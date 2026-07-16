@@ -1,0 +1,67 @@
+import re
+from pathlib import Path
+from typing import Any
+
+import yaml
+from utils import cfg_get
+from utils import load_config
+
+_FRONTMATTER_RE = re.compile(r"^---\s*\n(.*?)\n---\s*(?:\n|$)", re.DOTALL)
+
+
+def parse_frontmatter(content: str) -> tuple[dict[str, Any], str]:
+    """Split ``content`` into ``(frontmatter, body)``.
+
+    Returns an empty dict and the original body if no frontmatter block
+    is present. Frontmatter is parsed as YAML; YAML parse errors are
+    swallowed (empty dict) to keep skill_view resilient to malformed
+    manifests.
+    """
+    match = _FRONTMATTER_RE.match(content)
+    if not match:
+        return {}, content
+    try:
+        data = yaml.safe_load(match.group(1)) or {}
+    except Exception:
+        return {}, content[match.end() :]
+    return data if isinstance(data, dict) else {}, content[match.end() :]
+
+
+def iter_skill_index_files(directory: Path | str, name: str = "SKILL.md"):
+    """Yield every ``name`` file under ``directory`` (recursive)."""
+    root = Path(directory)
+    if not root.is_dir():
+        return
+    yield from sorted(root.rglob(name))
+
+
+def get_zast_metadata(frontmatter: dict[str, Any] | None) -> dict[str, Any]:
+    """Return ``frontmatter.metadata.zast`` as a dict, or ``{}`` if any link is missing/wrong type."""
+    if not isinstance(frontmatter, dict):
+        return {}
+    metadata = frontmatter.get("metadata")
+    if not isinstance(metadata, dict):
+        return {}
+    zast = metadata.get("zast")
+    return zast if isinstance(zast, dict) else {}
+
+
+def get_disabled_skill_names(section: str = "skills") -> set[str]:
+    """Read the ``<section>.disabled`` list from ``~/.zast/config.yaml``.
+
+    ``section`` defaults to ``"skills"``; pass ``"toolsets"`` to share the
+    same parse path for the sibling toolsets section.
+    """
+    try:
+        disabled = cfg_get(load_config(), section, "disabled", default=[])
+        return {str(n) for n in disabled if isinstance(n, (str, int))} if isinstance(disabled, list) else set()
+    except Exception:
+        return set()
+
+
+__all__ = [
+    "parse_frontmatter",
+    "iter_skill_index_files",
+    "get_zast_metadata",
+    "get_disabled_skill_names",
+]

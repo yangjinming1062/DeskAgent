@@ -1,0 +1,372 @@
+import codecs
+import json
+import logging
+import os
+import select
+import shlex
+import subprocess
+import tempfile
+import threading
+import time
+import uuid
+from abc import ABC
+from abc import abstractmethod
+from collections.abc import Callable
+from pathlib import Path
+from typing import IO
+from typing import Protocol
+
+from utils import cfg_get
+from utils import get_zast_home
+from utils import load_config
+
+from ..interrupt import is_interrupted
+
+
+def _load_json_store(path: Path) -> dict:
+    try:
+        return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+    except Exception:
+        return {}
+
+
+def _save_json_store(path: Path, data: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    except Exception:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
+def _file_mtime_key(host_path: str) -> tuple[float, int] | None:
+    try:
+        return ((st := Path(host_path).stat()).st_mtime, st.st_size)
+    except OSError:
+        return None
+
+
+logger = logging.getLogger(__name__)
+
+
+def get_sandbox_dir() -> Path:
+    override = cfg_get(load_config(), "terminal", "sandbox_dir")
+    base = Path(str(override)) if override else (get_zast_home() / "sandboxes")
+    base.mkdir(parents=True, exist_ok=True)
+    return base
+
+
+def _pipe_stdin(proc: subprocess.Popen, data: str) -> None:
+    def _write():
+        try:
+            (target := getattr(proc.stdin, "buffer", proc.stdin)).write(data.encode("utf-8") if isinstance(data, str) else data)
+            target.close()
+        except (BrokenPipeError, OSError):
+            pass
+
+    threading.Thread(target=_write, daemon=True).start()
+
+
+def _popen_bash(cmd: list[str], stdin_data: str | None = None, **kwargs) -> subprocess.Popen:
+    proc = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        stdin=subprocess.PIPE if stdin_data is not None else subprocess.DEVNULL,
+        text=True,
+        **kwargs,
+    )
+    if stdin_data is not None:
+        _pipe_stdin(proc, stdin_data)
+    return proc
+
+
+class ProcessHandle(Protocol):
+    def poll(self) -> int | None: ...
+    def kill(self) -> None: ...
+    def wait(self, timeout: float | None = None) -> int: ...
+    @property
+    def stdout(self) -> IO[str] | None: ...
+    @property
+    def returncode(self) -> int | None: ...
+
+
+class _ThreadedProcessHandle:
+    def __init__(self, exec_fn: Callable[[], tuple[str, int]], cancel_fn: Callable[[], None] | None = None):
+        self._cancel_fn = cancel_fn
+        self._done = threading.Event()
+        self._returncode: int | None = None
+        self._error: Exception | None = None
+        read_fd, write_fd = os.pipe()
+        self._stdout = os.fdopen(read_fd, "r", encoding="utf-8", errors="replace")
+        self._write_fd = write_fd
+
+        def _worker():
+            try:
+                output, exit_code = exec_fn()
+                self._returncode = exit_code
+                try:
+                    os.write(self._write_fd, output.encode("utf-8", errors="replace"))
+                except OSError:
+                    pass
+            except Exception as exc:
+                self._error = exc
+                self._returncode = 1
+            finally:
+                try:
+                    os.close(self._write_fd)
+                except OSError:
+                    pass
+                self._done.set()
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+    @property
+    def stdout(self):
+        return self._stdout
+
+    @property
+    def returncode(self) -> int | None:
+        return self._returncode
+
+    def poll(self) -> int | None:
+        return self._returncode if self._done.is_set() else None
+
+    def kill(self):
+        if self._cancel_fn:
+            try:
+                self._cancel_fn()
+            except Exception:
+                pass
+
+    def wait(self, timeout: float | None = None) -> int:
+        self._done.wait(timeout=timeout)
+        return self._returncode
+
+
+def _cwd_marker(session_id: str) -> str:
+    return f"ZAST_CWD_{session_id}__"
+
+
+class BaseEnvironment(ABC):
+    _stdin_mode: str = "pipe"
+    _snapshot_timeout: int = 30
+
+    def get_temp_dir(self) -> str:
+        return "/tmp"
+
+    def __init__(self, cwd: str, timeout: int, env: dict = None):
+        self.cwd = cwd
+        self.timeout = timeout
+        self.env = env or {}
+        self._session_id = uuid.uuid4().hex[:12]
+        temp_dir = self.get_temp_dir().rstrip("/") or "/"
+        self._snapshot_path = f"{temp_dir}/zast-snap-{self._session_id}.sh"
+        self._cwd_file = f"{temp_dir}/zast-cwd-{self._session_id}.txt"
+        self._cwd_marker = _cwd_marker(self._session_id)
+        self._snapshot_ready = False
+
+    def _run_bash(
+        self,
+        cmd_string: str,
+        *,
+        login: bool = False,
+        timeout: int = 120,
+        stdin_data: str | None = None,
+    ) -> ProcessHandle:
+        raise NotImplementedError(f"{type(self).__name__} must implement _run_bash()")
+
+    @abstractmethod
+    def cleanup(self): ...
+    def init_session(self):
+        bootstrap = (
+            f"export -p > {shlex.quote(self._snapshot_path)}\n"
+            f"declare -f | grep -vE '^_[^_]' >> {shlex.quote(self._snapshot_path)}\n"
+            f"alias -p >> {shlex.quote(self._snapshot_path)}\n"
+            f"echo 'shopt -s expand_aliases' >> {shlex.quote(self._snapshot_path)}\n"
+            f"echo 'set +e' >> {shlex.quote(self._snapshot_path)}\n"
+            f"echo 'set +u' >> {shlex.quote(self._snapshot_path)}\n"
+            f"builtin cd {shlex.quote(self.cwd)} 2>/dev/null || true\n"
+            f"pwd -P > {shlex.quote(self._cwd_file)} 2>/dev/null || true\n"
+            f"printf '\\n{self._cwd_marker}%s{self._cwd_marker}\\n' \"$(pwd -P)\"\n"
+        )
+        try:
+            proc = self._run_bash(bootstrap, login=True, timeout=self._snapshot_timeout)
+            result = self._wait_for_process(proc, timeout=self._snapshot_timeout)
+            self._snapshot_ready = True
+            self._update_cwd(result)
+            logger.info("Session snapshot created (session=%s, cwd=%s)", self._session_id, self.cwd)
+        except Exception as exc:
+            logger.warning("init_session failed (session=%s): %s — falling back to bash -l per command", self._session_id, exc)
+            self._snapshot_ready = False
+
+    @staticmethod
+    def _quote_cwd_for_cd(cwd: str) -> str:
+        return cwd if cwd == "~" else "$HOME" if cwd == "~/" else f"$HOME/{shlex.quote(cwd[2:])}" if cwd.startswith("~/") else shlex.quote(cwd)
+
+    def _wrap_command(self, command: str, cwd: str) -> str:
+        escaped = command.replace("'", "'\\''")
+        _quoted_snap = shlex.quote(self._snapshot_path)
+        _quoted_cwd_file = shlex.quote(self._cwd_file)
+        parts = []
+        if self._snapshot_ready:
+            parts.append(f"source {_quoted_snap} >/dev/null 2>&1 || true")
+        parts.append(f"builtin cd -- {self._quote_cwd_for_cd(cwd)} || exit 126")
+        parts.append(f"eval '{escaped}'")
+        parts.append("__zast_ec=$?")
+        if self._snapshot_ready:
+            parts.append(f"export -p > {_quoted_snap} 2>/dev/null || true")
+        parts.append(f"pwd -P > {_quoted_cwd_file} 2>/dev/null || true")
+        parts.append(f"printf '\\n{self._cwd_marker}%s{self._cwd_marker}\\n' \"$(pwd -P)\"")
+        parts.append("exit $__zast_ec")
+        return "\n".join(parts)
+
+    @staticmethod
+    def _embed_stdin_heredoc(command: str, stdin_data: str) -> str:
+        delimiter = f"ZAST_STDIN_{uuid.uuid4().hex[:12]}"
+        return f"{command} << '{delimiter}'\n{stdin_data}\n{delimiter}"
+
+    def _wait_for_process(self, proc: ProcessHandle, timeout: int = 120) -> dict:
+        output_chunks: list[str] = []
+        decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
+
+        def _drain_iterable(stream):
+            try:
+                for piece in stream:
+                    if piece is not None:
+                        output_chunks.append(decoder.decode(piece) if isinstance(piece, bytes) else str(piece))
+            except Exception:
+                pass
+
+        def _drain():
+            if (stream := proc.stdout) is None:
+                return
+            try:
+                fileno = getattr(stream, "fileno", None)
+                fd = fileno() if callable(fileno) else None
+                if not isinstance(fd, int) or fd < 0:
+                    _drain_iterable(stream)
+                elif os.name == "nt":
+                    while chunk := os.read(fd, 4096):
+                        output_chunks.append(decoder.decode(chunk))
+                else:
+                    idle_after_exit = 0
+                    while True:
+                        ready, _, _ = select.select([fd], [], [], 0.1)
+                        if ready:
+                            if not (chunk := os.read(fd, 4096)):
+                                break
+                            output_chunks.append(decoder.decode(chunk))
+                            idle_after_exit = 0
+                        elif proc.poll() is not None:
+                            if (idle_after_exit := idle_after_exit + 1) >= 3:
+                                break
+            except (ValueError, OSError):
+                pass
+            finally:
+                try:
+                    if tail := decoder.decode(b"", final=True):
+                        output_chunks.append(tail)
+                except Exception:
+                    pass
+
+        drain_thread = threading.Thread(target=_drain, daemon=True)
+        drain_thread.start()
+        deadline = time.monotonic() + timeout
+        try:
+            _poll_sleep = 0.005
+            while proc.poll() is None:
+                if is_interrupted():
+                    self._kill_process(proc)
+                    drain_thread.join(timeout=2)
+                    return {"output": "".join(output_chunks) + "\n[Command interrupted]", "returncode": 130}
+                if time.monotonic() > deadline:
+                    self._kill_process(proc)
+                    drain_thread.join(timeout=2)
+                    partial = "".join(output_chunks)
+                    return {"output": f"{partial}\n[Command timed out after {timeout}s]" if partial else f"[Command timed out after {timeout}s]", "returncode": 124}
+                time.sleep(_poll_sleep)
+                _poll_sleep = min(_poll_sleep * 1.5, 0.2)
+        except (KeyboardInterrupt, SystemExit):
+            try:
+                self._kill_process(proc)
+                drain_thread.join(timeout=2)
+            except Exception:
+                pass
+            raise
+        drain_thread.join(timeout=2)
+        try:
+            proc.stdout.close()
+        except Exception:
+            pass
+        return {"output": "".join(output_chunks), "returncode": proc.returncode}
+
+    def _kill_process(self, proc: ProcessHandle):
+        try:
+            proc.kill()
+        except (ProcessLookupError, PermissionError, OSError):
+            pass
+
+    def _update_cwd(self, result: dict):
+        self._extract_cwd_from_output(result)
+
+    def _extract_cwd_from_output(self, result: dict):
+        output = result.get("output", "")
+        marker = self._cwd_marker
+        if (last := output.rfind(marker)) != -1 and (first := output.rfind(marker, max(0, last - 4096), last)) != -1 and first != last:
+            if cwd_path := output[first + len(marker) : last].strip():
+                self.cwd = cwd_path
+            line_start = first if (ls := output.rfind("\n", 0, first)) == -1 else ls
+            line_end = len(output) if (le := output.find("\n", last + len(marker))) == -1 else le + 1
+            result["output"] = output[:line_start] + output[line_end:]
+
+    def _before_execute(self) -> None:
+        pass
+
+    def execute(
+        self,
+        command: str,
+        cwd: str = "",
+        *,
+        timeout: int | None = None,
+        stdin_data: str | None = None,
+        rewrite_compound_background: bool = True,
+    ) -> dict:
+        self._before_execute()
+        exec_command, sudo_stdin = self._prepare_command(command)
+        if rewrite_compound_background:
+            import tools.terminal.terminal_tool as _terminal_tool
+
+            exec_command = _terminal_tool._rewrite_compound_background(exec_command)
+        effective_stdin = sudo_stdin + stdin_data if sudo_stdin is not None and stdin_data is not None else (sudo_stdin or stdin_data)
+        if effective_stdin and self._stdin_mode == "heredoc":
+            exec_command = self._embed_stdin_heredoc(exec_command, effective_stdin)
+            effective_stdin = None
+        to = timeout or self.timeout
+        wrapped = self._wrap_command(exec_command, cwd or self.cwd)
+        proc = self._run_bash(wrapped, login=not self._snapshot_ready, timeout=to, stdin_data=effective_stdin)
+        result = self._wait_for_process(proc, timeout=to)
+        self._update_cwd(result)
+        return result
+
+    def stop(self):
+        self.cleanup()
+
+    def __del__(self):
+        try:
+            self.cleanup()
+        except Exception:
+            pass
+
+    def _prepare_command(self, command: str) -> tuple[str, str | None]:
+        import tools.terminal.terminal_tool as _terminal_tool
+
+        return _terminal_tool._transform_sudo_command(command)

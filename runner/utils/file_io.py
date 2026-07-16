@@ -1,0 +1,28 @@
+import os
+import tempfile
+
+
+def atomic_replace(file_path: str, content: str) -> None:
+    """Write ``content`` to ``file_path`` atomically (tempfile + fsync + os.replace).
+
+    Crash-safe: a writer that dies mid-write leaves the previous file
+    intact; the tmp file may be orphaned in the same directory.
+    """
+    if dir_name := os.path.dirname(file_path):
+        os.makedirs(dir_name, exist_ok=True)
+    fd, tmp_name = tempfile.mkstemp(dir=dir_name or None)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as tmp:
+            tmp.write(content)
+            tmp.flush()
+            os.fsync(tmp.fileno())
+        os.replace(tmp_name, file_path)
+    except BaseException:
+        try:
+            os.unlink(tmp_name)
+        except OSError:
+            pass
+        raise
+
+
+__all__ = ["atomic_replace"]

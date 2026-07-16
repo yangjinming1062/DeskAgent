@@ -1,0 +1,51 @@
+services:
+  postgres:
+    image: postgres:15
+    container_name: zast-agent-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: zast
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  backend:
+    build:
+      context: ..
+      dockerfile: backend/Dockerfile
+    container_name: zast-agent-backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres:5432/zast
+      APP_ENV: production
+      JWT_SECRET_KEY: replace-this-with-a-strong-secret
+      ADMIN_USERNAME: zast
+      ADMIN_PASSWORD: zast@admin123
+      LLM_BASE_URL: https://token-plan-cn.xiaomimimo.com/v1
+      LLM_API_KEY: tp-x
+      LLM_MODEL_NAME: mimo-v2.5-pro
+      STT_BASE_URL: https://token-plan-cn.xiaomimimo.com/v1
+      STT_API_KEY: tp-x
+      STT_MODEL_NAME: mimo-v2.5-asr
+      TTS_BASE_URL: https://token-plan-cn.xiaomimimo.com/v1
+      TTS_API_KEY: tp-x
+      TTS_MODEL_NAME: mimo-v2.5-tts
+      TTS_DEFAULT_VOICE: mimo_default
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./updates:/app/backend/updates
+
+volumes:
+  postgres_data:

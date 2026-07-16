@@ -1,0 +1,73 @@
+import asyncio
+from importlib import util as importlib_util
+from typing import Any
+
+from ddgs import DDGS
+from logger import get_logger
+
+from .. import WebSearchProvider
+
+logger = get_logger(__name__)
+
+
+def _ddgs_importable() -> bool:
+    return importlib_util.find_spec("ddgs") is not None
+
+
+class DDGSWebSearchProvider(WebSearchProvider):
+    @property
+    def name(self) -> str:
+        return "ddgs"
+
+    @property
+    def display_name(self) -> str:
+        return "DuckDuckGo (ddgs)"
+
+    def is_available(self) -> bool:
+        return _ddgs_importable()
+
+    def supports_search(self) -> bool:
+        return True
+
+    def supports_extract(self) -> bool:
+        return False
+
+    def _sync_search(self, query: str, safe_limit: int) -> dict[str, Any]:
+        if not _ddgs_importable():
+            return {"success": False, "error": "ddgs package is not installed — run `pip install ddgs`"}
+
+        web_results = []
+        try:
+            with DDGS() as client:
+                for i, hit in enumerate(client.text(query, max_results=safe_limit)):
+                    url = str(hit.get("href") or hit.get("url") or "")
+                    web_results.append(
+                        {
+                            "title": str(hit.get("title", "")),
+                            "url": url,
+                            "description": str(hit.get("body", "")),
+                            "position": i + 1,
+                        }
+                    )
+        except Exception as exc:  # noqa: BLE001 — ddgs raises its own exceptions
+            logger.warning("DDGS search error", extra={"error": str(exc)})
+            return {"success": False, "error": f"DuckDuckGo search failed: {exc}"}
+
+        logger.info("DDGS search complete", extra={"query": query, "result_count": len(web_results), "limit": safe_limit})
+        return {"success": True, "data": {"web": web_results}}
+
+    async def search(self, query: str, limit: int = 5) -> dict[str, Any]:
+        # ``ddgs`` is sync-only — push the blocking HTTP call onto a worker
+        # thread so the asyncio loop stays responsive while DuckDuckGo replies.
+        return await asyncio.to_thread(self._sync_search, query, max(1, int(limit)))
+
+    def get_setup_schema(self) -> dict[str, Any]:
+        return {
+            "name": "DuckDuckGo (ddgs)",
+            "badge": "free · no key · search only",
+            "tag": "Search via the ddgs Python package — no API key (pair with any extract provider)",
+            "env_vars": [],
+            # Trigger `_run_post_setup("ddgs")` after the user picks this row
+            # so the ddgs Python package gets pip-installed on first selection.
+            "post_setup": "ddgs",
+        }

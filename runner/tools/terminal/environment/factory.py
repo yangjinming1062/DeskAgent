@@ -1,0 +1,74 @@
+from .._env_docker import DockerEnvironment
+from .._env_docker import maybe_reap_docker_orphans
+from .._env_local import LocalEnvironment
+from .._env_singularity import SingularityEnvironment
+from .._env_ssh import SSHEnvironment
+from .state import DOCKER_ORPHAN_LIFETIME_SECONDS
+
+
+def create_environment(
+    env_type: str,
+    image: str,
+    cwd: str,
+    timeout: int,
+    ssh_config: dict = None,
+    container_config: dict = None,
+    local_config: dict = None,
+    task_id: str = "default",
+    host_cwd: str = None,
+):
+    cc = container_config or {}
+    cpu = cc.get("container_cpu", 1)
+    memory = cc.get("container_memory", 5120)
+    disk = cc.get("container_disk", 51200)
+    persistent = cc.get("container_persistent", True)
+    volumes = cc.get("docker_volumes", [])
+    docker_forward_env = cc.get("docker_forward_env", [])
+    docker_env = cc.get("docker_env", {})
+    docker_extra_args = cc.get("docker_extra_args", [])
+    if env_type == "local":
+        return LocalEnvironment(cwd=cwd, timeout=timeout)
+    elif env_type == "docker":
+        maybe_reap_docker_orphans(cc, DOCKER_ORPHAN_LIFETIME_SECONDS)
+        return DockerEnvironment(
+            image=image,
+            cwd=cwd,
+            timeout=timeout,
+            cpu=cpu,
+            memory=memory,
+            disk=disk,
+            persistent_filesystem=persistent,
+            task_id=task_id,
+            volumes=volumes,
+            host_cwd=host_cwd,
+            auto_mount_cwd=cc.get("docker_mount_cwd_to_workspace", False),
+            forward_env=docker_forward_env,
+            env=docker_env,
+            run_as_host_user=cc.get("docker_run_as_host_user", False),
+            extra_args=docker_extra_args,
+            persist_across_processes=cc.get("docker_persist_across_processes", True),
+        )
+    elif env_type == "singularity":
+        return SingularityEnvironment(
+            image=image,
+            cwd=cwd,
+            timeout=timeout,
+            cpu=cpu,
+            memory=memory,
+            disk=disk,
+            persistent_filesystem=persistent,
+            task_id=task_id,
+        )
+    elif env_type == "ssh":
+        if not ssh_config or not ssh_config.get("host") or not ssh_config.get("user"):
+            raise ValueError("SSH environment requires ssh_host and ssh_user to be configured")
+        return SSHEnvironment(
+            host=ssh_config["host"],
+            user=ssh_config["user"],
+            port=ssh_config.get("port", 22),
+            key_path=ssh_config.get("key", ""),
+            cwd=cwd,
+            timeout=timeout,
+        )
+    else:
+        raise ValueError(f"Unknown environment type: {env_type}. Use 'local', 'docker', 'singularity', or 'ssh'")
