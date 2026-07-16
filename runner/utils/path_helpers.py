@@ -1,0 +1,128 @@
+import functools
+import os
+import re
+import shutil
+import subprocess
+import tempfile
+from pathlib import Path
+
+from .config import cfg_get
+from .config import load_config
+from .constants import IS_WINDOWS as _IS_WINDOWS
+
+SANE_PATH = "/opt/homebrew/bin:" "/opt/homebrew/sbin:" "/usr/local/sbin:" "/usr/local/bin:" "/usr/sbin:" "/usr/bin:" "/sbin:" "/bin"
+
+_MSYS_PATH_RE = re.compile(r"^/([a-zA-Z])(/.*)?$")
+
+
+def msys_to_windows_path(cwd: str) -> str:
+    if not _IS_WINDOWS or not cwd:
+        return cwd
+    m = _MSYS_PATH_RE.match(cwd)
+    if not m:
+        return cwd
+    drive = m.group(1).upper()
+    rest = (m.group(2) or "").replace("/", "\\") or "\\"
+    return f"{drive}:{rest}"
+
+
+def resolve_safe_cwd(cwd: str) -> str:
+    cwd = msys_to_windows_path(cwd) if _IS_WINDOWS else cwd
+    if cwd and os.path.isdir(cwd):
+        return cwd
+    parent = os.path.dirname(cwd) if cwd else ""
+    while parent:
+        if os.path.isdir(parent):
+            return parent
+        if (next_parent := os.path.dirname(parent)) == parent:
+            break
+        parent = next_parent
+    return tempfile.gettempdir()
+
+
+def find_bash() -> str:
+    """Return absolute path to a runnable bash; raise on Windows if Git for Windows is missing."""
+    if not _IS_WINDOWS:
+        return shutil.which("bash") or next((p for p in ("/usr/bin/bash", "/bin/bash") if os.path.isfile(p)), None) or os.environ.get("SHELL") or "/bin/sh"
+
+    if (custom := cfg_get(load_config(), "terminal", "git_bash_path", default="")) and os.path.isfile(custom):
+        return custom
+
+    lap = os.environ.get("LOCALAPPDATA", "")
+    for candidate in (
+        os.path.join(lap, "zast", "git", "bin", "bash.exe"),
+        os.path.join(lap, "zast", "git", "usr", "bin", "bash.exe"),
+    ):
+        if os.path.isfile(candidate):
+            return candidate
+    if found := shutil.which("bash"):
+        return found
+    for candidate in (
+        os.path.join(os.environ.get("ProgramFiles", r"C:\Program Files"), "Git", "bin", "bash.exe"),
+        os.path.join(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)"), "Git", "bin", "bash.exe"),
+        os.path.join(lap, "Programs", "Git", "bin", "bash.exe") if lap else "",
+    ):
+        if candidate and os.path.isfile(candidate):
+            return candidate
+    raise RuntimeError("Git Bash not found. Install Git for Windows or set ZAST_GIT_BASH_PATH.")
+
+
+def append_sane_path_entries(existing_path: str) -> str:
+    if _IS_WINDOWS:
+        return existing_path
+    seen: set[str] = set()
+    ordered = [entry for entry in existing_path.split(":") if entry and not (entry in seen or seen.add(entry))]
+    return ":".join(ordered + [entry for entry in SANE_PATH.split(":") if entry and entry not in seen])
+
+
+@functools.lru_cache(maxsize=1)
+def find_python() -> str | None:
+    """Locate the uv-managed Python for the user's zast venv.
+
+    Lookup order:
+      1. ``ZAST_PYTHON`` env var (explicit override).
+      2. ``$ZAST_HOME/runner/.venv/bin/python`` (POSIX) or
+         ``Scripts\\python.exe`` (Win).
+      3. ``uv python find`` against the managed uv (if on PATH or at
+         ``$ZAST_HOME/bin/uv``), parse first line.
+
+    Returns ``None`` when no usable interpreter is found; callers fall back
+    to ``sys.executable``.
+    """
+    if override := os.environ.get("ZAST_PYTHON"):
+        if Path(override).is_file():
+            return override
+
+    zast_home = os.environ.get("ZAST_HOME")
+    if not zast_home:
+        # Derive ZAST_HOME using the same logic as constants.get_zast_home()
+        if _IS_WINDOWS and (lap := os.environ.get("LOCALAPPDATA")):
+            zast_home = str(Path(lap) / "zast")
+        else:
+            zast_home = str(Path.home() / ".zast")
+
+    root = Path(zast_home) / "runner" / ".venv"
+    if _IS_WINDOWS:
+        candidates = [root / "Scripts" / "python.exe", root / "Scripts" / "python3.exe"]
+    else:
+        candidates = [root / "bin" / "python", root / "bin" / "python3"]
+    for c in candidates:
+        if c.is_file() and os.access(c, os.X_OK):
+            return str(c)
+
+    # Fallback: ask uv for any installed cpython matching requires-python.
+    uv_candidates = [shutil.which("uv")]
+    if _IS_WINDOWS:
+        uv_candidates.append(str(Path(zast_home) / "bin" / "uv.exe"))
+    else:
+        uv_candidates.append(str(Path(zast_home) / "bin" / "uv"))
+    for uv in uv_candidates:
+        if not uv or not Path(uv).is_file():
+            continue
+        try:
+            out = subprocess.check_output([uv, "python", "find"], text=True, timeout=5).strip()
+            if out and Path(out).is_file():
+                return out
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError):
+            continue
+    return None

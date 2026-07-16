@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>ZAST 管理后台</title>
+    <style>
+        * { box-sizing: border-box; }
+        body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background: #f5f5f5; }
+        h1 { border-bottom: 2px solid #1677ff; padding-bottom: 10px; color: #1677ff; }
+        h2 { color: #333; margin-top: 30px; }
+        .section { background: white; padding: 20px; margin-bottom: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        table { border-collapse: collapse; width: 100%; margin-top: 10px; }
+        th, td { border: 1px solid #ddd; padding: 10px; text-align: left; }
+        th { background-color: #1677ff; color: white; }
+        .btn { padding: 8px 16px; margin: 2px; cursor: pointer; border: none; border-radius: 6px; color: white; font-size: 14px; font-weight: 600; transition: all 0.2s; }
+        .btn:hover { opacity: 0.8; transform: translateY(-1px); }
+        .btn-primary { background: #1677ff; }
+        .btn-danger { background: #ff4d4f; }
+        .btn-warning { background: #faad14; }
+        .btn-info { background: #13c2c2; }
+        input[type="text"], input[type="password"], input[type="date"] { padding: 10px; margin: 5px; border: 1px solid #ddd; border-radius: 6px; width: 220px; }
+        select { padding: 10px; margin: 5px; border: 1px solid #ddd; border-radius: 6px; min-width: 150px; }
+        .form-group { margin-bottom: 15px; }
+        .modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); align-items: center; justify-content: center; z-index: 999; backdrop-filter: blur(4px); }
+        .modal.show { display: flex; }
+        .modal-content { background: white; padding: 30px; border-radius: 12px; min-width: 450px; box-shadow: 0 10px 25px rgba(0,0,0,0.2); }
+        .modal h2 { margin-top: 0; margin-bottom: 20px; color: #1677ff; }
+        .tab-nav { margin-bottom: 20px; border-bottom: 1px solid #ddd; }
+        .tab-nav .tab { display: inline-block; padding: 12px 24px; cursor: pointer; background: transparent; margin-right: 5px; border-radius: 6px 6px 0 0; font-weight: 600; color: #666; }
+        .tab-nav .tab:hover { color: #1677ff; }
+        .tab-nav .tab.active { background: #1677ff; color: white; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        .status-active { color: #52c41a; font-weight: bold; }
+        .status-inactive { color: #ff4d4f; font-weight: bold; }
+        .expires-valid { color: #52c41a; }
+        .expires-expired { color: #ff4d4f; font-weight: bold; }
+        #loginOverlay { position: fixed; inset: 0; background: linear-gradient(135deg, #1677ff, #003a8c); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+        #loginBox { background: white; padding: 40px; border-radius: 16px; text-align: center; box-shadow: 0 15px 35px rgba(0,0,0,0.3); width: 350px; }
+        #loginBox h2 { margin-bottom: 25px; color: #1677ff; }
+        #loginBox input { display: block; margin: 15px auto; padding: 12px; width: 100%; border-radius: 8px; border: 1px solid #ddd; }
+        #loginBox button { width: 100%; padding: 12px; font-size: 16px; margin-top: 10px; }
+        #appContent { display: none; }
+        code { background: #f0f0f0; padding: 2px 4px; border-radius: 4px; font-family: monospace; }
+    </style>
+</head>
+<body>
+    <div id="loginOverlay">
+        <div id="loginBox">
+            <h2>ZAST 管理后台</h2>
+            <input type="text" id="loginUser" placeholder="用户名" autocomplete="username">
+            <input type="password" id="loginPass" placeholder="密码" autocomplete="current-password">
+            <button class="btn btn-primary" onclick="doLogin()">登录</button>
+            <p id="loginError" style="color: #ff4d4f; display: none; margin-top: 15px;"></p>
+        </div>
+    </div>
+
+    <div id="appContent">
+        <h1>ZAST 管理后台</h1>
+
+        <div class="tab-nav">
+            <span class="tab active" onclick="showTab('users')">用户管理</span>
+            <span class="tab" onclick="showTab('models')">模型配置</span>
+            <span class="tab" onclick="showTab('versions')">版本管理</span>
+        </div>
+
+        <div id="tab-users" class="tab-content active section">
+            <h2>用户列表</h2>
+            <div class="form-group">
+                <button class="btn btn-primary" onclick="showCreateUser()">创建新用户</button>
+            </div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>用户名</th>
+                        <th>显示名称</th>
+                        <th>可用</th>
+                        <th>有效期</th>
+                        <th>状态</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody id="userList"><tr><td colspan="7">加载中...</td></tr></tbody>
+            </table>
+        </div>
+
+        <div id="tab-models" class="tab-content section">
+            <h2>模型配置 (AI API 设置)</h2>
+            <div class="form-group">
+                <select id="modelUserSelect"><option value="">选择用户</option></select>
+                <button class="btn btn-primary" onclick="showModelConfig()">设置配置</button>
+            </div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>用户ID</th>
+                        <th>LLM Model</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody id="modelList"><tr><td colspan="5">加载中...</td></tr></tbody>
+            </table>
+        </div>
+
+        <div id="tab-versions" class="tab-content section">
+            <div class="upload-form">
+                <h2>发布新版本</h2>
+                <form id="uploadForm">
+                    <input type="text" id="releaseNotes" placeholder="更新说明（可选）">
+                    <input type="file" id="fileInput" required>
+                    <button type="submit" class="btn btn-primary">上传并发布</button>
+                </form>
+                <p id="uploadStatus"></p>
+            </div>
+            <h2>版本历史</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>版本号</th>
+                        <th>Runner</th>
+                        <th>SHA256</th>
+                        <th>更新说明</th>
+                        <th>状态</th>
+                        <th>创建时间</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody id="versionList"><tr><td colspan="8">加载中...</td></tr></tbody>
+            </table>
+        </div>
+    </div>
+
+    <div id="userModal" class="modal">
+        <div class="modal-content">
+            <h2 id="userModalTitle">创建用户</h2>
+            <input type="hidden" id="editUserId">
+            <div class="form-group">
+                <label>用户名</label><br>
+                <input type="text" id="username" placeholder="登录用户名" style="width:100%">
+            </div>
+            <div class="form-group">
+                <label>密码</label><br>
+                <input type="password" id="password" placeholder="密码" style="width:100%">
+            </div>
+            <div class="form-group">
+                <label>显示名称</label><br>
+                <input type="text" id="displayName" placeholder="客户名称" style="width:100%">
+            </div>
+            <div class="form-group">
+                <label><input type="checkbox" id="canUse" checked> 允许登录客户端</label>
+            </div>
+            <div class="form-group">
+                <label>到期日期</label><br>
+                <input type="date" id="expiresAt" placeholder="留空永久" style="width:100%">
+            </div>
+            <div style="margin-top: 20px; text-align: right;">
+                <button class="btn btn-danger" onclick="closeModal('userModal')">取消</button>
+                <button class="btn btn-primary" onclick="saveUser()">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="modelModal" class="modal">
+        <div class="modal-content" style="min-width: 720px; max-width: 900px;">
+            <h2 id="modelModalTitle">配置 AI 参数</h2>
+            <input type="hidden" id="modelUserId">
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                <div>
+                    <h3 style="margin-bottom: 10px; color: #555;">大语言模型 (LLM)</h3>
+                    <div class="form-group">
+                        <label>Base URL</label><br>
+                        <input type="text" id="llmBaseUrl" placeholder="https://api.openai.com/v1" style="width:100%">
+                    </div>
+                    <div class="form-group">
+                        <label>API Key</label><br>
+                        <input type="text" id="llmApiKey" placeholder="sk-..." style="width:100%">
+                    </div>
+                    <div class="form-group">
+                        <label>模型名称</label><br>
+                        <input type="text" id="llmModelName" placeholder="gpt-4o" style="width:100%">
+                    </div>
+                </div>
+                <div>
+                    <h3 style="margin-bottom: 10px; color: #555;">语音识别 (STT)</h3>
+                    <div class="form-group">
+                        <label>Base URL</label><br>
+                        <input type="text" id="sttBaseUrl" placeholder="留空使用 SETTINGS 默认" style="width:100%">
+                    </div>
+                    <div class="form-group">
+                        <label>API Key</label><br>
+                        <input type="text" id="sttApiKey" placeholder="留空保留现有值" style="width:100%">
+                    </div>
+                    <div class="form-group">
+                        <label>模型名称</label><br>
+                        <input type="text" id="sttModelName" placeholder="mimo-v2.5-asr" style="width:100%">
+                    </div>
+                </div>
+                <div>
+                    <h3 style="margin-bottom: 10px; color: #555;">语音合成 (TTS)</h3>
+                    <div class="form-group">
+                        <label>Base URL</label><br>
+                        <input type="text" id="ttsBaseUrl" placeholder="留空使用 SETTINGS 默认" style="width:100%">
+                    </div>
+                    <div class="form-group">
+                        <label>API Key</label><br>
+                        <input type="text" id="ttsApiKey" placeholder="留空保留现有值" style="width:100%">
+                    </div>
+                    <div class="form-group">
+                        <label>模型名称</label><br>
+                        <input type="text" id="ttsModelName" placeholder="mimo-v2.5-tts" style="width:100%">
+                    </div>
+                </div>
+                <div>
+                    <h3 style="margin-bottom: 10px; color: #555;">图片生成 (Image Gen)</h3>
+                    <div class="form-group">
+                        <label>Base URL</label><br>
+                        <input type="text" id="imageGenBaseUrl" placeholder="留空使用 SETTINGS 默认" style="width:100%">
+                    </div>
+                    <div class="form-group">
+                        <label>API Key</label><br>
+                        <input type="text" id="imageGenApiKey" placeholder="留空保留现有值" style="width:100%">
+                    </div>
+                    <div class="form-group">
+                        <label>模型名称</label><br>
+                        <input type="text" id="imageGenModelName" placeholder="dall-e-3" style="width:100%">
+                    </div>
+                </div>
+            </div>
+            <div style="margin-top: 20px; text-align: right;">
+                <button class="btn btn-danger" onclick="closeModal('modelModal')">取消</button>
+                <button class="btn btn-primary" onclick="saveModelConfig()">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = '';
+        const TOKEN_KEY = 'zast_admin_token';
+        const tabCache = { users: null, models: null, versions: null };
+
+        function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":"&#39;"}[c])); }
+        const getItems = (data) => data?.items ?? [];
+
+        function showTab(name) {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+            const activeTab = document.querySelector(`[onclick="showTab('${name}')"]`);
+            if (activeTab) activeTab.classList.add('active');
+            const activeContent = document.getElementById('tab-' + name);
+            if (activeContent) activeContent.classList.add('active');
+            
+            if (name === 'users') loadUsers();
+            if (name === 'models') loadModelConfigs();
+            if (name === 'versions') loadVersions();
+        }
+
+        function getToken() { return sessionStorage.getItem(TOKEN_KEY); }
+
+        async function apiFetch(path, options = {}) {
+            const headers = {
+                ...(getToken() ? { 'Authorization': 'Bearer ' + getToken() } : {}),
+            };
+            // Don't set Content-Type for FormData bodies - browser will set multipart/form-data with boundary
+            if (!(options.body instanceof FormData)) {
+                headers['Content-Type'] = 'application/json';
+            }
+
+            const resp = await fetch(API_BASE + path, {
+                ...options,
+                headers: {
+                    ...headers,
+                    ...(options.headers || {})
+                }
+            });
+            if (resp.status === 401) {
+                sessionStorage.removeItem(TOKEN_KEY);
+                location.reload();
+                throw new Error('会话过期，请重新登录');
+            }
+            if (!resp.ok) {
+                const detail = (await resp.json().catch(() => ({}))).detail;
+                throw new Error(detail || `HTTP ${resp.status}`);
+            }
+            return resp;
+        }
+
+        function doLogin() {
+            const u = document.getElementById('loginUser').value, p = document.getElementById('loginPass').value;
+            if (!u || !p) return;
+            fetch(API_BASE + '/admin/login', { 
+                method: 'POST', 
+                headers: { 'Content-Type': 'application/json' }, 
+                body: JSON.stringify({ username: u, password: p }) 
+            })
+            .then(r => { if (!r.ok) throw new Error('用户名或密码错误'); return r.json(); })
+            .then(data => { 
+                sessionStorage.setItem(TOKEN_KEY, data.access_token); 
+                document.getElementById('loginOverlay').style.display = 'none'; 
+                document.getElementById('appContent').style.display = 'block'; 
+                loadUsers(); 
+            })
+            .catch(e => { 
+                const err = document.getElementById('loginError'); 
+                err.textContent = e.message; 
+                err.style.display = 'block'; 
+            });
+        }
+
+        if (getToken()) { 
+            document.getElementById('loginOverlay').style.display = 'none'; 
+            document.getElementById('appContent').style.display = 'block'; 
+            loadUsers(); 
+        }
+
+        // Users
+        async function loadUsers() {
+            try {
+                const resp = await apiFetch('/api/admin/users');
+                const data = await resp.json();
+                tabCache.users = data;
+                renderUsers(data);
+            } catch (e) { document.getElementById('userList').innerHTML = `<tr><td colspan="7" style="color:red">加载失败: ${e.message}</td></tr>`; }
+        }
+
+        function renderUsers(data) {
+            const tbody = document.getElementById('userList');
+            const items = getItems(data);
+            if (!items.length) { tbody.innerHTML = '<tr><td colspan="7">暂无用户</td></tr>'; return; }
+            tbody.innerHTML = items.map(u => `
+                <tr>
+                    <td>${u.id}</td>
+                    <td>${esc(u.username)}</td>
+                    <td>${esc(u.display_name)}</td>
+                    <td>${u.can_use ? '是' : '否'}</td>
+                    <td class="${u.expires_at && new Date(u.expires_at) < new Date() ? 'expires-expired' : 'expires-valid'}">${u.expires_at || '永久'}</td>
+                    <td class="${u.is_active ? 'status-active' : 'status-inactive'}">${u.is_active ? '激活' : '已停用'}</td>
+                    <td>
+                        <button class="btn btn-info" onclick="editUser(${u.id})">编辑</button>
+                        <button class="btn btn-warning" onclick="toggleUser(${u.id})">${u.is_active ? '停用' : '启用'}</button>
+                        <button class="btn btn-danger" onclick="deleteUser(${u.id})">删除</button>
+                    </td>
+                </tr>`).join('');
+        }
+
+        function showCreateUser() {
+            document.getElementById('userModalTitle').textContent = '创建新用户';
+            document.getElementById('editUserId').value = '';
+            document.getElementById('username').value = '';
+            document.getElementById('username').disabled = false;
+            document.getElementById('password').value = '';
+            document.getElementById('displayName').value = '';
+            document.getElementById('canUse').checked = true;
+            document.getElementById('expiresAt').value = '';
+            document.getElementById('userModal').classList.add('show');
+        }
+
+        async function editUser(id) {
+            const resp = await apiFetch('/api/admin/users/' + id);
+            const u = await resp.json();
+            document.getElementById('userModalTitle').textContent = '编辑用户';
+            document.getElementById('editUserId').value = u.id;
+            document.getElementById('username').value = u.username;
+            document.getElementById('username').disabled = true;
+            document.getElementById('password').value = '';
+            document.getElementById('displayName').value = u.display_name;
+            document.getElementById('canUse').checked = u.can_use;
+            document.getElementById('expiresAt').value = u.expires_at ? u.expires_at.split('T')[0] : '';
+            document.getElementById('userModal').classList.add('show');
+        }
+
+        async function saveUser() {
+            const id = document.getElementById('editUserId').value;
+            const payload = {};
+            if (!id) { 
+                payload.username = document.getElementById('username').value; 
+                payload.password = document.getElementById('password').value; 
+            } else {
+                const pwd = document.getElementById('password').value;
+                if (pwd) payload.password = pwd;
+            }
+            payload.display_name = document.getElementById('displayName').value;
+            payload.can_use = document.getElementById('canUse').checked;
+            const ea = document.getElementById('expiresAt').value; payload.expires_at = ea || null;
+
+            const method = id ? 'PATCH' : 'POST';
+            const url = id ? `/api/admin/users/${id}` : '/api/admin/users';
+            await apiFetch(url, { method, body: JSON.stringify(payload) });
+            closeModal('userModal');
+            loadUsers();
+        }
+
+        async function toggleUser(id) {
+            await apiFetch(`/api/admin/users/${id}/toggle-active`, { method: 'PATCH' });
+            loadUsers();
+        }
+
+        async function deleteUser(id) {
+            if (!confirm('确定彻底删除此用户及其所有关联数据？')) return;
+            await apiFetch(`/api/admin/users/${id}`, { method: 'DELETE' });
+            loadUsers();
+        }
+
+        // Model configs
+        async function loadModelConfigs() {
+            try {
+                const [configsResp, usersResp] = await Promise.all([
+                    apiFetch('/api/admin/model-configs'),
+                    apiFetch('/api/admin/users'),
+                ]);
+                const data = await configsResp.json();
+                const userData = await usersResp.json();
+                tabCache.models = data;
+                renderModels(data);
+                const sel = document.getElementById('modelUserSelect');
+                sel.innerHTML = '<option value="">选择用户</option>' + getItems(userData).map(u => `<option value="${u.id}">${esc(u.username)}</option>`).join('');
+            } catch (e) { document.getElementById('modelList').innerHTML = `<tr><td colspan="3" style="color:red">加载失败: ${e.message}</td></tr>`; }
+        }
+
+        function showModelConfig() {
+            const userId = document.getElementById('modelUserSelect').value;
+            if (!userId) { alert('请先选择用户'); return; }
+            showModelConfigForUser(userId);
+        }
+
+        function showModelConfigForUser(userId) {
+            const cached = tabCache.models?.items?.find(c => c.user_id == userId) ?? null;
+            document.getElementById('modelUserId').value = userId;
+            // base_url + model_name come from the cached list response.
+            // api_key inputs are always left empty: the list endpoint exposes
+            // *_api_key_set (a bool) instead of the raw key. Saving with an
+            // empty input means "keep the existing key on the server" — never
+            // overwrite with an empty string and never surface the literal
+            // 'undefined'.
+            const fields = [
+                ['llmBaseUrl', 'llm_base_url'],
+                ['llmModelName', 'llm_model_name'],
+                ['sttBaseUrl', 'stt_base_url'],
+                ['sttModelName', 'stt_model_name'],
+                ['ttsBaseUrl', 'tts_base_url'],
+                ['ttsModelName', 'tts_model_name'],
+                ['imageGenBaseUrl', 'image_gen_base_url'],
+                ['imageGenModelName', 'image_gen_model_name'],
+            ];
+            for (const [inputId, responseKey] of fields) {
+                document.getElementById(inputId).value = cached ? (cached[responseKey] ?? '') : '';
+            }
+            for (const inputId of ['llmApiKey', 'sttApiKey', 'ttsApiKey', 'imageGenApiKey']) {
+                document.getElementById(inputId).value = '';
+            }
+            document.getElementById('modelModal').classList.add('show');
+        }
+
+        function renderModels(data) {
+            const tbody = document.getElementById('modelList');
+            const items = getItems(data);
+            if (!items.length) { tbody.innerHTML = '<tr><td colspan="3">暂无配置</td></tr>'; return; }
+            tbody.innerHTML = items.map(c => `
+                <tr>
+                    <td>${c.user_id}</td>
+                    <td>${esc(c.llm_model_name)}<br><small>${esc(c.llm_base_url)}</small></td>
+                    <td>
+                        <button class="btn btn-info" onclick="showModelConfigForUser(${c.user_id})">编辑</button>
+                        <button class="btn btn-danger" onclick="deleteModelConfig(${c.user_id})">删除</button>
+                    </td>
+                </tr>`).join('');
+        }
+
+        async function saveModelConfig() {
+            const userId = document.getElementById('modelUserId').value;
+            // Build the PUT payload from every service's (base_url, api_key, model_name).
+            // For each api_key, only include it when the user typed a new value —
+            // an empty input means "keep the existing key on the server". Sending
+            // ``*_api_key: ""`` would overwrite the stored key with a blank.
+            const services = [
+                { url: 'llmBaseUrl', key: 'llmApiKey', model: 'llmModelName', urlField: 'llm_base_url', keyField: 'llm_api_key', modelField: 'llm_model_name' },
+                { url: 'sttBaseUrl', key: 'sttApiKey', model: 'sttModelName', urlField: 'stt_base_url', keyField: 'stt_api_key', modelField: 'stt_model_name' },
+                { url: 'ttsBaseUrl', key: 'ttsApiKey', model: 'ttsModelName', urlField: 'tts_base_url', keyField: 'tts_api_key', modelField: 'tts_model_name' },
+                { url: 'imageGenBaseUrl', key: 'imageGenApiKey', model: 'imageGenModelName', urlField: 'image_gen_base_url', keyField: 'image_gen_api_key', modelField: 'image_gen_model_name' },
+            ];
+            const payload = {};
+            for (const s of services) {
+                payload[s.urlField] = document.getElementById(s.url).value;
+                payload[s.modelField] = document.getElementById(s.model).value;
+                const apiKey = document.getElementById(s.key).value;
+                if (apiKey) payload[s.keyField] = apiKey;
+            }
+            await apiFetch(`/api/admin/${userId}/model-config`, { method: 'PUT', body: JSON.stringify(payload) });
+            closeModal('modelModal');
+            loadModelConfigs();
+        }
+
+        async function deleteModelConfig(userId) {
+            if (!confirm('确定删除此用户的模型配置？')) return;
+            await apiFetch(`/api/admin/${userId}/model-config`, { method: 'DELETE' });
+            loadModelConfigs();
+        }
+
+        // Versions
+        async function loadVersions() {
+            try {
+                const resp = await apiFetch('/api/update/versions');
+                const data = await resp.json();
+                tabCache.versions = data;
+                renderVersions(data);
+            } catch (e) { document.getElementById('versionList').innerHTML = `<tr><td colspan="8" style="color:red">加载失败: ${e.message}</td></tr>`; }
+        }
+
+        function renderVersions(data) {
+            const tbody = document.getElementById('versionList');
+            const items = getItems(data);
+            if (!items.length) { tbody.innerHTML = '<tr><td colspan="8">暂无历史版本</td></tr>'; return; }
+            const runnerCell = v => v.runner_filename
+                ? `<code>${esc(v.runner_filename)}</code><br><small>v${esc(v.runner_version || v.version)}</small>`
+                : '<span style="color:#999">—</span>';
+            tbody.innerHTML = items.map(v => `
+                <tr>
+                    <td>${v.id}</td>
+                    <td>${esc(v.version)}</td>
+                    <td>${runnerCell(v)}</td>
+                    <td><code>${esc(v.exe_sha512 ? v.exe_sha512.substring(0, 16) : 'N/A')}...</code></td>
+                    <td>${esc(v.release_notes) || '-'}</td>
+                    <td class="${v.is_active ? 'status-active' : 'status-inactive'}">${v.is_active ? '上线' : '下线'}</td>
+                    <td>${v.created_at ? new Date(v.created_at).toLocaleString() : 'N/A'}</td>
+                    <td>
+                        ${v.is_active ? `<button class="btn btn-warning" onclick="setActive(${v.id}, false)">下线</button>` : `<button class="btn btn-info" onclick="setActive(${v.id}, true)">上线</button>`}
+                        <button class="btn btn-danger" onclick="deleteVersion(${v.id})">删除</button>
+                    </td>
+                </tr>`).join('');
+        }
+
+        async function setActive(id, active) {
+            await apiFetch(`/api/update/versions/${id}`, {
+                method: 'PATCH',
+                body: JSON.stringify({ is_active: active }),
+            });
+            loadVersions();
+        }
+        async function deleteVersion(id) { if (!confirm('确定永久删除此版本文件？')) return; await apiFetch(`/api/update/versions/${id}`, { method: 'DELETE' }); loadVersions(); }
+
+        document.getElementById('uploadForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const formData = new FormData();
+            const rn = document.getElementById('releaseNotes').value;
+            if (rn) formData.append('release_notes', rn);
+            formData.append('file', document.getElementById('fileInput').files[0]);
+            const status = document.getElementById('uploadStatus');
+            status.textContent = '正在上传并处理版本，请稍候...'; status.style.color = 'blue';
+            try {
+                const resp = await apiFetch('/api/update/versions', {
+                    method: 'POST',
+                    body: formData,
+                    headers: {} // Let browser set form-data boundary
+                });
+                const data = await resp.json();
+                status.textContent = '发布成功！新版本号: ' + data.version; status.style.color = 'green';
+                document.getElementById('uploadForm').reset();
+                loadVersions();
+            } catch (e) { status.textContent = '发布失败: ' + e.message; status.style.color = 'red'; }
+        });
+
+        function closeModal(id) { document.getElementById(id).classList.remove('show'); }
+    </script>
+</body>
+</html>

@@ -1,0 +1,52 @@
+default_language_version:
+  python: python3.13
+
+repos:
+  - repo: https://github.com/psf/black
+    rev: 24.10.0
+    hooks:
+      - id: black
+        args: [ --line-length=180 ]
+        exclude: ^(tests|installer)/
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: check-json
+        types: [ file ]
+        files: \.(json|myext)$
+      - id: check-ast
+      - id: check-case-conflict
+      - id: check-merge-conflict
+  - repo: https://github.com/asottile/reorder_python_imports
+    rev: v3.14.0
+    hooks:
+      - id: reorder-python-imports
+        exclude: ^(tests|installer)/
+  - repo: local
+    hooks:
+      - id: check-imports
+        name: check backend+runner import shape (TYPE_CHECKING leak, core<->tools cycle, facade consistency)
+        # --strict-imports makes the hook fail the commit on any violation;
+        # without it, check_imports.py prints diagnostics and exits 0
+        # (advisory mode).
+        entry: python scripts/check_imports.py --strict-imports
+        language: system
+        types: [python]
+        files: ^(backend|runner)/
+      - id: runner-startup-imports
+        name: runner startup imports (pre-commit fast subset of the build_client gate)
+        # Strict subset of the build_client.{ps1,sh} gate, which runs
+        # the full `tests/` directory before `uv build --wheel`. This
+        # hook only runs the 11 load-bearing import checks in <1s,
+        # cheap enough for every commit. The build gate is the
+        # authoritative safety net — this hook exists so a stale env
+        # surfaces before push rather than only at release time.
+        # `pass_filenames: false` keeps pre-commit from appending the
+        # staged file paths as extra positional args; the entry is a
+        # fixed pytest invocation (the `files:` filter only decides
+        # *when* to fire, not *what* it sees).
+        entry: uv run --directory runner --frozen --extra dev pytest tests/test_startup_imports.py -q
+        language: system
+        files: ^runner/(.*\.py|pyproject\.toml|uv\.lock)$
+        pass_filenames: false
+        require_serial: true

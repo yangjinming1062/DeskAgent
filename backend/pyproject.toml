@@ -1,0 +1,43 @@
+[project]
+name = "zast-backend"
+version = "0.1.0"
+description = "ZAST Backend API"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi==0.116.1",
+    "uvicorn[standard]==0.35.0",
+    "sqlalchemy==2.0.43",
+    "PyJWT==2.10.1",
+    "pydantic>=2.0",
+    "pydantic-settings==2.10.1",
+    "python-multipart",
+    "openai>=2.41.1",
+    "httpx>=0.28.1",
+    "tenacity>=9.1.4",
+    "pyyaml>=6.0.3",
+    "ruamel-yaml>=0.19.1",
+    "requests>=2.34.2",
+    "jinja2>=3.1.6",
+    "prompt-toolkit>=3.0.52",
+    "markdown>=3.10.2",
+    "pillow>=12.2.0",
+    "psutil>=7.2.2",
+    "python-dotenv>=1.2.2",
+    "fire>=0.7.1",
+    "ddgs>=9.0.0",
+    "croniter>=6.0.0",
+    "psycopg[binary]>=3.1.18",
+    "asyncpg>=0.29.0",
+    "slowapi==0.1.9",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+]
+
+[tool.pytest.ini_options]
+markers = [
+    "e2e: tests that call real LLM API (requires MIMO_API_KEY env var)",
+]

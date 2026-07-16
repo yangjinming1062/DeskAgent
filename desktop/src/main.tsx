@@ -1,0 +1,150 @@
+import './styles.css'
+
+import { QueryClientProvider } from '@tanstack/react-query'
+import { StrictMode } from 'react'
+import { createRoot } from 'react-dom/client'
+import { HashRouter } from 'react-router-dom'
+
+import App from './app'
+import { ErrorBoundary } from './components/error-boundary'
+import { HapticsProvider } from './components/haptics-provider'
+import type { DesktopRunnerUpdateEvent, DesktopUpdateEvent } from './global'
+import { I18nProvider } from './i18n'
+import { installClipboardShim } from './lib/clipboard'
+import { queryClient } from './lib/query-client'
+import { setRunnerUpdateStatus, setUpdateStatus } from './store/update'
+import { ThemeProvider } from './themes/context'
+
+installClipboardShim()
+
+// Subscribe to electron-updater events at boot. The main process auto-checks
+// ~30s after launch; this listener pumps every event into the renderer store
+// so the status bar badge, About panel, and update toast all react.
+window.zastDesktop?.update?.onEvent?.((payload: DesktopUpdateEvent) => {
+  switch (payload.type) {
+    case 'checking':
+      setUpdateStatus({ status: 'checking' })
+
+      break
+
+    case 'available':
+      setUpdateStatus({
+        status: 'available',
+        version: payload.info?.version ?? '',
+        releaseDate: payload.info?.releaseDate
+      })
+
+      break
+
+    case 'none':
+      setUpdateStatus({ status: 'none', version: payload.info?.version })
+
+      break
+
+    case 'progress':
+      setUpdateStatus({
+        status: 'downloading',
+        percent: payload.progress?.percent ?? 0,
+        transferred: payload.progress?.transferred ?? 0,
+        total: payload.progress?.total ?? 0
+      })
+
+      break
+
+    case 'downloaded':
+      setUpdateStatus({ status: 'downloaded', version: payload.info?.version ?? '' })
+
+      break
+
+    case 'error':
+      setUpdateStatus({ status: 'error', message: payload.message ?? 'Unknown error' })
+
+      break
+  }
+})
+
+// Subscribe to runner-side update events. Phase 1 (prefetch) runs in the OLD
+// Electron after `update-downloaded`; phase 2 (install) runs in the NEW
+// Electron at startup. The toast renders this state to keep the user
+// informed through the full lifecycle. See runner-updater.cjs for details.
+window.zastDesktop?.update?.onRunnerEvent?.((payload: DesktopRunnerUpdateEvent) => {
+  switch (payload.kind) {
+    case 'runner-prefetching':
+      setRunnerUpdateStatus({
+        status: 'prefetching',
+        version: payload.version,
+        phase: payload.phase,
+        percent: payload.percent
+      })
+
+      break
+
+    case 'runner-ready':
+      setRunnerUpdateStatus({ status: 'ready', version: payload.version })
+
+      break
+
+    case 'runner-installing':
+      setRunnerUpdateStatus({
+        status: 'installing',
+        version: payload.version,
+        phase: payload.phase,
+        percent: payload.percent
+      })
+
+      break
+
+    case 'runner-installed':
+      setRunnerUpdateStatus({ status: 'installed', version: payload.version })
+
+      break
+
+    case 'runner-failed':
+      setRunnerUpdateStatus({
+        status: 'failed',
+        error: payload.error,
+        recoverable: payload.recoverable,
+        version: payload.version
+      })
+
+      break
+  }
+})
+
+// Dev-only: install __PERF_DRIVE__ + __PERF_PROBE__ on window so the
+// scripts/ harnesses can drive a synthetic stream + record render cost.
+// Tree-shaken out of production builds. (Uses MODE rather than DEV because
+// our Vite setup currently bundles with PROD=true even in `vite dev`.)
+if (import.meta.env.MODE !== 'production') {
+  import('./app/chat/perf-probe')
+}
+
+import { RecordingToolbar } from './app/toolbar/page'
+
+const isToolbar = window.location.hash.startsWith('#/toolbar')
+
+if (isToolbar) {
+  createRoot(document.getElementById('root')!).render(
+    <StrictMode>
+      <RecordingToolbar />
+    </StrictMode>
+  )
+} else {
+  createRoot(document.getElementById('root')!).render(
+    <StrictMode>
+      <ErrorBoundary label="root">
+        <QueryClientProvider client={queryClient}>
+          <I18nProvider>
+            <ThemeProvider>
+              <HapticsProvider>
+                <HashRouter>
+                  <App />
+                </HashRouter>
+              </HapticsProvider>
+            </ThemeProvider>
+          </I18nProvider>
+        </QueryClientProvider>
+      </ErrorBoundary>
+    </StrictMode>
+  )
+}

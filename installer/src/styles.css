@@ -1,0 +1,125 @@
+/*
+ * Zast Setup — self-contained design tokens.
+ *
+ * The installer is an independent top-level module. It does NOT import
+ * from desktop/, runner/, or backend/. This file declares the design
+ * tokens the four installer screens (welcome / progress / success / failure)
+ * actually use, hardcoded to the brand's light surface (Nous-blue accent
+ * on near-white chrome). No theme switcher — a one-time install UX doesn't
+ * need one.
+ *
+ * Token values mirror desktop/src/styles.css's light mode so the wordmark
+ * and brand feel consistent, but they are NOT auto-generated from there.
+ * If the brand palette changes, update both — they are intentionally
+ * decoupled. The installer's needs are narrow (one accent, one destructive,
+ * a few surfaces); pulling in the full design system would couple us to
+ * its every edit.
+ */
+
+@import 'tailwindcss';
+
+/* Collapse Bold — Zast wordmark font. Shipped via @nous-research/ui, which
+   is a dep of this package; the path resolves to installer/node_modules.
+   The desktop uses the same font, but from its own copy of node_modules. */
+@font-face {
+  font-family: 'Collapse';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('../node_modules/@nous-research/ui/dist/fonts/Collapse-Bold.woff2') format('woff2');
+}
+
+@theme inline {
+  --color-background: #f8faff;
+  --color-foreground: #17171a;
+  --color-card: #ffffff;
+  --color-muted: #f3f3f3;
+  --color-muted-foreground: color-mix(in srgb, #17171a 60%, transparent);
+  --color-primary: #0053fd;
+  --color-primary-foreground: #ffffff;
+  --color-secondary: color-mix(in srgb, #0053fd 7%, #ffffff);
+  --color-secondary-foreground: #17171a;
+  --color-accent: color-mix(in srgb, #0053fd 10%, #ffffff);
+  --color-accent-foreground: #17171a;
+  --color-border: color-mix(in srgb, #17171a 8%, transparent);
+  --color-input: color-mix(in srgb, #17171a 12%, transparent);
+  --color-ring: #0053fd;
+  --color-destructive: #cf2d56;
+  --color-destructive-foreground: #ffffff;
+  --color-midground: #0053fd;
+  --color-midground-foreground: #ffffff;
+}
+
+@layer utilities {
+  /* fit-text — auto-size text to its container. The wordmark and the
+     failure headline use this to size themselves to the window width.
+     Logic copied from desktop/src/styles.css §.fit-text; the CSS is plain
+     enough that maintaining a copy is cheaper than introducing a shared
+     stylesheet package. */
+  .fit-text {
+    --fit-captured-length: initial;
+    --fit-support-sentinel: var(--fit-captured-length, 9999px);
+
+    display: flex;
+    flex-direction: column;
+    container-type: inline-size;
+  }
+
+  .fit-text > [aria-hidden] {
+    visibility: hidden;
+  }
+
+  .fit-text > :not([aria-hidden]) {
+    flex-grow: 1;
+    container-type: inline-size;
+    --fit-available-space: var(--fit-captured-length);
+  }
+
+  .fit-text > :not([aria-hidden]) > * {
+    --fit-support-sentinel: inherit;
+    --fit-captured-length: 100cqi;
+    --fit-ratio: tan(
+      atan2(
+        var(--fit-available-space),
+        var(--fit-available-space) - var(--fit-captured-length)
+      )
+    );
+    --fit-support: var(--fit-support-sentinel) * var(--fit-ratio);
+    font-size: clamp(
+      100% * var(--fit-min, 1) / var(--fit-captured-length),
+      var(--fit-support),
+      100% * var(--fit-max, 1) / var(--fit-captured-length)
+    );
+  }
+
+  @container (inline-size > 0) {
+    .fit-text > :not([aria-hidden]) > * {
+      white-space: nowrap;
+    }
+  }
+}
+
+/* Installer-only additions: a fade-in animation and a warm radial glow
+   for the welcome screen. */
+@keyframes zast-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.zast-fade-in {
+  animation: zast-fade-in 0.45s ease-out both;
+}
+
+.zast-glow {
+  background: radial-gradient(
+    ellipse at center,
+    color-mix(in srgb, #cf806d 18%, transparent) 0%,
+    transparent 60%
+  );
+}

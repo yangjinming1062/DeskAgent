@@ -1,0 +1,1123 @@
+import glob
+import json
+import logging
+import os
+import platform
+import re
+import shutil
+import subprocess
+import sys
+import threading
+import time
+import traceback
+from pathlib import Path
+from typing import Any
+
+if platform.system() != "Windows":
+    import termios
+else:
+    termios = None  # type: ignore[assignment]
+
+    def _get_msvcrt():  # type: ignore[misc]
+        import msvcrt as _msvcrt
+
+        return _msvcrt
+
+
+from ..interrupt import INTERRUPT_EVENT
+from ..interrupt import is_interrupted
+from ..registry import registry
+from ..system.clean import clean_output
+from ..tool_output_limits import get_max_bytes
+from ._env_docker import find_docker
+from ._env_singularity import _get_scratch_dir
+from .environment import DOCKER_ORPHAN_LIFETIME_SECONDS
+from .environment import _active_environments
+from .environment import _creation_locks
+from .environment import _creation_locks_lock
+from .environment import _env_lock
+from .environment import _last_activity
+from .environment import _task_env_overrides
+from .environment import cleanup_all_environments
+from .environment import cleanup_vm
+from .environment import create_environment
+from .environment import get_active_env
+from .environment import get_env_config
+from .environment import is_persistent_env
+from .environment import register_environment
+from .environment import resolve_container_task_id
+from .environment import start_cleanup_thread
+from utils import cfg_get
+from utils import get_env_type
+from utils import IS_WINDOWS
+from utils import is_truthy_value
+from utils import load_config
+
+logger = logging.getLogger(__name__)
+
+DEFAULT_FOREGROUND_MAX_TIMEOUT = 600
+DEFAULT_DISK_USAGE_WARNING_GB = 500.0
+
+_ENV_ASSIGN_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+_EXIT_CODE_SPLIT_RE = re.compile(r"\s*(?:\|\||&&|[|;])\s*")
+_SINGLE_QUOTE_RE = re.compile(r"'[^']*'")
+_DOUBLE_QUOTE_RE = re.compile(r'"(?:[^"\\]|\\.)*"')
+_BACKTICK_RE = re.compile(r"`[^`]*`")
+
+_cfg = load_config()
+FOREGROUND_MAX_TIMEOUT = cfg_get(_cfg, "terminal", "max_foreground_timeout", default=DEFAULT_FOREGROUND_MAX_TIMEOUT)
+DISK_USAGE_WARNING_THRESHOLD_GB = float(cfg_get(_cfg, "terminal", "disk_warning_gb", default=DEFAULT_DISK_USAGE_WARNING_GB))
+
+
+def _check_disk_usage_warning():
+
+    try:
+        scratch_dir = _get_scratch_dir()
+        total_bytes = 0
+        for path in glob.glob(str(scratch_dir / "zast-*")):
+            for f in Path(path).rglob("*"):
+                if f.is_file():
+                    try:
+                        total_bytes += f.stat().st_size
+                    except OSError as e:
+                        logger.debug("Could not stat file %s: %s", f, e)
+        total_gb = total_bytes / (1024**3)
+        if total_gb > DISK_USAGE_WARNING_THRESHOLD_GB:
+            logger.warning("Disk usage (%.1fGB) exceeds threshold (%.0fGB). Consider running cleanup_all_environments().", total_gb, DISK_USAGE_WARNING_THRESHOLD_GB)
+            return True
+        return False
+    except Exception as e:
+        logger.debug("Disk usage warning check failed: %s", e, exc_info=True)
+        return False
+
+
+_sudo_password_cache: dict[str, str] = {}
+
+_sudo_password_cache_lock = threading.Lock()
+
+_callback_tls = threading.local()
+
+
+def _get_sudo_password_callback():
+
+    return getattr(_callback_tls, "sudo_password", None)
+
+
+def set_sudo_password_callback(cb):
+
+    _callback_tls.sudo_password = cb
+
+
+def _get_sudo_password_cache_scope() -> str:
+    callback = _get_sudo_password_callback()
+    if callback is not None:
+        owner = getattr(callback, "__self__", None)
+        func = getattr(callback, "__func__", None)
+        if owner is not None and func is not None:
+            return f"callback-owner:{id(owner)}:{id(func)}"
+        return f"callback:{id(callback)}"
+    return f"thread:{threading.get_ident()}"
+
+
+def _get_cached_sudo_password() -> str:
+
+    scope = _get_sudo_password_cache_scope()
+    with _sudo_password_cache_lock:
+        return _sudo_password_cache.get(scope, "")
+
+
+def _set_cached_sudo_password(password: str) -> None:
+
+    scope = _get_sudo_password_cache_scope()
+    with _sudo_password_cache_lock:
+        if password:
+            _sudo_password_cache[scope] = password
+        else:
+            _sudo_password_cache.pop(scope, None)
+
+
+_WORKDIR_SAFE_RE = re.compile(r"^[A-Za-z0-9/\\:_\-.~ +@=,]+$")
+
+
+def _validate_workdir(workdir: str) -> str | None:
+
+    if not workdir:
+        return None
+    if _WORKDIR_SAFE_RE.match(workdir):
+        return None
+    for ch in workdir:
+        if not _WORKDIR_SAFE_RE.match(ch):
+            return f"Blocked: workdir contains disallowed character {repr(ch)}. Use a simple filesystem path without shell metacharacters."
+    return "Blocked: workdir contains disallowed characters."
+
+
+def _prompt_for_sudo_password(timeout_seconds: int = 45) -> str:
+
+    _sudo_cb = _get_sudo_password_callback()
+    if _sudo_cb is not None:
+        try:
+            return _sudo_cb() or ""
+        except Exception:
+            return ""
+    result = {"password": None, "done": False}
+
+    def read_password_thread():
+        tty_fd = None
+        old_attrs = None
+        try:
+            if IS_WINDOWS:
+                msvcrt_mod = _get_msvcrt()
+                chars = []
+                while True:
+                    c = msvcrt_mod.getwch()
+                    if c in {"\r", "\n"}:
+                        break
+                    if c == "\x03":
+                        raise KeyboardInterrupt
+                    chars.append(c)
+                result["password"] = "".join(chars)
+            else:
+                tty_fd = os.open("/dev/tty", os.O_RDONLY)
+                old_attrs = termios.tcgetattr(tty_fd)
+                new_attrs = termios.tcgetattr(tty_fd)
+                new_attrs[3] = new_attrs[3] & ~termios.ECHO
+                termios.tcsetattr(tty_fd, termios.TCSAFLUSH, new_attrs)
+                chars = []
+                while True:
+                    b = os.read(tty_fd, 1)
+                    if not b or b in {b"\n", b"\r"}:
+                        break
+                    chars.append(b)
+                result["password"] = b"".join(chars).decode("utf-8", errors="replace")
+        except (EOFError, KeyboardInterrupt, OSError):
+            result["password"] = ""
+        except Exception:
+            result["password"] = ""
+        finally:
+            if tty_fd is not None and old_attrs is not None:
+                try:
+                    termios.tcsetattr(tty_fd, termios.TCSAFLUSH, old_attrs)
+                except Exception as e:
+                    logger.debug("Failed to restore terminal attributes: %s", e)
+            if tty_fd is not None:
+                try:
+                    os.close(tty_fd)
+                except Exception as e:
+                    logger.debug("Failed to close tty fd: %s", e)
+            result["done"] = True
+
+    try:
+        os.environ["ZAST_SPINNER_PAUSE"] = "1"
+        time.sleep(0.2)
+        print()
+        print("┌" + "─" * 58 + "┐")
+        print("│  🔐 SUDO PASSWORD REQUIRED" + " " * 30 + "│")
+        print("├" + "─" * 58 + "┤")
+        print("│  Enter password below (input is hidden), or:            │")
+        print("│    • Press Enter to skip (command fails gracefully)     │")
+        print(f"│    • Wait {timeout_seconds}s to auto-skip" + " " * 27 + "│")
+        print("└" + "─" * 58 + "┘")
+        print()
+        print("  Password (hidden): ", end="", flush=True)
+        password_thread = threading.Thread(target=read_password_thread, daemon=True)
+        password_thread.start()
+        password_thread.join(timeout=timeout_seconds)
+        if result["done"]:
+            password = result["password"] or ""
+            print()
+            if password:
+                print("  ✓ Password received (cached for this session)")
+            else:
+                print("  ⏭ Skipped - continuing without sudo")
+            print()
+            sys.stdout.flush()
+            return password
+        else:
+            print("\n  ⏱ Timeout - continuing without sudo")
+            print("    (Press Enter to dismiss)")
+            print()
+            sys.stdout.flush()
+            return ""
+    except (EOFError, KeyboardInterrupt):
+        print()
+        print("  ⏭ Cancelled - continuing without sudo")
+        print()
+        sys.stdout.flush()
+        return ""
+    except Exception as e:
+        print(f"\n  [sudo prompt error: {e}] - continuing without sudo\n")
+        sys.stdout.flush()
+        return ""
+    finally:
+        if "ZAST_SPINNER_PAUSE" in os.environ:
+            del os.environ["ZAST_SPINNER_PAUSE"]
+
+
+def _safe_command_preview(command: Any, limit: int = 200) -> str:
+
+    if command is None:
+        return "<None>"
+    if isinstance(command, str):
+        return command[:limit]
+    try:
+        return repr(command)[:limit]
+    except Exception:
+        return f"<{type(command).__name__}>"
+
+
+def _looks_like_env_assignment(token: str) -> bool:
+
+    if "=" not in token or token.startswith("="):
+        return False
+    name, _value = token.split("=", 1)
+    return bool(_ENV_ASSIGN_NAME_RE.match(name))
+
+
+def _read_shell_token(command: str, start: int) -> tuple[str, int]:
+
+    i = start
+    n = len(command)
+    while i < n:
+        ch = command[i]
+        if ch.isspace() or ch in ";|&()":
+            break
+        if ch == "'":
+            i += 1
+            while i < n and command[i] != "'":
+                i += 1
+            if i < n:
+                i += 1
+            continue
+        if ch == '"':
+            i += 1
+            while i < n:
+                inner = command[i]
+                if inner == "\\" and i + 1 < n:
+                    i += 2
+                    continue
+                if inner == '"':
+                    i += 1
+                    break
+                i += 1
+            continue
+        if ch == "\\" and i + 1 < n:
+            i += 2
+            continue
+        i += 1
+    return command[start:i], i
+
+
+def _rewrite_real_sudo_invocations(command: str) -> tuple[str, bool]:
+
+    out: list[str] = []
+    i = 0
+    n = len(command)
+    command_start = True
+    found = False
+    while i < n:
+        ch = command[i]
+        if ch.isspace():
+            out.append(ch)
+            if ch == "\n":
+                command_start = True
+            i += 1
+            continue
+        if ch == "#" and command_start:
+            comment_end = command.find("\n", i)
+            if comment_end == -1:
+                out.append(command[i:])
+                break
+            out.append(command[i:comment_end])
+            i = comment_end
+            continue
+        if command.startswith("&&", i) or command.startswith("||", i) or command.startswith(";;", i):
+            out.append(command[i : i + 2])
+            i += 2
+            command_start = True
+            continue
+        if ch in ";|&(":
+            out.append(ch)
+            i += 1
+            command_start = True
+            continue
+        if ch == ")":
+            out.append(ch)
+            i += 1
+            command_start = False
+            continue
+        token, next_i = _read_shell_token(command, i)
+        if command_start and token == "sudo":
+            out.append("sudo -S -p ''")
+            found = True
+        else:
+            out.append(token)
+        if command_start and _looks_like_env_assignment(token):
+            command_start = True
+        else:
+            command_start = False
+        i = next_i
+    return "".join(out), found
+
+
+def _sudo_nopasswd_works() -> bool:
+
+    terminal_env = get_env_type()
+    if terminal_env != "local":
+        return False
+    try:
+        probe = subprocess.run(
+            ["sudo", "-n", "true"],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=3,
+            check=False,
+        )
+        return probe.returncode == 0
+    except Exception:
+        return False
+
+
+def _rewrite_compound_background(command: str) -> str:
+
+    n = len(command)
+    i = 0
+    paren_depth = 0
+    brace_depth = 0
+    last_chain_op_end = -1
+    rewrites: list[tuple[int, int]] = []
+    while i < n:
+        ch = command[i]
+        if ch == "\n" and paren_depth == 0 and brace_depth == 0:
+            last_chain_op_end = -1
+            i += 1
+            continue
+        if ch.isspace():
+            i += 1
+            continue
+        if ch == "#":
+            nl = command.find("\n", i)
+            if nl == -1:
+                break
+            i = nl
+            continue
+        if ch == "\\" and i + 1 < n:
+            i += 2
+            continue
+        if ch in {"'", '"'}:
+            _, next_i = _read_shell_token(command, i)
+            i = max(next_i, i + 1)
+            continue
+        if ch == "(":
+            paren_depth += 1
+            i += 1
+            continue
+        if ch == ")":
+            paren_depth = max(0, paren_depth - 1)
+            i += 1
+            continue
+        if ch == "{" and i + 1 < n and (command[i + 1].isspace() or command[i + 1] == "\n"):
+            brace_depth += 1
+            i += 1
+            continue
+        if ch == "}" and brace_depth > 0:
+            brace_depth -= 1
+            last_chain_op_end = -1
+            i += 1
+            continue
+        if paren_depth > 0 or brace_depth > 0:
+            i += 1
+            continue
+        if command.startswith("&&", i) or command.startswith("||", i):
+            last_chain_op_end = i + 2
+            i += 2
+            continue
+        if ch == ";":
+            last_chain_op_end = -1
+            i += 1
+            continue
+        if ch == "|":
+            last_chain_op_end = -1
+            i += 1
+            continue
+        if ch == "&":
+            if i + 1 < n and command[i + 1] == ">":
+                i += 2
+                continue
+            j = i - 1
+            while j >= 0 and command[j].isspace():
+                j -= 1
+            if j >= 0 and command[j] in "<>":
+                i += 1
+                continue
+            if last_chain_op_end >= 0:
+                rewrites.append((last_chain_op_end, i))
+            last_chain_op_end = -1
+            i += 1
+            continue
+        _, next_i = _read_shell_token(command, i)
+        i = max(next_i, i + 1)
+    if not rewrites:
+        return command
+    result = command
+    for chain_end, amp_pos in reversed(rewrites):
+        insert_pos = chain_end
+        while insert_pos < amp_pos and result[insert_pos].isspace():
+            insert_pos += 1
+        prefix = result[:insert_pos]
+        middle = result[insert_pos:amp_pos]
+        suffix = result[amp_pos + 1 :]
+        result = prefix + "{ " + middle + "& }" + suffix
+    return result
+
+
+def _transform_sudo_command(command: str | None) -> tuple[str | None, str | None]:
+
+    if command is None:
+        return None, None
+    transformed, has_real_sudo = _rewrite_real_sudo_invocations(command)
+    if not has_real_sudo:
+        return command, None
+    sudo_password = cfg_get(load_config(), "terminal", "sudo_password", default="")
+    has_configured_password = bool(sudo_password)
+    if not has_configured_password and not sudo_password and _sudo_nopasswd_works():
+        return command, None
+    if not has_configured_password and not sudo_password and is_truthy_value(cfg_get(load_config(), "terminal", "interactive_sudo_prompt", default=False)):
+        sudo_password = _prompt_for_sudo_password(timeout_seconds=45)
+        if sudo_password:
+            _set_cached_sudo_password(sudo_password)
+    if has_configured_password or sudo_password:
+        return transformed, sudo_password + "\n"
+    return command, None
+
+
+TERMINAL_TOOL_DESCRIPTION = """Execute shell commands on a Linux environment. Filesystem usually persists between calls.
+
+Do NOT use cat/head/tail to read files — use read_file instead.
+Do NOT use grep/rg/find to search — use search_files instead.
+Do NOT use ls to list directories — use search_files(target='files') instead.
+Do NOT use sed/awk to edit files — use patch instead.
+Do NOT use echo/cat heredoc to create files — use write_file instead.
+Reserve terminal for: builds, installs, git, processes, scripts, network, package managers, and anything that needs a shell.
+
+Foreground (default): Commands return INSTANTLY when done, even if the timeout is high. Set timeout=300 for long builds/scripts — you'll still get the result in seconds if it's fast. Prefer foreground for short commands.
+Background: Set background=true to get a session_id. Almost always pair with notify_on_complete=true — bg without notify runs SILENTLY and you have no way to learn it finished short of calling process(action='poll') yourself. Two legitimate uses:
+  (1) Long-lived processes that never exit (servers, watchers, daemons) — silent is correct, there's no exit to notify on.
+  (2) Long-running bounded tasks (tests, builds, deploys, CI pollers, batch jobs) — MUST set notify_on_complete=true. Without it you'll either forget to poll or sit blocked waiting for the user to surface the result.
+For servers/watchers, do NOT use shell-level background wrappers (nohup/disown/setsid/trailing '&') in foreground mode. Use background=true so Zast can track lifecycle and output.
+After starting a server, verify readiness with a health check or log signal, then run tests in a separate terminal() call. Avoid blind sleep loops.
+Use process(action="poll") for progress checks, process(action="wait") to block until done.
+Working directory: Use 'workdir' for per-command cwd.
+PTY mode: Set pty=true for interactive CLI tools (Codex, Claude Code, Python REPL).
+
+Do NOT use vim/nano/interactive tools without pty=true — they hang without a pseudo-terminal. Pipe git output to cat if it might page.
+"""
+
+
+def _interpret_exit_code(command: str, exit_code: int) -> str | None:
+
+    if exit_code == 0:
+        return None
+    segments = _EXIT_CODE_SPLIT_RE.split(command)
+    last_segment = (segments[-1] if segments else command).strip()
+    words = last_segment.split()
+    base_cmd = ""
+    for w in words:
+        if "=" in w and not w.startswith("-"):
+            continue
+        base_cmd = w.split("/")[-1]
+        break
+    if not base_cmd:
+        return None
+    semantics: dict[str, dict[int, str]] = {
+        "grep": {1: "No matches found (not an error)"},
+        "egrep": {1: "No matches found (not an error)"},
+        "fgrep": {1: "No matches found (not an error)"},
+        "rg": {1: "No matches found (not an error)"},
+        "ag": {1: "No matches found (not an error)"},
+        "ack": {1: "No matches found (not an error)"},
+        "diff": {1: "Files differ (expected, not an error)"},
+        "colordiff": {1: "Files differ (expected, not an error)"},
+        "find": {1: "Some directories were inaccessible (partial results may still be valid)"},
+        "test": {1: "Condition evaluated to false (expected, not an error)"},
+        "[": {1: "Condition evaluated to false (expected, not an error)"},
+        "curl": {
+            6: "Could not resolve host",
+            7: "Failed to connect to host",
+            22: "HTTP response code indicated error (e.g. 404, 500)",
+            28: "Operation timed out",
+        },
+        "git": {1: "Non-zero exit (often normal — e.g. 'git diff' returns 1 when files differ)"},
+    }
+    cmd_semantics = semantics.get(base_cmd)
+    if cmd_semantics and exit_code in cmd_semantics:
+        return cmd_semantics[exit_code]
+    return None
+
+
+def _command_requires_pipe_stdin(command: str) -> bool:
+
+    normalized = " ".join(command.lower().split())
+    return normalized.startswith("gh auth login") and "--with-token" in normalized
+
+
+_SHELL_LEVEL_BACKGROUND_RE = re.compile(r"(?:^|[;&|]\s*|&&\s*|\|\|\s*|\$\(\s*)(?:nohup|disown|setsid)\b", re.IGNORECASE | re.MULTILINE)
+
+_INLINE_BACKGROUND_AMP_RE = re.compile(r"\s&\s")
+
+_TRAILING_BACKGROUND_AMP_RE = re.compile(r"\s&\s*(?:#.*)?$")
+
+
+def _strip_quotes(command: str) -> str:
+
+    result = _SINGLE_QUOTE_RE.sub("''", command)
+    result = _DOUBLE_QUOTE_RE.sub('""', result)
+    result = _BACKTICK_RE.sub("``", result)
+    return result
+
+
+_LONG_LIVED_FOREGROUND_PATTERNS = (
+    re.compile(r"\b(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?(?:dev|start|serve|watch)\b", re.IGNORECASE),
+    re.compile(r"\bdocker\s+compose\s+up\b", re.IGNORECASE),
+    re.compile(r"\bnext\s+dev\b", re.IGNORECASE),
+    re.compile(r"\bvite(?:\s|$)", re.IGNORECASE),
+    re.compile(r"\bnodemon\b", re.IGNORECASE),
+    re.compile(r"\buvicorn\b", re.IGNORECASE),
+    re.compile(r"\bgunicorn\b", re.IGNORECASE),
+    re.compile(r"\bpython(?:3)?\s+-m\s+http\.server\b", re.IGNORECASE),
+)
+
+
+def _looks_like_help_or_version_command(command: str) -> bool:
+
+    normalized = " ".join(command.lower().split())
+    return " --help" in normalized or normalized.endswith(" -h") or " --version" in normalized or normalized.endswith(" -v")
+
+
+def _foreground_background_guidance(command: str) -> str | None:
+
+    if _looks_like_help_or_version_command(command):
+        return None
+    unquoted = _strip_quotes(command)
+    if _SHELL_LEVEL_BACKGROUND_RE.search(unquoted):
+        return (
+            "Foreground command uses shell-level background wrappers (nohup/disown/setsid). "
+            "Use terminal(background=true) so Zast can track the process, then run "
+            "readiness checks and tests in separate commands."
+        )
+    if _INLINE_BACKGROUND_AMP_RE.search(unquoted) or _TRAILING_BACKGROUND_AMP_RE.search(unquoted):
+        return "Foreground command uses '&' backgrounding. Use terminal(background=true) for long-lived " "processes, then run health checks and tests in follow-up terminal calls."
+    for pattern in _LONG_LIVED_FOREGROUND_PATTERNS:
+        if pattern.search(unquoted):
+            return (
+                "This foreground command appears to start a long-lived server/watch process. "
+                "Run it with background=true, verify readiness (health endpoint/log signal), "
+                "then execute tests in a separate command."
+            )
+    return None
+
+
+def _resolve_notification_flag_conflict(
+    *,
+    notify_on_complete: bool,
+    watch_patterns,
+    background: bool,
+) -> tuple:
+
+    if background and notify_on_complete and watch_patterns:
+        note = "watch_patterns ignored because notify_on_complete=True; " "these two flags produce duplicate notifications when combined"
+        return None, note
+    return watch_patterns, ""
+
+
+def _resolve_command_cwd(
+    *,
+    workdir: str | None,
+    env: Any,
+    default_cwd: str,
+) -> str:
+
+    if workdir:
+        return workdir
+    live_cwd = getattr(env, "cwd", None)
+    if isinstance(live_cwd, str) and live_cwd.strip():
+        return live_cwd
+    return default_cwd
+
+
+def terminal_tool(
+    command: str,
+    background: bool = False,
+    timeout: int | None = None,
+    task_id: str | None = None,
+    force: bool = False,
+    workdir: str | None = None,
+    pty: bool = False,
+    notify_on_complete: bool = False,
+    watch_patterns: list[str] | None = None,
+) -> str:
+    from ..process import process_registry
+    from ..security import check_command_security
+
+    try:
+        if not isinstance(command, str):
+            logger.warning(
+                "Rejected invalid terminal command value: %s",
+                type(command).__name__,
+            )
+            return json.dumps(
+                {
+                    "output": "",
+                    "exit_code": -1,
+                    "error": f"Invalid command: expected string, got {type(command).__name__}",
+                    "status": "error",
+                },
+                ensure_ascii=False,
+            )
+        config = get_env_config()
+        env_type = config["env_type"]
+        effective_task_id = resolve_container_task_id(task_id)
+        overrides = (_task_env_overrides.get(task_id) if task_id else None) or _task_env_overrides.get(effective_task_id, {})
+        if env_type == "docker":
+            image = overrides.get("docker_image") or config["docker_image"]
+        elif env_type == "singularity":
+            image = overrides.get("singularity_image") or config["singularity_image"]
+        else:
+            image = ""
+        cwd = overrides.get("cwd") or config["cwd"]
+        default_timeout = config["timeout"]
+        effective_timeout = timeout or default_timeout
+        if not background and timeout and timeout > FOREGROUND_MAX_TIMEOUT:
+            return json.dumps(
+                {
+                    "error": (
+                        f"Foreground timeout {timeout}s exceeds the maximum of "
+                        f"{FOREGROUND_MAX_TIMEOUT}s. Use background=true with "
+                        f"notify_on_complete=true for long-running commands."
+                    ),
+                },
+                ensure_ascii=False,
+            )
+        if not background:
+            guidance = _foreground_background_guidance(command)
+            if guidance:
+                return json.dumps(
+                    {
+                        "output": "",
+                        "exit_code": -1,
+                        "error": guidance,
+                        "status": "error",
+                    },
+                    ensure_ascii=False,
+                )
+        start_cleanup_thread()
+        with _env_lock:
+            _existing_key = effective_task_id if effective_task_id in _active_environments else (task_id if task_id and task_id in _active_environments else None)
+            if _existing_key is not None:
+                _last_activity[_existing_key] = time.time()
+                env = _active_environments[_existing_key]
+                needs_creation = False
+            else:
+                needs_creation = True
+        if needs_creation:
+            with _creation_locks_lock:
+                if effective_task_id not in _creation_locks:
+                    _creation_locks[effective_task_id] = threading.Lock()
+                task_lock = _creation_locks[effective_task_id]
+            with task_lock:
+                with _env_lock:
+                    _existing_key = effective_task_id if effective_task_id in _active_environments else (task_id if task_id and task_id in _active_environments else None)
+                    if _existing_key is not None:
+                        _last_activity[_existing_key] = time.time()
+                        env = _active_environments[_existing_key]
+                        needs_creation = False
+                if needs_creation:
+                    if env_type == "singularity":
+                        _check_disk_usage_warning()
+                    logger.info("Creating new %s environment for task %s...", env_type, effective_task_id[:8])
+                    try:
+                        ssh_config = None
+                        if env_type == "ssh":
+                            ssh_config = {
+                                "host": config.get("ssh_host", ""),
+                                "user": config.get("ssh_user", ""),
+                                "port": config.get("ssh_port", 22),
+                                "key": config.get("ssh_key", ""),
+                                "persistent": config.get("ssh_persistent", False),
+                            }
+                        container_config = None
+                        if env_type in {"docker", "singularity"}:
+                            container_config = {
+                                "container_cpu": config.get("container_cpu", 1),
+                                "container_memory": config.get("container_memory", 5120),
+                                "container_disk": config.get("container_disk", 51200),
+                                "container_persistent": config.get("container_persistent", True),
+                                "docker_volumes": config.get("docker_volumes", []),
+                                "docker_mount_cwd_to_workspace": config.get("docker_mount_cwd_to_workspace", False),
+                                "docker_forward_env": config.get("docker_forward_env", []),
+                                "docker_env": config.get("docker_env", {}),
+                                "docker_run_as_host_user": config.get("docker_run_as_host_user", False),
+                                "docker_extra_args": config.get("docker_extra_args", []),
+                                "docker_persist_across_processes": config.get("docker_persist_across_processes", True),
+                                "docker_orphan_reaper": config.get("docker_orphan_reaper", True),
+                            }
+                        local_config = None
+                        if env_type == "local":
+                            local_config = {
+                                "persistent": config.get("local_persistent", False),
+                            }
+                        new_env = create_environment(
+                            env_type=env_type,
+                            image=image,
+                            cwd=cwd,
+                            timeout=effective_timeout,
+                            ssh_config=ssh_config,
+                            container_config=container_config,
+                            local_config=local_config,
+                            task_id=effective_task_id,
+                            host_cwd=config.get("host_cwd"),
+                        )
+                    except ImportError as e:
+                        return json.dumps(
+                            {"output": "", "exit_code": -1, "error": f"Terminal tool disabled: environment creation failed ({e})", "status": "disabled"}, ensure_ascii=False
+                        )
+                    with _env_lock:
+                        _active_environments[effective_task_id] = new_env
+                        _last_activity[effective_task_id] = time.time()
+                        env = new_env
+                    logger.info("%s environment ready for task %s", env_type, effective_task_id[:8])
+        if not force:
+            tirith_err = check_command_security(command)
+            if tirith_err:
+                return json.dumps({"output": "", "exit_code": -1, "error": tirith_err, "status": "error"}, ensure_ascii=False)
+        if workdir:
+            workdir_error = _validate_workdir(workdir)
+            if workdir_error:
+                logger.warning("Blocked dangerous workdir: %s (command: %s)", workdir[:200], _safe_command_preview(command))
+                return json.dumps({"output": "", "exit_code": -1, "error": workdir_error, "status": "blocked"}, ensure_ascii=False)
+        pty_disabled_reason = None
+        effective_pty = pty
+        if pty and _command_requires_pipe_stdin(command):
+            effective_pty = False
+            pty_disabled_reason = (
+                "PTY disabled for this command because it expects piped stdin/EOF "
+                "(for example gh auth login --with-token). For local background "
+                "processes, call process(action='close') after writing so it receives "
+                "EOF."
+            )
+        if background:
+            session_key = ""
+            effective_cwd = _resolve_command_cwd(
+                workdir=workdir,
+                env=env,
+                default_cwd=cwd,
+            )
+            try:
+                if env_type == "local":
+                    proc_session = process_registry.spawn_local(
+                        command=command,
+                        cwd=effective_cwd,
+                        task_id=effective_task_id,
+                        session_key=session_key,
+                        env_vars=env.env if hasattr(env, "env") else None,
+                        use_pty=effective_pty,
+                    )
+                else:
+                    proc_session = process_registry.spawn_via_env(
+                        env=env,
+                        command=command,
+                        cwd=effective_cwd,
+                        task_id=effective_task_id,
+                        session_key=session_key,
+                    )
+                result_data = {
+                    "output": "Background process started",
+                    "session_id": proc_session.id,
+                    "pid": proc_session.pid,
+                    "exit_code": 0,
+                    "error": None,
+                }
+                if pty_disabled_reason:
+                    result_data["pty_note"] = pty_disabled_reason
+                if background and not notify_on_complete and not watch_patterns:
+                    result_data["hint"] = (
+                        "background=true without notify_on_complete=true means "
+                        "this process runs SILENTLY — you will not be told when "
+                        "it exits. If this is a bounded task (test suite, build, "
+                        "CI poller, deploy, anything with a defined end), you "
+                        "almost certainly wanted notify_on_complete=true so the "
+                        "system pings you on exit. Re-launch with "
+                        "notify_on_complete=true, or call process(action='poll') "
+                        "/ process(action='wait') yourself to learn the outcome. "
+                        "Only ignore this hint for genuine long-lived processes "
+                        "that never exit (servers, watchers, daemons)."
+                    )
+                if background and command:
+                    _gh = "gh pr view" in command or "gh pr checks" in command
+                    _has_jq = " jq " in command or "| jq" in command or "$(jq" in command
+                    _bad_shape = "statusCheckRollup" in command or (_gh and _has_jq)
+                    if _bad_shape:
+                        existing = result_data.get("hint", "")
+                        canonical_hint = (
+                            "This looks like a homebrewed CI poller built from "
+                            "`gh pr view --json statusCheckRollup` and/or "
+                            "`gh pr checks | jq`. That shape has burned us "
+                            "repeatedly in zast-agent dev work (PRs #31329, "
+                            "#31448, #31695, #31709, #31745, #32264, #33131) — "
+                            "stdout buffering kills output capture, jq null-key "
+                            "edge cases silently exit the loop, conclusion-vs-"
+                            "status field confusion exits early with bogus "
+                            "all-green verdicts, TTY-only summary banners "
+                            "never appear when piped. Use the canonical "
+                            "snippets in the green-ci-policy skill instead: "
+                            "the exit-code-driven `gh pr checks $PR >/dev/null` "
+                            "(rc 0 = green, 8 = pending, else fail) for "
+                            "exit-on-first-fail behavior, or the column-2 "
+                            "awk-on-tabs poller "
+                            '(`awk -F"\\t" "$2==\\"pending\\""`) for '
+                            "sharded matrices. Load skill_view("
+                            "name='github/zast-agent-dev', "
+                            "file_path='references/green-ci-policy.md') for "
+                            "the verbatim snippets. If you must roll a custom "
+                            "loop with rich structured output, write each tick "
+                            "to a known file (`tee -a /tmp/ci.log`) and rely "
+                            "on `process(action='log')` to read THAT file — "
+                            "do not rely on background-process stdout capture "
+                            "for line-buffered shell loops."
+                        )
+                        result_data["hint"] = existing + "\n\n" + canonical_hint if existing else canonical_hint
+                if background and (notify_on_complete or watch_patterns):
+                    _gw_platform = os.environ.get("ZAST_SESSION_PLATFORM", "")
+                    if _gw_platform:
+                        _gw_chat_id = os.environ.get("ZAST_SESSION_CHAT_ID", "")
+                        _gw_thread_id = os.environ.get("ZAST_SESSION_THREAD_ID", "")
+                        _gw_user_id = os.environ.get("ZAST_SESSION_USER_ID", "")
+                        _gw_user_name = os.environ.get("ZAST_SESSION_USER_NAME", "")
+                        _gw_message_id = os.environ.get("ZAST_SESSION_MESSAGE_ID", "")
+                        proc_session.watcher_platform = _gw_platform
+                        proc_session.watcher_chat_id = _gw_chat_id
+                        proc_session.watcher_user_id = _gw_user_id
+                        proc_session.watcher_user_name = _gw_user_name
+                        proc_session.watcher_thread_id = _gw_thread_id
+                        proc_session.watcher_message_id = _gw_message_id
+                watch_patterns, conflict_note = _resolve_notification_flag_conflict(
+                    notify_on_complete=bool(notify_on_complete),
+                    watch_patterns=watch_patterns,
+                    background=bool(background),
+                )
+                if conflict_note:
+                    logger.warning("background proc %s: %s", proc_session.id, conflict_note)
+                    result_data["watch_patterns_ignored"] = conflict_note
+                if notify_on_complete and background:
+                    proc_session.notify_on_complete = True
+                    result_data["notify_on_complete"] = True
+                    if proc_session.watcher_platform:
+                        proc_session.watcher_interval = 5
+                        process_registry.pending_watchers.append(
+                            {
+                                "session_id": proc_session.id,
+                                "check_interval": 5,
+                                "session_key": session_key,
+                                "platform": proc_session.watcher_platform,
+                                "chat_id": proc_session.watcher_chat_id,
+                                "user_id": proc_session.watcher_user_id,
+                                "user_name": proc_session.watcher_user_name,
+                                "thread_id": proc_session.watcher_thread_id,
+                                "message_id": proc_session.watcher_message_id,
+                                "notify_on_complete": True,
+                            }
+                        )
+                if watch_patterns and background:
+                    proc_session.watch_patterns = list(watch_patterns)
+                    result_data["watch_patterns"] = proc_session.watch_patterns
+                return json.dumps(result_data, ensure_ascii=False)
+            except Exception as e:
+                return json.dumps({"output": "", "exit_code": -1, "error": f"Failed to start background process: {str(e)}"}, ensure_ascii=False)
+        else:
+            max_retries = 3
+            retry_count = 0
+            result = None
+            while retry_count <= max_retries:
+                try:
+                    execute_kwargs = {
+                        "timeout": effective_timeout,
+                        "cwd": _resolve_command_cwd(
+                            workdir=workdir,
+                            env=env,
+                            default_cwd=cwd,
+                        ),
+                    }
+                    result = env.execute(command, **execute_kwargs)
+                except Exception as e:
+                    error_str = str(e).lower()
+                    if "timeout" in error_str:
+                        return json.dumps({"output": "", "exit_code": 124, "error": f"Command timed out after {effective_timeout} seconds"}, ensure_ascii=False)
+                    if retry_count < max_retries:
+                        retry_count += 1
+                        wait_time = 2**retry_count
+                        logger.warning(
+                            "Execution error, retrying in %ds (attempt %d/%d) - Command: %s - Error: %s: %s - Task: %s, Backend: %s",
+                            wait_time,
+                            retry_count,
+                            max_retries,
+                            _safe_command_preview(command),
+                            type(e).__name__,
+                            e,
+                            effective_task_id,
+                            env_type,
+                        )
+                        time.sleep(wait_time)
+                        continue
+                    logger.error(
+                        "Execution failed after %d retries - Command: %s - Error: %s: %s - Task: %s, Backend: %s",
+                        max_retries,
+                        _safe_command_preview(command),
+                        type(e).__name__,
+                        e,
+                        effective_task_id,
+                        env_type,
+                    )
+                    return json.dumps({"output": "", "exit_code": -1, "error": f"Command execution failed: {type(e).__name__}: {str(e)}"}, ensure_ascii=False)
+                break
+            output = result.get("output", "")
+            returncode = result.get("returncode", 0)
+            MAX_OUTPUT_CHARS = get_max_bytes()
+            if len(output) > MAX_OUTPUT_CHARS:
+                head_chars = int(MAX_OUTPUT_CHARS * 0.4)
+                tail_chars = MAX_OUTPUT_CHARS - head_chars
+                omitted = len(output) - head_chars - tail_chars
+                truncated_notice = f"\n\n... [OUTPUT TRUNCATED - {omitted} chars omitted " f"out of {len(output)} total] ...\n\n"
+                output = output[:head_chars] + truncated_notice + output[-tail_chars:]
+            from ..system.clean import clean_output
+
+            output = clean_output(output.strip()) if output else ""
+            exit_note = _interpret_exit_code(command, returncode)
+            result_dict = {
+                "output": output,
+                "exit_code": returncode,
+                "error": None,
+            }
+            if exit_note:
+                result_dict["exit_code_meaning"] = exit_note
+            return json.dumps(result_dict, ensure_ascii=False)
+    except Exception as e:
+        tb_str = traceback.format_exc()
+        logger.error("terminal_tool exception:\n%s", tb_str)
+        return json.dumps({"output": "", "exit_code": -1, "error": f"Failed to execute command: {str(e)}", "traceback": tb_str, "status": "error"}, ensure_ascii=False)
+
+
+def check_terminal_requirements() -> bool:
+
+    try:
+        config = get_env_config()
+        env_type = config["env_type"]
+        if env_type == "local":
+            return True
+        elif env_type == "docker":
+            docker = find_docker()
+            if not docker:
+                logger.error("Docker executable not found in PATH or common install locations")
+                return False
+            result = subprocess.run([docker, "version"], capture_output=True, timeout=5, stdin=subprocess.DEVNULL)
+            return result.returncode == 0
+        elif env_type == "singularity":
+            executable = shutil.which("apptainer") or shutil.which("singularity")
+            if executable:
+                result = subprocess.run([executable, "--version"], capture_output=True, timeout=5, stdin=subprocess.DEVNULL)
+                return result.returncode == 0
+            return False
+        elif env_type == "ssh":
+            if not config.get("ssh_host") or not config.get("ssh_user"):
+                logger.error("SSH backend selected but TERMINAL_SSH_HOST and TERMINAL_SSH_USER " "are not both set. Configure both or switch TERMINAL_ENV to 'local'.")
+                return False
+            return True
+        else:
+            logger.error(
+                "Unknown TERMINAL_ENV '%s'. Use one of: local, docker, singularity, or ssh.",
+                env_type,
+            )
+            return False
+    except Exception as e:
+        logger.error("Terminal requirements check failed: %s", e, exc_info=True)
+        return False
+
+
+if __name__ == "__main__":
+
+    print("Terminal Tool Module")
+    print("=" * 50)
+    config = get_env_config()
+    print("\nCurrent Configuration:")
+    print(f"  Environment type: {config['env_type']}")
+    print(f"  Docker image: {config['docker_image']}")
+    print(f"  Working directory: {config['cwd']}")
+    print(f"  Default timeout: {config['timeout']}s")
+    print(f"  Lifetime: {config['lifetime_seconds']}s")
+    if not check_terminal_requirements():
+        print("\n❌ Requirements not met. Please check the messages above.")
+        sys.exit(1)
+    print("\n✅ All requirements met!")
+    print("\nAvailable Tool:")
+    print("  - terminal_tool: Execute commands in sandboxed environments")
+    print("\nUsage Examples:")
+    print("  # Execute a command")
+    print("  result = terminal_tool(command='ls -la')")
+    print("  ")
+    print("  # Run a background task")
+    print("  result = terminal_tool(command='python server.py', background=True)")
+
+TERMINAL_SCHEMA = {
+    "name": "terminal",
+    "description": TERMINAL_TOOL_DESCRIPTION,
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "command": {"type": "string", "description": "The command to execute on the VM"},
+            "background": {
+                "type": "boolean",
+                "description": "Run the command in the background. Almost always pair with notify_on_complete=true — without it, the process runs silently and you'll have no way to learn it finished short of calling process(action='poll') yourself (easy to forget, leading to silent blindness on long jobs). Two legitimate patterns: (1) Long-lived processes that never exit (servers, watchers, daemons) — these stay silent because there's no exit to notify on. (2) Long-running bounded tasks (tests, builds, deploys, CI pollers, batch jobs) — these MUST set notify_on_complete=true. For short commands, prefer foreground with a generous timeout instead.",
+                "default": False,
+            },
+            "timeout": {
+                "type": "integer",
+                "description": "Max seconds to wait (default: 180). Returns INSTANTLY when command finishes — set high for long tasks, you won't wait unnecessarily. Foreground timeouts above the configured cap (600 by default, overridable via the TERMINAL_MAX_FOREGROUND_TIMEOUT env var) are rejected; use background=true for longer commands.",
+                "minimum": 1,
+            },
+            "workdir": {"type": "string", "description": "Working directory for this command (absolute path). Defaults to the session working directory."},
+            "pty": {
+                "type": "boolean",
+                "description": "Run in pseudo-terminal (PTY) mode for interactive CLI tools like Codex, Claude Code, or Python REPL. Only works with local and SSH backends. Default: false.",
+                "default": False,
+            },
+            "notify_on_complete": {
+                "type": "boolean",
+                "description": "When true (and background=true), you'll be automatically notified exactly once when the process finishes. **This is the right choice for almost every long-running task** — tests, builds, deployments, multi-item batch jobs, anything that takes over a minute and has a defined end. Use this and keep working on other things; the system notifies you on exit. MUTUALLY EXCLUSIVE with watch_patterns — when both are set, watch_patterns is dropped.",
+                "default": False,
+            },
+            "watch_patterns": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Strings to watch for in background process output. HARD RATE LIMIT: at most 1 notification per 15 seconds per process — matches arriving inside the cooldown are dropped. After 3 consecutive 15-second windows with dropped matches, watch_patterns is automatically disabled for that process and promoted to notify_on_complete behavior (one notification on exit, no more mid-process spam). USE ONLY for truly rare, one-shot mid-process signals on LONG-LIVED processes that will never exit on their own — e.g. ['Application startup complete'] on a server so you know when to hit its endpoint, or ['migration done'] on a daemon. DO NOT use for: (1) end-of-run markers like 'DONE'/'PASS' — use notify_on_complete instead; (2) error patterns like 'ERROR'/'Traceback' in loops or multi-item batch jobs — they fire on every iteration and you'll hit the strike limit fast; (3) anything you'd ever combine with notify_on_complete. When in doubt, choose notify_on_complete. MUTUALLY EXCLUSIVE with notify_on_complete — set one, not both.",
+            },
+        },
+        "required": ["command"],
+    },
+}
+
+
+def _handle_terminal(args, **kw):
+
+    return terminal_tool(
+        command=args.get("command"),
+        background=args.get("background", False),
+        timeout=args.get("timeout"),
+        task_id=kw.get("task_id"),
+        workdir=args.get("workdir"),
+        pty=args.get("pty", False),
+        notify_on_complete=args.get("notify_on_complete", False),
+        watch_patterns=args.get("watch_patterns"),
+        force=args.get("force", False),
+    )
+
+
+registry.register_tool("terminal", schema=TERMINAL_SCHEMA)(_handle_terminal)
