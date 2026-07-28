@@ -48,7 +48,7 @@ class FailoverReason(enum.Enum):
     multimodal_tool_content_unsupported = (
         "multimodal_tool_content_unsupported"  # Provider rejected list-type content in tool messages (e.g. Xiaomi MiMo) — downgrade to text and retry
     )
-    attachment_fetch_failed = "attachment_fetch_failed"  # Provider couldn't fetch a URL from an image_url/video_url part. The backend has nothing else to try on retry; surface a curated user-facing message.
+    attachment_fetch_failed = "attachment_fetch_failed"  # Provider couldn't fetch a URL from an image_url part. The backend has nothing else to try on retry; surface a curated user-facing message.
 
     # Provider-specific
     thinking_signature = "thinking_signature"  # Anthropic thinking block sig invalid
@@ -187,14 +187,14 @@ _IMAGE_TOO_LARGE_PATTERNS = [
 # Providers that follow the OpenAI spec strictly require tool message
 # ``content`` to be a string.  Some (Anthropic native, Codex Responses,
 # Gemini native, first-party OpenAI) extend this to accept a content-parts
-# list (text + image_url) so screenshots from computer_use survive.  Others
+# list (text + image_url) so multimodal tool results survive.  Others
 # (Xiaomi MiMo, some Alibaba endpoints, a long tail of OpenAI-compatible
 # providers) reject the list with a 400 — the patterns below are the most
 # common error shapes we see.  Recovery: strip image parts from tool
 # messages in-place, record the (provider, model) for the rest of the
 # session so we don't waste another call learning the same lesson, retry.
 #
-# See: https://github.com/NousResearch/zast-agent/issues/27344
+# See: https://github.com/NousResearch/desk-agent/issues/27344
 _MULTIMODAL_TOOL_CONTENT_PATTERNS = [
     # Xiaomi MiMo: {"error":{"code":"400","message":"Param Incorrect","param":"text is not set"}}
     "text is not set",
@@ -998,9 +998,9 @@ def _classify_400(
             should_fallback=True,
         )
 
-    # Provider couldn't fetch the URL embedded in an image_url / video_url
-    # part. Distinguished from generic format_error because retrying
-    # unchanged won't help; the user needs a curated message saying so.
+    # Provider couldn't fetch the URL embedded in an image_url part.
+    # Distinguished from generic format_error because retrying unchanged
+    # won't help; the user needs a curated message saying so.
     if any(p in error_msg for p in _ATTACHMENT_FETCH_PATTERNS):
         return result_fn(
             FailoverReason.attachment_fetch_failed,

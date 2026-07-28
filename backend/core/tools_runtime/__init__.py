@@ -18,7 +18,6 @@ from .tool_dispatch_helpers import _append_subdir_hint_to_multimodal
 from .tool_dispatch_helpers import _is_multimodal_tool_result
 from .tool_dispatch_helpers import _multimodal_text_summary
 from .tool_dispatch_helpers import _should_parallelize_tool_batch
-from .tool_dispatch_helpers import evict_old_screenshots
 from .tool_dispatch_helpers import make_tool_result_message
 from .tool_guardrails import append_toolguard_guidance
 from .tool_guardrails import canonical_tool_args
@@ -59,7 +58,6 @@ __all__ = [
     "FILE_MUTATING_TOOL_NAMES",
     # tool_dispatch_helpers
     "make_tool_result_message",
-    "evict_old_screenshots",
     # tool_guardrails
     "check_file_safety",
     "ToolCallGuardrailController",

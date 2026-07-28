@@ -105,12 +105,6 @@ TTS_MAX_TEXT_CHARS: int = 4_000
 # Whisper accepts up to 25 MB; cap at 24 MB to avoid at-limit 413s.
 STT_MAX_AUDIO_BYTES: int = 24 * 1024 * 1024
 
-# Screen-recording webm upload cap. The recording toolbar allows up to
-# 30 minutes at ~500 kbps video + Opus audio, which fits in ~115 MB;
-# 512 MB gives ample headroom for higher bitrates without inviting
-# arbitrary large-file abuse.
-RECORDING_MAX_VIDEO_BYTES: int = 512 * 1024 * 1024
-
 
 # ── Session & Search ─────────────────────────────────────────────────
 
@@ -148,7 +142,7 @@ RUNTIME_CHECK_TIMEOUT_SECONDS: int = 10
 # per-loop cadence knobs live in one place.
 SESSION_HEARTBEAT_INTERVAL_S: int = 20
 
-# Max video attachments per single prompt.submit turn.
+# Max image attachments per single prompt.submit turn.
 MAX_ATTACHMENTS_PER_TURN: int = 16
 
 # LoginRecord.last_seen_at heartbeat interval (seconds).
@@ -182,9 +176,7 @@ TTS_VOICES: list[str] = ["mimo_default", "冰糖", "茉莉", "苏打", "白桦",
 
 # ── Attachments ────────────────────────────────────────────────────────
 
-# Wire-protocol attachment-kind discriminator. Today the only attachment
-# kind the chat pipeline accepts is screen-recording video; the literal
-# is duplicated across routers/chat.py (_validate_attachments) and
-# core/chat_service.py (_build_persisted_content) so it lives here as
-# the single source of truth.
-ATTACHMENT_TYPE_VIDEO: str = "video"
+# Wire-protocol attachment-kind discriminator. The chat pipeline currently
+# accepts image attachments only — vision-capable models consume them as
+# ``image_url`` parts.
+ATTACHMENT_TYPE_IMAGE: str = "image"
