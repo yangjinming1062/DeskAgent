@@ -64,20 +64,18 @@ def _detect_image_mime_type(image_path: Path) -> str | None:
 
 _PAYMENT_HINTS = ("402", "insufficient", "payment required", "credits", "billing")
 _SIZE_HINTS = ("too large", "payload", "413", "content_too_large", "request_too_large", "exceeds", "size limit")
-_VISION_UNSUPPORT_HINTS = ("does not support", "not support image", "content_policy", "multimodal", "unrecognized request argument", "image input")
-_VIDEO_UNSUPPORT_HINTS = ("does not support", "not support video", "content_policy", "multimodal", "unrecognized request argument", "video input", "video_url")
+_UNSUPPORT_HINTS = ("does not support", "not support image", "content_policy", "multimodal", "unrecognized request argument", "image input")
 
 
 def _classify_api_error(error: Exception, media_label: str) -> str:
     err_str = str(error).lower()
-    hints = _VISION_UNSUPPORT_HINTS if media_label == "image" else _VIDEO_UNSUPPORT_HINTS
     if any(h in err_str for h in _PAYMENT_HINTS):
         return f"Insufficient credits or payment required. Please top up your API provider account and try again. Error: {error}"
-    if any(h in err_str for h in hints):
+    if any(h in err_str for h in _UNSUPPORT_HINTS):
         return f"The model does not support {media_label} analysis or the request was rejected. Error: {error}"
     if any(h in err_str for h in _SIZE_HINTS):
         return f"The {media_label} is too large for the API. Error: {error}"
-    if media_label == "image" and ("invalid_request" in err_str or "image_url" in err_str):
+    if "invalid_request" in err_str or "image_url" in err_str:
         return f"The vision API rejected the image. Try a smaller JPEG/PNG and retry. Error: {error}"
     return f"There was a problem with the request and the {media_label} could not be analyzed. Error: {error}"
 
@@ -108,9 +106,10 @@ async def _download_media(
     max_retries: int = 3,
 ) -> Path:
     """Download a media file to ``destination`` with size cap, redirect
-    safety, and retryable-error handling. Used by both vision (image) and
-    video tools; the only differences are the Accept header, the size
-    cap, the per-request timeout, and a log label.
+    safety, and retryable-error handling. The vision tool is the sole
+    caller today; ``accept`` / ``max_bytes`` / ``timeout`` / ``media_label``
+    remain parameterised so a future media tool can reuse the helper
+    without copying the size-cap / redirect-guard machinery.
     """
     from ..browser import async_is_safe_url
     from ..browser import check_website_access
