@@ -1,6 +1,6 @@
 # installer/
 
-Zast 安装器产品。本目录容纳 **Tauri 2 桌面程序**（`src/` + `src-tauri/`，产 `Zast-Setup.exe` / `Zast-Setup.app` / `zast-setup`）、它要释放的安装 payload（`skills/`、`config.yaml`）、以及 Tauri 进程 spawn 出来的 **install 协议后端**（`install.sh` / `install.ps1` / `install.cmd`）。
+Zast 安装器产品。本目录容纳 **Tauri 2 桌面程序**（`src/` + `src-tauri/`，产 `Zast-Setup.exe` / `Zast-Setup.app` / `zast-setup`）、它要释放的安装 payload（`skills/`、`config.yaml`）、以及 Tauri 进程 spawn 出来的 **install 协议后端**（`install.sh` / `install.ps1` / `install.cmd`）。首装完成释放 Desktop 后，Desktop 以"蛋"形态首次启动，进入 [design.md §2](../design.md) 的伙伴生命周期 onboarding。
 
 ## 1. 顶层模块解耦
 
@@ -12,15 +12,15 @@ manifest 字段、`install.{ps1,sh}` 的 stage 名、JSON-RPC frame 等**协议�
 
 **Installer binary is self-contained** —— install 脚本由 `scripts/build_client.{sh,ps1}` 在 `stage_payload()` 时硬链接 / 符号链接到 `installer/payload/`，Tauri 自动嵌入。`Zast-Setup` 二进制运行时**零网络依赖**：不下载 install 脚本，不下载 payload（payload 都在 `bundle.resources` 里），不查更新（更新流走 `backend/updates/` HTTP endpoint，由 backend 提供）。
 
-**Desktop 启动后不做 install / uninstall** —— [desktop/CLAUDE.md §"安装 / 卸载 / 更新"](../desktop/CLAUDE.md) 明确 desktop 启动时只连 cloud Backend，不调 `install.ps1` / `Zast-Setup --uninstall`。本模块（Tauri Zast-Setup）拥有所有平台变更职责，desktop 是只读消费方。
+**Desktop 启动后不做 install / uninstall** —— [desktop/README.md §"安装 / 卸载 / 更新"](../desktop/README.md) 明确 desktop 启动时只连 cloud Backend，不调 `install.ps1` / `Zast-Setup --uninstall`。本模块（Tauri Zast-Setup）拥有所有平台变更职责，desktop 是只读消费方。
 
-**Electron 二进制自更新由 desktop 自己负责** —— Desktop 通过 `electron-updater` 从 Backend `/api/update` 拉取预构建产物自更新(desktop 二进制 + Python runner wheel + `server.py`,两半一起装)。详见 [desktop/CLAUDE.md §"Electron 二进制自更新"](../desktop/CLAUDE.md#electron-二进制自更新)。
+**Electron 二进制自更新由 desktop 自己负责** —— Desktop 通过 `electron-updater` 从 Backend `/api/update` 拉取预构建产物自更新(desktop 二进制 + Python runner wheel + `server.py`,两半一起装)。详见 [desktop/README.md §"Electron 二进制自更新"](../desktop/README.md#electron-二进制自更新)。
 
 ## 2. 同目录三类内容
 
 - **`src/` + `src-tauri/`**：Tauri 2 桌面程序源码（Rust 后端 + React 19 前端），编译产物是签名好的安装器二进制。Tauri 包名 `@zast/installer`、cargo bin 名 `Zast-Setup`、lib 名 `zast_bootstrap_lib`。
 - **`install.sh` / `install.ps1` / `install.cmd`**：6-stage install 协议后端（welcome / install-python / unpack-runner / unpack-desktop / install-skills / write-config）。Tauri `Zast-Setup` 启动后 spawn 它们干活。`install.cmd` 是 Windows 下 `install.ps1` 在 cmd.exe 环境不可用时的 dev fallback;`bundle.resources` 不嵌入(走 `ZAST_SETUP_DEV_REPO_ROOT/installer/install.cmd` dev 解析路径)。完整规范见 §4。
-- **`skills/`、`config.yaml`**：安装 payload，被 `install.{ps1,sh}` 的 `install-skills` / `write-config` stage 读出来 seed 到 `$ZAST_HOME/{skills,config.yaml}`（路径契约详 [runner/CLAUDE.md §Skills 系统](../runner/CLAUDE.md#skills-系统)）。
+- **`skills/`、`config.yaml`**：安装 payload，被 `install.{ps1,sh}` 的 `install-skills` / `write-config` stage 读出来 seed 到 `$ZAST_HOME/{skills,config.yaml}`（路径契约详 [runner/README.md §Skills 系统](../runner/README.md#skills-系统)）。
 
 `install.{ps1,sh}` 已经在路径 `<repo>/installer/skills/` 寻找 payload——和 Tauri 源码同居让 payload 路径与安装脚本的预期天然对齐，无需在 install 脚本里维护"另一份位置"。
 
@@ -116,3 +116,11 @@ $ZAST_HOME/runner/
 `unpack-runner` stage 流程：找 wheel → 复制 `server.py` → `uv venv` 创建 venv → `uv pip install <wheel>` 安装 wheel 及其依赖 → 冒烟 `import tools, utils` → 清理旧 `zast-runner{,.exe}`。
 
 Desktop spawn 命令：`$ZAST_HOME/runner/.venv/{bin/python,Scripts/python.exe} $ZAST_HOME/runner/server.py --desktop-ws <ws-url>`。运行时路径 knob 仍是 `ZAST_HOME`。
+
+## 重构行动项
+
+Installer 在新定位下**基本保留**——install 协议、payload 释放、Python 运行时引导全不变。唯一新增考量是"蛋"阶段的形象来源。
+
+- **保留（不动）**：6-stage install 协议（welcome / install-python / unpack-runner / unpack-desktop / install-skills / write-config）、Tauri 2 安装器二进制、payload 嵌入与释放、平台标准安装位置、macOS fast path、自包含零网络设计。
+- **评估（产品设计决策）**：首装是否 seed 一个默认"蛋"形象资产到 `$ZAST_HOME/`，让 Desktop 在角色定义完成前离线渲染蛋；还是完全由 Desktop 内置默认蛋渲染（不经 installer）。倾向后者——蛋是 Desktop 内置默认形象，不需要 installer 参与，也避免引入 payload 与形象资产版本耦合。
+- **无 payload 变更**：`skills/`、`config.yaml` payload 不受产品定位影响，install-skills / write-config stage 不变。

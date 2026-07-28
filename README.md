@@ -77,7 +77,7 @@ cd desktop && pnpm install && pnpm dev  # Vite :5174 + Electron;
 
 ### Runner
 
-由 installer 安装到 `$ZAST_HOME/runner/.venv`,desktop 启动时自动 spawn。dev 模式手动启动见 [runner/CLAUDE.md §通信协议](runner/CLAUDE.md)。
+由 installer 安装到 `$ZAST_HOME/runner/.venv`,desktop 启动时自动 spawn。dev 模式手动启动见 [runner/README.md §通信协议](runner/README.md)。
 
 ### 安装包 (Installer)
 
@@ -102,11 +102,11 @@ bash scripts/build_client.sh
 | 想了解什么 | 看哪里 |
 |-----------|--------|
 | 项目总览 / 架构机制 / 通信协议与不变量 | [design.md](design.md) |
-| Backend 模块结构与实现 | [backend/CLAUDE.md](backend/CLAUDE.md) |
-| Runner 模块结构与实现 | [runner/CLAUDE.md](runner/CLAUDE.md) |
-| Desktop 模块结构与实现 | [desktop/CLAUDE.md](desktop/CLAUDE.md) |
-| Installer 模块结构与协议 | [installer/CLAUDE.md](installer/CLAUDE.md) |
-| 构建 / 测试 / 发布脚本 | [scripts/CLAUDE.md](scripts/CLAUDE.md) |
+| Backend 模块结构与实现 | [backend/README.md](backend/README.md) |
+| Runner 模块结构与实现 | [runner/README.md](runner/README.md) |
+| Desktop 模块结构与实现 | [desktop/README.md](desktop/README.md) |
+| Installer 模块结构与协议 | [installer/README.md](installer/README.md) |
+| 构建 / 测试 / 发布脚本 | [scripts/README.md](scripts/README.md) |
 | 仓库级 AI 协作规范 | [CLAUDE.md](CLAUDE.md) |
 
 ## 平台支持
@@ -114,8 +114,8 @@ bash scripts/build_client.sh
 | 模块 | 部署目标 | 兼容性要求 |
 |------|---------|-----------|
 | Backend | Linux (Docker 容器) | 仅 Linux,无 Windows 兼容要求 |
-| Runner | Windows / macOS / Linux 原生 | Windows 是已知风险面(见 [runner/CLAUDE.md §已知限制](runner/CLAUDE.md)) |
-| Desktop | Windows / macOS / Linux 原生 | Windows 兼容性是已知风险面(见 [desktop/CLAUDE.md §已知限制](desktop/CLAUDE.md)) |
+| Runner | Windows / macOS / Linux 原生 | Windows 是已知风险面(见 [runner/README.md §已知限制](runner/README.md)) |
+| Desktop | Windows / macOS / Linux 原生 | Windows 兼容性是已知风险面(见 [desktop/README.md §已知限制](desktop/README.md)) |
 | Installer | Windows / macOS / Linux 原生 | Tauri 2 cross-platform;当前 install 协议 v2(含 install-python stage) |
 
 ## 当前信任模型
