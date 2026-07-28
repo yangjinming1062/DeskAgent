@@ -1,6 +1,6 @@
 # Runner
 
-本地手脚——纯粹的工具执行器，承载伙伴"能帮用户做的事"。以 uv build wheel 形式发布，安装器在 `$ZAST_HOME/runner/.venv` 创建 venv 并安装；Desktop 直接 spawn venv Python 调用 `server.py`，通过 WebSocket 接收 JSON-RPC 2.0 工具调用指令并在用户机器上执行。Runner 不感知"伙伴"语义——终端、文件、浏览器、代码执行等底层能力 100% 保留，伙伴人格完全由 Backend 承载、伙伴形象完全由 Desktop 渲染。
+本地手脚——纯粹的工具执行器，承载伙伴"能帮用户做的事"。以 uv build wheel 形式发布，安装器在 `$DESKAGENT_HOME/runner/.venv` 创建 venv 并安装；Desktop 直接 spawn venv Python 调用 `server.py`，通过 WebSocket 接收 JSON-RPC 2.0 工具调用指令并在用户机器上执行。Runner 不感知"伙伴"语义——终端、文件、浏览器、代码执行等底层能力 100% 保留，伙伴人格完全由 Backend 承载、伙伴形象完全由 Desktop 渲染。
 
 设计文档：[design.md](../design.md) §3 / §4 / §5 / §8
 
@@ -69,7 +69,6 @@ runner/
 │   │   └── osv_check.py     # OSV 恶意包检查
 │   ├── multimodal/          # 多模态工具
 │   │   ├── vision_tool.py       # vision_analyze
-│   │   ├── video_tool.py        # video_analyze
 │   │   ├── computer_use_tool.py # computer_use（桌面操作）
 │   │   ├── cu_schema.py         # computer-use 操作 schema
 │   │   ├── cu_tool.py           # computer-use tool handler
@@ -92,7 +91,7 @@ runner/
 │       └── helpers.py       # 工具集助手
 └── utils/               # 环境 helper
     ├── __init__.py
-    ├── constants.py     # 路径解析（ZAST_HOME 等）
+    ├── constants.py     # 路径解析（DESKAGENT_HOME 等）
     ├── config.py        # 配置加载
     ├── redact.py        # 结果脱敏（API key/JWT/连接字符串）
     ├── file_safety.py   # 文件安全检查（写拒绝列表）
@@ -110,7 +109,7 @@ runner/
 - `test_path_helpers.py` 覆盖 path 解析 helpers
 - `test_startup_imports.py` 钉死 `server.py:9-22` 的每行 module-level import(MCP load-bearing 等关键传递依赖)。`.pre-commit-config.yaml` 在 runner 文件改动时跑它(`<1s`);`build_client.{ps1,sh}` 在 `uv build --wheel` 之前跑整个 `tests/` 作为发布门 — 任意一个层失败都拦下坏 wheel(env-rot、传递依赖损坏永远不应该出 repo)
 
-Wheel 产物：`runner/dist/zast_agent-*.whl`。安装器在 stage 3 创建 `$ZAST_HOME/runner/.venv` 并 `uv pip install` 这个 wheel；Desktop spawn `$ZAST_HOME/runner/.venv/{bin/python,Scripts/python.exe}` 调用 `$ZAST_HOME/runner/server.py`。
+Wheel 产物：`runner/dist/desk_agent-*.whl`。安装器在 stage 3 创建 `$DESKAGENT_HOME/runner/.venv` 并 `uv pip install` 这个 wheel；Desktop spawn `$DESKAGENT_HOME/runner/.venv/{bin/python,Scripts/python.exe}` 调用 `$DESKAGENT_HOME/runner/server.py`。
 
 ## 通信协议
 
@@ -141,8 +140,8 @@ Runner 主动连接 Desktop 提供的本地 WS 服务器（`ws://127.0.0.1:<port
 | `tools_changed` | Runner → Desktop | 工具 schema 变更通知（启动后 MCP 后台发现完成触发）；Desktop 收到后重拉 `get_tools` 并重新 `tools.sync` 到 backend |
 | `get_tools` | Desktop → Runner | 获取工具 Schema |
 | `execute_tool` | Desktop → Runner | 执行工具调用 |
-| `mcp.reload` | Desktop → Runner | 第一类 RPC（不走 `execute_tool`）：关闭当前所有 MCP 连接并从最新 `$ZAST_HOME/config.yaml` 重新连接，回复 `{reloaded, errors, servers, connected}`。无入参（runner 始终读本地 YAML） |
-| `zast.cancel` | Desktop → Runner | 中断信号：设 `_global_interrupt` 让 in-flight 工具下次轮询时退出；返回 `{ok: true}` |
+| `mcp.reload` | Desktop → Runner | 第一类 RPC（不走 `execute_tool`）：关闭当前所有 MCP 连接并从最新 `$DESKAGENT_HOME/config.yaml` 重新连接，回复 `{reloaded, errors, servers, connected}`。无入参（runner 始终读本地 YAML） |
+| `deskagent.cancel` | Desktop → Runner | 中断信号：设 `_global_interrupt` 让 in-flight 工具下次轮询时退出；返回 `{ok: true}` |
 | `request_llm` | Runner → Desktop | 反向 RPC（带 `id` 的请求）：借用 LLM，响应体可含 `content` / `choices[0].message.content` / `text`，`server.py::_extract_llm_content` 做容错抽取 |
 
 ### 反向 RPC
@@ -151,7 +150,7 @@ Runner 需要借用 LLM 时（如 vision_analyze、browser 长文本检索、MCP
 
 ### 自动退出与重连
 
-WebSocket 断开后 Runner 进入重连循环（指数退避 2s → 30s，最多 15 次约 5 分钟）。每次重试前读取 `$ZAST_HOME/desktop-endpoint.json` 获取最新端口（Desktop 重启后端口变化），并检查 Desktop PID 存活以跳过残留文件。超时后 `sys.exit(1)`。
+WebSocket 断开后 Runner 进入重连循环（指数退避 2s → 30s，最多 15 次约 5 分钟）。每次重试前读取 `$DESKAGENT_HOME/desktop-endpoint.json` 获取最新端口（Desktop 重启后端口变化），并检查 Desktop PID 存活以跳过残留文件。超时后 `sys.exit(1)`。
 
 ## 工具系统
 
@@ -159,7 +158,7 @@ WebSocket 断开后 Runner 进入重连循环（指数退避 2s → 30s，最多
 
 每个工具模块在 import 时调用 `registry.register_tool(...)` 完成注册。`discover_builtin_tools()` 递归扫描 `tools/` 子包（跳过 `registry` 和 `mcp/mcp_tool`——MCP 模块的特殊性见下文）。
 
-MCP 工具由 `discover_mcp_tools()` 在 `server.py::runner_loop` 紧跟 `runner_ready` 之后**后台线程**调用（`_schedule_background_mcp_discovery`），从 `$ZAST_HOME/config.yaml` 的 `mcp_servers` 段读取配置、连接各 server、把 `mcp_<server>_<tool>` 注册到全局 registry。**这是 MCP 工具进入 backend LLM schema 的唯一入口**。后台执行是为了让 bridge 握手在 <1s 完成——desktop 立刻收到 `runner_ready` 并 `get_tools` + `tools.sync` 25 个静态工具；MCP 发现完成后 runner 发 `tools_changed` 通知，desktop 重拉 + 重 `tools.sync`，LLM 在下一轮 turn 看到 MCP 工具。运行时新增/删除 MCP server 须经 Runner 重启（Desktop MCP 设置页 `runnerConfig.write` 走 `restartRunnerBridge`）才能让 backend 看到。
+MCP 工具由 `discover_mcp_tools()` 在 `server.py::runner_loop` 紧跟 `runner_ready` 之后**后台线程**调用（`_schedule_background_mcp_discovery`），从 `$DESKAGENT_HOME/config.yaml` 的 `mcp_servers` 段读取配置、连接各 server、把 `mcp_<server>_<tool>` 注册到全局 registry。**这是 MCP 工具进入 backend LLM schema 的唯一入口**。后台执行是为了让 bridge 握手在 <1s 完成——desktop 立刻收到 `runner_ready` 并 `get_tools` + `tools.sync` 25 个静态工具；MCP 发现完成后 runner 发 `tools_changed` 通知，desktop 重拉 + 重 `tools.sync`，LLM 在下一轮 turn 看到 MCP 工具。运行时新增/删除 MCP server 须经 Runner 重启（Desktop MCP 设置页 `runnerConfig.write` 走 `restartRunnerBridge`）才能让 backend 看到。
 
 **Handler 契约**：接收 `**kwargs`，返回 JSON 字符串。
 
@@ -167,7 +166,7 @@ MCP 工具由 `discover_mcp_tools()` 在 `server.py::runner_loop` 紧跟 `runner
 
 ### 已注册工具
 
-47 个静态注册工具 + N 个 MCP 动态工具（启动时由 `discover_mcp_tools()` 从 `$ZAST_HOME/config.yaml` 读取；N 取决于用户配置的 MCP server 数）：
+46 个静态注册工具 + N 个 MCP 动态工具（启动时由 `discover_mcp_tools()` 从 `$DESKAGENT_HOME/config.yaml` 读取；N 取决于用户配置的 MCP server 数）：
 
 | 工具名 | 来源文件 | 说明 |
 |--------|----------|------|
@@ -211,14 +210,13 @@ MCP 工具由 `discover_mcp_tools()` 在 `server.py::runner_loop` 紧跟 `runner
 | `browser_set_extra_headers` | browser/browser_tool.py | 替换所有额外 HTTP 头（CDP Network，wholesale）|
 | `browser_set_geolocation` | browser/browser_tool.py | 覆盖浏览器地理位置（CDP Emulation）|
 
-持久化 profile（cookie + storage 跨重启存活）：[profile_manager.py](runner/tools/browser/profile_manager.py) 解析 `$ZAST_HOME/browser_profiles/<name>` 路径，检查 `SingletonLock`/`LOCK` 锁冲突，并在后台 cleanup 线程每 30s 跑一次 72h 保留 GC。`_create_local_session` 把 `profile_dir` 注入到 `--user-data-dir` agent-browser 命令行参数。
+持久化 profile（cookie + storage 跨重启存活）：[profile_manager.py](runner/tools/browser/profile_manager.py) 解析 `$DESKAGENT_HOME/browser_profiles/<name>` 路径，检查 `SingletonLock`/`LOCK` 锁冲突，并在后台 cleanup 线程每 30s 跑一次 72h 保留 GC。`_create_local_session` 把 `profile_dir` 注入到 `--user-data-dir` agent-browser 命令行参数。
 | `browser_cdp` | browser/browser_cdp_tool.py | CDP passthrough |
 | `browser_dialog` | browser/browser_dialog_tool.py | JS dialog 响应 |
 | `skills_list` | skills/skills_tool.py | 列出 Skills |
 | `skill_view` | skills/skills_tool.py | 查看 Skill 内容 |
 | `skill_manage` | skills/skill_manager_tool.py | 创建/修改 Skills |
 | `vision_analyze` | multimodal/vision_tool.py | 图片分析 |
-| `video_analyze` | multimodal/video_tool.py | 视频分析 |
 | `computer_use` | multimodal/computer_use_tool.py | 桌面操作（computer-use） |
 | `mcp_<server>_<tool>` | mcp/mcp_tool.py | 动态 MCP 工具 |
 
@@ -231,7 +229,7 @@ MCP 工具由 `discover_mcp_tools()` 在 `server.py::runner_loop` 紧跟 `runner
 
 ### MCP server 通知处理（`tools/mcp/mcp_tool.py::_make_message_handler`）
 
-Runner 在 MCP `ClientSession` 上注册的 message handler 仅消费 `ToolListChangedNotification`——收到时调度一次 `_refresh_tools()` 重新拉取 tool 列表并热替换 `ToolRegistry` 条目。`PromptListChangedNotification` 与 `ResourceListChangedNotification` 是 debug 日志后被忽略（**这是设计意图而非 TODO**）：runner 当前的工具 surface 只覆盖 tools，prompts/resources 暂未通过任何 Zast 端工具暴露，所以即便 server 端列表变化也不会引起 stale registry。需要刷新 prompt/resource 的调用方必须经 Desktop 主动触发 `reload.mcp`（`backend/routers/chat.py::reload_mcp` → `core/ipc.dispatch_user_event` → desktop `zast:runner:dispatch` → runner `mcp.reload`），不能依赖 Runner 内的自动响应。
+Runner 在 MCP `ClientSession` 上注册的 message handler 仅消费 `ToolListChangedNotification`——收到时调度一次 `_refresh_tools()` 重新拉取 tool 列表并热替换 `ToolRegistry` 条目。`PromptListChangedNotification` 与 `ResourceListChangedNotification` 是 debug 日志后被忽略（**这是设计意图而非 TODO**）：runner 当前的工具 surface 只覆盖 tools，prompts/resources 暂未通过任何 DeskAgent 端工具暴露，所以即便 server 端列表变化也不会引起 stale registry。需要刷新 prompt/resource 的调用方必须经 Desktop 主动触发 `reload.mcp`（`backend/routers/chat.py::reload_mcp` → `core/ipc.dispatch_user_event` → desktop `deskagent:runner:dispatch` → runner `mcp.reload`），不能依赖 Runner 内的自动响应。
 
 ## 终端后端
 
@@ -278,8 +276,8 @@ Runner 侧不存在 LLM provider 特定的 schema 适配。`tools/mcp/mcp_tool.p
 | 检测器 | 命中的路径形状 | 默认行为 |
 |--------|----------------|----------|
 | `cross-profile` | 另一 profile 的 `skills/plugins/cron/memories` 目录 | 软警告，agent 可经 `cross_profile=True` opt-in（需用户明确许可） |
-| `sandbox-mirror` | host-side `…/sandboxes/<backend>/<task>/home/.zast/…`（Docker / Daytona 等非本地后端的绑定镜像） | 软警告 |
-| `container-mirror` | Docker 容器内部去前缀后的 `/root/.zast/…` 路径 | 软警告 |
+| `sandbox-mirror` | host-side `…/sandboxes/<backend>/<task>/home/.deskagent/…`（Docker / Daytona 等非本地后端的绑定镜像） | 软警告 |
+| `container-mirror` | Docker 容器内部去前缀后的 `/root/.deskagent/…` 路径 | 软警告 |
 
 设计意图：**soft-guard 而非 hard block**——同一 OS 用户下，agent 通过 terminal 工具本身就能写到任何路径，所以硬阻断只会给"虚假的安心感"。soft-guard 让 agent 在 LLM 提示层看到警告，必须先获得用户 `cross_profile=True` 才能覆盖。三个检测器共享同一道 opt-in 闸门（位于 write 工具的 `cross_profile` 入参），不是每个 detector 各自一份 override。
 
@@ -297,7 +295,7 @@ SSRF 防护：block private IPs、loopback、link-local、CGNAT（100.64.0.0/10�
 
 ### execute_code 沙箱
 
-环境变量清洗（仅 PATH/HOME/USER/LANG/LC_*/TERM/TMPDIR/SHELL/XDG_*/ZAST_* 通过）。工具调用限制 50 次/脚本。5 分钟超时。50KB stdout 上限。
+环境变量清洗（仅 PATH/HOME/USER/LANG/LC_*/TERM/TMPDIR/SHELL/XDG_*/DESKAGENT_* 通过）。工具调用限制 50 次/脚本。5 分钟超时。50KB stdout 上限。
 
 ### MCP OSV 检查（tools/mcp/osv_check.py）
 
@@ -305,17 +303,17 @@ SSRF 防护：block private IPs、loopback、link-local、CGNAT（100.64.0.0/10�
 
 ## Skills 系统
 
-Skills 由安装器 seed 到 `$ZAST_HOME/skills/`:
+Skills 由安装器 seed 到 `$DESKAGENT_HOME/skills/`:
 
 | 层 | 路径 | 谁写 | 谁读 |
 |----|------|------|------|
 | Bundled source | `<repo>/installer/skills/` | 仓库维护者 | 安装脚本 |
-| 运行时位置 | `$ZAST_HOME/skills/` | 安装脚本 | Runner |
-| 启用/禁用配置 | `$ZAST_HOME/config.yaml::skills.disabled` | Desktop(`zast:skill:set-enabled` IPC) | Runner(`get_disabled_skill_names`);category-grain 匹配,单条 entry 覆盖整个 category 下的所有 leaf |
+| 运行时位置 | `$DESKAGENT_HOME/skills/` | 安装脚本 | Runner |
+| 启用/禁用配置 | `$DESKAGENT_HOME/config.yaml::skills.disabled` | Desktop(`deskagent:skill:set-enabled` IPC) | Runner(`get_disabled_skill_names`);category-grain 匹配,单条 entry 覆盖整个 category 下的所有 leaf |
 
-**唯一的路径 knob**：`ZAST_HOME`（默认 `$HOME/.zast` 或 `%LOCALAPPDATA%\zast`）。
+**唯一的路径 knob**：`DESKAGENT_HOME`（默认 `$HOME/.deskagent` 或 `%LOCALAPPDATA%\deskagent`）。
 
-**Skills 路径单一来源**：所有 skills 模块都通过 `utils.get_skills_dir()` 解析运行时 skills 路径，不允许再各自 `ZAST_HOME / "skills"` 或本地 `_skills_dir()` 包装函数。新增 skill 模块前先 `from utils import get_skills_dir`。
+**Skills 路径单一来源**：所有 skills 模块都通过 `utils.get_skills_dir()` 解析运行时 skills 路径，不允许再各自 `DESKAGENT_HOME / "skills"` 或本地 `_skills_dir()` 包装函数。新增 skill 模块前先 `from utils import get_skills_dir`。
 
 **平台过滤**：`tools/skills/skills_tool.py::skill_matches_platform` 将 SKILL.md frontmatter 的 `platforms`（人话：`macos` / `windows` / `linux`）通过模块顶部 `_PLATFORM_MAP` 翻译成 `sys.platform` 字符串（`darwin` / `win32` / `linux`），再做 `sys.platform in [...]` 比较。两套字符串不能直接对比 —— 必须走 `_PLATFORM_MAP` 翻译，否则 `darwin in ['macos']` 永真为 False。Desktop `lib/skill-index.cjs` 在 main 进程同样做翻译，给 renderer 发 `compatible: bool` 用来隐藏不兼容的行；两套表（Node 的 alias→canonical 与 Python 的 canonical→sys.platform）结构不同但语义对齐，新增平台时需同步更新两边。
 
@@ -325,7 +323,7 @@ Toolsets 是用户可平移的 LLM-facing schema 过滤单位。Catalog 是**三
 
 | 层 | 路径 | 谁写 | 谁读 |
 |----|------|------|------|
-| 启用/禁用配置 | `$ZAST_HOME/config.yaml::toolsets.disabled` | Desktop(`zast:toolset:set-enabled` IPC) | Runner(`toolsets/helpers.py::get_disabled_toolset_ids`) |
+| 启用/禁用配置 | `$DESKAGENT_HOME/config.yaml::toolsets.disabled` | Desktop(`deskagent:toolset:set-enabled` IPC) | Runner(`toolsets/helpers.py::get_disabled_toolset_ids`) |
 | Catalog | `runner/tools/toolsets/catalog.py::TOOLSET_CATALOG` + 两侧镜像 | 仓库维护者 | Runner filter + Desktop UI |
 | 过滤生效点 | `registry.get_schemas_for_llm(set_of_disabled_ids)` | — | `server.py` `get_tools` RPC handler 调 |
 
@@ -333,7 +331,7 @@ Toolsets 是用户可平移的 LLM-facing schema 过滤单位。Catalog 是**三
 
 **与 CORE_TOOLS 的分层语义**：`backend/core/chat_service.py::CORE_TOOLS` 是 Backend 侧的**硬保证**白名单；工具集过滤在更上游（Runner `get_tools` RPC），是**软补充**。两层语义独立：禁用的工具不在 Runner 返回的 schema 列表里出现；CORE_TOOLS 不影响过滤结果。`tools.sync` 上报的即 Runner `get_schemas_for_llm` 的过滤结果。
 
-**重启语义**：Desktop `zast:toolset:set-enabled` 走 atomic write + `restartRunnerBridge()`，确保 `disabled_toolsets` 集合在 Runner 进程重建时是最新的（Registry 是一次性 init，没有热重载入口，进程级 restart 是唯一路径）。
+**重启语义**：Desktop `deskagent:toolset:set-enabled` 走 atomic write + `restartRunnerBridge()`，确保 `disabled_toolsets` 集合在 Runner 进程重建时是最新的（Registry 是一次性 init，没有热重载入口，进程级 restart 是唯一路径）。
 
 ## 浏览器多后端
 
@@ -367,6 +365,6 @@ CDP Supervisor（`browser_supervisor.py`）：持久 WebSocket 到 CDP，dialog 
 
 Runner 在新定位下**零代码改动**——这是"backend/runner 基本完全保留复用"的直接体现。产品从工具型 Agent 重新定位为陪伴型桌面伙伴的变化全部落在 Backend（人格/形象）与 Desktop（精灵 UI），Runner 始终是纯粹的本地工具执行器。
 
-- **保留（不动）**：全部 47 个静态工具 + MCP 动态工具、6 个终端后端、浏览器多后端、安全机制（Tirith / file_safety / SSRF / redact）、Skills 系统、工具集过滤、反向 RPC、Windows 平台兼容性缓解。
+- **保留（不动）**：全部 46 个静态工具 + MCP 动态工具、6 个终端后端、浏览器多后端、安全机制（Tirith / file_safety / SSRF / redact）、Skills 系统、工具集过滤、反向 RPC、Windows 平台兼容性缓解。
 - **无新增**：Runner 不参与角色定义 / 形象生成 / 陪伴交互——这些完全在 Backend + Desktop 之间完成，Runner 侧无需感知。
 - **唯一扩展点**：未来若伙伴需调用新类型的本机能力，经现有 `registry.register_tool(...)` 协议新增工具即可，不涉及架构变更。
