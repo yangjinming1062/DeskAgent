@@ -564,7 +564,7 @@ export const zh: Translations = {
     scheduled_tasks: { label: '定时任务', description: 'Cron 触发与周期调度。' },
     agent_delegation: { label: '子代理委托', description: '派生子会话与子代理。' },
     computer_use: { label: '桌面操控', description: '通过 CUA / Win 后端接管桌面。' },
-    media_analysis: { label: '多媒体分析', description: '图片与视频分析。' }
+    media_analysis: { label: '多媒体分析', description: '图片分析。' }
   },
 
   agents: {

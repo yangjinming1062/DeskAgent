@@ -29,7 +29,7 @@ const TOOLSET_DEFS = [
   { id: 'scheduled_tasks', extraTools: ['cronjob'] },
   { id: 'agent_delegation', extraTools: ['agent_delegate_tool'] },
   { id: 'computer_use', extraTools: ['computer_use'] },
-  { id: 'media_analysis', extraTools: ['vision_analyze', 'video_analyze'] }
+  { id: 'media_analysis', extraTools: ['vision_analyze'] }
 ]
 
 const readDisabledToolsets = configPath => readDisabledSet(configPath, 'toolsets')

@@ -2,7 +2,7 @@ import { act, cleanup, render } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { $desktopBoot } from '@/store/boot'
-import { $gatewayState } from '@/store/session'
+import { $gatewayState } from '@/store/gateway'
 
 import { useGatewayBoot } from './use-gateway-boot'
 
@@ -103,9 +103,7 @@ function Harness() {
   useGatewayBoot({
     handleGatewayEvent: () => undefined,
     onConnectionReady: () => undefined,
-    onGatewayReady: () => undefined,
-    refreshZastConfig: async () => undefined,
-    refreshSessions: async () => undefined
+    onGatewayReady: () => undefined
   })
 
   return null

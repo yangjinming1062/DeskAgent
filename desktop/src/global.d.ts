@@ -122,6 +122,8 @@ declare global {
       onBootProgress: (callback: (payload: DesktopBootProgress) => void) => () => void
       onSessionExpired: (callback: () => void) => () => void
       onRunnerStatus?: (callback: (payload: DesktopRunnerStatusEvent) => void) => () => void
+      onOpenSettings?: (callback: () => void) => () => void
+      onTrayLogout?: (callback: () => void) => () => void
       getVersion: () => Promise<DesktopVersionInfo>
       update?: {
         check: () => Promise<{ ok: boolean; reason?: string }>
@@ -131,21 +133,6 @@ declare global {
         retryRunnerInstall: () => Promise<{ ok: boolean; noop?: boolean; error?: string }>
         onEvent: (callback: (payload: DesktopUpdateEvent) => void) => () => void
         onRunnerEvent: (callback: (payload: DesktopRunnerUpdateEvent) => void) => () => void
-      }
-      recorder?: {
-        startWithToolbar?: () => Promise<boolean>
-        pause?: () => Promise<boolean>
-        resume?: () => Promise<boolean>
-        stop?: () => Promise<boolean>
-        setData?: (data: ArrayBuffer) => Promise<boolean>
-        finishUpload?: () => Promise<string>
-        hideToolbar?: () => Promise<boolean>
-        moveToolbar?: (pos: { x: number; y: number }) => Promise<boolean>
-        onFinished?: (callback: (uri: string) => void) => () => void
-        onStopped?: (callback: () => void) => () => void
-        onUploadStarted?: (callback: () => void) => () => void
-        onProgress?: (callback: (payload: RecorderProgressPayload) => void) => () => void
-        onFailed?: (callback: (payload: { message: string }) => void) => () => void
       }
     }
   }
@@ -212,17 +199,6 @@ export type DesktopRunnerStatusEvent =
   | { type: 'tools_changed'; tools: unknown[] }
   | { type: 'stopped'; reason?: string; errors: string[] }
   | { type: 'error'; phase: string; error: Error }
-
-// Recorder upload progress payload, broadcast every ~100ms during the
-// Desktop → Backend HTTP upload (XHR `upload.onprogress`, throttled). The
-// renderer's toolbar / composer subscribe to show a live progress bar.
-export interface RecorderProgressPayload {
-  bytesSent: number
-  totalBytes: number
-  percent: number
-  bytesPerSec: number
-  etaMs: number | null
-}
 
 export interface ZastConnection {
   baseUrl: string

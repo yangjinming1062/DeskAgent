@@ -592,7 +592,7 @@ export const en: Translations = {
     scheduled_tasks: { label: 'Scheduled Tasks', description: 'Cron triggers and recurring schedules.' },
     agent_delegation: { label: 'Agent Delegation', description: 'Spawn sub-sessions and sub-agents.' },
     computer_use: { label: 'Computer Use', description: 'Drive the desktop via CUA / Win backends.' },
-    media_analysis: { label: 'Media Analysis', description: 'Image and video understanding.' }
+    media_analysis: { label: 'Media Analysis', description: 'Image understanding.' }
   },
 
   agents: {

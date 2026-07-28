@@ -6,9 +6,8 @@ import { resolveGatewayWsUrl } from '@/lib/gateway-ws-url'
 import { reconnectBackoffMs } from '@/lib/reconnect'
 import { logout } from '@/store/auth'
 import { applyDesktopBootProgress, completeDesktopBoot, failDesktopBoot, setDesktopBootStep } from '@/store/boot'
-import { reportPrimaryGatewayState, setPrimaryGateway, setRunnerOnline, tearDownPrimaryGateway } from '@/store/gateway'
+import { reportPrimaryGatewayState, setConnection, setPrimaryGateway, setRunnerOnline, tearDownPrimaryGateway } from '@/store/gateway'
 import { notifyError } from '@/store/notifications'
-import { setConnection, setSessionsLoading } from '@/store/session'
 import type { RpcEvent } from '@/types/zast'
 import { ZastGateway } from '@/zast'
 
@@ -63,32 +62,12 @@ interface GatewayBootOptions {
     connection: Awaited<ReturnType<NonNullable<typeof window.zastDesktop>['getConnection']>> | null
   ) => void
   onGatewayReady: (gateway: ZastGateway | null) => void
-  refreshZastConfig: () => Promise<void>
-  refreshSessions: () => Promise<void>
 }
 
-export function useGatewayBoot({
-  handleGatewayEvent,
-  onConnectionReady,
-  onGatewayReady,
-  refreshZastConfig,
-  refreshSessions
-}: GatewayBootOptions) {
-  const callbacksRef = useRef({
-    handleGatewayEvent,
-    onConnectionReady,
-    onGatewayReady,
-    refreshZastConfig,
-    refreshSessions
-  })
+export function useGatewayBoot({ handleGatewayEvent, onConnectionReady, onGatewayReady }: GatewayBootOptions) {
+  const callbacksRef = useRef({ handleGatewayEvent, onConnectionReady, onGatewayReady })
 
-  callbacksRef.current = {
-    handleGatewayEvent,
-    onConnectionReady,
-    onGatewayReady,
-    refreshZastConfig,
-    refreshSessions
-  }
+  callbacksRef.current = { handleGatewayEvent, onConnectionReady, onGatewayReady }
 
   useEffect(() => {
     let cancelled = false
@@ -101,23 +80,17 @@ export function useGatewayBoot({
 
     if (!desktop) {
       failDesktopBoot('Desktop IPC bridge is unavailable.')
-      setSessionsLoading(false)
 
       return () => void (cancelled = true)
     }
 
     // macOS sleep silently drops the renderer's WebSocket. The backend Python
     // process keeps running, but nothing re-opened the socket on wake, so the
-    // composer stayed disabled forever on "Starting Zast...". Once the
-    // initial boot succeeds we treat any non-open state as recoverable and
-    // reconnect with backoff, and we nudge a reconnect on the OS/browser
-    // signals that fire around wake (power resume, network online, the window
-    // becoming visible).
+    // app stayed disabled forever on "Starting…". Once the initial boot
+    // succeeds we treat any non-open state as recoverable and reconnect with
+    // backoff, and we nudge a reconnect on the OS/browser signals that fire
+    // around wake (power resume, network online, the window becoming visible).
     let bootCompleted = false
-    // bootCompleted = initial setup done; treat closed/error as recoverable.
-    // bootOverlayDismissed = completeDesktopBoot() has already been fired; don't fire it again.
-    // They're orthogonal: the post-wake "open" event must dismiss the overlay even
-    // though bootCompleted was set on a previous boot.
     let bootOverlayDismissed = false
     let reconnecting = false
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null
@@ -127,10 +100,6 @@ export function useGatewayBoot({
     // identical error toasts (and their haptics). Reset on the next clean open.
     let reauthNotified = false
 
-    // completeDesktopBoot() must fire exactly once: the boot() flow calls it
-    // after refreshZastConfig/refreshSessions, but a fast-path "open" event
-    // from onState can also call it on post-wake reconnects. A simple flag
-    // dedupes both call sites regardless of arrival order.
     const dismissOverlayOnce = () => {
       if (bootOverlayDismissed) {
         return
@@ -140,9 +109,6 @@ export function useGatewayBoot({
       completeDesktopBoot()
     }
 
-    // Wrap the live getter in a call so TS control-flow analysis doesn't narrow
-    // `connectionState` to a constant across the early-return guards (the state
-    // genuinely changes between reads).
     const gatewayOpen = () => gateway.connectionState === 'open'
 
     const clearReconnectTimer = () => {
@@ -170,7 +136,7 @@ export function useGatewayBoot({
         // Re-mint the WS URL before reconnecting. OAuth tickets are single-use
         // with a short TTL, so the ticket baked into the cached conn.wsUrl is
         // dead on every reconnect after the initial boot — reusing it surfaces
-        // as an opaque "Could not connect to Zast gateway". resolveGatewayWsUrl
+        // as an opaque "Could not connect to gateway". resolveGatewayWsUrl
         // mints a fresh ticket (or throws a reauth error in OAuth mode rather
         // than connecting with a stale one). For local/token gateways the URL
         // carries a long-lived token and the re-mint is a cheap no-op.
@@ -181,13 +147,8 @@ export function useGatewayBoot({
           return
         }
 
-        // Sync runner tool schemas to the backend after reconnect.
         void syncRunnerTools(gateway)
-
         reconnectAttempt = 0
-        // Resync state that may have moved on the backend while we were asleep.
-        await callbacksRef.current.refreshZastConfig().catch(() => undefined)
-        await callbacksRef.current.refreshSessions().catch(() => undefined)
       } catch {
         // Transport failure — fall through to the backoff in the finally block.
       } finally {
@@ -251,7 +212,7 @@ export function useGatewayBoot({
 
         // On a normal post-wake reconnect, nothing calls completeDesktopBoot()
         // afterwards, so dismiss the boot-progress overlay here once we're open
-        // again — otherwise it sticks at ~94%. A no-op on the initial boot.
+        // again — otherwise it sticks. A no-op on the initial boot.
         if (bootCompleted) {
           dismissOverlayOnce()
         }
@@ -262,16 +223,12 @@ export function useGatewayBoot({
           return
         }
 
-        // The socket dropped after a healthy boot (typically sleep/wake). Try
-        // to bring it back instead of leaving the composer stuck disabled.
         scheduleReconnect()
       }
     })
 
     const offEvent = gateway.onEvent(event => callbacksRef.current.handleGatewayEvent(event))
 
-    // Wake signals: power resume (macOS/Windows), network coming back, and the
-    // window regaining focus/visibility. Each nudges an immediate reconnect.
     const offPowerResume = desktop.onPowerResume?.(() => reconnectNow())
 
     const onOnline = () => reconnectNow()
@@ -286,8 +243,6 @@ export function useGatewayBoot({
     document.addEventListener('visibilitychange', onVisible)
 
     const offWindowState = desktop.onWindowStateChanged?.(payload => {
-      // Hook left for the future window-state payload merge; no-op until the
-      // caller wires a real connection object in via publish().
       void payload
     })
 
@@ -317,11 +272,6 @@ export function useGatewayBoot({
           progress: 95
         })
         publish(conn)
-        // Mint a fresh WS URL right before connecting. For OAuth gateways the
-        // ticket is single-use with a short TTL, so the ticket baked into
-        // conn.wsUrl is stale; resolveGatewayWsUrl() re-mints it and, on
-        // failure, throws a reauth error rather than connecting with a dead
-        // ticket (which would surface as an opaque "connection closed").
         const wsUrl = await resolveGatewayWsUrl(desktop, conn)
         await gateway.connect(wsUrl)
 
@@ -329,26 +279,7 @@ export function useGatewayBoot({
           return
         }
 
-        // Sync runner tool schemas to the backend so the LLM can invoke them.
         void syncRunnerTools(gateway)
-
-        setDesktopBootStep({
-          phase: 'renderer.config',
-          message: translateNow('boot.steps.loadingSettings'),
-          progress: 97
-        })
-        await callbacksRef.current.refreshZastConfig()
-
-        if (cancelled) {
-          return
-        }
-
-        setDesktopBootStep({
-          phase: 'renderer.sessions',
-          message: translateNow('boot.steps.loadingSessions'),
-          progress: 99
-        })
-        await callbacksRef.current.refreshSessions()
         dismissOverlayOnce()
         bootCompleted = true
       } catch (err) {
@@ -356,7 +287,6 @@ export function useGatewayBoot({
           const message = err instanceof Error ? err.message : String(err)
           failDesktopBoot(message)
           notifyError(err, translateNow('boot.errors.desktopBootFailed'))
-          setSessionsLoading(false)
         }
       }
     }

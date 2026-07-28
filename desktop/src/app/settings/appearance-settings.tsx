@@ -1,4 +1,3 @@
-import { useStore } from '@nanostores/react'
 
 import { LanguageSwitcher } from '@/components/language-switcher'
 import { SegmentedControl } from '@/components/ui/segmented-control'
@@ -6,7 +5,6 @@ import { useI18n } from '@/i18n'
 import { triggerHaptic } from '@/lib/haptics'
 import { Check, Palette } from '@/lib/icons'
 import { cn } from '@/lib/utils'
-import { $toolViewMode, setToolViewMode } from '@/store/tool-view'
 import { useTheme } from '@/themes/context'
 import { BUILTIN_THEMES } from '@/themes/presets'
 
@@ -56,15 +54,9 @@ function ThemePreview({ name }: { name: string }) {
 export function AppearanceSettings() {
   const { t, isSavingLocale } = useI18n()
   const { themeName, mode, availableThemes, setTheme, setMode } = useTheme()
-  const toolViewMode = useStore($toolViewMode)
   const a = t.settings.appearance
 
   const modeOptions = MODE_OPTIONS.map(({ id, icon }) => ({ icon, id, label: t.settings.modeOptions[id].label }))
-
-  const toolOptions = [
-    { id: 'product', label: a.product },
-    { id: 'technical', label: a.technical }
-  ] as const
 
   return (
     <SettingsContent>
@@ -136,21 +128,6 @@ export function AppearanceSettings() {
             description={a.themeDesc}
             title={a.themeTitle}
             wide
-          />
-
-          <ListRow
-            action={
-              <SegmentedControl
-                onChange={id => {
-                  triggerHaptic('selection')
-                  setToolViewMode(id)
-                }}
-                options={toolOptions}
-                value={toolViewMode}
-              />
-            }
-            description={a.toolViewDesc}
-            title={a.toolViewTitle}
           />
         </div>
       </SettingsSubsection>

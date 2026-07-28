@@ -118,6 +118,16 @@ contextBridge.exposeInMainWorld('zastDesktop', {
     ipcRenderer.on('zast:runner:status', listener)
     return () => ipcRenderer.removeListener('zast:runner:status', listener)
   },
+  onOpenSettings: callback => {
+    const listener = () => callback()
+    ipcRenderer.on('zast:tray:open-settings', listener)
+    return () => ipcRenderer.removeListener('zast:tray:open-settings', listener)
+  },
+  onTrayLogout: callback => {
+    const listener = () => callback()
+    ipcRenderer.on('zast:tray:logout', listener)
+    return () => ipcRenderer.removeListener('zast:tray:logout', listener)
+  },
   getVersion: () => ipcRenderer.invoke('zast:version'),
   update: {
     check: () => ipcRenderer.invoke('zast:update:check'),
@@ -134,41 +144,6 @@ contextBridge.exposeInMainWorld('zastDesktop', {
       const listener = (_event, payload) => callback(payload)
       ipcRenderer.on('zast:runner-update-event', listener)
       return () => ipcRenderer.removeListener('zast:runner-update-event', listener)
-    }
-  },
-  recorder: {
-    startWithToolbar: () => ipcRenderer.invoke('zast:recorder:startWithToolbar'),
-    pause: () => ipcRenderer.invoke('zast:recorder:pause'),
-    resume: () => ipcRenderer.invoke('zast:recorder:resume'),
-    stop: () => ipcRenderer.invoke('zast:recorder:stop'),
-    setData: data => ipcRenderer.invoke('zast:recorder:setData', data),
-    finishUpload: () => ipcRenderer.invoke('zast:recorder:finishUpload'),
-    hideToolbar: () => ipcRenderer.invoke('zast:recorder:hideToolbar'),
-    moveToolbar: pos => ipcRenderer.invoke('zast:recorder:moveToolbar', pos),
-    onFinished: callback => {
-      const listener = (_event, uri) => callback(uri)
-      ipcRenderer.on('zast:recorder:finished', listener)
-      return () => ipcRenderer.removeListener('zast:recorder:finished', listener)
-    },
-    onStopped: callback => {
-      const listener = () => callback()
-      ipcRenderer.on('zast:recorder:stopped', listener)
-      return () => ipcRenderer.removeListener('zast:recorder:stopped', listener)
-    },
-    onUploadStarted: callback => {
-      const listener = () => callback()
-      ipcRenderer.on('zast:recorder:upload-started', listener)
-      return () => ipcRenderer.removeListener('zast:recorder:upload-started', listener)
-    },
-    onProgress: callback => {
-      const listener = (_event, payload) => callback(payload)
-      ipcRenderer.on('zast:recorder:progress', listener)
-      return () => ipcRenderer.removeListener('zast:recorder:progress', listener)
-    },
-    onFailed: callback => {
-      const listener = (_event, payload) => callback(payload)
-      ipcRenderer.on('zast:recorder:failed', listener)
-      return () => ipcRenderer.removeListener('zast:recorder:failed', listener)
     }
   }
 })

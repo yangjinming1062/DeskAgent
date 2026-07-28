@@ -1,7 +1,7 @@
 import { atom } from 'nanostores'
 
+import type { ZastConnection } from '@/global'
 import type { ConnectionState } from '@/lib/gateway-protocol'
-import { setGatewayState } from '@/store/session'
 import type { ZastGateway } from '@/zast'
 
 // Tracks whether the local Runner is online and has synced its tools — lets
@@ -21,6 +21,20 @@ export function setRunnerOnline(online: boolean): void {
 // (e.g. model overlays) that call gateway methods without the instance
 // threaded down through props.
 export const $gateway = atom<ZastGateway | null>(null)
+
+// Live backend connection snapshot + WS state. Consumed by the gateway hooks
+// and the connecting overlay; owned here (not in a session store) because they
+// describe the single backend link, independent of any conversation.
+export const $connection = atom<ZastConnection | null>(null)
+export const $gatewayState = atom<ConnectionState>('idle')
+
+export function setConnection(next: ZastConnection | null): void {
+  $connection.set(next)
+}
+
+export function setGatewayState(next: ConnectionState): void {
+  $gatewayState.set(next)
+}
 
 export function setPrimaryGateway(gateway: ZastGateway | null): void {
   $gateway.set(gateway)
