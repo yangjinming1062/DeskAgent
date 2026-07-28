@@ -30,7 +30,7 @@ class SSHEnvironment(BaseEnvironment):
         self.user = user
         self.port = port
         self.key_path = key_path
-        self.control_dir = Path(tempfile.gettempdir()) / "zast-ssh"
+        self.control_dir = Path(tempfile.gettempdir()) / "deskagent-ssh"
         self.control_dir.mkdir(parents=True, exist_ok=True)
         _socket_id = hashlib.sha256(f"{user}@{host}:{port}".encode()).hexdigest()[:16]
         self.control_socket = self.control_dir / f"{_socket_id}.sock"
@@ -39,7 +39,7 @@ class SSHEnvironment(BaseEnvironment):
         self._remote_home = self._detect_remote_home()
         self._ensure_remote_dirs()
         self._sync_manager = FileSyncManager(
-            get_files_fn=lambda: iter_sync_files(f"{self._remote_home}/.zast"),
+            get_files_fn=lambda: iter_sync_files(f"{self._remote_home}/.deskagent"),
             upload_fn=self._scp_upload,
             delete_fn=self._ssh_delete,
             bulk_upload_fn=self._ssh_bulk_upload,
@@ -95,7 +95,7 @@ class SSHEnvironment(BaseEnvironment):
         return "/root" if self.user == "root" else f"/home/{self.user}"
 
     def _ensure_remote_dirs(self) -> None:
-        base = f"{self._remote_home}/.zast"
+        base = f"{self._remote_home}/.deskagent"
         cmd = self._build_ssh_command()
         cmd.append(quoted_mkdir_command([base, f"{base}/skills", f"{base}/credentials", f"{base}/cache"]))
         subprocess.run(cmd, capture_output=True, text=True, timeout=10, stdin=subprocess.DEVNULL)
@@ -116,13 +116,13 @@ class SSHEnvironment(BaseEnvironment):
     def _ssh_bulk_upload(self, files: list[tuple[str, str]]) -> None:
         if not files:
             return
-        base = f"{self._remote_home}/.zast"
+        base = f"{self._remote_home}/.deskagent"
         if parents := unique_parent_dirs(files):
             cmd = self._build_ssh_command()
             cmd.append(quoted_mkdir_command(parents))
             if subprocess.run(cmd, capture_output=True, text=True, timeout=30, stdin=subprocess.DEVNULL).returncode != 0:
                 raise RuntimeError("remote mkdir failed")
-        with tempfile.TemporaryDirectory(prefix="zast-ssh-bulk-") as staging:
+        with tempfile.TemporaryDirectory(prefix="deskagent-ssh-bulk-") as staging:
             for host_path, remote_path in files:
                 try:
                     rel_remote = os.path.relpath(remote_path, base)
@@ -165,7 +165,7 @@ class SSHEnvironment(BaseEnvironment):
 
     def _ssh_bulk_download(self, dest: Path) -> None:
         ssh_cmd = self._build_ssh_command()
-        ssh_cmd.append(f"tar cf - -C / {shlex.quote(f'{self._remote_home}/.zast'.lstrip('/'))}")
+        ssh_cmd.append(f"tar cf - -C / {shlex.quote(f'{self._remote_home}/.deskagent'.lstrip('/'))}")
         with open(dest, "wb") as f:
             if subprocess.run(ssh_cmd, stdin=subprocess.DEVNULL, stdout=f, stderr=subprocess.PIPE, timeout=120).returncode != 0:
                 raise RuntimeError("SSH bulk download failed")

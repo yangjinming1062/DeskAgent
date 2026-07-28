@@ -10,15 +10,15 @@ from .config import get_env_type
 from .config import is_truthy_value
 from .config import load_config
 from .constants import CREATE_NO_WINDOW
+from .constants import get_deskagent_dir
+from .constants import get_deskagent_home
+from .constants import get_deskagent_home_override
 from .constants import get_skills_dir
 from .constants import get_subprocess_home
-from .constants import get_zast_dir
-from .constants import get_zast_home
-from .constants import get_zast_home_override
 from .constants import is_termux
 from .constants import IS_WINDOWS
 from .constants import secure_parent_dir
-from .env_helpers import inject_context_zast_home
+from .env_helpers import inject_context_deskagent_home
 from .env_helpers import sanitize_subprocess_env
 from .file_io import atomic_replace
 from .file_safety import build_write_denied_paths
@@ -54,12 +54,12 @@ __all__ = [
     "load_config",
     "get_skills_dir",
     "get_subprocess_home",
-    "get_zast_dir",
-    "get_zast_home",
-    "get_zast_home_override",
+    "get_deskagent_dir",
+    "get_deskagent_home",
+    "get_deskagent_home_override",
     "is_termux",
     "secure_parent_dir",
-    "inject_context_zast_home",
+    "inject_context_deskagent_home",
     "sanitize_subprocess_env",
     "atomic_replace",
     "build_write_denied_paths",

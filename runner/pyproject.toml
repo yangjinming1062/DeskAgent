@@ -3,11 +3,11 @@ requires = ["setuptools>=77.0,<83"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "zast-agent"
+name = "desk-agent"
 version = "0.2.0"
-description = "Zast Runner — stateless local tool executor for the Zast agent"
+description = "DeskAgent Runner — stateless local tool executor for the DeskAgent companion"
 requires-python = ">=3.11"
-authors = [{ name = "Zast" }]
+authors = [{ name = "DeskAgent" }]
 license = "MIT"
 dependencies = [
   "httpx[socks]==0.28.1",

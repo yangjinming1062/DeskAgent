@@ -34,7 +34,7 @@ def set_interrupt(active: bool, thread_id: int | None = None) -> None:
 def set_global_interrupt(active: bool) -> None:
     """Mark the runner as interrupted across all threads.
 
-    The WS message loop sets ``True`` for ``zast.cancel`` requests so
+    The WS message loop sets ``True`` for ``deskagent.cancel`` requests so
     in-flight tool handlers from other requests see the flag on their
     next ``is_interrupted()`` check.  ``False`` is set at the start of
     every non-cancel request to clear a stale flag from a prior cancel.

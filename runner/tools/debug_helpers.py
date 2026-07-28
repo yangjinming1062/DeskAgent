@@ -5,7 +5,7 @@ import uuid
 from typing import Any
 
 from utils import cfg_get
-from utils import get_zast_home
+from utils import get_deskagent_home
 from utils import load_config
 
 logger = logging.getLogger(__name__)
@@ -19,7 +19,7 @@ class DebugSession:
         # configured without env-var injection.
         self.enabled = bool(cfg_get(load_config(), "debug", env_var.lower(), default=False))
         self.session_id = str(uuid.uuid4()) if self.enabled else ""
-        self.log_dir = get_zast_home() / "logs"
+        self.log_dir = get_deskagent_home() / "logs"
         self._calls: list[dict[str, Any]] = []
         self._start_time = datetime.datetime.now().isoformat() if self.enabled else ""
         if self.enabled:

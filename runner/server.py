@@ -19,10 +19,10 @@ from tools.tool_output_limits import reset_cache as reset_output_limits_cache
 from tools.toolsets import get_disabled_toolset_ids
 from utils import pid_exists
 from utils import set_handler
-from utils.constants import get_zast_home
+from utils.constants import get_deskagent_home
 
 logging.basicConfig(level=logging.WARNING)
-logger = logging.getLogger("zast_runner")
+logger = logging.getLogger("deskagent_runner")
 
 _ACTIVE_WS = None
 _RUNNER_LOOP: asyncio.AbstractEventLoop | None = None
@@ -135,13 +135,13 @@ async def process_request(ws, req):
     # workers spawned before the cancel can still observe it; it is
     # cleared here on the *next* request rather than in the cancel's
     # own finally-block, which runs before those workers poll.
-    if method == "zast.cancel":
+    if method == "deskagent.cancel":
         set_global_interrupt(True)
     else:
         set_global_interrupt(False)
     set_interrupt(False, thread_id=None)
     try:
-        if method == "zast.cancel":
+        if method == "deskagent.cancel":
             await _send(ws, req_id, result={"ok": True})
             return
 
@@ -160,7 +160,7 @@ async def process_request(ws, req):
             reset_max_read_chars_cache()
             # Off-load: reload_mcp_servers joins the MCP loop thread and waits
             # up to 15s on shutdown — running it inline would block the
-            # Runner's WS event loop and starve zast.cancel / heartbeats.
+            # Runner's WS event loop and starve deskagent.cancel / heartbeats.
             result = await asyncio.to_thread(reload_mcp_servers)
             await _send(ws, req_id, result=result)
             return
@@ -258,13 +258,13 @@ async def runner_loop(ws_url: str):
 
 
 def _read_endpoint_url() -> str | None:
-    """Read ``$ZAST_HOME/desktop-endpoint.json`` and return a WS URL.
+    """Read ``$DESKAGENT_HOME/desktop-endpoint.json`` and return a WS URL.
 
     Returns ``None`` if the file is missing, malformed, or the Desktop PID
     is no longer alive (stale file from a crashed Desktop).
     """
     try:
-        endpoint_path = get_zast_home() / "desktop-endpoint.json"
+        endpoint_path = get_deskagent_home() / "desktop-endpoint.json"
         if not endpoint_path.exists():
             return None
         data = json.loads(endpoint_path.read_text(encoding="utf-8"))
@@ -284,7 +284,7 @@ def _read_endpoint_url() -> str | None:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Zast Runner Server")
+    parser = argparse.ArgumentParser(description="DeskAgent Runner Server")
     parser.add_argument("--desktop-ws", required=True, help="Desktop WebSocket URL (e.g. ws://127.0.0.1:8080/rpc)")
     args = parser.parse_args()
 

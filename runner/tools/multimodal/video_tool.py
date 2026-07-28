@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from utils import call_llm
-from utils import get_zast_dir
+from utils import get_deskagent_dir
 
 from ..debug_helpers import DebugSession
 from ..interrupt import is_interrupted
@@ -87,7 +87,7 @@ async def video_analyze_tool(video_url: str, user_prompt: str) -> str:
         if local_path.is_file():
             temp_path, should_cleanup = local_path, False
         elif await _validate_image_url_async(video_url):
-            temp_path = get_zast_dir("cache/video", "temp_video_files") / f"temp_video_{uuid.uuid4()}.mp4"
+            temp_path = get_deskagent_dir("cache/video", "temp_video_files") / f"temp_video_{uuid.uuid4()}.mp4"
             await _download_video(video_url, temp_path)
         else:
             raise ValueError("Invalid video source. Provide an HTTP/HTTPS URL or a valid local file path.")

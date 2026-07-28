@@ -43,7 +43,7 @@ from mcp.types import ServerNotification
 from mcp.types import TextContent
 from mcp.types import ToolListChangedNotification
 from mcp.types import ToolUseContent
-from utils import get_zast_home
+from utils import get_deskagent_home
 from utils import IS_WINDOWS
 from utils import kill_tree
 from utils import load_config
@@ -69,7 +69,7 @@ logger = logging.getLogger(__name__)
 # corrupts the display and can hang the session.
 #
 # Instead we redirect every stdio MCP subprocess's stderr into a shared
-# per-profile log file (~/.zast/logs/mcp-stderr.log), tagged with the
+# per-profile log file (~/.deskagent/logs/mcp-stderr.log), tagged with the
 # server name so individual servers remain debuggable.
 #
 # Fallback is os.devnull if opening the log file fails for any reason.
@@ -92,7 +92,7 @@ def _get_mcp_stderr_log() -> Any:
             return _mcp_stderr_log_fh
         try:
 
-            log_dir = get_zast_home() / "logs"
+            log_dir = get_deskagent_home() / "logs"
             log_dir.mkdir(parents=True, exist_ok=True)
             log_path = log_dir / "mcp-stderr.log"
             # Line-buffered so server output lands on disk promptly; errors=
@@ -294,13 +294,13 @@ def _resolve_stdio_command(command: str, env: dict) -> tuple[str, dict]:
         if which_hit:
             resolved_command = which_hit
         elif resolved_command in {"npx", "npm", "node"}:
-            zast_home = str(get_zast_home())
+            deskagent_home = str(get_deskagent_home())
             candidates = [
-                os.path.join(zast_home, "node", "bin", resolved_command),
+                os.path.join(deskagent_home, "node", "bin", resolved_command),
                 os.path.join(os.path.expanduser("~"), ".local", "bin", resolved_command),
                 # /usr/local/bin is the canonical install location for Node on
                 # Linux from-source builds, the upstream node:bookworm-slim
-                # image (which the Zast Docker image copies node + npm +
+                # image (which the DeskAgent Docker image copies node + npm +
                 # corepack from since #4977), and macOS Homebrew on Intel.
                 # Without this candidate, any MCP server configured with an
                 # env.PATH that omits /usr/local/bin (a common pattern when
@@ -322,7 +322,7 @@ def _resolve_stdio_command(command: str, env: dict) -> tuple[str, dict]:
     return resolved_command, resolved_env
 
 
-# MCP ImageContent block → Zast MEDIA tag
+# MCP ImageContent block → DeskAgent MEDIA tag
 
 _image_cache_dir: Path | None = None
 
@@ -330,7 +330,7 @@ _image_cache_dir: Path | None = None
 def _get_image_cache_dir() -> Path:
     global _image_cache_dir
     if _image_cache_dir is None:
-        _image_cache_dir = Path(tempfile.mkdtemp(prefix="zast-mcp-images-"))
+        _image_cache_dir = Path(tempfile.mkdtemp(prefix="deskagent-mcp-images-"))
         atexit.register(shutil.rmtree, _image_cache_dir, ignore_errors=True)
     return _image_cache_dir
 
@@ -927,7 +927,7 @@ class MCPServerTask:
         ``ResourceListChangedNotification`` are deliberately ignored at the
         Runner level — the runner's `tools_list` / `skill_view` surface only
         reflects tools, and prompts/resources are not yet exposed through
-        any Zast-side tool. Callers who need prompt/resource updates must
+        any DeskAgent-side tool. Callers who need prompt/resource updates must
         send ``mcp.reload`` via the Desktop ``reload.mcp`` JSON-RPC path.
         """
 
@@ -1085,9 +1085,9 @@ class MCPServerTask:
             raise ImportError(
                 f"MCP server '{self.name}' requires the 'mcp' Python SDK, but "
                 "it is not installed. Install with:\n"
-                "  pip install 'zast-agent[mcp]'\n"
+                "  pip install 'deskagent-agent[mcp]'\n"
                 "or (full install):\n"
-                "  pip install 'zast-agent[all]'"
+                "  pip install 'deskagent-agent[all]'"
             )
 
         command = config.get("command")
@@ -1119,7 +1119,7 @@ class MCPServerTask:
 
         # (FastMCP banners, slack-mcp startup JSON, etc.) don't dump onto
         # the user's TTY and corrupt the TUI.  Preserves debuggability via
-        # ~/.zast/logs/mcp-stderr.log.
+        # ~/.deskagent/logs/mcp-stderr.log.
         _write_stderr_log_header(self.name)
         _errlog = _get_mcp_stderr_log()
         try:
@@ -1858,8 +1858,8 @@ def _handle_auth_error_and_retry(
         {
             "error": (
                 f"MCP server '{server_name}' requires re-authentication. "
-                f"Run `zast mcp login {server_name}` (or delete the tokens "
-                f"file under ~/.zast/mcp-tokens/ and restart). Do NOT retry "
+                f"Run `deskagent mcp login {server_name}` (or delete the tokens "
+                f"file under ~/.deskagent/mcp-tokens/ and restart). Do NOT retry "
                 f"this tool — ask the user to re-authenticate."
             ),
             "needs_reauth": True,
@@ -2175,7 +2175,7 @@ def _interpolate_env_vars(value):
 
 
 def _load_mcp_config() -> dict[str, dict]:
-    """Read ``mcp_servers`` from the Zast config file.
+    """Read ``mcp_servers`` from the DeskAgent config file.
 
     Returns a dict of ``{server_name: server_config}`` or empty dict.
     Server config can contain either ``command``/``args``/``env`` for stdio
@@ -2183,7 +2183,7 @@ def _load_mcp_config() -> dict[str, dict]:
     ``timeout``, ``connect_timeout``, and ``auth`` overrides.
 
     ``${ENV_VAR}`` placeholders in string values are resolved from
-    ``os.environ`` (which includes ``~/.zast/.env`` loaded at startup).
+    ``os.environ`` (which includes ``~/.deskagent/.env`` loaded at startup).
     """
     try:
 
@@ -2194,7 +2194,7 @@ def _load_mcp_config() -> dict[str, dict]:
         # Ensure .env vars are available for interpolation
         try:
 
-            load_zast_dotenv()
+            load_deskagent_dotenv()
         except Exception:
             pass
         return {name: _interpolate_env_vars(cfg) for name, cfg in servers.items()}
@@ -2285,13 +2285,13 @@ def _make_tool_handler(server_name: str, tool_name: str, tool_timeout: float):
 
             # include ImageContent blocks (screenshot / Blockbench / Playwright
             # etc.); cache those via the gateway's image-cache helper so they
-            # flow through Zast' MEDIA: tag convention and out to messaging
+            # flow through DeskAgent' MEDIA: tag convention and out to messaging
             # adapters that render images natively. Without this, image blocks
             # were silently dropped and the agent got an empty response.
             #
             # Distilled from #17915 (c3115644151) and #10848 (gnanirahulnutakki),
             # both too stale to cherry-pick. #10848's approach (integrate with
-            # Zast' MEDIA tag + cache_image_from_bytes) was the cleaner of
+            # DeskAgent' MEDIA tag + cache_image_from_bytes) was the cleaner of
             # the two — plugs into existing infrastructure.
             parts: list[str] = []
             for block in result.content or []:
@@ -2733,7 +2733,7 @@ def _normalize_mcp_input_schema(schema: dict | None) -> dict:
 def sanitize_mcp_name_component(value: str) -> str:
     """Return an MCP name component safe for tool and prefix generation.
 
-    Preserves Zast's historical behavior of converting hyphens to
+    Preserves DeskAgent's historical behavior of converting hyphens to
     underscores, and also replaces any other character outside
     ``[A-Za-z0-9_]`` with ``_`` so generated tool names are compatible with
     provider validation rules.
@@ -2742,7 +2742,7 @@ def sanitize_mcp_name_component(value: str) -> str:
 
 
 def _convert_mcp_schema(server_name: str, mcp_tool) -> dict:
-    """Convert an MCP tool listing to the Zast registry schema format.
+    """Convert an MCP tool listing to the DeskAgent registry schema format.
 
     Args:
         server_name: The logical server name for prefixing.
@@ -3300,9 +3300,9 @@ def get_mcp_status() -> list[dict]:
 def probe_mcp_server_tools() -> dict[str, list[tuple]]:
     """Temporarily connect to configured MCP servers and list their tools.
 
-    Designed for ``zast tools`` interactive configuration — connects to each
+    Designed for ``deskagent tools`` interactive configuration — connects to each
     enabled server, grabs tool names and descriptions, then disconnects.
-    Does NOT register tools in the Zast registry.
+    Does NOT register tools in the DeskAgent registry.
 
     Returns:
         Dict mapping server name to list of (tool_name, description) tuples.
@@ -3413,7 +3413,7 @@ def reload_mcp_servers() -> dict:
 
     Called by the ``mcp.reload`` first-class JSON-RPC method (server.py) in
     response to a backend ``reload.mcp`` request. Re-reads
-    ``$ZAST_HOME/config.yaml`` on each call so the next ``mcp_*`` tool call
+    ``$DESKAGENT_HOME/config.yaml`` on each call so the next ``mcp_*`` tool call
     has live tools without needing a Runner restart.
 
     Returns ``{"reloaded": int, "errors": int, "servers": int, "connected": int}``
@@ -3477,7 +3477,7 @@ def _kill_orphaned_mcp_children(include_active: bool = False) -> None:
     sessions are not disrupted.
 
     Sends SIGTERM, waits 2 seconds, then escalates to SIGKILL for any
-    survivors, avoiding shared-resource collisions when multiple zast
+    survivors, avoiding shared-resource collisions when multiple deskagent
     processes run on the same host (each has its own ``_stdio_pids`` dict).
 
     On POSIX, signals are sent via ``os.killpg`` to the spawn-time pgid when

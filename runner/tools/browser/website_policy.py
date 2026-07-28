@@ -7,7 +7,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 import yaml
-from utils import get_zast_home
+from utils import get_deskagent_home
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +25,7 @@ _cached_policy_time: float = 0.0
 
 
 def _get_default_config_path() -> Path:
-    return get_zast_home() / "config.yaml"
+    return get_deskagent_home() / "config.yaml"
 
 
 class WebsitePolicyError(Exception):
@@ -113,7 +113,7 @@ def load_website_blocklist(config_path: Path | None = None) -> dict[str, Any]:
     for shared_file in raw_shared_files:
         if isinstance(shared_file, str) and shared_file.strip():
             path = Path(shared_file).expanduser()
-            resolved = path if path.is_absolute() else (get_zast_home() / path).resolve()
+            resolved = path if path.is_absolute() else (get_deskagent_home() / path).resolve()
             for normalized in _iter_blocklist_file_rules(resolved):
                 if (key := (str(resolved), normalized)) not in seen:
                     rules.append({"pattern": normalized, "source": str(resolved)})

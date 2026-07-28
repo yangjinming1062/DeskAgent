@@ -17,7 +17,7 @@ from typing import IO
 from typing import Protocol
 
 from utils import cfg_get
-from utils import get_zast_home
+from utils import get_deskagent_home
 from utils import load_config
 
 from ..interrupt import is_interrupted
@@ -59,7 +59,7 @@ logger = logging.getLogger(__name__)
 
 def get_sandbox_dir() -> Path:
     override = cfg_get(load_config(), "terminal", "sandbox_dir")
-    base = Path(str(override)) if override else (get_zast_home() / "sandboxes")
+    base = Path(str(override)) if override else (get_deskagent_home() / "sandboxes")
     base.mkdir(parents=True, exist_ok=True)
     return base
 
@@ -153,7 +153,7 @@ class _ThreadedProcessHandle:
 
 
 def _cwd_marker(session_id: str) -> str:
-    return f"ZAST_CWD_{session_id}__"
+    return f"DESKAGENT_CWD_{session_id}__"
 
 
 class BaseEnvironment(ABC):
@@ -169,8 +169,8 @@ class BaseEnvironment(ABC):
         self.env = env or {}
         self._session_id = uuid.uuid4().hex[:12]
         temp_dir = self.get_temp_dir().rstrip("/") or "/"
-        self._snapshot_path = f"{temp_dir}/zast-snap-{self._session_id}.sh"
-        self._cwd_file = f"{temp_dir}/zast-cwd-{self._session_id}.txt"
+        self._snapshot_path = f"{temp_dir}/deskagent-snap-{self._session_id}.sh"
+        self._cwd_file = f"{temp_dir}/deskagent-cwd-{self._session_id}.txt"
         self._cwd_marker = _cwd_marker(self._session_id)
         self._snapshot_ready = False
 
@@ -221,17 +221,17 @@ class BaseEnvironment(ABC):
             parts.append(f"source {_quoted_snap} >/dev/null 2>&1 || true")
         parts.append(f"builtin cd -- {self._quote_cwd_for_cd(cwd)} || exit 126")
         parts.append(f"eval '{escaped}'")
-        parts.append("__zast_ec=$?")
+        parts.append("__deskagent_ec=$?")
         if self._snapshot_ready:
             parts.append(f"export -p > {_quoted_snap} 2>/dev/null || true")
         parts.append(f"pwd -P > {_quoted_cwd_file} 2>/dev/null || true")
         parts.append(f"printf '\\n{self._cwd_marker}%s{self._cwd_marker}\\n' \"$(pwd -P)\"")
-        parts.append("exit $__zast_ec")
+        parts.append("exit $__deskagent_ec")
         return "\n".join(parts)
 
     @staticmethod
     def _embed_stdin_heredoc(command: str, stdin_data: str) -> str:
-        delimiter = f"ZAST_STDIN_{uuid.uuid4().hex[:12]}"
+        delimiter = f"DESKAGENT_STDIN_{uuid.uuid4().hex[:12]}"
         return f"{command} << '{delimiter}'\n{stdin_data}\n{delimiter}"
 
     def _wait_for_process(self, proc: ProcessHandle, timeout: int = 120) -> dict:

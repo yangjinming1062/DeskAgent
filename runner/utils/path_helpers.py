@@ -50,8 +50,8 @@ def find_bash() -> str:
 
     lap = os.environ.get("LOCALAPPDATA", "")
     for candidate in (
-        os.path.join(lap, "zast", "git", "bin", "bash.exe"),
-        os.path.join(lap, "zast", "git", "usr", "bin", "bash.exe"),
+        os.path.join(lap, "deskagent", "git", "bin", "bash.exe"),
+        os.path.join(lap, "deskagent", "git", "usr", "bin", "bash.exe"),
     ):
         if os.path.isfile(candidate):
             return candidate
@@ -64,7 +64,7 @@ def find_bash() -> str:
     ):
         if candidate and os.path.isfile(candidate):
             return candidate
-    raise RuntimeError("Git Bash not found. Install Git for Windows or set ZAST_GIT_BASH_PATH.")
+    raise RuntimeError("Git Bash not found. Install Git for Windows or set DESKAGENT_GIT_BASH_PATH.")
 
 
 def append_sane_path_entries(existing_path: str) -> str:
@@ -77,31 +77,31 @@ def append_sane_path_entries(existing_path: str) -> str:
 
 @functools.lru_cache(maxsize=1)
 def find_python() -> str | None:
-    """Locate the uv-managed Python for the user's zast venv.
+    """Locate the uv-managed Python for the user's deskagent venv.
 
     Lookup order:
-      1. ``ZAST_PYTHON`` env var (explicit override).
-      2. ``$ZAST_HOME/runner/.venv/bin/python`` (POSIX) or
+      1. ``DESKAGENT_PYTHON`` env var (explicit override).
+      2. ``$DESKAGENT_HOME/runner/.venv/bin/python`` (POSIX) or
          ``Scripts\\python.exe`` (Win).
       3. ``uv python find`` against the managed uv (if on PATH or at
-         ``$ZAST_HOME/bin/uv``), parse first line.
+         ``$DESKAGENT_HOME/bin/uv``), parse first line.
 
     Returns ``None`` when no usable interpreter is found; callers fall back
     to ``sys.executable``.
     """
-    if override := os.environ.get("ZAST_PYTHON"):
+    if override := os.environ.get("DESKAGENT_PYTHON"):
         if Path(override).is_file():
             return override
 
-    zast_home = os.environ.get("ZAST_HOME")
-    if not zast_home:
-        # Derive ZAST_HOME using the same logic as constants.get_zast_home()
+    deskagent_home = os.environ.get("DESKAGENT_HOME")
+    if not deskagent_home:
+        # Derive DESKAGENT_HOME using the same logic as constants.get_deskagent_home()
         if _IS_WINDOWS and (lap := os.environ.get("LOCALAPPDATA")):
-            zast_home = str(Path(lap) / "zast")
+            deskagent_home = str(Path(lap) / "deskagent")
         else:
-            zast_home = str(Path.home() / ".zast")
+            deskagent_home = str(Path.home() / ".deskagent")
 
-    root = Path(zast_home) / "runner" / ".venv"
+    root = Path(deskagent_home) / "runner" / ".venv"
     if _IS_WINDOWS:
         candidates = [root / "Scripts" / "python.exe", root / "Scripts" / "python3.exe"]
     else:
@@ -113,9 +113,9 @@ def find_python() -> str | None:
     # Fallback: ask uv for any installed cpython matching requires-python.
     uv_candidates = [shutil.which("uv")]
     if _IS_WINDOWS:
-        uv_candidates.append(str(Path(zast_home) / "bin" / "uv.exe"))
+        uv_candidates.append(str(Path(deskagent_home) / "bin" / "uv.exe"))
     else:
-        uv_candidates.append(str(Path(zast_home) / "bin" / "uv"))
+        uv_candidates.append(str(Path(deskagent_home) / "bin" / "uv"))
     for uv in uv_candidates:
         if not uv or not Path(uv).is_file():
             continue

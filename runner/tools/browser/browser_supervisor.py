@@ -42,7 +42,7 @@ RECENT_DIALOGS_MAX = 20
 # Magic host the injected dialog bridge XHRs to.  Intercepted via the CDP
 
 # has to exist.  Keep this ASCII + URL-safe; we also gate Fetch patterns on it.
-DIALOG_BRIDGE_HOST = "zast-dialog-bridge.invalid"
+DIALOG_BRIDGE_HOST = "deskagent-dialog-bridge.invalid"
 DIALOG_BRIDGE_URL_PATTERN = f"http://{DIALOG_BRIDGE_HOST}/*"
 
 # Script injected into every frame via Page.addScriptToEvaluateOnNewDocument.
@@ -52,9 +52,9 @@ DIALOG_BRIDGE_URL_PATTERN = f"http://{DIALOG_BRIDGE_HOST}/*"
 # in the first place — the overrides take precedence.
 _DIALOG_BRIDGE_SCRIPT = r"""
 (() => {
-  if (window.__zastDialogBridgeInstalled) return;
-  window.__zastDialogBridgeInstalled = true;
-  const ENDPOINT = "http://zast-dialog-bridge.invalid/";
+  if (window.__deskagentDialogBridgeInstalled) return;
+  window.__deskagentDialogBridgeInstalled = true;
+  const ENDPOINT = "http://deskagent-dialog-bridge.invalid/";
   function ask(kind, message, defaultPrompt) {
     try {
       const xhr = new XMLHttpRequest();

@@ -10,8 +10,8 @@ from utils import append_sane_path_entries as _append_missing_sane_path_entries
 from utils import CREATE_NO_WINDOW
 from utils import find_bash
 from utils import get_subprocess_home
-from utils import get_zast_home
-from utils import inject_context_zast_home
+from utils import get_deskagent_home
+from utils import inject_context_deskagent_home
 from utils import IS_WINDOWS
 from utils import kill_tree
 from utils import load_config
@@ -35,7 +35,7 @@ def _make_run_env(env: dict) -> dict:
     run_env = {k: str(v) if v is not None else "" for k, v in (os.environ | env).items()}
     if path_key := _path_env_key(run_env):
         run_env[path_key] = _append_missing_sane_path_entries(run_env.get(path_key, ""))
-    inject_context_zast_home(run_env)
+    inject_context_deskagent_home(run_env)
     if ph := get_subprocess_home():
         run_env["HOME"] = ph
     return run_env
@@ -77,9 +77,9 @@ class LocalEnvironment(BaseEnvironment):
     def get_temp_dir(self) -> str:
         if IS_WINDOWS:
             try:
-                cache_dir = get_zast_home() / "cache" / "terminal"
+                cache_dir = get_deskagent_home() / "cache" / "terminal"
             except Exception:
-                cache_dir = Path(tempfile.gettempdir()) / "zast_terminal"
+                cache_dir = Path(tempfile.gettempdir()) / "deskagent_terminal"
             cache_dir.mkdir(parents=True, exist_ok=True)
             return str(cache_dir).replace("\\", "/")
         for env_var in ("TMPDIR", "TMP", "TEMP"):
@@ -112,7 +112,7 @@ class LocalEnvironment(BaseEnvironment):
         )
         if not IS_WINDOWS:
             try:
-                proc._zast_pgid = os.getpgid(proc.pid)
+                proc._deskagent_pgid = os.getpgid(proc.pid)
             except ProcessLookupError:
                 pass
         if stdin_data is not None:
@@ -156,7 +156,7 @@ class LocalEnvironment(BaseEnvironment):
                 try:
                     pgid = os.getpgid(proc.pid)
                 except ProcessLookupError:
-                    if (pgid := getattr(proc, "_zast_pgid", None)) is None:
+                    if (pgid := getattr(proc, "_deskagent_pgid", None)) is None:
                         raise
                 try:
                     os.killpg(pgid, signal.SIGTERM)

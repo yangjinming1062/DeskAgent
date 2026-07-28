@@ -39,7 +39,7 @@ WRITE_DENIED_PATHS = build_write_denied_paths(_HOME)
 WRITE_DENIED_PREFIXES = build_write_denied_prefixes(_HOME)
 
 _OSC_SEQUENCE_RE = re.compile(r"\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)")
-_FENCE_MARKER_RE = re.compile(r"'?\x07?ZAST_FENCE_[A-Za-z0-9]+__\x07?'?")
+_FENCE_MARKER_RE = re.compile(r"'?\x07?DESKAGENT_FENCE_[A-Za-z0-9]+__\x07?'?")
 _SEARCH_LINE_RE = re.compile(r"^([A-Za-z]:)?(.*?):(\d+):(.*)$")
 _CONTEXT_DELIM_RE = re.compile(r"-(\d+)-")
 _HUNK_HINT_RE = re.compile(r"@@\s*(.+?)\s*@@")
@@ -51,7 +51,7 @@ def _strip_terminal_fence_leaks(text: str) -> str:
         return text
     cleaned_lines: list[str] = []
     for line in text.splitlines(keepends=True):
-        had_terminal_wrapper = "ZAST_FENCE_" in line or "\x1b]" in line
+        had_terminal_wrapper = "DESKAGENT_FENCE_" in line or "\x1b]" in line
         cleaned = _OSC_SEQUENCE_RE.sub("", line)
         cleaned = _FENCE_MARKER_RE.sub("", cleaned)
         cleaned = cleaned.replace("\x07", "")
@@ -476,13 +476,13 @@ class ShellFileOperations(FileOperations):
         q_path = self._escape_shell_arg(path)
         parent = os.path.dirname(path) or "."
         q_parent = self._escape_shell_arg(parent)
-        tmpl = self._escape_shell_arg(".zast-tmp.XXXXXX")
+        tmpl = self._escape_shell_arg(".deskagent-tmp.XXXXXX")
         script = (
             "set -e; "
             f"d={q_parent}; t={q_path}; "
             'tmp="$(mktemp -p "$d" ' + tmpl + " 2>/dev/null "
-            '|| mktemp "$d/.zast-tmp.$$.XXXXXX" 2>/dev/null '
-            '|| { tmp="$d/.zast-tmp.$$"; : > "$tmp" && echo "$tmp"; })"; '
+            '|| mktemp "$d/.deskagent-tmp.$$.XXXXXX" 2>/dev/null '
+            '|| { tmp="$d/.deskagent-tmp.$$"; : > "$tmp" && echo "$tmp"; })"; '
             '[ -n "$tmp" ] || { echo "atomic write: could not create temp file" >&2; exit 1; }; '
             "trap 'rm -f \"$tmp\"' EXIT; "
             'if [ -e "$t" ]; then '

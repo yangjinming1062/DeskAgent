@@ -7,8 +7,8 @@ from contextvars import ContextVar
 from pathlib import Path
 
 from utils import cfg_get
-from utils import get_zast_dir
-from utils import get_zast_home
+from utils import get_deskagent_dir
+from utils import get_deskagent_home
 from utils import load_config
 
 logger = logging.getLogger(__name__)
@@ -33,14 +33,14 @@ def _get_registered() -> dict[str, str]:
 _config_files: list[dict[str, str]] | None = None
 
 
-def register_credential_file(relative_path: str, container_base: str = "/root/.zast") -> bool:
+def register_credential_file(relative_path: str, container_base: str = "/root/.deskagent") -> bool:
     from ..files import validate_within_dir
 
-    zast_home = get_zast_home()
+    deskagent_home = get_deskagent_home()
     if os.path.isabs(relative_path):
-        logger.warning("credential_files: rejected absolute path %r (must be relative to ZAST_HOME)", relative_path)
+        logger.warning("credential_files: rejected absolute path %r (must be relative to DESKAGENT_HOME)", relative_path)
         return False
-    if containment_error := validate_within_dir(host_path := zast_home / relative_path, zast_home):
+    if containment_error := validate_within_dir(host_path := deskagent_home / relative_path, deskagent_home):
         logger.warning("credential_files: rejected path traversal %r (%s)", relative_path, containment_error)
         return False
     if not (resolved := host_path.resolve()).is_file():
@@ -51,7 +51,7 @@ def register_credential_file(relative_path: str, container_base: str = "/root/.z
     return True
 
 
-def register_credential_files(entries: list, container_base: str = "/root/.zast") -> list[str]:
+def register_credential_files(entries: list, container_base: str = "/root/.deskagent") -> list[str]:
     return [
         rel_path
         for entry in entries
@@ -68,17 +68,17 @@ def _load_config_files() -> list[dict[str, str]]:
         return _config_files
     _config_files = []
     try:
-        zast_home = get_zast_home()
+        deskagent_home = get_deskagent_home()
         if isinstance(cred_files := cfg_get(load_config(), "terminal", "credential_files"), list):
             for item in cred_files:
                 if not isinstance(item, str) or not (rel := item.strip()):
                     continue
                 if os.path.isabs(rel):
                     logger.warning("credential_files: rejected absolute config path %r", rel)
-                elif containment_error := validate_within_dir(host_path := zast_home / rel, zast_home):
+                elif containment_error := validate_within_dir(host_path := deskagent_home / rel, deskagent_home):
                     logger.warning("credential_files: rejected config path traversal %r (%s)", rel, containment_error)
                 elif (resolved_path := host_path.resolve()).is_file():
-                    _config_files.append({"host_path": str(resolved_path), "container_path": f"/root/.zast/{rel}"})
+                    _config_files.append({"host_path": str(resolved_path), "container_path": f"/root/.deskagent/{rel}"})
     except Exception as e:
         logger.warning("Could not read terminal.credential_files from config: %s", e)
     return _config_files
@@ -90,10 +90,10 @@ def get_credential_file_mounts() -> list[dict[str, str]]:
     return [{"host_path": hp, "container_path": cp} for cp, hp in (cfg_mounts | mounts).items()]
 
 
-def get_skills_directory_mount(container_base: str = "/root/.zast") -> list[dict[str, str]]:
-    zast_home = get_zast_home()
+def get_skills_directory_mount(container_base: str = "/root/.deskagent") -> list[dict[str, str]]:
+    deskagent_home = get_deskagent_home()
     base = container_base.rstrip("/")
-    mounts = [{"host_path": _safe_skills_path(skills_dir), "container_path": f"{base}/skills"}] if (skills_dir := zast_home / "skills").is_dir() else []
+    mounts = [{"host_path": _safe_skills_path(skills_dir), "container_path": f"{base}/skills"}] if (skills_dir := deskagent_home / "skills").is_dir() else []
     try:
         mounts.extend(
             [
@@ -118,7 +118,7 @@ def _safe_skills_path(skills_dir: Path) -> str:
         logger.warning("credential_files: skipping symlink in skills dir: %s -> %s", link, os.readlink(link))
     if _safe_skills_tempdir and _safe_skills_tempdir.is_dir():
         shutil.rmtree(_safe_skills_tempdir, ignore_errors=True)
-    _safe_skills_tempdir = safe_dir = Path(tempfile.mkdtemp(prefix="zast-skills-safe-"))
+    _safe_skills_tempdir = safe_dir = Path(tempfile.mkdtemp(prefix="deskagent-skills-safe-"))
     for item in skills_dir.rglob("*"):
         if not item.is_symlink():
             target = safe_dir / item.relative_to(skills_dir)
@@ -132,10 +132,10 @@ def _safe_skills_path(skills_dir: Path) -> str:
     return str(safe_dir)
 
 
-def iter_skills_files(container_base: str = "/root/.zast") -> list[dict[str, str]]:
-    zast_home = get_zast_home()
+def iter_skills_files(container_base: str = "/root/.deskagent") -> list[dict[str, str]]:
+    deskagent_home = get_deskagent_home()
     base = container_base.rstrip("/")
-    dirs = [(zast_home / "skills", f"{base}/skills")] if (zast_home / "skills").is_dir() else []
+    dirs = [(deskagent_home / "skills", f"{base}/skills")] if (deskagent_home / "skills").is_dir() else []
     try:
         dirs.extend((ext_dir, f"{base}/external_skills/{idx}") for idx, ext_dir in enumerate(get_external_skills_dirs()) if ext_dir.is_dir())
     except ImportError:
@@ -156,20 +156,20 @@ _CACHE_DIRS: list[tuple[str, str]] = [
 ]
 
 
-def get_cache_directory_mounts(container_base: str = "/root/.zast") -> list[dict[str, str]]:
+def get_cache_directory_mounts(container_base: str = "/root/.deskagent") -> list[dict[str, str]]:
     return [
         {"host_path": str(host_dir), "container_path": f"{container_base.rstrip('/')}/{new_subpath}"}
         for new_subpath, old_name in _CACHE_DIRS
-        if (host_dir := get_zast_dir(new_subpath, old_name)).is_dir()
+        if (host_dir := get_deskagent_dir(new_subpath, old_name)).is_dir()
     ]
 
 
-def iter_cache_files(container_base: str = "/root/.zast") -> list[dict[str, str]]:
+def iter_cache_files(container_base: str = "/root/.deskagent") -> list[dict[str, str]]:
     base = container_base.rstrip("/")
     return [
         {"host_path": str(item), "container_path": f"{base}/{new_subpath}/{item.relative_to(host_dir)}"}
         for new_subpath, old_name in _CACHE_DIRS
-        if (host_dir := get_zast_dir(new_subpath, old_name)).is_dir()
+        if (host_dir := get_deskagent_dir(new_subpath, old_name)).is_dir()
         for item in host_dir.rglob("*")
         if not item.is_symlink() and item.is_file()
     ]

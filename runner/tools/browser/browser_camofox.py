@@ -13,7 +13,7 @@ from urllib.parse import urlunsplit
 
 import requests
 from utils import cfg_get
-from utils import get_zast_home
+from utils import get_deskagent_home
 from utils import load_config
 from utils import redact_sensitive_text
 
@@ -168,7 +168,7 @@ def _get_session(task_id: str | None) -> dict[str, Any]:
                 }
             else:
                 _sessions[task_id] = {
-                    "user_id": f"zast_{uuid.uuid4().hex[:10]}",
+                    "user_id": f"deskagent_{uuid.uuid4().hex[:10]}",
                     "tab_id": None,
                     "session_key": f"task_{task_id[:16]}",
                     "managed": False,
@@ -382,7 +382,7 @@ def camofox_vision(question: str, annotate: bool = False, task_id: str | None = 
         if not session["tab_id"]:
             return tool_error("No browser session. Call browser_navigate first.", success=False)
         resp = _get_raw(f"/tabs/{session['tab_id']}/screenshot", params={"userId": session["user_id"]})
-        screenshots_dir = get_zast_home() / "browser_screenshots"
+        screenshots_dir = get_deskagent_home() / "browser_screenshots"
         screenshots_dir.mkdir(parents=True, exist_ok=True)
         screenshot_path = str(screenshots_dir / f"browser_screenshot_{uuid.uuid4().hex[:8]}.png")
         with open(screenshot_path, "wb") as f:

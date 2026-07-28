@@ -4,7 +4,7 @@ import time
 from pathlib import Path
 
 from utils import cfg_get
-from utils import get_zast_home
+from utils import get_deskagent_home
 from utils import load_config
 
 logger = logging.getLogger(__name__)
@@ -30,7 +30,7 @@ def _has_lock_file(path: Path) -> bool:
 
 
 def resolve_profile_dir(profile_name: str = "default") -> Path:
-    """Return the on-disk path for ``profile_name`` under $ZAST_HOME.
+    """Return the on-disk path for ``profile_name`` under $DESKAGENT_HOME.
 
     The directory is created (parents + leaf) but never *used* — caller
     decides whether to pass it to ``--user-data-dir`` and whether to hold
@@ -42,7 +42,7 @@ def resolve_profile_dir(profile_name: str = "default") -> Path:
         logger.debug("Could not read browser.profile_dir from config: %s", e)
         cfg_root = ""
 
-    base = Path(cfg_root) if cfg_root else get_zast_home() / "browser_profiles"
+    base = Path(cfg_root) if cfg_root else get_deskagent_home() / "browser_profiles"
     target = base / profile_name
     target.mkdir(parents=True, exist_ok=True)
     return target

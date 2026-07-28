@@ -15,7 +15,7 @@ from utils import atomic_replace
 from utils import get_skills_dir
 from utils import load_config
 
-from .helpers import get_zast_metadata
+from .helpers import get_deskagent_metadata
 from .helpers import iter_skill_index_files
 from .helpers import parse_frontmatter
 
@@ -38,7 +38,7 @@ _VALID_STATES = {STATE_ACTIVE, STATE_STALE, STATE_ARCHIVED}
 
 @functools.cache
 def _load_protected_builtins() -> frozenset[str]:
-    """Skill names declaring ``metadata.zast.protected: true`` in their SKILL.md.
+    """Skill names declaring ``metadata.deskagent.protected: true`` in their SKILL.md.
 
     Per-skill OSError and YAML errors are swallowed so a single malformed
     manifest doesn't disable curator protection across the board.
@@ -51,7 +51,7 @@ def _load_protected_builtins() -> frozenset[str]:
         except OSError:
             continue
         frontmatter, _ = parse_frontmatter(content)
-        if not get_zast_metadata(frontmatter).get("protected"):
+        if not get_deskagent_metadata(frontmatter).get("protected"):
             continue
         name = frontmatter.get("name")
         if isinstance(name, str) and name:

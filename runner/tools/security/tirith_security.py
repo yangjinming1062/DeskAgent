@@ -13,7 +13,7 @@ import time
 import urllib.request
 
 from utils import cfg_get
-from utils import get_zast_home
+from utils import get_deskagent_home
 from utils import load_config
 
 logger = logging.getLogger(__name__)
@@ -60,12 +60,12 @@ def _reset_spawn_warning_state() -> None:
         _warned_messages.clear()
 
 
-def _get_zast_home() -> str:
-    return str(get_zast_home())
+def _get_deskagent_home() -> str:
+    return str(get_deskagent_home())
 
 
 def _failure_marker_path() -> str:
-    return os.path.join(_get_zast_home(), ".tirith-install-failed")
+    return os.path.join(_get_deskagent_home(), ".tirith-install-failed")
 
 
 def _read_failure_reason() -> str | None:
@@ -104,8 +104,8 @@ def _clear_install_failed() -> None:
         pass
 
 
-def _zast_bin_dir() -> str:
-    os.makedirs(d := os.path.join(_get_zast_home(), "bin"), exist_ok=True)
+def _deskagent_bin_dir() -> str:
+    os.makedirs(d := os.path.join(_get_deskagent_home(), "bin"), exist_ok=True)
     return d
 
 
@@ -238,7 +238,7 @@ def _install_tirith(*, log_failures: bool = True) -> tuple[str | None, str]:
             src, reason = _extract_tirith_binary(tar, tmpdir, log)
             if src is None:
                 return None, reason
-        dest = os.path.join(_zast_bin_dir(), "tirith")
+        dest = os.path.join(_deskagent_bin_dir(), "tirith")
         try:
             shutil.move(src, dest)
         except OSError:
@@ -277,7 +277,7 @@ def _resolve_tirith_path(configured_path: str) -> str:
         logger.warning("Configured tirith path %r not found; scanning disabled", configured_path)
         _resolved_path, _install_failure_reason = _INSTALL_FAILED, "explicit_path_missing"
         return os.path.expanduser(configured_path)
-    for p in ("tirith", os.path.join(_zast_bin_dir(), "tirith")):
+    for p in ("tirith", os.path.join(_deskagent_bin_dir(), "tirith")):
         if found := shutil.which(p) if p == "tirith" else p if (os.path.isfile(p) and os.access(p, os.X_OK)) else None:
             _resolved_path, _install_failure_reason = found, ""
             _clear_install_failed()
@@ -308,7 +308,7 @@ def _background_install(*, log_failures: bool = True) -> None:
     with _install_lock:
         if _resolved_path is not None:
             return
-        for p in ("tirith", os.path.join(_zast_bin_dir(), "tirith")):
+        for p in ("tirith", os.path.join(_deskagent_bin_dir(), "tirith")):
             if found := shutil.which(p) if p == "tirith" else p if (os.path.isfile(p) and os.access(p, os.X_OK)) else None:
                 _resolved_path, _install_failure_reason = found, ""
                 return
@@ -340,7 +340,7 @@ def ensure_installed(*, log_failures: bool = True) -> str | None:
             return expanded
         _resolved_path, _install_failure_reason = _INSTALL_FAILED, "explicit_path_missing"
         return None
-    for p in ("tirith", os.path.join(_zast_bin_dir(), "tirith")):
+    for p in ("tirith", os.path.join(_deskagent_bin_dir(), "tirith")):
         if found := shutil.which(p) if p == "tirith" else p if (os.path.isfile(p) and os.access(p, os.X_OK)) else None:
             _resolved_path, _install_failure_reason = found, ""
             _clear_install_failed()

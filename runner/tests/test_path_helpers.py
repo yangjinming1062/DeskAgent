@@ -15,16 +15,16 @@ def _clear_cache():
 
 
 def test_find_python_prefers_env_override(tmp_path):
-    """ZAST_PYTHON env var takes highest priority."""
+    """DESKAGENT_PYTHON env var takes highest priority."""
     stub = tmp_path / "custom-python"
     stub.write_text("#!/bin/sh\nexit 0\n")
     stub.chmod(0o755)
-    with mock.patch.dict(os.environ, {"ZAST_PYTHON": str(stub)}, clear=False):
+    with mock.patch.dict(os.environ, {"DESKAGENT_PYTHON": str(stub)}, clear=False):
         assert find_python() == str(stub)
 
 
-def test_find_python_returns_zast_home_venv(tmp_path):
-    """When ZAST_HOME is set and the venv python exists, return it."""
+def test_find_python_returns_deskagent_home_venv(tmp_path):
+    """When DESKAGENT_HOME is set and the venv python exists, return it."""
     is_win = platform.system() == "Windows"
     if is_win:
         venv_py = tmp_path / "runner" / ".venv" / "Scripts" / "python.exe"
@@ -33,8 +33,8 @@ def test_find_python_returns_zast_home_venv(tmp_path):
     venv_py.parent.mkdir(parents=True, exist_ok=True)
     venv_py.write_text("#!/bin/sh\nexit 0\n")
     venv_py.chmod(0o755)
-    with mock.patch.dict(os.environ, {"ZAST_HOME": str(tmp_path)}, clear=False):
-        os.environ.pop("ZAST_PYTHON", None)
+    with mock.patch.dict(os.environ, {"DESKAGENT_HOME": str(tmp_path)}, clear=False):
+        os.environ.pop("DESKAGENT_PYTHON", None)
         result = find_python()
     assert result == str(venv_py)
 
@@ -42,8 +42,8 @@ def test_find_python_returns_zast_home_venv(tmp_path):
 def test_find_python_returns_none_when_nothing():
     """When no env, no venv, and no uv on PATH, return None."""
     env = {
-        "ZAST_PYTHON": "",
-        "ZAST_HOME": "/nonexistent_zast_home_test_only",
+        "DESKAGENT_PYTHON": "",
+        "DESKAGENT_HOME": "/nonexistent_deskagent_home_test_only",
         "HOME": "/nonexistent_home_test_only",
         "LOCALAPPDATA": "/nonexistent_lap_test_only",
     }

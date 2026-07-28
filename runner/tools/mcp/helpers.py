@@ -33,7 +33,7 @@ from mcp.shared.auth import OAuthClientMetadata
 from mcp.shared.auth import OAuthMetadata
 from mcp.shared.auth import OAuthToken
 from pydantic import AnyUrl
-from utils import get_zast_home
+from utils import get_deskagent_home
 from utils import secure_parent_dir
 
 logger = logging.getLogger(__name__)
@@ -45,14 +45,14 @@ class OAuthNonInteractiveError(RuntimeError):
 
 _oauth_port: int | None = None
 _SKIP_TOKENS = frozenset({"skip", "cancel", "s", "n", "no", "q", "quit"})
-_USER_SKIPPED_SENTINEL = "__zast_user_skipped__"
+_USER_SKIPPED_SENTINEL = "__deskagent_user_skipped__"
 
 
 def _get_token_dir() -> Path:
     try:
-        return Path(get_zast_home()) / "mcp-tokens"
+        return Path(get_deskagent_home()) / "mcp-tokens"
     except Exception:
-        return Path.home() / ".zast" / "mcp-tokens"
+        return Path.home() / ".deskagent" / "mcp-tokens"
 
 
 def _safe_filename(name: str) -> str:
@@ -110,7 +110,7 @@ def _write_json(path: Path, data: dict) -> None:
         raise
 
 
-class ZastTokenStorage:
+class DeskAgentTokenStorage:
     def __init__(self, server_name: str):
         self._server_name = _safe_filename(server_name)
         self._token_dir = _get_token_dir()
@@ -190,7 +190,7 @@ def _make_callback_handler() -> tuple[type, dict]:
             params = parse_qs(urlparse(self.path).query)
             result.update({"auth_code": params.get("code", [None])[0], "state": params.get("state", [None])[0], "error": params.get("error", [None])[0]})
             body = (
-                "<html><body><h2>Authorization Successful</h2><p>You can close this tab and return to Zast.</p></body></html>"
+                "<html><body><h2>Authorization Successful</h2><p>You can close this tab and return to DeskAgent.</p></body></html>"
                 if result["auth_code"]
                 else f"<html><body><h2>Authorization Failed</h2><p>Error: {result['error'] or 'unknown'}</p></body></html>"
             )
@@ -300,7 +300,7 @@ def _paste_callback_reader(result: dict) -> None:
 
 
 def remove_oauth_tokens(server_name: str) -> None:
-    ZastTokenStorage(server_name).remove()
+    DeskAgentTokenStorage(server_name).remove()
     logger.info("OAuth tokens removed for '%s'", server_name)
 
 
@@ -316,7 +316,7 @@ def _build_client_metadata(cfg: dict) -> OAuthClientMetadata:
     if (port := cfg.get("_resolved_port")) is None:
         raise ValueError("Callback port not configured")
     metadata_kwargs = {
-        "client_name": cfg.get("client_name", "Zast Agent"),
+        "client_name": cfg.get("client_name", "DeskAgent Agent"),
         "redirect_uris": [AnyUrl(f"http://127.0.0.1:{port}/callback")],
         "grant_types": ["authorization_code", "refresh_token"],
         "response_types": ["code"],
@@ -327,7 +327,7 @@ def _build_client_metadata(cfg: dict) -> OAuthClientMetadata:
     return OAuthClientMetadata.model_validate(metadata_kwargs)
 
 
-def _maybe_preregister_client(storage: ZastTokenStorage, cfg: dict, client_metadata: OAuthClientMetadata) -> None:
+def _maybe_preregister_client(storage: DeskAgentTokenStorage, cfg: dict, client_metadata: OAuthClientMetadata) -> None:
     if not (client_id := cfg.get("client_id")):
         return
     info_dict = {
@@ -345,7 +345,7 @@ def _maybe_preregister_client(storage: ZastTokenStorage, cfg: dict, client_metad
 
 def build_oauth_auth(server_name: str, server_url: str, oauth_config: dict | None = None) -> OAuthClientProvider | None:
     cfg = dict(oauth_config or {})
-    storage = ZastTokenStorage(server_name)
+    storage = DeskAgentTokenStorage(server_name)
     if not _is_interactive() and not storage.has_cached_tokens():
         logger.warning("MCP OAuth for '%s': non-interactive environment and no cached tokens found.", server_name)
     _configure_callback_port(cfg)
@@ -361,11 +361,11 @@ def build_oauth_auth(server_name: str, server_url: str, oauth_config: dict | Non
     )
 
 
-def _make_zast_provider_class() -> type:
-    class ZastMCPOAuthProvider(OAuthClientProvider):
+def _make_deskagent_provider_class() -> type:
+    class DeskAgentMCPOAuthProvider(OAuthClientProvider):
         def __init__(self, *args: Any, server_name: str = "", **kwargs: Any):
             super().__init__(*args, **kwargs)
-            self._zast_server_name = server_name
+            self._deskagent_server_name = server_name
 
         async def _initialize(self) -> None:
             await super()._initialize()
@@ -373,16 +373,16 @@ def _make_zast_provider_class() -> type:
                 self.context.update_token_expiry(tokens)
 
             storage = self.context.storage
-            if isinstance(storage, ZastTokenStorage) and self.context.oauth_metadata is None:
+            if isinstance(storage, DeskAgentTokenStorage) and self.context.oauth_metadata is None:
                 if (meta := storage.load_oauth_metadata()) is not None:
                     self.context.oauth_metadata = meta
-                    logger.debug("MCP OAuth '%s': restored metadata from disk", self._zast_server_name)
+                    logger.debug("MCP OAuth '%s': restored metadata from disk", self._deskagent_server_name)
 
             if tokens is not None and self.context.oauth_metadata is None:
                 try:
                     await self._prefetch_oauth_metadata()
                 except Exception as exc:
-                    logger.debug("MCP OAuth '%s': pre-flight metadata discovery failed: %s", self._zast_server_name, exc)
+                    logger.debug("MCP OAuth '%s': pre-flight metadata discovery failed: %s", self._deskagent_server_name, exc)
 
         async def _prefetch_oauth_metadata(self) -> None:
             server_url = self.context.server_url
@@ -391,7 +391,7 @@ def _make_zast_provider_class() -> type:
                     try:
                         resp = await client.send(create_oauth_metadata_request(url))
                     except httpx.HTTPError as exc:
-                        logger.debug("MCP OAuth '%s': PRM discovery to %s failed: %s", self._zast_server_name, url, exc)
+                        logger.debug("MCP OAuth '%s': PRM discovery to %s failed: %s", self._deskagent_server_name, url, exc)
                         continue
                     if prm := await handle_protected_resource_response(resp):
                         self.context.protected_resource_metadata = prm
@@ -403,22 +403,22 @@ def _make_zast_provider_class() -> type:
                     try:
                         resp = await client.send(create_oauth_metadata_request(url))
                     except httpx.HTTPError as exc:
-                        logger.debug("MCP OAuth '%s': ASM discovery to %s failed: %s", self._zast_server_name, url, exc)
+                        logger.debug("MCP OAuth '%s': ASM discovery to %s failed: %s", self._deskagent_server_name, url, exc)
                         continue
                     ok, asm = await handle_auth_metadata_response(resp)
                     if not ok:
                         break
                     if asm:
                         self.context.oauth_metadata = asm
-                        if isinstance(storage := self.context.storage, ZastTokenStorage):
+                        if isinstance(storage := self.context.storage, DeskAgentTokenStorage):
                             storage.save_oauth_metadata(asm)
-                        logger.debug("MCP OAuth '%s': ASM discovered token_endpoint=%s", self._zast_server_name, asm.token_endpoint)
+                        logger.debug("MCP OAuth '%s': ASM discovered token_endpoint=%s", self._deskagent_server_name, asm.token_endpoint)
                         break
 
         def _persist_oauth_metadata_if_changed(self) -> None:
             if (meta := self.context.oauth_metadata) is None:
                 return
-            if not isinstance(storage := self.context.storage, ZastTokenStorage):
+            if not isinstance(storage := self.context.storage, DeskAgentTokenStorage):
                 return
             existing = storage.load_oauth_metadata()
             if existing is None or str(existing.token_endpoint) != str(meta.token_endpoint):
@@ -426,9 +426,9 @@ def _make_zast_provider_class() -> type:
 
         async def async_auth_flow(self, request):
             try:
-                await get_manager().invalidate_if_disk_changed(self._zast_server_name)
+                await get_manager().invalidate_if_disk_changed(self._deskagent_server_name)
             except Exception as exc:
-                logger.debug("MCP OAuth '%s': disk-watch failed: %s", self._zast_server_name, exc)
+                logger.debug("MCP OAuth '%s': disk-watch failed: %s", self._deskagent_server_name, exc)
 
             inner = super().async_auth_flow(request)
             try:
@@ -440,10 +440,10 @@ def _make_zast_provider_class() -> type:
                 self._persist_oauth_metadata_if_changed()
                 return
 
-    return ZastMCPOAuthProvider
+    return DeskAgentMCPOAuthProvider
 
 
-ZAST_PROVIDER_CLS = _make_zast_provider_class()
+DESKAGENT_PROVIDER_CLS = _make_deskagent_provider_class()
 
 
 @dataclass
@@ -475,13 +475,13 @@ class MCPOAuthManager:
 
     def _build_provider(self, server_name: str, entry: _ProviderEntry) -> Any | None:
         cfg = dict(entry.oauth_config or {})
-        storage = ZastTokenStorage(server_name)
+        storage = DeskAgentTokenStorage(server_name)
         if not _is_interactive() and not storage.has_cached_tokens():
             logger.warning("MCP OAuth '%s': non-interactive and no cached tokens found.", server_name)
         _configure_callback_port(cfg)
         client_metadata = _build_client_metadata(cfg)
         _maybe_preregister_client(storage, cfg, client_metadata)
-        return ZAST_PROVIDER_CLS(
+        return DESKAGENT_PROVIDER_CLS(
             server_name=server_name,
             server_url=entry.server_url,
             client_metadata=client_metadata,

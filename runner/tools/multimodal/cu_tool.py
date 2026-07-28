@@ -174,9 +174,9 @@ def handle_computer_use(args: dict[str, Any], **kwargs) -> Any:
     try:
         backend = _get_backend()
         if not backend.is_available():
-            return json.dumps({"error": "computer_use backend unavailable on this platform; run `zast tools` to enable"})
+            return json.dumps({"error": "computer_use backend unavailable on this platform; run `deskagent tools` to enable"})
     except Exception as e:
-        return json.dumps({"error": f"computer_use backend unavailable: {e}", "hint": "Run `zast tools` and enable Computer Use to install cua-driver."})
+        return json.dumps({"error": f"computer_use backend unavailable: {e}", "hint": "Run `deskagent tools` and enable Computer Use to install cua-driver."})
 
     try:
         return _dispatch(backend, action, args)

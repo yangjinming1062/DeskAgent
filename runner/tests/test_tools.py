@@ -43,7 +43,7 @@ class TestTerminal:
 
 class TestFileTools:
     def test_write_and_read(self):
-        tmp = os.path.join(tempfile.gettempdir(), "zast_test_rw.txt")
+        tmp = os.path.join(tempfile.gettempdir(), "deskagent_test_rw.txt")
         try:
             registry.dispatch("write_file", {"path": tmp, "content": "test123"})
             r = json.loads(registry.dispatch("read_file", {"path": tmp}))
