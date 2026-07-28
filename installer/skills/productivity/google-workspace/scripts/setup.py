@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Google Workspace OAuth2 setup for Zast Agent.
+"""Google Workspace OAuth2 setup for DeskAgent Agent.
 
 Fully non-interactive — designed to be driven by the agent via terminal commands.
 The agent mediates between this script and the user (works on CLI, Telegram, Discord, etc.)
@@ -30,17 +30,17 @@ import subprocess
 import sys
 from pathlib import Path
 
-# Ensure sibling modules (_zast_home) are importable when run standalone.
+# Ensure sibling modules (_deskagent_home) are importable when run standalone.
 _SCRIPTS_DIR = str(Path(__file__).resolve().parent)
 if _SCRIPTS_DIR not in sys.path:
     sys.path.insert(0, _SCRIPTS_DIR)
 
-from _zast_home import display_zast_home, get_zast_home
+from _deskagent_home import display_deskagent_home, get_deskagent_home
 
-ZAST_HOME = get_zast_home()
-TOKEN_PATH = ZAST_HOME / "google_token.json"
-CLIENT_SECRET_PATH = ZAST_HOME / "google_client_secret.json"
-PENDING_AUTH_PATH = ZAST_HOME / "google_oauth_pending.json"
+DESKAGENT_HOME = get_deskagent_home()
+TOKEN_PATH = DESKAGENT_HOME / "google_token.json"
+CLIENT_SECRET_PATH = DESKAGENT_HOME / "google_client_secret.json"
+PENDING_AUTH_PATH = DESKAGENT_HOME / "google_oauth_pending.json"
 
 SCOPES = [
     "https://www.googleapis.com/auth/gmail.readonly",
@@ -85,7 +85,7 @@ def _missing_scopes_from_payload(payload: dict) -> list[str]:
 
 def _format_missing_scopes(missing_scopes: list[str]) -> str:
     bullets = "\n".join(f"  - {scope}" for scope in missing_scopes)
-    return "Token is valid but missing required Google Workspace scopes:\n" f"{bullets}\n" "Run the Google Workspace setup again from this same Zast profile to refresh consent."
+    return "Token is valid but missing required Google Workspace scopes:\n" f"{bullets}\n" "Run the Google Workspace setup again from this same DeskAgent profile to refresh consent."
 
 
 def install_deps():
@@ -112,7 +112,7 @@ def install_deps():
     except subprocess.CalledProcessError as e:
         pip_error = e
 
-    # Fallback: the interpreter has no pip (the Zast Docker image's venv is
+    # Fallback: the interpreter has no pip (the DeskAgent Docker image's venv is
     # built with `uv sync`, which does not bootstrap pip). `uv pip install
     # --python <interpreter>` installs into that exact interpreter without
     # needing pip present. Targeting sys.executable keeps us on the venv the
@@ -132,8 +132,8 @@ def install_deps():
             return False
 
     print(f"ERROR: Failed to install dependencies: {pip_error}")
-    print("On environments without pip (e.g. Nix, or the Zast Docker image's " "uv-managed venv), install the optional extra instead:")
-    print("  pip install 'zast-agent[google]'")
+    print("On environments without pip (e.g. Nix, or the DeskAgent Docker image's " "uv-managed venv), install the optional extra instead:")
+    print("  pip install 'deskagent-agent[google]'")
     print(f"Or manually: {sys.executable} -m pip install {' '.join(REQUIRED_PACKAGES)}")
     return False
 
@@ -246,7 +246,7 @@ def check_auth(quiet: bool = False):
 
 
 def store_client_secret(path: str):
-    """Copy and validate client_secret.json to Zast home."""
+    """Copy and validate client_secret.json to DeskAgent home."""
     src = Path(path).expanduser().resolve()
     if not src.exists():
         print(f"ERROR: File not found: {src}")
@@ -406,7 +406,7 @@ def exchange_auth_code(code: str):
     TOKEN_PATH.write_text(json.dumps(token_payload, indent=2))
     PENDING_AUTH_PATH.unlink(missing_ok=True)
     print(f"OK: Authenticated. Token saved to {TOKEN_PATH}")
-    print(f"Profile-scoped token location: {display_zast_home()}/google_token.json")
+    print(f"Profile-scoped token location: {display_deskagent_home()}/google_token.json")
 
 
 def revoke():
@@ -444,7 +444,7 @@ def revoke():
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Google Workspace OAuth setup for Zast")
+    parser = argparse.ArgumentParser(description="Google Workspace OAuth setup for DeskAgent")
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--check", action="store_true", help="Check if auth is valid (exit 0=yes, 1=no)")
     group.add_argument("--check-live", action="store_true", help="Check auth with a real API call (detects disabled_client)")

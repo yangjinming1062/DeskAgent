@@ -2,11 +2,11 @@
 name: llm-wiki
 description: "Karpathy's LLM Wiki: build/query interlinked markdown KB."
 version: 2.1.0
-author: Zast Agent
+author: DeskAgent Agent
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
-  zast:
+  deskagent:
     tags: [wiki, knowledge-base, research, notes, markdown, rag-alternative]
     related_skills: [obsidian, arxiv]
 ---
@@ -34,7 +34,7 @@ Use this skill when the user:
 
 ## Wiki Location
 
-**Location:** Set via `WIKI_PATH` environment variable (e.g. in `$${ZAST_HOME:-~/.zast}/.env`).
+**Location:** Set via `WIKI_PATH` environment variable (e.g. in `$${DESKAGENT_HOME:-~/.deskagent}/.env`).
 
 If unset, defaults to `~/wiki`.
 

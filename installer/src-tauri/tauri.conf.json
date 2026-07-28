@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Zast",
+  "productName": "DeskAgent",
   "version": "0.2.0",
-  "identifier": "io.zast.agent.setup",
+  "identifier": "io.deskagent.agent.setup",
   "build": {
     "beforeDevCommand": "pnpm run dev",
     "devUrl": "http://127.0.0.1:5175",
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "Zast",
+        "title": "DeskAgent",
         "width": 880,
         "height": 620,
         "minWidth": 720,
@@ -34,10 +34,10 @@
   "bundle": {
     "active": true,
     "category": "DeveloperTool",
-    "shortDescription": "Zast",
-    "longDescription": "Installs Zast Agent on your machine. Drives installer/install.ps1 (Windows) and installer/install.sh (macOS/Linux).",
-    "publisher": "Zast",
-    "copyright": "Copyright © 2026 Zast",
+    "shortDescription": "DeskAgent",
+    "longDescription": "Installs DeskAgent Agent on your machine. Drives installer/install.ps1 (Windows) and installer/install.sh (macOS/Linux).",
+    "publisher": "DeskAgent",
+    "copyright": "Copyright © 2026 DeskAgent",
     "targets": [
       "app",
       "dmg",

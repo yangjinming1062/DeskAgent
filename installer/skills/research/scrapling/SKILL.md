@@ -6,7 +6,7 @@ author: FEUAZUR
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
-  zast:
+  deskagent:
     tags: [Web Scraping, Browser, Cloudflare, Stealth, Crawling, Spider]
     related_skills: [duckduckgo-search, domain-intel]
 prerequisites:

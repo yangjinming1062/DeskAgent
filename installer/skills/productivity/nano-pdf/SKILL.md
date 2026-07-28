@@ -6,7 +6,7 @@ author: community
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
-  zast:
+  deskagent:
     tags: [PDF, Documents, Editing, NLP, Productivity]
 ---
 
@@ -17,7 +17,7 @@ Edit PDFs using natural-language instructions. Point it at a page and describe w
 ## Prerequisites
 
 ```bash
-# Install with uv (recommended — already available in Zast)
+# Install with uv (recommended — already available in DeskAgent)
 uv pip install nano-pdf
 
 # Or with pip

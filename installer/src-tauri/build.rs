@@ -12,17 +12,17 @@ fn main() {
     // The COMMIT pin is opt-in. By default a dev build pins ONLY the branch,
     // so the produced installer follows that branch's HEAD at install time
     // (tolerant of fast-forwards/new commits, and never references a SHA the
-    // local checkout hasn't pushed). Set ZAST_BUILD_PIN_COMMIT to bake an
+    // local checkout hasn't pushed). Set DESKAGENT_BUILD_PIN_COMMIT to bake an
     // immutable commit pin for reproducible/release installers.
     //
     // Commit pin resolution:
-    //   - ZAST_BUILD_PIN_COMMIT, if set and non-empty. Accepts a SHA, tag,
+    //   - DESKAGENT_BUILD_PIN_COMMIT, if set and non-empty. Accepts a SHA, tag,
     //     or branch name; resolved to an immutable SHA via `git rev-parse`
     //     when possible, else used verbatim if it already looks like a SHA.
     //   - Otherwise: NO commit pin (branch-follow is the default).
     //
     // Branch pin resolution:
-    //   1. ZAST_BUILD_PIN_BRANCH, if set and non-empty.
+    //   1. DESKAGENT_BUILD_PIN_BRANCH, if set and non-empty.
     //   2. `git rev-parse --abbrev-ref HEAD` of the checkout this build.rs
     //      lives in — the current branch. (None on a detached HEAD.)
     //   3. Last-resort fallback handled below: if neither commit nor branch
@@ -38,17 +38,17 @@ fn main() {
     if let Some(c) = &commit {
         println!("cargo:rustc-env=BUILD_PIN_COMMIT={c}");
         println!(
-            "cargo:warning=zast-bootstrap: pinning to commit {}",
+            "cargo:warning=deskagent-bootstrap: pinning to commit {}",
             short(c)
         );
     }
     if let Some(b) = &branch {
         println!("cargo:rustc-env=BUILD_PIN_BRANCH={b}");
         match &commit {
-            Some(_) => println!("cargo:warning=zast-bootstrap: pinning to branch {b}"),
+            Some(_) => println!("cargo:warning=deskagent-bootstrap: pinning to branch {b}"),
             None => println!(
-                "cargo:warning=zast-bootstrap: following branch {b} HEAD (no commit pin; \
-                 set ZAST_BUILD_PIN_COMMIT for an immutable pin)"
+                "cargo:warning=deskagent-bootstrap: following branch {b} HEAD (no commit pin; \
+                 set DESKAGENT_BUILD_PIN_COMMIT for an immutable pin)"
             ),
         }
     }
@@ -58,14 +58,14 @@ fn main() {
         // can't resolve a pin almost certainly indicates a misconfigured
         // build environment.
         println!(
-            "cargo:warning=zast-bootstrap: no pin resolved at build time; binary will fail at runtime without ZAST_SETUP_DEV_REPO_ROOT or runtime args"
+            "cargo:warning=deskagent-bootstrap: no pin resolved at build time; binary will fail at runtime without DESKAGENT_SETUP_DEV_REPO_ROOT or runtime args"
         );
     }
 
     // Rerun build.rs when HEAD moves. With branch-follow as the default the
     // baked commit no longer changes per-commit, but a branch *switch* changes
     // the detected branch name, so we still re-trigger. When an explicit
-    // ZAST_BUILD_PIN_COMMIT resolves a moving ref (tag/branch) to a SHA, a
+    // DESKAGENT_BUILD_PIN_COMMIT resolves a moving ref (tag/branch) to a SHA, a
     // HEAD move can also change that resolution. .git/HEAD changes on every
     // commit / branch switch / rebase.
     let git_dir = locate_git_dir();
@@ -80,17 +80,17 @@ fn main() {
             }
         }
     }
-    println!("cargo:rerun-if-env-changed=ZAST_BUILD_PIN_COMMIT");
-    println!("cargo:rerun-if-env-changed=ZAST_BUILD_PIN_BRANCH");
+    println!("cargo:rerun-if-env-changed=DESKAGENT_BUILD_PIN_COMMIT");
+    println!("cargo:rerun-if-env-changed=DESKAGENT_BUILD_PIN_BRANCH");
 
     // -----------------------------------------------------------------
-    // Tauri windows manifest. See zast-setup.manifest for rationale —
+    // Tauri windows manifest. See deskagent-setup.manifest for rationale —
     // declares level="asInvoker" so Windows's installer-detection
     // heuristic doesn't refuse to launch us without UAC elevation.
     // -----------------------------------------------------------------
     #[cfg(target_os = "windows")]
     let attrs = {
-        let manifest = include_str!("zast-setup.manifest");
+        let manifest = include_str!("deskagent-setup.manifest");
         let win = tauri_build::WindowsAttributes::new().app_manifest(manifest);
         tauri_build::Attributes::new().windows_attributes(win)
     };
@@ -107,7 +107,7 @@ fn embed_payload() {
     let manifest_dir = std::path::PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
     let payload_dir = manifest_dir.join("../payload");
     if !payload_dir.is_dir() {
-        println!("cargo:warning=zast-bootstrap: payload/ not found; skipping resource embedding");
+        println!("cargo:warning=deskagent-bootstrap: payload/ not found; skipping resource embedding");
         return;
     }
 
@@ -147,7 +147,7 @@ static EXTRACTED_DIR: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceL
 
 pub fn extract_resources() -> &'static std::path::Path {{
     EXTRACTED_DIR.get_or_init(|| {{
-        let tmp = std::env::temp_dir().join("zast-setup-payload");
+        let tmp = std::env::temp_dir().join("deskagent-setup-payload");
         let _ = std::fs::remove_dir_all(&tmp);
 
         for (rel, data) in FILES {{
@@ -165,7 +165,7 @@ pub fn extract_resources() -> &'static std::path::Path {{
 "#).unwrap();
 
     println!("cargo:rerun-if-changed={}", payload_dir.display());
-    println!("cargo:warning=zast-bootstrap: embedded {file_count} payload files");
+    println!("cargo:warning=deskagent-bootstrap: embedded {file_count} payload files");
 }
 
 fn relative_path_prefix(from: &std::path::Path, to: &std::path::Path) -> String {
@@ -194,9 +194,9 @@ fn relative_path_prefix(from: &std::path::Path, to: &std::path::Path) -> String 
 
 fn resolve_commit_pin() -> Option<String> {
     // Commit pinning is OPT-IN. Only bake a commit when the caller explicitly
-    // asks for one via ZAST_BUILD_PIN_COMMIT. With no env var, we return
+    // asks for one via DESKAGENT_BUILD_PIN_COMMIT. With no env var, we return
     // None and the installer follows the branch HEAD at install time.
-    let requested = std::env::var("ZAST_BUILD_PIN_COMMIT").ok()?;
+    let requested = std::env::var("DESKAGENT_BUILD_PIN_COMMIT").ok()?;
     let requested = requested.trim();
     if requested.is_empty() {
         return None;
@@ -224,7 +224,7 @@ fn resolve_commit_pin() -> Option<String> {
         return Some(requested.to_string());
     }
     panic!(
-        "ZAST_BUILD_PIN_COMMIT={requested:?} could not be resolved to a commit \
+        "DESKAGENT_BUILD_PIN_COMMIT={requested:?} could not be resolved to a commit \
          (git rev-parse failed and it is not a valid SHA)"
     );
 }
@@ -236,7 +236,7 @@ fn is_sha(s: &str) -> bool {
 }
 
 fn resolve_branch_pin() -> Option<String> {
-    if let Ok(v) = std::env::var("ZAST_BUILD_PIN_BRANCH") {
+    if let Ok(v) = std::env::var("DESKAGENT_BUILD_PIN_BRANCH") {
         if !v.trim().is_empty() {
             return Some(v.trim().to_string());
         }

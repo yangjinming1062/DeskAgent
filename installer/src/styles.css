@@ -1,5 +1,5 @@
 /*
- * Zast Setup — self-contained design tokens.
+ * DeskAgent Setup — self-contained design tokens.
  *
  * The installer is an independent top-level module. It does NOT import
  * from desktop/, runner/, or backend/. This file declares the design
@@ -18,7 +18,7 @@
 
 @import 'tailwindcss';
 
-/* Collapse Bold — Zast wordmark font. Shipped via @nous-research/ui, which
+/* Collapse Bold — DeskAgent wordmark font. Shipped via @nous-research/ui, which
    is a dep of this package; the path resolves to installer/node_modules.
    The desktop uses the same font, but from its own copy of node_modules. */
 @font-face {
@@ -101,7 +101,7 @@
 
 /* Installer-only additions: a fade-in animation and a warm radial glow
    for the welcome screen. */
-@keyframes zast-fade-in {
+@keyframes deskagent-fade-in {
   from {
     opacity: 0;
     transform: translateY(4px);
@@ -112,11 +112,11 @@
   }
 }
 
-.zast-fade-in {
-  animation: zast-fade-in 0.45s ease-out both;
+.deskagent-fade-in {
+  animation: deskagent-fade-in 0.45s ease-out both;
 }
 
-.zast-glow {
+.deskagent-glow {
   background: radial-gradient(
     ellipse at center,
     color-mix(in srgb, #cf806d 18%, transparent) 0%,

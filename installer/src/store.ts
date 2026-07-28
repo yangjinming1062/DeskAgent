@@ -65,7 +65,7 @@ export type Route = 'welcome' | 'progress' | 'success' | 'failure'
 export const $route = atom<Route>('welcome')
 export const $bootstrap = atom<BootstrapStateModel>(INITIAL)
 export const $logPath = atom<string | null>(null)
-export const $zastHome = atom<string | null>(null)
+export const $deskAgentHome = atom<string | null>(null)
 
 export const $progress = computed($bootstrap, (b) => {
   const total = b.stageOrder.length
@@ -151,12 +151,12 @@ export async function initialize(): Promise<void> {
 
   // Pull static info on mount for the diagnostics footer.
   try {
-    const [logPath, zastHome] = await Promise.all([
+    const [logPath, deskAgentHome] = await Promise.all([
       invoke<string>('get_log_path'),
-      invoke<string>('get_zast_home')
+      invoke<string>('get_deskagent_home')
     ])
     $logPath.set(logPath)
-    $zastHome.set(zastHome)
+    $deskAgentHome.set(deskAgentHome)
   } catch (err) {
     console.warn('failed to fetch installer paths', err)
   }
@@ -253,7 +253,7 @@ export async function startInstall(): Promise<void> {
       commit: null,
       branch: null,
       include_desktop: true,
-      zast_home: null
+      deskagent_home: null
     }
   })
 }
@@ -262,14 +262,14 @@ export async function cancelInstall(): Promise<void> {
   await invoke('cancel_bootstrap')
 }
 
-export async function launchZastDesktop(): Promise<void> {
+export async function launchDeskAgentDesktop(): Promise<void> {
   if (!$bootstrap.get().installRoot) throw new Error('no install root')
-  // launch_zast_desktop resolves the desktop binary from $ZAST_HOME on the
-  // Rust side (see src-tauri/src/bootstrap.rs::launch_zast_desktop) — the
+  // launch_deskagent_desktop resolves the desktop binary from $DESKAGENT_HOME on the
+  // Rust side (see src-tauri/src/bootstrap.rs::launch_deskagent_desktop) — the
   // previous shape passed installRoot here but the Rust signature is
   // parameterless, so the field was being silently dropped and the
   // mismatch surfaced as confusion when tracing through logs.
-  await invoke('launch_zast_desktop')
+  await invoke('launch_deskagent_desktop')
 }
 
 export async function openLogDir(): Promise<void> {

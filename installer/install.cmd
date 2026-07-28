@@ -1,6 +1,6 @@
 @echo off
 REM ============================================================================
-REM Zast Agent Installer (CMD wrapper)
+REM DeskAgent Agent Installer (CMD wrapper)
 REM ============================================================================
 REM Forwards to install.ps1 in the same directory. Use this when
 REM you're on a Windows CMD shell and only have install.cmd handy; if you
@@ -18,14 +18,14 @@ setlocal
 set SCRIPT_DIR=%~dp0
 
 echo.
-echo  Zast Agent Installer
+echo  DeskAgent Agent Installer
 echo  Launching PowerShell installer from %SCRIPT_DIR%install.ps1 ...
 echo.
 
 powershell -ExecutionPolicy ByPass -NoProfile -File "%SCRIPT_DIR%install.ps1" %*
 if %ERRORLEVEL% NEQ 0 (
     echo.
-    echo  Installation failed. See %%LOCALAPPDATA%%\zast\logs\ for details.
+    echo  Installation failed. See %%LOCALAPPDATA%%\deskagent\logs\ for details.
     echo.
     pause
     exit /b 1

@@ -1,18 +1,18 @@
 import { useState } from 'react'
 import { type CSSProperties } from 'react'
 import { Button } from '../components/button'
-import { launchZastDesktop } from '../store'
+import { launchDeskAgentDesktop } from '../store'
 import { Rocket, AlertCircle } from 'lucide-react'
 
 /*
- * Success screen. ZAST AGENT wordmark stays as the visual anchor
+ * Success screen. DESKAGENT AGENT wordmark stays as the visual anchor
  * (same Collapse Bold treatment as Welcome + the desktop chat intro),
  * with a status line below.
  *
  * Launching the desktop can fail (e.g. Stage-Desktop was skipped and
- * Zast.exe doesn't exist). We catch the Tauri error and surface it
+ * DeskAgent.exe doesn't exist). We catch the Tauri error and surface it
  * inline rather than silently doing nothing — the previous version
- * had `onClick={() => void launchZastDesktop()}` which swallowed
+ * had `onClick={() => void launchDeskAgentDesktop()}` which swallowed
  * the rejection and left the user staring at an unresponsive button.
  */
 export default function Success() {
@@ -23,7 +23,7 @@ export default function Success() {
     setError(null)
     setLaunching(true)
     try {
-      await launchZastDesktop()
+      await launchDeskAgentDesktop()
       // On success the installer exits — control never returns here.
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
@@ -33,7 +33,7 @@ export default function Success() {
   }
 
   return (
-    <div className="zast-fade-in flex h-full flex-col items-center justify-center gap-8 px-12 py-10">
+    <div className="deskagent-fade-in flex h-full flex-col items-center justify-center gap-8 px-12 py-10">
       <div className="w-full max-w-2xl min-w-0 text-center">
         <p
           className="fit-text mx-auto mb-4 w-full font-['Collapse'] font-bold uppercase leading-[0.9] tracking-[0.08em] text-midground mix-blend-plus-lighter dark:text-foreground/90"
@@ -46,15 +46,15 @@ export default function Success() {
           }
         >
           <span>
-            <span>Zast 已准备就绪</span>
+            <span>DeskAgent 已准备就绪</span>
           </span>
-          <span aria-hidden="true">Zast 已准备就绪</span>
+          <span aria-hidden="true">DeskAgent 已准备就绪</span>
         </p>
 
         <p className="m-0 text-center text-base leading-normal tracking-tight text-muted-foreground">
           您可以从这里启动，也可以随时在终端中使用{' '}
           <code className="rounded bg-muted/60 px-1 py-0.5 font-mono text-sm">
-            zast desktop
+            deskagent desktop
           </code>
           命令启动。
         </p>
@@ -67,7 +67,7 @@ export default function Success() {
         className="inline-flex items-center gap-2 px-6"
       >
         <Rocket size={18} />
-        {launching ? '启动中…' : '启动 Zast'}
+        {launching ? '启动中…' : '启动 DeskAgent'}
       </Button>
 
       {error && (

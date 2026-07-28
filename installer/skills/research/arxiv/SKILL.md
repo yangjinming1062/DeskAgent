@@ -2,11 +2,11 @@
 name: arxiv
 description: "Search arXiv papers by keyword, author, category, or ID."
 version: 1.0.0
-author: Zast Agent
+author: DeskAgent Agent
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
-  zast:
+  deskagent:
     tags: [Research, Arxiv, Papers, Academic, Science, API]
     related_skills: [ocr-and-documents]
 ---

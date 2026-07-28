@@ -1,24 +1,24 @@
 [package]
-name = "zast-bootstrap"
+name = "deskagent-bootstrap"
 version = "0.2.0"
-description = "Zast Setup — signed installer that drives installer/install.ps1"
-authors = ["Zast <info@zast.ai>"]
+description = "DeskAgent Setup — signed installer that drives installer/install.ps1"
+authors = ["DeskAgent <info@deskagent.ai>"]
 edition = "2021"
 rust-version = "1.77"
 
 # Rename the output binary so the distributed artifact is literally
-# `Zast-Setup.exe` on disk — not `zast-bootstrap.exe`. Grandma sees
+# `DeskAgent-Setup.exe` on disk — not `deskagent-bootstrap.exe`. Grandma sees
 # what we hand her, period. Tauri honors [[bin]] over [package].name
 # for the produced executable name.
 [[bin]]
-name = "Zast-Setup"
+name = "DeskAgent-Setup"
 path = "src/main.rs"
 
 # The library target name MUST match the `withGlobalTauri` binding name that
 # tauri.conf.json's `app.windows[].label` references. We don't ship a separate
 # lib for now; everything is in src/.
 [lib]
-name = "zast_bootstrap_lib"
+name = "deskagent_bootstrap_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
@@ -41,7 +41,7 @@ futures = "0.3"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
-# Logging — emitted to a file under ZAST_HOME/logs/ and (optionally) the
+# Logging — emitted to a file under DESKAGENT_HOME/logs/ and (optionally) the
 # webview console via Tauri's event channel.
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }

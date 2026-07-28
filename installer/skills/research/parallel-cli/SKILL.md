@@ -2,11 +2,11 @@
 name: parallel-cli
 description: Optional vendor skill for Parallel CLI — agent-native web search, extraction, deep research, enrichment, FindAll, and monitoring. Prefer JSON output and non-interactive flows.
 version: 1.1.0
-author: Zast Agent
+author: DeskAgent Agent
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
-  zast:
+  deskagent:
     tags: [Research, Web, Search, Deep-Research, Enrichment, CLI]
     related_skills: [duckduckgo-search, mcporter]
 ---

@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# Build the Zast client installer for macOS / Linux.
+# Build the DeskAgent client installer for macOS / Linux.
 #
 # Single entry point that orchestrates:
-#   1. uv build wheel → runner/dist/zast_agent-*.whl
-#   2. electron-builder → desktop/release/Zast-{ver}-{platform}.{dmg,AppImage,zip}
+#   1. uv build wheel → runner/dist/deskagent-agent-*.whl
+#   2. electron-builder → desktop/release/DeskAgent-{ver}-{platform}.{dmg,AppImage,zip}
 #   3. Stage payload (runner wheel + desktop + skills + config) to installer/payload/
 #   4. Patch tauri.conf.json so bundle.resources contains the current host's
 #      desktop artifact (Tauri 2 fails on missing resources).
-#   5. Tauri build → installer/src-tauri/target/release/bundle/.../Zast-Setup.*
+#   5. Tauri build → installer/src-tauri/target/release/bundle/.../DeskAgent-Setup.*
 #   6. Restore tauri.conf.json (git state preserved).
 #   7. Print the final installer path under release/.
 #
@@ -23,8 +23,8 @@
 #   --target {mac|linux}      Build target. Defaults to current host. macOS and
 #                             Linux must be built on their native host
 #                             (electron-builder / Tauri can't cross-build).
-#   --skip-runner             Don't build runner wheel (use existing dist/zast_agent-*.whl).
-#   --skip-desktop            Don't build desktop (use existing release/Zast-*).
+#   --skip-runner             Don't build runner wheel (use existing dist/deskagent-agent-*.whl).
+#   --skip-desktop            Don't build desktop (use existing release/DeskAgent-*).
 #   --sign-identity ID        macOS code-sign identity (Developer ID Application: ...).
 #   --notary-profile NAME     macOS notarytool keychain profile.
 #   --output DIR              Output directory for the final installer. Default: release/.
@@ -106,7 +106,7 @@ case "$TARGET" in
       exit 1
     fi
     DESKTOP_PNPM_TARGET="dist:mac:dmg"
-    DESKTOP_ARTIFACT_GLOB="Zast-${VERSION}-mac-*.dmg"
+    DESKTOP_ARTIFACT_GLOB="DeskAgent-${VERSION}-mac-*.dmg"
     DESKTOP_FORMAT="dmg"
     TAURI_BUNDLE_DIR="dmg"
     ;;
@@ -116,7 +116,7 @@ case "$TARGET" in
       exit 1
     fi
     DESKTOP_PNPM_TARGET="dist:linux"
-    DESKTOP_ARTIFACT_GLOB="Zast-${VERSION}-linux-*.AppImage"
+    DESKTOP_ARTIFACT_GLOB="DeskAgent-${VERSION}-linux-*.AppImage"
     DESKTOP_FORMAT="AppImage"
     TAURI_BUNDLE_DIR="appimage"
     ;;
@@ -200,13 +200,13 @@ stage_payload() {
   mkdir -p installer/payload/runner installer/payload/desktop
 
   local wheel
-  wheel=$(ls -1 runner/dist/zast_agent-*.whl 2>/dev/null | head -1 || true)
+  wheel=$(ls -1 runner/dist/deskagent-agent-*.whl 2>/dev/null | head -1 || true)
   if [[ -z "$wheel" ]]; then
     echo "error: no wheel found in runner/dist/ (build runner first)" >&2
     exit 1
   fi
   cp "$wheel" "installer/payload/runner/$(basename "$wheel")"
-  # Also copy server.py into the payload so install scripts deploy it to $ZAST_HOME/runner/
+  # Also copy server.py into the payload so install scripts deploy it to $DESKAGENT_HOME/runner/
   cp runner/server.py installer/payload/runner/server.py
 
   # Symlink skills/config.yaml/install scripts so they're not duplicated in
@@ -246,8 +246,8 @@ meta = {
     "built_at": built_at,
     "host": f"{host_os}-{os.uname().machine}" if hasattr(os, 'uname') else host_os,
     "desktop_format": fmt,
-    "runner_wheel": os.path.basename(sorted(glob.glob("installer/payload/runner/zast_agent-*.whl"))[0]),
-    "runner_sha256": sha(sorted(glob.glob("installer/payload/runner/zast_agent-*.whl"))[0]),
+    "runner_wheel": os.path.basename(sorted(glob.glob("installer/payload/runner/deskagent-agent-*.whl"))[0]),
+    "runner_sha256": sha(sorted(glob.glob("installer/payload/runner/deskagent-agent-*.whl"))[0]),
 }
 desktop_glob = "installer/payload/desktop/*"
 desktops = sorted(glob.glob(desktop_glob))
@@ -302,7 +302,7 @@ set_version "$VERSION"
 
 # 1. Build runner.
 if [[ $SKIP_RUNNER -eq 0 ]]; then
-  echo "==> Building runner (uv build wheel → dist/zast_agent-*.whl)"
+  echo "==> Building runner (uv build wheel → dist/deskagent-agent-*.whl)"
   # Pre-package gate: catch the env-rot failure mode that previously
   # shipped zero-byte `typing_extensions.py` / `mcp` `.py` files inside
   # the wheel — the install-time smoke was too shallow (`import tools,
@@ -319,7 +319,7 @@ fi
 
 # 2. Build desktop.
 if [[ $SKIP_DESKTOP -eq 0 ]]; then
-  echo "==> Building desktop (electron-builder → release/Zast-${VERSION}-${TARGET}*)"
+  echo "==> Building desktop (electron-builder → release/DeskAgent-${VERSION}-${TARGET}*)"
   ( cd desktop && pnpm install --frozen-lockfile && pnpm run $DESKTOP_PNPM_TARGET )
 else
   echo "==> Skipping desktop build (--skip-desktop)"
@@ -365,10 +365,10 @@ echo "==> Tauri build"
 FINAL_DIR="installer/src-tauri/target/release/bundle/$TAURI_BUNDLE_DIR"
 case "$TARGET" in
   mac)
-    FINAL_GLOB="Zast-Setup_${VERSION}_*.dmg"
+    FINAL_GLOB="DeskAgent-Setup_${VERSION}_*.dmg"
     ;;
   linux)
-    FINAL_GLOB="Zast-Setup_${VERSION}_*.AppImage"
+    FINAL_GLOB="DeskAgent-Setup_${VERSION}_*.AppImage"
     ;;
 esac
 FINAL="$(ls -1 $FINAL_DIR/$FINAL_GLOB 2>/dev/null | head -1 || true)"

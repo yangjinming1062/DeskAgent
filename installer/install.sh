@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
-# Zast Agent installer (POSIX / macOS / Linux).
+# DeskAgent Agent installer (POSIX / macOS / Linux).
 #
-# 6-stage payload release. Tauri Zast-Setup.app is the GUI shell that
+# 6-stage payload release. Tauri DeskAgent-Setup.app is the GUI shell that
 # spawns this script; the script's job is to install Python (if needed),
 # copy the bundled runner binary, desktop app, skills, and config.yaml
-# into the user's $ZAST_HOME (and platform-canonical locations for the
+# into the user's $DESKAGENT_HOME (and platform-canonical locations for the
 # desktop app).
 #
 # Protocol:
 #   install.sh -Manifest                 → emit manifest JSON, one stage list
 #   install.sh -Stage NAME -Json         → run a single stage, emit result frame
 #
-# Payload locations are passed via ZAST_BUNDLE_* env vars (set by the Tauri
+# Payload locations are passed via DESKAGENT_BUNDLE_* env vars (set by the Tauri
 # installer) or via the matching --bundled-*-dir CLI args (for dev/test).
 # When both are present, env wins.
 
@@ -24,18 +24,18 @@ PYTHON_VERSION="3.13"
 
 # --- defaults ---------------------------------------------------------------
 
-# Default ZAST_HOME. Overridden by $ZAST_HOME or --zast-home.
-DEFAULT_ZAST_HOME_UNIX="$HOME/.zast"
+# Default DESKAGENT_HOME. Overridden by $DESKAGENT_HOME or --deskagent-home.
+DEFAULT_DESKAGENT_HOME_UNIX="$HOME/.deskagent"
 
 # Path to the runner binary inside the bundle. POSIX uses no extension.
-RUNNER_WHEEL_GLOB="zast_agent-*.whl"
+RUNNER_WHEEL_GLOB="desk_agent-*.whl"
 
-# Default desktop format; overridden by $ZAST_INSTALLER_FORMAT.
+# Default desktop format; overridden by $DESKAGENT_INSTALLER_FORMAT.
 DEFAULT_DESKTOP_FORMAT="dmg"
 
 # --- arg parsing ------------------------------------------------------------
 
-ZAST_HOME_ARG=""
+DESKAGENT_HOME_ARG=""
 BUNDLED_RUNNER_DIR_ARG=""
 BUNDLED_DESKTOP_DIR_ARG=""
 BUNDLED_SKILLS_DIR_ARG=""
@@ -48,12 +48,12 @@ NON_INTERACTIVE=0
 
 usage() {
   cat <<EOF
-$SCRIPT_NAME — Zast Agent installer (6-stage payload release)
+$SCRIPT_NAME — DeskAgent Agent installer (6-stage payload release)
 
 Usage:
   $SCRIPT_NAME -Manifest
   $SCRIPT_NAME -Stage NAME [-Json] [-NonInteractive] \\
-      [--zast-home PATH] \\
+      [--deskagent-home PATH] \\
       [--bundled-runner-dir PATH] \\
       [--bundled-desktop-dir PATH] \\
       [--bundled-skills-dir PATH] \\
@@ -69,7 +69,7 @@ while [[ $# -gt 0 ]]; do
     -Stage|--stage)               MODE="stage"; STAGE="$2"; shift 2 ;;
     -Json|--json)                 JSON_OUTPUT=1; shift ;;
     -NonInteractive|--non-interactive) NON_INTERACTIVE=1; shift ;;
-    --zast-home)                  ZAST_HOME_ARG="$2"; shift 2 ;;
+    --deskagent-home)                  DESKAGENT_HOME_ARG="$2"; shift 2 ;;
     --bundled-runner-dir)         BUNDLED_RUNNER_DIR_ARG="$2"; shift 2 ;;
     --bundled-desktop-dir)        BUNDLED_DESKTOP_DIR_ARG="$2"; shift 2 ;;
     --bundled-skills-dir)         BUNDLED_SKILLS_DIR_ARG="$2"; shift 2 ;;
@@ -81,19 +81,19 @@ done
 
 # --- resolve paths: env var > arg > default ---------------------------------
 
-if [[ -n "${ZAST_HOME:-}" ]]; then
-  ZAST_HOME_RESOLVED="$ZAST_HOME"
-elif [[ -n "$ZAST_HOME_ARG" ]]; then
-  ZAST_HOME_RESOLVED="$ZAST_HOME_ARG"
+if [[ -n "${DESKAGENT_HOME:-}" ]]; then
+  DESKAGENT_HOME_RESOLVED="$DESKAGENT_HOME"
+elif [[ -n "$DESKAGENT_HOME_ARG" ]]; then
+  DESKAGENT_HOME_RESOLVED="$DESKAGENT_HOME_ARG"
 else
-  ZAST_HOME_RESOLVED="$DEFAULT_ZAST_HOME_UNIX"
+  DESKAGENT_HOME_RESOLVED="$DEFAULT_DESKAGENT_HOME_UNIX"
 fi
 
-BUNDLED_RUNNER_DIR="${ZAST_BUNDLED_RUNNER_DIR:-$BUNDLED_RUNNER_DIR_ARG}"
-BUNDLED_DESKTOP_DIR="${ZAST_BUNDLED_DESKTOP_DIR:-$BUNDLED_DESKTOP_DIR_ARG}"
-BUNDLED_SKILLS_DIR="${ZAST_BUNDLED_SKILLS_DIR:-$BUNDLED_SKILLS_DIR_ARG}"
-CONFIG_PATH="${ZAST_CONFIG_PATH:-$CONFIG_PATH_ARG}"
-DESKTOP_FORMAT="${ZAST_INSTALLER_FORMAT:-$DEFAULT_DESKTOP_FORMAT}"
+BUNDLED_RUNNER_DIR="${DESKAGENT_BUNDLED_RUNNER_DIR:-$BUNDLED_RUNNER_DIR_ARG}"
+BUNDLED_DESKTOP_DIR="${DESKAGENT_BUNDLED_DESKTOP_DIR:-$BUNDLED_DESKTOP_DIR_ARG}"
+BUNDLED_SKILLS_DIR="${DESKAGENT_BUNDLED_SKILLS_DIR:-$BUNDLED_SKILLS_DIR_ARG}"
+CONFIG_PATH="${DESKAGENT_CONFIG_PATH:-$CONFIG_PATH_ARG}"
+DESKTOP_FORMAT="${DESKAGENT_INSTALLER_FORMAT:-$DEFAULT_DESKTOP_FORMAT}"
 
 # --- output helpers ---------------------------------------------------------
 
@@ -102,8 +102,8 @@ emit_manifest() {
 {"protocol_version": ${PROTOCOL_VERSION}, "stages": [
   {"name": "welcome", "title": "准备安装", "category": "setup", "needs_user_input": false},
   {"name": "install-python", "title": "安装 Python 运行时", "category": "prereqs", "needs_user_input": false},
-  {"name": "unpack-runner", "title": "安装 Zast 运行器", "category": "payload", "needs_user_input": false},
-  {"name": "unpack-desktop", "title": "安装 Zast 桌面应用", "category": "payload", "needs_user_input": false},
+  {"name": "unpack-runner", "title": "安装 DeskAgent 运行器", "category": "payload", "needs_user_input": false},
+  {"name": "unpack-desktop", "title": "安装 DeskAgent 桌面应用", "category": "payload", "needs_user_input": false},
   {"name": "install-skills", "title": "安装内置技能", "category": "payload", "needs_user_input": false},
   {"name": "write-config", "title": "写入配置文件", "category": "finalize", "needs_user_input": false}
 ]}
@@ -134,18 +134,18 @@ emit_stage_err() {
 # --- Python installation helpers --------------------------------------------
 
 install_uv() {
-  local managed_uv="$ZAST_HOME_RESOLVED/bin/uv"
+  local managed_uv="$DESKAGENT_HOME_RESOLVED/bin/uv"
   if [[ -f "$managed_uv" ]]; then
     UV_CMD="$managed_uv"
     return 0
   fi
 
-  mkdir -p "$ZAST_HOME_RESOLVED/bin"
+  mkdir -p "$DESKAGENT_HOME_RESOLVED/bin"
 
   if command -v curl >/dev/null 2>&1; then
-    curl -LsSf https://astral.sh/uv/install.sh | UV_INSTALL_DIR="$ZAST_HOME_RESOLVED/bin" sh 2>/dev/null
+    curl -LsSf https://astral.sh/uv/install.sh | UV_INSTALL_DIR="$DESKAGENT_HOME_RESOLVED/bin" sh 2>/dev/null
   elif command -v wget >/dev/null 2>&1; then
-    wget -qO- https://astral.sh/uv/install.sh | UV_INSTALL_DIR="$ZAST_HOME_RESOLVED/bin" sh 2>/dev/null
+    wget -qO- https://astral.sh/uv/install.sh | UV_INSTALL_DIR="$DESKAGENT_HOME_RESOLVED/bin" sh 2>/dev/null
   else
     return 1
   fi
@@ -191,25 +191,25 @@ test_python() {
 # --- stage 1: welcome -------------------------------------------------------
 
 stage_welcome() {
-  mkdir -p "$ZAST_HOME_RESOLVED/bin" \
-           "$ZAST_HOME_RESOLVED/skills" \
-           "$ZAST_HOME_RESOLVED/logs"
+  mkdir -p "$DESKAGENT_HOME_RESOLVED/bin" \
+           "$DESKAGENT_HOME_RESOLVED/skills" \
+           "$DESKAGENT_HOME_RESOLVED/logs"
 
-  if [[ ! -d "$ZAST_HOME_RESOLVED" ]]; then
-    emit_stage_err welcome "could not create ZAST_HOME: $ZAST_HOME_RESOLVED"
+  if [[ ! -d "$DESKAGENT_HOME_RESOLVED" ]]; then
+    emit_stage_err welcome "could not create DESKAGENT_HOME: $DESKAGENT_HOME_RESOLVED"
     return 1
   fi
-  if [[ ! -w "$ZAST_HOME_RESOLVED" ]]; then
-    emit_stage_err welcome "ZAST_HOME not writable: $ZAST_HOME_RESOLVED"
+  if [[ ! -w "$DESKAGENT_HOME_RESOLVED" ]]; then
+    emit_stage_err welcome "DESKAGENT_HOME not writable: $DESKAGENT_HOME_RESOLVED"
     return 1
   fi
 
-  local marker="$ZAST_HOME_RESOLVED/.zast-bootstrap-complete"
+  local marker="$DESKAGENT_HOME_RESOLVED/.deskagent-bootstrap-complete"
   local is_reinstall="false"
   [[ -f "$marker" ]] && is_reinstall="true"
 
-  printf '{"ok": true, "stage": "welcome", "data": {"zast_home": "%s", "is_reinstall": %s}}\n' \
-    "$ZAST_HOME_RESOLVED" "$is_reinstall"
+  printf '{"ok": true, "stage": "welcome", "data": {"deskagent_home": "%s", "is_reinstall": %s}}\n' \
+    "$DESKAGENT_HOME_RESOLVED" "$is_reinstall"
 }
 
 # --- stage 2: install-python ------------------------------------------------
@@ -228,7 +228,7 @@ stage_install_python() {
 
 stage_unpack_runner() {
   if [[ -z "$BUNDLED_RUNNER_DIR" ]]; then
-    emit_stage_err unpack-runner "--bundled-runner-dir (or ZAST_BUNDLED_RUNNER_DIR) is required"
+    emit_stage_err unpack-runner "--bundled-runner-dir (or DESKAGENT_BUNDLED_RUNNER_DIR) is required"
     return 1
   fi
   if [[ ! -d "$BUNDLED_RUNNER_DIR" ]]; then
@@ -244,7 +244,7 @@ stage_unpack_runner() {
   fi
   wheel="${wheel[0]}"
 
-  local runner_dir="$ZAST_HOME_RESOLVED/runner"
+  local runner_dir="$DESKAGENT_HOME_RESOLVED/runner"
   mkdir -p "$runner_dir"
 
   # Copy server.py alongside the wheel
@@ -273,19 +273,19 @@ stage_unpack_runner() {
   # install.sh stays simple.
 
   # Clean up old PyInstaller binary if present
-  rm -f "$ZAST_HOME_RESOLVED/bin/zast-runner"
+  rm -f "$DESKAGENT_HOME_RESOLVED/bin/deskagent-runner"
 
   local size
   size=$(stat -c%s "$wheel" 2>/dev/null || stat -f%z "$wheel" 2>/dev/null || echo 0)
   printf '{"ok": true, "stage": "unpack-runner", "data": {"venv": "%s/runner/.venv", "wheel": "%s", "size_bytes": %s}}\n' \
-    "$ZAST_HOME_RESOLVED" "$(basename "$wheel")" "$size"
+    "$DESKAGENT_HOME_RESOLVED" "$(basename "$wheel")" "$size"
 }
 
 # --- stage 4: unpack-desktop ------------------------------------------------
 
 stage_unpack_desktop() {
   if [[ -z "$BUNDLED_DESKTOP_DIR" ]]; then
-    emit_stage_err unpack-desktop "--bundled-desktop-dir (or ZAST_BUNDLED_DESKTOP_DIR) is required"
+    emit_stage_err unpack-desktop "--bundled-desktop-dir (or DESKAGENT_BUNDLED_DESKTOP_DIR) is required"
     return 1
   fi
   if [[ ! -d "$BUNDLED_DESKTOP_DIR" ]]; then
@@ -321,7 +321,7 @@ stage_unpack_desktop() {
 
   case "$DESKTOP_FORMAT" in
     dmg)
-      # macOS: mount DMG, copy Zast.app to /Applications, detach, strip xattrs.
+      # macOS: mount DMG, copy DeskAgent.app to /Applications, detach, strip xattrs.
       if [[ "$(uname -s)" != "Darwin" ]]; then
         emit_stage_err unpack-desktop "dmg format requires macOS host"
         return 1
@@ -332,36 +332,36 @@ stage_unpack_desktop() {
         emit_stage_err unpack-desktop "failed to mount $artifact"
         return 1
       fi
-      if [[ ! -d "$mount_point/Zast.app" ]]; then
+      if [[ ! -d "$mount_point/DeskAgent.app" ]]; then
         hdiutil detach "$mount_point" 2>/dev/null || true
-        emit_stage_err unpack-desktop "Zast.app not found in DMG $artifact"
+        emit_stage_err unpack-desktop "DeskAgent.app not found in DMG $artifact"
         return 1
       fi
-      rm -rf /Applications/Zast.app
-      cp -R "$mount_point/Zast.app" /Applications/Zast.app
+      rm -rf /Applications/DeskAgent.app
+      cp -R "$mount_point/DeskAgent.app" /Applications/DeskAgent.app
       hdiutil detach "$mount_point" 2>/dev/null || true
-      xattr -cr /Applications/Zast.app 2>/dev/null || true
-      printf '{"ok": true, "stage": "unpack-desktop", "data": {"installed_path": "/Applications/Zast.app", "format": "dmg"}}\n'
+      xattr -cr /Applications/DeskAgent.app 2>/dev/null || true
+      printf '{"ok": true, "stage": "unpack-desktop", "data": {"installed_path": "/Applications/DeskAgent.app", "format": "dmg"}}\n'
       ;;
     AppImage)
-      # Linux: copy AppImage to $ZAST_HOME/bin/, chmod, write .desktop entry.
+      # Linux: copy AppImage to $DESKAGENT_HOME/bin/, chmod, write .desktop entry.
       local appimage_name
       appimage_name=$(basename "$artifact")
-      mkdir -p "$ZAST_HOME_RESOLVED/bin"
-      cp -f "$artifact" "$ZAST_HOME_RESOLVED/bin/$appimage_name"
-      chmod +x "$ZAST_HOME_RESOLVED/bin/$appimage_name"
+      mkdir -p "$DESKAGENT_HOME_RESOLVED/bin"
+      cp -f "$artifact" "$DESKAGENT_HOME_RESOLVED/bin/$appimage_name"
+      chmod +x "$DESKAGENT_HOME_RESOLVED/bin/$appimage_name"
       mkdir -p "$HOME/.local/share/applications"
-      cat > "$HOME/.local/share/applications/zast.desktop" <<EOF2
+      cat > "$HOME/.local/share/applications/deskagent.desktop" <<EOF2
 [Desktop Entry]
 Type=Application
-Name=Zast
-Exec=$ZAST_HOME_RESOLVED/bin/$appimage_name %U
-Icon=zast
+Name=DeskAgent
+Exec=$DESKAGENT_HOME_RESOLVED/bin/$appimage_name %U
+Icon=deskagent
 Terminal=false
 Categories=Development;
 EOF2
       printf '{"ok": true, "stage": "unpack-desktop", "data": {"installed_path": "%s/bin/%s", "format": "AppImage"}}\n' \
-        "$ZAST_HOME_RESOLVED" "$appimage_name"
+        "$DESKAGENT_HOME_RESOLVED" "$appimage_name"
       ;;
     nsis|zip)
       # install.sh doesn't run on Windows; on POSIX this format is unsupported
@@ -376,7 +376,7 @@ EOF2
 
 stage_install_skills() {
   if [[ -z "$BUNDLED_SKILLS_DIR" ]]; then
-    emit_stage_err install-skills "--bundled-skills-dir (or ZAST_BUNDLED_SKILLS_DIR) is required"
+    emit_stage_err install-skills "--bundled-skills-dir (or DESKAGENT_BUNDLED_SKILLS_DIR) is required"
     return 1
   fi
   if [[ ! -d "$BUNDLED_SKILLS_DIR" ]]; then
@@ -384,22 +384,22 @@ stage_install_skills() {
     return 1
   fi
 
-  # Respect the .no-bundled-skills marker (set by --no-skills / zast profile).
-  if [[ -f "$ZAST_HOME_RESOLVED/.no-bundled-skills" ]]; then
+  # Respect the .no-bundled-skills marker (set by --no-skills / deskagent profile).
+  if [[ -f "$DESKAGENT_HOME_RESOLVED/.no-bundled-skills" ]]; then
     emit_stage_ok install-skills 1 "user opted out via .no-bundled-skills"
     return 0
   fi
 
   # rsync without --delete to preserve any skills the user added locally.
-  mkdir -p "$ZAST_HOME_RESOLVED/skills"
+  mkdir -p "$DESKAGENT_HOME_RESOLVED/skills"
   if command -v rsync >/dev/null 2>&1; then
-    rsync -a "$BUNDLED_SKILLS_DIR/" "$ZAST_HOME_RESOLVED/skills/"
+    rsync -a "$BUNDLED_SKILLS_DIR/" "$DESKAGENT_HOME_RESOLVED/skills/"
   else
-    cp -R "$BUNDLED_SKILLS_DIR/." "$ZAST_HOME_RESOLVED/skills/"
+    cp -R "$BUNDLED_SKILLS_DIR/." "$DESKAGENT_HOME_RESOLVED/skills/"
   fi
 
   local bundled_count
-  bundled_count=$(find "$ZAST_HOME_RESOLVED/skills" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l | tr -d ' ')
+  bundled_count=$(find "$DESKAGENT_HOME_RESOLVED/skills" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l | tr -d ' ')
 
   printf '{"ok": true, "stage": "install-skills", "data": {"bundled_count": %s}}\n' \
     "$bundled_count"
@@ -409,7 +409,7 @@ stage_install_skills() {
 
 stage_write_config() {
   if [[ -z "$CONFIG_PATH" ]]; then
-    emit_stage_err write-config "--config-path (or ZAST_CONFIG_PATH) is required"
+    emit_stage_err write-config "--config-path (or DESKAGENT_CONFIG_PATH) is required"
     return 1
   fi
   if [[ ! -f "$CONFIG_PATH" ]]; then
@@ -417,14 +417,14 @@ stage_write_config() {
     return 1
   fi
 
-  local dst="$ZAST_HOME_RESOLVED/config.yaml"
+  local dst="$DESKAGENT_HOME_RESOLVED/config.yaml"
   cp -f "$CONFIG_PATH" "$dst"
 
   # bootstrap-complete marker — installer/CLAUDE.md §6 fast path checks this.
-  : > "$ZAST_HOME_RESOLVED/.zast-bootstrap-complete"
+  : > "$DESKAGENT_HOME_RESOLVED/.deskagent-bootstrap-complete"
 
-  printf '{"ok": true, "stage": "write-config", "data": {"config": "%s", "marker": "%s/.zast-bootstrap-complete"}}\n' \
-    "$dst" "$ZAST_HOME_RESOLVED"
+  printf '{"ok": true, "stage": "write-config", "data": {"config": "%s", "marker": "%s/.deskagent-bootstrap-complete"}}\n' \
+    "$dst" "$DESKAGENT_HOME_RESOLVED"
 }
 
 # --- dispatch ---------------------------------------------------------------

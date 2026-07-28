@@ -2,11 +2,11 @@
 name: spike
 description: "Throwaway experiments to validate an idea before build."
 version: 1.0.0
-author: Zast Agent (adapted from gsd-build/get-shit-done)
+author: DeskAgent Agent (adapted from gsd-build/get-shit-done)
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
-  zast:
+  deskagent:
     tags: [spike, prototype, experiment, feasibility, throwaway, exploration, research, planning, mvp, proof-of-concept]
     related_skills: [sketch, subagent-driven-development, plan]
 ---
@@ -76,7 +76,7 @@ Spikes are not research-free — you research enough to pick the right approach,
 3. **Pick one.** State why. If 2+ are credible, build quick variants within the spike.
 4. **Skip research** for pure logic with no external dependencies.
 
-Use Zast tools for the research step:
+Use DeskAgent tools for the research step:
 
 - `web_search("python websocket streaming libraries 2025")` — find candidates
 - `web_extract(urls=["https://websockets.readthedocs.io/..."])` — read the actual docs (returns markdown)
