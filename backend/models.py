@@ -36,6 +36,8 @@ class User(Base):
 
     login_records: Mapped[list["LoginRecord"]] = relationship(back_populates="user", passive_deletes=True)
     model_config: Mapped["UserModelConfig | None"] = relationship(back_populates="user", uselist=False, passive_deletes=True)
+    persona: Mapped["Persona | None"] = relationship(back_populates="user", uselist=False, passive_deletes=True)
+    avatar_assets: Mapped[list["AvatarAsset"]] = relationship(back_populates="user", passive_deletes=True)
     conversations: Mapped[list["Conversation"]] = relationship(back_populates="user", passive_deletes=True)
     cron_jobs: Mapped[list["CronJob"]] = relationship(back_populates="user", passive_deletes=True)
     settings: Mapped[list["UserSetting"]] = relationship(back_populates="user", passive_deletes=True)
@@ -235,3 +237,56 @@ class WSEvent(Base):
     event_type: Mapped[str] = mapped_column(String(128))
     payload: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
+
+
+class Persona(Base):
+    """Per-user companion persona — the source of truth for the companion's
+    voice, personality, and behavioral biases. Persisted as one row per
+    user (the user's current persona, editable via onboarding). The
+    ``definition_json`` blob carries the structured fields the onboarding
+    flow collects (name, personality, speaking style, appearance
+    preference, pronouns, etc.); ``system_prompt_extras`` is the rendered
+    snippet injected into the LLM system prompt — kept as a separate
+    column so persona edits only re-render one row instead of every
+    historical message.
+    """
+
+    __tablename__ = "personas"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), unique=True, index=True)
+    definition_json: Mapped[str] = mapped_column(Text, default="{}")
+    system_prompt_extras: Mapped[str] = mapped_column(Text, default="")
+    is_complete: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("FALSE"), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    user: Mapped[User] = relationship(back_populates="persona")
+
+
+class AvatarAsset(Base):
+    """A generated companion avatar. Each successful generation writes a new
+    row; ``active`` flips off the previous row in the same transaction so
+    only one avatar per user is "current" at any time. ``prompt_json`` is
+    the rendered image-generation prompt (kept for audit + regenerate);
+    ``asset_url`` is the provider-returned URL (TTL-bounded, so the
+    desktop must cache locally).
+    """
+
+    __tablename__ = "avatar_assets"
+    __table_args__ = (
+        # Only one active asset per user — enforced via partial unique index
+        # in ``_install_schema_extensions`` (cannot be expressed in vanilla
+        # ``UniqueConstraint`` because Postgres needs ``WHERE``).
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    prompt_json: Mapped[str] = mapped_column(Text)
+    asset_url: Mapped[str] = mapped_column(String(2048))
+    style: Mapped[str] = mapped_column(String(64), default="")
+    seed: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    active: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("FALSE"), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    user: Mapped[User] = relationship(back_populates="avatar_assets")
