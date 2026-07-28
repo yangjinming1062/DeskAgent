@@ -1,12 +1,12 @@
 services:
   postgres:
     image: postgres:15
-    container_name: zast-agent-postgres
+    container_name: deskagent-postgres
     restart: unless-stopped
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: zast
+      POSTGRES_DB: deskagent
     ports:
       - "5432:5432"
     volumes:
@@ -21,17 +21,17 @@ services:
     build:
       context: ..
       dockerfile: backend/Dockerfile
-    container_name: zast-agent-backend
+    container_name: deskagent-backend
     restart: unless-stopped
     depends_on:
       postgres:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres:5432/zast
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres:5432/deskagent
       APP_ENV: production
       JWT_SECRET_KEY: replace-this-with-a-strong-secret
-      ADMIN_USERNAME: zast
-      ADMIN_PASSWORD: zast@admin123
+      ADMIN_USERNAME: deskagent
+      ADMIN_PASSWORD: deskagent@admin123
       LLM_BASE_URL: https://token-plan-cn.xiaomimimo.com/v1
       LLM_API_KEY: tp-x
       LLM_MODEL_NAME: mimo-v2.5-pro

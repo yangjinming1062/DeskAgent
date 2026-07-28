@@ -3,7 +3,7 @@ import itertools
 import json
 
 from config import SETTINGS
-from constants import ATTACHMENT_TYPE_VIDEO
+from constants import ATTACHMENT_TYPE_IMAGE
 from constants import JSONRPC_INVALID_PARAMS
 from constants import JSONRPC_METHOD_NOT_FOUND
 from constants import MAX_ATTACHMENTS_PER_TURN
@@ -381,7 +381,7 @@ def _validate_attachments(params: dict) -> list[dict] | None:
     for idx, att in enumerate(raw):
         if not isinstance(att, dict):
             raise JsonRpcError(JSONRPC_INVALID_PARAMS, f"attachments[{idx}] must be an object")
-        att_type = att.get("type", ATTACHMENT_TYPE_VIDEO)
+        att_type = att.get("type", ATTACHMENT_TYPE_IMAGE)
 
         # file_url (HTTP/HTTPS)
         file_url = att.get("file_url")
@@ -436,7 +436,7 @@ def _register_session_handlers(
     # Prevents a renderer bug (or hostile local file) from injecting arbitrary
     # UserSetting rows that downstream _merge_session_settings would then carry
     # into the per-turn tool dispatch context. ``identity_prompt`` is read-only
-    # via the user router. MCP server configs live in $ZAST_HOME/config.yaml
+    # via the user router. MCP server configs live in $DESKAGENT_HOME/config.yaml
     # on the runner host (managed by Desktop's MCP settings page), not here.
     _ALLOWED_GLOBAL_KEYS = {
         "yolo_mode",
@@ -546,7 +546,7 @@ def _register_session_handlers(
 
     async def config_get(params: dict) -> dict:
         # ``project`` key needs filesystem access; desktop intercepts this
-        # call locally (gateway-level intercept in src/zast/gateway.ts).
+        # call locally (gateway-level intercept in src/deskagent/gateway.ts).
         # Defensive handler returns ``{}`` so a misrouted call doesn't 500.
         key = params.get("key")
         if not isinstance(key, str) or not key:
@@ -639,9 +639,9 @@ def _register_session_handlers(
         return {"items": items}
 
     async def image_attach(params: dict) -> dict:
-        # Path-mode handler. The backend does not need the image bytes; it simply
-        # passes the path to the LLM, which uses the vision_analyze tool (running on
-        # the local runner) to read the local file.
+        # Path-mode handler. The backend does not need the image bytes; it
+        # passes the path through to the LLM, which reads the local file
+        # via Runner file tools (e.g. ``read_file``).
         runtime = _get_runtime(runtime_sessions, params)
         path = _require_str(params, "path")
         return path_attach_ref(path, fallback="image")
@@ -662,7 +662,7 @@ def _register_session_handlers(
     async def complete_path(params: dict) -> dict:
         # Filesystem-bound: the desktop intercepts this call locally in
         # ``use-gateway-request.ts::tryLocalIntercept`` and resolves ``@``-prefixed
-        # paths via the ``zast:fs:completePath`` IPC handler. That runs against
+        # paths via the ``deskagent:fs:completePath`` IPC handler. That runs against
         # the user's real filesystem which the backend (in Docker) cannot see.
         # Registered as a defensive stub so a misrouted frame does NOT surface
         # as ``-32601 JSONRPC_METHOD_NOT_FOUND``.
@@ -672,7 +672,7 @@ def _register_session_handlers(
         confirm = bool(params.get("confirm"))
         if not confirm:
             return {"status": "cancelled"}
-        # MCP server configs live in $ZAST_HOME/config.yaml on the runner's
+        # MCP server configs live in $DESKAGENT_HOME/config.yaml on the runner's
         # host. The runner reloads lazily on the next mcp_* tool call, so we
         # only need to forward the reload signal — no server list to ship.
         try:

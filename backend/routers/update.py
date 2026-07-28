@@ -244,7 +244,7 @@ async def create_version(
 
     # Runner-half. The wheel + server.py are extracted into runner/ by
     # _extract_archive_entries; latest-runner.yml lives at the root.
-    wheel_file = _pick_asset(versions_dir, "runner/zast_agent-*.whl")
+    wheel_file = _pick_asset(versions_dir, "runner/desk_agent-*.whl")
 
     record = UpdateVersion(
         version=version,
