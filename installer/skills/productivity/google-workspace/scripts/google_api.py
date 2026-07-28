@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Google Workspace API CLI for Zast Agent.
+"""Google Workspace API CLI for DeskAgent Agent.
 
 Uses the Google Workspace CLI (`gws`) when available, but preserves the
-existing Zast-facing JSON contract and falls back to the Python client
+existing DeskAgent-facing JSON contract and falls back to the Python client
 libraries if `gws` is not installed.
 
 Usage:
@@ -32,16 +32,16 @@ from datetime import timezone
 from email.mime.text import MIMEText
 from pathlib import Path
 
-# Ensure sibling modules (_zast_home) are importable when run standalone.
+# Ensure sibling modules (_deskagent_home) are importable when run standalone.
 _SCRIPTS_DIR = str(Path(__file__).resolve().parent)
 if _SCRIPTS_DIR not in sys.path:
     sys.path.insert(0, _SCRIPTS_DIR)
 
-from _zast_home import get_zast_home
+from _deskagent_home import get_deskagent_home
 
-ZAST_HOME = get_zast_home()
-TOKEN_PATH = ZAST_HOME / "google_token.json"
-CLIENT_SECRET_PATH = ZAST_HOME / "google_client_secret.json"
+DESKAGENT_HOME = get_deskagent_home()
+TOKEN_PATH = DESKAGENT_HOME / "google_token.json"
+CLIENT_SECRET_PATH = DESKAGENT_HOME / "google_client_secret.json"
 
 SCOPES = [
     "https://www.googleapis.com/auth/gmail.readonly",
@@ -83,7 +83,7 @@ def _stored_token_scopes() -> list[str]:
 def _gws_binary() -> str | None:
     # Prefer the new name, fall back to the legacy env var for users upgrading
     # from the Hermes era who still have HERMES_GWS_BIN in their shell rc.
-    override = os.getenv("ZAST_GWS_BIN") or os.getenv("HERMES_GWS_BIN")
+    override = os.getenv("DESKAGENT_GWS_BIN") or os.getenv("HERMES_GWS_BIN")
     if override:
         return override
     return shutil.which("gws")
@@ -1187,7 +1187,7 @@ def _docs_insert_text(doc_id: str, text: str, index: int) -> None:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Google Workspace API for Zast Agent")
+    parser = argparse.ArgumentParser(description="Google Workspace API for DeskAgent Agent")
     sub = parser.add_subparsers(dest="service", required=True)
 
     # --- Gmail ---

@@ -7,17 +7,17 @@ import { ArrowRight } from 'lucide-react'
  * Welcome screen.
  *
  * Mirrors the desktop's chat intro (desktop/src/components/chat/intro.tsx):
- *   - ZAST AGENT wordmark rendered in Collapse Bold, uppercase, tracked
+ *   - DESKAGENT AGENT wordmark rendered in Collapse Bold, uppercase, tracked
  *   - mix-blend-plus-lighter so the type "glows" on the canvas
  *   - fit-text utility so the wordmark sizes itself to the column
  *
  * No install-path footer. The default install location is correct for
- * 99% of users; the rest will use the CLI installer with a -ZastHome
+ * 99% of users; the rest will use the CLI installer with a -DeskAgentHome
  * flag. Showing %LOCALAPPDATA% to grandma is developer-brain.
  */
 export default function Welcome() {
   return (
-    <div className="zast-fade-in flex h-full flex-col items-center justify-center gap-10 px-12 py-10">
+    <div className="deskagent-fade-in flex h-full flex-col items-center justify-center gap-10 px-12 py-10">
       {/* Hero — same recipe the desktop's chat/intro.tsx uses */}
       <div className="w-full max-w-2xl min-w-0 text-center">
         <p
@@ -31,9 +31,9 @@ export default function Welcome() {
           }
         >
           <span>
-            <span>ZAST AGENT</span>
+            <span>DESKAGENT AGENT</span>
           </span>
-          <span aria-hidden="true">ZAST AGENT</span>
+          <span aria-hidden="true">DESKAGENT AGENT</span>
         </p>
 
         <p className="m-0 text-center text-base leading-normal tracking-tight text-muted-foreground">
@@ -46,7 +46,7 @@ export default function Welcome() {
         size="lg"
         className="group inline-flex items-center gap-2 px-6"
       >
-        安装 Zast
+        安装 DeskAgent
         <ArrowRight
           size={18}
           className="transition-transform group-hover:translate-x-0.5"

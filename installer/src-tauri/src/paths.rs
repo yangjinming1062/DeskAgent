@@ -1,12 +1,12 @@
 //! Filesystem paths + logging setup.
 //!
-//! Mirrors `zast_constants.get_zast_home()` from the Python CLI:
-//!   Windows: %LOCALAPPDATA%\zast
-//!   macOS:   ~/.zast
-//!   Linux:   ~/.zast  (override via $ZAST_HOME)
+//! Mirrors `deskagent_constants.get_deskagent_home()` from the Python CLI:
+//!   Windows: %LOCALAPPDATA%\deskagent
+//!   macOS:   ~/.deskagent
+//!   Linux:   ~/.deskagent  (override via $DESKAGENT_HOME)
 //!
-//! NOTE (macOS): Python's get_zast_home(), installer/install.sh, and the
-//! Electron desktop's resolveZastHome() ALL use ~/.zast on macOS — there
+//! NOTE (macOS): Python's get_deskagent_home(), installer/install.sh, and the
+//! Electron desktop's resolveDeskAgentHome() ALL use ~/.deskagent on macOS — there
 //! is no ~/Library/Application Support branch anywhere else. An earlier
 //! version of this file used Application Support, which drifted from every
 //! other component: the installer wrote the install to one dir and the
@@ -21,9 +21,9 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use tracing_appender::non_blocking::WorkerGuard;
 
-/// Returns the canonical Zast home directory, respecting $ZAST_HOME if set.
-pub fn zast_home() -> PathBuf {
-    if let Ok(override_path) = std::env::var("ZAST_HOME") {
+/// Returns the canonical DeskAgent home directory, respecting $DESKAGENT_HOME if set.
+pub fn deskagent_home() -> PathBuf {
+    if let Ok(override_path) = std::env::var("DESKAGENT_HOME") {
         if !override_path.trim().is_empty() {
             return PathBuf::from(override_path);
         }
@@ -31,25 +31,25 @@ pub fn zast_home() -> PathBuf {
 
     #[cfg(target_os = "windows")]
     {
-        // %LOCALAPPDATA%\zast — matches installer/install.ps1's $ZastHome.
+        // %LOCALAPPDATA%\deskagent — matches installer/install.ps1's $DeskAgentHome.
         if let Some(local_app_data) = dirs::data_local_dir() {
-            return local_app_data.join("zast");
+            return local_app_data.join("deskagent");
         }
     }
 
-    // macOS + Linux + fallback: ~/.zast (matches Python get_zast_home(),
-    // install.sh, and the Electron desktop's resolveZastHome()).
+    // macOS + Linux + fallback: ~/.deskagent (matches Python get_deskagent_home(),
+    // install.sh, and the Electron desktop's resolveDeskAgentHome()).
     if let Some(home) = dirs::home_dir() {
-        return home.join(".zast");
+        return home.join(".deskagent");
     }
 
     // Last resort — current dir, almost certainly wrong but at least
     // doesn't panic.
-    PathBuf::from(".zast")
+    PathBuf::from(".deskagent")
 }
 
 pub fn log_dir() -> PathBuf {
-    zast_home().join("logs")
+    deskagent_home().join("logs")
 }
 
 pub fn log_path() -> PathBuf {
@@ -58,17 +58,17 @@ pub fn log_path() -> PathBuf {
 
 /// Stable location the installer copies itself to after a successful install.
 /// The start-menu / desktop shortcuts can point users back to it for repair
-/// runs. Lives directly under ZAST_HOME so it survives repo checkout deletion.
+/// runs. Lives directly under DESKAGENT_HOME so it survives repo checkout deletion.
 ///
-/// On Windows this is `%LOCALAPPDATA%\zast\zast-setup.exe`; on other
+/// On Windows this is `%LOCALAPPDATA%\deskagent\deskagent-setup.exe`; on other
 /// platforms the extension differs but the directory is the same.
 pub fn installer_dest() -> PathBuf {
     let name = if cfg!(target_os = "windows") {
-        "zast-setup.exe"
+        "deskagent-setup.exe"
     } else {
-        "zast-setup"
+        "deskagent-setup"
     };
-    zast_home().join(name)
+    deskagent_home().join(name)
 }
 
 /// Copy the currently-running installer binary to `installer_dest()` so the
@@ -78,7 +78,7 @@ pub fn installer_dest() -> PathBuf {
 /// prior copy), where copying onto ourselves would be a Windows sharing
 /// violation. Best-effort: a failure here must not fail the install, so the
 /// caller logs and continues.
-pub fn copy_self_to_zast_home() -> std::io::Result<()> {
+pub fn copy_self_to_deskagent_home() -> std::io::Result<()> {
     let src = std::env::current_exe()?;
     let dest = installer_dest();
 
@@ -99,7 +99,7 @@ pub fn copy_self_to_zast_home() -> std::io::Result<()> {
     }
     std::fs::copy(&src, &dest)?;
     repair_macos_installer_helper(&dest);
-    tracing::info!(?src, ?dest, "copied installer to ZAST_HOME");
+    tracing::info!(?src, ?dest, "copied installer to DESKAGENT_HOME");
     Ok(())
 }
 
@@ -131,12 +131,12 @@ fn repair_macos_installer_helper(_path: &Path) {}
 
 /// Where install.ps1 writes the bootstrap-complete marker (existence-only file
 /// the Electron app also checks). Per main.cjs:
-///   const BOOTSTRAP_COMPLETE_MARKER = path.join(ACTIVE_ZAST_ROOT, '.zast-bootstrap-complete')
-/// We don't always know ACTIVE_ZAST_ROOT until install.ps1 reports it, so
+///   const BOOTSTRAP_COMPLETE_MARKER = path.join(ACTIVE_DESKAGENT_ROOT, '.deskagent-bootstrap-complete')
+/// We don't always know ACTIVE_DESKAGENT_ROOT until install.ps1 reports it, so
 /// this is a probe helper, not a definitive path.
 #[allow(dead_code)]
 pub fn likely_bootstrap_marker(install_root: &Path) -> PathBuf {
-    install_root.join(".zast-bootstrap-complete")
+    install_root.join(".deskagent-bootstrap-complete")
 }
 
 /// Path to the python binary in the Runner's uv-managed venv. `None`
@@ -148,7 +148,7 @@ pub fn likely_bootstrap_marker(install_root: &Path) -> PathBuf {
 /// list so a venv that uv produced on Windows without `python.exe`
 /// but with `python3.exe` still reports positive.
 pub fn runner_venv_python() -> Option<PathBuf> {
-    let root = zast_home().join("runner").join(".venv");
+    let root = deskagent_home().join("runner").join(".venv");
     let candidates: [PathBuf; 2] = if cfg!(target_os = "windows") {
         [
             root.join("Scripts").join("python.exe"),
@@ -163,7 +163,7 @@ pub fn runner_venv_python() -> Option<PathBuf> {
     candidates.into_iter().find(|p| p.is_file())
 }
 
-/// Initializes tracing to bootstrap-installer.log under ZAST_HOME/logs/.
+/// Initializes tracing to bootstrap-installer.log under DESKAGENT_HOME/logs/.
 /// Returns a guard that flushes the appender on drop — keep it alive for
 /// the lifetime of the process.
 pub fn init_logging() -> Option<WorkerGuard> {
@@ -171,14 +171,14 @@ pub fn init_logging() -> Option<WorkerGuard> {
     if let Err(err) = std::fs::create_dir_all(&dir) {
         // No log dir → log to stderr only. Don't panic; the installer
         // should still be usable on an exotic filesystem.
-        eprintln!("[zast-setup] could not create log dir {dir:?}: {err}");
+        eprintln!("[deskagent-setup] could not create log dir {dir:?}: {err}");
         return None;
     }
 
     let file_appender = tracing_appender::rolling::never(&dir, "bootstrap-installer.log");
     let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
 
-    let env_filter = tracing_subscriber::EnvFilter::try_from_env("ZAST_BOOTSTRAP_LOG")
+    let env_filter = tracing_subscriber::EnvFilter::try_from_env("DESKAGENT_BOOTSTRAP_LOG")
         .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));
 
     tracing_subscriber::fmt()
@@ -201,8 +201,8 @@ pub fn get_log_path() -> String {
 }
 
 #[tauri::command]
-pub fn get_zast_home() -> String {
-    zast_home().to_string_lossy().into_owned()
+pub fn get_deskagent_home() -> String {
+    deskagent_home().to_string_lossy().into_owned()
 }
 
 #[tauri::command]

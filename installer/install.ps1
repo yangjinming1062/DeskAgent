@@ -1,16 +1,16 @@
-# Zast Agent installer (Windows / PowerShell 5.1+).
+# DeskAgent Agent installer (Windows / PowerShell 5.1+).
 #
-# 6-stage payload release. Tauri Zast-Setup.exe is the GUI shell that
+# 6-stage payload release. Tauri DeskAgent-Setup.exe is the GUI shell that
 # spawns this script; the script's job is to install Python (if needed),
 # copy the bundled runner binary, desktop app, skills, and config.yaml
-# into the user's $ZAST_HOME (and the platform-canonical desktop install
+# into the user's $DESKAGENT_HOME (and the platform-canonical desktop install
 # location).
 #
 # Protocol:
 #   powershell -File install.ps1 -Manifest                 → emit manifest JSON
 #   powershell -File install.ps1 -Stage NAME -Json         → run a single stage
 #
-# Payload locations are passed via ZAST_BUNDLE_* env vars (set by the Tauri
+# Payload locations are passed via DESKAGENT_BUNDLE_* env vars (set by the Tauri
 # installer) or via the matching --bundled-*-dir parameters (for dev/test).
 # When both are present, env wins.
 
@@ -20,7 +20,7 @@ param(
     [string]$Stage,
     [switch]$Json,
     [switch]$NonInteractive,
-    [string]$ZastHome,
+    [string]$DeskAgentHome,
     [string]$BundledRunnerDir,
     [string]$BundledDesktopDir,
     [string]$BundledSkillsDir,
@@ -35,23 +35,23 @@ $InformationPreference = 'Continue'
 $ErrorActionPreference = "Stop"
 $ProtocolVersion = 2
 $ScriptName = "install.ps1"
-$RunnerWheelGlob = "zast_agent-*.whl"
+$RunnerWheelGlob = "desk_agent-*.whl"
 $DefaultDesktopFormat = "nsis"
 $PythonVersion = "3.13"
 $PythonFallbackVersions = @("3.12", "3.14", "3.11")
 
 # --- resolve paths: env var > param > default ------------------------------
 
-if (-not $ZastHome) {
-    if ($env:ZAST_HOME) { $ZastHome = $env:ZAST_HOME }
-    else { $ZastHome = Join-Path $env:LOCALAPPDATA "zast" }
+if (-not $DeskAgentHome) {
+    if ($env:DESKAGENT_HOME) { $DeskAgentHome = $env:DESKAGENT_HOME }
+    else { $DeskAgentHome = Join-Path $env:LOCALAPPDATA "deskagent" }
 }
-if (-not $BundledRunnerDir -and $env:ZAST_BUNDLED_RUNNER_DIR) { $BundledRunnerDir = $env:ZAST_BUNDLED_RUNNER_DIR }
-if (-not $BundledDesktopDir -and $env:ZAST_BUNDLED_DESKTOP_DIR) { $BundledDesktopDir = $env:ZAST_BUNDLED_DESKTOP_DIR }
-if (-not $BundledSkillsDir -and $env:ZAST_BUNDLED_SKILLS_DIR) { $BundledSkillsDir = $env:ZAST_BUNDLED_SKILLS_DIR }
-if (-not $ConfigPath -and $env:ZAST_CONFIG_PATH) { $ConfigPath = $env:ZAST_CONFIG_PATH }
+if (-not $BundledRunnerDir -and $env:DESKAGENT_BUNDLED_RUNNER_DIR) { $BundledRunnerDir = $env:DESKAGENT_BUNDLED_RUNNER_DIR }
+if (-not $BundledDesktopDir -and $env:DESKAGENT_BUNDLED_DESKTOP_DIR) { $BundledDesktopDir = $env:DESKAGENT_BUNDLED_DESKTOP_DIR }
+if (-not $BundledSkillsDir -and $env:DESKAGENT_BUNDLED_SKILLS_DIR) { $BundledSkillsDir = $env:DESKAGENT_BUNDLED_SKILLS_DIR }
+if (-not $ConfigPath -and $env:DESKAGENT_CONFIG_PATH) { $ConfigPath = $env:DESKAGENT_CONFIG_PATH }
 if (-not $InstallerFormat) {
-    if ($env:ZAST_INSTALLER_FORMAT) { $InstallerFormat = $env:ZAST_INSTALLER_FORMAT }
+    if ($env:DESKAGENT_INSTALLER_FORMAT) { $InstallerFormat = $env:DESKAGENT_INSTALLER_FORMAT }
     else { $InstallerFormat = $DefaultDesktopFormat }
 }
 
@@ -62,8 +62,8 @@ function Emit-Manifest {
 {"protocol_version": $ProtocolVersion, "stages": [
   {"name": "welcome", "title": "\u51c6\u5907\u5b89\u88c5", "category": "setup", "needs_user_input": false},
   {"name": "install-python", "title": "\u5b89\u88c5 Python \u8fd0\u884c\u65f6", "category": "prereqs", "needs_user_input": false},
-  {"name": "unpack-runner", "title": "\u5b89\u88c5 Zast \u8fd0\u884c\u5668", "category": "payload", "needs_user_input": false},
-  {"name": "unpack-desktop", "title": "\u5b89\u88c5 Zast \u684c\u9762\u5e94\u7528", "category": "payload", "needs_user_input": false},
+  {"name": "unpack-runner", "title": "\u5b89\u88c5 DeskAgent \u8fd0\u884c\u5668", "category": "payload", "needs_user_input": false},
+  {"name": "unpack-desktop", "title": "\u5b89\u88c5 DeskAgent \u684c\u9762\u5e94\u7528", "category": "payload", "needs_user_input": false},
   {"name": "install-skills", "title": "\u5b89\u88c5\u5185\u7f6e\u6280\u80fd", "category": "payload", "needs_user_input": false},
   {"name": "write-config", "title": "\u5199\u5165\u914d\u7f6e\u6587\u4ef6", "category": "finalize", "needs_user_input": false}
 ]}
@@ -90,13 +90,13 @@ function Emit-StageErr([string]$stage, [string]$reason) {
 # --- Python installation helpers --------------------------------------------
 
 function Install-Uv {
-    $managedUv = Join-Path $ZastHome "bin\uv.exe"
+    $managedUv = Join-Path $DeskAgentHome "bin\uv.exe"
     if (Test-Path $managedUv) {
         $script:UvCmd = $managedUv
         return $true
     }
 
-    $binDir = Join-Path $ZastHome "bin"
+    $binDir = Join-Path $DeskAgentHome "bin"
     if (-not (Test-Path $binDir)) {
         New-Item -ItemType Directory -Force -Path $binDir | Out-Null
     }
@@ -170,9 +170,9 @@ function Test-Python {
 # --- stage 1: welcome -------------------------------------------------------
 
 function Stage-Welcome {
-    $bin = Join-Path $ZastHome "bin"
-    $skills = Join-Path $ZastHome "skills"
-    $logs = Join-Path $ZastHome "logs"
+    $bin = Join-Path $DeskAgentHome "bin"
+    $skills = Join-Path $DeskAgentHome "skills"
+    $logs = Join-Path $DeskAgentHome "logs"
 
     foreach ($d in @($bin, $skills, $logs)) {
         if (-not (Test-Path $d)) {
@@ -180,16 +180,16 @@ function Stage-Welcome {
         }
     }
 
-    if (-not (Test-Path $ZastHome -PathType Container)) {
-        Emit-StageErr "welcome" "could not create ZAST_HOME: $ZastHome"
+    if (-not (Test-Path $DeskAgentHome -PathType Container)) {
+        Emit-StageErr "welcome" "could not create DESKAGENT_HOME: $DeskAgentHome"
         return 1
     }
 
-    $marker = Join-Path $ZastHome ".zast-bootstrap-complete"
+    $marker = Join-Path $DeskAgentHome ".deskagent-bootstrap-complete"
     $isReinstall = Test-Path $marker
 
-    $escHome = Escape-JsonString $ZastHome
-    Write-Output "{`"ok`": true, `"stage`": `"welcome`", `"data`": {`"zast_home`": `"$escHome`", `"is_reinstall`": $($isReinstall.ToString().ToLower())}}"
+    $escHome = Escape-JsonString $DeskAgentHome
+    Write-Output "{`"ok`": true, `"stage`": `"welcome`", `"data`": {`"deskagent_home`": `"$escHome`", `"is_reinstall`": $($isReinstall.ToString().ToLower())}}"
     return 0
 }
 
@@ -217,7 +217,7 @@ function Stage-UnpackRunner {
     }
 
     if (-not $BundledRunnerDir) {
-        Emit-StageErr "unpack-runner" "--BundledRunnerDir (or ZAST_BUNDLED_RUNNER_DIR) is required"
+        Emit-StageErr "unpack-runner" "--BundledRunnerDir (or DESKAGENT_BUNDLED_RUNNER_DIR) is required"
         return 1
     }
     if (-not (Test-Path $BundledRunnerDir -PathType Container)) {
@@ -231,7 +231,7 @@ function Stage-UnpackRunner {
         return 1
     }
 
-    $runnerDir = Join-Path $ZastHome "runner"
+    $runnerDir = Join-Path $DeskAgentHome "runner"
     if (-not (Test-Path $runnerDir)) { New-Item -ItemType Directory -Force -Path $runnerDir | Out-Null }
 
     # Copy server.py alongside the wheel (not inside it)
@@ -262,7 +262,7 @@ function Stage-UnpackRunner {
     # through this installer. install.ps1 stays simple.
 
     # Clean up old PyInstaller binary if present
-    $oldBin = Join-Path (Join-Path $ZastHome "bin") "zast-runner.exe"
+    $oldBin = Join-Path (Join-Path $DeskAgentHome "bin") "deskagent-runner.exe"
     if (Test-Path $oldBin) { Remove-Item -Force $oldBin }
 
     $size = $wheel.Length
@@ -276,7 +276,7 @@ function Stage-UnpackRunner {
 
 function Stage-UnpackDesktop {
     if (-not $BundledDesktopDir) {
-        Emit-StageErr "unpack-desktop" "--BundledDesktopDir (or ZAST_BUNDLED_DESKTOP_DIR) is required"
+        Emit-StageErr "unpack-desktop" "--BundledDesktopDir (or DESKAGENT_BUNDLED_DESKTOP_DIR) is required"
         return 1
     }
     if (-not (Test-Path $BundledDesktopDir -PathType Container)) {
@@ -307,7 +307,7 @@ function Stage-UnpackDesktop {
             # NSIS /S = silent install; /D sets install dir. No console window
             # because Tauri's installer process already owns the visible window.
             $localPrograms = Join-Path $env:LOCALAPPDATA "Programs"
-            $installDir = Join-Path $localPrograms "Zast"
+            $installDir = Join-Path $localPrograms "DeskAgent"
             if (-not (Test-Path $installDir)) { New-Item -ItemType Directory -Force -Path $installDir | Out-Null }
             $proc = Start-Process -FilePath $artifactPath `
                                   -ArgumentList @("/S", "/D=$installDir") `
@@ -330,16 +330,16 @@ function Stage-UnpackDesktop {
                 return 1
             }
             $localPrograms = Join-Path $env:LOCALAPPDATA "Programs"
-            $installDir = Join-Path $localPrograms "Zast"
+            $installDir = Join-Path $localPrograms "DeskAgent"
             $escPath = Escape-JsonString $installDir
             Write-Output "{`"ok`": true, `"stage`": `"unpack-desktop`", `"data`": {`"installed_path`": `"$escPath`", `"format`": `"msi`"}}"
             return 0
         }
         "zip" {
-            # Extract ZIP to $ZAST_HOME\apps\Zast (NSIS-style layout) — desktop
-            # is then launched from Zast.exe inside. Matches the install_root
-            # path bootstrap.rs::resolve_zast_desktop_exe expects on Windows.
-            $dest = Join-Path $ZastHome "apps\Zast"
+            # Extract ZIP to $DESKAGENT_HOME\apps\DeskAgent (NSIS-style layout) — desktop
+            # is then launched from DeskAgent.exe inside. Matches the install_root
+            # path bootstrap.rs::resolve_deskagent_desktop_exe expects on Windows.
+            $dest = Join-Path $DeskAgentHome "apps\DeskAgent"
             if (Test-Path $dest) { Remove-Item -Recurse -Force $dest }
             Expand-Archive -Path $artifactPath -DestinationPath $dest -Force
             $escPath = Escape-JsonString $dest
@@ -354,7 +354,7 @@ function Stage-UnpackDesktop {
 
 function Stage-InstallSkills {
     if (-not $BundledSkillsDir) {
-        Emit-StageErr "install-skills" "--BundledSkillsDir (or ZAST_BUNDLED_SKILLS_DIR) is required"
+        Emit-StageErr "install-skills" "--BundledSkillsDir (or DESKAGENT_BUNDLED_SKILLS_DIR) is required"
         return 1
     }
     if (-not (Test-Path $BundledSkillsDir -PathType Container)) {
@@ -363,13 +363,13 @@ function Stage-InstallSkills {
     }
 
     # Respect the .no-bundled-skills marker.
-    $noSkillsMarker = Join-Path $ZastHome ".no-bundled-skills"
+    $noSkillsMarker = Join-Path $DeskAgentHome ".no-bundled-skills"
     if (Test-Path $noSkillsMarker) {
         Emit-StageOk "install-skills" $true "user opted out via .no-bundled-skills"
         return 0
     }
 
-    $skillsDir = Join-Path $ZastHome "skills"
+    $skillsDir = Join-Path $DeskAgentHome "skills"
     if (-not (Test-Path $skillsDir)) { New-Item -ItemType Directory -Force -Path $skillsDir | Out-Null }
 
     # robocopy /MIR mirrors (preserves user-added dirs/files that don't
@@ -389,7 +389,7 @@ function Stage-InstallSkills {
 
 function Stage-WriteConfig {
     if (-not $ConfigPath) {
-        Emit-StageErr "write-config" "--ConfigPath (or ZAST_CONFIG_PATH) is required"
+        Emit-StageErr "write-config" "--ConfigPath (or DESKAGENT_CONFIG_PATH) is required"
         return 1
     }
     if (-not (Test-Path $ConfigPath -PathType Leaf)) {
@@ -397,10 +397,10 @@ function Stage-WriteConfig {
         return 1
     }
 
-    $dst = Join-Path $ZastHome "config.yaml"
+    $dst = Join-Path $DeskAgentHome "config.yaml"
     Copy-Item -Force $ConfigPath $dst
 
-    $marker = Join-Path $ZastHome ".zast-bootstrap-complete"
+    $marker = Join-Path $DeskAgentHome ".deskagent-bootstrap-complete"
     Set-Content -Path $marker -Value "" -NoNewline
 
     $escDst = Escape-JsonString $dst

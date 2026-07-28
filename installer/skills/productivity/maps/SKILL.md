@@ -6,7 +6,7 @@ author: Mibayy
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
-  zast:
+  deskagent:
     tags: [maps, geocoding, places, routing, distance, directions, nearby, location, openstreetmap, nominatim, overpass, osrm]
     supersedes: [find-nearby]
 ---
@@ -37,12 +37,12 @@ functionality is covered by the `nearby` command below, with the same
 
 Python 3.8+ (stdlib only — no pip installs needed).
 
-Script path: `${ZAST_HOME:-~/.zast}/skills/maps/scripts/maps_client.py`
+Script path: `${DESKAGENT_HOME:-~/.deskagent}/skills/maps/scripts/maps_client.py`
 
 ## Commands
 
 ```bash
-MAPS=${ZAST_HOME:-~/.zast}/skills/maps/scripts/maps_client.py
+MAPS=${DESKAGENT_HOME:-~/.deskagent}/skills/maps/scripts/maps_client.py
 ```
 
 ### search — Geocode a place name
@@ -185,9 +185,9 @@ current.
 ## Verification
 
 ```bash
-python3 ${ZAST_HOME:-~/.zast}/skills/maps/scripts/maps_client.py search "Statue of Liberty"
+python3 ${DESKAGENT_HOME:-~/.deskagent}/skills/maps/scripts/maps_client.py search "Statue of Liberty"
 # Should return lat ~40.689, lon ~-74.044
 
-python3 ${ZAST_HOME:-~/.zast}/skills/maps/scripts/maps_client.py nearby --near "Times Square" --category restaurant --limit 3
+python3 ${DESKAGENT_HOME:-~/.deskagent}/skills/maps/scripts/maps_client.py nearby --near "Times Square" --category restaurant --limit 3
 # Should return a list of restaurants within ~500m of Times Square
 ```

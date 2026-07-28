@@ -2,11 +2,11 @@
 name: subagent-driven-development
 description: "Execute plans via agent_delegate_tool subagents (2-stage review)."
 version: 1.1.0
-author: Zast Agent (adapted from obra/superpowers)
+author: DeskAgent Agent (adapted from obra/superpowers)
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
-  zast:
+  deskagent:
     tags: [delegation, subagent, implementation, workflow, parallel]
     related_skills: [plan, requesting-code-review, test-driven-development]
 ---

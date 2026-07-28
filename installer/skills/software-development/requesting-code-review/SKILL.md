@@ -2,11 +2,11 @@
 name: requesting-code-review
 description: "Pre-commit review: security scan, quality gates, auto-fix."
 version: 2.0.0
-author: Zast Agent (adapted from obra/superpowers + MorAlekss)
+author: DeskAgent Agent (adapted from obra/superpowers + MorAlekss)
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
-  zast:
+  deskagent:
     tags: [code-review, security, verification, quality, pre-commit, auto-fix]
     related_skills: [subagent-driven-development, plan, test-driven-development, github-code-review]
 ---

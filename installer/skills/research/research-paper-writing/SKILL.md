@@ -8,7 +8,7 @@ license: MIT
 dependencies: [semanticscholar, arxiv, habanero, requests, scipy, numpy, matplotlib, SciencePlots]
 platforms: [linux, macos]
 metadata:
-  zast:
+  deskagent:
     tags: [Research, Paper Writing, Experiments, ML, AI, NeurIPS, ICML, ICLR, ACL, AAAI, COLM, LaTeX, Citations, Statistical Analysis]
     category: research
     related_skills: [arxiv, subagent-driven-development, plan]
@@ -2119,26 +2119,26 @@ The main pipeline above targets empirical ML papers. Other paper types require d
 
 ---
 
-## Zast Agent Integration
+## DeskAgent Agent Integration
 
-This skill is designed for the Zast agent. It uses Zast tools, delegation, scheduling, and memory for the full research lifecycle.
+This skill is designed for the DeskAgent agent. It uses DeskAgent tools, delegation, scheduling, and memory for the full research lifecycle.
 
 ### Related Skills
 
-Compose this skill with other Zast skills for specific phases:
+Compose this skill with other DeskAgent skills for specific phases:
 
 | Skill | When to Use | How to Load |
 |-------|-------------|-------------|
 | **arxiv** | Phase 1 (Literature Review): searching arXiv, generating BibTeX, finding related papers via Semantic Scholar | `skill_view("arxiv")` |
 | **subagent-driven-development** | Phase 5 (Drafting): parallel section writing with 2-stage review (spec compliance then quality) | `skill_view("subagent-driven-development")` |
-| **plan** | Phase 0 (Setup): creating structured plans before execution. Writes to `$ZAST_HOME/plans/` | `skill_view("plan")` |
+| **plan** | Phase 0 (Setup): creating structured plans before execution. Writes to `$DESKAGENT_HOME/plans/` | `skill_view("plan")` |
 | **qmd** | Phase 1 (Literature): searching local knowledge bases (notes, transcripts, docs) via hybrid BM25+vector search | Install: `skill_manage("install", "qmd")` |
 | **diagramming** | Phase 4-5: creating Excalidraw-based figures and architecture diagrams | `skill_view("diagramming")` |
 | **data-science** | Phase 4 (Analysis): Jupyter live kernel for interactive analysis and visualization | `skill_view("data-science")` |
 
 **This skill supersedes `ml-paper-writing`** — it contains all of ml-paper-writing's content plus the full experiment/analysis pipeline and autoreason methodology.
 
-### Zast Tools Reference
+### DeskAgent Tools Reference
 
 | Tool | Usage in This Pipeline |
 |------|----------------------|

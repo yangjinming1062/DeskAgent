@@ -33,17 +33,17 @@ pub struct ScriptResult {
 pub type CancelRx = mpsc::Receiver<()>;
 
 /// Optional context for the install script, derived from the installer's
-/// `bundle.resources` layout. Propagated to the child as a ZAST_BUNDLE_*
+/// `bundle.resources` layout. Propagated to the child as a DESKAGENT_BUNDLE_*
 /// env-var pair so the slim install.{sh,ps1} (5-stage payload release)
 /// knows where to read its inputs from without having to be passed CLI args.
 #[derive(Debug, Clone, Default)]
 pub struct BundleContext {
     /// Absolute path to the unpacked Tauri bundle resources root.
     pub bundle_dir: Option<std::path::PathBuf>,
-    /// `<bundle>/payload/runner/` — holds the runner wheel (`zast_agent-*.whl`) and `server.py`.
+    /// `<bundle>/payload/runner/` — holds the runner wheel (`desk_agent-*.whl`) and `server.py`.
     pub bundled_runner_dir: Option<std::path::PathBuf>,
     /// `<bundle>/payload/desktop/` — holds the platform's desktop installer
-    /// (dmg / nsis / AppImage). Filename is `Zast-{version}-{platform}.{ext}`.
+    /// (dmg / nsis / AppImage). Filename is `DeskAgent-{version}-{platform}.{ext}`.
     pub bundled_desktop_dir: Option<std::path::PathBuf>,
     /// `<bundle>/payload/skills/` — Stage-InstallSkills source.
     pub bundled_skills_dir: Option<std::path::PathBuf>,
@@ -56,14 +56,14 @@ pub struct BundleContext {
 
 /// Spawns install.ps1 / install.sh with the given args and streams output.
 ///
-/// `zast_home_override` propagates to the child as $ZAST_HOME so the
+/// `deskagent_home_override` propagates to the child as $DESKAGENT_HOME so the
 /// install script writes to the same directory the installer is reading from.
-/// `bundle` is propagated as ZAST_BUNDLE_* env vars (see `BundleContext`).
+/// `bundle` is propagated as DESKAGENT_BUNDLE_* env vars (see `BundleContext`).
 pub async fn run_script(
     script_path: &Path,
     args: &[String],
     sink: StreamSink,
-    zast_home_override: Option<&str>,
+    deskagent_home_override: Option<&str>,
     bundle: &BundleContext,
     mut cancel_rx: Option<CancelRx>,
 ) -> Result<ScriptResult> {
@@ -73,35 +73,35 @@ pub async fn run_script(
     // during self-update. Pin child scripts to a stable directory so bash/zsh
     // never starts from a deleted cwd and emits getcwd/job-working-directory
     // errors at the end of an otherwise successful install.
-    if let Some(cwd) = stable_script_cwd(script_path, zast_home_override) {
+    if let Some(cwd) = stable_script_cwd(script_path, deskagent_home_override) {
         cmd.current_dir(cwd);
     }
 
-    if let Some(home) = zast_home_override {
-        cmd.env("ZAST_HOME", home);
+    if let Some(home) = deskagent_home_override {
+        cmd.env("DESKAGENT_HOME", home);
     }
 
-    // Inject ZAST_BUNDLE_* env vars so the slim install script can find
+    // Inject DESKAGENT_BUNDLE_* env vars so the slim install script can find
     // its payload without a long CLI arg list. Each var is independent
     // (None → omit), so dev overrides via individual CLI args remain
     // available at the bootstrap layer.
     if let Some(p) = &bundle.bundle_dir {
-        cmd.env("ZAST_BUNDLE_DIR", p);
+        cmd.env("DESKAGENT_BUNDLE_DIR", p);
     }
     if let Some(p) = &bundle.bundled_runner_dir {
-        cmd.env("ZAST_BUNDLED_RUNNER_DIR", p);
+        cmd.env("DESKAGENT_BUNDLED_RUNNER_DIR", p);
     }
     if let Some(p) = &bundle.bundled_desktop_dir {
-        cmd.env("ZAST_BUNDLED_DESKTOP_DIR", p);
+        cmd.env("DESKAGENT_BUNDLED_DESKTOP_DIR", p);
     }
     if let Some(p) = &bundle.bundled_skills_dir {
-        cmd.env("ZAST_BUNDLED_SKILLS_DIR", p);
+        cmd.env("DESKAGENT_BUNDLED_SKILLS_DIR", p);
     }
     if let Some(p) = &bundle.config_path {
-        cmd.env("ZAST_CONFIG_PATH", p);
+        cmd.env("DESKAGENT_CONFIG_PATH", p);
     }
     if let Some(fmt) = &bundle.installer_format {
-        cmd.env("ZAST_INSTALLER_FORMAT", fmt);
+        cmd.env("DESKAGENT_INSTALLER_FORMAT", fmt);
     }
 
     cmd.stdin(Stdio::null())
@@ -201,8 +201,8 @@ pub async fn run_script(
     })
 }
 
-fn stable_script_cwd<'a>(script_path: &'a Path, zast_home_override: Option<&'a str>) -> Option<&'a Path> {
-    if let Some(home) = zast_home_override {
+fn stable_script_cwd<'a>(script_path: &'a Path, deskagent_home_override: Option<&'a str>) -> Option<&'a Path> {
+    if let Some(home) = deskagent_home_override {
         let path = Path::new(home);
         if path.is_dir() {
             return Some(path);
@@ -405,7 +405,7 @@ info line
     }
 
     #[test]
-    fn stable_script_cwd_prefers_existing_zast_home() {
+    fn stable_script_cwd_prefers_existing_deskagent_home() {
         let script = Path::new("/tmp/install.sh");
         let cwd = stable_script_cwd(script, Some("/"));
         assert_eq!(cwd, Some(Path::new("/")));

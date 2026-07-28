@@ -1,12 +1,12 @@
-# Build the Zast client installer for Windows.
+# Build the DeskAgent client installer for Windows.
 #
 # Single entry point that orchestrates:
-#   1. uv build wheel → runner/dist/zast_agent-*.whl
-#   2. electron-builder → desktop/release/Zast-{ver}-win-x64-nsis.exe
+#   1. uv build wheel → runner/dist/deskagent-agent-*.whl
+#   2. electron-builder → desktop/release/DeskAgent-{ver}-win-x64-nsis.exe
 #   3. Stage payload (runner wheel + desktop + skills + config) to installer/payload/
 #   4. Patch tauri.conf.json so bundle.resources contains the current host's
 #      desktop artifact (Tauri 2 fails on missing resources).
-#   5. Tauri build → installer\src-tauri\target\release\bundle\nsis\Zast-Setup_*_x64-setup.exe
+#   5. Tauri build → installer\src-tauri\target\release\bundle\nsis\DeskAgent-Setup_*_x64-setup.exe
 #   6. Restore tauri.conf.json (git state preserved).
 #   7. Copy the final installer to the output directory.
 #
@@ -18,8 +18,8 @@
 # Parameters:
 #   -Version X.Y.Z      Required. Written into desktop + installer package.json
 #                       and runner/pyproject.toml.
-#   -SkipRunner         Don't build runner wheel (use existing dist/zast_agent-*.whl).
-#   -SkipDesktop        Don't build desktop (use existing release/Zast-*-nsis.exe).
+#   -SkipRunner         Don't build runner wheel (use existing dist/deskagent-agent-*.whl).
+#   -SkipDesktop        Don't build desktop (use existing release/DeskAgent-*-nsis.exe).
 #   -SignTool PATH      signtool.exe path (defaults to first in PATH).
 #   -CertThumbprint TH  Code-sign certificate thumbprint.
 #   -OutputDir DIR      Output directory for the final installer. Default: release\.
@@ -48,9 +48,9 @@ $RepoRoot = (Resolve-Path "$ScriptDir\..").Path
 
 if (-not $OutputDir) { $OutputDir = Join-Path $RepoRoot "release" }
 
-$RunnerWheelGlob = "zast_agent-*.whl"
+$RunnerWheelGlob = "deskagent-agent-*.whl"
 $DesktopPnpmTarget = "dist:win:nsis"
-$DesktopArtifactGlob = "Zast-${Version}-win-*.exe"
+$DesktopArtifactGlob = "DeskAgent-${Version}-win-*.exe"
 $DesktopFormat = "nsis"
 $TauriBundleDir = "nsis"
 
@@ -94,7 +94,7 @@ function Stage-Payload {
     }
     $runnerDst = Join-Path $payloadRunner $runnerWheel.Name
     Copy-Item -Force $runnerWheel.FullName $runnerDst
-    # Also copy server.py into the payload so install scripts deploy it to $ZAST_HOME/runner/
+    # Also copy server.py into the payload so install scripts deploy it to $DESKAGENT_HOME/runner/
     Copy-Item -Force (Join-Path $RepoRoot "runner\server.py") (Join-Path $payloadRunner "server.py")
 
     # Junction skills/install scripts/config.yaml into the payload dir.
@@ -128,7 +128,7 @@ function Write-StagingMetadata {
     param([string]$fmt)
     $builtAt = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
 
-    $runnerWheelFile = Get-ChildItem -Path (Join-Path $RepoRoot "installer\payload\runner") -Filter "zast_agent-*.whl" -File | Select-Object -First 1
+    $runnerWheelFile = Get-ChildItem -Path (Join-Path $RepoRoot "installer\payload\runner") -Filter "deskagent-agent-*.whl" -File | Select-Object -First 1
     $runnerSha = (Get-FileHash -Path $runnerWheelFile.FullName -Algorithm SHA256).Hash
     $desktopDir = Join-Path $RepoRoot "installer\payload\desktop"
     $desktop = Get-ChildItem -Path $desktopDir -File | Select-Object -First 1
@@ -161,7 +161,7 @@ function Write-StagingMetadata {
 function Build-UpdateZip {
     <#
     .SYNOPSIS
-      Build the Zast-{ver}-update.zip artifact consumed by the desktop
+      Build the DeskAgent-{ver}-update.zip artifact consumed by the desktop
       client's self-updater.
 
     .DESCRIPTION
@@ -175,7 +175,7 @@ function Build-UpdateZip {
       Skills ship INSIDE the wheel (as `package_data` declared in
       runner/pyproject.toml); the desktop never sees a separate skills tar.
 
-      Output: {OutputDir}/Zast-{ver}-update.zip, containing:
+      Output: {OutputDir}/DeskAgent-{ver}-update.zip, containing:
         - desktop artifacts (exe / dmg / zip / AppImage + blockmap)
         - latest.yml / latest-mac.yml / latest-linux.yml (re-signed defensively)
         - latest-runner.yml (signed by New-RunnerManifest)
@@ -183,7 +183,7 @@ function Build-UpdateZip {
           ignored by the desktop client, which resolves the host at runtime)
         - manifest.json (uploaded alongside the binaries so the backend can
           validate version consistency)
-        - runner/zast_agent-{ver}-py3-none-any.whl
+        - runner/deskagent-agent-{ver}-py3-none-any.whl
         - runner/server.py
     #>
     param(
@@ -206,7 +206,7 @@ function Build-UpdateZip {
 
     Write-Output "==> Building update zip for $Version"
 
-    $stageDir = Join-Path ([IO.Path]::GetTempPath()) "zast-update-stage-$Version-$PID"
+    $stageDir = Join-Path ([IO.Path]::GetTempPath()) "deskagent-update-stage-$Version-$PID"
     if (Test-Path $stageDir) { Remove-Item -Recurse -Force $stageDir }
     New-Item -ItemType Directory -Path $stageDir | Out-Null
 
@@ -214,7 +214,7 @@ function Build-UpdateZip {
         # 1. Copy only current-version artifacts and update manifests into
         #    staging. Exclude win-unpacked/, builder debug files, and stale
         #    artifacts from prior builds.
-        $versionPrefix = "Zast-$Version"
+        $versionPrefix = "DeskAgent-$Version"
         Get-ChildItem -Path $DesktopReleaseDir -File | Where-Object {
             $_.Name -like "$versionPrefix*" -or
             $_.Name -match '^latest.*\.yml$' -or
@@ -261,7 +261,7 @@ function Build-UpdateZip {
         # 6. Pick the canonical desktop exe (Windows NSIS) to record in
         # manifest.json so the backend's _extract_archive_entries finds it
         # without ambiguity.
-        $desktopExe = Get-ChildItem $stageDir -Filter 'Zast-*-win-*.exe' -File | Select-Object -First 1
+        $desktopExe = Get-ChildItem $stageDir -Filter 'DeskAgent-*-win-*.exe' -File | Select-Object -First 1
         $manifest = [ordered]@{
             version        = $Version
             desktop_path   = if ($desktopExe) { $desktopExe.Name } else { $null }
@@ -272,7 +272,7 @@ function Build-UpdateZip {
         ($manifest | ConvertTo-Json -Depth 5) | Set-Content -Path (Join-Path $stageDir 'manifest.json') -NoNewline
 
         # 7. Zip up.
-        $zipPath = Join-Path $OutputDir "Zast-${Version}-update.zip"
+        $zipPath = Join-Path $OutputDir "DeskAgent-${Version}-update.zip"
         if (Test-Path $zipPath) { Remove-Item -Force $zipPath }
         Add-Type -AssemblyName 'System.IO.Compression.FileSystem'
         [IO.Compression.ZipFile]::CreateFromDirectory($stageDir, $zipPath)
@@ -319,7 +319,7 @@ try {
 
     # 1. Build runner.
     if (-not $SkipRunner) {
-        Write-Output "==> Building runner (uv build wheel → dist\zast_agent-*.whl)"
+        Write-Output "==> Building runner (uv build wheel → dist\deskagent-agent-*.whl)"
         Push-Location (Join-Path $RepoRoot "runner")
         try {
             & uv sync --frozen --extra dev
@@ -346,7 +346,7 @@ try {
 
     # 2. Build desktop.
     if (-not $SkipDesktop) {
-        Write-Output "==> Building desktop (electron-builder → release\Zast-${Version}-win-*-nsis.exe)"
+        Write-Output "==> Building desktop (electron-builder → release\DeskAgent-${Version}-win-*-nsis.exe)"
         Push-Location (Join-Path $RepoRoot "desktop")
         try {
             & pnpm install --frozen-lockfile
@@ -381,9 +381,9 @@ try {
     }
 
     # 7. Patch tauri.conf.json, then Tauri build, then restore.
-    # No NSIS wrap — ship Zast-Setup.exe directly so the user double-clicks it
+    # No NSIS wrap — ship DeskAgent-Setup.exe directly so the user double-clicks it
     # and immediately sees the install UI (single-file installer pattern,
-    # avoids the double-installer problem where NSIS extracts Zast-Setup.exe
+    # avoids the double-installer problem where NSIS extracts DeskAgent-Setup.exe
     # to Program Files and the user then has to run it manually).
     Patch-TauriConfig
     try {
@@ -399,9 +399,9 @@ try {
         Restore-TauriConfig
     }
 
-    # 8. Locate final installer — Zast-Setup.exe at target/release (no NSIS wrapper).
+    # 8. Locate final installer — DeskAgent-Setup.exe at target/release (no NSIS wrapper).
     $finalDir = Join-Path $RepoRoot "installer\src-tauri\target\release"
-    $finalGlob = "Zast-Setup.exe"
+    $finalGlob = "DeskAgent-Setup.exe"
     $final = Get-ChildItem -Path $finalDir -Filter $finalGlob -File -ErrorAction SilentlyContinue | Select-Object -First 1
     if (-not $final) {
         throw "Tauri build did not produce $finalDir\$finalGlob"
@@ -409,7 +409,7 @@ try {
 
     # 9. Copy to output dir with version-suffixed name.
     if (-not (Test-Path $OutputDir)) { New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null }
-    $finalName = "Zast-Setup-${Version}.exe"
+    $finalName = "DeskAgent-Setup-${Version}.exe"
     Copy-Item -Force $final.FullName (Join-Path $OutputDir $finalName)
     Write-Output ""
     Write-Output "==> Final installer: $(Join-Path $OutputDir $finalName)"
@@ -420,7 +420,7 @@ try {
     Build-UpdateZip `
         -Version $Version `
         -DesktopReleaseDir (Join-Path (Join-Path $RepoRoot 'desktop') 'release') `
-        -RunnerWheelPath (Get-ChildItem (Join-Path $RepoRoot 'installer\payload\runner') -Filter 'zast_agent-*.whl' | Select-Object -First 1).FullName `
+        -RunnerWheelPath (Get-ChildItem (Join-Path $RepoRoot 'installer\payload\runner') -Filter 'deskagent-agent-*.whl' | Select-Object -First 1).FullName `
         -ServerPyPath (Join-Path $RepoRoot 'installer\payload\runner\server.py') `
         -OutputDir $OutputDir
 } finally {

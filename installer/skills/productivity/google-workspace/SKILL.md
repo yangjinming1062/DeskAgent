@@ -11,14 +11,14 @@ required_credential_files:
   - path: google_client_secret.json
     description: Google OAuth2 client credentials (downloaded from Google Cloud Console)
 metadata:
-  zast:
+  deskagent:
     tags: [Google, Gmail, Calendar, Drive, Sheets, Docs, Contacts, Email, OAuth]
     related_skills: [himalaya]
 ---
 
 # Google Workspace
 
-Gmail, Calendar, Drive, Contacts, Sheets, and Docs — through Zast-managed OAuth and a thin CLI wrapper. When `gws` is installed, the skill uses it as the execution backend for broader Google Workspace coverage; otherwise it falls back to the bundled Python client implementation.
+Gmail, Calendar, Drive, Contacts, Sheets, and Docs — through DeskAgent-managed OAuth and a thin CLI wrapper. When `gws` is installed, the skill uses it as the execution backend for broader Google Workspace coverage; otherwise it falls back to the bundled Python client implementation.
 
 ## References
 
@@ -37,7 +37,7 @@ on CLI, Telegram, Discord, or any platform.
 Define a shorthand first:
 
 ```bash
-GSETUP="python ${ZAST_HOME}:-$HOME/.hermes}/skills/productivity/google-workspace/scripts/setup.py"
+GSETUP="python ${DESKAGENT_HOME}:-$HOME/.hermes}/skills/productivity/google-workspace/scripts/setup.py"
 ```
 
 ### Step 0: Check if already set up
@@ -99,7 +99,7 @@ Tell the user:
 >    Audience → Test users → Add users
 > 6. Download the JSON file and tell me the file path
 >
-> Important Zast CLI note: if the file path starts with `/`, do NOT send only the bare path as its own message in the CLI, because it can be mistaken for a slash command. Send it in a sentence instead, like:
+> Important DeskAgent CLI note: if the file path starts with `/`, do NOT send only the bare path as its own message in the CLI, because it can be mistaken for a slash command. Send it in a sentence instead, like:
 > `The JSON file path is: /home/user/Downloads/client_secret_....json`
 
 Once they provide the path:
@@ -124,7 +124,7 @@ $GSETUP --auth-url --services all --format json
 ```
 
 This returns JSON with an `auth_url` field and also saves the exact URL to
-`${ZAST_HOME:-~/.zast}/google_oauth_last_url.txt`.
+`${DESKAGENT_HOME:-~/.deskagent}/google_oauth_last_url.txt`.
 
 Agent rules for this step:
 - Extract the `auth_url` field and send that exact URL to the user as a single line.
@@ -158,9 +158,9 @@ Should print `AUTHENTICATED`. Setup is complete — token refreshes automaticall
 
 ### Notes
 
-- Token is stored at `${ZAST_HOME:-~/.zast}/google_token.json` and auto-refreshes.
-- Pending OAuth session state/verifier are stored temporarily at `${ZAST_HOME:-~/.zast}/google_oauth_pending.json` until exchange completes.
-- If `gws` is installed, `google_api.py` points it at the same `${ZAST_HOME:-~/.zast}/google_token.json` credentials file. Users do not need to run a separate `gws auth login` flow.
+- Token is stored at `${DESKAGENT_HOME:-~/.deskagent}/google_token.json` and auto-refreshes.
+- Pending OAuth session state/verifier are stored temporarily at `${DESKAGENT_HOME:-~/.deskagent}/google_oauth_pending.json` until exchange completes.
+- If `gws` is installed, `google_api.py` points it at the same `${DESKAGENT_HOME:-~/.deskagent}/google_token.json` credentials file. Users do not need to run a separate `gws auth login` flow.
 - To revoke: `$GSETUP --revoke`
 
 ## Usage
@@ -168,7 +168,7 @@ Should print `AUTHENTICATED`. Setup is complete — token refreshes automaticall
 All commands go through the API script. Set `GAPI` as a shorthand:
 
 ```bash
-GAPI="python ${ZAST_HOME}:-$HOME/.hermes}/skills/productivity/google-workspace/scripts/google_api.py"
+GAPI="python ${DESKAGENT_HOME}:-$HOME/.hermes}/skills/productivity/google-workspace/scripts/google_api.py"
 ```
 
 ### Gmail
