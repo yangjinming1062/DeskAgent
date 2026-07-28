@@ -1,0 +1,13 @@
+<type>(<scope>): <subject — ≤72 chars total, imperative, lowercase>
+
+# Body: one bullet per change.
+#   - path/area: what changed
+#   - path/area: what changed
+# Single-file commits may omit the body. Non-obvious motivation goes in
+# a final "Why: ..." line. Do NOT write "moved from X to Y" history —
+# `git log` carries that.
+#
+# type:    feat | fix | refactor | perf | docs | test | chore | style | build
+# scope:   engines | SLJ | MEDBALL | pose | common |
+#          server_app | train_app | label_app | auth | apps |
+#          or a sub-package; combine cross-cutting with '+' (engines+apps).
