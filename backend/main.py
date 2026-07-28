@@ -24,6 +24,7 @@ from logger import setup_logging
 from models import Base
 from routers import admin_router
 from routers import chat_router
+from routers import companion_router
 from routers import config_router
 from routers import health_router
 from routers import insights_router
@@ -97,6 +98,15 @@ def _install_schema_extensions(conn) -> None:
         ("image_gen_model_name", "VARCHAR(128) DEFAULT ''"),
     ):
         conn.execute(text(f"ALTER TABLE user_model_configs ADD COLUMN IF NOT EXISTS {column} {ddl_type}"))
+    # Enforce "one active avatar per user" at the DB level. Partial unique
+    # indexes are the standard Postgres idiom — ``CREATE UNIQUE INDEX IF
+    # NOT EXISTS`` is idempotent so re-running on boot is safe.
+    conn.execute(
+        text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_avatar_assets_one_active "
+            "ON avatar_assets (user_id) WHERE active"
+        )
+    )
 
 
 def init_database(engine=None) -> None:
@@ -195,3 +205,4 @@ app.include_router(sessions_router, prefix=SETTINGS.api_prefix, dependencies=[De
 app.include_router(config_router, prefix=SETTINGS.api_prefix)
 app.include_router(llm_router, prefix=SETTINGS.api_prefix)
 app.include_router(media_router, prefix=SETTINGS.api_prefix)
+app.include_router(companion_router, prefix=SETTINGS.api_prefix, dependencies=[Depends(get_current_session)])

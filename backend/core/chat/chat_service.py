@@ -25,6 +25,7 @@ from utils import tool_error
 
 from ..async_jobs.background_review import run_background_memory_review
 from ..async_jobs.title_generator import auto_generate_title
+from ..companion import build_system_prompt_extras
 from ..correlation import new_request_id
 from ..llm.context_compressor import compress_history_if_needed
 from ..llm.error_classifier import FailoverReason
@@ -39,7 +40,6 @@ from ..tools_runtime.registry import REGISTRY
 from ..tools_runtime.registry import schema_name
 from ..tools_runtime.tool_dispatch_helpers import _is_multimodal_tool_result
 from ..tools_runtime.tool_dispatch_helpers import _should_parallelize_tool_batch
-from ..tools_runtime.tool_dispatch_helpers import evict_old_screenshots
 from ..tools_runtime.tool_dispatch_helpers import make_tool_result_message
 from ..tools_runtime.tool_guardrails import append_toolguard_guidance
 from ..tools_runtime.tool_guardrails import check_file_safety
@@ -226,11 +226,7 @@ def _build_persisted_content(req: "ChatRequest") -> tuple[str, str]:
     parts array tagged ``multimodal_v1`` so the read path can trust the
     column instead of substring-sniffing.
 
-    Attachments are dispatched by type:
-      - ``video`` → ``video_url`` part (MiMo format with fps/media_resolution)
-      - ``image`` / other → ``image_url`` part (legacy format)
-
-    URL source: ``file_url``.
+    Attachments are emitted as ``image_url`` parts. URL source: ``file_url``.
     """
     text = req.message.content or ""
     attachments = getattr(req.message, "attachments", None) or []
@@ -244,21 +240,7 @@ def _build_persisted_content(req: "ChatRequest") -> tuple[str, str]:
         url = att.get("file_url")
         if not url:
             continue
-
-        att_type = att.get("type", "video")  # default video for historical compat
-
-        if att_type == "video":
-            parts.append(
-                {
-                    "type": "video_url",
-                    "video_url": {"url": url},
-                    "fps": 2,
-                    "media_resolution": "default",
-                }
-            )
-        else:
-            parts.append({"type": "image_url", "image_url": {"url": url}})
-
+        parts.append({"type": "image_url", "image_url": {"url": url}})
         media_uris.append(url)
 
     if media_uris:
@@ -564,12 +546,14 @@ def _build_turn_inputs(
     identity_prompt = db.query(UserSetting.setting_value).filter(UserSetting.user_id == user_id, UserSetting.setting_key == "identity_prompt").scalar()
 
     all_schemas = REGISTRY.get_all_schemas(user_id, user_settings=user_settings)
+    persona = db.query(Persona).filter(Persona.user_id == user_id).one_or_none()
     agent_config = AgentPromptConfig(
         valid_tool_names=[schema_name(s) for s in all_schemas],
         model=model_name,
         tools=all_schemas,
         client_context=_merge_client_context(session_client_context, req.client_context),
         identity_prompt=identity_prompt,
+        persona_extras=build_system_prompt_extras(persona),
     )
     messages = _history_to_messages(history, build_system_prompt(agent_config))
 
@@ -650,11 +634,11 @@ async def _stream_llm_response(
     # the proxy couldn't translate the part to ``inline_data``; having
     # the actual part list in the log lets us confirm shape (text order,
     # URL format, type field) without a packet capture.
-    video_parts = [m for m in current_messages if isinstance(m.get("content"), list) and any(isinstance(p, dict) and p.get("type") == "image_url" for p in m["content"])]
-    if video_parts:
+    image_parts = [m for m in current_messages if isinstance(m.get("content"), list) and any(isinstance(p, dict) and p.get("type") == "image_url" for p in m["content"])]
+    if image_parts:
         logger.info(
             "multimodal request shape",
-            extra={"model_name": model_name, "video_messages": len(video_parts), "sample_content": video_parts[0]["content"]},
+            extra={"model_name": model_name, "image_messages": len(image_parts), "sample_content": image_parts[0]["content"]},
         )
 
     turn_start_time = time.monotonic()
@@ -854,10 +838,10 @@ async def _persist_assistant_with_tool_calls_and_results(
     current_messages: list[dict],
     active_tool_names: set[str],
     schemas_by_name: dict[str, dict],
-) -> tuple[list[dict], bool]:
+) -> list[dict]:
     """Persist assistant-with-tool_calls Message, run the tool batch, persist
-    tool result Messages, return ``(tool_results, had_new_cu_screenshot)``
-    so the orchestrator can decide whether to evict screenshots.
+    tool result Messages, return the tool result messages for the next LLM
+    iteration.
 
     ``active_tool_names`` and ``schemas_by_name`` are mutated in place when
     ``search_tools`` unlocks new tool names so the next iteration's
@@ -888,7 +872,6 @@ async def _persist_assistant_with_tool_calls_and_results(
 
     tool_results = await _run_tool_batch(tool_calls_list, dispatch_ctx)
 
-    had_new_cu_screenshot = False
     for res in tool_results:
         current_messages.append(res)
         if res.get("name") == "search_tools":
@@ -903,8 +886,6 @@ async def _persist_assistant_with_tool_calls_and_results(
                         schema = REGISTRY.get_schema(dispatch_ctx.user_id, name)
                         if schema is not None:
                             schemas_by_name[name] = schema
-        if (res.get("name") or res.get("tool_name")) == "computer_use":
-            had_new_cu_screenshot = True
         db.add(
             Message(
                 conversation_id=conv.id,
@@ -915,7 +896,7 @@ async def _persist_assistant_with_tool_calls_and_results(
         )
     db.commit()
 
-    return tool_results, had_new_cu_screenshot
+    return tool_results
 
 
 async def run_chat_turn(
@@ -1010,7 +991,7 @@ async def run_chat_turn(
                         active_tool_names.add(name)
             _ensure_tool_call_ids(llm_result.tool_calls_list)
 
-            tool_results, had_cu = await _persist_assistant_with_tool_calls_and_results(
+            await _persist_assistant_with_tool_calls_and_results(
                 db,
                 conv,
                 llm_result.tool_calls_list,
@@ -1023,8 +1004,6 @@ async def run_chat_turn(
                 active_tool_names,
                 schemas_by_name,
             )
-            if had_cu:
-                evict_old_screenshots(current_messages)
 
             # Drain steer queue AFTER tool persistence so the OpenAI message
             # ordering [assistant(tool_calls), tool(results), user(steer)] is

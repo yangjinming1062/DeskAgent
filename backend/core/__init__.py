@@ -16,6 +16,14 @@ from .attachments import path_attach_ref
 from .attachments import remove as attachments_remove
 from .attachments import session_dir
 from .auth_helpers import authenticate_ws_token
+from .companion import AvatarGenerationError
+from .companion import build_system_prompt_extras
+from .companion import generate_avatar
+from .companion import get_active_avatar
+from .companion import get_or_create_persona
+from .companion import list_avatar_history
+from .companion import PersonaValidationError
+from .companion import update_persona
 from .backend_tools import cronjob
 from .backend_tools import CRONJOB_SCHEMA
 from .backend_tools import IMAGE_GENERATION_SCHEMA
@@ -83,7 +91,6 @@ from .tools_runtime import canonical_tool_args
 from .tools_runtime import check_file_safety
 from .tools_runtime import classify_tool_failure
 from .tools_runtime import coerce_tool_args
-from .tools_runtime import evict_old_screenshots
 from .tools_runtime import FILE_MUTATING_TOOL_NAMES
 from .tools_runtime import file_mutation_result_landed
 from .tools_runtime import FORGET_SCHEMA
@@ -158,6 +165,14 @@ __all__ = [
     "get_file_path",
     "save_file",
     "authenticate_ws_token",
+    "AvatarGenerationError",
+    "build_system_prompt_extras",
+    "generate_avatar",
+    "get_active_avatar",
+    "get_or_create_persona",
+    "list_avatar_history",
+    "PersonaValidationError",
+    "update_persona",
     "CommandContext",
     "commands_catalog",
     "exec_slash_command",
@@ -206,7 +221,6 @@ __all__ = [
     "file_mutation_result_landed",
     "FILE_MUTATING_TOOL_NAMES",
     "make_tool_result_message",
-    "evict_old_screenshots",
     "check_file_safety",
     "ToolCallGuardrailController",
     "ToolCallGuardrailConfig",
