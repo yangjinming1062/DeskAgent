@@ -18,7 +18,7 @@ from ..interrupt import is_interrupted
 from ..registry import registry
 from ..registry import tool_error
 from .helpers import get_disabled_skill_names
-from .helpers import get_zast_metadata
+from .helpers import get_deskagent_metadata
 from .helpers import iter_skill_index_files
 from .helpers import parse_frontmatter
 from .skill_usage import bump_use
@@ -184,7 +184,7 @@ def _get_required_environment_variables(
 
 
 def _env_overrides() -> dict[str, str]:
-    """Read the ``skills.env_overrides`` map from ``~/.zast/config.yaml``.
+    """Read the ``skills.env_overrides`` map from ``~/.deskagent/config.yaml``.
 
     The runner does not interactive-prompt for secrets. Operators declare
     per-skill env values in config.yaml; Desktop surfaces that map to the
@@ -319,7 +319,7 @@ def skills_list(category: str = None, task_id: str = None) -> str:
     try:
         if not SKILLS_DIR.exists():
             SKILLS_DIR.mkdir(parents=True, exist_ok=True)
-            return json.dumps({"success": True, "skills": [], "categories": [], "message": "No skills found. Skills directory created at $ZAST_HOME/skills/."}, ensure_ascii=False)
+            return json.dumps({"success": True, "skills": [], "categories": [], "message": "No skills found. Skills directory created at $DESKAGENT_HOME/skills/."}, ensure_ascii=False)
         all_skills = _find_all_skills()
         if not all_skills:
             return json.dumps({"success": True, "skills": [], "categories": [], "message": "No skills found in skills/ directory."}, ensure_ascii=False)
@@ -351,7 +351,7 @@ def _serve_plugin_skill(
     from ..system import get_external_skills_dirs
 
     if namespace in _get_disabled_plugins():
-        return json.dumps({"success": False, "error": f"Plugin '{namespace}' is disabled. Re-enable with: zast plugins enable {namespace}"}, ensure_ascii=False)
+        return json.dumps({"success": False, "error": f"Plugin '{namespace}' is disabled. Re-enable with: deskagent plugins enable {namespace}"}, ensure_ascii=False)
     try:
         content = skill_md.read_text(encoding="utf-8")
     except Exception as e:
@@ -538,7 +538,7 @@ def skill_view(
         if outside or (inj := any(p in content.lower() for p in _INJECTION_PATTERNS)):
             warns = []
             if outside:
-                warns.append(f"skill file is outside the trusted skills directory (~/.zast/skills/): {skill_md}")
+                warns.append(f"skill file is outside the trusted skills directory (~/.deskagent/skills/): {skill_md}")
             if inj:
                 warns.append("skill content contains patterns that may indicate prompt injection")
             logger.warning("Skill security warning for '%s': %s", name, "; ".join(warns))
@@ -557,7 +557,7 @@ def skill_view(
         resolved_name = parsed_frontmatter.get("name", skill_md.parent.name)
         if _is_skill_disabled(resolved_name, category=_get_category_from_path(skill_md)):
             return json.dumps(
-                {"success": False, "error": f"Skill '{resolved_name}' is disabled. Enable it with `zast skills` or inspect the files directly on disk."}, ensure_ascii=False
+                {"success": False, "error": f"Skill '{resolved_name}' is disabled. Enable it with `deskagent skills` or inspect the files directly on disk."}, ensure_ascii=False
             )
 
         if file_path and skill_dir:
@@ -621,9 +621,9 @@ def skill_view(
                 for ext in ["*.py", "*.sh", "*.bash", "*.js", "*.ts", "*.rb"]:
                     scr_files.extend(str(f.relative_to(skill_dir)) for f in scr_dir.glob(ext))
 
-        zast_meta = get_zast_metadata(parsed_frontmatter)
-        tags = _parse_tags(zast_meta.get("tags") or parsed_frontmatter.get("tags", ""))
-        related_skills = _parse_tags(zast_meta.get("related_skills") or parsed_frontmatter.get("related_skills", ""))
+        deskagent_meta = get_deskagent_metadata(parsed_frontmatter)
+        tags = _parse_tags(deskagent_meta.get("tags") or parsed_frontmatter.get("tags", ""))
+        related_skills = _parse_tags(deskagent_meta.get("related_skills") or parsed_frontmatter.get("related_skills", ""))
 
         linked_files = {k: v for k, v in [("references", ref_files), ("templates", tmp_files), ("assets", ast_files), ("scripts", scr_files)] if v}
 

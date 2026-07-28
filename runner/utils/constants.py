@@ -11,37 +11,37 @@ IS_WINDOWS: bool = platform.system() == "Windows"
 CREATE_NO_WINDOW: int = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
 """Windows subprocess flag to suppress console window creation."""
 
-_zast_home_override: contextvars.ContextVar[str | None] = contextvars.ContextVar("zast_home_override", default=None)
+_deskagent_home_override: contextvars.ContextVar[str | None] = contextvars.ContextVar("deskagent_home_override", default=None)
 
 
-def set_zast_home_override(value: str | None) -> contextvars.Token:
-    return _zast_home_override.set(value)
+def set_deskagent_home_override(value: str | None) -> contextvars.Token:
+    return _deskagent_home_override.set(value)
 
 
-def reset_zast_home_override(token: contextvars.Token) -> None:
-    _zast_home_override.reset(token)
+def reset_deskagent_home_override(token: contextvars.Token) -> None:
+    _deskagent_home_override.reset(token)
 
 
-def get_zast_home() -> Path:
-    if override := _zast_home_override.get():
+def get_deskagent_home() -> Path:
+    if override := _deskagent_home_override.get():
         return Path(override)
-    if override := os.environ.get("ZAST_HOME"):
+    if override := os.environ.get("DESKAGENT_HOME"):
         return Path(override)
     if sys.platform == "win32" and (local_appdata := os.environ.get("LOCALAPPDATA")):
-        return Path(local_appdata) / "zast"
-    return Path.home() / ".zast"
+        return Path(local_appdata) / "deskagent"
+    return Path.home() / ".deskagent"
 
 
-def get_zast_home_override() -> str | None:
-    return _zast_home_override.get() or os.environ.get("ZAST_HOME") or None
+def get_deskagent_home_override() -> str | None:
+    return _deskagent_home_override.get() or os.environ.get("DESKAGENT_HOME") or None
 
 
 def get_subprocess_home() -> Path:
-    return Path(override) if (override := os.environ.get("ZAST_SUBPROCESS_HOME")) else get_zast_home()
+    return Path(override) if (override := os.environ.get("DESKAGENT_SUBPROCESS_HOME")) else get_deskagent_home()
 
 
-def get_zast_dir(new_subpath: str | None = None, old_name: str | None = None) -> Path:
-    base = get_zast_home()
+def get_deskagent_dir(new_subpath: str | None = None, old_name: str | None = None) -> Path:
+    base = get_deskagent_home()
     new_path = base / new_subpath if new_subpath else None
     old_path = base / old_name if old_name else None
     if new_path and new_path.is_dir():
@@ -52,7 +52,7 @@ def get_zast_dir(new_subpath: str | None = None, old_name: str | None = None) ->
 
 
 def get_skills_dir() -> Path:
-    return get_zast_home() / "skills"
+    return get_deskagent_home() / "skills"
 
 
 def is_termux() -> bool:

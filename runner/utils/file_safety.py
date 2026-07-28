@@ -4,20 +4,20 @@ from pathlib import Path
 
 from .config import cfg_get
 from .config import load_config
-from .constants import get_zast_home
+from .constants import get_deskagent_home
 from .constants import IS_WINDOWS as _IS_WINDOWS
 
 _BLOCKED_PROJECT_ENV_BASENAMES: set[str] = {".env", ".env.local", ".env.development", ".env.production", ".env.test", ".env.staging", ".envrc"}
 PROFILE_SCOPED_AREAS = ("skills", "plugins", "cron", "memories")
 _SANDBOX_BACKEND_DIR = "sandboxes"
-_SANDBOX_HOME_SUFFIX = ("home", ".zast")
+_SANDBOX_HOME_SUFFIX = ("home", ".deskagent")
 
 
-def _zast_home_path() -> Path:
+def _deskagent_home_path() -> Path:
     try:
-        return get_zast_home()
+        return get_deskagent_home()
     except Exception:
-        return Path(os.path.expanduser("~/.zast"))
+        return Path(os.path.expanduser("~/.deskagent"))
 
 
 _denied_paths_cache: tuple[str, set[str]] | None = None
@@ -29,7 +29,7 @@ def build_write_denied_paths(home: str) -> set[str]:
     global _denied_paths_cache
     if _denied_paths_cache and _denied_paths_cache[0] == home:
         return _denied_paths_cache[1]
-    zast, p_home = _zast_home_path(), Path(home)
+    deskagent, p_home = _deskagent_home_path(), Path(home)
     result = {
         os.path.realpath(p)
         for p in [
@@ -37,8 +37,8 @@ def build_write_denied_paths(home: str) -> set[str]:
             p_home / ".ssh/id_rsa",
             p_home / ".ssh/id_ed25519",
             p_home / ".ssh/config",
-            zast / ".env",
-            zast / "anthropic_oauth.json",
+            deskagent / ".env",
+            deskagent / "anthropic_oauth.json",
             p_home / ".bashrc",
             p_home / ".zshrc",
             p_home / ".profile",
@@ -189,13 +189,13 @@ def is_write_denied(path: str) -> bool:
     elif any(resolved.startswith(p) for p in build_write_denied_prefixes(home)):
         return True
 
-    zast_dirs = []
+    deskagent_dirs = []
     try:
-        zast_dirs.append(os.path.realpath(_zast_home_path()))
+        deskagent_dirs.append(os.path.realpath(_deskagent_home_path()))
     except Exception:
         pass
 
-    for base_real in zast_dirs:
+    for base_real in deskagent_dirs:
         try:
             if any(resolved == os.path.realpath(os.path.join(base_real, n)) for n in ("auth.json", "config.yaml", "webhook_subscriptions.json")):
                 return True
@@ -215,33 +215,33 @@ def get_read_block_error(path: str) -> str | None:
     except Exception:
         return None
 
-    zast_dirs = []
+    deskagent_dirs = []
     try:
-        zast_dirs.append(_zast_home_path().resolve())
+        deskagent_dirs.append(_deskagent_home_path().resolve())
     except Exception:
         pass
 
-    for zd in zast_dirs:
+    for zd in deskagent_dirs:
         for blocked in (zd / "skills/.hub/index-cache", zd / "skills/.hub"):
             try:
                 resolved.relative_to(blocked)
-                return f"Access denied: {path} is an internal Zast cache file. Use skill_view / skills_list instead."
+                return f"Access denied: {path} is an internal DeskAgent cache file. Use skill_view / skills_list instead."
             except ValueError:
                 continue
 
     credential_file_names = ("auth.json", "auth.lock", "anthropic_oauth.json", ".env", "webhook_subscriptions.json", "auth/google_oauth.json", "cache/bws_cache.json")
-    for zd in zast_dirs:
+    for zd in deskagent_dirs:
         for name in credential_file_names:
             try:
                 if resolved == (zd / name).resolve():
-                    return f"Access denied: {path} is a Zast credential store and cannot be read directly."
+                    return f"Access denied: {path} is a DeskAgent credential store and cannot be read directly."
             except Exception:
                 pass
 
-    for zd in zast_dirs:
+    for zd in deskagent_dirs:
         try:
             resolved.relative_to((zd / "mcp-tokens").resolve())
-            return f"Access denied: {path} is a Zast MCP token file and cannot be read directly."
+            return f"Access denied: {path} is a DeskAgent MCP token file and cannot be read directly."
         except (ValueError, Exception):
             continue
 
@@ -253,8 +253,8 @@ def get_read_block_error(path: str) -> str | None:
 
 def _resolve_active_profile_name() -> str:
     try:
-        zast_real = _zast_home_path().resolve()
-        rel = zast_real.relative_to(zast_real / "profiles")
+        deskagent_real = _deskagent_home_path().resolve()
+        rel = deskagent_real.relative_to(deskagent_real / "profiles")
         if rel.parts:
             return rel.parts[0]
     except (OSError, RuntimeError, ValueError):
@@ -265,7 +265,7 @@ def _resolve_active_profile_name() -> str:
 def classify_cross_profile_target(path: str) -> dict | None:
     try:
         target = Path(os.path.expanduser(str(path))).resolve()
-        root_real = _zast_home_path().resolve()
+        root_real = _deskagent_home_path().resolve()
         rel = target.relative_to(root_real)
         parts = rel.parts
         if not parts:

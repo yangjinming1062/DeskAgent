@@ -1,6 +1,6 @@
 import json
 
-from .constants import get_zast_home
+from .constants import get_deskagent_home
 
 CONFIG_FILENAME = "config.yaml"
 
@@ -37,7 +37,7 @@ def load_config() -> dict:
     invalidated automatically when the mtime advances.
     """
     global _CONFIG_CACHE, _CONFIG_CACHE_MTIME
-    path = get_zast_home() / CONFIG_FILENAME
+    path = get_deskagent_home() / CONFIG_FILENAME
     try:
         mtime = path.stat().st_mtime if path.is_file() else None
     except OSError:

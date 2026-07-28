@@ -17,7 +17,7 @@ from utils import atomic_replace
 from utils import cfg_get
 from utils import CREATE_NO_WINDOW
 from utils import find_bash as _find_shell
-from utils import get_zast_home
+from utils import get_deskagent_home
 from utils import IS_WINDOWS
 from utils import kill_tree
 from utils import load_config
@@ -54,7 +54,7 @@ if not IS_WINDOWS:
 logger = logging.getLogger(__name__)
 
 # Checkpoint file for crash recovery
-CHECKPOINT_PATH = get_zast_home() / "processes.json"
+CHECKPOINT_PATH = get_deskagent_home() / "processes.json"
 
 MAX_OUTPUT_CHARS = 200_000  # 200KB rolling output buffer
 FINISHED_TTL_SECONDS = 1800  # Keep finished processes for 30 minutes
@@ -586,9 +586,9 @@ class ProcessRegistry:
             pid_scope="sandbox",
         )
         temp_dir = self._env_temp_dir(env)
-        log_path = f"{temp_dir}/zast_bg_{session.id}.log"
-        pid_path = f"{temp_dir}/zast_bg_{session.id}.pid"
-        exit_path = f"{temp_dir}/zast_bg_{session.id}.exit"
+        log_path = f"{temp_dir}/deskagent_bg_{session.id}.log"
+        pid_path = f"{temp_dir}/deskagent_bg_{session.id}.pid"
+        exit_path = f"{temp_dir}/deskagent_bg_{session.id}.exit"
         quoted_command = shlex.quote(command)
         quoted_temp_dir = shlex.quote(temp_dir)
         quoted_log_path = shlex.quote(log_path)

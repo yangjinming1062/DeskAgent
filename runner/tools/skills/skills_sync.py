@@ -9,7 +9,7 @@ from pathlib import PurePosixPath
 
 from utils import atomic_replace
 from utils import get_skills_dir
-from utils import get_zast_home
+from utils import get_deskagent_home
 
 from .skill_usage import _load_protected_builtins
 from .skill_usage import read_suppressed_names
@@ -17,7 +17,7 @@ from .skills_guard import content_hash
 
 logger = logging.getLogger(__name__)
 
-ZAST_HOME = get_zast_home()
+DESKAGENT_HOME = get_deskagent_home()
 SKILLS_DIR = get_skills_dir()
 MANIFEST_FILE = SKILLS_DIR / ".bundled_manifest"
 NO_BUNDLED_SKILLS_MARKER = ".no-bundled-skills"
@@ -110,7 +110,7 @@ def _content_hash(directory: Path) -> str:
 
 
 def sync_skills(quiet: bool = False) -> dict:
-    if (ZAST_HOME / NO_BUNDLED_SKILLS_MARKER).exists():
+    if (DESKAGENT_HOME / NO_BUNDLED_SKILLS_MARKER).exists():
         if not quiet:
             print("  (skipped — profile opted out of bundled skills via .no-bundled-skills)")
         return {"copied": [], "updated": [], "skipped": 0, "user_modified": [], "cleaned": [], "total_bundled": 0, "skipped_opt_out": True}
@@ -143,7 +143,7 @@ def sync_skills(quiet: bool = False) -> dict:
                         manifest[skill_name] = bundled_hash
                     elif not quiet:
                         print(
-                            f"  ⚠ {skill_name}: bundled version shipped but you already have a local skill by this name — yours was kept. Run `zast skills reset {skill_name}` to replace it with the bundled version."
+                            f"  ⚠ {skill_name}: bundled version shipped but you already have a local skill by this name — yours was kept. Run `deskagent skills reset {skill_name}` to replace it with the bundled version."
                         )
                 else:
                     dest.parent.mkdir(parents=True, exist_ok=True)
@@ -240,7 +240,7 @@ def reset_bundled_skill(name: str, restore: bool = False) -> dict:
         return {
             "ok": False,
             "action": "not_in_manifest",
-            "message": f"'{name}' is not a tracked bundled skill. Nothing to reset. (Hub-installed skills use `zast skills uninstall`.)",
+            "message": f"'{name}' is not a tracked bundled skill. Nothing to reset. (Hub-installed skills use `deskagent skills uninstall`.)",
             "synced": None,
         }
     deleted_user_copy = False
@@ -281,13 +281,13 @@ def reset_bundled_skill(name: str, restore: bool = False) -> dict:
 
 
 def set_bundled_skills_opt_out(enabled: bool) -> dict:
-    marker = ZAST_HOME / NO_BUNDLED_SKILLS_MARKER
+    marker = DESKAGENT_HOME / NO_BUNDLED_SKILLS_MARKER
     existed = marker.exists()
     try:
         if enabled:
-            ZAST_HOME.mkdir(parents=True, exist_ok=True)
+            DESKAGENT_HOME.mkdir(parents=True, exist_ok=True)
             marker.write_text(
-                "This profile opted out of bundled-skill seeding (`zast skills opt-out`).\nDelete this file to re-enable sync on the next self-update.\n", encoding="utf-8"
+                "This profile opted out of bundled-skill seeding (`deskagent skills opt-out`).\nDelete this file to re-enable sync on the next self-update.\n", encoding="utf-8"
             )
             changed = not existed
             message = (
@@ -299,14 +299,14 @@ def set_bundled_skills_opt_out(enabled: bool) -> dict:
             if existed:
                 marker.unlink()
             changed = existed
-            message = "Opted back in. The next self-update (or `zast skills opt-in --sync`) will re-seed bundled skills." if changed else "Not opted out — no marker to remove."
+            message = "Opted back in. The next self-update (or `deskagent skills opt-in --sync`) will re-seed bundled skills." if changed else "Not opted out — no marker to remove."
     except OSError as e:
         return {"ok": False, "changed": False, "marker": str(marker), "message": f"Could not update opt-out marker at {marker}: {e}"}
     return {"ok": True, "changed": changed, "marker": str(marker), "message": message}
 
 
 def is_bundled_skills_opt_out() -> bool:
-    return (ZAST_HOME / NO_BUNDLED_SKILLS_MARKER).exists()
+    return (DESKAGENT_HOME / NO_BUNDLED_SKILLS_MARKER).exists()
 
 
 def remove_pristine_bundled_skills(dry_run: bool = False) -> dict:
@@ -347,7 +347,7 @@ def remove_pristine_bundled_skills(dry_run: bool = False) -> dict:
 
 
 if __name__ == "__main__":
-    print("Syncing bundled skills into ~/.zast/skills/ ...")
+    print("Syncing bundled skills into ~/.deskagent/skills/ ...")
     res = sync_skills(quiet=False)
     parts = [f"{len(res['copied'])} new", f"{len(res['updated'])} updated", f"{res['skipped']} unchanged"]
     if res["user_modified"]:

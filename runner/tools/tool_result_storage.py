@@ -9,14 +9,14 @@ from .system.budget_config import DEFAULT_PREVIEW_SIZE_CHARS
 logger = logging.getLogger(__name__)
 PERSISTED_OUTPUT_TAG = "<persisted-output>"
 PERSISTED_OUTPUT_CLOSING_TAG = "</persisted-output>"
-STORAGE_DIR = "/tmp/zast-results"
+STORAGE_DIR = "/tmp/deskagent-results"
 
 
 def _resolve_storage_dir(env) -> str:
     if env is not None and (get_temp_dir := getattr(env, "get_temp_dir", None)) and callable(get_temp_dir):
         try:
             if temp_dir := get_temp_dir():
-                return f"{temp_dir.rstrip('/') or '/'}/zast-results"
+                return f"{temp_dir.rstrip('/') or '/'}/deskagent-results"
         except Exception as exc:
             logger.debug("Could not resolve env temp dir: %s", exc)
     return STORAGE_DIR

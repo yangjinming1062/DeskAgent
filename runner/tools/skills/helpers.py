@@ -35,19 +35,19 @@ def iter_skill_index_files(directory: Path | str, name: str = "SKILL.md"):
     yield from sorted(root.rglob(name))
 
 
-def get_zast_metadata(frontmatter: dict[str, Any] | None) -> dict[str, Any]:
-    """Return ``frontmatter.metadata.zast`` as a dict, or ``{}`` if any link is missing/wrong type."""
+def get_deskagent_metadata(frontmatter: dict[str, Any] | None) -> dict[str, Any]:
+    """Return ``frontmatter.metadata.deskagent`` as a dict, or ``{}`` if any link is missing/wrong type."""
     if not isinstance(frontmatter, dict):
         return {}
     metadata = frontmatter.get("metadata")
     if not isinstance(metadata, dict):
         return {}
-    zast = metadata.get("zast")
-    return zast if isinstance(zast, dict) else {}
+    deskagent = metadata.get("deskagent")
+    return deskagent if isinstance(deskagent, dict) else {}
 
 
 def get_disabled_skill_names(section: str = "skills") -> set[str]:
-    """Read the ``<section>.disabled`` list from ``~/.zast/config.yaml``.
+    """Read the ``<section>.disabled`` list from ``~/.deskagent/config.yaml``.
 
     ``section`` defaults to ``"skills"``; pass ``"toolsets"`` to share the
     same parse path for the sibling toolsets section.
@@ -62,6 +62,6 @@ def get_disabled_skill_names(section: str = "skills") -> set[str]:
 __all__ = [
     "parse_frontmatter",
     "iter_skill_index_files",
-    "get_zast_metadata",
+    "get_deskagent_metadata",
     "get_disabled_skill_names",
 ]

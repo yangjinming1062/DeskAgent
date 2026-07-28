@@ -136,7 +136,7 @@ class ToolRegistry:
         """Return ``get_schemas()`` filtered by ``disabled_toolset_ids``.
 
         Symmetric with ``tools/skills/helpers.py::get_disabled_skill_names``
-        — reads ``toolsets.disabled`` from ``$ZAST_HOME/config.yaml`` via
+        — reads ``toolsets.disabled`` from ``$DESKAGENT_HOME/config.yaml`` via
         ``runner/tools/toolsets/helpers.py``. Used by ``server.py``'s
         ``get_tools`` RPC handler so Desktop never advertises a disabled
         toolset to Backend's LLM-facing schema list.

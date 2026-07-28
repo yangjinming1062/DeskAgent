@@ -16,7 +16,7 @@ from utils import get_cross_profile_warning
 from utils import get_read_block_error
 from utils import get_sandbox_mirror_warning
 from utils import get_windows_sensitive_prefixes
-from utils import get_zast_home
+from utils import get_deskagent_home
 from utils import IS_WINDOWS
 from utils import load_config
 from utils import redact_sensitive_text
@@ -395,25 +395,25 @@ if IS_WINDOWS:
         "c:/hiberfil.sys",
     }
 
-_zast_config_resolved: str | None = None
-_zast_config_resolved_loaded = False
+_deskagent_config_resolved: str | None = None
+_deskagent_config_resolved_loaded = False
 
 
-def _get_zast_config_resolved() -> str | None:
-    """Return the resolved absolute path of the Zast config file (cached)."""
-    global _zast_config_resolved, _zast_config_resolved_loaded
-    if _zast_config_resolved_loaded:
-        return _zast_config_resolved
-    _zast_config_resolved_loaded = True
+def _get_deskagent_config_resolved() -> str | None:
+    """Return the resolved absolute path of the DeskAgent config file (cached)."""
+    global _deskagent_config_resolved, _deskagent_config_resolved_loaded
+    if _deskagent_config_resolved_loaded:
+        return _deskagent_config_resolved
+    _deskagent_config_resolved_loaded = True
     try:
 
-        _zast_config_resolved = str((get_zast_home() / "config.yaml").resolve())
+        _deskagent_config_resolved = str((get_deskagent_home() / "config.yaml").resolve())
     except Exception:
         try:
-            _zast_config_resolved = str(Path("~/.zast/config.yaml").expanduser().resolve())
+            _deskagent_config_resolved = str(Path("~/.deskagent/config.yaml").expanduser().resolve())
         except Exception:
-            _zast_config_resolved = None
-    return _zast_config_resolved
+            _deskagent_config_resolved = None
+    return _deskagent_config_resolved
 
 
 def _check_sensitive_path(filepath: str, task_id: str = "default") -> str | None:
@@ -446,22 +446,22 @@ def _check_sensitive_path(filepath: str, task_id: str = "default") -> str | None
             return _err
     if resolved in _SENSITIVE_EXACT_PATHS or normalized in _SENSITIVE_EXACT_PATHS:
         return _err
-    # Prevent agents from modifying the Zast config file directly.
+    # Prevent agents from modifying the DeskAgent config file directly.
     # approvals.mode and other security settings live here; a malicious or
     # prompt-injected agent could silently disable exec approval by writing to
     # this file.
-    zast_config = _get_zast_config_resolved()
-    if zast_config and (resolved == zast_config or normalized == zast_config):
+    deskagent_config = _get_deskagent_config_resolved()
+    if deskagent_config and (resolved == deskagent_config or normalized == deskagent_config):
         return (
-            f"Refusing to write to Zast config file: {filepath}\n"
+            f"Refusing to write to DeskAgent config file: {filepath}\n"
             "Agent cannot modify security-sensitive configuration. "
-            "Edit ~/.zast/config.yaml directly or use 'zast config' instead."
+            "Edit ~/.deskagent/config.yaml directly or use 'deskagent config' instead."
         )
     return None
 
 
 def _get_container_mirror_prefix_for_task(task_id: str = "default") -> str | None:
-    """Return the container-side Zast mirror prefix for Docker file tools."""
+    """Return the container-side DeskAgent mirror prefix for Docker file tools."""
     try:
 
         container_key = resolve_container_task_id(task_id)
@@ -474,7 +474,7 @@ def _get_container_mirror_prefix_for_task(task_id: str = "default") -> str | Non
 
         if env is not None:
             if env.__class__.__name__ == "DockerEnvironment" and bool(getattr(env, "_persistent", False)):
-                return "/root/.zast"
+                return "/root/.deskagent"
             return None
 
         config = get_env_config()
@@ -482,14 +482,14 @@ def _get_container_mirror_prefix_for_task(task_id: str = "default") -> str | Non
         return None
 
     if config.get("env_type") == "docker" and config.get("container_persistent", True):
-        return "/root/.zast"
+        return "/root/.deskagent"
     return None
 
 
 def _check_cross_profile_path(filepath: str, task_id: str = "default") -> str | None:
-    """Return a soft-guard warning when ``filepath`` lands in another Zast
+    """Return a soft-guard warning when ``filepath`` lands in another DeskAgent
     profile's scoped area, a host-side sandbox-mirror of authoritative profile
-    state, or the Docker container's sandbox mirror of Zast state.
+    state, or the Docker container's sandbox mirror of DeskAgent state.
 
     Three detectors run in order:
 
@@ -502,15 +502,15 @@ def _check_cross_profile_path(filepath: str, task_id: str = "default") -> str | 
       agent's host OS user can already write anywhere (the terminal tool
       has no enforcement), so a hard block here would give false confidence.
     * sandbox-mirror (#32049) — writes that hit the
-      ``…/sandboxes/<backend>/<task>/home/.zast/…`` mirror created by a
+      ``…/sandboxes/<backend>/<task>/home/.deskagent/…`` mirror created by a
       non-local terminal backend (Docker, Daytona, etc.), where the host
-      Zast process never reads the mirror and the authoritative file is
+      DeskAgent process never reads the mirror and the authoritative file is
       left untouched.
     * container-mirror (#32049 follow-up) — writes from inside a Docker
       container whose bind-mounted home strips the ``sandboxes/`` prefix, so
-      the agent sees a plain ``/root/.zast/…`` path.
+      the agent sees a plain ``/root/.deskagent/…`` path.
 
-    Returns ``None`` when the write is in-scope or outside Zast scope.
+    Returns ``None`` when the write is in-scope or outside DeskAgent scope.
     All detectors are soft guards — the agent can override any by
     passing ``cross_profile=True`` to its write tool after explicit user
     direction. Defense-in-depth, NOT a security boundary — the terminal
@@ -520,7 +520,7 @@ def _check_cross_profile_path(filepath: str, task_id: str = "default") -> str | 
     for the detection rules.
     """
     # Resolve via the task's cwd so a relative ``skills/foo/SKILL.md``
-    # in a session that cd'd into ``~/.zast/profiles/other/`` is
+    # in a session that cd'd into ``~/.deskagent/profiles/other/`` is
     # classified against the right base.
     try:
         resolved = str(_resolve_path_for_task(filepath, task_id))
@@ -904,11 +904,11 @@ def read_file_tool(path: str, offset: int = 1, limit: int = 500, task_id: str = 
                 }
             )
 
-        # ── Zast internal path guard ────────────────────────────────
+        # ── DeskAgent internal path guard ────────────────────────────────
         # Prevent prompt injection via catalog or hub metadata files,
-        # and block credential stores under ZAST_HOME.  Pass the
+        # and block credential stores under DESKAGENT_HOME.  Pass the
         # already-resolved path so a relative-path read against
-        # TERMINAL_CWD == ZAST_HOME (e.g. "auth.json") still hits the
+        # TERMINAL_CWD == DESKAGENT_HOME (e.g. "auth.json") still hits the
         # denylist — get_read_block_error's own resolve() runs against
         # the Python process cwd, which can differ.
         block_error = get_read_block_error(str(_resolved))
@@ -1194,7 +1194,7 @@ def _check_file_staleness(filepath: str, task_id: str) -> str | None:
 def write_file_tool(path: str, content: str, task_id: str = "default", cross_profile: bool = False) -> str:
     """Write content to a file.
 
-    ``cross_profile`` opts out of the soft cross-Zast-profile guard. The
+    ``cross_profile`` opts out of the soft cross-DeskAgent-profile guard. The
     guard fires only on writes that land in another profile's
     skills/plugins/cron/memories directory; everything else is unaffected.
     Pass ``True`` after explicit user direction — same shape as ``force``
@@ -1277,7 +1277,7 @@ def patch_tool(
 ) -> str:
     """Patch a file using replace mode or V4A patch format.
 
-    ``cross_profile`` opts out of the soft cross-Zast-profile guard for
+    ``cross_profile`` opts out of the soft cross-DeskAgent-profile guard for
     targets under another profile's skills/plugins/cron/memories
     directory. Same shape as ``write_file``'s flag.
     """
@@ -1555,7 +1555,7 @@ WRITE_FILE_SCHEMA = {
             "content": {"type": "string", "description": "Complete content to write to the file"},
             "cross_profile": {
                 "type": "boolean",
-                "description": "Opt out of the cross-profile soft guard. Defaults to false. Set true ONLY after explicit user direction to edit another Zast profile's skills/plugins/cron/memories — by default these writes are blocked with a warning because they affect a different profile than the one this session is running under.",
+                "description": "Opt out of the cross-profile soft guard. Defaults to false. Set true ONLY after explicit user direction to edit another DeskAgent profile's skills/plugins/cron/memories — by default these writes are blocked with a warning because they affect a different profile than the one this session is running under.",
                 "default": False,
             },
         },
@@ -1606,7 +1606,7 @@ PATCH_SCHEMA = {
             },
             "cross_profile": {
                 "type": "boolean",
-                "description": "Opt out of the cross-profile soft guard. Defaults to false. Set true ONLY after explicit user direction to edit another Zast profile's skills/plugins/cron/memories.",
+                "description": "Opt out of the cross-profile soft guard. Defaults to false. Set true ONLY after explicit user direction to edit another DeskAgent profile's skills/plugins/cron/memories.",
                 "default": False,
             },
         },
@@ -1656,7 +1656,7 @@ def _handle_write_file(args, **kw):
     if not isinstance(path := args.get("path"), str) or not path:
         return tool_error("write_file: missing 'path'.")
     if "content" not in args:
-        return tool_error("write_file: missing 'content'. Use execute_code with zast_tools.write_file() for huge files.")
+        return tool_error("write_file: missing 'content'. Use execute_code with deskagent_tools.write_file() for huge files.")
     if not isinstance(content := args["content"], str):
         return tool_error(f"write_file: 'content' must be string, got {type(content).__name__}.")
     return write_file_tool(path, content, kw.get("task_id", "default"), bool(args.get("cross_profile")))

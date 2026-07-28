@@ -28,8 +28,8 @@ import requests
 from utils import call_llm
 from utils import cfg_get
 from utils import CREATE_NO_WINDOW
-from utils import get_zast_dir
-from utils import get_zast_home
+from utils import get_deskagent_dir
+from utils import get_deskagent_home
 from utils import in_async_loop
 from utils import is_termux as _is_termux_environment
 from utils import is_truthy_value
@@ -95,11 +95,11 @@ def _discover_homebrew_node_dirs() -> tuple[str, ...]:
 
 def _browser_candidate_path_dirs() -> list[str]:
     """Return ordered browser CLI PATH candidates shared by discovery and execution."""
-    zast_home = get_zast_home()
-    zast_node_bin = str(zast_home / "node" / "bin")
-    zast_node_root = str(zast_home / "node")
-    zast_nm_bin = str(zast_home / "node_modules" / ".bin")
-    return [zast_node_bin, zast_node_root, zast_nm_bin, *list(_discover_homebrew_node_dirs()), *_SANE_PATH_DIRS]
+    deskagent_home = get_deskagent_home()
+    deskagent_node_bin = str(deskagent_home / "node" / "bin")
+    deskagent_node_root = str(deskagent_home / "node")
+    deskagent_nm_bin = str(deskagent_home / "node_modules" / ".bin")
+    return [deskagent_node_bin, deskagent_node_root, deskagent_nm_bin, *list(_discover_homebrew_node_dirs()), *_SANE_PATH_DIRS]
 
 
 def _merge_browser_path(existing_path: str = "") -> str:
@@ -379,7 +379,7 @@ def _lightpanda_fallback_reason(engine: str, command: str, result: dict[str, Any
     """Return the user-visible reason a Lightpanda result needs Chrome fallback.
 
     ``None`` means no fallback should run.  The returned string is copied into
-    the fallback result so CLI/TUI/gateway users can see when Zast silently
+    the fallback result so CLI/TUI/gateway users can see when DeskAgent silently
     switched from Lightpanda to Chrome for completeness.
     """
     if engine != "lightpanda":
@@ -489,7 +489,7 @@ def _run_chrome_fallback_command(
     if not _chromium_installed():
         if _running_in_docker():
             hint = (
-                "Chrome fallback requires Chromium, but it is missing. " "You're running in Docker — pull the latest image: " "docker pull ghcr.io/nousresearch/zast-agent:latest"
+                "Chrome fallback requires Chromium, but it is missing. " "You're running in Docker — pull the latest image: " "docker pull ghcr.io/nousresearch/deskagent-agent:latest"
             )
         else:
             hint = (
@@ -542,7 +542,7 @@ def _run_chrome_fallback_command(
             #   and that grandchild's CreateProcess dies silently
             #   ("Daemon process exited during startup with no error output")
             #   when inherited parent handles are in a weird state. Observed
-            #   in the Zast CLI where sys.stdout and sys.stderr both report
+            #   in the DeskAgent CLI where sys.stdout and sys.stderr both report
             #   fileno=1 (stderr dup'd onto stdout at the OS level).
             # * close_fds=True → block inheritance of every other handle.
             #   (Default on POSIX; must be explicit on Windows for stdio.)
@@ -739,7 +739,7 @@ def _socket_safe_tmpdir() -> str:
     """Return a short temp directory path suitable for Unix domain sockets.
 
     macOS sets ``TMPDIR`` to ``/var/folders/xx/.../T/`` (~51 chars).  When we
-    append ``agent-browser-zast_…`` the resulting socket path exceeds the
+    append ``agent-browser-deskagent_…`` the resulting socket path exceeds the
     104-byte macOS limit for ``AF_UNIX`` addresses, causing agent-browser to
     fail with "Failed to create socket directory" or silent screenshot failures.
 
@@ -789,7 +789,7 @@ def _emergency_cleanup_all_sessions():
     Called on process exit or interrupt to prevent orphaned sessions.
 
     Also runs the orphan reaper to clean up daemons left behind by previously
-    crashed zast processes — this way every clean zast exit sweeps
+    crashed deskagent processes — this way every clean deskagent exit sweeps
     accumulated orphans, not just ones that actively used the browser tool.
     """
     global _cleanup_done
@@ -811,9 +811,9 @@ def _emergency_cleanup_all_sessions():
                 _session_last_activity.clear()
                 _recording_sessions.clear()
 
-    # Sweep orphans from other crashed zast processes.  Safe even if we
+    # Sweep orphans from other crashed deskagent processes.  Safe even if we
     # never used the browser — uses owner_pid liveness to avoid reaping
-    # daemons owned by other live zast processes.
+    # daemons owned by other live deskagent processes.
     try:
         _reap_orphaned_browser_sessions()
     except Exception as e:
@@ -857,10 +857,10 @@ def _cleanup_inactive_browser_sessions():
 
 
 def _write_owner_pid(socket_dir: str, session_name: str) -> None:
-    """Record the current zast PID as the owner of a browser socket dir.
+    """Record the current deskagent PID as the owner of a browser socket dir.
 
     Written atomically to ``<socket_dir>/<session_name>.owner_pid`` so the
-    orphan reaper can distinguish daemons owned by a live zast process
+    orphan reaper can distinguish daemons owned by a live deskagent process
     (don't reap) from daemons whose owner crashed (reap).  Best-effort —
     an OSError here just falls back to the legacy ``tracked_names``
     heuristic in the reaper.
@@ -882,13 +882,13 @@ def _reap_orphaned_browser_sessions():
 
     This function scans the tmp directory for ``agent-browser-*`` socket dirs
     left behind by previous runs, reads the daemon PID files, and kills any
-    daemons whose owning zast process is no longer alive.
+    daemons whose owning deskagent process is no longer alive.
 
     Ownership detection priority:
       1. ``<session>.owner_pid`` file (written by current code) — if the
-         referenced zast PID is alive, leave the daemon alone regardless
+         referenced deskagent PID is alive, leave the daemon alone regardless
          of whether it's in *this* process's ``_active_sessions``.  This is
-         cross-process safe: two concurrent zast instances won't reap each
+         cross-process safe: two concurrent deskagent instances won't reap each
          other's daemons.
       2. Fallback for daemons that predate owner_pid: check
          ``_active_sessions`` in the current process.  If not tracked here,
@@ -903,10 +903,10 @@ def _reap_orphaned_browser_sessions():
     socket_dirs = glob.glob(pattern)
 
     socket_dirs += glob.glob(os.path.join(tmpdir, "agent-browser-cdp_*"))
-    # Also pick up Camofox sessions (keyed by `zast_<uuid>` user_id; see
+    # Also pick up Camofox sessions (keyed by `deskagent_<uuid>` user_id; see
     # browser_camofox.py — the agent-browser CLI does not own these socket
     # dirs, but cleaning them prevents stale tempfiles from accumulating.)
-    socket_dirs += glob.glob(os.path.join(tmpdir, "agent-browser-zast_*"))
+    socket_dirs += glob.glob(os.path.join(tmpdir, "agent-browser-deskagent_*"))
 
     if not socket_dirs:
         return
@@ -936,7 +936,7 @@ def _reap_orphaned_browser_sessions():
                 owner_alive = None  # corrupt file — fall through
 
         if owner_alive is True:
-            # Owner is alive — this session belongs to a live zast process.
+            # Owner is alive — this session belongs to a live deskagent process.
             continue
 
         if owner_alive is None:
@@ -1316,7 +1316,7 @@ BROWSER_TOOL_SCHEMAS = [
     },
     {
         "name": "browser_vision",
-        "description": "Take a screenshot of the current page so you can inspect it visually. Use this when you need to understand what the page looks like - especially for CAPTCHAs, visual verification challenges, complex layouts, or cases where the text snapshot misses important visual information. When your active model has native vision, the screenshot is attached to your context directly and you inspect it on the next turn; otherwise Zast falls back to an auxiliary vision model and returns a text analysis. Includes a screenshot_path that you can share with the user by including MEDIA:<screenshot_path> in your response. Requires browser_navigate to be called first.",
+        "description": "Take a screenshot of the current page so you can inspect it visually. Use this when you need to understand what the page looks like - especially for CAPTCHAs, visual verification challenges, complex layouts, or cases where the text snapshot misses important visual information. When your active model has native vision, the screenshot is attached to your context directly and you inspect it on the next turn; otherwise DeskAgent falls back to an auxiliary vision model and returns a text analysis. Includes a screenshot_path that you can share with the user by including MEDIA:<screenshot_path> in your response. Requires browser_navigate to be called first.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -1441,7 +1441,7 @@ def _find_agent_browser() -> str:
     """
     Find the agent-browser CLI executable.
 
-    Checks in order: current PATH, Homebrew/common bin dirs, Zast-managed
+    Checks in order: current PATH, Homebrew/common bin dirs, DeskAgent-managed
     node, local node_modules/.bin/, npx fallback.
 
     Returns:
@@ -1471,7 +1471,7 @@ def _find_agent_browser() -> str:
         _agent_browser_resolved = True
         return which_result
 
-    # Build an extended search PATH including Zast-managed Node, macOS
+    # Build an extended search PATH including DeskAgent-managed Node, macOS
     # versioned Homebrew installs, and fallback system dirs like Termux.
     extended_path = _merge_browser_path("")
     if extended_path:
@@ -1513,14 +1513,14 @@ def _find_agent_browser() -> str:
             if not recheck and extended_path:
                 recheck = shutil.which("agent-browser", path=extended_path)
             if not recheck:
-                zast_nm = str(get_zast_home() / "node_modules" / ".bin")
-                recheck = shutil.which("agent-browser", path=zast_nm)
+                deskagent_nm = str(get_deskagent_home() / "node_modules" / ".bin")
+                recheck = shutil.which("agent-browser", path=deskagent_nm)
             if not recheck:
-                zast_node_bin = str(get_zast_home() / "node" / "bin")
-                recheck = shutil.which("agent-browser", path=zast_node_bin)
+                deskagent_node_bin = str(get_deskagent_home() / "node" / "bin")
+                recheck = shutil.which("agent-browser", path=deskagent_node_bin)
             if not recheck:
-                zast_node_root = str(get_zast_home() / "node")
-                recheck = shutil.which("agent-browser", path=zast_node_root)
+                deskagent_node_root = str(get_deskagent_home() / "node")
+                recheck = shutil.which("agent-browser", path=deskagent_node_root)
             if recheck:
                 _cached_agent_browser = recheck
                 _agent_browser_resolved = True
@@ -1604,7 +1604,7 @@ def _run_browser_command(
             hint = (
                 "Chromium browser is missing. You're running in Docker — pull "
                 "the latest image to get the bundled Chromium: "
-                "docker pull ghcr.io/nousresearch/zast-agent:latest"
+                "docker pull ghcr.io/nousresearch/deskagent-agent:latest"
             )
         else:
             hint = "Chromium browser is missing. Install it with: " "npx agent-browser install --with-deps " "(or: npx playwright install --with-deps chromium)"
@@ -1664,7 +1664,7 @@ def _run_browser_command(
         # causing "Failed to create socket directory: Permission denied" errors.
         task_socket_dir = os.path.join(_socket_safe_tmpdir(), f"agent-browser-{session_info['session_name']}")
         os.makedirs(task_socket_dir, mode=0o700, exist_ok=True)
-        # Record this zast PID as the session owner (cross-process safe
+        # Record this deskagent PID as the session owner (cross-process safe
         # orphan detection — see _write_owner_pid).
         _write_owner_pid(task_socket_dir, session_info["session_name"])
         logger.debug("browser cmd=%s task=%s socket_dir=%s (%d chars)", command, task_id, task_socket_dir, len(task_socket_dir))
@@ -2013,7 +2013,7 @@ def browser_navigate(url: str, task_id: str | None = None) -> str:
                 f"Page title '{title}' suggests bot detection. The site may have blocked this request. "
                 "Options: 1) Try adding delays between actions, 2) Access different pages first, "
                 "3) Switch to the Camofox remote browser backend (set `browser.camofox.url` in "
-                "$ZAST_HOME/config.yaml) for residential-IP routing, "
+                "$DESKAGENT_HOME/config.yaml) for residential-IP routing, "
                 "4) Some sites have very aggressive bot detection that may be unavoidable."
             )
 
@@ -2885,7 +2885,7 @@ def _unlink_files_older_than(paths, cutoff_s: float) -> None:
 
 def _get_downloads_dir() -> Path:
     """Return (and create) the persistent browser downloads directory."""
-    d = get_zast_dir("cache/downloads", "browser_downloads")
+    d = get_deskagent_dir("cache/downloads", "browser_downloads")
     d.mkdir(parents=True, exist_ok=True)
     return d
 
@@ -3198,7 +3198,7 @@ def browser_screenshot_element(
         )
 
     img_bytes = base64.b64decode(img_b64)
-    screenshots_dir = get_zast_dir("cache/screenshots", "browser_screenshots")
+    screenshots_dir = get_deskagent_dir("cache/screenshots", "browser_screenshots")
     screenshots_dir.mkdir(parents=True, exist_ok=True)
     filename = save_as or f"element_{uuid.uuid4().hex[:8]}.png"
     file_path = screenshots_dir / filename
@@ -3660,13 +3660,13 @@ def _maybe_start_recording(task_id: str):
         if task_id in _recording_sessions:
             return
     try:
-        zast_home = get_zast_home()
+        deskagent_home = get_deskagent_home()
         record_enabled = cfg_get(load_config(), "browser", "record_sessions", default=False)
 
         if not record_enabled:
             return
 
-        recordings_dir = zast_home / "browser_recordings"
+        recordings_dir = deskagent_home / "browser_recordings"
         recordings_dir.mkdir(parents=True, exist_ok=True)
         _cleanup_old_recordings(max_age_hours=72)
 
@@ -3753,7 +3753,7 @@ def browser_vision(question: str, annotate: bool = False, task_id: str | None = 
 
     Captures what's visually displayed in the browser. When the active model
     supports native vision, the screenshot is attached directly to the
-    conversation so the model can inspect it on the next turn; otherwise Zast
+    conversation so the model can inspect it on the next turn; otherwise DeskAgent
     falls back to the auxiliary vision model and returns a text analysis. Useful
     for visual content the text-based snapshot may not capture (CAPTCHAs,
     verification challenges, images, complex layouts, etc.).
@@ -3773,7 +3773,7 @@ def browser_vision(question: str, annotate: bool = False, task_id: str | None = 
     if is_camofox_mode():
         return camofox_vision(question, annotate, task_id)
 
-    screenshots_dir = get_zast_dir("cache/screenshots", "browser_screenshots")
+    screenshots_dir = get_deskagent_dir("cache/screenshots", "browser_screenshots")
     screenshot_path = screenshots_dir / f"browser_screenshot_{uuid.uuid4().hex}.png"
     effective_task_id = _last_session_key(task_id or "default")
 
@@ -3802,7 +3802,7 @@ def browser_vision(question: str, annotate: bool = False, task_id: str | None = 
             _lp_fallback_warning = fb_result.get("fallback_warning")
             fb_path = fb_result.get("data", {}).get("path", "")
             if fb_path and os.path.exists(fb_path):
-                screenshots_dir = get_zast_dir("cache/screenshots", "browser_screenshots")
+                screenshots_dir = get_deskagent_dir("cache/screenshots", "browser_screenshots")
                 screenshots_dir.mkdir(parents=True, exist_ok=True)
 
                 persistent_path = screenshots_dir / f"browser_screenshot_{uuid.uuid4().hex}.png"
@@ -3992,7 +3992,7 @@ def _cleanup_old_screenshots(screenshots_dir, max_age_hours=24):
 def _cleanup_old_recordings(max_age_hours=72):
     """Remove browser recordings older than max_age_hours to prevent disk bloat."""
     try:
-        recordings_dir = get_zast_home() / "browser_recordings"
+        recordings_dir = get_deskagent_home() / "browser_recordings"
         if not recordings_dir.exists():
             return
         _unlink_files_older_than(recordings_dir.glob("session_*.webm"), time.time() - max_age_hours * 3600)
@@ -4147,7 +4147,7 @@ def _chromium_search_roots() -> list[str]:
         pass
 
     1. ``PLAYWRIGHT_BROWSERS_PATH`` when set (Docker image sets this to
-       ``/opt/zast/.playwright``).
+       ``/opt/deskagent/.playwright``).
     2. ``~/.cache/ms-playwright`` — Playwright's default on Linux/macOS.
     3. ``~/Library/Caches/ms-playwright`` — Playwright's default on macOS.
     4. ``%USERPROFILE%\\AppData\\Local\\ms-playwright`` — Playwright's default
@@ -4309,7 +4309,7 @@ if __name__ == "__main__":
                 print(f"     Searched: {searched}")
                 if _running_in_docker():
                     print("     Docker: pull the latest image — the current one " "predates the bundled Chromium install")
-                    print("       docker pull ghcr.io/nousresearch/zast-agent:latest")
+                    print("       docker pull ghcr.io/nousresearch/deskagent-agent:latest")
                 else:
                     print("     Install it with:")
                     print("       npx agent-browser install --with-deps")

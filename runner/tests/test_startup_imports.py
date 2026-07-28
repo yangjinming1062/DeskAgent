@@ -10,7 +10,7 @@ STARTUP_IMPORTS = [
     ("tools.tool_output_limits", "from tools.tool_output_limits import reset_cache"),
     ("tools.toolsets", "from tools.toolsets import get_disabled_toolset_ids"),
     ("utils.core", "from utils import pid_exists, set_handler"),
-    ("utils.constants", "from utils.constants import get_zast_home"),
+    ("utils.constants", "from utils.constants import get_deskagent_home"),
 ]
 
 

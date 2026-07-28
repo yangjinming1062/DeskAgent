@@ -116,7 +116,7 @@ def cleanup_all_environments():
         except Exception as e:
             logger.error("Error cleaning %s: %s", task_id, e, exc_info=True)
     scratch_dir = _get_scratch_dir()
-    for path in glob.glob(str(scratch_dir / "zast-*")):
+    for path in glob.glob(str(scratch_dir / "deskagent-*")):
         try:
             shutil.rmtree(path, ignore_errors=True)
             logger.info("Removed orphaned: %s", path)

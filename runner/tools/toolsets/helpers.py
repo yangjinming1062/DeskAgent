@@ -2,7 +2,7 @@ from tools.skills import get_disabled_skill_names
 
 
 def get_disabled_toolset_ids() -> set[str]:
-    """Read the ``toolsets.disabled`` list from ``~/.zast/config.yaml``.
+    """Read the ``toolsets.disabled`` list from ``~/.deskagent/config.yaml``.
 
     Symmetric with ``tools/skills/helpers.py::get_disabled_skill_names``.
     Stored in a sibling ``toolsets`` YAML section so the atomic-write lock
