@@ -36,7 +36,7 @@ TOOLSET_CATALOG: tuple[ToolsetDef, ...] = (
     ToolsetDef(id="scheduled_tasks", extra_tools=("cronjob",)),
     ToolsetDef(id="agent_delegation", extra_tools=("agent_delegate_tool",)),
     ToolsetDef(id="computer_use", extra_tools=("computer_use",)),
-    ToolsetDef(id="media_analysis", extra_tools=("vision_analyze", "video_analyze")),
+    ToolsetDef(id="media_analysis", extra_tools=("vision_analyze",)),
 )
 
 

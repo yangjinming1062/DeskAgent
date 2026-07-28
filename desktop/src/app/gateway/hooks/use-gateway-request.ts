@@ -2,8 +2,7 @@ import { useStore } from '@nanostores/react'
 import { useCallback, useEffect, useRef } from 'react'
 
 import { resolveGatewayWsUrl } from '@/lib/gateway-ws-url'
-import { $gateway } from '@/store/gateway'
-import { $gatewayState, setConnection } from '@/store/session'
+import { $gateway, $gatewayState, setConnection } from '@/store/gateway'
 import type { ZastGateway } from '@/zast'
 
 export function useGatewayRequest() {

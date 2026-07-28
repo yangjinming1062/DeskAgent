@@ -11,7 +11,6 @@ import { triggerHaptic } from '@/lib/haptics'
 import { Eye, EyeOff, Globe, KeyRound, Loader2, LogOut, SlidersHorizontal, X } from '@/lib/icons'
 import { $auth, logout } from '@/store/auth'
 import { notify, notifyError } from '@/store/notifications'
-import { setShowSubagentsInSidebar } from '@/store/session'
 import type { ZastConfigResponse } from '@/types/zast'
 import { getZastConfig, saveZastConfig } from '@/zast/config'
 
@@ -229,9 +228,6 @@ export function AccountSettings({ onConfigSaved }: { onConfigSaved?: () => void 
       setOriginalAgent(nextAgent)
       setWeb(nextWeb)
       setAgent(nextAgent)
-      // Apply optimistically so the post-save refresh sees the new value even
-      // when the GET round-trip in onConfigSaved transiently fails.
-      setShowSubagentsInSidebar(nextAgent.show_subagents_in_sidebar)
       triggerHaptic('success')
       notify({ kind: 'success', title: a.heading, message: a.saved })
       onConfigSaved?.()

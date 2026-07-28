@@ -5,7 +5,6 @@ const {
   Notification,
   Tray,
   clipboard,
-  desktopCapturer,
   dialog,
   ipcMain,
   nativeImage,
@@ -50,7 +49,6 @@ const { registerAuthIpc } = require('./ipc/auth.cjs')
 const { registerRunnerIpc, autoStartBridge, autoStopBridge, restartRunnerBridge } = require('./ipc/runner.cjs')
 const { registerRunnerConfigIpc } = require('./ipc/runner-config.cjs')
 const { registerSkillsIpc } = require('./ipc/skills.cjs')
-const { registerRecorderIpc } = require('./ipc/recorder.cjs')
 const { registerUpdateIpc } = require('./ipc/update.cjs')
 const { RunnerUpdater } = require('./runner-updater.cjs')
 const { looksBinary, fileExists, directoryExists, sendToMain, atomicWriteFile } = require('./utils.cjs')
@@ -1376,23 +1374,6 @@ function installMediaPermissions() {
 
     return false
   })
-
-  // Display media capture (screen sharing) for the recording toolbar.
-  // Starting in Electron 17, Chromium requires this handler to be set;
-  // otherwise, getDisplayMedia throws NotSupportedError.
-  session.defaultSession.setDisplayMediaRequestHandler((request, callback) => {
-    desktopCapturer
-      .getSources({ types: ['screen'] })
-      .then(sources => {
-        // Automatically grant access to the primary screen (first source).
-        // On Windows, 'loopback' captures system audio along with the video.
-        callback({ video: sources[0], audio: 'loopback' })
-      })
-      .catch(err => {
-        console.error('[Main] Failed to get desktop sources:', err)
-        callback() // Rejects the request
-      })
-  })
 }
 
 // Auto-update the inner Electron shell against the backend update server.
@@ -1872,11 +1853,6 @@ const bridgeDeps = {
     }
     return bridgeDeps.backendSession
   },
-  // The recorder uploads screen recordings through Backend's
-  // /api/media/recording/upload endpoint — it needs baseUrl + token, which
-  // ensureBackend() (vs ensureBackendSession() which returns the session
-  // object alone) provides.
-  ensureBackend,
   fetchJson,
   rememberLog,
   // Wire the forward-declared getAuthToken() to the live backendSession.
@@ -1903,7 +1879,6 @@ registerAuthIpc({ ipcMain, deps: bridgeDeps })
 registerRunnerIpc({ ipcMain, deps: bridgeDeps })
 registerRunnerConfigIpc({ ipcMain, deps: bridgeDeps })
 registerSkillsIpc({ ipcMain, deps: bridgeDeps, zastHome: zastHome() })
-registerRecorderIpc({ ipcMain, deps: bridgeDeps })
 registerUpdateIpc({
   ipcMain,
   electron: { app },

@@ -1,4 +1,3 @@
-import { useStore } from '@nanostores/react'
 import { useEffect, useMemo, useState } from 'react'
 import { type Document } from 'yaml'
 
@@ -9,7 +8,6 @@ import { useI18n } from '@/i18n'
 import { Wrench } from '@/lib/icons'
 import { cn } from '@/lib/utils'
 import { notify, notifyError } from '@/store/notifications'
-import { $activeSessionId } from '@/store/session'
 import type { ZastGateway } from '@/zast'
 
 import { EmptyState, LoadingState, Pill, SettingsContent } from './primitives'
@@ -55,7 +53,6 @@ const transportLabel = (server: Record<string, unknown>) =>
 export function McpSettings({ gateway, onConfigSaved }: McpSettingsProps) {
   const { t } = useI18n()
   const m = t.settings.mcp
-  const activeSessionId = useStore($activeSessionId)
   const { yamlDoc, setYamlDoc, patch } = useRunnerConfig(m.failedLoad)
   const [selected, setSelected] = useState<string | null>(null)
   const [name, setName] = useState('')
@@ -191,8 +188,7 @@ export function McpSettings({ gateway, onConfigSaved }: McpSettingsProps) {
 
     try {
       await gateway.request('reload.mcp', {
-        confirm: true,
-        session_id: activeSessionId ?? undefined
+        confirm: true
       })
       notify({ kind: 'success', title: m.reloadedTitle, message: m.reloadedMessage })
     } catch (err) {

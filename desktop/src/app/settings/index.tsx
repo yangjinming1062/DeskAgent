@@ -4,7 +4,7 @@ import { useRef } from 'react'
 import { Tip } from '@/components/ui/tooltip'
 import { useI18n } from '@/i18n'
 import { triggerHaptic } from '@/lib/haptics'
-import { Archive, Info, KeyRound, Palette, Settings, Sparkles, Wrench } from '@/lib/icons'
+import { Info, KeyRound, Palette, Settings, Sparkles, Wrench } from '@/lib/icons'
 import { notifyError } from '@/store/notifications'
 import { getZastConfigDefaults, getZastConfigRecord, saveZastConfig } from '@/zast'
 
@@ -18,21 +18,12 @@ import { AccountSettings } from './account-settings'
 import { AppearanceSettings } from './appearance-settings'
 import { McpSettings } from './mcp-settings'
 import { RunnerSettings } from './runner-settings'
-import { SessionsSettings } from './sessions-settings'
 import { SkillsToolsTabs } from './skills-tools-tabs'
 import type { SettingsPageProps } from './types'
 
-type SettingsViewId = 'about' | 'account' | 'appearance' | 'mcp' | 'runner' | 'sessions' | 'skills'
+type SettingsViewId = 'about' | 'account' | 'appearance' | 'mcp' | 'runner' | 'skills'
 
-const SETTINGS_VIEWS: readonly SettingsViewId[] = [
-  'appearance',
-  'account',
-  'runner',
-  'skills',
-  'mcp',
-  'sessions',
-  'about'
-]
+const SETTINGS_VIEWS: readonly SettingsViewId[] = ['appearance', 'account', 'runner', 'skills', 'mcp', 'about']
 
 export function SettingsView({ gateway, onClose, onConfigSaved }: SettingsPageProps) {
   const { t } = useI18n()
@@ -105,12 +96,6 @@ export function SettingsView({ gateway, onClose, onConfigSaved }: SettingsPagePr
             label={t.settings.nav.mcp}
             onClick={() => setActiveView('mcp')}
           />
-          <OverlayNavItem
-            active={activeView === 'sessions'}
-            icon={Archive}
-            label={t.settings.nav.archivedChats}
-            onClick={() => setActiveView('sessions')}
-          />
           <div className="my-2 h-px bg-border/30" />
           <OverlayNavItem
             active={activeView === 'about'}
@@ -157,12 +142,10 @@ export function SettingsView({ gateway, onClose, onConfigSaved }: SettingsPagePr
             <RunnerSettings />
           ) : activeView === 'skills' ? (
             <SkillsToolsTabs />
-          ) : activeView === 'about' ? (
-            <AboutSettings />
           ) : activeView === 'mcp' ? (
             <McpSettings gateway={gateway} onConfigSaved={onConfigSaved} />
           ) : (
-            <SessionsSettings />
+            <AboutSettings />
           )}
         </OverlayMain>
       </OverlaySplitLayout>

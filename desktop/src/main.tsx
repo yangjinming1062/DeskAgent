@@ -111,40 +111,20 @@ window.zastDesktop?.update?.onRunnerEvent?.((payload: DesktopRunnerUpdateEvent) 
   }
 })
 
-// Dev-only: install __PERF_DRIVE__ + __PERF_PROBE__ on window so the
-// scripts/ harnesses can drive a synthetic stream + record render cost.
-// Tree-shaken out of production builds. (Uses MODE rather than DEV because
-// our Vite setup currently bundles with PROD=true even in `vite dev`.)
-if (import.meta.env.MODE !== 'production') {
-  import('./app/chat/perf-probe')
-}
-
-import { RecordingToolbar } from './app/toolbar/page'
-
-const isToolbar = window.location.hash.startsWith('#/toolbar')
-
-if (isToolbar) {
-  createRoot(document.getElementById('root')!).render(
-    <StrictMode>
-      <RecordingToolbar />
-    </StrictMode>
-  )
-} else {
-  createRoot(document.getElementById('root')!).render(
-    <StrictMode>
-      <ErrorBoundary label="root">
-        <QueryClientProvider client={queryClient}>
-          <I18nProvider>
-            <ThemeProvider>
-              <HapticsProvider>
-                <HashRouter>
-                  <App />
-                </HashRouter>
-              </HapticsProvider>
-            </ThemeProvider>
-          </I18nProvider>
+createRoot(document.getElementById('root')!).render(
+  <StrictMode>
+    <ErrorBoundary label="root">
+      <QueryClientProvider client={queryClient}>
+        <I18nProvider>
+          <ThemeProvider>
+            <HapticsProvider>
+              <HashRouter>
+                <App />
+              </HashRouter>
+            </HapticsProvider>
+          </ThemeProvider>
+        </I18nProvider>
         </QueryClientProvider>
       </ErrorBoundary>
     </StrictMode>
   )
-}

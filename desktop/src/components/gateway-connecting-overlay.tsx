@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 
 import { cn } from '@/lib/utils'
 import { $desktopBoot } from '@/store/boot'
-import { $gatewayState } from '@/store/session'
+import { $gatewayState } from '@/store/gateway'
 
 // Static, always-legible prefix; only TAIL ever scrambles. Splitting them at
 // the render level means no timer logic (even a stale HMR one) can ever

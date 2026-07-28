@@ -2,7 +2,7 @@ import { cleanup, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import { $desktopBoot } from '@/store/boot'
-import { setGatewayState } from '@/store/session'
+import { setGatewayState } from '@/store/gateway'
 
 import { BootFailureOverlay } from './boot-failure-overlay'
 import { GatewayConnectingOverlay } from './gateway-connecting-overlay'
