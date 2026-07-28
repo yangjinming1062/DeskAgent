@@ -115,7 +115,7 @@ def test_app(_patch_db):
     from utils import get_db
 
     engine, SessionLocal = _patch_db
-    app = FastAPI(title="zast-test")
+    app = FastAPI(title="deskagent-test")
 
     def _test_get_db():
         db = SessionLocal()

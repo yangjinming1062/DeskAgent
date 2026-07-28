@@ -7,18 +7,18 @@ from pydantic_settings import SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    app_name: str = "ZAST Agent Backend"
+    app_name: str = "DeskAgent Backend"
     app_env: str = "development"
     api_prefix: str = "/api"
 
-    database_url: str = "postgresql+psycopg://postgres:postgres@localhost:5432/zast"
+    database_url: str = "postgresql+psycopg://postgres:postgres@localhost:5432/deskagent"
 
     jwt_secret_key: str = Field(default="change-me-in-production", min_length=16)
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 60 * 8
 
-    admin_username: str = "zast"
-    admin_password: str = "zast@admin123"
+    admin_username: str = "deskagent"
+    admin_password: str = "deskagent@admin123"
 
     llm_base_url: str = ""
     llm_api_key: str = ""
@@ -91,18 +91,9 @@ class Settings(BaseSettings):
     media_tts_rate_limit_per_minute: int = 30
     # POST /api/media/image_gen — DALL-E 3 is the most expensive media op.
     media_image_gen_rate_limit_per_minute: int = 10
-    # POST /api/media/recording/upload — screen-recording webm upload.
-    # Recording uploads are large (≤ 512 MB) but rare per user; cap low to
-    # deter abuse but not block legitimate 30-min captures.
-    media_recording_upload_rate_limit_per_minute: int = 6
-    # Per-IP secondary on the same endpoint. Without it, account rotation
-    # multiplies the effective quota per source IP — a single user with N
-    # accounts gets N × 6 uploads/minute. Mirrors llm/completion's two-tier
-    # pattern (see ``rate_limit_enabled`` docs).
-    media_recording_upload_rate_limit_per_ip_per_minute: int = 30
 
     # ── Temp File Storage (self-hosted, replaces GCS) ──
-    # 公网 URL 前缀，例如 "https://zast.mycompany.com" 或 "http://1.2.3.4:8000"
+    # 公网 URL 前缀，例如 "https://deskagent.mycompany.com" 或 "http://1.2.3.4:8000"
     # 留空则启动时自动获取公网 IP
     public_url_prefix: str = ""
     # 公网 IP（启动时自动获取，仅 public_url_prefix 为空时生效）

@@ -37,8 +37,8 @@ _SENSITIVE_BODY_KEYS = frozenset(
 )
 
 # Snapshot at import time so runtime env mutations (e.g. LLM-generated
-# `export ZAST_REDACT_SECRETS=false`) cannot disable redaction mid-session.
-_REDACT_ENABLED = os.getenv("ZAST_REDACT_SECRETS", "true").lower() in {"1", "true", "yes", "on"}
+# `export DESKAGENT_REDACT_SECRETS=false`) cannot disable redaction mid-session.
+_REDACT_ENABLED = os.getenv("DESKAGENT_REDACT_SECRETS", "true").lower() in {"1", "true", "yes", "on"}
 
 _PREFIX_PATTERNS = [
     r"sk-[A-Za-z0-9_-]{10,}",  # OpenAI / OpenRouter / Anthropic

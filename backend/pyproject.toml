@@ -1,7 +1,7 @@
 [project]
-name = "zast-backend"
+name = "deskagent-backend"
 version = "0.1.0"
-description = "ZAST Backend API"
+description = "DeskAgent Backend API"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi==0.116.1",

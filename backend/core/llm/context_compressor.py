@@ -24,7 +24,7 @@ _SUMMARY_PROMPT = (
     "  * Speculation about future turns.\n"
     "  * Meta-commentary about the conversation itself.\n\n"
     "Write the summary in markdown. Be specific — prefer 'edited "
-    "~/.zast/config.yaml to set context_compression_threshold=0.8' over "
+    "~/.deskagent/config.yaml to set context_compression_threshold=0.8' over "
     "'discussed configuration'. Target length: 300-800 words."
 )
 
