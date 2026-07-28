@@ -1,5 +1,5 @@
-# Zast Runner 默认配置文件
-# 此文件在安装时释放到 ~/.zast/config.yaml
+# DeskAgent Runner 默认配置文件
+# 此文件在安装时释放到 ~/.deskagent/config.yaml
 # 所有配置项都可通过 Desktop 设置页面修改
 
 # =============================================================================
@@ -30,7 +30,7 @@ terminal:
   # Git Bash 路径（仅 Windows，留空自动检测）
   git_bash_path: ""
 
-  # 沙箱目录（留空使用默认 ~/.zast/sandboxes）
+  # 沙箱目录（留空使用默认 ~/.deskagent/sandboxes）
   sandbox_dir: ""
 
   # Shell 初始化文件列表（留空使用默认）
@@ -124,21 +124,19 @@ skills:
     installation_id: ""
 
   # 禁用的技能列表。
-  # 安装时整段 cp -f 覆盖到 $ZAST_HOME/config.yaml —— 用户在桌面端切换后,
+  # 安装时整段 cp -f 覆盖到 $DESKAGENT_HOME/config.yaml —— 用户在桌面端切换后,
   # reinstall 会重置回本默认(repair 同理)。填入 leaf 技能名而非 category 名:
   # Runner `_is_disabled` 匹配粒度为 name OR category,category 条目会一并禁用
-  # 该目录下的 bundled(always-on)技能。基础版本默认全部启用,以下 6 项需要外部
+  # 该目录下的 bundled(always-on)技能。基础版本默认全部启用,以下 5 项需要外部
   # CLI 或认证,需要用户从桌面端按需开启:
   # - claude-code: 需要安装 Claude Code CLI (npm i -g @anthropic-ai/claude-code) + OAuth
   # - codex: 需要安装 Codex CLI (npm i -g @openai/codex) + OAuth
-  # - darwinian-evolver: 需要安装 Imbue 的 darwinian_evolver Python 包
   # - fastmcp: 需要安装 FastMCP 库
   # - mcporter: 需要安装 mcporter CLI
   # - parallel-cli: 需要安装 parallel-cli 工具
   disabled:
     - claude-code
     - codex
-    - darwinian-evolver
     - fastmcp
     - mcporter
     - parallel-cli
