@@ -1,7 +1,6 @@
 import base64
 
 from config import SETTINGS
-from constants import RECORDING_MAX_VIDEO_BYTES
 from constants import STT_MAX_AUDIO_BYTES
 from constants import TTS_MAX_TEXT_CHARS
 from core import classify_api_error
@@ -24,7 +23,6 @@ from models import LoginRecord
 from models import User
 from openai import AsyncOpenAI
 from routers._http_errors import classified_http_exception
-from slowapi.util import get_remote_address
 from utils import get_current_session
 from utils import SESSION_LOCAL
 
@@ -220,44 +218,3 @@ async def image_gen(
         return {"success": True, "url": response.data[0].url}
     except Exception as e:
         raise _llm_http_error(e, "image_gen") from e
-
-
-# ── Recording Upload (屏幕录制上传) ────────────────────────────────────
-
-
-@ROUTER.post("/recording/upload")
-@limiter.limit(f"{SETTINGS.media_recording_upload_rate_limit_per_minute}/minute")
-@limiter.limit(f"{SETTINGS.media_recording_upload_rate_limit_per_ip_per_minute}/minute", key_func=get_remote_address)
-async def upload_recording(
-    request: Request,
-    file: UploadFile = File(...),
-    ext: str = Form(default=""),
-    session_id: str = Form(default=""),
-    auth_data: tuple[User, LoginRecord] = Depends(get_current_session),
-):
-    """Upload a screen-recording webm and return a public HTTP URL."""
-    raw_ext = ext.strip().lstrip(".").lower()
-    if not raw_ext:
-        raise _http_error(415, "unable_to_determine_extension", "ext field is required")
-    if raw_ext != "webm":
-        raise _http_error(415, "invalid_mime_type", f"file extension {raw_ext!r} not supported (only webm)")
-
-    max_mb = RECORDING_MAX_VIDEO_BYTES // (1024 * 1024)
-    sink = bytearray()
-    chunk_size = 1024 * 1024
-    while True:
-        chunk = await file.read(chunk_size)
-        if not chunk:
-            break
-        sink.extend(chunk)
-        if len(sink) > RECORDING_MAX_VIDEO_BYTES:
-            raise _http_error(413, "payload_too_large", f"Video file too large (max {max_mb} MB)")
-
-    if not sink:
-        raise _http_error(400, "empty_file", "uploaded file has zero bytes")
-
-    _, auth_data_inner = auth_data
-    effective_session_id = session_id or str(auth_data_inner.user_id)
-    file_id, file_url = save_file(sink, effective_session_id, "video/webm", raw_ext)
-
-    return {"file_url": file_url, "file_id": file_id, "content_type": "video/webm", "size_bytes": len(sink)}

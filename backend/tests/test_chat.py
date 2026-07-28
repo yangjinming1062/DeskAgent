@@ -75,28 +75,6 @@ class TestLLMClient:
         assert _is_mimo_family("claude-3-5-sonnet") is False
         assert _is_mimo_family("gemini-1.5-pro") is False
 
-    def test_video_attachment_uses_video_url_part(self):
-        from core.chat.chat_service import _build_persisted_content
-        from schemas import ChatMessageRequest
-
-        req = SimpleNamespace(
-            message=ChatMessageRequest(
-                role="user",
-                content="Look at this video",
-                attachments=[{"type": "video", "file_url": "http://example.com/video.mp4"}],
-            )
-        )
-        content, content_type = _build_persisted_content(req)
-        assert content_type == "multimodal_v1"
-        parsed = json.loads(content)
-        assert len(parsed) == 2
-        assert parsed[0] == {"type": "text", "text": "Look at this video"}
-        video_part = parsed[1]
-        assert video_part["type"] == "video_url"
-        assert video_part["video_url"]["url"] == "http://example.com/video.mp4"
-        assert video_part["fps"] == 2
-        assert video_part["media_resolution"] == "default"
-
     def test_image_attachment_uses_image_url_part(self):
         from core.chat.chat_service import _build_persisted_content
         from schemas import ChatMessageRequest
@@ -124,21 +102,6 @@ class TestLLMClient:
         content, content_type = _build_persisted_content(req)
         assert content_type == "text"
         assert content == "Just text"
-
-    def test_default_attachment_type_is_video(self):
-        from core.chat.chat_service import _build_persisted_content
-        from schemas import ChatMessageRequest
-
-        req = SimpleNamespace(
-            message=ChatMessageRequest(
-                role="user",
-                content="Check this",
-                attachments=[{"file_url": "http://example.com/recording.webm"}],
-            )
-        )
-        content, content_type = _build_persisted_content(req)
-        parsed = json.loads(content)
-        assert parsed[1]["type"] == "video_url"
 
 
 # ── TestChatE2E (real MiMo API calls) ───────────────────────────────

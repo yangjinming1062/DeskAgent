@@ -25,7 +25,6 @@ _PARALLEL_SAFE_TOOLS = frozenset(
         "session_search",
         "skill_view",
         "skills_list",
-        "vision_analyze",
         "web_extract",
         "web_search",
     }
@@ -221,43 +220,3 @@ def make_tool_result_message(name: str, content: Any, tool_call_id: str) -> dict
     list structure intact.
     """
     return {"role": "tool", "name": name, "tool_name": name, "content": _maybe_wrap_untrusted(name, content), "tool_call_id": tool_call_id}
-
-
-def evict_old_screenshots(messages: list[dict], keep: int = 2) -> int:
-    """In-place: walk ``messages`` backwards, and for each ``computer_use`` tool
-    result whose image hasn't already been evicted, replace the ``image_url``
-    parts with a placeholder text — except the most recent ``keep`` such
-    results.
-
-    The full-scan is fine: a 200-message history is sub-millisecond to walk
-    (a handful of dict.get + isinstance checks per row), and the simpler
-    code path is easier to reason about than a cursor that would have to
-    survive ``current_messages`` mutation between LLM turns.
-
-    Tool messages are identified by EITHER ``name`` (set by
-    ``make_tool_result_message`` on the live path) or ``tool_name`` (set by
-    ``build_session_messages`` when reloading from DB on session.resume) —
-    missing both means the message isn't a computer_use result.
-    """
-    # Count every computer_use tool message — including those whose ``content``
-    # is a plain string (errors, mode='ax' text-only capture). Counting only
-    # list-content messages off-by-ones the keep window whenever the most
-    # recent history mixes list and string results.
-    seen = 0
-    for msg in reversed(messages):
-        if msg.get("role") != "tool":
-            continue
-        tool_label = msg.get("name") or msg.get("tool_name")
-        if tool_label != "computer_use":
-            continue
-        seen += 1
-        if seen <= keep:
-            continue
-        content = msg.get("content")
-        if not isinstance(content, list):
-            continue
-        for part in content:
-            if isinstance(part, dict) and part.get("type") == "image_url":
-                part.clear()
-                part.update({"type": "text", "text": "[screenshot removed to save context]"})
-    return seen - keep

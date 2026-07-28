@@ -32,9 +32,6 @@ DEFAULT_CONFIG = {
     "stt": {
         "enabled": True,
     },
-    "voice": {
-        "max_recording_seconds": 120,
-    },
 }
 
 # Web-provider API keys that must never round-trip through the public
