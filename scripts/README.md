@@ -1,6 +1,6 @@
 # scripts/
 
-Two classes of artifacts, deliberately kept thin. **Install scripts are NOT here** — they live next to the installer in [installer/install.{sh,ps1,cmd](../installer/CLAUDE.md) so the Tauri app and its worker scripts ship as one self-contained unit.
+Two classes of artifacts, deliberately kept thin. **Install scripts are NOT here** — they live next to the installer in [installer/install.{sh,ps1,cmd](../installer/README.md) so the Tauri app and its worker scripts ship as one self-contained unit.
 
 ## 1. Build client installer — `build_client.{sh,ps1}`
 
@@ -43,4 +43,11 @@ backend + runner 的 static import-shape 检查器（被 `.pre-commit-config.yam
 | `lib/UpdateManifest.ps1` | `Build-UpdateZip` PowerShell 实现 | build_client.ps1 末尾调它产出 `release/Zast-{ver}-update.zip`(签 `latest*.yml` 与 `latest-runner.yml`) |
 
 
-See [installer/CLAUDE.md](../installer/CLAUDE.md) for the install protocol backend (`install.{sh,ps1,cmd}`) that lives there.
+See [installer/README.md](../installer/README.md) for the install protocol backend (`install.{sh,ps1,cmd}`) that lives there.
+
+## 重构行动项
+
+Scripts 在新定位下**零改动**——构建链（runner wheel → desktop artifact → Tauri installer → update zip）与产品定位无关。
+
+- **保留（不动）**：`build_client.{sh,ps1}` 全链路、`check_imports.py` import-shape 检查、`lib/UpdateManifest.ps1` 自更新包签名。版本号写入、staging、code-sign、update zip 产出流程全不变。
+- **无新增**：未来若 Desktop 引入新的原生依赖（如精灵渲染库），其打包由 `desktop/package.json` 的 electron-builder 配置承接，scripts 端无需调整。

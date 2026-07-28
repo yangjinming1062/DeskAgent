@@ -1,8 +1,8 @@
 # Runner
 
-本地手脚——纯粹的工具执行器。以 uv build wheel 形式发布，安装器在 `$ZAST_HOME/runner/.venv` 创建 venv 并安装；Desktop 直接 spawn venv Python 调用 `server.py`，通过 WebSocket 接收 JSON-RPC 2.0 工具调用指令并在用户机器上执行。
+本地手脚——纯粹的工具执行器，承载伙伴"能帮用户做的事"。以 uv build wheel 形式发布，安装器在 `$ZAST_HOME/runner/.venv` 创建 venv 并安装；Desktop 直接 spawn venv Python 调用 `server.py`，通过 WebSocket 接收 JSON-RPC 2.0 工具调用指令并在用户机器上执行。Runner 不感知"伙伴"语义——终端、文件、浏览器、代码执行等底层能力 100% 保留，伙伴人格完全由 Backend 承载、伙伴形象完全由 Desktop 渲染。
 
-设计文档：[design.md](../design.md) §2.3 / §3.2 / §5.5
+设计文档：[design.md](../design.md) §3 / §4 / §5 / §8
 
 ## 设计意图
 
@@ -362,3 +362,11 @@ CDP Supervisor（`browser_supervisor.py`）：持久 WebSocket 到 CDP，dialog 
 | PTY `write()` 类型不一致 | 跨平台代码易崩溃 | `_env_base._pipe_stdin` 统一按 `isinstance(data, str)` 编码再走 `proc.stdin.buffer`|
 | text-mode stdin `\n → \r\n` 转换 | 写入文件内容被破坏 | 统一使用 `proc.stdin.buffer` (二进制模式) 写入 |
 | 缺少 Windows 必需环境变量 | `socket` 抛 `WinError 10106` | `code_execution_tool` 提供 `_WINDOWS_ESSENTIAL_ENV_VARS` 必传子集 |
+
+## 重构行动项
+
+Runner 在新定位下**零代码改动**——这是"backend/runner 基本完全保留复用"的直接体现。产品从工具型 Agent 重新定位为陪伴型桌面伙伴的变化全部落在 Backend（人格/形象）与 Desktop（精灵 UI），Runner 始终是纯粹的本地工具执行器。
+
+- **保留（不动）**：全部 47 个静态工具 + MCP 动态工具、6 个终端后端、浏览器多后端、安全机制（Tirith / file_safety / SSRF / redact）、Skills 系统、工具集过滤、反向 RPC、Windows 平台兼容性缓解。
+- **无新增**：Runner 不参与角色定义 / 形象生成 / 陪伴交互——这些完全在 Backend + Desktop 之间完成，Runner 侧无需感知。
+- **唯一扩展点**：未来若伙伴需调用新类型的本机能力，经现有 `registry.register_tool(...)` 协议新增工具即可，不涉及架构变更。

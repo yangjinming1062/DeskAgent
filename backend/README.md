@@ -1,8 +1,8 @@
 # Backend
 
-云端大脑——FastAPI + PostgreSQL + JWT，负责多用户会话管理、LLM 流式对话编排、系统提示词组装、云端工具执行、Cron 调度，以及通过 IPC 将本地工具调用下发给 Desktop/Runner。
+云端大脑——FastAPI + PostgreSQL + JWT。承载 DeskAgent 伙伴的"人格"（角色定义 + 长期记忆）与"形象"（专属形象资产生成与下发），并负责 LLM 流式对话编排、系统提示词装配、云端工具执行、Cron 调度，以及通过 IPC 将本地工具调用下发给 Desktop/Runner。
 
-设计文档：[design.md](../design.md) §2.1 / §3.1 / §5
+设计文档：[design.md](../design.md) §1 / §2 / §5 / §6 / §7 / §9
 
 ## 模块结构
 
@@ -214,6 +214,8 @@ renderer 在 edit / regenerate 提交时传（[desktop/src/app/session/hooks/use
 
 **判定标准**：
 - **backend tools**：需要服务端资源（LLM API key、DB、外部 API 凭证）或无副作用的云端 API 调用。`agent_delegate_tool` 自己 spawn 子 agent 跑完整 chat-turn，不走 Runner——因为它需要 Backend 的 LLM 编排能力。`cronjob` 是 Backend 工具因为调度器在 `core/async_jobs/cron.py` 进程内。
+
+**陪伴语义映射**：上述 backend tools 在 DeskAgent 新定位下恰好覆盖伙伴的核心能力——`image_generate` 生成专属桌面形象、`text_to_speech_tool` 给伙伴语音、`send_message_tool` 让伙伴主动发起对话、`web_search`/`web_extract` 让伙伴帮用户查信息。完整映射见 [design.md §7.4](../design.md#74-已有云端工具在新定位下的复用映射)。
 - **memory tools**：独立第三类——注入 DB session 走 `NativeMemory.execute_tool`，既不需要本地环境也不调外部 API，但需要 Backend 的 DB 访问。
 - **runner tools**：需要用户本地环境（终端、文件系统、浏览器、代码执行）或用户设备上的操作。Backend 无法直接执行这些操作，必须通过 IPC 下发。
 
@@ -230,7 +232,7 @@ renderer 在 edit / regenerate 提交时传（[desktop/src/app/session/hooks/use
 
 #### 快速失败
 
-`_dispatch_runner_tool` (`core/chat/chat_service.py`) 的 `try/except (WebSocketDisconnect, RuntimeError)` 包裹 `emitter.send_json`——`WSEmitter` 吞掉了这两类异常,但 chat loop 必须看到快速失败才能避免 `await_future` 悬挂 300s。Desktop 侧的协议级契约见 [desktop/CLAUDE.md §工具调用快速失败](../desktop/CLAUDE.md)。
+`_dispatch_runner_tool` (`core/chat/chat_service.py`) 的 `try/except (WebSocketDisconnect, RuntimeError)` 包裹 `emitter.send_json`——`WSEmitter` 吞掉了这两类异常,但 chat loop 必须看到快速失败才能避免 `await_future` 悬挂 300s。Desktop 侧的协议级契约见 [desktop/README.md §工具调用快速失败](../desktop/README.md)。
 
 ### 工具调用消息流（一次 turn）
 
@@ -272,7 +274,7 @@ renderer 在 edit / regenerate 提交时传（[desktop/src/app/session/hooks/use
 
 **分类流水线**（8 步优先级）：provider patterns → HTTP status → error code → message pattern → SSL/TLS transient → server disconnect → transport heuristics → unknown fallback。`_ATTACHMENT_FETCH_PATTERNS` 在 billing 之后、generic 400 之前匹配，防止退化为 `format_error`。
 
-**REST 错误信封**：`/api/llm/completion` 与 `/api/media/*` 在异常路径上调用 `classify_api_error`，把 `FailoverReason` + `status_code` 折成 `{error, reason, status}` 返回给 renderer。原始异常（可能带 provider URL / 部分 auth header）只写服务端 log，**永远不出后端**——满足 `design.md §3.1` 的 -32603 "no internal detail" 契约。
+**REST 错误信封**：`/api/llm/completion` 与 `/api/media/*` 在异常路径上调用 `classify_api_error`，把 `FailoverReason` + `status_code` 折成 `{error, reason, status}` 返回给 renderer。原始异常（可能带 provider URL / 部分 auth header）只写服务端 log，**永远不出后端**——满足 `design.md §9` 的 -32603 "no internal detail" 契约。
 
 ### Observability
 
@@ -371,3 +373,44 @@ Desktop 录制的 webm 通过 `POST /api/media/recording/upload` 存储于本地
 未知 backend 值：search 走 `ddgs`、extract 走 `tavily`，打 `ERROR` 日志。
 
 `web.brave_api_key` / `web.tavily_api_key` 在 `GET /api/config` 响应里**不返回原始值**，替换为 `*_set: bool` + `*_fingerprint: str`。`PUT /api/config` 路径丢弃计算字段避免数据污染。
+
+## 伙伴人格与形象系统（新定位核心）
+
+DeskAgent 从工具型 Agent 重新定位为定制化陪伴型桌面伙伴后，Backend 在现有架构上新增两项跨模块契约。设计意图详见 [design.md §2 伙伴生命周期](../design.md) 与 [§7 伙伴形象与角色系统](../design.md)。
+
+### 角色定义（Persona）
+
+onboarding 产出的结构化角色定义（名字、性格、说话风格、外貌/风格偏好等），按用户维度持久化，作为系统提示词的一部分注入该用户每次对话（由 `core/chat/system_prompt.py:build_system_prompt_parts` 装配）。角色定义是伙伴行为的**唯一真相源**，只能由用户显式发起变更，禁止 LLM 自行改写——与现有 reserved 键防注入机制（`registry.execute_backend_tool` 拦截 `user_id`/`llm_config`/`user_settings`）同属一道防线。
+
+### 形象资产（Avatar Asset）
+
+Backend 据角色定义装配生图 prompt，调用现有 `backend_tools/image_generation_tool.py` 产出专属形象资产，与角色定义一同按用户维度持久化，经 `core/ws/ipc.py:dispatch_user_event` 下发至 Desktop 渲染。形象在多次会话间保持一致；变更走受控再生成流程（用户主动触发或未来扩展的成长机制）。
+
+### 复用映射（现有能力 → 伙伴场景）
+
+| 能力 | 现状 | 伙伴场景复用 |
+|------|------|-------------|
+| 长期记忆 | `Memory` 表 + `tools_runtime/memory.py` | 直接复用——伙伴对用户的长期记忆 |
+| 主动陪伴调度 | `CronJob` 表 + `core/async_jobs/cron.py` | 直接复用——伙伴定时问候/提醒 |
+| 事件下发 | `WSEvent` + LISTEN/NOTIFY | 直接复用——伙伴主动消息送达 Desktop |
+| 生图凭证 | `UserModelConfig.image_gen_*` 字段 | 直接复用——形象生成的 provider 配置已就位 |
+| 生图执行 | `backend_tools/image_generation_tool.py` | 直接复用——产出专属形象资产 |
+| 伙伴语音 | `backend_tools/tts_tool.py` | 直接复用——让伙伴"能说" |
+| 主动消息 | `backend_tools/send_message_tool.py` | 直接复用——让伙伴主动发起对话 |
+
+## 重构行动项
+
+Backend 整体保留复用——三模块解耦、JSON-RPC、工具调用流、反向 RPC、Outbox/Cron、安全边界、错误契约均不变。新定位下的增量工作如下。
+
+### 新增
+- **角色定义数据模型**：在 `models.py` 新增 `Persona` 表（用户维度、一对一、结构化角色定义 JSON）。配套 REST 或 WS 端点供 Desktop onboarding 读写。
+- **形象资产数据模型**：在 `models.py` 新增 `AvatarAsset` 表（用户维度、形象资产引用与元数据、生成状态），配套下发端点。表结构走 [main.py `_install_schema_extensions`](main.py) 的 `ADD COLUMN IF NOT EXISTS` 幂等路径，与无 Alembic 的现状一致。
+- **角色定义注入**：在 `core/chat/system_prompt.py:build_system_prompt_parts` 的 stable 段装配角色定义，驱动伙伴说话风格与性格。
+- **形象生成编排**：onboarding 用户确认后，Backend 装配 prompt → 调 `image_generate` → 写 `AvatarAsset` → 经 `dispatch_user_event` 下发"孵化"事件到 Desktop。
+- **形象生成失败友好回包**：在 `error_classifier` 或 `chat_service` 层为形象生成路径提供可理解的失败提示与重试（design.md §9.2），不透传生图服务原始报错。
+
+### 改造
+- **onboarding JSON-RPC 方法**：在 `routers/chat.py` 注册表新增 `persona.create` / `avatar.generate` / `avatar.status` 等方法，复用现有 IPC future 与事件通道，不引入新链路。
+
+### 保留（不动）
+全部现有工具三层注册表、IPC future 桥接、Cron 调度、错误分类管道（21 种 `FailoverReason`）、安全防护网（reserved 键 / untrusted wrap / Tirith / SSRF）、数据库 LISTEN/NOTIFY 触发器、Web Providers、限流、自更新端点。
