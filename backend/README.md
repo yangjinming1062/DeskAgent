@@ -65,9 +65,12 @@ backend/
 │   ├── backend_tools/       # 云端工具实现（自注册）
 │   │   ├── web_tools.py         # web_search + web_extract
 │   │   ├── cronjob_tools.py     # cron CRUD
-│   │   ├── image_generation_tool.py  # DALL-E 3
-│   │   ├── tts_tool.py          # OpenAI TTS
-│   │   └── send_message_tool.py # webhook POST（含 is_safe_outbound）
+│   │   ├── image_generation_tool.py  # DALL-E 3（伙伴形象生成 + 通用图片）
+│   │   ├── tts_tool.py          # OpenAI TTS（伙伴语音）
+│   │   └── send_message_tool.py # webhook POST（伙伴主动消息 + is_safe_outbound）
+│   ├── companion/         # 伙伴人格与形象系统（设计文档 §7）
+│   │   ├── persona_service.py   # Persona CRUD + 角色定义验证 + system_prompt_extras 渲染
+│   │   └── avatar_service.py    # 伙伴形象生成编排（persona → prompt → image_gen → AvatarAsset）
 │   └── async_jobs/          # 后台异步任务
 │       ├── background_review.py # 后台记忆提取
 │       ├── cron.py              # Cron 调度（60s tick）
@@ -81,6 +84,7 @@ backend/
 │   ├── config.py        # 用户配置 CRUD
 │   ├── llm.py           # 反向 RPC 代理
 │   ├── media.py         # STT / TTS / 图片生成
+│   ├── companion.py     # 伙伴 onboarding：persona CRUD + 形象生成/查询/历史
 │   ├── insights.py      # 用量统计
 │   ├── status.py        # 用户状态快照
 │   ├── update.py        # 客户端自动更新
@@ -126,8 +130,13 @@ backend/
 | `/api/media/stt` | POST | 语音转文字（Whisper；≤24MB 上限，超限返 413；限流：per-user 20/min） | media.py |
 | `/api/media/tts` | POST | 文字转语音（流式；≤4000 chars 上限，超限返 413；限流：per-user 30/min） | media.py |
 | `/api/media/image_gen` | POST | 图片生成（DALL-E 3；限流：per-user 10/min） | media.py |
-| `/api/media/recording/upload` | POST | 屏幕录制上传（webm ≤512MB，限流：per-user 6/min）。保存到本地磁盘，并返回公网可访问的自托管临时 HTTP URL。 | media.py |
-| `/api/media/files/{file_id}` | GET | 无需鉴权的临时录屏文件服务（直接返回本地的 webm 视频，供 LLM/MiMo 下载理解）。 | media.py |
+| `/api/media/files/{file_id}` | GET | 无鉴权的临时媒体文件服务（直接返回本地的图像附件 URL，供 LLM 下载理解） | media.py |
+| **伙伴 onboarding（设计文档 §7）** | | | |
+| `/api/companion/persona` | GET / PUT | 获取/更新伙伴角色定义（onboarding 表单）；PUT 时 `system_prompt_extras` 即时重渲染 | companion.py |
+| `/api/companion/persona/extras` | GET | 单独拿 system_prompt 注入片段（供 renderer 调试） | companion.py |
+| `/api/companion/avatar` | GET | 获取当前激活形象资产；不存在 → `null`，renderer 显示"蛋"占位 | companion.py |
+| `/api/companion/avatar/history` | GET | 历史形象资产列表（最多 20 条） | companion.py |
+| `/api/companion/avatar` | POST | 生成新形象（persona → prompt → image_gen → 写 AvatarAsset 行，置 active）；失败时对外返回 `502` + 友好文案，不泄露 provider 原始错误 | companion.py |
 | **其他** | | | |
 | `/api/llm/completion` | POST | LLM completion 代理（反向 RPC；错误走 `error_classifier.classify_api_error`，返回 `{error, reason, status}`，原始异常仅入服务端 log；限流：per-user 60/min + per-IP 200/min 双层） | llm.py |
 | `/api/status` | GET | 用户状态快照 | status.py |
@@ -160,12 +169,12 @@ backend/
 | `compression.respond` | `{}` | [routers/chat.py](routers/chat.py) — desktop 回复压缩同意请求；参数 `session_id: str` 匹配 `pending_compression_consents` dict 的 str key |
 | `tools.sync` | `{count: int}` | [routers/chat.py](routers/chat.py) — desktop 上报本地 Runner schema（per-user 动态工具集），写入 `core/tools_runtime/registry.update_runner_tools`；后续 LLM 调用看到的 Runner 工具立刻刷新。失败抛 `JsonRpcError(INVALID_PARAMS, ...)`，响应体不含 `ok` 字段 |
 | `config.get` | `{value}` | [routers/chat.py](routers/chat.py) — `key == "project"` 时返回 `{}`（filesystem-only，desktop 在 `gateway.ts::LOCAL_INTERCEPT` 截获本地处理）；其他 key 读 `UserSetting` |
-| `config.set` | `{key, scope, value}` / `{key, session_id, value}` | [routers/chat.py](routers/chat.py) — `scope == "global"` 与 `session_id` **互斥**（同时给 = `INVALID_PARAMS`）。`scope == "global"` 写 `UserSetting` 并同步 in-memory `user_settings` 字典（避免 prompt.submit 读到陈旧值）；allow-list: `yolo_mode` / `reasoning_effort` / `service_tier` / `fast` / `enable_background_review`（MCP server 配置不在此列——存在 runner 主机的 `$ZAST_HOME/config.yaml`，由 Desktop MCP 设置页通过 `zast:runner-config:write` 写入）。`session_id` 写 `Conversation.settings_json`（同步更新 `RuntimeSession.settings`）；allow-list: `yolo` / `reasoning` / `fast`，merge 阶段由 `_merge_session_settings` 翻译为全局 key 命名空间（[core/chat/chat_service.py](core/chat/chat_service.py)）。布尔写入序列化到小写 `true`/`false`，结构化值（dict/list）走 `json.dumps` |
+| `config.set` | `{key, scope, value}` / `{key, session_id, value}` | [routers/chat.py](routers/chat.py) — `scope == "global"` 与 `session_id` **互斥**（同时给 = `INVALID_PARAMS`）。`scope == "global"` 写 `UserSetting` 并同步 in-memory `user_settings` 字典（避免 prompt.submit 读到陈旧值）；allow-list: `yolo_mode` / `reasoning_effort` / `service_tier` / `fast` / `enable_background_review`（MCP server 配置不在此列——存在 runner 主机的 `$DESKAGENT_HOME/config.yaml`，由 Desktop MCP 设置页通过 `deskagent:runner-config:write` 写入）。`session_id` 写 `Conversation.settings_json`（同步更新 `RuntimeSession.settings`）；allow-list: `yolo` / `reasoning` / `fast`，merge 阶段由 `_merge_session_settings` 翻译为全局 key 命名空间（[core/chat/chat_service.py](core/chat/chat_service.py)）。布尔写入序列化到小写 `true`/`false`，结构化值（dict/list）走 `json.dumps` |
 | `complete.slash` | `{items: [{text, display, meta}]}` | [routers/chat.py](routers/chat.py) — 复用 [core/slash_commands.py `commands_catalog()`](core/slash_commands.py) 做前缀过滤；返回 shape = 桌面端 `CompletionEntry`（[use-live-completion-adapter.ts](../../desktop/src/app/chat/composer/hooks/use-live-completion-adapter.ts)）。`text == "/"` 不再 IndexError（先 `strip('/')` 再 `split`） |
-| `complete.path` | `{items: []}` | [routers/chat.py](routers/chat.py) — filesystem-bound 的 defensive stub。真正实现由 desktop 在 `use-gateway-request.ts::tryLocalIntercept` 本地截获后调 `zast:fs:completePath` IPC 走真目录；后端在 Docker 中看不到客户端文件系统，所以保留这个注册只为了在 local-intercept 失败时返回 `{items: []}` 而非 `-32601 METHOD_NOT_FOUND` |
+| `complete.path` | `{items: []}` | [routers/chat.py](routers/chat.py) — filesystem-bound 的 defensive stub。真正实现由 desktop 在 `use-gateway-request.ts::tryLocalIntercept` 本地截获后调 `deskagent:fs:completePath` IPC 走真目录；后端在 Docker 中看不到客户端文件系统，所以保留这个注册只为了在 local-intercept 失败时返回 `{items: []}` 而非 `-32601 METHOD_NOT_FOUND` |
 | `image.attach` | `{attached, path, ref_text, size[, name, width, height]}` | [routers/chat.py](routers/chat.py) — 接受本地图片或文件 path，生成 `@image:<path>` 或 `@file:<path>` 引用供 LLM 通过 Runner 工具读取 |
 | `image.detach` | `{removed: bool}` | [routers/chat.py](routers/chat.py) — unlink 单个 attachment，路径必须在 attachment root下 |
-| `reload.mcp` | runner 返回的 body / `{status: "runner_offline"}` | [routers/chat.py](routers/chat.py) — 通过 [core/ws/ipc.py `dispatch_user_event`](core/ws/ipc.py) 下发 `mcp.reload` 事件到 Desktop；Desktop 经 `zast:runner:dispatch` IPC 把该事件原样转发为第一类 JSON-RPC `mcp.reload` 方法（不走 `execute_tool`），等 `tool.result` 回包（60s 超时）。MCP server 列表实际存储在 runner 主机上的 `$ZAST_HOME/config.yaml`（由 Desktop MCP 设置页通过 `zast:runner-config:write` 写入），runner 在下次 `mcp_*` 工具调用时惰性重读该 YAML。MCP 连接管理在 Runner（[runner/server.py `mcp.reload` 分支](../runner/server.py) → [runner/tools/mcp/mcp_tool.py `reload_mcp_servers`](../runner/tools/mcp/mcp_tool.py)） |
+| `reload.mcp` | runner 返回的 body / `{status: "runner_offline"}` | [routers/chat.py](routers/chat.py) — 通过 [core/ws/ipc.py `dispatch_user_event`](core/ws/ipc.py) 下发 `mcp.reload` 事件到 Desktop；Desktop 经 `deskagent:runner:dispatch` IPC 把该事件原样转发为第一类 JSON-RPC `mcp.reload` 方法（不走 `execute_tool`），等 `tool.result` 回包（60s 超时）。MCP server 列表实际存储在 runner 主机上的 `$DESKAGENT_HOME/config.yaml`（由 Desktop MCP 设置页通过 `deskagent:runner-config:write` 写入），runner 在下次 `mcp_*` 工具调用时惰性重读该 YAML。MCP 连接管理在 Runner（[runner/server.py `mcp.reload` 分支](../runner/server.py) → [runner/tools/mcp/mcp_tool.py `reload_mcp_servers`](../runner/tools/mcp/mcp_tool.py)） |
 
 ##### Reserved methods（backend 注册但 renderer 当前未通过 chat WS 触发）
 
@@ -325,7 +334,7 @@ renderer 在 edit / regenerate 提交时传（[desktop/src/app/session/hooks/use
 
 ### Secret Redaction
 
-`core/redact.redact_sensitive_text`：36 prefix patterns + regex rules。import 时快照 `ZAST_REDACT_SECRETS`（anti-tamper）。
+`core/redact.redact_sensitive_text`：36 prefix patterns + regex rules。import 时快照 `DESKAGENT_REDACT_SECRETS`（anti-tamper）。
 
 ### API Key Fingerprinting
 
@@ -345,9 +354,11 @@ renderer 在 edit / regenerate 提交时传（[desktop/src/app/session/hooks/use
 
 [core/attachments.py](core/attachments.py) 提供路径引用注册和安全删除。`image.attach` 生成 `@image:<path>` 引用，LLM 通过 Runner 文件工具直接读取本地文件，backend 无需暂存。`DELETE /api/sessions/{id}` 触发 `gc_session` 级联删除（双层防御：session_id 正则 + `is_relative_to` 校验）。
 
-### 屏幕录制附件（自托管临时文件服务）
+### 伙伴人格与形象系统（设计文档 §7）
 
-Desktop 录制的 webm 通过 `POST /api/media/recording/upload` 存储于本地磁盘（`temp-media/`），返回自托管临时 HTTP URL。MiMo API 通过该 URL 直接下载媒体文件进行多模态理解。`prompt.submit` 由 [core/chat/chat_service.py `_build_persisted_content`](core/chat/chat_service.py) 封装为 `video_url` part（视频）或 `image_url` part（图片）。定时任务每小时清理过期文件（默认 TTL 24h），删除会话时同步 `temp_files.gc_session`。
+`Persona` 表存用户 onboarding 产出的角色定义（结构化 JSON + 渲染好的 `system_prompt_extras` 片段），注入每次 chat turn 的 system prompt；`AvatarAsset` 表存历次生成的专属形象资产，由 Postgres partial unique index 约束"每个用户最多一条 active 记录"。`/api/companion/*` 五个路由覆盖 onboarding 流程：get/put persona、extras、get 激活形象、avatar history、generate new avatar。
+
+形象生成失败时返回 `502` + 友好文案（`伙伴形象生成失败，请稍后重试`），不泄露 provider 原始错误——参考 [design.md §9.2](../design.md) 的错误收拢原则。
 
 ## 已知限制
 
@@ -356,7 +367,7 @@ Desktop 录制的 webm 通过 `POST /api/media/recording/upload` 存储于本地
 | Runner tools 在 desktop 离线时延迟返回 | ipc.await_future 有 300s 超时；`_dispatch_runner_tool` 做三层 fast-fail（active_connections → has_runner_tools → send_json 异常），通常 < 100ms 返回离线错误，仅绕过三层后才进入 300s 超时 |
 | 并行 terminal 不可用 | Runner 端共享 LocalEnvironment 实例，快照文件不可并发写。架构决定，不视为待修缺口 |
 | `apply_partial` 抹除"清空"语义 | PATCH 无法用 null 清字段 |
-| 视频 recording 全量进 chat history | HTTP URL 在 message content 里原文存储，每条 user message 携带完整 URL。当前无 token 成本（LLM 只看引用），未来 inline `data:` 形态需重新评估 |
+| 形象资产 URL 有 TTL | `AvatarAsset.asset_url` 直接保存 provider 返回的 URL；Desktop 必须在收到时立刻本地缓存，未来过期后无法直接重读需重新生成 |
 | `image_generate` / `text_to_speech_tool` 不参与 config-aware 过滤 | 可用性取决于 LLM provider，需调用时拿 `llm_config`；Registry 构造时无从判断。LLM 维度门控是未来的工作 |
 
 ## Web Providers
