@@ -5,18 +5,13 @@ from modules.auth import UserModelConfig
 from openai import AsyncOpenAI
 from sqlalchemy.orm import Session
 
+from .providers import BaseProvider
+from .providers import ProviderConfig
+from .providers import ServiceType
+from .providers import infer_provider_name
+from .providers import resolve
+from .providers.http import get_async_client
 from .user_config import resolve_user_llm_config
-
-
-@functools.lru_cache(maxsize=64)
-def get_async_client(api_key: str, base_url: str) -> AsyncOpenAI:
-    """Cached AsyncOpenAI keyed on (api_key, base_url).
-
-    ``model`` is intentionally NOT a cache key — ``AsyncOpenAI`` doesn't
-    take a model in its constructor (the model is per-request), so threading it
-    through here only inflated the cache key and made callers repeat themselves.
-    """
-    return AsyncOpenAI(api_key=api_key, base_url=base_url)
 
 
 def client_for_config(llm_config: dict) -> AsyncOpenAI:
@@ -58,6 +53,7 @@ _SERVICE_DEFAULTS: dict[str, str] = {
     "stt": SETTINGS.stt_model_name,
     "tts": SETTINGS.tts_model_name,
     "image_gen": SETTINGS.image_gen_model_name,
+    "video_gen": SETTINGS.video_gen_model_name,
 }
 
 
@@ -75,31 +71,82 @@ def resolve_service_row(db: Session | None, user_id: int | None, prefix: str) ->
     return tuple(getattr(config or SETTINGS, f"{prefix}_{suffix}", "") or "" for suffix in ("base_url", "api_key", "model_name"))
 
 
-def client_for_service(db: Session | None, user_id: int | None, service_type: str = "llm") -> tuple[AsyncOpenAI, str]:
-    """Unified entry point: resolve config → ``(client, model_name)``.
+def resolve_provider_config(db: Session | None, user_id: int | None, service_type: str) -> ProviderConfig:
+    """Resolve the active provider config for a service.
 
     Fallback priority:
       1. User DB config (service-specific fields, may be empty)
-      2. Service-specific global config (``SETTINGS.stt_*`` / ``tts_*`` / ``image_gen_*``)
-      3. Base LLM config (``SETTINGS.llm_*``)
+      2. Service-specific global config (``SETTINGS.<svc>_*``)
+      3. Base LLM config (``SETTINGS.llm_*``) — only for non-MiniMax providers
 
-    When ``user_id`` is None (e.g. tool calls without a user context), the
-    DB tier is skipped entirely and only global SETTINGS are used.
+    Provider name comes from ``SETTINGS.<svc>_provider`` when set, else
+    inferred from the resolved base_url host. MiniMax gets an extra fallback
+    tier (``SETTINGS.minimax_api_key``) and **must not** inherit the MiMo
+    ``llm_api_key`` — sending a MiMo key to a MiniMax host always 401s.
     """
     user_base_url, user_api_key, user_model = resolve_service_row(db, user_id, service_type)
     svc_base_url = getattr(SETTINGS, f"{service_type}_base_url", "")
     svc_api_key = getattr(SETTINGS, f"{service_type}_api_key", "")
     svc_model = _SERVICE_DEFAULTS[service_type]
 
-    # For ``llm``, the svc_* tier IS SETTINGS.llm_* — a third ``or llm_*``
-    # fallback would be the same value, so it's dropped. For stt/tts/
-    # image_gen the svc_* tier is the deployment-wide service default
-    # before the base LLM env.
     base_url = user_base_url or svc_base_url or SETTINGS.llm_base_url
     api_key = user_api_key or svc_api_key or SETTINGS.llm_api_key
     model_name = user_model or svc_model
 
+    explicit_provider = getattr(SETTINGS, f"{service_type}_provider", "")
+    provider_name = explicit_provider or infer_provider_name(base_url)
+
+    if provider_name == "minimax" and api_key == SETTINGS.llm_api_key and SETTINGS.llm_api_key:
+        # Resolved key is the legacy MiMo key (the fallback chose
+        # ``llm_api_key``). Swap to the MiniMax-dedicated key if set;
+        # otherwise fail fast with a clear error — sending a MiMo key to
+        # api.minimaxi.com always 401s, and "401 from upstream" is harder
+        # to diagnose than "missing MINIMAX_API_KEY".
+        minimax_key = getattr(SETTINGS, "minimax_api_key", "")
+        if not minimax_key:
+            raise MissingLlmConfigError(
+                f"{service_type} provider 'minimax' requires MINIMAX_API_KEY (cannot reuse LLM_API_KEY)"
+            )
+        api_key = minimax_key
+
     if not api_key or not base_url:
         raise MissingLlmConfigError(f"{service_type} provider not configured")
 
-    return get_async_client(api_key, base_url), model_name
+    return ProviderConfig(
+        base_url=base_url,
+        api_key=api_key,
+        model=model_name,
+        service_type=ServiceType(service_type),
+        provider_name=provider_name,
+    )
+
+
+def provider_for_service(db: Session | None, user_id: int | None, service_type: str) -> BaseProvider:
+    """Unified entry point: resolve config → instantiate provider class.
+
+    Provider classes are not cached (cheap, immutable config) — the
+    expensive objects (httpx/AsyncOpenAI clients) are cached inside the
+    provider constructors via :mod:`providers.http` /
+    :mod:`providers.openai_compat`.
+    """
+    config = resolve_provider_config(db, user_id, service_type)
+    cls = resolve(config.service_type, config.provider_name)
+    return cls(config)
+
+
+def client_for_service(db: Session | None, user_id: int | None, service_type: str = "llm") -> tuple[AsyncOpenAI, str]:
+    """Unified entry point for legacy callers: resolve config → ``(client, model_name)``.
+
+    This is a compatibility shim over :func:`provider_for_service` — kept
+    stable so existing chat / tts / stt / image_gen call sites (which use
+    ``client.images.generate()`` / ``client.chat.completions.create()``
+    directly) need no changes. Raises :class:`MissingLlmConfigError` when
+    the resolved provider is not OpenAI-compatible (e.g. MiniMax video).
+    """
+    provider = provider_for_service(db, user_id, service_type)
+    raw = provider.raw_client()
+    if raw is None:
+        raise MissingLlmConfigError(
+            f"{service_type} provider '{provider.provider_name}' is not OpenAI-compatible; use provider_for_service() instead"
+        )
+    return raw, provider.config.model
