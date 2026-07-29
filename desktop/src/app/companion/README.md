@@ -49,6 +49,12 @@ WS 流式帧经 `handleCompanionEvent`（`events.ts`，即 `use-gateway-boot` �
 
 对话框激活时 `setIgnoreMouseEvents(false)` + `setAlwaysOnTop(false)`（切别的 app 可覆盖、不挡工作），关闭恢复 click-through + 置顶。默认**文字响应**（不打扰）；SPEAKING 留给 onboarding / 主动消息（Slice 4）。
 
+## 主动陪伴 / 打扰档位 / 故障兜底（plan §4.2 / §4.5）
+
+- **主动陪伴**：`companion.message {text}` 事件（design §5.1.A；由 Backend `send_message` 路径下发，**待 Backend 实现**）→ `speakProactive`：TTS 念出 + 聊天关闭时冒 `ProactiveBubble`，受打扰档位过滤。`cron.trigger` 由 Backend 处理成 companion.message（Desktop 不自行跑 cron 轮）。dev 验证：精灵窗口聚焦时 **Ctrl+Shift+P** 注入测试消息（仅 dev 构建）。
+- **打扰档位**：`$disturbanceTier`（默认 `normal`），ChatDock 头部三档（积极/常规/安静）切换并上报 `companion.set_disturbance_tier`（Backend 未注册则 no-op）。**`quiet` 断主动消息通道、不断 affect**（design §6；affect 流为 phase 2）。用户主动发起的交互永不受档位约束。
+- **故障兜底（MVP 级）**：gateway 断连 → ready 伙伴 drowsy（灰阶 + z，`$gatewayState !== 'open'`），重连回神。TTS 失败 → 回退文字（`speak` 返回 false，调用方降级）。工具失败 → LLM 在流里人格化报告（诚实但不说"做完了"，不暴露原始栈）；catastrophic `error` 事件显示 Backend 脱敏消息。完整前台/后台分级 grace 留 phase 2。
+
 ## 桌面交互契约（`SpriteStage`）
 
 精灵窗口铺满工作区、默认点击穿透。交互解析全部在 `SpriteStage` 的 pointer 层，子组件（蛋等）纯视觉、无自身事件：

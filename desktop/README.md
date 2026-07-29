@@ -10,7 +10,7 @@ DeskAgent 是**双层叠加**的单 Electron 应用：
 
 | 层 | 职责 | 状态 |
 |----|------|------|
-| **伙伴层**（上层） | 桌面精灵形象渲染、onboarding（蛋→角色定义→孵化）、陪伴式交互 UI | **实现中**（MVP Slice 1–3：精灵窗口 + 蛋 + 双窗口 auth 同步 + 对话式 onboarding + Chat 模式（文字/粘贴图片，状态机 IDLE/THINKING/SPEAKING/WORKING）已落地；主动陪伴 / 打扰档位 / 分级故障兜底见 [plan.md](plan.md) §7 路线） |
+| **伙伴层**（上层） | 桌面精灵形象渲染、onboarding（蛋→角色定义→孵化）、陪伴式交互 UI | **MVP 已落地**（Slice 1–4：精灵窗口 + 蛋 + 双窗口 auth 同步 + 对话式 onboarding + Chat 模式（状态机 IDLE/THINKING/SPEAKING/WORKING）+ 主动陪伴接收（companion.message → TTS/气泡）+ 打扰档位 + 故障兜底）。Backend 伙伴能力缺口（onboarding 逐字段 / affect / send_message→companion.message / clip scene / disturbance）以 mock 占位，待 Backend 实现后去 mock——见 [plan.md](plan.md) §7 |
 | **枢纽层**（下层） | 凭证加密落盘、WS 中转、Runner 进程编排、反向 RPC 代理、两阶段自更新、本地文件系统拦截 | **保留复用** |
 
 两层共享同一个 Electron 主进程，职责严格分离：枢纽层处理协议与安全，伙伴层处理形象渲染与用户体验。伙伴层不直接接触凭证或 Runner 句柄，一切经枢纽层 IPC。

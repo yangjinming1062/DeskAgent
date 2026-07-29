@@ -13,6 +13,8 @@ import {
 } from '@/store/chat'
 import { setSpriteState } from '@/store/companion'
 
+import { speakProactive } from './proactive'
+
 export function handleCompanionEvent(event: RpcEvent): void {
   switch (event.type) {
     case 'message.start':
@@ -51,8 +53,15 @@ export function handleCompanionEvent(event: RpcEvent): void {
     }
 
     case 'cron.trigger':
-      // Slice 4: proactive companionship driven by cron.
+      // Backend (design.md §6) processes cron into a `companion.message`; the
+      // desktop doesn't run the cron turn itself. No-op until that lands.
       break
+
+    case 'companion.message': {
+      const text = (event.payload as { text?: string } | undefined)?.text ?? ''
+      if (text) void speakProactive(text)
+      break
+    }
 
     default:
       break

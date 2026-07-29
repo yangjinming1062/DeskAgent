@@ -11,7 +11,13 @@ import {
   setChatSession,
   type ChatMessage
 } from '@/store/chat'
-import { setSpriteState } from '@/store/companion'
+import { $disturbanceTier, type DisturbanceTier, setDisturbanceTier, setSpriteState } from '@/store/companion'
+
+const TIERS: { id: DisturbanceTier; label: string }[] = [
+  { id: 'proactive', label: '积极' },
+  { id: 'normal', label: '常规' },
+  { id: 'quiet', label: '安静' }
+]
 
 interface ChatDockProps {
   onClose: () => void
@@ -21,6 +27,7 @@ export function ChatDock({ onClose }: ChatDockProps) {
   const messages = useStore($chatMessages)
   const sessionId = useStore($chatSessionId)
   const gatewayState = useStore($gatewayState)
+  const tier = useStore($disturbanceTier)
   const { requestGateway } = useGatewayRequest()
   const [text, setText] = useState('')
   const [pendingImage, setPendingImage] = useState<string | null>(null)
@@ -51,6 +58,13 @@ export function ChatDock({ onClose }: ChatDockProps) {
     const res = await requestGateway<{ session_id: string }>('session.create', {})
     setChatSession(res.session_id)
     return res.session_id
+  }
+
+  const changeTier = (next: DisturbanceTier) => {
+    setDisturbanceTier(next)
+    // Report to Backend (companion.set_disturbance_tier). No-op until the
+    // Backend endpoint ships — never block the UI on the report.
+    void requestGateway('companion.set_disturbance_tier', { tier: next }).catch(() => {})
   }
 
   const onPaste = async (e: React.ClipboardEvent) => {
@@ -113,8 +127,19 @@ export function ChatDock({ onClose }: ChatDockProps) {
   return (
     <div className="fixed inset-0 z-40 flex items-center justify-center px-6" style={{ pointerEvents: 'auto' }}>
       <div className="flex h-[min(70vh,560px)] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-white/10 bg-black/55 text-white shadow-2xl backdrop-blur-md">
-        <div className="flex items-center justify-between border-b border-white/10 px-4 py-2.5">
-          <span className="text-sm font-medium">对话</span>
+        <div className="flex items-center justify-between gap-2 border-b border-white/10 px-3 py-2">
+          <div className="flex items-center gap-0.5 rounded-full bg-white/5 p-0.5 text-[11px]" title="打扰档位">
+            {TIERS.map(t => (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => changeTier(t.id)}
+                className={`rounded-full px-2.5 py-1 transition ${tier === t.id ? 'bg-white/80 font-medium text-black' : 'text-white/60 hover:text-white'}`}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
           <button type="button" onClick={onClose} className="text-white/50 transition hover:text-white" aria-label="关闭对话">
             ✕
           </button>
