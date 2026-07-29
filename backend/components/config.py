@@ -38,15 +38,17 @@ class Settings(BaseSettings):
     tts_model_name: str = "mimo-v2.5-tts"
     tts_default_voice: str = "mimo_default"
 
-    # Image Gen Provider (图片生成)
-    image_gen_base_url: str = "https://api.minimaxi.com/v1"  # MiniMax by default
+    # Image Gen Provider (图片生成). base_url is the MiniMax host root WITHOUT
+    # /v1 — the minimax httpx providers post to /v1/<endpoint> themselves (unlike
+    # the OpenAI-SDK providers, which need /v1 in llm_base_url).
+    image_gen_base_url: str = "https://api.minimaxi.com"
     image_gen_api_key: str = ""  # 优先 image_gen_api_key，否则回落 minimax_api_key，再回落 llm_api_key
     image_gen_model_name: str = "image-01"
 
     # Video Gen Provider (视频生成) — added in commit 1 to keep the service
     # registry's _SERVICE_DEFAULTS dict a closed set at import time. Wired up
     # end-to-end in commit 4.
-    video_gen_base_url: str = "https://api.minimaxi.com/v1"
+    video_gen_base_url: str = "https://api.minimaxi.com"
     video_gen_api_key: str = ""  # falls back to minimax_api_key
     video_gen_model_name: str = "MiniMax-Hailuo-02"
     video_gen_poll_interval_seconds: float = 5.0

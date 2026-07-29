@@ -94,6 +94,8 @@ async def _persist_assistant_no_tool_turn(
     first_user_msg_content: str | None,
     current_messages: list[dict],
     track_task: TrackTask | None,
+    *,
+    emotion: str | None = None,
 ) -> None:
     """Terminal path: assistant produced text only. Persist Message, kick
     off optional title + background review, emit ``message.complete``.
@@ -138,6 +140,7 @@ async def _persist_assistant_no_tool_turn(
             "type": "message.complete",
             "text": turn_content,
             **({"usage": final_usage_payload} if final_usage_payload else {}),
+            **({"affect": emotion} if emotion else {}),
         }
     )
 

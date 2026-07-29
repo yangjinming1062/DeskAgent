@@ -7,14 +7,20 @@ from .disturbance import get_disturbance_tier
 from .disturbance import is_quiet
 from .disturbance import set_disturbance_tier
 from .persona_service import build_system_prompt_extras
+from .persona_service import get_onboarding_state
 from .persona_service import get_or_create_persona
+from .persona_service import ONBOARDING_FIELDS
 from .persona_service import PersonaValidationError
+from .persona_service import submit_onboarding_field
 from .persona_service import update_persona
 
 __all__ = [
     "build_system_prompt_extras",
     "get_or_create_persona",
     "update_persona",
+    "get_onboarding_state",
+    "submit_onboarding_field",
+    "ONBOARDING_FIELDS",
     "PersonaValidationError",
     "generate_avatar",
     "get_active_avatar",

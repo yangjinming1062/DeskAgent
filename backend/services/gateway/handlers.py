@@ -29,6 +29,9 @@ from services.chat import exec_slash_command
 from services.chat import load_user_settings
 from services.chat import run_chat_turn
 from services.companion import set_disturbance_tier as set_companion_disturbance_tier
+from services.companion import get_onboarding_state
+from services.companion import PersonaValidationError
+from services.companion import submit_onboarding_field
 from services.gateway import authenticate_ws_token
 from services.gateway import discard_user
 from services.gateway import dispatch_user_event
@@ -709,3 +712,30 @@ def _register_session_handlers(
         return {"tier": normalized}
 
     dispatcher.register("companion.set_disturbance_tier", companion_set_disturbance_tier)
+
+    async def onboarding_get_state(_params: dict) -> dict:
+        # Breakpoint recovery (design.md §7.5): the desktop calls this on boot
+        # to learn which onboarding fields are already collected and which
+        # question to resume from. Returns ``complete: true`` once the persona
+        # is finalized, so the desktop skips onboarding entirely.
+        with SESSION_LOCAL() as db:
+            return get_onboarding_state(db, user_id)
+
+    async def onboarding_submit(params: dict) -> dict:
+        # Per-field incremental persistence (design.md §7.5). Each
+        # ``onboarding.submit {field, value}`` lands immediately, so a
+        # crash/exit mid-onboarding loses at most the current question.
+        field = params.get("field")
+        if not isinstance(field, str) or not field:
+            raise JsonRpcError(JSONRPC_INVALID_PARAMS, "field must be a non-empty string")
+        value = params.get("value")
+        if value is not None and not isinstance(value, str):
+            raise JsonRpcError(JSONRPC_INVALID_PARAMS, "value must be a string or null")
+        with SESSION_LOCAL() as db:
+            try:
+                return submit_onboarding_field(db, user_id, field, value)
+            except PersonaValidationError as exc:
+                raise JsonRpcError(JSONRPC_INVALID_PARAMS, str(exc))
+
+    dispatcher.register("onboarding.get_state", onboarding_get_state)
+    dispatcher.register("onboarding.submit", onboarding_submit)

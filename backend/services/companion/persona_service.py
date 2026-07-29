@@ -12,6 +12,16 @@ _OPTIONAL_FIELDS: tuple[str, ...] = ("appearance", "pronouns", "background", "bo
 _KNOWN_FIELDS: frozenset[str] = frozenset(_REQUIRED_FIELDS + _OPTIONAL_FIELDS)
 _MAX_FIELD_LEN: int = 500
 
+# Onboarding raw-answer fields collected from the conversation flow (plan §3.2),
+# in the order the questions are asked. Stored as a draft in
+# ``Persona.definition_json`` while ``is_complete`` is False; overwritten with
+# the cleaned persona once the desktop submits the final assembled persona.
+# ``self_intro`` feeds the memory layer (user info), ``voice`` feeds TTS —
+# neither is a persona field (design §7.6), but both ride the onboarding draft
+# so a crash mid-onboarding can resume from the last answered question.
+ONBOARDING_FIELDS: tuple[str, ...] = ("name", "role", "personality", "self_intro", "voice")
+_ONBOARDING_MAX_LEN: int = 1000
+
 
 class PersonaValidationError(ValueError):
     """Raised when a persona payload is missing required fields or
@@ -80,3 +90,51 @@ def render_extras(definition: dict[str, str]) -> str:
             label = key.replace("_", " ").capitalize()
             lines.append(f"- **{label}**: {definition[key]}")
     return "\n".join(lines)
+
+
+# ── Onboarding draft (per-field incremental persistence, design §7.5) ──
+
+
+def _load_draft(persona: Persona) -> dict[str, str]:
+    try:
+        draft = json.loads(persona.definition_json or "{}")
+    except (TypeError, ValueError):
+        return {}
+    return draft if isinstance(draft, dict) else {}
+
+
+def get_onboarding_state(db: Session, user_id: int) -> dict[str, Any]:
+    """Return the onboarding draft for breakpoint recovery.
+
+    ``answers`` holds every field already submitted; ``next_field`` is the
+    first unanswered question in order (``None`` when all answered); ``complete``
+    mirrors ``Persona.is_complete`` so the desktop knows whether to skip
+    onboarding entirely on boot.
+    """
+    persona = get_or_create_persona(db, user_id)
+    if persona.is_complete:
+        return {"answers": {}, "next_field": None, "complete": True}
+    draft = _load_draft(persona)
+    next_field = next((f for f in ONBOARDING_FIELDS if not draft.get(f)), None)
+    return {"answers": draft, "next_field": next_field, "complete": False}
+
+
+def submit_onboarding_field(db: Session, user_id: int, field: str, value: str | None) -> dict[str, Any]:
+    """Persist one onboarding answer incrementally (design §7.5).
+
+    A ``None``/empty value clears the field (lets the user redo a question).
+    Returns the post-submit state so the desktop gets ``next_field`` without a
+    separate ``onboarding.get_state`` round-trip.
+    """
+    if field not in ONBOARDING_FIELDS:
+        raise PersonaValidationError(f"unknown onboarding field: {field!r}", field)
+    persona = get_or_create_persona(db, user_id)
+    draft = _load_draft(persona)
+    if value and value.strip():
+        draft[field] = value.strip()[:_ONBOARDING_MAX_LEN]
+    else:
+        draft.pop(field, None)
+    persona.definition_json = json.dumps(draft, ensure_ascii=False)
+    db.commit()
+    next_field = next((f for f in ONBOARDING_FIELDS if not draft.get(f)), None)
+    return {"answers": draft, "next_field": next_field, "complete": False}
