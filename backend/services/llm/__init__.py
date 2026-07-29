@@ -14,7 +14,12 @@ from .llm_retry import call_with_retry
 from .llm_retry import LLMRuntimeError
 from .providers import BaseProvider
 from .providers import ChatProvider
+from .providers import ChatResult
+from .providers import ChatStreamEvent
+from .providers import ImageAsset
 from .providers import ImageGenProvider
+from .providers import ImageGenRequest
+from .providers import ImageGenResult
 from .providers import infer_provider_name
 from .providers import ProviderConfig
 from .providers import ProviderError
@@ -22,8 +27,13 @@ from .providers import register
 from .providers import resolve
 from .providers import ServiceType
 from .providers import STTProvider
+from .providers import STTResult
 from .providers import TTSProvider
+from .providers import TTSResult
+from .providers import VideoAsset
 from .providers import VideoGenProvider
+from .providers import VideoGenRequest
+from .providers import VideoJobStatus
 from .user_config import resolve_user_llm_config
 
 __all__ = [
@@ -37,10 +47,20 @@ __all__ = [
     "provider_for_service",
     "BaseProvider",
     "ChatProvider",
+    "ChatResult",
+    "ChatStreamEvent",
+    "ImageAsset",
     "ImageGenProvider",
+    "ImageGenRequest",
+    "ImageGenResult",
     "STTProvider",
+    "STTResult",
     "TTSProvider",
+    "TTSResult",
+    "VideoAsset",
     "VideoGenProvider",
+    "VideoGenRequest",
+    "VideoJobStatus",
     "ProviderConfig",
     "ProviderError",
     "ServiceType",
