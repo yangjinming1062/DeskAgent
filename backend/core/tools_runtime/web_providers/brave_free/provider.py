@@ -2,7 +2,7 @@ import os
 from typing import Any
 
 import httpx
-from logger import get_logger
+from components import get_logger
 
 from .. import WebSearchProvider
 

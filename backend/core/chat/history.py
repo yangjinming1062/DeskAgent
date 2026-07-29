@@ -1,6 +1,6 @@
-from models import Message
+from modules.conversation import Message
 from sqlalchemy.orm import Session
-from utils import safe_json_loads
+from components import safe_json_loads
 
 
 def build_session_messages(conv_id: int, db: Session) -> list[dict]:

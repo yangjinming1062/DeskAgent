@@ -8,14 +8,16 @@
 
 ```
 backend/
-├── routers/          # HTTP/WS 端点——chat.py(唯一 WS) / user / admin / sessions / config / llm / media / companion / ...
-├── core/             # 认知层：chat/ 对话编排 · llm/ 客户端与错误分类 · ws/ 连接与 IPC · tools_runtime/ 工具框架
+├── common/           # 框架基类与 API 助手（业务无关）：ModelBase/TimestampMixin · get_router · get_or_404/list_response
+├── components/        # 基础设施单例 + 通用工具：database · config(Settings) · logger · constants · functions · background · hashing
+├── modules/           # 按领域拆分的 ORM 模型 + Pydantic 契约：auth / conversation / companion / memory / scheduler / settings / update / ws / system
+├── api/v1/            # HTTP/WS 端点，pkgutil 自动发现——chat.py(唯一 WS) / user / admin / sessions / config / llm / media / companion / ...
+├── core/              # 认知层：chat/ 对话编排 · llm/ 客户端与错误分类 · ws/ 连接与 IPC · tools_runtime/ 工具框架
 │   │                   backend_tools/ 云端工具 · companion/ 伙伴系统 · async_jobs/ 后台任务(Cron/记忆提取)
-├── models.py + schemas.py   # SQLAlchemy 模型 + Pydantic 通信契约
-└── utils/            # auth(JWT) / db / text(fingerprint) / json_helpers ...
+└── main.py            # lifespan + middleware + 遍历 api.ROUTERS 挂载
 ```
 
-依赖方向：`routers` → `core` → `models` / `utils`，无反向。REST 路由完整列表见 `routers/` 各文件（FastAPI `/docs` 提供 OpenAPI）；WS JSON-RPC 方法注册见 `routers/chat.py`。
+依赖方向（低 → 高）：`common` / `components`（框架基座）→ `modules`（领域模型与契约）→ `api/v1`（端点）/ `core`（认知层）→ `main.py`，无反向。`common` 与 `components` 的分界：`common` 放纯定义/基类（无模块级状态、无副作用），`components` 放有状态的基础设施单例（`ENGINE`、`SETTINGS`、logger 缓存）与无状态通用工具。REST 路由完整列表见 `api/v1/` 各文件（FastAPI `/docs` 提供 OpenAPI）；WS JSON-RPC 方法注册见 `api/v1/chat.py`。
 
 ## 工具三层分类
 
@@ -131,12 +133,12 @@ DeskAgent 伙伴的"人格"与"形象"是跨 Backend↔Desktop 的核心契约�
 ## 数据库
 
 - **引擎**：PostgreSQL（`postgresql+psycopg://`），连接池 `pool_size=20, max_overflow=10, pool_recycle=3600, pool_pre_ping=True`
-- **Schema**：`Base.metadata.create_all` + PG trigger（需手动 DDL；无 Alembic）。新增列走 `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`（PG 9.6+ 幂等，不破坏已部署实例）
+- **Schema**：`ModelBase.metadata.create_all`（`common/model.py`）+ PG trigger（需手动 DDL；无 Alembic）。新增列走 `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`（PG 9.6+ 幂等，不破坏已部署实例）
 - **WS 事件通知**：`ws_events` 表上的 PG Trigger 在 INSERT 时 `NOTIFY ws_events_channel`，`core/ws/connection_manager.ws_event_loop` 经 `asyncpg` 独立连接 `LISTEN`，`DELETE ... RETURNING` 原子认领 + 派发（60s 超时兜底 GC）
 
 ## Observability
 
-- **日志**：`backend/logger.py` 集中入口 + lifespan 接管 root logger；`Settings.log_level` / `log_format` 部署可调（dev: text / prod: json）；stdout only。**脱敏责任在调用方**——logger 是基础设施层**不** import `core.*`（避免循环依赖），`chat_service` 等 LLM 路径在打 log 前已跑 `redact_sensitive_text`。`extra` dict key **禁止**与 stdlib `LogRecord` 内置属性同名（命中 = `KeyError` 崩溃）
+- **日志**：`components/logger.py` 集中入口 + lifespan 接管 root logger；`Settings.log_level` / `log_format` 部署可调（dev: text / prod: json）；stdout only。**脱敏责任在调用方**——logger 是基础设施层**不** import `core.*`（避免循环依赖），`chat_service` 等 LLM 路径在打 log 前已跑 `redact_sensitive_text`。`extra` dict key **禁止**与 stdlib `LogRecord` 内置属性同名（命中 = `KeyError` 崩溃）
 - **correlation ID**：每个 HTTP 请求经 middleware 解 `X-Request-ID`（缺则生成）写入 ContextVar；跨 `asyncio.create_task` 自动透传（CPython 3.11+），**不要** wrap
 - 无 `/metrics` 端点、无 OpenTelemetry 集成
 

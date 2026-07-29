@@ -7,6 +7,7 @@ from .llm_client import client_for_service
 from .llm_client import client_for_user
 from .llm_client import get_async_client
 from .llm_client import MissingLlmConfigError
+from .llm_client import resolve_service_row
 from .llm_retry import call_with_retry
 from .llm_retry import LLMRuntimeError
 from .user_config import resolve_user_llm_config
@@ -17,6 +18,7 @@ __all__ = [
     "client_for_user",
     "get_async_client",
     "MissingLlmConfigError",
+    "resolve_service_row",
     "call_with_retry",
     "LLMRuntimeError",
     "classify_api_error",

@@ -5,7 +5,7 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
-from logger import get_logger
+from components import get_logger
 
 from .tool_result_classification import FILE_MUTATING_TOOL_NAMES as _FILE_MUTATING_TOOLS
 

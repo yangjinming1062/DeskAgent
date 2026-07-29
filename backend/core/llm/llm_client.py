@@ -1,7 +1,7 @@
 import functools
 
-from config import SETTINGS
-from models import UserModelConfig
+from components import SETTINGS
+from modules.auth import UserModelConfig
 from openai import AsyncOpenAI
 from sqlalchemy.orm import Session
 

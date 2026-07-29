@@ -4,10 +4,10 @@ from dataclasses import dataclass
 from dataclasses import field
 from typing import Any
 
-from utils import as_bool
-from utils import positive_int
-from utils import safe_json_loads
-from utils import sha256_hex
+from components import as_bool
+from components import positive_int
+from components import safe_json_loads
+from components import sha256_hex
 
 from .file_safety import get_read_block_error
 from .file_safety import is_write_denied

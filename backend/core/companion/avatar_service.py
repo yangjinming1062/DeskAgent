@@ -10,8 +10,8 @@ locally before returning (see design.md §7.2).
 import json
 import secrets
 
-from models import AvatarAsset
-from models import Persona
+from modules.companion import AvatarAsset
+from modules.companion import Persona
 from sqlalchemy.orm import Session
 
 from ..backend_tools.image_generation_tool import image_generation_tool

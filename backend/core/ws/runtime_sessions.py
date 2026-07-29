@@ -3,7 +3,7 @@ import json
 from dataclasses import dataclass
 from dataclasses import field
 
-from utils import safe_json_loads
+from components import safe_json_loads
 
 
 @dataclass

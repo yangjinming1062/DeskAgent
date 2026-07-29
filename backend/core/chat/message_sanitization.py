@@ -1,7 +1,7 @@
 import json
 import re
 
-from logger import get_logger
+from components import get_logger
 
 logger = get_logger(__name__)
 

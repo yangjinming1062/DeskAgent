@@ -2,8 +2,9 @@ import os
 
 import pytest
 import sqlalchemy
-import utils.db as _db_mod
-from models import Base
+import components.database as _db_mod
+from common import ModelBase
+import modules  # noqa: F401 — register all domain models on ModelBase.metadata
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -16,7 +17,7 @@ def sqlite_engine():
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
-    Base.metadata.create_all(bind=engine)
+    ModelBase.metadata.create_all(bind=engine)
     return engine
 
 
@@ -52,17 +53,19 @@ def _patch_db(monkeypatch, sqlite_engine):
         "core.async_jobs.title_generator",
         "core.tools_runtime.registry",
         "core.chat.agent_delegate",
-        "routers.chat",
-        "routers.llm",
-        "routers.media",
+        "core.backend_tools.image_generation_tool",
+        "core.backend_tools.tts_tool",
+        "api.v1.chat",
+        "api.v1.llm",
+        "api.v1.media",
     ):
         mod = __import__(mod_name, fromlist=["SESSION_LOCAL"])
         if hasattr(mod, "SESSION_LOCAL"):
             monkeypatch.setattr(mod, "SESSION_LOCAL", SessionLocal)
 
-    import utils
+    import components
 
-    monkeypatch.setattr(utils, "SESSION_LOCAL", SessionLocal)
+    monkeypatch.setattr(components, "SESSION_LOCAL", SessionLocal)
 
     yield connection, SessionLocal
 
@@ -73,8 +76,8 @@ def _patch_db(monkeypatch, sqlite_engine):
 
 def _seed_user(SessionLocal, username="testuser", password="testpass123"):
     """Insert a user + active LoginRecord + model config, return jwt_token."""
-    from utils import hash_password, create_access_token
-    from models import User, UserModelConfig, LoginRecord
+    from modules.auth import hash_password, create_access_token
+    from modules.auth import User, UserModelConfig, LoginRecord
 
     # Retrieve real credentials from the environment for unmocked testing
     mimo_key = os.getenv("MIMO_API_KEY", "sk-fake-for-unit-tests")
@@ -111,8 +114,8 @@ def _seed_user(SessionLocal, username="testuser", password="testpass123"):
 @pytest.fixture()
 def test_app(_patch_db):
     from fastapi import FastAPI
-    from config import SETTINGS
-    from utils import get_db
+    from components import SETTINGS
+    from components import get_db
 
     engine, SessionLocal = _patch_db
     app = FastAPI(title="deskagent-test")
@@ -126,19 +129,15 @@ def test_app(_patch_db):
 
     app.dependency_overrides[get_db] = _test_get_db
 
-    from routers import chat_router
-    from routers import health_router
-    from routers import sessions_router
-    from routers import user_router
-    from routers import media_router
-    from routers import llm_router
+    from api.v1 import chat
+    from api.v1 import health
+    from api.v1 import llm
+    from api.v1 import media
+    from api.v1 import sessions
+    from api.v1 import user
 
-    app.include_router(health_router, prefix=SETTINGS.api_prefix)
-    app.include_router(user_router, prefix=SETTINGS.api_prefix)
-    app.include_router(chat_router, prefix=SETTINGS.api_prefix)
-    app.include_router(sessions_router, prefix=SETTINGS.api_prefix)
-    app.include_router(media_router, prefix=SETTINGS.api_prefix)
-    app.include_router(llm_router, prefix=SETTINGS.api_prefix)
+    for _r in (health.router, user.router, chat.router, sessions.router, media.router, llm.router):
+        app.include_router(_r)
     yield app
 
 

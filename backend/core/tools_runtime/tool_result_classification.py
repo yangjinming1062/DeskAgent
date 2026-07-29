@@ -1,6 +1,6 @@
 from typing import Any
 
-from utils import safe_json_loads
+from components import safe_json_loads
 
 FILE_MUTATING_TOOL_NAMES = frozenset({"write_file", "patch"})
 

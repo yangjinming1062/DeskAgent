@@ -1,5 +1,5 @@
-from logger import get_logger
-from utils import unquote_user_setting
+from components import get_logger
+from components import unquote_user_setting
 
 from .web_providers import WebSearchProvider
 from .web_providers.brave_free.provider import BraveFreeWebSearchProvider
