@@ -129,6 +129,8 @@ MiniMax Hailuo 异步三段式：`POST /v1/video_generation`（task_id）→ `GE
 
 **Tool**：`video_generate`（schema: prompt/duration/resolution/first_frame_image/aspect_ratio）+ `video_generate_status`（schema: task_id）。前者最多等 `video_gen_tool_wait_seconds`（180s）；超时返回 `{success:true, pending:true, task_id, hint:"用 video_generate_status 查询"}`——后台任务继续跑。MiniMax 不暴露 ASR，所以 `stt` provider 没有 `minimax` 实现。
 
+**伙伴层 clip 的种子图**：`companion/avatar_service` 生成角色动画 clip 时，`first_frame_image` 固定为该用户当前 portrait，prompt 描述场景/动作——所有 clip 共享同一颗种子图以保证跨 clip 角色一致；portrait 重生时全部 clip 失效重排（[design.md §7.2](../design.md#72-形象与动画资产-avatar--animation-assets)）。clip 复用 `video_gen.completed/failed` 事件下发，payload 携 scene 标识。
+
 ## 安全设计
 
 - **Tool Reserved Keys 防注入**：`registry.execute_backend_tool` 把 `user_id`、`llm_config`、`user_settings` 标记为 reserved——LLM 塞同名 key 静默丢弃。角色定义同样受此保护，防止用户对话内容注入改写伙伴人格。
