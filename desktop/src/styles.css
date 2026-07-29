@@ -1,17 +1,8 @@
 @import 'tailwindcss';
 @plugin '@tailwindcss/typography';
 @import 'tw-shimmer';
-@import 'katex/dist/katex.min.css';
 @import '@vscode/codicons/dist/codicon.css';
 @custom-variant dark (&:is(.dark *));
-
-@font-face {
-  font-family: 'Collapse';
-  font-style: normal;
-  font-weight: 700;
-  font-display: swap;
-  src: url('../../../node_modules/@nous-research/ui/dist/fonts/Collapse-Bold.woff2') format('woff2');
-}
 
 @theme inline {
   --color-background: var(--dt-background);
