@@ -17,7 +17,9 @@ backend/
 │   │                   + emitter(循环断路器) · system_prompt · history · message_sanitization · think_scrubber · agent_delegate · commands
 │   ├── gateway/       # WS 网关：connection(MANAGER+LISTEN/NOTIFY) · jsonrpc · emitter · ipc · runtime · auth · handlers(22 个 JSON-RPC 方法)
 │   ├── llm/           # LLM 客户端与错误分类：llm_client · llm_retry · error_classifier · context_compressor · user_config
-│   ├── tools/         # 工具框架 + 内置工具：registry · guardrails · memory · ... + builtin/(web/tts/image_gen/send_message/cronjob)
+│   │                   + providers/(抽象层：base · registry · http · openai_compat · mimo · minimax)
+│   ├── media/         # 视频生成后台任务：video_jobs(submit/poll/download/finalize + WSEvent outbox)
+│   ├── tools/         # 工具框架 + 内置工具：registry · guardrails · memory · ... + builtin/(web/tts/image_gen/video_gen/send_message/cronjob)
 │   ├── companion/     # 伙伴系统：persona_service · avatar_service
 │   └── scheduler/     # 后台任务：cron · title_generator · background_review
 ├── api/v1/            # 薄 HTTP/WS 端点，pkgutil 自动发现——chat.py(唯一 WS，仅薄端点委托 gateway/handlers) / user / sessions / llm / ...
@@ -95,6 +97,37 @@ backend/
 
 **附件 fetch 失败**：LLM 无法下载临时媒体文件时（链接过期、网络隔离），拦截 Proxy 端原始 SDK 报错，向用户返回 provider-agnostic 短消息，避免误导性触发 LLM 回退逻辑。
 
+## LLM Provider 抽象
+
+`services/llm/providers/` 在五类服务（`ChatProvider` / `ImageGenProvider` / `VideoGenProvider` / `TTSProvider` / `STTProvider`）各放一个 ABC，`BaseProvider` 公共根。Provider 名解析规则：显式 `SETTINGS.<svc>_provider` 优先，否则按 `base_url` host 推断（`api.minimaxi.com` / `api.minimax.io` → `minimax`，其余 → `mimo`）。注册表 `registry.register(service_type, provider_name, cls)` 由 provider 子包 `__init__.py` 自注册；`providers/__init__.py` 仅 `from . import mimo, minimax` 触发。
+
+**两层入口**：`provider_for_service(db, user_id, service_type) -> BaseProvider` 是新统一入口；`client_for_service(...)` 保留为兼容 shim——OpenAI 协议 provider 返回其缓存的 `AsyncOpenAI`（供 chat/stt/tts/image_gen 老 call site 透明使用），非 OpenAI 协议（MiniMax video_gen）抛 `MissingLlmConfigError` 提示改用 `provider_for_service`。
+
+**关键设计决策**：
+- chat 走 OpenAI 协议 → `OpenAICompatChatProvider` 共享基类；`MiMoChatProvider` 与 `MiniMaxChatProvider` 都继承它，差异只在 base_url 与 model
+- image_gen / video_gen / t2a_v2 与 OpenAI 协议**不兼容**，**一律走** `providers/http.py` 的 httpx 池（base_url + api_key 缓存，超时 `llm_request_timeout_seconds`），不做 `AsyncOpenAI.post` 兼容层 hack
+- `ProviderError(status_code, body, provider, model)` 字段名刻意对齐 `error_classifier._extract_status_code/_extract_error_body`，让 `classify_api_error` 复用既有 8 步流水线——MiniMax `base_resp.status_code` 在 `providers/minimax/_errors.py` 翻译（`1002/1039→429`、`1004→401`、`1008→402`、`1027→400 content_filter`，其余→原 HTTP）
+- MiniMax key 不能继承 MiMo key（host 不同 401）；`resolve_provider_config` 在检测到 provider=minimax 且 api_key 是从 `llm_api_key` 回落而来时，强制改用 `MINIMAX_API_KEY` env，缺则 fail-fast 报 `MissingLlmConfigError`
+
+**为什么 MiMo 没有 `_errors.py`**：MiMo chat.completions 协议就是 OpenAI 标准格式，错误返回 OpenAI 标准的 `{"error":{"message":"..."}}` HTTP 状态码，`AsyncOpenAI` 自动解析成 `APIStatusError`（带 `.status_code` 与 `.body`），`error_classifier` 直接读这俩字段。MiniMax 不一样——错误是 HTTP 200 外层 + `base_resp.status_code` 内层，SDK 看不到，所以需要单独翻译。
+
+## 视频生成
+
+MiniMax Hailuo 异步三段式：`POST /v1/video_generation`（task_id）→ `GET /v1/query/video_generation?task_id=...` 轮询 → `GET /v1/files/retrieve?file_id=...` 拿到 9 小时有效的 `download_url`——必须在 provider 文件过期前**立即**下载落盘，否则前端 404。`services/media/video_jobs.py` 把这条流水编排成：
+
+- `enqueue_video_job` 入库 + 提交 + `asyncio.create_task` 起后台 polling
+- `_poll_and_finalize` 每 `video_gen_poll_interval_seconds`（5s）查一次，最长 `video_gen_max_poll_seconds`（900s）
+- succeeded 后 `provider.fetch` → httpx streaming 下载（`video_gen_download_max_bytes=200MB` 上限）→ `components.save_file` 落 `data_dir/temp-media`，对外只暴露自家 `/api/media/files/<id>` URL
+- 写 `WSEvent(user_id, "video_gen.completed"|"video_gen.failed", payload)`，复用 `services/gateway/connection` 的 LISTEN/NOTIFY outbox 推到桌面端
+
+**REST 接口**：
+- `POST /api/media/video_gen`（rate-limit 3/min）：返回 **202** `{task_id, status, poll_url}`；可选 `wait_seconds=0..60` 做有限伪同步（完成的化 200 直接带 `url`）
+- `GET /api/media/video_gen/{task_id}`：返回 `{status, url|null, error|null, created_at, updated_at}`，按 `user_id` 过滤
+
+**进程恢复**：lifespan 启动时调 `resume_pending_jobs()` 把 `status IN ('queued','processing')` 的行重新挂上 polling 任务——deploy / OOM / SIGTERM 不会丢失在飞的视频。
+
+**Tool**：`video_generate`（schema: prompt/duration/resolution/first_frame_image/aspect_ratio）+ `video_generate_status`（schema: task_id）。前者最多等 `video_gen_tool_wait_seconds`（180s）；超时返回 `{success:true, pending:true, task_id, hint:"用 video_generate_status 查询"}`——后台任务继续跑。MiniMax 不暴露 ASR，所以 `stt` provider 没有 `minimax` 实现。
+
 ## 安全设计
 
 - **Tool Reserved Keys 防注入**：`registry.execute_backend_tool` 把 `user_id`、`llm_config`、`user_settings` 标记为 reserved——LLM 塞同名 key 静默丢弃。角色定义同样受此保护，防止用户对话内容注入改写伙伴人格。
@@ -161,5 +194,18 @@ DeskAgent 伙伴的"人格"与"形象"是跨 Backend↔Desktop 的核心契约�
 | 并行 terminal 不可用 | Runner 端共享 LocalEnvironment 实例，快照文件不可并发写。架构决定 |
 | `apply_partial` 抹除"清空"语义 | PATCH 无法用 null 清字段 |
 | 形象资产 URL 有 TTL | `AvatarAsset.asset_url` 直接保存 provider 返回的 URL；Desktop 必须在收到时立刻本地缓存，过期后需重新生成 |
-| `image_generate` / `text_to_speech_tool` 不参与 config-aware 过滤 | 可用性取决于 LLM provider，需调用时拿 `llm_config`；Registry 构造时无从判断 |
+| `image_generate` / `text_to_speech_tool` / `video_generate` 不参与 config-aware 过滤 | 可用性取决于 provider；调用时按 `llm_config` 拉 `provider_for_service` |
+| MiniMax 文件 URL 9 小时有效期 | video_gen `provider.fetch` 拿到的 `download_url` 仅 9 小时有效，必须立即下载落 `data_dir/temp-media`，**不能**直接返给前端 |
+| MiniMax 内容风控 1027 不重试 | `base_resp.status_code=1027` 映射到 `content_policy_blocked` 且 `retryable=False`，避免重试三次白烧配额 |
 | WS 方法当前无 Desktop 消费方 | chat 类 JSON-RPC 方法（prompt.submit / session.* / tool.result 等）已实现且可响应，Desktop 伙伴层将消费它们——当前 companion 层尚未构建 |
+
+## MiniMax 注意事项
+
+仅与启用 MiniMax provider 的部署相关（默认配置即开）：
+
+- **国内 / 国际双域名**：`https://api.minimaxi.com/v1`（国内）+ `https://api.minimax.io/v1`（国际）。切换域名单独改对应 `*_base_url` env 即可
+- **API Key 单源**：`MINIMAX_API_KEY` 是 chat/image/video/tts 通用 key；`MINIMAX_API_KEY` 与 `LLM_API_KEY`（MiMo）相互独立。**不要**让 MiniMax 配置继承 MiMo key（host 不同会 401）——`resolve_provider_config` 在 provider 推断为 minimax 时强制把回落链截断在 `minimax_api_key`
+- **单 key 多能力计费**：image-01 按张、Hailuo 按秒/分辨率、speech-2.8 按字符。`media_video_gen_rate_limit_per_minute=3` 是按秒计费的限流保守默认
+- **视频下载大小上限**：`video_gen_download_max_bytes=200MB` 兜底，避免 provider 返回巨型文件撑爆 `data_dir`；1080P/10s 实测 20–60 MB
+- **桌面端必须独立缓存**：服务端已 download 落本地（`/api/media/files/<id>`），不要把 MiniMax 原 URL 透传到桌面
+- **ASR 不在 MiniMax 公开 API**：stt 仍走 MiMo（input_audio chat completions 扩展），未来要切其他 ASR provider 时直接挂一个新 provider 类到 `(ServiceType.stt, "<name>")` registry slot
