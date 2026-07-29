@@ -44,6 +44,8 @@ class MiniMaxVideoGenProvider(VideoGenProvider):
             "duration": req.duration,
             "resolution": req.resolution,
         }
+        if req.aspect_ratio:
+            payload["aspect_ratio"] = req.aspect_ratio
         if req.first_frame_image:
             payload["first_frame_image"] = req.first_frame_image
 

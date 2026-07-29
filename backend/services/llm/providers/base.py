@@ -195,14 +195,19 @@ class VideoGenProvider(BaseProvider):
     async def fetch(self, file_id: str) -> VideoAsset: ...
 
     async def download(self, asset: VideoAsset) -> bytes:
-        """Default downloader via the shared httpx pool. Providers with custom
-        auth headers may override."""
-        from .http import get_http
+        """Default downloader. Plain httpx GET — no Authorization header.
 
-        client = get_http(self.config.base_url, self.config.api_key)
-        resp = await client.get(asset.download_url)
-        resp.raise_for_status()
-        return resp.content
+        ``get_http`` would attach the provider's Bearer token to whatever
+        URL we pass it, but ``asset.download_url`` is typically a
+        third-party CDN (MiniMax files are hosted off ``api.minimaxi.com``).
+        Sending the API key to a CDN host leaks it; download anonymously.
+        """
+        import httpx
+
+        async with httpx.AsyncClient(timeout=httpx.Timeout(600.0, connect=10.0)) as client:
+            resp = await client.get(asset.download_url)
+            resp.raise_for_status()
+            return resp.content
 
     async def generate_and_wait(
         self,

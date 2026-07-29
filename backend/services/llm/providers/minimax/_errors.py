@@ -24,6 +24,11 @@ def raise_for_minimax_response(resp, *, provider: str, model: str) -> dict:
     "status_msg": "..."}, "data": null}`` — but the HTTP status is often
     still 200 even when ``base_resp.status_code != 0``. The HTTP-level
     4xx/5xx responses come back with their own JSON shape, so we handle both.
+
+    Known inner codes land in ``_BASE_RESP_TO_HTTP``. Unknown inner codes
+    map to 502 (provider upstream failure) instead of falling back to
+    ``resp.status_code`` — the latter is often 200, which would tell
+    error_classifier the call succeeded.
     """
     try:
         body = resp.json()
@@ -35,14 +40,24 @@ def raise_for_minimax_response(resp, *, provider: str, model: str) -> dict:
         inner_code = base.get("status_code", 0)
         inner_msg = base.get("status_msg", "") or ""
         if inner_code and inner_code != 0:
-            http = _BASE_RESP_TO_HTTP.get(int(inner_code)) or resp.status_code or 400
-            # 1027 is content-policy; mark so classify_api_error picks it up
+            try:
+                inner_int = int(inner_code)
+            except (TypeError, ValueError):
+                inner_int = 0
+            if inner_int in _BASE_RESP_TO_HTTP:
+                http = _BASE_RESP_TO_HTTP[inner_int]
+            else:
+                # Don't fall back to resp.status_code (likely 200); surface
+                # as a generic 502 so error_classifier marks it retryable.
+                http = 502
             extra_body = {
                 "error": {"code": str(inner_code), "message": inner_msg},
                 "base_resp": base,
             }
-            if int(inner_code) == 1027 and "content_filter" not in inner_msg:
-                extra_body["error"]["message"] = f"{inner_msg} (content_filter)"
+            # Don't pollute the message with internal marker words — the
+            # classifier uses the message TEXT to detect content-filter;
+            # using ``content_filter`` as a sentinel here makes sense only
+            # when the upstream actually mentioned it.
             raise ProviderError(
                 f"minimax {provider} error {inner_code}: {inner_msg}",
                 status_code=http,
@@ -52,7 +67,6 @@ def raise_for_minimax_response(resp, *, provider: str, model: str) -> dict:
             )
         return body
 
-    # Fall through to HTTP status
     if resp.status_code >= 400:
         raise ProviderError(
             f"minimax {provider} HTTP {resp.status_code}: {body}",
