@@ -486,6 +486,30 @@ class TestMiniMaxVideoGen:
         assert job.status == "queued"
 
     @pytest.mark.asyncio
+    async def test_submit_passes_aspect_ratio(self):
+        captured: list[dict] = []
+
+        async def capture(req: httpx.Request) -> httpx.Response:
+            captured.append(json.loads(req.content))
+            return httpx.Response(200, json={"base_resp": {"status_code": 0}, "task_id": "task-arc"})
+
+        provider = self._make_provider(capture)
+        await provider.submit(VideoGenRequest(prompt="x", aspect_ratio="9:16"))
+        assert captured[0]["aspect_ratio"] == "9:16"
+
+    @pytest.mark.asyncio
+    async def test_submit_omits_aspect_ratio_when_none(self):
+        captured: list[dict] = []
+
+        async def capture(req: httpx.Request) -> httpx.Response:
+            captured.append(json.loads(req.content))
+            return httpx.Response(200, json={"base_resp": {"status_code": 0}, "task_id": "task-no-arc"})
+
+        provider = self._make_provider(capture)
+        await provider.submit(VideoGenRequest(prompt="x"))
+        assert "aspect_ratio" not in captured[0]
+
+    @pytest.mark.asyncio
     async def test_poll_success(self):
         handler = _async_handler([
             {"base_resp": {"status_code": 0}, "status": "Success", "file_id": "file-xyz"}

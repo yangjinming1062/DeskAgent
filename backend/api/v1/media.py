@@ -1,8 +1,12 @@
+import asyncio
 import base64
+from datetime import timedelta
 
 from common import get_router
 from components import get_file_path
 from components import get_logger
+from components import naive_utc_now
+from components import save_file
 from components import SESSION_LOCAL
 from components import SETTINGS
 from components import STT_MAX_AUDIO_BYTES
@@ -21,6 +25,7 @@ from modules.auth import User
 from openai import AsyncOpenAI
 from services.llm import classify_api_error
 from services.llm import client_for_service
+from services.llm import ImageGenRequest
 from services.llm import MissingLlmConfigError
 from services.llm import provider_for_service
 from services.media import enqueue_video_job
@@ -218,8 +223,6 @@ async def image_gen(
         raise _http_error(501, "image_gen_not_configured", "图片生成服务未配置。请在设置中配置 IMAGE_GEN_BASE_URL 和 IMAGE_GEN_API_KEY。")
 
     try:
-        from services.llm import ImageGenRequest
-
         result = await provider.generate(ImageGenRequest(prompt=prompt))
     except Exception as e:
         raise _llm_http_error(e, "image_gen") from e
@@ -235,10 +238,6 @@ async def image_gen(
     # base64 payload — persist locally and serve via our public files route so
     # downstream callers (LLM image_url parts, browser previews) get a stable
     # URL that survives MiniMax CDN eviction.
-    import base64
-
-    from components import save_file
-
     data = base64.b64decode(asset.b64 or "")
     file_id, public_url = save_file(data, session_id="", content_type=asset.mime, ext="jpg")
     return {"success": True, "url": public_url}
@@ -295,12 +294,6 @@ async def video_gen(
         # Bounded pseudo-sync: poll the DB for status until deadline. Most
         # MiniMax generations complete well within 60s for short clips; for
         # longer ones the caller polls ``GET /video_gen/{id}`` instead.
-        import asyncio
-
-        from components import naive_utc_now
-
-        from datetime import timedelta
-
         deadline = naive_utc_now() + timedelta(seconds=wait_seconds)
         while naive_utc_now() < deadline:
             await asyncio.sleep(2)

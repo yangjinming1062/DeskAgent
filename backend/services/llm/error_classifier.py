@@ -319,6 +319,7 @@ _PROVIDER_POLICY_BLOCKED_PATTERNS = [
 #     "usage policies" disambiguating from billing's "exceeded ... policy")
 #   • Anthropic safety refusal ("prompt was flagged by ... safety system")
 #   • OpenAI Responses content filter
+#   • MiniMax safety refusal ("violated safety policy" — base_resp 1027)
 _CONTENT_POLICY_BLOCKED_PATTERNS = [
     # OpenAI Codex (#18028) — message may arrive without an HTTP status
     "flagged for possible cybersecurity risk",
@@ -330,6 +331,10 @@ _CONTENT_POLICY_BLOCKED_PATTERNS = [
     # Anthropic safety system
     "prompt was flagged by our safety",
     "responses cannot be generated due to safety",
+    # MiniMax (base_resp.status_code 1027) — verbatim message seen in their
+    # safety pipeline. ``violated safety policy`` is enough to distinguish
+    # from billing's "exceeded ... policy" without false positives.
+    "violated safety policy",
     # Generic content-filter wording seen on Azure / OpenAI Responses.
     # ``content_filter`` (underscore) is the OpenAI-standard error/finish
     # token surfaced verbatim by their SDKs when a request is blocked.

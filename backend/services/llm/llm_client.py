@@ -75,7 +75,7 @@ def resolve_provider_config(db: Session | None, user_id: int | None, service_typ
     """Resolve the active provider config for a service.
 
     Fallback priority:
-      1. User DB config (service-specific fields, may be empty)
+      1. User DB config
       2. Service-specific global config (``SETTINGS.<svc>_*``)
       3. Base LLM config (``SETTINGS.llm_*``) — only for non-MiniMax providers
 
@@ -83,6 +83,10 @@ def resolve_provider_config(db: Session | None, user_id: int | None, service_typ
     inferred from the resolved base_url host. MiniMax gets an extra fallback
     tier (``SETTINGS.minimax_api_key``) and **must not** inherit the MiMo
     ``llm_api_key`` — sending a MiMo key to a MiniMax host always 401s.
+
+    Per-service ``*_provider`` slots exist so operators can route a
+    service at MiniMax while keeping the chat backend on MiMo, or pin a
+    custom URL while keeping the env fallback active.
     """
     user_base_url, user_api_key, user_model = resolve_service_row(db, user_id, service_type)
     svc_base_url = getattr(SETTINGS, f"{service_type}_base_url", "")
