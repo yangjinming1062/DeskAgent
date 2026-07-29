@@ -4,8 +4,13 @@ import socket
 from urllib.parse import urlparse
 
 import httpx
+from components import SESSION_LOCAL
 from components import get_logger
 from components import tool_error
+from modules.ws import WSEvent
+# Import from the leaf submodule (not the companion package __init__) to avoid
+# a cycle: companion.__init__ → avatar_service → tools.builtin → this module.
+from services.companion.disturbance import is_quiet
 
 from .. import ALWAYS_AVAILABLE
 from .. import REGISTRY
@@ -42,7 +47,28 @@ def is_safe_outbound(host: str) -> tuple[bool, str]:
     return True, ""
 
 
-async def send_message_tool(target_webhook: str, message: str, **kwargs) -> str:
+def _emit_companion_message(user_id: int, text: str) -> None:
+    """Push a proactive companion message to the user's desktop via the WS
+    outbox (design.md §5.1.A / §6). The desktop receives `companion.message`
+    and speaks it + shows a bubble (plan.md §4.2)."""
+    payload = json.dumps({"text": text}, ensure_ascii=False)
+    with SESSION_LOCAL() as db:
+        db.add(WSEvent(user_id=user_id, event_type="companion.message", payload=payload))
+        db.commit()
+
+
+async def send_message_tool(message: str, target_webhook: str | None = None, **kwargs) -> str:
+    # Companion-native proactive path: no webhook ⇒ deliver straight to the
+    # user's desktop as a companion.message (design.md §7.4 repurposes this
+    # tool as the companion's proactive-reach-out channel). The disturbance
+    # tier gates it — `quiet` suppresses outreach without surfacing an error
+    # to the LLM (保持安静断消息不断 affect).
+    if not target_webhook:
+        user_id = kwargs.get("user_id")
+        if isinstance(user_id, int) and not is_quiet(user_id):
+            _emit_companion_message(user_id, message)
+        return json.dumps({"success": True, "channel": "companion"}, ensure_ascii=False)
+
     parsed = urlparse(target_webhook)
     if parsed.scheme not in ("http", "https"):
         return tool_error("Invalid webhook URL scheme (must be http or https).")
@@ -65,14 +91,20 @@ async def send_message_tool(target_webhook: str, message: str, **kwargs) -> str:
 
 SEND_MESSAGE_SCHEMA = {
     "name": "send_message_tool",
-    "description": "Send a text message to a configured webhook or bot API (e.g., Slack, Discord, Telegram). Use this to send notifications, alerts, or messages as requested.",
+    "description": (
+        "Send a message. With no target_webhook, it reaches the user's desktop "
+        "companion directly as a spoken proactive message (greetings, reminders, "
+        "check-ins) — use this when the companion wants to reach out to the user. "
+        "With a target_webhook URL, it POSTs to an external bot API "
+        "(Slack/Discord/Telegram) for notifications."
+    ),
     "parameters": {
         "type": "object",
         "properties": {
-            "target_webhook": {"type": "string", "description": "The webhook URL to POST the message to."},
             "message": {"type": "string", "description": "The full text message content to send."},
+            "target_webhook": {"type": "string", "description": "Optional webhook URL to POST to (external bot). Omit to deliver to the user's desktop companion."},
         },
-        "required": ["target_webhook", "message"],
+        "required": ["message"],
     },
 }
 
