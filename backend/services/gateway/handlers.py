@@ -28,6 +28,7 @@ from services.chat import commands_catalog
 from services.chat import exec_slash_command
 from services.chat import load_user_settings
 from services.chat import run_chat_turn
+from services.companion import set_disturbance_tier as set_companion_disturbance_tier
 from services.gateway import authenticate_ws_token
 from services.gateway import discard_user
 from services.gateway import dispatch_user_event
@@ -697,3 +698,14 @@ def _register_session_handlers(
     dispatcher.register("image.attach", image_attach)
     dispatcher.register("image.detach", image_detach)
     dispatcher.register("reload.mcp", reload_mcp)
+
+    async def companion_set_disturbance_tier(params: dict) -> dict:
+        # Desktop reports the effective disturbance tier (design.md §6); the
+        # companion's proactive outreach (send_message → companion.message) is
+        # gated by it. The desktop also gates playback client-side, so this is
+        # defense-in-depth.
+        tier_param = params.get("tier")
+        normalized = set_companion_disturbance_tier(user_id, tier_param if isinstance(tier_param, str) else "normal")
+        return {"tier": normalized}
+
+    dispatcher.register("companion.set_disturbance_tier", companion_set_disturbance_tier)

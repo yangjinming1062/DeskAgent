@@ -53,7 +53,7 @@ backend/
 |------|----------|
 | `image_generate` | 生成专属桌面形象 |
 | `text_to_speech_tool` | 伙伴语音（让伙伴"能说"） |
-| `send_message_tool` | 伙伴主动发起对话（问候/提醒/闲聊） |
+| `send_message_tool` | 伙伴主动发起对话（问候/提醒/闲聊）——无 webhook 时投递 companion.message 到桌面 |
 | `web_search` / `web_extract` | 伙伴帮用户查信息、聊时事 |
 | `memory_*` | 伙伴对用户的长期记忆 |
 
@@ -83,6 +83,8 @@ backend/
 伙伴主动陪伴（问候、提醒、情境闲聊）经 PostgreSQL LISTEN/NOTIFY + Outbox 表支撑（[design.md §6](../design.md)）。
 
 `services/scheduler/cron.scheduler_loop` 每 60s `_tick()`：扫描到期任务，CAS 推进 `next_run_at`（多副本安全），写 `cron.trigger` 到 `ws_events` outbox。`_tick` 不 await WS 推送——慢客户端不卡 cron 事务。PostgreSQL trigger 在 `ws_events` INSERT 时 `NOTIFY ws_events_channel`，每个 Backend 副本独立 `LISTEN` + `DELETE ... RETURNING` 原子认领消费（行锁保证不重复投递）。无效 cron 表达式自动暂停 job。
+
+**伙伴主动消息通道**：`send_message_tool` 无 `target_webhook` 时走 companion 原生路径——`_emit_companion_message` 写 `companion.message {text}` 到 `ws_events` outbox，经同一套 LISTEN/NOTIFY 推到桌面端（伙伴 TTS + 气泡呈现，[design.md §5.1.A / §7.4](../design.md)）。带 `target_webhook` 时仍是外部 webhook POST（Slack/Discord 等）。**打扰档位**：`companion.set_disturbance_tier {tier}` JSON-RPC（`services/companion/disturbance.py` 进程内 per-user 存储，默认 `normal`）——`quiet` 抑制 send_message 的 companion 投递（断消息不断 affect）。Desktop 侧也客户端过滤，此为防御层。
 
 ## 系统提示词与上下文管理
 
