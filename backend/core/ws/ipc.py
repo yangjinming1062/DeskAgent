@@ -1,10 +1,10 @@
 import asyncio
 import json
 
-from config import SETTINGS
-from constants import JSONRPC_INTERNAL_ERROR
-from logger import get_logger
-from utils import safe_json_loads
+from components import SETTINGS
+from components import JSONRPC_INTERNAL_ERROR
+from components import get_logger
+from components import safe_json_loads
 
 from ..correlation import new_request_id
 

@@ -3,7 +3,7 @@ from importlib import util as importlib_util
 from typing import Any
 
 from ddgs import DDGS
-from logger import get_logger
+from components import get_logger
 
 from .. import WebSearchProvider
 

@@ -4,8 +4,8 @@ import socket
 from urllib.parse import urlparse
 
 import httpx
-from logger import get_logger
-from utils import tool_error
+from components import get_logger
+from components import tool_error
 
 from ..tools_runtime.registry import ALWAYS_AVAILABLE
 from ..tools_runtime.registry import REGISTRY

@@ -1,5 +1,5 @@
-from config import SETTINGS
-from models import UserModelConfig
+from components import SETTINGS
+from modules.auth import UserModelConfig
 from sqlalchemy.orm import Session
 
 

@@ -1,13 +1,13 @@
 import jwt
-from config import SETTINGS
+from components import SETTINGS
 from fastapi import Request
 from fastapi.responses import JSONResponse
-from logger import get_logger
-from logger import set_request_user_id
+from components import get_logger
+from components import set_request_user_id
 from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
-from utils import decode_access_token
+from modules.auth import decode_access_token
 
 logger = get_logger(__name__)
 

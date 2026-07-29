@@ -4,8 +4,8 @@ from dataclasses import dataclass
 from dataclasses import field
 from typing import Any
 
-from logger import get_logger
-from utils import safe_json_loads
+from components import get_logger
+from components import safe_json_loads
 
 from ..redact import redact_sensitive_text
 

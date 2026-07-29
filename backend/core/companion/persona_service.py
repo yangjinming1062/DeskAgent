@@ -9,7 +9,7 @@ chat pipeline prepends to every LLM system prompt (see design.md §7.1).
 import json
 from typing import Any
 
-from models import Persona
+from modules.companion import Persona
 from sqlalchemy.orm import Session
 
 # Required keys + per-key validation. Listed in the order they should

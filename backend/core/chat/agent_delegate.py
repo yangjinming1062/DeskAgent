@@ -1,12 +1,12 @@
 import json
 
-from logger import get_logger
-from models import Conversation
-from schemas import ChatMessageRequest
-from schemas import ChatRequest
-from utils import SESSION_LOCAL
-from utils import session_scope
-from utils import tool_error
+from components import get_logger
+from modules.conversation import Conversation
+from modules.system import ChatMessageRequest
+from modules.system import ChatRequest
+from components import SESSION_LOCAL
+from components import session_scope
+from components import tool_error
 
 from .chat_emitter import HeadlessEmitter
 from .chat_emitter import safe_emit

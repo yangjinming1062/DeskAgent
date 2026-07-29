@@ -6,8 +6,8 @@ from typing import Any
 from fastapi import Request
 from fastapi import Response
 from fastapi.responses import JSONResponse
-from logger import current_request_id
-from logger import set_request_id
+from components import current_request_id
+from components import set_request_id
 
 REQUEST_ID_HEADER = "X-Request-ID"
 _MAX_INBOUND_ID_LEN = 64

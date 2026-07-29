@@ -3,12 +3,12 @@ from datetime import timedelta
 
 import asyncpg
 from fastapi import WebSocket
-from models import WSEvent
+from modules.ws import WSEvent
 from sqlalchemy import delete
-from utils import BackgroundTask
-from utils import naive_utc_now
-from utils import safe_json_loads
-from utils import session_scope
+from components import BackgroundTask
+from components import naive_utc_now
+from components import safe_json_loads
+from components import session_scope
 
 from ..correlation import begin_local_scope
 from .jsonrpc_dispatcher import JsonRpcDispatcher
@@ -17,7 +17,7 @@ from .jsonrpc_dispatcher import JsonRpcDispatcher
 # without a successful dispatch (user offline too long).
 WS_EVENT_MAX_AGE_SECONDS = 60
 
-from logger import get_logger
+from components import get_logger
 
 logger = get_logger(__name__)
 

@@ -40,7 +40,7 @@ class TestLLMClient:
             client_for_config({"api_key": "sk-only"})
 
     def test_mimo_models_in_hints(self):
-        from constants import MODEL_CONTEXT_TOKEN_HINTS
+        from components import MODEL_CONTEXT_TOKEN_HINTS
 
         assert "mimo-v2.5-pro" in MODEL_CONTEXT_TOKEN_HINTS
         assert "mimo-v2.5" in MODEL_CONTEXT_TOKEN_HINTS
@@ -48,14 +48,14 @@ class TestLLMClient:
         assert "mimo-v2.5-tts" in MODEL_CONTEXT_TOKEN_HINTS
 
     def test_no_openai_models_in_hints(self):
-        from constants import MODEL_CONTEXT_TOKEN_HINTS
+        from components import MODEL_CONTEXT_TOKEN_HINTS
 
         assert "gpt-4o" not in MODEL_CONTEXT_TOKEN_HINTS
         assert "claude-3-5-sonnet" not in MODEL_CONTEXT_TOKEN_HINTS
         assert "gemini-1.5-pro" not in MODEL_CONTEXT_TOKEN_HINTS
 
     def test_context_lengths(self):
-        from constants import MODEL_CONTEXT_TOKEN_HINTS
+        from components import MODEL_CONTEXT_TOKEN_HINTS
 
         assert MODEL_CONTEXT_TOKEN_HINTS["mimo-v2.5-pro"] == 1_000_000
         assert MODEL_CONTEXT_TOKEN_HINTS["mimo-v2.5-asr"] == 8_000
@@ -77,7 +77,7 @@ class TestLLMClient:
 
     def test_image_attachment_uses_image_url_part(self):
         from core.chat.chat_service import _build_persisted_content
-        from schemas import ChatMessageRequest
+        from modules.system import ChatMessageRequest
 
         req = SimpleNamespace(
             message=ChatMessageRequest(
@@ -96,7 +96,7 @@ class TestLLMClient:
 
     def test_no_attachments_returns_text(self):
         from core.chat.chat_service import _build_persisted_content
-        from schemas import ChatMessageRequest
+        from modules.system import ChatMessageRequest
 
         req = SimpleNamespace(message=ChatMessageRequest(role="user", content="Just text"))
         content, content_type = _build_persisted_content(req)

@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 import asyncpg
-from config import SETTINGS
+from components import SETTINGS
 from core import attachment_root
 from core import cleanup_expired
 from core import correlated_exception_response
@@ -16,31 +16,18 @@ from core import start_ws_event_loop
 from core import stash_user_id_middleware
 from core import stop_scheduler
 from core import stop_ws_event_loop
-from fastapi import Depends
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
-from logger import get_logger
-from logger import setup_logging
-from models import Base
-from routers import admin_router
-from routers import chat_router
-from routers import companion_router
-from routers import config_router
-from routers import health_router
-from routers import insights_router
-from routers import llm_router
-from routers import media_router
-from routers import page_router
-from routers import sessions_router
-from routers import status_router
-from routers import update_router
-from routers import user_router
+from common import ModelBase
+import modules
+from api import ROUTERS
+from components import get_logger
+from components import setup_logging
 from slowapi.errors import RateLimitExceeded
 from sqlalchemy import text
 from sqlalchemy.engine import make_url
-from utils import fetch_public_ip
-from utils import get_current_session
-from utils.db import ENGINE
+from components import fetch_public_ip
+from components import ENGINE
 
 logger = get_logger(__name__)
 
@@ -85,7 +72,7 @@ def _install_schema_extensions(conn) -> None:
     # Per-service model config columns (stt / tts / image_gen). The renderer
     # already ships these in its UserModelConfigRequest/Response payloads;
     # the DB has to match. The authoritative column declarations live on
-    # ``models.UserModelConfig`` — keep types in sync when editing either side.
+    # ``modules.auth.UserModelConfig`` — keep types in sync when editing either side.
     for column, ddl_type in (
         ("stt_base_url", "VARCHAR(255) DEFAULT ''"),
         ("stt_api_key", "TEXT DEFAULT ''"),
@@ -115,7 +102,7 @@ def init_database(engine=None) -> None:
     so it doesn't have to reach into a private helper to install the NOTIFY trigger.
     """
     target = engine if engine is not None else ENGINE
-    Base.metadata.create_all(bind=target)
+    ModelBase.metadata.create_all(bind=target)
     with target.begin() as conn:
         _install_ws_notify_trigger(conn)
         _install_schema_extensions(conn)
@@ -192,17 +179,6 @@ app.middleware("http")(correlation_id_middleware)
 # 写 header, 让 500 路径也带 X-Request-ID (404 找不到路由时同理).
 app.add_exception_handler(Exception, correlated_exception_response)
 app.add_exception_handler(RateLimitExceeded, rate_limit_exception_handler)
-app.include_router(health_router, prefix=SETTINGS.api_prefix)
-app.include_router(page_router)
-app.include_router(admin_router, prefix=SETTINGS.api_prefix)
 app.mount("/updates", StaticFiles(directory=str(Path("updates").absolute())), name="updates")
-app.include_router(user_router, prefix=SETTINGS.api_prefix)
-app.include_router(insights_router, prefix=SETTINGS.api_prefix, dependencies=[Depends(get_current_session)])
-app.include_router(update_router, prefix=SETTINGS.api_prefix)
-app.include_router(status_router, prefix=SETTINGS.api_prefix)
-app.include_router(chat_router, prefix=SETTINGS.api_prefix)
-app.include_router(sessions_router, prefix=SETTINGS.api_prefix, dependencies=[Depends(get_current_session)])
-app.include_router(config_router, prefix=SETTINGS.api_prefix)
-app.include_router(llm_router, prefix=SETTINGS.api_prefix)
-app.include_router(media_router, prefix=SETTINGS.api_prefix)
-app.include_router(companion_router, prefix=SETTINGS.api_prefix, dependencies=[Depends(get_current_session)])
+for _router in ROUTERS:
+    app.include_router(_router)

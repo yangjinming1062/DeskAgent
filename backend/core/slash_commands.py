@@ -1,8 +1,8 @@
 from dataclasses import dataclass
 from typing import Any
 
-from logger import get_logger
-from models import *
+from components import get_logger
+from modules.settings import UserSetting
 from sqlalchemy.orm import Session
 
 logger = get_logger(__name__)
