@@ -96,12 +96,12 @@ def resolve_provider_config(db: Session | None, user_id: int | None, service_typ
     explicit_provider = getattr(SETTINGS, f"{service_type}_provider", "")
     provider_name = explicit_provider or infer_provider_name(base_url)
 
-    if provider_name == "minimax" and api_key == SETTINGS.llm_api_key and SETTINGS.llm_api_key:
-        # Resolved key is the legacy MiMo key (the fallback chose
-        # ``llm_api_key``). Swap to the MiniMax-dedicated key if set;
-        # otherwise fail fast with a clear error — sending a MiMo key to
-        # api.minimaxi.com always 401s, and "401 from upstream" is harder
-        # to diagnose than "missing MINIMAX_API_KEY".
+    if provider_name == "minimax" and (not api_key or api_key == SETTINGS.llm_api_key):
+        # Resolved key is empty OR is the legacy MiMo key (the fallback
+        # chose ``llm_api_key``). Swap to the MiniMax-dedicated key if
+        # set; otherwise fail fast with a clear error — sending a MiMo key
+        # to api.minimaxi.com always 401s, and "401 from upstream" is
+        # harder to diagnose than "missing MINIMAX_API_KEY".
         minimax_key = getattr(SETTINGS, "minimax_api_key", "")
         if not minimax_key:
             raise MissingLlmConfigError(

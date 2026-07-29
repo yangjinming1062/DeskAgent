@@ -36,9 +36,9 @@ class Settings(BaseSettings):
     tts_default_voice: str = "mimo_default"
 
     # Image Gen Provider (图片生成)
-    image_gen_base_url: str = ""  # 空则回落到 llm_base_url
-    image_gen_api_key: str = ""  # 空则回落到 llm_api_key
-    image_gen_model_name: str = "dall-e-3"
+    image_gen_base_url: str = "https://api.minimaxi.com/v1"  # MiniMax by default
+    image_gen_api_key: str = ""  # 优先 image_gen_api_key，否则回落 minimax_api_key，再回落 llm_api_key
+    image_gen_model_name: str = "image-01"
 
     # Video Gen Provider (视频生成) — added in commit 1 to keep the service
     # registry's _SERVICE_DEFAULTS dict a closed set at import time. Wired up
