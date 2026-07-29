@@ -33,15 +33,20 @@ services:
       ADMIN_USERNAME: deskagent
       ADMIN_PASSWORD: deskagent@admin123
       LLM_BASE_URL: https://token-plan-cn.xiaomimimo.com/v1
-      LLM_API_KEY: tp-x
+      # Wired to the repo-root .env (run `docker compose` from the repo root
+      # so the .env is in compose's substitution context). MiMo serves
+      # chat/STT/TTS; MiniMax serves image/video (image_gen/video_gen fall back
+      # to minimax_api_key). `:-tp-x` keeps the placeholder if unset.
+      LLM_API_KEY: ${MIMO_KEY:-tp-x}
       LLM_MODEL_NAME: mimo-v2.5-pro
       STT_BASE_URL: https://token-plan-cn.xiaomimimo.com/v1
-      STT_API_KEY: tp-x
+      STT_API_KEY: ${MIMO_KEY:-tp-x}
       STT_MODEL_NAME: mimo-v2.5-asr
       TTS_BASE_URL: https://token-plan-cn.xiaomimimo.com/v1
-      TTS_API_KEY: tp-x
+      TTS_API_KEY: ${MIMO_KEY:-tp-x}
       TTS_MODEL_NAME: mimo-v2.5-tts
       TTS_DEFAULT_VOICE: mimo_default
+      MINIMAX_API_KEY: ${MINIMAX_KEY:-tp-x}
     ports:
       - "8000:8000"
     volumes:
