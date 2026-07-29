@@ -2,7 +2,7 @@
 
 // IPC handlers for the inner-desktop auto-updater. The flow is:
 //   1. main process (main.cjs) auto-checks for updates 30s after launch.
-//   2. autoUpdater events are forwarded to the renderer as `zast:update-event`.
+//   2. autoUpdater events are forwarded to the renderer as `deskagent:update-event`.
 //   3. the renderer drives the user-visible flow (status bar badge, toast)
 //      and calls these handlers for the explicit user actions:
 //        - check (manual "Check for updates" button)
@@ -22,11 +22,11 @@ function registerUpdateIpc({ ipcMain, electron, sendToMain, getMainWindow, runne
   // these handlers uniformly without feature-flagging on the renderer side.
   if (!app.isPackaged) {
     for (const channel of [
-      'zast:update:check',
-      'zast:update:download',
-      'zast:update:install',
-      'zast:update:status',
-      'zast:update:runner:install'
+      'deskagent:update:check',
+      'deskagent:update:download',
+      'deskagent:update:install',
+      'deskagent:update:status',
+      'deskagent:update:runner:install'
     ]) {
       ipcMain.handle(channel, () => ({ ok: false, reason: 'dev-mode' }))
     }
@@ -37,7 +37,7 @@ function registerUpdateIpc({ ipcMain, electron, sendToMain, getMainWindow, runne
   const log = require('electron-log/main')
   autoUpdater.logger = log
 
-  ipcMain.handle('zast:update:check', async () => {
+  ipcMain.handle('deskagent:update:check', async () => {
     try {
       await autoUpdater.checkForUpdates()
       return { ok: true }
@@ -50,7 +50,7 @@ function registerUpdateIpc({ ipcMain, electron, sendToMain, getMainWindow, runne
     }
   })
 
-  ipcMain.handle('zast:update:download', async () => {
+  ipcMain.handle('deskagent:update:download', async () => {
     try {
       await autoUpdater.downloadUpdate()
       return { ok: true }
@@ -62,18 +62,18 @@ function registerUpdateIpc({ ipcMain, electron, sendToMain, getMainWindow, runne
   // quitAndInstall is fire-and-forget; the app will exit before we can
   // send a response. Renderer schedules this only on explicit user
   // confirmation ("Restart now"), never on app quit.
-  ipcMain.handle('zast:update:install', () => {
+  ipcMain.handle('deskagent:update:install', () => {
     autoUpdater.quitAndInstall(false, false)
     return { ok: true }
   })
 
-  ipcMain.handle('zast:update:status', () => ({
+  ipcMain.handle('deskagent:update:status', () => ({
     currentVersion: app.getVersion()
   }))
 
   // Renderer retry of phase 2 install after a previous attempt failed and
   // the user clicked "Retry runner install" on the toast.
-  ipcMain.handle('zast:update:runner:install', async () => {
+  ipcMain.handle('deskagent:update:runner:install', async () => {
     if (!runnerUpdater) return { ok: false, reason: 'no-runner-updater' }
     try {
       return await runnerUpdater.installPending()
@@ -86,7 +86,7 @@ function registerUpdateIpc({ ipcMain, electron, sendToMain, getMainWindow, runne
   // setupAutoUpdater; lives here so the IPC module owns its full surface.
   function broadcast(eventName, payload) {
     const win = getMainWindow()
-    sendToMain(win, 'zast:update-event', { type: eventName, ...payload })
+    sendToMain(win, 'deskagent:update-event', { type: eventName, ...payload })
   }
 
   autoUpdater.on('checking-for-update', () => broadcast('checking'))

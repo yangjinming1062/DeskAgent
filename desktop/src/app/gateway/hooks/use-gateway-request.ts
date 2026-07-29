@@ -1,20 +1,20 @@
 import { useStore } from '@nanostores/react'
 import { useCallback, useEffect, useRef } from 'react'
 
+import type { DeskAgentGateway } from '@/deskagent'
 import { resolveGatewayWsUrl } from '@/lib/gateway-ws-url'
 import { $gateway, $gatewayState, setConnection } from '@/store/gateway'
-import type { ZastGateway } from '@/zast'
 
 export function useGatewayRequest() {
   const gatewayState = useStore($gatewayState)
-  const gatewayRef = useRef<ZastGateway | null>(null)
+  const gatewayRef = useRef<DeskAgentGateway | null>(null)
 
-  const connectionRef = useRef<Awaited<ReturnType<NonNullable<typeof window.zastDesktop>['getConnection']>> | null>(
+  const connectionRef = useRef<Awaited<ReturnType<NonNullable<typeof window.deskagent>['getConnection']>> | null>(
     null
   )
 
   const gatewayStateRef = useRef(gatewayState)
-  const reconnectingRef = useRef<Promise<ZastGateway | null> | null>(null)
+  const reconnectingRef = useRef<Promise<DeskAgentGateway | null> | null>(null)
   useEffect(() => {
     gatewayStateRef.current = gatewayState
   }, [gatewayState])
@@ -24,7 +24,7 @@ export function useGatewayRequest() {
   useEffect(
     () =>
       $gateway.subscribe(gateway => {
-        gatewayRef.current = gateway as ZastGateway | null
+        gatewayRef.current = gateway as DeskAgentGateway | null
       }),
     []
   )
@@ -45,7 +45,7 @@ export function useGatewayRequest() {
     }
 
     reconnectingRef.current = (async () => {
-      const desktop = window.zastDesktop
+      const desktop = window.deskagent
 
       if (!desktop) {
         return null
@@ -82,7 +82,7 @@ export function useGatewayRequest() {
   // so these would otherwise return -32601. Returns the local result, or
   // ``null`` to fall through to the WS gateway.
   const tryLocalIntercept = useCallback(async (method: string, params: Record<string, unknown>): Promise<unknown> => {
-    const desktop = window.zastDesktop
+    const desktop = window.deskagent
 
     if (method === 'config.get') {
       if (params.key !== 'project') {
@@ -143,7 +143,7 @@ export function useGatewayRequest() {
       const gateway = gatewayRef.current
 
       if (!gateway) {
-        throw new Error('Zast gateway unavailable')
+        throw new Error('DeskAgent gateway unavailable')
       }
 
       try {

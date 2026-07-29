@@ -13,7 +13,7 @@ export const $auth = atom<AuthState>({ kind: 'pending' })
 
 export async function hydrateAuth(): Promise<void> {
   try {
-    const snapshot = await window.zastDesktop.getSession()
+    const snapshot = await window.deskagent.getSession()
     const expiresAt = snapshot?.tokenExpiresAt
     const expired = typeof expiresAt !== 'number' || !Number.isFinite(expiresAt) || expiresAt <= Date.now()
 
@@ -32,7 +32,7 @@ export async function hydrateAuth(): Promise<void> {
 
 export async function login(payload: { username: string; password: string }): Promise<void> {
   try {
-    const snapshot = await window.zastDesktop.login(payload)
+    const snapshot = await window.deskagent.login(payload)
     $auth.set({ kind: 'authenticated', snapshot })
   } catch (error) {
     $auth.set({
@@ -46,13 +46,13 @@ export async function login(payload: { username: string; password: string }): Pr
 export async function refreshSession(payload?: any): Promise<void> {
   // Refresh failure does NOT auto-logout (unlike login()): the old JWT may
   // still work, and the caller can decide whether to surface the error.
-  const snapshot = await window.zastDesktop.refreshSession(payload)
+  const snapshot = await window.deskagent.refreshSession(payload)
   $auth.set({ kind: 'authenticated', snapshot })
 }
 
 export async function logout(): Promise<void> {
   try {
-    await window.zastDesktop.logout()
+    await window.deskagent.logout()
   } finally {
     tearDownPrimaryGateway()
     // Reset Runner online state — a stale `true` would defeat the tool-call

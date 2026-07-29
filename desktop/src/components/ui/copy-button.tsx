@@ -18,8 +18,8 @@ export async function writeClipboardText(text: string) {
     return
   }
 
-  if (window.zastDesktop?.writeClipboard) {
-    await window.zastDesktop.writeClipboard(text)
+  if (window.deskagent?.writeClipboard) {
+    await window.deskagent.writeClipboard(text)
 
     return
   }

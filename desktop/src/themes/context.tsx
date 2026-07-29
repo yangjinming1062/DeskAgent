@@ -14,11 +14,11 @@ import { createContext, type ReactNode, useCallback, useContext, useEffect, useM
 import { matchesQuery, useMediaQuery } from '@/hooks/use-media-query'
 import { persistString, storedString } from '@/lib/storage'
 
-import { BUILTIN_THEME_LIST, BUILTIN_THEMES, DEFAULT_SKIN_NAME, DEFAULT_TYPOGRAPHY, zastTheme } from './presets'
+import { BUILTIN_THEME_LIST, BUILTIN_THEMES, DEFAULT_SKIN_NAME, DEFAULT_TYPOGRAPHY, deskagentTheme } from './presets'
 import type { DesktopTheme, DesktopThemeColors } from './types'
 
-const SKIN_KEY = 'zast-desktop-theme-v2'
-const MODE_KEY = 'zast-desktop-mode-v1'
+const SKIN_KEY = 'deskagent-desktop-theme-v2'
+const MODE_KEY = 'deskagent-desktop-mode-v1'
 const RETIRED_SKINS = new Set(['nous', 'nous-light', 'default', 'gold'])
 
 export type ThemeMode = 'light' | 'dark' | 'system'
@@ -124,7 +124,7 @@ function synthLightColors(seed: DesktopTheme): DesktopThemeColors {
 
 /** Returns the seed palette for a given skin + mode (no overrides applied). */
 export function getBaseColors(skinName: string, mode: 'light' | 'dark'): DesktopThemeColors {
-  const seed = BUILTIN_THEMES[skinName] ?? zastTheme
+  const seed = BUILTIN_THEMES[skinName] ?? deskagentTheme
 
   if (mode === 'dark') {
     return seed.darkColors ?? seed.colors
@@ -134,7 +134,7 @@ export function getBaseColors(skinName: string, mode: 'light' | 'dark'): Desktop
 }
 
 function deriveTheme(skinName: string, mode: 'light' | 'dark'): DesktopTheme {
-  const seed = BUILTIN_THEMES[skinName] ?? zastTheme
+  const seed = BUILTIN_THEMES[skinName] ?? deskagentTheme
 
   return {
     ...seed,
@@ -182,15 +182,15 @@ function applyTheme(theme: DesktopTheme, mode: 'light' | 'dark') {
 
   const root = document.documentElement
   const c = theme.colors
-  const typo = { ...DEFAULT_TYPOGRAPHY, ...zastTheme.typography, ...theme.typography }
+  const typo = { ...DEFAULT_TYPOGRAPHY, ...deskagentTheme.typography, ...theme.typography }
   const rendered = renderedModeFor(c, mode)
   const isDark = rendered === 'dark'
   const midground = c.midground ?? c.ring
   const skinName = theme.name.endsWith(`-${mode}`) ? theme.name.slice(0, -mode.length - 1) : theme.name
 
   root.style.setProperty('color-scheme', rendered)
-  root.dataset.zastTheme = skinName
-  root.dataset.zastMode = rendered
+  root.dataset.deskagentTheme = skinName
+  root.dataset.deskagentMode = rendered
   root.classList.toggle('dark', isDark)
 
   // Brand seeds feed every glass + shadcn token via `color-mix()` in styles.css.
@@ -232,7 +232,7 @@ function applyTheme(theme: DesktopTheme, mode: 'light' | 'dark') {
     root.style.setProperty(k, v)
   }
 
-  window.zastDesktop?.setTitleBarTheme?.({
+  window.deskagent?.setTitleBarTheme?.({
     background: c.background,
     foreground: c.foreground
   })
@@ -241,7 +241,7 @@ function applyTheme(theme: DesktopTheme, mode: 'light' | 'dark') {
     const link = document.createElement('link')
     link.rel = 'stylesheet'
     link.href = typo.fontUrl
-    link.dataset.zastThemeFont = 'true'
+    link.dataset.deskagentThemeFont = 'true'
     document.head.appendChild(link)
     INJECTED_FONT_URLS.add(typo.fontUrl)
   }
@@ -269,7 +269,7 @@ interface ThemeContextValue {
 const SKIN_LIST = BUILTIN_THEME_LIST.map(({ name, label, description }) => ({ name, label, description }))
 
 const ThemeContext = createContext<ThemeContextValue>({
-  theme: zastTheme,
+  theme: deskagentTheme,
   themeName: DEFAULT_SKIN_NAME,
   mode: 'light',
   resolvedMode: 'light',
@@ -317,7 +317,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
 export const useTheme = (): ThemeContextValue => useContext(ThemeContext)
 
-/** Sync the desktop skin with the active Zast backend theme on connect. */
+/** Sync the desktop skin with the active DeskAgent backend theme on connect. */
 export function useSyncThemeFromBackend(backendThemeName: string | undefined, setTheme: (name: string) => void) {
   useEffect(() => {
     if (backendThemeName && BUILTIN_THEMES[backendThemeName]) {

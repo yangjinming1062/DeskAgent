@@ -70,7 +70,7 @@ function encryptToken(raw, safeStorage) {
     throw new SessionError({
       code: 'safe-storage-unavailable',
       message:
-        'Secure token storage is unavailable, so Zast Desktop cannot save the Backend token. ' +
+        'Secure token storage is unavailable, so DeskAgent Desktop cannot save the Backend token. ' +
         'Enable OS keychain access and try again.'
     })
   }
@@ -216,7 +216,7 @@ function createBackendSession(options = {}) {
     if (!baseUrl) {
       throw new SessionError({
         code: 'no-base-url',
-        message: 'Backend base URL is not configured. Check $ZAST_HOME/desktop-config.json or sign in.'
+        message: 'Backend base URL is not configured. Check $DESKAGENT_HOME/desktop-config.json or sign in.'
       })
     }
     if (backendClient && backendClientBaseUrl === baseUrl) return backendClient

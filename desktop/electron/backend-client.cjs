@@ -1,5 +1,5 @@
 /**
- * Thin HTTP wrapper for the Zast cloud backend. Owns base URL resolution,
+ * Thin HTTP wrapper for the DeskAgent cloud backend. Owns base URL resolution,
  * request building, timeout, JSON encoding, and error normalization.
  * Electron-free — wires in via main.cjs's ipcMain.handle callers.
  */
@@ -105,7 +105,7 @@ function createBackendClient(options = {}) {
 
   const baseUrl = normalizeBaseUrl(options.baseUrl)
   const defaultTimeoutMs = resolveTimeoutMs(options.timeoutMs)
-  const userAgent = options.userAgent || 'ZastDesktop/0.15 (Electron)'
+  const userAgent = options.userAgent || 'DeskAgentDesktop/0.15 (Electron)'
 
   async function request(method, path, { body, query, headers, token, timeoutMs, signal } = {}) {
     let url

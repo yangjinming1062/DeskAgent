@@ -5,17 +5,17 @@ const { app, BrowserWindow, session } = require('electron')
 
 // Two-tier link title fetcher with bounded concurrency.
 //   Tier 1: spawn `curl` to grab the raw HTML and extract <title>.
-//   Tier 2: hidden BrowserWindow (zast:link-titles partition) for JS-heavy
+//   Tier 2: hidden BrowserWindow (deskagent:link-titles partition) for JS-heavy
 //           pages curl can't render.
 // All work funnels through a single in-flight map + LRU cache; multiple
-// concurrent `zast:fetchLinkTitle` IPCs for the same URL share one promise.
+// concurrent `deskagent:fetchLinkTitle` IPCs for the same URL share one promise.
 
 const TITLE_CACHE_LIMIT = 500
 const TITLE_BYTE_BUDGET = 96 * 1024
 const TITLE_TIMEOUT_MS = 5000
 const TITLE_MAX_REDIRECTS = 3
 
-const TITLE_USER_AGENT = 'Mozilla/5.0 (compatible; ZastTitleBot/1.0)'
+const TITLE_USER_AGENT = 'Mozilla/5.0 (compatible; DeskAgentTitleBot/1.0)'
 
 const TITLE_ERROR_RE = /(?:404|forbidden|access\s*denied|not\s*found|error)/i
 
@@ -118,7 +118,7 @@ function fetchHtmlTitleWithCurl(rawUrl) {
 
 function getLinkTitleSession() {
   if (linkTitleSession || !app.isReady()) return linkTitleSession
-  linkTitleSession = session.fromPartition('zast:link-titles', { cache: false })
+  linkTitleSession = session.fromPartition('deskagent:link-titles', { cache: false })
   linkTitleSession.webRequest.onBeforeRequest((details, callback) => {
     callback({ cancel: RENDER_TITLE_BLOCKED_RESOURCES.has(details.resourceType) })
   })
@@ -254,7 +254,7 @@ function fetchLinkTitle(rawUrl) {
 }
 
 function registerLinkTitleIpc({ ipcMain }) {
-  ipcMain.handle('zast:fetchLinkTitle', (_event, url) => fetchLinkTitle(url))
+  ipcMain.handle('deskagent:fetchLinkTitle', (_event, url) => fetchLinkTitle(url))
 }
 
 module.exports = { registerLinkTitleIpc }

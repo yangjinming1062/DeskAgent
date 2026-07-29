@@ -2,7 +2,7 @@ import { cn } from '@/lib/utils'
 
 const assetPath = (path: string) => `${import.meta.env.BASE_URL}${path.replace(/^\/+/, '')}`
 
-// Brand badge: Zast app icon, identical in light/dark. Icon is a transparent PNG
+// Brand badge: DeskAgent app icon, identical in light/dark. Icon is a transparent PNG
 // so no tile bg is needed; size via className (default size-14).
 export function BrandMark({ className, ...props }: React.ComponentProps<'span'>) {
   return (

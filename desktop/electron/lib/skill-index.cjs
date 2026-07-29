@@ -29,8 +29,8 @@ function platformMatches(declared) {
 }
 
 // Mtime-keyed cache for `<section>.disabled` so per-login buildClientContext,
-// per-IPC `zast:skills:list`, and per-IPC `zast:toolsets:list` calls don't
-// re-parse $ZAST_HOME/config.yaml on every invocation. Per-section state so
+// per-IPC `deskagent:skills:list`, and per-IPC `deskagent:toolsets:list` calls don't
+// re-parse $DESKAGENT_HOME/config.yaml on every invocation. Per-section state so
 // skills.disabled and toolsets.disabled don't collide. One stat per call to
 // detect writes.
 const cachedBySection = new Map()
@@ -135,8 +135,8 @@ function projectSummary(skill, disabledSet) {
 }
 
 // ``disabledSet`` is the mtime-cached value from readDisabledSet for the
-// ``zast:skills:list`` path, or the post-write set returned by
-// patchAndCommit for the ``zast:skill:set-enabled`` path (avoids a second
+// ``deskagent:skills:list`` path, or the post-write set returned by
+// patchAndCommit for the ``deskagent:skill:set-enabled`` path (avoids a second
 // disk read).
 function buildSkillSummaries(skillsRoot, disabledSet) {
   return listSkillsFromDisk(skillsRoot).map(skill => projectSummary(skill, disabledSet))

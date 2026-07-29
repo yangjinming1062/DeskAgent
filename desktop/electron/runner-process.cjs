@@ -1,6 +1,6 @@
 /**
  * Manages the local Runner child process. After login, Desktop launches
- * the runner's venv Python (at $ZAST_HOME/runner/.venv) or dev Python runner,
+ * the runner's venv Python (at $DESKAGENT_HOME/runner/.venv) or dev Python runner,
  * passing the local WS server URL for bidirectional JSON-RPC communication.
  *
  * Pure-ish: no electron require at the top — call sites inject `childProcess`.
@@ -23,7 +23,7 @@ function resolveRunnerExecutable(options) {
   if (options.executable) return { command: options.executable, args: [], kind: 'binary' }
 
   const venvResult = resolveVenvPython({
-    zastHome: options.zastHome,
+    deskagentHome: options.deskagentHome,
     fileExists: options.fileExists,
     platform: process.platform
   })
@@ -89,7 +89,7 @@ function createRunnerProcess(options = {}) {
 
     const resolved = resolveRunnerExecutable({
       executable: args.executable,
-      zastHome: options.zastHome,
+      deskagentHome: options.deskagentHome,
       fileExists,
       devPython: options.devPython,
       repoRoot: options.repoRoot
@@ -97,7 +97,7 @@ function createRunnerProcess(options = {}) {
 
     if (!resolved) {
       const err = new Error(
-        'Could not resolve a Runner executable. Pass options.executable, install the Runner venv under $ZAST_HOME, or set ZAST_DESKTOP_PYTHON for dev mode.'
+        'Could not resolve a Runner executable. Pass options.executable, install the Runner venv under $DESKAGENT_HOME, or set DESKAGENT_DESKTOP_PYTHON for dev mode.'
       )
       setState({ lastError: err.message })
       throw err

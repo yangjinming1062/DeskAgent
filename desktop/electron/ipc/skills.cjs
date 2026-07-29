@@ -13,24 +13,24 @@ const {
 } = require('../lib/toolset-index.cjs')
 const { patchAndCommit } = require('../lib/config-writer.cjs')
 
-function registerSkillsIpc({ ipcMain, deps, zastHome }) {
+function registerSkillsIpc({ ipcMain, deps, deskagentHome }) {
   // deps must expose atomicWriteFile + restartRunnerBridge (passed through
   // to lib/config-writer.cjs so the in-flight write lock is shared with
-  // zast:runner-config:write and zast:runner-config:patch).
+  // deskagent:runner-config:write and deskagent:runner-config:patch).
   // onCommit invalidates the readDisabledSet mtime cache after a successful
   // atomic write so the next read after a same-mtime-tick write doesn't
   // return the pre-write set.
   const writeDeps = { ...deps, onCommit: invalidateDisabledCache }
   const toolsetsWriteDeps = { ...deps, onCommit: invalidateDisabledToolsetsCache }
-  const skillsRoot = path.join(zastHome, 'skills')
-  const configPath = path.join(zastHome, 'config.yaml')
+  const skillsRoot = path.join(deskagentHome, 'skills')
+  const configPath = path.join(deskagentHome, 'config.yaml')
 
-  ipcMain.handle('zast:skills:list', () => ({
+  ipcMain.handle('deskagent:skills:list', () => ({
     ok: true,
     skills: buildSkillSummaries(skillsRoot, readDisabledSet(configPath))
   }))
 
-  // The read-modify-write cycle on $ZAST_HOME/config.yaml must sit inside
+  // The read-modify-write cycle on $DESKAGENT_HOME/config.yaml must sit inside
   // the shared write lock — otherwise two fast toggles both read the same
   // starting state and the second write clobbers the first. We hand
   // patchAndCommit a `mutate` callback that re-reads the doc under the lock,
@@ -39,7 +39,7 @@ function registerSkillsIpc({ ipcMain, deps, zastHome }) {
   //
   // A no-op toggle (state already matches) skips the write+restart entirely;
   // the bridge cold start otherwise costs 1-3s of dead tool time per click.
-  ipcMain.handle('zast:skill:set-enabled', async (_evt, payload) => {
+  ipcMain.handle('deskagent:skill:set-enabled', async (_evt, payload) => {
     const { name, enabled } = payload ?? {}
     if (typeof name !== 'string' || !name) return { ok: false, error: 'invalid name' }
     if (typeof enabled !== 'boolean') return { ok: false, error: 'invalid enabled' }
@@ -58,7 +58,7 @@ function registerSkillsIpc({ ipcMain, deps, zastHome }) {
     const wasDisabled = current.has(name)
     if (wasDisabled !== enabled) {
       const result = await patchAndCommit({
-        zastHome,
+        deskagentHome,
         path: ['skills', 'disabled'],
         deps: writeDeps,
         mutate: doc => {
@@ -84,7 +84,7 @@ function registerSkillsIpc({ ipcMain, deps, zastHome }) {
   // toolset ids are mtime-cached from `toolsets.disabled` in config.yaml.
   // The renderer cross-references each rosterset's id with the static
   // `desktop/src/lib/toolset-catalog.ts` for label/icon/description.
-  ipcMain.handle('zast:toolsets:list', () => {
+  ipcMain.handle('deskagent:toolsets:list', () => {
     let schemas = []
     try {
       schemas = deps.runnerBridge?.getTools?.() ?? []
@@ -96,10 +96,10 @@ function registerSkillsIpc({ ipcMain, deps, zastHome }) {
     return { ok: true, toolsets: buildToolsetRoster(schemas, disabled) }
   })
 
-  // Symmetric with `zast:skill:set-enabled` — writes to `toolsets.disabled`
+  // Symmetric with `deskagent:skill:set-enabled` — writes to `toolsets.disabled`
   // under the shared write lock, returns the post-write roster. Toggling a
   // toolset triggers `restartRunnerBridge()` so the Runner re-reads
-  // `$ZAST_HOME/config.yaml` and rebuilds its filtered schema set.
+  // `$DESKAGENT_HOME/config.yaml` and rebuilds its filtered schema set.
   //
   // Capture the cached tool schemas BEFORE patchAndCommit: the bridge clears
   // its `cachedTools` on stop, and `_fetchAndCacheTools()` re-populates it
@@ -108,7 +108,7 @@ function registerSkillsIpc({ ipcMain, deps, zastHome }) {
   // emit a roster with empty `toolNames` for every entry. The pre-write
   // snapshot is one bridge cycle behind the new Runner, but it is non-empty,
   // so the renderer's chip strip never goes blank mid-toggle.
-  ipcMain.handle('zast:toolset:set-enabled', async (_evt, payload) => {
+  ipcMain.handle('deskagent:toolset:set-enabled', async (_evt, payload) => {
     const { id, enabled } = payload ?? {}
     if (typeof id !== 'string' || !id) return { ok: false, error: 'invalid id' }
     if (typeof enabled !== 'boolean') return { ok: false, error: 'invalid enabled' }
@@ -124,7 +124,7 @@ function registerSkillsIpc({ ipcMain, deps, zastHome }) {
     const wasDisabled = current.has(id)
     if (wasDisabled !== enabled) {
       const result = await patchAndCommit({
-        zastHome,
+        deskagentHome,
         path: ['toolsets', 'disabled'],
         deps: toolsetsWriteDeps,
         mutate: doc => {

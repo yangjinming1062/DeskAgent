@@ -1,7 +1,7 @@
 import { atom } from 'nanostores'
 
 // Discriminated union — the main process forwards electron-updater events as
-// `{ type, ... }` payloads on the `zast:update-event` IPC channel. Each
+// `{ type, ... }` payloads on the `deskagent:update-event` IPC channel. Each
 // variant mirrors one autoUpdater.on(...) callback.
 export type UpdateStatus =
   | { status: 'idle' }
@@ -43,7 +43,7 @@ function closeUpdateDialog() {
 
 // Runner-side update state. The desktop auto-updates the inner Electron
 // binary, then in the same flow prefetches the Python runner wheel +
-// server.py to $ZAST_HOME/runner.staging/ (Phase 1, in the OLD Electron),
+// server.py to $DESKAGENT_HOME/runner.staging/ (Phase 1, in the OLD Electron),
 // and on next launch `pip install --upgrade` the wheel into the existing
 // venv and overwrites server.py (Phase 2, in the NEW Electron). The toast
 // renders this state to keep the user informed through the full lifecycle.

@@ -4,18 +4,18 @@ import { type Document } from 'yaml'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
+import type { DeskAgentGateway } from '@/deskagent'
 import { useI18n } from '@/i18n'
 import { Wrench } from '@/lib/icons'
 import { cn } from '@/lib/utils'
 import { notify, notifyError } from '@/store/notifications'
-import type { ZastGateway } from '@/zast'
 
 import { EmptyState, LoadingState, Pill, SettingsContent } from './primitives'
 import { useDeepLinkHighlight } from './use-deep-link-highlight'
 import { useRunnerConfig } from './use-runner-config'
 
 interface McpSettingsProps {
-  gateway?: ZastGateway | null
+  gateway?: DeskAgentGateway | null
   onConfigSaved?: () => void
 }
 

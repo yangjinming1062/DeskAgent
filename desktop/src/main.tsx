@@ -20,7 +20,7 @@ installClipboardShim()
 // Subscribe to electron-updater events at boot. The main process auto-checks
 // ~30s after launch; this listener pumps every event into the renderer store
 // so the status bar badge, About panel, and update toast all react.
-window.zastDesktop?.update?.onEvent?.((payload: DesktopUpdateEvent) => {
+window.deskagent?.update?.onEvent?.((payload: DesktopUpdateEvent) => {
   switch (payload.type) {
     case 'checking':
       setUpdateStatus({ status: 'checking' })
@@ -67,7 +67,7 @@ window.zastDesktop?.update?.onEvent?.((payload: DesktopUpdateEvent) => {
 // Electron after `update-downloaded`; phase 2 (install) runs in the NEW
 // Electron at startup. The toast renders this state to keep the user
 // informed through the full lifecycle. See runner-updater.cjs for details.
-window.zastDesktop?.update?.onRunnerEvent?.((payload: DesktopRunnerUpdateEvent) => {
+window.deskagent?.update?.onRunnerEvent?.((payload: DesktopRunnerUpdateEvent) => {
   switch (payload.kind) {
     case 'runner-prefetching':
       setRunnerUpdateStatus({

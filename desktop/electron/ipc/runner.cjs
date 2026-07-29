@@ -6,13 +6,13 @@
 function ensureRunnerBridge(deps) {
   if (deps.runnerBridge) return deps.runnerBridge
   deps.runnerBridge = deps.createRunnerBridge({
-    zastHome: deps.zastHome,
+    deskagentHome: deps.deskagentHome,
     processFactory: () =>
       deps.createRunnerProcess({
-        executable: process.env.ZAST_DESKTOP_RUNNER_EXECUTABLE || null,
-        zastHome: deps.zastHome,
-        devPython: process.env.ZAST_DESKTOP_PYTHON || null,
-        repoRoot: process.env.ZAST_DESKTOP_RUNNER_REPO_ROOT || null,
+        executable: process.env.DESKAGENT_DESKTOP_RUNNER_EXECUTABLE || null,
+        deskagentHome: deps.deskagentHome,
+        devPython: process.env.DESKAGENT_DESKTOP_PYTHON || null,
+        repoRoot: process.env.DESKAGENT_DESKTOP_RUNNER_REPO_ROOT || null,
         fileExists: deps.fileExists,
         log: deps.taggedLogger('[runner]')
       }),
@@ -32,7 +32,7 @@ function ensureRunnerBridge(deps) {
   deps.runnerBridge.onEvent?.(ev => {
     const win = deps.getMainWindow?.()
     if (win && !win.isDestroyed()) {
-      win.webContents.send('zast:runner:status', ev)
+      win.webContents.send('deskagent:runner:status', ev)
     }
   })
 
@@ -99,12 +99,12 @@ async function restartRunnerBridge(deps) {
 }
 
 function registerRunnerIpc({ ipcMain, deps }) {
-  // Co-locates every renderer→runner IPC channel. ``zast:runner:get-tools``
+  // Co-locates every renderer→runner IPC channel. ``deskagent:runner:get-tools``
   // stays in main.cjs because it needs access to ``mainWindow`` to send the
   // tools list back to the renderer; the rest are pure request/response.
   if (!ipcMain) return
 
-  ipcMain.handle('zast:runner:invoke', async (_event, name, args) => {
+  ipcMain.handle('deskagent:runner:invoke', async (_event, name, args) => {
     if (typeof name !== 'string' || !name) {
       throw new Error('runner:invoke requires a non-empty tool name')
     }
@@ -112,7 +112,7 @@ function registerRunnerIpc({ ipcMain, deps }) {
     return bridge.invoke(name, args && typeof args === 'object' ? args : {})
   })
 
-  ipcMain.handle('zast:runner:dispatch', async (_event, method, params) => {
+  ipcMain.handle('deskagent:runner:dispatch', async (_event, method, params) => {
     if (typeof method !== 'string' || !method) {
       throw new Error('runner:dispatch requires a non-empty method name')
     }

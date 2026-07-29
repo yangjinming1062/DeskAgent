@@ -41,25 +41,25 @@ export const zh: Translations = {
   },
 
   boot: {
-    ready: 'Zast 桌面版已就绪',
+    ready: 'DeskAgent 桌面版已就绪',
     desktopBootFailedWithMessage: message => `桌面启动失败：${message}`,
     steps: {
       connectingGateway: '正在连接桌面网关',
-      loadingSettings: '正在加载 Zast 设置',
+      loadingSettings: '正在加载 DeskAgent 设置',
       loadingSessions: '正在加载最近会话',
       startingDesktopConnection: '正在启动桌面连接',
-      startingZastDesktop: '正在启动 Zast 桌面版…'
+      startingDeskAgentDesktop: '正在启动 DeskAgent 桌面版…'
     },
     errors: {
-      backgroundExited: 'Zast 后台进程已退出。',
-      backgroundExitedDuringStartup: 'Zast 后台进程在启动期间退出。',
+      backgroundExited: 'DeskAgent 后台进程已退出。',
+      backgroundExitedDuringStartup: 'DeskAgent 后台进程在启动期间退出。',
       backendStopped: '后端已停止',
       desktopBootFailed: '桌面启动失败',
       gatewaySignInRequired: '需要登录网关',
       ipcBridgeUnavailable: '桌面 IPC 桥不可用。'
     },
     failure: {
-      title: 'Zast 无法启动',
+      title: 'DeskAgent 无法启动',
       description: '后台网关没有启动。请尝试下面的恢复步骤；这里不会删除你的对话或设置。',
       retry: '重试',
       openLogs: '打开日志',
@@ -83,7 +83,7 @@ export const zh: Translations = {
     errors: {
       elevenLabsNeedsKey: 'ElevenLabs STT 需要 ELEVENLABS_API_KEY。',
       elevenLabsRejectedKey: 'ElevenLabs 拒绝了该 API key (401)。',
-      methodNotAllowed: '桌面后端拒绝了该请求 (405 Method Not Allowed)。请尝试重启 Zast Desktop。',
+      methodNotAllowed: '桌面后端拒绝了该请求 (405 Method Not Allowed)。请尝试重启 DeskAgent Desktop。',
       microphonePermission: '麦克风权限已被拒绝。',
       openaiRejectedApiKey: 'OpenAI 拒绝了该 API key。',
       openaiRejectedApiKeyWithStatus: status => `OpenAI 拒绝了该 API key (${status} invalid_api_key)。`,
@@ -224,7 +224,7 @@ export const zh: Translations = {
     exportConfig: '导出配置',
     importConfig: '导入配置',
     resetToDefaults: '恢复默认',
-    resetConfirm: '将所有设置恢复为 Zast 默认值？',
+    resetConfirm: '将所有设置恢复为 DeskAgent 默认值？',
     exportFailed: '导出失败',
     resetFailed: '重置失败',
     nav: {
@@ -246,7 +246,7 @@ export const zh: Translations = {
       title: '外观',
       intro: '这些是仅桌面端的显示偏好。模式控制明暗；主题控制强调色与对话界面样式。',
       colorMode: '颜色模式',
-      colorModeDesc: '选择固定模式，或让 Zast 跟随系统设置。',
+      colorModeDesc: '选择固定模式，或让 DeskAgent 跟随系统设置。',
       toolViewTitle: '工具调用显示',
       toolViewDesc: '产品模式隐藏原始工具数据；技术模式显示完整输入/输出。',
       product: '产品',
@@ -258,7 +258,7 @@ export const zh: Translations = {
       themeProfileNote: profile => `已为「${profile}」配置文件保存——每个配置文件保留各自的主题。`
     },
     about: {
-      heading: 'Zast Desktop',
+      heading: 'DeskAgent Desktop',
       version: value => `版本 ${value}`,
       versionUnavailable: '版本不可用',
       checkForUpdates: '检查更新',
@@ -395,15 +395,15 @@ export const zh: Translations = {
     skills: {
       title: '技能',
       intro:
-        '下方每一项对应 $ZAST_HOME/skills 下的一个 category 目录。开启或关闭会重写本地 config.yaml 并重启执行器;启用集会在每个对话轮次发给后端,让模型只看到你能调用的本地技能。',
+        '下方每一项对应 $DESKAGENT_HOME/skills 下的一个 category 目录。开启或关闭会重写本地 config.yaml 并重启执行器;启用集会在每个对话轮次发给后端,让模型只看到你能调用的本地技能。',
       loading: '正在加载技能…',
       loadError: '无法从磁盘读取技能列表。',
       saveError: '无法保存技能开关。',
       refreshError: '本地已保存,但后端会话未刷新 — 下一轮对话仍可能看到旧的技能集合,请再次切换。',
       emptyTitle: '未安装任何技能',
-      emptyDesc: '请重新安装 Zast 以恢复内置技能。',
+      emptyDesc: '请重新安装 DeskAgent 以恢复内置技能。',
       hiddenByPlatformTitle: '当前操作系统没有可用技能',
-      hiddenByPlatformDesc: '本版本 Zast 内置的技能面向其他操作系统。请在支持的操作系统上重新安装 Zast 后再启用。'
+      hiddenByPlatformDesc: '本版本 DeskAgent 内置的技能面向其他操作系统。请在支持的操作系统上重新安装 DeskAgent 后再启用。'
     },
     account: {
       heading: '账户',
@@ -530,7 +530,7 @@ export const zh: Translations = {
     noSkillsTitle: '未找到技能',
     noSkillsDesc: '尝试更宽泛的搜索或其他分类。',
     loadFailedTitle: '技能列表加载失败',
-    loadFailedDesc: '请稍后重试,或检查 $ZAST_HOME/skills 目录。',
+    loadFailedDesc: '请稍后重试,或检查 $DESKAGENT_HOME/skills 目录。',
     noToolsetsTitle: '未找到工具集',
     noToolsetsDesc: '尝试更宽泛的搜索词。',
     noDescription: '暂无描述。',
@@ -620,7 +620,7 @@ export const zh: Translations = {
     },
     nav: {
       newChat: { title: '新建会话', detail: '开始一个新会话' },
-      settings: { title: '设置', detail: '配置 Zast 桌面端' },
+      settings: { title: '设置', detail: '配置 DeskAgent 桌面端' },
       skills: { title: '技能与工具', detail: '启用技能、工具集与提供方' },
       messaging: { title: '消息平台', detail: '配置 Telegram、Slack、Discord 等' },
       artifacts: { title: '产物', detail: '浏览生成的输出' }
@@ -642,7 +642,7 @@ export const zh: Translations = {
     noSessions: '暂无会话。',
     gatewayRunning: '消息网关运行中',
     gatewayStopped: '消息网关已停止',
-    zastActiveSessions: (version, count) => `Zast ${version} · 活跃会话 ${count}`,
+    deskagentActiveSessions: (version, count) => `DeskAgent ${version} · 活跃会话 ${count}`,
     restartMessaging: '重启消息服务',
     actionRunning: '运行中',
     actionDone: '完成',
@@ -761,7 +761,7 @@ export const zh: Translations = {
       MATTERMOST_ALLOWED_USERS: { label: '允许的用户 ID', help: '推荐。逗号分隔的 Mattermost 用户 ID。' },
       MATRIX_HOMESERVER: { label: 'Homeserver URL', placeholder: 'https://matrix.org' },
       MATRIX_ACCESS_TOKEN: { label: '访问令牌' },
-      MATRIX_USER_ID: { label: 'Bot 用户 ID', placeholder: '@zast:example.org' },
+      MATRIX_USER_ID: { label: 'Bot 用户 ID', placeholder: '@deskagent:example.org' },
       MATRIX_ALLOWED_USERS: { label: '允许的 Matrix 用户 ID', help: '推荐。@user:server 格式的逗号分隔用户 ID。' },
       SIGNAL_HTTP_URL: {
         label: 'Signal 桥接 URL',
@@ -782,9 +782,9 @@ export const zh: Translations = {
       slack: '创建 Slack 应用，启用 Socket Mode，安装到你的工作区，然后复制 bot 令牌和 app 级令牌。',
       mattermost: '在你的 Mattermost 服务器上，创建机器人账户或个人访问令牌，然后在此粘贴服务器 URL 和令牌。',
       matrix: '用机器人账户登录你的 homeserver，然后复制访问令牌、用户 ID 和 homeserver URL。',
-      signal: '在可访问的位置运行 signal-cli REST 桥接，然后把 Zast 指向该 URL 和已注册的电话号码。',
-      whatsapp: '启动 Zast 自带的 WhatsApp 桥接，首次运行时扫描二维码，然后启用该平台。',
-      bluebubbles: '在装有 iMessage 的 Mac 上运行 BlueBubbles Server，暴露其 API，然后用服务器密码把 Zast 指向该 URL。',
+      signal: '在可访问的位置运行 signal-cli REST 桥接，然后把 DeskAgent 指向该 URL 和已注册的电话号码。',
+      whatsapp: '启动 DeskAgent 自带的 WhatsApp 桥接，首次运行时扫描二维码，然后启用该平台。',
+      bluebubbles: '在装有 iMessage 的 Mac 上运行 BlueBubbles Server，暴露其 API，然后用服务器密码把 DeskAgent 指向该 URL。',
       homeassistant: '在 Home Assistant 中打开你的个人资料并创建长期访问令牌。把它连同你的 HA URL 一起粘贴到这里。',
       email: '使用专用邮箱。对于 Gmail/Workspace,创建应用专用密码并使用 imap.gmail.com / smtp.gmail.com。',
       sms: '从 Twilio 控制台获取你的 Account SID 和 Auth Token，以及一个可发送短信的电话号码。',
@@ -792,9 +792,9 @@ export const zh: Translations = {
       feishu: '创建飞书 / Lark 应用，配置机器人能力，复制 App ID、App secret 和事件加密密钥。',
       wecom: '在企业微信中添加群机器人，复制其 webhook key 作为 WECOM_BOT_ID。仅可发送——双向请用企业微信 (应用) 选项。',
       wecom_callback: '设置一个企业微信自建应用，暴露其回调 URL，并提供 corp ID、secret、agent ID 和 AES key。',
-      weixin: '登录微信公众平台，复制 AppID 和 Token，并把消息回调 URL 指向 Zast。',
+      weixin: '登录微信公众平台，复制 AppID 和 Token，并把消息回调 URL 指向 DeskAgent。',
       qqbot: '在 QQ 开放平台 (q.qq.com) 注册一个应用，复制 App ID 和 Client Secret。',
-      api_server: '把 Zast 暴露为兼容 OpenAI 的 API。设置一个鉴权密钥，然后把 Open WebUI / LobeChat 等指向 host:port。',
+      api_server: '把 DeskAgent 暴露为兼容 OpenAI 的 API。设置一个鉴权密钥，然后把 Open WebUI / LobeChat 等指向 host:port。',
       webhook: '运行一个 HTTP 服务器，供其他工具 (GitHub、GitLab、自定义应用)POST。用 secret 验证签名。'
     }
   },
@@ -844,7 +844,7 @@ export const zh: Translations = {
     deleteDescMid: ' 并移除其 ',
     deleteDescSuffix: ' 目录。此操作无法撤销。',
     deleting: '删除中…',
-    createDesc: '配置档案是相互独立的 Zast 环境：各自拥有独立的配置、技能和 SOUL.md。',
+    createDesc: '配置档案是相互独立的 DeskAgent 环境：各自拥有独立的配置、技能和 SOUL.md。',
     nameLabel: '名称',
     cloneFromDefault: '从默认档案克隆',
     cloneFromDefaultDesc: '从你的默认配置档案复制配置、技能和 SOUL.md。',
@@ -927,7 +927,7 @@ export const zh: Translations = {
     topOfHour: '每个整点',
     everyHourAt: minute => `每小时的 :${minute}`,
     newCron: '新建定时任务',
-    emptyDescNew: '按 cron 表达式排程一个提示词。Zast 会运行它，并把结果发送到你选择的目的地。',
+    emptyDescNew: '按 cron 表达式排程一个提示词。DeskAgent 会运行它，并把结果发送到你选择的目的地。',
     emptyDescSearch: '尝试更宽泛的搜索词。',
     emptyTitleNew: '暂无排程任务',
     emptyTitleSearch: '无匹配项',
@@ -1073,12 +1073,12 @@ export const zh: Translations = {
   composer: {
     message: '消息',
     wakingProfile: profile => `正在唤醒 ${profile}…`,
-    placeholderStarting: '正在启动 Zast…',
-    placeholderReconnecting: '正在重新连接 Zast…',
+    placeholderStarting: '正在启动 DeskAgent…',
+    placeholderReconnecting: '正在重新连接 DeskAgent…',
     placeholderFollowUp: '发送后续消息',
     newSessionPlaceholders: [
       '我们要构建什么？',
-      '给 Zast 一个任务',
+      '给 DeskAgent 一个任务',
       '你在想什么？',
       '描述你需要什么',
       '我们该处理什么？',
@@ -1128,7 +1128,7 @@ export const zh: Translations = {
       '/resume': '恢复之前的会话',
       '/details': '控制对话记录的详细程度',
       '/copy': '复制所选内容或最后一条助手消息',
-      '/quit': '退出 zast'
+      '/quit': '退出 deskagent'
     },
     hotkeyDescs: {
       '@': '引用文件、文件夹、URL、git',
@@ -1141,7 +1141,7 @@ export const zh: Translations = {
       '↑ / ↓': '循环弹窗 / 历史'
     },
     attachUrlTitle: '附加 URL',
-    attachUrlDesc: 'Zast 将抓取该页面并作为本回合的上下文。',
+    attachUrlDesc: 'DeskAgent 将抓取该页面并作为本回合的上下文。',
     urlPlaceholder: 'https://example.com/post',
     urlHintPre: '请包含完整 URL，例如 ',
     attach: '附加',
@@ -1219,7 +1219,7 @@ export const zh: Translations = {
           body: '我能编辑文件、跑命令、搜网页，陪你啃下棘手的 Bug。描述任务即可。'
         },
         {
-          headline: '嗨，我是 Zast',
+          headline: '嗨，我是 DeskAgent',
           body: '给我一个仓库路径或问题就开始。我保持回复清晰，并标注我改动的文件。'
         }
       ],
@@ -1302,7 +1302,7 @@ export const zh: Translations = {
           body: '贴一个 Bug 或文件路径，我会温柔地修好它。测试、diff、PR，全都加倍用心哦~ ✨'
         },
         {
-          headline: 'zast 小酱驾到！<3',
+          headline: 'deskagent 小酱驾到！<3',
           body: '告诉我你在做什么！我超爱重构、小工具，也爱大仓库 (>w<)'
         },
         {
@@ -1336,7 +1336,7 @@ export const zh: Translations = {
           body: '贴个错误或计划。我 debug 像捕猎：安静、彻底，偶尔 zoomies。'
         },
         {
-          headline: '喵啊~ Zast 在岗',
+          headline: '喵啊~ DeskAgent 在岗',
           body: '说一声，我就读文件、跑测试、卷在你的分支里，留下一笔干净的提交。'
         }
       ],
@@ -1346,7 +1346,7 @@ export const zh: Translations = {
           body: '说出你的猎物——一个 Bug、一个 feature、一个被诅咒的测试——我去追，水手。Diff 就是战利品。'
         },
         {
-          headline: 'Zast 掌舵啦，arrr',
+          headline: 'DeskAgent 掌舵啦，arrr',
           body: '把海图（代码）指给我，我就补船身、开炮（测试）、挂起一张干净的 PR。'
         },
         {
@@ -1368,7 +1368,7 @@ export const zh: Translations = {
           body: '说出你的 Bug、你的文件、你疲惫的测试，我必以学者之手与诚实的 diff 修补之。'
         },
         {
-          headline: '听啊！Zast 已就位',
+          headline: '听啊！DeskAgent 已就位',
           body: '点出困扰你的代码。我当读之、改之，呈上最公平、最干净之补丁。'
         },
         {
@@ -1416,7 +1416,7 @@ export const zh: Translations = {
           body: '你有 Bug。我有耐心和终端。报上案子，我会盘到它开口。'
         },
         {
-          headline: 'Zast。代码侦探。',
+          headline: 'DeskAgent。代码侦探。',
           body: '贴上堆栈跟踪、嫌疑人文件、不在场证明。我读字里行间，把真相带回来。'
         },
         {
@@ -1434,7 +1434,7 @@ export const zh: Translations = {
           body: '贴一个 Bug 文件或目标~ 我会读、改、测，diff 上留下小小的爪印 owo'
         },
         {
-          headline: 'zast 酱在听哦',
+          headline: 'deskagent 酱在听哦',
           body: '告诉我任务，不管多小~ 我保证 commit 干净、重构温柔，nyuu~'
         },
         {
@@ -1478,7 +1478,7 @@ export const zh: Translations = {
           body: '把那个 Bug、那个仓库、那个疯狂 feature 想法丢过来——我全神贯注。干净 diff。绿测试。就在现在。'
         },
         {
-          headline: 'ZAST 在线。开干。',
+          headline: 'DESKAGENT 在线。开干。',
           body: '把任务丢过来看我表演。读文件、跑测试、开 PR——今天我们不输，朋友。'
         },
         {
@@ -1496,7 +1496,7 @@ export const zh: Translations = {
       ],
       none: [
         {
-          headline: 'Zast Agent 已就绪。',
+          headline: 'DeskAgent Agent 已就绪。',
           body: '提出问题、粘贴错误信息或指定仓库。我可以阅读代码、运行工具，帮你顺利交付。'
         },
         {
@@ -1516,7 +1516,7 @@ export const zh: Translations = {
       fallback: [
         { headline: '今天做什么？', body: '发一个 bug、分支、计划或模糊想法。我会检查仓库并给出下一步具体行动。' },
         { headline: '在想什么？', body: '带上代码、问题或卡住的地方。我会先了解情况再动手。' },
-        { headline: '让 Zast 看看什么？', body: '发来任务、失败路径或半成品计划。我帮你把它变成可执行的行动。' },
+        { headline: '让 DeskAgent 看看什么？', body: '发来任务、失败路径或半成品计划。我帮你把它变成可执行的行动。' },
         { headline: '从哪里开始？', body: '带上问题、目标或文件。我会先检查，确保下一步具体可行。' },
         { headline: '需要关注什么？', body: '把你知道的上下文发来。我帮你梳理成计划或修复方案。' }
       ]
@@ -1590,7 +1590,7 @@ export const zh: Translations = {
       update: '更新',
       updateInProgress: '正在更新',
       commitsBehind: (count, branch) => `落后 ${branch} ${count} 个提交`,
-      desktopVersion: version => `Zast Desktop v${version}`,
+      desktopVersion: version => `DeskAgent Desktop v${version}`,
       backendVersion: version => `后端 v${version}`,
       clientLabel: version => `客户端 v${version}`,
       backendLabel: version => `后端 v${version}`,
@@ -1604,7 +1604,7 @@ export const zh: Translations = {
       gatewayChecking: '检查中',
       gatewayConnecting: '连接中',
       gatewayOffline: '离线',
-      gatewayTitle: 'Zast 推理网关状态',
+      gatewayTitle: 'DeskAgent 推理网关状态',
       agents: '代理',
       closeAgents: '关闭代理',
       openAgents: '打开代理',
@@ -1672,7 +1672,7 @@ export const zh: Translations = {
     binaryTitle: '这看起来像二进制文件',
     binaryBody: label => `预览 ${label} 可能会显示不可读文本。`,
     largeTitle: '此文件较大',
-    largeBody: (label, size) => `${label} 大小为 ${size}。Zast 只会显示前 512 KB。`,
+    largeBody: (label, size) => `${label} 大小为 ${size}。DeskAgent 只会显示前 512 KB。`,
     previewAnyway: '仍然预览',
     truncated: '显示前 512 KB。',
     noInlineTitle: '没有内联预览',
@@ -1723,7 +1723,7 @@ export const zh: Translations = {
   assistant: {
     thread: {
       loadingSession: '正在加载会话',
-      loadingResponse: 'Zast 正在加载回复',
+      loadingResponse: 'DeskAgent 正在加载回复',
       thinking: '思考中',
       today: time => `今天，${time}`,
       yesterday: time => `昨天，${time}`,
@@ -1745,7 +1745,7 @@ export const zh: Translations = {
       sendEdited: '发送编辑后的消息'
     },
     approval: {
-      gatewayDisconnected: 'Zast 网关未连接',
+      gatewayDisconnected: 'DeskAgent 网关未连接',
       sendFailed: '无法发送审批响应',
       run: '运行',
       moreOptions: '更多审批选项',
@@ -1754,12 +1754,12 @@ export const zh: Translations = {
       reject: '拒绝',
       alwaysTitle: '始终允许此命令？',
       alwaysDescription: pattern =>
-        `这会将“${pattern}”模式加入永久允许列表 (~/.zast/config.yaml)。Zast 对类似命令将不再询问，包括当前会话和未来会话。`,
+        `这会将“${pattern}”模式加入永久允许列表 (~/.deskagent/config.yaml)。DeskAgent 对类似命令将不再询问，包括当前会话和未来会话。`,
       alwaysAllow: '始终允许'
     },
     clarify: {
       notReady: '澄清请求尚未就绪',
-      gatewayDisconnected: 'Zast 网关未连接',
+      gatewayDisconnected: 'DeskAgent 网关未连接',
       sendFailed: '无法发送澄清响应',
       loadingQuestion: '正在加载问题…',
       other: '其他 (输入你的答案)',
@@ -1796,14 +1796,14 @@ export const zh: Translations = {
   },
 
   prompts: {
-    gatewayDisconnected: 'Zast 网关未连接',
+    gatewayDisconnected: 'DeskAgent 网关未连接',
     sudoSendFailed: '无法发送 sudo 密码',
     secretSendFailed: '无法发送密钥',
     sudoTitle: '管理员密码',
-    sudoDesc: 'Zast 需要你的 sudo 密码来运行特权命令。它只会发送给你的本地 agent。',
+    sudoDesc: 'DeskAgent 需要你的 sudo 密码来运行特权命令。它只会发送给你的本地 agent。',
     sudoPlaceholder: 'sudo 密码',
     secretTitle: '需要密钥',
-    secretDesc: 'Zast 需要一个凭据才能继续。',
+    secretDesc: 'DeskAgent 需要一个凭据才能继续。',
     secretPlaceholder: '密钥值'
   },
 
@@ -1850,8 +1850,8 @@ export const zh: Translations = {
     sessionExportFailed: '无法导出会话',
     imageSaved: '图片已保存',
     downloadStarted: '下载已开始',
-    restartToUseSaveImage: '重启 Zast 桌面版后可使用保存图片。',
-    restartToSaveImages: '重启 Zast 桌面版以保存图片',
+    restartToUseSaveImage: '重启 DeskAgent 桌面版后可使用保存图片。',
+    restartToSaveImages: '重启 DeskAgent 桌面版以保存图片',
     imageDownloadFailed: '图片下载失败',
     openImage: '打开图片',
     downloadImage: '下载图片',
@@ -1915,8 +1915,8 @@ export const zh: Translations = {
     signIn: '登录',
     signingIn: '登录中…',
     signOut: '退出登录',
-    subtitle: '使用你的 Zast 账户登录以继续。',
-    title: '登录 Zast',
+    subtitle: '使用你的 DeskAgent 账户登录以继续。',
+    title: '登录 DeskAgent',
     username: '用户名'
   }
 }

@@ -9,7 +9,7 @@ function ensureBackendSession(deps) {
   deps.backendSession = deps.createBackendSession({
     userDataDir: deps.app.getPath('userData'),
     safeStorage: deps.safeStorage,
-    appVersion: deps.resolveZastVersion(),
+    appVersion: deps.resolveDeskAgentVersion(),
     fetchImpl: (url, options) => deps.electronNet.fetch(url, options),
     defaultBaseUrl: getBackendUrl() || null,
     log: chunk => deps.rememberLog(chunk)
@@ -24,10 +24,10 @@ function ensureBackendSession(deps) {
 }
 
 function registerAuthIpc({ ipcMain, deps }) {
-  ipcMain.handle('zast:auth:login', async (_event, payload) => {
+  ipcMain.handle('deskagent:auth:login', async (_event, payload) => {
     const session = ensureBackendSession(deps)
     // Inject clientContext here (not in the renderer): only main process has
-    // access to process.platform / arch / release and to $ZAST_HOME/skills.
+    // access to process.platform / arch / release and to $DESKAGENT_HOME/skills.
     // Backend runs in a cloud container and cannot reach the host OS, so this
     // payload is the only signal it gets about the local environment.
     const built = deps.buildClientContext?.() ?? {}
@@ -42,7 +42,7 @@ function registerAuthIpc({ ipcMain, deps }) {
     return result
   })
 
-  ipcMain.handle('zast:auth:refresh', async (_event, payload) => {
+  ipcMain.handle('deskagent:auth:refresh', async (_event, payload) => {
     const session = ensureBackendSession(deps)
     const built = deps.buildClientContext?.() ?? {}
     const enriched = {
@@ -54,24 +54,24 @@ function registerAuthIpc({ ipcMain, deps }) {
     return result
   })
 
-  ipcMain.handle('zast:auth:logout', async () => {
+  ipcMain.handle('deskagent:auth:logout', async () => {
     const session = ensureBackendSession(deps)
     const result = await session.logout()
     deps.resetBackendCache?.()
     return result
   })
 
-  ipcMain.handle('zast:auth:get-session', async () => {
+  ipcMain.handle('deskagent:auth:get-session', async () => {
     const session = ensureBackendSession(deps)
     return session.getSession()
   })
 
-  ipcMain.handle('zast:auth:change-password', async (_event, payload) => {
+  ipcMain.handle('deskagent:auth:change-password', async (_event, payload) => {
     const session = ensureBackendSession(deps)
     return session.changePassword(payload || {})
   })
 
-  ipcMain.handle('zast:model-config:get', async () => {
+  ipcMain.handle('deskagent:model-config:get', async () => {
     const session = ensureBackendSession(deps)
     const full = await session.getModelConfig()
     return {

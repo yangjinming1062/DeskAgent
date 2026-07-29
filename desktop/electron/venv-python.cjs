@@ -3,31 +3,31 @@
 const path = require('node:path')
 
 /**
- * Path to the python executable inside the venv at `$ZAST_HOME/runner/.venv`.
+ * Path to the python executable inside the venv at `$DESKAGENT_HOME/runner/.venv`.
  * Cross-platform: `Scripts/python.exe` on Windows, `bin/python` elsewhere.
  *
- * @param {string} zastHome
+ * @param {string} deskagentHome
  * @param {string} [platform] — defaults to `process.platform`; pass `process.platform` from callers
  *   for testability.
  */
-function venvPythonFor(zastHome, platform = process.platform) {
+function venvPythonFor(deskagentHome, platform = process.platform) {
   return platform === 'win32'
-    ? path.join(zastHome, 'runner', '.venv', 'Scripts', 'python.exe')
-    : path.join(zastHome, 'runner', '.venv', 'bin', 'python')
+    ? path.join(deskagentHome, 'runner', '.venv', 'Scripts', 'python.exe')
+    : path.join(deskagentHome, 'runner', '.venv', 'bin', 'python')
 }
 
 /**
- * Resolve the runner's venv Python + server.py from $ZAST_HOME.
+ * Resolve the runner's venv Python + server.py from $DESKAGENT_HOME.
  *
- * @param {{ zastHome?: string, fileExists?: (p: string) => boolean, platform?: string }} opts
+ * @param {{ deskagentHome?: string, fileExists?: (p: string) => boolean, platform?: string }} opts
  * @returns {{ command: string, args: string[], kind: string } | null}
  */
 function resolveVenvPython(opts = {}) {
-  const { zastHome, fileExists, platform } = opts
-  if (!zastHome || typeof fileExists !== 'function') return null
+  const { deskagentHome, fileExists, platform } = opts
+  if (!deskagentHome || typeof fileExists !== 'function') return null
 
-  const venvPython = venvPythonFor(zastHome, platform)
-  const serverPy = path.join(zastHome, 'runner', 'server.py')
+  const venvPython = venvPythonFor(deskagentHome, platform)
+  const serverPy = path.join(deskagentHome, 'runner', 'server.py')
 
   if (fileExists(venvPython) && fileExists(serverPy)) {
     return { command: venvPython, args: [serverPy], kind: 'venv-python' }

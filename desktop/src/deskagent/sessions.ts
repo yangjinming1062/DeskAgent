@@ -1,4 +1,4 @@
-import type { PaginatedSessions, SessionMessagesResponse, SessionSearchResponse } from '@/types/zast'
+import type { PaginatedSessions, SessionMessagesResponse, SessionSearchResponse } from '@/types/deskagent'
 
 const SESSION_LIST_REQUEST_TIMEOUT_MS = 60_000
 
@@ -11,7 +11,7 @@ export async function listSessions(
 ): Promise<PaginatedSessions> {
   const subagents = includeSubagents ? '&include_subagents=true' : ''
 
-  const result = await window.zastDesktop.api<PaginatedSessions>({
+  const result = await window.deskagent.api<PaginatedSessions>({
     path: `/api/sessions?limit=${limit}&offset=0&min_messages=${Math.max(0, minMessages)}&archived=${archived}&order=${order}${subagents}`,
     timeoutMs: SESSION_LIST_REQUEST_TIMEOUT_MS
   })
@@ -24,7 +24,7 @@ export async function listSessions(
 }
 
 export function setSessionArchived(id: string, archived: boolean): Promise<{ ok: boolean }> {
-  return window.zastDesktop.api<{ ok: boolean }>({
+  return window.deskagent.api<{ ok: boolean }>({
     path: `/api/sessions/${encodeURIComponent(id)}`,
     method: 'PATCH',
     body: { archived }
@@ -32,26 +32,26 @@ export function setSessionArchived(id: string, archived: boolean): Promise<{ ok:
 }
 
 export function searchSessions(query: string): Promise<SessionSearchResponse> {
-  return window.zastDesktop.api<SessionSearchResponse>({
+  return window.deskagent.api<SessionSearchResponse>({
     path: `/api/sessions/search?q=${encodeURIComponent(query)}`
   })
 }
 
 export function getSessionMessages(id: string): Promise<SessionMessagesResponse> {
-  return window.zastDesktop.api<SessionMessagesResponse>({
+  return window.deskagent.api<SessionMessagesResponse>({
     path: `/api/sessions/${encodeURIComponent(id)}/messages`
   })
 }
 
 export function deleteSession(id: string): Promise<{ ok: boolean }> {
-  return window.zastDesktop.api<{ ok: boolean }>({
+  return window.deskagent.api<{ ok: boolean }>({
     path: `/api/sessions/${encodeURIComponent(id)}`,
     method: 'DELETE'
   })
 }
 
 export function renameSession(id: string, title: string): Promise<{ ok: boolean; title: string }> {
-  return window.zastDesktop.api<{ ok: boolean; title: string }>({
+  return window.deskagent.api<{ ok: boolean; title: string }>({
     path: `/api/sessions/${encodeURIComponent(id)}`,
     method: 'PATCH',
     body: { title }

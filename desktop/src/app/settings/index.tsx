@@ -2,11 +2,11 @@ import { IconDownload, IconRefresh, IconUpload } from '@tabler/icons-react'
 import { useRef } from 'react'
 
 import { Tip } from '@/components/ui/tooltip'
+import { getDeskAgentConfigDefaults, getDeskAgentConfigRecord, saveDeskAgentConfig } from '@/deskagent'
 import { useI18n } from '@/i18n'
 import { triggerHaptic } from '@/lib/haptics'
 import { Info, KeyRound, Palette, Settings, Sparkles, Wrench } from '@/lib/icons'
 import { notifyError } from '@/store/notifications'
-import { getZastConfigDefaults, getZastConfigRecord, saveZastConfig } from '@/zast'
 
 import { useRouteEnumParam } from '../hooks/use-route-enum-param'
 import { OverlayIconButton } from '../overlays/overlay-chrome'
@@ -33,12 +33,12 @@ export function SettingsView({ gateway, onClose, onConfigSaved }: SettingsPagePr
 
   const exportConfig = async () => {
     try {
-      const cfg = await getZastConfigRecord()
+      const cfg = await getDeskAgentConfigRecord()
       const blob = new Blob([JSON.stringify(cfg, null, 2)], { type: 'application/json' })
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = 'zast-config.json'
+      a.download = 'deskagent-config.json'
       a.click()
       URL.revokeObjectURL(url)
       triggerHaptic('success')
@@ -53,7 +53,7 @@ export function SettingsView({ gateway, onClose, onConfigSaved }: SettingsPagePr
     }
 
     try {
-      await saveZastConfig(await getZastConfigDefaults())
+      await saveDeskAgentConfig(await getDeskAgentConfigDefaults())
       triggerHaptic('success')
       onConfigSaved?.()
     } catch (err) {

@@ -110,20 +110,20 @@ function registerFsIpc({ ipcMain }) {
     }
   }
 
-  ipcMain.handle('zast:fs:readDir', async (_event, dirPath) => {
+  ipcMain.handle('deskagent:fs:readDir', async (_event, dirPath) => {
     const resolved = path.resolve(String(dirPath || ''))
     if (!resolved) return { entries: [], error: 'invalid-path' }
     return listDirents(resolved)
   })
 
-  ipcMain.handle('zast:fs:gitRoot', async (_event, startPath) => {
+  ipcMain.handle('deskagent:fs:gitRoot', async (_event, startPath) => {
     return findGitRoot(await resolveStartDir(startPath))
   })
 
   // Branch extraction by reading .git/HEAD directly. The backend can't do
   // this (Docker has no access to user disk) and we don't want to depend on
   // a ``git`` binary in PATH, so the desktop owns this lookup.
-  ipcMain.handle('zast:fs:gitBranch', async (_event, startPath) => {
+  ipcMain.handle('deskagent:fs:gitBranch', async (_event, startPath) => {
     const start = await resolveStartDir(startPath)
     const root = await findGitRoot(start)
     const branch = await readBranchFromHead(root)
@@ -134,7 +134,7 @@ function registerFsIpc({ ipcMain }) {
   // ``word`` may be ``"@file:"`` (suggestion panel) or a partial path the
   // user is typing (``"@src/ut"``). Always returns at most FS_COMPLETE_LIMIT
   // entries, directories first.
-  ipcMain.handle('zast:fs:completePath', async (_event, params) => {
+  ipcMain.handle('deskagent:fs:completePath', async (_event, params) => {
     const word = String(params?.word ?? '')
     const cwdInput = String(params?.cwd ?? '')
     const cwd = cwdInput ? path.resolve(cwdInput) : process.cwd()

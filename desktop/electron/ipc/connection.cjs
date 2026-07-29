@@ -10,14 +10,14 @@ function registerConnectionIpc({
   resolveTimeoutMs,
   defaultFetchTimeoutMs
 }) {
-  ipcMain.handle('zast:connection', async () => ensureBackend())
-  ipcMain.handle('zast:gateway:ws-url', async () => {
+  ipcMain.handle('deskagent:connection', async () => ensureBackend())
+  ipcMain.handle('deskagent:gateway:ws-url', async () => {
     const connection = await ensureBackend()
     return connection.wsUrl
   })
-  ipcMain.handle('zast:boot-progress:get', async () => getBootProgressState())
+  ipcMain.handle('deskagent:boot-progress:get', async () => getBootProgressState())
 
-  ipcMain.handle('zast:api', async (_event, request) => {
+  ipcMain.handle('deskagent:api', async (_event, request) => {
     const connection = await ensureBackend()
     const timeoutMs = resolveTimeoutMs(request?.timeoutMs, defaultFetchTimeoutMs)
     const url = `${connection.baseUrl}${request.path}`
@@ -32,7 +32,7 @@ function registerConnectionIpc({
       // instead of a cascade of failing requests.
       if (error?.message?.startsWith('401 ') && connection.token) {
         try {
-          _event.sender.send('zast:auth:session-expired')
+          _event.sender.send('deskagent:auth:session-expired')
         } catch {
           /* window may have been destroyed */
         }

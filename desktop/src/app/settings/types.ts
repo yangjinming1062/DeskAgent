@@ -1,9 +1,9 @@
-import type { ZastGateway } from '@/zast'
+import type { DeskAgentGateway } from '@/deskagent'
 
 export type SettingsView = 'about' | 'account' | 'mcp' | 'sessions' | 'appearance' | 'runner' | 'skills'
 
 export interface SettingsPageProps {
-  gateway?: ZastGateway | null
+  gateway?: DeskAgentGateway | null
   onClose: () => void
   onConfigSaved?: () => void
 }

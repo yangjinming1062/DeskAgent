@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { I18nProvider, useI18n } from './context'
 import type { Locale } from './types'
 
-const LOCALE_STORAGE_KEY = 'zast.desktop.locale.v1'
+const LOCALE_STORAGE_KEY = 'deskagent.desktop.locale.v1'
 
 function LanguageProbe({ target = 'zh' }: { target?: Locale }) {
   const { locale, saveError, setLocale, t } = useI18n()

@@ -65,7 +65,7 @@ function toolNamesForToolset(def, availableNames) {
   return names
 }
 
-// Build the renderer-facing toolset roster. Used by `zast:toolsets:list`.
+// Build the renderer-facing toolset roster. Used by `deskagent:toolsets:list`.
 // `schemas` is the cached Runner tool schemas (`runnerBridge.getTools()`
 // already returns `[]` when the Runner isn't ready, so no null check needed).
 function buildToolsetRoster(schemas, disabledToolsetIds) {

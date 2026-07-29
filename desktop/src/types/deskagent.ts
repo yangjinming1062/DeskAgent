@@ -136,7 +136,7 @@ export interface UsageStats {
 
 /** Shape returned by `GET /api/config`. Includes computed siblings like `*_set` / `*_fingerprint`
  * that the backend injects after stripping raw credentials. */
-export interface ZastConfigResponse {
+export interface DeskAgentConfigResponse {
   agent?: {
     reasoning_effort?: string
     personalities?: Record<string, unknown>
@@ -173,7 +173,7 @@ export interface ZastConfigResponse {
 
 /** Body shape accepted by `PUT /api/config`. Raw credentials are writable here; the computed
  * `*_set` / `*_fingerprint` siblings from the response shape are not. */
-export interface ZastConfigPutRequest {
+export interface DeskAgentConfigPutRequest {
   agent?: {
     reasoning_effort?: string
     personalities?: Record<string, unknown>
@@ -207,13 +207,13 @@ export interface ZastConfigPutRequest {
   }
 }
 
-export type ZastConfigRecord = Record<string, unknown>
+export type DeskAgentConfigRecord = Record<string, unknown>
 
-/** LLM model config projected by the `zast:model-config:get` IPC.
+/** LLM model config projected by the `deskagent:model-config:get` IPC.
  *
  * GCS secrets (`gcs_access_key` / `gcs_secret_key` / `gcs_bucket_name`) are
  * intentionally NOT included — they are stripped at the IPC boundary in
- * `electron/ipc/auth.cjs::zast:model-config:get`. The full object (with GCS
+ * `electron/ipc/auth.cjs::deskagent:model-config:get`. The full object (with GCS
  * fields) lives only in main-process code paths that need it for uploads.
  */
 export interface ModelConfigResponse {

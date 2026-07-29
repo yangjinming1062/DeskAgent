@@ -1,5 +1,8 @@
 export type {
   ActionStatusResponse,
+  DeskAgentConfigPutRequest,
+  DeskAgentConfigRecord,
+  DeskAgentConfigResponse,
   InsightsDailyActivity,
   InsightsModel,
   InsightsOverview,
@@ -20,8 +23,5 @@ export type {
   SessionSearchResponse,
   SessionSearchResult,
   StatusResponse,
-  UsageStats,
-  ZastConfigPutRequest,
-  ZastConfigRecord,
-  ZastConfigResponse
-} from '@/types/zast'
+  UsageStats
+} from '@/types/deskagent'

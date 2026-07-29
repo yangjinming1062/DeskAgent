@@ -5,9 +5,9 @@
 // dedicated clipboard-image variant (clipboard handling lives in
 // ipc/clipboard.cjs because the read-clipboard step is its own surface).
 function registerImagesIpc({ ipcMain, saveImageFromUrl, writeComposerImage }) {
-  ipcMain.handle('zast:saveImageFromUrl', (_event, url) => saveImageFromUrl(String(url || '')))
+  ipcMain.handle('deskagent:saveImageFromUrl', (_event, url) => saveImageFromUrl(String(url || '')))
 
-  ipcMain.handle('zast:saveImageBuffer', async (_event, payload) => {
+  ipcMain.handle('deskagent:saveImageBuffer', async (_event, payload) => {
     const data = payload?.data
     if (!data) throw new Error('saveImageBuffer: missing data')
 

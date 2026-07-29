@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 
-import type { ZastConnection } from '@/global'
+import { DeskAgentGateway } from '@/deskagent'
+import type { DeskAgentConnection } from '@/global'
 import { translateNow } from '@/i18n'
 import { resolveGatewayWsUrl } from '@/lib/gateway-ws-url'
 import { reconnectBackoffMs } from '@/lib/reconnect'
@@ -8,15 +9,14 @@ import { logout } from '@/store/auth'
 import { applyDesktopBootProgress, completeDesktopBoot, failDesktopBoot, setDesktopBootStep } from '@/store/boot'
 import { reportPrimaryGatewayState, setConnection, setPrimaryGateway, setRunnerOnline, tearDownPrimaryGateway } from '@/store/gateway'
 import { notifyError } from '@/store/notifications'
-import type { RpcEvent } from '@/types/zast'
-import { ZastGateway } from '@/zast'
+import type { RpcEvent } from '@/types/deskagent'
 
 // Backend uses WS close 1008 for auth failures (token expired/revoked) —
 // trigger logout instead of looping reconnect with a dead token.
 const WS_CLOSE_POLICY_VIOLATION = 1008
 
-async function syncRunnerTools(gateway: ZastGateway): Promise<void> {
-  const desktop = window.zastDesktop
+async function syncRunnerTools(gateway: DeskAgentGateway): Promise<void> {
+  const desktop = window.deskagent
 
   if (!desktop?.runnerGetTools) {
     return
@@ -59,9 +59,9 @@ async function syncRunnerTools(gateway: ZastGateway): Promise<void> {
 interface GatewayBootOptions {
   handleGatewayEvent: (event: RpcEvent) => void
   onConnectionReady: (
-    connection: Awaited<ReturnType<NonNullable<typeof window.zastDesktop>['getConnection']>> | null
+    connection: Awaited<ReturnType<NonNullable<typeof window.deskagent>['getConnection']>> | null
   ) => void
-  onGatewayReady: (gateway: ZastGateway | null) => void
+  onGatewayReady: (gateway: DeskAgentGateway | null) => void
 }
 
 export function useGatewayBoot({ handleGatewayEvent, onConnectionReady, onGatewayReady }: GatewayBootOptions) {
@@ -71,9 +71,9 @@ export function useGatewayBoot({ handleGatewayEvent, onConnectionReady, onGatewa
 
   useEffect(() => {
     let cancelled = false
-    const desktop = window.zastDesktop
+    const desktop = window.deskagent
 
-    const publish = (next: ZastConnection | null) => {
+    const publish = (next: DeskAgentConnection | null) => {
       callbacksRef.current.onConnectionReady(next)
       setConnection(next)
     }
@@ -198,7 +198,7 @@ export function useGatewayBoot({ handleGatewayEvent, onConnectionReady, onGatewa
       progress: 6
     })
 
-    const gateway = new ZastGateway()
+    const gateway = new DeskAgentGateway()
     callbacksRef.current.onGatewayReady(gateway)
     setPrimaryGateway(gateway)
 

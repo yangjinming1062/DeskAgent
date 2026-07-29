@@ -32,10 +32,10 @@ async function postMultipart({ url, token, form, timeoutMs }) {
 }
 
 // Backend media proxy (STT/TTS). Kept separate from ipc/connection.cjs
-// because the generic zast:api proxy only ships JSON and audio endpoints
+// because the generic deskagent:api proxy only ships JSON and audio endpoints
 // need multipart upload (STT) and binary download (TTS).
 function registerMediaIpc({ ipcMain, ensureBackend }) {
-  ipcMain.handle('zast:media:stt', async (_event, payload) => {
+  ipcMain.handle('deskagent:media:stt', async (_event, payload) => {
     const connection = await ensureBackend()
     const { mime, data } = decodeDataUrl(payload?.dataUrl)
     if (data.length > STT_MAX_AUDIO_BYTES) {
@@ -54,7 +54,7 @@ function registerMediaIpc({ ipcMain, ensureBackend }) {
     return { text: parsed.text || '' }
   })
 
-  ipcMain.handle('zast:media:tts', async (_event, payload) => {
+  ipcMain.handle('deskagent:media:tts', async (_event, payload) => {
     const text = String(payload?.text || '')
     if (!text) throw new Error('text is required')
     if (text.length > TTS_MAX_TEXT_CHARS) {

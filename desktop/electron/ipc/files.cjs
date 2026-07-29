@@ -9,7 +9,7 @@ const TEXT_PREVIEW_MAX_BYTES = 512 * 1024
 function registerFilesIpc({ ipcMain, electron, hardening, mimeTypeForPath, previewLanguageByExt }) {
   const { dialog, getMainWindow } = electron
 
-  ipcMain.handle('zast:readFileDataUrl', async (_event, filePath) => {
+  ipcMain.handle('deskagent:readFileDataUrl', async (_event, filePath) => {
     const { resolvedPath } = await hardening.resolveReadableFileForIpc(filePath, {
       maxBytes: hardening.DATA_URL_READ_MAX_BYTES,
       purpose: 'File preview'
@@ -18,7 +18,7 @@ function registerFilesIpc({ ipcMain, electron, hardening, mimeTypeForPath, previ
     return `data:${mimeTypeForPath(resolvedPath)};base64,${data.toString('base64')}`
   })
 
-  ipcMain.handle('zast:readFileText', async (_event, filePath) => {
+  ipcMain.handle('deskagent:readFileText', async (_event, filePath) => {
     const { resolvedPath, stat } = await hardening.resolveReadableFileForIpc(filePath, {
       maxBytes: hardening.TEXT_PREVIEW_SOURCE_MAX_BYTES,
       purpose: 'Text preview'
@@ -45,7 +45,7 @@ function registerFilesIpc({ ipcMain, electron, hardening, mimeTypeForPath, previ
     }
   })
 
-  ipcMain.handle('zast:selectPaths', async (_event, options = {}) => {
+  ipcMain.handle('deskagent:selectPaths', async (_event, options = {}) => {
     const properties = options?.directories ? ['openDirectory'] : ['openFile']
     if (options?.multiple !== false) properties.push('multiSelections')
 

@@ -2,20 +2,20 @@ export {}
 
 declare global {
   interface Window {
-    zastDesktop: {
-      getConnection: () => Promise<ZastConnection>
+    deskagent: {
+      getConnection: () => Promise<DeskAgentConnection>
       getGatewayWsUrl: () => Promise<string>
       getBootProgress: () => Promise<DesktopBootProgress>
       login: (payload: DesktopLoginPayload) => Promise<DesktopAuthSnapshot>
       refreshSession: (payload?: any) => Promise<DesktopAuthSnapshot>
       logout: () => Promise<DesktopLogoutResult>
       getSession: () => Promise<DesktopAuthSnapshot | null>
-      api: <T>(request: ZastApiRequest) => Promise<T>
-      notify: (payload: ZastNotification) => Promise<boolean>
+      api: <T>(request: DeskAgentApiRequest) => Promise<T>
+      notify: (payload: DeskAgentNotification) => Promise<boolean>
       requestMicrophoneAccess: () => Promise<boolean>
       readFileDataUrl: (filePath: string) => Promise<string>
-      readFileText: (filePath: string) => Promise<ZastReadFileTextResult>
-      selectPaths: (options?: ZastSelectPathsOptions) => Promise<string[]>
+      readFileText: (filePath: string) => Promise<DeskAgentReadFileTextResult>
+      selectPaths: (options?: DeskAgentSelectPathsOptions) => Promise<string[]>
       writeClipboard: (text: string) => Promise<boolean>
       saveImageFromUrl: (url: string) => Promise<boolean>
       saveImageBuffer: (data: ArrayBuffer | Uint8Array, ext: string) => Promise<string>
@@ -24,10 +24,10 @@ declare global {
       runnerDispatch?: (method: string, params?: Record<string, unknown>) => Promise<unknown>
       runnerGetTools?: () => Promise<Array<Record<string, unknown>>>
       getPathForFile: (file: File) => string
-      normalizePreviewTarget: (target: string, baseDir?: string) => Promise<ZastPreviewTarget | null>
-      watchPreviewFile: (url: string) => Promise<ZastPreviewWatch>
+      normalizePreviewTarget: (target: string, baseDir?: string) => Promise<DeskAgentPreviewTarget | null>
+      watchPreviewFile: (url: string) => Promise<DeskAgentPreviewWatch>
       stopPreviewFileWatch: (id: string) => Promise<boolean>
-      setTitleBarTheme?: (payload: ZastTitleBarTheme) => void
+      setTitleBarTheme?: (payload: DeskAgentTitleBarTheme) => void
       setPreviewShortcutActive?: (active: boolean) => void
       openExternal: (url: string) => Promise<void>
       fetchLinkTitle: (url: string) => Promise<string>
@@ -85,7 +85,7 @@ declare global {
           error?: string
         }>
       }
-      readDir: (path: string) => Promise<ZastReadDirResult>
+      readDir: (path: string) => Promise<DeskAgentReadDirResult>
       gitRoot?: (path: string) => Promise<string | null>
       gitBranch?: (path: string) => Promise<{ branch: string; root: string | null }>
       completePath?: (params: { word: string; cwd?: string }) => Promise<{
@@ -110,14 +110,14 @@ declare global {
       terminal: {
         dispose: (id: string) => Promise<boolean>
         onData: (id: string, callback: (payload: string) => void) => () => void
-        onExit: (id: string, callback: (payload: ZastTerminalExit) => void) => () => void
+        onExit: (id: string, callback: (payload: DeskAgentTerminalExit) => void) => () => void
         resize: (id: string, size: { cols: number; rows: number }) => Promise<boolean>
-        start: (options?: { cols?: number; cwd?: string; rows?: number }) => Promise<ZastTerminalSession>
+        start: (options?: { cols?: number; cwd?: string; rows?: number }) => Promise<DeskAgentTerminalSession>
         write: (id: string, data: string) => Promise<boolean>
       }
       onClosePreviewRequested?: (callback: () => void) => () => void
-      onWindowStateChanged?: (callback: (payload: ZastWindowState) => void) => () => void
-      onPreviewFileChanged: (callback: (payload: ZastPreviewFileChanged) => void) => () => void
+      onWindowStateChanged?: (callback: (payload: DeskAgentWindowState) => void) => () => void
+      onPreviewFileChanged: (callback: (payload: DeskAgentPreviewFileChanged) => void) => () => void
       onPowerResume?: (callback: () => void) => () => void
       onBootProgress: (callback: (payload: DesktopBootProgress) => void) => () => void
       onSessionExpired: (callback: () => void) => () => void
@@ -138,13 +138,13 @@ declare global {
   }
 }
 
-export interface ZastTerminalSession {
+export interface DeskAgentTerminalSession {
   cwd: string
   id: string
   shell: string
 }
 
-export interface ZastTerminalExit {
+export interface DeskAgentTerminalExit {
   code: number | null
   signal: string | null
 }
@@ -179,7 +179,7 @@ export type DesktopUpdateEvent =
   | { type: 'error'; message: string }
 
 // Runner-side update events, forwarded from main.cjs → runner-updater.cjs
-// on the `zast:runner-update-event` IPC channel. Phase 1 (prefetch) runs in
+// on the `deskagent:runner-update-event` IPC channel. Phase 1 (prefetch) runs in
 // the OLD Electron after `update-downloaded`; phase 2 (install) runs in the
 // NEW Electron at startup. `recoverable: false` means the user must reinstall.
 export type DesktopRunnerUpdateEvent =
@@ -190,7 +190,7 @@ export type DesktopRunnerUpdateEvent =
   | { kind: 'runner-failed'; error: string; recoverable: boolean; version?: string }
 
 // Runner lifecycle events from runner-bridge.cjs (`running` / `stopped` /
-// `error` / `tools_changed`), forwarded over the `zast:runner:status` IPC
+// `error` / `tools_changed`), forwarded over the `deskagent:runner:status` IPC
 // channel. Renderer subscribes via `onRunnerStatus`; see use-gateway-boot.ts
 // where the `running` and `tools_changed` variants both trigger a
 // tool-schema sync to backend.
@@ -200,7 +200,7 @@ export type DesktopRunnerStatusEvent =
   | { type: 'stopped'; reason?: string; errors: string[] }
   | { type: 'error'; phase: string; error: Error }
 
-export interface ZastConnection {
+export interface DeskAgentConnection {
   baseUrl: string
   isFullscreen: boolean
   mode?: 'local' | 'remote'
@@ -212,12 +212,12 @@ export interface ZastConnection {
   windowButtonPosition: { x: number; y: number } | null
 }
 
-export interface ZastTitleBarTheme {
+export interface DeskAgentTitleBarTheme {
   background: string
   foreground: string
 }
 
-export interface ZastWindowState {
+export interface DeskAgentWindowState {
   isFullscreen: boolean
   nativeOverlayWidth: number
   windowButtonPosition: { x: number; y: number } | null
@@ -257,20 +257,20 @@ export interface DesktopLogoutResult {
   ok: boolean
 }
 
-export interface ZastApiRequest {
+export interface DeskAgentApiRequest {
   body?: unknown
   method?: string
   path: string
   timeoutMs?: number
 }
 
-export interface ZastNotification {
+export interface DeskAgentNotification {
   body?: string
   silent?: boolean
   title?: string
 }
 
-export interface ZastPreviewTarget {
+export interface DeskAgentPreviewTarget {
   binary?: boolean
   byteSize?: number
   kind: 'file' | 'url'
@@ -285,7 +285,7 @@ export interface ZastPreviewTarget {
   url: string
 }
 
-export interface ZastReadFileTextResult {
+export interface DeskAgentReadFileTextResult {
   binary?: boolean
   byteSize?: number
   language?: string
@@ -295,29 +295,29 @@ export interface ZastReadFileTextResult {
   truncated?: boolean
 }
 
-export interface ZastPreviewWatch {
+export interface DeskAgentPreviewWatch {
   id: string
   path: string
 }
 
-export interface ZastReadDirEntry {
+export interface DeskAgentReadDirEntry {
   isDirectory: boolean
   name: string
   path: string
 }
 
-export interface ZastReadDirResult {
-  entries: ZastReadDirEntry[]
+export interface DeskAgentReadDirResult {
+  entries: DeskAgentReadDirEntry[]
   error?: string
 }
 
-export interface ZastPreviewFileChanged {
+export interface DeskAgentPreviewFileChanged {
   id: string
   path: string
   url: string
 }
 
-export interface ZastSelectPathsOptions {
+export interface DeskAgentSelectPathsOptions {
   defaultPath?: string
   directories?: boolean
   filters?: Array<{ extensions: string[]; name: string }>

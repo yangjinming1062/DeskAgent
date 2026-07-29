@@ -78,7 +78,7 @@ type WebSocketLike = WebSocket
 // `backend/core/jsonrpc_dispatcher.py` — keep this list in sync with the
 // Python side so consumers can branch on `err.code` without parsing
 // `err.message` heuristically.
-export enum ZastRpcErrorCode {
+export enum DeskAgentRpcErrorCode {
   ParseError = -32700,
   InvalidRequest = -32600,
   MethodNotFound = -32601,
@@ -86,13 +86,13 @@ export enum ZastRpcErrorCode {
   InternalError = -32603
 }
 
-export class ZastRpcError extends Error {
+export class DeskAgentRpcError extends Error {
   readonly code: number
   readonly data?: unknown
 
   constructor(code: number, message: string, data?: unknown) {
     super(message)
-    this.name = 'ZastRpcError'
+    this.name = 'DeskAgentRpcError'
     this.code = code
     this.data = data
   }
@@ -101,7 +101,7 @@ export class ZastRpcError extends Error {
 const ANY = '*'
 const DEFAULT_REQUEST_TIMEOUT_MS = 120_000
 // A reconnect after sleep/wake must not hang forever in 'connecting' (which
-// keeps the composer disabled and stuck on "Starting Zast..."). If the open
+// keeps the composer disabled and stuck on "Starting DeskAgent..."). If the open
 // handshake doesn't land in this window, fail to 'error' so callers can retry.
 const DEFAULT_CONNECT_TIMEOUT_MS = 15_000
 
@@ -341,8 +341,8 @@ export class JsonRpcGatewayClient {
       this.clearPending(frame.id)
 
       if (frame.error) {
-        const code = typeof frame.error.code === 'number' ? frame.error.code : ZastRpcErrorCode.InternalError
-        call.reject(new ZastRpcError(code, frame.error.message || 'Zast RPC failed', frame.error.data))
+        const code = typeof frame.error.code === 'number' ? frame.error.code : DeskAgentRpcErrorCode.InternalError
+        call.reject(new DeskAgentRpcError(code, frame.error.message || 'DeskAgent RPC failed', frame.error.data))
       } else {
         call.resolve(frame.result)
       }

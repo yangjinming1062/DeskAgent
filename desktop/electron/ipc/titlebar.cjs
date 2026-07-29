@@ -8,7 +8,7 @@ function isHexColor(value) {
 // overlay); we validate the hex strings before applying them to the
 // BrowserWindow's native overlay. Validated state lives in main.cjs.
 function registerTitlebarIpc({ ipcMain, getMainWindow, getTitleBarOverlayOptions, setRendererTitleBarTheme }) {
-  ipcMain.on('zast:titlebar-theme', (_event, payload) => {
+  ipcMain.on('deskagent:titlebar-theme', (_event, payload) => {
     if (!payload || !isHexColor(payload.background) || !isHexColor(payload.foreground)) {
       return
     }

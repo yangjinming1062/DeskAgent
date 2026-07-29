@@ -11,7 +11,7 @@ import { $gatewayState } from '@/store/gateway'
 const PREFIX = 'CONN'
 const TAIL = 'ECTING'
 // Even-weight mono ascii so cycling glyphs don't jump width (matches the
-// zast-portal download-button decode effect).
+// deskagent-portal download-button decode effect).
 const SCRAMBLE_CHARS = '/\\|-_=+<>~:*'
 const TICK_MS = 45
 
