@@ -17,8 +17,8 @@ from utils import load_config
 from ..interrupt import is_interrupted
 from ..registry import registry
 from ..registry import tool_error
-from .helpers import get_disabled_skill_names
 from .helpers import get_deskagent_metadata
+from .helpers import get_disabled_skill_names
 from .helpers import iter_skill_index_files
 from .helpers import parse_frontmatter
 from .skill_usage import bump_use
@@ -319,7 +319,9 @@ def skills_list(category: str = None, task_id: str = None) -> str:
     try:
         if not SKILLS_DIR.exists():
             SKILLS_DIR.mkdir(parents=True, exist_ok=True)
-            return json.dumps({"success": True, "skills": [], "categories": [], "message": "No skills found. Skills directory created at $DESKAGENT_HOME/skills/."}, ensure_ascii=False)
+            return json.dumps(
+                {"success": True, "skills": [], "categories": [], "message": "No skills found. Skills directory created at $DESKAGENT_HOME/skills/."}, ensure_ascii=False
+            )
         all_skills = _find_all_skills()
         if not all_skills:
             return json.dumps({"success": True, "skills": [], "categories": [], "message": "No skills found in skills/ directory."}, ensure_ascii=False)

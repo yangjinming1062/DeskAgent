@@ -489,7 +489,9 @@ def _run_chrome_fallback_command(
     if not _chromium_installed():
         if _running_in_docker():
             hint = (
-                "Chrome fallback requires Chromium, but it is missing. " "You're running in Docker — pull the latest image: " "docker pull ghcr.io/nousresearch/deskagent-agent:latest"
+                "Chrome fallback requires Chromium, but it is missing. "
+                "You're running in Docker — pull the latest image: "
+                "docker pull ghcr.io/nousresearch/deskagent-agent:latest"
             )
         else:
             hint = (
