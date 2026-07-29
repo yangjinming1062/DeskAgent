@@ -1,32 +1,32 @@
 from typing import Literal
 
-from components import SETTINGS
+from common import get_router
+from components import get_db
 from components import SEARCH_INPUT_MAX_LEN
 from components import SESSION_PREVIEW_MAX_CHARS
+from components import SETTINGS
 from components import SQL_LIKE_ESCAPE_CHAR
 from core import attachments_gc_session as attachments_gc
 from core import build_session_messages
 from core import temp_files_gc_session as temp_files_gc
-from common import get_router
 from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Query
-from modules.conversation import Conversation
-from modules.conversation import Message
+from modules.auth import get_current_session
 from modules.auth import User
+from modules.conversation import Conversation
 from modules.conversation import DesktopSessionInfo
 from modules.conversation import DesktopSessionListResponse
 from modules.conversation import DesktopSessionMessagesResponse
 from modules.conversation import DesktopSessionPatchRequest
 from modules.conversation import DesktopSessionSearchResponse
+from modules.conversation import Message
 from sqlalchemy import asc
 from sqlalchemy import desc
 from sqlalchemy import func
 from sqlalchemy import or_
 from sqlalchemy.orm import selectinload
 from sqlalchemy.orm import Session
-from modules.auth import get_current_session
-from components import get_db
 
 router = get_router(dependencies=[Depends(get_current_session)])
 

@@ -4,7 +4,14 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 import asyncpg
+import modules
+from api import ROUTERS
+from common import ModelBase
+from components import ENGINE
+from components import fetch_public_ip
+from components import get_logger
 from components import SETTINGS
+from components import setup_logging
 from core import attachment_root
 from core import cleanup_expired
 from core import correlated_exception_response
@@ -18,16 +25,9 @@ from core import stop_scheduler
 from core import stop_ws_event_loop
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
-from common import ModelBase
-import modules
-from api import ROUTERS
-from components import get_logger
-from components import setup_logging
 from slowapi.errors import RateLimitExceeded
 from sqlalchemy import text
 from sqlalchemy.engine import make_url
-from components import fetch_public_ip
-from components import ENGINE
 
 logger = get_logger(__name__)
 
@@ -88,12 +88,7 @@ def _install_schema_extensions(conn) -> None:
     # Enforce "one active avatar per user" at the DB level. Partial unique
     # indexes are the standard Postgres idiom — ``CREATE UNIQUE INDEX IF
     # NOT EXISTS`` is idempotent so re-running on boot is safe.
-    conn.execute(
-        text(
-            "CREATE UNIQUE INDEX IF NOT EXISTS uq_avatar_assets_one_active "
-            "ON avatar_assets (user_id) WHERE active"
-        )
-    )
+    conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_avatar_assets_one_active " "ON avatar_assets (user_id) WHERE active"))
 
 
 def init_database(engine=None) -> None:

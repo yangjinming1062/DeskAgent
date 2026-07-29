@@ -1,11 +1,11 @@
 import json
 
-from components import MEMORY_RECALL_MAX_RESULTS
 from components import get_logger
+from components import MEMORY_RECALL_MAX_RESULTS
+from components import tool_error
 from modules.memory import Memory
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
-from components import tool_error
 
 from .registry import REGISTRY
 

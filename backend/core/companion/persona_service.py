@@ -5,7 +5,6 @@ and behavior. It is user-private, only mutated via explicit user action,
 and rendered into ``Persona.system_prompt_extras`` — the snippet the
 chat pipeline prepends to every LLM system prompt (see design.md §7.1).
 """
-
 import json
 from typing import Any
 

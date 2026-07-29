@@ -17,4 +17,3 @@ for _finder, _name, _is_pkg in pkgutil.iter_modules(v1.__path__, v1.__name__ + "
         ROUTERS.append(_router)
 
 __all__ = ["ROUTERS"]
-

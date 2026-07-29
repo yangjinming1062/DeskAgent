@@ -1,22 +1,23 @@
 from typing import Any
 
+from common import get_router
+from components import get_logger
+from components import SESSION_LOCAL
 from components import SETTINGS
 from core import classify_api_error
 from core import client_for_service
 from core import limiter
 from core import MissingLlmConfigError
-from common import get_router
 from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Request
-from components import get_logger
+from modules.auth import get_current_session
 from modules.auth import LoginRecord
 from modules.auth import User
 from pydantic import BaseModel
-from ._http_errors import classified_http_exception
 from slowapi.util import get_remote_address
-from modules.auth import get_current_session
-from components import SESSION_LOCAL
+
+from ._http_errors import classified_http_exception
 
 logger = get_logger(__name__)
 

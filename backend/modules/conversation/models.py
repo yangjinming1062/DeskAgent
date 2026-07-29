@@ -1,5 +1,7 @@
 from datetime import datetime
 
+from common import ModelBase
+from common import TimestampMixin
 from sqlalchemy import DateTime
 from sqlalchemy import ForeignKey
 from sqlalchemy import func
@@ -11,9 +13,6 @@ from sqlalchemy.orm import Mapped
 from sqlalchemy.orm import mapped_column
 from sqlalchemy.orm import relationship
 from sqlalchemy.orm import Session
-
-from common import ModelBase
-from common import TimestampMixin
 
 
 class Conversation(ModelBase, TimestampMixin):

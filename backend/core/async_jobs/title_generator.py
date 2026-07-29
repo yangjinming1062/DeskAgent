@@ -3,13 +3,13 @@ import asyncio
 import httpx
 import sqlalchemy.exc
 from components import DEFAULT_SESSION_TITLE
+from components import get_logger
+from components import SESSION_LOCAL
 from components import TITLE_GENERATION_MAX_TOKENS
 from components import TITLE_GENERATION_TEMPERATURE
 from components import TITLE_MAX_CHARS
 from components import TITLE_SNIPPET_MAX_CHARS
-from components import get_logger
 from modules.conversation import Conversation
-from components import SESSION_LOCAL
 
 from ..llm.llm_client import client_for_config
 from ..llm.llm_retry import call_with_retry

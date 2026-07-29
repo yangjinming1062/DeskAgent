@@ -1,10 +1,10 @@
 import os
 
+import components.database as _db_mod
+import modules  # noqa: F401 — register all domain models on ModelBase.metadata
 import pytest
 import sqlalchemy
-import components.database as _db_mod
 from common import ModelBase
-import modules  # noqa: F401 — register all domain models on ModelBase.metadata
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool

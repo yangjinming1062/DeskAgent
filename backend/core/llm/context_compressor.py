@@ -1,10 +1,10 @@
 import json
 from typing import Any
 
-from components import SETTINGS
 from components import CHARS_PER_TOKEN
 from components import CONTEXT_SUMMARY_HEADROOM_FACTOR
 from components import get_logger
+from components import SETTINGS
 
 from .llm_retry import call_with_retry
 

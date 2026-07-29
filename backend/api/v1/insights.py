@@ -3,26 +3,26 @@ from datetime import datetime
 from datetime import timedelta
 from typing import Any
 
-from components import SETTINGS
+from common import get_router
 from components import ACTIVITY_DAY_BUCKETS
 from components import DEFAULT_INSIGHTS_DAYS
+from components import get_db
 from components import MS_PER_HOUR
-from common import get_router
+from components import naive_utc_now
+from components import safe_json_loads
+from components import SETTINGS
 from fastapi import Depends
-from modules.conversation import Conversation
+from modules.auth import get_current_session
 from modules.auth import LoginRecord
-from modules.memory import Memory
-from modules.conversation import Message
 from modules.auth import User
 from modules.auth import UserModelConfig
+from modules.conversation import Conversation
+from modules.conversation import Message
+from modules.memory import Memory
 from sqlalchemy import func
 from sqlalchemy import text
 from sqlalchemy.orm import Query
 from sqlalchemy.orm import Session
-from modules.auth import get_current_session
-from components import get_db
-from components import naive_utc_now
-from components import safe_json_loads
 
 router = get_router(dependencies=[Depends(get_current_session)])
 

@@ -48,7 +48,9 @@ class FailoverReason(enum.Enum):
     multimodal_tool_content_unsupported = (
         "multimodal_tool_content_unsupported"  # Provider rejected list-type content in tool messages (e.g. Xiaomi MiMo) — downgrade to text and retry
     )
-    attachment_fetch_failed = "attachment_fetch_failed"  # Provider couldn't fetch a URL from an image_url part. The backend has nothing else to try on retry; surface a curated user-facing message.
+    attachment_fetch_failed = (
+        "attachment_fetch_failed"  # Provider couldn't fetch a URL from an image_url part. The backend has nothing else to try on retry; surface a curated user-facing message.
+    )
 
     # Provider-specific
     thinking_signature = "thinking_signature"  # Anthropic thinking block sig invalid

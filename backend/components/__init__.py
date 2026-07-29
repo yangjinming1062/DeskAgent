@@ -49,8 +49,8 @@ from .database import ENGINE
 from .database import get_db
 from .database import SESSION_LOCAL
 from .database import session_scope
-from .functions import approx_message_tokens
 from .functions import apply_partial
+from .functions import approx_message_tokens
 from .functions import as_bool
 from .functions import coerce_int
 from .functions import is_finite_number
