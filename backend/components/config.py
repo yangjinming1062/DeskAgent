@@ -1,5 +1,6 @@
 from typing import Literal
 
+from pydantic import AliasChoices
 from pydantic import Field
 from pydantic import field_validator
 from pydantic_settings import BaseSettings
@@ -21,7 +22,9 @@ class Settings(BaseSettings):
     admin_password: str = "deskagent@admin123"
 
     llm_base_url: str = ""
-    llm_api_key: str = ""
+    # Accept the canonical LLM_API_KEY or the repo .env's MIMO_KEY (MiMo serves
+    # chat/STT/TTS; stt/tts keys fall back to this in the provider resolver).
+    llm_api_key: str = Field(default="", validation_alias=AliasChoices("LLM_API_KEY", "MIMO_KEY"))
     llm_model_name: str = ""
 
     # STT Provider (语音识别)
@@ -61,8 +64,9 @@ class Settings(BaseSettings):
 
     # MiniMax-dedicated key — used when a MiniMax-flavoured provider inherits
     # the legacy llm_api_key (MiMo) by mistake; we swap to this instead so
-    # the call doesn't 401 against api.minimaxi.com. Empty by default.
-    minimax_api_key: str = ""
+    # the call doesn't 401 against api.minimaxi.com. Empty by default. Accepts
+    # the repo .env's MINIMAX_KEY (image/video gen fall back to this).
+    minimax_api_key: str = Field(default="", validation_alias=AliasChoices("MINIMAX_API_KEY", "MINIMAX_KEY"))
 
     # LLM call resilience — applied by services.llm_retry.call_with_retry
     llm_request_timeout_seconds: float = 300.0
@@ -142,7 +146,9 @@ class Settings(BaseSettings):
     # and is GC'd when the session row is deleted.
     data_dir: str = "./data"
 
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", case_sensitive=False)
+    # extra="ignore": the build context may carry unrelated env vars (e.g. the
+    # repo .env's MIMO_KEY/MINIMAX_KEY before aliasing); never crash on extras.
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", case_sensitive=False, extra="ignore")
 
 
 SETTINGS = Settings()
