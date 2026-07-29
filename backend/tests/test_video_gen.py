@@ -6,6 +6,7 @@ lifespan recovery.
 """
 
 import json
+from types import SimpleNamespace
 
 import httpx
 import pytest
@@ -79,15 +80,8 @@ class TestVideoGenRestEndpoints:
 
 
 class TestVideoGenJobRoundtrip:
-    """End-to-end submit → poll → success path using a mock provider.
+    """End-to-end submit → poll → success path using a mock provider."""
 
-    Skipped: instantiating ``User`` triggers the Conversation mapper, which
-    carries a pre-existing ``remote_side=[id]`` typo in modules/conversation/
-    models.py — out of scope for this PR. The model/endpoint tests above
-    still exercise the new code paths.
-    """
-
-    @pytest.mark.skip(reason="pre-existing Conversation.mapper.remote_side typo blocks User instantiation; tracked separately")
     @pytest.mark.asyncio
     async def test_submit_then_poll_then_download(self, monkeypatch, _patch_db, test_token):
         from services.llm.providers.minimax import MiniMaxVideoGenProvider
@@ -114,6 +108,13 @@ class TestVideoGenJobRoundtrip:
 
         async def handler(request: httpx.Request) -> httpx.Response:
             path = request.url.path
+            # The CDN download URL is absolute, not relative — match by full URL.
+            if str(request.url) == "https://example.com/video.mp4":
+                return httpx.Response(
+                    200,
+                    content=b"\x00\x00\x00\x18ftypmoov",
+                    headers={"content-type": "video/mp4"},
+                )
             if path == "/v1/video_generation":
                 submit_calls.append(json.loads(request.content))
                 return httpx.Response(200, json={"base_resp": {"status_code": 0}, "task_id": "task-test-1"})
@@ -123,13 +124,37 @@ class TestVideoGenJobRoundtrip:
             if path == "/v1/files/retrieve":
                 fetch_calls.append(dict(request.url.params))
                 return httpx.Response(200, json={"base_resp": {"status_code": 0}, "file": {"download_url": "https://example.com/video.mp4", "content_type": "video/mp4", "bytes": 100}})
-            if path.startswith("/v1/files/retrieve_content") or path == "https://example.com/video.mp4":
-                # Final binary download — return a tiny MP4-looking byte string
-                return httpx.Response(200, content=b"\x00\x00\x00\x18ftyp", headers={"content-type": "video/mp4"})
             return httpx.Response(404, json={"error": "not found", "path": path})
 
-        client = get_http("https://api.minimaxi.com", "sk-test")
-        client._transport = httpx.MockTransport(handler)
+        # Eagerly register a mock-transport-backed client so the cached
+        # ``get_http`` lookup returns our mock instead of building a real
+        # httpx client whose internal transport we can't easily swap.
+        # Replace ``services.media.video_jobs.httpx`` wholesale so the bare
+        # ``httpx.AsyncClient(...)`` inside ``_stream_download`` is also
+        # intercepted (the CDN URL points to ``example.com``, which would
+        # otherwise hit the open internet).
+        import services.llm.providers.http as http_mod
+        import services.media.video_jobs as video_jobs_mod
+
+        def _mock_async_client(timeout=None, **kwargs):
+            return httpx.AsyncClient(
+                transport=httpx.MockTransport(handler),
+                headers=kwargs.get("headers"),
+                timeout=timeout,
+            )
+
+        fake_httpx = SimpleNamespace(
+            Timeout=httpx.Timeout,
+            AsyncClient=_mock_async_client,
+        )
+        monkeypatch.setattr(video_jobs_mod, "httpx", fake_httpx)
+
+        mock_client = httpx.AsyncClient(
+            transport=httpx.MockTransport(handler),
+            base_url="https://api.minimaxi.com",
+            headers={"Authorization": "Bearer sk-test"},
+        )
+        http_mod._clients[("https://api.minimaxi.com", "sk-test")] = mock_client
 
         with SESSION_LOCAL() as db:
             job = await enqueue_video_job(
@@ -160,13 +185,29 @@ class TestVideoGenJobRoundtrip:
         assert row.file_id is not None
         assert submit_calls and poll_calls and fetch_calls, "all three endpoints should have been hit"
 
-    @pytest.mark.skip(reason="pre-existing Conversation.mapper.remote_side typo blocks User instantiation; tracked separately")
     @pytest.mark.asyncio
     async def test_provider_failure_marks_job_failed(self, monkeypatch, _patch_db, test_token):
+        # Bypass the multi-session visibility question: drive everything
+        # through the same SESSION_LOCAL session so the commit happens in
+        # the same transaction the test reads.
         from components import SESSION_LOCAL
         from modules.auth import User, UserModelConfig
         from services.media import enqueue_video_job, get_job
         import asyncio
+        import services.llm.providers.http as http_mod
+
+        async def handler(request: httpx.Request) -> httpx.Response:
+            if request.url.path == "/v1/video_generation":
+                return httpx.Response(200, json={"base_resp": {"status_code": 1004, "status_msg": "auth fail"}})
+            return httpx.Response(404)
+
+        mock_client = httpx.AsyncClient(
+            transport=httpx.MockTransport(handler),
+            base_url="https://api.minimaxi.com",
+            headers={"Authorization": "Bearer sk-test"},
+        )
+        http_mod._clients.clear()
+        http_mod._clients[("https://api.minimaxi.com", "sk-test")] = mock_client
 
         with SESSION_LOCAL() as db:
             user = db.query(User).filter(User.username == "testuser").first()
@@ -177,17 +218,6 @@ class TestVideoGenJobRoundtrip:
             cfg.video_gen_model_name = "MiniMax-Hailuo-02"
             db.commit()
 
-        async def handler(request: httpx.Request) -> httpx.Response:
-            if request.url.path == "/v1/video_generation":
-                return httpx.Response(200, json={"base_resp": {"status_code": 1004, "status_msg": "auth fail"}})
-            return httpx.Response(404)
-
-        from services.llm.providers.http import get_http
-
-        client = get_http("https://api.minimaxi.com", "sk-test")
-        client._transport = httpx.MockTransport(handler)
-
-        with SESSION_LOCAL() as db:
             with pytest.raises(Exception):
                 await enqueue_video_job(
                     db,
@@ -201,13 +231,16 @@ class TestVideoGenJobRoundtrip:
                     aspect_ratio=None,
                 )
 
-        # Row should be marked failed with reason=submit_failed
-        from modules.media.models import VideoGenJob
-        from sqlalchemy import select
+            # Read via the SAME session the test session — _update_job
+            # opens its own session which on SQLite under SAVEPOINT may
+            # have visibility issues, so trust the test session.
+            from modules.media.models import VideoGenJob
+            from sqlalchemy import select
 
-        with SESSION_LOCAL() as db:
-            stmt = select(VideoGenJob).where(VideoGenJob.user_id == user_id)
-            rows = db.execute(stmt).scalars().all()
-        assert rows, "expected a failed job row"
-        assert rows[0].status == "failed"
-        assert rows[0].error_reason == "submit_failed"
+            db.expire_all()
+            rows = db.execute(
+                select(VideoGenJob).where(VideoGenJob.user_id == user_id)
+            ).scalars().all()
+            assert rows, "expected a failed job row"
+            assert rows[0].status == "failed", f"row status: {rows[0].status}"
+            assert rows[0].error_reason == "submit_failed"

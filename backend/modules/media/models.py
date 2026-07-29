@@ -34,7 +34,10 @@ class VideoGenJob(ModelBase):
     prompt: Mapped[str] = mapped_column(Text)
     params_json: Mapped[str] = mapped_column(Text, default="{}")
     status: Mapped[str] = mapped_column(String(16), default="queued", index=True)
-    provider_task_id: Mapped[str] = mapped_column(String(128), index=True)
+    # Nullable for the brief window between row insert and submit completion;
+    # the polling task sets this on its first iteration via the task_id
+    # returned by MiniMax. Without nullable=True, SQLite rejects the insert.
+    provider_task_id: Mapped[str | None] = mapped_column(String(128), index=True)
     provider_file_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     file_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     video_url: Mapped[str | None] = mapped_column(Text, nullable=True)

@@ -1,3 +1,6 @@
+import importlib
+import sys
+
 from .chat_emitter import Emitter
 from .chat_emitter import HeadlessEmitter
 from .chat_emitter import safe_emit
@@ -22,10 +25,28 @@ from .types import IterationBudget
 # import ``agent_delegate`` (which pulls orchestrator) for tool registration,
 # so the graph loads at startup regardless; the deferral is structural
 # (cycle safety), not a startup-time optimization.
-_ORCHESTRATOR_NAMES = frozenset({"run_chat_turn"})
-_TURN_INPUTS_NAMES = frozenset({"load_user_settings"})
-_AGENT_DELEGATE_NAMES = frozenset({"agent_delegate_tool", "AGENT_DELEGATE_SCHEMA"})
+#
+# Resolution is try-each-lazy-submodule: first ``getattr`` call for any
+# name triggers the matching submodule's import, then we hand back the
+# attribute. New public functions added to ``orchestrator`` /
+# ``turn_inputs`` / ``agent_delegate`` are automatically accessible via
+# ``from services.chat import <name>`` without updating a curated list.
+_LAZY_SUBMODULES = ("orchestrator", "turn_inputs", "agent_delegate")
 
+
+def __getattr__(name: str):
+    for module_name in _LAZY_SUBMODULES:
+        full_name = f"{__name__}.{module_name}"
+        module = sys.modules.get(full_name)
+        if module is None:
+            module = importlib.import_module(f".{module_name}", __name__)
+        if hasattr(module, name):
+            return getattr(module, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+# Mark the lazy submodules so ``from services.chat import orchestrator``
+# (rare but legitimate) still works via __getattr__.
 __all__ = [
     "Emitter",
     "HeadlessEmitter",
@@ -40,24 +61,12 @@ __all__ = [
     "StreamingThinkScrubber",
     "CORE_TOOLS",
     "IterationBudget",
+    # Names exposed via __getattr__ from the lazy submodules — listed here
+    # only so wildcard imports (`from services.chat import *`) keep working.
+    # Adding a new public function in ``orchestrator`` does NOT require
+    # updating this list; it's resolved on demand by ``__getattr__``.
     "load_user_settings",
     "run_chat_turn",
     "agent_delegate_tool",
     "AGENT_DELEGATE_SCHEMA",
 ]
-
-
-def __getattr__(name: str):
-    if name in _ORCHESTRATOR_NAMES:
-        from . import orchestrator
-
-        return getattr(orchestrator, name)
-    if name in _TURN_INPUTS_NAMES:
-        from . import turn_inputs
-
-        return getattr(turn_inputs, name)
-    if name in _AGENT_DELEGATE_NAMES:
-        from . import agent_delegate
-
-        return getattr(agent_delegate, name)
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
