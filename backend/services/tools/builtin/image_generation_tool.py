@@ -4,10 +4,10 @@ from components import get_logger
 from components import SESSION_LOCAL
 from components import tool_error
 
-from ...llm.llm_client import client_for_service
-from ...llm.llm_client import MissingLlmConfigError
-from ..registry import ALWAYS_AVAILABLE
-from ..registry import REGISTRY
+from .. import ALWAYS_AVAILABLE
+from .. import REGISTRY
+from ...llm import client_for_service
+from ...llm import MissingLlmConfigError
 
 logger = get_logger(__name__)
 

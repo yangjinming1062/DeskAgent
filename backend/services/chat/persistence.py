@@ -10,9 +10,9 @@ from modules.conversation import Message
 from modules.system import ChatRequest
 from sqlalchemy.orm import Session
 
-from ..scheduler.background_review import run_background_memory_review
-from ..scheduler.title_generator import auto_generate_title
-from ..tools.registry import REGISTRY
+from ..scheduler import auto_generate_title
+from ..scheduler import run_background_memory_review
+from ..tools import REGISTRY
 from .chat_emitter import Emitter
 from .tool_dispatch import _run_tool_batch
 from .tool_dispatch import _ToolDispatchContext

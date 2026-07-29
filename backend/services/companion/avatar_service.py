@@ -5,7 +5,7 @@ from modules.companion import AvatarAsset
 from modules.companion import Persona
 from sqlalchemy.orm import Session
 
-from ..llm.llm_client import MissingLlmConfigError
+from ..llm import MissingLlmConfigError
 from ..tools.builtin.image_generation_tool import image_generation_tool
 
 # Generation defaults tuned for desktop sprite use: square, low-noise,

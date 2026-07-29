@@ -11,9 +11,9 @@ from components import TITLE_MAX_CHARS
 from components import TITLE_SNIPPET_MAX_CHARS
 from modules.conversation import Conversation
 
-from ..llm.llm_client import client_for_config
-from ..llm.llm_retry import call_with_retry
-from ..llm.llm_retry import LLMRuntimeError
+from ..llm import call_with_retry
+from ..llm import client_for_config
+from ..llm import LLMRuntimeError
 
 logger = get_logger(__name__)
 

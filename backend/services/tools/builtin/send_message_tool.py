@@ -7,8 +7,8 @@ import httpx
 from components import get_logger
 from components import tool_error
 
-from ..registry import ALWAYS_AVAILABLE
-from ..registry import REGISTRY
+from .. import ALWAYS_AVAILABLE
+from .. import REGISTRY
 
 logger = get_logger(__name__)
 

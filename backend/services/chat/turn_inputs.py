@@ -16,11 +16,11 @@ from modules.system import ChatRequest
 from sqlalchemy.orm import Session
 
 from ..companion import build_system_prompt_extras
-from ..gateway.runtime import RuntimeSession
-from ..llm.llm_client import client_for_service
-from ..tools.memory import NativeMemory
-from ..tools.registry import REGISTRY
-from ..tools.registry import schema_name
+from ..gateway import RuntimeSession
+from ..llm import client_for_service
+from ..tools import NativeMemory
+from ..tools import REGISTRY
+from ..tools import schema_name
 from .system_prompt import build_system_prompt
 
 

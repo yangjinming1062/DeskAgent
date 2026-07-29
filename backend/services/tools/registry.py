@@ -6,6 +6,8 @@ from typing import Callable
 from components import get_logger
 from components import tool_error
 
+from .extract_provider import resolve_extract_provider
+
 logger = get_logger(__name__)
 
 
@@ -31,11 +33,6 @@ def _web_extract_available(user_settings: dict[str, str]) -> bool:
     """Mirror ``web_extract_tool``'s runtime check so the schema is hidden
     when the configured provider can't service extract.
     """
-    # Local import: ``extract_provider`` is in this same package; touching it
-    # here keeps ``registry.py`` discoverable in isolation without forcing a
-    # import-time dependency on the provider tree.
-    from .extract_provider import resolve_extract_provider
-
     try:
         provider = resolve_extract_provider(user_settings)
         return provider.is_available() and provider.supports_extract()

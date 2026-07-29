@@ -27,6 +27,7 @@ from services.rate_limit import rate_limit_exception_handler
 from services.rate_limit import stash_user_id_middleware
 from services.scheduler import start_scheduler
 from services.scheduler import stop_scheduler
+from services.tools.web_providers import aclose
 from slowapi.errors import RateLimitExceeded
 from sqlalchemy import text
 from sqlalchemy.engine import make_url
@@ -164,9 +165,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
         if global_pool:
             await global_pool.close()
 
-        from services.tools.web_providers import aclose as close_web_clients
-
-        await close_web_clients()
+        await aclose()
 
 
 app = FastAPI(title=SETTINGS.app_name, lifespan=lifespan)

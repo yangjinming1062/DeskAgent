@@ -8,6 +8,7 @@ from modules.conversation import Conversation
 from modules.system import ChatMessageRequest
 from modules.system import ChatRequest
 
+from ..tools import REGISTRY
 from .chat_emitter import HeadlessEmitter
 from .chat_emitter import safe_emit
 from .orchestrator import run_chat_turn
@@ -99,7 +100,5 @@ AGENT_DELEGATE_SCHEMA = {
         "required": ["task_description"],
     },
 }
-
-from ..tools.registry import REGISTRY
 
 REGISTRY.register("agent_delegate_tool", AGENT_DELEGATE_SCHEMA, agent_delegate_tool)

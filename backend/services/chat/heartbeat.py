@@ -3,8 +3,8 @@ import asyncio
 from components import get_logger
 from components import SESSION_HEARTBEAT_INTERVAL_S
 
-from ..gateway.runtime import runtime_info_snapshot
-from ..gateway.runtime import RuntimeSession
+from ..gateway import runtime_info_snapshot
+from ..gateway import RuntimeSession
 from .chat_emitter import Emitter
 
 logger = get_logger(__name__)
