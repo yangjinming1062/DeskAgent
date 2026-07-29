@@ -87,7 +87,7 @@ async def enqueue_video_job(
     first_frame_image: str | None,
     model: str | None,
     aspect_ratio: str | None,
-) -> VideoGenJob:
+) -> "VideoGenJob":
     """Insert a queued job, submit to the provider, and schedule the
     background polling task. Returns the persisted row.
 
