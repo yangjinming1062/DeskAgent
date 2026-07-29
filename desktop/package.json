@@ -13,7 +13,7 @@
     "pnpm": "11.5.2"
   },
   "scripts": {
-    "dev": "node scripts/assert-root-install.cjs && concurrently -k \"pnpm dev:renderer\" \"wait-on http://127.0.0.1:5174 && cross-env XCURSOR_SIZE=24 DESKAGENT_DESKTOP_DEV_SERVER=http://127.0.0.1:5174 electron .\"",
+    "dev": "node scripts/assert-root-install.cjs && concurrently -k \"pnpm dev:renderer\" \"wait-on http://127.0.0.1:5174 && cross-env XCURSOR_SIZE=24 DESKAGENT_DESKTOP_DEV_SERVER=http://127.0.0.1:5174 node scripts/launch-dev-electron.cjs\"",
     "dev:renderer": "node scripts/assert-root-install.cjs && vite --host 127.0.0.1 --port 5174",
     "build": "node scripts/assert-root-install.cjs && node scripts/write-build-stamp.cjs && node scripts/stage-native-deps.cjs && tsc -b && vite build && node scripts/assert-dist-built.cjs",
     "builder": "cross-env NODE_OPTIONS=--max-old-space-size=16384 electron-builder",
