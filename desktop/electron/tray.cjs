@@ -6,12 +6,50 @@
 let trayInstance = null
 let trayDeps = null
 
+// Settings + Login/Logout live in the tray context menu rather than in-app
+// chrome: the companion window is intentionally minimal (sprite + on-demand
+// panel), so primary entry points for configuration and account actions are
+// the tray. The menu reflects the live auth state — `backendSession` is null
+// until the first IPC call hydrates it, and getSession().hasToken flips on
+// login/logout. rebuildTrayMenu() re-runs after auth changes so the label set
+// (Show/Sign in, Settings, Log out) stays correct.
+function isAuthenticated() {
+  return trayDeps.bridgeDeps.backendSession?.getSession?.()?.hasToken === true
+}
+
+function sendToMainWindow(channel) {
+  const win = trayDeps.bridgeDeps.getMainWindow()
+  if (win && !win.isDestroyed()) {
+    win.webContents.send(channel)
+  }
+}
+
 function buildTrayMenu() {
-  return trayDeps.Menu.buildFromTemplate([
-    { label: 'Show DeskAgent', click: () => showMainWindow() },
-    { type: 'separator' },
-    { label: 'Quit DeskAgent', click: () => quitAppFully() }
-  ])
+  const authed = isAuthenticated()
+  const template = [
+    { label: authed ? 'Show DeskAgent' : 'Sign in...', click: () => showMainWindow() }
+  ]
+  if (authed) {
+    template.push(
+      { type: 'separator' },
+      {
+        label: 'Settings...',
+        click: () => {
+          showMainWindow()
+          sendToMainWindow('deskagent:tray:open-settings')
+        }
+      },
+      { label: 'Log out', click: () => sendToMainWindow('deskagent:tray:logout') }
+    )
+  }
+  template.push({ type: 'separator' }, { label: 'Quit DeskAgent', click: () => quitAppFully() })
+  return trayDeps.Menu.buildFromTemplate(template)
+}
+
+function rebuildTrayMenu() {
+  if (trayInstance && !trayInstance.isDestroyed()) {
+    trayInstance.setContextMenu(buildTrayMenu())
+  }
 }
 
 function installCloseInterceptor(win) {
@@ -120,5 +158,6 @@ module.exports = {
   showMainWindow,
   quitAppFully,
   registerSingleInstanceForwarder,
-  destroyTray
+  destroyTray,
+  rebuildTrayMenu
 }

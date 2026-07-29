@@ -57,7 +57,8 @@ const {
   installCloseInterceptor,
   showMainWindow,
   registerSingleInstanceForwarder,
-  destroyTray
+  destroyTray,
+  rebuildTrayMenu
 } = require('./tray.cjs')
 const { deskagentHome } = require('./paths.cjs')
 const { STREAMABLE_MEDIA_EXTS, mimeTypeForPath, extensionForMimeType } = require('./mime.cjs')
@@ -1863,6 +1864,9 @@ const bridgeDeps = {
   },
   taggedLogger: prefix => chunk => rememberLog(`${prefix} ${chunk}`),
   getMainWindow: () => mainWindow,
+  // Rebuild the tray context menu after auth state changes (login/logout) so
+  // the Show/Sign-in + Settings + Log-out label set reflects the live session.
+  rebuildTrayMenu: () => rebuildTrayMenu(),
   // Tray / single-instance state. `isQuitting` is flipped in `before-quit`
   // (the only universal quit hook — covers Cmd+Q, tray Quit, and any other
   // teardown path) and consulted by the close interceptor installed by
