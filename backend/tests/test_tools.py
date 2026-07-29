@@ -10,7 +10,7 @@ import pytest
 class TestTTSTool:
     @pytest.mark.asyncio
     async def test_tts_basic(self):
-        from core.backend_tools.tts_tool import text_to_speech_tool
+        from services.tools.builtin.tts_tool import text_to_speech_tool
 
         api_key = os.getenv("MIMO_API_KEY")
         base_url = os.getenv("MIMO_BASE_URL", "https://token-plan-cn.xiaomimimo.com/v1")
@@ -34,7 +34,7 @@ class TestTTSTool:
 
     @pytest.mark.asyncio
     async def test_tts_chinese_voice(self):
-        from core.backend_tools.tts_tool import text_to_speech_tool
+        from services.tools.builtin.tts_tool import text_to_speech_tool
 
         api_key = os.getenv("MIMO_API_KEY")
         base_url = os.getenv("MIMO_BASE_URL", "https://token-plan-cn.xiaomimimo.com/v1")
@@ -96,7 +96,7 @@ class TestSTTTool:
 class TestImageGenTool:
     @pytest.mark.asyncio
     async def test_image_gen_basic(self):
-        from core.backend_tools.image_generation_tool import image_generation_tool
+        from services.tools.builtin.image_generation_tool import image_generation_tool
 
         api_key = os.getenv("MIMO_API_KEY")
         base_url = os.getenv("MIMO_BASE_URL", "https://token-plan-cn.xiaomimimo.com/v1")
@@ -131,7 +131,7 @@ class TestImageGenTool:
 class TestWebSearch:
     @pytest.mark.asyncio
     async def test_search_basic(self):
-        from core.backend_tools.web_tools import web_search_tool
+        from services.tools.builtin.web_tools import web_search_tool
 
         # Call the actual web search provider (DDGS) directly without mock
         result_str = await web_search_tool(query="python programming language", limit=2)

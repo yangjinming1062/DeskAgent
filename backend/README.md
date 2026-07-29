@@ -9,27 +9,38 @@
 ```
 backend/
 ├── common/           # 框架基类与 API 助手（业务无关）：ModelBase/TimestampMixin · get_router · get_or_404/list_response
-├── components/        # 基础设施单例 + 通用工具：database · config(Settings) · logger · constants · functions · background · hashing
+├── components/        # 基础设施单例 + 通用工具：database · config · logger · constants · functions · background · hashing
+│   │                   + 横切基础设施（无领域逻辑）：correlation · rate_limit · redact · attachments · temp_files
 ├── modules/           # 按领域拆分的 ORM 模型 + Pydantic 契约：auth / conversation / companion / memory / scheduler / settings / update / ws / system
-├── api/v1/            # HTTP/WS 端点，pkgutil 自动发现——chat.py(唯一 WS) / user / admin / sessions / config / llm / media / companion / ...
-├── core/              # 认知层：chat/ 对话编排 · llm/ 客户端与错误分类 · ws/ 连接与 IPC · tools_runtime/ 工具框架
-│   │                   backend_tools/ 云端工具 · companion/ 伙伴系统 · async_jobs/ 后台任务(Cron/记忆提取)
-└── main.py            # lifespan + middleware + 遍历 api.ROUTERS 挂载
+├── services/          # 服务/编排层（业务逻辑）。无 god-facade——按子包直接 import
+│   ├── chat/          # 对话编排：orchestrator(run_chat_turn) · streaming · tool_dispatch · persistence · turn_inputs · heartbeat · types
+│   │                   + emitter(循环断路器) · system_prompt · history · message_sanitization · think_scrubber · agent_delegate · commands
+│   ├── gateway/       # WS 网关：connection(MANAGER+LISTEN/NOTIFY) · jsonrpc · emitter · ipc · runtime · auth · handlers(22 个 JSON-RPC 方法)
+│   ├── llm/           # LLM 客户端与错误分类：llm_client · llm_retry · error_classifier · context_compressor · user_config
+│   ├── tools/         # 工具框架 + 内置工具：registry · guardrails · memory · ... + builtin/(web/tts/image_gen/send_message/cronjob)
+│   ├── companion/     # 伙伴系统：persona_service · avatar_service
+│   └── scheduler/     # 后台任务：cron · title_generator · background_review
+├── api/v1/            # 薄 HTTP/WS 端点，pkgutil 自动发现——chat.py(唯一 WS，仅薄端点委托 gateway/handlers) / user / sessions / llm / ...
+└── main.py            # lifespan + middleware + 遍历 api.ROUTERS + 显式工具注册 import
 ```
 
-依赖方向（低 → 高）：`common` / `components`（框架基座）→ `modules`（领域模型与契约）→ `api/v1`（端点）/ `core`（认知层）→ `main.py`，无反向。`common` 与 `components` 的分界：`common` 放纯定义/基类（无模块级状态、无副作用），`components` 放有状态的基础设施单例（`ENGINE`、`SETTINGS`、logger 缓存）与无状态通用工具。REST 路由完整列表见 `api/v1/` 各文件（FastAPI `/docs` 提供 OpenAPI）；WS JSON-RPC 方法注册见 `api/v1/chat.py`。
+依赖方向（低 → 高）：`common` / `components`（框架基座，**不** import modules/services）→ `modules`（领域模型与契约）→ `api/v1`（端点）/ `services`（服务层）→ `main.py`，无反向。`common` 放纯定义/基类（无模块级状态、无副作用）；`components` 放有状态基础设施单例（`ENGINE`、`SETTINGS`、logger 缓存）+ 无状态通用工具 + 横切基础设施（correlation/rate_limit/redact/attachments/temp_files，无领域依赖；`rate_limit` 因依赖 `modules.auth` 留在 `services/`）。`services` 无顶层 re-export facade——消费者直接 `from services.chat import run_chat_turn`，import 行即依赖图。REST 路由见 `api/v1/`（FastAPI `/docs`）；WS JSON-RPC 方法注册见 `services/gateway/handlers.py`（`api/v1/chat.py` 仅薄端点）。
+
+**循环断路器**：`chat ↔ gateway`、`chat ↔ scheduler`、`chat → companion → tools.builtin → scheduler → chat` 三条 import 环全部经 `services/chat/emitter.py`（`Emitter` 协议，零内部依赖）收敛——`chat/__init__.py` 急切 import `emitter` + `types`，重编排器/`turn_inputs`/`agent_delegate` 经 `__getattr__` 懒加载，保证 import chat 包不会触发整张服务图。
+
+**工具自注册**：每个工具模块在 module bottom 调 `REGISTRY.register(...)`；旧 `services` facade 的 eager re-export 曾隐式触发注册，facade 拆除后改由 `main.py` 显式 `import services.tools.builtin` / `from services.chat import agent_delegate` 触发（首条 chat turn 前完成）。
 
 ## 工具三层分类
 
-`core/tools_runtime/registry.py` 把所有工具分为三类，决定执行位置与凭证需求：
+`services/tools/registry.py` 把所有工具分为三类，决定执行位置与凭证需求：
 
 | 类型 | 执行位置 | 判定标准 |
 |------|----------|----------|
-| **backend tools** | 服务端进程内 | 需要服务端资源（LLM API key、DB、外部 API 凭证）。`agent_delegate_tool` 自己 spawn 子 agent 跑完整 chat-turn（需 Backend LLM 编排）；`cronjob` 在 `core/async_jobs/cron.py` 进程内调度 |
+| **backend tools** | 服务端进程内 | 需要服务端资源（LLM API key、DB、外部 API 凭证）。`agent_delegate_tool` 自己 spawn 子 agent 跑完整 chat-turn（需 Backend LLM 编排）；`cronjob` 在 `services/scheduler/cron.py` 进程内调度 |
 | **memory tools** | `NativeMemory.execute_tool`（注入 DB session） | 既不需要本地环境也不调外部 API，但需 Backend DB 访问 |
 | **runner tools** | 通过 IPC 下发给 Runner | 需要用户本地环境（终端、文件系统、浏览器、代码执行） |
 
-**LLM 可见性**（`CORE_TOOLS` in `core/chat/chat_service.py`）：所有 backend + memory + 核心 runner 工具在 chat 起始时直接暴露给 LLM schema（硬保证白名单）。Runner 注入的工具经 `tools.sync` 上报后同样进入 CORE。
+**LLM 可见性**（`CORE_TOOLS` in `services/chat/types.py`）：所有 backend + memory + 核心 runner 工具在 chat 起始时直接暴露给 LLM schema（硬保证白名单）。Runner 注入的工具经 `tools.sync` 上报后同样进入 CORE。
 
 **Config-aware 过滤**：每个 backend tool 声明 `availability_check(user_settings) -> bool`，`get_all_schemas` 按 check 静默过滤不可用项（Predicate 异常时单 tool 静默隐藏，fail-closed）。
 
@@ -45,7 +56,7 @@ backend/
 
 ## IPC Future 桥接
 
-`core/ws/ipc.py` 维护 `_pending: dict[(user_id, call_id), Future]`——键是 `(user_id, call_id)` 而非单 `call_id`：并发用户不共享 future，`user_id` 来自 JWT 解析，WS 断开时 `discard_user` 取消该用户所有未决 future。
+`services/gateway/ipc.py` 维护 `_pending: dict[(user_id, call_id), Future]`——键是 `(user_id, call_id)` 而非单 `call_id`：并发用户不共享 future，`user_id` 来自 JWT 解析，WS 断开时 `discard_user` 取消该用户所有未决 future。
 
 完整工具调用流（LLM → Backend → Desktop → Runner → 回传）见 [design.md §5.2.I](../design.md)。Backend 侧的关键约束：
 
@@ -68,17 +79,17 @@ backend/
 
 伙伴主动陪伴（问候、提醒、情境闲聊）经 PostgreSQL LISTEN/NOTIFY + Outbox 表支撑（[design.md §6](../design.md)）。
 
-`core/async_jobs/cron.scheduler_loop` 每 60s `_tick()`：扫描到期任务，CAS 推进 `next_run_at`（多副本安全），写 `cron.trigger` 到 `ws_events` outbox。`_tick` 不 await WS 推送——慢客户端不卡 cron 事务。PostgreSQL trigger 在 `ws_events` INSERT 时 `NOTIFY ws_events_channel`，每个 Backend 副本独立 `LISTEN` + `DELETE ... RETURNING` 原子认领消费（行锁保证不重复投递）。无效 cron 表达式自动暂停 job。
+`services/scheduler/cron.scheduler_loop` 每 60s `_tick()`：扫描到期任务，CAS 推进 `next_run_at`（多副本安全），写 `cron.trigger` 到 `ws_events` outbox。`_tick` 不 await WS 推送——慢客户端不卡 cron 事务。PostgreSQL trigger 在 `ws_events` INSERT 时 `NOTIFY ws_events_channel`，每个 Backend 副本独立 `LISTEN` + `DELETE ... RETURNING` 原子认领消费（行锁保证不重复投递）。无效 cron 表达式自动暂停 job。
 
 ## 系统提示词与上下文管理
 
-`core/chat/system_prompt.build_system_prompt_parts`：stable / context / volatile 三段装配。角色定义注入 stable 段（驱动伙伴说话风格与性格）。按模型族注入执行纪律（OpenAI/Gemini/Grok）。Steer 通道用 `[OUT-OF-BAND USER MESSAGE]` 标记。
+`services/chat/system_prompt.build_system_prompt_parts`：stable / context / volatile 三段装配。角色定义注入 stable 段（驱动伙伴说话风格与性格）。按模型族注入执行纪律（OpenAI/Gemini/Grok）。Steer 通道用 `[OUT-OF-BAND USER MESSAGE]` 标记。
 
 消息截断（`message_sanitization.truncate_chat_history`）：保留最近 40 条非 system 消息；单条字符上限 15000。
 
 ## 错误分类管道
 
-`core/llm/error_classifier.py` 将所有 API 层或依赖项错误收拢为 `FailoverReason`（21 种），经 8 步优先级流水线过滤：provider patterns → HTTP status → error code → message pattern → SSL/TLS transient → server disconnect → transport heuristics → unknown fallback。分类决定恢复策略（退避重试 / 凭证轮换 / 压缩上下文 / 不重试等）。
+`services/llm/error_classifier.py` 将所有 API 层或依赖项错误收拢为 `FailoverReason`（21 种），经 8 步优先级流水线过滤：provider patterns → HTTP status → error code → message pattern → SSL/TLS transient → server disconnect → transport heuristics → unknown fallback。分类决定恢复策略（退避重试 / 凭证轮换 / 压缩上下文 / 不重试等）。
 
 **REST 错误信封**：`/api/llm/completion` 与 `/api/media/*` 在异常路径上调 `classify_api_error`，把 `FailoverReason` + `status_code` 折成 `{error, reason, status}` 返回。原始异常（可能带 provider URL / 部分 auth header）只写服务端 log，**永远不出后端**——满足 [design.md §9](../design.md) 的 -32603 "no internal detail" 契约。
 
@@ -116,7 +127,7 @@ DeskAgent 伙伴的"人格"与"形象"是跨 Backend↔Desktop 的核心契约�
 | 能力 | 现状 | 伙伴场景复用 |
 |------|------|-------------|
 | 长期记忆 | `Memory` 表 + `tools_runtime/memory.py` | 伙伴对用户的长期记忆 |
-| 主动陪伴调度 | `CronJob` 表 + `core/async_jobs/cron.py` | 伙伴定时问候/提醒 |
+| 主动陪伴调度 | `CronJob` 表 + `services/scheduler/cron.py` | 伙伴定时问候/提醒 |
 | 事件下发 | `WSEvent` + LISTEN/NOTIFY | 伙伴主动消息送达 Desktop |
 | 生图凭证 / 执行 | `UserModelConfig.image_gen_*` + `backend_tools/image_generation_tool.py` | 形象生成 |
 | 伙伴语音 | `backend_tools/tts_tool.py` | 让伙伴"能说" |
@@ -134,11 +145,11 @@ DeskAgent 伙伴的"人格"与"形象"是跨 Backend↔Desktop 的核心契约�
 
 - **引擎**：PostgreSQL（`postgresql+psycopg://`），连接池 `pool_size=20, max_overflow=10, pool_recycle=3600, pool_pre_ping=True`
 - **Schema**：`ModelBase.metadata.create_all`（`common/model.py`）+ PG trigger（需手动 DDL；无 Alembic）。新增列走 `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`（PG 9.6+ 幂等，不破坏已部署实例）
-- **WS 事件通知**：`ws_events` 表上的 PG Trigger 在 INSERT 时 `NOTIFY ws_events_channel`，`core/ws/connection_manager.ws_event_loop` 经 `asyncpg` 独立连接 `LISTEN`，`DELETE ... RETURNING` 原子认领 + 派发（60s 超时兜底 GC）
+- **WS 事件通知**：`ws_events` 表上的 PG Trigger 在 INSERT 时 `NOTIFY ws_events_channel`，`services/gateway/connection.ws_event_loop` 经 `asyncpg` 独立连接 `LISTEN`，`DELETE ... RETURNING` 原子认领 + 派发（60s 超时兜底 GC）
 
 ## Observability
 
-- **日志**：`components/logger.py` 集中入口 + lifespan 接管 root logger；`Settings.log_level` / `log_format` 部署可调（dev: text / prod: json）；stdout only。**脱敏责任在调用方**——logger 是基础设施层**不** import `core.*`（避免循环依赖），`chat_service` 等 LLM 路径在打 log 前已跑 `redact_sensitive_text`。`extra` dict key **禁止**与 stdlib `LogRecord` 内置属性同名（命中 = `KeyError` 崩溃）
+- **日志**：`components/logger.py` 集中入口 + lifespan 接管 root logger；`Settings.log_level` / `log_format` 部署可调（dev: text / prod: json）；stdout only。**脱敏责任在调用方**——logger 是基础设施层**不** import `services.*`（避免循环依赖），`orchestrator`/`streaming` 等 LLM 路径在打 log 前已跑 `redact_sensitive_text`。`extra` dict key **禁止**与 stdlib `LogRecord` 内置属性同名（命中 = `KeyError` 崩溃）
 - **correlation ID**：每个 HTTP 请求经 middleware 解 `X-Request-ID`（缺则生成）写入 ContextVar；跨 `asyncio.create_task` 自动透传（CPython 3.11+），**不要** wrap
 - 无 `/metrics` 端点、无 OpenTelemetry 集成
 

@@ -44,17 +44,17 @@ def _patch_db(monkeypatch, sqlite_engine):
     monkeypatch.setattr(_db_mod, "SESSION_LOCAL", SessionLocal)
 
     for mod_name in (
-        "core.auth_helpers",
-        "core.ws.connection_manager",
-        "core.async_jobs.cron",
-        "core.ws.ipc",
-        "core.tools_runtime.memory",
-        "core.ws.runtime_sessions",
-        "core.async_jobs.title_generator",
-        "core.tools_runtime.registry",
-        "core.chat.agent_delegate",
-        "core.backend_tools.image_generation_tool",
-        "core.backend_tools.tts_tool",
+        "services.gateway.auth",
+        "services.gateway.connection",
+        "services.scheduler.cron",
+        "services.gateway.ipc",
+        "services.tools.memory",
+        "services.gateway.runtime",
+        "services.scheduler.title_generator",
+        "services.tools.registry",
+        "services.chat.agent_delegate",
+        "services.tools.builtin.image_generation_tool",
+        "services.tools.builtin.tts_tool",
         "api.v1.chat",
         "api.v1.llm",
         "api.v1.media",
@@ -157,7 +157,7 @@ def test_token(_patch_db):
 
 @pytest.fixture(autouse=True)
 def _clear_client_cache():
-    from core import get_async_client
+    from services.llm import get_async_client
 
     get_async_client.cache_clear()
     yield
