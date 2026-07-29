@@ -27,11 +27,3 @@ export async function saveDeskAgentConfig(config: DeskAgentConfigPutRequest): Pr
 
   return { config: response.config }
 }
-
-/** Read a nested section (e.g. `web`, `agent`) as a fresh object copy. Returns `null` if absent
- * or not an object. Use this when you need to spread a sub-section without mutating the source. */
-export function pickSection(record: DeskAgentConfigRecord, key: string): Record<string, unknown> | null {
-  const value = record[key]
-
-  return value && typeof value === 'object' && !Array.isArray(value) ? { ...(value as object) } : null
-}

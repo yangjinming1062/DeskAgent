@@ -12,8 +12,6 @@ nodeLinker: hoisted
 onlyBuiltDependencies:
   - electron-winstaller
   - node-pty
-  - unicode-animations
 allowBuilds:
   electron-winstaller: true
   node-pty: true
-  unicode-animations: true
