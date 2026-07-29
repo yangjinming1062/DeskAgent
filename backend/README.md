@@ -62,7 +62,7 @@ backend/
 
 - **超时**：`ipc_future_timeout_seconds`（默认 300s），超时返回 synthetic error
 - **快速失败**：`_dispatch_runner_tool` 做 active_connections → has_runner_tools → send_json 异常三层检查，通常 < 100ms 返回离线错误；仅绕过三层后才进入 300s 超时
-- **JWT 过期边界**：token 在 IPC 飞行途中过期时 Desktop 的 `tool.result` 被 `auth_helpers` 拒绝 → future 挂起直到超时。`discard_user` 在 WS 断开时清理，但 token 过期不触发 WS 断开——当前靠超时兜底
+- **JWT 过期边界**：token 在 IPC 飞行途中过期时 Desktop 的 `tool.result` 被 `gateway/auth` 拒绝 → future 挂起直到超时。`discard_user` 在 WS 断开时清理，但 token 过期不触发 WS 断开——当前靠超时兜底
 - **通用事件分发**：`dispatch_user_event(user_id, event_type, payload)` 复用同一 future 通道发任意 JSON-RPC 事件（`reload.mcp` 用此路径），desktop 收到后转发给 Runner 并经 `tool.result` 路径回包
 
 ## WS 会话与配置
@@ -126,12 +126,12 @@ DeskAgent 伙伴的"人格"与"形象"是跨 Backend↔Desktop 的核心契约�
 
 | 能力 | 现状 | 伙伴场景复用 |
 |------|------|-------------|
-| 长期记忆 | `Memory` 表 + `tools_runtime/memory.py` | 伙伴对用户的长期记忆 |
+| 长期记忆 | `Memory` 表 + `services/tools/memory.py` | 伙伴对用户的长期记忆 |
 | 主动陪伴调度 | `CronJob` 表 + `services/scheduler/cron.py` | 伙伴定时问候/提醒 |
 | 事件下发 | `WSEvent` + LISTEN/NOTIFY | 伙伴主动消息送达 Desktop |
-| 生图凭证 / 执行 | `UserModelConfig.image_gen_*` + `backend_tools/image_generation_tool.py` | 形象生成 |
-| 伙伴语音 | `backend_tools/tts_tool.py` | 让伙伴"能说" |
-| 主动消息 | `backend_tools/send_message_tool.py` | 让伙伴主动发起对话 |
+| 生图凭证 / 执行 | `UserModelConfig.image_gen_*` + `services/tools/builtin/image_generation_tool.py` | 形象生成 |
+| 伙伴语音 | `services/tools/builtin/tts_tool.py` | 让伙伴"能说" |
+| 主动消息 | `services/tools/builtin/send_message_tool.py` | 让伙伴主动发起对话 |
 
 ## 限流
 

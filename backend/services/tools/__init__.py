@@ -1,5 +1,7 @@
 from . import memory  # self-registers memory_retain/recall/forget
 from . import search_tools_tool  # self-registers search_tools
+from .extract_provider import resolve_extract_provider
+from .extract_provider import resolve_search_provider
 from .file_safety import get_read_block_error
 from .file_safety import is_write_denied
 from .memory import FORGET_SCHEMA
@@ -51,6 +53,9 @@ __all__ = [
     # search_tools_tool
     "SEARCH_TOOLS_SCHEMA",
     "search_tools_tool",
+    # extract_provider
+    "resolve_extract_provider",
+    "resolve_search_provider",
     # model_tools
     "coerce_tool_args",
     # tool_result_classification

@@ -14,6 +14,10 @@ _BRAVE_ENDPOINT = "https://api.search.brave.com/res/v1/web/search"
 _HTTP_CLIENT = httpx.AsyncClient(timeout=15)
 
 
+async def aclose() -> None:
+    await _HTTP_CLIENT.aclose()
+
+
 class BraveFreeWebSearchProvider(WebSearchProvider):
     def __init__(self, *, api_key: str | None = None) -> None:
         # Per-user key from the dispatcher (loaded out of `user_settings`)

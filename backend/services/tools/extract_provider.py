@@ -2,9 +2,9 @@ from components import get_logger
 from components import unquote_user_setting
 
 from .web_providers import WebSearchProvider
-from .web_providers.brave_free.provider import BraveFreeWebSearchProvider
-from .web_providers.ddgs.provider import DDGSWebSearchProvider
-from .web_providers.tavily.provider import TavilyWebSearchProvider
+from .web_providers.brave_free import BraveFreeWebSearchProvider
+from .web_providers.ddgs import DDGSWebSearchProvider
+from .web_providers.tavily import TavilyWebSearchProvider
 
 logger = get_logger(__name__)
 
@@ -63,6 +63,20 @@ def _get_provider(
     except Exception as e:
         logger.error("Error loading web provider", extra={"provider_name": name, "error": str(e)})
         return _PROVIDERS[_DEFAULT_BY_KIND[kind]]()
+
+
+def resolve_search_provider(user_settings: dict | None) -> WebSearchProvider:
+    """Resolve the configured search backend, auto-falling back to the key-less
+    default when the user's pick is unavailable. Only search does this — extract
+    has no key-less backend, so a misconfigured extract provider surfaces its error.
+    """
+    user_settings = user_settings or {}
+    selected = unquote_user_setting(user_settings.get("web.backend")) or _DEFAULT_BY_KIND["search"]
+    provider = _get_provider(selected, user_settings, kind="search")
+    if not provider.is_available() and provider.name != _DEFAULT_BY_KIND["search"]:
+        logger.info("Web search provider '%s' not configured; falling back to %s", provider.name, _DEFAULT_BY_KIND["search"])
+        provider = _get_provider(_DEFAULT_BY_KIND["search"], user_settings, kind="search")
+    return provider
 
 
 def resolve_extract_provider(user_settings: dict | None) -> WebSearchProvider:

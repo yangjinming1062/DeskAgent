@@ -1,6 +1,6 @@
 from typing import Any
 
-from ..chat.chat_emitter import Emitter
+from ..chat import Emitter
 from .jsonrpc import JsonRpcDispatcher
 
 # Raw ``type`` → JSON-RPC ``params.type``.  Every raw frame is either

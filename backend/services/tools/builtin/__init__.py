@@ -3,8 +3,8 @@ from . import image_generation_tool  # self-registers image_generate
 from . import send_message_tool  # self-registers send_message_tool
 from . import tts_tool  # self-registers text_to_speech_tool
 from . import web_tools  # self-registers web_search + web_extract
-from ..search_tools_tool import SEARCH_TOOLS_SCHEMA
-from ..search_tools_tool import search_tools_tool
+from .. import SEARCH_TOOLS_SCHEMA
+from .. import search_tools_tool
 from .cronjob_tools import cronjob
 from .cronjob_tools import CRONJOB_SCHEMA
 from .image_generation_tool import IMAGE_GENERATION_SCHEMA

@@ -4,13 +4,14 @@ import json
 from components import coerce_int
 from components import get_logger
 from components import tool_error
-from components import unquote_user_setting
 
-from ...llm.llm_client import client_for_config
-from ...llm.llm_retry import call_with_retry
-from ..extract_provider import _DEFAULT_BY_KIND
-from ..extract_provider import _get_provider
-from ..extract_provider import resolve_extract_provider
+from .. import ALWAYS_AVAILABLE
+from .. import REGISTRY
+from .. import resolve_extract_provider
+from .. import resolve_search_provider
+from .. import WEB_EXTRACT_AVAILABILITY
+from ...llm import call_with_retry
+from ...llm import client_for_config
 
 logger = get_logger(__name__)
 
@@ -55,21 +56,7 @@ async def _summarize_documents(documents: list[dict], llm_config: dict) -> None:
 async def web_search_tool(query: str, limit: int = 5, user_settings: dict | None = None, **kwargs) -> str:
     user_settings = user_settings or {}
 
-    selected = unquote_user_setting(user_settings.get("web.backend")) or _DEFAULT_BY_KIND["search"]
-    provider = _get_provider(selected, user_settings, kind="search")
-    # Search-only auto-fallback: when the user picked a key-requiring
-    # provider but neither ``user_settings`` nor the deployment env has a
-    # key, silently switch to the key-less default so search keeps working.
-    # Only search does this — extract has no key-less backend. We don't
-    # auto-fall back when the user already picked the default (e.g. ddgs
-    # not installed); that path surfaces the explicit error below.
-    if not provider.is_available() and provider.name != _DEFAULT_BY_KIND["search"]:
-        logger.info(
-            "Web search provider '%s' not configured; falling back to %s",
-            provider.name,
-            _DEFAULT_BY_KIND["search"],
-        )
-        provider = _get_provider(_DEFAULT_BY_KIND["search"], user_settings, kind="search")
+    provider = resolve_search_provider(user_settings)
     if not provider.is_available():
         return tool_error(f"{provider.display_name} is not configured or unavailable.")
     if not provider.supports_search():
@@ -153,10 +140,6 @@ WEB_EXTRACT_SCHEMA = {
     },
 }
 
-
-from ..registry import ALWAYS_AVAILABLE
-from ..registry import REGISTRY
-from ..registry import WEB_EXTRACT_AVAILABILITY
 
 REGISTRY.register("web_search", WEB_SEARCH_SCHEMA, web_search_tool, ALWAYS_AVAILABLE)
 REGISTRY.register("web_extract", WEB_EXTRACT_SCHEMA, web_extract_tool, WEB_EXTRACT_AVAILABILITY)

@@ -9,11 +9,11 @@ from modules.conversation import Conversation
 from modules.system import ChatRequest
 from sqlalchemy.orm import Session
 
-from ..gateway.runtime import RuntimeSession
-from ..llm.context_compressor import compress_history_if_needed
-from ..llm.llm_retry import LLMRuntimeError
-from ..tools.registry import schema_name
-from ..tools.tool_guardrails import ToolCallGuardrailController
+from ..gateway import RuntimeSession
+from ..llm import compress_history_if_needed
+from ..llm import LLMRuntimeError
+from ..tools import schema_name
+from ..tools import ToolCallGuardrailController
 from .chat_emitter import Emitter
 from .heartbeat import _close_heartbeat_bracket
 from .heartbeat import _open_heartbeat_bracket

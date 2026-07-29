@@ -14,6 +14,10 @@ TAVILY_TIMEOUT = 60
 _HTTP_CLIENT = httpx.AsyncClient(timeout=TAVILY_TIMEOUT)
 
 
+async def aclose() -> None:
+    await _HTTP_CLIENT.aclose()
+
+
 def _build_tavily_request(
     endpoint: str,
     payload: dict[str, Any],
