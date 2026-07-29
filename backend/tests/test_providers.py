@@ -83,6 +83,18 @@ class TestResolveProviderConfig:
         assert cfg.provider_name == "mimo"
         assert cfg.service_type == ServiceType.image_gen
 
+    def test_image_gen_default_is_minimax(self, monkeypatch):
+        """Commit 3: image_gen defaults to MiniMax (image-01). Without a
+        minimax_api_key the swap path raises MissingLlmConfigError."""
+        from components import SETTINGS
+
+        monkeypatch.setattr("components.SETTINGS.minimax_api_key", "sk-minimax-test")
+        cfg = resolve_provider_config(None, None, "image_gen")
+        assert cfg.provider_name == "minimax"
+        assert cfg.base_url == SETTINGS.image_gen_base_url
+        assert cfg.api_key == "sk-minimax-test"
+        assert cfg.model == SETTINGS.image_gen_model_name
+
     def test_minimax_host_infers_provider(self, monkeypatch):
         monkeypatch.setattr("components.SETTINGS.image_gen_base_url", "https://api.minimaxi.com/v1")
         monkeypatch.setattr("components.SETTINGS.image_gen_api_key", "sk-minimax")
@@ -142,6 +154,12 @@ class TestProviderForService:
         assert provider.provider_name == "mimo"
 
     def test_image_gen_returns_mimo_image_provider(self, monkeypatch):
+        # Commit 3 sets image_gen defaults to MiniMax. Override them here so
+        # we exercise the "user opts into legacy DALL·E" path.
+        monkeypatch.setattr("components.SETTINGS.image_gen_base_url", "")
+        monkeypatch.setattr("components.SETTINGS.image_gen_api_key", "")
+        monkeypatch.setattr("components.SETTINGS.image_gen_model_name", "dall-e-3")
+        monkeypatch.setattr("components.SETTINGS.image_gen_provider", "mimo")
         monkeypatch.setattr("components.SETTINGS.llm_base_url", "https://api.openai.com/v1")
         monkeypatch.setattr("components.SETTINGS.llm_api_key", "sk")
         monkeypatch.setattr("components.SETTINGS.llm_model_name", "gpt-4o")
@@ -178,6 +196,12 @@ class TestClientForServiceCompat:
         monkeypatch.setattr("components.SETTINGS.llm_base_url", "https://api.xiaomimimo.com/v1")
         monkeypatch.setattr("components.SETTINGS.llm_api_key", "sk")
         monkeypatch.setattr("components.SETTINGS.llm_model_name", "mimo-v2.5")
+        # Force the image_gen path to legacy MiMo/DALL·E regardless of the
+        # MiniMax default added in commit 3.
+        monkeypatch.setattr("components.SETTINGS.image_gen_base_url", "")
+        monkeypatch.setattr("components.SETTINGS.image_gen_api_key", "")
+        monkeypatch.setattr("components.SETTINGS.image_gen_model_name", "dall-e-3")
+        monkeypatch.setattr("components.SETTINGS.image_gen_provider", "mimo")
         client, resolved_model = client_for_service(None, None, svc)
         from openai import AsyncOpenAI
 

@@ -22,6 +22,7 @@ from openai import AsyncOpenAI
 from services.llm import classify_api_error
 from services.llm import client_for_service
 from services.llm import MissingLlmConfigError
+from services.llm import provider_for_service
 from services.rate_limit import limiter
 
 from ._http_errors import classified_http_exception
@@ -209,12 +210,33 @@ async def image_gen(
         raise HTTPException(status_code=400, detail={"error": "prompt is required", "reason": "missing_params", "status": 400})
 
     try:
-        client, model_name = _service_client(user, "image_gen")
-    except HTTPException:
+        with SESSION_LOCAL() as db:
+            provider = provider_for_service(db, user.id, "image_gen")
+    except MissingLlmConfigError:
         raise _http_error(501, "image_gen_not_configured", "图片生成服务未配置。请在设置中配置 IMAGE_GEN_BASE_URL 和 IMAGE_GEN_API_KEY。")
 
     try:
-        response = await client.images.generate(model=model_name, prompt=prompt, n=1, size="1024x1024")
-        return {"success": True, "url": response.data[0].url}
+        from services.llm import ImageGenRequest
+
+        result = await provider.generate(ImageGenRequest(prompt=prompt))
     except Exception as e:
         raise _llm_http_error(e, "image_gen") from e
+
+    if not result.images:
+        raise _http_error(502, "image_gen_empty", "图片生成服务返回空结果")
+
+    asset = result.images[0]
+    if asset.url:
+        # DALL·E-style URL — pass through (URL is provider-hosted, usually
+        # valid for an hour).
+        return {"success": True, "url": asset.url}
+    # base64 payload — persist locally and serve via our public files route so
+    # downstream callers (LLM image_url parts, browser previews) get a stable
+    # URL that survives MiniMax CDN eviction.
+    import base64
+
+    from components import save_file
+
+    data = base64.b64decode(asset.b64 or "")
+    file_id, public_url = save_file(data, session_id="", content_type=asset.mime, ext="jpg")
+    return {"success": True, "url": public_url}
