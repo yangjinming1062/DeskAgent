@@ -10,27 +10,28 @@
 backend/
 ├── common/           # 框架基类与 API 助手（业务无关）：ModelBase/TimestampMixin · get_router · get_or_404/list_response
 ├── components/        # 基础设施单例 + 通用工具：database · config · logger · constants · functions · background · hashing
-│   │                   + 横切基础设施（无领域逻辑）：correlation · rate_limit · redact · attachments · temp_files
-├── modules/           # 按领域拆分的 ORM 模型 + Pydantic 契约：auth / conversation / companion / memory / scheduler / settings / update / ws / system
+│   │                   + 横切基础设施（无领域逻辑）：correlation · redact · attachments · temp_files
+├── modules/           # 按领域拆分的 ORM 模型 + Pydantic 契约：auth / companion / conversation / media / memory / scheduler / settings / system / update / ws
 ├── services/          # 服务/编排层（业务逻辑）。无 god-facade——按子包直接 import
 │   ├── chat/          # 对话编排：orchestrator(run_chat_turn) · streaming · tool_dispatch · persistence · turn_inputs · heartbeat · types
-│   │                   + emitter(循环断路器) · system_prompt · history · message_sanitization · think_scrubber · agent_delegate · commands
-│   ├── gateway/       # WS 网关：connection(MANAGER+LISTEN/NOTIFY) · jsonrpc · emitter · ipc · runtime · auth · handlers(22 个 JSON-RPC 方法)
+│   │                   + chat_emitter(循环断路器，Emitter 协议) · system_prompt · history · message_sanitization · think_scrubber · agent_delegate · commands
+│   ├── gateway/       # WS 网关：connection(MANAGER+LISTEN/NOTIFY) · jsonrpc · emitter(JsonRpcEmitter) · ipc · runtime · auth · handlers(24 个 JSON-RPC 方法)
 │   ├── llm/           # LLM 客户端与错误分类：llm_client · llm_retry · error_classifier · context_compressor · user_config
-│   │                   + providers/(抽象层：base · registry · http · openai_compat · mimo · minimax)
+│   │                   + providers/(抽象层：base · registry · http · openai_compat · content · mimo/ · minimax/)
 │   ├── media/         # 视频生成后台任务：video_jobs(submit/poll/download/finalize + WSEvent outbox)
 │   ├── tools/         # 工具框架 + 内置工具：registry · guardrails · memory · ... + builtin/(web/tts/image_gen/video_gen/send_message/cronjob)
 │   ├── companion/     # 伙伴系统：persona_service · avatar_service
-│   └── scheduler/     # 后台任务：cron · title_generator · background_review
-├── api/v1/            # 薄 HTTP/WS 端点，pkgutil 自动发现——chat.py(唯一 WS，仅薄端点委托 gateway/handlers) / user / sessions / llm / ...
-└── main.py            # lifespan + middleware + 遍历 api.ROUTERS + 显式工具注册 import
+│   ├── scheduler/     # 后台任务：cron · title_generator · background_review
+│   └── rate_limit.py  # slowapi 限流（依赖 modules.auth，独居 services/ 根而非 components/）
+├── api/v1/            # 薄 HTTP/WS 端点，pkgutil 自动发现：chat(唯一 WS，薄端点委托 gateway/handlers) / user / sessions / llm / media / companion / config / insights / admin / status / health / update / page
+└── main.py            # lifespan + middleware + init_database(NOTIFY trigger + 幂等 ALTER) + 遍历 api.ROUTERS + 显式工具注册 import
 ```
 
-依赖方向（低 → 高）：`common` / `components`（框架基座，**不** import modules/services）→ `modules`（领域模型与契约）→ `api/v1`（端点）/ `services`（服务层）→ `main.py`，无反向。`common` 放纯定义/基类（无模块级状态、无副作用）；`components` 放有状态基础设施单例（`ENGINE`、`SETTINGS`、logger 缓存）+ 无状态通用工具 + 横切基础设施（correlation/rate_limit/redact/attachments/temp_files，无领域依赖；`rate_limit` 因依赖 `modules.auth` 留在 `services/`）。`services` 无顶层 re-export facade——消费者直接 `from services.chat import run_chat_turn`，import 行即依赖图。REST 路由见 `api/v1/`（FastAPI `/docs`）；WS JSON-RPC 方法注册见 `services/gateway/handlers.py`（`api/v1/chat.py` 仅薄端点）。
+依赖方向（低 → 高）：`common` / `components`（框架基座，**不** import modules/services）→ `modules`（领域模型与契约）→ `api/v1`（端点）/ `services`（服务层）→ `main.py`，无反向。`common` 放纯定义/基类（无模块级状态、无副作用）；`components` 放有状态基础设施单例（`ENGINE`、`SETTINGS`、logger 缓存）+ 无状态通用工具 + 横切基础设施（correlation/redact/attachments/temp_files，无领域依赖）。`rate_limit` 同属横切层但因依赖 `modules.auth` 留在 `services/rate_limit.py`。`services` 无顶层 re-export facade——消费者直接 `from services.chat import run_chat_turn`，import 行即依赖图。REST 路由见 `api/v1/`（FastAPI `/docs`）；WS JSON-RPC 方法注册见 `services/gateway/handlers.py`（`api/v1/chat.py` 仅薄端点）。
 
-**循环断路器**：`chat ↔ gateway`、`chat ↔ scheduler`、`chat → companion → tools.builtin → scheduler → chat` 三条 import 环全部经 `services/chat/emitter.py`（`Emitter` 协议，零内部依赖）收敛——`chat/__init__.py` 急切 import `emitter` + `types`，重编排器/`turn_inputs`/`agent_delegate` 经 `__getattr__` 懒加载，保证 import chat 包不会触发整张服务图。
+**循环断路器**：`chat ↔ gateway`、`chat ↔ scheduler`、`chat → companion → tools.builtin → scheduler → chat` 三条 import 环全部经 `services/chat/chat_emitter.py`（`Emitter` 协议，零内部依赖）收敛——`chat/__init__.py` 急切 import `chat_emitter` + `types`，重编排器/`turn_inputs`/`agent_delegate` 经 `__getattr__` 懒加载，保证 import chat 包不会触发整张服务图。`gateway/emitter.py`（`JsonRpcEmitter`）import `chat.chat_emitter.Emitter`，是 chat↔gateway 环的接合点——两个 emitter 文件不要混淆。
 
-**工具自注册**：每个工具模块在 module bottom 调 `REGISTRY.register(...)`；旧 `services` facade 的 eager re-export 曾隐式触发注册，facade 拆除后改由 `main.py` 显式 `import services.tools.builtin` / `from services.chat import agent_delegate` 触发（首条 chat turn 前完成）。
+**工具自注册**：每个工具模块在 module bottom 调 `REGISTRY.register(...)`；旧 `services` facade 的 eager re-export 曾隐式触发注册，facade 拆除后改由 `main.py` 显式 `import services.tools.builtin` / `import services.chat.agent_delegate` 触发（首条 chat turn 前完成）。
 
 ## 工具三层分类
 
