@@ -9,14 +9,14 @@
 - **剥离大脑逻辑**：系统提示词、多模型适配器、对话记忆模块全部由 Backend 承载。
 - **剔除网络请求**：Runner 不保存任何用户 Token 或云端地址，无法直接访问 Backend。需借 LLM 时通过反向 RPC 请求 Desktop 代为调用（[design.md §5.2.II](../design.md)）。
 - **Provider 范围**：产品 LLM 交互只面向 OpenAI-compatible providers，不接 Anthropic。Runner 不做 LLM provider 特定的 schema 适配（如折叠 `anyOf` null branch）——nullable union 原样传递，由目标 provider 决定能否接受。
-- **环境状态与工具解耦**：环境生命周期管理提取到 `tools/terminal/environment.py`，`terminal_tool.py` 只保留 handler 和 schema。`file_tools`、`code_execution_tool`、`process_tool` 从 `environment.py` 直接导入，无循环依赖。`terminal/__init__.py` 对 `terminal_tool` 的重导出使用 `__getattr__` 惰性加载，避免包初始化时触发循环。
+- **环境状态与工具解耦**：环境共享态（活跃实例表、工厂、cleanup 线程）下沉到 `tools/terminal/environment/` 子包，`file_tools`、`code_execution_tool` 跨包直接导入该子包、共享同一批 env 实例，绕开仍含命令处理 / 安全审批逻辑的 `terminal_tool` 避免循环依赖。`terminal/__init__.py` 对 `terminal_tool` 的重导出用 `__getattr__` 惰性加载——包初始化时 terminal_tool → files → environment → `terminal/__init__` → terminal_tool 的环不会触发。
 
 ## 架构地图
 
 ```
 runner/
 ├── server.py     # WebSocket JSON-RPC 入口（唯一入口）——runner_loop / get_tools / execute_tool / mcp.reload / request_llm
-├── tools/        # 工具实现与自注册中心——terminal(6后端) / files / browser(多后端) / execute_code / process / skills / mcp / multimodal / toolsets / security
+├── tools/        # 工具实现与自注册中心——terminal(6后端) / files / browser(多后端) / execute_code / process / skills / mcp / multimodal / toolsets / security / system(输出清洗·结果预算·凭据文件)
 └── utils/        # 路径解析(DESKAGENT_HOME) / 配置 / 脱敏 / 文件安全 / PID 管理(Windows兼容) / 反向 RPC
 ```
 
@@ -34,7 +34,7 @@ Runner 主动连接 Desktop 提供的本地 WS 服务器（`ws://127.0.0.1:<port
 | `tools_changed` | Runner → Desktop | 工具 schema 变更通知（MCP 后台发现完成后触发）；Desktop 收到后重拉 `get_tools` 并重新 `tools.sync` 到 backend |
 | `get_tools` | Desktop → Runner | 获取工具 Schema |
 | `execute_tool` | Desktop → Runner | 执行工具调用 |
-| `mcp.reload` | Desktop → Runner | 第一类 RPC（不走 `execute_tool`）：关闭当前所有 MCP 连接并从最新 `$DESKAGENT_HOME/config.yaml` 重新连接。无入参（runner 始终读本地 YAML） |
+| `mcp.reload` | Desktop → Runner | 第一类 RPC（不走 `execute_tool`）：关闭当前所有 MCP 连接并从最新 `$DESKAGENT_HOME/config.yaml` 重新连接；同时清 `tool_output_limits` / `file_read_max_chars` 缓存，让相关 config 改动免重启生效。无入参（runner 始终读本地 YAML） |
 | `deskagent.cancel` | Desktop → Runner | 中断信号：设 `_global_interrupt` 让 in-flight 工具下次轮询时退出 |
 | `request_llm` | Runner → Desktop | 反向 RPC（带 `id` 的请求）：借用 LLM，响应体可含 `content` / `choices[0].message.content` / `text`，`server.py::_extract_llm_content` 做容错抽取 |
 
@@ -60,7 +60,9 @@ MCP 工具由 `discover_mcp_tools()` 在 `server_loop` 紧跟 `runner_ready` 之
 
 后台执行是为了让 bridge 握手在 <1s 完成——desktop 立刻收到 `runner_ready` 并 `get_tools` + `tools.sync` 静态工具；MCP 发现完成后 runner 发 `tools_changed`，desktop 重拉 + 重 `tools.sync`，LLM 在下一轮 turn 看到 MCP 工具。运行时新增/删除 MCP server 须经 Runner 重启（Desktop MCP 设置页 `runnerConfig.write` 走 `restartRunnerBridge`）才能让 backend 看到。
 
-**MCP server 通知处理**：Runner 在 MCP `ClientSession` 上注册的 message handler 仅消费 `ToolListChangedNotification`——收到时重新拉取 tool 列表并热替换 registry 条目。`PromptListChangedNotification` 与 `ResourceListChangedNotification` 是 debug 日志后被忽略（**设计意图而非 TODO**）：runner 的工具 surface 只覆盖 tools，prompts/resources 未通过任何 DeskAgent 端工具暴露。需要刷新 prompt/resource 的调用方须经 Desktop 主动触发 `mcp.reload`，不能依赖 Runner 内的自动响应。
+**MCP server 通知处理**：Runner 在 MCP `ClientSession` 上注册的 message handler 仅消费 `ToolListChangedNotification`——收到时重新拉取 tool 列表并热替换 registry 条目。`PromptListChangedNotification` 与 `ResourceListChangedNotification` 仅 debug 日志后被忽略（**设计意图而非 TODO**）：list-change 不触发热刷新，要看新增/删除的 prompt/resource 须经 Desktop 主动触发 `mcp.reload`，不能依赖 Runner 内的自动响应。
+
+**Prompt / Resource 经 utility 工具暴露**：每个 MCP server 的 resources 和 prompts 注册为 `mcp_<server>_list_resources` / `_read_resource` / `_list_prompts` / `_get_prompt` 四个 utility 工具，与普通 MCP 工具一起进 LLM schema。双重门控：(1) server 在 initialize 握手声明了对应 capability（以 `initialize_result.capabilities` 为准，不靠 `hasattr(session, ...)`——`ClientSession` 总是定义这四个方法属性，旧判据从不过滤）；(2) config `mcp_servers.<name>.tools.resources` / `.prompts` 未显式关闭（默认开）。utility 工具同样走 `mcp_` 前缀、受同名 collision guard 保护。
 
 **Schema 修复是 MCP 协议层而非 LLM 适配层**：`tools/mcp/mcp_tool.py` 内部的 `_rewrite_local_refs` / `_repair_object_shape` 是 MCP 协议本身需要的结构修复（处理 `$ref`、补 `type` 字段等），与目标 LLM provider 无关。
 
@@ -70,9 +72,11 @@ MCP 工具由 `discover_mcp_tools()` 在 `server_loop` 紧跟 `runner_ready` 之
 
 ## 终端后端
 
-`tools/terminal/_env_*.py` 实现 6 个模块：`base` 抽象类 + `file_sync` 同步 helper + 4 个执行后端（local PTY/Pipe、docker、ssh ControlMaster、singularity/Apptainer）。
+执行后端在 `tools/terminal/_env_*.py`：`_env_base` 抽象类 + `_env_file_sync` 同步 helper + 4 个后端（`_env_local` PTY/Pipe、`_env_docker`、`_env_ssh` ControlMaster、`_env_singularity`/Apptainer）。进程级共享态与生命周期在 `environment/` 子包：`state.py` 持有 `_active_environments` / `_last_activity`，`factory.py` 按 `env_type` 分发，`cleanup.py` 跑后台 reaper。
 
-采用 **spawn-per-call + 会话快照** 模型：exports/aliases/functions 在快照文件中捕获，每次命令前 source。CWD 跟踪使用 marker-based stdout 提取。并行 terminal 不可用——Runner 端共享 LocalEnvironment 实例，快照文件不可并发写。
+**环境缓存与隔离**：env 实例按 `task_id` 缓存。`resolve_container_task_id` 把无镜像 override（`docker_image` / `singularity_image` / `env_type`）的 task 折叠到 `"default"`——local 默认下所有 task 共享同一 LocalEnvironment；带 override 的 task 拿到独立容器。docker/singularity 支持 persistent 容器（`container_persistent` 跨命令、`docker_persist_across_processes` 跨 runner 进程存活），reaper 按 `lifetime_seconds` 回收孤儿容器。
+
+**命令执行模型**：spawn-per-call + 会话快照——每条命令起新 bash，先 source 快照恢复 exports/functions/aliases，执行后写回；CWD 用 marker-based stdout 提取。并行 terminal 不安全且未被锁保护：同一 env 实例的快照/CWD 文件不可并发写，默认 local 共享实例意味着并发命令互相覆盖——这是真约束，调用方须自行串行化。
 
 ## 安全机制
 
@@ -112,7 +116,7 @@ SSRF 防护：block private IPs、loopback、link-local、CGNAT（100.64.0.0/10�
 
 ### execute_code 沙箱
 
-环境变量清洗（仅 PATH/HOME/USER/LANG/LC_*/TERM/TMPDIR/SHELL/XDG_*/DESKAGENT_* 通过）。工具调用限制 50 次/脚本。5 分钟超时。50KB stdout 上限。
+环境变量清洗：前缀白名单 + secret 关键字（KEY/TOKEN/SECRET/PASSWORD…）黑名单双过滤，各工具可经 `register_env_passthrough` 运行时追加放行项；Windows 额外放行系统必需变量（SYSTEMROOT/WINDIR 等）。工具调用限制 50 次/脚本。5 分钟超时。50KB stdout 上限。
 
 ### MCP OSV 检查
 
