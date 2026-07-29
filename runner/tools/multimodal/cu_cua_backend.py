@@ -113,8 +113,8 @@ _CUA_DRIVER_PUBLIC_OVERRIDES: frozenset[str] = frozenset(
     }
 )
 # Exact-match drop list for vars whose names don't contain the substrings
-# above but are still sensitive (e.g. ZAST_JWT contains "JWT" so it'd be
-# caught; ZAST_DESKTOP_TOKEN contains "TOKEN" so it'd be caught too — kept
+# above but are still sensitive (e.g. DESKAGENT_JWT contains "JWT" so it'd be
+# caught; DESKAGENT_DESKTOP_TOKEN contains "TOKEN" so it'd be caught too — kept
 # here as a belt-and-suspenders anchor).
 _CUA_DRIVER_DROP_EXACT: frozenset[str] = frozenset()
 

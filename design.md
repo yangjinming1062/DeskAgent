@@ -305,7 +305,7 @@ Desktop 的更新通过 `/api/update` 获取 Electron 二进制与 Runner wheel 
   │
   ├─ 1. 定时后台自检最新版本 (30s)
   ├─ 2. 下载新版 Electron 二进制，触发 Runner Staging Prefetch
-  ├─ 3. 新版 Runner wheel 和 server.py 下载至 $ZAST_HOME/runner.staging/
+  ├─ 3. 新版 Runner wheel 和 server.py 下载至 $DESKAGENT_HOME/runner.staging/
   └─ 4. 强校验公钥签名 (update.pub) 与 SHA-512，写入升级 Sentinel
   │
 [用户点击重启 (Restart & Install)]
