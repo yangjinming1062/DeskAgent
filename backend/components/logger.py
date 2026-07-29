@@ -13,8 +13,8 @@ from .config import SETTINGS
 # Formatter.format() and can collide with `extra=` keys.
 _RESERVED_LOGRECORD_KEYS: frozenset[str] = frozenset(set(logging.LogRecord("", 0, "", 0, "", (), None).__dict__) | {"message", "asctime", "color_message"})
 
-# Caller 在 HTTP 入口 (core.correlation.correlation_id_middleware) 或
-# 长生命周期 task tick 顶部 (core.cron.scheduler_loop / core.connection_manager.
+# Caller 在 HTTP 入口 (services.correlation.correlation_id_middleware) 或
+# 长生命周期 task tick 顶部 (services.cron.scheduler_loop / services.gateway.connection.
 # _process_events) 调 set_request_id(...) 注入; _RequestContextFilter
 # 自动透传到每条 LogRecord.
 _user_id_var: ContextVar[int | None] = ContextVar("logger_user_id", default=None)

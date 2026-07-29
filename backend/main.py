@@ -5,29 +5,37 @@ from pathlib import Path
 
 import asyncpg
 import modules
+import services.chat.agent_delegate  # noqa: F401
+import services.tools.builtin  # noqa: F401
 from api import ROUTERS
 from common import ModelBase
+from components import attachment_root
+from components import cleanup_expired
+from components import correlated_exception_response
+from components import correlation_id_middleware
 from components import ENGINE
 from components import fetch_public_ip
 from components import get_logger
 from components import SETTINGS
 from components import setup_logging
-from core import attachment_root
-from core import cleanup_expired
-from core import correlated_exception_response
-from core import correlation_id_middleware
-from core import limiter
-from core import rate_limit_exception_handler
-from core import start_scheduler
-from core import start_ws_event_loop
-from core import stash_user_id_middleware
-from core import stop_scheduler
-from core import stop_ws_event_loop
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
+from services.gateway import start_ws_event_loop
+from services.gateway import stop_ws_event_loop
+from services.rate_limit import limiter
+from services.rate_limit import rate_limit_exception_handler
+from services.rate_limit import stash_user_id_middleware
+from services.scheduler import start_scheduler
+from services.scheduler import stop_scheduler
 from slowapi.errors import RateLimitExceeded
 from sqlalchemy import text
 from sqlalchemy.engine import make_url
+
+# Tool self-registration happens on import (each tool module calls REGISTRY.register
+# at module bottom). The former ``services`` facade triggered this implicitly via its
+# eager re-exports; with the facade gone, registration is explicit here so all tools
+# are registered before the first chat turn. Order: tools before agent_delegate
+# (agent_delegate imports the registry from tools).
 
 logger = get_logger(__name__)
 
@@ -156,11 +164,9 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
         if global_pool:
             await global_pool.close()
 
-        from core.tools_runtime.web_providers.brave_free.provider import _HTTP_CLIENT as _BRAVE_CLIENT
-        from core.tools_runtime.web_providers.tavily.provider import _HTTP_CLIENT as _TAVILY_CLIENT
+        from services.tools.web_providers import aclose as close_web_clients
 
-        await _BRAVE_CLIENT.aclose()
-        await _TAVILY_CLIENT.aclose()
+        await close_web_clients()
 
 
 app = FastAPI(title=SETTINGS.app_name, lifespan=lifespan)

@@ -14,7 +14,7 @@ import pytest
 
 class TestLLMClient:
     def test_client_for_config_uses_cached_factory(self):
-        from core import client_for_config
+        from services.llm import client_for_config
 
         cfg = {"api_key": "sk-a", "base_url": "https://a.example/v1"}
         a = client_for_config(cfg)
@@ -22,7 +22,7 @@ class TestLLMClient:
         assert a is b
 
     def test_client_for_config_distinguishes_by_key_pair(self):
-        from core import client_for_config
+        from services.llm import client_for_config
 
         a = client_for_config({"api_key": "sk-a", "base_url": "https://a.example/v1"})
         b = client_for_config({"api_key": "sk-b", "base_url": "https://a.example/v1"})
@@ -32,7 +32,7 @@ class TestLLMClient:
         assert b is not c
 
     def test_client_for_config_keyerror_when_missing_keys(self):
-        from core import client_for_config
+        from services.llm import client_for_config
 
         with pytest.raises(KeyError):
             client_for_config({})
@@ -62,21 +62,21 @@ class TestLLMClient:
         assert MODEL_CONTEXT_TOKEN_HINTS["mimo-v2.5-tts"] == 8_000
 
     def test_mimo_detected(self):
-        from core.chat.system_prompt import _is_mimo_family
+        from services.chat.system_prompt import _is_mimo_family
 
         assert _is_mimo_family("mimo-v2.5-pro") is True
         assert _is_mimo_family("mimo-v2.5") is True
         assert _is_mimo_family("mimo-v2.5-asr") is True
 
     def test_non_mimo_not_detected(self):
-        from core.chat.system_prompt import _is_mimo_family
+        from services.chat.system_prompt import _is_mimo_family
 
         assert _is_mimo_family("gpt-4o") is False
         assert _is_mimo_family("claude-3-5-sonnet") is False
         assert _is_mimo_family("gemini-1.5-pro") is False
 
     def test_image_attachment_uses_image_url_part(self):
-        from core.chat.chat_service import _build_persisted_content
+        from services.chat.persistence import _build_persisted_content
         from modules.system import ChatMessageRequest
 
         req = SimpleNamespace(
@@ -95,7 +95,7 @@ class TestLLMClient:
         assert image_part["image_url"]["url"] == "http://example.com/image.png"
 
     def test_no_attachments_returns_text(self):
-        from core.chat.chat_service import _build_persisted_content
+        from services.chat.persistence import _build_persisted_content
         from modules.system import ChatMessageRequest
 
         req = SimpleNamespace(message=ChatMessageRequest(role="user", content="Just text"))

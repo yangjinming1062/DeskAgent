@@ -1,13 +1,5 @@
 from common import get_router
 from components import get_db
-from core import AvatarGenerationError
-from core import build_system_prompt_extras
-from core import generate_avatar
-from core import get_active_avatar
-from core import get_or_create_persona
-from core import list_avatar_history
-from core import PersonaValidationError
-from core import update_persona
 from fastapi import Depends
 from fastapi import HTTPException
 from modules.auth import get_current_session
@@ -18,6 +10,14 @@ from modules.companion import AvatarGenerateRequest
 from modules.companion import AvatarHistoryResponse
 from modules.companion import PersonaResponse
 from modules.companion import PersonaUpdate
+from services.companion import AvatarGenerationError
+from services.companion import build_system_prompt_extras
+from services.companion import generate_avatar
+from services.companion import get_active_avatar
+from services.companion import get_or_create_persona
+from services.companion import list_avatar_history
+from services.companion import PersonaValidationError
+from services.companion import update_persona
 from sqlalchemy.orm import Session
 
 router = get_router(dependencies=[Depends(get_current_session)])

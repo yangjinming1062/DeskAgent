@@ -40,25 +40,25 @@ class Settings(BaseSettings):
     image_gen_api_key: str = ""  # 空则回落到 llm_api_key
     image_gen_model_name: str = "dall-e-3"
 
-    # LLM call resilience — applied by core.llm_retry.call_with_retry
+    # LLM call resilience — applied by services.llm_retry.call_with_retry
     llm_request_timeout_seconds: float = 300.0
     llm_max_retry_attempts: int = 3
     llm_base_retry_delay: float = 5.0
     llm_max_retry_delay: float = 60.0
 
-    # Context-window compression — applied by core.context_compressor
+    # Context-window compression — applied by services.context_compressor
     context_compression_threshold: float = 0.85
     context_summary_target_tokens: int = 2000
     context_summary_max_input_messages: int = 30
     # Feature flag — kept off until the LLM-summary path is verified end-to-end
     enable_context_compression: bool = False
 
-    # IPC future timeout — applied by core.ipc.await_future. Caps how long
+    # IPC future timeout — applied by services.ipc.await_future. Caps how long
     # chat will block waiting for a runner tool result before falling back
     # to a synthetic "runner offline" tool message.
     ipc_future_timeout_seconds: float = 300.0
 
-    # Compression-consent prompt timeout — applied by core.chat_service.ask_consent.
+    # Compression-consent prompt timeout — applied by services.chat_service.ask_consent.
     # Bounds how long chat will wait for the desktop to reply to a
     # require_compression_consent frame before denying consent and falling
     # through to the deterministic truncate_chat_history path.
@@ -68,7 +68,7 @@ class Settings(BaseSettings):
     # Counts Conversation rows updated within the last N minutes.
     chat_active_window_minutes: int = 30
 
-    # Rate limiting — applied by core.rate_limit. In-memory backend (N replicas
+    # Rate limiting — applied by services.rate_limit. In-memory backend (N replicas
     # = N× effective rate per user). Master switch is fail-open (False →
     # limiter becomes a no-op). Tunable per .env / environment variable
     # without code change.

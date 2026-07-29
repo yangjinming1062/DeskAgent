@@ -2,8 +2,6 @@ from common import get_router
 from components import get_db
 from components import naive_utc_now
 from components import SETTINGS
-from core import limiter
-from core import resolve_service_row
 from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Request
@@ -22,6 +20,8 @@ from modules.auth import UserInfo
 from modules.auth import UserModelConfigResponse
 from modules.auth import verify_password
 from modules.system import MessageResponse
+from services.llm import resolve_service_row
+from services.rate_limit import limiter
 from slowapi.util import get_remote_address
 from sqlalchemy.orm import Session
 

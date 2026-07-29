@@ -1,14 +1,13 @@
 from typing import Literal
 
 from common import get_router
+from components import attachments_gc_session as attachments_gc
 from components import get_db
 from components import SEARCH_INPUT_MAX_LEN
 from components import SESSION_PREVIEW_MAX_CHARS
 from components import SETTINGS
 from components import SQL_LIKE_ESCAPE_CHAR
-from core import attachments_gc_session as attachments_gc
-from core import build_session_messages
-from core import temp_files_gc_session as temp_files_gc
+from components import temp_files_gc_session as temp_files_gc
 from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Query
@@ -21,6 +20,7 @@ from modules.conversation import DesktopSessionMessagesResponse
 from modules.conversation import DesktopSessionPatchRequest
 from modules.conversation import DesktopSessionSearchResponse
 from modules.conversation import Message
+from services.chat import build_session_messages
 from sqlalchemy import asc
 from sqlalchemy import desc
 from sqlalchemy import func

@@ -1,3 +1,8 @@
+from .attachments import attachment_root
+from .attachments import gc_session as attachments_gc_session
+from .attachments import path_attach_ref
+from .attachments import remove as attachments_remove
+from .attachments import session_dir
 from .background import BackgroundTask
 from .background import fetch_public_ip
 from .config import SETTINGS
@@ -45,6 +50,13 @@ from .constants import TOOL_ENFORCE_OFF_VALUES
 from .constants import TOOL_ENFORCE_ON_VALUES
 from .constants import TTS_MAX_TEXT_CHARS
 from .constants import TTS_VOICES
+from .correlation import adopt_inbound
+from .correlation import begin_local_scope
+from .correlation import correlated_exception_response
+from .correlation import correlation_id_middleware
+from .correlation import new_request_id
+from .correlation import normalize_inbound
+from .correlation import REQUEST_ID_HEADER
 from .database import ENGINE
 from .database import get_db
 from .database import SESSION_LOCAL
@@ -67,6 +79,13 @@ from .logger import get_logger
 from .logger import set_request_id
 from .logger import set_request_user_id
 from .logger import setup_logging
+from .redact import mask_secret
+from .redact import redact_sensitive_text
+from .redact import RedactingFormatter
+from .temp_files import cleanup_expired
+from .temp_files import gc_session as temp_files_gc_session
+from .temp_files import get_file_path
+from .temp_files import save_file
 
 __all__ = [
     "BackgroundTask",
@@ -138,4 +157,23 @@ __all__ = [
     "set_request_id",
     "set_request_user_id",
     "setup_logging",
+    "adopt_inbound",
+    "begin_local_scope",
+    "correlated_exception_response",
+    "correlation_id_middleware",
+    "new_request_id",
+    "normalize_inbound",
+    "REQUEST_ID_HEADER",
+    "mask_secret",
+    "redact_sensitive_text",
+    "RedactingFormatter",
+    "attachment_root",
+    "attachments_gc_session",
+    "path_attach_ref",
+    "attachments_remove",
+    "session_dir",
+    "cleanup_expired",
+    "temp_files_gc_session",
+    "get_file_path",
+    "save_file",
 ]

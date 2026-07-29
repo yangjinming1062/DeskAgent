@@ -4,13 +4,13 @@ from common import get_router
 from components import get_db
 from components import naive_utc_now
 from components import SETTINGS
-from core import MANAGER
 from fastapi import Depends
 from modules.auth import get_current_session
 from modules.auth import LoginRecord
 from modules.auth import User
 from modules.conversation import Conversation
 from modules.system import StatusResponse
+from services.gateway import MANAGER
 from sqlalchemy.orm import Session
 
 router = get_router()
