@@ -40,6 +40,26 @@ class Settings(BaseSettings):
     image_gen_api_key: str = ""  # 空则回落到 llm_api_key
     image_gen_model_name: str = "dall-e-3"
 
+    # Video Gen Provider (视频生成) — added in commit 1 to keep the service
+    # registry's _SERVICE_DEFAULTS dict a closed set at import time. Wired up
+    # end-to-end in commit 4.
+    video_gen_base_url: str = ""
+    video_gen_api_key: str = ""
+    video_gen_model_name: str = "MiniMax-Hailuo-02"
+
+    # Provider selection — empty = infer from base_url host. Commit 1 ships
+    # the slot; MiniMax provider classes are added in commit 2.
+    llm_provider: str = ""
+    stt_provider: str = ""
+    tts_provider: str = ""
+    image_gen_provider: str = ""
+    video_gen_provider: str = ""
+
+    # MiniMax-dedicated key — used when a MiniMax-flavoured provider inherits
+    # the legacy llm_api_key (MiMo) by mistake; we swap to this instead so
+    # the call doesn't 401 against api.minimaxi.com. Empty by default.
+    minimax_api_key: str = ""
+
     # LLM call resilience — applied by services.llm_retry.call_with_retry
     llm_request_timeout_seconds: float = 300.0
     llm_max_retry_attempts: int = 3

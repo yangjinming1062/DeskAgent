@@ -7,9 +7,23 @@ from .llm_client import client_for_service
 from .llm_client import client_for_user
 from .llm_client import get_async_client
 from .llm_client import MissingLlmConfigError
+from .llm_client import provider_for_service
+from .llm_client import resolve_provider_config
 from .llm_client import resolve_service_row
 from .llm_retry import call_with_retry
 from .llm_retry import LLMRuntimeError
+from .providers import BaseProvider
+from .providers import ChatProvider
+from .providers import ImageGenProvider
+from .providers import infer_provider_name
+from .providers import ProviderConfig
+from .providers import ProviderError
+from .providers import register
+from .providers import resolve
+from .providers import ServiceType
+from .providers import STTProvider
+from .providers import TTSProvider
+from .providers import VideoGenProvider
 from .user_config import resolve_user_llm_config
 
 __all__ = [
@@ -19,6 +33,20 @@ __all__ = [
     "get_async_client",
     "MissingLlmConfigError",
     "resolve_service_row",
+    "resolve_provider_config",
+    "provider_for_service",
+    "BaseProvider",
+    "ChatProvider",
+    "ImageGenProvider",
+    "STTProvider",
+    "TTSProvider",
+    "VideoGenProvider",
+    "ProviderConfig",
+    "ProviderError",
+    "ServiceType",
+    "register",
+    "resolve",
+    "infer_provider_name",
     "call_with_retry",
     "LLMRuntimeError",
     "classify_api_error",
