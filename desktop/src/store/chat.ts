@@ -13,6 +13,9 @@ export interface ChatMessage {
 export const $chatMessages = atom<ChatMessage[]>([])
 export const $chatSessionId = atom<string | null>(null)
 export const $chatOpen = atom(false)
+// A transient proactive message the companion speaks aloud and surfaces as a
+// bubble when the chat dock is closed. Cleared after the utterance ends.
+export const $proactiveBubble = atom<string | null>(null)
 
 let idCounter = 0
 const nextId = () => `m${++idCounter}`
@@ -23,6 +26,10 @@ export function setChatOpen(open: boolean): void {
 
 export function setChatSession(id: string | null): void {
   $chatSessionId.set(id)
+}
+
+export function setProactiveBubble(text: string | null): void {
+  $proactiveBubble.set(text)
 }
 
 export function pushUserMessage(text: string, attachments?: string[]): string {

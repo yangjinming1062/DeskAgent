@@ -19,6 +19,14 @@ export const $companionLifecycle = atom<CompanionLifecycle>('unauthed-egg')
 export const $spriteState = atom<SpriteStateName>('idle')
 export const $spritePosition = atom<SpritePosition | null>(null)
 
+// Disturbance tier gates the companion's proactive behaviour (design.md §6 /
+// plan.md §4.2). User-initiated actions are never gated — only proactive
+// outbound (companion.message). `quiet` blocks proactive messages but keeps
+// the affect channel open (phase 2).
+export type DisturbanceTier = 'proactive' | 'normal' | 'quiet'
+
+export const $disturbanceTier = atom<DisturbanceTier>('normal')
+
 export function setCompanionLifecycle(next: CompanionLifecycle): void {
   $companionLifecycle.set(next)
 }
@@ -29,4 +37,8 @@ export function setSpriteState(name: SpriteStateName): void {
 
 export function setSpritePosition(pos: SpritePosition | null): void {
   $spritePosition.set(pos)
+}
+
+export function setDisturbanceTier(tier: DisturbanceTier): void {
+  $disturbanceTier.set(tier)
 }

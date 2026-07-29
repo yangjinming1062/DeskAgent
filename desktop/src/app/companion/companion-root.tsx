@@ -12,6 +12,8 @@ import { CompanionReady } from './companion-ready'
 import { Egg, type EggMode } from './egg'
 import { handleCompanionEvent } from './events'
 import { OnboardingFlow } from './onboarding-flow'
+import { ProactiveBubble } from './proactive-bubble'
+import { speakProactive } from './proactive'
 import { SpriteStage } from './sprite-stage'
 
 const HATCH_AT = 5
@@ -48,6 +50,21 @@ export function CompanionRoot() {
   useEffect(() => {
     const off = window.deskagent.onSessionExpired(() => void logout())
     return () => off()
+  }, [])
+
+  // Dev-only: inject a test proactive message (Ctrl+Shift+P) to exercise the
+  // companion.message receiver + bubble + TTS without the Backend send_message
+  // path. Stripped in production builds.
+  useEffect(() => {
+    if (import.meta.env.PROD) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.shiftKey && (e.key === 'P' || e.key === 'p')) {
+        e.preventDefault()
+        void speakProactive('（测试）嘿，休息一下眼睛吧～')
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
   }, [])
 
   // On auth, route by persona completeness: incomplete → onboarding, complete
@@ -106,6 +123,7 @@ export function CompanionRoot() {
         </SpriteStage>
       )}
       {showReady && chatOpen && <ChatDock onClose={() => setChatOpen(false)} />}
+      {showReady && <ProactiveBubble />}
       {authed && <GatewayBooter />}
     </>
   )
