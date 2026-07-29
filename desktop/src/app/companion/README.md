@@ -32,6 +32,23 @@
 - **完成**：调真实 `PUT /api/companion/persona` 落库（见 Mock 边界的 persona 约束）→ TTS 念第一句问候 → `onCompleted` → lifecycle `ready`。
 - onboarding 全程 `setIgnoreMouseEvents(false)`（输入可用），卸载恢复 click-through。
 
+## Chat 模式 + 状态机（MVP 子集）
+
+**双击** ready 伙伴唤起 `ChatDock`（plan §4.3：双击→对话；单击戳反应待后续 slice）。IM 气泡（伙伴左 / 用户右），文字 + 粘贴图片（`saveClipboardImage` 落盘 → `image.attach` 拿 `@file:` ref → 嵌入 prompt 文本）。请求经 `useGatewayRequest::requestGateway`（含本地 fs 拦截 + 重连）发 `session.create` / `prompt.submit`。
+
+WS 流式帧经 `handleCompanionEvent`（`events.ts`，即 `use-gateway-boot` 那个原空的 `handleGatewayEvent` 嫁接点）分发到 chat store + 状态机：
+
+| 事件 | 状态机 | chat store |
+|------|--------|-----------|
+| `message.start` | THINKING | 新建流式 assistant 段（前一段在工具轮后已 finalize） |
+| `message.delta` | — | 累积文本 |
+| `tool.call(running)` | WORKING | 标记当前工具 |
+| `tool.call(complete)` | THINKING | 清工具标记 |
+| `message.complete` | IDLE | finalize |
+| `error` | IDLE | 人格化错误气泡 |
+
+对话框激活时 `setIgnoreMouseEvents(false)` + `setAlwaysOnTop(false)`（切别的 app 可覆盖、不挡工作），关闭恢复 click-through + 置顶。默认**文字响应**（不打扰）；SPEAKING 留给 onboarding / 主动消息（Slice 4）。
+
 ## 桌面交互契约（`SpriteStage`）
 
 精灵窗口铺满工作区、默认点击穿透。交互解析全部在 `SpriteStage` 的 pointer 层，子组件（蛋等）纯视觉、无自身事件：

@@ -284,7 +284,7 @@ IDLE 时形象不是静止贴图。两类自主行为，**都不触发 TTS、不
 
 ## 7. MVP 范围与渐进路线
 
-> **实现进展（2026-07-29）**：Slice 1（窗口模型重写 + 精灵窗口 + 蛋 + 双窗口 auth 同步）、Slice 2（对话式 onboarding：5 问 → 真实 portrait 生成/确认 → 音色确认 → 第一句问候，完成时 `PUT /api/companion/persona` 落库）已落地。MVP 列表中的 **Chat 模式 / 状态机 IDLE·THINKING·SPEAKING·WORKING / 主动陪伴 send_message / 打扰档位 / 故障兜底** 为后续切片。详见 `desktop/src/app/companion/` 与实现计划 `deskagent-desktop-drifting-volcano.md`。
+> **实现进展（2026-07-29）**：Slice 1（窗口模型重写 + 精灵窗口 + 蛋 + 双窗口 auth 同步）、Slice 2（对话式 onboarding：5 问 → 真实 portrait 生成/确认 → 音色确认 → 第一句问候，完成时 `PUT /api/companion/persona` 落库）、Slice 3（Chat 模式：文字/粘贴图片 + 状态机 IDLE/THINKING/SPEAKING/WORKING，WS 流式经 `handleCompanionEvent` 分发）已落地。MVP 列表中的 **主动陪伴 send_message / 打扰档位 / 故障兜底** 为后续切片。详见 `desktop/src/app/companion/` 与实现计划 `deskagent-desktop-drifting-volcano.md`。
 
 ### MVP（首次可用）
 - 蛋 → 对话式 onboarding（5 问）→ portrait 生成 + 确认 → 音色确认 → idle loop 生成 → 第一句问候。

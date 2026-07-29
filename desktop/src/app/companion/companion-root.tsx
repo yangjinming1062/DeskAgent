@@ -3,11 +3,14 @@ import { useEffect, useState } from 'react'
 
 import { useGatewayBoot } from '@/app/gateway/hooks/use-gateway-boot'
 import { $auth, applyAuthBroadcast, hydrateAuth, logout } from '@/store/auth'
+import { $chatOpen, setChatOpen } from '@/store/chat'
 import { $gatewayState } from '@/store/gateway'
 import { $companionLifecycle, setCompanionLifecycle } from '@/store/companion'
 
+import { ChatDock } from './chat-dock'
 import { CompanionReady } from './companion-ready'
 import { Egg, type EggMode } from './egg'
+import { handleCompanionEvent } from './events'
 import { OnboardingFlow } from './onboarding-flow'
 import { SpriteStage } from './sprite-stage'
 
@@ -15,14 +18,11 @@ const HATCH_AT = 5
 
 // Boots the gateway as a mount effect — so it only runs while authenticated.
 // When $auth flips back to unauthenticated (logout/expiry) this unmounts and
-// useGatewayBoot's cleanup tears the WS down. The empty handleGatewayEvent is
-// the designated companion graft point (chat / tool / affect dispatch lands in
-// Slice 3+); today it only keeps the connection alive.
+// useGatewayBoot's cleanup tears the WS down. handleGatewayEvent dispatches the
+// streaming chat frames onto the chat store + state machine (events.ts).
 function GatewayBooter() {
   useGatewayBoot({
-    handleGatewayEvent: () => {
-      /* companion event dispatch — Slice 3 */
-    },
+    handleGatewayEvent: handleCompanionEvent,
     onConnectionReady: () => {},
     onGatewayReady: () => {}
   })
@@ -33,6 +33,7 @@ export function CompanionRoot() {
   const auth = useStore($auth)
   const gatewayState = useStore($gatewayState)
   const lifecycle = useStore($companionLifecycle)
+  const chatOpen = useStore($chatOpen)
   const [cracks, setCracks] = useState(0)
 
   useEffect(() => {
@@ -80,8 +81,6 @@ export function CompanionRoot() {
 
   const onTap = () => {
     // Pre-auth: each tap cracks the egg; 5 cracks shatter it and summon login.
-    // Post-auth the egg is replaced by onboarding / the ready companion, so taps
-    // are a no-op here until Slice 3 (poke reactions / open chat).
     if (authed) return
     if (cracks >= HATCH_AT) {
       void window.deskagent.showToolWindow()
@@ -92,14 +91,21 @@ export function CompanionRoot() {
     if (next >= HATCH_AT) void window.deskagent.showToolWindow()
   }
 
+  // Plan §4.3: double-tap the ready companion to open Chat. Single-tap poke
+  // reactions (LLM-generated) arrive in a later slice.
+  const onDoubleTap = () => {
+    if (showReady) setChatOpen(true)
+  }
+
   return (
     <>
       {showOnboarding && <OnboardingFlow onCompleted={() => setCompanionLifecycle('ready')} />}
       {(showEgg || showReady) && (
-        <SpriteStage onTap={onTap}>
+        <SpriteStage onTap={onTap} onDoubleTap={onDoubleTap}>
           {showReady ? <CompanionReady /> : <Egg cracks={cracks} mode={mode} />}
         </SpriteStage>
       )}
+      {showReady && chatOpen && <ChatDock onClose={() => setChatOpen(false)} />}
       {authed && <GatewayBooter />}
     </>
   )
