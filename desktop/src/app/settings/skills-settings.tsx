@@ -47,7 +47,7 @@ export function SkillsSettings() {
 
     void (async () => {
       try {
-        const res = await window.zastDesktop.skills.list()
+        const res = await window.deskagent.skills.list()
 
         if (cancelled) {
           return
@@ -92,7 +92,7 @@ export function SkillsSettings() {
     const prev = skillsRef.current
 
     try {
-      const res = await window.zastDesktop.skills.setEnabled({ name, enabled: nextEnabled })
+      const res = await window.deskagent.skills.setEnabled({ name, enabled: nextEnabled })
 
       if (!res.ok || !res.skills) {
         setSkills(prev)

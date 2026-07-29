@@ -27,7 +27,7 @@ const tone: Record<NotificationKind, { icon: IconComponent; iconClass: string; v
   success: { icon: CheckCircle2, iconClass: 'text-primary', variant: 'success' }
 }
 
-const STACK_SURFACE = 'pointer-events-auto border border-(--stroke-zast) bg-popover/95 shadow-zast backdrop-blur-md'
+const STACK_SURFACE = 'pointer-events-auto border border-(--stroke-deskagent) bg-popover/95 shadow-deskagent backdrop-blur-md'
 
 export function NotificationStack() {
   const notifications = useStore($notifications)

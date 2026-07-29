@@ -12,8 +12,8 @@ type Patch = {
 }
 
 /**
- * Shared lifecycle for settings pages that read/write `$ZAST_HOME/config.yaml`
- * via the `zast:runner-config:*` IPC channels.
+ * Shared lifecycle for settings pages that read/write `$DESKAGENT_HOME/config.yaml`
+ * via the `deskagent:runner-config:*` IPC channels.
  *
  * On mount the hook reads the file, parses it into a YAML `Document`, and
  * surfaces a loading / error state. Callers hold the returned `yamlDoc` for
@@ -32,7 +32,7 @@ export function useRunnerConfig(errorKey: string) {
     void (async () => {
       try {
         setIsLoading(true)
-        const res = await window.zastDesktop.runnerConfig.read()
+        const res = await window.deskagent.runnerConfig.read()
 
         if (cancelled) {
           return
@@ -60,7 +60,7 @@ export function useRunnerConfig(errorKey: string) {
   }, [errorKey])
 
   const write = async (content: string): Promise<SaveResult> => {
-    const res = await window.zastDesktop.runnerConfig.write(content)
+    const res = await window.deskagent.runnerConfig.write(content)
 
     return res.ok
       ? { ok: true, restarted: res.restarted !== false, restartError: res.restartError }
@@ -68,7 +68,7 @@ export function useRunnerConfig(errorKey: string) {
   }
 
   const patch = async (p: Patch): Promise<SaveResult> => {
-    const res = await window.zastDesktop.runnerConfig.patch(p)
+    const res = await window.deskagent.runnerConfig.patch(p)
 
     return res.ok
       ? { ok: true, restarted: res.restarted !== false, restartError: res.restartError }

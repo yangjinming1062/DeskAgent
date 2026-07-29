@@ -43,7 +43,7 @@ export function ToolsetsSettings() {
 
     void (async () => {
       try {
-        const res = await window.zastDesktop.toolsets.list()
+        const res = await window.deskagent.toolsets.list()
 
         if (cancelled) {
           return
@@ -111,7 +111,7 @@ export function ToolsetsSettings() {
     setSavingId(id)
 
     try {
-      const res = await window.zastDesktop.toolsets.setEnabled({ id, enabled: nextEnabled })
+      const res = await window.deskagent.toolsets.setEnabled({ id, enabled: nextEnabled })
 
       if (!res.ok || !res.toolsets) {
         setToolsets(prev)

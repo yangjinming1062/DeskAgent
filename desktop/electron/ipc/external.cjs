@@ -4,7 +4,7 @@
 // file:// / http(s) / mailto / WSL→Windows dispatch logic. Here we just call it
 // and convert a false return into a renderer-visible error.
 function registerExternalIpc({ ipcMain, openExternalUrl }) {
-  ipcMain.handle('zast:openExternal', (_event, url) => {
+  ipcMain.handle('deskagent:openExternal', (_event, url) => {
     if (!openExternalUrl(url)) {
       throw new Error('Invalid external URL')
     }

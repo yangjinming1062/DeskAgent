@@ -1,30 +1,30 @@
 const { contextBridge, ipcRenderer, webUtils } = require('electron')
 
-contextBridge.exposeInMainWorld('zastDesktop', {
-  getConnection: () => ipcRenderer.invoke('zast:connection'),
-  getGatewayWsUrl: () => ipcRenderer.invoke('zast:gateway:ws-url'),
-  getBootProgress: () => ipcRenderer.invoke('zast:boot-progress:get'),
-  login: payload => ipcRenderer.invoke('zast:auth:login', payload),
-  refreshSession: payload => ipcRenderer.invoke('zast:auth:refresh', payload),
-  logout: () => ipcRenderer.invoke('zast:auth:logout'),
-  getSession: () => ipcRenderer.invoke('zast:auth:get-session'),
-  changePassword: payload => ipcRenderer.invoke('zast:auth:change-password', payload),
+contextBridge.exposeInMainWorld('deskagent', {
+  getConnection: () => ipcRenderer.invoke('deskagent:connection'),
+  getGatewayWsUrl: () => ipcRenderer.invoke('deskagent:gateway:ws-url'),
+  getBootProgress: () => ipcRenderer.invoke('deskagent:boot-progress:get'),
+  login: payload => ipcRenderer.invoke('deskagent:auth:login', payload),
+  refreshSession: payload => ipcRenderer.invoke('deskagent:auth:refresh', payload),
+  logout: () => ipcRenderer.invoke('deskagent:auth:logout'),
+  getSession: () => ipcRenderer.invoke('deskagent:auth:get-session'),
+  changePassword: payload => ipcRenderer.invoke('deskagent:auth:change-password', payload),
   modelConfig: {
-    get: () => ipcRenderer.invoke('zast:model-config:get')
+    get: () => ipcRenderer.invoke('deskagent:model-config:get')
   },
-  api: request => ipcRenderer.invoke('zast:api', request),
-  notify: payload => ipcRenderer.invoke('zast:notify', payload),
-  requestMicrophoneAccess: () => ipcRenderer.invoke('zast:requestMicrophoneAccess'),
-  readFileDataUrl: filePath => ipcRenderer.invoke('zast:readFileDataUrl', filePath),
-  readFileText: filePath => ipcRenderer.invoke('zast:readFileText', filePath),
-  selectPaths: options => ipcRenderer.invoke('zast:selectPaths', options),
-  writeClipboard: text => ipcRenderer.invoke('zast:writeClipboard', text),
-  saveImageFromUrl: url => ipcRenderer.invoke('zast:saveImageFromUrl', url),
-  saveImageBuffer: (data, ext) => ipcRenderer.invoke('zast:saveImageBuffer', { data, ext }),
-  saveClipboardImage: () => ipcRenderer.invoke('zast:saveClipboardImage'),
-  runnerInvoke: (name, args) => ipcRenderer.invoke('zast:runner:invoke', name, args),
-  runnerDispatch: (method, params) => ipcRenderer.invoke('zast:runner:dispatch', method, params),
-  runnerGetTools: () => ipcRenderer.invoke('zast:runner:get-tools'),
+  api: request => ipcRenderer.invoke('deskagent:api', request),
+  notify: payload => ipcRenderer.invoke('deskagent:notify', payload),
+  requestMicrophoneAccess: () => ipcRenderer.invoke('deskagent:requestMicrophoneAccess'),
+  readFileDataUrl: filePath => ipcRenderer.invoke('deskagent:readFileDataUrl', filePath),
+  readFileText: filePath => ipcRenderer.invoke('deskagent:readFileText', filePath),
+  selectPaths: options => ipcRenderer.invoke('deskagent:selectPaths', options),
+  writeClipboard: text => ipcRenderer.invoke('deskagent:writeClipboard', text),
+  saveImageFromUrl: url => ipcRenderer.invoke('deskagent:saveImageFromUrl', url),
+  saveImageBuffer: (data, ext) => ipcRenderer.invoke('deskagent:saveImageBuffer', { data, ext }),
+  saveClipboardImage: () => ipcRenderer.invoke('deskagent:saveClipboardImage'),
+  runnerInvoke: (name, args) => ipcRenderer.invoke('deskagent:runner:invoke', name, args),
+  runnerDispatch: (method, params) => ipcRenderer.invoke('deskagent:runner:dispatch', method, params),
+  runnerGetTools: () => ipcRenderer.invoke('deskagent:runner:get-tools'),
   getPathForFile: file => {
     try {
       return webUtils.getPathForFile(file) || ''
@@ -32,52 +32,52 @@ contextBridge.exposeInMainWorld('zastDesktop', {
       return ''
     }
   },
-  normalizePreviewTarget: (target, baseDir) => ipcRenderer.invoke('zast:normalizePreviewTarget', target, baseDir),
-  watchPreviewFile: url => ipcRenderer.invoke('zast:watchPreviewFile', url),
-  stopPreviewFileWatch: id => ipcRenderer.invoke('zast:stopPreviewFileWatch', id),
-  setTitleBarTheme: payload => ipcRenderer.send('zast:titlebar-theme', payload),
-  setPreviewShortcutActive: active => ipcRenderer.send('zast:previewShortcutActive', Boolean(active)),
-  openExternal: url => ipcRenderer.invoke('zast:openExternal', url),
-  fetchLinkTitle: url => ipcRenderer.invoke('zast:fetchLinkTitle', url),
+  normalizePreviewTarget: (target, baseDir) => ipcRenderer.invoke('deskagent:normalizePreviewTarget', target, baseDir),
+  watchPreviewFile: url => ipcRenderer.invoke('deskagent:watchPreviewFile', url),
+  stopPreviewFileWatch: id => ipcRenderer.invoke('deskagent:stopPreviewFileWatch', id),
+  setTitleBarTheme: payload => ipcRenderer.send('deskagent:titlebar-theme', payload),
+  setPreviewShortcutActive: active => ipcRenderer.send('deskagent:previewShortcutActive', Boolean(active)),
+  openExternal: url => ipcRenderer.invoke('deskagent:openExternal', url),
+  fetchLinkTitle: url => ipcRenderer.invoke('deskagent:fetchLinkTitle', url),
   settings: {
-    getDefaultProjectDir: () => ipcRenderer.invoke('zast:setting:defaultProjectDir:get'),
-    setDefaultProjectDir: dir => ipcRenderer.invoke('zast:setting:defaultProjectDir:set', dir),
-    pickDefaultProjectDir: () => ipcRenderer.invoke('zast:setting:defaultProjectDir:pick')
+    getDefaultProjectDir: () => ipcRenderer.invoke('deskagent:setting:defaultProjectDir:get'),
+    setDefaultProjectDir: dir => ipcRenderer.invoke('deskagent:setting:defaultProjectDir:set', dir),
+    pickDefaultProjectDir: () => ipcRenderer.invoke('deskagent:setting:defaultProjectDir:pick')
   },
   runnerConfig: {
-    read: () => ipcRenderer.invoke('zast:runner-config:read'),
-    write: configString => ipcRenderer.invoke('zast:runner-config:write', configString),
-    patch: patch => ipcRenderer.invoke('zast:runner-config:patch', patch)
+    read: () => ipcRenderer.invoke('deskagent:runner-config:read'),
+    write: configString => ipcRenderer.invoke('deskagent:runner-config:write', configString),
+    patch: patch => ipcRenderer.invoke('deskagent:runner-config:patch', patch)
   },
   skills: {
-    list: () => ipcRenderer.invoke('zast:skills:list'),
-    setEnabled: payload => ipcRenderer.invoke('zast:skill:set-enabled', payload)
+    list: () => ipcRenderer.invoke('deskagent:skills:list'),
+    setEnabled: payload => ipcRenderer.invoke('deskagent:skill:set-enabled', payload)
   },
   toolsets: {
-    list: () => ipcRenderer.invoke('zast:toolsets:list'),
-    setEnabled: payload => ipcRenderer.invoke('zast:toolset:set-enabled', payload)
+    list: () => ipcRenderer.invoke('deskagent:toolsets:list'),
+    setEnabled: payload => ipcRenderer.invoke('deskagent:toolset:set-enabled', payload)
   },
-  readDir: dirPath => ipcRenderer.invoke('zast:fs:readDir', dirPath),
-  gitRoot: startPath => ipcRenderer.invoke('zast:fs:gitRoot', startPath),
-  gitBranch: startPath => ipcRenderer.invoke('zast:fs:gitBranch', startPath),
-  completePath: params => ipcRenderer.invoke('zast:fs:completePath', params),
+  readDir: dirPath => ipcRenderer.invoke('deskagent:fs:readDir', dirPath),
+  gitRoot: startPath => ipcRenderer.invoke('deskagent:fs:gitRoot', startPath),
+  gitBranch: startPath => ipcRenderer.invoke('deskagent:fs:gitBranch', startPath),
+  completePath: params => ipcRenderer.invoke('deskagent:fs:completePath', params),
   media: {
-    stt: payload => ipcRenderer.invoke('zast:media:stt', payload),
-    tts: payload => ipcRenderer.invoke('zast:media:tts', payload)
+    stt: payload => ipcRenderer.invoke('deskagent:media:stt', payload),
+    tts: payload => ipcRenderer.invoke('deskagent:media:tts', payload)
   },
   terminal: {
-    dispose: id => ipcRenderer.invoke('zast:terminal:dispose', id),
-    resize: (id, size) => ipcRenderer.invoke('zast:terminal:resize', id, size),
-    start: options => ipcRenderer.invoke('zast:terminal:start', options),
-    write: (id, data) => ipcRenderer.invoke('zast:terminal:write', id, data),
+    dispose: id => ipcRenderer.invoke('deskagent:terminal:dispose', id),
+    resize: (id, size) => ipcRenderer.invoke('deskagent:terminal:resize', id, size),
+    start: options => ipcRenderer.invoke('deskagent:terminal:start', options),
+    write: (id, data) => ipcRenderer.invoke('deskagent:terminal:write', id, data),
     onData: (id, callback) => {
-      const channel = `zast:terminal:${id}:data`
+      const channel = `deskagent:terminal:${id}:data`
       const listener = (_event, payload) => callback(payload)
       ipcRenderer.on(channel, listener)
       return () => ipcRenderer.removeListener(channel, listener)
     },
     onExit: (id, callback) => {
-      const channel = `zast:terminal:${id}:exit`
+      const channel = `deskagent:terminal:${id}:exit`
       const listener = (_event, payload) => callback(payload)
       ipcRenderer.on(channel, listener)
       return () => ipcRenderer.removeListener(channel, listener)
@@ -85,65 +85,65 @@ contextBridge.exposeInMainWorld('zastDesktop', {
   },
   onClosePreviewRequested: callback => {
     const listener = () => callback()
-    ipcRenderer.on('zast:close-preview-requested', listener)
-    return () => ipcRenderer.removeListener('zast:close-preview-requested', listener)
+    ipcRenderer.on('deskagent:close-preview-requested', listener)
+    return () => ipcRenderer.removeListener('deskagent:close-preview-requested', listener)
   },
   onWindowStateChanged: callback => {
     const listener = (_event, payload) => callback(payload)
-    ipcRenderer.on('zast:window-state-changed', listener)
-    return () => ipcRenderer.removeListener('zast:window-state-changed', listener)
+    ipcRenderer.on('deskagent:window-state-changed', listener)
+    return () => ipcRenderer.removeListener('deskagent:window-state-changed', listener)
   },
   onPreviewFileChanged: callback => {
     const listener = (_event, payload) => callback(payload)
-    ipcRenderer.on('zast:preview-file-changed', listener)
-    return () => ipcRenderer.removeListener('zast:preview-file-changed', listener)
+    ipcRenderer.on('deskagent:preview-file-changed', listener)
+    return () => ipcRenderer.removeListener('deskagent:preview-file-changed', listener)
   },
   onPowerResume: callback => {
     const listener = () => callback()
-    ipcRenderer.on('zast:power-resume', listener)
-    return () => ipcRenderer.removeListener('zast:power-resume', listener)
+    ipcRenderer.on('deskagent:power-resume', listener)
+    return () => ipcRenderer.removeListener('deskagent:power-resume', listener)
   },
   onBootProgress: callback => {
     const listener = (_event, payload) => callback(payload)
-    ipcRenderer.on('zast:boot-progress', listener)
-    return () => ipcRenderer.removeListener('zast:boot-progress', listener)
+    ipcRenderer.on('deskagent:boot-progress', listener)
+    return () => ipcRenderer.removeListener('deskagent:boot-progress', listener)
   },
   onSessionExpired: callback => {
     const listener = () => callback()
-    ipcRenderer.on('zast:auth:session-expired', listener)
-    return () => ipcRenderer.removeListener('zast:auth:session-expired', listener)
+    ipcRenderer.on('deskagent:auth:session-expired', listener)
+    return () => ipcRenderer.removeListener('deskagent:auth:session-expired', listener)
   },
   onRunnerStatus: callback => {
     const listener = (_event, payload) => callback(payload)
-    ipcRenderer.on('zast:runner:status', listener)
-    return () => ipcRenderer.removeListener('zast:runner:status', listener)
+    ipcRenderer.on('deskagent:runner:status', listener)
+    return () => ipcRenderer.removeListener('deskagent:runner:status', listener)
   },
   onOpenSettings: callback => {
     const listener = () => callback()
-    ipcRenderer.on('zast:tray:open-settings', listener)
-    return () => ipcRenderer.removeListener('zast:tray:open-settings', listener)
+    ipcRenderer.on('deskagent:tray:open-settings', listener)
+    return () => ipcRenderer.removeListener('deskagent:tray:open-settings', listener)
   },
   onTrayLogout: callback => {
     const listener = () => callback()
-    ipcRenderer.on('zast:tray:logout', listener)
-    return () => ipcRenderer.removeListener('zast:tray:logout', listener)
+    ipcRenderer.on('deskagent:tray:logout', listener)
+    return () => ipcRenderer.removeListener('deskagent:tray:logout', listener)
   },
-  getVersion: () => ipcRenderer.invoke('zast:version'),
+  getVersion: () => ipcRenderer.invoke('deskagent:version'),
   update: {
-    check: () => ipcRenderer.invoke('zast:update:check'),
-    download: () => ipcRenderer.invoke('zast:update:download'),
-    install: () => ipcRenderer.invoke('zast:update:install'),
-    status: () => ipcRenderer.invoke('zast:update:status'),
-    retryRunnerInstall: () => ipcRenderer.invoke('zast:update:runner:install'),
+    check: () => ipcRenderer.invoke('deskagent:update:check'),
+    download: () => ipcRenderer.invoke('deskagent:update:download'),
+    install: () => ipcRenderer.invoke('deskagent:update:install'),
+    status: () => ipcRenderer.invoke('deskagent:update:status'),
+    retryRunnerInstall: () => ipcRenderer.invoke('deskagent:update:runner:install'),
     onEvent: callback => {
       const listener = (_event, payload) => callback(payload)
-      ipcRenderer.on('zast:update-event', listener)
-      return () => ipcRenderer.removeListener('zast:update-event', listener)
+      ipcRenderer.on('deskagent:update-event', listener)
+      return () => ipcRenderer.removeListener('deskagent:update-event', listener)
     },
     onRunnerEvent: callback => {
       const listener = (_event, payload) => callback(payload)
-      ipcRenderer.on('zast:runner-update-event', listener)
-      return () => ipcRenderer.removeListener('zast:runner-update-event', listener)
+      ipcRenderer.on('deskagent:runner-update-event', listener)
+      return () => ipcRenderer.removeListener('deskagent:runner-update-event', listener)
     }
   }
 })

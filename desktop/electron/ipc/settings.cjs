@@ -5,17 +5,17 @@ const fs = require('node:fs')
 
 // User-configurable default project directory. The renderer reads it on
 // settings mount and seeds the value into the picker; writing back persists
-// it via writeDefaultProjectDir so resolveZastCwd picks it up on the next
+// it via writeDefaultProjectDir so resolveDeskAgentCwd picks it up on the next
 // session spawn (no app restart needed).
 function registerSettingsIpc({ ipcMain, electron, readDefaultProjectDir, writeDefaultProjectDir }) {
   const { app, dialog } = electron
 
-  ipcMain.handle('zast:setting:defaultProjectDir:get', async () => ({
+  ipcMain.handle('deskagent:setting:defaultProjectDir:get', async () => ({
     dir: readDefaultProjectDir(),
-    defaultLabel: path.join(app.getPath('home'), 'zast-projects')
+    defaultLabel: path.join(app.getPath('home'), 'deskagent-projects')
   }))
 
-  ipcMain.handle('zast:setting:defaultProjectDir:set', async (_event, dir) => {
+  ipcMain.handle('deskagent:setting:defaultProjectDir:set', async (_event, dir) => {
     const next = typeof dir === 'string' && dir.trim() ? dir.trim() : null
 
     if (next) {
@@ -31,7 +31,7 @@ function registerSettingsIpc({ ipcMain, electron, readDefaultProjectDir, writeDe
     return { dir: next }
   })
 
-  ipcMain.handle('zast:setting:defaultProjectDir:pick', async () => {
+  ipcMain.handle('deskagent:setting:defaultProjectDir:pick', async () => {
     const result = await dialog.showOpenDialog({
       title: 'Choose default project directory',
       properties: ['openDirectory', 'createDirectory'],

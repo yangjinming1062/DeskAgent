@@ -5,7 +5,7 @@
  *
  *   1. The MAIN process hits ``GET /api/health`` over HTTP (token in a header)
  *      to confirm the backend is up. This is what the boot logs print as
- *      "Remote Zast backend is ready".
+ *      "Remote DeskAgent backend is ready".
  *   2. The RENDERER then opens a live WebSocket to ``/api/ws`` (credential in a
  *      query param) via ``gateway.connect()``. The chat surface only works once
  *      THIS succeeds.
@@ -15,7 +15,7 @@
  * sees (Host/Origin checks, ws-ticket/token auth, peer-IP checks). So a gateway
  * can pass the HTTP status check yet reject the WebSocket — which surfaces to
  * the user as a green "Test remote" followed by an opaque "Could not connect to
- * Zast gateway" on the boot overlay.
+ * DeskAgent gateway" on the boot overlay.
  *
  * This module performs the second half of the check: it actually opens the WS
  * URL and confirms the upgrade is accepted (and isn't immediately torn down by

@@ -5,7 +5,7 @@
 function registerSystemIpc({ ipcMain, electron }) {
   const { app, Notification, systemPreferences } = electron
 
-  ipcMain.handle('zast:requestMicrophoneAccess', async () => {
+  ipcMain.handle('deskagent:requestMicrophoneAccess', async () => {
     if (process.platform !== 'darwin' || typeof systemPreferences.askForMediaAccess !== 'function') {
       return true
     }
@@ -13,17 +13,17 @@ function registerSystemIpc({ ipcMain, electron }) {
     return systemPreferences.askForMediaAccess('microphone')
   })
 
-  ipcMain.handle('zast:notify', (_event, payload) => {
+  ipcMain.handle('deskagent:notify', (_event, payload) => {
     if (!Notification.isSupported()) return false
     new Notification({
-      title: payload?.title || 'Zast',
+      title: payload?.title || 'DeskAgent',
       body: payload?.body || '',
       silent: Boolean(payload?.silent)
     }).show()
     return true
   })
 
-  ipcMain.handle('zast:version', async () => ({
+  ipcMain.handle('deskagent:version', async () => ({
     appVersion: app.getVersion(),
     electronVersion: process.versions.electron,
     nodeVersion: process.versions.node,

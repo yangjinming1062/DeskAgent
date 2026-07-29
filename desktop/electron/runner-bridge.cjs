@@ -71,9 +71,9 @@ function createRunnerBridge(options = {}) {
   }
 
   async function writeEndpointFile(port) {
-    const zastHome = options.zastHome
-    if (!zastHome) return
-    endpointFilePath = path.join(zastHome, 'desktop-endpoint.json')
+    const deskagentHome = options.deskagentHome
+    if (!deskagentHome) return
+    endpointFilePath = path.join(deskagentHome, 'desktop-endpoint.json')
     const payload = JSON.stringify({ port, pid: process.pid, timestamp: Date.now() })
     try {
       await atomicWriteFile(endpointFilePath, payload)

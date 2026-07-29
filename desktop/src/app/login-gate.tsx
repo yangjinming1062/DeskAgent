@@ -18,7 +18,7 @@ export function LoginGate() {
   // Subscribe unconditionally — the IPC is fire-and-forget, so an event that
   // arrives during the `pending` hydrate window would otherwise be lost.
   useEffect(() => {
-    const off = window.zastDesktop.onSessionExpired(() => void logout())
+    const off = window.deskagent.onSessionExpired(() => void logout())
 
     return () => off()
   }, [])

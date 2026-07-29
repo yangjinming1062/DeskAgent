@@ -31,8 +31,8 @@ export function DesktopController() {
   })
 
   useEffect(() => {
-    const offOpen = window.zastDesktop?.onOpenSettings?.(() => setSettingsOpen(true))
-    const offLogout = window.zastDesktop?.onTrayLogout?.(() => void logout())
+    const offOpen = window.deskagent?.onOpenSettings?.(() => setSettingsOpen(true))
+    const offLogout = window.deskagent?.onTrayLogout?.(() => void logout())
 
     return () => {
       offOpen?.()

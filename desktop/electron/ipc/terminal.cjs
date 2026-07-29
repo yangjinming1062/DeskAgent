@@ -6,7 +6,7 @@ const crypto = require('node:crypto')
 const { app } = require('electron')
 
 // Interactive shell session over node-pty. Renderer holds session id
-// and listens on zast:terminal:<id>:{data,exit} for output.
+// and listens on deskagent:terminal:<id>:{data,exit} for output.
 function terminalShellCommand() {
   if (process.platform === 'win32') {
     return { args: [], command: process.env.COMSPEC || 'cmd.exe' }
@@ -53,14 +53,14 @@ function terminalShellEnv() {
   env.COLORTERM = 'truecolor'
   env.LC_CTYPE = env.LC_CTYPE || 'UTF-8'
   env.TERM = 'xterm-256color'
-  env.TERM_PROGRAM = 'Zast'
+  env.TERM_PROGRAM = 'DeskAgent'
   env.TERM_PROGRAM_VERSION = app.getVersion()
 
   return env
 }
 
 function terminalChannel(id, suffix) {
-  return `zast:terminal:${id}:${suffix}`
+  return `deskagent:terminal:${id}:${suffix}`
 }
 
 function disposeTerminalSession(terminalSessions, id) {
@@ -82,9 +82,9 @@ function disposeTerminalSession(terminalSessions, id) {
 }
 
 function registerTerminalIpc({ ipcMain, nodePty, terminalSessions }) {
-  ipcMain.handle('zast:terminal:start', async (event, payload = {}) => {
+  ipcMain.handle('deskagent:terminal:start', async (event, payload = {}) => {
     if (!nodePty) {
-      throw new Error('PTY support is unavailable. Reinstall desktop dependencies and restart Zast.')
+      throw new Error('PTY support is unavailable. Reinstall desktop dependencies and restart DeskAgent.')
     }
 
     const id = crypto.randomUUID()
@@ -120,7 +120,7 @@ function registerTerminalIpc({ ipcMain, nodePty, terminalSessions }) {
     return { cwd, id, shell: name }
   })
 
-  ipcMain.handle('zast:terminal:write', (_event, id, data) => {
+  ipcMain.handle('deskagent:terminal:write', (_event, id, data) => {
     const sessionInfo = terminalSessions.get(String(id || ''))
 
     if (!sessionInfo) {
@@ -132,7 +132,7 @@ function registerTerminalIpc({ ipcMain, nodePty, terminalSessions }) {
     return true
   })
 
-  ipcMain.handle('zast:terminal:resize', (_event, id, size = {}) => {
+  ipcMain.handle('deskagent:terminal:resize', (_event, id, size = {}) => {
     const sessionInfo = terminalSessions.get(String(id || ''))
 
     if (!sessionInfo) {
@@ -147,7 +147,7 @@ function registerTerminalIpc({ ipcMain, nodePty, terminalSessions }) {
     return true
   })
 
-  ipcMain.handle('zast:terminal:dispose', (_event, id) => disposeTerminalSession(terminalSessions, String(id || '')))
+  ipcMain.handle('deskagent:terminal:dispose', (_event, id) => disposeTerminalSession(terminalSessions, String(id || '')))
 }
 
 module.exports = { registerTerminalIpc, disposeTerminalSession, terminalChannel }

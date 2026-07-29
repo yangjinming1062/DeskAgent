@@ -9,14 +9,14 @@ const { promisify } = require('node:util')
 
 const execFileP = promisify(execFile)
 
-const { zastHome } = require('./paths.cjs')
+const { deskagentHome } = require('./paths.cjs')
 const { venvPythonFor } = require('./venv-python.cjs')
 
 // Phase 1 / Phase 2 split — see CLAUDE.md §"Electron 二进制自更新".
 //
 // Phase 1 (prefetchRunnerAssets) runs in the OLD Electron on
 // `update-downloaded`. It downloads the runner manifest + wheel + server.py
-// to `$ZAST_HOME/runner.staging/`, verifies SHA-512 + RSA signature on each
+// to `$DESKAGENT_HOME/runner.staging/`, verifies SHA-512 + RSA signature on each
 // asset, and writes a sentinel `.pending-runner-update.json` recording the
 // staged paths. The renderer only enables the "Restart now" button AFTER
 // phase 1 completes.
@@ -26,8 +26,8 @@ const { venvPythonFor } = require('./venv-python.cjs')
 // needs the python.exe handle released before we touch the venv), then:
 //   - `pip install --upgrade <wheel>` against the existing venv's python
 //     (NEVER renames or moves the venv)
-//   - overwrites `$ZAST_HOME/runner/server.py`
-//   - smoke-imports `zast_agent` + `server` to confirm the new wheel
+//   - overwrites `$DESKAGENT_HOME/runner/server.py`
+//   - smoke-imports `deskagent_agent` + `server` to confirm the new wheel
 //     loads without ModuleNotFoundError
 //   - calls `runnerBridge.start()` to bring the new runner up
 //   - on any failure, calls `runnerBridge.start()` again in `finally` to
@@ -46,7 +46,7 @@ class RunnerUpdater {
   // Phase 1: prefetch in the OLD Electron.
   // ------------------------------------------------------------------
   async prefetchRunnerAssets({ version, updateBaseUrl, publicKeyPath }) {
-    const home = zastHome()
+    const home = deskagentHome()
     const stagingDir = path.join(home, 'runner.staging')
 
     await fsp.rm(stagingDir, { recursive: true, force: true })
@@ -182,7 +182,7 @@ class RunnerUpdater {
   // Phase 2: install in the NEW Electron.
   // ------------------------------------------------------------------
   async installPending() {
-    const home = zastHome()
+    const home = deskagentHome()
     const sentinelPath = path.join(home, '.pending-runner-update.json')
     if (!fs.existsSync(sentinelPath)) {
       return { ok: true, noop: true }
@@ -286,7 +286,7 @@ class RunnerUpdater {
       try {
         await execFileP(
           venvPython,
-          ['-c', 'import zast_agent, importlib.util as u; assert u.find_spec("server") is not None'],
+          ['-c', 'import deskagent_agent, importlib.util as u; assert u.find_spec("server") is not None'],
           { cwd: path.join(home, 'runner'), timeout: 30_000 }
         )
       } catch (err) {
@@ -340,7 +340,7 @@ class RunnerUpdater {
 
   /// Import chain is intentionally identical to
   /// `installer/.../bootstrap.rs::runner_venv_is_healthy` so the desktop
-  /// auto-update gate and the macOS Zast-Setup fast-path gate never
+  /// auto-update gate and the macOS DeskAgent-Setup fast-path gate never
   /// disagree on what "venv is healthy" means.
   async _probeVenvIntegrity(venvPython) {
     try {
@@ -372,7 +372,7 @@ class RunnerUpdater {
     if (typeof this.sendToMain === 'function') {
       // sendToMain already guards against null/destroyed windows; no try/catch
       // needed here.
-      this.sendToMain(this.getMainWindow?.(), 'zast:runner-update-event', payload)
+      this.sendToMain(this.getMainWindow?.(), 'deskagent:runner-update-event', payload)
     }
   }
 

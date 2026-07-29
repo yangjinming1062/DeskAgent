@@ -41,25 +41,25 @@ export const en: Translations = {
   },
 
   boot: {
-    ready: 'Zast Desktop is ready',
+    ready: 'DeskAgent Desktop is ready',
     desktopBootFailedWithMessage: message => `Desktop boot failed: ${message}`,
     steps: {
       connectingGateway: 'Connecting live desktop gateway',
-      loadingSettings: 'Loading Zast settings',
+      loadingSettings: 'Loading DeskAgent settings',
       loadingSessions: 'Loading recent sessions',
       startingDesktopConnection: 'Starting desktop connection',
-      startingZastDesktop: 'Starting Zast Desktop…'
+      startingDeskAgentDesktop: 'Starting DeskAgent Desktop…'
     },
     errors: {
-      backgroundExited: 'Zast background process exited.',
-      backgroundExitedDuringStartup: 'Zast background process exited during startup.',
+      backgroundExited: 'DeskAgent background process exited.',
+      backgroundExitedDuringStartup: 'DeskAgent background process exited during startup.',
       backendStopped: 'Backend stopped',
       desktopBootFailed: 'Desktop boot failed',
       gatewaySignInRequired: 'Gateway sign-in required',
       ipcBridgeUnavailable: 'Desktop IPC bridge is unavailable.'
     },
     failure: {
-      title: "Zast couldn't start",
+      title: "DeskAgent couldn't start",
       description:
         "The background gateway didn't come up. Try one of the recovery steps below. Nothing here deletes your chats or settings.",
       retry: 'Retry',
@@ -85,7 +85,7 @@ export const en: Translations = {
       elevenLabsNeedsKey: 'ElevenLabs STT needs ELEVENLABS_API_KEY.',
       elevenLabsRejectedKey: 'ElevenLabs rejected the API key (401).',
       methodNotAllowed:
-        'The desktop backend rejected that request (405 Method Not Allowed). Try restarting Zast Desktop.',
+        'The desktop backend rejected that request (405 Method Not Allowed). Try restarting DeskAgent Desktop.',
       microphonePermission: 'Microphone permission was denied.',
       openaiRejectedApiKey: 'OpenAI rejected the API key.',
       openaiRejectedApiKeyWithStatus: status => `OpenAI rejected the API key (${status} invalid_api_key).`,
@@ -218,8 +218,8 @@ export const en: Translations = {
     signIn: 'Sign in',
     signingIn: 'Signing in…',
     signOut: 'Sign out',
-    subtitle: 'Sign in with your Zast account to continue.',
-    title: 'Sign in to Zast',
+    subtitle: 'Sign in with your DeskAgent account to continue.',
+    title: 'Sign in to DeskAgent',
     username: 'Username'
   },
 
@@ -238,7 +238,7 @@ export const en: Translations = {
     exportConfig: 'Export config',
     importConfig: 'Import config',
     resetToDefaults: 'Reset to defaults',
-    resetConfirm: 'Reset all settings to Zast defaults?',
+    resetConfirm: 'Reset all settings to DeskAgent defaults?',
     exportFailed: 'Export failed',
     resetFailed: 'Reset failed',
     nav: {
@@ -261,7 +261,7 @@ export const en: Translations = {
       intro:
         'These are desktop-only display preferences. Mode controls brightness; theme controls the accent palette and chat surface styling.',
       colorMode: 'Color Mode',
-      colorModeDesc: 'Pick a fixed mode or let Zast follow your system setting.',
+      colorModeDesc: 'Pick a fixed mode or let DeskAgent follow your system setting.',
       toolViewTitle: 'Tool Call Display',
       toolViewDesc: 'Product hides raw tool payloads; Technical shows full input/output.',
       product: 'Product',
@@ -273,7 +273,7 @@ export const en: Translations = {
       themeProfileNote: profile => `Saved for the ${profile} profile — each profile keeps its own theme.`
     },
     about: {
-      heading: 'Zast Desktop',
+      heading: 'DeskAgent Desktop',
       version: value => `Version ${value}`,
       versionUnavailable: 'Version unavailable',
       checkForUpdates: 'Check for updates',
@@ -413,17 +413,17 @@ export const en: Translations = {
     skills: {
       title: 'Skills',
       intro:
-        'Each entry below is a category folder shipped with Zast under $ZAST_HOME/skills. Toggling a category on or off rewrites your local config.yaml and restarts the runner. The enabled set is sent to the backend on every chat turn so the model only sees local skills you can actually call.',
+        'Each entry below is a category folder shipped with DeskAgent under $DESKAGENT_HOME/skills. Toggling a category on or off rewrites your local config.yaml and restarts the runner. The enabled set is sent to the backend on every chat turn so the model only sees local skills you can actually call.',
       loading: 'Loading skills…',
       loadError: 'Could not load skills from disk.',
       saveError: 'Could not save the skill toggle.',
       refreshError:
         'Saved locally but the backend session was not refreshed — the next chat turn may still see the old skill set. Try toggling again.',
       emptyTitle: 'No skills installed',
-      emptyDesc: 'Reinstall Zast to recover the bundled skills.',
+      emptyDesc: 'Reinstall DeskAgent to recover the bundled skills.',
       hiddenByPlatformTitle: 'No skills available on this platform',
       hiddenByPlatformDesc:
-        'The bundled skills in this Zast build target other operating systems. Reinstall Zast on a supported OS to enable them.'
+        'The bundled skills in this DeskAgent build target other operating systems. Reinstall DeskAgent on a supported OS to enable them.'
     },
     account: {
       heading: 'Account',
@@ -555,7 +555,7 @@ export const en: Translations = {
     noSkillsTitle: 'No skills found',
     noSkillsDesc: 'Try a broader search or different category.',
     loadFailedTitle: 'Failed to load skills',
-    loadFailedDesc: 'Please retry, or check the $ZAST_HOME/skills directory.',
+    loadFailedDesc: 'Please retry, or check the $DESKAGENT_HOME/skills directory.',
     noToolsetsTitle: 'No toolsets found',
     noToolsetsDesc: 'Try a broader search query.',
     noDescription: 'No description.',
@@ -648,7 +648,7 @@ export const en: Translations = {
     },
     nav: {
       newChat: { title: 'New session', detail: 'Start a fresh session' },
-      settings: { title: 'Settings', detail: 'Configure Zast desktop' },
+      settings: { title: 'Settings', detail: 'Configure DeskAgent desktop' },
       skills: { title: 'Skills & Tools', detail: 'Enable skills, toolsets, and providers' },
       messaging: { title: 'Messaging', detail: 'Set up Telegram, Slack, Discord, and more' },
       artifacts: { title: 'Artifacts', detail: 'Browse generated outputs' }
@@ -670,7 +670,7 @@ export const en: Translations = {
     noSessions: 'No sessions yet.',
     gatewayRunning: 'Messaging gateway running',
     gatewayStopped: 'Messaging gateway stopped',
-    zastActiveSessions: (version, count) => `Zast ${version} · Active sessions ${count}`,
+    deskagentActiveSessions: (version, count) => `DeskAgent ${version} · Active sessions ${count}`,
     restartMessaging: 'Restart messaging',
     actionRunning: 'running',
     actionDone: 'done',
@@ -807,7 +807,7 @@ export const en: Translations = {
       },
       MATRIX_HOMESERVER: { label: 'Homeserver URL', placeholder: 'https://matrix.org' },
       MATRIX_ACCESS_TOKEN: { label: 'Access token' },
-      MATRIX_USER_ID: { label: 'Bot user ID', placeholder: '@zast:example.org' },
+      MATRIX_USER_ID: { label: 'Bot user ID', placeholder: '@deskagent:example.org' },
       MATRIX_ALLOWED_USERS: {
         label: 'Allowed Matrix user IDs',
         help: 'Recommended. Comma-separated user IDs in @user:server format.'
@@ -840,10 +840,10 @@ export const en: Translations = {
         'On your Mattermost server, create a bot account or personal access token, then paste the server URL and token here.',
       matrix: 'Log in to your homeserver with a bot account, then copy the access token, user ID, and homeserver URL.',
       signal:
-        'Run signal-cli REST bridge somewhere reachable, then point Zast at that URL and the registered phone number.',
+        'Run signal-cli REST bridge somewhere reachable, then point DeskAgent at that URL and the registered phone number.',
       whatsapp: 'Start the bundled WhatsApp bridge, scan the QR code on first run, then enable this platform.',
       bluebubbles:
-        'Run BlueBubbles Server on a Mac with iMessage, expose its API, then point Zast at that URL with the server password.',
+        'Run BlueBubbles Server on a Mac with iMessage, expose its API, then point DeskAgent at that URL with the server password.',
       homeassistant:
         'Open your Home Assistant profile and create a long-lived access token. Paste it together with your HA URL here.',
       email:
@@ -858,10 +858,10 @@ export const en: Translations = {
       wecom_callback:
         'Set up a self-built WeCom app, expose its callback URL, then provide corp ID, secret, agent ID, and AES key.',
       weixin:
-        'Sign in to the Weixin Official Accounts platform, copy the AppID and Token, and point the message callback URL at Zast.',
+        'Sign in to the Weixin Official Accounts platform, copy the AppID and Token, and point the message callback URL at DeskAgent.',
       qqbot: 'Register an app on the QQ Open Platform (q.qq.com), then copy the App ID and Client Secret.',
       api_server:
-        'Expose Zast as an OpenAI-compatible API. Set an auth key, then point Open WebUI / LobeChat at host:port.',
+        'Expose DeskAgent as an OpenAI-compatible API. Set an auth key, then point Open WebUI / LobeChat at host:port.',
       webhook:
         'Run an HTTP server that other tools (GitHub, GitLab, custom apps) POST to. Use a secret to verify signatures.'
     }
@@ -912,7 +912,7 @@ export const en: Translations = {
     deleteDescMid: ' and remove its ',
     deleteDescSuffix: ' directory. This cannot be undone.',
     deleting: 'Deleting...',
-    createDesc: 'Profiles are independent Zast environments: separate config, skills, and SOUL.md.',
+    createDesc: 'Profiles are independent DeskAgent environments: separate config, skills, and SOUL.md.',
     nameLabel: 'Name',
     cloneFromDefault: 'Clone from default',
     cloneFromDefaultDesc: 'Copy config, skills, and SOUL.md from your default profile.',
@@ -996,7 +996,7 @@ export const en: Translations = {
     everyHourAt: minute => `Every hour at :${minute}`,
     newCron: 'New cron',
     emptyDescNew:
-      'Schedule a prompt to run on a cron expression. Zast will run it and deliver results to the destination you pick.',
+      'Schedule a prompt to run on a cron expression. DeskAgent will run it and deliver results to the destination you pick.',
     emptyDescSearch: 'Try a broader search query.',
     emptyTitleNew: 'No scheduled jobs yet',
     emptyTitleSearch: 'No matches',
@@ -1142,12 +1142,12 @@ export const en: Translations = {
   composer: {
     message: 'Message',
     wakingProfile: profile => `Waking up ${profile}…`,
-    placeholderStarting: 'Starting Zast...',
-    placeholderReconnecting: 'Reconnecting to Zast…',
+    placeholderStarting: 'Starting DeskAgent...',
+    placeholderReconnecting: 'Reconnecting to DeskAgent…',
     placeholderFollowUp: 'Send follow-up',
     newSessionPlaceholders: [
       'What are we building?',
-      'Give Zast a task',
+      'Give DeskAgent a task',
       "What's on your mind?",
       'Describe what you need',
       'What should we tackle?',
@@ -1197,7 +1197,7 @@ export const en: Translations = {
       '/resume': 'resume a prior session',
       '/details': 'control transcript detail level',
       '/copy': 'copy selection or last assistant message',
-      '/quit': 'exit zast'
+      '/quit': 'exit deskagent'
     },
     hotkeyDescs: {
       '@': 'reference files, folders, urls, git',
@@ -1210,7 +1210,7 @@ export const en: Translations = {
       '↑ / ↓': 'cycle popover / history'
     },
     attachUrlTitle: 'Attach a URL',
-    attachUrlDesc: 'Zast will fetch the page and include it as context for this turn.',
+    attachUrlDesc: 'DeskAgent will fetch the page and include it as context for this turn.',
     urlPlaceholder: 'https://example.com/post',
     urlHintPre: 'Include the full URL, e.g. ',
     attach: 'Attach',
@@ -1288,7 +1288,7 @@ export const en: Translations = {
           body: 'I can edit files, run commands, search the web, and walk you through tricky bugs. Just describe the task.'
         },
         {
-          headline: 'Hi, Zast here',
+          headline: 'Hi, DeskAgent here',
           body: 'Share a repo path or a question to start. I keep replies clear and link back to the files I touch.'
         }
       ],
@@ -1371,7 +1371,7 @@ export const en: Translations = {
           body: "paste a bug or a file path and i'll fix it super gently. tests, diffs, PRs - all with extra care! *sparkle*"
         },
         {
-          headline: 'zast-chan is here! <3',
+          headline: 'deskagent-chan is here! <3',
           body: "tell me what you're making! i love refactors, tiny helpers, and big scary repos alike (>w<)"
         },
         {
@@ -1405,7 +1405,7 @@ export const en: Translations = {
           body: 'paste an error or a plan. i debug like i hunt: quietly, thoroughly, with the occasional zoomie.'
         },
         {
-          headline: 'nyaaa~ zast reporting',
+          headline: 'nyaaa~ deskagent reporting',
           body: "say the word and i'll read your files, run your tests, and curl up in your branch with a tidy commit."
         }
       ],
@@ -1415,7 +1415,7 @@ export const en: Translations = {
           body: "Name yer quarry - a bug, a feature, a cursed test - and I'll chase it down, matey. Diffs for plunder."
         },
         {
-          headline: 'Zast at the helm, arrr',
+          headline: 'DeskAgent at the helm, arrr',
           body: "Point me at the charts (the code) and I'll patch the hull, fire the cannons (tests), hoist a clean PR."
         },
         {
@@ -1437,7 +1437,7 @@ export const en: Translations = {
           body: "Speak thy bug, thy file, thy weary test, and I shall mend it with a scholar's hand and honest diff."
         },
         {
-          headline: 'Hark! Zast standeth ready',
+          headline: 'Hark! DeskAgent standeth ready',
           body: 'Name the code that vexeth thee. I shall read, revise, and render a patch most fair and clean.'
         },
         {
@@ -1485,7 +1485,7 @@ export const en: Translations = {
           body: "You've got a bug. I've got patience and a terminal. Name the case and I'll work it till it talks."
         },
         {
-          headline: 'Zast. Code investigator.',
+          headline: 'DeskAgent. Code investigator.',
           body: 'Paste the stack trace, the suspect file, the alibi. I read between the lines and return with the truth.'
         },
         {
@@ -1503,7 +1503,7 @@ export const en: Translations = {
           body: "paste a buggy fiwe or a goaw~ i'll wead, patch, and test, aww with tiny pawprints on the diff owo"
         },
         {
-          headline: 'zast-san is wistening',
+          headline: 'deskagent-san is wistening',
           body: 'teww me the task, no matter how smoww~ i pwomise cwean commits and gentwe refactors, nyuu~'
         },
         {
@@ -1547,7 +1547,7 @@ export const en: Translations = {
           body: 'Paste that bug, that repo, that wild feature idea - I AM LOCKED IN. Clean diffs. Green tests. RIGHT NOW.'
         },
         {
-          headline: 'ZAST ONLINE. LFG.',
+          headline: 'DESKAGENT ONLINE. LFG.',
           body: 'Drop your task and watch me cook. Files read, tests run, PRs opened - we are NOT losing today, friend.'
         },
         {
@@ -1565,7 +1565,7 @@ export const en: Translations = {
       ],
       none: [
         {
-          headline: 'Zast Agent is ready.',
+          headline: 'DeskAgent Agent is ready.',
           body: 'Ask a question, paste an error, or point me at a repo. I can read code, run tools, and help you ship.'
         },
         {
@@ -1595,7 +1595,7 @@ export const en: Translations = {
           body: "Bring the code, question, or stuck part. I'll read the room before making changes."
         },
         {
-          headline: 'What should Zast look at?',
+          headline: 'What should DeskAgent look at?',
           body: "Send the task, failing path, or half-formed plan. I'll help turn it into action."
         },
         {
@@ -1677,7 +1677,7 @@ export const en: Translations = {
       update: 'update',
       updateInProgress: 'Update in progress',
       commitsBehind: (count, branch) => `${count} commit${count === 1 ? '' : 's'} behind ${branch}`,
-      desktopVersion: version => `Zast Desktop v${version}`,
+      desktopVersion: version => `DeskAgent Desktop v${version}`,
       backendVersion: version => `Backend v${version}`,
       clientLabel: version => `client v${version}`,
       backendLabel: version => `backend v${version}`,
@@ -1691,7 +1691,7 @@ export const en: Translations = {
       gatewayChecking: 'checking',
       gatewayConnecting: 'connecting',
       gatewayOffline: 'offline',
-      gatewayTitle: 'Zast inference gateway status',
+      gatewayTitle: 'DeskAgent inference gateway status',
       agents: 'Agents',
       closeAgents: 'Close agents',
       openAgents: 'Open agents',
@@ -1759,7 +1759,7 @@ export const en: Translations = {
     binaryTitle: 'This looks like a binary file',
     binaryBody: label => `Previewing ${label} may show unreadable text.`,
     largeTitle: 'This file is large',
-    largeBody: (label, size) => `${label} is ${size}. Zast will only show the first 512 KB.`,
+    largeBody: (label, size) => `${label} is ${size}. DeskAgent will only show the first 512 KB.`,
     previewAnyway: 'Preview anyway',
     truncated: 'Showing first 512 KB.',
     noInlineTitle: 'No inline preview',
@@ -1810,7 +1810,7 @@ export const en: Translations = {
   assistant: {
     thread: {
       loadingSession: 'Loading session',
-      loadingResponse: 'Zast is loading a response',
+      loadingResponse: 'DeskAgent is loading a response',
       thinking: 'Thinking',
       today: time => `Today, ${time}`,
       yesterday: time => `Yesterday, ${time}`,
@@ -1832,7 +1832,7 @@ export const en: Translations = {
       sendEdited: 'Send edited message'
     },
     approval: {
-      gatewayDisconnected: 'Zast gateway is not connected',
+      gatewayDisconnected: 'DeskAgent gateway is not connected',
       sendFailed: 'Could not send approval response',
       run: 'Run',
       moreOptions: 'More approval options',
@@ -1841,12 +1841,12 @@ export const en: Translations = {
       reject: 'Reject',
       alwaysTitle: 'Always allow this command?',
       alwaysDescription: pattern =>
-        `This adds the “${pattern}” pattern to your permanent allowlist (~/.zast/config.yaml). Zast won’t ask again for commands like this — in this session or any future one.`,
+        `This adds the “${pattern}” pattern to your permanent allowlist (~/.deskagent/config.yaml). DeskAgent won’t ask again for commands like this — in this session or any future one.`,
       alwaysAllow: 'Always allow'
     },
     clarify: {
       notReady: 'Clarify request is not ready yet',
-      gatewayDisconnected: 'Zast gateway is not connected',
+      gatewayDisconnected: 'DeskAgent gateway is not connected',
       sendFailed: 'Could not send clarify response',
       loadingQuestion: 'Loading question…',
       other: 'Other (type your answer)',
@@ -1883,14 +1883,14 @@ export const en: Translations = {
   },
 
   prompts: {
-    gatewayDisconnected: 'Zast gateway is not connected',
+    gatewayDisconnected: 'DeskAgent gateway is not connected',
     sudoSendFailed: 'Could not send sudo password',
     secretSendFailed: 'Could not send secret',
     sudoTitle: 'Administrator password',
-    sudoDesc: 'Zast needs your sudo password to run a privileged command. It is sent only to your local agent.',
+    sudoDesc: 'DeskAgent needs your sudo password to run a privileged command. It is sent only to your local agent.',
     sudoPlaceholder: 'sudo password',
     secretTitle: 'Secret required',
-    secretDesc: 'Zast needs a credential to continue.',
+    secretDesc: 'DeskAgent needs a credential to continue.',
     secretPlaceholder: 'secret value'
   },
 
@@ -1938,8 +1938,8 @@ export const en: Translations = {
     sessionExportFailed: 'Could not export session',
     imageSaved: 'Image saved',
     downloadStarted: 'Download started',
-    restartToUseSaveImage: 'Restart Zast Desktop to use Save Image.',
-    restartToSaveImages: 'Restart Zast Desktop to save images',
+    restartToUseSaveImage: 'Restart DeskAgent Desktop to use Save Image.',
+    restartToSaveImages: 'Restart DeskAgent Desktop to save images',
     imageDownloadFailed: 'Image download failed',
     openImage: 'Open image',
     downloadImage: 'Download image',

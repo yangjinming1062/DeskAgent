@@ -8,9 +8,9 @@ let trayDeps = null
 
 function buildTrayMenu() {
   return trayDeps.Menu.buildFromTemplate([
-    { label: 'Show Zast', click: () => showMainWindow() },
+    { label: 'Show DeskAgent', click: () => showMainWindow() },
     { type: 'separator' },
-    { label: 'Quit Zast', click: () => quitAppFully() }
+    { label: 'Quit DeskAgent', click: () => quitAppFully() }
   ])
 }
 
@@ -75,7 +75,7 @@ function installTray(deps) {
     return null
   }
 
-  trayInstance.setToolTip('Zast')
+  trayInstance.setToolTip('DeskAgent')
   trayInstance.setContextMenu(buildTrayMenu())
 
   // On Linux, left-click on the tray icon opens the window. On Windows,

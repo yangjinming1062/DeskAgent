@@ -2,13 +2,13 @@ import { useCallback } from 'react'
 
 import { useTheme } from './context'
 
-// Retired skin names land on the canonical Zast skin so old muscle memory works.
+// Retired skin names land on the canonical DeskAgent skin so old muscle memory works.
 const ALIASES: Record<string, string> = {
   ares: 'ember',
-  default: 'zast',
-  gold: 'zast',
-  'nous-light': 'zast',
-  'zast-light': 'zast'
+  default: 'deskagent',
+  gold: 'deskagent',
+  'nous-light': 'deskagent',
+  'deskagent-light': 'deskagent'
 }
 
 export function useSkinCommand() {

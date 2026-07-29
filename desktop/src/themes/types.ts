@@ -60,7 +60,7 @@ export interface DesktopTheme {
   description: string
   /** Light palette (also reused for dark when `darkColors` is omitted). */
   colors: DesktopThemeColors
-  /** Hand-tuned dark palette. Skins like `zast` ship one. */
+  /** Hand-tuned dark palette. Skins like `deskagent` ship one. */
   darkColors?: DesktopThemeColors
   typography?: Partial<DesktopThemeTypography>
 }

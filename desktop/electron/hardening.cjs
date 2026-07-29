@@ -38,7 +38,7 @@ function encryptDesktopSecret(value, safeStorageApi) {
 
   if (!encryptionAvailable) {
     throw new Error(
-      'Secure token storage is unavailable, so Zast Desktop cannot save remote gateway tokens. ' +
+      'Secure token storage is unavailable, so DeskAgent Desktop cannot save remote gateway tokens. ' +
         'Enable OS keychain access and try again.'
     )
   }

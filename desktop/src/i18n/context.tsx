@@ -41,10 +41,10 @@ const I18nContext = createContext<I18nContextValue>({
 })
 
 // localStorage key for the persisted renderer locale preference.
-// Naming follows the `zast.desktop.<scope>.v1` convention (see e.g.
-// `zast.desktop.sessionPreviews.v1`). Bump the suffix if the persisted shape
+// Naming follows the `deskagent.desktop.<scope>.v1` convention (see e.g.
+// `deskagent.desktop.sessionPreviews.v1`). Bump the suffix if the persisted shape
 // changes in a non-backwards-compatible way.
-const LOCALE_STORAGE_KEY = 'zast.desktop.locale.v1'
+const LOCALE_STORAGE_KEY = 'deskagent.desktop.locale.v1'
 
 export interface I18nProviderProps {
   children: ReactNode

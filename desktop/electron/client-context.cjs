@@ -21,19 +21,19 @@ const { buildSkillSummaries } = require('./lib/skill-index.cjs')
 
 const SCHEMA_VERSION = 1
 
-function resolveZastHome(env = process.env) {
-  if (env.ZAST_HOME && String(env.ZAST_HOME).trim()) {
-    return path.resolve(String(env.ZAST_HOME))
+function resolveDeskAgentHome(env = process.env) {
+  if (env.DESKAGENT_HOME && String(env.DESKAGENT_HOME).trim()) {
+    return path.resolve(String(env.DESKAGENT_HOME))
   }
 
   // Mirror installer scripts:
-  //   POSIX:    $HOME/.zast
-  //   Windows:  %LOCALAPPDATA%\zast
+  //   POSIX:    $HOME/.deskagent
+  //   Windows:  %LOCALAPPDATA%\deskagent
   const home = os.homedir()
   if (process.platform === 'win32' && env.LOCALAPPDATA) {
-    return path.join(env.LOCALAPPDATA, 'zast')
+    return path.join(env.LOCALAPPDATA, 'deskagent')
   }
-  return path.join(home, '.zast')
+  return path.join(home, '.deskagent')
 }
 
 function buildClientContext(options = {}) {
@@ -43,17 +43,17 @@ function buildClientContext(options = {}) {
   const nodeVersion = options.nodeVersion ?? process.versions?.node ?? null
   const desktopVersion = options.desktopVersion ?? 'unknown'
   const userAgent = options.userAgent ?? null
-  const zastHome = options.zastHome ?? resolveZastHome(options.env)
-  const skillsRoot = options.skillsRoot ?? path.join(zastHome, 'skills')
-  const configPath = options.configPath ?? path.join(zastHome, 'config.yaml')
+  const deskagentHome = options.deskagentHome ?? resolveDeskAgentHome(options.env)
+  const skillsRoot = options.skillsRoot ?? path.join(deskagentHome, 'skills')
+  const configPath = options.configPath ?? path.join(deskagentHome, 'config.yaml')
   const listSkills = options.listSkills ?? buildSkillSummaries
 
   const lines = [
     `${platform} ${release}`,
     `arch=${arch}`,
-    desktopVersion !== 'unknown' ? `zast-desktop=${desktopVersion}` : null,
+    desktopVersion !== 'unknown' ? `deskagent-desktop=${desktopVersion}` : null,
     nodeVersion ? `node=${nodeVersion}` : null,
-    zastHome ? `zast_home=${zastHome}` : null
+    deskagentHome ? `deskagent_home=${deskagentHome}` : null
   ].filter(Boolean)
 
   const enabledNames = listSkills({ skillsRoot, configPath })
@@ -69,7 +69,7 @@ function buildClientContext(options = {}) {
     client_version: desktopVersion,
     client_context: {
       environment_hints: lines.join('; '),
-      platform_hints: userAgent || `ZastDesktop/${desktopVersion} (${platform}; ${arch})`,
+      platform_hints: userAgent || `DeskAgentDesktop/${desktopVersion} (${platform}; ${arch})`,
       skills: enabledNames
     }
   }
@@ -78,5 +78,5 @@ function buildClientContext(options = {}) {
 module.exports = {
   SCHEMA_VERSION,
   buildClientContext,
-  resolveZastHome
+  resolveDeskAgentHome
 }

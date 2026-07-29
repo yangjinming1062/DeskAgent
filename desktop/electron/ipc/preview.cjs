@@ -30,9 +30,9 @@ function expandUserPath(filePath) {
 }
 
 async function previewFileTarget(rawTarget, baseDir, deps) {
-  const { resolveZastCwd, previewFileMetadata, mimeTypeForPath, previewLanguageByExt } = deps
+  const { resolveDeskAgentCwd, previewFileMetadata, mimeTypeForPath, previewLanguageByExt } = deps
   const raw = String(rawTarget || '').trim()
-  const base = baseDir ? path.resolve(expandUserPath(baseDir)) : resolveZastCwd()
+  const base = baseDir ? path.resolve(expandUserPath(baseDir)) : resolveDeskAgentCwd()
   const filePath = raw.startsWith('file:') ? fileURLToPath(raw) : path.resolve(base, expandUserPath(raw))
   let resolved = filePath
 
@@ -119,7 +119,7 @@ function filePathFromPreviewUrl(rawUrl) {
 }
 
 function sendPreviewFileChanged(getMainWindow, payload) {
-  sendToMain(getMainWindow(), 'zast:preview-file-changed', payload)
+  sendToMain(getMainWindow(), 'deskagent:preview-file-changed', payload)
 }
 
 function watchPreviewFile(rawUrl, deps) {
@@ -178,13 +178,13 @@ function closePreviewWatchers(deps) {
 }
 
 function registerPreviewIpc({ ipcMain, deps }) {
-  ipcMain.handle('zast:normalizePreviewTarget', async (_event, target, baseDir) =>
+  ipcMain.handle('deskagent:normalizePreviewTarget', async (_event, target, baseDir) =>
     normalizePreviewTarget(String(target || ''), baseDir ? String(baseDir) : '', deps)
   )
 
-  ipcMain.handle('zast:watchPreviewFile', (_event, url) => watchPreviewFile(String(url || ''), deps))
+  ipcMain.handle('deskagent:watchPreviewFile', (_event, url) => watchPreviewFile(String(url || ''), deps))
 
-  ipcMain.handle('zast:stopPreviewFileWatch', (_event, id) => stopPreviewFileWatch(String(id || ''), deps))
+  ipcMain.handle('deskagent:stopPreviewFileWatch', (_event, id) => stopPreviewFileWatch(String(id || ''), deps))
 }
 
 module.exports = { registerPreviewIpc, closePreviewWatchers }

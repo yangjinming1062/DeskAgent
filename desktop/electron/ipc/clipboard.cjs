@@ -7,12 +7,12 @@
 function registerClipboardIpc({ ipcMain, electron, writeComposerImage }) {
   const { clipboard } = electron
 
-  ipcMain.handle('zast:writeClipboard', (_event, text) => {
+  ipcMain.handle('deskagent:writeClipboard', (_event, text) => {
     clipboard.writeText(String(text || ''))
     return true
   })
 
-  ipcMain.handle('zast:saveClipboardImage', async () => {
+  ipcMain.handle('deskagent:saveClipboardImage', async () => {
     const image = clipboard.readImage()
     if (!image || image.isEmpty()) {
       return ''

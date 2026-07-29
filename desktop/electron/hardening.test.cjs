@@ -52,7 +52,7 @@ test('sensitiveFileBlockReason blocks obvious secret file patterns', () => {
 })
 
 test('resolveReadableFileForIpc validates existence type size and sensitivity', async t => {
-  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'zast-desktop-hardening-'))
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'deskagent-desktop-hardening-'))
   t.after(() => fs.rmSync(tempDir, { recursive: true, force: true }))
 
   const textPath = path.join(tempDir, 'notes.txt')

@@ -26,7 +26,7 @@ export function AboutSettings() {
     // `$updateStatus` atom — even if the check resolves to "none" the
     // dialog reports it inline.
     openUpdateDialog()
-    void window.zastDesktop?.update?.check?.()
+    void window.deskagent?.update?.check?.()
   }, [])
 
   const isChecking = updateStatus.status === 'checking'

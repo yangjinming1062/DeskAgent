@@ -9,15 +9,15 @@ const { patchAndCommit, commitRaw, MAX_CONTENT_BYTES } = require('../lib/config-
 const { invalidateDisabledCache } = require('../lib/skill-index.cjs')
 
 function registerRunnerConfigIpc({ ipcMain, deps }) {
-  const { zastHome, restartRunnerBridge, rememberLog } = deps
-  const configPath = path.join(zastHome, 'config.yaml')
+  const { deskagentHome, restartRunnerBridge, rememberLog } = deps
+  const configPath = path.join(deskagentHome, 'config.yaml')
 
   // onCommit drops the readDisabledSet mtime cache after any successful
   // write so a same-tick patch on `skills.disabled` doesn't return a stale
   // set on the next read.
   const writeDeps = { atomicWriteFile, restartRunnerBridge, rememberLog, onCommit: invalidateDisabledCache }
 
-  ipcMain.handle('zast:runner-config:read', async () => {
+  ipcMain.handle('deskagent:runner-config:read', async () => {
     try {
       const content = await fs.promises.readFile(configPath, 'utf8')
       return { ok: true, content }
@@ -31,7 +31,7 @@ function registerRunnerConfigIpc({ ipcMain, deps }) {
     }
   })
 
-  ipcMain.handle('zast:runner-config:write', async (_event, newContent) => {
+  ipcMain.handle('deskagent:runner-config:write', async (_event, newContent) => {
     if (typeof newContent !== 'string') {
       return { ok: false, error: 'config content must be a string' }
     }
@@ -65,7 +65,7 @@ function registerRunnerConfigIpc({ ipcMain, deps }) {
   // document (e.g. the MCP settings page just edits the mcp_servers
   // section). The lock + atomic write + bridge restart + deprecated-key
   // strip live in lib/config-writer.cjs so skills.cjs can share them.
-  ipcMain.handle('zast:runner-config:patch', async (_event, patch) => {
+  ipcMain.handle('deskagent:runner-config:patch', async (_event, patch) => {
     if (!patch || !Array.isArray(patch.path) || patch.path.length === 0) {
       return { ok: false, error: 'patch.path must be a non-empty array' }
     }
@@ -74,7 +74,7 @@ function registerRunnerConfigIpc({ ipcMain, deps }) {
       return { ok: false, error: `unknown op: ${op}` }
     }
     return patchAndCommit({
-      zastHome,
+      deskagentHome,
       path: patch.path,
       value: patch.value,
       deps: writeDeps,

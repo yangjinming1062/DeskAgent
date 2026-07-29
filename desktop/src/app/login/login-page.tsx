@@ -39,7 +39,7 @@ export function LoginPage() {
   return (
     <div className="fixed inset-0 z-[1300] flex items-center justify-center bg-(--ui-chat-surface-background) p-6">
       <form
-        className="grid w-full max-w-[24rem] gap-4 rounded-xl border border-(--stroke-zast) bg-(--ui-chat-bubble-background) p-5 shadow-zast"
+        className="grid w-full max-w-[24rem] gap-4 rounded-xl border border-(--stroke-deskagent) bg-(--ui-chat-bubble-background) p-5 shadow-deskagent"
         onSubmit={onSubmit}
       >
         <BrandMark className="mx-auto size-14" />

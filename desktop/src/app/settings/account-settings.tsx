@@ -6,13 +6,13 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
+import { getDeskAgentConfig, saveDeskAgentConfig } from '@/deskagent/config'
 import { useI18n } from '@/i18n'
 import { triggerHaptic } from '@/lib/haptics'
 import { Eye, EyeOff, Globe, KeyRound, Loader2, LogOut, SlidersHorizontal, X } from '@/lib/icons'
 import { $auth, logout } from '@/store/auth'
 import { notify, notifyError } from '@/store/notifications'
-import type { ZastConfigResponse } from '@/types/zast'
-import { getZastConfig, saveZastConfig } from '@/zast/config'
+import type { DeskAgentConfigResponse } from '@/types/deskagent'
 
 import { ListRow, LoadingState, SectionHeading, SettingsContent, SettingsSubsection } from './primitives'
 
@@ -68,7 +68,7 @@ const EMPTY_AGENT: AgentFormState = {
   show_subagents_in_sidebar: false
 }
 
-const readWebState = (config: ZastConfigResponse): WebFormState => {
+const readWebState = (config: DeskAgentConfigResponse): WebFormState => {
   const web = config.web
 
   return {
@@ -86,7 +86,7 @@ const readWebState = (config: ZastConfigResponse): WebFormState => {
   }
 }
 
-const readAgentState = (config: ZastConfigResponse): AgentFormState => {
+const readAgentState = (config: DeskAgentConfigResponse): AgentFormState => {
   const agent = config.agent
   const display = config.display
 
@@ -117,7 +117,7 @@ export function AccountSettings({ onConfigSaved }: { onConfigSaved?: () => void 
 
     void (async () => {
       try {
-        const config = await getZastConfig()
+        const config = await getDeskAgentConfig()
 
         if (cancelled) {
           return
@@ -209,7 +209,7 @@ export function AccountSettings({ onConfigSaved }: { onConfigSaved?: () => void 
         bodyWeb.tavily_api_key = ''
       }
 
-      const { config } = await saveZastConfig({
+      const { config } = await saveDeskAgentConfig({
         agent: {
           enable_background_review: agent.enable_background_review,
           reasoning_effort: agent.reasoning_effort,
@@ -350,7 +350,7 @@ function ChangePasswordForm() {
     setBusy(true)
 
     try {
-      const result = await window.zastDesktop.changePassword({
+      const result = await window.deskagent.changePassword({
         current_password: currentPassword,
         new_password: newPassword
       })

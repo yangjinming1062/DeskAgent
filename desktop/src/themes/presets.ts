@@ -20,48 +20,48 @@ const SYSTEM_MONO =
 
 export const DEFAULT_TYPOGRAPHY: DesktopThemeTypography = { fontSans: SYSTEM_SANS, fontMono: SYSTEM_MONO }
 
-const ZAST_BLUE = '#0053FD'
+const DESKAGENT_BLUE = '#0053FD'
 const PSYCHE_BLUE = '#1540B1'
 const PSYCHE_WARM = '#FFE6CB'
 
-const zastTint = (pct: number) => `color-mix(in srgb, ${ZAST_BLUE} ${pct}%, #FFFFFF)`
-const zastTintTransparent = (pct: number) => `color-mix(in srgb, ${ZAST_BLUE} ${pct}%, transparent)`
+const deskagentTint = (pct: number) => `color-mix(in srgb, ${DESKAGENT_BLUE} ${pct}%, #FFFFFF)`
+const deskagentTintTransparent = (pct: number) => `color-mix(in srgb, ${DESKAGENT_BLUE} ${pct}%, transparent)`
 
 /**
- * Zast — canonical desktop identity. The palette keeps the current
+ * DeskAgent — canonical desktop identity. The palette keeps the current
  * glass geometry neutral, then lets the old bb/gui blue and psyche cream
  * return as accent seeds.
  */
-export const zastTheme: DesktopTheme = {
-  name: 'zast',
-  label: 'Zast',
-  description: 'Glass neutrals with Zast blue accents',
+export const deskagentTheme: DesktopTheme = {
+  name: 'deskagent',
+  label: 'DeskAgent',
+  description: 'Glass neutrals with DeskAgent blue accents',
   colors: {
     background: '#F8FAFF',
     foreground: '#17171A',
     card: '#FFFFFF',
     cardForeground: '#17171A',
-    muted: zastTint(5),
+    muted: deskagentTint(5),
     mutedForeground: '#666678',
     popover: '#FFFFFF',
     popoverForeground: '#17171A',
-    primary: ZAST_BLUE,
+    primary: DESKAGENT_BLUE,
     primaryForeground: '#FCFCFC',
-    secondary: zastTint(7),
+    secondary: deskagentTint(7),
     secondaryForeground: '#242432',
-    accent: zastTint(10),
+    accent: deskagentTint(10),
     accentForeground: '#202030',
-    border: zastTintTransparent(22),
-    input: zastTintTransparent(30),
-    ring: ZAST_BLUE,
-    midground: ZAST_BLUE,
-    composerRing: ZAST_BLUE,
+    border: deskagentTintTransparent(22),
+    input: deskagentTintTransparent(30),
+    ring: DESKAGENT_BLUE,
+    midground: DESKAGENT_BLUE,
+    composerRing: DESKAGENT_BLUE,
     destructive: '#C72E4D',
     destructiveForeground: '#FFFFFF',
     sidebarBackground: '#F3F7FF',
-    sidebarBorder: zastTintTransparent(18),
-    userBubble: zastTint(6),
-    userBubbleBorder: zastTintTransparent(24)
+    sidebarBorder: deskagentTintTransparent(18),
+    userBubble: deskagentTint(6),
+    userBubbleBorder: deskagentTintTransparent(24)
   },
   darkColors: {
     background: '#0D2F86',
@@ -81,7 +81,7 @@ export const zastTheme: DesktopTheme = {
     border: '#3158AD',
     input: '#0B2566',
     ring: PSYCHE_WARM,
-    midground: ZAST_BLUE,
+    midground: DESKAGENT_BLUE,
     composerRing: PSYCHE_WARM,
     destructive: '#C0473A',
     destructiveForeground: '#FEF2F2',
@@ -278,7 +278,7 @@ export const slateTheme: DesktopTheme = {
 }
 
 export const BUILTIN_THEMES: Record<string, DesktopTheme> = {
-  zast: zastTheme,
+  deskagent: deskagentTheme,
   midnight: midnightTheme,
   ember: emberTheme,
   mono: monoTheme,
@@ -289,4 +289,4 @@ export const BUILTIN_THEMES: Record<string, DesktopTheme> = {
 export const BUILTIN_THEME_LIST = Object.values(BUILTIN_THEMES)
 
 /** Skin used when nothing is persisted or the persisted name is retired. */
-export const DEFAULT_SKIN_NAME = 'zast'
+export const DEFAULT_SKIN_NAME = 'deskagent'

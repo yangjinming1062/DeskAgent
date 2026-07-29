@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { listSessions } from './zast'
+import { listSessions } from './deskagent'
 
 const emptySessionsResponse = {
   limit: 0,
@@ -9,12 +9,12 @@ const emptySessionsResponse = {
   total: 0
 }
 
-describe('Zast REST session helpers', () => {
+describe('DeskAgent REST session helpers', () => {
   let api: ReturnType<typeof vi.fn>
 
   beforeEach(() => {
     api = vi.fn().mockResolvedValue(emptySessionsResponse)
-    Object.defineProperty(window, 'zastDesktop', {
+    Object.defineProperty(window, 'deskagent', {
       configurable: true,
       value: { api }
     })
@@ -22,7 +22,7 @@ describe('Zast REST session helpers', () => {
 
   afterEach(() => {
     vi.restoreAllMocks()
-    Reflect.deleteProperty(window, 'zastDesktop')
+    Reflect.deleteProperty(window, 'deskagent')
   })
 
   it('uses a longer timeout for the single-profile session list', async () => {

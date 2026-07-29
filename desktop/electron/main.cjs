@@ -59,7 +59,7 @@ const {
   registerSingleInstanceForwarder,
   destroyTray
 } = require('./tray.cjs')
-const { zastHome } = require('./paths.cjs')
+const { deskagentHome } = require('./paths.cjs')
 const { STREAMABLE_MEDIA_EXTS, mimeTypeForPath, extensionForMimeType } = require('./mime.cjs')
 const log = require('electron-log/main')
 
@@ -86,14 +86,14 @@ try {
   }
 }
 
-const USER_DATA_OVERRIDE = process.env.ZAST_DESKTOP_USER_DATA_DIR
+const USER_DATA_OVERRIDE = process.env.DESKAGENT_DESKTOP_USER_DATA_DIR
 if (USER_DATA_OVERRIDE) {
   const resolvedUserData = path.resolve(USER_DATA_OVERRIDE)
   fs.mkdirSync(resolvedUserData, { recursive: true })
   app.setPath('userData', resolvedUserData)
 }
 
-const DEV_SERVER = process.env.ZAST_DESKTOP_DEV_SERVER
+const DEV_SERVER = process.env.DESKAGENT_DESKTOP_DEV_SERVER
 const IS_PACKAGED = app.isPackaged
 const IS_MAC = process.platform === 'darwin'
 const IS_WSL = isWslEnvironment()
@@ -103,9 +103,9 @@ const APP_ROOT = app.getAppPath()
 // When a second process launches, the original instance receives
 // `second-instance` and the new one exits with `app.exit(0)` — we don't run
 // `app.quit()` because the lock owner is responsible for teardown and
-// pretending to quit would race with it. `ZAST_DESKTOP_DISABLE_SINGLE_INSTANCE_LOCK=1`
+// pretending to quit would race with it. `DESKAGENT_DESKTOP_DISABLE_SINGLE_INSTANCE_LOCK=1`
 // opts out for dev workflows that legitimately need two windows.
-if (process.env.ZAST_DESKTOP_DISABLE_SINGLE_INSTANCE_LOCK !== '1') {
+if (process.env.DESKAGENT_DESKTOP_DISABLE_SINGLE_INSTANCE_LOCK !== '1') {
   if (!app.requestSingleInstanceLock()) {
     app.exit(0)
   }
@@ -118,7 +118,7 @@ if (process.env.ZAST_DESKTOP_DISABLE_SINGLE_INSTANCE_LOCK !== '1') {
 // GPU and never see it. Fall back to software rendering when a remote display
 // is detected; it's rock-steady over the wire and the CPU cost is negligible
 // next to the connection's latency. Must run before app `ready` — these
-// switches only apply pre-launch. Override with ZAST_DESKTOP_DISABLE_GPU
+// switches only apply pre-launch. Override with DESKAGENT_DESKTOP_DISABLE_GPU
 // (1/true → always disable, 0/false → keep GPU on).
 const REMOTE_DISPLAY_REASON = detectRemoteDisplay()
 if (REMOTE_DISPLAY_REASON) {
@@ -127,7 +127,7 @@ if (REMOTE_DISPLAY_REASON) {
   // with only --disable-gpu: force compositing onto the CPU too.
   app.commandLine.appendSwitch('disable-gpu-compositing')
   console.log(
-    `[zast] remote display detected (${REMOTE_DISPLAY_REASON}); disabling GPU hardware acceleration to prevent flicker`
+    `[deskagent] remote display detected (${REMOTE_DISPLAY_REASON}); disabling GPU hardware acceleration to prevent flicker`
   )
 }
 
@@ -144,28 +144,28 @@ app.commandLine.appendSwitch('disable-renderer-backgrounding')
 app.commandLine.appendSwitch('disable-backgrounding-occluded-windows')
 app.commandLine.appendSwitch('disable-background-timer-throttling')
 
-// ZAST_HOME — the user-facing root for everything Zast-related. Mirrors the
+// DESKAGENT_HOME — the user-facing root for everything DeskAgent-related. Mirrors the
 // installer module's path conventions (see installer/CLAUDE.md).
 //
-// ZAST_DESKTOP_USER_DATA_DIR (used by scripts/test-desktop.mjs fresh) puts the sandbox
-// ZAST_HOME beneath the throwaway userData dir so a fresh-install run never
-// touches the user's real ~/.zast / %LOCALAPPDATA%\zast. The Windows legacy
-// `~/.zast` migration (preserve an existing user state when no LOCALAPPDATA
-// install yet) is folded into paths.cjs::zastHome and activated by passing
+// DESKAGENT_DESKTOP_USER_DATA_DIR (used by scripts/test-desktop.mjs fresh) puts the sandbox
+// DESKAGENT_HOME beneath the throwaway userData dir so a fresh-install run never
+// touches the user's real ~/.deskagent / %LOCALAPPDATA%\deskagent. The Windows legacy
+// `~/.deskagent` migration (preserve an existing user state when no LOCALAPPDATA
+// install yet) is folded into paths.cjs::deskagentHome and activated by passing
 // `directoryExists`.
-function resolveZastHome() {
-  if (process.env.ZAST_HOME) return path.resolve(process.env.ZAST_HOME)
-  if (USER_DATA_OVERRIDE) return path.join(path.resolve(USER_DATA_OVERRIDE), 'zast-home')
-  return zastHome({ directoryExists })
+function resolveDeskAgentHome() {
+  if (process.env.DESKAGENT_HOME) return path.resolve(process.env.DESKAGENT_HOME)
+  if (USER_DATA_OVERRIDE) return path.join(path.resolve(USER_DATA_OVERRIDE), 'deskagent-home')
+  return deskagentHome({ directoryExists })
 }
 
-const ZAST_HOME = resolveZastHome()
+const DESKAGENT_HOME = resolveDeskAgentHome()
 
-// active-profile.json records which Zast profile the desktop is configured
-// desktop.log lives under ZAST_HOME/logs/ so it sits next to agent.log,
-// errors.log, gateway.log produced by zast_logging.setup_logging — one log
+// active-profile.json records which DeskAgent profile the desktop is configured
+// desktop.log lives under DESKAGENT_HOME/logs/ so it sits next to agent.log,
+// errors.log, gateway.log produced by deskagent_logging.setup_logging — one log
 // directory per user, regardless of which UI surface produced the line.
-const DESKTOP_LOG_PATH = path.join(ZAST_HOME, 'logs', 'desktop.log')
+const DESKTOP_LOG_PATH = path.join(DESKAGENT_HOME, 'logs', 'desktop.log')
 const DESKTOP_LOG_FLUSH_MS = 120
 const DESKTOP_LOG_BUFFER_MAX_CHARS = 64 * 1024
 // Bound desktop.log on disk. It is an append-only forensic log, so a boot loop
@@ -174,7 +174,7 @@ const DESKTOP_LOG_BUFFER_MAX_CHARS = 64 * 1024
 // bound — we have seen it reach ~326 GB and exhaust the disk, which then breaks
 // update/install (no room for git/venv/npm temp files).
 //
-// Mirror the Python logs (zast_logging.py RotatingFileHandler, maxBytes x
+// Mirror the Python logs (deskagent_logging.py RotatingFileHandler, maxBytes x
 // backupCount): cascade live -> .1 -> .2 -> .3, drop the oldest. Steady-state
 // stays bounded at ~(backupCount + 1) x cap however hard the app loops.
 //
@@ -187,7 +187,7 @@ const DESKTOP_LOG_MAX_BYTES = 10 * 1024 * 1024
 const DESKTOP_LOG_BACKUP_COUNT = 3
 const DESKTOP_LOG_DISCARD_BYTES = DESKTOP_LOG_MAX_BYTES * 4
 const desktopLogBackupPath = n => `${DESKTOP_LOG_PATH}.${n}`
-const APP_NAME = 'Zast'
+const APP_NAME = 'DeskAgent'
 const TITLEBAR_HEIGHT = 34
 const MACOS_TRAFFIC_LIGHTS_HEIGHT = 14
 const WINDOW_BUTTON_POSITION = {
@@ -306,21 +306,21 @@ async function previewFileMetadata(filePath, mimeType) {
 
 app.setName(APP_NAME)
 // Windows notification grouping: without this, every Notification from
-// Electron is attributed to "electron.app.Zast" instead of "io.zast.agent",
+// Electron is attributed to "electron.app.DeskAgent" instead of "io.deskagent.agent",
 // so the Action Center shows split entries per toast and tray pinning shows
 // the wrong app name. Matches `package.json#build.appId`.
 if (process.platform === 'win32') {
-  app.setAppUserModelId('io.zast.agent')
+  app.setAppUserModelId('io.deskagent.agent')
 }
 // Seed the native About panel with the desktop's app version on startup.
-// `resolveZastVersion()` returns `app.getVersion()` — fixed for the lifetime
-// of this process; a Tauri Zast-Setup update only takes effect after relaunch.
+// `resolveDeskAgentVersion()` returns `app.getVersion()` — fixed for the lifetime
+// of this process; a Tauri DeskAgent-Setup update only takes effect after relaunch.
 // The handler at showAboutPanelFresh() re-seeds on each menu-open in case the
 // process was reloaded in dev mode.
 app.setAboutPanelOptions({
   applicationName: APP_NAME,
-  applicationVersion: resolveZastVersion(),
-  copyright: 'Copyright © 2026 Zast'
+  applicationVersion: resolveDeskAgentVersion(),
+  copyright: 'Copyright © 2026 DeskAgent'
 })
 
 // Custom scheme for streaming local media (video/audio) into the renderer.
@@ -329,9 +329,9 @@ app.setAboutPanelOptions({
 // so any non-trivial video silently refused to load. Streaming via a protocol
 // handler removes the size cap and gives the <video> element seekable,
 // range-aware playback. Must be registered before the app is ready.
-const MEDIA_PROTOCOL = 'zast-media'
+const MEDIA_PROTOCOL = 'deskagent-media'
 // Only audio/video may be streamed. Without this the handler would read any
-// non-blocklisted local file (no size cap) for any `fetch(zast-media://…)`.
+// non-blocklisted local file (no size cap) for any `fetch(deskagent-media://…)`.
 // The membership list itself lives in electron/mime.cjs; `STREAMABLE_MEDIA_EXTS`
 // is destructured from there.
 
@@ -380,7 +380,7 @@ let mainWindow = null
 const RENDERER_RELOAD_WINDOW_MS = 60_000
 const RENDERER_RELOAD_MAX = 3
 let rendererReloadTimes = []
-const zastLog = []
+const deskagentLog = []
 const previewWatchers = new Map()
 let previewShortcutActive = false
 let desktopLogBuffer = ''
@@ -389,7 +389,7 @@ let desktopLogFlushPromise = Promise.resolve()
 let nativeThemeListenerInstalled = false
 let bootProgressState = {
   error: null,
-  message: 'Waiting to start Zast backend',
+  message: 'Waiting to start DeskAgent backend',
   phase: 'idle',
   progress: 0,
   running: false,
@@ -500,16 +500,16 @@ function rememberLog(chunk) {
   if (!IS_PACKAGED) {
     const colored = process.stdout.isTTY
     if (colored) {
-      process.stdout.write(`\x1b[2m[zast]\x1b[0m ${text}\n`)
+      process.stdout.write(`\x1b[2m[deskagent]\x1b[0m ${text}\n`)
     } else {
-      process.stdout.write(`[zast] ${text}\n`)
+      process.stdout.write(`[deskagent] ${text}\n`)
     }
   }
 
-  const lines = text.split(/\r?\n/).map(line => `[zast] ${line}`)
-  zastLog.push(...lines)
-  if (zastLog.length > 300) {
-    zastLog.splice(0, zastLog.length - 300)
+  const lines = text.split(/\r?\n/).map(line => `[deskagent] ${line}`)
+  deskagentLog.push(...lines)
+  if (deskagentLog.length > 300) {
+    deskagentLog.splice(0, deskagentLog.length - 300)
   }
 
   desktopLogBuffer += `${lines.join('\n')}\n`
@@ -612,7 +612,7 @@ function ensureWslWindowsFonts() {
 
   try {
     const confDir = path.join(app.getPath('home'), '.config', 'fontconfig', 'conf.d')
-    const confPath = path.join(confDir, '99-zast-wsl-windows-fonts.conf')
+    const confPath = path.join(confDir, '99-deskagent-wsl-windows-fonts.conf')
     let existing = ''
     try {
       existing = fs.readFileSync(confPath, 'utf8')
@@ -643,7 +643,7 @@ function clampBootProgress(value) {
 }
 
 function broadcastBootProgress() {
-  sendToMain(mainWindow, 'zast:boot-progress', bootProgressState)
+  sendToMain(mainWindow, 'deskagent:boot-progress', bootProgressState)
 }
 
 function updateBootProgress(update, options = {}) {
@@ -722,15 +722,15 @@ function writeDefaultProjectDir(dir) {
   }
 }
 
-// resolveZastCwd — resolve the directory the agent should treat as cwd for
+// resolveDeskAgentCwd — resolve the directory the agent should treat as cwd for
 // operations that don't have an explicit base. Honors a stored "default
 // project directory" preference (settings → sessions), then env hints, then
-// the platform default. Mirrors the Python zast_cli cwd-resolution chain so
+// the platform default. Mirrors the Python deskagent_cli cwd-resolution chain so
 // the desktop and the spawned local CLI agree on what "the project dir" is.
-function resolveZastCwd() {
+function resolveDeskAgentCwd() {
   const candidates = [
     readDefaultProjectDir(),
-    process.env.ZAST_DESKTOP_CWD,
+    process.env.DESKAGENT_DESKTOP_CWD,
     process.env.INIT_CWD,
     IS_PACKAGED ? null : process.cwd(),
     !IS_PACKAGED ? path.resolve(__dirname, '..', '..') : null,
@@ -751,7 +751,7 @@ function resolveZastCwd() {
 // `dist/` lives under `app.asar.unpacked/` so the bundled server can
 // serve it as static files.
 function resolveWebDist() {
-  const override = process.env.ZAST_DESKTOP_WEB_DIST
+  const override = process.env.DESKAGENT_DESKTOP_WEB_DIST
   if (override && directoryExists(path.resolve(override))) return path.resolve(override)
 
   const unpackedDist = path.join(unpackedPathFor(APP_ROOT), 'dist')
@@ -765,7 +765,7 @@ function resolveWebDist() {
     rememberLog(
       `[web-dist] dashboard frontend dir resolved to an asar-internal path that ` +
         `is not a real directory: ${fallback}. Static routes will 404. ` +
-        'Ensure dist/** is unpacked (asarUnpack) or set ZAST_DESKTOP_WEB_DIST.'
+        'Ensure dist/** is unpacked (asarUnpack) or set DESKAGENT_DESKTOP_WEB_DIST.'
     )
   }
   return fallback
@@ -782,16 +782,16 @@ function resolveRendererIndex() {
     `[renderer] index.html not found — the desktop app was packaged without a ` +
       'renderer bundle. Tried: ' +
       candidates.join(', ') +
-      '. Rebuild via the Tauri Zast-Setup installer.'
+      '. Rebuild via the Tauri DeskAgent-Setup installer.'
   )
   return candidates[0]
 }
 
-// Resolve the canonical Zast version. With the Tauri Zast-Setup owning
-// install/update, the desktop shell IS the canonical Zast version for
-// user-visible purposes (the embedded zast_cli module is no longer shipped
+// Resolve the canonical DeskAgent version. With the Tauri DeskAgent-Setup owning
+// install/update, the desktop shell IS the canonical DeskAgent version for
+// user-visible purposes (the embedded deskagent_cli module is no longer shipped
 // inside the desktop bundle — see installer/CLAUDE.md).
-function resolveZastVersion() {
+function resolveDeskAgentVersion() {
   return app.getVersion()
 }
 
@@ -803,7 +803,7 @@ function fetchJson(url, token, options = {}) {
     const timeoutMs = resolveTimeoutMs(options.timeoutMs, DEFAULT_FETCH_TIMEOUT_MS)
 
     if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-      reject(new Error(`Unsupported Zast backend URL protocol: ${parsed.protocol}`))
+      reject(new Error(`Unsupported DeskAgent backend URL protocol: ${parsed.protocol}`))
       return
     }
 
@@ -841,7 +841,7 @@ function fetchJson(url, token, options = {}) {
             reject(
               new Error(
                 `Expected JSON from ${url} but got HTML (status ${res.statusCode}). ` +
-                  'The endpoint is likely missing on the Zast backend.'
+                  'The endpoint is likely missing on the DeskAgent backend.'
               )
             )
             return
@@ -857,7 +857,7 @@ function fetchJson(url, token, options = {}) {
 
     req.on('error', reject)
     req.setTimeout(timeoutMs, () => {
-      req.destroy(new Error(`Timed out connecting to Zast backend after ${timeoutMs}ms`))
+      req.destroy(new Error(`Timed out connecting to DeskAgent backend after ${timeoutMs}ms`))
     })
     if (body) req.write(body)
     req.end()
@@ -947,7 +947,7 @@ async function writeComposerImage(buffer, ext = '.png') {
   return filePath
 }
 
-async function waitForZast(baseUrl, token) {
+async function waitForDeskAgent(baseUrl, token) {
   const deadline = Date.now() + 45_000
   let lastError = null
 
@@ -961,7 +961,7 @@ async function waitForZast(baseUrl, token) {
     }
   }
 
-  throw new Error(`Zast backend did not become ready: ${lastError?.message || 'timeout'}`)
+  throw new Error(`DeskAgent backend did not become ready: ${lastError?.message || 'timeout'}`)
 }
 
 function getWindowButtonPosition() {
@@ -992,14 +992,14 @@ function sameWindowButtonPosition(a, b) {
 }
 
 function sendClosePreviewRequested() {
-  sendToMain(mainWindow, 'zast:close-preview-requested')
+  sendToMain(mainWindow, 'deskagent:close-preview-requested')
 }
 
 // Tell the renderer the machine just woke. Sleep silently drops the
 // renderer's WebSocket to the local backend; the renderer reconnects on this
-// signal so the chat composer doesn't stay stuck on "Starting Zast...".
+// signal so the chat composer doesn't stay stuck on "Starting DeskAgent...".
 function sendPowerResume() {
-  sendToMain(mainWindow, 'zast:power-resume')
+  sendToMain(mainWindow, 'deskagent:power-resume')
 }
 
 let powerResumeRegistered = false
@@ -1030,7 +1030,7 @@ function sendWindowStateChanged(nextIsFullscreen) {
     state.isFullscreen = nextIsFullscreen
   }
 
-  sendToMain(mainWindow, 'zast:window-state-changed', state)
+  sendToMain(mainWindow, 'deskagent:window-state-changed', state)
 }
 
 function buildApplicationMenu() {
@@ -1172,7 +1172,7 @@ function installPreviewShortcut(window) {
 // survives reloads/restarts) rather than a main-process JSON file. The main
 // process owns setZoomLevel, so we mirror each change into localStorage and
 // read it back on did-finish-load to re-apply after reloads or crash recovery.
-const ZOOM_STORAGE_KEY = 'zast:desktop:zoomLevel'
+const ZOOM_STORAGE_KEY = 'deskagent:desktop:zoomLevel'
 
 function clampZoomLevel(value) {
   if (!Number.isFinite(value)) return 0
@@ -1380,14 +1380,14 @@ function installMediaPermissions() {
 // The flow:
 //   1. main process auto-checks ~30s after launch (renderer hasn't loaded
 //      the user-facing flow yet and the backend health probe has settled).
-//   2. autoUpdater events are forwarded to the renderer as `zast:update-event`
+//   2. autoUpdater events are forwarded to the renderer as `deskagent:update-event`
 //      by ipc/update.cjs; that module also owns the user-action handlers
 //      (check / download / install).
 //   3. autoDownload is OFF — the renderer shows a "Restart to update"
 //      dialog and only then asks main to download + install.
 //   4. When the desktop binary is downloaded (update-downloaded), main
 //      starts Phase 1 of the runner update: download + verify the runner
-//      wheel + server.py to $ZAST_HOME/runner.staging/. The renderer only
+//      wheel + server.py to $DESKAGENT_HOME/runner.staging/. The renderer only
 //      enables the "Restart now" button AFTER phase 1 completes. This
 //      avoids the brick state where a new Electron is launched but the
 //      runner update cannot complete (network down, etc.).
@@ -1509,7 +1509,7 @@ async function ensureBackend() {
     const tokenChanged = token !== cachedBackend.token
 
     // Cheap path: token is the only state that moves without a window-state
-    // event. Window state feeds `zast:connection`; `zast:window-state-changed`
+    // event. Window state feeds `deskagent:connection`; `deskagent:window-state-changed`
     // is a separate stream that doesn't refresh the cache, so on a stable
     // token we still need to detect moves / fullscreen toggles here.
     if (
@@ -1532,15 +1532,15 @@ async function ensureBackend() {
     return cachedBackend
   }
 
-  await advanceBootProgress('backend.resolve', 'Resolving Zast backend', 8)
+  await advanceBootProgress('backend.resolve', 'Resolving DeskAgent backend', 8)
   const remote = await resolveRemoteBackend()
   if (remote) {
     const token = getAuthToken()
-    await advanceBootProgress('backend.remote', `Connecting to remote Zast backend at ${remote.baseUrl}`, 24)
-    await waitForZast(remote.baseUrl, token)
+    await advanceBootProgress('backend.remote', `Connecting to remote DeskAgent backend at ${remote.baseUrl}`, 24)
+    await waitForDeskAgent(remote.baseUrl, token)
     updateBootProgress({
       phase: 'backend.ready',
-      message: 'Remote Zast backend is ready',
+      message: 'Remote DeskAgent backend is ready',
       progress: 94,
       running: true,
       error: null
@@ -1553,13 +1553,13 @@ async function ensureBackend() {
       authMode: 'token',
       token,
       wsUrl: token ? `${wsBase}/api/chat/ws?token=${token}` : `${wsBase}/api/chat/ws`,
-      logs: zastLog.slice(-80),
+      logs: deskagentLog.slice(-80),
       ...getWindowState()
     }
     return cachedBackend
   }
 
-  throw new Error('No remote Zast backend configured.')
+  throw new Error('No remote DeskAgent backend configured.')
 }
 
 function createWindow() {
@@ -1569,7 +1569,7 @@ function createWindow() {
     height: 800,
     minWidth: 400,
     minHeight: 620,
-    title: 'Zast',
+    title: 'DeskAgent',
     // Frameless title bar on every platform so the renderer can paint the
     // "hide sidebar" button (and other left-side titlebar tools) flush with
     // the top edge — matching the macOS layout where the traffic lights sit
@@ -1704,7 +1704,7 @@ function createWindow() {
   installCloseInterceptor(mainWindow)
 }
 
-ipcMain.on('zast:previewShortcutActive', (_event, active) => {
+ipcMain.on('deskagent:previewShortcutActive', (_event, active) => {
   previewShortcutActive = Boolean(active)
 })
 
@@ -1775,7 +1775,7 @@ registerPreviewIpc({
   deps: {
     previewWatchers,
     getMainWindow: () => mainWindow,
-    resolveZastCwd,
+    resolveDeskAgentCwd,
     previewFileMetadata,
     mimeTypeForPath,
     previewLanguageByExt: PREVIEW_LANGUAGE_BY_EXT
@@ -1791,7 +1791,7 @@ function showAboutPanelFresh() {
   app.setAboutPanelOptions({
     applicationName: APP_NAME,
     applicationVersion: app.getVersion(),
-    copyright: 'Copyright © 2026 Zast'
+    copyright: 'Copyright © 2026 DeskAgent'
   })
   app.showAboutPanel()
 }
@@ -1799,7 +1799,7 @@ function showAboutPanelFresh() {
 // The desktop talks to the cloud Backend over REST for login / session. The
 // modules live in electron/backend-{client,session}.cjs so
 // they can be unit-tested without Electron; main.cjs only wires them to
-// ipcMain. `zast:api` IPC is the general-purpose REST proxy (sessions,
+// ipcMain. `deskagent:api` IPC is the general-purpose REST proxy (sessions,
 // profiles, configs, models, tools, cron, OAuth, …).
 
 const { createBackendSession } = require('./backend-session.cjs')
@@ -1816,7 +1816,7 @@ const { createRunnerBridge } = require('./runner-bridge.cjs')
 const bridgeDeps = {
   app,
   electronNet,
-  zastHome: ZAST_HOME,
+  deskagentHome: DESKAGENT_HOME,
   safeStorage,
   backendSession: null,
   runnerBridge: null,
@@ -1824,24 +1824,24 @@ const bridgeDeps = {
   createBackendSession,
   // Builds the clientContext (platform / arch / release / version / skills)
   // that desktop stamps into the JWT ctx claim at login. Only main process
-  // can read process.platform and $ZAST_HOME/skills.
+  // can read process.platform and $DESKAGENT_HOME/skills.
   buildClientContext: () =>
     buildClientContext({
-      desktopVersion: resolveZastVersion(),
-      zastHome: zastHome()
+      desktopVersion: resolveDeskAgentVersion(),
+      deskagentHome: deskagentHome()
     }),
   atomicWriteFile,
   createRunnerProcess,
   createRunnerWsServer,
   createReverseRpc,
   createRunnerBridge,
-  resolveZastVersion,
+  resolveDeskAgentVersion,
   ensureBackendSession: () => {
     if (bridgeDeps.backendSession) return bridgeDeps.backendSession
     bridgeDeps.backendSession = createBackendSession({
       userDataDir: app.getPath('userData'),
       safeStorage,
-      appVersion: resolveZastVersion(),
+      appVersion: resolveDeskAgentVersion(),
       fetchImpl: (url, options) => electronNet.fetch(url, options),
       defaultBaseUrl: getBackendUrl() || null,
       log: chunk => rememberLog(chunk)
@@ -1878,7 +1878,7 @@ const bridgeDeps = {
 registerAuthIpc({ ipcMain, deps: bridgeDeps })
 registerRunnerIpc({ ipcMain, deps: bridgeDeps })
 registerRunnerConfigIpc({ ipcMain, deps: bridgeDeps })
-registerSkillsIpc({ ipcMain, deps: bridgeDeps, zastHome: zastHome() })
+registerSkillsIpc({ ipcMain, deps: bridgeDeps, deskagentHome: deskagentHome() })
 registerUpdateIpc({
   ipcMain,
   electron: { app },
@@ -1887,7 +1887,7 @@ registerUpdateIpc({
   runnerUpdater: getRunnerUpdater()
 })
 
-ipcMain.handle('zast:runner:get-tools', async () => {
+ipcMain.handle('deskagent:runner:get-tools', async () => {
   if (!bridgeDeps.runnerBridge) {
     return []
   }
@@ -2024,7 +2024,7 @@ app.on('before-quit', () => {
   closePreviewWatchers({
     previewWatchers,
     getMainWindow: () => mainWindow,
-    resolveZastCwd,
+    resolveDeskAgentCwd,
     previewFileMetadata,
     mimeTypeForPath,
     previewLanguageByExt: PREVIEW_LANGUAGE_BY_EXT

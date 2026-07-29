@@ -26,15 +26,15 @@ function stripDeprecated(doc) {
 }
 
 // Module-level lock shared by every config-writer caller. Two IPC handlers
-// (zast:runner-config:write / zast:skill:set-enabled) both target the same
-// $ZAST_HOME/config.yaml and both restart the Runner bridge afterward — without
+// (deskagent:runner-config:write / deskagent:skill:set-enabled) both target the same
+// $DESKAGENT_HOME/config.yaml and both restart the Runner bridge afterward — without
 // a shared lock, a fast double-toggle on the Skills page can race a runner-
 // config save and produce a torn write or a bridge restart against a config
 // the other writer already advanced past.
 let inFlightWrite = null
 
 /**
- * Patch one key-path of `$ZAST_HOME/config.yaml` atomically and restart the
+ * Patch one key-path of `$DESKAGENT_HOME/config.yaml` atomically and restart the
  * Runner bridge on success. The shared lock makes the (read → mutate → write
  * → restart) pipeline observable to any other config-writer caller on the
  * same process.
@@ -50,7 +50,7 @@ let inFlightWrite = null
  * `stripDeprecated` is always applied after the mutation, so callers never
  * need to thread a transform.
  */
-async function patchAndCommit({ zastHome, path: keyPath, value, deps, op = 'set', mutate }) {
+async function patchAndCommit({ deskagentHome, path: keyPath, value, deps, op = 'set', mutate }) {
   if (!Array.isArray(keyPath) || keyPath.length === 0) {
     return { ok: false, error: 'path must be a non-empty array' }
   }
@@ -58,7 +58,7 @@ async function patchAndCommit({ zastHome, path: keyPath, value, deps, op = 'set'
     return { ok: false, error: `unknown op: ${op}` }
   }
 
-  const configPath = path.join(zastHome, 'config.yaml')
+  const configPath = path.join(deskagentHome, 'config.yaml')
 
   return _runLocked(async () => {
     let current = ''

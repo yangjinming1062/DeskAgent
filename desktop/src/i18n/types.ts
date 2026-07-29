@@ -72,7 +72,7 @@ export interface Translations {
       loadingSettings: string
       loadingSessions: string
       startingDesktopConnection: string
-      startingZastDesktop: string
+      startingDeskAgentDesktop: string
     }
     errors: {
       backgroundExited: string
@@ -590,7 +590,7 @@ export interface Translations {
     noSessions: string
     gatewayRunning: string
     gatewayStopped: string
-    zastActiveSessions: (version: string, count: number) => string
+    deskagentActiveSessions: (version: string, count: number) => string
     restartMessaging: string
     actionRunning: string
     actionDone: string

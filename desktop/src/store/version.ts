@@ -9,7 +9,7 @@ const $desktopVersion = atom<DesktopVersionInfo | null>(null)
 
 async function refreshDesktopVersion() {
   try {
-    const next = await window.zastDesktop?.getVersion()
+    const next = await window.deskagent?.getVersion()
 
     if (next) {
       $desktopVersion.set(next)

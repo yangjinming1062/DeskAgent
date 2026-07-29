@@ -1,4 +1,4 @@
-import type { ZastConnection } from '@/global'
+import type { DeskAgentConnection } from '@/global'
 
 export interface ResolveGatewayWsUrlDeps {
   getGatewayWsUrl?: () => Promise<string>
@@ -6,7 +6,7 @@ export interface ResolveGatewayWsUrlDeps {
 
 export async function resolveGatewayWsUrl(
   desktop: ResolveGatewayWsUrlDeps,
-  conn: Pick<ZastConnection, 'wsUrl'>
+  conn: Pick<DeskAgentConnection, 'wsUrl'>
 ): Promise<string> {
   const mint = desktop.getGatewayWsUrl
 

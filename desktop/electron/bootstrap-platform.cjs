@@ -19,17 +19,17 @@ const GPU_OVERRIDE_OFF = new Set(['0', 'false', 'no', 'off'])
  * Decide whether the app is shown over a remote/forwarded display where
  * Chromium's GPU compositor produces an unstable, flickering surface.
  * Returns a short reason string when GPU should be disabled, or null.
- * `ZAST_DESKTOP_DISABLE_GPU` overrides detection.
+ * `DESKAGENT_DESKTOP_DISABLE_GPU` overrides detection.
  * Pure + dependency-free so it can be unit-tested.
  */
 function detectRemoteDisplay(options = {}) {
   const env = options.env ?? process.env
   const platform = options.platform ?? process.platform
 
-  const override = String(env.ZAST_DESKTOP_DISABLE_GPU || '')
+  const override = String(env.DESKAGENT_DESKTOP_DISABLE_GPU || '')
     .trim()
     .toLowerCase()
-  if (GPU_OVERRIDE_ON.has(override)) return 'override (ZAST_DESKTOP_DISABLE_GPU)'
+  if (GPU_OVERRIDE_ON.has(override)) return 'override (DESKAGENT_DESKTOP_DISABLE_GPU)'
   if (GPU_OVERRIDE_OFF.has(override)) return null
 
   // Launched from an SSH session → display is X11-forwarded or remote.
