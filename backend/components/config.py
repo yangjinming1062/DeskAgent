@@ -43,9 +43,13 @@ class Settings(BaseSettings):
     # Video Gen Provider (视频生成) — added in commit 1 to keep the service
     # registry's _SERVICE_DEFAULTS dict a closed set at import time. Wired up
     # end-to-end in commit 4.
-    video_gen_base_url: str = ""
-    video_gen_api_key: str = ""
+    video_gen_base_url: str = "https://api.minimaxi.com/v1"
+    video_gen_api_key: str = ""  # falls back to minimax_api_key
     video_gen_model_name: str = "MiniMax-Hailuo-02"
+    video_gen_poll_interval_seconds: float = 5.0
+    video_gen_max_poll_seconds: float = 900.0
+    video_gen_tool_wait_seconds: float = 180.0
+    video_gen_download_max_bytes: int = 200 * 1024 * 1024  # 200 MB safety cap
 
     # Provider selection — empty = infer from base_url host. Commit 1 ships
     # the slot; MiniMax provider classes are added in commit 2.
@@ -111,6 +115,9 @@ class Settings(BaseSettings):
     media_tts_rate_limit_per_minute: int = 30
     # POST /api/media/image_gen — DALL-E 3 is the most expensive media op.
     media_image_gen_rate_limit_per_minute: int = 10
+    # POST /api/media/video_gen — Hailuo runs can take 60–600s and the user
+    # pays per second of output. Cap well below image_gen.
+    media_video_gen_rate_limit_per_minute: int = 3
 
     # ── Temp File Storage (self-hosted, replaces GCS) ──
     # 公网 URL 前缀，例如 "https://deskagent.mycompany.com" 或 "http://1.2.3.4:8000"

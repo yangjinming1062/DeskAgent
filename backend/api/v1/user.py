@@ -132,6 +132,7 @@ def model_config(current: tuple[User, LoginRecord] = Depends(get_current_session
     stt_base_url, stt_api_key, stt_model_name = resolve_service_row(db, user.id, "stt")
     tts_base_url, tts_api_key, tts_model_name = resolve_service_row(db, user.id, "tts")
     img_base_url, img_api_key, img_model_name = resolve_service_row(db, user.id, "image_gen")
+    vid_base_url, vid_api_key, vid_model_name = resolve_service_row(db, user.id, "video_gen")
 
     return UserModelConfigResponse(
         llm_base_url=llm_base_url,
@@ -147,4 +148,7 @@ def model_config(current: tuple[User, LoginRecord] = Depends(get_current_session
         image_gen_base_url=img_base_url,
         image_gen_api_key_set=bool(img_api_key),
         image_gen_model_name=img_model_name,
+        video_gen_base_url=vid_base_url,
+        video_gen_api_key_set=bool(vid_api_key),
+        video_gen_model_name=vid_model_name,
     )

@@ -71,5 +71,9 @@ class UserModelConfig(ModelBase, TimestampMixin):
     image_gen_base_url: Mapped[str] = mapped_column(String(255), default="")
     image_gen_api_key: Mapped[str] = mapped_column(Text, default="")
     image_gen_model_name: Mapped[str] = mapped_column(String(128), default="")
+    # Video generation configuration
+    video_gen_base_url: Mapped[str] = mapped_column(String(255), default="")
+    video_gen_api_key: Mapped[str] = mapped_column(Text, default="")
+    video_gen_model_name: Mapped[str] = mapped_column(String(128), default="")
 
     user: Mapped[User] = relationship(back_populates="model_config")
