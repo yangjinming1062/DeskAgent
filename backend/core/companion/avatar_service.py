@@ -6,7 +6,6 @@ flip the previous active row off + write the new active row in one
 transaction. The provider URL is TTL-bounded — Desktop must cache
 locally before returning (see design.md §7.2).
 """
-
 import json
 import secrets
 
@@ -113,10 +112,4 @@ def get_active_avatar(db: Session, user_id: int) -> AvatarAsset | None:
 
 
 def list_avatar_history(db: Session, user_id: int, limit: int = 20) -> list[AvatarAsset]:
-    return (
-        db.query(AvatarAsset)
-        .filter(AvatarAsset.user_id == user_id)
-        .order_by(AvatarAsset.created_at.desc())
-        .limit(limit)
-        .all()
-    )
+    return db.query(AvatarAsset).filter(AvatarAsset.user_id == user_id).order_by(AvatarAsset.created_at.desc()).limit(limit).all()

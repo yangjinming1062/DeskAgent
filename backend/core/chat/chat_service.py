@@ -6,17 +6,19 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-from components import SETTINGS
 from components import AGENT_MAX_LOOP_TURNS
 from components import BACKGROUND_REVIEW_DEFAULT
 from components import DEFAULT_LLM_CONTEXT_TOKENS
+from components import get_logger
 from components import MODEL_CONTEXT_HINT_KEYS
 from components import MODEL_CONTEXT_TOKEN_HINTS
+from components import safe_json_loads
 from components import SESSION_HEARTBEAT_INTERVAL_S
 from components import SESSION_TO_GLOBAL_KEY_ALIASES
+from components import SETTINGS
 from components import TOOL_CALL_ID_HEX_PREFIX_LEN
+from components import tool_error
 from fastapi import WebSocketDisconnect
-from components import get_logger
 from modules.auth import ChatRequestClientContext
 from modules.companion import Persona
 from modules.conversation import Conversation
@@ -25,8 +27,6 @@ from modules.settings import UserSetting
 from modules.system import AgentPromptConfig
 from modules.system import ChatRequest
 from sqlalchemy.orm import Session
-from components import safe_json_loads
-from components import tool_error
 
 from ..async_jobs.background_review import run_background_memory_review
 from ..async_jobs.title_generator import auto_generate_title

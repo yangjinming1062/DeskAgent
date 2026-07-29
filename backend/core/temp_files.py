@@ -3,8 +3,8 @@ import secrets
 import time
 from pathlib import Path
 
-from components import SETTINGS
 from components import get_logger
+from components import SETTINGS
 
 logger = get_logger(__name__)
 

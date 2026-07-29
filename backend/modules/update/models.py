@@ -1,5 +1,6 @@
 from datetime import datetime
 
+from common import ModelBase
 from sqlalchemy import Boolean
 from sqlalchemy import DateTime
 from sqlalchemy import func
@@ -9,8 +10,6 @@ from sqlalchemy import Text
 from sqlalchemy import text
 from sqlalchemy.orm import Mapped
 from sqlalchemy.orm import mapped_column
-
-from common import ModelBase
 
 
 class UpdateVersion(ModelBase):

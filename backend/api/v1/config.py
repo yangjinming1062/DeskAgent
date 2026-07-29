@@ -2,17 +2,17 @@ import json
 import re
 
 from common import get_router
+from components import get_db
+from components import safe_json_loads
+from components import unquote_user_setting
 from fastapi import Depends
+from modules.auth import fingerprint_api_key
+from modules.auth import get_current_session
 from modules.auth import User
 from modules.settings import UserSetting
 from modules.system import DesktopConfigPutRequest
 from modules.system import DesktopConfigResponse
 from sqlalchemy.orm import Session
-from modules.auth import fingerprint_api_key
-from modules.auth import get_current_session
-from components import get_db
-from components import safe_json_loads
-from components import unquote_user_setting
 
 router = get_router()
 

@@ -1,7 +1,7 @@
 from pathlib import Path
 
-from components import SETTINGS
 from common import get_router
+from components import SETTINGS
 from fastapi import HTTPException
 from fastapi import status
 from fastapi.responses import FileResponse

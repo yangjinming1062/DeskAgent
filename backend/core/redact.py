@@ -3,11 +3,11 @@ import os
 import re
 from collections.abc import Callable
 
+from components import get_logger
 from components import REDACT_PHONE_DIGIT_THRESHOLD
 from components import SECRET_MASK_HEAD_CHARS
 from components import SECRET_MASK_MIN_LENGTH
 from components import SECRET_MASK_TAIL_CHARS
-from components import get_logger
 
 logger = get_logger(__name__)
 

@@ -16,14 +16,6 @@ from .attachments import path_attach_ref
 from .attachments import remove as attachments_remove
 from .attachments import session_dir
 from .auth_helpers import authenticate_ws_token
-from .companion import AvatarGenerationError
-from .companion import build_system_prompt_extras
-from .companion import generate_avatar
-from .companion import get_active_avatar
-from .companion import get_or_create_persona
-from .companion import list_avatar_history
-from .companion import PersonaValidationError
-from .companion import update_persona
 from .backend_tools import cronjob
 from .backend_tools import CRONJOB_SCHEMA
 from .backend_tools import IMAGE_GENERATION_SCHEMA
@@ -52,6 +44,14 @@ from .chat import load_user_settings
 from .chat import run_chat_turn
 from .chat import safe_emit
 from .chat import StreamingThinkScrubber
+from .companion import AvatarGenerationError
+from .companion import build_system_prompt_extras
+from .companion import generate_avatar
+from .companion import get_active_avatar
+from .companion import get_or_create_persona
+from .companion import list_avatar_history
+from .companion import PersonaValidationError
+from .companion import update_persona
 from .correlation import adopt_inbound
 from .correlation import begin_local_scope
 from .correlation import correlated_exception_response

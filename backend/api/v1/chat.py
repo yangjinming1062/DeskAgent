@@ -2,12 +2,15 @@ import asyncio
 import itertools
 import json
 
-from components import SETTINGS
+from common import get_router
 from components import ATTACHMENT_TYPE_IMAGE
+from components import get_logger
 from components import JSONRPC_INVALID_PARAMS
 from components import JSONRPC_METHOD_NOT_FOUND
 from components import MAX_ATTACHMENTS_PER_TURN
 from components import RUNTIME_CHECK_TIMEOUT_SECONDS
+from components import SESSION_LOCAL
+from components import SETTINGS
 from core import adopt_inbound
 from core import attachments_remove
 from core import authenticate_ws_token
@@ -33,18 +36,15 @@ from core import run_chat_turn
 from core import runtime_info_snapshot
 from core import RuntimeSession
 from core import serialize_settings
-from common import get_router
 from fastapi import WebSocket
 from fastapi import WebSocketDisconnect
-from components import get_logger
+from modules.auth import ChatRequestClientContext
 from modules.conversation import Conversation
 from modules.conversation import Message
 from modules.settings import UserSetting
 from modules.system import ChatMessageRequest
 from modules.system import ChatRequest
-from modules.auth import ChatRequestClientContext
 from sqlalchemy import func
-from components import SESSION_LOCAL
 
 logger = get_logger(__name__)
 

@@ -2,10 +2,11 @@ from collections.abc import Generator
 from collections.abc import Iterator
 from contextlib import contextmanager
 
-from .config import SETTINGS
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 from sqlalchemy.orm import sessionmaker
+
+from .config import SETTINGS
 
 
 ENGINE = create_engine(

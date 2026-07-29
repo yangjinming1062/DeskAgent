@@ -6,7 +6,8 @@ The "hatch" step is implicit — once ``POST /api/companion/avatar`` has
 written an active row, the next time Desktop asks for the active avatar
 it will receive a URL and the renderer swaps the egg for the image.
 """
-
+from common import get_router
+from components import get_db
 from core import AvatarGenerationError
 from core import build_system_prompt_extras
 from core import generate_avatar
@@ -15,9 +16,9 @@ from core import get_or_create_persona
 from core import list_avatar_history
 from core import PersonaValidationError
 from core import update_persona
-from common import get_router
 from fastapi import Depends
 from fastapi import HTTPException
+from modules.auth import get_current_session
 from modules.auth import LoginRecord
 from modules.auth import User
 from modules.companion import AvatarAssetResponse
@@ -26,8 +27,6 @@ from modules.companion import AvatarHistoryResponse
 from modules.companion import PersonaResponse
 from modules.companion import PersonaUpdate
 from sqlalchemy.orm import Session
-from modules.auth import get_current_session
-from components import get_db
 
 router = get_router(dependencies=[Depends(get_current_session)])
 

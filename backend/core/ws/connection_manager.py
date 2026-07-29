@@ -2,13 +2,13 @@ import asyncio
 from datetime import timedelta
 
 import asyncpg
-from fastapi import WebSocket
-from modules.ws import WSEvent
-from sqlalchemy import delete
 from components import BackgroundTask
 from components import naive_utc_now
 from components import safe_json_loads
 from components import session_scope
+from fastapi import WebSocket
+from modules.ws import WSEvent
+from sqlalchemy import delete
 
 from ..correlation import begin_local_scope
 from .jsonrpc_dispatcher import JsonRpcDispatcher

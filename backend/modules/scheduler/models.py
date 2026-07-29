@@ -1,6 +1,7 @@
 from datetime import datetime
 from typing import Any
 
+from common import ModelBase
 from sqlalchemy import Boolean
 from sqlalchemy import DateTime
 from sqlalchemy import ForeignKey
@@ -11,8 +12,6 @@ from sqlalchemy import text
 from sqlalchemy.orm import Mapped
 from sqlalchemy.orm import mapped_column
 from sqlalchemy.orm import relationship
-
-from common import ModelBase
 
 
 class CronJob(ModelBase):
