@@ -3,6 +3,8 @@ from components import TOOL_ENFORCE_OFF_VALUES
 from components import TOOL_ENFORCE_ON_VALUES
 from modules.system import AgentPromptConfig
 
+from .affect import COMPANION_AFFECT_GUIDANCE
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Prompt-template constants (originally in prompt_builder.py)
 # ──────────────────────────────────────────────────────────────────────────────
@@ -443,6 +445,10 @@ def build_system_prompt_parts(config: AgentPromptConfig, system_message: str | N
     stable_parts.append(DESK_AGENT_HELP_GUIDANCE)
     if config.persona_extras:
         stable_parts.append(config.persona_extras)
+        # A companion persona drives a visible avatar — instruct the LLM to
+        # emit an inline affect tag so the desktop's animation state machine
+        # gets an emotion cue with every response (design.md §7.5).
+        stable_parts.append(COMPANION_AFFECT_GUIDANCE)
     if config.task_completion_guidance and valid_tools:
         stable_parts.append(TASK_COMPLETION_GUIDANCE)
 

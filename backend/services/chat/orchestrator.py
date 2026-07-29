@@ -151,6 +151,7 @@ async def run_chat_turn(
                     inputs.first_user_msg_content,
                     current_messages,
                     track_task,
+                    emotion=llm_result.emotion,
                 )
                 return
 

@@ -26,24 +26,13 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    # Loads backend/.env (MIMO_KEY/MINIMAX_KEY) into the container env; Settings
-    # maps them to llm_api_key / minimax_api_key via AliasChoices
-    # (MiMo→chat/STT/TTS, MiniMax→image/video).
+    # All config lives in backend/.env (copy .env.example → .env and edit).
+    # Only DATABASE_URL is overridden here because the container must reach
+    # postgres by service name, not localhost.
     env_file:
       - .env
     environment:
       DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres:5432/deskagent
-      APP_ENV: production
-      JWT_SECRET_KEY: replace-this-with-a-strong-secret
-      ADMIN_USERNAME: deskagent
-      ADMIN_PASSWORD: deskagent@admin123
-      LLM_BASE_URL: https://token-plan-cn.xiaomimimo.com/v1
-      LLM_MODEL_NAME: mimo-v2.5-pro
-      STT_BASE_URL: https://token-plan-cn.xiaomimimo.com/v1
-      STT_MODEL_NAME: mimo-v2.5-asr
-      TTS_BASE_URL: https://token-plan-cn.xiaomimimo.com/v1
-      TTS_MODEL_NAME: mimo-v2.5-tts
-      TTS_DEFAULT_VOICE: mimo_default
     ports:
       - "8000:8000"
     volumes:

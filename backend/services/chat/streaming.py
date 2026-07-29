@@ -11,6 +11,7 @@ from components import TOOL_CALL_ID_HEX_PREFIX_LEN
 from ..llm import call_with_retry
 from ..llm import FailoverReason
 from ..llm import LLMRuntimeError
+from .affect import AffectScrubber
 from .chat_emitter import Emitter
 from .think_scrubber import StreamingThinkScrubber as ThinkScrubber
 
@@ -35,6 +36,7 @@ class _LLMTurnResult:
     final_completion_tokens: int
     final_usage_payload: dict | None
     turn_duration_ms: int
+    emotion: str | None = None
 
 
 def _llm_error_user_message(exc: LLMRuntimeError) -> str:
@@ -159,6 +161,7 @@ async def _stream_llm_response(
         _reasoning_queue.put_nowait(text)
 
     scrubber = ThinkScrubber(on_reasoning=_on_reasoning_sync)
+    affect = AffectScrubber()
     clean_tail = ""  # assigned in try; read in finally to flush on stream errors
 
     try:
@@ -171,7 +174,7 @@ async def _stream_llm_response(
                     continue
                 delta = chunk.choices[0].delta
                 if delta and delta.content:
-                    clean_text = scrubber.feed(delta.content)
+                    clean_text = scrubber.feed(affect.feed(delta.content))
                     if clean_text:
                         turn_content += clean_text
                         await emitter.send_json({"type": "chunk", "content": clean_text})
@@ -191,7 +194,7 @@ async def _stream_llm_response(
             await _emit_llm_error(emitter, exc)
             raise
 
-        clean_tail = scrubber.flush()
+        clean_tail = scrubber.flush(affect.flush())
     finally:
         # Always flush (success OR stream-raise path) so text buffered in a
         # half-open ``<reasoning>`` block lands in the assistant Message
@@ -220,4 +223,5 @@ async def _stream_llm_response(
         final_completion_tokens=final_completion_tokens,
         final_usage_payload=final_usage_payload,
         turn_duration_ms=turn_duration_ms,
+        emotion=affect.emotion,
     )
