@@ -133,11 +133,11 @@ def _scrub_child_env(source_env, is_passthrough=None, is_windows=None):
         if is_windows and k.upper() in _WINDOWS_ESSENTIAL_ENV_VARS:
             scrubbed[k] = v
             continue
-        if k.startswith("ZAST_"):
+        if k.startswith("DESKAGENT_"):
             _dropped_deskagent.append(k)
     if _dropped_deskagent:
         logger.debug(
-            "execute_code: dropped %d non-allowlisted ZAST_* var(s) from the "
+            "execute_code: dropped %d non-allowlisted DESKAGENT_* var(s) from the "
             "sandbox child env (%s). This is intentional hardening (#27303); if "
             "a sandbox script legitimately needs one, declare it via "
             "env_passthrough in the skill/config so it passes by explicit opt-in.",
