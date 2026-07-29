@@ -1,11 +1,3 @@
-"""Avatar generation orchestration.
-
-Wraps the generic ``image_generation_tool`` backend tool into a persona-
-aware pipeline: assemble the prompt from the persona, run generation,
-flip the previous active row off + write the new active row in one
-transaction. The provider URL is TTL-bounded — Desktop must cache
-locally before returning (see design.md §7.2).
-"""
 import json
 import secrets
 

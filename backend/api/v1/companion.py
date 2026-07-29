@@ -1,11 +1,3 @@
-"""Companion onboarding / persona / avatar routes.
-
-Implements design.md §2 lifecycle states reachable before "ongoing
-companionship" (egg → persona definition → avatar generation → hatch).
-The "hatch" step is implicit — once ``POST /api/companion/avatar`` has
-written an active row, the next time Desktop asks for the active avatar
-it will receive a URL and the renderer swaps the egg for the image.
-"""
 from common import get_router
 from components import get_db
 from core import AvatarGenerationError
