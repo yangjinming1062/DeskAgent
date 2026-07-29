@@ -2,7 +2,7 @@
 
 桌面伙伴形象载体 + 本地枢纽——Electron 客户端。上层渲染常驻桌面的伙伴形象并承载陪伴式交互，下层连接云端 Backend 与本地 Runner，持有用户凭证、中转工具调用、管理 Runner 生命周期与自更新。
 
-设计文档：[design.md](../design.md) §2 / §3 / §5 / §7 / §10
+设计文档：[design.md](../design.md) §2 / §3 / §5 / §7 / §10；伙伴层交互设计见 [plan.md](plan.md)。
 
 ## 双层定位
 
@@ -54,6 +54,8 @@ desktop/
 ## 伙伴层（待建）
 
 精灵窗口（透明置顶、无边框、可控点击穿透的 `BrowserWindow`）+ 形象渲染引擎 + onboarding（蛋→角色定义→孵化）+ 陪伴交互 UI 均未实现。当前 `desktop-controller.tsx` 是最小基础：boot gateway、挂起设置浮层、显示 boot/connecting 覆盖。
+
+详细交互设计（onboarding 流程、动画状态机、场景库、陪伴交互范式、MVP 分阶段路线）见 [plan.md](plan.md)；跨模块表达层契约（情绪 cue、clip 生命周期、onboarding 断点恢复）见 [design.md §5.2.IV / §7.5](../design.md)。
 
 WS 事件流（`use-gateway-boot` 的 `handleGatewayEvent`）目前为空实现——伙伴层将在此分发 Backend 的 Cron / `send_message` 等主动陪伴事件（[design.md §6](../design.md)），在精灵窗口以人格化方式表达。
 
