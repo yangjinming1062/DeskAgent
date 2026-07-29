@@ -13,10 +13,10 @@ from pathlib import Path
 from utils import cfg_get
 from utils import get_container_mirror_warning
 from utils import get_cross_profile_warning
+from utils import get_deskagent_home
 from utils import get_read_block_error
 from utils import get_sandbox_mirror_warning
 from utils import get_windows_sensitive_prefixes
-from utils import get_deskagent_home
 from utils import IS_WINDOWS
 from utils import load_config
 from utils import redact_sensitive_text

@@ -9,8 +9,8 @@ from pathlib import Path
 from utils import append_sane_path_entries as _append_missing_sane_path_entries
 from utils import CREATE_NO_WINDOW
 from utils import find_bash
-from utils import get_subprocess_home
 from utils import get_deskagent_home
+from utils import get_subprocess_home
 from utils import inject_context_deskagent_home
 from utils import IS_WINDOWS
 from utils import kill_tree

@@ -8,8 +8,8 @@ from pathlib import Path
 from pathlib import PurePosixPath
 
 from utils import atomic_replace
-from utils import get_skills_dir
 from utils import get_deskagent_home
+from utils import get_skills_dir
 
 from .skill_usage import _load_protected_builtins
 from .skill_usage import read_suppressed_names
@@ -299,7 +299,9 @@ def set_bundled_skills_opt_out(enabled: bool) -> dict:
             if existed:
                 marker.unlink()
             changed = existed
-            message = "Opted back in. The next self-update (or `deskagent skills opt-in --sync`) will re-seed bundled skills." if changed else "Not opted out — no marker to remove."
+            message = (
+                "Opted back in. The next self-update (or `deskagent skills opt-in --sync`) will re-seed bundled skills." if changed else "Not opted out — no marker to remove."
+            )
     except OSError as e:
         return {"ok": False, "changed": False, "marker": str(marker), "message": f"Could not update opt-out marker at {marker}: {e}"}
     return {"ok": True, "changed": changed, "marker": str(marker), "message": message}
