@@ -29,7 +29,15 @@ class Conversation(ModelBase, TimestampMixin):
     settings_json: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     user: Mapped["User"] = relationship(back_populates="conversations")
-    parent: Mapped["Conversation | None"] = relationship(remote_side=[id], back_populates="children")
+    # Self-referential parent↔children. The previous ``remote_side=[id]``
+    # passed Python's builtin ``id`` function — SQLAlchemy silently coerced
+    # it via the Mapper protocol and mapper configuration crashed the
+    # first time any User was instantiated (since User.conversations walks
+    # through Conversation.parent → Conversation mapper configures →
+    # reads ``id`` as a non-Column). The column object on this class is
+    # referenced via a forward string, which SQLAlchemy resolves at
+    # mapper-configuration time (i.e. after the class is fully defined).
+    parent: Mapped["Conversation | None"] = relationship(remote_side="Conversation.id", back_populates="children")
     children: Mapped[list["Conversation"]] = relationship(back_populates="parent", passive_deletes=True)
     messages: Mapped[list["Message"]] = relationship(back_populates="conversation", passive_deletes=True)
 

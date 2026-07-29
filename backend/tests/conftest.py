@@ -56,6 +56,8 @@ def _patch_db(monkeypatch, sqlite_engine):
         "services.chat.agent_delegate",
         "services.tools.builtin.image_generation_tool",
         "services.tools.builtin.tts_tool",
+        "services.tools.builtin.video_generation_tool",
+        "services.media.video_jobs",
         "api.v1.chat",
         "api.v1.llm",
         "api.v1.media",
@@ -159,10 +161,15 @@ def test_token(_patch_db):
 @pytest.fixture(autouse=True)
 def _clear_client_cache():
     from services.llm import get_async_client
+    from services.llm.providers import http as http_pool
 
     get_async_client.cache_clear()
+    http_pool._clients.clear()
+    http_pool._clients_openai.clear()
     yield
     get_async_client.cache_clear()
+    http_pool._clients.clear()
+    http_pool._clients_openai.clear()
 
 
 # ── E2E test auto-skip ──────────────────────────────────────────────

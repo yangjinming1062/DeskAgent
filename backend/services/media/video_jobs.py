@@ -14,6 +14,8 @@ import asyncio
 import json
 from datetime import timedelta
 
+import httpx
+
 from components import get_logger
 from components import naive_utc_now
 from components import save_file
@@ -26,13 +28,11 @@ from services.llm.providers.base import VideoGenRequest
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-# Import the model lazily inside functions — importing ``modules.media`` at
-# module load time forces every registered mapper (including the
-# self-referencing Conversation mapper, which has a long-standing
-# ``remote_side=[id]`` typo) to configure, which fails. Keeping the import
-# scoped to the call site keeps this module import-safe.
+# Import the model lazily inside functions. ``modules/media/__init__.py``
+# is intentionally empty so importing the package never drags every
+# mapper into configuration. The model lives in ``modules.media.models``.
 def _VideoGenJob():
-    from modules.media import VideoGenJob
+    from modules.media.models import VideoGenJob
 
     return VideoGenJob
 
@@ -41,34 +41,21 @@ logger = get_logger(__name__)
 
 
 def _update_job(job_id: int, **fields) -> None:
-    """Conditional UPDATE on a job row.
+    """Update a job row using a fresh short-lived session.
 
-    Status transitions are guarded so two concurrent ``_poll_and_finalize``
-    coroutines (resume-during-restart race) don't race-write each other
-    into a bogus state. The terminal-state check on the WHERE clause also
-    makes the resume path a no-op for already-finished jobs.
+    Background tasks outlive the request session — never reuse the
+    caller's ``db`` here. Reads the row, applies the field updates,
+    commits. Returns early if the row has been GC'd between read and
+    write (admin DELETE, etc.).
     """
     VideoGenJob = _VideoGenJob()
-    non_status = {k: v for k, v in fields.items() if k != "status"}
-    if non_status:
-        with SESSION_LOCAL() as db:
-            job = db.get(VideoGenJob, job_id)
-            if job is None:
-                return
-            for k, v in non_status.items():
-                setattr(job, k, v)
-            db.commit()
-    if "status" in fields:
-        new_status = fields["status"]
-        # Terminal states are write-once — ``succeeded`` / ``failed`` may not
-        # be overwritten by a late-arriving poll task.
-        with SESSION_LOCAL() as db:
-            db.execute(
-                VideoGenJob.__table__.update()
-                .where(VideoGenJob.id == job_id, VideoGenJob.status.notin_(("succeeded", "failed")))
-                .values(status=new_status)
-            )
-            db.commit()
+    with SESSION_LOCAL() as db:
+        job = db.get(VideoGenJob, job_id)
+        if job is None:
+            return
+        for k, v in fields.items():
+            setattr(job, k, v)
+        db.commit()
 
 
 def _emit_ws_event(user_id: int, event_type: str, payload: dict) -> None:
@@ -142,8 +129,11 @@ async def enqueue_video_job(
     try:
         submitted = await provider.submit(req)
     except Exception as e:
-        _update_job(job.id, status="failed", error_reason="submit_failed", error_message=str(e))
         logger.exception("video submit failed", extra={"job_id": job.id})
+        try:
+            _update_job(job.id, status="failed", error_reason="submit_failed", error_message=str(e))
+        except Exception as update_err:
+            logger.exception("failed to mark job as failed", extra={"job_id": job.id, "error": str(update_err)})
         raise
     job.provider_task_id = submitted.task_id
     db.commit()
@@ -292,8 +282,6 @@ async def _stream_download(url: str) -> bytes:
     (10 min) since the LLM default (30–60s) is way too short for a 200MB
     video on a slow link, and a single ``bytearray`` to keep peak memory
     at ~1× the video size."""
-    import httpx
-
     cap = SETTINGS.video_gen_download_max_bytes
     total = 0
     sink = bytearray()
