@@ -3109,11 +3109,11 @@ def _load_deskagent_index() -> dict | None:
     try:
         resp = httpx.get(DESKAGENT_INDEX_URL, timeout=15, follow_redirects=True)
         if resp.status_code != 200:
-            logger.debug(DeskAgent" index fetch returned %d", resp.status_code)
+            logger.debug("DeskAgent index fetch returned %d", resp.status_code)
             return _load_stale_index_cache()
         data = resp.json()
     except (httpx.HTTPError, json.JSONDecodeError) as e:
-        logger.debug(DeskAgent" index fetch failed: %s", e)
+        logger.debug("DeskAgent index fetch failed: %s", e)
         return _load_stale_index_cache()
 
     if not isinstance(data, dict) or "skills" not in data:
