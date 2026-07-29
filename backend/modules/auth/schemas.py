@@ -75,6 +75,9 @@ class UserModelConfigResponse(BaseModel):
     image_gen_base_url: str
     image_gen_api_key_set: bool
     image_gen_model_name: str
+    video_gen_base_url: str
+    video_gen_api_key_set: bool
+    video_gen_model_name: str
 
 
 class UserModelConfigRequest(BaseModel):
@@ -92,6 +95,9 @@ class UserModelConfigRequest(BaseModel):
     image_gen_base_url: str = Field(default="", max_length=255)
     image_gen_api_key: str = Field(default="", max_length=255)
     image_gen_model_name: str = Field(default="", max_length=128)
+    video_gen_base_url: str = Field(default="", max_length=255)
+    video_gen_api_key: str = Field(default="", max_length=255)
+    video_gen_model_name: str = Field(default="", max_length=128)
 
 
 class UserModelConfigListItem(BaseModel):
@@ -110,6 +116,9 @@ class UserModelConfigListItem(BaseModel):
     image_gen_base_url: str
     image_gen_api_key_set: bool
     image_gen_model_name: str
+    video_gen_base_url: str
+    video_gen_api_key_set: bool
+    video_gen_model_name: str
 
 
 class UserModelConfigListResponse(BaseModel):

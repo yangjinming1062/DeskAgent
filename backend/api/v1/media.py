@@ -23,6 +23,8 @@ from services.llm import classify_api_error
 from services.llm import client_for_service
 from services.llm import MissingLlmConfigError
 from services.llm import provider_for_service
+from services.media import enqueue_video_job
+from services.media import get_job as get_video_job
 from services.rate_limit import limiter
 
 from ._http_errors import classified_http_exception
@@ -240,3 +242,100 @@ async def image_gen(
     data = base64.b64decode(asset.b64 or "")
     file_id, public_url = save_file(data, session_id="", content_type=asset.mime, ext="jpg")
     return {"success": True, "url": public_url}
+
+
+# ── Video Generation (视频生成) ───────────────────────────────────────
+
+
+@router.post("/video_gen")
+@limiter.limit(f"{SETTINGS.media_video_gen_rate_limit_per_minute}/minute")
+async def video_gen(
+    request: Request,
+    prompt: str = Form(...),
+    duration: int = Form(default=6),
+    resolution: str = Form(default="768P"),
+    first_frame_image: str | None = Form(default=None),
+    aspect_ratio: str | None = Form(default=None),
+    model: str | None = Form(default=None),
+    wait_seconds: int = Form(default=0),
+    auth_data: tuple[User, LoginRecord] = Depends(get_current_session),
+):
+    """Submit a video generation job. Default response is 202 + task_id; if
+    ``wait_seconds`` > 0, the handler polls for up to that many seconds and
+    returns the resulting URL directly when the job finishes."""
+    user, _ = auth_data
+    if not prompt:
+        raise HTTPException(status_code=400, detail={"error": "prompt is required", "reason": "missing_params", "status": 400})
+    if duration not in (6, 10):
+        raise HTTPException(status_code=400, detail={"error": "duration must be 6 or 10", "reason": "invalid_params", "status": 400})
+    if resolution not in ("512P", "768P", "1080P"):
+        raise HTTPException(status_code=400, detail={"error": "resolution must be 512P/768P/1080P", "reason": "invalid_params", "status": 400})
+    if wait_seconds < 0 or wait_seconds > 60:
+        wait_seconds = min(max(wait_seconds, 0), 60)
+
+    try:
+        with SESSION_LOCAL() as db:
+            job = await enqueue_video_job(
+                db,
+                user_id=user.id,
+                session_id=None,
+                prompt=prompt,
+                duration=duration,
+                resolution=resolution,
+                first_frame_image=first_frame_image,
+                model=model,
+                aspect_ratio=aspect_ratio,
+            )
+    except MissingLlmConfigError:
+        raise _http_error(501, "video_gen_not_configured", "视频生成服务未配置。请在设置中配置 VIDEO_GEN_BASE_URL 和 VIDEO_GEN_API_KEY。")
+    except Exception as e:
+        raise _llm_http_error(e, "video_gen") from e
+
+    if wait_seconds > 0:
+        # Bounded pseudo-sync: poll the DB for status until deadline. Most
+        # MiniMax generations complete well within 60s for short clips; for
+        # longer ones the caller polls ``GET /video_gen/{id}`` instead.
+        import asyncio
+
+        from components import naive_utc_now
+
+        from datetime import timedelta
+
+        deadline = naive_utc_now() + timedelta(seconds=wait_seconds)
+        while naive_utc_now() < deadline:
+            await asyncio.sleep(2)
+            with SESSION_LOCAL() as db:
+                row = get_video_job(db, job.id, user.id)
+                if row is None:
+                    break
+                if row.status == "succeeded":
+                    return {"success": True, "task_id": str(job.id), "status": "succeeded", "url": row.video_url}
+                if row.status == "failed":
+                    return {"success": False, "task_id": str(job.id), "status": "failed", "error": row.error_message}
+
+    return {
+        "success": True,
+        "task_id": str(job.id),
+        "status": job.status,
+        "poll_url": f"/api/media/video_gen/{job.id}",
+    }
+
+
+@router.get("/video_gen/{task_id}")
+async def video_gen_status(
+    task_id: int,
+    auth_data: tuple[User, LoginRecord] = Depends(get_current_session),
+):
+    user, _ = auth_data
+    with SESSION_LOCAL() as db:
+        row = get_video_job(db, task_id, user.id)
+    if row is None:
+        raise HTTPException(status_code=404, detail={"error": "video job not found", "reason": "not_found", "status": 404})
+    return {
+        "task_id": str(row.id),
+        "status": row.status,
+        "url": row.video_url,
+        "error": row.error_message,
+        "created_at": row.created_at.isoformat() if row.created_at else None,
+        "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+    }

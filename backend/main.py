@@ -5,6 +5,7 @@ from pathlib import Path
 
 import asyncpg
 import modules
+import modules.media.models  # noqa: F401 — register VideoGenJob on ModelBase.metadata
 import services.chat.agent_delegate  # noqa: F401
 import services.tools.builtin  # noqa: F401
 from api import ROUTERS
@@ -25,6 +26,7 @@ from services.gateway import stop_ws_event_loop
 from services.rate_limit import limiter
 from services.rate_limit import rate_limit_exception_handler
 from services.rate_limit import stash_user_id_middleware
+from services.media import resume_pending_video_jobs
 from services.scheduler import start_scheduler
 from services.scheduler import stop_scheduler
 from services.tools.web_providers import aclose
@@ -92,6 +94,9 @@ def _install_schema_extensions(conn) -> None:
         ("image_gen_base_url", "VARCHAR(255) DEFAULT ''"),
         ("image_gen_api_key", "TEXT DEFAULT ''"),
         ("image_gen_model_name", "VARCHAR(128) DEFAULT ''"),
+        ("video_gen_base_url", "VARCHAR(255) DEFAULT ''"),
+        ("video_gen_api_key", "TEXT DEFAULT ''"),
+        ("video_gen_model_name", "VARCHAR(128) DEFAULT ''"),
     ):
         conn.execute(text(f"ALTER TABLE user_model_configs ADD COLUMN IF NOT EXISTS {column} {ddl_type}"))
     # Enforce "one active avatar per user" at the DB level. Partial unique
@@ -143,6 +148,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
 
     start_scheduler()
     start_ws_event_loop(global_pool)
+    resume_pending_video_jobs()
 
     async def _cleanup_loop():
         while True:
