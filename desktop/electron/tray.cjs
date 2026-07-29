@@ -27,18 +27,16 @@ function sendToMainWindow(channel) {
 function buildTrayMenu() {
   const authed = isAuthenticated()
   const template = [
-    { label: authed ? 'Show DeskAgent' : 'Sign in...', click: () => showMainWindow() }
+    {
+      label: authed ? 'Show DeskAgent' : 'Sign in...',
+      click: () => (authed ? showMainWindow() : trayDeps.bridgeDeps.showToolWindow())
+    }
   ]
   if (authed) {
     template.push(
       { type: 'separator' },
-      {
-        label: 'Settings...',
-        click: () => {
-          showMainWindow()
-          sendToMainWindow('deskagent:tray:open-settings')
-        }
-      },
+      // The framed tool window self-selects Settings (authed) from $auth.
+      { label: 'Settings...', click: () => trayDeps.bridgeDeps.showToolWindow() },
       { label: 'Log out', click: () => sendToMainWindow('deskagent:tray:logout') }
     )
   }

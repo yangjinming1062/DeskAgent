@@ -13,6 +13,7 @@ const {
   powerMonitor,
   protocol,
   safeStorage,
+  screen,
   session,
   shell,
   systemPreferences
@@ -49,6 +50,7 @@ const { registerAuthIpc } = require('./ipc/auth.cjs')
 const { registerRunnerIpc, autoStartBridge, autoStopBridge, restartRunnerBridge } = require('./ipc/runner.cjs')
 const { registerRunnerConfigIpc } = require('./ipc/runner-config.cjs')
 const { registerSkillsIpc } = require('./ipc/skills.cjs')
+const { registerSpriteIpc } = require('./ipc/sprite.cjs')
 const { registerUpdateIpc } = require('./ipc/update.cjs')
 const { RunnerUpdater } = require('./runner-updater.cjs')
 const { looksBinary, fileExists, directoryExists, sendToMain, atomicWriteFile } = require('./utils.cjs')
@@ -374,6 +376,11 @@ function registerMediaProtocol() {
 }
 
 let mainWindow = null
+// The companion sprite window is the resident `mainWindow` (transparent,
+// always-on-top). The framed tool window (Login / Settings) is created on
+// demand into `toolWindow`.
+let toolWindow = null
+let spriteBoundsListenerInstalled = false
 // Auto-reload budget for renderer crashes. A deterministic startup crash would
 // otherwise loop forever (reload → crash → reload), pinning CPU and spamming
 // logs. Allow a few reloads per rolling window, then stop and leave the dead
@@ -1563,76 +1570,25 @@ async function ensureBackend() {
   throw new Error('No remote DeskAgent backend configured.')
 }
 
-function createWindow() {
-  const icon = getAppIconPath()
-  mainWindow = new BrowserWindow({
-    width: 1220,
-    height: 800,
-    minWidth: 400,
-    minHeight: 620,
-    title: 'DeskAgent',
-    // Frameless title bar on every platform so the renderer can paint the
-    // "hide sidebar" button (and other left-side titlebar tools) flush with
-    // the top edge — matching the macOS layout where the traffic lights sit
-    // inside the same band. On Windows/Linux, titleBarOverlay tells Electron
-    // to paint native min/max/close in the top-right of the renderer; on
-    // macOS it just reserves a content inset alongside the traffic lights.
-    titleBarStyle: 'hidden',
-    titleBarOverlay: getTitleBarOverlayOptions(),
-    trafficLightPosition: IS_MAC ? WINDOW_BUTTON_POSITION : undefined,
-    vibrancy: IS_MAC ? 'sidebar' : undefined,
-    icon,
-    backgroundColor: '#f7f7f7',
-    webPreferences: {
-      preload: path.join(__dirname, 'preload.cjs'),
-      contextIsolation: true,
-      webviewTag: true,
-      sandbox: true,
-      nodeIntegration: false,
-      devTools: true,
-      // Keep timers + requestAnimationFrame running at full speed when the
-      // window is blurred/occluded. The chat transcript streams to the screen
-      // through a requestAnimationFrame-gated flush (useSessionStateCache),
-      // so with Chromium's default background throttling the live answer
-      // stalls whenever this window isn't focused (e.g. you switch to your
-      // editor mid-turn, or open detached devtools) and only appears once you
-      // refocus or refresh. A streaming chat app must render in the
-      // background, so opt out — matching the secondary windows above.
-      backgroundThrottling: false
-    }
-  })
+// Renderer entry URL stamped with a window role so the shared bundle branches
+// at the root: `sprite` (transparent companion surface) vs `tool` (framed
+// Login / Settings). A query param keeps it independent of the HashRouter.
+function rendererUrlFor(role) {
+  const suffix = `?role=${role}`
+  return DEV_SERVER ? DEV_SERVER + suffix : pathToFileURL(resolveRendererIndex()).toString() + suffix
+}
 
-  if (IS_MAC) {
-    mainWindow.setWindowButtonPosition?.(WINDOW_BUTTON_POSITION)
-    if (icon) {
-      app.dock?.setIcon(icon)
-    }
-  }
-
-  if (!IS_MAC) {
-    if (!nativeThemeListenerInstalled) {
-      nativeThemeListenerInstalled = true
-      nativeTheme.on('updated', () => {
-        mainWindow?.setTitleBarOverlay?.(getTitleBarOverlayOptions())
-      })
-    }
-  }
-
-  mainWindow.on('will-enter-full-screen', () => sendWindowStateChanged(true))
-  mainWindow.on('enter-full-screen', () => sendWindowStateChanged(true))
-  mainWindow.on('will-leave-full-screen', () => sendWindowStateChanged(false))
-  mainWindow.on('leave-full-screen', () => sendWindowStateChanged(false))
-
-  installPreviewShortcut(mainWindow)
-  installDevToolsShortcut(mainWindow)
-  installZoomShortcuts(mainWindow)
-  installContextMenu(mainWindow)
-  mainWindow.webContents.setWindowOpenHandler(details => {
+// Handlers common to every BrowserWindow: devtools shortcut, external-link
+// interception, crash-loop-bounded reload, console-error logging, and the
+// close-to-tray interceptor (tray.cjs contract: re-apply on every window).
+function installStandardWindowHandlers(win) {
+  installDevToolsShortcut(win)
+  win.webContents.setWindowOpenHandler(details => {
     openExternalUrl(details.url)
 
     return { action: 'deny' }
   })
-  mainWindow.webContents.on('will-navigate', (event, url) => {
+  win.webContents.on('will-navigate', (event, url) => {
     if ((DEV_SERVER && url.startsWith(DEV_SERVER)) || (!DEV_SERVER && url.startsWith('file:'))) {
       return
     }
@@ -1640,8 +1596,7 @@ function createWindow() {
     event.preventDefault()
     openExternalUrl(url)
   })
-
-  mainWindow.webContents.on('render-process-gone', (_event, details) => {
+  win.webContents.on('render-process-gone', (_event, details) => {
     rememberLog(`[renderer] render-process-gone reason=${details?.reason} exitCode=${details?.exitCode}`)
 
     if (details?.reason === 'crashed' || details?.reason === 'oom') {
@@ -1658,23 +1613,22 @@ function createWindow() {
 
       rendererReloadTimes.push(now)
       setImmediate(() => {
-        if (!mainWindow || mainWindow.isDestroyed()) return
+        if (!win || win.isDestroyed()) return
         try {
-          mainWindow.webContents.reload()
+          win.webContents.reload()
         } catch (err) {
           rememberLog(`[renderer] reload after crash failed: ${err?.message || err}`)
         }
       })
     }
   })
-
-  mainWindow.webContents.on('unresponsive', () => rememberLog('[renderer] webContents became unresponsive'))
+  win.webContents.on('unresponsive', () => rememberLog('[renderer] webContents became unresponsive'))
 
   // Electron always passes the event first. The canonical (Electron 36+) shape
   // is (event, messageDetails); the deprecated positional shape is
   // (event, level, message, line, sourceId). Handle both. `level` is numeric
   // (0..3), where 3 === error.
-  mainWindow.webContents.on('console-message', (_event, detailsOrLevel, message, line, sourceId) => {
+  win.webContents.on('console-message', (_event, detailsOrLevel, message, line, sourceId) => {
     const details = detailsOrLevel && typeof detailsOrLevel === 'object' ? detailsOrLevel : null
     const level = details ? details.level : detailsOrLevel
 
@@ -1685,24 +1639,166 @@ function createWindow() {
     const lineNo = details ? details.lineNumber : line
     rememberLog(`[renderer console] ${text} (${src}:${lineNo})`)
   })
+  installCloseInterceptor(win)
+}
 
-  if (DEV_SERVER) {
-    mainWindow.loadURL(DEV_SERVER)
-  } else {
-    mainWindow.loadURL(pathToFileURL(resolveRendererIndex()).toString())
-  }
-
-  mainWindow.webContents.once('did-finish-load', () => {
-    restorePersistedZoomLevel(mainWindow)
-    broadcastBootProgress()
-    sendWindowStateChanged()
-    ensureBackend().catch(error => rememberLog(error.stack || error.message))
+// On-demand framed window hosting Login (unauthenticated) and Settings
+// (authenticated) — REST-only, it never boots the gateway. Created lazily by
+// showToolWindow (egg-crack gesture, tray Settings / Sign-in).
+function createToolWindow() {
+  const icon = getAppIconPath()
+  toolWindow = new BrowserWindow({
+    width: 1220,
+    height: 800,
+    minWidth: 400,
+    minHeight: 620,
+    title: 'DeskAgent',
+    // Frameless title bar on every platform so the renderer can paint the
+    // titlebar tools flush with the top edge. On Windows/Linux titleBarOverlay
+    // paints native min/max/close in the top-right of the renderer; on macOS it
+    // reserves a content inset alongside the traffic lights.
+    titleBarStyle: 'hidden',
+    titleBarOverlay: getTitleBarOverlayOptions(),
+    trafficLightPosition: IS_MAC ? WINDOW_BUTTON_POSITION : undefined,
+    vibrancy: IS_MAC ? 'sidebar' : undefined,
+    icon,
+    backgroundColor: '#f7f7f7',
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.cjs'),
+      contextIsolation: true,
+      webviewTag: true,
+      sandbox: true,
+      nodeIntegration: false,
+      devTools: true,
+      backgroundThrottling: false
+    }
   })
 
-  // Close-to-tray is a per-window policy — install on every freshly
-  // constructed BrowserWindow so the guarantee survives window
-  // re-creations triggered by activate, second-instance, or recovery.
-  installCloseInterceptor(mainWindow)
+  if (IS_MAC) {
+    toolWindow.setWindowButtonPosition?.(WINDOW_BUTTON_POSITION)
+  }
+
+  if (!IS_MAC) {
+    if (!nativeThemeListenerInstalled) {
+      nativeThemeListenerInstalled = true
+      nativeTheme.on('updated', () => {
+        toolWindow?.setTitleBarOverlay?.(getTitleBarOverlayOptions())
+      })
+    }
+  }
+
+  toolWindow.on('will-enter-full-screen', () => sendWindowStateChanged(true))
+  toolWindow.on('enter-full-screen', () => sendWindowStateChanged(true))
+  toolWindow.on('will-leave-full-screen', () => sendWindowStateChanged(false))
+  toolWindow.on('leave-full-screen', () => sendWindowStateChanged(false))
+
+  installPreviewShortcut(toolWindow)
+  installZoomShortcuts(toolWindow)
+  installContextMenu(toolWindow)
+  installStandardWindowHandlers(toolWindow)
+
+  toolWindow.loadURL(rendererUrlFor('tool'))
+
+  toolWindow.webContents.once('did-finish-load', () => {
+    restorePersistedZoomLevel(toolWindow)
+  })
+}
+
+// The transparent screen-sized always-on-top window — the sole resident main
+// window. The companion, chat dialog, onboarding, and proactive bubbles all
+// render as absolutely positioned overlays inside it; non-interactive regions
+// are click-through (setIgnoreMouseEvents + forward). Remote displays (X11 /
+// VNC / RDP) can't composite transparency, so the sprite degrades to a
+// non-transparent window there (Linux-no-compositor degradation is a known
+// limitation, see desktop/README.md).
+const SPRITE_TRANSPARENT = !REMOTE_DISPLAY_REASON
+
+function applySpriteBounds() {
+  if (!mainWindow || mainWindow.isDestroyed()) return
+  mainWindow.setBounds(screen.getPrimaryDisplay().workArea)
+}
+
+function createSpriteWindow() {
+  const icon = getAppIconPath()
+  mainWindow = new BrowserWindow({
+    width: 480,
+    height: 320,
+    frame: false,
+    transparent: SPRITE_TRANSPARENT,
+    resizable: false,
+    movable: false,
+    hasShadow: false,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    show: false,
+    backgroundColor: '#00000000',
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.cjs'),
+      contextIsolation: true,
+      sandbox: true,
+      nodeIntegration: false,
+      devTools: true,
+      backgroundThrottling: false
+    }
+  })
+
+  applySpriteBounds()
+  // Default click-through with mousemove forwarding so the renderer can detect
+  // re-entering an interactive overlay and request capture via the sprite IPC.
+  mainWindow.setIgnoreMouseEvents(true, { forward: SPRITE_TRANSPARENT })
+  mainWindow.setAlwaysOnTop(true, 'floating')
+
+  if (IS_MAC && icon) {
+    app.dock?.setIcon(icon)
+  }
+  // Re-cover the work area when the display resizes. Registered once (sprite
+  // recreation is rare; applySpriteBounds no-ops on a destroyed window anyway).
+  if (!spriteBoundsListenerInstalled) {
+    spriteBoundsListenerInstalled = true
+    screen.on('display-metrics-changed', applySpriteBounds)
+  }
+
+  installStandardWindowHandlers(mainWindow)
+
+  mainWindow.loadURL(rendererUrlFor('sprite'))
+  mainWindow.webContents.once('did-finish-load', () => {
+    broadcastBootProgress()
+    // Ambient: appear without stealing focus from whatever the user is doing.
+    mainWindow.showInactive()
+  })
+}
+
+// Create-or-show the framed tool window. The renderer self-selects Login vs
+// Settings from $auth, so callers don't distinguish.
+function showToolWindow() {
+  if (!toolWindow || toolWindow.isDestroyed()) {
+    createToolWindow()
+    return
+  }
+  if (toolWindow.isMinimized()) toolWindow.restore()
+  if (!toolWindow.isVisible()) {
+    if (process.platform === 'win32') toolWindow.setSkipTaskbar(false)
+    toolWindow.show()
+  }
+  toolWindow.focus()
+}
+
+function hideToolWindow() {
+  if (toolWindow && !toolWindow.isDestroyed()) {
+    toolWindow.hide()
+    if (process.platform === 'win32') toolWindow.setSkipTaskbar(true)
+  }
+}
+
+// Auth state is owned per-renderer (two windows = two nanostores). Broadcast
+// every login/logout/refresh to BOTH windows so the sprite (which never hosts
+// the login form) learns the new session and can boot/teardown its gateway.
+function broadcastAuthChanged(snapshot) {
+  const authenticated = Boolean(snapshot?.hasToken)
+  const payload = { authenticated, snapshot: authenticated ? snapshot : null }
+  for (const win of [mainWindow, toolWindow]) {
+    if (win && !win.isDestroyed()) win.webContents.send('deskagent:auth:changed', payload)
+  }
 }
 
 ipcMain.on('deskagent:previewShortcutActive', (_event, active) => {
@@ -1864,6 +1960,13 @@ const bridgeDeps = {
   },
   taggedLogger: prefix => chunk => rememberLog(`${prefix} ${chunk}`),
   getMainWindow: () => mainWindow,
+  // The sprite is `mainWindow`; the framed Login/Settings window is
+  // `toolWindow`, created on demand.
+  getSpriteWindow: () => mainWindow,
+  getToolWindow: () => toolWindow,
+  showToolWindow,
+  hideToolWindow,
+  broadcastAuthChanged,
   // Rebuild the tray context menu after auth state changes (login/logout) so
   // the Show/Sign-in + Settings + Log-out label set reflects the live session.
   rebuildTrayMenu: () => rebuildTrayMenu(),
@@ -1889,6 +1992,17 @@ registerUpdateIpc({
   sendToMain,
   getMainWindow: () => mainWindow,
   runnerUpdater: getRunnerUpdater()
+})
+
+registerSpriteIpc({
+  ipcMain,
+  deps: { getSpriteWindow: () => mainWindow, getUserDataDir: () => app.getPath('userData') }
+})
+
+// Sprite → main: bring up the framed tool window (the egg-crack gesture hands
+// the user off to Login; tray Settings reuses the same path for Settings).
+ipcMain.handle('deskagent:window:show-tool', async () => {
+  showToolWindow()
 })
 
 ipcMain.handle('deskagent:runner:get-tools', async () => {
@@ -1934,7 +2048,7 @@ app.whenReady().then(async () => {
   setupAutoUpdater()
   // Phase 2 of the runner self-update: if a previous-version Electron
   // staged a runner update and wrote a sentinel, install it now. This
-  // runs BEFORE createWindow() so the user lands in a fully-updated
+  // runs BEFORE createSpriteWindow() so the user lands in a fully-updated
   // state on first paint. installPending is fast (local pip + file
   // copy, no network) so the brief delay is acceptable.
   await getRunnerUpdater()
@@ -1942,16 +2056,16 @@ app.whenReady().then(async () => {
     .catch(err => {
       log.warn('runner installPending failed:', err?.message || err)
     })
-  createWindow()
+  createSpriteWindow()
 
-  // Single-instance `second-instance` forwarder must be registered after
-  // `createWindow` so `bridgeDeps.getMainWindow()` resolves. The actual
+  // Single-instance `second-instance` forwarder must be registered after the
+  // sprite window exists so `bridgeDeps.getMainWindow()` resolves. The actual
   // tray icon + close interceptor are installed by `installTray` below.
   registerSingleInstanceForwarder({
     app,
     bridgeDeps,
     rememberLog,
-    createWindow
+    createWindow: createSpriteWindow
   })
 
   installTray({
@@ -1964,15 +2078,15 @@ app.whenReady().then(async () => {
     getAppIconPath,
     rememberLog,
     bridgeDeps,
-    createWindow
+    createWindow: createSpriteWindow
   })
 
-  // macOS dock click → recreate or focus. Mostly dead on macOS because
-  // `installTray` hides the dock, but kept so the app still behaves
+  // macOS dock click → recreate or focus the sprite. Mostly dead on macOS
+  // because `installTray` hides the dock, but kept so the app still behaves
   // sensibly if a user later unhides the dock (e.g. via `defaults write`).
   app.on('activate', () => {
     const win = bridgeDeps.getMainWindow()
-    if (!win || win.isDestroyed()) createWindow()
+    if (!win || win.isDestroyed()) createSpriteWindow()
     else showMainWindow()
   })
 })

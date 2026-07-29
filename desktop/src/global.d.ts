@@ -10,6 +10,7 @@ declare global {
       refreshSession: (payload?: any) => Promise<DesktopAuthSnapshot>
       logout: () => Promise<DesktopLogoutResult>
       getSession: () => Promise<DesktopAuthSnapshot | null>
+      showToolWindow: () => Promise<void>
       api: <T>(request: DeskAgentApiRequest) => Promise<T>
       notify: (payload: DeskAgentNotification) => Promise<boolean>
       requestMicrophoneAccess: () => Promise<boolean>
@@ -107,6 +108,12 @@ declare global {
         stt: (payload: { dataUrl: string; filename?: string }) => Promise<{ text: string }>
         tts: (payload: { text: string; voice?: string }) => Promise<{ dataUrl: string; mimeType: string }>
       }
+      sprite: {
+        setIgnoreMouseEvents: (payload: { ignore: boolean; forward?: boolean }) => Promise<void>
+        setAlwaysOnTop: (payload: { on: boolean }) => Promise<void>
+        getWorkArea: () => Promise<{ x: number; y: number; width: number; height: number }>
+        setPosition: (payload: { x: number; y: number }) => Promise<void>
+      }
       terminal: {
         dispose: (id: string) => Promise<boolean>
         onData: (id: string, callback: (payload: string) => void) => () => void
@@ -121,6 +128,7 @@ declare global {
       onPowerResume?: (callback: () => void) => () => void
       onBootProgress: (callback: (payload: DesktopBootProgress) => void) => () => void
       onSessionExpired: (callback: () => void) => () => void
+      onAuthChanged: (callback: (payload: DesktopAuthBroadcast) => void) => () => void
       onRunnerStatus?: (callback: (payload: DesktopRunnerStatusEvent) => void) => () => void
       onOpenSettings?: (callback: () => void) => () => void
       onTrayLogout?: (callback: () => void) => () => void
@@ -255,6 +263,15 @@ export interface DesktopLogoutResult {
   backendUnreachable?: boolean
   error?: string
   ok: boolean
+}
+
+// main→renderer broadcast after every login/logout/refresh, sent to BOTH
+// windows so each renderer's per-window $auth stays in sync. The sprite
+// window never runs the login form, so it relies on this to learn the new
+// session and boot/teardown its gateway.
+export interface DesktopAuthBroadcast {
+  authenticated: boolean
+  snapshot: DesktopAuthSnapshot | null
 }
 
 export interface DeskAgentApiRequest {
