@@ -20,6 +20,9 @@ function ensureBackendSession(deps) {
   } catch (error) {
     deps.rememberLog(`[session] restore failed: ${error.message}`)
   }
+  // A restored session flips auth state before any login IPC fires — rebuild
+  // the tray menu so it shows the authenticated items right after startup.
+  deps.rebuildTrayMenu?.()
   return deps.backendSession
 }
 
@@ -39,6 +42,7 @@ function registerAuthIpc({ ipcMain, deps }) {
     // JWT changed — invalidate the cached backend connection so the next
     // ensureBackend() re-resolves with the fresh token.
     deps.resetBackendCache?.()
+    deps.rebuildTrayMenu?.()
     return result
   })
 
@@ -58,6 +62,7 @@ function registerAuthIpc({ ipcMain, deps }) {
     const session = ensureBackendSession(deps)
     const result = await session.logout()
     deps.resetBackendCache?.()
+    deps.rebuildTrayMenu?.()
     return result
   })
 
