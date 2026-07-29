@@ -43,6 +43,10 @@ function registerAuthIpc({ ipcMain, deps }) {
     // ensureBackend() re-resolves with the fresh token.
     deps.resetBackendCache?.()
     deps.rebuildTrayMenu?.()
+    // Sync the sprite window's per-renderer $auth so it boots its gateway.
+    deps.broadcastAuthChanged?.(session.getSession())
+    // The sprite takes over; dismiss the login form.
+    deps.hideToolWindow?.()
     return result
   })
 
@@ -55,6 +59,7 @@ function registerAuthIpc({ ipcMain, deps }) {
     }
     const result = await session.refresh(enriched)
     deps.resetBackendCache?.()
+    deps.broadcastAuthChanged?.(session.getSession())
     return result
   })
 
@@ -63,6 +68,10 @@ function registerAuthIpc({ ipcMain, deps }) {
     const result = await session.logout()
     deps.resetBackendCache?.()
     deps.rebuildTrayMenu?.()
+    // Tell the sprite window to tear down its gateway and return to the egg.
+    deps.broadcastAuthChanged?.(session.getSession())
+    // Surface the login form again so the user can re-authenticate.
+    deps.showToolWindow?.()
     return result
   })
 

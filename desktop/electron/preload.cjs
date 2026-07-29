@@ -8,6 +8,10 @@ contextBridge.exposeInMainWorld('deskagent', {
   refreshSession: payload => ipcRenderer.invoke('deskagent:auth:refresh', payload),
   logout: () => ipcRenderer.invoke('deskagent:auth:logout'),
   getSession: () => ipcRenderer.invoke('deskagent:auth:get-session'),
+  // Sprite window → main: bring up the framed tool window (Login when
+  // unauthenticated, Settings when authenticated). The sprite's egg-crack
+  // gesture calls this to hand the user off to the login form.
+  showToolWindow: () => ipcRenderer.invoke('deskagent:window:show-tool'),
   changePassword: payload => ipcRenderer.invoke('deskagent:auth:change-password', payload),
   modelConfig: {
     get: () => ipcRenderer.invoke('deskagent:model-config:get')
@@ -65,6 +69,12 @@ contextBridge.exposeInMainWorld('deskagent', {
     stt: payload => ipcRenderer.invoke('deskagent:media:stt', payload),
     tts: payload => ipcRenderer.invoke('deskagent:media:tts', payload)
   },
+  sprite: {
+    setIgnoreMouseEvents: payload => ipcRenderer.invoke('deskagent:sprite:set-ignore-mouse-events', payload),
+    setAlwaysOnTop: payload => ipcRenderer.invoke('deskagent:sprite:set-always-on-top', payload),
+    getWorkArea: () => ipcRenderer.invoke('deskagent:sprite:get-work-area'),
+    setPosition: payload => ipcRenderer.invoke('deskagent:sprite:set-position', payload)
+  },
   terminal: {
     dispose: id => ipcRenderer.invoke('deskagent:terminal:dispose', id),
     resize: (id, size) => ipcRenderer.invoke('deskagent:terminal:resize', id, size),
@@ -112,6 +122,15 @@ contextBridge.exposeInMainWorld('deskagent', {
     const listener = () => callback()
     ipcRenderer.on('deskagent:auth:session-expired', listener)
     return () => ipcRenderer.removeListener('deskagent:auth:session-expired', listener)
+  },
+  // Auth state is owned per-renderer (two windows = two nanostores). The main
+  // process broadcasts every login/logout/refresh to BOTH windows so the
+  // sprite (which never runs the login form) learns the new session and can
+  // boot/teardown its gateway. Mirrors onSessionExpired's mechanism.
+  onAuthChanged: callback => {
+    const listener = (_event, payload) => callback(payload)
+    ipcRenderer.on('deskagent:auth:changed', listener)
+    return () => ipcRenderer.removeListener('deskagent:auth:changed', listener)
   },
   onRunnerStatus: callback => {
     const listener = (_event, payload) => callback(payload)

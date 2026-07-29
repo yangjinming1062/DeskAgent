@@ -1,6 +1,6 @@
 import { atom } from 'nanostores'
 
-import type { DesktopAuthSnapshot } from '@/global'
+import type { DesktopAuthBroadcast, DesktopAuthSnapshot } from '@/global'
 
 import { setRunnerOnline, tearDownPrimaryGateway } from './gateway'
 
@@ -27,6 +27,22 @@ export async function hydrateAuth(): Promise<void> {
       kind: 'unauthenticated',
       error: error instanceof Error ? error.message : String(error)
     })
+  }
+}
+
+// Apply a main→renderer auth broadcast (login/logout/refresh). The sprite
+// window never runs the login form, so it relies on this to learn the new
+// session. Gateway teardown on logout is handled by the GatewayBooter unmount
+// (conditional render on $auth), so here we only flip auth state.
+export function applyAuthBroadcast(payload: DesktopAuthBroadcast): void {
+  const { snapshot } = payload
+  const expiresAt = snapshot?.tokenExpiresAt
+  const expired = typeof expiresAt !== 'number' || !Number.isFinite(expiresAt) || expiresAt <= Date.now()
+
+  if (payload.authenticated && snapshot && snapshot.hasToken && !expired) {
+    $auth.set({ kind: 'authenticated', snapshot })
+  } else {
+    $auth.set({ kind: 'unauthenticated' })
   }
 }
 

@@ -10,7 +10,7 @@ DeskAgent 是**双层叠加**的单 Electron 应用：
 
 | 层 | 职责 | 状态 |
 |----|------|------|
-| **伙伴层**（上层） | 桌面精灵形象渲染、onboarding（蛋→角色定义→孵化）、陪伴式交互 UI | **待建**（旧聊天 UI 已移除，留出干净基础） |
+| **伙伴层**（上层） | 桌面精灵形象渲染、onboarding（蛋→角色定义→孵化）、陪伴式交互 UI | **实现中**（MVP Slice 1–2：精灵窗口 + 蛋 + 双窗口 auth 同步 + 对话式 onboarding（5 问→portrait 生成/确认→音色确认→问候）已落地；chat / 主动陪伴见 [plan.md](plan.md) §7 路线） |
 | **枢纽层**（下层） | 凭证加密落盘、WS 中转、Runner 进程编排、反向 RPC 代理、两阶段自更新、本地文件系统拦截 | **保留复用** |
 
 两层共享同一个 Electron 主进程，职责严格分离：枢纽层处理协议与安全，伙伴层处理形象渲染与用户体验。伙伴层不直接接触凭证或 Runner 句柄，一切经枢纽层 IPC。
@@ -19,8 +19,8 @@ DeskAgent 是**双层叠加**的单 Electron 应用：
 
 ```
 desktop/
-├── electron/     # 枢纽层（主进程，CommonJS *.cjs）——lifecycle / tray / backend-session / runner-bridge / runner-updater / ipc/
-├── src/          # 渲染进程（ESM，Vite 编译）——gateway hooks / settings / login / overlays / store
+├── electron/     # 枢纽层（主进程，CommonJS *.cjs）——lifecycle / tray / backend-session / runner-bridge / runner-updater / ipc/（含 sprite.cjs 精灵窗口控制）
+├── src/          # 渲染进程（ESM，Vite 编译）——gateway hooks / settings / login / overlays / store / app/companion（伙伴层）
 ├── scripts/      # 构建钩子（before-pack / notarize / stage-native-deps / test-desktop）
 └── assets/       # icon.{png,ico,icns}
 ```
@@ -45,25 +45,31 @@ desktop/
 | 已登录 | Show DeskAgent · Settings... · Log out · Quit DeskAgent |
 | 未登录 | Sign in... · Quit DeskAgent |
 
-- **Settings...** → 显示主窗口 + 向 renderer 发 `deskagent:tray:open-settings`，`desktop-controller.tsx` 收到后挂起设置浮层。
-- **Log out** → 向 renderer 发 `deskagent:tray:logout`，renderer 走完整 logout 流（清 auth store + 撤 gateway + 回登录页），比主进程直接清 session 多一步 renderer 状态同步。
-- **Sign in... / Show** → 仅显示窗口（未登录时 LoginGate 渲染登录页）。
+- **Show DeskAgent**（已登录）→ 前置精灵窗口（透明置顶常驻窗口）。
+- **Sign in...**（未登录）→ 打开 framed 工具窗口，渲染 LoginGate。
+- **Settings...** → 打开 framed 工具窗口，渲染 SettingsView（工具窗口按 `$auth` 自选登录/设置态）。
+- **Log out** → 向精灵窗口发 `deskagent:tray:logout`，精灵 renderer 走 logout 流 → `ipc/auth.cjs` 广播 `deskagent:auth:changed` 到两个窗口、并重新显示登录工具窗（精灵回蛋）。
 
 `rebuildTrayMenu()` 在 login / logout / 启动会话恢复后重跑 `setContextMenu`，保证菜单标签与实时会话状态一致（`ipc/auth.cjs` 经 `bridgeDeps.rebuildTrayMenu` 调用）。
 
-## 伙伴层（待建）
+## 伙伴层（实现中）
 
-精灵窗口（透明置顶、无边框、可控点击穿透的 `BrowserWindow`）+ 形象渲染引擎 + onboarding（蛋→角色定义→孵化）+ 陪伴交互 UI 均未实现。当前 `desktop-controller.tsx` 是最小基础：boot gateway、挂起设置浮层、显示 boot/connecting 覆盖。
+**双窗口模型**：精灵窗口（透明、无边框、置顶、可控点击穿透）是唯一常驻主窗口；framed 工具窗口按需承载 Login / Settings。两者共享同一渲染 bundle，靠 URL `?role=sprite|tool` 在根组件分流（`app/index.tsx`）。
 
-详细交互设计（onboarding 流程、动画状态机、场景库、陪伴交互范式、MVP 分阶段路线）见 [plan.md](plan.md)；跨模块表达层契约（情绪 cue、clip 生命周期、onboarding 断点恢复）见 [design.md §5.2.IV / §7.5](../design.md)。
+- **精灵窗口**（`createSpriteWindow`）铺满工作区、默认全窗点击穿透（`setIgnoreMouseEvents(true,{forward:true})`）；渲染层 `SpriteStage` 对 mouse-move hit-test，光标进入形象/对话框时请求捕获、离开时释放。形象为代码渲染（SVG/CSS）——蛋 + 累计裂纹 + 犯困/醒来态；Backend 生成的 portrait / WebM clip 尚未接入（[plan.md §1.3](plan.md)）。
+- **gateway 门控**：仅精灵窗口、且仅已鉴权后 boot gateway（`CompanionRoot` 条件渲染 `GatewayBooter` → `useGatewayBoot`）。未鉴权 = 蛋 teaser，不连 WS——避免 `useGatewayBoot` 在无 JWT 时抛错或触发 1008→logout 破坏首启。
+- **跨窗口 auth 同步**：两个 BrowserWindow = 两个独立渲染进程 = 两份独立 nanostores，`$auth` 不共享。`ipc/auth.cjs` 在 login/logout/refresh 后经 `bridgeDeps.broadcastAuthChanged` 向**两窗口**广播 `deskagent:auth:changed`（镜像 `onSessionExpired` 机制），各窗口根订阅后更新各自副本：精灵据此 boot/teardown gateway、推进生命周期；工具窗口据此切 LoginGate/SettingsView。登录成功隐藏工具窗、登出/过期重新显示。
+- **动态置顶**：对话框激活且聚焦时精灵窗口降级 `alwaysOnTop`（切到别的 app 可被覆盖），关闭恢复（[plan.md §1.2](plan.md)；chat 未实现前不触发）。
 
-WS 事件流（`use-gateway-boot` 的 `handleGatewayEvent`）目前为空实现——伙伴层将在此分发 Backend 的 Cron / `send_message` 等主动陪伴事件（[design.md §6](../design.md)），在精灵窗口以人格化方式表达。
+详细交互设计（onboarding、动画状态机、场景库、陪伴范式、渐进路线）见 [plan.md](plan.md)；跨模块表达层契约（情绪 cue、clip 生命周期、onboarding 断点恢复）见 [design.md §5.2.IV / §7.5](../design.md)。
+
+`handleGatewayEvent`（`use-gateway-boot`）目前仍为空实现——chat / 主动陪伴事件分发在后续 slice 接入；精灵窗口的 WS 事件流是它们的落点。
 
 ## 通信模型
 
 ### Renderer ↔ Main（IPC）
 
-renderer 通过 `window.deskagent.*` 调 main，后者通过 `webContents.send(...)` 推事件。`preload.cjs` 是白名单——只有显式 expose 的方法可调。每个 IPC 模块 export `registerXxxIpc(deps)`，deps 由 `main.cjs` 显式注入（`backendSession` + `runnerBridge` 两个跨模块单例经 `bridgeDeps` 传递）。
+renderer 通过 `window.deskagent.*` 调 main，后者通过 `webContents.send(...)` 推事件。`preload.cjs` 是白名单——只有显式 expose 的方法可调。每个 IPC 模块 export `registerXxxIpc(deps)`，deps 由 `main.cjs` 显式注入（`backendSession` + `runnerBridge` 两个跨模块单例经 `bridgeDeps` 传递）。伙伴层新增：`deskagent:sprite:*`（点击穿透/动态置顶/工作区/休息位，`ipc/sprite.cjs`）与 main→**两窗口**广播 `deskagent:auth:changed`（跨渲染器 auth 同步，见上）。
 
 ### Renderer ↔ Backend（REST + WS）
 
@@ -115,6 +121,7 @@ Desktop 走 `electron-updater` 从 Backend `/api/update` 拉取预构建安装�
 | Runner 崩溃后重连窗口有限 | 端点文件 + 重连循环（~5 分钟），超时后 Runner 退出 |
 | Electron 42 + pnpm 11 需 hoisted | 失去 phantom-deps 防护；等 Electron ESM 主进程支持 |
 | `.cjs` + `.ts` 双 runtime | 新增 main 模块用 `.cjs`，renderer 用 `.ts/.tsx`；等 Electron ESM 主进程支持 |
-| 透明窗口平台差异 | Linux 部分桌面环境（无 compositor）透明窗口可能黑底；macOS/Windows 支持良好——精灵窗口需平台降级策略 |
+| 透明窗口平台差异 | 远程显示（X11/VNC/RDP）无法合成透明层，精灵窗口降级为非透明（`SPRITE_TRANSPARENT`）；Linux 无 compositor 仍可能黑底——macOS/Windows 支持良好。完整 sprite-sheet 降级留后续阶段 |
+| 托盘 Settings 中"重载 MCP"不可用 | gateway 仅在精灵窗口 boot；从托盘打开的 framed 工具窗口无 gateway，`mcp-settings.tsx` 的 reload 按钮优雅报"gateway 不可用"。其余 settings（runnerConfig 等 REST）不受影响 |
 | WSL 下无系统托盘 | Electron Tray API 在 WSL 不可用；降级为 hide-only；托盘菜单在 WSL 下不可达 |
 | 死 IPC 模块待清理 | `ipc/terminal.cjs`（node-pty）、`ipc/preview.cjs`、`ipc/link-title.cjs`、`ipc/images.cjs` 的 renderer 消费方已移除，模块仍在（node-pty 编织进 native-deps 打包链 `scripts/stage-native-deps.cjs` + `test-desktop.mjs` 断言，移除属构建管线改动） |
