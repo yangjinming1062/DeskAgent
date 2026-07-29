@@ -1,4 +1,4 @@
-# Zast Agent
+# DeskAgent
 
 > 三模块 LLM Agent —— **Backend** 云端编排 + **Desktop** 本地枢纽 + **Runner** 隔离执行。
 
@@ -6,10 +6,10 @@
 
 ## 这是什么
 
-Zast Agent 解决一个具体问题:**让 LLM 安全地"动手"操作用户本机**。
+DeskAgent 解决一个具体问题:**让 LLM 安全地"动手"操作用户本机**。
 
 - **传统 LLM Agent** 要么只能云端回答(无执行力),要么把执行能力塞进 LLM SDK(用户凭证暴露给模型/云)
-- **Zast Agent** 把"思考"放云端、把"动手"放本机,**用 WebSocket 协议 + JSON-RPC 2.0** 把两者解耦——Runner 进程不持有任何 Backend token,需要 LLM 时通过反向 RPC 借 Desktop 代为调用
+- **DeskAgent** 把"思考"放云端、把"动手"放本机,**用 WebSocket 协议 + JSON-RPC 2.0** 把两者解耦——Runner 进程不持有任何 Backend token,需要 LLM 时通过反向 RPC 借 Desktop 代为调用
 
 ## 模块架构
 
@@ -77,7 +77,7 @@ cd desktop && pnpm install && pnpm dev  # Vite :5174 + Electron;
 
 ### Runner
 
-由 installer 安装到 `$ZAST_HOME/runner/.venv`,desktop 启动时自动 spawn。dev 模式手动启动见 [runner/README.md §通信协议](runner/README.md)。
+由 installer 安装到 `$DESKAGENT_HOME/runner/.venv`,desktop 启动时自动 spawn。dev 模式手动启动见 [runner/README.md §通信协议](runner/README.md)。
 
 ### 安装包 (Installer)
 
@@ -90,10 +90,10 @@ bash scripts/build_client.sh
 ```
 
 产物:
-- `release/Zast-Setup-{ver}.{exe|dmg|AppImage}` —— 首次安装 / 卸载 / repair
-- `release/Zast-{ver}-update.zip` —— 运行期自更新 payload(走 `electron-updater` 通道)
+- `release/DeskAgent-Setup-{ver}.{exe|dmg|AppImage}` —— 首次安装 / 卸载 / repair
+- `release/DeskAgent-{ver}-update.zip` —— 运行期自更新 payload(走 `electron-updater` 通道)
 
-发布运维:登录 `https://<your-backend>/admin/` → "版本管理" → 选 `release/Zast-{ver}-update.zip` → 上传并发布。
+发布运维:登录 `https://<your-backend>/admin/` → "版本管理" → 选 `release/DeskAgent-{ver}-update.zip` → 上传并发布。
 
 ## 文档导航
 
