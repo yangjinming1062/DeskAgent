@@ -1,3 +1,4 @@
+from . import activity_tools  # noqa: F401, E402
 from .ansi_strip import strip_ansi
 from .ansi_strip import strip_fence
 from .budget_config import BudgetConfig
@@ -12,6 +13,9 @@ from .credential_files import register_credential_files
 from .env_passthrough import get_all_passthrough
 from .env_passthrough import is_env_passthrough
 from .env_passthrough import register_env_passthrough
+
+# Importing these registers the `system.*` tools with the registry as a
+# side effect — must run after `registry` itself is importable.
 
 __all__ = [
     "strip_ansi",

@@ -2,11 +2,14 @@ import argparse
 import asyncio
 import json
 import logging
+import platform
 import sys
 import threading
+import time
 import uuid
 
 import websockets
+from runner_version import __version__
 from tools import discover_builtin_tools
 from tools import registry
 from tools import ToolError
@@ -19,6 +22,9 @@ from tools.tool_output_limits import reset_cache as reset_output_limits_cache
 from tools.toolsets import get_disabled_toolset_ids
 from utils import pid_exists
 from utils import set_handler
+from utils.capabilities import disk_free_bytes
+from utils.capabilities import network_reachable
+from utils.capabilities import snapshot
 from utils.constants import get_deskagent_home
 
 logging.basicConfig(level=logging.WARNING)
@@ -30,6 +36,8 @@ _PENDING_RPC: dict[str, asyncio.Future] = {}
 # Process-scoped: MCP tool cache lives for the runner's lifetime, so a single
 # discovery on the first connect is enough.
 _discovery_started = False
+_STARTED_AT = time.time()
+_RECONNECT_COUNT = 0
 
 
 async def _send(ws, req_id, **fields):
@@ -153,6 +161,10 @@ async def process_request(ws, req):
             )
             return
 
+        if method == "deskagent.info":
+            await _send(ws, req_id, result=_build_info())
+            return
+
         if method == "mcp.reload":
             # Clear config caches so tool_output_limits and file_read_max_chars
             # pick up any config.yaml changes without requiring a runner restart.
@@ -201,7 +213,7 @@ async def runner_loop(ws_url: str):
                 _RUNNER_LOOP = asyncio.get_running_loop()
                 attempt = 0  # reset on successful connection
                 try:
-                    await _send_notification(ws, "runner_ready", {})
+                    await _send_notification(ws, "runner_ready", _runner_ready_payload())
                     _schedule_background_mcp_discovery()
 
                     async for message in ws:
@@ -242,6 +254,7 @@ async def runner_loop(ws_url: str):
         except Exception as e:
             logger.error(f"WebSocket error: {e}")
 
+        _RECONNECT_COUNT += 1
         attempt += 1
         if attempt >= MAX_RECONNECT_ATTEMPTS:
             logger.error(f"Failed to reconnect after {MAX_RECONNECT_ATTEMPTS} attempts. Exiting.")
@@ -281,6 +294,95 @@ def _read_endpoint_url() -> str | None:
         return f"ws://127.0.0.1:{port}/rpc"
     except Exception:
         return None
+
+
+def _runner_ready_payload() -> dict:
+    """Compact handshake payload sent right after WS connect.
+
+    Mirrors ``deskagent.info`` minus fields that depend on runtime stats
+    (uptime, reconnect count) — capabilities are computed once at handshake
+    time and cached. Desktop uses this to decide whether to expose features
+    that depend on optional OS subsystems (microphone, screen capture,
+    system activity signals, local STT/TTS).
+
+    On probe failure we surface a structurally distinct shape so the
+    Desktop can tell ``probe_failed=True`` apart from
+    ``capabilities={...all False}``. The Desktop should treat any
+    feature whose value is missing from the dict as "do not enable"
+    regardless of the failure flag.
+    """
+    payload: dict[str, object] = {
+        "version": __version__,
+        "capabilities": {},
+        "probe_failed": False,
+    }
+    try:
+        caps = snapshot()
+        if isinstance(caps, dict):
+            payload["capabilities"] = caps
+        else:
+            payload["probe_failed"] = True
+    except Exception as e:
+        logger.warning(f"capabilities probe failed: {e}")
+        payload["probe_failed"] = True
+    return payload
+
+
+def _build_info() -> dict:
+    """Full snapshot returned by the ``deskagent.info`` RPC.
+
+    Captures process / OS state in addition to capabilities so the
+    Desktop diagnostic panel can tell stale-process from cold-start, and
+    so the agent itself can adapt behaviour (e.g. avoid heavy tools when
+    disk is tight).
+    """
+    try:
+        caps = snapshot()
+    except Exception:
+        caps = {}
+    try:
+        mcp_servers = sorted(_active_mcp_server_names())
+    except Exception:
+        mcp_servers = []
+    try:
+        tool_names = registry.get_all_tool_names()
+    except Exception:
+        tool_names = []
+    return {
+        "version": __version__,
+        "started_at": _STARTED_AT,
+        "uptime_seconds": round(time.time() - _STARTED_AT, 2),
+        "reconnect_count": _RECONNECT_COUNT,
+        "capabilities": caps,
+        "system": {
+            "platform": sys.platform,
+            "python": sys.version.split()[0],
+            "release": platform.release(),
+            "machine": platform.machine(),
+        },
+        "tool_count": len(tool_names),
+        "mcp_servers": mcp_servers,
+        "network_reachable": network_reachable(),
+        "disk_free_bytes": disk_free_bytes(get_deskagent_home()),
+    }
+
+
+def _active_mcp_server_names() -> list[str]:
+    """Names of MCP servers with at least one live task in ``mcp_tool._servers``.
+
+    Resolved via the same MCP module loader the rest of the runner uses,
+    but never raises — a stale registry state during shutdown must not
+    break ``deskagent.info``.
+    """
+    try:
+        from tools.mcp import mcp_tool
+
+        servers = getattr(mcp_tool, "_servers", None)
+        if not servers:
+            return []
+        return sorted(servers.keys())
+    except Exception:
+        return []
 
 
 def main():

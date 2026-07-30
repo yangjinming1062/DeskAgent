@@ -335,3 +335,12 @@ IDLE 时形象不是静止贴图。两类自主行为，**都不触发 TTS、不
 - **伙伴表达永不空白不变量**（[§11 #9](../ARCHITECTURE.md)）：任何状态/cue 无就绪 clip 时回退 idle loop，用户不可见空白——这是上述解耦能成立的兜底。
 
 Desktop 侧待实现的 scene 标识符体系（与 `video_gen.completed` payload 的 `scene` 字段对应）需与 Backend 的 clip 生成队列对齐：scene 名直接取自状态机状态与 emotion 枚举（`idle` / `speaking` / `working` / `thinking` / `sleeping` / `happy` / ...），无需另造命名空间。
+
+### Runner runtime surface（消费指南）
+
+Runner 端在 2026-07 落地了一批与伴侣场景直接对接的能力，Desktop 侧按以下契约消费：
+
+- **`runner_ready` payload**：含 `version` 与 `capabilities`（`microphone` / `screen_capture` / `local_stt` / `local_tts` / `system_activity` / `platform` / `python`）。Desktop 据此决定是否展示语音通话 / 唤醒词 / 主动伴随 UI——不全可装的环境不阻塞启动。
+- **`deskagent.info` RPC**：任何时候可调，返回完整进程 / OS / 网络 / 磁盘快照。失败态降级（[§4.5](#45-故障态与降级行为伙伴永不死)）依据此 RPC 与 WS 连通性双源判定。
+- **环境感知工具** `system.get_idle_seconds` / `system.is_screen_locked` / `system.get_focused_app` / `system.get_power_state`：经标准 `execute_tool` 通道轮询——结果直接进 §4.4 情境判定，**不经 LLM**。`is_screen_locked=true` 时静默切断主动消息（仍可 affect），解锁后静默恢复。
+- **本地语音** `speech_to_text` / `text_to_speech` / `list_tts_voices`：[§5](#5-语音交互stt--tts) 的 TTS 默认仍走 Backend 云端引擎；Runner 本地引擎作为并行主路径（用户可在设置里二选一）与云断连时的降级（避免 §4.5 "暂时说不出话"）。`text_to_speech` 写盘到 `$DESKAGENT_HOME/cache/audio/tts/*.wav`，Desktop 拿到 path 后由 `<audio>` 播放。
