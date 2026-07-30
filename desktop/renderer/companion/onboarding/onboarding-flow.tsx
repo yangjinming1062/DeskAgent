@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 
 import { matchVoice, nextVoice, sampleLine, type VoiceOption } from '../backend-companion-mock'
+import { clearClipCatalog } from '../clip-store'
 import { assemblePersona, type OnboardingAnswers } from '../persona'
 import { Silhouette } from '../sprite/silhouette'
 import { speak, stopSpeaking } from '../tts'
@@ -185,6 +186,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
   const regeneratePortrait = async () => {
     setBusy(true)
     setHint(null)
+    clearClipCatalog()
     const url = await generatePortrait()
     setBusy(false)
 

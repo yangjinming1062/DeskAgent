@@ -45,6 +45,11 @@ export function setClipStatus(scene: string, status: ClipItem['status'], url: st
   $clipCatalog.set(current)
 }
 
+export function clearClipCatalog(): void {
+  $clipCatalog.set({})
+  $activeTransitionClip.set(null)
+}
+
 export function getClipUrlForScene(scene: string): string | null {
   const catalog = $clipCatalog.get()
   const item = catalog[scene]
