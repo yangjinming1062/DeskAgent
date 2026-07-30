@@ -5,7 +5,7 @@ import { Switch } from '@/components/ui/switch'
 import { useI18n } from '@/shared/i18n'
 import { Wrench } from '@/shared/lib/icons'
 import { TOOLSET_CATALOG, type ToolsetCatalogEntry } from '@/shared/lib/toolset-catalog'
-import { notifyError } from '@/store/notifications'
+import { notifyError } from '@/shared/store/notifications'
 
 import { EmptyState, LoadingState, Pill, SettingsSubsection } from './primitives'
 

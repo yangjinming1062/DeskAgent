@@ -8,7 +8,7 @@ import type { DeskAgentGateway } from '@/shared/deskagent'
 import { useI18n } from '@/shared/i18n'
 import { Wrench } from '@/shared/lib/icons'
 import { cn } from '@/shared/lib/utils'
-import { notify, notifyError } from '@/store/notifications'
+import { notify, notifyError } from '@/shared/store/notifications'
 
 import { EmptyState, LoadingState, Pill, SettingsContent } from './primitives'
 import { useDeepLinkHighlight } from './use-deep-link-highlight'

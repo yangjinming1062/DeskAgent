@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useI18n } from '@/shared/i18n'
 import { Loader2, LogIn } from '@/shared/lib/icons'
-import { $auth, login } from '@/store/auth'
+import { $auth, login } from '@/shared/store/auth'
 
 export function LoginPage() {
   const { t } = useI18n()

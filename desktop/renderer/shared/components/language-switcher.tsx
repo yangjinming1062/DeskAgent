@@ -9,7 +9,7 @@ import { type Locale, LOCALE_META, useI18n } from '@/shared/i18n'
 import { triggerHaptic } from '@/shared/lib/haptics'
 import { Check, ChevronDown, Globe } from '@/shared/lib/icons'
 import { cn } from '@/shared/lib/utils'
-import { notifyError } from '@/store/notifications'
+import { notifyError } from '@/shared/store/notifications'
 
 export interface LanguageSwitcherProps {
   className?: string

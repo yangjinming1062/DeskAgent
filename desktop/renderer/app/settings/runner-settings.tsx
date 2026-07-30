@@ -7,7 +7,7 @@ import { Switch } from '@/components/ui/switch'
 import { useI18n } from '@/shared/i18n'
 import { triggerHaptic } from '@/shared/lib/haptics'
 import { Settings } from '@/shared/lib/icons'
-import { notify, notifyError } from '@/store/notifications'
+import { notify, notifyError } from '@/shared/store/notifications'
 
 import { EmptyState, ListRow, LoadingState, SectionHeading, SettingsContent, SettingsSubsection } from './primitives'
 import { useRunnerConfig } from './use-runner-config'

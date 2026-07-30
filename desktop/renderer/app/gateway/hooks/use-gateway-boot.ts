@@ -5,10 +5,10 @@ import type { DeskAgentConnection } from '@/shared/types/global'
 import { translateNow } from '@/shared/i18n'
 import { resolveGatewayWsUrl } from '@/shared/lib/gateway-ws-url'
 import { reconnectBackoffMs } from '@/shared/lib/reconnect'
-import { logout } from '@/store/auth'
+import { logout } from '@/shared/store/auth'
 import { applyDesktopBootProgress, completeDesktopBoot, failDesktopBoot, setDesktopBootStep } from '@/store/boot'
-import { reportPrimaryGatewayState, setConnection, setPrimaryGateway, setRunnerOnline, tearDownPrimaryGateway } from '@/store/gateway'
-import { notifyError } from '@/store/notifications'
+import { reportPrimaryGatewayState, setConnection, setPrimaryGateway, setRunnerOnline, tearDownPrimaryGateway } from '@/shared/store/gateway'
+import { notifyError } from '@/shared/store/notifications'
 import type { RpcEvent } from '@/shared/types/deskagent'
 
 // Backend uses WS close 1008 for auth failures (token expired/revoked) —

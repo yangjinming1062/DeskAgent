@@ -3,7 +3,7 @@ import { type ReactNode, useEffect } from 'react'
 import { useWebHaptics } from 'web-haptics/react'
 
 import { registerHapticTrigger } from '@/shared/lib/haptics'
-import { $hapticsMuted } from '@/store/haptics'
+import { $hapticsMuted } from '@/shared/store/haptics'
 
 export function HapticsProvider({ children }: { children: ReactNode }) {
   const muted = useStore($hapticsMuted)

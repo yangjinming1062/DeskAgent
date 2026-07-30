@@ -2,7 +2,7 @@ import { useStore } from '@nanostores/react'
 import { useEffect, useRef, useState } from 'react'
 
 import { useGatewayRequest } from '@/app/gateway/hooks/use-gateway-request'
-import { $gatewayState } from '@/store/gateway'
+import { $gatewayState } from '@/shared/store/gateway'
 import {
   $chatMessages,
   $chatSessionId,

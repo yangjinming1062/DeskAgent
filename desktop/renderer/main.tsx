@@ -12,7 +12,7 @@ import type { DesktopRunnerUpdateEvent, DesktopUpdateEvent } from '@/shared/type
 import { I18nProvider } from '@/shared/i18n'
 import { installClipboardShim } from '@/shared/lib/clipboard'
 import { queryClient } from '@/shared/lib/query-client'
-import { setRunnerUpdateStatus, setUpdateStatus } from './store/update'
+import { setRunnerUpdateStatus, setUpdateStatus } from './shared/store/update'
 import { ThemeProvider } from '@/shared/themes/context'
 
 installClipboardShim()
