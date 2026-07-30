@@ -1,6 +1,6 @@
 import { type PointerEvent as ReactPointerEvent, type ReactNode, useEffect, useRef, useState } from 'react'
 
-import { setSpritePosition } from '@/store/companion'
+import { setSpritePosition } from '@/companion/companion-store'
 
 // The sprite window is screen-sized, transparent, and click-through by default
 // (main sets setIgnoreMouseEvents(true, {forward:true})). mouse-move is still

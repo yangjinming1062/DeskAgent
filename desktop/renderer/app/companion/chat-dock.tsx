@@ -10,8 +10,8 @@ import {
   setAssistantError,
   setChatSession,
   type ChatMessage
-} from '@/store/chat'
-import { $disturbanceTier, type DisturbanceTier, setDisturbanceTier, setSpriteState } from '@/store/companion'
+} from '@/companion/chat-store'
+import { $disturbanceTier, type DisturbanceTier, setDisturbanceTier, setSpriteState } from '@/companion/companion-store'
 
 const TIERS: { id: DisturbanceTier; label: string }[] = [
   { id: 'proactive', label: '积极' },

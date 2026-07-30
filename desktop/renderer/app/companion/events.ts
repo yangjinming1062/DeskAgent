@@ -10,8 +10,8 @@ import {
   finalizeAssistantMessage,
   setAssistantError,
   setAssistantTool
-} from '@/store/chat'
-import { setSpriteState } from '@/store/companion'
+} from '@/companion/chat-store'
+import { setSpriteState } from '@/companion/companion-store'
 
 import { speakProactive } from './proactive'
 
