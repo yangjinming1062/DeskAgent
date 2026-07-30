@@ -1,3 +1,5 @@
+import json
+
 from common import get_or_404
 from common import get_router
 from common import list_response
@@ -8,6 +10,7 @@ from fastapi import HTTPException
 from fastapi import status
 from modules.auth import get_current_admin_token
 from modules.auth import hash_password
+from modules.auth import public_provider_slots
 from modules.auth import User
 from modules.auth import UserCreate
 from modules.auth import UserListResponse
@@ -76,18 +79,60 @@ def toggle_user_active(user_id: int, _admin: str = Depends(get_current_admin_tok
     return UserResponse.model_validate(user)
 
 
+def _config_list_item(r: UserModelConfig) -> UserModelConfigListItem:
+    # Built explicitly (not from_attributes): the model has no ``*_api_key_set``
+    # properties, and provider_config is a JSON string that must be parsed.
+    return UserModelConfigListItem(
+        user_id=r.user_id,
+        llm_base_url=r.llm_base_url,
+        llm_api_key=r.llm_api_key,
+        llm_model_name=r.llm_model_name,
+        stt_base_url=r.stt_base_url,
+        stt_api_key_set=bool(r.stt_api_key),
+        stt_model_name=r.stt_model_name,
+        tts_base_url=r.tts_base_url,
+        tts_api_key_set=bool(r.tts_api_key),
+        tts_model_name=r.tts_model_name,
+        image_gen_base_url=r.image_gen_base_url,
+        image_gen_api_key_set=bool(r.image_gen_api_key),
+        image_gen_model_name=r.image_gen_model_name,
+        video_gen_base_url=r.video_gen_base_url,
+        video_gen_api_key_set=bool(r.video_gen_api_key),
+        video_gen_model_name=r.video_gen_model_name,
+        provider_config=public_provider_slots(r.provider_config),
+    )
+
+
+def _merged_provider_json(payload: UserModelConfigRequest, existing: UserModelConfig | None) -> str:
+    # An empty api_key keeps the existing key for that provider — the admin
+    # can't see the raw value, so "leave blank" must mean "no change".
+    prev = {s["name"]: s.get("api_key", "") for s in json.loads(existing.provider_config or "[]")} if existing else {}
+    out = []
+    for slot in payload.provider_config:
+        d = slot.model_dump()
+        if not d.get("api_key") and d["name"] in prev:
+            d["api_key"] = prev[d["name"]]
+        out.append(d)
+    return json.dumps(out)
+
+
 @router.get("/model-configs", response_model=UserModelConfigListResponse)
 def list_model_configs(_admin: str = Depends(get_current_admin_token), db: Session = Depends(get_db)) -> UserModelConfigListResponse:
-    return list_response(db.query(UserModelConfig).all(), UserModelConfigListItem, UserModelConfigListResponse)
+    return UserModelConfigListResponse(items=[_config_list_item(r) for r in db.query(UserModelConfig).all()])
 
 
 @router.put("/{user_id}/model-config")
 def upsert_model_config(user_id: int, payload: UserModelConfigRequest, _admin: str = Depends(get_current_admin_token), db: Session = Depends(get_db)) -> dict:
     get_or_404(db, User, id=user_id, detail="用户不存在。")
-    if config := db.query(UserModelConfig).filter(UserModelConfig.user_id == user_id).one_or_none():
-        apply_partial(config, payload)
+    config = db.query(UserModelConfig).filter(UserModelConfig.user_id == user_id).one_or_none()
+    provider_json = _merged_provider_json(payload, config)
+    if config:
+        apply_partial(config, payload, exclude=frozenset({"provider_config"}))
+        config.provider_config = provider_json
     else:
-        db.add(UserModelConfig(user_id=user_id, **payload.model_dump()))
+        data = payload.model_dump()
+        data["provider_config"] = provider_json
+        db.add(UserModelConfig(user_id=user_id, **data))
     db.commit()
     return {"message": "模型配置已更新。"}
 

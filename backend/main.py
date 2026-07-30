@@ -97,6 +97,7 @@ def _install_schema_extensions(conn) -> None:
         ("video_gen_base_url", "VARCHAR(255) DEFAULT ''"),
         ("video_gen_api_key", "TEXT DEFAULT ''"),
         ("video_gen_model_name", "VARCHAR(128) DEFAULT ''"),
+        ("provider_config", "TEXT DEFAULT '[]'"),
     ):
         conn.execute(text(f"ALTER TABLE user_model_configs ADD COLUMN IF NOT EXISTS {column} {ddl_type}"))
     # Enforce "one active avatar per user" at the DB level. Partial unique
