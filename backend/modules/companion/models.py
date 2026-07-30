@@ -62,3 +62,28 @@ class AvatarAsset(ModelBase):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     user: Mapped["User"] = relationship(back_populates="avatar_assets")
+
+
+class AvatarClip(ModelBase, TimestampMixin):
+    """A companion animation clip generated from the user's portrait via
+    image-to-video (design.md §7.2). Each clip binds a ``scene`` label
+    (matching the desktop animation state machine) to a video-gen job that
+    uses the active portrait as ``first_frame_image`` — the shared seed
+    guarantees cross-clip character consistency.
+
+    Lifecycle mirrors the underlying ``VideoGenJob``: ``video_job_id`` is
+    ``None`` until the job is submitted, then the desktop reads status via
+    ``avatar.list_clips`` (which joins back to the job row). Portrait
+    regeneration deletes all of the user's clips (design §7.2 derivative
+    invalidation) and re-enqueues batch 0.
+    """
+
+    __tablename__ = "avatar_clips"
+
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    scene: Mapped[str] = mapped_column(String(64), index=True)
+    batch: Mapped[int] = mapped_column(Integer, default=0)
+    # Plain int (no SQLAlchemy FK) — avoids a hard cross-module dependency on
+    # modules.media, which is intentionally not auto-imported.
+    video_job_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    portrait_id: Mapped[int] = mapped_column(ForeignKey("avatar_assets.id", ondelete="CASCADE"))

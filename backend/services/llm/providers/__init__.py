@@ -17,9 +17,13 @@ from .base import VideoAsset
 from .base import VideoGenProvider
 from .base import VideoGenRequest
 from .base import VideoJobStatus
+from .registry import default_base_url
 from .registry import infer_provider_name
+from .registry import KNOWN_PROVIDERS
+from .registry import PROVIDER_DEFAULT_URLS
 from .registry import register
 from .registry import resolve
+from .registry import SERVICE_DEFAULT_PROVIDER
 
 # Side-effect imports register concrete providers in their family modules.
 from . import mimo  # noqa: F401
@@ -48,4 +52,8 @@ __all__ = [
     "register",
     "resolve",
     "infer_provider_name",
+    "default_base_url",
+    "KNOWN_PROVIDERS",
+    "PROVIDER_DEFAULT_URLS",
+    "SERVICE_DEFAULT_PROVIDER",
 ]

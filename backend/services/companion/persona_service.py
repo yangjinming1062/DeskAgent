@@ -1,6 +1,7 @@
 import json
 from typing import Any
 
+from components import safe_json_loads
 from modules.companion import Persona
 from sqlalchemy.orm import Session
 
@@ -96,10 +97,7 @@ def render_extras(definition: dict[str, str]) -> str:
 
 
 def _load_draft(persona: Persona) -> dict[str, str]:
-    try:
-        draft = json.loads(persona.definition_json or "{}")
-    except (TypeError, ValueError):
-        return {}
+    draft = safe_json_loads(persona.definition_json or "{}", default={})
     return draft if isinstance(draft, dict) else {}
 
 

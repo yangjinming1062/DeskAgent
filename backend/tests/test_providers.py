@@ -70,57 +70,56 @@ class TestInferProviderName:
 
 
 class TestResolveProviderConfig:
-    def test_image_gen_falls_back_to_llm_env(self, monkeypatch):
-        """Empty image_gen envs should resolve to llm_* values, provider 'mimo'."""
-        monkeypatch.setattr("components.SETTINGS.llm_base_url", "https://api.openai.com/v1")
-        monkeypatch.setattr("components.SETTINGS.llm_api_key", "sk-openai")
-        monkeypatch.setattr("components.SETTINGS.llm_model_name", "gpt-4o")
+    def test_image_gen_default_provider_is_minimax(self, monkeypatch):
+        """Empty image_gen settings → default provider minimax, provider default URL."""
+        from services.llm.providers import PROVIDER_DEFAULT_URLS
+
         monkeypatch.setattr("components.SETTINGS.image_gen_base_url", "")
         monkeypatch.setattr("components.SETTINGS.image_gen_api_key", "")
-        cfg = resolve_provider_config(None, None, "image_gen")
-        assert cfg.base_url == "https://api.openai.com/v1"
-        assert cfg.api_key == "sk-openai"
-        assert cfg.provider_name == "mimo"
-        assert cfg.service_type == ServiceType.image_gen
-
-    def test_image_gen_default_is_minimax(self, monkeypatch):
-        """Commit 3: image_gen defaults to MiniMax (image-01). Without a
-        minimax_api_key the swap path raises MissingLlmConfigError."""
-        from components import SETTINGS
-
+        monkeypatch.setattr("components.SETTINGS.image_gen_provider", "")
         monkeypatch.setattr("components.SETTINGS.minimax_api_key", "sk-minimax-test")
         cfg = resolve_provider_config(None, None, "image_gen")
         assert cfg.provider_name == "minimax"
-        assert cfg.base_url == SETTINGS.image_gen_base_url
+        assert cfg.base_url == PROVIDER_DEFAULT_URLS["minimax"]["image_gen"]
         assert cfg.api_key == "sk-minimax-test"
-        assert cfg.model == SETTINGS.image_gen_model_name
+        assert cfg.service_type == ServiceType.image_gen
+
+    def test_image_gen_explicit_base_url_infers_provider(self, monkeypatch):
+        """Setting a custom base_url triggers host-based provider inference
+        (backward compat); to use the service-default provider with a custom
+        URL, also set ``*_PROVIDER`` explicitly."""
+        monkeypatch.setattr("components.SETTINGS.image_gen_base_url", "https://api.minimaxi.com")
+        monkeypatch.setattr("components.SETTINGS.image_gen_api_key", "sk-minimax")
+        monkeypatch.setattr("components.SETTINGS.image_gen_provider", "")
+        cfg = resolve_provider_config(None, None, "image_gen")
+        assert cfg.base_url == "https://api.minimaxi.com"
+        assert cfg.provider_name == "minimax"  # inferred from minimaxi.com host
 
     def test_minimax_host_infers_provider(self, monkeypatch):
         monkeypatch.setattr("components.SETTINGS.image_gen_base_url", "https://api.minimaxi.com/v1")
         monkeypatch.setattr("components.SETTINGS.image_gen_api_key", "sk-minimax")
         monkeypatch.setattr("components.SETTINGS.image_gen_model_name", "image-01")
+        monkeypatch.setattr("components.SETTINGS.image_gen_provider", "")
         cfg = resolve_provider_config(None, None, "image_gen")
         assert cfg.provider_name == "minimax"
         assert cfg.base_url == "https://api.minimaxi.com/v1"
 
-    def test_minimax_swaps_inherited_mimo_key(self, monkeypatch):
-        """image_gen resolves to llm_* (MiMo key), but host is MiniMax → swap to MINIMAX_API_KEY."""
+    def test_minimax_uses_minimax_key_not_llm_key(self, monkeypatch):
+        """minimax provider must use MINIMAX_API_KEY, never the MiMo LLM_API_KEY."""
         monkeypatch.setattr("components.SETTINGS.llm_base_url", "https://api.xiaomimimo.com/v1")
         monkeypatch.setattr("components.SETTINGS.llm_api_key", "sk-mimo-llm")
-        monkeypatch.setattr("components.SETTINGS.llm_model_name", "mimo-v2.5")
-        monkeypatch.setattr("components.SETTINGS.image_gen_base_url", "https://api.minimaxi.com/v1")
+        monkeypatch.setattr("components.SETTINGS.image_gen_base_url", "")
         monkeypatch.setattr("components.SETTINGS.image_gen_api_key", "")
-        monkeypatch.setattr("components.SETTINGS.image_gen_model_name", "image-01")
+        monkeypatch.setattr("components.SETTINGS.image_gen_provider", "")
         monkeypatch.setattr("components.SETTINGS.minimax_api_key", "sk-minimax-dedicated")
         cfg = resolve_provider_config(None, None, "image_gen")
         assert cfg.provider_name == "minimax"
         assert cfg.api_key == "sk-minimax-dedicated", "must not inherit MiMo key"
-        assert cfg.base_url == "https://api.minimaxi.com/v1"
 
     def test_minimax_missing_key_raises(self, monkeypatch):
         monkeypatch.setattr("components.SETTINGS.llm_base_url", "https://api.xiaomimimo.com/v1")
         monkeypatch.setattr("components.SETTINGS.llm_api_key", "sk-mimo-llm")
-        monkeypatch.setattr("components.SETTINGS.image_gen_base_url", "https://api.minimaxi.com/v1")
+        monkeypatch.setattr("components.SETTINGS.image_gen_base_url", "")
         monkeypatch.setattr("components.SETTINGS.image_gen_api_key", "")
         monkeypatch.setattr("components.SETTINGS.minimax_api_key", "")
         with pytest.raises(MissingLlmConfigError):
@@ -131,6 +130,7 @@ class TestResolveProviderConfig:
         monkeypatch.setattr("components.SETTINGS.llm_api_key", "")
         monkeypatch.setattr("components.SETTINGS.image_gen_base_url", "")
         monkeypatch.setattr("components.SETTINGS.image_gen_api_key", "")
+        monkeypatch.setattr("components.SETTINGS.minimax_api_key", "")
         with pytest.raises(MissingLlmConfigError):
             resolve_provider_config(None, None, "image_gen")
 
@@ -139,8 +139,18 @@ class TestResolveProviderConfig:
         monkeypatch.setattr("components.SETTINGS.image_gen_api_key", "sk")
         monkeypatch.setattr("components.SETTINGS.image_gen_model_name", "image-01")
         monkeypatch.setattr("components.SETTINGS.image_gen_provider", "mimo")
+        # mimo has no image-gen default URL, so llm_base_url must be set for
+        # the provider to resolve a base_url.
+        monkeypatch.setattr("components.SETTINGS.llm_base_url", "https://api.openai.com/v1")
+        monkeypatch.setattr("components.SETTINGS.llm_api_key", "sk")
         cfg = resolve_provider_config(None, None, "image_gen")
         assert cfg.provider_name == "mimo"
+
+    def test_unknown_provider_raises(self, monkeypatch):
+        monkeypatch.setattr("components.SETTINGS.image_gen_provider", "bogus")
+        monkeypatch.setattr("components.SETTINGS.image_gen_api_key", "sk")
+        with pytest.raises(MissingLlmConfigError):
+            resolve_provider_config(None, None, "image_gen")
 
 
 class TestProviderForService:

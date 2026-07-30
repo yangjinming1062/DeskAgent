@@ -6,6 +6,7 @@ from components import adopt_inbound
 from components import ATTACHMENT_TYPE_IMAGE
 from components import attachments_remove
 from components import get_logger
+from components import JSONRPC_INTERNAL_ERROR
 from components import JSONRPC_INVALID_PARAMS
 from components import JSONRPC_METHOD_NOT_FOUND
 from components import MAX_ATTACHMENTS_PER_TURN
@@ -28,9 +29,14 @@ from services.chat import commands_catalog
 from services.chat import exec_slash_command
 from services.chat import load_user_settings
 from services.chat import run_chat_turn
-from services.companion import set_disturbance_tier as set_companion_disturbance_tier
+from services.companion import AvatarGenerationError
+from services.companion import get_active_avatar
 from services.companion import get_onboarding_state
+from services.companion import get_or_create_persona
+from services.companion import list_clips as list_companion_clips
 from services.companion import PersonaValidationError
+from services.companion import regenerate_avatar as regenerate_companion_avatar
+from services.companion import set_disturbance_tier as set_companion_disturbance_tier
 from services.companion import submit_onboarding_field
 from services.gateway import authenticate_ws_token
 from services.gateway import discard_user
@@ -739,3 +745,32 @@ def _register_session_handlers(
 
     dispatcher.register("onboarding.get_state", onboarding_get_state)
     dispatcher.register("onboarding.submit", onboarding_submit)
+
+    async def avatar_regenerate(params: dict) -> dict:
+        # Regenerate the portrait from the current persona, with optional
+        # free-text feedback folded into the prompt (design.md §5.1.A). All
+        # derivative clips are invalidated and batch 0 re-seeded (§7.2). Runs
+        # synchronously so the desktop gets the new portrait URL in the
+        # response; clip generation continues in the background.
+        feedback = params.get("feedback")
+        if feedback is not None and not isinstance(feedback, str):
+            raise JsonRpcError(JSONRPC_INVALID_PARAMS, "feedback must be a string")
+        with SESSION_LOCAL() as db:
+            persona = get_or_create_persona(db, user_id)
+            if not persona.is_complete:
+                raise JsonRpcError(JSONRPC_INVALID_PARAMS, "finish onboarding before regenerating avatar")
+            try:
+                asset = await regenerate_companion_avatar(db, user_id, persona, feedback=feedback)
+            except AvatarGenerationError as exc:
+                raise JsonRpcError(JSONRPC_INTERNAL_ERROR, f"伙伴形象生成失败：{exc}")
+            return {"asset_url": asset.asset_url, "id": asset.id}
+
+    async def avatar_list_clips(_params: dict) -> dict:
+        # Query the full clip directory with live generation status (design.md
+        # §5.1.A). The desktop calls this after receiving video_gen.completed /
+        # failed to refresh its clip cache.
+        with SESSION_LOCAL() as db:
+            return {"clips": [c.model_dump() for c in list_companion_clips(db, user_id)]}
+
+    dispatcher.register("avatar.regenerate", avatar_regenerate)
+    dispatcher.register("avatar.list_clips", avatar_list_clips)

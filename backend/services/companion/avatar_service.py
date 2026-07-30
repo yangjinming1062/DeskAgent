@@ -1,15 +1,18 @@
 import json
 import secrets
 
+from components import get_logger
+from components import safe_json_loads
 from modules.companion import AvatarAsset
 from modules.companion import Persona
 from sqlalchemy.orm import Session
 
-from ..llm import MissingLlmConfigError
 from ..tools.builtin.image_generation_tool import image_generation_tool
+from .clip_service import enqueue_clip_batch
+from .clip_service import invalidate_user_clips
 
-# Generation defaults tuned for desktop sprite use: square, low-noise,
-# centered subject. Style can be overridden by future persona fields.
+logger = get_logger(__name__)
+
 _DEFAULT_STYLE: str = "portrait"
 _AVATAR_SIZE: str = "1024x1024"
 _AVATAR_QUALITY: str = "standard"
@@ -29,7 +32,7 @@ def _build_prompt(persona: Persona, style: str) -> str:
     persona_service._REQUIRED_FIELDS — visual prominence mirrors
     importance.
     """
-    definition = json.loads(persona.definition_json or "{}")
+    definition = safe_json_loads(persona.definition_json or "{}", default={})
     parts = [f"a {style} portrait of {definition.get('name', 'a friendly companion')}"]
     if appearance := definition.get("appearance"):
         parts.append(appearance)
@@ -39,38 +42,35 @@ def _build_prompt(persona: Persona, style: str) -> str:
     return ", ".join(parts)
 
 
-async def generate_avatar(db: Session, user_id: int, persona: Persona, style: str = _DEFAULT_STYLE) -> AvatarAsset:
-    """Generate a new avatar asset and flip it active in one transaction.
+async def _generate_and_persist(db: Session, user_id: int, *, prompt: str, style: str, feedback: str | None = None) -> AvatarAsset:
+    """Shared image-gen + persistence core. Calls the provider, deactivates
+    the previous active asset, inserts + commits the new row. Does NOT touch
+    clips — callers compose clip lifecycle around this.
 
-    Caller is responsible for ensuring the persona is complete; this
-    function raises ``AvatarGenerationError`` (not validation error) when
-    the provider fails so the route can map it to a 502 with a friendly
-    payload.
+    ``image_generation_tool`` catches provider errors internally and returns a
+    JSON ``{success: false}`` string — it never raises. So this function
+    surfaces failures via ``_extract_first_url → None → AvatarGenerationError``.
     """
-    if not persona.is_complete:
-        raise AvatarGenerationError("persona is incomplete; finish onboarding first")
-
-    prompt = _build_prompt(persona, style)
-    try:
-        result_json = await image_generation_tool(
-            prompt=prompt,
-            llm_config={},
-            size=_AVATAR_SIZE,
-            quality=_AVATAR_QUALITY,
-            n=1,
-            user_id=user_id,
-        )
-    except MissingLlmConfigError as exc:
-        raise AvatarGenerationError("image-gen provider is not configured") from exc
+    result_json = await image_generation_tool(
+        prompt=prompt,
+        llm_config={},
+        size=_AVATAR_SIZE,
+        quality=_AVATAR_QUALITY,
+        n=1,
+        user_id=user_id,
+    )
 
     asset_url = _extract_first_url(result_json)
     if asset_url is None:
         raise AvatarGenerationError("image-gen provider returned no URL")
 
     db.query(AvatarAsset).filter(AvatarAsset.user_id == user_id, AvatarAsset.active.is_(True)).update({"active": False})
+    prompt_payload: dict = {"prompt": prompt, "style": style}
+    if feedback is not None:
+        prompt_payload["feedback"] = feedback
     asset = AvatarAsset(
         user_id=user_id,
-        prompt_json=json.dumps({"prompt": prompt, "style": style}, ensure_ascii=False),
+        prompt_json=json.dumps(prompt_payload, ensure_ascii=False),
         asset_url=asset_url,
         style=style,
         seed=secrets.randbelow(2**31),
@@ -82,14 +82,35 @@ async def generate_avatar(db: Session, user_id: int, persona: Persona, style: st
     return asset
 
 
+async def _seed_batch0(db: Session, user_id: int, asset: AvatarAsset) -> None:
+    """Enqueue the idle clip from a freshly committed portrait. Fire-and-forget —
+    clip generation continues in the background via the video-gen pipeline."""
+    try:
+        await enqueue_clip_batch(db, user_id=user_id, portrait_asset_url=asset.asset_url, portrait_id=asset.id, batch=0)
+    except Exception:
+        logger.warning("batch-0 clip enqueue failed", extra={"user_id": user_id}, exc_info=True)
+
+
+async def generate_avatar(db: Session, user_id: int, persona: Persona, style: str = _DEFAULT_STYLE) -> AvatarAsset:
+    """Generate a new avatar asset and flip it active, then seed batch-0 clips.
+
+    Caller is responsible for ensuring the persona is complete; this
+    function raises ``AvatarGenerationError`` (not validation error) when
+    the provider fails so the route can map it to a 502 with a friendly
+    payload.
+    """
+    if not persona.is_complete:
+        raise AvatarGenerationError("persona is incomplete; finish onboarding first")
+    asset = await _generate_and_persist(db, user_id, prompt=_build_prompt(persona, style), style=style)
+    await _seed_batch0(db, user_id, asset)
+    return asset
+
+
 def _extract_first_url(result_json: str) -> str | None:
     """Pull the first image URL out of ``image_generation_tool``'s JSON
     result. The tool returns ``{"success": true, "urls": [...]}`` on
     success and ``{"success": false, "error": ...}`` on failure."""
-    try:
-        parsed = json.loads(result_json)
-    except (TypeError, ValueError):
-        return None
+    parsed = safe_json_loads(result_json, default=None)
     if not isinstance(parsed, dict) or not parsed.get("success"):
         return None
     urls = parsed.get("urls")
@@ -105,3 +126,22 @@ def get_active_avatar(db: Session, user_id: int) -> AvatarAsset | None:
 
 def list_avatar_history(db: Session, user_id: int, limit: int = 20) -> list[AvatarAsset]:
     return db.query(AvatarAsset).filter(AvatarAsset.user_id == user_id).order_by(AvatarAsset.created_at.desc()).limit(limit).all()
+
+
+async def regenerate_avatar(db: Session, user_id: int, persona: Persona, feedback: str | None = None, style: str = _DEFAULT_STYLE) -> AvatarAsset:
+    """Regenerate the portrait and re-seed the clip pipeline.
+
+    Optional ``feedback`` (e.g. "longer hair") is folded into the prompt so
+    iterative regeneration converges. Old derivative clips are invalidated
+    only AFTER the new portrait succeeds — if image-gen fails, the existing
+    clips (matching the still-active old portrait) survive.
+    """
+    if not persona.is_complete:
+        raise AvatarGenerationError("persona is incomplete; finish onboarding first")
+    prompt = _build_prompt(persona, style)
+    if feedback and feedback.strip():
+        prompt = f"{prompt}. Adjustment requested: {feedback.strip()}"
+    asset = await _generate_and_persist(db, user_id, prompt=prompt, style=style, feedback=feedback)
+    invalidate_user_clips(db, user_id)
+    await _seed_batch0(db, user_id, asset)
+    return asset

@@ -38,26 +38,22 @@ class Settings(BaseSettings):
     tts_model_name: str = "mimo-v2.5-tts"
     tts_default_voice: str = "mimo_default"
 
-    # Image Gen Provider (图片生成). base_url is the MiniMax host root WITHOUT
-    # /v1 — the minimax httpx providers post to /v1/<endpoint> themselves (unlike
-    # the OpenAI-SDK providers, which need /v1 in llm_base_url).
-    image_gen_base_url: str = "https://api.minimaxi.com"
-    image_gen_api_key: str = ""  # 优先 image_gen_api_key，否则回落 minimax_api_key，再回落 llm_api_key
+    # Image Gen Provider (图片生成). base_url empty → provider default (minimax).
+    image_gen_base_url: str = ""
+    image_gen_api_key: str = ""  # 空 → 继承 MINIMAX_API_KEY (minimax provider)
     image_gen_model_name: str = "image-01"
 
-    # Video Gen Provider (视频生成) — added in commit 1 to keep the service
-    # registry's _SERVICE_DEFAULTS dict a closed set at import time. Wired up
-    # end-to-end in commit 4.
-    video_gen_base_url: str = "https://api.minimaxi.com"
-    video_gen_api_key: str = ""  # falls back to minimax_api_key
+    # Video Gen Provider (视频生成). base_url empty → provider default (minimax).
+    video_gen_base_url: str = ""
+    video_gen_api_key: str = ""  # 空 → 继承 MINIMAX_API_KEY (minimax provider)
     video_gen_model_name: str = "MiniMax-Hailuo-02"
     video_gen_poll_interval_seconds: float = 5.0
     video_gen_max_poll_seconds: float = 900.0
     video_gen_tool_wait_seconds: float = 180.0
     video_gen_download_max_bytes: int = 200 * 1024 * 1024  # 200 MB safety cap
 
-    # Provider selection — empty = infer from base_url host. Commit 1 ships
-    # the slot; MiniMax provider classes are added in commit 2.
+    # Provider selection — primary selector. Empty = SERVICE_DEFAULT_PROVIDER
+    # (mimo for chat/stt/tts, minimax for image/video). See providers/registry.py.
     llm_provider: str = ""
     stt_provider: str = ""
     tts_provider: str = ""

@@ -104,6 +104,8 @@ def _install_schema_extensions(conn) -> None:
     # indexes are the standard Postgres idiom — ``CREATE UNIQUE INDEX IF
     # NOT EXISTS`` is idempotent so re-running on boot is safe.
     conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_avatar_assets_one_active " "ON avatar_assets (user_id) WHERE active"))
+    # Companion clip batch index for efficient per-user scene lookups.
+    conn.execute(text("CREATE INDEX IF NOT EXISTS ix_avatar_clips_user_batch ON avatar_clips (user_id, batch)"))
 
 
 def init_database(engine=None) -> None:
