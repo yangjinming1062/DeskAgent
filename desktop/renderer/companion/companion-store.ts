@@ -120,6 +120,22 @@ export function setSpriteState(
   $spriteState.set(name)
 }
 
+export function checkBedtimeAndAutoSleep(): boolean {
+  const hour = new Date().getHours()
+  const isNight = hour >= 23 || hour < 7
+  if (isNight && $spriteState.get() === 'idle') {
+    setSpriteState('sleeping')
+    return true
+  }
+  return false
+}
+
+export function wakeUpFromSleep(): void {
+  if ($spriteState.get() === 'sleeping') {
+    setSpriteState('idle', { force: true })
+  }
+}
+
 export function setSpritePosition(pos: SpritePosition | null): void {
   $spritePosition.set(pos)
 }
