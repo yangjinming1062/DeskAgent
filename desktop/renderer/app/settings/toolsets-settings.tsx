@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 
-import { SearchField } from '@/components/ui/search-field'
-import { Switch } from '@/components/ui/switch'
+import { SearchField } from '@/shared/components/ui/search-field'
+import { Switch } from '@/shared/components/ui/switch'
 import { useI18n } from '@/shared/i18n'
 import { Wrench } from '@/shared/lib/icons'
 import { TOOLSET_CATALOG, type ToolsetCatalogEntry } from '@/shared/lib/toolset-catalog'

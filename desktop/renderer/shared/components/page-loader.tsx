@@ -1,6 +1,6 @@
 import type { ComponentProps } from 'react'
 
-import { Loader } from '@/components/ui/loader'
+import { Loader } from '@/shared/components/ui/loader'
 import { cn } from '@/shared/lib/utils'
 
 interface PageLoaderProps extends Omit<ComponentProps<'div'>, 'children'> {

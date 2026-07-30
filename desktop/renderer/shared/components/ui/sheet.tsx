@@ -3,7 +3,7 @@
 import { Dialog as SheetPrimitive } from 'radix-ui'
 import * as React from 'react'
 
-import { Codicon } from '@/components/ui/codicon'
+import { Codicon } from '@/shared/components/ui/codicon'
 import { useI18n } from '@/shared/i18n'
 import { cn } from '@/shared/lib/utils'
 

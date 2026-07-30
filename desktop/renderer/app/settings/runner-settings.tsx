@@ -1,9 +1,9 @@
 import { useState } from 'react'
 
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Switch } from '@/components/ui/switch'
+import { Button } from '@/shared/components/ui/button'
+import { Input } from '@/shared/components/ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/shared/components/ui/select'
+import { Switch } from '@/shared/components/ui/switch'
 import { useI18n } from '@/shared/i18n'
 import { triggerHaptic } from '@/shared/lib/haptics'
 import { Settings } from '@/shared/lib/icons'

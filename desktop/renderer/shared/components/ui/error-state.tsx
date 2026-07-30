@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 
-import { Codicon } from '@/components/ui/codicon'
+import { Codicon } from '@/shared/components/ui/codicon'
 import { cn } from '@/shared/lib/utils'
 
 // The single canonical error glyph (codicon's filled error mark). Use this

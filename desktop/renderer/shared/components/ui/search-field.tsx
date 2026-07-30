@@ -1,7 +1,7 @@
 import type { ReactNode, RefObject } from 'react'
 
-import { Button } from '@/components/ui/button'
-import { Codicon } from '@/components/ui/codicon'
+import { Button } from '@/shared/components/ui/button'
+import { Codicon } from '@/shared/components/ui/codicon'
 import { useI18n } from '@/shared/i18n'
 import { Loader2, Search } from '@/shared/lib/icons'
 import { cn } from '@/shared/lib/utils'

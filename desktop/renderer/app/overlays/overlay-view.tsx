@@ -1,7 +1,7 @@
 import { type ReactNode, useEffect } from 'react'
 
-import { Button } from '@/components/ui/button'
-import { Codicon } from '@/components/ui/codicon'
+import { Button } from '@/shared/components/ui/button'
+import { Codicon } from '@/shared/components/ui/codicon'
 import { translateNow } from '@/shared/i18n'
 import { triggerHaptic } from '@/shared/lib/haptics'
 import { cn } from '@/shared/lib/utils'

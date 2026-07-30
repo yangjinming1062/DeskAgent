@@ -1,8 +1,8 @@
 import * as React from 'react'
 
-import { Button } from '@/components/ui/button'
-import { DropdownMenuItem } from '@/components/ui/dropdown-menu'
-import { Tip } from '@/components/ui/tooltip'
+import { Button } from '@/shared/components/ui/button'
+import { DropdownMenuItem } from '@/shared/components/ui/dropdown-menu'
+import { Tip } from '@/shared/components/ui/tooltip'
 import { useI18n } from '@/shared/i18n'
 import { triggerHaptic } from '@/shared/lib/haptics'
 import { Check, Copy, X } from '@/shared/lib/icons'
