@@ -5,7 +5,7 @@
 import { $chatOpen, setProactiveBubble } from '@/companion/chat-store'
 import { $disturbanceTier, setSpriteState } from '@/companion/companion-store'
 
-import { speak } from './tts'
+import { speak } from '../tts'
 
 export async function speakProactive(text: string): Promise<void> {
   if (!text.trim()) return

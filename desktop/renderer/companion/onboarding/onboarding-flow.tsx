@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 
-import { matchVoice, nextVoice, sampleLine, type VoiceOption } from './backend-companion-mock'
-import { Silhouette } from './silhouette'
-import { speak, stopSpeaking } from './tts'
-import { assemblePersona, type OnboardingAnswers } from './persona'
+import { matchVoice, nextVoice, sampleLine, type VoiceOption } from '../backend-companion-mock'
+import { Silhouette } from '../sprite/silhouette'
+import { speak, stopSpeaking } from '../tts'
+import { assemblePersona, type OnboardingAnswers } from '../persona'
 
 type Phase = 'q' | 'hatching' | 'portrait' | 'voice' | 'finishing' | 'greeting'
 type QKey = keyof OnboardingAnswers
@@ -124,7 +124,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
 
   const commit = (value: string | undefined) => {
     const q = QUESTIONS[qIndex]
-    setAnswers(prev => ({ ...prev, [q.key]: value && value.trim() ? value.trim() : undefined }))
+    setAnswers((prev: OnboardingAnswers) => ({ ...prev, [q.key]: value && value.trim() ? value.trim() : undefined }))
   }
 
   const advance = () => {

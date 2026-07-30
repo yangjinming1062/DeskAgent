@@ -13,7 +13,7 @@ import {
 } from '@/companion/chat-store'
 import { setSpriteState } from '@/companion/companion-store'
 
-import { speakProactive } from './proactive'
+import { speakProactive } from './proactive/proactive'
 
 export function handleCompanionEvent(event: RpcEvent): void {
   switch (event.type) {
