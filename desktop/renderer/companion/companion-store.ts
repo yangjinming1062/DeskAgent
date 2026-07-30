@@ -136,6 +136,27 @@ export function wakeUpFromSleep(): void {
   }
 }
 
+let activityCounter = 0
+let activityResetTimer: ReturnType<typeof setTimeout> | null = null
+
+export function reportUserActivity(): void {
+  const current = $spriteState.get()
+  if (current !== 'idle' && current !== 'working') return
+
+  activityCounter += 1
+  if (activityCounter >= 6 && current === 'idle') {
+    setSpriteState('working')
+  }
+
+  if (activityResetTimer) clearTimeout(activityResetTimer)
+  activityResetTimer = setTimeout(() => {
+    activityCounter = 0
+    if ($spriteState.get() === 'working') {
+      setSpriteState('idle')
+    }
+  }, 10000)
+}
+
 export function setSpritePosition(pos: SpritePosition | null): void {
   $spritePosition.set(pos)
 }
