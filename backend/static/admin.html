@@ -1,566 +1,1027 @@
 <!DOCTYPE html>
-<html>
+<html lang="zh-CN">
 <head>
-    <meta charset="utf-8">
-    <title>DeskAgent 管理后台</title>
-    <style>
-        * { box-sizing: border-box; }
-        body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background: #f5f5f5; }
-        h1 { border-bottom: 2px solid #1677ff; padding-bottom: 10px; color: #1677ff; }
-        h2 { color: #333; margin-top: 30px; }
-        .section { background: white; padding: 20px; margin-bottom: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-        table { border-collapse: collapse; width: 100%; margin-top: 10px; }
-        th, td { border: 1px solid #ddd; padding: 10px; text-align: left; }
-        th { background-color: #1677ff; color: white; }
-        .btn { padding: 8px 16px; margin: 2px; cursor: pointer; border: none; border-radius: 6px; color: white; font-size: 14px; font-weight: 600; transition: all 0.2s; }
-        .btn:hover { opacity: 0.8; transform: translateY(-1px); }
-        .btn-primary { background: #1677ff; }
-        .btn-danger { background: #ff4d4f; }
-        .btn-warning { background: #faad14; }
-        .btn-info { background: #13c2c2; }
-        input[type="text"], input[type="password"], input[type="date"] { padding: 10px; margin: 5px; border: 1px solid #ddd; border-radius: 6px; width: 220px; }
-        select { padding: 10px; margin: 5px; border: 1px solid #ddd; border-radius: 6px; min-width: 150px; }
-        .form-group { margin-bottom: 15px; }
-        .modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); align-items: center; justify-content: center; z-index: 999; backdrop-filter: blur(4px); }
-        .modal.show { display: flex; }
-        .modal-content { background: white; padding: 30px; border-radius: 12px; min-width: 450px; box-shadow: 0 10px 25px rgba(0,0,0,0.2); }
-        .modal h2 { margin-top: 0; margin-bottom: 20px; color: #1677ff; }
-        .tab-nav { margin-bottom: 20px; border-bottom: 1px solid #ddd; }
-        .tab-nav .tab { display: inline-block; padding: 12px 24px; cursor: pointer; background: transparent; margin-right: 5px; border-radius: 6px 6px 0 0; font-weight: 600; color: #666; }
-        .tab-nav .tab:hover { color: #1677ff; }
-        .tab-nav .tab.active { background: #1677ff; color: white; }
-        .tab-content { display: none; }
-        .tab-content.active { display: block; }
-        .status-active { color: #52c41a; font-weight: bold; }
-        .status-inactive { color: #ff4d4f; font-weight: bold; }
-        .expires-valid { color: #52c41a; }
-        .expires-expired { color: #ff4d4f; font-weight: bold; }
-        #loginOverlay { position: fixed; inset: 0; background: linear-gradient(135deg, #1677ff, #003a8c); display: flex; align-items: center; justify-content: center; z-index: 1000; }
-        #loginBox { background: white; padding: 40px; border-radius: 16px; text-align: center; box-shadow: 0 15px 35px rgba(0,0,0,0.3); width: 350px; }
-        #loginBox h2 { margin-bottom: 25px; color: #1677ff; }
-        #loginBox input { display: block; margin: 15px auto; padding: 12px; width: 100%; border-radius: 8px; border: 1px solid #ddd; }
-        #loginBox button { width: 100%; padding: 12px; font-size: 16px; margin-top: 10px; }
-        #appContent { display: none; }
-        code { background: #f0f0f0; padding: 2px 4px; border-radius: 4px; font-family: monospace; }
-    </style>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DeskAgent 管理后台</title>
+<style>
+/* ── DeskAgent product tokens (ported from desktop/renderer/styles.css) ──
+   The admin console reuses the product's own palette, type stack, radius
+   scale and hairline border language so it reads as the same product, not a
+   generic template. Light-only — an internal ops door, not a marketing face. */
+:root {
+    --primary: #0053fd;
+    --primary-ink: color-mix(in srgb, #0053fd 88%, #000);   /* hover/pressed */
+    --primary-fg: #fcfcfc;
+    --primary-soft: color-mix(in srgb, #0053fd 10%, #fff);
+    --primary-softer: color-mix(in srgb, #0053fd 5%, #fff);
+
+    --fg: #17171a;
+    --text-2: color-mix(in srgb, #17171a 66%, transparent);
+    --text-3: color-mix(in srgb, #17171a 46%, transparent);
+
+    --bg: #f8faff;
+    --surface: #ffffff;
+    --surface-2: #fcfcfc;
+
+    --border: color-mix(in srgb, #17171a 9%, transparent);
+    --border-2: color-mix(in srgb, #17171a 14%, transparent);
+
+    --row-hover: color-mix(in srgb, #0053fd 4.5%, transparent);
+    --row-active: color-mix(in srgb, #0053fd 9%, transparent);
+
+    --green: #1f8a65;
+    --green-soft: color-mix(in srgb, #1f8a65 12%, #fff);
+    --red: #cf2d56;
+    --red-soft: color-mix(in srgb, #cf2d56 10%, #fff);
+    --amber: #c08532;
+    --amber-soft: color-mix(in srgb, #c08532 14%, #fff);
+
+    --radius: 0.625rem;
+    --radius-sm: 0.4rem;
+    --radius-lg: 0.875rem;
+
+    --shadow-sm: 0 0.0625rem 0.125rem color-mix(in srgb, #000 5%, transparent);
+    --shadow-md: 0 0.5rem 1.25rem color-mix(in srgb, #000 9%, transparent);
+    --shadow-lg: 0 1rem 2.5rem color-mix(in srgb, #000 14%, transparent);
+
+    --font-sans: 'Segoe UI', -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif,
+        'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji', emoji;
+    --font-mono: 'Cascadia Code', 'JetBrains Mono', 'SF Mono', ui-monospace, Consolas, monospace;
+}
+
+* { box-sizing: border-box; }
+*:focus { outline: none; }
+*:focus-visible { outline: 2px solid color-mix(in srgb, var(--primary) 55%, #fff); outline-offset: 1px; }
+
+html, body { height: 100%; }
+body {
+    margin: 0;
+    font-family: var(--font-sans);
+    font-size: 0.875rem;
+    line-height: 1.5;
+    color: var(--fg);
+    background: var(--bg);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+}
+button, input, select, textarea { font: inherit; color: inherit; }
+.mono { font-family: var(--font-mono); font-size: 0.78rem; }
+.text-3 { color: var(--text-3); }
+.text-red { color: var(--red); }
+
+/* ── Brand mark ─────────────────────────────────────────── */
+.logo { display: inline-flex; flex: none; }
+
+/* ── Buttons ────────────────────────────────────────────── */
+.btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 0.4rem;
+    padding: 0.5rem 0.9rem;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--fg);
+    font-size: 0.8125rem; font-weight: 600;
+    line-height: 1.2;
+    cursor: pointer;
+    transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease, opacity 0.12s ease;
+    white-space: nowrap;
+}
+.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.btn--primary { background: var(--primary); color: var(--primary-fg); }
+.btn--primary:not(:disabled):hover { background: var(--primary-ink); }
+.btn--ghost { border-color: var(--border-2); color: var(--text-2); background: var(--surface); }
+.btn--ghost:not(:disabled):hover { background: var(--primary-softer); border-color: var(--primary); color: var(--primary); }
+.btn--danger { background: var(--red); color: #fff; }
+.btn--danger:not(:disabled):hover { background: color-mix(in srgb, var(--red) 86%, #000); }
+.btn--sm { padding: 0.32rem 0.6rem; font-size: 0.75rem; font-weight: 600; }
+.btn--block { width: 100%; }
+
+/* ── Pills / chips ──────────────────────────────────────── */
+.pill {
+    display: inline-flex; align-items: center; gap: 0.3rem;
+    padding: 0.12rem 0.5rem;
+    border-radius: 999px;
+    font-size: 0.72rem; font-weight: 600; line-height: 1.4;
+    border: 1px solid transparent;
+}
+.pill::before { content: ''; width: 0.4rem; height: 0.4rem; border-radius: 50%; background: currentColor; opacity: 0.85; }
+.pill--green { color: var(--green); background: var(--green-soft); }
+.pill--red { color: var(--red); background: var(--red-soft); }
+.pill--amber { color: var(--amber); background: var(--amber-soft); }
+.pill--muted { color: var(--text-2); background: color-mix(in srgb, var(--fg) 5%, transparent); }
+.pill--primary { color: var(--primary); background: var(--primary-soft); }
+
+.svc-dot {
+    display: inline-flex; align-items: center;
+    font-size: 0.7rem; font-weight: 600;
+    padding: 0.1rem 0.42rem; border-radius: 999px;
+    color: var(--text-3); background: color-mix(in srgb, var(--fg) 4%, transparent);
+}
+.svc-dot.on { color: var(--green); background: var(--green-soft); }
+
+.plat {
+    display: inline-flex;
+    font-size: 0.68rem; font-weight: 600;
+    padding: 0.1rem 0.4rem; border-radius: 0.3rem;
+    color: var(--text-2); background: color-mix(in srgb, var(--fg) 5%, transparent);
+}
+.plat--on { color: var(--primary); background: var(--primary-soft); }
+.plat--off { color: var(--text-3); text-decoration: line-through; text-decoration-thickness: 1px; }
+
+.keybadge { font-size: 0.7rem; font-weight: 600; padding: 0.1rem 0.45rem; border-radius: 999px; }
+.keybadge.on { color: var(--green); background: var(--green-soft); }
+.keybadge.off { color: var(--text-3); background: color-mix(in srgb, var(--fg) 5%, transparent); }
+
+/* ── Login ──────────────────────────────────────────────── */
+#login {
+    position: fixed; inset: 0; z-index: 1000;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--bg);
+    background-image:
+        radial-gradient(120% 90% at 100% 0%, color-mix(in srgb, var(--primary) 7%, transparent), transparent 55%),
+        radial-gradient(120% 90% at 0% 100%, color-mix(in srgb, var(--primary) 5%, transparent), transparent 55%);
+    padding: 1.5rem;
+}
+.login-card {
+    width: 100%; max-width: 23rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-md);
+    padding: 2.25rem 2rem 2rem;
+}
+.login-brand { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 1.5rem; }
+.login-brand .wordmark { font-size: 1.05rem; font-weight: 700; letter-spacing: -0.01em; }
+.login-brand .tag { font-size: 0.7rem; font-weight: 600; color: var(--primary); background: var(--primary-soft); padding: 0.1rem 0.45rem; border-radius: 999px; }
+.login-card h1 { margin: 0 0 0.25rem; font-size: 1.35rem; font-weight: 700; letter-spacing: -0.02em; }
+.login-card .sub { margin: 0 0 1.5rem; color: var(--text-3); font-size: 0.82rem; }
+#loginError { display: none; margin-top: 0.75rem; padding: 0.55rem 0.7rem; border-radius: var(--radius-sm); background: var(--red-soft); color: var(--red); font-size: 0.8rem; font-weight: 500; }
+
+/* ── App shell ──────────────────────────────────────────── */
+#app { display: none; }
+.shell { display: grid; grid-template-columns: 14.5rem 1fr; min-height: 100vh; }
+
+.sidebar {
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    display: flex; flex-direction: column;
+    padding: 1.1rem 0.75rem;
+    position: sticky; top: 0; height: 100vh;
+}
+.side-brand { display: flex; align-items: center; gap: 0.55rem; padding: 0.35rem 0.5rem 1.1rem; }
+.side-brand .wordmark { font-size: 0.98rem; font-weight: 700; letter-spacing: -0.01em; line-height: 1.1; }
+.side-brand .tag { display: block; font-size: 0.68rem; font-weight: 500; color: var(--text-3); }
+
+.nav { display: flex; flex-direction: column; gap: 0.15rem; }
+.nav-item {
+    display: flex; align-items: center; gap: 0.6rem;
+    padding: 0.55rem 0.65rem;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text-2);
+    font-size: 0.84rem; font-weight: 600;
+    text-align: left; width: 100%; cursor: pointer;
+    transition: background 0.12s ease, color 0.12s ease;
+}
+.nav-item:hover { background: var(--primary-softer); color: var(--primary); }
+.nav-item.active { background: var(--primary-soft); color: var(--primary); }
+.nav-item svg { flex: none; opacity: 0.9; }
+
+.side-foot { margin-top: auto; padding-top: 0.75rem; border-top: 1px solid var(--border); }
+.side-foot .btn { width: 100%; justify-content: flex-start; color: var(--text-2); }
+
+.main { display: flex; flex-direction: column; min-width: 0; }
+.topbar {
+    position: sticky; top: 0; z-index: 20;
+    background: color-mix(in srgb, var(--bg) 88%, transparent);
+    backdrop-filter: blur(0.5rem) saturate(1.1);
+    -webkit-backdrop-filter: blur(0.5rem) saturate(1.1);
+    border-bottom: 1px solid var(--border);
+}
+.topbar-inner { padding: 1rem 1.75rem; }
+.topbar h1 { margin: 0; font-size: 1.15rem; font-weight: 700; letter-spacing: -0.015em; }
+.topbar .desc { margin: 0.15rem 0 0; color: var(--text-3); font-size: 0.8rem; }
+
+.content { padding: 1.5rem 1.75rem 4rem; }
+.wrap { max-width: 72rem; margin: 0 auto; display: flex; flex-direction: column; gap: 1.25rem; }
+
+.panel { display: none; }
+.panel.active { display: block; }
+
+/* ── Card ───────────────────────────────────────────────── */
+.card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-sm);
+    overflow: hidden;
+}
+.card-head {
+    display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;
+    padding: 0.95rem 1.1rem;
+    border-bottom: 1px solid var(--border);
+}
+.card-head h2 { margin: 0; font-size: 0.98rem; font-weight: 700; letter-spacing: -0.01em; }
+.card-head .spacer { flex: 1; }
+.card-head .count { font-size: 0.75rem; font-weight: 600; color: var(--text-3); background: color-mix(in srgb, var(--fg) 5%, transparent); padding: 0.1rem 0.5rem; border-radius: 999px; }
+
+/* ── Table ──────────────────────────────────────────────── */
+.table-scroll { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; min-width: 44rem; }
+th, td { text-align: left; padding: 0.7rem 1.1rem; vertical-align: middle; }
+thead th {
+    font-size: 0.7rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;
+    color: var(--text-3);
+    border-bottom: 1px solid var(--border-2);
+    background: var(--surface-2);
+    white-space: nowrap;
+}
+tbody td { border-bottom: 1px solid var(--border); }
+tbody tr:last-child td { border-bottom: 0; }
+tbody tr { transition: background 0.1s ease; }
+tbody tr:hover { background: var(--row-hover); }
+.td-id { font-family: var(--font-mono); font-size: 0.78rem; color: var(--text-3); white-space: nowrap; }
+.td-actions { white-space: nowrap; text-align: right; }
+.td-actions .btn + .btn { margin-left: 0.3rem; }
+.td-services, .td-platforms { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+.td-notes { max-width: 18rem; color: var(--text-2); }
+.cell-strong { font-weight: 600; color: var(--fg); }
+.cell-sub { color: var(--text-3); font-size: 0.74rem; margin-top: 0.1rem; word-break: break-all; }
+
+/* ── States (loading / empty / error) ───────────────────── */
+.state-row td { text-align: center; padding: 2.5rem 1rem; }
+.state-row .state-msg { color: var(--text-2); font-weight: 600; }
+.state-row .state-hint { color: var(--text-3); font-size: 0.8rem; margin-top: 0.25rem; }
+.state-row.err .state-msg { color: var(--red); }
+
+/* ── Forms ──────────────────────────────────────────────── */
+.field { margin-bottom: 0.95rem; }
+.field:last-child { margin-bottom: 0; }
+.field > label { display: block; font-size: 0.78rem; font-weight: 600; margin-bottom: 0.3rem; }
+.field .hint { font-size: 0.73rem; color: var(--text-3); margin-top: 0.3rem; }
+.field .label-row { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; margin-bottom: 0.3rem; }
+.field .label-row > label { margin: 0; }
+input[type="text"], input[type="password"], input[type="date"], input[type="search"], select, textarea {
+    width: 100%;
+    padding: 0.5rem 0.65rem;
+    border: 1px solid var(--border-2);
+    border-radius: var(--radius-sm);
+    background: var(--surface);
+    transition: border-color 0.12s ease, box-shadow 0.12s ease;
+}
+input::placeholder, select { color: var(--text-3); }
+input:focus, select:focus, textarea:focus {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 16%, transparent);
+}
+.checkbox-row { display: flex; align-items: center; gap: 0.5rem; font-weight: 600; cursor: pointer; }
+.checkbox-row input { width: 1rem; height: 1rem; accent-color: var(--primary); }
+select { cursor: pointer; }
+
+/* inline form row (models panel head) */
+.inline-form { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+.inline-form select { width: auto; min-width: 10rem; }
+
+/* ── Upload form ────────────────────────────────────────── */
+.upload-grid { display: grid; grid-template-columns: 1fr; gap: 0.85rem; padding: 1.1rem; }
+.upload-row { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
+.upload-row .file-name { color: var(--text-3); font-size: 0.8rem; }
+.upload-row input[type="text"] { flex: 1; min-width: 12rem; }
+input[type="file"] { font-size: 0.78rem; }
+.file-drop {
+    border: 1px dashed var(--border-2);
+    border-radius: var(--radius-sm);
+    padding: 0.65rem 0.8rem;
+    background: var(--surface-2);
+}
+#uploadStatus { font-size: 0.8rem; margin: 0; min-height: 1.1rem; }
+
+/* ── Modal ──────────────────────────────────────────────── */
+.modal {
+    display: none; position: fixed; inset: 0; z-index: 200;
+    align-items: center; justify-content: center;
+    background: color-mix(in srgb, #000 32%, transparent);
+    backdrop-filter: blur(0.25rem); -webkit-backdrop-filter: blur(0.25rem);
+    padding: 1.5rem;
+}
+.modal.open { display: flex; }
+.modal-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-lg);
+    width: 100%; max-width: 32rem;
+    max-height: 90vh; overflow-y: auto;
+    animation: modal-in 0.14s ease-out;
+}
+.modal-card.wide { max-width: 56rem; }
+@keyframes modal-in { from { opacity: 0; transform: translateY(0.5rem); } to { opacity: 1; transform: none; } }
+.modal-head { display: flex; align-items: center; gap: 0.75rem; padding: 1.1rem 1.25rem; border-bottom: 1px solid var(--border); position: sticky; top: 0; background: var(--surface); }
+.modal-head h2 { margin: 0; font-size: 1.02rem; font-weight: 700; letter-spacing: -0.01em; flex: 1; }
+.modal-close { border: 0; background: transparent; cursor: pointer; color: var(--text-3); width: 1.75rem; height: 1.75rem; border-radius: var(--radius-sm); display: grid; place-items: center; }
+.modal-close:hover { background: color-mix(in srgb, var(--fg) 6%, transparent); color: var(--fg); }
+.modal-body { padding: 1.25rem; }
+.modal-foot { display: flex; justify-content: flex-end; gap: 0.5rem; padding: 1rem 1.25rem; border-top: 1px solid var(--border); position: sticky; bottom: 0; background: var(--surface); }
+
+/* model config service cards */
+.svc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: 1rem; }
+.svc-card {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 0.9rem;
+    background: var(--surface-2);
+}
+.svc-card.required { border-color: color-mix(in srgb, var(--primary) 30%, var(--border)); }
+.svc-card h3 { margin: 0 0 0.65rem; font-size: 0.82rem; font-weight: 700; display: flex; align-items: center; gap: 0.4rem; }
+.svc-card .req { font-size: 0.62rem; font-weight: 700; color: var(--primary); background: var(--primary-soft); padding: 0.05rem 0.35rem; border-radius: 0.2rem; text-transform: uppercase; letter-spacing: 0.03em; }
+
+/* ── Toast ──────────────────────────────────────────────── */
+#toast-wrap { position: fixed; right: 1.25rem; bottom: 1.25rem; z-index: 300; display: flex; flex-direction: column; gap: 0.5rem; }
+.toast {
+    background: var(--surface); border: 1px solid var(--border);
+    border-left: 3px solid var(--primary);
+    border-radius: var(--radius-sm);
+    box-shadow: var(--shadow-md);
+    padding: 0.6rem 0.85rem;
+    font-size: 0.82rem; font-weight: 500;
+    max-width: 22rem;
+    animation: toast-in 0.16s ease-out;
+}
+.toast.ok { border-left-color: var(--green); }
+.toast.err { border-left-color: var(--red); }
+@keyframes toast-in { from { opacity: 0; transform: translateY(0.4rem); } to { opacity: 1; transform: none; } }
+
+/* ── Responsive ─────────────────────────────────────────── */
+@media (max-width: 860px) {
+    .shell { grid-template-columns: 1fr; }
+    .sidebar { position: static; height: auto; flex-direction: row; align-items: center; gap: 0.5rem; padding: 0.6rem 0.75rem; overflow-x: auto; }
+    .side-brand { padding: 0; border: 0; }
+    .nav { flex-direction: row; }
+    .side-foot { margin: 0; padding: 0; border: 0; }
+    .side-foot .btn { width: auto; }
+    .nav-item span { display: none; }
+    .topbar-inner, .content { padding-left: 1rem; padding-right: 1rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}
+</style>
 </head>
 <body>
-    <div id="loginOverlay">
-        <div id="loginBox">
-            <h2>DeskAgent 管理后台</h2>
-            <input type="text" id="loginUser" placeholder="用户名" autocomplete="username">
-            <input type="password" id="loginPass" placeholder="密码" autocomplete="current-password">
-            <button class="btn btn-primary" onclick="doLogin()">登录</button>
-            <p id="loginError" style="color: #ff4d4f; display: none; margin-top: 15px;"></p>
+
+<!-- ── Login ─────────────────────────────────────────────── -->
+<div id="login">
+    <div class="login-card">
+        <div class="login-brand">
+            <svg class="logo" viewBox="0 0 32 32" width="30" height="30" aria-hidden="true">
+                <rect width="32" height="32" rx="9" fill="var(--primary)"/>
+                <circle cx="16" cy="16" r="7.2" fill="none" stroke="#fff" stroke-width="2.6"/>
+                <circle cx="16" cy="16" r="2.4" fill="#fff"/>
+            </svg>
+            <span class="wordmark">DeskAgent</span>
+            <span class="tag">管理后台</span>
         </div>
+        <h1>欢迎回来</h1>
+        <p class="sub">登录以管理用户、凭证与版本分发。</p>
+        <form id="loginForm" autocomplete="on">
+            <div class="field">
+                <label for="loginUser">用户名</label>
+                <input type="text" id="loginUser" autocomplete="username" required>
+            </div>
+            <div class="field">
+                <label for="loginPass">密码</label>
+                <input type="password" id="loginPass" autocomplete="current-password" required>
+            </div>
+            <button type="submit" class="btn btn--primary btn--block">登录</button>
+            <p id="loginError"></p>
+        </form>
     </div>
+</div>
 
-    <div id="appContent">
-        <h1>DeskAgent 管理后台</h1>
-
-        <div class="tab-nav">
-            <span class="tab active" onclick="showTab('users')">用户管理</span>
-            <span class="tab" onclick="showTab('models')">模型配置</span>
-            <span class="tab" onclick="showTab('versions')">版本管理</span>
-        </div>
-
-        <div id="tab-users" class="tab-content active section">
-            <h2>用户列表</h2>
-            <div class="form-group">
-                <button class="btn btn-primary" onclick="showCreateUser()">创建新用户</button>
+<!-- ── App ──────────────────────────────────────────────── -->
+<div id="app">
+    <div class="shell">
+        <aside class="sidebar">
+            <div class="side-brand">
+                <svg class="logo" viewBox="0 0 32 32" width="26" height="26" aria-hidden="true">
+                    <rect width="32" height="32" rx="9" fill="var(--primary)"/>
+                    <circle cx="16" cy="16" r="7.2" fill="none" stroke="#fff" stroke-width="2.6"/>
+                    <circle cx="16" cy="16" r="2.4" fill="#fff"/>
+                </svg>
+                <div>
+                    <span class="wordmark">DeskAgent</span>
+                    <span class="tag">管理后台</span>
+                </div>
             </div>
-            <table>
-                <thead>
-                    <tr>
-                        <th>ID</th>
-                        <th>用户名</th>
-                        <th>显示名称</th>
-                        <th>可用</th>
-                        <th>有效期</th>
-                        <th>状态</th>
-                        <th>操作</th>
-                    </tr>
-                </thead>
-                <tbody id="userList"><tr><td colspan="7">加载中...</td></tr></tbody>
-            </table>
-        </div>
-
-        <div id="tab-models" class="tab-content section">
-            <h2>模型配置 (AI API 设置)</h2>
-            <div class="form-group">
-                <select id="modelUserSelect"><option value="">选择用户</option></select>
-                <button class="btn btn-primary" onclick="showModelConfig()">设置配置</button>
+            <nav class="nav">
+                <button class="nav-item active" data-tab="users" onclick="showTab('users')">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                    <span>用户管理</span>
+                </button>
+                <button class="nav-item" data-tab="models" onclick="showTab('models')">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2 2 7l10 5 10-5-10-5Z"/><path d="m2 17 10 5 10-5"/><path d="m2 12 10 5 10-5"/></svg>
+                    <span>模型配置</span>
+                </button>
+                <button class="nav-item" data-tab="versions" onclick="showTab('versions')">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                    <span>版本管理</span>
+                </button>
+            </nav>
+            <div class="side-foot">
+                <button class="btn btn--ghost btn--sm" onclick="logout()">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+                    退出登录
+                </button>
             </div>
-            <table>
-                <thead>
-                    <tr>
-                        <th>用户ID</th>
-                        <th>LLM Model</th>
-                        <th>操作</th>
-                    </tr>
-                </thead>
-                <tbody id="modelList"><tr><td colspan="5">加载中...</td></tr></tbody>
-            </table>
-        </div>
+        </aside>
 
-        <div id="tab-versions" class="tab-content section">
-            <div class="upload-form">
-                <h2>发布新版本</h2>
-                <form id="uploadForm">
-                    <input type="text" id="releaseNotes" placeholder="更新说明（可选）">
-                    <input type="file" id="fileInput" required>
-                    <button type="submit" class="btn btn-primary">上传并发布</button>
-                </form>
-                <p id="uploadStatus"></p>
+        <main class="main">
+            <header class="topbar">
+                <div class="topbar-inner">
+                    <h1 id="topTitle">用户管理</h1>
+                    <p class="desc" id="topDesc"></p>
+                </div>
+            </header>
+
+            <div class="content">
+                <div class="wrap">
+
+                    <!-- ── Users ─────────────────────────────── -->
+                    <section id="panel-users" class="panel active">
+                        <div class="card">
+                            <div class="card-head">
+                                <h2>用户列表</h2>
+                                <span class="count" id="userCount"></span>
+                                <span class="spacer"></span>
+                                <button class="btn btn--primary btn--sm" onclick="showCreateUser()">＋ 创建用户</button>
+                            </div>
+                            <div class="table-scroll">
+                                <table>
+                                    <thead><tr>
+                                        <th>ID</th><th>用户名</th><th>显示名称</th><th>登录权限</th><th>有效期</th><th>状态</th><th style="text-align:right">操作</th>
+                                    </tr></thead>
+                                    <tbody id="userList"><tr class="state-row"><td colspan="7"><div class="state-msg">加载中…</div></td></tr></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- ── Models ────────────────────────────── -->
+                    <section id="panel-models" class="panel">
+                        <div class="card">
+                            <div class="card-head">
+                                <h2>凭证配置</h2>
+                                <span class="count" id="modelCount"></span>
+                                <span class="spacer"></span>
+                                <div class="inline-form">
+                                    <select id="modelUserSelect"><option value="">选择用户…</option></select>
+                                    <button class="btn btn--primary btn--sm" onclick="showModelConfig()">设置配置</button>
+                                </div>
+                            </div>
+                            <div class="table-scroll">
+                                <table>
+                                    <thead><tr>
+                                        <th>用户</th><th>LLM</th><th>已配置服务</th><th style="text-align:right">操作</th>
+                                    </tr></thead>
+                                    <tbody id="modelList"><tr class="state-row"><td colspan="4"><div class="state-msg">加载中…</div></td></tr></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- ── Versions ──────────────────────────── -->
+                    <section id="panel-versions" class="panel">
+                        <div class="card">
+                            <div class="card-head"><h2>发布新版本</h2></div>
+                            <form id="uploadForm" class="upload-grid">
+                                <div class="upload-row">
+                                    <input type="text" id="releaseNotes" placeholder="更新说明（可选）">
+                                </div>
+                                <div class="upload-row">
+                                    <label class="file-drop">
+                                        <input type="file" id="fileInput" accept=".zip" required>
+                                    </label>
+                                    <span class="file-name" id="fileName"></span>
+                                    <span class="spacer" style="flex:1"></span>
+                                    <button type="submit" class="btn btn--primary btn--sm">上传并发布</button>
+                                </div>
+                                <p id="uploadStatus"></p>
+                            </form>
+                        </div>
+                        <div class="card">
+                            <div class="card-head">
+                                <h2>版本历史</h2>
+                                <span class="count" id="versionCount"></span>
+                            </div>
+                            <div class="table-scroll">
+                                <table>
+                                    <thead><tr>
+                                        <th>版本</th><th>更新说明</th><th>平台</th><th>状态</th><th>发布时间</th><th style="text-align:right">操作</th>
+                                    </tr></thead>
+                                    <tbody id="versionList"><tr class="state-row"><td colspan="6"><div class="state-msg">加载中…</div></td></tr></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </section>
+
+                </div>
             </div>
-            <h2>版本历史</h2>
-            <table>
-                <thead>
-                    <tr>
-                        <th>ID</th>
-                        <th>版本号</th>
-                        <th>Runner</th>
-                        <th>SHA256</th>
-                        <th>更新说明</th>
-                        <th>状态</th>
-                        <th>创建时间</th>
-                        <th>操作</th>
-                    </tr>
-                </thead>
-                <tbody id="versionList"><tr><td colspan="8">加载中...</td></tr></tbody>
-            </table>
-        </div>
+        </main>
     </div>
+</div>
 
-    <div id="userModal" class="modal">
-        <div class="modal-content">
+<!-- ── User modal ───────────────────────────────────────── -->
+<div id="userModal" class="modal" onclick="if(event.target===this)closeModal('userModal')">
+    <div class="modal-card">
+        <div class="modal-head">
             <h2 id="userModalTitle">创建用户</h2>
+            <button class="modal-close" onclick="closeModal('userModal')" aria-label="关闭">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+            </button>
+        </div>
+        <div class="modal-body">
             <input type="hidden" id="editUserId">
-            <div class="form-group">
-                <label>用户名</label><br>
-                <input type="text" id="username" placeholder="登录用户名" style="width:100%">
+            <div class="field">
+                <label for="username">用户名</label>
+                <input type="text" id="username" placeholder="登录用户名" autocomplete="off">
             </div>
-            <div class="form-group">
-                <label>密码</label><br>
-                <input type="password" id="password" placeholder="密码" style="width:100%">
+            <div class="field">
+                <label for="password">密码</label>
+                <input type="password" id="password" placeholder="至少 8 位" autocomplete="new-password">
+                <div class="hint" id="passwordHint"></div>
             </div>
-            <div class="form-group">
-                <label>显示名称</label><br>
-                <input type="text" id="displayName" placeholder="客户名称" style="width:100%">
+            <div class="field">
+                <label for="displayName">显示名称</label>
+                <input type="text" id="displayName" placeholder="客户名称（留空则用用户名）" autocomplete="off">
             </div>
-            <div class="form-group">
-                <label><input type="checkbox" id="canUse" checked> 允许登录客户端</label>
-            </div>
-            <div class="form-group">
-                <label>到期日期</label><br>
-                <input type="date" id="expiresAt" placeholder="留空永久" style="width:100%">
-            </div>
-            <div style="margin-top: 20px; text-align: right;">
-                <button class="btn btn-danger" onclick="closeModal('userModal')">取消</button>
-                <button class="btn btn-primary" onclick="saveUser()">保存</button>
+            <label class="checkbox-row"><input type="checkbox" id="canUse" checked> 允许登录客户端</label>
+            <div class="field" style="margin-top:0.95rem">
+                <label for="expiresAt">到期日期</label>
+                <input type="date" id="expiresAt">
+                <div class="hint">留空表示永久有效</div>
             </div>
         </div>
+        <div class="modal-foot">
+            <button class="btn btn--ghost" onclick="closeModal('userModal')">取消</button>
+            <button class="btn btn--primary" onclick="saveUser()">保存</button>
+        </div>
     </div>
+</div>
 
-    <div id="modelModal" class="modal">
-        <div class="modal-content" style="min-width: 720px; max-width: 900px;">
-            <h2 id="modelModalTitle">配置 AI 参数</h2>
+<!-- ── Model config modal ──────────────────────────────── -->
+<div id="modelModal" class="modal" onclick="if(event.target===this)closeModal('modelModal')">
+    <div class="modal-card wide">
+        <div class="modal-head">
+            <h2 id="modelModalTitle">配置凭证</h2>
+            <button class="modal-close" onclick="closeModal('modelModal')" aria-label="关闭">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+            </button>
+        </div>
+        <div class="modal-body">
             <input type="hidden" id="modelUserId">
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
-                <div>
-                    <h3 style="margin-bottom: 10px; color: #555;">大语言模型 (LLM)</h3>
-                    <div class="form-group">
-                        <label>Base URL</label><br>
-                        <input type="text" id="llmBaseUrl" placeholder="https://api.openai.com/v1" style="width:100%">
+            <div class="svc-grid">
+                <div class="svc-card required">
+                    <h3>大语言模型 <span class="req">必填</span></h3>
+                    <div class="field"><label>Base URL</label><input type="text" id="llmBaseUrl" placeholder="https://api.openai.com/v1"></div>
+                    <div class="field">
+                        <div class="label-row"><label>API Key</label><span class="keybadge off" id="llmKeyBadge">未设置</span></div>
+                        <input type="password" id="llmApiKey" placeholder="sk-…">
+                        <div class="hint">留空表示保留现有值</div>
                     </div>
-                    <div class="form-group">
-                        <label>API Key</label><br>
-                        <input type="text" id="llmApiKey" placeholder="sk-..." style="width:100%">
-                    </div>
-                    <div class="form-group">
-                        <label>模型名称</label><br>
-                        <input type="text" id="llmModelName" placeholder="gpt-4o" style="width:100%">
-                    </div>
+                    <div class="field"><label>模型名称</label><input type="text" id="llmModelName" placeholder="gpt-4o"></div>
                 </div>
-                <div>
-                    <h3 style="margin-bottom: 10px; color: #555;">语音识别 (STT)</h3>
-                    <div class="form-group">
-                        <label>Base URL</label><br>
-                        <input type="text" id="sttBaseUrl" placeholder="留空使用 SETTINGS 默认" style="width:100%">
+                <div class="svc-card">
+                    <h3>语音识别 STT</h3>
+                    <div class="field"><label>Base URL</label><input type="text" id="sttBaseUrl" placeholder="留空使用默认"></div>
+                    <div class="field">
+                        <div class="label-row"><label>API Key</label><span class="keybadge off" id="sttKeyBadge">未设置</span></div>
+                        <input type="password" id="sttApiKey" placeholder="留空保留现有值">
                     </div>
-                    <div class="form-group">
-                        <label>API Key</label><br>
-                        <input type="text" id="sttApiKey" placeholder="留空保留现有值" style="width:100%">
-                    </div>
-                    <div class="form-group">
-                        <label>模型名称</label><br>
-                        <input type="text" id="sttModelName" placeholder="mimo-v2.5-asr" style="width:100%">
-                    </div>
+                    <div class="field"><label>模型名称</label><input type="text" id="sttModelName" placeholder="mimo-v2.5-asr"></div>
                 </div>
-                <div>
-                    <h3 style="margin-bottom: 10px; color: #555;">语音合成 (TTS)</h3>
-                    <div class="form-group">
-                        <label>Base URL</label><br>
-                        <input type="text" id="ttsBaseUrl" placeholder="留空使用 SETTINGS 默认" style="width:100%">
+                <div class="svc-card">
+                    <h3>语音合成 TTS</h3>
+                    <div class="field"><label>Base URL</label><input type="text" id="ttsBaseUrl" placeholder="留空使用默认"></div>
+                    <div class="field">
+                        <div class="label-row"><label>API Key</label><span class="keybadge off" id="ttsKeyBadge">未设置</span></div>
+                        <input type="password" id="ttsApiKey" placeholder="留空保留现有值">
                     </div>
-                    <div class="form-group">
-                        <label>API Key</label><br>
-                        <input type="text" id="ttsApiKey" placeholder="留空保留现有值" style="width:100%">
-                    </div>
-                    <div class="form-group">
-                        <label>模型名称</label><br>
-                        <input type="text" id="ttsModelName" placeholder="mimo-v2.5-tts" style="width:100%">
-                    </div>
+                    <div class="field"><label>模型名称</label><input type="text" id="ttsModelName" placeholder="mimo-v2.5-tts"></div>
                 </div>
-                <div>
-                    <h3 style="margin-bottom: 10px; color: #555;">图片生成 (Image Gen)</h3>
-                    <div class="form-group">
-                        <label>Base URL</label><br>
-                        <input type="text" id="imageGenBaseUrl" placeholder="留空使用 SETTINGS 默认" style="width:100%">
+                <div class="svc-card">
+                    <h3>图像生成</h3>
+                    <div class="field"><label>Base URL</label><input type="text" id="imageGenBaseUrl" placeholder="留空使用默认"></div>
+                    <div class="field">
+                        <div class="label-row"><label>API Key</label><span class="keybadge off" id="imageKeyBadge">未设置</span></div>
+                        <input type="password" id="imageGenApiKey" placeholder="留空保留现有值">
                     </div>
-                    <div class="form-group">
-                        <label>API Key</label><br>
-                        <input type="text" id="imageGenApiKey" placeholder="留空保留现有值" style="width:100%">
-                    </div>
-                    <div class="form-group">
-                        <label>模型名称</label><br>
-                        <input type="text" id="imageGenModelName" placeholder="dall-e-3" style="width:100%">
-                    </div>
+                    <div class="field"><label>模型名称</label><input type="text" id="imageGenModelName" placeholder="image-01"></div>
                 </div>
-            </div>
-            <div style="margin-top: 20px; text-align: right;">
-                <button class="btn btn-danger" onclick="closeModal('modelModal')">取消</button>
-                <button class="btn btn-primary" onclick="saveModelConfig()">保存</button>
+                <div class="svc-card">
+                    <h3>视频生成</h3>
+                    <div class="field"><label>Base URL</label><input type="text" id="videoGenBaseUrl" placeholder="留空使用默认"></div>
+                    <div class="field">
+                        <div class="label-row"><label>API Key</label><span class="keybadge off" id="videoKeyBadge">未设置</span></div>
+                        <input type="password" id="videoGenApiKey" placeholder="留空保留现有值">
+                    </div>
+                    <div class="field"><label>模型名称</label><input type="text" id="videoGenModelName" placeholder="video-01"></div>
+                </div>
             </div>
         </div>
+        <div class="modal-foot">
+            <button class="btn btn--ghost" onclick="closeModal('modelModal')">取消</button>
+            <button class="btn btn--primary" onclick="saveModelConfig()">保存</button>
+        </div>
     </div>
+</div>
 
-    <script>
-        const API_BASE = '';
-        const TOKEN_KEY = 'deskagent_admin_token';
-        const tabCache = { users: null, models: null, versions: null };
+<div id="toast-wrap"></div>
 
-        function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":"&#39;"}[c])); }
-        const getItems = (data) => data?.items ?? [];
+<script>
+const API_BASE = '';
+const TOKEN_KEY = 'deskagent_admin_token';
+const tabCache = { users: null, models: null, versions: null };
 
-        function showTab(name) {
-            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-            const activeTab = document.querySelector(`[onclick="showTab('${name}')"]`);
-            if (activeTab) activeTab.classList.add('active');
-            const activeContent = document.getElementById('tab-' + name);
-            if (activeContent) activeContent.classList.add('active');
-            
-            if (name === 'users') loadUsers();
-            if (name === 'models') loadModelConfigs();
-            if (name === 'versions') loadVersions();
-        }
+const TABS = {
+    users:    { title: '用户管理', desc: '管理可登录客户端的账户、登录权限与有效期' },
+    models:   { title: '模型配置', desc: '为每个用户配置 LLM、语音、图像与视频的接入凭证' },
+    versions: { title: '版本管理', desc: '上传并分发桌面端与 Runner 的更新包' },
+};
 
-        function getToken() { return sessionStorage.getItem(TOKEN_KEY); }
+// service → (input-id map) for the credential modal. video_gen was missing
+// from the old page; the backend UserModelConfigRequest has carried it all along.
+const SVC_FIELDS = [
+    { url: 'llmBaseUrl',      key: 'llmApiKey',      model: 'llmModelName',      urlField: 'llm_base_url',      keyField: 'llm_api_key',      modelField: 'llm_model_name' },
+    { url: 'sttBaseUrl',      key: 'sttApiKey',      model: 'sttModelName',      urlField: 'stt_base_url',      keyField: 'stt_api_key',      modelField: 'stt_model_name' },
+    { url: 'ttsBaseUrl',      key: 'ttsApiKey',      model: 'ttsModelName',      urlField: 'tts_base_url',      keyField: 'tts_api_key',      modelField: 'tts_model_name' },
+    { url: 'imageGenBaseUrl', key: 'imageGenApiKey', model: 'imageGenModelName', urlField: 'image_gen_base_url', keyField: 'image_gen_api_key', modelField: 'image_gen_model_name' },
+    { url: 'videoGenBaseUrl', key: 'videoGenApiKey', model: 'videoGenModelName', urlField: 'video_gen_base_url', keyField: 'video_gen_api_key', modelField: 'video_gen_model_name' },
+];
 
-        async function apiFetch(path, options = {}) {
-            const headers = {
-                ...(getToken() ? { 'Authorization': 'Bearer ' + getToken() } : {}),
-            };
-            // Don't set Content-Type for FormData bodies - browser will set multipart/form-data with boundary
-            if (!(options.body instanceof FormData)) {
-                headers['Content-Type'] = 'application/json';
-            }
+const $  = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
 
-            const resp = await fetch(API_BASE + path, {
-                ...options,
-                headers: {
-                    ...headers,
-                    ...(options.headers || {})
-                }
-            });
-            if (resp.status === 401) {
-                sessionStorage.removeItem(TOKEN_KEY);
-                location.reload();
-                throw new Error('会话过期，请重新登录');
-            }
-            if (!resp.ok) {
-                const detail = (await resp.json().catch(() => ({}))).detail;
-                throw new Error(detail || `HTTP ${resp.status}`);
-            }
-            return resp;
-        }
+function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+const getItems = (data) => data?.items ?? [];
 
-        function doLogin() {
-            const u = document.getElementById('loginUser').value, p = document.getElementById('loginPass').value;
-            if (!u || !p) return;
-            fetch(API_BASE + '/admin/login', { 
-                method: 'POST', 
-                headers: { 'Content-Type': 'application/json' }, 
-                body: JSON.stringify({ username: u, password: p }) 
-            })
-            .then(r => { if (!r.ok) throw new Error('用户名或密码错误'); return r.json(); })
-            .then(data => { 
-                sessionStorage.setItem(TOKEN_KEY, data.access_token); 
-                document.getElementById('loginOverlay').style.display = 'none'; 
-                document.getElementById('appContent').style.display = 'block'; 
-                loadUsers(); 
-            })
-            .catch(e => { 
-                const err = document.getElementById('loginError'); 
-                err.textContent = e.message; 
-                err.style.display = 'block'; 
-            });
-        }
+function pill(text, type = 'muted') { return `<span class="pill pill--${type}">${esc(text)}</span>`; }
+function svcDot(label, on) { return `<span class="svc-dot ${on ? 'on' : ''}">${esc(label)}</span>`; }
+function plat(label, on) { return `<span class="plat ${on ? 'plat--on' : 'plat--off'}">${esc(label)}</span>`; }
 
-        if (getToken()) { 
-            document.getElementById('loginOverlay').style.display = 'none'; 
-            document.getElementById('appContent').style.display = 'block'; 
-            loadUsers(); 
-        }
+function fmtDate(s) {
+    if (!s) return '—';
+    const d = new Date(s);
+    if (isNaN(d)) return '—';
+    return d.toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+}
+function fmtDateOnly(s) { return s ? s.split('T')[0] : ''; }
+function fmtSize(b) {
+    if (b === null || b === undefined || isNaN(b)) return '';
+    if (b === 0) return '0 B';
+    const u = ['B', 'KB', 'MB', 'GB'];
+    let i = 0, n = b;
+    while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+    return (n < 10 && i > 0 ? n.toFixed(1) : Math.round(n)) + ' ' + u[i];
+}
 
-        // Users
-        async function loadUsers() {
-            try {
-                const resp = await apiFetch('/api/admin/users');
-                const data = await resp.json();
-                tabCache.users = data;
-                renderUsers(data);
-            } catch (e) { document.getElementById('userList').innerHTML = `<tr><td colspan="7" style="color:red">加载失败: ${e.message}</td></tr>`; }
-        }
+function toast(msg, type = 'ok') {
+    const wrap = $('#toast-wrap');
+    const el = document.createElement('div');
+    el.className = `toast ${type}`;
+    el.textContent = msg;
+    wrap.appendChild(el);
+    setTimeout(() => { el.style.opacity = '0'; el.style.transform = 'translateY(0.4rem)'; el.style.transition = 'all .16s ease'; setTimeout(() => el.remove(), 200); }, 2600);
+}
 
-        function renderUsers(data) {
-            const tbody = document.getElementById('userList');
-            const items = getItems(data);
-            if (!items.length) { tbody.innerHTML = '<tr><td colspan="7">暂无用户</td></tr>'; return; }
-            tbody.innerHTML = items.map(u => `
-                <tr>
-                    <td>${u.id}</td>
-                    <td>${esc(u.username)}</td>
-                    <td>${esc(u.display_name)}</td>
-                    <td>${u.can_use ? '是' : '否'}</td>
-                    <td class="${u.expires_at && new Date(u.expires_at) < new Date() ? 'expires-expired' : 'expires-valid'}">${u.expires_at || '永久'}</td>
-                    <td class="${u.is_active ? 'status-active' : 'status-inactive'}">${u.is_active ? '激活' : '已停用'}</td>
-                    <td>
-                        <button class="btn btn-info" onclick="editUser(${u.id})">编辑</button>
-                        <button class="btn btn-warning" onclick="toggleUser(${u.id})">${u.is_active ? '停用' : '启用'}</button>
-                        <button class="btn btn-danger" onclick="deleteUser(${u.id})">删除</button>
-                    </td>
-                </tr>`).join('');
-        }
+function stateRow(colspan, msg, hint = '', err = false) {
+    return `<tr class="state-row ${err ? 'err' : ''}"><td colspan="${colspan}"><div class="state-msg">${esc(msg)}</div>${hint ? `<div class="state-hint">${esc(hint)}</div>` : ''}</td></tr>`;
+}
 
-        function showCreateUser() {
-            document.getElementById('userModalTitle').textContent = '创建新用户';
-            document.getElementById('editUserId').value = '';
-            document.getElementById('username').value = '';
-            document.getElementById('username').disabled = false;
-            document.getElementById('password').value = '';
-            document.getElementById('displayName').value = '';
-            document.getElementById('canUse').checked = true;
-            document.getElementById('expiresAt').value = '';
-            document.getElementById('userModal').classList.add('show');
-        }
+function showTab(name) {
+    $$('.nav-item').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+    $$('.panel').forEach(p => p.classList.toggle('active', p.id === 'panel-' + name));
+    const t = TABS[name];
+    $('#topTitle').textContent = t.title;
+    $('#topDesc').textContent = t.desc;
+    if (name === 'users') loadUsers();
+    if (name === 'models') loadModelConfigs();
+    if (name === 'versions') loadVersions();
+}
 
-        async function editUser(id) {
-            const resp = await apiFetch('/api/admin/users/' + id);
-            const u = await resp.json();
-            document.getElementById('userModalTitle').textContent = '编辑用户';
-            document.getElementById('editUserId').value = u.id;
-            document.getElementById('username').value = u.username;
-            document.getElementById('username').disabled = true;
-            document.getElementById('password').value = '';
-            document.getElementById('displayName').value = u.display_name;
-            document.getElementById('canUse').checked = u.can_use;
-            document.getElementById('expiresAt').value = u.expires_at ? u.expires_at.split('T')[0] : '';
-            document.getElementById('userModal').classList.add('show');
-        }
+function getToken() { return sessionStorage.getItem(TOKEN_KEY); }
 
-        async function saveUser() {
-            const id = document.getElementById('editUserId').value;
-            const payload = {};
-            if (!id) { 
-                payload.username = document.getElementById('username').value; 
-                payload.password = document.getElementById('password').value; 
-            } else {
-                const pwd = document.getElementById('password').value;
-                if (pwd) payload.password = pwd;
-            }
-            payload.display_name = document.getElementById('displayName').value;
-            payload.can_use = document.getElementById('canUse').checked;
-            const ea = document.getElementById('expiresAt').value; payload.expires_at = ea || null;
+async function apiFetch(path, options = {}) {
+    const headers = { ...(getToken() ? { Authorization: 'Bearer ' + getToken() } : {}) };
+    if (!(options.body instanceof FormData)) headers['Content-Type'] = 'application/json';
+    const resp = await fetch(API_BASE + path, { ...options, headers: { ...headers, ...(options.headers || {}) } });
+    if (resp.status === 401) {
+        sessionStorage.removeItem(TOKEN_KEY);
+        location.reload();
+        throw new Error('会话已过期，请重新登录');
+    }
+    if (!resp.ok) {
+        const detail = (await resp.json().catch(() => ({}))).detail;
+        throw new Error(detail || `HTTP ${resp.status}`);
+    }
+    return resp;
+}
 
-            const method = id ? 'PATCH' : 'POST';
-            const url = id ? `/api/admin/users/${id}` : '/api/admin/users';
-            await apiFetch(url, { method, body: JSON.stringify(payload) });
-            closeModal('userModal');
-            loadUsers();
-        }
+function enterApp() {
+    $('#login').style.display = 'none';
+    $('#app').style.display = 'block';
+    showTab('users');
+}
 
-        async function toggleUser(id) {
-            await apiFetch(`/api/admin/users/${id}/toggle-active`, { method: 'PATCH' });
-            loadUsers();
-        }
+function logout() {
+    sessionStorage.removeItem(TOKEN_KEY);
+    location.reload();
+}
 
-        async function deleteUser(id) {
-            if (!confirm('确定彻底删除此用户及其所有关联数据？')) return;
-            await apiFetch(`/api/admin/users/${id}`, { method: 'DELETE' });
-            loadUsers();
-        }
+// ── Login ────────────────────────────────────────────────
+$('#loginForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const u = $('#loginUser').value.trim(), p = $('#loginPass').value;
+    if (!u || !p) return;
+    fetch(API_BASE + '/admin/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: u, password: p }),
+    })
+    .then(r => r.ok ? r.json() : Promise.reject(new Error('用户名或密码错误')))
+    .then(data => { sessionStorage.setItem(TOKEN_KEY, data.access_token); enterApp(); })
+    .catch(e => { const err = $('#loginError'); err.textContent = e.message; err.style.display = 'block'; });
+});
 
-        // Model configs
-        async function loadModelConfigs() {
-            try {
-                const [configsResp, usersResp] = await Promise.all([
-                    apiFetch('/api/admin/model-configs'),
-                    apiFetch('/api/admin/users'),
-                ]);
-                const data = await configsResp.json();
-                const userData = await usersResp.json();
-                tabCache.models = data;
-                renderModels(data);
-                const sel = document.getElementById('modelUserSelect');
-                sel.innerHTML = '<option value="">选择用户</option>' + getItems(userData).map(u => `<option value="${u.id}">${esc(u.username)}</option>`).join('');
-            } catch (e) { document.getElementById('modelList').innerHTML = `<tr><td colspan="3" style="color:red">加载失败: ${e.message}</td></tr>`; }
-        }
+if (getToken()) enterApp();
 
-        function showModelConfig() {
-            const userId = document.getElementById('modelUserSelect').value;
-            if (!userId) { alert('请先选择用户'); return; }
-            showModelConfigForUser(userId);
-        }
+// ── Users ────────────────────────────────────────────────
+async function loadUsers() {
+    try {
+        const data = await (await apiFetch('/api/admin/users')).json();
+        tabCache.users = data;
+        renderUsers(data);
+    } catch (e) { $('#userList').innerHTML = stateRow(7, '加载失败：' + e.message, '', true); }
+}
 
-        function showModelConfigForUser(userId) {
-            const cached = tabCache.models?.items?.find(c => c.user_id == userId) ?? null;
-            document.getElementById('modelUserId').value = userId;
-            // base_url + model_name come from the cached list response.
-            // api_key inputs are always left empty: the list endpoint exposes
-            // *_api_key_set (a bool) instead of the raw key. Saving with an
-            // empty input means "keep the existing key on the server" — never
-            // overwrite with an empty string and never surface the literal
-            // 'undefined'.
-            const fields = [
-                ['llmBaseUrl', 'llm_base_url'],
-                ['llmModelName', 'llm_model_name'],
-                ['sttBaseUrl', 'stt_base_url'],
-                ['sttModelName', 'stt_model_name'],
-                ['ttsBaseUrl', 'tts_base_url'],
-                ['ttsModelName', 'tts_model_name'],
-                ['imageGenBaseUrl', 'image_gen_base_url'],
-                ['imageGenModelName', 'image_gen_model_name'],
-            ];
-            for (const [inputId, responseKey] of fields) {
-                document.getElementById(inputId).value = cached ? (cached[responseKey] ?? '') : '';
-            }
-            for (const inputId of ['llmApiKey', 'sttApiKey', 'ttsApiKey', 'imageGenApiKey']) {
-                document.getElementById(inputId).value = '';
-            }
-            document.getElementById('modelModal').classList.add('show');
-        }
+function renderUsers(data) {
+    const tbody = $('#userList');
+    const items = getItems(data);
+    $('#userCount').textContent = items.length ? `${items.length} 个用户` : '';
+    if (!items.length) { tbody.innerHTML = stateRow(7, '暂无用户', '点击右上角“创建用户”添加'); return; }
+    tbody.innerHTML = items.map(u => {
+        const expired = u.expires_at && new Date(u.expires_at) < new Date();
+        const expir = u.expires_at
+            ? `<span class="${expired ? 'text-red' : ''}">${fmtDate(u.expires_at)}</span>${expired ? ' ' + pill('已过期', 'red') : ''}`
+            : '<span class="text-3">永久</span>';
+        return `<tr>
+            <td class="td-id">${u.id}</td>
+            <td><div class="cell-strong">${esc(u.username)}</div></td>
+            <td>${esc(u.display_name)}</td>
+            <td>${u.can_use ? pill('允许', 'green') : pill('禁止', 'muted')}</td>
+            <td>${expir}</td>
+            <td>${u.is_active ? pill('启用', 'green') : pill('停用', 'red')}</td>
+            <td class="td-actions">
+                <button class="btn btn--ghost btn--sm" onclick="editUser(${u.id})">编辑</button>
+                <button class="btn btn--ghost btn--sm" onclick="toggleUser(${u.id})">${u.is_active ? '停用' : '启用'}</button>
+                <button class="btn btn--danger btn--sm" onclick="deleteUser(${u.id})">删除</button>
+            </td>
+        </tr>`;
+    }).join('');
+}
 
-        function renderModels(data) {
-            const tbody = document.getElementById('modelList');
-            const items = getItems(data);
-            if (!items.length) { tbody.innerHTML = '<tr><td colspan="3">暂无配置</td></tr>'; return; }
-            tbody.innerHTML = items.map(c => `
-                <tr>
-                    <td>${c.user_id}</td>
-                    <td>${esc(c.llm_model_name)}<br><small>${esc(c.llm_base_url)}</small></td>
-                    <td>
-                        <button class="btn btn-info" onclick="showModelConfigForUser(${c.user_id})">编辑</button>
-                        <button class="btn btn-danger" onclick="deleteModelConfig(${c.user_id})">删除</button>
-                    </td>
-                </tr>`).join('');
-        }
+function showCreateUser() {
+    $('#userModalTitle').textContent = '创建用户';
+    $('#editUserId').value = '';
+    $('#username').value = ''; $('#username').disabled = false;
+    $('#password').value = '';
+    $('#displayName').value = '';
+    $('#canUse').checked = true;
+    $('#expiresAt').value = '';
+    $('#passwordHint').textContent = '至少 8 位';
+    openModal('userModal');
+    $('#username').focus();
+}
 
-        async function saveModelConfig() {
-            const userId = document.getElementById('modelUserId').value;
-            // Build the PUT payload from every service's (base_url, api_key, model_name).
-            // For each api_key, only include it when the user typed a new value —
-            // an empty input means "keep the existing key on the server". Sending
-            // ``*_api_key: ""`` would overwrite the stored key with a blank.
-            const services = [
-                { url: 'llmBaseUrl', key: 'llmApiKey', model: 'llmModelName', urlField: 'llm_base_url', keyField: 'llm_api_key', modelField: 'llm_model_name' },
-                { url: 'sttBaseUrl', key: 'sttApiKey', model: 'sttModelName', urlField: 'stt_base_url', keyField: 'stt_api_key', modelField: 'stt_model_name' },
-                { url: 'ttsBaseUrl', key: 'ttsApiKey', model: 'ttsModelName', urlField: 'tts_base_url', keyField: 'tts_api_key', modelField: 'tts_model_name' },
-                { url: 'imageGenBaseUrl', key: 'imageGenApiKey', model: 'imageGenModelName', urlField: 'image_gen_base_url', keyField: 'image_gen_api_key', modelField: 'image_gen_model_name' },
-            ];
-            const payload = {};
-            for (const s of services) {
-                payload[s.urlField] = document.getElementById(s.url).value;
-                payload[s.modelField] = document.getElementById(s.model).value;
-                const apiKey = document.getElementById(s.key).value;
-                if (apiKey) payload[s.keyField] = apiKey;
-            }
-            await apiFetch(`/api/admin/${userId}/model-config`, { method: 'PUT', body: JSON.stringify(payload) });
-            closeModal('modelModal');
-            loadModelConfigs();
-        }
+async function editUser(id) {
+    try {
+        const u = await (await apiFetch('/api/admin/users/' + id)).json();
+        $('#userModalTitle').textContent = '编辑用户';
+        $('#editUserId').value = u.id;
+        $('#username').value = u.username; $('#username').disabled = true;
+        $('#password').value = '';
+        $('#displayName').value = u.display_name;
+        $('#canUse').checked = u.can_use;
+        $('#expiresAt').value = fmtDateOnly(u.expires_at);
+        $('#passwordHint').textContent = '留空表示不修改密码';
+        openModal('userModal');
+    } catch (e) { toast(e.message, 'err'); }
+}
 
-        async function deleteModelConfig(userId) {
-            if (!confirm('确定删除此用户的模型配置？')) return;
-            await apiFetch(`/api/admin/${userId}/model-config`, { method: 'DELETE' });
-            loadModelConfigs();
-        }
+async function saveUser() {
+    const id = $('#editUserId').value;
+    const payload = {};
+    if (!id) {
+        payload.username = $('#username').value.trim();
+        payload.password = $('#password').value;
+    } else {
+        const pwd = $('#password').value;
+        if (pwd) payload.password = pwd;
+    }
+    payload.display_name = $('#displayName').value;
+    payload.can_use = $('#canUse').checked;
+    const ea = $('#expiresAt').value; payload.expires_at = ea || null;
+    try {
+        const method = id ? 'PATCH' : 'POST';
+        const url = id ? `/api/admin/users/${id}` : '/api/admin/users';
+        await apiFetch(url, { method, body: JSON.stringify(payload) });
+        closeModal('userModal');
+        toast(id ? '用户已更新' : '用户已创建');
+        loadUsers();
+    } catch (e) { toast(e.message, 'err'); }
+}
 
-        // Versions
-        async function loadVersions() {
-            try {
-                const resp = await apiFetch('/api/update/versions');
-                const data = await resp.json();
-                tabCache.versions = data;
-                renderVersions(data);
-            } catch (e) { document.getElementById('versionList').innerHTML = `<tr><td colspan="8" style="color:red">加载失败: ${e.message}</td></tr>`; }
-        }
+async function toggleUser(id) {
+    try { await apiFetch(`/api/admin/users/${id}/toggle-active`, { method: 'PATCH' }); toast('状态已切换'); loadUsers(); }
+    catch (e) { toast(e.message, 'err'); }
+}
 
-        function renderVersions(data) {
-            const tbody = document.getElementById('versionList');
-            const items = getItems(data);
-            if (!items.length) { tbody.innerHTML = '<tr><td colspan="8">暂无历史版本</td></tr>'; return; }
-            const runnerCell = v => v.runner_filename
-                ? `<code>${esc(v.runner_filename)}</code><br><small>v${esc(v.runner_version || v.version)}</small>`
-                : '<span style="color:#999">—</span>';
-            tbody.innerHTML = items.map(v => `
-                <tr>
-                    <td>${v.id}</td>
-                    <td>${esc(v.version)}</td>
-                    <td>${runnerCell(v)}</td>
-                    <td><code>${esc(v.exe_sha512 ? v.exe_sha512.substring(0, 16) : 'N/A')}...</code></td>
-                    <td>${esc(v.release_notes) || '-'}</td>
-                    <td class="${v.is_active ? 'status-active' : 'status-inactive'}">${v.is_active ? '上线' : '下线'}</td>
-                    <td>${v.created_at ? new Date(v.created_at).toLocaleString() : 'N/A'}</td>
-                    <td>
-                        ${v.is_active ? `<button class="btn btn-warning" onclick="setActive(${v.id}, false)">下线</button>` : `<button class="btn btn-info" onclick="setActive(${v.id}, true)">上线</button>`}
-                        <button class="btn btn-danger" onclick="deleteVersion(${v.id})">删除</button>
-                    </td>
-                </tr>`).join('');
-        }
+async function deleteUser(id) {
+    if (!confirm('确定彻底删除此用户及其所有关联数据？此操作不可撤销。')) return;
+    try { await apiFetch(`/api/admin/users/${id}`, { method: 'DELETE' }); toast('用户已删除'); loadUsers(); }
+    catch (e) { toast(e.message, 'err'); }
+}
 
-        async function setActive(id, active) {
-            await apiFetch(`/api/update/versions/${id}`, {
-                method: 'PATCH',
-                body: JSON.stringify({ is_active: active }),
-            });
-            loadVersions();
-        }
-        async function deleteVersion(id) { if (!confirm('确定永久删除此版本文件？')) return; await apiFetch(`/api/update/versions/${id}`, { method: 'DELETE' }); loadVersions(); }
+// ── Model configs ────────────────────────────────────────
+async function loadModelConfigs() {
+    try {
+        const [configsResp, usersResp] = await Promise.all([apiFetch('/api/admin/model-configs'), apiFetch('/api/admin/users')]);
+        const data = await configsResp.json();
+        const userData = await usersResp.json();
+        tabCache.models = data;
+        renderModels(data);
+        $('#modelUserSelect').innerHTML = '<option value="">选择用户…</option>' + getItems(userData).map(u => `<option value="${u.id}">${esc(u.username)} (#${u.id})</option>`).join('');
+    } catch (e) { $('#modelList').innerHTML = stateRow(4, '加载失败：' + e.message, '', true); }
+}
 
-        document.getElementById('uploadForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const formData = new FormData();
-            const rn = document.getElementById('releaseNotes').value;
-            if (rn) formData.append('release_notes', rn);
-            formData.append('file', document.getElementById('fileInput').files[0]);
-            const status = document.getElementById('uploadStatus');
-            status.textContent = '正在上传并处理版本，请稍候...'; status.style.color = 'blue';
-            try {
-                const resp = await apiFetch('/api/update/versions', {
-                    method: 'POST',
-                    body: formData,
-                    headers: {} // Let browser set form-data boundary
-                });
-                const data = await resp.json();
-                status.textContent = '发布成功！新版本号: ' + data.version; status.style.color = 'green';
-                document.getElementById('uploadForm').reset();
-                loadVersions();
-            } catch (e) { status.textContent = '发布失败: ' + e.message; status.style.color = 'red'; }
-        });
+function renderModels(data) {
+    const tbody = $('#modelList');
+    const items = getItems(data);
+    $('#modelCount').textContent = items.length ? `${items.length} 条配置` : '';
+    if (!items.length) { tbody.innerHTML = stateRow(4, '暂无凭证配置', '选择用户后点击“设置配置”'); return; }
+    tbody.innerHTML = items.map(c => {
+        const llmOn = !!(c.llm_model_name && c.llm_base_url);
+        return `<tr>
+            <td class="td-id">#${c.user_id}</td>
+            <td><div class="cell-strong">${esc(c.llm_model_name) || '<span class="text-3">—</span>'}</div><div class="cell-sub mono">${esc(c.llm_base_url) || ''}</div></td>
+            <td class="td-services">
+                ${svcDot('LLM', llmOn)}
+                ${svcDot('STT', c.stt_api_key_set)}
+                ${svcDot('TTS', c.tts_api_key_set)}
+                ${svcDot('图像', c.image_gen_api_key_set)}
+                ${svcDot('视频', c.video_gen_api_key_set)}
+            </td>
+            <td class="td-actions">
+                <button class="btn btn--ghost btn--sm" onclick="showModelConfigForUser(${c.user_id})">编辑</button>
+                <button class="btn btn--danger btn--sm" onclick="deleteModelConfig(${c.user_id})">删除</button>
+            </td>
+        </tr>`;
+    }).join('');
+}
 
-        function closeModal(id) { document.getElementById(id).classList.remove('show'); }
-    </script>
+function showModelConfig() {
+    const userId = $('#modelUserSelect').value;
+    if (!userId) { toast('请先选择用户', 'err'); return; }
+    showModelConfigForUser(userId);
+}
+
+function setKeyBadge(id, set) {
+    const el = $('#' + id);
+    el.textContent = set ? '已设置' : '未设置';
+    el.className = 'keybadge ' + (set ? 'on' : 'off');
+}
+
+function showModelConfigForUser(userId) {
+    const cached = tabCache.models?.items?.find(c => c.user_id == userId) ?? null;
+    $('#modelUserId').value = userId;
+    $('#modelModalTitle').textContent = cached ? `编辑凭证 · 用户 #${userId}` : `配置凭证 · 用户 #${userId}`;
+    // base_url + model_name come from the cached list response; api_key inputs
+    // are always left empty — the list exposes *_api_key_set (a bool), not the
+    // raw key. Saving with an empty input means "keep the existing key".
+    const fields = [
+        ['llmBaseUrl', 'llm_base_url'], ['llmModelName', 'llm_model_name'],
+        ['sttBaseUrl', 'stt_base_url'], ['sttModelName', 'stt_model_name'],
+        ['ttsBaseUrl', 'tts_base_url'], ['ttsModelName', 'tts_model_name'],
+        ['imageGenBaseUrl', 'image_gen_base_url'], ['imageGenModelName', 'image_gen_model_name'],
+        ['videoGenBaseUrl', 'video_gen_base_url'], ['videoGenModelName', 'video_gen_model_name'],
+    ];
+    for (const [inputId, responseKey] of fields) $('#' + inputId).value = cached ? (cached[responseKey] ?? '') : '';
+    for (const s of SVC_FIELDS) $('#' + s.key).value = '';
+    setKeyBadge('llmKeyBadge', cached ? !!cached.llm_api_key : false);
+    setKeyBadge('sttKeyBadge', cached ? !!cached.stt_api_key_set : false);
+    setKeyBadge('ttsKeyBadge', cached ? !!cached.tts_api_key_set : false);
+    setKeyBadge('imageKeyBadge', cached ? !!cached.image_gen_api_key_set : false);
+    setKeyBadge('videoKeyBadge', cached ? !!cached.video_gen_api_key_set : false);
+    openModal('modelModal');
+}
+
+async function saveModelConfig() {
+    const userId = $('#modelUserId').value;
+    const payload = {};
+    for (const s of SVC_FIELDS) {
+        payload[s.urlField] = $('#' + s.url).value;
+        payload[s.modelField] = $('#' + s.model).value;
+        const apiKey = $('#' + s.key).value;
+        if (apiKey) payload[s.keyField] = apiKey;
+    }
+    try {
+        await apiFetch(`/api/admin/${userId}/model-config`, { method: 'PUT', body: JSON.stringify(payload) });
+        closeModal('modelModal');
+        toast('凭证配置已保存');
+        loadModelConfigs();
+    } catch (e) { toast(e.message, 'err'); }
+}
+
+async function deleteModelConfig(userId) {
+    if (!confirm('确定删除此用户的凭证配置？')) return;
+    try { await apiFetch(`/api/admin/${userId}/model-config`, { method: 'DELETE' }); toast('凭证配置已删除'); loadModelConfigs(); }
+    catch (e) { toast(e.message, 'err'); }
+}
+
+// ── Versions ─────────────────────────────────────────────
+async function loadVersions() {
+    try {
+        const data = await (await apiFetch('/api/update/versions')).json();
+        tabCache.versions = data;
+        renderVersions(data);
+    } catch (e) { $('#versionList').innerHTML = stateRow(6, '加载失败：' + e.message, '', true); }
+}
+
+function renderVersions(data) {
+    const tbody = $('#versionList');
+    const items = getItems(data);
+    $('#versionCount').textContent = items.length ? `${items.length} 个版本` : '';
+    if (!items.length) { tbody.innerHTML = stateRow(6, '暂无历史版本', '上传一个 .zip 更新包以开始分发'); return; }
+    tbody.innerHTML = items.map(v => {
+        const size = fmtSize(v.exe_size);
+        return `<tr>
+            <td><div class="cell-strong">v${esc(v.version)}</div><div class="cell-sub mono">${size ? esc(size) : '—'}</div></td>
+            <td class="td-notes">${esc(v.release_notes) || '<span class="text-3">—</span>'}</td>
+            <td class="td-platforms">
+                ${plat('Windows', !!v.exe_filename)}
+                ${plat('macOS', !!v.mac_filename)}
+                ${plat('Linux', !!v.linux_filename)}
+                ${plat('Runner', !!v.runner_filename)}
+            </td>
+            <td>${v.is_active ? pill('上线', 'green') : pill('下线', 'muted')}</td>
+            <td><div>${fmtDate(v.created_at)}</div><div class="cell-sub">${esc(v.created_by) || '—'}</div></td>
+            <td class="td-actions">
+                ${v.is_active
+                    ? `<button class="btn btn--ghost btn--sm" onclick="setActive(${v.id}, false)">下线</button>`
+                    : `<button class="btn btn--primary btn--sm" onclick="setActive(${v.id}, true)">上线</button>`}
+                <button class="btn btn--danger btn--sm" onclick="deleteVersion(${v.id})">删除</button>
+            </td>
+        </tr>`;
+    }).join('');
+}
+
+async function setActive(id, active) {
+    try { await apiFetch(`/api/update/versions/${id}`, { method: 'PATCH', body: JSON.stringify({ is_active: active }) }); toast(active ? '版本已上线' : '版本已下线'); loadVersions(); }
+    catch (e) { toast(e.message, 'err'); }
+}
+
+async function deleteVersion(id) {
+    if (!confirm('确定永久删除此版本及其文件？此操作不可撤销。')) return;
+    try { await apiFetch(`/api/update/versions/${id}`, { method: 'DELETE' }); toast('版本已删除'); loadVersions(); }
+    catch (e) { toast(e.message, 'err'); }
+}
+
+$('#fileInput').addEventListener('change', (e) => { $('#fileName').textContent = e.target.files[0] ? e.target.files[0].name : ''; });
+
+$('#uploadForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const formData = new FormData();
+    const rn = $('#releaseNotes').value;
+    if (rn) formData.append('release_notes', rn);
+    formData.append('file', $('#fileInput').files[0]);
+    const status = $('#uploadStatus');
+    status.textContent = '正在上传并处理版本，请稍候…'; status.style.color = 'var(--primary)';
+    try {
+        const resp = await apiFetch('/api/update/versions', { method: 'POST', body: formData, headers: {} });
+        const data = await resp.json();
+        status.textContent = `发布成功 · v${data.version}`; status.style.color = 'var(--green)';
+        $('#uploadForm').reset(); $('#fileName').textContent = '';
+        toast('新版本已发布');
+        loadVersions();
+    } catch (err) { status.textContent = '发布失败：' + err.message; status.style.color = 'var(--red)'; }
+});
+
+function openModal(id) { $('#' + id).classList.add('open'); document.body.style.overflow = 'hidden'; }
+function closeModal(id) { $('#' + id).classList.remove('open'); document.body.style.overflow = ''; }
+
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') $$('.modal.open').forEach(m => m.classList.remove('open')); });
+</script>
 </body>
 </html>
