@@ -26,8 +26,8 @@
     "test:desktop:all": "node scripts/test-desktop.mjs all",
     "test:desktop:platforms": "node --test main/lifecycle/platform.test.cjs main/security/hardening.test.cjs main/backend/ws-probe.test.cjs main/runner/rpc-ws.test.cjs main/runner/reverse-rpc.test.cjs main/runner/bridge.test.cjs",
     "type-check": "tsc -b",
-    "lint": "eslint src/ main/",
-    "lint:fix": "eslint src/ main/ --fix",
+    "lint": "eslint renderer/ main/",
+    "lint:fix": "eslint renderer/ main/ --fix",
     "fmt": "prettier --write \"src/**/*.{ts,tsx}\" \"main/**/*.{js,cjs,mjs}\" \"scripts/**/*.{cjs,mjs}\" \"vite.config.ts\"",
     "fix": "pnpm run lint:fix && pnpm run fmt && pnpm run type-check",
     "test:ui": "vitest run"

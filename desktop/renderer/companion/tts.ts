@@ -24,9 +24,11 @@ export async function speak(text: string, voice?: string): Promise<boolean> {
       current?.addEventListener('ended', done, { once: true })
       current?.addEventListener('error', done, { once: true })
     })
+
     return true
   } catch {
     stopSpeaking()
+
     return false
   }
 }

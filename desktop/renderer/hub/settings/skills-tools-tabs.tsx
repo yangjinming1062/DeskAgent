@@ -1,7 +1,6 @@
 import { SegmentedControl } from '@/shared/components/ui/segmented-control'
-import { useI18n } from '@/shared/i18n'
-
 import { useRouteEnumParam } from '@/shared/hooks/use-route-enum-param'
+import { useI18n } from '@/shared/i18n'
 
 import { SettingsContent } from './primitives'
 import { SkillsSettings } from './skills-settings'

@@ -10,9 +10,10 @@ import { Wrench } from '@/shared/lib/icons'
 import { cn } from '@/shared/lib/utils'
 import { notify, notifyError } from '@/shared/store/notifications'
 
+import { useRunnerConfig } from '../runner/use-runner-config'
+
 import { EmptyState, LoadingState, Pill, SettingsContent } from './primitives'
 import { useDeepLinkHighlight } from './use-deep-link-highlight'
-import { useRunnerConfig } from '../runner/use-runner-config'
 
 interface McpSettingsProps {
   gateway?: DeskAgentGateway | null

@@ -38,6 +38,7 @@ export function pushUserMessage(text: string, attachments?: string[]): string {
     ...$chatMessages.get(),
     { id, role: 'user', text, attachments: attachments?.length ? attachments : undefined }
   ])
+
   return id
 }
 
@@ -55,33 +56,39 @@ export function beginAssistantMessage(): void {
 export function appendAssistantDelta(text: string): void {
   const msgs = $chatMessages.get()
   const last = msgs[msgs.length - 1]
-  if (!last || last.role !== 'assistant') return
+
+  if (!last || last.role !== 'assistant') {return}
   $chatMessages.set([...msgs.slice(0, -1), { ...last, text: last.text + text }])
 }
 
 export function setAssistantTool(name: string | null): void {
   const msgs = $chatMessages.get()
   const last = msgs[msgs.length - 1]
-  if (!last || last.role !== 'assistant') return
+
+  if (!last || last.role !== 'assistant') {return}
   $chatMessages.set([...msgs.slice(0, -1), { ...last, toolName: name }])
 }
 
 export function finalizeAssistantMessage(text?: string): void {
   const msgs = $chatMessages.get()
   const last = msgs[msgs.length - 1]
-  if (!last) return
+
+  if (!last) {return}
   const finalized: ChatMessage = { ...last, streaming: false, toolName: null }
-  if (typeof text === 'string') finalized.text = text
+
+  if (typeof text === 'string') {finalized.text = text}
   $chatMessages.set([...msgs.slice(0, -1), finalized])
 }
 
 export function setAssistantError(message: string): void {
   const msgs = $chatMessages.get()
   const last = msgs[msgs.length - 1]
+
   const error: ChatMessage =
     last?.role === 'assistant' && last.streaming
       ? { ...last, streaming: false, error: message }
       : { id: nextId(), role: 'assistant', text: '', error: message }
+
   $chatMessages.set(last ? [...msgs.slice(0, -1), error] : [error])
 }
 

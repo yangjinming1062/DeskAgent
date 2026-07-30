@@ -2,18 +2,18 @@ import { useStore } from '@nanostores/react'
 import { useEffect, useState } from 'react'
 
 import { useGatewayBoot } from '@/companion/boot/use-gateway-boot'
-import { $auth, applyAuthBroadcast, hydrateAuth, logout } from '@/shared/store/auth'
 import { $chatOpen, setChatOpen } from '@/companion/chat-store'
-import { $gatewayState } from '@/shared/store/gateway'
 import { $companionLifecycle, setCompanionLifecycle } from '@/companion/companion-store'
+import { $auth, applyAuthBroadcast, hydrateAuth, logout } from '@/shared/store/auth'
+import { $gatewayState } from '@/shared/store/gateway'
 
 import { ChatDock } from './chat-dock'
-import { CompanionReady } from './sprite/companion-ready'
-import { Egg, type EggMode } from './sprite/egg'
 import { handleCompanionEvent } from './events'
 import { OnboardingFlow } from './onboarding/onboarding-flow'
-import { ProactiveBubble } from './proactive/proactive-bubble'
 import { speakProactive } from './proactive/proactive'
+import { ProactiveBubble } from './proactive/proactive-bubble'
+import { CompanionReady } from './sprite/companion-ready'
+import { Egg, type EggMode } from './sprite/egg'
 import { SpriteStage } from './sprite/sprite-stage'
 
 const HATCH_AT = 5
@@ -28,6 +28,7 @@ function GatewayBooter() {
     onConnectionReady: () => {},
     onGatewayReady: () => {}
   })
+
   return null
 }
 
@@ -44,11 +45,13 @@ export function CompanionRoot() {
 
   useEffect(() => {
     const off = window.deskagent.onAuthChanged(payload => applyAuthBroadcast(payload))
+
     return () => off()
   }, [])
 
   useEffect(() => {
     const off = window.deskagent.onSessionExpired(() => void logout())
+
     return () => off()
   }, [])
 
@@ -56,14 +59,17 @@ export function CompanionRoot() {
   // companion.message receiver + bubble + TTS without the Backend send_message
   // path. Stripped in production builds.
   useEffect(() => {
-    if (import.meta.env.PROD) return
+    if (import.meta.env.PROD) {return}
+
     const onKey = (e: KeyboardEvent) => {
       if (e.ctrlKey && e.shiftKey && (e.key === 'P' || e.key === 'p')) {
         e.preventDefault()
         void speakProactive('（测试）嘿，休息一下眼睛吧～')
       }
     }
+
     window.addEventListener('keydown', onKey)
+
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
@@ -72,18 +78,21 @@ export function CompanionRoot() {
   useEffect(() => {
     if (auth.kind !== 'authenticated') {
       setCompanionLifecycle('unauthed-egg')
+
       return
     }
+
     let cancelled = false
     setCompanionLifecycle('unauthed-egg')
     window.deskagent
       .api<{ is_complete?: boolean }>({ path: '/api/companion/persona' })
       .then(p => {
-        if (!cancelled) setCompanionLifecycle(p?.is_complete ? 'ready' : 'onboarding')
+        if (!cancelled) {setCompanionLifecycle(p?.is_complete ? 'ready' : 'onboarding')}
       })
       .catch(() => {
-        if (!cancelled) setCompanionLifecycle('onboarding')
+        if (!cancelled) {setCompanionLifecycle('onboarding')}
       })
+
     return () => {
       cancelled = true
     }
@@ -98,27 +107,31 @@ export function CompanionRoot() {
 
   const onTap = () => {
     // Pre-auth: each tap cracks the egg; 5 cracks shatter it and summon login.
-    if (authed) return
+    if (authed) {return}
+
     if (cracks >= HATCH_AT) {
       void window.deskagent.showToolWindow()
+
       return
     }
+
     const next = cracks + 1
     setCracks(next)
-    if (next >= HATCH_AT) void window.deskagent.showToolWindow()
+
+    if (next >= HATCH_AT) {void window.deskagent.showToolWindow()}
   }
 
   // Plan §4.3: double-tap the ready companion to open Chat. Single-tap poke
   // reactions (LLM-generated) arrive in a later slice.
   const onDoubleTap = () => {
-    if (showReady) setChatOpen(true)
+    if (showReady) {setChatOpen(true)}
   }
 
   return (
     <>
       {showOnboarding && <OnboardingFlow onCompleted={() => setCompanionLifecycle('ready')} />}
       {(showEgg || showReady) && (
-        <SpriteStage onTap={onTap} onDoubleTap={onDoubleTap}>
+        <SpriteStage onDoubleTap={onDoubleTap} onTap={onTap}>
           {showReady ? <CompanionReady /> : <Egg cracks={cracks} mode={mode} />}
         </SpriteStage>
       )}

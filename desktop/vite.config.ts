@@ -41,7 +41,10 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      '@': path.resolve(__dirname, './renderer')
+      '@': path.resolve(__dirname, './renderer'),
+      '@shared': path.resolve(__dirname, './renderer/shared'),
+      '@companion': path.resolve(__dirname, './renderer/companion'),
+      '@hub': path.resolve(__dirname, './renderer/hub')
     },
     dedupe: ['react', 'react-dom']
   },
