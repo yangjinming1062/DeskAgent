@@ -31,6 +31,7 @@ class MiniMaxVideoGenProvider(VideoGenProvider):
     """
 
     provider_name = "minimax"
+    DEFAULT_MODELS = {"video_gen": "MiniMax-Hailuo-02"}
 
     def __init__(self, config: ProviderConfig):
         super().__init__(config)

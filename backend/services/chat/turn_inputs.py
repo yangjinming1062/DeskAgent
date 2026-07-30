@@ -34,6 +34,7 @@ class _TurnInputs:
     client: Any
     native_memory: NativeMemory
     model_name: str
+    model_override: str | None
     ctx_length: int
     all_schemas: list[dict]
     first_user_msg_content: str | None
@@ -150,6 +151,7 @@ def _build_turn_inputs(
         client=client,
         native_memory=native_memory,
         model_name=model_name,
+        model_override=req.model,
         ctx_length=ctx_length,
         all_schemas=all_schemas,
         first_user_msg_content=first_user_msg_content,

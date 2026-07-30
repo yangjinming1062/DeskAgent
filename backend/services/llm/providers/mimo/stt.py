@@ -17,6 +17,7 @@ class MiMoSTTProvider(STTProvider):
     """
 
     provider_name = "mimo"
+    DEFAULT_MODELS = {"stt": "mimo-v2.5-asr"}
 
     def __init__(self, config: ProviderConfig):
         super().__init__(config)

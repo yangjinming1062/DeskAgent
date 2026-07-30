@@ -20,9 +20,11 @@ from .base import VideoGenProvider
 from .base import VideoGenRequest
 from .base import VideoJobStatus
 from .registry import default_base_url
+from .registry import default_model_for
 from .registry import infer_provider_name
 from .registry import KNOWN_PROVIDERS
 from .registry import PROVIDER_DEFAULT_URLS
+from .registry import providers_supporting
 from .registry import register
 from .registry import resolve
 from .registry import SERVICE_DEFAULT_PROVIDER
@@ -53,6 +55,8 @@ __all__ = [
     "resolve",
     "infer_provider_name",
     "default_base_url",
+    "default_model_for",
+    "providers_supporting",
     "KNOWN_PROVIDERS",
     "PROVIDER_DEFAULT_URLS",
     "SERVICE_DEFAULT_PROVIDER",

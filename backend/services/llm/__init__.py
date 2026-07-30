@@ -8,21 +8,24 @@ from .llm_client import client_for_user
 from .llm_client import get_async_client
 from .llm_client import MissingLlmConfigError
 from .llm_client import provider_for_service
+from .llm_client import resolve_provider_chain
 from .llm_client import resolve_provider_config
 from .llm_client import resolve_service_row
+from .llm_fallback import execute_with_fallback
 from .llm_retry import call_with_retry
 from .llm_retry import LLMRuntimeError
 from .providers import BaseProvider
 from .providers import ChatProvider
 from .providers import ChatResult
 from .providers import ChatStreamEvent
+from .providers import default_model_for
 from .providers import ImageAsset
 from .providers import ImageGenProvider
 from .providers import ImageGenRequest
 from .providers import ImageGenResult
-from .providers import infer_provider_name
 from .providers import ProviderConfig
 from .providers import ProviderError
+from .providers import providers_supporting
 from .providers import register
 from .providers import resolve
 from .providers import ServiceType
@@ -43,8 +46,10 @@ __all__ = [
     "get_async_client",
     "MissingLlmConfigError",
     "resolve_service_row",
+    "resolve_provider_chain",
     "resolve_provider_config",
     "provider_for_service",
+    "execute_with_fallback",
     "BaseProvider",
     "ChatProvider",
     "ChatResult",
@@ -66,7 +71,8 @@ __all__ = [
     "ServiceType",
     "register",
     "resolve",
-    "infer_provider_name",
+    "providers_supporting",
+    "default_model_for",
     "call_with_retry",
     "LLMRuntimeError",
     "classify_api_error",

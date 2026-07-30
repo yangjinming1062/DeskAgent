@@ -5,3 +5,4 @@ from ..openai_compat import OpenAICompatChatProvider
 class MiMoChatProvider(OpenAICompatChatProvider):
     provider_name = "mimo"
     service_type = ServiceType.llm
+    DEFAULT_MODELS = {"llm": "mimo-v2.5-pro"}

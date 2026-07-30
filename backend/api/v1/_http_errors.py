@@ -25,3 +25,12 @@ def classified_http_exception(classified: ClassifiedError) -> HTTPException:
             "status": classified.status_code,
         },
     )
+
+
+def missing_config_http(svc_label: str, status_code: int = 400) -> HTTPException:
+    """Standard 400/501 envelope for ``MissingLlmConfigError`` raised by
+    the chain resolver when no provider is configured for ``svc_label``."""
+    return HTTPException(
+        status_code=status_code,
+        detail={"error": f"{svc_label} provider not configured", "reason": "missing_config", "status": status_code},
+    )

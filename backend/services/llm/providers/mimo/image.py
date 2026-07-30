@@ -18,6 +18,7 @@ class MiMoImageGenProvider(ImageGenProvider):
     """
 
     provider_name = "mimo"
+    DEFAULT_MODELS = {"image_gen": "dall-e-3"}
 
     def __init__(self, config: ProviderConfig):
         super().__init__(config)

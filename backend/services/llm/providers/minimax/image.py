@@ -31,6 +31,7 @@ class MiniMaxImageGenProvider(ImageGenProvider):
     """
 
     provider_name = "minimax"
+    DEFAULT_MODELS = {"image_gen": "image-01"}
 
     def __init__(self, config: ProviderConfig):
         super().__init__(config)

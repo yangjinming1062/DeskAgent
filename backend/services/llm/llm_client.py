@@ -5,9 +5,10 @@ from sqlalchemy.orm import Session
 
 from .providers import BaseProvider
 from .providers import default_base_url
-from .providers import infer_provider_name
+from .providers import default_model_for
 from .providers import KNOWN_PROVIDERS
 from .providers import ProviderConfig
+from .providers import providers_supporting
 from .providers import resolve
 from .providers import SERVICE_DEFAULT_PROVIDER
 from .providers import ServiceType
@@ -48,16 +49,6 @@ def client_for_user(db: Session, user_id: int) -> AsyncOpenAI:
     return get_async_client(api_key, base_url)
 
 
-# 服务类型 → 默认模型名（fallback 链最末端的 SETTINGS env 值）
-_SERVICE_DEFAULTS: dict[str, str] = {
-    "llm": SETTINGS.llm_model_name,
-    "stt": SETTINGS.stt_model_name,
-    "tts": SETTINGS.tts_model_name,
-    "image_gen": SETTINGS.image_gen_model_name,
-    "video_gen": SETTINGS.video_gen_model_name,
-}
-
-
 def resolve_service_row(db: Session | None, user_id: int | None, prefix: str) -> tuple[str, str, str]:
     """Return ``(base_url, api_key, model_name)`` for a service prefix.
 
@@ -72,60 +63,117 @@ def resolve_service_row(db: Session | None, user_id: int | None, prefix: str) ->
     return tuple(getattr(config or SETTINGS, f"{prefix}_{suffix}", "") or "" for suffix in ("base_url", "api_key", "model_name"))
 
 
-def resolve_provider_config(db: Session | None, user_id: int | None, service_type: str) -> ProviderConfig:
-    """Resolve the active provider config for a service.
+def _provider_level_key(name: str) -> str:
+    """Provider-level API key for a given provider name.
 
-    Selection model: ``PROVIDER`` is the primary selector. Fallback priority:
-
-      1. ``SETTINGS.<svc>_provider`` (explicit env)
-      2. ``infer_provider_name(base_url)`` — backward-compat when only BASE_URL
-         is set (host-based: minimaxi.com → minimax, else mimo)
-      3. ``SERVICE_DEFAULT_PROVIDER`` (mimo for chat/stt/tts, minimax for
-         image/video)
-
-    ``BASE_URL`` is optional — when empty, the provider's default URL is used
-    (``PROVIDER_DEFAULT_URLS``). ``API_KEY`` falls back per provider: MiMo
-    services share ``LLM_API_KEY``; MiniMax services share ``MINIMAX_API_KEY``
-    and **must not** inherit the MiMo key (host mismatch → 401).
+    MiniMax keys never inherit MiMo keys (host-mismatch 401 avoidance).
+    Other providers fall back to ``SETTINGS.<name>_api_key``, then to the
+    legacy ``SETTINGS.llm_api_key`` so existing single-key deployments keep
+    working when ``MIMO_API_KEY`` is left unset.
     """
-    user_base_url, user_api_key, user_model = resolve_service_row(db, user_id, service_type)
-    svc_base_url = getattr(SETTINGS, f"{service_type}_base_url", "")
-    svc_api_key = getattr(SETTINGS, f"{service_type}_api_key", "")
-    svc_model = _SERVICE_DEFAULTS[service_type]
-    explicit_provider = getattr(SETTINGS, f"{service_type}_provider", "")
-    resolved_url = user_base_url or svc_base_url
+    if name == "minimax":
+        return SETTINGS.minimax_api_key
+    return getattr(SETTINGS, f"{name}_api_key", "") or SETTINGS.llm_api_key
 
-    # PROVIDER is primary. When unset, fall back to host inference from any
-    # explicit BASE_URL (backward compat), then to the service default.
-    if explicit_provider:
-        provider_name = explicit_provider
-    elif resolved_url:
-        provider_name = infer_provider_name(resolved_url)
-    else:
-        provider_name = SERVICE_DEFAULT_PROVIDER.get(service_type, "mimo")
-    if provider_name not in KNOWN_PROVIDERS:
-        raise MissingLlmConfigError(f"{service_type} provider {provider_name!r} unknown; known: {sorted(KNOWN_PROVIDERS)}")
 
-    base_url = user_base_url or svc_base_url or default_base_url(provider_name, service_type) or SETTINGS.llm_base_url
-    model_name = user_model or svc_model
+def _provider_level_url(name: str, service_type: str) -> str:
+    """Provider-level BASE_URL: env override, built-in default, then legacy
+    fallback to ``SETTINGS.llm_base_url`` for non-minimax providers.
+    """
+    explicit = getattr(SETTINGS, f"{name}_base_url", "") or ""
+    default = default_base_url(name, service_type)
+    if name == "minimax":
+        return explicit or default
+    return explicit or default or SETTINGS.llm_base_url
 
-    if provider_name == "minimax":
-        api_key = user_api_key or svc_api_key or SETTINGS.minimax_api_key
-    else:
-        api_key = user_api_key or svc_api_key or SETTINGS.llm_api_key
 
-    if not api_key:
-        raise MissingLlmConfigError(f"{service_type} provider {provider_name!r} not configured (no API key)")
-    if not base_url:
-        raise MissingLlmConfigError(f"{service_type} provider {provider_name!r} has no base_url")
+def _resolve_slot_config(name: str, service_type: str, row: tuple[str, str, str]) -> ProviderConfig | None:
+    """Resolve one provider's ``ProviderConfig`` for one capability slot.
+
+    Resolution order (first non-empty wins):
+      1. user per-cap row (already folded in via ``row``; ``resolve_service_row``
+         falls back to ``SETTINGS.<svc>_*`` when no DB row exists)
+      2. provider-level (``SETTINGS.<NAME>_API_KEY`` / ``SETTINGS.<NAME>_BASE_URL``)
+      3. built-in defaults (``PROVIDER_DEFAULT_URLS``, ``DEFAULT_MODELS``)
+
+    Returns ``None`` when no api_key resolves — the chain skips this slot and
+    tries the next provider. Returns a populated ``ProviderConfig`` otherwise.
+    """
+    user_base_url, user_api_key, user_model = row
+
+    base_url = user_base_url or _provider_level_url(name, service_type)
+    api_key = user_api_key or _provider_level_key(name)
+    model = user_model or default_model_for(name, service_type)
+
+    if not api_key or not base_url:
+        return None
 
     return ProviderConfig(
         base_url=base_url,
         api_key=api_key,
-        model=model_name,
+        model=model,
         service_type=ServiceType(service_type),
-        provider_name=provider_name,
+        provider_name=name,
     )
+
+
+def _build_chain_order(service_type: str) -> list[str]:
+    """Build the ordered list of provider names to try for ``service_type``.
+
+    Source priority:
+      1. ``SETTINGS.<svc>_provider`` — soft-reorder: move named provider to
+         front of ``PROVIDERS`` order (chain stays multi-element, no collapse).
+      2. ``SETTINGS.providers`` — comma-separated priority order.
+      3. ``SERVICE_DEFAULT_PROVIDER[svc]`` — single-element chain (legacy).
+
+    Only providers registered for this service are kept — providers with no
+    capability implementation are silently dropped so the chain can iterate
+    even when ``PROVIDERS`` lists a non-supporting name. An explicit
+    ``<svc>_provider`` pin that names an unknown provider raises
+    :class:`MissingLlmConfigError` (operator misconfiguration).
+    """
+    pin = getattr(SETTINGS, f"{service_type}_provider", "") or ""
+    if pin and pin not in KNOWN_PROVIDERS:
+        raise MissingLlmConfigError(f"{service_type} provider {pin!r} unknown; known: {sorted(KNOWN_PROVIDERS)}")
+
+    base_order = list(SETTINGS.providers) if SETTINGS.providers else [SERVICE_DEFAULT_PROVIDER.get(service_type, "mimo")]
+    if pin:
+        base_order = [pin] + [name for name in base_order if name != pin]
+
+    supporting = set(providers_supporting(service_type))
+    return [name for name in base_order if name in supporting]
+
+
+def resolve_provider_chain(db: Session | None, user_id: int | None, service_type: str) -> list[ProviderConfig]:
+    """Resolve the ordered fallback chain for ``service_type``.
+
+    Returns a list of fully populated :class:`ProviderConfig`, in priority
+    order. Empty list means no provider in the configured chain had both a
+    key and a base_url — the dispatcher raises ``MissingLlmConfigError`` to
+    the caller. Slots with missing credentials are silently skipped so a
+    partial chain (e.g. ``PROVIDERS=mimo,minimax`` but only MiMo key set)
+    still works against the configured provider.
+    """
+    # ``resolve_service_row`` hits the DB; the row is per-user-per-service
+    # and identical across chain slots, so hoist once.
+    row = resolve_service_row(db, user_id, service_type)
+    chain = [_resolve_slot_config(name, service_type, row) for name in _build_chain_order(service_type)]
+    return [cfg for cfg in chain if cfg is not None]
+
+
+def resolve_provider_config(db: Session | None, user_id: int | None, service_type: str) -> ProviderConfig:
+    """Resolve the active provider config for a service (single, back-compat).
+
+    Thin wrapper over :func:`resolve_provider_chain` that returns the first
+    element. Existing call sites of ``resolve_provider_config`` keep their
+    1-element contract; new code can iterate the chain directly. Raises
+    :class:`MissingLlmConfigError` when no provider in the chain has both a
+    key and a base_url.
+    """
+    chain = resolve_provider_chain(db, user_id, service_type)
+    if not chain:
+        raise MissingLlmConfigError(f"no provider configured for service {service_type!r}")
+    return chain[0]
 
 
 def provider_for_service(db: Session | None, user_id: int | None, service_type: str) -> BaseProvider:
@@ -134,7 +182,8 @@ def provider_for_service(db: Session | None, user_id: int | None, service_type: 
     Provider classes are not cached (cheap, immutable config) — the
     expensive objects (httpx/AsyncOpenAI clients) are cached inside the
     provider constructors via :mod:`providers.http` /
-    :mod:`providers.openai_compat`.
+    :mod:`providers.openai_compat`. Returns chain[0]; for multi-provider
+    fallback, see :func:`services.llm.llm_fallback.execute_with_fallback`.
     """
     config = resolve_provider_config(db, user_id, service_type)
     cls = resolve(config.service_type, config.provider_name)

@@ -1,8 +1,11 @@
+from typing import Annotated
 from typing import Literal
 
 from pydantic import AliasChoices
 from pydantic import Field
+from pydantic import field_validator
 from pydantic_settings import BaseSettings
+from pydantic_settings import NoDecode
 from pydantic_settings import SettingsConfigDict
 
 
@@ -26,26 +29,52 @@ class Settings(BaseSettings):
     llm_api_key: str = Field(default="", validation_alias=AliasChoices("LLM_API_KEY", "MIMO_KEY"))
     llm_model_name: str = ""
 
+    # ── PROVIDER-level credentials ──
+    # Provider-first config: declare provider key/base_url once; capability
+    # resolver falls back to these when no per-cap override is set. Per-cap
+    # `LLM_*` / `STT_*` / etc. (set above) take priority over provider-level.
+    providers: Annotated[list[str], NoDecode] = Field(default=[], validation_alias="PROVIDERS")
+    # `MIMO_API_KEY` reads first; `MIMO_KEY` kept as legacy alias for older
+    # .env files. `LLM_API_KEY` continues to flow into `llm_api_key` above
+    # (per-cap, higher priority).
+    mimo_api_key: str = Field(default="", validation_alias=AliasChoices("MIMO_API_KEY", "MIMO_KEY"))
+    mimo_base_url: str = Field(default="", validation_alias="MIMO_BASE_URL")
+    minimax_base_url: str = Field(default="", validation_alias="MINIMAX_BASE_URL")
+
+    @field_validator("providers", mode="before")
+    @classmethod
+    def _parse_providers_csv(cls, v):
+        """Parse `PROVIDERS=mimo,minimax` into a list. Empty string → []."""
+        if v is None or v == "":
+            return []
+        if isinstance(v, str):
+            return [p.strip() for p in v.split(",") if p.strip()]
+        return v
+
     # STT Provider (语音识别)
     stt_base_url: str = ""  # 空则回落到 llm_base_url
     stt_api_key: str = ""  # 空则回落到 llm_api_key
-    stt_model_name: str = "mimo-v2.5-asr"
+    # Per-cap model_name defaults to "" so the provider's `DEFAULT_MODELS`
+    # (declared on each provider class) applies per-slot in the chain;
+    # otherwise the head-provider's model leaks into fallback slots whose
+    # provider doesn't accept it.
+    stt_model_name: str = ""
 
     # TTS Provider (语音合成)
     tts_base_url: str = ""  # 空则回落到 llm_base_url
     tts_api_key: str = ""  # 空则回落到 llm_api_key
-    tts_model_name: str = "mimo-v2.5-tts"
+    tts_model_name: str = ""
     tts_default_voice: str = "mimo_default"
 
-    # Image Gen Provider (图片生成). base_url empty → provider default (minimax).
+    # Image Gen Provider (图片生成). base_url empty → provider default.
     image_gen_base_url: str = ""
     image_gen_api_key: str = ""  # 空 → 继承 MINIMAX_API_KEY (minimax provider)
-    image_gen_model_name: str = "image-01"
+    image_gen_model_name: str = ""
 
-    # Video Gen Provider (视频生成). base_url empty → provider default (minimax).
+    # Video Gen Provider (视频生成). base_url empty → provider default.
     video_gen_base_url: str = ""
     video_gen_api_key: str = ""  # 空 → 继承 MINIMAX_API_KEY (minimax provider)
-    video_gen_model_name: str = "MiniMax-Hailuo-02"
+    video_gen_model_name: str = ""
     video_gen_poll_interval_seconds: float = 5.0
     video_gen_max_poll_seconds: float = 900.0
     video_gen_tool_wait_seconds: float = 180.0

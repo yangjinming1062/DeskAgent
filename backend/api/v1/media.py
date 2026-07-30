@@ -22,17 +22,17 @@ from fastapi.responses import StreamingResponse
 from modules.auth import get_current_session
 from modules.auth import LoginRecord
 from modules.auth import User
-from openai import AsyncOpenAI
 from services.llm import classify_api_error
-from services.llm import client_for_service
+from services.llm import execute_with_fallback
 from services.llm import ImageGenRequest
 from services.llm import MissingLlmConfigError
-from services.llm import provider_for_service
+from services.llm import resolve_provider_chain
 from services.media import enqueue_video_job
 from services.media import get_job as get_video_job
 from services.rate_limit import limiter
 
 from ._http_errors import classified_http_exception
+from ._http_errors import missing_config_http
 
 logger = get_logger(__name__)
 
@@ -40,18 +40,6 @@ router = get_router()
 
 
 # ── Helpers ────────────────────────────────────────────────────────────
-
-
-def _service_client(user: User, service_type: str) -> tuple[AsyncOpenAI, str]:
-    """Resolve ``(client, model_name)`` for a given service type.
-
-    Raises ``HTTPException(400)`` when the provider is not configured.
-    """
-    try:
-        with SESSION_LOCAL() as db:
-            return client_for_service(db, user.id, service_type)
-    except MissingLlmConfigError as e:
-        raise HTTPException(status_code=400, detail={"error": str(e), "reason": "missing_config", "status": 400})
 
 
 def _llm_http_error(e: Exception, op: str) -> HTTPException:
@@ -120,9 +108,8 @@ async def speech_to_text(
     audio_file: UploadFile = File(...),
     auth_data: tuple[User, LoginRecord] = Depends(get_current_session),
 ):
-    """Speech-to-text via MiMo ASR (chat completions API)."""
+    """Speech-to-text via the provider chain (MiMo ASR; only MiMo registers STT)."""
     user, _ = auth_data
-    client, model_name = _service_client(user, "stt")
 
     declared_size = _upload_size_or_none(audio_file)
     if declared_size is not None and declared_size > STT_MAX_AUDIO_BYTES:
@@ -148,12 +135,22 @@ async def speech_to_text(
     mime_type = _resolve_mime_type(audio_file.content_type)
 
     try:
-        response = await client.chat.completions.create(
-            model=model_name,
-            messages=[{"role": "user", "content": [{"type": "input_audio", "input_audio": {"data": f"data:{mime_type};base64,{b64_audio}"}}]}],
-            extra_body={"asr_options": {"language": "auto"}},
+        with SESSION_LOCAL() as db:
+            chain = resolve_provider_chain(db, user.id, "stt")
+        if not chain:
+            raise missing_config_http("STT")
+        result = await execute_with_fallback(
+            db=None,
+            user_id=user.id,
+            service_type="stt",
+            call_fn=lambda p: p.transcribe(file_bytes, mime_type=mime_type, language="auto"),
+            _chain=chain,
         )
-        return {"success": True, "text": response.choices[0].message.content}
+        return {"success": True, "text": result.text}
+    except HTTPException:
+        raise
+    except MissingLlmConfigError:
+        raise missing_config_http("STT")
     except Exception as e:
         raise _llm_http_error(e, "stt") from e
 
@@ -169,7 +166,7 @@ async def text_to_speech(
     voice: str = Form(default=""),
     auth_data: tuple[User, LoginRecord] = Depends(get_current_session),
 ):
-    """Text-to-speech via MiMo TTS (chat completions API)."""
+    """Text-to-speech via the provider chain (MiMo TTS or MiniMax TTS)."""
     user, _ = auth_data
     if not text:
         raise HTTPException(status_code=400, detail={"error": "text is required", "reason": "missing_params", "status": 400})
@@ -179,24 +176,28 @@ async def text_to_speech(
             detail={"error": f"text exceeds {TTS_MAX_TEXT_CHARS} chars", "reason": "payload_too_large", "status": 413},
         )
 
-    client, model_name = _service_client(user, "tts")
     effective_voice = voice or SETTINGS.tts_default_voice
 
     try:
-        response = await client.chat.completions.create(
-            model=model_name,
-            messages=[
-                {"role": "user", "content": ""},
-                {"role": "assistant", "content": text},
-            ],
-            audio={"format": "mp3", "voice": effective_voice},
+        with SESSION_LOCAL() as db:
+            chain = resolve_provider_chain(db, user.id, "tts")
+        if not chain:
+            raise missing_config_http("TTS")
+        result = await execute_with_fallback(
+            db=None,
+            user_id=user.id,
+            service_type="tts",
+            call_fn=lambda p: p.synthesize(text, voice=effective_voice),
+            _chain=chain,
         )
-        audio_b64 = response.choices[0].message.audio.data
-        audio_bytes = base64.b64decode(audio_b64)
+    except HTTPException:
+        raise
+    except MissingLlmConfigError:
+        raise missing_config_http("TTS")
     except Exception as e:
         raise _llm_http_error(e, "tts") from e
 
-    return StreamingResponse(iter([audio_bytes]), media_type="audio/mpeg")
+    return StreamingResponse(iter([result.audio]), media_type=result.mime)
 
 
 # ── Image Generation (图片生成) ────────────────────────────────────────
@@ -209,19 +210,27 @@ async def image_gen(
     prompt: str = Form(...),
     auth_data: tuple[User, LoginRecord] = Depends(get_current_session),
 ):
-    """Image generation. Returns 501 when no image-gen provider is configured."""
+    """Image generation via the provider chain. Returns 501 when no image-gen provider is configured."""
     user, _ = auth_data
     if not prompt:
         raise HTTPException(status_code=400, detail={"error": "prompt is required", "reason": "missing_params", "status": 400})
 
     try:
         with SESSION_LOCAL() as db:
-            provider = provider_for_service(db, user.id, "image_gen")
+            chain = resolve_provider_chain(db, user.id, "image_gen")
+        if not chain:
+            raise missing_config_http("image_gen", status_code=501)
+        result = await execute_with_fallback(
+            db=None,
+            user_id=user.id,
+            service_type="image_gen",
+            call_fn=lambda p: p.generate(ImageGenRequest(prompt=prompt)),
+            _chain=chain,
+        )
+    except HTTPException:
+        raise
     except MissingLlmConfigError:
-        raise _http_error(501, "image_gen_not_configured", "图片生成服务未配置。请在设置中配置 IMAGE_GEN_BASE_URL 和 IMAGE_GEN_API_KEY。")
-
-    try:
-        result = await provider.generate(ImageGenRequest(prompt=prompt))
+        raise missing_config_http("image_gen", status_code=501)
     except Exception as e:
         raise _llm_http_error(e, "image_gen") from e
 

@@ -13,3 +13,4 @@ class MiniMaxChatProvider(OpenAICompatChatProvider):
 
     provider_name = "minimax"
     service_type = ServiceType.llm
+    DEFAULT_MODELS = {"llm": "MiniMax-Text-01"}

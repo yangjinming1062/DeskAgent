@@ -16,6 +16,7 @@ class MiniMaxTTSProvider(TTSProvider):
     """
 
     provider_name = "minimax"
+    DEFAULT_MODELS = {"tts": "speech-2.8-hd"}
 
     def __init__(self, config: ProviderConfig):
         super().__init__(config)
