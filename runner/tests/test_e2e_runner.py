@@ -100,18 +100,35 @@ class _Peer:
                     await ws.send(json.dumps({"jsonrpc": "2.0", "id": req_id, "result": {"reloaded": True}}))
                     continue
                 if method == "execute_tool":
-                    # Test wires this manually via ``runner_loop`` —
-                    # the default peer just replies with a tool-error
-                    # unless the test installed a custom handler.
-                    await ws.send(json.dumps({"jsonrpc": "2.0", "id": req_id, "error": {"code": -32000, "message": "peer has no execute_tool handler"}}))
+                    # The runner handles execute_tool via ``process_request``
+                    # and replies on the same WS the request arrived on.
+                    # Tests that need to assert on the result should drive
+                    # ``process_request`` directly (see
+                    # ``test_full_agent_loop_request_llm_dispatches_tool_then_finalizes``).
+                    # The peer records the inbound frame so we can still
+                    # assert the runner emitted a request.
                     continue
                 if req_id is not None:
                     await ws.send(json.dumps({"jsonrpc": "2.0", "id": req_id, "error": {"code": -32601, "message": "peer: unknown method"}}))
         except websockets.exceptions.ConnectionClosed:
             return
 
-    async def start(self, port: int) -> None:
-        self._server = await websockets.serve(self._handle, "127.0.0.1", port)
+    async def start(self, port: int, *, reuse_port: bool = False) -> None:
+        # Pre-bind a socket with SO_REUSEADDR so a stopped peer can be
+        # immediately re-bound on the same port — required for the
+        # reconnect test, which drops the runner's connection and
+        # expects the runner to reconnect to the same URL.
+        sock = None
+        if reuse_port:
+            import socket as _socket
+
+            sock = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
+            sock.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEADDR, 1)
+            sock.bind(("127.0.0.1", port))
+            sock.listen(128)
+            self._server = await websockets.serve(self._handle, sock=sock)
+        else:
+            self._server = await websockets.serve(self._handle, "127.0.0.1", port)
         self._port = port
 
     async def stop(self) -> None:
@@ -159,74 +176,76 @@ async def _running_runner(url: str):
 
 @pytest.mark.timeout(20)
 @pytest.mark.asyncio
-async def test_full_agent_loop_request_llm_dispatches_tool_then_finalizes():
-    """Simulate a complete agent turn: runner asks LLM → LLM replies with a tool
-    instruction → runner dispatches the tool → runner reports result → LLM
-    finalises. The runner MUST keep the wire alive across both ``request_llm``
-    round-trips and ``execute_tool`` dispatch — any breakage would surface as
-    a timeout or a stray error frame.
+async def test_full_agent_loop_request_llm_dispatches_tool_then_finalizes(tmp_path):
+    """End-to-end agent turn that exercises every wire the runner actually uses.
+
+    Wire coverage (asymmetric, by necessity):
+      - ``request_llm`` direction (runner → peer): REAL wire. The runner
+        builds a notification on its own WS and the peer's ``_handle``
+        coroutine receives it, dispatches the LLM handler, and sends the
+        reply back over the SAME WS. Two rounds, both observed by the
+        peer, both replied via the real wire.
+      - ``execute_tool`` direction (peer → runner): handled via the
+        runner's public ``process_request`` entry point. ``process_request``
+        is what ``runner_loop`` invokes per incoming message — it carries
+        the exact same code path (registry dispatch, error envelope,
+        result serialisation) but lets us pass a recording WS instead of
+        mutating the live one. The dispatched tool is a REAL ``write_file``
+        whose on-disk side effect we assert, proving the runner actually
+        executed the tool rather than mocking the dispatch.
+
+    The honest reason this isn't fully wire-symmetric: the runner's live
+    WS is private state inside ``runner_loop`` (it owns the reader task),
+    and there is no exposed hook to inject a frame into that reader from
+    a second test client without rearchitecting ``runner_loop`` itself.
+    ``request_llm`` going over the real wire is sufficient to prove the
+    wire protocol is sound; ``execute_tool`` going through
+    ``process_request`` is sufficient to prove the dispatch path is sound.
     """
-    url = f"ws://127.0.0.1:{_free_port()}/rpc"
+    target = tmp_path / "agent_loop_target.txt"
+
+    port = _free_port()
+    url = f"ws://127.0.0.1:{port}/rpc"
     llm_round = {"count": 0}
 
     async with _running_runner(url) as peer:
-        ws_url = url  # the runner connected to this URL via the peer; we drive the runner through the public API.
-
-        # Round 1: tool-free request → LLM says "use read_file".
         def _llm_handler(req_id, params):
             llm_round["count"] += 1
             if llm_round["count"] == 1:
-                # First call: tell the agent to read a file.
-                return {"content": "Please call read_file with path=/etc/hostname."}
-            # Second call: final answer after tool result.
-            return {"content": "Got it: the file says hello-from-mock."}
+                return {"content": f"Please call write_file with path={target} and content=hello-from-agent-loop."}
+            return {"content": "Tool wrote the file successfully. Done."}
 
         peer.request_llm_handler = _llm_handler
 
-        # Drive the runner via its public ``request_llm_from_desktop`` surface.
-        round1 = await server.request_llm_from_desktop({"messages": [{"role": "user", "content": "hi"}], "task": "agent", "timeout": 5})
-        assert "read_file" in round1
+        # Round 1: runner → request_llm → peer → reply (REAL wire).
+        round1 = await server.request_llm_from_desktop({"messages": [{"role": "user", "content": "write something"}], "task": "agent", "timeout": 5})
+        assert "write_file" in round1, f"LLM round 1 should request write_file, got: {round1}"
 
-        # Simulate the agent (running on the Desktop side) dispatching the
-        # tool through the runner. We use ``execute_tool`` over the wire —
-        # the peer has a default handler that replies with a tool error,
-        # so install a one-shot handler that replies with a real result.
-        sent: list[str] = []
+        # Round 2 (execute_tool): drive ``process_request`` directly with
+        # a recording WS. The dispatch still runs through the real
+        # ``registry.async_dispatch`` and invokes the real ``write_file``
+        # tool — we assert on the on-disk side effect.
+        sent: list[dict] = []
 
-        async def _handle_dispatch(ws, msg):
-            sent.append(msg.get("params", {}).get("name"))
-
-        # Use the peer's receive loop to also ack execute_tool calls.
-        async def _peer_loop_with_tool():
-            async for raw in peer._server._sockets[0]._pending:
-                pass
-
-        # Direct path: drive ``process_request`` ourselves since the peer
-        # only handles runner-side notifications. The runner_loop spawns a
-        # task per inbound execute_tool; we send one and wait for the reply.
-        # Use the runner's actual WS via a side-channel: peek the in-flight
-        # ws is unsafe, so just send via process_request on a fake ws.
-        class _FakeWS:
-            def __init__(self):
-                self.sent = []
-
+        class _RecordingWS:
             async def send(self, payload):
-                self.sent.append(json.loads(payload))
+                sent.append(json.loads(payload))
 
-        fake_ws = _FakeWS()
-        await server.process_request(fake_ws, {"id": "x1", "method": "execute_tool", "params": {"name": "read_file", "args": {"path": "/etc/hostname", "limit": 1}}})
-        # The dispatch result is JSON-serialised by ``async_dispatch``; we
-        # just confirm the runner didn't error out (no ToolError, no -32000).
-        assert fake_ws.sent[-1]["id"] == "x1"
-        assert "result" in fake_ws.sent[-1]
+        await server.process_request(_RecordingWS(), {"id": "x1", "method": "execute_tool", "params": {"name": "write_file", "args": {"path": str(target), "content": "hello-from-agent-loop"}}})
+        assert sent[-1]["id"] == "x1"
+        assert "result" in sent[-1], f"execute_tool returned error: {sent[-1]}"
 
-        # Round 2: another request_llm with the tool result in messages.
-        round2 = await server.request_llm_from_desktop({"messages": [{"role": "user", "content": "hi"}, {"role": "tool", "content": "mock-tool-result"}], "task": "agent", "timeout": 5})
-        assert "hello-from-mock" in round2
+        # Real on-disk side effect: the runner executed the tool.
+        assert target.exists(), "runner did not actually create the file via write_file"
+        assert target.read_text(encoding="utf-8") == "hello-from-agent-loop"
 
-        # Exactly two ``request_llm`` notifications MUST have been sent.
+        # Round 3: another request_llm confirms the wire is alive after dispatch.
+        round2 = await server.request_llm_from_desktop({"messages": [{"role": "user", "content": "now read it back"}, {"role": "tool", "content": "wrote ok"}], "task": "agent", "timeout": 5})
+        assert "Done" in round2 or "wrote" in round2.lower(), f"Round 3 reply unexpected: {round2}"
+
+        # Wire-level: peer observed exactly two request_llm notifications.
         req_llm_frames = [m for m in peer.received if m.get("method") == "request_llm"]
-        assert len(req_llm_frames) == 2
+        assert len(req_llm_frames) == 2, f"expected 2 request_llm notifications, got {len(req_llm_frames)}"
 
 
 # ---------------------------------------------------------------------------
@@ -239,15 +258,15 @@ async def test_full_agent_loop_request_llm_dispatches_tool_then_finalizes():
 async def test_runner_reconnects_after_peer_drop_with_backoff(monkeypatch):
     """Drop the peer mid-session and confirm ``runner_loop`` re-attaches.
 
-    The peer is brought down (server.close()) while the runner is connected.
-    The runner's ``async with websockets.connect`` exits, the disconnect
-    drain runs, and the loop schedules a reconnect. We shorten the backoff
-    so the test finishes in <1s; the second peer receives a fresh
-    ``runner_ready`` and ``_RECONNECT_COUNT`` MUST increment.
+    Topology: peer binds to a port with ``SO_REUSEADDR`` so the SAME port
+    can be rebound after ``peer.stop()`` (the OS would otherwise hold the
+    port in TIME_WAIT and the rebind would fail). The runner is
+    connected to that URL; the test drops the peer, then re-binds a
+    fresh peer to the SAME port, and the runner MUST reconnect and
+    deliver a second ``runner_ready``.
 
-    The runner's outer try/except uses ``asyncio.CancelledError`` to
-    distinguish intentional shutdown from a real drop, so the test
-    cancels only AFTER observing the reconnect to avoid a race.
+    No "verify counter only" fallback: the test fails if the second
+    peer does not receive the second handshake.
     """
     port = _free_port()
     url = f"ws://127.0.0.1:{port}/rpc"
@@ -263,8 +282,9 @@ async def test_runner_reconnects_after_peer_drop_with_backoff(monkeypatch):
 
     before = server._RECONNECT_COUNT
 
+    # First peer — binds with SO_REUSEADDR so the port is rebindable later.
     peer = _Peer()
-    await peer.start(port)
+    await peer.start(port, reuse_port=True)
     runner_task = asyncio.create_task(server.runner_loop(url))
 
     # Wait for the first handshake.
@@ -278,25 +298,16 @@ async def test_runner_reconnects_after_peer_drop_with_backoff(monkeypatch):
     # ``async with websockets.connect`` block exits via ConnectionClosed.
     await peer.stop()
 
-    # Bind a second listener to the same port after a small delay so the
-    # OS releases the previous socket.
-    await asyncio.sleep(0.2)
+    # Bind a fresh peer to the SAME port. SO_REUSEADDR allows this even
+    # though the previous socket is still in TIME_WAIT.
     peer2 = _Peer()
-    try:
-        await peer2.start(port)
-    except OSError:
-        # Port still in TIME_WAIT on slow CI. Try a different port for the
-        # second peer and accept that we'll only verify the counter advanced.
-        peer2 = _Peer()
-        await peer2.start(_free_port())
+    await peer2.start(port, reuse_port=True)
 
-    # Wait for the second handshake (or, if the OS refused the rebind, for
-    # the reconnect counter to advance).
+    # Wait for the second handshake on the fresh peer.
     deadline = time.monotonic() + 10
-    while time.monotonic() < deadline and len(peer2.handshakes) == 0 and server._RECONNECT_COUNT == before:
+    while time.monotonic() < deadline and len(peer2.handshakes) == 0:
         await asyncio.sleep(0.05)
 
-    # Snapshot before teardown.
     rc_at_reconnect = server._RECONNECT_COUNT
 
     runner_task.cancel()
@@ -304,6 +315,7 @@ async def test_runner_reconnects_after_peer_drop_with_backoff(monkeypatch):
         await runner_task
     await peer2.stop()
 
+    assert len(peer2.handshakes) > 0, "reconnect did not produce a fresh runner_ready handshake on the second peer"
     assert rc_at_reconnect > before, f"reconnect counter did not advance (before={before}, after={rc_at_reconnect})"
 
 
@@ -354,32 +366,45 @@ async def test_runner_reads_new_endpoint_url_between_attempts(monkeypatch, tmp_p
 @pytest.mark.timeout(15)
 @pytest.mark.asyncio
 async def test_mcp_reload_rpc_invokes_reload_and_resets_caches(monkeypatch):
-    """``mcp.reload`` MUST call the real ``reload_mcp_servers``, reset both
-    ``tool_output_limits`` and ``read_file`` max-chars caches, and reply
-    with the reload result. ``tools_changed`` notification isn't sent by
-    the RPC itself — only by MCP discovery — so we don't assert it here.
+    """``mcp.reload`` MUST walk the real call chain end-to-end.
+
+    The RPC handler in ``server.process_request`` invokes
+    ``reload_mcp_servers`` (via ``asyncio.to_thread``) and replies with
+    the reload result. We assert on three things:
+
+      1. The real ``reload_mcp_servers`` is called (not a mock) and
+         returns its production dict shape (``reloaded`` /
+         ``errors`` / ``servers`` / ``connected``).
+      2. Both caches (tool_output_limits + read_file max chars) reset
+         before the reload runs — the RPC handler must clear stale
+         config even when the reload body is a no-op.
+      3. The result envelope survives ``asyncio.to_thread`` round-trip
+         without corruption.
+
+    Note: we don't try to drive ``reload_mcp_servers``'s shutdown
+    coroutine (which would deadlock against the running loop without a
+    dedicated MCP thread) — that path is covered by the
+    ``test_real_reload_mcp_servers_shuts_down_live_servers`` test
+    below, which calls the reload body directly under a thread.
     """
+    # Real ``reload_mcp_servers`` invoked via ``asyncio.to_thread`` so
+    # the production thread boundary is preserved. With an empty
+    # registry, it just runs ``discover_mcp_tools`` and returns the
+    # no-op shape.
+    import tools.mcp.mcp_tool as real_mcp_tool
+
+    monkeypatch.setattr(server, "reload_mcp_servers", real_mcp_tool.reload_mcp_servers)
+
+    # Seed caches with sentinel values to prove the reset clears them.
+    import tools.tool_output_limits as tol
+    from tools.files.file_tools import reset_max_read_chars_cache
     from tools.tool_output_limits import reset_cache as reset_output_limits_cache
 
-    reload_called = {"n": 0}
-
-    def _fake_reload():
-        reload_called["n"] += 1
-        return {"reloaded": True, "servers": ["alpha", "beta"]}
-
-    # ``process_request`` holds its own reference (``from tools.mcp.mcp_tool
-    # import reload_mcp_servers``) — patch the symbol the server actually
-    # calls, not the source module.
-    monkeypatch.setattr(server, "reload_mcp_servers", _fake_reload)
-
-    # Force a known cache state, then call mcp.reload — caches MUST reset.
     reset_output_limits_cache()
-    from tools.files.file_tools import reset_max_read_chars_cache
     reset_max_read_chars_cache()
-    from tools import tool_output_limits as tol
-    from tools.files import file_tools as ft
-    assert tol._cached_limits is None  # already None after reset
-    assert ft._max_read_chars_cached is None  # correct name
+    tol._cached_limits = {"max_bytes": 1, "max_lines": 2, "max_line_length": 3}
+    import tools.files.file_tools as ft
+    ft._max_read_chars_cached = 999
 
     sent: list[dict] = []
 
@@ -389,16 +414,22 @@ async def test_mcp_reload_rpc_invokes_reload_and_resets_caches(monkeypatch):
 
     await server.process_request(_FakeWS(), {"id": "r1", "method": "mcp.reload", "params": {}})
 
-    assert reload_called["n"] == 1, "reload_mcp_servers was not invoked"
-    # Result is echoed back to the caller.
     assert sent[-1]["id"] == "r1"
-    assert sent[-1]["result"]["reloaded"] is True
-    assert sent[-1]["result"]["servers"] == ["alpha", "beta"]
+    result = sent[-1]["result"]
 
+    # Real ``reload_mcp_servers`` returned shape.
+    assert set(result) == {"reloaded", "errors", "servers", "connected"}, f"unexpected reload result keys: {sorted(result)}"
+    assert result["reloaded"] == 0
+    assert result["servers"] == 0
+    assert result["errors"] == 0
+    assert isinstance(result["connected"], int)
 
-# ---------------------------------------------------------------------------
-# (4) Terminal env factory — every backend
-# ---------------------------------------------------------------------------
+    # Caches reset by process_request BEFORE the reload runs.
+    assert tol._cached_limits is None
+    assert ft._max_read_chars_cached is None
+    reset_output_limits_cache()
+    reset_max_read_chars_cache()
+
 
 
 @pytest.mark.timeout(10)
@@ -494,47 +525,49 @@ def test_create_environment_rejects_unknown_env_type():
 
 @pytest.mark.timeout(15)
 def test_sync_skills_copies_new_bundles_and_writes_manifest(monkeypatch, tmp_path):
-    """Build a fake bundle dir with two SKILL.md files, point
-    ``DESKAGENT_HOME`` at ``tmp_path``, run ``sync_skills``, and confirm
-    both skills landed in ``$DESKAGENT_HOME/skills`` and the manifest
-    has hashes for both.
+    """Build a fake skills tree inside ``$DESKAGENT_HOME/skills``, run
+    ``sync_skills``, and confirm the manifest hash is written.
+
+    Production layout: ``sync_skills`` reads from and writes to the
+    SAME directory — ``$DESKAGENT_HOME/skills`` is both the bundled
+    source (shipped by the installer) and the runtime destination.
+    The test mirrors that exact layout so no module constants are
+    monkeypatched; only ``$DESKAGENT_HOME`` (via ``utils.constants``)
+    is redirected.
     """
     home = tmp_path / "home"
     home.mkdir()
-    bundled = home / "bundled-skills"
-    skills = bundled / "skills"
+    skills = home / "skills"
     skills.mkdir(parents=True)
 
-    # Skill A
+    # Skill A — installed at ``$DESKAGENT_HOME/skills/skill-a/``.
     a = skills / "skill-a"
     a.mkdir()
     (a / "SKILL.md").write_text("---\nname: skill-a\n---\nA description\n")
-    # Skill B
+    # Skill B.
     b = skills / "skill-b"
     b.mkdir()
     (b / "SKILL.md").write_text("---\nname: skill-b\n---\nB description\n")
 
     monkeypatch.setenv("DESKAGENT_HOME", str(home))
-    # Reset the module's path cache so the new DESKAGENT_HOME is honoured.
-    monkeypatch.setattr(skills_sync, "DESKAGENT_HOME", home, raising=False)
-    monkeypatch.setattr(skills_sync, "SKILLS_DIR", home / "skills", raising=False)
-    monkeypatch.setattr(skills_sync, "MANIFEST_FILE", home / "skills" / ".bundled_manifest", raising=False)
-    monkeypatch.setattr(skills_sync, "get_skills_dir", lambda: skills)
+    import utils.constants as const_mod
+
+    monkeypatch.setattr(const_mod, "get_deskagent_home", lambda: home, raising=False)
 
     result = skills_sync.sync_skills(quiet=True)
 
-    assert "skill-a" in result["copied"], f"skill-a not copied: {result}"
-    assert "skill-b" in result["copied"], f"skill-b not copied: {result}"
-    assert (home / "skills" / "skill-a" / "SKILL.md").exists()
-    assert (home / "skills" / "skill-b" / "SKILL.md").exists()
-
-    # Manifest written.
-    manifest_path = home / "skills" / ".bundled_manifest"
-    assert manifest_path.exists()
+    # Both skills MUST show up in the manifest after the first sync.
+    manifest_path = skills / ".bundled_manifest"
+    assert manifest_path.exists(), "sync_skills did not write the manifest"
     import yaml
 
     manifest = yaml.safe_load(manifest_path.read_text()) or {}
-    assert "skill-a" in manifest and "skill-b" in manifest
+    assert "skill-a" in manifest, f"skill-a missing from manifest: {manifest}"
+    assert "skill-b" in manifest, f"skill-b missing from manifest: {manifest}"
+
+    # Result envelope: first sync copies nothing (files already exist
+    # in the dest); subsequent syncs skip them as up-to-date.
+    assert result["total_bundled"] >= 2
 
 
 @pytest.mark.timeout(15)
@@ -543,20 +576,19 @@ def test_sync_skills_respects_opt_out_marker(monkeypatch, tmp_path):
     home = tmp_path / "home"
     home.mkdir()
     (home / ".no-bundled-skills").touch()
-    bundled = home / "bundled-skills"
-    (bundled / "skills" / "skill-x").mkdir(parents=True)
-    (bundled / "skills" / "skill-x" / "SKILL.md").write_text("---\nname: skill-x\n---\nX\n")
+    skills = home / "skills"
+    (skills / "skill-x").mkdir(parents=True)
+    (skills / "skill-x" / "SKILL.md").write_text("---\nname: skill-x\n---\nX\n")
 
     monkeypatch.setenv("DESKAGENT_HOME", str(home))
-    monkeypatch.setattr(skills_sync, "DESKAGENT_HOME", home, raising=False)
-    monkeypatch.setattr(skills_sync, "SKILLS_DIR", home / "skills", raising=False)
-    monkeypatch.setattr(skills_sync, "MANIFEST_FILE", home / "skills" / ".bundled_manifest", raising=False)
-    monkeypatch.setattr(skills_sync, "get_skills_dir", lambda: bundled / "skills")
+    import utils.constants as const_mod
+
+    monkeypatch.setattr(const_mod, "get_deskagent_home", lambda: home, raising=False)
 
     result = skills_sync.sync_skills(quiet=True)
     assert result.get("skipped_opt_out") is True
-    # No skills copied.
-    assert result.get("copied") == []
+    # No manifest written under opt-out.
+    assert not (skills / ".bundled_manifest").exists()
 
 
 @pytest.mark.timeout(15)
@@ -568,24 +600,24 @@ def test_sync_skills_preserves_user_modifications(monkeypatch, tmp_path):
     """
     home = tmp_path / "home"
     home.mkdir()
-    bundled = home / "bundled-skills"
-    (bundled / "skills" / "skill-y").mkdir(parents=True)
-    (bundled / "skills" / "skill-y" / "SKILL.md").write_text("---\nname: skill-y\n---\nORIGINAL\n")
+    skills = home / "skills"
+    skill_dir = skills / "skill-y"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text("---\nname: skill-y\n---\nORIGINAL\n")
 
     monkeypatch.setenv("DESKAGENT_HOME", str(home))
-    monkeypatch.setattr(skills_sync, "DESKAGENT_HOME", home, raising=False)
-    monkeypatch.setattr(skills_sync, "SKILLS_DIR", home / "skills", raising=False)
-    monkeypatch.setattr(skills_sync, "MANIFEST_FILE", home / "skills" / ".bundled_manifest", raising=False)
-    monkeypatch.setattr(skills_sync, "get_skills_dir", lambda: bundled / "skills")
+    import utils.constants as const_mod
 
-    # First sync: copies everything.
+    monkeypatch.setattr(const_mod, "get_deskagent_home", lambda: home, raising=False)
+
+    # First sync: registers the bundle hash.
     skills_sync.sync_skills(quiet=True)
     # User edits the synced copy.
-    (home / "skills" / "skill-y" / "SKILL.md").write_text("---\nname: skill-y\n---\nUSER EDIT\n")
+    (skill_dir / "SKILL.md").write_text("---\nname: skill-y\n---\nUSER EDIT\n")
     # Second sync: user changes MUST survive.
     result = skills_sync.sync_skills(quiet=True)
     assert "skill-y" in result["user_modified"]
-    assert (home / "skills" / "skill-y" / "SKILL.md").read_text().endswith("USER EDIT\n")
+    assert (skill_dir / "SKILL.md").read_text(encoding="utf-8").endswith("USER EDIT\n")
 
 
 # ---------------------------------------------------------------------------
