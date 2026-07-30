@@ -41,7 +41,7 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      '@': path.resolve(__dirname, './src')
+      '@': path.resolve(__dirname, './renderer')
     },
     dedupe: ['react', 'react-dom']
   },
@@ -61,7 +61,7 @@ export default defineConfig({
   // vitest tries to parse them and fails on the CommonJS `require()` calls
   // and the absence of a jsdom `window`.
   test: {
-    include: ['src/**/*.{test,spec}.{ts,tsx}'],
+    include: ['renderer/**/*.{test,spec}.{ts,tsx}'],
     environment: 'jsdom'
   }
 })
