@@ -16,9 +16,9 @@
     "noEmit": true,
     "jsx": "react-jsx",
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./renderer/*"]
     }
   },
-  "include": ["src"],
+  "include": ["renderer"],
   "references": []
 }
