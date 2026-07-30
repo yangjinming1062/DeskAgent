@@ -46,14 +46,35 @@ export function CompanionReady() {
   const [prevUrl, setPrevUrl] = useState<string | null>(null)
   const [fading, setFading] = useState<boolean>(false)
 
+  const [idleVariant, setIdleVariant] = useState<string>('idle')
+
   const gatewayState = useStore($gatewayState)
   const spriteState = useStore($spriteState)
   const emotion = useStore($spriteEmotion)
   const clipCatalog = useStore($clipCatalog)
   const drowsy = gatewayState !== 'open' || spriteState === 'disconnected'
 
+  // Random micro-action timer for IDLE state (10s-25s)
+  useEffect(() => {
+    if (spriteState !== 'idle' || drowsy) {
+      setIdleVariant('idle')
+      return
+    }
+
+    const IDLE_VARIANTS = ['idle', 'idle_look_around', 'idle_blink', 'idle_stretch']
+    const nextInterval = Math.floor(Math.random() * 15000) + 10000
+
+    const timer = setTimeout(() => {
+      const available = IDLE_VARIANTS.filter(scene => scene === 'idle' || Boolean(getClipUrlForScene(scene)))
+      const picked = available[Math.floor(Math.random() * available.length)]
+      setIdleVariant(picked)
+    }, nextInterval)
+
+    return () => clearTimeout(timer)
+  }, [spriteState, drowsy, activeUrl])
+
   // Determine active scene
-  const activeScene = spriteState === 'emotional' && emotion ? emotion : spriteState
+  const activeScene = spriteState === 'emotional' && emotion ? emotion : spriteState === 'idle' ? idleVariant : spriteState
   const clipUrl = getClipUrlForScene(activeScene) ?? getClipUrlForScene('idle')
 
   useEffect(() => {
