@@ -1,6 +1,7 @@
 import { type ReactNode, type PointerEvent as ReactPointerEvent, useEffect, useRef, useState } from 'react'
 
 import { setSpritePosition } from '@/companion/companion-store'
+import { handleDragEndInteraction, handleHoverInteraction } from '../interaction'
 
 // The sprite window is screen-sized, transparent, and click-through by default
 // (main sets setIgnoreMouseEvents(true, {forward:true})). mouse-move is still
@@ -34,6 +35,7 @@ export function SpriteStage({ children, onTap, onDoubleTap, onContextMenu }: Spr
   const capture = () => {
     if (capturedRef.current) {return}
     capturedRef.current = true
+    handleHoverInteraction()
     void window.deskagent.sprite.setIgnoreMouseEvents({ ignore: false })
   }
 
@@ -93,6 +95,7 @@ export function SpriteStage({ children, onTap, onDoubleTap, onContextMenu }: Spr
     if (drag?.moved) {
       setSpritePosition(pos)
       void window.deskagent.sprite.setPosition(pos)
+      handleDragEndInteraction()
 
       return
     }

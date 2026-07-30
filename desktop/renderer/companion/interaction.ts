@@ -58,6 +58,26 @@ export function handlePokeInteraction(): void {
   void speakProactive(text)
 }
 
+const DRAG_REACTIONS = [
+  '呼，落地成功！',
+  '把我搬到这里啦？',
+  '别乱拉我呀，脑袋晕乎乎的！',
+  '站稳啦！新的好地方~'
+]
+
+let hoverThrottleTimer: ReturnType<typeof setTimeout> | null = null
+
 export function handleHoverInteraction(): void {
-  // Gentle interaction on hover
+  if (hoverThrottleTimer) return
+  setSpriteState('interacting', { durationMs: 1500 })
+  hoverThrottleTimer = setTimeout(() => {
+    hoverThrottleTimer = null
+  }, 10000)
+}
+
+export function handleDragEndInteraction(): void {
+  recordInteraction('poke')
+  setSpriteState('interacting', { durationMs: 2000 })
+  const text = DRAG_REACTIONS[Math.floor(Math.random() * DRAG_REACTIONS.length)]
+  void speakProactive(text)
 }
