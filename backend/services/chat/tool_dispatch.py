@@ -9,15 +9,15 @@ from fastapi import WebSocketDisconnect
 
 from ..gateway import await_future
 from ..gateway import MANAGER
-from ..tools import _is_multimodal_tool_result
-from ..tools import _should_parallelize_tool_batch
 from ..tools import append_toolguard_guidance
 from ..tools import check_file_safety
 from ..tools import coerce_tool_args
 from ..tools import file_mutation_result_landed
+from ..tools import is_multimodal_tool_result
 from ..tools import make_tool_result_message
 from ..tools import NativeMemory
 from ..tools import REGISTRY
+from ..tools import should_parallelize_tool_batch
 from ..tools import ToolCallGuardrailController
 from ..tools import toolguard_synthetic_result
 from .chat_emitter import Emitter
@@ -43,7 +43,7 @@ def _redact_tool_payload(result_str: str) -> str | list:
     """Redact secrets, unwrapping ``_multimodal`` envelopes so each text part is redacted in place."""
     if result_str.lstrip().startswith("{"):
         parsed = safe_json_loads(result_str)
-        if _is_multimodal_tool_result(parsed):
+        if is_multimodal_tool_result(parsed):
             for p in parsed["content"]:
                 if isinstance(p, dict) and p.get("type") == "text" and "text" in p:
                     p["text"] = redact_sensitive_text(p["text"])
@@ -135,7 +135,7 @@ async def _execute_single_tool(tc: dict, ctx: _ToolDispatchContext) -> dict:
 
 async def _run_tool_batch(tool_calls_list: list[dict], ctx: _ToolDispatchContext) -> list[dict]:
     coros = [_execute_single_tool(tc, ctx) for tc in tool_calls_list]
-    if len(tool_calls_list) > 1 and _should_parallelize_tool_batch([(tc["function"]["name"], tc["function"]["arguments"]) for tc in tool_calls_list]):
+    if len(tool_calls_list) > 1 and should_parallelize_tool_batch([(tc["function"]["name"], tc["function"]["arguments"]) for tc in tool_calls_list]):
         # ``return_exceptions=True`` so a single tool's raise (e.g. IPC
         # future timeout in :func:`_dispatch_runner_tool`, ``CancelledError``
         # leaking through a tool's httpx stream, or any unexpected

@@ -3,7 +3,6 @@ import base64
 from openai import AsyncOpenAI
 
 from ..base import ProviderConfig
-from ..base import ServiceType
 from ..base import STTProvider
 from ..base import STTResult
 from ..http import get_async_client

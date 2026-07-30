@@ -290,7 +290,7 @@ def _advance_due_jobs(due_jobs: list[CronJob], now: datetime) -> None:
     _insert_wsevents(winners)
 
 
-async def _tick():
+async def _tick() -> None:
     """CAS-advance ``next_run_at`` for due jobs and enqueue ``cron.trigger`` WSEvents.
 
     Delivery happens out-of-band via the ws_events outbox (see
@@ -315,7 +315,7 @@ async def _tick():
     _advance_due_jobs(due_jobs, now)
 
 
-async def scheduler_loop():
+async def scheduler_loop() -> None:
     """Cron tick loop driven by ``SCHEDULER_INTERVAL_SECONDS``.
 
     Single-tick resolution — sub-minute schedules not supported.

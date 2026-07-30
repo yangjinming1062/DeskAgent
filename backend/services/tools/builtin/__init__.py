@@ -1,8 +1,8 @@
-from . import cronjob_tools  # self-registers cronjob
-from . import image_generation_tool  # self-registers image_generate
-from . import send_message_tool  # self-registers send_message_tool
-from . import tts_tool  # self-registers text_to_speech_tool
-from . import web_tools  # self-registers web_search + web_extract
+from . import cronjob_tools  # noqa: F401 — self-registers cronjob
+from . import image_generation_tool  # noqa: F401 — self-registers image_generate
+from . import send_message_tool  # noqa: F401 — self-registers send_message_tool
+from . import tts_tool  # noqa: F401 — self-registers text_to_speech_tool
+from . import web_tools  # noqa: F401 — self-registers web_search + web_extract
 from .. import SEARCH_TOOLS_SCHEMA
 from .. import search_tools_tool
 from .cronjob_tools import cronjob

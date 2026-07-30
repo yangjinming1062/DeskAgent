@@ -28,7 +28,9 @@ from sqlalchemy.orm import Session
 router = get_router()
 
 
-def _login_user(payload: LoginRequest, request: Request, db: Session) -> TokenResponse:
+@router.post("/login", response_model=TokenResponse)
+@limiter.limit(f"{SETTINGS.login_rate_limit_per_minute}/minute", key_func=get_remote_address)
+def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)) -> TokenResponse:
     user = db.query(User).filter(User.username == payload.username, User.is_active.is_(True)).one_or_none()
     if user is None or not verify_password(payload.password, user.password_hash):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="用户名或密码错误。")
@@ -57,12 +59,6 @@ def _login_user(payload: LoginRequest, request: Request, db: Session) -> TokenRe
     )
     db.commit()
     return TokenResponse(access_token=token, expires_in=expires_in, user=UserInfo.model_validate(user))
-
-
-@router.post("/login", response_model=TokenResponse)
-@limiter.limit(f"{SETTINGS.login_rate_limit_per_minute}/minute", key_func=get_remote_address)
-def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)) -> TokenResponse:
-    return _login_user(payload, request, db)
 
 
 @router.post("/refresh", response_model=TokenResponse)

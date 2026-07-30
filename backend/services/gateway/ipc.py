@@ -7,6 +7,8 @@ from components import new_request_id
 from components import safe_json_loads
 from components import SETTINGS
 
+from .jsonrpc import JsonRpcDispatcher
+
 logger = get_logger(__name__)
 
 _PENDING: dict[tuple[int, str], asyncio.Future] = {}
@@ -71,7 +73,7 @@ async def dispatch_user_event(
     event_type: str,
     payload: dict,
     *,
-    dispatcher,
+    dispatcher: JsonRpcDispatcher,
     timeout: float | None = None,
 ) -> dict:
     """Emit a JSON-RPC event to the desktop and await a matching ``tool.result``.

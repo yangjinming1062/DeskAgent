@@ -20,7 +20,6 @@ class CommandContext:
 
 
 def cmd_yolo(args_str: str, ctx: CommandContext) -> dict:
-    """Toggle YOLO mode (auto-approve dangerous tool calls)."""
     current = ctx.user_settings.get("yolo_mode", "false").lower()
     new_val = "false" if current == "true" else "true"
 

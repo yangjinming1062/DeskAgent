@@ -1,4 +1,3 @@
-import base64
 import json
 
 from components import get_logger

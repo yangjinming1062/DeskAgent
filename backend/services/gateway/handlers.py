@@ -30,7 +30,6 @@ from services.chat import exec_slash_command
 from services.chat import load_user_settings
 from services.chat import run_chat_turn
 from services.companion import AvatarGenerationError
-from services.companion import get_active_avatar
 from services.companion import get_onboarding_state
 from services.companion import get_or_create_persona
 from services.companion import list_clips as list_companion_clips
@@ -54,6 +53,7 @@ from services.llm import client_for_config
 from services.llm import resolve_user_llm_config
 from services.tools import REGISTRY
 from sqlalchemy import func
+from sqlalchemy.orm import Session
 
 logger = get_logger(__name__)
 
@@ -351,7 +351,7 @@ def _register_setup_handlers(dispatcher: JsonRpcDispatcher, llm_config: dict, us
     dispatcher.register("setup.runtime_check", setup_runtime_check)
 
 
-def _find_owned_conv(db, user_id: int, session_id: str) -> Conversation | None:
+def _find_owned_conv(db: Session, user_id: int, session_id: str) -> Conversation | None:
     """Resolve a renderer-supplied session_id (the stored DB id) to a Conversation.
 
     Returns None when the id is not an int, doesn't exist, or isn't owned by
@@ -644,12 +644,9 @@ def _register_session_handlers(
         return {"items": items}
 
     async def image_attach(params: dict) -> dict:
-        # Path-mode handler. The backend does not need the image bytes; it
-        # passes the path through to the LLM, which reads the local file
-        # via Runner file tools (e.g. ``read_file``).
-        runtime = _get_runtime(runtime_sessions, params)
+        # Path-mode: backend doesn't read the bytes; LLM reads via Runner file tools.
         path = _require_str(params, "path")
-        return path_attach_ref(path, fallback="image")
+        return path_attach_ref(path)
 
     async def image_detach(params: dict) -> dict:
         runtime = _get_runtime(runtime_sessions, params)

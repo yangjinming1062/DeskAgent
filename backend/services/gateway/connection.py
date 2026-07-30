@@ -4,6 +4,7 @@ from datetime import timedelta
 import asyncpg
 from components import BackgroundTask
 from components import begin_local_scope
+from components import get_logger
 from components import naive_utc_now
 from components import safe_json_loads
 from components import session_scope
@@ -16,8 +17,6 @@ from .jsonrpc import JsonRpcDispatcher
 # GC window for stale outbox events — at-most-once after this many seconds
 # without a successful dispatch (user offline too long).
 WS_EVENT_MAX_AGE_SECONDS = 60
-
-from components import get_logger
 
 logger = get_logger(__name__)
 

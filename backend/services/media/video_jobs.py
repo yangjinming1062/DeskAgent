@@ -1,41 +1,20 @@
-"""Background video generation jobs.
-
-Submit a task to the video provider, poll until the provider reports
-``succeeded`` (or ``failed``), then immediately download the file to local
-disk and write a ``WSEvent`` so the desktop (if connected) gets a push
-notification.
-
-Lifespan calls :func:`resume_pending_video_jobs` on boot so jobs that were in
-flight at process exit (deploy, OOM, ctrl-c) get re-attached instead of
-stranded.
-"""
-
 import asyncio
 import json
 from datetime import timedelta
 
 import httpx
-
 from components import get_logger
 from components import naive_utc_now
 from components import save_file
 from components import SESSION_LOCAL
 from components import SETTINGS
+from modules.media.models import VideoGenJob
 from modules.ws import WSEvent
 from services.llm import MissingLlmConfigError
 from services.llm import provider_for_service
 from services.llm.providers.base import VideoGenRequest
 from sqlalchemy import select
 from sqlalchemy.orm import Session
-
-# Import the model lazily inside functions. ``modules/media/__init__.py``
-# is intentionally empty so importing the package never drags every
-# mapper into configuration. The model lives in ``modules.media.models``.
-def _VideoGenJob():
-    from modules.media.models import VideoGenJob
-
-    return VideoGenJob
-
 
 logger = get_logger(__name__)
 
@@ -48,7 +27,7 @@ def _update_job(job_id: int, **fields) -> None:
     commits. Returns early if the row has been GC'd between read and
     write (admin DELETE, etc.).
     """
-    VideoGenJob = _VideoGenJob()
+
     with SESSION_LOCAL() as db:
         job = db.get(VideoGenJob, job_id)
         if job is None:
@@ -71,7 +50,7 @@ def _emit_ws_event(user_id: int, event_type: str, payload: dict) -> None:
 
 def get_job(db: Session, job_id: int, user_id: int):
     """Filter by user_id so the GET endpoint doesn't leak other users' jobs."""
-    VideoGenJob = _VideoGenJob()
+
     stmt = select(VideoGenJob).where(VideoGenJob.id == job_id, VideoGenJob.user_id == user_id)
     return db.execute(stmt).scalar_one_or_none()
 
@@ -111,7 +90,6 @@ async def enqueue_video_job(
         model=model,
     )
 
-    VideoGenJob = _VideoGenJob()
     params = {
         "duration": duration,
         "resolution": resolution,
@@ -193,7 +171,7 @@ def _extras_from_params(params_json: str | None) -> dict:
 
 
 async def _poll_and_finalize_locked(job_id: int) -> None:
-    VideoGenJob = _VideoGenJob()
+
     with SESSION_LOCAL() as db:
         job = db.get(VideoGenJob, job_id)
         if job is None:
@@ -202,9 +180,7 @@ async def _poll_and_finalize_locked(job_id: int) -> None:
         # don't redownload or re-emit. The terminal-state guard inside
         # ``_update_job`` is a belt-and-braces backup.
         if job.status in ("succeeded", "failed"):
-            logger.info(
-                "skipping already-finalized job", extra={"job_id": job_id, "status": job.status}
-            )
+            logger.info("skipping already-finalized job", extra={"job_id": job_id, "status": job.status})
             return
         user_id = job.user_id
         provider_task_id = job.provider_task_id or ""
@@ -334,16 +310,14 @@ def resume_pending_video_jobs() -> None:
     download started but never finished is unfortunately unrecoverable
     (the 9h provider URL window expires), so we mark it failed up front
     rather than spinning forever."""
-    VideoGenJob = _VideoGenJob()
+
     with SESSION_LOCAL() as db:
         stuck = db.execute(
             VideoGenJob.__table__.update()
             .where(VideoGenJob.status == "downloading")
             .values(status="failed", error_reason="download_interrupted", error_message="restarted during download; provider URL window expired")
         )
-        rows = db.execute(
-            select(VideoGenJob).where(VideoGenJob.status.in_(("queued", "processing")))
-        ).scalars().all()
+        rows = db.execute(select(VideoGenJob).where(VideoGenJob.status.in_(("queued", "processing")))).scalars().all()
         job_ids = [r.id for r in rows]
         db.commit()
     if stuck.rowcount:

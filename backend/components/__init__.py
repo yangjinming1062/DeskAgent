@@ -65,7 +65,6 @@ from .functions import apply_partial
 from .functions import approx_message_tokens
 from .functions import as_bool
 from .functions import coerce_int
-from .functions import is_finite_number
 from .functions import naive_utc_now
 from .functions import positive_int
 from .functions import safe_json_loads
@@ -81,7 +80,6 @@ from .logger import set_request_user_id
 from .logger import setup_logging
 from .redact import mask_secret
 from .redact import redact_sensitive_text
-from .redact import RedactingFormatter
 from .temp_files import cleanup_expired
 from .temp_files import gc_session as temp_files_gc_session
 from .temp_files import get_file_path
@@ -99,7 +97,6 @@ __all__ = [
     "apply_partial",
     "as_bool",
     "coerce_int",
-    "is_finite_number",
     "naive_utc_now",
     "positive_int",
     "safe_json_loads",
@@ -166,7 +163,6 @@ __all__ = [
     "REQUEST_ID_HEADER",
     "mask_secret",
     "redact_sensitive_text",
-    "RedactingFormatter",
     "attachment_root",
     "attachments_gc_session",
     "path_attach_ref",

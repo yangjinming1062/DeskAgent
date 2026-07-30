@@ -4,16 +4,17 @@ import socket
 from urllib.parse import urlparse
 
 import httpx
-from components import SESSION_LOCAL
 from components import get_logger
+from components import SESSION_LOCAL
 from components import tool_error
 from modules.ws import WSEvent
-# Import from the leaf submodule (not the companion package __init__) to avoid
-# a cycle: companion.__init__ → avatar_service → tools.builtin → this module.
 from services.companion.disturbance import is_quiet
 
 from .. import ALWAYS_AVAILABLE
 from .. import REGISTRY
+
+# Import from the leaf submodule (not the companion package __init__) to avoid
+# a cycle: companion.__init__ → avatar_service → tools.builtin → this module.
 
 logger = get_logger(__name__)
 

@@ -1,5 +1,6 @@
 import enum
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from dataclasses import field
 from typing import Any
@@ -82,6 +83,9 @@ class ClassifiedError:
     should_rotate_credential: bool = False
     should_fallback: bool = False
     suggested_delay: float | None = None
+
+
+_ClassifierBuilder = Callable[..., ClassifiedError]
 
 
 # ── Provider-specific patterns ──────────────────────────────────────────
@@ -645,7 +649,7 @@ def classify_api_error(
     return _result(FailoverReason.unknown, retryable=True)
 
 
-def _classify_provider_specific(error_msg: str, status_code: int | None, result_fn) -> ClassifiedError | None:
+def _classify_provider_specific(error_msg: str, status_code: int | None, result_fn: _ClassifierBuilder) -> ClassifiedError | None:
     """Classify provider-specific patterns that take priority over status codes."""
     # Provider content-policy / safety-filter block. The provider has made a
     # deterministic refusal decision about THIS prompt — retrying unchanged
@@ -755,7 +759,7 @@ def _classify_by_status(
     approx_tokens: int,
     context_length: int,
     num_messages: int = 0,
-    result_fn,
+    result_fn: _ClassifierBuilder,
 ) -> ClassifiedError | None:
     """Classify based on HTTP status code with message-aware refinement."""
     match status_code:
@@ -846,7 +850,7 @@ def _classify_by_status(
             return None
 
 
-def _classify_404(error_msg: str, result_fn) -> ClassifiedError:
+def _classify_404(error_msg: str, result_fn: _ClassifierBuilder) -> ClassifiedError:
     """Classify 404 — billing, policy-block, model-not-found, or unknown."""
     # Nous API currently surfaces HA/NAS credit depletion as a paid model
     # becoming unavailable on the Free Tier, returned as 404 rather than
@@ -889,7 +893,7 @@ def _classify_404(error_msg: str, result_fn) -> ClassifiedError:
     )
 
 
-def _classify_402(error_msg: str, result_fn) -> ClassifiedError:
+def _classify_402(error_msg: str, result_fn: _ClassifierBuilder) -> ClassifiedError:
     """Disambiguate 402: billing exhaustion vs transient usage limit.
 
     The key insight from OpenClaw: some 402s are transient rate limits
@@ -925,7 +929,7 @@ def _classify_400(
     approx_tokens: int,
     context_length: int,
     num_messages: int = 0,
-    result_fn,
+    result_fn: _ClassifierBuilder,
 ) -> ClassifiedError:
     """Classify 400 Bad Request — context overflow, format error, or generic."""
     # Multimodal tool content rejected from 400.  Must be checked BEFORE
@@ -1043,7 +1047,7 @@ def _classify_400(
 def _classify_by_error_code(
     error_code: str,
     error_msg: str,
-    result_fn,
+    result_fn: _ClassifierBuilder,
 ) -> ClassifiedError | None:
     """Classify by structured error codes from the response body."""
     code_lower = error_code.lower()
@@ -1090,7 +1094,7 @@ def _classify_by_message(
     *,
     approx_tokens: int,
     context_length: int,
-    result_fn,
+    result_fn: _ClassifierBuilder,
 ) -> ClassifiedError | None:
     """Classify based on error message patterns when no status code is available."""
     if any(p in error_msg for p in _PAYLOAD_TOO_LARGE_PATTERNS):

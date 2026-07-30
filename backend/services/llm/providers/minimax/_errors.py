@@ -1,3 +1,5 @@
+import base64
+
 from ..base import ProviderError
 
 
@@ -80,8 +82,6 @@ def raise_for_minimax_response(resp, *, provider: str, model: str) -> dict:
 
 def extract_minimax_audio(body: dict) -> bytes:
     """MiniMax TTS returns audio as a hex-encoded string under data.audio."""
-    import base64
-
     data = body.get("data") or {}
     audio_hex = data.get("audio") or ""
     if audio_hex:

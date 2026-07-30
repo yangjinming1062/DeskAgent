@@ -1,3 +1,5 @@
+from . import mimo  # noqa: F401
+from . import minimax  # noqa: F401
 from .base import BaseProvider
 from .base import ChatProvider
 from .base import ChatResult
@@ -26,8 +28,6 @@ from .registry import resolve
 from .registry import SERVICE_DEFAULT_PROVIDER
 
 # Side-effect imports register concrete providers in their family modules.
-from . import mimo  # noqa: F401
-from . import minimax  # noqa: F401
 
 __all__ = [
     "BaseProvider",

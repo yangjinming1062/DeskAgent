@@ -1,5 +1,4 @@
 import json
-import math
 from datetime import datetime
 from datetime import UTC
 from typing import Any
@@ -8,12 +7,11 @@ from pydantic import BaseModel
 
 from .constants import CHARS_PER_TOKEN
 
-# Truthy/falsy string literals accepted by config parsers (CLI flags, YAML).
 TRUTHY_STRINGS: frozenset[str] = frozenset({"1", "true", "yes", "on", "enabled"})
 FALSY_STRINGS: frozenset[str] = frozenset({"0", "false", "no", "off", "disabled"})
 
 
-def apply_partial(obj, payload: BaseModel, /, *, exclude: frozenset[str] = frozenset()) -> None:
+def apply_partial(obj: Any, payload: BaseModel, /, *, exclude: frozenset[str] = frozenset()) -> None:
     """Set ``obj`` attributes from ``payload``; both unset and explicit-null are skipped."""
     for field, value in payload.model_dump(exclude_unset=True, exclude=exclude).items():
         if value is None:
@@ -29,9 +27,9 @@ def safe_json_loads(text: str, default: Any = None) -> Any:
         return default
 
 
-def tool_error(msg: str, success: bool = False) -> str:
+def tool_error(msg: str) -> str:
     """Serialize a tool-side failure as a JSON string the LLM can read back."""
-    return json.dumps({"success": success, "error": msg}, ensure_ascii=False)
+    return json.dumps({"success": False, "error": msg}, ensure_ascii=False)
 
 
 def naive_utc_now() -> datetime:
@@ -76,18 +74,7 @@ def coerce_int(value: Any, default: int | None) -> int | None:
 
 
 def unquote_user_setting(val: str | None) -> str | None:
-    """Strip the literal double quotes that ``put_config._flatten`` wraps
-    every JSON-dumped string with.
-
-    ``load_user_settings`` returns raw DB values; the PUT-side encoding
-    is ``json.dumps(v)``, so string values land in the table wrapped in
-    quotes. This helper undoes that without affecting non-string values
-    that happen to flow through (booleans, ints, ``None``).
-
-    Used by both ``GET /api/config`` (for sensitive-key fingerprint
-    computation) and the tool dispatcher (``web_tools``) — every site
-    that reads a string ``user_settings`` value must go through this.
-    """
+    """Undo ``put_config._flatten``'s ``json.dumps`` quoting for string-valued settings."""
     if val is None:
         return None
     s = str(val).strip()
@@ -96,11 +83,6 @@ def unquote_user_setting(val: str | None) -> str | None:
         if isinstance(inner, str):
             return inner or None
     return s or None
-
-
-def is_finite_number(value: float) -> bool:
-    """False for NaN/±inf — model_tools needs this for LLM-supplied numbers."""
-    return math.isfinite(value)
 
 
 def approx_message_tokens(messages: list[dict] | None) -> int:

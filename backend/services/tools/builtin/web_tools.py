@@ -4,6 +4,7 @@ import json
 from components import coerce_int
 from components import get_logger
 from components import tool_error
+from openai import AsyncOpenAI
 
 from .. import ALWAYS_AVAILABLE
 from .. import REGISTRY
@@ -16,7 +17,7 @@ from ...llm import client_for_config
 logger = get_logger(__name__)
 
 
-async def _summarize_doc(client, model_name: str, doc: dict) -> None:
+async def _summarize_doc(client: AsyncOpenAI, model_name: str, doc: dict) -> None:
     content = doc.get("content", "")
     if not content or len(content) <= 1000:
         return

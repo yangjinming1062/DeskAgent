@@ -1,5 +1,4 @@
 import httpx
-
 from components import SETTINGS
 from openai import AsyncOpenAI
 

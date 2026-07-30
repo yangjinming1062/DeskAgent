@@ -73,6 +73,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **包内用相对 import。** 同一模块内部的文件互相引用时，用相对 import（`from .foo import bar`）让包自包含；只有跨包才用绝对 import（如 `from apps.auth import ...`）。**例外**：`engines/` 包内跨子包（`SLJ`↔`common`↔`MEDBALL`↔`pose`）统一使用绝对 import（`from engines.common import X`），不适用相对 import 规则——绝对路径在 IDE 导航/grep 中更友好，且 `engines` 作为一个整体安装包，子包间不存在独立发布场景。
 - **import 必须放在模块顶部，不要写在函数内部。** 如果放在顶部会引发循环引用，那就重构代码（把共享部分抽到独立模块、调整依赖方向）来消除循环，而不是用函数内 lazy import 临时绕开。
 - **保持包根目录干净。** 包根目录只放入口、配置、DB 模块和全局数据模型；业务逻辑下沉到领域模块（`core/`、`tools/`、`routers/` 等）。
+- **提交前先格式化。** 运行 `uvx pre-commit run -a`。
 
 ### 注释（Comments）
 

@@ -1,10 +1,3 @@
-# Importing every domain package registers all ORM models on the shared
-# ``ModelBase.registry`` so ``ModelBase.metadata`` is complete for
-# ``create_all``. Add new domains here.
-#
-# Note: ``modules.media`` is intentionally NOT auto-imported — see its
-# __init__.py. Callers that need VideoGenJob on create_all must import it
-# explicitly.
 from . import auth
 from . import companion
 from . import conversation
@@ -14,3 +7,20 @@ from . import settings
 from . import system
 from . import update
 from . import ws
+
+# Importing each package registers its ORM models on ``ModelBase.metadata`` so
+# ``create_all`` sees every table. ``modules.media`` is intentionally omitted
+# because its mapper triggers an import-time crash on stale DB connections —
+# callers that need ``VideoGenJob`` on ``create_all`` must import it explicitly.
+
+__all__ = [
+    "auth",
+    "companion",
+    "conversation",
+    "memory",
+    "scheduler",
+    "settings",
+    "system",
+    "update",
+    "ws",
+]
