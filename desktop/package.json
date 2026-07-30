@@ -6,7 +6,7 @@
   "description": "Native desktop shell for DeskAgent Agent.",
   "author": "DeskAgent",
   "type": "module",
-  "main": "main/main.cjs",
+  "main": "main/entry.cjs",
   "packageManager": "pnpm@11.5.2",
   "engines": {
     "node": ">=24 <25",
