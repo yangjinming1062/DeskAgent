@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import type { IconComponent } from '@/shared/lib/icons'
 import { cn } from '@/shared/lib/utils'
 
-import { PAGE_INSET_X } from '../layout-constants'
+import { PAGE_INSET_X } from '../../shared/layout/page-inset'
 
 export function SettingsContent({ children }: { children: ReactNode }) {
   return (

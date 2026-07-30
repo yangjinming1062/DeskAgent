@@ -1,9 +1,9 @@
 import { useEffect, useRef } from 'react'
 
-import { DeskAgentGateway } from '@/deskagent'
+import { DeskAgentGateway } from '@/shared/deskagent'
 import type { DeskAgentConnection } from '@/shared/types/global'
 import { translateNow } from '@/shared/i18n'
-import { resolveGatewayWsUrl } from '@/lib/gateway-ws-url'
+import { resolveGatewayWsUrl } from '@/shared/lib/gateway-ws-url'
 import { reconnectBackoffMs } from '@/shared/lib/reconnect'
 import { logout } from '@/store/auth'
 import { applyDesktopBootProgress, completeDesktopBoot, failDesktopBoot, setDesktopBootStep } from '@/store/boot'

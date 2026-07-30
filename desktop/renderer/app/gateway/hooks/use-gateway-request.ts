@@ -1,8 +1,8 @@
 import { useStore } from '@nanostores/react'
 import { useCallback, useEffect, useRef } from 'react'
 
-import type { DeskAgentGateway } from '@/deskagent'
-import { resolveGatewayWsUrl } from '@/lib/gateway-ws-url'
+import type { DeskAgentGateway } from '@/shared/deskagent'
+import { resolveGatewayWsUrl } from '@/shared/lib/gateway-ws-url'
 import { $gateway, $gatewayState, setConnection } from '@/store/gateway'
 
 export function useGatewayRequest() {
