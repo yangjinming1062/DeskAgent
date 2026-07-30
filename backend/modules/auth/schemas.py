@@ -3,7 +3,6 @@ from datetime import datetime
 from pydantic import BaseModel
 from pydantic import ConfigDict
 from pydantic import Field
-from pydantic import model_validator
 
 
 class UserInfo(BaseModel):
@@ -11,18 +10,6 @@ class UserInfo(BaseModel):
 
     id: int
     username: str
-    display_name: str
-
-    @model_validator(mode="before")
-    @classmethod
-    def set_display_name(cls, data: dict | object) -> dict | object:
-        if isinstance(data, dict):
-            if not data.get("display_name"):
-                data["display_name"] = data.get("username", "")
-        else:
-            if not getattr(data, "display_name", None):
-                data.display_name = getattr(data, "username", "")
-        return data
 
 
 class ChatRequestClientContext(BaseModel):
@@ -139,14 +126,12 @@ class AdminTokenResponse(BaseModel):
 class UserCreate(BaseModel):
     username: str = Field(min_length=1, max_length=64)
     password: str = Field(min_length=8, max_length=128)
-    display_name: str = Field(default="", max_length=128)
     can_use: bool = True
     expires_at: datetime | None = None
 
 
 class UserUpdate(BaseModel):
     password: str | None = Field(default=None, min_length=8, max_length=128)
-    display_name: str | None = Field(default=None, max_length=128)
     can_use: bool | None = None
     expires_at: datetime | None = None
 
@@ -156,7 +141,6 @@ class UserResponse(BaseModel):
 
     id: int
     username: str
-    display_name: str
     can_use: bool
     expires_at: datetime | None
     is_active: bool

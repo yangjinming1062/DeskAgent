@@ -461,9 +461,9 @@ input[type="file"] { font-size: 0.78rem; }
                             <div class="table-scroll">
                                 <table>
                                     <thead><tr>
-                                        <th>ID</th><th>用户名</th><th>显示名称</th><th>登录权限</th><th>有效期</th><th>状态</th><th style="text-align:right">操作</th>
+                                        <th>ID</th><th>用户名</th><th>登录权限</th><th>有效期</th><th>状态</th><th style="text-align:right">操作</th>
                                     </tr></thead>
-                                    <tbody id="userList"><tr class="state-row"><td colspan="7"><div class="state-msg">加载中…</div></td></tr></tbody>
+                                    <tbody id="userList"><tr class="state-row"><td colspan="6"><div class="state-msg">加载中…</div></td></tr></tbody>
                                 </table>
                             </div>
                         </div>
@@ -552,10 +552,6 @@ input[type="file"] { font-size: 0.78rem; }
                 <label for="password">密码</label>
                 <input type="password" id="password" placeholder="至少 8 位" autocomplete="new-password">
                 <div class="hint" id="passwordHint"></div>
-            </div>
-            <div class="field">
-                <label for="displayName">显示名称</label>
-                <input type="text" id="displayName" placeholder="客户名称（留空则用用户名）" autocomplete="off">
             </div>
             <label class="checkbox-row"><input type="checkbox" id="canUse" checked> 允许登录客户端</label>
             <div class="field" style="margin-top:0.95rem">
@@ -763,14 +759,14 @@ async function loadUsers() {
         const data = await (await apiFetch('/api/admin/users')).json();
         tabCache.users = data;
         renderUsers(data);
-    } catch (e) { $('#userList').innerHTML = stateRow(7, '加载失败：' + e.message, '', true); }
+    } catch (e) { $('#userList').innerHTML = stateRow(6, '加载失败：' + e.message, '', true); }
 }
 
 function renderUsers(data) {
     const tbody = $('#userList');
     const items = getItems(data);
     $('#userCount').textContent = items.length ? `${items.length} 个用户` : '';
-    if (!items.length) { tbody.innerHTML = stateRow(7, '暂无用户', '点击右上角“创建用户”添加'); return; }
+    if (!items.length) { tbody.innerHTML = stateRow(6, '暂无用户', '点击右上角“创建用户”添加'); return; }
     tbody.innerHTML = items.map(u => {
         const expired = u.expires_at && new Date(u.expires_at) < new Date();
         const expir = u.expires_at
@@ -779,7 +775,6 @@ function renderUsers(data) {
         return `<tr>
             <td class="td-id">${u.id}</td>
             <td><div class="cell-strong">${esc(u.username)}</div></td>
-            <td>${esc(u.display_name)}</td>
             <td>${u.can_use ? pill('允许', 'green') : pill('禁止', 'muted')}</td>
             <td>${expir}</td>
             <td>${u.is_active ? pill('启用', 'green') : pill('停用', 'red')}</td>
@@ -797,7 +792,6 @@ function showCreateUser() {
     $('#editUserId').value = '';
     $('#username').value = ''; $('#username').disabled = false;
     $('#password').value = '';
-    $('#displayName').value = '';
     $('#canUse').checked = true;
     $('#expiresAt').value = '';
     $('#passwordHint').textContent = '至少 8 位';
@@ -812,7 +806,6 @@ async function editUser(id) {
         $('#editUserId').value = u.id;
         $('#username').value = u.username; $('#username').disabled = true;
         $('#password').value = '';
-        $('#displayName').value = u.display_name;
         $('#canUse').checked = u.can_use;
         $('#expiresAt').value = fmtDateOnly(u.expires_at);
         $('#passwordHint').textContent = '留空表示不修改密码';
@@ -830,7 +823,6 @@ async function saveUser() {
         const pwd = $('#password').value;
         if (pwd) payload.password = pwd;
     }
-    payload.display_name = $('#displayName').value;
     payload.can_use = $('#canUse').checked;
     const ea = $('#expiresAt').value; payload.expires_at = ea || null;
     try {

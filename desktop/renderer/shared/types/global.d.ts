@@ -242,7 +242,6 @@ export interface DesktopBootProgress {
 }
 
 export interface DesktopAuthUser {
-  display_name: string
   id: number
   username: string
 }
