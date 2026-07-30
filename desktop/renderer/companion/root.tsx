@@ -9,12 +9,15 @@ import { $gatewayState } from '@/shared/store/gateway'
 
 import { ChatDock } from './chat-dock'
 import { handleCompanionEvent } from './events'
+import { handlePokeInteraction } from './interaction'
 import { OnboardingFlow } from './onboarding/onboarding-flow'
 import { speakProactive } from './proactive/proactive'
 import { ProactiveBubble } from './proactive/proactive-bubble'
 import { CompanionReady } from './sprite/companion-ready'
 import { Egg, type EggMode } from './sprite/egg'
 import { SpriteStage } from './sprite/sprite-stage'
+
+import { VoiceCallDock } from './voice-call-dock'
 
 const HATCH_AT = 5
 
@@ -38,6 +41,7 @@ export function CompanionRoot() {
   const lifecycle = useStore($companionLifecycle)
   const chatOpen = useStore($chatOpen)
   const [cracks, setCracks] = useState(0)
+  const [voiceCallOpen, setVoiceCallOpen] = useState(false)
 
   useEffect(() => {
     void hydrateAuth()
@@ -106,6 +110,11 @@ export function CompanionRoot() {
   const mode: EggMode = !authed ? 'teaser' : gatewayState === 'open' ? 'awake' : 'drowsy'
 
   const onTap = () => {
+    if (showReady) {
+      handlePokeInteraction()
+      return
+    }
+
     // Pre-auth: each tap cracks the egg; 5 cracks shatter it and summon login.
     if (authed) {return}
 
@@ -135,7 +144,16 @@ export function CompanionRoot() {
           {showReady ? <CompanionReady /> : <Egg cracks={cracks} mode={mode} />}
         </SpriteStage>
       )}
-      {showReady && chatOpen && <ChatDock onClose={() => setChatOpen(false)} />}
+      {showReady && chatOpen && (
+        <ChatDock
+          onClose={() => setChatOpen(false)}
+          onOpenVoiceCall={() => {
+            setChatOpen(false)
+            setVoiceCallOpen(true)
+          }}
+        />
+      )}
+      {showReady && voiceCallOpen && <VoiceCallDock onClose={() => setVoiceCallOpen(false)} />}
       {showReady && <ProactiveBubble />}
       {authed && <GatewayBooter />}
     </>

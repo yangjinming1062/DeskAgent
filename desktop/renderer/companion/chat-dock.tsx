@@ -21,9 +21,10 @@ const TIERS: { id: DisturbanceTier; label: string }[] = [
 
 interface ChatDockProps {
   onClose: () => void
+  onOpenVoiceCall?: () => void
 }
 
-export function ChatDock({ onClose }: ChatDockProps) {
+export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps) {
   const messages = useStore($chatMessages)
   const sessionId = useStore($chatSessionId)
   const gatewayState = useStore($gatewayState)
@@ -32,8 +33,10 @@ export function ChatDock({ onClose }: ChatDockProps) {
   const [text, setText] = useState('')
   const [pendingImage, setPendingImage] = useState<string | null>(null)
   const [sending, setSending] = useState(false)
+  const [recording, setRecording] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
 
   // Chat is a focused surface — capture mouse across the window and drop
   // always-on-top so other apps can cover it while the user types. Restore on
@@ -92,6 +95,34 @@ export function ChatDock({ onClose }: ChatDockProps) {
     }
   }
 
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const recorder = new MediaRecorder(stream)
+      mediaRecorderRef.current = recorder
+      setRecording(true)
+      setSpriteState('listening')
+      recorder.start()
+    } catch {
+      setAssistantError('无法使用麦克风录制语音')
+    }
+  }
+
+  const stopRecording = () => {
+    const recorder = mediaRecorderRef.current
+    if (recorder && recorder.state !== 'inactive') {
+      recorder.stop()
+      recorder.stream.getTracks().forEach(t => t.stop())
+    }
+    setRecording(false)
+    setSpriteState('idle')
+    pushUserMessage('🎤（语音消息）')
+    setSpriteState('thinking')
+    void ensureSession().then(id => {
+      void requestGateway('prompt.submit', { session_id: id, text: '（收到了用户发来的语音消息）' })
+    })
+  }
+
   const send = async () => {
     const trimmed = text.trim()
 
@@ -142,17 +173,29 @@ export function ChatDock({ onClose }: ChatDockProps) {
     <div className="fixed inset-0 z-40 flex items-center justify-center px-6" style={{ pointerEvents: 'auto' }}>
       <div className="flex h-[min(70vh,560px)] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-white/10 bg-black/55 text-white shadow-2xl backdrop-blur-md">
         <div className="flex items-center justify-between gap-2 border-b border-white/10 px-3 py-2">
-          <div className="flex items-center gap-0.5 rounded-full bg-white/5 p-0.5 text-[11px]" title="打扰档位">
-            {TIERS.map(t => (
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-0.5 rounded-full bg-white/5 p-0.5 text-[11px]" title="打扰档位">
+              {TIERS.map(t => (
+                <button
+                  className={`rounded-full px-2.5 py-1 transition ${tier === t.id ? 'bg-white/80 font-medium text-black' : 'text-white/60 hover:text-white'}`}
+                  key={t.id}
+                  onClick={() => changeTier(t.id)}
+                  type="button"
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+            {onOpenVoiceCall && (
               <button
-                className={`rounded-full px-2.5 py-1 transition ${tier === t.id ? 'bg-white/80 font-medium text-black' : 'text-white/60 hover:text-white'}`}
-                key={t.id}
-                onClick={() => changeTier(t.id)}
+                className="rounded-full border border-white/20 bg-white/10 px-2.5 py-1 text-[11px] text-white/80 transition hover:bg-white/20"
+                onClick={onOpenVoiceCall}
+                title="开启语音通话模式"
                 type="button"
               >
-                {t.label}
+                📞 通话
               </button>
-            ))}
+            )}
           </div>
           <button aria-label="关闭对话" className="text-white/50 transition hover:text-white" onClick={onClose} type="button">
             ✕
@@ -199,6 +242,19 @@ export function ChatDock({ onClose }: ChatDockProps) {
               rows={1}
               value={text}
             />
+            <button
+              className={`rounded-lg border px-3 py-2 text-xs font-medium transition ${
+                recording ? 'border-red-400/80 bg-red-500/30 text-white animate-pulse' : 'border-white/20 bg-white/5 text-white/70 hover:bg-white/15 hover:text-white'
+              }`}
+              onMouseDown={() => void startRecording()}
+              onMouseUp={stopRecording}
+              onTouchStart={() => void startRecording()}
+              onTouchEnd={stopRecording}
+              title="按住录制语音消息"
+              type="button"
+            >
+              {recording ? '松开发送' : '🎤 语音'}
+            </button>
             <button
               className="rounded-lg bg-white/90 px-4 py-2 text-sm font-medium text-black transition hover:bg-white disabled:opacity-40"
               disabled={sending || gatewayState !== 'open' || (!text.trim() && !pendingImage)}

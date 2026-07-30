@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 
 import { applyDesktopBootProgress, completeDesktopBoot, failDesktopBoot, setDesktopBootStep } from '@/companion/boot-store'
+import { setSpriteState } from '@/companion/companion-store'
 import { DeskAgentGateway } from '@/shared/deskagent'
 import { translateNow } from '@/shared/i18n'
 import { resolveGatewayWsUrl } from '@/shared/lib/gateway-ws-url'
@@ -94,6 +95,7 @@ export function useGatewayBoot({ handleGatewayEvent, onConnectionReady, onGatewa
     let bootOverlayDismissed = false
     let reconnecting = false
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null
+    let graceTimer: ReturnType<typeof setTimeout> | null = null
     let reconnectAttempt = 0
     // Surface "sign in again" once per disconnect episode, not on every backoff
     // tick — a stale OAuth ticket fails every attempt and would otherwise stack
@@ -115,6 +117,13 @@ export function useGatewayBoot({ handleGatewayEvent, onConnectionReady, onGatewa
       if (reconnectTimer !== null) {
         clearTimeout(reconnectTimer)
         reconnectTimer = null
+      }
+    }
+
+    const clearGraceTimer = () => {
+      if (graceTimer !== null) {
+        clearTimeout(graceTimer)
+        graceTimer = null
       }
     }
 
@@ -209,6 +218,7 @@ export function useGatewayBoot({ handleGatewayEvent, onConnectionReady, onGatewa
         reconnectAttempt = 0
         reauthNotified = false
         clearReconnectTimer()
+        clearGraceTimer()
 
         // On a normal post-wake reconnect, nothing calls completeDesktopBoot()
         // afterwards, so dismiss the boot-progress overlay here once we're open
@@ -221,6 +231,16 @@ export function useGatewayBoot({ handleGatewayEvent, onConnectionReady, onGatewa
           void logout()
 
           return
+        }
+
+        // Schedule disconnection grace state (3s foreground, 30s background)
+        if (graceTimer === null) {
+          const isForeground = document.visibilityState === 'visible'
+          const graceMs = isForeground ? 3000 : 30000
+          graceTimer = setTimeout(() => {
+            graceTimer = null
+            setSpriteState('disconnected')
+          }, graceMs)
         }
 
         scheduleReconnect()
