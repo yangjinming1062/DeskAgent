@@ -10,6 +10,7 @@ import { $gatewayState } from '@/shared/store/gateway'
 import { ChatDock } from './chat-dock'
 import { handleCompanionEvent } from './events'
 import { handlePokeInteraction } from './interaction'
+import { DeveloperOverlay } from './developer-overlay'
 import { OnboardingFlow } from './onboarding/onboarding-flow'
 import { speakProactive } from './proactive/proactive'
 import { ProactiveBubble } from './proactive/proactive-bubble'
@@ -193,6 +194,7 @@ export function CompanionRoot() {
       )}
       {showReady && voiceCallOpen && <VoiceCallDock onClose={() => setVoiceCallOpen(false)} />}
       {showReady && <ProactiveBubble />}
+      <DeveloperOverlay />
       {authed && <GatewayBooter />}
     </>
   )
