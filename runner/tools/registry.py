@@ -69,7 +69,7 @@ class ToolRegistry:
             unknown = ", ".join(sorted(kwargs))
             raise TypeError(f"registry.register_tool got unexpected keyword arguments: {unknown}")
         if schema is None:
-            raise TypeError(f"registry.register_tool({name!r}) requires a `schema=` argument. runner/CLAUDE.md mandates explicit schemas for every tool.")
+            raise TypeError(f"registry.register_tool({name!r}) requires a `schema=` argument (every tool must declare an explicit JSON Schema).")
 
         def decorator(func: Callable) -> Callable:
             with self._lock:
@@ -97,7 +97,7 @@ class ToolRegistry:
         if not handler:
             raise TypeError("registry.register requires a handler")
         if schema is None:
-            raise TypeError(f"registry.register({name!r}) requires a `schema=` argument. runner/CLAUDE.md mandates explicit schemas for every tool.")
+            raise TypeError(f"registry.register({name!r}) requires a `schema=` argument (every tool must declare an explicit JSON Schema).")
         if kwargs:
             unknown = ", ".join(sorted(kwargs))
             raise TypeError(f"registry.register got unexpected keyword arguments: {unknown}")

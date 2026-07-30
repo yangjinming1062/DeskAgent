@@ -401,14 +401,13 @@ def _rpc_server_loop(
                         tool_args.pop(param, None)
                 try:
                     _real_stdout, _real_stderr = sys.stdout, sys.stderr
-                    devnull = open(os.devnull, "w", encoding="utf-8")
-                    try:
-                        sys.stdout = devnull
-                        sys.stderr = devnull
-                        result = registry.dispatch(tool_name, tool_args, task_id=task_id)
-                    finally:
-                        sys.stdout, sys.stderr = _real_stdout, _real_stderr
-                        devnull.close()
+                    with open(os.devnull, "w", encoding="utf-8") as devnull:
+                        try:
+                            sys.stdout = devnull
+                            sys.stderr = devnull
+                            result = registry.dispatch(tool_name, tool_args, task_id=task_id)
+                        finally:
+                            sys.stdout, sys.stderr = _real_stdout, _real_stderr
                 except Exception as exc:
                     logger.error("Tool call failed in sandbox: %s", exc, exc_info=True)
                     result = tool_error(str(exc))
@@ -590,14 +589,13 @@ def _rpc_poll_loop(
                             tool_args.pop(param, None)
                     try:
                         _real_stdout, _real_stderr = sys.stdout, sys.stderr
-                        devnull = open(os.devnull, "w", encoding="utf-8")
-                        try:
-                            sys.stdout = devnull
-                            sys.stderr = devnull
-                            tool_result = registry.dispatch(tool_name, tool_args, task_id=task_id)
-                        finally:
-                            sys.stdout, sys.stderr = _real_stdout, _real_stderr
-                            devnull.close()
+                        with open(os.devnull, "w", encoding="utf-8") as devnull:
+                            try:
+                                sys.stdout = devnull
+                                sys.stderr = devnull
+                                tool_result = registry.dispatch(tool_name, tool_args, task_id=task_id)
+                            finally:
+                                sys.stdout, sys.stderr = _real_stdout, _real_stderr
                     except Exception as exc:
                         logger.error("Tool call failed in remote sandbox: %s", exc, exc_info=True)
                         tool_result = tool_error(str(exc))

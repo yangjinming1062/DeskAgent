@@ -192,9 +192,7 @@ def network_reachable(host: str = "1.1.1.1", port: int = 443, timeout: float = 1
 def disk_free_bytes(path: str | Path = ".") -> int | None:
     """Free bytes for ``path``'s filesystem. ``None`` if not queryable."""
     try:
-        import shutil as _shutil
-
-        return _shutil.disk_usage(path).free
+        return shutil.disk_usage(path).free
     except OSError:
         return None
 

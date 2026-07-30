@@ -24,27 +24,18 @@ else:
         return _msvcrt
 
 
-from ..interrupt import INTERRUPT_EVENT
-from ..interrupt import is_interrupted
 from ..registry import registry
 from ..system.clean import clean_output
 from ..tool_output_limits import get_max_bytes
-from ._env_docker import find_docker
 from ._env_singularity import _get_scratch_dir
-from .environment import DOCKER_ORPHAN_LIFETIME_SECONDS
 from .environment import _active_environments
 from .environment import _creation_locks
 from .environment import _creation_locks_lock
 from .environment import _env_lock
 from .environment import _last_activity
 from .environment import _task_env_overrides
-from .environment import cleanup_all_environments
-from .environment import cleanup_vm
 from .environment import create_environment
-from .environment import get_active_env
 from .environment import get_env_config
-from .environment import is_persistent_env
-from .environment import register_environment
 from .environment import resolve_container_task_id
 from .environment import start_cleanup_thread
 from utils import cfg_get
@@ -152,7 +143,9 @@ def _validate_workdir(workdir: str) -> str | None:
 
 
 def _prompt_for_sudo_password(timeout_seconds: int = 45) -> str:
-
+    cached = _get_cached_sudo_password()
+    if cached:
+        return cached
     _sudo_cb = _get_sudo_password_callback()
     if _sudo_cb is not None:
         try:
@@ -986,10 +979,8 @@ def terminal_tool(
                 head_chars = int(MAX_OUTPUT_CHARS * 0.4)
                 tail_chars = MAX_OUTPUT_CHARS - head_chars
                 omitted = len(output) - head_chars - tail_chars
-                truncated_notice = f"\n\n... [OUTPUT TRUNCATED - {omitted} chars omitted " f"out of {len(output)} total] ...\n\n"
+                truncated_notice = f"\n\n... [OUTPUT TRUNCATED - {omitted} chars omitted out of {len(output)} total] ...\n\n"
                 output = output[:head_chars] + truncated_notice + output[-tail_chars:]
-            from ..system.clean import clean_output
-
             output = clean_output(output.strip()) if output else ""
             exit_note = _interpret_exit_code(command, returncode)
             result_dict = {
@@ -1005,66 +996,6 @@ def terminal_tool(
         logger.error("terminal_tool exception:\n%s", tb_str)
         return json.dumps({"output": "", "exit_code": -1, "error": f"Failed to execute command: {str(e)}", "traceback": tb_str, "status": "error"}, ensure_ascii=False)
 
-
-def check_terminal_requirements() -> bool:
-
-    try:
-        config = get_env_config()
-        env_type = config["env_type"]
-        if env_type == "local":
-            return True
-        elif env_type == "docker":
-            docker = find_docker()
-            if not docker:
-                logger.error("Docker executable not found in PATH or common install locations")
-                return False
-            result = subprocess.run([docker, "version"], capture_output=True, timeout=5, stdin=subprocess.DEVNULL)
-            return result.returncode == 0
-        elif env_type == "singularity":
-            executable = shutil.which("apptainer") or shutil.which("singularity")
-            if executable:
-                result = subprocess.run([executable, "--version"], capture_output=True, timeout=5, stdin=subprocess.DEVNULL)
-                return result.returncode == 0
-            return False
-        elif env_type == "ssh":
-            if not config.get("ssh_host") or not config.get("ssh_user"):
-                logger.error("SSH backend selected but TERMINAL_SSH_HOST and TERMINAL_SSH_USER " "are not both set. Configure both or switch TERMINAL_ENV to 'local'.")
-                return False
-            return True
-        else:
-            logger.error(
-                "Unknown TERMINAL_ENV '%s'. Use one of: local, docker, singularity, or ssh.",
-                env_type,
-            )
-            return False
-    except Exception as e:
-        logger.error("Terminal requirements check failed: %s", e, exc_info=True)
-        return False
-
-
-if __name__ == "__main__":
-
-    print("Terminal Tool Module")
-    print("=" * 50)
-    config = get_env_config()
-    print("\nCurrent Configuration:")
-    print(f"  Environment type: {config['env_type']}")
-    print(f"  Docker image: {config['docker_image']}")
-    print(f"  Working directory: {config['cwd']}")
-    print(f"  Default timeout: {config['timeout']}s")
-    print(f"  Lifetime: {config['lifetime_seconds']}s")
-    if not check_terminal_requirements():
-        print("\n❌ Requirements not met. Please check the messages above.")
-        sys.exit(1)
-    print("\n✅ All requirements met!")
-    print("\nAvailable Tool:")
-    print("  - terminal_tool: Execute commands in sandboxed environments")
-    print("\nUsage Examples:")
-    print("  # Execute a command")
-    print("  result = terminal_tool(command='ls -la')")
-    print("  ")
-    print("  # Run a background task")
-    print("  result = terminal_tool(command='python server.py', background=True)")
 
 TERMINAL_SCHEMA = {
     "name": "terminal",
@@ -1087,6 +1018,11 @@ TERMINAL_SCHEMA = {
             "pty": {
                 "type": "boolean",
                 "description": "Run in pseudo-terminal (PTY) mode for interactive CLI tools like Codex, Claude Code, or Python REPL. Only works with local and SSH backends. Default: false.",
+                "default": False,
+            },
+            "force": {
+                "type": "boolean",
+                "description": "Skip the tirith safety scan for this single command (YOLO mode). Useful only when the user explicitly trusts the command — never set this for untrusted or model-originated input. Default: false.",
                 "default": False,
             },
             "notify_on_complete": {

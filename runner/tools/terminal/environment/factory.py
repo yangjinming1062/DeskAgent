@@ -18,6 +18,7 @@ def create_environment(
     host_cwd: str = None,
 ):
     cc = container_config or {}
+    lc = local_config or {}
     cpu = cc.get("container_cpu", 1)
     memory = cc.get("container_memory", 5120)
     disk = cc.get("container_disk", 51200)
@@ -27,7 +28,7 @@ def create_environment(
     docker_env = cc.get("docker_env", {})
     docker_extra_args = cc.get("docker_extra_args", [])
     if env_type == "local":
-        return LocalEnvironment(cwd=cwd, timeout=timeout)
+        return LocalEnvironment(cwd=cwd, timeout=timeout, persistent=lc.get("persistent", False))
     elif env_type == "docker":
         maybe_reap_docker_orphans(cc, DOCKER_ORPHAN_LIFETIME_SECONDS)
         return DockerEnvironment(

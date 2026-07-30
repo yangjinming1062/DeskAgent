@@ -5,7 +5,7 @@ from pathlib import Path
 from .config import cfg_get
 from .config import load_config
 from .constants import get_deskagent_home
-from .constants import IS_WINDOWS as _IS_WINDOWS
+from .constants import IS_WINDOWS
 
 _BLOCKED_PROJECT_ENV_BASENAMES: set[str] = {".env", ".env.local", ".env.development", ".env.production", ".env.test", ".env.staging", ".envrc"}
 PROFILE_SCOPED_AREAS = ("skills", "plugins", "cron", "memories")
@@ -91,7 +91,7 @@ def build_write_denied_prefixes(home: str) -> list[str]:
         p_home / "AppData/Roaming/Microsoft",
         p_home / "AppData/Local/Microsoft",
     ]
-    sources = posix_prefixes if not _IS_WINDOWS else windows_prefixes
+    sources = [*posix_prefixes, *windows_prefixes] if IS_WINDOWS else posix_prefixes
     result = [os.path.realpath(p) + os.sep for p in sources if str(p)]
     _denied_prefixes_cache = (home, result)
     return result
@@ -146,7 +146,7 @@ def _enumerate_windows_drives() -> tuple[str, ...]:
     Empty on non-Windows; ``("c",)`` on enumeration failure. Result is
     memoized — drive topology doesn't change for the runner's lifetime.
     """
-    if not _IS_WINDOWS:
+    if not IS_WINDOWS:
         return ()
     try:
         import ctypes
@@ -178,11 +178,11 @@ def is_write_denied(path: str) -> bool:
     # ``c:/windows/system32`` or any trailing-separator variant still hits
     # the denylist — otherwise the agent can bypass it with a different
     # slash style. POSIX is left untouched (no case folding).
-    resolved_norm = resolved.replace("\\", "/").lower() if _IS_WINDOWS else resolved
+    resolved_norm = resolved.replace("\\", "/").lower() if IS_WINDOWS else resolved
 
     if resolved in build_write_denied_paths(home):
         return True
-    if _IS_WINDOWS:
+    if IS_WINDOWS:
         # Pre-normalized prefixes — one pass, no per-prefix replace/lower.
         if any(resolved_norm.startswith(p) for p in _build_normalized_prefixes(home)):
             return True
@@ -254,10 +254,16 @@ def get_read_block_error(path: str) -> str | None:
 def _resolve_active_profile_name() -> str:
     try:
         deskagent_real = _deskagent_home_path().resolve()
-        rel = deskagent_real.relative_to(deskagent_real / "profiles")
+        profiles_root = deskagent_real / "profiles"
+        if not profiles_root.is_dir():
+            return "default"
+        try:
+            rel = deskagent_real.relative_to(profiles_root)
+        except ValueError:
+            return "default"
         if rel.parts:
             return rel.parts[0]
-    except (OSError, RuntimeError, ValueError):
+    except (OSError, RuntimeError):
         pass
     return "default"
 

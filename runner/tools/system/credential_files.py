@@ -94,16 +94,9 @@ def get_skills_directory_mount(container_base: str = "/root/.deskagent") -> list
     deskagent_home = get_deskagent_home()
     base = container_base.rstrip("/")
     mounts = [{"host_path": _safe_skills_path(skills_dir), "container_path": f"{base}/skills"}] if (skills_dir := deskagent_home / "skills").is_dir() else []
-    try:
-        mounts.extend(
-            [
-                {"host_path": _safe_skills_path(ext_dir), "container_path": f"{base}/external_skills/{idx}"}
-                for idx, ext_dir in enumerate(get_external_skills_dirs())
-                if ext_dir.is_dir()
-            ]
-        )
-    except ImportError:
-        pass
+    mounts.extend(
+        [{"host_path": _safe_skills_path(ext_dir), "container_path": f"{base}/external_skills/{idx}"} for idx, ext_dir in enumerate(get_external_skills_dirs()) if ext_dir.is_dir()]
+    )
     return mounts
 
 
@@ -136,10 +129,7 @@ def iter_skills_files(container_base: str = "/root/.deskagent") -> list[dict[str
     deskagent_home = get_deskagent_home()
     base = container_base.rstrip("/")
     dirs = [(deskagent_home / "skills", f"{base}/skills")] if (deskagent_home / "skills").is_dir() else []
-    try:
-        dirs.extend((ext_dir, f"{base}/external_skills/{idx}") for idx, ext_dir in enumerate(get_external_skills_dirs()) if ext_dir.is_dir())
-    except ImportError:
-        pass
+    dirs.extend((ext_dir, f"{base}/external_skills/{idx}") for idx, ext_dir in enumerate(get_external_skills_dirs()) if ext_dir.is_dir())
     return [
         {"host_path": str(item), "container_path": f"{c_root}/{item.relative_to(s_dir)}"}
         for s_dir, c_root in dirs

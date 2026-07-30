@@ -121,7 +121,7 @@ def load_website_blocklist(config_path: Path | None = None) -> dict[str, Any]:
 
     result = {"enabled": enabled, "rules": rules}
 
-    if config_path == _get_default_config_path():
+    if config_path == _get_default_config_path() or config_path.resolve() == _get_default_config_path().resolve():
         with _cache_lock:
             _cached_policy, _cached_policy_path, _cached_policy_time = result, "__default__", now
 

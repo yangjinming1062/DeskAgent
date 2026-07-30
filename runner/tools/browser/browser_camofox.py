@@ -12,6 +12,7 @@ from urllib.parse import urlsplit
 from urllib.parse import urlunsplit
 
 import requests
+from utils import call_llm
 from utils import cfg_get
 from utils import get_deskagent_home
 from utils import load_config

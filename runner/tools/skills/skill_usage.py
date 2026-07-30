@@ -75,25 +75,24 @@ def is_excluded_skill_path(path: Path) -> bool:
 def _usage_file_lock():
     lock_path = _usage_file().with_suffix(".json.lock")
     lock_path.parent.mkdir(parents=True, exist_ok=True)
-    fd = open(lock_path, "a+", encoding="utf-8")
-    try:
-        if sys.platform == "win32":
-            msvcrt.locking(fd.fileno(), msvcrt.LK_LOCK, 1)
-        else:
-            fcntl.flock(fd, fcntl.LOCK_EX)
-        yield
-    finally:
-        if sys.platform == "win32":
-            try:
-                msvcrt.locking(fd.fileno(), msvcrt.LK_UNLCK, 1)
-            except OSError:
-                pass
-        else:
-            try:
-                fcntl.flock(fd, fcntl.LOCK_UN)
-            except OSError:
-                pass
-        fd.close()
+    with open(lock_path, "a+", encoding="utf-8") as fd:
+        try:
+            if sys.platform == "win32":
+                msvcrt.locking(fd.fileno(), msvcrt.LK_LOCK, 1)
+            else:
+                fcntl.flock(fd, fcntl.LOCK_EX)
+            yield
+        finally:
+            if sys.platform == "win32":
+                try:
+                    msvcrt.locking(fd.fileno(), msvcrt.LK_UNLCK, 1)
+                except OSError:
+                    pass
+            else:
+                try:
+                    fcntl.flock(fd, fcntl.LOCK_UN)
+                except OSError:
+                    pass
 
 
 def _archive_dir() -> Path:

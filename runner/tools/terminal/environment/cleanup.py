@@ -1,3 +1,4 @@
+import atexit
 import glob
 import inspect
 import logging
@@ -116,7 +117,12 @@ def cleanup_all_environments():
         except Exception as e:
             logger.error("Error cleaning %s: %s", task_id, e, exc_info=True)
     scratch_dir = _get_scratch_dir()
+    # Skip `deskagent-overlays/` (Singularity persistent overlays live under
+    # it bound to live task_ids) — wiping this dir during cleanup will
+    # silently nuke overlays that persistent sessions still use.
     for path in glob.glob(str(scratch_dir / "deskagent-*")):
+        if path.endswith("deskagent-overlays"):
+            continue
         try:
             shutil.rmtree(path, ignore_errors=True)
             logger.info("Removed orphaned: %s", path)
@@ -169,7 +175,5 @@ def _atexit_cleanup():
             except Exception as e:
                 logger.debug("wait_for_cleanup raised on exit: %s", e)
 
-
-import atexit
 
 atexit.register(_atexit_cleanup)

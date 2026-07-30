@@ -118,8 +118,9 @@ def maybe_reap_docker_orphans(container_config: dict, lifetime_seconds: int | No
         _orphan_reaper_ran = True
     lifetime = max(60, lifetime_seconds or _DEFAULT_ORPHAN_LIFETIME_SECONDS)
     max_age = lifetime * 2
+    active_profile = cfg_get(load_config(), "profile", "name", default="default")
     try:
-        removed = reap_orphan_containers(max_age_seconds=max_age, profile_filter="default")
+        removed = reap_orphan_containers(max_age_seconds=max_age, profile_filter=active_profile)
         if removed:
             logger.info("Docker orphan reaper removed %d stale container(s)", removed)
     except Exception as e:

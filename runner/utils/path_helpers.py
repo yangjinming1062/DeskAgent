@@ -8,15 +8,26 @@ from pathlib import Path
 
 from .config import cfg_get
 from .config import load_config
-from .constants import IS_WINDOWS as _IS_WINDOWS
+from .constants import get_deskagent_home
+from .constants import IS_WINDOWS
 
-SANE_PATH = "/opt/homebrew/bin:" "/opt/homebrew/sbin:" "/usr/local/sbin:" "/usr/local/bin:" "/usr/sbin:" "/usr/bin:" "/sbin:" "/bin"
+SANE_PATH = ":".join(
+    (
+        "/opt/homebrew/bin",
+        "/usr/local/sbin",
+        "/usr/local/bin",
+        "/usr/sbin",
+        "/usr/bin",
+        "/sbin",
+        "/bin",
+    )
+)
 
 _MSYS_PATH_RE = re.compile(r"^/([a-zA-Z])(/.*)?$")
 
 
 def msys_to_windows_path(cwd: str) -> str:
-    if not _IS_WINDOWS or not cwd:
+    if not IS_WINDOWS or not cwd:
         return cwd
     m = _MSYS_PATH_RE.match(cwd)
     if not m:
@@ -27,7 +38,7 @@ def msys_to_windows_path(cwd: str) -> str:
 
 
 def resolve_safe_cwd(cwd: str) -> str:
-    cwd = msys_to_windows_path(cwd) if _IS_WINDOWS else cwd
+    cwd = msys_to_windows_path(cwd)
     if cwd and os.path.isdir(cwd):
         return cwd
     parent = os.path.dirname(cwd) if cwd else ""
@@ -42,7 +53,7 @@ def resolve_safe_cwd(cwd: str) -> str:
 
 def find_bash() -> str:
     """Return absolute path to a runnable bash; raise on Windows if Git for Windows is missing."""
-    if not _IS_WINDOWS:
+    if not IS_WINDOWS:
         return shutil.which("bash") or next((p for p in ("/usr/bin/bash", "/bin/bash") if os.path.isfile(p)), None) or os.environ.get("SHELL") or "/bin/sh"
 
     if (custom := cfg_get(load_config(), "terminal", "git_bash_path", default="")) and os.path.isfile(custom):
@@ -64,59 +75,39 @@ def find_bash() -> str:
     ):
         if candidate and os.path.isfile(candidate):
             return candidate
-    raise RuntimeError("Git Bash not found. Install Git for Windows or set DESKAGENT_GIT_BASH_PATH.")
+    raise RuntimeError("Git Bash not found. Install Git for Windows or set terminal.git_bash_path in config.yaml.")
 
 
 def append_sane_path_entries(existing_path: str) -> str:
-    if _IS_WINDOWS:
+    if IS_WINDOWS:
         return existing_path
-    seen: set[str] = set()
-    ordered = [entry for entry in existing_path.split(":") if entry and not (entry in seen or seen.add(entry))]
-    return ":".join(ordered + [entry for entry in SANE_PATH.split(":") if entry and entry not in seen])
+    existing = dict.fromkeys(p for p in existing_path.split(":") if p)
+    sane = dict.fromkeys(p for p in SANE_PATH.split(":") if p)
+    seen = {*existing, *sane}
+    return ":".join(p for p in (existing | seen) if p)
 
 
 @functools.lru_cache(maxsize=1)
 def find_python() -> str | None:
-    """Locate the uv-managed Python for the user's deskagent venv.
+    """Locate the uv-managed Python for the user's deskagent venv. Returns None when no usable interpreter is found; callers fall back to ``sys.executable``.
 
-    Lookup order:
-      1. ``DESKAGENT_PYTHON`` env var (explicit override).
-      2. ``$DESKAGENT_HOME/runner/.venv/bin/python`` (POSIX) or
-         ``Scripts\\python.exe`` (Win).
-      3. ``uv python find`` against the managed uv (if on PATH or at
-         ``$DESKAGENT_HOME/bin/uv``), parse first line.
-
-    Returns ``None`` when no usable interpreter is found; callers fall back
-    to ``sys.executable``.
+    Resolved once per process — a venv created after the first call is invisible until the runner restarts.
     """
     if override := os.environ.get("DESKAGENT_PYTHON"):
         if Path(override).is_file():
             return override
 
-    deskagent_home = os.environ.get("DESKAGENT_HOME")
-    if not deskagent_home:
-        # Derive DESKAGENT_HOME using the same logic as constants.get_deskagent_home()
-        if _IS_WINDOWS and (lap := os.environ.get("LOCALAPPDATA")):
-            deskagent_home = str(Path(lap) / "deskagent")
-        else:
-            deskagent_home = str(Path.home() / ".deskagent")
-
-    root = Path(deskagent_home) / "runner" / ".venv"
-    if _IS_WINDOWS:
-        candidates = [root / "Scripts" / "python.exe", root / "Scripts" / "python3.exe"]
+    root = Path(get_deskagent_home()) / "runner" / ".venv"
+    if IS_WINDOWS:
+        candidates = (root / "Scripts" / "python.exe", root / "Scripts" / "python3.exe")
     else:
-        candidates = [root / "bin" / "python", root / "bin" / "python3"]
+        candidates = (root / "bin" / "python", root / "bin" / "python3")
     for c in candidates:
         if c.is_file() and os.access(c, os.X_OK):
             return str(c)
 
-    # Fallback: ask uv for any installed cpython matching requires-python.
-    uv_candidates = [shutil.which("uv")]
-    if _IS_WINDOWS:
-        uv_candidates.append(str(Path(deskagent_home) / "bin" / "uv.exe"))
-    else:
-        uv_candidates.append(str(Path(deskagent_home) / "bin" / "uv"))
-    for uv in uv_candidates:
+    uv_exe = "uv.exe" if IS_WINDOWS else "uv"
+    for uv in (shutil.which("uv"), str(Path(root).parents[2] / "bin" / uv_exe)):
         if not uv or not Path(uv).is_file():
             continue
         try:

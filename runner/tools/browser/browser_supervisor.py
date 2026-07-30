@@ -1,5 +1,5 @@
 import asyncio
-import base64 as _b64
+import base64
 import json
 import logging
 import tempfile
@@ -1335,7 +1335,7 @@ class CDPSupervisor:
                         {"name": "Content-Type", "value": "application/json"},
                         {"name": "Access-Control-Allow-Origin", "value": "*"},
                     ],
-                    "body": _b64.b64encode(body).decode(),
+                    "body": base64.b64encode(body).decode(),
                 },
                 session_id=dialog.cdp_session_id or None,
                 timeout=5.0,

@@ -454,7 +454,11 @@ def _maybe_follow_capture(backend: ComputerUseBackend, res: ActionResult, do_cap
 
 
 def _format_elements(elements: list[UIElement], max_lines: int = 40) -> list[str]:
-    out = [f"  #{e.index} {e.role} {e.label.replace('\n', ' ')[:60]!r} @ {e.bounds}" + (f" [{e.app}]" if e.app else "") for e in elements[:max_lines]]
+    out = []
+    for e in elements[:max_lines]:
+        label = e.label.replace("\n", " ")[:60]
+        app_suffix = f" [{e.app}]" if e.app else ""
+        out.append(f"  #{e.index} {e.role} {label!r} @ {e.bounds}{app_suffix}")
     if len(elements) > max_lines:
         out.append(f"  ... +{len(elements) - max_lines} more (call capture with app= to narrow)")
     return out
