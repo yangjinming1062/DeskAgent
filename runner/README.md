@@ -185,7 +185,14 @@ MCP 工具由 `discover_mcp_tools()` 在 `server_loop` 紧跟 `runner_ready` 之
 
 ### 测试钉子
 
-`test_startup_imports.py` 钉死 `server.py` 的每行 module-level import（MCP load-bearing 等关键传递依赖）。`.pre-commit-config.yaml` 在 runner 文件改动时跑它（<1s）；`build_client.{ps1,sh}` 在 `uv build --wheel` 之前跑整个 `tests/` 作为发布门——任意一层失败都拦下坏 wheel（env-rot、传递依赖损坏永远不应该出 repo）。
+`tests/` 现在 300+ 测试，~3.5s 全跑完，分四层：
+
+- **WebSocket 协议层**（`test_server_websocket.py`）—— 真起 `websockets.serve` + 跑 `runner_loop`，覆盖握手 / `request_llm` / `get_tools` / `deskagent.info` / `execute_tool` / `mcp.reload` / `deskagent.cancel` / unknown-method / pending-RPC drain on disconnect。
+- **process & pid 跨平台层**（`test_pid.py`、`test_process_tool.py`）—— `kill_tree` 的 8 类返回路径（Windows + POSIX NotImplementedError）、`format_process_notification` 事件三型、`_handle_process` 8 个 action 路由。
+- **utils 残留覆盖**（`test_utils_residual.py`）—— `file_safety` 拒绝/放行矩阵、`redact` 13 类 token、`config` mtime 缓存、`env_helpers` HOME 注入。
+- **tool 子包纯 helper**（`test_tools_residual.py`）—— interrupt 标志、output_limits、tool_result_storage、url_safety、website_policy、execute_code 的 `_scrub_child_env` 和生成的 sandbox 模块模板、`toolsets` 目录过滤。
+
+`test_startup_imports.py` 钉死 `server.py` 的每行 module-level import（MCP load-bearing 等关键传递依赖）；`test_runner_runtime.py` 测 registry / capabilities / audio tool 注册。`.pre-commit-config.yaml` 在 runner 文件改动时跑 startup 子集（<1s）；`build_client.{ps1,sh}` 在 `uv build --wheel` 之前跑整个 `tests/` 作为发布门——任意一层失败都拦下坏 wheel（env-rot、传递依赖损坏永远不应该出 repo）。
 
 ## 终端后端
 
