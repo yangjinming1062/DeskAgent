@@ -160,14 +160,17 @@ def test_token(_patch_db):
 def _clear_client_cache():
     from services.llm import get_async_client
     from services.llm.providers import http as http_pool
+    from services.llm.providers.gemini import _client as gemini_pool
 
     get_async_client.cache_clear()
     http_pool._clients.clear()
     http_pool._clients_openai.clear()
+    gemini_pool.cache_clear()
     yield
     get_async_client.cache_clear()
     http_pool._clients.clear()
     http_pool._clients_openai.clear()
+    gemini_pool.cache_clear()
 
 
 # ── E2E test auto-skip ──────────────────────────────────────────────

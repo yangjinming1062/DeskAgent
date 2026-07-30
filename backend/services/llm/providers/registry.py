@@ -13,10 +13,10 @@ _REGISTRY: dict[tuple[ServiceType, str], type[BaseProvider]] = {}
 # `default_model_for()`. Per-cap `*_MODEL_NAME` env overrides win at resolve.
 _PROVIDER_DEFAULT_MODELS: dict[str, dict[str, str]] = {}
 
-# The two provider families DeskAgent currently ships. ``*_PROVIDER`` env
-# vars must be one of these; adding a new family means registering its
-# classes AND extending the dicts below.
-KNOWN_PROVIDERS: frozenset[str] = frozenset({"mimo", "minimax"})
+# Provider families DeskAgent ships. ``*_PROVIDER`` env vars must be one
+# of these; adding a new family means registering its classes AND extending
+# the dicts below.
+KNOWN_PROVIDERS: frozenset[str] = frozenset({"mimo", "minimax", "gemini"})
 
 # Default provider when ``SETTINGS.<svc>_provider`` is empty. Chat/STT/TTS
 # default to MiMo (OpenAI-compatible); image/video gen default to MiniMax.
@@ -48,6 +48,13 @@ PROVIDER_DEFAULT_URLS: dict[str, dict[str, str]] = {
         "tts": "https://api.minimaxi.com/v1",
         "image_gen": "https://api.minimaxi.com/v1",
         "video_gen": "https://api.minimaxi.com/v1",
+    },
+    "gemini": {
+        "llm": "https://generativelanguage.googleapis.com/v1beta/openai/",
+        "stt": "https://generativelanguage.googleapis.com",
+        "tts": "https://generativelanguage.googleapis.com",
+        "image_gen": "https://generativelanguage.googleapis.com",
+        "video_gen": "",
     },
 }
 
@@ -96,4 +103,6 @@ def infer_provider_name(base_url: str) -> str:
     host = (urlparse(base_url).hostname or "").lower()
     if host.endswith("minimaxi.com") or host.endswith("minimax.io"):
         return "minimax"
+    if host == "generativelanguage.googleapis.com":
+        return "gemini"
     return "mimo"

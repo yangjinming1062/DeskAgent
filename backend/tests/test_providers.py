@@ -67,6 +67,18 @@ class TestInferProviderName:
     @pytest.mark.parametrize(
         "base_url",
         [
+            "https://generativelanguage.googleapis.com/v1beta/openai/",
+            "https://GENERATIVELANGUAGE.GOOGLEAPIS.COM/v1beta/openai/",
+        ],
+    )
+    def test_gemini_hosts(self, base_url):
+        from services.llm.providers.registry import infer_provider_name
+
+        assert infer_provider_name(base_url) == "gemini"
+
+    @pytest.mark.parametrize(
+        "base_url",
+        [
             "https://api.xiaomimimo.com/v1",
             "https://api.openai.com/v1",
             "https://my-custom.example.com/v1",
@@ -343,10 +355,10 @@ class TestProvidersSupporting:
         image_providers = set(providers_supporting("image_gen"))
         video_providers = set(providers_supporting("video_gen"))
 
-        assert chat_providers == {"mimo", "minimax"}
-        assert stt_providers == {"mimo"}
-        assert tts_providers == {"mimo", "minimax"}
-        assert image_providers == {"mimo", "minimax"}
+        assert chat_providers == {"mimo", "minimax", "gemini"}
+        assert stt_providers == {"mimo", "gemini"}
+        assert tts_providers == {"mimo", "minimax", "gemini"}
+        assert image_providers == {"mimo", "minimax", "gemini"}
         assert video_providers == {"minimax"}
 
 

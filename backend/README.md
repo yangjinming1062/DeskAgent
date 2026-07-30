@@ -17,7 +17,7 @@ backend/
 │   │                   + chat_emitter(循环断路器，Emitter 协议) · system_prompt · history · message_sanitization · think_scrubber · agent_delegate · commands
 │   ├── gateway/       # WS 网关：connection(MANAGER+LISTEN/NOTIFY) · jsonrpc · emitter(JsonRpcEmitter) · ipc · runtime · auth · handlers(24 个 JSON-RPC 方法)
 │   ├── llm/           # LLM 客户端与错误分类：llm_client · llm_retry · error_classifier · context_compressor · user_config
-│   │                   + providers/(抽象层：base · registry · http · openai_compat · content · mimo/ · minimax/)
+│   │                   + providers/(抽象层：base · registry · http · openai_compat · content · mimo/ · minimax/ · gemini/)
 │   ├── media/         # 视频生成后台任务：video_jobs(submit/poll/download/finalize + WSEvent outbox)
 │   ├── tools/         # 工具框架 + 内置工具：registry · guardrails · memory · ... + builtin/(web/tts/image_gen/video_gen/send_message/cronjob)
 │   ├── companion/     # 伙伴系统：persona_service(onboarding draft + 角色定义) · avatar_service(generate/regenerate + clip seed) · clip_service(scene catalog + enqueue/list/invalidate) · disturbance
@@ -102,7 +102,7 @@ backend/
 
 ## LLM Provider 抽象
 
-`services/llm/providers/` 在五类服务（`ChatProvider` / `ImageGenProvider` / `VideoGenProvider` / `TTSProvider` / `STTProvider`）各放一个 ABC，`BaseProvider` 公共根。Provider 名解析规则：显式 `SETTINGS.<svc>_provider` 优先，否则按 `base_url` host 推断（`api.minimaxi.com` / `api.minimax.io` → `minimax`，其余 → `mimo`）。注册表 `registry.register(service_type, provider_name, cls)` 由 provider 子包 `__init__.py` 自注册；`providers/__init__.py` 仅 `from . import mimo, minimax` 触发。哪些 provider 支持哪些能力由 `(ServiceType, name)` 在 `_REGISTRY` 里的存在与否决定——`providers_supporting(service)` 返回所有注册过此服务的 provider 名列表。
+`services/llm/providers/` 在五类服务（`ChatProvider` / `ImageGenProvider` / `VideoGenProvider` / `TTSProvider` / `STTProvider`）各放一个 ABC，`BaseProvider` 公共根。Provider 名解析规则：显式 `SETTINGS.<svc>_provider` 优先，否则按 `base_url` host 推断（`api.minimaxi.com` / `api.minimax.io` → `minimax`，`googleapis.com` → `gemini`，其余 → `mimo`）。注册表 `registry.register(service_type, provider_name, cls)` 由 provider 子包 `__init__.py` 自注册；`providers/__init__.py` 仅 `from . import mimo, minimax, gemini` 触发。哪些 provider 支持哪些能力由 `(ServiceType, name)` 在 `_REGISTRY` 里的存在与否决定——`providers_supporting(service)` 返回所有注册过此服务的 provider 名列表。
 
 ### PROVIDER-first 配置
 
@@ -122,7 +122,7 @@ Tier 2-4 保持原 fold-in 语义（per-cap 覆盖 provider-level），兼容老
 
 `<svc>_PROVIDER` 不参与单 slot 凭证解析；它**只软重排** chain——把命名的 provider 提到第一位，chain 仍保留其它 provider 作为 fallback（设计决策：用户希望链不塌缩）。空 `<svc>_provider` + `PROVIDERS` 未设 → `SERVICE_DEFAULT_PROVIDER[svc]` 兜底（chat/stt/tts→`mimo`、image/video→`minimax`），chain 退化为单元素。
 
-**provider 默认 URL**（`PROVIDER_DEFAULT_URLS`）：MiMo 含 `/v1`（OpenAI SDK 需完整 base_url）；MiniMax 含 `/v1`（providers 自拼接 `/v1/<endpoint>`）。**key 隔离**：minimax provider 始终用 `MINIMAX_API_KEY`，不继承 MiMo key（host 不同会 401）；其他 provider 链路最终回落 `LLM_API_KEY` 兼容老部署。`MIMO_KEY` / `MINIMAX_KEY` 是 legacy 别名。
+**provider 默认 URL**（`PROVIDER_DEFAULT_URLS`）：MiMo 含 `/v1`（OpenAI SDK 需完整 base_url）；MiniMax 含 `/v1`（providers 自拼接 `/v1/<endpoint>`）；Gemini chat 含 `/v1beta/openai/`（Google OpenAI 兼容端点），其余能力（stt/tts/image_gen/video_gen）用 `generativelanguage.googleapis.com` 原生端点。**key 隔离**：minimax provider 始终用 `MINIMAX_API_KEY`，不继承 MiMo key（host 不同会 401）；gemini provider 用 `GEMINI_API_KEY`（兼容 `GEMINI_KEY` 别名）；其他 provider 链路最终回落 `LLM_API_KEY` 兼容老部署。`MIMO_KEY` / `MINIMAX_KEY` / `GEMINI_KEY` 是 legacy 别名。
 
 `backend/.env.example` 是完整模板。**最小配置**：`LLM_API_KEY` + `MINIMAX_API_KEY`——每 provider 用自己的默认 URL + model。
 
@@ -150,8 +150,12 @@ Tier 2-4 保持原 fold-in 语义（per-cap 覆盖 provider-level），兼容老
 
 ### 关键设计决策
 
-- chat 走 OpenAI 协议 → `OpenAICompatChatProvider` 共享基类；`MiMoChatProvider` 与 `MiniMaxChatProvider` 都继承它，差异只在 base_url 与 model
-- image_gen / video_gen / t2a_v2 与 OpenAI 协议**不兼容**，**一律走** `providers/http.py` 的 httpx 池（base_url + api_key 缓存，超时 `llm_request_timeout_seconds`），不做 `AsyncOpenAI.post` 兼容层 hack
+- chat 走 OpenAI 协议 → `OpenAICompatChatProvider` 共享基类；`MiMoChatProvider`、`MiniMaxChatProvider`、`GeminiChatProvider` 都继承它，差异只在 base_url 与 model
+- STT：MiMo 走 OpenAI chat + `input_audio` 扩展；Gemini 走 `generateContent` + audio inlineData httpx
+- TTS：MiMo 走 OpenAI chat + `audio` 扩展；MiniMax 走 `/v1/t2a_v2` httpx；Gemini 走 `generateContent` + `responseModalities:["AUDIO"]` httpx
+- image_gen：MiMo 走 OpenAI Images API；MiniMax 走 `/v1/image_generation` httpx；Gemini 走 `generateContent` + `responseModalities:["IMAGE"]` httpx
+- video_gen：MiniMax 走三段式 httpx（submit/poll/fetch）（Gemini Veo 需 Vertex AI，暂不支持）
+- 非 OpenAI 协议的能力**一律走** `providers/http.py` 的 httpx 池（base_url + api_key 缓存，超时 `llm_request_timeout_seconds`），不做 `AsyncOpenAI.post` 兼容层 hack
 - `ProviderError(status_code, body, provider, model)` 字段名刻意对齐 `error_classifier._extract_status_code/_extract_error_body`，让 `classify_api_error` 复用既有 8 步流水线——MiniMax `base_resp.status_code` 在 `providers/minimax/_errors.py` 翻译（`1002/1039→429`、`1004→401`、`1008→402`、`1027→400 content_filter`，其余→原 HTTP）
 - MiniMax key 不能继承 MiMo key（host 不同 401）；resolver 在 provider=minimax 时强制把回落链截断在 `minimax_api_key`
 
