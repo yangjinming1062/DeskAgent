@@ -16,7 +16,7 @@ import {
   clearNotifications,
   dismissNotification,
   type NotificationKind
-} from '@/store/notifications'
+} from '@/shared/store/notifications'
 
 type ToneVariant = 'default' | 'destructive' | 'warning' | 'success'
 

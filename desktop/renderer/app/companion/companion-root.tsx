@@ -2,9 +2,9 @@ import { useStore } from '@nanostores/react'
 import { useEffect, useState } from 'react'
 
 import { useGatewayBoot } from '@/app/gateway/hooks/use-gateway-boot'
-import { $auth, applyAuthBroadcast, hydrateAuth, logout } from '@/store/auth'
+import { $auth, applyAuthBroadcast, hydrateAuth, logout } from '@/shared/store/auth'
 import { $chatOpen, setChatOpen } from '@/store/chat'
-import { $gatewayState } from '@/store/gateway'
+import { $gatewayState } from '@/shared/store/gateway'
 import { $companionLifecycle, setCompanionLifecycle } from '@/store/companion'
 
 import { ChatDock } from './chat-dock'

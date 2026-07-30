@@ -5,8 +5,8 @@ import { BrandMark } from '@/shared/components/brand-mark'
 import { Button } from '@/components/ui/button'
 import { useI18n } from '@/shared/i18n'
 import { Loader2, RefreshCw } from '@/shared/lib/icons'
-import { $updateStatus, openUpdateDialog, selectTargetVersion } from '@/store/update'
-import { $desktopVersion, refreshDesktopVersion } from '@/store/version'
+import { $updateStatus, openUpdateDialog, selectTargetVersion } from '@/shared/store/update'
+import { $desktopVersion, refreshDesktopVersion } from '@/shared/store/version'
 
 import { SettingsContent } from './primitives'
 

@@ -1,7 +1,7 @@
 import { useStore } from '@nanostores/react'
 import { useEffect, useState } from 'react'
 
-import { $gatewayState } from '@/store/gateway'
+import { $gatewayState } from '@/shared/store/gateway'
 
 // The hatched companion at idle — the Backend portrait rendered with a gentle
 // breathing animation. No WebM clips exist yet (Desktop-first MVP), so this is

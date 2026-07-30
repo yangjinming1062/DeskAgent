@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { type Document, parseDocument } from 'yaml'
 
-import { notifyError } from '@/store/notifications'
+import { notifyError } from '@/shared/store/notifications'
 
 type SaveResult = { ok: true; restarted: boolean; restartError?: string } | { ok: false; error: string }
 

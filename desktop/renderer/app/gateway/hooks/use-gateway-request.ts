@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef } from 'react'
 
 import type { DeskAgentGateway } from '@/shared/deskagent'
 import { resolveGatewayWsUrl } from '@/shared/lib/gateway-ws-url'
-import { $gateway, $gatewayState, setConnection } from '@/store/gateway'
+import { $gateway, $gatewayState, setConnection } from '@/shared/store/gateway'
 
 export function useGatewayRequest() {
   const gatewayState = useStore($gatewayState)

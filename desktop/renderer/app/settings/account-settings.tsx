@@ -10,8 +10,8 @@ import { getDeskAgentConfig, saveDeskAgentConfig } from '@/shared/deskagent/conf
 import { useI18n } from '@/shared/i18n'
 import { triggerHaptic } from '@/shared/lib/haptics'
 import { Eye, EyeOff, Globe, KeyRound, Loader2, LogOut, SlidersHorizontal, X } from '@/shared/lib/icons'
-import { $auth, logout } from '@/store/auth'
-import { notify, notifyError } from '@/store/notifications'
+import { $auth, logout } from '@/shared/store/auth'
+import { notify, notifyError } from '@/shared/store/notifications'
 import type { DeskAgentConfigResponse } from '@/shared/types/deskagent'
 
 import { ListRow, LoadingState, SectionHeading, SettingsContent, SettingsSubsection } from './primitives'

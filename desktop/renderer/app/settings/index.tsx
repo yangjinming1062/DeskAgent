@@ -6,7 +6,7 @@ import { getDeskAgentConfigDefaults, getDeskAgentConfigRecord, saveDeskAgentConf
 import { useI18n } from '@/shared/i18n'
 import { triggerHaptic } from '@/shared/lib/haptics'
 import { Info, KeyRound, Palette, Settings, Sparkles, Wrench } from '@/shared/lib/icons'
-import { notifyError } from '@/store/notifications'
+import { notifyError } from '@/shared/store/notifications'
 
 import { useRouteEnumParam } from '../hooks/use-route-enum-param'
 import { OverlayIconButton } from '../overlays/overlay-chrome'
