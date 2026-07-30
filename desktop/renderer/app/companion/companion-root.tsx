@@ -1,7 +1,7 @@
 import { useStore } from '@nanostores/react'
 import { useEffect, useState } from 'react'
 
-import { useGatewayBoot } from '@/app/gateway/hooks/use-gateway-boot'
+import { useGatewayBoot } from '@/companion/boot/use-gateway-boot'
 import { $auth, applyAuthBroadcast, hydrateAuth, logout } from '@/shared/store/auth'
 import { $chatOpen, setChatOpen } from '@/companion/chat-store'
 import { $gatewayState } from '@/shared/store/gateway'
