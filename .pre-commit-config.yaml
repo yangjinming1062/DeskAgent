@@ -7,7 +7,11 @@ repos:
     hooks:
       - id: black
         args: [ --line-length=180 ]
-        exclude: ^(tests|installer)/
+        # Match against the repo-root-relative path; ``runner/tests/`` and
+        # ``backend/tests/`` and ``installer/`` should NOT be reformatted
+        # (the test files have their own conventions; the installer
+        # script lives outside the Python project).
+        exclude: ^(runner/tests|backend/tests|installer)/
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
     hooks:
@@ -21,7 +25,7 @@ repos:
     rev: v3.14.0
     hooks:
       - id: reorder-python-imports
-        exclude: ^(tests|installer)/
+        exclude: ^(runner/tests|backend/tests|installer)/
   - repo: local
     hooks:
       - id: check-imports

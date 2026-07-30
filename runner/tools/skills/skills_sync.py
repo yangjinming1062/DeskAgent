@@ -19,16 +19,30 @@ from .skills_guard import content_hash
 logger = logging.getLogger(__name__)
 
 DESKAGENT_HOME = get_deskagent_home()
+# Backwards-compat module-level constants: callers that imported these
+# before the lazy-resolution refactor still see Paths. New code inside
+# this module MUST call ``_skills_dir()`` / ``_deskagent_home()`` so a
+# test (or a profile switch) that changes ``DESKAGENT_HOME`` between
+# calls gets fresh paths.
 SKILLS_DIR = get_skills_dir()
 MANIFEST_FILE = SKILLS_DIR / ".bundled_manifest"
 NO_BUNDLED_SKILLS_MARKER = ".no-bundled-skills"
 
 
+def _deskagent_home() -> Path:
+    return get_deskagent_home()
+
+
+def _skills_dir() -> Path:
+    return get_skills_dir()
+
+
 def _read_manifest() -> dict[str, str]:
+    manifest_file = _skills_dir() / ".bundled_manifest"
     try:
         return (
-            {(parts := line.partition(":"))[0].strip(): parts[2].strip() for line in MANIFEST_FILE.read_text(encoding="utf-8").splitlines() if line.strip()}
-            if MANIFEST_FILE.exists()
+            {(parts := line.partition(":"))[0].strip(): parts[2].strip() for line in manifest_file.read_text(encoding="utf-8").splitlines() if line.strip()}
+            if manifest_file.exists()
             else {}
         )
     except OSError:
@@ -39,7 +53,7 @@ def _read_suppressed_names() -> set[str]:
     try:
         return read_suppressed_names()
     except Exception:
-        path = SKILLS_DIR / ".curator_suppressed"
+        path = _skills_dir() / ".curator_suppressed"
         try:
             return {line.strip() for line in path.read_text(encoding="utf-8").splitlines() if line.strip() and not line.strip().startswith("#")} if path.exists() else set()
         except OSError:
@@ -48,10 +62,11 @@ def _read_suppressed_names() -> set[str]:
 
 def _write_manifest(entries: dict[str, str]) -> None:
     data = "".join(f"{name}:{hash_val}\n" for name, hash_val in sorted(entries.items()))
+    manifest_file = _skills_dir() / ".bundled_manifest"
     try:
-        atomic_replace(str(MANIFEST_FILE), data)
+        atomic_replace(str(manifest_file), data)
     except Exception as e:
-        logger.debug("Failed to write skills manifest %s: %s", MANIFEST_FILE, e, exc_info=True)
+        logger.debug("Failed to write skills manifest %s: %s", manifest_file, e, exc_info=True)
 
 
 def _read_skill_name(skill_md: Path, fallback: str) -> str:
@@ -75,7 +90,7 @@ def _discover_bundled_skills(bundled_dir: Path) -> list[tuple[str, Path]]:
 
 
 def _compute_relative_dest(skill_dir: Path, bundled_dir: Path) -> Path:
-    return SKILLS_DIR / skill_dir.relative_to(bundled_dir)
+    return _skills_dir() / skill_dir.relative_to(bundled_dir)
 
 
 def _dir_hash(directory: Path) -> str:
@@ -111,7 +126,9 @@ def _content_hash(directory: Path) -> str:
 
 
 def sync_skills(quiet: bool = False) -> dict:
-    if (DESKAGENT_HOME / NO_BUNDLED_SKILLS_MARKER).exists():
+    deskagent_home = _deskagent_home()
+    skills_dir = _skills_dir()
+    if (deskagent_home / NO_BUNDLED_SKILLS_MARKER).exists():
         if not quiet:
             logger.info("skipped: profile opted out of bundled skills via .no-bundled-skills")
         return {"copied": [], "updated": [], "skipped": 0, "user_modified": [], "cleaned": [], "total_bundled": 0, "skipped_opt_out": True}
@@ -120,7 +137,7 @@ def sync_skills(quiet: bool = False) -> dict:
     if not bundled_dir.exists():
         return {"copied": [], "updated": [], "skipped": 0, "user_modified": [], "cleaned": [], "suppressed": [], "total_bundled": 0}
 
-    SKILLS_DIR.mkdir(parents=True, exist_ok=True)
+    skills_dir.mkdir(parents=True, exist_ok=True)
     manifest = _read_manifest()
     bundled_skills = _discover_bundled_skills(bundled_dir)
     bundled_names = {name for name, _ in bundled_skills}
@@ -201,7 +218,7 @@ def sync_skills(quiet: bool = False) -> dict:
         del manifest[name]
 
     for desc_md in bundled_dir.rglob("DESCRIPTION.md"):
-        dest_desc = SKILLS_DIR / desc_md.relative_to(bundled_dir)
+        dest_desc = skills_dir / desc_md.relative_to(bundled_dir)
         if not dest_desc.exists():
             try:
                 dest_desc.parent.mkdir(parents=True, exist_ok=True)
@@ -238,7 +255,8 @@ def _rmtree_writable(path: Path) -> None:
 
 def reset_bundled_skill(name: str, restore: bool = False) -> dict:
     manifest = _read_manifest()
-    bundled_by_name = dict(_discover_bundled_skills(bundled_dir := get_skills_dir()))
+    bundled_dir = get_skills_dir()
+    bundled_by_name = dict(_discover_bundled_skills(bundled_dir))
     if name not in manifest and name not in bundled_by_name:
         return {
             "ok": False,
