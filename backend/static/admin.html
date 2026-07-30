@@ -337,6 +337,18 @@ input[type="file"] { font-size: 0.78rem; }
 .svc-card h3 { margin: 0 0 0.65rem; font-size: 0.82rem; font-weight: 700; display: flex; align-items: center; gap: 0.4rem; }
 .svc-card .req { font-size: 0.62rem; font-weight: 700; color: var(--primary); background: var(--primary-soft); padding: 0.05rem 0.35rem; border-radius: 0.2rem; text-transform: uppercase; letter-spacing: 0.03em; }
 
+/* ── Provider slots (per-user provider_config) ──────────── */
+.provider-section { margin-top: 1.25rem; border-top: 1px solid var(--border); padding-top: 1rem; }
+.provider-head { display: flex; align-items: baseline; gap: 0.6rem; margin-bottom: 0.65rem; flex-wrap: wrap; }
+.provider-head h3 { margin: 0; font-size: 0.82rem; font-weight: 700; }
+.provider-head .hint { font-size: 0.72rem; color: var(--text-3); }
+#providerSlots { display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 0.6rem; }
+.prov-row { display: flex; align-items: center; gap: 0.45rem; flex-wrap: wrap; }
+.prov-row select { width: auto; min-width: 8rem; }
+.prov-row .prov-url { flex: 1; min-width: 11rem; }
+.prov-keywrap { display: flex; align-items: center; gap: 0.4rem; flex: 1; min-width: 12rem; }
+.prov-keywrap input { flex: 1; min-width: 8rem; }
+
 /* ── Toast ──────────────────────────────────────────────── */
 #toast-wrap { position: fixed; right: 1.25rem; bottom: 1.25rem; z-index: 300; display: flex; flex-direction: column; gap: 0.5rem; }
 .toast {
@@ -626,6 +638,14 @@ input[type="file"] { font-size: 0.78rem; }
                     <div class="field"><label>模型名称</label><input type="text" id="videoGenModelName" placeholder="video-01"></div>
                 </div>
             </div>
+            <div class="provider-section">
+                <div class="provider-head">
+                    <h3>供应商配置</h3>
+                    <span class="hint">最高优先级调用层 · 列表顺序即 provider 回落顺序 · 留空继承全局</span>
+                </div>
+                <div id="providerSlots"></div>
+                <button type="button" class="btn btn--ghost btn--sm" onclick="addProviderSlot()">＋ 添加供应商</button>
+            </div>
         </div>
         <div class="modal-foot">
             <button class="btn btn--ghost" onclick="closeModal('modelModal')">取消</button>
@@ -895,6 +915,39 @@ function setKeyBadge(id, set) {
     el.className = 'keybadge ' + (set ? 'on' : 'off');
 }
 
+const PROVIDER_OPTIONS = ['mimo', 'minimax'];
+
+function providerSlotRow(slot) {
+    const name = slot?.name || '', url = slot?.base_url || '', set = !!slot?.api_key_set;
+    const opts = PROVIDER_OPTIONS.map(o => `<option value="${o}"${o === name ? ' selected' : ''}>${o}</option>`).join('');
+    return `<div class="prov-row">
+        <select class="prov-name">${opts}</select>
+        <input class="prov-url" type="text" value="${esc(url)}" placeholder="Base URL（留空用默认）">
+        <div class="prov-keywrap">
+            <input class="prov-key" type="password" placeholder="API Key（留空保留）">
+            <span class="keybadge ${set ? 'on' : 'off'}">${set ? '已设置' : '未设置'}</span>
+        </div>
+        <button type="button" class="btn btn--ghost btn--sm" onclick="moveProviderSlot(this,-1)" title="上移" aria-label="上移">↑</button>
+        <button type="button" class="btn btn--ghost btn--sm" onclick="moveProviderSlot(this,1)" title="下移" aria-label="下移">↓</button>
+        <button type="button" class="btn btn--danger btn--sm" onclick="removeProviderSlot(this)">删除</button>
+    </div>`;
+}
+function renderProviderSlots(slots) { $('#providerSlots').innerHTML = (Array.isArray(slots) ? slots : []).map(providerSlotRow).join(''); }
+function addProviderSlot() { $('#providerSlots').insertAdjacentHTML('beforeend', providerSlotRow({})); }
+function removeProviderSlot(btn) { btn.closest('.prov-row').remove(); }
+function moveProviderSlot(btn, dir) {
+    const row = btn.closest('.prov-row'), rows = $$('#providerSlots .prov-row'), i = rows.indexOf(row), j = i + dir;
+    if (j < 0 || j >= rows.length) return;
+    if (dir < 0) row.parentNode.insertBefore(row, rows[j]); else row.parentNode.insertBefore(row, rows[j].nextSibling);
+}
+function collectProviderSlots() {
+    return $$('#providerSlots .prov-row').map(row => ({
+        name: $('.prov-name', row).value.trim(),
+        base_url: $('.prov-url', row).value.trim(),
+        api_key: $('.prov-key', row).value,
+    })).filter(s => s.name);
+}
+
 function showModelConfigForUser(userId) {
     const cached = tabCache.models?.items?.find(c => c.user_id == userId) ?? null;
     $('#modelUserId').value = userId;
@@ -916,6 +969,7 @@ function showModelConfigForUser(userId) {
     setKeyBadge('ttsKeyBadge', cached ? !!cached.tts_api_key_set : false);
     setKeyBadge('imageKeyBadge', cached ? !!cached.image_gen_api_key_set : false);
     setKeyBadge('videoKeyBadge', cached ? !!cached.video_gen_api_key_set : false);
+    renderProviderSlots(cached?.provider_config ?? []);
     openModal('modelModal');
 }
 
@@ -928,6 +982,7 @@ async function saveModelConfig() {
         const apiKey = $('#' + s.key).value;
         if (apiKey) payload[s.keyField] = apiKey;
     }
+    payload.provider_config = collectProviderSlots();
     try {
         await apiFetch(`/api/admin/${userId}/model-config`, { method: 'PUT', body: JSON.stringify(payload) });
         closeModal('modelModal');

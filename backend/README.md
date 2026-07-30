@@ -112,11 +112,13 @@ backend/
 - `PROVIDERS` + `{NAME}_API_KEY` 是面向"一个 provider 覆盖多种能力"的统一凭证
 - 老的 `<svc>_PROVIDER` / `<svc>_API_KEY` / `<svc>_BASE_URL` / `<svc>_MODEL_NAME` 仍是面向"某个具体能力直接配凭证"的定向凭证，**优先级更高**
 
-每个能力 slot 解析顺序（首个非空即用）：
-1. 用户表 `UserModelConfig` 该能力的 row（按 `user_id` 过滤）
-2. `SETTINGS.<svc>_base_url` / `<svc>_api_key` / `<svc>_model_name`
-3. `SETTINGS.<NAME>_API_KEY` / `<NAME>_BASE_URL`（provider-level）
-4. `PROVIDER_DEFAULT_URLS[provider][service]` / `default_model_for(provider, service)`（built-in 默认）
+`resolve_provider_chain(db, user_id, svc)` 构建有序回落链，首个 key+base_url 齐全的 provider 生效。Tier 1（用户 provider）prepend 到既有 fold-in 链前，按 `provider_name` 去重（tier 1 胜）：
+1. **用户 provider**（最高优先级）— `UserModelConfig.provider_config`（JSON 有序列表 `[{name, api_key, base_url}]`，按 `user_id` 过滤）。JSON 形状，新增 provider 家族无需改 schema
+2. 用户能力凭证 — `UserModelConfig.<svc>_base_url` / `<svc>_api_key` / `<svc>_model_name`
+3. 全局 provider — `SETTINGS.providers` / `<svc>_provider` 软重排 + `SETTINGS.<NAME>_API_KEY` / `<NAME>_BASE_URL`
+4. 全局能力凭证 + built-in 默认 — `SETTINGS.<svc>_*` → `PROVIDER_DEFAULT_URLS[provider][service]` / `default_model_for(provider, service)`
+
+Tier 2-4 保持原 fold-in 语义（per-cap 覆盖 provider-level），兼容老的单 key 部署（`LLM_BASE_URL`+`LLM_API_KEY`+`LLM_MODEL_NAME`）。无用户上下文（`db`/`user_id` 为 None）时仅走 tier 3-4。admin upsert 对 provider_config 的空 `api_key` 做"保留现有值"合并（admin 看不到原始 key）。
 
 `<svc>_PROVIDER` 不参与单 slot 凭证解析；它**只软重排** chain——把命名的 provider 提到第一位，chain 仍保留其它 provider 作为 fallback（设计决策：用户希望链不塌缩）。空 `<svc>_provider` + `PROVIDERS` 未设 → `SERVICE_DEFAULT_PROVIDER[svc]` 兜底（chat/stt/tts→`mimo`、image/video→`minimax`），chain 退化为单元素。
 
