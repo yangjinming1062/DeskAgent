@@ -3,9 +3,9 @@ import { useRef } from 'react'
 
 import { Tip } from '@/components/ui/tooltip'
 import { getDeskAgentConfigDefaults, getDeskAgentConfigRecord, saveDeskAgentConfig } from '@/deskagent'
-import { useI18n } from '@/i18n'
-import { triggerHaptic } from '@/lib/haptics'
-import { Info, KeyRound, Palette, Settings, Sparkles, Wrench } from '@/lib/icons'
+import { useI18n } from '@/shared/i18n'
+import { triggerHaptic } from '@/shared/lib/haptics'
+import { Info, KeyRound, Palette, Settings, Sparkles, Wrench } from '@/shared/lib/icons'
 import { notifyError } from '@/store/notifications'
 
 import { useRouteEnumParam } from '../hooks/use-route-enum-param'

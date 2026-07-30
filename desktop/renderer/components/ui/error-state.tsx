@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 
 import { Codicon } from '@/components/ui/codicon'
-import { cn } from '@/lib/utils'
+import { cn } from '@/shared/lib/utils'
 
 // The single canonical error glyph (codicon's filled error mark). Use this
 // everywhere an error is surfaced (boundaries, dialogs, banners) so failures

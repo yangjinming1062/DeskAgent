@@ -1,4 +1,4 @@
-import type { DeskAgentConfigPutRequest, DeskAgentConfigRecord, DeskAgentConfigResponse } from '@/types/deskagent'
+import type { DeskAgentConfigPutRequest, DeskAgentConfigRecord, DeskAgentConfigResponse } from '@/shared/types/deskagent'
 
 export function getDeskAgentConfig(): Promise<DeskAgentConfigResponse> {
   return window.deskagent.api<DeskAgentConfigResponse>({

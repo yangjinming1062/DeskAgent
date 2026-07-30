@@ -1,5 +1,5 @@
 import { SegmentedControl } from '@/components/ui/segmented-control'
-import { useI18n } from '@/i18n'
+import { useI18n } from '@/shared/i18n'
 
 import { useRouteEnumParam } from '../hooks/use-route-enum-param'
 

@@ -11,8 +11,8 @@
 
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 
-import { matchesQuery, useMediaQuery } from '@/hooks/use-media-query'
-import { persistString, storedString } from '@/lib/storage'
+import { matchesQuery, useMediaQuery } from '@/shared/hooks/use-media-query'
+import { persistString, storedString } from '@/shared/lib/storage'
 
 import { BUILTIN_THEME_LIST, BUILTIN_THEMES, DEFAULT_SKIN_NAME, DEFAULT_TYPOGRAPHY, deskagentTheme } from './presets'
 import type { DesktopTheme, DesktopThemeColors } from './types'

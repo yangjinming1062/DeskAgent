@@ -1,7 +1,7 @@
 import { atom } from 'nanostores'
 
 import type { DeskAgentGateway } from '@/deskagent'
-import type { DeskAgentConnection } from '@/global'
+import type { DeskAgentConnection } from '@/shared/types/global'
 import type { ConnectionState } from '@/lib/gateway-protocol'
 
 // Tracks whether the local Runner is online and has synced its tools — lets

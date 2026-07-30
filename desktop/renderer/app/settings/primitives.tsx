@@ -1,10 +1,10 @@
 import type { ReactNode } from 'react'
 
-import { PageLoader } from '@/components/page-loader'
+import { PageLoader } from '@/shared/components/page-loader'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import type { IconComponent } from '@/lib/icons'
-import { cn } from '@/lib/utils'
+import type { IconComponent } from '@/shared/lib/icons'
+import { cn } from '@/shared/lib/utils'
 
 import { PAGE_INSET_X } from '../layout-constants'
 

@@ -2,9 +2,9 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { SearchField } from '@/components/ui/search-field'
 import { Switch } from '@/components/ui/switch'
-import { useI18n } from '@/i18n'
-import { Wrench } from '@/lib/icons'
-import { TOOLSET_CATALOG, type ToolsetCatalogEntry } from '@/lib/toolset-catalog'
+import { useI18n } from '@/shared/i18n'
+import { Wrench } from '@/shared/lib/icons'
+import { TOOLSET_CATALOG, type ToolsetCatalogEntry } from '@/shared/lib/toolset-catalog'
 import { notifyError } from '@/store/notifications'
 
 import { EmptyState, LoadingState, Pill, SettingsSubsection } from './primitives'

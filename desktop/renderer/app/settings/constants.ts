@@ -1,5 +1,5 @@
-import { type IconComponent, Monitor, Moon, Sun } from '@/lib/icons'
-import type { ThemeMode } from '@/themes/context'
+import { type IconComponent, Monitor, Moon, Sun } from '@/shared/lib/icons'
+import type { ThemeMode } from '@/shared/themes/context'
 
 export const EMPTY_SELECT_VALUE = '__deskagent_empty__'
 export const UNCATEGORIZED_KEY = '__uncategorized__'

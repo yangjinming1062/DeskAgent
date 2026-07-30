@@ -7,7 +7,7 @@
 
 export type Locale = 'en' | 'zh'
 
-import type { ToolsetId } from '@/lib/toolset-catalog'
+import type { ToolsetId } from '@/shared/lib/toolset-catalog'
 
 interface ModeOptionCopy {
   label: string

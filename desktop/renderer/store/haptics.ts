@@ -1,6 +1,6 @@
 import { atom } from 'nanostores'
 
-import { persistBoolean, storedBoolean } from '@/lib/storage'
+import { persistBoolean, storedBoolean } from '@/shared/lib/storage'
 
 const HAPTICS_MUTED_STORAGE_KEY = 'deskagent.desktop.hapticsMuted'
 
