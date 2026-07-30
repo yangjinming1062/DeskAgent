@@ -247,7 +247,7 @@ Backend clip 生成队列（portrait 种子图 + 场景文本 → 图生视频�
 
 ## 7. 伙伴形象与角色系统
 
-这是新定位下 Backend/Desktop 之间的核心新增契约。实现细节（schema、存储表、渲染管线）留给 [backend/README.md](backend/README.md) 与 [desktop/README.md](desktop/README.md)，design.md 只锁定跨模块的设计意图与不变量。
+这是新定位下 Backend/Desktop 之间的核心新增契约。实现细节（schema、存储表、渲染管线）留给 [backend/README.md](backend/README.md) 与 [desktop/README.md](desktop/README.md)，ARCHITECTURE.md 只锁定跨模块的设计意图与不变量。
 
 ### 7.1 角色定义 (Persona Definition)
 - onboarding 产出的结构化角色定义，持久化在 Backend 的用户维度。

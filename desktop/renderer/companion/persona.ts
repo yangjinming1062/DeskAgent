@@ -1,7 +1,7 @@
 // Assemble the Backend PersonaUpdate payload from onboarding answers.
 // Backend's PersonaUpdate requires name/personality/speaking_style and rejects
 // unknown keys (extra="forbid"). selfIntro is USER info → memory layer (NOT
-// persona, per design.md §7.6); voice feeds TTS, not persona. Skipped required
+// persona, per ARCHITECTURE.md §7.6); voice feeds TTS, not persona. Skipped required
 // fields get sensible defaults so the PUT always succeeds (is_complete=true),
 // unblocking Slice 3 chat with a personality injected. See plan.md §4.
 

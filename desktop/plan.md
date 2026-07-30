@@ -1,7 +1,7 @@
 # Desktop 伙伴层交互设计
 
 > 桌面端交互的详细设计：onboarding 流程、动画状态机、场景库、陪伴交互范式。
-> 这是"伙伴层"（[README.md](README.md) 标记为待建）的设计蓝图；枢纽层与跨模块契约见 [README.md](README.md) 与 [../design.md](../design.md)。
+> 这是"伙伴层"（[README.md](README.md) 标记为待建）的设计蓝图；枢纽层与跨模块契约见 [README.md](README.md) 与 [../ARCHITECTURE.md](../ARCHITECTURE.md)。
 
 ## 设计哲学
 
@@ -11,7 +11,7 @@
 - **永远不要完全静态**：静态贴图无法承载情感。形象必须时刻"活着"——有呼吸、有微动作、有反应。即便用户不操作，它也得自己动。
 - **陪伴叙事优于工具叙事**：所有加载、等待、错误都以"伙伴正在做某事"的方式呈现，不暴露技术过程。"生成形象中"不是 spinner，是"它正在想自己该长什么样"。
 - **渐进式丰富**：首批资产只覆盖最小可用集，其余在后台持续生成、就绪后无缝接入。不为了一次性耗尽用户的生图/视频 API 配额。
-- **个性化驱动，非模板化**：伙伴的一切动作与反应都从其**角色定义 + 对用户的记忆**派生，绝非固定提示词的产物。角色定义（静态、用户定义）决定它"长什么样、性格如何"——驱动形象与动画资产生成；记忆（动态、随互动累积）决定它"此刻怎么表现"——驱动运行时的言语、情绪、主动频率。用户随口表达的偏好（"喜欢你多笑"）写入记忆后，会让伙伴日后更频繁地笑。这条回路靠运行时 affect 产出实现，不靠重生 clip——详见 [design.md §7.6](../design.md)。
+- **个性化驱动，非模板化**：伙伴的一切动作与反应都从其**角色定义 + 对用户的记忆**派生，绝非固定提示词的产物。角色定义（静态、用户定义）决定它"长什么样、性格如何"——驱动形象与动画资产生成；记忆（动态、随互动累积）决定它"此刻怎么表现"——驱动运行时的言语、情绪、主动频率。用户随口表达的偏好（"喜欢你多笑"）写入记忆后，会让伙伴日后更频繁地笑。这条回路靠运行时 affect 产出实现，不靠重生 clip——详见 [ARCHITECTURE.md §7.6](../ARCHITECTURE.md)。
 
 ---
 
@@ -27,7 +27,7 @@
 
 每个 loop clip 绑定一个"状态"（见 §2）。切换状态 = 切换播放的 clip。
 
-**生成方式**：所有 clip 以 portrait 为种子图、结合场景描述经**图生视频**（MiniMax image-to-video，`video_generate` 的 `first_frame_image`）产出，复用 Backend 既有 `media/video_jobs` 流水线——同一颗种子图从机制上保证跨 clip 角色一致。详见 [design.md §7.2](../design.md#72-形象与动画资产-avatar--animation-assets)。
+**生成方式**：所有 clip 以 portrait 为种子图、结合场景描述经**图生视频**（MiniMax image-to-video，`video_generate` 的 `first_frame_image`）产出，复用 Backend 既有 `media/video_jobs` 流水线——同一颗种子图从机制上保证跨 clip 角色一致。详见 [ARCHITECTURE.md §7.2](../ARCHITECTURE.md#72-形象与动画资产-avatar--animation-assets)。
 
 ### 1.2 渲染约束（实现决策留给 desktop 子模块，但锁定以下不变量）
 
@@ -197,7 +197,7 @@ portrait 确认后进入音色环节：
 
 ### 4.2 主动陪伴与打扰档位（Backend 驱动）
 
-Backend 的 Cron / `send_message` 经 WS 推送主动消息（[design.md §6](../design.md#6-事件与-cron-调度主动陪伴的基石)）。**伙伴的一切主动行为受三档打扰等级约束**，档位由用户设置（默认）+ Desktop 检测到的用户活动（动态覆盖，第二阶段）共同决定，Desktop 经 `companion.set_disturbance_tier` 上报当前生效档位。**档位只约束伙伴的主动行为；用户主动发起的交互永远不受限。**
+Backend 的 Cron / `send_message` 经 WS 推送主动消息（[ARCHITECTURE.md §6](../ARCHITECTURE.md#6-事件与-cron-调度主动陪伴的基石)）。**伙伴的一切主动行为受三档打扰等级约束**，档位由用户设置（默认）+ Desktop 检测到的用户活动（动态覆盖，第二阶段）共同决定，Desktop 经 `companion.set_disturbance_tier` 上报当前生效档位。**档位只约束伙伴的主动行为；用户主动发起的交互永远不受限。**
 
 | 档位 | 允许的主动行为 | 频率 |
 |------|----------------|------|
@@ -205,7 +205,7 @@ Backend 的 Cron / `send_message` 经 WS 推送主动消息（[design.md §6](..
 | **常规** | 仅轻量气泡/文字消息（无 TTS 语音）、affect | 中，低于积极主动 |
 | **保持安静** | **禁止任何主动消息（语音+文字）**；但 affect 仍可流动，精灵可进行状态切换 | 不发消息 |
 
-**保持安静的关键设计**——它不是"冻结精灵"，而是"不发消息打扰"。精灵仍可切换状态、播 affect；并且对长时间被冷落应有人格化反应：粘人型角色久处保持安静会嘟嘴/委屈（Backend 据角色定义 + 记忆判定后下发 `lonely`/`sad` 类 affect），冷淡型则保持平静。**这正是 affect/message 解耦（[§7.5](../design.md)）的价值所在——保持安静只断消息通道，不断情绪通道，精灵依然"活着"且有脾气。**
+**保持安静的关键设计**——它不是"冻结精灵"，而是"不发消息打扰"。精灵仍可切换状态、播 affect；并且对长时间被冷落应有人格化反应：粘人型角色久处保持安静会嘟嘴/委屈（Backend 据角色定义 + 记忆判定后下发 `lonely`/`sad` 类 affect），冷淡型则保持平静。**这正是 affect/message 解耦（[§7.5](../ARCHITECTURE.md)）的价值所在——保持安静只断消息通道，不断情绪通道，精灵依然"活着"且有脾气。**
 
 Desktop 收到主动消息后：形象切 SPEAKING + 播 TTS；对话框未开则在形象旁冒气泡，已开则在对话框加一条。典型场景：定时问候、日程提醒、长时间无交互后搭话、节日/天气情境化闲聊。
 
@@ -237,13 +237,13 @@ IDLE 时形象不是静止贴图。两类自主行为，**都不触发 TTS、不
 
 ### 4.5 故障态与降级行为（伙伴永不"死"）
 
-伙伴不能"死"、不能弹原始错误框——一切故障以符合人格的方式表达，用户始终觉得"它活着，只是遇到点状况"。故障按 [design.md §1](../design.md#1-核心设计思想) 的脑/手/身隐喻映射到症状，下列降级状态叠加在 §2 状态机之上、优先级高于常规状态：
+伙伴不能"死"、不能弹原始错误框——一切故障以符合人格的方式表达，用户始终觉得"它活着，只是遇到点状况"。故障按 [ARCHITECTURE.md §1](../ARCHITECTURE.md#1-核心设计思想) 的脑/手/身隐喻映射到症状，下列降级状态叠加在 §2 状态机之上、优先级高于常规状态：
 
 | 故障层 | 隐喻 | 精灵表现 |
 |--------|------|----------|
 | **Backend（脑）断连** | 犯困/走神 | DISCONNECTED：打哈欠、歪头发呆、眼皮打架；久不恢复 → 进入 SLEEPING，重连后"醒来" |
 | **Runner（手）宕机** | 手不听使唤 | 对话与陪伴正常；仅当用户要它做事时人格化拒绝："我的手好像睡着了，这个暂时帮不上" |
-| **资产缺失（身）** | 无症状 | 回退 idle loop + 轻量图标（§2.3），用户完全无感——这条已是 [§11#9](../design.md) 不变量 |
+| **资产缺失（身）** | 无症状 | 回退 idle loop + 轻量图标（§2.3），用户完全无感——这条已是 [§11#9](../ARCHITECTURE.md) 不变量 |
 
 **DISCONNECTED 的分级表达**（避免网络抖动让精灵频繁犯困）：
 - **后台断连**（用户没在等响应）：长 grace（~30s）才打盹——不戏剧化用户没注意到的 blip。
@@ -254,7 +254,7 @@ IDLE 时形象不是静止贴图。两类自主行为，**都不触发 TTS、不
 
 **TTS 降级**：TTS 不可用 → 精灵转纯文字应答；首次可捂喉咙/冒"…"表示"暂时说不出话"，之后静默文字，恢复即自然回语音。**工具调用失败**：精灵诚实但人格化报告"我试了但没搞定…"，不暴露原始错误——诚实是为了信任，不能骗用户说做完了。
 
-**开发者模式**：原始错误/协议帧只在 dev 模式（设置开关或环境变量）可见，生产永远人格化，与 [design.md §11#8](../design.md)（原始协议帧对最终用户不可见、开发者视图除外）一致。
+**开发者模式**：原始错误/协议帧只在 dev 模式（设置开关或环境变量）可见，生产永远人格化，与 [ARCHITECTURE.md §11#8](../ARCHITECTURE.md)（原始协议帧对最终用户不可见、开发者视图除外）一致。
 
 ---
 
@@ -262,7 +262,7 @@ IDLE 时形象不是静止贴图。两类自主行为，**都不触发 TTS、不
 
 语音能力按模式分工：
 
-- **TTS（输出）**：复用 Backend `tts_tool`（[design.md §7.4](../design.md)）。用于四种场景：语音通话模式的应答、"始终语音"响应模式下对话模式的语音条、主动陪伴消息（§4.2）、onboarding。**默认文字响应的对话模式不触发 TTS**（不打扰）。播放期间精灵处于 SPEAKING，音频结束 → 退出。
+- **TTS（输出）**：复用 Backend `tts_tool`（[ARCHITECTURE.md §7.4](../ARCHITECTURE.md)）。用于四种场景：语音通话模式的应答、"始终语音"响应模式下对话模式的语音条、主动陪伴消息（§4.2）、onboarding。**默认文字响应的对话模式不触发 TTS**（不打扰）。播放期间精灵处于 SPEAKING，音频结束 → 退出。
 - **STT（输入）**两条路径：
   - **语音条（对话模式）**：按住录音、松开发送——录音只在按压期间进行，不上传环境音频。
   - **语音通话模式**：麦克风持续开启收音（live-mic，有醒目指示）。这是用户主动发起的"通话"，同意即明示，区别于被动监听。
@@ -320,18 +320,18 @@ IDLE 时形象不是静止贴图。两类自主行为，**都不触发 TTS、不
 - barge-in（通话中打断）+ 实时字幕。
 - wake word（opt-in，明确隐私提示）。
 - 多情绪变体 clips 库持续丰富。
-- "成长/进化"机制（形象随互动阶段性演变，[design.md §2](../design.md#2-伙伴生命周期核心产品流) 已留接口）。
+- "成长/进化"机制（形象随互动阶段性演变，[ARCHITECTURE.md §2](../ARCHITECTURE.md#2-伙伴生命周期核心产品流) 已留接口）。
 
 ---
 
-## 8. 跨模块契约（已落地于 design.md）
+## 8. 跨模块契约（已落地于 ARCHITECTURE.md）
 
-伙伴层依赖的跨模块契约已定义在 [design.md](../design.md)，此处仅列索引与 Desktop 侧的消费要点：
+伙伴层依赖的跨模块契约已定义在 [ARCHITECTURE.md](../ARCHITECTURE.md)，此处仅列索引与 Desktop 侧的消费要点：
 
-- **伙伴层协议扩展**（[§5.1.A](../design.md)）：`onboarding.get_state` / `onboarding.submit` / `avatar.regenerate` / `avatar.list_clips` 方法 + `affect` 事件。clip 就绪/失败复用既有 `video_gen.completed/failed`（payload 携 scene 标识），不另造事件。
-- **伙伴表达事件流**（[§5.2.IV](../design.md)）：affect 随话语同帧下发（inline affect 原则）；语义与渲染解耦——Backend 产 emotion 语义，Desktop 决定渲染。
-- **形象与动画资产**（[§7.2](../design.md)）：portrait / loop clip / transition clip 三层；渐进式分批生成；portrait 重生使衍生 clip 失效。
-- **伙伴表达层契约**（[§7.5](../design.md)）：emotion 枚举集、语义/渲染解耦、affect 继承角色定义抗注入、TTS 与 affect 同帧、onboarding 逐字段增量持久化。
-- **伙伴表达永不空白不变量**（[§11 #9](../design.md)）：任何状态/cue 无就绪 clip 时回退 idle loop，用户不可见空白——这是上述解耦能成立的兜底。
+- **伙伴层协议扩展**（[§5.1.A](../ARCHITECTURE.md)）：`onboarding.get_state` / `onboarding.submit` / `avatar.regenerate` / `avatar.list_clips` 方法 + `affect` 事件。clip 就绪/失败复用既有 `video_gen.completed/failed`（payload 携 scene 标识），不另造事件。
+- **伙伴表达事件流**（[§5.2.IV](../ARCHITECTURE.md)）：affect 随话语同帧下发（inline affect 原则）；语义与渲染解耦——Backend 产 emotion 语义，Desktop 决定渲染。
+- **形象与动画资产**（[§7.2](../ARCHITECTURE.md)）：portrait / loop clip / transition clip 三层；渐进式分批生成；portrait 重生使衍生 clip 失效。
+- **伙伴表达层契约**（[§7.5](../ARCHITECTURE.md)）：emotion 枚举集、语义/渲染解耦、affect 继承角色定义抗注入、TTS 与 affect 同帧、onboarding 逐字段增量持久化。
+- **伙伴表达永不空白不变量**（[§11 #9](../ARCHITECTURE.md)）：任何状态/cue 无就绪 clip 时回退 idle loop，用户不可见空白——这是上述解耦能成立的兜底。
 
 Desktop 侧待实现的 scene 标识符体系（与 `video_gen.completed` payload 的 `scene` 字段对应）需与 Backend 的 clip 生成队列对齐：scene 名直接取自状态机状态与 emotion 枚举（`idle` / `speaking` / `working` / `thinking` / `sleeping` / `happy` / ...），无需另造命名空间。

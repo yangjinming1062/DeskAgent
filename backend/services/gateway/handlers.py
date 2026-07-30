@@ -706,7 +706,7 @@ def _register_session_handlers(
     dispatcher.register("reload.mcp", reload_mcp)
 
     async def companion_set_disturbance_tier(params: dict) -> dict:
-        # Desktop reports the effective disturbance tier (design.md §6); the
+        # Desktop reports the effective disturbance tier (ARCHITECTURE.md §6); the
         # companion's proactive outreach (send_message → companion.message) is
         # gated by it. The desktop also gates playback client-side, so this is
         # defense-in-depth.
@@ -717,7 +717,7 @@ def _register_session_handlers(
     dispatcher.register("companion.set_disturbance_tier", companion_set_disturbance_tier)
 
     async def onboarding_get_state(_params: dict) -> dict:
-        # Breakpoint recovery (design.md §7.5): the desktop calls this on boot
+        # Breakpoint recovery (ARCHITECTURE.md §7.5): the desktop calls this on boot
         # to learn which onboarding fields are already collected and which
         # question to resume from. Returns ``complete: true`` once the persona
         # is finalized, so the desktop skips onboarding entirely.
@@ -725,7 +725,7 @@ def _register_session_handlers(
             return get_onboarding_state(db, user_id)
 
     async def onboarding_submit(params: dict) -> dict:
-        # Per-field incremental persistence (design.md §7.5). Each
+        # Per-field incremental persistence (ARCHITECTURE.md §7.5). Each
         # ``onboarding.submit {field, value}`` lands immediately, so a
         # crash/exit mid-onboarding loses at most the current question.
         field = params.get("field")
@@ -745,7 +745,7 @@ def _register_session_handlers(
 
     async def avatar_regenerate(params: dict) -> dict:
         # Regenerate the portrait from the current persona, with optional
-        # free-text feedback folded into the prompt (design.md §5.1.A). All
+        # free-text feedback folded into the prompt (ARCHITECTURE.md §5.1.A). All
         # derivative clips are invalidated and batch 0 re-seeded (§7.2). Runs
         # synchronously so the desktop gets the new portrait URL in the
         # response; clip generation continues in the background.
@@ -763,7 +763,7 @@ def _register_session_handlers(
             return {"asset_url": asset.asset_url, "id": asset.id}
 
     async def avatar_list_clips(_params: dict) -> dict:
-        # Query the full clip directory with live generation status (design.md
+        # Query the full clip directory with live generation status (ARCHITECTURE.md
         # §5.1.A). The desktop calls this after receiving video_gen.completed /
         # failed to refresh its clip cache.
         with SESSION_LOCAL() as db:

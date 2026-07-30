@@ -20,7 +20,7 @@ def _VideoGenJob():
     return VideoGenJob
 
 
-# Scene catalog (design.md §7.2 / desktop plan.md §1.3). Each scene maps to a
+# Scene catalog (ARCHITECTURE.md §7.2 / desktop plan.md §1.3). Each scene maps to a
 # batch (generation priority) and an i2v prompt fragment that describes the
 # motion. Scene labels double as the desktop animation-state identifiers — no
 # separate naming surface (plan.md §8). ``idle`` is batch 0 (onboarding-sync);

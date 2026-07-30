@@ -19,7 +19,7 @@ export const $companionLifecycle = atom<CompanionLifecycle>('unauthed-egg')
 export const $spriteState = atom<SpriteStateName>('idle')
 export const $spritePosition = atom<SpritePosition | null>(null)
 
-// Disturbance tier gates the companion's proactive behaviour (design.md §6 /
+// Disturbance tier gates the companion's proactive behaviour (ARCHITECTURE.md §6 /
 // plan.md §4.2). User-initiated actions are never gated — only proactive
 // outbound (companion.message). `quiet` blocks proactive messages but keeps
 // the affect channel open (phase 2).

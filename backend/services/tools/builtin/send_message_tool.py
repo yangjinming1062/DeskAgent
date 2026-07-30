@@ -50,7 +50,7 @@ def is_safe_outbound(host: str) -> tuple[bool, str]:
 
 def _emit_companion_message(user_id: int, text: str) -> None:
     """Push a proactive companion message to the user's desktop via the WS
-    outbox (design.md §5.1.A / §6). The desktop receives `companion.message`
+    outbox (ARCHITECTURE.md §5.1.A / §6). The desktop receives `companion.message`
     and speaks it + shows a bubble (plan.md §4.2)."""
     payload = json.dumps({"text": text}, ensure_ascii=False)
     with SESSION_LOCAL() as db:
@@ -60,7 +60,7 @@ def _emit_companion_message(user_id: int, text: str) -> None:
 
 async def send_message_tool(message: str, target_webhook: str | None = None, **kwargs) -> str:
     # Companion-native proactive path: no webhook ⇒ deliver straight to the
-    # user's desktop as a companion.message (design.md §7.4 repurposes this
+    # user's desktop as a companion.message (ARCHITECTURE.md §7.4 repurposes this
     # tool as the companion's proactive-reach-out channel). The disturbance
     # tier gates it — `quiet` suppresses outreach without surfacing an error
     # to the LLM (保持安静断消息不断 affect).

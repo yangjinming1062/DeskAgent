@@ -58,7 +58,7 @@ export function handleCompanionEvent(event: RpcEvent): void {
     }
 
     case 'cron.trigger':
-      // Backend (design.md §6) processes cron into a `companion.message`; the
+      // Backend (ARCHITECTURE.md §6) processes cron into a `companion.message`; the
       // desktop doesn't run the cron turn itself. No-op until that lands.
       break
     case 'companion.message': {

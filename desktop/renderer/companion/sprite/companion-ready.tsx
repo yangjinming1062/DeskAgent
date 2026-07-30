@@ -6,7 +6,7 @@ import { $gatewayState } from '@/shared/store/gateway'
 // The hatched companion at idle — the Backend portrait rendered with a gentle
 // breathing animation. No WebM clips exist yet (Desktop-first MVP), so this is
 // the code-rendered idle until clip generation ships; it's the same fallback
-// the "never blank" invariant (design.md §11#9) guarantees. When the gateway is
+// the "never blank" invariant (ARCHITECTURE.md §11#9) guarantees. When the gateway is
 // down the companion looks drowsy (plan.md §4.5 DISCONNECTED) — basic MVP
 // level; foreground/background grace arrives in phase 2.
 export function CompanionReady() {

@@ -2,7 +2,7 @@
 
 云端大脑——FastAPI + PostgreSQL + JWT。承载 DeskAgent 伙伴的"人格"（角色定义 + 长期记忆）与"形象"（专属形象资产生成与下发），负责 LLM 流式对话编排、系统提示词装配、云端工具执行、Cron 调度，以及通过 IPC 将本地工具调用下发给 Desktop/Runner。
 
-设计文档：[design.md](../design.md) §1 / §2 / §5 / §6 / §7 / §9
+设计文档：[ARCHITECTURE.md](../ARCHITECTURE.md) §1 / §2 / §5 / §6 / §7 / §9
 
 ## 架构地图
 
@@ -47,7 +47,7 @@ backend/
 
 **Config-aware 过滤**：每个 backend tool 声明 `availability_check(user_settings) -> bool`，`get_all_schemas` 按 check 静默过滤不可用项（Predicate 异常时单 tool 静默隐藏，fail-closed）。
 
-**陪伴语义映射**——已有 backend tools 在新定位下恰好覆盖伙伴核心能力（完整映射见 [design.md §7.4](../design.md)）：
+**陪伴语义映射**——已有 backend tools 在新定位下恰好覆盖伙伴核心能力（完整映射见 [ARCHITECTURE.md §7.4](../ARCHITECTURE.md)）：
 
 | 工具 | 伙伴场景 |
 |------|----------|
@@ -61,7 +61,7 @@ backend/
 
 `services/gateway/ipc.py` 维护 `_pending: dict[(user_id, call_id), Future]`——键是 `(user_id, call_id)` 而非单 `call_id`：并发用户不共享 future，`user_id` 来自 JWT 解析，WS 断开时 `discard_user` 取消该用户所有未决 future。
 
-完整工具调用流（LLM → Backend → Desktop → Runner → 回传）见 [design.md §5.2.I](../design.md)。Backend 侧的关键约束：
+完整工具调用流（LLM → Backend → Desktop → Runner → 回传）见 [ARCHITECTURE.md §5.2.I](../ARCHITECTURE.md)。Backend 侧的关键约束：
 
 - **超时**：`ipc_future_timeout_seconds`（默认 300s），超时返回 synthetic error
 - **快速失败**：`_dispatch_runner_tool` 做 active_connections → has_runner_tools → send_json 异常三层检查，通常 < 100ms 返回离线错误；仅绕过三层后才进入 300s 超时
@@ -80,11 +80,11 @@ backend/
 
 ## Cron 与事件下发
 
-伙伴主动陪伴（问候、提醒、情境闲聊）经 PostgreSQL LISTEN/NOTIFY + Outbox 表支撑（[design.md §6](../design.md)）。
+伙伴主动陪伴（问候、提醒、情境闲聊）经 PostgreSQL LISTEN/NOTIFY + Outbox 表支撑（[ARCHITECTURE.md §6](../ARCHITECTURE.md)）。
 
 `services/scheduler/cron.scheduler_loop` 每 60s `_tick()`：扫描到期任务，CAS 推进 `next_run_at`（多副本安全），写 `cron.trigger` 到 `ws_events` outbox。`_tick` 不 await WS 推送——慢客户端不卡 cron 事务。PostgreSQL trigger 在 `ws_events` INSERT 时 `NOTIFY ws_events_channel`，每个 Backend 副本独立 `LISTEN` + `DELETE ... RETURNING` 原子认领消费（行锁保证不重复投递）。无效 cron 表达式自动暂停 job。
 
-**伙伴主动消息通道**：`send_message_tool` 无 `target_webhook` 时走 companion 原生路径——`_emit_companion_message` 写 `companion.message {text}` 到 `ws_events` outbox，经同一套 LISTEN/NOTIFY 推到桌面端（伙伴 TTS + 气泡呈现，[design.md §5.1.A / §7.4](../design.md)）。带 `target_webhook` 时仍是外部 webhook POST（Slack/Discord 等）。**打扰档位**：`companion.set_disturbance_tier {tier}` JSON-RPC（`services/companion/disturbance.py` 进程内 per-user 存储，默认 `normal`）——`quiet` 抑制 send_message 的 companion 投递（断消息不断 affect）。Desktop 侧也客户端过滤，此为防御层。
+**伙伴主动消息通道**：`send_message_tool` 无 `target_webhook` 时走 companion 原生路径——`_emit_companion_message` 写 `companion.message {text}` 到 `ws_events` outbox，经同一套 LISTEN/NOTIFY 推到桌面端（伙伴 TTS + 气泡呈现，[ARCHITECTURE.md §5.1.A / §7.4](../ARCHITECTURE.md)）。带 `target_webhook` 时仍是外部 webhook POST（Slack/Discord 等）。**打扰档位**：`companion.set_disturbance_tier {tier}` JSON-RPC（`services/companion/disturbance.py` 进程内 per-user 存储，默认 `normal`）——`quiet` 抑制 send_message 的 companion 投递（断消息不断 affect）。Desktop 侧也客户端过滤，此为防御层。
 
 ## 系统提示词与上下文管理
 
@@ -96,7 +96,7 @@ backend/
 
 `services/llm/error_classifier.py` 将所有 API 层或依赖项错误收拢为 `FailoverReason`（21 种），经 8 步优先级流水线过滤：provider patterns → HTTP status → error code → message pattern → SSL/TLS transient → server disconnect → transport heuristics → unknown fallback。分类决定恢复策略（退避重试 / 凭证轮换 / 压缩上下文 / 不重试等）。
 
-**REST 错误信封**：`/api/llm/completion` 与 `/api/media/*` 在异常路径上调 `classify_api_error`，把 `FailoverReason` + `status_code` 折成 `{error, reason, status}` 返回。原始异常（可能带 provider URL / 部分 auth header）只写服务端 log，**永远不出后端**——满足 [design.md §9](../design.md) 的 -32603 "no internal detail" 契约。
+**REST 错误信封**：`/api/llm/completion` 与 `/api/media/*` 在异常路径上调 `classify_api_error`，把 `FailoverReason` + `status_code` 折成 `{error, reason, status}` 返回。原始异常（可能带 provider URL / 部分 auth header）只写服务端 log，**永远不出后端**——满足 [ARCHITECTURE.md §9](../ARCHITECTURE.md) 的 -32603 "no internal detail" 契约。
 
 **附件 fetch 失败**：LLM 无法下载临时媒体文件时（链接过期、网络隔离），拦截 Proxy 端原始 SDK 报错，向用户返回 provider-agnostic 短消息，避免误导性触发 LLM 回退逻辑。
 
@@ -172,7 +172,7 @@ MiniMax Hailuo 异步三段式：`POST /v1/video_generation`（task_id）→ `GE
 
 **Tool**：`video_generate`（schema: prompt/duration/resolution/first_frame_image/aspect_ratio）+ `video_generate_status`（schema: task_id）。前者最多等 `video_gen_tool_wait_seconds`（180s）；超时返回 `{success:true, pending:true, task_id, hint:"用 video_generate_status 查询"}`——后台任务继续跑。MiniMax 不暴露 ASR，所以 `stt` provider 没有 `minimax` 实现。
 
-**伙伴层 clip 的种子图**：`companion/avatar_service` 生成角色动画 clip 时，`first_frame_image` 固定为该用户当前 portrait，prompt 描述场景/动作——所有 clip 共享同一颗种子图以保证跨 clip 角色一致；portrait 重生时全部 clip 失效重排（[design.md §7.2](../design.md#72-形象与动画资产-avatar--animation-assets)）。clip 复用 `video_gen.completed/failed` 事件下发，payload 携 scene 标识。
+**伙伴层 clip 的种子图**：`companion/avatar_service` 生成角色动画 clip 时，`first_frame_image` 固定为该用户当前 portrait，prompt 描述场景/动作——所有 clip 共享同一颗种子图以保证跨 clip 角色一致；portrait 重生时全部 clip 失效重排（[ARCHITECTURE.md §7.2](../ARCHITECTURE.md#72-形象与动画资产-avatar--animation-assets)）。clip 复用 `video_gen.completed/failed` 事件下发，payload 携 scene 标识。
 
 ## 安全设计
 
@@ -191,7 +191,7 @@ MiniMax Hailuo 异步三段式：`POST /v1/video_generation`（task_id）→ `GE
 
 ## 伙伴人格与形象系统
 
-DeskAgent 伙伴的"人格"与"形象"是跨 Backend↔Desktop 的核心契约（[design.md §7](../design.md)）。设计意图详见 design.md，此处只记 backend 侧的实现决策。
+DeskAgent 伙伴的"人格"与"形象"是跨 Backend↔Desktop 的核心契约（[ARCHITECTURE.md §7](../ARCHITECTURE.md)）。设计意图详见 ARCHITECTURE.md，此处只记 backend 侧的实现决策。
 
 ### 角色定义（Persona）
 

@@ -78,7 +78,7 @@ async def enqueue_video_job(
     ``event_extras`` is an opaque dict merged into every emitted
     ``video_gen.completed`` / ``video_gen.failed`` WS event payload — e.g.
     the companion clip pipeline passes ``{"scene": "idle"}`` so the desktop
-    can bind the result to a specific animation state (design.md §7.2).
+    can bind the result to a specific animation state (ARCHITECTURE.md §7.2).
 
     Raises :class:`MissingLlmConfigError` if no video_gen provider is
     configured, or any provider error during submission.

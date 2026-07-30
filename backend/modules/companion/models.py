@@ -66,7 +66,7 @@ class AvatarAsset(ModelBase):
 
 class AvatarClip(ModelBase, TimestampMixin):
     """A companion animation clip generated from the user's portrait via
-    image-to-video (design.md §7.2). Each clip binds a ``scene`` label
+    image-to-video (ARCHITECTURE.md §7.2). Each clip binds a ``scene`` label
     (matching the desktop animation state machine) to a video-gen job that
     uses the active portrait as ``first_frame_image`` — the shared seed
     guarantees cross-clip character consistency.

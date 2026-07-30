@@ -227,7 +227,7 @@ async def run_chat_turn(
 
             # Drain steer queue AFTER tool persistence so the OpenAI message
             # ordering [assistant(tool_calls), tool(results), user(steer)] is
-            # preserved (see design.md §3.1 tool-call message ordering).
+            # preserved (see ARCHITECTURE.md §3.1 tool-call message ordering).
             _drain_steer_queue(runtime, current_messages)
 
             if guardrails.halt_decision:
