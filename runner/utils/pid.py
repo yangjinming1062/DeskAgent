@@ -61,5 +61,7 @@ def kill_tree(pid: int | None, *, force: bool = True, timeout: float = 10.0) -> 
         return True
     if result is None and not force:
         # Soft-kill timed out — escalate to force-kill so caller doesn't have to.
-        _run([*args, "/F"])
+        result = _run([*args, "/F"])
+        if result is not None and result.returncode in (0, 128):
+            return True
     return False
