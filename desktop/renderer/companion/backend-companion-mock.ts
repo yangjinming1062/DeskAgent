@@ -19,6 +19,7 @@ export const VOICE_OPTIONS: readonly VoiceOption[] = [
 
 export function matchVoice(preference: string | undefined): VoiceOption {
   const p = (preference || '').toLowerCase()
+
   return (
     VOICE_OPTIONS.find(v => v.tags.some(t => p.includes(t)) || p.includes(v.label)) ?? VOICE_OPTIONS[0]
   )
@@ -26,6 +27,7 @@ export function matchVoice(preference: string | undefined): VoiceOption {
 
 export function nextVoice(currentId: string): VoiceOption {
   const idx = VOICE_OPTIONS.findIndex(v => v.id === currentId)
+
   return VOICE_OPTIONS[(idx + 1) % VOICE_OPTIONS.length]
 }
 

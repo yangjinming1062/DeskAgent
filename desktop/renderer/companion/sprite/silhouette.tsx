@@ -19,19 +19,19 @@ export function Silhouette({ clarity, size = 180, spin = false }: SilhouetteProp
       <style>{SIL_CSS}</style>
       <span className="sil-glow" style={{ opacity: 0.25 + c * 0.55 }} />
       <svg
-        viewBox="0 0 200 200"
-        width={size}
         height={size}
         style={{ filter: `blur(${blur.toFixed(2)}px)`, opacity: fillOpacity }}
+        viewBox="0 0 200 200"
+        width={size}
       >
         <defs>
-          <radialGradient id="silFill" cx="50%" cy="38%" r="62%">
+          <radialGradient cx="50%" cy="38%" id="silFill" r="62%">
             <stop offset="0%" stopColor="#fff6c2" />
             <stop offset="70%" stopColor="#f0c949" stopOpacity="0.95" />
             <stop offset="100%" stopColor="#e0a138" stopOpacity="0.75" />
           </radialGradient>
         </defs>
-        <circle cx="100" cy="58" r="30" fill="url(#silFill)" />
+        <circle cx="100" cy="58" fill="url(#silFill)" r="30" />
         <path d="M100 92 C66 92 52 134 52 176 L148 176 C148 134 134 92 100 92 Z" fill="url(#silFill)" />
       </svg>
     </div>

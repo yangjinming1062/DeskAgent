@@ -2,16 +2,16 @@ import { useStore } from '@nanostores/react'
 import { useEffect, useRef, useState } from 'react'
 
 import { useGatewayRequest } from '@/companion/boot/use-gateway-request'
-import { $gatewayState } from '@/shared/store/gateway'
 import {
   $chatMessages,
   $chatSessionId,
+  type ChatMessage,
   pushUserMessage,
   setAssistantError,
-  setChatSession,
-  type ChatMessage
+  setChatSession
 } from '@/companion/chat-store'
 import { $disturbanceTier, type DisturbanceTier, setDisturbanceTier, setSpriteState } from '@/companion/companion-store'
+import { $gatewayState } from '@/shared/store/gateway'
 
 const TIERS: { id: DisturbanceTier; label: string }[] = [
   { id: 'proactive', label: '积极' },
@@ -42,6 +42,7 @@ export function ChatDock({ onClose }: ChatDockProps) {
     void window.deskagent.sprite.setIgnoreMouseEvents({ ignore: false })
     void window.deskagent.sprite.setAlwaysOnTop({ on: false })
     inputRef.current?.focus()
+
     return () => {
       void window.deskagent.sprite.setAlwaysOnTop({ on: true })
       void window.deskagent.sprite.setIgnoreMouseEvents({ ignore: true, forward: true })
@@ -54,9 +55,11 @@ export function ChatDock({ onClose }: ChatDockProps) {
 
   const ensureSession = async (): Promise<string> => {
     const existing = $chatSessionId.get()
-    if (existing) return existing
+
+    if (existing) {return existing}
     const res = await requestGateway<{ session_id: string }>('session.create', {})
     setChatSession(res.session_id)
+
     return res.session_id
   }
 
@@ -69,16 +72,21 @@ export function ChatDock({ onClose }: ChatDockProps) {
 
   const onPaste = async (e: React.ClipboardEvent) => {
     const items = e.clipboardData?.items
-    if (!items) return
+
+    if (!items) {return}
+
     for (const item of items) {
       if (item.type.startsWith('image/')) {
         e.preventDefault()
+
         try {
           const path = await window.deskagent.saveClipboardImage()
-          if (path) setPendingImage(path)
+
+          if (path) {setPendingImage(path)}
         } catch {
           /* ignore clipboard read failure */
         }
+
         return
       }
     }
@@ -86,24 +94,30 @@ export function ChatDock({ onClose }: ChatDockProps) {
 
   const send = async () => {
     const trimmed = text.trim()
-    if ((!trimmed && !pendingImage) || sending) return
-    if (gatewayState !== 'open') return
+
+    if ((!trimmed && !pendingImage) || sending) {return}
+
+    if (gatewayState !== 'open') {return}
 
     setSending(true)
+
     try {
       const id = await ensureSession()
       let fullText = trimmed
       const attachments: string[] = []
+
       if (pendingImage) {
         const ref = await requestGateway<{ ref_text?: string }>('image.attach', {
           session_id: id,
           path: pendingImage
         })
+
         if (ref.ref_text) {
           fullText = `${fullText}\n${ref.ref_text}`.trim()
           attachments.push(pendingImage)
         }
       }
+
       pushUserMessage(fullText || '（图片）', attachments.length ? attachments : undefined)
       setSpriteState('thinking')
       setText('')
@@ -131,21 +145,21 @@ export function ChatDock({ onClose }: ChatDockProps) {
           <div className="flex items-center gap-0.5 rounded-full bg-white/5 p-0.5 text-[11px]" title="打扰档位">
             {TIERS.map(t => (
               <button
-                key={t.id}
-                type="button"
-                onClick={() => changeTier(t.id)}
                 className={`rounded-full px-2.5 py-1 transition ${tier === t.id ? 'bg-white/80 font-medium text-black' : 'text-white/60 hover:text-white'}`}
+                key={t.id}
+                onClick={() => changeTier(t.id)}
+                type="button"
               >
                 {t.label}
               </button>
             ))}
           </div>
-          <button type="button" onClick={onClose} className="text-white/50 transition hover:text-white" aria-label="关闭对话">
+          <button aria-label="关闭对话" className="text-white/50 transition hover:text-white" onClick={onClose} type="button">
             ✕
           </button>
         </div>
 
-        <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto px-4 py-4">
+        <div className="flex-1 space-y-3 overflow-y-auto px-4 py-4" ref={scrollRef}>
           {messages.length === 0 && !sending && (
             <p className="mt-6 text-center text-sm text-white/40">说点什么，或粘贴一张图给我看看～</p>
           )}
@@ -171,25 +185,25 @@ export function ChatDock({ onClose }: ChatDockProps) {
           )}
           <div className="flex items-end gap-2">
             <textarea
-              ref={inputRef}
-              value={text}
+              className="max-h-32 flex-1 resize-none rounded-lg border border-white/15 bg-white/10 px-3 py-2 text-sm outline-none placeholder:text-white/40 focus:border-white/40"
               onChange={e => setText(e.target.value)}
-              onPaste={onPaste}
               onKeyDown={e => {
                 if (e.key === 'Enter' && !e.shiftKey) {
                   e.preventDefault()
                   void send()
                 }
               }}
-              rows={1}
+              onPaste={onPaste}
               placeholder="输入消息，Enter 发送，Shift+Enter 换行"
-              className="max-h-32 flex-1 resize-none rounded-lg border border-white/15 bg-white/10 px-3 py-2 text-sm outline-none placeholder:text-white/40 focus:border-white/40"
+              ref={inputRef}
+              rows={1}
+              value={text}
             />
             <button
-              type="button"
-              onClick={() => void send()}
-              disabled={sending || gatewayState !== 'open' || (!text.trim() && !pendingImage)}
               className="rounded-lg bg-white/90 px-4 py-2 text-sm font-medium text-black transition hover:bg-white disabled:opacity-40"
+              disabled={sending || gatewayState !== 'open' || (!text.trim() && !pendingImage)}
+              onClick={() => void send()}
+              type="button"
             >
               发送
             </button>
@@ -202,6 +216,7 @@ export function ChatDock({ onClose }: ChatDockProps) {
 
 function MessageBubble({ message }: { message: ChatMessage }) {
   const isUser = message.role === 'user'
+
   return (
     <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
       <div

@@ -108,6 +108,44 @@ export default [
     }
   },
   {
+    // Renderer-internal module boundary — companion ↔ hub. Both may reach
+    // into @/shared/*; neither may reach into the other. Implemented with
+    // ESLint core's no-restricted-imports (path-glob style) so we don't
+    // add eslint-plugin-import for one rule.
+    files: ['renderer/companion/**/*.{ts,tsx}'],
+    ignores: ['**/node_modules/**'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['@/hub', '@/hub/*', '../hub', '../hub/*', '../../hub', '../../hub/*'],
+              message: 'companion must not import hub — review design before coupling the two windows.'
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    files: ['renderer/hub/**/*.{ts,tsx}'],
+    ignores: ['**/node_modules/**'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['@/companion', '@/companion/*', '../companion', '../companion/*', '../../companion', '../../companion/*'],
+              message: 'hub must not import companion — review design before coupling the two windows.'
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
     files: ['**/*.js', '**/*.cjs'],
     ignores: ['**/node_modules/**', '**/dist/**'],
     languageOptions: {

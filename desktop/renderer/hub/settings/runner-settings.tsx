@@ -9,8 +9,9 @@ import { triggerHaptic } from '@/shared/lib/haptics'
 import { Settings } from '@/shared/lib/icons'
 import { notify, notifyError } from '@/shared/store/notifications'
 
-import { EmptyState, ListRow, LoadingState, SectionHeading, SettingsContent, SettingsSubsection } from './primitives'
 import { useRunnerConfig } from '../runner/use-runner-config'
+
+import { EmptyState, ListRow, LoadingState, SectionHeading, SettingsContent, SettingsSubsection } from './primitives'
 
 type SelectRow = {
   kind: 'select'

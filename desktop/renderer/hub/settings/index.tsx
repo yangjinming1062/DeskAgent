@@ -3,12 +3,12 @@ import { useRef } from 'react'
 
 import { Tip } from '@/shared/components/ui/tooltip'
 import { getDeskAgentConfigDefaults, getDeskAgentConfigRecord, saveDeskAgentConfig } from '@/shared/deskagent'
+import { useRouteEnumParam } from '@/shared/hooks/use-route-enum-param'
 import { useI18n } from '@/shared/i18n'
 import { triggerHaptic } from '@/shared/lib/haptics'
 import { Info, KeyRound, Palette, Settings, Sparkles, Wrench } from '@/shared/lib/icons'
 import { notifyError } from '@/shared/store/notifications'
 
-import { useRouteEnumParam } from '@/shared/hooks/use-route-enum-param'
 import { OverlayIconButton } from '../overlays/overlay-chrome'
 import { OverlayMain, OverlayNavItem, OverlaySidebar, OverlaySplitLayout } from '../overlays/overlay-split-layout'
 import { OverlayView } from '../overlays/overlay-view'

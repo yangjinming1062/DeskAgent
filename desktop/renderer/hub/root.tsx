@@ -1,5 +1,5 @@
 import { useStore } from '@nanostores/react'
-import { Suspense, lazy, useEffect } from 'react'
+import { lazy, Suspense, useEffect } from 'react'
 
 import { Loader2 } from '@/shared/lib/icons'
 import { $auth, applyAuthBroadcast, hydrateAuth, logout } from '@/shared/store/auth'
@@ -21,11 +21,13 @@ export function ToolRoot() {
 
   useEffect(() => {
     const off = window.deskagent.onAuthChanged(payload => applyAuthBroadcast(payload))
+
     return () => off()
   }, [])
 
   useEffect(() => {
     const off = window.deskagent.onSessionExpired(() => void logout())
+
     return () => off()
   }, [])
 

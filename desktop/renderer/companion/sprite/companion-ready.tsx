@@ -19,11 +19,12 @@ export function CompanionReady() {
     window.deskagent
       .api<{ asset_url?: string }>({ path: '/api/companion/avatar' })
       .then(r => {
-        if (!cancelled) setUrl(r.asset_url ?? null)
+        if (!cancelled) {setUrl(r.asset_url ?? null)}
       })
       .catch(() => {
         /* stay on placeholder — companion never "blank" */
       })
+
     return () => {
       cancelled = true
     }
@@ -35,10 +36,10 @@ export function CompanionReady() {
       <span className="companion-glow" style={{ opacity: drowsy ? 0.2 : undefined }} />
       {url ? (
         <img
-          src={url}
           alt="companion"
           className="companion-img"
           draggable={false}
+          src={url}
           style={{ filter: drowsy ? 'grayscale(0.6) brightness(0.85)' : undefined }}
         />
       ) : (

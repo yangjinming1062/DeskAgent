@@ -9,7 +9,7 @@ export function ProactiveBubble() {
   const text = useStore($proactiveBubble)
   const chatOpen = useStore($chatOpen)
 
-  if (!text || chatOpen) return null
+  if (!text || chatOpen) {return null}
 
   return (
     <div className="proactive-bubble fixed bottom-28 right-8 z-30 max-w-[16rem]">

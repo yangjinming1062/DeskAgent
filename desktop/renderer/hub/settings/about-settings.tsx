@@ -1,11 +1,11 @@
 import { useStore } from '@nanostores/react'
 import { useCallback, useEffect } from 'react'
 
+import { $updateStatus, openUpdateDialog, selectTargetVersion } from '@/hub/settings-store'
 import { BrandMark } from '@/shared/components/brand-mark'
 import { Button } from '@/shared/components/ui/button'
 import { useI18n } from '@/shared/i18n'
 import { Loader2, RefreshCw } from '@/shared/lib/icons'
-import { $updateStatus, openUpdateDialog, selectTargetVersion } from '@/hub/settings-store'
 import { $desktopVersion, refreshDesktopVersion } from '@/shared/store/version'
 
 import { SettingsContent } from './primitives'

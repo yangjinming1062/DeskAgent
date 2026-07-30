@@ -16,7 +16,10 @@
     "noEmit": true,
     "jsx": "react-jsx",
     "paths": {
-      "@/*": ["./renderer/*"]
+      "@/*": ["./renderer/*"],
+      "@shared/*": ["./renderer/shared/*"],
+      "@companion/*": ["./renderer/companion/*"],
+      "@hub/*": ["./renderer/hub/*"]
     }
   },
   "include": ["renderer"],

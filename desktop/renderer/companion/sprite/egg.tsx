@@ -30,9 +30,9 @@ export function Egg({ cracks, mode }: EggProps) {
     <div className="select-none" style={{ width: EGG_SIZE, height: EGG_SIZE + 24 }}>
       <style>{KEYFRAMES}</style>
       <div
-        role="img"
         aria-label="DeskAgent egg"
         className={`egg-root ${wobble} relative grid place-items-center`}
+        role="img"
         style={{ width: EGG_SIZE, height: EGG_SIZE }}
       >
         {/* Ambient glow — brightens as the companion "comes to". */}
@@ -43,19 +43,19 @@ export function Egg({ cracks, mode }: EggProps) {
           }}
         />
         <svg
+          className="egg-shell"
+          height={EGG_SIZE}
+          style={{ transform: shattered ? 'scale(0.92)' : undefined }}
           viewBox="0 0 160 160"
           width={EGG_SIZE}
-          height={EGG_SIZE}
-          className="egg-shell"
-          style={{ transform: shattered ? 'scale(0.92)' : undefined }}
         >
           <defs>
-            <radialGradient id="eggFill" cx="42%" cy="36%" r="72%">
+            <radialGradient cx="42%" cy="36%" id="eggFill" r="72%">
               <stop offset="0%" stopColor="#fffdf6" />
               <stop offset="60%" stopColor="#f6efe0" />
               <stop offset="100%" stopColor="#e6dcc4" />
             </radialGradient>
-            <radialGradient id="coreGlow" cx="50%" cy="50%" r="50%">
+            <radialGradient cx="50%" cy="50%" id="coreGlow" r="50%">
               <stop offset="0%" stopColor="#fff3b0" />
               <stop offset="70%" stopColor="#ffd166" stopOpacity="0.55" />
               <stop offset="100%" stopColor="#ffd166" stopOpacity="0" />
@@ -63,7 +63,7 @@ export function Egg({ cracks, mode }: EggProps) {
           </defs>
 
           {/* Once shattered, a warm core glows through the split shell. */}
-          {shattered && <circle cx="80" cy="82" r="42" fill="url(#coreGlow)" />}
+          {shattered && <circle cx="80" cy="82" fill="url(#coreGlow)" r="42" />}
 
           <path
             d="M80 18 C120 18 138 60 138 92 C138 124 112 146 80 146 C48 146 22 124 22 92 C22 60 40 18 80 18 Z"
@@ -73,9 +73,9 @@ export function Egg({ cracks, mode }: EggProps) {
           />
 
           {/* Cracks accumulate; on shatter the shell halves part slightly. */}
-          <g stroke="#b9a982" strokeWidth="1.6" fill="none" strokeLinejoin="round" strokeLinecap="round" opacity={shattered ? 0.9 : 0.7}>
+          <g fill="none" opacity={shattered ? 0.9 : 0.7} stroke="#b9a982" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.6">
             {CRACK_PATHS.slice(0, Math.min(cracks, CRACK_PATHS.length)).map((d, i) => (
-              <path key={i} d={d} />
+              <path d={d} key={i} />
             ))}
             {shattered && <path d="M80 18 L74 60 L86 88 L72 120 L80 146" strokeWidth="2" />}
           </g>

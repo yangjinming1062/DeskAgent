@@ -1,8 +1,8 @@
 import { atom } from 'nanostores'
 
 import type { DeskAgentGateway } from '@/shared/deskagent'
-import type { DeskAgentConnection } from '@/shared/types/global'
 import type { ConnectionState } from '@/shared/lib/gateway-protocol'
+import type { DeskAgentConnection } from '@/shared/types/global'
 
 // Tracks whether the local Runner is online and has synced its tools — lets
 // the message-stream handler fast-fail tool.call instead of parking on the
