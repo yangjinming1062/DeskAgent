@@ -74,5 +74,10 @@ class UserModelConfig(ModelBase, TimestampMixin):
     video_gen_base_url: Mapped[str] = mapped_column(String(255), default="")
     video_gen_api_key: Mapped[str] = mapped_column(Text, default="")
     video_gen_model_name: Mapped[str] = mapped_column(String(128), default="")
+    # Per-user provider slots as JSON: an ordered list of
+    # ``{"name", "api_key", "base_url"}`` tried before capability credentials
+    # (services/llm/llm_client.resolve_provider_chain, tier 1). JSON shape so
+    # adding a provider family later needs no DB schema change.
+    provider_config: Mapped[str] = mapped_column(Text, default="[]")
 
     user: Mapped[User] = relationship(back_populates="model_config")

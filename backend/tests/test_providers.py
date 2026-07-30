@@ -865,3 +865,73 @@ class TestMiniMaxVideoGen:
         assert asset.download_url == "https://filecdn.minimax.chat/abc.mp4"
         assert asset.content_type == "video/mp4"
         assert asset.size == 12345
+
+
+class TestPerUserProviderChain:
+    """Tier-1: a user's per-user provider_config is tried before the global chain.
+
+    resolve_provider_chain prepends slots built from the user's JSON
+    provider_config, then appends the existing global fold-in. Same-provider
+    dedup keeps the user (tier-1) slot.
+    """
+
+    _EMPTY = TestProviderChain._EMPTY_DEFAULTS
+
+    def _reset(self, monkeypatch):
+        for field, default in self._EMPTY.items():
+            monkeypatch.setattr(f"components.SETTINGS.{field}", default)
+
+    def _seed(self, SessionLocal, provider_config):
+        from modules.auth import User, UserModelConfig, hash_password
+
+        with SessionLocal() as db:
+            user = User(username="u", password_hash=hash_password("p1234567"), is_active=True, can_use=True)
+            db.add(user)
+            db.commit()
+            db.refresh(user)
+            db.add(UserModelConfig(user_id=user.id, provider_config=json.dumps(provider_config)))
+            db.commit()
+            return user.id
+
+    def test_user_provider_prepended_and_deduped(self, _patch_db, monkeypatch):
+        from services.llm import resolve_provider_chain
+
+        self._reset(monkeypatch)
+        # Global chain: mimo then minimax, both keyed.
+        monkeypatch.setattr("components.SETTINGS.providers", ["mimo", "minimax"])
+        monkeypatch.setattr("components.SETTINGS.mimo_api_key", "sk-global-mimo")
+        monkeypatch.setattr("components.SETTINGS.minimax_api_key", "sk-global-mm")
+
+        _, SessionLocal = _patch_db
+        user_id = self._seed(SessionLocal, [{"name": "minimax", "api_key": "sk-user-mm", "base_url": "https://user-mm.example/v1"}])
+        with SessionLocal() as db:
+            chain = resolve_provider_chain(db, user_id, "llm")
+        # User minimax (tier 1) first; global mimo next; global minimax deduped away.
+        assert [c.provider_name for c in chain] == ["minimax", "mimo"]
+        assert chain[0].api_key == "sk-user-mm"
+        assert chain[0].base_url == "https://user-mm.example/v1"
+
+    def test_user_provider_slot_skipped_without_key(self, _patch_db, monkeypatch):
+        from services.llm import resolve_provider_chain
+
+        self._reset(monkeypatch)
+        monkeypatch.setattr("components.SETTINGS.providers", ["minimax"])
+        monkeypatch.setattr("components.SETTINGS.minimax_api_key", "sk-global-mm")
+
+        _, SessionLocal = _patch_db
+        # mimo slot lacks an api_key → dropped; falls through to global minimax.
+        user_id = self._seed(SessionLocal, [{"name": "mimo", "api_key": "", "base_url": "https://x/v1"}])
+        with SessionLocal() as db:
+            chain = resolve_provider_chain(db, user_id, "llm")
+        assert [c.provider_name for c in chain] == ["minimax"]
+
+    def test_no_user_context_unchanged(self, monkeypatch):
+        """db=None/user_id=None must behave exactly as before (no tier 1)."""
+        from services.llm import resolve_provider_chain
+
+        self._reset(monkeypatch)
+        monkeypatch.setattr("components.SETTINGS.providers", ["mimo", "minimax"])
+        monkeypatch.setattr("components.SETTINGS.mimo_api_key", "sk-mimo")
+        monkeypatch.setattr("components.SETTINGS.minimax_api_key", "sk-mm")
+        chain = resolve_provider_chain(None, None, "llm")
+        assert [c.provider_name for c in chain] == ["mimo", "minimax"]

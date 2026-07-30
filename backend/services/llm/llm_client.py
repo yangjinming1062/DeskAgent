@@ -1,3 +1,5 @@
+import json
+
 from components import SETTINGS
 from modules.auth import UserModelConfig
 from openai import AsyncOpenAI
@@ -144,21 +146,62 @@ def _build_chain_order(service_type: str) -> list[str]:
     return [name for name in base_order if name in supporting]
 
 
+def _load_user_config(db: Session | None, user_id: int | None) -> UserModelConfig | None:
+    if db is None or user_id is None:
+        return None
+    return db.query(UserModelConfig).filter(UserModelConfig.user_id == user_id).first()
+
+
+def _user_provider_slots(user_cfg: UserModelConfig, service_type: str) -> list[ProviderConfig]:
+    """Tier-1 chain slots from a user's per-user provider_config (JSON list).
+
+    One slot per entry in stored order, filtered to providers registered for
+    ``service_type``. A slot needs both an api_key and a resolvable base_url.
+    """
+    supporting = set(providers_supporting(service_type))
+    slots: list[ProviderConfig] = []
+    for entry in json.loads(user_cfg.provider_config or "[]"):
+        name = entry.get("name", "")
+        if name not in KNOWN_PROVIDERS or name not in supporting:
+            continue
+        api_key = entry.get("api_key", "") or ""
+        base_url = entry.get("base_url", "") or default_base_url(name, service_type)
+        model = getattr(user_cfg, f"{service_type}_model_name", "") or default_model_for(name, service_type)
+        if api_key and base_url:
+            slots.append(ProviderConfig(base_url=base_url, api_key=api_key, model=model, service_type=ServiceType(service_type), provider_name=name))
+    return slots
+
+
 def resolve_provider_chain(db: Session | None, user_id: int | None, service_type: str) -> list[ProviderConfig]:
     """Resolve the ordered fallback chain for ``service_type``.
 
-    Returns a list of fully populated :class:`ProviderConfig`, in priority
-    order. Empty list means no provider in the configured chain had both a
-    key and a base_url — the dispatcher raises ``MissingLlmConfigError`` to
-    the caller. Slots with missing credentials are silently skipped so a
-    partial chain (e.g. ``PROVIDERS=mimo,minimax`` but only MiMo key set)
-    still works against the configured provider.
+    Resolution tiers (first provider with both a key and a base_url wins):
+      1. user provider — per-user provider_config (JSON) + provider-level keys
+      2. user capability credentials — ``UserModelConfig.<svc>_*``
+      3. global provider — ``SETTINGS.providers`` / ``<svc>_provider`` + keys
+      4. global capability credentials — ``SETTINGS.<svc>_*``
+
+    Tiers 2-4 reuse the per-cap/provider fold-in (``_resolve_slot_config``)
+    so legacy single-key deployments keep working unchanged; tier 1 is
+    prepended and deduped by provider name. Empty list → the dispatcher
+    raises ``MissingLlmConfigError``.
     """
     # ``resolve_service_row`` hits the DB; the row is per-user-per-service
     # and identical across chain slots, so hoist once.
     row = resolve_service_row(db, user_id, service_type)
-    chain = [_resolve_slot_config(name, service_type, row) for name in _build_chain_order(service_type)]
-    return [cfg for cfg in chain if cfg is not None]
+    chain: list[ProviderConfig | None] = []
+    user_cfg = _load_user_config(db, user_id)
+    if user_cfg is not None:
+        chain.extend(_user_provider_slots(user_cfg, service_type))
+    chain.extend(_resolve_slot_config(name, service_type, row) for name in _build_chain_order(service_type))
+    seen: set[str] = set()
+    result: list[ProviderConfig] = []
+    for cfg in chain:
+        if cfg is None or cfg.provider_name in seen:
+            continue
+        seen.add(cfg.provider_name)
+        result.append(cfg)
+    return result
 
 
 def resolve_provider_config(db: Session | None, user_id: int | None, service_type: str) -> ProviderConfig:

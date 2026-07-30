@@ -8,6 +8,9 @@ from .schemas import AdminTokenResponse
 from .schemas import ChangePasswordRequest
 from .schemas import ChatRequestClientContext
 from .schemas import LoginRequest
+from .schemas import ProviderSlot
+from .schemas import ProviderSlotPublic
+from .schemas import public_provider_slots
 from .schemas import RefreshRequest
 from .schemas import TokenResponse
 from .schemas import UserCreate
@@ -36,6 +39,9 @@ __all__ = [
     "ChangePasswordRequest",
     "ChatRequestClientContext",
     "LoginRequest",
+    "ProviderSlot",
+    "ProviderSlotPublic",
+    "public_provider_slots",
     "RefreshRequest",
     "TokenResponse",
     "UserCreate",

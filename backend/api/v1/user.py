@@ -13,10 +13,12 @@ from modules.auth import get_current_session
 from modules.auth import hash_password
 from modules.auth import LoginRecord
 from modules.auth import LoginRequest
+from modules.auth import public_provider_slots
 from modules.auth import RefreshRequest
 from modules.auth import TokenResponse
 from modules.auth import User
 from modules.auth import UserInfo
+from modules.auth import UserModelConfig
 from modules.auth import UserModelConfigResponse
 from modules.auth import verify_password
 from modules.system import MessageResponse
@@ -129,6 +131,9 @@ def model_config(current: tuple[User, LoginRecord] = Depends(get_current_session
     tts_base_url, tts_api_key, tts_model_name = resolve_service_row(db, user.id, "tts")
     img_base_url, img_api_key, img_model_name = resolve_service_row(db, user.id, "image_gen")
     vid_base_url, vid_api_key, vid_model_name = resolve_service_row(db, user.id, "video_gen")
+    # Provider-level config lives directly on the user's row (no global
+    # fallback — empty means "inherit global provider resolution").
+    cfg = db.query(UserModelConfig).filter(UserModelConfig.user_id == user.id).first()
 
     return UserModelConfigResponse(
         llm_base_url=llm_base_url,
@@ -147,4 +152,5 @@ def model_config(current: tuple[User, LoginRecord] = Depends(get_current_session
         video_gen_base_url=vid_base_url,
         video_gen_api_key_set=bool(vid_api_key),
         video_gen_model_name=vid_model_name,
+        provider_config=public_provider_slots(cfg.provider_config if cfg else None),
     )

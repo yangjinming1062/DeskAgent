@@ -1,3 +1,4 @@
+import json
 from datetime import datetime
 
 from pydantic import BaseModel
@@ -46,6 +47,27 @@ class TokenResponse(BaseModel):
     user: UserInfo
 
 
+class ProviderSlot(BaseModel):
+    """One entry in a user's per-user provider_config (write shape)."""
+
+    name: str = Field(min_length=1, max_length=64)
+    api_key: str = Field(default="", max_length=255)
+    base_url: str = Field(default="", max_length=255)
+
+
+class ProviderSlotPublic(BaseModel):
+    """Read shape: the api_key is masked as ``api_key_set``."""
+
+    name: str
+    base_url: str
+    api_key_set: bool
+
+
+def public_provider_slots(raw: str | None) -> list[ProviderSlotPublic]:
+    """Parse a user's provider_config JSON into the masked read shape."""
+    return [ProviderSlotPublic(name=s.get("name", ""), base_url=s.get("base_url", ""), api_key_set=bool(s.get("api_key"))) for s in json.loads(raw or "[]")]
+
+
 class UserModelConfigResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -65,6 +87,7 @@ class UserModelConfigResponse(BaseModel):
     video_gen_base_url: str
     video_gen_api_key_set: bool
     video_gen_model_name: str
+    provider_config: list[ProviderSlotPublic]
 
 
 class UserModelConfigRequest(BaseModel):
@@ -85,6 +108,7 @@ class UserModelConfigRequest(BaseModel):
     video_gen_base_url: str = Field(default="", max_length=255)
     video_gen_api_key: str = Field(default="", max_length=255)
     video_gen_model_name: str = Field(default="", max_length=128)
+    provider_config: list[ProviderSlot] = Field(default_factory=list)
 
 
 class UserModelConfigListItem(BaseModel):
@@ -106,6 +130,7 @@ class UserModelConfigListItem(BaseModel):
     video_gen_base_url: str
     video_gen_api_key_set: bool
     video_gen_model_name: str
+    provider_config: list[ProviderSlotPublic]
 
 
 class UserModelConfigListResponse(BaseModel):
