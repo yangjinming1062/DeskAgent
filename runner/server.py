@@ -228,6 +228,14 @@ async def runner_loop(ws_url: str) -> None:
                         except json.JSONDecodeError:
                             logger.error("Invalid JSON received")
                             continue
+                        # JSON-RPC frames must be JSON objects. A frame
+                        # that parses to ``int``/``list``/``None`` is
+                        # a malformed message — log and skip rather
+                        # than letting ``data.get(...)`` raise and
+                        # kill the reader task.
+                        if not isinstance(data, dict):
+                            logger.error("Non-object JSON frame received: %r", type(data).__name__)
+                            continue
 
                         req_id = data.get("id")
                         if req_id and (fut := _PENDING_RPC.pop(req_id, None)):
