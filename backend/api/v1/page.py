@@ -11,7 +11,7 @@ from modules.auth import create_admin_token
 
 router = get_router(prefix="", tag="admin")
 
-ADMIN_HTML_PATH = Path(__file__).parent.parent / "static" / "admin.html"
+ADMIN_HTML_PATH = Path(__file__).parent.parent.parent / "static" / "admin.html"
 
 
 @router.post("/admin/login", response_model=AdminTokenResponse)
