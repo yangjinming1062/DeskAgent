@@ -5,10 +5,32 @@ import { atom } from 'nanostores'
 // onboarding/hatching arrive in Slice 2.
 export type CompanionLifecycle = 'unauthed-egg' | 'onboarding' | 'hatching' | 'ready'
 
-// MVP state-machine subset (plan.md §2 / §7): IDLE / THINKING / SPEAKING /
-// WORKING, plus a DISCONNECTED overlay. EMOTIONAL/LISTENING/SLEEPING/INTERACTING
-// arrive in later slices.
-export type SpriteStateName = 'idle' | 'thinking' | 'speaking' | 'working' | 'disconnected'
+// Phase 2 state-machine (plan.md §2):
+// IDLE / LISTENING / THINKING / SPEAKING / WORKING / EMOTIONAL / SLEEPING / INTERACTING / DISCONNECTED
+export type SpriteStateName =
+  | 'idle'
+  | 'listening'
+  | 'thinking'
+  | 'speaking'
+  | 'working'
+  | 'emotional'
+  | 'sleeping'
+  | 'interacting'
+  | 'disconnected'
+
+export type SpriteEmotion =
+  | 'happy'
+  | 'sad'
+  | 'surprised'
+  | 'excited'
+  | 'confused'
+  | 'concerned'
+  | 'shy'
+  | 'proud'
+  | 'grateful'
+  | 'playful'
+  | 'bored'
+  | 'lonely'
 
 export interface SpritePosition {
   x: number
@@ -17,6 +39,8 @@ export interface SpritePosition {
 
 export const $companionLifecycle = atom<CompanionLifecycle>('unauthed-egg')
 export const $spriteState = atom<SpriteStateName>('idle')
+export const $spriteEmotion = atom<SpriteEmotion | null>(null)
+export const $previousState = atom<SpriteStateName>('idle')
 export const $spritePosition = atom<SpritePosition | null>(null)
 
 // Disturbance tier gates the companion's proactive behaviour (ARCHITECTURE.md §6 /
@@ -27,11 +51,72 @@ export type DisturbanceTier = 'proactive' | 'normal' | 'quiet'
 
 export const $disturbanceTier = atom<DisturbanceTier>('normal')
 
+const STATE_PRIORITY: Record<SpriteStateName, number> = {
+  disconnected: 100,
+  interacting: 80,
+  working: 70,
+  speaking: 60,
+  thinking: 50,
+  listening: 40,
+  emotional: 35,
+  sleeping: 30,
+  idle: 10
+}
+
+let transientTimer: ReturnType<typeof setTimeout> | null = null
+
 export function setCompanionLifecycle(next: CompanionLifecycle): void {
   $companionLifecycle.set(next)
 }
 
-export function setSpriteState(name: SpriteStateName): void {
+export function setSpriteState(
+  name: SpriteStateName,
+  options?: { emotion?: SpriteEmotion; durationMs?: number; force?: boolean }
+): void {
+  const current = $spriteState.get()
+
+  if (options?.force) {
+    if (transientTimer) {
+      clearTimeout(transientTimer)
+      transientTimer = null
+    }
+  }
+
+  if (name === 'emotional' || name === 'interacting') {
+    if (current !== 'emotional' && current !== 'interacting') {
+      $previousState.set(current)
+    }
+    if (options?.emotion) {
+      $spriteEmotion.set(options.emotion)
+    }
+
+    $spriteState.set(name)
+
+    if (transientTimer) {
+      clearTimeout(transientTimer)
+    }
+
+    const ms = options?.durationMs ?? (name === 'emotional' ? 2500 : 1800)
+    transientTimer = setTimeout(() => {
+      transientTimer = null
+      $spriteEmotion.set(null)
+      const prev = $previousState.get()
+      $spriteState.set(prev === 'emotional' || prev === 'interacting' ? 'idle' : prev)
+    }, ms)
+    return
+  }
+
+  if (!options?.force && STATE_PRIORITY[name] < STATE_PRIORITY[current] && current !== 'idle') {
+    // Lower priority state cannot interrupt higher priority state
+    return
+  }
+
+  if (transientTimer) {
+    clearTimeout(transientTimer)
+    transientTimer = null
+  }
+
+  $spriteEmotion.set(options?.emotion ?? null)
   $spriteState.set(name)
 }
 
@@ -42,3 +127,4 @@ export function setSpritePosition(pos: SpritePosition | null): void {
 export function setDisturbanceTier(tier: DisturbanceTier): void {
   $disturbanceTier.set(tier)
 }
+
