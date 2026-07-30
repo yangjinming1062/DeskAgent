@@ -1,7 +1,7 @@
 /**
- * Tests for main/gateway-ws-probe.cjs.
+ * Tests for main/backend/ws-probe.cjs.
  *
- * Run with: node --test main/gateway-ws-probe.test.cjs
+ * Run with: node --test main/backend/ws-probe.test.cjs
  * (Wired into npm test:desktop:platforms in package.json.)
  *
  * The probe drives a real WebSocket handshake for the "Test remote" button.
@@ -12,7 +12,7 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
 
-const { probeGatewayWebSocket } = require('./gateway-ws-probe.cjs')
+const { probeGatewayWebSocket } = require('./ws-probe.cjs')
 
 // Minimal WebSocket double: records listeners synchronously (the probe attaches
 // them in its executor) and exposes emit() so the test can replay events.
