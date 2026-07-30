@@ -1,5 +1,15 @@
 from .async_bridge import in_async_loop
 from .async_bridge import safe_schedule_threadsafe
+from .capabilities import disk_free_bytes
+from .capabilities import IS_LINUX
+from .capabilities import IS_MACOS
+from .capabilities import local_stt_available
+from .capabilities import local_tts_available
+from .capabilities import microphone_available
+from .capabilities import network_reachable
+from .capabilities import screen_capture_available
+from .capabilities import snapshot as capabilities_snapshot
+from .capabilities import system_activity_available
 from .config import cfg_bool
 from .config import cfg_float
 from .config import cfg_get
@@ -43,6 +53,17 @@ from .reverse_rpc import set_handler
 __all__ = [
     "in_async_loop",
     "safe_schedule_threadsafe",
+    "capabilities_snapshot",
+    "disk_free_bytes",
+    "local_stt_available",
+    "local_tts_available",
+    "microphone_available",
+    "network_reachable",
+    "screen_capture_available",
+    "system_activity_available",
+    "IS_LINUX",
+    "IS_MACOS",
+    "IS_WINDOWS",
     "cfg_bool",
     "cfg_float",
     "cfg_get",
@@ -70,7 +91,6 @@ __all__ = [
     "get_sandbox_mirror_warning",
     "get_windows_sensitive_prefixes",
     "is_write_denied",
-    "IS_WINDOWS",
     "CREATE_NO_WINDOW",
     "append_sane_path_entries",
     "find_bash",

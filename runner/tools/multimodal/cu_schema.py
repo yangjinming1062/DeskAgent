@@ -169,7 +169,28 @@ COMPUTER_USE_SCHEMA: dict[str, Any] = {
             "capture_after": {
                 "type": "boolean",
                 "description": (
-                    "If true, take a follow-up capture after the action " "and include it in the response. Saves a round-trip " "when you need to verify an action's effect."
+                    "If true, take a follow-up capture after the action and " "include it in the response. Saves a round-trip when you " "need to verify an action's effect."
+                ),
+            },
+            "delivery_mode": {
+                "type": "string",
+                "enum": ["background", "foreground"],
+                "description": (
+                    "How to deliver the synthesized input. ``background`` "
+                    "(default) routes events to the target without raising "
+                    "its window or stealing focus. ``foreground`` raises "
+                    "the window and passes focus; reserved for "
+                    "user-confirmed escalations. Each mode requires its "
+                    "own approval scope."
+                ),
+            },
+            "bring_to_front": {
+                "type": "boolean",
+                "description": (
+                    "If true, raise the window before the action (DISRUPTS "
+                    "the user). Distinct from ``delivery_mode='foreground'`` "
+                    "which also passes focus; this flag only raises. "
+                    "Default false."
                 ),
             },
         },

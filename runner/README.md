@@ -15,24 +15,82 @@
 
 ```
 runner/
-├── server.py     # WebSocket JSON-RPC 入口（唯一入口）——runner_loop / get_tools / execute_tool / mcp.reload / request_llm
-├── tools/        # 工具实现与自注册中心——terminal(6后端) / files / browser(多后端) / execute_code / process / skills / mcp / multimodal / toolsets / security / system(输出清洗·结果预算·凭据文件)
-└── utils/        # 路径解析(DESKAGENT_HOME) / 配置 / 脱敏 / 文件安全 / PID 管理(Windows兼容) / 反向 RPC
+├── server.py                # WebSocket JSON-RPC 入口（唯一入口）——runner_loop / get_tools / deskagent.info / execute_tool / mcp.reload / request_llm
+├── runner_version.py        # 从 pyproject.toml 解析 __version__（一次缓存）
+├── tools/                   # 工具实现与自注册中心
+│   ├── terminal/{6 后端}    # 6 后端共享 environment 池
+│   ├── files/               # read/write/patch/search/list
+│   ├── browser/             # 多后端 (Local Chromium / Camofox / CDP) + 26 个 browser_* 工具 + check_fn 门控
+│   ├── execute_code/        # 沙箱执行
+│   ├── process/             # 进程管理
+│   ├── skills/              # skills_list / skill_view / skill_manage
+│   ├── mcp/                 # MCP 动态发现 + 每 server 4 utility
+│   ├── multimodal/          # vision_analyze / computer_use（含 CU 后端与权限）/audio(STT+TTS)
+│   ├── toolsets/            # 用户可平移的 schema 过滤
+│   ├── security/            # tirith 扫描
+│   └── system/              # 输出清洗·结果预算·凭据文件 + activity / activity_tools (系统感知)
+└── utils/                   # 路径解析 / 配置 / 脱敏 / 文件安全 / PID / 反向 RPC / capabilities (本地 STT/TTS/麦克风/网络/磁盘)
 ```
 
 Wheel 产物：`dist/deskagent-agent-*.whl`。Desktop spawn `$DESKAGENT_HOME/runner/.venv/{bin/python,Scripts/python.exe} $DESKAGENT_HOME/runner/server.py --desktop-ws <ws-url>`。安装布局详 [installer/README.md §9](../installer/README.md)。
 
+**音频引擎默认在基础 wheel 内**：`faster-whisper` / `piper-tts` / `sounddevice` / `numpy` 是伴侣语音栈的核心依赖（[plan §5 语音交互](desktop/plan.md)），从基础 wheel 直接可用——前装不再要求额外的 `uv pip install "desk-agent[audio]"`。`pyttsx3` 用平台 marker 限制（Linux 上 voice 栈走 Piper 单一引擎即可）。运行时仍要求系统 PATH 有 `ffmpeg`（`audio_io.wav_to_wav_pcm16` 用）。
+
+要确认 capability 是否在当前 venv 内为真，调 `deskagent.info` 看 `capabilities.local_stt / local_tts` 字段——运行时检测比静态 extra 标记更准（依赖可能在 import 时报警但运行时仍可用，反过来亦然）。
+
 ## 通信协议
 
-Runner 主动连接 Desktop 提供的本地 WS 服务器（`ws://127.0.0.1:<port>/rpc`），启动参数 `--desktop-ws`。连接后发送 `runner_ready` 握手。
+Runner 主动连接 Desktop 提供的本地 WS 服务器（`ws://127.0.0.1:<port>/rpc`），启动参数 `--desktop-ws`。连接后发送 `runner_ready` 握手通知，**payload 含 runner 版本与 `capabilities` 探测快照**——Desktop 据此在握手阶段决定是否暴露语音通话 / 唤醒词 / 主动陪伴等依赖 OS 能力的功能（plan §4.1 / §5）。
 
-**RPC 方法**（Desktop↔Runner 协议的完整方法集）：
+### `runner_ready` payload
+
+```json
+{
+  "version": "0.2.0",
+  "capabilities": {
+    "microphone": false,
+    "screen_capture": true,
+    "local_stt": false,
+    "local_tts": false,
+    "system_activity": true,
+    "platform": "win32",
+    "python": "3.11.13"
+  },
+  "probe_failed": false
+}
+```
+
+`capabilities.local_stt` / `local_tts` 由 `utils.capabilities.snapshot()` 计算——`microphone_available` 真去枚举设备（Win/Mac 走 `sounddevice.query_devices`），`system_activity_available` 真调底层 Win32 / Quartz / loginctl，没东西可答时才报 `False`。**不要把 capability 探测退化成"import 是否存在"——那是欺骗 UI 让用户点不能用按钮。** 语音通话 / 唤醒词在 capability 为 `false` 时被 Desktop 静默隐藏，伴侣不强提示。
+
+`probe_failed` 字段：正常为 `false`；等于 `true` 表示 capabilities 探测整体抛异常（外部依赖损坏、Cap' 探测死循环等）——Desktop 应当把这条 handshake 视为"功能状态不可信"，结合 `deskagent.info` 进一步诊断。
+
+### `deskagent.info`（动态查询）
+
+任意时候调 `{"method": "deskagent.info"}` 返回完整进程快照，便于 Desktop 诊断面板与故障态降级（plan §4.5）：
+
+```json
+{
+  "version": "0.2.0",
+  "started_at": 1722345678.901,
+  "uptime_seconds": 1842.31,
+  "reconnect_count": 0,
+  "capabilities": { ... 上面 payload 同 ... },
+  "system": { "platform": "win32", "python": "3.11.13", "release": "...", "machine": "AMD64" },
+  "tool_count": 53,
+  "mcp_servers": ["github", "filesystem"],
+  "network_reachable": true,
+  "disk_free_bytes": 524288000000
+}
+```
+
+### RPC 方法清单
 
 | 方法 | 方向 | 用途 |
 |------|------|------|
-| `runner_ready` | Runner → Desktop | 启动握手通知 |
+| `runner_ready` | Runner → Desktop | 启动握手通知；携带 `version` + `capabilities` |
 | `tools_changed` | Runner → Desktop | 工具 schema 变更通知（MCP 后台发现完成后触发）；Desktop 收到后重拉 `get_tools` 并重新 `tools.sync` 到 backend |
-| `get_tools` | Desktop → Runner | 获取工具 Schema |
+| `get_tools` | Desktop → Runner | 获取工具 Schema（已过滤：toolset disabled & capability check 失败的工具均不返回） |
+| `deskagent.info` | Desktop → Runner | 返回完整运行快照，见上 |
 | `execute_tool` | Desktop → Runner | 执行工具调用 |
 | `mcp.reload` | Desktop → Runner | 第一类 RPC（不走 `execute_tool`）：关闭当前所有 MCP 连接并从最新 `$DESKAGENT_HOME/config.yaml` 重新连接；同时清 `tool_output_limits` / `file_read_max_chars` 缓存，让相关 config 改动免重启生效。无入参（runner 始终读本地 YAML） |
 | `deskagent.cancel` | Desktop → Runner | 中断信号：设 `_global_interrupt` 让 in-flight 工具下次轮询时退出 |
@@ -46,11 +104,26 @@ Runner 主动连接 Desktop 提供的本地 WS 服务器（`ws://127.0.0.1:<port
 
 每个工具模块在 import 时调用 `registry.register_tool(...)` 完成注册。`discover_builtin_tools()` 递归扫描 `tools/` 子包（跳过 `registry` 和 `mcp/mcp_tool`——MCP 模块的特性见下文）。
 
-46 个静态注册工具覆盖终端（6 后端）、文件（read/write/patch/search/list）、浏览器（导航/交互/cookie/storage/tab 管理/CDP/dialog 等）、代码执行、进程管理、Skills（list/view/manage）、多模态（vision_analyze / computer_use）。完整工具名与 schema 见 `tools/` 各子包。
+**当前工具数：53 个静态 + 动态 MCP。** 覆盖：
+
+| 类别 | 工具 |
+|------|------|
+| 终端 | `terminal`（6 后端：local / docker / ssh / singularity / apptainer / noop） |
+| 文件 | `list_directory` / `read_file` / `write_file` / `patch` / `search_files` |
+| 浏览器（26） | `browser_navigate` / `browser_snapshot` / `browser_click` / `browser_type` / `browser_scroll` / `browser_back` / `browser_press` / `browser_get_images` / `browser_vision` / `browser_console` / `browser_hover` / `browser_wait_for` / `browser_find` / `browser_drag` / `browser_select` / `browser_download` / `browser_pdf` / `browser_screenshot_element` / `browser_tab_new` / `browser_tab_switch` / `browser_tab_close` / `browser_tab_list` / `browser_set_viewport` / `browser_set_user_agent` / `browser_set_extra_headers` / `browser_set_geolocation` / `browser_dialog` / `browser_cookies_get` / `browser_cookies_set` / `browser_cookies_clear` / `browser_storage_get` / `browser_storage_set` / `browser_cdp` |
+| 代码 | `execute_code`（沙箱执行；50 调用/脚本、5 分钟超时） |
+| 进程 | `process` |
+| Skills | `skills_list` / `skill_view` / `skill_manage` |
+| 多模态（视觉） | `vision_analyze` / `computer_use` |
+| **音频（Voice，新）** | `speech_to_text` / `text_to_speech` / `list_tts_voices` |
+| **环境感知（新）** | `system.get_idle_seconds` / `system.is_screen_locked` / `system.get_focused_app` / `system.get_power_state` |
+| MCP（动态） | `mcp_<server>_<tool>` + 4 个 utility（list/read resources、list/get prompts） |
 
 **Handler 契约**：接收 `**kwargs`，返回 JSON 字符串。
 
 **Schema 要求**：每个工具必须提供显式 JSON Schema。Backend 依赖这些 schema 告知 LLM 工具参数。Runner 不做 provider-specific 适配。
+
+**Capability 门控（`check_fn`）**：工具可以声明一个 zero-arg 探测函数（`check_fn`），TTL 缓存 30 s；探测失败 60 s 内仍保留 last-good 结果（hermes-agent 模式），防止瞬态失败把工具从 schema 抹掉。`get_tools` RPC 返回的 schema 已自动过滤 `check_fn is False` 的工具——LLM 永远看不到此刻跑不起来的工具。示例：`speech_to_text` 在 `faster-whisper` 未装的 venv 里直接消失；`text_to_speech` 在 Piper/pyttsx3 都缺的环境里消失。
 
 **结果规范**：成功 `tool_result(...)`、失败 `tool_error(...)`，均返回 JSON 字符串。清洗流水线：`ansi_strip → strip_fence → redact`。大结果持久化到文件，返回 `<persisted-output>` 标签。
 
@@ -65,6 +138,50 @@ MCP 工具由 `discover_mcp_tools()` 在 `server_loop` 紧跟 `runner_ready` 之
 **Prompt / Resource 经 utility 工具暴露**：每个 MCP server 的 resources 和 prompts 注册为 `mcp_<server>_list_resources` / `_read_resource` / `_list_prompts` / `_get_prompt` 四个 utility 工具，与普通 MCP 工具一起进 LLM schema。双重门控：(1) server 在 initialize 握手声明了对应 capability（以 `initialize_result.capabilities` 为准，不靠 `hasattr(session, ...)`——`ClientSession` 总是定义这四个方法属性，旧判据从不过滤）；(2) config `mcp_servers.<name>.tools.resources` / `.prompts` 未显式关闭（默认开）。utility 工具同样走 `mcp_` 前缀、受同名 collision guard 保护。
 
 **Schema 修复是 MCP 协议层而非 LLM 适配层**：`tools/mcp/mcp_tool.py` 内部的 `_rewrite_local_refs` / `_repair_object_shape` 是 MCP 协议本身需要的结构修复（处理 `$ref`、补 `type` 字段等），与目标 LLM provider 无关。
+
+### 音频工具 (STT + TTS)
+
+为伴侣语音能力 ([plan §5](desktop/plan.md#5-语音交互stt--tts)) 提供本地后备 / 平行路径。Backend `tts_tool`（云端、生成式音色）仍是默认主路径；Runner 暴露的本地引擎在云断连或开发预览场景下出场。
+
+**`speech_to_text`**（`tools/multimodal/audio/stt_tool.py`）：接收本地路径 `audio_path` 或 base64 编码的音频字节（≤ 25 MB，mp3/wav/m4a/ogg/flac/webm/aac）；先经 ffmpeg 解码到 16 kHz mono PCM16 WAV，再喂给 faster-whisper（CTranslate2）。语言自动检测或显式传 `language`；模型大小 `tiny | base | small | medium | large-v2 | large-v3`（默认 `base`，模型文件按需下载到 `$DESKAGENT_HOME/models/whisper/`）。Segment-confidence gate 丢弃 `no_speech_prob > 0.6` 或 `avg_logprob < -1.0` 的段。返回 `{success, text, language, segments[]}`。`check_fn` 探测 `faster-whisper` 是否可导入——未装时从 LLM schema 自动消失。
+
+**`text_to_speech`**（`tools/multimodal/audio/tts_tool.py`）：本地优先 Piper（44 语言 VITS、CPU 实时），不可用时降级 `pyttsx3`（系统 TTS SAPI5/NSSpeech/espeak）。输入 `(text, voice?, engine?, speed)`；`speed` 钳制到 `[0.5, 2.0]`；文本预处理剥离 `<!-- 注释 -->` 与 `<!-- think -->` 块。输出写入 `$DESKAGENT_HOME/cache/audio/tts/{hint}_{uuid}.wav`，返回 `{success, path, engine, voice, size_bytes}`。Desktop 渲染层拿到路径后由其 `<audio>` 播放——Runner 不做音频回放。`voice` 缺省读 `config.yaml::audio.tts.default_voice`。
+
+**`list_tts_voices`**：枚举 `$DESKAGENT_HOME/models/piper/` 下所有已下载的 Piper 语音（同时存在 `.onnx` 与 `.onnx.json` 才算安装完整）。
+
+**模型 & 引擎装入策略**：核心 wheel 不强引 audio deps（`pip install desk-agent[audio]` 才装）——保证 CI 与最小部署仍然能在没有 PortAudio/ffmpeg 的环境里启动。Capability 探测在握手时验 `import faster_whisper` / `import piper` / `import pyttsx3`，无任一可导入即 `runner_ready.capabilities.local_stt|local_tts=false`，Desktop 隐藏语音相关 UI。
+
+### 环境感知 (`system.*`)
+
+驱动 [plan §4.4 情境动作](desktop/plan.md) 与 [plan §4.2 打扰档位动态覆盖](desktop/plan.md)。Desktop 用 `setInterval` 轮询这些工具（标准 `execute_tool` 通道），结果完全脱离 LLM 直接进状态机判定——这不是 LLM 工具，是采样探针。
+
+| 工具 | 平台 | 实现 |
+|------|------|------|
+| `system.get_idle_seconds` | Win | `GetLastInputInfo` via `ctypes` |
+| 〃 | macOS | `Quartz.CGEventSourceSecondsSinceLastEventType` |
+| 〃 | Linux | `loginctl show-session self -p IdleHint`（暂时只能给二元 hint） |
+| `system.is_screen_locked` | Win | 无前台窗口线程 → 锁屏 |
+| 〃 | macOS | `CGSessionCopyCurrentDictionary` |
+| 〃 | Linux | `loginctl show-session self -p LockedHint` |
+| `system.get_focused_app` | Win | `GetForegroundWindow` + `GetModuleFileNameExW` |
+| 〃 | macOS | `NSWorkspace.frontmostApplication` (PyObjC) |
+| 〃 | Linux | `wmctrl -lp`（无 wmctrl 时返回 `{}`） |
+| `system.get_power_state` | 全平台 | `psutil.sensors_battery()` + 不可知字段默认 False |
+
+每个 probe **失败返回 safe default**（`-1.0` / `False` / `{}`）——错的"已锁屏"信号会直接静默伴侣，不接受。
+
+### computer_use 增强
+
+`tools/multimodal/cu_tool.py` 在原有 14 个 action 上扩展了两个动作参数 + 一个稳定取消前缀：
+
+- **`delivery_mode: background | foreground`**（默认 `background`）：与 hermes-agent 的 `(action, delivery_mode)` 鉴权 scope 对齐——foreground 模式需要单独的鉴权 scope，与 background 互不传染。Runner 不强制鉴权，但把 `delivery_mode` 写入 `ActionResult` 让上游 / LLM 读到。
+- **`bring_to_front: bool`**（默认 `false`）：仅 focus_app 实际起作用——与 `raise_window` 同义（兼容旧 schema）；其他 action 接受但忽略。
+- **`INTERRUPTED_PREFIX = "[INTERRUPTED]"`**：当 `is_interrupted()` 命中时，cancel 响应 JSON 里加 `prefix` 字段与 `returncode: 130`——ACP / TUI 客户端可以稳定前缀匹配判断"这回合是干净的取消"，避免把取消词误当成助手输出。
+- **`ActionResult` 新增字段**（hermes-agent `_classify_action_result` 模式）：`verified` / `effect` / `escalation` (`done | verify_fresh_state | escalate`) / `path` / `code` / `delivery_mode` —— `_text_response` 自动序列化其中非空项。
+
+### 浏览器 toolset check_fn
+
+`browser_*` 的 33 个注册全部挂 `check_fn=_browser_check_fn`，实际委托给 `check_browser_requirements()`（Camofox 模式 / CDP 模式 / 本地 agent-browser + Chromium 三选一）。浏览器子系统整个未装时，所有 `browser_*` 从 LLM schema 消失——避免 LLM 在没有浏览器的容器里尝试触发无谓的 RPC。
 
 ### 测试钉子
 
@@ -154,7 +271,17 @@ CDP Supervisor（`browser_supervisor.py`）：持久 WebSocket 到 CDP，dialog 
 |------|------|------|
 | `os.kill(pid, 0)` 在 Windows 实际终止进程 | 存活检查会误杀进程 | 统一走 `utils/pid.pid_exists()`，Windows 上经 `psutil.pid_exists()` |
 | `psutil.children(recursive=True)` PPID 链在 Windows 易过期 | 子进程树可能漏杀 | `utils/pid.kill_tree()` 统一在 Windows 上 `taskkill /T [/F]` |
-| `subprocess.Popen` 在 Windows 需隐藏控制台窗口 | 会弹出黑色 cmd 窗口 | `utils/constants.CREATE_NO_WINDOW` 统一定义 |
+| `subprocess.Popen` 在 Windows 需隐藏控制台窗口 | 会弹出黑色 cmd 窗口 | `utils/constants.CREATE_NO_WINDOW` 统一定义；`audio_io.suppress_windows_console_window` 给 ffmpeg / afplay / aplay 共用 |
 | PTY `write()` 类型不一致 | 跨平台代码易崩溃 | `_env_base._pipe_stdin` 统一按 `isinstance(data, str)` 编码再走 `proc.stdin.buffer` |
 | text-mode stdin `\n → \r\n` 转换 | 写入文件内容被破坏 | 统一使用 `proc.stdin.buffer`（二进制模式）写入 |
 | 缺少 Windows 必需环境变量 | `socket` 抛 `WinError 10106` | `code_execution_tool` 提供 `_WINDOWS_ESSENTIAL_ENV_VARS` 必传子集 |
+
+### 音频栈（`[audio]` extra）
+
+| 问题 | 影响 | 缓解 |
+|------|------|------|
+| `piper-tts` 不在 Linux ARMv7 wheels | 部分嵌入式 Linux 装不上 | 检查 `platform.machine()` 后允许 pyttsx3 兜底或返回 `no_engine_installed` 友好错误 |
+| `pyttsx3` 在 macOS 上 `import` 会触发 kTCCServiceMediaLibrary 弹窗 | 影响开发启动体验 | `_audio_capability` 在握手阶段检查 import，false 时 Desktop 隐藏语音 UI（不阻塞启动） |
+| Whisper 模型首次下载需要出网（huggingface / hf-mirror） | 冷启动延迟 30–300 s | 模型下载到 `$DESKAGENT_HOME/models/whisper/` 后即永久离线；首次大调用前 Desktop 可预热 |
+| ffmpeg 缺 PATH | `speech_to_text` 失败 | tool 返回 `"audio decode failed: ffmpeg binary not found"`；Desktop 据此引导用户装 ffmpeg |
+| `faster-whisper` 接收 > 25 MB 音频 | 防止上下文爆炸（LLM 端 LLM context dump 攻击） | `audio_io.DEFAULT_MAX_INPUT_BYTES = 25 MiB` hard cap;调用方可在 `max_seconds` 二次限时长 |

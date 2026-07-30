@@ -22,6 +22,13 @@ from .helpers import _MAX_BASE64_BYTES
 
 logger = logging.getLogger(__name__)
 
+# Stable prefix the LLM and downstream surfacing can pattern-match on as
+# a cancellation marker. Matches the hermes-agent
+# ``INTERRUPT_WAITING_FOR_MODEL_PREFIX``-style convention used to tell
+# ACP / TUI clients that a turn exited cleanly via cancel rather than
+# producing assistant prose.
+INTERRUPTED_PREFIX = "[INTERRUPTED]"
+
 _BLOCKED_KEY_COMBOS = {
     frozenset({"cmd", "shift", "backspace"}),
     frozenset({"cmd", "option", "backspace"}),
@@ -159,7 +166,7 @@ def handle_computer_use(args: dict[str, Any], **kwargs) -> Any:
     # to round-trip through the cua driver / Win backend. Checking here
     # avoids a half-finished desktop action after the user has moved on.
     if is_interrupted():
-        return json.dumps({"error": "Interrupted", "interrupted": True})
+        return json.dumps({"error": "Interrupted", "interrupted": True, "prefix": INTERRUPTED_PREFIX, "returncode": 130})
     if not (action := (args.get("action") or "").strip().lower()):
         return json.dumps({"error": "missing `action`"})
 
@@ -203,20 +210,46 @@ def _summarize_action(action: str, args: dict[str, Any]) -> str:
 
 def _dispatch(backend: ComputerUseBackend, action: str, args: dict[str, Any]) -> Any:
     capture_after = bool(args.get("capture_after"))
+    delivery_mode = str(args.get("delivery_mode") or "background").strip().lower()
+    if delivery_mode not in {"background", "foreground"}:
+        delivery_mode = "background"
+    bring_to_front = bool(args.get("bring_to_front"))
+
+    def _tag(res: ActionResult) -> ActionResult:
+        """Stamp ``delivery_mode`` and default verdict fields onto a result
+        without going through the backend ABC.
+
+        ``delivery_mode`` is always overwritten — the runner side is the
+        only layer that knows which scope (background/foreground) the
+        call came from.
+
+        ``escalation`` defaults to ``"done"`` / ``"verify_fresh_state"``
+        only when the backend left it at the dataclass default (``""``).
+        A backend that already set ``"escalate"`` or another truthful
+        value keeps its verdict — never silently overwritten by a
+        runner-side heuristic.
+        """
+        res.delivery_mode = delivery_mode
+        if not res.escalation:
+            res.escalation = "done" if res.ok else "verify_fresh_state"
+        return res
+
     match action:
         case "capture":
             if (mode := str(args.get("mode", "som"))) not in {"som", "vision", "ax"}:
                 return json.dumps({"error": f"bad mode {mode!r}; use som|vision|ax"})
             return _capture_response(backend.capture(mode=mode, app=args.get("app")), _coerce_max_elements(args.get("max_elements")))
         case "wait":
-            return _text_response(backend.wait(float(args.get("seconds", 1.0))))
+            return _text_response(_tag(backend.wait(float(args.get("seconds", 1.0)))))
         case "list_apps":
             apps = backend.list_apps()
             return json.dumps({"apps": apps, "count": len(apps)})
         case "focus_app":
             if not (app := args.get("app")):
                 return json.dumps({"error": "focus_app requires `app`"})
-            return _maybe_follow_capture(backend, backend.focus_app(app, bool(args.get("raise_window"))), capture_after)
+            # ``raise_window`` (legacy) and ``bring_to_front`` (new) are aliases.
+            do_raise = bool(args.get("raise_window")) or bring_to_front
+            return _maybe_follow_capture(backend, _tag(backend.focus_app(app, do_raise)), capture_after)
         case "click" | "double_click" | "right_click" | "middle_click":
             button = "right" if action == "right_click" else "middle" if action == "middle_click" else args.get("button") or "left"
             coord = args.get("coordinate") or (None, None)
@@ -228,7 +261,7 @@ def _dispatch(backend: ComputerUseBackend, action: str, args: dict[str, Any]) ->
                 click_count=2 if action == "double_click" else 1,
                 modifiers=args.get("modifiers"),
             )
-            return _maybe_follow_capture(backend, res, capture_after)
+            return _maybe_follow_capture(backend, _tag(res), capture_after)
         case "drag":
             if args.get("from_element") is None and not args.get("from_coordinate"):
                 return json.dumps({"error": "drag requires from_coordinate/to_coordinate or from_element/to_element"})
@@ -240,7 +273,7 @@ def _dispatch(backend: ComputerUseBackend, action: str, args: dict[str, Any]) ->
                 button=args.get("button", "left"),
                 modifiers=args.get("modifiers"),
             )
-            return _maybe_follow_capture(backend, res, capture_after)
+            return _maybe_follow_capture(backend, _tag(res), capture_after)
         case "scroll":
             coord = args.get("coordinate") or (None, None)
             res = backend.scroll(
@@ -251,22 +284,20 @@ def _dispatch(backend: ComputerUseBackend, action: str, args: dict[str, Any]) ->
                 y=coord[1],
                 modifiers=args.get("modifiers"),
             )
-            return _maybe_follow_capture(backend, res, capture_after)
+            return _maybe_follow_capture(backend, _tag(res), capture_after)
         case "type":
-            return _maybe_follow_capture(backend, backend.type_text(args.get("text", "")), capture_after)
+            return _maybe_follow_capture(backend, _tag(backend.type_text(args.get("text", ""))), capture_after)
         case "key":
-            return _maybe_follow_capture(backend, backend.key(args.get("keys", "")), capture_after)
+            return _maybe_follow_capture(backend, _tag(backend.key(args.get("keys", ""))), capture_after)
         case "set_value":
             if (val := args.get("value")) is None:
                 return json.dumps({"error": "set_value requires `value`"})
-            return _maybe_follow_capture(backend, backend.set_value(str(val), args.get("element")), capture_after)
+            return _maybe_follow_capture(backend, _tag(backend.set_value(str(val), args.get("element"))), capture_after)
     return json.dumps({"error": f"unknown action {action!r}"})
 
 
 def _text_response(res: ActionResult) -> str:
-    from ..system import clean_output
-
-    return json.dumps({"ok": res.ok, "action": res.action} | ({"message": clean_output(res.message)} if res.message else {}) | ({"meta": res.meta} if res.meta else {}))
+    return json.dumps(_action_result_payload(res))
 
 
 def _sniff_image_mime(b64: str) -> str:
@@ -360,6 +391,36 @@ def _capture_response(cap: CaptureResult, max_elements: int = 100) -> Any:
     )
 
 
+def _action_result_payload(res: ActionResult) -> dict[str, Any]:
+    """Compact envelope for an ``ActionResult`` — verdict fields included.
+
+    Used as the action header on both the standalone text response and
+    the follow-up capture merge. Symmetric with ``_text_response`` —
+    every surface that emits an ActionResult goes through this shape so
+    downstream consumers can rely on the same field set regardless of
+    whether the action was followed by a capture.
+    """
+    from ..system import clean_output
+
+    payload: dict[str, Any] = {
+        "ok": res.ok,
+        "action": res.action,
+        "delivery_mode": res.delivery_mode,
+        "escalation": res.escalation,
+    }
+    if res.message:
+        payload["message"] = clean_output(res.message)
+    if res.meta:
+        payload["meta"] = res.meta
+    if res.effect:
+        payload["effect"] = res.effect
+    if res.verified:
+        payload["verified"] = res.verified
+    if res.code:
+        payload["code"] = res.code
+    return payload
+
+
 def _maybe_follow_capture(backend: ComputerUseBackend, res: ActionResult, do_capture: bool) -> Any:
     if not do_capture or not res.ok:
         return _text_response(res)
@@ -370,19 +431,26 @@ def _maybe_follow_capture(backend: ComputerUseBackend, res: ActionResult, do_cap
         return _text_response(res)
 
     resp = _capture_response(cap)
+    action_payload = _action_result_payload(res)
     if isinstance(resp, dict) and resp.get("_multimodal"):
         from ..system import clean_output
 
         safe_message = clean_output(res.message) if res.message else ""
-        prefix = f"[{res.action}] ok={res.ok}" + (f" — {safe_message}" if safe_message else "")
+        prefix_parts = [f"[{res.action}]", f"ok={res.ok}", f"delivery_mode={res.delivery_mode}", f"escalation={res.escalation}"]
+        if safe_message:
+            prefix_parts.append(f"message={safe_message!r}")
+        prefix = " ".join(prefix_parts)
         resp["content"][0]["text"] = f"{prefix}\n\n{resp['content'][0]['text']}"
         resp["text_summary"] = f"{prefix}\n\n{resp['text_summary']}"
+        # Mirror the verdict fields at the envelope level so ACP / TUI
+        # consumers don't have to parse the text payload to recover them.
+        resp.update(action_payload)
         return resp
     try:
         data = json.loads(resp)
     except (TypeError, json.JSONDecodeError):
         data = {"capture": resp}
-    return json.dumps(data | {"action": res.action, "ok": res.ok} | ({"message": res.message} if res.message else {}))
+    return json.dumps({**data, **action_payload})
 
 
 def _format_elements(elements: list[UIElement], max_lines: int = 40) -> list[str]:
