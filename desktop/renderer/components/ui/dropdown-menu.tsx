@@ -2,7 +2,7 @@ import { DropdownMenu as DropdownMenuPrimitive } from 'radix-ui'
 import * as React from 'react'
 
 import { Codicon } from '@/components/ui/codicon'
-import { cn } from '@/lib/utils'
+import { cn } from '@/shared/lib/utils'
 
 // Shared class tokens for edge-to-edge menus (use with `p-0` content): rows go
 // full-width, square, and compact so the highlight spans the whole surface.

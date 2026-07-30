@@ -3,7 +3,7 @@
 // (message.*, tool.call) onto the chat store + the MVP state machine subset
 // (plan §2). Proactive events (cron.trigger / companion.message) and affect
 // arrive in later slices.
-import type { RpcEvent } from '@/types/deskagent'
+import type { RpcEvent } from '@/shared/types/deskagent'
 import {
   appendAssistantDelta,
   beginAssistantMessage,

@@ -9,10 +9,10 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu'
-import { useI18n } from '@/i18n'
-import { triggerHaptic } from '@/lib/haptics'
-import { ExternalLink, Eye, EyeOff, Trash2 } from '@/lib/icons'
-import { cn } from '@/lib/utils'
+import { useI18n } from '@/shared/i18n'
+import { triggerHaptic } from '@/shared/lib/haptics'
+import { ExternalLink, Eye, EyeOff, Trash2 } from '@/shared/lib/icons'
+import { cn } from '@/shared/lib/utils'
 
 interface EnvVarActionsMenuProps extends Pick<
   React.ComponentProps<typeof DropdownMenuContent>,

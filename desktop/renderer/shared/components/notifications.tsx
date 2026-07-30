@@ -6,10 +6,10 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Codicon } from '@/components/ui/codicon'
 import { CopyButton } from '@/components/ui/copy-button'
-import { useI18n } from '@/i18n'
-import { triggerHaptic } from '@/lib/haptics'
-import { AlertCircle, AlertTriangle, CheckCircle2, type IconComponent, Info } from '@/lib/icons'
-import { cn } from '@/lib/utils'
+import { useI18n } from '@/shared/i18n'
+import { triggerHaptic } from '@/shared/lib/haptics'
+import { AlertCircle, AlertTriangle, CheckCircle2, type IconComponent, Info } from '@/shared/lib/icons'
+import { cn } from '@/shared/lib/utils'
 import {
   $notifications,
   type AppNotification,

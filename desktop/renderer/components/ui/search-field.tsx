@@ -2,9 +2,9 @@ import type { ReactNode, RefObject } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { Codicon } from '@/components/ui/codicon'
-import { useI18n } from '@/i18n'
-import { Loader2, Search } from '@/lib/icons'
-import { cn } from '@/lib/utils'
+import { useI18n } from '@/shared/i18n'
+import { Loader2, Search } from '@/shared/lib/icons'
+import { cn } from '@/shared/lib/utils'
 
 interface SearchFieldProps {
   placeholder: string

@@ -1,4 +1,4 @@
-import type { DeskAgentConnection } from '@/global'
+import type { DeskAgentConnection } from '@/shared/types/global'
 
 export interface ResolveGatewayWsUrlDeps {
   getGatewayWsUrl?: () => Promise<string>

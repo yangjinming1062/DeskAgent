@@ -23,7 +23,7 @@ import {
   Terminal,
   Users,
   Volume2
-} from '@/lib/icons'
+} from '@/shared/lib/icons'
 
 export interface ToolsetCatalogEntry {
   id: string

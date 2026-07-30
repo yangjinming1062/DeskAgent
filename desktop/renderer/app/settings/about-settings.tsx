@@ -1,10 +1,10 @@
 import { useStore } from '@nanostores/react'
 import { useCallback, useEffect } from 'react'
 
-import { BrandMark } from '@/components/brand-mark'
+import { BrandMark } from '@/shared/components/brand-mark'
 import { Button } from '@/components/ui/button'
-import { useI18n } from '@/i18n'
-import { Loader2, RefreshCw } from '@/lib/icons'
+import { useI18n } from '@/shared/i18n'
+import { Loader2, RefreshCw } from '@/shared/lib/icons'
 import { $updateStatus, openUpdateDialog, selectTargetVersion } from '@/store/update'
 import { $desktopVersion, refreshDesktopVersion } from '@/store/version'
 

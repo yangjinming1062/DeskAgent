@@ -1,8 +1,8 @@
 import { Command as CommandPrimitive } from 'cmdk'
 import * as React from 'react'
 
-import { SearchIcon } from '@/lib/icons'
-import { cn } from '@/lib/utils'
+import { SearchIcon } from '@/shared/lib/icons'
+import { cn } from '@/shared/lib/utils'
 
 function Command({ className, ...props }: React.ComponentProps<typeof CommandPrimitive>) {
   return (

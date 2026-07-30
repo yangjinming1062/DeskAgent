@@ -1,15 +1,15 @@
 import { useEffect, useRef } from 'react'
 
 import { DeskAgentGateway } from '@/deskagent'
-import type { DeskAgentConnection } from '@/global'
-import { translateNow } from '@/i18n'
+import type { DeskAgentConnection } from '@/shared/types/global'
+import { translateNow } from '@/shared/i18n'
 import { resolveGatewayWsUrl } from '@/lib/gateway-ws-url'
-import { reconnectBackoffMs } from '@/lib/reconnect'
+import { reconnectBackoffMs } from '@/shared/lib/reconnect'
 import { logout } from '@/store/auth'
 import { applyDesktopBootProgress, completeDesktopBoot, failDesktopBoot, setDesktopBootStep } from '@/store/boot'
 import { reportPrimaryGatewayState, setConnection, setPrimaryGateway, setRunnerOnline, tearDownPrimaryGateway } from '@/store/gateway'
 import { notifyError } from '@/store/notifications'
-import type { RpcEvent } from '@/types/deskagent'
+import type { RpcEvent } from '@/shared/types/deskagent'
 
 // Backend uses WS close 1008 for auth failures (token expired/revoked) —
 // trigger logout instead of looping reconnect with a dead token.

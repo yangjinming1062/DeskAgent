@@ -1,6 +1,6 @@
 import type { ButtonHTMLAttributes, ComponentProps, ReactNode } from 'react'
 
-import { cn } from '@/lib/utils'
+import { cn } from '@/shared/lib/utils'
 
 export const overlayCardClass =
   'rounded-lg border border-[color-mix(in_srgb,var(--dt-border)_52%,transparent)] bg-[color-mix(in_srgb,var(--dt-card)_72%,transparent)] shadow-[inset_0_0.0625rem_0_color-mix(in_srgb,white_34%,transparent)]'

@@ -1,7 +1,7 @@
 import { useStore } from '@nanostores/react'
 import { Suspense, lazy, useEffect } from 'react'
 
-import { Loader2 } from '@/lib/icons'
+import { Loader2 } from '@/shared/lib/icons'
 import { $auth, applyAuthBroadcast, hydrateAuth, logout } from '@/store/auth'
 
 import { LoginPage } from './login/login-page'

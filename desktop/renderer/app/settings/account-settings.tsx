@@ -1,18 +1,18 @@
 import { useStore } from '@nanostores/react'
 import { useEffect, useState } from 'react'
 
-import { InlineNotice } from '@/components/notifications'
+import { InlineNotice } from '@/shared/components/notifications'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { getDeskAgentConfig, saveDeskAgentConfig } from '@/deskagent/config'
-import { useI18n } from '@/i18n'
-import { triggerHaptic } from '@/lib/haptics'
-import { Eye, EyeOff, Globe, KeyRound, Loader2, LogOut, SlidersHorizontal, X } from '@/lib/icons'
+import { useI18n } from '@/shared/i18n'
+import { triggerHaptic } from '@/shared/lib/haptics'
+import { Eye, EyeOff, Globe, KeyRound, Loader2, LogOut, SlidersHorizontal, X } from '@/shared/lib/icons'
 import { $auth, logout } from '@/store/auth'
 import { notify, notifyError } from '@/store/notifications'
-import type { DeskAgentConfigResponse } from '@/types/deskagent'
+import type { DeskAgentConfigResponse } from '@/shared/types/deskagent'
 
 import { ListRow, LoadingState, SectionHeading, SettingsContent, SettingsSubsection } from './primitives'
 

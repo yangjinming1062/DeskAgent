@@ -1,6 +1,6 @@
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 
-import { persistString, storedString } from '@/lib/storage'
+import { persistString, storedString } from '@/shared/lib/storage'
 
 import { TRANSLATIONS } from './catalog'
 import { DEFAULT_LOCALE, INITIAL_LOCALE, localeConfigValue, normalizeLocale } from './languages'

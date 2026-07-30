@@ -6,14 +6,14 @@ import { createRoot } from 'react-dom/client'
 import { HashRouter } from 'react-router-dom'
 
 import App from './app'
-import { ErrorBoundary } from './components/error-boundary'
-import { HapticsProvider } from './components/haptics-provider'
-import type { DesktopRunnerUpdateEvent, DesktopUpdateEvent } from './global'
-import { I18nProvider } from './i18n'
-import { installClipboardShim } from './lib/clipboard'
-import { queryClient } from './lib/query-client'
+import { ErrorBoundary } from '@/shared/components/error-boundary'
+import { HapticsProvider } from '@/shared/components/haptics-provider'
+import type { DesktopRunnerUpdateEvent, DesktopUpdateEvent } from '@/shared/types/global'
+import { I18nProvider } from '@/shared/i18n'
+import { installClipboardShim } from '@/shared/lib/clipboard'
+import { queryClient } from '@/shared/lib/query-client'
 import { setRunnerUpdateStatus, setUpdateStatus } from './store/update'
-import { ThemeProvider } from './themes/context'
+import { ThemeProvider } from '@/shared/themes/context'
 
 installClipboardShim()
 

@@ -1,6 +1,6 @@
 import { atom } from 'nanostores'
 
-import type { DesktopVersionInfo } from '@/global'
+import type { DesktopVersionInfo } from '@/shared/types/global'
 
 // Lazily populated on first read. Refreshed by `refreshDesktopVersion()` (called
 // from the About panel on mount so the displayed version reflects the running

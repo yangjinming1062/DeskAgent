@@ -1,11 +1,11 @@
 import { useStore } from '@nanostores/react'
 import { type FormEvent, useState } from 'react'
 
-import { BrandMark } from '@/components/brand-mark'
+import { BrandMark } from '@/shared/components/brand-mark'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { useI18n } from '@/i18n'
-import { Loader2, LogIn } from '@/lib/icons'
+import { useI18n } from '@/shared/i18n'
+import { Loader2, LogIn } from '@/shared/lib/icons'
 import { $auth, login } from '@/store/auth'
 
 export function LoginPage() {

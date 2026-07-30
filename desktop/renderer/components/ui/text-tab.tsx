@@ -1,6 +1,6 @@
 import * as React from 'react'
 
-import { cn } from '@/lib/utils'
+import { cn } from '@/shared/lib/utils'
 
 function TextTabMeta({ className, ...props }: React.ComponentProps<'span'>) {
   return <span className={cn('text-[0.72em] font-normal text-(--ui-text-tertiary)', className)} {...props} />

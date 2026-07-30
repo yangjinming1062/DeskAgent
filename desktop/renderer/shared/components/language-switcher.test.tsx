@@ -1,7 +1,7 @@
 import { cleanup, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { I18nProvider } from '@/i18n'
+import { I18nProvider } from '@/shared/i18n'
 
 import { LanguageSwitcher } from './language-switcher'
 

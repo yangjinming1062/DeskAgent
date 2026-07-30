@@ -1,6 +1,6 @@
 import { atom } from 'nanostores'
 
-import type { DesktopAuthBroadcast, DesktopAuthSnapshot } from '@/global'
+import type { DesktopAuthBroadcast, DesktopAuthSnapshot } from '@/shared/types/global'
 
 import { setRunnerOnline, tearDownPrimaryGateway } from './gateway'
 
