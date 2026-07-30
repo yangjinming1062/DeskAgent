@@ -131,7 +131,6 @@ async def speech_to_text(
                 )
         file_bytes = bytes(sink)
 
-    b64_audio = base64.b64encode(file_bytes).decode("utf-8")
     mime_type = _resolve_mime_type(audio_file.content_type)
 
     try:

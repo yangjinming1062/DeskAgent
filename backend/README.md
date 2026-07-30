@@ -273,3 +273,6 @@ Backend 在对话响应的 `message.complete` 帧内联 `affect: {emotion}` 字�
 - **视频下载大小上限**：`video_gen_download_max_bytes=200MB` 兜底，避免 provider 返回巨型文件撑爆 `data_dir`；1080P/10s 实测 20–60 MB
 - **桌面端必须独立缓存**：服务端已 download 落本地（`/api/media/files/<id>`），不要把 MiniMax 原 URL 透传到桌面
 - **ASR 不在 MiniMax 公开 API**：stt 仍走 MiMo（input_audio chat completions 扩展），未来要切其他 ASR provider 时直接挂一个新 provider 类到 `(ServiceType.stt, "<name>")` registry slot
+## Provider 客户端生命周期
+
+`services/llm/providers/http.py` 的 httpx 池与 `openai_compat` 的 `AsyncOpenAI` 客户端按 `(base_url, api_key)` 缓存，shutdown 时统一由 `services.llm.aclose_all()` 关闭。`main.py` lifespan 的 `finally` 调 `services.media.aclose_all()`（video gen 是该 httpx 池的主要消费方），后者委托 `services.llm.aclose_all`——滚动发布时释放连接池 / 文件描述符，而非等内核回收进程。`aclose_all` 因此是 `services.llm` 的公共 lifecycle 出口，不再藏在 `video_jobs` 的函数内 lazy import 里。

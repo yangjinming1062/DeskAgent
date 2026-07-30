@@ -7,7 +7,7 @@ from modules.companion import AvatarAsset
 from modules.companion import Persona
 from sqlalchemy.orm import Session
 
-from ..tools.builtin.image_generation_tool import image_generation_tool
+from ..tools.builtin import image_generation_tool
 from .clip_service import enqueue_clip_batch
 from .clip_service import invalidate_user_clips
 

@@ -1,4 +1,5 @@
 import inspect
+from collections.abc import Iterable
 from typing import Any
 
 from components import SETTINGS
@@ -29,7 +30,7 @@ def get_router(*, prefix: Any = _SENTINEL, tag: str | None = None, dependencies:
     return APIRouter(**kwargs)
 
 
-def list_response(records, item_cls: type[BaseModel], response_cls: type[BaseModel]) -> BaseModel:
+def list_response(records: Iterable[Any], item_cls: type[BaseModel], response_cls: type[BaseModel]) -> BaseModel:
     return response_cls(items=[item_cls.model_validate(r) for r in records])
 
 

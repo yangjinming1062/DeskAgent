@@ -1,4 +1,5 @@
-from .video_jobs import aclose_all as _media_aclose_all
+from services.llm import aclose_all as _close_llm_http
+
 from .video_jobs import enqueue_video_job
 from .video_jobs import get_job
 from .video_jobs import resume_pending_video_jobs
@@ -13,4 +14,4 @@ async def aclose_all() -> None:
     rolling deploys release connection pools + file descriptors instead
     of leaking them until the kernel reaps the process.
     """
-    await _media_aclose_all()
+    await _close_llm_http()

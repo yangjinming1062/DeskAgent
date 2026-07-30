@@ -14,6 +14,7 @@ from .llm_client import resolve_service_row
 from .llm_fallback import execute_with_fallback
 from .llm_retry import call_with_retry
 from .llm_retry import LLMRuntimeError
+from .providers import aclose_all
 from .providers import BaseProvider
 from .providers import ChatProvider
 from .providers import ChatResult
@@ -40,6 +41,7 @@ from .providers import VideoJobStatus
 from .user_config import resolve_user_llm_config
 
 __all__ = [
+    "aclose_all",
     "client_for_config",
     "client_for_service",
     "client_for_user",

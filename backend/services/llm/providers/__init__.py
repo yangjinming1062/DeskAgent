@@ -19,6 +19,7 @@ from .base import VideoAsset
 from .base import VideoGenProvider
 from .base import VideoGenRequest
 from .base import VideoJobStatus
+from .http import aclose_all
 from .registry import default_base_url
 from .registry import default_model_for
 from .registry import infer_provider_name
@@ -32,6 +33,7 @@ from .registry import SERVICE_DEFAULT_PROVIDER
 # Side-effect imports register concrete providers in their family modules.
 
 __all__ = [
+    "aclose_all",
     "BaseProvider",
     "ChatProvider",
     "ChatResult",
