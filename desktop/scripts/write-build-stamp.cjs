@@ -3,7 +3,7 @@
 /**
  * Writes desktop/build/install-stamp.json with the git ref the packaged
  * desktop was built from. The file ships inside the packaged app via
- * electron-builder's extraResources entry and is read by electron/main.cjs
+ * electron-builder's extraResources entry and is read by main/main.cjs
  * for first-launch version pinning.
  *
  * Schema (subject to bump via STAMP_SCHEMA_VERSION):

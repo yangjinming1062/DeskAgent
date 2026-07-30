@@ -1,6 +1,6 @@
 //! Event types streamed from Rust → React.
 //!
-//! These mirror `desktop/electron/bootstrap-runner.cjs`'s event shape
+//! These mirror `desktop/main/bootstrap-platform.cjs`'s event shape
 //! 1:1 so the React installer code can be roughly identical to the Electron
 //! install-overlay we'll replace.
 //!

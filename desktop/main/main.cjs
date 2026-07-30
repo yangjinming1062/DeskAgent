@@ -335,7 +335,7 @@ app.setAboutPanelOptions({
 const MEDIA_PROTOCOL = 'deskagent-media'
 // Only audio/video may be streamed. Without this the handler would read any
 // non-blocklisted local file (no size cap) for any `fetch(deskagent-media://…)`.
-// The membership list itself lives in electron/mime.cjs; `STREAMABLE_MEDIA_EXTS`
+// The membership list itself lives in main/mime.cjs; `STREAMABLE_MEDIA_EXTS`
 // is destructured from there.
 
 protocol.registerSchemesAsPrivileged([
@@ -1894,7 +1894,7 @@ function showAboutPanelFresh() {
 }
 
 // The desktop talks to the cloud Backend over REST for login / session. The
-// modules live in electron/backend-{client,session}.cjs so
+// modules live in main/backend-{client,session}.cjs so
 // they can be unit-tested without Electron; main.cjs only wires them to
 // ipcMain. `deskagent:api` IPC is the general-purpose REST proxy (sessions,
 // profiles, configs, models, tools, cron, OAuth, …).

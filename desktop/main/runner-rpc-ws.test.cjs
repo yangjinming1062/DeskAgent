@@ -1,7 +1,7 @@
 /**
- * Tests for electron/runner-rpc-ws.cjs.
+ * Tests for main/runner-rpc-ws.cjs.
  *
- * Run with: node --test electron/runner-rpc-ws.test.cjs
+ * Run with: node --test main/runner-rpc-ws.test.cjs
  */
 
 const test = require('node:test')

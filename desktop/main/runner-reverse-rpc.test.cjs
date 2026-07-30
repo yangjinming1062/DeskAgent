@@ -1,7 +1,7 @@
 /**
- * Tests for electron/runner-reverse-rpc.cjs.
+ * Tests for main/runner-reverse-rpc.cjs.
  *
- * Run with: node --test electron/runner-reverse-rpc.test.cjs
+ * Run with: node --test main/runner-reverse-rpc.test.cjs
  */
 
 const test = require('node:test')

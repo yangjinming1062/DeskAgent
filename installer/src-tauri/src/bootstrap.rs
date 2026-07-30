@@ -1,6 +1,6 @@
 //! Bootstrap orchestration.
 //!
-//! Direct port of `runBootstrap` from `desktop/electron/bootstrap-runner.cjs`.
+//! Direct port of `runBootstrap` from `desktop/main/bootstrap-platform.cjs`.
 //! Drives install.ps1 / install.sh stage-by-stage, emits progress events
 //! over the Tauri `bootstrap` channel, writes a forensic log to
 //! DESKAGENT_HOME/logs/bootstrap-<timestamp>.log.
@@ -287,7 +287,7 @@ pub(crate) fn resolve_deskagent_desktop_app() -> Option<PathBuf> {
 
 /// Gates `deskagent_is_installed` so a broken venv can never satisfy the
 /// macOS launcher fast-path. The import chain must match
-/// `desktop/electron/runner-updater.cjs::_probeVenvIntegrity` so the
+/// `desktop/main/runner-updater.cjs::_probeVenvIntegrity` so the
 /// two gates never disagree on what "venv is healthy" means.
 fn runner_venv_is_healthy() -> bool {
     use std::process::{Command, Stdio};

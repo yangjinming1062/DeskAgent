@@ -1,7 +1,7 @@
 /**
- * Tests for electron/runner-bridge.cjs.
+ * Tests for main/runner-bridge.cjs.
  *
- * Run with: node --test electron/runner-bridge.test.cjs
+ * Run with: node --test main/runner-bridge.test.cjs
  *
  * The orchestrator composes runner-process + runner-rpc-ws + runner-reverse-rpc.
  * We inject fake factories so the test drives every state transition
