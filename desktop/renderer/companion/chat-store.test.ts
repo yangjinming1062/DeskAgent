@@ -9,7 +9,7 @@ import {
   pushUserMessage,
   setAssistantError,
   setAssistantTool
-} from './chat'
+} from './chat-store'
 
 beforeEach(() => clearChat())
 

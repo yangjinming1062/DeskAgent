@@ -1,6 +1,6 @@
 import { useStore } from '@nanostores/react'
 
-import { $chatOpen, $proactiveBubble } from '@/store/chat'
+import { $chatOpen, $proactiveBubble } from '@/companion/chat-store'
 
 // Transient bubble for a proactive companion message, shown beside the
 // companion when the chat dock is closed (plan.md §4.2). When chat is open the

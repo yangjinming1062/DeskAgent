@@ -2,8 +2,8 @@
 // emitted by the Backend's send_message path) and presents it: TTS + a bubble
 // when chat is closed. Gated by the disturbance tier — `quiet` blocks the
 // companion's proactive outreach (but never the user's own actions).
-import { $chatOpen, setProactiveBubble } from '@/store/chat'
-import { $disturbanceTier, setSpriteState } from '@/store/companion'
+import { $chatOpen, setProactiveBubble } from '@/companion/chat-store'
+import { $disturbanceTier, setSpriteState } from '@/companion/companion-store'
 
 import { speak } from './tts'
 

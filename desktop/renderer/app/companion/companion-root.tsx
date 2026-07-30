@@ -3,9 +3,9 @@ import { useEffect, useState } from 'react'
 
 import { useGatewayBoot } from '@/app/gateway/hooks/use-gateway-boot'
 import { $auth, applyAuthBroadcast, hydrateAuth, logout } from '@/shared/store/auth'
-import { $chatOpen, setChatOpen } from '@/store/chat'
+import { $chatOpen, setChatOpen } from '@/companion/chat-store'
 import { $gatewayState } from '@/shared/store/gateway'
-import { $companionLifecycle, setCompanionLifecycle } from '@/store/companion'
+import { $companionLifecycle, setCompanionLifecycle } from '@/companion/companion-store'
 
 import { ChatDock } from './chat-dock'
 import { CompanionReady } from './companion-ready'
