@@ -1,8 +1,11 @@
 import { useStore } from '@nanostores/react'
 import { useEffect, useRef, useState } from 'react'
 
-import { setSpriteState } from '@/companion/companion-store'
+import { $spriteState, setSpriteState } from '@/companion/companion-store'
+import { stopSpeaking } from '@/companion/tts'
 import { $gatewayState } from '@/shared/store/gateway'
+
+import { SubtitlesOverlay } from './subtitles-overlay'
 
 interface VoiceCallDockProps {
   onClose: () => void
@@ -15,19 +18,49 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps) {
   const [durationSec, setDurationSec] = useState(0)
   const streamRef = useRef<MediaStream | null>(null)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const audioAnimRef = useRef<number | null>(null)
 
   useEffect(() => {
     // Focus window and enable mouse interaction
     void window.deskagent.sprite.setIgnoreMouseEvents({ ignore: false })
     void window.deskagent.sprite.setAlwaysOnTop({ on: false })
 
-    // Request microphone
+    // Request microphone and set up audio analyser for Barge-in
     navigator.mediaDevices
       ?.getUserMedia({ audio: true })
       .then(stream => {
         streamRef.current = stream
         setMicActive(true)
         setSpriteState('listening')
+
+        try {
+          const AudioContextClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
+          if (AudioContextClass) {
+            const ctx = new AudioContextClass()
+            const source = ctx.createMediaStreamSource(stream)
+            const analyser = ctx.createAnalyser()
+            analyser.fftSize = 256
+            source.connect(analyser)
+
+            const dataArray = new Uint8Array(analyser.frequencyBinCount)
+            const checkVolume = () => {
+              analyser.getByteFrequencyData(dataArray)
+              const sum = dataArray.reduce((acc, val) => acc + val, 0)
+              const avg = sum / dataArray.length
+
+              // Barge-in check: user speaks while assistant is speaking
+              if (avg > 30 && $spriteState.get() === 'speaking') {
+                stopSpeaking()
+                setSpriteState('listening')
+              }
+
+              audioAnimRef.current = requestAnimationFrame(checkVolume)
+            }
+            audioAnimRef.current = requestAnimationFrame(checkVolume)
+          }
+        } catch {
+          /* AudioContext fallback */
+        }
       })
       .catch(() => {
         setMicError('无法接入麦克风，请检查系统权限')
@@ -46,6 +79,7 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps) {
     }, 1000)
 
     return () => {
+      if (audioAnimRef.current) cancelAnimationFrame(audioAnimRef.current)
       if (timerRef.current) clearInterval(timerRef.current)
       if (streamRef.current) {
         streamRef.current.getTracks().forEach(track => track.stop())
@@ -101,6 +135,7 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps) {
           结束通话
         </button>
       </div>
+      <SubtitlesOverlay />
     </div>
   )
 }
