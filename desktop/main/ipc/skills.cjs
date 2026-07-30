@@ -5,13 +5,13 @@ const {
   readDisabledSet,
   buildSkillSummaries,
   invalidateDisabledCache
-} = require('../lib/skill-index.cjs')
+} = require('../shared/lib/skill-index.cjs')
 const {
   readDisabledToolsets,
   invalidateDisabledToolsetsCache,
   buildToolsetRoster
-} = require('../lib/toolset-index.cjs')
-const { patchAndCommit } = require('../lib/config-writer.cjs')
+} = require('../shared/lib/toolset-index.cjs')
+const { patchAndCommit } = require('../shared/lib/config-writer.cjs')
 
 function registerSkillsIpc({ ipcMain, deps, deskagentHome }) {
   // deps must expose atomicWriteFile + restartRunnerBridge (passed through

@@ -2,7 +2,7 @@
 
 const path = require('node:path')
 const fs = require('node:fs')
-const { looksBinary } = require('../utils.cjs')
+const { looksBinary } = require('../shared/utils.cjs')
 
 const TEXT_PREVIEW_MAX_BYTES = 512 * 1024
 

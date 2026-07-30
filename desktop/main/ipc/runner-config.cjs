@@ -4,9 +4,9 @@ const path = require('node:path')
 const fs = require('node:fs')
 const yaml = require('yaml')
 
-const { atomicWriteFile } = require('../utils.cjs')
-const { patchAndCommit, commitRaw, MAX_CONTENT_BYTES } = require('../lib/config-writer.cjs')
-const { invalidateDisabledCache } = require('../lib/skill-index.cjs')
+const { atomicWriteFile } = require('../shared/utils.cjs')
+const { patchAndCommit, commitRaw, MAX_CONTENT_BYTES } = require('../shared/lib/config-writer.cjs')
+const { invalidateDisabledCache } = require('../shared/lib/skill-index.cjs')
 
 function registerRunnerConfigIpc({ ipcMain, deps }) {
   const { deskagentHome, restartRunnerBridge, rememberLog } = deps

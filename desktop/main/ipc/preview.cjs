@@ -5,7 +5,7 @@ const fs = require('node:fs')
 const crypto = require('node:crypto')
 const { fileURLToPath, pathToFileURL } = require('node:url')
 const { app } = require('electron')
-const { fileExists, directoryExists, sendToMain } = require('../utils.cjs')
+const { fileExists, directoryExists, sendToMain } = require('../shared/utils.cjs')
 
 const PREVIEW_HTML_EXTENSIONS = new Set(['.html', '.htm'])
 const PREVIEW_WATCH_DEBOUNCE_MS = 120

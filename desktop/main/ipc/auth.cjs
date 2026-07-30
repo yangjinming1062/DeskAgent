@@ -2,7 +2,7 @@
 
 // Backend session IPC: login / logout / session snapshot.
 
-const { getBackendUrl } = require('../config.cjs')
+const { getBackendUrl } = require('../shared/config.cjs')
 
 function ensureBackendSession(deps) {
   if (deps.backendSession) return deps.backendSession
