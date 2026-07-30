@@ -53,7 +53,7 @@ const { registerSkillsIpc } = require('./ipc/skills.cjs')
 const { registerSpriteIpc } = require('./ipc/sprite.cjs')
 const { registerUpdateIpc } = require('./ipc/update.cjs')
 const { RunnerUpdater } = require('./runner-updater.cjs')
-const { looksBinary, fileExists, directoryExists, sendToMain, atomicWriteFile } = require('./utils.cjs')
+const { looksBinary, fileExists, directoryExists, sendToMain, atomicWriteFile } = require('./shared/utils.cjs')
 const {
   installTray,
   installCloseInterceptor,
@@ -63,7 +63,7 @@ const {
   rebuildTrayMenu
 } = require('./tray.cjs')
 const { deskagentHome } = require('./paths.cjs')
-const { STREAMABLE_MEDIA_EXTS, mimeTypeForPath, extensionForMimeType } = require('./mime.cjs')
+const { STREAMABLE_MEDIA_EXTS, mimeTypeForPath, extensionForMimeType } = require('./shared/mime.cjs')
 const log = require('electron-log/main')
 
 let nodePty = null
@@ -1900,8 +1900,8 @@ function showAboutPanelFresh() {
 // profiles, configs, models, tools, cron, OAuth, …).
 
 const { createBackendSession } = require('./backend-session.cjs')
-const { buildClientContext } = require('./client-context.cjs')
-const { getBackendUrl, getNormalizedBackendUrl } = require('./config.cjs')
+const { buildClientContext } = require('./shared/client-context.cjs')
+const { getBackendUrl, getNormalizedBackendUrl } = require('./shared/config.cjs')
 const { createRunnerProcess } = require('./runner-process.cjs')
 const { createRunnerWsServer } = require('./runner-rpc-ws.cjs')
 const { createReverseRpc } = require('./runner-reverse-rpc.cjs')

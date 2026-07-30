@@ -14,7 +14,7 @@ const { EventEmitter } = require('node:events')
 const fs = require('node:fs')
 const path = require('node:path')
 
-const { atomicWriteFile } = require('./utils.cjs')
+const { atomicWriteFile } = require('./shared/utils.cjs')
 
 function createRunnerBridge(options = {}) {
   const log = typeof options.log === 'function' ? options.log : () => {}
