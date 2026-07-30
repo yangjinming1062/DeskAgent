@@ -52,7 +52,7 @@ const { registerRunnerConfigIpc } = require('./ipc/runner-config.cjs')
 const { registerSkillsIpc } = require('./ipc/skills.cjs')
 const { registerSpriteIpc } = require('./ipc/sprite.cjs')
 const { registerUpdateIpc } = require('./ipc/update.cjs')
-const { RunnerUpdater } = require('./runner-updater.cjs')
+const { RunnerUpdater } = require('./runner/updater.cjs')
 const { looksBinary, fileExists, directoryExists, sendToMain, atomicWriteFile } = require('./shared/utils.cjs')
 const {
   installTray,
@@ -1902,10 +1902,10 @@ function showAboutPanelFresh() {
 const { createBackendSession } = require('./backend/session.cjs')
 const { buildClientContext } = require('./shared/client-context.cjs')
 const { getBackendUrl, getNormalizedBackendUrl } = require('./shared/config.cjs')
-const { createRunnerProcess } = require('./runner-process.cjs')
-const { createRunnerWsServer } = require('./runner-rpc-ws.cjs')
-const { createReverseRpc } = require('./runner-reverse-rpc.cjs')
-const { createRunnerBridge } = require('./runner-bridge.cjs')
+const { createRunnerProcess } = require('./runner/process.cjs')
+const { createRunnerWsServer } = require('./runner/rpc-ws.cjs')
+const { createReverseRpc } = require('./runner/reverse-rpc.cjs')
+const { createRunnerBridge } = require('./runner/bridge.cjs')
 
 // Shared mutable state for auth + runner modules. The bridge and backend
 // session are both initialized lazily and live across login/logout cycles;

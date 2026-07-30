@@ -1,12 +1,12 @@
 /**
- * Tests for main/runner-rpc-ws.cjs.
+ * Tests for main/runner/rpc-ws.cjs.
  *
- * Run with: node --test main/runner-rpc-ws.test.cjs
+ * Run with: node --test main/runner/rpc-ws.test.cjs
  */
 
 const test = require('node:test')
 const assert = require('node:assert/strict')
-const { createRunnerWsServer } = require('./runner-rpc-ws.cjs')
+const { createRunnerWsServer } = require('./rpc-ws.cjs')
 
 function makeWsServer(overrides = {}) {
   return createRunnerWsServer({

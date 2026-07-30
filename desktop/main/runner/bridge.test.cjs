@@ -1,7 +1,7 @@
 /**
- * Tests for main/runner-bridge.cjs.
+ * Tests for main/runner/bridge.cjs.
  *
- * Run with: node --test main/runner-bridge.test.cjs
+ * Run with: node --test main/runner/bridge.test.cjs
  *
  * The orchestrator composes runner-process + runner-rpc-ws + runner-reverse-rpc.
  * We inject fake factories so the test drives every state transition
@@ -11,7 +11,7 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
 const { EventEmitter } = require('node:events')
-const { createRunnerBridge } = require('./runner-bridge.cjs')
+const { createRunnerBridge } = require('./bridge.cjs')
 
 function makeFakeProcess() {
   const emitter = new EventEmitter()
