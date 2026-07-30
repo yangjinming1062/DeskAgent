@@ -5,7 +5,7 @@ import { Codicon } from '@/components/ui/codicon'
 import type { IconComponent } from '@/shared/lib/icons'
 import { cn } from '@/shared/lib/utils'
 
-import { PAGE_INSET_X } from '../layout-constants'
+import { PAGE_INSET_X } from '../../shared/layout/page-inset'
 
 interface OverlaySplitLayoutProps {
   children: ReactNode
