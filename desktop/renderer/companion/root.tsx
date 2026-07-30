@@ -8,13 +8,13 @@ import { $gatewayState } from '@/shared/store/gateway'
 import { $companionLifecycle, setCompanionLifecycle } from '@/companion/companion-store'
 
 import { ChatDock } from './chat-dock'
-import { CompanionReady } from './companion-ready'
-import { Egg, type EggMode } from './egg'
+import { CompanionReady } from './sprite/companion-ready'
+import { Egg, type EggMode } from './sprite/egg'
 import { handleCompanionEvent } from './events'
-import { OnboardingFlow } from './onboarding-flow'
-import { ProactiveBubble } from './proactive-bubble'
-import { speakProactive } from './proactive'
-import { SpriteStage } from './sprite-stage'
+import { OnboardingFlow } from './onboarding/onboarding-flow'
+import { ProactiveBubble } from './proactive/proactive-bubble'
+import { speakProactive } from './proactive/proactive'
+import { SpriteStage } from './sprite/sprite-stage'
 
 const HATCH_AT = 5
 

@@ -1,4 +1,4 @@
-import { CompanionRoot } from './companion/companion-root'
+import { CompanionRoot } from '@/companion/root'
 import { ToolRoot } from './tool-root'
 
 // The shared renderer bundle branches at the root on a `?role=` query param
