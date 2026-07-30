@@ -9,7 +9,7 @@
 const fs = require('node:fs')
 const path = require('node:path')
 
-const { createBackendClient, BackendRequestError } = require('./backend-client.cjs')
+const { createBackendClient, BackendRequestError } = require('./client.cjs')
 
 const SESSION_FILENAME = 'agent-session.json'
 const SESSION_SCHEMA_VERSION = 1

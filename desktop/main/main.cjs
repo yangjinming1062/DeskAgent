@@ -1899,7 +1899,7 @@ function showAboutPanelFresh() {
 // ipcMain. `deskagent:api` IPC is the general-purpose REST proxy (sessions,
 // profiles, configs, models, tools, cron, OAuth, …).
 
-const { createBackendSession } = require('./backend-session.cjs')
+const { createBackendSession } = require('./backend/session.cjs')
 const { buildClientContext } = require('./shared/client-context.cjs')
 const { getBackendUrl, getNormalizedBackendUrl } = require('./shared/config.cjs')
 const { createRunnerProcess } = require('./runner-process.cjs')
