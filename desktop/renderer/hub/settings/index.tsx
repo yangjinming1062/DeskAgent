@@ -8,7 +8,7 @@ import { triggerHaptic } from '@/shared/lib/haptics'
 import { Info, KeyRound, Palette, Settings, Sparkles, Wrench } from '@/shared/lib/icons'
 import { notifyError } from '@/shared/store/notifications'
 
-import { useRouteEnumParam } from '../hooks/use-route-enum-param'
+import { useRouteEnumParam } from '@/shared/hooks/use-route-enum-param'
 import { OverlayIconButton } from '../overlays/overlay-chrome'
 import { OverlayMain, OverlayNavItem, OverlaySidebar, OverlaySplitLayout } from '../overlays/overlay-split-layout'
 import { OverlayView } from '../overlays/overlay-view'

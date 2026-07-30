@@ -1,5 +1,5 @@
 import { CompanionRoot } from '@/companion/root'
-import { ToolRoot } from './tool-root'
+import { ToolRoot } from '@/hub/root'
 
 // The shared renderer bundle branches at the root on a `?role=` query param
 // stamped by main (rendererUrlFor): the transparent sprite window runs

@@ -12,7 +12,7 @@ import { notify, notifyError } from '@/shared/store/notifications'
 
 import { EmptyState, LoadingState, Pill, SettingsContent } from './primitives'
 import { useDeepLinkHighlight } from './use-deep-link-highlight'
-import { useRunnerConfig } from './use-runner-config'
+import { useRunnerConfig } from '../runner/use-runner-config'
 
 interface McpSettingsProps {
   gateway?: DeskAgentGateway | null

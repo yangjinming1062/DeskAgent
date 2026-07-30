@@ -10,7 +10,7 @@ import { Settings } from '@/shared/lib/icons'
 import { notify, notifyError } from '@/shared/store/notifications'
 
 import { EmptyState, ListRow, LoadingState, SectionHeading, SettingsContent, SettingsSubsection } from './primitives'
-import { useRunnerConfig } from './use-runner-config'
+import { useRunnerConfig } from '../runner/use-runner-config'
 
 type SelectRow = {
   kind: 'select'
