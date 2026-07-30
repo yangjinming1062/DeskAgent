@@ -32,7 +32,7 @@ const {
   TEXT_PREVIEW_SOURCE_MAX_BYTES,
   resolveReadableFileForIpc,
   resolveTimeoutMs
-} = require('./hardening.cjs')
+} = require('./security/hardening.cjs')
 const { registerSystemIpc } = require('./ipc/system.cjs')
 const { registerTitlebarIpc } = require('./ipc/titlebar.cjs')
 const { registerClipboardIpc } = require('./ipc/clipboard.cjs')
@@ -62,7 +62,7 @@ const {
   destroyTray,
   rebuildTrayMenu
 } = require('./tray.cjs')
-const { deskagentHome } = require('./paths.cjs')
+const { deskagentHome } = require('./security/paths.cjs')
 const { STREAMABLE_MEDIA_EXTS, mimeTypeForPath, extensionForMimeType } = require('./shared/mime.cjs')
 const log = require('electron-log/main')
 

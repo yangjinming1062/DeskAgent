@@ -24,7 +24,7 @@
     "dist:win:nsis": "pnpm run build && pnpm run builder -- --win nsis",
     "dist:linux": "pnpm run build && pnpm run builder -- --linux AppImage deb rpm",
     "test:desktop:all": "node scripts/test-desktop.mjs all",
-    "test:desktop:platforms": "node --test main/bootstrap-platform.test.cjs main/hardening.test.cjs main/backend/ws-probe.test.cjs main/runner/rpc-ws.test.cjs main/runner/reverse-rpc.test.cjs main/runner/bridge.test.cjs",
+    "test:desktop:platforms": "node --test main/bootstrap-platform.test.cjs main/security/hardening.test.cjs main/backend/ws-probe.test.cjs main/runner/rpc-ws.test.cjs main/runner/reverse-rpc.test.cjs main/runner/bridge.test.cjs",
     "type-check": "tsc -b",
     "lint": "eslint src/ main/",
     "lint:fix": "eslint src/ main/ --fix",
@@ -135,8 +135,8 @@
     ],
     "mac": {
       "category": "public.app-category.developer-tools",
-      "entitlements": "main/entitlements.mac.plist",
-      "entitlementsInherit": "main/entitlements.mac.inherit.plist",
+      "entitlements": "main/security/entitlements.mac.plist",
+      "entitlementsInherit": "main/security/entitlements.mac.inherit.plist",
       "extendInfo": {
         "CFBundleDisplayName": "DeskAgent",
         "CFBundleExecutable": "DeskAgent",
