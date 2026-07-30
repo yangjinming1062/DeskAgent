@@ -8,8 +8,11 @@ from sqlalchemy.orm import Session
 from .providers import BaseProvider
 from .providers import ProviderConfig
 from .providers import ServiceType
+from .providers import default_base_url
 from .providers import infer_provider_name
+from .providers import KNOWN_PROVIDERS
 from .providers import resolve
+from .providers import SERVICE_DEFAULT_PROVIDER
 from .providers.http import get_async_client
 from .user_config import resolve_user_llm_config
 
@@ -74,47 +77,49 @@ def resolve_service_row(db: Session | None, user_id: int | None, prefix: str) ->
 def resolve_provider_config(db: Session | None, user_id: int | None, service_type: str) -> ProviderConfig:
     """Resolve the active provider config for a service.
 
-    Fallback priority:
-      1. User DB config
-      2. Service-specific global config (``SETTINGS.<svc>_*``)
-      3. Base LLM config (``SETTINGS.llm_*``) — only for non-MiniMax providers
+    Selection model: ``PROVIDER`` is the primary selector. Fallback priority:
 
-    Provider name comes from ``SETTINGS.<svc>_provider`` when set, else
-    inferred from the resolved base_url host. MiniMax gets an extra fallback
-    tier (``SETTINGS.minimax_api_key``) and **must not** inherit the MiMo
-    ``llm_api_key`` — sending a MiMo key to a MiniMax host always 401s.
+      1. ``SETTINGS.<svc>_provider`` (explicit env)
+      2. ``infer_provider_name(base_url)`` — backward-compat when only BASE_URL
+         is set (host-based: minimaxi.com → minimax, else mimo)
+      3. ``SERVICE_DEFAULT_PROVIDER`` (mimo for chat/stt/tts, minimax for
+         image/video)
 
-    Per-service ``*_provider`` slots exist so operators can route a
-    service at MiniMax while keeping the chat backend on MiMo, or pin a
-    custom URL while keeping the env fallback active.
+    ``BASE_URL`` is optional — when empty, the provider's default URL is used
+    (``PROVIDER_DEFAULT_URLS``). ``API_KEY`` falls back per provider: MiMo
+    services share ``LLM_API_KEY``; MiniMax services share ``MINIMAX_API_KEY``
+    and **must not** inherit the MiMo key (host mismatch → 401).
     """
     user_base_url, user_api_key, user_model = resolve_service_row(db, user_id, service_type)
     svc_base_url = getattr(SETTINGS, f"{service_type}_base_url", "")
     svc_api_key = getattr(SETTINGS, f"{service_type}_api_key", "")
     svc_model = _SERVICE_DEFAULTS[service_type]
+    explicit_provider = getattr(SETTINGS, f"{service_type}_provider", "")
+    resolved_url = user_base_url or svc_base_url
 
-    base_url = user_base_url or svc_base_url or SETTINGS.llm_base_url
-    api_key = user_api_key or svc_api_key or SETTINGS.llm_api_key
+    # PROVIDER is primary. When unset, fall back to host inference from any
+    # explicit BASE_URL (backward compat), then to the service default.
+    if explicit_provider:
+        provider_name = explicit_provider
+    elif resolved_url:
+        provider_name = infer_provider_name(resolved_url)
+    else:
+        provider_name = SERVICE_DEFAULT_PROVIDER.get(service_type, "mimo")
+    if provider_name not in KNOWN_PROVIDERS:
+        raise MissingLlmConfigError(f"{service_type} provider {provider_name!r} unknown; known: {sorted(KNOWN_PROVIDERS)}")
+
+    base_url = user_base_url or svc_base_url or default_base_url(provider_name, service_type) or SETTINGS.llm_base_url
     model_name = user_model or svc_model
 
-    explicit_provider = getattr(SETTINGS, f"{service_type}_provider", "")
-    provider_name = explicit_provider or infer_provider_name(base_url)
+    if provider_name == "minimax":
+        api_key = user_api_key or svc_api_key or SETTINGS.minimax_api_key
+    else:
+        api_key = user_api_key or svc_api_key or SETTINGS.llm_api_key
 
-    if provider_name == "minimax" and (not api_key or api_key == SETTINGS.llm_api_key):
-        # Resolved key is empty OR is the legacy MiMo key (the fallback
-        # chose ``llm_api_key``). Swap to the MiniMax-dedicated key if
-        # set; otherwise fail fast with a clear error — sending a MiMo key
-        # to api.minimaxi.com always 401s, and "401 from upstream" is
-        # harder to diagnose than "missing MINIMAX_API_KEY".
-        minimax_key = getattr(SETTINGS, "minimax_api_key", "")
-        if not minimax_key:
-            raise MissingLlmConfigError(
-                f"{service_type} provider 'minimax' requires MINIMAX_API_KEY (cannot reuse LLM_API_KEY)"
-            )
-        api_key = minimax_key
-
-    if not api_key or not base_url:
-        raise MissingLlmConfigError(f"{service_type} provider not configured")
+    if not api_key:
+        raise MissingLlmConfigError(f"{service_type} provider {provider_name!r} not configured (no API key)")
+    if not base_url:
+        raise MissingLlmConfigError(f"{service_type} provider {provider_name!r} has no base_url")
 
     return ProviderConfig(
         base_url=base_url,

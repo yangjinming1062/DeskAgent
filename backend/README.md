@@ -20,7 +20,7 @@ backend/
 │   │                   + providers/(抽象层：base · registry · http · openai_compat · content · mimo/ · minimax/)
 │   ├── media/         # 视频生成后台任务：video_jobs(submit/poll/download/finalize + WSEvent outbox)
 │   ├── tools/         # 工具框架 + 内置工具：registry · guardrails · memory · ... + builtin/(web/tts/image_gen/video_gen/send_message/cronjob)
-│   ├── companion/     # 伙伴系统：persona_service · avatar_service
+│   ├── companion/     # 伙伴系统：persona_service(onboarding draft + 角色定义) · avatar_service(generate/regenerate + clip seed) · clip_service(scene catalog + enqueue/list/invalidate) · disturbance
 │   ├── scheduler/     # 后台任务：cron · title_generator · background_review
 │   └── rate_limit.py  # slowapi 限流（依赖 modules.auth，独居 services/ 根而非 components/）
 ├── api/v1/            # 薄 HTTP/WS 端点，pkgutil 自动发现：chat(唯一 WS，薄端点委托 gateway/handlers) / user / sessions / llm / media / companion / config / insights / admin / status / health / update / page
@@ -88,7 +88,7 @@ backend/
 
 ## 系统提示词与上下文管理
 
-`services/chat/system_prompt.build_system_prompt_parts`：stable / context / volatile 三段装配。角色定义注入 stable 段（驱动伙伴说话风格与性格）。按模型族注入执行纪律（OpenAI/Gemini/Grok）。Steer 通道用 `[OUT-OF-BAND USER MESSAGE]` 标记。
+`services/chat/system_prompt.build_system_prompt_parts`：stable / context / volatile 三段装配。角色定义注入 stable 段（驱动伙伴说话风格与性格）。角色定义存在时同步注入 affect 指令（`COMPANION_AFFECT_GUIDANCE`，要求 LLM 在文字回复前缀 `[affect:EMOTION]` 标签，由 `AffectScrubber` 在流式路径剥离并附加到 `message.complete`）。按模型族注入执行纪律（OpenAI/Gemini/Grok）。Steer 通道用 `[OUT-OF-BAND USER MESSAGE]` 标记。
 
 消息截断（`message_sanitization.truncate_chat_history`）：保留最近 40 条非 system 消息；单条字符上限 15000。
 
@@ -103,6 +103,12 @@ backend/
 ## LLM Provider 抽象
 
 `services/llm/providers/` 在五类服务（`ChatProvider` / `ImageGenProvider` / `VideoGenProvider` / `TTSProvider` / `STTProvider`）各放一个 ABC，`BaseProvider` 公共根。Provider 名解析规则：显式 `SETTINGS.<svc>_provider` 优先，否则按 `base_url` host 推断（`api.minimaxi.com` / `api.minimax.io` → `minimax`，其余 → `mimo`）。注册表 `registry.register(service_type, provider_name, cls)` 由 provider 子包 `__init__.py` 自注册；`providers/__init__.py` 仅 `from . import mimo, minimax` 触发。
+
+### 每能力独立配置（per-capability env）
+
+五种能力各自由 `PROVIDER` / `API_KEY` / `MODEL_NAME` 驱动，`BASE_URL` 可选（每个 provider 有默认 URL，仅在覆盖时才设）。`PROVIDER` 是主选择器（`mimo` 或 `minimax`），定义在 `providers/registry.py:SERVICE_DEFAULT_PROVIDER`（chat/stt/tts 默认 mimo，image/video 默认 minimax）。`backend/.env.example` 是完整模板——复制为 `.env` 填入 key 即可，`docker-compose.yml` 经 `env_file: .env` 加载全部配置，仅 `DATABASE_URL` 因容器网络差异需在 `environment` 中覆盖。
+
+**provider 默认 URL**（`PROVIDER_DEFAULT_URLS`）：MiMo 含 `/v1`（OpenAI SDK 需完整 base_url）；MiniMax 不含 `/v1`（httpx provider 自行拼接 `/v1/<endpoint>`）。**key 回落**：mimo provider 共享 `LLM_API_KEY`；minimax provider 共享 `MINIMAX_API_KEY`（**不可**继承 MiMo key——host 不同会 401）。`MIMO_KEY` / `MINIMAX_KEY` 是 `LLM_API_KEY` / `MINIMAX_API_KEY` 的兼容别名。**最小配置**：只设 `LLM_API_KEY` + `MINIMAX_API_KEY`，其余留空——每个能力用各自的默认 provider + URL。
 
 **两层入口**：`provider_for_service(db, user_id, service_type) -> BaseProvider` 是新统一入口；`client_for_service(...)` 保留为兼容 shim——OpenAI 协议 provider 返回其缓存的 `AsyncOpenAI`（供 chat/stt/tts/image_gen 老 call site 透明使用），非 OpenAI 协议（MiniMax video_gen）抛 `MissingLlmConfigError` 提示改用 `provider_for_service`。
 
@@ -156,9 +162,26 @@ DeskAgent 伙伴的"人格"与"形象"是跨 Backend↔Desktop 的核心契约�
 
 `Persona` 表存用户 onboarding 产出的结构化角色定义（JSON + 渲染好的 `system_prompt_extras` 片段），按用户维度一对一持久化。作为系统提示词 stable 段的一部分注入每次 chat turn，驱动伙伴说话风格、性格表现与主动行为倾向。角色定义是伙伴行为的**唯一真相源**——只能由用户显式发起变更（重新进入角色编辑），禁止 LLM 自行改写。
 
+**onboarding 断点恢复**（design §7.5）：onboarding 逐字段增量持久化经两个 JSON-RPC 方法：`onboarding.get_state` 返回已采集字段 + 下一个未答问题（`next_field`）；`onboarding.submit {field, value}` 即时落盘单个字段。Desktop 启动时调 `get_state`，未完成则从 `next_field` 恢复，崩溃/退出不丢进度。draft 存在 `Persona.definition_json`（`is_complete=False`），完成后 Desktop 发 `PUT /api/companion/persona` 覆盖为最终角色定义（`is_complete=True`）。
+
 ### 形象资产（AvatarAsset）
 
-`AvatarAsset` 表存历次生成的专属形象资产（provider 返回的 URL + 元数据 + 生成状态），按用户维度持久化。Postgres partial unique index 约束"每个用户最多一条 active 记录"。`/api/companion/avatar` POST 时 Backend 据角色定义装配生图 prompt → 调 `image_generate` → 写行并置 active → 经 `dispatch_user_event` 下发"孵化"事件到 Desktop。形象生成失败时返回 `502` + 友好文案（`伙伴形象生成失败，请稍后重试`），不泄露 provider 原始错误。
+`AvatarAsset` 表存历次生成的专属形象资产（provider 返回的 URL + 元数据 + 生成状态），按用户维度持久化。Postgres partial unique index 约束"每个用户最多一条 active 记录"。`/api/companion/avatar` POST 时 Backend 据角色定义装配生图 prompt → 调 `image_generate` → 写行并置 active → 自动从新 portrait 种子 batch-0 idle clip。形象生成失败时返回 `502` + 友好文案（`伙伴形象生成失败，请稍后重试`），不泄露 provider 原始错误。
+
+**avatar.regenerate** JSON-RPC：带可选 `feedback` 文本（如"头发长一点"），折入 prompt 做增量重生成。旧 clip 在新 portrait 成功后才失效（避免生图失败时用户失去全部 clip），然后 batch-0 重新排队。
+
+### 动画 clip 流水线（AvatarClip）
+
+`AvatarClip` 表存以 portrait 为种子的图生视频 clip，每个 clip 绑定一个 `scene` 标签（与 Desktop 动画状态机状态对齐：`idle` / `speaking` / `thinking` / `happy` / ...）。scene 目录 + 批次优先级定义在 `services/companion/clip_service.CLIP_SCENES`。
+
+- **渐进式生成**：batch 0（idle）在 portrait 生成时同步排队；其余批次（speaking/thinking/working → 生命周期 → 情绪变体）后台渐进生成
+- **事件下发**：clip 复用既有 `video_gen.completed/failed` 事件（design §7.2），`enqueue_video_job` 的 `event_extras` dict 合入事件 payload，Desktop 据 `scene` 字段绑定到对应动画状态
+- **avatar.list_clips** JSON-RPC：返回全部 clip + 实时生成状态（JOIN `VideoGenJob` 行）
+- **衍生失效**：portrait 重生时所有 clip 失效（design §7.2——同一颗种子图从机制上保证跨 clip 一致性，跨版本不可复用）
+
+### 伙伴情绪（affect）
+
+Backend 在对话响应的 `message.complete` 帧内联 `affect: {emotion}` 字段（design §7.5 inline affect 原则）。实现：当角色定义存在时，系统提示词注入 affect 指令（`COMPANION_AFFECT_GUIDANCE`），要求 LLM 在每条文字回复前缀 `[affect:EMOTION]` 标签。`services/chat/affect.AffectScrubber` 在流式路径中剥离该标签（用户不可见），捕获的 emotion 附加到 `message.complete`。emotion 词汇表在 `ALLOWED_EMOTIONS`（有限枚举，可扩展但需同步 Desktop clip 目录）。
 
 ### 复用映射
 
@@ -202,7 +225,8 @@ DeskAgent 伙伴的"人格"与"形象"是跨 Backend↔Desktop 的核心契约�
 | `image_generate` / `text_to_speech_tool` / `video_generate` 不参与 config-aware 过滤 | 可用性取决于 provider；调用时按 `llm_config` 拉 `provider_for_service` |
 | MiniMax 文件 URL 9 小时有效期 | video_gen `provider.fetch` 拿到的 `download_url` 仅 9 小时有效，必须立即下载落 `data_dir/temp-media`，**不能**直接返给前端 |
 | MiniMax 内容风控 1027 不重试 | `base_resp.status_code=1027` 映射到 `content_policy_blocked` 且 `retryable=False`，避免重试三次白烧配额 |
-| WS 方法当前无 Desktop 消费方 | chat 类 JSON-RPC 方法（prompt.submit / session.* / tool.result 等）已实现且可响应，Desktop 伙伴层将消费它们——当前 companion 层尚未构建 |
+| clip 生成依赖 video_gen provider | `AvatarClip` 排队需 video_gen 配置（默认 MiniMax Hailuo）；未配置时 clip 排队静默失败（有日志），portrait 仍正常生成 |
+| clip 的 first_frame_image 需公网可达 | portrait `asset_url` 作为图生视频种子图传给 provider；本地 `/api/media/files/<id>` URL 在 Docker 内网不可达，需正确配置 `PUBLIC_URL_PREFIX` |
 
 ## MiniMax 注意事项
 

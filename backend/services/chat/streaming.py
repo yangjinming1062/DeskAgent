@@ -194,7 +194,7 @@ async def _stream_llm_response(
             await _emit_llm_error(emitter, exc)
             raise
 
-        clean_tail = (scrubber.flush() or "") + (affect.flush() or "")
+        clean_tail = scrubber.flush() + affect.flush()
     finally:
         # Always flush (success OR stream-raise path) so text buffered in a
         # half-open ``<reasoning>`` block lands in the assistant Message

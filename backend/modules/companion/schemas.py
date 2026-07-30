@@ -49,3 +49,12 @@ class AvatarGenerateRequest(BaseModel):
 
 class AvatarHistoryResponse(BaseModel):
     items: list[AvatarAssetResponse]
+
+
+class ClipStatusResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    scene: str
+    batch: int
+    status: str
+    url: str | None = None

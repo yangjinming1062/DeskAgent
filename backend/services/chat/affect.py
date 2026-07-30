@@ -75,11 +75,7 @@ class AffectScrubber:
             return self._drain(m.end())
 
         stripped = self._buf.lstrip()
-        # First non-whitespace content doesn't start the tag prefix → plain text.
-        if stripped and not stripped.startswith(_TAG_PREFIX):
-            return self._resolve_no_tag()
-        # Prefix present but bracket not yet closed, and buffer within bounds.
-        if "]" in stripped or len(self._buf) > self._MAX_TAG_LEN:
+        if (stripped and not stripped.startswith(_TAG_PREFIX)) or "]" in stripped or len(self._buf) > self._MAX_TAG_LEN:
             return self._resolve_no_tag()
         return ""
 

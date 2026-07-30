@@ -2,6 +2,12 @@ from .avatar_service import AvatarGenerationError
 from .avatar_service import generate_avatar
 from .avatar_service import get_active_avatar
 from .avatar_service import list_avatar_history
+from .avatar_service import regenerate_avatar
+from .clip_service import CLIP_SCENES
+from .clip_service import enqueue_clip_batch
+from .clip_service import invalidate_user_clips
+from .clip_service import list_clips
+from .clip_service import scenes_for_batch
 from .disturbance import ALLOWED_TIERS
 from .disturbance import get_disturbance_tier
 from .disturbance import is_quiet
@@ -23,9 +29,15 @@ __all__ = [
     "ONBOARDING_FIELDS",
     "PersonaValidationError",
     "generate_avatar",
+    "regenerate_avatar",
     "get_active_avatar",
     "list_avatar_history",
     "AvatarGenerationError",
+    "CLIP_SCENES",
+    "enqueue_clip_batch",
+    "invalidate_user_clips",
+    "list_clips",
+    "scenes_for_batch",
     "ALLOWED_TIERS",
     "get_disturbance_tier",
     "is_quiet",
