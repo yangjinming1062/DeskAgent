@@ -12,10 +12,11 @@ from modules.media.models import VideoGenJob
 from modules.ws import WSEvent
 from services.llm import execute_with_fallback
 from services.llm import MissingLlmConfigError
+from services.llm import resolve
 from services.llm import resolve_provider_chain
-from services.llm.providers import resolve as resolve_provider_class
-from services.llm.providers.base import ServiceType
-from services.llm.providers.base import VideoGenRequest
+from services.llm import ServiceType
+from services.llm import VideoGenProvider
+from services.llm import VideoGenRequest
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -106,7 +107,7 @@ async def enqueue_video_job(
 
     # Capture the actual provider that wins the submit — polling/fetch
     # run against it (task_id is per-provider).
-    submitted_provider: "VideoGenProvider | None" = None
+    submitted_provider: VideoGenProvider | None = None
 
     async def _submit(p):
         nonlocal submitted_provider
@@ -248,7 +249,7 @@ async def _poll_and_finalize_locked(job_id: int) -> None:
         )
         _evt("video_gen.failed", {"task_id": str(job_id), "error": "provider unavailable"})
         return
-    provider = resolve_provider_class(ServiceType.video_gen, provider_cfg.provider_name)(provider_cfg)
+    provider = resolve(ServiceType.video_gen, provider_cfg.provider_name)(provider_cfg)
 
     interval = SETTINGS.video_gen_poll_interval_seconds
     deadline = naive_utc_now() + timedelta(seconds=SETTINGS.video_gen_max_poll_seconds)
@@ -364,15 +365,3 @@ def resume_pending_video_jobs() -> None:
         asyncio.create_task(_poll_and_finalize(job_id))
     if job_ids:
         logger.info("Resumed pending video jobs", extra={"count": len(job_ids)})
-
-
-async def aclose_all() -> None:
-    """Close cached httpx / AsyncOpenAI clients owned by the LLM provider pool.
-
-    FastAPI lifespan ``finally`` block awaits this on shutdown so rolling
-    deploys release connection pools + file descriptors instead of leaking
-    them until the kernel reaps the process.
-    """
-    from services.llm.providers.http import aclose_all as _aclose
-
-    await _aclose()

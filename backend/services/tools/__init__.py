@@ -1,5 +1,4 @@
 from . import memory  # noqa: F401 — self-registers memory_retain/recall/forget
-from . import search_tools_tool  # noqa: F401 — self-registers search_tools
 from .extract_provider import resolve_extract_provider
 from .extract_provider import resolve_search_provider
 from .file_safety import get_read_block_error

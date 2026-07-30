@@ -21,7 +21,7 @@ class UserInfo(BaseModel):
                 data["display_name"] = data.get("username", "")
         else:
             if not getattr(data, "display_name", None):
-                setattr(data, "display_name", getattr(data, "username", ""))
+                data.display_name = getattr(data, "username", "")
         return data
 
 

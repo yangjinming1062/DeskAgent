@@ -3,6 +3,7 @@ from collections.abc import Callable
 from typing import Any
 
 from components import AGENT_MAX_LOOP_TURNS
+from components import get_logger
 from components import SETTINGS
 from modules.auth import ChatRequestClientContext
 from modules.conversation import Conversation
@@ -14,7 +15,6 @@ from ..llm import compress_history_if_needed
 from ..llm import execute_with_fallback
 from ..llm import LLMRuntimeError
 from ..llm import MissingLlmConfigError
-from ..llm import resolve_provider_chain
 from ..tools import schema_name
 from ..tools import ToolCallGuardrailController
 from .chat_emitter import Emitter
@@ -33,6 +33,8 @@ from .turn_inputs import _drain_steer_queue
 from .turn_inputs import _merge_session_settings
 from .types import IterationBudget
 from .types import TrackTask
+
+logger = get_logger(__name__)
 
 
 def _make_ask_consent(
