@@ -7,6 +7,7 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from dataclasses import field
 from typing import Any
+from typing import ClassVar
 from typing import Literal
 
 import httpx
@@ -38,6 +39,12 @@ class BaseProvider(ABC):
 
     service_type: ServiceType = ServiceType.llm
     provider_name: str = ""
+    # Per-capability default MODEL_NAME published by this provider. Mirrored
+    # into ``registry._PROVIDER_DEFAULT_MODELS`` at register() time so the
+    # capability resolver can pull defaults without importing each provider
+    # class. Subclasses populate the keys for capabilities they implement;
+    # absent keys fall back to ``SETTINGS.<svc>_model_name``.
+    DEFAULT_MODELS: ClassVar[dict[str, str]] = {}
 
     def __init__(self, config: ProviderConfig):
         self.config = config

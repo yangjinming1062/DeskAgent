@@ -10,8 +10,11 @@ from components import SESSION_LOCAL
 from components import SETTINGS
 from modules.media.models import VideoGenJob
 from modules.ws import WSEvent
+from services.llm import execute_with_fallback
 from services.llm import MissingLlmConfigError
-from services.llm import provider_for_service
+from services.llm import resolve_provider_chain
+from services.llm.providers import resolve as resolve_provider_class
+from services.llm.providers.base import ServiceType
 from services.llm.providers.base import VideoGenRequest
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -78,9 +81,11 @@ async def enqueue_video_job(
 
     Raises :class:`MissingLlmConfigError` if no video_gen provider is
     configured, or any provider error during submission.
-    """
-    provider = provider_for_service(db, user_id, "video_gen")
 
+    Submission iterates the provider chain on ``should_fallback`` errors —
+    polling stays pinned to the provider that owns the resulting
+    ``task_id`` (task_ids are per-provider and can't migrate mid-flight).
+    """
     req = VideoGenRequest(
         prompt=prompt,
         duration=duration,
@@ -98,11 +103,28 @@ async def enqueue_video_job(
     }
     if event_extras:
         params["_event_extras"] = event_extras
+
+    # Capture the actual provider that wins the submit — polling/fetch
+    # run against it (task_id is per-provider).
+    submitted_provider: "VideoGenProvider | None" = None
+
+    async def _submit(p):
+        nonlocal submitted_provider
+        submitted_provider = p
+        return await p.submit(req)
+
+    # Resolve the chain once: chain[0] populates the job row's provider
+    # metadata, and execute_with_fallback re-runs the same resolution
+    # against the same env (so chain[0] is the same head).
+    chain = resolve_provider_chain(db, user_id, "video_gen")
+    if not chain:
+        raise MissingLlmConfigError("no provider configured for service 'video_gen'")
+    head_cfg = chain[0]
     job = VideoGenJob(
         user_id=user_id,
         session_id=session_id,
-        provider=provider.provider_name,
-        model=req.model or provider.config.model,
+        provider=head_cfg.provider_name,
+        model=req.model or head_cfg.model,
         prompt=prompt,
         params_json=json.dumps(params),
         status="queued",
@@ -112,7 +134,7 @@ async def enqueue_video_job(
     db.refresh(job)
 
     try:
-        submitted = await provider.submit(req)
+        submitted = await execute_with_fallback(db, user_id, "video_gen", call_fn=_submit)
     except Exception as e:
         logger.exception("video submit failed", extra={"job_id": job.id})
         try:
@@ -120,6 +142,10 @@ async def enqueue_video_job(
         except Exception as update_err:
             logger.exception("failed to mark job as failed", extra={"job_id": job.id, "error": str(update_err)})
         raise
+
+    if submitted_provider is not None and submitted_provider.provider_name != job.provider:
+        job.provider = submitted_provider.provider_name
+        job.model = req.model or submitted_provider.config.model
     job.provider_task_id = submitted.task_id
     db.commit()
 
@@ -205,12 +231,24 @@ async def _poll_and_finalize_locked(job_id: int) -> None:
         return
 
     with SESSION_LOCAL() as db:
-        try:
-            provider = provider_for_service(db, user_id, "video_gen")
-        except MissingLlmConfigError as e:
-            _update_job(job_id, status="failed", error_reason="missing_config", error_message=str(e))
-            _evt("video_gen.failed", {"task_id": str(job_id), "error": "missing config"})
-            return
+        # Re-resolve the chain and pick the slot that owns this job's
+        # ``provider`` column (set by ``enqueue_video_job`` when the submit
+        # succeeded). Polling must hit the same provider that owns the
+        # ``task_id`` — task_ids are per-provider and not portable.
+        job_row = db.get(VideoGenJob, job_id)
+        provider_name = job_row.provider if job_row else ""
+        chain = resolve_provider_chain(db, user_id, "video_gen")
+        provider_cfg = next((cfg for cfg in chain if cfg.provider_name == provider_name), None)
+    if provider_cfg is None:
+        _update_job(
+            job_id,
+            status="failed",
+            error_reason="provider_unavailable",
+            error_message=f"video provider {provider_name!r} no longer in the chain; cannot poll task_id",
+        )
+        _evt("video_gen.failed", {"task_id": str(job_id), "error": "provider unavailable"})
+        return
+    provider = resolve_provider_class(ServiceType.video_gen, provider_cfg.provider_name)(provider_cfg)
 
     interval = SETTINGS.video_gen_poll_interval_seconds
     deadline = naive_utc_now() + timedelta(seconds=SETTINGS.video_gen_max_poll_seconds)

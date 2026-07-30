@@ -2,11 +2,11 @@ from unittest.mock import MagicMock
 from unittest.mock import patch
 
 import pytest
+from components import SETTINGS
 from services.llm import BaseProvider
 from services.llm import client_for_service
 from services.llm import ImageGenProvider
 from services.llm import ImageGenRequest
-from services.llm import infer_provider_name
 from services.llm import MissingLlmConfigError
 from services.llm import provider_for_service
 from services.llm import ProviderConfig
@@ -47,6 +47,10 @@ class TestProviderConfig:
 
 
 class TestInferProviderName:
+    """Host-based inference is still exported by `services.llm.providers.registry`
+    (the helper remains useful for migration scripts and tests), but is no
+    longer part of the chain resolver."""
+
     @pytest.mark.parametrize(
         "base_url",
         [
@@ -56,6 +60,8 @@ class TestInferProviderName:
         ],
     )
     def test_minimax_hosts(self, base_url):
+        from services.llm.providers.registry import infer_provider_name
+
         assert infer_provider_name(base_url) == "minimax"
 
     @pytest.mark.parametrize(
@@ -68,6 +74,8 @@ class TestInferProviderName:
         ],
     )
     def test_falls_back_to_mimo(self, base_url):
+        from services.llm.providers.registry import infer_provider_name
+
         assert infer_provider_name(base_url) == "mimo"
 
 
@@ -298,6 +306,293 @@ class TestRegistry:
         assert resolve(ServiceType.video_gen, "minimax") is MiniMaxVideoGenProvider
         with pytest.raises(LookupError):
             resolve(ServiceType.stt, "minimax")
+
+
+class TestDefaultModels:
+    def test_default_models_published(self):
+        """Each provider class declares a `DEFAULT_MODELS` dict; the registry
+        mirrors it via `default_model_for()` so resolvers don't import
+        individual provider classes."""
+        from services.llm import default_model_for
+
+        assert default_model_for("mimo", "llm") == "mimo-v2.5-pro"
+        assert default_model_for("mimo", "stt") == "mimo-v2.5-asr"
+        assert default_model_for("mimo", "tts") == "mimo-v2.5-tts"
+        assert default_model_for("mimo", "image_gen") == "dall-e-3"
+        assert default_model_for("minimax", "llm") == "MiniMax-Text-01"
+        assert default_model_for("minimax", "image_gen") == "image-01"
+        assert default_model_for("minimax", "video_gen") == "MiniMax-Hailuo-02"
+        assert default_model_for("minimax", "tts") == "speech-2.8-hd"
+
+    def test_unsupported_cap_returns_empty(self):
+        from services.llm import default_model_for
+
+        # mimo doesn't register video_gen — no default model published.
+        assert default_model_for("mimo", "video_gen") == ""
+        # minimax doesn't register stt.
+        assert default_model_for("minimax", "stt") == ""
+
+
+class TestProvidersSupporting:
+    def test_supporting_providers_for_each_capability(self):
+        from services.llm import providers_supporting
+
+        chat_providers = set(providers_supporting("llm"))
+        stt_providers = set(providers_supporting("stt"))
+        tts_providers = set(providers_supporting("tts"))
+        image_providers = set(providers_supporting("image_gen"))
+        video_providers = set(providers_supporting("video_gen"))
+
+        assert chat_providers == {"mimo", "minimax"}
+        assert stt_providers == {"mimo"}
+        assert tts_providers == {"mimo", "minimax"}
+        assert image_providers == {"mimo", "minimax"}
+        assert video_providers == {"minimax"}
+
+
+class TestProviderChain:
+    _EMPTY_DEFAULTS = {
+        "providers": [],
+        "llm_provider": "",
+        "stt_provider": "",
+        "tts_provider": "",
+        "image_gen_provider": "",
+        "video_gen_provider": "",
+        "llm_base_url": "",
+        "llm_api_key": "",
+        "llm_model_name": "",
+        "stt_base_url": "",
+        "stt_api_key": "",
+        "stt_model_name": "",
+        "tts_base_url": "",
+        "tts_api_key": "",
+        "tts_model_name": "",
+        "image_gen_base_url": "",
+        "image_gen_api_key": "",
+        "image_gen_model_name": "",
+        "video_gen_base_url": "",
+        "video_gen_api_key": "",
+        "video_gen_model_name": "",
+        "mimo_api_key": "",
+        "mimo_base_url": "",
+        "minimax_api_key": "",
+        "minimax_base_url": "",
+    }
+
+    def _reset_settings(self, monkeypatch):
+        """Reset per-capability and provider-level env-driven fields so
+        each test starts from a known empty state."""
+        for field, default in self._EMPTY_DEFAULTS.items():
+            monkeypatch.setattr(f"components.SETTINGS.{field}", default)
+
+    def test_chain_orders_by_providers_env(self, monkeypatch):
+        from services.llm import resolve_provider_chain
+
+        self._reset_settings(monkeypatch)
+        monkeypatch.setattr("components.SETTINGS.providers", ["minimax", "mimo"])
+        monkeypatch.setattr("components.SETTINGS.minimax_api_key", "sk-mm")
+        monkeypatch.setattr("components.SETTINGS.mimo_api_key", "sk-mimo")
+
+        chain = resolve_provider_chain(None, None, "llm")
+        assert [c.provider_name for c in chain] == ["minimax", "mimo"]
+
+    def test_chain_skips_unsupported_providers(self, monkeypatch):
+        """video_gen only registers minimax; mimo is dropped even when listed."""
+        from services.llm import resolve_provider_chain
+
+        self._reset_settings(monkeypatch)
+        monkeypatch.setattr("components.SETTINGS.providers", ["mimo", "minimax"])
+        monkeypatch.setattr("components.SETTINGS.minimax_api_key", "sk-mm")
+
+        chain = resolve_provider_chain(None, None, "video_gen")
+        assert [c.provider_name for c in chain] == ["minimax"]
+
+    def test_soft_reorder_moves_pinned_provider_first(self, monkeypatch):
+        """`*_PROVIDER` pin moves the named provider to the front of the chain
+        but other PROVIDERS entries stay as fallback candidates."""
+        from services.llm import resolve_provider_chain
+
+        self._reset_settings(monkeypatch)
+        monkeypatch.setattr("components.SETTINGS.providers", ["mimo", "minimax"])
+        monkeypatch.setattr("components.SETTINGS.mimo_api_key", "sk-mimo")
+        monkeypatch.setattr("components.SETTINGS.minimax_api_key", "sk-mm")
+        # image_gen_provider pins minimax first; mimo stays as fallback.
+        monkeypatch.setattr("components.SETTINGS.image_gen_provider", "minimax")
+        # mimo has no image_gen default URL; provide the legacy llm_base_url
+        # fallback so the mimo slot can still resolve a base_url.
+        monkeypatch.setattr("components.SETTINGS.llm_base_url", "https://api.openai.com/v1")
+
+        chain = resolve_provider_chain(None, None, "image_gen")
+        assert [c.provider_name for c in chain] == ["minimax", "mimo"]
+
+    def test_chain_skips_slot_without_api_key(self, monkeypatch):
+        from services.llm import resolve_provider_chain
+
+        self._reset_settings(monkeypatch)
+        monkeypatch.setattr("components.SETTINGS.providers", ["mimo", "minimax"])
+        monkeypatch.setattr("components.SETTINGS.mimo_api_key", "sk-mimo")
+        # No minimax_api_key → minimax slot has no key, gets dropped.
+
+        chain = resolve_provider_chain(None, None, "llm")
+        assert [c.provider_name for c in chain] == ["mimo"]
+
+    def test_empty_chain_raises(self, monkeypatch):
+        """`resolve_provider_chain` returns an empty list when no provider in
+        the chain has both a key and a base_url. `resolve_provider_config`
+        (the single-config back-compat wrapper) raises MissingLlmConfigError."""
+        from services.llm import resolve_provider_chain
+
+        self._reset_settings(monkeypatch)
+        monkeypatch.setattr("components.SETTINGS.providers", [])
+        # No api keys anywhere → chain empty.
+        chain = resolve_provider_chain(None, None, "image_gen")
+        assert chain == []
+        with pytest.raises(MissingLlmConfigError):
+            resolve_provider_config(None, None, "image_gen")
+
+    def test_chain_falls_back_to_service_default(self, monkeypatch):
+        """When PROVIDERS is unset and no per-cap pin, the chain collapses to
+        `SERVICE_DEFAULT_PROVIDER[service]`."""
+        from services.llm import resolve_provider_chain
+
+        self._reset_settings(monkeypatch)
+        monkeypatch.setattr("components.SETTINGS.minimax_api_key", "sk-mm")
+
+        chain = resolve_provider_chain(None, None, "image_gen")
+        assert [c.provider_name for c in chain] == ["minimax"]
+
+
+class TestExecuteWithFallback:
+    """End-to-end coverage for the fallback dispatcher.
+
+    The chain resolver is exercised elsewhere; these tests use a 2-slot
+    chain and stub out the per-provider call to verify the dispatcher's
+    iteration, error classification, and stream-start guards."""
+
+    def _two_provider_llm_chain(self, monkeypatch):
+        """Set up PROVIDERS=[mimo, minimax] with both keys; chat is
+        supported by both so chain has length 2."""
+        for field in (
+            "providers",
+            "llm_provider",
+            "llm_base_url",
+            "llm_api_key",
+            "llm_model_name",
+            "mimo_api_key",
+            "mimo_base_url",
+            "minimax_api_key",
+            "minimax_base_url",
+        ):
+            monkeypatch.setattr(f"components.SETTINGS.{field}", "" if field != "providers" else [])
+        monkeypatch.setattr("components.SETTINGS.providers", ["mimo", "minimax"])
+        monkeypatch.setattr("components.SETTINGS.mimo_api_key", "sk-mimo")
+        monkeypatch.setattr("components.SETTINGS.minimax_api_key", "sk-mm")
+
+    @pytest.mark.asyncio
+    async def test_returns_first_provider_success(self, monkeypatch):
+        from services.llm import execute_with_fallback
+
+        self._two_provider_llm_chain(monkeypatch)
+        calls: list[str] = []
+
+        async def call_fn(provider):
+            calls.append(provider.provider_name)
+            return "ok"
+
+        result = await execute_with_fallback(None, None, "llm", call_fn=call_fn)
+        assert result == "ok"
+        assert calls == ["mimo"]  # second provider not tried on success
+
+    @pytest.mark.asyncio
+    async def test_falls_back_on_should_fallback_error(self, monkeypatch):
+        from services.llm import execute_with_fallback
+        from services.llm import ProviderError
+
+        self._two_provider_llm_chain(monkeypatch)
+        calls: list[str] = []
+
+        async def call_fn(provider):
+            calls.append(provider.provider_name)
+            if provider.provider_name == "mimo":
+                # Auth-classified error → should_fallback=True.
+                raise ProviderError("auth", status_code=401, body={}, provider="mimo", model="m")
+            return "ok-from-minimax"
+
+        result = await execute_with_fallback(None, None, "llm", call_fn=call_fn)
+        assert result == "ok-from-minimax"
+        assert calls == ["mimo", "minimax"]
+
+    @pytest.mark.asyncio
+    async def test_no_fallback_on_retryable_error(self, monkeypatch):
+        """should_fallback=False (e.g. server_error) means the per-provider
+        retry layer owns the recovery; the dispatcher should not advance."""
+        from services.llm import execute_with_fallback
+        from services.llm import ProviderError
+
+        self._two_provider_llm_chain(monkeypatch)
+        calls: list[str] = []
+
+        async def call_fn(provider):
+            calls.append(provider.provider_name)
+            raise ProviderError("server error", status_code=500, body={}, provider="mimo", model="m")
+
+        with pytest.raises(Exception):
+            await execute_with_fallback(None, None, "llm", call_fn=call_fn)
+        assert calls == ["mimo"]  # second provider never tried
+
+    @pytest.mark.asyncio
+    async def test_stream_started_blocks_fallback(self, monkeypatch):
+        """Once `stream_started` flips to True, the dispatcher must surface
+        the error rather than restart on a fresh provider (the renderer has
+        already received partial output)."""
+        from services.llm import execute_with_fallback
+        from services.llm import ProviderError
+
+        self._two_provider_llm_chain(monkeypatch)
+        calls: list[str] = []
+
+        async def call_fn(provider):
+            calls.append(provider.provider_name)
+            raise ProviderError("auth", status_code=401, body={}, provider="mimo", model="m")
+
+        with pytest.raises(ProviderError):
+            await execute_with_fallback(
+                None,
+                None,
+                "llm",
+                call_fn=call_fn,
+                stream_started=lambda: True,  # simulate first chunk already emitted
+            )
+        assert calls == ["mimo"]  # stream_started=True blocks the fallback
+
+    @pytest.mark.asyncio
+    async def test_all_providers_fail_surfaces_last_error(self, monkeypatch):
+        from services.llm import execute_with_fallback
+        from services.llm import ProviderError
+
+        self._two_provider_llm_chain(monkeypatch)
+
+        async def call_fn(provider):
+            raise ProviderError("auth", status_code=401, body={}, provider=provider.provider_name, model="m")
+
+        with pytest.raises(Exception):
+            await execute_with_fallback(None, None, "llm", call_fn=call_fn)
+
+    @pytest.mark.asyncio
+    async def test_empty_chain_raises(self, monkeypatch):
+        from services.llm import execute_with_fallback
+
+        for field in (
+            "providers",
+            "llm_provider",
+            "mimo_api_key",
+            "minimax_api_key",
+            "llm_base_url",
+            "llm_api_key",
+        ):
+            monkeypatch.setattr(f"components.SETTINGS.{field}", "" if field != "providers" else [])
+        with pytest.raises(MissingLlmConfigError):
+            await execute_with_fallback(None, None, "llm", call_fn=lambda p: None)
 
 
 # ── MiniMax providers (commit 2) ────────────────────────────────────

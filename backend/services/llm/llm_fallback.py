@@ -1,0 +1,90 @@
+from collections.abc import Awaitable
+from collections.abc import Callable
+from typing import TypeVar
+
+from components import get_logger
+from sqlalchemy.orm import Session
+
+from .error_classifier import classify_api_error
+from .llm_client import MissingLlmConfigError
+from .llm_client import resolve_provider_chain
+from .providers import BaseProvider
+from .providers import ProviderConfig
+from .providers import resolve
+
+logger = get_logger(__name__)
+
+T = TypeVar("T")
+
+
+async def execute_with_fallback(
+    db: Session | None,
+    user_id: int | None,
+    service_type: str,
+    call_fn: Callable[[BaseProvider], Awaitable[T]],
+    *,
+    stream_started: Callable[[], bool] | None = None,
+    _chain: list[ProviderConfig] | None = None,
+) -> T:
+    """Run ``call_fn`` against the resolved provider chain; on
+    ``ClassifiedError.should_fallback`` try the next provider.
+
+    The chain is built by :func:`resolve_provider_chain` from the
+    provider-first env (``PROVIDERS`` list, with optional ``*_PROVIDER``
+    soft-reorder). Each iteration instantiates the provider class and
+    invokes ``call_fn(provider)``; the inner per-provider retry layer
+    (``call_with_retry`` for chat, none yet for image_gen / tts / video_gen)
+    handles transient errors before the fallback decision is made here.
+
+    Falls back only when ``should_fallback=True`` (auth, billing, model
+    not found, content policy). Transient errors (``retryable=True``,
+    ``should_fallback=False``) stay within the per-provider retry loop.
+
+    ``stream_started`` — for streaming calls, pass a callable returning
+    True once the first chunk has been emitted to the client. When the
+    current provider raises after that point, fallback is aborted (the
+    user has already received partial output).
+
+    ``_chain`` — pre-resolved chain (advanced). Lets callers resolve the
+    chain under their own DB session and close it before the (potentially
+    long) upstream await, so the pool connection isn't held for the entire
+    call. Internal — production callers should use ``db`` / ``user_id``.
+
+    Raises :class:`MissingLlmConfigError` when the chain is empty
+    (no provider configured at all for this service).
+    """
+    chain = _chain if _chain is not None else resolve_provider_chain(db, user_id, service_type)
+    if not chain:
+        raise MissingLlmConfigError(f"no provider configured for service {service_type!r}")
+
+    last_error: Exception | None = None
+    for idx, config in enumerate(chain):
+        provider_cls = resolve(config.service_type, config.provider_name)
+        provider = provider_cls(config)
+        try:
+            return await call_fn(provider)
+        except Exception as exc:
+            last_error = exc
+            classified = getattr(exc, "classified", None) or classify_api_error(exc, provider=config.provider_name, model=config.model)
+
+        if classified.should_fallback and (stream_started is None or not stream_started()):
+            next_provider = chain[idx + 1].provider_name if idx + 1 < len(chain) else None
+            logger.warning(
+                "provider failed; falling back",
+                extra={
+                    "service": service_type,
+                    "failed_provider": config.provider_name,
+                    "reason": classified.reason.value,
+                    "status_code": classified.status_code,
+                    "next_provider": next_provider,
+                },
+            )
+            continue
+
+        # Either not a fallback condition, stream already emitted, or this
+        # was the last slot. Surface the original exception unchanged —
+        # call sites classify it via ``classify_api_error`` if they need a
+        # ``ClassifiedError``.
+        raise last_error
+
+    raise last_error if last_error is not None else MissingLlmConfigError(f"provider chain empty for {service_type!r}")

@@ -11,7 +11,10 @@ from sqlalchemy.orm import Session
 
 from ..gateway import RuntimeSession
 from ..llm import compress_history_if_needed
+from ..llm import execute_with_fallback
 from ..llm import LLMRuntimeError
+from ..llm import MissingLlmConfigError
+from ..llm import resolve_provider_chain
 from ..tools import schema_name
 from ..tools import ToolCallGuardrailController
 from .chat_emitter import Emitter
@@ -21,6 +24,7 @@ from .message_sanitization import truncate_chat_history
 from .persistence import _persist_assistant_no_tool_turn
 from .persistence import _persist_assistant_with_tool_calls_and_results
 from .persistence import _persist_user_message
+from .streaming import _emit_llm_error
 from .streaming import _ensure_tool_call_ids
 from .streaming import _stream_llm_response
 from .tool_dispatch import _ToolDispatchContext
@@ -129,9 +133,52 @@ async def run_chat_turn(
                 break
 
             active_schemas = [schemas_by_name[n] for n in active_tool_names if n in schemas_by_name]
+            # Provider-chain wrapper: try the configured providers in order;
+            # fallback only fires when no chunk has been emitted yet. Use the
+            # per-slot provider's model on each attempt so a fallback provider
+            # doesn't receive the head provider's model name (which it may not
+            # accept → model_not_found → chain exhausts unnecessarily).
+            stream_emitted = False
+
+            async def _call(provider):
+                client = provider.raw_client()
+                if client is None:
+                    raise RuntimeError(f"provider {provider.provider_name} is not OpenAI-compatible")
+                model_for_slot = inputs.model_override or provider.config.model
+                return await _stream_llm_response(
+                    emitter,
+                    model_for_slot,
+                    current_messages,
+                    active_schemas,
+                    inputs.ctx_length,
+                    client,
+                    on_first_chunk=set_stream_emitted,
+                )
+
+            def set_stream_emitted() -> None:
+                nonlocal stream_emitted
+                stream_emitted = True
+
             try:
-                llm_result = await _stream_llm_response(emitter, inputs.model_name, current_messages, active_schemas, inputs.ctx_length, inputs.client)
-            except LLMRuntimeError:
+                llm_result = await execute_with_fallback(
+                    db,
+                    user_id,
+                    "llm",
+                    call_fn=_call,
+                    stream_started=lambda: stream_emitted,
+                )
+            except LLMRuntimeError as exc:
+                # Chain exhausted (or non-fallback error / mid-stream after
+                # chunks already shipped). Emit the closing error frame so
+                # the renderer's message state machine gets a clean end.
+                await _emit_llm_error(emitter, exc)
+                break
+            except (MissingLlmConfigError, RuntimeError) as exc:
+                # Empty chain or non-OpenAI-compatible provider slot. The
+                # dispatcher surfaces these only when no fallback is
+                # possible; emit a curated error and unwind the turn.
+                logger.warning("LLM chain failed to start: %s", exc)
+                await emitter.send_json({"type": "error", "message": f"LLM unavailable: {exc}"})
                 break
 
             if not llm_result.tool_calls_list:

@@ -3,6 +3,7 @@ import re
 import time
 from dataclasses import dataclass
 from typing import Any
+from typing import Callable
 
 from components import get_logger
 from components import new_request_id
@@ -102,6 +103,8 @@ async def _stream_llm_response(
     active_schemas: list[dict],
     ctx_length: int,
     client: Any,
+    *,
+    on_first_chunk: Callable[[], None] | None = None,
 ) -> _LLMTurnResult:
     """One LLM call: stream text + accumulate tool calls + capture usage.
 
@@ -109,6 +112,12 @@ async def _stream_llm_response(
     the inner ``try/finally`` guarantees the drain task is shut down
     (sentinel ``None``) and awaited before we return. Leaving the drain
     task alive across iterations would orphan it on ``LLMRuntimeError``.
+
+    ``on_first_chunk`` fires exactly once after the first yieldable chunk
+    has been sent to the emitter — the fallback dispatcher uses this to
+    decide whether provider failure can still trigger a fallback to the
+    next configured provider (no chunks emitted) or must surface to the
+    client (tokens already shipped).
     """
     kwargs: dict = {"model": model_name, "messages": current_messages, "stream": True, "stream_options": {"include_usage": True}}
     if active_schemas:
@@ -129,8 +138,11 @@ async def _stream_llm_response(
     turn_start_time = time.monotonic()
     try:
         stream = await call_with_retry(client, context_length=ctx_length, **kwargs)
-    except LLMRuntimeError as exc:
-        await _emit_llm_error(emitter, exc)
+    except LLMRuntimeError:
+        # Setup-time failure (call_with_retry exhausted before any chunk). The
+        # orchestrator's fallback wrapper may swap providers; it owns the
+        # error-event emission so the renderer doesn't see an error frame
+        # followed by content from the next provider in the chain.
         raise
 
     turn_content = ""
@@ -168,6 +180,13 @@ async def _stream_llm_response(
         _reasoning_task = asyncio.ensure_future(_reasoning_drain())
         try:
             async for chunk in stream:
+                # A usage-only chunk (no choices) still proves the stream is
+                # live and that swapping providers would orphan the renderer.
+                # Fire on_first_chunk BEFORE the skip so the fallback dispatcher
+                # sees the stream as "started".
+                if on_first_chunk is not None:
+                    on_first_chunk()
+                    on_first_chunk = None  # fire once
                 # Some providers emit a final chunk with choices == [] carrying
                 # only usage info — skip rather than crash on chunk.choices[0].
                 if not chunk.choices:
@@ -185,13 +204,12 @@ async def _stream_llm_response(
                     final_prompt_tokens = getattr(chunk.usage, "prompt_tokens", 0)
                     final_completion_tokens = getattr(chunk.usage, "completion_tokens", 0)
                     final_usage_payload = _usage_payload(chunk.usage)
-        except LLMRuntimeError as exc:
-            # Mid-stream classifier errors (provider 4xx after some chunks
-            # already shipped) otherwise bypass our error emitter and leave
-            # the renderer staring at a partial transcript with no closing
-            # event — emit the same curated message as setup-time, then
-            # re-raise so the chat turn unwinds normally.
-            await _emit_llm_error(emitter, exc)
+        except LLMRuntimeError:
+            # Mid-stream classifier error (provider 4xx after some chunks
+            # already shipped). The orchestrator's fallback wrapper sees
+            # stream_emitted=True (on_first_chunk already fired) and refuses
+            # to swap providers; it will surface this exception and emit the
+            # closing error event so the renderer gets a clean transcript.
             raise
 
         clean_tail = scrubber.flush() + affect.flush()

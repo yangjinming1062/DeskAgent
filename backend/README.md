@@ -102,21 +102,56 @@ backend/
 
 ## LLM Provider 抽象
 
-`services/llm/providers/` 在五类服务（`ChatProvider` / `ImageGenProvider` / `VideoGenProvider` / `TTSProvider` / `STTProvider`）各放一个 ABC，`BaseProvider` 公共根。Provider 名解析规则：显式 `SETTINGS.<svc>_provider` 优先，否则按 `base_url` host 推断（`api.minimaxi.com` / `api.minimax.io` → `minimax`，其余 → `mimo`）。注册表 `registry.register(service_type, provider_name, cls)` 由 provider 子包 `__init__.py` 自注册；`providers/__init__.py` 仅 `from . import mimo, minimax` 触发。
+`services/llm/providers/` 在五类服务（`ChatProvider` / `ImageGenProvider` / `VideoGenProvider` / `TTSProvider` / `STTProvider`）各放一个 ABC，`BaseProvider` 公共根。Provider 名解析规则：显式 `SETTINGS.<svc>_provider` 优先，否则按 `base_url` host 推断（`api.minimaxi.com` / `api.minimax.io` → `minimax`，其余 → `mimo`）。注册表 `registry.register(service_type, provider_name, cls)` 由 provider 子包 `__init__.py` 自注册；`providers/__init__.py` 仅 `from . import mimo, minimax` 触发。哪些 provider 支持哪些能力由 `(ServiceType, name)` 在 `_REGISTRY` 里的存在与否决定——`providers_supporting(service)` 返回所有注册过此服务的 provider 名列表。
 
-### 每能力独立配置（per-capability env）
+### PROVIDER-first 配置
 
-五种能力各自由 `PROVIDER` / `API_KEY` / `MODEL_NAME` 驱动，`BASE_URL` 可选（每个 provider 有默认 URL，仅在覆盖时才设）。`PROVIDER` 是主选择器（`mimo` 或 `minimax`），定义在 `providers/registry.py:SERVICE_DEFAULT_PROVIDER`（chat/stt/tts 默认 mimo，image/video 默认 minimax）。`backend/.env.example` 是完整模板——复制为 `.env` 填入 key 即可，`docker-compose.yml` 经 `env_file: .env` 加载全部配置，仅 `DATABASE_URL` 因容器网络差异需在 `environment` 中覆盖。
+`PROVIDERS` env（逗号分隔）声明可用 provider 的优先级顺序。每个 provider 有自己的 `{NAME}_API_KEY` 和可选 `{NAME}_BASE_URL`，覆盖在该 provider 涉及的每个能力上。**provider 自带的默认 MODEL_NAME** 通过每个 provider 类的 `DEFAULT_MODELS: ClassVar[dict[str, str]]` 声明，注册时 `registry.register()` 同步进 `_PROVIDER_DEFAULT_MODELS`——resolve 链不需 import 每个 provider 类就能拿到默认 model。
 
-**provider 默认 URL**（`PROVIDER_DEFAULT_URLS`）：MiMo 含 `/v1`（OpenAI SDK 需完整 base_url）；MiniMax 不含 `/v1`（httpx provider 自行拼接 `/v1/<endpoint>`）。**key 回落**：mimo provider 共享 `LLM_API_KEY`；minimax provider 共享 `MINIMAX_API_KEY`（**不可**继承 MiMo key——host 不同会 401）。`MIMO_KEY` / `MINIMAX_KEY` 是 `LLM_API_KEY` / `MINIMAX_API_KEY` 的兼容别名。**最小配置**：只设 `LLM_API_KEY` + `MINIMAX_API_KEY`，其余留空——每个能力用各自的默认 provider + URL。
+两套体系**共存**（用户明确要求）：
+- `PROVIDERS` + `{NAME}_API_KEY` 是面向"一个 provider 覆盖多种能力"的统一凭证
+- 老的 `<svc>_PROVIDER` / `<svc>_API_KEY` / `<svc>_BASE_URL` / `<svc>_MODEL_NAME` 仍是面向"某个具体能力直接配凭证"的定向凭证，**优先级更高**
 
-**两层入口**：`provider_for_service(db, user_id, service_type) -> BaseProvider` 是新统一入口；`client_for_service(...)` 保留为兼容 shim——OpenAI 协议 provider 返回其缓存的 `AsyncOpenAI`（供 chat/stt/tts/image_gen 老 call site 透明使用），非 OpenAI 协议（MiniMax video_gen）抛 `MissingLlmConfigError` 提示改用 `provider_for_service`。
+每个能力 slot 解析顺序（首个非空即用）：
+1. 用户表 `UserModelConfig` 该能力的 row（按 `user_id` 过滤）
+2. `SETTINGS.<svc>_base_url` / `<svc>_api_key` / `<svc>_model_name`
+3. `SETTINGS.<NAME>_API_KEY` / `<NAME>_BASE_URL`（provider-level）
+4. `PROVIDER_DEFAULT_URLS[provider][service]` / `default_model_for(provider, service)`（built-in 默认）
 
-**关键设计决策**：
+`<svc>_PROVIDER` 不参与单 slot 凭证解析；它**只软重排** chain——把命名的 provider 提到第一位，chain 仍保留其它 provider 作为 fallback（设计决策：用户希望链不塌缩）。空 `<svc>_provider` + `PROVIDERS` 未设 → `SERVICE_DEFAULT_PROVIDER[svc]` 兜底（chat/stt/tts→`mimo`、image/video→`minimax`），chain 退化为单元素。
+
+**provider 默认 URL**（`PROVIDER_DEFAULT_URLS`）：MiMo 含 `/v1`（OpenAI SDK 需完整 base_url）；MiniMax 含 `/v1`（providers 自拼接 `/v1/<endpoint>`）。**key 隔离**：minimax provider 始终用 `MINIMAX_API_KEY`，不继承 MiMo key（host 不同会 401）；其他 provider 链路最终回落 `LLM_API_KEY` 兼容老部署。`MIMO_KEY` / `MINIMAX_KEY` 是 legacy 别名。
+
+`backend/.env.example` 是完整模板。**最小配置**：`LLM_API_KEY` + `MINIMAX_API_KEY`——每 provider 用自己的默认 URL + model。
+
+### Fallback chain（`services/llm/llm_fallback.py`）
+
+`execute_with_fallback(db, user_id, service_type, call_fn, *, stream_started=None, on_fallback=None)` 在 `resolve_provider_chain()` 返回的有序 `ProviderConfig` 列表上迭代 `call_fn(provider)`。调用流程：
+
+1. `resolve_provider_chain` 按 `PROVIDERS` 顺序 + `<svc>_PROVIDER` 软重排构建 chain；未注册此能力的 provider 静默剔除；某 slot 缺 key/URL 时该 slot 整体跳过（chain 长度变小但仍可工作）
+2. 对 chain 中每个 slot 实例化 provider 类 → 调用 `call_fn(provider)`
+3. `call_fn` 抛出时分类错误（`LLMRuntimeError` / `ProviderError` / 普通异常 → `classify_api_error`）
+4. 若 `classified.should_fallback` 且 `stream_started` 未触发 → log WARNING + 调用 `on_fallback(next_name, classified)` + continue
+5. 否则（`should_fallback=False` 或 stream 已发出或 chain 末尾）→ raise，让 HTTP envelope（`api/v1/_http_errors.py`）走标准 `{error, reason, status}` 路径
+
+**触发 fallback 的分类原因**（`error_classifier.should_fallback` 已设 True）：`auth`、`billing`、`rate_limit`（持续性）、`model_not_found`、`format_error`、`content_policy_blocked`。**不触发**（留在 per-provider retry 层）：`overloaded`、`server_error`、`timeout`、`context_overflow`、`payload_too_large`——`call_with_retry` 的退避循环负责。
+
+**流式 chat 特殊处理**：`_stream_llm_response` 新增 `on_first_chunk: Callable[[], None]` 参数，第一块 chunk 处理后回调一次；调用方通过 `stream_started=lambda: <flag>` 传给 dispatcher。一旦首个 chunk 已发出到 renderer，任何 provider 失败**不再 fallback**——用户已经看到部分输出，切换 provider 只会造成 transcript 截断。
+
+**video_gen fallback 范围**：仅 `provider.submit()` 走 chain；poll/fetch 钉在持有 `task_id` 的 provider（task_id 跨 provider 不可迁移）。submit 成功后若 chain 跳到下一个 provider，`VideoGenJob.provider` 字段会同步更新。
+
+### 三层入口
+
+- `provider_for_service(db, user_id, service_type) -> BaseProvider`：单 provider 入口，返回 chain[0]；老 call site（直读 `provider.generate()` 等）继续工作
+- `client_for_service(...) -> (AsyncOpenAI, model)`：OpenAI 兼容 shim，对非 OpenAI provider（MiniMax video）抛 `MissingLlmConfigError`
+- `execute_with_fallback(...)`：新 chain-aware 入口，handler（REST / tool / video_jobs submit）用它做自动降级
+
+### 关键设计决策
+
 - chat 走 OpenAI 协议 → `OpenAICompatChatProvider` 共享基类；`MiMoChatProvider` 与 `MiniMaxChatProvider` 都继承它，差异只在 base_url 与 model
 - image_gen / video_gen / t2a_v2 与 OpenAI 协议**不兼容**，**一律走** `providers/http.py` 的 httpx 池（base_url + api_key 缓存，超时 `llm_request_timeout_seconds`），不做 `AsyncOpenAI.post` 兼容层 hack
 - `ProviderError(status_code, body, provider, model)` 字段名刻意对齐 `error_classifier._extract_status_code/_extract_error_body`，让 `classify_api_error` 复用既有 8 步流水线——MiniMax `base_resp.status_code` 在 `providers/minimax/_errors.py` 翻译（`1002/1039→429`、`1004→401`、`1008→402`、`1027→400 content_filter`，其余→原 HTTP）
-- MiniMax key 不能继承 MiMo key（host 不同 401）；`resolve_provider_config` 在检测到 provider=minimax 且 api_key 是从 `llm_api_key` 回落而来时，强制改用 `MINIMAX_API_KEY` env，缺则 fail-fast 报 `MissingLlmConfigError`
+- MiniMax key 不能继承 MiMo key（host 不同 401）；resolver 在 provider=minimax 时强制把回落链截断在 `minimax_api_key`
 
 **为什么 MiMo 没有 `_errors.py`**：MiMo chat.completions 协议就是 OpenAI 标准格式，错误返回 OpenAI 标准的 `{"error":{"message":"..."}}` HTTP 状态码，`AsyncOpenAI` 自动解析成 `APIStatusError`（带 `.status_code` 与 `.body`），`error_classifier` 直接读这俩字段。MiniMax 不一样——错误是 HTTP 200 外层 + `base_resp.status_code` 内层，SDK 看不到，所以需要单独翻译。
 

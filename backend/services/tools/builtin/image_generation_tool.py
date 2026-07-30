@@ -8,9 +8,9 @@ from components import tool_error
 
 from .. import ALWAYS_AVAILABLE
 from .. import REGISTRY
+from ...llm import execute_with_fallback
 from ...llm import ImageGenRequest
 from ...llm import MissingLlmConfigError
-from ...llm import provider_for_service
 
 logger = get_logger(__name__)
 
@@ -23,21 +23,19 @@ async def image_generation_tool(
     user_id: int | None = None,
     **kwargs,
 ) -> str:
-    """Image generation via the per-service provider (MiniMax image-01 or
-    OpenAI DALL·E 3). base64 payloads are saved locally and returned as
+    """Image generation via the per-service provider chain (MiniMax image-01
+    or OpenAI DALL·E 3). base64 payloads are saved locally and returned as
     our own /api/media/files/<id> URLs so the LLM can safely reference them
     in image_url parts even after the upstream CDN evicts."""
+    req = ImageGenRequest(prompt=prompt, size=size, n=n)
     try:
         if user_id is not None:
             with SESSION_LOCAL() as db:
-                provider = provider_for_service(db, user_id, "image_gen")
+                result = await execute_with_fallback(db, user_id, "image_gen", call_fn=lambda p: p.generate(req))
         else:
-            provider = provider_for_service(None, None, "image_gen")
+            result = await execute_with_fallback(None, None, "image_gen", call_fn=lambda p: p.generate(req))
     except MissingLlmConfigError:
         return tool_error("图片生成服务未配置")
-
-    try:
-        result = await provider.generate(ImageGenRequest(prompt=prompt, size=size, n=n))
     except Exception as e:
         logger.exception("image_generation_tool failed")
         return tool_error(str(e))

@@ -17,6 +17,7 @@ class MiMoTTSProvider(TTSProvider):
     """
 
     provider_name = "mimo"
+    DEFAULT_MODELS = {"tts": "mimo-v2.5-tts"}
 
     def __init__(self, config: ProviderConfig):
         super().__init__(config)
