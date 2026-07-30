@@ -21,9 +21,12 @@ import { RunnerSettings } from './runner-settings'
 import { SkillsToolsTabs } from './skills-tools-tabs'
 import type { SettingsPageProps } from './types'
 
-type SettingsViewId = 'about' | 'account' | 'appearance' | 'mcp' | 'runner' | 'skills'
+import { IconVolume } from '@tabler/icons-react'
+import { WakeWordSettings } from './wake-word-settings'
 
-const SETTINGS_VIEWS: readonly SettingsViewId[] = ['appearance', 'account', 'runner', 'skills', 'mcp', 'about']
+type SettingsViewId = 'about' | 'account' | 'appearance' | 'mcp' | 'runner' | 'skills' | 'speech'
+
+const SETTINGS_VIEWS: readonly SettingsViewId[] = ['appearance', 'account', 'speech', 'runner', 'skills', 'mcp', 'about']
 
 export function SettingsView({ gateway, onClose, onConfigSaved }: SettingsPageProps) {
   const { t } = useI18n()
@@ -76,6 +79,12 @@ export function SettingsView({ gateway, onClose, onConfigSaved }: SettingsPagePr
             icon={KeyRound}
             label={t.settings.nav.account}
             onClick={() => setActiveView('account')}
+          />
+          <OverlayNavItem
+            active={activeView === 'speech'}
+            icon={IconVolume}
+            label="Speech & Wake"
+            onClick={() => setActiveView('speech')}
           />
           <OverlayNavItem
             active={activeView === 'runner'}
@@ -138,6 +147,8 @@ export function SettingsView({ gateway, onClose, onConfigSaved }: SettingsPagePr
             <AppearanceSettings />
           ) : activeView === 'account' ? (
             <AccountSettings onConfigSaved={onConfigSaved} />
+          ) : activeView === 'speech' ? (
+            <WakeWordSettings />
           ) : activeView === 'runner' ? (
             <RunnerSettings />
           ) : activeView === 'skills' ? (

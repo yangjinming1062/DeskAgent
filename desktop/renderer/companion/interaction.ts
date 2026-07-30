@@ -1,4 +1,5 @@
 import { setSpriteState } from './companion-store'
+import { recordInteraction } from './evolution-store'
 import { speakProactive } from './proactive/proactive'
 
 let lastPokeTime = 0
