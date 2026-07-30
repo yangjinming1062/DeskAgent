@@ -42,6 +42,10 @@ function getStateBadge(state: SpriteStateName, emotion: SpriteEmotion | null): s
 export function CompanionReady() {
   const [portraitUrl, setPortraitUrl] = useState<string | null>(null)
   const [videoFailed, setVideoFailed] = useState<boolean>(false)
+  const [activeUrl, setActiveUrl] = useState<string | null>(null)
+  const [prevUrl, setPrevUrl] = useState<string | null>(null)
+  const [fading, setFading] = useState<boolean>(false)
+
   const gatewayState = useStore($gatewayState)
   const spriteState = useStore($spriteState)
   const emotion = useStore($spriteEmotion)
@@ -51,6 +55,16 @@ export function CompanionReady() {
   // Determine active scene
   const activeScene = spriteState === 'emotional' && emotion ? emotion : spriteState
   const clipUrl = getClipUrlForScene(activeScene) ?? getClipUrlForScene('idle')
+
+  useEffect(() => {
+    if (clipUrl !== activeUrl) {
+      setPrevUrl(activeUrl)
+      setActiveUrl(clipUrl)
+      setFading(true)
+      const timer = setTimeout(() => setFading(false), 250)
+      return () => clearTimeout(timer)
+    }
+  }, [clipUrl, activeUrl])
 
   useEffect(() => {
     setVideoFailed(false)
@@ -75,23 +89,38 @@ export function CompanionReady() {
   }, [])
 
   const badge = drowsy && spriteState !== 'disconnected' ? '💤' : getStateBadge(spriteState, emotion)
-  const showVideo = Boolean(clipUrl) && !videoFailed
+  const showVideo = Boolean(activeUrl) && !videoFailed
 
   return (
     <div className="companion-ready select-none" style={{ width: 160, height: 160 }}>
       <style>{READY_CSS}</style>
       <span className="companion-glow" style={{ opacity: drowsy ? 0.2 : undefined }} />
-      {showVideo && clipUrl ? (
-        <video
-          autoPlay
-          className="companion-img object-cover"
-          loop
-          muted
-          onError={() => setVideoFailed(true)}
-          playsInline
-          src={clipUrl}
-          style={{ filter: drowsy ? 'grayscale(0.6) brightness(0.85)' : undefined }}
-        />
+      {showVideo && activeUrl ? (
+        <div className="relative h-40 w-40 overflow-hidden rounded-full">
+          {prevUrl && fading && (
+            <video
+              autoPlay
+              className="companion-video absolute inset-0 h-full w-full object-cover transition-opacity duration-250 opacity-0"
+              loop
+              muted
+              playsInline
+              src={prevUrl}
+              style={{ filter: drowsy ? 'grayscale(0.6) brightness(0.85)' : undefined }}
+            />
+          )}
+          <video
+            autoPlay
+            className={`companion-video absolute inset-0 h-full w-full object-cover transition-opacity duration-250 ${
+              fading ? 'opacity-100' : 'opacity-100'
+            }`}
+            loop
+            muted
+            onError={() => setVideoFailed(true)}
+            playsInline
+            src={activeUrl}
+            style={{ filter: drowsy ? 'grayscale(0.6) brightness(0.85)' : undefined }}
+          />
+        </div>
       ) : portraitUrl ? (
         <img
           alt="companion"
@@ -114,6 +143,7 @@ const READY_CSS = `
 @keyframes companionBadge { 0%,100%{opacity:.8;transform:translateY(0)} 50%{opacity:1;transform:translateY(-3px)} }
 .companion-ready { position: relative; display: grid; place-items: center; }
 .companion-img, .companion-ph { width: 160px; height: 160px; border-radius: 9999px; object-fit: cover; animation: companionBreathe 3.6s ease-in-out infinite; }
+.companion-video { animation: companionBreathe 3.6s ease-in-out infinite; }
 .companion-glow { position: absolute; width: 170%; height: 170%; border-radius: 9999px; background: radial-gradient(closest-side, rgba(255,209,102,0.35), transparent 70%); filter: blur(8px); animation: companionGlow 3.4s ease-in-out infinite; }
 .companion-badge { position: absolute; top: 4%; right: 18%; font-size: 16px; animation: companionBadge 2.6s ease-in-out infinite; text-shadow: 0 0 6px rgba(0,0,0,0.5); }
 `
