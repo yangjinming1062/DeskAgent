@@ -1,7 +1,7 @@
 /**
- * Tests for electron/gateway-ws-probe.cjs.
+ * Tests for main/gateway-ws-probe.cjs.
  *
- * Run with: node --test electron/gateway-ws-probe.test.cjs
+ * Run with: node --test main/gateway-ws-probe.test.cjs
  * (Wired into npm test:desktop:platforms in package.json.)
  *
  * The probe drives a real WebSocket handshake for the "Test remote" button.

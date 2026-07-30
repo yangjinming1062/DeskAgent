@@ -213,7 +213,7 @@ export type DeskAgentConfigRecord = Record<string, unknown>
  *
  * GCS secrets (`gcs_access_key` / `gcs_secret_key` / `gcs_bucket_name`) are
  * intentionally NOT included — they are stripped at the IPC boundary in
- * `electron/ipc/auth.cjs::deskagent:model-config:get`. The full object (with GCS
+ * `main/ipc/auth.cjs::deskagent:model-config:get`. The full object (with GCS
  * fields) lives only in main-process code paths that need it for uploads.
  */
 export interface ModelConfigResponse {

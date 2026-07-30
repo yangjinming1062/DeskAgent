@@ -6,7 +6,7 @@
   "description": "Native desktop shell for DeskAgent Agent.",
   "author": "DeskAgent",
   "type": "module",
-  "main": "electron/main.cjs",
+  "main": "main/main.cjs",
   "packageManager": "pnpm@11.5.2",
   "engines": {
     "node": ">=24 <25",
@@ -24,11 +24,11 @@
     "dist:win:nsis": "pnpm run build && pnpm run builder -- --win nsis",
     "dist:linux": "pnpm run build && pnpm run builder -- --linux AppImage deb rpm",
     "test:desktop:all": "node scripts/test-desktop.mjs all",
-    "test:desktop:platforms": "node --test electron/bootstrap-platform.test.cjs electron/hardening.test.cjs electron/gateway-ws-probe.test.cjs electron/runner-rpc-ws.test.cjs electron/runner-reverse-rpc.test.cjs electron/runner-bridge.test.cjs",
+    "test:desktop:platforms": "node --test main/bootstrap-platform.test.cjs main/hardening.test.cjs main/gateway-ws-probe.test.cjs main/runner-rpc-ws.test.cjs main/runner-reverse-rpc.test.cjs main/runner-bridge.test.cjs",
     "type-check": "tsc -b",
-    "lint": "eslint src/ electron/",
-    "lint:fix": "eslint src/ electron/ --fix",
-    "fmt": "prettier --write \"src/**/*.{ts,tsx}\" \"electron/**/*.{js,cjs,mjs}\" \"scripts/**/*.{cjs,mjs}\" \"vite.config.ts\"",
+    "lint": "eslint src/ main/",
+    "lint:fix": "eslint src/ main/ --fix",
+    "fmt": "prettier --write \"src/**/*.{ts,tsx}\" \"main/**/*.{js,cjs,mjs}\" \"scripts/**/*.{cjs,mjs}\" \"vite.config.ts\"",
     "fix": "pnpm run lint:fix && pnpm run fmt && pnpm run type-check",
     "test:ui": "vitest run"
   },
@@ -99,7 +99,7 @@
     "files": [
       "dist/**",
       "assets/**",
-      "electron/**",
+      "main/**",
       "package.json"
     ],
     "npmRebuild": false,
@@ -135,8 +135,8 @@
     ],
     "mac": {
       "category": "public.app-category.developer-tools",
-      "entitlements": "electron/entitlements.mac.plist",
-      "entitlementsInherit": "electron/entitlements.mac.inherit.plist",
+      "entitlements": "main/entitlements.mac.plist",
+      "entitlementsInherit": "main/entitlements.mac.inherit.plist",
       "extendInfo": {
         "CFBundleDisplayName": "DeskAgent",
         "CFBundleExecutable": "DeskAgent",
