@@ -1,18 +1,16 @@
-import functools
-
 from components import SETTINGS
 from modules.auth import UserModelConfig
 from openai import AsyncOpenAI
 from sqlalchemy.orm import Session
 
 from .providers import BaseProvider
-from .providers import ProviderConfig
-from .providers import ServiceType
 from .providers import default_base_url
 from .providers import infer_provider_name
 from .providers import KNOWN_PROVIDERS
+from .providers import ProviderConfig
 from .providers import resolve
 from .providers import SERVICE_DEFAULT_PROVIDER
+from .providers import ServiceType
 from .providers.http import get_async_client
 from .user_config import resolve_user_llm_config
 
@@ -155,7 +153,5 @@ def client_for_service(db: Session | None, user_id: int | None, service_type: st
     provider = provider_for_service(db, user_id, service_type)
     raw = provider.raw_client()
     if raw is None:
-        raise MissingLlmConfigError(
-            f"{service_type} provider '{provider.provider_name}' is not OpenAI-compatible; use provider_for_service() instead"
-        )
+        raise MissingLlmConfigError(f"{service_type} provider '{provider.provider_name}' is not OpenAI-compatible; use provider_for_service() instead")
     return raw, provider.config.model

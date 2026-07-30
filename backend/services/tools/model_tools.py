@@ -1,7 +1,7 @@
+import math
 from typing import Any
 
 from components import get_logger
-from components import is_finite_number
 from components import safe_json_loads
 
 logger = get_logger(__name__)
@@ -98,7 +98,7 @@ def _coerce_number(value: str, integer_only: bool = False):
         f = float(value)
     except (ValueError, OverflowError):
         return value
-    if not is_finite_number(f):
+    if not math.isfinite(f):
         return value
     if f == int(f):
         return int(f)

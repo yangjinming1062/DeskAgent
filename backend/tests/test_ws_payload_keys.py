@@ -1,8 +1,3 @@
-"""Verify the WS push payload uses ``task_id`` (matching the REST endpoint
-and the video_generate tool return) so the desktop can correlate pushes
-with the rows it already knows about.
-"""
-
 import json
 
 

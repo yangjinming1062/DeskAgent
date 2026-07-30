@@ -2,8 +2,8 @@ import base64
 import json
 
 from components import get_logger
-from components import SESSION_LOCAL
 from components import save_file
+from components import SESSION_LOCAL
 from components import tool_error
 
 from .. import ALWAYS_AVAILABLE
@@ -60,8 +60,17 @@ async def image_generation_tool(
 # MiniMax aspect ratios + the legacy DALL·E pixel sizes that map to them via
 # the provider's size→aspect_ratio table.
 IMAGE_GENERATION_SIZES = [
-    "1024x1024", "1024x1792", "1792x1024",
-    "1:1", "16:9", "4:3", "3:2", "2:3", "3:4", "9:16", "21:9",
+    "1024x1024",
+    "1024x1792",
+    "1792x1024",
+    "1:1",
+    "16:9",
+    "4:3",
+    "3:2",
+    "2:3",
+    "3:4",
+    "9:16",
+    "21:9",
 ]
 
 IMAGE_GENERATION_SCHEMA = {
@@ -71,7 +80,11 @@ IMAGE_GENERATION_SCHEMA = {
         "type": "object",
         "properties": {
             "prompt": {"type": "string", "description": "A detailed, descriptive prompt for the image to generate."},
-            "size": {"type": "string", "enum": IMAGE_GENERATION_SIZES, "description": "Output size. Pixel sizes (1024x1024, 1024x1792, 1792x1024) map to aspect ratios when the provider is MiniMax."},
+            "size": {
+                "type": "string",
+                "enum": IMAGE_GENERATION_SIZES,
+                "description": "Output size. Pixel sizes (1024x1024, 1024x1792, 1792x1024) map to aspect ratios when the provider is MiniMax.",
+            },
             "n": {"type": "integer", "description": "Number of images to generate."},
         },
         "required": ["prompt"],

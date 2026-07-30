@@ -2,29 +2,25 @@ from unittest.mock import MagicMock
 from unittest.mock import patch
 
 import pytest
-
-from services.llm import (
-    BaseProvider,
-    ImageGenProvider,
-    ImageGenRequest,
-    MissingLlmConfigError,
-    ProviderConfig,
-    ServiceType,
-    TTSProvider,
-    VideoGenProvider,
-    VideoGenRequest,
-    client_for_service,
-    infer_provider_name,
-    provider_for_service,
-    resolve_provider_config,
-)
-from services.llm.providers.base import ChatProvider, STTProvider
-from services.llm.providers.mimo import (
-    MiMoChatProvider,
-    MiMoImageGenProvider,
-    MiMoSTTProvider,
-    MiMoTTSProvider,
-)
+from services.llm import BaseProvider
+from services.llm import client_for_service
+from services.llm import ImageGenProvider
+from services.llm import ImageGenRequest
+from services.llm import infer_provider_name
+from services.llm import MissingLlmConfigError
+from services.llm import provider_for_service
+from services.llm import ProviderConfig
+from services.llm import resolve_provider_config
+from services.llm import ServiceType
+from services.llm import TTSProvider
+from services.llm import VideoGenProvider
+from services.llm import VideoGenRequest
+from services.llm.providers.base import ChatProvider
+from services.llm.providers.base import STTProvider
+from services.llm.providers.mimo import MiMoChatProvider
+from services.llm.providers.mimo import MiMoImageGenProvider
+from services.llm.providers.mimo import MiMoSTTProvider
+from services.llm.providers.mimo import MiMoTTSProvider
 from services.llm.providers.registry import register
 
 
@@ -51,20 +47,26 @@ class TestProviderConfig:
 
 
 class TestInferProviderName:
-    @pytest.mark.parametrize("base_url", [
-        "https://api.minimaxi.com/v1",
-        "https://api.minimax.io/v1",
-        "https://API.MINIMAXI.COM/v1",
-    ])
+    @pytest.mark.parametrize(
+        "base_url",
+        [
+            "https://api.minimaxi.com/v1",
+            "https://api.minimax.io/v1",
+            "https://API.MINIMAXI.COM/v1",
+        ],
+    )
     def test_minimax_hosts(self, base_url):
         assert infer_provider_name(base_url) == "minimax"
 
-    @pytest.mark.parametrize("base_url", [
-        "https://api.xiaomimimo.com/v1",
-        "https://api.openai.com/v1",
-        "https://my-custom.example.com/v1",
-        "",
-    ])
+    @pytest.mark.parametrize(
+        "base_url",
+        [
+            "https://api.xiaomimimo.com/v1",
+            "https://api.openai.com/v1",
+            "https://my-custom.example.com/v1",
+            "",
+        ],
+    )
     def test_falls_back_to_mimo(self, base_url):
         assert infer_provider_name(base_url) == "mimo"
 
@@ -196,12 +198,15 @@ class TestClientForServiceCompat:
     """Verify the legacy AsyncOpenAI-returning entry point still works for
     every OpenAI-compatible service (chat, stt, tts, image_gen)."""
 
-    @pytest.mark.parametrize("svc,model", [
-        ("llm", "mimo-v2.5"),
-        ("stt", "mimo-v2.5-asr"),
-        ("tts", "mimo-v2.5-tts"),
-        ("image_gen", "dall-e-3"),
-    ])
+    @pytest.mark.parametrize(
+        "svc,model",
+        [
+            ("llm", "mimo-v2.5"),
+            ("stt", "mimo-v2.5-asr"),
+            ("tts", "mimo-v2.5-tts"),
+            ("image_gen", "dall-e-3"),
+        ],
+    )
     def test_returns_async_openai_for_mimo(self, monkeypatch, svc, model):
         monkeypatch.setattr("components.SETTINGS.llm_base_url", "https://api.xiaomimimo.com/v1")
         monkeypatch.setattr("components.SETTINGS.llm_api_key", "sk")
@@ -346,12 +351,14 @@ class TestMiniMaxImageGen:
 
     @pytest.mark.asyncio
     async def test_generate_b64_success(self):
-        handler = _async_handler([
-            {
-                "base_resp": {"status_code": 0, "status_msg": "success"},
-                "data": {"image_base64": ["aGVsbG8=", "d29ybGQ="]},
-            }
-        ])
+        handler = _async_handler(
+            [
+                {
+                    "base_resp": {"status_code": 0, "status_msg": "success"},
+                    "data": {"image_base64": ["aGVsbG8=", "d29ybGQ="]},
+                }
+            ]
+        )
         provider = self._make_provider(handler)
         result = await provider.generate(ImageGenRequest(prompt="a cat"))
         assert len(result.images) == 2
@@ -380,14 +387,16 @@ class TestMiniMaxImageGen:
     async def test_base_resp_auth_error(self):
         from services.llm import ProviderError, classify_api_error, FailoverReason
 
-        handler = _async_handler([
-            {
-                "base_resp": {
-                    "status_code": 1004,
-                    "status_msg": "login fail: invalid api key",
+        handler = _async_handler(
+            [
+                {
+                    "base_resp": {
+                        "status_code": 1004,
+                        "status_msg": "login fail: invalid api key",
+                    }
                 }
-            }
-        ])
+            ]
+        )
         provider = self._make_provider(handler)
         with pytest.raises(ProviderError) as exc_info:
             await provider.generate(ImageGenRequest(prompt="x"))
@@ -400,9 +409,7 @@ class TestMiniMaxImageGen:
     async def test_base_resp_rate_limit(self):
         from services.llm import ProviderError, classify_api_error, FailoverReason
 
-        handler = _async_handler([
-            {"base_resp": {"status_code": 1002, "status_msg": "rate limit"}}
-        ])
+        handler = _async_handler([{"base_resp": {"status_code": 1002, "status_msg": "rate limit"}}])
         provider = self._make_provider(handler)
         with pytest.raises(ProviderError) as exc_info:
             await provider.generate(ImageGenRequest(prompt="x"))
@@ -414,9 +421,7 @@ class TestMiniMaxImageGen:
     async def test_base_resp_content_filter(self):
         from services.llm import classify_api_error, FailoverReason
 
-        handler = _async_handler([
-            {"base_resp": {"status_code": 1027, "status_msg": "violated safety policy"}}
-        ])
+        handler = _async_handler([{"base_resp": {"status_code": 1027, "status_msg": "violated safety policy"}}])
         provider = self._make_provider(handler)
         with pytest.raises(Exception) as exc_info:
             await provider.generate(ImageGenRequest(prompt="x"))
@@ -429,8 +434,11 @@ class TestMiniMaxImageGen:
 
         provider = MiniMaxImageGenProvider(
             ProviderConfig(
-                base_url="x", api_key="k", model="m",
-                service_type=ServiceType.image_gen, provider_name="minimax",
+                base_url="x",
+                api_key="k",
+                model="m",
+                service_type=ServiceType.image_gen,
+                provider_name="minimax",
             )
         )
         assert provider.raw_client() is None
@@ -456,12 +464,14 @@ class TestMiniMaxTTS:
     @pytest.mark.asyncio
     async def test_synthesize_decodes_hex_audio(self):
         # "hello" -> 0x68 65 6c 6c 6f
-        handler = _async_handler([
-            {
-                "base_resp": {"status_code": 0},
-                "data": {"audio": "68656c6c6f"},
-            }
-        ])
+        handler = _async_handler(
+            [
+                {
+                    "base_resp": {"status_code": 0},
+                    "data": {"audio": "68656c6c6f"},
+                }
+            ]
+        )
         provider = self._make_provider(handler)
         result = await provider.synthesize("hello", voice="male-qn-qingse")
         assert result.audio == b"hello"
@@ -487,9 +497,7 @@ class TestMiniMaxVideoGen:
 
     @pytest.mark.asyncio
     async def test_submit_returns_task_id(self):
-        handler = _async_handler([
-            {"base_resp": {"status_code": 0}, "task_id": "task-abc-123"}
-        ])
+        handler = _async_handler([{"base_resp": {"status_code": 0}, "task_id": "task-abc-123"}])
         provider = self._make_provider(handler)
         job = await provider.submit(VideoGenRequest(prompt="a cat"))
         assert job.task_id == "task-abc-123"
@@ -521,9 +529,7 @@ class TestMiniMaxVideoGen:
 
     @pytest.mark.asyncio
     async def test_poll_success(self):
-        handler = _async_handler([
-            {"base_resp": {"status_code": 0}, "status": "Success", "file_id": "file-xyz"}
-        ])
+        handler = _async_handler([{"base_resp": {"status_code": 0}, "status": "Success", "file_id": "file-xyz"}])
         provider = self._make_provider(handler)
         job = await provider.poll("task-abc")
         assert job.status == "succeeded"
@@ -531,9 +537,7 @@ class TestMiniMaxVideoGen:
 
     @pytest.mark.asyncio
     async def test_poll_processing(self):
-        handler = _async_handler([
-            {"base_resp": {"status_code": 0}, "status": "Processing"}
-        ])
+        handler = _async_handler([{"base_resp": {"status_code": 0}, "status": "Processing"}])
         provider = self._make_provider(handler)
         job = await provider.poll("task-abc")
         assert job.status == "processing"
@@ -541,9 +545,7 @@ class TestMiniMaxVideoGen:
 
     @pytest.mark.asyncio
     async def test_poll_fail(self):
-        handler = _async_handler([
-            {"base_resp": {"status_code": 0}, "status": "Fail", "error_message": "bad prompt"}
-        ])
+        handler = _async_handler([{"base_resp": {"status_code": 0}, "status": "Fail", "error_message": "bad prompt"}])
         provider = self._make_provider(handler)
         job = await provider.poll("task-abc")
         assert job.status == "failed"
@@ -551,16 +553,18 @@ class TestMiniMaxVideoGen:
 
     @pytest.mark.asyncio
     async def test_fetch_returns_download_url(self):
-        handler = _async_handler([
-            {
-                "base_resp": {"status_code": 0},
-                "file": {
-                    "download_url": "https://filecdn.minimax.chat/abc.mp4",
-                    "content_type": "video/mp4",
-                    "bytes": 12345,
-                },
-            }
-        ])
+        handler = _async_handler(
+            [
+                {
+                    "base_resp": {"status_code": 0},
+                    "file": {
+                        "download_url": "https://filecdn.minimax.chat/abc.mp4",
+                        "content_type": "video/mp4",
+                        "bytes": 12345,
+                    },
+                }
+            ]
+        )
         provider = self._make_provider(handler)
         asset = await provider.fetch("file-xyz")
         assert asset.download_url == "https://filecdn.minimax.chat/abc.mp4"

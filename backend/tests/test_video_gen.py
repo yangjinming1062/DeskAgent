@@ -1,10 +1,3 @@
-"""Smoke tests for the video generation pipeline.
-
-We don't call MiniMax — the provider is mocked via httpx.MockTransport. The
-focus is: DB schema, REST endpoints, polling lifecycle, WS push events,
-lifespan recovery.
-"""
-
 import json
 from types import SimpleNamespace
 
@@ -123,7 +116,9 @@ class TestVideoGenJobRoundtrip:
                 return httpx.Response(200, json={"base_resp": {"status_code": 0}, "status": "Success", "file_id": "file-test-1"})
             if path == "/v1/files/retrieve":
                 fetch_calls.append(dict(request.url.params))
-                return httpx.Response(200, json={"base_resp": {"status_code": 0}, "file": {"download_url": "https://example.com/video.mp4", "content_type": "video/mp4", "bytes": 100}})
+                return httpx.Response(
+                    200, json={"base_resp": {"status_code": 0}, "file": {"download_url": "https://example.com/video.mp4", "content_type": "video/mp4", "bytes": 100}}
+                )
             return httpx.Response(404, json={"error": "not found", "path": path})
 
         # Eagerly register a mock-transport-backed client so the cached
@@ -238,9 +233,7 @@ class TestVideoGenJobRoundtrip:
             from sqlalchemy import select
 
             db.expire_all()
-            rows = db.execute(
-                select(VideoGenJob).where(VideoGenJob.user_id == user_id)
-            ).scalars().all()
+            rows = db.execute(select(VideoGenJob).where(VideoGenJob.user_id == user_id)).scalars().all()
             assert rows, "expected a failed job row"
             assert rows[0].status == "failed", f"row status: {rows[0].status}"
             assert rows[0].error_reason == "submit_failed"

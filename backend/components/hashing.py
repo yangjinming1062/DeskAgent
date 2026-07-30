@@ -1,24 +1,16 @@
 import base64
 import hashlib
-
-
-def _b64encode(data: bytes) -> str:
-    return base64.urlsafe_b64encode(data).decode("ascii").rstrip("=")
-
-
-def _b64decode(value: str) -> bytes:
-    padding = "=" * (-len(value) % 4)
-    return base64.urlsafe_b64decode(value + padding)
+from pathlib import Path
 
 
 def sha256_hex(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
-def sha512_b64(path) -> str:
+def sha512_b64(path: Path) -> str:
     """SHA-512 of a file as base64 (electron-updater format)."""
     h = hashlib.sha512()
-    with open(path, "rb") as f:
+    with path.open("rb") as f:
         while chunk := f.read(65536):
             h.update(chunk)
     return base64.b64encode(h.digest()).decode()

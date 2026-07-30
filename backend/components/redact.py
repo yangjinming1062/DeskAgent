@@ -1,4 +1,3 @@
-import logging
 import os
 import re
 from collections.abc import Callable
@@ -258,10 +257,3 @@ def redact_sensitive_text(text: str | None, *, force: bool = False, code_file: b
         text = _redact_form_body(text)
 
     return text
-
-
-class RedactingFormatter(logging.Formatter):
-    """Log formatter that redacts secrets from every log message."""
-
-    def format(self, record: logging.LogRecord) -> str:
-        return redact_sensitive_text(super().format(record))

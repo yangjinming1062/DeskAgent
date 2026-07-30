@@ -1,19 +1,18 @@
 import asyncio
 import json
+from datetime import timedelta
 
 from components import get_logger
-from components import SETTINGS
+from components import naive_utc_now
 from components import SESSION_LOCAL
+from components import SETTINGS
 from components import tool_error
-from datetime import timedelta
+from services.media import enqueue_video_job
+from services.media import get_job
 
 from .. import ALWAYS_AVAILABLE
 from .. import REGISTRY
 from ...llm import MissingLlmConfigError
-from ...llm import VideoGenRequest
-from ...llm import provider_for_service
-from services.media import enqueue_video_job
-from services.media import get_job
 
 logger = get_logger(__name__)
 
@@ -62,8 +61,6 @@ async def video_generation_tool(
         return tool_error(str(e))
 
     # Bounded wait: poll the DB row until terminal status or deadline.
-    from components import naive_utc_now
-
     deadline = naive_utc_now() + timedelta(seconds=SETTINGS.video_gen_tool_wait_seconds)
     interval = min(SETTINGS.video_gen_poll_interval_seconds, 5.0)
     while naive_utc_now() < deadline:

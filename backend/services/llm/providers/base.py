@@ -1,4 +1,6 @@
+import asyncio
 import enum
+import time
 from abc import ABC
 from abc import abstractmethod
 from collections.abc import AsyncIterator
@@ -7,6 +9,7 @@ from dataclasses import field
 from typing import Any
 from typing import Literal
 
+import httpx
 from openai import AsyncOpenAI
 
 
@@ -202,8 +205,6 @@ class VideoGenProvider(BaseProvider):
         third-party CDN (MiniMax files are hosted off ``api.minimaxi.com``).
         Sending the API key to a CDN host leaks it; download anonymously.
         """
-        import httpx
-
         async with httpx.AsyncClient(timeout=httpx.Timeout(600.0, connect=10.0)) as client:
             resp = await client.get(asset.download_url)
             resp.raise_for_status()
@@ -218,9 +219,6 @@ class VideoGenProvider(BaseProvider):
     ) -> VideoJobStatus:
         """Submit + poll until terminal status. Tool uses this with a finite
         timeout; long-running jobs continue in the background after timeout."""
-        import asyncio
-        import time
-
         job = await self.submit(req)
         deadline = time.monotonic() + timeout
         while True:

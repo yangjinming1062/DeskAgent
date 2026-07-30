@@ -160,8 +160,6 @@ async def speech_to_text(
 
 # ── TTS (语音合成) ─────────────────────────────────────────────────────
 
-from components import TTS_VOICES
-
 
 @router.post("/tts")
 @limiter.limit(f"{SETTINGS.media_tts_rate_limit_per_minute}/minute")

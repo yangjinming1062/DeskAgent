@@ -1,5 +1,3 @@
-import base64 as _base64
-
 from ..base import ImageAsset
 from ..base import ImageGenProvider
 from ..base import ImageGenRequest

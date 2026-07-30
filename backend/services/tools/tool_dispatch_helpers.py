@@ -59,7 +59,7 @@ def _is_mcp_tool_parallel_safe(tool_name: str) -> bool:
     return False
 
 
-def _should_parallelize_tool_batch(tool_calls: Iterable[tuple[str, str]]) -> bool:
+def should_parallelize_tool_batch(tool_calls: Iterable[tuple[str, str]]) -> bool:
     """True when a tool-call batch is safe to run concurrently."""
     tool_calls = list(tool_calls)
     if len(tool_calls) <= 1:
@@ -112,14 +112,14 @@ def _paths_overlap(left: Path, right: Path) -> bool:
     return left_parts[: min(len(left_parts), len(right_parts))] == right_parts[: min(len(left_parts), len(right_parts))]
 
 
-def _is_multimodal_tool_result(value: Any) -> bool:
+def is_multimodal_tool_result(value: Any) -> bool:
     """True if ``value`` is the ``{"_multimodal": True, "content": [...], "text_summary": ...}`` envelope."""
     return isinstance(value, dict) and value.get("_multimodal") is True and isinstance(value.get("content"), list)
 
 
 def _multimodal_text_summary(value: Any) -> str:
     """Plain text view of a multimodal tool result — for logs, previews, providers that don't accept multipart."""
-    if _is_multimodal_tool_result(value):
+    if is_multimodal_tool_result(value):
         if value.get("text_summary"):
             return str(value["text_summary"])
         parts = [str(p.get("text", "")) for p in (value.get("content") or []) if isinstance(p, dict) and p.get("type") == "text"]
@@ -134,7 +134,7 @@ def _multimodal_text_summary(value: Any) -> str:
 
 def _append_subdir_hint_to_multimodal(value: dict[str, Any], hint: str) -> None:
     """Mutate a multimodal envelope to append a subdir hint to the first text part (and text_summary)."""
-    if not _is_multimodal_tool_result(value):
+    if not is_multimodal_tool_result(value):
         return
     parts = value.get("content") or []
     for p in parts:

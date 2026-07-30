@@ -4,11 +4,27 @@ import re
 # prefix each response; the affect scrubber strips it and the orchestrator
 # attaches it to the ``message.complete`` frame so the desktop can drive its
 # animation state machine. Unknown values fall back to ``neutral`` downstream.
-ALLOWED_EMOTIONS: frozenset[str] = frozenset({
-    "happy", "sad", "surprised", "excited", "confused", "concerned",
-    "shy", "proud", "grateful", "playful", "bored", "neutral",
-    "lonely", "sleepy", "curious", "embarrassed", "apologetic",
-})
+ALLOWED_EMOTIONS: frozenset[str] = frozenset(
+    {
+        "happy",
+        "sad",
+        "surprised",
+        "excited",
+        "confused",
+        "concerned",
+        "shy",
+        "proud",
+        "grateful",
+        "playful",
+        "bored",
+        "neutral",
+        "lonely",
+        "sleepy",
+        "curious",
+        "embarrassed",
+        "apologetic",
+    }
+)
 
 # ``[affect:emotion]`` at the very start of the LLM response (leading
 # whitespace tolerated). The whole tag line — including a trailing newline —
@@ -22,8 +38,7 @@ COMPANION_AFFECT_GUIDANCE = (
     "reflects your emotion. To convey how you feel, begin EVERY text response "
     "with an affect tag on its own line, exactly in the form:\n"
     "    [affect:EMOTION]\n"
-    "followed by your actual reply. EMOTION must be one of: "
-    + ", ".join(sorted(ALLOWED_EMOTIONS)) + ".\n"
+    "followed by your actual reply. EMOTION must be one of: " + ", ".join(sorted(ALLOWED_EMOTIONS)) + ".\n"
     "Choose the emotion that best fits your persona and the moment — be "
     "expressive and varied, not mechanical. If nothing fits, use [affect:neutral]. "
     "Examples:\n"

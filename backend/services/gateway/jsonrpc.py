@@ -6,7 +6,6 @@ from typing import Any
 from components import get_logger
 from components import JSON_RPC_VERSION
 from components import JSONRPC_INTERNAL_ERROR
-from components import JSONRPC_INVALID_PARAMS
 from components import JSONRPC_INVALID_REQUEST
 from components import JSONRPC_METHOD_NOT_FOUND
 from components import JSONRPC_PARSE_ERROR

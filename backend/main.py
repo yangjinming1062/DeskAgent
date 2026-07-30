@@ -4,7 +4,6 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 import asyncpg
-import modules
 import modules.media.models  # noqa: F401 — register VideoGenJob on ModelBase.metadata
 import services.chat.agent_delegate  # noqa: F401
 import services.tools.builtin  # noqa: F401
@@ -23,11 +22,11 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from services.gateway import start_ws_event_loop
 from services.gateway import stop_ws_event_loop
+from services.media import aclose_all as media_aclose_all
+from services.media import resume_pending_video_jobs
 from services.rate_limit import limiter
 from services.rate_limit import rate_limit_exception_handler
 from services.rate_limit import stash_user_id_middleware
-from services.media import aclose_all as media_aclose_all
-from services.media import resume_pending_video_jobs
 from services.scheduler import start_scheduler
 from services.scheduler import stop_scheduler
 from services.tools.web_providers import aclose
