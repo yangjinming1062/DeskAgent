@@ -19,7 +19,6 @@ class User(ModelBase, TimestampMixin):
     __tablename__ = "users"
 
     username: Mapped[str] = mapped_column(String(64), unique=True, index=True)
-    display_name: Mapped[str] = mapped_column(String(128), default="")
     password_hash: Mapped[str] = mapped_column(String(255))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default=text("TRUE"))
     can_use: Mapped[bool] = mapped_column(Boolean, default=True, server_default=text("TRUE"))

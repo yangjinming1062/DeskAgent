@@ -39,7 +39,6 @@ def create_user(payload: UserCreate, _admin: str = Depends(get_current_admin_tok
     user = User(
         username=payload.username,
         password_hash=hash_password(payload.password),
-        display_name=payload.display_name or payload.username,
         can_use=payload.can_use,
         expires_at=payload.expires_at,
     )

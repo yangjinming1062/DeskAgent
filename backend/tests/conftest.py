@@ -88,7 +88,6 @@ def _seed_user(SessionLocal, username="testuser", password="testpass123"):
     with SessionLocal() as db:
         user = User(
             username=username,
-            display_name="Test User",
             password_hash=hash_password(password),
             is_active=True,
             can_use=True,
