@@ -9,9 +9,11 @@ import { setClipStatus } from '@/companion/clip-store'
 import { $disturbanceTier, setSpriteState, type SpriteEmotion } from '@/companion/companion-store'
 import type { RpcEvent } from '@/shared/types/deskagent'
 
+import { pushDevLog } from './developer-overlay'
 import { speakProactive } from './proactive/proactive'
 
 export function handleCompanionEvent(event: RpcEvent): void {
+  pushDevLog(event.type, JSON.stringify(event.payload ?? {}))
   switch (event.type) {
     case 'message.start':
       beginAssistantMessage()
