@@ -1,7 +1,7 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react'
 
-import { Button } from '@/components/ui/button'
-import { ErrorState } from '@/components/ui/error-state'
+import { Button } from '@/shared/components/ui/button'
+import { ErrorState } from '@/shared/components/ui/error-state'
 import { useI18n } from '@/shared/i18n'
 
 export interface ErrorBoundaryFallbackProps {

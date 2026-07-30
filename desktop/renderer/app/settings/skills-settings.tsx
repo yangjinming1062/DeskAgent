@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 
-import { SearchField } from '@/components/ui/search-field'
-import { Switch } from '@/components/ui/switch'
-import { TextTab, TextTabMeta } from '@/components/ui/text-tab'
+import { SearchField } from '@/shared/components/ui/search-field'
+import { Switch } from '@/shared/components/ui/switch'
+import { TextTab, TextTabMeta } from '@/shared/components/ui/text-tab'
 import { useI18n } from '@/shared/i18n'
 import { Sparkles } from '@/shared/lib/icons'
 import { refreshSession } from '@/shared/store/auth'

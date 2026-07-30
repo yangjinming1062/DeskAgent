@@ -1,8 +1,8 @@
 import { Select as SelectPrimitive } from 'radix-ui'
 import * as React from 'react'
 
-import { Codicon } from '@/components/ui/codicon'
-import { type ControlVariantProps, controlVariants } from '@/components/ui/control'
+import { Codicon } from '@/shared/components/ui/codicon'
+import { type ControlVariantProps, controlVariants } from '@/shared/components/ui/control'
 import { cn } from '@/shared/lib/utils'
 
 function Select({ ...props }: React.ComponentProps<typeof SelectPrimitive.Root>) {

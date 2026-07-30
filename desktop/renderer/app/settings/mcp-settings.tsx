@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import { type Document } from 'yaml'
 
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Textarea } from '@/components/ui/textarea'
+import { Button } from '@/shared/components/ui/button'
+import { Input } from '@/shared/components/ui/input'
+import { Textarea } from '@/shared/components/ui/textarea'
 import type { DeskAgentGateway } from '@/shared/deskagent'
 import { useI18n } from '@/shared/i18n'
 import { Wrench } from '@/shared/lib/icons'

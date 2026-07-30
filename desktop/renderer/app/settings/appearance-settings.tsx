@@ -1,6 +1,6 @@
 
 import { LanguageSwitcher } from '@/shared/components/language-switcher'
-import { SegmentedControl } from '@/components/ui/segmented-control'
+import { SegmentedControl } from '@/shared/components/ui/segmented-control'
 import { useI18n } from '@/shared/i18n'
 import { triggerHaptic } from '@/shared/lib/haptics'
 import { Check, Palette } from '@/shared/lib/icons'

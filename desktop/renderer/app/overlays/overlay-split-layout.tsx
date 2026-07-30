@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 
-import { Button } from '@/components/ui/button'
-import { Codicon } from '@/components/ui/codicon'
+import { Button } from '@/shared/components/ui/button'
+import { Codicon } from '@/shared/components/ui/codicon'
 import type { IconComponent } from '@/shared/lib/icons'
 import { cn } from '@/shared/lib/utils'
 

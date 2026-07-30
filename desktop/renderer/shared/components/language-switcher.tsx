@@ -1,9 +1,9 @@
 import { useState } from 'react'
 
-import { Button } from '@/components/ui/button'
-import { Command, CommandInput, CommandItem, CommandList } from '@/components/ui/command'
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet'
+import { Button } from '@/shared/components/ui/button'
+import { Command, CommandInput, CommandItem, CommandList } from '@/shared/components/ui/command'
+import { Popover, PopoverContent, PopoverTrigger } from '@/shared/components/ui/popover'
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from '@/shared/components/ui/sheet'
 import { useIsMobile } from '@/shared/hooks/use-mobile'
 import { type Locale, LOCALE_META, useI18n } from '@/shared/i18n'
 import { triggerHaptic } from '@/shared/lib/haptics'

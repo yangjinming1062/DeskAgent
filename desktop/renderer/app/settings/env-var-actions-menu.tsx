@@ -1,14 +1,14 @@
 import type * as React from 'react'
 
-import { Button } from '@/components/ui/button'
-import { Codicon } from '@/components/ui/codicon'
+import { Button } from '@/shared/components/ui/button'
+import { Codicon } from '@/shared/components/ui/codicon'
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger
-} from '@/components/ui/dropdown-menu'
+} from '@/shared/components/ui/dropdown-menu'
 import { useI18n } from '@/shared/i18n'
 import { triggerHaptic } from '@/shared/lib/haptics'
 import { ExternalLink, Eye, EyeOff, Trash2 } from '@/shared/lib/icons'
