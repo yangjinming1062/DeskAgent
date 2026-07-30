@@ -68,7 +68,7 @@ test('detectRemoteDisplay honors the DESKAGENT_DESKTOP_DISABLE_GPU override both
 
 test('packaged electron entrypoints do not require unpackaged npm modules', () => {
   const electronDir = path.join(__dirname, '..')
-  const entrypoints = ['main.cjs', 'preload.cjs', 'lifecycle/platform.cjs']
+  const entrypoints = ['entry.cjs', 'preload.cjs', 'lifecycle/platform.cjs']
   // - electron: provided by the electron runtime, always resolvable in packaged builds.
   // - node-pty: hoisted by workspace dedup AND shipped via extraResources to
   //   resources/native-deps/node-pty (see scripts/stage-native-deps.cjs). main.cjs
