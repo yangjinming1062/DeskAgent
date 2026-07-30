@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 
 import { useGatewayBoot } from '@/companion/boot/use-gateway-boot'
 import { $chatOpen, setChatOpen } from '@/companion/chat-store'
-import { $companionLifecycle, setCompanionLifecycle } from '@/companion/companion-store'
+import { $companionLifecycle, checkBedtimeAndAutoSleep, setCompanionLifecycle, wakeUpFromSleep } from '@/companion/companion-store'
 import { $auth, applyAuthBroadcast, hydrateAuth, logout } from '@/shared/store/auth'
 import { $gatewayState } from '@/shared/store/gateway'
 
@@ -111,8 +111,18 @@ export function CompanionRoot() {
   const showReady = authed && lifecycle === 'ready'
   const mode: EggMode = !authed ? 'teaser' : gatewayState === 'open' ? 'awake' : 'drowsy'
 
+  useEffect(() => {
+    if (lifecycle !== 'ready') return
+    checkBedtimeAndAutoSleep()
+    const timer = setInterval(() => {
+      checkBedtimeAndAutoSleep()
+    }, 60000)
+    return () => clearInterval(timer)
+  }, [lifecycle])
+
   const onTap = () => {
     if (showReady) {
+      wakeUpFromSleep()
       handlePokeInteraction()
       return
     }
