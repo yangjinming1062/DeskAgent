@@ -194,19 +194,25 @@ async def process_request(ws, req):
         await _send(ws, req_id, error={"code": -32000, "message": str(e)})
 
 
-async def runner_loop(ws_url: str):
-    """Connect to Desktop WS with exponential-backoff reconnection (gives up after MAX_RECONNECT_ATTEMPTS)."""
-    global _ACTIVE_WS, _RUNNER_LOOP
+MAX_RECONNECT_ATTEMPTS = 15
+BASE_BACKOFF_S = 2.0
+MAX_BACKOFF_S = 30.0
 
-    MAX_RECONNECT_ATTEMPTS = 15
-    BASE_BACKOFF_S = 2.0
-    MAX_BACKOFF_S = 30.0
+
+async def runner_loop(ws_url: str) -> None:
+    """Long-running connection loop for Desktop WS.
+
+    Keeps a persistent connection, handles reconnect backoff, dispatches
+    RPC calls, and notifies Desktop when ready.
+    """
+    global _ACTIVE_WS, _RUNNER_LOOP, _RECONNECT_COUNT
 
     current_url = ws_url
     attempt = 0
 
     while True:
         logger.info(f"Connecting to Desktop WS: {current_url} (attempt {attempt + 1})")
+        cancelled = False
         try:
             async with websockets.connect(current_url) as ws:
                 _ACTIVE_WS = ws
@@ -251,9 +257,16 @@ async def runner_loop(ws_url: str):
 
         except websockets.exceptions.ConnectionClosed:
             logger.warning("WebSocket connection closed by Desktop.")
+        except asyncio.CancelledError:
+            # Test cleanup / normal shutdown — exit the loop. Don't bump
+            # ``_RECONNECT_COUNT`` because we intentionally tore down, not
+            # dropped mid-session.
+            cancelled = True
         except Exception as e:
             logger.error(f"WebSocket error: {e}")
 
+        if cancelled:
+            break
         _RECONNECT_COUNT += 1
         attempt += 1
         if attempt >= MAX_RECONNECT_ATTEMPTS:

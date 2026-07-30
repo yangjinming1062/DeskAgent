@@ -16,12 +16,10 @@ Targets:
 These tests run fast (no subprocess, no network) so they belong in the
 default suite, not the build-gate slow path.
 """
-
 import json
 import re
 
 import pytest
-
 from tools.execute_code import code_execution_tool as ec
 from tools.interrupt import INTERRUPT_EVENT
 from tools.interrupt import is_interrupted
@@ -39,9 +37,9 @@ from tools.tool_output_limits import get_max_lines
 from tools.tool_output_limits import get_tool_output_limits
 from tools.tool_output_limits import reset_cache
 from tools.tool_result_storage import DEFAULT_BUDGET
-from tools.tool_result_storage import PERSISTED_OUTPUT_TAG
 from tools.tool_result_storage import generate_preview
 from tools.tool_result_storage import maybe_persist_tool_result
+from tools.tool_result_storage import PERSISTED_OUTPUT_TAG
 
 
 # ---------------------------------------------------------------------------
@@ -194,7 +192,7 @@ class TestToolOutputLimits:
         assert first is second  # same object — cache hit
 
     def test_reset_cache_invalidates(self, monkeypatch):
-        from tools import tool_output_limits as tol
+        import tools.tool_output_limits as tol
 
         real = tol.load_config
         monkeypatch.setattr(tol, "load_config", lambda: {"tool_output": {"max_bytes": 99_999}})

@@ -12,6 +12,7 @@ from utils import get_deskagent_home
 from utils import get_skills_dir
 
 from .skill_usage import _load_protected_builtins
+from .skill_usage import is_excluded_skill_path
 from .skill_usage import read_suppressed_names
 from .skills_guard import content_hash
 
