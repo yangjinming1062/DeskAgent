@@ -14,6 +14,7 @@ import { OnboardingFlow } from './onboarding/onboarding-flow'
 import { speakProactive } from './proactive/proactive'
 import { ProactiveBubble } from './proactive/proactive-bubble'
 import { CompanionReady } from './sprite/companion-ready'
+import { SpriteContextMenu } from './sprite/context-menu'
 import { Egg, type EggMode } from './sprite/egg'
 import { SpriteStage } from './sprite/sprite-stage'
 
@@ -42,6 +43,7 @@ export function CompanionRoot() {
   const chatOpen = useStore($chatOpen)
   const [cracks, setCracks] = useState(0)
   const [voiceCallOpen, setVoiceCallOpen] = useState(false)
+  const [contextMenuPos, setContextMenuPos] = useState<{ x: number; y: number } | null>(null)
 
   useEffect(() => {
     void hydrateAuth()
@@ -140,9 +142,28 @@ export function CompanionRoot() {
     <>
       {showOnboarding && <OnboardingFlow onCompleted={() => setCompanionLifecycle('ready')} />}
       {(showEgg || showReady) && (
-        <SpriteStage onDoubleTap={onDoubleTap} onTap={onTap}>
+        <SpriteStage
+          onContextMenu={e => {
+            if (showReady) {
+              setContextMenuPos({ x: e.clientX, y: e.clientY })
+            }
+          }}
+          onDoubleTap={onDoubleTap}
+          onTap={onTap}
+        >
           {showReady ? <CompanionReady /> : <Egg cracks={cracks} mode={mode} />}
         </SpriteStage>
+      )}
+      {showReady && contextMenuPos && (
+        <SpriteContextMenu
+          onClose={() => setContextMenuPos(null)}
+          onOpenVoiceCall={() => {
+            setChatOpen(false)
+            setVoiceCallOpen(true)
+          }}
+          x={contextMenuPos.x}
+          y={contextMenuPos.y}
+        />
       )}
       {showReady && chatOpen && (
         <ChatDock

@@ -11,6 +11,7 @@ interface SpriteStageProps {
   children: ReactNode
   onTap?: () => void
   onDoubleTap?: () => void
+  onContextMenu?: (e: React.MouseEvent) => void
 }
 
 const REST_MARGIN = 24
@@ -19,7 +20,7 @@ const EGG_H = 184
 const DRAG_THRESHOLD = 6
 const DOUBLE_TAP_MS = 320
 
-export function SpriteStage({ children, onTap, onDoubleTap }: SpriteStageProps) {
+export function SpriteStage({ children, onTap, onDoubleTap, onContextMenu }: SpriteStageProps) {
   const mountRef = useRef<HTMLDivElement>(null)
   const capturedRef = useRef(false)
   const dragRef = useRef<{ startX: number; startY: number; originX: number; originY: number; moved: boolean } | null>(null)
@@ -111,6 +112,10 @@ export function SpriteStage({ children, onTap, onDoubleTap }: SpriteStageProps) 
     <div className="fixed inset-0" style={{ pointerEvents: 'none' }}>
       <div
         className="absolute"
+        onContextMenu={e => {
+          e.preventDefault()
+          onContextMenu?.(e)
+        }}
         onMouseLeave={() => {
           if (!dragRef.current) {release()}
         }}
