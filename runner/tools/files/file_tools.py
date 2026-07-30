@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 import errno
 import functools
 import json
@@ -762,10 +761,6 @@ def _get_file_ops(task_id: str = "default") -> ShellFileOperations:
                 image = overrides.get("docker_image") or config["docker_image"]
             elif env_type == "singularity":
                 image = overrides.get("singularity_image") or config["singularity_image"]
-            elif env_type == "modal":
-                image = overrides.get("modal_image") or config["modal_image"]
-            elif env_type == "daytona":
-                image = overrides.get("daytona_image") or config["daytona_image"]
             else:
                 image = ""
 
@@ -773,7 +768,7 @@ def _get_file_ops(task_id: str = "default") -> ShellFileOperations:
             logger.info("Creating new %s environment for task %s...", env_type, task_id[:8])
 
             container_config = None
-            if env_type in {"docker", "singularity", "modal", "daytona"}:
+            if env_type in {"docker", "singularity"}:
                 container_config = {
                     "container_cpu": config.get("container_cpu", 1),
                     "container_memory": config.get("container_memory", 5120),
@@ -830,7 +825,7 @@ def _get_file_ops(task_id: str = "default") -> ShellFileOperations:
     return file_ops
 
 
-def clear_file_ops_cache(task_id: str = None):
+def clear_file_ops_cache(task_id: str | None = None):
     """Clear the file operations cache."""
     with _file_ops_lock:
         if task_id:

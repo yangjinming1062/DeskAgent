@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from dataclasses import field
 
-import tools.registry as _registry
+from ..registry import registry
 
 PINNED_THRESHOLDS: dict[str, float] = {"read_file": float("inf")}
 DEFAULT_RESULT_SIZE_CHARS = 100_000
@@ -17,11 +17,7 @@ class BudgetConfig:
     tool_overrides: dict[str, int] = field(default_factory=dict)
 
     def resolve_threshold(self, tool_name: str) -> int | float:
-        return (
-            val
-            if (val := PINNED_THRESHOLDS.get(tool_name, self.tool_overrides.get(tool_name))) is not None
-            else _registry.registry.get_max_result_size(default=self.default_result_size)
-        )
+        return val if (val := PINNED_THRESHOLDS.get(tool_name, self.tool_overrides.get(tool_name))) is not None else registry.get_max_result_size(default=self.default_result_size)
 
 
 DEFAULT_BUDGET = BudgetConfig()

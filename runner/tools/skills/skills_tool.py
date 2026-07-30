@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 import json
 import logging
 import re
@@ -273,7 +272,6 @@ def _is_skill_disabled(name: str, category: str | None = None, platform: str | N
 
 
 def _find_all_skills(*, skip_disabled: bool = False) -> list[dict[str, Any]]:
-    from ..system import get_external_skills_dirs
 
     skills = []
     seen_names = set()
@@ -350,8 +348,6 @@ def _serve_plugin_skill(
     preprocess: bool = True,
     session_id: str | None = None,
 ) -> str:
-    from ..system import get_external_skills_dirs
-
     if namespace in _get_disabled_plugins():
         return json.dumps({"success": False, "error": f"Plugin '{namespace}' is disabled. Re-enable with: deskagent plugins enable {namespace}"}, ensure_ascii=False)
     try:
@@ -410,12 +406,6 @@ def skill_view(
     task_id: str = None,
     preprocess: bool = True,
 ) -> str:
-    from ..files import has_traversal_component
-    from ..files import validate_within_dir
-    from ..system import get_external_skills_dirs
-    from ..system import register_credential_files
-    from ..system import register_env_passthrough
-
     try:
         if lookup_error := _skill_lookup_path_error(name):
             return json.dumps({"success": False, "error": lookup_error, "hint": "Use a skill name or relative path within the skills directory."}, ensure_ascii=False)
@@ -450,6 +440,8 @@ def skill_view(
                 )
             if bare:
                 local_category_name = f"{namespace}/{bare}"
+
+        from ..system import get_external_skills_dirs
 
         if local_category_name and (err := _skill_lookup_path_error(local_category_name)):
             return json.dumps({"success": False, "error": err, "hint": "Use a skill name or relative path within the skills directory."}, ensure_ascii=False)
@@ -563,6 +555,9 @@ def skill_view(
             )
 
         if file_path and skill_dir:
+            from ..files import has_traversal_component
+            from ..files import validate_within_dir
+
             if has_traversal_component(file_path):
                 return json.dumps(
                     {"success": False, "error": "Path traversal ('..') is not allowed.", "hint": "Use a relative path within the skill directory"}, ensure_ascii=False
@@ -638,6 +633,9 @@ def skill_view(
         legacy_env, _ = _collect_prerequisite_values(parsed_frontmatter)
         req_envs = _get_required_environment_variables(parsed_frontmatter, legacy_env)
         backend = get_env_type()
+        from ..system import register_credential_files
+        from ..system import register_env_passthrough
+
         overrides = _env_overrides()
         rem_missing_envs = [e["name"] for e in req_envs if not e.get("optional") and not overrides.get(e["name"])]
         setup_needed = bool(rem_missing_envs)

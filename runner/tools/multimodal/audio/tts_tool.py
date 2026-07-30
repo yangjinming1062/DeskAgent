@@ -15,8 +15,8 @@ from .piper_runtime import default_voice_id
 from .piper_runtime import list_installed_voices
 from .piper_runtime import piper_available
 from .piper_runtime import piper_voice_dir
-from .piper_runtime import pyttsx3_available
 from .piper_runtime import PiperRuntime
+from .piper_runtime import pyttsx3_available
 
 logger = logging.getLogger(__name__)
 

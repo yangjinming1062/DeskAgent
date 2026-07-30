@@ -1,6 +1,6 @@
 from collections.abc import Awaitable
+from collections.abc import Callable
 from typing import Any
-from typing import Callable
 
 _handler: Callable[..., Awaitable[Any]] | None = None
 

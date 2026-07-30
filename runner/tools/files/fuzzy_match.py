@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 import re
 from collections.abc import Callable
 from difflib import SequenceMatcher

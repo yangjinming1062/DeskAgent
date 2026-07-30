@@ -21,7 +21,6 @@ from urllib.parse import parse_qs
 from urllib.parse import urlparse
 
 import httpx
-from mcp.client.auth import OAuthClientProvider
 from mcp.client.auth.oauth2 import OAuthClientProvider
 from mcp.client.auth.utils import build_oauth_authorization_server_metadata_discovery_urls
 from mcp.client.auth.utils import build_protected_resource_metadata_discovery_urls

@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 import json
 import logging
 import os
@@ -27,8 +26,6 @@ from .skills_guard import scan_skill
 from .skills_guard import should_allow_install
 
 logger = logging.getLogger(__name__)
-
-_GUARD_AVAILABLE = True
 
 
 def _guard_agent_created_enabled() -> bool:

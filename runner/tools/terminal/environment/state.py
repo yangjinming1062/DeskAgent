@@ -1,5 +1,7 @@
+import logging
 import os
 import threading
+import time
 from typing import Any
 
 from utils import cfg_bool
@@ -88,8 +90,6 @@ def get_env_config() -> dict[str, Any]:
         is_host_path = any(cwd.startswith(p) for p in host_prefixes)
         is_relative = not os.path.isabs(cwd)
         if (is_host_path or is_relative) and cwd != default_cwd:
-            import logging
-
             logging.getLogger(__name__).info("Ignoring cwd=%r for %s backend (host/relative path won't work in sandbox). Using %r instead.", cwd, env_type, default_cwd)
             cwd = default_cwd
     ssh_cfg = t.get("ssh") if isinstance(t.get("ssh"), dict) else {}
@@ -137,8 +137,6 @@ def is_persistent_env(task_id: str) -> bool:
 
 def register_environment(task_id: str, env: Any) -> None:
     """Register an environment instance and update last activity timestamp."""
-    import time
-
     with _env_lock:
         _active_environments[task_id] = env
         _last_activity[task_id] = time.time()

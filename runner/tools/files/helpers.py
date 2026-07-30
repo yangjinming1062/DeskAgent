@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 import ast as _ast
 import difflib
 import json as _json
@@ -16,6 +15,7 @@ from dataclasses import field
 from enum import Enum
 from pathlib import Path
 from typing import Any
+from typing import TypeAlias
 
 import yaml as _yaml
 from utils import build_write_denied_paths
@@ -1079,8 +1079,7 @@ class ShellFileOperations(FileOperations):
 
 # ── File State ─────────────────────────────────────────────────────────────
 
-type ReadStamp = tuple[float, float, bool]
-
+ReadStamp: TypeAlias = tuple[float, float, bool]  # noqa: UP040
 _MAX_PATHS_PER_AGENT = 4096
 _MAX_GLOBAL_WRITERS = 4096
 

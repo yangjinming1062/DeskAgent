@@ -1,4 +1,3 @@
-import contextvars
 import os
 import platform
 import subprocess
@@ -8,23 +7,11 @@ from pathlib import Path
 IS_WINDOWS: bool = platform.system() == "Windows"
 """Platform flag: True on Windows, False on POSIX."""
 
-CREATE_NO_WINDOW: int = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
-"""Windows subprocess flag to suppress console window creation."""
-
-_deskagent_home_override: contextvars.ContextVar[str | None] = contextvars.ContextVar("deskagent_home_override", default=None)
-
-
-def set_deskagent_home_override(value: str | None) -> contextvars.Token:
-    return _deskagent_home_override.set(value)
-
-
-def reset_deskagent_home_override(token: contextvars.Token) -> None:
-    _deskagent_home_override.reset(token)
+CREATE_NO_WINDOW: int = subprocess.CREATE_NO_WINDOW if IS_WINDOWS else 0
+"""Windows subprocess flag for ``creationflags``; 0 on POSIX (no-op)."""
 
 
 def get_deskagent_home() -> Path:
-    if override := _deskagent_home_override.get():
-        return Path(override)
     if override := os.environ.get("DESKAGENT_HOME"):
         return Path(override)
     if sys.platform == "win32" and (local_appdata := os.environ.get("LOCALAPPDATA")):
@@ -33,7 +20,7 @@ def get_deskagent_home() -> Path:
 
 
 def get_deskagent_home_override() -> str | None:
-    return _deskagent_home_override.get() or os.environ.get("DESKAGENT_HOME") or None
+    return os.environ.get("DESKAGENT_HOME") or None
 
 
 def get_subprocess_home() -> Path:
@@ -56,16 +43,15 @@ def get_skills_dir() -> Path:
 
 
 def is_termux() -> bool:
-    """True if running under Android Termux (detected via well-known env var)."""
     return bool(os.environ.get("TERMUX_VERSION"))
 
 
-def secure_parent_dir(path) -> None:
-    """Ensure ``path``'s parent directory exists with ``0700`` permissions.
+def secure_parent_dir(path: str | Path) -> None:
+    """Ensure ``path``'s parent exists with ``0700`` permissions (POSIX).
 
-    Used when writing secrets (OAuth tokens, credentials) to disk — the
-    parent dir is what attackers would target if they found the file. Safe
-    no-op if the directory already exists.
+    On Windows, NTFS ignores POSIX mode bits — the chmod is a silent no-op,
+    documented in ``runner/README.md`` under platform support. Use NTFS ACLs
+    if real protection is needed for Windows credential storage.
     """
     parent = Path(path).parent
     if not parent.exists():

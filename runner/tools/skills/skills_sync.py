@@ -112,7 +112,7 @@ def _content_hash(directory: Path) -> str:
 def sync_skills(quiet: bool = False) -> dict:
     if (DESKAGENT_HOME / NO_BUNDLED_SKILLS_MARKER).exists():
         if not quiet:
-            print("  (skipped — profile opted out of bundled skills via .no-bundled-skills)")
+            logger.info("skipped: profile opted out of bundled skills via .no-bundled-skills")
         return {"copied": [], "updated": [], "skipped": 0, "user_modified": [], "cleaned": [], "total_bundled": 0, "skipped_opt_out": True}
 
     bundled_dir = get_skills_dir()
@@ -142,8 +142,10 @@ def sync_skills(quiet: bool = False) -> dict:
                     if _dir_hash(dest) == bundled_hash:
                         manifest[skill_name] = bundled_hash
                     elif not quiet:
-                        print(
-                            f"  ⚠ {skill_name}: bundled version shipped but you already have a local skill by this name — yours was kept. Run `deskagent skills reset {skill_name}` to replace it with the bundled version."
+                        logger.warning(
+                            "bundled version of %s skipped: user has local skill (run `deskagent skills reset %s`)",
+                            skill_name,
+                            skill_name,
                         )
                 else:
                     dest.parent.mkdir(parents=True, exist_ok=True)
@@ -151,10 +153,10 @@ def sync_skills(quiet: bool = False) -> dict:
                     copied.append(skill_name)
                     manifest[skill_name] = bundled_hash
                     if not quiet:
-                        print(f"  + {skill_name}")
+                        logger.info("copied bundled skill: %s", skill_name)
             except OSError as e:
                 if not quiet:
-                    print(f"  ! Failed to copy {skill_name}: {e}")
+                    logger.warning("failed to copy %s: %s", skill_name, e)
         elif dest.exists():
             origin_hash = manifest.get(skill_name, "")
             user_hash = _dir_hash(dest)
@@ -165,7 +167,7 @@ def sync_skills(quiet: bool = False) -> dict:
             if user_hash != origin_hash:
                 user_modified.append(skill_name)
                 if not quiet:
-                    print(f"  ~ {skill_name} (user-modified, skipping)")
+                    logger.info("user-modified, skipping: %s", skill_name)
                 continue
             if bundled_hash != origin_hash:
                 try:
@@ -176,7 +178,7 @@ def sync_skills(quiet: bool = False) -> dict:
                         manifest[skill_name] = bundled_hash
                         updated.append(skill_name)
                         if not quiet:
-                            print(f"  ↑ {skill_name} (updated)")
+                            logger.info("updated bundled skill: %s", skill_name)
                         try:
                             _rmtree_writable(backup)
                         except OSError:
@@ -187,7 +189,7 @@ def sync_skills(quiet: bool = False) -> dict:
                         raise
                 except OSError as e:
                     if not quiet:
-                        print(f"  ! Failed to update {skill_name}: {e}")
+                        logger.warning("failed to update %s: %s", skill_name, e)
             else:
                 skipped += 1
         else:

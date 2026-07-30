@@ -9,7 +9,6 @@ logger = logging.getLogger(__name__)
 
 _PREFIX_PATTERNS: tuple[str, ...] = (
     r"sk-[A-Za-z0-9_-]{10,}",
-    r"sk-ant-[A-Za-z0-9_-]{10,}",
     r"ghp_[A-Za-z0-9]{10,}",
     r"github_pat_[A-Za-z0-9_]{10,}",
     r"gho_[A-Za-z0-9]{10,}",
@@ -67,11 +66,17 @@ def _mask_token(token: str) -> str:
     return f"{token[:6]}...{token[-4:]}" if token and len(token) >= 18 else "***"
 
 
-_REDACT_ENABLED = is_truthy_value(cfg_get(load_config(), "security", "redact_secrets", default=True))
+def _is_redact_enabled() -> bool:
+    return is_truthy_value(cfg_get(load_config(), "security", "redact_secrets", default=True))
 
 
 def redact_sensitive_text(text: str) -> str:
-    if not _REDACT_ENABLED or not text:
+    """Redact likely secrets in *text*. Disabled when ``security.redact_secrets`` is falsy in config.
+
+    Resolves the config flag on each call so editors can flip it via ``mcp.reload``
+    without a runner restart; ``load_config`` is mtime-cached so the per-call cost is a stat.
+    """
+    if not text or not _is_redact_enabled():
         return text
     try:
         return _redact(text)

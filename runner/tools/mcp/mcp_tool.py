@@ -788,21 +788,17 @@ class SamplingHandler:
             len(messages),
         )
 
-        # Offload sync LLM call to thread (non-blocking)
-        def _sync_call():
-            return call_llm(
-                task="mcp",
-                model=resolved_model or None,
-                messages=messages,
-                temperature=call_temperature,
-                max_tokens=max_tokens,
-                tools=call_tools,
-                timeout=self.timeout,
-            )
-
         try:
             response = await asyncio.wait_for(
-                asyncio.to_thread(_sync_call),
+                call_llm(
+                    task="mcp",
+                    model=resolved_model or None,
+                    messages=messages,
+                    temperature=call_temperature,
+                    max_tokens=max_tokens,
+                    tools=call_tools,
+                    timeout=self.timeout,
+                ),
                 timeout=self.timeout,
             )
         except TimeoutError:
@@ -1229,20 +1225,20 @@ class MCPServerTask:
         client_kwargs: dict = {
             "verify": ssl_verify,
             "follow_redirects": True,
-            "timeout": _httpx.Timeout(timeout),
+            "timeout": httpx.Timeout(timeout),
         }
         if client_cert is not None:
             client_kwargs["cert"] = client_cert
 
         probe_headers = dict(headers) if headers else {}
         try:
-            async with _httpx.AsyncClient(**client_kwargs) as client:
+            async with httpx.AsyncClient(**client_kwargs) as client:
                 # HEAD is cheapest; fall back to GET if the server doesn't
                 # implement it (405 Method Not Allowed / 501 Not Implemented).
                 resp = await client.head(url, headers=probe_headers)
                 if resp.status_code in (405, 501):
                     resp = await client.get(url, headers=probe_headers)
-        except _httpx.HTTPError:
+        except httpx.HTTPError:
             return  # DNS/connect/timeout/transport error — let the SDK try.
 
         # Only judge successful responses. A 4xx/5xx may be an auth challenge
@@ -1352,14 +1348,14 @@ class MCPServerTask:
                     if timeout is not None:
                         kwargs["timeout"] = timeout
                     else:
-                        kwargs["timeout"] = _httpx_mod.Timeout(30.0, read=300.0)
+                        kwargs["timeout"] = httpx.Timeout(30.0, read=300.0)
                     if headers is not None:
                         kwargs["headers"] = headers
                     if auth is not None:
                         kwargs["auth"] = auth
                     if _cert_for_factory is not None:
                         kwargs["cert"] = _cert_for_factory
-                    return _httpx_mod.AsyncClient(**kwargs)
+                    return httpx.AsyncClient(**kwargs)
 
                 _sse_kwargs["httpx_client_factory"] = _mcp_http_client_factory
             async with sse_client(**_sse_kwargs) as (read_stream, write_stream):

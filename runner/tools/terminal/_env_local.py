@@ -70,8 +70,9 @@ def _prepend_shell_init(cmd_string: str, files: list[str]) -> str:
 
 
 class LocalEnvironment(BaseEnvironment):
-    def __init__(self, cwd: str = "", timeout: int = 60, env: dict = None):
+    def __init__(self, cwd: str = "", timeout: int = 60, env: dict | None = None, persistent: bool = False):
         super().__init__(cwd=os.path.expanduser(cwd) if cwd else os.getcwd(), timeout=timeout, env=env)
+        self._persistent = persistent
         self.init_session()
 
     def get_temp_dir(self) -> str:

@@ -87,7 +87,8 @@ def _is_always_blocked(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> boo
 
 
 def _is_blocked_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
-    ip = ip.ipv4_mapped or ip if isinstance(ip, ipaddress.IPv6Address) else ip
+    if isinstance(ip, ipaddress.IPv6Address) and (mapped := ip.ipv4_mapped) is not None:
+        ip = mapped
     return ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast or ip.is_unspecified or ip in _CGNAT_NETWORK
 
 

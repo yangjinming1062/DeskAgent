@@ -1,6 +1,7 @@
 import logging
 import os
 import shlex
+import tempfile
 
 from .system.budget_config import BudgetConfig
 from .system.budget_config import DEFAULT_BUDGET
@@ -9,7 +10,7 @@ from .system.budget_config import DEFAULT_PREVIEW_SIZE_CHARS
 logger = logging.getLogger(__name__)
 PERSISTED_OUTPUT_TAG = "<persisted-output>"
 PERSISTED_OUTPUT_CLOSING_TAG = "</persisted-output>"
-STORAGE_DIR = "/tmp/deskagent-results"
+STORAGE_DIR = os.path.join(tempfile.gettempdir(), "deskagent-results")
 
 
 def _resolve_storage_dir(env) -> str:
@@ -39,13 +40,14 @@ def _write_to_sandbox(content: str, remote_path: str, env) -> bool:
 def _build_persisted_message(preview: str, has_more: bool, original_size: int, file_path: str) -> str:
     size_kb = original_size / 1024
     size_str = f"{size_kb / 1024:.1f} MB" if size_kb >= 1024 else f"{size_kb:.1f} KB"
+    ellipsis = "\n..." if has_more else ""
     return (
         f"{PERSISTED_OUTPUT_TAG}\n"
         f"This tool result was too large ({original_size:,} characters, {size_str}).\n"
         f"Full output saved to: {file_path}\n"
         "Use the read_file tool with offset and limit to access specific sections of this output.\n\n"
         f"Preview (first {len(preview)} chars):\n"
-        f"{preview}{'\n...' if has_more else ''}\n"
+        f"{preview}{ellipsis}\n"
         f"{PERSISTED_OUTPUT_CLOSING_TAG}"
     )
 
