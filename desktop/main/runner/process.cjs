@@ -9,7 +9,7 @@
 const path = require('node:path')
 const { EventEmitter } = require('node:events')
 const childProcess = require('node:child_process')
-const { resolveVenvPython } = require('./venv-python.cjs')
+const { resolveVenvPython } = require('./venv.cjs')
 
 const DEFAULT_GRACE_MS = 4_000
 const DEFAULT_STOP_TIMEOUT_MS = 8_000

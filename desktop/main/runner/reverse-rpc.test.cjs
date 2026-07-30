@@ -1,12 +1,12 @@
 /**
- * Tests for main/runner-reverse-rpc.cjs.
+ * Tests for main/runner/reverse-rpc.cjs.
  *
- * Run with: node --test main/runner-reverse-rpc.test.cjs
+ * Run with: node --test main/runner/reverse-rpc.test.cjs
  */
 
 const test = require('node:test')
 const assert = require('node:assert/strict')
-const { createReverseRpc } = require('./runner-reverse-rpc.cjs')
+const { createReverseRpc } = require('./reverse-rpc.cjs')
 
 function makeFakeSession({ token = 'test-token', baseUrl = 'https://api.test.com', hasToken = true } = {}) {
   const session = hasToken ? { hasToken: true, baseUrl, token } : { hasToken: false }

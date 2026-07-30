@@ -10,7 +10,7 @@ const { promisify } = require('node:util')
 const execFileP = promisify(execFile)
 
 const { deskagentHome } = require('./paths.cjs')
-const { venvPythonFor } = require('./venv-python.cjs')
+const { venvPythonFor } = require('./venv.cjs')
 
 // Phase 1 / Phase 2 split — see CLAUDE.md §"Electron 二进制自更新".
 //
