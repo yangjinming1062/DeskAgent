@@ -10,171 +10,109 @@ from pydantic_settings import SettingsConfigDict
 
 
 class Settings(BaseSettings):
+    # ── Runtime ──
     app_name: str = "DeskAgent Backend"
     app_env: str = "development"
     api_prefix: str = "/api"
 
+    # ── Database ──
     database_url: str = "postgresql+psycopg://postgres:postgres@localhost:5432/deskagent"
 
+    # ── Auth & Admin ──
     jwt_secret_key: str = Field(default="change-me-in-production", min_length=16)
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 60 * 8
-
     admin_username: str = "deskagent"
     admin_password: str = "deskagent@admin123"
 
-    llm_base_url: str = ""
-    # Accept the canonical LLM_API_KEY or the repo .env's MIMO_KEY (MiMo serves
-    # chat/STT/TTS; stt/tts keys fall back to this in the provider resolver).
-    llm_api_key: str = Field(default="", validation_alias=AliasChoices("LLM_API_KEY", "MIMO_KEY"))
-    llm_model_name: str = ""
+    # ── Public URL & Temp Files ──
+    public_url_prefix: str = ""
+    public_ip: str = ""
+    port: int = 8000
+    temp_file_ttl_hours: int = 24
+    data_dir: str = "./data"
 
-    # ── PROVIDER-level credentials ──
-    # Provider-first config: declare provider key/base_url once; capability
-    # resolver falls back to these when no per-cap override is set. Per-cap
-    # `LLM_*` / `STT_*` / etc. (set above) take priority over provider-level.
+    # ── Provider chain ──
     providers: Annotated[list[str], NoDecode] = Field(default=[], validation_alias="PROVIDERS")
-    # `MIMO_API_KEY` reads first; `MIMO_KEY` kept as legacy alias for older
-    # .env files. `LLM_API_KEY` continues to flow into `llm_api_key` above
-    # (per-cap, higher priority).
     mimo_api_key: str = Field(default="", validation_alias=AliasChoices("MIMO_API_KEY", "MIMO_KEY"))
     mimo_base_url: str = Field(default="", validation_alias="MIMO_BASE_URL")
-    minimax_base_url: str = Field(default="", validation_alias="MINIMAX_BASE_URL")
-
-    @field_validator("providers", mode="before")
-    @classmethod
-    def _parse_providers_csv(cls, v):
-        """Parse `PROVIDERS=mimo,minimax` into a list. Empty string → []."""
-        if v is None or v == "":
-            return []
-        if isinstance(v, str):
-            return [p.strip() for p in v.split(",") if p.strip()]
-        return v
-
-    # STT Provider (语音识别)
-    stt_base_url: str = ""  # 空则回落到 llm_base_url
-    stt_api_key: str = ""  # 空则回落到 llm_api_key
-    # Per-cap model_name defaults to "" so the provider's `DEFAULT_MODELS`
-    # (declared on each provider class) applies per-slot in the chain;
-    # otherwise the head-provider's model leaks into fallback slots whose
-    # provider doesn't accept it.
-    stt_model_name: str = ""
-
-    # TTS Provider (语音合成)
-    tts_base_url: str = ""  # 空则回落到 llm_base_url
-    tts_api_key: str = ""  # 空则回落到 llm_api_key
-    tts_model_name: str = ""
-    tts_default_voice: str = "mimo_default"
-
-    # Image Gen Provider (图片生成). base_url empty → provider default.
-    image_gen_base_url: str = ""
-    image_gen_api_key: str = ""  # 空 → 继承 MINIMAX_API_KEY (minimax provider)
-    image_gen_model_name: str = ""
-
-    # Video Gen Provider (视频生成). base_url empty → provider default.
-    video_gen_base_url: str = ""
-    video_gen_api_key: str = ""  # 空 → 继承 MINIMAX_API_KEY (minimax provider)
-    video_gen_model_name: str = ""
-    video_gen_poll_interval_seconds: float = 5.0
-    video_gen_max_poll_seconds: float = 900.0
-    video_gen_tool_wait_seconds: float = 180.0
-    video_gen_download_max_bytes: int = 200 * 1024 * 1024  # 200 MB safety cap
-
-    # Provider selection — primary selector. Empty = SERVICE_DEFAULT_PROVIDER
-    # (mimo for chat/stt/tts, minimax for image/video). See providers/registry.py.
-    llm_provider: str = ""
-    stt_provider: str = ""
-    tts_provider: str = ""
-    image_gen_provider: str = ""
-    video_gen_provider: str = ""
-
-    # MiniMax-dedicated key — used when a MiniMax-flavoured provider inherits
-    # the legacy llm_api_key (MiMo) by mistake; we swap to this instead so
-    # the call doesn't 401 against api.minimaxi.com. Empty by default. Accepts
-    # the repo .env's MINIMAX_KEY (image/video gen fall back to this).
     minimax_api_key: str = Field(default="", validation_alias=AliasChoices("MINIMAX_API_KEY", "MINIMAX_KEY"))
+    minimax_base_url: str = Field(default="", validation_alias="MINIMAX_BASE_URL")
+    gemini_api_key: str = Field(default="", validation_alias=AliasChoices("GEMINI_API_KEY", "GEMINI_KEY"))
+    gemini_base_url: str = Field(default="", validation_alias="GEMINI_BASE_URL")
 
-    # LLM call resilience — applied by services.llm_retry.call_with_retry
+    # ── LLM (chat) ──
+    llm_provider: str = ""
+    llm_base_url: str = ""
+    llm_api_key: str = Field(default="", validation_alias=AliasChoices("LLM_API_KEY", "MIMO_KEY"))
+    llm_model_name: str = ""
     llm_request_timeout_seconds: float = 300.0
     llm_max_retry_attempts: int = 3
     llm_base_retry_delay: float = 5.0
     llm_max_retry_delay: float = 60.0
 
-    # Context-window compression — applied by services.context_compressor
+    # ── STT (speech-to-text) ──
+    stt_provider: str = ""
+    stt_base_url: str = ""
+    stt_api_key: str = ""
+    stt_model_name: str = ""
+
+    # ── TTS (text-to-speech) ──
+    tts_provider: str = ""
+    tts_base_url: str = ""
+    tts_api_key: str = ""
+    tts_model_name: str = ""
+    tts_default_voice: str = "mimo_default"
+
+    # ── Image Gen ──
+    image_gen_provider: str = ""
+    image_gen_base_url: str = ""
+    image_gen_api_key: str = ""
+    image_gen_model_name: str = ""
+
+    # ── Video Gen ──
+    video_gen_provider: str = ""
+    video_gen_base_url: str = ""
+    video_gen_api_key: str = ""
+    video_gen_model_name: str = ""
+    video_gen_poll_interval_seconds: float = 5.0
+    video_gen_max_poll_seconds: float = 900.0
+    video_gen_tool_wait_seconds: float = 180.0
+    video_gen_download_max_bytes: int = 200 * 1024 * 1024
+
+    # ── Chat service ──
     context_compression_threshold: float = 0.85
     context_summary_target_tokens: int = 2000
     context_summary_max_input_messages: int = 30
-    # Feature flag — kept off until the LLM-summary path is verified end-to-end
     enable_context_compression: bool = False
-
-    # IPC future timeout — applied by services.ipc.await_future. Caps how long
-    # chat will block waiting for a runner tool result before falling back
-    # to a synthetic "runner offline" tool message.
     ipc_future_timeout_seconds: float = 300.0
-
-    # Compression-consent prompt timeout — applied by services.chat_service.ask_consent.
-    # Bounds how long chat will wait for the desktop to reply to a
-    # require_compression_consent frame before denying consent and falling
-    # through to the deterministic truncate_chat_history path.
     compression_consent_timeout_seconds: float = 300.0
-
-    # Per-user "recently active chat" window for GET /api/status's chat_count.
-    # Counts Conversation rows updated within the last N minutes.
     chat_active_window_minutes: int = 30
 
-    # Rate limiting — applied by services.rate_limit. In-memory backend (N replicas
-    # = N× effective rate per user). Master switch is fail-open (False →
-    # limiter becomes a no-op). Tunable per .env / environment variable
-    # without code change.
+    # ── Rate limiting ──
     rate_limit_enabled: bool = True
-    # POST /api/user/login — per-IP only (no JWT yet). 10/min is generous for
-    # legitimate retries but tight enough to deter credential spraying.
     login_rate_limit_per_minute: int = 10
-    # POST /api/llm/completion — per-user primary. The reverse-RPC path
-    # (runner → desktop → this endpoint) shares the same user bucket.
     llm_completion_rate_limit_per_minute: int = 60
-    # Per-IP secondary on the same endpoint, catches "open N accounts to
-    # multiply LLM quota" abuse. Set high enough that a single user's
-    # normal traffic is far below this even across multiple devices.
     llm_completion_rate_limit_per_ip_per_minute: int = 200
-    # POST /api/media/stt — Whisper is per-call expensive.
     media_stt_rate_limit_per_minute: int = 20
-    # POST /api/media/tts — StreamingResponse, but the LLM call is made
-    # before the stream starts; rate-limit at the handler entry to prevent
-    # burning provider quota on rejected requests.
     media_tts_rate_limit_per_minute: int = 30
-    # POST /api/media/image_gen — DALL-E 3 is the most expensive media op.
     media_image_gen_rate_limit_per_minute: int = 10
-    # POST /api/media/video_gen — Hailuo runs can take 60–600s and the user
-    # pays per second of output. Cap well below image_gen.
     media_video_gen_rate_limit_per_minute: int = 3
 
-    # ── Temp File Storage (self-hosted, replaces GCS) ──
-    # 公网 URL 前缀，例如 "https://deskagent.mycompany.com" 或 "http://1.2.3.4:8000"
-    # 留空则启动时自动获取公网 IP
-    public_url_prefix: str = ""
-    # 公网 IP（启动时自动获取，仅 public_url_prefix 为空时生效）
-    public_ip: str = ""
-    # 后端端口（拼接 public_url 时使用）
-    port: int = 8000
-    # 临时文件 TTL（小时）
-    temp_file_ttl_hours: int = 24
-
-    # Logging — applied by logger.setup_logging on app boot. stdout only (Docker
-    # driver rotates externally). Literal beats getattr(logging, ...) — typo
-    # fails at boot, not in request path.
+    # ── Logging ──
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
     log_format: Literal["json", "text"] = "json"
 
-    # Root directory for backend-side disk artifacts (currently:
-    # attachments registered by desktop via image.attach / file.attach).
-    # Per-session subdir lives at ``$DATA_DIR/desktop-attachments/{session_id}/``
-    # and is GC'd when the session row is deleted.
-    data_dir: str = "./data"
-
-    # extra="ignore": the build context may carry unrelated env vars (e.g. the
-    # repo .env's MIMO_KEY/MINIMAX_KEY before aliasing); never crash on extras.
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", case_sensitive=False, extra="ignore")
+
+    @field_validator("providers", mode="before")
+    @classmethod
+    def _parse_providers_csv(cls, v):
+        if v is None or v == "":
+            return []
+        if isinstance(v, str):
+            return [p.strip() for p in v.split(",") if p.strip()]
+        return v
 
 
 SETTINGS = Settings()
