@@ -10,6 +10,20 @@ export interface ClipItem {
 export type ClipCatalog = Record<string, ClipItem>
 
 export const $clipCatalog = atom<ClipCatalog>({})
+export const $activeTransitionClip = atom<string | null>(null)
+
+let transitionTimer: ReturnType<typeof setTimeout> | null = null
+
+export function playTransitionClip(scene: string, durationMs = 3000): void {
+  if (transitionTimer) {
+    clearTimeout(transitionTimer)
+  }
+  $activeTransitionClip.set(scene)
+  transitionTimer = setTimeout(() => {
+    transitionTimer = null
+    $activeTransitionClip.set(null)
+  }, durationMs)
+}
 
 export function updateClipCatalog(clips: ClipItem[]): void {
   const current = { ...$clipCatalog.get() }

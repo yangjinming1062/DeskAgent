@@ -1,7 +1,7 @@
 import { useStore } from '@nanostores/react'
 import { useEffect, useState } from 'react'
 
-import { $clipCatalog, getClipUrlForScene } from '@/companion/clip-store'
+import { $activeTransitionClip, $clipCatalog, getClipUrlForScene } from '@/companion/clip-store'
 import { $spriteEmotion, $spriteState, type SpriteEmotion, type SpriteStateName } from '@/companion/companion-store'
 import { $gatewayState } from '@/shared/store/gateway'
 
@@ -51,6 +51,7 @@ export function CompanionReady() {
   const gatewayState = useStore($gatewayState)
   const spriteState = useStore($spriteState)
   const emotion = useStore($spriteEmotion)
+  const transitionClip = useStore($activeTransitionClip)
   const clipCatalog = useStore($clipCatalog)
   const drowsy = gatewayState !== 'open' || spriteState === 'disconnected'
 
@@ -73,8 +74,14 @@ export function CompanionReady() {
     return () => clearTimeout(timer)
   }, [spriteState, drowsy, activeUrl])
 
-  // Determine active scene
-  const activeScene = spriteState === 'emotional' && emotion ? emotion : spriteState === 'idle' ? idleVariant : spriteState
+  // Determine active scene (transition clip has top priority if active)
+  const activeScene = transitionClip
+    ? transitionClip
+    : spriteState === 'emotional' && emotion
+      ? emotion
+      : spriteState === 'idle'
+        ? idleVariant
+        : spriteState
   const clipUrl = getClipUrlForScene(activeScene) ?? getClipUrlForScene('idle')
 
   useEffect(() => {
