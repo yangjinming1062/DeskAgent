@@ -25,7 +25,7 @@ const https = require('node:https')
 const path = require('node:path')
 const { fileURLToPath, pathToFileURL } = require('node:url')
 const { spawn } = require('node:child_process')
-const { detectRemoteDisplay, isWslEnvironment } = require('./bootstrap-platform.cjs')
+const { detectRemoteDisplay, isWslEnvironment } = require('./lifecycle/platform.cjs')
 const {
   DATA_URL_READ_MAX_BYTES,
   DEFAULT_FETCH_TIMEOUT_MS,
@@ -61,7 +61,7 @@ const {
   registerSingleInstanceForwarder,
   destroyTray,
   rebuildTrayMenu
-} = require('./tray.cjs')
+} = require('./lifecycle/tray.cjs')
 const { deskagentHome } = require('./security/paths.cjs')
 const { STREAMABLE_MEDIA_EXTS, mimeTypeForPath, extensionForMimeType } = require('./shared/mime.cjs')
 const log = require('electron-log/main')

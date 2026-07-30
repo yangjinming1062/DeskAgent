@@ -3,7 +3,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 const test = require('node:test')
 
-const { detectRemoteDisplay, isWslEnvironment } = require('./bootstrap-platform.cjs')
+const { detectRemoteDisplay, isWslEnvironment } = require('./platform.cjs')
 
 test('isWslEnvironment detects WSL2 env vars on linux', () => {
   assert.equal(isWslEnvironment({ WSL_DISTRO_NAME: 'Ubuntu' }, 'linux'), true)
@@ -67,8 +67,8 @@ test('detectRemoteDisplay honors the DESKAGENT_DESKTOP_DISABLE_GPU override both
 })
 
 test('packaged electron entrypoints do not require unpackaged npm modules', () => {
-  const electronDir = __dirname
-  const entrypoints = ['main.cjs', 'preload.cjs', 'bootstrap-platform.cjs']
+  const electronDir = path.join(__dirname, '..')
+  const entrypoints = ['main.cjs', 'preload.cjs', 'lifecycle/platform.cjs']
   // - electron: provided by the electron runtime, always resolvable in packaged builds.
   // - node-pty: hoisted by workspace dedup AND shipped via extraResources to
   //   resources/native-deps/node-pty (see scripts/stage-native-deps.cjs). main.cjs

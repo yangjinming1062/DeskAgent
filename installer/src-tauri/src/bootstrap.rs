@@ -1,6 +1,6 @@
 //! Bootstrap orchestration.
 //!
-//! Direct port of `runBootstrap` from `desktop/main/bootstrap-platform.cjs`.
+//! Direct port of `runBootstrap` from `desktop/main/lifecycle/platform.cjs`.
 //! Drives install.ps1 / install.sh stage-by-stage, emits progress events
 //! over the Tauri `bootstrap` channel, writes a forensic log to
 //! DESKAGENT_HOME/logs/bootstrap-<timestamp>.log.
