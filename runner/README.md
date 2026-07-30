@@ -2,12 +2,12 @@
 
 本地手脚——纯粹的工具执行器，承载伙伴"能帮用户做的事"。以 uv build wheel 形式发布，安装器在 `$DESKAGENT_HOME/runner/.venv` 创建 venv 并安装；Desktop 直接 spawn venv Python 调用 `server.py`，通过 WebSocket 接收 JSON-RPC 2.0 工具调用指令并在用户机器上执行。Runner 不感知"伙伴"语义——终端、文件、浏览器、代码执行等底层能力 100% 保留，伙伴人格完全由 Backend 承载、伙伴形象完全由 Desktop 渲染。
 
-设计文档：[design.md](../design.md) §3 / §4 / §5 / §8
+设计文档：[ARCHITECTURE.md](../ARCHITECTURE.md) §3 / §4 / §5 / §8
 
 ## 设计意图
 
 - **剥离大脑逻辑**：系统提示词、多模型适配器、对话记忆模块全部由 Backend 承载。
-- **剔除网络请求**：Runner 不保存任何用户 Token 或云端地址，无法直接访问 Backend。需借 LLM 时通过反向 RPC 请求 Desktop 代为调用（[design.md §5.2.II](../design.md)）。
+- **剔除网络请求**：Runner 不保存任何用户 Token 或云端地址，无法直接访问 Backend。需借 LLM 时通过反向 RPC 请求 Desktop 代为调用（[ARCHITECTURE.md §5.2.II](../ARCHITECTURE.md)）。
 - **Provider 范围**：产品 LLM 交互只面向 OpenAI-compatible providers，不接 Anthropic。Runner 不做 LLM provider 特定的 schema 适配（如折叠 `anyOf` null branch）——nullable union 原样传递，由目标 provider 决定能否接受。
 - **环境状态与工具解耦**：环境共享态（活跃实例表、工厂、cleanup 线程）下沉到 `tools/terminal/environment/` 子包，`file_tools`、`code_execution_tool` 跨包直接导入该子包、共享同一批 env 实例，绕开仍含命令处理 / 安全审批逻辑的 `terminal_tool` 避免循环依赖。`terminal/__init__.py` 对 `terminal_tool` 的重导出用 `__getattr__` 惰性加载——包初始化时 terminal_tool → files → environment → `terminal/__init__` → terminal_tool 的环不会触发。
 

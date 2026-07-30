@@ -2,7 +2,7 @@
 
 桌面伙伴形象载体 + 本地枢纽——单 Electron 应用，承担双职责。
 
-设计文档：[design.md](../design.md) §2 / §3 / §5 / §7 / §10；伙伴层详细交互见 [plan.md](plan.md)。
+设计文档：[ARCHITECTURE.md](../ARCHITECTURE.md) §2 / §3 / §5 / §7 / §10；伙伴层详细交互见 [plan.md](plan.md)。
 
 ## 双层定位
 
@@ -182,7 +182,7 @@ Desktop 走 `electron-updater` 从 Backend `/api/update` 拉取预构建安装�
 
 签名 keypair：私钥 `scripts/secrets/update.key`、公钥 `scripts/secrets/update.pub`（经 `desktop/package.json#build.extraResources` 复制到 packaged desktop，`main/runner/updater.cjs` 启动时读取校验）。**生产构建签名密钥在构建机上**——开发分支留 `update.key` 在本地是因为出包验证需要测试签名链路。
 
-伙伴形象资产与角色定义云端持久化（[design.md §7](../design.md)），自更新只影响本地代码与运行时，不触碰用户的伙伴身份。
+伙伴形象资产与角色定义云端持久化（[ARCHITECTURE.md §7](../ARCHITECTURE.md)），自更新只影响本地代码与运行时，不触碰用户的伙伴身份。
 
 ## 安全
 

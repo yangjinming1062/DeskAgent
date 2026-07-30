@@ -6,7 +6,7 @@ DeskAgent 是一个**根据用户描述定制的、具有专属形象的陪伴�
 
 三个关键词：**定制**（形象与人格由用户定义并生成）、**陪伴**（主动、持续、有记忆）、**伙伴**（交互对象是"他/她/它"，工具能力只是伙伴"会做的事"，不是产品的主角）。
 
-完整设计意图、伙伴生命周期、通信协议不变量见 [design.md](design.md)。
+完整设计意图、伙伴生命周期、通信协议不变量见 [ARCHITECTURE.md](ARCHITECTURE.md)。
 
 ## 模块架构
 
@@ -93,7 +93,7 @@ bash scripts/build_client.sh
 
 | 想了解什么 | 看哪里 |
 |-----------|--------|
-| 项目总览 / 架构机制 / 通信协议与不变量 / 伙伴生命周期 | [design.md](design.md) |
+| 项目总览 / 架构机制 / 通信协议与不变量 / 伙伴生命周期 | [ARCHITECTURE.md](ARCHITECTURE.md) |
 | Backend 模块结构与实现 | [backend/README.md](backend/README.md) |
 | Runner 模块结构与实现 | [runner/README.md](runner/README.md) |
 | Desktop 模块结构与实现 | [desktop/README.md](desktop/README.md) |
@@ -112,7 +112,7 @@ bash scripts/build_client.sh
 
 ## 信任与安全
 
-跨模块安全契约详见 [design.md §8](design.md)；核心要点：
+跨模块安全契约详见 [ARCHITECTURE.md §8](ARCHITECTURE.md)；核心要点：
 
 - **Runner 零凭证**：不持有 Backend token；需借 LLM 时通过反向 RPC 经 Desktop 代调 `POST /api/llm/completion`
 - **JWT 加密落盘**：Electron `safeStorage` 跨平台统一（DPAPI / Keychain / libsecret）

@@ -43,7 +43,7 @@ async def create_completion(req: CompletionRequest, request: Request, current: t
     text (which can carry provider URLs and partial auth headers) stays in
     server-side logs; the renderer only sees ``{error, reason, status}`` where
     ``reason`` is a stable ``FailoverReason`` enum value. This mirrors the
-    -32603 "no internal detail" requirement in ``design.md §3.1``.
+    -32603 "no internal detail" requirement in ``ARCHITECTURE.md §3.1``.
 
     Calls run through the provider chain; if the head provider returns an
     auth/billing/model-not-found error, the next configured provider is tried

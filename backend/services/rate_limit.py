@@ -79,7 +79,7 @@ async def stash_user_id_middleware(request: Request, call_next):  # type: ignore
 async def rate_limit_exception_handler(request: Request, exc: RateLimitExceeded) -> JSONResponse:
     """429 envelope in ``{error, reason, status}`` shape with ``Retry-After``.
 
-    Mirrors ``design.md §5.3`` and the upstream 429 path: server log
+    Mirrors ``ARCHITECTURE.md §5.3`` and the upstream 429 path: server log
     keeps the full context, the renderer sees the stable
     ``FailoverReason.rate_limit`` enum value
     (``core/error_classifier.py:26``) so its error handling is uniform

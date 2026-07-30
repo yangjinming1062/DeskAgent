@@ -1,6 +1,6 @@
 import re
 
-# The companion emotion vocabulary (design.md §7.5). The LLM picks one to
+# The companion emotion vocabulary (ARCHITECTURE.md §7.5). The LLM picks one to
 # prefix each response; the affect scrubber strips it and the orchestrator
 # attaches it to the ``message.complete`` frame so the desktop can drive its
 # animation state machine. Unknown values fall back to ``neutral`` downstream.

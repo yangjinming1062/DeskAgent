@@ -447,7 +447,7 @@ def build_system_prompt_parts(config: AgentPromptConfig, system_message: str | N
         stable_parts.append(config.persona_extras)
         # A companion persona drives a visible avatar — instruct the LLM to
         # emit an inline affect tag so the desktop's animation state machine
-        # gets an emotion cue with every response (design.md §7.5).
+        # gets an emotion cue with every response (ARCHITECTURE.md §7.5).
         stable_parts.append(COMPANION_AFFECT_GUIDANCE)
     if config.task_completion_guidance and valid_tools:
         stable_parts.append(TASK_COMPLETION_GUIDANCE)

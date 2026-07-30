@@ -2,7 +2,7 @@ from components import get_logger
 
 logger = get_logger(__name__)
 
-# Per-user disturbance tier (design.md §6). The desktop reports the effective
+# Per-user disturbance tier (ARCHITECTURE.md §6). The desktop reports the effective
 # tier via `companion.set_disturbance_tier`; `quiet` suppresses the companion's
 # proactive outreach (the send_message → companion.message path) without
 # cutting the affect channel. Process-local — the desktop ALSO gates proactive
