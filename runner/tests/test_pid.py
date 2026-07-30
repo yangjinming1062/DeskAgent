@@ -9,12 +9,10 @@ callers — that contract is itself load-bearing because callers fall back
 to ``psutil``-based tree-kill on POSIX and don't want a silent no-op
 implementation to mask bugs.
 """
-
 import sys
 
 import psutil
 import pytest
-
 from utils.pid import kill_tree
 from utils.pid import pid_exists
 
@@ -41,6 +39,7 @@ def test_pid_exists_treats_access_denied_as_exists():
     Without this, a brief permission flap on Windows would silently drop
     a live PID and a process tree we'd intended to skip.
     """
+
     class _Boom:
         def __call__(self, pid):
             raise psutil.AccessDenied(pid)
@@ -60,6 +59,7 @@ def test_pid_exists_treats_other_psutil_errors_as_not_exists():
     load-bearing: a transient probe failure should NOT be confused with a
     confirmed-gone process.
     """
+
     class _Boom:
         def __call__(self, pid):
             raise psutil.TimeoutExpired(0.0)

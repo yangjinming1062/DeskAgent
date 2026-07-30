@@ -10,29 +10,36 @@ Targets:
 - ``utils.reverse_rpc`` — handler not configured + happy path
 - ``utils.config`` — cfg_* coercers
 """
-
 import json
 import os
 import sys
 from pathlib import Path
 
 import pytest
-
-from utils import config as cfg_mod
-from utils import env_helpers
-from utils import reverse_rpc
+import utils.reverse_rpc as reverse_rpc
 from utils.capabilities import _binary_exists
 from utils.capabilities import disk_free_bytes
 from utils.capabilities import snapshot
+from utils.config import cfg_bool
+from utils.config import cfg_float
+from utils.config import cfg_get
+from utils.config import cfg_int
+from utils.config import cfg_json
+from utils.config import cfg_str
+from utils.config import get_env_type
+from utils.config import is_truthy_value
+from utils.config import load_config
 from utils.constants import CREATE_NO_WINDOW
-from utils.constants import IS_WINDOWS
 from utils.constants import get_deskagent_dir
 from utils.constants import get_deskagent_home
 from utils.constants import get_deskagent_home_override
 from utils.constants import get_skills_dir
 from utils.constants import get_subprocess_home
 from utils.constants import is_termux
+from utils.constants import IS_WINDOWS
 from utils.constants import secure_parent_dir
+from utils.env_helpers import inject_context_deskagent_home
+from utils.env_helpers import sanitize_subprocess_env
 from utils.file_safety import classify_container_mirror_target
 from utils.file_safety import classify_cross_profile_target
 from utils.file_safety import classify_sandbox_mirror_target
@@ -42,6 +49,8 @@ from utils.file_safety import get_read_block_error
 from utils.file_safety import get_sandbox_mirror_warning
 from utils.file_safety import is_write_denied
 from utils.redact import redact_sensitive_text
+from utils.reverse_rpc import call_llm
+from utils.reverse_rpc import set_handler
 
 
 # ---------------------------------------------------------------------------
@@ -53,36 +62,36 @@ class TestInjectContextDeskagentHome:
     def test_injects_when_override_set(self, monkeypatch):
         monkeypatch.setenv("DESKAGENT_HOME", "/custom/path")
         env: dict = {}
-        env_helpers.inject_context_deskagent_home(env)
+        inject_context_deskagent_home(env)
         assert env["DESKAGENT_HOME"] == "/custom/path"
 
     def test_does_nothing_when_override_unset(self, monkeypatch):
         monkeypatch.delenv("DESKAGENT_HOME", raising=False)
         env: dict = {"OTHER": "x"}
-        env_helpers.inject_context_deskagent_home(env)
+        inject_context_deskagent_home(env)
         assert env == {"OTHER": "x"}
 
 
 class TestSanitizeSubprocessEnv:
     def test_merges_base_and_extra(self, monkeypatch):
         monkeypatch.setenv("DESKAGENT_HOME", "/x")
-        out = env_helpers.sanitize_subprocess_env({"A": "1"}, {"B": "2"})
+        out = sanitize_subprocess_env({"A": "1"}, {"B": "2"})
         assert out["A"] == "1" and out["B"] == "2"
 
     def test_overlay_wins_on_conflict(self, monkeypatch):
         monkeypatch.setenv("DESKAGENT_HOME", "/x")
-        out = env_helpers.sanitize_subprocess_env({"A": "1"}, {"A": "2"})
+        out = sanitize_subprocess_env({"A": "1"}, {"A": "2"})
         assert out["A"] == "2"
 
     def test_injects_home_from_override(self, monkeypatch):
         monkeypatch.setenv("DESKAGENT_HOME", "/x")
-        out = env_helpers.sanitize_subprocess_env({})
+        out = sanitize_subprocess_env({})
         assert out["DESKAGENT_HOME"] == "/x"
 
     def test_home_is_str_not_path(self, monkeypatch):
         """HOME MUST be ``str``, not ``Path`` — child Python may not handle Path objects in os.environ."""
         monkeypatch.setenv("DESKAGENT_HOME", "/custom")
-        out = env_helpers.sanitize_subprocess_env({})
+        out = sanitize_subprocess_env({})
         assert isinstance(out["HOME"], str)
         # Don't pin the exact string — Windows normalizes "/custom" to "\custom".
         # The contract under test is the type, not the path representation.
@@ -330,9 +339,7 @@ class TestContainerMirror:
 class TestRedactSensitiveText:
     def test_disabled_by_config(self, monkeypatch):
         """``security.redact_secrets=false`` in config disables redaction."""
-        # ``redact`` imports ``load_config`` by name; patch the symbol in
-        # the *redact* module, not the source module.
-        from utils import redact as redact_mod
+        import utils.redact as redact_mod
 
         real = redact_mod.load_config
         monkeypatch.setattr(redact_mod, "load_config", lambda: {"security": {"redact_secrets": False}})
@@ -409,7 +416,7 @@ class TestRedactSensitiveText:
 
     def test_redact_failure_returns_original(self, monkeypatch):
         """If the redactor itself raises, MUST return the original text (defensive)."""
-        from utils import redact as redact_mod
+        import utils.redact as redact_mod
 
         real = redact_mod._redact
         monkeypatch.setattr(redact_mod, "_redact", lambda s: (_ for _ in ()).throw(RuntimeError("boom")))
@@ -463,7 +470,8 @@ class TestReverseRpc:
         try:
             with pytest.raises(RuntimeError, match="not configured"):
                 import asyncio
-                asyncio.run(reverse_rpc.call_llm(messages=[]))
+
+                asyncio.run(call_llm(messages=[]))
         finally:
             reverse_rpc._handler = real
 
@@ -472,10 +480,11 @@ class TestReverseRpc:
             return "hello-from-handler"
 
         real = reverse_rpc._handler
-        reverse_rpc.set_handler(_fake)
+        set_handler(_fake)
         try:
             import asyncio
-            out = asyncio.run(reverse_rpc.call_llm(prompt="x"))
+
+            out = asyncio.run(call_llm(prompt="x"))
             assert out == "hello-from-handler"
         finally:
             reverse_rpc._handler = real
@@ -488,69 +497,69 @@ class TestReverseRpc:
 
 class TestConfigHelpers:
     def test_is_truthy_accepts_known_truthy_strings(self):
-        assert cfg_mod.is_truthy_value("true") is True
-        assert cfg_mod.is_truthy_value("yes") is True
-        assert cfg_mod.is_truthy_value("on") is True
-        assert cfg_mod.is_truthy_value("1") is True
+        assert is_truthy_value("true") is True
+        assert is_truthy_value("yes") is True
+        assert is_truthy_value("on") is True
+        assert is_truthy_value("1") is True
         # case + whitespace
-        assert cfg_mod.is_truthy_value("  TRUE  ") is True
+        assert is_truthy_value("  TRUE  ") is True
 
     def test_is_truthy_rejects_garbage(self):
-        assert cfg_mod.is_truthy_value("nope") is False
-        assert cfg_mod.is_truthy_value("") is False
-        assert cfg_mod.is_truthy_value(None, default=False) is False
-        assert cfg_mod.is_truthy_value(None, default=True) is True
+        assert is_truthy_value("nope") is False
+        assert is_truthy_value("") is False
+        assert is_truthy_value(None, default=False) is False
+        assert is_truthy_value(None, default=True) is True
 
     def test_is_truthy_passes_through_bool(self):
-        assert cfg_mod.is_truthy_value(True) is True
-        assert cfg_mod.is_truthy_value(False) is False
+        assert is_truthy_value(True) is True
+        assert is_truthy_value(False) is False
 
     def test_is_truthy_numeric_truthy(self):
         # Non-zero numbers coerce True per the documented contract.
-        assert cfg_mod.is_truthy_value(1) is True
-        assert cfg_mod.is_truthy_value(0) is False
+        assert is_truthy_value(1) is True
+        assert is_truthy_value(0) is False
 
     def test_cfg_get_walks_nested(self):
         d = {"a": {"b": {"c": "deep"}}}
-        assert cfg_mod.cfg_get(d, "a", "b", "c") == "deep"
-        assert cfg_mod.cfg_get(d, "a", "missing", default="fallback") == "fallback"
+        assert cfg_get(d, "a", "b", "c") == "deep"
+        assert cfg_get(d, "a", "missing", default="fallback") == "fallback"
         # Non-dict intermediate returns default.
-        assert cfg_mod.cfg_get(d, "a", "b", "c", "deeper", default=None) is None
+        assert cfg_get(d, "a", "b", "c", "deeper", default=None) is None
 
     def test_cfg_get_returns_default_for_missing_keys(self):
-        assert cfg_mod.cfg_get({}, "missing", default=42) == 42
+        assert cfg_get({}, "missing", default=42) == 42
 
     def test_cfg_int_coercion(self):
-        assert cfg_mod.cfg_int({"k": 42}, "k") == 42
-        assert cfg_mod.cfg_int({"k": "42"}, "k") == 42
-        assert cfg_mod.cfg_int({"k": "abc"}, "k", default=99) == 99
-        assert cfg_mod.cfg_int({"k": None}, "k", default=99) == 99
+        assert cfg_int({"k": 42}, "k") == 42
+        assert cfg_int({"k": "42"}, "k") == 42
+        assert cfg_int({"k": "abc"}, "k", default=99) == 99
+        assert cfg_int({"k": None}, "k", default=99) == 99
 
     def test_cfg_float_coercion(self):
-        assert cfg_mod.cfg_float({"k": 1.5}, "k") == 1.5
-        assert cfg_mod.cfg_float({"k": "1.5"}, "k") == 1.5
-        assert cfg_mod.cfg_float({"k": "x"}, "k", default=0.0) == 0.0
+        assert cfg_float({"k": 1.5}, "k") == 1.5
+        assert cfg_float({"k": "1.5"}, "k") == 1.5
+        assert cfg_float({"k": "x"}, "k", default=0.0) == 0.0
 
     def test_cfg_bool_via_truthy(self):
-        assert cfg_mod.cfg_bool({"k": "true"}, "k") is True
-        assert cfg_mod.cfg_bool({"k": "false"}, "k") is False
-        assert cfg_mod.cfg_bool({"k": None}, "k", default=True) is True
+        assert cfg_bool({"k": "true"}, "k") is True
+        assert cfg_bool({"k": "false"}, "k") is False
+        assert cfg_bool({"k": None}, "k", default=True) is True
 
     def test_cfg_str_strips(self):
-        assert cfg_mod.cfg_str({"k": "  hi  "}, "k") == "hi"
-        assert cfg_mod.cfg_str({"k": None}, "k", default="d") == "d"
-        assert cfg_mod.cfg_str({}, "k", default="d") == "d"
+        assert cfg_str({"k": "  hi  "}, "k") == "hi"
+        assert cfg_str({"k": None}, "k", default="d") == "d"
+        assert cfg_str({}, "k", default="d") == "d"
 
     def test_cfg_json_decodes(self):
-        assert cfg_mod.cfg_json({"k": '{"a": 1}'}, "k") == {"a": 1}
-        assert cfg_mod.cfg_json({"k": "[1,2]"}, "k") == [1, 2]
+        assert cfg_json({"k": '{"a": 1}'}, "k") == {"a": 1}
+        assert cfg_json({"k": "[1,2]"}, "k") == [1, 2]
         # Pass-through for already-decoded values.
-        assert cfg_mod.cfg_json({"k": {"x": 1}}, "k") == {"x": 1}
+        assert cfg_json({"k": {"x": 1}}, "k") == {"x": 1}
         # Garbage returns default.
-        assert cfg_mod.cfg_json({"k": "not-json{"}, "k", default={}) == {}
+        assert cfg_json({"k": "not-json{"}, "k", default={}) == {}
 
     def test_get_env_type_normalizes(self, monkeypatch):
-        from utils import config
+        import utils.config as config
 
         real = config.load_config
         monkeypatch.setattr(config, "load_config", lambda: {"terminal": {"env_type": "  Docker  "}})
@@ -567,41 +576,41 @@ class TestConfigHelpers:
         """Missing config.yaml MUST NOT raise — return ``{}``."""
         monkeypatch.setenv("DESKAGENT_HOME", str(tmp_path))
         # Force cache reset so the new HOME is observed.
-        cfg_mod._CONFIG_CACHE = None
-        cfg_mod._CONFIG_CACHE_MTIME = None
+        _CONFIG_CACHE = None
+        _CONFIG_CACHE_MTIME = None
         try:
-            assert cfg_mod.load_config() == {}
+            assert load_config() == {}
         finally:
-            cfg_mod._CONFIG_CACHE = None
-            cfg_mod._CONFIG_CACHE_MTIME = None
+            _CONFIG_CACHE = None
+            _CONFIG_CACHE_MTIME = None
 
     def test_load_config_invalid_yaml_returns_empty(self, monkeypatch, tmp_path):
         monkeypatch.setenv("DESKAGENT_HOME", str(tmp_path))
         (tmp_path / "config.yaml").write_text(": not yaml [")
-        cfg_mod._CONFIG_CACHE = None
-        cfg_mod._CONFIG_CACHE_MTIME = None
+        _CONFIG_CACHE = None
+        _CONFIG_CACHE_MTIME = None
         try:
-            assert cfg_mod.load_config() == {}
+            assert load_config() == {}
         finally:
-            cfg_mod._CONFIG_CACHE = None
-            cfg_mod._CONFIG_CACHE_MTIME = None
+            _CONFIG_CACHE = None
+            _CONFIG_CACHE_MTIME = None
 
     def test_load_config_caches_per_mtime(self, monkeypatch, tmp_path):
         monkeypatch.setenv("DESKAGENT_HOME", str(tmp_path))
         cfg_file = tmp_path / "config.yaml"
         cfg_file.write_text("a: 1\n")
-        cfg_mod._CONFIG_CACHE = None
-        cfg_mod._CONFIG_CACHE_MTIME = None
+        _CONFIG_CACHE = None
+        _CONFIG_CACHE_MTIME = None
         try:
-            first = cfg_mod.load_config()
+            first = load_config()
             assert first == {"a": 1}
             # Without mtime change, second call returns cached object.
-            second = cfg_mod.load_config()
+            second = load_config()
             assert second is first  # identity, not equality
             # Edit config; mtime advances.
             cfg_file.write_text("a: 2\n")
-            third = cfg_mod.load_config()
+            third = load_config()
             assert third == {"a": 2}
         finally:
-            cfg_mod._CONFIG_CACHE = None
-            cfg_mod._CONFIG_CACHE_MTIME = None
+            _CONFIG_CACHE = None
+            _CONFIG_CACHE_MTIME = None

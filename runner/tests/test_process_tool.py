@@ -13,17 +13,15 @@ The 2026-07 review added several contracts worth pinning:
 - ``ProcessRegistry._clean_shell_noise`` strips every variant of the
   bash startup noise lines without eating real command output.
 """
-
 import json
 
 import pytest
-
+from tools import tool_error
 from tools.process import process_tool
-from tools.process.process_tool import ProcessRegistry
-from tools.process.process_tool import ProcessSession
 from tools.process.process_tool import _handle_process
 from tools.process.process_tool import format_process_notification
-from tools import tool_error
+from tools.process.process_tool import ProcessRegistry
+from tools.process.process_tool import ProcessSession
 
 
 @pytest.fixture

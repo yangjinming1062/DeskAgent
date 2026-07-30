@@ -17,7 +17,6 @@ exercises ``runner_loop`` and ``process_request`` exactly as they run in
 production (same async, same JSON, same envelopes) without depending on a
 real TCP listener.
 """
-
 import asyncio
 import contextlib
 import json
@@ -28,10 +27,9 @@ from typing import Awaitable
 from typing import Callable
 
 import pytest
+import server
 import websockets
 from websockets.legacy.server import serve
-
-import server
 
 
 class _Peer:
