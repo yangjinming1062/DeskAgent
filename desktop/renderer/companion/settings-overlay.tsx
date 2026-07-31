@@ -4,9 +4,10 @@ import { useEffect, useState } from 'react'
 import { useGatewayRequest } from '@/companion/boot/use-gateway-request'
 import { clearClipCatalog } from '@/companion/clip-store'
 import { $disturbanceTier, type DisturbanceTier, setDisturbanceTier } from '@/companion/companion-store'
+import { $persona } from '@/companion/persona-store'
 import { $companionVoiceId, $responseMode, type ResponseMode, setCompanionVoiceId, setResponseMode } from '@/companion/prefs'
 import { speak } from '@/companion/tts'
-import { fetchVoiceCatalog, type VoiceOption } from '@/companion/voice'
+import { fetchVoiceCatalog, sampleLine, type VoiceOption } from '@/companion/voice'
 
 interface SettingsOverlayProps {
   onClose: () => void
@@ -26,6 +27,7 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps) {
   const tier = useStore($disturbanceTier)
   const responseMode = useStore($responseMode)
   const currentVoice = useStore($companionVoiceId)
+  const persona = useStore($persona)
   const { requestGateway } = useGatewayRequest()
   const [voices, setVoices] = useState<VoiceOption[]>([])
   const [regenerating, setRegenerating] = useState(false)
@@ -146,7 +148,7 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps) {
                       <p className="text-white/40">{v.tags.join(' · ')}</p>
                     </div>
                     <div className="flex gap-2">
-                      <button className="text-white/60 transition hover:text-white" onClick={() => void speak('你好呀，这是我的声音～', v.id || undefined)} type="button">试听</button>
+                      <button className="text-white/60 transition hover:text-white" onClick={() => void speak(sampleLine(persona?.name ?? ''), v.id || undefined)} type="button">试听</button>
                       <button
                         className={`transition ${currentVoice === v.id ? 'text-emerald-400' : 'text-white/60 hover:text-white'}`}
                         onClick={() => setCompanionVoiceId(v.id)}

@@ -7,6 +7,7 @@ import {
   setAssistantTool
 } from '@/companion/chat-store'
 import { setClipStatus } from '@/companion/clip-store'
+import { applyClipUpdate, type ClipMeta } from '@/companion/clip-store'
 import { $disturbanceTier, setSpriteState, type SpriteEmotion } from '@/companion/companion-store'
 import { $responseMode } from '@/companion/prefs'
 import { speak } from '@/companion/tts'
@@ -82,6 +83,30 @@ export function handleCompanionEvent(event: RpcEvent): void {
 
       if (payload?.scene) {
         setClipStatus(payload.scene, 'succeeded', payload.video_url ?? null)
+      }
+
+      break
+    }
+
+    case 'clip.updated': {
+      const p = event.payload as {
+        scene?: string
+        tier?: number
+        status?: string
+        url?: string | null
+        keyframe_url?: string | null
+        keyframe_meta?: ClipMeta | null
+      } | undefined
+
+      if (p?.scene && typeof p.tier === 'number') {
+        applyClipUpdate({
+          scene: p.scene,
+          tier: p.tier,
+          status: p.status,
+          url: p.url ?? null,
+          keyframe_url: p.keyframe_url ?? null,
+          keyframe_meta: p.keyframe_meta ?? null,
+        })
       }
 
       break
