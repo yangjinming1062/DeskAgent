@@ -1,8 +1,10 @@
 import json
 import secrets
+from pathlib import Path
 
 from components import get_logger
 from components import safe_json_loads
+from components import SETTINGS
 from modules.companion import AvatarAsset
 from modules.companion import Persona
 from sqlalchemy.orm import Session
@@ -16,6 +18,7 @@ logger = get_logger(__name__)
 _DEFAULT_STYLE: str = "portrait"
 _AVATAR_SIZE: str = "1024x1024"
 _AVATAR_QUALITY: str = "standard"
+_UPLOAD_EXTS: dict[str, str] = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp", "image/gif": "gif"}
 
 
 class AvatarGenerationError(RuntimeError):
@@ -145,3 +148,49 @@ async def regenerate_avatar(db: Session, user_id: int, persona: Persona, feedbac
     invalidate_user_clips(db, user_id)
     await _seed_batch0(db, user_id, asset)
     return asset
+
+
+def upload_avatar(db: Session, user_id: int, data: bytes, content_type: str) -> AvatarAsset:
+    """Persist a user-supplied image as the active portrait (plan §3.4 self-
+    upload). Stored under a dedicated persistent dir (not temp-media, which is
+    TTL-cleaned) and served via the companion file route. Derivative clips are
+    invalidated since an uploaded image has no shared seed with prior clips.
+
+    Note: clips generated from an uploaded portrait may be lower-fidelity or
+    slower — there is no cloud-side reference, only the single image."""
+    ext = _UPLOAD_EXTS.get(content_type.split(";")[0].strip().lower(), "png")
+    file_id = secrets.token_urlsafe(16)
+    avatars_dir = Path(SETTINGS.data_dir) / "companion-avatars"
+    avatars_dir.mkdir(parents=True, exist_ok=True)
+    filepath = avatars_dir / f"{file_id}.{ext}"
+    with open(filepath, "wb") as f:
+        f.write(data)
+    prefix = SETTINGS.public_url_prefix or f"http://{SETTINGS.public_ip}:{SETTINGS.port}"
+    public_url = f"{prefix}/api/companion/avatar/file/{file_id}.{ext}"
+
+    db.query(AvatarAsset).filter(AvatarAsset.user_id == user_id, AvatarAsset.active.is_(True)).update({"active": False})
+    asset = AvatarAsset(
+        user_id=user_id,
+        prompt_json=json.dumps({"source": "upload", "content_type": content_type}),
+        asset_url=public_url,
+        style="uploaded",
+        active=True,
+    )
+    db.add(asset)
+    db.commit()
+    db.refresh(asset)
+    invalidate_user_clips(db, user_id)
+    return asset
+
+
+def resolve_uploaded_avatar_path(filename: str) -> tuple[Path, str] | None:
+    """Locate an uploaded avatar file on disk for the serving route."""
+    name = Path(filename).name
+    if "/" in name or "\\" in name or ".." in name:
+        return None
+    filepath = Path(SETTINGS.data_dir) / "companion-avatars" / name
+    if not filepath.exists():
+        return None
+    ext = filepath.suffix.lstrip(".").lower()
+    content_type = next((ct for ct, e in _UPLOAD_EXTS.items() if e == ext), "image/png")
+    return filepath, content_type

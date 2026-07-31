@@ -15,7 +15,7 @@ backend/
 ├── services/          # 服务/编排层（业务逻辑）。无 god-facade——按子包直接 import
 │   ├── chat/          # 对话编排：orchestrator(run_chat_turn) · streaming · tool_dispatch · persistence · turn_inputs · heartbeat · types
 │   │                   + chat_emitter(循环断路器，Emitter 协议) · system_prompt · history · message_sanitization · think_scrubber · agent_delegate · commands
-│   ├── gateway/       # WS 网关：connection(MANAGER+LISTEN/NOTIFY) · jsonrpc · emitter(JsonRpcEmitter) · ipc · runtime · auth · handlers(24 个 JSON-RPC 方法)
+│   ├── gateway/       # WS 网关：connection(MANAGER+LISTEN/NOTIFY) · jsonrpc · emitter(JsonRpcEmitter) · ipc · runtime · auth · handlers(31 个 JSON-RPC 方法)
 │   ├── llm/           # LLM 客户端与错误分类：llm_client · llm_retry · error_classifier · context_compressor · user_config
 │   │                   + providers/(抽象层：base · registry · http · openai_compat · content · mimo/ · minimax/ · gemini/)
 │   ├── media/         # 视频生成后台任务：video_jobs(submit/poll/download/finalize + WSEvent outbox)
@@ -219,6 +219,15 @@ DeskAgent 伙伴的"人格"与"形象"是跨 Backend↔Desktop 的核心契约�
 - **事件下发**：clip 复用既有 `video_gen.completed/failed` 事件（design §7.2），`enqueue_video_job` 的 `event_extras` dict 合入事件 payload，Desktop 据 `scene` 字段绑定到对应动画状态
 - **avatar.list_clips** JSON-RPC：返回全部 clip + 实时生成状态（JOIN `VideoGenJob` 行）
 - **衍生失效**：portrait 重生时所有 clip 失效（design §7.2——同一颗种子图从机制上保证跨 clip 一致性，跨版本不可复用）
+
+### 音色匹配（voice catalog）
+
+onboarding 的音色偏好（`voice` 草稿字段）经两个 JSON-RPC 落到具体 voice id（design §3.2 / §3.5）：
+
+- **`tts.list_voices`**：返回当前用户激活的 TTS provider 的候选音色目录（`{provider, voices:[{id,label,gender,tags,description}]}`）。voice id 是 provider 私有的（MiMo/MiniMax/Gemini/智谱各自命名），目录只收录各 provider 验证可用的 id，匹配结果不会让合成失败。
+- **`tts.match_voice {preference}`**：把自由文本偏好（"温柔的少女音"）经标签评分映射到目录中最贴合的 voice id，返回 `{provider, voice, alternatives[]}`。评分是即时确定性的（标签/性别/label 子串重叠）——onboarding 不该为一个窄域标签任务付 LLM 延迟。无匹配时优先中性默认音色。
+
+匹配到的 voice id 由 Desktop 持久化，后续 `POST /api/media/tts` 的 `voice` 参数直接透传给 provider（`provider.synthesize(text, voice=…)`）。`services/companion/voice_catalog.py`。
 
 ### 伙伴情绪（affect）
 
