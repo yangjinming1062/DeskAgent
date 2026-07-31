@@ -5,7 +5,6 @@ import { atom } from 'nanostores'
 // When the Runner is offline the polls no-op and the atoms keep their defaults.
 
 export const $screenLocked = atom<boolean>(false)
-export const $idleSeconds = atom<number>(0)
 
 const POLL_INTERVAL_MS = 30_000
 
@@ -17,18 +16,11 @@ async function pollOnce(): Promise<void> {
   if (!desktop?.runnerInvoke) {return}
 
   try {
-    const locked = (await desktop.runnerInvoke('system.is_screen_locked', {})) as { locked?: boolean }
-    $screenLocked.set(Boolean(locked?.locked))
+    const locked = await desktop.runnerInvoke('system.is_screen_locked', {})
+
+    $screenLocked.set(Boolean((locked as { locked?: boolean } | null)?.locked))
   } catch {
     /* runner offline or tool unavailable — leave previous value */
-  }
-
-  try {
-    const idle = (await desktop.runnerInvoke('system.get_idle_seconds', {})) as { idle_seconds?: number }
-
-    if (typeof idle?.idle_seconds === 'number') {$idleSeconds.set(idle.idle_seconds)}
-  } catch {
-    /* same */
   }
 }
 
