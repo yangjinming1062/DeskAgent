@@ -8,10 +8,14 @@ export const $evolutionLevel = atom<number>(1)
 export const $totalInteractions = atom<number>(0)
 
 function calculateLevel(score: number): number {
-  if (score >= 300) return 5
-  if (score >= 120) return 4
-  if (score >= 50) return 3
-  if (score >= 15) return 2
+  if (score >= 300) {return 5}
+
+  if (score >= 120) {return 4}
+
+  if (score >= 50) {return 3}
+
+  if (score >= 15) {return 2}
+
   return 1
 }
 

@@ -1,0 +1,144 @@
+import { useStore } from '@nanostores/react'
+import { useState } from 'react'
+
+import { useGatewayRequest } from '@/companion/boot/use-gateway-request'
+import { clearClipCatalog } from '@/companion/clip-store'
+import { assemblePersona } from '@/companion/persona'
+import { $persona, hydratePersona } from '@/companion/persona-store'
+
+const ROLE_PRESETS = ['爱人', '秘书', '专属管家', '无话不谈的朋友']
+const PERSONALITY_PRESETS = ['温柔体贴', '活泼好动', '冷静理性', '毒舌傲娇']
+
+const inputClass =
+  'w-full rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-xs text-white placeholder:text-white/30 outline-none focus:border-white/40'
+
+const presetClass =
+  'rounded-full border border-white/15 bg-white/5 px-2.5 py-1 text-[11px] text-white/70 transition hover:bg-white/15'
+
+// Runtime persona editor: revisits the onboarding name/role/personality
+// fields prefilled with the current persona, PUTs the assembled payload, then
+// re-hydrates $persona. Avatar regeneration is offered (not forced) since a
+// persona change should re-seed the portrait but regeneration is costly.
+export function PersonaSection() {
+  const persona = useStore($persona)
+  const { requestGateway } = useGatewayRequest()
+  const [editing, setEditing] = useState(false)
+  const [name, setName] = useState(persona?.name ?? '')
+  const [role, setRole] = useState(persona?.background ?? '')
+  const [personality, setPersonality] = useState(persona?.personality ?? '')
+  const [saving, setSaving] = useState(false)
+  const [hint, setHint] = useState<string | null>(null)
+
+  const startEdit = () => {
+    setName(persona?.name ?? '')
+    setRole(persona?.background ?? '')
+    setPersonality(persona?.personality ?? '')
+    setHint(null)
+    setEditing(true)
+  }
+
+  const save = async () => {
+    const trimmed = name.trim()
+
+    if (!trimmed) {
+      setHint('得给我起个名字呀')
+
+      return
+    }
+
+    setSaving(true)
+    setHint(null)
+
+    try {
+      await window.deskagent.api({
+        body: assemblePersona({ name: trimmed, personality, role }),
+        method: 'PUT',
+        path: '/api/companion/persona'
+      })
+      await hydratePersona()
+      setEditing(false)
+
+      if (window.confirm('角色更新啦，要重新生成我的形象吗？')) {
+        clearClipCatalog()
+        void requestGateway('avatar.regenerate', {}).catch(() => {})
+      }
+    } catch {
+      setHint('保存失败了，稍后再试')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (!editing) {
+    return (
+      <div>
+        <p className="mb-1.5 text-xs font-medium text-white/80">角色</p>
+        <div className="space-y-0.5 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs">
+          <p className="font-medium text-white">{persona?.name ?? '伙伴'}</p>
+          <p className="text-white/50">{[persona?.background, persona?.personality].filter(Boolean).join(' · ') || '还没设定性格'}</p>
+        </div>
+        <button
+          className="mt-1.5 rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-xs text-white/80 transition hover:bg-white/15"
+          onClick={startEdit}
+          type="button"
+        >
+          编辑角色
+        </button>
+        <p className="mt-1.5 text-[10px] text-white/30">修改我的名字、定位与性格</p>
+      </div>
+    )
+  }
+
+  return (
+    <div>
+      <p className="mb-1.5 text-xs font-medium text-white/80">编辑角色</p>
+      <div className="space-y-2.5">
+        <label className="block">
+          <span className="mb-1 block text-[11px] text-white/50">名字</span>
+          <input className={inputClass} onChange={e => setName(e.target.value)} placeholder="给我起个名字" value={name} />
+        </label>
+        <label className="block">
+          <span className="mb-1 block text-[11px] text-white/50">角色定位</span>
+          <input className={inputClass} onChange={e => setRole(e.target.value)} placeholder="或者自由描述…" value={role} />
+          <div className="mt-1.5 flex flex-wrap gap-1.5">
+            {ROLE_PRESETS.map(p => (
+              <button className={presetClass} key={p} onClick={() => setRole(p)} type="button">
+                {p}
+              </button>
+            ))}
+          </div>
+        </label>
+        <label className="block">
+          <span className="mb-1 block text-[11px] text-white/50">性格</span>
+          <input className={inputClass} onChange={e => setPersonality(e.target.value)} placeholder="自由描述…" value={personality} />
+          <div className="mt-1.5 flex flex-wrap gap-1.5">
+            {PERSONALITY_PRESETS.map(p => (
+              <button className={presetClass} key={p} onClick={() => setPersonality(p)} type="button">
+                {p}
+              </button>
+            ))}
+          </div>
+        </label>
+        {hint && <p className="text-[11px] text-amber-300/80">{hint}</p>}
+        <div className="flex gap-2 pt-1">
+          <button
+            className="flex-1 rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-xs text-white/70 transition hover:bg-white/15"
+            disabled={saving}
+            onClick={() => setEditing(false)}
+            type="button"
+          >
+            取消
+          </button>
+          <button
+            className="flex-1 rounded-lg border border-white/40 bg-white/15 px-3 py-2 text-xs font-medium text-white transition hover:bg-white/25 disabled:opacity-40"
+            disabled={saving}
+            onClick={() => void save()}
+            type="button"
+          >
+            {saving ? '保存中…' : '保存'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}

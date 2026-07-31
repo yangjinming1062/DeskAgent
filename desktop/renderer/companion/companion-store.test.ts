@@ -4,9 +4,7 @@ import {
   $previousState,
   $spriteEmotion,
   $spriteState,
-  setSpriteState,
-  type SpriteEmotion,
-  type SpriteStateName
+  setSpriteState
 } from './companion-store'
 
 describe('companion-store Phase 2 state machine', () => {

@@ -28,6 +28,7 @@ export function playTransitionClip(scene: string, durationMs = 3000): void {
   if (transitionTimer) {
     clearTimeout(transitionTimer)
   }
+
   $activeTransitionClip.set(scene)
   transitionTimer = setTimeout(() => {
     transitionTimer = null
@@ -44,6 +45,7 @@ export function computeTier(item: ClipPatch): number {
 
 function mergeClip(scene: string, partial: ClipPatch): ClipItem {
   const existing = $clipCatalog.get()[scene]
+
   const merged: ClipItem = {
     scene,
     batch: existing?.batch ?? 1,
@@ -53,24 +55,30 @@ function mergeClip(scene: string, partial: ClipPatch): ClipItem {
     keyframe_url: partial.keyframe_url ?? existing?.keyframe_url ?? null,
     keyframe_meta: partial.keyframe_meta ?? existing?.keyframe_meta ?? null,
   }
+
   return merged
 }
 
 export function updateClipCatalog(clips: ClipItem[]): void {
   const current = { ...$clipCatalog.get() }
+
   for (const c of clips) {
     current[c.scene] = mergeClip(c.scene, c)
   }
+
   $clipCatalog.set(current)
 }
 
 export function setClipStatus(scene: string, status: ClipItem['status'], url: string | null): void {
   const merged = mergeClip(scene, { status, url })
+
   // Preserve the existing tier unless the new status is a definitive success.
   if (!(status === 'succeeded' && url)) {
     const existing = $clipCatalog.get()[scene]
+
     if (existing?.tier) {merged.tier = existing.tier}
   }
+
   $clipCatalog.set({ ...$clipCatalog.get(), [scene]: merged })
 }
 
@@ -100,15 +108,20 @@ export interface ClipAsset {
 
 export function getClipAsset(scene: string): ClipAsset {
   const catalog = $clipCatalog.get()
+
   const pick = (s: string | undefined): ClipAsset | null => {
-    if (!s) return null
+    if (!s) {return null}
     const item = catalog[s]
-    if (!item) return null
+
+    if (!item) {return null}
     const tier = computeTier(item)
+
     if (tier >= 2 && item.url) {
       return { tier, url: item.url, keyframe_meta: item.keyframe_meta ?? null }
     }
+
     return null
   }
+
   return pick(scene) ?? pick('idle') ?? { tier: 1, url: null, keyframe_meta: null }
 }

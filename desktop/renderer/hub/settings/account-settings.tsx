@@ -7,11 +7,11 @@ import { Input } from '@/shared/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/shared/components/ui/select'
 import { Switch } from '@/shared/components/ui/switch'
 import { getDeskAgentConfig, saveDeskAgentConfig } from '@/shared/deskagent/config'
-import { useI18n } from '@/shared/i18n'
 import { triggerHaptic } from '@/shared/lib/haptics'
 import { Eye, EyeOff, Globe, KeyRound, Loader2, LogOut, SlidersHorizontal, X } from '@/shared/lib/icons'
 import { $auth, logout } from '@/shared/store/auth'
 import { notify, notifyError } from '@/shared/store/notifications'
+import { strings } from '@/shared/strings'
 import type { DeskAgentConfigResponse } from '@/shared/types/deskagent'
 
 import { ListRow, LoadingState, SectionHeading, SettingsContent, SettingsSubsection } from './primitives'
@@ -100,7 +100,7 @@ const readAgentState = (config: DeskAgentConfigResponse): AgentFormState => {
 }
 
 export function AccountSettings({ onConfigSaved }: { onConfigSaved?: () => void } = {}) {
-  const { t } = useI18n()
+  const t = strings
   const a = t.settings.account
   const auth = useStore($auth)
 
@@ -316,7 +316,7 @@ export function AccountSettings({ onConfigSaved }: { onConfigSaved?: () => void 
 }
 
 function ChangePasswordForm() {
-  const { t } = useI18n()
+  const t = strings
   const a = t.settings.account.changePassword
 
   const [currentPassword, setCurrentPassword] = useState('')
@@ -410,8 +410,8 @@ function ChangePasswordForm() {
   )
 }
 
-type WebSearchCopy = ReturnType<typeof useI18n>['t']['settings']['account']['webSearch']
-type AgentDefaultsCopy = ReturnType<typeof useI18n>['t']['settings']['account']['agentDefaults']
+type WebSearchCopy = typeof strings['settings']['account']['webSearch']
+type AgentDefaultsCopy = typeof strings['settings']['account']['agentDefaults']
 
 function WebSearchSection({
   disabled,

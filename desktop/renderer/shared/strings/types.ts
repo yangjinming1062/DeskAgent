@@ -1,12 +1,3 @@
-// Desktop i18n type contract.
-//
-// `Translations` is the single source of truth for every translatable string
-// surface. Fully translated locale files may satisfy this interface directly;
-// missing keys in any active locale silently fall back to the canonical
-// `DEFAULT_LOCALE` (English) — see `runtime.translateNow`.
-
-export type Locale = 'en' | 'zh'
-
 import type { ToolsetId } from '@/shared/lib/toolset-catalog'
 
 interface ModeOptionCopy {
@@ -461,6 +452,20 @@ export interface Translations {
       signOut: string
       signOutConfirm: string
     }
+  }
+
+  speech: {
+    title: string
+    intro: string
+    loading: string
+    sttTitle: string
+    sttDesc: string
+    recordingTitle: string
+    recordingDesc: string
+    save: string
+    saving: string
+    saved: string
+    saveFailed: string
   }
 
   insights: {

@@ -1,6 +1,6 @@
 import { SegmentedControl } from '@/shared/components/ui/segmented-control'
 import { useRouteEnumParam } from '@/shared/hooks/use-route-enum-param'
-import { useI18n } from '@/shared/i18n'
+import { strings } from '@/shared/strings'
 
 import { SettingsContent } from './primitives'
 import { SkillsSettings } from './skills-settings'
@@ -10,7 +10,7 @@ const SUBTABS = ['skills', 'toolsets'] as const
 type SkillsToolsSubtab = (typeof SUBTABS)[number]
 
 export function SkillsToolsTabs() {
-  const { t } = useI18n()
+  const t = strings
   const [subtab, setSubtab] = useRouteEnumParam('subtab', SUBTABS, 'skills')
 
   return (

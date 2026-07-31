@@ -1,6 +1,6 @@
 import type { Translations } from './types'
 
-export const zh: Translations = {
+export const strings: Translations = {
   common: {
     apply: '应用',
     back: '返回',
@@ -492,6 +492,20 @@ export const zh: Translations = {
       signOut: '退出登录',
       signOutConfirm: '确定要退出登录吗？'
     }
+  },
+
+  speech: {
+    title: '语音',
+    intro: '语音输入与录音设置',
+    loading: '加载中…',
+    sttTitle: '语音转文字（STT）',
+    sttDesc: '开启后可用语音条与通话模式说话输入',
+    recordingTitle: '录音时长上限',
+    recordingDesc: '单条语音录音的最大时长（秒）',
+    save: '保存',
+    saving: '保存中…',
+    saved: '已保存',
+    saveFailed: '保存失败'
   },
 
   insights: {

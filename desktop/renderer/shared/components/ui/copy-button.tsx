@@ -3,10 +3,10 @@ import * as React from 'react'
 import { Button } from '@/shared/components/ui/button'
 import { DropdownMenuItem } from '@/shared/components/ui/dropdown-menu'
 import { Tip } from '@/shared/components/ui/tooltip'
-import { useI18n } from '@/shared/i18n'
 import { triggerHaptic } from '@/shared/lib/haptics'
 import { Check, Copy, X } from '@/shared/lib/icons'
 import { cn } from '@/shared/lib/utils'
+import { strings } from '@/shared/strings'
 
 type CopyPayload = string | (() => Promise<string> | string)
 type CopyButtonAppearance = 'button' | 'icon' | 'inline' | 'menu-item' | 'tool-row'
@@ -72,7 +72,7 @@ export function CopyButton({
   text,
   title
 }: CopyButtonProps) {
-  const { t } = useI18n()
+  const t = strings
   const resolvedErrorMessage = errorMessage ?? t.common.copyFailed
   const resolvedLabel = label ?? t.common.copy
   const [status, setStatus] = React.useState<CopyStatus>('idle')

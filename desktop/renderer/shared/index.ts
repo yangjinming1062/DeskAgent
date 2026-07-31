@@ -5,7 +5,6 @@ export { BrandMark } from './components/brand-mark'
 export { ErrorBoundary } from './components/error-boundary'
 
 export { HapticsProvider } from './components/haptics-provider'
-export { LanguageSwitcher } from './components/language-switcher'
 export { InlineNotice, NotificationStack } from './components/notifications'
 export { PageLoader } from './components/page-loader'
 export * from './components/ui'
@@ -20,8 +19,6 @@ export { useMediaQuery } from './hooks/use-media-query'
 
 export { useIsMobile } from './hooks/use-mobile'
 export { useRouteEnumParam } from './hooks/use-route-enum-param'
-export { I18nProvider, useI18n } from './i18n'
-export * from './i18n/types'
 
 export { PAGE_INSET_X } from './layout/page-inset'
 export { installClipboardShim } from './lib/clipboard'
@@ -61,6 +58,6 @@ export {
   notifyError
 } from './store/notifications'
 
-export { ThemeProvider, useSyncThemeFromBackend, useTheme } from './themes/context'
+export { ThemeProvider } from './themes/context'
 
 export type * from './types/deskagent'

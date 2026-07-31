@@ -67,11 +67,11 @@ renderer/
 ├── app.tsx                        # 角色分发（?role=sprite|tool → CompanionRoot | ToolRoot）
 ├── styles.css
 │
-├── shared/                        # 跨窗口复用：UI atom / 传输 / i18n / themes / 设计系统
+├── shared/                        # 跨窗口复用：UI atom / 传输 / strings / themes / 设计系统
 │   ├── components/{ui/,...}      #   设计系统 primitives（alert/button/dialog/...）
 │   ├── deskagent/                 #   DeskAgentGateway class + REST config wrappers
 │   ├── hooks/{use-mobile,use-media-query,use-route-enum-param}.ts
-│   ├── i18n/  themes/  layout/page-inset.ts  types/{deskagent.ts,global.d.ts,vite-env.d.ts}
+│   ├── strings/  themes/  layout/page-inset.ts  types/{deskagent.ts,global.d.ts,vite-env.d.ts}
 │   ├── lib/{clipboard,haptics,icons,query-client,reconnect,storage,utils}.ts
 │   ├── lib/gateway-protocol/      #   WS + JSON-RPC 客户端
 │   ├── lib/{gateway-ws-url,toolset-catalog}.ts

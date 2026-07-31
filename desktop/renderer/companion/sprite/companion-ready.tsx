@@ -2,7 +2,7 @@ import { useStore } from '@nanostores/react'
 import { useEffect, useState } from 'react'
 
 import { useGatewayRequest } from '@/companion/boot/use-gateway-request'
-import { $activeTransitionClip, $clipCatalog, computeTier, getClipAsset, type ClipMeta, updateClipCatalog } from '@/companion/clip-store'
+import { $activeTransitionClip, $clipCatalog, type ClipMeta, computeTier, getClipAsset, updateClipCatalog } from '@/companion/clip-store'
 import { $spriteEmotion, $spriteState, type SpriteEmotion, type SpriteStateName } from '@/companion/companion-store'
 import { $gatewayState } from '@/shared/store/gateway'
 
@@ -50,6 +50,7 @@ function proceduralKey(state: SpriteStateName, emotion: SpriteEmotion | null): s
   if (state === 'emotional' && emotion) {
     return EMOTION_PRESENTATION[emotion]?.proc ?? 'pulse'
   }
+
   return STATE_PRESENTATION[state]?.proc ?? 'idle'
 }
 
@@ -57,6 +58,7 @@ function getStateBadge(state: SpriteStateName, emotion: SpriteEmotion | null): s
   if (state === 'emotional' && emotion) {
     return EMOTION_PRESENTATION[emotion]?.badge ?? '✨'
   }
+
   return STATE_PRESENTATION[state]?.badge ?? null
 }
 
@@ -82,14 +84,18 @@ export function CompanionReady() {
   useEffect(() => {
     if (spriteState !== 'idle' || drowsy) {
       setIdleVariant('idle')
+
       return
     }
+
     const IDLE_VARIANTS = ['idle', 'idle_look_around', 'idle_blink', 'idle_stretch']
     const nextInterval = Math.floor(Math.random() * 15000) + 10000
+
     const timer = setTimeout(() => {
       const available = IDLE_VARIANTS.filter(v => v === 'idle' || getClipAsset(v).tier >= 2)
       setIdleVariant(available[Math.floor(Math.random() * available.length)] ?? 'idle')
     }, nextInterval)
+
     return () => clearTimeout(timer)
   }, [spriteState, drowsy, activeUrl])
 
@@ -105,6 +111,7 @@ export function CompanionReady() {
       setActiveMeta(asset.keyframe_meta)
       setFading(true)
       const timer = setTimeout(() => setFading(false), 250)
+
       return () => clearTimeout(timer)
     }
   }, [asset.url, asset.tier, activeUrl, activeTier, asset.keyframe_meta])
@@ -118,16 +125,17 @@ export function CompanionReady() {
     window.deskagent
       .api<{ asset_url?: string }>({ path: '/api/companion/avatar' })
       .then(r => {
-        if (!cancelled) setPortraitUrl(r.asset_url ?? null)
+        if (!cancelled) {setPortraitUrl(r.asset_url ?? null)}
       })
       .catch(() => {})
+
     return () => {
       cancelled = true
     }
   }, [])
 
   useEffect(() => {
-    if (gatewayState !== 'open') return
+    if (gatewayState !== 'open') {return}
     let cancelled = false
     void requestGateway<{ clips?: { scene: string; batch?: number; status: string; tier?: number; url: string | null; keyframe_url?: string | null; keyframe_meta?: ClipMeta | null }[] }>('avatar.list_clips', {})
       .then(res => {
@@ -146,6 +154,7 @@ export function CompanionReady() {
         }
       })
       .catch(() => {})
+
     return () => {
       cancelled = true
     }
@@ -170,7 +179,7 @@ export function CompanionReady() {
           <video autoPlay className="companion-video absolute inset-0 h-full w-full object-cover" loop muted onError={() => setVideoFailed(true)} playsInline src={activeUrl} style={{ filter: drowsyFilter }} />
         </div>
       ) : showSprite && activeUrl ? (
-        <KeyframeSprite cols={activeMeta?.cols ?? 4} fps={activeMeta?.fps ?? 6} url={activeUrl} filter={drowsyFilter} />
+        <KeyframeSprite cols={activeMeta?.cols ?? 4} filter={drowsyFilter} fps={activeMeta?.fps ?? 6} url={activeUrl} />
       ) : portraitUrl ? (
         <img alt="companion" className={`companion-img proc-${procKey}`} draggable={false} src={portraitUrl} style={{ filter: drowsyFilter }} />
       ) : (
@@ -188,6 +197,7 @@ function KeyframeSprite({ url, cols, fps, filter }: { url: string; cols: number;
   const steps = Math.max(cols - 1, 0)
   const duration = steps > 0 ? (cols / Math.max(fps, 1)).toFixed(2) : '0'
   const anim = steps > 0 ? `sprite${cols} ${duration}s steps(${steps}) infinite` : undefined
+
   return (
     <div
       className="companion-sprite"

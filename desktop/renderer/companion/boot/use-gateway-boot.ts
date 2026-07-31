@@ -3,12 +3,12 @@ import { useEffect, useRef } from 'react'
 import { applyDesktopBootProgress, completeDesktopBoot, failDesktopBoot, setDesktopBootStep } from '@/companion/boot-store'
 import { $spriteState, setSpriteState } from '@/companion/companion-store'
 import { DeskAgentGateway } from '@/shared/deskagent'
-import { translateNow } from '@/shared/i18n'
 import { resolveGatewayWsUrl } from '@/shared/lib/gateway-ws-url'
 import { reconnectBackoffMs } from '@/shared/lib/reconnect'
 import { logout } from '@/shared/store/auth'
 import { reportPrimaryGatewayState, setConnection, setPrimaryGateway, setRunnerOnline, tearDownPrimaryGateway } from '@/shared/store/gateway'
 import { notifyError } from '@/shared/store/notifications'
+import { strings } from '@/shared/strings'
 import type { RpcEvent } from '@/shared/types/deskagent'
 import type { DeskAgentConnection } from '@/shared/types/global'
 
@@ -203,7 +203,7 @@ export function useGatewayBoot({ handleGatewayEvent, onConnectionReady, onGatewa
 
     setDesktopBootStep({
       phase: 'renderer.boot',
-      message: translateNow('boot.steps.startingDesktopConnection'),
+      message: strings.boot.steps.startingDesktopConnection,
       progress: 6
     })
 
@@ -314,7 +314,7 @@ export function useGatewayBoot({ handleGatewayEvent, onConnectionReady, onGatewa
 
         setDesktopBootStep({
           phase: 'renderer.gateway.connect',
-          message: translateNow('boot.steps.connectingGateway'),
+          message: strings.boot.steps.connectingGateway,
           progress: 95
         })
         publish(conn)
@@ -332,7 +332,7 @@ export function useGatewayBoot({ handleGatewayEvent, onConnectionReady, onGatewa
         if (!cancelled) {
           const message = err instanceof Error ? err.message : String(err)
           failDesktopBoot(message)
-          notifyError(err, translateNow('boot.errors.desktopBootFailed'))
+          notifyError(err, strings.boot.errors.desktopBootFailed)
         }
       }
     }

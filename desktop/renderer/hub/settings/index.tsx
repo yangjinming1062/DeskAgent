@@ -1,13 +1,13 @@
-import { IconDownload, IconRefresh, IconUpload } from '@tabler/icons-react'
+import { IconDownload, IconRefresh, IconUpload, IconVolume } from '@tabler/icons-react'
 import { useRef } from 'react'
 
 import { Tip } from '@/shared/components/ui/tooltip'
 import { getDeskAgentConfigDefaults, getDeskAgentConfigRecord, saveDeskAgentConfig } from '@/shared/deskagent'
 import { useRouteEnumParam } from '@/shared/hooks/use-route-enum-param'
-import { useI18n } from '@/shared/i18n'
 import { triggerHaptic } from '@/shared/lib/haptics'
-import { Info, KeyRound, Palette, Settings, Sparkles, Wrench } from '@/shared/lib/icons'
+import { Info, KeyRound, Settings, Sparkles, Wrench } from '@/shared/lib/icons'
 import { notifyError } from '@/shared/store/notifications'
+import { strings } from '@/shared/strings'
 
 import { OverlayIconButton } from '../overlays/overlay-chrome'
 import { OverlayMain, OverlayNavItem, OverlaySidebar, OverlaySplitLayout } from '../overlays/overlay-split-layout'
@@ -15,22 +15,19 @@ import { OverlayView } from '../overlays/overlay-view'
 
 import { AboutSettings } from './about-settings'
 import { AccountSettings } from './account-settings'
-import { AppearanceSettings } from './appearance-settings'
 import { McpSettings } from './mcp-settings'
 import { RunnerSettings } from './runner-settings'
 import { SkillsToolsTabs } from './skills-tools-tabs'
+import { SpeechSettings } from './speech-settings'
 import type { SettingsPageProps } from './types'
 
-import { IconVolume } from '@tabler/icons-react'
-import { WakeWordSettings } from './wake-word-settings'
+type SettingsViewId = 'about' | 'account' | 'mcp' | 'runner' | 'skills' | 'speech'
 
-type SettingsViewId = 'about' | 'account' | 'appearance' | 'mcp' | 'runner' | 'skills' | 'speech'
-
-const SETTINGS_VIEWS: readonly SettingsViewId[] = ['appearance', 'account', 'speech', 'runner', 'skills', 'mcp', 'about']
+const SETTINGS_VIEWS: readonly SettingsViewId[] = ['account', 'speech', 'runner', 'skills', 'mcp', 'about']
 
 export function SettingsView({ gateway, onClose, onConfigSaved }: SettingsPageProps) {
-  const { t } = useI18n()
-  const [activeView, setActiveView] = useRouteEnumParam('tab', SETTINGS_VIEWS, 'appearance')
+  const t = strings
+  const [activeView, setActiveView] = useRouteEnumParam('tab', SETTINGS_VIEWS, 'account')
 
   const importInputRef = useRef<HTMLInputElement | null>(null)
 
@@ -69,12 +66,6 @@ export function SettingsView({ gateway, onClose, onConfigSaved }: SettingsPagePr
       <OverlaySplitLayout>
         <OverlaySidebar>
           <OverlayNavItem
-            active={activeView === 'appearance'}
-            icon={Palette}
-            label={t.settings.nav.appearance ?? 'Appearance'}
-            onClick={() => setActiveView('appearance')}
-          />
-          <OverlayNavItem
             active={activeView === 'account'}
             icon={KeyRound}
             label={t.settings.nav.account}
@@ -83,7 +74,7 @@ export function SettingsView({ gateway, onClose, onConfigSaved }: SettingsPagePr
           <OverlayNavItem
             active={activeView === 'speech'}
             icon={IconVolume}
-            label="Speech & Wake"
+            label={t.speech.title}
             onClick={() => setActiveView('speech')}
           />
           <OverlayNavItem
@@ -143,12 +134,10 @@ export function SettingsView({ gateway, onClose, onConfigSaved }: SettingsPagePr
         </OverlaySidebar>
 
         <OverlayMain className="px-0 pb-0 pt-[calc(var(--titlebar-height)+1rem)]">
-          {activeView === 'appearance' ? (
-            <AppearanceSettings />
-          ) : activeView === 'account' ? (
+          {activeView === 'account' ? (
             <AccountSettings onConfigSaved={onConfigSaved} />
           ) : activeView === 'speech' ? (
-            <WakeWordSettings />
+            <SpeechSettings />
           ) : activeView === 'runner' ? (
             <RunnerSettings />
           ) : activeView === 'skills' ? (

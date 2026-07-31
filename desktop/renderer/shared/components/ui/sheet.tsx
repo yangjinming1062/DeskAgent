@@ -4,8 +4,8 @@ import { Dialog as SheetPrimitive } from 'radix-ui'
 import * as React from 'react'
 
 import { Codicon } from '@/shared/components/ui/codicon'
-import { useI18n } from '@/shared/i18n'
 import { cn } from '@/shared/lib/utils'
+import { strings } from '@/shared/strings'
 
 function Sheet({ ...props }: React.ComponentProps<typeof SheetPrimitive.Root>) {
   return <SheetPrimitive.Root data-slot="sheet" {...props} />
@@ -46,7 +46,7 @@ function SheetContent({
   side?: 'top' | 'right' | 'bottom' | 'left'
   showCloseButton?: boolean
 }) {
-  const { t } = useI18n()
+  const t = strings
 
   return (
     <SheetPortal>

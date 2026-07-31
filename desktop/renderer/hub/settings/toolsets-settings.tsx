@@ -2,10 +2,10 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { SearchField } from '@/shared/components/ui/search-field'
 import { Switch } from '@/shared/components/ui/switch'
-import { useI18n } from '@/shared/i18n'
 import { Wrench } from '@/shared/lib/icons'
 import { TOOLSET_CATALOG, type ToolsetCatalogEntry } from '@/shared/lib/toolset-catalog'
 import { notifyError } from '@/shared/store/notifications'
+import { strings } from '@/shared/strings'
 
 import { EmptyState, LoadingState, Pill, SettingsSubsection } from './primitives'
 
@@ -23,7 +23,7 @@ type ToolsetView = {
 }
 
 export function ToolsetsSettings() {
-  const { t } = useI18n()
+  const t = strings
   const sk = t.skills
   const toolsetText = t.toolsets
 

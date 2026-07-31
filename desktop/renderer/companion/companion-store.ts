@@ -86,6 +86,7 @@ export function setSpriteState(
     if (current !== 'emotional' && current !== 'interacting') {
       $previousState.set(current)
     }
+
     if (options?.emotion) {
       $spriteEmotion.set(options.emotion)
     }
@@ -103,6 +104,7 @@ export function setSpriteState(
       const prev = $previousState.get()
       $spriteState.set(prev === 'emotional' || prev === 'interacting' ? 'idle' : prev)
     }, ms)
+
     return
   }
 
@@ -123,10 +125,13 @@ export function setSpriteState(
 export function checkBedtimeAndAutoSleep(): boolean {
   const hour = new Date().getHours()
   const isNight = hour >= 23 || hour < 7
+
   if (isNight && $spriteState.get() === 'idle') {
     setSpriteState('sleeping')
+
     return true
   }
+
   return false
 }
 
@@ -141,16 +146,19 @@ let activityResetTimer: ReturnType<typeof setTimeout> | null = null
 
 export function reportUserActivity(): void {
   const current = $spriteState.get()
-  if (current !== 'idle' && current !== 'working') return
+
+  if (current !== 'idle' && current !== 'working') {return}
 
   activityCounter += 1
+
   if (activityCounter >= 6 && current === 'idle') {
     setSpriteState('working')
   }
 
-  if (activityResetTimer) clearTimeout(activityResetTimer)
+  if (activityResetTimer) {clearTimeout(activityResetTimer)}
   activityResetTimer = setTimeout(() => {
     activityCounter = 0
+
     if ($spriteState.get() === 'working') {
       setSpriteState('idle')
     }
