@@ -1,11 +1,11 @@
 import base64
 
+from .._provider_errors import raise_for_provider_response
 from ..base import ProviderConfig
 from ..base import STTProvider
 from ..base import STTResult
-from ._client import get_gemini_http
-from ._errors import iter_parts
-from ._errors import raise_for_gemini_response
+from ..http import get_http
+from ._parts import iter_parts
 
 
 class GeminiSTTProvider(STTProvider):
@@ -16,7 +16,7 @@ class GeminiSTTProvider(STTProvider):
 
     def __init__(self, config: ProviderConfig):
         super().__init__(config)
-        self._client = get_gemini_http(config.base_url, config.api_key)
+        self._client = get_http(config.base_url, config.api_key, auth_header={"x-goog-api-key": "{api_key}"})
 
     async def transcribe(
         self,
@@ -39,7 +39,7 @@ class GeminiSTTProvider(STTProvider):
         }
 
         resp = await self._client.post(f"/v1beta/models/{self.config.model}:generateContent", json=payload)
-        body = raise_for_gemini_response(resp, provider="gemini", model=self.config.model)
+        body = raise_for_provider_response(resp, family="gemini", model=self.config.model)
 
         for part in iter_parts(body):
             text = part.get("text")

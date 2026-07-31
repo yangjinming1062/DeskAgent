@@ -1,3 +1,4 @@
+from .._size_aspect import SIZE_TO_ASPECT
 from ..base import ImageAsset
 from ..base import ImageGenProvider
 from ..base import ImageGenRequest
@@ -5,18 +6,6 @@ from ..base import ImageGenResult
 from ..base import ProviderConfig
 from ..http import get_http
 from ._errors import raise_for_minimax_response
-
-
-# OpenAI-style pixel sizes → MiniMax aspect_ratio strings. MiniMax ignores
-# `size` if `aspect_ratio` is set, but tool callers still pass `size` from the
-# legacy DALL·E schema — translate so the provider stays a drop-in.
-_SIZE_TO_ASPECT: dict[str, str] = {
-    "1024x1024": "1:1",
-    "1024x1792": "9:16",
-    "1792x1024": "16:9",
-    "2048x2048": "1:1",
-    "512x512": "1:1",
-}
 
 
 class MiniMaxImageGenProvider(ImageGenProvider):
@@ -38,7 +27,7 @@ class MiniMaxImageGenProvider(ImageGenProvider):
         self._client = get_http(config.base_url, config.api_key)
 
     async def generate(self, req: ImageGenRequest) -> ImageGenResult:
-        aspect = req.aspect_ratio or (req.size and _SIZE_TO_ASPECT.get(req.size)) or "1:1"
+        aspect = req.aspect_ratio or (req.size and SIZE_TO_ASPECT.get(req.size)) or "1:1"
 
         payload: dict = {
             "model": self.config.model,
