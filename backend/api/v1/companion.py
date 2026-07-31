@@ -1,3 +1,5 @@
+import base64
+
 from common import get_router
 from components import get_db
 from fastapi import Depends
@@ -9,8 +11,10 @@ from modules.auth import User
 from modules.companion import AvatarAssetResponse
 from modules.companion import AvatarGenerateRequest
 from modules.companion import AvatarHistoryResponse
+from modules.companion import AvatarUploadRequest
 from modules.companion import PersonaResponse
 from modules.companion import PersonaUpdate
+from services.companion import ALLOWED_AVATAR_UPLOAD_MIME_TYPES
 from services.companion import AvatarGenerationError
 from services.companion import build_system_prompt_extras
 from services.companion import generate_avatar
@@ -18,6 +22,7 @@ from services.companion import get_active_avatar
 from services.companion import get_or_create_persona
 from services.companion import list_avatar_history
 from services.companion import PersonaValidationError
+from services.companion import resolve_companion_asset_path
 from services.companion import resolve_uploaded_avatar_path
 from services.companion import update_persona
 from services.companion import upload_avatar
@@ -105,7 +110,7 @@ async def post_avatar(
 
 @router.post("/avatar/upload", response_model=AvatarAssetResponse, status_code=201)
 async def upload_avatar_route(
-    body: dict,
+    body: AvatarUploadRequest,
     auth: tuple[User, LoginRecord] = Depends(get_current_session),
     db: Session = Depends(get_db),
 ) -> AvatarAssetResponse:
@@ -114,16 +119,11 @@ async def upload_avatar_route(
     Takes base64 JSON (``{image, content_type}``) so the desktop's REST IPC —
     which speaks JSON, not multipart — can post the picked file directly."""
     user, _ = auth
-    import base64
-
-    raw = body.get("image")
-    content_type = (body.get("content_type") or "image/png").split(";")[0].strip().lower()
-    if not isinstance(raw, str) or not raw:
-        raise HTTPException(status_code=400, detail={"error": "上传文件为空"})
-    if content_type not in {"image/png", "image/jpeg", "image/webp", "image/gif"}:
+    content_type = (body.content_type or "image/png").split(";")[0].strip().lower()
+    if content_type not in ALLOWED_AVATAR_UPLOAD_MIME_TYPES:
         raise HTTPException(status_code=415, detail={"error": "仅支持 PNG / JPEG / WebP / GIF 图片"})
     try:
-        data = base64.b64decode(raw)
+        data = base64.b64decode(body.image)
     except ValueError:
         raise HTTPException(status_code=400, detail={"error": "图片编码无效"})
     asset = upload_avatar(db, user.id, data, content_type)
@@ -140,5 +140,19 @@ async def serve_avatar_file(filename: str):
     result = resolve_uploaded_avatar_path(filename)
     if result is None:
         raise HTTPException(status_code=404, detail="Avatar not found")
+    path, content_type = result
+    return FileResponse(path, media_type=content_type)
+
+
+@public_router.get("/asset/{user_id}/{filename:path}")
+async def serve_companion_asset(user_id: int, filename: str):
+    """Serve a durable companion clip asset (tier-2 keyframes / tier-3 video).
+
+    No auth — the portrait <img>/<video>/<sprite> tags load these without JWT
+    headers, mirroring the temp-media and avatar file routes. Cross-device:
+    a freshly logged-in desktop fetches already-generated products here."""
+    result = resolve_companion_asset_path(user_id, filename)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Asset not found")
     path, content_type = result
     return FileResponse(path, media_type=content_type)

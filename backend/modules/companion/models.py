@@ -65,17 +65,23 @@ class AvatarAsset(ModelBase):
 
 
 class AvatarClip(ModelBase, TimestampMixin):
-    """A companion animation clip generated from the user's portrait via
-    image-to-video (ARCHITECTURE.md §7.2). Each clip binds a ``scene`` label
-    (matching the desktop animation state machine) to a video-gen job that
-    uses the active portrait as ``first_frame_image`` — the shared seed
-    guarantees cross-clip character consistency.
+    """A companion animation clip with a three-tier fallback ladder so the
+    companion is never blocked on video generation (ARCHITECTURE.md §7.2):
 
-    Lifecycle mirrors the underlying ``VideoGenJob``: ``video_job_id`` is
-    ``None`` until the job is submitted, then the desktop reads status via
-    ``avatar.list_clips`` (which joins back to the job row). Portrait
-    regeneration deletes all of the user's clips (design §7.2 derivative
-    invalidation) and re-enqueues batch 0.
+      Tier 1 - procedural: portrait + state-driven CSS transforms. No asset,
+               always available the moment a portrait exists.
+      Tier 2 - multi-frame: one image-gen sprite-sheet PNG per scene
+               (``keyframe_url``), cycled client-side.
+      Tier 3 - video: image-to-video clip (``video_asset_url``), the durable
+               copy of the underlying ``VideoGenJob`` product.
+
+    ``active_tier`` is computed (3 > 2 > 1), never stored, to avoid
+    derived-state staleness. T2/T3 products persist on durable
+    ``companion-assets`` storage (not temp-media) so a user logging in from
+    a new device re-fetches already-generated assets via ``avatar.list_clips``
+    instead of regenerating. Failed tiers are retried on a schedule by the
+    escalation loop with exponential backoff (``*_attempts`` /
+    ``*_next_retry_at``); the goal is Tier 3 for every scene.
     """
 
     __tablename__ = "avatar_clips"
@@ -87,3 +93,18 @@ class AvatarClip(ModelBase, TimestampMixin):
     # modules.media, which is intentionally not auto-imported.
     video_job_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     portrait_id: Mapped[int] = mapped_column(ForeignKey("avatar_assets.id", ondelete="CASCADE"))
+
+    # Tier 3 (video) - durable copy of the VideoGenJob product. ``video_job_id``
+    # tracks the in-flight/terminal job; ``video_asset_url`` is the persisted
+    # URL once the escalation loop copies the temp product to durable storage.
+    video_asset_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    video_attempts: Mapped[int] = mapped_column(Integer, default=0, server_default=text("0"))
+    video_next_retry_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+
+    # Tier 2 (multi-frame sprite sheet) - one image-gen PNG per scene.
+    # ``keyframe_meta_json`` carries the cell layout the renderer needs to
+    # step through frames (cols/rows/fps).
+    keyframe_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    keyframe_meta_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    keyframe_attempts: Mapped[int] = mapped_column(Integer, default=0, server_default=text("0"))
+    keyframe_next_retry_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)

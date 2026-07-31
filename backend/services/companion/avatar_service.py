@@ -10,8 +10,8 @@ from modules.companion import Persona
 from sqlalchemy.orm import Session
 
 from ..tools.builtin import image_generation_tool
-from .clip_service import enqueue_clip_batch
 from .clip_service import invalidate_user_clips
+from .clip_service import seed_all_clips
 
 logger = get_logger(__name__)
 
@@ -19,6 +19,7 @@ _DEFAULT_STYLE: str = "portrait"
 _AVATAR_SIZE: str = "1024x1024"
 _AVATAR_QUALITY: str = "standard"
 _UPLOAD_EXTS: dict[str, str] = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp", "image/gif": "gif"}
+ALLOWED_AVATAR_UPLOAD_MIME_TYPES: frozenset[str] = frozenset(_UPLOAD_EXTS)
 
 
 class AvatarGenerationError(RuntimeError):
@@ -86,10 +87,11 @@ async def _generate_and_persist(db: Session, user_id: int, *, prompt: str, style
 
 
 async def _seed_batch0(db: Session, user_id: int, asset: AvatarAsset) -> None:
-    """Enqueue the idle clip from a freshly committed portrait. Fire-and-forget —
-    clip generation continues in the background via the video-gen pipeline."""
+    """Seed Tier-1 baseline rows for every catalog scene from a freshly
+    committed portrait. Fire-and-forget — the escalation loop then climbs each
+    scene toward Tier 2 (keyframes) and Tier 3 (video) in the background."""
     try:
-        await enqueue_clip_batch(db, user_id=user_id, portrait_asset_url=asset.asset_url, portrait_id=asset.id, batch=0)
+        await seed_all_clips(db, user_id=user_id, portrait_asset_url=asset.asset_url, portrait_id=asset.id)
     except Exception:
         logger.warning("batch-0 clip enqueue failed", extra={"user_id": user_id}, exc_info=True)
 

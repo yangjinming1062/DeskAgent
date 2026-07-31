@@ -47,6 +47,13 @@ class AvatarGenerateRequest(BaseModel):
     style: str = Field(default="portrait", min_length=1, max_length=64)
 
 
+class AvatarUploadRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    image: str = Field(min_length=1)
+    content_type: str | None = Field(default=None, max_length=64)
+
+
 class AvatarHistoryResponse(BaseModel):
     items: list[AvatarAssetResponse]
 
@@ -58,3 +65,6 @@ class ClipStatusResponse(BaseModel):
     batch: int
     status: str
     url: str | None = None
+    tier: int = 1
+    keyframe_url: str | None = None
+    keyframe_meta: dict | None = None

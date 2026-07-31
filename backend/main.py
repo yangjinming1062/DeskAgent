@@ -20,6 +20,8 @@ from components import SETTINGS
 from components import setup_logging
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
+from services.companion import start_clip_escalation
+from services.companion import stop_clip_escalation
 from services.gateway import start_ws_event_loop
 from services.gateway import stop_ws_event_loop
 from services.media import aclose_all as media_aclose_all
@@ -106,6 +108,21 @@ def _install_schema_extensions(conn) -> None:
     conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_avatar_assets_one_active " "ON avatar_assets (user_id) WHERE active"))
     # Companion clip batch index for efficient per-user scene lookups.
     conn.execute(text("CREATE INDEX IF NOT EXISTS ix_avatar_clips_user_batch ON avatar_clips (user_id, batch)"))
+    # Tiered clip columns (three-tier fallback: procedural / keyframes / video).
+    # create_all does not ALTER existing tables, so add them idempotently here.
+    for column, ddl_type in (
+        ("video_asset_url", "TEXT"),
+        ("video_attempts", "INTEGER DEFAULT 0"),
+        ("video_next_retry_at", "TIMESTAMP"),
+        ("keyframe_url", "TEXT"),
+        ("keyframe_meta_json", "TEXT"),
+        ("keyframe_attempts", "INTEGER DEFAULT 0"),
+        ("keyframe_next_retry_at", "TIMESTAMP"),
+    ):
+        conn.execute(text(f"ALTER TABLE avatar_clips ADD COLUMN IF NOT EXISTS {column} {ddl_type}"))
+    # Retry-schedule indexes for the escalation loop's due-clip scans.
+    conn.execute(text("CREATE INDEX IF NOT EXISTS ix_avatar_clips_video_retry ON avatar_clips (video_next_retry_at)"))
+    conn.execute(text("CREATE INDEX IF NOT EXISTS ix_avatar_clips_keyframe_retry ON avatar_clips (keyframe_next_retry_at)"))
 
 
 def init_database(engine=None) -> None:
@@ -150,6 +167,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     global_pool = await asyncpg.create_pool(pool_url)
 
     start_scheduler()
+    start_clip_escalation()
     start_ws_event_loop(global_pool)
     resume_pending_video_jobs()
 
@@ -169,6 +187,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
         cleanup_task.cancel()
 
         await stop_scheduler()
+        await stop_clip_escalation()
         await stop_ws_event_loop()
 
         if global_pool:
