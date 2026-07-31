@@ -33,6 +33,8 @@ from services.companion import AvatarGenerationError
 from services.companion import get_onboarding_state
 from services.companion import get_or_create_persona
 from services.companion import list_clips as list_companion_clips
+from services.companion import list_tts_voices
+from services.companion import match_user_voice
 from services.companion import PersonaValidationError
 from services.companion import regenerate_avatar as regenerate_companion_avatar
 from services.companion import set_disturbance_tier as set_companion_disturbance_tier
@@ -332,7 +334,7 @@ def _register_setup_handlers(dispatcher: JsonRpcDispatcher, llm_config: dict, us
         client = client_for_config(llm_config)
         try:
             await asyncio.wait_for(client.models.list(), timeout=RUNTIME_CHECK_TIMEOUT_SECONDS)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             return {"ok": False, "error": f"timeout after {RUNTIME_CHECK_TIMEOUT_SECONDS}s"}
         except Exception as e:
             # Log the full cause server-side; surface a short label to the
@@ -771,3 +773,24 @@ def _register_session_handlers(
 
     dispatcher.register("avatar.regenerate", avatar_regenerate)
     dispatcher.register("avatar.list_clips", avatar_list_clips)
+
+    async def tts_list_voices(_params: dict) -> dict:
+        # Voice catalog for the user's active TTS provider (plan §3.5 / §6).
+        # Voice ids are provider-specific; the catalog only lists ids the
+        # provider accepts so a matched id never breaks synthesis.
+        with SESSION_LOCAL() as db:
+            return list_tts_voices(db, user_id)
+
+    async def tts_match_voice(params: dict) -> dict:
+        # Map a free-text voice preference to a concrete voice id from the
+        # active provider's catalog (plan §3.2). Tag-based scoring is instant
+        # and deterministic — onboarding should not pay LLM latency for a
+        # narrow tagging task the curated catalog already covers.
+        preference = params.get("preference")
+        if not isinstance(preference, str):
+            raise JsonRpcError(JSONRPC_INVALID_PARAMS, "preference must be a string")
+        with SESSION_LOCAL() as db:
+            return match_user_voice(db, user_id, preference)
+
+    dispatcher.register("tts.list_voices", tts_list_voices)
+    dispatcher.register("tts.match_voice", tts_match_voice)

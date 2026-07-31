@@ -53,7 +53,11 @@ async def test_send_message_quiet_tier_suppresses(monkeypatch):
 
 def test_onboarding_incremental_persistence_and_recovery(_patch_db):
     _, SessionLocal = _patch_db
-    from services.companion import get_onboarding_state, submit_onboarding_field, update_persona
+    from services.companion import (
+        get_onboarding_state,
+        submit_onboarding_field,
+        update_persona,
+    )
 
     with SessionLocal() as db:
         # Fresh user: no answers, next field is the first question.
@@ -129,7 +133,7 @@ def test_affect_scrubber_rejects_unknown_emotion():
 
 
 def test_clip_scenes_cover_all_batches():
-    from services.companion import scenes_for_batch, CLIP_SCENES
+    from services.companion import CLIP_SCENES, scenes_for_batch
 
     assert scenes_for_batch(0) == ["idle"]
     assert set(scenes_for_batch(1)) == {"speaking", "thinking", "working"}
@@ -142,8 +146,8 @@ def test_clip_scenes_cover_all_batches():
 
 def test_clip_list_and_invalidate(_patch_db):
     _, SessionLocal = _patch_db
-    from services.companion import invalidate_user_clips, list_clips
     from modules.companion import AvatarClip
+    from services.companion import invalidate_user_clips, list_clips
 
     with SessionLocal() as db:
         # No clips → empty list.
@@ -180,3 +184,50 @@ def test_video_job_extras_from_params(_patch_db):
     assert _extras_from_params('{"duration": 5}') == {}
     assert _extras_from_params(None) == {}
     assert _extras_from_params("not json") == {}
+
+
+# ── Voice catalog + matching ──
+
+
+def test_voice_catalog_match_by_tag():
+    from services.companion.voice_catalog import VOICE_CATALOG, match_voice
+
+    minimax = VOICE_CATALOG["minimax"]
+    best, alts = match_voice("想要温柔的少女音", minimax)
+    assert best.id == "female-shaonv"
+    assert best not in alts
+
+    best, _ = match_voice("沉稳的男声", minimax)
+    assert best.gender == "male"
+    assert "沉稳" in best.tags
+
+
+def test_voice_catalog_no_match_falls_back_neutral():
+    from services.companion.voice_catalog import VOICE_CATALOG, match_voice
+
+    # Nonsense preference → neutral default preferred over arbitrary top voice.
+    best, _ = match_voice("xyzqwerty", VOICE_CATALOG["gemini"])
+    assert best.gender == "neutral"
+
+
+def test_voice_catalog_single_voice_provider():
+    from services.companion.voice_catalog import VOICE_CATALOG, match_voice
+
+    # mimo has one known-good voice; matching collapses to it regardless of input.
+    best, alts = match_voice("随便什么", VOICE_CATALOG["mimo"])
+    assert best.id == "mimo_default"
+    assert alts == []
+
+
+def test_list_voices_empty_when_no_provider(monkeypatch):
+    from services.companion import voice_catalog
+
+    monkeypatch.setattr(voice_catalog, "active_tts_provider", lambda db, uid: "")
+    result = voice_catalog.list_voices(db=None, user_id=999)
+    assert result["provider"] == ""
+    assert result["voices"] == []
+
+    monkeypatch.setattr(voice_catalog, "active_tts_provider", lambda db, uid: "minimax")
+    result = voice_catalog.list_voices(db=None, user_id=999)
+    assert result["provider"] == "minimax"
+    assert result["voices"][0]["id"] == "female-shaonv"
