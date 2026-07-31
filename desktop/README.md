@@ -2,7 +2,7 @@
 
 桌面伙伴形象载体 + 本地枢纽——单 Electron 应用，承担双职责。
 
-设计文档：[ARCHITECTURE.md](../ARCHITECTURE.md) §2 / §3 / §5 / §7 / §10；伙伴层详细交互见 [plan.md](plan.md)。
+设计文档：[ARCHITECTURE.md](../ARCHITECTURE.md) §2 / §3 / §5 / §7 / §10；伙伴层详细交互见 [COMPANION_DESIGN.md](../COMPANION_DESIGN.md)。
 
 ## 双层定位
 
@@ -24,7 +24,6 @@ desktop/
 ├── scripts/                         # 构建流水线（不进 package.json#scripts）
 ├── assets/                          # icon.{png,ico,icns}
 ├── README.md                        # ← 你正在读
-├── plan.md                          # 伙伴层交互设计蓝图
 ├── package.json / tsconfig.json / vite.config.ts / index.html / eslint.config.mjs
 └── components.json / config.json    # shadcn/内部配置
 ```

@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
 
 import { applyDesktopBootProgress, completeDesktopBoot, failDesktopBoot, setDesktopBootStep } from '@/companion/boot-store'
-import { setSpriteState } from '@/companion/companion-store'
+import { $spriteState, setSpriteState } from '@/companion/companion-store'
 import { DeskAgentGateway } from '@/shared/deskagent'
 import { translateNow } from '@/shared/i18n'
 import { resolveGatewayWsUrl } from '@/shared/lib/gateway-ws-url'
@@ -211,6 +211,15 @@ export function useGatewayBoot({ handleGatewayEvent, onConnectionReady, onGatewa
     callbacksRef.current.onGatewayReady(gateway)
     setPrimaryGateway(gateway)
 
+    let sleepEscalationTimer: ReturnType<typeof setTimeout> | null = null
+
+    const clearSleepEscalation = () => {
+      if (sleepEscalationTimer !== null) {
+        clearTimeout(sleepEscalationTimer)
+        sleepEscalationTimer = null
+      }
+    }
+
     const offState = gateway.onState(st => {
       reportPrimaryGatewayState(st)
 
@@ -219,12 +228,21 @@ export function useGatewayBoot({ handleGatewayEvent, onConnectionReady, onGatewa
         reauthNotified = false
         clearReconnectTimer()
         clearGraceTimer()
+        clearSleepEscalation()
 
         // On a normal post-wake reconnect, nothing calls completeDesktopBoot()
         // afterwards, so dismiss the boot-progress overlay here once we're open
         // again — otherwise it sticks. A no-op on the initial boot.
         if (bootCompleted) {
           dismissOverlayOnce()
+          // Reconnect "perk up": if we had expressed a disconnected/sleeping
+          // degradation, wake back to idle (plan §4.5). Silent recovery when
+          // the degradation was never shown.
+          const cur = $spriteState.get()
+
+          if (cur === 'disconnected' || cur === 'sleeping') {
+            setSpriteState('idle', { force: true })
+          }
         }
       } else if (bootCompleted && (st === 'closed' || st === 'error')) {
         if (st === 'closed' && gateway.lastCloseCode === WS_CLOSE_POLICY_VIOLATION) {
@@ -240,6 +258,14 @@ export function useGatewayBoot({ handleGatewayEvent, onConnectionReady, onGatewa
           graceTimer = setTimeout(() => {
             graceTimer = null
             setSpriteState('disconnected')
+
+            // Prolonged disconnect → the companion dozes off (plan §4.5).
+            if (sleepEscalationTimer === null) {
+              sleepEscalationTimer = setTimeout(() => {
+                sleepEscalationTimer = null
+                setSpriteState('sleeping', { force: true })
+              }, 5 * 60 * 1000)
+            }
           }, graceMs)
         }
 
@@ -316,6 +342,7 @@ export function useGatewayBoot({ handleGatewayEvent, onConnectionReady, onGatewa
     return () => {
       cancelled = true
       clearReconnectTimer()
+      clearSleepEscalation()
       window.removeEventListener('online', onOnline)
       document.removeEventListener('visibilitychange', onVisible)
       offPowerResume?.()

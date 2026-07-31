@@ -37,6 +37,7 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
+  const voiceChunksRef = useRef<Blob[]>([])
 
   // Chat is a focused surface — capture mouse across the window and drop
   // always-on-top so other apps can cover it while the user types. Restore on
@@ -100,6 +101,12 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps) {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
       const recorder = new MediaRecorder(stream)
       mediaRecorderRef.current = recorder
+      voiceChunksRef.current = []
+
+      recorder.ondataavailable = e => {
+        if (e.data.size > 0) {voiceChunksRef.current.push(e.data)}
+      }
+
       setRecording(true)
       setSpriteState('listening')
       recorder.start()
@@ -110,17 +117,65 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps) {
 
   const stopRecording = () => {
     const recorder = mediaRecorderRef.current
-    if (recorder && recorder.state !== 'inactive') {
-      recorder.stop()
-      recorder.stream.getTracks().forEach(t => t.stop())
+
+    if (!recorder || recorder.state === 'inactive') {
+      setRecording(false)
+
+      return
     }
+
+    recorder.onstop = () => {
+      recorder.stream.getTracks().forEach(t => t.stop())
+      void transcribeAndSend()
+    }
+
+    recorder.stop()
     setRecording(false)
-    setSpriteState('idle')
-    pushUserMessage('🎤（语音消息）')
+  }
+
+  // Push-to-talk voice message: record → cloud STT (media.stt) → send the
+  // transcribed text as a normal prompt. Falls back to a typed hint when STT
+  // is unavailable so the user is never stuck (plan §5 always-fallback-text).
+  const transcribeAndSend = async () => {
     setSpriteState('thinking')
-    void ensureSession().then(id => {
-      void requestGateway('prompt.submit', { session_id: id, text: '（收到了用户发来的语音消息）' })
-    })
+    const blob = new Blob(voiceChunksRef.current, { type: 'audio/webm' })
+    voiceChunksRef.current = []
+    let text = ''
+
+    try {
+      const reader = new FileReader()
+
+      const dataUrl: string = await new Promise((resolve, reject) => {
+        reader.onload = () => resolve(reader.result as string)
+        reader.onerror = () => reject(new Error('read failed'))
+        reader.readAsDataURL(blob)
+      })
+
+      const res = await window.deskagent.media.stt({ dataUrl, filename: 'voice.webm' })
+      text = (res.text ?? '').trim()
+    } catch {
+      setAssistantError('没听清，用打字吧～')
+      setSpriteState('idle')
+
+      return
+    }
+
+    if (!text) {
+      setAssistantError('没听清，用打字吧～')
+      setSpriteState('idle')
+
+      return
+    }
+
+    pushUserMessage(text)
+
+    try {
+      const id = await ensureSession()
+      await requestGateway('prompt.submit', { session_id: id, text })
+    } catch (err) {
+      setAssistantError(err instanceof Error ? err.message : '发送失败')
+      setSpriteState('idle')
+    }
   }
 
   const send = async () => {
@@ -170,8 +225,8 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps) {
   const showTyping = lastIsUser && gatewayState === 'open'
 
   return (
-    <div className="fixed inset-0 z-40 flex items-center justify-center px-6" style={{ pointerEvents: 'auto' }}>
-      <div className="flex h-[min(70vh,560px)] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-white/10 bg-black/55 text-white shadow-2xl backdrop-blur-md">
+    <div className="fixed inset-0 z-40 flex items-end justify-center px-6 pb-10" style={{ pointerEvents: 'auto' }}>
+      <div className="flex h-[min(60vh,520px)] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-white/10 bg-black/55 text-white shadow-2xl backdrop-blur-md">
         <div className="flex items-center justify-between gap-2 border-b border-white/10 px-3 py-2">
           <div className="flex items-center gap-2">
             <div className="flex items-center gap-0.5 rounded-full bg-white/5 p-0.5 text-[11px]" title="打扰档位">
@@ -248,8 +303,8 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps) {
               }`}
               onMouseDown={() => void startRecording()}
               onMouseUp={stopRecording}
-              onTouchStart={() => void startRecording()}
               onTouchEnd={stopRecording}
+              onTouchStart={() => void startRecording()}
               title="按住录制语音消息"
               type="button"
             >

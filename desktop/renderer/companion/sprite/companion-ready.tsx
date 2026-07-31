@@ -1,41 +1,61 @@
 import { useStore } from '@nanostores/react'
 import { useEffect, useState } from 'react'
 
-import { $activeTransitionClip, $clipCatalog, getClipUrlForScene } from '@/companion/clip-store'
+import { useGatewayRequest } from '@/companion/boot/use-gateway-request'
+import { $activeTransitionClip, $clipCatalog, getClipUrlForScene, updateClipCatalog } from '@/companion/clip-store'
 import { $spriteEmotion, $spriteState, type SpriteEmotion, type SpriteStateName } from '@/companion/companion-store'
 import { $gatewayState } from '@/shared/store/gateway'
 
 function getStateBadge(state: SpriteStateName, emotion: SpriteEmotion | null): string | null {
-  if (state === 'disconnected') return '🔌'
-  if (state === 'sleeping') return '💤'
-  if (state === 'working') return '⚙️'
-  if (state === 'thinking') return '💭'
-  if (state === 'listening') return '🎧'
-  if (state === 'speaking') return '💬'
-  if (state === 'interacting') return '✨'
+  if (state === 'disconnected') {return '🔌'}
+
+  if (state === 'sleeping') {return '💤'}
+
+  if (state === 'working') {return '⚙️'}
+
+  if (state === 'thinking') {return '💭'}
+
+  if (state === 'listening') {return '🎧'}
+
+  if (state === 'speaking') {return '💬'}
+
+  if (state === 'interacting') {return '✨'}
+
   if (state === 'emotional' && emotion) {
     switch (emotion) {
       case 'happy':
+
       case 'excited':
+
       case 'playful':
         return '❤️'
+
       case 'sad':
+
       case 'lonely':
         return '💧'
+
       case 'surprised':
+
       case 'confused':
         return '❓'
+
       case 'shy':
+
       case 'grateful':
         return '🌸'
+
       case 'proud':
         return '🌟'
+
       case 'bored':
         return '💤'
+
       default:
         return '✨'
     }
   }
+
   return null
 }
 
@@ -53,12 +73,14 @@ export function CompanionReady() {
   const emotion = useStore($spriteEmotion)
   const transitionClip = useStore($activeTransitionClip)
   const clipCatalog = useStore($clipCatalog)
+  const { requestGateway } = useGatewayRequest()
   const drowsy = gatewayState !== 'open' || spriteState === 'disconnected'
 
   // Random micro-action timer for IDLE state (10s-25s)
   useEffect(() => {
     if (spriteState !== 'idle' || drowsy) {
       setIdleVariant('idle')
+
       return
     }
 
@@ -82,6 +104,7 @@ export function CompanionReady() {
       : spriteState === 'idle'
         ? idleVariant
         : spriteState
+
   const clipUrl = getClipUrlForScene(activeScene) ?? getClipUrlForScene('idle')
 
   useEffect(() => {
@@ -90,6 +113,7 @@ export function CompanionReady() {
       setActiveUrl(clipUrl)
       setFading(true)
       const timer = setTimeout(() => setFading(false), 250)
+
       return () => clearTimeout(timer)
     }
   }, [clipUrl, activeUrl])
@@ -115,6 +139,28 @@ export function CompanionReady() {
       cancelled = true
     }
   }, [])
+
+  // Hydrate the clip catalog from the backend on first gateway open, so clips
+  // generated in a prior session show immediately instead of waiting for a
+  // fresh video_gen.completed event. Subsequent readiness updates arrive via
+  // events.ts → setClipStatus.
+  useEffect(() => {
+    if (gatewayState !== 'open') {return}
+    let cancelled = false
+    void requestGateway<{ clips?: { scene: string; status: string; url: string | null; batch?: number }[] }>('avatar.list_clips', {})
+      .then(res => {
+        if (!cancelled && res?.clips?.length) {
+          updateClipCatalog(
+            res.clips.map(c => ({ scene: c.scene, batch: c.batch ?? 1, status: c.status as 'succeeded' | 'failed' | 'pending' | 'processing' | 'queued', url: c.url }))
+          )
+        }
+      })
+      .catch(() => {})
+
+    return () => {
+      cancelled = true
+    }
+  }, [gatewayState, requestGateway])
 
   const badge = drowsy && spriteState !== 'disconnected' ? '💤' : getStateBadge(spriteState, emotion)
   const showVideo = Boolean(activeUrl) && !videoFailed

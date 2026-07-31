@@ -1,8 +1,10 @@
 import { useStore } from '@nanostores/react'
 import { useEffect, useRef, useState } from 'react'
 
+import { useGatewayRequest } from '@/companion/boot/use-gateway-request'
+import { $chatMessages, $chatSessionId, setChatOpen, setChatSession } from '@/companion/chat-store'
 import { $spriteState, setSpriteState } from '@/companion/companion-store'
-import { stopSpeaking } from '@/companion/tts'
+import { speak, stopSpeaking } from '@/companion/tts'
 import { $gatewayState } from '@/shared/store/gateway'
 
 import { SubtitlesOverlay } from './subtitles-overlay'
@@ -11,21 +13,39 @@ interface VoiceCallDockProps {
   onClose: () => void
 }
 
+const SPEECH_THRESHOLD = 28
+const BARGEIN_THRESHOLD = 38
+const SILENCE_END_MS = 1300
+
+// Live half-duplex voice conversation: the mic stays open; a volume analyser
+// segments utterances (speech → sustained silence = turn end). Each finished
+// utterance is transcribed (cloud STT), sent as a prompt, and the streamed
+// reply is spoken aloud when it completes. Barge-in: speaking aloud while the
+// companion talks cuts off the TTS and returns to listening (plan §4.1).
 export function VoiceCallDock({ onClose }: VoiceCallDockProps) {
   const gatewayState = useStore($gatewayState)
+  const messages = useStore($chatMessages)
   const [micActive, setMicActive] = useState(false)
   const [micError, setMicError] = useState<string | null>(null)
   const [durationSec, setDurationSec] = useState(0)
   const streamRef = useRef<MediaStream | null>(null)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const audioAnimRef = useRef<number | null>(null)
+  const recorderRef = useRef<MediaRecorder | null>(null)
+  const chunksRef = useRef<Blob[]>([])
+  const analyserRef = useRef<AnalyserNode | null>(null)
+  const userSpeakingRef = useRef(false)
+  const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const awaitingReplyRef = useRef(false)
+  const assistantSpeakingRef = useRef(false)
+  const lastSpokenIdRef = useRef<string | null>(null)
+  const { requestGateway } = useGatewayRequest()
 
   useEffect(() => {
-    // Focus window and enable mouse interaction
     void window.deskagent.sprite.setIgnoreMouseEvents({ ignore: false })
     void window.deskagent.sprite.setAlwaysOnTop({ on: false })
 
-    // Request microphone and set up audio analyser for Barge-in
+    let ctx: AudioContext | null = null
     navigator.mediaDevices
       ?.getUserMedia({ audio: true })
       .then(stream => {
@@ -35,31 +55,92 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps) {
 
         try {
           const AudioContextClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
+
           if (AudioContextClass) {
-            const ctx = new AudioContextClass()
+            ctx = new AudioContextClass()
             const source = ctx.createMediaStreamSource(stream)
             const analyser = ctx.createAnalyser()
             analyser.fftSize = 256
             source.connect(analyser)
-
+            analyserRef.current = analyser
             const dataArray = new Uint8Array(analyser.frequencyBinCount)
+
+            const startRecorder = () => {
+              if (recorderRef.current?.state === 'recording') {return}
+
+              try {
+                const rec = new MediaRecorder(stream)
+                chunksRef.current = []
+
+                rec.ondataavailable = e => {
+                  if (e.data.size > 0) {chunksRef.current.push(e.data)}
+                }
+
+                rec.start()
+                recorderRef.current = rec
+              } catch {
+                /* recorder unavailable — skip this utterance */
+              }
+            }
+
+            const finishUtterance = () => {
+              const rec = recorderRef.current
+
+              if (!rec || rec.state !== 'recording') {
+                userSpeakingRef.current = false
+
+                return
+              }
+
+              rec.onstop = () => void transcribeAndSubmit()
+              rec.stop()
+              userSpeakingRef.current = false
+            }
+
             const checkVolume = () => {
               analyser.getByteFrequencyData(dataArray)
-              const sum = dataArray.reduce((acc, val) => acc + val, 0)
-              const avg = sum / dataArray.length
+              const avg = dataArray.reduce((acc, val) => acc + val, 0) / dataArray.length
 
-              // Barge-in check: user speaks while assistant is speaking
-              if (avg > 30 && $spriteState.get() === 'speaking') {
+              // Barge-in: user speaks while the companion is talking.
+              if (avg > BARGEIN_THRESHOLD && assistantSpeakingRef.current) {
                 stopSpeaking()
+                assistantSpeakingRef.current = false
                 setSpriteState('listening')
+              }
+
+              const canListen = !awaitingReplyRef.current && !assistantSpeakingRef.current
+
+              if (canListen) {
+                if (!userSpeakingRef.current && avg > SPEECH_THRESHOLD) {
+                  userSpeakingRef.current = true
+                  setSpriteState('listening')
+                  startRecorder()
+
+                  if (silenceTimerRef.current) {
+                    clearTimeout(silenceTimerRef.current)
+                    silenceTimerRef.current = null
+                  }
+                } else if (userSpeakingRef.current && avg < SPEECH_THRESHOLD) {
+                  if (!silenceTimerRef.current) {
+                    silenceTimerRef.current = setTimeout(() => {
+                      silenceTimerRef.current = null
+
+                      if (userSpeakingRef.current) {finishUtterance()}
+                    }, SILENCE_END_MS)
+                  }
+                } else if (userSpeakingRef.current && avg >= SPEECH_THRESHOLD && silenceTimerRef.current) {
+                  clearTimeout(silenceTimerRef.current)
+                  silenceTimerRef.current = null
+                }
               }
 
               audioAnimRef.current = requestAnimationFrame(checkVolume)
             }
+
             audioAnimRef.current = requestAnimationFrame(checkVolume)
           }
         } catch {
-          /* AudioContext fallback */
+          /* AudioContext fallback — mic works, VAD disabled */
         }
       })
       .catch(() => {
@@ -67,32 +148,120 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps) {
         setSpriteState('idle')
       })
 
-    // Auto duration timer & 3-min silent timeout
     timerRef.current = setInterval(() => {
       setDurationSec(prev => {
         if (prev >= 180) {
           onClose()
+
           return prev
         }
+
         return prev + 1
       })
     }, 1000)
 
+    async function transcribeAndSubmit() {
+      const blob = new Blob(chunksRef.current, { type: 'audio/webm' })
+      chunksRef.current = []
+      let text = ''
+
+      try {
+        const reader = new FileReader()
+
+        const dataUrl: string = await new Promise((resolve, reject) => {
+          reader.onload = () => resolve(reader.result as string)
+          reader.onerror = () => reject(new Error('read failed'))
+          reader.readAsDataURL(blob)
+        })
+
+        const res = await window.deskagent.media.stt({ dataUrl, filename: 'voice.webm' })
+        text = (res.text ?? '').trim()
+      } catch {
+        text = ''
+      }
+
+      if (!text || gatewayState !== 'open') {
+        setSpriteState('listening')
+
+        return
+      }
+
+      awaitingReplyRef.current = true
+      setSpriteState('thinking')
+
+      try {
+        const id = await ensureSession()
+        await requestGateway('prompt.submit', { session_id: id, text })
+      } catch {
+        awaitingReplyRef.current = false
+        setSpriteState('listening')
+      }
+    }
+
+    async function ensureSession(): Promise<string> {
+      const existing = $chatSessionId.get()
+
+      if (existing) {return existing}
+      const res = await requestGateway<{ session_id: string }>('session.create', {})
+      setChatSession(res.session_id)
+
+      return res.session_id
+    }
+
     return () => {
-      if (audioAnimRef.current) cancelAnimationFrame(audioAnimRef.current)
-      if (timerRef.current) clearInterval(timerRef.current)
+      if (audioAnimRef.current) {cancelAnimationFrame(audioAnimRef.current)}
+
+      if (timerRef.current) {clearInterval(timerRef.current)}
+
+      if (silenceTimerRef.current) {clearTimeout(silenceTimerRef.current)}
+
+      if (recorderRef.current && recorderRef.current.state !== 'inactive') {
+        recorderRef.current.stop()
+      }
+
       if (streamRef.current) {
         streamRef.current.getTracks().forEach(track => track.stop())
       }
+
+      ctx?.close().catch(() => {})
+      stopSpeaking()
       setSpriteState('idle')
       void window.deskagent.sprite.setAlwaysOnTop({ on: true })
       void window.deskagent.sprite.setIgnoreMouseEvents({ ignore: true, forward: true })
     }
-  }, [onClose])
+  }, [onClose, gatewayState, requestGateway])
+
+  // Speak the assistant's completed reply, then return to listening. The chat
+  // event stream (events.ts) owns the streaming + state machine; this effect
+  // only reacts to a finalized assistant turn.
+  useEffect(() => {
+    if (!micActive) {return}
+    const last = messages[messages.length - 1]
+
+    if (!last || last.role !== 'assistant' || last.streaming || last.error) {return}
+
+    if (last.id === lastSpokenIdRef.current) {return}
+    lastSpokenIdRef.current = last.id
+    awaitingReplyRef.current = false
+
+    if (!last.text.trim()) {
+      setSpriteState('listening')
+
+      return
+    }
+
+    assistantSpeakingRef.current = true
+    setSpriteState('speaking')
+    void speak(last.text).then(ok => {
+      assistantSpeakingRef.current = false
+      setSpriteState(ok ? 'listening' : 'idle')
+    })
+  }, [messages, micActive])
 
   const formatTime = (sec: number) => {
     const m = Math.floor(sec / 60)
     const s = sec % 60
+
     return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`
   }
 
@@ -123,13 +292,16 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps) {
             <span className="h-1.5 w-1.5 rounded-full bg-white/60 animate-bounce" />
             <span className="h-1.5 w-1.5 rounded-full bg-white/60 animate-bounce [animation-delay:0.2s]" />
             <span className="h-1.5 w-1.5 rounded-full bg-white/60 animate-bounce [animation-delay:0.4s]" />
-            <span className="ml-1">正在倾听…</span>
+            <span className="ml-1">{spriteLabel($spriteState.get())}</span>
           </div>
         )}
 
         <button
           className="mt-2 w-full rounded-xl bg-red-500/80 py-2 text-xs font-medium text-white transition hover:bg-red-600 active:scale-95"
-          onClick={onClose}
+          onClick={() => {
+            setChatOpen(false)
+            onClose()
+          }}
           type="button"
         >
           结束通话
@@ -138,4 +310,14 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps) {
       <SubtitlesOverlay />
     </div>
   )
+}
+
+function spriteLabel(state: string): string {
+  if (state === 'listening') {return '正在倾听…'}
+
+  if (state === 'thinking') {return '正在思考…'}
+
+  if (state === 'speaking') {return '正在回答…'}
+
+  return '语音通话中…'
 }

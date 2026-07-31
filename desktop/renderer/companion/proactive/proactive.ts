@@ -7,12 +7,13 @@ import { $disturbanceTier, setSpriteState } from '@/companion/companion-store'
 
 import { speak } from '../tts'
 
-export async function speakProactive(text: string): Promise<void> {
+export async function speakProactive(text: string, opts?: { userInitiated?: boolean }): Promise<void> {
   if (!text.trim()) {return}
 
-  // 保持安静档断消息通道、不断 affect (ARCHITECTURE.md §6) — affect is phase 2, so
-  // here we simply suppress the proactive utterance.
-  if ($disturbanceTier.get() === 'quiet') {return}
+  // Quiet tier suppresses the companion's proactive outreach, but user-
+  // initiated reactions (poke/drag) always voice (plan §4.2: 用户主动发起的
+  // 交互永远不受限). Affect is never gated — callers set emotional state directly.
+  if (!opts?.userInitiated && $disturbanceTier.get() === 'quiet') {return}
 
   if (!$chatOpen.get()) {setProactiveBubble(text.trim())}
   setSpriteState('speaking')

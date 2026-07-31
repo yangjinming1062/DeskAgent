@@ -1,6 +1,9 @@
+import { useStore } from '@nanostores/react'
 import { type ReactNode, type PointerEvent as ReactPointerEvent, useEffect, useRef, useState } from 'react'
 
+import { $chatOpen } from '@/companion/chat-store'
 import { setSpritePosition } from '@/companion/companion-store'
+
 import { handleDragEndInteraction, handleHoverInteraction } from '../interaction'
 
 // The sprite window is screen-sized, transparent, and click-through by default
@@ -26,11 +29,19 @@ export function SpriteStage({ children, onTap, onDoubleTap, onContextMenu }: Spr
   const capturedRef = useRef(false)
   const dragRef = useRef<{ startX: number; startY: number; originX: number; originY: number; moved: boolean } | null>(null)
   const lastTapRef = useRef(0)
+  const chatOpen = useStore($chatOpen)
 
   const [pos, setPos] = useState<{ x: number; y: number }>(() => ({
     x: Math.max(REST_MARGIN, window.innerWidth - EGG_W - REST_MARGIN),
     y: Math.max(REST_MARGIN, window.innerHeight - EGG_H - REST_MARGIN)
   }))
+
+  // Plan §4.1 "对话发生在角色身边": when chat opens the sprite joins the
+  // dialog in the centered column (upper area, dialog below). Voice-call mode
+  // leaves the sprite in place (ambient). Restores the dragged position on close.
+  const displayPos = chatOpen
+    ? { x: Math.round((window.innerWidth - EGG_W) / 2), y: Math.round(window.innerHeight * 0.16) }
+    : pos
 
   const capture = () => {
     if (capturedRef.current) {return}
@@ -127,7 +138,7 @@ export function SpriteStage({ children, onTap, onDoubleTap, onContextMenu }: Spr
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         ref={mountRef}
-        style={{ left: pos.x, top: pos.y, pointerEvents: 'auto', touchAction: 'none' }}
+        style={{ left: displayPos.x, top: displayPos.y, pointerEvents: 'auto', touchAction: 'none' }}
       >
         {children}
       </div>

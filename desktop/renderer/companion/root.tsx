@@ -1,24 +1,26 @@
 import { useStore } from '@nanostores/react'
 import { useEffect, useState } from 'react'
 
+import { startActivityMonitor } from '@/companion/activity'
 import { useGatewayBoot } from '@/companion/boot/use-gateway-boot'
 import { $chatOpen, setChatOpen } from '@/companion/chat-store'
 import { $companionLifecycle, checkBedtimeAndAutoSleep, reportUserActivity, setCompanionLifecycle, wakeUpFromSleep } from '@/companion/companion-store'
+import { hydratePersona } from '@/companion/persona-store'
 import { $auth, applyAuthBroadcast, hydrateAuth, logout } from '@/shared/store/auth'
 import { $gatewayState } from '@/shared/store/gateway'
 
 import { ChatDock } from './chat-dock'
+import { DeveloperOverlay } from './developer-overlay'
 import { handleCompanionEvent } from './events'
 import { handlePokeInteraction } from './interaction'
-import { DeveloperOverlay } from './developer-overlay'
 import { OnboardingFlow } from './onboarding/onboarding-flow'
 import { speakProactive } from './proactive/proactive'
 import { ProactiveBubble } from './proactive/proactive-bubble'
+import { CompanionSettings } from './settings-overlay'
 import { CompanionReady } from './sprite/companion-ready'
 import { SpriteContextMenu } from './sprite/context-menu'
 import { Egg, type EggMode } from './sprite/egg'
 import { SpriteStage } from './sprite/sprite-stage'
-
 import { VoiceCallDock } from './voice-call-dock'
 
 const HATCH_AT = 5
@@ -44,6 +46,7 @@ export function CompanionRoot() {
   const chatOpen = useStore($chatOpen)
   const [cracks, setCracks] = useState(0)
   const [voiceCallOpen, setVoiceCallOpen] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
   const [contextMenuPos, setContextMenuPos] = useState<{ x: number; y: number } | null>(null)
 
   useEffect(() => {
@@ -113,8 +116,9 @@ export function CompanionRoot() {
   const mode: EggMode = !authed ? 'teaser' : gatewayState === 'open' ? 'awake' : 'drowsy'
 
   useEffect(() => {
-    if (lifecycle !== 'ready') return
+    if (lifecycle !== 'ready') {return}
     checkBedtimeAndAutoSleep()
+
     const timer = setInterval(() => {
       checkBedtimeAndAutoSleep()
     }, 60000)
@@ -122,9 +126,13 @@ export function CompanionRoot() {
     const onKey = () => reportUserActivity()
     window.addEventListener('keydown', onKey)
 
+    const stopActivity = startActivityMonitor()
+    void hydratePersona()
+
     return () => {
       clearInterval(timer)
       window.removeEventListener('keydown', onKey)
+      stopActivity()
     }
   }, [lifecycle])
 
@@ -132,6 +140,7 @@ export function CompanionRoot() {
     if (showReady) {
       wakeUpFromSleep()
       handlePokeInteraction()
+
       return
     }
 
@@ -175,6 +184,11 @@ export function CompanionRoot() {
       {showReady && contextMenuPos && (
         <SpriteContextMenu
           onClose={() => setContextMenuPos(null)}
+          onOpenSettings={() => {
+            setChatOpen(false)
+            setVoiceCallOpen(false)
+            setSettingsOpen(true)
+          }}
           onOpenVoiceCall={() => {
             setChatOpen(false)
             setVoiceCallOpen(true)
@@ -193,6 +207,7 @@ export function CompanionRoot() {
         />
       )}
       {showReady && voiceCallOpen && <VoiceCallDock onClose={() => setVoiceCallOpen(false)} />}
+      {showReady && settingsOpen && <CompanionSettings onClose={() => setSettingsOpen(false)} />}
       {showReady && <ProactiveBubble />}
       <DeveloperOverlay />
       {authed && <GatewayBooter />}
