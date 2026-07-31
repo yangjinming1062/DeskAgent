@@ -1,14 +1,12 @@
 services:
   postgres:
-    image: postgres:15
+    image: postgres:16-alpine
     container_name: deskagent-postgres
     restart: unless-stopped
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: deskagent
-    ports:
-      - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -26,9 +24,6 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    # All config lives in backend/.env (copy .env.example → .env and edit).
-    # Only DATABASE_URL is overridden here because the container must reach
-    # postgres by service name, not localhost.
     env_file:
       - .env
     environment:
