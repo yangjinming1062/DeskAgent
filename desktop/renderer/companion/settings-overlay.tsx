@@ -9,6 +9,8 @@ import { $companionVoiceId, $responseMode, type ResponseMode, setCompanionVoiceI
 import { speak } from '@/companion/tts'
 import { fetchVoiceCatalog, sampleLine, type VoiceOption } from '@/companion/voice'
 
+import { PersonaSection } from './persona-editor'
+
 interface SettingsOverlayProps {
   onClose: () => void
 }
@@ -96,6 +98,8 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps) {
         </div>
 
         <div className="flex-1 space-y-5 overflow-y-auto px-4 py-4 text-sm">
+          <PersonaSection />
+
           {/* Response mode */}
           <Section hint="语音通话模式始终语音，不受此设置影响" title="对话回应方式">
             <div className="flex gap-2">

@@ -2,7 +2,7 @@ import { Component, type ErrorInfo, type ReactNode } from 'react'
 
 import { Button } from '@/shared/components/ui/button'
 import { ErrorState } from '@/shared/components/ui/error-state'
-import { useI18n } from '@/shared/i18n'
+import { strings } from '@/shared/strings'
 
 export interface ErrorBoundaryFallbackProps {
   error: Error
@@ -53,7 +53,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
 }
 
 function RootErrorFallback({ error, reset }: ErrorBoundaryFallbackProps) {
-  const { t } = useI18n()
+  const t = strings
 
   return (
     <div className="fixed inset-0 z-[1500] grid place-items-center bg-(--ui-chat-surface-background) p-6">

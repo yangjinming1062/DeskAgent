@@ -2,9 +2,9 @@ import type { ReactNode, RefObject } from 'react'
 
 import { Button } from '@/shared/components/ui/button'
 import { Codicon } from '@/shared/components/ui/codicon'
-import { useI18n } from '@/shared/i18n'
 import { Loader2, Search } from '@/shared/lib/icons'
 import { cn } from '@/shared/lib/utils'
+import { strings } from '@/shared/strings'
 
 interface SearchFieldProps {
   placeholder: string
@@ -36,7 +36,7 @@ export function SearchField({
   trailingAction,
   'aria-label': ariaLabel
 }: SearchFieldProps) {
-  const { t } = useI18n()
+  const t = strings
   const clear = onClear ?? (() => onChange(''))
 
   return (

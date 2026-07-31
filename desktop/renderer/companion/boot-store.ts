@@ -1,6 +1,6 @@
 import { atom } from 'nanostores'
 
-import { translateNow } from '@/shared/i18n'
+import { strings } from '@/shared/strings'
 import type { DesktopBootProgress } from '@/shared/types/global'
 
 export interface DesktopBootState extends DesktopBootProgress {
@@ -10,7 +10,7 @@ export interface DesktopBootState extends DesktopBootProgress {
 const INITIAL_BOOT_STATE: DesktopBootState = {
   error: null,
   fakeMode: false,
-  message: translateNow('boot.steps.startingDeskAgentDesktop'),
+  message: strings.boot.steps.startingDeskAgentDesktop,
   phase: 'renderer.init',
   progress: 2,
   running: true,
@@ -62,7 +62,7 @@ export function setDesktopBootStep(step: {
   })
 }
 
-export function completeDesktopBoot(message = translateNow('boot.ready')) {
+export function completeDesktopBoot(message = strings.boot.ready) {
   const current = $desktopBoot.get()
   $desktopBoot.set({
     ...current,
@@ -81,7 +81,7 @@ export function failDesktopBoot(message: string) {
   $desktopBoot.set({
     ...current,
     error: message,
-    message: translateNow('boot.desktopBootFailedWithMessage', message),
+    message: strings.boot.desktopBootFailedWithMessage(message),
     phase: 'renderer.error',
     progress: clampProgress(current.progress),
     running: false,

@@ -29,6 +29,7 @@ describe('evolution-store intimacy and growth mechanism', () => {
     for (let i = 0; i < 15; i++) {
       recordInteraction('poke')
     }
+
     expect($intimacyScore.get()).toBe(15)
     expect($evolutionLevel.get()).toBe(2)
   })

@@ -27,11 +27,13 @@ export function DeveloperOverlay() {
         $devMode.set(!$devMode.get())
       }
     }
+
     window.addEventListener('keydown', onKey)
+
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
-  if (!isDev) return null
+  if (!isDev) {return null}
 
   return (
     <div className="fixed top-4 left-4 z-50 w-80 overflow-hidden rounded-xl border border-emerald-500/30 bg-black/85 font-mono text-[11px] text-emerald-400 shadow-2xl backdrop-blur-md select-none">
@@ -39,16 +41,16 @@ export function DeveloperOverlay() {
         <span className="font-semibold text-emerald-300">🛠️ Developer Debug Mode</span>
         <div className="flex items-center gap-2">
           <button
-            type="button"
             className="text-emerald-400 hover:text-white"
             onClick={() => setMinimized(!minimized)}
+            type="button"
           >
             {minimized ? '展开' : '折叠'}
           </button>
           <button
-            type="button"
             className="text-emerald-400 hover:text-white"
             onClick={() => $devMode.set(false)}
+            type="button"
           >
             ✕
           </button>
@@ -67,7 +69,7 @@ export function DeveloperOverlay() {
               <p className="text-emerald-600 italic">No JSON-RPC frames captured yet…</p>
             )}
             {logs.map((log, idx) => (
-              <div key={idx} className="leading-tight">
+              <div className="leading-tight" key={idx}>
                 <span className="text-emerald-600">[{log.time}]</span>{' '}
                 <span className="font-semibold text-emerald-300">{log.type}:</span>{' '}
                 <span className="text-white/80">{log.details}</span>

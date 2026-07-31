@@ -9,10 +9,10 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger
 } from '@/shared/components/ui/dropdown-menu'
-import { useI18n } from '@/shared/i18n'
 import { triggerHaptic } from '@/shared/lib/haptics'
 import { ExternalLink, Eye, EyeOff, Trash2 } from '@/shared/lib/icons'
 import { cn } from '@/shared/lib/utils'
+import { strings } from '@/shared/strings'
 
 interface EnvVarActionsMenuProps extends Pick<
   React.ComponentProps<typeof DropdownMenuContent>,
@@ -50,7 +50,7 @@ export function EnvVarActionsMenu({
   showReveal = true,
   sideOffset = 6
 }: EnvVarActionsMenuProps) {
-  const { t } = useI18n()
+  const t = strings
   const copy = t.settings.envActions
   const hasClear = isSet && onClear
   const hasReveal = isSet && showReveal && onReveal
@@ -123,7 +123,7 @@ interface EnvVarActionsTriggerProps extends Omit<React.ComponentProps<typeof But
 }
 
 export function EnvVarActionsTrigger({ className, label, ...props }: EnvVarActionsTriggerProps) {
-  const { t } = useI18n()
+  const t = strings
   const copy = t.settings.envActions
 
   return (

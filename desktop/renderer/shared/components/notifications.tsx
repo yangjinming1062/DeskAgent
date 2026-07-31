@@ -6,7 +6,6 @@ import { Alert, AlertDescription, AlertTitle } from '@/shared/components/ui/aler
 import { Button } from '@/shared/components/ui/button'
 import { Codicon } from '@/shared/components/ui/codicon'
 import { CopyButton } from '@/shared/components/ui/copy-button'
-import { useI18n } from '@/shared/i18n'
 import { triggerHaptic } from '@/shared/lib/haptics'
 import { AlertCircle, AlertTriangle, CheckCircle2, type IconComponent, Info } from '@/shared/lib/icons'
 import { cn } from '@/shared/lib/utils'
@@ -17,6 +16,7 @@ import {
   dismissNotification,
   type NotificationKind
 } from '@/shared/store/notifications'
+import { strings } from '@/shared/strings'
 
 type ToneVariant = 'default' | 'destructive' | 'warning' | 'success'
 
@@ -31,7 +31,7 @@ const STACK_SURFACE = 'pointer-events-auto border border-(--stroke-deskagent) bg
 
 export function NotificationStack() {
   const notifications = useStore($notifications)
-  const { t } = useI18n()
+  const t = strings
   const lastNotificationIdRef = useRef<string | null>(null)
   const [expanded, setExpanded] = useState(false)
   const copy = t.notifications
@@ -106,7 +106,7 @@ function NotificationItem({ notification }: { notification: AppNotification }) {
   const styles = tone[notification.kind]
   const Icon = styles.icon
   const hasDetail = Boolean(notification.detail && notification.detail !== notification.message)
-  const { t } = useI18n()
+  const t = strings
   const copy = t.notifications
 
   return (
@@ -153,7 +153,7 @@ function NotificationItem({ notification }: { notification: AppNotification }) {
 }
 
 function NotificationDetail({ detail }: { detail: string }) {
-  const { t } = useI18n()
+  const t = strings
   const copy = t.notifications
 
   return (

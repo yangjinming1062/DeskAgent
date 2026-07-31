@@ -4,10 +4,10 @@ import { Button } from '@/shared/components/ui/button'
 import { Input } from '@/shared/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/shared/components/ui/select'
 import { Switch } from '@/shared/components/ui/switch'
-import { useI18n } from '@/shared/i18n'
 import { triggerHaptic } from '@/shared/lib/haptics'
 import { Settings } from '@/shared/lib/icons'
 import { notify, notifyError } from '@/shared/store/notifications'
+import { strings } from '@/shared/strings'
 
 import { useRunnerConfig } from '../runner/use-runner-config'
 
@@ -51,7 +51,7 @@ const BROWSER_ENGINE_OPTIONS = [
 ]
 
 export function RunnerSettings() {
-  const { t } = useI18n()
+  const t = strings
   const r = t.settings.runner
 
   const { yamlDoc, setYamlDoc, isLoading, write } = useRunnerConfig(r.failedLoad)
@@ -99,8 +99,7 @@ export function RunnerSettings() {
     setIsDirty(true)
   }
 
-  // Locale is locked in this app (I18nProvider hardcodes zh), so the row
-  // config is a stable module-level shape — no useMemo needed.
+  // Row config is a stable module-level shape — no useMemo needed.
   const rowGroups: readonly { heading: string; rows: readonly Row[] }[] = [
     {
       heading: r.terminal,

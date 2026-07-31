@@ -4,12 +4,12 @@ import { type FormEvent, useState } from 'react'
 import { BrandMark } from '@/shared/components/brand-mark'
 import { Button } from '@/shared/components/ui/button'
 import { Input } from '@/shared/components/ui/input'
-import { useI18n } from '@/shared/i18n'
 import { Loader2, LogIn } from '@/shared/lib/icons'
 import { $auth, login } from '@/shared/store/auth'
+import { strings } from '@/shared/strings'
 
 export function LoginPage() {
-  const { t } = useI18n()
+  const t = strings
   const a = t.login
   const auth = useStore($auth)
   const [username, setUsername] = useState('')

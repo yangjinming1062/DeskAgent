@@ -5,10 +5,10 @@ import { Button } from '@/shared/components/ui/button'
 import { Input } from '@/shared/components/ui/input'
 import { Textarea } from '@/shared/components/ui/textarea'
 import type { DeskAgentGateway } from '@/shared/deskagent'
-import { useI18n } from '@/shared/i18n'
 import { Wrench } from '@/shared/lib/icons'
 import { cn } from '@/shared/lib/utils'
 import { notify, notifyError } from '@/shared/store/notifications'
+import { strings } from '@/shared/strings'
 
 import { useRunnerConfig } from '../runner/use-runner-config'
 
@@ -52,7 +52,7 @@ const transportLabel = (server: Record<string, unknown>) =>
         : 'custom'
 
 export function McpSettings({ gateway, onConfigSaved }: McpSettingsProps) {
-  const { t } = useI18n()
+  const t = strings
   const m = t.settings.mcp
   const { yamlDoc, setYamlDoc, patch } = useRunnerConfig(m.failedLoad)
   const [selected, setSelected] = useState<string | null>(null)

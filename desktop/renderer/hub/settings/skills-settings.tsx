@@ -3,11 +3,11 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { SearchField } from '@/shared/components/ui/search-field'
 import { Switch } from '@/shared/components/ui/switch'
 import { TextTab, TextTabMeta } from '@/shared/components/ui/text-tab'
-import { useI18n } from '@/shared/i18n'
 import { Sparkles } from '@/shared/lib/icons'
 import { refreshSession } from '@/shared/store/auth'
 import { $gateway } from '@/shared/store/gateway'
 import { notifyError } from '@/shared/store/notifications'
+import { strings } from '@/shared/strings'
 
 import { UNCATEGORIZED_KEY } from './constants'
 import { EmptyState, ListRow, LoadingState, SettingsSubsection } from './primitives'
@@ -30,7 +30,7 @@ function isUserCategory(key: string): boolean {
 }
 
 export function SkillsSettings() {
-  const { t } = useI18n()
+  const t = strings
   const s = t.settings.skills
   const sk = t.skills
   const [skills, setSkills] = useState<SkillSummary[]>([])

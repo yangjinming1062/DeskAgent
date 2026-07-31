@@ -1,6 +1,6 @@
 import { atom } from 'nanostores'
 
-import { translateNow } from '@/shared/i18n'
+import { strings } from '@/shared/strings'
 
 export type NotificationKind = 'error' | 'warning' | 'info' | 'success'
 
@@ -55,28 +55,28 @@ const ERROR_SUMMARIES: { test: (msg: string) => boolean; summarize: (msg: string
       const status = msg.match(/(?:error code|status(?:Code)?)[^\d]*(\d{3})/i)?.[1]
 
       return status
-        ? translateNow('notifications.errors.openaiRejectedApiKeyWithStatus', status)
-        : translateNow('notifications.errors.openaiRejectedApiKey')
+        ? strings.notifications.errors.openaiRejectedApiKeyWithStatus(status)
+        : strings.notifications.errors.openaiRejectedApiKey
     }
   },
   {
     test: msg => /neither voice_tools_openai_key nor openai_api_key is set/i.test(msg),
-    summarize: () => translateNow('notifications.errors.openaiTtsNeedsKey')
+    summarize: () => strings.notifications.errors.openaiTtsNeedsKey
   },
   {
     test: msg => /ELEVENLABS_API_KEY not set/i.test(msg) || /ElevenLabs STT API error \(HTTP 401\)/i.test(msg),
     summarize: msg =>
       /ELEVENLABS_API_KEY not set/i.test(msg)
-        ? translateNow('notifications.errors.elevenLabsNeedsKey')
-        : translateNow('notifications.errors.elevenLabsRejectedKey')
+        ? strings.notifications.errors.elevenLabsNeedsKey
+        : strings.notifications.errors.elevenLabsRejectedKey
   },
   {
     test: msg => /method not allowed/i.test(msg),
-    summarize: () => translateNow('notifications.errors.methodNotAllowed')
+    summarize: () => strings.notifications.errors.methodNotAllowed
   },
   {
     test: msg => /microphone permission/i.test(msg),
-    summarize: () => translateNow('notifications.errors.microphonePermission')
+    summarize: () => strings.notifications.errors.microphonePermission
   }
 ]
 

@@ -1,50 +1,11 @@
-/**
- * Desktop theme context.
- *
- * Applies the active theme as CSS custom properties on :root so every
- * Tailwind utility that references a color or font-family token picks up
- * the change automatically.
- *
- * Mode (light/dark/system) controls brightness; skin controls accent.
- * The two are persisted independently. Shift+X toggles light/dark.
- */
+import { type ReactNode, useEffect } from 'react'
 
-import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useState } from 'react'
-
-import { matchesQuery, useMediaQuery } from '@/shared/hooks/use-media-query'
-import { persistString, storedString } from '@/shared/lib/storage'
-
-import { BUILTIN_THEME_LIST, BUILTIN_THEMES, DEFAULT_SKIN_NAME, DEFAULT_TYPOGRAPHY, deskagentTheme } from './presets'
+import { BUILTIN_THEMES, DEFAULT_SKIN_NAME, DEFAULT_TYPOGRAPHY, deskagentTheme } from './presets'
 import type { DesktopTheme, DesktopThemeColors } from './types'
-
-const SKIN_KEY = 'deskagent-desktop-theme-v2'
-const MODE_KEY = 'deskagent-desktop-mode-v1'
-const RETIRED_SKINS = new Set(['nous', 'nous-light', 'default', 'gold'])
 
 export type ThemeMode = 'light' | 'dark' | 'system'
 
 const INJECTED_FONT_URLS = new Set<string>()
-
-const resolveMode = (mode: ThemeMode, systemDark = matchesQuery('(prefers-color-scheme: dark)')): 'light' | 'dark' =>
-  mode === 'system' ? (systemDark ? 'dark' : 'light') : mode
-
-const normalizeSkin = (name: string | null): string => {
-  if (!name || !BUILTIN_THEMES[name] || RETIRED_SKINS.has(name)) {
-    // Surface the silent fallback so the next time a user opens the app and
-    // their saved skin has been retired, the diagnostic turns up in the
-    // browser console instead of looking like a random theme swap.
-    if (name) {
-      console.warn(`[theme] persisted skin "${name}" is no longer available; falling back to "${DEFAULT_SKIN_NAME}"`)
-    }
-
-    return DEFAULT_SKIN_NAME
-  }
-
-  return name
-}
-
-const normalizeMode = (value: string | null): ThemeMode =>
-  value === 'light' || value === 'dark' || value === 'system' ? value : 'light'
 
 // ─── Color math (for synthesised light variants of dark-only skins) ────────
 
@@ -145,11 +106,6 @@ function deriveTheme(skinName: string, mode: 'light' | 'dark'): DesktopTheme {
   }
 }
 
-/**
- * Some palettes intentionally keep a bright background even when
- * `mode === 'dark'`, so we shouldn't apply the `.dark` class. Decide from
- * the actual background luminance.
- */
 function renderedModeFor(colors: DesktopThemeColors, mode: 'light' | 'dark'): 'light' | 'dark' {
   const rgb = hexToRgb(colors.background)
 
@@ -164,9 +120,6 @@ function renderedModeFor(colors: DesktopThemeColors, mode: 'light' | 'dark'): 'l
 
 // ─── CSS application ────────────────────────────────────────────────────────
 
-// Per-mode mix knobs. Light/dark fallbacks live in styles.css `:root` /
-// `:root.dark`; setting them inline keeps active-skin overrides surviving
-// the boot-time paint.
 const mixesFor = (isDark: boolean): Record<string, string> => ({
   '--theme-mix-chrome': isDark ? '74%' : '92%',
   '--theme-mix-sidebar': '100%',
@@ -249,79 +202,11 @@ function applyTheme(theme: DesktopTheme, mode: 'light' | 'dark') {
 
 // Boot-time paint to avoid a flash before <ThemeProvider> mounts.
 if (typeof window !== 'undefined') {
-  const skin = normalizeSkin(storedString(SKIN_KEY))
-  const resolved = resolveMode(normalizeMode(storedString(MODE_KEY)))
-  applyTheme(deriveTheme(skin, resolved), resolved)
+  applyTheme(deriveTheme(DEFAULT_SKIN_NAME, 'light'), 'light')
 }
-
-// ─── Context ────────────────────────────────────────────────────────────────
-
-interface ThemeContextValue {
-  theme: DesktopTheme
-  themeName: string
-  mode: ThemeMode
-  resolvedMode: 'light' | 'dark'
-  availableThemes: Array<{ name: string; label: string; description: string }>
-  setTheme: (name: string) => void
-  setMode: (mode: ThemeMode) => void
-}
-
-const SKIN_LIST = BUILTIN_THEME_LIST.map(({ name, label, description }) => ({ name, label, description }))
-
-const ThemeContext = createContext<ThemeContextValue>({
-  theme: deskagentTheme,
-  themeName: DEFAULT_SKIN_NAME,
-  mode: 'light',
-  resolvedMode: 'light',
-  availableThemes: SKIN_LIST,
-  setTheme: () => {},
-  setMode: () => {}
-})
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [themeName, setThemeNameState] = useState(() =>
-    typeof window === 'undefined' ? DEFAULT_SKIN_NAME : normalizeSkin(storedString(SKIN_KEY))
-  )
+  useEffect(() => applyTheme(deriveTheme(DEFAULT_SKIN_NAME, 'light'), 'light'), [])
 
-  const [mode, setModeState] = useState<ThemeMode>(() =>
-    typeof window === 'undefined' ? 'light' : normalizeMode(storedString(MODE_KEY))
-  )
-
-  const systemDark = useMediaQuery('(prefers-color-scheme: dark)')
-  const resolvedMode = resolveMode(mode, systemDark)
-  const activeTheme = useMemo(() => deriveTheme(themeName, resolvedMode), [themeName, resolvedMode])
-
-  useEffect(() => applyTheme(activeTheme, resolvedMode), [activeTheme, resolvedMode])
-
-  const setTheme = useCallback((name: string) => {
-    const next = normalizeSkin(name)
-    setThemeNameState(next)
-    persistString(SKIN_KEY, next)
-  }, [])
-
-  const setMode = useCallback((next: ThemeMode) => {
-    setModeState(next)
-    persistString(MODE_KEY, next)
-  }, [])
-
-  // The light/dark toggle (Shift+X by default) is owned by the keybind runtime
-  // (`appearance.toggleMode`) so it shows up in the hotkey map and is rebindable.
-
-  const value = useMemo<ThemeContextValue>(
-    () => ({ theme: activeTheme, themeName, mode, resolvedMode, availableThemes: SKIN_LIST, setTheme, setMode }),
-    [activeTheme, themeName, mode, resolvedMode, setTheme, setMode]
-  )
-
-  return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>
-}
-
-export const useTheme = (): ThemeContextValue => useContext(ThemeContext)
-
-/** Sync the desktop skin with the active DeskAgent backend theme on connect. */
-export function useSyncThemeFromBackend(backendThemeName: string | undefined, setTheme: (name: string) => void) {
-  useEffect(() => {
-    if (backendThemeName && BUILTIN_THEMES[backendThemeName]) {
-      setTheme(backendThemeName)
-    }
-  }, [backendThemeName, setTheme])
+  return <>{children}</>
 }

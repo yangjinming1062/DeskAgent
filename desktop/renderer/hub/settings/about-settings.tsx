@@ -4,14 +4,14 @@ import { useCallback, useEffect } from 'react'
 import { $updateStatus, openUpdateDialog, selectTargetVersion } from '@/hub/settings-store'
 import { BrandMark } from '@/shared/components/brand-mark'
 import { Button } from '@/shared/components/ui/button'
-import { useI18n } from '@/shared/i18n'
 import { Loader2, RefreshCw } from '@/shared/lib/icons'
 import { $desktopVersion, refreshDesktopVersion } from '@/shared/store/version'
+import { strings } from '@/shared/strings'
 
 import { SettingsContent } from './primitives'
 
 export function AboutSettings() {
-  const { t } = useI18n()
+  const t = strings
   const a = t.settings.about
   const version = useStore($desktopVersion)
   const updateStatus = useStore($updateStatus)
