@@ -150,12 +150,12 @@ Tier 2-4 保持原 fold-in 语义（per-cap 覆盖 provider-level），兼容老
 
 ### 关键设计决策
 
-- chat 走 OpenAI 协议 → `OpenAICompatChatProvider` 共享基类；`MiMoChatProvider`、`MiniMaxChatProvider`、`GeminiChatProvider` 都继承它，差异只在 base_url 与 model
-- STT：MiMo 走 OpenAI chat + `input_audio` 扩展；Gemini 走 `generateContent` + audio inlineData httpx
-- TTS：MiMo 走 OpenAI chat + `audio` 扩展；MiniMax 走 `/v1/t2a_v2` httpx；Gemini 走 `generateContent` + `responseModalities:["AUDIO"]` httpx
-- image_gen：MiMo 走 OpenAI Images API；MiniMax 走 `/v1/image_generation` httpx；Gemini 走 `generateContent` + `responseModalities:["IMAGE"]` httpx
-- video_gen：MiniMax 走三段式 httpx（submit/poll/fetch）（Gemini Veo 需 Vertex AI，暂不支持）
-- 非 OpenAI 协议的能力**一律走** `providers/http.py` 的 httpx 池（base_url + api_key 缓存，超时 `llm_request_timeout_seconds`），不做 `AsyncOpenAI.post` 兼容层 hack
+- chat 走 OpenAI 协议 → `OpenAICompatChatProvider` 共享基类；`MiMoChatProvider`、`MiniMaxChatProvider`、`GeminiChatProvider`、`ZhipuChatProvider` 都继承它，差异只在 base_url 与 model
+- STT：MiMo 走 OpenAI chat + `input_audio` 扩展；Gemini 走 `generateContent` + audio inlineData httpx；智谱走 `/audio/transcriptions` multipart httpx
+- TTS：MiMo 走 OpenAI chat + `audio` 扩展；MiniMax 走 `/v1/t2a_v2` httpx；Gemini 走 `generateContent` + `responseModalities:["AUDIO"]` httpx；智谱走 `/audio/speech` httpx
+- image_gen：MiMo 走 OpenAI Images API；MiniMax 走 `/v1/image_generation` httpx；Gemini 走 `generateContent` + `responseModalities:["IMAGE"]` httpx；智谱走 `/images/generations` httpx（返回 URL，provider 内下载转 b64）
+- video_gen：MiniMax 走三段式 httpx（submit/poll/fetch）（Gemini Veo 需 Vertex AI，暂不支持；智谱 CogVideo 走异步 API，暂不支持）
+- 非 OpenAI 协议的能力**一律走** `providers/http.py` 的 httpx 池（base_url + api_key 缓存，超时 `llm_request_timeout_seconds`），不做 `AsyncOpenAI.post` 兼容层 hack。智谱的 TTS/STT/Image Gen 走同一 httpx 池（`Authorization: Bearer` 认证）
 - `ProviderError(status_code, body, provider, model)` 字段名刻意对齐 `error_classifier._extract_status_code/_extract_error_body`，让 `classify_api_error` 复用既有 8 步流水线——MiniMax `base_resp.status_code` 在 `providers/minimax/_errors.py` 翻译（`1002/1039→429`、`1004→401`、`1008→402`、`1027→400 content_filter`，其余→原 HTTP）
 - MiniMax key 不能继承 MiMo key（host 不同 401）；resolver 在 provider=minimax 时强制把回落链截断在 `minimax_api_key`
 

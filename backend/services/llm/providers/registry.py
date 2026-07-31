@@ -16,7 +16,7 @@ _PROVIDER_DEFAULT_MODELS: dict[str, dict[str, str]] = {}
 # Provider families DeskAgent ships. ``*_PROVIDER`` env vars must be one
 # of these; adding a new family means registering its classes AND extending
 # the dicts below.
-KNOWN_PROVIDERS: frozenset[str] = frozenset({"mimo", "minimax", "gemini"})
+KNOWN_PROVIDERS: frozenset[str] = frozenset({"mimo", "minimax", "gemini", "zhipu"})
 
 # Default provider when ``SETTINGS.<svc>_provider`` is empty. Chat/STT/TTS
 # default to MiMo (OpenAI-compatible); image/video gen default to MiniMax.
@@ -54,6 +54,13 @@ PROVIDER_DEFAULT_URLS: dict[str, dict[str, str]] = {
         "stt": "https://generativelanguage.googleapis.com",
         "tts": "https://generativelanguage.googleapis.com",
         "image_gen": "https://generativelanguage.googleapis.com",
+        "video_gen": "",
+    },
+    "zhipu": {
+        "llm": "https://open.bigmodel.cn/api/paas/v4",
+        "stt": "https://open.bigmodel.cn/api/paas/v4",
+        "tts": "https://open.bigmodel.cn/api/paas/v4",
+        "image_gen": "https://open.bigmodel.cn/api/paas/v4",
         "video_gen": "",
     },
 }
@@ -105,4 +112,6 @@ def infer_provider_name(base_url: str) -> str:
         return "minimax"
     if host == "generativelanguage.googleapis.com":
         return "gemini"
+    if host == "open.bigmodel.cn":
+        return "zhipu"
     return "mimo"

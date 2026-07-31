@@ -319,6 +319,22 @@ class TestRegistry:
         with pytest.raises(LookupError):
             resolve(ServiceType.stt, "minimax")
 
+    def test_zhipu_providers_registered(self):
+        from services.llm.providers.zhipu import (
+            ZhipuChatProvider,
+            ZhipuImageGenProvider,
+            ZhipuSTTProvider,
+            ZhipuTTSProvider,
+        )
+        from services.llm.providers.registry import resolve
+
+        assert resolve(ServiceType.llm, "zhipu") is ZhipuChatProvider
+        assert resolve(ServiceType.stt, "zhipu") is ZhipuSTTProvider
+        assert resolve(ServiceType.tts, "zhipu") is ZhipuTTSProvider
+        assert resolve(ServiceType.image_gen, "zhipu") is ZhipuImageGenProvider
+        with pytest.raises(LookupError):
+            resolve(ServiceType.video_gen, "zhipu")
+
 
 class TestDefaultModels:
     def test_default_models_published(self):
@@ -335,6 +351,10 @@ class TestDefaultModels:
         assert default_model_for("minimax", "image_gen") == "image-01"
         assert default_model_for("minimax", "video_gen") == "MiniMax-Hailuo-02"
         assert default_model_for("minimax", "tts") == "speech-2.8-hd"
+        assert default_model_for("zhipu", "llm") == "glm-5.2"
+        assert default_model_for("zhipu", "stt") == "glm-asr-2512"
+        assert default_model_for("zhipu", "tts") == "glm-tts"
+        assert default_model_for("zhipu", "image_gen") == "glm-image"
 
     def test_unsupported_cap_returns_empty(self):
         from services.llm import default_model_for
@@ -343,6 +363,8 @@ class TestDefaultModels:
         assert default_model_for("mimo", "video_gen") == ""
         # minimax doesn't register stt.
         assert default_model_for("minimax", "stt") == ""
+        # zhipu doesn't register video_gen.
+        assert default_model_for("zhipu", "video_gen") == ""
 
 
 class TestProvidersSupporting:
@@ -355,10 +377,10 @@ class TestProvidersSupporting:
         image_providers = set(providers_supporting("image_gen"))
         video_providers = set(providers_supporting("video_gen"))
 
-        assert chat_providers == {"mimo", "minimax", "gemini"}
-        assert stt_providers == {"mimo", "gemini"}
-        assert tts_providers == {"mimo", "minimax", "gemini"}
-        assert image_providers == {"mimo", "minimax", "gemini"}
+        assert chat_providers == {"mimo", "minimax", "gemini", "zhipu"}
+        assert stt_providers == {"mimo", "gemini", "zhipu"}
+        assert tts_providers == {"mimo", "minimax", "gemini", "zhipu"}
+        assert image_providers == {"mimo", "minimax", "gemini", "zhipu"}
         assert video_providers == {"minimax"}
 
 
@@ -389,6 +411,8 @@ class TestProviderChain:
         "mimo_base_url": "",
         "minimax_api_key": "",
         "minimax_base_url": "",
+        "zhipu_api_key": "",
+        "zhipu_base_url": "",
     }
 
     def _reset_settings(self, monkeypatch):
