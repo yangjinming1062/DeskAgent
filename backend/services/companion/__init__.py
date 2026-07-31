@@ -1,3 +1,6 @@
+from .asset_store import delete_user_assets
+from .asset_store import resolve_companion_asset_path
+from .avatar_service import ALLOWED_AVATAR_UPLOAD_MIME_TYPES
 from .avatar_service import AvatarGenerationError
 from .avatar_service import generate_avatar
 from .avatar_service import get_active_avatar
@@ -6,14 +9,16 @@ from .avatar_service import regenerate_avatar
 from .avatar_service import resolve_uploaded_avatar_path
 from .avatar_service import upload_avatar
 from .clip_service import CLIP_SCENES
-from .clip_service import enqueue_clip_batch
 from .clip_service import invalidate_user_clips
 from .clip_service import list_clips
 from .clip_service import scenes_for_batch
+from .clip_service import seed_all_clips
 from .disturbance import ALLOWED_TIERS
 from .disturbance import get_disturbance_tier
 from .disturbance import is_quiet
 from .disturbance import set_disturbance_tier
+from .escalation_loop import start_clip_escalation
+from .escalation_loop import stop_clip_escalation
 from .persona_service import build_system_prompt_extras
 from .persona_service import get_onboarding_state
 from .persona_service import get_or_create_persona
@@ -25,13 +30,14 @@ from .voice_catalog import list_voices as list_tts_voices
 from .voice_catalog import match_user_voice
 
 __all__ = [
+    "ALLOWED_AVATAR_UPLOAD_MIME_TYPES",
     "ALLOWED_TIERS",
     "CLIP_SCENES",
     "ONBOARDING_FIELDS",
     "AvatarGenerationError",
     "PersonaValidationError",
     "build_system_prompt_extras",
-    "enqueue_clip_batch",
+    "delete_user_assets",
     "generate_avatar",
     "get_active_avatar",
     "get_disturbance_tier",
@@ -44,10 +50,14 @@ __all__ = [
     "list_tts_voices",
     "match_user_voice",
     "regenerate_avatar",
+    "resolve_companion_asset_path",
     "resolve_uploaded_avatar_path",
-    "upload_avatar",
     "scenes_for_batch",
+    "seed_all_clips",
     "set_disturbance_tier",
+    "start_clip_escalation",
+    "stop_clip_escalation",
     "submit_onboarding_field",
     "update_persona",
+    "upload_avatar",
 ]

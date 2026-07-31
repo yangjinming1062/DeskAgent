@@ -118,4 +118,4 @@ demo.*
 installer/payload/
 
 # Backend runtime data (generated media/logs from tests + runs, never tracked)
-backend/data/
+data/
