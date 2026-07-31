@@ -34,7 +34,7 @@ runner/
 
 Wheel 产物：`dist/deskagent-agent-*.whl`。Desktop spawn `$DESKAGENT_HOME/runner/.venv/{bin/python,Scripts/python.exe} $DESKAGENT_HOME/runner/server.py --desktop-ws <ws-url>`。安装布局详 [installer/README.md §9](../installer/README.md)。
 
-**音频引擎默认在基础 wheel 内**：`faster-whisper` / `piper-tts` / `sounddevice` / `numpy` 是伴侣语音栈的核心依赖（[plan §5 语音交互](desktop/plan.md)），从基础 wheel 直接可用——前装不再要求额外的 `uv pip install "desk-agent[audio]"`。`pyttsx3` 用平台 marker 限制（Linux 上 voice 栈走 Piper 单一引擎即可）。运行时仍要求系统 PATH 有 `ffmpeg`（`audio_io.wav_to_wav_pcm16` 用）。
+**音频引擎默认在基础 wheel 内**：`faster-whisper` / `piper-tts` / `sounddevice` / `numpy` 是伴侣语音栈的核心依赖（[COMPANION_DESIGN §5 语音交互](../COMPANION_DESIGN.md#5-语音交互stt--tts)），从基础 wheel 直接可用——前装不再要求额外的 `uv pip install "desk-agent[audio]"`。`pyttsx3` 用平台 marker 限制（Linux 上 voice 栈走 Piper 单一引擎即可）。运行时仍要求系统 PATH 有 `ffmpeg`（`audio_io.wav_to_wav_pcm16` 用）。
 
 要确认 capability 是否在当前 venv 内为真，调 `deskagent.info` 看 `capabilities.local_stt / local_tts` 字段——运行时检测比静态 extra 标记更准（依赖可能在 import 时报警但运行时仍可用，反过来亦然）。
 
@@ -141,7 +141,7 @@ MCP 工具由 `discover_mcp_tools()` 在 `server_loop` 紧跟 `runner_ready` 之
 
 ### 音频工具 (STT + TTS)
 
-为伴侣语音能力 ([plan §5](desktop/plan.md#5-语音交互stt--tts)) 提供本地后备 / 平行路径。Backend `tts_tool`（云端、生成式音色）仍是默认主路径；Runner 暴露的本地引擎在云断连或开发预览场景下出场。
+为伴侣语音能力 ([COMPANION_DESIGN §5](../COMPANION_DESIGN.md#5-语音交互stt--tts)) 提供本地后备 / 平行路径。Backend `tts_tool`（云端、生成式音色）仍是默认主路径；Runner 暴露的本地引擎在云断连或开发预览场景下出场。
 
 **`speech_to_text`**（`tools/multimodal/audio/stt_tool.py`）：接收本地路径 `audio_path` 或 base64 编码的音频字节（≤ 25 MB，mp3/wav/m4a/ogg/flac/webm/aac）；先经 ffmpeg 解码到 16 kHz mono PCM16 WAV，再喂给 faster-whisper（CTranslate2）。语言自动检测或显式传 `language`；模型大小 `tiny | base | small | medium | large-v2 | large-v3`（默认 `base`，模型文件按需下载到 `$DESKAGENT_HOME/models/whisper/`）。Segment-confidence gate 丢弃 `no_speech_prob > 0.6` 或 `avg_logprob < -1.0` 的段。返回 `{success, text, language, segments[]}`。`check_fn` 探测 `faster-whisper` 是否可导入——未装时从 LLM schema 自动消失。
 
@@ -153,7 +153,7 @@ MCP 工具由 `discover_mcp_tools()` 在 `server_loop` 紧跟 `runner_ready` 之
 
 ### 环境感知 (`system.*`)
 
-驱动 [plan §4.4 情境动作](desktop/plan.md) 与 [plan §4.2 打扰档位动态覆盖](desktop/plan.md)。Desktop 用 `setInterval` 轮询这些工具（标准 `execute_tool` 通道），结果完全脱离 LLM 直接进状态机判定——这不是 LLM 工具，是采样探针。
+驱动 [COMPANION_DESIGN §4.4 情境动作](../COMPANION_DESIGN.md#44-自主行为让形象活着) 与 [COMPANION_DESIGN §4.2 打扰档位](../COMPANION_DESIGN.md#42-主动陪伴与打扰档位backend-驱动)。Desktop 用 `setInterval` 轮询这些工具（标准 `execute_tool` 通道），结果完全脱离 LLM 直接进状态机判定——这不是 LLM 工具，是采样探针。
 
 | 工具 | 平台 | 实现 |
 |------|------|------|

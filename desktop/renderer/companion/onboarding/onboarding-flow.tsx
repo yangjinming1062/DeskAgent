@@ -1,10 +1,15 @@
+import { useStore } from '@nanostores/react'
 import { useEffect, useRef, useState } from 'react'
 
-import { matchVoice, nextVoice, sampleLine, type VoiceOption } from '../backend-companion-mock'
+import { useGatewayRequest } from '@/companion/boot/use-gateway-request'
+import { $gatewayState } from '@/shared/store/gateway'
+
 import { clearClipCatalog } from '../clip-store'
 import { assemblePersona, type OnboardingAnswers } from '../persona'
+import { setCompanionVoiceId } from '../prefs'
 import { Silhouette } from '../sprite/silhouette'
 import { speak, stopSpeaking } from '../tts'
+import { fetchVoiceCatalog, matchVoicePreference, nextVoice, sampleLine, type VoiceOption } from '../voice'
 
 type Phase = 'q' | 'hatching' | 'portrait' | 'voice' | 'finishing' | 'greeting'
 type QKey = keyof OnboardingAnswers
@@ -56,6 +61,9 @@ const QUESTIONS: readonly Question[] = [
 
 const sleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms))
 
+// Desktop answer keys → Backend ONBOARDING_FIELDS (services/companion/persona_service.py).
+const BACKEND_FIELD: Record<QKey, string> = { name: 'name', role: 'role', personality: 'personality', selfIntro: 'self_intro', voice: 'voice' }
+
 async function generatePortrait(): Promise<string | null> {
   try {
     const res = await window.deskagent.api<{ asset_url?: string }>({
@@ -85,16 +93,20 @@ interface OnboardingFlowProps {
 }
 
 export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
+  const gatewayState = useStore($gatewayState)
+  const { requestGateway } = useGatewayRequest()
   const [phase, setPhase] = useState<Phase>('q')
   const [qIndex, setQIndex] = useState(0)
   const [answers, setAnswers] = useState<OnboardingAnswers>({})
   const [input, setInput] = useState('')
   const [portraitUrl, setPortraitUrl] = useState<string | null>(null)
   const [voice, setVoice] = useState<VoiceOption | null>(null)
+  const [voiceCatalog, setVoiceCatalog] = useState<VoiceOption[]>([])
   const [busy, setBusy] = useState(false)
   const [hint, setHint] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const resumedRef = useRef(false)
 
   // The onboarding surface is fully interactive — disable click-through while
   // mounted so the text inputs work without per-element hit-testing. Restore
@@ -107,6 +119,43 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
       void window.deskagent.sprite.setIgnoreMouseEvents({ ignore: true, forward: true })
     }
   }, [])
+
+  // Breakpoint recovery (plan §3 / design §7.5): once the gateway is open,
+  // pull any half-answered draft so a crash/exit mid-onboarding resumes from
+  // the next unanswered question. One-shot — never re-resumes.
+  useEffect(() => {
+    if (resumedRef.current || gatewayState !== 'open') {return}
+    resumedRef.current = true
+
+    void (async () => {
+      try {
+        const state = await requestGateway<{ answers?: Record<string, string>; next_field?: string | null; complete?: boolean }>('onboarding.get_state', {})
+
+        if (state?.complete) {
+          onCompleted()
+
+          return
+        }
+
+        if (state?.answers) {
+          setAnswers({
+            name: state.answers.name,
+            role: state.answers.role,
+            personality: state.answers.personality,
+            selfIntro: state.answers.self_intro,
+            voice: state.answers.voice
+          })
+          const idx = QUESTIONS.findIndex(q => BACKEND_FIELD[q.key] === state.next_field)
+
+          if (idx > 0) {setQIndex(idx)}
+        }
+      } catch {
+        /* no draft yet — start fresh */
+      }
+
+      setVoiceCatalog(await fetchVoiceCatalog(requestGateway))
+    })()
+  }, [gatewayState, requestGateway, onCompleted])
 
   const question = QUESTIONS[qIndex]
   const spokenText = question.text.replace('{name}', answers.name?.trim() || '你')
@@ -129,7 +178,14 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
 
   const commit = (value: string | undefined) => {
     const q = QUESTIONS[qIndex]
-    setAnswers((prev: OnboardingAnswers) => ({ ...prev, [q.key]: value && value.trim() ? value.trim() : undefined }))
+    const cleaned = value && value.trim() ? value.trim() : undefined
+    setAnswers((prev: OnboardingAnswers) => ({ ...prev, [q.key]: cleaned }))
+
+    // Per-field incremental persistence (design §7.5); fire-and-forget — never
+    // block the UI on a draft save. No-op until the gateway is open.
+    if (gatewayState === 'open') {
+      void requestGateway('onboarding.submit', { field: BACKEND_FIELD[q.key], value: cleaned ?? null }).catch(() => {})
+    }
   }
 
   const advance = () => {
@@ -168,14 +224,34 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
     setPhase('hatching')
     setHint(null)
     void speak('让我想想我该是什么样子…')
-    let url: string | null = null
+
+    // Finalize the persona BEFORE generating the portrait — the backend's
+    // avatar generation requires a complete persona (is_complete=true). The
+    // answers are all collected by this point; self_intro/voice were already
+    // consumed by the draft + voice matching below. Retries, then proceeds
+    // regardless so the user is never stranded.
+    let personaOk = false
 
     for (let i = 0; i < 3; i++) {
-      url = await generatePortrait()
+      if (await savePersona(assemblePersona(answers))) {personaOk = true;
 
-      if (url) {break}
-      setHint('我还没想好…')
-      await sleep(900)
+ break}
+
+      await sleep(700)
+    }
+
+    let url: string | null = null
+
+    if (personaOk) {
+      for (let i = 0; i < 3; i++) {
+        url = await generatePortrait()
+
+        if (url) {break}
+        setHint('我还没想好…')
+        await sleep(900)
+      }
+    } else {
+      setHint('记忆还没存好，稍后再试试形象吧…')
     }
 
     setPortraitUrl(url)
@@ -187,22 +263,60 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
     setBusy(true)
     setHint(null)
     clearClipCatalog()
-    const url = await generatePortrait()
-    setBusy(false)
 
-    if (url) {
-      setPortraitUrl(url)
-      void speak('换一个样子，这样如何？')
-    } else {
+    // avatar.regenerate invalidates derivative clips on the backend (design
+    // §5.1.A) and re-seeds batch 0 after the new portrait succeeds.
+    try {
+      const res = await requestGateway<{ asset_url?: string }>('avatar.regenerate', { feedback: undefined })
+
+      if (res?.asset_url) {
+        setPortraitUrl(res.asset_url)
+        void speak('换一个样子，这样如何？')
+      } else {
+        setHint('暂时换不出来，稍后再试吧')
+      }
+    } catch {
       setHint('暂时换不出来，稍后再试吧')
+    } finally {
+      setBusy(false)
     }
   }
 
-  const confirmPortrait = () => {
-    const matched = matchVoice(answers.voice)
+  const uploadPortrait = async () => {
+    try {
+      const [path] = await window.deskagent.selectPaths({ title: '选择一张图片作为形象', filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif'] }] })
+
+      if (!path) {return}
+      const dataUrl = await window.deskagent.readFileDataUrl(path)
+      const comma = dataUrl.indexOf(',')
+      const mime = comma > 0 ? dataUrl.slice(5, comma) : 'image/png'
+      const base64 = comma > 0 ? dataUrl.slice(comma + 1) : ''
+
+      if (!base64) {return}
+
+      // POST base64 JSON — the desktop REST IPC speaks JSON, not multipart.
+      const res = await window.deskagent.api<{ asset_url?: string }>({
+        path: '/api/companion/avatar/upload',
+        method: 'POST',
+        body: { image: base64, content_type: mime }
+      })
+
+      if (res?.asset_url) {
+        clearClipCatalog()
+        setPortraitUrl(res.asset_url)
+        void speak('用你给的样子，这样如何？')
+      }
+    } catch {
+      setHint('上传失败了，换张图试试？')
+    }
+  }
+
+  const confirmPortrait = async () => {
+    const { voice: matched } = await matchVoicePreference(requestGateway, answers.voice ?? '')
     setVoice(matched)
+    setCompanionVoiceId(matched.id)
     setPhase('voice')
-    void speak(sampleLine(answers.name || ''))
+    void speak(sampleLine(answers.name || ''), matched.id || undefined)
   }
 
   const confirmVoice = () => {
@@ -211,14 +325,9 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
   }
 
   const finish = async () => {
-    // Persist persona so Slice 3 chat has a personality injected. Required
-    // fields are defaulted in assemblePersona so the PUT succeeds even with
-    // skips (plan §4). Retries, then proceeds regardless — never strand the
-    // user on a save failure.
-    for (let i = 0; i < 3; i++) {
-      if (await savePersona(assemblePersona(answers))) {break}
-      await sleep(700)
-    }
+    // Persona was finalized at hatching; this is a no-op safety net if that
+    // save failed — retry once more so chat has a personality injected.
+    await savePersona(assemblePersona(answers))
 
     setPhase('greeting')
     const ok = await speak(`您好，我是${answers.name?.trim() || '您的伙伴'}。很高兴见到您！`)
@@ -306,9 +415,14 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
 
         {phase === 'portrait' && (
           <div className="mt-4 flex items-center justify-between text-xs">
-            <button className="text-white/70 transition hover:text-white disabled:opacity-40" disabled={busy} onClick={regeneratePortrait} type="button">
-              {busy ? '生成中…' : '重新生成'}
-            </button>
+            <div className="flex gap-3">
+              <button className="text-white/70 transition hover:text-white disabled:opacity-40" disabled={busy} onClick={regeneratePortrait} type="button">
+                {busy ? '生成中…' : '重新生成'}
+              </button>
+              <button className="text-white/70 transition hover:text-white disabled:opacity-40" disabled={busy} onClick={uploadPortrait} type="button">
+                自己上传
+              </button>
+            </div>
             <button className="rounded-full bg-white/90 px-4 py-1 font-medium text-black transition hover:bg-white" onClick={confirmPortrait} type="button">
               就这样吧
             </button>
@@ -320,15 +434,16 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
             <div className="flex items-center justify-between text-xs text-white/70">
               <span>{voice.label}</span>
               <div className="flex gap-3">
-                <button className="transition hover:text-white" onClick={() => void speak(sampleLine(answers.name || ''))} type="button">
+                <button className="transition hover:text-white" onClick={() => void speak(sampleLine(answers.name || ''), voice?.id || undefined)} type="button">
                   试听
                 </button>
                 <button
                   className="transition hover:text-white"
                   onClick={() => {
-                    const n = nextVoice(voice.id)
+                    const n = nextVoice(voice.id, voiceCatalog.length ? voiceCatalog : [voice])
                     setVoice(n)
-                    void speak(sampleLine(answers.name || ''))
+                    setCompanionVoiceId(n.id)
+                    void speak(sampleLine(answers.name || ''), n.id || undefined)
                   }}
                   type="button"
                 >

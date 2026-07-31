@@ -135,7 +135,7 @@ DeskAgent 是一个**根据用户描述定制的、具有专属形象的陪伴�
 - **请求信封 (Request)**: `{"jsonrpc": "2.0", "id": "<call_id>", "method": "<method>", "params": {...}}`
 - **事件推送 (Notification)**: `{"jsonrpc": "2.0", "method": "event", "params": {"type": "<event_type>", "payload": {...}}`
 
-**伙伴层协议扩展**（onboarding / 形象与动画资产 / 情绪表达）：在上述信封基础上新增以下方法与事件，承载伙伴生命周期的控制信令。Desktop 侧的消费状态机见 [desktop/plan.md §2](desktop/plan.md#2-动画状态机)。
+**伙伴层协议扩展**（onboarding / 形象与动画资产 / 情绪表达）：在上述信封基础上新增以下方法与事件，承载伙伴生命周期的控制信令。Desktop 侧的消费状态机见 [COMPANION_DESIGN.md §2](COMPANION_DESIGN.md#2-动画状态机)。
 
 | 方向 | 方法 / 事件 type | 用途 |
 |------|------------------|------|
@@ -241,7 +241,7 @@ Backend clip 生成队列（portrait 种子图 + 场景文本 → 图生视频�
 
 `send_message`（主动消息）、Cron（定时任务）、形象/角色变更通知等所有"伙伴主动行为"都经此通道下发至 Desktop，再由伙伴形象以符合其人格的方式表达。
 
-**打扰档位约束**：所有"伙伴主动行为"受三档打扰等级约束（积极主动 / 常规 / 保持安静），档位由用户设置 + Desktop 检测到的用户活动共同决定，Desktop 经 `companion.set_disturbance_tier` 上报当前生效档位。Backend 据此放行或抑制主动消息：**保持安静档阻断主动消息但不断 affect cue**——精灵不发消息打扰，仍可经 affect 表达情绪（如粘人型被冷落后的委屈 affect）。这条约束成立的前提正是 §7.5 的 affect/message 解耦。档位的行为细节见 [desktop/plan.md §4.2](desktop/plan.md)。
+**打扰档位约束**：所有"伙伴主动行为"受三档打扰等级约束（积极主动 / 常规 / 保持安静），档位由用户设置 + Desktop 检测到的用户活动共同决定，Desktop 经 `companion.set_disturbance_tier` 上报当前生效档位。Backend 据此放行或抑制主动消息：**保持安静档阻断主动消息但不断 affect cue**——精灵不发消息打扰，仍可经 affect 表达情绪（如粘人型被冷落后的委屈 affect）。这条约束成立的前提正是 §7.5 的 affect/message 解耦。档位的行为细节见 [COMPANION_DESIGN.md §4.2](COMPANION_DESIGN.md#42-主动陪伴与打扰档位backend-驱动)。
 
 ---
 
@@ -260,11 +260,11 @@ Backend clip 生成队列（portrait 种子图 + 场景文本 → 图生视频�
 | 资产 | 形态 | 用途 |
 |------|------|------|
 | **portrait** | PNG | 视觉身份基准；由 Backend 据角色定义装配生图 prompt，调用 `backend_tools/image_generation_tool.py` 产出 |
-| **loop clip** | 3–5s 透明背景循环视频 | 常驻状态承载，每个 clip 绑定一个动画状态（[plan.md §2](desktop/plan.md#2-动画状态机)） |
+| **loop clip** | 3–5s 透明背景循环视频 | 常驻状态承载，每个 clip 绑定一个动画状态（[COMPANION_DESIGN.md §2](COMPANION_DESIGN.md#2-动画状态机)） |
 | **transition clip** | 一次性透明背景视频 | 仪式感时刻（孵化、问候、告别） |
 
 - **图生视频契约**：所有 clip 由 Backend 以当前 portrait 为种子图、结合场景/动作描述文本，经图生视频能力（MiniMax Hailuo，复用 `video_generate` 工具的 `first_frame_image` 参数与 `media/video_jobs` 流水线）产出。portrait 既是视觉身份基准、也是全部 clip 的生成种子——同一颗种子图从机制上保证跨 clip 的角色一致性，无需额外的风格锁。
-- **渐进式生成**：portrait + idle clip 在 onboarding 同步生成（批次 0）；其余 clip 按优先级后台排队——speaking/thinking/working（批次 1）→ 生命周期 clip（批次 2）→ 情绪变体（批次 3），就绪后经既有 `video_gen.completed` 事件下发。分批策略与降级细节见 [desktop/plan.md §1.3](desktop/plan.md#13-渐进式生成策略)。
+- **渐进式生成**：portrait + idle clip 在 onboarding 同步生成（批次 0）；其余 clip 按优先级后台排队——speaking/thinking/working（批次 1）→ 生命周期 clip（批次 2）→ 情绪变体（批次 3），就绪后经既有 `video_gen.completed` 事件下发。分批策略与降级细节见 [COMPANION_DESIGN.md §1.3](COMPANION_DESIGN.md#13-渐进式生成与不变量)。
 - **衍生失效**：因 clip 是以 portrait 为种子的图生视频产物，portrait 重生（`avatar.regenerate`）时所有 clip 必然失配，须全部失效并从新种子重新排队，绝不跨 portrait 版本复用。
 - **资产 URL 有 TTL**：provider 下载 URL 有时效（MiniMax 9h），Backend 已在服务端下载落盘并对 Desktop 暴露自有 `/api/media/files/<id>` URL；Desktop 收到后仍须立即本地缓存，不依赖该 URL 永久有效。
 - Desktop 以透明置顶窗口将形象以桌面精灵形态常驻呈现（具体渲染技术——WebM alpha / sprite / 序列帧——是实现决策，由 desktop 子模块决定）。

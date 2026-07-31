@@ -1,3 +1,4 @@
+import { $screenLocked } from '@/companion/activity'
 import {
   appendAssistantDelta,
   beginAssistantMessage,
@@ -7,6 +8,8 @@ import {
 } from '@/companion/chat-store'
 import { setClipStatus } from '@/companion/clip-store'
 import { $disturbanceTier, setSpriteState, type SpriteEmotion } from '@/companion/companion-store'
+import { $responseMode } from '@/companion/prefs'
+import { speak } from '@/companion/tts'
 import type { RpcEvent } from '@/shared/types/deskagent'
 
 import { pushDevLog } from './developer-overlay'
@@ -14,6 +17,7 @@ import { speakProactive } from './proactive/proactive'
 
 export function handleCompanionEvent(event: RpcEvent): void {
   pushDevLog(event.type, JSON.stringify(event.payload ?? {}))
+
   switch (event.type) {
     case 'message.start':
       beginAssistantMessage()
@@ -38,14 +42,24 @@ export function handleCompanionEvent(event: RpcEvent): void {
         setSpriteState('idle')
       }
 
+      // "Always voice" response mode (plan §4.1): speak chat replies aloud.
+      // Voice-call mode drives its own speaking in VoiceCallDock and never
+      // reaches here with a chat dock open, so this only fires for Chat mode.
+      if ($responseMode.get() === 'voice' && payload?.text?.trim()) {
+        setSpriteState('speaking')
+        void speak(payload.text).then(() => setSpriteState('idle'))
+      }
+
       break
     }
 
     case 'affect': {
       const emotion = (event.payload as { emotion?: string } | undefined)?.emotion
+
       if (emotion) {
         setSpriteState('emotional', { emotion: emotion as SpriteEmotion })
       }
+
       break
     }
 
@@ -65,9 +79,11 @@ export function handleCompanionEvent(event: RpcEvent): void {
 
     case 'video_gen.completed': {
       const payload = event.payload as { scene?: string; video_url?: string } | undefined
+
       if (payload?.scene) {
         setClipStatus(payload.scene, 'succeeded', payload.video_url ?? null)
       }
+
       break
     }
 
@@ -90,7 +106,12 @@ export function handleCompanionEvent(event: RpcEvent): void {
         setSpriteState('emotional', { emotion: payload.affect.emotion as SpriteEmotion })
       }
 
-      if (text && currentTier !== 'quiet') {
+      // Quiet tier OR screen locked → suppress the proactive message, but the
+      // affect above still flows (plan §4.2 / §8:断消息不断情绪). Screen-lock
+      // silence is itself silent — no bubble pops over a locked screen.
+      const suppressed = currentTier === 'quiet' || $screenLocked.get()
+
+      if (text && !suppressed) {
         void speakProactive(text)
       }
 

@@ -124,7 +124,7 @@ async def upload_avatar_route(
         raise HTTPException(status_code=415, detail={"error": "仅支持 PNG / JPEG / WebP / GIF 图片"})
     try:
         data = base64.b64decode(raw)
-    except Exception:
+    except ValueError:
         raise HTTPException(status_code=400, detail={"error": "图片编码无效"})
     asset = upload_avatar(db, user.id, data, content_type)
     return _avatar_to_response(asset)
