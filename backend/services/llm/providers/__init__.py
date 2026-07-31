@@ -1,6 +1,7 @@
 from . import gemini  # noqa: F401
 from . import mimo  # noqa: F401
 from . import minimax  # noqa: F401
+from . import zhipu  # noqa: F401
 from .base import BaseProvider
 from .base import ChatProvider
 from .base import ChatResult

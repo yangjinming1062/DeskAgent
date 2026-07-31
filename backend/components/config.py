@@ -40,6 +40,8 @@ class Settings(BaseSettings):
     minimax_base_url: str = Field(default="", validation_alias="MINIMAX_BASE_URL")
     gemini_api_key: str = Field(default="", validation_alias=AliasChoices("GEMINI_API_KEY", "GEMINI_KEY"))
     gemini_base_url: str = Field(default="", validation_alias="GEMINI_BASE_URL")
+    zhipu_api_key: str = Field(default="", validation_alias=AliasChoices("ZHIPU_API_KEY", "ZHIPU_KEY"))
+    zhipu_base_url: str = Field(default="", validation_alias="ZHIPU_BASE_URL")
 
     # ── LLM (chat) ──
     llm_provider: str = ""
