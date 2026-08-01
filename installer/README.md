@@ -121,3 +121,19 @@ Desktop spawn 命令：`$DESKAGENT_HOME/runner/.venv/{bin/python,Scripts/python.
 ## 已知限制
 
 - **蛋形象不随 installer 分发**：角色定义完成前的"蛋"占位形象由 Desktop 内置默认渲染（`BrandMark` 组件），不经 installer seed payload。这避免了 payload 与形象资产版本耦合——installer 只负责代码与运行时分发，形象资产完全由 Backend 生成并下发（[ARCHITECTURE.md §7](../ARCHITECTURE.md)）。
+
+## 10. 本地 TTS voice 打包
+
+`installer/payload/voices/` 目录携带三份 Piper 离线 voice：
+
+| voice id | 用途 | 大小 |
+|----------|------|------|
+| `zh_CN-huayan-medium` | 默认中文女声（onboarding 期间永远用） | ~60MB |
+| `zh_CN-chaowen-medium` | 中文男声备用 | ~60MB |
+| `en_US-amy-medium` | 用户从 voice catalog 选英文 voice 时用 | ~30MB |
+
+`install.{sh,ps1}` 在 `unpack-runner` stage 用 content-based copy（看到 onnx 且同名 .onnx.json 存在才拷）把这三份都拷贝到 `$DESKAGENT_HOME/models/piper/`。**产品方向是"默认中文"**（[runner/README.md §音频工具](../runner/README.md#音频工具-stt--tts)）：onboarding 期间 silhouette 朗读中文问题、且本地 TTS 优先于云端时——立刻能听到中文 Piper 女声而不是 pyttsx3 的 Windows SAPI5 系统默认男声——所必须的兜底。
+
+- **添加新 voice**：把 `<id>.onnx` 与 `<id>.onnx.json` 一起放入 `installer/payload/voices/`，并在 [`runner/tools/multimodal/audio/piper_runtime.py`](../runner/tools/multimodal/audio/piper_runtime.py) 的 `_BUNDLED_VOICES` 元组中注册 id（以及在 `ZH_DEFAULT_VOICE` / `ZH_MALE_DEFAULT_VOICE` / `EN_DEFAULT_VOICE` 常量里加一份 voice 引用，如果你想用某个常量名）。install 脚本用 content-based copy，不需要改 install 脚本。
+- **Piper 缺失 voice 自动下载**：bundled 列表里没有的 Piper voice 会在首次 speak 时从 `huggingface.co/rhasspy/piper-voices` 拉一次（`ensure_voice_installed`）；失败回退 pyttsx3。bundled 路径本身就是为了让常见 onboarding 路径**永远不需要**走这条网络路径。
+- **DESKAGENT_BUNDLED_VOICES_DIR** env var（or `--bundled-voices-dir` CLI arg）由 Tauri `bundle.resources` 解析到 `<bundle>/payload/voices/`，install 脚本读这个变量定位打包的 voice。

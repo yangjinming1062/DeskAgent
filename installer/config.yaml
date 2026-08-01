@@ -109,6 +109,24 @@ auxiliary:
     # 下载超时时间（秒）
     download_timeout: 30
 
+  # 本地音频（语音合成 / 语音转写）配置。
+  # 本地 TTS 引擎（Piper / pyttsx3）在 Desktop 端是默认主路径：免费、零成本。
+  # 但 Piper voice 必须先下载到 $DESKAGENT_HOME/models/piper/ 才能用。
+  # onboarding 期间 silhouette 的问句全是中文，runner 始终用 bundled
+  # zh_CN Piper voice（无论 CJK 还是英文文本——产品方向"默认中文"，
+  # 避免 chat 期间在不同音色间反复横跳）。EN voice 仅在用户从 voice
+  # catalog 显式挑了 `en_US-amy-medium` 时使用（renderer 写到
+  # companionVoiceId，runner 接收 preferred 透传）。
+  # 这里留空作为单一真相源：tts_tool 的 pick_voice_for_text 是唯一
+  # 决策点（见 runner/tools/multimodal/audio/piper_runtime.py）。
+  audio:
+    tts:
+      # 留空 → runner 永远用 bundled zh_CN voice（默认中文）。
+      # 若操作员硬要把所有文本路由到某个非 ZH voice，可在这里填：
+      #   default_voice: "en_US-amy-medium"
+      # 但默认不需要。
+      default_voice: ""
+
 # =============================================================================
 # 技能配置
 # =============================================================================

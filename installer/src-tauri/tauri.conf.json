@@ -46,6 +46,7 @@
     "resources": [
       "../payload/runner/",
       "../payload/skills",
+      "../payload/voices",
       "../payload/config.yaml",
       "../payload/.staging.json",
       "../payload/desktop/.gitkeep",
