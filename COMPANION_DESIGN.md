@@ -193,8 +193,8 @@ IDLE 时形象不是静止贴图。两类自主行为，**都不触发 TTS、不
 
 ## 5. 语音交互（STT + TTS）
 
-- **TTS（输出）**：默认走 Backend 云端引擎（`POST /api/media/tts`，`voice` 参数透传给 provider）；Runner 本地引擎（Piper/pyttsx3）作为并行主路径与云断连时的降级（[§8](#8-runner-runtime-surface)）。用于：语音通话应答、"始终语音"响应模式、主动陪伴消息、onboarding。播放期间精灵处于 SPEAKING，音频结束退出。
-- **STT（输入）**两条路径：语音条（对话模式，按住录音→云端 STT 转写→发送）；语音通话模式（持续收音 + VAD 分段→转写→发送）。Runner 本地 faster-whisper 作为并行路径。
+- **TTS（输出）**：默认**本地优先**——Runner 本地引擎（Piper 主、pyttsx3 降级）作为零成本主路径,本地不可用或失败时回退 Backend 云端引擎（`POST /api/media/tts`,`voice` 透传给 provider）。三档可切（设置 `tts.engine`:`auto` 本地优先+云端回退 / `local` 纯本地失败不回退 / `cloud` 永远云端）。用于:语音通话应答、"始终语音"响应模式、主动陪伴消息、onboarding。播放期间精灵处于 SPEAKING,音频结束退出。
+- **STT（输入）**:默认**本地优先**（Runner faster-whisper),同样三档可切（`stt.engine`)。两条输入路径:语音条(对话模式,按住录音→转写→发送);语音通话模式(持续收音 + VAD 分段→转写→发送)。
 - **音色匹配**：`tts.list_voices` 返回当前 provider 候选目录，`tts.match_voice` 把偏好映射到 voice id（见 §3.5）。
 - **始终可回退文字**：TTS/STT 任一失败不阻断交互——TTS 失败仅显示文字，STT 失败提示"没听清，用打字吧"。
 
@@ -232,13 +232,12 @@ Runner 端提供与伴侣场景直接对接的本地能力，Desktop 按以下�
 - **`runner_ready` payload**：含 `version` 与 `capabilities`（`microphone` / `screen_capture` / `local_stt` / `local_tts` / `system_activity` / `platform` / `python`），由 Runner **真实探测**各平台子系统得出，非硬编码。不全可装的环境不阻塞启动。
 - **`deskagent.info` RPC**：任何时候可调，返回完整进程 / OS / 网络 / 磁盘快照。失败态降级（[§4.5](#45-故障态与降级行为伙伴永不死)）依据此 RPC 与 WS 连通性双源判定。
 - **环境感知工具** `system.get_idle_seconds` / `is_screen_locked` / `get_focused_app` / `get_power_state`：经标准 `execute_tool` 通道轮询（Desktop 经 `runnerInvoke`）——结果直接进 §4.4 情境判定，**不经 LLM**。`is_screen_locked=true` 时静默切断主动消息（仍可 affect），解锁后静默恢复。
-- **本地语音** `speech_to_text`（faster-whisper）/ `text_to_speech`（Piper 主、pyttsx3 降级）/ `list_tts_voices`：TTS 默认走 Backend 云端引擎；Runner 本地引擎作为并行主路径与云断连时的降级（避免 §4.5 "暂时说不出话"）。
+- **本地语音** `speech_to_text`（faster-whisper）/ `text_to_speech`（Piper 主、pyttsx3 降级）/ `list_tts_voices`:STT/TTS 的零成本主路径。Desktop 经 `media.stt`/`media.tts` IPC 路由——默认本地优先(`auto`),本地不可用或失败时回退云端;`local` 档纯本地不回退,`cloud` 档强制云端(见 §5)。
 
 ---
 
 ## 已知限制与后续增强
 
-- **本地语音作为默认主路径**：当前 TTS/STT 默认走云端，Runner 本地引擎的自动降级/主路径切换尚未在 Desktop 侧自动编排（用户可手动配置）。
 - **LLM + 记忆驱动的交互反应**：戳/拖反应目前是角色性格分层的客户端文案池；完整"反应文案由 Backend LLM 据角色定义 + 记忆即时生成、反应写回记忆"是后续增强。
 - **活动检测驱动的自动档位**：打扰档位目前由用户手动设置；据本机活动信号自动覆盖档位 + 保持安静时的人格化 affect（粘人型被冷落的委屈反应等）是后续增强。
 - **情境自主行为**：检测键盘/音乐活动 → 精灵坐下看书/跟着节拍轻晃等情境动作，依赖对应 clip 资产就绪。
