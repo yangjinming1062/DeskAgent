@@ -95,20 +95,26 @@ def _decode_and_transcribe(
     from faster_whisper import WhisperModel  # type: ignore[import-not-found]
 
     model = WhisperModel if WhisperModel is None else get_whisper(size=model_size)  # type: ignore[truthy-function]
+    # Normalize ``"auto"`` / ``None`` → None so the third-party API only sees the explicit-or-auto contract.
+    whisper_language = None if language in (None, "auto") else language
     segments, info = model.transcribe(
         str(audio_path),
-        language=language,
+        language=whisper_language,
         beam_size=beam_size,
         initial_prompt=initial_prompt,
         vad_filter=True,
         condition_on_previous_text=False,
     )
 
-    if not language:
+    detected_language: str | None = None
+    detected_language_probability: float | None = None
+    if not whisper_language:
         try:
-            language = info.language
+            detected_language = str(info.language)
+            detected_language_probability = float(info.language_probability)
         except Exception:
-            language = None
+            detected_language = None
+            detected_language_probability = None
 
     out_segments: list[dict[str, Any]] = []
     text_parts: list[str] = []
@@ -131,7 +137,8 @@ def _decode_and_transcribe(
 
     return {
         "text": " ".join(p for p in text_parts if p).strip(),
-        "language": language or "unknown",
+        "language": whisper_language or detected_language or "unknown",
+        "language_probability": detected_language_probability,
         "segments": out_segments,
     }
 
@@ -146,13 +153,15 @@ def _check_faster_whisper() -> bool:
 
 
 async def speech_to_text_tool(args: dict[str, Any], **kw: Any) -> str:
-    import base64
-    import uuid
-
     audio_path_arg = args.get("audio_path")
     audio_b64 = args.get("audio_base64")
     mime = args.get("mime_type") or "audio/wav"
-    language = args.get("language") or None
+    # ``""`` and ``"auto"`` both mean "let whisper auto-detect" — kept as
+    # sentinels here so the IPC layer's `language="zh"` default still wins
+    # for the common case while callers can opt into auto-detect explicitly.
+    raw_language = args.get("language")
+    is_auto_detect = raw_language in (None, "", "auto")
+    language = None if is_auto_detect else str(raw_language).strip() or None
     model_size = args.get("model") or "base"
     initial_prompt = args.get("initial_prompt") or None
     max_seconds = float(args.get("max_seconds") or 120.0)
@@ -211,12 +220,33 @@ async def speech_to_text_tool(args: dict[str, Any], **kw: Any) -> str:
         logger.exception("speech_to_text decode failed")
         return tool_error(f"whisper decode failed: {e}", success=False)
 
+    # Auto-detect mode: return tool_error (not empty success) when whisper was uncertain or
+    # filtered every segment — the desktop's local→cloud fallback then kicks in cleanly.
+    # Explicit `language=` calls skip this: the caller said "transcribe as zh", honor it.
+    if is_auto_detect:
+        prob = result.get("language_probability")
+        text = result.get("text") or ""
+        if not text:
+            return tool_error(
+                "local STT produced no segments (audio may be silent or all " "segments filtered by confidence gate)",
+                hint=("Set stt.engine=cloud in config.yaml, or check the audio input. " "Cloud STT (e.g. mimo) handles non-zh audio and noisy inputs."),
+                success=False,
+            )
+        if prob is not None and prob < 0.5:
+            return tool_error(
+                f"local STT language detection confidence too low: {prob:.2f}",
+                hint=(
+                    "Whisper auto-detect was uncertain. Set stt.engine=cloud in "
+                    "config.yaml to fall back to a stronger multilingual model, "
+                    "or pass language='zh'/'en' explicitly to bias the local result."
+                ),
+                success=False,
+            )
+
     return tool_result(success=True, **result)
 
 
 def _handle_speech_to_text(args: dict[str, Any], **kw: Any) -> Any:
-    import asyncio
-
     return asyncio.run(speech_to_text_tool(args, **kw))
 
 
