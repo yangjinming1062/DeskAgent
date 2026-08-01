@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 协作规范
 
-1. **阅读文档优先**：处理模块前**先读**该模块 `README.md`。
+1. **阅读文档优先**：优先阅读[ARCHITECTURE.md](ARCHITECTURE.md)和[COMPANION_DESIGN.md](COMPANION_DESIGN.md)了解项目思路，处理具体模块前**先读**该模块 `README.md`。
 2. **同步更新文档**：修改源码/结构/导出/架构后，**同一提交**里同步该模块及所有受影响的 `README.md`。
 
 ## 全局已知限制与平台支持策略
