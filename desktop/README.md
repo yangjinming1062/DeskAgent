@@ -109,6 +109,7 @@ renderer/
 - **关闭按钮语义**：Win/Linux/WSL 上 close = hide to tray；macOS 上 close = hide window，Dock icon 保留。统一由 `main/lifecycle/tray.cjs::installCloseInterceptor` 实现。
 - **单实例锁**：`app.requestSingleInstanceLock()` 在 `app.whenReady()` 之前调用；`second-instance` 唤起现有窗口。dev opt-out：`DESKAGENT_DESKTOP_DISABLE_SINGLE_INSTANCE_LOCK=1`。
 - **Windows AppUserModelID**：`'io.deskagent.agent'`（与 `package.json#build.appId` 对齐），Windows 通知分组依赖此 ID。
+- **精灵窗口透明需要双重保证**：BrowserWindow `transparent: true` **加** 渲染层 `body` 透明（`html[data-role='sprite'] body { background: transparent }`，`data-role` 由 `index.html` 内嵌脚本在 `<head>` 解析时同步设置）。两者缺一，body 背景色（`var(--ui-chat-surface-background)`）会在桌面剩余区域盖满屏幕——违背"伙伴应不干扰用户正常工作"的契约。伴侣形象周围仍由 `SpriteStage` + `setIgnoreMouseEvents({forward:true})` 维持点击穿透。
 
 ## 跨模块边界（renderer 内部）
 

@@ -5,6 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="color-scheme" content="light dark" />
     <meta name="theme-color" content="#0a0a0a" />
+    <!-- Stamp <html data-role="sprite|tool"> synchronously before <body>
+         parses so the sprite window's "background: transparent" rule in
+         styles.css applies on the very first paint. Without this, the body
+         briefly fills white (browser default), defeating the point of the
+         transparent BrowserWindow. The renderer branch in app.tsx reads the
+         same value; this just runs earlier. -->
+    <script>
+      document.documentElement.dataset.role = new URLSearchParams(location.search).get('role') || 'tool'
+    </script>
     <link rel="icon" type="image/png" href="/icon.png" />
     <link rel="apple-touch-icon" href="/icon.png" />
     <link rel="shortcut icon" href="/icon.png" />
