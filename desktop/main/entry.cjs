@@ -1429,7 +1429,7 @@ function setupAutoUpdater() {
   autoUpdater.autoInstallOnAppQuit = false
   autoUpdater.logger = log
 
-  const stripped = getNormalizedBackendUrl()
+  const stripped = String(resolveBackendUrl(DESKAGENT_HOME) || '').replace(/\/+$/, '')
   const updateBaseUrl = stripped.endsWith('/api/update') ? stripped : stripped + '/api/update'
   const publicKeyPath = getBundledPublicKeyPath()
 
@@ -1493,7 +1493,7 @@ function getBundledPublicKeyPath() {
 }
 
 async function resolveRemoteBackend() {
-  const url = getBackendUrl()
+  const url = resolveBackendUrl(DESKAGENT_HOME)
   if (!url) return null
   return { baseUrl: getNormalizedBackendUrl() }
 }
@@ -1901,7 +1901,7 @@ function showAboutPanelFresh() {
 
 const { createBackendSession } = require('./backend/session.cjs')
 const { buildClientContext } = require('./shared/client-context.cjs')
-const { getBackendUrl, getNormalizedBackendUrl } = require('./shared/config.cjs')
+const { getNormalizedBackendUrl, resolveBackendUrl } = require('./shared/config.cjs')
 const { createRunnerProcess } = require('./runner/process.cjs')
 const { createRunnerWsServer } = require('./runner/rpc-ws.cjs')
 const { createReverseRpc } = require('./runner/reverse-rpc.cjs')
@@ -1940,7 +1940,7 @@ const bridgeDeps = {
       safeStorage,
       appVersion: resolveDeskAgentVersion(),
       fetchImpl: (url, options) => electronNet.fetch(url, options),
-      defaultBaseUrl: getBackendUrl() || null,
+      defaultBaseUrl: resolveBackendUrl(DESKAGENT_HOME) || null,
       log: chunk => rememberLog(chunk)
     })
     try {
@@ -2023,6 +2023,37 @@ setTimeout(() => {
   }
 }, 200).unref?.()
 
+// One-shot installer → desktop handoff. Runs INSIDE app.whenReady() after
+// windows exist (otherwise broadcastAuthChanged() has no listeners and
+// the renderer still shows Login on first paint). On success the bridge
+// is kicked explicitly — the 200ms timer above has long since fired by
+// the time Electron is ready, so it can't see an adopted session.
+const { consumeBootstrapSession } = require('./backend/bootstrap-session.cjs')
+async function tryConsumeBootstrapSession() {
+  try {
+    const result = await consumeBootstrapSession({
+      deskagentHome: DESKAGENT_HOME,
+      fetchImpl: (url, options) => electronNet.fetch(url, options),
+      log: chunk => rememberLog(chunk)
+    })
+    if (result.status !== 'ok' || !result.snapshot) return
+    const session = bridgeDeps.ensureBackendSession()
+    session.adoptSession(result.snapshot)
+    // Mirror the existing login flow: invalidate the cached backend
+    // connection so the next ensureBackend() re-resolves with the
+    // fresh token, rebuild the tray menu, and broadcast to both windows
+    // so the sprite can boot its gateway without showing Login.
+    bridgeDeps.resetBackendCache?.()
+    bridgeDeps.rebuildTrayMenu?.()
+    bridgeDeps.broadcastAuthChanged?.(session.getSession())
+    // Bootstrap adoption happens after the 200ms timer — start the bridge
+    // ourselves. autoStartBridge is idempotent.
+    autoStartBridge(bridgeDeps)
+  } catch (error) {
+    rememberLog(`[bootstrap-session] consume failed: ${error?.message || error}`)
+  }
+}
+
 // One-shot: legacy connection.json deprecated, rename to .bak silently
 try {
   const legacyPath = path.join(app.getPath('userData'), 'connection.json')
@@ -2080,6 +2111,11 @@ app.whenReady().then(async () => {
     bridgeDeps,
     createWindow: createSpriteWindow
   })
+
+  // Installer → desktop session handoff. Runs after createSpriteWindow so
+  // broadcastAuthChanged() lands on a live window — otherwise the renderer
+  // still sees a no-session state on first paint and shows Login.
+  await tryConsumeBootstrapSession()
 
   // macOS dock click → recreate or focus the sprite. Mostly dead on macOS
   // because `installTray` hides the dock, but kept so the app still behaves

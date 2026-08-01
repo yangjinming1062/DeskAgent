@@ -1924,6 +1924,8 @@ export const strings: Translations = {
 
   login: {
     backendUnreachable: '无法连接后端。请检查网络后重试。',
+    backendUrl: '后端地址',
+    backendUrlPlaceholder: 'https://api.example.com',
     error: '用户名或密码错误。',
     password: '密码',
     signIn: '登录',

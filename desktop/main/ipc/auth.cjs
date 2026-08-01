@@ -2,7 +2,17 @@
 
 // Backend session IPC: login / logout / session snapshot.
 
-const { getBackendUrl } = require('../shared/config.cjs')
+const { resolveBackendUrl, writeStoredBackendUrl } = require('../shared/config.cjs')
+
+function persistDefaultBackendUrl(deps, baseUrl) {
+  const home = deps.deskagentHome
+  if (!home || typeof baseUrl !== 'string' || !baseUrl.trim()) return false
+  return writeStoredBackendUrl(home, baseUrl)
+}
+
+function resolveDefaultBackendUrl(deps) {
+  return resolveBackendUrl(deps.deskagentHome)
+}
 
 function ensureBackendSession(deps) {
   if (deps.backendSession) return deps.backendSession
@@ -11,7 +21,7 @@ function ensureBackendSession(deps) {
     safeStorage: deps.safeStorage,
     appVersion: deps.resolveDeskAgentVersion(),
     fetchImpl: (url, options) => deps.electronNet.fetch(url, options),
-    defaultBaseUrl: getBackendUrl() || null,
+    defaultBaseUrl: resolveDefaultBackendUrl(deps),
     log: chunk => deps.rememberLog(chunk)
   })
   // Best-effort restore; failure routes user to login screen.
@@ -45,6 +55,12 @@ function registerAuthIpc({ ipcMain, deps }) {
     deps.rebuildTrayMenu?.()
     // Sync the sprite window's per-renderer $auth so it boots its gateway.
     deps.broadcastAuthChanged?.(session.getSession())
+    // Persist the URL the user just logged in with as the next-launch
+    // default. Logout intentionally does NOT clear this file so the login
+    // form pre-fills with the last-known backend URL.
+    if (result && result.baseUrl) {
+      persistDefaultBackendUrl(deps, result.baseUrl)
+    }
     // The sprite takes over; dismiss the login form.
     deps.hideToolWindow?.()
     return result
@@ -80,6 +96,16 @@ function registerAuthIpc({ ipcMain, deps }) {
     return session.getSession()
   })
 
+  ipcMain.handle('deskagent:auth:get-default-backend-url', async () => {
+    return resolveDefaultBackendUrl(deps)
+  })
+
+  ipcMain.handle('deskagent:auth:set-default-backend-url', async (_event, baseUrl) => {
+    const ok = persistDefaultBackendUrl(deps, baseUrl)
+    deps.resetBackendCache?.()
+    return { ok }
+  })
+
   ipcMain.handle('deskagent:auth:change-password', async (_event, payload) => {
     const session = ensureBackendSession(deps)
     return session.changePassword(payload || {})
@@ -97,4 +123,4 @@ function registerAuthIpc({ ipcMain, deps }) {
   })
 }
 
-module.exports = { registerAuthIpc, ensureBackendSession }
+module.exports = { registerAuthIpc, ensureBackendSession, resolveDefaultBackendUrl, persistDefaultBackendUrl }

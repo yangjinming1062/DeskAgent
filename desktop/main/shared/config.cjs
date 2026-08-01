@@ -1,9 +1,15 @@
 'use strict'
 
 // Resolution priority (first hit wins):
-//   1. process.resourcesPath/config.json — packaged default
-//   2. <repo>/desktop/config.json — dev default
-//   3. DEFAULT_BACKEND_URL — last-resort fallback
+//   1. $DESKAGENT_HOME/desktop-config.json — last user-confirmed backend URL
+//   2. process.resourcesPath/config.json — packaged default
+//   3. <repo>/desktop/config.json — dev default
+//   4. DEFAULT_BACKEND_URL — last-resort fallback
+//
+// `getBackendUrl()` keeps the bundled-only path for callers that explicitly
+// want the packaged/dev default; `resolveBackendUrl(home)` is the single
+// authoritative chain used by every runtime path that should honor a user
+// override (session bootstrap, login form prefill, auto-updater feed, etc.).
 const fs = require('node:fs')
 const path = require('node:path')
 const { app } = require('electron')
@@ -44,4 +50,81 @@ function getNormalizedBackendUrl() {
   return String(getBackendUrl() || '').replace(/\/+$/, '')
 }
 
-module.exports = { getBackendUrl, getNormalizedBackendUrl, loadConfig, DEFAULT_BACKEND_URL }
+// $DESKAGENT_HOME/desktop-config.json holds the user's last-entered backend
+// URL (kept distinct from the encrypted session file at `agent-session.json`
+// so it survives a logout). Best-effort: missing / malformed file yields
+// null and the caller falls through to the bundled config.
+const FILENAME = 'desktop-config.json'
+
+function configPath(deskagentHome) {
+  if (!deskagentHome) return null
+  return path.join(deskagentHome, FILENAME)
+}
+
+function readStoredBackendUrl(deskagentHome) {
+  const target = configPath(deskagentHome)
+  if (!target) return null
+  try {
+    const parsed = JSON.parse(fs.readFileSync(target, 'utf8'))
+    if (parsed && typeof parsed.backendUrl === 'string' && parsed.backendUrl.trim()) {
+      return parsed.backendUrl.trim()
+    }
+  } catch {
+    // missing / malformed / unreadable → fall through to bundled
+  }
+  return null
+}
+
+function writeStoredBackendUrl(deskagentHome, backendUrl) {
+  const target = configPath(deskagentHome)
+  if (!target || typeof backendUrl !== 'string' || !backendUrl.trim()) return false
+
+  let existing = {}
+  try {
+    existing = JSON.parse(fs.readFileSync(target, 'utf8'))
+    if (!existing || typeof existing !== 'object') existing = {}
+  } catch {
+    existing = {}
+  }
+
+  existing.backendUrl = backendUrl.trim()
+  existing.savedAt = Date.now()
+
+  try {
+    fs.mkdirSync(path.dirname(target), { recursive: true })
+    const tmp = `${target}.${process.pid}.${Date.now()}.tmp`
+    fs.writeFileSync(tmp, JSON.stringify(existing, null, 2), 'utf8')
+    fs.renameSync(tmp, target)
+    if (process.platform !== 'win32') {
+      try {
+        fs.chmodSync(target, 0o600)
+      } catch {
+        // best-effort; FS may not support chmod
+      }
+    }
+    return true
+  } catch {
+    return false
+  }
+}
+
+// Single source of truth for "what backend URL should this process use?".
+// Pass `deskagentHome` (typically `DESKAGENT_HOME` from entry.cjs) to honor
+// the persisted user override; omit to get the bundled-only chain.
+function resolveBackendUrl(deskagentHome) {
+  const stored = readStoredBackendUrl(deskagentHome)
+  if (stored) return stored
+  return getBackendUrl() || DEFAULT_BACKEND_URL
+}
+
+module.exports = {
+  getBackendUrl,
+  getNormalizedBackendUrl,
+  loadConfig,
+  resolveBackendUrl,
+  readStoredBackendUrl,
+  writeStoredBackendUrl,
+  configPath,
+  FILENAME,
+  DEFAULT_BACKEND_URL
+}

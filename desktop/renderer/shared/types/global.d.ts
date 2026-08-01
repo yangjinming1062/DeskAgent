@@ -10,6 +10,8 @@ declare global {
       refreshSession: (payload?: any) => Promise<DesktopAuthSnapshot>
       logout: () => Promise<DesktopLogoutResult>
       getSession: () => Promise<DesktopAuthSnapshot | null>
+      getDefaultBackendUrl: () => Promise<string | null>
+      setDefaultBackendUrl: (baseUrl: string) => Promise<{ ok: boolean }>
       showToolWindow: () => Promise<void>
       api: <T>(request: DeskAgentApiRequest) => Promise<T>
       notify: (payload: DeskAgentNotification) => Promise<boolean>
@@ -256,6 +258,7 @@ export interface DesktopAuthSnapshot {
 export interface DesktopLoginPayload {
   password: string
   username: string
+  baseUrl?: string
 }
 
 export interface DesktopLogoutResult {

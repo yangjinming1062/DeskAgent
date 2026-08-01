@@ -42,6 +42,7 @@ main/
 ├── backend/                     # Backend HTTP/WS 会话
 │   ├── client.cjs               #   backend-client.cjs
 │   ├── session.cjs              #   backend-session.cjs
+│   ├── bootstrap-session.cjs    #   安装器→桌面 one-shot handoff
 │   └── ws-probe.cjs             #   gateway-ws-probe.cjs
 ├── runner/                      # Runner 子进程编排
 │   ├── bridge.cjs               #   runner-bridge.cjs（WS server + 子进程）
@@ -55,7 +56,7 @@ main/
 │   ├── paths.cjs                #   DESKAGENT_HOME 等
 │   └── entitlements.mac.{plist,plist.inherit}
 └── shared/                       # 主进程杂项 + lib
-    ├── config.cjs / utils.cjs / mime.cjs / client-context.cjs
+    ├── config.cjs / deskagent-config.cjs / utils.cjs / mime.cjs / client-context.cjs
     └── lib/{config-writer,skill-index,toolset-index}.cjs
 ```
 
@@ -187,6 +188,8 @@ Desktop 走 `electron-updater` 从 Backend `/api/update` 拉取预构建安装�
 ## 安全
 
 - **Token 加密存储**：JWT 经 `safeStorage` 加密落盘，userData 目录权限由 OS 控制。Renderer 与 Preload 无法接触 safeStorage 接口。
+- **Installer → desktop one-shot auth handoff**：安装器登录成功后写 `$DESKAGENT_HOME/agent-session-bootstrap.json`（schemaVersion=1：raw jwt、baseUrl、tokenExpiresAt、user、savedAt）。Desktop 主进程在 `restoreSession()` 后、`autoStartBridge` 前通过 `main/backend/bootstrap-session.cjs::consumeBootstrapSession` 消费该文件：原子重命名为 `.consumed` → POST `${baseUrl}/api/user/refresh` 校验 token → `BackendSession::adoptSession` 走 safeStorage 落盘到 `agent-session.json` → 广播 `deskagent:auth:changed` 让 sprite 自动 boot gateway。任何失败（schema 不匹配、refresh 401、网络断）都静默删文件，回退到未登录态。路径可被 `DESKAGENT_DESKTOP_BOOTSTRAP_SESSION` 覆盖（测试用）。密码永不被持久化。
+- **Auth bootstrap 一致性**：用户登录成功的 baseUrl 写入 `$DESKAGENT_HOME/desktop-config.json`（POSIX 0600；Windows 由父目录 ACL 控制）；登出只清 `agent-session.json`，不动 desktop-config.json，所以登录页每次都会预填上次的 baseUrl 而 token 永远不会被还原。优先级：persisted `desktop-config.json` > bundled `config.json` > `null`。
 - **Model Config IPC 边界**：`main/ipc/auth.cjs::deskagent:model-config:get` 返回前投影仅 `llm_*` 字段，剥离 GCS 凭据；共享 5min cache。
 - **路径白名单**：`main/security/hardening.cjs` 的 `resolveReadableFileForIpc` 拒绝路径遍历、符号链接逃逸、超大读取、敏感文件（.env/.ssh/.pem 等）。
 - **Runner 进程隔离**：Runner 作为独立子进程，所有工具调用经本地 WS 中转。
