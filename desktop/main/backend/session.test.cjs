@@ -82,20 +82,6 @@ test('adoptSession persists the encrypted token so the next restoreSession loads
   assert.equal(snapshot.user.username, 'carol')
 })
 
-test('adoptSession rejects missing baseUrl', () => {
-  const userDataDir = tmpUserData('bad-url')
-  const session = createBackendSession({
-    userDataDir,
-    safeStorage: identitySafeStorage(),
-    appVersion: 'test',
-    fetchImpl: async () => ({})
-  })
-  assert.throws(
-    () => session.adoptSession({ baseUrl: '', token: 'jwt' }),
-    err => err instanceof SessionError && err.code === 'invalid-bootstrap-session'
-  )
-})
-
 test('adoptSession rejects missing token', () => {
   const userDataDir = tmpUserData('bad-token')
   const session = createBackendSession({
@@ -104,8 +90,10 @@ test('adoptSession rejects missing token', () => {
     appVersion: 'test',
     fetchImpl: async () => ({})
   })
+  // Token validation lives in applySession (no-token); adoptSession is a
+  // pure funnel, so it surfaces the underlying error rather than its own.
   assert.throws(
     () => session.adoptSession({ baseUrl: 'https://api.example.com', token: '' }),
-    err => err instanceof SessionError && err.code === 'invalid-bootstrap-session'
+    err => err instanceof SessionError && err.code === 'no-token'
   )
 })

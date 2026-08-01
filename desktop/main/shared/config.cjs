@@ -50,6 +50,14 @@ function getNormalizedBackendUrl() {
   return String(getBackendUrl() || '').replace(/\/+$/, '')
 }
 
+// Same as above but honors the persisted override via `deskagentHome` —
+// callers that surface user-facing URLs (login prefill, auto-updater feed,
+// remote backend resolution) must go through this so a non-default
+// backend survives logout + relaunch.
+function resolveNormalizedBackendUrl(deskagentHome) {
+  return String(resolveBackendUrl(deskagentHome) || '').replace(/\/+$/, '')
+}
+
 // $DESKAGENT_HOME/desktop-config.json holds the user's last-entered backend
 // URL (kept distinct from the encrypted session file at `agent-session.json`
 // so it survives a logout). Best-effort: missing / malformed file yields
@@ -122,6 +130,7 @@ module.exports = {
   getNormalizedBackendUrl,
   loadConfig,
   resolveBackendUrl,
+  resolveNormalizedBackendUrl,
   readStoredBackendUrl,
   writeStoredBackendUrl,
   configPath,

@@ -99,8 +99,7 @@
   }
 }
 
-/* Installer-only additions: a fade-in animation and a warm radial glow
-   for the welcome screen. */
+/* Installer-only additions: a fade-in animation and the companion glow. */
 @keyframes deskagent-fade-in {
   from {
     opacity: 0;
@@ -116,10 +115,36 @@
   animation: deskagent-fade-in 0.45s ease-out both;
 }
 
+/* The installer's companion glow — breathes in lockstep with the egg the
+   user is about to meet (desktop companion/sprite/egg.tsx `eggGlowPulse`):
+   identical 3.4s ease-in-out cadence and ×1.5 opacity swell, same amber
+   (#ffd166 family) as the egg/silhouette life-force glow. The installer is
+   the very first impression — before the egg even appears — so it carries
+   the same warmth the desktop login and the egg radiate. Self-contained:
+   this module does not import desktop's .login-glow; the rhythm is mirrored. */
 .deskagent-glow {
-  background: radial-gradient(
-    ellipse at center,
-    color-mix(in srgb, #cf806d 18%, transparent) 0%,
-    transparent 60%
-  );
+  position: absolute;
+  left: 50%;
+  top: 42%;
+  width: min(72vw, 34rem);
+  height: min(72vw, 34rem);
+  transform: translate(-50%, -50%);
+  border-radius: 9999px;
+  background: radial-gradient(closest-side, rgba(255, 209, 102, 0.30), transparent 70%);
+  filter: blur(36px);
+  opacity: 0.6;
+  pointer-events: none;
+  z-index: -1;
+  animation: deskagent-glow-pulse 3.4s ease-in-out infinite;
+}
+
+@keyframes deskagent-glow-pulse {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 0.9; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .deskagent-glow {
+    animation: none;
+  }
 }

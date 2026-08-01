@@ -11,7 +11,6 @@ declare global {
       logout: () => Promise<DesktopLogoutResult>
       getSession: () => Promise<DesktopAuthSnapshot | null>
       getDefaultBackendUrl: () => Promise<string | null>
-      setDefaultBackendUrl: (baseUrl: string) => Promise<{ ok: boolean }>
       showToolWindow: () => Promise<void>
       api: <T>(request: DeskAgentApiRequest) => Promise<T>
       notify: (payload: DeskAgentNotification) => Promise<boolean>

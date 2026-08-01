@@ -56,7 +56,7 @@ main/
 │   ├── paths.cjs                #   DESKAGENT_HOME 等
 │   └── entitlements.mac.{plist,plist.inherit}
 └── shared/                       # 主进程杂项 + lib
-    ├── config.cjs / deskagent-config.cjs / utils.cjs / mime.cjs / client-context.cjs
+    ├── config.cjs / utils.cjs / mime.cjs / client-context.cjs
     └── lib/{config-writer,skill-index,toolset-index}.cjs
 ```
 

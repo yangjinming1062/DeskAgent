@@ -1429,8 +1429,7 @@ function setupAutoUpdater() {
   autoUpdater.autoInstallOnAppQuit = false
   autoUpdater.logger = log
 
-  const stripped = String(resolveBackendUrl(DESKAGENT_HOME) || '').replace(/\/+$/, '')
-  const updateBaseUrl = stripped.endsWith('/api/update') ? stripped : stripped + '/api/update'
+  const updateBaseUrl = resolveNormalizedBackendUrl(DESKAGENT_HOME) + '/api/update'
   const publicKeyPath = getBundledPublicKeyPath()
 
   if (!publicKeyPath) {
@@ -1493,9 +1492,8 @@ function getBundledPublicKeyPath() {
 }
 
 async function resolveRemoteBackend() {
-  const url = resolveBackendUrl(DESKAGENT_HOME)
-  if (!url) return null
-  return { baseUrl: getNormalizedBackendUrl() }
+  const url = resolveNormalizedBackendUrl(DESKAGENT_HOME)
+  return url ? { baseUrl: url } : null
 }
 
 // Forward-declared; bridgeDeps assigns the real impl after backendSession is
@@ -1901,7 +1899,7 @@ function showAboutPanelFresh() {
 
 const { createBackendSession } = require('./backend/session.cjs')
 const { buildClientContext } = require('./shared/client-context.cjs')
-const { getNormalizedBackendUrl, resolveBackendUrl } = require('./shared/config.cjs')
+const { resolveNormalizedBackendUrl, resolveBackendUrl } = require('./shared/config.cjs')
 const { createRunnerProcess } = require('./runner/process.cjs')
 const { createRunnerWsServer } = require('./runner/rpc-ws.cjs')
 const { createReverseRpc } = require('./runner/reverse-rpc.cjs')
@@ -2115,7 +2113,9 @@ app.whenReady().then(async () => {
   // Installer → desktop session handoff. Runs after createSpriteWindow so
   // broadcastAuthChanged() lands on a live window — otherwise the renderer
   // still sees a no-session state on first paint and shows Login.
-  await tryConsumeBootstrapSession()
+  // Fire-and-forget: a cold install with an unreachable backend shouldn't
+  // hold up first paint for the full 15s refresh timeout.
+  tryConsumeBootstrapSession()
 
   // macOS dock click → recreate or focus the sprite. Mostly dead on macOS
   // because `installTray` hides the dock, but kept so the app still behaves

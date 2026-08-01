@@ -9,7 +9,6 @@ contextBridge.exposeInMainWorld('deskagent', {
   logout: () => ipcRenderer.invoke('deskagent:auth:logout'),
   getSession: () => ipcRenderer.invoke('deskagent:auth:get-session'),
   getDefaultBackendUrl: () => ipcRenderer.invoke('deskagent:auth:get-default-backend-url'),
-  setDefaultBackendUrl: baseUrl => ipcRenderer.invoke('deskagent:auth:set-default-backend-url', baseUrl),
   // Sprite window → main: bring up the framed tool window (Login when
   // unauthenticated, Settings when authenticated). The sprite's egg-crack
   // gesture calls this to hand the user off to the login form.

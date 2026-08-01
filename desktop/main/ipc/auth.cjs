@@ -4,16 +4,6 @@
 
 const { resolveBackendUrl, writeStoredBackendUrl } = require('../shared/config.cjs')
 
-function persistDefaultBackendUrl(deps, baseUrl) {
-  const home = deps.deskagentHome
-  if (!home || typeof baseUrl !== 'string' || !baseUrl.trim()) return false
-  return writeStoredBackendUrl(home, baseUrl)
-}
-
-function resolveDefaultBackendUrl(deps) {
-  return resolveBackendUrl(deps.deskagentHome)
-}
-
 function ensureBackendSession(deps) {
   if (deps.backendSession) return deps.backendSession
   deps.backendSession = deps.createBackendSession({
@@ -21,7 +11,7 @@ function ensureBackendSession(deps) {
     safeStorage: deps.safeStorage,
     appVersion: deps.resolveDeskAgentVersion(),
     fetchImpl: (url, options) => deps.electronNet.fetch(url, options),
-    defaultBaseUrl: resolveDefaultBackendUrl(deps),
+    defaultBaseUrl: resolveBackendUrl(deps.deskagentHome),
     log: chunk => deps.rememberLog(chunk)
   })
   // Best-effort restore; failure routes user to login screen.
@@ -59,7 +49,7 @@ function registerAuthIpc({ ipcMain, deps }) {
     // default. Logout intentionally does NOT clear this file so the login
     // form pre-fills with the last-known backend URL.
     if (result && result.baseUrl) {
-      persistDefaultBackendUrl(deps, result.baseUrl)
+      writeStoredBackendUrl(deps.deskagentHome, result.baseUrl)
     }
     // The sprite takes over; dismiss the login form.
     deps.hideToolWindow?.()
@@ -97,13 +87,7 @@ function registerAuthIpc({ ipcMain, deps }) {
   })
 
   ipcMain.handle('deskagent:auth:get-default-backend-url', async () => {
-    return resolveDefaultBackendUrl(deps)
-  })
-
-  ipcMain.handle('deskagent:auth:set-default-backend-url', async (_event, baseUrl) => {
-    const ok = persistDefaultBackendUrl(deps, baseUrl)
-    deps.resetBackendCache?.()
-    return { ok }
+    return resolveBackendUrl(deps.deskagentHome)
   })
 
   ipcMain.handle('deskagent:auth:change-password', async (_event, payload) => {
@@ -123,4 +107,4 @@ function registerAuthIpc({ ipcMain, deps }) {
   })
 }
 
-module.exports = { registerAuthIpc, ensureBackendSession, resolveDefaultBackendUrl, persistDefaultBackendUrl }
+module.exports = { registerAuthIpc, ensureBackendSession }

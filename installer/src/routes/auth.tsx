@@ -58,7 +58,8 @@ export default function Auth() {
   }
 
   return (
-    <div className="deskagent-fade-in flex h-full flex-col items-center justify-center gap-8 px-12 py-10">
+    <div className="deskagent-fade-in relative isolate flex h-full flex-col items-center justify-center gap-8 px-12 py-10">
+      <span aria-hidden="true" className="deskagent-glow" />
       <div className="w-full max-w-xl min-w-0 text-center">
         <p
           className="fit-text mx-auto mb-3 w-full font-['Collapse'] font-bold uppercase leading-[0.9] tracking-[0.08em] text-midground mix-blend-plus-lighter dark:text-foreground/90"
@@ -82,7 +83,7 @@ export default function Auth() {
       </div>
 
       <form
-        className="grid w-full max-w-xl gap-4 rounded-xl border border-border bg-card p-6 shadow-sm"
+        className="grid w-full max-w-xl gap-5 rounded-xl border border-border bg-card p-7 shadow-sm"
         onSubmit={onSubmit}
       >
         {auth.error && (

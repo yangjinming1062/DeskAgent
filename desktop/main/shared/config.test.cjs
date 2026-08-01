@@ -4,7 +4,7 @@ const os = require('node:os')
 const path = require('node:path')
 const test = require('node:test')
 
-const { FILENAME, configPath, readStoredBackendUrl, writeStoredBackendUrl } = require('./deskagent-config.cjs')
+const { FILENAME, configPath, readStoredBackendUrl, writeStoredBackendUrl } = require('./config.cjs')
 
 function tmpHome(tag) {
   return fs.mkdtempSync(path.join(os.tmpdir(), `deskagent-config-test-${tag}-`))

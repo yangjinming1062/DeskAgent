@@ -5,7 +5,8 @@ import { ArrowRight } from 'lucide-react'
 
 export default function Welcome() {
   return (
-    <div className="deskagent-fade-in flex h-full flex-col items-center justify-center gap-10 px-12 py-10">
+    <div className="deskagent-fade-in relative isolate flex h-full flex-col items-center justify-center gap-10 px-12 py-10">
+      <span aria-hidden="true" className="deskagent-glow" />
       <div className="w-full max-w-2xl min-w-0 text-center">
         <p
           className="fit-text mx-auto mb-4 w-full font-['Collapse'] font-bold uppercase leading-[0.9] tracking-[0.08em] text-midground mix-blend-plus-lighter dark:text-foreground/90"

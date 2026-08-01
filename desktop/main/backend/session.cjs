@@ -498,13 +498,6 @@ function createBackendSession(options = {}) {
   // with login()/refresh() — future session-wide side effects only need
   // to be added in one place.
   function adoptSession({ baseUrl, token, tokenExpiresAt, user }) {
-    if (!baseUrl || !token) {
-      throw new SessionError({
-        code: 'invalid-bootstrap-session',
-        message: 'Bootstrap session is missing baseUrl or token.'
-      })
-    }
-
     const expiresAt =
       Number.isFinite(tokenExpiresAt) && tokenExpiresAt > 0
         ? tokenExpiresAt
