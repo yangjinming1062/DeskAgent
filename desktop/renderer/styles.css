@@ -396,6 +396,17 @@
     -webkit-font-smoothing: antialiased;
   }
 
+  /* Sprite window (?role=sprite): the BrowserWindow is screen-sized and
+     `transparent: true`, but a default body background would paint a full
+     opaque sheet and occlude the user's desktop. Strip html/body/#root to
+     transparent so the OS desktop shows through everywhere except the
+     companion figure; SpriteStage still gates pointer-events so the
+     figure remains clickable while the rest is click-through. */
+  html[data-role='sprite'] body,
+  html[data-role='sprite'] #root {
+    background: transparent !important;
+  }
+
   button,
   textarea {
     font: inherit;
