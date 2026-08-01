@@ -141,7 +141,7 @@ MCP 工具由 `discover_mcp_tools()` 在 `server_loop` 紧跟 `runner_ready` 之
 
 ### 音频工具 (STT + TTS)
 
-为伴侣语音能力 ([COMPANION_DESIGN §5](../COMPANION_DESIGN.md#5-语音交互stt--tts)) 提供本地后备 / 平行路径。Backend `tts_tool`（云端、生成式音色）仍是默认主路径；Runner 暴露的本地引擎在云断连或开发预览场景下出场。
+为伴侣语音能力 ([COMPANION_DESIGN §5](../COMPANION_DESIGN.md#5-语音交互stt--tts)) 提供零成本主路径。Runner 本地引擎（faster-whisper STT、Piper/pyttsx3 TTS）是默认主路径；Desktop 在本地不可用或失败时回退 Backend 云端引擎（`/api/media/stt|tts`），三档可切（`auto` 本地优先 / `local` 纯本地 / `cloud` 强制云端）。
 
 **`speech_to_text`**（`tools/multimodal/audio/stt_tool.py`）：接收本地路径 `audio_path` 或 base64 编码的音频字节（≤ 25 MB，mp3/wav/m4a/ogg/flac/webm/aac）；先经 ffmpeg 解码到 16 kHz mono PCM16 WAV，再喂给 faster-whisper（CTranslate2）。语言自动检测或显式传 `language`；模型大小 `tiny | base | small | medium | large-v2 | large-v3`（默认 `base`，模型文件按需下载到 `$DESKAGENT_HOME/models/whisper/`）。Segment-confidence gate 丢弃 `no_speech_prob > 0.6` 或 `avg_logprob < -1.0` 的段。返回 `{success, text, language, segments[]}`。`check_fn` 探测 `faster-whisper` 是否可导入——未装时从 LLM schema 自动消失。
 
@@ -149,7 +149,7 @@ MCP 工具由 `discover_mcp_tools()` 在 `server_loop` 紧跟 `runner_ready` 之
 
 **`list_tts_voices`**：枚举 `$DESKAGENT_HOME/models/piper/` 下所有已下载的 Piper 语音（同时存在 `.onnx` 与 `.onnx.json` 才算安装完整）。
 
-**模型 & 引擎装入策略**：核心 wheel 不强引 audio deps（`pip install desk-agent[audio]` 才装）——保证 CI 与最小部署仍然能在没有 PortAudio/ffmpeg 的环境里启动。Capability 探测在握手时验 `import faster_whisper` / `import piper` / `import pyttsx3`，无任一可导入即 `runner_ready.capabilities.local_stt|local_tts=false`，Desktop 隐藏语音相关 UI。
+**模型 & 引擎装入策略**：audio deps（`faster-whisper` / `piper-tts` / `pyttsx3` / `sounddevice`）在基础 wheel 内（伴侣语音是核心能力，不再是 optional extra）；运行时仍要求系统 PATH 有 `ffmpeg`。Capability 探测在握手时验 `import faster_whisper` / `import piper` / `import pyttsx3`，无任一可导入即 `runner_ready.capabilities.local_stt|local_tts=false`，Desktop 隐藏语音相关 UI。
 
 ### 环境感知 (`system.*`)
 

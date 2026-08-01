@@ -249,6 +249,6 @@ const READY_CSS = `
 .companion-img.proc-proud { animation: procProud 2.8s ease-in-out infinite; }
 .companion-img.proc-pulse { animation: procPulse 2s ease-in-out infinite; }
 .companion-video { animation: procBreathe 3.6s ease-in-out infinite; }
-.companion-glow { position: absolute; width: 170%; height: 170%; border-radius: 9999px; background: radial-gradient(closest-side, rgba(255,209,102,0.35), transparent 70%); filter: blur(8px); animation: companionGlow 3.4s ease-in-out infinite; }
-.companion-badge { position: absolute; top: 4%; right: 18%; font-size: 16px; animation: companionBadge 2.6s ease-in-out infinite; text-shadow: 0 0 6px rgba(0,0,0,0.5); }
+.companion-glow { position: absolute; width: 170%; height: 170%; border-radius: 9999px; background: radial-gradient(closest-side, rgba(255,209,102,0.35), transparent 70%); filter: blur(8px); animation: companionGlow 3.4s ease-in-out infinite; pointer-events: none; }
+.companion-badge { position: absolute; top: 4%; right: 18%; font-size: 16px; animation: companionBadge 2.6s ease-in-out infinite; text-shadow: 0 0 6px rgba(0,0,0,0.5); pointer-events: none; }
 `

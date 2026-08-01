@@ -11,8 +11,26 @@
 
 delete process.env.ELECTRON_RUN_AS_NODE
 
+const path = require('node:path')
+const fs = require('node:fs')
 const { spawn } = require('node:child_process')
 const electronPath = require('electron') // resolves to the electron executable path
+
+// Auto-wire the local Runner so dev mode gets local STT/TTS/tools without
+// manually setting DESKAGENT_DESKTOP_PYTHON every session. Detects a runner
+// venv in the source tree (../runner/.venv relative to this script's package
+// root) and points the Desktop at it + the repo root for runner/server.py.
+// Explicit env vars always win.
+const repoRoot = path.resolve(__dirname, '..', '..')
+const venvPython = process.platform === 'win32'
+  ? path.join(repoRoot, 'runner', '.venv', 'Scripts', 'python.exe')
+  : path.join(repoRoot, 'runner', '.venv', 'bin', 'python')
+if (!process.env.DESKAGENT_DESKTOP_PYTHON && fs.existsSync(venvPython)) {
+  process.env.DESKAGENT_DESKTOP_PYTHON = venvPython
+}
+if (!process.env.DESKAGENT_DESKTOP_RUNNER_REPO_ROOT && fs.existsSync(path.join(repoRoot, 'runner', 'server.py'))) {
+  process.env.DESKAGENT_DESKTOP_RUNNER_REPO_ROOT = repoRoot
+}
 
 const child = spawn(electronPath, ['.'], {
   stdio: 'inherit',
