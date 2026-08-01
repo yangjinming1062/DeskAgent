@@ -111,10 +111,10 @@ const KEYFRAMES = `
 .egg-glow {
   position: absolute; width: 150%; height: 150%; border-radius: 9999px;
   background: radial-gradient(closest-side, rgba(255,209,102,0.55), transparent 70%);
-  filter: blur(6px); animation: eggGlowPulse 3.4s ease-in-out infinite;
+  filter: blur(6px); animation: eggGlowPulse 3.4s ease-in-out infinite; pointer-events: none;
 }
 .egg-zzz {
   position: absolute; top: 6%; right: 18%; font-size: 14px; color: #9a8fb4;
-  opacity: 0.8; animation: eggBreathe 3s ease-in-out infinite;
+  opacity: 0.8; animation: eggBreathe 3s ease-in-out infinite; pointer-events: none;
 }
 `

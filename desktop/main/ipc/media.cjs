@@ -108,7 +108,7 @@ async function ttsViaBackend({ ensureBackend, text, voice }) {
   const connection = await ensureBackend()
   const form = new FormData()
   form.set('text', text)
-  form.set('voice', voice || 'alloy')
+  form.set('voice', voice)
   const { body, contentType } = await postMultipart({
     url: `${connection.baseUrl}/api/media/tts`,
     token: connection.token,
