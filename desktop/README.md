@@ -171,6 +171,20 @@ renderer 通过 `window.deskagent.*`（preload contextBridge）调 main；main �
 | `config.get({key:"project", cwd})` | 读 `.git/HEAD` 解析分支 |
 | `complete.path({word, cwd})` | 解析 `@` 后路径前缀，列目录项 |
 
+### STT/TTS 引擎路由
+
+`main/ipc/media.cjs` 是 `media.stt` / `media.tts` 的唯一路由点，在 Backend 云端引擎与 Runner 本地引擎之间决策。**默认本地优先**（本地引擎零成本），三档偏好由 backend config 的 `stt.engine` / `tts.engine`（`auto` / `local` / `cloud`）控制，经短 TTL 缓存读取：
+
+| 档位 | 行为 |
+|------|------|
+| `auto`（默认） | 本地优先;本地不可用或失败 → 回退云端 |
+| `local` | 纯本地;失败/不可用 → 抛错,不回退(由 renderer 兜底:STT 提示"没听清"、TTS 退纯文字) |
+| `cloud` | 永远云端 |
+
+本地可用性由 runner 工具 schema 决定——`speech_to_text` / `text_to_speech` 是否出现在 `runnerBridge.getTools()`(已被 runner `check_fn` 过滤)。media.cjs 在路由层桥接两侧契约:STT 把 dataUrl 解码为 base64 喂给 runner;TTS 把 runner 产出的本地 WAV 路径读回转 dataUrl。renderer 的 `media.*` 接口因此不感知路由。
+
+**已知限制**:STT/TTS 透传的 `voice` 命名空间在本地(Piper voice id)与云端(provider voice id)之间不互通;路由到本地时若不匹配则 Piper 用默认音色(本地仍可用)。音色管理统一是独立工作。
+
 ## Electron 二进制自更新
 
 Desktop 走 `electron-updater` 从 Backend `/api/update` 拉取预构建安装包并原子替换。**一次更新同时刷新 desktop 二进制 + Python runner**（wheel + `server.py`），保证两端不会因版本错配而 broken。

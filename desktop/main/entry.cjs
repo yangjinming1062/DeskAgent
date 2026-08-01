@@ -42,7 +42,7 @@ const { registerFsIpc } = require('./ipc/fs.cjs')
 const { registerFilesIpc } = require('./ipc/files.cjs')
 const { registerConnectionIpc } = require('./ipc/connection.cjs')
 const { registerImagesIpc } = require('./ipc/images.cjs')
-const { registerMediaIpc } = require('./ipc/media.cjs')
+const { registerMediaIpc, createEnginePrefsCache } = require('./ipc/media.cjs')
 const { registerLinkTitleIpc } = require('./ipc/link-title.cjs')
 const { registerTerminalIpc } = require('./ipc/terminal.cjs')
 const { registerPreviewIpc, closePreviewWatchers } = require('./ipc/preview.cjs')
@@ -1853,7 +1853,14 @@ registerConnectionIpc({
   resolveTimeoutMs,
   defaultFetchTimeoutMs: DEFAULT_FETCH_TIMEOUT_MS
 })
-registerMediaIpc({ ipcMain, ensureBackend })
+registerMediaIpc({
+  ipcMain,
+  ensureBackend,
+  // Lazily resolved at media-request time — bridgeDeps.runnerBridge is created
+  // by ensureRunnerBridge after session restore, well after this registration.
+  getRunnerBridge: () => bridgeDeps.runnerBridge,
+  getEnginePrefs: createEnginePrefsCache({ ensureBackend })
+})
 registerImagesIpc({
   ipcMain,
   saveImageFromUrl,

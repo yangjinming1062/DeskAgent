@@ -31,6 +31,10 @@ DEFAULT_CONFIG = {
     },
     "stt": {
         "enabled": True,
+        "engine": "auto",
+    },
+    "tts": {
+        "engine": "auto",
     },
 }
 

@@ -3,27 +3,36 @@ import { useEffect, useState } from 'react'
 
 import { Button } from '@/shared/components/ui/button'
 import { Input } from '@/shared/components/ui/input'
+import { SegmentedControl } from '@/shared/components/ui/segmented-control'
+import type { SegmentedControlOption } from '@/shared/components/ui/segmented-control'
 import { Switch } from '@/shared/components/ui/switch'
 import { getDeskAgentConfig, saveDeskAgentConfig } from '@/shared/deskagent/config'
 import { triggerHaptic } from '@/shared/lib/haptics'
 import { notify, notifyError } from '@/shared/store/notifications'
 import { strings } from '@/shared/strings'
+import type { SpeechEngine } from '@/shared/types/deskagent'
 import type { DeskAgentConfigResponse } from '@/shared/types/deskagent'
 
-import { ListRow, LoadingState, SettingsContent, SettingsSubsection } from './primitives'
+import { ListRow, LoadingState, Pill, SettingsContent, SettingsSubsection } from './primitives'
 
 interface SpeechFormState {
   sttEnabled: boolean
+  sttEngine: SpeechEngine
+  ttsEngine: SpeechEngine
   maxRecordingSeconds: number
 }
 
 const DEFAULTS: SpeechFormState = {
   sttEnabled: true,
+  sttEngine: 'auto',
+  ttsEngine: 'auto',
   maxRecordingSeconds: 60
 }
 
 const readState = (config: DeskAgentConfigResponse): SpeechFormState => ({
   sttEnabled: config.stt?.enabled ?? DEFAULTS.sttEnabled,
+  sttEngine: config.stt?.engine ?? DEFAULTS.sttEngine,
+  ttsEngine: config.tts?.engine ?? DEFAULTS.ttsEngine,
   maxRecordingSeconds: config.voice?.max_recording_seconds ?? DEFAULTS.maxRecordingSeconds
 })
 
@@ -33,6 +42,9 @@ export function SpeechSettings() {
   const [isSaving, setIsSaving] = useState(false)
   const [original, setOriginal] = useState<SpeechFormState>(DEFAULTS)
   const [state, setState] = useState<SpeechFormState>(DEFAULTS)
+  // Local-engine availability, probed from the Runner tool schema (null = unknown).
+  const [localSttAvailable, setLocalSttAvailable] = useState<boolean | null>(null)
+  const [localTtsAvailable, setLocalTtsAvailable] = useState<boolean | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -62,7 +74,42 @@ export function SpeechSettings() {
     }
   }, [])
 
-  const isDirty = state.sttEnabled !== original.sttEnabled || state.maxRecordingSeconds !== original.maxRecordingSeconds
+  // Probe which local engines the Runner currently advertises (check_fn-gated),
+  // so the user can see whether "local"/"auto" will actually use a local engine.
+  useEffect(() => {
+    let cancelled = false
+
+    void (async () => {
+      try {
+        const tools = await window.deskagent.runnerGetTools?.()
+
+        if (cancelled || !Array.isArray(tools)) {
+          return
+        }
+
+        const names = new Set(
+          (tools as Array<{ function?: { name?: string }; name?: string }>)
+            .map(t => t?.function?.name || t?.name)
+            .filter((n): n is string => Boolean(n))
+        )
+
+        setLocalSttAvailable(names.has('speech_to_text'))
+        setLocalTtsAvailable(names.has('text_to_speech'))
+      } catch {
+        // leave null — availability badge stays hidden
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const isDirty =
+    state.sttEnabled !== original.sttEnabled ||
+    state.sttEngine !== original.sttEngine ||
+    state.ttsEngine !== original.ttsEngine ||
+    state.maxRecordingSeconds !== original.maxRecordingSeconds
 
   const update = (patch: Partial<SpeechFormState>) => {
     setState(prev => ({ ...prev, ...patch }))
@@ -73,7 +120,8 @@ export function SpeechSettings() {
 
     try {
       const { config } = await saveDeskAgentConfig({
-        stt: { enabled: state.sttEnabled },
+        stt: { enabled: state.sttEnabled, engine: state.sttEngine },
+        tts: { engine: state.ttsEngine },
         voice: { max_recording_seconds: state.maxRecordingSeconds }
       })
 
@@ -97,6 +145,15 @@ export function SpeechSettings() {
     )
   }
 
+  const engineOptions: readonly SegmentedControlOption<SpeechEngine>[] = [
+    { id: 'auto', label: s.engineAuto },
+    { id: 'local', label: s.engineLocal },
+    { id: 'cloud', label: s.engineCloud }
+  ]
+
+  const availBadge = (avail: boolean | null) =>
+    avail === null ? null : <Pill tone={avail ? 'primary' : 'muted'}>{avail ? s.engineLocalAvail : s.engineLocalUnavail}</Pill>
+
   return (
     <SettingsContent>
       <SettingsSubsection icon={IconVolume} intro={s.intro} title={s.title}>
@@ -105,6 +162,34 @@ export function SpeechSettings() {
             action={<Switch checked={state.sttEnabled} onCheckedChange={v => update({ sttEnabled: v })} />}
             description={s.sttDesc}
             title={s.sttTitle}
+          />
+          <ListRow
+            action={
+              <div className="flex flex-col items-end gap-1.5">
+                <SegmentedControl
+                  onChange={v => update({ sttEngine: v })}
+                  options={engineOptions}
+                  value={state.sttEngine}
+                />
+                {availBadge(localSttAvailable)}
+              </div>
+            }
+            description={s.sttEngineDesc}
+            title={s.sttEngineTitle}
+          />
+          <ListRow
+            action={
+              <div className="flex flex-col items-end gap-1.5">
+                <SegmentedControl
+                  onChange={v => update({ ttsEngine: v })}
+                  options={engineOptions}
+                  value={state.ttsEngine}
+                />
+                {availBadge(localTtsAvailable)}
+              </div>
+            }
+            description={s.ttsEngineDesc}
+            title={s.ttsEngineTitle}
           />
           <ListRow
             action={

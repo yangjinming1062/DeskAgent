@@ -462,6 +462,15 @@ export interface Translations {
     loading: string
     sttTitle: string
     sttDesc: string
+    sttEngineTitle: string
+    sttEngineDesc: string
+    ttsEngineTitle: string
+    ttsEngineDesc: string
+    engineAuto: string
+    engineLocal: string
+    engineCloud: string
+    engineLocalAvail: string
+    engineLocalUnavail: string
     recordingTitle: string
     recordingDesc: string
     save: string
