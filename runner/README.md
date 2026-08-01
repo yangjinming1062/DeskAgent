@@ -143,9 +143,26 @@ MCP 工具由 `discover_mcp_tools()` 在 `server_loop` 紧跟 `runner_ready` 之
 
 为伴侣语音能力 ([COMPANION_DESIGN §5](../COMPANION_DESIGN.md#5-语音交互stt--tts)) 提供零成本主路径。Runner 本地引擎（faster-whisper STT、Piper/pyttsx3 TTS）是默认主路径；Desktop 在本地不可用或失败时回退 Backend 云端引擎（`/api/media/stt|tts`），三档可切（`auto` 本地优先 / `local` 纯本地 / `cloud` 强制云端）。
 
-**`speech_to_text`**（`tools/multimodal/audio/stt_tool.py`）：接收本地路径 `audio_path` 或 base64 编码的音频字节（≤ 25 MB，mp3/wav/m4a/ogg/flac/webm/aac）；先经 ffmpeg 解码到 16 kHz mono PCM16 WAV，再喂给 faster-whisper（CTranslate2）。语言自动检测或显式传 `language`；模型大小 `tiny | base | small | medium | large-v2 | large-v3`（默认 `base`，模型文件按需下载到 `$DESKAGENT_HOME/models/whisper/`）。Segment-confidence gate 丢弃 `no_speech_prob > 0.6` 或 `avg_logprob < -1.0` 的段。返回 `{success, text, language, segments[]}`。`check_fn` 探测 `faster-whisper` 是否可导入——未装时从 LLM schema 自动消失。
+**`speech_to_text`**（`tools/multimodal/audio/stt_tool.py`）：接收本地路径 `audio_path` 或 base64 编码的音频字节（≤ 25 MB，mp3/wav/m4a/ogg/flac/webm/aac）；先经 ffmpeg 解码到 16 kHz mono PCM16 WAV，再喂给 faster-whisper（CTranslate2）。语言自动检测或显式传 `language`；模型大小 `tiny | base | small | medium | large-v2 | large-v3`（默认 `base`，模型文件按需下载到 `$DESKAGENT_HOME/models/whisper/`）。Segment-confidence gate 丢弃 `no_speech_prob > 0.6` 或 `avg_logprob < -1.0` 的段。返回 `{success, text, language, language_probability, segments[]}`。`check_fn` 探测 `faster-whisper` 是否可导入——未装时从 LLM schema 自动消失。
 
-**`text_to_speech`**（`tools/multimodal/audio/tts_tool.py`）：本地优先 Piper（44 语言 VITS、CPU 实时），不可用时降级 `pyttsx3`（系统 TTS SAPI5/NSSpeech/espeak）。输入 `(text, voice?, engine?, speed)`；`speed` 钳制到 `[0.5, 2.0]`；文本预处理剥离 `<!-- 注释 -->` 与 `<!-- think -->` 块。输出写入 `$DESKAGENT_HOME/cache/audio/tts/{hint}_{uuid}.wav`，返回 `{success, path, engine, voice, size_bytes}`。Desktop 渲染层拿到路径后由其 `<audio>` 播放——Runner 不做音频回放。`voice` 缺省读 `config.yaml::audio.tts.default_voice`。
+**STT auto-detect + low-confidence cloud fallback**：
+- `language` 字段接受 `None` / `""` / `"auto"` 任意一种 → runner 走 whisper auto-detect；`language="zh"` / `"en"` 等显式值则让 whisper 在该语言上做识别（固定模型）。
+- Auto-detect 模式下，runner 检查 `language_probability`（whisper 对 auto-detect 出的语言的置信度）。如果 < 0.5（明确"whisper 自己都不知道我说的是什么"）或全部段被 confidence gate 过滤掉（text 为空），runner 返 `tool_error` + `hint="Set stt.engine=cloud in config.yaml"`。desktop IPC 层（`engine_pref='auto'`）的现有 local→cloud fallback 接管——自动改跑云端 STT 而不是让用户对着空文本框发呆。
+- 显式 `language='zh'` 等不走这个检查：用户说"按中文识别"，whisper 怎么不确信都返结果，避免强行 cloud fallback 让用户多付一份 API 费。
+
+**`text_to_speech`**（`tools/multimodal/audio/tts_tool.py`）：本地优先 Piper（44 语言 VITS、CPU 实时），不可用时降级 `pyttsx3`（系统 TTS SAPI5/NSSpeech/espeak）。输入 `(text, voice?, engine?, speed)`；`speed` 钳制到 `[0.5, 2.0]`；文本预处理剥离 `<!-- 注释 -->` 与 `<!-- think -->` 块。输出写入 `$DESKAGENT_HOME/cache/audio/tts/{hint}_{uuid}.wav`，返回 `{success, path, engine, voice, size_bytes}`。Desktop 渲染层拿到路径后由其 `<audio>` 播放——Runner 不做音频回放。
+
+**本地 TTS voice 选型**（参考 [COMPANION_DESIGN §5 语音交互](../COMPANION_DESIGN.md#5-语音交互stt--tts)）：
+
+- **仅支持中英文两种语言，默认中文**。产品定位决定 TTS 永远以"中文为系统身份"——onboarding silhouette、默认 TTS 反馈都走中文 Piper voice。LLM 偶尔返回的英文回复也用中文 voice 念（不会"自动切到 EN voice"导致产品身份不稳定）。用户在 voice catalog 显式挑了 EN voice（`en_US-amy-medium`）时例外，desktop 把 id 透传到 runner。
+- **Auto 模式本地失败 fallback**（`tts_tool.py::text_to_speech_tool`）：默认 `engine=auto` 走 Piper → pyttsx3 链。任一引擎合成失败（model corruption / OOM / FileNotFoundError 中途丢文件）自动静默回退下一引擎——避免 onboarding 期间 Piper 模型坏掉直接给出"声音不可用"的硬错误。链路耗尽才返 `tool_error("all engines failed: …", hint="Set tts.engine=cloud in config.yaml")`，告诉用户把 TTS 切到云端是最终逃生口。显式 `engine=piper` / `engine=pyttsx3` 走 single-engine 路径（pyttsx3 失败不偷偷回退 Piper，反之亦然），方便测试和强制走某条路径。
+- **STT 默认 `language="zh"`**（`desktop/main/ipc/media.cjs`）：product direction 同样适用——renderer 调 `media.stt` 时不传 `language` 字段，IPC 层在缺省值处默认填 `zh`（随 `form.set('language', 'zh')` 一并 POST 到 backend `/api/media/stt`），让 faster-whisper 命中中文模型——避免对中文语音输入每次都做 auto-detect。要回退到 auto-detect 时 renderer 显式传 `language: 'auto'` 即可（IPC 层 `if (typeof payload?.language === 'string' && payload.language)` 守门）。
+- **Voice 解析**（`piper_runtime.py::pick_voice_for_text`）：caller 显式 `voice` 参数永远胜出；缺省时**永远返回 `ZH_DEFAULT_VOICE`**（`zh_CN-huayan-medium`），不按文本语言路由。
+- **Bundled voices**（`piper_runtime.py::bundled_voices`）：install payload 在 `installer/payload/voices/` 下带三份 Piper voice：`zh_CN-huayan-medium`（女声，默认）、`zh_CN-chaowen-medium`（男声备用）、`en_US-amy-medium`（用户从 catalog 选 EN 时使用）。`install.{sh,ps1}` 在 `unpack-runner` stage 把所有 onnx/json 拷到 `$DESKAGENT_HOME/models/piper/`。新增 voice 只需把 onnx/json 投入 payload 目录并把 id 加到 `_BUNDLED_VOICES` 元组，无需改 install 脚本（content-based copy）。
+- **Auto-download fallback**（`piper_runtime.py::ensure_voice_installed`）：若请求的 Piper voice 不在磁盘且没在 bundled 列表里，会从 `huggingface.co/rhasspy/piper-voices` 拉一次（`zh_<region>-<name>-<quality>` 自动解析到 `zh/zh_CN/huayan/medium/...` 的 repo 路径）。失败返回 `False`、回退 pyttsx3，绝不抛错阻断 speak。
+- **Cloud voice id 拦截**：用户传了云端 id（`mimo_default` / `冰糖` / `Mia` / `female-shaonv` 等）时本地工具不静默兜底，直接返回 `tool_error` 并提示 desktop 切到 `tts.engine=cloud`——避免把云端 id 喂给 Piper 然后听到 HUAYAN 这种诡异结果。判据：id 不匹配 Piper 的 `lang_REGION-name-quality` 形态（`piper_runtime.py::PIPER_VOICE_RE`）就视为云端 id。
+- **Pyttsx3 中文 voice**：在 Windows 上 `_enumerate_pyttsx3_voices` 拉 SAPI5 voice 列表，对 CJK 文本优先选 `name`/`languages` 含 "Chinese" / "中文" / "Mandarin" 的 voice；枚举失败回退系统默认。
+- **STT（Whisper）**：desktop 端 `media.stt` IPC 在 `language` 缺省时默认填 `zh`（[media.cjs#deskagent:media:stt](../desktop/main/ipc/media.cjs)），POST 到 backend `/api/media/stt` 的 form 字段里——让 faster-whisper 命中中文模型。要 auto-detect 时 renderer 显式传 `language: 'auto'` 即可。`zh_CN-huayan-medium` 等中文 voice 的 22050Hz 采样率与 Whisper 16kHz mono 输入不冲突——前者只用于 TTS 输出。
 
 **`list_tts_voices`**：枚举 `$DESKAGENT_HOME/models/piper/` 下所有已下载的 Piper 语音（同时存在 `.onnx` 与 `.onnx.json` 才算安装完整）。
 

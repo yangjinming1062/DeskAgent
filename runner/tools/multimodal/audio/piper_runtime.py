@@ -1,5 +1,8 @@
 import logging
+import re
 import threading
+import urllib.error
+import urllib.request
 import wave
 from collections import OrderedDict
 from pathlib import Path
@@ -13,7 +16,7 @@ try:
     from piper import PiperVoice, SynthesisConfig  # type: ignore[import-not-found]
 except ImportError:
     PiperVoice = None  # type: ignore[assignment,misc]
-    SynthesisConfig = None  # type: ignore[assignment,misc]
+    SynthesisConfig = None  # type: ignore[assignment]
 try:
     import piper  # type: ignore[import-not-found]
 except ImportError:
@@ -27,6 +30,33 @@ logger = logging.getLogger(__name__)
 
 _VOICE_CACHE_MAX = 3
 _DEFAULT_VOICE = "en_US-amy-medium"
+
+# Bundled voices shipped in installer/payload/voices/ (see installer/README §10).
+ZH_DEFAULT_VOICE = "zh_CN-huayan-medium"
+EN_DEFAULT_VOICE = "en_US-amy-medium"
+ZH_MALE_DEFAULT_VOICE = "zh_CN-chaowen-medium"
+_BUNDLED_VOICES: tuple[str, ...] = (ZH_DEFAULT_VOICE, ZH_MALE_DEFAULT_VOICE, EN_DEFAULT_VOICE)
+
+# Piper's documented voice source: https://github.com/rhasspy/piper#predefined-voices
+_PIPER_VOICES_REPO = "https://huggingface.co/rhasspy/piper-voices/resolve/main"
+
+# CJK Unified Ideographs plus the two extension blocks for common CJK punctuation.
+_CJK_RE = re.compile(r"[　-〿㐀-䶿一-鿿豈-﫿]")
+
+# Canonical Piper voice id shape. Cloud ids (e.g. ``Mia`` / ``冰糖``) never match —
+# basis for tts_tool._is_cloud_voice's shape check.
+PIPER_VOICE_RE = re.compile(r"^[a-z]{2,3}_[A-Z]{2}-[a-z0-9-]+-(?:x_low|low|medium|high)$")
+
+
+def text_language(text: str) -> str:
+    """``"zh"`` when ≥50% of non-whitespace chars are CJK, else ``"other"``."""
+    if not text:
+        return "other"
+    chars = [c for c in text if not c.isspace()]
+    if not chars:
+        return "other"
+    cjk = sum(1 for c in chars if _CJK_RE.match(c))
+    return "zh" if cjk * 2 >= len(chars) else "other"
 
 
 class PiperRuntime:
@@ -86,7 +116,7 @@ def list_installed_voices() -> list[str]:
 
 
 def get_piper_voice(voice_id: str = _DEFAULT_VOICE) -> Any:
-    return _runtime.get_voice(voice_id)
+    return _runtime.get_voice(voice_id=voice_id)
 
 
 def reset_runtime() -> None:
@@ -109,3 +139,71 @@ def pyttsx3_available() -> bool:
 def default_voice_id() -> str:
     val = cfg_get(load_config(), "audio", "tts", "default_voice", default=_DEFAULT_VOICE)
     return str(val).strip() or _DEFAULT_VOICE
+
+
+def bundled_voices() -> tuple[str, ...]:
+    """Voice ids bundled in installer/payload/voices/."""
+    return _BUNDLED_VOICES
+
+
+def pick_voice_for_text(text: str, *, preferred: str = "") -> str:
+    """Explicit `preferred` wins; otherwise default to ZH_DEFAULT_VOICE.
+
+    ``text`` is reserved for future language-aware routing — see runner/README
+    §"本地 TTS voice 选型" for why we currently don't auto-switch on detected
+    language (inconsistent voice identity across a single conversation).
+    """
+    if preferred and preferred.strip():
+        return preferred.strip()
+    del text
+    return ZH_DEFAULT_VOICE
+
+
+def _is_voice_installed(voice_id: str, voice_dir: Path | None = None) -> bool:
+    base = voice_dir if voice_dir is not None else piper_voice_dir()
+    return (base / f"{voice_id}.onnx").is_file() and (base / f"{voice_id}.onnx.json").is_file()
+
+
+def download_voice(voice_id: str, *, voice_dir: Path | None = None, timeout: float = 60.0) -> Path:
+    """Fetch ``.onnx`` and ``.onnx.json`` for ``voice_id`` into ``voice_dir``. Raises on failure."""
+    base = voice_dir if voice_dir is not None else piper_voice_dir()
+    base.mkdir(parents=True, exist_ok=True)
+    prefix = _voice_id_to_repo_path(voice_id)
+    for ext in (".onnx", ".onnx.json"):
+        dst = base / f"{voice_id}{ext}"
+        if dst.is_file():
+            continue
+        url = f"{_PIPER_VOICES_REPO}/{prefix}/{voice_id}{ext}"
+        logger.info("downloading Piper voice %s from %s", voice_id, url)
+        try:
+            with urllib.request.urlopen(url, timeout=timeout) as resp:
+                data = resp.read()
+        except (urllib.error.URLError, TimeoutError, OSError) as exc:
+            raise RuntimeError(f"failed to download {url}: {exc}") from exc
+        if not data:
+            raise RuntimeError(f"empty response while downloading {url}")
+        dst.write_bytes(data)
+    return base / f"{voice_id}.onnx"
+
+
+def _voice_id_to_repo_path(voice_id: str) -> str:
+    parts = voice_id.split("-")
+    if len(parts) < 3:
+        return f"misc/{voice_id}"
+    lang_region, name, quality = parts[0], parts[1], parts[2]
+    lang, _, region = lang_region.partition("_")
+    if not region:
+        return f"misc/{voice_id}"
+    return f"{lang}/{lang_region}/{name}/{quality}"
+
+
+def ensure_voice_installed(voice_id: str, *, voice_dir: Path | None = None, timeout: float = 60.0) -> bool:
+    """False on download failure — caller falls back to pyttsx3 / cloud."""
+    if _is_voice_installed(voice_id, voice_dir=voice_dir):
+        return True
+    try:
+        download_voice(voice_id, voice_dir=voice_dir, timeout=timeout)
+    except Exception as exc:  # noqa: BLE001 — best-effort, log and move on
+        logger.warning("Piper voice %s auto-download failed: %s", voice_id, exc)
+        return False
+    return _is_voice_installed(voice_id, voice_dir=voice_dir)
