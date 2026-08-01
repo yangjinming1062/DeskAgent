@@ -1817,7 +1817,7 @@ registerSystemIpc({
 })
 registerTitlebarIpc({
   ipcMain,
-  getMainWindow: () => mainWindow,
+  getToolWindow: () => toolWindow,
   getTitleBarOverlayOptions,
   setRendererTitleBarTheme: theme => {
     rendererTitleBarTheme = theme
