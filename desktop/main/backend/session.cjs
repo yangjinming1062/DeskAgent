@@ -175,6 +175,10 @@ function createBackendSession(options = {}) {
         log(`[session] proactive refresh failed: ${err?.message || err}`)
       })
     }, delay)
+    // Don't keep the event loop alive just to fire a refresh — the
+    // session is also reloaded on next ensureBackend()/restoreSession(),
+    // and on quit we don't want a pending refresh to delay shutdown.
+    if (typeof refreshTimer.unref === 'function') refreshTimer.unref()
   }
 
   function loadFromDisk() {
@@ -244,6 +248,44 @@ function createBackendSession(options = {}) {
     })
   }
 
+  // Single mutation site for "we now have a session". `login`, `refresh`,
+  // and `adoptSession` all funnel through here so the invalidate-/
+  // persist-/-schedule-refresh invariants stay in lockstep — future
+  // session-wide side effects (revocation, telemetry, model-config reset)
+  // belong in this function, not in each caller.
+  function applySession({ baseUrl, token, tokenExpiresAt, user, source }) {
+    if (!token) {
+      throw new SessionError({
+        code: 'no-token',
+        message: 'Cannot apply a session without a token.'
+      })
+    }
+    const resolvedBaseUrl = baseUrl || cached?.baseUrl || null
+    const resolvedUser = normalizeUser(user) || cached?.user || { id: null, username: null }
+    const encryptedToken = encryptToken(token, safeStorage)
+
+    cached = {
+      baseUrl: resolvedBaseUrl,
+      token,
+      tokenExpiresAt,
+      user: resolvedUser,
+      encryptedToken
+    }
+
+    // Invalidate the cached BackendClient so the next request hits the
+    // freshly applied baseUrl. Also drop the model-config cache — the
+    // new session may belong to a different user with a different config.
+    backendClient = null
+    backendClientBaseUrl = null
+    cachedModelConfig = null
+
+    persistCurrent()
+    scheduleRefresh()
+
+    log(`[session] ${source} ok base=${resolvedBaseUrl} user=${resolvedUser?.username ?? '?'}`)
+    return snapshot()
+  }
+
   function login(payload = {}) {
     const { username, password, baseUrl: overrideBaseUrl, clientContext } = payload
     if (!username || !password) {
@@ -285,27 +327,13 @@ function createBackendSession(options = {}) {
           Number.isFinite(response.expires_in) && response.expires_in > 0
             ? response.expires_in * 1000
             : KNOWN_TOKEN_TTL_MS
-        const tokenExpiresAt = now() + expiresIn
-
-        cached = {
+        return applySession({
           baseUrl,
           token: response.access_token,
-          tokenExpiresAt,
-          user: normalizeUser(response.user),
-          encryptedToken: encryptToken(response.access_token, safeStorage)
-        }
-        // Invalidate the cached BackendClient so the next request hits the
-        // freshly logged-in baseUrl. Also drop the model-config cache — the
-        // new login may belong to a different user with a different config.
-        backendClient = null
-        backendClientBaseUrl = null
-        cachedModelConfig = null
-
-        persistCurrent()
-        scheduleRefresh()
-
-        log(`[session] login ok base=${baseUrl} user=${cached.user?.username ?? '?'}`)
-        return snapshot()
+          tokenExpiresAt: now() + expiresIn,
+          user: response.user,
+          source: 'login'
+        })
       })
       .catch(translateBackendError)
       .finally(() => {
@@ -348,24 +376,12 @@ function createBackendSession(options = {}) {
           Number.isFinite(response.expires_in) && response.expires_in > 0
             ? response.expires_in * 1000
             : KNOWN_TOKEN_TTL_MS
-        const tokenExpiresAt = now() + expiresIn
-
-        cached = {
-          ...cached,
+        return applySession({
           token: response.access_token,
-          tokenExpiresAt,
-          encryptedToken: encryptToken(response.access_token, safeStorage)
-        }
-
-        backendClient = null
-        backendClientBaseUrl = null
-        cachedModelConfig = null
-
-        persistCurrent()
-        scheduleRefresh()
-
-        log(`[session] refresh ok user=${cached.user?.username ?? '?'}`)
-        return snapshot()
+          tokenExpiresAt: now() + expiresIn,
+          user: response.user,
+          source: 'refresh'
+        })
       })
       .catch(translateBackendError)
   }
@@ -477,6 +493,32 @@ function createBackendSession(options = {}) {
     return snapshot()
   }
 
+  // Adopt an externally-validated session (currently the installer
+  // bootstrap file). Funnels through applySession so it stays in lockstep
+  // with login()/refresh() — future session-wide side effects only need
+  // to be added in one place.
+  function adoptSession({ baseUrl, token, tokenExpiresAt, user }) {
+    if (!baseUrl || !token) {
+      throw new SessionError({
+        code: 'invalid-bootstrap-session',
+        message: 'Bootstrap session is missing baseUrl or token.'
+      })
+    }
+
+    const expiresAt =
+      Number.isFinite(tokenExpiresAt) && tokenExpiresAt > 0
+        ? tokenExpiresAt
+        : now() + KNOWN_TOKEN_TTL_MS
+
+    return applySession({
+      baseUrl,
+      token,
+      tokenExpiresAt: expiresAt,
+      user,
+      source: 'adopted'
+    })
+  }
+
   function getSession() {
     return snapshot()
   }
@@ -496,6 +538,7 @@ function createBackendSession(options = {}) {
     logout,
     changePassword,
     restoreSession,
+    adoptSession,
     clearSession,
     getSession,
     getToken,

@@ -55,6 +55,16 @@ Tauri 进程把 bundle.resources 解压根通过 env var 传给 `install.{sh,ps1
 
 完整规范在 `src-tauri/src/bootstrap.rs`，前端通过 Tauri `bootstrap` event channel 拿阶段进度。当前 install 协议为 v2（含 `install-python` stage）。
 
+## 5. 鉴权引导（auth bootstrap）
+
+`welcome → auth → progress` 三段路由：`auth` 路由收集后端地址 + 用户名 + 密码，由 Tauri 命令 `verify_backend`（GET `/api/health`）和 `authenticate_backend`（POST `/api/user/login`，body 匹配 `backend/modules/auth/schemas.py::LoginRequest`）在 Rust 侧完成 HTTP。密码只存在于 POST body 与 React state，绝不落盘。
+
+登录成功后写入的 one-shot 文件：
+- 路径：`$DESKAGENT_HOME/agent-session-bootstrap.json`（`installer/src-tauri/src/paths.rs::deskagent_home()`）
+- schema（`schemaVersion: 1`）：`{ baseUrl, token (raw jwt), tokenExpiresAt, user, savedAt }`
+- POSIX 0600；Windows 由父目录 ACL 控制访问
+- Desktop 启动时消费该文件：校验 schema + 调用 backend `POST /api/user/refresh` 验证 token；成功则原子重命名为 `.consumed` 并交给 `BackendSession::adoptSession` 走 `safeStorage` 落盘到 `agent-session.json`；任何失败（缺字段、解析错、refresh 401/网络失败）都静默删除文件并回落到未登录态。环境变量 `DESKAGENT_DESKTOP_BOOTSTRAP_SESSION` 覆盖消费路径。
+
 ## 5. 平台标准安装位置
 
 `bootstrap::desktop_install_root()` 给出 desktop 的平台-canonical 路径：

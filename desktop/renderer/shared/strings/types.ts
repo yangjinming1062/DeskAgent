@@ -165,6 +165,8 @@ export interface Translations {
 
   login: {
     backendUnreachable: string
+    backendUrl: string
+    backendUrlPlaceholder: string
     error: string
     password: string
     signIn: string

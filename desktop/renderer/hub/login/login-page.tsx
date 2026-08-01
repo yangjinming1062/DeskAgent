@@ -1,5 +1,5 @@
 import { useStore } from '@nanostores/react'
-import { type FormEvent, useState } from 'react'
+import { type FormEvent, useEffect, useState } from 'react'
 
 import { BrandMark } from '@/shared/components/brand-mark'
 import { Button } from '@/shared/components/ui/button'
@@ -14,21 +14,36 @@ export function LoginPage() {
   const auth = useStore($auth)
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
+  const [backendUrl, setBackendUrl] = useState('')
   const [busy, setBusy] = useState(false)
+
+  // Prefill the backend URL from the persisted login default (set on
+  // successful login) so re-login after a logout keeps the same target.
+  // On a fresh install with no desktop-config.json, the persisted default
+  // falls back to the bundled config.json entry via main's resolver.
+  useEffect(() => {
+    let cancelled = false
+    window.deskagent
+      .getDefaultBackendUrl()
+      .then(value => {
+        if (!cancelled && typeof value === 'string') setBackendUrl(value)
+      })
+      .catch(() => undefined)
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const error = auth.kind === 'unauthenticated' ? auth.error : undefined
 
   const onSubmit = async (event: FormEvent) => {
     event.preventDefault()
 
-    if (busy) {
-      return
-    }
-
+    if (busy) return
     setBusy(true)
 
     try {
-      await login({ username, password })
+      await login({ username, password, baseUrl: backendUrl.trim() || undefined })
     } catch {
       // $auth.error is set by the store; the banner reads it.
     } finally {
@@ -55,12 +70,29 @@ export function LoginPage() {
         )}
 
         <div className="grid gap-1.5">
+          <label className="text-xs font-medium" htmlFor="login-backend-url">
+            {a.backendUrl}
+          </label>
+          <Input
+            autoComplete="url"
+            disabled={busy}
+            id="login-backend-url"
+            inputMode="url"
+            onChange={event => setBackendUrl(event.currentTarget.value)}
+            placeholder={a.backendUrlPlaceholder}
+            required
+            spellCheck={false}
+            type="url"
+            value={backendUrl}
+          />
+        </div>
+
+        <div className="grid gap-1.5">
           <label className="text-xs font-medium" htmlFor="login-username">
             {a.username}
           </label>
           <Input
             autoComplete="username"
-            autoFocus
             disabled={busy}
             id="login-username"
             onChange={event => setUsername(event.currentTarget.value)}
@@ -84,7 +116,10 @@ export function LoginPage() {
           />
         </div>
 
-        <Button disabled={busy || !username || !password} type="submit">
+        <Button
+          disabled={busy || !username || !password || !backendUrl.trim()}
+          type="submit"
+        >
           {busy ? <Loader2 className="size-3.5 animate-spin" /> : <LogIn className="size-3.5" />}
           {busy ? a.signingIn : a.signIn}
         </Button>

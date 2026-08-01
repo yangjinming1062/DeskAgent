@@ -60,12 +60,19 @@ const INITIAL: BootstrapStateModel = {
 // Atoms
 // ---------------------------------------------------------------------------
 
-export type Route = 'welcome' | 'progress' | 'success' | 'failure'
+export type Route = 'welcome' | 'auth' | 'progress' | 'success' | 'failure'
 
 export const $route = atom<Route>('welcome')
 export const $bootstrap = atom<BootstrapStateModel>(INITIAL)
 export const $logPath = atom<string | null>(null)
 export const $deskAgentHome = atom<string | null>(null)
+
+export interface AuthState {
+  status: 'idle' | 'verifying' | 'submitting' | 'error'
+  error: string | null
+}
+
+export const $auth = atom<AuthState>({ status: 'idle', error: null })
 
 export const $progress = computed($bootstrap, (b) => {
   const total = b.stageOrder.length
@@ -274,4 +281,45 @@ export async function launchDeskAgentDesktop(): Promise<void> {
 
 export async function openLogDir(): Promise<void> {
   await invoke('open_log_dir')
+}
+
+interface AuthSuccessPayload {
+  baseUrl: string
+  tokenExpiresAt: number
+  user: { id: number | null; username: string | null }
+}
+
+interface AuthFailurePayload {
+  kind: string
+  message: string
+  status?: number
+}
+
+export async function verifyBackendUrl(baseUrl: string): Promise<boolean> {
+  try {
+    return await invoke<boolean>('verify_backend', { args: { baseUrl } })
+  } catch {
+    return false
+  }
+}
+
+export async function authenticateBackend(
+  baseUrl: string,
+  username: string,
+  password: string
+): Promise<AuthSuccessPayload> {
+  $auth.set({ status: 'submitting', error: null })
+  try {
+    const result = await invoke<AuthSuccessPayload>('authenticate_backend', {
+      args: { baseUrl, username, password }
+    })
+    $auth.set({ status: 'idle', error: null })
+    return result
+  } catch (raw) {
+    const failure = (raw && typeof raw === 'object' ? raw : {}) as AuthFailurePayload
+    const message =
+      failure.message || (raw instanceof Error ? raw.message : String(raw)) || '登录失败。'
+    $auth.set({ status: 'error', error: message })
+    throw raw
+  }
 }

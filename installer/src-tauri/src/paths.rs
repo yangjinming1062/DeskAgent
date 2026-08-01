@@ -163,6 +163,30 @@ pub fn runner_venv_python() -> Option<PathBuf> {
     candidates.into_iter().find(|p| p.is_file())
 }
 
+// ---------------------------------------------------------------------------
+// Cross-language installer ↔ desktop handoff contract.
+//
+// These three constants define the on-disk shape the installer writes and
+// the desktop consumes at startup. They live here (not in
+// `bootstrap_session.rs`) so they're discoverable next to the other
+// cross-language strings (`likely_bootstrap_marker` above, the
+// `.deskagent-bootstrap-complete` file name), and so the Rust side is
+// the single canonical source — `desktop/main/backend/bootstrap-session.cjs`
+// mirrors them with a `// MUST match paths.rs` comment and a sync test
+// (`bootstrap-session.test.cjs::bootstrap_constants_match_rust_paths`)
+// that fails fast on drift.
+// ---------------------------------------------------------------------------
+
+/// Filename of the bootstrap session file under `$DESKAGENT_HOME`.
+pub const BOOTSTRAP_FILENAME: &str = "agent-session-bootstrap.json";
+/// Suffix appended to the bootstrap filename after a successful handoff
+/// so a second launch never replays the file.
+pub const BOOTSTRAP_CONSUMED_SUFFIX: &str = ".consumed";
+/// Schema version baked into the bootstrap file. Desktop validates
+/// `schemaVersion === BOOTSTRAP_SCHEMA_VERSION` before parsing; bump
+/// here when the on-disk shape changes incompatibly.
+pub const BOOTSTRAP_SCHEMA_VERSION: u32 = 1;
+
 /// Initializes tracing to bootstrap-installer.log under DESKAGENT_HOME/logs/.
 /// Returns a guard that flushes the appender on drop — keep it alive for
 /// the lifetime of the process.
