@@ -1,7 +1,8 @@
 import { useStore } from '@nanostores/react'
-import { useEffect, useRef, useState } from 'react'
+import { type PointerEvent as ReactPointerEvent, useEffect, useRef, useState } from 'react'
 
 import { useGatewayRequest } from '@/companion/boot/use-gateway-request'
+import { registerInteractiveRegion, unregisterInteractiveRegion } from '@/companion/interactive-regions'
 import { $gatewayState } from '@/shared/store/gateway'
 
 import { clearClipCatalog } from '../clip-store'
@@ -61,6 +62,12 @@ const QUESTIONS: readonly Question[] = [
 
 const sleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms))
 
+// Halo padding for the silhouette's CSS glow. With `flex items-center` the
+// silhouette sits centered inside the container's 448px-wide row, so its
+// glow (170% × 170% = ~56px overflow on each side) stays well inside the
+// container's bounding box — no extra padding needed.
+const DRAG_THRESHOLD = 6
+
 // Desktop answer keys → Backend ONBOARDING_FIELDS (services/companion/persona_service.py).
 const BACKEND_FIELD: Record<QKey, string> = { name: 'name', role: 'role', personality: 'personality', selfIntro: 'self_intro', voice: 'voice' }
 
@@ -107,16 +114,89 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
   const inputRef = useRef<HTMLInputElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const resumedRef = useRef(false)
+  const containerRef = useRef<HTMLDivElement>(null)
+  const dragRef = useRef<{ startX: number; startY: number; originX: number; originY: number; moved: boolean; pointerId: number } | null>(null)
 
-  // The onboarding surface is fully interactive — disable click-through while
-  // mounted so the text inputs work without per-element hit-testing. Restore
-  // click-through (with mousemove forwarding) on unmount.
+  // Centered initial position; the user can drag from there.
+  const [dialogPos, setDialogPos] = useState<{ x: number; y: number }>(() => {
+    const width = 448
+    const height = 600
+
+    if (typeof window === 'undefined') {return { x: 0, y: 0 }}
+
+    return {
+      x: Math.max(0, Math.round((window.innerWidth - width) / 2)),
+      y: Math.max(0, Math.round((window.innerHeight - height) / 2))
+    }
+  })
+
+  // Onboarding dialog is fully interactive — register its actual visible rect
+  // with the global interactive-regions registry so SpriteStage's hit-test
+  // captures only while the cursor is over the dialog silhouette + form.
+  // SpriteStage restores click-through on unmount.
   useEffect(() => {
-    void window.deskagent.sprite.setIgnoreMouseEvents({ ignore: false })
+    registerInteractiveRegion('onboarding', () => {
+      const rect = containerRef.current?.getBoundingClientRect() ?? null
+
+      if (!rect || rect.width === 0 || rect.height === 0) {return null}
+
+      return rect
+    })
 
     return () => {
       stopSpeaking()
-      void window.deskagent.sprite.setIgnoreMouseEvents({ ignore: true, forward: true })
+      unregisterInteractiveRegion('onboarding')
+    }
+  }, [])
+
+  // Drag uses document-level listeners (not React onPointerMove on the
+  // container) so the drag survives the cursor leaving the dialog rect and
+  // still updates while the cursor is over an unrelated region. setPointerCapture
+  // would interfere with click events fired on the form's buttons/inputs.
+  const onDialogPointerDown = (e: ReactPointerEvent) => {
+    const target = e.target as HTMLElement
+
+    if (target.closest('button, input, textarea, [contenteditable="true"]')) {return}
+
+    dragRef.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      originX: dialogPos.x,
+      originY: dialogPos.y,
+      moved: false,
+      pointerId: e.pointerId
+    }
+  }
+
+  useEffect(() => {
+    const onMove = (e: PointerEvent) => {
+      const drag = dragRef.current
+
+      if (!drag || drag.pointerId !== e.pointerId) {return}
+
+      const dx = e.clientX - drag.startX
+      const dy = e.clientY - drag.startY
+
+      if (!drag.moved && Math.hypot(dx, dy) < DRAG_THRESHOLD) {return}
+      drag.moved = true
+      setDialogPos({ x: drag.originX + dx, y: drag.originY + dy })
+    }
+
+    const onUp = (e: PointerEvent) => {
+      const drag = dragRef.current
+
+      if (!drag || drag.pointerId !== e.pointerId) {return}
+      dragRef.current = null
+    }
+
+    document.addEventListener('pointermove', onMove)
+    document.addEventListener('pointerup', onUp)
+    document.addEventListener('pointercancel', onUp)
+
+    return () => {
+      document.removeEventListener('pointermove', onMove)
+      document.removeEventListener('pointerup', onUp)
+      document.removeEventListener('pointercancel', onUp)
     }
   }, [])
 
@@ -341,11 +421,27 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
   const presetValues = question?.presets ?? []
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-4 px-6" style={{ pointerEvents: 'auto' }}>
-      <Silhouette clarity={clarity} size={160} spin={phase === 'hatching'} />
+    <div
+      className="fixed inset-0 z-50 pointer-events-none"
+      style={{ pointerEvents: 'none' }}
+    >
+      <div
+        className="absolute flex max-h-[90vh] w-full max-w-md flex-col items-center gap-4"
+        onPointerDown={onDialogPointerDown}
+        ref={containerRef}
+        style={{
+          left: dialogPos.x,
+          padding: '0 1.5rem',
+          pointerEvents: 'auto',
+          position: 'absolute',
+          top: dialogPos.y,
+          touchAction: 'none'
+        }}
+      >
+        <Silhouette clarity={clarity} size={160} spin={phase === 'hatching'} />
 
-      <div className="w-full max-w-md rounded-2xl border border-white/10 bg-black/45 p-5 text-white shadow-2xl backdrop-blur-md">
-        {phase === 'q' && (
+        <div className="w-full rounded-2xl border border-white/10 bg-black/45 p-5 text-white shadow-2xl backdrop-blur-md" style={{ pointerEvents: 'auto' }}>
+          {phase === 'q' && (
           <>
             <p className="min-h-[3.5rem] text-[15px] leading-relaxed">{spokenText}</p>
             {presetValues.length > 0 && (
@@ -470,6 +566,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
             {hint && <p className="mt-1 text-center text-[10px] text-white/40">{hint}</p>}
           </div>
         )}
+        </div>
       </div>
     </div>
   )

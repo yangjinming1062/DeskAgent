@@ -168,19 +168,17 @@ export function CompanionRoot() {
   return (
     <>
       {showOnboarding && <OnboardingFlow onCompleted={() => setCompanionLifecycle('ready')} />}
-      {(showEgg || showReady) && (
-        <SpriteStage
-          onContextMenu={e => {
-            if (showReady) {
-              setContextMenuPos({ x: e.clientX, y: e.clientY })
-            }
-          }}
-          onDoubleTap={onDoubleTap}
-          onTap={onTap}
-        >
-          {showReady ? <CompanionReady /> : <Egg cracks={cracks} mode={mode} />}
-        </SpriteStage>
-      )}
+      <SpriteStage
+        onContextMenu={e => {
+          if (showReady) {
+            setContextMenuPos({ x: e.clientX, y: e.clientY })
+          }
+        }}
+        onDoubleTap={onDoubleTap}
+        onTap={onTap}
+      >
+        {showReady ? <CompanionReady /> : showEgg ? <Egg cracks={cracks} mode={mode} /> : null}
+      </SpriteStage>
       {showReady && contextMenuPos && (
         <SpriteContextMenu
           onClose={() => setContextMenuPos(null)}

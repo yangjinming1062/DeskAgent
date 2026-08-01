@@ -1,9 +1,10 @@
 import { useStore } from '@nanostores/react'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { useGatewayRequest } from '@/companion/boot/use-gateway-request'
 import { clearClipCatalog } from '@/companion/clip-store'
 import { $disturbanceTier, type DisturbanceTier, setDisturbanceTier } from '@/companion/companion-store'
+import { registerInteractiveRegion, unregisterInteractiveRegion } from '@/companion/interactive-regions'
 import { $persona } from '@/companion/persona-store'
 import { $companionVoiceId, $responseMode, type ResponseMode, setCompanionVoiceId, setResponseMode } from '@/companion/prefs'
 import { speak } from '@/companion/tts'
@@ -41,6 +42,13 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps) {
   const [designPreview, setDesignPreview] = useState<VoiceDesignPreview | null>(null)
   const [designing, setDesigning] = useState(false)
   const [designHint, setDesignHint] = useState<string | null>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    registerInteractiveRegion('companion-settings', () => panelRef.current?.getBoundingClientRect() ?? null)
+
+    return () => unregisterInteractiveRegion('companion-settings')
+  }, [])
 
   const filteredVoices = useMemo(
     () => catalog.voices.filter(v => (!langFilter || v.language === langFilter || v.language === 'multi') && (!genderFilter || v.gender === genderFilter)),
@@ -54,13 +62,11 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps) {
   }, [catalog.voices])
 
   useEffect(() => {
-    void window.deskagent.sprite.setIgnoreMouseEvents({ ignore: false })
     void window.deskagent.sprite.setAlwaysOnTop({ on: false })
     void fetchVoiceCatalog(requestGateway).then(setCatalog)
 
     return () => {
       void window.deskagent.sprite.setAlwaysOnTop({ on: true })
-      void window.deskagent.sprite.setIgnoreMouseEvents({ ignore: true, forward: true })
     }
   }, [requestGateway])
 
@@ -126,8 +132,12 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center px-6 pb-10" style={{ pointerEvents: 'auto' }}>
-      <div className="flex h-[min(70vh,600px)] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-white/10 bg-black/60 text-white shadow-2xl backdrop-blur-md">
+    <div className="fixed inset-0 z-50 flex items-end justify-center px-6 pb-10" style={{ pointerEvents: 'none' }}>
+      <div
+        className="flex h-[min(70vh,600px)] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-white/10 bg-black/60 text-white shadow-2xl backdrop-blur-md"
+        ref={panelRef}
+        style={{ pointerEvents: 'auto' }}
+      >
         <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
           <h2 className="text-sm font-semibold">伙伴设置</h2>
           <button aria-label="关闭" className="text-white/50 transition hover:text-white" onClick={onClose} type="button">✕</button>

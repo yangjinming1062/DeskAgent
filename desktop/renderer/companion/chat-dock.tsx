@@ -11,6 +11,7 @@ import {
   setChatSession
 } from '@/companion/chat-store'
 import { $disturbanceTier, type DisturbanceTier, setDisturbanceTier, setSpriteState } from '@/companion/companion-store'
+import { registerInteractiveRegion, unregisterInteractiveRegion } from '@/companion/interactive-regions'
 import { $gatewayState } from '@/shared/store/gateway'
 
 const TIERS: { id: DisturbanceTier; label: string }[] = [
@@ -39,18 +40,26 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps) {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const voiceChunksRef = useRef<Blob[]>([])
 
-  // Chat is a focused surface — capture mouse across the window and drop
-  // always-on-top so other apps can cover it while the user types. Restore on
-  // unmount (close).
+  // Chat is a focused surface — register its panel bbox with the global
+  // interactive-regions registry so SpriteStage's hit-test can capture only
+  // while the cursor is over the panel, and drop always-on-top so other apps
+  // can cover the conversation while the user types. SpriteStage restores
+  // click-through on unmount (the panel's ref callback also unregisters).
   useEffect(() => {
-    void window.deskagent.sprite.setIgnoreMouseEvents({ ignore: false })
     void window.deskagent.sprite.setAlwaysOnTop({ on: false })
     inputRef.current?.focus()
 
     return () => {
       void window.deskagent.sprite.setAlwaysOnTop({ on: true })
-      void window.deskagent.sprite.setIgnoreMouseEvents({ ignore: true, forward: true })
     }
+  }, [])
+
+  const panelRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    registerInteractiveRegion('chat-dock', () => panelRef.current?.getBoundingClientRect() ?? null)
+
+    return () => unregisterInteractiveRegion('chat-dock')
   }, [])
 
   useEffect(() => {
@@ -225,8 +234,12 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps) {
   const showTyping = lastIsUser && gatewayState === 'open'
 
   return (
-    <div className="fixed inset-0 z-40 flex items-end justify-center px-6 pb-10" style={{ pointerEvents: 'auto' }}>
-      <div className="flex h-[min(60vh,520px)] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-white/10 bg-black/55 text-white shadow-2xl backdrop-blur-md">
+    <div className="fixed inset-0 z-40 flex items-end justify-center px-6 pb-10" style={{ pointerEvents: 'none' }}>
+      <div
+        className="flex h-[min(60vh,520px)] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-white/10 bg-black/55 text-white shadow-2xl backdrop-blur-md"
+        ref={panelRef}
+        style={{ pointerEvents: 'auto' }}
+      >
         <div className="flex items-center justify-between gap-2 border-b border-white/10 px-3 py-2">
           <div className="flex items-center gap-2">
             <div className="flex items-center gap-0.5 rounded-full bg-white/5 p-0.5 text-[11px]" title="打扰档位">

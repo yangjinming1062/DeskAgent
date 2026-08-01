@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useGatewayRequest } from '@/companion/boot/use-gateway-request'
 import { $chatMessages, $chatSessionId, setChatOpen, setChatSession } from '@/companion/chat-store'
 import { $spriteState, setSpriteState } from '@/companion/companion-store'
+import { registerInteractiveRegion, unregisterInteractiveRegion } from '@/companion/interactive-regions'
 import { speak, stopSpeaking } from '@/companion/tts'
 import { $gatewayState } from '@/shared/store/gateway'
 
@@ -40,9 +41,15 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps) {
   const assistantSpeakingRef = useRef(false)
   const lastSpokenIdRef = useRef<string | null>(null)
   const { requestGateway } = useGatewayRequest()
+  const panelRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    void window.deskagent.sprite.setIgnoreMouseEvents({ ignore: false })
+    registerInteractiveRegion('voice-call-dock', () => panelRef.current?.getBoundingClientRect() ?? null)
+
+    return () => unregisterInteractiveRegion('voice-call-dock')
+  }, [])
+
+  useEffect(() => {
     void window.deskagent.sprite.setAlwaysOnTop({ on: false })
 
     let ctx: AudioContext | null = null
@@ -227,7 +234,6 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps) {
       stopSpeaking()
       setSpriteState('idle')
       void window.deskagent.sprite.setAlwaysOnTop({ on: true })
-      void window.deskagent.sprite.setIgnoreMouseEvents({ ignore: true, forward: true })
     }
   }, [onClose, gatewayState, requestGateway])
 
@@ -266,8 +272,12 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center px-6" style={{ pointerEvents: 'auto' }}>
-      <div className="flex h-72 w-80 flex-col items-center justify-between rounded-3xl border border-white/15 bg-black/75 p-6 text-white shadow-2xl backdrop-blur-xl">
+    <div className="fixed inset-0 z-50 flex items-center justify-center px-6" style={{ pointerEvents: 'none' }}>
+      <div
+        className="flex h-72 w-80 flex-col items-center justify-between rounded-3xl border border-white/15 bg-black/75 p-6 text-white shadow-2xl backdrop-blur-xl"
+        ref={panelRef}
+        style={{ pointerEvents: 'auto' }}
+      >
         <div className="flex w-full items-center justify-between text-xs text-white/60">
           <span className="flex items-center gap-1.5 font-medium text-emerald-400">
             <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
