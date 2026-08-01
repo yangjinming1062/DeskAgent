@@ -183,7 +183,7 @@ renderer 通过 `window.deskagent.*`（preload contextBridge）调 main；main �
 
 本地可用性由 runner 工具 schema 决定——`speech_to_text` / `text_to_speech` 是否出现在 `runnerBridge.getTools()`(已被 runner `check_fn` 过滤)。media.cjs 在路由层桥接两侧契约:STT 把 dataUrl 解码为 base64 喂给 runner;TTS 把 runner 产出的本地 WAV 路径读回转 dataUrl。renderer 的 `media.*` 接口因此不感知路由。
 
-**已知限制**:STT/TTS 透传的 `voice` 命名空间在本地(Piper voice id)与云端(provider voice id)之间不互通;路由到本地时若不匹配则 Piper 用默认音色(本地仍可用)。音色管理统一是独立工作。
+**voice id 不跨引擎**：云端 voice id（provider 目录中的 id）与本地 voice id（Piper `en_US-amy-medium` 格式）属于不同命名空间。`media.cjs` 路由到本地时不传 caller 的 voice——Piper 用 `config.yaml::audio.tts.default_voice` 自行决定音色；路由到云端时才透传 caller 的 voice id。用户在伙伴设置中选的音色仅在云端路径生效。
 
 ## Electron 二进制自更新
 

@@ -193,7 +193,9 @@ test('TTS auto + local available + success → reads WAV, returns audio/wav data
   assert.ok(res.dataUrl.startsWith('data:audio/wav;base64,'))
   assert.equal(bridge.calls[0].name, 'text_to_speech')
   assert.equal(bridge.calls[0].args.text, 'hi')
-  assert.equal(bridge.calls[0].args.voice, 'en_US-amy-medium')
+  // Local engine never receives the caller's voice — Piper falls back to its
+  // own default (config.yaml::audio.tts.default_voice). See media.cjs:79-81.
+  assert.equal(Object.prototype.hasOwnProperty.call(bridge.calls[0].args, 'voice'), false)
 })
 
 test('TTS local invoke omits voice when empty', async () => {

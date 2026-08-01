@@ -76,9 +76,15 @@ async function tryLocalStt({ bridge, mime, data }) {
 }
 
 // Run the local TTS tool and bridge its local-file output to a data URL.
-async function tryLocalTts({ bridge, text, voice }) {
+// We never forward the caller's voice to Piper: cloud voice ids
+// (e.g. "mimo_default", "冰糖") are meaningless to it, and even local Piper
+// voice ids (e.g. "en_US-amy-medium") are not exposed through the companion
+// UI.  Piper always uses its own default_voice from config.yaml
+// (audio.tts.default_voice).  Users who need a specific Piper voice set it
+// in Runner config, not through the companion picker.
+async function tryLocalTts({ bridge, text }) {
   try {
-    const result = await bridge.invoke('text_to_speech', { text, ...(voice ? { voice } : {}) })
+    const result = await bridge.invoke('text_to_speech', { text })
     if (result && result.success === true && result.path) {
       const buf = fs.readFileSync(result.path)
       return { ok: true, value: { dataUrl: `data:audio/wav;base64,${buf.toString('base64')}`, mimeType: 'audio/wav' } }
@@ -189,11 +195,17 @@ function registerMediaIpc({ ipcMain, ensureBackend, getRunnerBridge, getEnginePr
     const voice = String(payload?.voice || '')
 
     const prefs = await resolvePrefs()
-    const engine = prefs.tts
+    // Designed voices are encoded as ``mimo_voicedesign:<prompt>`` tokens
+    // (see MiMoTTSProvider.synthesize). The local Piper engine has no
+    // notion of these — even under ``tts.engine='auto'`` we must route to
+    // the cloud backend or the user pays for a voicedesign call and hears
+    // Piper's default voice instead.
+    const isDesigned = voice.startsWith('mimo_voicedesign:')
+    const engine = isDesigned ? 'cloud' : prefs.tts
 
     if (engine !== 'cloud') {
       if (localToolAvailable(bridge(), 'text_to_speech')) {
-        const res = await tryLocalTts({ bridge: bridge(), voice, text })
+        const res = await tryLocalTts({ bridge: bridge(), text })
         if (res.ok) return res.value
         if (engine === 'local') throw res.error
         // auto: fall through to cloud
