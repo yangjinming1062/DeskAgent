@@ -21,6 +21,7 @@ from .base import VideoAsset
 from .base import VideoGenProvider
 from .base import VideoGenRequest
 from .base import VideoJobStatus
+from .base import VoiceDesignResult
 from .http import aclose_all
 from .registry import default_base_url
 from .registry import default_model_for
@@ -31,6 +32,7 @@ from .registry import providers_supporting
 from .registry import register
 from .registry import resolve
 from .registry import SERVICE_DEFAULT_PROVIDER
+from .registry import try_resolve
 
 # Side-effect imports register concrete providers in their family modules.
 
@@ -52,11 +54,13 @@ __all__ = [
     "VideoGenProvider",
     "VideoGenRequest",
     "VideoJobStatus",
+    "VoiceDesignResult",
     "ProviderConfig",
     "ProviderError",
     "ServiceType",
     "register",
     "resolve",
+    "try_resolve",
     "infer_provider_name",
     "default_base_url",
     "default_model_for",

@@ -26,6 +26,7 @@ from .persona_service import ONBOARDING_FIELDS
 from .persona_service import PersonaValidationError
 from .persona_service import submit_onboarding_field
 from .persona_service import update_persona
+from .voice_catalog import design_voice
 from .voice_catalog import list_voices as list_tts_voices
 from .voice_catalog import match_user_voice
 
@@ -38,6 +39,7 @@ __all__ = [
     "PersonaValidationError",
     "build_system_prompt_extras",
     "delete_user_assets",
+    "design_voice",
     "generate_avatar",
     "get_active_avatar",
     "get_disturbance_tier",

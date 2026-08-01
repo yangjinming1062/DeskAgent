@@ -22,6 +22,7 @@ from fastapi.responses import StreamingResponse
 from modules.auth import get_current_session
 from modules.auth import LoginRecord
 from modules.auth import User
+from services.companion.voice_catalog import default_voice_id
 from services.llm import classify_api_error
 from services.llm import execute_with_fallback
 from services.llm import ImageGenRequest
@@ -175,8 +176,6 @@ async def text_to_speech(
             detail={"error": f"text exceeds {TTS_MAX_TEXT_CHARS} chars", "reason": "payload_too_large", "status": 413},
         )
 
-    effective_voice = voice or SETTINGS.tts_default_voice
-
     try:
         with SESSION_LOCAL() as db:
             chain = resolve_provider_chain(db, user.id, "tts")
@@ -186,7 +185,7 @@ async def text_to_speech(
             db=None,
             user_id=user.id,
             service_type="tts",
-            call_fn=lambda p: p.synthesize(text, voice=effective_voice),
+            call_fn=lambda p: p.synthesize(text, voice=voice or default_voice_id(p.provider_name)),
             _chain=chain,
         )
     except HTTPException:

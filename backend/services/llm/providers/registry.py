@@ -45,9 +45,9 @@ PROVIDER_DEFAULT_URLS: dict[str, dict[str, str]] = {
     "minimax": {
         "llm": "https://api.minimaxi.com/v1",
         "stt": "",
-        "tts": "https://api.minimaxi.com/v1",
-        "image_gen": "https://api.minimaxi.com/v1",
-        "video_gen": "https://api.minimaxi.com/v1",
+        "tts": "https://api.minimaxi.com",
+        "image_gen": "https://api.minimaxi.com",
+        "video_gen": "https://api.minimaxi.com",
     },
     "gemini": {
         "llm": "https://generativelanguage.googleapis.com/v1beta/openai/",
@@ -79,6 +79,10 @@ def resolve(service_type: ServiceType, provider_name: str) -> type[BaseProvider]
         return _REGISTRY[(service_type, provider_name)]
     except KeyError as e:
         raise LookupError(f"No provider registered for service={service_type.value!r}, provider={provider_name!r}") from e
+
+
+def try_resolve(service_type: ServiceType, provider_name: str) -> type[BaseProvider] | None:
+    return _REGISTRY.get((service_type, provider_name))
 
 
 def default_base_url(provider: str, service_type: str) -> str:

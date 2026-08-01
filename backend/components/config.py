@@ -64,7 +64,6 @@ class Settings(BaseSettings):
     tts_base_url: str = ""
     tts_api_key: str = ""
     tts_model_name: str = ""
-    tts_default_voice: str = "mimo_default"
 
     # ── Image Gen ──
     image_gen_provider: str = ""

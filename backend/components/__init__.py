@@ -26,6 +26,7 @@ from .constants import LLM_RETRY_MIN_DELAY
 from .constants import LLM_RETRY_MIN_TIMEOUT
 from .constants import LOGIN_HEARTBEAT_INTERVAL_SECONDS
 from .constants import MAX_ATTACHMENTS_PER_TURN
+from .constants import MAX_VOICE_DESIGN_PROMPT_CHARS
 from .constants import MEMORY_RECALL_MAX_RESULTS
 from .constants import MODEL_CONTEXT_HINT_KEYS
 from .constants import MODEL_CONTEXT_TOKEN_HINTS
@@ -49,7 +50,6 @@ from .constants import TOOL_CALL_ID_HEX_PREFIX_LEN
 from .constants import TOOL_ENFORCE_OFF_VALUES
 from .constants import TOOL_ENFORCE_ON_VALUES
 from .constants import TTS_MAX_TEXT_CHARS
-from .constants import TTS_VOICES
 from .correlation import adopt_inbound
 from .correlation import begin_local_scope
 from .correlation import correlated_exception_response
@@ -125,6 +125,7 @@ __all__ = [
     "LLM_RETRY_MIN_TIMEOUT",
     "LOGIN_HEARTBEAT_INTERVAL_SECONDS",
     "MAX_ATTACHMENTS_PER_TURN",
+    "MAX_VOICE_DESIGN_PROMPT_CHARS",
     "MEMORY_RECALL_MAX_RESULTS",
     "MODEL_CONTEXT_HINT_KEYS",
     "MODEL_CONTEXT_TOKEN_HINTS",
@@ -148,7 +149,6 @@ __all__ = [
     "TOOL_ENFORCE_OFF_VALUES",
     "TOOL_ENFORCE_ON_VALUES",
     "TTS_MAX_TEXT_CHARS",
-    "TTS_VOICES",
     "current_request_id",
     "get_logger",
     "set_request_id",

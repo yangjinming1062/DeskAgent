@@ -1,54 +1,28 @@
+import base64
+
+from components import MAX_VOICE_DESIGN_PROMPT_CHARS
 from pydantic import BaseModel
+from services.llm import resolve as resolve_provider_class
 from services.llm import resolve_provider_chain
+from services.llm import ServiceType
+from services.llm import try_resolve
+from services.llm import VoiceDesignResult
 from sqlalchemy.orm import Session
+
+_LANG_KEYWORDS: dict[str, list[str]] = {
+    "zh": ["中文", "普通话", "国语", "chinese", "mandarin"],
+    "en": ["英文", "英语", "english"],
+}
 
 
 class VoiceEntry(BaseModel):
     id: str
     label: str
     gender: str  # "female" | "male" | "neutral"
+    language: str = ""  # "zh" | "en" | "multi" | ""
     tags: list[str]
     description: str = ""
 
-
-# Curated, provider-aware TTS voice catalog. Voice ids are provider-specific
-# (each cloud TTS engine names its voices differently); only ids verified to
-# be accepted by the corresponding provider are listed, so a matched id never
-# breaks synthesis. Providers with a single known-good voice still expose it
-# so onboarding/settings always have *something* to pick — matching collapses
-# to that one voice rather than failing.
-_MIMO: list[VoiceEntry] = [
-    VoiceEntry(id="mimo_default", label="默认音色", gender="neutral", tags=["默认", "温柔", "自然", "中性"], description="MiMo 默认音色，自然温和。"),
-]
-
-_MINIMAX: list[VoiceEntry] = [
-    VoiceEntry(id="female-shaonv", label="少女音", gender="female", tags=["少女", "温柔", "甜", "活泼", "女"], description="清甜的少女音，活泼温柔。"),
-    VoiceEntry(id="female-yujie", label="御姐音", gender="female", tags=["御姐", "清冷", "成熟", "沉稳", "女"], description="清冷成熟的御姐音。"),
-    VoiceEntry(id="female-chengshu", label="知性女声", gender="female", tags=["知性", "温柔", "成熟", "女", "稳重"], description="温柔知性的成熟女声。"),
-    VoiceEntry(id="female-mengyao", label="萌丫音", gender="female", tags=["萌", "可爱", "甜", "少女", "女"], description="软萌可爱的少女音。"),
-    VoiceEntry(id="male-qn-qingse", label="青涩少年", gender="male", tags=["少年", "青涩", "清新", "男", "正太"], description="清新青涩的少年音。"),
-    VoiceEntry(id="male-qn-jingying", label="精英男声", gender="male", tags=["精英", "沉稳", "成熟", "磁性", "男"], description="沉稳干练的精英男声。"),
-]
-
-_GEMINI: list[VoiceEntry] = [
-    VoiceEntry(id="Kore", label="Kore", gender="neutral", tags=["温柔", "温暖", "自然", "中性"], description="温暖自然的音色。"),
-    VoiceEntry(id="Puck", label="Puck", gender="neutral", tags=["活泼", "轻快", "俏皮"], description="轻快活泼的音色。"),
-    VoiceEntry(id="Aoede", label="Aoede", gender="female", tags=["温柔", "柔和", "女", "轻"], description="柔和温婉的女声。"),
-    VoiceEntry(id="Leda", label="Leda", gender="female", tags=["明亮", "青春", "女", "清"], description="明亮青春的女声。"),
-    VoiceEntry(id="Charon", label="Charon", gender="male", tags=["低沉", "沉稳", "男", "磁性"], description="低沉稳重的男声。"),
-    VoiceEntry(id="Fenrir", label="Fenrir", gender="male", tags=["果断", "有力", "男", "强势"], description="果断有力的男声。"),
-]
-
-_ZHIPU: list[VoiceEntry] = [
-    VoiceEntry(id="tongtong", label="彤彤", gender="female", tags=["温柔", "自然", "女", "甜"], description="温柔自然的默认女声。"),
-]
-
-VOICE_CATALOG: dict[str, list[VoiceEntry]] = {
-    "mimo": _MIMO,
-    "minimax": _MINIMAX,
-    "gemini": _GEMINI,
-    "zhipu": _ZHIPU,
-}
 
 DEFAULT_VOICE = VoiceEntry(id="", label="默认音色", gender="neutral", tags=["默认"], description="使用引擎默认音色。")
 
@@ -58,13 +32,34 @@ def active_tts_provider(db: Session, user_id: int) -> str:
     return chain[0].provider_name if chain else ""
 
 
+def _provider_class(provider_name: str):
+    if not provider_name:
+        return None
+    return try_resolve(ServiceType.tts, provider_name)
+
+
 def voices_for_provider(provider_name: str) -> list[VoiceEntry]:
-    return VOICE_CATALOG.get(provider_name, [])
+    cls = _provider_class(provider_name)
+    if cls is None:
+        return []
+    return [VoiceEntry(**v) for v in cls.VOICE_CATALOG]
+
+
+def default_voice_id(provider_name: str) -> str:
+    voices = voices_for_provider(provider_name)
+    return voices[0].id if voices else ""
 
 
 def list_voices(db: Session, user_id: int) -> dict:
     provider = active_tts_provider(db, user_id)
-    return {"provider": provider, "voices": [v.model_dump() for v in voices_for_provider(provider)]}
+    cls = _provider_class(provider)
+    guide = cls.VOICE_DESIGN_GUIDE if cls else None
+    return {
+        "provider": provider,
+        "voices": [v.model_dump() for v in voices_for_provider(provider)],
+        "supports_voice_design": guide is not None,
+        "voice_design_guide": guide or "",
+    }
 
 
 def _score(preference: str, voice: VoiceEntry) -> int:
@@ -76,10 +71,12 @@ def _score(preference: str, voice: VoiceEntry) -> int:
             score += 2
         elif any(tok and tok in t for tok in p.split()):
             score += 1
-    if voice.gender != "neutral" and voice.gender in p:
-        score += 1
     if voice.label.lower() in p:
         score += 2
+    if voice.language and voice.language != "multi":
+        kws = _LANG_KEYWORDS.get(voice.language, [])
+        if any(kw.lower() in p for kw in kws):
+            score += 2
     return score
 
 
@@ -88,7 +85,6 @@ def match_voice(preference: str, voices: list[VoiceEntry]) -> tuple[VoiceEntry, 
         return DEFAULT_VOICE, []
     ranked = sorted(voices, key=lambda v: _score(preference, v), reverse=True)
     best = ranked[0]
-    # When nothing matched, prefer a neutral default over an arbitrary top voice.
     if _score(preference, best) == 0:
         neutral = next((v for v in voices if v.gender == "neutral"), None)
         best = neutral or voices[0]
@@ -105,3 +101,17 @@ def match_user_voice(db: Session, user_id: int, preference: str) -> dict:
         "voice": best.model_dump(),
         "alternatives": [v.model_dump() for v in alternatives],
     }
+
+
+async def design_voice(db: Session, user_id: int, prompt: str, *, preview_text: str = "") -> VoiceDesignResult:
+    if len(prompt) > MAX_VOICE_DESIGN_PROMPT_CHARS:
+        raise ValueError(f"prompt exceeds {MAX_VOICE_DESIGN_PROMPT_CHARS} chars")
+    chain = resolve_provider_chain(db, user_id, "tts")
+    if not chain:
+        raise ValueError("no TTS provider configured")
+    config = chain[0]
+    cls = resolve_provider_class(ServiceType.tts, config.provider_name)
+    if cls.VOICE_DESIGN_GUIDE is None:
+        raise ValueError(f"{config.provider_name} does not support voice design")
+    provider = cls(config)
+    return await provider.design_voice(prompt, preview_text=preview_text)
