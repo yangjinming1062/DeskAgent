@@ -55,6 +55,7 @@ from services.gateway import runtime_info_snapshot
 from services.gateway import RuntimeSession
 from services.gateway import serialize_settings
 from services.llm import client_for_config
+from services.llm import MissingLlmConfigError
 from services.llm import resolve_user_llm_config
 from services.tools import REGISTRY
 from sqlalchemy import func
@@ -797,17 +798,18 @@ def _register_session_handlers(
 
     async def tts_design_voice(params: dict) -> dict:
         prompt = params.get("prompt")
-        if not isinstance(prompt, str) or not prompt.strip():
+        if not isinstance(prompt, str):
             raise JsonRpcError(JSONRPC_INVALID_PARAMS, "prompt must be a non-empty string")
-        if len(prompt) > MAX_VOICE_DESIGN_PROMPT_CHARS:
-            raise JsonRpcError(JSONRPC_INVALID_PARAMS, f"prompt exceeds {MAX_VOICE_DESIGN_PROMPT_CHARS} chars")
+        prompt = prompt.strip()
+        if not prompt or len(prompt) > MAX_VOICE_DESIGN_PROMPT_CHARS:
+            raise JsonRpcError(JSONRPC_INVALID_PARAMS, f"prompt must be 1..{MAX_VOICE_DESIGN_PROMPT_CHARS} chars")
         preview_text = params.get("preview_text")
         if not isinstance(preview_text, str):
             preview_text = ""
         with SESSION_LOCAL() as db:
             try:
                 result = await design_companion_voice(db, user_id, prompt, preview_text=preview_text)
-            except ValueError as exc:
+            except (ValueError, MissingLlmConfigError) as exc:
                 raise JsonRpcError(JSONRPC_INVALID_PARAMS, str(exc)) from exc
         return {
             "voice_id": result.voice_id,

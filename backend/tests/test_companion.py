@@ -5,7 +5,9 @@ import pytest
 
 from services.companion import voice_catalog
 from services.companion.voice_catalog import match_voice
-from services.companion.voice_catalog import voices_for_provider
+from services.llm import VoiceDesignResult
+from services.llm.voice_catalog import pick_voice_id
+from services.llm.voice_catalog import voices_for_provider
 
 
 def test_disturbance_tier_store_defaults_and_normalizes():
@@ -204,6 +206,20 @@ def test_voice_catalog_match_by_tag():
     assert "沉稳" in best.tags
 
 
+def test_voice_catalog_gender_scoring():
+    # English male preference on a non-MiMo catalog (whose tags don't embed
+    # the literal "male" / "female" tokens) — exercised the old regression
+    # where _score returned 0 for gender and defaulted to the first voice.
+    best, _ = match_voice("male", voices_for_provider("minimax"))
+    assert best.gender == "male"
+
+    best, _ = match_voice("a deep male voice", voices_for_provider("gemini"))
+    assert best.gender == "male"
+
+    best, _ = match_voice("温柔的女声", voices_for_provider("minimax"))
+    assert best.gender == "female"
+
+
 def test_voice_catalog_no_match_falls_back_neutral():
     # Nonsense preference → neutral default preferred over arbitrary top voice.
     best, _ = match_voice("xyzqwerty", voices_for_provider("gemini"))
@@ -245,6 +261,67 @@ def test_voice_catalog_supports_voice_design(monkeypatch):
     assert result["supports_voice_design"] is False
 
 
+@pytest.mark.asyncio
+async def test_design_voice_calls_provider(monkeypatch):
+    chain = [type("Cfg", (), {"provider_name": "minimax"})()]
+    monkeypatch.setattr(voice_catalog, "resolve_provider_chain", lambda db, uid, svc: chain)
+
+    design_calls = []
+
+    class FakeDesign:
+        VOICE_DESIGN_GUIDE = "describe your voice"
+
+        def __init__(self, config):
+            pass
+
+        async def design_voice(self, prompt, *, preview_text=""):
+            design_calls.append((prompt, preview_text))
+            return VoiceDesignResult(
+                voice_id="custom-voice-123",
+                trial_audio=b"\x00\x01",
+                trial_audio_mime="audio/mpeg",
+            )
+
+    monkeypatch.setattr(voice_catalog, "resolve_provider_class", lambda st, name: FakeDesign)
+
+    result = await voice_catalog.design_voice(db=None, user_id=1, prompt="warm female voice", preview_text="hello")
+
+    assert result.voice_id == "custom-voice-123"
+    assert design_calls == [("warm female voice", "hello")]
+
+
+@pytest.mark.asyncio
+async def test_design_voice_unsupported_provider(monkeypatch):
+    chain = [type("Cfg", (), {"provider_name": "zhipu"})()]
+    monkeypatch.setattr(voice_catalog, "resolve_provider_chain", lambda db, uid, svc: chain)
+
+    class NoDesign:
+        VOICE_DESIGN_GUIDE = None
+
+        def __init__(self, config):
+            pass
+
+    monkeypatch.setattr(voice_catalog, "resolve_provider_class", lambda st, name: NoDesign)
+
+    with pytest.raises(ValueError, match="does not support voice design"):
+        await voice_catalog.design_voice(db=None, user_id=1, prompt="test")
+
+
+def test_pick_voice_id_passes_through_design_tokens():
+    voice = pick_voice_id("mimo_voicedesign:warm female voice", "mimo")
+    assert voice == "mimo_voicedesign:warm female voice"
+
+
+def test_pick_voice_id_known_voice():
+    voice = pick_voice_id("冰糖", "mimo")
+    assert voice == "冰糖"
+
+
+def test_pick_voice_id_unknown_falls_back_to_default():
+    voice = pick_voice_id("nonexistent_voice", "minimax")
+    assert voice == "female-shaonv"
+
+
 def test_list_voices_empty_when_no_provider(monkeypatch):
     monkeypatch.setattr(voice_catalog, "active_tts_provider", lambda db, uid: "")
     result = voice_catalog.list_voices(db=None, user_id=999)
@@ -255,4 +332,8 @@ def test_list_voices_empty_when_no_provider(monkeypatch):
     monkeypatch.setattr(voice_catalog, "active_tts_provider", lambda db, uid: "minimax")
     result = voice_catalog.list_voices(db=None, user_id=999)
     assert result["provider"] == "minimax"
+    # catalog[0] is the default for users who never picked a voice.
     assert result["voices"][0]["id"] == "female-shaonv"
+    # Backend ships the default voice so the renderer doesn't need its own
+    # mirror literal (C7).
+    assert result["default_voice"]["id"] == "female-shaonv"

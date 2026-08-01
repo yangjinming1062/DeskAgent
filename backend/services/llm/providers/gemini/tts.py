@@ -14,10 +14,10 @@ class GeminiTTSProvider(TTSProvider):
     provider_name = "gemini"
     DEFAULT_MODELS = {"tts": "gemini-2.5-flash-preview-tts"}
     VOICE_CATALOG = [
+        {"id": "Kore", "label": "Kore", "gender": "neutral", "language": "multi", "tags": ["坚定", "温柔", "温暖", "自然", "中性"], "description": "坚定温暖的音色。"},
         {"id": "Zephyr", "label": "Zephyr", "gender": "neutral", "language": "multi", "tags": ["明亮", "bright"], "description": "明亮的音色。"},
         {"id": "Puck", "label": "Puck", "gender": "neutral", "language": "multi", "tags": ["欢快", "活泼", "轻快", "俏皮"], "description": "欢快轻快的音色。"},
         {"id": "Charon", "label": "Charon", "gender": "male", "language": "multi", "tags": ["信息丰富", "低沉", "沉稳", "男", "磁性"], "description": "信息丰富、低沉稳重的男声。"},
-        {"id": "Kore", "label": "Kore", "gender": "neutral", "language": "multi", "tags": ["坚定", "温柔", "温暖", "自然", "中性"], "description": "坚定温暖的音色。"},
         {"id": "Fenrir", "label": "Fenrir", "gender": "male", "language": "multi", "tags": ["易兴奋", "果断", "有力", "男", "强势"], "description": "易兴奋、果断有力的男声。"},
         {"id": "Leda", "label": "Leda", "gender": "female", "language": "multi", "tags": ["青春", "明亮", "女", "清"], "description": "明亮青春的女声。"},
         {"id": "Orus", "label": "Orus", "gender": "neutral", "language": "multi", "tags": ["沉稳", "稳重", "坚定"], "description": "沉稳坚定的音色。"},
