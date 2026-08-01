@@ -75,9 +75,12 @@ export function SpriteStage({ children, onTap, onDoubleTap, onContextMenu }: Spr
 
   useEffect(() => {
     const onMove = (e: MouseEvent) => {
-      // lastPointRef only matters while uncaptured (probe path); skip the
-      // allocation once we already own the window.
-      if (!capturedRef.current) {lastPointRef.current = { x: e.clientX, y: e.clientY }}
+      // Track every forwarded move so the captureProbe (fired when an
+      // overlay registers / unregisters) can re-evaluate against the
+      // current cursor position. Skipping the write while captured would
+      // leave the probe blind to a cursor that just moved inside a newly
+      // registered panel without firing another mousemove first.
+      lastPointRef.current = { x: e.clientX, y: e.clientY }
 
       // Two-way: cursor inside a registered region → capture; outside all →
       // release. Mouseleave alone wouldn't catch "cursor moves within the
@@ -136,8 +139,13 @@ export function SpriteStage({ children, onTap, onDoubleTap, onContextMenu }: Spr
       setSpritePosition(pos)
       void window.deskagent.sprite.setPosition(pos)
       handleDragEndInteraction()
-      release()
 
+      // Don't release here — the next mousemove reconciles based on cursor
+      // position. Releasing unconditionally leaves the window click-through
+      // while the cursor sits still over the just-dragged sprite, so a
+      // tap-without-move on the new position falls through to the apps
+      // behind. The pointer capture was already released above; nothing else
+      // needs to happen synchronously.
       return
     }
 
