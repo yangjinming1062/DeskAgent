@@ -24,6 +24,7 @@ param(
     [string]$BundledRunnerDir,
     [string]$BundledDesktopDir,
     [string]$BundledSkillsDir,
+    [string]$BundledVoicesDir,
     [string]$ConfigPath,
     [string]$InstallerFormat
 )
@@ -49,6 +50,7 @@ if (-not $DeskAgentHome) {
 if (-not $BundledRunnerDir -and $env:DESKAGENT_BUNDLED_RUNNER_DIR) { $BundledRunnerDir = $env:DESKAGENT_BUNDLED_RUNNER_DIR }
 if (-not $BundledDesktopDir -and $env:DESKAGENT_BUNDLED_DESKTOP_DIR) { $BundledDesktopDir = $env:DESKAGENT_BUNDLED_DESKTOP_DIR }
 if (-not $BundledSkillsDir -and $env:DESKAGENT_BUNDLED_SKILLS_DIR) { $BundledSkillsDir = $env:DESKAGENT_BUNDLED_SKILLS_DIR }
+if (-not $BundledVoicesDir -and $env:DESKAGENT_BUNDLED_VOICES_DIR) { $BundledVoicesDir = $env:DESKAGENT_BUNDLED_VOICES_DIR }
 if (-not $ConfigPath -and $env:DESKAGENT_CONFIG_PATH) { $ConfigPath = $env:DESKAGENT_CONFIG_PATH }
 if (-not $InstallerFormat) {
     if ($env:DESKAGENT_INSTALLER_FORMAT) { $InstallerFormat = $env:DESKAGENT_INSTALLER_FORMAT }
@@ -265,10 +267,31 @@ function Stage-UnpackRunner {
     $oldBin = Join-Path (Join-Path $DeskAgentHome "bin") "deskagent-runner.exe"
     if (Test-Path $oldBin) { Remove-Item -Force $oldBin }
 
+    # Copy bundled Piper voices (installer/payload/voices/) into the models
+    # directory so local TTS works offline on day 1. Each voice needs both
+    # ``.onnx`` and ``.onnx.json`` — a partial copy is useless to Piper.
+    # Content-based copy so future voice additions only need a payload
+    # drop, no install-script edit.
+    $voiceCount = 0
+    if ($BundledVoicesDir -and (Test-Path $BundledVoicesDir -PathType Container)) {
+        $voicesTarget = Join-Path $DeskAgentHome "models\piper"
+        if (-not (Test-Path $voicesTarget)) { New-Item -ItemType Directory -Force -Path $voicesTarget | Out-Null }
+
+        $onnxFiles = Get-ChildItem -Path $BundledVoicesDir -Filter "*.onnx" -File -ErrorAction SilentlyContinue
+        foreach ($onnx in $onnxFiles) {
+            $jsonPath = Join-Path $BundledVoicesDir ($onnx.Name + ".json")
+            if (Test-Path $jsonPath) {
+                Copy-Item -Force $onnx.FullName (Join-Path $voicesTarget $onnx.Name)
+                Copy-Item -Force $jsonPath (Join-Path $voicesTarget $jsonPath.Name)
+            }
+        }
+        $voiceCount = (Get-ChildItem -Path $voicesTarget -Filter "*.onnx" -File -ErrorAction SilentlyContinue).Count
+    }
+
     $size = $wheel.Length
     $escVenv = Escape-JsonString $venvDir
     $escWheel = Escape-JsonString $wheel.Name
-    Write-Output "{`"ok`": true, `"stage`": `"unpack-runner`", `"data`": {`"venv`": `"$escVenv`", `"wheel`": `"$escWheel`", `"size_bytes`": $size}}"
+    Write-Output "{`"ok`": true, `"stage`": `"unpack-runner`", `"data`": {`"venv`": `"$escVenv`", `"wheel`": `"$escWheel`", `"size_bytes`": $size, `"voices_copied`": $voiceCount}}"
     return 0
 }
 

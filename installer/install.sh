@@ -39,6 +39,7 @@ DESKAGENT_HOME_ARG=""
 BUNDLED_RUNNER_DIR_ARG=""
 BUNDLED_DESKTOP_DIR_ARG=""
 BUNDLED_SKILLS_DIR_ARG=""
+BUNDLED_VOICES_DIR_ARG=""
 CONFIG_PATH_ARG=""
 
 MODE="stage"     # "manifest" | "stage"
@@ -57,6 +58,7 @@ Usage:
       [--bundled-runner-dir PATH] \\
       [--bundled-desktop-dir PATH] \\
       [--bundled-skills-dir PATH] \\
+      [--bundled-voices-dir PATH] \\
       [--config-path PATH]
 
 Stages: welcome, install-python, unpack-runner, unpack-desktop, install-skills, write-config.
@@ -73,6 +75,7 @@ while [[ $# -gt 0 ]]; do
     --bundled-runner-dir)         BUNDLED_RUNNER_DIR_ARG="$2"; shift 2 ;;
     --bundled-desktop-dir)        BUNDLED_DESKTOP_DIR_ARG="$2"; shift 2 ;;
     --bundled-skills-dir)         BUNDLED_SKILLS_DIR_ARG="$2"; shift 2 ;;
+    --bundled-voices-dir)         BUNDLED_VOICES_DIR_ARG="$2"; shift 2 ;;
     --config-path)                CONFIG_PATH_ARG="$2"; shift 2 ;;
     -h|--help)                    usage; exit 0 ;;
     *)                            echo "unknown arg: $1" >&2; exit 2 ;;
@@ -92,6 +95,7 @@ fi
 BUNDLED_RUNNER_DIR="${DESKAGENT_BUNDLED_RUNNER_DIR:-$BUNDLED_RUNNER_DIR_ARG}"
 BUNDLED_DESKTOP_DIR="${DESKAGENT_BUNDLED_DESKTOP_DIR:-$BUNDLED_DESKTOP_DIR_ARG}"
 BUNDLED_SKILLS_DIR="${DESKAGENT_BUNDLED_SKILLS_DIR:-$BUNDLED_SKILLS_DIR_ARG}"
+BUNDLED_VOICES_DIR="${DESKAGENT_BUNDLED_VOICES_DIR:-$BUNDLED_VOICES_DIR_ARG}"
 CONFIG_PATH="${DESKAGENT_CONFIG_PATH:-$CONFIG_PATH_ARG}"
 DESKTOP_FORMAT="${DESKAGENT_INSTALLER_FORMAT:-$DEFAULT_DESKTOP_FORMAT}"
 
@@ -275,10 +279,49 @@ stage_unpack_runner() {
   # Clean up old PyInstaller binary if present
   rm -f "$DESKAGENT_HOME_RESOLVED/bin/deskagent-runner"
 
+  # Copy bundled Piper voices (installer/payload/voices/) into the models
+  # directory so local TTS works offline on day 1. Each voice is an onnx
+  # model + a config json — both files are required; partial copies make
+  # Piper raise FileNotFoundError. Voice selection in tts_tool honours the
+  # config.yaml::audio.tts.default_voice setting; this just makes sure the
+  # on-disk side of the contract is satisfied.
+  local voice_count=0
+  if [[ -n "$BUNDLED_VOICES_DIR" && -d "$BUNDLED_VOICES_DIR" ]]; then
+    local voices_target="$DESKAGENT_HOME_RESOLVED/models/piper"
+    mkdir -p "$voices_target"
+    shopt -s nullglob
+    local voice_files=("$BUNDLED_VOICES_DIR"/*)
+    if [[ ${#voice_files[@]} -gt 0 ]]; then
+      # Content-based copy, not name-based — a single onnx without its
+      # .onnx.json sibling is useless to Piper. Copy anything that ships
+      # with both halves so future voice additions only need a payload
+      # drop, no install-script edit.
+      for f in "${voice_files[@]}"; do
+        local name
+        name=$(basename "$f")
+        if [[ "$name" == *.onnx.json ]]; then
+          local stem="${name%.onnx.json}"
+          if [[ -f "$BUNDLED_VOICES_DIR/${stem}.onnx" ]]; then
+            cp -f "$f" "$voices_target/$name"
+          fi
+        elif [[ "$name" == *.onnx ]]; then
+          # ``${name}.onnx.json`` would expand to ``<name>.onnx.onnx.json``
+          # (duplicate .onnx) because ``name`` already ends in .onnx.
+          # Append the canonical suffix to the file id stem instead.
+          if [[ -f "$BUNDLED_VOICES_DIR/${name}.json" ]]; then
+            cp -f "$f" "$voices_target/$name"
+          fi
+        fi
+      done
+      voice_count=$(find "$voices_target" -maxdepth 1 -name '*.onnx' -type f | wc -l | tr -d ' ')
+    fi
+    shopt -u nullglob
+  fi
+
   local size
   size=$(stat -c%s "$wheel" 2>/dev/null || stat -f%z "$wheel" 2>/dev/null || echo 0)
-  printf '{"ok": true, "stage": "unpack-runner", "data": {"venv": "%s/runner/.venv", "wheel": "%s", "size_bytes": %s}}\n' \
-    "$DESKAGENT_HOME_RESOLVED" "$(basename "$wheel")" "$size"
+  printf '{"ok": true, "stage": "unpack-runner", "data": {"venv": "%s/runner/.venv", "wheel": "%s", "size_bytes": %s, "voices_copied": %s}}\n' \
+    "$DESKAGENT_HOME_RESOLVED" "$(basename "$wheel")" "$size" "$voice_count"
 }
 
 # --- stage 4: unpack-desktop ------------------------------------------------

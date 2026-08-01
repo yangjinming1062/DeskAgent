@@ -827,6 +827,7 @@ fn build_bundle_context(app: &AppHandle) -> BundleContext {
         bundled_runner_dir: effective_payload.as_ref().map(|d| d.join("runner")),
         bundled_desktop_dir: effective_payload.as_ref().map(|d| d.join("desktop")),
         bundled_skills_dir: effective_payload.as_ref().map(|d| d.join("skills")),
+        bundled_voices_dir: effective_payload.as_ref().map(|d| d.join("voices")),
         config_path: effective_payload.as_ref().map(|d| d.join("config.yaml")),
         installer_format: Some(installer_format),
     }
