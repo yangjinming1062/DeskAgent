@@ -69,10 +69,6 @@ const QUESTIONS: readonly Question[] = [
 
 const sleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms))
 
-// Halo padding for the silhouette's CSS glow. With `flex items-center` the
-// silhouette sits centered inside the container's 448px-wide row, so its
-// glow (170% × 170% = ~56px overflow on each side) stays well inside the
-// container's bounding box — no extra padding needed.
 const DRAG_THRESHOLD = 6
 
 // Desktop answer keys → Backend ONBOARDING_FIELDS (services/companion/persona_service.py).
@@ -142,7 +138,10 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
   // Onboarding dialog is fully interactive — register its actual visible rect
   // with the global interactive-regions registry so SpriteStage's hit-test
   // captures only while the cursor is over the dialog silhouette + form.
-  // SpriteStage restores click-through on unmount.
+  // SpriteStage restores click-through on unmount. The silhouette's CSS glow
+  // (170% × 170%) overflows by ~56px on each side but stays well inside this
+  // container's bounding box (silhouette is centered in the 448px row with
+  // `flex items-center`), so no extra padding is needed.
   useEffect(() => {
     registerInteractiveRegion('onboarding', () => {
       const rect = containerRef.current?.getBoundingClientRect() ?? null
