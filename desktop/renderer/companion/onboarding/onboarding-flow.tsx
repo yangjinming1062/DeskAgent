@@ -153,7 +153,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
         /* no draft yet — start fresh */
       }
 
-      setVoiceCatalog(await fetchVoiceCatalog(requestGateway))
+      setVoiceCatalog((await fetchVoiceCatalog(requestGateway)).voices)
     })()
   }, [gatewayState, requestGateway, onCompleted])
 

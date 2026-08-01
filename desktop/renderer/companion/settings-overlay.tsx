@@ -1,5 +1,5 @@
 import { useStore } from '@nanostores/react'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 import { useGatewayRequest } from '@/companion/boot/use-gateway-request'
 import { clearClipCatalog } from '@/companion/clip-store'
@@ -7,7 +7,7 @@ import { $disturbanceTier, type DisturbanceTier, setDisturbanceTier } from '@/co
 import { $persona } from '@/companion/persona-store'
 import { $companionVoiceId, $responseMode, type ResponseMode, setCompanionVoiceId, setResponseMode } from '@/companion/prefs'
 import { speak } from '@/companion/tts'
-import { fetchVoiceCatalog, sampleLine, type VoiceOption } from '@/companion/voice'
+import { designVoice, fetchVoiceCatalog, GENDER_OPTIONS, LANGUAGE_LABELS, playDataUrl, sampleLine, type VoiceCatalog, type VoiceDesignPreview } from '@/companion/voice'
 
 import { PersonaSection } from './persona-editor'
 
@@ -31,14 +31,32 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps) {
   const currentVoice = useStore($companionVoiceId)
   const persona = useStore($persona)
   const { requestGateway } = useGatewayRequest()
-  const [voices, setVoices] = useState<VoiceOption[]>([])
+  const [catalog, setCatalog] = useState<VoiceCatalog>({ provider: '', voices: [], supportsVoiceDesign: false, voiceDesignGuide: '' })
+  const [langFilter, setLangFilter] = useState('')
+  const [genderFilter, setGenderFilter] = useState('')
   const [regenerating, setRegenerating] = useState(false)
   const [avatarHint, setAvatarHint] = useState<string | null>(null)
+  const [showDesign, setShowDesign] = useState(false)
+  const [designPrompt, setDesignPrompt] = useState('')
+  const [designPreview, setDesignPreview] = useState<VoiceDesignPreview | null>(null)
+  const [designing, setDesigning] = useState(false)
+  const [designHint, setDesignHint] = useState<string | null>(null)
+
+  const filteredVoices = useMemo(
+    () => catalog.voices.filter(v => (!langFilter || v.language === langFilter || v.language === 'multi') && (!genderFilter || v.gender === genderFilter)),
+    [catalog.voices, langFilter, genderFilter]
+  )
+
+  const langOptions = useMemo(() => {
+    const langs = new Set(catalog.voices.map(v => v.language).filter(Boolean))
+
+    return ['', ...Array.from(langs).sort()]
+  }, [catalog.voices])
 
   useEffect(() => {
     void window.deskagent.sprite.setIgnoreMouseEvents({ ignore: false })
     void window.deskagent.sprite.setAlwaysOnTop({ on: false })
-    void fetchVoiceCatalog(requestGateway).then(setVoices)
+    void fetchVoiceCatalog(requestGateway).then(setCatalog)
 
     return () => {
       void window.deskagent.sprite.setAlwaysOnTop({ on: true })
@@ -86,6 +104,24 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps) {
       setAvatarHint('上传失败了，换张图试试？')
     } finally {
       setRegenerating(false)
+    }
+  }
+
+  const runDesign = async () => {
+    const prompt = designPrompt.trim()
+
+    if (!prompt) {return}
+    setDesigning(true)
+    setDesignHint(null)
+
+    try {
+      const result = await designVoice(requestGateway, prompt, sampleLine(persona?.name ?? ''))
+      setDesignPreview(result)
+      playDataUrl(result.trialAudioDataUrl)
+    } catch {
+      setDesignHint('生成失败，换个描述试试？')
+    } finally {
+      setDesigning(false)
     }
   }
 
@@ -137,33 +173,109 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps) {
           </Section>
 
           {/* Voice */}
-          <Section hint="选择伙伴的说话音色" title="音色">
-            {voices.length === 0 ? (
+          <Section hint="选择伙伴的说话音色，或设计一个专属音色" title="音色">
+            {catalog.voices.length === 0 ? (
               <p className="text-xs text-white/40">未配置 TTS 引擎，使用默认音色。</p>
             ) : (
-              <div className="space-y-1.5">
-                {voices.map(v => (
-                  <div
-                    className={`flex items-center justify-between rounded-lg border px-3 py-2 text-xs transition ${currentVoice === v.id ? 'border-white/60 bg-white/15' : 'border-white/10 bg-white/5'}`}
-                    key={v.id}
-                  >
-                    <div>
-                      <p className="font-medium">{v.label}</p>
-                      <p className="text-white/40">{v.tags.join(' · ')}</p>
+              <>
+                {/* 语言 & 性别筛选 */}
+                <div className="mb-2 flex flex-wrap items-center gap-1.5">
+                  {langOptions.map(lang => (
+                    <button
+                      className={`rounded-full px-2.5 py-0.5 text-[10px] transition ${langFilter === lang ? 'bg-white/20 font-medium text-white' : 'bg-white/5 text-white/50 hover:bg-white/10'}`}
+                      key={lang}
+                      onClick={() => setLangFilter(lang)}
+                      type="button"
+                    >
+                      {lang ? (LANGUAGE_LABELS[lang] ?? lang) : '全部'}
+                    </button>
+                  ))}
+                  <span className="mx-1 text-white/20">|</span>
+                  {GENDER_OPTIONS.map(g => (
+                    <button
+                      className={`rounded-full px-2.5 py-0.5 text-[10px] transition ${genderFilter === g.id ? 'bg-white/20 font-medium text-white' : 'bg-white/5 text-white/50 hover:bg-white/10'}`}
+                      key={g.id}
+                      onClick={() => setGenderFilter(g.id)}
+                      type="button"
+                    >
+                      {g.label}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="space-y-1.5">
+                  {filteredVoices.map(v => (
+                    <div
+                      className={`flex items-center justify-between rounded-lg border px-3 py-2 text-xs transition ${currentVoice === v.id ? 'border-white/60 bg-white/15' : 'border-white/10 bg-white/5'}`}
+                      key={v.id}
+                    >
+                      <div>
+                        <p className="font-medium">{v.label}</p>
+                        <p className="text-white/40">{v.tags.join(' · ')}</p>
+                      </div>
+                      <div className="flex gap-2">
+                        <button className="text-white/60 transition hover:text-white" onClick={() => void speak(sampleLine(persona?.name ?? ''), v.id || undefined)} type="button">试听</button>
+                        <button
+                          className={`transition ${currentVoice === v.id ? 'text-emerald-400' : 'text-white/60 hover:text-white'}`}
+                          onClick={() => setCompanionVoiceId(v.id)}
+                          type="button"
+                        >
+                          {currentVoice === v.id ? '✓ 使用中' : '使用'}
+                        </button>
+                      </div>
                     </div>
-                    <div className="flex gap-2">
-                      <button className="text-white/60 transition hover:text-white" onClick={() => void speak(sampleLine(persona?.name ?? ''), v.id || undefined)} type="button">试听</button>
-                      <button
-                        className={`transition ${currentVoice === v.id ? 'text-emerald-400' : 'text-white/60 hover:text-white'}`}
-                        onClick={() => setCompanionVoiceId(v.id)}
-                        type="button"
-                      >
-                        {currentVoice === v.id ? '✓ 使用中' : '使用'}
-                      </button>
-                    </div>
+                  ))}
+                  {filteredVoices.length === 0 && <p className="text-xs text-white/30">当前筛选无匹配音色。</p>}
+                </div>
+
+                {/* 语音设计 */}
+                {catalog.supportsVoiceDesign && (
+                  <div className="mt-3">
+                    <button
+                      className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-white/70 transition hover:bg-white/10"
+                      onClick={() => setShowDesign(s => !s)}
+                      type="button"
+                    >
+                      {showDesign ? '收起音色设计' : '设计专属音色 ✨'}
+                    </button>
+                    {showDesign && (
+                      <div className="mt-2 rounded-lg border border-white/10 bg-white/5 p-3">
+                        {catalog.voiceDesignGuide && <p className="whitespace-pre-line text-[10px] leading-relaxed text-white/40">{catalog.voiceDesignGuide}</p>}
+                        <textarea
+                          className="mt-2 w-full rounded border border-white/10 bg-black/30 px-2 py-1.5 text-xs text-white placeholder:text-white/30 focus:border-white/30 focus:outline-none"
+                          onChange={e => setDesignPrompt(e.target.value)}
+                          placeholder="描述你想要的音色…"
+                          rows={3}
+                          value={designPrompt}
+                        />
+                        <div className="mt-2 flex items-center gap-2">
+                          <button
+                            className="rounded-lg bg-white/10 px-3 py-1 text-xs text-white/80 transition hover:bg-white/20 disabled:opacity-40"
+                            disabled={designing || !designPrompt.trim()}
+                            onClick={() => void runDesign()}
+                            type="button"
+                          >
+                            {designing ? '生成中…' : '生成预览'}
+                          </button>
+                          {designPreview && (
+                            <>
+                              <button className="text-white/60 transition hover:text-white" onClick={() => playDataUrl(designPreview.trialAudioDataUrl)} type="button">试听</button>
+                              <button
+                                className={`transition ${currentVoice === designPreview.voiceId ? 'text-emerald-400' : 'text-white/60 hover:text-white'}`}
+                                onClick={() => setCompanionVoiceId(designPreview.voiceId)}
+                                type="button"
+                              >
+                                {currentVoice === designPreview.voiceId ? '✓ 使用中' : '使用'}
+                              </button>
+                            </>
+                          )}
+                        </div>
+                        {designHint && <p className="mt-2 text-xs text-amber-300/80">{designHint}</p>}
+                      </div>
+                    )}
                   </div>
-                ))}
-              </div>
+                )}
+              </>
             )}
           </Section>
 
