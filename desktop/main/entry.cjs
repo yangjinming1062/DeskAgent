@@ -1859,7 +1859,12 @@ registerMediaIpc({
   // Lazily resolved at media-request time — bridgeDeps.runnerBridge is created
   // by ensureRunnerBridge after session restore, well after this registration.
   getRunnerBridge: () => bridgeDeps.runnerBridge,
-  getEnginePrefs: createEnginePrefsCache({ ensureBackend })
+  getEnginePrefs: createEnginePrefsCache({ ensureBackend }),
+  // Per-call STT/TTS trace: emits one structured line per routing decision
+  // (received / local.invoke / local.ok / fallback / cloud.request / done).
+  // Wired to rememberLog so [tts#N] / [stt#N] lines flow into both the
+  // desktop log file and the dev terminal under `pnpm dev`.
+  log: chunk => rememberLog(chunk)
 })
 registerImagesIpc({
   ipcMain,

@@ -85,9 +85,14 @@ interface DesignResponse {
   trial_audio_mime: string
 }
 
-export async function fetchVoiceCatalog(requestGateway: RequestGateway): Promise<VoiceCatalog> {
+export async function fetchVoiceCatalog(
+  requestGateway: RequestGateway,
+  language?: string | null
+): Promise<VoiceCatalog> {
   try {
-    const res = await requestGateway<CatalogResponse>('tts.list_voices', {})
+    const res = await requestGateway<CatalogResponse>('tts.list_voices', {
+      language: language ?? null
+    })
     const voices = res.voices?.length ? res.voices : [DEFAULT_VOICE]
 
     return {
