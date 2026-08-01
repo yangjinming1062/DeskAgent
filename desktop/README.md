@@ -188,6 +188,10 @@ renderer 通过 `window.deskagent.*`（preload contextBridge）调 main；main �
 
 **voice id 不跨引擎**：云端 voice id（provider 目录中的 id）与本地 voice id（Piper `en_US-amy-medium` 格式）属于不同命名空间。`media.cjs` 路由到本地时不传 caller 的 voice——Piper 用 `config.yaml::audio.tts.default_voice` 自行决定音色；路由到云端时才透传 caller 的 voice id。用户在伙伴设置中选的音色仅在云端路径生效。
 
+**Voice picker 语言 tabs**（`onboarding-flow.tsx` 语音预览阶段）：三个 tab——`中文` / `English` / `全部`。默认 `中文`（产品方向"默认中文"）。点击 tab → `fetchVoiceCatalog(requestGateway, lang)` 重新拉取后端 `/api/media/tts.list_voices`（带 `language` 过滤参数），用 zh-first 排序的子集刷新 `voiceCatalog` 列表。catalog 空时回退到 `DEFAULT_VOICE`。
+
+**Dev 终端 trace**：`media.cjs` 在每次 STT/TTS 请求收尾时发**一行**结构化日志（`[tts#N] done …` / `[stt#N] done …`），auto-fallback 多一行 `[tts#N] fallback from=local to=cloud reason=…`。关键字段：`voice_in`（caller 想用的）、`engine_pref`（用户配置）、`route`（local/cloud）、`engine`（piper/pyttsx3/cloud）、`voice`（实际用的 voice id，**这里就能看到本地路径静默把 cloud voice id 丢成 Piper config 默认**）、`voice_out`（云端实际收到的）、`mime` / `ms` / `context` / `language`（STT 透传给 `/api/media/stt` 的 `language` 字段，默认 `zh`）。Renderer 调 `speak(text, voice?, context?)` 时可传一个短标签（`onboarding.q2` / `onboarding.voice.preview.try` 等），trace 行的 `context` 字段会带上。日志由 `entry.cjs` 注入的 `log: rememberLog` 落到 `desktop.log` 并镜像到 `pnpm dev` 的终端。
+
 ## Electron 二进制自更新
 
 Desktop 走 `electron-updater` 从 Backend `/api/update` 拉取预构建安装包并原子替换。**一次更新同时刷新 desktop 二进制 + Python runner**（wheel + `server.py`），保证两端不会因版本错配而 broken。

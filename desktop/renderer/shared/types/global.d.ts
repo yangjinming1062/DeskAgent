@@ -106,8 +106,8 @@ declare global {
         }>
       }
       media: {
-        stt: (payload: { dataUrl: string; filename?: string }) => Promise<{ text: string }>
-        tts: (payload: { text: string; voice?: string }) => Promise<{ dataUrl: string; mimeType: string }>
+        stt: (payload: { context?: string | null; dataUrl: string; filename?: string; language?: string }) => Promise<{ text: string }>
+        tts: (payload: { context?: string | null; text: string; voice?: string }) => Promise<{ dataUrl: string; mimeType: string }>
       }
       sprite: {
         setIgnoreMouseEvents: (payload: { ignore: boolean; forward?: boolean }) => Promise<void>
