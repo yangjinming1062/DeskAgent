@@ -246,8 +246,21 @@ class TTSResult:
     mime: str
 
 
+@dataclass(frozen=True)
+class VoiceDesignResult:
+    voice_id: str
+    trial_audio: bytes
+    trial_audio_mime: str
+
+
 class TTSProvider(BaseProvider):
     service_type: ServiceType = ServiceType.tts
+
+    VOICE_CATALOG: ClassVar[list[dict]] = []
+
+    # None → provider doesn't support voice design. A non-empty guide string
+    # → provider supports it; the string is shown to users as a writing guide.
+    VOICE_DESIGN_GUIDE: ClassVar[str | None] = None
 
     @abstractmethod
     async def synthesize(
@@ -258,6 +271,14 @@ class TTSProvider(BaseProvider):
         fmt: str = "mp3",
         speed: float | None = None,
     ) -> TTSResult: ...
+
+    async def design_voice(
+        self,
+        prompt: str,
+        *,
+        preview_text: str = "",
+    ) -> VoiceDesignResult:
+        raise NotImplementedError(f"{self.provider_name} does not support voice design")
 
 
 @dataclass(frozen=True)

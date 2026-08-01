@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import itertools
 import json
 
@@ -10,6 +11,7 @@ from components import JSONRPC_INTERNAL_ERROR
 from components import JSONRPC_INVALID_PARAMS
 from components import JSONRPC_METHOD_NOT_FOUND
 from components import MAX_ATTACHMENTS_PER_TURN
+from components import MAX_VOICE_DESIGN_PROMPT_CHARS
 from components import path_attach_ref
 from components import REQUEST_ID_HEADER
 from components import RUNTIME_CHECK_TIMEOUT_SECONDS
@@ -30,6 +32,7 @@ from services.chat import exec_slash_command
 from services.chat import load_user_settings
 from services.chat import run_chat_turn
 from services.companion import AvatarGenerationError
+from services.companion import design_voice as design_companion_voice
 from services.companion import get_onboarding_state
 from services.companion import get_or_create_persona
 from services.companion import list_clips as list_companion_clips
@@ -792,5 +795,26 @@ def _register_session_handlers(
         with SESSION_LOCAL() as db:
             return match_user_voice(db, user_id, preference)
 
+    async def tts_design_voice(params: dict) -> dict:
+        prompt = params.get("prompt")
+        if not isinstance(prompt, str) or not prompt.strip():
+            raise JsonRpcError(JSONRPC_INVALID_PARAMS, "prompt must be a non-empty string")
+        if len(prompt) > MAX_VOICE_DESIGN_PROMPT_CHARS:
+            raise JsonRpcError(JSONRPC_INVALID_PARAMS, f"prompt exceeds {MAX_VOICE_DESIGN_PROMPT_CHARS} chars")
+        preview_text = params.get("preview_text")
+        if not isinstance(preview_text, str):
+            preview_text = ""
+        with SESSION_LOCAL() as db:
+            try:
+                result = await design_companion_voice(db, user_id, prompt, preview_text=preview_text)
+            except ValueError as exc:
+                raise JsonRpcError(JSONRPC_INVALID_PARAMS, str(exc)) from exc
+        return {
+            "voice_id": result.voice_id,
+            "trial_audio_base64": base64.b64encode(result.trial_audio).decode("ascii"),
+            "trial_audio_mime": result.trial_audio_mime,
+        }
+
     dispatcher.register("tts.list_voices", tts_list_voices)
     dispatcher.register("tts.match_voice", tts_match_voice)
+    dispatcher.register("tts.design_voice", tts_design_voice)

@@ -152,7 +152,7 @@ Tier 2-4 保持原 fold-in 语义（per-cap 覆盖 provider-level），兼容老
 
 - chat 走 OpenAI 协议 → `OpenAICompatChatProvider` 共享基类；`MiMoChatProvider`、`MiniMaxChatProvider`、`GeminiChatProvider`、`ZhipuChatProvider` 都继承它，差异只在 base_url 与 model
 - STT：MiMo 走 OpenAI chat + `input_audio` 扩展；Gemini 走 `generateContent` + audio inlineData httpx；智谱走 `/audio/transcriptions` multipart httpx
-- TTS：MiMo 走 OpenAI chat + `audio` 扩展；MiniMax 走 `/v1/t2a_v2` httpx；Gemini 走 `generateContent` + `responseModalities:["AUDIO"]` httpx；智谱走 `/audio/speech` httpx
+- TTS：MiMo 走 OpenAI chat + `audio` 扩展（音色设计走 `mimo-v2.5-tts-voicedesign` 模型，voice_id 编码为 `mimo_voicedesign:<prompt>`）；MiniMax 走 `/v1/t2a_v2` httpx（音色设计走 `/v1/voice_design`）；Gemini 走 `generateContent` + `responseModalities:["AUDIO"]` httpx；智谱走 `/audio/speech` httpx
 - image_gen：MiMo 走 OpenAI Images API；MiniMax 走 `/v1/image_generation` httpx；Gemini 走 `generateContent` + `responseModalities:["IMAGE"]` httpx；智谱走 `/images/generations` httpx（返回 URL，provider 内下载转 b64）
 - video_gen：MiniMax 走三段式 httpx（submit/poll/fetch）（Gemini Veo 需 Vertex AI，暂不支持；智谱 CogVideo 走异步 API，暂不支持）
 - 非 OpenAI 协议的能力**一律走** `providers/http.py` 的 httpx 池（base_url + api_key 缓存，超时 `llm_request_timeout_seconds`），不做 `AsyncOpenAI.post` 兼容层 hack。智谱的 TTS/STT/Image Gen 走同一 httpx 池（`Authorization: Bearer` 认证）
@@ -222,12 +222,18 @@ DeskAgent 伙伴的"人格"与"形象"是跨 Backend↔Desktop 的核心契约�
 
 ### 音色匹配（voice catalog）
 
-onboarding 的音色偏好（`voice` 草稿字段）经两个 JSON-RPC 落到具体 voice id（design §3.2 / §3.5）：
+onboarding 的音色偏好（`voice` 草稿字段）经 JSON-RPC 落到具体 voice id（design §3.2 / §3.5）：
 
-- **`tts.list_voices`**：返回当前用户激活的 TTS provider 的候选音色目录（`{provider, voices:[{id,label,gender,tags,description}]}`）。voice id 是 provider 私有的（MiMo/MiniMax/Gemini/智谱各自命名），目录只收录各 provider 验证可用的 id，匹配结果不会让合成失败。
-- **`tts.match_voice {preference}`**：把自由文本偏好（"温柔的少女音"）经标签评分映射到目录中最贴合的 voice id，返回 `{provider, voice, alternatives[]}`。评分是即时确定性的（标签/性别/label 子串重叠）——onboarding 不该为一个窄域标签任务付 LLM 延迟。无匹配时优先中性默认音色。
+- **`tts.list_voices`**：返回当前用户激活的 TTS provider 的候选音色目录（`{provider, voices:[{id,label,gender,language,tags,description}], supports_voice_design, voice_design_guide}`）。voice id 是 provider 私有的；`language`（`"zh"`/`"en"`/`"multi"`）驱动语言偏好匹配。`supports_voice_design` 标记该 provider 是否支持用户自定义音色设计，`voice_design_guide` 是写法指南文本供前端展示。
+- **`tts.match_voice {preference}`**：把自由文本偏好（"温柔的少女音"）经标签/性别/语言评分映射到目录中最贴合的 voice id，返回 `{provider, voice, alternatives[]}`。评分是即时确定性的——onboarding 不该为一个窄域标签任务付 LLM 延迟。无匹配时优先中性默认音色。
+- **`tts.design_voice {prompt, preview_text?}`**：用户手动描述期望音色，provider 返回 `{voice_id, trial_audio_base64, trial_audio_mime}` 供试听。设计出的 voice_id 用法与预设音色一致（客户端存储，`POST /api/media/tts` 的 `voice` 参数透传）。MINIMAX 返回稳定可复用的 voice_id（一次设计后续免费复用）；MIMO 无可复用 id，voice_id 编码为 `mimo_voicedesign:<prompt>` 自描述 token，`synthesize()` 检测该前缀后切换到 voicedesign 模型。
 
-匹配到的 voice id 由 Desktop 持久化，后续 `POST /api/media/tts` 的 `voice` 参数直接透传给 provider（`provider.synthesize(text, voice=…)`）。`services/companion/voice_catalog.py`。
+音色目录由各 TTS provider 类的 `VOICE_CATALOG` 类属性声明（与 `synthesize()` 同文件，保证 id 与 provider 实际接受的一致）；`services/companion/voice_catalog.py` 经 `resolve(ServiceType.tts, provider_name)` 读取该属性，提供 `VoiceEntry` 包装 + 标签评分匹配。匹配到的 voice id 由 Desktop 持久化，后续 `POST /api/media/tts` 的 `voice` 参数直接透传给 provider；未传 voice 时 call_fn 内按 `default_voice_id(p.provider_name)` 取各 provider 自己的目录首项（fallback 链中每家 provider 有独立默认，voice id 不跨 provider 通用）。
+
+**已知限制**：
+
+- **MIMO 设计音色按调用计费**：MIMO voicedesign 模型不返回可复用 voice_id，voice_id 编码为 `mimo_voicedesign:<prompt>` 自描述 token。每次 `synthesize()` 检测到该前缀都会切换到 voicedesign 模型重新生成，产生额外延迟和成本。Desktop 应缓存重复文本的合成结果避免重复调用。
+- **本地 Runner 音色与云目录脱节**：Runner 的 Piper 本地 TTS（`runner/tools/multimodal/audio/tts_tool.py`）有独立的 voice id 体系（如 `en_US-amy-medium`），与云 provider 目录互不相通。当 Desktop 将 TTS 路由到 Runner 且传入云 voice id 时，Runner 静默回退到 Piper 默认音色。此问题需 Desktop 侧路由修复（云 voice id 路由到 `POST /api/media/tts`，Piper voice id 路由到 Runner），后端无法单独解决。
 
 ### 伙伴情绪（affect）
 

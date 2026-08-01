@@ -4,7 +4,6 @@ import json
 from components import get_logger
 from components import SESSION_LOCAL
 from components import tool_error
-from components import TTS_VOICES
 
 from .. import ALWAYS_AVAILABLE
 from .. import REGISTRY
@@ -15,12 +14,9 @@ from ...llm import TTSResult
 logger = get_logger(__name__)
 
 
-async def text_to_speech_tool(text: str, llm_config: dict, voice: str = "mimo_default", model: str = "mimo-v2.5-tts", user_id: int | None = None, **kwargs) -> str:
+async def text_to_speech_tool(text: str, llm_config: dict, voice: str = "", user_id: int | None = None, **kwargs) -> str:
     """TTS via the provider chain (MiMo chat completions API or MiniMax TTS)."""
 
-    # MiMo and MiniMax use different voice vocabularies. When the chain falls
-    # back to MiniMax, pass an empty voice so MiniMax uses its own default
-    # instead of forwarding a MiMo voice ID that doesn't exist on its side.
     def _call(p):
         slot_voice = voice if p.provider_name == "mimo" else ""
         return p.synthesize(text, voice=slot_voice)
@@ -44,13 +40,12 @@ async def text_to_speech_tool(text: str, llm_config: dict, voice: str = "mimo_de
 
 TTS_SCHEMA = {
     "name": "text_to_speech_tool",
-    "description": "Convert text to speech audio using the configured TTS provider (MiMo or MiniMax). Returns base64-encoded audio. Supports built-in voices and style control.",
+    "description": "Convert text to speech audio using the configured TTS provider (MiMo or MiniMax). Returns base64-encoded audio. Omit voice to use the provider default.",
     "parameters": {
         "type": "object",
         "properties": {
             "text": {"type": "string", "description": "The text to convert to speech."},
-            "voice": {"type": "string", "enum": TTS_VOICES, "description": "The voice to use."},
-            "model": {"type": "string", "enum": ["mimo-v2.5-tts", "mimo-v2.5-tts-voiceclone", "mimo-v2.5-tts-voicedesign"], "description": "The TTS model."},
+            "voice": {"type": "string", "description": "Optional voice id. Omit to use the provider default."},
         },
         "required": ["text"],
     },

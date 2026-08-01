@@ -3,6 +3,10 @@ import json
 
 import pytest
 
+from services.companion import voice_catalog
+from services.companion.voice_catalog import match_voice
+from services.companion.voice_catalog import voices_for_provider
+
 
 def test_disturbance_tier_store_defaults_and_normalizes():
     from services.companion import disturbance
@@ -190,9 +194,7 @@ def test_video_job_extras_from_params(_patch_db):
 
 
 def test_voice_catalog_match_by_tag():
-    from services.companion.voice_catalog import VOICE_CATALOG, match_voice
-
-    minimax = VOICE_CATALOG["minimax"]
+    minimax = voices_for_provider("minimax")
     best, alts = match_voice("想要温柔的少女音", minimax)
     assert best.id == "female-shaonv"
     assert best not in alts
@@ -203,29 +205,52 @@ def test_voice_catalog_match_by_tag():
 
 
 def test_voice_catalog_no_match_falls_back_neutral():
-    from services.companion.voice_catalog import VOICE_CATALOG, match_voice
-
     # Nonsense preference → neutral default preferred over arbitrary top voice.
-    best, _ = match_voice("xyzqwerty", VOICE_CATALOG["gemini"])
+    best, _ = match_voice("xyzqwerty", voices_for_provider("gemini"))
     assert best.gender == "neutral"
 
 
-def test_voice_catalog_single_voice_provider():
-    from services.companion.voice_catalog import VOICE_CATALOG, match_voice
-
-    # mimo has one known-good voice; matching collapses to it regardless of input.
-    best, alts = match_voice("随便什么", VOICE_CATALOG["mimo"])
+def test_voice_catalog_mimo_default_first():
+    mimo = voices_for_provider("mimo")
+    assert mimo[0].id == "mimo_default"
+    best, alts = match_voice("默认", mimo)
     assert best.id == "mimo_default"
-    assert alts == []
+
+
+def test_voice_catalog_language_field():
+    mimo = voices_for_provider("mimo")
+    zh = [v for v in mimo if v.language == "zh"]
+    en = [v for v in mimo if v.language == "en"]
+    assert len(zh) == 4
+    assert len(en) == 4
+    gemini = voices_for_provider("gemini")
+    assert all(v.language == "multi" for v in gemini)
+
+
+def test_voice_catalog_language_scoring():
+    mimo = voices_for_provider("mimo")
+    best, _ = match_voice("english female voice", mimo)
+    assert best.language == "en"
+    assert best.gender == "female"
+
+
+def test_voice_catalog_supports_voice_design(monkeypatch):
+    monkeypatch.setattr(voice_catalog, "active_tts_provider", lambda db, uid: "minimax")
+    result = voice_catalog.list_voices(db=None, user_id=999)
+    assert result["supports_voice_design"] is True
+    assert result["voice_design_guide"]
+
+    monkeypatch.setattr(voice_catalog, "active_tts_provider", lambda db, uid: "zhipu")
+    result = voice_catalog.list_voices(db=None, user_id=999)
+    assert result["supports_voice_design"] is False
 
 
 def test_list_voices_empty_when_no_provider(monkeypatch):
-    from services.companion import voice_catalog
-
     monkeypatch.setattr(voice_catalog, "active_tts_provider", lambda db, uid: "")
     result = voice_catalog.list_voices(db=None, user_id=999)
     assert result["provider"] == ""
     assert result["voices"] == []
+    assert result["supports_voice_design"] is False
 
     monkeypatch.setattr(voice_catalog, "active_tts_provider", lambda db, uid: "minimax")
     result = voice_catalog.list_voices(db=None, user_id=999)

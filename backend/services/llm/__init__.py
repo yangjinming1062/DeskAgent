@@ -32,12 +32,14 @@ from .providers import resolve
 from .providers import ServiceType
 from .providers import STTProvider
 from .providers import STTResult
+from .providers import try_resolve
 from .providers import TTSProvider
 from .providers import TTSResult
 from .providers import VideoAsset
 from .providers import VideoGenProvider
 from .providers import VideoGenRequest
 from .providers import VideoJobStatus
+from .providers import VoiceDesignResult
 from .user_config import resolve_user_llm_config
 
 __all__ = [
@@ -68,11 +70,13 @@ __all__ = [
     "VideoGenProvider",
     "VideoGenRequest",
     "VideoJobStatus",
+    "VoiceDesignResult",
     "ProviderConfig",
     "ProviderError",
     "ServiceType",
     "register",
     "resolve",
+    "try_resolve",
     "providers_supporting",
     "default_model_for",
     "call_with_retry",

@@ -168,11 +168,8 @@ SECRET_MASK_MIN_LENGTH: int = 18
 TOOL_ENFORCE_ON_VALUES: frozenset[str] = frozenset({"true", "always", "yes", "on"})
 TOOL_ENFORCE_OFF_VALUES: frozenset[str] = frozenset({"false", "never", "no", "off"})
 
-
-# ── TTS ────────────────────────────────────────────────────────────────
-
-TTS_VOICES: list[str] = ["mimo_default", "冰糖", "茉莉", "苏打", "白桦", "Mia", "Chloe", "Milo", "Dean"]
-
+# Cap free-text voice-design prompts — MIMO embeds them in voice_id verbatim.
+MAX_VOICE_DESIGN_PROMPT_CHARS: int = 200
 
 # ── Attachments ────────────────────────────────────────────────────────
 
