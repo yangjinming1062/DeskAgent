@@ -11,8 +11,15 @@ import { setCompanionVoiceId } from '../prefs'
 import { Silhouette } from '../sprite/silhouette'
 import { speak, stopSpeaking } from '../tts'
 import { fetchVoiceCatalog, matchVoicePreference, nextVoice, sampleLine, type VoiceOption } from '../voice'
+import { $voicePreparing } from '../voice-state'
 
 type Phase = 'q' | 'hatching' | 'portrait' | 'voice' | 'finishing' | 'greeting'
+type VoiceLanguageFilter = '' | 'zh' | 'en'
+const VOICE_LANGUAGE_TABS: { id: VoiceLanguageFilter; label: string }[] = [
+  { id: '', label: '全部' },
+  { id: 'zh', label: '中文' },
+  { id: 'en', label: 'English' }
+]
 type QKey = keyof OnboardingAnswers
 
 interface Question {
@@ -101,6 +108,7 @@ interface OnboardingFlowProps {
 
 export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
   const gatewayState = useStore($gatewayState)
+  const voicePreparing = useStore($voicePreparing)
   const { requestGateway } = useGatewayRequest()
   const [phase, setPhase] = useState<Phase>('q')
   const [qIndex, setQIndex] = useState(0)
@@ -109,6 +117,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
   const [portraitUrl, setPortraitUrl] = useState<string | null>(null)
   const [voice, setVoice] = useState<VoiceOption | null>(null)
   const [voiceCatalog, setVoiceCatalog] = useState<VoiceOption[]>([])
+  const [voiceLangFilter, setVoiceLangFilter] = useState<VoiceLanguageFilter>('zh')
   const [busy, setBusy] = useState(false)
   const [hint, setHint] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -245,7 +254,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
     if (phase !== 'q') {return}
     setInput((answers[question.key] as string) ?? '')
     setHint(null)
-    void speak(spokenText)
+    void speak(spokenText, undefined, `onboarding.q${qIndex}`)
 
     return () => stopSpeaking()
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -303,7 +312,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
   const enterHatching = async () => {
     setPhase('hatching')
     setHint(null)
-    void speak('让我想想我该是什么样子…')
+    void speak('让我想想我该是什么样子…', undefined, 'onboarding.hatching')
 
     // Finalize the persona BEFORE generating the portrait — the backend's
     // avatar generation requires a complete persona (is_complete=true). The
@@ -336,7 +345,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
 
     setPortraitUrl(url)
     setPhase('portrait')
-    void speak(url ? '嗯…这就是我，您觉得怎么样？' : '我大概长这样，您觉得呢？')
+    void speak(url ? '嗯…这就是我，您觉得怎么样？' : '我大概长这样，您觉得呢？', undefined, 'onboarding.portrait')
   }
 
   const regeneratePortrait = async () => {
@@ -351,7 +360,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
 
       if (res?.asset_url) {
         setPortraitUrl(res.asset_url)
-        void speak('换一个样子，这样如何？')
+        void speak('换一个样子，这样如何？', undefined, 'onboarding.portrait.regenerate')
       } else {
         setHint('暂时换不出来，稍后再试吧')
       }
@@ -384,7 +393,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
       if (res?.asset_url) {
         clearClipCatalog()
         setPortraitUrl(res.asset_url)
-        void speak('用你给的样子，这样如何？')
+        void speak('用你给的样子，这样如何？', undefined, 'onboarding.portrait.upload')
       }
     } catch {
       setHint('上传失败了，换张图试试？')
@@ -396,7 +405,30 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
     setVoice(matched)
     setCompanionVoiceId(matched.id)
     setPhase('voice')
-    void speak(sampleLine(answers.name || ''), matched.id || undefined)
+    // Force the ZH tab on initial entry — even if a previous session left
+    // voiceLangFilter='en' in storage, the new user gets the curation
+    // they signed up for. Pick the new voice id as the catalogue start
+    // BEFORE the network fetch so the catalog refresh picks the right
+    // default voice on the first paint.
+    setVoiceLangFilter('zh')
+    const catalog = await fetchVoiceCatalog(requestGateway, 'zh')
+    setVoiceCatalog(catalog.voices)
+    void speak(sampleLine(answers.name || ''), matched.id || undefined, 'onboarding.voice.preview')
+  }
+
+  const onVoiceLangTabClick = async (lang: VoiceLanguageFilter) => {
+    setVoiceLangFilter(lang)
+    const catalog = await fetchVoiceCatalog(requestGateway, lang)
+    setVoiceCatalog(catalog.voices)
+    // Reset the current voice to the first of the filtered list so the
+    // Try/Next cycle starts from a language-appropriate default. The
+    // persisted voice id follows the displayed voice so a later
+    // confirmVoice picks the filtered-list voice, not the previous tab's.
+    const next = catalog.voices[0] ?? voice
+    setVoice(next)
+    if (next) {
+      setCompanionVoiceId(next.id)
+    }
   }
 
   const confirmVoice = () => {
@@ -410,7 +442,11 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
     await savePersona(assemblePersona(answers))
 
     setPhase('greeting')
-    const ok = await speak(`您好，我是${answers.name?.trim() || '您的伙伴'}。很高兴见到您！`)
+    const ok = await speak(
+      `您好，我是${answers.name?.trim() || '您的伙伴'}。很高兴见到您！`,
+      undefined,
+      'onboarding.greeting'
+    )
 
     if (!ok) {setHint('（声音暂时不可用）')}
     await sleep(ok ? 600 : 1800)
@@ -495,6 +531,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
               </div>
             </div>
             {hint && <p className="mt-2 text-xs text-amber-300/80">{hint}</p>}
+            {voicePreparing && <p className="mt-2 text-[10px] text-white/40">🔊 正在准备声音…</p>}
             <p className="mt-2 text-right text-[10px] text-white/30">
               {qIndex + 1} / {QUESTIONS.length}
             </p>
@@ -504,6 +541,11 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
         {phase === 'hatching' && (
           <p className="py-6 text-center text-sm text-white/80">{hint || '让我想想我该是什么样子…'}</p>
         )}
+
+        {/* Voice-prep hint is rendered in three phase branches (q / hatching / voice).
+            Single source of truth via the shared `voicePreparing` flag — see
+            the JSX block at the bottom of this section for the voice-phase
+            variant. */}
 
         {(phase === 'portrait' || phase === 'voice' || phase === 'greeting') && (
           <PortraitPanel name={answers.name?.trim() || '伙伴'} url={portraitUrl} />
@@ -527,19 +569,32 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
 
         {phase === 'voice' && voice && (
           <div className="mt-4">
+            <div className="mb-3 flex gap-1 rounded-full border border-white/10 bg-white/5 p-1 text-[10px]">
+              {VOICE_LANGUAGE_TABS.map(tab => (
+                <button
+                  className={`flex-1 rounded-full px-2 py-1 transition ${voiceLangFilter === tab.id ? 'bg-white/90 text-black' : 'text-white/60 hover:text-white'}`}
+                  key={tab.id || 'all'}
+                  onClick={() => void onVoiceLangTabClick(tab.id)}
+                  type="button"
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
             <div className="flex items-center justify-between text-xs text-white/70">
               <span>{voice.label}</span>
               <div className="flex gap-3">
-                <button className="transition hover:text-white" onClick={() => void speak(sampleLine(answers.name || ''), voice?.id || undefined)} type="button">
+                <button className="transition hover:text-white disabled:opacity-40" disabled={voicePreparing} onClick={() => void speak(sampleLine(answers.name || ''), voice?.id || undefined, 'onboarding.voice.preview.try')} type="button">
                   试听
                 </button>
                 <button
-                  className="transition hover:text-white"
+                  className="transition hover:text-white disabled:opacity-40"
+                  disabled={voicePreparing}
                   onClick={() => {
                     const n = nextVoice(voice.id, voiceCatalog.length ? voiceCatalog : [voice])
                     setVoice(n)
                     setCompanionVoiceId(n.id)
-                    void speak(sampleLine(answers.name || ''), n.id || undefined)
+                    void speak(sampleLine(answers.name || ''), n.id || undefined, 'onboarding.voice.preview.next')
                   }}
                   type="button"
                 >
@@ -547,7 +602,8 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
                 </button>
               </div>
             </div>
-            <p className="mt-1 text-[10px] text-white/40">先挑个差不多的就行，以后随时能在设置里调。</p>
+            {voicePreparing && <p className="mt-1 text-[10px] text-white/40">🔊 正在准备声音…</p>}
+            <p className="mt-1 text-[10px] text-white/40">{voiceCatalog.length} 个音色 · 先挑个差不多的就行，以后随时能在设置里调。</p>
             <button
               className="mt-3 w-full rounded-full bg-white/90 py-1.5 text-sm font-medium text-black transition hover:bg-white"
               onClick={confirmVoice}
