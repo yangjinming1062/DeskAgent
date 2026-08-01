@@ -1100,6 +1100,38 @@ body:has(.recording-toolbar-root) {
   overflow: hidden;
 }
 
+/* ── Login gate: ambient companion glow ─────────────────────────────────────
+    Breathes in lockstep with the companion egg (egg.tsx `eggGlowPulse`):
+    identical 3.4s ease-in-out cadence and ×1.5 opacity swell. The login is the
+    front door to meeting one's companion, so its warmth pulses with the egg's
+    life-force rhythm — same amber (#ffd166 family) as the egg/silhouette glow. */
+.login-glow {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: min(72vw, 38rem);
+  height: min(72vw, 38rem);
+  transform: translate(-50%, -50%);
+  border-radius: 9999px;
+  background: radial-gradient(closest-side, rgba(255, 209, 102, 0.32), transparent 70%);
+  filter: blur(32px);
+  opacity: 0.6;
+  pointer-events: none;
+  z-index: 0;
+  animation: loginGlowPulse 3.4s ease-in-out infinite;
+}
+
+@keyframes loginGlowPulse {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 0.9; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .login-glow {
+    animation: none;
+  }
+}
+
 /* ── Keybind panel / edit overlay: small key chips ──────────────────────────
    A quiet `kbd`-style chip shared by the shortcuts panel and the on-screen
    editor so both read as the same control. No animation, no glow. */

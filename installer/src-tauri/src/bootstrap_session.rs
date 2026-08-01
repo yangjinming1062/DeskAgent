@@ -20,12 +20,25 @@
 //! and a sync test (`bootstrap-session.test.cjs`) catches drift.
 
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::paths;
+
+// Shared across the verify and authenticate commands so the connection pool
+// + TLS config survive across invocations. Building a reqwest::Client is
+// non-trivial — it allocates a connection pool, runs TLS init, etc.
+static HTTP: Lazy<reqwest::Client> = Lazy::new(|| {
+    reqwest::Client::builder()
+        .build()
+        .expect("reqwest::Client::builder should not fail")
+});
+
+const VERIFY_TIMEOUT: Duration = Duration::from_secs(5);
+const LOGIN_TIMEOUT: Duration = Duration::from_secs(15);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UserShape {
@@ -132,12 +145,9 @@ fn now_ms() -> i64 {
 pub async fn verify_backend(args: VerifyBackendArgs) -> Result<bool, String> {
     let normalized = normalize_base_url(&args.base_url)?;
     let health_url = format!("{}/api/health", normalized);
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(10))
-        .build()
-        .map_err(|e| format!("Could not build HTTP client: {e}"))?;
-    let response = client
+    let response = HTTP
         .get(&health_url)
+        .timeout(VERIFY_TIMEOUT)
         .send()
         .await
         .map_err(|e| format!("Could not reach backend: {e}"))?;
@@ -153,15 +163,6 @@ pub async fn authenticate_backend(
         Err(e) => return Err(AuthFailure { kind: "bad-url".into(), message: e, status: None }),
     };
 
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(15))
-        .build()
-        .map_err(|e| AuthFailure {
-            kind: "client-init".into(),
-            message: format!("Could not build HTTP client: {e}"),
-            status: None,
-        })?;
-
     let body = serde_json::json!({
         "username": args.username,
         "password": args.password,
@@ -172,7 +173,13 @@ pub async fn authenticate_backend(
     });
 
     let login_url = format!("{}/api/user/login", base_url);
-    let response = match client.post(&login_url).json(&body).send().await {
+    let response = match HTTP
+        .post(&login_url)
+        .timeout(LOGIN_TIMEOUT)
+        .json(&body)
+        .send()
+        .await
+    {
         Ok(r) => r,
         Err(e) => {
             return Err(AuthFailure {

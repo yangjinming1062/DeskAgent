@@ -33,6 +33,11 @@ const REFRESH_TIMEOUT_MS = 15_000
 
 const BOOTSTRAP_ENV_VAR = 'DESKAGENT_DESKTOP_BOOTSTRAP_SESSION'
 
+function extractUserShape(value) {
+  if (!value || typeof value !== 'object') return null
+  return { id: value.id ?? null, username: value.username ?? null }
+}
+
 function defaultBootstrapPath(deskagentHome) {
   return path.join(deskagentHome, FILENAME)
 }
@@ -77,10 +82,7 @@ function readBootstrapFile(filePath) {
       baseUrl: parsed.baseUrl,
       token: parsed.token,
       tokenExpiresAt: parsed.tokenExpiresAt,
-      user:
-        parsed.user && typeof parsed.user === 'object'
-          ? { id: parsed.user.id ?? null, username: parsed.user.username ?? null }
-          : { id: null, username: null },
+      user: extractUserShape(parsed.user) || { id: null, username: null },
       savedAt: Number.isFinite(parsed.savedAt) ? parsed.savedAt : null
     }
   }
@@ -119,7 +121,10 @@ function deleteBootstrapFile(filePath) {
 async function validateViaRefresh(baseUrl, token, fetchImpl) {
   if (typeof fetchImpl !== 'function') return null
 
-  const url = `${baseUrl.replace(/\/+$/, '')}/api/user/refresh`
+  // baseUrl is normalized by the Rust writer (normalize_base_url: strips
+  // trailing slashes + whitespace, only emits valid http/https) — no
+  // additional trim needed here.
+  const url = `${baseUrl}/api/user/refresh`
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), REFRESH_TIMEOUT_MS)
   try {
@@ -141,10 +146,7 @@ async function validateViaRefresh(baseUrl, token, fetchImpl) {
     return {
       accessToken: body.access_token,
       tokenExpiresAt: Date.now() + expiresInSec * 1000,
-      user:
-        body.user && typeof body.user === 'object'
-          ? { id: body.user.id ?? null, username: body.user.username ?? null }
-          : null
+      user: extractUserShape(body.user)
     }
   } catch {
     return null

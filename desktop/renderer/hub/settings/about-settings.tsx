@@ -49,8 +49,20 @@ export function AboutSettings() {
 
   return (
     <SettingsContent>
-      <div className="flex flex-col items-center gap-3 pt-6 pb-2 text-center">
-        <BrandMark className="size-16" />
+      <div className="flex flex-col items-center gap-3 pt-10 pb-2 text-center">
+        <div className="relative grid place-items-center">
+          {/* Static warm halo — echoes the companion's amber glow (egg.tsx).
+              Settings is the admin surface, so no breathing; just identity warmth. */}
+          <span
+            aria-hidden="true"
+            className="pointer-events-none absolute z-0 size-32 rounded-full"
+            style={{
+              background: 'radial-gradient(closest-side, rgba(255,209,102,0.28), transparent 70%)',
+              filter: 'blur(12px)'
+            }}
+          />
+          <BrandMark className="relative z-10 size-16" />
+        </div>
         <div>
           <h2 className="text-lg font-semibold tracking-tight">{a.heading}</h2>
           <p className="mt-1 text-xs text-muted-foreground">
