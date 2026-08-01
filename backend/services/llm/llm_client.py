@@ -81,11 +81,18 @@ def _provider_level_key(name: str) -> str:
 def _provider_level_url(name: str, service_type: str) -> str:
     """Provider-level BASE_URL: env override, built-in default, then legacy
     fallback to ``SETTINGS.llm_base_url`` for non-minimax providers.
+
+    MiniMax paths already embed ``/v1`` (``/v1/t2a_v2``, ``/v1/voice_design``)
+    and httpx joins a trailing ``/v1`` again → 404. The OpenAI SDK on llm
+    *does* need that suffix, so we strip it only for non-llm capabilities.
     """
     explicit = getattr(SETTINGS, f"{name}_base_url", "") or ""
     default = default_base_url(name, service_type)
     if name == "minimax":
-        return explicit or default
+        url = explicit or default
+        if service_type != "llm" and url.endswith("/v1"):
+            url = url[: -len("/v1")]
+        return url
     return explicit or default or SETTINGS.llm_base_url
 
 

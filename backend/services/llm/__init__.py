@@ -41,6 +41,10 @@ from .providers import VideoGenRequest
 from .providers import VideoJobStatus
 from .providers import VoiceDesignResult
 from .user_config import resolve_user_llm_config
+from .voice_catalog import default_voice_id
+from .voice_catalog import pick_voice_id
+from .voice_catalog import VoiceEntry
+from .voice_catalog import voices_for_provider
 
 __all__ = [
     "aclose_all",
@@ -71,6 +75,10 @@ __all__ = [
     "VideoGenRequest",
     "VideoJobStatus",
     "VoiceDesignResult",
+    "VoiceEntry",
+    "default_voice_id",
+    "pick_voice_id",
+    "voices_for_provider",
     "ProviderConfig",
     "ProviderError",
     "ServiceType",

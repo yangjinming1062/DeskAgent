@@ -9,6 +9,7 @@ from .. import ALWAYS_AVAILABLE
 from .. import REGISTRY
 from ...llm import execute_with_fallback
 from ...llm import MissingLlmConfigError
+from ...llm import pick_voice_id
 from ...llm import TTSResult
 
 logger = get_logger(__name__)
@@ -18,8 +19,7 @@ async def text_to_speech_tool(text: str, llm_config: dict, voice: str = "", user
     """TTS via the provider chain (MiMo chat completions API or MiniMax TTS)."""
 
     def _call(p):
-        slot_voice = voice if p.provider_name == "mimo" else ""
-        return p.synthesize(text, voice=slot_voice)
+        return p.synthesize(text, voice=pick_voice_id(voice, p.provider_name))
 
     try:
         if user_id is not None:

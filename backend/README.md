@@ -233,7 +233,6 @@ onboarding 的音色偏好（`voice` 草稿字段）经 JSON-RPC 落到具体 vo
 **已知限制**：
 
 - **MIMO 设计音色按调用计费**：MIMO voicedesign 模型不返回可复用 voice_id，voice_id 编码为 `mimo_voicedesign:<prompt>` 自描述 token。每次 `synthesize()` 检测到该前缀都会切换到 voicedesign 模型重新生成，产生额外延迟和成本。Desktop 应缓存重复文本的合成结果避免重复调用。
-- **本地 Runner 音色与云目录脱节**：Runner 的 Piper 本地 TTS（`runner/tools/multimodal/audio/tts_tool.py`）有独立的 voice id 体系（如 `en_US-amy-medium`），与云 provider 目录互不相通。当 Desktop 将 TTS 路由到 Runner 且传入云 voice id 时，Runner 静默回退到 Piper 默认音色。此问题需 Desktop 侧路由修复（云 voice id 路由到 `POST /api/media/tts`，Piper voice id 路由到 Runner），后端无法单独解决。
 
 ### 伙伴情绪（affect）
 
@@ -288,7 +287,7 @@ Backend 在对话响应的 `message.complete` 帧内联 `affect: {emotion}` 字�
 
 仅与启用 MiniMax provider 的部署相关（默认配置即开）：
 
-- **国内 / 国际双域名**：`https://api.minimaxi.com/v1`（国内）+ `https://api.minimax.io/v1`（国际）。切换域名单独改对应 `*_base_url` env 即可
+- **国内 / 国际双域名**：`https://api.minimaxi.com/v1`（国内）+ `https://api.minimax.io/v1`（国际）。切换域名单独改对应 `*_base_url` env 即可。注：MiniMax llm 端用 OpenAI SDK 需要 `/v1` 后缀；其它能力（tts / image_gen / video_gen）的路径已自带 `/v1`，`_provider_level_url` 会自动剥掉 env 末尾的 `/v1` 避免 `/v1/v1/...` 404
 - **API Key 单源**：`MINIMAX_API_KEY` 是 chat/image/video/tts 通用 key；`MINIMAX_API_KEY` 与 `LLM_API_KEY`（MiMo）相互独立。**不要**让 MiniMax 配置继承 MiMo key（host 不同会 401）——`resolve_provider_config` 在 provider 推断为 minimax 时强制把回落链截断在 `minimax_api_key`
 - **单 key 多能力计费**：image-01 按张、Hailuo 按秒/分辨率、speech-2.8 按字符。`media_video_gen_rate_limit_per_minute=3` 是按秒计费的限流保守默认
 - **视频下载大小上限**：`video_gen_download_max_bytes=200MB` 兜底，避免 provider 返回巨型文件撑爆 `data_dir`；1080P/10s 实测 20–60 MB

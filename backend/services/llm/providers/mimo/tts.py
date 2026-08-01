@@ -72,10 +72,15 @@ class MiMoTTSProvider(TTSProvider):
         fmt: str = "mp3",
         speed: float | None = None,
     ) -> TTSResult:
-        if voice.startswith(_VOICEDESIGN_PREFIX):
+        if voice and voice.startswith(_VOICEDESIGN_PREFIX):
             design_prompt = voice[len(_VOICEDESIGN_PREFIX) :]
             if not design_prompt.strip():
                 raise ValueError("voice design prompt is empty")
+            # Same cap the JSON-RPC design path enforces; the REST POST
+            # /api/media/tts path can carry an unbounded ``voice`` form field
+            # otherwise, which the voicedesign model would happily bill for.
+            if len(design_prompt) > MAX_VOICE_DESIGN_PROMPT_CHARS:
+                raise ValueError(f"prompt exceeds {MAX_VOICE_DESIGN_PROMPT_CHARS} chars")
             audio_kwargs: dict = {"format": fmt, "optimize_text_preview": True}
             messages = [
                 {"role": "user", "content": design_prompt},
@@ -108,8 +113,6 @@ class MiMoTTSProvider(TTSProvider):
         *,
         preview_text: str = "",
     ) -> VoiceDesignResult:
-        if len(prompt) > MAX_VOICE_DESIGN_PROMPT_CHARS:
-            raise ValueError(f"prompt exceeds {MAX_VOICE_DESIGN_PROMPT_CHARS} chars")
         response = await self._client.chat.completions.create(
             model=_VOICEDESIGN_MODEL,
             messages=[

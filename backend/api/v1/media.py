@@ -22,11 +22,11 @@ from fastapi.responses import StreamingResponse
 from modules.auth import get_current_session
 from modules.auth import LoginRecord
 from modules.auth import User
-from services.companion.voice_catalog import default_voice_id
 from services.llm import classify_api_error
 from services.llm import execute_with_fallback
 from services.llm import ImageGenRequest
 from services.llm import MissingLlmConfigError
+from services.llm import pick_voice_id
 from services.llm import resolve_provider_chain
 from services.media import enqueue_video_job
 from services.media import get_job as get_video_job
@@ -185,7 +185,7 @@ async def text_to_speech(
             db=None,
             user_id=user.id,
             service_type="tts",
-            call_fn=lambda p: p.synthesize(text, voice=voice or default_voice_id(p.provider_name)),
+            call_fn=lambda p: p.synthesize(text, voice=pick_voice_id(voice, p.provider_name)),
             _chain=chain,
         )
     except HTTPException:

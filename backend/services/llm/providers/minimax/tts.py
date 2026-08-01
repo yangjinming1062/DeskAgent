@@ -85,8 +85,6 @@ preview_text 为试听文本——设计完成后会用它合成一段示例音�
         if not voice_id:
             raise RuntimeError("MiniMax voice design returned no voice_id")
         trial_hex = body.get("trial_audio", "")
-        trial_audio = bytes.fromhex(trial_hex) if trial_hex else b""
-        return VoiceDesignResult(voice_id=voice_id, trial_audio=trial_audio, trial_audio_mime="audio/mpeg")
-
-    def raw_client(self) -> "object | None":
-        return None
+        if not trial_hex:
+            raise RuntimeError("MiniMax voice design returned no trial_audio")
+        return VoiceDesignResult(voice_id=voice_id, trial_audio=bytes.fromhex(trial_hex), trial_audio_mime="audio/mpeg")
