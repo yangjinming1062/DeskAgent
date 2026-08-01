@@ -85,7 +85,9 @@ renderer/
 │   ├── onboarding/onboarding-flow.tsx
 │   ├── proactive/{proactive,proactive-bubble}.{ts,tsx}
 │   ├── chat-dock.tsx  events.ts  persona.ts(+test)  tts.ts  backend-companion-mock.ts
-│   └── {chat,companion,boot}-store.ts
+│   ├── interactive-regions.ts     #   精灵窗口可见矩形注册表 → SpriteStage 唯一做 click-through 判定
+│   ├── voice-call-dock.tsx  settings-overlay.tsx  subtitles-overlay.tsx  developer-overlay.tsx
+│   └── {chat,companion,boot,clip,persona,evolution}-store.ts
 │
 └── hub/                           # 本地枢纽（工具窗口 + IPC/orchestration）
     ├── root.tsx                   #   ToolRoot
@@ -110,7 +112,8 @@ renderer/
 - **关闭按钮语义**：Win/Linux/WSL 上 close = hide to tray；macOS 上 close = hide window，Dock icon 保留。统一由 `main/lifecycle/tray.cjs::installCloseInterceptor` 实现。
 - **单实例锁**：`app.requestSingleInstanceLock()` 在 `app.whenReady()` 之前调用；`second-instance` 唤起现有窗口。dev opt-out：`DESKAGENT_DESKTOP_DISABLE_SINGLE_INSTANCE_LOCK=1`。
 - **Windows AppUserModelID**：`'io.deskagent.agent'`（与 `package.json#build.appId` 对齐），Windows 通知分组依赖此 ID。
-- **精灵窗口透明需要双重保证**：BrowserWindow `transparent: true` **加** 渲染层 `body` 透明（`html[data-role='sprite'] body { background: transparent }`，`data-role` 由 `index.html` 内嵌脚本在 `<head>` 解析时同步设置）。两者缺一，body 背景色（`var(--ui-chat-surface-background)`）会在桌面剩余区域盖满屏幕——违背"伙伴应不干扰用户正常工作"的契约。伴侣形象周围仍由 `SpriteStage` + `setIgnoreMouseEvents({forward:true})` 维持点击穿透。
+- **精灵窗口透明需要双重保证**：BrowserWindow `transparent: true` **加** 渲染层 `body` 透明（`html[data-role='sprite'] body { background: transparent }`，`data-role` 由 `index.html` 内嵌脚本在 `<head>` 解析时同步设置）。两者缺一，body 背景色（`var(--ui-chat-surface-background)`）会在桌面剩余区域盖满屏幕——违背"伙伴应不干扰用户正常工作"的契约。
+- **交互范围仅限可见矩形**：Electron 的 `setIgnoreMouseEvents` 是窗口级二元开关；要在屏幕尺寸的透明窗口里只让"看得见"的区域捕获、其余继续穿透给桌面其它应用，所有 overlay（`SpriteStage` / `ChatDock` / `VoiceCallDock` / `CompanionSettings` / `OnboardingFlow`）把自己的面板 bbox 注册到 `companion/interactive-regions.ts`，由 `SpriteStage` 的全局 `mousemove` 唯一做命中测试再切换 `setIgnoreMouseEvents`。任何 overlay 都不能再用 `setIgnoreMouseEvents({ignore:false})` 一刀切捕获整个窗口——那会立刻把桌面的其它应用"锁死"。
 
 ## 跨模块边界（renderer 内部）
 

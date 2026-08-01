@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 
 import { setChatOpen } from '@/companion/chat-store'
 import { setSpriteState } from '@/companion/companion-store'
+import { registerInteractiveRegion, unregisterInteractiveRegion } from '@/companion/interactive-regions'
 
 interface ContextMenuProps {
   x: number
@@ -25,6 +26,12 @@ export function SpriteContextMenu({ x, y, onClose, onOpenVoiceCall, onOpenSettin
 
     return () => window.removeEventListener('mousedown', handleClickOutside)
   }, [onClose])
+
+  useEffect(() => {
+    registerInteractiveRegion('sprite-context-menu', () => menuRef.current?.getBoundingClientRect() ?? null)
+
+    return () => unregisterInteractiveRegion('sprite-context-menu')
+  }, [])
 
   return (
     <div

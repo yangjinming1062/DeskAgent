@@ -3,14 +3,13 @@ import { type ReactNode, type PointerEvent as ReactPointerEvent, useEffect, useR
 
 import { $chatOpen } from '@/companion/chat-store'
 import { setSpritePosition } from '@/companion/companion-store'
+import { isPointInteractive, registerInteractiveRegion, setCaptureProbe, unregisterInteractiveRegion } from '@/companion/interactive-regions'
 
 import { handleDragEndInteraction, handleHoverInteraction } from '../interaction'
 
-// The sprite window is screen-sized, transparent, and click-through by default
-// (main sets setIgnoreMouseEvents(true, {forward:true})). mouse-move is still
-// forwarded, so we hit-test it against the sprite's rect and request capture
-// (setIgnoreMouseEvents(false)) only while the cursor is over it — letting the
-// desktop show through everywhere else. Tap vs drag is resolved by movement.
+// Hit-test the forwarded mousemove against registered interactive regions
+// (see companion/interactive-regions.ts); capture only while the cursor is
+// over one. Tap vs drag is resolved by movement.
 interface SpriteStageProps {
   children: ReactNode
   onTap?: () => void
@@ -23,10 +22,16 @@ const EGG_W = 160
 const EGG_H = 184
 const DRAG_THRESHOLD = 6
 const DOUBLE_TAP_MS = 320
+// Covers the sprite's CSS glow halos that overflow the inner box: egg-glow
+// 150% (≈40px/side), companion-glow 170% (≈56px), sil-glow 170% of 180 (≈63px).
+const HALO_PAD = 70
+
+const SPRITE_REGION_ID = 'sprite-stage'
 
 export function SpriteStage({ children, onTap, onDoubleTap, onContextMenu }: SpriteStageProps) {
   const mountRef = useRef<HTMLDivElement>(null)
   const capturedRef = useRef(false)
+  const lastPointRef = useRef<{ x: number; y: number } | null>(null)
   const dragRef = useRef<{ startX: number; startY: number; originX: number; originY: number; moved: boolean } | null>(null)
   const lastTapRef = useRef(0)
   const chatOpen = useStore($chatOpen)
@@ -57,21 +62,45 @@ export function SpriteStage({ children, onTap, onDoubleTap, onContextMenu }: Spr
   }
 
   useEffect(() => {
+    registerInteractiveRegion(SPRITE_REGION_ID, () => {
+      const rect = mountRef.current?.getBoundingClientRect() ?? null
+
+      if (!rect || rect.width === 0 || rect.height === 0) {return null}
+
+      return new DOMRect(rect.left - HALO_PAD, rect.top - HALO_PAD, rect.width + 2 * HALO_PAD, rect.height + 2 * HALO_PAD)
+    })
+
+    return () => unregisterInteractiveRegion(SPRITE_REGION_ID)
+  }, [])
+
+  useEffect(() => {
     const onMove = (e: MouseEvent) => {
-      if (capturedRef.current) {return}
-      const el = mountRef.current
+      // lastPointRef only matters while uncaptured (probe path); skip the
+      // allocation once we already own the window.
+      if (!capturedRef.current) {lastPointRef.current = { x: e.clientX, y: e.clientY }}
 
-      if (!el) {return}
-      const r = el.getBoundingClientRect()
+      // Two-way: cursor inside a registered region → capture; outside all →
+      // release. Mouseleave alone wouldn't catch "cursor moves within the
+      // window but exits the sprite" — that's the whole point of the
+      // region hit-test, so do it on every move.
+      if (isPointInteractive(e.clientX, e.clientY)) {capture()}
+      else if (!dragRef.current) {release()}
+    }
 
-      if (e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom) {
-        capture()
-      }
+    const probe = () => {
+      const p = lastPointRef.current
+
+      if (p && isPointInteractive(p.x, p.y)) {capture()}
     }
 
     window.addEventListener('mousemove', onMove)
+    setCaptureProbe(probe)
 
-    return () => window.removeEventListener('mousemove', onMove)
+    return () => {
+      window.removeEventListener('mousemove', onMove)
+      setCaptureProbe(null)
+      release()
+    }
   }, [])
 
   const onPointerDown = (e: ReactPointerEvent) => {
@@ -107,6 +136,7 @@ export function SpriteStage({ children, onTap, onDoubleTap, onContextMenu }: Spr
       setSpritePosition(pos)
       void window.deskagent.sprite.setPosition(pos)
       handleDragEndInteraction()
+      release()
 
       return
     }
@@ -129,9 +159,6 @@ export function SpriteStage({ children, onTap, onDoubleTap, onContextMenu }: Spr
         onContextMenu={e => {
           e.preventDefault()
           onContextMenu?.(e)
-        }}
-        onMouseLeave={() => {
-          if (!dragRef.current) {release()}
         }}
         onPointerCancel={onPointerUp}
         onPointerDown={onPointerDown}
