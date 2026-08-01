@@ -7,7 +7,14 @@ function isHexColor(value) {
 // Renderer pushes its desired titlebar colors (rendered via custom titlebar
 // overlay); we validate the hex strings before applying them to the
 // BrowserWindow's native overlay. Validated state lives in main.cjs.
-function registerTitlebarIpc({ ipcMain, getMainWindow, getTitleBarOverlayOptions, setRendererTitleBarTheme }) {
+//
+// Live setTitleBarOverlay targets the framed tool window ONLY: the sprite
+// window (mainWindow) is frameless + transparent with no titleBarOverlay, so
+// calling setTitleBarOverlay on it throws "Titlebar overlay is not enabled" —
+// and as an ipcMain handler that surfaces as a main-process uncaught-exception
+// dialog. Both windows still push their theme here so the cached colors feed
+// getTitleBarOverlayOptions() for the next tool-window creation.
+function registerTitlebarIpc({ ipcMain, getToolWindow, getTitleBarOverlayOptions, setRendererTitleBarTheme }) {
   ipcMain.on('deskagent:titlebar-theme', (_event, payload) => {
     if (!payload || !isHexColor(payload.background) || !isHexColor(payload.foreground)) {
       return
@@ -18,8 +25,7 @@ function registerTitlebarIpc({ ipcMain, getMainWindow, getTitleBarOverlayOptions
       foreground: payload.foreground
     })
 
-    const window = getMainWindow()
-    window?.setTitleBarOverlay?.(getTitleBarOverlayOptions())
+    getToolWindow()?.setTitleBarOverlay?.(getTitleBarOverlayOptions())
   })
 }
 
