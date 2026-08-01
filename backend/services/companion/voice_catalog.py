@@ -29,11 +29,25 @@ def active_tts_provider(db: Session, user_id: int) -> str:
     return chain[0].provider_name if chain else ""
 
 
-def list_voices(db: Session, user_id: int) -> dict:
+def _sort_voices_by_language(voices: list[VoiceEntry]) -> list[VoiceEntry]:
+    """Stable sort: zh → multi → ∅ → en. Original order preserved within each bucket."""
+    bucket = {"zh": 0, "multi": 1, "": 2, "en": 3}.get
+    return sorted(voices, key=lambda v: bucket(v.language or ""))
+
+
+def list_voices(db: Session, user_id: int, language: str | None = None) -> dict:
+    """Return voice catalog, optionally filtered by ``language`` (zh/en/multi/'').
+
+    Filtering applies AFTER the language-aware sort so a zh-only view still
+    leads with the curated zh ordering. ``default_voice`` falls back to the
+    unfiltered DEFAULT_VOICE stub when the filter empties the catalog.
+    """
     provider = active_tts_provider(db, user_id)
     cls = _provider_class(provider)
     guide = cls.VOICE_DESIGN_GUIDE if cls else None
-    voices = voices_for_provider(provider)
+    voices = _sort_voices_by_language(voices_for_provider(provider))
+    if language:
+        voices = [v for v in voices if v.language == language]
     return {
         "provider": provider,
         "voices": [v.model_dump() for v in voices],

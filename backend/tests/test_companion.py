@@ -243,6 +243,96 @@ def test_voice_catalog_language_field():
     assert all(v.language == "multi" for v in gemini)
 
 
+def test_voice_catalog_zh_first_in_list_voices(monkeypatch):
+    """Onboarding voice picker is what users see on first launch — zh-first matches "default Chinese"."""
+    from services.llm.voice_catalog import voices_for_provider
+    from services.companion import voice_catalog as vc
+
+    monkeypatch.setattr(vc, "active_tts_provider", lambda db, uid: "mimo")
+    result = vc.list_voices(db=None, user_id=999)
+    langs = [v["language"] for v in result["voices"]]
+    # All zh must come before any en (multi sits between them).
+    first_en = langs.index("en") if "en" in langs else len(langs)
+    last_zh = max(i for i, l in enumerate(langs) if l == "zh") if "zh" in langs else -1
+    assert last_zh < first_en, f"zh voices must precede en voices: {langs}"
+    # The first voice must be a Chinese one (not mimo_default which is "multi").
+    assert result["voices"][0]["language"] == "zh", result["voices"][0]
+
+
+def test_voice_catalog_zh_first_preserves_within_language_order():
+    """Catches accidental re-orderings that would break provider-curated within-language sequences."""
+    from services.llm.voice_catalog import voices_for_provider
+    from services.companion.voice_catalog import _sort_voices_by_language
+
+    original = voices_for_provider("mimo")
+    sorted_voices = _sort_voices_by_language(original)
+    zh_original = [v.id for v in original if v.language == "zh"]
+    zh_sorted = [v.id for v in sorted_voices if v.language == "zh"]
+    assert zh_original == zh_sorted
+
+
+def test_voice_catalog_minimax_all_zh_stays_unchanged():
+    """All-zh catalogs (MiniMax) keep their original order — sort is a no-op for them."""
+    from services.llm.voice_catalog import voices_for_provider
+    from services.companion.voice_catalog import _sort_voices_by_language
+
+    original = voices_for_provider("minimax")
+    sorted_voices = _sort_voices_by_language(original)
+    assert [v.id for v in original] == [v.id for v in sorted_voices]
+
+
+def test_voice_catalog_language_filter_zh(monkeypatch):
+    """list_voices(language='zh') returns only Chinese voices."""
+    from services.companion import voice_catalog as vc
+
+    monkeypatch.setattr(vc, "active_tts_provider", lambda db, uid: "mimo")
+    result = vc.list_voices(db=None, user_id=999, language="zh")
+    assert all(v["language"] == "zh" for v in result["voices"])
+    assert len(result["voices"]) == 4  # 冰糖 / 茉莉 / 苏打 / 白桦
+    assert result["default_voice"]["language"] == "zh"
+
+
+def test_voice_catalog_language_filter_en(monkeypatch):
+    """list_voices(language='en') returns only English voices."""
+    from services.companion import voice_catalog as vc
+
+    monkeypatch.setattr(vc, "active_tts_provider", lambda db, uid: "mimo")
+    result = vc.list_voices(db=None, user_id=999, language="en")
+    assert all(v["language"] == "en" for v in result["voices"])
+    assert len(result["voices"]) == 4  # Mia / Chloe / Milo / Dean
+
+
+def test_voice_catalog_language_filter_multi(monkeypatch):
+    """list_voices(language='multi') returns only multilingual voices."""
+    from services.companion import voice_catalog as vc
+
+    monkeypatch.setattr(vc, "active_tts_provider", lambda db, uid: "mimo")
+    result = vc.list_voices(db=None, user_id=999, language="multi")
+    assert all(v["language"] == "multi" for v in result["voices"])
+    assert result["default_voice"]["id"] == "mimo_default"
+
+
+def test_voice_catalog_language_filter_none_returns_full(monkeypatch):
+    """list_voices(language=None) returns the full sorted catalog."""
+    from services.companion import voice_catalog as vc
+
+    monkeypatch.setattr(vc, "active_tts_provider", lambda db, uid: "mimo")
+    result = vc.list_voices(db=None, user_id=999, language=None)
+    # Same as the default call — all 9 voices.
+    assert len(result["voices"]) == 9
+
+
+def test_voice_catalog_language_filter_empty_zh_subset_keeps_default(monkeypatch):
+    """Filter-empty catalog keeps ``default_voice`` shape — falls back to the DEFAULT_VOICE stub."""
+    from services.companion import voice_catalog as vc
+
+    # Gemini has only 'multi' voices — filtering by 'zh' should return empty.
+    monkeypatch.setattr(vc, "active_tts_provider", lambda db, uid: "gemini")
+    result = vc.list_voices(db=None, user_id=999, language="zh")
+    assert result["voices"] == []
+    assert result["default_voice"]["id"] == ""
+
+
 def test_voice_catalog_language_scoring():
     mimo = voices_for_provider("mimo")
     best, _ = match_voice("english female voice", mimo)

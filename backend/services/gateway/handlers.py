@@ -778,12 +778,16 @@ def _register_session_handlers(
     dispatcher.register("avatar.regenerate", avatar_regenerate)
     dispatcher.register("avatar.list_clips", avatar_list_clips)
 
-    async def tts_list_voices(_params: dict) -> dict:
-        # Voice catalog for the user's active TTS provider (plan §3.5 / §6).
-        # Voice ids are provider-specific; the catalog only lists ids the
-        # provider accepts so a matched id never breaks synthesis.
+    async def tts_list_voices(params: dict) -> dict:
+        # Voice catalog (plan §3.5 / §6). Optional ``language`` filter — unknown
+        # values fall through to the full catalog so future tags don't 400.
+        language = params.get("language")
+        if language is not None and not isinstance(language, str):
+            raise JsonRpcError(JSONRPC_INVALID_PARAMS, "language must be a string")
+        if isinstance(language, str) and language not in {"zh", "en", "multi", ""}:
+            language = None
         with SESSION_LOCAL() as db:
-            return list_tts_voices(db, user_id)
+            return list_tts_voices(db, user_id, language=language or None)
 
     async def tts_match_voice(params: dict) -> dict:
         # Map a free-text voice preference to a concrete voice id from the
