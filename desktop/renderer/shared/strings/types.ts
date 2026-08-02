@@ -122,6 +122,9 @@ export interface Translations {
       transcriptionUnavailable: string
       tryRecordingAgain: string
       unavailable: string
+      invalidTitle: string
+      invalidMessage: (name: string) => string
+      invalidAction: string
     }
     events: {
       referencesTitle: string
@@ -204,6 +207,7 @@ export interface Translations {
       toolsets: string
       runner: string
       skills: string
+      voices: string
     }
     modeOptions: Record<'light' | 'dark' | 'system', ModeOptionCopy>
     appearance: {
@@ -464,6 +468,8 @@ export interface Translations {
     sttDesc: string
     sttEngineTitle: string
     sttEngineDesc: string
+    sttSilentFallbackTitle: string
+    sttSilentFallbackDesc: string
     ttsEngineTitle: string
     ttsEngineDesc: string
     engineAuto: string
@@ -477,6 +483,19 @@ export interface Translations {
     saving: string
     saved: string
     saveFailed: string
+  }
+
+  voiceGallery: {
+    title: string
+    intro: string
+    loading: string
+    empty: string
+    error: string
+    provider: string
+    preview: string
+    playing: string
+    all: string
+    designSupported: string
   }
 
   insights: {

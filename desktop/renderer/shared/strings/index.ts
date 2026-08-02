@@ -106,7 +106,10 @@ export const strings: Translations = {
       transcriptionFailed: '语音转写失败',
       transcriptionUnavailable: '语音转写暂不可用。',
       tryRecordingAgain: '请再录一次。',
-      unavailable: '语音不可用'
+      unavailable: '语音不可用',
+      invalidTitle: '音色已失效',
+      invalidMessage: name => `你之前选的音色「${name}」已不在当前目录，已临时用默认音色，去伙伴设置里重新挑一个吧～`,
+      invalidAction: '去设置'
     },
     events: {
       referencesTitle: '引用',
@@ -235,7 +238,8 @@ export const strings: Translations = {
       appearance: '外观',
       toolsets: '工具集',
       runner: '执行器',
-      skills: '技能与工具'
+      skills: '技能与工具',
+      voices: '音色目录'
     },
     modeOptions: {
       light: { label: '明亮', description: '明亮的桌面界面' },
@@ -502,6 +506,8 @@ export const strings: Translations = {
     sttDesc: '开启后可用语音条与通话模式说话输入',
     sttEngineTitle: 'STT 引擎',
     sttEngineDesc: '语音转文字优先使用的引擎。本地引擎免费、零成本。',
+    sttSilentFallbackTitle: '低置信度自动切云端',
+    sttSilentFallbackDesc: '本地识别不确定时静默改用云端再试，让结果更准（关闭则直接显示本地结果）',
     ttsEngineTitle: 'TTS 引擎',
     ttsEngineDesc: '文字转语音优先使用的引擎。本地引擎免费、零成本。',
     engineAuto: '自动（本地优先）',
@@ -515,6 +521,19 @@ export const strings: Translations = {
     saving: '保存中…',
     saved: '已保存',
     saveFailed: '保存失败'
+  },
+
+  voiceGallery: {
+    title: '音色目录',
+    intro: '浏览当前云端 TTS 服务提供的所有音色，点击试听。更换伙伴音色请在精灵窗口的「伙伴设置」中进行。',
+    loading: '正在加载音色目录…',
+    empty: '当前没有可用音色。',
+    error: '音色目录加载失败，请稍后重试。',
+    provider: '服务商',
+    preview: '试听',
+    playing: '播放中…',
+    all: '全部',
+    designSupported: '支持音色设计'
   },
 
   insights: {

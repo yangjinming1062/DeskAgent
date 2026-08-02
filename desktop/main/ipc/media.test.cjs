@@ -48,13 +48,13 @@ function toolSchema(name) {
   return { function: { name } }
 }
 
-function setup({ stt = 'auto', tts = 'auto', bridge = null }) {
+function setup({ stt = 'auto', tts = 'auto', sttSilentFallback = true, bridge = null }) {
   const ipc = makeFakeIpc()
   registerMediaIpc({
     ipcMain: ipc,
     ensureBackend: async () => ({ baseUrl: 'https://backend.test', token: 'tok' }),
     getRunnerBridge: () => bridge,
-    getEnginePrefs: async () => ({ stt, tts })
+    getEnginePrefs: async () => ({ stt, sttSilentFallback, tts })
   })
   return ipc
 }
@@ -165,6 +165,25 @@ test('STT local + unavailable → throws, no cloud fallback', async () => {
   global.fetch = cloudFetch({ json: { text: 'cloud-text' } })
 
   await assert.rejects(ipc.invoke('deskagent:media:stt', { dataUrl: STT_DATA_URL }), /Local STT unavailable/)
+})
+
+test('STT auto + silent_fallback=false + local success:false → throws, no silent cloud retry', async () => {
+  const bridge = makeBridge({ tools: [toolSchema('speech_to_text')], invokeResult: { success: false, error: 'low confidence' } })
+  const ipc = setup({ stt: 'auto', sttSilentFallback: false, bridge })
+  global.fetch = cloudFetch({ json: { text: 'cloud-text' } })
+
+  await assert.rejects(ipc.invoke('deskagent:media:stt', { dataUrl: STT_DATA_URL }), /low confidence/)
+})
+
+test('STT auto + silent_fallback=false + local unavailable → still falls back to cloud', async () => {
+  const bridge = makeBridge({ tools: [], invokeResult: { success: true, text: 'should-not-happen' } })
+  const ipc = setup({ stt: 'auto', sttSilentFallback: false, bridge })
+  global.fetch = cloudFetch({ json: { text: 'cloud-text' } })
+
+  const res = await ipc.invoke('deskagent:media:stt', { dataUrl: STT_DATA_URL })
+
+  assert.equal(res.text, 'cloud-text')
+  assert.equal(bridge.calls.length, 0)
 })
 
 // ── TTS ──────────────────────────────────────────────────────────────────

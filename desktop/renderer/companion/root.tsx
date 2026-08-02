@@ -1,13 +1,16 @@
 import { useStore } from '@nanostores/react'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import { startActivityMonitor } from '@/companion/activity'
 import { useGatewayBoot } from '@/companion/boot/use-gateway-boot'
+import { useGatewayRequest } from '@/companion/boot/use-gateway-request'
 import { $chatOpen, setChatOpen } from '@/companion/chat-store'
 import { $companionLifecycle, checkBedtimeAndAutoSleep, reportUserActivity, setCompanionLifecycle, wakeUpFromSleep } from '@/companion/companion-store'
 import { hydratePersona } from '@/companion/persona-store'
 import { $auth, applyAuthBroadcast, hydrateAuth, logout } from '@/shared/store/auth'
 import { $gatewayState } from '@/shared/store/gateway'
+import { notify } from '@/shared/store/notifications'
+import { strings } from '@/shared/strings'
 
 import { ChatDock } from './chat-dock'
 import { DeveloperOverlay } from './developer-overlay'
@@ -22,6 +25,7 @@ import { SpriteContextMenu } from './sprite/context-menu'
 import { Egg, type EggMode } from './sprite/egg'
 import { SpriteStage } from './sprite/sprite-stage'
 import { VoiceCallDock } from './voice-call-dock'
+import { checkCompanionVoiceValidity } from './voice-validity'
 
 const HATCH_AT = 5
 
@@ -48,6 +52,8 @@ export function CompanionRoot() {
   const [voiceCallOpen, setVoiceCallOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [contextMenuPos, setContextMenuPos] = useState<{ x: number; y: number } | null>(null)
+  const { requestGateway } = useGatewayRequest()
+  const validityCheckedRef = useRef(false)
 
   useEffect(() => {
     void hydrateAuth()
@@ -135,6 +141,24 @@ export function CompanionRoot() {
       stopActivity()
     }
   }, [lifecycle])
+
+  // Detect a cached companion voice id that the cloud catalog no longer lists
+  // (provider pruned/renamed voices, or provider switch). Backend tolerates
+  // unknown ids, so this is a one-time prompt — not a hard error.
+  useEffect(() => {
+    if (lifecycle !== 'ready' || gatewayState !== 'open' || validityCheckedRef.current) {return}
+    validityCheckedRef.current = true
+
+    void checkCompanionVoiceValidity(requestGateway).then(result => {
+      if (result.valid) {return}
+      notify({
+        kind: 'warning',
+        title: strings.notifications.voice.invalidTitle,
+        message: strings.notifications.voice.invalidMessage(result.name ?? ''),
+        action: { label: strings.notifications.voice.invalidAction, onClick: () => setSettingsOpen(true) }
+      })
+    })
+  }, [lifecycle, gatewayState, requestGateway])
 
   const onTap = () => {
     if (showReady) {

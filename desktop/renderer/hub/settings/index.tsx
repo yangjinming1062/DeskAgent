@@ -5,7 +5,7 @@ import { Tip } from '@/shared/components/ui/tooltip'
 import { getDeskAgentConfigDefaults, getDeskAgentConfigRecord, saveDeskAgentConfig } from '@/shared/deskagent'
 import { useRouteEnumParam } from '@/shared/hooks/use-route-enum-param'
 import { triggerHaptic } from '@/shared/lib/haptics'
-import { Info, KeyRound, Settings, Sparkles, Wrench } from '@/shared/lib/icons'
+import { AudioLines, Info, KeyRound, Settings, Sparkles, Wrench } from '@/shared/lib/icons'
 import { notifyError } from '@/shared/store/notifications'
 import { strings } from '@/shared/strings'
 
@@ -20,10 +20,11 @@ import { RunnerSettings } from './runner-settings'
 import { SkillsToolsTabs } from './skills-tools-tabs'
 import { SpeechSettings } from './speech-settings'
 import type { SettingsPageProps } from './types'
+import { VoiceGallerySettings } from './voice-gallery-settings'
 
-type SettingsViewId = 'about' | 'account' | 'mcp' | 'runner' | 'skills' | 'speech'
+type SettingsViewId = 'about' | 'account' | 'mcp' | 'runner' | 'skills' | 'speech' | 'voices'
 
-const SETTINGS_VIEWS: readonly SettingsViewId[] = ['account', 'speech', 'runner', 'skills', 'mcp', 'about']
+const SETTINGS_VIEWS: readonly SettingsViewId[] = ['account', 'speech', 'voices', 'runner', 'skills', 'mcp', 'about']
 
 export function SettingsView({ gateway, onClose, onConfigSaved }: SettingsPageProps) {
   const t = strings
@@ -76,6 +77,12 @@ export function SettingsView({ gateway, onClose, onConfigSaved }: SettingsPagePr
             icon={IconVolume}
             label={t.speech.title}
             onClick={() => setActiveView('speech')}
+          />
+          <OverlayNavItem
+            active={activeView === 'voices'}
+            icon={AudioLines}
+            label={t.settings.nav.voices}
+            onClick={() => setActiveView('voices')}
           />
           <OverlayNavItem
             active={activeView === 'runner'}
@@ -138,6 +145,8 @@ export function SettingsView({ gateway, onClose, onConfigSaved }: SettingsPagePr
             <AccountSettings onConfigSaved={onConfigSaved} />
           ) : activeView === 'speech' ? (
             <SpeechSettings />
+          ) : activeView === 'voices' ? (
+            <VoiceGallerySettings />
           ) : activeView === 'runner' ? (
             <RunnerSettings />
           ) : activeView === 'skills' ? (

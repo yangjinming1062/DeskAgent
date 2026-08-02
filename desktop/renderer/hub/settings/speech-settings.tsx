@@ -18,6 +18,7 @@ import { ListRow, LoadingState, Pill, SettingsContent, SettingsSubsection } from
 interface SpeechFormState {
   sttEnabled: boolean
   sttEngine: SpeechEngine
+  sttSilentFallback: boolean
   ttsEngine: SpeechEngine
   maxRecordingSeconds: number
 }
@@ -25,6 +26,7 @@ interface SpeechFormState {
 const DEFAULTS: SpeechFormState = {
   sttEnabled: true,
   sttEngine: 'auto',
+  sttSilentFallback: true,
   ttsEngine: 'auto',
   maxRecordingSeconds: 60
 }
@@ -32,6 +34,7 @@ const DEFAULTS: SpeechFormState = {
 const readState = (config: DeskAgentConfigResponse): SpeechFormState => ({
   sttEnabled: config.stt?.enabled ?? DEFAULTS.sttEnabled,
   sttEngine: config.stt?.engine ?? DEFAULTS.sttEngine,
+  sttSilentFallback: config.stt?.silent_fallback ?? DEFAULTS.sttSilentFallback,
   ttsEngine: config.tts?.engine ?? DEFAULTS.ttsEngine,
   maxRecordingSeconds: config.voice?.max_recording_seconds ?? DEFAULTS.maxRecordingSeconds
 })
@@ -108,6 +111,7 @@ export function SpeechSettings() {
   const isDirty =
     state.sttEnabled !== original.sttEnabled ||
     state.sttEngine !== original.sttEngine ||
+    state.sttSilentFallback !== original.sttSilentFallback ||
     state.ttsEngine !== original.ttsEngine ||
     state.maxRecordingSeconds !== original.maxRecordingSeconds
 
@@ -120,7 +124,7 @@ export function SpeechSettings() {
 
     try {
       const { config } = await saveDeskAgentConfig({
-        stt: { enabled: state.sttEnabled, engine: state.sttEngine },
+        stt: { enabled: state.sttEnabled, engine: state.sttEngine, silent_fallback: state.sttSilentFallback },
         tts: { engine: state.ttsEngine },
         voice: { max_recording_seconds: state.maxRecordingSeconds }
       })
@@ -177,6 +181,13 @@ export function SpeechSettings() {
             description={s.sttEngineDesc}
             title={s.sttEngineTitle}
           />
+          {state.sttEngine === 'auto' && (
+            <ListRow
+              action={<Switch checked={state.sttSilentFallback} onCheckedChange={v => update({ sttSilentFallback: v })} />}
+              description={s.sttSilentFallbackDesc}
+              title={s.sttSilentFallbackTitle}
+            />
+          )}
           <ListRow
             action={
               <div className="flex flex-col items-end gap-1.5">
