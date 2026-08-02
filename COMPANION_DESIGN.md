@@ -194,8 +194,8 @@ IDLE 时形象不是静止贴图。两类自主行为，**都不触发 TTS、不
 ## 5. 语音交互（STT + TTS）
 
 - **TTS（输出）**：默认**本地优先**——Runner 本地引擎（Piper 主、pyttsx3 降级）作为零成本主路径,本地不可用或失败时回退 Backend 云端引擎（`POST /api/media/tts`,`voice` 透传给 provider）。三档可切（设置 `tts.engine`:`auto` 本地优先+云端回退 / `local` 纯本地失败不回退 / `cloud` 永远云端）。用于:语音通话应答、"始终语音"响应模式、主动陪伴消息、onboarding。播放期间精灵处于 SPEAKING,音频结束退出。
-- **STT（输入）**:默认**本地优先**（Runner faster-whisper),同样三档可切（`stt.engine`)。两条输入路径:语音条(对话模式,按住录音→转写→发送);语音通话模式(持续收音 + VAD 分段→转写→发送)。
-- **音色匹配**：`tts.list_voices` 返回当前 provider 候选目录，`tts.match_voice` 把偏好映射到 voice id（见 §3.5）。
+- **STT（输入）**:默认**本地优先**（Runner faster-whisper),同样三档可切（`stt.engine`)。`auto` 档下本地识别不确定（低置信度/空文本）时，由 `stt.silent_fallback`（默认 `true`）决定是否静默改跑云端（`/api/media/stt`，MiMo ASR）——`true` 用户无感、`false` 直接暴露本地弱结果（隐私/成本敏感用户不想偷偷走云端）。两条输入路径:语音条(对话模式,按住录音→转写→发送);语音通话模式(持续收音 + VAD 分段→转写→发送)。
+- **音色匹配**：`tts.list_voices` 返回当前 provider 候选目录，`tts.match_voice` 把偏好映射到 voice id（见 §3.5）。缓存的 voice id 失效（provider 目录变化）时，精灵窗口就绪后检测并提示重选（后端对未知 id 容错，TTS 不断）。
 - **始终可回退文字**：TTS/STT 任一失败不阻断交互——TTS 失败仅显示文字，STT 失败提示"没听清，用打字吧"。
 
 ---
@@ -205,9 +205,9 @@ IDLE 时形象不是静止贴图。两类自主行为，**都不触发 TTS、不
 两类设置分处两个窗口，由**网关可用性**决定归属：
 
 - **伙伴设置**（精灵窗口，网关可用）：右键精灵 → 伙伴设置。包括角色管理（名字/定位/性格编辑，改后可选重生形象）、响应模式（默认文字 / 始终语音）、打扰档位、音色管理（目录切换 + 试听，`tts.list_voices` + speak 预览）、形象管理（`avatar.regenerate` / 上传）。
-- **应用设置**（托盘 → Settings...，framed 工具窗口，无网关）：账户、语音（STT 开关 / 录音时长）、Runner、Skills/MCP 等通用配置。
+- **应用设置**（托盘 → Settings...，framed 工具窗口，无网关）：账户、语音（STT 开关 / `silent_fallback` / 录音时长 / 引擎）、音色目录（只读浏览 + 试听，走 REST `GET /api/companion/voices`）、Runner、Skills/MCP 等通用配置。
 
-> **设计约束**：JSON-RPC（`tts.list_voices` / `avatar.*` / `onboarding.*`）只在精灵窗口的 WS 网关上可用——工具窗口不 boot 网关。因此依赖这些方法的伙伴设置必须住在精灵窗口；工具窗口的设置只走 REST。
+> **设计约束**：JSON-RPC（`tts.list_voices` / `avatar.*` / `onboarding.*`）只在精灵窗口的 WS 网关上可用——工具窗口不 boot 网关。因此依赖这些方法的伙伴设置必须住在精灵窗口；工具窗口的设置只走 REST（音色目录页是 `tts.list_voices` 的 REST 镜像，专为工具窗口而设）。
 
 ---
 

@@ -21,6 +21,7 @@ from services.companion import generate_avatar
 from services.companion import get_active_avatar
 from services.companion import get_or_create_persona
 from services.companion import list_avatar_history
+from services.companion import list_tts_voices
 from services.companion import PersonaValidationError
 from services.companion import resolve_companion_asset_path
 from services.companion import resolve_uploaded_avatar_path
@@ -70,6 +71,24 @@ def get_persona_extras(
     user, _ = auth
     persona = get_or_create_persona(db, user.id)
     return {"extras": build_system_prompt_extras(persona)}
+
+
+# REST mirror of the gateway `tts.list_voices` method — the framed tool window
+# (hub) has no gateway, so its voice-gallery page reaches the same catalog via
+# REST here. Unknown ``language`` values fall through to the full catalog,
+# matching the gateway handler's permissive behavior.
+_SUPPORTED_VOICE_LANGUAGES = frozenset({"zh", "en", "multi"})
+
+
+@router.get("/voices")
+def list_voices(
+    language: str | None = None,
+    auth: tuple[User, LoginRecord] = Depends(get_current_session),
+    db: Session = Depends(get_db),
+) -> dict:
+    user, _ = auth
+    normalized = language if language in _SUPPORTED_VOICE_LANGUAGES else None
+    return list_tts_voices(db, user.id, language=normalized)
 
 
 @router.get("/avatar", response_model=AvatarAssetResponse | None)

@@ -162,6 +162,9 @@ export interface DeskAgentConfigResponse {
   stt?: {
     enabled?: boolean
     engine?: SpeechEngine
+    /** When false, a weak/low-confidence local STT result surfaces to the user
+     * instead of silently retrying on cloud. Default true. See media.cjs. */
+    silent_fallback?: boolean
   }
   tts?: {
     engine?: SpeechEngine
@@ -202,6 +205,7 @@ export interface DeskAgentConfigPutRequest {
   stt?: {
     enabled?: boolean
     engine?: SpeechEngine
+    silent_fallback?: boolean
   }
   tts?: {
     engine?: SpeechEngine

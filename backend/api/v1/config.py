@@ -32,6 +32,7 @@ DEFAULT_CONFIG = {
     "stt": {
         "enabled": True,
         "engine": "auto",
+        "silent_fallback": True,
     },
     "tts": {
         "engine": "auto",

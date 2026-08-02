@@ -187,11 +187,16 @@ function createEnginePrefsCache({ ensureBackend, ttlMs = CONFIG_CACHE_TTL_MS }) 
       const config = body?.config || {}
       cached = {
         stt: config.stt?.engine || 'auto',
+        // When false, a weak/errored local STT result surfaces to the renderer
+        // instead of silently retrying on cloud (privacy/cost-conscious users).
+        // Local-engine-unavailable still falls back to cloud regardless — that
+        // is auto's core promise, not a "weak result".
+        sttSilentFallback: config.stt?.silent_fallback !== false,
         tts: config.tts?.engine || 'auto',
         expiresAt: now + ttlMs
       }
     } catch {
-      cached = { stt: 'auto', tts: 'auto', expiresAt: now + ttlMs }
+      cached = { stt: 'auto', sttSilentFallback: true, tts: 'auto', expiresAt: now + ttlMs }
     }
     return cached
   }
@@ -219,7 +224,8 @@ function registerMediaIpc({ ipcMain, ensureBackend, getRunnerBridge, getEnginePr
 
     const prefs = await resolvePrefs()
     const engine = prefs.stt
-    const sttLog = makeLog(log, `[stt#${sttId}]`, { engine_pref: engine, context: context || null, ...(mime ? { mime } : {}) })
+    const silentFallback = prefs.sttSilentFallback !== false
+    const sttLog = makeLog(log, `[stt#${sttId}]`, { engine_pref: engine, ...(silentFallback ? {} : { silent_fallback: false }), context: context || null, ...(mime ? { mime } : {}) })
     const startedAt = Date.now()
 
     if (engine !== 'cloud') {
@@ -230,6 +236,12 @@ function registerMediaIpc({ ipcMain, ensureBackend, getRunnerBridge, getEnginePr
           return res.value
         }
         if (engine === 'local') {
+          sttLog('done', { route: 'local', error: res.error.message, ms: Date.now() - startedAt })
+          throw res.error
+        }
+        // auto: surface the weak local result when silent_fallback is off,
+        // otherwise silently retry on cloud.
+        if (!silentFallback) {
           sttLog('done', { route: 'local', error: res.error.message, ms: Date.now() - startedAt })
           throw res.error
         }
