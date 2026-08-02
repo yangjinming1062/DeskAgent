@@ -6,7 +6,7 @@ import { registerInteractiveRegion, unregisterInteractiveRegion } from '@/compan
 import { $gatewayState } from '@/shared/store/gateway'
 
 import { clearClipCatalog } from '../clip-store'
-import { assemblePersona, type OnboardingAnswers } from '../persona'
+import { assemblePersona, MAX_APPEARANCE, MAX_USER_TEXT, type OnboardingAnswers } from '../persona'
 import { setCompanionVoiceId } from '../prefs'
 import { Silhouette } from '../sprite/silhouette'
 import { speak, stopSpeaking } from '../tts'
@@ -31,13 +31,39 @@ interface Question {
   required: boolean
   multiline: boolean
   presets: readonly string[]
+  max?: number
 }
 
 const QUESTIONS: readonly Question[] = [
   { key: 'name', text: '您好…我还不认识自己。您愿意给我一个名字吗？', placeholder: '给我起个名字吧', required: true, multiline: false, presets: [] },
   {
+    key: 'species',
+    text: '那我是哪种生灵呢？',
+    placeholder: '或者自由描述…',
+    required: false,
+    multiline: false,
+    presets: ['人类', '灵兽', '精灵', '机甲', '幻形']
+  },
+  {
+    key: 'character_gender',
+    text: '嗯…那我是男性、女性、还是…',
+    placeholder: '或者自由描述…',
+    required: false,
+    multiline: false,
+    presets: ['女', '男', '其他', '不指定']
+  },
+  {
+    key: 'appearance',
+    text: '那您希望我长什么样？说说头发、眼睛、穿着、气质…',
+    placeholder: '比如：金发绿眼、黑色礼帽…',
+    required: false,
+    multiline: true,
+    max: MAX_APPEARANCE,
+    presets: ['优雅古典', '现代利落', '萌系可爱', '冷酷暗黑']
+  },
+  {
     key: 'role',
-    text: '好的，我会是 {name}。那您希望我是什么样的存在？爱人、秘书、还是专属的“贾维斯”？',
+    text: '好的，我会是 {name}。那您希望我是什么样的身份？',
     placeholder: '或者自由描述…',
     required: false,
     multiline: false,
@@ -45,18 +71,55 @@ const QUESTIONS: readonly Question[] = [
   },
   {
     key: 'personality',
-    text: '您希望我是什么性格？活泼好动、温柔体贴、冷静理性…还是别的？',
+    text: '您希望我是什么性格？',
     placeholder: '自由描述…',
     required: false,
     multiline: false,
     presets: ['温柔体贴', '活泼好动', '冷静理性', '毒舌傲娇']
   },
   {
-    key: 'selfIntro',
-    text: '说说您自己吧——您是谁，平时在忙什么，有什么在意的事？',
-    placeholder: '（说说你自己，让我更懂你）',
+    key: 'user_call_name',
+    text: '我该怎么称呼您？',
+    placeholder: '或者自由描述…',
+    required: false,
+    multiline: false,
+    max: MAX_USER_TEXT,
+    presets: ['名字', '昵称', '老板', '自填']
+  },
+  {
+    key: 'user_gender',
+    text: '您方便告诉我您的性别吗？',
+    placeholder: '或自由描述…',
+    required: false,
+    multiline: false,
+    max: MAX_USER_TEXT,
+    presets: ['女', '男', '其他', '不愿说']
+  },
+  {
+    key: 'user_age_bucket',
+    text: '您属于哪个年龄段？',
+    placeholder: '或自由描述…',
+    required: false,
+    multiline: false,
+    max: MAX_USER_TEXT,
+    presets: ['18 以下', '18-25', '26-35', '36-50', '50+']
+  },
+  {
+    key: 'user_hobbies',
+    text: '您平时喜欢什么？',
+    placeholder: '可以多写几个…',
     required: false,
     multiline: true,
+    max: MAX_USER_TEXT,
+    presets: []
+  },
+  {
+    key: 'user_freeform',
+    text: '还有什么想告诉我、或者想叮嘱我的吗？',
+    placeholder: '可跳过…',
+    required: false,
+    multiline: true,
+    max: MAX_USER_TEXT,
     presets: []
   },
   {
@@ -71,10 +134,38 @@ const QUESTIONS: readonly Question[] = [
 
 const sleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms))
 
+// Trailing comma disambiguates the generic from JSX in .tsx files.
+const retry3 = async <T,>(fn: () => Promise<T | null | undefined>, delayMs: number): Promise<T | null> => {
+  for (let i = 0; i < 3; i++) {
+    const result = await fn()
+
+    if (result) {return result}
+
+    if (i < 2) {await sleep(delayMs)}
+  }
+
+  return null
+}
+
 const DRAG_THRESHOLD = 6
 
-// Desktop answer keys → Backend ONBOARDING_FIELDS (services/companion/persona_service.py).
-const BACKEND_FIELD: Record<QKey, string> = { name: 'name', role: 'role', personality: 'personality', selfIntro: 'self_intro', voice: 'voice' }
+// Desktop answer keys → Backend ONBOARDING_FIELDS. species / character_gender
+// become biological_type / gender via assemblePersona; user_* travel in the
+// same PUT and the backend routes them to Memory.
+const BACKEND_FIELD: Record<QKey, string> = {
+  name: 'name',
+  species: 'species',
+  character_gender: 'character_gender',
+  appearance: 'appearance',
+  role: 'role',
+  personality: 'personality',
+  user_call_name: 'user_call_name',
+  user_gender: 'user_gender',
+  user_age_bucket: 'user_age_bucket',
+  user_hobbies: 'user_hobbies',
+  user_freeform: 'user_freeform',
+  voice: 'voice'
+}
 
 async function generatePortrait(): Promise<string | null> {
   try {
@@ -95,7 +186,12 @@ async function savePersona(payload: ReturnType<typeof assemblePersona>): Promise
     await window.deskagent.api({ path: '/api/companion/persona', method: 'PUT', body: payload })
 
     return true
-  } catch {
+  } catch (error) {
+    // Re-throw 4xx so retry3 doesn't burn 2.1s on a deterministic failure.
+    const msg = error instanceof Error ? error.message : String(error)
+
+    if (/^4\d\d /.test(msg)) {throw error}
+
     return false
   }
 }
@@ -228,12 +324,24 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
         }
 
         if (state?.answers) {
+          // Project all 12 backend keys into OnboardingAnswers uniformly; missing
+          // keys become undefined which is fine — they re-ask on resume. Legacy
+          // drafts may still contain a stray ``self_intro`` key which is silently
+          // ignored because it isn't an OnboardingAnswers field.
+          const a = state.answers
           setAnswers({
-            name: state.answers.name,
-            role: state.answers.role,
-            personality: state.answers.personality,
-            selfIntro: state.answers.self_intro,
-            voice: state.answers.voice
+            name: a.name,
+            species: a.species,
+            character_gender: a.character_gender,
+            appearance: a.appearance,
+            role: a.role,
+            personality: a.personality,
+            user_call_name: a.user_call_name,
+            user_gender: a.user_gender,
+            user_age_bucket: a.user_age_bucket,
+            user_hobbies: a.user_hobbies,
+            user_freeform: a.user_freeform,
+            voice: a.voice,
           })
           const idx = QUESTIONS.findIndex(q => BACKEND_FIELD[q.key] === state.next_field)
 
@@ -273,7 +381,8 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
 
   const commit = (value: string | undefined) => {
     const q = QUESTIONS[qIndex]
-    const cleaned = value && value.trim() ? value.trim() : undefined
+    const trimmed = value && value.trim() ? value.trim() : undefined
+    const cleaned = trimmed && q.max ? trimmed.slice(0, q.max) : trimmed
     setAnswers((prev: OnboardingAnswers) => ({ ...prev, [q.key]: cleaned }))
 
     // Per-field incremental persistence (design §7.5); fire-and-forget — never
@@ -320,31 +429,15 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
     setHint(null)
     void speak('让我想想我该是什么样子…', undefined, 'onboarding.hatching')
 
-    // Finalize the persona BEFORE generating the portrait — the backend's
-    // avatar generation requires a complete persona (is_complete=true). The
-    // answers are all collected by this point; self_intro/voice were already
-    // consumed by the draft + voice matching below. Retries, then proceeds
-    // regardless so the user is never stranded.
-    let personaOk = false
-
-    for (let i = 0; i < 3; i++) {
-      if (await savePersona(assemblePersona(answers))) {personaOk = true;
-
- break}
-
-      await sleep(700)
-    }
-
+    // Finalize persona BEFORE the portrait — avatar generation requires
+    // is_complete=true. Proceeds even if save fails so the user isn't stranded.
+    const personaOk = await retry3(() => savePersona(assemblePersona(answers)), 700)
     let url: string | null = null
 
     if (personaOk) {
-      for (let i = 0; i < 3; i++) {
-        url = await generatePortrait()
+      url = await retry3(generatePortrait, 900)
 
-        if (url) {break}
-        setHint('我还没想好…')
-        await sleep(900)
-      }
+      if (!url) {setHint('我还没想好…')}
     } else {
       setHint('记忆还没存好，稍后再试试形象吧…')
     }

@@ -443,6 +443,10 @@ def build_system_prompt_parts(config: AgentPromptConfig, system_message: str | N
 
     stable_parts.append(config.identity_prompt or DEFAULT_AGENT_IDENTITY)
     stable_parts.append(DESK_AGENT_HELP_GUIDANCE)
+    if config.user_profile_extras:
+        # Inject structured user identity so the LLM doesn't need a memory_recall
+        # round-trip just to know "this user is 老板, male, 26-35, likes music".
+        stable_parts.append(config.user_profile_extras)
     if config.persona_extras:
         stable_parts.append(config.persona_extras)
         # A companion persona drives a visible avatar — instruct the LLM to

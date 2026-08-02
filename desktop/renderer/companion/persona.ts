@@ -1,15 +1,15 @@
-// Assemble the Backend PersonaUpdate payload from onboarding answers.
-// Backend's PersonaUpdate requires name/personality/speaking_style and rejects
-// unknown keys (extra="forbid"). selfIntro is USER info → memory layer (NOT
-// persona, per ARCHITECTURE.md §7.6); voice feeds TTS, not persona. Skipped required
-// fields get sensible defaults so the PUT always succeeds (is_complete=true),
-// unblocking Slice 3 chat with a personality injected. See plan.md §4.
-
 export interface OnboardingAnswers {
   name?: string
+  species?: string
+  character_gender?: string
+  appearance?: string
   role?: string
   personality?: string
-  selfIntro?: string
+  user_call_name?: string
+  user_gender?: string
+  user_age_bucket?: string
+  user_hobbies?: string
+  user_freeform?: string
   voice?: string
 }
 
@@ -18,9 +18,30 @@ export interface PersonaPayload {
   personality: string
   speaking_style: string
   background?: string
+  biological_type?: string
+  gender?: string
+  appearance?: string
+  user_call_name?: string
+  user_gender?: string
+  user_age_bucket?: string
+  user_hobbies?: string
+  user_freeform?: string
 }
 
 const DEFAULT_PERSONALITY = '温柔体贴'
+export const MAX_APPEARANCE = 500
+export const MAX_USER_TEXT = 2000
+const MAX_SPECIES_GENDER = 64
+const MAX_BACKGROUND = 500
+
+function truncate(value: string | undefined, max: number): string | undefined {
+  if (!value) {return undefined}
+  const trimmed = value.trim()
+
+  if (!trimmed) {return undefined}
+
+  return trimmed.slice(0, max)
+}
 
 export function deriveSpeakingStyle(role: string | undefined, personality: string | undefined): string {
   const p = personality || ''
@@ -43,12 +64,26 @@ export function assemblePersona(answers: OnboardingAnswers): PersonaPayload {
   const payload: PersonaPayload = {
     name,
     personality,
-    speaking_style: deriveSpeakingStyle(answers.role, answers.personality)
+    speaking_style: deriveSpeakingStyle(answers.role, answers.personality),
   }
 
-  const background = answers.role?.trim()
+  const optional: Array<[keyof PersonaPayload, string | undefined, number]> = [
+    ['biological_type', answers.species, MAX_SPECIES_GENDER],
+    ['gender', answers.character_gender, MAX_SPECIES_GENDER],
+    ['appearance', answers.appearance, MAX_APPEARANCE],
+    ['background', answers.role, MAX_BACKGROUND],
+    ['user_call_name', answers.user_call_name, MAX_USER_TEXT],
+    ['user_gender', answers.user_gender, MAX_USER_TEXT],
+    ['user_age_bucket', answers.user_age_bucket, MAX_USER_TEXT],
+    ['user_hobbies', answers.user_hobbies, MAX_USER_TEXT],
+    ['user_freeform', answers.user_freeform, MAX_USER_TEXT],
+  ]
 
-  if (background) {payload.background = background}
+  for (const [key, raw, max] of optional) {
+    const trimmed = truncate(raw, max)
+
+    if (trimmed) {payload[key] = trimmed}
+  }
 
   return payload
 }

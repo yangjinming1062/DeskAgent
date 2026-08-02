@@ -78,7 +78,7 @@ LIST_VOICES_SCHEMA = {
 # prefixes. New providers must add their prefix here AND wire their voices
 # into ``backend/services/llm/voice_catalog.py`` — keeping the two in sync
 # is the contract this list enforces.
-_CLOUD_VOICE_HINTS = ("mimo_", "mimo_voicedesign:", "minimax_", "minimax:")
+_CLOUD_VOICE_HINTS = ("mimo_", "minimax_", "minimax:")
 
 
 def _is_cloud_voice(voice: str) -> bool:
@@ -142,9 +142,9 @@ def _enumerate_pyttsx3_voices(engine: Any) -> list[dict[str, str]]:
     return out
 
 
-# Module-scope cache: the OS voice list doesn't change at runtime, and
-# pyttsx3.init() costs ~100ms of SAPI5 enumeration on Windows. Refreshing
-# per-call adds latency for no benefit.
+# Module-scope cache: the OS voice list doesn't change at runtime. SAPI5
+# enumeration is what costs ~100ms per ``init()``; init itself is still
+# per-call (the engine's runAndWait lifecycle owns the COM apartment).
 _PYTTSX3_VOICE_CACHE: list[dict[str, str]] | None = None
 
 

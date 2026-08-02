@@ -27,6 +27,15 @@ DEFAULT_VOICE = VoiceEntry(id="", label="默认音色", gender="neutral", tags=[
 # Module-level so we don't re-allocate the dict on every ``list_voices`` call.
 _LANGUAGE_BUCKET: dict[str, int] = {"zh": 0, "multi": 1, "": 2, "en": 3}
 
+# Derived from _LANGUAGE_BUCKET so the supported set can never drift from
+# the sort order; unknown values fall through to the unfiltered catalog.
+SUPPORTED_VOICE_LANGUAGES: frozenset[str] = frozenset(_LANGUAGE_BUCKET)
+
+
+def normalize_voice_language(value: object) -> str | None:
+    """Single null-rendering rule shared by REST + JSON-RPC list endpoints."""
+    return value if isinstance(value, str) and value in SUPPORTED_VOICE_LANGUAGES else None
+
 
 def active_tts_provider(db: Session, user_id: int) -> str:
     chain = resolve_provider_chain(db, user_id, "tts")

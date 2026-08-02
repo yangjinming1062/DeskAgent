@@ -123,6 +123,9 @@ def _install_schema_extensions(conn) -> None:
     # Retry-schedule indexes for the escalation loop's due-clip scans.
     conn.execute(text("CREATE INDEX IF NOT EXISTS ix_avatar_clips_video_retry ON avatar_clips (video_next_retry_at)"))
     conn.execute(text("CREATE INDEX IF NOT EXISTS ix_avatar_clips_keyframe_retry ON avatar_clips (keyframe_next_retry_at)"))
+    # Postgres-only — guards the query-then-update race in record_user_profile.
+    # SQLite tests skip this since conftest only runs create_all.
+    conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_memories_user_context ON memories (user_id, context) WHERE context LIKE 'user_profile:%'"))
 
 
 def init_database(engine=None) -> None:

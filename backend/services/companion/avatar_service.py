@@ -21,6 +21,30 @@ _AVATAR_QUALITY: str = "standard"
 _UPLOAD_EXTS: dict[str, str] = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp", "image/gif": "gif"}
 ALLOWED_AVATAR_UPLOAD_MIME_TYPES: frozenset[str] = frozenset(_UPLOAD_EXTS)
 
+# Chinese onboarding chips → English tokens for image-gen providers; free-text
+# inputs pass through verbatim via _to_en_token's table.get(value, value).
+_SPECIES_EN: dict[str, str] = {
+    "人类": "human",
+    "灵兽": "spirit beast",
+    "精灵": "elf",
+    "机甲": "mecha",
+    "幻形": "shapeshifting entity",
+}
+_GENDER_EN: dict[str, str] = {
+    "女": "female",
+    "男": "male",
+    "其他": "androgynous",
+    "不指定": "",
+}
+
+
+def _to_en_token(value: str | None, table: dict[str, str]) -> str:
+    """Look up ``value`` in ``table``; unknown / free-text passes through
+    verbatim so user-typed input still lands in the prompt."""
+    if not value:
+        return ""
+    return table.get(value, value)
+
 
 class AvatarGenerationError(RuntimeError):
     """Raised when avatar generation cannot complete. Distinct from a
@@ -29,18 +53,22 @@ class AvatarGenerationError(RuntimeError):
 
 
 def _build_prompt(persona: Persona, style: str) -> str:
-    """Assemble the image-generation prompt from persona fields.
-
-    The prompt is rendered as a structured brief so a future diff can
-    log / A/B it without parsing free-form text. Field order matches
-    persona_service._REQUIRED_FIELDS — visual prominence mirrors
-    importance.
-    """
+    """Assemble the image-generation prompt from persona fields. Word order
+    is species → named → gender → appearance → background so the subject
+    reference is unambiguous (``a fox named X`` not ``of X a fox``)."""
     definition = safe_json_loads(persona.definition_json or "{}", default={})
-    parts = [f"a {style} portrait of {definition.get('name', 'a friendly companion')}"]
-    if appearance := definition.get("appearance"):
+    name = definition.get("name") or "a friendly companion"
+    species = _to_en_token(definition.get("biological_type"), _SPECIES_EN)
+    gender = _to_en_token(definition.get("gender"), _GENDER_EN)
+    appearance = definition.get("appearance") or ""
+    background = definition.get("background") or ""
+
+    parts: list[str] = [f"a {style} portrait of a {species}, named {name}" if species else f"a {style} portrait of {name}"]
+    if gender:
+        parts.append(f"({gender})")
+    if appearance:
         parts.append(appearance)
-    if background := definition.get("background"):
+    if background:
         parts.append(f"set in {background}")
     parts.append("digital illustration, clean linework, full character on neutral background")
     return ", ".join(parts)

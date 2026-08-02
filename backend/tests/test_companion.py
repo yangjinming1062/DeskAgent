@@ -73,12 +73,12 @@ def test_onboarding_incremental_persistence_and_recovery(_patch_db):
         # Submit one field — it persists immediately.
         state = submit_onboarding_field(db, 100, "name", "小光")
         assert state["answers"]["name"] == "小光"
-        assert state["next_field"] == "role"
+        assert state["next_field"] == "species"
 
         # A new session (simulating crash/restart) recovers the draft.
         state = get_onboarding_state(db, 100)
         assert state["answers"]["name"] == "小光"
-        assert state["next_field"] == "role"
+        assert state["next_field"] == "species"
 
         # Empty value clears the field.
         submit_onboarding_field(db, 100, "name", None)
@@ -427,3 +427,259 @@ def test_list_voices_empty_when_no_provider(monkeypatch):
     # Backend ships the default voice so the renderer doesn't need its own
     # mirror literal (C7).
     assert result["default_voice"]["id"] == "female-shaonv"
+
+
+# ── Persona + memory dual-write (post-hatching flow) ──
+
+
+def test_dual_write_routes_user_profile_to_memory(_patch_db):
+    """A single PUT carrying character + user_* fields writes the persona
+    blob to ``personas`` and the 5 user_* entries to ``memories`` with
+    the canonical ``user_profile:*`` context labels. ``definition_json``
+    must not contain any ``user_*`` keys — they're routed away before the
+    persona validator runs, so the persona strict schema never sees them.
+    """
+    _, SessionLocal = _patch_db
+    from services.companion import extract_user_profile, ONBOARDING_FIELDS, update_persona
+    from modules.memory import Memory
+
+    payload = {
+        "name": "梦鳞",
+        "personality": "温柔",
+        "speaking_style": "轻柔",
+        "biological_type": "灵兽",
+        "gender": "女",
+        "appearance": "金发绿眼",
+        "user_call_name": "老板",
+        "user_gender": "男",
+        "user_age_bucket": "26-35",
+        "user_hobbies": "音乐",
+        "user_freeform": "早起型",
+    }
+    with SessionLocal() as db:
+        persona = update_persona(db, 777, payload)
+        db.refresh(persona)
+        assert persona.is_complete is True
+        # 3 new character fields land in definition_json
+        definition = json.loads(persona.definition_json)
+        assert definition["biological_type"] == "灵兽"
+        assert definition["gender"] == "女"
+        assert definition["appearance"] == "金发绿眼"
+        # user_* keys do NOT bleed into definition_json
+        for key in ("user_call_name", "user_gender", "user_age_bucket", "user_hobbies", "user_freeform"):
+            assert key not in definition
+
+        rows = db.query(Memory).filter(Memory.user_id == 777, Memory.context.like("user_profile:%")).order_by(Memory.context).all()
+        assert {r.context for r in rows} == {
+            "user_profile:preferred_name",
+            "user_profile:gender",
+            "user_profile:age_bucket",
+            "user_profile:hobbies",
+            "user_profile:freeform",
+        }
+        # tags JSON matches the rest of the Memory table (NativeMemory._retain
+        # emits the same shape, so any consumer doing json.loads stays happy).
+        for row in rows:
+            tags = json.loads(row.tags or "[]")
+            assert set(tags) == {"onboarding", "user_profile"}
+
+
+def test_dual_write_is_idempotent(_patch_db):
+    """Repeating PUT for the same user_* keeps the memory row count at 5
+    (query-then-update upsert, dialect-agnostic).
+    """
+    _, SessionLocal = _patch_db
+    from services.companion import update_persona
+    from modules.memory import Memory
+
+    payload = {
+        "name": "梦鳞",
+        "personality": "温柔",
+        "speaking_style": "轻柔",
+        "user_call_name": "老板",
+    }
+    with SessionLocal() as db:
+        update_persona(db, 555, payload)
+        update_persona(db, 555, payload)
+        update_persona(db, 555, {**payload, "user_call_name": "大佬"})
+        rows = db.query(Memory).filter(Memory.user_id == 555, Memory.context == "user_profile:preferred_name").all()
+        assert len(rows) == 1
+        assert rows[0].content == "大佬"
+
+
+def test_dual_write_editor_path_leaves_memory_alone(_patch_db):
+    """When the persona editor sends back only persona fields (no user_*),
+    ``record_user_profile`` short-circuits to no-op: existing user_profile
+    rows must not be touched or deleted. (Editor is intentionally persona-
+    only; user info editing lives behind memory_retain/forget tools.)
+    """
+    _, SessionLocal = _patch_db
+    from services.companion import update_persona
+    from modules.memory import Memory
+
+    with SessionLocal() as db:
+        update_persona(db, 888, {"name": "梦鳞", "personality": "温柔", "speaking_style": "轻柔", "user_call_name": "老板", "user_hobbies": "音乐"})
+        # Editor re-saves persona only
+        update_persona(db, 888, {"name": "梦鳞", "personality": "俏皮", "speaking_style": "利落"})
+        rows = db.query(Memory).filter(Memory.user_id == 888).all()
+        contents = {r.content for r in rows}
+        assert "老板" in contents and "音乐" in contents
+
+
+def test_dual_write_empty_user_fields_skip(_patch_db):
+    """Empty / whitespace-only user_* values are skipped — no insert, no
+    delete of existing rows (user-revocation semantics).
+    """
+    _, SessionLocal = _patch_db
+    from services.companion import update_persona
+    from modules.memory import Memory
+
+    with SessionLocal() as db:
+        update_persona(db, 666, {
+            "name": "梦鳞", "personality": "温柔", "speaking_style": "轻柔",
+            "user_call_name": "老板",
+            "user_gender": "",
+            "user_age_bucket": "   ",
+        })
+        rows = db.query(Memory).filter(Memory.user_id == 666, Memory.context.like("user_profile:%")).all()
+        assert len(rows) == 1
+        assert rows[0].context == "user_profile:preferred_name"
+
+
+def test_build_user_profile_extras_renders_known_rows(_patch_db):
+    """``build_user_profile_extras`` formats user_profile:* rows in the
+    ``_CONTEXT_LABELS`` declaration order. Header is ``# User profile`` so
+    the LLM can distinguish from the ``# Companion persona`` block.
+    """
+    _, SessionLocal = _patch_db
+    from services.companion import build_user_profile_extras, update_persona
+
+    with SessionLocal() as db:
+        update_persona(db, 333, {
+            "name": "梦鳞", "personality": "温柔", "speaking_style": "轻柔",
+            "user_call_name": "老板", "user_gender": "男", "user_age_bucket": "26-35",
+            "user_hobbies": "音乐, 摄影", "user_freeform": "早起型",
+        })
+        out = build_user_profile_extras(db, 333)
+
+    assert out.startswith("# User profile")
+    # Order matches ``_CONTEXT_LABELS`` (preferred_name → gender → age_bucket → hobbies → freeform)
+    sections = out.splitlines()[1:]
+    assert sections[0].startswith("- **Preferred name**:")
+    assert sections[1].startswith("- **Gender**:")
+    assert sections[2].startswith("- **Age bucket**:")
+    assert sections[3].startswith("- **Hobbies**:")
+    assert sections[4].startswith("- **Freeform**:")
+
+
+def test_build_user_profile_extras_empty_when_no_rows(_patch_db):
+    """A user with no profile rows (pre-onboarding, or all skipped fields)
+    yields an empty string — the system prompt caller skips empty strings
+    naturally so no ``# User profile`` header is added without content.
+    """
+    _, SessionLocal = _patch_db
+    from services.companion import build_user_profile_extras
+
+    with SessionLocal() as db:
+        assert build_user_profile_extras(db, 999) == ""
+
+
+def test_build_user_profile_extras_partial_rows_keep_order(_patch_db):
+    """Only the rows actually stored get rendered; missing keys are silently
+    skipped (don't fabricate empty headers).
+    """
+    _, SessionLocal = _patch_db
+    from services.companion import build_user_profile_extras, update_persona
+
+    with SessionLocal() as db:
+        update_persona(db, 444, {
+            "name": "梦鳞", "personality": "温柔", "speaking_style": "轻柔",
+            "user_call_name": "老板", "user_hobbies": "音乐",
+            # user_gender / user_age_bucket / user_freeform intentionally not set
+        })
+        out = build_user_profile_extras(db, 444)
+
+    assert "Preferred name" in out and "Hobbies" in out
+    assert "Gender" not in out and "Age bucket" not in out and "Freeform" not in out
+
+
+def test_render_extras_includes_new_character_fields():
+    from services.companion.persona_service import render_extras
+    out = render_extras({"name": "小光", "personality": "温柔体贴", "speaking_style": "轻声细语", "biological_type": "灵兽", "gender": "女", "appearance": "金发"})
+    assert "Biological type" in out and "灵兽" in out
+    assert "Gender" in out and "女" in out
+    assert "Appearance" in out and "金发" in out
+
+
+def test_persona_update_schema_accepts_new_fields():
+    from modules.companion.schemas import PersonaUpdate
+    p = PersonaUpdate(
+        name="梦鳞", personality="温柔", speaking_style="轻柔",
+        biological_type="灵兽", gender="女", appearance="金发绿眼",
+        user_call_name="老板", user_gender="男", user_age_bucket="26-35",
+        user_hobbies="音乐", user_freeform="早起型",
+    )
+    assert p.biological_type == "灵兽" and p.user_call_name == "老板"
+
+
+def test_persona_update_schema_rejects_unknown_keys():
+    from modules.companion.schemas import PersonaUpdate
+    from pydantic import ValidationError
+    with pytest.raises(ValidationError):
+        PersonaUpdate(name="x", personality="y", speaking_style="z", totally_unknown_key="oops")
+
+
+def test_onboarding_field_order_matches_question_sequence():
+    from services.companion import ONBOARDING_FIELDS
+    assert ONBOARDING_FIELDS == (
+        "name", "species", "character_gender", "appearance", "role", "personality",
+        "user_call_name", "user_gender", "user_age_bucket", "user_hobbies", "user_freeform",
+        "voice",
+    )
+
+
+def test_build_prompt_translates_species_and_gender():
+    from services.companion.avatar_service import _build_prompt
+    persona = type("P", (), {"definition_json": json.dumps({"name": "小光", "biological_type": "灵兽", "gender": "女", "appearance": "金发绿眼"})})()
+    prompt = _build_prompt(persona, "portrait")
+    # species → "spirit beast", name follows, gender in parens, then appearance
+    assert "spirit beast" in prompt and "named 小光" in prompt and "(female)" in prompt and "金发绿眼" in prompt
+
+
+def test_build_prompt_free_text_species_passthrough():
+    from services.companion.avatar_service import _build_prompt
+    persona = type("P", (), {"definition_json": json.dumps({"name": "阿离", "biological_type": "九尾狐", "gender": "女"})})()
+    prompt = _build_prompt(persona, "portrait")
+    # "九尾狐" not in the lookup table → keep verbatim (user-typed value)
+    assert "九尾狐" in prompt
+
+
+def test_build_prompt_without_species_skips_token():
+    from services.companion.avatar_service import _build_prompt
+    persona = type("P", (), {"definition_json": json.dumps({"name": "小光", "appearance": "书生模样"})})()
+    prompt = _build_prompt(persona, "portrait")
+    # No species → no "named X" pattern; layout still starts with name
+    assert prompt.startswith("a portrait portrait of 小光") or prompt.startswith("a portrait of 小光")
+    assert "书生模样" in prompt
+
+
+def test_dynamic_user_profile_key_lands_in_memory(_patch_db):
+    """Adding a new ``user_*`` field to PersonaUpdate must not 400 —
+    extract_user_profile picks it up via the ``user_`` prefix and lands
+    it in Memory as ``user_profile:<raw_key>``.
+    """
+    _, SessionLocal = _patch_db
+    from services.companion import update_persona
+    from modules.memory import Memory
+
+    with SessionLocal() as db:
+        update_persona(db, 2222, {
+            "name": "梦鳞", "personality": "温柔", "speaking_style": "轻柔",
+            "user_call_name": "老板",
+            "user_timezone": "Asia/Shanghai",  # not in _CONTEXT_LABELS
+        })
+        rows = db.query(Memory).filter(Memory.user_id == 2222, Memory.context.like("user_profile:%")).all()
+        contexts = {r.context for r in rows}
+        # Known field uses the friendly label, unknown field uses the raw key.
+        assert "user_profile:preferred_name" in contexts
+        assert "user_profile:timezone" in contexts

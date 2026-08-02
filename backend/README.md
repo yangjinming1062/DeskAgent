@@ -20,7 +20,7 @@ backend/
 │   │                   + providers/(抽象层：base · registry · http · openai_compat · content · mimo/ · minimax/ · gemini/)
 │   ├── media/         # 视频生成后台任务：video_jobs(submit/poll/download/finalize + WSEvent outbox)
 │   ├── tools/         # 工具框架 + 内置工具：registry · guardrails · memory · ... + builtin/(web/tts/image_gen/video_gen/send_message/cronjob)
-│   ├── companion/     # 伙伴系统：persona_service(onboarding draft + 角色定义) · avatar_service(generate/regenerate + clip seed) · clip_service(scene catalog + enqueue/list/invalidate) · disturbance
+│   ├── companion/     # 伙伴系统：persona_service(onboarding draft + persona+memory 双写) · memory_bootstrap(user_profile→Memory upsert) · avatar_service(generate/regenerate + clip seed，中英 species/gender 查表) · clip_service(scene catalog + enqueue/list/invalidate) · disturbance
 │   ├── scheduler/     # 后台任务：cron · title_generator · background_review
 │   └── rate_limit.py  # slowapi 限流（依赖 modules.auth，独居 services/ 根而非 components/）
 ├── api/v1/            # 薄 HTTP/WS 端点，pkgutil 自动发现：chat(唯一 WS，薄端点委托 gateway/handlers) / user / sessions / llm / media / companion / config / insights / admin / status / health / update / page
@@ -201,9 +201,11 @@ DeskAgent 伙伴的"人格"与"形象"是跨 Backend↔Desktop 的核心契约�
 
 ### 角色定义（Persona）
 
-`Persona` 表存用户 onboarding 产出的结构化角色定义（JSON + 渲染好的 `system_prompt_extras` 片段），按用户维度一对一持久化。作为系统提示词 stable 段的一部分注入每次 chat turn，驱动伙伴说话风格、性格表现与主动行为倾向。角色定义是伙伴行为的**唯一真相源**——只能由用户显式发起变更（重新进入角色编辑），禁止 LLM 自行改写。
+`Persona` 表存用户 onboarding 产出的结构化角色定义（JSON + 渲染好的 `system_prompt_extras` 片段），按用户维度一对一持久化。角色定义字段：`name` / `personality` / `speaking_style` 为必传；`appearance` / `background` / `biological_type` / `gender` 全部 optional（`biological_type` 把"灵兽/精灵/机甲…"物种维度从自由文本规范化为 profile 字段，`gender` 把"男/女/其他"的角色性别从隐式约定变为显式 schema）。作为系统提示词 stable 段的一部分注入每次 chat turn，驱动伙伴说话风格、性格表现与主动行为倾向。角色定义是伙伴行为的**唯一真相源**——只能由用户显式发起变更（重新进入角色编辑），禁止 LLM 自行改写。
 
 **onboarding 断点恢复**（design §7.5）：onboarding 逐字段增量持久化经两个 JSON-RPC 方法：`onboarding.get_state` 返回已采集字段 + 下一个未答问题（`next_field`）；`onboarding.submit {field, value}` 即时落盘单个字段。Desktop 启动时调 `get_state`，未完成则从 `next_field` 恢复，崩溃/退出不丢进度。draft 存在 `Persona.definition_json`（`is_complete=False`），完成后 Desktop 发 `PUT /api/companion/persona` 覆盖为最终角色定义（`is_complete=True`）。
+
+**12 步 onboarding + 角色/用户单 PUT 双写**：onboarding 采集 12 个字段（4 旧 + 3 角色 —— `species` / `character_gender` / `appearance` —— + 5 结构化用户字段 `user_call_name` / `user_gender` / `user_age_bucket` / `user_hobbies` / `user_freeform`）。`PersonaUpdate` schema 把 user_* 字段显式声明为 optional 仍在 `extra="forbid"` 严格校验下；`update_persona` 在 `_validate_definition(persona_def)` 之前先把 user_* 字段抽出交给 `services.companion.memory_bootstrap.record_user_profile` 落到 `Memory` 表（query-then-update 幂等 upsert，tags `["onboarding","user_profile"]`，context `user_profile:*`，与 `NativeMemory._retain` 同一模式保证 SQLite 单测与生产 Postgres 同行为），然后写 persona 字段 + `is_complete=True`，**同一 `db.commit()` 让两路写入具备原子性**——失败要么都回滚、要么都落。生产 Postgres `main.py::_install_schema_extensions` 加 `uq_memories_user_context` 部分唯一索引做并发 race 兜底。avatar 生图 prompt 经 `_SPECIES_EN` / `_GENDER_EN` 查表把中文物种/性别翻成稳定英文 token（`灵兽` → `spirit beast`、`女` → `female`…），未知值/自由输入原文回退保留用户原意。
 
 ### 形象资产（AvatarAsset）
 

@@ -12,9 +12,14 @@ class PersonaUpdate(BaseModel):
     personality: str = Field(min_length=1, max_length=500)
     speaking_style: str = Field(min_length=1, max_length=500)
     appearance: str | None = Field(default=None, max_length=500)
-    pronouns: str | None = Field(default=None, max_length=64)
     background: str | None = Field(default=None, max_length=500)
-    boundaries: str | None = Field(default=None, max_length=500)
+    biological_type: str | None = Field(default=None, max_length=64)
+    gender: str | None = Field(default=None, max_length=64)
+    user_call_name: str | None = Field(default=None, max_length=2000)
+    user_gender: str | None = Field(default=None, max_length=2000)
+    user_age_bucket: str | None = Field(default=None, max_length=2000)
+    user_hobbies: str | None = Field(default=None, max_length=2000)
+    user_freeform: str | None = Field(default=None, max_length=2000)
 
 
 class PersonaResponse(BaseModel):

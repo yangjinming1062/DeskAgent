@@ -60,3 +60,4 @@ class AgentPromptConfig(BaseModel):
     task_completion_guidance: bool = True
     tool_use_enforcement: str = "auto"
     persona_extras: str | None = None
+    user_profile_extras: str | None = None

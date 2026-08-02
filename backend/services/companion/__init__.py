@@ -19,6 +19,9 @@ from .disturbance import is_quiet
 from .disturbance import set_disturbance_tier
 from .escalation_loop import start_clip_escalation
 from .escalation_loop import stop_clip_escalation
+from .memory_bootstrap import build_user_profile_extras
+from .memory_bootstrap import extract_user_profile
+from .memory_bootstrap import record_user_profile
 from .persona_service import build_system_prompt_extras
 from .persona_service import get_onboarding_state
 from .persona_service import get_or_create_persona
@@ -29,6 +32,8 @@ from .persona_service import update_persona
 from .voice_catalog import design_voice
 from .voice_catalog import list_voices as list_tts_voices
 from .voice_catalog import match_user_voice
+from .voice_catalog import normalize_voice_language
+from .voice_catalog import SUPPORTED_VOICE_LANGUAGES
 
 __all__ = [
     "ALLOWED_AVATAR_UPLOAD_MIME_TYPES",
@@ -38,8 +43,10 @@ __all__ = [
     "AvatarGenerationError",
     "PersonaValidationError",
     "build_system_prompt_extras",
+    "build_user_profile_extras",
     "delete_user_assets",
     "design_voice",
+    "extract_user_profile",
     "generate_avatar",
     "get_active_avatar",
     "get_disturbance_tier",
@@ -51,6 +58,7 @@ __all__ = [
     "list_clips",
     "list_tts_voices",
     "match_user_voice",
+    "record_user_profile",
     "regenerate_avatar",
     "resolve_companion_asset_path",
     "resolve_uploaded_avatar_path",

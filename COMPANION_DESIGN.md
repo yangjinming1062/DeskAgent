@@ -105,15 +105,19 @@
 
 安装完成 → 蛋以默认形象出现在桌面（透明置顶窗口），带轻微 idle 动画。用户每次点击产生新裂纹，累计 5 次蛋完全碎裂并唤起登录。不在蛋上贴"点我"提示——让 idle 动画引导好奇心。未登录时蛋是"teaser"，登录后变"drowsy"（半醒），网关连上变"awake"。
 
-### 3.2 对话式信息采集
+### 3.2 对话式信息采集（12 步）
 
-蛋破碎后，一个发光的、尚未定形的轮廓（silhouette）开始与用户对话——叙事上是"这个新生命在问你怎么定义它"。问题序列（顺序有依赖，前一个的答案塑造后一个的语境）：名字 → 角色定位 → 性格 → 用户自我介绍 → 音色偏好。每个问题由 silhouette 以默认中性语音 TTS 说出（同时显示文字气泡），让用户从第一步就建立"它会说话"的预期。全部支持"跳过/返回上一步"；只有名字必填。
+蛋破碎后，一个发光的、尚未定形的轮廓（silhouette）开始与用户对话——叙事上是"这个新生命在问你怎么定义它"。问题序列（按角色定义 → 用户信息的顺序组织，物种 / 性别 / 形象描述三步连排形成视觉锚点，前一个答案塑造后一个的语境）：名字 → 物种（生物类型）→ 角色性别 → 形象描述 → 角色定位 → 性格 → 怎么称呼您 → 您的性别 → 年龄段 → 您的爱好 → 还有什么想告诉我 → 音色偏好。每个问题由 silhouette 以默认中性语音 TTS 说出（同时显示文字气泡），让用户从第一步就建立"它会说话"的预期。全部支持"跳过/返回上一步"；只有名字必填。
+
+形象描述这一步把 `PersonaUpdate.appearance` 字段（schema 早已预留但 onboarding 从未收取）真正接通到 silhouette → portrait 生图链路，让用户主动告诉伙伴"希望我长什么样"，避免单纯基于姓名 / 性格 / 角色定位生成的随机性。
 
 **断点恢复**（[ARCHITECTURE.md §7.5](ARCHITECTURE.md)）：每个回答经 `onboarding.submit {field, value}` 即时落盘单个字段，Desktop 启动时调 `onboarding.get_state` 从下一个未答问题恢复——崩溃/退出不丢进度。
 
-### 3.3 孵化与形象生成
+### 3.3 孵化与形象生成（单 PUT 双写）
 
-问题收齐后进入孵化动画。关键不变量：**Backend 的形象生成要求 persona 已完成（`is_complete=True`）**，因此 Desktop 在孵化开始时**先把 assembled persona 经 `PUT /api/companion/persona` 落库完成**，再生成 portrait——此时 5 个答案已全部采集，self_intro/voice 已被消费（voice 用于音色匹配）。生图超时/失败时 silhouette 说"我还没想好…"并自动重试（最多 3 次），不暴露技术错误；三次失败后允许稍后再试，不阻断用户。
+问题收齐后进入孵化动画。关键不变量：**Backend 的形象生成要求 persona 已完成（`is_complete=True`）**，因此 Desktop 在孵化开始时**先把 12 个答案（角色定义 + 5 用户结构化字段）经同一次 `PUT /api/companion/persona` 落库完成**——`update_persona` 服务端按 `extra="forbid"` schema 严格校验角色定义字段、把 5 个 user_* 字段无侵入地分流到 `Memory` 表（context 为 `user_profile:*`，tags 为 `"onboarding,user_profile"`），单 `db.commit()` 同时落 persona 与 memory。voice 字段已被消费（用于音色匹配）。生图超时/失败时 silhouette 说"我还没想好…"并自动重试（最多 3 次），不暴露技术错误；三次失败后允许稍后再试，不阻断用户。
+
+如果前一次 PUT 因网络问题失败，desktop `enterHatching` 自带的 3 次重试循环会把所有 12 个字段（包括 user_*）一起再发，由服务端的 query-then-update 幂等 upsert 避免重复或丢字段。
 
 ### 3.4 形象确认
 

@@ -17,14 +17,12 @@ from sqlalchemy.orm import relationship
 
 class Persona(ModelBase, TimestampMixin):
     """Per-user companion persona — the source of truth for the companion's
-    voice, personality, and behavioral biases. Persisted as one row per
-    user (the user's current persona, editable via onboarding). The
-    ``definition_json`` blob carries the structured fields the onboarding
-    flow collects (name, personality, speaking style, appearance
-    preference, pronouns, etc.); ``system_prompt_extras`` is the rendered
-    snippet injected into the LLM system prompt — kept as a separate
-    column so persona edits only re-render one row instead of every
-    historical message.
+    voice, personality, and behavioral biases. ``definition_json`` carries
+    the structured fields the onboarding flow collects (name, personality,
+    speaking style, appearance, biological_type, gender, background, etc.);
+    ``system_prompt_extras`` is the rendered snippet injected into the
+    LLM system prompt — kept as a separate column so persona edits only
+    re-render one row instead of every historical message.
     """
 
     __tablename__ = "personas"
