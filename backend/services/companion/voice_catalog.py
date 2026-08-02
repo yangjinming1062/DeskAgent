@@ -23,6 +23,10 @@ _GENDER_KEYWORDS: dict[str, list[str]] = {
 
 DEFAULT_VOICE = VoiceEntry(id="", label="默认音色", gender="neutral", tags=["默认"], description="使用引擎默认音色。")
 
+# Stable sort: zh → multi → ∅ → en. Original order preserved within each bucket.
+# Module-level so we don't re-allocate the dict on every ``list_voices`` call.
+_LANGUAGE_BUCKET: dict[str, int] = {"zh": 0, "multi": 1, "": 2, "en": 3}
+
 
 def active_tts_provider(db: Session, user_id: int) -> str:
     chain = resolve_provider_chain(db, user_id, "tts")
@@ -30,9 +34,7 @@ def active_tts_provider(db: Session, user_id: int) -> str:
 
 
 def _sort_voices_by_language(voices: list[VoiceEntry]) -> list[VoiceEntry]:
-    """Stable sort: zh → multi → ∅ → en. Original order preserved within each bucket."""
-    bucket = {"zh": 0, "multi": 1, "": 2, "en": 3}.get
-    return sorted(voices, key=lambda v: bucket(v.language or ""))
+    return sorted(voices, key=lambda v: _LANGUAGE_BUCKET.get(v.language or "", 4))
 
 
 def list_voices(db: Session, user_id: int, language: str | None = None) -> dict:

@@ -13,7 +13,3 @@
 import { atom } from 'nanostores'
 
 export const $voicePreparing = atom<boolean>(false)
-
-export function setVoicePreparing(preparing: boolean): void {
-  $voicePreparing.set(preparing)
-}

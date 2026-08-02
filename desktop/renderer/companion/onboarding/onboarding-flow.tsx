@@ -476,6 +476,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
         <Silhouette clarity={clarity} size={160} spin={phase === 'hatching'} />
 
         <div className="w-full rounded-2xl border border-white/10 bg-black/45 p-5 text-white shadow-2xl backdrop-blur-md" style={{ pointerEvents: 'auto' }}>
+          {voicePreparing && <p className="mb-2 text-center text-[10px] text-white/40">🔊 正在准备声音…</p>}
           {phase === 'q' && (
           <>
             <p className="min-h-[3.5rem] text-[15px] leading-relaxed">{spokenText}</p>
@@ -530,7 +531,6 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
               </div>
             </div>
             {hint && <p className="mt-2 text-xs text-amber-300/80">{hint}</p>}
-            {voicePreparing && <p className="mt-2 text-[10px] text-white/40">🔊 正在准备声音…</p>}
             <p className="mt-2 text-right text-[10px] text-white/30">
               {qIndex + 1} / {QUESTIONS.length}
             </p>
@@ -540,11 +540,6 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
         {phase === 'hatching' && (
           <p className="py-6 text-center text-sm text-white/80">{hint || '让我想想我该是什么样子…'}</p>
         )}
-
-        {/* Voice-prep hint is rendered in three phase branches (q / hatching / voice).
-            Single source of truth via the shared `voicePreparing` flag — see
-            the JSX block at the bottom of this section for the voice-phase
-            variant. */}
 
         {(phase === 'portrait' || phase === 'voice' || phase === 'greeting') && (
           <PortraitPanel name={answers.name?.trim() || '伙伴'} url={portraitUrl} />
@@ -601,7 +596,6 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
                 </button>
               </div>
             </div>
-            {voicePreparing && <p className="mt-1 text-[10px] text-white/40">🔊 正在准备声音…</p>}
             <p className="mt-1 text-[10px] text-white/40">{voiceCatalog.length} 个音色 · 先挑个差不多的就行，以后随时能在设置里调。</p>
             <button
               className="mt-3 w-full rounded-full bg-white/90 py-1.5 text-sm font-medium text-black transition hover:bg-white"

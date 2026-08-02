@@ -42,6 +42,7 @@ _PIPER_VOICES_REPO = "https://huggingface.co/rhasspy/piper-voices/resolve/main"
 
 # CJK Unified Ideographs plus the two extension blocks for common CJK punctuation.
 _CJK_RE = re.compile(r"[　-〿㐀-䶿一-鿿豈-﫿]")
+_WS_RE = re.compile(r"\s")
 
 # Canonical Piper voice id shape. Cloud ids (e.g. ``Mia`` / ``冰糖``) never match —
 # basis for tts_tool._is_cloud_voice's shape check.
@@ -52,11 +53,11 @@ def text_language(text: str) -> str:
     """``"zh"`` when ≥50% of non-whitespace chars are CJK, else ``"other"``."""
     if not text:
         return "other"
-    chars = [c for c in text if not c.isspace()]
-    if not chars:
+    non_ws = _WS_RE.sub("", text)
+    if not non_ws:
         return "other"
-    cjk = sum(1 for c in chars if _CJK_RE.match(c))
-    return "zh" if cjk * 2 >= len(chars) else "other"
+    cjk = sum(1 for _ in _CJK_RE.findall(non_ws))
+    return "zh" if cjk * 2 >= len(non_ws) else "other"
 
 
 class PiperRuntime:
@@ -100,8 +101,17 @@ class PiperRuntime:
         output_wav = Path(output_wav)
         output_wav.parent.mkdir(parents=True, exist_ok=True)
         cfg = SynthesisConfig(length_scale=max(0.5, min(2.0, 1.0 / max(0.5, speed))))
+        # piper-tts' modernize ``synthesize(text, syn_config)`` returns an
+        # ``Iterable[AudioChunk]`` and writes nothing itself — the older
+        # ``synthesize(text, wav_file, syn_config=...)`` API no longer
+        # accepts a wav_file argument (would raise ``TypeError: got
+        # multiple values for syn_config`` against the modern signature).
+        # ``synthesize_wav`` is the right bridge: it takes an already-opened
+        # ``wave.Wave_write`` and ``set_wav_format=True`` lets Piper set the
+        # wave header from the audio chunk's sample_rate / sample_width /
+        # sample_channels so we don't need to hardcode 22050/mono/16-bit.
         with wave.open(str(output_wav), "wb") as wf:
-            voice.synthesize(text, wf, syn_config=cfg)
+            voice.synthesize_wav(text, wf, syn_config=cfg, set_wav_format=True)
         return output_wav
 
 
@@ -146,16 +156,15 @@ def bundled_voices() -> tuple[str, ...]:
     return _BUNDLED_VOICES
 
 
-def pick_voice_for_text(text: str, *, preferred: str = "") -> str:
+def pick_voice_for_text(*, preferred: str = "") -> str:
     """Explicit `preferred` wins; otherwise default to ZH_DEFAULT_VOICE.
 
-    ``text`` is reserved for future language-aware routing — see runner/README
-    §"本地 TTS voice 选型" for why we currently don't auto-switch on detected
-    language (inconsistent voice identity across a single conversation).
+    We deliberately do not auto-route on text language — see runner/README
+    §"本地 TTS voice 选型" for why (inconsistent voice identity across a
+    single conversation).
     """
     if preferred and preferred.strip():
         return preferred.strip()
-    del text
     return ZH_DEFAULT_VOICE
 
 
@@ -191,9 +200,9 @@ def _voice_id_to_repo_path(voice_id: str) -> str:
     if len(parts) < 3:
         return f"misc/{voice_id}"
     lang_region, name, quality = parts[0], parts[1], parts[2]
-    lang, _, region = lang_region.partition("_")
-    if not region:
+    if "_" not in lang_region:
         return f"misc/{voice_id}"
+    lang = lang_region.split("_", 1)[0]
     return f"{lang}/{lang_region}/{name}/{quality}"
 
 
@@ -203,7 +212,7 @@ def ensure_voice_installed(voice_id: str, *, voice_dir: Path | None = None, time
         return True
     try:
         download_voice(voice_id, voice_dir=voice_dir, timeout=timeout)
+        return True
     except Exception as exc:  # noqa: BLE001 — best-effort, log and move on
         logger.warning("Piper voice %s auto-download failed: %s", voice_id, exc)
         return False
-    return _is_voice_installed(voice_id, voice_dir=voice_dir)

@@ -24,6 +24,9 @@ const TTS_TIMEOUT_MS = 60_000
 const TTS_MAX_TEXT_CHARS = 4000
 const STT_MAX_AUDIO_BYTES = 24 * 1024 * 1024
 const CONFIG_CACHE_TTL_MS = 10_000
+// Product direction is "default Chinese" for STT — see CLAUDE.md / product brief.
+// Renderer callers that want auto-detect can pass `language: 'auto'` explicitly.
+const DEFAULT_STT_LANGUAGE = 'zh'
 
 // Per-process call counters. Each TTS/STT request gets a stable id
 // ([tts#N] / [stt#N]) so the operator can follow one speak() from
@@ -68,33 +71,18 @@ function localToolAvailable(bridge, toolName) {
 }
 
 function formatKv(prefix, event, base, extra = {}) {
-  const parts = []
-  // Same filter rules for both ``base`` and ``extra``: drop nullish and
-  // explicit false so the trace always reads as one self-contained line
-  // with only meaningful fields (an omitted `is_designed=false` is more
-  // useful than `is_designed=false` for tracing).
-  const isOmitted = v => v === null || v === undefined || v === false
-  for (const [k, v] of Object.entries(base)) {
-    if (isOmitted(v)) continue
-    parts.push(typeof v === 'string' ? `${k}=${JSON.stringify(v)}` : `${k}=${v}`)
-  }
-  for (const [k, v] of Object.entries(extra)) {
-    if (isOmitted(v)) continue
-    parts.push(typeof v === 'string' ? `${k}=${JSON.stringify(v)}` : `${k}=${v}`)
-  }
+  // Drops nullish and explicit false so the trace reads as one self-contained
+  // line with only meaningful fields — an omitted `is_designed=false` is
+  // more useful than `is_designed=false` for tracing.
+  const fmt = ([k, v]) => `${k}=${typeof v === 'string' ? JSON.stringify(v) : v}`
+  const parts = [...Object.entries(base), ...Object.entries(extra)]
+    .filter(([, v]) => v !== null && v !== undefined && v !== false)
+    .map(fmt)
   return `${prefix} ${event} ${parts.join(' ')}`
 }
 
-function makeTtsLog({ log, id, voice, enginePref, isDesigned, context }) {
-  const base = { voice_in: voice || '', engine_pref: enginePref, context: context || null }
-  if (isDesigned) base.is_designed = true
-  return (event, extra = {}) => log(formatKv(`[tts#${id}]`, event, base, extra))
-}
-
-function makeSttLog({ log, id, mime, enginePref, context }) {
-  const base = { engine_pref: enginePref, context: context || null }
-  if (mime) base.mime = mime
-  return (event, extra = {}) => log(formatKv(`[stt#${id}]`, event, base, extra))
+function makeLog(log, prefix, base) {
+  return (event, extra = {}) => log(formatKv(prefix, event, base, extra))
 }
 
 // Run the local STT tool; never throws — returns {ok,value} or {ok:false,error}.
@@ -227,17 +215,11 @@ function registerMediaIpc({ ipcMain, ensureBackend, getRunnerBridge, getEnginePr
     const filename = payload?.filename || `recording.${(mime.split('/')[1] || 'webm').split(';')[0]}`
     const context = typeof payload?.context === 'string' ? payload.context : null
 
-    // Product direction is "default Chinese" for TTS/STT (per
-    // CLAUDE.md / product brief). Renderer's `media.stt` IPC doesn't
-    // currently pass a `language` arg, so we hint Whisper with `zh` to
-    // improve accuracy on the common case (Chinese chat voice input).
-    // Operators who want auto-detect can pass `language: 'auto'` from
-    // the renderer explicitly.
-    const language = (typeof payload?.language === 'string' && payload.language) ? payload.language : 'zh'
+    const language = (typeof payload?.language === 'string' && payload.language) ? payload.language : DEFAULT_STT_LANGUAGE
 
     const prefs = await resolvePrefs()
     const engine = prefs.stt
-    const sttLog = makeSttLog({ log, id: sttId, mime, enginePref: engine, context })
+    const sttLog = makeLog(log, `[stt#${sttId}]`, { engine_pref: engine, context: context || null, ...(mime ? { mime } : {}) })
     const startedAt = Date.now()
 
     if (engine !== 'cloud') {
@@ -282,7 +264,7 @@ function registerMediaIpc({ ipcMain, ensureBackend, getRunnerBridge, getEnginePr
     const isDesigned = voice.startsWith('mimo_voicedesign:')
     const engine = isDesigned ? 'cloud' : prefs.tts
 
-    const ttsLog = makeTtsLog({ log, id: ttsId, voice, enginePref: engine, isDesigned, context })
+    const ttsLog = makeLog(log, `[tts#${ttsId}]`, { voice_in: voice || '', engine_pref: engine, context: context || null, ...(isDesigned ? { is_designed: true } : {}) })
     const startedAt = Date.now()
 
     if (engine !== 'cloud') {

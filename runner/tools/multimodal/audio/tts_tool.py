@@ -1,5 +1,6 @@
 import logging
 import re
+import sys
 import tempfile
 import uuid
 from pathlib import Path
@@ -14,11 +15,13 @@ from ...registry import tool_result
 from .piper_runtime import bundled_voices
 from .piper_runtime import default_voice_id
 from .piper_runtime import ensure_voice_installed
+from .piper_runtime import _is_voice_installed
 from .piper_runtime import list_installed_voices
 from .piper_runtime import pick_voice_for_text
 from .piper_runtime import piper_available
 from .piper_runtime import piper_voice_dir
 from .piper_runtime import PiperRuntime
+from .piper_runtime import PIPER_VOICE_RE
 from .piper_runtime import pyttsx3_available
 from .piper_runtime import text_language
 
@@ -71,18 +74,22 @@ LIST_VOICES_SCHEMA = {
 
 
 # Cloud voice ids the backend advertises — Piper/pyttsx3 can't speak them.
+# Tuple form lets ``str.startswith`` do a single C-level check across all
+# prefixes. New providers must add their prefix here AND wire their voices
+# into ``backend/services/llm/voice_catalog.py`` — keeping the two in sync
+# is the contract this list enforces.
 _CLOUD_VOICE_HINTS = ("mimo_", "mimo_voicedesign:", "minimax_", "minimax:")
 
 
 def _is_cloud_voice(voice: str) -> bool:
     """True iff `voice` is a cloud-provider id rather than a local Piper id.
 
-    Shape fallback (anything not matching ``PIPER_VOICE_RE``) catches bare
-    names like ``冰糖`` / ``Mia`` that don't carry a known cloud prefix.
+    The shape fallback (anything not matching ``PIPER_VOICE_RE``) catches
+    bare names like ``冰糖`` / ``Mia`` that don't carry a known prefix; the
+    prefix list is a forward-compat guard for ids that LOOK Piper-shaped
+    but are actually cloud tokens (e.g. ``mimo_voicedesign:<prompt>``).
     """
-    from .piper_runtime import PIPER_VOICE_RE
-
-    return any(voice.startswith(prefix) for prefix in _CLOUD_VOICE_HINTS) or not PIPER_VOICE_RE.match(voice)
+    return voice.startswith(_CLOUD_VOICE_HINTS) or not PIPER_VOICE_RE.match(voice)
 
 
 def _normalize_text(text: str) -> str:
@@ -96,10 +103,6 @@ def _output_path(name_hint: str = "tts") -> Path:
     return base / f"{name_hint}_{uuid.uuid4().hex[:10]}.wav"
 
 
-def _piper_voice_ready(v: str) -> bool:
-    return piper_available() and (Path(piper_voice_dir() / f"{v}.onnx").is_file())
-
-
 def _synth_piper(text: str, voice: str, speed: float, dst: Path) -> dict[str, Any]:
     return {
         "engine": "piper",
@@ -108,20 +111,13 @@ def _synth_piper(text: str, voice: str, speed: float, dst: Path) -> dict[str, An
     }
 
 
-def _enumerate_pyttsx3_voices() -> list[dict[str, str]]:
-    """Enumerate pyttsx3 voices as ``{id, name, lang, lang_name, is_zh}``.
+def _enumerate_pyttsx3_voices(engine: Any) -> list[dict[str, str]]:
+    """Snapshot the pyttsx3 voices list as ``{id, name, lang, lang_name, is_zh}``.
 
-    Best-effort: pyttsx3 is a thin SAPI5/NSSpeech/espeak wrapper and shape
-    varies by platform; returns ``[]`` on any failure.
+    Caller owns ``engine`` — must have a live pyttsx3.init() handle. On
+    Windows the calling thread must already have called CoInitialize, or
+    SAPI5 raises ``OSError: CoInitialize has not been called``.
     """
-    try:
-        import pyttsx3
-    except ImportError:
-        return []
-    try:
-        engine = pyttsx3.init()
-    except Exception:  # noqa: BLE001 — pyttsx3 raises broad on driver init failures
-        return []
     try:
         voices = engine.getProperty("voices") or []
     except Exception:  # noqa: BLE001
@@ -146,45 +142,78 @@ def _enumerate_pyttsx3_voices() -> list[dict[str, str]]:
     return out
 
 
-def _pick_pyttsx3_voice_for_text(text: str) -> str | None:
-    """Pick a Chinese pyttsx3 voice for CJK text; ``None`` to use the OS default."""
-    if not pyttsx3_available():
-        return None
-    voices = _enumerate_pyttsx3_voices()
-    if not voices or text_language(text) != "zh":
-        return None
-    return next((v["id"] or None for v in voices if v["is_zh"] == "1"), None)
+# Module-scope cache: the OS voice list doesn't change at runtime, and
+# pyttsx3.init() costs ~100ms of SAPI5 enumeration on Windows. Refreshing
+# per-call adds latency for no benefit.
+_PYTTSX3_VOICE_CACHE: list[dict[str, str]] | None = None
 
 
 def _synth_pyttsx3(text: str, voice: str | None, speed: float, dst: Path) -> dict[str, Any]:
     import pyttsx3
 
-    engine = pyttsx3.init()
-    try:
-        rate = engine.getProperty("rate")
-        if rate:
-            engine.setProperty("rate", int(rate * speed))
-    except Exception:
-        pass
-
-    # pyttsx3's setProperty("voice") is best-effort across platforms.
-    if voice:
+    # pyttsx3 on Windows uses SAPI5 via COM. The runner's tools run on
+    # asyncio worker threads that don't have COM initialized — SAPI5
+    # raises ``OSError: [WinError -2147221008] CoInitialize has not
+    # been called`` if we don't bootstrap the apartment. CoInitialize
+    # / CoUninitialize must be paired per thread. Windows-only; the
+    # import is deferred so POSIX runs aren't affected. Both the voice
+    # enumeration and the synthesis must happen inside this scope — see
+    # ``_PYTTSX3_VOICE_CACHE`` below.
+    com_initialized = False
+    if sys.platform == "win32":
         try:
-            engine.setProperty("voice", voice)
+            import pythoncom
+
+            pythoncom.CoInitialize()
+            com_initialized = True
+        except Exception:
+            com_initialized = False
+
+    try:
+        engine = pyttsx3.init()
+        try:
+            rate = engine.getProperty("rate")
+            if rate:
+                engine.setProperty("rate", int(rate * speed))
         except Exception:
             pass
 
-    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
-        tmp_path = tmp.name
-    try:
-        engine.save_to_file(text, tmp_path)
-        engine.runAndWait()
-        copy2(tmp_path, dst)
-    finally:
+        # Resolve the voice inside the COM scope. An explicit caller-supplied
+        # id wins; otherwise pick a Chinese SAPI5 voice for CJK text — but
+        # only if no caller choice was given (see ``text_to_speech_tool``).
+        global _PYTTSX3_VOICE_CACHE
+        if not voice:
+            if _PYTTSX3_VOICE_CACHE is None:
+                _PYTTSX3_VOICE_CACHE = _enumerate_pyttsx3_voices(engine)
+            if text_language(text) == "zh":
+                voice = next((v["id"] or None for v in _PYTTSX3_VOICE_CACHE if v["is_zh"] == "1"), None)
+
+        # pyttsx3's setProperty("voice") is best-effort across platforms.
+        if voice:
+            try:
+                engine.setProperty("voice", voice)
+            except Exception:
+                pass
+
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+            tmp_path = tmp.name
         try:
-            Path(tmp_path).unlink()
-        except OSError:
-            pass
+            engine.save_to_file(text, tmp_path)
+            engine.runAndWait()
+            copy2(tmp_path, dst)
+        finally:
+            try:
+                Path(tmp_path).unlink()
+            except OSError:
+                pass
+    finally:
+        if com_initialized:
+            try:
+                import pythoncom
+
+                pythoncom.CoUninitialize()
+            except Exception:
+                pass
 
     return {"engine": "pyttsx3", "voice": voice or "(system default)", "path": str(dst)}
 
@@ -229,7 +258,7 @@ def text_to_speech_tool(args: dict[str, Any], **kw: Any) -> str:
 
     # Per-user voice id is the single source of truth for routing (see runner/README §本地 TTS voice 选型):
     # explicit caller pref wins, otherwise default to bundled ZH voice per the "default Chinese" direction.
-    voice = pick_voice_for_text(normalized, preferred=raw_voice)
+    voice = pick_voice_for_text(preferred=raw_voice)
 
     dst = _output_path(name_hint="piper" if engine == "piper" else "tts")
 
@@ -238,7 +267,7 @@ def text_to_speech_tool(args: dict[str, Any], **kw: Any) -> str:
     engine_chain: list[tuple[str, str]] = []  # (engine_name, voice_id)
 
     if engine == "piper":
-        if not _piper_voice_ready(voice):
+        if not (piper_available() and _is_voice_installed(voice)):
             return tool_error(
                 f"piper voice {voice!r} not installed under {piper_voice_dir()}",
                 hint="Use `list_tts_voices` to see installed voices, or pass engine='pyttsx3'.",
@@ -254,13 +283,13 @@ def text_to_speech_tool(args: dict[str, Any], **kw: Any) -> str:
     else:
         # Auto mode: try the requested Piper voice first; auto-download on miss so a first install
         # that wiped $DESKAGENT_HOME keeps speaking locally.
+        cfg_default = default_voice_id()
         piper_voice_for_chain: str | None = None
-        for candidate in (voice, *([default_voice_id()] if voice != default_voice_id() else [])):
-            if _piper_voice_ready(candidate):
-                piper_voice_for_chain = candidate
-                break
-            if candidate in bundled_voices() or candidate.startswith(("zh_", "en_", "ja_", "ko_")):
-                if ensure_voice_installed(candidate) and _piper_voice_ready(candidate):
+        for candidate in (voice, *( [cfg_default] if voice != cfg_default else [])):
+            if PIPER_VOICE_RE.match(candidate):
+                # ensure_voice_installed already short-circuits when the voice is
+                # on disk and returns True; otherwise it tries to download.
+                if ensure_voice_installed(candidate):
                     piper_voice_for_chain = candidate
                     break
         if piper_voice_for_chain is not None:
@@ -270,40 +299,30 @@ def text_to_speech_tool(args: dict[str, Any], **kw: Any) -> str:
         if not engine_chain:
             return tool_error(
                 "no TTS engine available: piper voice not on disk and pyttsx3 not importable",
-                hint=(f"Download a Piper voice to {piper_voice_dir()}, or install pyttsx3. " "Bundled voice ids: " + ", ".join(bundled_voices()) + "."),
+                hint=(f"Download a Piper voice to {piper_voice_dir()}, or install pyttsx3. Bundled voice ids: {', '.join(bundled_voices())}."),
             )
 
-    # Auto mode silently falls through to the next engine on any failure (model corruption, OOM,
-    # missing file mid-synthesis). Explicit engine=piper/pyttsx3 honors the caller's choice.
+    # Explicit engine=piper/pyttsx3 honors the caller's choice — only auto mode
+    # silently falls through to the next engine on failure (model corruption,
+    # OOM, missing file mid-synthesis).
+    is_auto = engine not in ("piper", "pyttsx3")
     last_error: Exception | None = None
     info: dict[str, Any] | None = None
-    for i, (eng_name, eng_voice) in enumerate(engine_chain):
-        pyttsx3_voice_id: str | None = None
-        if eng_name == "pyttsx3":
-            pyttsx3_voice_id = _pick_pyttsx3_voice_for_text(normalized)
-        has_next = i < len(engine_chain) - 1
+    for eng_name, eng_voice in engine_chain:
         try:
             if eng_name == "piper":
                 info = _synth_piper(normalized, eng_voice, speed, dst)
             else:
-                info = _synth_pyttsx3(normalized, pyttsx3_voice_id, speed, dst)
+                # The pyttsx3 slot in the chain never carries a voice id —
+                # _synth_pyttsx3 auto-picks a Chinese SAPI5 voice for CJK text
+                # inside its COM scope.
+                info = _synth_pyttsx3(normalized, None, speed, dst)
             break
-        except FileNotFoundError as e:
-            last_error = e
-            logger.warning("piper synthesis FileNotFoundError: %s; trying next engine", e)
-            if has_next:
-                continue
-            if i > 0:
-                return _all_engines_failed(last_error)
-            return tool_error(str(e), hint=f"Download a Piper voice to {piper_voice_dir()}", success=False)
         except Exception as e:
             last_error = e
-            logger.exception("%s synthesis failed", eng_name)
-            if has_next:
-                continue
-            if i > 0:
-                return _all_engines_failed(last_error)
-            return tool_error(f"{eng_name} failed: {e}", success=False)
+            logger.warning("%s synthesis failed: %s", eng_name, e)
+            if not is_auto:
+                return tool_error(f"{eng_name} failed: {e}", success=False)
 
     if info is None:
         return _all_engines_failed(last_error)
