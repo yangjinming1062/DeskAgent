@@ -22,7 +22,7 @@ from .runtime import serialize_settings
 # only needs e.g. ``MANAGER`` — and to keep this package importable during the
 # chat↔gateway cycle (handlers imports services.chat, which must not re-enter
 # gateway's __init__ before it finishes).
-_HANDLER_NAMES = frozenset({"handle_chat_websocket"})
+_HANDLER_NAMES = frozenset({"handle_chat_websocket", "SUPPORTED_VOICE_LANGUAGES"})
 
 __all__ = [
     "MANAGER",
@@ -44,6 +44,7 @@ __all__ = [
     "resolve_future",
     "authenticate_ws_token",
     "handle_chat_websocket",
+    "SUPPORTED_VOICE_LANGUAGES",
 ]
 
 

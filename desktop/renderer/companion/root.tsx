@@ -154,7 +154,7 @@ export function CompanionRoot() {
       notify({
         kind: 'warning',
         title: strings.notifications.voice.invalidTitle,
-        message: strings.notifications.voice.invalidMessage(result.name ?? ''),
+        message: strings.notifications.voice.invalidMessage(result.name),
         action: { label: strings.notifications.voice.invalidAction, onClick: () => setSettingsOpen(true) }
       })
     })

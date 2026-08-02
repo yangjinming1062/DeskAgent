@@ -22,6 +22,23 @@ export function Pill({ tone = 'muted', children }: { tone?: 'muted' | 'primary';
   return <Badge variant={tone === 'primary' ? 'default' : 'muted'}>{children}</Badge>
 }
 
+export function FilterPill({ active, children, onClick }: { active: boolean; children: ReactNode; onClick: () => void }) {
+  return (
+    <button
+      className={cn(
+        'rounded-full px-2.5 py-0.5 text-xs transition',
+        active
+          ? 'bg-(--ui-bg-tertiary) font-medium text-foreground'
+          : 'text-(--ui-text-secondary) hover:bg-(--chrome-action-hover) hover:text-foreground'
+      )}
+      onClick={onClick}
+      type="button"
+    >
+      {children}
+    </button>
+  )
+}
+
 export function SectionHeading({ icon: Icon, title, meta }: { icon: IconComponent; title: string; meta?: string }) {
   return (
     <div className="mb-2.5 flex items-center gap-2 pt-2 text-[length:var(--conversation-text-font-size)] font-medium">

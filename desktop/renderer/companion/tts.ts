@@ -35,6 +35,7 @@ export function stopSpeaking(): void {
     current.pause()
     current = null
   }
+
   if (currentDone) {
     currentDone()
     currentDone = null
@@ -44,24 +45,29 @@ export function stopSpeaking(): void {
 export async function speak(text: string, voice?: string, context?: string): Promise<boolean> {
   const gen = ++speakGen
   $voicePreparing.set(true)
+
   try {
     const res = await window.deskagent.media.tts({
       text,
       voice: voice ?? $companionVoiceId.get(),
       context: context ?? null
     })
+
     stopSpeaking()
     current = new Audio(res.dataUrl)
     await current.play()
+
     // Playback has started — clear the "preparing" hint so the user can
     // re-trigger 试听/下一个 without waiting for the audio to finish.
-    if (gen === speakGen) $voicePreparing.set(false)
+    if (gen === speakGen) {$voicePreparing.set(false)}
     await new Promise<void>(resolve => {
       currentDone = resolve
+
       const done = () => {
         currentDone = null
         resolve()
       }
+
       current?.addEventListener('ended', done, { once: true })
       current?.addEventListener('error', done, { once: true })
     })
@@ -72,6 +78,6 @@ export async function speak(text: string, voice?: string, context?: string): Pro
 
     return false
   } finally {
-    if (gen === speakGen) $voicePreparing.set(false)
+    if (gen === speakGen) {$voicePreparing.set(false)}
   }
 }

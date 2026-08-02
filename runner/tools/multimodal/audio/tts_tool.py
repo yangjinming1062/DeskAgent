@@ -12,16 +12,16 @@ from utils import get_deskagent_dir
 from ...registry import registry
 from ...registry import tool_error
 from ...registry import tool_result
+from .piper_runtime import _is_voice_installed
 from .piper_runtime import bundled_voices
 from .piper_runtime import default_voice_id
 from .piper_runtime import ensure_voice_installed
-from .piper_runtime import _is_voice_installed
 from .piper_runtime import list_installed_voices
 from .piper_runtime import pick_voice_for_text
 from .piper_runtime import piper_available
 from .piper_runtime import piper_voice_dir
-from .piper_runtime import PiperRuntime
 from .piper_runtime import PIPER_VOICE_RE
+from .piper_runtime import PiperRuntime
 from .piper_runtime import pyttsx3_available
 from .piper_runtime import text_language
 
@@ -285,7 +285,7 @@ def text_to_speech_tool(args: dict[str, Any], **kw: Any) -> str:
         # that wiped $DESKAGENT_HOME keeps speaking locally.
         cfg_default = default_voice_id()
         piper_voice_for_chain: str | None = None
-        for candidate in (voice, *( [cfg_default] if voice != cfg_default else [])):
+        for candidate in (voice, *([cfg_default] if voice != cfg_default else [])):
             if PIPER_VOICE_RE.match(candidate):
                 # ensure_voice_installed already short-circuits when the voice is
                 # on disk and returns True; otherwise it tries to download.

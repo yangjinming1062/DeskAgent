@@ -8,21 +8,18 @@
 // always considered valid. A catalog fetch failure is treated as valid to
 // avoid false positives on transient gateway/network hiccups.
 
+import type { RequestGateway } from '@/shared/voice-catalog'
+import { VOICEDESIGN_PREFIX } from '@/shared/voice-catalog'
+
 import { $companionVoiceId } from './prefs'
 import { fetchVoiceCatalog } from './voice'
 
-type RequestGateway = <T>(method: string, params?: Record<string, unknown>) => Promise<T>
-
-export interface VoiceValidityResult {
-  valid: boolean
-  /** Best-effort label for the invalid id (the id itself when unknown). */
-  name?: string
-}
+export type VoiceValidityResult = { valid: true } | { valid: false; name: string }
 
 export async function checkCompanionVoiceValidity(requestGateway: RequestGateway): Promise<VoiceValidityResult> {
   const id = $companionVoiceId.get()
 
-  if (!id || id.includes(':')) {
+  if (!id || id.startsWith(VOICEDESIGN_PREFIX)) {
     return { valid: true }
   }
 
@@ -30,11 +27,7 @@ export async function checkCompanionVoiceValidity(requestGateway: RequestGateway
     const catalog = await fetchVoiceCatalog(requestGateway)
     const match = catalog.voices.find(v => v.id === id)
 
-    if (match) {
-      return { valid: true }
-    }
-
-    return { valid: false, name: id }
+    return match ? { valid: true } : { valid: false, name: id }
   } catch {
     return { valid: true }
   }
