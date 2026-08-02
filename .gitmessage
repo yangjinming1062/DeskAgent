@@ -1,13 +1,24 @@
 <type>(<scope>): <subject — ≤72 chars total, imperative, lowercase>
 
-# Body: one bullet per change.
-#   - path/area: what changed
-#   - path/area: what changed
-# Single-file commits may omit the body. Non-obvious motivation goes in
-# a final "Why: ..." line. Do NOT write "moved from X to Y" history —
-# `git log` carries that.
+# Body: one bullet per change. Aim for ≤6 bullets, ≤2 lines each.
+#   - path/area: what changed, and why if it isn't obvious
+#
+# Summarize, don't transcribe. The diff is one `git show` away — the body
+# exists to explain what a reader can't get from it.
+#   - One module = one bullet. Merge sibling changes that serve the same
+#     goal instead of listing them file by file.
+#   - Say what the change accomplishes, not how the code does it. Skip
+#     symbol names, snippets, literals, line counts and per-file diffs.
+#   - Drop mechanical fallout: lint/format fixes, renames forced by a
+#     change already listed, follow-up import churn.
+#   - Single-file or otherwise self-evident commits may omit the body.
+#
+# Non-obvious motivation for the commit as a whole goes in a final
+# "Why: ..." line (≤2 lines) — the trigger or constraint, not a recap of
+# the bullets. Do NOT write "moved from X to Y" history — `git log`
+# carries that.
 #
 # type:    feat | fix | refactor | perf | docs | test | chore | style | build
-# scope:   engines | SLJ | MEDBALL | pose | common |
-#          server_app | train_app | label_app | auth | apps |
-#          or a sub-package; combine cross-cutting with '+' (engines+apps).
+# scope:   backend | desktop | runner | installer | scripts | docs |
+#          or a sub-module (companion | hub | main | gateway | tools ...);
+#          combine cross-cutting with '+' (desktop+backend).
