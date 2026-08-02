@@ -8,6 +8,46 @@ describe('assemblePersona', () => {
     expect(p).toEqual({ name: '小光', personality: '温柔体贴', speaking_style: '专业干练', background: '专属管家' })
   })
 
+  it('maps species / character_gender to biological_type / gender', () => {
+    const p = assemblePersona({ name: '梦鳞', species: '灵兽', character_gender: '女', appearance: '金发' })
+    expect(p.biological_type).toBe('灵兽')
+    expect(p.gender).toBe('女')
+    expect(p.appearance).toBe('金发')
+  })
+
+  it('passes user_* fields through verbatim (backend routes them to memory)', () => {
+    const p = assemblePersona({
+      name: '梦鳞',
+      personality: '温柔',
+      user_call_name: '老板',
+      user_hobbies: '音乐',
+      user_freeform: '早起型',
+    })
+
+    expect(p.user_call_name).toBe('老板')
+    expect(p.user_hobbies).toBe('音乐')
+    expect(p.user_freeform).toBe('早起型')
+  })
+
+  it('drops empty user_* keys so PUT body stays clean', () => {
+    const p = assemblePersona({ name: '小光', user_call_name: '', user_hobbies: '   ' })
+    expect(p).not.toHaveProperty('user_call_name')
+    expect(p).not.toHaveProperty('user_hobbies')
+  })
+
+  it('truncates appearance to 500 chars (matches schema max_length)', () => {
+    const long = '金'.repeat(800)
+    const p = assemblePersona({ name: '小光', appearance: long })
+    expect(p.appearance?.length).toBe(500)
+  })
+
+  it('truncates user_* free-text fields to 2000 chars (matches schema max_length)', () => {
+    const long = '音'.repeat(4000)
+    const p = assemblePersona({ name: '小光', user_freeform: long, user_hobbies: long })
+    expect(p.user_freeform?.length).toBe(2000)
+    expect(p.user_hobbies?.length).toBe(2000)
+  })
+
   it('defaults skipped required fields so the PUT always satisfies is_complete', () => {
     const p = assemblePersona({ name: '小光' })
     expect(p.name).toBe('小光')
@@ -20,12 +60,12 @@ describe('assemblePersona', () => {
     expect(assemblePersona({}).name).toBe('伙伴')
   })
 
-  it('never leaks self-intro or voice into the persona (memory/TTS layers, not persona)', () => {
-    const p = assemblePersona({ name: '小光', selfIntro: '我是张三', voice: '少女音' })
-    expect(p).not.toHaveProperty('selfIntro')
+  it('never leaks voice into the persona (TTS layer, not persona; user_* go to memory, not persona either)', () => {
+    // voice is consumed by tts.match_voice, not assembled into the persona PUT.
+    const p = assemblePersona({ name: '小光', voice: '少女音' })
     expect(p).not.toHaveProperty('voice')
-    // Backend PersonaUpdate is extra="forbid" — the payload must contain only
-    // the schema's keys (no role here → no background either).
+    // Backend PersonaUpdate is extra="forbid" — without role / species / character_gender /
+    // appearance / user_* there's nothing extra in the payload.
     expect(Object.keys(p).sort()).toEqual(['name', 'personality', 'speaking_style'])
   })
 })

@@ -16,6 +16,7 @@ from modules.system import ChatRequest
 from sqlalchemy.orm import Session
 
 from ..companion import build_system_prompt_extras
+from ..companion import build_user_profile_extras
 from ..gateway import RuntimeSession
 from ..llm import client_for_service
 from ..tools import NativeMemory
@@ -132,6 +133,8 @@ def _build_turn_inputs(
 
     all_schemas = REGISTRY.get_all_schemas(user_id, user_settings=user_settings)
     persona = db.query(Persona).filter(Persona.user_id == user_id).one_or_none()
+    # Pre-onboarding users have no user_profile rows — skip the SELECT.
+    user_profile_extras = build_user_profile_extras(db, user_id) if persona is not None and persona.is_complete else ""
     agent_config = AgentPromptConfig(
         valid_tool_names=[schema_name(s) for s in all_schemas],
         model=model_name,
@@ -139,6 +142,7 @@ def _build_turn_inputs(
         client_context=_merge_client_context(session_client_context, req.client_context),
         identity_prompt=identity_prompt,
         persona_extras=build_system_prompt_extras(persona),
+        user_profile_extras=user_profile_extras,
     )
     messages = _history_to_messages(history, build_system_prompt(agent_config))
 

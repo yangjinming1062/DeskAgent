@@ -22,12 +22,12 @@ from services.companion import get_active_avatar
 from services.companion import get_or_create_persona
 from services.companion import list_avatar_history
 from services.companion import list_tts_voices
+from services.companion import normalize_voice_language
 from services.companion import PersonaValidationError
 from services.companion import resolve_companion_asset_path
 from services.companion import resolve_uploaded_avatar_path
 from services.companion import update_persona
 from services.companion import upload_avatar
-from services.gateway import SUPPORTED_VOICE_LANGUAGES
 from sqlalchemy.orm import Session
 
 router = get_router(dependencies=[Depends(get_current_session)])
@@ -84,8 +84,7 @@ def list_voices(
     db: Session = Depends(get_db),
 ) -> dict:
     user, _ = auth
-    normalized = language if language in SUPPORTED_VOICE_LANGUAGES else None
-    return list_tts_voices(db, user.id, language=normalized)
+    return list_tts_voices(db, user.id, language=normalize_voice_language(language))
 
 
 @router.get("/avatar", response_model=AvatarAssetResponse | None)

@@ -42,7 +42,6 @@ _PIPER_VOICES_REPO = "https://huggingface.co/rhasspy/piper-voices/resolve/main"
 
 # CJK Unified Ideographs plus the two extension blocks for common CJK punctuation.
 _CJK_RE = re.compile(r"[　-〿㐀-䶿一-鿿豈-﫿]")
-_WS_RE = re.compile(r"\s")
 
 # Canonical Piper voice id shape. Cloud ids (e.g. ``Mia`` / ``冰糖``) never match —
 # basis for tts_tool._is_cloud_voice's shape check.
@@ -53,11 +52,10 @@ def text_language(text: str) -> str:
     """``"zh"`` when ≥50% of non-whitespace chars are CJK, else ``"other"``."""
     if not text:
         return "other"
-    non_ws = _WS_RE.sub("", text)
+    non_ws = "".join(text.split())
     if not non_ws:
         return "other"
-    cjk = sum(1 for _ in _CJK_RE.findall(non_ws))
-    return "zh" if cjk * 2 >= len(non_ws) else "other"
+    return "zh" if len(_CJK_RE.findall(non_ws)) * 2 >= len(non_ws) else "other"
 
 
 class PiperRuntime:

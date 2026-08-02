@@ -12,7 +12,7 @@ import type { RequestGateway } from '@/shared/voice-catalog'
 import { VOICEDESIGN_PREFIX } from '@/shared/voice-catalog'
 
 import { $companionVoiceId } from './prefs'
-import { fetchVoiceCatalog } from './voice'
+import { EMPTY_CATALOG, fetchVoiceCatalog } from './voice'
 
 export type VoiceValidityResult = { valid: true } | { valid: false; name: string }
 
@@ -23,12 +23,12 @@ export async function checkCompanionVoiceValidity(requestGateway: RequestGateway
     return { valid: true }
   }
 
-  try {
-    const catalog = await fetchVoiceCatalog(requestGateway)
-    const match = catalog.voices.find(v => v.id === id)
+  // ``fetchVoiceCatalog`` already swallows gateway errors and returns
+  // ``EMPTY_CATALOG``; treat that as "unknown → valid" so a transient
+  // network hiccup doesn't flag a perfectly good persisted voice id.
+  const catalog = await fetchVoiceCatalog(requestGateway)
 
-    return match ? { valid: true } : { valid: false, name: id }
-  } catch {
-    return { valid: true }
-  }
+  if (catalog === EMPTY_CATALOG) {return { valid: true }}
+
+  return catalog.voices.some(v => v.id === id) ? { valid: true } : { valid: false, name: id }
 }
