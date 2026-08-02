@@ -27,6 +27,7 @@ from services.companion import resolve_companion_asset_path
 from services.companion import resolve_uploaded_avatar_path
 from services.companion import update_persona
 from services.companion import upload_avatar
+from services.gateway import SUPPORTED_VOICE_LANGUAGES
 from sqlalchemy.orm import Session
 
 router = get_router(dependencies=[Depends(get_current_session)])
@@ -75,11 +76,7 @@ def get_persona_extras(
 
 # REST mirror of the gateway `tts.list_voices` method — the framed tool window
 # (hub) has no gateway, so its voice-gallery page reaches the same catalog via
-# REST here. Unknown ``language`` values fall through to the full catalog,
-# matching the gateway handler's permissive behavior.
-_SUPPORTED_VOICE_LANGUAGES = frozenset({"zh", "en", "multi"})
-
-
+# REST here. Unknown ``language`` values fall through to the full catalog.
 @router.get("/voices")
 def list_voices(
     language: str | None = None,
@@ -87,7 +84,7 @@ def list_voices(
     db: Session = Depends(get_db),
 ) -> dict:
     user, _ = auth
-    normalized = language if language in _SUPPORTED_VOICE_LANGUAGES else None
+    normalized = language if language in SUPPORTED_VOICE_LANGUAGES else None
     return list_tts_voices(db, user.id, language=normalized)
 
 

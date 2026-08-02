@@ -15,11 +15,13 @@ import { $voicePreparing } from '../voice-state'
 
 type Phase = 'q' | 'hatching' | 'portrait' | 'voice' | 'finishing' | 'greeting'
 type VoiceLanguageFilter = '' | 'zh' | 'en'
+
 const VOICE_LANGUAGE_TABS: { id: VoiceLanguageFilter; label: string }[] = [
   { id: '', label: '全部' },
   { id: 'zh', label: '中文' },
   { id: 'en', label: 'English' }
 ]
+
 type QKey = keyof OnboardingAnswers
 
 interface Question {
@@ -246,22 +248,27 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
   }, [gatewayState, requestGateway, onCompleted])
 
   const question = QUESTIONS[qIndex]
-  const spokenText = question.text.replace('{name}', answers.name?.trim() || '你')
+  // Latest-answers ref so the speak/focus effects only re-run on phase/qIndex,
+  // not on every keystroke (the rule's exhaustive-deps lint can't see the
+  // intent).
+  const answersRef = useRef(answers)
+  answersRef.current = answers
 
   // Speak each question as it appears (default neutral voice; plan §3.2).
   useEffect(() => {
     if (phase !== 'q') {return}
-    setInput((answers[question.key] as string) ?? '')
+    const q = QUESTIONS[qIndex]
+    const current = answersRef.current
+    setInput((current[q.key] as string) ?? '')
     setHint(null)
+    const spokenText = q.text.replace('{name}', current.name?.trim() || '你')
     void speak(spokenText, undefined, `onboarding.q${qIndex}`)
 
     return () => stopSpeaking()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase, qIndex])
 
   useEffect(() => {
-    if (phase === 'q') {(question.multiline ? textareaRef.current : inputRef.current)?.focus()}
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (phase === 'q') {(QUESTIONS[qIndex].multiline ? textareaRef.current : inputRef.current)?.focus()}
   }, [phase, qIndex])
 
   const commit = (value: string | undefined) => {
@@ -425,6 +432,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
     // confirmVoice picks the filtered-list voice, not the previous tab's.
     const next = catalog.voices[0] ?? voice
     setVoice(next)
+
     if (next) {
       setCompanionVoiceId(next.id)
     }
@@ -441,6 +449,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
     await savePersona(assemblePersona(answers))
 
     setPhase('greeting')
+
     const ok = await speak(
       `您好，我是${answers.name?.trim() || '您的伙伴'}。很高兴见到您！`,
       undefined,

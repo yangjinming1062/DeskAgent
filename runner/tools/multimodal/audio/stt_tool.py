@@ -234,10 +234,7 @@ async def speech_to_text_tool(args: dict[str, Any], **kw: Any) -> str:
         if reason:
             return tool_error(
                 f"local STT {reason}",
-                hint=(
-                    "Set stt.engine=cloud in config.yaml to fall back to a stronger "
-                    "multilingual model, or pass language='zh'/'en' explicitly to bias the local result."
-                ),
+                hint=("Set stt.engine=cloud in config.yaml to fall back to a stronger " "multilingual model, or pass language='zh'/'en' explicitly to bias the local result."),
                 success=False,
             )
 

@@ -224,7 +224,7 @@ function registerMediaIpc({ ipcMain, ensureBackend, getRunnerBridge, getEnginePr
 
     const prefs = await resolvePrefs()
     const engine = prefs.stt
-    const silentFallback = prefs.sttSilentFallback !== false
+    const silentFallback = prefs.sttSilentFallback
     const sttLog = makeLog(log, `[stt#${sttId}]`, { engine_pref: engine, ...(silentFallback ? {} : { silent_fallback: false }), context: context || null, ...(mime ? { mime } : {}) })
     const startedAt = Date.now()
 
@@ -235,13 +235,11 @@ function registerMediaIpc({ ipcMain, ensureBackend, getRunnerBridge, getEnginePr
           sttLog('done', { route: 'local', text_chars: res.value.text.length, ms: Date.now() - startedAt })
           return res.value
         }
-        if (engine === 'local') {
-          sttLog('done', { route: 'local', error: res.error.message, ms: Date.now() - startedAt })
-          throw res.error
-        }
-        // auto: surface the weak local result when silent_fallback is off,
-        // otherwise silently retry on cloud.
-        if (!silentFallback) {
+        // Local-only OR auto with silent_fallback=false → surface the local
+        // error to the renderer. auto with silent_fallback=true silently
+        // retries on cloud below. Local-engine-unavailable still falls back
+        // to cloud regardless — that's auto's core promise, not a "weak result".
+        if (engine === 'local' || !silentFallback) {
           sttLog('done', { route: 'local', error: res.error.message, ms: Date.now() - startedAt })
           throw res.error
         }
@@ -272,8 +270,10 @@ function registerMediaIpc({ ipcMain, ensureBackend, getRunnerBridge, getEnginePr
     // (see MiMoTTSProvider.synthesize). The local Piper engine has no
     // notion of these — even under ``tts.engine='auto'`` we must route to
     // the cloud backend or the user pays for a voicedesign call and hears
-    // Piper's default voice instead.
-    const isDesigned = voice.startsWith('mimo_voicedesign:')
+    // Piper's default voice instead. Same prefix is mirrored in
+    // desktop/renderer/shared/voice-catalog.ts (VOICEDESIGN_PREFIX).
+    const VOICEDESIGN_PREFIX = 'mimo_voicedesign:'
+    const isDesigned = voice.startsWith(VOICEDESIGN_PREFIX)
     const engine = isDesigned ? 'cloud' : prefs.tts
 
     const ttsLog = makeLog(log, `[tts#${ttsId}]`, { voice_in: voice || '', engine_pref: engine, context: context || null, ...(isDesigned ? { is_designed: true } : {}) })

@@ -1,16 +1,12 @@
+import type { RequestGateway } from '@/shared/voice-catalog'
+
 // Voice catalog + matching + design backed by the Backend `tts.*` JSON-RPC
 // methods (services/companion/voice_catalog.py). Voice ids are provider-specific;
 // the backend catalog only lists ids the active TTS provider accepts, so a
 // matched id never breaks synthesis.
 
-export interface VoiceOption {
-  id: string
-  label: string
-  gender: string
-  language: string
-  tags: readonly string[]
-  description: string
-}
+export type { VoiceOption } from '@/shared/voice-catalog'
+export { GENDER_OPTIONS, LANGUAGE_LABELS } from '@/shared/voice-catalog'
 
 export interface VoiceMatch {
   voice: VoiceOption
@@ -46,25 +42,9 @@ export const EMPTY_CATALOG: VoiceCatalog = {
   voiceDesignGuide: ''
 }
 
-export const LANGUAGE_LABELS: Record<string, string> = {
-  zh: '中文',
-  en: '英文',
-  multi: '多语言',
-  '': '通用'
-}
-
-export const GENDER_OPTIONS: { id: string; label: string }[] = [
-  { id: '', label: '全部' },
-  { id: 'female', label: '女声' },
-  { id: 'male', label: '男声' },
-  { id: 'neutral', label: '中性' }
-]
-
 export function playDataUrl(dataUrl: string): void {
   void new Audio(dataUrl).play().catch(() => {})
 }
-
-type RequestGateway = <T>(method: string, params?: Record<string, unknown>) => Promise<T>
 
 interface CatalogResponse {
   provider?: string
@@ -93,6 +73,7 @@ export async function fetchVoiceCatalog(
     const res = await requestGateway<CatalogResponse>('tts.list_voices', {
       language: language ?? null
     })
+
     const voices = res.voices?.length ? res.voices : [DEFAULT_VOICE]
 
     return {
