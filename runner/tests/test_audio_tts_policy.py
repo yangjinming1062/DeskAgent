@@ -56,16 +56,15 @@ def test_text_language_mixed_long_chinese_heavy_is_zh():
 def test_pick_voice_for_text_explicit_preferred_wins():
     from tools.multimodal.audio import piper_runtime as pr
 
-    # An explicit caller preference always wins — even over the Chinese
-    # text-language routing, because the operator just said "use this voice".
-    assert pr.pick_voice_for_text("您好", preferred="en_US-amy-medium") == "en_US-amy-medium"
+    # An explicit caller preference always wins.
+    assert pr.pick_voice_for_text(preferred="en_US-amy-medium") == "en_US-amy-medium"
 
 
 def test_pick_voice_for_text_chinese_text_picks_zh_default():
     from tools.multimodal.audio import piper_runtime as pr
 
     with mock.patch.object(pr, "default_voice_id", return_value="en_US-amy-medium"):
-        assert pr.pick_voice_for_text("您好") == pr.ZH_DEFAULT_VOICE
+        assert pr.pick_voice_for_text() == pr.ZH_DEFAULT_VOICE
 
 
 def test_pick_voice_for_text_english_text_picks_zh_default():
@@ -73,16 +72,14 @@ def test_pick_voice_for_text_english_text_picks_zh_default():
     from tools.multimodal.audio import piper_runtime as pr
 
     with mock.patch.object(pr, "default_voice_id", return_value="en_US-amy-medium"):
-        assert pr.pick_voice_for_text("Hello there") == pr.ZH_DEFAULT_VOICE
-        assert pr.pick_voice_for_text("This is a friendly greeting") == pr.ZH_DEFAULT_VOICE
+        assert pr.pick_voice_for_text() == pr.ZH_DEFAULT_VOICE
 
 
 def test_pick_voice_for_text_empty_preferred_uses_zh_default():
     from tools.multimodal.audio import piper_runtime as pr
 
     # No caller pref → ZH default wins regardless of text language.
-    assert pr.pick_voice_for_text("Hello") == pr.ZH_DEFAULT_VOICE
-    assert pr.pick_voice_for_text("您好") == pr.ZH_DEFAULT_VOICE
+    assert pr.pick_voice_for_text() == pr.ZH_DEFAULT_VOICE
 
 
 # ── _is_cloud_voice / cloud-id handling ───────────────────────────────────

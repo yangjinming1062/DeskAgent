@@ -224,21 +224,19 @@ async def speech_to_text_tool(args: dict[str, Any], **kw: Any) -> str:
     # filtered every segment — the desktop's local→cloud fallback then kicks in cleanly.
     # Explicit `language=` calls skip this: the caller said "transcribe as zh", honor it.
     if is_auto_detect:
-        prob = result.get("language_probability")
         text = result.get("text") or ""
+        prob = result.get("language_probability")
+        reason: str | None = None
         if not text:
+            reason = "produced no segments (audio may be silent or all segments filtered by confidence gate)"
+        elif prob is not None and prob < 0.5:
+            reason = f"language detection confidence too low: {prob:.2f}"
+        if reason:
             return tool_error(
-                "local STT produced no segments (audio may be silent or all " "segments filtered by confidence gate)",
-                hint=("Set stt.engine=cloud in config.yaml, or check the audio input. " "Cloud STT (e.g. mimo) handles non-zh audio and noisy inputs."),
-                success=False,
-            )
-        if prob is not None and prob < 0.5:
-            return tool_error(
-                f"local STT language detection confidence too low: {prob:.2f}",
+                f"local STT {reason}",
                 hint=(
-                    "Whisper auto-detect was uncertain. Set stt.engine=cloud in "
-                    "config.yaml to fall back to a stronger multilingual model, "
-                    "or pass language='zh'/'en' explicitly to bias the local result."
+                    "Set stt.engine=cloud in config.yaml to fall back to a stronger "
+                    "multilingual model, or pass language='zh'/'en' explicitly to bias the local result."
                 ),
                 success=False,
             )

@@ -63,6 +63,10 @@ from sqlalchemy.orm import Session
 
 logger = get_logger(__name__)
 
+# Languages the voice catalog accepts as a filter. Unknown values fall through
+# to the unfiltered catalog — forward-compat for tags added after this build.
+SUPPORTED_VOICE_LANGUAGES: frozenset[str] = frozenset({"zh", "en", "multi", ""})
+
 
 class WSEmitter:
     def __init__(self, websocket: WebSocket):
@@ -784,7 +788,7 @@ def _register_session_handlers(
         language = params.get("language")
         if language is not None and not isinstance(language, str):
             raise JsonRpcError(JSONRPC_INVALID_PARAMS, "language must be a string")
-        if isinstance(language, str) and language not in {"zh", "en", "multi", ""}:
+        if isinstance(language, str) and language not in SUPPORTED_VOICE_LANGUAGES:
             language = None
         with SESSION_LOCAL() as db:
             return list_tts_voices(db, user_id, language=language or None)
