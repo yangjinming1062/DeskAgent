@@ -32,6 +32,14 @@ class Settings(BaseSettings):
     temp_file_ttl_hours: int = 24
     data_dir: str = "./data"
 
+    # P0 (contract audit): HMAC key for signed companion asset URLs.
+    # Must be set explicitly via env (``DESKAGENT_COMPANION_ASSET_SIGNING_KEY``
+    # or a deployment-injected secret). When empty, the backend
+    # fails fast at startup so an attacker who can guess
+    # ``public_url_prefix`` can't forge a signature (the previous
+    # weak derivation from public_url_prefix was a security hole).
+    companion_asset_signing_key: str = ""
+
     # ── Provider chain ──
     providers: Annotated[list[str], NoDecode] = Field(default=[], validation_alias="PROVIDERS")
     mimo_api_key: str = Field(default="", validation_alias=AliasChoices("MIMO_API_KEY", "MIMO_KEY"))

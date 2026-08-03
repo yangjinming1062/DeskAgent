@@ -31,6 +31,7 @@ async def test_send_message_companion_path_emits_ws_event(monkeypatch):
 
     captured: list[tuple[int, str, str | None]] = []
     monkeypatch.setattr(smt, "_emit_companion_message", lambda uid, text, affect=None: captured.append((uid, text, affect)))
+    monkeypatch.setattr(smt, "is_quiet", lambda uid: False)
 
     result = json.loads(await smt.send_message_tool(message="你好呀，想我了吗？", user_id=7))
 
@@ -44,6 +45,7 @@ async def test_send_message_companion_path_emits_with_affect(monkeypatch):
 
     captured: list[tuple[int, str, str | None]] = []
     monkeypatch.setattr(smt, "_emit_companion_message", lambda uid, text, affect=None: captured.append((uid, text, affect)))
+    monkeypatch.setattr(smt, "is_quiet", lambda uid: False)
 
     result = json.loads(await smt.send_message_tool(message="晚上好呀！", affect="happy", user_id=3))
 
@@ -52,24 +54,40 @@ async def test_send_message_companion_path_emits_with_affect(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_send_message_quiet_tier_keeps_event_for_desktop(monkeypatch):
-    """The backend must always emit ``companion.message`` regardless of tier —
-    the desktop is the single source of truth for disturbance gating (P0-7,
-    P1-17). Quiet / normal / proactive semantics are applied client-side so
-    the affect channel can still flow at the quiet tier and the choice
-    survives a multi-replica deployment where the WS and the chat turn land
-    on different replicas."""
+async def test_send_message_quiet_tier_suppresses_at_backend(monkeypatch):
+    """P0-5 (contract audit): the desktop remains the source of truth for
+    disturbance gating, but the backend also acts as a defense-in-depth
+    gate. A non-official client connecting via /api/chat/ws bypasses
+    the desktop filter, so the backend suppresses at the source:
+    quiet → no WSEvent, normal/proactive → emit."""
     smt = importlib.import_module("services.tools.builtin.send_message_tool")
 
     captured: list[tuple[int, str, str | None]] = []
     monkeypatch.setattr(smt, "_emit_companion_message", lambda uid, text, affect=None: captured.append((uid, text, affect)))
+    monkeypatch.setattr(smt, "is_quiet", lambda uid: True)
 
     result = json.loads(await smt.send_message_tool(message="psst", affect="concerned", user_id=1))
 
+    # The LLM still sees success (no error); the backend short-circuits
+    # so no WSEvent is written and no cron / send_message quota is spent
+    # for suppressed messages.
     assert result["success"] is True
-    # Event still goes out, with the affect still attached — the desktop
-    # suppresses the TTS / bubble but drives the EMOTIONAL cue.
-    assert captured == [(1, "psst", "concerned")]
+    assert captured == []
+
+
+@pytest.mark.asyncio
+async def test_send_message_normal_tier_emits(monkeypatch):
+    """P0-5: normal tier (or any non-quiet) lets the WSEvent through."""
+    smt = importlib.import_module("services.tools.builtin.send_message_tool")
+
+    captured: list[tuple[int, str, str | None]] = []
+    monkeypatch.setattr(smt, "_emit_companion_message", lambda uid, text, affect=None: captured.append((uid, text, affect)))
+    monkeypatch.setattr(smt, "is_quiet", lambda uid: False)
+
+    result = json.loads(await smt.send_message_tool(message="hi", affect="happy", user_id=7))
+
+    assert result["success"] is True
+    assert captured == [(7, "hi", "happy")]
 
 
 # ── Onboarding per-field persistence (design §7.5) ──

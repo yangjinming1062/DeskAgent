@@ -8,6 +8,7 @@ from components import get_logger
 from components import SESSION_LOCAL
 from components import tool_error
 from modules.ws import WSEvent
+from services.companion.disturbance import is_quiet
 
 from .. import ALWAYS_AVAILABLE
 from .. import REGISTRY
@@ -73,12 +74,19 @@ async def send_message_tool(
 ) -> str:
     # Companion-native proactive path: no webhook ⇒ deliver straight to the
     # user's desktop as a companion.message (ARCHITECTURE.md §7.4 repurposes this
-    # tool as the companion's proactive-reach-out channel). Disturbance tier
-    # is owned by the desktop — the backend just ships text + optional affect
-    # so quiet/normal/proactive semantics survive cross-replica routing.
+    # tool as the companion's proactive-reach-out channel).
+    #
+    # P0-5 (contract audit): the desktop is the source of truth for the
+    # disturbance tier, but the backend also acts as a defense-in-depth
+    # gate. If a non-official client connects via /api/chat/ws, the
+    # desktop-side filter doesn't apply, so the backend suppresses at
+    # the source. Quiet → no WSEvent; normal/proactive → emit.
+    # The cron-driven autonomous turn also checks this gate before
+    # kicking off (services/scheduler/cron.py::_kick_autonomous_turn)
+    # so a quiet user doesn't burn LLM quota on suppressed messages.
     if not target_webhook:
         user_id = kwargs.get("user_id")
-        if isinstance(user_id, int):
+        if isinstance(user_id, int) and not is_quiet(user_id):
             _emit_companion_message(user_id, message, affect=affect)
         return json.dumps({"success": True, "channel": "companion"}, ensure_ascii=False)
 
