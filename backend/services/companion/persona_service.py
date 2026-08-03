@@ -135,10 +135,27 @@ def get_onboarding_state(db: Session, user_id: int) -> dict[str, Any]:
 def submit_onboarding_field(db: Session, user_id: int, field: str, value: str | None) -> dict[str, Any]:
     """Persist one onboarding answer incrementally. ``None``/empty clears
     the field (lets the user redo a question). Returns the post-submit
-    state so the desktop gets ``next_field`` without a separate round-trip."""
+    state so the desktop gets ``next_field`` without a separate round-trip.
+
+    P1-7 (backend audit): once the persona is finalized
+    (``is_complete=True``) the draft is supposed to be frozen — the
+    canonical persona lives in the explicit columns and the system
+    prompt. The previous code would still accept \`onboarding.submit\`
+    and silently rewrite \`definition_json\`; the avatar / system
+    prompt would then read the polluted draft and the user would
+    see "old persona, new image / new system prompt" without an
+    error. Reject with \`PersonaValidationError\` (which the JSON-RPC
+    handler maps to -32602 Invalid Params) so the desktop gets a
+    clear "persona already finalized" message.
+    """
     if field not in ONBOARDING_FIELDS:
         raise PersonaValidationError(f"unknown onboarding field: {field!r}", field)
     persona = get_or_create_persona(db, user_id)
+    if persona.is_complete:
+        raise PersonaValidationError(
+            f"onboarding field {field!r} cannot be edited after persona is finalized; use PUT /api/companion/persona",
+            field,
+        )
     draft = _load_draft(persona)
     if value and value.strip():
         draft[field] = value.strip()[:_ONBOARDING_MAX_LEN]

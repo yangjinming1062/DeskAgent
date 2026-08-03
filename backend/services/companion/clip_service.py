@@ -127,7 +127,7 @@ def _active_portrait_url(db: Session, user_id: int) -> str | None:
     return a.asset_url if a else None
 
 
-def _emit_clip_event(user_id: int, clip: AvatarClip) -> None:
+def _emit_clip_event(user_id: int, clip: AvatarClip, *, status: str | None = None) -> None:
     """Notify the desktop of a tier/asset change. Single channel for all clip
     lifecycle transitions (tier up, failure, retry-scheduled). Never raises —
     a notification failure must not abort the escalation loop.
@@ -135,16 +135,26 @@ def _emit_clip_event(user_id: int, clip: AvatarClip) -> None:
     P0-3 / P0-4: the row stores bare ``companion-assets/<user>/<file>``
     paths; re-sign every URL on the way out so a 5-minute-TTL signed
     URL never reaches the renderer / provider.
+
+    P1-2 (contract audit): the previous \`status\` derivation
+    (\`"succeeded" if video_asset_url else "ready"\`) collapsed
+    "ready" and "failed" into the same wire payload. Allow the
+    caller to pass an explicit \`status\` (one of "succeeded",
+    "ready", "failed", "pending") so the renderer can show a
+    distinct state. Default is the previous derived behavior for
+    the success path.
     """
     from .asset_store import build_signed_asset_url
 
+    if status is None:
+        status = "succeeded" if clip.video_asset_url else "ready"
     meta = safe_json_loads(clip.keyframe_meta_json or "{}", default={})
     video_url = _re_sign_clip_path(clip, clip.video_asset_url, build_signed_asset_url) if clip.video_asset_url else None
     keyframe_url = _re_sign_clip_path(clip, clip.keyframe_url, build_signed_asset_url) if clip.keyframe_url else None
     payload = {
         "scene": clip.scene,
         "tier": active_tier(clip),
-        "status": "succeeded" if clip.video_asset_url else "ready",
+        "status": status,
         "url": video_url or keyframe_url,
         "keyframe_url": keyframe_url,
         "keyframe_meta": meta or None,
@@ -328,7 +338,18 @@ def _read_temp_bytes(file_id: str | None) -> bytes | None:
 
 async def _fetch_asset_bytes(url: str) -> bytes:
     """Resolve a generated asset URL to bytes: local temp-media, local durable
-    companion asset, or a remote provider URL (DALL·E-style)."""
+    companion asset, or a remote provider URL (DALL·E-style).
+
+    4.1 (backend audit): the previous httpx fallback had no
+    outbound-host guard. An attacker who could poison the
+    ``first_frame_image`` (e.g. via a user-controlled provider
+    config) could make the backend fetch arbitrary internal
+    URLs — including the cloud metadata endpoint. Reuse the
+    existing ``send_message_tool.is_safe_outbound`` check (which
+    blocks loopback, link-local, private, multicast, and reserved
+    IPs at the DNS-resolution layer) so the two outbound paths
+    share a single allowlist.
+    """
     if "/api/media/files/" in url:
         fid = url.rsplit("/", 1)[-1].split("?")[0]
         res = get_file_path(fid)
@@ -341,7 +362,19 @@ async def _fetch_asset_bytes(url: str) -> bytes:
             res = resolve_companion_asset_path(int(parts[0]), parts[1].split("?")[0])
             if res:
                 return Path(res[0]).read_bytes()
-    async with httpx.AsyncClient(timeout=120.0, follow_redirects=True) as client:
+    # Out-of-scope provider URL: same SSRF guard as send_message_tool.
+    from urllib.parse import urlparse
+
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        raise RuntimeError(f"refusing to fetch non-http asset url: {url}")
+    hostname = parsed.hostname or ""
+    from services.tools.builtin.send_message_tool import is_safe_outbound
+
+    safe, reason = is_safe_outbound(hostname)
+    if not safe:
+        raise RuntimeError(f"refusing to fetch unsafe outbound host: {hostname} ({reason})")
+    async with httpx.AsyncClient(timeout=120.0, follow_redirects=False) as client:
         resp = await client.get(url)
         resp.raise_for_status()
         return resp.content
