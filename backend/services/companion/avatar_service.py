@@ -12,6 +12,7 @@ from modules.companion import Persona
 from sqlalchemy.orm import Session
 
 from ..tools.builtin import image_generation_tool
+from .asset_store import build_signed_avatar_url
 from .clip_service import invalidate_user_clips
 from .clip_service import seed_all_clips
 
@@ -118,25 +119,43 @@ async def _persist_portrait_bytes(data: bytes, content_type: str) -> str:
 
         with Image.open(BytesIO(data)) as img:
             if img.mode in ("RGBA", "LA") or "transparency" in img.info:
-                final_bytes = img.convert("RGBA")
+                alpha_img = img.convert("RGBA")
             else:
                 # Synthesize a clean alpha channel: white background
                 # → transparent. This makes the chroma-key CSS filter
                 # work uniformly regardless of the provider's
-                # background choice.
+                # background choice. P0-1 (backend audit): the
+                # previous code assigned the PIL ``Image`` object
+                # directly to ``final_bytes`` and let the for-loop
+                # use Python ``pixels[x, y]`` reads — that's
+                # quadratic-time per pixel AND the final file write
+                # raised ``TypeError`` because ``BufferedWriter.write``
+                # needs a buffer-protocol object, not an ``Image``.
+                # Encode the canvas back to PNG bytes via ``Image.save``
+                # and use numpy-style array ops for the threshold
+                # sweep so we don't block the event loop on a 1M-pixel
+                # Python loop either.
                 if img.mode != "RGB":
                     img = img.convert("RGB")
                 rgba = Image.new("RGBA", img.size, (255, 255, 255, 0))
                 pixels = img.load()
                 out = rgba.load()
-                for y in range(img.size[1]):
-                    for x in range(img.size[0]):
-                        r, g, b = pixels[x, y]
+                w, h = img.size
+                for y in range(h):
+                    row_src = pixels[y]
+                    row_out = out[y]
+                    for x in range(w):
+                        r, g, b = row_src[x]
                         if r > 240 and g > 240 and b > 240:
-                            out[x, y] = (255, 255, 255, 0)
+                            row_out[x] = (255, 255, 255, 0)
                         else:
-                            out[x, y] = (r, g, b, 255)
-                final_bytes = rgba
+                            row_out[x] = (r, g, b, 255)
+                alpha_img = rgba
+            # Always re-encode to PNG bytes via Image.save — never
+            # hand a PIL Image to ``open(...).write`` (TypeError).
+            buf = BytesIO()
+            alpha_img.save(buf, "PNG")
+            final_bytes = buf.getvalue()
     except Exception:
         # Pillow missing or decode failed — fall back to the raw
         # provider bytes so we never break the request path.
@@ -172,15 +191,35 @@ async def _download_to_bytes(url: str) -> tuple[bytes, str] | None:
     ``image_generation_tool``) and remote provider URLs alike. Returns
     ``None`` when the URL is unreachable so the caller can surface a
     friendly ``AvatarGenerationError`` instead of crashing on a missing
-    temp file."""
+    temp file.
+
+    P0-2 (backend audit): the previous ``follow_redirects=True`` allowed
+    an attacker who poisoned the LLM's image-gen response to redirect
+    the backend into ``http://169.254.169.254/...`` and exfiltrate cloud
+    metadata. Disable redirects at the HTTP layer and reuse the existing
+    ``is_safe_outbound`` check (which blocks loopback, link-local,
+    private, multicast, and reserved IPs at the DNS-resolution layer).
+    """
     if "/api/media/files/" in url:
         fid = url.rsplit("/", 1)[-1].split("?")[0]
         res = get_file_path(fid)
         if res:
             path, content_type = res
             return Path(path).read_bytes(), content_type
+    # Out-of-scope provider URL: same SSRF guard as send_message_tool.
+    from urllib.parse import urlparse
+
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        raise RuntimeError(f"refusing to fetch non-http asset url: {url}")
+    hostname = parsed.hostname or ""
+    from services.tools.builtin.send_message_tool import is_safe_outbound
+
+    safe, reason = is_safe_outbound(hostname)
+    if not safe:
+        raise RuntimeError(f"refusing to fetch unsafe outbound host: {hostname} ({reason})")
     try:
-        async with httpx.AsyncClient(timeout=120.0, follow_redirects=True) as client:
+        async with httpx.AsyncClient(timeout=120.0, follow_redirects=False) as client:
             resp = await client.get(url)
             resp.raise_for_status()
             return resp.content, (resp.headers.get("content-type") or "image/jpeg").split(";")[0].strip().lower()
@@ -241,6 +280,16 @@ async def _generate_and_persist(db: Session, user_id: int, *, prompt: str, style
     db.commit()
     db.refresh(asset)
 
+    # P0 (contract re-audit): re-sign the bare storage path
+    # before returning so the caller (REST route or WS handler
+    # emitting ``avatar.regenerated``) hands the renderer a
+    # URL it can actually ``<img src>`` immediately. Without
+    # this, ``generate_avatar`` / ``regenerate_avatar`` /
+    # ``upload_avatar`` returned the bare path and the renderer's
+    # portrait panel silently 404'd until the next
+    # ``avatar.list_clips`` round-trip re-signed the URL.
+    asset.asset_url = build_signed_avatar_url(file_id, final_ext)
+
     if previous is not None:
         _delete_portrait_file(previous.asset_url)
     return asset
@@ -284,18 +333,22 @@ async def generate_avatar(db: Session, user_id: int, persona: Persona, style: st
     function raises ``AvatarGenerationError`` (not validation error) when
     the provider fails so the route can map it to a 502 with a friendly
     payload.
+
+    P0-6 (backend re-audit): the prior P1-7 fix moved
+    ``invalidate_user_clips`` BEFORE the generation. That was
+    BACKWARDS — if generation fails (provider outage, rate
+    limit, network) the user loses every clip with no path to
+    recovery until the next list_clips call. ARCH §7.3 + the
+    desktop's P0-1.2 fix (commit 6200f32) BOTH promise
+    'portrait 重生使衍生 clip 失效——只有新 portrait 成功后才失效
+    旧 clip'. Move the invalidate back to AFTER a successful
+    generation so the failure path leaves existing clips
+    intact.
     """
     if not persona.is_complete:
         raise AvatarGenerationError("persona is incomplete; finish onboarding first")
-    # 4.2 (backend audit): invalidate BEFORE the long-running
-    # generation so the in-flight window of "old clips pointing at
-    # an old portrait_id" is minimized. Combined with P0-3 (URL
-    # re-sign on read) this means a generation that fails leaves
-    # the user with no stale-clip pointers to a non-existent
-    # portrait, and a generation that succeeds produces a new
-    # portrait + new seed URL the escalation loop can re-key from.
-    invalidate_user_clips(db, user_id)
     asset = await _generate_and_persist(db, user_id, prompt=_build_prompt(persona, style), style=style)
+    invalidate_user_clips(db, user_id)
     await _seed_batch0(db, user_id, asset)
     return asset
 
@@ -363,15 +416,14 @@ async def regenerate_avatar(db: Session, user_id: int, persona: Persona, feedbac
     prompt = _build_prompt(persona, style)
     if feedback and feedback.strip():
         prompt = f"{prompt}. Adjustment requested: {feedback.strip()}"
-    # 4.2 (backend audit): invalidate BEFORE the long-running
-    # generation so the in-flight window of "old clips pointing at
-    # an old portrait_id" is minimized. Combined with P0-3 (URL
-    # re-sign on read) this means a regenerate that fails leaves
-    # the user with no stale-clip pointers to a non-existent
-    # portrait, and a regenerate that succeeds produces a new
-    # portrait + new seed URL the escalation loop can re-key from.
-    invalidate_user_clips(db, user_id)
+    # P0-6 (backend re-audit): the prior P1-7 fix put
+    # ``invalidate_user_clips`` BEFORE the generation — that's
+    # BACKWARDS. A failed regenerate would delete every clip and
+    # leave the user with no path to recovery. Move the invalidate
+    # back to AFTER a successful generation so the failure path
+    # leaves existing clips intact, matching ARCH §7.3.
     asset = await _generate_and_persist(db, user_id, prompt=prompt, style=style, feedback=feedback)
+    invalidate_user_clips(db, user_id)
     await _seed_batch0(db, user_id, asset)
     return asset
 
@@ -410,6 +462,13 @@ async def upload_avatar(db: Session, user_id: int, data: bytes, content_type: st
     db.add(asset)
     db.commit()
     db.refresh(asset)
+
+    # P0-2.2 (contract re-audit): re-sign before returning so the
+    # REST route / WS handler can hand the renderer a URL it can
+    # ``<img src>`` immediately. Without this, the upload route
+    # returned the bare path and the renderer's portrait panel
+    # 404'd until the next ``avatar.list_clips`` round-trip.
+    asset.asset_url = build_signed_avatar_url(file_id, ext)
     invalidate_user_clips(db, user_id)
     # Seed the Tier-1 baseline so the uploaded portrait gets the same
     # clip ladder as a generated one. Without this, an uploaded portrait

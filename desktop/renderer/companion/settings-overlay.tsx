@@ -75,17 +75,31 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps) {
   const regenerate = async () => {
     setRegenerating(true)
     setAvatarHint(null)
-    clearClipCatalog()
+    // P0-4 (desktop re-audit): don't pre-emptively clear the clip
+    // catalog before the regenerate RPC. The previous code did
+    // clearClipCatalog() at the top of this function, which meant
+    // a transient regenerate failure (network blip / provider
+    // outage) left the user with no Tier 2/3 clips until the next
+    // list_clips refresh — the same defect the onboarding-flow
+    // already fixed (commit 6200f32). Move the clear to AFTER the
+    // new portrait URL lands, mirroring the onboarding pattern.
+    let cleared = false
 
     try {
       const res = await requestGateway<{ asset_url?: string; queued?: boolean; job_id?: string }>('avatar.regenerate', {})
 
       if (res?.asset_url) {
+        if (!cleared) {clearClipCatalog(); cleared = true}
         setAvatarHint('换好啦，新形象已生成～')
       } else if (res?.queued && res.job_id) {
         // P0-4: wait for the background avatar.regenerated event.
         const result = await awaitAvatarRegeneration(res.job_id)
-        setAvatarHint(result.asset_url ? '换好啦，新形象已生成～' : (result.error ?? '暂时换不出来，稍后再试'))
+        if (result.asset_url) {
+          if (!cleared) {clearClipCatalog(); cleared = true}
+          setAvatarHint('换好啦，新形象已生成～')
+        } else {
+          setAvatarHint(result.error ?? '暂时换不出来，稍后再试')
+        }
       } else {
         setAvatarHint('暂时换不出来，稍后再试')
       }

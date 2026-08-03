@@ -57,7 +57,10 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps) {
   // stayed set forever — the sprite was stuck in the listening
   // state until a new state transition (e.g. another chat reply).
   // Reset the sprite on unmount so the partner returns to idle
-  // when the chat is closed.
+  // when the chat is closed. P0 (second-pass audit): use
+  // ``force: true`` so the priority gate doesn't silently swallow
+  // the reset when the sprite happens to be in 'listening' or
+  // 'thinking' (priority 40 / 50 > idle's 10).
   useEffect(() => {
     return () => {
       const recorder = mediaRecorderRef.current
@@ -69,7 +72,7 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps) {
         }
       }
       setRecording(false)
-      setSpriteState('idle')
+      setSpriteState('idle', { force: true })
     }
   }, [])
 
