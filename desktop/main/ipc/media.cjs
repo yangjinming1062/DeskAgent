@@ -90,11 +90,17 @@ function makeLog(log, prefix, base) {
 }
 
 // Run the local STT tool; never throws — returns {ok,value} or {ok:false,error}.
-async function tryLocalStt({ bridge, mime, data }) {
+async function tryLocalStt({ bridge, mime, data, language }) {
   try {
     const result = await bridge.invoke('speech_to_text', {
       audio_base64: data.toString('base64'),
-      mime_type: mime
+      mime_type: mime,
+      // P0-3 (runtime audit): forward the default language to local
+      // STT so faster-whisper's auto-detect heuristic isn't forced
+      // on every turn. The runner's stt_tool auto-probes when
+      // language is in (None, "", "auto"); explicit "zh" picks
+      // the zh model directly.
+      ...(language ? { language } : {}),
     })
     if (result && result.success === true && typeof result.text === 'string') {
       return { ok: true, value: { text: result.text } }
@@ -242,7 +248,7 @@ function registerMediaIpc({ ipcMain, ensureBackend, getRunnerBridge, getEnginePr
 
     if (engine !== 'cloud') {
       if (localToolAvailable(bridge(), 'speech_to_text')) {
-        const res = await tryLocalStt({ bridge: bridge(), mime, data })
+        const res = await tryLocalStt({ bridge: bridge(), mime, data, language })
         if (res.ok) {
           sttLog('done', { route: 'local', text_chars: res.value.text.length, ms: Date.now() - startedAt })
           return res.value
