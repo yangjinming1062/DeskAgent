@@ -40,18 +40,15 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps) {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const voiceChunksRef = useRef<Blob[]>([])
 
-  // Chat is a focused surface — register its panel bbox with the global
-  // interactive-regions registry so SpriteStage's hit-test can capture only
-  // while the cursor is over the panel, and drop always-on-top so other apps
-  // can cover the conversation while the user types. SpriteStage restores
-  // click-through on unmount (the panel's ref callback also unregisters).
+  // P1-4: previously toggled the sprite's always-on-top flag on
+  // mount/unmount, which let other apps cover the sprite AND chat
+  // panel the moment the user started typing. The chat panel is a
+  // React child of the same sprite window, so it inherits topmost
+  // automatically — no toggling needed. Drop the call; the cleanup
+  // would also race with the closing dock and re-show the sprite
+  // *after* the user dismissed it.
   useEffect(() => {
-    void window.deskagent.sprite.setAlwaysOnTop({ on: false })
     inputRef.current?.focus()
-
-    return () => {
-      void window.deskagent.sprite.setAlwaysOnTop({ on: true })
-    }
   }, [])
 
   const panelRef = useRef<HTMLDivElement>(null)

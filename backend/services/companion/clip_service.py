@@ -81,6 +81,14 @@ CLIP_SCENES: dict[str, _SceneSpec] = {
     "curious": _SceneSpec(3, "head tilted with bright curious eyes, leaning forward to investigate"),
     "embarrassed": _SceneSpec(3, "flustered expression, slight blush, looking away with awkward half-smile"),
     "apologetic": _SceneSpec(3, "sincere apologetic bow with hands together, regretful soft expression"),
+    # P1-3: idle micro-variants the desktop randomly swaps in (10-25s
+    # interval). Previously no scenes mapped to these names so the
+    # renderer could never advance past Tier-1 procedural animation;
+    # batch 2 keeps them low-priority so the main idle / speaking /
+    # working scenes climb first.
+    "idle_look_around": _SceneSpec(2, "casual glance around the room, head turn to the side with curious eyes"),
+    "idle_blink": _SceneSpec(2, "single slow blink with a soft smile, idle micro-expression"),
+    "idle_stretch": _SceneSpec(2, "gentle stretch with arms overhead, relaxed yawn micro-motion"),
 }
 
 

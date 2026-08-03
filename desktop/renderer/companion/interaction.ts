@@ -1,5 +1,4 @@
 import { setSpriteState } from './companion-store'
-import { recordInteraction } from './evolution-store'
 import { personaTone, type ReactionTone } from './persona-store'
 import { speakProactive } from './proactive/proactive'
 
@@ -79,7 +78,6 @@ export function handleHoverInteraction(): void {
 }
 
 export function handleDragEndInteraction(): void {
-  recordInteraction('poke')
   setSpriteState('interacting', { durationMs: 2000 })
   void speakProactive(pick(DRAG_REACTIONS[personaTone()]), { userInitiated: true })
 }

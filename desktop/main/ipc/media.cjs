@@ -284,7 +284,18 @@ function registerMediaIpc({ ipcMain, ensureBackend, getRunnerBridge, getEnginePr
     const isDesigned = voice.startsWith(VOICEDESIGN_PREFIX)
     const engine = isDesigned ? 'cloud' : prefs.tts
 
-    const ttsLog = makeLog(log, `[tts#${ttsId}]`, { voice_in: voice || '', engine_pref: engine, context: context || null, ...(isDesigned ? { is_designed: true } : {}) })
+    // P1-1 (runtime audit): the trace previously hid when a
+    // ``mimo_voicedesign:`` token forced the cloud path against the
+    // user's prefs (silent surprise). Surface the override in the log
+    // so a 'I set local but it went cloud' bug is debuggable from the
+    // structured log alone.
+    const ttsLog = makeLog(log, `[tts#${ttsId}]`, {
+      voice_in: voice || '',
+      engine_pref: isDesigned ? 'cloud' : prefs.tts,
+      engine_pref_forced: isDesigned && prefs.tts !== 'cloud' ? 'cloud' : null,
+      is_designed: isDesigned,
+      context: context || null,
+    })
     const startedAt = Date.now()
 
     if (engine !== 'cloud') {
