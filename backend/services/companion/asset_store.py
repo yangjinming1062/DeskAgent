@@ -27,12 +27,14 @@ def _assets_root() -> Path:
 
 
 def _signing_key() -> bytes:
-    """HMAC key for asset-URL signing. P0 (contract audit): no
-    fallback to a derived-from-public-url key — that was a
+    """HMAC key for asset-URL signing. P0 / P1-3 (contract audit):
+    no fallback to a derived-from-public-url key — that was a
     security hole because ``public_url_prefix`` is public. The
     backend's ``init_database`` fail-fast check guarantees the
     env var is set in production; the field can still be empty
-    in tests (see ``_test_signer_key`` below)."""
+    in tests (see ``_test_signer_key`` below) since ``engine`` is
+    passed there and the production guard short-circuits before
+    this point."""
     secret = getattr(SETTINGS, "companion_asset_signing_key", None)
     if secret:
         return secret.encode("utf-8")
