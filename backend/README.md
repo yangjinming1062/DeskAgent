@@ -90,7 +90,7 @@ backend/
 
 ## LLM Provider 抽象
 
-`services/llm/providers/` 在五类服务（`ChatProvider` / `ImageGenProvider` / `VideoGenProvider` / `TTSProvider` / `STTProvider`）各放一个 ABC，`BaseProvider` 公共根。Provider 名解析：显式 `SETTINGS.<svc>_provider` 优先，否则按 `base_url` host 推断（`api.minimaxi.com` / `api.minimax.io` → `minimax`，`generativelanguage.googleapis.com` → `gemini`，`open.bigmodel.cn` → `zhipu`，其余 → `mimo`）；此推断（`infer_provider_name`）仅供迁移脚本/测试，chain resolver 实际用 `PROVIDERS` env + `SERVICE_DEFAULT_PROVIDER`。注册表 `registry.register(service_type, provider_name, cls)` 由 provider 子包 `__init__.py` 自注册；`providers/__init__.py` `from . import mimo, minimax, gemini, zhipu` 触发。哪些 provider 支持哪些能力由 `(ServiceType, name)` 在 `_REGISTRY` 里的存在与否决定——`providers_supporting(service)` 返回所有注册过此服务的 provider 名列表。
+`services/llm/providers/` 在五类服务（`ChatProvider` / `ImageGenProvider` / `VideoGenProvider` / `TTSProvider` / `STTProvider`）各放一个 ABC，`BaseProvider` 公共根。**Provider 名永远显式**：tier 1 用户配置存 JSON 时就带 `name`，全局配置读 `SETTINGS.<svc>_provider` / `SETTINGS.providers`，两者皆空则回落到 `SERVICE_DEFAULT_PROVIDER[svc]`——chain resolver 不会从 `base_url` host 反推。注册表 `registry.register(service_type, provider_name, cls)` 由 provider 子包 `__init__.py` 自注册；`providers/__init__.py` `from . import mimo, minimax, gemini, zhipu` 触发。哪些 provider 支持哪些能力由 `(ServiceType, name)` 在 `_REGISTRY` 里的存在与否决定——`providers_supporting(service)` 返回所有注册过此服务的 provider 名列表。
 
 ### PROVIDER-first 配置
 

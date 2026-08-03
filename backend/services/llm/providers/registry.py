@@ -1,5 +1,3 @@
-from urllib.parse import urlparse
-
 from .base import BaseProvider
 from .base import ServiceType
 
@@ -105,17 +103,3 @@ def providers_supporting(service_type: ServiceType | str) -> list[str]:
     """
     svc = ServiceType(service_type) if not isinstance(service_type, ServiceType) else service_type
     return list(dict.fromkeys(name for registered_svc, name in _REGISTRY if registered_svc == svc))
-
-
-def infer_provider_name(base_url: str) -> str:
-    """Infer provider family from the base URL host. Exposed for migration
-    scripts and tests; not used by the chain resolver (which keys off
-    ``PROVIDERS`` env + ``SERVICE_DEFAULT_PROVIDER`` directly)."""
-    host = (urlparse(base_url).hostname or "").lower()
-    if host.endswith("minimaxi.com") or host.endswith("minimax.io"):
-        return "minimax"
-    if host == "generativelanguage.googleapis.com":
-        return "gemini"
-    if host == "open.bigmodel.cn":
-        return "zhipu"
-    return "mimo"
