@@ -1,4 +1,3 @@
-import json
 import pytest
 
 from services.gateway.jsonrpc import JsonRpcDispatcher

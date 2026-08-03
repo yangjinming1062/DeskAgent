@@ -2,7 +2,6 @@ import re
 import threading
 from pathlib import Path
 
-
 _LOCK = threading.Lock()
 _CACHED_VERSION: str | None = None
 

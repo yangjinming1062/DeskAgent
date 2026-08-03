@@ -1,7 +1,5 @@
-import base64
 import io
 import json
-import os
 import struct
 import zlib
 from types import SimpleNamespace
@@ -203,7 +201,7 @@ class TestChatE2E:
         from starlette.testclient import WebSocketDisconnect
 
         with pytest.raises((WebSocketDisconnect, Exception)):
-            with test_client.websocket_connect("/api/chat/ws?token=invalid-token-abc") as ws:
+            with test_client.websocket_connect("/api/chat/ws?token=invalid-token-abc"):
                 pass
 
     def test_websocket_session_lifecycle(self, test_client, test_token):

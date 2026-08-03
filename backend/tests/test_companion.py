@@ -310,7 +310,6 @@ def test_voice_catalog_language_field():
 
 def test_voice_catalog_zh_first_in_list_voices(monkeypatch):
     """Onboarding voice picker is what users see on first launch — zh-first matches "default Chinese"."""
-    from services.llm.voice_catalog import voices_for_provider
     from services.companion import voice_catalog as vc
 
     monkeypatch.setattr(vc, "active_tts_provider", lambda db, uid: "mimo")
@@ -505,7 +504,7 @@ def test_dual_write_routes_user_profile_to_memory(_patch_db):
     persona validator runs, so the persona strict schema never sees them.
     """
     _, SessionLocal = _patch_db
-    from services.companion import extract_user_profile, ONBOARDING_FIELDS, update_persona
+    from services.companion import update_persona
     from modules.memory import Memory
 
     payload = {

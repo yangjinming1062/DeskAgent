@@ -33,7 +33,6 @@ from .voice_catalog import design_voice
 from .voice_catalog import list_voices as list_tts_voices
 from .voice_catalog import match_user_voice
 from .voice_catalog import normalize_voice_language
-from .voice_catalog import SUPPORTED_VOICE_LANGUAGES
 
 __all__ = [
     "ALLOWED_AVATAR_UPLOAD_MIME_TYPES",
@@ -58,6 +57,7 @@ __all__ = [
     "list_clips",
     "list_tts_voices",
     "match_user_voice",
+    "normalize_voice_language",
     "record_user_profile",
     "regenerate_avatar",
     "resolve_companion_asset_path",

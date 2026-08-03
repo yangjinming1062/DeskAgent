@@ -2,7 +2,6 @@ import base64
 
 from ..base import ProviderError
 
-
 # MiniMax uses ``base_resp.status_code`` to carry its own error taxonomy on top
 # of the HTTP status code.  Mappings below are tuned so that
 # ``error_classifier.classify_api_error`` lands in the same FailoverReason

@@ -16,24 +16,17 @@ Targets:
 These tests run fast (no subprocess, no network) so they belong in the
 default suite, not the build-gate slow path.
 """
-import json
-import re
 
-import pytest
 from tools.execute_code import code_execution_tool as ec
 from tools.interrupt import INTERRUPT_EVENT
 from tools.interrupt import is_interrupted
 from tools.interrupt import set_global_interrupt
-from tools.interrupt import set_interrupt
 from tools.system.ansi_strip import strip_ansi
 from tools.system.ansi_strip import strip_fence
 from tools.system.clean import clean_output
 from tools.thread_context import propagate_context_to_thread
-from tools.tool_output_limits import _cached_limits
 from tools.tool_output_limits import _coerce_positive_int
 from tools.tool_output_limits import get_max_bytes
-from tools.tool_output_limits import get_max_line_length
-from tools.tool_output_limits import get_max_lines
 from tools.tool_output_limits import get_tool_output_limits
 from tools.tool_output_limits import reset_cache
 from tools.tool_result_storage import DEFAULT_BUDGET

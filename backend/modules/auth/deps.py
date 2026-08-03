@@ -31,9 +31,7 @@ def get_current_admin_token(
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="令牌无效。")
     jti = payload.get("jti")
     if jti:
-        session = db.query(AdminSession).filter(
-            AdminSession.token_jti == jti, AdminSession.is_active.is_(True)
-        ).one_or_none()
+        session = db.query(AdminSession).filter(AdminSession.token_jti == jti, AdminSession.is_active.is_(True)).one_or_none()
         if session is None:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,

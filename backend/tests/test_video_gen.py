@@ -77,8 +77,6 @@ class TestVideoGenJobRoundtrip:
 
     @pytest.mark.asyncio
     async def test_submit_then_poll_then_download(self, monkeypatch, _patch_db, test_token):
-        from services.llm.providers.minimax import MiniMaxVideoGenProvider
-        from services.llm.providers.http import get_http
         from components import SESSION_LOCAL
         from modules.auth import User, UserModelConfig
         from services.media import enqueue_video_job, get_job
@@ -187,8 +185,7 @@ class TestVideoGenJobRoundtrip:
         # the same transaction the test reads.
         from components import SESSION_LOCAL
         from modules.auth import User, UserModelConfig
-        from services.media import enqueue_video_job, get_job
-        import asyncio
+        from services.media import enqueue_video_job
         import services.llm.providers.http as http_mod
 
         async def handler(request: httpx.Request) -> httpx.Response:

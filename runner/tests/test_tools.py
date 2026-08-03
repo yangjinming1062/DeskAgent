@@ -1,7 +1,6 @@
 import json
 import os
 import tempfile
-from pathlib import Path
 
 import pytest
 from tools import discover_builtin_tools

@@ -122,6 +122,7 @@ class UserModelConfigListItem(BaseModel):
     fingerprint (``fingerprint_api_key``) plus a ``*_set`` boolean
     so admins can confirm a key is configured without seeing it.
     """
+
     model_config = ConfigDict(from_attributes=True)
 
     user_id: int

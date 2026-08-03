@@ -16,7 +16,6 @@ The 2026-07 review added several contracts worth pinning:
 import json
 
 import pytest
-from tools import tool_error
 from tools.process import process_tool
 from tools.process.process_tool import _handle_process
 from tools.process.process_tool import format_process_notification

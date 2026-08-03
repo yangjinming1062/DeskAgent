@@ -1,7 +1,6 @@
 import contextlib
 import json
 import logging
-import os
 import re
 import sys
 import threading
@@ -17,7 +16,6 @@ from .cu_backend import ComputerUseBackend
 from .cu_backend import UIElement
 from .cu_cua_backend import cua_driver_binary_available
 from .cu_cua_backend import CuaDriverBackend
-from .cu_schema import COMPUTER_USE_SCHEMA
 from .helpers import _MAX_BASE64_BYTES
 
 logger = logging.getLogger(__name__)

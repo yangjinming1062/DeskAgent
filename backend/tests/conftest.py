@@ -116,7 +116,6 @@ def _seed_user(SessionLocal, username="testuser", password="testpass123"):
 @pytest.fixture()
 def test_app(_patch_db):
     from fastapi import FastAPI
-    from components import SETTINGS
     from components import get_db
 
     engine, SessionLocal = _patch_db

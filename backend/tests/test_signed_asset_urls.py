@@ -1,6 +1,5 @@
 import time
 
-import pytest
 
 from services.companion.asset_store import build_signed_asset_url
 from services.companion.asset_store import build_signed_avatar_url

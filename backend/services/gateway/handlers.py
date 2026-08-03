@@ -8,7 +8,6 @@ from components import adopt_inbound
 from components import ATTACHMENT_TYPE_IMAGE
 from components import attachments_remove
 from components import get_logger
-from components import JSONRPC_INTERNAL_ERROR
 from components import JSONRPC_INVALID_PARAMS
 from components import JSONRPC_METHOD_NOT_FOUND
 from components import MAX_ATTACHMENTS_PER_TURN

@@ -29,7 +29,6 @@ from ..interrupt import is_interrupted
 from ..registry import registry
 from ..registry import tool_error
 
-
 # winpty is Windows-only; importing at module load would crash the runner on
 # POSIX during tool discovery. Guard with a platform check.
 _PtyProcessCls = None

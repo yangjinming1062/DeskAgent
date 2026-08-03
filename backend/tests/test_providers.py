@@ -1,27 +1,17 @@
-from unittest.mock import MagicMock
-from unittest.mock import patch
 
 import pytest
-from components import SETTINGS
-from services.llm import BaseProvider
 from services.llm import client_for_service
-from services.llm import ImageGenProvider
 from services.llm import ImageGenRequest
 from services.llm import MissingLlmConfigError
 from services.llm import provider_for_service
 from services.llm import ProviderConfig
 from services.llm import resolve_provider_config
 from services.llm import ServiceType
-from services.llm import TTSProvider
-from services.llm import VideoGenProvider
 from services.llm import VideoGenRequest
-from services.llm.providers.base import ChatProvider
-from services.llm.providers.base import STTProvider
 from services.llm.providers.mimo import MiMoChatProvider
 from services.llm.providers.mimo import MiMoImageGenProvider
 from services.llm.providers.mimo import MiMoSTTProvider
 from services.llm.providers.mimo import MiMoTTSProvider
-from services.llm.providers.registry import register
 
 
 class TestServiceType:
@@ -643,7 +633,6 @@ def _async_handler(responses: list):
     queue = list(responses)
 
     async def handler(request: httpx.Request) -> httpx.Response:
-        body = request.content.decode() if request.content else ""
         if not queue:
             return httpx.Response(500, text="queue empty")
         item = queue.pop(0)

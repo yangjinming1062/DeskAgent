@@ -164,8 +164,12 @@ async def _key_video_alpha(mp4_bytes: bytes, *, timeout: float = 180.0) -> bytes
             # -auto-alt-ref 0 keeps the encoder deterministic so
             # the resulting WebM is cacheable.
             cmd = [
-                ffmpeg, "-y", "-loglevel", "error",
-                "-i", str(in_path),
+                ffmpeg,
+                "-y",
+                "-loglevel",
+                "error",
+                "-i",
+                str(in_path),
                 "-vf",
                 (
                     f"format=rgb24,geq=r='if(gt(r\\,{_WHITE_KEY_THRESHOLD})\\,0\\,r)':"
@@ -173,12 +177,18 @@ async def _key_video_alpha(mp4_bytes: bytes, *, timeout: float = 180.0) -> bytes
                     f"b='if(gt(b\\,{_WHITE_KEY_THRESHOLD})\\,0\\,b)',"
                     "format=yuva420p"
                 ),
-                "-c:v", "libvpx-vp9",
-                "-pix_fmt", "yuva420p",
-                "-auto-alt-ref", "0",
-                "-deadline", "realtime",
-                "-cpu-used", "4",
-                "-b:v", "0",
+                "-c:v",
+                "libvpx-vp9",
+                "-pix_fmt",
+                "yuva420p",
+                "-auto-alt-ref",
+                "0",
+                "-deadline",
+                "realtime",
+                "-cpu-used",
+                "4",
+                "-b:v",
+                "0",
                 str(out_path),
             ]
 
@@ -254,7 +264,6 @@ def _emit_clip_event(user_id: int, clip: AvatarClip, *, status: str | None = Non
     distinct state. Default is the previous derived behavior for
     the success path.
     """
-    from .asset_store import build_signed_asset_url
 
     if status is None:
         status = "succeeded" if clip.video_asset_url else "ready"
@@ -344,7 +353,6 @@ def list_clips(db: Session, user_id: int) -> list[ClipStatusResponse]:
             status = job.status
         else:
             status = "pending"
-        from .asset_store import build_signed_asset_url
 
         video_url = _re_sign_clip_path(c, c.video_asset_url, build_signed_asset_url) if c.video_asset_url else None
         keyframe_url = _re_sign_clip_path(c, c.keyframe_url, build_signed_asset_url) if c.keyframe_url else None

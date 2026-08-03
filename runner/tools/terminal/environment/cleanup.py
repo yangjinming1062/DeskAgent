@@ -13,7 +13,6 @@ from .state import _creation_locks_lock
 from .state import _env_lock
 from .state import _last_activity
 from .state import get_env_config
-from .state import resolve_container_task_id
 
 logger = logging.getLogger(__name__)
 

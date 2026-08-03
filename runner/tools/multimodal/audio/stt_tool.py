@@ -1,9 +1,6 @@
 import asyncio
 import base64
-import json
 import logging
-import os
-import tempfile
 import uuid
 from pathlib import Path
 from typing import Any
@@ -56,10 +53,6 @@ SPEECH_TO_TEXT_SCHEMA = {
             "initial_prompt": {
                 "type": "string",
                 "description": "Optional context priming for the model (e.g. names, jargon).",
-            },
-            "max_seconds": {
-                "type": "number",
-                "description": "Hard cap on audio length in seconds. Inputs longer than this are truncated with a warning. Default 120.",
             },
         },
         "required": [],
@@ -164,7 +157,6 @@ async def speech_to_text_tool(args: dict[str, Any], **kw: Any) -> str:
     language = None if is_auto_detect else str(raw_language).strip() or None
     model_size = args.get("model") or "base"
     initial_prompt = args.get("initial_prompt") or None
-    max_seconds = float(args.get("max_seconds") or 120.0)
 
     if not audio_path_arg and not audio_b64:
         return tool_error("speech_to_text requires audio_path or audio_base64")

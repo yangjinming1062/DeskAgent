@@ -136,7 +136,6 @@ class NativeFileOperations(FileOperations):
         if _is_write_denied(str(p)):
             return WriteResult(error=f"Write denied: '{path}' is a protected system/credential file.")
 
-        ext = p.suffix.lower()
         pre_content = None
         if p.exists():
             try:

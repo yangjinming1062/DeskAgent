@@ -27,18 +27,13 @@ import contextlib
 import json
 import os
 import socket
-import threading
 import time
-from pathlib import Path
 
 import pytest
 import websockets
 
 import server
-from tools import discover_builtin_tools
 from tools import registry
-from tools.multimodal import audio
-from tools.multimodal import cu_tool
 from tools.skills import skills_sync
 from tools.terminal.environment import factory as env_factory
 
@@ -816,7 +811,6 @@ def test_sync_skills_survives_unwritable_destination(monkeypatch, tmp_path):
     _os.chmod(protected, 0o555)
 
     monkeypatch.setenv("DESKAGENT_HOME", str(home))
-    import server as server_mod  # not used directly but keeps the symbol alive for grep
     import utils.constants as const_mod
     monkeypatch.setattr(const_mod, "get_deskagent_home", lambda: home, raising=False)
     monkeypatch.setattr(skills_sync, "get_skills_dir", lambda: protected / "skills")
@@ -890,7 +884,6 @@ def test_vision_tool_visibility_is_locked_to_schema(monkeypatch):
     schema loads. We assert that contract here so a future refactor doesn't
     silently start adding a check_fn that might filter it on the wrong host.
     """
-    from tools import registry
 
     registry.clear_availability_cache()
     schemas = registry.get_schemas_for_llm(set())
@@ -904,7 +897,6 @@ def test_tts_tool_visibility_matches_piper_availability(monkeypatch):
     and reappear when at least one does. This is the user-visible behaviour
     the Desktop relies on for the "speak" affordance.
     """
-    from tools import registry
 
     # The registry stored the check_fn reference at import time — patch the
     # function object the registry actually calls, not the source module.
@@ -932,7 +924,6 @@ def test_tts_tool_visibility_matches_piper_availability(monkeypatch):
 @pytest.mark.timeout(10)
 def test_stt_tool_visibility_matches_whisper_availability(monkeypatch):
     """``speech_to_text`` MUST disappear when faster-whisper can't import."""
-    from tools import registry
 
     real = registry._check_fns.get("speech_to_text")
     registry.clear_availability_cache()
@@ -1143,7 +1134,6 @@ async def test_runner_loop_does_not_swallow_unhandled_exceptions_in_dispatch():
     process normally.
     """
     from tools import registry as real_registry
-    from tools import ToolError
 
     # Inject a synthetic buggy tool whose handler raises a generic
     # exception — NOT ``ToolError``. ``registry.async_dispatch`` is

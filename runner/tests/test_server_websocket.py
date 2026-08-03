@@ -21,7 +21,6 @@ import asyncio
 import contextlib
 import json
 import os
-import threading
 from typing import Any
 from typing import Awaitable
 from typing import Callable
@@ -29,7 +28,6 @@ from typing import Callable
 import pytest
 import server
 import websockets
-from websockets.legacy.server import serve
 
 
 class _Peer:
@@ -101,7 +99,6 @@ class _ConnectPatch:
         # server object whose ``wait_closed`` we never await; the test
         # controls the peer side directly. We piggy-back on ``websockets``
         # internals: instantiate two ends with the same loop.
-        from websockets.legacy.protocol import WebSocketCommonProtocol
 
         async with _make_pair() as (runner_ws, peer_ws):
             self.peer_ws = peer_ws
@@ -117,7 +114,6 @@ class _make_pair:
 
     async def __aenter__(self):
         loop = asyncio.get_running_loop()
-        from websockets.legacy.protocol import WebSocketCommonProtocol
 
         # ``websockets`` legacy pair via ``connect`` + ``serve`` would
         # require a real socket; instead we use the in-memory asyncio
@@ -166,7 +162,6 @@ class _make_pair:
         runner_task = asyncio.create_task(_connect_runner())
         server_conn = await accept_task
         sock.close()
-        from websockets.server import serve
 
         async def _serve_peer():
             # Use the existing connection directly.
@@ -205,12 +200,8 @@ async def desktop_peer():
     is started pointing at it; the test then drives the peer by reading
     messages and sending replies via the peer-side ws object.
     """
-    from websockets.legacy.server import WebSocketServerProtocol
 
-    loop = asyncio.get_running_loop()
-    incoming: asyncio.Queue[Any] = asyncio.Queue()
     peer_obj = _Peer()
-    runner_ws_holder: dict[str, Any] = {}
     peer_ws_holder: dict[str, Any] = {}
 
     async def on_peer_ws(ws):
@@ -279,7 +270,6 @@ async def test_runner_ready_handshake_carries_capabilities(desktop_peer):
 @pytest.mark.timeout(15)
 @pytest.mark.asyncio
 async def test_get_tools_returns_registry_schemas(desktop_peer):
-    peer = desktop_peer["peer"]
     # Wait until the runner is settled; the fixture already consumed ``runner_ready``.
     await asyncio.sleep(0.05)
     # The peer is bound to its own queue; we need a way to push the request IN
@@ -313,7 +303,7 @@ async def test_get_tools_returns_registry_schemas(desktop_peer):
     # call.
 
     # Direct unit-style test of process_request for get_tools.
-    from tools import discover_builtin_tools, registry
+    from tools import discover_builtin_tools
 
     discover_builtin_tools()  # ensure singleton registry is populated
 

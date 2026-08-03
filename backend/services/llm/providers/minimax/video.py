@@ -6,7 +6,6 @@ from ..base import VideoJobStatus
 from ..http import get_http
 from ._errors import raise_for_minimax_response
 
-
 _STATUS_MAP = {
     "Queueing": "queued",
     "Processing": "processing",

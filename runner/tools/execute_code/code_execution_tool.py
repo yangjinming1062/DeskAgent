@@ -36,7 +36,6 @@ from ..terminal.environment import _last_activity
 from ..terminal.environment import _task_env_overrides
 from ..terminal.environment import create_environment
 from ..terminal.environment import get_env_config
-from ..terminal.environment import register_environment
 from ..terminal.environment import resolve_container_task_id
 from ..terminal.environment import start_cleanup_thread
 from ..thread_context import propagate_context_to_thread
@@ -244,9 +243,7 @@ def retry(fn, max_attempts=3, delay=2):
 
 '''
 
-_UDS_TRANSPORT_HEADER = (
-    _COMMON_HELPERS
-    + '''\
+_UDS_TRANSPORT_HEADER = _COMMON_HELPERS + '''\
 
 def _connect():
     """Connect to the parent's RPC server via the transport it picked.
@@ -297,11 +294,8 @@ def _call(tool_name, args):
     return result
 
 '''
-)
 
-_FILE_TRANSPORT_HEADER = (
-    _COMMON_HELPERS
-    + '''\
+_FILE_TRANSPORT_HEADER = _COMMON_HELPERS + '''\
 
 def _call(tool_name, args):
     """Send a tool call request via file-based RPC and wait for response."""
@@ -346,7 +340,6 @@ def _call(tool_name, args):
     return result
 
 '''
-)
 
 _TERMINAL_BLOCKED_PARAMS = {"background", "pty", "notify_on_complete", "watch_patterns"}
 

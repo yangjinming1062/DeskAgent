@@ -5,7 +5,6 @@ import subprocess
 import uuid
 from pathlib import Path
 from typing import Any
-from typing import IO
 
 from utils import CREATE_NO_WINDOW
 from utils import get_deskagent_dir

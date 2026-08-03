@@ -17,7 +17,6 @@ from utils import kill_tree
 from utils import load_config
 from utils import msys_to_windows_path
 from utils import resolve_safe_cwd
-from utils import sanitize_subprocess_env
 
 from ._env_base import _pipe_stdin
 from ._env_base import BaseEnvironment

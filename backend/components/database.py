@@ -8,7 +8,6 @@ from sqlalchemy.orm import sessionmaker
 
 from .config import SETTINGS
 
-
 ENGINE = create_engine(
     SETTINGS.database_url,
     pool_size=20,
