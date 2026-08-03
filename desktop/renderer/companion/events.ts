@@ -8,6 +8,7 @@ import {
 } from '@/companion/chat-store'
 import { applyClipUpdate, type ClipMeta } from '@/companion/clip-store'
 import { $disturbanceTier, setSpriteState, type SpriteEmotion } from '@/companion/companion-store'
+import { resolveAvatarRegeneration } from '@/companion/avatar-regen-store'
 import { $responseMode } from '@/companion/prefs'
 import { speak } from '@/companion/tts'
 import type { RpcEvent } from '@/shared/types/deskagent'
@@ -96,6 +97,18 @@ export function handleCompanionEvent(event: RpcEvent): void {
           keyframe_url: p.keyframe_url ?? null,
           keyframe_meta: p.keyframe_meta ?? null,
         })
+      }
+
+      break
+    }
+
+    case 'avatar.regenerated': {
+      // P0-4: avatar.regenerate is now a background task; the handler returns
+      // {queued: true, job_id} and the real result lands here. Resolve the
+      // pending promise keyed by job_id so the awaiter can swap the portrait.
+      const p = event.payload as { job_id?: string; asset_url?: string; id?: number; error?: string } | undefined
+      if (p?.job_id) {
+        resolveAvatarRegeneration(p)
       }
 
       break
