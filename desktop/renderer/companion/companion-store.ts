@@ -160,7 +160,11 @@ export function reportUserActivity(): void {
     activityCounter = 0
 
     if ($spriteState.get() === 'working') {
-      setSpriteState('idle')
+      // ``working`` (pri 70) gates ``idle`` (pri 10) — without ``force: true``
+      // the timer expires but the state stays locked on the working badge.
+      // P0-9: explicitly force the exit so the sprite returns to idle once
+      // the user stops producing activity for the configured window.
+      setSpriteState('idle', { force: true })
     }
   }, 10000)
 }

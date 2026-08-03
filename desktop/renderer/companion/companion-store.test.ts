@@ -4,6 +4,7 @@ import {
   $previousState,
   $spriteEmotion,
   $spriteState,
+  reportUserActivity,
   setSpriteState
 } from './companion-store'
 
@@ -51,5 +52,22 @@ describe('companion-store Phase 2 state machine', () => {
 
     vi.advanceTimersByTime(500)
     expect($spriteState.get()).toBe('listening')
+  })
+
+  it('returns to idle after 10s of inactivity while in working (P0-9)', () => {
+    setSpriteState('idle', { force: true })
+    expect($spriteState.get()).toBe('idle')
+
+    // 6 consecutive activity ticks flip idle -> working (counter gate).
+    for (let i = 0; i < 6; i++) {
+      reportUserActivity()
+    }
+    expect($spriteState.get()).toBe('working')
+
+    // Working (pri 70) gates idle (pri 10) — without force, the 10s
+    // inactivity timer would expire but the state would stay locked on
+    // the working badge. The fix forces the exit.
+    vi.advanceTimersByTime(10_000)
+    expect($spriteState.get()).toBe('idle')
   })
 })
