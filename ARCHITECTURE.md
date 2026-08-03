@@ -75,7 +75,7 @@ DeskAgent 是一个**根据用户描述定制的、具有专属形象的陪伴�
 | **运行环境** | 容器/云端服务器 (Linux Docker) | 用户本机原生环境 (Win/Mac/Linux) | 本地静默进程 (venv Python 运行时) |
 | **状态持有** | 伙伴角色定义、形象资产、长期记忆、PostgreSQL、LLM API 凭证、用户会话历史 | 用户身份 JWT (加密)、Runner 进程 PID、本地工具集 Schema 缓存、伙伴形象资产本地缓存 | 终端环境快照、CDP 浏览器会话、本地 MCP Server 句柄 |
 | **核心职责** | 接收用户消息、装配角色定义+记忆上下文、流式调度 LLM、按需生成/再生形象资产、解析工具调用并路由 | 渲染桌面伙伴形象、承载陪伴式交互、引导 onboarding；维护本地安全防线、中转 WS 工具帧、代理 Runner 的反向 LLM 请求 | 纯粹执行底层工具逻辑，上报真实可用的工具 Schema 列表 |
-| **安全准则** | `<untrusted_tool_result>` 包裹一切外部输入；Reserved 键覆盖保护；脱敏日志；角色定义属用户隐私数据 | Renderer 进程隐藏 JWT；仅暴露本地文件系统代理拦截；屏幕录制通道防护 | Hardline 危险命令阻断；Windows 路径不敏感写限制；SSRF 防护 |
+| **安全准则** | `<untrusted_tool_result>` 包裹一切外部输入；Reserved 键覆盖保护；脱敏日志；角色定义属用户隐私数据 | Renderer 进程隐藏 JWT；仅暴露本地文件系统代理拦截 | Hardline 危险命令阻断；Windows 路径不敏感写限制；SSRF 防护 |
 
 ---
 

@@ -949,8 +949,6 @@ export interface Translations {
     stopDictation: string
     transcribingDictation: string
     voiceDictation: string
-    screenRecordTip: string
-    screenRecordingLabel: string
     lookupLoading: string
     lookupNoMatches: string
     lookupTry: string
