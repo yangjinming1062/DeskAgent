@@ -51,6 +51,28 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps) {
     inputRef.current?.focus()
   }, [])
 
+  // 2.7 (desktop audit): the previous cleanup only un-registered
+  // the interactive region. If the user dismissed the chat while a
+  // voice recording was in flight, ``setSpriteState('listening')``
+  // stayed set forever — the sprite was stuck in the listening
+  // state until a new state transition (e.g. another chat reply).
+  // Reset the sprite on unmount so the partner returns to idle
+  // when the chat is closed.
+  useEffect(() => {
+    return () => {
+      const recorder = mediaRecorderRef.current
+      if (recorder && recorder.state !== 'inactive') {
+        try {
+          recorder.stop()
+        } catch {
+          /* already stopped */
+        }
+      }
+      setRecording(false)
+      setSpriteState('idle')
+    }
+  }, [])
+
   const panelRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -214,7 +236,17 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps) {
       setSpriteState('thinking')
       setText('')
       setPendingImage(null)
-      await requestGateway('prompt.submit', { session_id: id, text: fullText || '请看这张图' })
+      await requestGateway('prompt.submit', {
+        session_id: id,
+        text: fullText || '请看这张图',
+        // 3.7 (desktop audit): forward attachments so the backend
+        // knows the user is including an image; previously the
+        // attachment was stored in the message but the prompt.submit
+        // frame had no attachment field, so the LLM never saw the
+        // image. ``attachments`` is a list of {file_url, type} dicts
+        // matching the JSON-RPC handler contract.
+        ...(attachments.length ? { attachments: attachments.map((file_url) => ({ file_url, type: 'image' })) } : {}),
+      })
     } catch (err) {
       setAssistantError(err instanceof Error ? err.message : '发送失败')
       setSpriteState('idle')
@@ -285,7 +317,17 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps) {
   }
 
   return (
-    <div className="fixed inset-0 z-40 flex items-end justify-center px-6 pb-10" style={{ pointerEvents: 'none' }}>
+    // 2.3 (desktop audit): SPEC §4.1 says "对话发生在角色身边" with
+    // the sprite upper and the panel below, in the same vertical
+    // column. The previous layout stacked the panel against the
+    // bottom edge; the sprite was at its dragged position so the
+    // two could be far apart. Anchor the panel to the lower-third
+    // (pb-24 = 96px) so it sits under the centered sprite, not
+    // against the bottom of the screen.
+    <div
+      className="fixed inset-0 z-40 flex flex-col items-center justify-end px-6 pb-24"
+      style={{ pointerEvents: 'none' }}
+    >
       <div
         className="flex h-[min(60vh,520px)] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-white/10 bg-black/55 text-white shadow-2xl backdrop-blur-md"
         ref={panelRef}
