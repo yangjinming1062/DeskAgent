@@ -1,6 +1,6 @@
 # installer/
 
-DeskAgent 安装器产品。本目录容纳 **Tauri 2 桌面程序**（`src/` + `src-tauri/`，产 `DeskAgent-Setup.exe` / `DeskAgent-Setup.app` / `deskagent-setup`）、它要释放的安装 payload（`skills/`、`config.yaml`）、以及 Tauri 进程 spawn 出来的 **install 协议后端**（`install.sh` / `install.ps1` / `install.cmd`）。首装完成释放 Desktop 后，Desktop 以"蛋"形态首次启动，进入 [COMPANION_DESIGN.md §3](../COMPANION_DESIGN.md) 的伙伴生命周期 onboarding。
+DeskAgent 安装器产品。本目录容纳 **Tauri 2 桌面程序**（`src/` + `src-tauri/`，产 `DeskAgent-Setup.exe` / `DeskAgent-Setup.app` / `deskagent-setup`）、它要释放的安装 payload（`skills/`、`config.yaml`、`voices/`）、以及 Tauri 进程 spawn 出来的 **install 协议后端**（`install.sh` / `install.ps1` / `install.cmd`）。首装完成释放 Desktop 后，Desktop 以"蛋"形态首次启动，进入 [COMPANION_DESIGN.md §3](../COMPANION_DESIGN.md) 的伙伴生命周期 onboarding。
 
 ## 1. 顶层模块解耦
 
@@ -16,9 +16,9 @@ manifest 字段、`install.{ps1,sh}` 的 stage 名、JSON-RPC frame 等**协议�
 
 ## 2. 同目录三类内容
 
-- **`src/` + `src-tauri/`**：Tauri 2 桌面程序源码（Rust 后端 + React 19 前端），编译产物是签名好的安装器二进制。Tauri 包名 `@deskagent/installer`、cargo bin 名 `DeskAgent-Setup`、lib 名 `deskagent_bootstrap_lib`。
+- **`src/` + `src-tauri/`**：Tauri 2 桌面程序源码（Rust 后端 + React 19 前端），编译产物是签名好的安装器二进制。npm 包名 `@deskagent/installer`、cargo bin 名 `DeskAgent-Setup`、lib 名 `deskagent_bootstrap_lib`。
 - **`install.sh` / `install.ps1` / `install.cmd`**：6-stage install 协议后端（welcome / install-python / unpack-runner / unpack-desktop / install-skills / write-config）。`install.cmd` 是 Windows 下 `install.ps1` 在 cmd.exe 不可用时的 dev fallback（`bundle.resources` 不嵌入）。完整规范见 §4。
-- **`skills/`、`config.yaml`**：安装 payload，被 `install-skills` / `write-config` stage 读出来 seed 到 `$DESKAGENT_HOME/{skills,config.yaml}`（路径契约详 [runner/README.md §Skills 系统](../runner/README.md)）。
+- **`skills/`、`config.yaml`、`voices/`**：安装 payload——skills 由 `install-skills`、config 由 `write-config`、Piper voice 由 `unpack-runner` stage 分别读出来 seed 到 `$DESKAGENT_HOME`（路径契约详 [runner/README.md §Skills 系统](../runner/README.md)）。
 
 **源位置 vs 嵌入位置**：`installer/skills/`（源，仓库随附）由 `scripts/build_client.{sh,ps1}` 的 `stage_payload()` 在 build 期建立 symlink 到 `installer/payload/skills/`，再由 Tauri `bundle.resources` 嵌入到 `DeskAgent-Setup` 二进制。install 脚本运行时读的是 `<bundle>/payload/skills/`（= §3 的 `DESKAGENT_BUNDLED_SKILLS_DIR`），不是源位置。
 
@@ -30,6 +30,7 @@ manifest 字段、`install.{ps1,sh}` 的 stage 名、JSON-RPC frame 等**协议�
 
 - `../payload/runner/` — Runner wheel（`deskagent-agent-*.whl`）+ `server.py`
 - `../payload/skills` — symlink 到 `installer/skills/`
+- `../payload/voices` — 三份 Piper 离线 voice（见 §11）
 - `../payload/config.yaml` — Runner 默认配置（运行期释放到 `~/.deskagent/config.yaml`）
 - `../payload/.staging.json` — build metadata（version / sha256 / host）
 - `../payload/desktop/.gitkeep` — **占位符**。`scripts/build_client` 在 tauri build 前 patch 为实际 desktop artifact，build 后 restore
@@ -44,6 +45,7 @@ Tauri 进程把 bundle.resources 解压根通过 env var 传给 `install.{sh,ps1
 | `DESKAGENT_BUNDLED_RUNNER_DIR` | `<bundle>/payload/runner/` |
 | `DESKAGENT_BUNDLED_DESKTOP_DIR` | `<bundle>/payload/desktop/` |
 | `DESKAGENT_BUNDLED_SKILLS_DIR` | `<bundle>/payload/skills/` |
+| `DESKAGENT_BUNDLED_VOICES_DIR` | `<bundle>/payload/voices/` |
 | `DESKAGENT_CONFIG_PATH` | `<bundle>/payload/config.yaml` |
 | `DESKAGENT_INSTALLER_FORMAT` | `dmg` / `nsis` / `AppImage` / `msi` / `zip` |
 
@@ -51,7 +53,7 @@ Tauri 进程把 bundle.resources 解压根通过 env var 传给 `install.{sh,ps1
 
 ## 4. 引导协议（bootstrap 流程）
 
-`DeskAgent-Setup.exe` 启动后调用 `installer/install.ps1 -Manifest`（macOS/Linux 是 `installer/install.sh`）拿 stage 列表，再逐 stage 用 `-Stage NAME -NonInteractive -Json` 执行。**6 个 stage**：`install-python` 检测/安装 Python 运行时（通过 uv，目标版本 3.13），其余 5 个 stage 专做 payload 释放——`install.{sh,ps1}` 不做构建（runner / desktop 都是预构建产物，由 Tauri `bundle.resources` 嵌入）。
+`DeskAgent-Setup.exe` 启动后调用 `installer/install.ps1 -Manifest`（macOS/Linux 是 `installer/install.sh`）拿 stage 列表，再逐 stage 用 `-Stage NAME -NonInteractive -Json` 执行。**6 个 stage**：`welcome`（创建 `$DESKAGENT_HOME`）+ `install-python`（检测/安装 Python 运行时，通过 uv，目标 3.13）+ 3 个 payload 释放 stage（`unpack-runner` / `unpack-desktop` / `install-skills`）+ `write-config`（写配置 + 落 `.deskagent-bootstrap-complete` 标记）。`install.{sh,ps1}` 不做构建（runner / desktop 都是预构建产物，由 Tauri `bundle.resources` 嵌入）。
 
 完整规范在 `src-tauri/src/bootstrap.rs`，前端通过 Tauri `bootstrap` event channel 拿阶段进度。当前 install 协议为 v2（含 `install-python` stage）。
 
@@ -61,11 +63,11 @@ Tauri 进程把 bundle.resources 解压根通过 env var 传给 `install.{sh,ps1
 
 登录成功后写入的 one-shot 文件：
 - 路径：`$DESKAGENT_HOME/agent-session-bootstrap.json`（`installer/src-tauri/src/paths.rs::deskagent_home()`）
-- schema（`schemaVersion: 1`）：`{ baseUrl, token (raw jwt), tokenExpiresAt, user, savedAt }`
+- schema（`schema_version: 1`）：`{ base_url, token (raw jwt), token_expires_at, user, saved_at }`（serde 默认 snake_case 序列化，desktop 端按此字段名读取）
 - POSIX 0600；Windows 由父目录 ACL 控制访问
 - Desktop 启动时消费该文件：校验 schema + 调用 backend `POST /api/user/refresh` 验证 token；成功则原子重命名为 `.consumed` 并交给 `BackendSession::adoptSession` 走 `safeStorage` 落盘到 `agent-session.json`；任何失败（缺字段、解析错、refresh 401/网络失败）都静默删除文件并回落到未登录态。环境变量 `DESKAGENT_DESKTOP_BOOTSTRAP_SESSION` 覆盖消费路径。
 
-## 5. 平台标准安装位置
+## 6. 平台标准安装位置
 
 `bootstrap::desktop_install_root()` 给出 desktop 的平台-canonical 路径：
 
@@ -75,11 +77,11 @@ Tauri 进程把 bundle.resources 解压根通过 env var 传给 `install.{sh,ps1
 
 `install.sh` `Stage-UnpackDesktop` 的 macOS 分支用 `hdiutil attach` + `cp -R` + `xattr -cr`；Windows 分支用 `Start-Process /S /D=...` 调 NSIS 静默安装；Linux 分支 `cp +x` AppImage + 写 `~/.local/share/applications/deskagent.desktop`。
 
-## 6. macOS fast path
+## 7. macOS fast path
 
-macOS 上若 `deskagent_is_installed() == true`（存在 `$DESKAGENT_HOME/.deskagent-bootstrap-complete` 标记 + `/Applications/DeskAgent.app/Contents/MacOS/DeskAgent` 可启动），Tauri 直接 relaunch 桌面并退出——让 `/Applications/DeskAgent.app` 兼任"首次启动走安装、之后是 launcher"。`--reinstall` / `--repair` 跳过 fast path，强制显示安装 UI。
+macOS 上若 `deskagent_is_installed() == true`——三条件全部满足：`$DESKAGENT_HOME/.deskagent-bootstrap-complete` 标记存在 + `/Applications/DeskAgent.app/Contents/MacOS/DeskAgent` 可启动 + Runner venv 健康（`runner_venv_is_healthy()` 探测依赖 import 链完整，broken venv 不满足）——Tauri 直接 relaunch 桌面并退出——让 `/Applications/DeskAgent.app` 兼任"首次启动走安装、之后是 launcher"。`--reinstall` / `--repair` 跳过 fast path，强制显示安装 UI。
 
-## 7. Install 脚本解析 —— 自包含，无网络
+## 8. Install 脚本解析 —— 自包含，无网络
 
 `install_script.rs::resolve` 的解析顺序：
 
@@ -88,7 +90,7 @@ macOS 上若 `deskagent_is_installed() == true`（存在 `$DESKAGENT_HOME/.deska
 
 DeskAgent-Setup 二进制**不**下载 install 脚本（项目不放在 GitHub，无可下载源）。脚本版本 = installer build 版本。
 
-## 8. Python 运行时安装
+## 9. Python 运行时安装
 
 Skills 中的 Python 脚本需要系统 Python。`install-python` stage 通过 [uv](https://docs.astral.sh/uv/) 安装：
 
@@ -99,7 +101,7 @@ Skills 中的 Python 脚本需要系统 Python。`install-python` stage 通过 [
 
 Python 通过 uv 安装到 uv 管理位置，无需管理员权限。
 
-## 9. Runner 安装布局
+## 10. Runner 安装布局
 
 Runner 通过 `uv build --wheel` 构建为 `deskagent-agent-*.whl`。安装器在 `unpack-runner` stage 将 wheel 安装到 uv-managed venv：
 
@@ -122,7 +124,7 @@ Desktop spawn 命令：`$DESKAGENT_HOME/runner/.venv/{bin/python,Scripts/python.
 
 - **蛋形象不随 installer 分发**：角色定义完成前的"蛋"占位形象由 Desktop 内置默认渲染（`BrandMark` 组件），不经 installer seed payload。这避免了 payload 与形象资产版本耦合——installer 只负责代码与运行时分发，形象资产完全由 Backend 生成并下发（[ARCHITECTURE.md §6](../ARCHITECTURE.md)）。
 
-## 10. 本地 TTS voice 打包
+## 11. 本地 TTS voice 打包
 
 `installer/payload/voices/` 目录携带三份 Piper 离线 voice：
 

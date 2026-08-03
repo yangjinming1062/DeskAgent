@@ -8,30 +8,18 @@
 
 ```
 backend/
-├── common/           # 框架基类与 API 助手（业务无关）：ModelBase/TimestampMixin · get_router · get_or_404/list_response
-├── components/        # 基础设施单例 + 通用工具：database · config · logger · constants · functions · background · hashing
-│   │                   + 横切基础设施（无领域逻辑）：correlation · redact · attachments · temp_files
-├── modules/           # 按领域拆分的 ORM 模型 + Pydantic 契约：auth / companion / conversation / media / memory / scheduler / settings / system / update / ws
-├── services/          # 服务/编排层（业务逻辑）。无 god-facade——按子包直接 import
-│   ├── chat/          # 对话编排：orchestrator(run_chat_turn) · streaming · tool_dispatch · persistence · turn_inputs · heartbeat · types
-│   │                   + chat_emitter(循环断路器，Emitter 协议) · system_prompt · history · message_sanitization · think_scrubber · agent_delegate · commands
-│   ├── gateway/       # WS 网关：connection(MANAGER+LISTEN/NOTIFY) · jsonrpc · emitter(JsonRpcEmitter) · ipc · runtime · auth · handlers(31 个 JSON-RPC 方法)
-│   ├── llm/           # LLM 客户端与错误分类：llm_client · llm_retry · error_classifier · context_compressor · user_config
-│   │                   + providers/(抽象层：base · registry · http · openai_compat · content · mimo/ · minimax/ · gemini/)
-│   ├── media/         # 视频生成后台任务：video_jobs(submit/poll/download/finalize + WSEvent outbox)
-│   ├── tools/         # 工具框架 + 内置工具：registry · guardrails · memory · ... + builtin/(web/tts/image_gen/video_gen/send_message/cronjob)
-│   ├── companion/     # 伙伴系统：persona_service(onboarding draft + persona+memory 双写) · memory_bootstrap(user_profile→Memory upsert) · avatar_service(generate/regenerate + clip seed，中英 species/gender 查表) · clip_service(scene catalog + enqueue/list/invalidate) · disturbance · affect_emit(companion.affect outbox) · affect_check(idle 触发的情境化情绪 LLM 推理)
-│   ├── scheduler/     # 后台任务：cron · title_generator · background_review
-│   └── rate_limit.py  # slowapi 限流（依赖 modules.auth，独居 services/ 根而非 components/）
-├── api/v1/            # 薄 HTTP/WS 端点，pkgutil 自动发现：chat(唯一 WS，薄端点委托 gateway/handlers) / user / sessions / llm / media / companion / config / insights / admin / status / health / update / page
-└── main.py            # lifespan + middleware + init_database(NOTIFY trigger + 幂等 ALTER) + 遍历 api.ROUTERS + 显式工具注册 import
+├── common/ · components/    # 框架基座（基类 + 有状态基础设施单例 + 横切层 correlation/redact/attachments/temp_files），不 import modules/services
+├── modules/                  # 按 domain 分包的 ORM 模型 + Pydantic 契约
+├── services/                 # 业务/编排层，无 facade，按子包直接 import；rate_limit.py 因依赖 modules.auth 独居 services/ 根
+│   └── llm/providers/{mimo, minimax, gemini, zhipu}/ + chat/chat_emitter.py ↔ gateway/emitter.py   # provider 自注册 + chat↔gateway import 环的收敛处
+└── api/v1/ + main.py         # 薄 HTTP/WS 端点（pkgutil 自动发现）+ lifespan + 路由装配 + 工具注册触发
 ```
 
 依赖方向（低 → 高）：`common` / `components`（框架基座，**不** import modules/services）→ `modules`（领域模型与契约）→ `api/v1`（端点）/ `services`（服务层）→ `main.py`，无反向。`common` 放纯定义/基类（无模块级状态、无副作用）；`components` 放有状态基础设施单例（`ENGINE`、`SETTINGS`、logger 缓存）+ 无状态通用工具 + 横切基础设施（correlation/redact/attachments/temp_files，无领域依赖）。`rate_limit` 同属横切层但因依赖 `modules.auth` 留在 `services/rate_limit.py`。`services` 无顶层 re-export facade——消费者直接 `from services.chat import run_chat_turn`，import 行即依赖图。REST 路由见 `api/v1/`（FastAPI `/docs`）；WS JSON-RPC 方法注册见 `services/gateway/handlers.py`（`api/v1/chat.py` 仅薄端点）。
 
 **循环断路器**：`chat ↔ gateway`、`chat ↔ scheduler`、`chat → companion → tools.builtin → scheduler → chat` 三条 import 环全部经 `services/chat/chat_emitter.py`（`Emitter` 协议，零内部依赖）收敛——`chat/__init__.py` 急切 import `chat_emitter` + `types`，重编排器/`turn_inputs`/`agent_delegate` 经 `__getattr__` 懒加载，保证 import chat 包不会触发整张服务图。`gateway/emitter.py`（`JsonRpcEmitter`）import `chat.chat_emitter.Emitter`，是 chat↔gateway 环的接合点——两个 emitter 文件不要混淆。
 
-**工具自注册**：每个工具模块在 module bottom 调 `REGISTRY.register(...)`；旧 `services` facade 的 eager re-export 曾隐式触发注册，facade 拆除后改由 `main.py` 显式 `import services.tools.builtin` / `import services.chat.agent_delegate` 触发（首条 chat turn 前完成）。
+**工具自注册**：每个工具模块在 module bottom 调 `REGISTRY.register(...)`；`main.py` 显式 `import services.tools.builtin` / `import services.chat.agent_delegate` 触发注册（首条 chat turn 前完成）。
 
 ## 工具三层分类
 
@@ -94,7 +82,7 @@ backend/
 
 ## 错误分类管道
 
-`services/llm/error_classifier.py` 将所有 API 层或依赖项错误收拢为 `FailoverReason`（21 种），经 8 步优先级流水线过滤：provider patterns → HTTP status → error code → message pattern → SSL/TLS transient → server disconnect → transport heuristics → unknown fallback。分类决定恢复策略（退避重试 / 凭证轮换 / 压缩上下文 / 不重试等）。
+`services/llm/error_classifier.py` 将所有 API 层或依赖项错误收拢为 `FailoverReason`，分类决定恢复策略（退避重试 / 凭证轮换 / 压缩上下文 / 不重试）。
 
 **REST 错误信封**：`/api/llm/completion` 与 `/api/media/*` 在异常路径上调 `classify_api_error`，把 `FailoverReason` + `status_code` 折成 `{error, reason, status}` 返回。原始异常（可能带 provider URL / 部分 auth header）只写服务端 log，**永远不出后端**——满足 [ARCHITECTURE.md §8](../ARCHITECTURE.md) 的 -32603 "no internal detail" 契约。
 
@@ -102,7 +90,7 @@ backend/
 
 ## LLM Provider 抽象
 
-`services/llm/providers/` 在五类服务（`ChatProvider` / `ImageGenProvider` / `VideoGenProvider` / `TTSProvider` / `STTProvider`）各放一个 ABC，`BaseProvider` 公共根。Provider 名解析规则：显式 `SETTINGS.<svc>_provider` 优先，否则按 `base_url` host 推断（`api.minimaxi.com` / `api.minimax.io` → `minimax`，`googleapis.com` → `gemini`，其余 → `mimo`）。注册表 `registry.register(service_type, provider_name, cls)` 由 provider 子包 `__init__.py` 自注册；`providers/__init__.py` 仅 `from . import mimo, minimax, gemini` 触发。哪些 provider 支持哪些能力由 `(ServiceType, name)` 在 `_REGISTRY` 里的存在与否决定——`providers_supporting(service)` 返回所有注册过此服务的 provider 名列表。
+`services/llm/providers/` 在五类服务（`ChatProvider` / `ImageGenProvider` / `VideoGenProvider` / `TTSProvider` / `STTProvider`）各放一个 ABC，`BaseProvider` 公共根。Provider 名解析：显式 `SETTINGS.<svc>_provider` 优先，否则按 `base_url` host 推断（`api.minimaxi.com` / `api.minimax.io` → `minimax`，`generativelanguage.googleapis.com` → `gemini`，`open.bigmodel.cn` → `zhipu`，其余 → `mimo`）；此推断（`infer_provider_name`）仅供迁移脚本/测试，chain resolver 实际用 `PROVIDERS` env + `SERVICE_DEFAULT_PROVIDER`。注册表 `registry.register(service_type, provider_name, cls)` 由 provider 子包 `__init__.py` 自注册；`providers/__init__.py` `from . import mimo, minimax, gemini, zhipu` 触发。哪些 provider 支持哪些能力由 `(ServiceType, name)` 在 `_REGISTRY` 里的存在与否决定——`providers_supporting(service)` 返回所有注册过此服务的 provider 名列表。
 
 ### PROVIDER-first 配置
 
@@ -122,19 +110,13 @@ Tier 2-4 保持原 fold-in 语义（per-cap 覆盖 provider-level），兼容老
 
 `<svc>_PROVIDER` 不参与单 slot 凭证解析；它**只软重排** chain——把命名的 provider 提到第一位，chain 仍保留其它 provider 作为 fallback（设计决策：用户希望链不塌缩）。空 `<svc>_provider` + `PROVIDERS` 未设 → `SERVICE_DEFAULT_PROVIDER[svc]` 兜底（chat/stt/tts→`mimo`、image/video→`minimax`），chain 退化为单元素。
 
-**provider 默认 URL**（`PROVIDER_DEFAULT_URLS`）：MiMo 含 `/v1`（OpenAI SDK 需完整 base_url）；MiniMax 含 `/v1`（providers 自拼接 `/v1/<endpoint>`）；Gemini chat 含 `/v1beta/openai/`（Google OpenAI 兼容端点），其余能力（stt/tts/image_gen/video_gen）用 `generativelanguage.googleapis.com` 原生端点。**key 隔离**：minimax provider 始终用 `MINIMAX_API_KEY`，不继承 MiMo key（host 不同会 401）；gemini provider 用 `GEMINI_API_KEY`（兼容 `GEMINI_KEY` 别名）；其他 provider 链路最终回落 `LLM_API_KEY` 兼容老部署。`MIMO_KEY` / `MINIMAX_KEY` / `GEMINI_KEY` 是 legacy 别名。
+**provider 默认 URL**（`PROVIDER_DEFAULT_URLS`）：MiMo 含 `/v1`（OpenAI SDK 需完整 base_url）；MiniMax 仅 chat（llm）URL 含 `/v1`，其余能力（tts/image_gen/video_gen）的路径已自带 `/v1`、base_url 不含；Gemini chat 含 `/v1beta/openai/`（Google OpenAI 兼容端点），其余能力（stt/tts/image_gen）用 `generativelanguage.googleapis.com` 原生端点，`video_gen` 为空字符串（Veo 需 Vertex AI，暂不支持）。**key 隔离**：minimax provider 始终用 `MINIMAX_API_KEY`，不继承 MiMo key（host 不同会 401）；gemini provider 用 `GEMINI_API_KEY`（兼容 `GEMINI_KEY` 别名）；其他 provider 链路最终回落 `LLM_API_KEY` 兼容老部署。`MIMO_KEY` / `MINIMAX_KEY` / `GEMINI_KEY` 是 legacy 别名。
 
 `backend/.env.example` 是完整模板。**最小配置**：`LLM_API_KEY` + `MINIMAX_API_KEY`——每 provider 用自己的默认 URL + model。
 
 ### Fallback chain（`services/llm/llm_fallback.py`）
 
-`execute_with_fallback(db, user_id, service_type, call_fn, *, stream_started=None, on_fallback=None)` 在 `resolve_provider_chain()` 返回的有序 `ProviderConfig` 列表上迭代 `call_fn(provider)`。调用流程：
-
-1. `resolve_provider_chain` 按 `PROVIDERS` 顺序 + `<svc>_PROVIDER` 软重排构建 chain；未注册此能力的 provider 静默剔除；某 slot 缺 key/URL 时该 slot 整体跳过（chain 长度变小但仍可工作）
-2. 对 chain 中每个 slot 实例化 provider 类 → 调用 `call_fn(provider)`
-3. `call_fn` 抛出时分类错误（`LLMRuntimeError` / `ProviderError` / 普通异常 → `classify_api_error`）
-4. 若 `classified.should_fallback` 且 `stream_started` 未触发 → log WARNING + 调用 `on_fallback(next_name, classified)` + continue
-5. 否则（`should_fallback=False` 或 stream 已发出或 chain 末尾）→ raise，让 HTTP envelope（`api/v1/_http_errors.py`）走标准 `{error, reason, status}` 路径
+`execute_with_fallback(db, user_id, service_type, call_fn, *, stream_started=None)` 在 `resolve_provider_chain()` 返回的有序 `ProviderConfig` 列表上迭代 `call_fn(provider)`；某 slot 抛错时按 `ClassifiedError.should_fallback` 决定 continue 到下一 provider 还是 raise（让 HTTP envelope `api/v1/_http_errors.py` 走标准 `{error, reason, status}` 路径）。
 
 **触发 fallback 的分类原因**（`error_classifier.should_fallback` 已设 True）：`auth`、`billing`、`rate_limit`（持续性）、`model_not_found`、`format_error`、`content_policy_blocked`。**不触发**（留在 per-provider retry 层）：`overloaded`、`server_error`、`timeout`、`context_overflow`、`payload_too_large`——`call_with_retry` 的退避循环负责。
 
@@ -150,13 +132,8 @@ Tier 2-4 保持原 fold-in 语义（per-cap 覆盖 provider-level），兼容老
 
 ### 关键设计决策
 
-- chat 走 OpenAI 协议 → `OpenAICompatChatProvider` 共享基类；`MiMoChatProvider`、`MiniMaxChatProvider`、`GeminiChatProvider`、`ZhipuChatProvider` 都继承它，差异只在 base_url 与 model
-- STT：MiMo 走 OpenAI chat + `input_audio` 扩展；Gemini 走 `generateContent` + audio inlineData httpx；智谱走 `/audio/transcriptions` multipart httpx
-- TTS：MiMo 走 OpenAI chat + `audio` 扩展（音色设计走 `mimo-v2.5-tts-voicedesign` 模型，voice_id 编码为 `mimo_voicedesign:<prompt>`）；MiniMax 走 `/v1/t2a_v2` httpx（音色设计走 `/v1/voice_design`）；Gemini 走 `generateContent` + `responseModalities:["AUDIO"]` httpx；智谱走 `/audio/speech` httpx
-- image_gen：MiMo 走 OpenAI Images API；MiniMax 走 `/v1/image_generation` httpx；Gemini 走 `generateContent` + `responseModalities:["IMAGE"]` httpx；智谱走 `/images/generations` httpx（返回 URL，provider 内下载转 b64）
-- video_gen：MiniMax 走三段式 httpx（submit/poll/fetch）（Gemini Veo 需 Vertex AI，暂不支持；智谱 CogVideo 走异步 API，暂不支持）
-- 非 OpenAI 协议的能力**一律走** `providers/http.py` 的 httpx 池（base_url + api_key 缓存，超时 `llm_request_timeout_seconds`），不做 `AsyncOpenAI.post` 兼容层 hack。智谱的 TTS/STT/Image Gen 走同一 httpx 池（`Authorization: Bearer` 认证）
-- `ProviderError(status_code, body, provider, model)` 字段名刻意对齐 `error_classifier._extract_status_code/_extract_error_body`，让 `classify_api_error` 复用既有 8 步流水线——MiniMax `base_resp.status_code` 在 `providers/minimax/_errors.py` 翻译（`1002/1039→429`、`1004→401`、`1008→402`、`1027→400 content_filter`，其余→原 HTTP）
+- 非 OpenAI 协议的能力**一律走** `providers/http.py` 的 httpx 池（base_url + api_key 缓存，超时 `llm_request_timeout_seconds`），不做 `AsyncOpenAI.post` 兼容层 hack
+- `ProviderError(status_code, body, provider, model)` 字段名刻意对齐 `error_classifier._extract_status_code/_extract_error_body`，让 `classify_api_error` 复用既有分类流水线——MiniMax `base_resp.status_code` 经 `providers/minimax/_errors.py` 翻译后复用既有分类流水线
 - MiniMax key 不能继承 MiMo key（host 不同 401）；resolver 在 provider=minimax 时强制把回落链截断在 `minimax_api_key`
 
 **为什么 MiMo 没有 `_errors.py`**：MiMo chat.completions 协议就是 OpenAI 标准格式，错误返回 OpenAI 标准的 `{"error":{"message":"..."}}` HTTP 状态码，`AsyncOpenAI` 自动解析成 `APIStatusError`（带 `.status_code` 与 `.body`），`error_classifier` 直接读这俩字段。MiniMax 不一样——错误是 HTTP 200 外层 + `base_resp.status_code` 内层，SDK 看不到，所以需要单独翻译。
@@ -174,7 +151,7 @@ MiniMax Hailuo 异步三段式：`POST /v1/video_generation`（task_id）→ `GE
 - `POST /api/media/video_gen`（rate-limit 3/min）：返回 **202** `{task_id, status, poll_url}`；可选 `wait_seconds=0..60` 做有限伪同步（完成的化 200 直接带 `url`）
 - `GET /api/media/video_gen/{task_id}`：返回 `{status, url|null, error|null, created_at, updated_at}`，按 `user_id` 过滤
 
-**进程恢复**：lifespan 启动时调 `resume_pending_jobs()` 把 `status IN ('queued','processing')` 的行重新挂上 polling 任务——deploy / OOM / SIGTERM 不会丢失在飞的视频。
+**进程恢复**：lifespan 启动时调 `resume_pending_video_jobs()` 把 `status IN ('queued','processing')` 的行重新挂上 polling 任务——deploy / OOM / SIGTERM 不会丢失在飞的视频。
 
 **Tool**：`video_generate`（schema: prompt/duration/resolution/first_frame_image/aspect_ratio）+ `video_generate_status`（schema: task_id）。前者最多等 `video_gen_tool_wait_seconds`（180s）；超时返回 `{success:true, pending:true, task_id, hint:"用 video_generate_status 查询"}`——后台任务继续跑。MiniMax 不暴露 ASR，所以 `stt` provider 没有 `minimax` 实现。
 
@@ -201,7 +178,7 @@ DeskAgent 伙伴的"人格"与"形象"是跨 Backend↔Desktop 的核心契约�
 
 ### 角色定义（Persona）
 
-`Persona` 表存用户 onboarding 产出的结构化角色定义（JSON + 渲染好的 `system_prompt_extras` 片段），按用户维度一对一持久化。角色定义字段：`name` / `personality` / `speaking_style` 为必传；`appearance` / `background` / `biological_type` / `gender` 全部 optional（`biological_type` 把"灵兽/精灵/机甲…"物种维度从自由文本规范化为 profile 字段，`gender` 把"男/女/其他"的角色性别从隐式约定变为显式 schema）。作为系统提示词 stable 段的一部分注入每次 chat turn，驱动伙伴说话风格、性格表现与主动行为倾向。角色定义是伙伴行为的**唯一真相源**——只能由用户显式发起变更（重新进入角色编辑），禁止 LLM 自行改写。
+`Persona` 表存用户 onboarding 产出的结构化角色定义（JSON + 渲染好的 `system_prompt_extras` 片段），按用户维度一对一持久化。作为系统提示词 stable 段的一部分注入每次 chat turn，驱动伙伴说话风格、性格表现与主动行为倾向。角色定义是伙伴行为的**唯一真相源**——只能由用户显式发起变更（重新进入角色编辑），禁止 LLM 自行改写。
 
 **onboarding 断点恢复**（design §6.3）：onboarding 逐字段增量持久化经两个 JSON-RPC 方法：`onboarding.get_state` 返回已采集字段 + 下一个未答问题（`next_field`）；`onboarding.submit {field, value}` 即时落盘单个字段。Desktop 启动时调 `get_state`，未完成则从 `next_field` 恢复，崩溃/退出不丢进度。draft 存在 `Persona.definition_json`（`is_complete=False`），完成后 Desktop 发 `PUT /api/companion/persona` 覆盖为最终角色定义（`is_complete=True`）。
 
@@ -226,7 +203,7 @@ DeskAgent 伙伴的"人格"与"形象"是跨 Backend↔Desktop 的核心契约�
 
 onboarding 的音色偏好（`voice` 草稿字段）经 JSON-RPC 落到具体 voice id（COMPANION_DESIGN.md §4.2 / §4.5）：
 
-- **`tts.list_voices`**：返回当前用户激活的 TTS provider 的候选音色目录（`{provider, voices:[{id,label,gender,language,tags,description}], supports_voice_design, voice_design_guide}`）。voice id 是 provider 私有的；`language`（`"zh"`/`"en"`/`"multi"`）驱动语言偏好匹配。`supports_voice_design` 标记该 provider 是否支持用户自定义音色设计，`voice_design_guide` 是写法指南文本供前端展示。**列表按 `language` 排序**：中文（`zh`）优先、多语言（`multi`）次之、英文（`en`）最后——同桶内保留 `VOICE_CATALOG` 原序，保证 provider 策展的内部相对顺序（冰糖在 茉莉 之前等）不被打乱。这一排序对应"默认中文"的产品方向（[runner/README.md §音频工具](../runner/README.md#音频工具-stt--tts)）：onboarding 期间 voice picker 先看到中文 voice，再看到 EN voice，让产品身份稳定。
+- **`tts.list_voices`**：返回当前用户激活的 TTS provider 的候选音色目录（`{provider, voices:[{id,label,gender,language,tags,description}], supports_voice_design, voice_design_guide}`）。voice id 是 provider 私有的；`language`（`"zh"`/`"en"`/`"multi"`）驱动语言偏好匹配。`supports_voice_design` 标记该 provider 是否支持用户自定义音色设计，`voice_design_guide` 是写法指南文本供前端展示。**列表按 `language` 排序**对应"默认中文"的产品方向（[runner/README.md §音频工具](../runner/README.md#音频工具-stt--tts)）。
   - **可选 `language` 过滤**（`{language: "zh"}` / `{"language": "en"}` / `{"language": "multi"}`）：返回仅该语言的子集。未知 / 空字符串值走全量未过滤路径。用于 voice picker UI 的"中文 / English / 全部"tabs——后端过滤避免前端在 `voices` 数组上做二次筛选，让 render-side 的 catalog 始终是策划好的 zh-first 顺序。Filter 后 default_voice 退化到第一个匹配的 voice；过滤后空则回退到 `DEFAULT_VOICE` 兜底，shape 永远存在。
 - **`tts.match_voice {preference}`**：把自由文本偏好（"温柔的少女音"）经标签/性别/语言评分映射到目录中最贴合的 voice id，返回 `{provider, voice, alternatives[]}`。评分是即时确定性的——onboarding 不该为一个窄域标签任务付 LLM 延迟。无匹配时优先中性默认音色。
 - **`GET /api/companion/voices`**：`tts.list_voices` 的 REST 镜像（可选 `?language=zh|en|multi`，未知值走全量）。framed 工具窗口（hub）无 WS gateway，调不到 JSON-RPC，其音色目录页经此 REST 端点拉取同一目录（复用 `list_tts_voices`）。**只读浏览**，不改音色。
@@ -299,4 +276,4 @@ Backend 在对话响应的 `message.complete` 帧内联 `affect: {emotion}` 字�
 - **ASR 不在 MiniMax 公开 API**：stt 仍走 MiMo（input_audio chat completions 扩展），未来要切其他 ASR provider 时直接挂一个新 provider 类到 `(ServiceType.stt, "<name>")` registry slot
 ## Provider 客户端生命周期
 
-`services/llm/providers/http.py` 的 httpx 池与 `openai_compat` 的 `AsyncOpenAI` 客户端按 `(base_url, api_key)` 缓存，shutdown 时统一由 `services.llm.aclose_all()` 关闭。`main.py` lifespan 的 `finally` 调 `services.media.aclose_all()`（video gen 是该 httpx 池的主要消费方），后者委托 `services.llm.aclose_all`——滚动发布时释放连接池 / 文件描述符，而非等内核回收进程。`aclose_all` 因此是 `services.llm` 的公共 lifecycle 出口，不再藏在 `video_jobs` 的函数内 lazy import 里。
+`services/llm/providers/http.py` 的 httpx 池与 `openai_compat` 的 `AsyncOpenAI` 客户端按 `(base_url, api_key)` 缓存，shutdown 时统一由 `services.llm.aclose_all()` 关闭。`main.py` lifespan 的 `finally` 调 `services.media.aclose_all()`（video gen 是该 httpx 池的主要消费方），后者委托 `services.llm.aclose_all`——滚动发布时释放连接池 / 文件描述符，而非等内核回收进程。`aclose_all` 因此是 `services.llm` 的公共 lifecycle 出口。
