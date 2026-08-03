@@ -21,13 +21,19 @@ async def image_generation_tool(
     size: str = "1024x1024",
     n: int = 1,
     user_id: int | None = None,
+    reference_image: str | None = None,
     **kwargs,
 ) -> str:
     """Image generation via the per-service provider chain (MiniMax image-01
     or OpenAI DALL·E 3). base64 payloads are saved locally and returned as
     our own /api/media/files/<id> URLs so the LLM can safely reference them
-    in image_url parts even after the upstream CDN evicts."""
-    req = ImageGenRequest(prompt=prompt, size=size, n=n)
+    in image_url parts even after the upstream CDN evicts.
+
+    ``reference_image`` is the URL or base64 of a seed image the provider
+    should keep consistent with the generation (MiniMax wires this through
+    as ``subject_reference``). Used by the companion Tier-2 keyframe path
+    (P1-8) to keep the same character across the tier ladder."""
+    req = ImageGenRequest(prompt=prompt, size=size, n=n, reference_image=reference_image)
     try:
         if user_id is not None:
             with SESSION_LOCAL() as db:
