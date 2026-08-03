@@ -321,14 +321,25 @@ class RunnerUpdater {
     } finally {
       // Defensive: if we stopped the old runner but failed to start a new
       // one, restart the bridge so the user isn't left without a runner.
+      // P0-1 (runtime audit): previously swallowed the error silently so
+      // the user got a 'silent runner' with no UI signal. Now we surface a
+      // dedicated ``runner-failed`` event so the renderer can show a
+      // friendly '升级失败' and offer a retry.
       if (stopResult && !startedNew && this.bridgeDeps?.runnerBridge) {
         try {
           await this.bridgeDeps.runnerBridge.start({
             backendSession: this.bridgeDeps.ensureBackendSession?.(),
             readyTimeoutMs: 8_000
           })
-        } catch {
-          // ignore — the next start attempt by the user-facing flow will retry
+          this._emit({ kind: 'runner-recovered', version: sentinel.version, recoverable: true })
+        } catch (err) {
+          this._emit({
+            kind: 'runner-failed',
+            error: 'restart-failed-after-update',
+            recoverable: true,
+            detail: err?.message || String(err),
+          })
+          this.log?.('error', '[updater] post-update restart failed', err)
         }
       }
     }

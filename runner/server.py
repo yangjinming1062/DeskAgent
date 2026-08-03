@@ -346,6 +346,19 @@ def _runner_ready_payload() -> dict:
     except Exception as e:
         logger.warning(f"capabilities probe failed: {e}")
         payload["probe_failed"] = True
+    # P1-6 (runtime audit): ship the bundled Piper voice ids in the
+    # runner_ready payload so the Desktop's onboarding voice picker can
+    # mark cloud-only options before the first TTS request. Without this
+    # the renderer has to call list_tts_voices / list_tts_voices_tool
+    # to discover the same info, adding a round-trip on a slow first
+    # paint. Best-effort: a broken bundled-voice probe must not poison
+    # the otherwise-valid runner_ready frame.
+    try:
+        from tools.multimodal.audio.piper_runtime import bundled_voices
+
+        payload["bundled_voice_ids"] = list(bundled_voices())
+    except Exception as e:
+        logger.debug(f"bundled_voice_ids probe failed: {e}")
     return payload
 
 
