@@ -267,12 +267,46 @@ class RunnerUpdater {
       //    --no-deps: pip's default `only-if-needed` strategy pulls only
       //    the diff of transitive deps; --no-deps would forbid pulling
       //    new deps the new wheel introduces and brick the runner.
+      //
+      //    P0-2 (runtime audit): before pip, snapshot the *currently
+      //    installed* wheel name + version into a rollback marker file
+      //    so a downstream failure (smoke test, server.py copy,
+      //    runnerBridge.start) can revert by re-pip-installing that
+      //    marker. Without the marker, Phase 2's failure mode is
+      //    "restart the bridge on a wheel that's already half-baked" —
+      //    the new wheel survives in site-packages even though the
+      //    integration check failed. ARCH §10 promises the failed path
+      //    "降级到旧版 Runner 并向用户警告"; the marker makes that
+      //    promise true.
+      let rollbackMarker = null
+      try {
+        const { stdout } = await execFileP(venvPython, ['-m', 'pip', 'show', 'deskagent-agent'], {
+          timeout: 30_000,
+          maxBuffer: 1 * 1024 * 1024
+        })
+        const m = /Name:\s*(\S+)[\s\S]+?Version:\s*(\S+)/.exec(stdout)
+        if (m) {rollbackMarker = `${m[1]}==${m[2]}`}
+      } catch (err) {
+        // No installed wheel yet — first install. Nothing to roll back to.
+        this.log?.('debug', '[updater] no pre-existing wheel to snapshot', err)
+      }
       try {
         await execFileP(venvPython, ['-m', 'pip', 'install', '--upgrade', sentinel.wheel_path], {
           timeout: 300_000,
           maxBuffer: 16 * 1024 * 1024
         })
       } catch (err) {
+        // pip failed — try to roll back to the prior wheel before bailing.
+        if (rollbackMarker) {
+          try {
+            await execFileP(venvPython, ['-m', 'pip', 'install', '--upgrade', rollbackMarker], {
+              timeout: 300_000,
+              maxBuffer: 16 * 1024 * 1024
+            })
+          } catch (rollbackErr) {
+            this.log?.('error', '[updater] pip rollback also failed', rollbackErr)
+          }
+        }
         return await fail('pip-failed', true, err)
       }
 
@@ -290,6 +324,19 @@ class RunnerUpdater {
           { cwd: path.join(home, 'runner'), timeout: 30_000 }
         )
       } catch (err) {
+        // P0-2: smoke test failed — try to roll back to the prior wheel
+        // so the user doesn't ship a half-baked new wheel.
+        if (rollbackMarker) {
+          try {
+            await execFileP(venvPython, ['-m', 'pip', 'install', '--upgrade', rollbackMarker], {
+              timeout: 300_000,
+              maxBuffer: 16 * 1024 * 1024
+            })
+            this.log?.('info', `[updater] rolled back to ${rollbackMarker} after smoke-test failure`)
+          } catch (rollbackErr) {
+            this.log?.('error', '[updater] rollback after smoke-test failure also failed', rollbackErr)
+          }
+        }
         return await fail('smoke-test-failed', true, err)
       }
 
@@ -306,6 +353,21 @@ class RunnerUpdater {
           })
           startedNew = true
         } catch (err) {
+          // P0-2: runnerBridge.start failed after the new wheel was
+          // installed — roll back before the finally path's
+          // "restart the bridge" creates a silent broken-runner
+          // state.
+          if (rollbackMarker) {
+            try {
+              await execFileP(venvPython, ['-m', 'pip', 'install', '--upgrade', rollbackMarker], {
+                timeout: 300_000,
+                maxBuffer: 16 * 1024 * 1024
+              })
+              this.log?.('info', `[updater] rolled back to ${rollbackMarker} after start failure`)
+            } catch (rollbackErr) {
+              this.log?.('error', '[updater] rollback after start failure also failed', rollbackErr)
+            }
+          }
           return await fail('start-timeout', true, err)
         }
       }
