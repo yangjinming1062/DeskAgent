@@ -98,8 +98,9 @@ def save_companion_asset(
     ext: str,
 ) -> str:
     """Write asset bytes to companion-assets/<user_id>/<scene>_<kind>_<token>.<ext>
-    and return a signed public URL (Contract P2-15) served by the
-    ``/api/companion/asset/<user_id>/<filename:path>`` route.
+    and return the canonical *bare* storage path. The read paths
+    (list_clips / _emit_clip_event / public file route) re-sign on
+    demand so a 5-min signed URL never reaches the renderer (P0-3).
 
     ``kind`` is "keyframes" (tier 2) or "video" (tier 3). A new token per
     write means regeneration does not collide with a cached older file.
@@ -113,7 +114,7 @@ def save_companion_asset(
     with open(filepath, "wb") as f:
         f.write(data)
     logger.info("Saved companion asset", extra={"user_id": user_id, "scene": scene, "kind": kind, "size": len(data)})
-    return build_signed_asset_url(user_id, filename)
+    return f"companion-assets/{user_id}/{filename}"
 
 
 def resolve_companion_asset_path(user_id: int, filename: str) -> tuple[Path, str] | None:

@@ -20,6 +20,8 @@ from sqlalchemy.orm import Session
 from ..llm import MissingLlmConfigError
 from ..media import enqueue_video_job
 from ..tools.builtin import image_generation_tool
+from .asset_store import build_signed_asset_url
+from .asset_store import build_signed_avatar_url
 from .asset_store import delete_user_assets
 from .asset_store import resolve_companion_asset_path
 from .asset_store import save_companion_asset
@@ -128,14 +130,23 @@ def _active_portrait_url(db: Session, user_id: int) -> str | None:
 def _emit_clip_event(user_id: int, clip: AvatarClip) -> None:
     """Notify the desktop of a tier/asset change. Single channel for all clip
     lifecycle transitions (tier up, failure, retry-scheduled). Never raises —
-    a notification failure must not abort the escalation loop."""
+    a notification failure must not abort the escalation loop.
+
+    P0-3 / P0-4: the row stores bare ``companion-assets/<user>/<file>``
+    paths; re-sign every URL on the way out so a 5-minute-TTL signed
+    URL never reaches the renderer / provider.
+    """
+    from .asset_store import build_signed_asset_url
+
     meta = safe_json_loads(clip.keyframe_meta_json or "{}", default={})
+    video_url = _re_sign_clip_path(clip, clip.video_asset_url, build_signed_asset_url) if clip.video_asset_url else None
+    keyframe_url = _re_sign_clip_path(clip, clip.keyframe_url, build_signed_asset_url) if clip.keyframe_url else None
     payload = {
         "scene": clip.scene,
         "tier": active_tier(clip),
         "status": "succeeded" if clip.video_asset_url else "ready",
-        "url": clip.video_asset_url or clip.keyframe_url,
-        "keyframe_url": clip.keyframe_url,
+        "url": video_url or keyframe_url,
+        "keyframe_url": keyframe_url,
         "keyframe_meta": meta or None,
     }
     try:
@@ -144,6 +155,26 @@ def _emit_clip_event(user_id: int, clip: AvatarClip) -> None:
             db.commit()
     except Exception:
         logger.warning("clip event emit failed", extra={"scene": clip.scene, "user_id": user_id}, exc_info=True)
+
+
+def _re_sign_clip_path(clip: AvatarClip, stored: str, signer) -> str:
+    """Parse ``companion-assets/<user_id>/<filename>`` and re-sign.
+    Returns the original string when it doesn't match the canonical
+    layout (e.g. legacy rows from before P0-3 migration) so we don't
+    silently 403 an older row."""
+    from urllib.parse import urlparse
+
+    parsed = urlparse(stored)
+    # Legacy absolute URL (already signed) → leave alone — caller will
+    # eventually 403 once TTL expires, but P0-3 only applies to writes
+    # from this commit onward.
+    if parsed.scheme in ("http", "https"):
+        return stored
+    parts = stored.split("/", 2)
+    if len(parts) != 3 or parts[0] != "companion-assets":
+        return stored
+    user_id, filename = int(parts[1]), parts[2]
+    return signer(user_id, filename)
 
 
 async def seed_all_clips(db: Session, *, user_id: int, portrait_asset_url: str, portrait_id: int) -> list[AvatarClip]:
@@ -193,14 +224,18 @@ def list_clips(db: Session, user_id: int) -> list[ClipStatusResponse]:
             status = job.status
         else:
             status = "pending"
+        from .asset_store import build_signed_asset_url
+
+        video_url = _re_sign_clip_path(c, c.video_asset_url, build_signed_asset_url) if c.video_asset_url else None
+        keyframe_url = _re_sign_clip_path(c, c.keyframe_url, build_signed_asset_url) if c.keyframe_url else None
         out.append(
             ClipStatusResponse(
                 scene=c.scene,
                 batch=c.batch,
                 status=status,
-                url=c.video_asset_url or c.keyframe_url,
+                url=video_url or keyframe_url,
                 tier=active_tier(c),
-                keyframe_url=c.keyframe_url,
+                keyframe_url=keyframe_url,
                 keyframe_meta=meta or None,
             )
         )
@@ -236,7 +271,16 @@ async def _submit_scene_video(db: Session, clip: AvatarClip, portrait_url: str) 
     consumer never sees a real ``video_url`` because the companion key shape
     differs (P0-8). The job still runs through the normal polling/finalize
     path; ``_finalize_terminal_videos`` picks up the terminal state on its
-    next tick and emits ``clip.updated`` with the persisted companion URL."""
+    next tick and emits ``clip.updated`` with the persisted companion URL.
+
+    P0-4: the row stores a *bare* portrait path; MiniMax fetches the
+    image from the public URL we pass in, so re-sign for the provider
+    right before submit. Without this step the seed URL was a 5-min
+    signed URL from the original avatar generation that expired
+    long before the slowest batch (batch 3 at 1h+) ran."""
+    from .asset_store import build_signed_avatar_url
+
+    provider_seed_url = _re_sign_avatar_seed(portrait_url, build_signed_avatar_url)
     spec = CLIP_SCENES[clip.scene]
     job = await enqueue_video_job(
         db,
@@ -245,13 +289,32 @@ async def _submit_scene_video(db: Session, clip: AvatarClip, portrait_url: str) 
         prompt=spec.prompt,
         duration=_CLIP_DURATION,
         resolution=_CLIP_RESOLUTION,
-        first_frame_image=portrait_url,
+        first_frame_image=provider_seed_url,
         model=None,
         aspect_ratio=None,
         emit_event=False,
     )
     clip.video_job_id = job.id
     db.commit()
+
+
+def _re_sign_avatar_seed(stored: str, signer) -> str:
+    """Convert a stored ``companion-avatars/<id>.<ext>`` path into a
+    fresh signed URL for the provider. Absolute URLs are passed
+    through (legacy / uploaded) so older code paths still work."""
+    from urllib.parse import urlparse
+
+    parsed = urlparse(stored)
+    if parsed.scheme in ("http", "https"):
+        return stored
+    if "/" not in stored:
+        return stored
+    # Format: companion-avatars/<file_id>.<ext>
+    parts = stored.split("/", 1)
+    if parts[0] != "companion-avatars" or "." not in parts[1]:
+        return stored
+    file_id, _, ext = parts[1].partition(".")
+    return signer(file_id, ext)
 
 
 def _read_temp_bytes(file_id: str | None) -> bytes | None:
@@ -309,7 +372,7 @@ async def _generate_scene_keyframes(db: Session, clip: AvatarClip) -> None:
         size="1024x1024",
         n=1,
         user_id=clip.user_id,
-        reference_image=portrait_url,
+        reference_image=_re_sign_avatar_seed(portrait_url, build_signed_avatar_url),
     )
     parsed = safe_json_loads(result_json, default=None)
     if not isinstance(parsed, dict) or not parsed.get("success"):

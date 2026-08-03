@@ -74,8 +74,15 @@ class JsonRpcEmitter:
             return {"message": data.get("message", "Unknown error")}
         if raw_type == "message.complete":
             usage = data.get("usage")
+            # P0: persist.py (lines 138-145) embeds ``affect: {emotion: ...}``
+            # on the raw frame; the previous translate dropped it so the
+            # desktop's ``payload?.affect?.emotion`` access returned
+            # undefined and every reply landed in ``idle`` instead of
+            # ``EMOTIONAL(affect)``. Forward the nested affect object
+            # through the JSON-RPC envelope so the channel stays alive.
             return {
                 "text": data.get("text", ""),
+                **({"affect": data["affect"]} if isinstance(data.get("affect"), dict) else {}),
                 **({"usage": usage} if isinstance(usage, dict) else {}),
             }
         if raw_type == "message.start":

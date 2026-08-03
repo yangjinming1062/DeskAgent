@@ -39,6 +39,7 @@ from services.companion import get_or_create_persona
 from services.companion import list_clips as list_companion_clips
 from services.companion import list_tts_voices
 from services.companion import match_user_voice
+from services.companion import normalize_voice_language
 from services.companion import PersonaValidationError
 from services.companion import regenerate_avatar as regenerate_companion_avatar
 from services.companion import set_disturbance_tier as set_companion_disturbance_tier
@@ -762,6 +763,14 @@ def _register_session_handlers(
         # a ``job_id`` + ``queued: true``; the result arrives over the new
         # ``avatar.regenerated`` event so the desktop swaps the portrait when
         # the work lands without blocking other WS traffic.
+        #
+        # P0 (contract audit): the previous code used ``_track(task)`` but
+        # ``_track`` lives in ``handle_chat_websocket``'s closure and isn't
+        # visible here — the call raised NameError AFTER the background task
+        # had already mutated the DB (clips invalidated, new portrait
+        # committed) so the desktop saw -32603 while the side effects
+        # persisted. Use ``background_tasks`` directly (it IS in scope, defined
+        # in ``handle_chat_websocket`` line 134).
         feedback = params.get("feedback")
         if feedback is not None and not isinstance(feedback, str):
             raise JsonRpcError(JSONRPC_INVALID_PARAMS, "feedback must be a string")
@@ -789,7 +798,8 @@ def _register_session_handlers(
                 logger.debug("avatar.regenerated event push failed", extra={"user_id": user_id}, exc_info=True)
 
         task = asyncio.create_task(_run())
-        _track(task)
+        background_tasks.add(task)
+        task.add_done_callback(background_tasks.discard)
         return {"queued": True, "job_id": job_id}
 
     async def avatar_list_clips(_params: dict) -> dict:
