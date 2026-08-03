@@ -20,6 +20,15 @@ const http = require('node:http')
 const DEFAULT_TIMEOUT_MS = 120_000
 const JSON_RPC_VERSION = '2.0'
 
+// P0-3 (runtime audit): the Runner WS had no application-level heartbeat
+// — only OS keepalive, which can take minutes to surface a network-isolated
+// runner. Send a JSON-RPC notification ``runner.ping`` every 10s; if no
+// reply frame of any kind arrives within 30s, treat the connection as
+// dead and close it. The reply is any inbound frame, so a busy runner
+// responding to RPCs is automatically accounted for.
+const HEARTBEAT_INTERVAL_MS = 10_000
+const HEARTBEAT_DEADLINE_MS = 30_000
+
 function createRunnerWsServer(options = {}) {
   const log = typeof options.log === 'function' ? options.log : () => {}
   const onReverseRpc = typeof options.onReverseRpc === 'function' ? options.onReverseRpc : null
@@ -190,7 +199,34 @@ function createRunnerWsServer(options = {}) {
             activeWs = ws
             emit({ type: 'connected' })
 
-            ws.on('message', data => handleRunnerMessage(data))
+            // P0-3 (runtime audit): 10s ping / 30s deadline heartbeat. Any
+            // inbound frame resets the deadline so a busy runner is
+            // automatically accounted for. Drop a stuck connection with a
+            // 1011 so the reconnect loop can recover.
+            let lastSeen = Date.now()
+            const heartbeatTimer = setInterval(() => {
+              if (ws.readyState !== 1) {
+                clearInterval(heartbeatTimer)
+                return
+              }
+              if (Date.now() - lastSeen > HEARTBEAT_DEADLINE_MS) {
+                log(`[runner-ws] heartbeat deadline (${HEARTBEAT_DEADLINE_MS}ms) exceeded; closing`)
+                try { ws.close(1011, 'heartbeat-deadline') } catch { /* ignore */ }
+                clearInterval(heartbeatTimer)
+                return
+              }
+              try {
+                ws.send(JSON.stringify({ jsonrpc: JSON_RPC_VERSION, method: 'runner.ping' }))
+              } catch (err) {
+                log(`[runner-ws] heartbeat send failed: ${err.message}`)
+              }
+            }, HEARTBEAT_INTERVAL_MS)
+            ws.on('close', () => clearInterval(heartbeatTimer))
+
+            ws.on('message', data => {
+              lastSeen = Date.now()
+              handleRunnerMessage(data)
+            })
 
             ws.on('close', code => {
               log(`[runner-ws] runner disconnected code=${code}`)

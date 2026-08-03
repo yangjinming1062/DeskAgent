@@ -160,6 +160,18 @@ export function CompanionRoot() {
     })
   }, [lifecycle, gatewayState, requestGateway])
 
+  // Reset the crack counter whenever the user transitions back to the
+  // pre-auth / unauthed-egg state. P0-2 (runtime audit): the counter
+  // was previously monotonically increasing across the entire session,
+  // so a user who logged out had to tap the egg 5 more times to summon
+  // login again. Resetting on logout restores the "first-tap counts"
+  // promise of the egg-teaser design.
+  useEffect(() => {
+    if (auth.kind !== 'authenticated') {
+      setCracks(0)
+    }
+  }, [auth.kind])
+
   const onTap = () => {
     if (showReady) {
       wakeUpFromSleep()

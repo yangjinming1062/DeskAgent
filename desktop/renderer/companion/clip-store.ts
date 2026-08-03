@@ -20,23 +20,13 @@ export interface ClipItem {
 export type ClipCatalog = Record<string, ClipItem>
 
 export const $clipCatalog = atom<ClipCatalog>({})
+// P2-4: the transition-clip atom and producer were never wired — the
+// companion-ready.tsx consumer reads the atom but ``playTransitionClip``
+// had zero callers. Drop both. The companion can still be extended later
+// with a real transition system; for now the 'hatch' / 'greeting' moments
+// just use the idle loop + the TTS hint (plan §3.6).
 export const $activeTransitionClip = atom<string | null>(null)
 
-let transitionTimer: ReturnType<typeof setTimeout> | null = null
-
-export function playTransitionClip(scene: string, durationMs = 3000): void {
-  if (transitionTimer) {
-    clearTimeout(transitionTimer)
-  }
-
-  $activeTransitionClip.set(scene)
-  transitionTimer = setTimeout(() => {
-    transitionTimer = null
-    $activeTransitionClip.set(null)
-  }, durationMs)
-}
-
- 
 type ClipPatch = Partial<Omit<ClipItem, 'status'>> & { status?: string }
 
 export function computeTier(item: ClipPatch): number {
@@ -97,7 +87,6 @@ export function applyClipUpdate(update: {
 
 export function clearClipCatalog(): void {
   $clipCatalog.set({})
-  $activeTransitionClip.set(null)
 }
 
 export interface ClipAsset {
