@@ -140,7 +140,7 @@ async def _persist_assistant_no_tool_turn(
             "type": "message.complete",
             "text": turn_content,
             **({"usage": final_usage_payload} if final_usage_payload else {}),
-            **({"affect": emotion} if emotion else {}),
+            **({"affect": {"emotion": emotion}} if emotion else {}),
         }
     )
 

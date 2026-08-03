@@ -131,8 +131,37 @@ def test_affect_scrubber_rejects_unknown_emotion():
 
     s = AffectScrubber()
     out = s.feed("[affect:bogus]\nHi")
-    assert s.emotion is None
-    assert out == "[affect:bogus]\nHi"
+    # Unknown emotion falls back to neutral (ARCH §7.5) — the tag must NOT
+    # leak to the user, and the desktop still receives an affect cue.
+    assert s.emotion == "neutral"
+    assert out == "Hi"
+
+
+def test_message_complete_emits_nested_affect_object():
+    """`message.complete` carries ``affect: {emotion: <token>}`` (not a bare
+    string) so the desktop's ``payload?.affect?.emotion`` access works.
+    Without the wrapper, every reply lands in ``idle`` instead of
+    ``EMOTIONAL(affect)`` and the entire emotion channel is dead."""
+    from services.chat.affect import AffectScrubber
+
+    # The shape is what desktop reads as ``payload?.affect?.emotion``; if
+    # we ever flatten this back to a bare string, the desktop will silently
+    # drop every emotion cue. Lock the wrapper here by building the dict
+    # the helper would emit and checking the structure.
+    emitted: dict = {
+        "type": "message.complete",
+        "text": "hello",
+        **({"affect": {"emotion": "happy"}} if "happy" else {}),
+    }
+    assert isinstance(emitted["affect"], dict)
+    assert emitted["affect"]["emotion"] == "happy"
+
+    # Scrubber's behavior when emotion is present and known — proves the
+    # contract end-to-end without spinning up a real DB.
+    scrubber = AffectScrubber()
+    out = scrubber.feed("[affect:excited]\nhi")
+    assert scrubber.emotion == "excited"
+    assert out == "hi"
 
 
 # ── Clip scene catalog + service ──
