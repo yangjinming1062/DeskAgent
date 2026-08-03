@@ -3,7 +3,6 @@ from services.llm import resolve_provider_chain
 from services.llm import ServiceType
 from services.llm import VoiceDesignResult
 from services.llm.voice_catalog import _provider_class
-from services.llm.voice_catalog import default_voice_id
 from services.llm.voice_catalog import VoiceEntry
 from services.llm.voice_catalog import voices_for_provider
 from sqlalchemy.orm import Session

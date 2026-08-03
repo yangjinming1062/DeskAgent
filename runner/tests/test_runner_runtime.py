@@ -1,8 +1,5 @@
-import json
 import sys
-import time
 
-import pytest
 
 
 def test_runner_version_resolves():
@@ -36,7 +33,6 @@ def test_capabilities_snapshot_returns_safe_dict():
 def test_registry_check_fn_filters_unavailable_tools():
     """Tools whose check_fn returns False must NOT appear in ``get_schemas_for_llm``,
     but tools without a check_fn must still appear."""
-    from tools import registry
     from tools.registry import ToolRegistry
 
     reg = ToolRegistry()
@@ -172,7 +168,6 @@ def test_activity_probes_safe_defaults(monkeypatch):
 def test_audio_tool_schemas_registered():
     """All three audio tools must register themselves at import, even if
     their check_fn later reports False (deps missing)."""
-    from tools.multimodal import audio
     from tools import registry
 
     for name in ("speech_to_text", "text_to_speech", "list_tts_voices"):

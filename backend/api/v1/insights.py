@@ -39,8 +39,7 @@ def _aggregate_user_messages(db: Session, user_id: int, since: datetime) -> dict
     cannot be merged into the FILTER aggregate.
     """
     row = db.execute(
-        text(
-            """
+        text("""
             SELECT
               COUNT(*) AS total_messages,
               COALESCE(SUM(prompt_tokens)     FILTER (WHERE role = 'assistant'), 0) AS in_tok,
@@ -49,8 +48,7 @@ def _aggregate_user_messages(db: Session, user_id: int, since: datetime) -> dict
             FROM messages
             JOIN conversations ON conversations.id = messages.conversation_id
             WHERE conversations.user_id = :uid AND messages.created_at >= :since
-            """
-        ),
+            """),
         {"uid": user_id, "since": since},
     ).one()
     return {

@@ -188,7 +188,6 @@ class TestHandleComputerUseEarlyReturns:
 
     def test_noop_backend_refuses_to_dispatch(self):
         # Force the noop backend to be selected by setting backend="noop".
-        from utils import cfg_get
         from utils import load_config
 
         config = load_config()

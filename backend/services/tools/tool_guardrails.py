@@ -13,7 +13,6 @@ from .file_safety import get_read_block_error
 from .file_safety import is_write_denied
 from .tool_dispatch_helpers import _append_subdir_hint_to_multimodal
 
-
 IDEMPOTENT_TOOL_NAMES = frozenset(
     {
         "read_file",

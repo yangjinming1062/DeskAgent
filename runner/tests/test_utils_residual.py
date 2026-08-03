@@ -10,8 +10,6 @@ Targets:
 - ``utils.reverse_rpc`` — handler not configured + happy path
 - ``utils.config`` — cfg_* coercers
 """
-import json
-import os
 import sys
 from pathlib import Path
 
@@ -26,13 +24,11 @@ from utils.config import cfg_get
 from utils.config import cfg_int
 from utils.config import cfg_json
 from utils.config import cfg_str
-from utils.config import get_env_type
 from utils.config import is_truthy_value
 from utils.config import load_config
 from utils.constants import CREATE_NO_WINDOW
 from utils.constants import get_deskagent_dir
 from utils.constants import get_deskagent_home
-from utils.constants import get_deskagent_home_override
 from utils.constants import get_skills_dir
 from utils.constants import get_subprocess_home
 from utils.constants import is_termux

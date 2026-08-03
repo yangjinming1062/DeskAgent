@@ -1,5 +1,4 @@
 import sys
-from unittest import mock
 
 import pytest
 from tools.skills.skills_tool import skill_matches_platform

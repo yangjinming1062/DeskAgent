@@ -16,7 +16,6 @@ Run the same handlers as production; monkeypatch the
 
 import importlib
 import sys
-import types
 from typing import Any
 
 import pytest
@@ -35,10 +34,9 @@ def handlers_module(monkeypatch):
 
 
 def test_tts_list_voices_handler_resolves(monkeypatch, handlers_module):
-    """P0-1: \`normalize_voice_language\` must be in scope inside
-    ``_register_session_handlers`` so \`tts.list_voices\` doesn't
+    r"""P0-1: `normalize_voice_language` must be in scope inside
+    ``_register_session_handlers`` so `tts.list_voices` doesn't
     NameError."""
-    captured: dict[str, Any] = {}
 
     class _StubDispatcher:
         def __init__(self):
@@ -70,7 +68,6 @@ def test_avatar_regenerate_handler_registers(monkeypatch, handlers_module):
     here so a future refactor that breaks handler registration
     fails the smoke test instead of producing a silent -32603
     at runtime."""
-    captured: dict[str, Any] = {}
 
     class _StubDispatcher:
         def __init__(self):
@@ -114,7 +111,6 @@ def test_companion_set_disturbance_tier_normalizes(monkeypatch, handlers_module)
     """Defensive: the handler must accept the documented aliases
     (proactive / normal / quiet) and unknown values must fall
     through to normal (per disturbance.py logic)."""
-    captured: dict[str, Any] = {}
 
     class _StubDispatcher:
         def __init__(self):

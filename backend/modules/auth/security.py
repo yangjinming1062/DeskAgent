@@ -8,11 +8,14 @@ from datetime import UTC
 from uuid import uuid4
 
 import jwt
+from components import get_logger
 from components import SETTINGS
 from fastapi import HTTPException
 from fastapi import status
 from fastapi.security import HTTPAuthorizationCredentials
 from fastapi.security import HTTPBearer
+
+logger = get_logger(__name__)
 
 # PBKDF2 password hashing parameters — must match the format produced by
 # hash_password() for verify_password() to accept.
@@ -85,14 +88,16 @@ def create_admin_token(client_version: str = "", ip_address: str = "", user_agen
         from modules.auth.models import AdminSession
 
         with SESSION_LOCAL() as db:
-            db.add(AdminSession(
-                token_jti=jti,
-                username=SETTINGS.admin_username,
-                client_version=client_version[:64],
-                ip_address=ip_address[:64],
-                user_agent=user_agent[:1024],
-                is_active=True,
-            ))
+            db.add(
+                AdminSession(
+                    token_jti=jti,
+                    username=SETTINGS.admin_username,
+                    client_version=client_version[:64],
+                    ip_address=ip_address[:64],
+                    user_agent=user_agent[:1024],
+                    is_active=True,
+                )
+            )
             db.commit()
     except Exception as exc:
         logger.warning("admin session record failed (token still valid): %s", exc)

@@ -26,8 +26,6 @@ import httpx
 import psutil
 from mcp import ClientSession
 from mcp import StdioServerParameters
-from mcp.client.auth import OAuthFlowError
-from mcp.client.auth import OAuthTokenError
 from mcp.client.sse import sse_client
 from mcp.client.stdio import stdio_client
 from mcp.client.streamable_http import streamable_http_client
@@ -55,7 +53,6 @@ from ..interrupt import set_interrupt
 from ..registry import registry
 from ..registry import tool_error
 from .helpers import get_manager
-from .helpers import OAuthNonInteractiveError
 from .osv_check import check_package_for_malware
 
 logger = logging.getLogger(__name__)
@@ -136,10 +133,6 @@ _MCP_HTTP_AVAILABLE = False
 _MCP_SAMPLING_TYPES = False
 _MCP_NOTIFICATION_TYPES = False
 _MCP_MESSAGE_HANDLER_SUPPORTED = False
-# Conservative fallback for SDK builds that don't export LATEST_PROTOCOL_VERSION.
-# Streamable HTTP was introduced by 2025-03-26, so this remains valid for the
-# HTTP transport path even on older-but-supported SDK versions.
-LATEST_PROTOCOL_VERSION = "2025-03-26"
 try:
 
     _MCP_AVAILABLE = True
@@ -3037,7 +3030,6 @@ def _register_server_tools(name: str, server: MCPServerTask, config: dict) -> li
         "list_prompts": _make_list_prompts_handler,
         "get_prompt": _make_get_prompt_handler,
     }
-    check_fn = _make_check_fn(name)
     for entry in _select_utility_schemas(name, server, config):
         schema = entry["schema"]
         handler_key = entry["handler_key"]

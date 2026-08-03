@@ -3,8 +3,8 @@ import secrets
 from pathlib import Path
 
 import httpx
-from components import get_logger
 from components import get_file_path
+from components import get_logger
 from components import safe_json_loads
 from components import SETTINGS
 from modules.companion import AvatarAsset
@@ -89,12 +89,11 @@ def _build_prompt(persona: Persona, style: str) -> str:
     return ", ".join(parts)
 
 
-async def _persist_portrait_bytes(data: bytes, content_type: str) -> str:
+async def _persist_portrait_bytes(data: bytes, content_type: str) -> tuple[str, str, str]:
     """Write portrait bytes to the persistent ``companion-avatars/`` dir and
-    return the public URL served by the no-auth companion file route. Mirrors
-    ``upload_avatar``'s storage path so generated portraits survive the
-    temp-media TTL window (24h) and are reachable on a fresh device login
-    (P0-1).
+    return ``(bare_storage_path, file_id, ext)``. Mirrors ``upload_avatar``'s
+    storage path so generated portraits survive the temp-media TTL window (24h)
+    and are reachable on a fresh device login (P0-1).
 
     P1-14: prefer PNG over JPEG when the provider can serve it. The
     image-gen pipeline returns JPEG by default (smaller payload, no
@@ -111,7 +110,6 @@ async def _persist_portrait_bytes(data: bytes, content_type: str) -> str:
 
     # Prefer PNG output for the chroma-key pipeline.
     final_ext = "png"
-    final_content_type = "image/png"
     final_bytes: bytes | None = None
     try:
         from io import BytesIO
@@ -160,7 +158,6 @@ async def _persist_portrait_bytes(data: bytes, content_type: str) -> str:
         # Pillow missing or decode failed — fall back to the raw
         # provider bytes so we never break the request path.
         final_ext = src_ext
-        final_content_type = src_content_type
         final_bytes = None
 
     filepath = avatars_dir / f"{file_id}.{final_ext}"
@@ -174,7 +171,7 @@ async def _persist_portrait_bytes(data: bytes, content_type: str) -> str:
     # that only refreshes via /api/companion/avatar at gateway
     # boot. ``get_active_avatar`` (and the public file route)
     # re-sign on read so the URL is always fresh.
-    return _avatar_storage_path(file_id, final_ext)
+    return _avatar_storage_path(file_id, final_ext), file_id, final_ext
 
 
 def _avatar_storage_path(file_id: str, ext: str) -> str:
@@ -256,7 +253,7 @@ async def _generate_and_persist(db: Session, user_id: int, *, prompt: str, style
     if downloaded is None:
         raise AvatarGenerationError("image-gen result is unreachable")
     data, content_type = downloaded
-    asset_url = await _persist_portrait_bytes(data, content_type)
+    asset_url, file_id, final_ext = await _persist_portrait_bytes(data, content_type)
 
     # P1-15: best-effort delete the previous active portrait's file on
     # disk. We rely on the row's ``asset_url`` to compute the path; rows
@@ -306,7 +303,7 @@ def _delete_portrait_file(asset_url: str | None) -> None:
     idx = asset_url.find(prefix)
     if idx < 0:
         return
-    filename = asset_url[idx + len(prefix):]
+    filename = asset_url[idx + len(prefix) :]
     name = Path(filename).name
     if "/" in name or "\\" in name or ".." in name:
         return

@@ -92,7 +92,6 @@ def test_kill_tree_handles_already_gone_pid(monkeypatch):
     be reported as a failed kill and the caller would escalate to
     ``proc.kill()`` on a dead handle, raising a spurious error.
     """
-    import subprocess
 
     class _FakeResult:
         returncode = 128
@@ -108,7 +107,6 @@ def test_kill_tree_handles_already_gone_pid(monkeypatch):
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows-only branch")
 def test_kill_tree_handles_real_success(monkeypatch):
     """Returncode 0 (kill succeeded) MUST return True."""
-    import subprocess
 
     class _FakeResult:
         returncode = 0
@@ -120,7 +118,6 @@ def test_kill_tree_handles_real_success(monkeypatch):
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows-only branch")
 def test_kill_tree_returns_false_on_failure(monkeypatch):
     """Non-0/128 returncode MUST return False (caller will escalate)."""
-    import subprocess
 
     class _FakeResult:
         returncode = 1  # actual failure
@@ -132,7 +129,6 @@ def test_kill_tree_returns_false_on_failure(monkeypatch):
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows-only branch")
 def test_kill_tree_handles_taskkill_not_found(monkeypatch):
     """If ``taskkill`` isn't on PATH (rare sandbox case), MUST return False, not raise."""
-    import subprocess
 
     def _fake_run(*args, **kwargs):
         raise FileNotFoundError("taskkill not found")

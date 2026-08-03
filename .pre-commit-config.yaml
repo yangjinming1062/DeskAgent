@@ -1,9 +1,6 @@
-default_language_version:
-  python: python3.13
-
 repos:
   - repo: https://github.com/psf/black
-    rev: 24.10.0
+    rev: 26.5.1
     hooks:
       - id: black
         args: [ --line-length=180 ]
@@ -13,7 +10,7 @@ repos:
         # script lives outside the Python project).
         exclude: ^(runner/tests|backend/tests|installer)/
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v5.0.0
+    rev: v6.0.0
     hooks:
       - id: check-json
         types: [ file ]
@@ -22,7 +19,7 @@ repos:
       - id: check-case-conflict
       - id: check-merge-conflict
   - repo: https://github.com/asottile/reorder_python_imports
-    rev: v3.14.0
+    rev: v3.17.0
     hooks:
       - id: reorder-python-imports
         exclude: ^(runner/tests|backend/tests|installer)/

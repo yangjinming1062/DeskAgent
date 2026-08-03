@@ -170,7 +170,6 @@ def _locked_windows() -> bool:
         return False
     try:
         user32 = ctypes.windll.user32
-        from ctypes import wintypes  # noqa: PLC0415
 
         hwnd = user32.GetForegroundWindow()
         if not hwnd:

@@ -4,8 +4,8 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 import asyncpg
-import modules.media.models  # noqa: F401 — register VideoGenJob on ModelBase.metadata
 import modules.auth.models  # noqa: F401 — register LoginRecord + AdminSession on ModelBase.metadata
+import modules.media.models  # noqa: F401 — register VideoGenJob on ModelBase.metadata
 import services.chat.agent_delegate  # noqa: F401
 import services.tools.builtin  # noqa: F401
 from api import ROUTERS
@@ -52,27 +52,19 @@ def _install_ws_notify_trigger(conn) -> None:
     This cannot be expressed in SQLAlchemy's declarative models, so it
     must be created via raw DDL after ``create_all``.
     """
-    conn.execute(
-        text(
-            """
+    conn.execute(text("""
     CREATE OR REPLACE FUNCTION notify_ws_event() RETURNS trigger AS $$
     BEGIN
       PERFORM pg_notify('ws_events_channel', 'wakeup');
       RETURN NEW;
     END;
     $$ LANGUAGE plpgsql;
-    """
-        )
-    )
-    conn.execute(
-        text(
-            """
+    """))
+    conn.execute(text("""
     CREATE OR REPLACE TRIGGER ws_event_notify_trigger
     AFTER INSERT ON ws_events
     FOR EACH STATEMENT EXECUTE FUNCTION notify_ws_event();
-    """
-        )
-    )
+    """))
 
 
 def _install_schema_extensions(conn) -> None:

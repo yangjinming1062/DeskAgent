@@ -506,7 +506,6 @@ class MCPOAuthManager:
             except (FileNotFoundError, OSError):
                 return False
             if mtime_ns != entry.last_mtime_ns:
-                old = entry.last_mtime_ns
                 entry.last_mtime_ns = mtime_ns
                 if hasattr(entry.provider, "_initialized"):
                     entry.provider._initialized = False

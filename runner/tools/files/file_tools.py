@@ -9,7 +9,6 @@ import time
 from contextlib import ExitStack
 from pathlib import Path
 
-from utils import cfg_get
 from utils import get_container_mirror_warning
 from utils import get_cross_profile_warning
 from utils import get_deskagent_home
@@ -29,9 +28,7 @@ from ..terminal.environment import _env_lock
 from ..terminal.environment import _last_activity
 from ..terminal.environment import _task_env_overrides
 from ..terminal.environment import create_environment
-from ..terminal.environment import get_active_env
 from ..terminal.environment import get_env_config
-from ..terminal.environment import register_environment
 from ..terminal.environment import resolve_container_task_id
 from ..terminal.environment import start_cleanup_thread
 from .binary_extensions import has_binary_extension

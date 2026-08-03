@@ -1,10 +1,8 @@
 import functools
 import json
 import logging
-import os
 import shutil
 import sys
-import tempfile
 from contextlib import contextmanager
 from datetime import datetime
 from datetime import timezone
@@ -292,7 +290,8 @@ def save_usage(data: dict[str, dict[str, Any]]) -> None:
 
 
 def get_record(skill_name: str) -> dict[str, Any]:
-    return _empty_record() | ((rec := load_usage().get(skill_name)) if isinstance(rec, dict) else {})
+    rec = load_usage().get(skill_name)
+    return _empty_record() | (rec if isinstance(rec, dict) else {})
 
 
 def seed_record_if_missing(skill_name: str) -> None:
