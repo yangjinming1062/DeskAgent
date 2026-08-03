@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import asyncio
+import contextlib
 import json
 import logging
 import os
@@ -143,10 +144,8 @@ class DeskAgentTokenStorage:
     async def set_tokens(self, tokens: OAuthToken) -> None:
         payload = tokens.model_dump(mode="json", exclude_none=True)
         if (exp_in := payload.get("expires_in")) is not None:
-            try:
+            with contextlib.suppress(TypeError, ValueError):
                 payload["expires_at"] = time.time() + int(exp_in)
-            except (TypeError, ValueError):
-                pass
         _write_json(self._tokens_path(), payload)
 
     async def get_client_info(self) -> OAuthClientInformationFull | None:
@@ -459,6 +458,7 @@ class MCPOAuthManager:
     def __init__(self) -> None:
         self._entries: dict[str, _ProviderEntry] = {}
         self._entries_lock = threading.Lock()
+        self._bg_tasks: set[asyncio.Task] = set()
 
     def get_or_build_provider(self, server_name: str, server_url: str, oauth_config: dict | None) -> Any | None:
         with self._entries_lock:
@@ -540,7 +540,9 @@ class MCPOAuthManager:
                     finally:
                         entry.pending_401.pop(key, None)
 
-                asyncio.create_task(_do_handle())
+                t = asyncio.create_task(_do_handle())
+                self._bg_tasks.add(t)
+                t.add_done_callback(self._bg_tasks.discard)
         try:
             return await pending
         except Exception as exc:

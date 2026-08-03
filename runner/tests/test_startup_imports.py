@@ -42,4 +42,4 @@ def test_server_module_loads_end_to_end() -> None:
     real cost is the second-stage traversal of those cached modules
     plus any ``__init__.py`` side effects (e.g. ``tools/system/__init__``
     registering the four ``system.*`` tools)."""
-    import server  # noqa: F401
+    import server  # noqa: F401 — side-effect import test

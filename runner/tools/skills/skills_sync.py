@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import contextlib
 import hashlib
 import logging
 import os
@@ -197,10 +198,8 @@ def sync_skills(quiet: bool = False) -> dict:
                         updated.append(skill_name)
                         if not quiet:
                             logger.info("updated bundled skill: %s", skill_name)
-                        try:
+                        with contextlib.suppress(OSError):
                             _rmtree_writable(backup)
-                        except OSError:
-                            pass
                     except OSError:
                         if backup.exists() and not dest.exists():
                             shutil.move(str(backup), str(dest))
@@ -244,10 +243,8 @@ def sync_skills(quiet: bool = False) -> dict:
 def _rmtree_writable(path: Path) -> None:
     def _on_error(func, fpath, exc_info):
         for target in (os.path.dirname(fpath), fpath):
-            try:
+            with contextlib.suppress(OSError):
                 os.chmod(target, stat.S_IRWXU)
-            except OSError:
-                pass
         func(fpath)
 
     shutil.rmtree(path, onerror=_on_error)
@@ -337,7 +334,7 @@ def remove_pristine_bundled_skills(dry_run: bool = False) -> dict:
     bundled_dir = get_skills_dir()
     bundled_by_name = dict(_discover_bundled_skills(bundled_dir))
     removed, skipped = [], []
-    for name, origin_hash in sorted(list(manifest.items())):
+    for name, origin_hash in sorted(manifest.items()):
         if (src := bundled_by_name.get(name)) is None:
             skipped.append({"name": name, "reason": "no bundled source (removed upstream)"})
             continue

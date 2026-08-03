@@ -1,4 +1,5 @@
 import base64
+from typing import ClassVar
 
 from openai import AsyncOpenAI
 
@@ -17,7 +18,7 @@ class MiMoSTTProvider(STTProvider):
     """
 
     provider_name = "mimo"
-    DEFAULT_MODELS = {"stt": "mimo-v2.5-asr"}
+    DEFAULT_MODELS: ClassVar[dict[str, str]] = {"stt": "mimo-v2.5-asr"}
 
     def __init__(self, config: ProviderConfig):
         super().__init__(config)

@@ -1,3 +1,4 @@
+import contextlib
 import logging
 import os
 import signal
@@ -111,10 +112,8 @@ class LocalEnvironment(BaseEnvironment):
             **({"creationflags": CREATE_NO_WINDOW} if IS_WINDOWS else {}),
         )
         if not IS_WINDOWS:
-            try:
+            with contextlib.suppress(ProcessLookupError):
                 proc._deskagent_pgid = os.getpgid(proc.pid)
-            except ProcessLookupError:
-                pass
         if stdin_data is not None:
             _pipe_stdin(proc, stdin_data)
         return proc
@@ -130,10 +129,8 @@ class LocalEnvironment(BaseEnvironment):
         def _wait_for_group_exit(pgid: int, timeout: float) -> bool:
             deadline = time.monotonic() + timeout
             while time.monotonic() < deadline:
-                try:
+                with contextlib.suppress(Exception):
                     proc.poll()
-                except Exception:
-                    pass
                 if not _group_alive(pgid):
                     return True
                 time.sleep(0.05)
@@ -169,15 +166,11 @@ class LocalEnvironment(BaseEnvironment):
                 except ProcessLookupError:
                     return
                 _wait_for_group_exit(pgid, 2.0)
-                try:
+                with contextlib.suppress(Exception):
                     proc.wait(timeout=0.2)
-                except Exception:
-                    pass
         except Exception:
-            try:
+            with contextlib.suppress(Exception):
                 proc.kill()
-            except Exception:
-                pass
 
     def _update_cwd(self, result: dict):
         try:
@@ -203,7 +196,5 @@ class LocalEnvironment(BaseEnvironment):
 
     def cleanup(self):
         for f in (self._snapshot_path, self._cwd_file):
-            try:
+            with contextlib.suppress(OSError):
                 os.unlink(f)
-            except OSError:
-                pass

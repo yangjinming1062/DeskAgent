@@ -1,3 +1,4 @@
+import contextlib
 import hashlib
 import io
 import json
@@ -18,6 +19,7 @@ from datetime import timezone
 from pathlib import Path
 from pathlib import PurePosixPath
 from typing import Any
+from typing import ClassVar
 from urllib.parse import urljoin
 from urllib.parse import urlparse
 from urllib.parse import urlunparse
@@ -270,7 +272,7 @@ class SkillSource(ABC):
 class GitHubSource(SkillSource):
     """Fetch skills from GitHub repos via the Contents API."""
 
-    DEFAULT_TAPS = [
+    DEFAULT_TAPS: ClassVar[list[dict]] = [
         # openai/skills keeps content in dot/underscore dirs that
         # _list_skills_in_repo skips, so point at the inner paths directly.
         {"repo": "openai/skills", "path": "skills/.curated/"},
@@ -1949,7 +1951,7 @@ class ClawHubSource(SkillSource):
         exact = self._exact_slug_meta(query_norm)
         if exact:
             filtered = [meta for meta in filtered if self._search_score(query_norm, meta) >= 20]
-            filtered = self._dedupe_results([exact] + filtered)
+            filtered = self._dedupe_results([exact, *filtered])
 
         if filtered:
             return filtered[:limit]
@@ -2303,7 +2305,7 @@ class ClaudeMarketplaceSource(SkillSource):
     Marketplace repos contain .claude-plugin/marketplace.json with plugin listings.
     """
 
-    KNOWN_MARKETPLACES = [
+    KNOWN_MARKETPLACES: ClassVar[list[str]] = [
         "anthropics/skills",
         "aiskillstore/marketplace",
     ]
@@ -2756,10 +2758,8 @@ def _write_index_cache(key: str, data: Any) -> None:
     # could include adversarial text (prompt injection via catalog entries).
     ignore_file = HUB_DIR / ".ignore"
     if not ignore_file.exists():
-        try:
+        with contextlib.suppress(OSError):
             ignore_file.write_text("# Exclude hub internals from search tools\n*\n")
-        except OSError:
-            pass
     cache_file = INDEX_CACHE_DIR / f"{key}.json"
     try:
         cache_file.write_text(json.dumps(data, ensure_ascii=False, default=str))

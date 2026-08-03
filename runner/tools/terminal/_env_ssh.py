@@ -1,3 +1,4 @@
+import contextlib
 import hashlib
 import logging
 import os
@@ -192,13 +193,9 @@ class SSHEnvironment(BaseEnvironment):
             except Exception as e:
                 logger.warning("SSH: sync_back failed: %s", e)
         if self.control_socket.exists():
-            try:
+            with contextlib.suppress(Exception):
                 subprocess.run(
                     ["ssh", "-o", f"ControlPath={self.control_socket}", "-O", "exit", f"{self.user}@{self.host}"], capture_output=True, timeout=5, stdin=subprocess.DEVNULL
                 )
-            except Exception:
-                pass
-            try:
+            with contextlib.suppress(OSError):
                 self.control_socket.unlink()
-            except OSError:
-                pass

@@ -1,4 +1,5 @@
 import base64
+from typing import ClassVar
 
 from components import MAX_VOICE_DESIGN_PROMPT_CHARS
 from openai import AsyncOpenAI
@@ -22,7 +23,7 @@ class MiMoTTSProvider(TTSProvider):
     """
 
     provider_name = "mimo"
-    DEFAULT_MODELS = {"tts": "mimo-v2.5-tts"}
+    DEFAULT_MODELS: ClassVar[dict[str, str]] = {"tts": "mimo-v2.5-tts"}
     VOICE_DESIGN_GUIDE = """\
 关键维度（不需要面面俱到）：
 • 性别与年龄：如"二十多岁的年轻女性"、"五十岁的中年男性"
@@ -31,7 +32,7 @@ class MiMoTTSProvider(TTSProvider):
 • 语速/节奏：如"语速偏快、像连珠炮"、"缓慢沉稳"
 中英文均可，1-4 句即可。避免矛盾特征（如"稚嫩童声+CEO气场"）、音质效果词（混响、回声）和模糊词（"普通的""正常的"）。\
 """
-    VOICE_CATALOG = [
+    VOICE_CATALOG: ClassVar[list[dict]] = [
         {"id": "mimo_default", "label": "默认音色", "gender": "neutral", "language": "multi", "tags": ["默认", "温柔", "自然", "中性"], "description": "MiMo 默认音色，自然温和。"},
         {"id": "冰糖", "label": "冰糖", "gender": "female", "language": "zh", "tags": ["冰糖", "温柔", "甜", "女", "中文"], "description": "温柔甜美的中文女声。"},
         {"id": "茉莉", "label": "茉莉", "gender": "female", "language": "zh", "tags": ["茉莉", "清亮", "自然", "女", "中文"], "description": "清亮自然的中文女声。"},

@@ -1,5 +1,6 @@
 import asyncio
 import base64
+from typing import ClassVar
 
 import httpx
 
@@ -21,7 +22,7 @@ class ZhipuImageGenProvider(ImageGenProvider):
     """
 
     provider_name = "zhipu"
-    DEFAULT_MODELS = {"image_gen": "glm-image"}
+    DEFAULT_MODELS: ClassVar[dict[str, str]] = {"image_gen": "glm-image"}
 
     def __init__(self, config: ProviderConfig):
         super().__init__(config)

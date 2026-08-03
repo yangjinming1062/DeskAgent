@@ -1,3 +1,4 @@
+import contextlib
 import json
 import logging
 import re
@@ -214,10 +215,8 @@ def _get_category_from_path(skill_path: Path) -> str | None:
     from ..system import get_external_skills_dirs
 
     dirs = [SKILLS_DIR]
-    try:
+    with contextlib.suppress(Exception):
         dirs.extend(get_external_skills_dirs())
-    except Exception:
-        pass
     for d in dirs:
         try:
             if len(parts := skill_path.relative_to(d).parts) >= 3:
@@ -277,10 +276,8 @@ def _find_all_skills(*, skip_disabled: bool = False) -> list[dict[str, Any]]:
     seen_names = set()
     disabled = set() if skip_disabled else get_disabled_skill_names()
     dirs = [SKILLS_DIR] if SKILLS_DIR.exists() else []
-    try:
+    with contextlib.suppress(Exception):
         dirs.extend(get_external_skills_dirs())
-    except Exception:
-        pass
     for d in dirs:
         for skill_md in iter_skill_index_files(d, "SKILL.md"):
             if is_excluded_skill_path(skill_md):
@@ -313,7 +310,7 @@ def _sort_skills(skills: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return sorted(skills, key=lambda s: (s.get("category") or "", s["name"]))
 
 
-def skills_list(category: str = None, task_id: str = None) -> str:
+def skills_list(category: str | None = None, task_id: str | None = None) -> str:
     try:
         if not SKILLS_DIR.exists():
             SKILLS_DIR.mkdir(parents=True, exist_ok=True)
@@ -356,10 +353,8 @@ def _serve_plugin_skill(
         return json.dumps({"success": False, "error": f"Failed to read skill '{namespace}:{bare}': {e}"}, ensure_ascii=False)
 
     parsed = {}
-    try:
+    with contextlib.suppress(Exception):
         parsed, _ = parse_frontmatter(content)
-    except Exception:
-        pass
     if not skill_matches_platform(parsed):
         return json.dumps(
             {"success": False, "error": f"Skill '{namespace}:{bare}' is not supported on this platform.", "readiness_status": SkillReadinessStatus.UNSUPPORTED.value},
@@ -402,8 +397,8 @@ def _serve_plugin_skill(
 
 def skill_view(
     name: str,
-    file_path: str = None,
-    task_id: str = None,
+    file_path: str | None = None,
+    task_id: str | None = None,
     preprocess: bool = True,
 ) -> str:
     try:
@@ -447,10 +442,8 @@ def skill_view(
             return json.dumps({"success": False, "error": err, "hint": "Use a skill name or relative path within the skills directory."}, ensure_ascii=False)
 
         all_dirs = [SKILLS_DIR] if SKILLS_DIR.exists() else []
-        try:
+        with contextlib.suppress(Exception):
             all_dirs.extend(get_external_skills_dirs())
-        except Exception:
-            pass
         if not all_dirs:
             return json.dumps({"success": False, "error": "Skills directory does not exist yet. It will be created on first install."}, ensure_ascii=False)
 
@@ -538,10 +531,8 @@ def skill_view(
             logger.warning("Skill security warning for '%s': %s", name, "; ".join(warns))
 
         parsed_frontmatter = {}
-        try:
+        with contextlib.suppress(Exception):
             parsed_frontmatter, _ = parse_frontmatter(content)
-        except Exception:
-            pass
 
         if not skill_matches_platform(parsed_frontmatter):
             return json.dumps(

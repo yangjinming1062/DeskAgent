@@ -188,7 +188,7 @@ class ToolRegistry:
             explicit = dict(self._schemas)
         schemas = []
         missing: list[str] = []
-        for name, func in known:
+        for name, _func in known:
             if name in explicit:
                 schemas.append(explicit[name])
                 continue

@@ -1,4 +1,5 @@
 import base64
+import contextlib
 import functools
 import json
 import logging
@@ -202,10 +203,7 @@ def generate_deskagent_tools_module(enabled_tools: list[str], transport: str = "
         func_name, sig, doc, args_expr = _TOOL_STUBS[tool_name]
         stub_functions.append(f"def {func_name}({sig}):\n" f"    {doc}\n" f"    return _call({func_name!r}, {args_expr})\n")
         export_names.append(func_name)
-    if transport == "file":
-        header = _FILE_TRANSPORT_HEADER
-    else:
-        header = _UDS_TRANSPORT_HEADER
+    header = _FILE_TRANSPORT_HEADER if transport == "file" else _UDS_TRANSPORT_HEADER
     return header + "\n".join(stub_functions)
 
 
@@ -1019,14 +1017,10 @@ def _kill_process_group(proc, escalate: bool = False):
         parent = psutil.Process(proc.pid)
         children = parent.children(recursive=True)
         for child in children:
-            try:
+            with contextlib.suppress(psutil.NoSuchProcess):
                 child.terminate()
-            except psutil.NoSuchProcess:
-                pass
-        try:
+        with contextlib.suppress(psutil.NoSuchProcess):
             parent.terminate()
-        except psutil.NoSuchProcess:
-            pass
     except psutil.NoSuchProcess:
         pass
     except (PermissionError, OSError) as e:
@@ -1042,14 +1036,10 @@ def _kill_process_group(proc, escalate: bool = False):
             try:
                 parent = psutil.Process(proc.pid)
                 for child in parent.children(recursive=True):
-                    try:
+                    with contextlib.suppress(psutil.NoSuchProcess):
                         child.kill()
-                    except psutil.NoSuchProcess:
-                        pass
-                try:
+                with contextlib.suppress(psutil.NoSuchProcess):
                     parent.kill()
-                except psutil.NoSuchProcess:
-                    pass
             except psutil.NoSuchProcess:
                 pass
             except (PermissionError, OSError) as e:

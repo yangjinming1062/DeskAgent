@@ -1,4 +1,5 @@
 import base64
+import contextlib
 import ctypes.wintypes
 import io
 import logging
@@ -228,9 +229,9 @@ class WinBackend(ComputerUseBackend):
         if not _is_win32():
             return False
         try:
-            import pywinauto  # noqa: F401
-            import mss  # noqa: F401
-            import pyautogui  # noqa: F401
+            import pywinauto  # noqa: F401 — capability check
+            import mss  # noqa: F401 — capability check
+            import pyautogui  # noqa: F401 — capability check
 
             return True
         except ImportError:
@@ -611,10 +612,8 @@ class WinBackend(ComputerUseBackend):
                         continue
                     control_type = ctrl.element_info.control_type or "Unknown"
                     label = ""
-                    try:
+                    with contextlib.suppress(Exception):
                         label = (ctrl.window_text() or "")[:120]
-                    except Exception:
-                        pass
                     elements.append(
                         UIElement(
                             index=idx,

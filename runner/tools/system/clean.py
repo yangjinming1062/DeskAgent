@@ -1,3 +1,4 @@
+import contextlib
 import logging
 
 from utils import redact_sensitive_text
@@ -18,14 +19,10 @@ def clean_output(text: str) -> str:
     same trailing newlines and indentation the tool produced.
     """
     # strip_ansi / strip_fence are cosmetic — fail-open is acceptable.
-    try:
+    with contextlib.suppress(Exception):
         text = strip_ansi(text)
-    except Exception:
-        pass
-    try:
+    with contextlib.suppress(Exception):
         text = strip_fence(text)
-    except Exception:
-        pass
     # redact_sensitive_text is security-critical — fail-closed so raw
     # secrets never reach the LLM if the regex engine chokes.
     if text:

@@ -1,30 +1,3 @@
-#!/usr/bin/env python3
-"""Static import-shape checks for backend and runner.
-
-Catches the regressions that shipped together in c66ab1a (and the original
-forward-reference bug from the bug log):
-
-  A. ``TYPE_CHECKING`` leak — a name imported under ``if TYPE_CHECKING:``
-     is also referenced outside that block (e.g. a class-body annotation
-     like ``dict[int, JsonRpcDispatcher]``). Type-checkers see it; the
-     runtime sees ``NameError``.
-
-  B. ``tools`` → ``core`` eager import — ``backend/tools/**/*.py`` doing
-     ``from core import ...`` at module level triggers the
-     ``core/__init__`` → ``chat_service`` → ``tools_registry`` → ``tools``
-     circular import. The established convention is to lazy-import
-     inside the function body.
-
-  C. Facade consistency — for ``from <local_pkg> import X`` (absolute or
-     single-segment relative import) where ``<local_pkg>`` resolves to
-     a package in this repo, ``X`` must be re-exported by
-     ``<local_pkg>/__init__.py``. Protects against trimming facades
-     too aggressively (c66ab1a almost broke this; future trims could).
-
-Exits non-zero with one diagnostic per violation if any file fails.
-Files passed as argv are checked; with no argv, walks ``backend/`` and
-``runner/`` (excluding virtualenvs and __pycache__).
-"""
 import ast
 import sys
 from pathlib import Path

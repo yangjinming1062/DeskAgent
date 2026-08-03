@@ -1,3 +1,5 @@
+from typing import ClassVar
+
 from ..base import ServiceType
 from ..openai_compat import OpenAICompatChatProvider
 
@@ -11,4 +13,4 @@ class ZhipuChatProvider(OpenAICompatChatProvider):
 
     provider_name = "zhipu"
     service_type = ServiceType.llm
-    DEFAULT_MODELS = {"llm": "glm-5.2"}
+    DEFAULT_MODELS: ClassVar[dict[str, str]] = {"llm": "glm-5.2"}

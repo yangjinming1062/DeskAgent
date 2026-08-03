@@ -1,3 +1,4 @@
+import contextlib
 import re
 import threading
 from pathlib import Path
@@ -20,10 +21,8 @@ def _read_wheel_version() -> str:
             return _CACHED_VERSION
         pyproject = Path(__file__).resolve().parent / "pyproject.toml"
         text = ""
-        try:
+        with contextlib.suppress(OSError):
             text = pyproject.read_text(encoding="utf-8")
-        except OSError:
-            pass
         match = re.search(r'^version\s*=\s*"([^"]+)"', text, re.MULTILINE) if text else None
         _CACHED_VERSION = match.group(1) if match else "0.0.0+unknown"
     return _CACHED_VERSION

@@ -1,3 +1,4 @@
+import contextlib
 import difflib
 import os
 import re
@@ -138,10 +139,8 @@ class NativeFileOperations(FileOperations):
 
         pre_content = None
         if p.exists():
-            try:
+            with contextlib.suppress(Exception):
                 pre_content = p.read_text(encoding="utf-8", errors="replace")
-            except Exception:
-                pass
 
         original_ending = _detect_line_ending(pre_content) if pre_content else None
         if original_ending == "\r\n":
@@ -198,10 +197,8 @@ class NativeFileOperations(FileOperations):
             new_content, match_count, _strategy, error = fuzzy_find_and_replace(content, old_string, new_string, replace_all)
             if error or match_count == 0:
                 err_msg = error or f"Could not find match for old_string in {path}"
-                try:
+                with contextlib.suppress(Exception):
                     err_msg += format_no_match_hint(err_msg, match_count, old_string, content)
-                except Exception:
-                    pass
                 return PatchResult(success=False, error=err_msg)
             content_after = new_content
         else:

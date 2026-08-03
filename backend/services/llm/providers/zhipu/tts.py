@@ -1,3 +1,5 @@
+from typing import ClassVar
+
 from .._provider_errors import raise_for_provider_response
 from ..base import ProviderConfig
 from ..base import TTSProvider
@@ -13,8 +15,8 @@ class ZhipuTTSProvider(TTSProvider):
     """
 
     provider_name = "zhipu"
-    DEFAULT_MODELS = {"tts": "glm-tts"}
-    VOICE_CATALOG = [
+    DEFAULT_MODELS: ClassVar[dict[str, str]] = {"tts": "glm-tts"}
+    VOICE_CATALOG: ClassVar[list[dict]] = [
         {"id": "tongtong", "label": "彤彤", "gender": "female", "language": "zh", "tags": ["温柔", "自然", "女", "甜", "默认", "中文"], "description": "温柔自然的默认女声。"},
         {"id": "chuichui", "label": "锤锤", "gender": "neutral", "language": "zh", "tags": ["活泼", "俏皮", "中文"], "description": "活泼俏皮的声音。"},
         {"id": "xiaochen", "label": "小陈", "gender": "neutral", "language": "zh", "tags": ["清晰", "自然", "中文"], "description": "清晰自然的声音。"},

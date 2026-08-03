@@ -1,3 +1,4 @@
+import contextlib
 import functools
 import os
 from pathlib import Path
@@ -190,10 +191,8 @@ def is_write_denied(path: str) -> bool:
         return True
 
     deskagent_dirs = []
-    try:
+    with contextlib.suppress(Exception):
         deskagent_dirs.append(os.path.realpath(_deskagent_home_path()))
-    except Exception:
-        pass
 
     for base_real in deskagent_dirs:
         try:
@@ -216,10 +215,8 @@ def get_read_block_error(path: str) -> str | None:
         return None
 
     deskagent_dirs = []
-    try:
+    with contextlib.suppress(Exception):
         deskagent_dirs.append(_deskagent_home_path().resolve())
-    except Exception:
-        pass
 
     for zd in deskagent_dirs:
         for blocked in (zd / "skills/.hub/index-cache", zd / "skills/.hub"):

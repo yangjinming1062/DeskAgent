@@ -1,4 +1,5 @@
 import json
+from typing import ClassVar
 
 from components import get_logger
 from components import MEMORY_RECALL_MAX_RESULTS
@@ -105,7 +106,7 @@ class NativeMemory:
             logger.error("memory_forget failed", extra={"error": str(e)})
             return tool_error(f"Failed to delete memory: {e}")
 
-    _HANDLERS = {"memory_retain": _retain, "memory_recall": _recall, "memory_forget": _forget}
+    _HANDLERS: ClassVar[dict[str, object]] = {"memory_retain": _retain, "memory_recall": _recall, "memory_forget": _forget}
 
 
 # Self-register: this module is the canonical source for the three memory schemas

@@ -1,3 +1,4 @@
+from typing import ClassVar
 
 import pytest
 from services.llm import client_for_service
@@ -32,7 +33,7 @@ class TestProviderConfig:
             service_type=ServiceType.llm,
             provider_name="mimo",
         )
-        with pytest.raises(Exception):
+        with pytest.raises((ValueError, AttributeError)):
             cfg.base_url = "https://y/v1"  # type: ignore[misc]
 
 
@@ -242,7 +243,7 @@ class TestClientForServiceCompat:
         monkeypatch.setattr("components.SETTINGS.llm_api_key", "sk")
         monkeypatch.setattr("components.SETTINGS.video_gen_base_url", "https://api.xiaomimimo.com/v1")
         monkeypatch.setattr("components.SETTINGS.video_gen_api_key", "sk")
-        with pytest.raises(Exception):
+        with pytest.raises((MissingLlmConfigError, ValueError)):
             client_for_service(None, None, "video_gen")
 
 
@@ -375,7 +376,7 @@ class TestProvidersSupporting:
 
 
 class TestProviderChain:
-    _EMPTY_DEFAULTS = {
+    _EMPTY_DEFAULTS: ClassVar[dict] = {
         "providers": [],
         "llm_provider": "",
         "stt_provider": "",
@@ -562,7 +563,7 @@ class TestExecuteWithFallback:
             calls.append(provider.provider_name)
             raise ProviderError("server error", status_code=500, body={}, provider="mimo", model="m")
 
-        with pytest.raises(Exception):
+        with pytest.raises(ProviderError):
             await execute_with_fallback(None, None, "llm", call_fn=call_fn)
         assert calls == ["mimo"]  # second provider never tried
 
@@ -601,7 +602,7 @@ class TestExecuteWithFallback:
         async def call_fn(provider):
             raise ProviderError("auth", status_code=401, body={}, provider=provider.provider_name, model="m")
 
-        with pytest.raises(Exception):
+        with pytest.raises(ProviderError):
             await execute_with_fallback(None, None, "llm", call_fn=call_fn)
 
     @pytest.mark.asyncio

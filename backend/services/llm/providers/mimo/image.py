@@ -1,3 +1,5 @@
+from typing import ClassVar
+
 from openai import AsyncOpenAI
 
 from ..base import ImageAsset
@@ -18,7 +20,7 @@ class MiMoImageGenProvider(ImageGenProvider):
     """
 
     provider_name = "mimo"
-    DEFAULT_MODELS = {"image_gen": "dall-e-3"}
+    DEFAULT_MODELS: ClassVar[dict[str, str]] = {"image_gen": "dall-e-3"}
 
     def __init__(self, config: ProviderConfig):
         super().__init__(config)

@@ -1,3 +1,4 @@
+import contextlib
 import hashlib
 import json
 import logging
@@ -98,10 +99,8 @@ def _mark_install_failed(reason: str = "") -> None:
 
 def _clear_install_failed() -> None:
     _reset_spawn_warning_state()
-    try:
+    with contextlib.suppress(OSError):
         os.unlink(_failure_marker_path())
-    except OSError:
-        pass
 
 
 def _deskagent_bin_dir() -> str:
@@ -245,10 +244,8 @@ def _install_tirith(*, log_failures: bool = True) -> tuple[str | None, str]:
             try:
                 shutil.copy(src, dest)
             except OSError:
-                try:
+                with contextlib.suppress(OSError):
                     os.unlink(dest)
-                except OSError:
-                    pass
                 return None, "cross_device_copy_failed"
         os.chmod(dest, os.stat(dest).st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
         logger.info("tirith installed to %s (%s)", dest, "cosign + SHA-256" if cosign_verified else "SHA-256 only")

@@ -218,19 +218,19 @@ def _post(path: str, body: dict, timeout: int = _DEFAULT_TIMEOUT) -> dict:
     return resp.json()
 
 
-def _get(path: str, params: dict = None, timeout: int = _DEFAULT_TIMEOUT) -> dict:
+def _get(path: str, params: dict | None = None, timeout: int = _DEFAULT_TIMEOUT) -> dict:
     resp = requests.get(f"{get_camofox_url()}{path}", params=params, timeout=timeout)
     resp.raise_for_status()
     return resp.json()
 
 
-def _get_raw(path: str, params: dict = None, timeout: int = _DEFAULT_TIMEOUT) -> requests.Response:
+def _get_raw(path: str, params: dict | None = None, timeout: int = _DEFAULT_TIMEOUT) -> requests.Response:
     resp = requests.get(f"{get_camofox_url()}{path}", params=params, timeout=timeout)
     resp.raise_for_status()
     return resp
 
 
-def _delete(path: str, body: dict = None, timeout: int = _DEFAULT_TIMEOUT) -> dict:
+def _delete(path: str, body: dict | None = None, timeout: int = _DEFAULT_TIMEOUT) -> dict:
     resp = requests.delete(f"{get_camofox_url()}{path}", json=body, timeout=timeout)
     resp.raise_for_status()
     return resp.json()

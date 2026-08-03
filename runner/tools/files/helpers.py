@@ -10,6 +10,7 @@ from abc import ABC
 from abc import abstractmethod
 from collections.abc import Iterable
 from contextlib import contextmanager
+from contextlib import suppress
 from dataclasses import dataclass
 from dataclasses import field
 from enum import Enum
@@ -315,7 +316,7 @@ def _lint_json_inproc(content: str) -> tuple[bool, str]:
         return True, ""
     except _json.JSONDecodeError as e:
         return False, f"JSONDecodeError: {e.msg} (line {e.lineno}, column {e.colno})"
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         return False, f"{type(e).__name__}: {e}"
 
 
@@ -326,7 +327,7 @@ def _lint_yaml_inproc(content: str) -> tuple[bool, str]:
         return True, ""
     except _yaml.YAMLError as e:
         return False, f"YAMLError: {e}"
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         return False, f"{type(e).__name__}: {e}"
 
 
@@ -347,7 +348,7 @@ def _lint_python_inproc(content: str) -> tuple[bool, str]:
     except SyntaxError as e:
         loc = f" (line {e.lineno}, column {e.offset})" if e.lineno else ""
         return False, f"{type(e).__name__}: {e.msg}{loc}"
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         return False, f"{type(e).__name__}: {e}"
 
 
@@ -395,12 +396,12 @@ def normalize_search_pagination(offset: Any = DEFAULT_SEARCH_OFFSET, limit: Any 
 class ShellFileOperations(FileOperations):
     """File operations implemented via shell commands."""
 
-    def __init__(self, terminal_env, cwd: str = None):
+    def __init__(self, terminal_env, cwd: str | None = None):
         self.env = terminal_env
         self.cwd = cwd or getattr(terminal_env, "cwd", None) or getattr(getattr(terminal_env, "config", None), "cwd", None) or "/"
         self._command_cache: dict[str, bool] = {}
 
-    def _exec(self, command: str, cwd: str = None, timeout: int = None, stdin_data: str = None) -> ExecuteResult:
+    def _exec(self, command: str, cwd: str | None = None, timeout: int | None = None, stdin_data: str | None = None) -> ExecuteResult:
         """Execute command via terminal backend."""
         kwargs = {}
         if timeout:
@@ -418,7 +419,7 @@ class ShellFileOperations(FileOperations):
             self._command_cache[cmd] = result.stdout.strip() == "yes"
         return self._command_cache[cmd]
 
-    def _is_likely_binary(self, path: str, content_sample: str = None) -> bool:
+    def _is_likely_binary(self, path: str, content_sample: str | None = None) -> bool:
         """Check if a file is likely binary."""
         ext = os.path.splitext(path)[1].lower()
         if ext in BINARY_EXTENSIONS:
@@ -742,10 +743,8 @@ class ShellFileOperations(FileOperations):
         new_content, match_count, _strategy, error = fuzzy_find_and_replace(content, old_string, new_string, replace_all)
         if error or match_count == 0:
             err_msg = error or f"Could not find match for old_string in {path}"
-            try:
+            with suppress(Exception):
                 err_msg += format_no_match_hint(err_msg, match_count, old_string, content)
-            except Exception:
-                pass
             return PatchResult(error=err_msg)
         file_ending = _detect_line_ending(content)
         if file_ending:
@@ -996,10 +995,8 @@ class ShellFileOperations(FileOperations):
                 if ":" in line:
                     parts = line.rsplit(":", 1)
                     if len(parts) == 2:
-                        try:
+                        with suppress(ValueError):
                             counts[parts[0]] = int(parts[1])
-                        except ValueError:
-                            pass
             return SearchResult(counts=counts, total_count=sum(counts.values()))
         else:
             _match_re = _SEARCH_LINE_RE
@@ -1053,10 +1050,8 @@ class ShellFileOperations(FileOperations):
                 if ":" in line:
                     parts = line.rsplit(":", 1)
                     if len(parts) == 2:
-                        try:
+                        with suppress(ValueError):
                             counts[parts[0]] = int(parts[1])
-                        except ValueError:
-                            pass
             return SearchResult(counts=counts, total_count=sum(counts.values()))
         else:
             _match_re = _SEARCH_LINE_RE
@@ -1079,7 +1074,7 @@ class ShellFileOperations(FileOperations):
 
 # ── File State ─────────────────────────────────────────────────────────────
 
-ReadStamp: TypeAlias = tuple[float, float, bool]  # noqa: UP040
+ReadStamp: TypeAlias = tuple[float, float, bool]
 _MAX_PATHS_PER_AGENT = 4096
 _MAX_GLOBAL_WRITERS = 4096
 
@@ -1469,10 +1464,8 @@ def _validate_operations(operations: list[PatchOperation], file_ops: Any) -> lis
                 if count == 0:
                     label = f"'{hunk.context_hint}'" if hunk.context_hint else "(no hint)"
                     msg = f"{op.file_path}: hunk {label} not found" + (f" — {match_error}" if match_error else "")
-                    try:
+                    with suppress(Exception):
                         msg += format_no_match_hint(match_error, count, search, simulated)
-                    except Exception:
-                        pass
                     errors.append(msg)
                 else:
                     simulated = new_simulated
@@ -1535,10 +1528,8 @@ def _apply_update(op: PatchOperation, file_ops: Any) -> tuple[bool, str]:
                 new_content, error = _retry_windowed(new_content, search, replace, hunk.context_hint)
             if error:
                 err_msg = f"Could not apply hunk: {error}"
-                try:
+                with suppress(Exception):
                     err_msg += format_no_match_hint(error, 0, search, new_content)
-                except Exception:
-                    pass
                 return False, err_msg
         else:
             new_content, err = _apply_addition_only(new_content, hunk)
@@ -1598,13 +1589,13 @@ def apply_v4a_operations(operations: list[PatchOperation], file_ops: Any) -> Pat
                 files_modified.append(op.file_path)
         all_diffs.append(diff)
     lint_results = {f: file_ops._check_lint(f).to_dict() for f in files_modified + files_created if hasattr(file_ops, "_check_lint")}
-    base = dict(
-        diff="\n".join(all_diffs),
-        files_modified=files_modified,
-        files_created=files_created,
-        files_deleted=files_deleted,
-        lint=lint_results or None,
-    )
+    base = {
+        "diff": "\n".join(all_diffs),
+        "files_modified": files_modified,
+        "files_created": files_created,
+        "files_deleted": files_deleted,
+        "lint": lint_results or None,
+    }
     if apply_errors:
         return PatchResult(
             success=False,

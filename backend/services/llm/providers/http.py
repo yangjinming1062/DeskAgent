@@ -1,3 +1,5 @@
+import contextlib
+
 import httpx
 from components import SETTINGS
 from openai import AsyncOpenAI
@@ -32,10 +34,8 @@ def get_http(base_url: str, api_key: str, *, auth_header: dict[str, str] | None 
 
 async def aclose_all() -> None:
     for client in list(_clients.values()):
-        try:
+        with contextlib.suppress(Exception):
             await client.aclose()
-        except Exception:
-            pass
     _clients.clear()
 
 

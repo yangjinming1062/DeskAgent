@@ -76,7 +76,7 @@ def screen_capture_available() -> bool:
         # pywinauto + mss are bundled only on Windows in pyproject.toml;
         # the absence of ``mss`` would have broken `computer_use` already.
         try:
-            import mss  # noqa: F401
+            import mss
 
             return True
         except ImportError:
@@ -87,7 +87,7 @@ def screen_capture_available() -> bool:
     if _binary_exists("grim") or _binary_exists("gnome-screenshot") or _binary_exists("scrot"):
         return True
     try:
-        import mss  # noqa: F401
+        import mss  # noqa: F401 — capability check
 
         return True
     except ImportError:
@@ -102,7 +102,7 @@ def local_stt_available() -> bool:
     is checked at tool-call time (first invocation downloads it).
     """
     try:
-        import faster_whisper  # noqa: F401
+        import faster_whisper  # noqa: F401 — capability check
     except ImportError:
         return False
     return True
@@ -116,13 +116,13 @@ def local_tts_available() -> bool:
     synthesize speech without a cloud round-trip.
     """
     try:
-        import piper  # noqa: F401
+        import piper  # noqa: F401 — capability check
 
         return True
     except ImportError:
         pass
     try:
-        import pyttsx3  # noqa: F401
+        import pyttsx3  # noqa: F401 — capability check
 
         return True
     except ImportError:
@@ -141,7 +141,7 @@ def system_activity_available() -> bool:
     """
     if IS_WINDOWS:
         try:
-            import ctypes  # noqa: PLC0415
+            import ctypes
 
             user32 = ctypes.windll.user32
 
@@ -160,7 +160,7 @@ def system_activity_available() -> bool:
             return False
     if IS_MACOS:
         try:
-            import Quartz  # type: ignore[import-not-found]  # noqa: PLC0415
+            import Quartz  # type: ignore[import-not-found]
 
             d = Quartz.CGSessionCopyCurrentDictionary()
             return d is not None

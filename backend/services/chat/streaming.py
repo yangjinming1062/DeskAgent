@@ -1,9 +1,10 @@
 import asyncio
+import contextlib
 import re
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
-from typing import Callable
 
 from components import get_logger
 from components import new_request_id
@@ -164,10 +165,8 @@ async def _stream_llm_response(
             text = await _reasoning_queue.get()
             if text is None:
                 break
-            try:
+            with contextlib.suppress(Exception):
                 await emitter.send_json({"type": "reasoning", "content": text})
-            except Exception:
-                pass
 
     def _on_reasoning_sync(text: str) -> None:
         _reasoning_queue.put_nowait(text)

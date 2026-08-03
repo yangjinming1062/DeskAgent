@@ -244,10 +244,8 @@ def _parse_elements_from_structured(raw_elements: list[dict[str, Any]]) -> list[
         frame = raw.get("frame")
         bounds = (0, 0, 0, 0)
         if isinstance(frame, dict):
-            try:
+            with contextlib.suppress(TypeError, ValueError):
                 bounds = (int(frame.get("x", 0)), int(frame.get("y", 0)), int(frame.get("w", 0)), int(frame.get("h", 0)))
-            except (TypeError, ValueError):
-                pass
         raw_token = raw.get("element_token")
         token = raw_token if isinstance(raw_token, str) and raw_token else None
         elements.append(
@@ -676,7 +674,7 @@ class CuaDriverBackend(ComputerUseBackend):
         key_name, modifiers = _parse_key_combo(keys)
         if not key_name:
             return ActionResult(ok=False, action="key", message=f"Could not parse key from '{keys}'.")
-        return self._action("hotkey", {"pid": pid, "keys": modifiers + [key_name]}) if modifiers else self._action("press_key", {"pid": pid, "key": key_name})
+        return self._action("hotkey", {"pid": pid, "keys": [*modifiers, key_name]}) if modifiers else self._action("press_key", {"pid": pid, "key": key_name})
 
     def set_value(self, value: str, element: int | None = None) -> ActionResult:
         pid, window_id = self._active_pid, self._active_window_id

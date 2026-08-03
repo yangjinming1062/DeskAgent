@@ -22,6 +22,8 @@ from sqlalchemy.orm import Session
 
 logger = get_logger(__name__)
 
+_BG_TASKS: set[asyncio.Task] = set()
+
 
 def _update_job(job_id: int, **fields) -> None:
     """Update a job row using a fresh short-lived session.
@@ -159,7 +161,9 @@ async def enqueue_video_job(
     job.provider_task_id = submitted.task_id
     db.commit()
 
-    asyncio.create_task(_poll_and_finalize(job.id))
+    t = asyncio.create_task(_poll_and_finalize(job.id))
+    _BG_TASKS.add(t)
+    t.add_done_callback(_BG_TASKS.discard)
     return job
 
 
@@ -390,6 +394,8 @@ def resume_pending_video_jobs() -> None:
     if stuck.rowcount:
         logger.warning("marked downloading jobs failed during resume", extra={"count": stuck.rowcount})
     for job_id in job_ids:
-        asyncio.create_task(_poll_and_finalize(job_id))
+        t = asyncio.create_task(_poll_and_finalize(job_id))
+        _BG_TASKS.add(t)
+        t.add_done_callback(_BG_TASKS.discard)
     if job_ids:
         logger.info("Resumed pending video jobs", extra={"count": len(job_ids)})

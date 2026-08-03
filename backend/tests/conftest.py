@@ -1,7 +1,7 @@
 import os
 
 import components.database as _db_mod
-import modules.media.models  # noqa: F401 — register VideoGenJob (see modules/media/__init__.py)
+import modules.media.models  # noqa: F401 — register models on ModelBase.metadata
 import pytest
 import sqlalchemy
 from common import ModelBase

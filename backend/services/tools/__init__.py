@@ -1,4 +1,4 @@
-from . import memory  # noqa: F401 — self-registers memory_retain/recall/forget
+from . import memory  # noqa: F401 — side-effect: registers memory tools
 from .extract_provider import resolve_extract_provider
 from .extract_provider import resolve_search_provider
 from .file_safety import get_read_block_error
@@ -15,9 +15,9 @@ from .registry import ToolsRegistry
 from .registry import WEB_EXTRACT_AVAILABILITY
 from .search_tools_tool import SEARCH_TOOLS_SCHEMA
 from .search_tools_tool import search_tools_tool
-from .tool_dispatch_helpers import is_multimodal_tool_result  # noqa: F401 — re-exported for cross-package use
+from .tool_dispatch_helpers import is_multimodal_tool_result
 from .tool_dispatch_helpers import make_tool_result_message
-from .tool_dispatch_helpers import should_parallelize_tool_batch  # noqa: F401 — re-exported for cross-package use
+from .tool_dispatch_helpers import should_parallelize_tool_batch
 from .tool_guardrails import append_toolguard_guidance
 from .tool_guardrails import canonical_tool_args
 from .tool_guardrails import check_file_safety

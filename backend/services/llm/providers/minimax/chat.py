@@ -1,3 +1,5 @@
+from typing import ClassVar
+
 from ..base import ServiceType
 from ..openai_compat import OpenAICompatChatProvider
 
@@ -13,4 +15,4 @@ class MiniMaxChatProvider(OpenAICompatChatProvider):
 
     provider_name = "minimax"
     service_type = ServiceType.llm
-    DEFAULT_MODELS = {"llm": "MiniMax-Text-01"}
+    DEFAULT_MODELS: ClassVar[dict[str, str]] = {"llm": "MiniMax-Text-01"}

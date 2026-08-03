@@ -1,3 +1,4 @@
+import contextlib
 import json
 import secrets
 from pathlib import Path
@@ -307,10 +308,8 @@ def _delete_portrait_file(asset_url: str | None) -> None:
     name = Path(filename).name
     if "/" in name or "\\" in name or ".." in name:
         return
-    try:
+    with contextlib.suppress(OSError):
         (Path(SETTINGS.data_dir) / "companion-avatars" / name).unlink(missing_ok=True)
-    except OSError:
-        pass
 
 
 async def _seed_batch0(db: Session, user_id: int, asset: AvatarAsset) -> None:

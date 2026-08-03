@@ -49,7 +49,7 @@ class DDGSWebSearchProvider(WebSearchProvider):
                             "position": i + 1,
                         }
                     )
-        except Exception as exc:  # noqa: BLE001 — ddgs raises its own exceptions
+        except Exception as exc:
             logger.warning("DDGS search error", extra={"error": str(exc)})
             return {"success": False, "error": f"DuckDuckGo search failed: {exc}"}
 
