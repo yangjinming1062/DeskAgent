@@ -76,7 +76,13 @@ def _build_prompt(persona: Persona, style: str) -> str:
         parts.append(appearance)
     if background:
         parts.append(f"set in {background}")
-    parts.append("digital illustration, clean linework, full character on neutral background")
+    # P1-14: ask the provider for a solid-color background (not a
+    # scene) so the sprite window can key out the colour. The
+    # MiniMax pipeline currently returns JPEG/PNG without alpha; we
+    # can still use a flat ``#ffffff`` (or any uniform colour) as a
+    # chroma key. The renderer already falls back to a CSS circular
+    # mask (companion-ready.tsx) so this is a soft improvement.
+    parts.append("digital illustration, clean linework, full character on solid flat color background, no scenery")
     return ", ".join(parts)
 
 

@@ -213,6 +213,17 @@ async def runner_loop(ws_url: str) -> None:
     while True:
         logger.info(f"Connecting to Desktop WS: {current_url} (attempt {attempt + 1})")
         cancelled = False
+        # P1-3 (runtime audit): proactively drain any stale
+        # ``_PENDING_RPC`` futures before the new connection opens. The
+        # ``finally`` block on the previous connection does this too,
+        # but only after the websocket context manager fully unwinds —
+        # any future created in the gap would leak an awaited
+        # ``wait_for`` on the caller side. Cheap insurance: set
+        # ConnectionError on every future that's still pending.
+        for _fut in list(_PENDING_RPC.values()):
+            if not _fut.done():
+                _fut.set_exception(ConnectionError("Runner WS reconnecting; abandoning in-flight request"))
+        _PENDING_RPC.clear()
         try:
             async with websockets.connect(current_url) as ws:
                 _ACTIVE_WS = ws
