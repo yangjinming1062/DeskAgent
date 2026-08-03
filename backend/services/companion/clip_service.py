@@ -77,6 +77,10 @@ CLIP_SCENES: dict[str, _SceneSpec] = {
     "playful": _SceneSpec(3, "mischievous playful grin, teasing wink or cheeky expression"),
     "bored": _SceneSpec(3, "mild boredom, resting chin on hands with a lazy blink"),
     "lonely": _SceneSpec(3, "wistful lonely expression, looking around hoping for company"),
+    "sleepy": _SceneSpec(3, "drowsy expression, eyelids heavy, fighting to stay awake"),
+    "curious": _SceneSpec(3, "head tilted with bright curious eyes, leaning forward to investigate"),
+    "embarrassed": _SceneSpec(3, "flustered expression, slight blush, looking away with awkward half-smile"),
+    "apologetic": _SceneSpec(3, "sincere apologetic bow with hands together, regretful soft expression"),
 }
 
 

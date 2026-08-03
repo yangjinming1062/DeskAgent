@@ -37,7 +37,12 @@ export function handleCompanionEvent(event: RpcEvent): void {
       const payload = event.payload as { text?: string; affect?: { emotion?: string } } | undefined
       finalizeAssistantMessage(payload?.text)
 
-      if (payload?.affect?.emotion) {
+      // ``neutral`` is the LLM's "no specific emotion" answer and must NOT
+      // trigger a transient EMOTIONAL state — it would otherwise fall
+      // through to ``pulse + ✨`` (companion-ready.tsx default) and ping a
+      // meaningless badge on every text reply. Filter at the boundary so
+      // ``neutral`` returns to idle like the no-affect path (P1-5).
+      if (payload?.affect?.emotion && payload.affect.emotion !== 'neutral') {
         setSpriteState('emotional', { emotion: payload.affect.emotion as SpriteEmotion })
       } else {
         setSpriteState('idle')
@@ -57,7 +62,8 @@ export function handleCompanionEvent(event: RpcEvent): void {
     case 'affect': {
       const emotion = (event.payload as { emotion?: string } | undefined)?.emotion
 
-      if (emotion) {
+      // ``neutral`` → no state change (see P1-5 note above).
+      if (emotion && emotion !== 'neutral') {
         setSpriteState('emotional', { emotion: emotion as SpriteEmotion })
       }
 
@@ -140,7 +146,9 @@ export function handleCompanionEvent(event: RpcEvent): void {
 
       // Affect always flows first — the user can see the companion react
       // even at the quiet tier (plan §4.2: 保持安静断消息不断情绪).
-      if (affectEmotion) {
+      // ``neutral`` is filtered at this boundary too (P1-5) so a
+      // system-prompt-driven default doesn't ping a meaningless badge.
+      if (affectEmotion && affectEmotion !== 'neutral') {
         setSpriteState('emotional', { emotion: affectEmotion as SpriteEmotion })
       }
 
