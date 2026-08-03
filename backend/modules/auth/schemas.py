@@ -112,11 +112,22 @@ class UserModelConfigRequest(BaseModel):
 
 
 class UserModelConfigListItem(BaseModel):
+    """Admin-facing view of ``UserModelConfig``.
+
+    P0-5 (backend re-audit): the previous schema returned
+    ``llm_api_key: str`` which serialized the raw API key value.
+    Any caller with an admin token could exfiltrate every user's
+    LLM credentials in one round-trip. Mirror the user-facing
+    ``UserModelConfigResponse`` shape — return the SHA-256
+    fingerprint (``fingerprint_api_key``) plus a ``*_set`` boolean
+    so admins can confirm a key is configured without seeing it.
+    """
     model_config = ConfigDict(from_attributes=True)
 
     user_id: int
     llm_base_url: str
-    llm_api_key: str
+    llm_api_key_fingerprint: str
+    llm_api_key_set: bool
     llm_model_name: str
     stt_base_url: str
     stt_api_key_set: bool

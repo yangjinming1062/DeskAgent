@@ -51,6 +51,25 @@ class LoginRecord(ModelBase):
     user: Mapped[User] = relationship(back_populates="login_records")
 
 
+# P0-11 (backend re-audit): admin tokens used to have no DB
+# record at all — the only way to revoke was waiting for the
+# JWT's natural expiry. Mirror the user LoginRecord shape so
+# admins can be force-logged-out by setting ``is_active=False``
+# (e.g. on suspected key compromise).
+class AdminSession(ModelBase):
+    __tablename__ = "admin_sessions"
+    __table_args__ = (UniqueConstraint("token_jti", name="uq_admin_sessions_token_jti"),)
+
+    token_jti: Mapped[str] = mapped_column(String(64), index=True)
+    username: Mapped[str] = mapped_column(String(64), index=True)
+    client_version: Mapped[str] = mapped_column(String(64), default="")
+    ip_address: Mapped[str] = mapped_column(String(64), default="")
+    user_agent: Mapped[str] = mapped_column(Text, default="")
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default=text("TRUE"), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
 class UserModelConfig(ModelBase, TimestampMixin):
     __tablename__ = "user_model_configs"
 

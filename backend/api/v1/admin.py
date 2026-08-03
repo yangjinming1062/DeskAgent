@@ -82,10 +82,16 @@ def toggle_user_active(user_id: int, _admin: str = Depends(get_current_admin_tok
 def _config_list_item(r: UserModelConfig) -> UserModelConfigListItem:
     # Built explicitly (not from_attributes): the model has no ``*_api_key_set``
     # properties, and provider_config is a JSON string that must be parsed.
+    # P0-5 (backend re-audit): never serialize the raw LLM key — return
+    # its SHA-256 fingerprint + a presence boolean so admins can confirm
+    # a key is configured without the ability to exfiltrate it.
+    from modules.auth.security import fingerprint_api_key
+
     return UserModelConfigListItem(
         user_id=r.user_id,
         llm_base_url=r.llm_base_url,
-        llm_api_key=r.llm_api_key,
+        llm_api_key_fingerprint=fingerprint_api_key(r.llm_api_key),
+        llm_api_key_set=bool(r.llm_api_key),
         llm_model_name=r.llm_model_name,
         stt_base_url=r.stt_base_url,
         stt_api_key_set=bool(r.stt_api_key),

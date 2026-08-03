@@ -209,29 +209,26 @@ async def _key_video_alpha(mp4_bytes: bytes, *, timeout: float = 180.0) -> bytes
 
 
 def _keyframe_submissions_today(db: Session, user_id: int) -> int:
-    """P1-8 (backend audit): count keyframes generated for this
-    user since the last UTC midnight. ``keyframe_url IS NOT NULL``
-    means a keyframe exists; ``keyframe_attempts &gt; 0`` is the
-    only signal before the first success — but we count *attempts*
-    via the failure path's `keyframe_url IS NULL AND
-    keyframe_attempts > 0` set. Both contribute to the daily
-    budget per the variable's documented meaning ('max Tier-2
-    keyframe submissions per user per UTC day'). Mirrors
-    ``_companion_video_submissions_today``."""
+    """P0-8 (backend re-audit): the previous P1-8 fix computed
+    ``start = naive_utc_now().replace(...)`` but never used it as
+    a filter — the count was all-time cumulative, not per-day.
+    A user who finished their first 20 keyframes would be
+    permanently blocked from any further keyframe generation,
+    defeating the whole three-tier escalation pipeline. Add the
+    missing ``created_at &gt;= start`` filter so the count is
+    truly per-day as the comment + variable name promised.
+    Mirrors ``_companion_video_submissions_today``.
+    """
     start = naive_utc_now().replace(hour=0, minute=0, second=0, microsecond=0)
     succeeded = (
         db.query(AvatarClip)
         .filter(
             AvatarClip.user_id == user_id,
             AvatarClip.keyframe_url.is_not(None),
-            AvatarClip.keyframe_attempts > 0,
+            AvatarClip.created_at >= start,
         )
         .count()
     )
-    # The DB column doesn't carry a keyframe_completed_at; we
-    # use keyframe_attempts as the proxy. This means the budget
-    # is conservative on retries of the same scene (counted each
-    # time) — that's the safer failure mode.
     return succeeded
 
 
