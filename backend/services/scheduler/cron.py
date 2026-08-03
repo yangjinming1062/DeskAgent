@@ -285,9 +285,100 @@ def _insert_wsevents(winners: dict[int, dict[str, Any]]) -> None:
 
 
 def _advance_due_jobs(due_jobs: list[CronJob], now: datetime) -> None:
-    """Tx1 (bulk CAS) + Tx2 (bulk WSEvent with per-row fallback)."""
+    """Tx1 (bulk CAS) + Tx2 (bulk WSEvent with per-row fallback) +
+    Tx3 (autonomous chat turn kickoff).
+
+    The autonomous turn is the actual product path (P0-5) — cron is the
+    infrastructure for the companion to reach out proactively, not a
+    notification system for the renderer. The ``cron.trigger`` WSEvent
+    remains for the desktop UI to show a 'scheduled' indicator, but the
+    real delivery flows through the same ``message.complete`` /
+    ``companion.message`` pipeline as a user-typed message, so the LLM
+    can call ``send_message_tool`` and the desktop's disturbance-tier
+    gate applies (plan §4.2).
+    """
     winners = _bulk_cas_advance(due_jobs, now)
     _insert_wsevents(winners)
+    for job_id, meta in winners.items():
+        if meta.get("is_paused"):
+            continue
+        try:
+            asyncio.create_task(_kick_autonomous_turn(job_id, meta))
+        except RuntimeError:
+            # No running loop — defer; the WSEvent is still queued and the
+            # next tick will retry, plus the renderer can drive the turn
+            # manually if it ships a cron.trigger handler.
+            logger.warning("cron: no running loop, skipping autonomous turn", extra={"job_id": job_id})
+
+
+class _NullEmitter:
+    """Drop-in no-op for JsonRpcEmitter's ``raw`` argument when the
+    autonomous cron turn has no live WS to forward unknown event types
+    to. All translated types (chunk / tool_* / message.*) still flow
+    through the dispatcher; only raw passthroughs are dropped."""
+
+    async def send_json(self, data: dict) -> None:
+        return None
+
+
+async def _kick_autonomous_turn(job_id: int, meta: dict[str, Any]) -> None:
+    """Run the cron prompt as a system-initiated chat turn for the user.
+
+    Skipped silently when the user is offline (no dispatcher registered) —
+    the partner only 'speaks' when the desktop is connected, so an
+    offline cron fire is correctly dropped. Connects to the user's
+    existing session so the conversation history is preserved across
+    cron fires; falls back to a fresh session if none exists yet.
+    """
+    from services.chat.orchestrator import run_chat_turn
+    from services.gateway.connection import MANAGER
+    from services.gateway.emitter import JsonRpcEmitter
+    from modules.conversation import Conversation
+    from modules.system import ChatMessageRequest
+    from modules.system import ChatRequest
+    from services.chat import load_user_settings
+    from services.llm import resolve_user_llm_config
+
+    user_id = meta["user_id"]
+    prompt = (meta["payload"].get("prompt") or "").strip()
+    if not prompt:
+        return
+
+    dispatcher = MANAGER._dispatchers.get(user_id)
+    if dispatcher is None:
+        # User offline — the WS outbox row for ``cron.trigger`` is still
+        # queued, but the autonomous turn has no emitter; drop silently.
+        logger.debug("cron: user offline, skipping autonomous turn", extra={"user_id": user_id, "job_id": job_id})
+        return
+
+    with session_scope() as db:
+        conv = db.query(Conversation).filter(Conversation.user_id == user_id).order_by(Conversation.created_at.desc()).first()
+        if conv is None:
+            conv = Conversation(user_id=user_id)
+            db.add(conv)
+            db.commit()
+            db.refresh(conv)
+        session_id = str(conv.id)
+        llm_config = resolve_user_llm_config(db, user_id)
+        user_settings = load_user_settings(db, user_id)
+        req = ChatRequest(
+            session_id=session_id,
+            message=ChatMessageRequest(role="user", content=prompt),
+        )
+
+    emitter = JsonRpcEmitter(raw=_NullEmitter(), dispatcher=dispatcher, session_id=session_id)
+    try:
+        with session_scope() as db:
+            await run_chat_turn(
+                db,
+                req,
+                llm_config,
+                user_settings,
+                user_id,
+                emitter,
+            )
+    except Exception:
+        logger.exception("cron: autonomous turn failed", extra={"user_id": user_id, "job_id": job_id})
 
 
 async def _tick() -> None:

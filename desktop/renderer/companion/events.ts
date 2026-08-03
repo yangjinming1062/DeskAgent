@@ -122,8 +122,16 @@ export function handleCompanionEvent(event: RpcEvent): void {
       break
     }
 
-    case 'cron.trigger':
+    case 'cron.trigger': {
+      // P0-5: the autonomous chat turn is now the actual product path (the
+      // LLM runs the cron prompt and may call send_message_tool, which
+      // produces a companion.message that flows through the normal TTS
+      // pipeline). This event is informational — the desktop can use it
+      // to show a "scheduled message" indicator before the actual reply
+      // arrives, or to log the schedule hit for the developer overlay.
+      pushDevLog('cron.trigger', JSON.stringify(event.payload ?? {}))
       break
+    }
     case 'companion.message': {
       const payload = event.payload as { text?: string; affect?: { emotion?: string } } | undefined
       const text = payload?.text ?? ''
