@@ -34,18 +34,34 @@ _REDACT_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"\s*Traceback \(most recent call last\):.*", re.DOTALL),
     re.compile(r"(/[A-Za-z0-9_.+-]+){2,}/[A-Za-z0-9_.-]+\.py:\d+"),
     re.compile(r"[A-Za-z]:\\\\[A-Za-z0-9_.\\\\ -]+\.py:\d+"),
+    # Generic filesystem paths (any /var/lib / /tmp / /etc) — the
+    # `.py` patterns above don't catch directories or non-Python files.
+    re.compile(r"/(?:var|tmp|etc|home|root|opt|srv|mnt)/[A-Za-z0-9_./-]+"),
+    # postgresql / psycopg asyncpg DSN with embedded user:pass.
     re.compile(r"postgresql(?:ql)?(?:\+[A-Za-z0-9_]+)?://[^@\s/]+:[^@\s/]+@"),
+    # Non-postgres DSNs the prior regex missed: redis / mongodb / amqp / kafka.
+    re.compile(r"(?:redis|mongodb|amqp|kafka)(?:\+[A-Za-z]+)?://[^@\s/]+:[^@\s/]+@"),
+    # Bearer / API-key header value (Authorization / X-API-Key / openai-style)
+    re.compile(r"(?:Bearer\s+|(?:X-)?Api-Key:\s*|(?:sk|xai|gAAAA|hsk)-)[A-Za-z0-9._\-]{12,}"),
+    # OpenAI-style / GitHub / Slack tokens + a few of the more common
+    # new prefixes that ship with provider SDKs.
     re.compile(r"(sk-|ghp_|gho_|ghu_|ghs_|ghr_|github_pat_|xox[abp]-|xapp-[A-Za-z0-9-]{20,})[A-Za-z0-9_-]+"),
     re.compile(r"\b(?:OperationalError|IntegrityError|FileNotFoundError|ConnectionError|TimeoutError|sqlalchemy\.exc\.[A-Za-z]+)\b"),
     # IPv4 (incl. RFC1918 / loopback) — caught here because the OperationalError
     # scrub above doesn't reach a bare host:port fragment like "10.0.0.5:5432".
     re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}(?::\d+)?\b"),
+    # IPv6 — bracket-enclosed (psycopg/asyncpg format `[::1]:5432`) and
+    # bare forms (the host:port scrub above misses these entirely).
+    re.compile(r"\[?[0-9a-fA-F:]+\]?:\d{2,5}"),
+    re.compile(r"\b(?:fe80|fc|fd)[0-9a-fA-F:]{8,}\b"),
     # Bare hostnames that show up in psycopg/asyncpg error strings
     re.compile(r"\b(?:host|server)\s+(?:at\s+)?[A-Za-z0-9.-]+\.[A-Za-z]{2,}", re.IGNORECASE),
     # PostgreSQL DSN user/role fragment (e.g. ``for user "postgres"``)
     re.compile(r"for user\s+\"[A-Za-z0-9_.-]+\"", re.IGNORECASE),
     # SQLAlchemy / psycopg "password authentication failed" labels
     re.compile(r"\b(?:password authentication failed|FATAL:\s+[A-Z][A-Za-z ]+?)\b", re.IGNORECASE),
+    # JWT-style three-segment dot-separated tokens.
+    re.compile(r"eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}"),
 )
 
 

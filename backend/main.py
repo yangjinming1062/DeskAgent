@@ -5,6 +5,7 @@ from pathlib import Path
 
 import asyncpg
 import modules.media.models  # noqa: F401 — register VideoGenJob on ModelBase.metadata
+import modules.auth.models  # noqa: F401 — register LoginRecord + AdminSession on ModelBase.metadata
 import services.chat.agent_delegate  # noqa: F401
 import services.tools.builtin  # noqa: F401
 from api import ROUTERS
