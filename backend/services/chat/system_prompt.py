@@ -443,16 +443,20 @@ def build_system_prompt_parts(config: AgentPromptConfig, system_message: str | N
 
     stable_parts.append(config.identity_prompt or DEFAULT_AGENT_IDENTITY)
     stable_parts.append(DESK_AGENT_HELP_GUIDANCE)
-    if config.user_profile_extras:
-        # Inject structured user identity so the LLM doesn't need a memory_recall
-        # round-trip just to know "this user is 老板, male, 26-35, likes music".
-        stable_parts.append(config.user_profile_extras)
     if config.persona_extras:
         stable_parts.append(config.persona_extras)
         # A companion persona drives a visible avatar — instruct the LLM to
         # emit an inline affect tag so the desktop's animation state machine
         # gets an emotion cue with every response (ARCHITECTURE.md §7.5).
         stable_parts.append(COMPANION_AFFECT_GUIDANCE)
+    # P2-1: ARCH §7.5 says "紧跟 persona_extras + COMPANION_AFFECT_GUIDANCE
+    # 之后追加" — user_profile is appended last so the stable-parts prefix
+    # (identity / help / persona / affect guidance) stays cache-friendly
+    # across persona changes that don't touch user identity.
+    if config.user_profile_extras:
+        # Inject structured user identity so the LLM doesn't need a memory_recall
+        # round-trip just to know "this user is 老板, male, 26-35, likes music".
+        stable_parts.append(config.user_profile_extras)
     if config.task_completion_guidance and valid_tools:
         stable_parts.append(TASK_COMPLETION_GUIDANCE)
 

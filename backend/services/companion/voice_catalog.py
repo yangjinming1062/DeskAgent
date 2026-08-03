@@ -1,4 +1,4 @@
-from services.llm import resolve as resolve_provider_class
+from services.llm import resolve as resolve_provider
 from services.llm import resolve_provider_chain
 from services.llm import ServiceType
 from services.llm import VoiceDesignResult
@@ -122,7 +122,7 @@ async def design_voice(db: Session, user_id: int, prompt: str, *, preview_text: 
     if not chain:
         raise ValueError("no TTS provider configured")
     config = chain[0]
-    cls = resolve_provider_class(ServiceType.tts, config.provider_name)
+    cls = resolve_provider(ServiceType.tts, config.provider_name)
     if cls.VOICE_DESIGN_GUIDE is None:
         raise ValueError(f"{config.provider_name} does not support voice design")
     provider = cls(config)

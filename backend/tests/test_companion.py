@@ -419,7 +419,7 @@ async def test_design_voice_calls_provider(monkeypatch):
                 trial_audio_mime="audio/mpeg",
             )
 
-    monkeypatch.setattr(voice_catalog, "resolve_provider_class", lambda st, name: FakeDesign)
+    monkeypatch.setattr(voice_catalog, "resolve_provider", lambda st, name: FakeDesign)
 
     result = await voice_catalog.design_voice(db=None, user_id=1, prompt="warm female voice", preview_text="hello")
 
@@ -438,7 +438,7 @@ async def test_design_voice_unsupported_provider(monkeypatch):
         def __init__(self, config):
             pass
 
-    monkeypatch.setattr(voice_catalog, "resolve_provider_class", lambda st, name: NoDesign)
+    monkeypatch.setattr(voice_catalog, "resolve_provider", lambda st, name: NoDesign)
 
     with pytest.raises(ValueError, match="does not support voice design"):
         await voice_catalog.design_voice(db=None, user_id=1, prompt="test")

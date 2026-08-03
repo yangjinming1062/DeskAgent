@@ -265,11 +265,19 @@ stage_unpack_runner() {
     return 1
   }
 
-  # Install wheel into venv
-  "$UV_CMD" pip install --python "$runner_dir/.venv/bin/python" "$wheel" 2>/dev/null || {
-    emit_stage_err unpack-runner "uv pip install failed"
-    return 1
-  }
+  # Install wheel into venv. PyPI direct connection is unreliable from
+  # China; on the first failure, retry against the Aliyun mirror which
+  # install.ps1 also uses (P2-10: keep the two scripts symmetric). The
+  # retry is best-effort: a second failure surfaces the same error to
+  # the stage handler.
+  if ! "$UV_CMD" pip install --python "$runner_dir/.venv/bin/python" "$wheel" 2>/dev/null; then
+    if ! "$UV_CMD" pip install --python "$runner_dir/.venv/bin/python" \
+        --index-url https://mirrors.aliyun.com/pypi/simple/ \
+        "$wheel" 2>/dev/null; then
+      emit_stage_err unpack-runner "uv pip install failed (PyPI + Aliyun mirror)"
+      return 1
+    fi
+  fi
 
   # No post-install smoke: build_client.{ps1,sh} already gates the
   # wheel behind pytest tests/test_startup_imports.py before packaging,

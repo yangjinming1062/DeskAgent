@@ -212,7 +212,12 @@ async def _stream_llm_response(
             # closing error event so the renderer gets a clean transcript.
             raise
 
-        clean_tail = scrubber.flush() + affect.flush()
+        # P2-2: feed the affect-residual buffer through the think scrubber
+        # so any ``<think>`` fragments buffered during a tag-strip window
+        # also get filtered. The previous ``scrubber.flush() + affect.flush()``
+        # order let affect's raw buffer bypass the think scrubber on
+        # extremely short or tag-saturated responses.
+        clean_tail = scrubber.feed(affect.flush()) + scrubber.flush()
     finally:
         # Always flush (success OR stream-raise path) so text buffered in a
         # half-open ``<reasoning>`` block lands in the assistant Message
