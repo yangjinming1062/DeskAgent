@@ -6,7 +6,6 @@ import {
   setAssistantError,
   setAssistantTool
 } from '@/companion/chat-store'
-import { setClipStatus } from '@/companion/clip-store'
 import { applyClipUpdate, type ClipMeta } from '@/companion/clip-store'
 import { $disturbanceTier, setSpriteState, type SpriteEmotion } from '@/companion/companion-store'
 import { $responseMode } from '@/companion/prefs'
@@ -73,16 +72,6 @@ export function handleCompanionEvent(event: RpcEvent): void {
       } else {
         setAssistantTool(p.name ?? '工具')
         setSpriteState('working')
-      }
-
-      break
-    }
-
-    case 'video_gen.completed': {
-      const payload = event.payload as { scene?: string; video_url?: string } | undefined
-
-      if (payload?.scene) {
-        setClipStatus(payload.scene, 'succeeded', payload.video_url ?? null)
       }
 
       break

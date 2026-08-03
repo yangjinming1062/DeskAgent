@@ -146,7 +146,7 @@ DeskAgent 是一个**根据用户描述定制的、具有专属形象的陪伴�
 | Backend → Desktop | `event.type="affect"` `{emotion}` | 情绪 cue，驱动 EMOTIONAL 状态（详见 §5.2.IV / §7.5） |
 | Desktop → Backend | `companion.set_disturbance_tier` `{tier}` | 上报当前打扰档位（积极主动/常规/保持安静），约束 Backend 主动消息 |
 
-clip 的就绪/失败通知**不另造事件**，直接复用既有的 `video_gen.completed` / `video_gen.failed`（[backend/README.md 视频生成](backend/README.md#视频生成)）：companion 服务以 portrait 为种子经图生视频生成 clip，走同一条 `media/video_jobs` 流水线，payload 中携带 scene 标识供 Desktop 绑定到对应状态。Desktop 另调 `avatar.list_clips` 查询整批 clip 目录与各自生成状态。
+clip 的就绪/失败通知走**单一 `clip.updated` 通道**（[backend/services/companion/clip_service.py](backend/services/companion/clip_service.py) `_emit_clip_event`）。companion 服务以 portrait 为种子经图生视频生成 clip，复用 `media/video_jobs` 流水线（通过 `enqueue_video_job(..., emit_event=False)` 抑制标准 `video_gen.*` 事件，避免双通知与字段名错位）。Desktop 另调 `avatar.list_clips` 查询整批 clip 目录与各自生成状态。
 
 #### B. Desktop ↔ Runner
 本地环回 WebSocket `ws://127.0.0.1:<port>/rpc`。Desktop 充当 RPC Server，Runner 启动时作为 Client 主动连入。
@@ -217,7 +217,7 @@ Desktop 状态机：EMOTIONAL(affect) → SPEAKING(TTS) → IDLE
 **clip 流（动画资产后台异步）：**
 
 ```
-Backend clip 生成队列（portrait 种子图 + 场景文本 → 图生视频）──event: video_gen.completed──> Desktop 本地缓存 + 状态机绑定
+Backend clip 生成队列（portrait 种子图 + 场景文本 → 图生视频）──event: clip.updated──> Desktop 本地缓存 + 状态机绑定
     │                                          │
     │  (Desktop 调 avatar.list_clips 查进度)    └─ clip 缺失时该状态回退 idle loop
     └── portrait 重生 → 所有衍生 clip 失效重排队列
@@ -264,7 +264,7 @@ Backend clip 生成队列（portrait 种子图 + 场景文本 → 图生视频�
 | **transition clip** | 一次性透明背景视频 | 仪式感时刻（孵化、问候、告别） |
 
 - **图生视频契约**：所有 clip 由 Backend 以当前 portrait 为种子图、结合场景/动作描述文本，经图生视频能力（MiniMax Hailuo，复用 `video_generate` 工具的 `first_frame_image` 参数与 `media/video_jobs` 流水线）产出。portrait 既是视觉身份基准、也是全部 clip 的生成种子——同一颗种子图从机制上保证跨 clip 的角色一致性，无需额外的风格锁。
-- **渐进式生成**：portrait + idle clip 在 onboarding 同步生成（批次 0）；其余 clip 按优先级后台排队——speaking/thinking/working（批次 1）→ 生命周期 clip（批次 2）→ 情绪变体（批次 3），就绪后经既有 `video_gen.completed` 事件下发。分批策略与降级细节见 [COMPANION_DESIGN.md §1.3](COMPANION_DESIGN.md#13-渐进式生成与不变量)。
+- **渐进式生成**：portrait + idle clip 在 onboarding 同步生成（批次 0）；其余 clip 按优先级后台排队——speaking/thinking/working（批次 1）→ 生命周期 clip（批次 2）→ 情绪变体（批次 3），就绪后经 `clip.updated` 事件下发。分批策略与降级细节见 [COMPANION_DESIGN.md §1.3](COMPANION_DESIGN.md#13-渐进式生成与不变量)。
 - **衍生失效**：因 clip 是以 portrait 为种子的图生视频产物，portrait 重生（`avatar.regenerate`）时所有 clip 必然失配，须全部失效并从新种子重新排队，绝不跨 portrait 版本复用。
 - **资产 URL 有 TTL**：provider 下载 URL 有时效（MiniMax 9h），Backend 已在服务端下载落盘并对 Desktop 暴露自有 `/api/media/files/<id>` URL；Desktop 收到后仍须立即本地缓存，不依赖该 URL 永久有效。
 - Desktop 以透明置顶窗口将形象以桌面精灵形态常驻呈现（具体渲染技术——WebM alpha / sprite / 序列帧——是实现决策，由 desktop 子模块决定）。

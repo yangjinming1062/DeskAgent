@@ -770,8 +770,8 @@ def _register_session_handlers(
 
     async def avatar_list_clips(_params: dict) -> dict:
         # Query the full clip directory with live generation status (ARCHITECTURE.md
-        # §5.1.A). The desktop calls this after receiving video_gen.completed /
-        # failed to refresh its clip cache.
+        # §5.1.A). The desktop calls this on gateway open / reconnect to sync its
+        # cache; incremental updates flow over the ``clip.updated`` event channel.
         with SESSION_LOCAL() as db:
             return {"clips": [c.model_dump() for c in list_companion_clips(db, user_id)]}
 
