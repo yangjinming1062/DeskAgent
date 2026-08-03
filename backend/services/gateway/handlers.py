@@ -33,6 +33,7 @@ from services.chat import exec_slash_command
 from services.chat import load_user_settings
 from services.chat import run_chat_turn
 from services.companion import AvatarGenerationError
+from services.companion import check_affect
 from services.companion import design_voice as design_companion_voice
 from services.companion import get_onboarding_state
 from services.companion import get_or_create_persona
@@ -719,6 +720,23 @@ def _register_session_handlers(
         return {"tier": normalized}
 
     dispatcher.register("companion.set_disturbance_tier", companion_set_disturbance_tier)
+
+    async def companion_check_affect(params: dict) -> dict:
+        # Idle-triggered contextual affect reasoning (§7.6). The desktop's idle
+        # monitor calls this when the user has been inactive past its threshold
+        # + cooldown. The backend loads persona + memory and asks the LLM
+        # whether the companion should express a contextual emotion right now;
+        # on a positive decision it emits ``companion.affect`` so the existing
+        # event handler switches the sprite to EMOTIONAL (no bubble, no TTS).
+        idle_seconds = params.get("idle_seconds")
+        if not isinstance(idle_seconds, (int, float)) or idle_seconds < 0:
+            idle_seconds = 0
+        local_hour = params.get("local_hour")
+        if not isinstance(local_hour, int) or not 0 <= local_hour <= 23:
+            local_hour = -1
+        return await check_affect(user_id, idle_seconds, local_hour, llm_config)
+
+    dispatcher.register("companion.check_affect", companion_check_affect)
 
     async def onboarding_get_state(_params: dict) -> dict:
         # Breakpoint recovery (ARCHITECTURE.md §7.5): the desktop calls this on boot

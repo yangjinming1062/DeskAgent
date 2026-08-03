@@ -1,6 +1,7 @@
 import importlib
 import sys
 
+from .affect import ALLOWED_EMOTIONS
 from .chat_emitter import Emitter
 from .chat_emitter import HeadlessEmitter
 from .chat_emitter import safe_emit
@@ -48,6 +49,7 @@ def __getattr__(name: str):
 # Mark the lazy submodules so ``from services.chat import orchestrator``
 # (rare but legitimate) still works via __getattr__.
 __all__ = [
+    "ALLOWED_EMOTIONS",
     "Emitter",
     "HeadlessEmitter",
     "safe_emit",

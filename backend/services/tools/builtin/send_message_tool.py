@@ -13,8 +13,12 @@ from services.companion.disturbance import is_quiet
 from .. import ALWAYS_AVAILABLE
 from .. import REGISTRY
 
-# Import from the leaf submodule (not the companion package __init__) to avoid
-# a cycle: companion.__init__ → avatar_service → tools.builtin → this module.
+# ``is_quiet`` is imported from the leaf submodule (not the companion package
+# __init__) because companion.__init__ → avatar_service → tools.builtin → this
+# module forms a cycle if send_message_tool imports from the companion root.
+# ``_emit_companion_affect`` below is an inlined mirror of
+# companion/affect_emit.py::emit_companion_affect for the same reason — the
+# canonical copy lives in the companion package and is used by affect_check.
 
 logger = get_logger(__name__)
 
@@ -51,8 +55,7 @@ def is_safe_outbound(host: str) -> tuple[bool, str]:
 def _emit_companion_message(user_id: int, text: str, affect: str | None = None) -> None:
     """Push a proactive companion message to the user's desktop via the WS
     outbox (ARCHITECTURE.md §5.1.A / §6). The desktop receives `companion.message`
-    and decides text-vs-affect-vs-bubble based on the user's disturbance tier
-    (plan §4.2: 保持安静断消息不断 affect).
+    and decides text-vs-affect-vs-bubble based on the user's disturbance tier.
 
     The backend never short-circuits the emit — the desktop owns the
     presentation gate so a future multi-replica deployment doesn't lose
@@ -63,6 +66,12 @@ def _emit_companion_message(user_id: int, text: str, affect: str | None = None) 
         payload["affect"] = {"emotion": affect}
     with SESSION_LOCAL() as db:
         db.add(WSEvent(user_id=user_id, event_type="companion.message", payload=json.dumps(payload, ensure_ascii=False)))
+        db.commit()
+
+
+def _emit_companion_affect(user_id: int, emotion: str) -> None:
+    with SESSION_LOCAL() as db:
+        db.add(WSEvent(user_id=user_id, event_type="companion.affect", payload=json.dumps({"emotion": emotion}, ensure_ascii=False)))
         db.commit()
 
 
@@ -86,9 +95,18 @@ async def send_message_tool(
     # so a quiet user doesn't burn LLM quota on suppressed messages.
     if not target_webhook:
         user_id = kwargs.get("user_id")
-        if isinstance(user_id, int) and not is_quiet(user_id):
-            _emit_companion_message(user_id, message, affect=affect)
-        return json.dumps({"success": True, "channel": "companion"}, ensure_ascii=False)
+        if isinstance(user_id, int):
+            # Quiet tier: the spoken/written message is gated, but the
+            # LLM-reasoned affect still flows so the companion's emotion is
+            # visible (ARCHITECTURE.md §6: 断消息不断 affect). This is not a
+            # Desktop rule-engine fallback — the emotion is produced by the
+            # persona-+memory-driven LLM that called this tool (§7.6).
+            if is_quiet(user_id):
+                if affect:
+                    _emit_companion_affect(user_id, affect)
+            else:
+                _emit_companion_message(user_id, message, affect=affect)
+        return json.dumps({"success": True, "channel": "companion", "quiet_suppressed": isinstance(user_id, int) and is_quiet(user_id)}, ensure_ascii=False)
 
     parsed = urlparse(target_webhook)
     if parsed.scheme not in ("http", "https"):

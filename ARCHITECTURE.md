@@ -143,8 +143,9 @@ DeskAgent 是一个**根据用户描述定制的、具有专属形象的陪伴�
 | Desktop → Backend | `onboarding.submit` `{field, value}` | 逐字段增量持久化 onboarding 答案 |
 | Desktop → Backend | `avatar.regenerate` `{feedback?}` | 重生 portrait，所有衍生 clip 失效并重排队列 |
 | Desktop → Backend | `avatar.list_clips` | 查询 clip 目录与生成状态（就绪/排队/失败） |
-| Backend → Desktop | `event.type="affect"` `{emotion}` | 情绪 cue，驱动 EMOTIONAL 状态（详见 §5.2.IV / §7.5） |
+| Backend → Desktop | `event.type="companion.affect"` `{emotion}` | affect-only 情绪 cue（无消息文本、无 TTS），驱动 EMOTIONAL 状态——quiet 档透传或 idle 触发 LLM 推理产出（详见 §5.2.IV / §6 / §7.5） |
 | Desktop → Backend | `companion.set_disturbance_tier` `{tier}` | 上报当前打扰档位（积极主动/常规/保持安静），约束 Backend 主动消息 |
+| Desktop → Backend | `companion.check_affect` `{idle_seconds, local_hour}` | idle 触发的情境化 affect 推理：Backend 加载 persona + 记忆跑一次 LLM 推理，决定是否 emit `companion.affect`（详见 §6 / §7.6） |
 
 clip 的就绪/失败通知走**单一 `clip.updated` 通道**（[backend/services/companion/clip_service.py](backend/services/companion/clip_service.py) `_emit_clip_event`）。companion 服务以 portrait 为种子经图生视频生成 clip，复用 `media/video_jobs` 流水线（通过 `enqueue_video_job(..., emit_event=False)` 抑制标准 `video_gen.*` 事件，避免双通知与字段名错位）。Desktop 另调 `avatar.list_clips` 查询整批 clip 目录与各自生成状态。
 
@@ -223,7 +224,7 @@ Backend clip 生成队列（portrait 种子图 + 场景文本 → 图生视频�
     └── portrait 重生 → 所有衍生 clip 失效重排队列
 ```
 
-- **inline affect 原则**：情绪 cue 随其所属话语在同一响应帧下发，Desktop 无需二次猜测"这句话该配什么情绪"。独立 `event: affect` 仅保留给非言语的情境化情绪反应（如用户久未上线后的兴奋招呼），属罕见场景。
+- **inline affect 原则**：情绪 cue 随其所属话语在同一响应帧（`message.complete`）下发，Desktop 无需二次猜测"这句话该配什么情绪"。独立的 `companion.affect` 事件用于非言语的情境化情绪反应——两条路径产出它：(1) `send_message_tool` 在 `quiet` 档下消息被吞但 affect 透传；(2) `companion.check_affect` 的 idle 触发 LLM 推理（详见 §6）。
 - **语义/渲染解耦**：Backend 只产出 `emotion` 语义，绝不指定 clip 文件名或渲染方式；Desktop 据本地可用资产决定如何渲染。这条解耦使 clip 的渐进生成不影响语义层（详见 §7.5）。
 
 ---
@@ -241,7 +242,11 @@ Backend clip 生成队列（portrait 种子图 + 场景文本 → 图生视频�
 
 `send_message`（主动消息）、Cron（定时任务）、形象/角色变更通知等所有"伙伴主动行为"都经此通道下发至 Desktop，再由伙伴形象以符合其人格的方式表达。
 
-**打扰档位约束**：所有"伙伴主动行为"受三档打扰等级约束（积极主动 / 常规 / 保持安静），档位由用户设置 + Desktop 检测到的用户活动共同决定，Desktop 经 `companion.set_disturbance_tier` 上报当前生效档位。Backend 据此放行或抑制主动消息：**保持安静档阻断主动消息但不断 affect cue**——精灵不发消息打扰，仍可经 affect 表达情绪（如粘人型被冷落后的委屈 affect）。这条约束成立的前提正是 §7.5 的 affect/message 解耦。档位的行为细节见 [COMPANION_DESIGN.md §4.2](COMPANION_DESIGN.md#42-主动陪伴与打扰档位backend-驱动)。
+**打扰档位约束**：所有"伙伴主动行为"受三档打扰等级约束（积极主动 / 常规 / 保持安静），档位由用户设置 + Desktop 检测到的用户活动共同决定，Desktop 经 `companion.set_disturbance_tier` 上报当前生效档位。Backend 据此放行或抑制主动消息：`send_message_tool` 在 `quiet` 档时把消息文本门控吞掉，但 LLM 推理出的 affect 仍经独立的 `companion.affect` outbox 事件流出（[backend/services/tools/builtin/send_message_tool.py](backend/services/tools/builtin/send_message_tool.py) + [backend/services/companion/affect_emit.py](backend/services/companion/affect_emit.py)）——即"断消息不断 affect"。Desktop 收到 `companion.affect` 切 EMOTIONAL 状态但不弹气泡、不做 TTS。
+
+**情境化 affect（无 turn 触发）**：用户长时间无活动时，Backend LLM 仍可基于角色定义 + 记忆推理出情境化情绪（如粘人型被冷落 30 分钟后的 lonely/委屈）。Desktop `companion/activity.ts` 的 30s idle 轮询跨过阈值（默认 30min）+ 冷却（默认 1h）时，调 `companion.check_affect {idle_seconds, local_hour}` JSON-RPC（[backend/services/companion/affect_check.py](backend/services/companion/affect_check.py)），Backend 跑一次轻量 LLM 推理（persona + 最近记忆 + 情境），决定是否 emit `companion.affect`。**触发时机由 Desktop 控制（它知道真实 idle 状态），情绪推理由 Backend LLM 承担（它有 persona + 记忆）**——各取所长，Desktop 不退化成规则驱动的文案池。这条路径是 §7.6"记忆驱动运行时行为"不变量的真正落地。档位的行为细节见 [COMPANION_DESIGN.md §4.2](COMPANION_DESIGN.md#42-主动陪伴与打扰档位backend-驱动)。
+
+**已知限制（多副本）**：`disturbance_tier` 与 `runtime_sessions` / IPC future 均为 process-local（[backend/services/companion/disturbance.py](backend/services/companion/disturbance.py) 的模块级 dict、[backend/services/gateway/connection.py](backend/services/gateway/connection.py) 的 MANAGER），多副本部署下用户必须连到同一副本；多副本横向扩展需先将这两处迁至共享存储（Redis 等）。当前设计假设单副本语义。
 
 ---
 
@@ -290,7 +295,7 @@ Backend clip 生成队列（portrait 种子图 + 场景文本 → 图生视频�
 - **情绪 cue（affect）**：Backend 在对话响应/主动消息中携带 `affect: {emotion}` 语义字段，Desktop 据此驱动动画状态机。emotion 为有限枚举集（`happy / sad / surprised / excited / confused / concerned / shy / proud / grateful / playful / bored` + `neutral`），可扩展——但每次扩展须同步 Backend 的产出 allowlist 与 Desktop 的 clip 目录，否则未覆盖的 emotion 一律按 `neutral` 处理。
 - **语义与渲染解耦**：Backend 只产出 emotion 语义，绝不指定 clip 文件或渲染方式。Desktop 据本地可用资产决定渲染——有对应 clip 则播放，否则回退 idle loop + 状态轻量提示。这使 clip 渐进生成与语义层互不阻塞。
 - **affect 与角色定义一致**：affect 由已注入角色定义的 LLM 产出，自然符合人格；角色定义本身受 §8.2 防篡改机制保护，affect 因此继承同一抗注入保证，无需额外的情绪过滤层。
-- **TTS 与 affect 同帧**：对话响应帧中，TTS 音频信息与 affect 必须在同一帧下发（§5.2.IV 的 inline affect 原则），使 Desktop 能在 SPEAKING 前先播 EMOTIONAL(affect)、用对应情绪基调进入说话，而非事后补播情绪。
+- **affect 与 text 同帧，TTS 由 Desktop 拉取式合成**：对话响应的 `message.complete` 帧内联 `{text, affect}`，**不内联 TTS 音频**。Desktop 收到该帧后按 §5.2.IV 状态机顺序驱动——先据 affect 切 EMOTIONAL，再据 text 拉 TTS（`POST /api/media/tts`）切 SPEAKING，保证情绪基调先于语音进入而非事后补播。Backend 只产出语义（emotion + text），TTS 合成归 Desktop 渲染层，与下方"语义/渲染解耦"原则一致；此前"TTS 音频信息必须同帧下发"的措辞与该原则自相矛盾，已修订。
 - **onboarding 断点恢复**：onboarding 采集的字段在 Backend 用户维度**逐字段增量持久化**（每提交一个 `onboarding.submit` 即落盘）。Desktop 启动时调 `onboarding.get_state`，未完成则从最后未答问题恢复，崩溃/退出不丢进度。
 - **形象描述步骤**：onboarding 在角色题里加入"物种（生物类型）—角色性别—形象描述"三步，物种 + 性别（chip 值 → 英文 token）写进 Persona，`appearance` 把原本预留但从未收取的字段接通到生图 prompt，让 portrait 与形象描述对齐；英文查表在 `backend/services/companion/avatar_service.py::_SPECIES_EN` / `_GENDER_EN`。
 - **结构化用户信息 + 角色端单 PUT 双写**：5 个结构化用户字段（称呼 / 性别 / 年龄段 / 爱好 / 自由文本）由 `update_persona` 服务端分流入 Memory 表。`PersonaUpdate` 仍保持 `extra="forbid"` 严格 schema，把 user_* 字段显式声明为 Optional、由 `update_persona` 在同一 SQLAlchemy session 内写到 `Memory`（query-then-update 幂等 upsert，tags = `json.dumps(["onboarding", "user_profile"])`，context 为 `user_profile:*`），然后再写 persona 字段 + `is_complete=true`，单 `db.commit()` 同时落两路。异常路径：生产 Postgres 由 `main.py::_install_schema_extensions` 加 `uq_memories_user_context` 部分唯一索引兜底 race，IntegrityError 上抛路由 → desktop 3 次重试兜底。`onboarding.submit` 的草稿（即 onboarding draft `definition_json`）仍包含 user_* 字段以便断点恢复，但 PUT 时整体清空、user_* 由服务端分流去处。

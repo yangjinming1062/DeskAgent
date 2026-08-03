@@ -1,3 +1,4 @@
+from .affect_check import check_affect
 from .asset_store import delete_user_assets
 from .asset_store import resolve_companion_asset_path
 from .avatar_service import ALLOWED_AVATAR_UPLOAD_MIME_TYPES
@@ -42,6 +43,7 @@ __all__ = [
     "AvatarGenerationError",
     "PersonaValidationError",
     "build_system_prompt_extras",
+    "check_affect",
     "build_user_profile_extras",
     "delete_user_assets",
     "design_voice",

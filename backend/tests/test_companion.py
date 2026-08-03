@@ -35,7 +35,9 @@ async def test_send_message_companion_path_emits_ws_event(monkeypatch):
 
     result = json.loads(await smt.send_message_tool(message="你好呀，想我了吗？", user_id=7))
 
-    assert result == {"success": True, "channel": "companion"}
+    assert result["success"] is True
+    assert result["channel"] == "companion"
+    assert result["quiet_suppressed"] is False
     assert captured == [(7, "你好呀，想我了吗？", None)]
 
 
@@ -54,25 +56,41 @@ async def test_send_message_companion_path_emits_with_affect(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_send_message_quiet_tier_suppresses_at_backend(monkeypatch):
-    """P0-5 (contract audit): the desktop remains the source of truth for
-    disturbance gating, but the backend also acts as a defense-in-depth
-    gate. A non-official client connecting via /api/chat/ws bypasses
-    the desktop filter, so the backend suppresses at the source:
-    quiet → no WSEvent, normal/proactive → emit."""
+async def test_send_message_quiet_tier_diverts_affect_only(monkeypatch):
+    """Quiet tier: message text is suppressed but the LLM-reasoned affect
+    still flows via ``companion.affect`` (§6: 断消息不断 affect)."""
     smt = importlib.import_module("services.tools.builtin.send_message_tool")
 
-    captured: list[tuple[int, str, str | None]] = []
-    monkeypatch.setattr(smt, "_emit_companion_message", lambda uid, text, affect=None: captured.append((uid, text, affect)))
+    messages: list[tuple[int, str, str | None]] = []
+    affects: list[tuple[int, str]] = []
+    monkeypatch.setattr(smt, "_emit_companion_message", lambda uid, text, affect=None: messages.append((uid, text, affect)))
+    monkeypatch.setattr(smt, "_emit_companion_affect", lambda uid, emotion: affects.append((uid, emotion)))
     monkeypatch.setattr(smt, "is_quiet", lambda uid: True)
 
     result = json.loads(await smt.send_message_tool(message="psst", affect="concerned", user_id=1))
 
-    # The LLM still sees success (no error); the backend short-circuits
-    # so no WSEvent is written and no cron / send_message quota is spent
-    # for suppressed messages.
     assert result["success"] is True
-    assert captured == []
+    assert result["quiet_suppressed"] is True
+    assert messages == []
+    assert affects == [(1, "concerned")]
+
+
+@pytest.mark.asyncio
+async def test_send_message_quiet_tier_no_affect_emits_nothing(monkeypatch):
+    """Quiet tier + no affect: neither companion.message nor companion.affect fires."""
+    smt = importlib.import_module("services.tools.builtin.send_message_tool")
+
+    messages: list[tuple[int, str, str | None]] = []
+    affects: list[tuple[int, str]] = []
+    monkeypatch.setattr(smt, "_emit_companion_message", lambda uid, text, affect=None: messages.append((uid, text, affect)))
+    monkeypatch.setattr(smt, "_emit_companion_affect", lambda uid, emotion: affects.append((uid, emotion)))
+    monkeypatch.setattr(smt, "is_quiet", lambda uid: True)
+
+    result = json.loads(await smt.send_message_tool(message="psst", user_id=1))
+
+    assert result["success"] is True
+    assert messages == []
+    assert affects == []
 
 
 @pytest.mark.asyncio
@@ -171,6 +189,134 @@ def test_affect_scrubber_rejects_unknown_emotion():
     # leak to the user, and the desktop still receives an affect cue.
     assert s.emotion == "neutral"
     assert out == "Hi"
+
+
+# ── Affect check: idle-triggered LLM reasoning (§7.6) ──
+
+
+class _MockResponse:
+    """Minimal stand-in for the OpenAI response shape check_affect reads."""
+
+    def __init__(self, content: str):
+        self.choices = [type("Choice", (), {"message": type("Msg", (), {"content": content})()})()]
+
+
+def _seed_persona(SessionLocal, user_id: int, *, complete: bool = True):
+    from modules.companion import Persona
+
+    with SessionLocal() as db:
+        db.add(Persona(
+            user_id=user_id,
+            definition_json='{"name":"小光","personality":"温柔","speaking_style":"轻柔"}',
+            system_prompt_extras="你是小光，一个温柔的桌面伙伴。" if complete else "",
+            is_complete=complete,
+        ))
+        db.commit()
+
+
+@pytest.mark.asyncio
+async def test_affect_check_no_persona_skips_llm(monkeypatch, _patch_db):
+    ac = importlib.import_module("services.companion.affect_check")
+
+    async def _fail_call(*a, **kw):
+        raise AssertionError("LLM should not be called without a persona")
+    monkeypatch.setattr(ac, "call_with_retry", _fail_call)
+
+    result = await ac.check_affect(user_id=888, idle_seconds=3600, local_hour=14, llm_config={"model_name": "test"})
+
+    assert result["expressed"] is False
+    assert result["reason"] == "persona not ready"
+
+
+@pytest.mark.asyncio
+async def test_affect_check_llm_decides_express(monkeypatch, _patch_db):
+    _, SessionLocal = _patch_db
+    ac = importlib.import_module("services.companion.affect_check")
+    _seed_persona(SessionLocal, 777)
+
+    monkeypatch.setattr(ac, "client_for_config", lambda cfg: None)
+
+    async def _mock_call(*a, **kw):
+        return _MockResponse('{"should_express": true, "emotion": "lonely", "reason": "用户离开很久了"}')
+    monkeypatch.setattr(ac, "call_with_retry", _mock_call)
+
+    emitted: list[tuple[int, str]] = []
+    monkeypatch.setattr(ac, "emit_companion_affect", lambda uid, emotion: emitted.append((uid, emotion)))
+
+    result = await ac.check_affect(user_id=777, idle_seconds=3600, local_hour=14, llm_config={"model_name": "test"})
+
+    assert result["expressed"] is True
+    assert result["emotion"] == "lonely"
+    assert emitted == [(777, "lonely")]
+
+
+@pytest.mark.asyncio
+async def test_affect_check_llm_decides_no_express(monkeypatch, _patch_db):
+    _, SessionLocal = _patch_db
+    ac = importlib.import_module("services.companion.affect_check")
+    _seed_persona(SessionLocal, 666)
+
+    monkeypatch.setattr(ac, "client_for_config", lambda cfg: None)
+
+    async def _mock_call(*a, **kw):
+        return _MockResponse('{"should_express": false, "emotion": "neutral", "reason": "刚离开不久"}')
+    monkeypatch.setattr(ac, "call_with_retry", _mock_call)
+
+    emitted: list[tuple[int, str]] = []
+    monkeypatch.setattr(ac, "emit_companion_affect", lambda uid, emotion: emitted.append((uid, emotion)))
+
+    result = await ac.check_affect(user_id=666, idle_seconds=120, local_hour=14, llm_config={"model_name": "test"})
+
+    assert result["expressed"] is False
+    assert emitted == []
+
+
+@pytest.mark.asyncio
+async def test_affect_check_neutral_emotion_not_emitted(monkeypatch, _patch_db):
+    """Even if the LLM says should_express=true, emotion=neutral is filtered —
+    it would ping a meaningless badge on every idle check (P1-5)."""
+    _, SessionLocal = _patch_db
+    ac = importlib.import_module("services.companion.affect_check")
+    _seed_persona(SessionLocal, 555)
+
+    monkeypatch.setattr(ac, "client_for_config", lambda cfg: None)
+
+    async def _mock_call(*a, **kw):
+        return _MockResponse('{"should_express": true, "emotion": "neutral", "reason": "..."}')
+    monkeypatch.setattr(ac, "call_with_retry", _mock_call)
+
+    emitted: list[tuple[int, str]] = []
+    monkeypatch.setattr(ac, "emit_companion_affect", lambda uid, emotion: emitted.append((uid, emotion)))
+
+    result = await ac.check_affect(user_id=555, idle_seconds=3600, local_hour=14, llm_config={"model_name": "test"})
+
+    assert result["expressed"] is False
+    assert emitted == []
+
+
+@pytest.mark.asyncio
+async def test_affect_check_llm_failure_is_silent(monkeypatch, _patch_db):
+    _, SessionLocal = _patch_db
+    ac = importlib.import_module("services.companion.affect_check")
+    _seed_persona(SessionLocal, 444)
+
+    from services.llm import LLMRuntimeError
+    from services.llm.error_classifier import ClassifiedError, FailoverReason
+
+    monkeypatch.setattr(ac, "client_for_config", lambda cfg: None)
+
+    async def _raise(*a, **kw):
+        raise LLMRuntimeError(ClassifiedError(reason=FailoverReason.unknown, message="boom"))
+    monkeypatch.setattr(ac, "call_with_retry", _raise)
+
+    emitted: list[tuple[int, str]] = []
+    monkeypatch.setattr(ac, "emit_companion_affect", lambda uid, emotion: emitted.append((uid, emotion)))
+
+    result = await ac.check_affect(user_id=444, idle_seconds=3600, local_hour=14, llm_config={"model_name": "test"})
+
+    assert result["expressed"] is False
+    assert result["reason"] == "llm_error"
+    assert emitted == []
 
 
 def test_message_complete_emits_nested_affect_object():
