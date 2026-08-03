@@ -23,7 +23,12 @@ export async function speakProactive(
   // Proactive tier: bubble + TTS.
   if (!$chatOpen.get()) {setProactiveBubble(text.trim())}
   if (tier === 'proactive' || opts?.userInitiated) {
-    setSpriteState('speaking')
+    // P1 (desktop re-audit): the previous code called
+    // setSpriteState('speaking') (priority 60) which was
+    // silently gated by 'working' (priority 70). Proactive
+    // messages and user-initiated reactions must visually
+    // interrupt the working state — force the transition.
+    setSpriteState('speaking', { force: true })
     const ok = await speak(text)
     setSpriteState('idle')
     // Let the bubble linger briefly after the voice ends, then dismiss.
