@@ -55,7 +55,12 @@ class AvatarGenerateRequest(BaseModel):
 class AvatarUploadRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    image: str = Field(min_length=1)
+    # 8 MiB of base64 ≈ 6 MiB of decoded image — well above any plausible
+    # avatar source (the renderer downscales to 1024x1024 before upload).
+    # P1-11: prevents a malicious client from posting an arbitrarily large
+    # JSON body that we'd then ``base64.b64decode`` into memory + write
+    # to disk before rejecting.
+    image: str = Field(min_length=1, max_length=8 * 1024 * 1024)
     content_type: str | None = Field(default=None, max_length=64)
 
 

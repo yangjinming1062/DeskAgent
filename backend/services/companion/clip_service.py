@@ -284,14 +284,24 @@ def _keyframe_prompt(scene_prompt: str) -> str:
 
 
 async def _generate_scene_keyframes(db: Session, clip: AvatarClip) -> None:
-    """Generate one Tier 2 sprite-sheet PNG, persist durably, record URL + meta."""
+    """Generate one Tier 2 sprite-sheet PNG, persist durably, record URL + meta.
+
+    P1-8: pass the user's current portrait as ``reference_image`` so the
+    MiniMax ``subject_reference`` pipe keeps the same character across
+    the Tier 1 → Tier 2 → Tier 3 ladder. Without it, the Tier-2 keyframe
+    is a brand-new character that doesn't resemble the user's avatar;
+    the sprite visibly swaps personalities whenever the ladder climbs.
+    Tier 3 (i2v) was already using the portrait URL as ``first_frame_image``
+    so the same seed image is the visual anchor throughout."""
     spec = CLIP_SCENES[clip.scene]
+    portrait_url = _active_portrait_url(db, clip.user_id)
     result_json = await image_generation_tool(
         prompt=_keyframe_prompt(spec.prompt),
         llm_config={},
         size="1024x1024",
         n=1,
         user_id=clip.user_id,
+        reference_image=portrait_url,
     )
     parsed = safe_json_loads(result_json, default=None)
     if not isinstance(parsed, dict) or not parsed.get("success"):
@@ -348,10 +358,20 @@ def _companion_video_submissions_today(db: Session, user_id: int) -> int:
     return db.query(VideoGenJob).filter(VideoGenJob.id.in_(job_ids), VideoGenJob.created_at >= start).count()
 
 
+_KEYFRAME_DAILY_BUDGET = 20  # max Tier-2 keyframe submissions per user per UTC day
+
+
 async def escalation_tick() -> None:
     """One pass of the escalation loop: finalize terminal jobs, retry due Tier 3
     (respecting the per-user daily budget), and generate due Tier 2 keyframes.
-    Called on a fixed interval by escalation_loop."""
+    Called on a fixed interval by escalation_loop.
+
+    Multi-replica safety: each claim attempts a CAS UPDATE on the clip row's
+    ``video_next_retry_at`` / ``keyframe_next_retry_at`` timestamp. The
+    replica that wins the race owns the submission for that scene until
+    the job lands; other replicas see the bumped timestamp and skip. The
+    cron loop already uses the same pattern (P1-10).
+    """
     now = naive_utc_now()
     with SESSION_LOCAL() as db:
         await _finalize_terminal_videos(db)
@@ -376,6 +396,21 @@ async def escalation_tick() -> None:
             portrait_url = _active_portrait_url(db, clip.user_id)
             if portrait_url is None:
                 continue
+            # CAS claim: bump the retry timestamp far enough that any other
+            # replica scanning the same ``due_video`` set sees the row as
+            # "not due yet" and skips. If the submission later fails, the
+            # exception handler arms a fresh retry with backoff.
+            claimed = (
+                db.query(AvatarClip)
+                .filter(
+                    AvatarClip.id == clip.id,
+                    AvatarClip.video_next_retry_at == clip.video_next_retry_at,
+                )
+                .update({"video_next_retry_at": now + timedelta(hours=1)}, synchronize_session=False)
+            )
+            if not claimed:
+                continue
+            db.commit()
             try:
                 await _submit_scene_video(db, clip, portrait_url)
                 spent[clip.user_id] += 1
@@ -397,10 +432,33 @@ async def escalation_tick() -> None:
             .order_by(AvatarClip.batch)
             .all()
         )
+        keyframes_spent: dict[int, int] = {}
         for clip in due_keyframes:
+            user_id = clip.user_id
+            if keyframes_spent.get(user_id, 0) >= _KEYFRAME_DAILY_BUDGET:
+                continue
+            # CAS claim mirrors the video branch.
+            claimed = (
+                db.query(AvatarClip)
+                .filter(
+                    AvatarClip.id == clip.id,
+                    AvatarClip.keyframe_next_retry_at == clip.keyframe_next_retry_at,
+                )
+                .update({"keyframe_next_retry_at": now + timedelta(hours=1)}, synchronize_session=False)
+            )
+            if not claimed:
+                continue
+            db.commit()
             try:
                 await _generate_scene_keyframes(db, clip)
                 _emit_clip_event(clip.user_id, clip)
+                keyframes_spent[user_id] = keyframes_spent.get(user_id, 0) + 1
+            except MissingLlmConfigError:
+                # P1-12: explicitly park the row for 6h instead of falling
+                # into the 6h-cap backoff loop, so unconfigured deployments
+                # don't churn through 20 scenes every tick.
+                clip.keyframe_next_retry_at = now + timedelta(hours=6)
+                db.commit()
             except Exception:
                 logger.warning("clip keyframe gen failed", extra={"scene": clip.scene, "user_id": clip.user_id}, exc_info=True)
                 _arm_keyframe_retry(clip)

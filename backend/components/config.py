@@ -101,6 +101,12 @@ class Settings(BaseSettings):
     media_tts_rate_limit_per_minute: int = 30
     media_image_gen_rate_limit_per_minute: int = 10
     media_video_gen_rate_limit_per_minute: int = 3
+    # P1-11: companion avatar endpoints were left unrate-limited. Generating
+    # a portrait hits a paid image-gen provider; uploading is a cheap write
+    # but still goes through the same SQLAlchemy session. Cap both so a
+    # client bug can't drain the user's image-gen quota.
+    companion_avatar_generate_rate_limit_per_minute: int = 3
+    companion_avatar_upload_rate_limit_per_minute: int = 5
 
     # ── Logging ──
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"

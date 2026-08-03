@@ -58,7 +58,14 @@ export const $spritePosition = atom<SpritePosition | null>(null)
 // the affect channel open (phase 2).
 export type DisturbanceTier = 'proactive' | 'normal' | 'quiet'
 
-export const $disturbanceTier = atom<DisturbanceTier>('normal')
+// P1-18: persist the chosen tier in localStorage so a Desktop restart
+// doesn't silently reset the user to the (more chatty) default. The
+// backend has its own process-local cache (services/companion/disturbance.py)
+// but the desktop is the source of truth — the desktop reports the tier
+// back to the backend on every change AND on gateway open.
+const _storedTier = (typeof localStorage !== 'undefined' && localStorage.getItem('da.companion.disturbanceTier')) as DisturbanceTier | null
+const _validStored: DisturbanceTier | null = _storedTier === 'proactive' || _storedTier === 'normal' || _storedTier === 'quiet' ? _storedTier : null
+export const $disturbanceTier = atom<DisturbanceTier>(_validStored ?? 'normal')
 
 const STATE_PRIORITY: Record<SpriteStateName, number> = {
   disconnected: 100,
@@ -184,5 +191,13 @@ export function setSpritePosition(pos: SpritePosition | null): void {
 
 export function setDisturbanceTier(tier: DisturbanceTier): void {
   $disturbanceTier.set(tier)
+  if (typeof localStorage !== 'undefined') {
+    try {
+      localStorage.setItem('da.companion.disturbanceTier', tier)
+    } catch {
+      // localStorage may be disabled (private mode); the in-memory atom
+      // is the only thing the rest of the code reads, so silently keep going.
+    }
+  }
 }
 

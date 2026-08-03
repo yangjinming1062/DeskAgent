@@ -2,8 +2,10 @@ import base64
 
 from common import get_router
 from components import get_db
+from components import SETTINGS
 from fastapi import Depends
 from fastapi import HTTPException
+from fastapi import Request
 from fastapi.responses import FileResponse
 from modules.auth import get_current_session
 from modules.auth import LoginRecord
@@ -28,6 +30,7 @@ from services.companion import resolve_companion_asset_path
 from services.companion import resolve_uploaded_avatar_path
 from services.companion import update_persona
 from services.companion import upload_avatar
+from services.rate_limit import limiter
 from sqlalchemy.orm import Session
 
 router = get_router(dependencies=[Depends(get_current_session)])
@@ -107,7 +110,9 @@ def get_avatar_history(
 
 
 @router.post("/avatar", response_model=AvatarAssetResponse, status_code=201)
+@limiter.limit(f"{SETTINGS.companion_avatar_generate_rate_limit_per_minute}/minute")
 async def post_avatar(
+    request: Request,
     body: AvatarGenerateRequest,
     auth: tuple[User, LoginRecord] = Depends(get_current_session),
     db: Session = Depends(get_db),
@@ -117,14 +122,19 @@ async def post_avatar(
     try:
         asset = await generate_avatar(db, user.id, persona, style=body.style)
     except AvatarGenerationError as exc:
-        # Curated message — surface a friendly error to the user without
-        # leaking the upstream image-gen provider's response body.
+        # P2-3: onboarding-not-complete is a client error, surface as 409
+        # Conflict so the desktop can show "finish onboarding first" instead
+        # of "image-gen failed — try again". Provider failures still 502.
+        if "persona is incomplete" in str(exc):
+            raise HTTPException(status_code=409, detail={"error": "请先完成 onboarding 再生成形象", "reason": str(exc)})
         raise HTTPException(status_code=502, detail={"error": "伙伴形象生成失败，请稍后重试", "reason": str(exc)})
     return _avatar_to_response(asset)
 
 
 @router.post("/avatar/upload", response_model=AvatarAssetResponse, status_code=201)
+@limiter.limit(f"{SETTINGS.companion_avatar_upload_rate_limit_per_minute}/minute")
 async def upload_avatar_route(
+    request: Request,
     body: AvatarUploadRequest,
     auth: tuple[User, LoginRecord] = Depends(get_current_session),
     db: Session = Depends(get_db),
