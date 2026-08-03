@@ -246,9 +246,27 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps) {
       const attachments: string[] = []
 
       if (pendingImage) {
+        // P1-15 (desktop re-audit): the previous code passed the
+        // local file path to ``image.attach``, which only works
+        // when the backend runs on the same machine. In Docker /
+        // remote deployments the backend can't read the path —
+        // the LLM receives a ref_text pointing at a non-existent
+        // file and ignores the image. Convert the local file to
+        // a base64 data URL and forward it as a multimodal
+        // attachment so the backend's attachment pipeline can
+        // ship it to the LLM provider directly.
+        let attachmentUrl = pendingImage
+        try {
+          if (!pendingImage.startsWith('data:')) {
+            const dataUrl = await window.deskagent.readFileDataUrl(pendingImage)
+            if (dataUrl) {attachmentUrl = dataUrl}
+          }
+        } catch {
+          /* keep the local path; backend may still resolve it via volume mount */
+        }
         const ref = await requestGateway<{ ref_text?: string }>('image.attach', {
           session_id: id,
-          path: pendingImage
+          path: attachmentUrl
         })
 
         if (ref.ref_text) {

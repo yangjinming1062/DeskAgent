@@ -232,6 +232,10 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
   const [voiceCatalog, setVoiceCatalog] = useState<VoiceOption[]>([])
   const [voiceLangFilter, setVoiceLangFilter] = useState<VoiceLanguageFilter>('zh')
   const [busy, setBusy] = useState(false)
+  // P1-14 (desktop re-audit): failure hints that live on the
+  // portrait panel itself, not on the form area (which the
+  // user can't see while the portrait is in the foreground).
+  const [portraitPanelHint, setPortraitPanelHint] = useState<string | null>(null)
   const [hint, setHint] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -469,6 +473,43 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
   const regeneratePortrait = async () => {
     setBusy(true)
     setHint(null)
+    setPortraitPanelHint(null)
+    // P0 (desktop audit): don't clear the clip catalog until the new
+    // portrait actually lands — ARCH §7.3 promises "portrait 重生
+    // 使衍生 clip 失效——只有新 portrait 成功后才失效旧 clip".
+    // Clearing eagerly means a transient regenerate failure
+    // leaves the user with no Tier 2/3 clips until the next
+    // list_clips refresh.
+
+    // P0-4: avatar.regenerate returns immediately with {queued, job_id}; the
+    // heavy image-gen runs as a background task on the backend and the result
+    // arrives as an ``avatar.regenerated`` event. Await the event so the
+    // portrait swaps only when the new image is ready.
+    try {
+      const queued = await requestGateway<{ queued?: boolean; job_id?: string; asset_url?: string }>('avatar.regenerate', { feedback: undefined })
+
+      if (queued?.asset_url) {
+        setPortraitUrl(queued.asset_url)
+        clearClipCatalog()
+        void speak('换一个样子，这样如何？', undefined, 'onboarding.portrait.regenerate')
+      } else if (queued?.queued && queued.job_id) {
+        const result = await awaitAvatarRegeneration(queued.job_id)
+
+        if (result.asset_url) {
+          setPortraitUrl(result.asset_url)
+          clearClipCatalog()
+          void speak('换一个样子，这样如何？', undefined, 'onboarding.portrait.regenerate')
+        } else {
+          // Failure path — keep the existing clip catalog intact so the
+          // user can keep their Tier 2/3 clips while the regenerate
+          // is retried.
+          setPortraitPanelHint(result.error ?? '暂时换不出来，稍后再试吧')
+          setHint(result.error ?? '暂时换不出来，稍后再试吧')
+        }
+      } else {
+        setPortraitPanelHint('暂时换不出来，稍后再试吧')
+        setHint('暂时换不出来，稍后再试吧')
+      }
     // P0 (desktop audit): don't clear the clip catalog until the new
     // portrait actually lands — ARCH §7.3 promises "portrait 重生
     // 使衍生 clip 失效——只有新 portrait 成功后才失效旧 clip".
@@ -504,6 +545,12 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
         setHint('暂时换不出来，稍后再试吧')
       }
     } catch {
+      // P1-14 (desktop re-audit): also surface the failure as a
+      // busy overlay so the user doesn't have to look at the
+      // form-area hint while the portrait panel sits in the
+      // foreground. The form-area hint is still set below; the
+      // busyOverlay is the in-portrait cue.
+      setPortraitPanelHint('暂时换不出来，稍后再试吧')
       setHint('暂时换不出来，稍后再试吧')
     } finally {
       setBusy(false)
@@ -691,7 +738,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
         )}
 
         {(phase === 'portrait' || phase === 'voice' || phase === 'greeting') && (
-          <PortraitPanel name={answers.name?.trim() || '伙伴'} url={portraitUrl} />
+          <PortraitPanel name={answers.name?.trim() || '伙伴'} url={portraitUrl} hint={portraitPanelHint} />
         )}
 
         {phase === 'portrait' && (
@@ -770,16 +817,22 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
   )
 }
 
-function PortraitPanel({ url, name }: { url: string | null; name: string }) {
+function PortraitPanel({ url, name, hint }: { url: string | null; name: string; hint: string | null }) {
   return (
-    <div className="flex justify-center">
-      {url ? (
-        <img alt={name} className="h-40 w-40 rounded-xl object-cover shadow-lg" src={url} />
-      ) : (
-        <div className="grid h-40 w-40 place-items-center rounded-xl bg-white/5 text-center text-xs text-white/50">
-          {name}
-        </div>
-      )}
+    <div className="flex flex-col items-center gap-2">
+      <div className="flex justify-center">
+        {url ? (
+          <img alt={name} className="h-40 w-40 rounded-xl object-cover shadow-lg" src={url} />
+        ) : (
+          <div className="grid h-40 w-40 place-items-center rounded-xl bg-white/5 text-center text-xs text-white/50">
+            {name}
+          </div>
+        )}
+      </div>
+      {/* P1-14 (desktop re-audit): surface regenerate failures on
+          the portrait panel itself (not just the form hint) so
+          the user actually sees the error. */}
+      {hint && <p className="text-xs text-rose-300/90">{hint}</p>}
     </div>
   )
 }
