@@ -114,6 +114,23 @@ const QUESTIONS: readonly Question[] = [
     max: MAX_USER_TEXT,
     presets: []
   },
+  // 1-6 (backend audit): persona.speaking_style is required by the
+  // backend schema but the previous code synthesized it from the
+  // personality-preset lookup table — the user never explicitly
+  // picked a speaking style. Add a dedicated question (13th, just
+  // before the voice question) so the user's choice is the direct
+  // source of truth. The new field flows through onboarding.submit
+  // → update_persona → persona.speaking_style verbatim, so the
+  // backend has no mapping logic of its own to drift.
+  {
+    key: 'speaking_style',
+    text: '您希望我说话的风格是什么样的？',
+    placeholder: '比如：简短、爱用比喻、俏皮一点…',
+    required: false,
+    multiline: true,
+    max: 500,
+    presets: ['温柔亲切', '俏皮带点小傲娇', '沉稳简洁', '轻快活泼', '专业干练']
+  },
   {
     key: 'user_freeform',
     text: '还有什么想告诉我、或者想叮嘱我的吗？',
@@ -160,6 +177,7 @@ const BACKEND_FIELD: Record<QKey, string> = {
   appearance: 'appearance',
   role: 'role',
   personality: 'personality',
+  speaking_style: 'speaking_style',
   user_call_name: 'user_call_name',
   user_gender: 'user_gender',
   user_age_bucket: 'user_age_bucket',
