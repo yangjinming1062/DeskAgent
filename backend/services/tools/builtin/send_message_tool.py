@@ -8,7 +8,6 @@ from components import get_logger
 from components import SESSION_LOCAL
 from components import tool_error
 from modules.ws import WSEvent
-from services.companion.disturbance import is_quiet
 
 from .. import ALWAYS_AVAILABLE
 from .. import REGISTRY
@@ -48,26 +47,39 @@ def is_safe_outbound(host: str) -> tuple[bool, str]:
     return True, ""
 
 
-def _emit_companion_message(user_id: int, text: str) -> None:
+def _emit_companion_message(user_id: int, text: str, affect: str | None = None) -> None:
     """Push a proactive companion message to the user's desktop via the WS
     outbox (ARCHITECTURE.md §5.1.A / §6). The desktop receives `companion.message`
-    and speaks it + shows a bubble (plan.md §4.2)."""
-    payload = json.dumps({"text": text}, ensure_ascii=False)
+    and decides text-vs-affect-vs-bubble based on the user's disturbance tier
+    (plan §4.2: 保持安静断消息不断 affect).
+
+    The backend never short-circuits the emit — the desktop owns the
+    presentation gate so a future multi-replica deployment doesn't lose
+    quiet/normal/proactive semantics when the WS and the chat turn land
+    on different replicas (P1-17)."""
+    payload: dict = {"text": text}
+    if affect:
+        payload["affect"] = {"emotion": affect}
     with SESSION_LOCAL() as db:
-        db.add(WSEvent(user_id=user_id, event_type="companion.message", payload=payload))
+        db.add(WSEvent(user_id=user_id, event_type="companion.message", payload=json.dumps(payload, ensure_ascii=False)))
         db.commit()
 
 
-async def send_message_tool(message: str, target_webhook: str | None = None, **kwargs) -> str:
+async def send_message_tool(
+    message: str,
+    target_webhook: str | None = None,
+    affect: str | None = None,
+    **kwargs,
+) -> str:
     # Companion-native proactive path: no webhook ⇒ deliver straight to the
     # user's desktop as a companion.message (ARCHITECTURE.md §7.4 repurposes this
-    # tool as the companion's proactive-reach-out channel). The disturbance
-    # tier gates it — `quiet` suppresses outreach without surfacing an error
-    # to the LLM (保持安静断消息不断 affect).
+    # tool as the companion's proactive-reach-out channel). Disturbance tier
+    # is owned by the desktop — the backend just ships text + optional affect
+    # so quiet/normal/proactive semantics survive cross-replica routing.
     if not target_webhook:
         user_id = kwargs.get("user_id")
-        if isinstance(user_id, int) and not is_quiet(user_id):
-            _emit_companion_message(user_id, message)
+        if isinstance(user_id, int):
+            _emit_companion_message(user_id, message, affect=affect)
         return json.dumps({"success": True, "channel": "companion"}, ensure_ascii=False)
 
     parsed = urlparse(target_webhook)
@@ -104,6 +116,7 @@ SEND_MESSAGE_SCHEMA = {
         "properties": {
             "message": {"type": "string", "description": "The full text message content to send."},
             "target_webhook": {"type": "string", "description": "Optional webhook URL to POST to (external bot). Omit to deliver to the user's desktop companion."},
+            "affect": {"type": "string", "description": "Optional emotion token to attach to the proactive message so the desktop can drive the EMOTIONAL state (one of: happy, sad, surprised, excited, confused, concerned, shy, proud, grateful, playful, bored, lonely, neutral). The desktop still applies the disturbance tier gate — quiet suppresses text but keeps the affect cue."},
         },
         "required": ["message"],
     },

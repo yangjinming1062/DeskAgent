@@ -29,29 +29,47 @@ def test_disturbance_tier_store_defaults_and_normalizes():
 async def test_send_message_companion_path_emits_ws_event(monkeypatch):
     smt = importlib.import_module("services.tools.builtin.send_message_tool")
 
-    captured: list[tuple[int, str]] = []
-    monkeypatch.setattr(smt, "_emit_companion_message", lambda uid, text: captured.append((uid, text)))
-    monkeypatch.setattr(smt, "is_quiet", lambda uid: False)
+    captured: list[tuple[int, str, str | None]] = []
+    monkeypatch.setattr(smt, "_emit_companion_message", lambda uid, text, affect=None: captured.append((uid, text, affect)))
 
     result = json.loads(await smt.send_message_tool(message="你好呀，想我了吗？", user_id=7))
 
     assert result == {"success": True, "channel": "companion"}
-    assert captured == [(7, "你好呀，想我了吗？")]
+    assert captured == [(7, "你好呀，想我了吗？", None)]
 
 
 @pytest.mark.asyncio
-async def test_send_message_quiet_tier_suppresses(monkeypatch):
+async def test_send_message_companion_path_emits_with_affect(monkeypatch):
     smt = importlib.import_module("services.tools.builtin.send_message_tool")
 
-    captured: list[tuple[int, str]] = []
-    monkeypatch.setattr(smt, "_emit_companion_message", lambda uid, text: captured.append((uid, text)))
-    monkeypatch.setattr(smt, "is_quiet", lambda uid: True)
+    captured: list[tuple[int, str, str | None]] = []
+    monkeypatch.setattr(smt, "_emit_companion_message", lambda uid, text, affect=None: captured.append((uid, text, affect)))
 
-    result = json.loads(await smt.send_message_tool(message="psst", user_id=1))
+    result = json.loads(await smt.send_message_tool(message="晚上好呀！", affect="happy", user_id=3))
 
-    # The LLM still sees success (no error), but nothing reaches the desktop.
     assert result["success"] is True
-    assert captured == []
+    assert captured == [(3, "晚上好呀！", "happy")]
+
+
+@pytest.mark.asyncio
+async def test_send_message_quiet_tier_keeps_event_for_desktop(monkeypatch):
+    """The backend must always emit ``companion.message`` regardless of tier —
+    the desktop is the single source of truth for disturbance gating (P0-7,
+    P1-17). Quiet / normal / proactive semantics are applied client-side so
+    the affect channel can still flow at the quiet tier and the choice
+    survives a multi-replica deployment where the WS and the chat turn land
+    on different replicas."""
+    smt = importlib.import_module("services.tools.builtin.send_message_tool")
+
+    captured: list[tuple[int, str, str | None]] = []
+    monkeypatch.setattr(smt, "_emit_companion_message", lambda uid, text, affect=None: captured.append((uid, text, affect)))
+
+    result = json.loads(await smt.send_message_tool(message="psst", affect="concerned", user_id=1))
+
+    assert result["success"] is True
+    # Event still goes out, with the affect still attached — the desktop
+    # suppresses the TTS / bubble but drives the EMOTIONAL cue.
+    assert captured == [(1, "psst", "concerned")]
 
 
 # ── Onboarding per-field persistence (design §7.5) ──
