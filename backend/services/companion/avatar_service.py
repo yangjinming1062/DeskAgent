@@ -65,7 +65,11 @@ def _build_prompt(persona: Persona, style: str) -> str:
     appearance = definition.get("appearance") or ""
     background = definition.get("background") or ""
 
-    parts: list[str] = [f"a {style} portrait of a {species}, named {name}" if species else f"a {style} portrait of {name}"]
+    # P2-16: \`style\` defaults to "portrait" so the previous \`a portrait
+    # portrait of ...\` literal slipped into every prompt. Use \`style\` only
+    # when it differs from the default to keep the prompt natural.
+    style_prefix = f"{style} " if style and style != _DEFAULT_STYLE else ""
+    parts: list[str] = [f"a {style_prefix}portrait of a {species}, named {name}" if species else f"a {style_prefix}portrait of {name}"]
     if gender:
         parts.append(f"({gender})")
     if appearance:
