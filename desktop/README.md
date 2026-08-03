@@ -87,7 +87,7 @@ renderer/
 │   ├── chat-dock.tsx  events.ts  persona.ts(+test)  tts.ts  backend-companion-mock.ts
 │   ├── interactive-regions.ts     #   精灵窗口可见矩形注册表 → SpriteStage 唯一做 click-through 判定
 │   ├── voice-call-dock.tsx  settings-overlay.tsx  subtitles-overlay.tsx  developer-overlay.tsx
-│   └── {chat,companion,boot,clip,persona,evolution}-store.ts
+│   └── {chat,companion,boot,clip,persona}-store.ts
 │
 └── hub/                           # 本地枢纽（工具窗口 + IPC/orchestration）
     ├── root.tsx                   #   ToolRoot
