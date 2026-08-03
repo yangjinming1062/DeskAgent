@@ -6,7 +6,7 @@ import { useGatewayRequest } from '@/companion/boot/use-gateway-request'
 import { registerInteractiveRegion, unregisterInteractiveRegion } from '@/companion/interactive-regions'
 import { $gatewayState } from '@/shared/store/gateway'
 
-import { clearClipCatalog } from '../clip-store'
+import { clearClipCatalog, playTransitionClip } from '../clip-store'
 import { assemblePersona, MAX_APPEARANCE, MAX_USER_TEXT, type OnboardingAnswers } from '../persona'
 import { setCompanionVoiceId } from '../prefs'
 import { Silhouette } from '../sprite/silhouette'
@@ -451,7 +451,12 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
   const regeneratePortrait = async () => {
     setBusy(true)
     setHint(null)
-    clearClipCatalog()
+    // P0 (desktop audit): don't clear the clip catalog until the new
+    // portrait actually lands — ARCH §7.3 promises "portrait 重生
+    // 使衍生 clip 失效——只有新 portrait 成功后才失效旧 clip".
+    // Clearing eagerly means a transient regenerate failure
+    // leaves the user with no Tier 2/3 clips until the next
+    // list_clips refresh.
 
     // P0-4: avatar.regenerate returns immediately with {queued, job_id}; the
     // heavy image-gen runs as a background task on the backend and the result
@@ -462,14 +467,19 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
 
       if (queued?.asset_url) {
         setPortraitUrl(queued.asset_url)
+        clearClipCatalog()
         void speak('换一个样子，这样如何？', undefined, 'onboarding.portrait.regenerate')
       } else if (queued?.queued && queued.job_id) {
         const result = await awaitAvatarRegeneration(queued.job_id)
 
         if (result.asset_url) {
           setPortraitUrl(result.asset_url)
+          clearClipCatalog()
           void speak('换一个样子，这样如何？', undefined, 'onboarding.portrait.regenerate')
         } else {
+          // Failure path — keep the existing clip catalog intact so the
+          // user can keep their Tier 2/3 clips while the regenerate
+          // is retried.
           setHint(result.error ?? '暂时换不出来，稍后再试吧')
         }
       } else {
@@ -554,6 +564,13 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
     await savePersona(assemblePersona(answers))
 
     setPhase('greeting')
+
+    // P0 (desktop audit): trigger a 3s "greeting" transition scene so the
+    // companion visibly "hatches" — the sprite swaps to the greeting
+    // clip if Tier 2/3 has one, otherwise falls back to Tier 1
+    // procedural (ARCH §11#9 永不空白). Pairs with the existing
+    // speak(...) call which drives the audio.
+    playTransitionClip('greeting', 3000)
 
     const ok = await speak(
       `您好，我是${answers.name?.trim() || '您的伙伴'}。很高兴见到您！`,

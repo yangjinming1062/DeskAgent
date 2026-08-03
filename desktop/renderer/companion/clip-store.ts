@@ -20,12 +20,26 @@ export interface ClipItem {
 export type ClipCatalog = Record<string, ClipItem>
 
 export const $clipCatalog = atom<ClipCatalog>({})
-// P2-4: the transition-clip atom and producer were never wired — the
-// companion-ready.tsx consumer reads the atom but ``playTransitionClip``
-// had zero callers. Drop both. The companion can still be extended later
-// with a real transition system; for now the 'hatch' / 'greeting' moments
-// just use the idle loop + the TTS hint (plan §3.6).
+// P0 (desktop audit): wire the transition clip system that the
+// P2-4 commit had marked as dead-code. Onboarding's hatch flow
+// fires ``playTransitionClip('greeting', 3000)``; ``companion-ready``
+// consumes $activeTransitionClip and swaps the active scene for
+// the duration. Tier 2/3 clip wins; Tier 1 procedural is the
+// never-blank fallback (ARCH §11#9).
 export const $activeTransitionClip = atom<string | null>(null)
+
+let _transitionTimer: ReturnType<typeof setTimeout> | null = null
+
+export function playTransitionClip(scene: string, durationMs = 3000): void {
+  if (_transitionTimer) {
+    clearTimeout(_transitionTimer)
+  }
+  $activeTransitionClip.set(scene)
+  _transitionTimer = setTimeout(() => {
+    _transitionTimer = null
+    $activeTransitionClip.set(null)
+  }, durationMs)
+}
 
 type ClipPatch = Partial<Omit<ClipItem, 'status'>> & { status?: string }
 

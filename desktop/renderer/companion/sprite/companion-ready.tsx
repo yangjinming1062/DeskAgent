@@ -86,7 +86,15 @@ export function CompanionReady() {
   const transitionClip = useStore($activeTransitionClip)
   useStore($clipCatalog)
   const { requestGateway } = useGatewayRequest()
-  const drowsy = gatewayState !== 'open' || spriteState === 'disconnected'
+  // P0 (desktop audit): only apply the drowsy filter when the
+  // sprite is *actually* disconnected, not while the gateway is
+  // still handshaking. The previous condition gray-scaled the
+  // portrait from the very first frame of the renderer, violating
+  // ARCH §11#9 "伙伴表达永不空白" during the normal connect
+  // window. Once ``disconnected`` is explicitly set (backend WS
+  // closed for 30s+) the filter kicks in; the connecting state
+  // is left alone.
+  const drowsy = spriteState === 'disconnected'
 
   useEffect(() => {
     if (spriteState !== 'idle' || drowsy) {
