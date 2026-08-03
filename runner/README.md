@@ -2,12 +2,12 @@
 
 本地手脚——纯粹的工具执行器，承载伙伴"能帮用户做的事"。以 uv build wheel 形式发布，安装器在 `$DESKAGENT_HOME/runner/.venv` 创建 venv 并安装；Desktop 直接 spawn venv Python 调用 `server.py`，通过 WebSocket 接收 JSON-RPC 2.0 工具调用指令并在用户机器上执行。Runner 不感知"伙伴"语义——终端、文件、浏览器、代码执行等底层能力 100% 保留，伙伴人格完全由 Backend 承载、伙伴形象完全由 Desktop 渲染。
 
-设计文档：[ARCHITECTURE.md](../ARCHITECTURE.md) §3 / §4 / §5 / §8
+设计文档：[ARCHITECTURE.md](../ARCHITECTURE.md) §2 / §3 / §4 / §7
 
 ## 设计意图
 
 - **剥离大脑逻辑**：系统提示词、多模型适配器、对话记忆模块全部由 Backend 承载。
-- **剔除网络请求**：Runner 不保存任何用户 Token 或云端地址，无法直接访问 Backend。需借 LLM 时通过反向 RPC 请求 Desktop 代为调用（[ARCHITECTURE.md §5.2.II](../ARCHITECTURE.md)）。
+- **剔除网络请求**：Runner 不保存任何用户 Token 或云端地址，无法直接访问 Backend。需借 LLM 时通过反向 RPC 请求 Desktop 代为调用（[ARCHITECTURE.md §4.2.II](../ARCHITECTURE.md)）。
 - **Provider 范围**：产品 LLM 交互只面向 OpenAI-compatible providers，不接 Anthropic。Runner 不做 LLM provider 特定的 schema 适配（如折叠 `anyOf` null branch）——nullable union 原样传递，由目标 provider 决定能否接受。
 - **环境状态与工具解耦**：环境共享态（活跃实例表、工厂、cleanup 线程）下沉到 `tools/terminal/environment/` 子包，`file_tools`、`code_execution_tool` 跨包直接导入该子包、共享同一批 env 实例，绕开仍含命令处理 / 安全审批逻辑的 `terminal_tool` 避免循环依赖。`terminal/__init__.py` 对 `terminal_tool` 的重导出用 `__getattr__` 惰性加载——包初始化时 terminal_tool → files → environment → `terminal/__init__` → terminal_tool 的环不会触发。
 
@@ -40,7 +40,7 @@ Wheel 产物：`dist/deskagent-agent-*.whl`。Desktop spawn `$DESKAGENT_HOME/run
 
 ## 通信协议
 
-Runner 主动连接 Desktop 提供的本地 WS 服务器（`ws://127.0.0.1:<port>/rpc`），启动参数 `--desktop-ws`。连接后发送 `runner_ready` 握手通知，**payload 含 runner 版本与 `capabilities` 探测快照**——Desktop 据此在握手阶段决定是否暴露语音通话 / 唤醒词 / 主动陪伴等依赖 OS 能力的功能（plan §4.1 / §5）。
+Runner 主动连接 Desktop 提供的本地 WS 服务器（`ws://127.0.0.1:<port>/rpc`），启动参数 `--desktop-ws`。连接后发送 `runner_ready` 握手通知，**payload 含 runner 版本与 `capabilities` 探测快照**——Desktop 据此在握手阶段决定是否暴露语音通话 / 唤醒词 / 主动陪伴等依赖 OS 能力的功能（plan §5.1 / §6）。
 
 ### `runner_ready` payload
 
@@ -66,7 +66,7 @@ Runner 主动连接 Desktop 提供的本地 WS 服务器（`ws://127.0.0.1:<port
 
 ### `deskagent.info`（动态查询）
 
-任意时候调 `{"method": "deskagent.info"}` 返回完整进程快照，便于 Desktop 诊断面板与故障态降级（plan §4.5）：
+任意时候调 `{"method": "deskagent.info"}` 返回完整进程快照，便于 Desktop 诊断面板与故障态降级（plan §5.5）：
 
 ```json
 {

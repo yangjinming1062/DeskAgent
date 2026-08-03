@@ -2,7 +2,7 @@
 
 云端大脑——FastAPI + PostgreSQL + JWT。承载 DeskAgent 伙伴的"人格"（角色定义 + 长期记忆）与"形象"（专属形象资产生成与下发），负责 LLM 流式对话编排、系统提示词装配、云端工具执行、Cron 调度，以及通过 IPC 将本地工具调用下发给 Desktop/Runner。
 
-设计文档：[ARCHITECTURE.md](../ARCHITECTURE.md) §1 / §2 / §5 / §6 / §7 / §9
+设计文档：[ARCHITECTURE.md](../ARCHITECTURE.md) §1 / §4 / §5 / §6 / §8
 
 ## 架构地图
 
@@ -47,7 +47,7 @@ backend/
 
 **Config-aware 过滤**：每个 backend tool 声明 `availability_check(user_settings) -> bool`，`get_all_schemas` 按 check 静默过滤不可用项（Predicate 异常时单 tool 静默隐藏，fail-closed）。
 
-**陪伴语义映射**——已有 backend tools 在新定位下恰好覆盖伙伴核心能力（完整映射见 [ARCHITECTURE.md §7.4](../ARCHITECTURE.md)）：
+**陪伴语义映射**——Backend tools 覆盖伙伴核心能力：
 
 | 工具 | 伙伴场景 |
 |------|----------|
@@ -61,7 +61,7 @@ backend/
 
 `services/gateway/ipc.py` 维护 `_pending: dict[(user_id, call_id), Future]`——键是 `(user_id, call_id)` 而非单 `call_id`：并发用户不共享 future，`user_id` 来自 JWT 解析，WS 断开时 `discard_user` 取消该用户所有未决 future。
 
-完整工具调用流（LLM → Backend → Desktop → Runner → 回传）见 [ARCHITECTURE.md §5.2.I](../ARCHITECTURE.md)。Backend 侧的关键约束：
+完整工具调用流（LLM → Backend → Desktop → Runner → 回传）见 [ARCHITECTURE.md §4.2.I](../ARCHITECTURE.md)。Backend 侧的关键约束：
 
 - **超时**：`ipc_future_timeout_seconds`（默认 300s），超时返回 synthetic error
 - **快速失败**：`_dispatch_runner_tool` 做 active_connections → has_runner_tools → send_json 异常三层检查，通常 < 100ms 返回离线错误；仅绕过三层后才进入 300s 超时
@@ -80,11 +80,11 @@ backend/
 
 ## Cron 与事件下发
 
-伙伴主动陪伴（问候、提醒、情境闲聊）经 PostgreSQL LISTEN/NOTIFY + Outbox 表支撑（[ARCHITECTURE.md §6](../ARCHITECTURE.md)）。
+伙伴主动陪伴（问候、提醒、情境闲聊）经 PostgreSQL LISTEN/NOTIFY + Outbox 表支撑（[ARCHITECTURE.md §5](../ARCHITECTURE.md)）。
 
 `services/scheduler/cron.scheduler_loop` 每 60s `_tick()`：扫描到期任务，CAS 推进 `next_run_at`（多副本安全），写 `cron.trigger` 到 `ws_events` outbox。`_tick` 不 await WS 推送——慢客户端不卡 cron 事务。PostgreSQL trigger 在 `ws_events` INSERT 时 `NOTIFY ws_events_channel`，每个 Backend 副本独立 `LISTEN` + `DELETE ... RETURNING` 原子认领消费（行锁保证不重复投递）。无效 cron 表达式自动暂停 job。
 
-**伙伴主动消息通道**：`send_message_tool` 无 `target_webhook` 时走 companion 原生路径——`_emit_companion_message` 写 `companion.message {text}` 到 `ws_events` outbox，经同一套 LISTEN/NOTIFY 推到桌面端（伙伴 TTS + 气泡呈现，[ARCHITECTURE.md §5.1.A / §7.4](../ARCHITECTURE.md)）。带 `target_webhook` 时仍是外部 webhook POST（Slack/Discord 等）。**打扰档位**：`companion.set_disturbance_tier {tier}` JSON-RPC（`services/companion/disturbance.py` 进程内 per-user 存储，默认 `normal`）——`quiet` 档时 `send_message_tool` 把消息文本吞掉，但 LLM 推理出的 affect 经 `companion.affect` 事件透传（断消息不断 affect，`services/companion/affect_emit.py::emit_companion_affect`）。**情境化 affect**：`companion.check_affect {idle_seconds, local_hour}` JSON-RPC（`services/companion/affect_check.py::check_affect`）由 Desktop idle 轮询触发，Backend 加载 persona + 最近记忆跑一次 LLM 推理，决定是否 emit `companion.affect`——触发时机由 Desktop 控制（知道真实 idle），情绪推理由 Backend LLM 承担（有 persona + 记忆）。Desktop 侧也客户端过滤，此为防御层。
+**伙伴主动消息通道**：`send_message_tool` 无 `target_webhook` 时走 companion 原生路径——`_emit_companion_message` 写 `companion.message {text}` 到 `ws_events` outbox，经同一套 LISTEN/NOTIFY 推到桌面端（伙伴 TTS + 气泡呈现，[ARCHITECTURE.md §4.1.A](../ARCHITECTURE.md)）。带 `target_webhook` 时仍是外部 webhook POST（Slack/Discord 等）。**打扰档位**：`companion.set_disturbance_tier {tier}` JSON-RPC（`services/companion/disturbance.py` 进程内 per-user 存储，默认 `normal`）——`quiet` 档时 `send_message_tool` 把消息文本吞掉，但 LLM 推理出的 affect 经 `companion.affect` 事件透传（断消息不断 affect，`services/companion/affect_emit.py::emit_companion_affect`）。**情境化 affect**：`companion.check_affect {idle_seconds, local_hour}` JSON-RPC（`services/companion/affect_check.py::check_affect`）由 Desktop idle 轮询触发，Backend 加载 persona + 最近记忆跑一次 LLM 推理，决定是否 emit `companion.affect`——触发时机由 Desktop 控制（知道真实 idle），情绪推理由 Backend LLM 承担（有 persona + 记忆）。Desktop 侧也客户端过滤，此为防御层。
 
 ## 系统提示词与上下文管理
 
@@ -96,7 +96,7 @@ backend/
 
 `services/llm/error_classifier.py` 将所有 API 层或依赖项错误收拢为 `FailoverReason`（21 种），经 8 步优先级流水线过滤：provider patterns → HTTP status → error code → message pattern → SSL/TLS transient → server disconnect → transport heuristics → unknown fallback。分类决定恢复策略（退避重试 / 凭证轮换 / 压缩上下文 / 不重试等）。
 
-**REST 错误信封**：`/api/llm/completion` 与 `/api/media/*` 在异常路径上调 `classify_api_error`，把 `FailoverReason` + `status_code` 折成 `{error, reason, status}` 返回。原始异常（可能带 provider URL / 部分 auth header）只写服务端 log，**永远不出后端**——满足 [ARCHITECTURE.md §9](../ARCHITECTURE.md) 的 -32603 "no internal detail" 契约。
+**REST 错误信封**：`/api/llm/completion` 与 `/api/media/*` 在异常路径上调 `classify_api_error`，把 `FailoverReason` + `status_code` 折成 `{error, reason, status}` 返回。原始异常（可能带 provider URL / 部分 auth header）只写服务端 log，**永远不出后端**——满足 [ARCHITECTURE.md §8](../ARCHITECTURE.md) 的 -32603 "no internal detail" 契约。
 
 **附件 fetch 失败**：LLM 无法下载临时媒体文件时（链接过期、网络隔离），拦截 Proxy 端原始 SDK 报错，向用户返回 provider-agnostic 短消息，避免误导性触发 LLM 回退逻辑。
 
@@ -178,7 +178,7 @@ MiniMax Hailuo 异步三段式：`POST /v1/video_generation`（task_id）→ `GE
 
 **Tool**：`video_generate`（schema: prompt/duration/resolution/first_frame_image/aspect_ratio）+ `video_generate_status`（schema: task_id）。前者最多等 `video_gen_tool_wait_seconds`（180s）；超时返回 `{success:true, pending:true, task_id, hint:"用 video_generate_status 查询"}`——后台任务继续跑。MiniMax 不暴露 ASR，所以 `stt` provider 没有 `minimax` 实现。
 
-**伙伴层 clip 的种子图**：`companion/avatar_service` 生成角色动画 clip 时，`first_frame_image` 固定为该用户当前 portrait，prompt 描述场景/动作——所有 clip 共享同一颗种子图以保证跨 clip 角色一致；portrait 重生时全部 clip 失效重排（[ARCHITECTURE.md §7.2](../ARCHITECTURE.md#72-形象与动画资产-avatar--animation-assets)）。clip 通过 `clip.updated` 事件（payload 携 scene + tier）单通道下发，`enqueue_video_job(..., emit_event=False)` 抑制通用的 `video_gen.completed/failed` 避免双通知。
+**伙伴层 clip 的种子图**：`companion/avatar_service` 生成角色动画 clip 时，`first_frame_image` 固定为该用户当前 portrait，prompt 描述场景/动作——所有 clip 共享同一颗种子图以保证跨 clip 角色一致；portrait 重生时全部 clip 失效重排（[ARCHITECTURE.md §6.2](../ARCHITECTURE.md)）。clip 通过 `clip.updated` 事件（payload 携 scene + tier）单通道下发，`enqueue_video_job(..., emit_event=False)` 抑制通用的 `video_gen.completed/failed` 避免双通知。
 
 ## 安全设计
 
@@ -197,13 +197,13 @@ MiniMax Hailuo 异步三段式：`POST /v1/video_generation`（task_id）→ `GE
 
 ## 伙伴人格与形象系统
 
-DeskAgent 伙伴的"人格"与"形象"是跨 Backend↔Desktop 的核心契约（[ARCHITECTURE.md §7](../ARCHITECTURE.md)）。设计意图详见 ARCHITECTURE.md，此处只记 backend 侧的实现决策。
+DeskAgent 伙伴的"人格"与"形象"是跨 Backend↔Desktop 的核心契约（[ARCHITECTURE.md §6](../ARCHITECTURE.md)）。设计意图详见 ARCHITECTURE.md，此处只记 backend 侧的实现决策。
 
 ### 角色定义（Persona）
 
 `Persona` 表存用户 onboarding 产出的结构化角色定义（JSON + 渲染好的 `system_prompt_extras` 片段），按用户维度一对一持久化。角色定义字段：`name` / `personality` / `speaking_style` 为必传；`appearance` / `background` / `biological_type` / `gender` 全部 optional（`biological_type` 把"灵兽/精灵/机甲…"物种维度从自由文本规范化为 profile 字段，`gender` 把"男/女/其他"的角色性别从隐式约定变为显式 schema）。作为系统提示词 stable 段的一部分注入每次 chat turn，驱动伙伴说话风格、性格表现与主动行为倾向。角色定义是伙伴行为的**唯一真相源**——只能由用户显式发起变更（重新进入角色编辑），禁止 LLM 自行改写。
 
-**onboarding 断点恢复**（design §7.5）：onboarding 逐字段增量持久化经两个 JSON-RPC 方法：`onboarding.get_state` 返回已采集字段 + 下一个未答问题（`next_field`）；`onboarding.submit {field, value}` 即时落盘单个字段。Desktop 启动时调 `get_state`，未完成则从 `next_field` 恢复，崩溃/退出不丢进度。draft 存在 `Persona.definition_json`（`is_complete=False`），完成后 Desktop 发 `PUT /api/companion/persona` 覆盖为最终角色定义（`is_complete=True`）。
+**onboarding 断点恢复**（design §6.3）：onboarding 逐字段增量持久化经两个 JSON-RPC 方法：`onboarding.get_state` 返回已采集字段 + 下一个未答问题（`next_field`）；`onboarding.submit {field, value}` 即时落盘单个字段。Desktop 启动时调 `get_state`，未完成则从 `next_field` 恢复，崩溃/退出不丢进度。draft 存在 `Persona.definition_json`（`is_complete=False`），完成后 Desktop 发 `PUT /api/companion/persona` 覆盖为最终角色定义（`is_complete=True`）。
 
 **12 步 onboarding + 角色/用户单 PUT 双写**：onboarding 采集 12 个字段（4 旧 + 3 角色 —— `species` / `character_gender` / `appearance` —— + 5 结构化用户字段 `user_call_name` / `user_gender` / `user_age_bucket` / `user_hobbies` / `user_freeform`）。`PersonaUpdate` schema 把 user_* 字段显式声明为 optional 仍在 `extra="forbid"` 严格校验下；`update_persona` 在 `_validate_definition(persona_def)` 之前先把 user_* 字段抽出交给 `services.companion.memory_bootstrap.record_user_profile` 落到 `Memory` 表（query-then-update 幂等 upsert，tags `["onboarding","user_profile"]`，context `user_profile:*`，与 `NativeMemory._retain` 同一模式保证 SQLite 单测与生产 Postgres 同行为），然后写 persona 字段 + `is_complete=True`，**同一 `db.commit()` 让两路写入具备原子性**——失败要么都回滚、要么都落。生产 Postgres `main.py::_install_schema_extensions` 加 `uq_memories_user_context` 部分唯一索引做并发 race 兜底。avatar 生图 prompt 经 `_SPECIES_EN` / `_GENDER_EN` 查表把中文物种/性别翻成稳定英文 token（`灵兽` → `spirit beast`、`女` → `female`…），未知值/自由输入原文回退保留用户原意。
 
@@ -220,11 +220,11 @@ DeskAgent 伙伴的"人格"与"形象"是跨 Backend↔Desktop 的核心契约�
 - **渐进式生成**：batch 0（idle）在 portrait 生成时同步排队；其余批次（speaking/thinking/working → 生命周期 → 情绪变体）后台渐进生成
 - **事件下发**：clip 通过 `clip.updated` 单通道下发（payload 携 scene + tier + url + keyframe_url + keyframe_meta + status），companion 服务以 `enqueue_video_job(..., emit_event=False)` 抑制通用 `video_gen.*` 事件避免双通知；`avatar.list_clips` 是拉取式同步入口（首次启动 / 断线重连补齐）
 - **avatar.list_clips** JSON-RPC：返回全部 clip + 实时生成状态（JOIN `VideoGenJob` 行）
-- **衍生失效**：portrait 重生时所有 clip 失效（design §7.2——同一颗种子图从机制上保证跨 clip 一致性，跨版本不可复用）
+- **衍生失效**：portrait 重生时所有 clip 失效（design §6.2——同一颗种子图从机制上保证跨 clip 一致性，跨版本不可复用）
 
 ### 音色匹配（voice catalog）
 
-onboarding 的音色偏好（`voice` 草稿字段）经 JSON-RPC 落到具体 voice id（design §3.2 / §3.5）：
+onboarding 的音色偏好（`voice` 草稿字段）经 JSON-RPC 落到具体 voice id（COMPANION_DESIGN.md §4.2 / §4.5）：
 
 - **`tts.list_voices`**：返回当前用户激活的 TTS provider 的候选音色目录（`{provider, voices:[{id,label,gender,language,tags,description}], supports_voice_design, voice_design_guide}`）。voice id 是 provider 私有的；`language`（`"zh"`/`"en"`/`"multi"`）驱动语言偏好匹配。`supports_voice_design` 标记该 provider 是否支持用户自定义音色设计，`voice_design_guide` 是写法指南文本供前端展示。**列表按 `language` 排序**：中文（`zh`）优先、多语言（`multi`）次之、英文（`en`）最后——同桶内保留 `VOICE_CATALOG` 原序，保证 provider 策展的内部相对顺序（冰糖在 茉莉 之前等）不被打乱。这一排序对应"默认中文"的产品方向（[runner/README.md §音频工具](../runner/README.md#音频工具-stt--tts)）：onboarding 期间 voice picker 先看到中文 voice，再看到 EN voice，让产品身份稳定。
   - **可选 `language` 过滤**（`{language: "zh"}` / `{"language": "en"}` / `{"language": "multi"}`）：返回仅该语言的子集。未知 / 空字符串值走全量未过滤路径。用于 voice picker UI 的"中文 / English / 全部"tabs——后端过滤避免前端在 `voices` 数组上做二次筛选，让 render-side 的 catalog 始终是策划好的 zh-first 顺序。Filter 后 default_voice 退化到第一个匹配的 voice；过滤后空则回退到 `DEFAULT_VOICE` 兜底，shape 永远存在。
@@ -240,7 +240,7 @@ onboarding 的音色偏好（`voice` 草稿字段）经 JSON-RPC 落到具体 vo
 
 ### 伙伴情绪（affect）
 
-Backend 在对话响应的 `message.complete` 帧内联 `affect: {emotion}` 字段（design §7.5 inline affect 原则）。实现：当角色定义存在时，系统提示词注入 affect 指令（`COMPANION_AFFECT_GUIDANCE`），要求 LLM 在每条文字回复前缀 `[affect:EMOTION]` 标签。`services/chat/affect.AffectScrubber` 在流式路径中剥离该标签（用户不可见），捕获的 emotion 附加到 `message.complete`。emotion 词汇表在 `ALLOWED_EMOTIONS`（有限枚举，可扩展但需同步 Desktop clip 目录）。
+Backend 在对话响应的 `message.complete` 帧内联 `affect: {emotion}` 字段（design §6.3 inline affect 原则）。实现：当角色定义存在时，系统提示词注入 affect 指令（`COMPANION_AFFECT_GUIDANCE`），要求 LLM 在每条文字回复前缀 `[affect:EMOTION]` 标签。`services/chat/affect.AffectScrubber` 在流式路径中剥离该标签（用户不可见），捕获的 emotion 附加到 `message.complete`。emotion 词汇表在 `ALLOWED_EMOTIONS`（有限枚举，可扩展但需同步 Desktop clip 目录）。
 
 ### 复用映射
 
