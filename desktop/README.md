@@ -2,7 +2,7 @@
 
 桌面伙伴形象载体 + 本地枢纽——单 Electron 应用，承担双职责。
 
-设计文档：[ARCHITECTURE.md](../ARCHITECTURE.md) §2 / §3 / §5 / §7 / §10；伙伴层详细交互见 [COMPANION_DESIGN.md](../COMPANION_DESIGN.md)。
+设计文档：[ARCHITECTURE.md](../ARCHITECTURE.md) §2 / §4 / §6 / §9；伙伴层详细交互见 [COMPANION_DESIGN.md](../COMPANION_DESIGN.md)。
 
 ## 双层定位
 
@@ -203,12 +203,12 @@ Desktop 走 `electron-updater` 从 Backend `/api/update` 拉取预构建安装�
 两阶段契约（network 在前、file ops 在后，避免网络断在重启后变砖）：
 
 - **Phase 1 — prefetch（OLD Electron 里跑）**：`main/entry.cjs::setupAutoUpdater` 在 `app.whenReady` 后挂载，延迟 30s 自检，下载 Electron 二进制；同时后台从 `/api/update/latest-runner.yml` 下载 wheel + `server.py` 到 `$DESKAGENT_HOME/runner.staging/`，验 RSA 签名 + SHA-512，写 sentinel。渲染端 "Restart now" 按钮只在 `runner-ready` 事件落地后才可点。
-- **Phase 2 — install（NEW Electron 里跑）**：`app.whenReady` 早期调 `runner-updater.installPending()`：读 sentinel → `runnerBridge.stop()` 释放 Python 句柄（Windows EPERM 风险）→ `pip install --upgrade <wheel>` 原地升级（pip 前先 `pip show` 快照当前 wheel `Name==Version` 作 rollback marker；commit 562cf4d）→ 覆盖 `server.py` → 冒烟 `import deskagent_agent, server` → `runnerBridge.start()`。**真降级**：pip / smoke / `runnerBridge.start` 任一失败时 `pip install --upgrade <rollback_marker>` 把 site-packages 还原到升级前状态，再 emit `runner-failed {recoverable: true}`，对应 ARCH §10 "失败 → 降级到旧版 Runner 并向用户警告"。
+- **Phase 2 — install（NEW Electron 里跑）**：`app.whenReady` 早期调 `runner-updater.installPending()`：读 sentinel → `runnerBridge.stop()` 释放 Python 句柄（Windows EPERM 风险）→ `pip install --upgrade <wheel>` 原地升级（pip 前先 `pip show` 快照当前 wheel `Name==Version` 作 rollback marker；commit 562cf4d）→ 覆盖 `server.py` → 冒烟 `import deskagent_agent, server` → `runnerBridge.start()`。**真降级**：pip / smoke / `runnerBridge.start` 任一失败时 `pip install --upgrade <rollback_marker>` 把 site-packages 还原到升级前状态，再 emit `runner-failed {recoverable: true}`，对应 ARCH §9 "失败 → 降级到旧版 Runner 并向用户警告"。
 - **venv 永不被改名/移动**——只有 venv 内部 wheel 被升级；`attempt_count >= 3` 删 sentinel 并 emit `runner-failed {recoverable: false}`。
 
 签名 keypair：私钥 `scripts/secrets/update.key`、公钥 `scripts/secrets/update.pub`（经 `desktop/package.json#build.extraResources` 复制到 packaged desktop，`main/runner/updater.cjs` 启动时读取校验）。**生产构建签名密钥在构建机上**——开发分支留 `update.key` 在本地是因为出包验证需要测试签名链路。
 
-伙伴形象资产与角色定义云端持久化（[ARCHITECTURE.md §7](../ARCHITECTURE.md)），自更新只影响本地代码与运行时，不触碰用户的伙伴身份。
+伙伴形象资产与角色定义云端持久化（[ARCHITECTURE.md §6](../ARCHITECTURE.md)），自更新只影响本地代码与运行时，不触碰用户的伙伴身份。
 
 ## 安全
 

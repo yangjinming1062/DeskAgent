@@ -1,6 +1,6 @@
 # installer/
 
-DeskAgent 安装器产品。本目录容纳 **Tauri 2 桌面程序**（`src/` + `src-tauri/`，产 `DeskAgent-Setup.exe` / `DeskAgent-Setup.app` / `deskagent-setup`）、它要释放的安装 payload（`skills/`、`config.yaml`）、以及 Tauri 进程 spawn 出来的 **install 协议后端**（`install.sh` / `install.ps1` / `install.cmd`）。首装完成释放 Desktop 后，Desktop 以"蛋"形态首次启动，进入 [ARCHITECTURE.md §2](../ARCHITECTURE.md) 的伙伴生命周期 onboarding。
+DeskAgent 安装器产品。本目录容纳 **Tauri 2 桌面程序**（`src/` + `src-tauri/`，产 `DeskAgent-Setup.exe` / `DeskAgent-Setup.app` / `deskagent-setup`）、它要释放的安装 payload（`skills/`、`config.yaml`）、以及 Tauri 进程 spawn 出来的 **install 协议后端**（`install.sh` / `install.ps1` / `install.cmd`）。首装完成释放 Desktop 后，Desktop 以"蛋"形态首次启动，进入 [COMPANION_DESIGN.md §3](../COMPANION_DESIGN.md) 的伙伴生命周期 onboarding。
 
 ## 1. 顶层模块解耦
 
@@ -120,7 +120,7 @@ Desktop spawn 命令：`$DESKAGENT_HOME/runner/.venv/{bin/python,Scripts/python.
 
 ## 已知限制
 
-- **蛋形象不随 installer 分发**：角色定义完成前的"蛋"占位形象由 Desktop 内置默认渲染（`BrandMark` 组件），不经 installer seed payload。这避免了 payload 与形象资产版本耦合——installer 只负责代码与运行时分发，形象资产完全由 Backend 生成并下发（[ARCHITECTURE.md §7](../ARCHITECTURE.md)）。
+- **蛋形象不随 installer 分发**：角色定义完成前的"蛋"占位形象由 Desktop 内置默认渲染（`BrandMark` 组件），不经 installer seed payload。这避免了 payload 与形象资产版本耦合——installer 只负责代码与运行时分发，形象资产完全由 Backend 生成并下发（[ARCHITECTURE.md §6](../ARCHITECTURE.md)）。
 
 ## 10. 本地 TTS voice 打包
 

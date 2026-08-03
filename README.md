@@ -112,7 +112,7 @@ bash scripts/build_client.sh
 
 ## 信任与安全
 
-跨模块安全契约详见 [ARCHITECTURE.md §8](ARCHITECTURE.md)；核心要点：
+跨模块安全契约详见 [ARCHITECTURE.md §7](ARCHITECTURE.md)；核心要点：
 
 - **Runner 零凭证**：不持有 Backend token；需借 LLM 时通过反向 RPC 经 Desktop 代调 `POST /api/llm/completion`
 - **JWT 加密落盘**：Electron `safeStorage` 跨平台统一（DPAPI / Keychain / libsecret）

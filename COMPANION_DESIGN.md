@@ -1,6 +1,6 @@
 # 伙伴层交互设计
 
-> 桌面伙伴（companion）的交互设计描述：形象资产、动画状态机、onboarding、陪伴交互范式、语音、故障态。
+> 桌面伙伴（companion）的交互设计描述：形象资产、动画状态机、伙伴生命周期、onboarding、陪伴交互范式、语音、故障态。
 > 这是**描述性文档**（记设计意图与跨模块契约，不记可从代码推出的结构）。协议契约与跨模块架构见 [ARCHITECTURE.md](ARCHITECTURE.md)；Desktop 实现见 [desktop/README.md](desktop/README.md)。
 
 ## 设计哲学
@@ -27,20 +27,20 @@
 
 每个 loop clip 绑定一个"状态"（见 §2）。切换状态 = 切换播放的 clip。
 
-所有 clip 以 portrait 为种子图、结合场景描述经**图生视频**（MiniMax image-to-video，`video_generate` 的 `first_frame_image`）产出，复用 Backend 既有 `media/video_jobs` 流水线——同一颗种子图从机制上保证跨 clip 角色一致（[ARCHITECTURE.md §7.2](ARCHITECTURE.md)）。
+所有 clip 以 portrait 为种子图、结合场景描述经**图生视频**（MiniMax image-to-video，`video_generate` 的 `first_frame_image`）产出，复用 Backend 既有 `media/video_jobs` 流水线——同一颗种子图从机制上保证跨 clip 角色一致（[ARCHITECTURE.md §6.2](ARCHITECTURE.md)）。
 
 ### 1.2 渲染约束
 
 - **透明背景视频**：WebM (VP9 + alpha) 是 Electron/Chromium 跨平台原生支持的最佳选项；sprite sheet（逐帧）作为备选。
-- **窗口架构**：精灵窗口（透明置顶、click-through 可控的 `BrowserWindow`）是**唯一常驻主窗口**，承载形象本身，并在对话激活时与对话框一同居中（见 §4.1）。登录与应用设置是从托盘唤起的按需工具窗口，不常驻——"对话发生在角色身边"。
+- **窗口架构**：精灵窗口（透明置顶、click-through 可控的 `BrowserWindow`）是**唯一常驻主窗口**，承载形象本身，并在对话激活时与对话框一同居中（见 §5.1）。登录与应用设置是从托盘唤起的按需工具窗口，不常驻——"对话发生在角色身边"。
 - **性能基线**：常驻视频解码必须硬件加速；idle loop 应能 24fps 循环且 CPU 占用 < 5%。
-- **平台降级**：Linux 无 compositor 时透明窗口可能黑底——降级为带背景窗口或纯 sprite（[desktop/README.md 已知限制](desktop/README.md#已知限制)）。
+- **平台降级**：Linux 无 compositor 时透明窗口可能黑底——降级为带背景窗口或纯 sprite（[desktop/README.md 已知限制](desktop/README.md)）。
 
 ### 1.3 渐进式生成与不变量
 
 按优先级分批，避免 onboarding 期间一次性耗尽配额：batch 0（idle）在 portrait 生成时**同步排队**；其余批次（speaking/thinking/working → 生命周期 → 情绪变体）后台渐进生成。
 
-**伙伴表达永不空白**（[ARCHITECTURE.md §11#9](ARCHITECTURE.md) 不变量）：任何 clip 未就绪时，对应状态回退到 idle loop + 该状态的轻量图标徽章（⚙️ 工作、💭 思考、💤 睡眠…）。用户永远看不到"这个功能还没生成"的空白。clip 目录在 Desktop 本地缓存（`clip-store`），首屏经 `avatar.list_clips` 拉取已生成项，后续就绪/失败经 `clip.updated`（payload 携 `scene` + `tier` 标识）增量更新。portrait 重生时所有衍生 clip 失效重排——只有新 portrait 成功后才失效旧 clip，避免生图失败时用户失去全部 clip。
+**伙伴表达永不空白**（[ARCHITECTURE.md §10 #9](ARCHITECTURE.md) 不变量）：任何 clip 未就绪时，对应状态回退到 idle loop + 该状态的轻量图标徽章（⚙️ 工作、💭 思考、💤 睡眠…）。用户永远看不到"这个功能还没生成"的空白。clip 目录在 Desktop 本地缓存（`clip-store`），首屏经 `avatar.list_clips` 拉取已生成项，后续就绪/失败经 `clip.updated`（payload 携 `scene` + `tier` 标识）增量更新。portrait 重生时所有衍生 clip 失效重排——只有新 portrait 成功后才失效旧 clip，避免生图失败时用户失去全部 clip。
 
 ---
 
@@ -70,7 +70,7 @@
 
 | 状态 | 触发源 | 说明 |
 |------|--------|------|
-| **IDLE** | 默认 | 呼吸/微动作循环；间歇性随机插入自主微动作（见 §4.4） |
+| **IDLE** | 默认 | 呼吸/微动作循环；间歇性随机插入自主微动作（见 §5.4） |
 | **LISTENING** | 用户开始输入/说话 | 专注倾听姿态 |
 | **THINKING** | LLM 处理中 | 思考/沉吟动画 |
 | **SPEAKING** | TTS 播放中 | 说话循环动画，时长与 TTS 音频同步 |
@@ -78,16 +78,16 @@
 | **EMOTIONAL** | LLM/规则事件 | 瞬态情绪（happy/sad/surprised/…），播放一次后回到被中断的状态 |
 | **SLEEPING** | 时间触发（深夜）/ 长断连 | 睡眠循环；用户交互可唤醒 |
 | **INTERACTING** | 用户直接操作形象 | 被戳/被拖/被抚摸的反应动画 |
-| **DISCONNECTED** | Backend 断连 | 打哈欠、歪头发呆（见 §4.5） |
+| **DISCONNECTED** | Backend 断连 | 打哈欠、歪头发呆（见 §5.5） |
 
 ### 2.2 四类触发源
 
 区分触发源的关键是**延迟特性**——决定是否需要 fallback 动画。
 
 1. **规则触发（Desktop 本地，零延迟）**：app 启动/退出、工具调用状态（WORKING）、用户输入起止（LISTENING/THINKING）、TTS 播放起止（SPEAKING）、时间（SLEEPING）。Desktop 按规则自主决定，不问 Backend。
-2. **LLM 触发（Backend 下发，高延迟 1–5s）**：无法靠规则判定的语义/情绪场景。Backend 在对话响应帧中附带 `affect: {emotion}`，Desktop 收到后切 EMOTIONAL。判断逻辑在 Backend（[§7.5](ARCHITECTURE.md)），Desktop 只执行 cue。
+2. **LLM 触发（Backend 下发，高延迟 1–5s）**：无法靠规则判定的语义/情绪场景。Backend 在对话响应帧中附带 `affect: {emotion}`，Desktop 收到后切 EMOTIONAL。判断逻辑在 Backend（[ARCHITECTURE.md §6.3](ARCHITECTURE.md)），Desktop 只执行 cue。
 3. **用户触发（Desktop 本地，零延迟）**：用户对形象本身的直接操作——戳、拖、悬停。
-4. **自主行为（Desktop 调度，无延迟感）**：IDLE 下随机插入微动作（10–25s 间隔），纯视觉，不触发 TTS、不弹气泡（见 §4.4）。
+4. **自主行为（Desktop 调度，无延迟感）**：IDLE 下随机插入微动作（10–25s 间隔），纯视觉，不触发 TTS、不弹气泡（见 §5.4）。
 
 ### 2.3 切换规则
 
@@ -97,47 +97,92 @@
 
 ---
 
-## 3. 初始化与 Onboarding
+## 3. 伙伴生命周期
+
+DeskAgent 区别于一切既有桌面宠物 / 桌面 Agent 的核心，在于伙伴有一个**从无到有的诞生过程**，以及诞生后**持续陪伴的长期关系**。这是产品体验的骨架：
+
+```
+[安装完成]
+    │
+    ▼
+┌─ 蛋 (Egg) ─────────────────────────────────────────────┐
+│  角色定义完成前，Desktop 以"蛋"作为占位形象常驻桌面。    │
+│  蛋是产品意象，技术本质是"形象生成未完成时的默认形象"。   │
+└──────────────────────────┬─────────────────────────────┘
+                           │  用户点击/唤醒，进入 onboarding
+                           ▼
+┌─ 角色定义 (Persona Definition) ────────────────────────┐
+│  引导用户描述想要的伙伴：名字、性格、说话风格、外貌与    │
+│  视觉风格偏好等。交互范式是对话式、可回退、用户拥有     │
+│  最终确认权。                                            │
+│  产出：一份结构化的角色定义，持久化在用户维度。          │
+└──────────────────────────┬─────────────────────────────┘
+                           │  用户确认
+                           ▼
+┌─ 形象生成 (Avatar Generation) ─────────────────────────┐
+│  Backend 据角色定义装配生图 prompt，调用云端图片生成工具 │
+│  产出专属形象资产，与角色定义一同在用户维度持久化。      │
+└──────────────────────────┬─────────────────────────────┘
+                           │  资产下发至 Desktop
+                           ▼
+┌─ 孵化 (Hatch) ─────────────────────────────────────────┐
+│  Desktop 将桌面上的"蛋"替换为生成的专属形象，配以仪式感 │
+│  过渡动画。这一刻是产品核心的情感锚点。                  │
+└──────────────────────────┬─────────────────────────────┘
+                           ▼
+┌─ 持续陪伴 (Ongoing Companionship) ─────────────────────┐
+│  • 伙伴形象常驻桌面（透明置顶窗口），可被用户随时唤起对话 │
+│  • 伙伴可主动发起交互：问候、提醒、闲聊（由 Cron / 事件驱动）│
+│  • 伙伴有长期记忆，随互动积累对用户的了解                 │
+│  • 伙伴可调用 Runner 帮用户操作本机——叙事上是"伙伴在帮忙"│
+└────────────────────────────────────────────────────────┘
+```
+
+诞生的详细交互设计（蛋的交互、对话式信息采集、孵化动画、形象/音色确认）见 §4；持续陪伴的交互范式（双模式对话、主动陪伴、用户直接交互、自主行为、故障态）见 §5。后续可在此基础上扩展"成长 / 进化"机制（伙伴随互动阶段性地演变形象或人格），具体设计待补。
+
+---
+
+## 4. 初始化与 Onboarding
 
 设计目标：让用户在第一次见面时建立情感连接——**不是"填表"，而是"和一个正在成形的新朋友对话"**。
 
-### 3.1 蛋阶段（Egg）
+### 4.1 蛋阶段（Egg）
 
 安装完成 → 蛋以默认形象出现在桌面（透明置顶窗口），带轻微 idle 动画。用户每次点击产生新裂纹，累计 5 次蛋完全碎裂并唤起登录。不在蛋上贴"点我"提示——让 idle 动画引导好奇心。未登录时蛋是"teaser"，登录后变"drowsy"（半醒），网关连上变"awake"。
 
-### 3.2 对话式信息采集（12 步）
+### 4.2 对话式信息采集（12 步）
 
 蛋破碎后，一个发光的、尚未定形的轮廓（silhouette）开始与用户对话——叙事上是"这个新生命在问你怎么定义它"。问题序列（按角色定义 → 用户信息的顺序组织，物种 / 性别 / 形象描述三步连排形成视觉锚点，前一个答案塑造后一个的语境）：名字 → 物种（生物类型）→ 角色性别 → 形象描述 → 角色定位 → 性格 → 怎么称呼您 → 您的性别 → 年龄段 → 您的爱好 → 还有什么想告诉我 → 音色偏好。每个问题由 silhouette 以默认中性语音 TTS 说出（同时显示文字气泡），让用户从第一步就建立"它会说话"的预期。全部支持"跳过/返回上一步"；只有名字必填。
 
 形象描述这一步把 `PersonaUpdate.appearance` 字段（schema 早已预留但 onboarding 从未收取）真正接通到 silhouette → portrait 生图链路，让用户主动告诉伙伴"希望我长什么样"，避免单纯基于姓名 / 性格 / 角色定位生成的随机性。
 
-**断点恢复**（[ARCHITECTURE.md §7.5](ARCHITECTURE.md)）：每个回答经 `onboarding.submit {field, value}` 即时落盘单个字段，Desktop 启动时调 `onboarding.get_state` 从下一个未答问题恢复——崩溃/退出不丢进度。
+**断点恢复**（[ARCHITECTURE.md §6.3](ARCHITECTURE.md)）：每个回答经 `onboarding.submit {field, value}` 即时落盘单个字段，Desktop 启动时调 `onboarding.get_state` 从下一个未答问题恢复——崩溃/退出不丢进度。
 
-### 3.3 孵化与形象生成（单 PUT 双写）
+### 4.3 孵化与形象生成（单 PUT 双写）
 
 问题收齐后进入孵化动画。关键不变量：**Backend 的形象生成要求 persona 已完成（`is_complete=True`）**，因此 Desktop 在孵化开始时**先把 12 个答案（角色定义 + 5 用户结构化字段）经同一次 `PUT /api/companion/persona` 落库完成**——`update_persona` 服务端按 `extra="forbid"` schema 严格校验角色定义字段、把 5 个 user_* 字段无侵入地分流到 `Memory` 表（context 为 `user_profile:*`，tags 为 `"onboarding,user_profile"`），单 `db.commit()` 同时落 persona 与 memory。voice 字段已被消费（用于音色匹配）。生图超时/失败时 silhouette 说"我还没想好…"并自动重试（最多 3 次），不暴露技术错误；三次失败后允许稍后再试，不阻断用户。
 
 如果前一次 PUT 因网络问题失败，desktop `enterHatching` 自带的 3 次重试循环会把所有 12 个字段（包括 user_*）一起再发，由服务端的 query-then-update 幂等 upsert 避免重复或丢字段。
 
-### 3.4 形象确认
+### 4.4 形象确认
 
 portrait 生成完成，silhouette 散开变为完整形象展示。操作：**确认** / **重新生成**（`avatar.regenerate`，旧 clip 在新 portrait 成功后才失效重排）/ **自己上传**（`POST /api/companion/avatar/upload`，base64 JSON；上传图无云端参考，衍生 clip 可能更慢）。不一次生成多个候选让用户挑——单次确认 + 反馈式重生成更经济也更聚焦。
 
-### 3.5 音色确认
+### 4.5 音色确认
 
 portrait 确认后进入音色环节：`tts.match_voice {preference}` 把 onboarding 的音色偏好经标签评分映射到当前 TTS provider 目录中最贴合的 voice id，展示推荐音色 + 候选。操作：使用这个 / 换一个（从候选另选，每个可试听）。匹配到的 voice id 由 Desktop 持久化，后续 TTS 透传给 provider。
 
 > **设计决策**：音色匹配是即时确定性的标签评分，而非 LLM。一个窄域标签任务用 LLM 反而引入不必要的延迟与成本；curated 目录已足够。无匹配时优先中性默认音色。
 
-### 3.6 最终孵化与问候
+### 4.6 最终孵化与问候
 
 形象 + 音色就位，idle loop（batch 0）已在 portrait 生成时由 Backend 自动排队。形象以 idle 动画"活"起来，用确认后的音色说出第一句问候。onboarding 结束，进入持续陪伴。
 
 ---
 
-## 4. 持续陪伴交互
+## 5. 持续陪伴交互
 
-### 4.1 双模式对话
+### 5.1 双模式对话
 
 | 模式 | 触发 | 形态 | 麦克风 |
 |------|------|------|--------|
@@ -150,11 +195,11 @@ portrait 确认后进入音色环节：`tts.match_voice {preference}` 把 onboar
 
 **语音通话模式细节**：麦克风持续收音，音量分析器做**半双工分段**——检测到说话（音量超阈值）开始录制，持续静默 ~1.3s 判定一句结束 → 转写 → 发送 → 精灵切 THINKING；助手回复完成（`message.complete`）后用 TTS 说出，说完回到倾听。**打断（barge-in）**：精灵说话时用户开口（音量超更高阈值）→ 立即止 TTS、转回 LISTENING。**静默超时**：~3 分钟无活动自动退出。**双向字幕**（可 toggle）在精灵下方显示。**live-mic 可见性**：通话期间有醒目的录音指示（红圈/波形）。
 
-**响应模式**（设置项，见 §6）：默认文字（对话模式下精灵以文字应答，不打扰）/ 始终语音（对话模式下精灵也以 TTS 说出回复）。语音通话模式始终语音。主动陪伴消息（§4.2）不受此设置约束。
+**响应模式**（设置项，见 §7）：默认文字（对话模式下精灵以文字应答，不打扰）/ 始终语音（对话模式下精灵也以 TTS 说出回复）。语音通话模式始终语音。主动陪伴消息（§5.2）不受此设置约束。
 
-### 4.2 主动陪伴与打扰档位
+### 5.2 主动陪伴与打扰档位
 
-Backend 的 Cron / `send_message` 经 WS 推送主动消息（[ARCHITECTURE.md §6](ARCHITECTURE.md)）。**伙伴的一切主动行为受三档打扰等级约束**，档位由用户设置 + Desktop 检测到的用户活动共同决定，Desktop 经 `companion.set_disturbance_tier` 上报当前生效档位。**档位只约束伙伴的主动行为；用户主动发起的交互永远不受限。**
+Backend 的 Cron / `send_message` 经 WS 推送主动消息（[ARCHITECTURE.md §5](ARCHITECTURE.md)）。**伙伴的一切主动行为受三档打扰等级约束**，档位由用户设置 + Desktop 检测到的用户活动共同决定，Desktop 经 `companion.set_disturbance_tier` 上报当前生效档位。**档位只约束伙伴的主动行为；用户主动发起的交互永远不受限。**
 
 | 档位 | 允许的主动行为 |
 |------|----------------|
@@ -162,24 +207,24 @@ Backend 的 Cron / `send_message` 经 WS 推送主动消息（[ARCHITECTURE.md �
 | **常规** | 仅轻量气泡/文字消息（无 TTS 语音）、affect |
 | **保持安静** | **禁止任何主动消息（语音+文字）**；但 LLM 推理出的 affect 仍经 `companion.affect` 事件流出，精灵切 EMOTIONAL 状态（无气泡无 TTS） |
 
-**消息与情绪是两个独立通道**（[§7.5](ARCHITECTURE.md)）：保持安静 / 屏幕锁定时 Backend 静默切断主动消息推送（`send_message_tool` 在 `quiet` 档把消息文本吞掉），但 LLM 推理出的 affect 经独立的 `companion.affect` 事件流出，精灵切 EMOTIONAL 状态（无气泡无 TTS）。用户长时间无活动时，Desktop 的 idle 轮询还会主动调 `companion.check_affect` 触发 Backend LLM 推理情境化情绪（粘人型被冷落的委屈等）——情绪始终由 Backend LLM 产出，不退化成 Desktop 规则判断。屏幕锁定（Runner `system.is_screen_locked`）同样静默切断主动消息但保留 affect，解锁后静默恢复。
+**消息与情绪是两个独立通道**（[ARCHITECTURE.md §6.3](ARCHITECTURE.md)）：保持安静 / 屏幕锁定时 Backend 静默切断主动消息推送（`send_message_tool` 在 `quiet` 档把消息文本吞掉），但 LLM 推理出的 affect 经独立的 `companion.affect` 事件流出，精灵切 EMOTIONAL 状态（无气泡无 TTS）。用户长时间无活动时，Desktop 的 idle 轮询还会主动调 `companion.check_affect` 触发 Backend LLM 推理情境化情绪（粘人型被冷落的委屈等）——情绪始终由 Backend LLM 产出，不退化成 Desktop 规则判断。屏幕锁定（Runner `system.is_screen_locked`）同样静默切断主动消息但保留 affect，解锁后静默恢复。
 
 Desktop 收到主动消息后：形象切 SPEAKING + 播 TTS；对话框未开则在形象旁冒气泡，已开则在对话框加一条。典型场景：定时问候、日程提醒、长时间无交互后搭话、节日/天气情境化闲聊。
 
-### 4.3 用户直接交互（形象本体）
+### 5.3 用户直接交互（形象本体）
 
 用户对形象本身的直接操作（不经过对话框）是情绪价值的核心——**形象"有脾气"**：单击戳（高频戳触发递进反应）、双击唤起对话、长按/拖拽（松手回弹）、右键快捷菜单、悬停（注意到鼠标）。
 
 反应由**角色性格**驱动分层：粘人型被戳后撒娇、毒舌型吐槽、管家型礼貌——同一操作不同人格不同反应（Desktop 据角色定义的性格关键词选 reaction tone，轻/中/重三层按戳的频率递进）。反应文案与动画从 affect 对应的可用变体中挑选。**完整 LLM + 记忆驱动的反应生成**（反应本身写回记忆、关系深度影响反应）是后续增强方向。
 
-### 4.4 自主行为（让形象"活着"）
+### 5.4 自主行为（让形象"活着"）
 
 IDLE 时形象不是静止贴图。两类自主行为，**都不触发 TTS、不弹气泡，纯视觉**：
 
 - **微动作**（10–25s 随机间隔）：眨眼、换重心、看四周、伸懒腰等 idle 变体随机切换（clip 就绪时；未就绪回退 idle）。
 - **情境动作**（检测本机状态）：Runner `system.get_idle_seconds` / `get_focused_app` 等环境感知工具的轮询结果直接进情境判定，**不经 LLM**。
 
-### 4.5 故障态与降级行为（伙伴永不"死"）
+### 5.5 故障态与降级行为（伙伴永不"死"）
 
 伙伴不能"死"、不能弹原始错误框——一切故障以符合人格的方式表达，用户始终觉得"它活着，只是遇到点状况"。故障按脑/手/身隐喻映射到症状，降级状态叠加在 §2 状态机之上、优先级高于常规状态：
 
@@ -195,16 +240,16 @@ IDLE 时形象不是静止贴图。两类自主行为，**都不触发 TTS、不
 
 ---
 
-## 5. 语音交互（STT + TTS）
+## 6. 语音交互（STT + TTS）
 
 - **TTS（输出）**：默认**本地优先**——Runner 本地引擎（Piper 主、pyttsx3 降级）作为零成本主路径,本地不可用或失败时回退 Backend 云端引擎（`POST /api/media/tts`,`voice` 透传给 provider）。三档可切（设置 `tts.engine`:`auto` 本地优先+云端回退 / `local` 纯本地失败不回退 / `cloud` 永远云端）。用于:语音通话应答、"始终语音"响应模式、主动陪伴消息、onboarding。播放期间精灵处于 SPEAKING,音频结束退出。
 - **STT（输入）**:默认**本地优先**（Runner faster-whisper),同样三档可切（`stt.engine`)。`auto` 档下本地识别不确定（低置信度/空文本）时，由 `stt.silent_fallback`（默认 `true`）决定是否静默改跑云端（`/api/media/stt`，MiMo ASR）——`true` 用户无感、`false` 直接暴露本地弱结果（隐私/成本敏感用户不想偷偷走云端）。两条输入路径:语音条(对话模式,按住录音→转写→发送);语音通话模式(持续收音 + VAD 分段→转写→发送)。
-- **音色匹配**：`tts.list_voices` 返回当前 provider 候选目录，`tts.match_voice` 把偏好映射到 voice id（见 §3.5）。缓存的 voice id 失效（provider 目录变化）时，精灵窗口就绪后检测并提示重选（后端对未知 id 容错，TTS 不断）。
+- **音色匹配**：`tts.list_voices` 返回当前 provider 候选目录，`tts.match_voice` 把偏好映射到 voice id（见 §4.5）。缓存的 voice id 失效（provider 目录变化）时，精灵窗口就绪后检测并提示重选（后端对未知 id 容错，TTS 不断）。
 - **始终可回退文字**：TTS/STT 任一失败不阻断交互——TTS 失败仅显示文字，STT 失败提示"没听清，用打字吧"。
 
 ---
 
-## 6. 设置与个性化
+## 7. 设置与个性化
 
 两类设置分处两个窗口，由**网关可用性**决定归属：
 
@@ -215,28 +260,22 @@ IDLE 时形象不是静止贴图。两类自主行为，**都不触发 TTS、不
 
 ---
 
-## 7. 跨模块契约
+## 8. 跨模块契约
 
-伙伴层依赖的跨模块契约定义在 [ARCHITECTURE.md](ARCHITECTURE.md)，此处仅列索引与 Desktop 消费要点：
+伙伴层依赖的跨模块协议与不变量定义在 [ARCHITECTURE.md](ARCHITECTURE.md)：通信协议与数据流（§4）、事件调度与打扰档位（§5）、角色定义与表达层契约（§6）、全局不变量（§10）。
 
-- **伙伴层协议扩展**（[§5.1.A](ARCHITECTURE.md)）：`onboarding.get_state` / `onboarding.submit` / `avatar.regenerate` / `avatar.list_clips` / `tts.list_voices` / `tts.match_voice` / `companion.set_disturbance_tier` / `companion.check_affect` 方法 + `companion.affect` 事件。clip 就绪/失败走单一 `clip.updated` 通道（payload 携 `scene` + `tier` 标识）；`video_gen.completed/failed` 仍是底层 `media/video_jobs` 流水线的通用事件，但 companion 通过 `enqueue_video_job(..., emit_event=False)` 抑制重复下发。
-- **伙伴表达事件流**（[§5.2.IV](ARCHITECTURE.md)）：affect 随话语同帧下发（inline affect 原则）；语义与渲染解耦——Backend 产 emotion 语义，Desktop 决定渲染。
-- **形象与动画资产**（[§7.2](ARCHITECTURE.md)）：portrait / loop clip / transition clip 三层；渐进式分批生成；portrait 重生使衍生 clip 失效。
-- **伙伴表达层契约**（[§7.5](ARCHITECTURE.md)）：emotion 枚举集、语义/渲染解耦、affect 继承角色定义抗注入、affect 与 text 同帧（TTS 由 Desktop 拉取式合成）、onboarding 逐字段增量持久化。
-- **伙伴表达永不空白不变量**（[§11 #9](ARCHITECTURE.md)）：任何状态/cue 无就绪 clip 时回退 idle loop，用户不可见空白。
-
-Desktop 侧的 scene 标识符体系（与 `clip.updated` payload 的 `scene` 字段对应）与 Backend 的 clip 生成队列对齐：scene 名直接取自状态机状态与 emotion 枚举（`idle` / `speaking` / `working` / `thinking` / `sleeping` / `happy` / …），无需另造命名空间。
+**Desktop scene 标识符体系**：`clip.updated` payload 的 `scene` 字段与 Backend clip 生成队列对齐——scene 名直接取自状态机状态（§2）与 emotion 枚举（`idle` / `speaking` / `working` / `thinking` / `sleeping` / `happy` / …），无需另造命名空间。Backend 的 scene 目录与批次优先级定义在 `services/companion/clip_service.CLIP_SCENES`。
 
 ---
 
-## 8. Runner runtime surface
+## 9. Runner runtime surface
 
 Runner 端提供与伴侣场景直接对接的本地能力，Desktop 按以下契约消费（[desktop/README.md](desktop/README.md) §Runner）：
 
 - **`runner_ready` payload**：含 `version` 与 `capabilities`（`microphone` / `screen_capture` / `local_stt` / `local_tts` / `system_activity` / `platform` / `python`），由 Runner **真实探测**各平台子系统得出，非硬编码。不全可装的环境不阻塞启动。
-- **`deskagent.info` RPC**：任何时候可调，返回完整进程 / OS / 网络 / 磁盘快照。失败态降级（[§4.5](#45-故障态与降级行为伙伴永不死)）依据此 RPC 与 WS 连通性双源判定。
-- **环境感知工具** `system.get_idle_seconds` / `is_screen_locked` / `get_focused_app` / `get_power_state`：经标准 `execute_tool` 通道轮询（Desktop 经 `runnerInvoke`）。`get_idle_seconds` 跨过阈值时额外触发 `companion.check_affect` 让 Backend LLM 推理情境化 affect（§6）；其余工具的结果直接进 §4.4 情境判定，**不经 LLM**。`is_screen_locked=true` 时静默切断主动消息（仍可 affect），解锁后静默恢复。
-- **本地语音** `speech_to_text`（faster-whisper）/ `text_to_speech`（Piper 主、pyttsx3 降级）/ `list_tts_voices`:STT/TTS 的零成本主路径。Desktop 经 `media.stt`/`media.tts` IPC 路由——默认本地优先(`auto`),本地不可用或失败时回退云端;`local` 档纯本地不回退,`cloud` 档强制云端(见 §5)。
+- **`deskagent.info` RPC**：任何时候可调，返回完整进程 / OS / 网络 / 磁盘快照。失败态降级（§5.5）依据此 RPC 与 WS 连通性双源判定。
+- **环境感知工具** `system.get_idle_seconds` / `is_screen_locked` / `get_focused_app` / `get_power_state`：经标准 `execute_tool` 通道轮询（Desktop 经 `runnerInvoke`）。`get_idle_seconds` 跨过阈值时额外触发 `companion.check_affect` 让 Backend LLM 推理情境化 affect（[ARCHITECTURE.md §5](ARCHITECTURE.md)）；其余工具的结果直接进 §5.4 情境判定，**不经 LLM**。`is_screen_locked=true` 时静默切断主动消息（仍可 affect），解锁后静默恢复。
+- **本地语音** `speech_to_text`（faster-whisper）/ `text_to_speech`（Piper 主、pyttsx3 降级）/ `list_tts_voices`:STT/TTS 的零成本主路径。Desktop 经 `media.stt`/`media.tts` IPC 路由——默认本地优先(`auto`),本地不可用或失败时回退云端;`local` 档纯本地不回退,`cloud` 档强制云端(见 §6)。
 
 ---
 

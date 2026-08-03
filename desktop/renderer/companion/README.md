@@ -22,7 +22,7 @@
 - **`emotional` / `interacting` 是叠加而非抢占**：进入前若当前不是这两个状态，原子 `$previousState` 记录原态；瞬态 timer 结束后回到 `previousState`（若 prev 也是 emotional/interacting，则回 `idle`）。
 - **crossfade ~250ms**：clip 切换通过 sprite-stage 的 fade 层处理，避免硬切。
 
-### 1.2 EMOTIONAL 帧时机（ARCH §7.5）
+### 1.2 EMOTIONAL 帧时机（ARCH §6.3）
 
 `message.complete` 帧内联 `affect: {emotion}` 字段。当 emotion 存在且 ≠ `neutral`：
 
@@ -66,11 +66,11 @@ LLM 任何 `joyful` / `happy_excited` 等未注册 token 走 `affect.py::_try_re
 | `normal` | 文本（气泡） | ✓ | ✗ |
 | `quiet` | 抑制文本与气泡 | ✓（仍可切 EMOTIONAL） | ✗ |
 
-`is_screen_locked` 等同 `quiet`（plan §4.5 / §4.2 锁屏静默）。失败回滚：若后端拒绝新档位，Desktop 回滚 `$disturbanceTier` 到旧值并写 dev log（P2-15）。
+`is_screen_locked` 等同 `quiet`（plan §5.5 / §5.2 锁屏静默）。失败回滚：若后端拒绝新档位，Desktop 回滚 `$disturbanceTier` 到旧值并写 dev log（P2-15）。
 
 ## 4. 精灵资源降级
 
-每 scene 计算 `active_tier = max(就绪档)`（3 > 2 > 1，不落库）。Tier 1 永远兜底——即使 zero 视频仍可启动（ARCH §11#9）。
+每 scene 计算 `active_tier = max(就绪档)`（3 > 2 > 1，不落库）。Tier 1 永远兜底——即使 zero 视频仍可启动（ARCH §10#9）。
 
 | Tier | 形态 | 渲染 |
 |---|---|---|

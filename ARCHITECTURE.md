@@ -2,15 +2,15 @@
 
 > **面向人类与 Agent 的系统总览。读代码前先读本文。**
 
-DeskAgent 是一个**根据用户描述定制的、具有专属形象的陪伴型桌面伙伴**。用户在首次安装时以一颗"蛋"的形态见到它，通过一段 onboarding 对话描述自己想要的伙伴（名字、性格、说话风格、外貌与视觉风格偏好），系统据此即时生成属于该用户的专属桌面形象；此后用户直接与这个形象交互，伙伴常驻桌面、能主动陪伴、也能调用本机能力帮用户做事。
+DeskAgent 是一个**根据用户描述定制的、具有专属形象的陪伴型桌面伙伴**。用户首次安装后经一段 onboarding 对话定制伙伴的名字、性格、说话风格与外貌，系统据此生成专属桌面形象；此后伙伴常驻桌面、主动陪伴，并调用本机能力帮用户做事。产品体验的完整设计（形象、动画、生命周期、onboarding、交互范式）见 [COMPANION_DESIGN.md](COMPANION_DESIGN.md)；本文聚焦系统物理架构——模块边界、通信协议、安全防线、跨模块不变量。
 
-三个关键词决定了一切产品与技术取舍：**定制**（形象与人格由用户定义并生成）、**陪伴**（主动、持续、有记忆的关系，而非一次性问答）、**伙伴**（交互对象是"他/她/它"，工具能力只是伙伴"会做的事"，不是产品的主角）。
+三个关键词决定一切产品与技术取舍：**定制**（形象与人格由用户定义并生成）、**陪伴**（主动、持续、有记忆的关系，而非一次性问答）、**伙伴**（交互对象是"他/她/它"，工具能力只是伙伴"会做的事"，不是产品的主角）。
 
 ---
 
-## 1. 核心设计思想
+## 1. 三模块物理解耦
 
-系统沿用以"云端思考 + 本地执行"为基础的三模块物理解耦，但在新的产品定位下重新解释其合理性：
+系统在物理上拆分为三个核心子模块，各自承载不同职责、运行在不同环境、由不同信任域管辖：
 
 | 层 | 所在 | 承载 | 为什么必须在物理上分离 |
 |----|------|------|------------------------|
@@ -18,58 +18,13 @@ DeskAgent 是一个**根据用户描述定制的、具有专属形象的陪伴�
 | **手脚** | Runner（本地） | 终端、文件、浏览器、代码沙箱等本机操作能力 | 伙伴"帮用户做事"必须真正触碰用户本机；但本机操作不可上云，且执行环境必须与凭证隔离 |
 | **形象与枢纽** | Desktop（本地） | 桌面精灵形象渲染、陪伴式交互、凭证持有、WS 中转、Runner 生命周期 | 伙伴要在用户桌面常驻可见、能听能说；同时是唯一可信的凭证持有点与本地/云端流量中转点 |
 
-解耦带来的不变收益在新定位下依然成立：**云端永不接触用户本机与凭证，本地 Runner 零凭证运行，Desktop 是唯一的可信枢纽。** 即便伙伴人格被 prompt 注入攻陷，最坏情况也只是受限用户账户下的本地工具被调用，不会泄露云端凭证或影响其他用户。
+**核心不变量**：云端永不接触用户本机与凭证，本地 Runner 零凭证运行，Desktop 是唯一的可信枢纽。即便伙伴人格被 prompt 注入攻陷，最坏情况也只是受限用户账户下的本地工具被调用，不会泄露云端凭证或影响其他用户。
 
 伙伴的"人格"由云端持久化的**角色定义**驱动（注入每次对话的系统提示词）；伙伴的"形象"由云端生成的**形象资产**驱动（由 Desktop 拉取并渲染）。两者共同构成"这一个伙伴"的数字身份，归属于该用户。
 
 ---
 
-## 2. 伙伴生命周期（核心产品流）
-
-这是 DeskAgent 区别于一切既有桌面宠物 / 桌面 Agent 的核心流程，也是产品体验的骨架：
-
-```
-[安装完成]
-    │
-    ▼
-┌─ 蛋 (Egg) ─────────────────────────────────────────────┐
-│  角色定义完成前，Desktop 以"蛋"作为占位形象常驻桌面。    │
-│  蛋是产品意象，技术本质是"形象生成未完成时的默认形象"。   │
-└──────────────────────────┬─────────────────────────────┘
-                           │  用户点击/唤醒，进入 onboarding
-                           ▼
-┌─ 角色定义 (Persona Definition) ────────────────────────┐
-│  引导用户描述想要的伙伴：名字、性格、说话风格、外貌与    │
-│  视觉风格偏好等。交互范式类似 agent 初始化时的基本信息   │
-│  确认（对话式、可回退、用户拥有最终确认权）。            │
-│  产出：一份结构化的角色定义，持久化在用户维度。          │
-└──────────────────────────┬─────────────────────────────┘
-                           │  用户确认
-                           ▼
-┌─ 形象生成 (Avatar Generation) ─────────────────────────┐
-│  Backend 据角色定义装配生图 prompt，调用云端图片生成工具 │
-│  产出专属形象资产，与角色定义一同在用户维度持久化。      │
-└──────────────────────────┬─────────────────────────────┘
-                           │  资产下发至 Desktop
-                           ▼
-┌─ 孵化 (Hatch) ─────────────────────────────────────────┐
-│  Desktop 将桌面上的"蛋"替换为生成的专属形象，配以仪式感 │
-│  过渡动画。这一刻是产品核心的情感锚点。                  │
-└──────────────────────────┬─────────────────────────────┘
-                           ▼
-┌─ 持续陪伴 (Ongoing Companionship) ─────────────────────┐
-│  • 伙伴形象常驻桌面（透明置顶窗口），可被用户随时唤起对话 │
-│  • 伙伴可主动发起交互：问候、提醒、闲聊（由 Cron / 事件驱动）│
-│  • 伙伴有长期记忆，随互动积累对用户的了解                 │
-│  • 伙伴可调用 Runner 帮用户操作本机——叙事上是"伙伴在帮忙"│
-└────────────────────────────────────────────────────────┘
-```
-
-后续可在此基础上扩展"成长 / 进化"机制（伙伴随互动阶段性地演变形象或人格），具体设计待补。
-
----
-
-## 3. 架构拓扑 (Topology)
+## 2. 架构拓扑 (Topology)
 
 系统在物理上拆分为三个核心子模块与一个独立的安装器引导组件：
 
@@ -113,7 +68,7 @@ DeskAgent 是一个**根据用户描述定制的、具有专属形象的陪伴�
 
 ---
 
-## 4. 核心模块与职责矩阵 (Responsibilities)
+## 3. 核心模块与职责矩阵 (Responsibilities)
 
 | 维度 | Backend (云端大脑) | Desktop (伙伴载体 + 本地枢纽) | Runner (本地手脚) |
 |---|---|---|---|
@@ -124,18 +79,18 @@ DeskAgent 是一个**根据用户描述定制的、具有专属形象的陪伴�
 
 ---
 
-## 5. 通信与消息协议 (Protocols & Flows)
+## 4. 通信与消息协议 (Protocols & Flows)
 
-全链路采用 **JSON-RPC 2.0** 封装双向流量。这一协议层是 backend/runner 复用的核心契约，不随产品定位变化。
+全链路采用 **JSON-RPC 2.0** 封装双向流量。这一协议层是 backend/runner 复用的核心契约。
 
-### 5.1 协议链路映射
+### 4.1 协议链路映射
 
 #### A. Backend ↔ Desktop
 单一 WebSocket 通道 `/api/chat/ws?token=<jwt>`，承载所有流式对话、控制事件、工具触发，以及形象资产下发与 onboarding 控制信令。
 - **请求信封 (Request)**: `{"jsonrpc": "2.0", "id": "<call_id>", "method": "<method>", "params": {...}}`
 - **事件推送 (Notification)**: `{"jsonrpc": "2.0", "method": "event", "params": {"type": "<event_type>", "payload": {...}}`
 
-**伙伴层协议扩展**（onboarding / 形象与动画资产 / 情绪表达）：在上述信封基础上新增以下方法与事件，承载伙伴生命周期的控制信令。Desktop 侧的消费状态机见 [COMPANION_DESIGN.md §2](COMPANION_DESIGN.md#2-动画状态机)。
+**伙伴层协议扩展**（onboarding / 形象与动画资产 / 情绪表达）：在上述信封基础上新增以下方法与事件，承载伙伴生命周期的控制信令。Desktop 侧的消费状态机见 [COMPANION_DESIGN.md §2](COMPANION_DESIGN.md)。
 
 | 方向 | 方法 / 事件 type | 用途 |
 |------|------------------|------|
@@ -143,11 +98,11 @@ DeskAgent 是一个**根据用户描述定制的、具有专属形象的陪伴�
 | Desktop → Backend | `onboarding.submit` `{field, value}` | 逐字段增量持久化 onboarding 答案 |
 | Desktop → Backend | `avatar.regenerate` `{feedback?}` | 重生 portrait，所有衍生 clip 失效并重排队列 |
 | Desktop → Backend | `avatar.list_clips` | 查询 clip 目录与生成状态（就绪/排队/失败） |
-| Backend → Desktop | `event.type="companion.affect"` `{emotion}` | affect-only 情绪 cue（无消息文本、无 TTS），驱动 EMOTIONAL 状态——quiet 档透传或 idle 触发 LLM 推理产出（详见 §5.2.IV / §6 / §7.5） |
+| Backend → Desktop | `event.type="companion.affect"` `{emotion}` | affect-only 情绪 cue（无消息文本、无 TTS），驱动 EMOTIONAL 状态——quiet 档透传或 idle 触发 LLM 推理产出（详见 §4.2.IV / §5 / §6.3） |
 | Desktop → Backend | `companion.set_disturbance_tier` `{tier}` | 上报当前打扰档位（积极主动/常规/保持安静），约束 Backend 主动消息 |
-| Desktop → Backend | `companion.check_affect` `{idle_seconds, local_hour}` | idle 触发的情境化 affect 推理：Backend 加载 persona + 记忆跑一次 LLM 推理，决定是否 emit `companion.affect`（详见 §6 / §7.6） |
+| Desktop → Backend | `companion.check_affect` `{idle_seconds, local_hour}` | idle 触发的情境化 affect 推理：Backend 加载 persona + 记忆跑一次 LLM 推理，决定是否 emit `companion.affect`（详见 §5 / §6.4） |
 
-clip 的就绪/失败通知走**单一 `clip.updated` 通道**（[backend/services/companion/clip_service.py](backend/services/companion/clip_service.py) `_emit_clip_event`）。companion 服务以 portrait 为种子经图生视频生成 clip，复用 `media/video_jobs` 流水线（通过 `enqueue_video_job(..., emit_event=False)` 抑制标准 `video_gen.*` 事件，避免双通知与字段名错位）。Desktop 另调 `avatar.list_clips` 查询整批 clip 目录与各自生成状态。
+clip 的就绪/失败通知走**单一 `clip.updated` 通道**。companion 服务以 portrait 为种子经图生视频生成 clip，复用 `media/video_jobs` 流水线（通过 `enqueue_video_job(..., emit_event=False)` 抑制标准 `video_gen.*` 事件，避免双通知与字段名错位）。Desktop 另调 `avatar.list_clips` 查询整批 clip 目录与各自生成状态。
 
 #### B. Desktop ↔ Runner
 本地环回 WebSocket `ws://127.0.0.1:<port>/rpc`。Desktop 充当 RPC Server，Runner 启动时作为 Client 主动连入。
@@ -155,7 +110,7 @@ clip 的就绪/失败通知走**单一 `clip.updated` 通道**（[backend/servic
   1. 避免 C 库底层日志或 Python `print` 污染标准输入输出帧。
   2. 全双工并发，按 `id` 异步匹配响应，避免进程读写阻塞与全局锁。
 
-### 5.2 核心数据流
+### 4.2 核心数据流
 
 #### I. 标准工具调用流（伙伴"帮忙"的底层通道）
 当云端 LLM 决定调用本地工具（如用户要伙伴整理某个文件夹，触发 `terminal` 或 `write_file`）：
@@ -224,102 +179,77 @@ Backend clip 生成队列（portrait 种子图 + 场景文本 → 图生视频�
     └── portrait 重生 → 所有衍生 clip 失效重排队列
 ```
 
-- **inline affect 原则**：情绪 cue 随其所属话语在同一响应帧（`message.complete`）下发，Desktop 无需二次猜测"这句话该配什么情绪"。独立的 `companion.affect` 事件用于非言语的情境化情绪反应——两条路径产出它：(1) `send_message_tool` 在 `quiet` 档下消息被吞但 affect 透传；(2) `companion.check_affect` 的 idle 触发 LLM 推理（详见 §6）。
-- **语义/渲染解耦**：Backend 只产出 `emotion` 语义，绝不指定 clip 文件名或渲染方式；Desktop 据本地可用资产决定如何渲染。这条解耦使 clip 的渐进生成不影响语义层（详见 §7.5）。
+- **inline affect 原则**：情绪 cue 随其所属话语在同一响应帧（`message.complete`）下发，Desktop 无需二次猜测"这句话该配什么情绪"。独立的 `companion.affect` 事件用于非言语的情境化情绪反应——两条路径产出它：(1) `send_message_tool` 在 `quiet` 档下消息被吞但 affect 透传；(2) `companion.check_affect` 的 idle 触发 LLM 推理（详见 §5）。
+- **语义/渲染解耦**：Backend 只产出 `emotion` 语义，绝不指定 clip 文件名或渲染方式；Desktop 据本地可用资产决定如何渲染。这条解耦使 clip 的渐进生成不影响语义层（详见 §6.3）。
 
 ---
 
-## 6. 事件与 Cron 调度（主动陪伴的基石）
+## 5. 事件与 Cron 调度（主动陪伴的基石）
 
 **陪伴区别于工具的关键，在于伙伴会主动找用户。** 系统以 PostgreSQL LISTEN/NOTIFY + Outbox 表支撑毫秒级、可水平扩展的事件分发，使伙伴的主动问候、定时提醒、情境化闲聊无需轮询即可送达：
 
-1. **写出事件**：业务或 Cron 协程（`core/cron.py` 推进 `cron_jobs` 状态；或 LLM 经 `send_message` 工具主动触发）将待发送的 WS 帧写入 `ws_events` 表。
+1. **写出事件**：业务或 Cron 协程将待发送的 WS 帧写入 `ws_events` 表。
 2. **数据库触发器**：PostgreSQL 在 `ws_events` 上的 STATEMENT 级触发器写入时自动发出 `NOTIFY ws_events_channel`。
-3. **副本认领（Atomic Claim）**：
-   - 每个 Backend 副本独立通过 `asyncpg` 监听 `LISTEN ws_events_channel`。
-   - 收到唤醒后各副本执行 `DELETE ... RETURNING`；行锁保证仅一台副本原子获取并消费该行，分发给连接其上的用户 WS。
-   - **防阻塞**：调度器 tick 只写入事件，不 await 实际 WebSocket 发射，避免慢客户端拖垮事务。
+3. **副本认领（Atomic Claim）**：每个 Backend 副本独立 `LISTEN`，收到唤醒后执行 `DELETE ... RETURNING`；行锁保证仅一台副本原子获取并消费该行。调度器 tick 只写入事件不 await WS 发射，避免慢客户端拖垮事务。
 
-`send_message`（主动消息）、Cron（定时任务）、形象/角色变更通知等所有"伙伴主动行为"都经此通道下发至 Desktop，再由伙伴形象以符合其人格的方式表达。
+`send_message`（主动消息）、Cron（定时任务）、形象/角色变更通知等所有"伙伴主动行为"都经此通道下发至 Desktop。调度循环与 LISTEN/NOTIFY 消费实现见 [backend/README.md](backend/README.md)。
 
-**打扰档位约束**：所有"伙伴主动行为"受三档打扰等级约束（积极主动 / 常规 / 保持安静），档位由用户设置 + Desktop 检测到的用户活动共同决定，Desktop 经 `companion.set_disturbance_tier` 上报当前生效档位。Backend 据此放行或抑制主动消息：`send_message_tool` 在 `quiet` 档时把消息文本门控吞掉，但 LLM 推理出的 affect 仍经独立的 `companion.affect` outbox 事件流出（[backend/services/tools/builtin/send_message_tool.py](backend/services/tools/builtin/send_message_tool.py) + [backend/services/companion/affect_emit.py](backend/services/companion/affect_emit.py)）——即"断消息不断 affect"。Desktop 收到 `companion.affect` 切 EMOTIONAL 状态但不弹气泡、不做 TTS。
+**打扰档位约束**：所有"伙伴主动行为"受三档打扰等级约束（积极主动 / 常规 / 保持安静），档位由用户设置 + Desktop 检测到的用户活动共同决定，Desktop 经 `companion.set_disturbance_tier` 上报。Backend 据此放行或抑制：`quiet` 档时主动消息被吞掉，但 LLM 推理出的 affect 仍经独立的 `companion.affect` 事件流出——即**断消息不断 affect**，Desktop 收到后切 EMOTIONAL 状态但不弹气泡、不做 TTS。档位的交互表现见 [COMPANION_DESIGN.md §5.2](COMPANION_DESIGN.md)；Backend 门控实现见 [backend/README.md](backend/README.md)。
 
-**情境化 affect（无 turn 触发）**：用户长时间无活动时，Backend LLM 仍可基于角色定义 + 记忆推理出情境化情绪（如粘人型被冷落 30 分钟后的 lonely/委屈）。Desktop `companion/activity.ts` 的 30s idle 轮询跨过阈值（默认 30min）+ 冷却（默认 1h）时，调 `companion.check_affect {idle_seconds, local_hour}` JSON-RPC（[backend/services/companion/affect_check.py](backend/services/companion/affect_check.py)），Backend 跑一次轻量 LLM 推理（persona + 最近记忆 + 情境），决定是否 emit `companion.affect`。**触发时机由 Desktop 控制（它知道真实 idle 状态），情绪推理由 Backend LLM 承担（它有 persona + 记忆）**——各取所长，Desktop 不退化成规则驱动的文案池。这条路径是 §7.6"记忆驱动运行时行为"不变量的真正落地。档位的行为细节见 [COMPANION_DESIGN.md §4.2](COMPANION_DESIGN.md#42-主动陪伴与打扰档位backend-驱动)。
+**情境化 affect（无 turn 触发）**：用户长时间无活动时，Desktop 的 idle 轮询跨过阈值时调 `companion.check_affect {idle_seconds, local_hour}`，Backend 加载 persona + 最近记忆跑一次 LLM 推理，决定是否 emit `companion.affect`。**触发时机由 Desktop 控制（知道真实 idle 状态），情绪推理由 Backend LLM 承担（有 persona + 记忆）**——各取所长，Desktop 不退化成规则驱动的文案池。这条路径是 §6.4"记忆驱动运行时行为"不变量的落地。
 
-**已知限制（多副本）**：`disturbance_tier` 与 `runtime_sessions` / IPC future 均为 process-local（[backend/services/companion/disturbance.py](backend/services/companion/disturbance.py) 的模块级 dict、[backend/services/gateway/connection.py](backend/services/gateway/connection.py) 的 MANAGER），多副本部署下用户必须连到同一副本；多副本横向扩展需先将这两处迁至共享存储（Redis 等）。当前设计假设单副本语义。
+**已知限制（多副本）**：`disturbance_tier` 与 IPC future 均为 process-local，多副本部署下用户必须连到同一副本；多副本横向扩展需先将这两处迁至共享存储（Redis 等）。当前设计假设单副本语义。
 
 ---
 
-## 7. 伙伴形象与角色系统
+## 6. 角色定义与表达层契约
 
-这是新定位下 Backend/Desktop 之间的核心新增契约。实现细节（schema、存储表、渲染管线）留给 [backend/README.md](backend/README.md) 与 [desktop/README.md](desktop/README.md)，ARCHITECTURE.md 只锁定跨模块的设计意图与不变量。
+Backend/Desktop 之间的核心契约：角色定义如何驱动伙伴、形象资产如何生成与下发、情绪如何表达。实现细节（schema、存储表、渲染管线）留给 [backend/README.md](backend/README.md) 与 [desktop/README.md](desktop/README.md)，本文只锁定跨模块的设计意图与不变量。
 
-### 7.1 角色定义 (Persona Definition)
-- onboarding 产出的结构化角色定义，持久化在 Backend 的用户维度。
-- 作为系统提示词的一部分注入该用户的每次对话，驱动伙伴的说话风格、性格表现与主动行为倾向。
-- 角色定义是伙伴行为的**唯一真相源**：变更只能由用户显式发起（重新进入角色编辑），不允许 LLM 自行改写。
+### 6.1 角色定义（唯一真相源）
 
-### 7.2 形象与动画资产 (Avatar & Animation Assets)
-伙伴的视觉表达由三层资产构成，均归属用户、在用户维度持久化，Desktop 拉取后本地缓存并渲染：
+onboarding 产出的结构化角色定义持久化在 Backend 用户维度，作为系统提示词的一部分注入该用户的每次对话，驱动伙伴的说话风格、性格表现与主动行为倾向。角色定义是伙伴行为的**唯一真相源**：变更只能由用户显式发起（重新进入角色编辑），禁止 LLM 自行改写。
 
-| 资产 | 形态 | 用途 |
-|------|------|------|
-| **portrait** | PNG | 视觉身份基准；由 Backend 据角色定义装配生图 prompt，调用 `backend_tools/image_generation_tool.py` 产出 |
-| **loop clip** | 3–5s 透明背景循环视频 | 常驻状态承载，每个 clip 绑定一个动画状态（[COMPANION_DESIGN.md §2](COMPANION_DESIGN.md#2-动画状态机)） |
-| **transition clip** | 一次性透明背景视频 | 仪式感时刻（孵化、问候、告别） |
+### 6.2 形象资产（跨模块契约）
 
-- **图生视频契约**：所有 clip 由 Backend 以当前 portrait 为种子图、结合场景/动作描述文本，经图生视频能力（MiniMax Hailuo，复用 `video_generate` 工具的 `first_frame_image` 参数与 `media/video_jobs` 流水线）产出。portrait 既是视觉身份基准、也是全部 clip 的生成种子——同一颗种子图从机制上保证跨 clip 的角色一致性，无需额外的风格锁。
-- **渐进式生成**：portrait + idle clip 在 onboarding 同步生成（批次 0）；其余 clip 按优先级后台排队——speaking/thinking/working（批次 1）→ 生命周期 clip（批次 2）→ 情绪变体（批次 3），就绪后经 `clip.updated` 事件下发。分批策略与降级细节见 [COMPANION_DESIGN.md §1.3](COMPANION_DESIGN.md#13-渐进式生成与不变量)。
-- **衍生失效**：因 clip 是以 portrait 为种子的图生视频产物，portrait 重生（`avatar.regenerate`）时所有 clip 必然失配，须全部失效并从新种子重新排队，绝不跨 portrait 版本复用。
-- **资产 URL 有 TTL（portrait 已在 P0-1 中持久化）**：provider 下载 URL 有时效（MiniMax 9h）。**portrait** 在 `services/companion/avatar_service.py::_generate_and_persist` 中即时下载到 `companion-avatars/` 持久目录，暴露给 Desktop 的是无 TTL 的 `/api/companion/avatar/file/<id>.<ext>` URL——换设备登录可直接拉取，无需重新生成。clip 资产（Tier 2/3）走 `companion-assets/` 同样持久化。Desktop 收到资产后仍应本地缓存以避免重复拉取。
-- Desktop 以透明置顶窗口将形象以桌面精灵形态常驻呈现（具体渲染技术——WebM alpha / sprite / 序列帧——是实现决策，由 desktop 子模块决定）。
+伙伴的视觉表达由 portrait、loop clip、transition clip 三层资产构成，均归属用户、在用户维度持久化。资产体系的形态、用途、渲染约束与三档降级设计见 [COMPANION_DESIGN.md §1](COMPANION_DESIGN.md)；此处只锁定跨模块契约：
 
-### 7.3 一致性与受控变更
-- **跨会话一致**：生成的形象在多次对话中保持稳定，构成伙伴的视觉身份。
-- **受控再生成**：形象变更只在以下情况发生——用户主动要求（换风格、重新生成）、或未来扩展的"成长/进化"机制；任意一种都走 Backend 主导的再生成流程，并同步更新 Desktop 本地缓存。
+- **portrait 是全部 clip 的生成种子**：所有 clip 经图生视频（portrait 为种子图 + 场景/动作文本，复用 `media/video_jobs` 流水线）产出。同一颗种子图从机制上保证跨 clip 的角色一致性，无需额外的风格锁。
+- **衍生失效**：portrait 重生（`avatar.regenerate`）时所有 clip 必然失配，须全部失效并从新种子重新排队，绝不跨 portrait 版本复用。
+- **资产 URL 无 TTL**：portrait 与 clip 产物落持久目录（`companion-avatars/` / `companion-assets/`），暴露无 TTL 的文件路由 URL——换设备登录可直接拉取，无需重新生成。Desktop 收到后仍应本地缓存避免重复拉取。
+- **受控再生成**：形象在多次会话间保持稳定，构成伙伴的视觉身份。变更只在用户主动要求时发生，走 Backend 主导的再生成流程并同步更新 Desktop 本地缓存。
+- **渐进式生成**：portrait + idle clip 在 onboarding 同步生成（批次 0）；其余 clip 按优先级后台排队，就绪后经 `clip.updated` 事件下发。分批策略与降级细节见 [COMPANION_DESIGN.md §1.3 / §1.4](COMPANION_DESIGN.md)。
 
-### 7.4 已有云端工具在新定位下的复用映射
-旧 backend 工具集恰好覆盖陪伴场景的核心能力，这是"为什么复用 backend 是合理的"的关键依据：
+### 6.3 表达层契约
 
-| 工具 | 旧定位 | 新定位（陪伴场景） |
-|------|--------|---------------------|
-| `image_generation_tool` | 通用图片生成 | **生成专属桌面形象** |
-| `tts_tool` | 通用 TTS | **伙伴的语音**（让伙伴"能说"） |
-| `send_message_tool` | 通用主动消息 | **伙伴主动发起对话**（问候/提醒/闲聊） |
-| `web_tools` | 通用 Web 搜索 | **伙伴帮用户查信息、聊时事** |
-| `memory`（tools_runtime） | 通用记忆 | **伙伴对用户的长期记忆**（陪伴的关系感） |
-
-### 7.5 伙伴表达层契约 (Companion Expression Contract)
 伙伴"说什么"由 LLM 产出，"怎么动、什么情绪"由 Desktop 渲染。以下是两者之间的语义契约：
 
-- **情绪 cue（affect）**：Backend 在对话响应/主动消息中携带 `affect: {emotion}` 语义字段，Desktop 据此驱动动画状态机。emotion 为有限枚举集（`happy / sad / surprised / excited / confused / concerned / shy / proud / grateful / playful / bored` + `neutral`），可扩展——但每次扩展须同步 Backend 的产出 allowlist 与 Desktop 的 clip 目录，否则未覆盖的 emotion 一律按 `neutral` 处理。
+- **情绪 cue（affect）**：Backend 在对话响应/主动消息中携带 `affect: {emotion}` 语义字段，Desktop 据此驱动动画状态机。emotion 为有限枚举集（`happy / sad / surprised / excited / confused / concerned / shy / proud / grateful / playful / bored` + `neutral`），可扩展——但每次扩展须同步 Backend 产出 allowlist 与 Desktop clip 目录，否则未覆盖的 emotion 一律按 `neutral` 处理。
 - **语义与渲染解耦**：Backend 只产出 emotion 语义，绝不指定 clip 文件或渲染方式。Desktop 据本地可用资产决定渲染——有对应 clip 则播放，否则回退 idle loop + 状态轻量提示。这使 clip 渐进生成与语义层互不阻塞。
-- **affect 与角色定义一致**：affect 由已注入角色定义的 LLM 产出，自然符合人格；角色定义本身受 §8.2 防篡改机制保护，affect 因此继承同一抗注入保证，无需额外的情绪过滤层。
-- **affect 与 text 同帧，TTS 由 Desktop 拉取式合成**：对话响应的 `message.complete` 帧内联 `{text, affect}`，**不内联 TTS 音频**。Desktop 收到该帧后按 §5.2.IV 状态机顺序驱动——先据 affect 切 EMOTIONAL，再据 text 拉 TTS（`POST /api/media/tts`）切 SPEAKING，保证情绪基调先于语音进入而非事后补播。Backend 只产出语义（emotion + text），TTS 合成归 Desktop 渲染层，与下方"语义/渲染解耦"原则一致；此前"TTS 音频信息必须同帧下发"的措辞与该原则自相矛盾，已修订。
-- **onboarding 断点恢复**：onboarding 采集的字段在 Backend 用户维度**逐字段增量持久化**（每提交一个 `onboarding.submit` 即落盘）。Desktop 启动时调 `onboarding.get_state`，未完成则从最后未答问题恢复，崩溃/退出不丢进度。
-- **形象描述步骤**：onboarding 在角色题里加入"物种（生物类型）—角色性别—形象描述"三步，物种 + 性别（chip 值 → 英文 token）写进 Persona，`appearance` 把原本预留但从未收取的字段接通到生图 prompt，让 portrait 与形象描述对齐；英文查表在 `backend/services/companion/avatar_service.py::_SPECIES_EN` / `_GENDER_EN`。
-- **结构化用户信息 + 角色端单 PUT 双写**：5 个结构化用户字段（称呼 / 性别 / 年龄段 / 爱好 / 自由文本）由 `update_persona` 服务端分流入 Memory 表。`PersonaUpdate` 仍保持 `extra="forbid"` 严格 schema，把 user_* 字段显式声明为 Optional、由 `update_persona` 在同一 SQLAlchemy session 内写到 `Memory`（query-then-update 幂等 upsert，tags = `json.dumps(["onboarding", "user_profile"])`，context 为 `user_profile:*`），然后再写 persona 字段 + `is_complete=true`，单 `db.commit()` 同时落两路。异常路径：生产 Postgres 由 `main.py::_install_schema_extensions` 加 `uq_memories_user_context` 部分唯一索引兜底 race，IntegrityError 上抛路由 → desktop 3 次重试兜底。`onboarding.submit` 的草稿（即 onboarding draft `definition_json`）仍包含 user_* 字段以便断点恢复，但 PUT 时整体清空、user_* 由服务端分流去处。
-- **user_profile 自动召回进 system prompt**：5 条 user_profile:* 行是稳定的用户身份事实（每条按用户都不变），不应该靠 LLM 主动调 `memory_recall` 才拉到。`services/companion/memory_bootstrap.py::build_user_profile_extras(db, user_id)` 在 chat 入口（`services/chat/turn_inputs.py::_build_turn_inputs`）按 `_CONTEXT_LABELS` 顺序渲染成 markdown 片段，经 `AgentPromptConfig.user_profile_extras` 进 `services/chat/system_prompt.py::build_system_prompt_parts` 的 stable parts，紧跟 persona_extras + COMPANION_AFFECT_GUIDANCE 之后追加。LLM 每个 turn 都能直接看到"用户叫老板/男/26-35 岁/喜欢音乐/早起型"——不再依赖 `memory_recall` 工具调用。这样 §7.6 双层模型里"记忆驱动行为"那条路径在结构化字段上**不会**靠 LLM 是否记得调工具来决定。
+- **affect 继承角色定义的抗注入保证**：affect 由已注入角色定义的 LLM 产出，自然符合人格；角色定义本身受 §7.2 reserved 键与不可信包围机制保护，affect 因此继承同一保证，无需额外的情绪过滤层。
+- **affect 与 text 同帧，TTS 由 Desktop 拉取式合成**：对话响应的 `message.complete` 帧内联 `{text, affect}`，不内联 TTS 音频。Desktop 收到后先据 affect 切 EMOTIONAL，再据 text 拉 TTS（`POST /api/media/tts`）切 SPEAKING，保证情绪基调先于语音进入。Backend 只产出语义（emotion + text），TTS 合成归 Desktop 渲染层。
+- **user_profile 自动召回**：5 条结构化用户字段（称呼/性别/年龄段/爱好/自由文本）在 chat 入口渲染成 markdown 片段注入 system prompt stable 段，紧跟角色定义之后。LLM 每个 turn 都能直接看到用户身份事实，不依赖 `memory_recall` 工具调用——§6.4 双层模型中"记忆驱动行为"在结构化字段上不靠 LLM 是否记得调工具来决定。
 
-### 7.6 行为驱动的双层模型
+### 6.4 行为驱动的双层模型
+
 伙伴"做什么、怎么做"由两个独立来源驱动，两者不可混淆、也不可错配：
 
-- **角色定义（静态，用户定义）→ 视觉身份与资产生成**：portrait 与所有 clip 的生图/生视频 prompt 从角色定义装配（§7.2）。换风格 = 改角色定义 → 资产重生。这是伙伴"长什么样、动作风格如何"的唯一来源。
+- **角色定义（静态，用户定义）→ 视觉身份与资产生成**：portrait 与所有 clip 的生图/生视频 prompt 从角色定义装配（§6.2）。换风格 = 改角色定义 → 资产重生。这是伙伴"长什么样、动作风格如何"的唯一来源。
 - **记忆（动态，随互动累积）→ 运行时行为表达**：记忆注入 LLM 上下文，驱动**说什么、表现什么情绪、何时主动搭话、主动频率**。用户随口表达的偏好（"我喜欢你多笑"）写入记忆后，LLM 在后续交互中更频繁地产出 `happy` affect——伙伴"笑得更多"。
 
-**核心不变量**：记忆驱动的个性化通过**运行时行为**（affect / 言语 / 主动频率）实现，**不通过 clip 重生实现**。clip 只随角色定义变更而重生。这避免了"每学到一条新偏好就重生成全部视频"的不可行开销，同时让伙伴随关系深入而"表现得不一样"。未来"成长/进化"机制（§2）才会引入记忆驱动的阶段性 clip 重生。
+**核心不变量**：记忆驱动的个性化通过**运行时行为**（affect / 言语 / 主动频率）实现，**不通过 clip 重生实现**。clip 只随角色定义变更而重生。这避免了"每学到一条新偏好就重生成全部视频"的不可行开销，同时让伙伴随关系深入而"表现得不一样"。
 
 ---
 
-## 8. 安全与准入控制 (Security & Trust)
+## 7. 安全与准入控制 (Security & Trust)
 
-### 8.1 物理与凭证隔离
+### 7.1 物理与凭证隔离
 - **大脑**（云端）不接触用户本地操作系统；即便 prompt 注入攻陷伙伴人格，也在受限用户账户下执行本地工具。
 - **手脚**（Runner）零 Token 运行，无法越权请求 Backend 管理级 API。
 - **枢纽**（Desktop）通过 Electron 主进程 `safeStorage` 将 JWT 加密落地在 `agent-session.json`。Renderer 与 Preload 无法接触 safeStorage 接口，阻断 XSS 窃取凭证。
 - **用户隐私数据**：角色定义与形象资产归属于该用户，按用户维度隔离，不跨用户共享、不下发给他租户。
 
-### 8.2 安全防护网 (Defense Layers)
+### 7.2 安全防护网 (Defense Layers)
 
 #### 1. 输入清洗与指令包围 (Untrusted Wrap)
 - Backend 从外部（Web 搜索、浏览器抓取、MCP 外部资源）获取的所有不可信文本，注入 LLM 上下文时强制用 `<untrusted_tool_result>` 标签包裹。
@@ -340,9 +270,9 @@ Backend clip 生成队列（portrait 种子图 + 场景文本 → 图生视频�
 
 ---
 
-## 9. 错误契约与韧性设计 (Error Contract)
+## 8. 错误契约与韧性设计 (Error Contract)
 
-### 9.1 错误分层模型
+### 8.1 错误分层模型
 
 ```
 ┌────────────────────────────────────────────────────────────────┐
@@ -364,7 +294,7 @@ Backend clip 生成队列（portrait 种子图 + 场景文本 → 图生视频�
 └────────────────────────────────────────────────────────────────┘
 ```
 
-### 9.2 错误分类管道 (Failover Reason)
+### 8.2 错误分类管道 (Failover Reason)
 云端 `error_classifier.py` 以 8 步优先级过滤（Provider 规则 ↔ 状态码 ↔ 错误代码 ↔ 异常特征 ↔ SSL 传输 ↔ 断连 ↔ 启发式），将所有 API 层或依赖项错误收拢为 21 种 `FailoverReason`：
 - **计费与限流** (`billing`, `rate_limit`)：触发客户端自动退避重试或切换凭证。
 - **附件获取异常** (`attachment_fetch_failed`)：LLM 获取多模态图片/视频附件失败时，拦截 Proxy 端原始 SDK 报错，向用户返回独立、明确的 Proxy 接入报错，避免误导性触发 LLM 回退逻辑。
@@ -372,7 +302,7 @@ Backend clip 生成队列（portrait 种子图 + 场景文本 → 图生视频�
 
 ---
 
-## 10. 自更新生命周期 (Self-Update)
+## 9. 自更新生命周期 (Self-Update)
 
 Desktop 的更新通过 `/api/update` 获取 Electron 二进制与 Runner wheel 包，本地原子替换。为确保升级中途断网或崩溃不会"变砖"，采用**两阶段自更新契约**：
 
@@ -399,7 +329,7 @@ Desktop 的更新通过 `/api/update` 获取 Electron 二进制与 Runner wheel 
 
 ---
 
-## 11. 全局开发不变量 (Invariants)
+## 10. 全局开发不变量 (Invariants)
 
 **架构层（不可破坏）：**
 
@@ -414,11 +344,11 @@ Desktop 的更新通过 `/api/update` 获取 Electron 二进制与 Runner wheel 
 6. **角色定义是伙伴行为的唯一真相源**：伙伴的所有输出风格、主动行为受持久化的角色定义约束；角色定义只能由用户显式发起变更，禁止 LLM 自行改写。
 7. **形象资产归属用户**：生成的专属形象归属该用户，按用户维度隔离，不跨用户共享；形象在多次会话间保持一致，除非用户触发受控再生成。
 8. **陪伴优先于工具**：产品决策发生冲突时，陪伴体验优先于工具效率。工具调用以"伙伴在帮忙"的叙事呈现，原始协议帧不直接暴露给最终用户（开发者视图除外）。
-9. **伙伴表达永不空白**：任何动画状态或情绪 cue 无对应就绪 clip 时，Desktop 必须回退 idle loop + 状态轻量提示，用户永远不可见"该动画尚未生成"的空白或加载态。这是陪伴体验连续性的底线，也是 §7.5 语义/渲染解耦能成立的代价兜底。
+9. **伙伴表达永不空白**：任何动画状态或情绪 cue 无对应就绪 clip 时，Desktop 必须回退 idle loop + 状态轻量提示，用户永远不可见"该动画尚未生成"的空白或加载态。这是陪伴体验连续性的底线，也是 §6.3 语义/渲染解耦能成立的代价兜底。
 
 ---
 
-## 12. 子模块详细 README.md 开发索引
+## 11. 子模块详细 README.md 开发索引
 
 模块级行为契约、文件树（带职责）、跨文件设计权衡分别记录在各子目录 README.md 中：
 
