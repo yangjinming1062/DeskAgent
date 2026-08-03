@@ -1,3 +1,5 @@
+from typing import ClassVar
+
 from ..base import ProviderConfig
 from ..base import VideoAsset
 from ..base import VideoGenProvider
@@ -30,7 +32,7 @@ class MiniMaxVideoGenProvider(VideoGenProvider):
     """
 
     provider_name = "minimax"
-    DEFAULT_MODELS = {"video_gen": "MiniMax-Hailuo-02"}
+    DEFAULT_MODELS: ClassVar[dict[str, str]] = {"video_gen": "MiniMax-Hailuo-02"}
 
     def __init__(self, config: ProviderConfig):
         super().__init__(config)

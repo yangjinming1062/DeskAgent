@@ -1,3 +1,4 @@
+import contextlib
 import logging
 import re
 import sys
@@ -120,7 +121,7 @@ def _enumerate_pyttsx3_voices(engine: Any) -> list[dict[str, str]]:
     """
     try:
         voices = engine.getProperty("voices") or []
-    except Exception:  # noqa: BLE001
+    except Exception:
         return []
     out: list[dict[str, str]] = []
     for v in voices:
@@ -190,10 +191,8 @@ def _synth_pyttsx3(text: str, voice: str | None, speed: float, dst: Path) -> dic
 
         # pyttsx3's setProperty("voice") is best-effort across platforms.
         if voice:
-            try:
+            with contextlib.suppress(Exception):
                 engine.setProperty("voice", voice)
-            except Exception:
-                pass
 
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
             tmp_path = tmp.name
@@ -202,10 +201,8 @@ def _synth_pyttsx3(text: str, voice: str | None, speed: float, dst: Path) -> dic
             engine.runAndWait()
             copy2(tmp_path, dst)
         finally:
-            try:
+            with contextlib.suppress(OSError):
                 Path(tmp_path).unlink()
-            except OSError:
-                pass
     finally:
         if com_initialized:
             try:

@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import random
 import time
 from collections.abc import AsyncIterator
@@ -69,10 +70,8 @@ async def _stream_with_timeout(stream: Any, timeout: float, *, model: str) -> As
     finally:
         aclose = getattr(stream, "aclose", None)
         if aclose is not None:
-            try:
+            with contextlib.suppress(Exception):
                 await aclose()
-            except Exception:
-                pass
 
 
 async def call_with_retry(

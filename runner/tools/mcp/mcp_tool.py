@@ -3,6 +3,7 @@ import asyncio
 import atexit
 import base64
 import concurrent.futures
+import contextlib
 import inspect
 import json
 import logging
@@ -20,6 +21,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+from typing import ClassVar
 from urllib.parse import urlparse
 
 import httpx
@@ -515,7 +517,7 @@ class SamplingHandler:
     it doesn't block the event loop.
     """
 
-    _STOP_REASON_MAP = {"stop": "endTurn", "length": "maxTokens", "tool_calls": "toolUse"}
+    _STOP_REASON_MAP: ClassVar[dict[str, str]] = {"stop": "endTurn", "length": "maxTokens", "tool_calls": "toolUse"}
 
     def __init__(self, server_name: str, config: dict):
         self.server_name = server_name
@@ -1058,10 +1060,8 @@ class MCPServerTask:
             for t in (shutdown_task, reconnect_task):
                 if not t.done():
                     t.cancel()
-                    try:
+                    with contextlib.suppress(asyncio.CancelledError, Exception):
                         await t
-                    except (asyncio.CancelledError, Exception):
-                        pass
 
         if self._shutdown_event.is_set():
             return "shutdown"
@@ -1125,12 +1125,8 @@ class MCPServerTask:
                     # (e.g. ``claude mcp serve`` spawned by a stdio wrapper).
                     new_pgids: dict[int, int] = {}
                     for _pid in new_pids:
-                        try:
+                        with contextlib.suppress(AttributeError, ProcessLookupError, OSError):
                             new_pgids[_pid] = os.getpgid(_pid)
-                        except (AttributeError, ProcessLookupError, OSError):
-                            # AttributeError: Windows (os.getpgid is POSIX-only)
-                            # ProcessLookupError: child raced and already exited
-                            pass
                     with _lock:
                         for _pid in new_pids:
                             _stdio_pids[_pid] = self.name
@@ -1659,10 +1655,8 @@ class MCPServerTask:
                     self.name,
                 )
                 self._task.cancel()
-                try:
+                with contextlib.suppress(asyncio.CancelledError):
                     await self._task
-                except asyncio.CancelledError:
-                    pass
         if self._pending_refresh_tasks:
             for task in list(self._pending_refresh_tasks):
                 task.cancel()
@@ -2181,11 +2175,9 @@ def _load_mcp_config() -> dict[str, dict]:
         if not servers or not isinstance(servers, dict):
             return {}
         # Ensure .env vars are available for interpolation
-        try:
+        with contextlib.suppress(Exception):
 
             load_deskagent_dotenv()
-        except Exception:
-            pass
         return {name: _interpolate_env_vars(cfg) for name, cfg in servers.items()}
     except Exception as exc:
         logger.debug("Failed to load MCP config: %s", exc)
@@ -3530,10 +3522,8 @@ def _kill_orphaned_mcp_children(include_active: bool = False) -> None:
                     server_name,
                     exc,
                 )
-        try:
+        with contextlib.suppress(ProcessLookupError, PermissionError, OSError):
             os.kill(pid, sig)
-        except (ProcessLookupError, PermissionError, OSError):
-            pass
 
     # Phase 1: SIGTERM (graceful)
     for pid, server_name in pids.items():
@@ -3571,10 +3561,8 @@ def _stop_mcp_loop():
         loop.call_soon_threadsafe(loop.stop)
         if thread is not None:
             thread.join(timeout=5)
-        try:
+        with contextlib.suppress(Exception):
             loop.close()
-        except Exception:
-            pass
         # After closing the loop, any stdio subprocesses that survived the
         # graceful shutdown are now orphaned — include active PIDs too
         # since the loop is gone and no session can still be in flight.

@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 
 from components import get_logger
 from components import SESSION_HEARTBEAT_INTERVAL_S
@@ -47,10 +48,8 @@ async def _close_heartbeat_bracket(emitter: Emitter, heartbeat_task: asyncio.Tas
     """
     if heartbeat_task is not None and not heartbeat_task.done():
         heartbeat_task.cancel()
-        try:
+        with contextlib.suppress(asyncio.CancelledError, Exception):
             await asyncio.shield(heartbeat_task)
-        except (asyncio.CancelledError, Exception):
-            pass
     if runtime is None:
         return
     try:

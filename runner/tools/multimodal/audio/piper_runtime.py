@@ -22,7 +22,7 @@ try:
 except ImportError:
     piper = None  # type: ignore[assignment]
 try:
-    import pyttsx3  # noqa: F401
+    import pyttsx3
 except ImportError:
     pyttsx3 = None  # type: ignore[assignment]
 
@@ -211,6 +211,6 @@ def ensure_voice_installed(voice_id: str, *, voice_dir: Path | None = None, time
     try:
         download_voice(voice_id, voice_dir=voice_dir, timeout=timeout)
         return True
-    except Exception as exc:  # noqa: BLE001 — best-effort, log and move on
+    except Exception as exc:
         logger.warning("Piper voice %s auto-download failed: %s", voice_id, exc)
         return False

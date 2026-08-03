@@ -219,10 +219,7 @@ def _resolve_base_dir(task_id: str = "default") -> Path:
     the process cwd only as a last resort, deterministically.
     """
     root = _authoritative_workspace_root(task_id)
-    if root:
-        base = Path(root).expanduser()
-    else:
-        base = Path(os.getcwd())
+    base = Path(root).expanduser() if root else Path(os.getcwd())
     if not base.is_absolute():
         # Last-resort anchoring: a live cwd should already be absolute, but if a
         # terminal backend ever reports a relative cwd, anchor it to the process
@@ -356,7 +353,8 @@ _SENSITIVE_PATH_PREFIXES = (
     "/usr/lib/systemd/",
     "/private/etc/",
     "/private/var/",
-) + get_windows_sensitive_prefixes()
+    *get_windows_sensitive_prefixes(),
+)
 # Per-user AppData / NTUSER.DAT — anchored to the logged-in user's home
 # directory so a workspace folder that happens to contain
 # ``appdata/roaming/microsoft/`` is NOT falsely blocked.  Without the
@@ -1259,11 +1257,11 @@ def write_file_tool(path: str, content: str, task_id: str = "default", cross_pro
 
 def patch_tool(
     mode: str = "replace",
-    path: str = None,
-    old_string: str = None,
-    new_string: str = None,
+    path: str | None = None,
+    old_string: str | None = None,
+    new_string: str | None = None,
     replace_all: bool = False,
-    patch: str = None,
+    patch: str | None = None,
     task_id: str = "default",
     cross_profile: bool = False,
 ) -> str:
@@ -1429,7 +1427,7 @@ def search_tool(
     pattern: str,
     target: str = "content",
     path: str = ".",
-    file_glob: str = None,
+    file_glob: str | None = None,
     limit: int = 50,
     offset: int = 0,
     output_mode: str = "content",

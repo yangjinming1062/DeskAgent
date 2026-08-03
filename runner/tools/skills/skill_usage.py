@@ -4,6 +4,7 @@ import logging
 import shutil
 import sys
 from contextlib import contextmanager
+from contextlib import suppress
 from datetime import datetime
 from datetime import timezone
 from pathlib import Path
@@ -82,15 +83,11 @@ def _usage_file_lock():
             yield
         finally:
             if sys.platform == "win32":
-                try:
+                with suppress(OSError):
                     msvcrt.locking(fd.fileno(), msvcrt.LK_UNLCK, 1)
-                except OSError:
-                    pass
             else:
-                try:
+                with suppress(OSError):
                     fcntl.flock(fd, fcntl.LOCK_UN)
-                except OSError:
-                    pass
 
 
 def _archive_dir() -> Path:

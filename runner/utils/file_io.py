@@ -1,3 +1,4 @@
+import contextlib
 import os
 import tempfile
 
@@ -18,10 +19,8 @@ def atomic_replace(file_path: str, content: str) -> None:
             os.fsync(tmp.fileno())
         os.replace(tmp_name, file_path)
     except BaseException:
-        try:
+        with contextlib.suppress(OSError):
             os.unlink(tmp_name)
-        except OSError:
-            pass
         raise
 
 

@@ -432,7 +432,7 @@ def test_read_endpoint_url_returns_none_for_corrupted_endpoint(monkeypatch, tmp_
         ("dead PID", json.dumps({"port": 8080, "pid": 2**31 - 1}), None, "dead PID → None"),
         ("dead PID overrides even valid port", json.dumps({"port": 8080, "pid": 2**31 - 1}), None, "dead PID still wins → None"),
     ]
-    for name, body, expected_url, doc in cases:
+    for name, body, _expected_url, doc in cases:
         if body == "" and not endpoint.exists():
             # Missing file case — leave it absent.
             pass
@@ -576,10 +576,8 @@ def test_real_reload_mcp_servers_shuts_down_live_servers():
         assert "alpha" not in real_mcp_tool._servers
         assert "beta" not in real_mcp_tool._servers
     finally:
-        try:
+        with contextlib.suppress(Exception):
             real_mcp_tool._stop_mcp_loop()
-        except Exception:
-            pass
         real_mcp_tool._servers.pop("alpha", None)
         real_mcp_tool._servers.pop("beta", None)
 @pytest.mark.timeout(10)

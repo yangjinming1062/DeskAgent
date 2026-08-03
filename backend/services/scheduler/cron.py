@@ -17,6 +17,8 @@ from sqlalchemy.exc import IntegrityError
 
 logger = get_logger(__name__)
 
+_BG_TASKS: set[asyncio.Task] = set()
+
 SCHEDULER_INTERVAL_SECONDS = 60
 
 _JOB_IMMUTABLE_FIELDS = frozenset({"id", "user_id"})
@@ -303,7 +305,9 @@ def _advance_due_jobs(due_jobs: list[CronJob], now: datetime) -> None:
         if meta.get("is_paused"):
             continue
         try:
-            asyncio.create_task(_kick_autonomous_turn(job_id, meta))
+            t = asyncio.create_task(_kick_autonomous_turn(job_id, meta))
+            _BG_TASKS.add(t)
+            t.add_done_callback(_BG_TASKS.discard)
         except RuntimeError:
             # No running loop — defer; the WSEvent is still queued and the
             # next tick will retry, plus the renderer can drive the turn

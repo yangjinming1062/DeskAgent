@@ -1,7 +1,7 @@
 import inspect
 import json
+from collections.abc import Callable
 from typing import Any
-from typing import Callable
 
 from components import get_logger
 from components import tool_error

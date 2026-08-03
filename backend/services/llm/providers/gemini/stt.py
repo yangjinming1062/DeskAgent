@@ -1,4 +1,5 @@
 import base64
+from typing import ClassVar
 
 from .._provider_errors import raise_for_provider_response
 from ..base import ProviderConfig
@@ -12,7 +13,7 @@ class GeminiSTTProvider(STTProvider):
     """STT via Gemini's ``generateContent`` with audio ``inlineData``."""
 
     provider_name = "gemini"
-    DEFAULT_MODELS = {"stt": "gemini-2.5-flash"}
+    DEFAULT_MODELS: ClassVar[dict[str, str]] = {"stt": "gemini-2.5-flash"}
 
     def __init__(self, config: ProviderConfig):
         super().__init__(config)

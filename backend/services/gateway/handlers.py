@@ -1,5 +1,6 @@
 import asyncio
 import base64
+import contextlib
 import itertools
 import json
 import secrets
@@ -110,10 +111,8 @@ async def handle_chat_websocket(websocket: WebSocket, token: str):
 
     session_client_context: ChatRequestClientContext | None = None
     if payload and "ctx" in payload:
-        try:
+        with contextlib.suppress(Exception):
             session_client_context = ChatRequestClientContext(**payload["ctx"])
-        except Exception:
-            pass
 
     # JSON-RPC 2.0 dispatcher — see services/gateway/jsonrpc.py. All inbound
     # frames are JSON-RPC 2.0 requests; legacy raw type frames are no longer
@@ -206,10 +205,8 @@ async def handle_chat_websocket(websocket: WebSocket, token: str):
                     raise
                 except Exception as e:
                     logger.exception("prompt.submit chat_turn failed")
-                    try:
+                    with contextlib.suppress(Exception):
                         await dispatcher.push_event("error", {"message": str(e)}, session_id=runtime.session_id)
-                    except Exception:
-                        pass
 
         runtime.chat_task = asyncio.create_task(_run_turn())
         _track(runtime.chat_task)

@@ -1,4 +1,4 @@
-from . import activity_tools  # noqa: F401, E402
+from . import activity_tools  # noqa: F401 — side-effect: registers system.* tools
 from .ansi_strip import strip_ansi
 from .ansi_strip import strip_fence
 from .budget_config import BudgetConfig

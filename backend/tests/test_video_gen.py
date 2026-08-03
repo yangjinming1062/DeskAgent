@@ -3,6 +3,8 @@ from types import SimpleNamespace
 
 import httpx
 import pytest
+from services.llm import MissingLlmConfigError
+from services.llm import ProviderError
 
 
 def _async_handler(responses):
@@ -210,7 +212,7 @@ class TestVideoGenJobRoundtrip:
             cfg.video_gen_model_name = "MiniMax-Hailuo-02"
             db.commit()
 
-            with pytest.raises(Exception):
+            with pytest.raises((MissingLlmConfigError, ProviderError, ValueError)):
                 await enqueue_video_job(
                     db,
                     user_id=user_id,

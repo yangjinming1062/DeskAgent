@@ -1,3 +1,4 @@
+import contextlib
 import json
 import secrets
 import time
@@ -105,7 +106,5 @@ def gc_session(session_id: str):
 
 
 def _safe_unlink(path: Path):
-    try:
+    with contextlib.suppress(OSError):
         path.unlink(missing_ok=True)
-    except OSError:
-        pass

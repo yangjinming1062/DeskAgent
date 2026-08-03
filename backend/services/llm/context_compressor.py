@@ -149,7 +149,7 @@ async def compress_history_if_needed(
 
     replaced_count = len(block)
     placeholder = {"role": "user", "content": f"[Conversation summary — {replaced_count} earlier turns compressed]\n\n{summary}"}
-    new_messages = list(system_msgs) + [placeholder] + list(keep)
+    new_messages = [*system_msgs, placeholder, *keep]
     logger.info(
         "context_compressor: summarized messages into one summary",
         extra={

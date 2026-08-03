@@ -1,4 +1,5 @@
 import base64
+from typing import ClassVar
 
 from .._provider_errors import raise_for_provider_response
 from ..base import ProviderConfig
@@ -12,8 +13,8 @@ class GeminiTTSProvider(TTSProvider):
     """TTS via Gemini's ``generateContent`` with ``responseModalities: ["AUDIO"]``."""
 
     provider_name = "gemini"
-    DEFAULT_MODELS = {"tts": "gemini-2.5-flash-preview-tts"}
-    VOICE_CATALOG = [
+    DEFAULT_MODELS: ClassVar[dict[str, str]] = {"tts": "gemini-2.5-flash-preview-tts"}
+    VOICE_CATALOG: ClassVar[list[dict]] = [
         {"id": "Kore", "label": "Kore", "gender": "neutral", "language": "multi", "tags": ["坚定", "温柔", "温暖", "自然", "中性"], "description": "坚定温暖的音色。"},
         {"id": "Zephyr", "label": "Zephyr", "gender": "neutral", "language": "multi", "tags": ["明亮", "bright"], "description": "明亮的音色。"},
         {"id": "Puck", "label": "Puck", "gender": "neutral", "language": "multi", "tags": ["欢快", "活泼", "轻快", "俏皮"], "description": "欢快轻快的音色。"},

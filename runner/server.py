@@ -198,6 +198,8 @@ MAX_RECONNECT_ATTEMPTS = 15
 BASE_BACKOFF_S = 2.0
 MAX_BACKOFF_S = 30.0
 
+_BG_TASKS: set[asyncio.Task] = set()
+
 
 async def runner_loop(ws_url: str) -> None:
     """Long-running connection loop for Desktop WS.
@@ -258,7 +260,9 @@ async def runner_loop(ws_url: str) -> None:
                                 fut.set_result(data.get("result"))
                             continue
 
-                        asyncio.create_task(process_request(ws, data))
+                        t = asyncio.create_task(process_request(ws, data))
+                        _BG_TASKS.add(t)
+                        t.add_done_callback(_BG_TASKS.discard)
                 finally:
                     _ACTIVE_WS = None
                     _RUNNER_LOOP = None

@@ -1,3 +1,4 @@
+import contextlib
 import json
 import re
 import shutil
@@ -205,10 +206,8 @@ async def create_version(
     except zipfile.BadZipFile:
         raise HTTPException(status_code=400, detail="Invalid zip file")
     finally:
-        try:
+        with contextlib.suppress(OSError):
             zip_path.unlink(missing_ok=True)
-        except OSError:
-            pass
 
     # Validate the embedded manifest.json. The build script (Build-UpdateZip)
     # always writes one and its `version` field must match the version we

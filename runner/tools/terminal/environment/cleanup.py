@@ -1,4 +1,5 @@
 import atexit
+import contextlib
 import glob
 import inspect
 import logging
@@ -100,10 +101,8 @@ def stop_cleanup_thread():
     _cleanup_running = False
     _cleanup_stop_event.set()
     if _cleanup_thread is not None:
-        try:
+        with contextlib.suppress(SystemExit, KeyboardInterrupt):
             _cleanup_thread.join(timeout=5)
-        except (SystemExit, KeyboardInterrupt):
-            pass
 
 
 def cleanup_all_environments():

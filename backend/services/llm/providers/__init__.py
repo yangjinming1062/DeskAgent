@@ -1,7 +1,7 @@
-from . import gemini  # noqa: F401
-from . import mimo  # noqa: F401
-from . import minimax  # noqa: F401
-from . import zhipu  # noqa: F401
+from . import gemini  # noqa: F401 — side-effect: registers gemini providers
+from . import mimo  # noqa: F401 — side-effect: registers mimo providers
+from . import minimax  # noqa: F401 — side-effect: registers minimax providers
+from . import zhipu  # noqa: F401 — side-effect: registers zhipu providers
 from .base import BaseProvider
 from .base import ChatProvider
 from .base import ChatResult

@@ -1,4 +1,5 @@
 import codecs
+import contextlib
 import json
 import logging
 import os
@@ -40,10 +41,8 @@ def _save_json_store(path: Path, data: dict) -> None:
             os.fsync(f.fileno())
         os.replace(tmp, path)
     except Exception:
-        try:
+        with contextlib.suppress(OSError):
             os.unlink(tmp)
-        except OSError:
-            pass
         raise
 
 
@@ -113,18 +112,14 @@ class _ThreadedProcessHandle:
             try:
                 output, exit_code = exec_fn()
                 self._returncode = exit_code
-                try:
+                with contextlib.suppress(OSError):
                     os.write(self._write_fd, output.encode("utf-8", errors="replace"))
-                except OSError:
-                    pass
             except Exception as exc:
                 self._error = exc
                 self._returncode = 1
             finally:
-                try:
+                with contextlib.suppress(OSError):
                     os.close(self._write_fd)
-                except OSError:
-                    pass
                 self._done.set()
 
         threading.Thread(target=_worker, daemon=True).start()
@@ -142,10 +137,8 @@ class _ThreadedProcessHandle:
 
     def kill(self):
         if self._cancel_fn:
-            try:
+            with contextlib.suppress(Exception):
                 self._cancel_fn()
-            except Exception:
-                pass
 
     def wait(self, timeout: float | None = None) -> int:
         self._done.wait(timeout=timeout)
@@ -163,7 +156,7 @@ class BaseEnvironment(ABC):
     def get_temp_dir(self) -> str:
         return "/tmp"
 
-    def __init__(self, cwd: str, timeout: int, env: dict = None):
+    def __init__(self, cwd: str, timeout: int, env: dict | None = None):
         self.cwd = cwd
         self.timeout = timeout
         self.env = env or {}
@@ -303,17 +296,13 @@ class BaseEnvironment(ABC):
                 pass
             raise
         drain_thread.join(timeout=2)
-        try:
+        with contextlib.suppress(Exception):
             proc.stdout.close()
-        except Exception:
-            pass
         return {"output": "".join(output_chunks), "returncode": proc.returncode}
 
     def _kill_process(self, proc: ProcessHandle):
-        try:
+        with contextlib.suppress(ProcessLookupError, PermissionError, OSError):
             proc.kill()
-        except (ProcessLookupError, PermissionError, OSError):
-            pass
 
     def _update_cwd(self, result: dict):
         self._extract_cwd_from_output(result)
@@ -361,10 +350,8 @@ class BaseEnvironment(ABC):
         self.cleanup()
 
     def __del__(self):
-        try:
+        with contextlib.suppress(Exception):
             self.cleanup()
-        except Exception:
-            pass
 
     def _prepare_command(self, command: str) -> tuple[str, str | None]:
         import tools.terminal.terminal_tool as _terminal_tool

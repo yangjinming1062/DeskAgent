@@ -10,7 +10,7 @@ from utils import CREATE_NO_WINDOW
 from utils import get_deskagent_dir
 
 try:
-    import sounddevice  # noqa: F401  # type: ignore[import-not-found]
+    import sounddevice  # type: ignore[import-not-found]
 except (ImportError, OSError):
     sounddevice = None  # type: ignore[assignment]
 

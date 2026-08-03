@@ -60,21 +60,22 @@ def find_bash() -> str:
         return custom
 
     lap = os.environ.get("LOCALAPPDATA", "")
-    for candidate in (
+    # Check deskagent-bundled Git Bash first, then standard Git Bash paths,
+    # before falling back to shutil.which("bash") which may return WSL bash
+    # (C:\WINDOWS\system32\bash.EXE) — WSL cannot access Windows temp paths.
+    candidates = [
         os.path.join(lap, "deskagent", "git", "bin", "bash.exe"),
         os.path.join(lap, "deskagent", "git", "usr", "bin", "bash.exe"),
-    ):
+        os.path.join(os.environ.get("ProgramFiles", r"C:\Program Files"), "Git", "bin", "bash.exe"),
+        os.path.join(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)"), "Git", "bin", "bash.exe"),
+    ]
+    if lap:
+        candidates.append(os.path.join(lap, "Programs", "Git", "bin", "bash.exe"))
+    for candidate in candidates:
         if os.path.isfile(candidate):
             return candidate
     if found := shutil.which("bash"):
         return found
-    for candidate in (
-        os.path.join(os.environ.get("ProgramFiles", r"C:\Program Files"), "Git", "bin", "bash.exe"),
-        os.path.join(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)"), "Git", "bin", "bash.exe"),
-        os.path.join(lap, "Programs", "Git", "bin", "bash.exe") if lap else "",
-    ):
-        if candidate and os.path.isfile(candidate):
-            return candidate
     raise RuntimeError("Git Bash not found. Install Git for Windows or set terminal.git_bash_path in config.yaml.")
 
 

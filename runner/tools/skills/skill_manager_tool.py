@@ -1,3 +1,4 @@
+import contextlib
 import json
 import logging
 import re
@@ -129,7 +130,7 @@ def _validate_content_size(content: str, label: str = "SKILL.md") -> str | None:
     return None
 
 
-def _resolve_skill_dir(name: str, category: str = None) -> Path:
+def _resolve_skill_dir(name: str, category: str | None = None) -> Path:
     return SKILLS_DIR / category / name if category else SKILLS_DIR / name
 
 
@@ -171,7 +172,7 @@ def _resolve_skill_target(skill_dir: Path, file_path: str) -> tuple[Path | None,
     return target, None
 
 
-def _create_skill(name: str, content: str, category: str = None) -> dict[str, Any]:
+def _create_skill(name: str, content: str, category: str | None = None) -> dict[str, Any]:
     if err := _validate_name(name):
         return {"success": False, "error": err}
     if err := _validate_category(category):
@@ -191,9 +192,7 @@ def _create_skill(name: str, content: str, category: str = None) -> dict[str, An
     result = {"success": True, "message": f"Skill '{name}' created.", "path": str(skill_dir.relative_to(SKILLS_DIR)), "skill_md": str(skill_dir / "SKILL.md")}
     if category:
         result["category"] = category
-    result["hint"] = (
-        "To add reference files, templates, or scripts, use skill_manage(action='write_file', name='{}', file_path='references/example.md', file_content='...')".format(name)
-    )
+    result["hint"] = f"To add reference files, templates, or scripts, use skill_manage(action='write_file', name='{name}', file_path='references/example.md', file_content='...')"
     return result
 
 
@@ -214,7 +213,7 @@ def _edit_skill(name: str, content: str) -> dict[str, Any]:
     return {"success": True, "message": f"Skill '{name}' updated.", "path": str(existing["path"])}
 
 
-def _patch_skill(name: str, old_string: str, new_string: str, file_path: str = None, replace_all: bool = False) -> dict[str, Any]:
+def _patch_skill(name: str, old_string: str, new_string: str, file_path: str | None = None, replace_all: bool = False) -> dict[str, Any]:
     from ..files import format_no_match_hint
     from ..files import fuzzy_find_and_replace
 
@@ -237,10 +236,8 @@ def _patch_skill(name: str, old_string: str, new_string: str, file_path: str = N
     content = target.read_text(encoding="utf-8")
     new_content, match_count, _, match_error = fuzzy_find_and_replace(content, old_string, new_string, replace_all)
     if match_error:
-        try:
+        with contextlib.suppress(Exception):
             match_error += format_no_match_hint(match_error, match_count, old_string, content)
-        except Exception:
-            pass
         return {"success": False, "error": match_error, "file_preview": content[:500] + ("..." if len(content) > 500 else "")}
     if err := _validate_content_size(new_content, label="SKILL.md" if not file_path else file_path):
         return {"success": False, "error": err}
@@ -322,14 +319,14 @@ def _remove_file(name: str, file_path: str) -> dict[str, Any]:
 def skill_manage(
     action: str,
     name: str,
-    content: str = None,
-    category: str = None,
-    file_path: str = None,
-    file_content: str = None,
-    old_string: str = None,
-    new_string: str = None,
+    content: str | None = None,
+    category: str | None = None,
+    file_path: str | None = None,
+    file_content: str | None = None,
+    old_string: str | None = None,
+    new_string: str | None = None,
     replace_all: bool = False,
-    absorbed_into: str = None,
+    absorbed_into: str | None = None,
 ) -> str:
     if action == "create":
         if not content:
@@ -361,10 +358,8 @@ def skill_manage(
         result = {"success": False, "error": f"Unknown action '{action}'."}
 
     if result.get("success"):
-        try:
+        with contextlib.suppress(Exception):
             clear_skills_system_prompt_cache(clear_snapshot=True)
-        except Exception:
-            pass
         try:
             if action == "create" and is_background_review():
                 mark_agent_created(name)

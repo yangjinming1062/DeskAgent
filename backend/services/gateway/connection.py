@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 from datetime import timedelta
 
 import asyncpg
@@ -44,10 +45,8 @@ class ConnectionManager:
         self.active_connections[user_id] = websocket
         logger.info("User connected", extra={"user_id": user_id})
         if prior is not None:
-            try:
+            with contextlib.suppress(Exception):
                 await prior.close(code=1000)
-            except Exception:
-                pass
 
     def disconnect(self, websocket: WebSocket, user_id: int) -> None:
         if self.active_connections.get(user_id) is websocket:

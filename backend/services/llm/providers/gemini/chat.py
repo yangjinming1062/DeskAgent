@@ -1,3 +1,5 @@
+from typing import ClassVar
+
 from ..base import ServiceType
 from ..openai_compat import OpenAICompatChatProvider
 
@@ -11,4 +13,4 @@ class GeminiChatProvider(OpenAICompatChatProvider):
 
     provider_name = "gemini"
     service_type = ServiceType.llm
-    DEFAULT_MODELS = {"llm": "gemini-3.6-flash"}
+    DEFAULT_MODELS: ClassVar[dict[str, str]] = {"llm": "gemini-3.6-flash"}

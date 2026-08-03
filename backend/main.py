@@ -4,9 +4,9 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 import asyncpg
-import modules.auth.models  # noqa: F401 — register LoginRecord + AdminSession on ModelBase.metadata
-import modules.media.models  # noqa: F401 — register VideoGenJob on ModelBase.metadata
-import services.chat.agent_delegate  # noqa: F401
+import modules.auth.models
+import modules.media.models  # noqa: F401
+import services.chat.agent_delegate
 import services.tools.builtin  # noqa: F401
 from api import ROUTERS
 from common import ModelBase

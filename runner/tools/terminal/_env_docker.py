@@ -1,3 +1,4 @@
+import contextlib
 import datetime
 import json
 import logging
@@ -144,7 +145,7 @@ def find_docker() -> str | None:
     if (ov := cfg_get(load_config(), "terminal", "docker_binary", default="")) and os.path.isfile(ov) and os.access(ov, os.X_OK):
         _docker_executable = ov
         return ov
-    for candidate in [shutil.which("docker"), shutil.which("podman")] + _DOCKER_SEARCH_PATHS:
+    for candidate in [shutil.which("docker"), shutil.which("podman"), *_DOCKER_SEARCH_PATHS]:
         if candidate and os.path.isfile(candidate) and os.access(candidate, os.X_OK):
             _docker_executable = candidate
             return candidate
@@ -232,14 +233,14 @@ class DockerEnvironment(BaseEnvironment):
         disk: int = 0,
         persistent_filesystem: bool = False,
         task_id: str = "default",
-        volumes: list = None,
+        volumes: list | None = None,
         forward_env: list[str] | None = None,
         env: dict | None = None,
         network: bool = True,
-        host_cwd: str = None,
+        host_cwd: str | None = None,
         auto_mount_cwd: bool = False,
         run_as_host_user: bool = False,
-        extra_args: list = None,
+        extra_args: list | None = None,
         persist_across_processes: bool = True,
     ):
         super().__init__(cwd="/root" if cwd == "~" else cwd, timeout=timeout)
@@ -293,7 +294,7 @@ class DockerEnvironment(BaseEnvironment):
                 writable_args.extend(["--tmpfs", "/workspace:rw,exec,size=10g"])
             writable_args.extend(["--tmpfs", "/home:rw,exec,size=1g", "--tmpfs", "/root:rw,exec,size=1g"])
         if bind_host_cwd:
-            volume_args = ["-v", f"{host_cwd_abs}:/workspace"] + volume_args
+            volume_args = ["-v", f"{host_cwd_abs}:/workspace", *volume_args]
         try:
             volume_args.extend(
                 f"-v {m['host_path']}:{m['container_path']}:ro".split()
@@ -340,10 +341,8 @@ class DockerEnvironment(BaseEnvironment):
 
     def _build_init_env_args(self) -> list[str]:
         passthrough_keys = set()
-        try:
+        with contextlib.suppress(Exception):
             passthrough_keys = set(get_all_passthrough())
-        except Exception:
-            pass
         forward_keys = set(self._forward_env) | passthrough_keys
         deskagent_env = _load_deskagent_env_vars() if forward_keys else {}
         forwarded = {k: val for k in forward_keys if (val := os.getenv(k) or deskagent_env.get(k))}

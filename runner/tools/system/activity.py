@@ -17,8 +17,8 @@ try:
 except ImportError:
     psutil = None  # type: ignore[assignment]
 try:
-    import ctypes  # noqa: PLC0415
-    from ctypes import wintypes  # noqa: PLC0415
+    import ctypes
+    from ctypes import wintypes
 except ImportError:
     ctypes = None  # type: ignore[assignment]
     wintypes = None  # type: ignore[assignment]
@@ -101,7 +101,7 @@ def _idle_windows() -> float:
     try:
 
         class LASTINPUTINFO(ctypes.Structure):
-            _fields_ = [("cbSize", wintypes.UINT), ("dwTime", wintypes.DWORD)]
+            _fields_ = [("cbSize", wintypes.UINT), ("dwTime", wintypes.DWORD)]  # noqa: RUF012
 
         info = LASTINPUTINFO()
         info.cbSize = ctypes.sizeof(info)
@@ -282,7 +282,7 @@ def _focus_windows() -> dict[str, Any]:
         # foreground thread (the actual window the user is
         # typing in, not just the topmost shell container).
         class _GuiThreadInfo(ctypes.Structure):
-            _fields_ = [
+            _fields_ = [  # noqa: RUF012
                 ("cbSize", wintypes.DWORD),
                 ("flags", wintypes.DWORD),
                 ("hwndActive", wintypes.HWND),

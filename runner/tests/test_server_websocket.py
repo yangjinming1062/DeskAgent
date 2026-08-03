@@ -22,8 +22,8 @@ import contextlib
 import json
 import os
 from typing import Any
-from typing import Awaitable
-from typing import Callable
+from collections.abc import Awaitable
+from collections.abc import Callable
 
 import pytest
 import server
@@ -75,7 +75,7 @@ class _Peer:
                     result = handler(msg)
                     if asyncio.iscoroutine(result):
                         result = await result
-                except Exception as exc:  # noqa: BLE001 — peer mirrors runner semantics
+                except Exception as exc:
                     if req_id is not None:
                         await peer_ws.send(json.dumps({"jsonrpc": "2.0", "id": req_id, "error": {"code": -32000, "message": str(exc)}}))
                     continue

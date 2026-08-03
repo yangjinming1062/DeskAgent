@@ -1,3 +1,4 @@
+import contextlib
 import os
 import platform
 import subprocess
@@ -56,7 +57,5 @@ def secure_parent_dir(path: str | Path) -> None:
     parent = Path(path).parent
     if not parent.exists():
         parent.mkdir(parents=True, exist_ok=True)
-    try:
+    with contextlib.suppress(OSError, NotImplementedError):
         os.chmod(parent, 0o700)
-    except (OSError, NotImplementedError):
-        pass

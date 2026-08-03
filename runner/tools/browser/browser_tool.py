@@ -69,6 +69,7 @@ from .url_safety import is_always_blocked_url
 from .url_safety import is_safe_url
 from .url_safety import normalize_url_for_request
 from .website_policy import check_website_access
+import contextlib
 
 logger = logging.getLogger(__name__)
 
@@ -524,7 +525,7 @@ def _run_chrome_fallback_command(
         cmd_prefix = [_npx_bin, "agent-browser"]
     else:
         cmd_prefix = [browser_cmd]
-    base_args = cmd_prefix + ["--engine", "chrome", "--session", tmp_session, "--json"]
+    base_args = [*cmd_prefix, "--engine", "chrome", "--session", tmp_session, "--json"]
 
     task_socket_dir = os.path.join(_socket_safe_tmpdir(), f"agent-browser-{tmp_session}")
     os.makedirs(task_socket_dir, mode=0o700, exist_ok=True)
@@ -535,7 +536,7 @@ def _run_chrome_fallback_command(
         browser_env["AGENT_BROWSER_IDLE_TIMEOUT_MS"] = str(BROWSER_SESSION_INACTIVITY_TIMEOUT * 1000)
 
     def _run_tmp(cmd: str, cmd_args: list[str]) -> dict[str, Any]:
-        full = base_args + [cmd] + cmd_args
+        full = [*base_args, cmd, *cmd_args]
         # Use temp-file stdout/stderr pattern (same as _run_browser_command)
         # to avoid pipe hang from agent-browser daemon inheriting fds.
         stdout_path = os.path.join(task_socket_dir, f"_stdout_{cmd}")
@@ -604,10 +605,8 @@ def _run_chrome_fallback_command(
             logger.debug("Chrome fallback tmp cmd '%s' error: %s", cmd, exc)
         finally:
             for pth in (stdout_path, stderr_path):
-                try:
+                with contextlib.suppress(OSError):
                     os.unlink(pth)
-                except OSError:
-                    pass
         return {"success": False, "error": f"Chrome fallback '{cmd}' failed"}
 
     try:
@@ -622,10 +621,8 @@ def _run_chrome_fallback_command(
 
     finally:
         # 5. Tear down the temporary Chrome session.
-        try:
+        with contextlib.suppress(Exception):
             _run_tmp("close", [])
-        except Exception:
-            pass
 
         _shutil.rmtree(task_socket_dir, ignore_errors=True)
 
@@ -1576,7 +1573,7 @@ def _extract_screenshot_path_from_text(text: str) -> str | None:
 def _run_browser_command(
     task_id: str,
     command: str,
-    args: list[str] = None,
+    args: list[str] | None = None,
     timeout: int | None = None,
     _engine_override: str | None = None,
 ) -> dict[str, Any]:
@@ -1652,7 +1649,7 @@ def _run_browser_command(
         # with it.
         profile_dir = session_info.get("profile_dir")
         if profile_dir and not session_info.get("profile_in_use"):
-            backend_args += ["--user-data-dir", profile_dir]  # type: ignore[arg-type]  # noqa: F821
+            backend_args += ["--user-data-dir", profile_dir]  # type: ignore[arg-type]
 
     # Lightpanda engine injection (local mode only, agent-browser v0.25.3+).
     # Use the resolved session backend rather than global cloud-provider state:
@@ -1782,10 +1779,8 @@ def _run_browser_command(
 
             # Clean up temp files (best-effort)
             for p in (stdout_path, stderr_path):
-                try:
+                with contextlib.suppress(OSError):
                     os.unlink(p)
-                except OSError:
-                    pass
 
             if stderr and stderr.strip():
                 level = logging.WARNING if returncode != 0 else logging.DEBUG
@@ -3549,10 +3544,8 @@ def _browser_eval(expression: str, task_id: str | None = None) -> str:
                 # parse it so the model gets structured data.
                 parsed = raw_result
                 if isinstance(raw_result, str):
-                    try:
+                    with contextlib.suppress(json.JSONDecodeError, ValueError):
                         parsed = json.loads(raw_result)
-                    except (json.JSONDecodeError, ValueError):
-                        pass  # keep as string
                 response = {
                     "success": True,
                     "result": parsed,
@@ -3618,10 +3611,8 @@ def _browser_eval(expression: str, task_id: str | None = None) -> str:
     # is valid JSON, parse it so the model gets structured data.
     parsed = raw_result
     if isinstance(raw_result, str):
-        try:
+        with contextlib.suppress(json.JSONDecodeError, ValueError):
             parsed = json.loads(raw_result)
-        except (json.JSONDecodeError, ValueError):
-            pass  # keep as string
 
     response = {
         "success": True,
@@ -3642,10 +3633,8 @@ def _camofox_eval(expression: str, task_id: str | None = None) -> str:
         raw_result = resp.get("result") if isinstance(resp, dict) else resp
         parsed = raw_result
         if isinstance(raw_result, str):
-            try:
+            with contextlib.suppress(json.JSONDecodeError, ValueError):
                 parsed = json.loads(raw_result)
-            except (json.JSONDecodeError, ValueError):
-                pass
 
         return json.dumps(
             {
@@ -4132,10 +4121,8 @@ def cleanup_all_browsers() -> None:
         cleanup_browser(task_id)
 
     # Tear down CDP supervisors for all tasks so background threads exit.
-    try:
+    with contextlib.suppress(Exception):
         SUPERVISOR_REGISTRY.stop_all()
-    except Exception:
-        pass
 
     global _cached_agent_browser, _agent_browser_resolved
     global _CACHED_COMMAND_TIMEOUT, _COMMAND_TIMEOUT_RESOLVED

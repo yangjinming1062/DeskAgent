@@ -1,3 +1,5 @@
+from typing import ClassVar
+
 from .._provider_errors import raise_for_provider_response
 from ..base import ProviderConfig
 from ..base import STTProvider
@@ -12,7 +14,7 @@ class ZhipuSTTProvider(STTProvider):
     """
 
     provider_name = "zhipu"
-    DEFAULT_MODELS = {"stt": "glm-asr-2512"}
+    DEFAULT_MODELS: ClassVar[dict[str, str]] = {"stt": "glm-asr-2512"}
 
     def __init__(self, config: ProviderConfig):
         super().__init__(config)

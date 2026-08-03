@@ -1,3 +1,5 @@
+from typing import ClassVar
+
 from .._size_aspect import SIZE_TO_ASPECT
 from ..base import ImageAsset
 from ..base import ImageGenProvider
@@ -20,7 +22,7 @@ class MiniMaxImageGenProvider(ImageGenProvider):
     """
 
     provider_name = "minimax"
-    DEFAULT_MODELS = {"image_gen": "image-01"}
+    DEFAULT_MODELS: ClassVar[dict[str, str]] = {"image_gen": "image-01"}
 
     def __init__(self, config: ProviderConfig):
         super().__init__(config)

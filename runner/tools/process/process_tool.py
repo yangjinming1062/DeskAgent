@@ -1,3 +1,4 @@
+import contextlib
 import json
 import logging
 import os
@@ -33,15 +34,11 @@ from ..registry import tool_error
 # POSIX during tool discovery. Guard with a platform check.
 _PtyProcessCls = None
 if IS_WINDOWS:
-    try:
+    with contextlib.suppress(ImportError):
         from winpty import PtyProcess as _PtyProcessCls
-    except ImportError:
-        pass
 else:
-    try:
+    with contextlib.suppress(ImportError):
         from ptyprocess import PtyProcess as _PtyProcessCls
-    except ImportError:
-        pass
 
 # ``fcntl`` is POSIX-only stdlib — not available on Windows at compile time,
 # so try/except would always raise there. Import unconditionally on POSIX.
@@ -403,26 +400,20 @@ class ProcessRegistry:
         """
         if IS_WINDOWS:
             if not kill_tree(pid, force=True):
-                try:
+                with contextlib.suppress(OSError, ProcessLookupError, PermissionError):
                     os.kill(pid, signal.SIGTERM)
-                except (OSError, ProcessLookupError, PermissionError):
-                    pass
             return
         try:
             parent = psutil.Process(pid)
             for child in parent.children(recursive=True):
-                try:
+                with contextlib.suppress(psutil.NoSuchProcess):
                     child.terminate()
-                except psutil.NoSuchProcess:
-                    pass
             parent.terminate()
         except psutil.NoSuchProcess:
             return
         except (OSError, PermissionError):
-            try:
+            with contextlib.suppress(OSError, ProcessLookupError, PermissionError):
                 os.kill(pid, signal.SIGTERM)
-            except (OSError, ProcessLookupError, PermissionError):
-                pass
 
     # ----- Spawn -----
     @staticmethod
@@ -441,10 +432,10 @@ class ProcessRegistry:
     def spawn_local(
         self,
         command: str,
-        cwd: str = None,
+        cwd: str | None = None,
         task_id: str = "",
         session_key: str = "",
-        env_vars: dict = None,
+        env_vars: dict | None = None,
         use_pty: bool = False,
     ) -> ProcessSession:
         """
@@ -549,10 +540,8 @@ class ProcessRegistry:
                         proc.kill()
             except Exception:
                 pass
-            try:
+            with contextlib.suppress(Exception):
                 proc.wait(timeout=5)
-            except Exception:
-                pass
             raise
         return session
 
@@ -560,7 +549,7 @@ class ProcessRegistry:
         self,
         env: Any,
         command: str,
-        cwd: str = None,
+        cwd: str | None = None,
         task_id: str = "",
         session_key: str = "",
         timeout: int = 10,
@@ -847,10 +836,8 @@ class ProcessRegistry:
                 except (BlockingIOError, OSError, ValueError):
                     pass
                 finally:
-                    try:
+                    with contextlib.suppress(Exception):
                         fcntl.fcntl(fd, fcntl.F_SETFL, flags)
-                    except Exception:
-                        pass
             except Exception as e:
                 logger.debug("Non-blocking drain failed for %s: %s", session.id, e)
         with session._lock:
@@ -922,7 +909,7 @@ class ProcessRegistry:
             self._completion_consumed.add(session_id)
         return result
 
-    def wait(self, session_id: str, timeout: int = None) -> dict:
+    def wait(self, session_id: str, timeout: int | None = None) -> dict:
         """
         Block until a process exits, timeout, or interrupt.
         Args:
@@ -1017,10 +1004,8 @@ class ProcessRegistry:
                         try:
                             parent = psutil.Process(session.process.pid)
                             for child in parent.children(recursive=True):
-                                try:
+                                with contextlib.suppress(psutil.NoSuchProcess):
                                     child.terminate()
-                                except psutil.NoSuchProcess:
-                                    pass
                             parent.terminate()
                         except psutil.NoSuchProcess:
                             pass
@@ -1120,7 +1105,7 @@ class ProcessRegistry:
         except Exception:
             return 0
 
-    def list_sessions(self, task_id: str = None) -> list:
+    def list_sessions(self, task_id: str | None = None) -> list:
         """List all running and recently-finished processes."""
         from ..system import clean_output
 
@@ -1168,7 +1153,7 @@ class ProcessRegistry:
         """Check if there are active processes for a gateway session key."""
         return self._has_active("session_key", session_key)
 
-    def kill_all(self, task_id: str = None) -> int:
+    def kill_all(self, task_id: str | None = None) -> int:
         """Kill all running processes, optionally filtered by task_id. Returns count killed."""
         with self._lock:
             targets = [s for s in self._running.values() if (task_id is None or s.task_id == task_id) and not s.exited]

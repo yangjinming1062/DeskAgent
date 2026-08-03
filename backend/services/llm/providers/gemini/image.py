@@ -1,3 +1,5 @@
+from typing import ClassVar
+
 from .._provider_errors import raise_for_provider_response
 from .._size_aspect import SIZE_TO_ASPECT
 from ..base import ImageAsset
@@ -14,7 +16,7 @@ class GeminiImageGenProvider(ImageGenProvider):
     ``responseModalities: ["IMAGE"]``."""
 
     provider_name = "gemini"
-    DEFAULT_MODELS = {"image_gen": "gemini-2.5-flash-image"}
+    DEFAULT_MODELS: ClassVar[dict[str, str]] = {"image_gen": "gemini-2.5-flash-image"}
 
     def __init__(self, config: ProviderConfig):
         super().__init__(config)

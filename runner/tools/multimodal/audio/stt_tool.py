@@ -138,7 +138,7 @@ def _decode_and_transcribe(
 
 def _check_faster_whisper() -> bool:
     try:
-        from faster_whisper import WhisperModel  # type: ignore[import-not-found]  # noqa: F401
+        from faster_whisper import WhisperModel  # type: ignore[import-not-found]  # noqa: F401 — capability check
 
         return True
     except (ImportError, OSError):
