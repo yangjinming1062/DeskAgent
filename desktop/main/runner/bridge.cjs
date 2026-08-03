@@ -223,15 +223,24 @@ function createRunnerBridge(options = {}) {
     emit.emit('event', { type: 'running', tools: cachedTools })
   }
 
+  // P2-13: debounce tools_changed — MCP servers can fire
+  // ToolListChangedNotification back-to-back during discovery, each
+  // round-trip costs a get_tools RPC. 300ms coalesces them into a
+  // single re-fetch + emit.
+  let _toolsChangedDebounce = null
   async function handleToolsChanged() {
     log('[runner-bridge] tools_changed received')
-
-    await _fetchAndCacheTools()
-    // Always emit regardless of phase: tools_changed arrives after we're in
-    // the `running` phase (background MCP discovery completed post-startup),
-    // so the renderer's `runner_status: tools_changed` listener re-syncs
-    // the new schemas to backend without needing a phase transition.
-    emit.emit('event', { type: 'tools_changed', tools: cachedTools })
+    if (_toolsChangedDebounce) clearTimeout(_toolsChangedDebounce)
+    _toolsChangedDebounce = setTimeout(async () => {
+      _toolsChangedDebounce = null
+      await _fetchAndCacheTools()
+      // Always emit regardless of phase: tools_changed arrives after we're
+      // in the `running` phase (background MCP discovery completed
+      // post-startup), so the renderer's `runner_status: tools_changed`
+      // listener re-syncs the new schemas to backend without needing a
+      // phase transition.
+      emit.emit('event', { type: 'tools_changed', tools: cachedTools })
+    }, 300)
   }
 
   async function _fetchAndCacheTools() {

@@ -236,6 +236,10 @@ function registerMediaIpc({ ipcMain, ensureBackend, getRunnerBridge, getEnginePr
     const sttLog = makeLog(log, `[stt#${sttId}]`, { engine_pref: engine, ...(silentFallback ? {} : { silent_fallback: false }), context: context || null, ...(mime ? { mime } : {}) })
     const startedAt = Date.now()
 
+    // P2-9: track whether we actually fell back from a local attempt so
+    // the renderer can show a one-shot "我们已切换到云端 STT" hint.
+    let fellBackFromLocal = false
+
     if (engine !== 'cloud') {
       if (localToolAvailable(bridge(), 'speech_to_text')) {
         const res = await tryLocalStt({ bridge: bridge(), mime, data })
@@ -252,14 +256,27 @@ function registerMediaIpc({ ipcMain, ensureBackend, getRunnerBridge, getEnginePr
           throw res.error
         }
         sttLog('fallback', { from: 'local', to: 'cloud', reason: res.error.message })
+        fellBackFromLocal = true
       } else if (engine === 'local') {
         sttLog('done', { route: 'local', error: 'Local STT unavailable', ms: Date.now() - startedAt })
         throw new Error('Local STT unavailable: runner not connected or speech_to_text tool missing')
+      } else {
+        // auto with no local engine available — also a fall-back.
+        fellBackFromLocal = true
       }
     }
 
     const result = await sttViaBackend({ ensureBackend, mime, data, filename, language })
-    sttLog('done', { route: 'cloud', text_chars: result.text.length, language, ms: Date.now() - startedAt })
+    sttLog('done', {
+      route: 'cloud',
+      text_chars: result.text.length,
+      language,
+      ms: Date.now() - startedAt,
+      // P2-9: surface a one-shot hint to the renderer when the
+      // silent_fallback path actually fires so the user can disable
+      // it (privacy/cost-sensitive) from settings.
+      ...(silentFallback && engine === 'auto' && fellBackFromLocal ? { silent_fallback_used: true } : {}),
+    })
     return result
   })
 
