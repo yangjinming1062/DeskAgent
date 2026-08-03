@@ -170,6 +170,15 @@ export function CompanionReady() {
   const badge = drowsy && spriteState !== 'disconnected' ? '💤' : getStateBadge(spriteState, emotion)
   const procKey = proceduralKey(spriteState, emotion)
   const drowsyFilter = drowsy ? 'grayscale(0.6) brightness(0.85)' : undefined
+  // P1-14: the sprite has no native alpha (image-gen returns JPEG,
+  // tier-3 video is MP4). Key out a uniform background colour so
+  // the character composites cleanly over the desktop. The SVG
+  // filter below maps near-white pixels to fully transparent; the
+  // backend prompt now asks for a flat-colour background (see
+  // avatar_service._build_prompt) so the key hits a clean target.
+  // The circular CSS mask stays as a defensive belt — if the key
+  // misses the edges, the circle still hides the residue.
+  const transparentFilter = 'url(#companion-chroma-key)'
 
   const showVideo = activeTier === 3 && Boolean(activeUrl) && !videoFailed
   const showSprite = !showVideo && activeTier === 2 && Boolean(activeUrl)
@@ -177,23 +186,73 @@ export function CompanionReady() {
   return (
     <div className="companion-ready select-none" style={{ width: CELL, height: CELL }}>
       <style>{READY_CSS}</style>
+      <ChromaKeyFilter />
       <span className="companion-glow" style={{ opacity: drowsy ? 0.2 : undefined }} />
       {showVideo && activeUrl ? (
         <div className="relative h-40 w-40 overflow-hidden rounded-full">
           {prevUrl && prevTier === 3 && fading && (
-            <video autoPlay className="companion-video absolute inset-0 h-full w-full object-cover" loop muted playsInline src={prevUrl} style={{ filter: drowsyFilter }} />
+            <video
+              autoPlay
+              className="companion-video absolute inset-0 h-full w-full object-cover"
+              loop
+              muted
+              playsInline
+              src={prevUrl}
+              style={{ filter: drowsyFilter ? `${drowsyFilter} ${transparentFilter}` : transparentFilter }}
+            />
           )}
-          <video autoPlay className="companion-video absolute inset-0 h-full w-full object-cover" loop muted onError={() => setVideoFailed(true)} playsInline src={activeUrl} style={{ filter: drowsyFilter }} />
+          <video
+            autoPlay
+            className="companion-video absolute inset-0 h-full w-full object-cover"
+            loop
+            muted
+            onError={() => setVideoFailed(true)}
+            playsInline
+            src={activeUrl}
+            style={{ filter: drowsyFilter ? `${drowsyFilter} ${transparentFilter}` : transparentFilter }}
+          />
         </div>
       ) : showSprite && activeUrl ? (
-        <KeyframeSprite cols={activeMeta?.cols ?? 4} filter={drowsyFilter} fps={activeMeta?.fps ?? 6} url={activeUrl} />
+        <KeyframeSprite cols={activeMeta?.cols ?? 4} filter={drowsyFilter ? `${drowsyFilter} ${transparentFilter}` : transparentFilter} fps={activeMeta?.fps ?? 6} url={activeUrl} />
       ) : portraitUrl ? (
-        <img alt="companion" className={`companion-img proc-${procKey}`} draggable={false} src={portraitUrl} style={{ filter: drowsyFilter }} />
+        <img
+          alt="companion"
+          className={`companion-img proc-${procKey}`}
+          draggable={false}
+          src={portraitUrl}
+          style={{ filter: drowsyFilter ? `${drowsyFilter} ${transparentFilter}` : transparentFilter }}
+        />
       ) : (
         <div className="companion-ph grid place-items-center rounded-full bg-white/10 text-white/40">伙伴</div>
       )}
       {badge && <span className="companion-badge">{badge}</span>}
     </div>
+  )
+}
+
+// P1-14: SVG chroma key filter referenced by ``url(#companion-chroma-key)``.
+// The feColorMatrix collapses near-white pixels to fully transparent so
+// the opaque portrait / sprite / video composites cleanly over the
+// desktop. The matrix is deliberately conservative — it only fully
+// transparentizes truly-white pixels (RGB > 0.92) so a small white
+// highlight on the character (eyes, badges) survives.
+function ChromaKeyFilter() {
+  return (
+    <svg aria-hidden="true" focusable="false" style={{ position: 'absolute', width: 0, height: 0, overflow: 'hidden' }} width="0" height="0">
+      <defs>
+        <filter id="companion-chroma-key" colorInterpolationFilters="sRGB">
+          <feColorMatrix
+            type="matrix"
+            values="
+              1 0 0 0 0
+              0 1 0 0 0
+              0 0 1 0 0
+              -3.6 -3.6 -3.6 0 4.5
+            "
+          />
+        </filter>
+      </defs>
+    </svg>
   )
 }
 

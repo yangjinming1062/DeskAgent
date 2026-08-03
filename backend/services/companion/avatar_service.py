@@ -76,13 +76,15 @@ def _build_prompt(persona: Persona, style: str) -> str:
         parts.append(appearance)
     if background:
         parts.append(f"set in {background}")
-    # P1-14: ask the provider for a solid-color background (not a
-    # scene) so the sprite window can key out the colour. The
-    # MiniMax pipeline currently returns JPEG/PNG without alpha; we
-    # can still use a flat ``#ffffff`` (or any uniform colour) as a
-    # chroma key. The renderer already falls back to a CSS circular
-    # mask (companion-ready.tsx) so this is a soft improvement.
-    parts.append("digital illustration, clean linework, full character on solid flat color background, no scenery")
+    # P1-14: ask the provider for a flat white background so the
+    # renderer's chroma-key CSS filter can pull the background out
+    # cleanly. The backend ``_persist_portrait_bytes`` then
+    # post-processes the result: when the provider returns JPEG we
+    # re-encode to PNG and synthesize a clean alpha channel from
+    # the white pixels (Pillow optional — falls back to JPEG if
+    # Pillow is missing). The result composites cleanly over the
+    # desktop without the previous CSS-circular-mask cheat.
+    parts.append("digital illustration, clean linework, full character on pure flat white background, no scenery, no gradient, no shadow")
     return ", ".join(parts)
 
 
@@ -91,19 +93,66 @@ async def _persist_portrait_bytes(data: bytes, content_type: str) -> str:
     return the public URL served by the no-auth companion file route. Mirrors
     ``upload_avatar``'s storage path so generated portraits survive the
     temp-media TTL window (24h) and are reachable on a fresh device login
-    (P0-1)."""
-    ext = _UPLOAD_EXTS.get(content_type.split(";")[0].strip().lower(), "jpg")
+    (P0-1).
+
+    P1-14: prefer PNG over JPEG when the provider can serve it. The
+    image-gen pipeline returns JPEG by default (smaller payload, no
+    alpha); we re-encode to PNG via Pillow when available so the
+    desktop's chroma-key filter has a clean alpha channel to work
+    with. If Pillow is missing we fall back to whatever the provider
+    returned — the CSS filter still keys out the white background.
+    """
+    src_content_type = content_type.split(";")[0].strip().lower()
+    src_ext = _UPLOAD_EXTS.get(src_content_type, "jpg")
     file_id = secrets.token_urlsafe(16)
     avatars_dir = Path(SETTINGS.data_dir) / "companion-avatars"
     avatars_dir.mkdir(parents=True, exist_ok=True)
-    filepath = avatars_dir / f"{file_id}.{ext}"
+
+    # Prefer PNG output for the chroma-key pipeline.
+    final_ext = "png"
+    final_content_type = "image/png"
+    final_bytes: bytes | None = None
+    try:
+        from io import BytesIO
+        from PIL import Image
+
+        with Image.open(BytesIO(data)) as img:
+            if img.mode in ("RGBA", "LA") or "transparency" in img.info:
+                final_bytes = img.convert("RGBA")
+            else:
+                # Synthesize a clean alpha channel: white background
+                # → transparent. This makes the chroma-key CSS filter
+                # work uniformly regardless of the provider's
+                # background choice.
+                if img.mode != "RGB":
+                    img = img.convert("RGB")
+                rgba = Image.new("RGBA", img.size, (255, 255, 255, 0))
+                pixels = img.load()
+                out = rgba.load()
+                for y in range(img.size[1]):
+                    for x in range(img.size[0]):
+                        r, g, b = pixels[x, y]
+                        if r > 240 and g > 240 and b > 240:
+                            out[x, y] = (255, 255, 255, 0)
+                        else:
+                            out[x, y] = (r, g, b, 255)
+                final_bytes = rgba
+    except Exception:
+        # Pillow missing or decode failed — fall back to the raw
+        # provider bytes so we never break the request path.
+        final_ext = src_ext
+        final_content_type = src_content_type
+        final_bytes = None
+
+    filepath = avatars_dir / f"{file_id}.{final_ext}"
     with open(filepath, "wb") as f:
-        f.write(data)
+        f.write(final_bytes if final_bytes is not None else data)
+
     # Contract P2-15: signed URL so the no-auth avatar file route
     # can verify the request was issued by this backend.
     from .asset_store import build_signed_avatar_url
 
-    return build_signed_avatar_url(file_id, ext)
+    return build_signed_avatar_url(file_id, final_ext)
 
 
 async def _download_to_bytes(url: str) -> tuple[bytes, str] | None:
