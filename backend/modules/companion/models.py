@@ -40,8 +40,10 @@ class AvatarAsset(ModelBase):
     row; ``active`` flips off the previous row in the same transaction so
     only one avatar per user is "current" at any time. ``prompt_json`` is
     the rendered image-generation prompt (kept for audit + regenerate);
-    ``asset_url`` is the provider-returned URL (TTL-bounded, so the
-    desktop must cache locally).
+    ``asset_url`` points to a persistent copy in ``companion-avatars/``
+    served by the no-auth companion file route (P0-1: previously this was
+    the 24h-TTL temp-media URL which broke Tier-1 fallback, cross-device
+    re-login, and Tier-3 escalation across days).
     """
 
     __tablename__ = "avatar_assets"
