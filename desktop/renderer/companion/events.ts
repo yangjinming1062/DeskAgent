@@ -85,15 +85,55 @@ export function handleCompanionEvent(event: RpcEvent): void {
     }
 
     case 'tool.call': {
-      const p = (event.payload as { status?: string; name?: string } | undefined) ?? {}
+      // P0 (contract re-audit): the previous handler only toggled
+      // the sprite state — it never actually invoked the Runner or
+      // returned the result to the backend. Backend's
+      // ``_dispatch_runner_tool`` (``backend/services/chat/
+      // tool_dispatch.py``) awaits ``await_future(user_id, call_id)``
+      // with a 300s timeout; without a corresponding
+      // ``tool.result`` frame the LLM is stuck for 300s and the
+      // partner's "help the user do things" promise is broken for
+      // every runner-localized tool (terminal, browser, file ops).
+      const p = (event.payload as { status?: string; name?: string; args?: Record<string, unknown>; call_id?: string } | undefined) ?? {}
 
       if (p.status === 'complete') {
         setAssistantTool(null)
         setSpriteState('thinking')
-      } else {
-        setAssistantTool(p.name ?? '工具')
-        setSpriteState('working')
+        break
       }
+
+      const name = p.name ?? '工具'
+      setAssistantTool(name)
+      setSpriteState('working')
+
+      if (!p.call_id || !window.deskagent?.runnerInvoke) {
+        // We don't have the bridge or call_id — leave sprite in
+        // 'working' so the user can see the partner is trying.
+        // Backend will time out at 300s and surface an error.
+        break
+      }
+      // Fire-and-forget: invoke the Runner, send the result back as
+      // a JSON-RPC request so the backend's await_future resolves
+      // and the LLM can continue. We use ``void`` + ``.catch`` so
+      // tool errors don't bubble into the events handler.
+      void (async () => {
+        try {
+          const result = await window.deskagent.runnerInvoke(name, p.args ?? {})
+          await window.deskagent.gateway?.request('tool.result', { call_id: p.call_id, result })
+        } catch (err) {
+          // Surface as a tool.result error so the LLM gets a
+          // structured failure instead of waiting the full 300s
+          // for the future to time out.
+          try {
+            await window.deskagent.gateway?.request('tool.result', {
+              call_id: p.call_id,
+              result: { ok: false, error: err instanceof Error ? err.message : String(err) },
+            })
+          } catch {
+            /* best effort — backend's 300s fallback will catch it */
+          }
+        }
+      })()
 
       break
     }
@@ -135,18 +175,18 @@ export function handleCompanionEvent(event: RpcEvent): void {
     }
 
     case 'error': {
-      // P0 (desktop audit): the previous code unconditionally set
-      // the sprite to 'idle' on any error, which clobbered
-      // working / speaking / tool-running states. The error
-      // message is surfaced via chat-store (setAssistantError);
-      // the sprite state only resets when the LLM stream is
-      // already idle. Tool / speaking transitions still win
-      // because they have higher priority.
+      // P0 (desktop audit, second pass): the previous P0 fix used
+      // a conditional `if (idle/thinking/listening) setSpriteState('idle')`
+      // but the priority gate
+      // (``STATE_PRIORITY['idle']=10 < STATE_PRIORITY['thinking']=50``)
+      // rejects those calls silently — the sprite was still stuck
+      // on 'thinking' after an error. Force the reset so the gate
+      // is bypassed; the tool / speaking cases keep their state
+      // because we explicitly want to clobber the abandoned LLM
+      // stream.
       const message = (event.payload as { message?: string } | undefined)?.message ?? '出了点小问题'
       setAssistantError(message)
-      if ($spriteState.get() === 'idle' || $spriteState.get() === 'thinking' || $spriteState.get() === 'listening') {
-        setSpriteState('idle')
-      }
+      setSpriteState('idle', { force: true })
 
       break
     }
