@@ -1,6 +1,7 @@
 import { useStore } from '@nanostores/react'
 import { type PointerEvent as ReactPointerEvent, useEffect, useRef, useState } from 'react'
 
+import { awaitAvatarRegeneration } from '@/companion/avatar-regen-store'
 import { useGatewayRequest } from '@/companion/boot/use-gateway-request'
 import { registerInteractiveRegion, unregisterInteractiveRegion } from '@/companion/interactive-regions'
 import { $gatewayState } from '@/shared/store/gateway'
@@ -452,14 +453,25 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
     setHint(null)
     clearClipCatalog()
 
-    // avatar.regenerate invalidates derivative clips on the backend (design
-    // §5.1.A) and re-seeds batch 0 after the new portrait succeeds.
+    // P0-4: avatar.regenerate returns immediately with {queued, job_id}; the
+    // heavy image-gen runs as a background task on the backend and the result
+    // arrives as an ``avatar.regenerated`` event. Await the event so the
+    // portrait swaps only when the new image is ready.
     try {
-      const res = await requestGateway<{ asset_url?: string }>('avatar.regenerate', { feedback: undefined })
+      const queued = await requestGateway<{ queued?: boolean; job_id?: string; asset_url?: string }>('avatar.regenerate', { feedback: undefined })
 
-      if (res?.asset_url) {
-        setPortraitUrl(res.asset_url)
+      if (queued?.asset_url) {
+        setPortraitUrl(queued.asset_url)
         void speak('换一个样子，这样如何？', undefined, 'onboarding.portrait.regenerate')
+      } else if (queued?.queued && queued.job_id) {
+        const result = await awaitAvatarRegeneration(queued.job_id)
+
+        if (result.asset_url) {
+          setPortraitUrl(result.asset_url)
+          void speak('换一个样子，这样如何？', undefined, 'onboarding.portrait.regenerate')
+        } else {
+          setHint(result.error ?? '暂时换不出来，稍后再试吧')
+        }
       } else {
         setHint('暂时换不出来，稍后再试吧')
       }

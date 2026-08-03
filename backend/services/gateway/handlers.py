@@ -2,6 +2,7 @@ import asyncio
 import base64
 import itertools
 import json
+import secrets
 
 from components import adopt_inbound
 from components import ATTACHMENT_TYPE_IMAGE
@@ -752,9 +753,15 @@ def _register_session_handlers(
     async def avatar_regenerate(params: dict) -> dict:
         # Regenerate the portrait from the current persona, with optional
         # free-text feedback folded into the prompt (ARCHITECTURE.md §5.1.A). All
-        # derivative clips are invalidated and batch 0 re-seeded (§7.2). Runs
-        # synchronously so the desktop gets the new portrait URL in the
-        # response; clip generation continues in the background.
+        # derivative clips are invalidated and batch 0 re-seeded (§7.2).
+        #
+        # The 10-60s image-gen call used to run inline in the handler, blocking
+        # the WS receive loop for the entire duration so concurrent
+        # ``tool.result`` frames piled up in the socket buffer (P0-4). Now the
+        # heavy work runs as a background task and we return immediately with
+        # a ``job_id`` + ``queued: true``; the result arrives over the new
+        # ``avatar.regenerated`` event so the desktop swaps the portrait when
+        # the work lands without blocking other WS traffic.
         feedback = params.get("feedback")
         if feedback is not None and not isinstance(feedback, str):
             raise JsonRpcError(JSONRPC_INVALID_PARAMS, "feedback must be a string")
@@ -762,11 +769,28 @@ def _register_session_handlers(
             persona = get_or_create_persona(db, user_id)
             if not persona.is_complete:
                 raise JsonRpcError(JSONRPC_INVALID_PARAMS, "finish onboarding before regenerating avatar")
+        job_id = f"avatar_regen_{user_id}_{secrets.token_urlsafe(6)}"
+
+        async def _run() -> None:
             try:
-                asset = await regenerate_companion_avatar(db, user_id, persona, feedback=feedback)
+                with SESSION_LOCAL() as db:
+                    persona = get_or_create_persona(db, user_id)
+                    asset = await regenerate_companion_avatar(db, user_id, persona, feedback=feedback)
+                    payload = {"job_id": job_id, "asset_url": asset.asset_url, "id": asset.id}
             except AvatarGenerationError as exc:
-                raise JsonRpcError(JSONRPC_INTERNAL_ERROR, f"伙伴形象生成失败：{exc}")
-            return {"asset_url": asset.asset_url, "id": asset.id}
+                logger.warning("avatar regenerate failed", extra={"user_id": user_id, "error": str(exc)})
+                payload = {"job_id": job_id, "error": f"伙伴形象生成失败：{exc}"}
+            except Exception:
+                logger.exception("avatar regenerate unexpected failure", extra={"user_id": user_id})
+                payload = {"job_id": job_id, "error": "伙伴形象生成失败，请稍后重试"}
+            try:
+                await dispatcher.push_event("avatar.regenerated", payload, session_id=None)
+            except Exception:
+                logger.debug("avatar.regenerated event push failed", extra={"user_id": user_id}, exc_info=True)
+
+        task = asyncio.create_task(_run())
+        _track(task)
+        return {"queued": True, "job_id": job_id}
 
     async def avatar_list_clips(_params: dict) -> dict:
         # Query the full clip directory with live generation status (ARCHITECTURE.md

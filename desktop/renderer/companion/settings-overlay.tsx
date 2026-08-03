@@ -1,6 +1,7 @@
 import { useStore } from '@nanostores/react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
+import { awaitAvatarRegeneration } from '@/companion/avatar-regen-store'
 import { useGatewayRequest } from '@/companion/boot/use-gateway-request'
 import { clearClipCatalog } from '@/companion/clip-store'
 import { $disturbanceTier, type DisturbanceTier, setDisturbanceTier } from '@/companion/companion-store'
@@ -76,8 +77,17 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps) {
     clearClipCatalog()
 
     try {
-      const res = await requestGateway<{ asset_url?: string }>('avatar.regenerate', {})
-      setAvatarHint(res?.asset_url ? '换好啦，新形象已生成～' : '暂时换不出来，稍后再试')
+      const res = await requestGateway<{ asset_url?: string; queued?: boolean; job_id?: string }>('avatar.regenerate', {})
+
+      if (res?.asset_url) {
+        setAvatarHint('换好啦，新形象已生成～')
+      } else if (res?.queued && res.job_id) {
+        // P0-4: wait for the background avatar.regenerated event.
+        const result = await awaitAvatarRegeneration(res.job_id)
+        setAvatarHint(result.asset_url ? '换好啦，新形象已生成～' : (result.error ?? '暂时换不出来，稍后再试'))
+      } else {
+        setAvatarHint('暂时换不出来，稍后再试')
+      }
     } catch {
       setAvatarHint('暂时换不出来，稍后再试')
     } finally {
