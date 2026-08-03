@@ -126,18 +126,22 @@ export function handleCompanionEvent(event: RpcEvent): void {
       const payload = event.payload as { text?: string; affect?: { emotion?: string } } | undefined
       const text = payload?.text ?? ''
       const currentTier = $disturbanceTier.get()
+      const affectEmotion = payload?.affect?.emotion
 
-      if (payload?.affect?.emotion) {
-        setSpriteState('emotional', { emotion: payload.affect.emotion as SpriteEmotion })
+      // Affect always flows first — the user can see the companion react
+      // even at the quiet tier (plan §4.2: 保持安静断消息不断情绪).
+      if (affectEmotion) {
+        setSpriteState('emotional', { emotion: affectEmotion as SpriteEmotion })
       }
 
-      // Quiet tier OR screen locked → suppress the proactive message, but the
-      // affect above still flows (plan §4.2 / §8:断消息不断情绪). Screen-lock
-      // silence is itself silent — no bubble pops over a locked screen.
-      const suppressed = currentTier === 'quiet' || $screenLocked.get()
+      // Quiet tier OR screen locked → suppress the proactive text, but the
+      // affect above still flows. Screen-lock silence is itself silent —
+      // no bubble pops over a locked screen. Normal tier still gets a
+      // bubble (handled inside speakProactive, which decides TTS-vs-text).
+      const textSuppressed = currentTier === 'quiet' || $screenLocked.get()
 
-      if (text && !suppressed) {
-        void speakProactive(text)
+      if (text && !textSuppressed) {
+        void speakProactive(text, { affect: affectEmotion })
       }
 
       break
