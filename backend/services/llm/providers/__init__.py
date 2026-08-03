@@ -25,7 +25,6 @@ from .base import VoiceDesignResult
 from .http import aclose_all
 from .registry import default_base_url
 from .registry import default_model_for
-from .registry import infer_provider_name
 from .registry import KNOWN_PROVIDERS
 from .registry import PROVIDER_DEFAULT_URLS
 from .registry import providers_supporting
@@ -61,7 +60,6 @@ __all__ = [
     "register",
     "resolve",
     "try_resolve",
-    "infer_provider_name",
     "default_base_url",
     "default_model_for",
     "providers_supporting",

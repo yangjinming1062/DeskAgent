@@ -37,51 +37,6 @@ class TestProviderConfig:
             cfg.base_url = "https://y/v1"  # type: ignore[misc]
 
 
-class TestInferProviderName:
-    """Host-based inference is still exported by `services.llm.providers.registry`
-    (the helper remains useful for migration scripts and tests), but is no
-    longer part of the chain resolver."""
-
-    @pytest.mark.parametrize(
-        "base_url",
-        [
-            "https://api.minimaxi.com/v1",
-            "https://api.minimax.io/v1",
-            "https://API.MINIMAXI.COM/v1",
-        ],
-    )
-    def test_minimax_hosts(self, base_url):
-        from services.llm.providers.registry import infer_provider_name
-
-        assert infer_provider_name(base_url) == "minimax"
-
-    @pytest.mark.parametrize(
-        "base_url",
-        [
-            "https://generativelanguage.googleapis.com/v1beta/openai/",
-            "https://GENERATIVELANGUAGE.GOOGLEAPIS.COM/v1beta/openai/",
-        ],
-    )
-    def test_gemini_hosts(self, base_url):
-        from services.llm.providers.registry import infer_provider_name
-
-        assert infer_provider_name(base_url) == "gemini"
-
-    @pytest.mark.parametrize(
-        "base_url",
-        [
-            "https://api.xiaomimimo.com/v1",
-            "https://api.openai.com/v1",
-            "https://my-custom.example.com/v1",
-            "",
-        ],
-    )
-    def test_falls_back_to_mimo(self, base_url):
-        from services.llm.providers.registry import infer_provider_name
-
-        assert infer_provider_name(base_url) == "mimo"
-
-
 class TestResolveProviderConfig:
     def test_image_gen_default_provider_is_minimax(self, monkeypatch):
         """Empty image_gen settings → default provider minimax, provider default URL."""
@@ -97,18 +52,19 @@ class TestResolveProviderConfig:
         assert cfg.api_key == "sk-minimax-test"
         assert cfg.service_type == ServiceType.image_gen
 
-    def test_image_gen_explicit_base_url_infers_provider(self, monkeypatch):
-        """Setting a custom base_url triggers host-based provider inference
-        (backward compat); to use the service-default provider with a custom
+    def test_image_gen_default_provider_used_with_custom_base_url(self, monkeypatch):
+        """Custom ``image_gen_base_url`` is honored verbatim; the provider
+        name comes from ``SERVICE_DEFAULT_PROVIDER['image_gen']`` (minimax),
+        not from host inference. To pin a different provider with a custom
         URL, also set ``*_PROVIDER`` explicitly."""
         monkeypatch.setattr("components.SETTINGS.image_gen_base_url", "https://api.minimaxi.com")
         monkeypatch.setattr("components.SETTINGS.image_gen_api_key", "sk-minimax")
         monkeypatch.setattr("components.SETTINGS.image_gen_provider", "")
         cfg = resolve_provider_config(None, None, "image_gen")
         assert cfg.base_url == "https://api.minimaxi.com"
-        assert cfg.provider_name == "minimax"  # inferred from minimaxi.com host
+        assert cfg.provider_name == "minimax"
 
-    def test_minimax_host_infers_provider(self, monkeypatch):
+    def test_minimax_default_provider_with_trailing_v1(self, monkeypatch):
         monkeypatch.setattr("components.SETTINGS.image_gen_base_url", "https://api.minimaxi.com/v1")
         monkeypatch.setattr("components.SETTINGS.image_gen_api_key", "sk-minimax")
         monkeypatch.setattr("components.SETTINGS.image_gen_model_name", "image-01")
