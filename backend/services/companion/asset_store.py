@@ -1,14 +1,92 @@
+import hashlib
+import hmac
 import secrets
+import time
 from pathlib import Path
+from urllib.parse import urlencode
 
 from components import get_logger
 from components import SETTINGS
 
 logger = get_logger(__name__)
 
+# Contract P2-15: companion asset URLs now carry a short-lived HMAC
+# signature so the no-auth file route can verify the request was
+# issued for the same user + filename. The previous design relied on
+# ``secrets.token_urlsafe(8)`` entropy as the only secret (64 bit)
+# which is brute-forceable in days at provider CDN scale. With a
+# signed URL the attacker must either know the server secret or
+# replay within the expiry window (5 min default).
+_ASSET_URL_TTL_SECONDS = 300  # 5 min — desktop re-fetches frequently anyway
+
+logger.info("Signed asset URL TTL set", extra={"ttl_seconds": _ASSET_URL_TTL_SECONDS})
+
 
 def _assets_root() -> Path:
     return Path(SETTINGS.data_dir) / "companion-assets"
+
+
+def _signing_key() -> bytes:
+    """HMAC key for asset-URL signing. Falls back to a derived key
+    from ``public_url_prefix`` so dev deployments without an explicit
+    secret still get a stable per-environment signature."""
+    secret = getattr(SETTINGS, "companion_asset_signing_key", None)
+    if secret:
+        return secret.encode("utf-8")
+    return hashlib.sha256(f"companion-asset:{SETTINGS.public_url_prefix}".encode("utf-8")).digest()
+
+
+def _sign(user_id: int, filename: str, expires_at: int) -> str:
+    """Compute the URL-safe HMAC signature for ``(user_id, filename, expires_at)``."""
+    msg = f"{user_id}:{filename}:{expires_at}".encode("utf-8")
+    return hmac.new(_signing_key(), msg, hashlib.sha256).hexdigest()
+
+
+def build_signed_asset_url(user_id: int, filename: str, *, ttl_seconds: int = _ASSET_URL_TTL_SECONDS) -> str:
+    """Build a self-validating public URL for a companion asset. The
+    ``sig`` query string is checked by ``verify_signed_asset_request``
+    before the file is served. Callers should NOT cache the URL
+    long-term — the desktop re-fetches the URL on every avatar list
+    refresh."""
+    prefix = SETTINGS.public_url_prefix or f"http://{SETTINGS.public_ip}:{SETTINGS.port}"
+    expires_at = int(time.time()) + ttl_seconds
+    sig = _sign(user_id, filename, expires_at)
+    qs = urlencode({"expires": expires_at, "sig": sig})
+    return f"{prefix}/api/companion/asset/{user_id}/{filename}?{qs}"
+
+
+def verify_signed_asset_request(user_id: int, filename: str, expires: int | None, sig: str | None) -> bool:
+    """Constant-time verification. Rejects expired or tampered URLs."""
+    if expires is None or sig is None:
+        return False
+    if int(expires) < int(time.time()):
+        return False
+    expected = _sign(user_id, filename, int(expires))
+    return hmac.compare_digest(expected, sig)
+
+
+def _sign_avatar(filename: str, expires_at: int) -> str:
+    msg = f"avatar:{filename}:{expires_at}".encode("utf-8")
+    return hmac.new(_signing_key(), msg, hashlib.sha256).hexdigest()
+
+
+def build_signed_avatar_url(file_id: str, ext: str, *, ttl_seconds: int = _ASSET_URL_TTL_SECONDS) -> str:
+    """Signed URL for the uploaded-portrait route. The filename is
+    ``<file_id>.<ext>`` so the verifier only needs the basename."""
+    prefix = SETTINGS.public_url_prefix or f"http://{SETTINGS.public_ip}:{SETTINGS.port}"
+    expires_at = int(time.time()) + ttl_seconds
+    sig = _sign_avatar(f"{file_id}.{ext}", expires_at)
+    qs = urlencode({"expires": expires_at, "sig": sig})
+    return f"{prefix}/api/companion/avatar/file/{file_id}.{ext}?{qs}"
+
+
+def verify_signed_avatar_request(filename: str, expires: int | None, sig: str | None) -> bool:
+    if expires is None or sig is None:
+        return False
+    if int(expires) < int(time.time()):
+        return False
+    expected = _sign_avatar(filename, int(expires))
+    return hmac.compare_digest(expected, sig)
 
 
 def save_companion_asset(
@@ -20,7 +98,8 @@ def save_companion_asset(
     ext: str,
 ) -> str:
     """Write asset bytes to companion-assets/<user_id>/<scene>_<kind>_<token>.<ext>
-    and return the public URL served by the no-auth companion file route.
+    and return a signed public URL (Contract P2-15) served by the
+    ``/api/companion/asset/<user_id>/<filename:path>`` route.
 
     ``kind`` is "keyframes" (tier 2) or "video" (tier 3). A new token per
     write means regeneration does not collide with a cached older file.
@@ -33,10 +112,8 @@ def save_companion_asset(
     filepath = user_dir / filename
     with open(filepath, "wb") as f:
         f.write(data)
-    prefix = SETTINGS.public_url_prefix or f"http://{SETTINGS.public_ip}:{SETTINGS.port}"
-    url = f"{prefix}/api/companion/asset/{user_id}/{filename}"
     logger.info("Saved companion asset", extra={"user_id": user_id, "scene": scene, "kind": kind, "size": len(data)})
-    return url
+    return build_signed_asset_url(user_id, filename)
 
 
 def resolve_companion_asset_path(user_id: int, filename: str) -> tuple[Path, str] | None:
