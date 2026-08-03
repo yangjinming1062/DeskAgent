@@ -266,7 +266,7 @@ Backend clip 生成队列（portrait 种子图 + 场景文本 → 图生视频�
 - **图生视频契约**：所有 clip 由 Backend 以当前 portrait 为种子图、结合场景/动作描述文本，经图生视频能力（MiniMax Hailuo，复用 `video_generate` 工具的 `first_frame_image` 参数与 `media/video_jobs` 流水线）产出。portrait 既是视觉身份基准、也是全部 clip 的生成种子——同一颗种子图从机制上保证跨 clip 的角色一致性，无需额外的风格锁。
 - **渐进式生成**：portrait + idle clip 在 onboarding 同步生成（批次 0）；其余 clip 按优先级后台排队——speaking/thinking/working（批次 1）→ 生命周期 clip（批次 2）→ 情绪变体（批次 3），就绪后经 `clip.updated` 事件下发。分批策略与降级细节见 [COMPANION_DESIGN.md §1.3](COMPANION_DESIGN.md#13-渐进式生成与不变量)。
 - **衍生失效**：因 clip 是以 portrait 为种子的图生视频产物，portrait 重生（`avatar.regenerate`）时所有 clip 必然失配，须全部失效并从新种子重新排队，绝不跨 portrait 版本复用。
-- **资产 URL 有 TTL**：provider 下载 URL 有时效（MiniMax 9h），Backend 已在服务端下载落盘并对 Desktop 暴露自有 `/api/media/files/<id>` URL；Desktop 收到后仍须立即本地缓存，不依赖该 URL 永久有效。
+- **资产 URL 有 TTL（portrait 已在 P0-1 中持久化）**：provider 下载 URL 有时效（MiniMax 9h）。**portrait** 在 `services/companion/avatar_service.py::_generate_and_persist` 中即时下载到 `companion-avatars/` 持久目录，暴露给 Desktop 的是无 TTL 的 `/api/companion/avatar/file/<id>.<ext>` URL——换设备登录可直接拉取，无需重新生成。clip 资产（Tier 2/3）走 `companion-assets/` 同样持久化。Desktop 收到资产后仍应本地缓存以避免重复拉取。
 - Desktop 以透明置顶窗口将形象以桌面精灵形态常驻呈现（具体渲染技术——WebM alpha / sprite / 序列帧——是实现决策，由 desktop 子模块决定）。
 
 ### 7.3 一致性与受控变更

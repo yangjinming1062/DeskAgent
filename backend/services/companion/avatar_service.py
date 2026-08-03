@@ -2,7 +2,9 @@ import json
 import secrets
 from pathlib import Path
 
+import httpx
 from components import get_logger
+from components import get_file_path
 from components import safe_json_loads
 from components import SETTINGS
 from modules.companion import AvatarAsset
@@ -74,10 +76,52 @@ def _build_prompt(persona: Persona, style: str) -> str:
     return ", ".join(parts)
 
 
+async def _persist_portrait_bytes(data: bytes, content_type: str) -> str:
+    """Write portrait bytes to the persistent ``companion-avatars/`` dir and
+    return the public URL served by the no-auth companion file route. Mirrors
+    ``upload_avatar``'s storage path so generated portraits survive the
+    temp-media TTL window (24h) and are reachable on a fresh device login
+    (P0-1)."""
+    ext = _UPLOAD_EXTS.get(content_type.split(";")[0].strip().lower(), "jpg")
+    file_id = secrets.token_urlsafe(16)
+    avatars_dir = Path(SETTINGS.data_dir) / "companion-avatars"
+    avatars_dir.mkdir(parents=True, exist_ok=True)
+    filepath = avatars_dir / f"{file_id}.{ext}"
+    with open(filepath, "wb") as f:
+        f.write(data)
+    prefix = SETTINGS.public_url_prefix or f"http://{SETTINGS.public_ip}:{SETTINGS.port}"
+    return f"{prefix}/api/companion/avatar/file/{file_id}.{ext}"
+
+
+async def _download_to_bytes(url: str) -> tuple[bytes, str] | None:
+    """Resolve a generated-asset URL to ``(bytes, content_type)``. Handles
+    local temp-media paths (the common case from
+    ``image_generation_tool``) and remote provider URLs alike. Returns
+    ``None`` when the URL is unreachable so the caller can surface a
+    friendly ``AvatarGenerationError`` instead of crashing on a missing
+    temp file."""
+    if "/api/media/files/" in url:
+        fid = url.rsplit("/", 1)[-1].split("?")[0]
+        res = get_file_path(fid)
+        if res:
+            path, content_type = res
+            return Path(path).read_bytes(), content_type
+    try:
+        async with httpx.AsyncClient(timeout=120.0, follow_redirects=True) as client:
+            resp = await client.get(url)
+            resp.raise_for_status()
+            return resp.content, (resp.headers.get("content-type") or "image/jpeg").split(";")[0].strip().lower()
+    except Exception:
+        return None
+
+
 async def _generate_and_persist(db: Session, user_id: int, *, prompt: str, style: str, feedback: str | None = None) -> AvatarAsset:
-    """Shared image-gen + persistence core. Calls the provider, deactivates
-    the previous active asset, inserts + commits the new row. Does NOT touch
-    clips — callers compose clip lifecycle around this.
+    """Shared image-gen + persistence core. Calls the provider, downloads the
+    result into the persistent ``companion-avatars/`` dir (P0-1: temp-media
+    URLs are 24h-TTL so we must mirror locally to survive cross-device login
+    and Tier-3 escalation across days), deactivates the previous active asset,
+    inserts + commits the new row. Does NOT touch clips — callers compose
+    clip lifecycle around this.
 
     ``image_generation_tool`` catches provider errors internally and returns a
     JSON ``{success: false}`` string — it never raises. So this function
@@ -92,12 +136,18 @@ async def _generate_and_persist(db: Session, user_id: int, *, prompt: str, style
         user_id=user_id,
     )
 
-    asset_url = _extract_first_url(result_json)
-    if asset_url is None:
+    source_url = _extract_first_url(result_json)
+    if source_url is None:
         raise AvatarGenerationError("image-gen provider returned no URL")
 
+    downloaded = await _download_to_bytes(source_url)
+    if downloaded is None:
+        raise AvatarGenerationError("image-gen result is unreachable")
+    data, content_type = downloaded
+    asset_url = await _persist_portrait_bytes(data, content_type)
+
     db.query(AvatarAsset).filter(AvatarAsset.user_id == user_id, AvatarAsset.active.is_(True)).update({"active": False})
-    prompt_payload: dict = {"prompt": prompt, "style": style}
+    prompt_payload: dict = {"prompt": prompt, "style": style, "source_url": source_url}
     if feedback is not None:
         prompt_payload["feedback"] = feedback
     asset = AvatarAsset(
