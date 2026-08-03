@@ -24,6 +24,10 @@ const TTS_TIMEOUT_MS = 60_000
 const TTS_MAX_TEXT_CHARS = 4000
 const STT_MAX_AUDIO_BYTES = 24 * 1024 * 1024
 const CONFIG_CACHE_TTL_MS = 10_000
+// P2-8 / runtime P1-2: TTS-to-backend had no language hint, so the cloud
+// provider auto-detected and occasionally picked an English voice for
+// Chinese text (TTS is the mirror of STT which already defaults to zh).
+const DEFAULT_TTS_LANGUAGE = 'zh'
 // Product direction is "default Chinese" for STT — see CLAUDE.md / product brief.
 // Renderer callers that want auto-detect can pass `language: 'auto'` explicitly.
 const DEFAULT_STT_LANGUAGE = 'zh'
@@ -152,11 +156,15 @@ async function sttViaBackend({ ensureBackend, mime, data, filename, language }) 
   return { text: parsed.text || '' }
 }
 
-async function ttsViaBackend({ ensureBackend, text, voice }) {
+async function ttsViaBackend({ ensureBackend, text, voice, language }) {
   const connection = await ensureBackend()
   const form = new FormData()
   form.set('text', text)
   form.set('voice', voice)
+  // P2-8: explicit language hint so the cloud provider picks a voice
+  // consistent with STT (which already defaults to 'zh'). Callers that
+  // want auto-detect can pass language=null / undefined explicitly.
+  form.set('language', language || DEFAULT_TTS_LANGUAGE)
   const { body, contentType } = await postMultipart({
     url: `${connection.baseUrl}/api/media/tts`,
     token: connection.token,
