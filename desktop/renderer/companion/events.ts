@@ -7,7 +7,7 @@ import {
   setAssistantTool
 } from '@/companion/chat-store'
 import { applyClipUpdate, type ClipMeta } from '@/companion/clip-store'
-import { $disturbanceTier, setSpriteState, type SpriteEmotion } from '@/companion/companion-store'
+import { $disturbanceTier, $spriteState, setSpriteState, type SpriteEmotion } from '@/companion/companion-store'
 import { resolveAvatarRegeneration } from '@/companion/avatar-regen-store'
 import { $responseMode } from '@/companion/prefs'
 import { speak } from '@/companion/tts'
@@ -135,9 +135,18 @@ export function handleCompanionEvent(event: RpcEvent): void {
     }
 
     case 'error': {
+      // P0 (desktop audit): the previous code unconditionally set
+      // the sprite to 'idle' on any error, which clobbered
+      // working / speaking / tool-running states. The error
+      // message is surfaced via chat-store (setAssistantError);
+      // the sprite state only resets when the LLM stream is
+      // already idle. Tool / speaking transitions still win
+      // because they have higher priority.
       const message = (event.payload as { message?: string } | undefined)?.message ?? '出了点小问题'
       setAssistantError(message)
-      setSpriteState('idle')
+      if ($spriteState.get() === 'idle' || $spriteState.get() === 'thinking' || $spriteState.get() === 'listening') {
+        setSpriteState('idle')
+      }
 
       break
     }
