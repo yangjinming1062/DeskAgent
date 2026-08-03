@@ -40,7 +40,7 @@
 
 按优先级分批，避免 onboarding 期间一次性耗尽配额：batch 0（idle）在 portrait 生成时**同步排队**；其余批次（speaking/thinking/working → 生命周期 → 情绪变体）后台渐进生成。
 
-**伙伴表达永不空白**（[ARCHITECTURE.md §11#9](ARCHITECTURE.md) 不变量）：任何 clip 未就绪时，对应状态回退到 idle loop + 该状态的轻量图标徽章（⚙️ 工作、💭 思考、💤 睡眠…）。用户永远看不到"这个功能还没生成"的空白。clip 目录在 Desktop 本地缓存（`clip-store`），首屏经 `avatar.list_clips` 拉取已生成项，后续就绪/失败经 `video_gen.completed/failed`（payload 携 `scene` 标识）增量更新。portrait 重生时所有衍生 clip 失效重排——只有新 portrait 成功后才失效旧 clip，避免生图失败时用户失去全部 clip。
+**伙伴表达永不空白**（[ARCHITECTURE.md §11#9](ARCHITECTURE.md) 不变量）：任何 clip 未就绪时，对应状态回退到 idle loop + 该状态的轻量图标徽章（⚙️ 工作、💭 思考、💤 睡眠…）。用户永远看不到"这个功能还没生成"的空白。clip 目录在 Desktop 本地缓存（`clip-store`），首屏经 `avatar.list_clips` 拉取已生成项，后续就绪/失败经 `clip.updated`（payload 携 `scene` + `tier` 标识）增量更新。portrait 重生时所有衍生 clip 失效重排——只有新 portrait 成功后才失效旧 clip，避免生图失败时用户失去全部 clip。
 
 ---
 
@@ -219,13 +219,13 @@ IDLE 时形象不是静止贴图。两类自主行为，**都不触发 TTS、不
 
 伙伴层依赖的跨模块契约定义在 [ARCHITECTURE.md](ARCHITECTURE.md)，此处仅列索引与 Desktop 消费要点：
 
-- **伙伴层协议扩展**（[§5.1.A](ARCHITECTURE.md)）：`onboarding.get_state` / `onboarding.submit` / `avatar.regenerate` / `avatar.list_clips` / `tts.list_voices` / `tts.match_voice` / `companion.set_disturbance_tier` 方法 + `affect` 事件。clip 就绪/失败复用既有 `video_gen.completed/failed`（payload 携 `scene` 标识），不另造事件。
+- **伙伴层协议扩展**（[§5.1.A](ARCHITECTURE.md)）：`onboarding.get_state` / `onboarding.submit` / `avatar.regenerate` / `avatar.list_clips` / `tts.list_voices` / `tts.match_voice` / `companion.set_disturbance_tier` 方法 + `affect` 事件。clip 就绪/失败走单一 `clip.updated` 通道（payload 携 `scene` + `tier` 标识）；`video_gen.completed/failed` 仍是底层 `media/video_jobs` 流水线的通用事件，但 companion 通过 `enqueue_video_job(..., emit_event=False)` 抑制重复下发。
 - **伙伴表达事件流**（[§5.2.IV](ARCHITECTURE.md)）：affect 随话语同帧下发（inline affect 原则）；语义与渲染解耦——Backend 产 emotion 语义，Desktop 决定渲染。
 - **形象与动画资产**（[§7.2](ARCHITECTURE.md)）：portrait / loop clip / transition clip 三层；渐进式分批生成；portrait 重生使衍生 clip 失效。
 - **伙伴表达层契约**（[§7.5](ARCHITECTURE.md)）：emotion 枚举集、语义/渲染解耦、affect 继承角色定义抗注入、TTS 与 affect 同帧、onboarding 逐字段增量持久化。
 - **伙伴表达永不空白不变量**（[§11 #9](ARCHITECTURE.md)）：任何状态/cue 无就绪 clip 时回退 idle loop，用户不可见空白。
 
-Desktop 侧的 scene 标识符体系（与 `video_gen.completed` payload 的 `scene` 字段对应）与 Backend 的 clip 生成队列对齐：scene 名直接取自状态机状态与 emotion 枚举（`idle` / `speaking` / `working` / `thinking` / `sleeping` / `happy` / …），无需另造命名空间。
+Desktop 侧的 scene 标识符体系（与 `clip.updated` payload 的 `scene` 字段对应）与 Backend 的 clip 生成队列对齐：scene 名直接取自状态机状态与 emotion 枚举（`idle` / `speaking` / `working` / `thinking` / `sleeping` / `happy` / …），无需另造命名空间。
 
 ---
 

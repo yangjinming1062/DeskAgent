@@ -71,6 +71,7 @@ async def enqueue_video_job(
     model: str | None,
     aspect_ratio: str | None,
     event_extras: dict | None = None,
+    emit_event: bool = True,
 ) -> "VideoGenJob":
     """Insert a queued job, submit to the provider, and schedule the
     background polling task. Returns the persisted row.
@@ -79,6 +80,12 @@ async def enqueue_video_job(
     ``video_gen.completed`` / ``video_gen.failed`` WS event payload — e.g.
     the companion clip pipeline passes ``{"scene": "idle"}`` so the desktop
     can bind the result to a specific animation state (ARCHITECTURE.md §7.2).
+
+    ``emit_event=False`` opts out of the standard ``video_gen.*`` WS
+    events. Used by the companion clip pipeline which owns its own
+    ``clip.updated`` event channel and would otherwise leak two events
+    for every scene transition (P0-8). The job still goes through the
+    normal polling/finalize path; only the public emission is silenced.
 
     Raises :class:`MissingLlmConfigError` if no video_gen provider is
     configured, or any provider error during submission.
@@ -104,6 +111,8 @@ async def enqueue_video_job(
     }
     if event_extras:
         params["_event_extras"] = event_extras
+    if not emit_event:
+        params["_emit_event"] = False
 
     # Capture the actual provider that wins the submit — polling/fetch
     # run against it (task_id is per-provider).
@@ -197,6 +206,18 @@ def _extras_from_params(params_json: str | None) -> dict:
     return extras if isinstance(extras, dict) and extras else {}
 
 
+def _emit_disabled(params_json: str | None) -> bool:
+    """Whether the caller opted out of the standard ``video_gen.*`` events
+    via ``enqueue_video_job(..., emit_event=False)``."""
+    if not params_json:
+        return False
+    try:
+        parsed = json.loads(params_json)
+    except (TypeError, ValueError):
+        return False
+    return isinstance(parsed, dict) and parsed.get("_emit_event") is False
+
+
 async def _poll_and_finalize_locked(job_id: int) -> None:
 
     with SESSION_LOCAL() as db:
@@ -228,7 +249,8 @@ async def _poll_and_finalize_locked(job_id: int) -> None:
             error_reason="missing_task_id",
             error_message="provider.submit returned no task_id",
         )
-        _evt("video_gen.failed", {"task_id": str(job_id), "error": "missing task id"})
+        if not _emit_disabled(job.params_json):
+            _evt("video_gen.failed", {"task_id": str(job_id), "error": "missing task id"})
         return
 
     with SESSION_LOCAL() as db:
@@ -247,7 +269,8 @@ async def _poll_and_finalize_locked(job_id: int) -> None:
             error_reason="provider_unavailable",
             error_message=f"video provider {provider_name!r} no longer in the chain; cannot poll task_id",
         )
-        _evt("video_gen.failed", {"task_id": str(job_id), "error": "provider unavailable"})
+        if not _emit_disabled(job.params_json):
+            _evt("video_gen.failed", {"task_id": str(job_id), "error": "provider unavailable"})
         return
     provider = resolve(ServiceType.video_gen, provider_cfg.provider_name)(provider_cfg)
 
@@ -268,7 +291,8 @@ async def _poll_and_finalize_locked(job_id: int) -> None:
         except Exception as e:
             logger.exception("video poll failed", extra={"job_id": job_id})
             _update_job(job_id, status="failed", error_reason="poll_failed", error_message=str(e))
-            _evt("video_gen.failed", {"task_id": str(job_id), "error": str(e)})
+            if not _emit_disabled(job.params_json):
+                _evt("video_gen.failed", {"task_id": str(job_id), "error": str(e)})
             return
 
         if status.status == "succeeded":
@@ -292,21 +316,25 @@ async def _poll_and_finalize_locked(job_id: int) -> None:
             except Exception as e:
                 logger.exception("video download failed", extra={"job_id": job_id})
                 _update_job(job_id, status="failed", error_reason="download_failed", error_message=str(e))
-                _evt("video_gen.failed", {"task_id": str(job_id), "error": str(e)})
+                if not _emit_disabled(job.params_json):
+                    _evt("video_gen.failed", {"task_id": str(job_id), "error": str(e)})
                 return
             _update_job(job_id, status="succeeded", file_id=file_id, video_url=public_url)
-            _evt("video_gen.completed", {"task_id": str(job_id), "url": public_url})
+            if not _emit_disabled(job.params_json):
+                _evt("video_gen.completed", {"task_id": str(job_id), "url": public_url})
             logger.info("video job succeeded", extra={"job_id": job_id, "file_id": file_id})
             return
         if status.status == "failed":
             _update_job(job_id, status="failed", error_reason="provider_failed", error_message=status.error)
-            _evt("video_gen.failed", {"task_id": str(job_id), "error": status.error})
+            if not _emit_disabled(job.params_json):
+                _evt("video_gen.failed", {"task_id": str(job_id), "error": status.error})
             return
 
         _update_job(job_id, status="processing")
         if naive_utc_now() >= deadline:
             _update_job(job_id, status="failed", error_reason="timeout", error_message="polling deadline reached")
-            _evt("video_gen.failed", {"task_id": str(job_id), "error": "timeout"})
+            if not _emit_disabled(job.params_json):
+                _evt("video_gen.failed", {"task_id": str(job_id), "error": "timeout"})
             return
         await asyncio.sleep(interval)
 

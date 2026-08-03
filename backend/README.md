@@ -178,7 +178,7 @@ MiniMax Hailuo 异步三段式：`POST /v1/video_generation`（task_id）→ `GE
 
 **Tool**：`video_generate`（schema: prompt/duration/resolution/first_frame_image/aspect_ratio）+ `video_generate_status`（schema: task_id）。前者最多等 `video_gen_tool_wait_seconds`（180s）；超时返回 `{success:true, pending:true, task_id, hint:"用 video_generate_status 查询"}`——后台任务继续跑。MiniMax 不暴露 ASR，所以 `stt` provider 没有 `minimax` 实现。
 
-**伙伴层 clip 的种子图**：`companion/avatar_service` 生成角色动画 clip 时，`first_frame_image` 固定为该用户当前 portrait，prompt 描述场景/动作——所有 clip 共享同一颗种子图以保证跨 clip 角色一致；portrait 重生时全部 clip 失效重排（[ARCHITECTURE.md §7.2](../ARCHITECTURE.md#72-形象与动画资产-avatar--animation-assets)）。clip 复用 `video_gen.completed/failed` 事件下发，payload 携 scene 标识。
+**伙伴层 clip 的种子图**：`companion/avatar_service` 生成角色动画 clip 时，`first_frame_image` 固定为该用户当前 portrait，prompt 描述场景/动作——所有 clip 共享同一颗种子图以保证跨 clip 角色一致；portrait 重生时全部 clip 失效重排（[ARCHITECTURE.md §7.2](../ARCHITECTURE.md#72-形象与动画资产-avatar--animation-assets)）。clip 通过 `clip.updated` 事件（payload 携 scene + tier）单通道下发，`enqueue_video_job(..., emit_event=False)` 抑制通用的 `video_gen.completed/failed` 避免双通知。
 
 ## 安全设计
 
@@ -218,7 +218,7 @@ DeskAgent 伙伴的"人格"与"形象"是跨 Backend↔Desktop 的核心契约�
 `AvatarClip` 表存以 portrait 为种子的图生视频 clip，每个 clip 绑定一个 `scene` 标签（与 Desktop 动画状态机状态对齐：`idle` / `speaking` / `thinking` / `happy` / ...）。scene 目录 + 批次优先级定义在 `services/companion/clip_service.CLIP_SCENES`。
 
 - **渐进式生成**：batch 0（idle）在 portrait 生成时同步排队；其余批次（speaking/thinking/working → 生命周期 → 情绪变体）后台渐进生成
-- **事件下发**：clip 复用既有 `video_gen.completed/failed` 事件（design §7.2），`enqueue_video_job` 的 `event_extras` dict 合入事件 payload，Desktop 据 `scene` 字段绑定到对应动画状态
+- **事件下发**：clip 通过 `clip.updated` 单通道下发（payload 携 scene + tier + url + keyframe_url + keyframe_meta + status），companion 服务以 `enqueue_video_job(..., emit_event=False)` 抑制通用 `video_gen.*` 事件避免双通知；`avatar.list_clips` 是拉取式同步入口（首次启动 / 断线重连补齐）
 - **avatar.list_clips** JSON-RPC：返回全部 clip + 实时生成状态（JOIN `VideoGenJob` 行）
 - **衍生失效**：portrait 重生时所有 clip 失效（design §7.2——同一颗种子图从机制上保证跨 clip 一致性，跨版本不可复用）
 

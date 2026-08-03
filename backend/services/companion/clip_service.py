@@ -216,7 +216,15 @@ def invalidate_user_clips(db: Session, user_id: int) -> int:
 
 
 async def _submit_scene_video(db: Session, clip: AvatarClip, portrait_url: str) -> None:
-    """Submit the Tier 3 image-to-video job for a scene (portrait as seed)."""
+    """Submit the Tier 3 image-to-video job for a scene (portrait as seed).
+    The standard ``video_gen.completed`` / ``video_gen.failed`` WS events are
+    suppressed (``emit_event=False``) because the companion owns the single
+    ``clip.updated`` event channel — letting both fire would emit two
+    notifications per scene transition and the renderer's ``video_gen.*``
+    consumer never sees a real ``video_url`` because the companion key shape
+    differs (P0-8). The job still runs through the normal polling/finalize
+    path; ``_finalize_terminal_videos`` picks up the terminal state on its
+    next tick and emits ``clip.updated`` with the persisted companion URL."""
     spec = CLIP_SCENES[clip.scene]
     job = await enqueue_video_job(
         db,
@@ -228,7 +236,7 @@ async def _submit_scene_video(db: Session, clip: AvatarClip, portrait_url: str) 
         first_frame_image=portrait_url,
         model=None,
         aspect_ratio=None,
-        event_extras={"scene": clip.scene},
+        emit_event=False,
     )
     clip.video_job_id = job.id
     db.commit()
