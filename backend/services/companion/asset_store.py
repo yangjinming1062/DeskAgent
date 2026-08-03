@@ -27,13 +27,26 @@ def _assets_root() -> Path:
 
 
 def _signing_key() -> bytes:
-    """HMAC key for asset-URL signing. Falls back to a derived key
-    from ``public_url_prefix`` so dev deployments without an explicit
-    secret still get a stable per-environment signature."""
+    """HMAC key for asset-URL signing. P0 (contract audit): no
+    fallback to a derived-from-public-url key — that was a
+    security hole because ``public_url_prefix`` is public. The
+    backend's ``init_database`` fail-fast check guarantees the
+    env var is set in production; the field can still be empty
+    in tests (see ``_test_signer_key`` below)."""
     secret = getattr(SETTINGS, "companion_asset_signing_key", None)
     if secret:
         return secret.encode("utf-8")
-    return hashlib.sha256(f"companion-asset:{SETTINGS.public_url_prefix}".encode("utf-8")).digest()
+    return _test_signer_key()
+
+
+# Stable test-only signing key. Production paths must set
+# ``companion_asset_signing_key``; init_database raises when the
+# field is empty AND no engine override is provided.
+_TEST_SIGNER_KEY = b"test-only-companion-asset-signer-key-do-not-use-in-prod"
+
+
+def _test_signer_key() -> bytes:
+    return _TEST_SIGNER_KEY
 
 
 def _sign(user_id: int, filename: str, expires_at: int) -> str:

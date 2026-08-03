@@ -133,6 +133,17 @@ def init_database(engine=None) -> None:
     the module-level ENGINE); the test fixture passes its own testcontainers engine
     so it doesn't have to reach into a private helper to install the NOTIFY trigger.
     """
+    # P0 (contract audit): companion asset URLs are HMAC-signed; an
+    # explicit signing key must be set so an attacker who knows
+    # ``public_url_prefix`` can't forge a signature. Fail fast at
+    # startup when the key is empty rather than silently deriving a
+    # weak one. ``engine``-passing tests can keep the empty default.
+    if engine is None and not SETTINGS.companion_asset_signing_key:
+        raise RuntimeError(
+            "DESKAGENT_COMPANION_ASSET_SIGNING_KEY must be set; "
+            "the previous weak derivation from public_url_prefix was a "
+            "security hole. See backend/README.md / components/config.py."
+        )
     target = engine if engine is not None else ENGINE
     ModelBase.metadata.create_all(bind=target)
     with target.begin() as conn:
