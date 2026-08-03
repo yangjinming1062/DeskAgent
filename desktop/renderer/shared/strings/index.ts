@@ -1155,8 +1155,6 @@ export const strings: Translations = {
     stopDictation: '停止听写',
     transcribingDictation: '正在转写听写',
     voiceDictation: '语音听写',
-    screenRecordTip: '录制屏幕作为上下文',
-    screenRecordingLabel: '录屏.webm',
     lookupLoading: '查找中…',
     lookupNoMatches: '没有匹配项。',
     lookupTry: '试试',
