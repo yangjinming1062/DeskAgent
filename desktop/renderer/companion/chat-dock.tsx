@@ -1,5 +1,5 @@
 import { useStore } from '@nanostores/react'
-import { useEffect, useRef, useState } from 'react'
+import { type PointerEvent as ReactPointerEvent, useEffect, useMemo, useRef, useState } from 'react'
 
 import { useGatewayRequest } from '@/companion/boot/use-gateway-request'
 import {
@@ -230,14 +230,75 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps) {
   const lastIsUser = messages[messages.length - 1]?.role === 'user'
   const showTyping = lastIsUser && gatewayState === 'open'
 
+  // P2-5: let the user grab the panel header and drag the dock to a
+  // new on-screen position. Persist the offset in localStorage so the
+  // choice survives a restart. The sprite itself stays put — only the
+  // dock moves. We drag the panel element via translate3d so the GPU
+  // handles the motion (no React re-render per pointermove).
+  const storedOffset = useMemo(() => {
+    if (typeof localStorage === 'undefined') {return null}
+    try {
+      const raw = localStorage.getItem('da.companion.chatDockOffset')
+      return raw ? (JSON.parse(raw) as { dx: number; dy: number }) : null
+    } catch {
+      return null
+    }
+  }, [])
+  const offsetRef = useRef<{ dx: number; dy: number }>(storedOffset ?? { dx: 0, dy: 0 })
+  const dragRef = useRef<{ startX: number; startY: number; baseDx: number; baseDy: number } | null>(null)
+
+  const onHeaderPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
+    // Only left-button drags; ignore middle/right click and modifier-hold.
+    if (e.button !== 0 || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) {return}
+    const target = e.target as HTMLElement
+    // Don't start a drag when the user actually clicked a button / input
+    // inside the header (tier pill, voice-call button, close).
+    if (target.closest('button, input, textarea, select, a, [role="button"]')) {return}
+    e.currentTarget.setPointerCapture(e.pointerId)
+    dragRef.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      baseDx: offsetRef.current.dx,
+      baseDy: offsetRef.current.dy,
+    }
+  }
+  const onHeaderPointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
+    const d = dragRef.current
+    if (!d) {return}
+    const next = { dx: d.baseDx + (e.clientX - d.startX), dy: d.baseDy + (e.clientY - d.startY) }
+    offsetRef.current = next
+    if (panelRef.current) {
+      panelRef.current.style.transform = `translate3d(${next.dx}px, ${next.dy}px, 0)`
+    }
+  }
+  const onHeaderPointerUp = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (!dragRef.current) {return}
+    e.currentTarget.releasePointerCapture(e.pointerId)
+    dragRef.current = null
+    if (typeof localStorage !== 'undefined') {
+      try {
+        localStorage.setItem('da.companion.chatDockOffset', JSON.stringify(offsetRef.current))
+      } catch {
+        /* private mode: in-memory only */
+      }
+    }
+  }
+
   return (
     <div className="fixed inset-0 z-40 flex items-end justify-center px-6 pb-10" style={{ pointerEvents: 'none' }}>
       <div
         className="flex h-[min(60vh,520px)] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-white/10 bg-black/55 text-white shadow-2xl backdrop-blur-md"
         ref={panelRef}
-        style={{ pointerEvents: 'auto' }}
+        style={{ pointerEvents: 'auto', transform: storedOffset ? `translate3d(${storedOffset.dx}px, ${storedOffset.dy}px, 0)` : undefined }}
       >
-        <div className="flex items-center justify-between gap-2 border-b border-white/10 px-3 py-2">
+        <div
+          className="flex cursor-grab items-center justify-between gap-2 border-b border-white/10 px-3 py-2 active:cursor-grabbing"
+          onPointerDown={onHeaderPointerDown}
+          onPointerMove={onHeaderPointerMove}
+          onPointerUp={onHeaderPointerUp}
+          onPointerCancel={onHeaderPointerUp}
+          title="拖动以移动对话框"
+        >
           <div className="flex items-center gap-2">
             <div className="flex items-center gap-0.5 rounded-full bg-white/5 p-0.5 text-[11px]" title="打扰档位">
               {TIERS.map(t => (

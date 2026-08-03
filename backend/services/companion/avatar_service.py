@@ -99,8 +99,11 @@ async def _persist_portrait_bytes(data: bytes, content_type: str) -> str:
     filepath = avatars_dir / f"{file_id}.{ext}"
     with open(filepath, "wb") as f:
         f.write(data)
-    prefix = SETTINGS.public_url_prefix or f"http://{SETTINGS.public_ip}:{SETTINGS.port}"
-    return f"{prefix}/api/companion/avatar/file/{file_id}.{ext}"
+    # Contract P2-15: signed URL so the no-auth avatar file route
+    # can verify the request was issued by this backend.
+    from .asset_store import build_signed_avatar_url
+
+    return build_signed_avatar_url(file_id, ext)
 
 
 async def _download_to_bytes(url: str) -> tuple[bytes, str] | None:
@@ -292,8 +295,12 @@ async def upload_avatar(db: Session, user_id: int, data: bytes, content_type: st
     filepath = avatars_dir / f"{file_id}.{ext}"
     with open(filepath, "wb") as f:
         f.write(data)
-    prefix = SETTINGS.public_url_prefix or f"http://{SETTINGS.public_ip}:{SETTINGS.port}"
-    public_url = f"{prefix}/api/companion/avatar/file/{file_id}.{ext}"
+    # Contract P2-15: serve the portrait via a signed URL so the
+    # <img> tag can fetch it cross-device without a JWT and without
+    # exposing the file to a brute-force token scan.
+    from .asset_store import build_signed_avatar_url
+
+    public_url = build_signed_avatar_url(file_id, ext)
 
     # P1-15: best-effort delete the previous portrait file.
     previous = db.query(AvatarAsset).filter(AvatarAsset.user_id == user_id, AvatarAsset.active.is_(True)).one_or_none()

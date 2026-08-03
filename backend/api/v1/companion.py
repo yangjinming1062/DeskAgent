@@ -30,6 +30,8 @@ from services.companion import resolve_companion_asset_path
 from services.companion import resolve_uploaded_avatar_path
 from services.companion import update_persona
 from services.companion import upload_avatar
+from services.companion.asset_store import verify_signed_asset_request
+from services.companion.asset_store import verify_signed_avatar_request
 from services.rate_limit import limiter
 from sqlalchemy.orm import Session
 
@@ -155,13 +157,17 @@ async def upload_avatar_route(
     return _avatar_to_response(asset)
 
 
-# Public (no-auth) file route — the companion <img>/<video> tags load avatars
-# without JWT headers, mirroring the temp-media file route.
+# Public file route — the companion <img>/<video> tags load avatars
+# without JWT headers, but Contract P2-15 requires a signed URL with
+# 5-min HMAC expiry so a leaked URL is useless past the window and a
+# brute-force token scan is infeasible.
 public_router = get_router()
 
 
 @public_router.get("/avatar/file/{filename}")
-async def serve_avatar_file(filename: str):
+async def serve_avatar_file(filename: str, expires: int | None = None, sig: str | None = None):
+    if not verify_signed_avatar_request(filename, expires, sig):
+        raise HTTPException(status_code=403, detail="Invalid or expired signature")
     result = resolve_uploaded_avatar_path(filename)
     if result is None:
         raise HTTPException(status_code=404, detail="Avatar not found")
@@ -170,12 +176,15 @@ async def serve_avatar_file(filename: str):
 
 
 @public_router.get("/asset/{user_id}/{filename:path}")
-async def serve_companion_asset(user_id: int, filename: str):
+async def serve_companion_asset(user_id: int, filename: str, expires: int | None = None, sig: str | None = None):
     """Serve a durable companion clip asset (tier-2 keyframes / tier-3 video).
 
-    No auth — the portrait <img>/<video>/<sprite> tags load these without JWT
-    headers, mirroring the temp-media and avatar file routes. Cross-device:
-    a freshly logged-in desktop fetches already-generated products here."""
+    Contract P2-15: HMAC-signed URL with 5-min expiry. The signature
+    binds (user_id, filename, expires_at) so a leak can't be replayed
+    cross-user or cross-file, and a token scan is bounded by the
+    5-minute window."""
+    if not verify_signed_asset_request(user_id, filename, expires, sig):
+        raise HTTPException(status_code=403, detail="Invalid or expired signature")
     result = resolve_companion_asset_path(user_id, filename)
     if result is None:
         raise HTTPException(status_code=404, detail="Asset not found")
