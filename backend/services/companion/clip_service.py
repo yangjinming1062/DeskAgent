@@ -122,6 +122,92 @@ def _arm_keyframe_retry(clip: AvatarClip) -> None:
     clip.keyframe_next_retry_at = _backoff(clip.keyframe_attempts, _KEYFRAME_BACKOFF)
 
 
+# P1-14 (backend audit): the flat-white background the prompt
+# requests is the keying anchor for the alpha pipeline. We
+# threshold the same RGB window the portrait post-processor uses
+# so a clip frame whose every channel exceeds this value is
+# transparent in the resulting WebM. The pixel value is in [0, 1];
+# 0.97 corresponds to the ``r > 240, g > 240, b > 240`` check.
+_WHITE_KEY_THRESHOLD = 0.97
+
+
+async def _key_video_alpha(mp4_bytes: bytes, *, timeout: float = 180.0) -> bytes | None:
+    """Convert an opaque MP4 to WebM VP9 + alpha by keying the
+    flat-white background out of every frame via ffmpeg's
+    ``geq`` + ``format=yuva420p`` + ``-c:v libvpx-vp9`` pipeline.
+
+    Returns ``None`` on any failure so the caller can fall back
+    to the raw MP4 (the CSS circular-mask trick is the documented
+    Tier 3 fallback; a real WebM alpha is the upgrade path, not
+    a hard requirement). Never raises.
+    """
+    try:
+        import asyncio
+        import shutil
+        import subprocess
+        import tempfile
+        from pathlib import Path
+
+        ffmpeg = shutil.which("ffmpeg")
+        if not ffmpeg:
+            logger.debug("ffmpeg not on PATH; skipping WebM alpha keying")
+            return None
+
+        with tempfile.TemporaryDirectory() as tmp:
+            in_path = Path(tmp) / "in.mp4"
+            out_path = Path(tmp) / "out.webm"
+            in_path.write_bytes(mp4_bytes)
+
+            # geq: r,g,b > thresh ? 0 : r ; alpha = (RGB == white) ? 0 : 255
+            # format=yuva420p forces alpha channel in the encoder
+            # input so libvpx-vp9 actually emits alpha frames.
+            # -auto-alt-ref 0 keeps the encoder deterministic so
+            # the resulting WebM is cacheable.
+            cmd = [
+                ffmpeg, "-y", "-loglevel", "error",
+                "-i", str(in_path),
+                "-vf",
+                (
+                    f"format=rgb24,geq=r='if(gt(r\\,{_WHITE_KEY_THRESHOLD})\\,0\\,r)':"
+                    f"g='if(gt(g\\,{_WHITE_KEY_THRESHOLD})\\,0\\,g)':"
+                    f"b='if(gt(b\\,{_WHITE_KEY_THRESHOLD})\\,0\\,b)',"
+                    "format=yuva420p"
+                ),
+                "-c:v", "libvpx-vp9",
+                "-pix_fmt", "yuva420p",
+                "-auto-alt-ref", "0",
+                "-deadline", "realtime",
+                "-cpu-used", "4",
+                "-b:v", "0",
+                str(out_path),
+            ]
+
+            proc = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+            )
+            try:
+                _, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+            except asyncio.TimeoutError:
+                proc.kill()
+                logger.warning("ffmpeg WebM alpha keying timed out after %ss", timeout)
+                return None
+
+            if proc.returncode != 0 or not out_path.exists():
+                logger.warning(
+                    "ffmpeg WebM alpha keying failed (rc=%s): %s",
+                    proc.returncode,
+                    (stderr or b"").decode("utf-8", errors="ignore")[:300],
+                )
+                return None
+
+            return out_path.read_bytes()
+    except Exception as exc:
+        logger.warning("ffmpeg WebM alpha keying unexpected failure: %s", exc)
+        return None
+
+
 def _keyframe_submissions_today(db: Session, user_id: int) -> int:
     """P1-8 (backend audit): count keyframes generated for this
     user since the last UTC midnight. ``keyframe_url IS NOT NULL``
@@ -467,7 +553,20 @@ async def _finalize_terminal_videos(db: Session) -> None:
                 _arm_video_retry(clip)
                 db.commit()
                 continue
-            url = save_companion_asset(data, user_id=clip.user_id, scene=clip.scene, kind="video", ext="mp4")
+            # P1-14 (backend audit): the MiniMax i2v provider
+            # returns opaque MP4 with no alpha channel. The previous
+            # code persisted the MP4 as-is and relied on the
+            # renderer's CSS circular-mask trick — a fake, not a real
+            # fix. Now post-process the MP4 through ffmpeg into a
+            # VP9-encoded WebM with a real alpha channel, keying the
+            # flat-white background out of every frame (same trick
+            # the portrait alpha pipeline uses for PNG). The renderer's
+            # <video> tag can then composite the WebM alpha natively
+            # without any CSS hack.
+            processed = await _key_video_alpha(data)
+            ext = "webm" if processed is not None else "mp4"
+            payload = processed if processed is not None else data
+            url = save_companion_asset(payload, user_id=clip.user_id, scene=clip.scene, kind="video", ext=ext)
             # 4.5 (backend audit): without CAS, two replicas can both
             # write video_asset_url for the same clip and produce
             # duplicate files in companion-assets/. Pin the write to
