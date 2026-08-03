@@ -5,16 +5,22 @@
 // so synthesis never breaks; this is a prompt, not a hard error.
 //
 // Design tokens ("mimo_voicedesign:<prompt>") and the empty default are
-// always considered valid. A catalog fetch failure is treated as valid to
-// avoid false positives on transient gateway/network hiccups.
+// always considered valid. P2-8 (runtime audit): distinguish "fetch
+// failed" (transient — keep current voice, no prompt) from
+// "fetch succeeded but voice not in catalog" (real miss — prompt the
+// user to re-pick). The previous code collapsed both into
+// {valid: true} so a user who switched providers never saw the
+// "your voice changed underneath you" hint.
 
 import type { RequestGateway } from '@/shared/voice-catalog'
 import { VOICEDESIGN_PREFIX } from '@/shared/voice-catalog'
 
 import { $companionVoiceId } from './prefs'
-import { EMPTY_CATALOG, fetchVoiceCatalog } from './voice'
+import { fetchVoiceCatalogRaw } from './voice'
 
-export type VoiceValidityResult = { valid: true } | { valid: false; name: string }
+export type VoiceValidityResult =
+  | { valid: true }
+  | { valid: false; name: string; reason: 'fetch_failed' | 'catalog_miss' }
 
 export async function checkCompanionVoiceValidity(requestGateway: RequestGateway): Promise<VoiceValidityResult> {
   const id = $companionVoiceId.get()
@@ -23,12 +29,15 @@ export async function checkCompanionVoiceValidity(requestGateway: RequestGateway
     return { valid: true }
   }
 
-  // ``fetchVoiceCatalog`` already swallows gateway errors and returns
-  // ``EMPTY_CATALOG``; treat that as "unknown → valid" so a transient
-  // network hiccup doesn't flag a perfectly good persisted voice id.
-  const catalog = await fetchVoiceCatalog(requestGateway)
+  const result = await fetchVoiceCatalogRaw(requestGateway)
 
-  if (catalog === EMPTY_CATALOG) {return { valid: true }}
+  if (!result.ok) {
+    // Transient: don't prompt the user — the next connectivity
+    // cycle will re-evaluate.
+    return { valid: true }
+  }
 
-  return catalog.voices.some(v => v.id === id) ? { valid: true } : { valid: false, name: id }
+  return result.catalog.voices.some(v => v.id === id)
+    ? { valid: true }
+    : { valid: false, name: id, reason: 'catalog_miss' }
 }

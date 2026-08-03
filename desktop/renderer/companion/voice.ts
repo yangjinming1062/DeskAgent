@@ -65,10 +65,14 @@ interface DesignResponse {
   trial_audio_mime: string
 }
 
-export async function fetchVoiceCatalog(
+export type FetchResult =
+  | { ok: true; catalog: VoiceCatalog }
+  | { ok: false; reason: 'fetch_failed' | 'empty_catalog' }
+
+export async function fetchVoiceCatalogRaw(
   requestGateway: RequestGateway,
   language?: string | null
-): Promise<VoiceCatalog> {
+): Promise<FetchResult> {
   try {
     const res = await requestGateway<CatalogResponse>('tts.list_voices', {
       language: language ?? null
@@ -77,15 +81,31 @@ export async function fetchVoiceCatalog(
     const voices = res.voices?.length ? res.voices : [DEFAULT_VOICE]
 
     return {
-      provider: res.provider ?? '',
-      voices,
-      defaultVoice: res.default_voice ?? DEFAULT_VOICE,
-      supportsVoiceDesign: Boolean(res.supports_voice_design),
-      voiceDesignGuide: res.voice_design_guide ?? ''
+      ok: true,
+      catalog: {
+        provider: res.provider ?? '',
+        voices,
+        defaultVoice: res.default_voice ?? DEFAULT_VOICE,
+        supportsVoiceDesign: Boolean(res.supports_voice_design),
+        voiceDesignGuide: res.voice_design_guide ?? ''
+      }
     }
   } catch {
-    return EMPTY_CATALOG
+    return { ok: false, reason: 'fetch_failed' }
   }
+}
+
+export async function fetchVoiceCatalog(
+  requestGateway: RequestGateway,
+  language?: string | null
+): Promise<VoiceCatalog> {
+  // Back-compat wrapper — returns EMPTY_CATALOG for any non-ok case so
+  // existing callers keep their fallthrough behavior. New consumers
+  // (P2-8 voice-validity) should use fetchVoiceCatalogRaw to distinguish
+  // 'fetch failed' (transient — keep current voice) from 'fetch
+  // succeeded but voice not in catalog' (real miss — prompt user).
+  const result = await fetchVoiceCatalogRaw(requestGateway, language)
+  return result.ok ? result.catalog : EMPTY_CATALOG
 }
 
 export async function matchVoicePreference(
