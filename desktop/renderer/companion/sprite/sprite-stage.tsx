@@ -20,7 +20,13 @@ interface SpriteStageProps {
 const REST_MARGIN = 24
 const EGG_W = 160
 const EGG_H = 184
-const DRAG_THRESHOLD = 6
+// 1.3 (desktop audit): the previous DRAG_THRESHOLD = 6px was too
+// tight — a trackpad user with a 1-2px jitter on the first tap
+// would land just over the threshold and have the second tap
+// classified as drag, never reaching the double-tap branch.
+// Bump to 12px (well under the "user actually dragged" visual
+// signal of ~24px) so micro-jitter is no longer misclassified.
+const DRAG_THRESHOLD = 12
 const DOUBLE_TAP_MS = 320
 // Covers the sprite's CSS glow halos that overflow the inner box: egg-glow
 // 150% (≈40px/side), companion-glow 170% (≈56px), sil-glow 170% of 180 (≈63px).
@@ -48,17 +54,36 @@ export function SpriteStage({ children, onTap, onDoubleTap, onContextMenu }: Spr
     ? { x: Math.round((window.innerWidth - EGG_W) / 2), y: Math.round(window.innerHeight * 0.16) }
     : pos
 
+  // 1.9 (desktop audit): on a high-refresh trackpad the previous
+  // release() ran setIgnoreMouseEvents on every mousemove that
+  // crossed the sprite boundary, causing rapid capture↔release
+  // toggles that flash the desktop behind the sprite. Coalesce
+  // multiple toggles within 50ms via a single-flight debounce so
+  // a fast cursor only triggers one IPC per settle.
+  let _pendingToggle: ReturnType<typeof setTimeout> | null = null
+  const _toggle = (capture: boolean) => {
+    if (_pendingToggle) {clearTimeout(_pendingToggle)}
+    _pendingToggle = setTimeout(() => {
+      _pendingToggle = null
+      if (capture) {
+        void window.deskagent.sprite.setIgnoreMouseEvents({ ignore: false })
+      } else {
+        void window.deskagent.sprite.setIgnoreMouseEvents({ ignore: true, forward: true })
+      }
+    }, 50)
+  }
+
   const capture = () => {
     if (capturedRef.current) {return}
     capturedRef.current = true
     handleHoverInteraction()
-    void window.deskagent.sprite.setIgnoreMouseEvents({ ignore: false })
+    _toggle(true)
   }
 
   const release = () => {
     if (!capturedRef.current) {return}
     capturedRef.current = false
-    void window.deskagent.sprite.setIgnoreMouseEvents({ ignore: true, forward: true })
+    _toggle(false)
   }
 
   useEffect(() => {
