@@ -78,9 +78,35 @@ class AffectScrubber:
         return self._try_resolve()
 
     def flush(self) -> str:
+        # 4.4 (backend audit): the previous flush() returned the
+        # raw buffer when no tag was resolved, leaking a half-formed
+        # tag like ``[affect:happy`` (no closing bracket) or a
+        # whitespace-prefixed fragment into the user-visible text
+        # when the LLM stream died mid-tag. Try a final regex match
+        # so an intact tag still peels off cleanly, and strip a
+        # partial ``[affect:`` prefix on the way out so the worst
+        # case is a buffered fragment with the leading ``[`` gone
+        # rather than a half-tag the user can read.
         if self._resolved or not self._buf:
             return ""
-        return self._resolve_no_tag()
+        m = _AFFECT_RE.match(self._buf)
+        if m:
+            self._resolved = True
+            token = m.group(1).lower()
+            self._emotion = token if token in ALLOWED_EMOTIONS else "neutral"
+            return self._drain(m.end())
+        # Partial / malformed tag — strip the leading "[affect:" if
+        # present so a truncated stream doesn't surface as a
+        # literal "[affect:happy" the user has to read.
+        out = self._buf
+        if out.lstrip().startswith(_TAG_PREFIX):
+            idx = out.find("[")
+            if idx >= 0:
+                out = out[:idx] + out[idx + 1 :]  # drop the '['
+        self._resolved = True
+        self._emotion = "neutral"
+        self._buf = ""
+        return out
 
     def _try_resolve(self) -> str:
         m = _AFFECT_RE.match(self._buf)

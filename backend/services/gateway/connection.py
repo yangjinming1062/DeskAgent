@@ -16,7 +16,16 @@ from .jsonrpc import JsonRpcDispatcher
 
 # GC window for stale outbox events — at-most-once after this many seconds
 # without a successful dispatch (user offline too long).
-WS_EVENT_MAX_AGE_SECONDS = 60
+#
+# P1-1 (contract audit): the previous 60s window meant a cron event
+# fired at 09:00 while the user had their laptop closed would be
+# GC'd at 09:01 and never delivered. ARCH §6 + the README §"主动
+# 陪伴" promise the partner "主动找用户"; losing a day's
+# morning greeting is the worst possible first impression. Bump
+# to 24h — the user reconnects within a day almost always; the
+# only cost is a few thousand rows in ws_events that are GC'd by
+# the next day's startup sweep.
+WS_EVENT_MAX_AGE_SECONDS = 24 * 60 * 60
 
 logger = get_logger(__name__)
 

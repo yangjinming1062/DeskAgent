@@ -287,12 +287,15 @@ async def generate_avatar(db: Session, user_id: int, persona: Persona, style: st
     """
     if not persona.is_complete:
         raise AvatarGenerationError("persona is incomplete; finish onboarding first")
-    asset = await _generate_and_persist(db, user_id, prompt=_build_prompt(persona, style), style=style)
-    # Invalidate any prior portrait's clips so ``list_clips`` doesn't
-    # surface orphan rows for an inactive portrait and the escalation
-    # loop never submits jobs derived from a stale seed. Mirrors the
-    # path in ``regenerate_avatar`` / ``upload_avatar`` (P0-3).
+    # 4.2 (backend audit): invalidate BEFORE the long-running
+    # generation so the in-flight window of "old clips pointing at
+    # an old portrait_id" is minimized. Combined with P0-3 (URL
+    # re-sign on read) this means a generation that fails leaves
+    # the user with no stale-clip pointers to a non-existent
+    # portrait, and a generation that succeeds produces a new
+    # portrait + new seed URL the escalation loop can re-key from.
     invalidate_user_clips(db, user_id)
+    asset = await _generate_and_persist(db, user_id, prompt=_build_prompt(persona, style), style=style)
     await _seed_batch0(db, user_id, asset)
     return asset
 
@@ -360,8 +363,15 @@ async def regenerate_avatar(db: Session, user_id: int, persona: Persona, feedbac
     prompt = _build_prompt(persona, style)
     if feedback and feedback.strip():
         prompt = f"{prompt}. Adjustment requested: {feedback.strip()}"
-    asset = await _generate_and_persist(db, user_id, prompt=prompt, style=style, feedback=feedback)
+    # 4.2 (backend audit): invalidate BEFORE the long-running
+    # generation so the in-flight window of "old clips pointing at
+    # an old portrait_id" is minimized. Combined with P0-3 (URL
+    # re-sign on read) this means a regenerate that fails leaves
+    # the user with no stale-clip pointers to a non-existent
+    # portrait, and a regenerate that succeeds produces a new
+    # portrait + new seed URL the escalation loop can re-key from.
     invalidate_user_clips(db, user_id)
+    asset = await _generate_and_persist(db, user_id, prompt=prompt, style=style, feedback=feedback)
     await _seed_batch0(db, user_id, asset)
     return asset
 
