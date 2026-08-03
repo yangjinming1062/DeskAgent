@@ -113,7 +113,7 @@ clip 通过 `clip.updated` 事件单通道下发（P0-8）。`video_gen.*` 事�
 ## 9. 不能从代码结构直接读出的边界
 
 - **3 种 token 通过守卫**：
-  - `STT` 数据 > 24MB → 拒绝（`media.cjs:225-227`）
+  - `STT` 数据 > 25 MiB → runner 端拒绝（`audio_io.DEFAULT_MAX_INPUT_BYTES`）
   - `TTS` 文本 > 4000 字符 → 拒绝
   - `runner:invoke` 60 次/秒 token bucket（P2-17）
 - **持久化键**：

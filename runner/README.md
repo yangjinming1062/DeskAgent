@@ -13,28 +13,14 @@
 
 ## 架构地图
 
-```
-runner/
-├── server.py                # WebSocket JSON-RPC 入口（唯一入口）——runner_loop / get_tools / deskagent.info / execute_tool / mcp.reload / request_llm
-├── runner_version.py        # 从 pyproject.toml 解析 __version__（一次缓存）
-├── tools/                   # 工具实现与自注册中心
-│   ├── terminal/{6 后端}    # 6 后端共享 environment 池
-│   ├── files/               # read/write/patch/search/list
-│   ├── browser/             # 多后端 (Local Chromium / Camofox / CDP) + 26 个 browser_* 工具 + check_fn 门控
-│   ├── execute_code/        # 沙箱执行
-│   ├── process/             # 进程管理
-│   ├── skills/              # skills_list / skill_view / skill_manage
-│   ├── mcp/                 # MCP 动态发现 + 每 server 4 utility
-│   ├── multimodal/          # vision_analyze / computer_use（含 CU 后端与权限）/audio(STT+TTS)
-│   ├── toolsets/            # 用户可平移的 schema 过滤
-│   ├── security/            # tirith 扫描
-│   └── system/              # 输出清洗·结果预算·凭据文件 + activity / activity_tools (系统感知)
-└── utils/                   # 路径解析 / 配置 / 脱敏 / 文件安全 / PID / 反向 RPC / capabilities (本地 STT/TTS/麦克风/网络/磁盘)
-```
+- `server.py` 是唯一 WebSocket 入口——所有 RPC 方法（`runner_ready` / `get_tools` / `execute_tool` / `deskagent.info` / `mcp.reload` / `request_llm`）都在此分发，不暴露其他网络端口。
+- `tools/` 各子包（`terminal` / `files` / `browser` / `execute_code` / `process` / `skills` / `mcp` / `multimodal` / `system` / `toolsets` / `security`）在 import 时自注册到 `registry`，`server.py` 不感知具体工具。
+- `tools/terminal/environment/` 子包下沉共享态（活跃实例表 / 工厂 / cleanup reaper），让 `files`、`execute_code` 跨包共享 env 实例、绕开含命令处理 + 安全审批的 `terminal_tool` 避免循环依赖。
+- `utils/` 是无业务逻辑的纯 helper 层：路径解析 / 配置 / 脱敏 / 文件安全 / PID / 反向 RPC / capabilities 探测——`tools/` 与 `server.py` 都依赖它，它不反向依赖任何工具。
 
-Wheel 产物：`dist/deskagent-agent-*.whl`。Desktop spawn `$DESKAGENT_HOME/runner/.venv/{bin/python,Scripts/python.exe} $DESKAGENT_HOME/runner/server.py --desktop-ws <ws-url>`。安装布局详 [installer/README.md §9](../installer/README.md)。
+Wheel 产物：`dist/deskagent-agent-*.whl`。Desktop spawn `$DESKAGENT_HOME/runner/.venv/{bin/python,Scripts/python.exe} $DESKAGENT_HOME/runner/server.py --desktop-ws <ws-url>`。安装布局详 [installer/README.md §10](../installer/README.md)。
 
-**音频引擎默认在基础 wheel 内**：`faster-whisper` / `piper-tts` / `sounddevice` / `numpy` 是伴侣语音栈的核心依赖（[COMPANION_DESIGN §5 语音交互](../COMPANION_DESIGN.md#5-语音交互stt--tts)），从基础 wheel 直接可用——前装不再要求额外的 `uv pip install "desk-agent[audio]"`。`pyttsx3` 用平台 marker 限制（Linux 上 voice 栈走 Piper 单一引擎即可）。运行时仍要求系统 PATH 有 `ffmpeg`（`audio_io.wav_to_wav_pcm16` 用）。
+**音频引擎默认在基础 wheel 内**：`faster-whisper` / `piper-tts` / `sounddevice` / `numpy` 是伴侣语音栈的核心依赖（[COMPANION_DESIGN §5 语音交互](../COMPANION_DESIGN.md#5-语音交互stt--tts)），从基础 wheel 直接可用。`pyttsx3` 用平台 marker 限制（Linux 上 voice 栈走 Piper 单一引擎即可）。运行时仍要求系统 PATH 有 `ffmpeg`（`audio_io.wav_to_wav_pcm16` 用）。
 
 要确认 capability 是否在当前 venv 内为真，调 `deskagent.info` 看 `capabilities.local_stt / local_tts` 字段——运行时检测比静态 extra 标记更准（依赖可能在 import 时报警但运行时仍可用，反过来亦然）。
 
@@ -104,20 +90,7 @@ Runner 主动连接 Desktop 提供的本地 WS 服务器（`ws://127.0.0.1:<port
 
 每个工具模块在 import 时调用 `registry.register_tool(...)` 完成注册。`discover_builtin_tools()` 递归扫描 `tools/` 子包（跳过 `registry` 和 `mcp/mcp_tool`——MCP 模块的特性见下文）。
 
-**当前工具数：53 个静态 + 动态 MCP。** 覆盖：
-
-| 类别 | 工具 |
-|------|------|
-| 终端 | `terminal`（6 后端：local / docker / ssh / singularity / apptainer / noop） |
-| 文件 | `list_directory` / `read_file` / `write_file` / `patch` / `search_files` |
-| 浏览器（26） | `browser_navigate` / `browser_snapshot` / `browser_click` / `browser_type` / `browser_scroll` / `browser_back` / `browser_press` / `browser_get_images` / `browser_vision` / `browser_console` / `browser_hover` / `browser_wait_for` / `browser_find` / `browser_drag` / `browser_select` / `browser_download` / `browser_pdf` / `browser_screenshot_element` / `browser_tab_new` / `browser_tab_switch` / `browser_tab_close` / `browser_tab_list` / `browser_set_viewport` / `browser_set_user_agent` / `browser_set_extra_headers` / `browser_set_geolocation` / `browser_dialog` / `browser_cookies_get` / `browser_cookies_set` / `browser_cookies_clear` / `browser_storage_get` / `browser_storage_set` / `browser_cdp` |
-| 代码 | `execute_code`（沙箱执行；50 调用/脚本、5 分钟超时） |
-| 进程 | `process` |
-| Skills | `skills_list` / `skill_view` / `skill_manage` |
-| 多模态（视觉） | `vision_analyze` / `computer_use` |
-| **音频（Voice，新）** | `speech_to_text` / `text_to_speech` / `list_tts_voices` |
-| **环境感知（新）** | `system.get_idle_seconds` / `system.is_screen_locked` / `system.get_focused_app` / `system.get_power_state` |
-| MCP（动态） | `mcp_<server>_<tool>` + 4 个 utility（list/read resources、list/get prompts） |
+工具按类别分组（具体工具名 grep `register_tool` 即可得）：终端 / 文件 / 浏览器（`browser_*` 系列）/ 代码执行 / 进程 / Skills / 多模态（视觉 + 音频）/ 系统感知（`system.*`）/ MCP（运行时动态发现，每个 server 附带 4 个 utility：list / read resources、list / get prompts）。
 
 **Handler 契约**：接收 `**kwargs`，返回 JSON 字符串。
 
@@ -172,19 +145,6 @@ MCP 工具由 `discover_mcp_tools()` 在 `server_loop` 紧跟 `runner_ready` 之
 
 驱动 [COMPANION_DESIGN §4.4 情境动作](../COMPANION_DESIGN.md#44-自主行为让形象活着) 与 [COMPANION_DESIGN §4.2 打扰档位](../COMPANION_DESIGN.md#42-主动陪伴与打扰档位backend-驱动)。Desktop 用 `setInterval` 轮询这些工具（标准 `execute_tool` 通道），结果完全脱离 LLM 直接进状态机判定——这不是 LLM 工具，是采样探针。
 
-| 工具 | 平台 | 实现 |
-|------|------|------|
-| `system.get_idle_seconds` | Win | `GetLastInputInfo` via `ctypes` |
-| 〃 | macOS | `Quartz.CGEventSourceSecondsSinceLastEventType` |
-| 〃 | Linux | `loginctl show-session self -p IdleHint`（暂时只能给二元 hint） |
-| `system.is_screen_locked` | Win | 无前台窗口线程 → 锁屏 |
-| 〃 | macOS | `CGSessionCopyCurrentDictionary` |
-| 〃 | Linux | `loginctl show-session self -p LockedHint` |
-| `system.get_focused_app` | Win | `GetForegroundWindow` + `GetModuleFileNameExW` |
-| 〃 | macOS | `NSWorkspace.frontmostApplication` (PyObjC) |
-| 〃 | Linux | `wmctrl -lp`（无 wmctrl 时返回 `{}`） |
-| `system.get_power_state` | 全平台 | `psutil.sensors_battery()` + 不可知字段默认 False |
-
 每个 probe **失败返回 safe default**（`-1.0` / `False` / `{}`）——错的"已锁屏"信号会直接静默伴侣，不接受。
 
 ### computer_use 增强
@@ -198,18 +158,13 @@ MCP 工具由 `discover_mcp_tools()` 在 `server_loop` 紧跟 `runner_ready` 之
 
 ### 浏览器 toolset check_fn
 
-`browser_*` 的 33 个注册全部挂 `check_fn=_browser_check_fn`，实际委托给 `check_browser_requirements()`（Camofox 模式 / CDP 模式 / 本地 agent-browser + Chromium 三选一）。浏览器子系统整个未装时，所有 `browser_*` 从 LLM schema 消失——避免 LLM 在没有浏览器的容器里尝试触发无谓的 RPC。
+`browser_tool.py` 注册的 `browser_*` 工具挂 `check_fn=_browser_check_fn`（委托给 `check_browser_requirements()`：Camofox 模式 / CDP 模式 / 本地 agent-browser + Chromium 三选一）。浏览器子系统整个未装时，这些工具从 LLM schema 消失——避免 LLM 在没有浏览器的容器里尝试触发无谓的 RPC。`browser_dialog_tool.py` / `browser_cookie_tool.py` / `browser_cdp_tool.py` 注册的工具（dialog / cookies / storage / cdp）不带 check_fn。
 
 ### 测试钉子
 
-`tests/` 现在 300+ 测试，~3.5s 全跑完，分四层：
+`tests/` 分四层：WebSocket 协议层（真起 `websockets.serve` 跑 `runner_loop`）/ process & pid 跨平台层 / utils 残留覆盖（file_safety、redact、config、env_helpers）/ tool 子包纯 helper。
 
-- **WebSocket 协议层**（`test_server_websocket.py`）—— 真起 `websockets.serve` + 跑 `runner_loop`，覆盖握手 / `request_llm` / `get_tools` / `deskagent.info` / `execute_tool` / `mcp.reload` / `deskagent.cancel` / unknown-method / pending-RPC drain on disconnect。
-- **process & pid 跨平台层**（`test_pid.py`、`test_process_tool.py`）—— `kill_tree` 的 8 类返回路径（Windows + POSIX NotImplementedError）、`format_process_notification` 事件三型、`_handle_process` 8 个 action 路由。
-- **utils 残留覆盖**（`test_utils_residual.py`）—— `file_safety` 拒绝/放行矩阵、`redact` 13 类 token、`config` mtime 缓存、`env_helpers` HOME 注入。
-- **tool 子包纯 helper**（`test_tools_residual.py`）—— interrupt 标志、output_limits、tool_result_storage、url_safety、website_policy、execute_code 的 `_scrub_child_env` 和生成的 sandbox 模块模板、`toolsets` 目录过滤。
-
-`test_startup_imports.py` 钉死 `server.py` 的每行 module-level import（MCP load-bearing 等关键传递依赖）；`test_runner_runtime.py` 测 registry / capabilities / audio tool 注册。`.pre-commit-config.yaml` 在 runner 文件改动时跑 startup 子集（<1s）；`build_client.{ps1,sh}` 在 `uv build --wheel` 之前跑整个 `tests/` 作为发布门——任意一层失败都拦下坏 wheel（env-rot、传递依赖损坏永远不应该出 repo）。
+`test_startup_imports.py` 钉死 `server.py` 的每行 module-level import（MCP load-bearing 等关键传递依赖）。`.pre-commit-config.yaml` 在 runner 文件改动时跑 startup 子集（<1s）；`build_client.{ps1,sh}` 在 `uv build --wheel` 之前跑整个 `tests/` 作为发布门——任意一层失败都拦下坏 wheel（env-rot、传递依赖损坏永远不应该出 repo）。
 
 ## 终端后端
 
@@ -300,7 +255,7 @@ CDP Supervisor（`browser_supervisor.py`）：持久 WebSocket 到 CDP，dialog 
 | text-mode stdin `\n → \r\n` 转换 | 写入文件内容被破坏 | 统一使用 `proc.stdin.buffer`（二进制模式）写入 |
 | 缺少 Windows 必需环境变量 | `socket` 抛 `WinError 10106` | `code_execution_tool` 提供 `_WINDOWS_ESSENTIAL_ENV_VARS` 必传子集 |
 
-### 音频栈（`[audio]` extra）
+### 本地音频栈
 
 | 问题 | 影响 | 缓解 |
 |------|------|------|

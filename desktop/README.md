@@ -10,99 +10,18 @@ DeskAgent 是**双层叠加**的单 Electron 应用：
 
 | 层 | 职责 | 状态 |
 |----|------|------|
-| **伙伴层**（上层） | 桌面精灵形象渲染、onboarding（蛋→12 步角色定义含形象/物种/性别 → 孵化）、陪伴式交互 UI | MVP 已落地（Slice 1–4：精灵窗口 + 蛋 + 双窗口 auth 同步 + 对话式 onboarding（12 题结构化采集，单 PUT 同时落 persona + memory）+ Chat 模式（9 态状态机 IDLE/THINKING/SPEAKING/WORKING/LISTENING/EMOTIONAL/INTERACTING/SLEEPING/DISCONNECTED + 优先级表 + crossfade + 久断 5min 升 SLEEPING）+ Voice Call 模式（VAD + barge-in + 字幕 + live-mic）+ 主动陪伴（cron / send_message 经 3 档 tier：proactive / normal / quiet 断消息不断 affect——Backend `companion.affect` 推送 + idle 触发 `companion.check_affect` LLM 推理）+ 故障兜底 + 角色管理 + 资产 3 档降级（程序化 → sprite → video）|
+| **伙伴层**（上层） | 桌面精灵形象渲染、onboarding（蛋→12 步角色定义含形象/物种/性别 → 孵化）、陪伴式交互 UI | MVP 已落地：精灵窗口 + 蛋 + 双窗口 auth 同步 + 对话式 onboarding + Chat 模式 + Voice Call 模式 + 主动陪伴 + 故障兜底 + 角色管理 + 资产 3 档降级（程序化 → sprite → video）|
 | **枢纽层**（下层） | 凭证加密落盘、WS 中转、Runner 进程编排、反向 RPC 代理、两阶段自更新、本地文件系统拦截 | **保留复用** |
 
 两层共享同一个 Electron 主进程（CommonJS，preload contextBridge 隔离），伙伴层不直接接触凭证或 Runner 句柄——一切经枢纽层 IPC。
 
 ## 顶层目录
 
-```
-desktop/
-├── main/                            # 主进程（CommonJS *.cjs）
-├── renderer/                        # 渲染进程（ESM, Vite 编译）
-├── scripts/                         # 构建流水线（不进 package.json#scripts）
-├── assets/                          # icon.{png,ico,icns}
-├── README.md                        # ← 你正在读
-├── package.json / tsconfig.json / vite.config.ts / index.html / eslint.config.mjs
-└── components.json / config.json    # shadcn/内部配置
-```
-
-### `main/` —— Electron 主进程
-
-```
-main/
-├── entry.cjs                    # slim 应用入口（app lifecycle + 顶层协调）
-├── preload.cjs                  # contextBridge → window.deskagent.*
-├── lifecycle/                   # 平台差异化 + 托盘 + 窗口
-│   ├── platform.cjs             #   bootstrap-platform.cjs
-│   ├── tray.cjs
-│   └── windows.cjs              # createSprite/createTool 抽出（若有）
-├── ipc/                         # renderer↔main 通道（21 个 *.cjs）
-├── backend/                     # Backend HTTP/WS 会话
-│   ├── client.cjs               #   backend-client.cjs
-│   ├── session.cjs              #   backend-session.cjs
-│   ├── bootstrap-session.cjs    #   安装器→桌面 one-shot handoff
-│   └── ws-probe.cjs             #   gateway-ws-probe.cjs
-├── runner/                      # Runner 子进程编排
-│   ├── bridge.cjs               #   runner-bridge.cjs（WS server + 子进程）
-│   ├── process.cjs              #   runner-process.cjs
-│   ├── rpc-ws.cjs               #   runner-rpc-ws.cjs
-│   ├── reverse-rpc.cjs          #   runner-reverse-rpc.cjs（Runner→LLM 代理）
-│   ├── updater.cjs              #   runner-updater.cjs（两阶段）
-│   └── venv.cjs                 #   venv-python.cjs（venv Python 探针）
-├── security/                    # 加固 + 路径白名单 + macOS entitlements
-│   ├── hardening.cjs            #   路径白名单 + 文件预览源字节上限 + 加密封存
-│   ├── paths.cjs                #   DESKAGENT_HOME 等
-│   └── entitlements.mac.{plist,plist.inherit}
-└── shared/                       # 主进程杂项 + lib
-    ├── config.cjs / utils.cjs / mime.cjs / client-context.cjs
-    └── lib/{config-writer,skill-index,toolset-index}.cjs
-```
-
-### `renderer/` —— 渲染进程
-
-```
-renderer/
-├── main.tsx                       # 入口：providers + installUpdaterEventListeners()
-├── app.tsx                        # 角色分发（?role=sprite|tool → CompanionRoot | ToolRoot）
-├── styles.css
-│
-├── shared/                        # 跨窗口复用：UI atom / 传输 / strings / themes / 设计系统
-│   ├── components/{ui/,...}      #   设计系统 primitives（alert/button/dialog/...）
-│   ├── deskagent/                 #   DeskAgentGateway class + REST config wrappers
-│   ├── hooks/{use-mobile,use-media-query,use-route-enum-param}.ts
-│   ├── strings/  themes/  layout/page-inset.ts  types/{deskagent.ts,global.d.ts,vite-env.d.ts}
-│   ├── lib/{clipboard,haptics,icons,query-client,reconnect,storage,utils}.ts
-│   ├── lib/gateway-protocol/      #   WS + JSON-RPC 客户端
-│   ├── lib/{gateway-ws-url,toolset-catalog}.ts
-│   └── store/{auth,gateway,haptics,notifications,version}.ts
-│
-├── companion/                     # 伙伴形象载体（精灵窗口）
-│   ├── root.tsx                   #   CompanionRoot + GatewayBooter
-│   ├── boot/                      #   useGatewayBoot + useGatewayRequest（WS 生命周期）
-│   ├── sprite/                    #   sprite-stage, egg, silhouette, companion-ready
-│   ├── onboarding/onboarding-flow.tsx
-│   ├── proactive/{proactive,proactive-bubble}.{ts,tsx}
-│   ├── chat-dock.tsx  events.ts  persona.ts(+test)  tts.ts  backend-companion-mock.ts
-│   ├── interactive-regions.ts     #   精灵窗口可见矩形注册表 → SpriteStage 唯一做 click-through 判定
-│   ├── voice-call-dock.tsx  settings-overlay.tsx  subtitles-overlay.tsx  developer-overlay.tsx
-│   └── {chat,companion,boot,clip,persona}-store.ts
-│
-└── hub/                           # 本地枢纽（工具窗口 + IPC/orchestration）
-    ├── root.tsx                   #   ToolRoot
-    ├── login/login-page.tsx
-    ├── overlays/{chrome,split-layout,view}.tsx
-    ├── settings/                  #   14 文件（见下文）
-    ├── runner/use-runner-config.ts
-    └── settings-store.ts          # electron-updater atoms
-```
-
-`renderer/shared/`、`renderer/companion/`、`renderer/hub/` 三个是**同级的 renderer 子模块**，与 main.tsx / app.tsx 平级。
+`main/`（CommonJS *.cjs）+ `renderer/`（ESM *.{ts,tsx}，Vite 编译）两个 runtime，绝不混用。`renderer/` 内 `shared` / `companion` / `hub` 三子模块同级，与 `main.tsx` / `app.tsx` 平级，互不跨引（ESLint `no-restricted-imports` 拦截 `companion`↔`hub`，详见"跨模块边界"）。`scripts/` 是构建/测试钩子（不进 `package.json#scripts`）。`assets/` 放 icon。
 
 ### `scripts/` —— 构建流水线
 
-`assert-dist-built / assert-root-install / launch-dev-electron / stage-native-deps / test-desktop / write-build-stamp` 六个构建/测试钩子。**部分因需特权路径或私有 key（`scripts/secrets/update.{pub,key}`）不进 `package.json#scripts`**——electron-updater 验签调用与 macOS 打包前的原生依赖 staging 都需要绕开 npm 生命周期约束。
+构建/测试钩子。**因需特权路径或私有 key（`scripts/secrets/update.{pub,key}`）不进 `package.json#scripts`**——electron-updater 验签调用与 macOS 打包前的原生依赖 staging 都需要绕开 npm 生命周期约束。
 
 ## 关键架构约束
 
@@ -132,17 +51,9 @@ ESLint `no-restricted-imports` 在 `renderer/companion/**` 与 `renderer/hub/**`
 
 ## 托盘菜单 = 主入口
 
-伙伴窗口刻意精简，**配置与账户动作的主入口在系统托盘右键菜单**，而非应用内 chrome。`main/lifecycle/tray.cjs::buildTrayMenu` 按 `backendSession.getSession().hasToken` 动态生成：
+伙伴窗口刻意精简，**配置与账户动作的主入口在系统托盘右键菜单**，而非应用内 chrome。菜单按 `backendSession.getSession().hasToken` 动态生成（读 `main/lifecycle/tray.cjs::buildTrayMenu` 即得）。
 
-| 认证状态 | 菜单项 |
-|---------|--------|
-| 已登录 | Show DeskAgent · Settings... · Log out · Quit DeskAgent |
-| 未登录 | Sign in... · Quit DeskAgent |
-
-- **Show DeskAgent**（已登录）→ 前置精灵窗口（透明置顶常驻窗口）。
-- **Sign in...**（未登录）→ 打开 framed 工具窗口，渲染 LoginGate。
-- **Settings...** → 打开 framed 工具窗口，渲染 SettingsView。
-- **Log out** → 向精灵窗口发 `deskagent:tray:logout`，精灵 renderer 走 logout 流 → `main/ipc/auth.cjs` 广播 `deskagent:auth:changed` 到两个窗口、并重新显示登录工具窗（精灵回蛋）。
+跨文件契约：**Log out** 向精灵窗口发 `deskagent:tray:logout` → 精灵 renderer 走 logout 流 → `main/ipc/auth.cjs` 广播 `deskagent:auth:changed` 到两个窗口、并重新显示登录工具窗（精灵回蛋）。
 
 `rebuildTrayMenu()` 在 login / logout / 启动会话恢复后重跑 `setContextMenu`。
 
@@ -150,7 +61,7 @@ ESLint `no-restricted-imports` 在 `renderer/companion/**` 与 `renderer/hub/**`
 
 ### Renderer ↔ Main（IPC）
 
-renderer 通过 `window.deskagent.*`（preload contextBridge）调 main；main 通过 `webContents.send(...)` 推事件。每个 IPC 模块 export `registerXxxIpc(deps)`，deps 由 `main/entry.cjs` 显式注入（`backendSession` + `runnerBridge` 两个跨模块单例经 `bridgeDeps` 传递）。伙伴层新增：`deskagent:sprite:*`（点击穿透/动态置顶/工作区/休息位，`main/ipc/sprite.cjs`）与 main→**两窗口**广播 `deskagent:auth:changed`。
+renderer 通过 `window.deskagent.*`（preload contextBridge）调 main；main 通过 `webContents.send(...)` 推事件。所有 IPC 命名空间以 `deskagent:` 为前缀（`deskagent:sprite:*` 点击穿透/动态置顶/工作区/休息位；main→**两窗口**广播 `deskagent:auth:changed` 等）。
 
 ### Renderer ↔ Backend（REST + WS）
 
@@ -159,7 +70,7 @@ renderer 通过 `window.deskagent.*`（preload contextBridge）调 main；main �
 
 ### Main ↔ Runner（本地 WS）
 
-`main/runner/bridge.cjs` 编排：`start()` → 启动 WS server（127.0.0.1:0）→ spawn Runner process（`--desktop-ws`）→ Runner 连入发 `runner_ready` → bridge 调 `get_tools` RPC 缓存结果 → emit `running`。Renderer 通过 `deskagent:runner:get-tools` IPC 拉到缓存的 Schema 后，调 `gateway.request('tools.sync', {tools})` 上报给 Backend。
+`main/runner/bridge.cjs` 编排 Runner 子进程（本地 WS，127.0.0.1:0）。Renderer 通过 `deskagent:runner:get-tools` IPC 拉到 bridge 缓存的 tool schema 后，调 `gateway.request('tools.sync', {tools})` 上报给 Backend。
 
 ### 反向 RPC（Runner → Backend）
 
@@ -203,8 +114,8 @@ Desktop 走 `electron-updater` 从 Backend `/api/update` 拉取预构建安装�
 两阶段契约（network 在前、file ops 在后，避免网络断在重启后变砖）：
 
 - **Phase 1 — prefetch（OLD Electron 里跑）**：`main/entry.cjs::setupAutoUpdater` 在 `app.whenReady` 后挂载，延迟 30s 自检，下载 Electron 二进制；同时后台从 `/api/update/latest-runner.yml` 下载 wheel + `server.py` 到 `$DESKAGENT_HOME/runner.staging/`，验 RSA 签名 + SHA-512，写 sentinel。渲染端 "Restart now" 按钮只在 `runner-ready` 事件落地后才可点。
-- **Phase 2 — install（NEW Electron 里跑）**：`app.whenReady` 早期调 `runner-updater.installPending()`：读 sentinel → `runnerBridge.stop()` 释放 Python 句柄（Windows EPERM 风险）→ `pip install --upgrade <wheel>` 原地升级（pip 前先 `pip show` 快照当前 wheel `Name==Version` 作 rollback marker；commit 562cf4d）→ 覆盖 `server.py` → 冒烟 `import deskagent_agent, server` → `runnerBridge.start()`。**真降级**：pip / smoke / `runnerBridge.start` 任一失败时 `pip install --upgrade <rollback_marker>` 把 site-packages 还原到升级前状态，再 emit `runner-failed {recoverable: true}`，对应 ARCH §9 "失败 → 降级到旧版 Runner 并向用户警告"。
-- **venv 永不被改名/移动**——只有 venv 内部 wheel 被升级；`attempt_count >= 3` 删 sentinel 并 emit `runner-failed {recoverable: false}`。
+- **Phase 2 — install（NEW Electron 里跑）**：`runner-updater.installPending()` 读 sentinel 后原地升级 wheel 与 `server.py`，冒烟 `import deskagent_agent, server` 后重启 bridge。**`runnerBridge.stop()` 必须在 pip install 前**——释放 Python 句柄避免 Windows EPERM。**降级语义**：pip / smoke / start 任一失败 → rollback marker（升级前 `pip show` 快照的 `Name==Version`）还原 site-packages → emit `runner-failed {recoverable: true}`；`attempt_count >= 3` → 删 sentinel，emit `runner-failed {recoverable: false}`。对应 ARCH §9 "失败 → 降级到旧版 Runner 并向用户警告"。
+- **venv 永不被改名/移动**——只有 venv 内部 wheel 被升级。
 
 签名 keypair：私钥 `scripts/secrets/update.key`、公钥 `scripts/secrets/update.pub`（经 `desktop/package.json#build.extraResources` 复制到 packaged desktop，`main/runner/updater.cjs` 启动时读取校验）。**生产构建签名密钥在构建机上**——开发分支留 `update.key` 在本地是因为出包验证需要测试签名链路。
 
@@ -229,4 +140,4 @@ Desktop 走 `electron-updater` 从 Backend `/api/update` 拉取预构建安装�
 | 透明窗口平台差异 | 远程显示（X11/VNC/RDP）无法合成透明层，精灵窗口降级为非透明（`SPRITE_TRANSPARENT`）；Linux 无 compositor 仍可能黑底——macOS/Windows 支持良好 |
 | 托盘 Settings 中"重载 MCP"不可用 | gateway 仅在精灵窗口 boot；从托盘打开的 framed 工具窗口无 gateway，`hub/settings/mcp-settings.tsx` 的 reload 按钮优雅报"gateway 不可用"。其余 settings（runnerConfig 等 REST）不受影响 |
 | WSL 下无系统托盘 | Electron Tray API 在 WSL 不可用；降级为 hide-only；托盘菜单在 WSL 下不可达 |
-| 死 IPC 模块待清理 | `main/ipc/terminal.cjs`（node-pty）、`main/ipc/preview.cjs`、`main/ipc/link-title.cjs`、`main/ipc/images.cjs` 的 renderer 消费方已移除，模块仍在（node-pty 编织进 native-deps 打包链 `scripts/stage-native-deps.cjs` + `test-desktop.mjs` 断言，移除属构建管线改动） |
+| 死 IPC 模块待清理 | `main/ipc/terminal.cjs`、`preview.cjs`、`link-title.cjs`、`images.cjs` 的 renderer 消费方已移除，但模块仍在且 `entry.cjs` 仍调用四个 `register*Ipc`、`preload.cjs` 仍暴露 `terminal.*`/`preview.*` API。node-pty 编织进 native-deps 打包链（`scripts/stage-native-deps.cjs` + `test-desktop.mjs` 断言），彻底清理需改构建管线 |

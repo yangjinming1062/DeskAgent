@@ -72,41 +72,7 @@ def check_type_checking_leak(path: Path) -> list[str]:
     return [f"{path}: '{name}' imported under TYPE_CHECKING but used outside it " f"(annotation evaluated at runtime → NameError)" for name in leaks]
 
 
-# ---- B. backend/tools → core eager import -------------------------------------
-
-
-def check_tools_eager_core_import(path: Path) -> list[str]:
-    """``backend/tools/**/*.py`` must not have module-level ``from core import ...``.
-
-    The core<->tools cycle:
-        core/__init__ -> chat_service -> tools_registry -> tools/__init__ -> <file> -> core (partial)
-    The convention is to ``from core import ...`` *inside* the function that needs it.
-    """
-    try:
-        rel = path.resolve().relative_to((REPO_ROOT / "backend").resolve())
-    except ValueError:
-        return []
-    parts = rel.parts
-    if not parts or parts[0] != "tools":
-        return []
-    if parts[-1] == "__init__.py":
-        return []
-
-    tree = _parse(path)
-    if tree is None:
-        return []
-    errors: list[str] = []
-    for node in tree.body:
-        if not isinstance(node, ast.ImportFrom):
-            continue
-        if node.level != 0 or node.module != "core":
-            continue
-        names = ", ".join(a.name for a in node.names)
-        errors.append(f"{path}:{node.lineno}: module-level `from core import {names}` — " "breaks the core<->tools cycle, move inside the function body")
-    return errors
-
-
-# ---- B2. runner/tools/* cross-subpackage eager import -------------------------
+# ---- B. runner/tools/* cross-subpackage eager import -------------------------
 
 
 def _runner_subpackages() -> set[str]:
@@ -319,7 +285,6 @@ def main(argv: list[str]) -> int:
         if not path.is_file():
             continue
         diagnostics.extend(check_type_checking_leak(path))
-        diagnostics.extend(check_tools_eager_core_import(path))
         diagnostics.extend(check_runner_subpkg_eager_import(path))
         diagnostics.extend(check_facade_consistency(path))
 
