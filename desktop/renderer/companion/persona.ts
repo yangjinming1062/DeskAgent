@@ -5,6 +5,10 @@ export interface OnboardingAnswers {
   appearance?: string
   role?: string
   personality?: string
+  // 1-6 (backend audit): user-picked speaking style (chip + free-text).
+  // When non-empty, overrides the personality-key derivation in
+  // `assemblePersona` so the user is the source of truth.
+  speaking_style?: string
   user_call_name?: string
   user_gender?: string
   user_age_bucket?: string
@@ -70,10 +74,15 @@ export function assemblePersona(answers: OnboardingAnswers): PersonaPayload {
   const name = answers.name?.trim() || '伙伴'
   const personality = answers.personality?.trim() || DEFAULT_PERSONALITY
 
+  // 1-6: user-picked speaking_style (chip + free-text) wins over the
+  // personality-key derivation when both are present. If the user
+  // skipped Q13, fall back to the persona-key map so the persona
+  // still satisfies the backend's required speaking_style field.
+  const userPickedStyle = answers.speaking_style?.trim()
   const payload: PersonaPayload = {
     name,
     personality,
-    speaking_style: deriveSpeakingStyle(answers.role, answers.personality),
+    speaking_style: userPickedStyle || deriveSpeakingStyle(answers.role, answers.personality),
   }
 
   const optional: Array<[keyof PersonaPayload, string | undefined, number]> = [

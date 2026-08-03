@@ -84,4 +84,21 @@ describe('deriveSpeakingStyle', () => {
     expect(deriveSpeakingStyle('专属管家', undefined)).toBe('专业干练')
     expect(deriveSpeakingStyle('贾维斯', undefined)).toBe('专业干练')
   })
+
+  // 1-6 (backend audit): user-picked speaking_style from onboarding
+  // Q13 wins over the personality-key derivation so the persona is
+  // a direct reflection of the user's actual selection.
+  it('user-picked speaking_style overrides personality-key derivation', () => {
+    const p = assemblePersona({
+      name: '小光',
+      personality: '毒舌傲娇',
+      speaking_style: '专业干练',
+    })
+    expect(p.speaking_style).toBe('专业干练')
+  })
+
+  it('falls back to personality-key derivation when user skipped speaking_style', () => {
+    const p = assemblePersona({ name: '小光', personality: '毒舌傲娇' })
+    expect(p.speaking_style).toBe('俏皮带点小傲娇')
+  })
 })
