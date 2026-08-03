@@ -150,6 +150,12 @@ async def _generate_and_persist(db: Session, user_id: int, *, prompt: str, style
     data, content_type = downloaded
     asset_url = await _persist_portrait_bytes(data, content_type)
 
+    # P1-15: best-effort delete the previous active portrait's file on
+    # disk. We rely on the row's ``asset_url`` to compute the path; rows
+    # written before the persistent-dir migration (P0-1) pointed at temp-
+    # media URLs that have long since been GC'd, in which case the
+    # delete is a no-op.
+    previous = db.query(AvatarAsset).filter(AvatarAsset.user_id == user_id, AvatarAsset.active.is_(True)).one_or_none()
     db.query(AvatarAsset).filter(AvatarAsset.user_id == user_id, AvatarAsset.active.is_(True)).update({"active": False})
     prompt_payload: dict = {"prompt": prompt, "style": style, "source_url": source_url}
     if feedback is not None:
@@ -165,7 +171,31 @@ async def _generate_and_persist(db: Session, user_id: int, *, prompt: str, style
     db.add(asset)
     db.commit()
     db.refresh(asset)
+
+    if previous is not None:
+        _delete_portrait_file(previous.asset_url)
     return asset
+
+
+def _delete_portrait_file(asset_url: str | None) -> None:
+    """Best-effort delete of a portrait file by its public URL. No-op when
+    the URL isn't in the persistent ``companion-avatars/`` dir (e.g. a
+    legacy temp-media row from before P0-1, or a remote URL the upload
+    path never persisted)."""
+    if not asset_url:
+        return
+    prefix = f"/api/companion/avatar/file/"
+    idx = asset_url.find(prefix)
+    if idx < 0:
+        return
+    filename = asset_url[idx + len(prefix):]
+    name = Path(filename).name
+    if "/" in name or "\\" in name or ".." in name:
+        return
+    try:
+        (Path(SETTINGS.data_dir) / "companion-avatars" / name).unlink(missing_ok=True)
+    except OSError:
+        pass
 
 
 async def _seed_batch0(db: Session, user_id: int, asset: AvatarAsset) -> None:
@@ -259,6 +289,8 @@ async def upload_avatar(db: Session, user_id: int, data: bytes, content_type: st
     prefix = SETTINGS.public_url_prefix or f"http://{SETTINGS.public_ip}:{SETTINGS.port}"
     public_url = f"{prefix}/api/companion/avatar/file/{file_id}.{ext}"
 
+    # P1-15: best-effort delete the previous portrait file.
+    previous = db.query(AvatarAsset).filter(AvatarAsset.user_id == user_id, AvatarAsset.active.is_(True)).one_or_none()
     db.query(AvatarAsset).filter(AvatarAsset.user_id == user_id, AvatarAsset.active.is_(True)).update({"active": False})
     asset = AvatarAsset(
         user_id=user_id,
@@ -278,6 +310,8 @@ async def upload_avatar(db: Session, user_id: int, data: bytes, content_type: st
     # side subject reference, so the seed-only portrait drives the
     # first_frame_image as-is.
     await _seed_batch0(db, user_id, asset)
+    if previous is not None:
+        _delete_portrait_file(previous.asset_url)
     return asset
 
 

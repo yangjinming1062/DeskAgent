@@ -42,8 +42,9 @@ export function handleCompanionEvent(event: RpcEvent): void {
       // through to ``pulse + ✨`` (companion-ready.tsx default) and ping a
       // meaningless badge on every text reply. Filter at the boundary so
       // ``neutral`` returns to idle like the no-affect path (P1-5).
-      if (payload?.affect?.emotion && payload.affect.emotion !== 'neutral') {
-        setSpriteState('emotional', { emotion: payload.affect.emotion as SpriteEmotion })
+      const hasEmotion = payload?.affect?.emotion && payload.affect.emotion !== 'neutral'
+      if (hasEmotion) {
+        setSpriteState('emotional', { emotion: payload!.affect!.emotion as SpriteEmotion })
       } else {
         setSpriteState('idle')
       }
@@ -51,9 +52,22 @@ export function handleCompanionEvent(event: RpcEvent): void {
       // "Always voice" response mode (plan §4.1): speak chat replies aloud.
       // Voice-call mode drives its own speaking in VoiceCallDock and never
       // reaches here with a chat dock open, so this only fires for Chat mode.
+      //
+      // P1-13: when an emotion is present, defer the speaking state by a
+      // short frame so the EMOTIONAL state is observable before being
+      // overwritten (ARCH §7.5 "使 Desktop 能在 SPEAKING 前先播 EMOTIONAL").
+      // Without this, the synchronous ``setSpriteState('speaking')``
+      // immediately cancels the 2.5s emotional transient timer.
       if ($responseMode.get() === 'voice' && payload?.text?.trim()) {
-        setSpriteState('speaking')
-        void speak(payload.text).then(() => setSpriteState('idle'))
+        if (hasEmotion) {
+          setTimeout(() => {
+            setSpriteState('speaking')
+            void speak(payload!.text!).then(() => setSpriteState('idle'))
+          }, 1200)
+        } else {
+          setSpriteState('speaking')
+          void speak(payload.text).then(() => setSpriteState('idle'))
+        }
       }
 
       break

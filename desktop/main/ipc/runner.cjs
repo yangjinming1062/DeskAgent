@@ -98,6 +98,29 @@ async function restartRunnerBridge(deps) {
   return await startRunnerBridgeForCurrentSession(deps)
 }
 
+// P2-17: token bucket so a renderer bug (or a misbehaving tool loop) can't
+// loop-bomb the runner. Reverse-RPC already caps at 200 frames / 1 MB per
+// session (desktop/main/runner/reverse-rpc.cjs); the inbound IPC side had
+// no such guard. 60 calls per second is well above any plausible tool-loop
+// cadence but trips on a runaway ``while`` loop within a few hundred ms.
+const _invokeBucket = { tokens: 60, lastRefill: Date.now() }
+const _INVOKE_RATE = 60 // tokens per second
+const _INVOKE_BURST = 60
+function _refillBucket() {
+  const now = Date.now()
+  const elapsed = (now - _invokeBucket.lastRefill) / 1000
+  _invokeBucket.tokens = Math.min(_INVOKE_BURST, _invokeBucket.tokens + elapsed * _INVOKE_RATE)
+  _invokeBucket.lastRefill = now
+}
+function _consumeToken() {
+  _refillBucket()
+  if (_invokeBucket.tokens < 1) {
+    return false
+  }
+  _invokeBucket.tokens -= 1
+  return true
+}
+
 function registerRunnerIpc({ ipcMain, deps }) {
   // Co-locates every renderer→runner IPC channel. ``deskagent:runner:get-tools``
   // stays in main.cjs because it needs access to ``mainWindow`` to send the
@@ -108,6 +131,9 @@ function registerRunnerIpc({ ipcMain, deps }) {
     if (typeof name !== 'string' || !name) {
       throw new Error('runner:invoke requires a non-empty tool name')
     }
+    if (!_consumeToken()) {
+      throw new Error('runner:invoke rate limit exceeded (token bucket empty)')
+    }
     const bridge = ensureRunnerBridge(deps)
     return bridge.invoke(name, args && typeof args === 'object' ? args : {})
   })
@@ -115,6 +141,9 @@ function registerRunnerIpc({ ipcMain, deps }) {
   ipcMain.handle('deskagent:runner:dispatch', async (_event, method, params) => {
     if (typeof method !== 'string' || !method) {
       throw new Error('runner:dispatch requires a non-empty method name')
+    }
+    if (!_consumeToken()) {
+      throw new Error('runner:dispatch rate limit exceeded (token bucket empty)')
     }
     const bridge = ensureRunnerBridge(deps)
     return bridge.dispatch(method, params && typeof params === 'object' ? params : {})

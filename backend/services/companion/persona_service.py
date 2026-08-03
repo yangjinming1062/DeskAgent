@@ -61,12 +61,19 @@ def _validate_definition(definition: dict[str, Any]) -> dict[str, str]:
 
 
 def get_or_create_persona(db: Session, user_id: int) -> Persona:
+    """Look up the user's persona, or stage an insert for one if none
+    exists. P1-16: does NOT ``db.commit()`` so the caller can keep the
+    whole ``user_profile + persona`` write in a single transaction
+    (ARCH §7.5 single-PUT dual-write contract). The previous version
+    committed here, which would commit any unflushed Memory rows from
+    ``record_user_profile`` and create a half-write state if the
+    follow-up commit failed.
+    """
     persona = db.query(Persona).filter(Persona.user_id == user_id).one_or_none()
     if persona is None:
         persona = Persona(user_id=user_id, definition_json="{}", system_prompt_extras="")
         db.add(persona)
-        db.commit()
-        db.refresh(persona)
+        db.flush()
     return persona
 
 
@@ -79,6 +86,10 @@ def update_persona(db: Session, user_id: int, definition: dict[str, Any]) -> Per
     persona.definition_json = json.dumps(cleaned, ensure_ascii=False)
     persona.system_prompt_extras = render_extras(cleaned)
     persona.is_complete = True
+    # P1-16: single commit lands both the Memory rows from
+    # ``record_user_profile`` and the persona mutation atomically. The
+    # prior implementation committed during ``get_or_create_persona``,
+    # which would persist Memory even if this later commit failed.
     db.commit()
     db.refresh(persona)
     return persona
