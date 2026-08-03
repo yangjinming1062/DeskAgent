@@ -135,6 +135,11 @@ async def generate_avatar(db: Session, user_id: int, persona: Persona, style: st
     if not persona.is_complete:
         raise AvatarGenerationError("persona is incomplete; finish onboarding first")
     asset = await _generate_and_persist(db, user_id, prompt=_build_prompt(persona, style), style=style)
+    # Invalidate any prior portrait's clips so ``list_clips`` doesn't
+    # surface orphan rows for an inactive portrait and the escalation
+    # loop never submits jobs derived from a stale seed. Mirrors the
+    # path in ``regenerate_avatar`` / ``upload_avatar`` (P0-3).
+    invalidate_user_clips(db, user_id)
     await _seed_batch0(db, user_id, asset)
     return asset
 
@@ -180,11 +185,13 @@ async def regenerate_avatar(db: Session, user_id: int, persona: Persona, feedbac
     return asset
 
 
-def upload_avatar(db: Session, user_id: int, data: bytes, content_type: str) -> AvatarAsset:
+async def upload_avatar(db: Session, user_id: int, data: bytes, content_type: str) -> AvatarAsset:
     """Persist a user-supplied image as the active portrait (plan §3.4 self-
     upload). Stored under a dedicated persistent dir (not temp-media, which is
     TTL-cleaned) and served via the companion file route. Derivative clips are
-    invalidated since an uploaded image has no shared seed with prior clips.
+    invalidated and re-seeded so an uploaded portrait gets the same Tier-1
+    baseline as a generated one (P1-9 — previously upload left the user
+    permanently at Tier 1).
 
     Note: clips generated from an uploaded portrait may be lower-fidelity or
     slower — there is no cloud-side reference, only the single image."""
@@ -210,6 +217,13 @@ def upload_avatar(db: Session, user_id: int, data: bytes, content_type: str) -> 
     db.commit()
     db.refresh(asset)
     invalidate_user_clips(db, user_id)
+    # Seed the Tier-1 baseline so the uploaded portrait gets the same
+    # clip ladder as a generated one. Without this, an uploaded portrait
+    # permanently sits at Tier 1 (P1-9). Note: clips generated from a
+    # user-supplied image may diverge stylistically — there's no cloud-
+    # side subject reference, so the seed-only portrait drives the
+    # first_frame_image as-is.
+    await _seed_batch0(db, user_id, asset)
     return asset
 
 

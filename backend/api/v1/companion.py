@@ -141,7 +141,7 @@ async def upload_avatar_route(
         data = base64.b64decode(body.image)
     except ValueError:
         raise HTTPException(status_code=400, detail={"error": "图片编码无效"})
-    asset = upload_avatar(db, user.id, data, content_type)
+    asset = await upload_avatar(db, user.id, data, content_type)
     return _avatar_to_response(asset)
 
 
