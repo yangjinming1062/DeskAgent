@@ -31,6 +31,15 @@ export type SpriteEmotion =
   | 'playful'
   | 'bored'
   | 'lonely'
+  // P1-5: align with the expanded ``ALLOWED_EMOTIONS`` in
+  // ``services/chat/affect.py`` so the LLM's vocabulary has a typed
+  // landing pad on the desktop. ``neutral`` deliberately NOT in this
+  // union — it's filtered at the events.ts boundary (P0-2 + P1-5) and
+  // maps to a plain ``idle`` return.
+  | 'sleepy'
+  | 'curious'
+  | 'embarrassed'
+  | 'apologetic'
 
 export interface SpritePosition {
   x: number

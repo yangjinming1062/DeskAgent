@@ -44,6 +44,13 @@ const EMOTION_PRESENTATION: Record<SpriteEmotion, { proc: string; badge: string 
   grateful: { proc: 'shy', badge: '😊' },
   proud: { proc: 'proud', badge: '⭐' },
   concerned: { proc: 'pulse', badge: '✨' },
+  // P1-5: newly-added emotions from affect.py's expanded ALLOWED_EMOTIONS.
+  // The procedural render falls back to 'pulse' / '✨' if no dedicated
+  // Tier-2 keyframe is generated yet — see ARCH §11#9 (永不空白).
+  sleepy: { proc: 'sag', badge: '💤' },
+  curious: { proc: 'pop', badge: '❓' },
+  embarrassed: { proc: 'shy', badge: '😊' },
+  apologetic: { proc: 'sag', badge: '😔' },
 }
 
 function proceduralKey(state: SpriteStateName, emotion: SpriteEmotion | null): string {
