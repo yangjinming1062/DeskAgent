@@ -20,7 +20,7 @@ backend/
 │   │                   + providers/(抽象层：base · registry · http · openai_compat · content · mimo/ · minimax/ · gemini/)
 │   ├── media/         # 视频生成后台任务：video_jobs(submit/poll/download/finalize + WSEvent outbox)
 │   ├── tools/         # 工具框架 + 内置工具：registry · guardrails · memory · ... + builtin/(web/tts/image_gen/video_gen/send_message/cronjob)
-│   ├── companion/     # 伙伴系统：persona_service(onboarding draft + persona+memory 双写) · memory_bootstrap(user_profile→Memory upsert) · avatar_service(generate/regenerate + clip seed，中英 species/gender 查表) · clip_service(scene catalog + enqueue/list/invalidate) · disturbance
+│   ├── companion/     # 伙伴系统：persona_service(onboarding draft + persona+memory 双写) · memory_bootstrap(user_profile→Memory upsert) · avatar_service(generate/regenerate + clip seed，中英 species/gender 查表) · clip_service(scene catalog + enqueue/list/invalidate) · disturbance · affect_emit(companion.affect outbox) · affect_check(idle 触发的情境化情绪 LLM 推理)
 │   ├── scheduler/     # 后台任务：cron · title_generator · background_review
 │   └── rate_limit.py  # slowapi 限流（依赖 modules.auth，独居 services/ 根而非 components/）
 ├── api/v1/            # 薄 HTTP/WS 端点，pkgutil 自动发现：chat(唯一 WS，薄端点委托 gateway/handlers) / user / sessions / llm / media / companion / config / insights / admin / status / health / update / page
@@ -84,7 +84,7 @@ backend/
 
 `services/scheduler/cron.scheduler_loop` 每 60s `_tick()`：扫描到期任务，CAS 推进 `next_run_at`（多副本安全），写 `cron.trigger` 到 `ws_events` outbox。`_tick` 不 await WS 推送——慢客户端不卡 cron 事务。PostgreSQL trigger 在 `ws_events` INSERT 时 `NOTIFY ws_events_channel`，每个 Backend 副本独立 `LISTEN` + `DELETE ... RETURNING` 原子认领消费（行锁保证不重复投递）。无效 cron 表达式自动暂停 job。
 
-**伙伴主动消息通道**：`send_message_tool` 无 `target_webhook` 时走 companion 原生路径——`_emit_companion_message` 写 `companion.message {text}` 到 `ws_events` outbox，经同一套 LISTEN/NOTIFY 推到桌面端（伙伴 TTS + 气泡呈现，[ARCHITECTURE.md §5.1.A / §7.4](../ARCHITECTURE.md)）。带 `target_webhook` 时仍是外部 webhook POST（Slack/Discord 等）。**打扰档位**：`companion.set_disturbance_tier {tier}` JSON-RPC（`services/companion/disturbance.py` 进程内 per-user 存储，默认 `normal`）——`quiet` 抑制 send_message 的 companion 投递（断消息不断 affect）。Desktop 侧也客户端过滤，此为防御层。
+**伙伴主动消息通道**：`send_message_tool` 无 `target_webhook` 时走 companion 原生路径——`_emit_companion_message` 写 `companion.message {text}` 到 `ws_events` outbox，经同一套 LISTEN/NOTIFY 推到桌面端（伙伴 TTS + 气泡呈现，[ARCHITECTURE.md §5.1.A / §7.4](../ARCHITECTURE.md)）。带 `target_webhook` 时仍是外部 webhook POST（Slack/Discord 等）。**打扰档位**：`companion.set_disturbance_tier {tier}` JSON-RPC（`services/companion/disturbance.py` 进程内 per-user 存储，默认 `normal`）——`quiet` 档时 `send_message_tool` 把消息文本吞掉，但 LLM 推理出的 affect 经 `companion.affect` 事件透传（断消息不断 affect，`services/companion/affect_emit.py::emit_companion_affect`）。**情境化 affect**：`companion.check_affect {idle_seconds, local_hour}` JSON-RPC（`services/companion/affect_check.py::check_affect`）由 Desktop idle 轮询触发，Backend 加载 persona + 最近记忆跑一次 LLM 推理，决定是否 emit `companion.affect`——触发时机由 Desktop 控制（知道真实 idle），情绪推理由 Backend LLM 承担（有 persona + 记忆）。Desktop 侧也客户端过滤，此为防御层。
 
 ## 系统提示词与上下文管理
 

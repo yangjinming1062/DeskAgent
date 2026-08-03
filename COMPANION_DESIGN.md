@@ -160,9 +160,9 @@ Backend 的 Cron / `send_message` 经 WS 推送主动消息（[ARCHITECTURE.md �
 |------|----------------|
 | **积极主动** | TTS 语音、气泡、主动消息、affect——全开放 |
 | **常规** | 仅轻量气泡/文字消息（无 TTS 语音）、affect |
-| **保持安静** | **禁止任何主动消息（语音+文字）**；但 affect 仍可流动，精灵可切换状态 |
+| **保持安静** | **禁止任何主动消息（语音+文字）**；但 LLM 推理出的 affect 仍经 `companion.affect` 事件流出，精灵切 EMOTIONAL 状态（无气泡无 TTS） |
 
-**消息与情绪是两个独立通道**（[§7.5](ARCHITECTURE.md)）：保持安静 / 屏幕锁定只断消息通道，不断情绪通道——精灵依然"活着"且有脾气。屏幕锁定（Runner `system.is_screen_locked`）同样静默切断主动消息但保留 affect，解锁后静默恢复。
+**消息与情绪是两个独立通道**（[§7.5](ARCHITECTURE.md)）：保持安静 / 屏幕锁定时 Backend 静默切断主动消息推送（`send_message_tool` 在 `quiet` 档把消息文本吞掉），但 LLM 推理出的 affect 经独立的 `companion.affect` 事件流出，精灵切 EMOTIONAL 状态（无气泡无 TTS）。用户长时间无活动时，Desktop 的 idle 轮询还会主动调 `companion.check_affect` 触发 Backend LLM 推理情境化情绪（粘人型被冷落的委屈等）——情绪始终由 Backend LLM 产出，不退化成 Desktop 规则判断。屏幕锁定（Runner `system.is_screen_locked`）同样静默切断主动消息但保留 affect，解锁后静默恢复。
 
 Desktop 收到主动消息后：形象切 SPEAKING + 播 TTS；对话框未开则在形象旁冒气泡，已开则在对话框加一条。典型场景：定时问候、日程提醒、长时间无交互后搭话、节日/天气情境化闲聊。
 
@@ -219,10 +219,10 @@ IDLE 时形象不是静止贴图。两类自主行为，**都不触发 TTS、不
 
 伙伴层依赖的跨模块契约定义在 [ARCHITECTURE.md](ARCHITECTURE.md)，此处仅列索引与 Desktop 消费要点：
 
-- **伙伴层协议扩展**（[§5.1.A](ARCHITECTURE.md)）：`onboarding.get_state` / `onboarding.submit` / `avatar.regenerate` / `avatar.list_clips` / `tts.list_voices` / `tts.match_voice` / `companion.set_disturbance_tier` 方法 + `affect` 事件。clip 就绪/失败走单一 `clip.updated` 通道（payload 携 `scene` + `tier` 标识）；`video_gen.completed/failed` 仍是底层 `media/video_jobs` 流水线的通用事件，但 companion 通过 `enqueue_video_job(..., emit_event=False)` 抑制重复下发。
+- **伙伴层协议扩展**（[§5.1.A](ARCHITECTURE.md)）：`onboarding.get_state` / `onboarding.submit` / `avatar.regenerate` / `avatar.list_clips` / `tts.list_voices` / `tts.match_voice` / `companion.set_disturbance_tier` / `companion.check_affect` 方法 + `companion.affect` 事件。clip 就绪/失败走单一 `clip.updated` 通道（payload 携 `scene` + `tier` 标识）；`video_gen.completed/failed` 仍是底层 `media/video_jobs` 流水线的通用事件，但 companion 通过 `enqueue_video_job(..., emit_event=False)` 抑制重复下发。
 - **伙伴表达事件流**（[§5.2.IV](ARCHITECTURE.md)）：affect 随话语同帧下发（inline affect 原则）；语义与渲染解耦——Backend 产 emotion 语义，Desktop 决定渲染。
 - **形象与动画资产**（[§7.2](ARCHITECTURE.md)）：portrait / loop clip / transition clip 三层；渐进式分批生成；portrait 重生使衍生 clip 失效。
-- **伙伴表达层契约**（[§7.5](ARCHITECTURE.md)）：emotion 枚举集、语义/渲染解耦、affect 继承角色定义抗注入、TTS 与 affect 同帧、onboarding 逐字段增量持久化。
+- **伙伴表达层契约**（[§7.5](ARCHITECTURE.md)）：emotion 枚举集、语义/渲染解耦、affect 继承角色定义抗注入、affect 与 text 同帧（TTS 由 Desktop 拉取式合成）、onboarding 逐字段增量持久化。
 - **伙伴表达永不空白不变量**（[§11 #9](ARCHITECTURE.md)）：任何状态/cue 无就绪 clip 时回退 idle loop，用户不可见空白。
 
 Desktop 侧的 scene 标识符体系（与 `clip.updated` payload 的 `scene` 字段对应）与 Backend 的 clip 生成队列对齐：scene 名直接取自状态机状态与 emotion 枚举（`idle` / `speaking` / `working` / `thinking` / `sleeping` / `happy` / …），无需另造命名空间。
@@ -235,7 +235,7 @@ Runner 端提供与伴侣场景直接对接的本地能力，Desktop 按以下�
 
 - **`runner_ready` payload**：含 `version` 与 `capabilities`（`microphone` / `screen_capture` / `local_stt` / `local_tts` / `system_activity` / `platform` / `python`），由 Runner **真实探测**各平台子系统得出，非硬编码。不全可装的环境不阻塞启动。
 - **`deskagent.info` RPC**：任何时候可调，返回完整进程 / OS / 网络 / 磁盘快照。失败态降级（[§4.5](#45-故障态与降级行为伙伴永不死)）依据此 RPC 与 WS 连通性双源判定。
-- **环境感知工具** `system.get_idle_seconds` / `is_screen_locked` / `get_focused_app` / `get_power_state`：经标准 `execute_tool` 通道轮询（Desktop 经 `runnerInvoke`）——结果直接进 §4.4 情境判定，**不经 LLM**。`is_screen_locked=true` 时静默切断主动消息（仍可 affect），解锁后静默恢复。
+- **环境感知工具** `system.get_idle_seconds` / `is_screen_locked` / `get_focused_app` / `get_power_state`：经标准 `execute_tool` 通道轮询（Desktop 经 `runnerInvoke`）。`get_idle_seconds` 跨过阈值时额外触发 `companion.check_affect` 让 Backend LLM 推理情境化 affect（§6）；其余工具的结果直接进 §4.4 情境判定，**不经 LLM**。`is_screen_locked=true` 时静默切断主动消息（仍可 affect），解锁后静默恢复。
 - **本地语音** `speech_to_text`（faster-whisper）/ `text_to_speech`（Piper 主、pyttsx3 降级）/ `list_tts_voices`:STT/TTS 的零成本主路径。Desktop 经 `media.stt`/`media.tts` IPC 路由——默认本地优先(`auto`),本地不可用或失败时回退云端;`local` 档纯本地不回退,`cloud` 档强制云端(见 §5)。
 
 ---
@@ -243,6 +243,6 @@ Runner 端提供与伴侣场景直接对接的本地能力，Desktop 按以下�
 ## 已知限制与后续增强
 
 - **LLM + 记忆驱动的交互反应**：戳/拖反应目前是角色性格分层的客户端文案池；完整"反应文案由 Backend LLM 据角色定义 + 记忆即时生成、反应写回记忆"是后续增强。
-- **活动检测驱动的自动档位**：打扰档位目前由用户手动设置；据本机活动信号自动覆盖档位 + 保持安静时的人格化 affect（粘人型被冷落的委屈反应等）是后续增强。
+- **活动检测驱动的自动档位**：打扰档位目前由用户手动设置；据本机活动信号自动覆盖档位是后续增强。安静档的人格化 affect 已实现（`companion.affect` 透传 + `companion.check_affect` idle 触发 LLM 推理）。
 - **情境自主行为**：检测键盘/音乐活动 → 精灵坐下看书/跟着节拍轻晃等情境动作，依赖对应 clip 资产就绪。
 - **角色定义编辑**：重新进入对话式 onboarding 编辑角色（而非重生）尚未在设置中提供入口。

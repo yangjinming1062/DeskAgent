@@ -83,7 +83,7 @@ clip 通过 `clip.updated` 事件单通道下发（P0-8）。`video_gen.*` 事�
 ## 5. 屏锁与端忙
 
 - `companion/activity.ts` 每 30s 调 `system.is_screen_locked`（`runnerInvoke`）。结果写入 `$screenLocked` atom。
-- `$screenLocked.get() === true` 视同 quiet：抑制主动消息文本，仍流 affect。
+- `$screenLocked.get() === true` 视同 quiet：抑制主动消息文本；affect 仍由 Backend 推送（`companion.affect` 事件，quiet 档透传 + `companion.check_affect` idle 触发 LLM 推理）。
 - 屏锁恢复后静默恢复，**仅在降级曾被表达过**时补发"回神" reaction（目前实现为静默恢复，与 §4.5 文案一致）。
 
 ## 6. 自主行为（IDLE 时）

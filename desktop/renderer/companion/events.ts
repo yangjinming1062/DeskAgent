@@ -73,7 +73,10 @@ export function handleCompanionEvent(event: RpcEvent): void {
       break
     }
 
-    case 'affect': {
+    case 'companion.affect': {
+      // Affect-only cue from the backend — either send_message_tool's quiet-tier
+      // pass-through (§6: 断消息不断 affect) or affect_check's idle-triggered
+      // LLM reasoning (§7.6). Switches to EMOTIONAL without a bubble or TTS.
       const emotion = (event.payload as { emotion?: string } | undefined)?.emotion
 
       // ``neutral`` → no state change (see P1-5 note above).
@@ -208,17 +211,19 @@ export function handleCompanionEvent(event: RpcEvent): void {
       const affectEmotion = payload?.affect?.emotion
 
       // Affect always flows first — the user can see the companion react
-      // even at the quiet tier (plan §4.2: 保持安静断消息不断情绪).
+      // even when the text is suppressed.
       // ``neutral`` is filtered at this boundary too (P1-5) so a
       // system-prompt-driven default doesn't ping a meaningless badge.
       if (affectEmotion && affectEmotion !== 'neutral') {
         setSpriteState('emotional', { emotion: affectEmotion as SpriteEmotion })
       }
 
-      // Quiet tier OR screen locked → suppress the proactive text, but the
-      // affect above still flows. Screen-lock silence is itself silent —
-      // no bubble pops over a locked screen. Normal tier still gets a
-      // bubble (handled inside speakProactive, which decides TTS-vs-text).
+      // The backend's quiet tier already diverts affect-only cues to
+      // ``companion.affect`` (never emitting ``companion.message`` for
+      // quiet users — see send_message_tool). This quiet check is
+      // defense-in-depth: if a companion.message somehow reaches a quiet
+      // user, suppress the text but the affect above already flowed.
+      // Screen-lock silence is itself silent — no bubble over a locked screen.
       const textSuppressed = currentTier === 'quiet' || $screenLocked.get()
 
       if (text && !textSuppressed) {
