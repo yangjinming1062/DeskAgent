@@ -84,9 +84,17 @@ class AffectScrubber:
 
     def _try_resolve(self) -> str:
         m = _AFFECT_RE.match(self._buf)
-        if m and m.group(1).lower() in ALLOWED_EMOTIONS:
+        if m:
+            tag_emotion = m.group(1).lower()
+            if tag_emotion in ALLOWED_EMOTIONS:
+                self._resolved = True
+                self._emotion = tag_emotion
+                return self._drain(m.end())
+            # Unknown token (LLM invented a word like "joyful" / "happy_excited")
+            # — fall back to ``neutral`` and strip the tag so it never reaches
+            # the user (ARCH §7.5 "未覆盖的 emotion 一律按 neutral 处理").
             self._resolved = True
-            self._emotion = m.group(1).lower()
+            self._emotion = "neutral"
             return self._drain(m.end())
 
         stripped = self._buf.lstrip()
