@@ -18,7 +18,8 @@ from sqlalchemy.orm import Session
 from ..companion import build_system_prompt_extras
 from ..companion import build_user_profile_extras
 from ..gateway import RuntimeSession
-from ..llm import client_for_service
+from ..llm import MissingLlmConfigError
+from ..llm import provider_for_service
 from ..tools import NativeMemory
 from ..tools import REGISTRY
 from ..tools import schema_name
@@ -125,8 +126,11 @@ def _build_turn_inputs(
     first_user_msg = next((m for m in history if m.role == "user"), None)
     first_user_msg_content = first_user_msg.content if first_user_msg else None
 
-    client, default_model = client_for_service(db, user_id, "llm")
-    model_name = req.model or default_model
+    provider = provider_for_service(db, user_id, "llm")
+    client = provider.raw_client()
+    if client is None:
+        raise MissingLlmConfigError(f"llm provider '{provider.provider_name}' is not OpenAI-compatible")
+    model_name = req.model or provider.config.model
     ctx_length = _estimate_context_length(model_name)
 
     identity_prompt = db.query(UserSetting.setting_value).filter(UserSetting.user_id == user_id, UserSetting.setting_key == "identity_prompt").scalar()
@@ -141,6 +145,7 @@ def _build_turn_inputs(
         tools=all_schemas,
         client_context=_merge_client_context(session_client_context, req.client_context),
         identity_prompt=identity_prompt,
+        prompt_family=provider.PROMPT_FAMILY,
         persona_extras=build_system_prompt_extras(persona),
         user_profile_extras=user_profile_extras,
     )

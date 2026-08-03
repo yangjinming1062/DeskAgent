@@ -59,19 +59,30 @@ class TestLLMClient:
         assert MODEL_CONTEXT_TOKEN_HINTS["mimo-v2.5-asr"] == 8_000
         assert MODEL_CONTEXT_TOKEN_HINTS["mimo-v2.5-tts"] == 8_000
 
-    def test_mimo_detected(self):
-        from services.chat.system_prompt import _is_mimo_family
+    def test_chat_providers_declare_prompt_family(self):
+        from services.llm.providers.base import ServiceType
+        from services.llm.providers.registry import resolve
 
-        assert _is_mimo_family("mimo-v2.5-pro") is True
-        assert _is_mimo_family("mimo-v2.5") is True
-        assert _is_mimo_family("mimo-v2.5-asr") is True
+        assert resolve(ServiceType.llm, "mimo").PROMPT_FAMILY == "openai"
+        assert resolve(ServiceType.llm, "minimax").PROMPT_FAMILY == "openai"
+        assert resolve(ServiceType.llm, "gemini").PROMPT_FAMILY == "google"
+        assert resolve(ServiceType.llm, "zhipu").PROMPT_FAMILY == "openai"
 
-    def test_non_mimo_not_detected(self):
-        from services.chat.system_prompt import _is_mimo_family
+    def test_openai_family_injects_openai_guidance(self):
+        from modules.system import AgentPromptConfig
+        from services.chat.system_prompt import OPENAI_MODEL_EXECUTION_GUIDANCE
+        from services.chat.system_prompt import build_system_prompt_parts
 
-        assert _is_mimo_family("gpt-4o") is False
-        assert _is_mimo_family("claude-3-5-sonnet") is False
-        assert _is_mimo_family("gemini-1.5-pro") is False
+        parts = build_system_prompt_parts(AgentPromptConfig(prompt_family="openai", valid_tool_names=["terminal"]))
+        assert OPENAI_MODEL_EXECUTION_GUIDANCE in parts["stable"]
+
+    def test_google_family_injects_google_guidance(self):
+        from modules.system import AgentPromptConfig
+        from services.chat.system_prompt import GOOGLE_MODEL_OPERATIONAL_GUIDANCE
+        from services.chat.system_prompt import build_system_prompt_parts
+
+        parts = build_system_prompt_parts(AgentPromptConfig(prompt_family="google", valid_tool_names=["terminal"]))
+        assert GOOGLE_MODEL_OPERATIONAL_GUIDANCE in parts["stable"]
 
     def test_image_attachment_uses_image_url_part(self):
         from services.chat.persistence import _build_persisted_content

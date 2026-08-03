@@ -59,5 +59,6 @@ class AgentPromptConfig(BaseModel):
     session_id: str | None = None
     task_completion_guidance: bool = True
     tool_use_enforcement: str = "auto"
+    prompt_family: str = "openai"
     persona_extras: str | None = None
     user_profile_extras: str | None = None

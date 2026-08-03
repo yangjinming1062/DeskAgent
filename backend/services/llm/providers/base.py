@@ -39,6 +39,12 @@ class BaseProvider(ABC):
 
     service_type: ServiceType = ServiceType.llm
     provider_name: str = ""
+    # Which prompt-guidance family this provider's models belong to. Drives
+    # tool-use enforcement + execution-discipline block selection in
+    # ``system_prompt.build_system_prompt_parts``. ``"openai"`` is the default
+    # (OpenAI-compatible discipline suits mimo / minimax / zhipu / any
+    # OpenAI-protocol endpoint); Google models override to ``"google"``.
+    PROMPT_FAMILY: ClassVar[str] = "openai"
     # Per-capability default MODEL_NAME published by this provider. Mirrored
     # into ``registry._PROVIDER_DEFAULT_MODELS`` at register() time so the
     # capability resolver can pull defaults without importing each provider

@@ -88,7 +88,7 @@ backend/
 
 ## 系统提示词与上下文管理
 
-`services/chat/system_prompt.build_system_prompt_parts`：stable / context / volatile 三段装配。角色定义注入 stable 段（驱动伙伴说话风格与性格）。角色定义存在时同步注入 affect 指令（`COMPANION_AFFECT_GUIDANCE`，要求 LLM 在文字回复前缀 `[affect:EMOTION]` 标签，由 `AffectScrubber` 在流式路径剥离并附加到 `message.complete`）。按模型族注入执行纪律（OpenAI/Gemini/Grok）。Steer 通道用 `[OUT-OF-BAND USER MESSAGE]` 标记。
+`services/chat/system_prompt.build_system_prompt_parts`：stable / context / volatile 三段装配。角色定义注入 stable 段（驱动伙伴说话风格与性格）。角色定义存在时同步注入 affect 指令（`COMPANION_AFFECT_GUIDANCE`，要求 LLM 在文字回复前缀 `[affect:EMOTION]` 标签，由 `AffectScrubber` 在流式路径剥离并附加到 `message.complete`）。按 provider 声明的 `PROMPT_FAMILY`（`BaseProvider` ClassVar，默认 `"openai"`，Gemini 覆写为 `"google"`）选择执行纪律 guidance 块；`turn_inputs` 在装配 `AgentPromptConfig` 时从 `provider_for_service` 实例读取该值传入。Steer 通道用 `[OUT-OF-BAND USER MESSAGE]` 标记。
 
 消息截断（`message_sanitization.truncate_chat_history`）：保留最近 40 条非 system 消息；单条字符上限 15000。
 

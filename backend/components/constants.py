@@ -164,8 +164,7 @@ SECRET_MASK_MIN_LENGTH: int = 18
 
 # ── System Prompt ─────────────────────────────────────────────────────
 
-# String values that toggle tool-use enforcement guidance on/off.
-TOOL_ENFORCE_ON_VALUES: frozenset[str] = frozenset({"true", "always", "yes", "on"})
+# String values that disable tool-use enforcement guidance.
 TOOL_ENFORCE_OFF_VALUES: frozenset[str] = frozenset({"false", "never", "no", "off"})
 
 # Cap free-text voice-design prompts — MIMO embeds them in voice_id verbatim.

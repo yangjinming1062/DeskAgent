@@ -48,7 +48,6 @@ from .constants import TITLE_MAX_CHARS
 from .constants import TITLE_SNIPPET_MAX_CHARS
 from .constants import TOOL_CALL_ID_HEX_PREFIX_LEN
 from .constants import TOOL_ENFORCE_OFF_VALUES
-from .constants import TOOL_ENFORCE_ON_VALUES
 from .constants import TTS_MAX_TEXT_CHARS
 from .correlation import adopt_inbound
 from .correlation import begin_local_scope
@@ -147,7 +146,6 @@ __all__ = [
     "TITLE_SNIPPET_MAX_CHARS",
     "TOOL_CALL_ID_HEX_PREFIX_LEN",
     "TOOL_ENFORCE_OFF_VALUES",
-    "TOOL_ENFORCE_ON_VALUES",
     "TTS_MAX_TEXT_CHARS",
     "current_request_id",
     "get_logger",
