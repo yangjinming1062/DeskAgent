@@ -10,46 +10,53 @@ export type InteractiveRegion = {
   id: string
 }
 
-let regions: InteractiveRegion[] = []
+// P2-12: replace the module-scoped `regions` array with a per-window
+// keyed map. The audit noted that a second window (e.g. a future framed
+// tool window with its own SpriteStage) would clobber this single list
+// — every window would share the same registry. With a Map the data
+// is owned by the window that created it.
+const _regionsByWindow = new Map<number, Map<string, InteractiveRegion>>()
+const _probesByWindow = new Map<number, () => void>()
 
-// Re-evaluates the capture state against the last-known cursor position.
-// SpriteStage installs this; overlays call it on mount so a dialog opened under
-// the cursor captures immediately instead of waiting for the next mousemove.
-let captureProbe: (() => void) | null = null
-
-export function registerInteractiveRegion(id: string, getRect: () => DOMRect | null): void {
-  regions = regions.filter(r => r.id !== id)
-
-  regions.push({ id, getRect })
-
-  captureProbe?.()
+function _bucket(windowId: number): Map<string, InteractiveRegion> {
+  let m = _regionsByWindow.get(windowId)
+  if (!m) {
+    m = new Map()
+    _regionsByWindow.set(windowId, m)
+  }
+  return m
 }
 
-export function unregisterInteractiveRegion(id: string): void {
-  const next = regions.filter(r => r.id !== id)
-
-  if (next.length === regions.length) {return}
-
-  regions = next
-  captureProbe?.()
+export function registerInteractiveRegion(id: string, getRect: () => DOMRect | null, windowId: number = 0): void {
+  const m = _bucket(windowId)
+  m.set(id, { id, getRect })
+  _probesByWindow.get(windowId)?.()
 }
 
-export function setCaptureProbe(fn: (() => void) | null): void {
-  captureProbe = fn
+export function unregisterInteractiveRegion(id: string, windowId: number = 0): void {
+  const m = _bucket(windowId)
+  if (!m.delete(id)) {return}
+  _probesByWindow.get(windowId)?.()
 }
 
-export function getInteractiveRegions(): ReadonlyArray<InteractiveRegion> {
-  return regions
+export function setCaptureProbe(fn: (() => void) | null, windowId: number = 0): void {
+  if (fn === null) {
+    _probesByWindow.delete(windowId)
+  } else {
+    _probesByWindow.set(windowId, fn)
+  }
 }
 
-export function isPointInteractive(x: number, y: number): boolean {
-  for (const region of regions) {
+export function getInteractiveRegions(windowId: number = 0): ReadonlyArray<InteractiveRegion> {
+  return Array.from(_bucket(windowId).values())
+}
+
+export function isPointInteractive(x: number, y: number, windowId: number = 0): boolean {
+  const regions = _bucket(windowId)
+  for (const region of regions.values()) {
     const rect = region.getRect()
-
     if (!rect) {continue}
-
     if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) {return true}
   }
-
   return false
 }

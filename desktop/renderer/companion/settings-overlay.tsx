@@ -12,6 +12,7 @@ import { speak } from '@/companion/tts'
 import { designVoice, fetchVoiceCatalog, GENDER_OPTIONS, LANGUAGE_LABELS, playDataUrl, sampleLine, type VoiceCatalog, type VoiceDesignPreview } from '@/companion/voice'
 
 import { PersonaSection } from './persona-editor'
+import { pushDevLog } from './developer-overlay'
 
 interface SettingsOverlayProps {
   onClose: () => void
@@ -180,8 +181,17 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps) {
                   className={`flex w-full items-center justify-between rounded-lg border px-3 py-2 text-left text-xs transition ${tier === t.id ? 'border-white/60 bg-white/15' : 'border-white/10 bg-white/5 hover:bg-white/10'}`}
                   key={t.id}
                   onClick={() => {
+                    const previous = $disturbanceTier.get()
                     setDisturbanceTier(t.id)
-                    void requestGateway('companion.set_disturbance_tier', { tier: t.id }).catch(() => {})
+                    // P2-15: roll the local atom back if the backend
+                    // rejects the new tier (e.g. a future cross-replica
+                    // sync conflict). Without the rollback the user
+                    // sees "you set quiet" locally while the next
+                    // proactive message still goes to cloud.
+                    requestGateway('companion.set_disturbance_tier', { tier: t.id }).catch((err) => {
+                      setDisturbanceTier(previous)
+                      pushDevLog('disturbance_tier_rejected', JSON.stringify({ requested: t.id, previous, error: String(err?.message || err) }))
+                    })
                   }}
                   type="button"
                 >
