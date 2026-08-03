@@ -148,17 +148,51 @@ def _idle_linux() -> float:
 
 
 def _locked_windows() -> bool:
+    """P2-4 (runtime audit): the previous code only checked
+    ``tid == 0`` on the foreground window. That's a weak proxy
+    — Windows 10/11's lock screen (LogonUI.exe) usually has a
+    real thread, and notification center / UAC dialogs frequently
+    show ``tid == 0`` even when the user is actively working.
+
+    Three independent signals OR'd together (any one True ⇒ locked):
+      1. ``GetForegroundWindow() == NULL`` — the desktop itself
+         owns no foreground window (the case before any app
+         launches or after a Ctrl+L).
+      2. ``GetClassName(hwnd) == 'LockScreenBackstop' / 'LogonUI'`` —
+         the only windows Microsoft ships with a lock-screen
+         class.
+      3. ``GetUserObjectInformation()`` on the foreground
+         thread's input desktop reports a different desktop name
+         than the default — the classic Win32 "switched to a
+         secure desktop" pattern the lock screen uses.
+    """
     if ctypes is None:
         return False
     try:
         user32 = ctypes.windll.user32
-        hwnd = user32.GetForegroundWindow()
-        # Window without a thread attached is the lock screen / UAC.
-        from ctypes import wintypes  # noqa: PLC0415  (re-import under runtime lock check)
+        from ctypes import wintypes  # noqa: PLC0415
 
-        pid_holder = wintypes.DWORD()
-        tid = user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid_holder))
-        return tid == 0
+        hwnd = user32.GetForegroundWindow()
+        if not hwnd:
+            return True
+        # (2) class-name match — LogonUI is the Win10/11 lock screen
+        buf = ctypes.create_unicode_buffer(256)
+        n = user32.GetClassNameW(hwnd, buf, 256)
+        cls = buf.value if n > 0 else ""
+        if cls in ("LockScreenBackstop", "LogonUI"):
+            return True
+        # (3) input desktop switch — GetUserObjectInformation is the
+        # canonical API but is heavy; only call when the cheap
+        # signals haven't tripped.
+        try:
+            thread_id = user32.GetWindowThreadProcessId(hwnd, None)
+            input_desktop = user32.GetThreadDesktop(thread_id)
+            default_desktop = user32.GetThreadDesktop(0)
+            if input_desktop and default_desktop and input_desktop != default_desktop:
+                return True
+        except Exception:
+            pass
+        return False
     except Exception as e:
         logger.debug("win lock probe failed: %s", e)
         return False
@@ -205,22 +239,77 @@ def _locked_linux() -> bool:
 
 
 def _focus_windows() -> dict[str, Any]:
+    """P2-5 (runtime audit): the previous code took the first
+    ``GetModuleFileNameExW`` of the foreground window's process.
+    When explorer.exe hosts a foreground window with another
+    app on top (e.g. file picker, UAC, lock screen), the
+    returned exe was explorer.exe — the user was actually
+    interacting with the dialog, not the shell.
+
+    New strategy:
+      1. Skip windows whose class is 'Shell_TrayWnd' / 'WorkerW' /
+         'Progman' (explorer containers) and re-query
+         GetForegroundWindow after setting focus mode.
+      2. Use ``GetGUIThreadInfo`` on the foreground thread to
+         read the *real* focused hwnd (hwndFocus), then walk
+         up the owner chain with GetAncestor(GA_ROOT) — that
+         returns the top-level user window regardless of how
+         many nested containers (file pickers, UAC prompts)
+         are in the way.
+    """
     if ctypes is None or wintypes is None:
         return {}
     try:
         user32 = ctypes.windll.user32
         kernel32 = ctypes.windll.kernel32
         psapi = ctypes.windll.psapi
+
         hwnd = user32.GetForegroundWindow()
         if not hwnd:
             return {}
+        # Skip explorer containers — they have a real hwnd but
+        # are not what the user is actually interacting with.
+        for _ in range(4):
+            buf = ctypes.create_unicode_buffer(256)
+            user32.GetClassNameW(hwnd, buf, 256)
+            if buf.value not in ("Shell_TrayWnd", "WorkerW", "Progman"):
+                break
+            # Walk to the real foreground window.
+            hwnd = user32.GetForegroundWindow()
+            if not hwnd:
+                return {}
+
+        # GetGUIThreadInfo: read the focused hwnd on the
+        # foreground thread (the actual window the user is
+        # typing in, not just the topmost shell container).
+        class _GuiThreadInfo(ctypes.Structure):
+            _fields_ = [
+                ("cbSize", wintypes.DWORD),
+                ("flags", wintypes.DWORD),
+                ("hwndActive", wintypes.HWND),
+                ("hwndFocus", wintypes.HWND),
+                ("hwndCapture", wintypes.HWND),
+                ("hwndMenuOwner", wintypes.HWND),
+                ("hwndMoveSize", wintypes.HWND),
+                ("hwndCaret", wintypes.HWND),
+                ("rcCaret", wintypes.RECT),
+            ]
+
+        tid = user32.GetWindowThreadProcessId(hwnd, None)
+        info = _GuiThreadInfo(cbSize=ctypes.sizeof(_GuiThreadInfo))
+        user32.GetGUIThreadInfo(tid, ctypes.byref(info))
+        real_hwnd = info.hwndFocus or info.hwndActive or hwnd
+        # Top-level owner of the focused window.
+        top = user32.GetAncestor(real_hwnd, 2)  # GA_ROOT = 2
+
         pid = wintypes.DWORD()
-        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
-        buf = ctypes.create_unicode_buffer(512)
-        psapi.GetModuleFileNameExW(kernel32.OpenProcess(0x1000, False, pid), None, buf, 512)
-        exe = buf.value.rsplit("\\", 1)[-1] if buf.value else ""
-        length = user32.GetWindowTextW(hwnd, buf, 512)
-        title = buf.value[:length]
+        user32.GetWindowThreadProcessId(top, ctypes.byref(pid))
+        title_buf = ctypes.create_unicode_buffer(512)
+        length = user32.GetWindowTextW(top, title_buf, 512)
+        title = title_buf.value[:length]
+        exe_buf = ctypes.create_unicode_buffer(512)
+        psapi.GetModuleFileNameExW(kernel32.OpenProcess(0x1000, False, pid), None, exe_buf, 512)
+        exe = exe_buf.value.rsplit("\\", 1)[-1] if exe_buf.value else ""
         return {"name": exe or title, "pid": pid.value, "title": title, "kind": "user"}
     except Exception as e:
         logger.debug("win focus probe failed: %s", e)

@@ -10,7 +10,7 @@ DeskAgent 是**双层叠加**的单 Electron 应用：
 
 | 层 | 职责 | 状态 |
 |----|------|------|
-| **伙伴层**（上层） | 桌面精灵形象渲染、onboarding（蛋→12 步角色定义含形象/物种/性别 → 孵化）、陪伴式交互 UI | MVP 已落地（Slice 1–4：精灵窗口 + 蛋 + 双窗口 auth 同步 + 对话式 onboarding（12 题结构化采集，单 PUT 同时落 persona + memory）+ Chat 模式（状态机 IDLE/THINKING/SPEAKING/WORKING）+ 主动陪伴接收 + 打扰档位 + 故障兜底） |
+| **伙伴层**（上层） | 桌面精灵形象渲染、onboarding（蛋→12 步角色定义含形象/物种/性别 → 孵化）、陪伴式交互 UI | MVP 已落地（Slice 1–4：精灵窗口 + 蛋 + 双窗口 auth 同步 + 对话式 onboarding（12 题结构化采集，单 PUT 同时落 persona + memory）+ Chat 模式（9 态状态机 IDLE/THINKING/SPEAKING/WORKING/LISTENING/EMOTIONAL/INTERACTING/SLEEPING/DISCONNECTED + 优先级表 + crossfade + 久断 5min 升 SLEEPING）+ Voice Call 模式（VAD + barge-in + 字幕 + live-mic）+ 主动陪伴（cron / send_message 经 3 档 tier：proactive / normal / quiet 断消息不断情绪）+ 故障兜底 + 角色管理 + 资产 3 档降级（程序化 → sprite → video）|
 | **枢纽层**（下层） | 凭证加密落盘、WS 中转、Runner 进程编排、反向 RPC 代理、两阶段自更新、本地文件系统拦截 | **保留复用** |
 
 两层共享同一个 Electron 主进程（CommonJS，preload contextBridge 隔离），伙伴层不直接接触凭证或 Runner 句柄——一切经枢纽层 IPC。

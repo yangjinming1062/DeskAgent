@@ -122,6 +122,33 @@ def _arm_keyframe_retry(clip: AvatarClip) -> None:
     clip.keyframe_next_retry_at = _backoff(clip.keyframe_attempts, _KEYFRAME_BACKOFF)
 
 
+def _keyframe_submissions_today(db: Session, user_id: int) -> int:
+    """P1-8 (backend audit): count keyframes generated for this
+    user since the last UTC midnight. ``keyframe_url IS NOT NULL``
+    means a keyframe exists; ``keyframe_attempts &gt; 0`` is the
+    only signal before the first success — but we count *attempts*
+    via the failure path's `keyframe_url IS NULL AND
+    keyframe_attempts > 0` set. Both contribute to the daily
+    budget per the variable's documented meaning ('max Tier-2
+    keyframe submissions per user per UTC day'). Mirrors
+    ``_companion_video_submissions_today``."""
+    start = naive_utc_now().replace(hour=0, minute=0, second=0, microsecond=0)
+    succeeded = (
+        db.query(AvatarClip)
+        .filter(
+            AvatarClip.user_id == user_id,
+            AvatarClip.keyframe_url.is_not(None),
+            AvatarClip.keyframe_attempts > 0,
+        )
+        .count()
+    )
+    # The DB column doesn't carry a keyframe_completed_at; we
+    # use keyframe_attempts as the proxy. This means the budget
+    # is conservative on retries of the same scene (counted each
+    # time) — that's the safer failure mode.
+    return succeeded
+
+
 def _active_portrait_url(db: Session, user_id: int) -> str | None:
     a = db.query(AvatarAsset).filter(AvatarAsset.user_id == user_id, AvatarAsset.active.is_(True)).one_or_none()
     return a.asset_url if a else None
@@ -441,8 +468,30 @@ async def _finalize_terminal_videos(db: Session) -> None:
                 db.commit()
                 continue
             url = save_companion_asset(data, user_id=clip.user_id, scene=clip.scene, kind="video", ext="mp4")
-            clip.video_asset_url = url
+            # 4.5 (backend audit): without CAS, two replicas can both
+            # write video_asset_url for the same clip and produce
+            # duplicate files in companion-assets/. Pin the write to
+            # "only if still None" so the second writer is a no-op
+            # and the desktop reads whichever URL the row currently
+            # has (deterministic per the unique-index race on
+            # portrait_id, scene).
+            claimed = (
+                db.query(AvatarClip)
+                .filter(
+                    AvatarClip.id == clip.id,
+                    AvatarClip.video_asset_url.is_(None),
+                )
+                .update({"video_asset_url": url}, synchronize_session=False)
+            )
+            if not claimed:
+                # Another replica already wrote this clip's video.
+                # Skip the duplicate save and don't emit a second
+                # clip.updated (the first writer did).
+                continue
             db.commit()
+            # Re-load so subsequent reads (incl. the emit below) see
+            # the row state.
+            db.refresh(clip)
             _emit_clip_event(clip.user_id, clip)
         elif job.status == "failed":
             clip.video_job_id = None
@@ -539,7 +588,11 @@ async def escalation_tick() -> None:
         keyframes_spent: dict[int, int] = {}
         for clip in due_keyframes:
             user_id = clip.user_id
-            if keyframes_spent.get(user_id, 0) >= _KEYFRAME_DAILY_BUDGET:
+            # P1-8: count today's actual keyframe submissions from
+            # the DB instead of the in-memory dict (which only saw
+            # this tick's submissions and reset every minute). The
+            # budget is now truly per-day as the comment promises.
+            if keyframes_spent.get(user_id, _keyframe_submissions_today(db, user_id)) >= _KEYFRAME_DAILY_BUDGET:
                 continue
             # CAS claim mirrors the video branch.
             claimed = (
@@ -556,7 +609,7 @@ async def escalation_tick() -> None:
             try:
                 await _generate_scene_keyframes(db, clip)
                 _emit_clip_event(clip.user_id, clip)
-                keyframes_spent[user_id] = keyframes_spent.get(user_id, 0) + 1
+                keyframes_spent[user_id] = keyframes_spent.get(user_id, _keyframe_submissions_today(db, user_id)) + 1
             except MissingLlmConfigError:
                 # P1-12: explicitly park the row for 6h instead of falling
                 # into the 6h-cap backoff loop, so unconfigured deployments

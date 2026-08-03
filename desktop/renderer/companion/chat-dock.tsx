@@ -124,26 +124,48 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps) {
     }
   }
 
-  const startRecording = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      const recorder = new MediaRecorder(stream)
-      mediaRecorderRef.current = recorder
-      voiceChunksRef.current = []
+  // 3.3 (desktop audit): the previous startRecording awaited
+  // getUserMedia *after* the mousedown handler returned, so a
+  // quick tap (mousedown → mouseup before the await resolved)
+  // would land in stopRecording with mediaRecorderRef.current
+  // still null and silently drop the recording. Track the
+  // pending-start promise so stopRecording can wait for the
+  // media stream to be acquired before deciding.
+  const startPendingRef = useRef<Promise<void> | null>(null)
 
-      recorder.ondataavailable = e => {
-        if (e.data.size > 0) {voiceChunksRef.current.push(e.data)}
+  const startRecording = () => {
+    const pending = (async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+        const recorder = new MediaRecorder(stream)
+        mediaRecorderRef.current = recorder
+        voiceChunksRef.current = []
+
+        recorder.ondataavailable = e => {
+          if (e.data.size > 0) {voiceChunksRef.current.push(e.data)}
+        }
+
+        setRecording(true)
+        setSpriteState('listening')
+        recorder.start()
+      } catch {
+        setAssistantError('无法使用麦克风录制语音')
+      } finally {
+        if (startPendingRef.current === pending) {
+          startPendingRef.current = null
+        }
       }
-
-      setRecording(true)
-      setSpriteState('listening')
-      recorder.start()
-    } catch {
-      setAssistantError('无法使用麦克风录制语音')
-    }
+    })()
+    startPendingRef.current = pending
   }
 
-  const stopRecording = () => {
+  const stopRecording = async () => {
+    // 3.3: wait for the start promise to settle so the recorder
+    // is available (or the error path ran) before we decide what
+    // to do with it.
+    if (startPendingRef.current) {
+      try {await startPendingRef.current} catch { /* surfaced via startRecording */ }
+    }
     const recorder = mediaRecorderRef.current
 
     if (!recorder || recorder.state === 'inactive') {
