@@ -52,7 +52,7 @@ export function awaitAvatarRegeneration(jobId: string): Promise<AvatarRegenerate
       }
     }, REGEN_TIMEOUT_MS)
 
-    const settle: Resolver = (payload) => {
+    const settle: Resolver = payload => {
       clearTimeout(timer)
       resolve(payload)
     }
@@ -64,10 +64,16 @@ export function awaitAvatarRegeneration(jobId: string): Promise<AvatarRegenerate
 export function resolveAvatarRegeneration(payload: AvatarRegeneratedPayload): void {
   const jobId = payload.job_id
 
-  if (!jobId) {return}
+  if (!jobId) {
+    return
+  }
+
   _pruneTombstones()
 
-  if (_timedOut.has(jobId)) {return}
+  if (_timedOut.has(jobId)) {
+    return
+  }
+
   const cb = _pending.get(jobId)
 
   if (cb) {

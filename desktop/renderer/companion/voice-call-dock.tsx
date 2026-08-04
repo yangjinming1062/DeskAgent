@@ -78,7 +78,8 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps) {
         setSpriteState('listening')
 
         try {
-          const AudioContextClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
+          const AudioContextClass =
+            window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
 
           if (AudioContextClass) {
             ctx = new AudioContextClass()
@@ -90,14 +91,18 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps) {
             const dataArray = new Uint8Array(analyser.frequencyBinCount)
 
             const startRecorder = () => {
-              if (recorderRef.current?.state === 'recording') {return}
+              if (recorderRef.current?.state === 'recording') {
+                return
+              }
 
               try {
                 const rec = new MediaRecorder(stream)
                 chunksRef.current = []
 
                 rec.ondataavailable = e => {
-                  if (e.data.size > 0) {chunksRef.current.push(e.data)}
+                  if (e.data.size > 0) {
+                    chunksRef.current.push(e.data)
+                  }
                 }
 
                 rec.start()
@@ -147,7 +152,9 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps) {
                     silenceTimerRef.current = setTimeout(() => {
                       silenceTimerRef.current = null
 
-                      if (userSpeakingRef.current) {finishUtterance()}
+                      if (userSpeakingRef.current) {
+                        finishUtterance()
+                      }
                     }, SILENCE_END_MS)
                   }
                 } else if (userSpeakingRef.current && avg >= SPEECH_THRESHOLD && silenceTimerRef.current) {
@@ -174,7 +181,9 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps) {
       durationSecRef.current += 1
       setDurationSec(durationSecRef.current)
 
-      if (durationSecRef.current >= 180) {onCloseRef.current()}
+      if (durationSecRef.current >= 180) {
+        onCloseRef.current()
+      }
     }, 1000)
 
     async function transcribeAndSubmit() {
@@ -240,7 +249,10 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps) {
     async function ensureSession(): Promise<string> {
       const existing = $chatSessionId.get()
 
-      if (existing) {return existing}
+      if (existing) {
+        return existing
+      }
+
       const res = await requestGateway<{ session_id: string }>('session.create', {})
       setChatSession(res.session_id)
 
@@ -248,11 +260,17 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps) {
     }
 
     return () => {
-      if (audioAnimRef.current) {cancelAnimationFrame(audioAnimRef.current)}
+      if (audioAnimRef.current) {
+        cancelAnimationFrame(audioAnimRef.current)
+      }
 
-      if (timerRef.current) {clearInterval(timerRef.current)}
+      if (timerRef.current) {
+        clearInterval(timerRef.current)
+      }
 
-      if (silenceTimerRef.current) {clearTimeout(silenceTimerRef.current)}
+      if (silenceTimerRef.current) {
+        clearTimeout(silenceTimerRef.current)
+      }
 
       if (awaitingReplyTimerRef.current) {
         clearTimeout(awaitingReplyTimerRef.current)
@@ -272,18 +290,26 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps) {
       setSpriteState('idle')
       void window.deskagent.sprite.setAlwaysOnTop({ on: true })
     }
-  }, [requestGateway])  // gatewayState intentionally omitted: a dep would re-mount the mic on reconnect flaps.
+  }, [requestGateway]) // gatewayState intentionally omitted: a dep would re-mount the mic on reconnect flaps.
 
   // Speak the assistant's completed reply, then return to listening. The chat
   // event stream (events.ts) owns the streaming + state machine; this effect
   // only reacts to a finalized assistant turn.
   useEffect(() => {
-    if (!micActive) {return}
+    if (!micActive) {
+      return
+    }
+
     const last = messages[messages.length - 1]
 
-    if (!last || last.role !== 'assistant' || last.streaming || last.error) {return}
+    if (!last || last.role !== 'assistant' || last.streaming || last.error) {
+      return
+    }
 
-    if (last.id === lastSpokenIdRef.current) {return}
+    if (last.id === lastSpokenIdRef.current) {
+      return
+    }
+
     lastSpokenIdRef.current = last.id
     awaitingReplyRef.current = false
 
@@ -302,7 +328,10 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps) {
     setSpriteState('speaking')
     const gen = ++speakGenRef.current
     void speak(last.text).then(() => {
-      if (gen !== speakGenRef.current) {return}
+      if (gen !== speakGenRef.current) {
+        return
+      }
+
       assistantSpeakingRef.current = false
       setSpriteState('listening')
     })
@@ -331,9 +360,7 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps) {
         </div>
 
         <div className="relative flex items-center justify-center my-2">
-          {micActive && (
-            <div className="absolute h-24 w-24 rounded-full bg-emerald-500/20 animate-ping" />
-          )}
+          {micActive && <div className="absolute h-24 w-24 rounded-full bg-emerald-500/20 animate-ping" />}
           <div className="grid h-20 w-20 place-items-center rounded-full bg-white/10 text-3xl shadow-inner border border-white/20">
             🎙️
           </div>
@@ -367,11 +394,17 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps) {
 }
 
 function spriteLabel(state: string): string {
-  if (state === 'listening') {return '正在倾听…'}
+  if (state === 'listening') {
+    return '正在倾听…'
+  }
 
-  if (state === 'thinking') {return '正在思考…'}
+  if (state === 'thinking') {
+    return '正在思考…'
+  }
 
-  if (state === 'speaking') {return '正在回答…'}
+  if (state === 'speaking') {
+    return '正在回答…'
+  }
 
   return '语音通话中…'
 }

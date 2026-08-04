@@ -1,9 +1,8 @@
-/**
- * Built-in desktop themes. Names match the CLI skins / dashboard presets.
- * Add new themes here — no code changes needed elsewhere.
- */
-
 import type { DesktopTheme, DesktopThemeTypography } from './types'
+
+/**
+ * Built-in desktop themes. Names match CLI skins / dashboard presets.
+ */
 
 // Color-emoji fonts to append to every stack as a last resort. None of the UI
 // text/mono fonts carry emoji glyphs, so without this emoji render as tofu

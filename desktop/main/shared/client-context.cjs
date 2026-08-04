@@ -1,19 +1,3 @@
-/**
- * Build the `client_context` payload the desktop sends to Backend at login.
- *
- * Backend runs in a cloud container and cannot reach the host OS, so each
- * desktop must volunteer platform / arch / release / version and the list of
- * locally-installed skills (enabled-only — desktop is ground truth for what
- * the runner exposes; runner refuses disabled tool calls independently).
- * Backend stamps this into the JWT `ctx` claim and reads it back on every
- * chat turn (see `backend/core/system_prompt.py` — `client_ctx.skills` /
- * `environment_hints` / `platform_hints`). Without this payload Backend
- * cannot route tool calls correctly: it would fall back to `PLATFORM_HINTS["webui"]`
- * and ship zero skills.
- *
- * Pure (no electron, no fs unless asked). Unit-testable.
- */
-
 const os = require('node:os')
 const path = require('node:path')
 

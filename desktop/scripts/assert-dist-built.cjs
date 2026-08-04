@@ -1,18 +1,5 @@
 'use strict'
 
-// Build-time guard: refuse to hand a half-built renderer to electron-builder.
-//
-// `pnpm run pack` / `pnpm run dist*` are `pnpm run build && pnpm run builder`.
-// If the `build` step (tsc -b && vite build) fails but packaging proceeds
-// anyway — a stale checkout that fails typecheck, an interrupted vite build,
-// or the package manager not short-circuiting `&&` in some shells — electron-builder happily
-// packages an app with an empty or missing `dist/`. The result launches but
-// blank-pages with `ERR_FILE_NOT_FOUND` for dist/index.html, with no clue why.
-//
-// This runs at the tail of `build`, after vite build, so any packaging path
-// inherits it. It fails loud and early instead of shipping a broken bundle.
-// See issues #39484 (renderer blank page) and #41327 / #39472 (dashboard 404).
-
 const fs = require('fs')
 const path = require('path')
 

@@ -9,9 +9,7 @@ export function useGatewayRequest() {
   const gatewayState = useStore($gatewayState)
   const gatewayRef = useRef<DeskAgentGateway | null>(null)
 
-  const connectionRef = useRef<Awaited<ReturnType<NonNullable<typeof window.deskagent>['getConnection']>> | null>(
-    null
-  )
+  const connectionRef = useRef<Awaited<ReturnType<NonNullable<typeof window.deskagent>['getConnection']>> | null>(null)
 
   const gatewayStateRef = useRef(gatewayState)
   const reconnectingRef = useRef<Promise<DeskAgentGateway | null> | null>(null)

@@ -3,20 +3,23 @@ import { $disturbanceTier, setSpriteState } from '@/companion/companion-store'
 
 import { speak } from '../tts'
 
-export async function speakProactive(
-  text: string,
-  opts?: { userInitiated?: boolean; affect?: string },
-): Promise<void> {
-  if (!text.trim()) {return}
+export async function speakProactive(text: string, opts?: { userInitiated?: boolean; affect?: string }): Promise<void> {
+  if (!text.trim()) {
+    return
+  }
 
   // Quiet tier suppresses proactive outreach, but user-initiated reactions
   // (poke/drag) always voice (plan §4.2). Affect is never gated — callers set
   // emotional state directly.
   const tier = $disturbanceTier.get()
 
-  if (!opts?.userInitiated && tier === 'quiet') {return}
+  if (!opts?.userInitiated && tier === 'quiet') {
+    return
+  }
 
-  if (!$chatOpen.get()) {setProactiveBubble(text.trim())}
+  if (!$chatOpen.get()) {
+    setProactiveBubble(text.trim())
+  }
 
   if (tier === 'proactive' || opts?.userInitiated) {
     // Force the speaking transition — priority 60 is otherwise gated silently

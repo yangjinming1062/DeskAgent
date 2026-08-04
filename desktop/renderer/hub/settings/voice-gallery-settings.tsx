@@ -77,7 +77,10 @@ export function VoiceGallerySettings() {
   }, [catalog, langFilter, genderFilter])
 
   const preview = async (voice: VoiceOption) => {
-    if (previewingId) {return}
+    if (previewingId) {
+      return
+    }
+
     setPreviewingId(voice.id)
 
     try {
@@ -138,12 +141,20 @@ export function VoiceGallerySettings() {
                     {previewingId === v.id ? t.playing : t.preview}
                   </Button>
                 }
-                description={<span className="flex flex-wrap gap-1">{v.tags.map(tag => <Pill key={tag}>{tag}</Pill>)}</span>}
+                description={
+                  <span className="flex flex-wrap gap-1">
+                    {v.tags.map(tag => (
+                      <Pill key={tag}>{tag}</Pill>
+                    ))}
+                  </span>
+                }
                 key={v.id}
                 title={
                   <span className="flex items-center gap-2">
                     {v.label}
-                    <span className="text-xs font-normal text-(--ui-text-tertiary)">{LANGUAGE_LABELS[v.language] ?? v.language}</span>
+                    <span className="text-xs font-normal text-(--ui-text-tertiary)">
+                      {LANGUAGE_LABELS[v.language] ?? v.language}
+                    </span>
                   </span>
                 }
               />

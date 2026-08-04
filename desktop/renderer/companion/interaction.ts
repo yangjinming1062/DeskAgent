@@ -56,7 +56,10 @@ export function handlePokeInteraction(): void {
   setSpriteState('interacting', { durationMs: 2000 })
 
   const tone = personaTone()
-  const text = pokeCount >= 5 ? pick(POKE_HEAVY[tone]) : pokeCount >= 3 ? pick(POKE_MEDIUM[tone]) : pick(POKE_LIGHT[tone])
+
+  const text =
+    pokeCount >= 5 ? pick(POKE_HEAVY[tone]) : pokeCount >= 3 ? pick(POKE_MEDIUM[tone]) : pick(POKE_LIGHT[tone])
+
   void speakProactive(text, { userInitiated: true })
 }
 
@@ -70,7 +73,10 @@ const DRAG_REACTIONS: Record<ReactionTone, readonly string[]> = {
 let hoverThrottleTimer: ReturnType<typeof setTimeout> | null = null
 
 export function handleHoverInteraction(): void {
-  if (hoverThrottleTimer) {return}
+  if (hoverThrottleTimer) {
+    return
+  }
+
   setSpriteState('interacting', { durationMs: 1500 })
   hoverThrottleTimer = setTimeout(() => {
     hoverThrottleTimer = null

@@ -1,13 +1,3 @@
-/**
- * Local WebSocket server communicating with Runner via JSON-RPC 2.0.
- * Desktop starts this server; Runner connects with --desktop-ws.
- *
- * Key invariants:
- *   - Per-id concurrent dispatch (no global lock)
- *   - Bind to 127.0.0.1 only
- *   - On close, reject all pending outbound calls
- */
-
 const { EventEmitter } = require('node:events')
 const http = require('node:http')
 
@@ -105,7 +95,12 @@ function createRunnerWsServer(options = {}) {
       if (method === 'runner_ready') {
         log('[runner-ws] runner_ready received')
         // Forward the runner's probed capabilities/flags to the bridge.
-        emit({ type: 'runner_ready', capabilities: message.params?.capabilities ?? null, version: message.params?.version ?? null, probe_failed: message.params?.probe_failed ?? null })
+        emit({
+          type: 'runner_ready',
+          capabilities: message.params?.capabilities ?? null,
+          version: message.params?.version ?? null,
+          probe_failed: message.params?.probe_failed ?? null
+        })
       } else if (method === 'tools_changed') {
         // Runner re-registered tools (e.g. MCP discovery finished after
         // startup). The bridge re-fetches schemas and re-syncs to backend.
@@ -208,7 +203,11 @@ function createRunnerWsServer(options = {}) {
               }
               if (Date.now() - lastSeen > HEARTBEAT_DEADLINE_MS) {
                 log(`[runner-ws] heartbeat deadline (${HEARTBEAT_DEADLINE_MS}ms) exceeded; closing`)
-                try { ws.close(1011, 'heartbeat-deadline') } catch { /* ignore */ }
+                try {
+                  ws.close(1011, 'heartbeat-deadline')
+                } catch {
+                  /* ignore */
+                }
                 clearInterval(heartbeatTimer)
                 return
               }

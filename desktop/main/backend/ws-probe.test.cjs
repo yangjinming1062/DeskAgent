@@ -1,14 +1,3 @@
-/**
- * Tests for main/backend/ws-probe.cjs.
- *
- * Run with: node --test main/backend/ws-probe.test.cjs
- * (Wired into npm test:desktop:platforms in package.json.)
- *
- * The probe drives a real WebSocket handshake for the "Test remote" button.
- * Here we inject a fake socket so we can deterministically replay each handshake
- * outcome (open, frame, error, early close, never-opens) without a network.
- */
-
 const test = require('node:test')
 const assert = require('node:assert/strict')
 

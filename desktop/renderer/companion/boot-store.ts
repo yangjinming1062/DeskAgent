@@ -28,7 +28,7 @@ function clampProgress(value: number) {
   return Math.max(0, Math.min(100, Math.round(value)))
 }
 
-export function applyDesktopBootProgress(progress: DesktopBootProgress) {
+export function applyDesktopBootProgress(progress: DesktopBootProgress): void {
   const current = $desktopBoot.get()
   const nextProgress = clampProgress(progress.progress)
   const mergedProgress = progress.running ? Math.max(current.progress, nextProgress) : nextProgress
@@ -49,7 +49,7 @@ export function setDesktopBootStep(step: {
   running?: boolean
   fakeMode?: boolean
   error?: string | null
-}) {
+}): void {
   const current = $desktopBoot.get()
   applyDesktopBootProgress({
     error: step.error ?? null,
@@ -62,7 +62,7 @@ export function setDesktopBootStep(step: {
   })
 }
 
-export function completeDesktopBoot(message = strings.boot.ready) {
+export function completeDesktopBoot(message = strings.boot.ready): void {
   const current = $desktopBoot.get()
   $desktopBoot.set({
     ...current,
@@ -76,7 +76,7 @@ export function completeDesktopBoot(message = strings.boot.ready) {
   })
 }
 
-export function failDesktopBoot(message: string) {
+export function failDesktopBoot(message: string): void {
   const current = $desktopBoot.get()
   $desktopBoot.set({
     ...current,

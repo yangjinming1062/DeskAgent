@@ -1,5 +1,7 @@
 'use strict'
 
+const fs = require('node:fs')
+
 /**
  * before-pack.cjs — electron-builder beforePack hook.
  *
@@ -45,8 +47,6 @@
  *   - appOutDir:            the unpacked app directory about to be staged
  *   - electronPlatformName: 'win32' | 'darwin' | 'linux'
  */
-
-const fs = require('node:fs')
 
 function cleanStaleAppOutDir(appOutDir) {
   if (!appOutDir || typeof appOutDir !== 'string') {

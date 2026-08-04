@@ -1,4 +1,8 @@
-import type { DeskAgentConfigPutRequest, DeskAgentConfigRecord, DeskAgentConfigResponse } from '@/shared/types/deskagent'
+import type {
+  DeskAgentConfigPutRequest,
+  DeskAgentConfigRecord,
+  DeskAgentConfigResponse
+} from '@/shared/types/deskagent'
 
 export function getDeskAgentConfig(): Promise<DeskAgentConfigResponse> {
   return window.deskagent.api<DeskAgentConfigResponse>({
@@ -18,7 +22,9 @@ export function getDeskAgentConfigDefaults(): Promise<DeskAgentConfigRecord> {
   })
 }
 
-export async function saveDeskAgentConfig(config: DeskAgentConfigPutRequest): Promise<{ config: DeskAgentConfigResponse }> {
+export async function saveDeskAgentConfig(
+  config: DeskAgentConfigPutRequest
+): Promise<{ config: DeskAgentConfigResponse }> {
   const response = await window.deskagent.api<{ config: DeskAgentConfigResponse }>({
     body: { config },
     method: 'PUT',

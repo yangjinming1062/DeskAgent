@@ -65,9 +65,7 @@ interface DesignResponse {
   trial_audio_mime: string
 }
 
-export type FetchResult =
-  | { ok: true; catalog: VoiceCatalog }
-  | { ok: false; reason: 'fetch_failed' | 'empty_catalog' }
+export type FetchResult = { ok: true; catalog: VoiceCatalog } | { ok: false; reason: 'fetch_failed' | 'empty_catalog' }
 
 export async function fetchVoiceCatalogRaw(
   requestGateway: RequestGateway,
@@ -106,10 +104,7 @@ export async function fetchVoiceCatalog(
   return result.ok ? result.catalog : EMPTY_CATALOG
 }
 
-export async function matchVoicePreference(
-  requestGateway: RequestGateway,
-  preference: string
-): Promise<VoiceMatch> {
+export async function matchVoicePreference(requestGateway: RequestGateway, preference: string): Promise<VoiceMatch> {
   try {
     const res = await requestGateway<MatchResponse>('tts.match_voice', { preference })
     const voice = res.voice ?? DEFAULT_VOICE
@@ -134,7 +129,10 @@ export async function designVoice(
 }
 
 export function nextVoice(currentId: string, catalog: readonly VoiceOption[]): VoiceOption {
-  if (catalog.length <= 1) {return catalog[0] ?? DEFAULT_VOICE}
+  if (catalog.length <= 1) {
+    return catalog[0] ?? DEFAULT_VOICE
+  }
+
   const idx = catalog.findIndex(v => v.id === currentId)
 
   return catalog[(idx + 1) % catalog.length] ?? catalog[0]

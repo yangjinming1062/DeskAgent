@@ -81,7 +81,10 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps) {
   const ensureSession = async (): Promise<string> => {
     const existing = $chatSessionId.get()
 
-    if (existing) {return existing}
+    if (existing) {
+      return existing
+    }
+
     const res = await requestGateway<{ session_id: string }>('session.create', {})
     setChatSession(res.session_id)
 
@@ -98,7 +101,9 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps) {
   const onPaste = async (e: React.ClipboardEvent) => {
     const items = e.clipboardData?.items
 
-    if (!items) {return}
+    if (!items) {
+      return
+    }
 
     for (const item of items) {
       if (item.type.startsWith('image/')) {
@@ -107,7 +112,9 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps) {
         try {
           const path = await window.deskagent.saveClipboardImage()
 
-          if (path) {setPendingImage(path)}
+          if (path) {
+            setPendingImage(path)
+          }
         } catch {
           /* ignore clipboard read failure */
         }
@@ -131,7 +138,9 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps) {
         voiceChunksRef.current = []
 
         recorder.ondataavailable = e => {
-          if (e.data.size > 0) {voiceChunksRef.current.push(e.data)}
+          if (e.data.size > 0) {
+            voiceChunksRef.current.push(e.data)
+          }
         }
 
         setRecording(true)
@@ -151,7 +160,11 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps) {
   const stopRecording = async () => {
     // Wait for the start promise so the recorder exists before deciding what to do.
     if (startPendingRef.current) {
-      try {await startPendingRef.current} catch { /* surfaced via startRecording */ }
+      try {
+        await startPendingRef.current
+      } catch {
+        /* surfaced via startRecording */
+      }
     }
 
     const recorder = mediaRecorderRef.current
@@ -219,9 +232,13 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps) {
   const send = async () => {
     const trimmed = text.trim()
 
-    if ((!trimmed && !pendingImage) || sending) {return}
+    if ((!trimmed && !pendingImage) || sending) {
+      return
+    }
 
-    if (gatewayState !== 'open') {return}
+    if (gatewayState !== 'open') {
+      return
+    }
 
     setSending(true)
 
@@ -239,7 +256,9 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps) {
           if (!pendingImage.startsWith('data:')) {
             const dataUrl = await window.deskagent.readFileDataUrl(pendingImage)
 
-            if (dataUrl) {attachmentUrl = dataUrl}
+            if (dataUrl) {
+              attachmentUrl = dataUrl
+            }
           }
         } catch {
           /* keep the local path; backend may still resolve it via volume mount */
@@ -264,7 +283,7 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps) {
         session_id: id,
         text: fullText || '请看这张图',
         // Forward attachments as {file_url, type} so the LLM sees the image.
-        ...(attachments.length ? { attachments: attachments.map((file_url) => ({ file_url, type: 'image' })) } : {}),
+        ...(attachments.length ? { attachments: attachments.map(file_url => ({ file_url, type: 'image' })) } : {})
       })
     } catch (err) {
       setAssistantError(err instanceof Error ? err.message : '发送失败')
@@ -284,7 +303,9 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps) {
   // Drag the panel via translate3d (GPU motion, no re-render per pointermove)
   // and persist the offset so the choice survives a restart.
   const storedOffset = useMemo(() => {
-    if (typeof localStorage === 'undefined') {return null}
+    if (typeof localStorage === 'undefined') {
+      return null
+    }
 
     try {
       const raw = localStorage.getItem('da.companion.chatDockOffset')
@@ -300,25 +321,34 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps) {
 
   const onHeaderPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
     // Only left-button drags; ignore middle/right click and modifier-hold.
-    if (e.button !== 0 || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) {return}
+    if (e.button !== 0 || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) {
+      return
+    }
+
     const target = e.target as HTMLElement
 
     // Don't start a drag when the user actually clicked a button / input
     // inside the header (tier pill, voice-call button, close).
-    if (target.closest('button, input, textarea, select, a, [role="button"]')) {return}
+    if (target.closest('button, input, textarea, select, a, [role="button"]')) {
+      return
+    }
+
     e.currentTarget.setPointerCapture(e.pointerId)
     dragRef.current = {
       startX: e.clientX,
       startY: e.clientY,
       baseDx: offsetRef.current.dx,
-      baseDy: offsetRef.current.dy,
+      baseDy: offsetRef.current.dy
     }
   }
 
   const onHeaderPointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
     const d = dragRef.current
 
-    if (!d) {return}
+    if (!d) {
+      return
+    }
+
     const next = { dx: d.baseDx + (e.clientX - d.startX), dy: d.baseDy + (e.clientY - d.startY) }
     offsetRef.current = next
 
@@ -328,7 +358,10 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps) {
   }
 
   const onHeaderPointerUp = (e: ReactPointerEvent<HTMLDivElement>) => {
-    if (!dragRef.current) {return}
+    if (!dragRef.current) {
+      return
+    }
+
     e.currentTarget.releasePointerCapture(e.pointerId)
     dragRef.current = null
 
@@ -351,7 +384,10 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps) {
       <div
         className="flex h-[min(60vh,520px)] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-white/10 bg-black/55 text-white shadow-2xl backdrop-blur-md"
         ref={panelRef}
-        style={{ pointerEvents: 'auto', transform: storedOffset ? `translate3d(${storedOffset.dx}px, ${storedOffset.dy}px, 0)` : undefined }}
+        style={{
+          pointerEvents: 'auto',
+          transform: storedOffset ? `translate3d(${storedOffset.dx}px, ${storedOffset.dy}px, 0)` : undefined
+        }}
       >
         <div
           className="flex cursor-grab items-center justify-between gap-2 border-b border-white/10 px-3 py-2 active:cursor-grabbing"
@@ -385,7 +421,12 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps) {
               </button>
             )}
           </div>
-          <button aria-label="关闭对话" className="text-white/50 transition hover:text-white" onClick={onClose} type="button">
+          <button
+            aria-label="关闭对话"
+            className="text-white/50 transition hover:text-white"
+            onClick={onClose}
+            type="button"
+          >
             ✕
           </button>
         </div>
@@ -411,9 +452,7 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps) {
         )}
 
         <div className="border-t border-white/10 p-3">
-          {gatewayState !== 'open' && (
-            <p className="mb-2 text-center text-xs text-amber-300/70">正在连接…</p>
-          )}
+          {gatewayState !== 'open' && <p className="mb-2 text-center text-xs text-amber-300/70">正在连接…</p>}
           <div className="flex items-end gap-2">
             <textarea
               className="max-h-32 flex-1 resize-none rounded-lg border border-white/15 bg-white/10 px-3 py-2 text-sm outline-none placeholder:text-white/40 focus:border-white/40"
@@ -432,7 +471,9 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps) {
             />
             <button
               className={`rounded-lg border px-3 py-2 text-xs font-medium transition ${
-                recording ? 'border-red-400/80 bg-red-500/30 text-white animate-pulse' : 'border-white/20 bg-white/5 text-white/70 hover:bg-white/15 hover:text-white'
+                recording
+                  ? 'border-red-400/80 bg-red-500/30 text-white animate-pulse'
+                  : 'border-white/20 bg-white/5 text-white/70 hover:bg-white/15 hover:text-white'
               }`}
               onMouseDown={() => void startRecording()}
               onMouseUp={stopRecording}

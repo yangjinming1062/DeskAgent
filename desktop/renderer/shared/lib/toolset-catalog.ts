@@ -1,11 +1,3 @@
-// Renderer-facing catalog of toolsets displayed in Settings → Skills → Toolsets.
-//
-// Filter logic (`prefixes` / `extraTools` / MCP exclusion) lives in the two
-// filter-side mirrors: `desktop/main/lib/toolset-index.cjs` and
-// `runner/tools/toolsets/catalog.py`. Both must be kept in lockstep with the
-// `id`s declared here. Label / description / icon live here only; toolset
-// filter data lives in the mirror files (see CLAUDE.md §"双侧目录同步").
-
 import {
   Brain,
   Clock,
@@ -23,7 +15,9 @@ import {
   Terminal,
   Users,
   Volume2
-} from '@/shared/lib/icons'
+} from './icons'
+
+// Renderer-facing catalog of toolsets.
 
 export interface ToolsetCatalogEntry {
   id: string

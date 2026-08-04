@@ -46,11 +46,7 @@ export function applyAuthBroadcast(payload: DesktopAuthBroadcast): void {
   }
 }
 
-export async function login(payload: {
-  username: string
-  password: string
-  baseUrl?: string
-}): Promise<void> {
+export async function login(payload: { username: string; password: string; baseUrl?: string }): Promise<void> {
   try {
     const snapshot = await window.deskagent.login(payload)
     $auth.set({ kind: 'authenticated', snapshot })

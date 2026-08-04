@@ -7,9 +7,24 @@ import { clearClipCatalog } from '@/companion/clip-store'
 import { $disturbanceTier, type DisturbanceTier, setDisturbanceTier } from '@/companion/companion-store'
 import { registerInteractiveRegion, unregisterInteractiveRegion } from '@/companion/interactive-regions'
 import { $persona } from '@/companion/persona-store'
-import { $companionVoiceId, $responseMode, type ResponseMode, setCompanionVoiceId, setResponseMode } from '@/companion/prefs'
+import {
+  $companionVoiceId,
+  $responseMode,
+  type ResponseMode,
+  setCompanionVoiceId,
+  setResponseMode
+} from '@/companion/prefs'
 import { speak } from '@/companion/tts'
-import { designVoice, fetchVoiceCatalog, GENDER_OPTIONS, LANGUAGE_LABELS, playDataUrl, sampleLine, type VoiceCatalog, type VoiceDesignPreview } from '@/companion/voice'
+import {
+  designVoice,
+  fetchVoiceCatalog,
+  GENDER_OPTIONS,
+  LANGUAGE_LABELS,
+  playDataUrl,
+  sampleLine,
+  type VoiceCatalog,
+  type VoiceDesignPreview
+} from '@/companion/voice'
 
 import { pushDevLog } from './developer-overlay'
 import { PersonaSection } from './persona-editor'
@@ -34,7 +49,14 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps) {
   const currentVoice = useStore($companionVoiceId)
   const persona = useStore($persona)
   const { requestGateway } = useGatewayRequest()
-  const [catalog, setCatalog] = useState<VoiceCatalog>({ provider: '', voices: [], supportsVoiceDesign: false, voiceDesignGuide: '' })
+
+  const [catalog, setCatalog] = useState<VoiceCatalog>({
+    provider: '',
+    voices: [],
+    supportsVoiceDesign: false,
+    voiceDesignGuide: ''
+  })
+
   const [langFilter, setLangFilter] = useState('')
   const [genderFilter, setGenderFilter] = useState('')
   const [regenerating, setRegenerating] = useState(false)
@@ -53,7 +75,12 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps) {
   }, [])
 
   const filteredVoices = useMemo(
-    () => catalog.voices.filter(v => (!langFilter || v.language === langFilter || v.language === 'multi') && (!genderFilter || v.gender === genderFilter)),
+    () =>
+      catalog.voices.filter(
+        v =>
+          (!langFilter || v.language === langFilter || v.language === 'multi') &&
+          (!genderFilter || v.gender === genderFilter)
+      ),
     [catalog.voices, langFilter, genderFilter]
   )
 
@@ -80,16 +107,27 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps) {
     let cleared = false
 
     try {
-      const res = await requestGateway<{ asset_url?: string; queued?: boolean; job_id?: string }>('avatar.regenerate', {})
+      const res = await requestGateway<{ asset_url?: string; queued?: boolean; job_id?: string }>(
+        'avatar.regenerate',
+        {}
+      )
 
       if (res?.asset_url) {
-        if (!cleared) {clearClipCatalog(); cleared = true}
+        if (!cleared) {
+          clearClipCatalog()
+          cleared = true
+        }
+
         setAvatarHint('换好啦，新形象已生成～')
       } else if (res?.queued && res.job_id) {
         const result = await awaitAvatarRegeneration(res.job_id)
 
         if (result.asset_url) {
-          if (!cleared) {clearClipCatalog(); cleared = true}
+          if (!cleared) {
+            clearClipCatalog()
+            cleared = true
+          }
+
           setAvatarHint('换好啦，新形象已生成～')
         } else {
           setAvatarHint(result.error ?? '暂时换不出来，稍后再试')
@@ -106,15 +144,24 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps) {
 
   const upload = async () => {
     try {
-      const [path] = await window.deskagent.selectPaths({ title: '选择一张图片作为形象', filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif'] }] })
+      const [path] = await window.deskagent.selectPaths({
+        title: '选择一张图片作为形象',
+        filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif'] }]
+      })
 
-      if (!path) {return}
+      if (!path) {
+        return
+      }
+
       const dataUrl = await window.deskagent.readFileDataUrl(path)
       const comma = dataUrl.indexOf(',')
       const mime = comma > 0 ? dataUrl.slice(5, comma) : 'image/png'
       const base64 = comma > 0 ? dataUrl.slice(comma + 1) : ''
 
-      if (!base64) {return}
+      if (!base64) {
+        return
+      }
+
       setRegenerating(true)
 
       const res = await window.deskagent.api<{ asset_url?: string }>({
@@ -135,7 +182,10 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps) {
   const runDesign = async () => {
     const prompt = designPrompt.trim()
 
-    if (!prompt) {return}
+    if (!prompt) {
+      return
+    }
+
     setDesigning(true)
     setDesignHint(null)
 
@@ -159,7 +209,14 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps) {
       >
         <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
           <h2 className="text-sm font-semibold">伙伴设置</h2>
-          <button aria-label="关闭" className="text-white/50 transition hover:text-white" onClick={onClose} type="button">✕</button>
+          <button
+            aria-label="关闭"
+            className="text-white/50 transition hover:text-white"
+            onClick={onClose}
+            type="button"
+          >
+            ✕
+          </button>
         </div>
 
         <div className="flex-1 space-y-5 overflow-y-auto px-4 py-4 text-sm">
@@ -192,9 +249,12 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps) {
                     const previous = $disturbanceTier.get()
                     setDisturbanceTier(t.id)
                     // Roll back locally if the backend rejects the tier.
-                    requestGateway('companion.set_disturbance_tier', { tier: t.id }).catch((err) => {
+                    requestGateway('companion.set_disturbance_tier', { tier: t.id }).catch(err => {
                       setDisturbanceTier(previous)
-                      pushDevLog('disturbance_tier_rejected', JSON.stringify({ requested: t.id, previous, error: String(err?.message || err) }))
+                      pushDevLog(
+                        'disturbance_tier_rejected',
+                        JSON.stringify({ requested: t.id, previous, error: String(err?.message || err) })
+                      )
                     })
                   }}
                   type="button"
@@ -248,7 +308,13 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps) {
                         <p className="text-white/40">{v.tags.join(' · ')}</p>
                       </div>
                       <div className="flex gap-2">
-                        <button className="text-white/60 transition hover:text-white" onClick={() => void speak(sampleLine(persona?.name ?? ''), v.id || undefined)} type="button">试听</button>
+                        <button
+                          className="text-white/60 transition hover:text-white"
+                          onClick={() => void speak(sampleLine(persona?.name ?? ''), v.id || undefined)}
+                          type="button"
+                        >
+                          试听
+                        </button>
                         <button
                           className={`transition ${currentVoice === v.id ? 'text-emerald-400' : 'text-white/60 hover:text-white'}`}
                           onClick={() => setCompanionVoiceId(v.id)}
@@ -274,7 +340,11 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps) {
                     </button>
                     {showDesign && (
                       <div className="mt-2 rounded-lg border border-white/10 bg-white/5 p-3">
-                        {catalog.voiceDesignGuide && <p className="whitespace-pre-line text-[10px] leading-relaxed text-white/40">{catalog.voiceDesignGuide}</p>}
+                        {catalog.voiceDesignGuide && (
+                          <p className="whitespace-pre-line text-[10px] leading-relaxed text-white/40">
+                            {catalog.voiceDesignGuide}
+                          </p>
+                        )}
                         <textarea
                           className="mt-2 w-full rounded border border-white/10 bg-black/30 px-2 py-1.5 text-xs text-white placeholder:text-white/30 focus:border-white/30 focus:outline-none"
                           onChange={e => setDesignPrompt(e.target.value)}
@@ -293,7 +363,13 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps) {
                           </button>
                           {designPreview && (
                             <>
-                              <button className="text-white/60 transition hover:text-white" onClick={() => playDataUrl(designPreview.trialAudioDataUrl)} type="button">试听</button>
+                              <button
+                                className="text-white/60 transition hover:text-white"
+                                onClick={() => playDataUrl(designPreview.trialAudioDataUrl)}
+                                type="button"
+                              >
+                                试听
+                              </button>
                               <button
                                 className={`transition ${currentVoice === designPreview.voiceId ? 'text-emerald-400' : 'text-white/60 hover:text-white'}`}
                                 onClick={() => setCompanionVoiceId(designPreview.voiceId)}

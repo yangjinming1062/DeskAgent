@@ -8,7 +8,7 @@ export function storedBoolean(key: string, fallback: boolean): boolean {
   }
 }
 
-export function persistBoolean(key: string, value: boolean) {
+export function persistBoolean(key: string, value: boolean): void {
   try {
     window.localStorage.setItem(key, String(value))
   } catch {
@@ -24,7 +24,7 @@ export function storedString(key: string): null | string {
   }
 }
 
-export function persistString(key: string, value: null | string) {
+export function persistString(key: string, value: null | string): void {
   try {
     if (value === null) {
       window.localStorage.removeItem(key)
@@ -35,4 +35,3 @@ export function persistString(key: string, value: null | string) {
     // Best-effort.
   }
 }
-

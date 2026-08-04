@@ -1,10 +1,6 @@
 const path = require('node:path')
 
-const {
-  readDisabledSet,
-  buildSkillSummaries,
-  invalidateDisabledCache
-} = require('../shared/lib/skill-index.cjs')
+const { readDisabledSet, buildSkillSummaries, invalidateDisabledCache } = require('../shared/lib/skill-index.cjs')
 const {
   readDisabledToolsets,
   invalidateDisabledToolsetsCache,

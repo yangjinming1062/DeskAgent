@@ -147,7 +147,9 @@ function registerTerminalIpc({ ipcMain, nodePty, terminalSessions }) {
     return true
   })
 
-  ipcMain.handle('deskagent:terminal:dispose', (_event, id) => disposeTerminalSession(terminalSessions, String(id || '')))
+  ipcMain.handle('deskagent:terminal:dispose', (_event, id) =>
+    disposeTerminalSession(terminalSessions, String(id || ''))
+  )
 }
 
 module.exports = { registerTerminalIpc, disposeTerminalSession, terminalChannel }

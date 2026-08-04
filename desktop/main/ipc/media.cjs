@@ -1,22 +1,5 @@
 'use strict'
 
-// STT/TTS routing hub. Each media request is dispatched to one of three
-// engines per the user's per-service preference (`stt.engine` / `tts.engine`
-// in the backend config):
-//   - "auto"   (default): local Runner engine first; on local failure or
-//               unavailability, fall back to the Backend cloud engine.
-//   - "local": local Runner engine only; failures are NOT masked by a cloud
-//               fallback — the renderer's existing STT/TTS failure handling
-//               takes over (COMPANION_DESIGN §4.5 "always-fallback-to-text").
-//   - "cloud": Backend cloud engine always.
-//
-// The renderer IPC contract (`media.stt {dataUrl,filename}` /
-// `media.tts {text,voice}`) is unchanged; the local/cloud contract
-// translation (dataUrl ↔ base64 / local WAV path) happens here.
-//
-// Every STT/TTS request emits one `done` line on the dev terminal via
-// the injected `log` sink; auto-fallbacks add one extra `fallback` line.
-// Format: `[tts#N] done voice_in="..." engine_pref=auto context=... route=local engine=pyttsx3 voice="..." mime=audio/wav bytes=N ms=N`.
 const fs = require('node:fs')
 
 const STT_TIMEOUT_MS = 60_000
@@ -94,7 +77,7 @@ async function tryLocalStt({ bridge, mime, data, language }) {
       audio_base64: data.toString('base64'),
       mime_type: mime,
       // Forward the language so faster-whisper doesn't auto-detect every turn; explicit "zh" picks the zh model.
-      ...(language ? { language } : {}),
+      ...(language ? { language } : {})
     })
     if (result && result.success === true && typeof result.text === 'string') {
       return { ok: true, value: { text: result.text } }
@@ -229,12 +212,17 @@ function registerMediaIpc({ ipcMain, ensureBackend, getRunnerBridge, getEnginePr
     const filename = payload?.filename || `recording.${(mime.split('/')[1] || 'webm').split(';')[0]}`
     const context = typeof payload?.context === 'string' ? payload.context : null
 
-    const language = (typeof payload?.language === 'string' && payload.language) ? payload.language : DEFAULT_STT_LANGUAGE
+    const language = typeof payload?.language === 'string' && payload.language ? payload.language : DEFAULT_STT_LANGUAGE
 
     const prefs = await resolvePrefs()
     const engine = prefs.stt
     const silentFallback = prefs.sttSilentFallback
-    const sttLog = makeLog(log, `[stt#${sttId}]`, { engine_pref: engine, ...(silentFallback ? {} : { silent_fallback: false }), context: context || null, ...(mime ? { mime } : {}) })
+    const sttLog = makeLog(log, `[stt#${sttId}]`, {
+      engine_pref: engine,
+      ...(silentFallback ? {} : { silent_fallback: false }),
+      context: context || null,
+      ...(mime ? { mime } : {})
+    })
     const startedAt = Date.now()
 
     // Track a real local→cloud fallback so the renderer can show a one-shot hint.
@@ -273,7 +261,7 @@ function registerMediaIpc({ ipcMain, ensureBackend, getRunnerBridge, getEnginePr
       language,
       ms: Date.now() - startedAt,
       // One-shot hint so privacy/cost-sensitive users can disable silent fallback in settings.
-      ...(silentFallback && engine === 'auto' && fellBackFromLocal ? { silent_fallback_used: true } : {}),
+      ...(silentFallback && engine === 'auto' && fellBackFromLocal ? { silent_fallback_used: true } : {})
     })
     return result
   })
@@ -305,7 +293,7 @@ function registerMediaIpc({ ipcMain, ensureBackend, getRunnerBridge, getEnginePr
       engine_pref: isDesigned ? 'cloud' : prefs.tts,
       engine_pref_forced: isDesigned && prefs.tts !== 'cloud' ? 'cloud' : null,
       is_designed: isDesigned,
-      context: context || null,
+      context: context || null
     })
     const startedAt = Date.now()
     let fellBackToCloud = false

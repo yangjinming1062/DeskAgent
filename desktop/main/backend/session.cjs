@@ -1,15 +1,12 @@
-/**
- * Owns the desktop's session with the cloud Backend: base URL, JWT, user
- * info, expires_at. Persists to disk with JWT encrypted via safeStorage.
- *
- * Pure (no electron require at the top) — caller injects electron modules
- * via the constructor for unit-testability.
- */
-
 const fs = require('node:fs')
 const path = require('node:path')
 
 const { createBackendClient, BackendRequestError } = require('./client.cjs')
+
+/**
+ * Owns the desktop's session with the cloud Backend.
+ * Persists to disk with JWT encrypted via safeStorage.
+ */
 
 const SESSION_FILENAME = 'agent-session.json'
 const SESSION_SCHEMA_VERSION = 1
@@ -499,9 +496,7 @@ function createBackendSession(options = {}) {
   // to be added in one place.
   function adoptSession({ baseUrl, token, tokenExpiresAt, user }) {
     const expiresAt =
-      Number.isFinite(tokenExpiresAt) && tokenExpiresAt > 0
-        ? tokenExpiresAt
-        : now() + KNOWN_TOKEN_TTL_MS
+      Number.isFinite(tokenExpiresAt) && tokenExpiresAt > 0 ? tokenExpiresAt : now() + KNOWN_TOKEN_TTL_MS
 
     return applySession({
       baseUrl,

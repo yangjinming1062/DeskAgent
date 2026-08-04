@@ -96,11 +96,11 @@ const RATE_WINDOW = 1000
 const RATE_LIMIT = 5
 let recentFires: number[] = []
 
-export function registerHapticTrigger(trigger: HapticTrigger | null) {
+export function registerHapticTrigger(trigger: HapticTrigger | null): void {
   registeredTrigger = trigger
 }
 
-export function triggerHaptic(intent: HapticIntent = 'selection') {
+export function triggerHaptic(intent: HapticIntent = 'selection'): void {
   if ($hapticsMuted.get() || !registeredTrigger) {
     return
   }

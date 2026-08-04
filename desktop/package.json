@@ -28,7 +28,7 @@
     "type-check": "tsc -b",
     "lint": "eslint renderer/ main/",
     "lint:fix": "eslint renderer/ main/ --fix",
-    "fmt": "prettier --write \"src/**/*.{ts,tsx}\" \"main/**/*.{js,cjs,mjs}\" \"scripts/**/*.{cjs,mjs}\" \"vite.config.ts\"",
+    "fmt": "prettier --write \"renderer/**/*.{ts,tsx}\" \"main/**/*.{js,cjs,mjs}\" \"scripts/**/*.{cjs,mjs}\" \"vite.config.ts\"",
     "fix": "pnpm run lint:fix && pnpm run fmt && pnpm run type-check",
     "test:ui": "vitest run"
   },

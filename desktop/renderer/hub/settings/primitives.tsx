@@ -22,7 +22,15 @@ export function Pill({ tone = 'muted', children }: { tone?: 'muted' | 'primary';
   return <Badge variant={tone === 'primary' ? 'default' : 'muted'}>{children}</Badge>
 }
 
-export function FilterPill({ active, children, onClick }: { active: boolean; children: ReactNode; onClick: () => void }) {
+export function FilterPill({
+  active,
+  children,
+  onClick
+}: {
+  active: boolean
+  children: ReactNode
+  onClick: () => void
+}) {
   return (
     <button
       className={cn(

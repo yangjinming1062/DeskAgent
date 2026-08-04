@@ -16,7 +16,9 @@ export async function hydratePersona(): Promise<void> {
   try {
     // All structured persona fields live INSIDE definition_json (a JSON
     // string blob), not as flat top-level keys on the wire.
-    const p = await window.deskagent.api<{ definition_json?: string; is_complete?: boolean }>({ path: '/api/companion/persona' })
+    const p = await window.deskagent.api<{ definition_json?: string; is_complete?: boolean }>({
+      path: '/api/companion/persona'
+    })
 
     if (!p?.is_complete) {
       $persona.set(null)
@@ -29,7 +31,7 @@ export async function hydratePersona(): Promise<void> {
     try {
       const out = p.definition_json ? JSON.parse(p.definition_json) : null
 
-      parsed = typeof out === 'object' && out !== null ? out as Record<string, string> : {}
+      parsed = typeof out === 'object' && out !== null ? (out as Record<string, string>) : {}
     } catch {
       parsed = {}
     }
@@ -53,11 +55,17 @@ export type ReactionTone = 'gentle' | 'lively' | 'snarky' | 'calm'
 export function personaTone(): ReactionTone {
   const p = ($persona.get()?.personality ?? '').toLowerCase()
 
-  if (p.includes('毒舌') || p.includes('傲娇')) {return 'snarky'}
+  if (p.includes('毒舌') || p.includes('傲娇')) {
+    return 'snarky'
+  }
 
-  if (p.includes('活泼') || p.includes('好动')) {return 'lively'}
+  if (p.includes('活泼') || p.includes('好动')) {
+    return 'lively'
+  }
 
-  if (p.includes('冷静') || p.includes('理性')) {return 'calm'}
+  if (p.includes('冷静') || p.includes('理性')) {
+    return 'calm'
+  }
 
   return 'gentle'
 }

@@ -410,8 +410,8 @@ function ChangePasswordForm() {
   )
 }
 
-type WebSearchCopy = typeof strings['settings']['account']['webSearch']
-type AgentDefaultsCopy = typeof strings['settings']['account']['agentDefaults']
+type WebSearchCopy = (typeof strings)['settings']['account']['webSearch']
+type AgentDefaultsCopy = (typeof strings)['settings']['account']['agentDefaults']
 
 function WebSearchSection({
   disabled,

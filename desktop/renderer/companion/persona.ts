@@ -39,10 +39,15 @@ const MAX_SPECIES_GENDER = 64
 const MAX_BACKGROUND = 500
 
 function truncate(value: string | undefined, max: number): string | undefined {
-  if (!value) {return undefined}
+  if (!value) {
+    return undefined
+  }
+
   const trimmed = value.trim()
 
-  if (!trimmed) {return undefined}
+  if (!trimmed) {
+    return undefined
+  }
 
   return trimmed.slice(0, max)
 }
@@ -52,13 +57,21 @@ function truncate(value: string | undefined, max: number): string | undefined {
 export function deriveSpeakingStyle(role: string | undefined, personality: string | undefined): string {
   const p = personality || ''
 
-  if (p.includes('毒舌') || p.includes('傲娇')) {return '俏皮带点小傲娇'}
+  if (p.includes('毒舌') || p.includes('傲娇')) {
+    return '俏皮带点小傲娇'
+  }
 
-  if (p.includes('冷静') || p.includes('理性')) {return '沉稳简洁'}
+  if (p.includes('冷静') || p.includes('理性')) {
+    return '沉稳简洁'
+  }
 
-  if (p.includes('活泼')) {return '轻快活泼'}
+  if (p.includes('活泼')) {
+    return '轻快活泼'
+  }
 
-  if (role && (role.includes('管家') || role.includes('秘书') || role.includes('贾维斯'))) {return '专业干练'}
+  if (role && (role.includes('管家') || role.includes('秘书') || role.includes('贾维斯'))) {
+    return '专业干练'
+  }
 
   return '温柔亲切'
 }
@@ -76,7 +89,7 @@ export function assemblePersona(answers: OnboardingAnswers): PersonaPayload {
   const payload: PersonaPayload = {
     name,
     personality,
-    speaking_style: userPickedStyle || deriveSpeakingStyle(answers.role, answers.personality),
+    speaking_style: userPickedStyle || deriveSpeakingStyle(answers.role, answers.personality)
   }
 
   const optional: Array<[keyof PersonaPayload, string | undefined, number]> = [
@@ -88,13 +101,15 @@ export function assemblePersona(answers: OnboardingAnswers): PersonaPayload {
     ['user_gender', answers.user_gender, MAX_USER_TEXT],
     ['user_age_bucket', answers.user_age_bucket, MAX_USER_TEXT],
     ['user_hobbies', answers.user_hobbies, MAX_USER_TEXT],
-    ['user_freeform', answers.user_freeform, MAX_USER_TEXT],
+    ['user_freeform', answers.user_freeform, MAX_USER_TEXT]
   ]
 
   for (const [key, raw, max] of optional) {
     const trimmed = truncate(raw, max)
 
-    if (trimmed) {payload[key] = trimmed}
+    if (trimmed) {
+      payload[key] = trimmed
+    }
   }
 
   return payload

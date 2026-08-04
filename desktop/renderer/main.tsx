@@ -122,7 +122,7 @@ createRoot(document.getElementById('root')!).render(
             </HashRouter>
           </HapticsProvider>
         </ThemeProvider>
-        </QueryClientProvider>
-      </ErrorBoundary>
-    </StrictMode>
-  )
+      </QueryClientProvider>
+    </ErrorBoundary>
+  </StrictMode>
+)

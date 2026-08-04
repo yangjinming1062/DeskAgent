@@ -31,7 +31,9 @@ export function handleCompanionEvent(event: RpcEvent): void {
     case 'message.delta': {
       const text = (event.payload as { text?: string } | undefined)?.text ?? ''
 
-      if (text) {appendAssistantDelta(text)}
+      if (text) {
+        appendAssistantDelta(text)
+      }
 
       break
     }
@@ -88,7 +90,11 @@ export function handleCompanionEvent(event: RpcEvent): void {
     }
 
     case 'tool.call': {
-      const p = (event.payload as { status?: string; name?: string; args?: Record<string, unknown>; call_id?: string } | undefined) ?? {}
+      const p =
+        (event.payload as
+          | { status?: string; name?: string; args?: Record<string, unknown>; call_id?: string }
+          | undefined) ?? {}
+
       const runnerInvoke = window.deskagent?.runnerInvoke
 
       if (p.status === 'complete') {
@@ -104,7 +110,9 @@ export function handleCompanionEvent(event: RpcEvent): void {
 
       // Without a bridge or call_id the sprite stays 'working'; the backend's
       // await_future times out at 300s and surfaces the error.
-      if (!p.call_id || !runnerInvoke) {break}
+      if (!p.call_id || !runnerInvoke) {
+        break
+      }
 
       // Fire-and-forget the Runner call and post the result so the backend's
       // await_future resolves; tool errors must not bubble into this handler.
@@ -118,7 +126,7 @@ export function handleCompanionEvent(event: RpcEvent): void {
           try {
             await gateway?.request('tool.result', {
               call_id: p.call_id,
-              result: { ok: false, error: err instanceof Error ? err.message : String(err) },
+              result: { ok: false, error: err instanceof Error ? err.message : String(err) }
             })
           } catch {
             /* best effort — backend's 300s fallback covers it */
@@ -130,14 +138,16 @@ export function handleCompanionEvent(event: RpcEvent): void {
     }
 
     case 'clip.updated': {
-      const p = event.payload as {
-        scene?: string
-        tier?: number
-        status?: string
-        url?: string | null
-        keyframe_url?: string | null
-        keyframe_meta?: ClipMeta | null
-      } | undefined
+      const p = event.payload as
+        | {
+            scene?: string
+            tier?: number
+            status?: string
+            url?: string | null
+            keyframe_url?: string | null
+            keyframe_meta?: ClipMeta | null
+          }
+        | undefined
 
       if (p?.scene && typeof p.tier === 'number') {
         applyClipUpdate({
@@ -146,7 +156,7 @@ export function handleCompanionEvent(event: RpcEvent): void {
           status: p.status,
           url: p.url ?? null,
           keyframe_url: p.keyframe_url ?? null,
-          keyframe_meta: p.keyframe_meta ?? null,
+          keyframe_meta: p.keyframe_meta ?? null
         })
       }
 

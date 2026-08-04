@@ -74,7 +74,14 @@ export function Egg({ cracks, mode }: EggProps) {
           />
 
           {/* Cracks accumulate; on shatter the shell halves part slightly. */}
-          <g fill="none" opacity={shattered ? 0.9 : 0.7} stroke="#b9a982" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.6">
+          <g
+            fill="none"
+            opacity={shattered ? 0.9 : 0.7}
+            stroke="#b9a982"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth="1.6"
+          >
             {CRACK_PATHS.slice(0, Math.min(cracks, CRACK_PATHS.length)).map((d, i) => (
               <path d={d} key={i} strokeWidth={i === 4 ? 2 : 1.6} />
             ))}
