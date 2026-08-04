@@ -75,14 +75,8 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps) {
   const regenerate = async () => {
     setRegenerating(true)
     setAvatarHint(null)
-    // P0-4 (desktop re-audit): don't pre-emptively clear the clip
-    // catalog before the regenerate RPC. The previous code did
-    // clearClipCatalog() at the top of this function, which meant
-    // a transient regenerate failure (network blip / provider
-    // outage) left the user with no Tier 2/3 clips until the next
-    // list_clips refresh — the same defect the onboarding-flow
-    // already fixed (commit 6200f32). Move the clear to AFTER the
-    // new portrait URL lands, mirroring the onboarding pattern.
+    // Clear the clip catalog only after the new portrait lands — an eager
+    // clear on a transient failure would leave Tier 2/3 clips gone.
     let cleared = false
 
     try {
@@ -92,8 +86,8 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps) {
         if (!cleared) {clearClipCatalog(); cleared = true}
         setAvatarHint('换好啦，新形象已生成～')
       } else if (res?.queued && res.job_id) {
-        // P0-4: wait for the background avatar.regenerated event.
         const result = await awaitAvatarRegeneration(res.job_id)
+
         if (result.asset_url) {
           if (!cleared) {clearClipCatalog(); cleared = true}
           setAvatarHint('换好啦，新形象已生成～')
@@ -197,11 +191,7 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps) {
                   onClick={() => {
                     const previous = $disturbanceTier.get()
                     setDisturbanceTier(t.id)
-                    // P2-15: roll the local atom back if the backend
-                    // rejects the new tier (e.g. a future cross-replica
-                    // sync conflict). Without the rollback the user
-                    // sees "you set quiet" locally while the next
-                    // proactive message still goes to cloud.
+                    // Roll back locally if the backend rejects the tier.
                     requestGateway('companion.set_disturbance_tier', { tier: t.id }).catch((err) => {
                       setDisturbanceTier(previous)
                       pushDevLog('disturbance_tier_rejected', JSON.stringify({ requested: t.id, previous, error: String(err?.message || err) }))

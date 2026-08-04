@@ -40,30 +40,19 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps) {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const voiceChunksRef = useRef<Blob[]>([])
 
-  // P1-4: previously toggled the sprite's always-on-top flag on
-  // mount/unmount, which let other apps cover the sprite AND chat
-  // panel the moment the user started typing. The chat panel is a
-  // React child of the same sprite window, so it inherits topmost
-  // automatically — no toggling needed. Drop the call; the cleanup
-  // would also race with the closing dock and re-show the sprite
-  // *after* the user dismissed it.
+  // The chat panel inherits the sprite window's topmost flag — no toggling;
+  // an unmount-time toggle would race the closing dock.
   useEffect(() => {
     inputRef.current?.focus()
   }, [])
 
-  // 2.7 (desktop audit): the previous cleanup only un-registered
-  // the interactive region. If the user dismissed the chat while a
-  // voice recording was in flight, ``setSpriteState('listening')``
-  // stayed set forever — the sprite was stuck in the listening
-  // state until a new state transition (e.g. another chat reply).
-  // Reset the sprite on unmount so the partner returns to idle
-  // when the chat is closed. P0 (second-pass audit): use
-  // ``force: true`` so the priority gate doesn't silently swallow
-  // the reset when the sprite happens to be in 'listening' or
-  // 'thinking' (priority 40 / 50 > idle's 10).
+  // Reset the sprite on unmount (force: true so the priority gate can't
+  // swallow it while 'listening'/'thinking') — a dismissed chat with an
+  // in-flight recording would otherwise leave the sprite stuck there.
   useEffect(() => {
     return () => {
       const recorder = mediaRecorderRef.current
+
       if (recorder && recorder.state !== 'inactive') {
         try {
           recorder.stop()
@@ -71,6 +60,7 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps) {
           /* already stopped */
         }
       }
+
       setRecording(false)
       setSpriteState('idle', { force: true })
     }
@@ -127,17 +117,13 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps) {
     }
   }
 
-  // 3.3 (desktop audit): the previous startRecording awaited
-  // getUserMedia *after* the mousedown handler returned, so a
-  // quick tap (mousedown → mouseup before the await resolved)
-  // would land in stopRecording with mediaRecorderRef.current
-  // still null and silently drop the recording. Track the
-  // pending-start promise so stopRecording can wait for the
-  // media stream to be acquired before deciding.
+  // stopRecording waits for an in-flight getUserMedia so a quick tap
+  // doesn't land in stopRecording before the recorder exists.
   const startPendingRef = useRef<Promise<void> | null>(null)
 
   const startRecording = () => {
-    const pending = (async () => {
+    let pending: Promise<void> | null = null
+    pending = (async () => {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
         const recorder = new MediaRecorder(stream)
@@ -163,12 +149,11 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps) {
   }
 
   const stopRecording = async () => {
-    // 3.3: wait for the start promise to settle so the recorder
-    // is available (or the error path ran) before we decide what
-    // to do with it.
+    // Wait for the start promise so the recorder exists before deciding what to do.
     if (startPendingRef.current) {
       try {await startPendingRef.current} catch { /* surfaced via startRecording */ }
     }
+
     const recorder = mediaRecorderRef.current
 
     if (!recorder || recorder.state === 'inactive') {
@@ -246,24 +231,20 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps) {
       const attachments: string[] = []
 
       if (pendingImage) {
-        // P1-15 (desktop re-audit): the previous code passed the
-        // local file path to ``image.attach``, which only works
-        // when the backend runs on the same machine. In Docker /
-        // remote deployments the backend can't read the path —
-        // the LLM receives a ref_text pointing at a non-existent
-        // file and ignores the image. Convert the local file to
-        // a base64 data URL and forward it as a multimodal
-        // attachment so the backend's attachment pipeline can
-        // ship it to the LLM provider directly.
+        // Convert the local path to a data URL — the backend can't read
+        // the path in Docker/remote deployments and would ignore the image.
         let attachmentUrl = pendingImage
+
         try {
           if (!pendingImage.startsWith('data:')) {
             const dataUrl = await window.deskagent.readFileDataUrl(pendingImage)
+
             if (dataUrl) {attachmentUrl = dataUrl}
           }
         } catch {
           /* keep the local path; backend may still resolve it via volume mount */
         }
+
         const ref = await requestGateway<{ ref_text?: string }>('image.attach', {
           session_id: id,
           path: attachmentUrl
@@ -282,12 +263,7 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps) {
       await requestGateway('prompt.submit', {
         session_id: id,
         text: fullText || '请看这张图',
-        // 3.7 (desktop audit): forward attachments so the backend
-        // knows the user is including an image; previously the
-        // attachment was stored in the message but the prompt.submit
-        // frame had no attachment field, so the LLM never saw the
-        // image. ``attachments`` is a list of {file_url, type} dicts
-        // matching the JSON-RPC handler contract.
+        // Forward attachments as {file_url, type} so the LLM sees the image.
         ...(attachments.length ? { attachments: attachments.map((file_url) => ({ file_url, type: 'image' })) } : {}),
       })
     } catch (err) {
@@ -305,20 +281,20 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps) {
   const lastIsUser = messages[messages.length - 1]?.role === 'user'
   const showTyping = lastIsUser && gatewayState === 'open'
 
-  // P2-5: let the user grab the panel header and drag the dock to a
-  // new on-screen position. Persist the offset in localStorage so the
-  // choice survives a restart. The sprite itself stays put — only the
-  // dock moves. We drag the panel element via translate3d so the GPU
-  // handles the motion (no React re-render per pointermove).
+  // Drag the panel via translate3d (GPU motion, no re-render per pointermove)
+  // and persist the offset so the choice survives a restart.
   const storedOffset = useMemo(() => {
     if (typeof localStorage === 'undefined') {return null}
+
     try {
       const raw = localStorage.getItem('da.companion.chatDockOffset')
+
       return raw ? (JSON.parse(raw) as { dx: number; dy: number }) : null
     } catch {
       return null
     }
   }, [])
+
   const offsetRef = useRef<{ dx: number; dy: number }>(storedOffset ?? { dx: 0, dy: 0 })
   const dragRef = useRef<{ startX: number; startY: number; baseDx: number; baseDy: number } | null>(null)
 
@@ -326,6 +302,7 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps) {
     // Only left-button drags; ignore middle/right click and modifier-hold.
     if (e.button !== 0 || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) {return}
     const target = e.target as HTMLElement
+
     // Don't start a drag when the user actually clicked a button / input
     // inside the header (tier pill, voice-call button, close).
     if (target.closest('button, input, textarea, select, a, [role="button"]')) {return}
@@ -337,19 +314,24 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps) {
       baseDy: offsetRef.current.dy,
     }
   }
+
   const onHeaderPointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
     const d = dragRef.current
+
     if (!d) {return}
     const next = { dx: d.baseDx + (e.clientX - d.startX), dy: d.baseDy + (e.clientY - d.startY) }
     offsetRef.current = next
+
     if (panelRef.current) {
       panelRef.current.style.transform = `translate3d(${next.dx}px, ${next.dy}px, 0)`
     }
   }
+
   const onHeaderPointerUp = (e: ReactPointerEvent<HTMLDivElement>) => {
     if (!dragRef.current) {return}
     e.currentTarget.releasePointerCapture(e.pointerId)
     dragRef.current = null
+
     if (typeof localStorage !== 'undefined') {
       try {
         localStorage.setItem('da.companion.chatDockOffset', JSON.stringify(offsetRef.current))
@@ -360,13 +342,8 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps) {
   }
 
   return (
-    // 2.3 (desktop audit): SPEC §4.1 says "对话发生在角色身边" with
-    // the sprite upper and the panel below, in the same vertical
-    // column. The previous layout stacked the panel against the
-    // bottom edge; the sprite was at its dragged position so the
-    // two could be far apart. Anchor the panel to the lower-third
-    // (pb-24 = 96px) so it sits under the centered sprite, not
-    // against the bottom of the screen.
+    // Anchor the panel under the centered sprite (SPEC §4.1 对话发生在角色身边),
+    // not against the screen bottom where the dragged sprite may be far away.
     <div
       className="fixed inset-0 z-40 flex flex-col items-center justify-end px-6 pb-24"
       style={{ pointerEvents: 'none' }}

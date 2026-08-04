@@ -20,15 +20,10 @@ const http = require('node:http')
 const DEFAULT_TIMEOUT_MS = 120_000
 const JSON_RPC_VERSION = '2.0'
 
-// P0-3 / P0-4 (runtime audit): the Runner WS had no application-level
-// heartbeat — only OS keepalive, which can take minutes to surface a
-// network-isolated runner. Send a JSON-RPC notification ``runner.ping``
-// every 10s; if no reply frame of any kind arrives within 120s, treat
-// the connection as dead and close it. The 120s deadline matches
-// Runner's ``request_llm`` floor + the local reverse-RPC proxy
-// timeout, so a busy LLM turn naturally accounts for the deadline
-// without being misclassified as dead. Any inbound frame resets the
-// deadline.
+// Application-level heartbeat — OS keepalive alone can take minutes to
+// surface a network-isolated runner. Ping every 10s; no frame within 120s
+// (matching the runner's LLM floor) means dead. Any inbound frame resets
+// the deadline.
 const HEARTBEAT_INTERVAL_MS = 10_000
 const HEARTBEAT_DEADLINE_MS = 120_000
 
@@ -203,10 +198,8 @@ function createRunnerWsServer(options = {}) {
             activeWs = ws
             emit({ type: 'connected' })
 
-            // P0-3 (runtime audit): 10s ping / 30s deadline heartbeat. Any
-            // inbound frame resets the deadline so a busy runner is
-            // automatically accounted for. Drop a stuck connection with a
-            // 1011 so the reconnect loop can recover.
+            // Any inbound frame resets the 120s deadline so a busy runner
+            // isn't misclassified as dead; drop a stuck connection with 1011.
             let lastSeen = Date.now()
             const heartbeatTimer = setInterval(() => {
               if (ws.readyState !== 1) {

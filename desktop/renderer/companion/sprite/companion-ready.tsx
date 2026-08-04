@@ -44,9 +44,7 @@ const EMOTION_PRESENTATION: Record<SpriteEmotion, { proc: string; badge: string 
   grateful: { proc: 'shy', badge: '😊' },
   proud: { proc: 'proud', badge: '⭐' },
   concerned: { proc: 'pulse', badge: '✨' },
-  // P1-5: newly-added emotions from affect.py's expanded ALLOWED_EMOTIONS.
-  // The procedural render falls back to 'pulse' / '✨' if no dedicated
-  // Tier-2 keyframe is generated yet — see ARCH §11#9 (永不空白).
+  // Procedural fallback for emotions without a dedicated Tier-2 keyframe (ARCH §11#9).
   sleepy: { proc: 'sag', badge: '💤' },
   curious: { proc: 'pop', badge: '❓' },
   embarrassed: { proc: 'shy', badge: '😊' },
@@ -86,14 +84,8 @@ export function CompanionReady() {
   const transitionClip = useStore($activeTransitionClip)
   useStore($clipCatalog)
   const { requestGateway } = useGatewayRequest()
-  // P0 (desktop audit): only apply the drowsy filter when the
-  // sprite is *actually* disconnected, not while the gateway is
-  // still handshaking. The previous condition gray-scaled the
-  // portrait from the very first frame of the renderer, violating
-  // ARCH §11#9 "伙伴表达永不空白" during the normal connect
-  // window. Once ``disconnected`` is explicitly set (backend WS
-  // closed for 30s+) the filter kicks in; the connecting state
-  // is left alone.
+  // Drowsy filter only when the gateway is explicitly disconnected — not
+  // while handshaking, so the portrait isn't grayed during the connect window.
   const drowsy = spriteState === 'disconnected'
 
   useEffect(() => {
@@ -178,14 +170,8 @@ export function CompanionReady() {
   const badge = drowsy ? '💤' : getStateBadge(spriteState, emotion)
   const procKey = proceduralKey(spriteState, emotion)
   const drowsyFilter = drowsy ? 'grayscale(0.6) brightness(0.85)' : undefined
-  // P1-14: the sprite has no native alpha (image-gen returns JPEG,
-  // tier-3 video is MP4). Key out a uniform background colour so
-  // the character composites cleanly over the desktop. The SVG
-  // filter below maps near-white pixels to fully transparent; the
-  // backend prompt now asks for a flat-colour background (see
-  // avatar_service._build_prompt) so the key hits a clean target.
-  // The circular CSS mask stays as a defensive belt — if the key
-  // misses the edges, the circle still hides the residue.
+  // Key out the uniform background (JPEG/MP4 have no alpha) so the character
+  // composites over the desktop; the circular mask covers key misses.
   const transparentFilter = 'url(#companion-chroma-key)'
 
   const showVideo = activeTier === 3 && Boolean(activeUrl) && !videoFailed
@@ -238,12 +224,8 @@ export function CompanionReady() {
   )
 }
 
-// P1-14: SVG chroma key filter referenced by ``url(#companion-chroma-key)``.
-// The feColorMatrix collapses near-white pixels to fully transparent so
-// the opaque portrait / sprite / video composites cleanly over the
-// desktop. The matrix is deliberately conservative — it only fully
-// transparentizes truly-white pixels (RGB > 0.92) so a small white
-// highlight on the character (eyes, badges) survives.
+// Chroma key for ``url(#companion-chroma-key)`` — only fully transparentizes
+// near-white pixels (RGB > 0.92) so highlights on the character survive.
 function ChromaKeyFilter() {
   return (
     <svg aria-hidden="true" focusable="false" height="0" style={{ position: 'absolute', width: 0, height: 0, overflow: 'hidden' }} width="0">

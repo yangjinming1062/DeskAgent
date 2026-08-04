@@ -99,12 +99,10 @@ export async function fetchVoiceCatalog(
   requestGateway: RequestGateway,
   language?: string | null
 ): Promise<VoiceCatalog> {
-  // Back-compat wrapper — returns EMPTY_CATALOG for any non-ok case so
-  // existing callers keep their fallthrough behavior. New consumers
-  // (P2-8 voice-validity) should use fetchVoiceCatalogRaw to distinguish
-  // 'fetch failed' (transient — keep current voice) from 'fetch
-  // succeeded but voice not in catalog' (real miss — prompt user).
+  // Back-compat wrapper — returns EMPTY_CATALOG for any non-ok case; use
+  // fetchVoiceCatalogRaw when 'fetch failed' vs 'not in catalog' matters.
   const result = await fetchVoiceCatalogRaw(requestGateway, language)
+
   return result.ok ? result.catalog : EMPTY_CATALOG
 }
 

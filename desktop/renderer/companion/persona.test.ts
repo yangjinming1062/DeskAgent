@@ -94,6 +94,7 @@ describe('deriveSpeakingStyle', () => {
       personality: '毒舌傲娇',
       speaking_style: '专业干练',
     })
+
     expect(p.speaking_style).toBe('专业干练')
   })
 

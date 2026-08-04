@@ -31,11 +31,8 @@ export type SpriteEmotion =
   | 'playful'
   | 'bored'
   | 'lonely'
-  // P1-5: align with the expanded ``ALLOWED_EMOTIONS`` in
-  // ``services/chat/affect.py`` so the LLM's vocabulary has a typed
-  // landing pad on the desktop. ``neutral`` deliberately NOT in this
-  // union — it's filtered at the events.ts boundary (P0-2 + P1-5) and
-  // maps to a plain ``idle`` return.
+  // Mirrors affect.py's ALLOWED_EMOTIONS; ``neutral`` is deliberately absent
+  // — events.ts filters it and maps to a plain idle return.
   | 'sleepy'
   | 'curious'
   | 'embarrassed'
@@ -61,7 +58,7 @@ export const $spritePosition = atom<SpritePosition | null>(null)
 // the affect channel open (phase 2).
 export type DisturbanceTier = 'proactive' | 'normal' | 'quiet'
 
-// P1-18: persist the chosen tier in localStorage so a Desktop restart
+// Persist the chosen tier in localStorage so a Desktop restart
 // doesn't silently reset the user to the (more chatty) default. The
 // backend has its own process-local cache (services/companion/disturbance.py)
 // but the desktop is the source of truth — the desktop reports the tier
@@ -184,7 +181,7 @@ export function reportUserActivity(): void {
     if ($spriteState.get() === 'working') {
       // ``working`` (pri 70) gates ``idle`` (pri 10) — without ``force: true``
       // the timer expires but the state stays locked on the working badge.
-      // P0-9: explicitly force the exit so the sprite returns to idle once
+      // Explicitly force the exit so the sprite returns to idle once
       // the user stops producing activity for the configured window.
       setSpriteState('idle', { force: true })
     }
@@ -197,6 +194,7 @@ export function setSpritePosition(pos: SpritePosition | null): void {
 
 export function setDisturbanceTier(tier: DisturbanceTier): void {
   $disturbanceTier.set(tier)
+
   if (typeof localStorage !== 'undefined') {
     try {
       localStorage.setItem('da.companion.disturbanceTier', tier)

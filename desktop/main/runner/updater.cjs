@@ -268,16 +268,8 @@ class RunnerUpdater {
       //    the diff of transitive deps; --no-deps would forbid pulling
       //    new deps the new wheel introduces and brick the runner.
       //
-      //    P0-2 (runtime audit): before pip, snapshot the *currently
-      //    installed* wheel name + version into a rollback marker file
-      //    so a downstream failure (smoke test, server.py copy,
-      //    runnerBridge.start) can revert by re-pip-installing that
-      //    marker. Without the marker, Phase 2's failure mode is
-      //    "restart the bridge on a wheel that's already half-baked" —
-      //    the new wheel survives in site-packages even though the
-      //    integration check failed. ARCH §10 promises the failed path
-      //    "降级到旧版 Runner 并向用户警告"; the marker makes that
-      //    promise true.
+      //    Snapshot the installed wheel into a rollback marker before pip
+      //    so a downstream failure (smoke/start) can revert to the old version.
       let rollbackMarker = null
       try {
         const { stdout } = await execFileP(venvPython, ['-m', 'pip', 'show', 'deskagent-agent'], {
@@ -324,8 +316,7 @@ class RunnerUpdater {
           { cwd: path.join(home, 'runner'), timeout: 30_000 }
         )
       } catch (err) {
-        // P0-2: smoke test failed — try to roll back to the prior wheel
-        // so the user doesn't ship a half-baked new wheel.
+        // Roll back so a failed smoke test doesn't ship a half-baked wheel.
         if (rollbackMarker) {
           try {
             await execFileP(venvPython, ['-m', 'pip', 'install', '--upgrade', rollbackMarker], {
@@ -353,10 +344,7 @@ class RunnerUpdater {
           })
           startedNew = true
         } catch (err) {
-          // P0-2: runnerBridge.start failed after the new wheel was
-          // installed — roll back before the finally path's
-          // "restart the bridge" creates a silent broken-runner
-          // state.
+          // Roll back before the finally path's restart creates a silently broken runner.
           if (rollbackMarker) {
             try {
               await execFileP(venvPython, ['-m', 'pip', 'install', '--upgrade', rollbackMarker], {
@@ -381,12 +369,8 @@ class RunnerUpdater {
       // Catastrophic — bump attempt, fall through to finally for state restore.
       return await fail('unknown', true, err)
     } finally {
-      // Defensive: if we stopped the old runner but failed to start a new
-      // one, restart the bridge so the user isn't left without a runner.
-      // P0-1 (runtime audit): previously swallowed the error silently so
-      // the user got a 'silent runner' with no UI signal. Now we surface a
-      // dedicated ``runner-failed`` event so the renderer can show a
-      // friendly '升级失败' and offer a retry.
+      // Restart the bridge if we stopped the old runner but failed to start
+      // a new one; surface a runner-failed event so the UI can offer a retry.
       if (stopResult && !startedNew && this.bridgeDeps?.runnerBridge) {
         try {
           await this.bridgeDeps.runnerBridge.start({

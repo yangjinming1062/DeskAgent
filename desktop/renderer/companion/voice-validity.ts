@@ -33,6 +33,7 @@ export async function checkCompanionVoiceValidity(requestGateway: RequestGateway
         // Clear the stale id so the next speak() omits the voice arg and the
         // server picks the active provider's default without a fallback detour.
         $companionVoiceId.set('')
+
         return { valid: false, name: id, reason: 'catalog_miss' }
       })()
 }

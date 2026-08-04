@@ -114,14 +114,8 @@ const QUESTIONS: readonly Question[] = [
     max: MAX_USER_TEXT,
     presets: []
   },
-  // 1-6 (backend audit): persona.speaking_style is required by the
-  // backend schema but the previous code synthesized it from the
-  // personality-preset lookup table — the user never explicitly
-  // picked a speaking style. Add a dedicated question (13th, just
-  // before the voice question) so the user's choice is the direct
-  // source of truth. The new field flows through onboarding.submit
-  // → update_persona → persona.speaking_style verbatim, so the
-  // backend has no mapping logic of its own to drift.
+  // speaking_style is required by the backend schema — the dedicated
+  // question makes the user's choice the direct source of truth.
   {
     key: 'speaking_style',
     text: '您希望我说话的风格是什么样的？',
@@ -234,9 +228,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
   const [voiceCatalog, setVoiceCatalog] = useState<VoiceOption[]>([])
   const [voiceLangFilter, setVoiceLangFilter] = useState<VoiceLanguageFilter>('zh')
   const [busy, setBusy] = useState(false)
-  // P1-14 (desktop re-audit): failure hints that live on the
-  // portrait panel itself, not on the form area (which the
-  // user can't see while the portrait is in the foreground).
+  // Failure hints live on the portrait panel — the form area is hidden behind it.
   const [portraitPanelHint, setPortraitPanelHint] = useState<string | null>(null)
   const [hint, setHint] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -461,6 +453,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
     // Finalize persona before the portrait (avatar gen needs is_complete=true).
     // savePersona re-throws 4xx; roll back to the form so the user can fix the field.
     let personaOk = false
+
     try {
       personaOk = await retry3(() => savePersona(assemblePersona(answers)), 700) === true
     } catch (err) {
@@ -470,6 +463,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
 
       return
     }
+
     let url: string | null = null
 
     if (personaOk) {
@@ -489,17 +483,11 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
     setBusy(true)
     setHint(null)
     setPortraitPanelHint(null)
-    // P0 (desktop audit): don't clear the clip catalog until the new
-    // portrait actually lands — ARCH §7.3 promises "portrait 重生
-    // 使衍生 clip 失效——只有新 portrait 成功后才失效旧 clip".
-    // Clearing eagerly means a transient regenerate failure
-    // leaves the user with no Tier 2/3 clips until the next
-    // list_clips refresh.
 
-    // P0-4: avatar.regenerate returns immediately with {queued, job_id}; the
-    // heavy image-gen runs as a background task on the backend and the result
-    // arrives as an ``avatar.regenerated`` event. Await the event so the
-    // portrait swaps only when the new image is ready.
+    // Clear the clip catalog only after the new portrait lands — an eager
+    // clear on a transient failure would leave Tier 2/3 clips gone.
+    // avatar.regenerate returns {queued, job_id}; the real result arrives
+    // via the avatar.regenerated event — await it before swapping.
     try {
       const queued = await requestGateway<{ queued?: boolean; job_id?: string; asset_url?: string }>('avatar.regenerate', { feedback: undefined })
 
@@ -526,11 +514,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
         setHint('暂时换不出来，稍后再试吧')
       }
     } catch {
-      // P1-14 (desktop re-audit): also surface the failure as a
-      // busy overlay so the user doesn't have to look at the
-      // form-area hint while the portrait panel sits in the
-      // foreground. The form-area hint is still set below; the
-      // busyOverlay is the in-portrait cue.
+      // Surface the failure on the portrait panel too — the form hint is hidden behind it.
       setPortraitPanelHint('暂时换不出来，稍后再试吧')
       setHint('暂时换不出来，稍后再试吧')
     } finally {
@@ -620,11 +604,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
 
     setPhase('greeting')
 
-    // P0 (desktop audit): trigger a 3s "greeting" transition scene so the
-    // companion visibly "hatches" — the sprite swaps to the greeting
-    // clip if Tier 2/3 has one, otherwise falls back to Tier 1
-    // procedural (ARCH §11#9 永不空白). Pairs with the existing
-    // speak(...) call which drives the audio.
+    // Play a 3s greeting transition so the companion visibly hatches (Tier 1 fallback if no clip).
     playTransitionClip('greeting', 3000)
 
     const ok = await speak(
@@ -819,9 +799,7 @@ function PortraitPanel({ url, name, hint }: { url: string | null; name: string; 
           </div>
         )}
       </div>
-      {/* P1-14 (desktop re-audit): surface regenerate failures on
-          the portrait panel itself (not just the form hint) so
-          the user actually sees the error. */}
+      {/* Regenerate failures surface on the portrait panel itself. */}
       {hint && <p className="text-xs text-rose-300/90">{hint}</p>}
     </div>
   )

@@ -20,12 +20,8 @@ export interface ClipItem {
 export type ClipCatalog = Record<string, ClipItem>
 
 export const $clipCatalog = atom<ClipCatalog>({})
-// P0 (desktop audit): wire the transition clip system that the
-// P2-4 commit had marked as dead-code. Onboarding's hatch flow
-// fires ``playTransitionClip('greeting', 3000)``; ``companion-ready``
-// consumes $activeTransitionClip and swaps the active scene for
-// the duration. Tier 2/3 clip wins; Tier 1 procedural is the
-// never-blank fallback (ARCH §11#9).
+// Transition scene (hatch greeting): companion-ready swaps the active scene
+// for the duration; Tier 2/3 clip wins, Tier 1 procedural is the fallback.
 export const $activeTransitionClip = atom<string | null>(null)
 
 let _transitionTimer: ReturnType<typeof setTimeout> | null = null
@@ -34,6 +30,7 @@ export function playTransitionClip(scene: string, durationMs = 3000): void {
   if (_transitionTimer) {
     clearTimeout(_transitionTimer)
   }
+
   $activeTransitionClip.set(scene)
   _transitionTimer = setTimeout(() => {
     _transitionTimer = null
@@ -71,19 +68,6 @@ export function updateClipCatalog(clips: ClipItem[]): void {
   }
 
   $clipCatalog.set(current)
-}
-
-export function setClipStatus(scene: string, status: ClipItem['status'], url: string | null): void {
-  const merged = mergeClip(scene, { status, url })
-
-  // Preserve the existing tier unless the new status is a definitive success.
-  if (!(status === 'succeeded' && url)) {
-    const existing = $clipCatalog.get()[scene]
-
-    if (existing?.tier) {merged.tier = existing.tier}
-  }
-
-  $clipCatalog.set({ ...$clipCatalog.get(), [scene]: merged })
 }
 
 export function applyClipUpdate(update: {

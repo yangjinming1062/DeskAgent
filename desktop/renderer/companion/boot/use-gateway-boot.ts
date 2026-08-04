@@ -279,10 +279,12 @@ export function useGatewayBoot({ handleGatewayEvent, onConnectionReady, onGatewa
             if (sleepEscalationTimer === null) {
               sleepEscalationTimer = setTimeout(() => {
                 sleepEscalationTimer = null
+
                 if ($voiceCallOpen.get()) {
                   // Skip — voice-call active; rescheduled on the next disconnect.
                   return
                 }
+
                 setSpriteState('sleeping', { force: true })
               }, 5 * 60 * 1000)
             }
@@ -307,10 +309,6 @@ export function useGatewayBoot({ handleGatewayEvent, onConnectionReady, onGatewa
 
     window.addEventListener('online', onOnline)
     document.addEventListener('visibilitychange', onVisible)
-
-    const offWindowState = desktop.onWindowStateChanged?.(payload => {
-      void payload
-    })
 
     const offRunnerStatus = desktop.onRunnerStatus?.(ev => {
       if (ev.type === 'running' || ev.type === 'tools_changed') {
@@ -368,7 +366,6 @@ export function useGatewayBoot({ handleGatewayEvent, onConnectionReady, onGatewa
       offPowerResume?.()
       offState()
       offEvent()
-      offWindowState?.()
       offRunnerStatus?.()
       offBootProgress()
       publish(null)

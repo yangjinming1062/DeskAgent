@@ -82,6 +82,7 @@ export function SpeechSettings() {
   // Re-probe on tools_changed/running so the badge flips once the Runner finishes loading.
   useEffect(() => {
     let cancelled = false
+
     const probe = async () => {
       try {
         const tools = await window.deskagent.runnerGetTools?.()
@@ -104,6 +105,7 @@ export function SpeechSettings() {
     }
 
     void probe()
+
     const off = window.deskagent.onRunnerStatus?.((ev: { type: string }) => {
       if (ev.type === 'tools_changed' || ev.type === 'running') {
         void probe()
