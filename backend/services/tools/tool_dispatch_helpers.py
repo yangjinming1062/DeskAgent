@@ -1,13 +1,10 @@
 import json
 import os
-import re
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
 from components import get_logger
-
-from .tool_result_classification import FILE_MUTATING_TOOL_NAMES as _FILE_MUTATING_TOOLS
 
 logger = get_logger(__name__)
 
@@ -32,31 +29,6 @@ _PARALLEL_SAFE_TOOLS = frozenset(
 
 # File tools can run concurrently when they target independent paths.
 _PATH_SCOPED_TOOLS = frozenset({"read_file", "write_file", "patch"})
-
-_DESTRUCTIVE_PATTERNS = re.compile(
-    r"""(?:^|\s|&&|\|\||;|`)(?:
-        rm\s|rmdir\s|cp\s|install\s|mv\s|
-        sed\s+-i|truncate\s|dd\s|shred\s|
-        git\s+(?:reset|clean|checkout)\s
-    )""",
-    re.VERBOSE,
-)
-# > but not >>
-_REDIRECT_OVERWRITE = re.compile(r"[^>]>[^>]|^>[^>]")
-
-# Patches carry *** Update/Add/Delete File: headers so a multi-file patch
-# can be tracked separately for the file-mutation verifier.
-_PATCH_FILE_HEADER_RE = re.compile(r"^\*\*\*\s+(?:Update|Add|Delete)\s+File:\s*(.+)$", re.MULTILINE)
-
-
-def _is_destructive_command(cmd: str) -> bool:
-    """Heuristic: does this terminal command look like it modifies/deletes files?"""
-    return bool(cmd and (_DESTRUCTIVE_PATTERNS.search(cmd) or _REDIRECT_OVERWRITE.search(cmd)))
-
-
-def _is_mcp_tool_parallel_safe(tool_name: str) -> bool:
-    # We do not support MCP parallel calls in the current architecture.
-    return False
 
 
 def should_parallelize_tool_batch(tool_calls: Iterable[tuple[str, str]]) -> bool:
@@ -85,7 +57,7 @@ def should_parallelize_tool_batch(tool_calls: Iterable[tuple[str, str]]) -> bool
             reserved_paths.append(scoped_path)
             continue
 
-        if tool_name not in _PARALLEL_SAFE_TOOLS and not _is_mcp_tool_parallel_safe(tool_name):
+        if tool_name not in _PARALLEL_SAFE_TOOLS:
             return False
 
     return True
@@ -117,21 +89,6 @@ def is_multimodal_tool_result(value: Any) -> bool:
     return isinstance(value, dict) and value.get("_multimodal") is True and isinstance(value.get("content"), list)
 
 
-def _multimodal_text_summary(value: Any) -> str:
-    """Plain text view of a multimodal tool result — for logs, previews, providers that don't accept multipart."""
-    if is_multimodal_tool_result(value):
-        if value.get("text_summary"):
-            return str(value["text_summary"])
-        parts = [str(p.get("text", "")) for p in (value.get("content") or []) if isinstance(p, dict) and p.get("type") == "text"]
-        return "\n".join(parts) if parts else "[multimodal tool result]"
-    if isinstance(value, str):
-        return value
-    try:
-        return json.dumps(value, default=str)
-    except Exception:
-        return str(value)
-
-
 def _append_subdir_hint_to_multimodal(value: dict[str, Any], hint: str) -> None:
     """Mutate a multimodal envelope to append a subdir hint to the first text part (and text_summary)."""
     if not is_multimodal_tool_result(value):
@@ -146,45 +103,6 @@ def _append_subdir_hint_to_multimodal(value: dict[str, Any], hint: str) -> None:
         value["content"] = parts
     if isinstance(value.get("text_summary"), str):
         value["text_summary"] += hint
-
-
-def _extract_file_mutation_targets(tool_name: str, args: dict[str, Any]) -> list[str]:
-    """File paths a ``write_file`` / ``patch`` call is targeting. Patch mode parses patch content for headers."""
-    if tool_name not in _FILE_MUTATING_TOOLS:
-        return []
-    if tool_name == "write_file":
-        p = args.get("path")
-        return [str(p)] if p else []
-    mode = args.get("mode") or "replace"
-    if mode == "replace":
-        p = args.get("path")
-        return [str(p)] if p else []
-    if mode == "patch":
-        body = args.get("patch") or ""
-        if not isinstance(body, str) or not body:
-            return []
-        return [m.group(1).strip() for m in _PATCH_FILE_HEADER_RE.finditer(body) if m.group(1).strip()]
-    return []
-
-
-def _extract_error_preview(result: Any, max_len: int = 180) -> str:
-    """One-line error summary from a tool result, for the chat footer / log preview."""
-    text = _multimodal_text_summary(result) if result is not None else ""
-    if not isinstance(text, str):
-        try:
-            text = str(text)
-        except Exception:
-            return ""
-    # Tool handlers return {"success": false, "error": "..."}; prefer that field.
-    if text.lstrip().startswith("{"):
-        try:
-            data = json.loads(text.strip())
-            if isinstance(data, dict) and isinstance(data.get("error"), str):
-                text = data["error"]
-        except Exception:
-            pass
-    text = " ".join(text.split())
-    return text[: max_len - 1] + "…" if len(text) > max_len else text
 
 
 # Tools whose output carries attacker-controllable content — wrapped in

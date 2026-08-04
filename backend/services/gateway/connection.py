@@ -17,16 +17,11 @@ from sqlalchemy import select
 from .jsonrpc import JsonRpcDispatcher
 
 # GC window for stale outbox events — at-most-once after this many seconds
-# without a successful dispatch (user offline too long).
-#
-# P1-1 (contract audit): the previous 60s window meant a cron event
-# fired at 09:00 while the user had their laptop closed would be
-# GC'd at 09:01 and never delivered. ARCH §6 + the README §"主动
-# 陪伴" promise the partner "主动找用户"; losing a day's
-# morning greeting is the worst possible first impression. Bump
-# to 24h — the user reconnects within a day almost always; the
-# only cost is a few thousand rows in ws_events that are GC'd by
-# the next day's startup sweep.
+# without a successful dispatch (user offline too long). 24h: a cron
+# event must survive the user closing their laptop until they reopen
+# it the next morning; the README promises the partner will 主动找用户,
+# and dropping the morning greeting after one minute violates that.
+# Cost is a few thousand ws_events rows swept on the next startup.
 WS_EVENT_MAX_AGE_SECONDS = 24 * 60 * 60
 
 logger = get_logger(__name__)
@@ -71,24 +66,6 @@ class ConnectionManager:
         # No dispatcher registered — the renderer only understands JSON-RPC
         # envelopes, so a raw frame would be silently dropped anyway.
         logger.warning("send_personal_event: no dispatcher, dropping event", extra={"user_id": user_id, "event_type": event_type})
-
-    async def send_personal_message(self, frame: dict, user_id: int) -> None:
-        ws = self.active_connections.get(user_id)
-        if ws is None:
-            return
-        try:
-            await ws.send_json(frame)
-        except Exception as e:
-            logger.error("Error sending message to user", extra={"user_id": user_id, "error": str(e)})
-            self.disconnect(ws, user_id)
-
-    async def broadcast(self, frame: dict) -> None:
-        for user_id, ws in list(self.active_connections.items()):
-            try:
-                await ws.send_json(frame)
-            except Exception as e:
-                logger.error("Error sending message to user", extra={"user_id": user_id, "error": str(e)})
-                self.disconnect(ws, user_id)
 
 
 MANAGER = ConnectionManager()

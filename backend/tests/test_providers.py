@@ -1,7 +1,6 @@
 from typing import ClassVar
 
 import pytest
-from services.llm import client_for_service
 from services.llm import ImageGenRequest
 from services.llm import MissingLlmConfigError
 from services.llm import provider_for_service
@@ -151,52 +150,6 @@ class TestProviderForService:
         # Skip: see ``test_llm_returns_mimo_provider`` — coverage now
         # lives in TestRegistry. See ISSUES.md 类别 8.
         pytest.skip("outdated: covered by TestRegistry deterministic tests")
-
-
-class TestClientForServiceCompat:
-    """Verify the legacy AsyncOpenAI-returning entry point still works for
-    every OpenAI-compatible service (chat, stt, tts, image_gen)."""
-
-    @pytest.mark.parametrize(
-        "svc,model",
-        [
-            ("llm", "mimo-v2.5"),
-            ("stt", "mimo-v2.5-asr"),
-            ("image_gen", "dall-e-3"),
-        ],
-    )
-    def test_returns_async_openai_for_mimo(self, monkeypatch, svc, model):
-        # ``tts`` was removed: the MiniMax TTS provider returns ``None``
-        # from ``raw_client()`` (it's not OpenAI-compatible), so the
-        # legacy shim raises MissingLlmConfigError. The TTS service
-        # now goes through ``provider_for_service()`` directly. See
-        # ISSUES.md 类别 8.
-        monkeypatch.setattr("components.SETTINGS.llm_base_url", "https://api.xiaomimimo.com/v1")
-        monkeypatch.setattr("components.SETTINGS.llm_api_key", "sk")
-        monkeypatch.setattr("components.SETTINGS.llm_model_name", "mimo-v2.5")
-        # Force the image_gen path to legacy MiMo/DALL·E regardless of the
-        # MiniMax default added in commit 3.
-        monkeypatch.setattr("components.SETTINGS.image_gen_base_url", "")
-        monkeypatch.setattr("components.SETTINGS.image_gen_api_key", "")
-        monkeypatch.setattr("components.SETTINGS.image_gen_model_name", "dall-e-3")
-        monkeypatch.setattr("components.SETTINGS.image_gen_provider", "mimo")
-        client, resolved_model = client_for_service(None, None, svc)
-        from openai import AsyncOpenAI
-
-        assert isinstance(client, AsyncOpenAI)
-        assert resolved_model == model
-
-    def test_video_gen_raises_not_openai_compatible(self, monkeypatch):
-        # video_gen has no MiMo provider — registry lookup fails. Set the
-        # host to MiniMax with key+model so resolve succeeds, then expect
-        # MissingLlmConfigError because MiniMaxVideoGenProvider doesn't exist
-        # yet (added in commit 2/4).
-        monkeypatch.setattr("components.SETTINGS.llm_base_url", "https://api.xiaomimimo.com/v1")
-        monkeypatch.setattr("components.SETTINGS.llm_api_key", "sk")
-        monkeypatch.setattr("components.SETTINGS.video_gen_base_url", "https://api.xiaomimimo.com/v1")
-        monkeypatch.setattr("components.SETTINGS.video_gen_api_key", "sk")
-        with pytest.raises((MissingLlmConfigError, ValueError)):
-            client_for_service(None, None, "video_gen")
 
 
 class TestProviderError:

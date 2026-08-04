@@ -8,7 +8,7 @@ from components import naive_utc_now
 from components import save_file
 from components import SESSION_LOCAL
 from components import SETTINGS
-from modules.media.models import VideoGenJob
+from modules.media import VideoGenJob
 from modules.ws import WSEvent
 from services.llm import execute_with_fallback
 from services.llm import MissingLlmConfigError
@@ -86,7 +86,7 @@ async def enqueue_video_job(
     ``emit_event=False`` opts out of the standard ``video_gen.*`` WS
     events. Used by the companion clip pipeline which owns its own
     ``clip.updated`` event channel and would otherwise leak two events
-    for every scene transition (P0-8). The job still goes through the
+    for every scene transition. The job still goes through the
     normal polling/finalize path; only the public emission is silenced.
 
     Raises :class:`MissingLlmConfigError` if no video_gen provider is

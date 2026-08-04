@@ -32,12 +32,10 @@ class Settings(BaseSettings):
     temp_file_ttl_hours: int = 24
     data_dir: str = "./data"
 
-    # P0 (contract audit): HMAC key for signed companion asset URLs.
-    # Must be set explicitly via env (``DESKAGENT_COMPANION_ASSET_SIGNING_KEY``
-    # or a deployment-injected secret). When empty, the backend
-    # fails fast at startup so an attacker who can guess
-    # ``public_url_prefix`` can't forge a signature (the previous
-    # weak derivation from public_url_prefix was a security hole).
+    # HMAC key for signed companion asset URLs. Must be set via
+    # ``DESKAGENT_COMPANION_ASSET_SIGNING_KEY`` (or a deployment-injected
+    # secret); an empty value fails fast at startup so an attacker who can
+    # guess ``public_url_prefix`` can't forge a signature.
     companion_asset_signing_key: str = ""
 
     # ── Provider chain ──
@@ -109,10 +107,8 @@ class Settings(BaseSettings):
     media_tts_rate_limit_per_minute: int = 30
     media_image_gen_rate_limit_per_minute: int = 10
     media_video_gen_rate_limit_per_minute: int = 3
-    # P1-11: companion avatar endpoints were left unrate-limited. Generating
-    # a portrait hits a paid image-gen provider; uploading is a cheap write
-    # but still goes through the same SQLAlchemy session. Cap both so a
-    # client bug can't drain the user's image-gen quota.
+    # Avatar endpoints share a per-minute cap so a client bug can't drain
+    # the user's paid image-gen quota through repeated generate calls.
     companion_avatar_generate_rate_limit_per_minute: int = 3
     companion_avatar_upload_rate_limit_per_minute: int = 5
 

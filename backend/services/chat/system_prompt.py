@@ -4,10 +4,6 @@ from modules.system import AgentPromptConfig
 
 from .affect import COMPANION_AFFECT_GUIDANCE
 
-# ──────────────────────────────────────────────────────────────────────────────
-# Prompt-template constants (originally in prompt_builder.py)
-# ──────────────────────────────────────────────────────────────────────────────
-
 DEFAULT_AGENT_IDENTITY = (
     "You are a companion, an intelligent AI partner on the user's desktop. "
     "You are helpful, knowledgeable, and direct. You assist users with a wide "
@@ -65,11 +61,10 @@ SKILLS_GUIDANCE = (
     "Skills that aren't maintained become liabilities."
 )
 
-# Covers inline attachment directives of the form ``@file:<path>`` and
-# ``@folder:<path>`` in user messages.  Injected for every session that
-# has any tools at all — including sessions where the runner hasn't
-# finished registering yet, so the LLM can surface "Runner not
-# registered" instead of guessing or falling back to web_search.
+# Injected for every session that has any tools at all — including
+# sessions where the runner hasn't finished registering yet, so the LLM
+# can surface "Runner not registered" instead of guessing or falling
+# back to web_search.
 ATTACHMENT_GUIDANCE = (
     "User messages may include inline attachment directives — "
     "`@file:<path>` for a local file, `@folder:<path>` for a local "
@@ -407,11 +402,6 @@ PLATFORM_HINTS = {
 }
 
 
-# ──────────────────────────────────────────────────────────────────────────────
-# System prompt composer (originally in system_prompt.py)
-# ──────────────────────────────────────────────────────────────────────────────
-
-
 def _join_nonempty(parts: list[str]) -> str:
     return "\n\n".join(s for p in parts if p and (s := p.strip()))
 
@@ -425,14 +415,10 @@ def build_system_prompt_parts(config: AgentPromptConfig, system_message: str | N
     stable_parts.append(DESK_AGENT_HELP_GUIDANCE)
     if config.persona_extras:
         stable_parts.append(config.persona_extras)
-        # A companion persona drives a visible avatar — instruct the LLM to
+        # Companion persona drives a visible avatar — instruct the LLM to
         # emit an inline affect tag so the desktop's animation state machine
-        # gets an emotion cue with every response (ARCHITECTURE.md §7.5).
+        # gets an emotion cue with every response.
         stable_parts.append(COMPANION_AFFECT_GUIDANCE)
-    # P2-1: ARCH §7.5 says "紧跟 persona_extras + COMPANION_AFFECT_GUIDANCE
-    # 之后追加" — user_profile is appended last so the stable-parts prefix
-    # (identity / help / persona / affect guidance) stays cache-friendly
-    # across persona changes that don't touch user identity.
     if config.user_profile_extras:
         # Inject structured user identity so the LLM doesn't need a memory_recall
         # round-trip just to know "this user is 老板, male, 26-35, likes music".
@@ -451,9 +437,9 @@ def build_system_prompt_parts(config: AgentPromptConfig, system_message: str | N
             if name in valid_tools
         ]
         # Always attach the inline-attachment hint when the session has any
-        # tools — even if the runner hasn't registered `read_file` yet.  The
-        # hint's "no tools" fallback clause tells the LLM to surface the
-        # Runner-registration problem instead of guessing at file contents.
+        # tools. The hint's "no tools" fallback clause tells the LLM to
+        # surface a Runner-registration problem instead of guessing at file
+        # contents.
         tool_guidance.append(ATTACHMENT_GUIDANCE)
         if tool_guidance:
             stable_parts.append(" ".join(tool_guidance))

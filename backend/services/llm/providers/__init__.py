@@ -4,8 +4,6 @@ from . import minimax  # noqa: F401 — side-effect: registers minimax providers
 from . import zhipu  # noqa: F401 — side-effect: registers zhipu providers
 from .base import BaseProvider
 from .base import ChatProvider
-from .base import ChatResult
-from .base import ChatStreamEvent
 from .base import ImageAsset
 from .base import ImageGenProvider
 from .base import ImageGenRequest
@@ -39,8 +37,6 @@ __all__ = [
     "aclose_all",
     "BaseProvider",
     "ChatProvider",
-    "ChatResult",
-    "ChatStreamEvent",
     "ImageAsset",
     "ImageGenProvider",
     "ImageGenRequest",

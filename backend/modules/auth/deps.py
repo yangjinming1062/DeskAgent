@@ -18,11 +18,9 @@ def get_current_admin_token(
     credentials: HTTPAuthorizationCredentials | None = Depends(BEARER_SCHEME),
     db: Session = Depends(get_db),
 ) -> str:
-    """P0-11 (backend re-audit): verify the admin token's ``jti``
-    is recorded in ``admin_sessions`` AND ``is_active=True``. A
-    force-revoked admin token (e.g. on suspected key compromise)
-    now fails immediately rather than waiting for natural JWT
-    expiry."""
+    """Verify the admin token's ``jti`` is recorded in ``admin_sessions``
+    with ``is_active=True`` so a force-revoked token fails immediately
+    instead of waiting for natural JWT expiry."""
     payload = decode_bearer_token(credentials)
     if not payload.get("is_admin"):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="非管理员令牌。")

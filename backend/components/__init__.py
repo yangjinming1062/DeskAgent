@@ -77,6 +77,7 @@ from .logger import get_logger
 from .logger import set_request_id
 from .logger import set_request_user_id
 from .logger import setup_logging
+from .network import is_safe_outbound
 from .redact import mask_secret
 from .redact import redact_sensitive_text
 from .temp_files import cleanup_expired
@@ -85,6 +86,7 @@ from .temp_files import get_file_path
 from .temp_files import save_file
 
 __all__ = [
+    "is_safe_outbound",
     "BackgroundTask",
     "fetch_public_ip",
     "SETTINGS",

@@ -26,10 +26,9 @@ _FILE_REFERENCE_PATTERN = re.compile(r"\[([^\]]+)\]\((file://[^\)]+)\)")
 class _LLMTurnResult:
     """Per-LLM-call output: streamed text + accumulated tool calls + usage.
 
-    Not ``frozen=True``: the orchestrator mutates ``tool_calls_list`` in
-    place via :func:`_ensure_tool_call_ids` (fills missing ``id`` fields).
-    The mutation is bounded — only this turn's orchestrator touches the
-    list — so the lack of immutability is intentional, not accidental.
+    Not frozen — the orchestrator mutates ``tool_calls_list`` in place via
+    ``_ensure_tool_call_ids`` (fills missing ids). The mutation is bounded
+    to this turn's orchestrator, so the lack of immutability is intentional.
     """
 
     turn_content: str
@@ -42,9 +41,10 @@ class _LLMTurnResult:
 
 
 def _llm_error_user_message(exc: LLMRuntimeError) -> str:
-    """Curated user-facing message for an LLM error. `attachment_fetch_failed`
-    gets a short sentence — the raw error body may include internal details
-    that don't tell the user what to change.
+    """Curated user-facing message for an LLM error.
+
+    `attachment_fetch_failed` gets a short sentence — the raw error body may
+    include internal details that don't tell the user what to change.
     """
     if exc.classified.reason == FailoverReason.attachment_fetch_failed:
         return (
@@ -56,9 +56,9 @@ def _llm_error_user_message(exc: LLMRuntimeError) -> str:
 
 
 async def _emit_llm_error(emitter: Emitter, exc: LLMRuntimeError) -> None:
-    """Surface a curated LLM error to the renderer so the chat turn always
-    ends with a closing ``error`` event — both setup-time and mid-stream
-    failures share this path so a partial transcript never strands the UI.
+    """Surface a curated LLM error so the chat turn always ends with a
+    closing ``error`` event — setup-time and mid-stream failures share this
+    path so a partial transcript never strands the UI.
     """
     await emitter.send_json({"type": "error", "message": _llm_error_user_message(exc)})
 
@@ -109,16 +109,15 @@ async def _stream_llm_response(
 ) -> _LLMTurnResult:
     """One LLM call: stream text + accumulate tool calls + capture usage.
 
-    Owns the reasoning queue + drain task — both live inside this scope so
-    the inner ``try/finally`` guarantees the drain task is shut down
-    (sentinel ``None``) and awaited before we return. Leaving the drain
-    task alive across iterations would orphan it on ``LLMRuntimeError``.
+    Owns the reasoning queue + drain task scoped inside this function so
+    the inner ``try/finally`` guarantees the drain task is shut down and
+    awaited before we return; leaving it alive across iterations would
+    orphan it on ``LLMRuntimeError``.
 
-    ``on_first_chunk`` fires exactly once after the first yieldable chunk
-    has been sent to the emitter — the fallback dispatcher uses this to
-    decide whether provider failure can still trigger a fallback to the
-    next configured provider (no chunks emitted) or must surface to the
-    client (tokens already shipped).
+    ``on_first_chunk`` fires exactly once after the first chunk ships to
+    the emitter — the fallback dispatcher uses this to decide whether
+    provider failure can still trigger fallback (no chunks emitted) or
+    must surface to the client (tokens already shipped).
     """
     kwargs: dict = {"model": model_name, "messages": current_messages, "stream": True, "stream_options": {"include_usage": True}}
     if active_schemas:
@@ -126,9 +125,9 @@ async def _stream_llm_response(
 
     # Log the part shape going to the LLM (multimodal only). A 400
     # ``INVALID_ARGUMENT`` from the Vertex beta API almost always means
-    # the proxy couldn't translate the part to ``inline_data``; having
-    # the actual part list in the log lets us confirm shape (text order,
-    # URL format, type field) without a packet capture.
+    # the proxy couldn't translate the part to ``inline_data``; having the
+    # actual part list in the log lets us confirm shape without a packet
+    # capture.
     image_parts = [m for m in current_messages if isinstance(m.get("content"), list) and any(isinstance(p, dict) and p.get("type") == "image_url" for p in m["content"])]
     if image_parts:
         logger.info(
@@ -140,10 +139,9 @@ async def _stream_llm_response(
     try:
         stream = await call_with_retry(client, context_length=ctx_length, **kwargs)
     except LLMRuntimeError:
-        # Setup-time failure (call_with_retry exhausted before any chunk). The
-        # orchestrator's fallback wrapper may swap providers; it owns the
-        # error-event emission so the renderer doesn't see an error frame
-        # followed by content from the next provider in the chain.
+        # Setup-time failure: the orchestrator's fallback wrapper may swap
+        # providers, and it owns error-event emission so the renderer never
+        # sees an error frame followed by content from the next provider.
         raise
 
     turn_content = ""
@@ -153,10 +151,9 @@ async def _stream_llm_response(
 
     await emitter.send_json({"type": "message.start"})
 
-    # Queue + drain task are scoped INSIDE this try/finally — if
-    # call_with_retry raised above (caught by the caller), these objects
-    # are never created, so the leak path where the drain task is
-    # orphaned between LLM-call attempts is eliminated.
+    # Queue + drain task are scoped inside this try/finally so they are
+    # never created when call_with_retry raises above — eliminating the
+    # orphan path between LLM-call attempts.
     _reasoning_queue: asyncio.Queue[str | None] = asyncio.Queue()
     _reasoning_task: asyncio.Task | None = None
 
@@ -179,15 +176,16 @@ async def _stream_llm_response(
         _reasoning_task = asyncio.ensure_future(_reasoning_drain())
         try:
             async for chunk in stream:
-                # A usage-only chunk (no choices) still proves the stream is
-                # live and that swapping providers would orphan the renderer.
-                # Fire on_first_chunk BEFORE the skip so the fallback dispatcher
-                # sees the stream as "started".
+                # A usage-only chunk still proves the stream is live and
+                # that swapping providers would orphan the renderer. Fire
+                # on_first_chunk BEFORE the skip so the fallback dispatcher
+                # sees the stream as started.
                 if on_first_chunk is not None:
                     on_first_chunk()
                     on_first_chunk = None  # fire once
-                # Some providers emit a final chunk with choices == [] carrying
-                # only usage info — skip rather than crash on chunk.choices[0].
+                # Some providers emit a final chunk with choices == []
+                # carrying only usage info — skip rather than crash on
+                # chunk.choices[0].
                 if not chunk.choices:
                     continue
                 delta = chunk.choices[0].delta
@@ -204,18 +202,16 @@ async def _stream_llm_response(
                     final_completion_tokens = getattr(chunk.usage, "completion_tokens", 0)
                     final_usage_payload = _usage_payload(chunk.usage)
         except LLMRuntimeError:
-            # Mid-stream classifier error (provider 4xx after some chunks
-            # already shipped). The orchestrator's fallback wrapper sees
-            # stream_emitted=True (on_first_chunk already fired) and refuses
-            # to swap providers; it will surface this exception and emit the
-            # closing error event so the renderer gets a clean transcript.
+            # Mid-stream classifier error: provider 4xx after some chunks
+            # already shipped. The orchestrator's fallback wrapper sees
+            # stream_emitted=True and refuses to swap providers; it surfaces
+            # this exception and emits the closing error event so the
+            # renderer gets a clean transcript.
             raise
 
-        # P2-2: feed the affect-residual buffer through the think scrubber
-        # so any ``<think>`` fragments buffered during a tag-strip window
-        # also get filtered. The previous ``scrubber.flush() + affect.flush()``
-        # order let affect's raw buffer bypass the think scrubber on
-        # extremely short or tag-saturated responses.
+        # Flush affect's residual buffer through the think scrubber so any
+        # ``<think>`` fragments buffered during a tag-strip window also get
+        # filtered.
         clean_tail = scrubber.feed(affect.flush()) + scrubber.flush()
     finally:
         # Always flush (success OR stream-raise path) so text buffered in a

@@ -1,10 +1,10 @@
 from services.llm import resolve
 from services.llm import resolve_provider_chain
 from services.llm import ServiceType
+from services.llm import try_resolve
 from services.llm import VoiceDesignResult
-from services.llm.voice_catalog import _provider_class
-from services.llm.voice_catalog import VoiceEntry
-from services.llm.voice_catalog import voices_for_provider
+from services.llm import VoiceEntry
+from services.llm import voices_for_provider
 from sqlalchemy.orm import Session
 
 _LANG_KEYWORDS: dict[str, list[str]] = {
@@ -53,7 +53,7 @@ def list_voices(db: Session, user_id: int, language: str | None = None) -> dict:
     unfiltered DEFAULT_VOICE stub when the filter empties the catalog.
     """
     provider = active_tts_provider(db, user_id)
-    cls = _provider_class(provider)
+    cls = try_resolve(ServiceType.tts, provider) if provider else None
     guide = cls.VOICE_DESIGN_GUIDE if cls else None
     voices = _sort_voices_by_language(voices_for_provider(provider))
     if language:

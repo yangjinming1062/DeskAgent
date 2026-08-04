@@ -32,8 +32,10 @@ from .tool_guardrails import toolguard_synthetic_result
 from .tool_guardrails import ToolGuardrailDecision
 from .tool_result_classification import FILE_MUTATING_TOOL_NAMES
 from .tool_result_classification import file_mutation_result_landed
+from .web_providers import aclose
 
 __all__ = [
+    "aclose",
     # registry
     "REGISTRY",
     "RESERVED_KEYS",

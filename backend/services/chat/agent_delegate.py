@@ -9,6 +9,7 @@ from modules.system import ChatMessageRequest
 from modules.system import ChatRequest
 
 from ..tools import REGISTRY
+from .chat_emitter import Emitter
 from .chat_emitter import HeadlessEmitter
 from .chat_emitter import safe_emit
 from .orchestrator import run_chat_turn
@@ -22,8 +23,8 @@ async def agent_delegate_tool(
     llm_config: dict,
     user_settings: dict,
     parent_session_id: str | None = None,
-    emitter=None,
-    **kwargs,
+    emitter: Emitter | None = None,
+    **_,
 ) -> str:
 
     sid: str | None = None

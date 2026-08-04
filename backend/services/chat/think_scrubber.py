@@ -61,7 +61,7 @@ class StreamingThinkScrubber:
             # Closed pair wins (it's a bounded construct — model leaking reasoning inline).
             if pair is not None and (open_idx == -1 or pair[0] <= open_idx):
                 start_idx, end_idx = pair
-                preceding = self._emit_preceding(buf, start_idx, out)
+                preceding = self._emit_preceding(buf, start_idx)
                 if preceding is not None:
                     out.append(preceding)
                     self._last_emitted_ended_newline = preceding.endswith("\n")
@@ -74,7 +74,7 @@ class StreamingThinkScrubber:
                 continue
 
             if open_idx != -1:
-                preceding = self._emit_preceding(buf, open_idx, out)
+                preceding = self._emit_preceding(buf, open_idx)
                 if preceding is not None:
                     out.append(preceding)
                     self._last_emitted_ended_newline = preceding.endswith("\n")
@@ -99,8 +99,8 @@ class StreamingThinkScrubber:
 
         return "".join(out)
 
-    def _emit_preceding(self, buf: str, tag_start: int, out: list[str]) -> str | None:
-        """Strip orphan closes from text preceding ``tag_start`` and emit it. Returns None when nothing to emit."""
+    def _emit_preceding(self, buf: str, tag_start: int) -> str | None:
+        """Strip orphan closes from text preceding ``tag_start``; None when nothing to emit."""
         if tag_start <= 0:
             return None
         preceding = self._strip_orphan_close_tags(buf[:tag_start])

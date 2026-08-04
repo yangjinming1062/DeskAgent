@@ -46,7 +46,7 @@ class NativeMemory:
         self.db = db
         self.user_id = user_id
 
-    def format_for_system_prompt(self, target: str = "") -> str | None:
+    def format_for_system_prompt(self, target: str = "") -> str | None:  # noqa: ARG002 — API shape; single fixed prompt
         return (
             "# Native Memory System\n"
             "Active. All memories are stored securely in the database.\n"

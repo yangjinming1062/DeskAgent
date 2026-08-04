@@ -11,7 +11,7 @@ from services.llm.voice_catalog import voices_for_provider
 
 
 def test_disturbance_tier_store_defaults_and_normalizes():
-    from services.companion import disturbance
+    from services import disturbance
 
     disturbance._disturbance.clear()
     assert disturbance.get_disturbance_tier(1) == "normal"
@@ -968,7 +968,7 @@ def test_disturbance_tier_persists_across_reload():
     """P0-4 companion fix: a backend restart wipes the process-local
     tier dict. The desktop must re-report on reconnect — unit-test
     the round-trip so the API surface is stable."""
-    from services.companion import disturbance
+    from services import disturbance
 
     disturbance._disturbance.clear()
     disturbance.set_disturbance_tier(7, "quiet")

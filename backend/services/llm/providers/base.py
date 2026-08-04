@@ -1,16 +1,12 @@
-import asyncio
 import enum
-import time
 from abc import ABC
 from abc import abstractmethod
-from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from dataclasses import field
 from typing import Any
 from typing import ClassVar
 from typing import Literal
 
-import httpx
 from openai import AsyncOpenAI
 
 
@@ -57,8 +53,8 @@ class BaseProvider(ABC):
 
     def raw_client(self) -> "AsyncOpenAI | None":
         """Default: no OpenAI SDK client. Chat subclasses override this when
-        the wire protocol is OpenAI-compatible. ``client_for_service`` uses
-        this to detect whether the legacy AsyncOpenAI path is reachable."""
+        the wire protocol is OpenAI-compatible; callers use it to detect
+        whether the AsyncOpenAI path is reachable."""
         return None
 
 
@@ -88,24 +84,6 @@ class ProviderError(Exception):
 # ── Chat ────────────────────────────────────────────────────────────────
 
 
-@dataclass(frozen=True)
-class ChatStreamEvent:
-    type: Literal["delta", "tool_call", "usage", "done", "error"]
-    text: str = ""
-    reasoning: str = ""
-    tool_calls: list[dict] = field(default_factory=list)
-    usage: dict | None = None
-    finish_reason: str = ""
-    raw: Any = None
-
-
-@dataclass(frozen=True)
-class ChatResult:
-    text: str
-    usage: dict | None = None
-    raw: Any = None
-
-
 class ChatProvider(BaseProvider):
     service_type: ServiceType = ServiceType.llm
 
@@ -113,24 +91,6 @@ class ChatProvider(BaseProvider):
     def raw_client(self) -> AsyncOpenAI | None:
         """Return the underlying cached ``AsyncOpenAI`` if the provider can be
         reached via the OpenAI SDK; ``None`` for non-OpenAI-compatible providers."""
-
-    @abstractmethod
-    async def stream(
-        self,
-        messages: list[dict],
-        *,
-        tools: list[dict] | None = None,
-        **params: Any,
-    ) -> AsyncIterator[ChatStreamEvent]: ...
-
-    @abstractmethod
-    async def complete(
-        self,
-        messages: list[dict],
-        *,
-        tools: list[dict] | None = None,
-        **params: Any,
-    ) -> ChatResult: ...
 
 
 # ── Image generation ───────────────────────────────────────────────────
@@ -209,38 +169,6 @@ class VideoGenProvider(BaseProvider):
 
     @abstractmethod
     async def fetch(self, file_id: str) -> VideoAsset: ...
-
-    async def download(self, asset: VideoAsset) -> bytes:
-        """Default downloader. Plain httpx GET — no Authorization header.
-
-        ``get_http`` would attach the provider's Bearer token to whatever
-        URL we pass it, but ``asset.download_url`` is typically a
-        third-party CDN (MiniMax files are hosted off ``api.minimaxi.com``).
-        Sending the API key to a CDN host leaks it; download anonymously.
-        """
-        async with httpx.AsyncClient(timeout=httpx.Timeout(600.0, connect=10.0)) as client:
-            resp = await client.get(asset.download_url)
-            resp.raise_for_status()
-            return resp.content
-
-    async def generate_and_wait(
-        self,
-        req: VideoGenRequest,
-        *,
-        timeout: float,
-        interval: float,
-    ) -> VideoJobStatus:
-        """Submit + poll until terminal status. Tool uses this with a finite
-        timeout; long-running jobs continue in the background after timeout."""
-        job = await self.submit(req)
-        deadline = time.monotonic() + timeout
-        while True:
-            if job.status in ("succeeded", "failed"):
-                return job
-            if time.monotonic() >= deadline:
-                return job
-            await asyncio.sleep(interval)
-            job = await self.poll(job.task_id)
 
 
 # ── TTS / STT ──────────────────────────────────────────────────────────

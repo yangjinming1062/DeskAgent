@@ -54,7 +54,7 @@ async def _summarize_documents(documents: list[dict], llm_config: dict) -> None:
     await asyncio.gather(*(_guarded(d) for d in documents))
 
 
-async def web_search_tool(query: str, limit: int = 5, user_settings: dict | None = None, **kwargs) -> str:
+async def web_search_tool(query: str, limit: int = 5, user_settings: dict | None = None, **_) -> str:
     user_settings = user_settings or {}
 
     provider = resolve_search_provider(user_settings)
@@ -76,10 +76,9 @@ async def web_search_tool(query: str, limit: int = 5, user_settings: dict | None
 async def web_extract_tool(
     urls: list[str],
     llm_config: dict,
-    format: str | None = None,
     use_llm_processing: bool = True,
     user_settings: dict | None = None,
-    **kwargs,
+    **_,
 ) -> str:
     user_settings = user_settings or {}
     provider = resolve_extract_provider(user_settings)

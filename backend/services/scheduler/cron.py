@@ -9,8 +9,15 @@ from components import get_logger
 from components import naive_utc_now
 from components import session_scope
 from croniter import croniter
+from modules.conversation import Conversation
 from modules.scheduler import CronJob
+from modules.system import ChatMessageRequest
+from modules.system import ChatRequest
 from modules.ws import WSEvent
+from services.disturbance import is_quiet
+from services.gateway import JsonRpcEmitter
+from services.gateway import MANAGER
+from services.llm import resolve_user_llm_config
 from sqlalchemy import insert
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
@@ -290,7 +297,7 @@ def _advance_due_jobs(due_jobs: list[CronJob], now: datetime) -> None:
     """Tx1 (bulk CAS) + Tx2 (bulk WSEvent with per-row fallback) +
     Tx3 (autonomous chat turn kickoff).
 
-    The autonomous turn is the actual product path (P0-5) — cron is the
+    The autonomous turn is the actual product path — cron is the
     infrastructure for the companion to reach out proactively, not a
     notification system for the renderer. The ``cron.trigger`` WSEvent
     remains for the desktop UI to show a 'scheduled' indicator, but the
@@ -321,29 +328,15 @@ class _NullEmitter:
     to. All translated types (chunk / tool_* / message.*) still flow
     through the dispatcher; only raw passthroughs are dropped."""
 
-    async def send_json(self, data: dict) -> None:
+    async def send_json(self, _data: dict) -> None:  # noqa: ARG002 — JsonRpcEmitter raw-arg contract
         return None
 
 
 async def _kick_autonomous_turn(job_id: int, meta: dict[str, Any]) -> None:
-    """Run the cron prompt as a system-initiated chat turn for the user.
+    """Run an autonomous chat turn on behalf of the user when a cron fires.
 
-    Skipped silently when the user is offline (no dispatcher registered) —
-    the partner only 'speaks' when the desktop is connected, so an
-    offline cron fire is correctly dropped. Connects to the user's
-    existing session so the conversation history is preserved across
-    cron fires; falls back to a fresh session if none exists yet.
+    Skipped silently when the user is offline (no dispatcher registered).
     """
-    from services.chat.orchestrator import run_chat_turn
-    from services.companion import is_quiet
-    from services.gateway.connection import MANAGER
-    from services.gateway.emitter import JsonRpcEmitter
-    from modules.conversation import Conversation
-    from modules.system import ChatMessageRequest
-    from modules.system import ChatRequest
-    from services.chat import load_user_settings
-    from services.llm import resolve_user_llm_config
-
     user_id = meta["user_id"]
     prompt = (meta["payload"].get("prompt") or "").strip()
     if not prompt:
@@ -360,6 +353,8 @@ async def _kick_autonomous_turn(job_id: int, meta: dict[str, Any]) -> None:
         # queued, but the autonomous turn has no emitter; drop silently.
         logger.debug("cron: user offline, skipping autonomous turn", extra={"user_id": user_id, "job_id": job_id})
         return
+
+    from services.chat import load_user_settings, run_chat_turn
 
     with session_scope() as db:
         conv = db.query(Conversation).filter(Conversation.user_id == user_id).order_by(Conversation.created_at.desc()).first()

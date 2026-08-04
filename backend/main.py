@@ -32,21 +32,17 @@ from services.rate_limit import rate_limit_exception_handler
 from services.rate_limit import stash_user_id_middleware
 from services.scheduler import start_scheduler
 from services.scheduler import stop_scheduler
-from services.tools.web_providers import aclose
+from services.tools import aclose
 from slowapi.errors import RateLimitExceeded
 from sqlalchemy import text
+from sqlalchemy.engine import Connection
+from sqlalchemy.engine import Engine
 from sqlalchemy.engine import make_url
-
-# Tool self-registration happens on import (each tool module calls REGISTRY.register
-# at module bottom). The former ``services`` facade triggered this implicitly via its
-# eager re-exports; with the facade gone, registration is explicit here so all tools
-# are registered before the first chat turn. Order: tools before agent_delegate
-# (agent_delegate imports the registry from tools).
 
 logger = get_logger(__name__)
 
 
-def _install_ws_notify_trigger(conn) -> None:
+def _install_ws_notify_trigger(conn: Connection) -> None:
     """Install the NOTIFY trigger on ws_events (idempotent).
 
     This cannot be expressed in SQLAlchemy's declarative models, so it
@@ -67,18 +63,9 @@ def _install_ws_notify_trigger(conn) -> None:
     """))
 
 
-def _install_schema_extensions(conn) -> None:
-    """Idempotent ALTERs for columns added after the initial create_all rollout.
-
-    SQLAlchemy's ``create_all`` only creates missing tables — it does not
-    ALTER existing tables. PostgreSQL 9.6+ supports ``ADD COLUMN IF NOT
-    EXISTS``, so this is safe to re-run on every boot.
-    """
+def _install_schema_extensions(conn: Connection) -> None:
+    """Idempotent ALTERs for columns added after the initial create_all rollout."""
     conn.execute(text("ALTER TABLE conversations ADD COLUMN IF NOT EXISTS settings_json TEXT"))
-    # Per-service model config columns (stt / tts / image_gen). The renderer
-    # already ships these in its UserModelConfigRequest/Response payloads;
-    # the DB has to match. The authoritative column declarations live on
-    # ``modules.auth.UserModelConfig`` — keep types in sync when editing either side.
     for column, ddl_type in (
         ("stt_base_url", "VARCHAR(255) DEFAULT ''"),
         ("stt_api_key", "TEXT DEFAULT ''"),
@@ -95,14 +82,8 @@ def _install_schema_extensions(conn) -> None:
         ("provider_config", "TEXT DEFAULT '[]'"),
     ):
         conn.execute(text(f"ALTER TABLE user_model_configs ADD COLUMN IF NOT EXISTS {column} {ddl_type}"))
-    # Enforce "one active avatar per user" at the DB level. Partial unique
-    # indexes are the standard Postgres idiom — ``CREATE UNIQUE INDEX IF
-    # NOT EXISTS`` is idempotent so re-running on boot is safe.
-    conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_avatar_assets_one_active " "ON avatar_assets (user_id) WHERE active"))
-    # Companion clip batch index for efficient per-user scene lookups.
+    conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_avatar_assets_one_active ON avatar_assets (user_id) WHERE active"))
     conn.execute(text("CREATE INDEX IF NOT EXISTS ix_avatar_clips_user_batch ON avatar_clips (user_id, batch)"))
-    # Tiered clip columns (three-tier fallback: procedural / keyframes / video).
-    # create_all does not ALTER existing tables, so add them idempotently here.
     for column, ddl_type in (
         ("video_asset_url", "TEXT"),
         ("video_attempts", "INTEGER DEFAULT 0"),
@@ -113,30 +94,15 @@ def _install_schema_extensions(conn) -> None:
         ("keyframe_next_retry_at", "TIMESTAMP"),
     ):
         conn.execute(text(f"ALTER TABLE avatar_clips ADD COLUMN IF NOT EXISTS {column} {ddl_type}"))
-    # Retry-schedule indexes for the escalation loop's due-clip scans.
     conn.execute(text("CREATE INDEX IF NOT EXISTS ix_avatar_clips_video_retry ON avatar_clips (video_next_retry_at)"))
     conn.execute(text("CREATE INDEX IF NOT EXISTS ix_avatar_clips_keyframe_retry ON avatar_clips (keyframe_next_retry_at)"))
-    # Postgres-only — guards the query-then-update race in record_user_profile.
-    # SQLite tests skip this since conftest only runs create_all.
     conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_memories_user_context ON memories (user_id, context) WHERE context LIKE 'user_profile:%'"))
 
 
-def init_database(engine=None) -> None:
-    """Idempotent schema setup. Production callers can omit ``engine`` (defaults to
-    the module-level ENGINE); the test fixture passes its own testcontainers engine
-    so it doesn't have to reach into a private helper to install the NOTIFY trigger.
-    """
-    # P0 (contract audit): companion asset URLs are HMAC-signed; an
-    # explicit signing key must be set so an attacker who knows
-    # ``public_url_prefix`` can't forge a signature. Fail fast at
-    # startup when the key is empty rather than silently deriving a
-    # weak one. ``engine``-passing tests can keep the empty default.
+def init_database(engine: Engine | None = None) -> None:
+    """Idempotent schema setup."""
     if engine is None and not SETTINGS.companion_asset_signing_key:
-        raise RuntimeError(
-            "DESKAGENT_COMPANION_ASSET_SIGNING_KEY must be set; "
-            "the previous weak derivation from public_url_prefix was a "
-            "security hole. See backend/README.md / components/config.py."
-        )
+        raise RuntimeError("DESKAGENT_COMPANION_ASSET_SIGNING_KEY must be set.")
     target = engine if engine is not None else ENGINE
     ModelBase.metadata.create_all(bind=target)
     with target.begin() as conn:

@@ -74,7 +74,7 @@ class MiMoTTSProvider(TTSProvider):
         *,
         voice: str = "",
         fmt: str = "mp3",
-        speed: float | None = None,
+        speed: float | None = None,  # noqa: ARG002 — abstract TTS contract; mimo ignores
     ) -> TTSResult:
         if voice and voice.startswith(_VOICEDESIGN_PREFIX):
             design_prompt = voice[len(_VOICEDESIGN_PREFIX) :]

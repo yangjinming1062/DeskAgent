@@ -69,7 +69,7 @@ def _redact_message(message: str) -> str:
     """Strip server-side internals out of a -32603 message before it leaves
     the gateway. The original (with all debug context) is preserved in
     server-side logs via ``logger.exception``; only the curated label
-    reaches the renderer (P1-9)."""
+    reaches the renderer."""
     out = message
     for pat in _REDACT_PATTERNS:
         out = pat.sub("[redacted]", out)

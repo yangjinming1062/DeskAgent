@@ -9,11 +9,14 @@ from uuid import uuid4
 
 import jwt
 from components import get_logger
+from components import SESSION_LOCAL
 from components import SETTINGS
 from fastapi import HTTPException
 from fastapi import status
 from fastapi.security import HTTPAuthorizationCredentials
 from fastapi.security import HTTPBearer
+
+from .models import AdminSession
 
 logger = get_logger(__name__)
 
@@ -86,14 +89,7 @@ def create_admin_token(client_version: str = "", ip_address: str = "", user_agen
     expires_at = datetime.now(UTC) + expires_delta
     payload = {"sub": "admin", "username": SETTINGS.admin_username, "is_admin": True, "jti": jti, "exp": expires_at}
     token = jwt.encode(payload, SETTINGS.jwt_secret_key, algorithm=SETTINGS.jwt_algorithm)
-    # P0-11 (backend re-audit): record the token in
-    # ``admin_sessions`` so it can be force-revoked. Best-effort:
-    # a transient DB failure shouldn't block admin login (the
-    # token is still usable until natural expiry).
     try:
-        from components import SESSION_LOCAL
-        from modules.auth.models import AdminSession
-
         with SESSION_LOCAL() as db:
             db.add(
                 AdminSession(

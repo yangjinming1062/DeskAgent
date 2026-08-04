@@ -68,14 +68,14 @@ class TestSeedAllClips:
     async def test_seeds_every_scene_and_is_idempotent(self, _patch_db):
         with components.SESSION_LOCAL() as db:
             uid, asset = _seed_user_and_avatar(db)
-            created = await seed_all_clips(db, user_id=uid, portrait_asset_url=asset.asset_url, portrait_id=asset.id)
+            created = await seed_all_clips(db, user_id=uid, portrait_id=asset.id)
             assert len(created) == len(CLIP_SCENES)
             rows = db.query(AvatarClip).filter(AvatarClip.user_id == uid).all()
             assert len(rows) == len(CLIP_SCENES)
             idle = next(r for r in rows if r.scene == "idle")
             assert idle.video_next_retry_at is not None
             assert idle.video_next_retry_at <= naive_utc_now() + timedelta(seconds=1)
-            again = await seed_all_clips(db, user_id=uid, portrait_asset_url=asset.asset_url, portrait_id=asset.id)
+            again = await seed_all_clips(db, user_id=uid, portrait_id=asset.id)
             assert again == []
 
 

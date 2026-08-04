@@ -189,7 +189,11 @@ async def create_version(
     if not file.filename or not file.filename.endswith(".zip"):
         raise HTTPException(status_code=400, detail="File must be a .zip file")
 
-    version = match.group(1) if (match := re.search(r"(\d+\.\d+\.\d+)", file.filename.replace(".zip", "").strip())) else file.filename.replace(".zip", "").strip()
+    # Constrain to a bare semver — the value becomes a path segment under
+    # VERSIONS_DIR, so anything else would let the filename escape the dir.
+    if not (match := re.search(r"\d+\.\d+\.\d+", file.filename)):
+        raise HTTPException(status_code=400, detail="Filename must contain a version like 1.2.3")
+    version = match.group(0)
 
     if db.query(UpdateVersion).filter(UpdateVersion.version == version).one_or_none():
         raise HTTPException(status_code=400, detail=f"Version {version} already exists")

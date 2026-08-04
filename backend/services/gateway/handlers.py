@@ -44,35 +44,36 @@ from services.companion import match_user_voice
 from services.companion import normalize_voice_language
 from services.companion import PersonaValidationError
 from services.companion import regenerate_avatar
-from services.companion import set_disturbance_tier
 from services.companion import submit_onboarding_field
-from services.gateway import authenticate_ws_token
-from services.gateway import discard_user
-from services.gateway import dispatch_user_event
-from services.gateway import JsonRpcDispatcher
-from services.gateway import JsonRpcEmitter
-from services.gateway import JsonRpcError
-from services.gateway import MANAGER
-from services.gateway import new_runtime_session
-from services.gateway import resolve_future
-from services.gateway import runtime_info_snapshot
-from services.gateway import RuntimeSession
-from services.gateway import serialize_settings
-from services.gateway import SessionCreateResult
-from services.gateway import SessionCwdSetResult
-from services.gateway import SessionResumeResult
-from services.gateway import SessionSteerResult
-from services.gateway import SessionTitleResult
-from services.gateway import SessionUsageResult
-from services.gateway import SetupRuntimeResult
-from services.gateway import SetupStatusResult
-from services.gateway import ToolsSyncResult
+from services.disturbance import set_disturbance_tier
 from services.llm import client_for_config
 from services.llm import MissingLlmConfigError
 from services.llm import resolve_user_llm_config
 from services.tools import REGISTRY
 from sqlalchemy import func
 from sqlalchemy.orm import Session
+
+from . import authenticate_ws_token
+from . import discard_user
+from . import dispatch_user_event
+from . import JsonRpcDispatcher
+from . import JsonRpcEmitter
+from . import JsonRpcError
+from . import MANAGER
+from . import new_runtime_session
+from . import resolve_future
+from . import runtime_info_snapshot
+from . import RuntimeSession
+from . import serialize_settings
+from . import SessionCreateResult
+from . import SessionCwdSetResult
+from . import SessionResumeResult
+from . import SessionSteerResult
+from . import SessionTitleResult
+from . import SessionUsageResult
+from . import SetupRuntimeResult
+from . import SetupStatusResult
+from . import ToolsSyncResult
 
 logger = get_logger(__name__)
 
@@ -134,8 +135,7 @@ async def handle_chat_websocket(websocket: WebSocket, token: str):
             session_client_context = ChatRequestClientContext(**payload["ctx"])
 
     # JSON-RPC 2.0 dispatcher — see services/gateway/jsonrpc.py. All inbound
-    # frames are JSON-RPC 2.0 requests; legacy raw type frames are no longer
-    # accepted.
+    # frames are JSON-RPC 2.0 requests.
     # ``ws_emitter`` is shared: the dispatcher uses its ``send_json`` so a
     # transient WS send failure (e.g. mid-disconnect) is swallowed.
     ws_emitter = WSEmitter(websocket)
@@ -684,7 +684,7 @@ def _register_session_handlers(
             removed = False
         return {"detached": True, "removed": removed, "path": path}
 
-    async def complete_path(params: dict) -> dict:
+    async def complete_path(params: dict) -> dict:  # noqa: ARG001 — dispatcher signature; stub returns empty
         # Filesystem-bound: the desktop intercepts this call locally in
         # ``use-gateway-request.ts::tryLocalIntercept`` and resolves ``@``-prefixed
         # paths via the ``deskagent:fs:completePath`` IPC handler. That runs against
@@ -729,9 +729,9 @@ def _register_session_handlers(
     dispatcher.register("reload.mcp", reload_mcp)
 
     async def companion_set_disturbance_tier(params: dict) -> dict:
-        # Desktop reports the effective disturbance tier (ARCHITECTURE.md §6); the
-        # companion's proactive outreach (send_message → companion.message) is
-        # gated by it. The desktop also gates playback client-side, so this is
+        # Desktop reports the effective disturbance tier; the companion's
+        # proactive outreach (send_message → companion.message) is gated by
+        # it. Desktop also gates playback client-side, so this is
         # defense-in-depth.
         tier_param = params.get("tier")
         normalized = set_disturbance_tier(user_id, tier_param if isinstance(tier_param, str) else "normal")
@@ -740,12 +740,13 @@ def _register_session_handlers(
     dispatcher.register("companion.set_disturbance_tier", companion_set_disturbance_tier)
 
     async def companion_check_affect(params: dict) -> dict:
-        # Idle-triggered contextual affect reasoning (§7.6). The desktop's idle
-        # monitor calls this when the user has been inactive past its threshold
-        # + cooldown. The backend loads persona + memory and asks the LLM
-        # whether the companion should express a contextual emotion right now;
-        # on a positive decision it emits ``companion.affect`` so the existing
-        # event handler switches the sprite to EMOTIONAL (no bubble, no TTS).
+        # Idle-triggered contextual affect reasoning. The desktop's idle
+        # monitor calls this when the user has been inactive past its
+        # threshold + cooldown. The backend loads persona + memory and asks
+        # the LLM whether the companion should express a contextual emotion
+        # right now; on a positive decision it emits ``companion.affect`` so
+        # the existing event handler switches the sprite to EMOTIONAL
+        # (no bubble, no TTS).
         now = time.monotonic()
         last = _last_check_affect_ts.get(user_id, 0.0)
         if now - last < CHECK_AFFECT_MIN_INTERVAL_SECONDS:
@@ -764,17 +765,17 @@ def _register_session_handlers(
     dispatcher.register("companion.check_affect", companion_check_affect)
 
     async def onboarding_get_state(_params: dict) -> dict:
-        # Breakpoint recovery (ARCHITECTURE.md §7.5): the desktop calls this on boot
-        # to learn which onboarding fields are already collected and which
-        # question to resume from. Returns ``complete: true`` once the persona
-        # is finalized, so the desktop skips onboarding entirely.
+        # Breakpoint recovery: the desktop calls this on boot to learn which
+        # onboarding fields are already collected and which question to
+        # resume from. Returns ``complete: true`` once the persona is
+        # finalized, so the desktop skips onboarding entirely.
         with SESSION_LOCAL() as db:
             return get_onboarding_state(db, user_id)
 
     async def onboarding_submit(params: dict) -> dict:
-        # Per-field incremental persistence (ARCHITECTURE.md §7.5). Each
-        # ``onboarding.submit {field, value}`` lands immediately, so a
-        # crash/exit mid-onboarding loses at most the current question.
+        # Per-field incremental persistence. Each ``onboarding.submit
+        # {field, value}`` lands immediately, so a crash/exit mid-onboarding
+        # loses at most the current question.
         field = params.get("field")
         if not isinstance(field, str) or not field:
             raise JsonRpcError(JSONRPC_INVALID_PARAMS, "field must be a non-empty string")
@@ -792,16 +793,15 @@ def _register_session_handlers(
 
     async def avatar_regenerate(params: dict) -> dict:
         # Regenerate the portrait from the current persona, with optional
-        # free-text feedback folded into the prompt (ARCHITECTURE.md §5.1.A). All
-        # derivative clips are invalidated and batch 0 re-seeded (§7.2).
+        # free-text feedback folded into the prompt. All derivative clips
+        # are invalidated and batch 0 re-seeded.
         #
-        # The 10-60s image-gen call used to run inline in the handler, blocking
-        # the WS receive loop for the entire duration so concurrent
-        # ``tool.result`` frames piled up in the socket buffer (P0-4). Now the
-        # heavy work runs as a background task and we return immediately with
-        # a ``job_id`` + ``queued: true``; the result arrives over the new
-        # ``avatar.regenerated`` event so the desktop swaps the portrait when
-        # the work lands without blocking other WS traffic.
+        # The 10-60s image-gen call runs as a background task and returns
+        # immediately with a ``job_id`` + ``queued: true`` so the WS
+        # receive loop is never blocked — concurrent ``tool.result`` frames
+        # would otherwise pile up in the socket buffer. The result arrives
+        # over the ``avatar.regenerated`` event so the desktop swaps the
+        # portrait when the work lands.
         feedback = params.get("feedback")
         if feedback is not None and not isinstance(feedback, str):
             raise JsonRpcError(JSONRPC_INVALID_PARAMS, "feedback must be a string")
