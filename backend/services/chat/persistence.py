@@ -3,6 +3,7 @@ import json
 from typing import Any
 
 from components import BACKGROUND_REVIEW_DEFAULT
+from components import DEFAULT_LANGUAGE
 from components import get_logger
 from components import safe_json_loads
 from modules.conversation import Conversation
@@ -126,7 +127,9 @@ async def _persist_assistant_no_tool_turn(
         db.commit()
 
     if conv.title == "New Conversation" and first_user_msg_content and turn_content:
-        title_task = asyncio.create_task(auto_generate_title(conv.id, first_user_msg_content, turn_content, llm_config))
+        title_task = asyncio.create_task(
+            auto_generate_title(conv.id, first_user_msg_content, turn_content, llm_config, language=effective_settings.get("language", DEFAULT_LANGUAGE))
+        )
         if track_task:
             track_task(title_task)
 

@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from typing import Any
 
+from components import DEFAULT_LANGUAGE
 from components import DEFAULT_LLM_CONTEXT_TOKENS
 from components import MODEL_CONTEXT_HINT_KEYS
 from components import MODEL_CONTEXT_TOKEN_HINTS
@@ -148,6 +149,7 @@ def _build_turn_inputs(
         prompt_family=provider.PROMPT_FAMILY,
         persona_extras=build_system_prompt_extras(persona),
         user_profile_extras=user_profile_extras,
+        language=user_settings.get("language", DEFAULT_LANGUAGE),
     )
     messages = _history_to_messages(history, build_system_prompt(agent_config))
 
