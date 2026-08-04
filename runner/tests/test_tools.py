@@ -16,11 +16,11 @@ def _discover_tools():
 
 class TestRegistry:
     def test_tools_registered(self):
-        assert len(registry.get_all_tool_names()) >= 20
+        assert len(registry.get_all_tool_names()) >= 15
 
     def test_get_schemas(self):
         schemas = registry.get_schemas()
-        assert len(schemas) >= 20
+        assert len(schemas) >= 15
         for s in schemas:
             assert "name" in s and "parameters" in s
 

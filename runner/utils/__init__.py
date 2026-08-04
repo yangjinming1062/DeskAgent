@@ -139,6 +139,7 @@ __all__ = [
     "strip_ansi",
     "strip_fence",
     "async_is_safe_url",
+    "check_redirect_url_safety",
     "check_website_access",
     "is_always_blocked_url",
     "is_safe_url",

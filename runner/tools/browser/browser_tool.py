@@ -29,6 +29,7 @@ import requests
 from utils import _PREFIX_RE
 from utils import call_llm
 from utils import cfg_get
+from utils import check_redirect_url_safety
 from utils import check_website_access
 from utils import CREATE_NO_WINDOW
 from utils import get_deskagent_dir
@@ -36,7 +37,7 @@ from utils import get_deskagent_home
 from utils import in_async_loop
 from utils import is_always_blocked_url
 from utils import is_safe_url
-from utils import is_termux as _is_termux_environment
+from utils import is_termux
 from utils import is_truthy_value
 from utils import kill_tree
 from utils import load_config
@@ -316,13 +317,13 @@ _VALID_BROWSER_ENGINES = ("auto", "lightpanda", "chrome")
 
 
 def _browser_install_hint() -> str:
-    if _is_termux_environment():
+    if is_termux():
         return "npm install -g agent-browser && agent-browser install"
     return "npm install -g agent-browser && agent-browser install --with-deps"
 
 
 def _requires_real_termux_browser_install(browser_cmd: str) -> bool:
-    return _is_termux_environment() and not _get_cdp_override() and browser_cmd.strip() == "npx agent-browser"
+    return is_termux() and not _get_cdp_override() and browser_cmd.strip() == "npx agent-browser"
 
 
 def _termux_browser_install_error() -> str:
@@ -2975,6 +2976,10 @@ def browser_download(
             {"success": False, "error": f"browser_download: {action} failed: {trigger_result.get('error', 'unknown')}"},
             ensure_ascii=False,
         )
+    if action == "navigate" and trigger_result.get("data", {}).get("url"):
+        final_url = trigger_result["data"]["url"]
+        if final_url != ref_or_url and not check_redirect_url_safety(ref_or_url, final_url):
+            return json.dumps({"success": False, "error": f"browser_download: redirect to unsafe URL blocked: {final_url}"}, ensure_ascii=False)
 
     # Wait for the download to complete via supervisor events.
     if supervisor is not None:
@@ -3244,6 +3249,14 @@ def browser_tab_new(url: str | None = None, task_id: str | None = None) -> str:
     result = supervisor.new_tab(url)
     if not result.get("ok"):
         return json.dumps({"success": False, "error": result.get("error", "unknown error")}, ensure_ascii=False)
+    if url and url.startswith(("http://", "https://")):
+        tab_id = result.get("tab_id")
+        if tab_id:
+            info = supervisor.send_cdp("Target.getTargetInfo", {"targetId": tab_id})
+            target_url = info.get("result", {}).get("targetInfo", {}).get("url", "")
+            if target_url and target_url != url and not check_redirect_url_safety(url, target_url):
+                supervisor.close_tab(tab_id)
+                return json.dumps({"success": False, "error": f"browser_tab_new: redirect to unsafe URL blocked: {target_url}"}, ensure_ascii=False)
     return json.dumps(
         {"success": True, "tab_id": result.get("tab_id"), "session_id": result.get("session_id")},
         ensure_ascii=False,

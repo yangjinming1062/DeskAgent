@@ -14,14 +14,12 @@ from typing import Any
 
 if platform.system() != "Windows":
     import termios
+
+    msvcrt = None
 else:
+    import msvcrt  # type: ignore[import-not-found]
+
     termios = None  # type: ignore[assignment]
-
-    def _get_msvcrt():  # type: ignore[misc]
-        import msvcrt as _msvcrt
-
-        return _msvcrt
-
 
 from utils import clean_output
 
@@ -159,7 +157,7 @@ def _prompt_for_sudo_password(timeout_seconds: int = 45) -> str:
         old_attrs = None
         try:
             if IS_WINDOWS:
-                msvcrt_mod = _get_msvcrt()
+                msvcrt_mod = msvcrt
                 chars = []
                 while True:
                     c = msvcrt_mod.getwch()
@@ -649,6 +647,7 @@ def terminal_tool(
     notify_on_complete: bool = False,
     watch_patterns: list[str] | None = None,
 ) -> str:
+    # Function-scope imports required here to prevent cross-subpackage import cycle (runner architecture requirement)
     from ..process import process_registry
     from ..security import check_command_security
 

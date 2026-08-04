@@ -188,6 +188,11 @@ async def async_is_safe_url(url: str) -> bool:
 
 def check_redirect_url_safety(original_url: str, redirect_url: str) -> bool:
     """Validate a redirect target URL against IMDSv2 metadata blocklists and SSRF guards."""
+    if not redirect_url or not redirect_url.startswith(("http://", "https://")):
+        return True
+    if is_always_blocked_url(redirect_url):
+        logger.warning("Blocked redirect to cloud metadata address: %s -> %s", original_url, redirect_url)
+        return False
     if not is_safe_url(redirect_url):
         logger.warning("Blocked redirect to unsafe target: %s -> %s", original_url, redirect_url)
         return False
