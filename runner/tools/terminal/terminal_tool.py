@@ -23,8 +23,9 @@ else:
         return _msvcrt
 
 
+from utils import clean_output
+
 from ..registry import registry
-from ..system.clean import clean_output
 from ..tool_output_limits import get_max_bytes
 from ._env_singularity import _get_scratch_dir
 from .environment import _active_environments

@@ -2,6 +2,7 @@
 import asyncio
 import atexit
 import base64
+import contextlib
 import functools
 import glob
 import hashlib
@@ -25,18 +26,21 @@ from urllib.parse import unquote
 from urllib.parse import urlparse
 
 import requests
+from utils import _PREFIX_RE
 from utils import call_llm
 from utils import cfg_get
+from utils import check_website_access
 from utils import CREATE_NO_WINDOW
 from utils import get_deskagent_dir
 from utils import get_deskagent_home
 from utils import in_async_loop
+from utils import is_always_blocked_url
+from utils import is_safe_url
 from utils import is_termux as _is_termux_environment
 from utils import is_truthy_value
 from utils import kill_tree
 from utils import load_config
-from utils import pid_exists
-from utils.redact import _PREFIX_RE
+from utils import normalize_url_for_request
 
 from ..interrupt import is_interrupted
 from ..registry import registry
@@ -48,28 +52,10 @@ from .browser_supervisor import SUPERVISOR_REGISTRY
 from .helpers import _extract_relevant_content
 from .helpers import _truncate_snapshot
 from .helpers import SNAPSHOT_SUMMARIZE_THRESHOLD
-
-
-def _browser_check_fn() -> bool:
-    """Compatibility alias for ``registry.check_fn=`` wiring.
-
-    Identical to :func:`check_browser_requirements`; renamed so the
-    registry-side pattern reads ``check_fn=_browser_check_fn`` without
-    shadowing the helper used by external ``check_browser_requirements``
-    callers.
-    """
-    return check_browser_requirements()
-
-
 from .profile_manager import cleanup_old_profiles
 from .profile_manager import DEFAULT_RETENTION_HOURS
 from .profile_manager import is_profile_locked
 from .profile_manager import resolve_profile_dir
-from .url_safety import is_always_blocked_url
-from .url_safety import is_safe_url
-from .url_safety import normalize_url_for_request
-from .website_policy import check_website_access
-import contextlib
 
 logger = logging.getLogger(__name__)
 
@@ -4331,39 +4317,41 @@ if __name__ == "__main__":
 
 _BROWSER_SCHEMA_MAP = {s["name"]: s for s in BROWSER_TOOL_SCHEMAS}
 
-registry.register_tool("browser_navigate", check_fn=_browser_check_fn, schema=_BROWSER_SCHEMA_MAP.get("browser_navigate"))(
+registry.register_tool("browser_navigate", check_fn=check_browser_requirements, schema=_BROWSER_SCHEMA_MAP.get("browser_navigate"))(
     lambda args, **kw: browser_navigate(url=args.get("url", ""), task_id=kw.get("task_id"))
 )
-registry.register_tool("browser_snapshot", check_fn=_browser_check_fn, schema=_BROWSER_SCHEMA_MAP.get("browser_snapshot"))(
+registry.register_tool("browser_snapshot", check_fn=check_browser_requirements, schema=_BROWSER_SCHEMA_MAP.get("browser_snapshot"))(
     lambda args, **kw: browser_snapshot(full=args.get("full", False), task_id=kw.get("task_id"), user_task=kw.get("user_task"))
 )
-registry.register_tool("browser_click", check_fn=_browser_check_fn, schema=_BROWSER_SCHEMA_MAP.get("browser_click"))(
+registry.register_tool("browser_click", check_fn=check_browser_requirements, schema=_BROWSER_SCHEMA_MAP.get("browser_click"))(
     lambda args, **kw: browser_click(ref=args.get("ref", ""), task_id=kw.get("task_id"))
 )
-registry.register_tool("browser_type", check_fn=_browser_check_fn, schema=_BROWSER_SCHEMA_MAP.get("browser_type"))(
+registry.register_tool("browser_type", check_fn=check_browser_requirements, schema=_BROWSER_SCHEMA_MAP.get("browser_type"))(
     lambda args, **kw: browser_type(ref=args.get("ref", ""), text=args.get("text", ""), task_id=kw.get("task_id"))
 )
-registry.register_tool("browser_scroll", check_fn=_browser_check_fn, schema=_BROWSER_SCHEMA_MAP.get("browser_scroll"))(
+registry.register_tool("browser_scroll", check_fn=check_browser_requirements, schema=_BROWSER_SCHEMA_MAP.get("browser_scroll"))(
     lambda args, **kw: browser_scroll(direction=args.get("direction", "down"), task_id=kw.get("task_id"))
 )
-registry.register_tool("browser_back", check_fn=_browser_check_fn, schema=_BROWSER_SCHEMA_MAP.get("browser_back"))(lambda args, **kw: browser_back(task_id=kw.get("task_id")))
-registry.register_tool("browser_press", check_fn=_browser_check_fn, schema=_BROWSER_SCHEMA_MAP.get("browser_press"))(
+registry.register_tool("browser_back", check_fn=check_browser_requirements, schema=_BROWSER_SCHEMA_MAP.get("browser_back"))(
+    lambda args, **kw: browser_back(task_id=kw.get("task_id"))
+)
+registry.register_tool("browser_press", check_fn=check_browser_requirements, schema=_BROWSER_SCHEMA_MAP.get("browser_press"))(
     lambda args, **kw: browser_press(key=args.get("key", ""), task_id=kw.get("task_id"))
 )
 
-registry.register_tool("browser_get_images", check_fn=_browser_check_fn, schema=_BROWSER_SCHEMA_MAP.get("browser_get_images"))(
+registry.register_tool("browser_get_images", check_fn=check_browser_requirements, schema=_BROWSER_SCHEMA_MAP.get("browser_get_images"))(
     lambda args, **kw: browser_get_images(task_id=kw.get("task_id"))
 )
-registry.register_tool("browser_vision", check_fn=_browser_check_fn, schema=_BROWSER_SCHEMA_MAP.get("browser_vision"))(
+registry.register_tool("browser_vision", check_fn=check_browser_requirements, schema=_BROWSER_SCHEMA_MAP.get("browser_vision"))(
     lambda args, **kw: browser_vision(question=args.get("question", ""), annotate=args.get("annotate", False), task_id=kw.get("task_id"))
 )
-registry.register_tool("browser_console", check_fn=_browser_check_fn, schema=_BROWSER_SCHEMA_MAP.get("browser_console"))(
+registry.register_tool("browser_console", check_fn=check_browser_requirements, schema=_BROWSER_SCHEMA_MAP.get("browser_console"))(
     lambda args, **kw: browser_console(clear=args.get("clear", False), expression=args.get("expression"), task_id=kw.get("task_id"))
 )
-registry.register_tool("browser_hover", check_fn=_browser_check_fn, schema=_BROWSER_SCHEMA_MAP.get("browser_hover"))(
+registry.register_tool("browser_hover", check_fn=check_browser_requirements, schema=_BROWSER_SCHEMA_MAP.get("browser_hover"))(
     lambda args, **kw: browser_hover(ref=args.get("ref", ""), task_id=kw.get("task_id"))
 )
-registry.register_tool("browser_wait_for", check_fn=_browser_check_fn, schema=_BROWSER_SCHEMA_MAP.get("browser_wait_for"))(
+registry.register_tool("browser_wait_for", check_fn=check_browser_requirements, schema=_BROWSER_SCHEMA_MAP.get("browser_wait_for"))(
     lambda args, **kw: browser_wait_for(
         selector=args.get("selector"),
         text=args.get("text"),
@@ -4372,14 +4360,14 @@ registry.register_tool("browser_wait_for", check_fn=_browser_check_fn, schema=_B
         task_id=kw.get("task_id"),
     )
 )
-registry.register_tool("browser_find", check_fn=_browser_check_fn, schema=_BROWSER_SCHEMA_MAP.get("browser_find"))(
+registry.register_tool("browser_find", check_fn=check_browser_requirements, schema=_BROWSER_SCHEMA_MAP.get("browser_find"))(
     lambda args, **kw: browser_find(
         query=args.get("query", ""),
         ref_only=args.get("ref_only", True),
         task_id=kw.get("task_id"),
     )
 )
-registry.register_tool("browser_drag", check_fn=_browser_check_fn, schema=_BROWSER_SCHEMA_MAP.get("browser_drag"))(
+registry.register_tool("browser_drag", check_fn=check_browser_requirements, schema=_BROWSER_SCHEMA_MAP.get("browser_drag"))(
     lambda args, **kw: browser_drag(
         from_ref=args.get("from_ref", ""),
         to_ref=args.get("to_ref", ""),
@@ -4387,7 +4375,7 @@ registry.register_tool("browser_drag", check_fn=_browser_check_fn, schema=_BROWS
         task_id=kw.get("task_id"),
     )
 )
-registry.register_tool("browser_select", check_fn=_browser_check_fn, schema=_BROWSER_SCHEMA_MAP.get("browser_select"))(
+registry.register_tool("browser_select", check_fn=check_browser_requirements, schema=_BROWSER_SCHEMA_MAP.get("browser_select"))(
     lambda args, **kw: browser_select(
         ref=args.get("ref", ""),
         value=args.get("value"),
@@ -4397,7 +4385,7 @@ registry.register_tool("browser_select", check_fn=_browser_check_fn, schema=_BRO
         task_id=kw.get("task_id"),
     )
 )
-registry.register_tool("browser_download", check_fn=_browser_check_fn, schema=_BROWSER_SCHEMA_MAP.get("browser_download"))(
+registry.register_tool("browser_download", check_fn=check_browser_requirements, schema=_BROWSER_SCHEMA_MAP.get("browser_download"))(
     lambda args, **kw: browser_download(
         ref_or_url=args.get("ref_or_url", ""),
         save_as=args.get("save_as"),
@@ -4405,7 +4393,7 @@ registry.register_tool("browser_download", check_fn=_browser_check_fn, schema=_B
         task_id=kw.get("task_id"),
     )
 )
-registry.register_tool("browser_pdf", check_fn=_browser_check_fn, schema=_BROWSER_SCHEMA_MAP.get("browser_pdf"))(
+registry.register_tool("browser_pdf", check_fn=check_browser_requirements, schema=_BROWSER_SCHEMA_MAP.get("browser_pdf"))(
     lambda args, **kw: browser_pdf(
         save_as=args.get("save_as"),
         landscape=args.get("landscape", False),
@@ -4415,35 +4403,35 @@ registry.register_tool("browser_pdf", check_fn=_browser_check_fn, schema=_BROWSE
         task_id=kw.get("task_id"),
     )
 )
-registry.register_tool("browser_screenshot_element", check_fn=_browser_check_fn, schema=_BROWSER_SCHEMA_MAP.get("browser_screenshot_element"))(
+registry.register_tool("browser_screenshot_element", check_fn=check_browser_requirements, schema=_BROWSER_SCHEMA_MAP.get("browser_screenshot_element"))(
     lambda args, **kw: browser_screenshot_element(
         ref=args.get("ref", ""),
         save_as=args.get("save_as"),
         task_id=kw.get("task_id"),
     )
 )
-registry.register_tool("browser_tab_new", check_fn=_browser_check_fn, schema=_BROWSER_SCHEMA_MAP.get("browser_tab_new"))(
+registry.register_tool("browser_tab_new", check_fn=check_browser_requirements, schema=_BROWSER_SCHEMA_MAP.get("browser_tab_new"))(
     lambda args, **kw: browser_tab_new(
         url=args.get("url"),
         task_id=kw.get("task_id"),
     )
 )
-registry.register_tool("browser_tab_switch", check_fn=_browser_check_fn, schema=_BROWSER_SCHEMA_MAP.get("browser_tab_switch"))(
+registry.register_tool("browser_tab_switch", check_fn=check_browser_requirements, schema=_BROWSER_SCHEMA_MAP.get("browser_tab_switch"))(
     lambda args, **kw: browser_tab_switch(
         tab_id=args.get("tab_id", ""),
         task_id=kw.get("task_id"),
     )
 )
-registry.register_tool("browser_tab_close", check_fn=_browser_check_fn, schema=_BROWSER_SCHEMA_MAP.get("browser_tab_close"))(
+registry.register_tool("browser_tab_close", check_fn=check_browser_requirements, schema=_BROWSER_SCHEMA_MAP.get("browser_tab_close"))(
     lambda args, **kw: browser_tab_close(
         tab_id=args.get("tab_id"),
         task_id=kw.get("task_id"),
     )
 )
-registry.register_tool("browser_tab_list", check_fn=_browser_check_fn, schema=_BROWSER_SCHEMA_MAP.get("browser_tab_list"))(
+registry.register_tool("browser_tab_list", check_fn=check_browser_requirements, schema=_BROWSER_SCHEMA_MAP.get("browser_tab_list"))(
     lambda args, **kw: browser_tab_list(task_id=kw.get("task_id"))
 )
-registry.register_tool("browser_set_viewport", check_fn=_browser_check_fn, schema=_BROWSER_SCHEMA_MAP.get("browser_set_viewport"))(
+registry.register_tool("browser_set_viewport", check_fn=check_browser_requirements, schema=_BROWSER_SCHEMA_MAP.get("browser_set_viewport"))(
     lambda args, **kw: browser_set_viewport(
         width=args.get("width", 1280),
         height=args.get("height", 720),
@@ -4452,7 +4440,7 @@ registry.register_tool("browser_set_viewport", check_fn=_browser_check_fn, schem
         task_id=kw.get("task_id"),
     )
 )
-registry.register_tool("browser_set_user_agent", check_fn=_browser_check_fn, schema=_BROWSER_SCHEMA_MAP.get("browser_set_user_agent"))(
+registry.register_tool("browser_set_user_agent", check_fn=check_browser_requirements, schema=_BROWSER_SCHEMA_MAP.get("browser_set_user_agent"))(
     lambda args, **kw: browser_set_user_agent(
         user_agent=args.get("user_agent"),
         platform=args.get("platform"),
@@ -4460,13 +4448,13 @@ registry.register_tool("browser_set_user_agent", check_fn=_browser_check_fn, sch
         task_id=kw.get("task_id"),
     )
 )
-registry.register_tool("browser_set_extra_headers", check_fn=_browser_check_fn, schema=_BROWSER_SCHEMA_MAP.get("browser_set_extra_headers"))(
+registry.register_tool("browser_set_extra_headers", check_fn=check_browser_requirements, schema=_BROWSER_SCHEMA_MAP.get("browser_set_extra_headers"))(
     lambda args, **kw: browser_set_extra_headers(
         headers=args.get("headers", {}),
         task_id=kw.get("task_id"),
     )
 )
-registry.register_tool("browser_set_geolocation", check_fn=_browser_check_fn, schema=_BROWSER_SCHEMA_MAP.get("browser_set_geolocation"))(
+registry.register_tool("browser_set_geolocation", check_fn=check_browser_requirements, schema=_BROWSER_SCHEMA_MAP.get("browser_set_geolocation"))(
     lambda args, **kw: browser_set_geolocation(
         lat=args.get("lat", 0.0),
         lon=args.get("lon", 0.0),

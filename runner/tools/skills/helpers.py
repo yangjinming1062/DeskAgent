@@ -4,6 +4,7 @@ from typing import Any
 
 import yaml
 from utils import cfg_get
+from utils import get_disabled_config_names
 from utils import load_config
 
 _FRONTMATTER_RE = re.compile(r"^---\s*\n(.*?)\n---\s*(?:\n|$)", re.DOTALL)
@@ -52,16 +53,4 @@ def get_disabled_skill_names(section: str = "skills") -> set[str]:
     ``section`` defaults to ``"skills"``; pass ``"toolsets"`` to share the
     same parse path for the sibling toolsets section.
     """
-    try:
-        disabled = cfg_get(load_config(), section, "disabled", default=[])
-        return {str(n) for n in disabled if isinstance(n, (str, int))} if isinstance(disabled, list) else set()
-    except Exception:
-        return set()
-
-
-__all__ = [
-    "parse_frontmatter",
-    "iter_skill_index_files",
-    "get_deskagent_metadata",
-    "get_disabled_skill_names",
-]
+    return get_disabled_config_names(section)

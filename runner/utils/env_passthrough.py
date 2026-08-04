@@ -2,8 +2,8 @@ import logging
 from collections.abc import Iterable
 from contextvars import ContextVar
 
-from utils import cfg_get
-from utils import load_config
+from .config import cfg_get
+from .config import load_config
 
 logger = logging.getLogger(__name__)
 _allowed_env_vars_var: ContextVar[set[str]] = ContextVar("_allowed_env_vars")

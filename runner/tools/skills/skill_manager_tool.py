@@ -10,8 +10,10 @@ import yaml
 from utils import atomic_replace
 from utils import cfg_get
 from utils import get_skills_dir
+from utils import has_traversal_component
 from utils import is_truthy_value
 from utils import load_config
+from utils import validate_within_dir
 
 from ..interrupt import is_interrupted
 from ..registry import registry
@@ -149,8 +151,6 @@ def _skill_not_found_error(name: str, suffix: str = "") -> str:
 
 
 def _validate_file_path(file_path: str) -> str | None:
-    from ..files import has_traversal_component
-
     if not file_path:
         return "file_path is required."
     if has_traversal_component(file_path):
@@ -164,8 +164,6 @@ def _validate_file_path(file_path: str) -> str | None:
 
 
 def _resolve_skill_target(skill_dir: Path, file_path: str) -> tuple[Path | None, str | None]:
-    from ..files import validate_within_dir
-
     target = skill_dir / file_path
     if error := validate_within_dir(target, skill_dir):
         return None, error

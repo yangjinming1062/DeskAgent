@@ -1625,19 +1625,3 @@ class _SupervisorRegistry:
 
 
 SUPERVISOR_REGISTRY = _SupervisorRegistry()
-
-__all__ = [
-    "CDPSupervisor",
-    "ConsoleEvent",
-    "DEFAULT_DIALOG_POLICY",
-    "DEFAULT_DIALOG_TIMEOUT_S",
-    "DIALOG_POLICY_AUTO_ACCEPT",
-    "DIALOG_POLICY_AUTO_DISMISS",
-    "DIALOG_POLICY_MUST_RESPOND",
-    "DialogRecord",
-    "FrameInfo",
-    "PendingDialog",
-    "SUPERVISOR_REGISTRY",
-    "SupervisorSnapshot",
-    "_SupervisorRegistry",
-]

@@ -10,8 +10,9 @@ from collections.abc import Callable
 from typing import Any
 
 import tools
-from tools.toolsets import excluded_tool_names
 from utils import redact_sensitive_text
+
+from .toolsets import excluded_tool_names
 
 logger = logging.getLogger(__name__)
 

@@ -16,6 +16,7 @@ from mcp import ClientSession
 from mcp import StdioServerParameters
 from mcp.client.stdio import stdio_client
 from utils import cfg_get
+from utils import is_env_passthrough
 from utils import load_config
 from utils import safe_schedule_threadsafe
 
@@ -186,7 +187,6 @@ def _build_cua_driver_env() -> dict[str, str]:
     Also injects ``CUA_DRIVER_RS_TELEMETRY_ENABLED`` based on the
     ``computer_use.cua_telemetry`` config knob — fail-safe default is off.
     """
-    from ..system import is_env_passthrough
 
     def _is_secret_var(name: str) -> bool:
         upper = name.upper()

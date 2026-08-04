@@ -7,11 +7,11 @@ import uuid
 from pathlib import Path
 
 from utils import cfg_get
+from utils import get_credential_file_mounts
 from utils import get_deskagent_home
+from utils import get_skills_directory_mount
 from utils import load_config
 
-from ..system.credential_files import get_credential_file_mounts
-from ..system.credential_files import get_skills_directory_mount
 from ._env_base import _load_json_store
 from ._env_base import _popen_bash
 from ._env_base import _save_json_store

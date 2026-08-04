@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from utils import call_llm
+from utils import clean_output
 from utils import get_deskagent_dir
 
 from ..debug_helpers import DebugSession
@@ -95,8 +96,6 @@ async def vision_analyze_tool(image_url: str, user_prompt: str) -> str:
             img_url = _resize_image_for_vision(temp_path, mime_type=mime)
             messages[0]["content"][1]["image_url"]["url"] = img_url
             res = await call_llm(**call_kwargs)
-
-        from ..system import clean_output
 
         analysis = clean_output(res) or "There was a problem with the request and the image could not be analyzed."
 

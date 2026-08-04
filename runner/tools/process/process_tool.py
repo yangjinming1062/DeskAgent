@@ -16,6 +16,7 @@ from typing import Any
 import psutil
 from utils import atomic_replace
 from utils import cfg_get
+from utils import clean_output
 from utils import CREATE_NO_WINDOW
 from utils import find_bash as _find_shell
 from utils import get_deskagent_home
@@ -251,7 +252,6 @@ class ProcessRegistry:
                 )
                 self.completion_queue.put(msg)
             return
-        from ..system import clean_output
 
         output = clean_output("\n".join(matched_lines[:20]))
         if len(output) > 2000:
@@ -738,8 +738,6 @@ class ProcessRegistry:
         with the reader thread), the second call is a no-op — no duplicate
         completion notification is enqueued.
         """
-        from ..system import clean_output
-
         with self._lock:
             was_running = self._running.pop(session.id, None) is not None
             self._finished[session.id] = session
@@ -856,8 +854,6 @@ class ProcessRegistry:
 
     def poll(self, session_id: str) -> dict:
         """Check status and get new output for a background process."""
-        from ..system import clean_output
-
         session = self.get(session_id)
         if session is None:
             return {"status": "not_found", "error": f"No process with ID {session_id}"}
@@ -884,8 +880,6 @@ class ProcessRegistry:
 
     def read_log(self, session_id: str, offset: int = 0, limit: int = 200) -> dict:
         """Read the full output log with optional pagination by lines."""
-        from ..system import clean_output
-
         session = self.get(session_id)
         if session is None:
             return {"status": "not_found", "error": f"No process with ID {session_id}"}
@@ -919,8 +913,6 @@ class ProcessRegistry:
             dict with status ("exited", "timeout", "interrupted", "not_found")
             and output snapshot.
         """
-        from ..system import clean_output
-
         try:
             default_timeout = int(cfg_get(load_config(), "terminal", "timeout", default=180))
         except (ValueError, TypeError):
@@ -1107,8 +1099,6 @@ class ProcessRegistry:
 
     def list_sessions(self, task_id: str | None = None) -> list:
         """List all running and recently-finished processes."""
-        from ..system import clean_output
-
         with self._lock:
             all_sessions = list(self._running.values()) + list(self._finished.values())
         all_sessions = [self._refresh_detached_session(s) for s in all_sessions]
@@ -1303,7 +1293,6 @@ def format_process_notification(evt: dict) -> "str | None":
     """
     evt_type = evt.get("type", "completion")
     _sid = evt.get("session_id", "unknown")
-    from ..system import clean_output
 
     _cmd = clean_output(evt.get("command", "unknown"))
     if evt_type == "watch_disabled":

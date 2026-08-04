@@ -1,9 +1,3 @@
-from .url_safety import async_is_safe_url
-from .url_safety import is_safe_url
-from .website_policy import check_website_access
+from . import browser_tool  # noqa: F401 — side-effect: registers browser.* tools
 
-__all__ = [
-    "is_safe_url",
-    "async_is_safe_url",
-    "check_website_access",
-]
+__all__: list[str] = []

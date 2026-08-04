@@ -1,4 +1,4 @@
-from tools.skills import get_disabled_skill_names
+from utils import get_disabled_config_names
 
 
 def get_disabled_toolset_ids() -> set[str]:
@@ -8,7 +8,4 @@ def get_disabled_toolset_ids() -> set[str]:
     Stored in a sibling ``toolsets`` YAML section so the atomic-write lock
     in ``config-writer.cjs`` keeps skills and toolsets writes serialized.
     """
-    return get_disabled_skill_names(section="toolsets")
-
-
-__all__ = ["get_disabled_toolset_ids"]
+    return get_disabled_config_names(section="toolsets")

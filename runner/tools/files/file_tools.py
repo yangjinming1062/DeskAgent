@@ -15,8 +15,10 @@ from utils import get_deskagent_home
 from utils import get_read_block_error
 from utils import get_sandbox_mirror_warning
 from utils import get_windows_sensitive_prefixes
+from utils import has_traversal_component
 from utils import IS_WINDOWS
 from utils import load_config
+from utils import msys_to_windows_path
 from utils import redact_sensitive_text
 
 from ..registry import registry
@@ -42,7 +44,6 @@ from .helpers import note_write
 from .helpers import record_read
 from .helpers import ShellFileOperations
 from .native_ops import NativeFileOperations
-from .path_security import has_traversal_component
 
 logger = logging.getLogger(__name__)
 
@@ -235,8 +236,6 @@ def _resolve_absolute_path(filepath: str) -> Path:
     Only call with absolute paths — a relative path would resolve against
     cwd and the cwd-dependent result would be cached permanently.
     """
-    from utils import msys_to_windows_path
-
     filepath = msys_to_windows_path(filepath) if IS_WINDOWS else filepath
     p = Path(filepath).expanduser()
     assert p.is_absolute(), f"_resolve_absolute_path requires an absolute path, got: {filepath!r}"
@@ -259,8 +258,6 @@ def _resolve_path_for_task(filepath: str, task_id: str = "default") -> Path:
     treats ``/c/Users/foo`` as a literal path under the runner's cwd and
     the user sees a confusing "file not found".
     """
-    from utils import msys_to_windows_path
-
     filepath = msys_to_windows_path(filepath) if IS_WINDOWS else filepath
     p = Path(filepath).expanduser()
     if p.is_absolute():
@@ -412,8 +409,6 @@ def _get_deskagent_config_resolved() -> str | None:
 
 def _check_sensitive_path(filepath: str, task_id: str = "default") -> str | None:
     """Return an error message if the path targets a sensitive system location."""
-    from utils import msys_to_windows_path
-
     try:
         resolved = str(_resolve_path_for_task(filepath, task_id))
     except (OSError, ValueError):

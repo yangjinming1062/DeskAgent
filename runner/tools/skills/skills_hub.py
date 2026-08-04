@@ -28,7 +28,9 @@ import httpx
 import jwt  # PyJWT
 import yaml
 from utils import cfg_get
+from utils import check_website_access
 from utils import get_skills_dir
+from utils import is_safe_url
 from utils import load_config
 
 from .helpers import get_deskagent_metadata
@@ -135,9 +137,6 @@ def _resolve_lock_install_path(install_path: str, skill_name: str) -> Path:
 
 def _guarded_http_get(url: str, *, timeout: int = 20) -> httpx.Response | None:
     """Fetch a URL with SSRF and redirect-target validation."""
-    from ..browser import check_website_access
-    from ..browser import is_safe_url
-
     current_url = url
 
     for _ in range(_MAX_SKILL_FETCH_REDIRECTS + 1):

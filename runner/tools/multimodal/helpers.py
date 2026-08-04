@@ -7,7 +7,9 @@ from urllib.parse import urlparse
 
 import httpx
 from PIL import Image
+from utils import async_is_safe_url
 from utils import cfg_get
+from utils import check_website_access
 from utils import load_config
 
 logger = logging.getLogger(__name__)
@@ -41,8 +43,6 @@ def _resolve_vision_params(default_timeout: float = 120.0, default_temperature: 
 
 
 async def _validate_image_url_async(url: str) -> bool:
-    from ..browser import async_is_safe_url
-
     return bool(url and isinstance(url, str) and url.startswith(("http://", "https://")) and urlparse(url).netloc) and await async_is_safe_url(url)
 
 
@@ -111,9 +111,6 @@ async def _download_media(
     remain parameterised so a future media tool can reuse the helper
     without copying the size-cap / redirect-guard machinery.
     """
-    from ..browser import async_is_safe_url
-    from ..browser import check_website_access
-
     destination.parent.mkdir(parents=True, exist_ok=True)
 
     async def _guard(response):

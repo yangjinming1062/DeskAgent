@@ -8,14 +8,24 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from utils import strip_ansi
+
+from .fuzzy_match import format_no_match_hint
+from .fuzzy_match import fuzzy_find_and_replace
 from .helpers import _detect_line_ending
 from .helpers import _has_bom
 from .helpers import _is_write_denied
+from .helpers import _looks_like_linter_unusable
 from .helpers import _normalize_line_endings
 from .helpers import _strip_bom
+from .helpers import _UTF8_BOM
+from .helpers import ExecuteResult
 from .helpers import FileOperations
 from .helpers import get_max_line_length
 from .helpers import IMAGE_EXTENSIONS
+from .helpers import LINTERS
+from .helpers import LINTERS_INPROC
+from .helpers import LintResult
 from .helpers import MAX_FILE_SIZE
 from .helpers import normalize_read_pagination
 from .helpers import PatchResult
@@ -131,8 +141,6 @@ class NativeFileOperations(FileOperations):
             return ReadResult(error=f"Failed to read file: {e}")
 
     def write_file(self, path: str, content: str) -> WriteResult:
-        from .helpers import _UTF8_BOM
-
         p = self._expand_path(path)
         if _is_write_denied(str(p)):
             return WriteResult(error=f"Write denied: '{path}' is a protected system/credential file.")
@@ -192,7 +200,7 @@ class NativeFileOperations(FileOperations):
 
         occurrences = content.count(old_string)
         if occurrences == 0:
-            from .fuzzy_match import fuzzy_find_and_replace, format_no_match_hint
+            hint = format_no_match_hint(content, old_string)
 
             new_content, match_count, _strategy, error = fuzzy_find_and_replace(content, old_string, new_string, replace_all)
             if error or match_count == 0:
@@ -355,8 +363,6 @@ class NativeFileOperations(FileOperations):
         return SearchResult(matches=matches, files=list(files), counts=counts, total_count=total_count, truncated=truncated)
 
     def _exec(self, command: str, cwd: str | None = None, timeout: int | None = None, stdin_data: str | None = None) -> Any:
-        from .helpers import ExecuteResult
-
         kwargs = {"shell": True, "text": True, "capture_output": True}
         if stdin_data is not None:
             kwargs["input"] = stdin_data
@@ -377,9 +383,6 @@ class NativeFileOperations(FileOperations):
         return shlex.quote(arg)
 
     def _check_lint(self, path: str, content: str | None = None) -> Any:
-        from .helpers import LINTERS_INPROC, LINTERS, LintResult, _looks_like_linter_unusable
-        from ..system import strip_ansi
-
         ext = os.path.splitext(path)[1].lower()
         inproc = LINTERS_INPROC.get(ext)
         if inproc is not None:
@@ -413,8 +416,6 @@ class NativeFileOperations(FileOperations):
         return LintResult(success=result.exit_code == 0, output=result.stdout.strip() if result.stdout.strip() else "")
 
     def _check_lint_delta(self, path: str, pre_content: str | None, post_content: str | None = None) -> Any:
-        from .helpers import LintResult
-
         post = self._check_lint(path, content=post_content)
         if post.success or post.skipped:
             return post

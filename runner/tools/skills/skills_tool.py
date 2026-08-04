@@ -11,8 +11,13 @@ from typing import Any
 
 from utils import cfg_get
 from utils import get_env_type
+from utils import get_external_skills_dirs
 from utils import get_skills_dir
+from utils import has_traversal_component
 from utils import load_config
+from utils import register_credential_files
+from utils import register_env_passthrough
+from utils import validate_within_dir
 
 from ..interrupt import is_interrupted
 from ..registry import registry
@@ -42,8 +47,6 @@ _REMOTE_ENV_BACKENDS = frozenset({"docker", "singularity", "modal", "ssh", "dayt
 
 
 def _skill_lookup_path_error(name: str) -> str | None:
-    from ..files import has_traversal_component
-
     if not isinstance(name, str):
         return "Skill name must be a string."
     candidate = name.strip()
@@ -212,8 +215,6 @@ def _build_setup_note(
 
 
 def _get_category_from_path(skill_path: Path) -> str | None:
-    from ..system import get_external_skills_dirs
-
     dirs = [SKILLS_DIR]
     with contextlib.suppress(Exception):
         dirs.extend(get_external_skills_dirs())
@@ -436,8 +437,6 @@ def skill_view(
             if bare:
                 local_category_name = f"{namespace}/{bare}"
 
-        from ..system import get_external_skills_dirs
-
         if local_category_name and (err := _skill_lookup_path_error(local_category_name)):
             return json.dumps({"success": False, "error": err, "hint": "Use a skill name or relative path within the skills directory."}, ensure_ascii=False)
 
@@ -546,9 +545,6 @@ def skill_view(
             )
 
         if file_path and skill_dir:
-            from ..files import has_traversal_component
-            from ..files import validate_within_dir
-
             if has_traversal_component(file_path):
                 return json.dumps(
                     {"success": False, "error": "Path traversal ('..') is not allowed.", "hint": "Use a relative path within the skill directory"}, ensure_ascii=False
@@ -624,8 +620,6 @@ def skill_view(
         legacy_env, _ = _collect_prerequisite_values(parsed_frontmatter)
         req_envs = _get_required_environment_variables(parsed_frontmatter, legacy_env)
         backend = get_env_type()
-        from ..system import register_credential_files
-        from ..system import register_env_passthrough
 
         overrides = _env_overrides()
         rem_missing_envs = [e["name"] for e in req_envs if not e.get("optional") and not overrides.get(e["name"])]
