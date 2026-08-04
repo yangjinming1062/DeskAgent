@@ -235,7 +235,7 @@ async def handle_chat_websocket(websocket: WebSocket, token: str):
 
     # slash.exec / command.dispatch / commands.catalog — the handlers
     # capture llm_config and user_settings as closure variables so /model
-    # and /yolo can mutate the per-WS state.
+    # and /reasoning can mutate the per-WS state.
     cmd_ctx = CommandContext(
         user_id=user_id,
         llm_config=llm_config,
@@ -459,7 +459,7 @@ def _register_session_handlers(
             conv.settings_json = serialize_settings(runtime.settings) if runtime.settings else None
             db.commit()
 
-    _ALLOWED_SESSION_KEYS = {"yolo", "reasoning", "fast"}
+    _ALLOWED_SESSION_KEYS = {"reasoning", "fast"}
     # Keys that may be written to UserSetting via ``config.set({scope:'global',...})``.
     # Prevents a renderer bug (or hostile local file) from injecting arbitrary
     # UserSetting rows that downstream _merge_session_settings would then carry
@@ -467,7 +467,6 @@ def _register_session_handlers(
     # via the user router. MCP server configs live in $DESKAGENT_HOME/config.yaml
     # on the runner host (managed by Desktop's MCP settings page), not here.
     _ALLOWED_GLOBAL_KEYS = {
-        "yolo_mode",
         "reasoning_effort",
         "service_tier",
         "fast",
@@ -604,7 +603,7 @@ def _register_session_handlers(
 
         # Coerce non-string values to the canonical string form. Booleans must
         # become lowercase ``true``/``false`` so downstream consumer checks
-        # (e.g. ``user_settings.get('yolo_mode') in {'true', '1'}``) see the
+        # (e.g. ``user_settings.get('enable_background_review') in {'true', '1'}``) see the
         # intended value rather than Python's str(True)=='True' (truthy).
         if value is None:
             encoded_value = ""

@@ -61,16 +61,16 @@ def _merge_session_settings(user_settings: dict, runtime: RuntimeSession | None)
 
     Per-session overrides (``runtime.settings``, populated from
     ``Conversation.settings_json``) win over global ``UserSetting`` values,
-    so a tool that reads ``user_settings.get('yolo_mode')`` sees the
-    session-scoped value when the renderer set ``config.set({key:'yolo',
-    session_id, value:'1'})``.
+    so a tool that reads ``user_settings.get('reasoning_effort')`` sees the
+    session-scoped value when the renderer set ``config.set({key:'reasoning',
+    session_id, value:'high'})``.
 
     Per-session keys defined in ``SESSION_TO_GLOBAL_KEY_ALIASES`` are translated into
     their global counterparts so consumer code (slash commands, guardrails,
     future-tool reads) sees one consistent namespace.
 
     Downstream tool dispatch reads ``ctx.user_settings`` so this is the
-    single injection point — every approval / guardrail path sees the
+    single injection point — every guardrail path sees the
     effective value without re-resolving.
     """
     merged = dict(user_settings)

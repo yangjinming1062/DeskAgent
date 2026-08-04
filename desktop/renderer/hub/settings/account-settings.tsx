@@ -38,7 +38,6 @@ interface WebFormState {
 interface AgentFormState {
   reasoning_effort: string
   service_tier: string
-  yolo_mode: boolean
   enable_background_review: boolean
   // Display preference — lives under `display.*` in /api/config, not
   // `agent.*`. Grouped into the agent defaults section UI to avoid a
@@ -63,7 +62,6 @@ const EMPTY_WEB: WebFormState = {
 const EMPTY_AGENT: AgentFormState = {
   reasoning_effort: 'medium',
   service_tier: 'standard',
-  yolo_mode: false,
   enable_background_review: true,
   show_subagents_in_sidebar: false
 }
@@ -93,7 +91,6 @@ const readAgentState = (config: DeskAgentConfigResponse): AgentFormState => {
   return {
     reasoning_effort: agent?.reasoning_effort ?? EMPTY_AGENT.reasoning_effort,
     service_tier: agent?.service_tier ?? EMPTY_AGENT.service_tier,
-    yolo_mode: agent?.yolo_mode ?? EMPTY_AGENT.yolo_mode,
     enable_background_review: agent?.enable_background_review ?? EMPTY_AGENT.enable_background_review,
     show_subagents_in_sidebar: display?.show_subagents_in_sidebar ?? EMPTY_AGENT.show_subagents_in_sidebar
   }
@@ -158,7 +155,6 @@ export function AccountSettings({ onConfigSaved }: { onConfigSaved?: () => void 
   const isAgentDirty =
     agent.reasoning_effort !== originalAgent.reasoning_effort ||
     agent.service_tier !== originalAgent.service_tier ||
-    agent.yolo_mode !== originalAgent.yolo_mode ||
     agent.enable_background_review !== originalAgent.enable_background_review ||
     agent.show_subagents_in_sidebar !== originalAgent.show_subagents_in_sidebar
 
@@ -213,8 +209,7 @@ export function AccountSettings({ onConfigSaved }: { onConfigSaved?: () => void 
         agent: {
           enable_background_review: agent.enable_background_review,
           reasoning_effort: agent.reasoning_effort,
-          service_tier: agent.service_tier,
-          yolo_mode: agent.yolo_mode
+          service_tier: agent.service_tier
         },
         display: {
           show_subagents_in_sidebar: agent.show_subagents_in_sidebar
@@ -577,18 +572,6 @@ function AgentDefaultsSection({
         }
         description={t.serviceTierDesc}
         title={t.serviceTier}
-      />
-
-      <ListRow
-        action={
-          <Switch
-            checked={state.yolo_mode}
-            disabled={disabled}
-            onCheckedChange={value => update({ yolo_mode: value })}
-          />
-        }
-        description={t.yoloModeDesc}
-        title={t.yoloMode}
       />
 
       <ListRow

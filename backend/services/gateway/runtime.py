@@ -73,7 +73,7 @@ class RuntimeSession:
     # call from a different loop context. ``steer_queue()`` creates + caches.
     steer_queue: asyncio.Queue[str] | None = None
     cwd: str | None = None
-    # Per-session overrides (yolo/reasoning/fast). Mirrors
+    # Per-session overrides (reasoning/fast/language). Mirrors
     # ``Conversation.settings_json`` at mount time. Mutated by ``set_setting``
     # which also persists to DB so reconnects re-load the same values.
     settings: dict = field(default_factory=dict)
@@ -113,7 +113,7 @@ def runtime_info_snapshot(llm_config: dict, runtime: RuntimeSession, *, running_
 
     Shape: ``{cwd, branch, model, provider, running, settings}``. The renderer
     tolerates missing fields, so personality / reasoning_effort / service_tier
-    / fast / yolo / skills / tools / version / desktop_contract / usage stay
+    / fast / skills / tools / version / desktop_contract / usage stay
     unset here and are not part of the contract yet.
 
     ``running_override`` lets callers force a specific value (the heartbeat

@@ -923,12 +923,12 @@ def test_session_runtime_info_pydantic_model():
 
     info = SessionRuntimeInfo(
         cwd="/tmp", branch=None, model="mimo-v2.5", provider="openai",
-        running=True, settings={"yolo": True},
+        running=True, settings={"fast": False},
     )
     dumped = info.model_dump()
     assert dumped["cwd"] == "/tmp"
     assert dumped["running"] is True
-    assert dumped["settings"] == {"yolo": True}
+    assert dumped["settings"] == {"fast": False}
 
 
 def test_voice_catalog_score_cjk_substring():

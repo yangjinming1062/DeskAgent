@@ -92,7 +92,7 @@ def test_session_info_handler_returns_session_id():
 
     info = SessionRuntimeInfo(
         cwd="/tmp", branch="main", model="mimo-v2.5", provider="openai",
-        running=True, settings={"yolo": True, "fast": False},
+        running=True, settings={"reasoning": "high", "fast": False},
     )
     dumped = info.model_dump()
     assert dumped["cwd"] == "/tmp"
@@ -100,7 +100,7 @@ def test_session_info_handler_returns_session_id():
     assert dumped["model"] == "mimo-v2.5"
     assert dumped["provider"] == "openai"
     assert dumped["running"] is True
-    assert dumped["settings"]["yolo"] is True
+    assert dumped["settings"]["reasoning"] == "high"
 
 
 def test_companion_affect_emitter_roundtrip():

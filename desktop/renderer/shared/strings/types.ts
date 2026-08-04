@@ -434,8 +434,6 @@ export interface Translations {
         reasoningEffortDesc: string
         serviceTier: string
         serviceTierDesc: string
-        yoloMode: string
-        yoloModeDesc: string
         backgroundReview: string
         backgroundReviewDesc: string
         showSubagentsInSidebar: string
@@ -1117,8 +1115,6 @@ export interface Translations {
       contextUsage: string
       session: string
       runtimeSessionElapsed: string
-      yoloOn: string
-      yoloOff: string
       switchModel: string
       openModelPicker: string
       modelTitle: (provider: string, model: string) => string
@@ -1314,11 +1310,6 @@ export interface Translations {
     desktopCommands: string
     skillCommandsAvailable: (count: number) => string
     warningLine: (message: string) => string
-    yoloArmed: string
-    yoloOff: string
-    yoloSystem: (active: boolean) => string
-    yoloTitle: string
-    yoloToggleFailed: string
     profileStatus: (current: string) => string
     unknownProfile: string
     noProfileNamed: (target: string, available: string) => string
