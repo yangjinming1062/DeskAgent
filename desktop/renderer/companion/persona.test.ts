@@ -21,7 +21,7 @@ describe('assemblePersona', () => {
       personality: '温柔',
       user_call_name: '老板',
       user_hobbies: '音乐',
-      user_freeform: '早起型',
+      user_freeform: '早起型'
     })
 
     expect(p.user_call_name).toBe('老板')
@@ -92,7 +92,7 @@ describe('deriveSpeakingStyle', () => {
     const p = assemblePersona({
       name: '小光',
       personality: '毒舌傲娇',
-      speaking_style: '专业干练',
+      speaking_style: '专业干练'
     })
 
     expect(p.speaking_style).toBe('专业干练')

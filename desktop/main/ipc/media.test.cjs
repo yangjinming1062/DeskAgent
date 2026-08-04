@@ -1,14 +1,3 @@
-/**
- * Tests for main/ipc/media.cjs — STT/TTS engine routing.
- *
- * Run with: node --test main/ipc/media.test.cjs
- *
- * The routing logic is exercised by injecting a fake runner bridge (tool list +
- * invoke results) and a fake engine-preference resolver. The cloud path is
- * reached via a mocked global fetch; the local TTS path reads a real temp WAV
- * so fs.readFileSync is covered without monkeypatching.
- */
-
 const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
@@ -66,7 +55,7 @@ function cloudFetch({ json = null, bytes = null, contentType = 'application/json
     status,
     statusText: 'OK',
     headers: { get: k => (k.toLowerCase() === 'content-type' ? contentType : null) },
-    arrayBuffer: async () => (bytes ?? Buffer.from(JSON.stringify(json))),
+    arrayBuffer: async () => bytes ?? Buffer.from(JSON.stringify(json)),
     text: async () => JSON.stringify(json)
   })
 }
@@ -143,7 +132,10 @@ test('STT cloud → always cloud even when local available', async () => {
 })
 
 test('STT local + success → uses local', async () => {
-  const bridge = makeBridge({ tools: [toolSchema('speech_to_text')], invokeResult: { success: true, text: 'local-text' } })
+  const bridge = makeBridge({
+    tools: [toolSchema('speech_to_text')],
+    invokeResult: { success: true, text: 'local-text' }
+  })
   const ipc = setup({ stt: 'local', bridge })
 
   const res = await ipc.invoke('deskagent:media:stt', { dataUrl: STT_DATA_URL })
@@ -152,7 +144,10 @@ test('STT local + success → uses local', async () => {
 })
 
 test('STT local + failure → throws, no cloud fallback', async () => {
-  const bridge = makeBridge({ tools: [toolSchema('speech_to_text')], invokeResult: { success: false, error: 'whisper oom' } })
+  const bridge = makeBridge({
+    tools: [toolSchema('speech_to_text')],
+    invokeResult: { success: false, error: 'whisper oom' }
+  })
   const ipc = setup({ stt: 'local', bridge })
   global.fetch = cloudFetch({ json: { text: 'cloud-text' } })
 
@@ -168,7 +163,10 @@ test('STT local + unavailable → throws, no cloud fallback', async () => {
 })
 
 test('STT auto + silent_fallback=false + local success:false → throws, no silent cloud retry', async () => {
-  const bridge = makeBridge({ tools: [toolSchema('speech_to_text')], invokeResult: { success: false, error: 'low confidence' } })
+  const bridge = makeBridge({
+    tools: [toolSchema('speech_to_text')],
+    invokeResult: { success: false, error: 'low confidence' }
+  })
   const ipc = setup({ stt: 'auto', sttSilentFallback: false, bridge })
   global.fetch = cloudFetch({ json: { text: 'cloud-text' } })
 
@@ -227,7 +225,10 @@ test('TTS local invoke omits voice when empty', async () => {
 })
 
 test('TTS auto + local fails → falls back to cloud', async () => {
-  const bridge = makeBridge({ tools: [toolSchema('text_to_speech')], invokeResult: { success: false, error: 'no piper voice' } })
+  const bridge = makeBridge({
+    tools: [toolSchema('text_to_speech')],
+    invokeResult: { success: false, error: 'no piper voice' }
+  })
   const ipc = setup({ tts: 'auto', bridge })
   global.fetch = cloudFetch({ bytes: Buffer.from('audio'), contentType: 'audio/mpeg' })
 
@@ -248,7 +249,10 @@ test('TTS cloud → always cloud', async () => {
 })
 
 test('TTS local + failure → throws, no cloud fallback', async () => {
-  const bridge = makeBridge({ tools: [toolSchema('text_to_speech')], invokeResult: { success: false, error: 'no engine' } })
+  const bridge = makeBridge({
+    tools: [toolSchema('text_to_speech')],
+    invokeResult: { success: false, error: 'no engine' }
+  })
   const ipc = setup({ tts: 'local', bridge })
   global.fetch = cloudFetch({ bytes: Buffer.from('audio') })
 

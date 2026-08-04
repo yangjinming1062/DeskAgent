@@ -2,7 +2,14 @@ import { useStore } from '@nanostores/react'
 import { useEffect, useState } from 'react'
 
 import { useGatewayRequest } from '@/companion/boot/use-gateway-request'
-import { $activeTransitionClip, $clipCatalog, type ClipMeta, computeTier, getClipAsset, updateClipCatalog } from '@/companion/clip-store'
+import {
+  $activeTransitionClip,
+  $clipCatalog,
+  type ClipMeta,
+  computeTier,
+  getClipAsset,
+  updateClipCatalog
+} from '@/companion/clip-store'
 import { $spriteEmotion, $spriteState, type SpriteEmotion, type SpriteStateName } from '@/companion/companion-store'
 import { $gatewayState } from '@/shared/store/gateway'
 
@@ -28,7 +35,7 @@ const STATE_PRESENTATION: Record<SpriteStateName, { proc: string; badge: string 
   sleeping: { proc: 'sleep', badge: '💤' },
   disconnected: { proc: 'sleep', badge: '📴' },
   interacting: { proc: 'idle', badge: '✨' },
-  emotional: { proc: 'idle', badge: null },
+  emotional: { proc: 'idle', badge: null }
 }
 
 const EMOTION_PRESENTATION: Record<SpriteEmotion, { proc: string; badge: string }> = {
@@ -48,7 +55,7 @@ const EMOTION_PRESENTATION: Record<SpriteEmotion, { proc: string; badge: string 
   sleepy: { proc: 'sag', badge: '💤' },
   curious: { proc: 'pop', badge: '❓' },
   embarrassed: { proc: 'shy', badge: '😊' },
-  apologetic: { proc: 'sag', badge: '😔' },
+  apologetic: { proc: 'sag', badge: '😔' }
 }
 
 function proceduralKey(state: SpriteStateName, emotion: SpriteEmotion | null): string {
@@ -106,7 +113,10 @@ export function CompanionReady() {
     return () => clearTimeout(timer)
   }, [spriteState, drowsy, activeUrl])
 
-  const activeScene = transitionClip ?? (spriteState === 'emotional' && emotion ? emotion : spriteState === 'idle' ? idleVariant : spriteState)
+  const activeScene =
+    transitionClip ??
+    (spriteState === 'emotional' && emotion ? emotion : spriteState === 'idle' ? idleVariant : spriteState)
+
   const asset = getClipAsset(activeScene)
 
   useEffect(() => {
@@ -132,7 +142,9 @@ export function CompanionReady() {
     window.deskagent
       .api<{ asset_url?: string }>({ path: '/api/companion/avatar' })
       .then(r => {
-        if (!cancelled) {setPortraitUrl(r.asset_url ?? null)}
+        if (!cancelled) {
+          setPortraitUrl(r.asset_url ?? null)
+        }
       })
       .catch(() => {})
 
@@ -142,9 +154,22 @@ export function CompanionReady() {
   }, [])
 
   useEffect(() => {
-    if (gatewayState !== 'open') {return}
+    if (gatewayState !== 'open') {
+      return
+    }
+
     let cancelled = false
-    void requestGateway<{ clips?: { scene: string; batch?: number; status: string; tier?: number; url: string | null; keyframe_url?: string | null; keyframe_meta?: ClipMeta | null }[] }>('avatar.list_clips', {})
+    void requestGateway<{
+      clips?: {
+        scene: string
+        batch?: number
+        status: string
+        tier?: number
+        url: string | null
+        keyframe_url?: string | null
+        keyframe_meta?: ClipMeta | null
+      }[]
+    }>('avatar.list_clips', {})
       .then(res => {
         if (!cancelled && res?.clips?.length) {
           updateClipCatalog(
@@ -155,7 +180,7 @@ export function CompanionReady() {
               status: c.status as 'succeeded' | 'failed' | 'pending' | 'processing' | 'queued',
               url: c.url,
               keyframe_url: c.keyframe_url ?? null,
-              keyframe_meta: c.keyframe_meta ?? null,
+              keyframe_meta: c.keyframe_meta ?? null
             }))
           )
         }
@@ -207,7 +232,12 @@ export function CompanionReady() {
           />
         </div>
       ) : showSprite && activeUrl ? (
-        <KeyframeSprite cols={activeMeta?.cols ?? 4} filter={drowsyFilter ? `${drowsyFilter} ${transparentFilter}` : transparentFilter} fps={activeMeta?.fps ?? 6} url={activeUrl} />
+        <KeyframeSprite
+          cols={activeMeta?.cols ?? 4}
+          filter={drowsyFilter ? `${drowsyFilter} ${transparentFilter}` : transparentFilter}
+          fps={activeMeta?.fps ?? 6}
+          url={activeUrl}
+        />
       ) : portraitUrl ? (
         <img
           alt="companion"
@@ -228,7 +258,13 @@ export function CompanionReady() {
 // near-white pixels (RGB > 0.92) so highlights on the character survive.
 function ChromaKeyFilter() {
   return (
-    <svg aria-hidden="true" focusable="false" height="0" style={{ position: 'absolute', width: 0, height: 0, overflow: 'hidden' }} width="0">
+    <svg
+      aria-hidden="true"
+      focusable="false"
+      height="0"
+      style={{ position: 'absolute', width: 0, height: 0, overflow: 'hidden' }}
+      width="0"
+    >
       <defs>
         <filter colorInterpolationFilters="sRGB" id="companion-chroma-key">
           <feColorMatrix
@@ -246,7 +282,17 @@ function ChromaKeyFilter() {
   )
 }
 
-function KeyframeSprite({ url, cols, fps, filter }: { url: string; cols: number; fps: number; filter: string | undefined }) {
+function KeyframeSprite({
+  url,
+  cols,
+  fps,
+  filter
+}: {
+  url: string
+  cols: number
+  fps: number
+  filter: string | undefined
+}) {
   // Single-row sprite strip: scale so one cell fills the 160px frame, then
   // step background-position across (cols-1) cells. steps(cols-1) shows all
   // cols frames and loops seamlessly back to the first.
@@ -264,7 +310,7 @@ function KeyframeSprite({ url, cols, fps, filter }: { url: string; cols: number;
         backgroundSize: `${cols * CELL}px ${CELL}px`,
         backgroundRepeat: 'no-repeat',
         animation: anim,
-        filter,
+        filter
       }}
     />
   )

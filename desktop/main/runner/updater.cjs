@@ -277,7 +277,9 @@ class RunnerUpdater {
           maxBuffer: 1 * 1024 * 1024
         })
         const m = /Name:\s*(\S+)[\s\S]+?Version:\s*(\S+)/.exec(stdout)
-        if (m) {rollbackMarker = `${m[1]}==${m[2]}`}
+        if (m) {
+          rollbackMarker = `${m[1]}==${m[2]}`
+        }
       } catch (err) {
         // No installed wheel yet — first install. Nothing to roll back to.
         this.log?.('debug', '[updater] no pre-existing wheel to snapshot', err)
@@ -383,7 +385,7 @@ class RunnerUpdater {
             kind: 'runner-failed',
             error: 'restart-failed-after-update',
             recoverable: true,
-            detail: err?.message || String(err),
+            detail: err?.message || String(err)
           })
           this.log?.('error', '[updater] post-update restart failed', err)
         }

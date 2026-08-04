@@ -124,11 +124,7 @@ export function LoginPage() {
           </div>
         </div>
 
-        <Button
-          className="h-9 w-full"
-          disabled={busy || !username || !password || !backendUrl.trim()}
-          type="submit"
-        >
+        <Button className="h-9 w-full" disabled={busy || !username || !password || !backendUrl.trim()} type="submit">
           {busy ? <Loader2 className="size-3.5 animate-spin" /> : <LogIn className="size-3.5" />}
           {busy ? a.signingIn : a.signIn}
         </Button>

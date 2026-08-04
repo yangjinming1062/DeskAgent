@@ -31,14 +31,7 @@ export { queryClient } from './lib/query-client'
 
 export { TOOLSET_CATALOG } from './lib/toolset-catalog'
 export { cn } from './lib/utils'
-export {
-  $auth,
-  applyAuthBroadcast,
-  hydrateAuth,
-  login,
-  logout,
-  refreshSession
-} from './store/auth'
+export { $auth, applyAuthBroadcast, hydrateAuth, login, logout, refreshSession } from './store/auth'
 
 export {
   $gateway,
@@ -50,13 +43,7 @@ export {
   tearDownPrimaryGateway
 } from './store/gateway'
 export { $hapticsMuted } from './store/haptics'
-export {
-  $notifications,
-  clearNotifications,
-  dismissNotification,
-  notify,
-  notifyError
-} from './store/notifications'
+export { $notifications, clearNotifications, dismissNotification, notify, notifyError } from './store/notifications'
 
 export { ThemeProvider } from './themes/context'
 

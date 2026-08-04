@@ -407,7 +407,8 @@ export const strings: Translations = {
       emptyTitle: '未安装任何技能',
       emptyDesc: '请重新安装 DeskAgent 以恢复内置技能。',
       hiddenByPlatformTitle: '当前操作系统没有可用技能',
-      hiddenByPlatformDesc: '本版本 DeskAgent 内置的技能面向其他操作系统。请在支持的操作系统上重新安装 DeskAgent 后再启用。'
+      hiddenByPlatformDesc:
+        '本版本 DeskAgent 内置的技能面向其他操作系统。请在支持的操作系统上重新安装 DeskAgent 后再启用。'
     },
     account: {
       heading: '账户',
@@ -826,7 +827,8 @@ export const strings: Translations = {
       matrix: '用机器人账户登录你的 homeserver，然后复制访问令牌、用户 ID 和 homeserver URL。',
       signal: '在可访问的位置运行 signal-cli REST 桥接，然后把 DeskAgent 指向该 URL 和已注册的电话号码。',
       whatsapp: '启动 DeskAgent 自带的 WhatsApp 桥接，首次运行时扫描二维码，然后启用该平台。',
-      bluebubbles: '在装有 iMessage 的 Mac 上运行 BlueBubbles Server，暴露其 API，然后用服务器密码把 DeskAgent 指向该 URL。',
+      bluebubbles:
+        '在装有 iMessage 的 Mac 上运行 BlueBubbles Server，暴露其 API，然后用服务器密码把 DeskAgent 指向该 URL。',
       homeassistant: '在 Home Assistant 中打开你的个人资料并创建长期访问令牌。把它连同你的 HA URL 一起粘贴到这里。',
       email: '使用专用邮箱。对于 Gmail/Workspace,创建应用专用密码并使用 imap.gmail.com / smtp.gmail.com。',
       sms: '从 Twilio 控制台获取你的 Account SID 和 Auth Token，以及一个可发送短信的电话号码。',
@@ -836,7 +838,8 @@ export const strings: Translations = {
       wecom_callback: '设置一个企业微信自建应用，暴露其回调 URL，并提供 corp ID、secret、agent ID 和 AES key。',
       weixin: '登录微信公众平台，复制 AppID 和 Token，并把消息回调 URL 指向 DeskAgent。',
       qqbot: '在 QQ 开放平台 (q.qq.com) 注册一个应用，复制 App ID 和 Client Secret。',
-      api_server: '把 DeskAgent 暴露为兼容 OpenAI 的 API。设置一个鉴权密钥，然后把 Open WebUI / LobeChat 等指向 host:port。',
+      api_server:
+        '把 DeskAgent 暴露为兼容 OpenAI 的 API。设置一个鉴权密钥，然后把 Open WebUI / LobeChat 等指向 host:port。',
       webhook: '运行一个 HTTP 服务器，供其他工具 (GitHub、GitLab、自定义应用)POST。用 secret 验证签名。'
     }
   },

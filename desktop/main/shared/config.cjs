@@ -1,18 +1,14 @@
 'use strict'
 
+const fs = require('node:fs')
+const path = require('node:path')
+const { app } = require('electron')
+
 // Resolution priority (first hit wins):
 //   1. $DESKAGENT_HOME/desktop-config.json — last user-confirmed backend URL
 //   2. process.resourcesPath/config.json — packaged default
 //   3. <repo>/desktop/config.json — dev default
 //   4. DEFAULT_BACKEND_URL — last-resort fallback
-//
-// `getBackendUrl()` keeps the bundled-only path for callers that explicitly
-// want the packaged/dev default; `resolveBackendUrl(home)` is the single
-// authoritative chain used by every runtime path that should honor a user
-// override (session bootstrap, login form prefill, auto-updater feed, etc.).
-const fs = require('node:fs')
-const path = require('node:path')
-const { app } = require('electron')
 
 const DEFAULT_BACKEND_URL = 'http://localhost:8000'
 

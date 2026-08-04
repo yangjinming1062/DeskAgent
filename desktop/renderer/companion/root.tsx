@@ -6,7 +6,14 @@ import { BootFailureOverlay } from '@/companion/boot/boot-failure-overlay'
 import { useGatewayBoot } from '@/companion/boot/use-gateway-boot'
 import { useGatewayRequest } from '@/companion/boot/use-gateway-request'
 import { $chatOpen, setChatOpen } from '@/companion/chat-store'
-import { $companionLifecycle, $voiceCallOpen, checkBedtimeAndAutoSleep, reportUserActivity, setCompanionLifecycle, wakeUpFromSleep } from '@/companion/companion-store'
+import {
+  $companionLifecycle,
+  $voiceCallOpen,
+  checkBedtimeAndAutoSleep,
+  reportUserActivity,
+  setCompanionLifecycle,
+  wakeUpFromSleep
+} from '@/companion/companion-store'
 import { hydratePersona } from '@/companion/persona-store'
 import { $auth, applyAuthBroadcast, hydrateAuth, logout } from '@/shared/store/auth'
 import { $gatewayState } from '@/shared/store/gateway'
@@ -79,7 +86,9 @@ export function CompanionRoot() {
   // companion.message receiver + bubble + TTS without the Backend send_message
   // path. Stripped in production builds.
   useEffect(() => {
-    if (import.meta.env.PROD) {return}
+    if (import.meta.env.PROD) {
+      return
+    }
 
     const onKey = (e: KeyboardEvent) => {
       if (e.ctrlKey && e.shiftKey && (e.key === 'P' || e.key === 'p')) {
@@ -107,10 +116,14 @@ export function CompanionRoot() {
     window.deskagent
       .api<{ is_complete?: boolean }>({ path: '/api/companion/persona' })
       .then(p => {
-        if (!cancelled) {setCompanionLifecycle(p?.is_complete ? 'ready' : 'onboarding')}
+        if (!cancelled) {
+          setCompanionLifecycle(p?.is_complete ? 'ready' : 'onboarding')
+        }
       })
       .catch(() => {
-        if (!cancelled) {setCompanionLifecycle('onboarding')}
+        if (!cancelled) {
+          setCompanionLifecycle('onboarding')
+        }
       })
 
     return () => {
@@ -126,7 +139,10 @@ export function CompanionRoot() {
   const mode: EggMode = !authed ? 'teaser' : gatewayState === 'open' ? 'awake' : 'drowsy'
 
   useEffect(() => {
-    if (lifecycle !== 'ready') {return}
+    if (lifecycle !== 'ready') {
+      return
+    }
+
     checkBedtimeAndAutoSleep()
 
     const timer = setInterval(() => {
@@ -150,11 +166,17 @@ export function CompanionRoot() {
   // (provider pruned/renamed voices, or provider switch). Backend tolerates
   // unknown ids, so this is a one-time prompt — not a hard error.
   useEffect(() => {
-    if (lifecycle !== 'ready' || gatewayState !== 'open' || validityCheckedRef.current) {return}
+    if (lifecycle !== 'ready' || gatewayState !== 'open' || validityCheckedRef.current) {
+      return
+    }
+
     validityCheckedRef.current = true
 
     void checkCompanionVoiceValidity(requestGateway).then(result => {
-      if (result.valid) {return}
+      if (result.valid) {
+        return
+      }
+
       notify({
         kind: 'warning',
         title: strings.notifications.voice.invalidTitle,
@@ -180,7 +202,9 @@ export function CompanionRoot() {
     }
 
     // Pre-auth: each tap cracks the egg; 5 cracks shatter it and summon login.
-    if (authed) {return}
+    if (authed) {
+      return
+    }
 
     if (cracks >= HATCH_AT) {
       void window.deskagent.showToolWindow()
@@ -191,13 +215,17 @@ export function CompanionRoot() {
     const next = cracks + 1
     setCracks(next)
 
-    if (next >= HATCH_AT) {void window.deskagent.showToolWindow()}
+    if (next >= HATCH_AT) {
+      void window.deskagent.showToolWindow()
+    }
   }
 
   // Plan §4.3: double-tap the ready companion to open Chat. Single-tap poke
   // reactions (LLM-generated) arrive in a later slice.
   const onDoubleTap = () => {
-    if (showReady) {setChatOpen(true)}
+    if (showReady) {
+      setChatOpen(true)
+    }
   }
 
   return (

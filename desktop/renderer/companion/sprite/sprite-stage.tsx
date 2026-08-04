@@ -3,7 +3,12 @@ import { type ReactNode, type PointerEvent as ReactPointerEvent, useCallback, us
 
 import { $chatOpen } from '@/companion/chat-store'
 import { setSpritePosition } from '@/companion/companion-store'
-import { isPointInteractive, registerInteractiveRegion, setCaptureProbe, unregisterInteractiveRegion } from '@/companion/interactive-regions'
+import {
+  isPointInteractive,
+  registerInteractiveRegion,
+  setCaptureProbe,
+  unregisterInteractiveRegion
+} from '@/companion/interactive-regions'
 
 import { handleDragEndInteraction, handleHoverInteraction } from '../interaction'
 
@@ -33,7 +38,11 @@ export function SpriteStage({ children, onTap, onDoubleTap, onContextMenu }: Spr
   const mountRef = useRef<HTMLDivElement>(null)
   const capturedRef = useRef(false)
   const lastPointRef = useRef<{ x: number; y: number } | null>(null)
-  const dragRef = useRef<{ startX: number; startY: number; originX: number; originY: number; moved: boolean } | null>(null)
+
+  const dragRef = useRef<{ startX: number; startY: number; originX: number; originY: number; moved: boolean } | null>(
+    null
+  )
+
   const lastTapRef = useRef(0)
   const chatOpen = useStore($chatOpen)
 
@@ -54,7 +63,10 @@ export function SpriteStage({ children, onTap, onDoubleTap, onContextMenu }: Spr
   const pendingToggleRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const toggle = useCallback((enable: boolean) => {
-    if (pendingToggleRef.current) {clearTimeout(pendingToggleRef.current)}
+    if (pendingToggleRef.current) {
+      clearTimeout(pendingToggleRef.current)
+    }
+
     pendingToggleRef.current = setTimeout(() => {
       pendingToggleRef.current = null
 
@@ -67,14 +79,20 @@ export function SpriteStage({ children, onTap, onDoubleTap, onContextMenu }: Spr
   }, [])
 
   const capture = useCallback(() => {
-    if (capturedRef.current) {return}
+    if (capturedRef.current) {
+      return
+    }
+
     capturedRef.current = true
     handleHoverInteraction()
     toggle(true)
   }, [toggle])
 
   const release = useCallback(() => {
-    if (!capturedRef.current) {return}
+    if (!capturedRef.current) {
+      return
+    }
+
     capturedRef.current = false
     toggle(false)
   }, [toggle])
@@ -83,9 +101,16 @@ export function SpriteStage({ children, onTap, onDoubleTap, onContextMenu }: Spr
     registerInteractiveRegion(SPRITE_REGION_ID, () => {
       const rect = mountRef.current?.getBoundingClientRect() ?? null
 
-      if (!rect || rect.width === 0 || rect.height === 0) {return null}
+      if (!rect || rect.width === 0 || rect.height === 0) {
+        return null
+      }
 
-      return new DOMRect(rect.left - HALO_PAD, rect.top - HALO_PAD, rect.width + 2 * HALO_PAD, rect.height + 2 * HALO_PAD)
+      return new DOMRect(
+        rect.left - HALO_PAD,
+        rect.top - HALO_PAD,
+        rect.width + 2 * HALO_PAD,
+        rect.height + 2 * HALO_PAD
+      )
     })
 
     return () => unregisterInteractiveRegion(SPRITE_REGION_ID)
@@ -104,14 +129,19 @@ export function SpriteStage({ children, onTap, onDoubleTap, onContextMenu }: Spr
       // release. Mouseleave alone wouldn't catch "cursor moves within the
       // window but exits the sprite" — that's the whole point of the
       // region hit-test, so do it on every move.
-      if (isPointInteractive(e.clientX, e.clientY)) {capture()}
-      else if (!dragRef.current) {release()}
+      if (isPointInteractive(e.clientX, e.clientY)) {
+        capture()
+      } else if (!dragRef.current) {
+        release()
+      }
     }
 
     const probe = () => {
       const p = lastPointRef.current
 
-      if (p && isPointInteractive(p.x, p.y)) {capture()}
+      if (p && isPointInteractive(p.x, p.y)) {
+        capture()
+      }
     }
 
     window.addEventListener('mousemove', onMove)
@@ -133,11 +163,17 @@ export function SpriteStage({ children, onTap, onDoubleTap, onContextMenu }: Spr
   const onPointerMove = (e: ReactPointerEvent) => {
     const drag = dragRef.current
 
-    if (!drag) {return}
+    if (!drag) {
+      return
+    }
+
     const dx = e.clientX - drag.startX
     const dy = e.clientY - drag.startY
 
-    if (!drag.moved && Math.hypot(dx, dy) < DRAG_THRESHOLD) {return}
+    if (!drag.moved && Math.hypot(dx, dy) < DRAG_THRESHOLD) {
+      return
+    }
+
     drag.moved = true
     setPos({ x: drag.originX + dx, y: drag.originY + dy })
   }

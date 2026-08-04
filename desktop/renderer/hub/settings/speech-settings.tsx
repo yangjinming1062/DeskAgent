@@ -166,7 +166,9 @@ export function SpeechSettings() {
   ]
 
   const availBadge = (avail: boolean | null) =>
-    avail === null ? null : <Pill tone={avail ? 'primary' : 'muted'}>{avail ? s.engineLocalAvail : s.engineLocalUnavail}</Pill>
+    avail === null ? null : (
+      <Pill tone={avail ? 'primary' : 'muted'}>{avail ? s.engineLocalAvail : s.engineLocalUnavail}</Pill>
+    )
 
   return (
     <SettingsContent>
@@ -193,7 +195,9 @@ export function SpeechSettings() {
           />
           {state.sttEngine === 'auto' && (
             <ListRow
-              action={<Switch checked={state.sttSilentFallback} onCheckedChange={v => update({ sttSilentFallback: v })} />}
+              action={
+                <Switch checked={state.sttSilentFallback} onCheckedChange={v => update({ sttSilentFallback: v })} />
+              }
               description={s.sttSilentFallbackDesc}
               title={s.sttSilentFallbackTitle}
             />

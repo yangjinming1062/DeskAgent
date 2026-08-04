@@ -70,7 +70,7 @@ export function PersonaSection() {
           role,
           species,
           character_gender: characterGender,
-          appearance: appearance.slice(0, MAX_APPEARANCE),
+          appearance: appearance.slice(0, MAX_APPEARANCE)
         }),
         method: 'PUT',
         path: '/api/companion/persona'
@@ -90,12 +90,7 @@ export function PersonaSection() {
   }
 
   if (!editing) {
-    const tags = [
-      persona?.biological_type,
-      persona?.gender,
-      persona?.background,
-      persona?.personality,
-    ].filter(Boolean)
+    const tags = [persona?.biological_type, persona?.gender, persona?.background, persona?.personality].filter(Boolean)
 
     return (
       <div>
@@ -123,11 +118,21 @@ export function PersonaSection() {
       <div className="space-y-2.5">
         <label className="block">
           <span className="mb-1 block text-[11px] text-white/50">名字</span>
-          <input className={inputClass} onChange={e => setName(e.target.value)} placeholder="给我起个名字" value={name} />
+          <input
+            className={inputClass}
+            onChange={e => setName(e.target.value)}
+            placeholder="给我起个名字"
+            value={name}
+          />
         </label>
         <label className="block">
           <span className="mb-1 block text-[11px] text-white/50">生物类型</span>
-          <input className={inputClass} onChange={e => setSpecies(e.target.value.slice(0, 64))} placeholder="比如：人类、灵兽…" value={species} />
+          <input
+            className={inputClass}
+            onChange={e => setSpecies(e.target.value.slice(0, 64))}
+            placeholder="比如：人类、灵兽…"
+            value={species}
+          />
           <div className="mt-1.5 flex flex-wrap gap-1.5">
             {SPECIES_PRESETS.map(p => (
               <button className={presetClass} key={p} onClick={() => setSpecies(p)} type="button">
@@ -138,7 +143,12 @@ export function PersonaSection() {
         </label>
         <label className="block">
           <span className="mb-1 block text-[11px] text-white/50">角色性别</span>
-          <input className={inputClass} onChange={e => setCharacterGender(e.target.value.slice(0, 64))} placeholder="比如：女、男…" value={characterGender} />
+          <input
+            className={inputClass}
+            onChange={e => setCharacterGender(e.target.value.slice(0, 64))}
+            placeholder="比如：女、男…"
+            value={characterGender}
+          />
           <div className="mt-1.5 flex flex-wrap gap-1.5">
             {CHARACTER_GENDER_PRESETS.map(p => (
               <button className={presetClass} key={p} onClick={() => setCharacterGender(p)} type="button">
@@ -163,11 +173,18 @@ export function PersonaSection() {
               </button>
             ))}
           </div>
-          <span className="mt-1 block text-[10px] text-white/40">{appearance.length} / {MAX_APPEARANCE}</span>
+          <span className="mt-1 block text-[10px] text-white/40">
+            {appearance.length} / {MAX_APPEARANCE}
+          </span>
         </label>
         <label className="block">
           <span className="mb-1 block text-[11px] text-white/50">角色定位</span>
-          <input className={inputClass} onChange={e => setRole(e.target.value)} placeholder="或者自由描述…" value={role} />
+          <input
+            className={inputClass}
+            onChange={e => setRole(e.target.value)}
+            placeholder="或者自由描述…"
+            value={role}
+          />
           <div className="mt-1.5 flex flex-wrap gap-1.5">
             {ROLE_PRESETS.map(p => (
               <button className={presetClass} key={p} onClick={() => setRole(p)} type="button">
@@ -178,7 +195,12 @@ export function PersonaSection() {
         </label>
         <label className="block">
           <span className="mb-1 block text-[11px] text-white/50">性格</span>
-          <input className={inputClass} onChange={e => setPersonality(e.target.value)} placeholder="自由描述…" value={personality} />
+          <input
+            className={inputClass}
+            onChange={e => setPersonality(e.target.value)}
+            placeholder="自由描述…"
+            value={personality}
+          />
           <div className="mt-1.5 flex flex-wrap gap-1.5">
             {PERSONALITY_PRESETS.map(p => (
               <button className={presetClass} key={p} onClick={() => setPersonality(p)} type="button">

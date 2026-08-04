@@ -218,19 +218,10 @@ test('validateViaRefresh returns null when fetchImpl is not a function', async (
 // matches, catching the drift deterministically on test failure rather
 // than at the user's first launch.
 test('bootstrap_constants_match_rust_paths', () => {
-  const pathsFile = path.resolve(
-    __dirname,
-    '..',
-    '..',
-    '..',
-    'installer',
-    'src-tauri',
-    'src',
-    'paths.rs'
-  )
+  const pathsFile = path.resolve(__dirname, '..', '..', '..', 'installer', 'src-tauri', 'src', 'paths.rs')
   const source = fs.readFileSync(pathsFile, 'utf8')
 
-  const expect = (re) => {
+  const expect = re => {
     const match = source.match(re)
     if (!match) {
       throw new Error(`paths.rs is missing the expected constant; is the source layout unchanged? (${re})`)
@@ -240,8 +231,8 @@ test('bootstrap_constants_match_rust_paths', () => {
 
   // Strip trailing semicolon + quotes from a `pub const NAME: &str = "value";`
   // or `pub const NAME: u32 = value;` declaration.
-  const rustString = (re) => expect(re).replace(/^"|"$/g, '')
-  const rustU32 = (re) => Number(expect(re))
+  const rustString = re => expect(re).replace(/^"|"$/g, '')
+  const rustU32 = re => Number(expect(re))
 
   assert.equal(
     rustString(/pub const BOOTSTRAP_FILENAME:\s*&str\s*=\s*"([^"]+)"\s*;/),

@@ -1,7 +1,5 @@
 'use strict'
 
-// Backend session IPC: login / logout / session snapshot.
-
 const { resolveBackendUrl, writeStoredBackendUrl } = require('../shared/config.cjs')
 
 function ensureBackendSession(deps) {

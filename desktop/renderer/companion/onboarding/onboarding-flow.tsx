@@ -36,7 +36,14 @@ interface Question {
 }
 
 const QUESTIONS: readonly Question[] = [
-  { key: 'name', text: '您好…我还不认识自己。您愿意给我一个名字吗？', placeholder: '给我起个名字吧', required: true, multiline: false, presets: [] },
+  {
+    key: 'name',
+    text: '您好…我还不认识自己。您愿意给我一个名字吗？',
+    placeholder: '给我起个名字吧',
+    required: true,
+    multiline: false,
+    presets: []
+  },
   {
     key: 'species',
     text: '那我是哪种生灵呢？',
@@ -151,9 +158,13 @@ const retry3 = async <T,>(fn: () => Promise<T | null | undefined>, delayMs: numb
   for (let i = 0; i < 3; i++) {
     const result = await fn()
 
-    if (result) {return result}
+    if (result) {
+      return result
+    }
 
-    if (i < 2) {await sleep(delayMs)}
+    if (i < 2) {
+      await sleep(delayMs)
+    }
   }
 
   return null
@@ -205,7 +216,9 @@ async function savePersona(payload: ReturnType<typeof assemblePersona>): Promise
     const raw = error instanceof Error ? error.message : String(error)
     const unwrapped = raw.match(/Error invoking remote method '[^']+': Error: (.+)$/)?.[1] ?? raw
 
-    if (/^4\d\d /.test(unwrapped)) {throw error}
+    if (/^4\d\d /.test(unwrapped)) {
+      throw error
+    }
 
     return false
   }
@@ -235,14 +248,24 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const resumedRef = useRef(false)
   const containerRef = useRef<HTMLDivElement>(null)
-  const dragRef = useRef<{ startX: number; startY: number; originX: number; originY: number; moved: boolean; pointerId: number } | null>(null)
+
+  const dragRef = useRef<{
+    startX: number
+    startY: number
+    originX: number
+    originY: number
+    moved: boolean
+    pointerId: number
+  } | null>(null)
 
   // Centered initial position; the user can drag from there.
   const [dialogPos, setDialogPos] = useState<{ x: number; y: number }>(() => {
     const width = 448
     const height = 600
 
-    if (typeof window === 'undefined') {return { x: 0, y: 0 }}
+    if (typeof window === 'undefined') {
+      return { x: 0, y: 0 }
+    }
 
     return {
       x: Math.max(0, Math.round((window.innerWidth - width) / 2)),
@@ -261,7 +284,9 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
     registerInteractiveRegion('onboarding', () => {
       const rect = containerRef.current?.getBoundingClientRect() ?? null
 
-      if (!rect || rect.width === 0 || rect.height === 0) {return null}
+      if (!rect || rect.width === 0 || rect.height === 0) {
+        return null
+      }
 
       return rect
     })
@@ -279,7 +304,9 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
   const onDialogPointerDown = (e: ReactPointerEvent) => {
     const target = e.target as HTMLElement
 
-    if (target.closest('button, input, textarea, [contenteditable="true"]')) {return}
+    if (target.closest('button, input, textarea, [contenteditable="true"]')) {
+      return
+    }
 
     dragRef.current = {
       startX: e.clientX,
@@ -295,12 +322,17 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
     const onMove = (e: PointerEvent) => {
       const drag = dragRef.current
 
-      if (!drag || drag.pointerId !== e.pointerId) {return}
+      if (!drag || drag.pointerId !== e.pointerId) {
+        return
+      }
 
       const dx = e.clientX - drag.startX
       const dy = e.clientY - drag.startY
 
-      if (!drag.moved && Math.hypot(dx, dy) < DRAG_THRESHOLD) {return}
+      if (!drag.moved && Math.hypot(dx, dy) < DRAG_THRESHOLD) {
+        return
+      }
+
       drag.moved = true
       setDialogPos({ x: drag.originX + dx, y: drag.originY + dy })
     }
@@ -308,7 +340,10 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
     const onUp = (e: PointerEvent) => {
       const drag = dragRef.current
 
-      if (!drag || drag.pointerId !== e.pointerId) {return}
+      if (!drag || drag.pointerId !== e.pointerId) {
+        return
+      }
+
       dragRef.current = null
     }
 
@@ -327,12 +362,19 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
   // pull any half-answered draft so a crash/exit mid-onboarding resumes from
   // the next unanswered question. One-shot — never re-resumes.
   useEffect(() => {
-    if (resumedRef.current || gatewayState !== 'open') {return}
+    if (resumedRef.current || gatewayState !== 'open') {
+      return
+    }
+
     resumedRef.current = true
 
     void (async () => {
       try {
-        const state = await requestGateway<{ answers?: Record<string, string>; next_field?: string | null; complete?: boolean }>('onboarding.get_state', {})
+        const state = await requestGateway<{
+          answers?: Record<string, string>
+          next_field?: string | null
+          complete?: boolean
+        }>('onboarding.get_state', {})
 
         if (state?.complete) {
           onCompleted()
@@ -359,11 +401,13 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
             user_age_bucket: a.user_age_bucket,
             user_hobbies: a.user_hobbies,
             user_freeform: a.user_freeform,
-            voice: a.voice,
+            voice: a.voice
           })
           const idx = QUESTIONS.findIndex(q => BACKEND_FIELD[q.key] === state.next_field)
 
-          if (idx > 0) {setQIndex(idx)}
+          if (idx > 0) {
+            setQIndex(idx)
+          }
         }
       } catch {
         /* no draft yet — start fresh */
@@ -385,7 +429,10 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
 
   // Speak each question as it appears (default neutral voice; plan §3.2).
   useEffect(() => {
-    if (phase !== 'q') {return}
+    if (phase !== 'q') {
+      return
+    }
+
     const q = QUESTIONS[qIndex]
     const current = answersRef.current
     setInput((current[q.key] as string) ?? '')
@@ -397,7 +444,9 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
   }, [phase, qIndex])
 
   useEffect(() => {
-    if (phase === 'q') {(QUESTIONS[qIndex].multiline ? textareaRef.current : inputRef.current)?.focus()}
+    if (phase === 'q') {
+      ;(QUESTIONS[qIndex].multiline ? textareaRef.current : inputRef.current)?.focus()
+    }
   }, [phase, qIndex])
 
   const commit = (value: string | undefined) => {
@@ -435,13 +484,19 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
   }
 
   const onSkip = () => {
-    if (question.required) {return}
+    if (question.required) {
+      return
+    }
+
     commit(undefined)
     advance()
   }
 
   const onBack = () => {
-    if (qIndex === 0) {return}
+    if (qIndex === 0) {
+      return
+    }
+
     setQIndex(qIndex - 1)
   }
 
@@ -455,7 +510,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
     let personaOk = false
 
     try {
-      personaOk = await retry3(() => savePersona(assemblePersona(answers)), 700) === true
+      personaOk = (await retry3(() => savePersona(assemblePersona(answers)), 700)) === true
     } catch (err) {
       setPhase('q')
       setHint(err instanceof Error ? `记忆存不上：${err.message}` : '记忆存不上，请重试 onboarding')
@@ -469,7 +524,9 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
     if (personaOk) {
       url = await retry3(generatePortrait, 900)
 
-      if (!url) {setHint('我还没想好…')}
+      if (!url) {
+        setHint('我还没想好…')
+      }
     } else {
       setHint('记忆还没存好，稍后再试试形象吧…')
     }
@@ -489,7 +546,10 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
     // avatar.regenerate returns {queued, job_id}; the real result arrives
     // via the avatar.regenerated event — await it before swapping.
     try {
-      const queued = await requestGateway<{ queued?: boolean; job_id?: string; asset_url?: string }>('avatar.regenerate', { feedback: undefined })
+      const queued = await requestGateway<{ queued?: boolean; job_id?: string; asset_url?: string }>(
+        'avatar.regenerate',
+        { feedback: undefined }
+      )
 
       if (queued?.asset_url) {
         setPortraitUrl(queued.asset_url)
@@ -524,15 +584,23 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
 
   const uploadPortrait = async () => {
     try {
-      const [path] = await window.deskagent.selectPaths({ title: '选择一张图片作为形象', filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif'] }] })
+      const [path] = await window.deskagent.selectPaths({
+        title: '选择一张图片作为形象',
+        filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif'] }]
+      })
 
-      if (!path) {return}
+      if (!path) {
+        return
+      }
+
       const dataUrl = await window.deskagent.readFileDataUrl(path)
       const comma = dataUrl.indexOf(',')
       const mime = comma > 0 ? dataUrl.slice(5, comma) : 'image/png'
       const base64 = comma > 0 ? dataUrl.slice(comma + 1) : ''
 
-      if (!base64) {return}
+      if (!base64) {
+        return
+      }
 
       // POST base64 JSON — the desktop REST IPC speaks JSON, not multipart.
       const res = await window.deskagent.api<{ asset_url?: string }>({
@@ -613,7 +681,10 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
       'onboarding.greeting'
     )
 
-    if (!ok) {setHint('（声音暂时不可用）')}
+    if (!ok) {
+      setHint('（声音暂时不可用）')
+    }
+
     await sleep(ok ? 600 : 1800)
     onCompleted()
   }
@@ -622,10 +693,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
   const presetValues = question?.presets ?? []
 
   return (
-    <div
-      className="fixed inset-0 z-50 pointer-events-none"
-      style={{ pointerEvents: 'none' }}
-    >
+    <div className="fixed inset-0 z-50 pointer-events-none" style={{ pointerEvents: 'none' }}>
       <div
         className="absolute flex max-h-[90vh] w-full max-w-md flex-col items-center gap-4"
         onPointerDown={onDialogPointerDown}
@@ -641,146 +709,185 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
       >
         <Silhouette clarity={clarity} size={160} spin={phase === 'hatching'} />
 
-        <div className="w-full rounded-2xl border border-white/10 bg-black/45 p-5 text-white shadow-2xl backdrop-blur-md" style={{ pointerEvents: 'auto' }}>
+        <div
+          className="w-full rounded-2xl border border-white/10 bg-black/45 p-5 text-white shadow-2xl backdrop-blur-md"
+          style={{ pointerEvents: 'auto' }}
+        >
           {voicePreparing && <p className="mb-2 text-center text-[10px] text-white/40">🔊 正在准备声音…</p>}
           {phase === 'q' && (
-          <>
-            <p className="min-h-[3.5rem] text-[15px] leading-relaxed">{spokenText}</p>
-            {presetValues.length > 0 && (
-              <div className="mt-3 flex flex-wrap gap-2">
-                {presetValues.map(p => (
+            <>
+              <p className="min-h-[3.5rem] text-[15px] leading-relaxed">{spokenText}</p>
+              {presetValues.length > 0 && (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {presetValues.map(p => (
+                    <button
+                      className="rounded-full border border-white/20 bg-white/5 px-3 py-1 text-xs transition hover:bg-white/15"
+                      key={p}
+                      onClick={() => setInput(p)}
+                      type="button"
+                    >
+                      {p}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {question.multiline ? (
+                <textarea
+                  className="mt-3 w-full resize-none rounded-lg border border-white/15 bg-white/10 px-3 py-2 text-sm outline-none placeholder:text-white/40 focus:border-white/40"
+                  onChange={e => setInput(e.target.value)}
+                  placeholder={question.placeholder}
+                  ref={textareaRef}
+                  rows={3}
+                  value={input}
+                />
+              ) : (
+                <input
+                  className="mt-3 w-full rounded-lg border border-white/15 bg-white/10 px-3 py-2 text-sm outline-none placeholder:text-white/40 focus:border-white/40"
+                  onChange={e => setInput(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter' && !question.multiline) {
+                      onSend()
+                    }
+                  }}
+                  placeholder={question.placeholder}
+                  ref={inputRef}
+                  value={input}
+                />
+              )}
+              <div className="mt-4 flex items-center justify-between text-xs">
+                <button
+                  className="text-white/60 transition hover:text-white disabled:opacity-30"
+                  disabled={qIndex === 0}
+                  onClick={onBack}
+                  type="button"
+                >
+                  上一题
+                </button>
+                <div className="flex gap-3">
+                  {!question.required && (
+                    <button className="text-white/60 transition hover:text-white" onClick={onSkip} type="button">
+                      跳过
+                    </button>
+                  )}
                   <button
-                    className="rounded-full border border-white/20 bg-white/5 px-3 py-1 text-xs transition hover:bg-white/15"
-                    key={p}
-                    onClick={() => setInput(p)}
+                    className="rounded-full bg-white/90 px-4 py-1 font-medium text-black transition hover:bg-white"
+                    onClick={onSend}
                     type="button"
                   >
-                    {p}
+                    {qIndex === QUESTIONS.length - 1 ? '完成' : '发送'}
+                  </button>
+                </div>
+              </div>
+              {hint && <p className="mt-2 text-xs text-amber-300/80">{hint}</p>}
+              <p className="mt-2 text-right text-[10px] text-white/30">
+                {qIndex + 1} / {QUESTIONS.length}
+              </p>
+            </>
+          )}
+
+          {phase === 'hatching' && (
+            <p className="py-6 text-center text-sm text-white/80">{hint || '让我想想我该是什么样子…'}</p>
+          )}
+
+          {(phase === 'portrait' || phase === 'voice' || phase === 'greeting') && (
+            <PortraitPanel hint={portraitPanelHint} name={answers.name?.trim() || '伙伴'} url={portraitUrl} />
+          )}
+
+          {phase === 'portrait' && (
+            <div className="mt-4 flex items-center justify-between text-xs">
+              <div className="flex gap-3">
+                <button
+                  className="text-white/70 transition hover:text-white disabled:opacity-40"
+                  disabled={busy}
+                  onClick={regeneratePortrait}
+                  type="button"
+                >
+                  {busy ? '生成中…' : '重新生成'}
+                </button>
+                <button
+                  className="text-white/70 transition hover:text-white disabled:opacity-40"
+                  disabled={busy}
+                  onClick={uploadPortrait}
+                  type="button"
+                >
+                  自己上传
+                </button>
+              </div>
+              <button
+                className="rounded-full bg-white/90 px-4 py-1 font-medium text-black transition hover:bg-white"
+                onClick={confirmPortrait}
+                type="button"
+              >
+                就这样吧
+              </button>
+            </div>
+          )}
+
+          {phase === 'voice' && voice && (
+            <div className="mt-4">
+              <div className="mb-3 flex gap-1 rounded-full border border-white/10 bg-white/5 p-1 text-[10px]">
+                {VOICE_LANGUAGE_TABS.map(tab => (
+                  <button
+                    className={`flex-1 rounded-full px-2 py-1 transition ${voiceLangFilter === tab.id ? 'bg-white/90 text-black' : 'text-white/60 hover:text-white'}`}
+                    key={tab.id || 'all'}
+                    onClick={() => void onVoiceLangTabClick(tab.id)}
+                    type="button"
+                  >
+                    {tab.label}
                   </button>
                 ))}
               </div>
-            )}
-            {question.multiline ? (
-              <textarea
-                className="mt-3 w-full resize-none rounded-lg border border-white/15 bg-white/10 px-3 py-2 text-sm outline-none placeholder:text-white/40 focus:border-white/40"
-                onChange={e => setInput(e.target.value)}
-                placeholder={question.placeholder}
-                ref={textareaRef}
-                rows={3}
-                value={input}
-              />
-            ) : (
-              <input
-                className="mt-3 w-full rounded-lg border border-white/15 bg-white/10 px-3 py-2 text-sm outline-none placeholder:text-white/40 focus:border-white/40"
-                onChange={e => setInput(e.target.value)}
-                onKeyDown={e => {
-                  if (e.key === 'Enter' && !question.multiline) {onSend()}
-                }}
-                placeholder={question.placeholder}
-                ref={inputRef}
-                value={input}
-              />
-            )}
-            <div className="mt-4 flex items-center justify-between text-xs">
-              <button className="text-white/60 transition hover:text-white disabled:opacity-30" disabled={qIndex === 0} onClick={onBack} type="button">
-                上一题
-              </button>
-              <div className="flex gap-3">
-                {!question.required && (
-                  <button className="text-white/60 transition hover:text-white" onClick={onSkip} type="button">
-                    跳过
+              <div className="flex items-center justify-between text-xs text-white/70">
+                <span>{voice.label}</span>
+                <div className="flex gap-3">
+                  <button
+                    className="transition hover:text-white disabled:opacity-40"
+                    disabled={voicePreparing}
+                    onClick={() =>
+                      void speak(sampleLine(answers.name || ''), voice?.id || undefined, 'onboarding.voice.preview.try')
+                    }
+                    type="button"
+                  >
+                    试听
                   </button>
-                )}
-                <button className="rounded-full bg-white/90 px-4 py-1 font-medium text-black transition hover:bg-white" onClick={onSend} type="button">
-                  {qIndex === QUESTIONS.length - 1 ? '完成' : '发送'}
-                </button>
+                  <button
+                    className="transition hover:text-white disabled:opacity-40"
+                    disabled={voicePreparing}
+                    onClick={() => {
+                      const n = nextVoice(voice.id, voiceCatalog.length ? voiceCatalog : [voice])
+                      setVoice(n)
+                      setCompanionVoiceId(n.id)
+                      void speak(sampleLine(answers.name || ''), n.id || undefined, 'onboarding.voice.preview.next')
+                    }}
+                    type="button"
+                  >
+                    换一个
+                  </button>
+                </div>
               </div>
-            </div>
-            {hint && <p className="mt-2 text-xs text-amber-300/80">{hint}</p>}
-            <p className="mt-2 text-right text-[10px] text-white/30">
-              {qIndex + 1} / {QUESTIONS.length}
-            </p>
-          </>
-        )}
-
-        {phase === 'hatching' && (
-          <p className="py-6 text-center text-sm text-white/80">{hint || '让我想想我该是什么样子…'}</p>
-        )}
-
-        {(phase === 'portrait' || phase === 'voice' || phase === 'greeting') && (
-          <PortraitPanel hint={portraitPanelHint} name={answers.name?.trim() || '伙伴'} url={portraitUrl} />
-        )}
-
-        {phase === 'portrait' && (
-          <div className="mt-4 flex items-center justify-between text-xs">
-            <div className="flex gap-3">
-              <button className="text-white/70 transition hover:text-white disabled:opacity-40" disabled={busy} onClick={regeneratePortrait} type="button">
-                {busy ? '生成中…' : '重新生成'}
-              </button>
-              <button className="text-white/70 transition hover:text-white disabled:opacity-40" disabled={busy} onClick={uploadPortrait} type="button">
-                自己上传
+              <p className="mt-1 text-[10px] text-white/40">
+                {voiceCatalog.length} 个音色 · 先挑个差不多的就行，以后随时能在设置里调。
+              </p>
+              <button
+                className="mt-3 w-full rounded-full bg-white/90 py-1.5 text-sm font-medium text-black transition hover:bg-white"
+                onClick={confirmVoice}
+                type="button"
+              >
+                使用这个
               </button>
             </div>
-            <button className="rounded-full bg-white/90 px-4 py-1 font-medium text-black transition hover:bg-white" onClick={confirmPortrait} type="button">
-              就这样吧
-            </button>
-          </div>
-        )}
+          )}
 
-        {phase === 'voice' && voice && (
-          <div className="mt-4">
-            <div className="mb-3 flex gap-1 rounded-full border border-white/10 bg-white/5 p-1 text-[10px]">
-              {VOICE_LANGUAGE_TABS.map(tab => (
-                <button
-                  className={`flex-1 rounded-full px-2 py-1 transition ${voiceLangFilter === tab.id ? 'bg-white/90 text-black' : 'text-white/60 hover:text-white'}`}
-                  key={tab.id || 'all'}
-                  onClick={() => void onVoiceLangTabClick(tab.id)}
-                  type="button"
-                >
-                  {tab.label}
-                </button>
-              ))}
+          {phase === 'finishing' && <p className="py-6 text-center text-sm text-white/80">正在记住您…</p>}
+
+          {phase === 'greeting' && (
+            <div className="mt-4">
+              <p className="text-center text-sm text-white/90">
+                您好，我是{answers.name?.trim() || '您的伙伴'}。很高兴见到您！
+              </p>
+              {hint && <p className="mt-1 text-center text-[10px] text-white/40">{hint}</p>}
             </div>
-            <div className="flex items-center justify-between text-xs text-white/70">
-              <span>{voice.label}</span>
-              <div className="flex gap-3">
-                <button className="transition hover:text-white disabled:opacity-40" disabled={voicePreparing} onClick={() => void speak(sampleLine(answers.name || ''), voice?.id || undefined, 'onboarding.voice.preview.try')} type="button">
-                  试听
-                </button>
-                <button
-                  className="transition hover:text-white disabled:opacity-40"
-                  disabled={voicePreparing}
-                  onClick={() => {
-                    const n = nextVoice(voice.id, voiceCatalog.length ? voiceCatalog : [voice])
-                    setVoice(n)
-                    setCompanionVoiceId(n.id)
-                    void speak(sampleLine(answers.name || ''), n.id || undefined, 'onboarding.voice.preview.next')
-                  }}
-                  type="button"
-                >
-                  换一个
-                </button>
-              </div>
-            </div>
-            <p className="mt-1 text-[10px] text-white/40">{voiceCatalog.length} 个音色 · 先挑个差不多的就行，以后随时能在设置里调。</p>
-            <button
-              className="mt-3 w-full rounded-full bg-white/90 py-1.5 text-sm font-medium text-black transition hover:bg-white"
-              onClick={confirmVoice}
-              type="button"
-            >
-              使用这个
-            </button>
-          </div>
-        )}
-
-        {phase === 'finishing' && <p className="py-6 text-center text-sm text-white/80">正在记住您…</p>}
-
-        {phase === 'greeting' && (
-          <div className="mt-4">
-            <p className="text-center text-sm text-white/90">您好，我是{answers.name?.trim() || '您的伙伴'}。很高兴见到您！</p>
-            {hint && <p className="mt-1 text-center text-[10px] text-white/40">{hint}</p>}
-          </div>
-        )}
+          )}
         </div>
       </div>
     </div>

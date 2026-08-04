@@ -13,7 +13,7 @@ type CopyButtonAppearance = 'button' | 'icon' | 'inline' | 'menu-item' | 'tool-r
 type CopyStatus = 'copied' | 'error' | 'idle'
 const COPIED_RESET_MS = 1_500
 
-export async function writeClipboardText(text: string) {
+export async function writeClipboardText(text: string): Promise<void> {
   if (!text) {
     return
   }

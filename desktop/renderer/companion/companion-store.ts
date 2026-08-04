@@ -63,8 +63,12 @@ export type DisturbanceTier = 'proactive' | 'normal' | 'quiet'
 // backend has its own process-local cache (services/companion/disturbance.py)
 // but the desktop is the source of truth — the desktop reports the tier
 // back to the backend on every change AND on gateway open.
-const _storedTier = (typeof localStorage !== 'undefined' && localStorage.getItem('da.companion.disturbanceTier')) as DisturbanceTier | null
-const _validStored: DisturbanceTier | null = _storedTier === 'proactive' || _storedTier === 'normal' || _storedTier === 'quiet' ? _storedTier : null
+const _storedTier = (typeof localStorage !== 'undefined' &&
+  localStorage.getItem('da.companion.disturbanceTier')) as DisturbanceTier | null
+
+const _validStored: DisturbanceTier | null =
+  _storedTier === 'proactive' || _storedTier === 'normal' || _storedTier === 'quiet' ? _storedTier : null
+
 export const $disturbanceTier = atom<DisturbanceTier>(_validStored ?? 'normal')
 
 const STATE_PRIORITY: Record<SpriteStateName, number> = {
@@ -120,7 +124,14 @@ export function setSpriteState(
       // Prefer the current state if a higher-priority one arrived mid-transient.
       const currentAfter = $spriteState.get()
       const storedPrev = $previousState.get()
-      const target = currentAfter !== 'emotional' && currentAfter !== 'interacting' ? currentAfter : (storedPrev === 'emotional' || storedPrev === 'interacting' ? 'idle' : storedPrev)
+
+      const target =
+        currentAfter !== 'emotional' && currentAfter !== 'interacting'
+          ? currentAfter
+          : storedPrev === 'emotional' || storedPrev === 'interacting'
+            ? 'idle'
+            : storedPrev
+
       $spriteState.set(target)
     }, ms)
 
@@ -166,7 +177,9 @@ let activityResetTimer: ReturnType<typeof setTimeout> | null = null
 export function reportUserActivity(): void {
   const current = $spriteState.get()
 
-  if (current !== 'idle' && current !== 'working') {return}
+  if (current !== 'idle' && current !== 'working') {
+    return
+  }
 
   activityCounter += 1
 
@@ -174,7 +187,10 @@ export function reportUserActivity(): void {
     setSpriteState('working')
   }
 
-  if (activityResetTimer) {clearTimeout(activityResetTimer)}
+  if (activityResetTimer) {
+    clearTimeout(activityResetTimer)
+  }
+
   activityResetTimer = setTimeout(() => {
     activityCounter = 0
 
@@ -204,4 +220,3 @@ export function setDisturbanceTier(tier: DisturbanceTier): void {
     }
   }
 }
-

@@ -35,7 +35,10 @@ export function registerInteractiveRegion(id: string, getRect: () => DOMRect | n
 export function unregisterInteractiveRegion(id: string, windowId: number = 0): void {
   const m = _bucket(windowId)
 
-  if (!m.delete(id)) {return}
+  if (!m.delete(id)) {
+    return
+  }
+
   _probesByWindow.get(windowId)?.()
 }
 
@@ -53,9 +56,13 @@ export function isPointInteractive(x: number, y: number, windowId: number = 0): 
   for (const region of regions.values()) {
     const rect = region.getRect()
 
-    if (!rect) {continue}
+    if (!rect) {
+      continue
+    }
 
-    if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) {return true}
+    if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) {
+      return true
+    }
   }
 
   return false

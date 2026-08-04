@@ -36,7 +36,9 @@ function createReverseRpc(options = {}) {
     const messageCount = messages.length
 
     if (messageCount > MAX_MESSAGES_PER_SESSION) {
-      throw new Error(`request_llm rejected: too many messages in this call (${messageCount} > ${MAX_MESSAGES_PER_SESSION}).`)
+      throw new Error(
+        `request_llm rejected: too many messages in this call (${messageCount} > ${MAX_MESSAGES_PER_SESSION}).`
+      )
     }
 
     const payloadBytes = Buffer.byteLength(JSON.stringify(messages), 'utf8')
@@ -60,7 +62,9 @@ function createReverseRpc(options = {}) {
       )
     }
 
-    log(`[reverse-rpc] request_llm (${messageCount} messages, ${payloadBytes} bytes, session ${sessionMessagesSent}/${sessionBytesSent})`)
+    log(
+      `[reverse-rpc] request_llm (${messageCount} messages, ${payloadBytes} bytes, session ${sessionMessagesSent}/${sessionBytesSent})`
+    )
 
     return backendSession.client().post('/api/llm/completion', {
       body: {

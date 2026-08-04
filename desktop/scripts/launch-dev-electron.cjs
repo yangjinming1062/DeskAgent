@@ -1,20 +1,11 @@
-// Launches the electron app with ELECTRON_RUN_AS_NODE removed from the env.
-//
-// VS Code's integrated terminal exports ELECTRON_RUN_AS_NODE=1 for its own
-// node usage. A child `electron` process that inherits it runs as PLAIN node
-// — `require('electron')` returns the binary path string, `app` is undefined,
-// and main.cjs crashes at `app.setPath`/`app.isPackaged`. The electron CLI
-// (node_modules/electron/cli.js) does not strip it, so `pnpm dev` from a VS
-// Code terminal dies instantly. This wrapper deletes the var (truly unsets —
-// an empty string still triggers node mode) before spawning electron.
 'use strict'
-
-delete process.env.ELECTRON_RUN_AS_NODE
 
 const path = require('node:path')
 const fs = require('node:fs')
 const { spawn } = require('node:child_process')
-const electronPath = require('electron') // resolves to the electron executable path
+const electronPath = require('electron')
+
+delete process.env.ELECTRON_RUN_AS_NODE
 
 // Auto-wire the local Runner so dev mode gets local STT/TTS/tools without
 // manually setting DESKAGENT_DESKTOP_PYTHON every session. Detects a runner
@@ -27,12 +18,13 @@ const electronPath = require('electron') // resolves to the electron executable 
 // Explicit env vars always win.
 const repoRoot = path.resolve(__dirname, '..', '..')
 const venvRoot = path.join(repoRoot, 'runner', '.venv')
-const venvPython = process.platform === 'win32'
-  ? path.join(venvRoot, 'Scripts', 'python.exe')
-  : path.join(venvRoot, 'bin', 'python')
+const venvPython =
+  process.platform === 'win32' ? path.join(venvRoot, 'Scripts', 'python.exe') : path.join(venvRoot, 'bin', 'python')
 
 function findSitePackages(venvRoot) {
-  if (process.platform === 'win32') {return path.join(venvRoot, 'Lib', 'site-packages')}
+  if (process.platform === 'win32') {
+    return path.join(venvRoot, 'Lib', 'site-packages')
+  }
   try {
     const entries = fs.readdirSync(path.join(venvRoot, 'lib'))
     const pyDir = entries.find(e => /^python3\.\d+$/.test(e))
@@ -44,9 +36,13 @@ function findSitePackages(venvRoot) {
 
 function venvHasAudioStack() {
   const sitePackages = findSitePackages(venvRoot)
-  if (!sitePackages) {return false}
+  if (!sitePackages) {
+    return false
+  }
   for (const pkg of ['faster_whisper', 'piper', 'pyttsx3']) {
-    if (!fs.existsSync(path.join(sitePackages, pkg, '__init__.py'))) {return false}
+    if (!fs.existsSync(path.join(sitePackages, pkg, '__init__.py'))) {
+      return false
+    }
   }
   return true
 }

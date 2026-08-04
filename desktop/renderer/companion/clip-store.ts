@@ -54,7 +54,7 @@ function mergeClip(scene: string, partial: ClipPatch): ClipItem {
     status: (partial.status as ClipItem['status'] | undefined) ?? existing?.status ?? 'succeeded',
     url: partial.url ?? existing?.url ?? null,
     keyframe_url: partial.keyframe_url ?? existing?.keyframe_url ?? null,
-    keyframe_meta: partial.keyframe_meta ?? existing?.keyframe_meta ?? null,
+    keyframe_meta: partial.keyframe_meta ?? existing?.keyframe_meta ?? null
   }
 
   return merged
@@ -97,10 +97,16 @@ export function getClipAsset(scene: string): ClipAsset {
   const catalog = $clipCatalog.get()
 
   const pick = (s: string | undefined): ClipAsset | null => {
-    if (!s) {return null}
+    if (!s) {
+      return null
+    }
+
     const item = catalog[s]
 
-    if (!item) {return null}
+    if (!item) {
+      return null
+    }
+
     const tier = computeTier(item)
 
     if (tier >= 2 && item.url) {

@@ -1,33 +1,5 @@
 'use strict'
 
-/**
- * Stage native node-modules dependencies for electron-builder packaging.
- *
- * Workspace dedup hoists `node-pty` into the root `node_modules/`, which
- * electron-builder's default file collector (when `files:` is explicitly set
- * in package.json) cannot reach.  The result: packaged builds ship with no
- * .node binaries and PTY initialization fails at runtime ("PTY support is
- * unavailable").
- *
- * Rather than restructure the workspace dedup (would require nohoist /
- * package.json shenanigans and risk breaking dev) or balloon the package
- * with the whole node_modules tree, we copy ONLY the runtime-essential
- * files of the native dep into desktop/build/native-deps/ and ship
- * THAT subtree via extraResources.  main.cjs falls back to require()-ing
- * from process.resourcesPath when the hoisted-root require fails.
- *
- * Runs as part of `pnpm run build`. Idempotent -- always re-stages on each
- * build to pick up native binary updates.
- *
- * Layout note: upstream node-pty (microsoft/node-pty 1.x) is N-API based
- * and ships its prebuilts under `prebuilds/<platform>-<arch>/` instead of
- * `build/Release/`.  Its runtime resolver (lib/utils.js) checks
- * build/Release first and falls through to the per-arch prebuilds dir, so
- * shipping only the latter is sufficient for packaged runs.  Per-arch
- * staging keeps the resource bundle lean -- we only need the target
- * arch's prebuilt, not all of them.
- */
-
 const fs = require('node:fs')
 const path = require('node:path')
 

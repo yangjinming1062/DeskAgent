@@ -1,13 +1,6 @@
-// Mirror of the catalog shape in `desktop/src/lib/toolset-catalog.ts` and
-// `runner/tools/toolsets/catalog.py`. Only `id`, `prefixes`, `extraTools` are
-// needed here — label / description / icon live in the renderer-side catalog.
-// Keep the three files in sync; each lists this invariant at the top.
-//
-// MCP tools (`mcp_*`) are explicitly excluded at runtime via
-// `EXCLUDED_PREFIXES` regardless of catalog entry, as a defense-in-depth
-// against future catalog drift.
-
 const { readDisabledSet, invalidateDisabledCache } = require('./skill-index.cjs')
+
+// Mirror of catalog shape in renderer and runner.
 
 const EXCLUDED_PREFIXES = ['mcp_']
 const EXCLUDED_PREFIX_RE = new RegExp(`^(?:${EXCLUDED_PREFIXES.join('|')})`)

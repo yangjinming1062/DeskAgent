@@ -1,20 +1,8 @@
 'use strict'
 
-// IPC handlers for the inner-desktop auto-updater. The flow is:
-//   1. main process (main.cjs) auto-checks for updates 30s after launch.
-//   2. autoUpdater events are forwarded to the renderer as `deskagent:update-event`.
-//   3. the renderer drives the user-visible flow (status bar badge, toast)
-//      and calls these handlers for the explicit user actions:
-//        - check (manual "Check for updates" button)
-//        - download (start fetching the available update)
-//        - install (commit the staged update and relaunch)
-//
-// In dev mode the handlers short-circuit to no-ops. The `electron-updater`
-// require below is deferred to inside the function because destructuring
-// `autoUpdater` at module load eagerly constructs AppUpdater, which crashes
-// when the asar lacks `app-update.yml` (the dev case).
-
 function registerUpdateIpc({ ipcMain, electron, sendToMain, getMainWindow, runnerUpdater }) {
+  // IPC handlers for inner-desktop auto-updater.
+
   const { app } = electron
 
   // In dev, electron-updater throws when the asar doesn't carry an

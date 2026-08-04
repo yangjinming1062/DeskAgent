@@ -1,29 +1,14 @@
 'use strict'
 
-// One-shot installer → desktop session handoff.
-//
-// The installer writes `agent-session-bootstrap.json` under the canonical
-// $DESKAGENT_HOME after a successful POST /api/user/login (see
-// installer/src-tauri/src/bootstrap_session.rs). Desktop's main process
-// reads the file at startup, validates the token against the backend by
-// calling POST /api/user/refresh, then hands the token to the normal
-// BackendSession so it gets encrypted through Electron safeStorage. The
-// bootstrap file is atomically renamed to `.consumed` so a second launch
-// never replays it.
-//
-// The path can be overridden via DESKAGENT_DESKTOP_BOOTSTRAP_SESSION,
-// and `consumeBootstrapSession` is the single entry point wired into
-// entry.cjs. Returns the validated session snapshot on success, or
-// `null` when there's nothing to consume (or the file is invalid).
-//
-// Cross-language constants (FILENAME / SCHEMA_VERSION / CONSUMED_SUFFIX)
-// are canonical on the Rust side at `installer/src-tauri/src/paths.rs`.
-// The values below are a deliberate mirror, enforced at test time by
-// `bootstrap-session.test.cjs::bootstrap_constants_match_rust_paths` —
-// don't bump one without the other.
-
 const fs = require('node:fs')
 const path = require('node:path')
+
+// One-shot installer -> desktop session handoff.
+//
+// The installer writes `agent-session-bootstrap.json` under $DESKAGENT_HOME.
+// Desktop's main process reads the file at startup, validates the token against
+// the backend, then hands the token to BackendSession for safeStorage encryption.
+// Cross-language constants MUST match installer/src-tauri/src/paths.rs.
 
 // MUST match installer/src-tauri/src/paths.rs BOOTSTRAP_* constants.
 const SCHEMA_VERSION = 1
@@ -69,10 +54,7 @@ function readBootstrapFile(filePath) {
   if (typeof parsed.token !== 'string' || !parsed.token) {
     return { ok: false, code: 'missing-token' }
   }
-  if (
-    typeof parsed.tokenExpiresAt !== 'number' ||
-    !Number.isFinite(parsed.tokenExpiresAt)
-  ) {
+  if (typeof parsed.tokenExpiresAt !== 'number' || !Number.isFinite(parsed.tokenExpiresAt)) {
     return { ok: false, code: 'missing-expiry' }
   }
 
@@ -155,12 +137,7 @@ async function validateViaRefresh(baseUrl, token, fetchImpl) {
   }
 }
 
-async function consumeBootstrapSession({
-  deskagentHome,
-  fetchImpl,
-  log = () => {},
-  env = process.env
-} = {}) {
+async function consumeBootstrapSession({ deskagentHome, fetchImpl, log = () => {}, env = process.env } = {}) {
   if (!deskagentHome) return { status: 'no-home', snapshot: null }
 
   const filePath = env[BOOTSTRAP_ENV_VAR] || defaultBootstrapPath(deskagentHome)

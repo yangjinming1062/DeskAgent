@@ -1,11 +1,3 @@
-/**
- * Manages the local Runner child process. After login, Desktop launches
- * the runner's venv Python (at $DESKAGENT_HOME/runner/.venv) or dev Python runner,
- * passing the local WS server URL for bidirectional JSON-RPC communication.
- *
- * Pure-ish: no electron require at the top — call sites inject `childProcess`.
- */
-
 const path = require('node:path')
 const { EventEmitter } = require('node:events')
 const childProcess = require('node:child_process')

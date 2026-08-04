@@ -1,9 +1,3 @@
-/**
- * Tests for main/runner/reverse-rpc.cjs.
- *
- * Run with: node --test main/runner/reverse-rpc.test.cjs
- */
-
 const test = require('node:test')
 const assert = require('node:assert/strict')
 const { createReverseRpc } = require('./reverse-rpc.cjs')

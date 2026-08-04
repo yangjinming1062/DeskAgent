@@ -1,12 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import {
-  $previousState,
-  $spriteEmotion,
-  $spriteState,
-  reportUserActivity,
-  setSpriteState
-} from './companion-store'
+import { $previousState, $spriteEmotion, $spriteState, reportUserActivity, setSpriteState } from './companion-store'
 
 describe('companion-store Phase 2 state machine', () => {
   beforeEach(() => {

@@ -1,20 +1,12 @@
-/**
- * High-level orchestrator that ties together the Runner process, local WS
- * server, and reverse RPC into a single lifecycle.
- *
- * bridge.start() → spawns Runner, starts WS server, waits for runner_ready,
- *   calls get_tools RPC to fetch schemas.
- * bridge.stop() → stops WS server, SIGTERMs Runner.
- *
- * All sub-components are injectable for unit testing.
- * Pure: no electron require at the top.
- */
-
 const { EventEmitter } = require('node:events')
 const fs = require('node:fs')
 const path = require('node:path')
 
 const { atomicWriteFile } = require('../shared/utils.cjs')
+
+/**
+ * Orchestrator tying together Runner process, local WS server, and reverse RPC.
+ */
 
 function createRunnerBridge(options = {}) {
   const log = typeof options.log === 'function' ? options.log : () => {}
@@ -238,7 +230,13 @@ function createRunnerBridge(options = {}) {
     if (state.phase !== 'starting') return
 
     setState({ phase: 'running' })
-    emit.emit('event', { type: 'running', tools: cachedTools, capabilities: state.capabilities, runnerVersion: state.runnerVersion, probeFailed: state.probeFailed })
+    emit.emit('event', {
+      type: 'running',
+      tools: cachedTools,
+      capabilities: state.capabilities,
+      runnerVersion: state.runnerVersion,
+      probeFailed: state.probeFailed
+    })
   }
 
   // Debounce tools_changed — MCP discovery can fire back-to-back; 300ms

@@ -1,31 +1,5 @@
 'use strict'
 
-/**
- * Writes desktop/build/install-stamp.json with the git ref the packaged
- * desktop was built from. The file ships inside the packaged app via
- * electron-builder's extraResources entry and is read by main/main.cjs
- * for first-launch version pinning.
- *
- * Schema (subject to bump via STAMP_SCHEMA_VERSION):
- *   {
- *     "schemaVersion": 1,
- *     "commit":        "<40-char SHA>",
- *     "branch":        "<branch name>",
- *     "builtAt":       "<ISO 8601 UTC timestamp>",
- *     "dirty":         true|false,
- *     "source":        "ci" | "local"
- *   }
- *
- * Source preference order:
- *   1. CI env vars ($GITHUB_SHA / $GITHUB_REF_NAME) -- avoid edge cases with
- *      shallow clones, detached HEADs, etc. in CI.
- *   2. Local `git rev-parse` against the parent repo (../..).
- *
- * Dev / out-of-repo builds without git produce an explicit error rather than
- * silently writing an unstamped manifest -- the packaged app refuses to
- * bootstrap without a stamp.
- */
-
 const fs = require('fs')
 const path = require('path')
 const { execSync } = require('child_process')

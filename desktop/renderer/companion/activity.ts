@@ -22,29 +22,42 @@ let timer: ReturnType<typeof setInterval> | null = null
 let lastAffectCheckAt = 0
 
 function maybeTriggerAffectCheck(idleSeconds: number, locked: boolean): void {
-  if (locked || idleSeconds < IDLE_THRESHOLD_SECONDS) {return}
+  if (locked || idleSeconds < IDLE_THRESHOLD_SECONDS) {
+    return
+  }
+
   const now = Date.now()
 
-  if (now - lastAffectCheckAt < CHECK_COOLDOWN_MS) {return}
+  if (now - lastAffectCheckAt < CHECK_COOLDOWN_MS) {
+    return
+  }
+
   const hour = new Date().getHours()
 
   // Quiet hours (23-7, synced with companion-store.checkBedtimeAndAutoSleep):
   // skip so an affect cue doesn't wake the companion past SLEEPING.
-  if (hour >= 23 || hour < 7) {return}
+  if (hour >= 23 || hour < 7) {
+    return
+  }
+
   lastAffectCheckAt = now
   const gateway = $gateway.get()
-  void gateway?.request('companion.check_affect', {
-    idle_seconds: idleSeconds,
-    local_hour: hour,
-  }).catch(() => {
-    /* backend offline or RPC failed — silent, next poll will retry after cooldown */
-  })
+  void gateway
+    ?.request('companion.check_affect', {
+      idle_seconds: idleSeconds,
+      local_hour: hour
+    })
+    .catch(() => {
+      /* backend offline or RPC failed — silent, next poll will retry after cooldown */
+    })
 }
 
 async function pollOnce(): Promise<void> {
   const desktop = window.deskagent
 
-  if (!desktop?.runnerInvoke) {return}
+  if (!desktop?.runnerInvoke) {
+    return
+  }
 
   try {
     const locked = await desktop.runnerInvoke('system.is_screen_locked', {})
@@ -67,7 +80,10 @@ async function pollOnce(): Promise<void> {
 }
 
 export function startActivityMonitor(): () => void {
-  if (timer) {return stopActivityMonitor}
+  if (timer) {
+    return stopActivityMonitor
+  }
+
   void pollOnce()
   timer = setInterval(() => void pollOnce(), POLL_INTERVAL_MS)
 

@@ -1,9 +1,5 @@
-// Routes `navigator.clipboard.writeText` through Electron IPC, since the
-// renderer's clipboard API throws "Write permission denied" whenever the
-// document loses focus (e.g. clicking a portaled Radix dropdown). The IPC
-// path runs in the main process and is unconditional.
-
-export function installClipboardShim() {
+export function installClipboardShim(): void {
+  // Routes navigator.clipboard.writeText through Electron IPC
   const ipc = window.deskagent?.writeClipboard
 
   if (!ipc || !navigator.clipboard) {
@@ -12,7 +8,7 @@ export function installClipboardShim() {
 
   const native = navigator.clipboard.writeText?.bind(navigator.clipboard)
 
-  const writeText = async (text: string) => {
+  const writeText = async (text: string): Promise<void> => {
     try {
       await ipc(text)
     } catch {
@@ -23,6 +19,6 @@ export function installClipboardShim() {
   try {
     Object.defineProperty(navigator.clipboard, 'writeText', { configurable: true, value: writeText, writable: true })
   } catch {
-    // Browser refused override; primitives keep using the native API.
+    // Browser refused override
   }
 }

@@ -1,12 +1,23 @@
 import { useEffect, useRef } from 'react'
 
-import { applyDesktopBootProgress, completeDesktopBoot, failDesktopBoot, setDesktopBootStep } from '@/companion/boot-store'
+import {
+  applyDesktopBootProgress,
+  completeDesktopBoot,
+  failDesktopBoot,
+  setDesktopBootStep
+} from '@/companion/boot-store'
 import { $disturbanceTier, $spriteState, $voiceCallOpen, setSpriteState } from '@/companion/companion-store'
 import { DeskAgentGateway } from '@/shared/deskagent'
 import { resolveGatewayWsUrl } from '@/shared/lib/gateway-ws-url'
 import { reconnectBackoffMs } from '@/shared/lib/reconnect'
 import { logout } from '@/shared/store/auth'
-import { reportPrimaryGatewayState, setConnection, setPrimaryGateway, setRunnerOnline, tearDownPrimaryGateway } from '@/shared/store/gateway'
+import {
+  reportPrimaryGatewayState,
+  setConnection,
+  setPrimaryGateway,
+  setRunnerOnline,
+  tearDownPrimaryGateway
+} from '@/shared/store/gateway'
 import { notifyError } from '@/shared/store/notifications'
 import { strings } from '@/shared/strings'
 import type { RpcEvent } from '@/shared/types/deskagent'
@@ -265,16 +276,19 @@ export function useGatewayBoot({ handleGatewayEvent, onConnectionReady, onGatewa
 
             // Prolonged disconnect → doze off (plan §4.5), but defer while a voice-call is live.
             if (sleepEscalationTimer === null) {
-              sleepEscalationTimer = setTimeout(() => {
-                sleepEscalationTimer = null
+              sleepEscalationTimer = setTimeout(
+                () => {
+                  sleepEscalationTimer = null
 
-                if ($voiceCallOpen.get()) {
-                  // Skip — voice-call active; rescheduled on the next disconnect.
-                  return
-                }
+                  if ($voiceCallOpen.get()) {
+                    // Skip — voice-call active; rescheduled on the next disconnect.
+                    return
+                  }
 
-                setSpriteState('sleeping', { force: true })
-              }, 5 * 60 * 1000)
+                  setSpriteState('sleeping', { force: true })
+                },
+                5 * 60 * 1000
+              )
             }
           }, graceMs)
         }

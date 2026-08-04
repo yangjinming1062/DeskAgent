@@ -142,7 +142,7 @@ export function notifyError(error: unknown, fallback: string): string {
   })
 }
 
-export function dismissNotification(id: string) {
+export function dismissNotification(id: string): void {
   window.clearTimeout(timers.get(id))
   timers.delete(id)
   const dismissed = $notifications.get().find(item => item.id === id)
@@ -150,7 +150,7 @@ export function dismissNotification(id: string) {
   dismissed?.onDismiss?.()
 }
 
-export function clearNotifications() {
+export function clearNotifications(): void {
   for (const timer of timers.values()) {
     window.clearTimeout(timer)
   }
