@@ -60,6 +60,16 @@ class AvatarUploadRequest(BaseModel):
     content_type: str | None = Field(default=None, max_length=64)
 
 
+class AvatarFromImageRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    # Same 8 MiB cap as upload: the image is both a provider seed (via a
+    # signed URL) and the source of truth the provider re-renders from.
+    image: str = Field(min_length=1, max_length=8 * 1024 * 1024)
+    content_type: str | None = Field(default=None, max_length=64)
+    description: str | None = Field(default=None, max_length=500)
+
+
 class AvatarHistoryResponse(BaseModel):
     items: list[AvatarAssetResponse]
 

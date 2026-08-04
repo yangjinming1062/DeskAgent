@@ -11,6 +11,7 @@ from .avatar_service import generate_avatar
 from .avatar_service import get_active_avatar
 from .avatar_service import list_avatar_history
 from .avatar_service import regenerate_avatar
+from .avatar_service import regenerate_avatar_from_image
 from .avatar_service import resolve_uploaded_avatar_path
 from .avatar_service import upload_avatar
 from .clip_service import CLIP_SCENES
@@ -63,6 +64,7 @@ __all__ = [
     "normalize_voice_language",
     "record_user_profile",
     "regenerate_avatar",
+    "regenerate_avatar_from_image",
     "resolve_companion_asset_path",
     "resolve_uploaded_avatar_path",
     "scenes_for_batch",

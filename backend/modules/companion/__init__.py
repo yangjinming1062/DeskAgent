@@ -2,6 +2,7 @@ from .models import AvatarAsset
 from .models import AvatarClip
 from .models import Persona
 from .schemas import AvatarAssetResponse
+from .schemas import AvatarFromImageRequest
 from .schemas import AvatarGenerateRequest
 from .schemas import AvatarHistoryResponse
 from .schemas import AvatarUploadRequest
@@ -14,6 +15,7 @@ __all__ = [
     "AvatarClip",
     "Persona",
     "AvatarAssetResponse",
+    "AvatarFromImageRequest",
     "AvatarGenerateRequest",
     "AvatarHistoryResponse",
     "AvatarUploadRequest",
