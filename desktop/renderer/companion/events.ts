@@ -82,7 +82,7 @@ export function handleCompanionEvent(event: RpcEvent): void {
       // switch to EMOTIONAL without a bubble or TTS.
       const emotion = (event.payload as { emotion?: string } | undefined)?.emotion
 
-      if (emotion && emotion !== 'neutral') {
+      if (emotion && emotion !== 'neutral' && !$screenLocked.get()) {
         setSpriteState('emotional', { emotion: emotion as SpriteEmotion })
       }
 

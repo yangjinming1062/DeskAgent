@@ -2944,6 +2944,9 @@ def browser_download(
     """
     if is_camofox_mode():
         return _camofox_unsupported("browser_download")
+    if ref_or_url and ref_or_url.startswith(("http://", "https://")):
+        if not is_safe_url(ref_or_url):
+            return json.dumps({"success": False, "error": f"URL rejected by security policy: {ref_or_url}"}, ensure_ascii=False)
 
     effective_task_id = _last_session_key(task_id or "default")
     downloads_dir = _get_downloads_dir()
@@ -3231,6 +3234,9 @@ def browser_tab_new(url: str | None = None, task_id: str | None = None) -> str:
     """
     if is_camofox_mode():
         return _camofox_unsupported("browser_tab_new")
+    if url and url.startswith(("http://", "https://")):
+        if not is_safe_url(url):
+            return json.dumps({"success": False, "error": f"URL rejected by security policy: {url}"}, ensure_ascii=False)
     effective_task_id = _last_session_key(task_id or "default")
     supervisor = SUPERVISOR_REGISTRY.get(effective_task_id)
     if supervisor is None:

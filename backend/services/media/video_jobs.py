@@ -246,104 +246,110 @@ async def _poll_and_finalize_locked(job_id: int) -> None:
             payload = {**payload, **extras}
         _emit_ws_event(user_id, event_type, payload)
 
-    if not provider_task_id:
-        # The submit ran but no task_id was persisted (extremely unlikely,
-        # but stay defensive) — fail fast with a clear reason so the row
-        # doesn't sit in limbo forever.
-        _update_job(
-            job_id,
-            status="failed",
-            error_reason="missing_task_id",
-            error_message="provider.submit returned no task_id",
-        )
-        if not _emit_disabled(job.params_json):
-            _evt("video_gen.failed", {"task_id": str(job_id), "error": "missing task id"})
-        return
-
-    with SESSION_LOCAL() as db:
-        # Re-resolve the chain and pick the slot that owns this job's
-        # ``provider`` column (set by ``enqueue_video_job`` when the submit
-        # succeeded). Polling must hit the same provider that owns the
-        # ``task_id`` — task_ids are per-provider and not portable.
-        job_row = db.get(VideoGenJob, job_id)
-        provider_name = job_row.provider if job_row else ""
-        chain = resolve_provider_chain(db, user_id, "video_gen")
-        provider_cfg = next((cfg for cfg in chain if cfg.provider_name == provider_name), None)
-    if provider_cfg is None:
-        _update_job(
-            job_id,
-            status="failed",
-            error_reason="provider_unavailable",
-            error_message=f"video provider {provider_name!r} no longer in the chain; cannot poll task_id",
-        )
-        if not _emit_disabled(job.params_json):
-            _evt("video_gen.failed", {"task_id": str(job_id), "error": "provider unavailable"})
-        return
-    provider = resolve(ServiceType.video_gen, provider_cfg.provider_name)(provider_cfg)
-
-    interval = SETTINGS.video_gen_poll_interval_seconds
-    deadline = naive_utc_now() + timedelta(seconds=SETTINGS.video_gen_max_poll_seconds)
-    while True:
-        # Reload the row to honor a concurrent terminal update (e.g. user
-        # DELETE on the row, or another worker finalised us first). An
-        # empty provider_task_id means the row was wiped mid-flight.
-        with SESSION_LOCAL() as db:
-            job = db.get(VideoGenJob, job_id)
-            if job is None or job.status in ("succeeded", "failed"):
-                return
-            current_task_id = job.provider_task_id or provider_task_id
-
-        try:
-            status = await provider.poll(current_task_id)
-        except Exception as e:
-            logger.exception("video poll failed", extra={"job_id": job_id})
-            _update_job(job_id, status="failed", error_reason="poll_failed", error_message=str(e))
+    try:
+        if not provider_task_id:
+            # The submit ran but no task_id was persisted (extremely unlikely,
+            # but stay defensive) — fail fast with a clear reason so the row
+            # doesn't sit in limbo forever.
+            _update_job(
+                job_id,
+                status="failed",
+                error_reason="missing_task_id",
+                error_message="provider.submit returned no task_id",
+            )
             if not _emit_disabled(job.params_json):
-                _evt("video_gen.failed", {"task_id": str(job_id), "error": str(e)})
+                _evt("video_gen.failed", {"task_id": str(job_id), "error": "missing task id"})
             return
 
-        if status.status == "succeeded":
-            # Claim the row in ``downloading`` state — resume_pending_video_jobs
-            # skips jobs in any non-queued/processing state, so a mid-download
-            # crash can never trigger a second download.
+        with SESSION_LOCAL() as db:
+            # Re-resolve the chain and pick the slot that owns this job's
+            # ``provider`` column (set by ``enqueue_video_job`` when the submit
+            # succeeded). Polling must hit the same provider that owns the
+            # ``task_id`` — task_ids are per-provider and not portable.
+            job_row = db.get(VideoGenJob, job_id)
+            provider_name = job_row.provider if job_row else ""
+            chain = resolve_provider_chain(db, user_id, "video_gen")
+            provider_cfg = next((cfg for cfg in chain if cfg.provider_name == provider_name), None)
+        if provider_cfg is None:
+            _update_job(
+                job_id,
+                status="failed",
+                error_reason="provider_unavailable",
+                error_message=f"video provider {provider_name!r} no longer in the chain; cannot poll task_id",
+            )
+            if not _emit_disabled(job.params_json):
+                _evt("video_gen.failed", {"task_id": str(job_id), "error": "provider unavailable"})
+            return
+        provider = resolve(ServiceType.video_gen, provider_cfg.provider_name)(provider_cfg)
+
+        interval = SETTINGS.video_gen_poll_interval_seconds
+        deadline = naive_utc_now() + timedelta(seconds=SETTINGS.video_gen_max_poll_seconds)
+        while True:
+            # Reload the row to honor a concurrent terminal update (e.g. user
+            # DELETE on the row, or another worker finalised us first). An
+            # empty provider_task_id means the row was wiped mid-flight.
             with SESSION_LOCAL() as db:
-                claimed = (
-                    db.query(VideoGenJob)
-                    .filter(
-                        VideoGenJob.id == job_id,
-                        VideoGenJob.status.notin_(("succeeded", "failed", "downloading")),
-                    )
-                    .update({"status": "downloading", "provider_file_id": status.file_id})
-                )
-                db.commit()
-                if not claimed:
+                job = db.get(VideoGenJob, job_id)
+                if job is None or job.status in ("succeeded", "failed"):
                     return
+                current_task_id = job.provider_task_id or provider_task_id
+
             try:
-                file_id, public_url = await _download_and_store(provider, status.file_id)
+                status = await provider.poll(current_task_id)
             except Exception as e:
-                logger.exception("video download failed", extra={"job_id": job_id})
-                _update_job(job_id, status="failed", error_reason="download_failed", error_message=str(e))
+                logger.exception("video poll failed", extra={"job_id": job_id})
+                _update_job(job_id, status="failed", error_reason="poll_failed", error_message=str(e))
                 if not _emit_disabled(job.params_json):
                     _evt("video_gen.failed", {"task_id": str(job_id), "error": str(e)})
                 return
-            _update_job(job_id, status="succeeded", file_id=file_id, video_url=public_url)
-            if not _emit_disabled(job.params_json):
-                _evt("video_gen.completed", {"task_id": str(job_id), "url": public_url})
-            logger.info("video job succeeded", extra={"job_id": job_id, "file_id": file_id})
-            return
-        if status.status == "failed":
-            _update_job(job_id, status="failed", error_reason="provider_failed", error_message=status.error)
-            if not _emit_disabled(job.params_json):
-                _evt("video_gen.failed", {"task_id": str(job_id), "error": status.error})
-            return
 
-        _update_job(job_id, status="processing")
-        if naive_utc_now() >= deadline:
-            _update_job(job_id, status="failed", error_reason="timeout", error_message="polling deadline reached")
-            if not _emit_disabled(job.params_json):
-                _evt("video_gen.failed", {"task_id": str(job_id), "error": "timeout"})
-            return
-        await asyncio.sleep(interval)
+            if status.status == "succeeded":
+                # Claim the row in ``downloading`` state — resume_pending_video_jobs
+                # skips jobs in any non-queued/processing state, so a mid-download
+                # crash can never trigger a second download.
+                with SESSION_LOCAL() as db:
+                    claimed = (
+                        db.query(VideoGenJob)
+                        .filter(
+                            VideoGenJob.id == job_id,
+                            VideoGenJob.status.notin_(("succeeded", "failed", "downloading")),
+                        )
+                        .update({"status": "downloading", "provider_file_id": status.file_id})
+                    )
+                    db.commit()
+                    if not claimed:
+                        return
+                try:
+                    file_id, public_url = await _download_and_store(provider, status.file_id)
+                except Exception as e:
+                    logger.exception("video download failed", extra={"job_id": job_id})
+                    _update_job(job_id, status="failed", error_reason="download_failed", error_message=str(e))
+                    if not _emit_disabled(job.params_json):
+                        _evt("video_gen.failed", {"task_id": str(job_id), "error": str(e)})
+                    return
+                _update_job(job_id, status="succeeded", file_id=file_id, video_url=public_url)
+                if not _emit_disabled(job.params_json):
+                    _evt("video_gen.completed", {"task_id": str(job_id), "url": public_url})
+                logger.info("video job succeeded", extra={"job_id": job_id, "file_id": file_id})
+                return
+            if status.status == "failed":
+                _update_job(job_id, status="failed", error_reason="provider_failed", error_message=status.error)
+                if not _emit_disabled(job.params_json):
+                    _evt("video_gen.failed", {"task_id": str(job_id), "error": status.error})
+                return
+
+            _update_job(job_id, status="processing")
+            if naive_utc_now() >= deadline:
+                _update_job(job_id, status="failed", error_reason="timeout", error_message="polling deadline reached")
+                if not _emit_disabled(job.params_json):
+                    _evt("video_gen.failed", {"task_id": str(job_id), "error": "timeout"})
+                return
+            await asyncio.sleep(interval)
+    except Exception as exc:
+        logger.exception("unhandled exception in video poll worker", extra={"job_id": job_id})
+        _update_job(job_id, status="failed", error_reason="worker_failed", error_message=str(exc))
+        if not _emit_disabled(job.params_json):
+            _evt("video_gen.failed", {"task_id": str(job_id), "error": str(exc)})
 
 
 async def _download_and_store(provider, file_id: str) -> tuple[str, str]:

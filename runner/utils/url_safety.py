@@ -186,6 +186,14 @@ async def async_is_safe_url(url: str) -> bool:
     return await asyncio.to_thread(is_safe_url, url)
 
 
+def check_redirect_url_safety(original_url: str, redirect_url: str) -> bool:
+    """Validate a redirect target URL against IMDSv2 metadata blocklists and SSRF guards."""
+    if not is_safe_url(redirect_url):
+        logger.warning("Blocked redirect to unsafe target: %s -> %s", original_url, redirect_url)
+        return False
+    return True
+
+
 # ---------------------------------------------------------------------------
 # Website Policy / Blocklist
 # ---------------------------------------------------------------------------

@@ -224,7 +224,16 @@ function createRunnerBridge(options = {}) {
       })
     }
 
-    if (state.phase !== 'starting') return
+    if (state.phase !== 'starting') {
+      emit.emit('event', {
+        type: 'runner_ready',
+        tools: cachedTools,
+        capabilities: state.capabilities,
+        runnerVersion: state.runnerVersion,
+        probeFailed: state.probeFailed
+      })
+      return
+    }
 
     await _fetchAndCacheTools()
     if (state.phase !== 'starting') return

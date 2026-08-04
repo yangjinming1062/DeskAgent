@@ -175,15 +175,22 @@ def _get_safe_write_root() -> str | None:
 
 
 def _resolve_long_path(path: str) -> str:
-    """Resolve 8.3 short names (PROGRA~1) to long form; realpath skips them, which would bypass the write-deny prefix check."""
+    """Resolve 8.3 short names (PROGRA~1) to long form and strip device prefixes (\\\\?\\, \\\\.\\); realpath skips them, which would bypass the write-deny prefix check."""
     expanded = os.path.expanduser(path)
     if not IS_WINDOWS:
         return os.path.realpath(expanded)
+    s = expanded
+    if s.startswith("\\\\?\\UNC\\"):
+        s = "\\\\" + s[8:]
+    elif s.startswith("\\\\?\\"):
+        s = s[4:]
+    elif s.startswith("\\\\.\\"):
+        s = s[4:]
     try:
         buf = ctypes.create_unicode_buffer(wintypes.MAX_PATH)
         # GetLongPathNameW returns the long path length; 0 means error.
         length = ctypes.windll.kernel32.GetLongPathNameW(  # type: ignore[attr-defined]
-            wintypes.LPCWSTR(expanded),
+            wintypes.LPCWSTR(s),
             buf,
             wintypes.MAX_PATH,
         )
@@ -191,7 +198,7 @@ def _resolve_long_path(path: str) -> str:
             return buf.value
     except Exception:
         pass
-    return os.path.realpath(expanded)
+    return os.path.realpath(s)
 
 
 def is_write_denied(path: str) -> bool:

@@ -304,6 +304,7 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps) {
     } catch (err) {
       setAssistantError(err instanceof Error ? err.message : '发送失败')
       setSpriteState('idle')
+      setPendingImage(null)
     } finally {
       setSending(false)
     }

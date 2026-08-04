@@ -523,13 +523,9 @@ def _register_session_handlers(
         runtime = _get_runtime(runtime_sessions, params)
         if runtime.chat_task and not runtime.chat_task.done():
             runtime.chat_task.cancel()
-        # Renderer waits for a terminal session.info event to drain busy
-        # state; it does not consume this RPC's return. Override running to
-        # False explicitly — task.cancel() is async, so .done() may still be
-        # False at this point and the snapshot would otherwise advertise a
-        # state the renderer is racing to settle.
-        snapshot = runtime_info_snapshot(llm_config, runtime, running_override=False)
-        await dispatcher.push_event("session.info", snapshot, session_id=runtime.session_id)
+        else:
+            snapshot = runtime_info_snapshot(llm_config, runtime, running_override=False)
+            await dispatcher.push_event("session.info", snapshot, session_id=runtime.session_id)
         return {}
 
     async def session_cwd_set(params: dict) -> dict:
@@ -818,22 +814,25 @@ def _register_session_handlers(
             return {"queued": False, "job_id": job_id, "reason": "already_running"}
 
         async def _run() -> None:
-            async with lock:
-                try:
-                    with SESSION_LOCAL() as db:
-                        persona = get_or_create_persona(db, user_id)
-                        asset = await regenerate_avatar(db, user_id, persona, feedback=feedback)
-                        payload = {"job_id": job_id, "asset_url": asset.asset_url, "id": asset.id}
-                except AvatarGenerationError as exc:
-                    logger.warning("avatar regenerate failed", extra={"user_id": user_id, "error": str(exc)})
-                    payload = {"job_id": job_id, "error": f"伙伴形象生成失败：{exc}"}
-                except Exception:
-                    logger.exception("avatar regenerate unexpected failure", extra={"user_id": user_id})
-                    payload = {"job_id": job_id, "error": "伙伴形象生成失败，请稍后重试"}
             try:
-                await dispatcher.push_event("avatar.regenerated", payload, session_id=None)
-            except Exception:
-                logger.debug("avatar.regenerated event push failed", extra={"user_id": user_id}, exc_info=True)
+                async with lock:
+                    try:
+                        with SESSION_LOCAL() as db:
+                            persona = get_or_create_persona(db, user_id)
+                            asset = await regenerate_avatar(db, user_id, persona, feedback=feedback)
+                            payload = {"job_id": job_id, "asset_url": asset.asset_url, "id": asset.id}
+                    except AvatarGenerationError as exc:
+                        logger.warning("avatar regenerate failed", extra={"user_id": user_id, "error": str(exc)})
+                        payload = {"job_id": job_id, "error": f"伙伴形象生成失败：{exc}"}
+                    except Exception:
+                        logger.exception("avatar regenerate unexpected failure", extra={"user_id": user_id})
+                        payload = {"job_id": job_id, "error": "伙伴形象生成失败，请稍后重试"}
+                try:
+                    await dispatcher.push_event("avatar.regenerated", payload, session_id=None)
+                except Exception:
+                    logger.debug("avatar.regenerated event push failed", extra={"user_id": user_id}, exc_info=True)
+            finally:
+                _avatar_regen_locks.pop(user_id, None)
 
         task = asyncio.create_task(_run())
         _avatar_regen_tasks.add(task)
