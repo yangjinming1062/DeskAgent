@@ -2,7 +2,7 @@ import { useStore } from '@nanostores/react'
 import { useEffect, useRef, useState } from 'react'
 
 import { useGatewayRequest } from '@/companion/boot/use-gateway-request'
-import { $chatMessages, $chatSessionId, setChatOpen, setChatSession } from '@/companion/chat-store'
+import { $chatMessages, $chatSessionId, setAssistantError, setChatOpen, setChatSession } from '@/companion/chat-store'
 import { $spriteState, setSpriteState } from '@/companion/companion-store'
 import { registerInteractiveRegion, unregisterInteractiveRegion } from '@/companion/interactive-regions'
 import { speak, stopSpeaking } from '@/companion/tts'
@@ -17,6 +17,8 @@ interface VoiceCallDockProps {
 const SPEECH_THRESHOLD = 28
 const BARGEIN_THRESHOLD = 38
 const SILENCE_END_MS = 1300
+// Releases the awaiting-reply lock if no message.start ever lands, so the mic re-opens.
+const AWAITING_REPLY_TIMEOUT_MS = 60_000
 
 // Live half-duplex voice conversation: the mic stays open; a volume analyser
 // segments utterances (speech → sustained silence = turn end). Each finished
@@ -38,8 +40,19 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps) {
   const userSpeakingRef = useRef(false)
   const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const awaitingReplyRef = useRef(false)
+  const awaitingReplyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const assistantSpeakingRef = useRef(false)
   const lastSpokenIdRef = useRef<string | null>(null)
+  // Reset the last-spoken dedup on a new session so the first reply isn't skipped as a duplicate.
+  const chatSessionId = useStore($chatSessionId)
+  useEffect(() => {
+    lastSpokenIdRef.current = null
+  }, [chatSessionId])
+  // Stale speak() promises can't drag the sprite to idle after a newer utterance starts.
+  const speakGenRef = useRef(0)
+  // Mirror gatewayState into a ref so mount effects read it live without re-mounting on reconnects.
+  const gatewayStateRef = useRef(gatewayState)
+  gatewayStateRef.current = gatewayState
   const { requestGateway } = useGatewayRequest()
   const panelRef = useRef<HTMLDivElement>(null)
 
@@ -122,11 +135,9 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps) {
                   userSpeakingRef.current = true
                   setSpriteState('listening')
                   startRecorder()
-
-                  if (silenceTimerRef.current) {
-                    clearTimeout(silenceTimerRef.current)
-                    silenceTimerRef.current = null
-                  }
+                  // Cancel unconditionally: a no-op when already cleared.
+                  clearTimeout(silenceTimerRef.current ?? undefined)
+                  silenceTimerRef.current = null
                 } else if (userSpeakingRef.current && avg < SPEECH_THRESHOLD) {
                   if (!silenceTimerRef.current) {
                     silenceTimerRef.current = setTimeout(() => {
@@ -184,10 +195,12 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps) {
         const res = await window.deskagent.media.stt({ dataUrl, filename: 'voice.webm' })
         text = (res.text ?? '').trim()
       } catch {
+        // Surface STT failure to the user instead of silently returning to listening.
+        setAssistantError('没听清，请再说一次')
         text = ''
       }
 
-      if (!text || gatewayState !== 'open') {
+      if (!text || gatewayStateRef.current !== 'open') {
         setSpriteState('listening')
 
         return
@@ -195,12 +208,27 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps) {
 
       awaitingReplyRef.current = true
       setSpriteState('thinking')
+      // Recover if the WS dies before any message.start lands; cleared on normal completion.
+      if (awaitingReplyTimerRef.current) {
+        clearTimeout(awaitingReplyTimerRef.current)
+      }
+      awaitingReplyTimerRef.current = setTimeout(() => {
+        awaitingReplyTimerRef.current = null
+        if (awaitingReplyRef.current) {
+          awaitingReplyRef.current = false
+          setSpriteState('listening')
+        }
+      }, AWAITING_REPLY_TIMEOUT_MS)
 
       try {
         const id = await ensureSession()
         await requestGateway('prompt.submit', { session_id: id, text })
       } catch {
         awaitingReplyRef.current = false
+        if (awaitingReplyTimerRef.current) {
+          clearTimeout(awaitingReplyTimerRef.current)
+          awaitingReplyTimerRef.current = null
+        }
         setSpriteState('listening')
       }
     }
@@ -235,7 +263,7 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps) {
       setSpriteState('idle')
       void window.deskagent.sprite.setAlwaysOnTop({ on: true })
     }
-  }, [onClose, gatewayState, requestGateway])
+  }, [onClose, requestGateway])  // gatewayState intentionally omitted: a dep would re-mount the mic on reconnect flaps.
 
   // Speak the assistant's completed reply, then return to listening. The chat
   // event stream (events.ts) owns the streaming + state machine; this effect
@@ -249,6 +277,10 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps) {
     if (last.id === lastSpokenIdRef.current) {return}
     lastSpokenIdRef.current = last.id
     awaitingReplyRef.current = false
+    if (awaitingReplyTimerRef.current) {
+      clearTimeout(awaitingReplyTimerRef.current)
+      awaitingReplyTimerRef.current = null
+    }
 
     if (!last.text.trim()) {
       setSpriteState('listening')
@@ -258,9 +290,11 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps) {
 
     assistantSpeakingRef.current = true
     setSpriteState('speaking')
-    void speak(last.text).then(ok => {
+    const gen = ++speakGenRef.current
+    void speak(last.text).then(() => {
+      if (gen !== speakGenRef.current) {return}
       assistantSpeakingRef.current = false
-      setSpriteState(ok ? 'listening' : 'idle')
+      setSpriteState('listening')
     })
   }, [messages, micActive])
 

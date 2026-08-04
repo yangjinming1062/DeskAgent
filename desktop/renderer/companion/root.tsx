@@ -2,10 +2,11 @@ import { useStore } from '@nanostores/react'
 import { useEffect, useRef, useState } from 'react'
 
 import { startActivityMonitor } from '@/companion/activity'
+import { BootFailureOverlay } from '@/companion/boot/boot-failure-overlay'
 import { useGatewayBoot } from '@/companion/boot/use-gateway-boot'
 import { useGatewayRequest } from '@/companion/boot/use-gateway-request'
 import { $chatOpen, setChatOpen } from '@/companion/chat-store'
-import { $companionLifecycle, checkBedtimeAndAutoSleep, reportUserActivity, setCompanionLifecycle, wakeUpFromSleep } from '@/companion/companion-store'
+import { $companionLifecycle, $voiceCallOpen, checkBedtimeAndAutoSleep, reportUserActivity, setCompanionLifecycle, wakeUpFromSleep } from '@/companion/companion-store'
 import { hydratePersona } from '@/companion/persona-store'
 import { $auth, applyAuthBroadcast, hydrateAuth, logout } from '@/shared/store/auth'
 import { $gatewayState } from '@/shared/store/gateway'
@@ -50,6 +51,9 @@ export function CompanionRoot() {
   const chatOpen = useStore($chatOpen)
   const [cracks, setCracks] = useState(0)
   const [voiceCallOpen, setVoiceCallOpen] = useState(false)
+  useEffect(() => {
+    $voiceCallOpen.set(voiceCallOpen)
+  }, [voiceCallOpen])
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [contextMenuPos, setContextMenuPos] = useState<{ x: number; y: number } | null>(null)
   const { requestGateway } = useGatewayRequest()
@@ -243,6 +247,7 @@ export function CompanionRoot() {
       {showReady && voiceCallOpen && <VoiceCallDock onClose={() => setVoiceCallOpen(false)} />}
       {showReady && settingsOpen && <CompanionSettings onClose={() => setSettingsOpen(false)} />}
       {showReady && <ProactiveBubble />}
+      <BootFailureOverlay />
       <DeveloperOverlay />
       {authed && <GatewayBooter />}
     </>

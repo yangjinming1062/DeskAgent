@@ -1,16 +1,8 @@
-// Detects when the persisted companion voice id ($companionVoiceId) is no
-// longer present in the active provider's cloud catalog — e.g. the provider
-// pruned/renamed voices, or the user switched providers. The backend's
-// pick_voice_id tolerates unknown ids (falls back to the provider default),
-// so synthesis never breaks; this is a prompt, not a hard error.
-//
-// Design tokens ("mimo_voicedesign:<prompt>") and the empty default are
-// always considered valid. P2-8 (runtime audit): distinguish "fetch
-// failed" (transient — keep current voice, no prompt) from
-// "fetch succeeded but voice not in catalog" (real miss — prompt the
-// user to re-pick). The previous code collapsed both into
-// {valid: true} so a user who switched providers never saw the
-// "your voice changed underneath you" hint.
+// Detects a persisted companion voice id that the active provider's catalog no
+// longer lists (provider pruned/renamed voices, or a provider switch). Backend
+// tolerates unknown ids (falls back to the default), so this is a re-pick prompt,
+// not a hard error. Design tokens and the empty default are always valid; a
+// transient fetch failure is treated as valid (re-evaluated next connectivity cycle).
 
 import type { RequestGateway } from '@/shared/voice-catalog'
 import { VOICEDESIGN_PREFIX } from '@/shared/voice-catalog'
@@ -20,7 +12,7 @@ import { fetchVoiceCatalogRaw } from './voice'
 
 export type VoiceValidityResult =
   | { valid: true }
-  | { valid: false; name: string; reason: 'fetch_failed' | 'catalog_miss' }
+  | { valid: false; name: string; reason: 'catalog_miss' }
 
 export async function checkCompanionVoiceValidity(requestGateway: RequestGateway): Promise<VoiceValidityResult> {
   const id = $companionVoiceId.get()
@@ -32,12 +24,15 @@ export async function checkCompanionVoiceValidity(requestGateway: RequestGateway
   const result = await fetchVoiceCatalogRaw(requestGateway)
 
   if (!result.ok) {
-    // Transient: don't prompt the user — the next connectivity
-    // cycle will re-evaluate.
     return { valid: true }
   }
 
   return result.catalog.voices.some(v => v.id === id)
     ? { valid: true }
-    : { valid: false, name: id, reason: 'catalog_miss' }
+    : (() => {
+        // Clear the stale id so the next speak() omits the voice arg and the
+        // server picks the active provider's default without a fallback detour.
+        $companionVoiceId.set('')
+        return { valid: false, name: id, reason: 'catalog_miss' }
+      })()
 }

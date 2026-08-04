@@ -1509,6 +1509,18 @@ function resetBackendCache() {
   cachedBackend = null
 }
 
+// WS-only JWT so the renderer never holds the long-lived access token (ARCH §7.1).
+async function mintWsTicket(baseUrl, token) {
+  if (!token) return null
+  try {
+    const res = await fetchJson(`${baseUrl}/api/user/ws-ticket`, token, { method: 'POST', timeoutMs: 5000 })
+    return res?.access_token || null
+  } catch (error) {
+    rememberLog(`[ws-ticket] mint failed: ${error?.message || error}`)
+    return null
+  }
+}
+
 async function ensureBackend() {
   if (cachedBackend) {
     const token = getAuthToken()
@@ -1529,11 +1541,12 @@ async function ensureBackend() {
 
     const liveWindowState = getWindowState()
     const wsBase = cachedBackend.baseUrl.replace(/^http/, 'ws')
+    const wsTicket = await mintWsTicket(cachedBackend.baseUrl, token)
     cachedBackend = {
       ...cachedBackend,
       ...liveWindowState,
       token,
-      wsUrl: token ? `${wsBase}/api/chat/ws?token=${token}` : `${wsBase}/api/chat/ws`
+      wsUrl: wsTicket ? `${wsBase}/api/chat/ws?ticket=${wsTicket}` : `${wsBase}/api/chat/ws`
     }
     return cachedBackend
   }
@@ -1552,13 +1565,14 @@ async function ensureBackend() {
       error: null
     })
     const wsBase = remote.baseUrl.replace(/^http/, 'ws')
+    const wsTicket = await mintWsTicket(remote.baseUrl, token)
     cachedBackend = {
       baseUrl: remote.baseUrl,
       mode: 'remote',
       source: 'env',
       authMode: 'token',
       token,
-      wsUrl: token ? `${wsBase}/api/chat/ws?token=${token}` : `${wsBase}/api/chat/ws`,
+      wsUrl: wsTicket ? `${wsBase}/api/chat/ws?ticket=${wsTicket}` : `${wsBase}/api/chat/ws`,
       logs: deskagentLog.slice(-80),
       ...getWindowState()
     }
@@ -2016,6 +2030,11 @@ ipcMain.handle('deskagent:window:show-tool', async () => {
 })
 
 ipcMain.handle('deskagent:runner:get-tools', async () => {
+  // Wait up to 5s for the runner bridge so an early hub-page probe doesn't read empty.
+  const deadline = Date.now() + 5000
+  while (!bridgeDeps.runnerBridge && Date.now() < deadline) {
+    await new Promise(resolve => setTimeout(resolve, 100))
+  }
   if (!bridgeDeps.runnerBridge) {
     return []
   }

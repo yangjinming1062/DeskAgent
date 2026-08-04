@@ -119,5 +119,5 @@ clip 通过 `clip.updated` 事件单通道下发（P0-8）。`video_gen.*` 事�
 - **持久化键**：
   - `da.companion.voiceId` / `da.companion.responseMode` / `da.companion.disturbanceTier` / `da.companion.chatDockOffset`（P1-18 + P2-5）
   - 仅 `disturbanceTier` + `chatDockOffset` 跨重启保留；`voiceId` 在 onMount 由 `voice-validity.ts` 校验 provider 目录变化。
-- **`/api/companion/asset/*` 文件路由**：当前无鉴权，靠 `secrets.token_urlsafe(8)` token 熵 + 文件名白名单。**Contract P2-15**：未来需切到 signed URL（`user_id` + `filename` + `expiry` + HMAC），与 installer 一次性 bootstrap 一致的临时凭证。
+- **`/api/companion/asset/*` 文件路由**：已切到 HMAC 签名 URL（`user_id` + `filename` + 5 分钟 expiry + HMAC），后端 `verify_signed_asset_request` 强制校验，丢签名 401。Asset 落持久目录（`companion-avatars/` / `companion-assets/`），URL 一次性 5 分钟有效。
 - **CORS / 跨窗口**：精灵窗口与对话面板共享同一 Electron 渲染进程（panel 是 React child of sprite window），`setAlwaysOnTop` 不再被 chat-dock 切换（P1-4）。

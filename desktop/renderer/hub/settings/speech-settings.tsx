@@ -79,10 +79,10 @@ export function SpeechSettings() {
 
   // Probe which local engines the Runner currently advertises (check_fn-gated),
   // so the user can see whether "local"/"auto" will actually use a local engine.
+  // Re-probe on tools_changed/running so the badge flips once the Runner finishes loading.
   useEffect(() => {
     let cancelled = false
-
-    void (async () => {
+    const probe = async () => {
       try {
         const tools = await window.deskagent.runnerGetTools?.()
 
@@ -101,10 +101,18 @@ export function SpeechSettings() {
       } catch {
         // leave null — availability badge stays hidden
       }
-    })()
+    }
+
+    void probe()
+    const off = window.deskagent.onRunnerStatus?.((ev: { type: string }) => {
+      if (ev.type === 'tools_changed' || ev.type === 'running') {
+        void probe()
+      }
+    })
 
     return () => {
       cancelled = true
+      off?.()
     }
   }, [])
 

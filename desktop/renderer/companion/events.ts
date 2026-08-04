@@ -1,4 +1,5 @@
 import { $screenLocked } from '@/companion/activity'
+import { resolveAvatarRegeneration } from '@/companion/avatar-regen-store'
 import {
   appendAssistantDelta,
   beginAssistantMessage,
@@ -7,8 +8,7 @@ import {
   setAssistantTool
 } from '@/companion/chat-store'
 import { applyClipUpdate, type ClipMeta } from '@/companion/clip-store'
-import { $disturbanceTier, $spriteState, setSpriteState, type SpriteEmotion } from '@/companion/companion-store'
-import { resolveAvatarRegeneration } from '@/companion/avatar-regen-store'
+import { $disturbanceTier, $voiceCallOpen, setSpriteState, type SpriteEmotion } from '@/companion/companion-store'
 import { $responseMode } from '@/companion/prefs'
 import { speak } from '@/companion/tts'
 import type { RpcEvent } from '@/shared/types/deskagent'
@@ -35,30 +35,25 @@ export function handleCompanionEvent(event: RpcEvent): void {
 
     case 'message.complete': {
       const payload = event.payload as { text?: string; affect?: { emotion?: string } } | undefined
+      // Suppress render-side cues for quiet users and when the screen is locked.
+      const quiet = $disturbanceTier.get() === 'quiet'
+      const screenLocked = $screenLocked.get()
+
       finalizeAssistantMessage(payload?.text)
 
-      // ``neutral`` is the LLM's "no specific emotion" answer and must NOT
-      // trigger a transient EMOTIONAL state — it would otherwise fall
-      // through to ``pulse + ✨`` (companion-ready.tsx default) and ping a
-      // meaningless badge on every text reply. Filter at the boundary so
-      // ``neutral`` returns to idle like the no-affect path (P1-5).
+      // "neutral" is the LLM's no-op emotion; treat it like no affect so it doesn't ping a badge.
       const hasEmotion = payload?.affect?.emotion && payload.affect.emotion !== 'neutral'
-      if (hasEmotion) {
+
+      if (hasEmotion && !quiet && !screenLocked) {
         setSpriteState('emotional', { emotion: payload!.affect!.emotion as SpriteEmotion })
       } else {
         setSpriteState('idle')
       }
 
-      // "Always voice" response mode (plan §4.1): speak chat replies aloud.
-      // Voice-call mode drives its own speaking in VoiceCallDock and never
-      // reaches here with a chat dock open, so this only fires for Chat mode.
-      //
-      // P1-13: when an emotion is present, defer the speaking state by a
-      // short frame so the EMOTIONAL state is observable before being
-      // overwritten (ARCH §7.5 "使 Desktop 能在 SPEAKING 前先播 EMOTIONAL").
-      // Without this, the synchronous ``setSpriteState('speaking')``
-      // immediately cancels the 2.5s emotional transient timer.
-      if ($responseMode.get() === 'voice' && payload?.text?.trim()) {
+      // Speak chat replies in "always voice" mode (plan §4.1). Skip while a voice-call is active
+      // (its dock speaks) or the screen is locked. Defer speaking a frame so EMOTIONAL is
+      // observable before SPEAKING overwrites it (ARCH §7.5).
+      if ($responseMode.get() === 'voice' && payload?.text?.trim() && !$voiceCallOpen.get() && !screenLocked) {
         if (hasEmotion) {
           setTimeout(() => {
             setSpriteState('speaking')
@@ -102,6 +97,7 @@ export function handleCompanionEvent(event: RpcEvent): void {
       if (p.status === 'complete') {
         setAssistantTool(null)
         setSpriteState('thinking')
+
         break
       }
 
@@ -170,6 +166,7 @@ export function handleCompanionEvent(event: RpcEvent): void {
       // {queued: true, job_id} and the real result lands here. Resolve the
       // pending promise keyed by job_id so the awaiter can swap the portrait.
       const p = event.payload as { job_id?: string; asset_url?: string; id?: number; error?: string } | undefined
+
       if (p?.job_id) {
         resolveAvatarRegeneration(p)
       }
@@ -202,8 +199,10 @@ export function handleCompanionEvent(event: RpcEvent): void {
       // to show a "scheduled message" indicator before the actual reply
       // arrives, or to log the schedule hit for the developer overlay.
       pushDevLog('cron.trigger', JSON.stringify(event.payload ?? {}))
+
       break
     }
+
     case 'companion.message': {
       const payload = event.payload as { text?: string; affect?: { emotion?: string } } | undefined
       const text = payload?.text ?? ''

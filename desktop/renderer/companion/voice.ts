@@ -1,4 +1,4 @@
-import type { RequestGateway } from '@/shared/voice-catalog'
+import type { RequestGateway, VoiceOption } from '@/shared/voice-catalog'
 
 // Voice catalog + matching + design backed by the Backend `tts.*` JSON-RPC
 // methods (services/companion/voice_catalog.py). Voice ids are provider-specific;

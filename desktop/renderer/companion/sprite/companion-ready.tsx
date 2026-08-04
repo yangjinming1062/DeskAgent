@@ -175,7 +175,7 @@ export function CompanionReady() {
     }
   }, [gatewayState, requestGateway])
 
-  const badge = drowsy && spriteState !== 'disconnected' ? '💤' : getStateBadge(spriteState, emotion)
+  const badge = drowsy ? '💤' : getStateBadge(spriteState, emotion)
   const procKey = proceduralKey(spriteState, emotion)
   const drowsyFilter = drowsy ? 'grayscale(0.6) brightness(0.85)' : undefined
   // P1-14: the sprite has no native alpha (image-gen returns JPEG,
@@ -246,9 +246,9 @@ export function CompanionReady() {
 // highlight on the character (eyes, badges) survives.
 function ChromaKeyFilter() {
   return (
-    <svg aria-hidden="true" focusable="false" style={{ position: 'absolute', width: 0, height: 0, overflow: 'hidden' }} width="0" height="0">
+    <svg aria-hidden="true" focusable="false" height="0" style={{ position: 'absolute', width: 0, height: 0, overflow: 'hidden' }} width="0">
       <defs>
-        <filter id="companion-chroma-key" colorInterpolationFilters="sRGB">
+        <filter colorInterpolationFilters="sRGB" id="companion-chroma-key">
           <feColorMatrix
             type="matrix"
             values="

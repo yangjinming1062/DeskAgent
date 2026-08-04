@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
 
 import { applyDesktopBootProgress, completeDesktopBoot, failDesktopBoot, setDesktopBootStep } from '@/companion/boot-store'
-import { $spriteState, setSpriteState } from '@/companion/companion-store'
+import { $disturbanceTier, $spriteState, $voiceCallOpen, setSpriteState } from '@/companion/companion-store'
 import { DeskAgentGateway } from '@/shared/deskagent'
 import { resolveGatewayWsUrl } from '@/shared/lib/gateway-ws-url'
 import { reconnectBackoffMs } from '@/shared/lib/reconnect'
@@ -15,6 +15,18 @@ import type { DeskAgentConnection } from '@/shared/types/global'
 // Backend uses WS close 1008 for auth failures (token expired/revoked) —
 // trigger logout instead of looping reconnect with a dead token.
 const WS_CLOSE_POLICY_VIOLATION = 1008
+
+// Re-report the tier after every (re)open: backend stores it in a process-local
+// dict that a restart silently resets. Fire-and-forget to match chat-dock's pattern.
+function syncDisturbanceTier(gateway: DeskAgentGateway): void {
+  const tier = $disturbanceTier.get()
+
+  if (!tier) {
+    return
+  }
+
+  void gateway.request('companion.set_disturbance_tier', { tier }).catch(() => {})
+}
 
 async function syncRunnerTools(gateway: DeskAgentGateway): Promise<void> {
   const desktop = window.deskagent
@@ -229,6 +241,10 @@ export function useGatewayBoot({ handleGatewayEvent, onConnectionReady, onGatewa
         clearReconnectTimer()
         clearGraceTimer()
         clearSleepEscalation()
+        // Re-report the disturbance tier so the backend's process-local
+        // dict picks up the user's persisted choice on first boot AND
+        // after each reconnect (covers backend restart, OAuth reauth).
+        syncDisturbanceTier(gateway)
 
         // On a normal post-wake reconnect, nothing calls completeDesktopBoot()
         // afterwards, so dismiss the boot-progress overlay here once we're open
@@ -259,10 +275,14 @@ export function useGatewayBoot({ handleGatewayEvent, onConnectionReady, onGatewa
             graceTimer = null
             setSpriteState('disconnected')
 
-            // Prolonged disconnect → the companion dozes off (plan §4.5).
+            // Prolonged disconnect → doze off (plan §4.5), but defer while a voice-call is live.
             if (sleepEscalationTimer === null) {
               sleepEscalationTimer = setTimeout(() => {
                 sleepEscalationTimer = null
+                if ($voiceCallOpen.get()) {
+                  // Skip — voice-call active; rescheduled on the next disconnect.
+                  return
+                }
                 setSpriteState('sleeping', { force: true })
               }, 5 * 60 * 1000)
             }

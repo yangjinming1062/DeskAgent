@@ -109,7 +109,8 @@ function createRunnerWsServer(options = {}) {
     if (method) {
       if (method === 'runner_ready') {
         log('[runner-ws] runner_ready received')
-        emit({ type: 'runner_ready' })
+        // Forward the runner's probed capabilities/flags to the bridge.
+        emit({ type: 'runner_ready', capabilities: message.params?.capabilities ?? null, version: message.params?.version ?? null, probe_failed: message.params?.probe_failed ?? null })
       } else if (method === 'tools_changed') {
         // Runner re-registered tools (e.g. MCP discovery finished after
         // startup). The bridge re-fetches schemas and re-syncs to backend.
