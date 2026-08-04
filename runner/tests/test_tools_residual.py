@@ -21,9 +21,9 @@ from tools.execute_code import code_execution_tool as ec
 from tools.interrupt import INTERRUPT_EVENT
 from tools.interrupt import is_interrupted
 from tools.interrupt import set_global_interrupt
-from tools.system.ansi_strip import strip_ansi
-from tools.system.ansi_strip import strip_fence
-from tools.system.clean import clean_output
+from utils import clean_output
+from utils import strip_ansi
+from utils import strip_fence
 from tools.thread_context import propagate_context_to_thread
 from tools.tool_output_limits import _coerce_positive_int
 from tools.tool_output_limits import get_max_bytes
@@ -419,17 +419,17 @@ class TestExecuteCodeHelpers:
 
 class TestUrlSafety:
     def test_blocks_metadata_google_internal(self):
-        from tools.browser.url_safety import is_always_blocked_url
+        from utils import is_always_blocked_url
 
         assert is_always_blocked_url("http://metadata.google.internal/computeMetadata/v1/") is True
 
     def test_allows_normal_https(self):
-        from tools.browser.url_safety import is_always_blocked_url
+        from utils import is_always_blocked_url
 
         assert is_always_blocked_url("https://example.com/path") is False
 
     def test_normalize_url_drops_default_port(self):
-        from tools.browser.url_safety import normalize_url_for_request
+        from utils import normalize_url_for_request
 
         out = normalize_url_for_request("https://example.com:443/path")
         # Default-port-stripping is conditional on the URL parser. We
@@ -441,14 +441,14 @@ class TestUrlSafety:
         assert "/path" in out
 
     def test_normalize_url_preserves_non_default_port(self):
-        from tools.browser.url_safety import normalize_url_for_request
+        from utils import normalize_url_for_request
 
         out = normalize_url_for_request("https://example.com:8443/path")
         assert ":8443" in out
 
     def test_is_safe_url_blocks_localhost(self):
         """127.0.0.1 is a SSRF risk — MUST be blocked by the private-IP gate."""
-        from tools.browser.url_safety import is_safe_url
+        from utils import is_safe_url
 
         # The private-IP gate is opt-in via config; without it the
         # gate is permissive. We don't pin the global state here —
@@ -461,33 +461,33 @@ class TestUrlSafety:
 class TestWebsitePolicy:
     def test_check_access_normalizes_url(self, tmp_path, monkeypatch):
         """Host normalization MUST lowercase and strip leading www. for matching."""
-        from tools.browser import website_policy
+        from utils import check_website_access
 
         config = tmp_path / "policy.yaml"
         config.write_text("block:\n  - example.com\n")
         # No cache busting needed; this is a fresh module load per test process.
 
-        out = website_policy.check_website_access("https://WWW.Example.COM/path", config_path=config)
+        out = check_website_access("https://WWW.Example.COM/path", config_path=config)
         # ``check_website_access`` returns either a denial dict or None.
         if out is not None:
             assert out.get("host") == "example.com" or "example.com" in str(out)
 
     def test_load_blocklist_handles_missing_config(self, tmp_path):
-        from tools.browser import website_policy
+        from utils import load_website_blocklist
 
         # Missing file → empty blocklist.
-        out = website_policy.load_website_blocklist(config_path=tmp_path / "nope.yaml")
+        out = load_website_blocklist(config_path=tmp_path / "nope.yaml")
         # Default shape: ``{"enabled": ..., "rules": [...]}``.
         assert isinstance(out, dict)
         rules = out.get("rules", [])
         assert rules == []
 
     def test_load_blocklist_reads_yaml(self, tmp_path):
-        from tools.browser import website_policy
+        from utils import load_website_blocklist
 
         cfg = tmp_path / "policy.yaml"
         cfg.write_text("security:\n  website_blocklist:\n    domains:\n      - foo.com\n      - bar.com\n")
-        out = website_policy.load_website_blocklist(config_path=cfg)
+        out = load_website_blocklist(config_path=cfg)
         rules = out.get("rules", [])
         assert any(r.get("pattern") == "foo.com" for r in rules)
         assert any(r.get("pattern") == "bar.com" for r in rules)
@@ -532,13 +532,13 @@ class TestToolsets:
         assert is_mcp_tool("terminal") is False
 
     def test_get_disabled_toolset_ids_reads_config(self, monkeypatch):
-        """``get_disabled_toolset_ids`` reads via ``get_disabled_skill_names(section="toolsets")`` — patch the symbol the consumer uses."""
+        """``get_disabled_toolset_ids`` reads via ``get_disabled_config_names(section="toolsets")``."""
         from tools.toolsets import helpers as toolsets_helpers
 
-        real = toolsets_helpers.get_disabled_skill_names
+        real = toolsets_helpers.get_disabled_config_names
         monkeypatch.setattr(
             toolsets_helpers,
-            "get_disabled_skill_names",
+            "get_disabled_config_names",
             lambda section="skills": {"skill_lab", "mcp_staging"} if section == "toolsets" else set(),
         )
         try:
@@ -546,4 +546,4 @@ class TestToolsets:
             assert "skill_lab" in ids
             assert "mcp_staging" in ids
         finally:
-            monkeypatch.setattr(toolsets_helpers, "get_disabled_skill_names", real)
+            monkeypatch.setattr(toolsets_helpers, "get_disabled_config_names", real)

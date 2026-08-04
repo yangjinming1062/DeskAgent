@@ -13,19 +13,19 @@ from runner_version import __version__
 from tools import discover_builtin_tools
 from tools import registry
 from tools import ToolError
-from tools.files.file_tools import reset_max_read_chars_cache
+from tools.files import reset_max_read_chars_cache
 from tools.interrupt import set_global_interrupt
 from tools.interrupt import set_interrupt
 from tools.mcp import discover_mcp_tools
-from tools.mcp.mcp_tool import reload_mcp_servers
+from tools.mcp import reload_mcp_servers
 from tools.tool_output_limits import reset_cache as reset_output_limits_cache
 from tools.toolsets import get_disabled_toolset_ids
+from utils import disk_free_bytes
+from utils import get_deskagent_home
+from utils import network_reachable
 from utils import pid_exists
 from utils import set_handler
-from utils.capabilities import disk_free_bytes
-from utils.capabilities import network_reachable
-from utils.capabilities import snapshot
-from utils.constants import get_deskagent_home
+from utils import snapshot
 
 logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger("deskagent_runner")
@@ -219,7 +219,7 @@ async def runner_loop(ws_url: str) -> None:
     while True:
         logger.info(f"Connecting to Desktop WS: {current_url} (attempt {attempt + 1})")
         cancelled = False
-        # P1-3 (runtime audit): proactively drain any stale
+        # Proactively drain any stale
         # ``_PENDING_RPC`` futures before the new connection opens. The
         # ``finally`` block on the previous connection does this too,
         # but only after the websocket context manager fully unwinds —
@@ -365,11 +365,6 @@ def _runner_ready_payload() -> dict:
     except Exception as e:
         logger.warning(f"capabilities probe failed: {e}")
         payload["probe_failed"] = True
-    # P0-1 (runtime audit): \`bundled_voice_ids\` was a dead field —
-    # the desktop never consumed it. Drop it from the wire payload
-    # so we don't ship unused bytes on every WS open. A future
-    # consumer (e.g. pre-rendering the local voice picker) can
-    # add a dedicated \`runner.bundled_voices\` RPC.
     return payload
 
 

@@ -198,7 +198,7 @@ MCP 工具由 `discover_mcp_tools()` 在 `server_loop` 紧跟 `runner_ready` 之
 
 设计意图：**soft-guard 而非 hard block**——同一 OS 用户下，agent 通过 terminal 工具本身就能写到任何路径，所以硬阻断只会给"虚假的安心感"。soft-guard 让 agent 在 LLM 提示层看到警告，必须先获得用户 `cross_profile=True` 才能覆盖。三个检测器共享同一道 opt-in 闸门，不是每个 detector 各自一份 override。
 
-### URL 安全（`tools/browser/url_safety.py`）
+### URL 安全（`utils/url_safety.py`）
 
 SSRF 防护：block private IPs、loopback、link-local、CGNAT（100.64.0.0/10）、云 metadata（169.254.169.254、metadata.google.internal）。DNS 解析校验。
 

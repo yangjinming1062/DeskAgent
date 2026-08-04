@@ -1,5 +1,7 @@
 import json
 
+import yaml
+
 from .constants import get_deskagent_home
 
 CONFIG_FILENAME = "config.yaml"
@@ -49,11 +51,6 @@ def load_config() -> dict:
         _CONFIG_CACHE_MTIME = None
         return _CONFIG_CACHE
     try:
-        # Lazy: pyyaml is a heavy C-backed import — defer until we actually
-        # need to parse config.yaml. Every `from utils import …` would
-        # otherwise drag it in even when only `pid_exists` is wanted.
-        import yaml
-
         with path.open("r", encoding="utf-8") as f:
             data = yaml.safe_load(f) or {}
     except Exception:
@@ -124,4 +121,12 @@ def cfg_json(section: dict, key: str, default=None):
         return default
 
 
-__all__ = ["is_truthy_value", "load_config", "cfg_get", "get_env_type", "cfg_str", "cfg_bool", "cfg_int", "cfg_float", "cfg_json"]
+def get_disabled_config_names(section: str = "skills") -> set[str]:
+    """Read the ``{section}.disabled`` list from ``~/.deskagent/config.yaml``.
+
+    Works for ``skills``, ``toolsets``, etc.
+    """
+    raw = cfg_get(load_config(), section, "disabled", default=[])
+    if not isinstance(raw, list):
+        return set()
+    return {str(item).strip() for item in raw if isinstance(item, str) and item.strip()}

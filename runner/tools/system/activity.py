@@ -148,23 +148,15 @@ def _idle_linux() -> float:
 
 
 def _locked_windows() -> bool:
-    """P2-4 (runtime audit): the previous code only checked
-    ``tid == 0`` on the foreground window. That's a weak proxy
-    — Windows 10/11's lock screen (LogonUI.exe) usually has a
-    real thread, and notification center / UAC dialogs frequently
-    show ``tid == 0`` even when the user is actively working.
+    """Detect whether Windows desktop is locked.
 
-    Three independent signals OR'd together (any one True ⇒ locked):
+    Combines three independent signals (any one True ⇒ locked):
       1. ``GetForegroundWindow() == NULL`` — the desktop itself
-         owns no foreground window (the case before any app
-         launches or after a Ctrl+L).
+         owns no foreground window.
       2. ``GetClassName(hwnd) == 'LockScreenBackstop' / 'LogonUI'`` —
-         the only windows Microsoft ships with a lock-screen
-         class.
+         lock-screen window classes.
       3. ``GetUserObjectInformation()`` on the foreground
-         thread's input desktop reports a different desktop name
-         than the default — the classic Win32 "switched to a
-         secure desktop" pattern the lock screen uses.
+         thread's input desktop reports a non-default desktop name.
     """
     if ctypes is None:
         return False
@@ -238,23 +230,11 @@ def _locked_linux() -> bool:
 
 
 def _focus_windows() -> dict[str, Any]:
-    """P2-5 (runtime audit): the previous code took the first
-    ``GetModuleFileNameExW`` of the foreground window's process.
-    When explorer.exe hosts a foreground window with another
-    app on top (e.g. file picker, UAC, lock screen), the
-    returned exe was explorer.exe — the user was actually
-    interacting with the dialog, not the shell.
+    """Inspect focused window on Windows.
 
-    New strategy:
-      1. Skip windows whose class is 'Shell_TrayWnd' / 'WorkerW' /
-         'Progman' (explorer containers) and re-query
-         GetForegroundWindow after setting focus mode.
-      2. Use ``GetGUIThreadInfo`` on the foreground thread to
-         read the *real* focused hwnd (hwndFocus), then walk
-         up the owner chain with GetAncestor(GA_ROOT) — that
-         returns the top-level user window regardless of how
-         many nested containers (file pickers, UAC prompts)
-         are in the way.
+    Strategy:
+      1. Skip windows whose class is 'Shell_TrayWnd' / 'WorkerW' / 'Progman'.
+      2. Use ``GetGUIThreadInfo`` on the foreground thread to read the real focused hwnd.
     """
     if ctypes is None or wintypes is None:
         return {}

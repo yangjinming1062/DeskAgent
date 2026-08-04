@@ -27,11 +27,9 @@ if sys.platform == "win32":
 else:
     import fcntl
 
-from ..system.credential_files import (
-    get_credential_file_mounts,
-    iter_cache_files,
-    iter_skills_files,
-)
+from utils import get_credential_file_mounts
+from utils import iter_cache_files
+from utils import iter_skills_files
 
 logger = logging.getLogger(__name__)
 

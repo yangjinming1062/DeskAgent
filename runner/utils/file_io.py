@@ -22,6 +22,3 @@ def atomic_replace(file_path: str, content: str) -> None:
         with contextlib.suppress(OSError):
             os.unlink(tmp_name)
         raise
-
-
-__all__ = ["atomic_replace"]

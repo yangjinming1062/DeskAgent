@@ -7,6 +7,7 @@ import threading
 from typing import Any
 
 from utils import cfg_get
+from utils import clean_output
 from utils import load_config
 
 from ..interrupt import is_interrupted
@@ -327,8 +328,6 @@ def _coerce_max_elements(value: Any) -> int:
 
 
 def _capture_response(cap: CaptureResult, max_elements: int = 100) -> Any:
-    from ..system import clean_output
-
     total = len(cap.elements)
     visible = cap.elements[:max_elements]
     truncated = max(0, total - len(visible))
@@ -398,8 +397,6 @@ def _action_result_payload(res: ActionResult) -> dict[str, Any]:
     downstream consumers can rely on the same field set regardless of
     whether the action was followed by a capture.
     """
-    from ..system import clean_output
-
     payload: dict[str, Any] = {
         "ok": res.ok,
         "action": res.action,
@@ -431,8 +428,6 @@ def _maybe_follow_capture(backend: ComputerUseBackend, res: ActionResult, do_cap
     resp = _capture_response(cap)
     action_payload = _action_result_payload(res)
     if isinstance(resp, dict) and resp.get("_multimodal"):
-        from ..system import clean_output
-
         safe_message = clean_output(res.message) if res.message else ""
         prefix_parts = [f"[{res.action}]", f"ok={res.ok}", f"delivery_mode={res.delivery_mode}", f"escalation={res.escalation}"]
         if safe_message:
@@ -463,8 +458,6 @@ def _format_elements(elements: list[UIElement], max_lines: int = 40) -> list[str
 
 
 def _element_to_dict(e: UIElement) -> dict[str, Any]:
-    from ..system import clean_output
-
     return {"index": e.index, "role": e.role, "label": clean_output(e.label), "bounds": list(e.bounds), "app": e.app}
 
 

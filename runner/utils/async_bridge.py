@@ -34,6 +34,3 @@ def in_async_loop() -> bool:
     except RuntimeError:
         return False
     return True
-
-
-__all__ = ["safe_schedule_threadsafe", "in_async_loop"]

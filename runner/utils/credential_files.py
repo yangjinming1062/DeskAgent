@@ -6,15 +6,16 @@ import tempfile
 from contextvars import ContextVar
 from pathlib import Path
 
-from utils import cfg_get
-from utils import get_deskagent_dir
-from utils import get_deskagent_home
-from utils import load_config
+from .config import cfg_get
+from .config import load_config
+from .constants import get_deskagent_dir
+from .constants import get_deskagent_home
+from .file_safety import validate_within_dir
 
 logger = logging.getLogger(__name__)
 
 
-def get_external_skills_dirs() -> list:
+def get_external_skills_dirs() -> list[Path]:
     try:
         return [Path(p) for p in raw if isinstance(p, (str, Path))] if isinstance(raw := cfg_get(load_config(), "skills", "external_dirs", default=[]), list) else []
     except Exception:
@@ -34,8 +35,6 @@ _config_files: list[dict[str, str]] | None = None
 
 
 def register_credential_file(relative_path: str, container_base: str = "/root/.deskagent") -> bool:
-    from ..files import validate_within_dir
-
     deskagent_home = get_deskagent_home()
     if os.path.isabs(relative_path):
         logger.warning("credential_files: rejected absolute path %r (must be relative to DESKAGENT_HOME)", relative_path)
@@ -61,8 +60,6 @@ def register_credential_files(entries: list, container_base: str = "/root/.deska
 
 
 def _load_config_files() -> list[dict[str, str]]:
-    from ..files import validate_within_dir
-
     global _config_files
     if _config_files is not None:
         return _config_files

@@ -24,6 +24,7 @@ from utils import build_write_denied_prefixes
 from utils import cfg_get
 from utils import is_write_denied as _shared_is_write_denied
 from utils import load_config
+from utils import strip_ansi
 
 from ..tool_output_limits import get_max_line_length
 from ..tool_output_limits import get_max_lines
@@ -788,8 +789,6 @@ class ShellFileOperations(FileOperations):
 
     def _check_lint(self, path: str, content: str | None = None) -> LintResult:
         """Run syntax check on a file after editing."""
-        from ..system import strip_ansi
-
         ext = os.path.splitext(path)[1].lower()
         inproc = LINTERS_INPROC.get(ext)
         if inproc is not None:
@@ -1257,17 +1256,6 @@ def writes_since(
 def known_reads(task_id: str) -> list[str]:
     return _REGISTRY.known_reads(task_id)
 
-
-__all__ = [
-    "FileStateRegistry",
-    "get_registry",
-    "record_read",
-    "note_write",
-    "check_stale",
-    "lock_path",
-    "writes_since",
-    "known_reads",
-]
 
 # ── Patch Parser ───────────────────────────────────────────────────────────
 

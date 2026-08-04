@@ -1,6 +1,6 @@
 import contextlib
-import os
 import ctypes
+import os
 from ctypes import wintypes
 from pathlib import Path
 
@@ -13,6 +13,19 @@ _BLOCKED_PROJECT_ENV_BASENAMES: set[str] = {".env", ".env.local", ".env.developm
 PROFILE_SCOPED_AREAS = ("skills", "plugins", "cron", "memories")
 _SANDBOX_BACKEND_DIR = "sandboxes"
 _SANDBOX_HOME_SUFFIX = ("home", ".deskagent")
+
+
+def validate_within_dir(path: Path, root: Path) -> str | None:
+    """Returns error if path resolves outside root, None if safe."""
+    try:
+        path.resolve().relative_to(root.resolve())
+        return None
+    except (ValueError, OSError) as e:
+        return f"Path escapes allowed directory: {e}"
+
+
+def has_traversal_component(path_str: str) -> bool:
+    return ".." in Path(path_str).parts
 
 
 def _deskagent_home_path() -> Path:
@@ -170,7 +183,9 @@ def _resolve_long_path(path: str) -> str:
         buf = ctypes.create_unicode_buffer(wintypes.MAX_PATH)
         # GetLongPathNameW returns the long path length; 0 means error.
         length = ctypes.windll.kernel32.GetLongPathNameW(  # type: ignore[attr-defined]
-            wintypes.LPCWSTR(expanded), buf, wintypes.MAX_PATH,
+            wintypes.LPCWSTR(expanded),
+            buf,
+            wintypes.MAX_PATH,
         )
         if length > 0 and length <= wintypes.MAX_PATH:
             return buf.value
