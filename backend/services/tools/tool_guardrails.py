@@ -243,7 +243,7 @@ def classify_tool_failure(tool_name: str, result: str | None) -> tuple[bool, str
 class ToolCallGuardrailController:
     """Per-turn controller for repeated failed / non-progressing tool calls."""
 
-    def __init__(self, config: ToolCallGuardrailConfig | None = None):
+    def __init__(self, config: ToolCallGuardrailConfig | None = None) -> None:
         self.config = config or ToolCallGuardrailConfig()
         self.reset_for_turn()
 

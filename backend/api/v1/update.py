@@ -294,7 +294,7 @@ def delete_version(id: int, _admin: str = Depends(get_current_admin_token), db: 
 
 
 @router.get("/{filename:path}", response_class=FileResponse)
-def get_latest_file(filename: str, db: Session = Depends(get_db)):
+def get_latest_file(filename: str, db: Session = Depends(get_db)) -> FileResponse:
     latest = _get_latest(db)
     if not any(filename.endswith(s) for s in _DOWNLOAD_SUFFIXES):
         raise HTTPException(status_code=400, detail="Invalid filename")

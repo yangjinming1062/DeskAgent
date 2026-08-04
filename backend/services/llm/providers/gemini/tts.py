@@ -79,7 +79,7 @@ class GeminiTTSProvider(TTSProvider):
         {"id": "Sulafat", "label": "Sulafat", "gender": "neutral", "language": "multi", "tags": ["偏高", "明亮", "zh", "en"], "description": "偏高的音色。"},
     ]
 
-    def __init__(self, config: ProviderConfig):
+    def __init__(self, config: ProviderConfig) -> None:
         super().__init__(config)
         self._client = get_http(config.base_url, config.api_key, auth_header={"x-goog-api-key": "{api_key}"})
 

@@ -35,7 +35,7 @@ def _jittered_backoff(attempt: int, *, base_delay: float, max_delay: float, jitt
 class LLMRuntimeError(Exception):
     """Wraps a classified API error; original is preserved on ``__cause__``."""
 
-    def __init__(self, classified: ClassifiedError, original: BaseException | None = None):
+    def __init__(self, classified: ClassifiedError, original: BaseException | None = None) -> None:
         self.classified = classified
         self.original = original
         super().__init__(classified.message or classified.reason.value)

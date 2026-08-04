@@ -48,7 +48,7 @@ class BaseProvider(ABC):
     # absent keys fall back to ``SETTINGS.<svc>_model_name``.
     DEFAULT_MODELS: ClassVar[dict[str, str]] = {}
 
-    def __init__(self, config: ProviderConfig):
+    def __init__(self, config: ProviderConfig) -> None:
         self.config = config
 
     def raw_client(self) -> "AsyncOpenAI | None":
@@ -73,7 +73,7 @@ class ProviderError(Exception):
         body: dict | None = None,
         provider: str = "",
         model: str = "",
-    ):
+    ) -> None:
         super().__init__(message)
         self.status_code = status_code
         self.body = body or {}

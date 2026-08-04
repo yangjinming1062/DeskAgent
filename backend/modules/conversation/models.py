@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from common import ModelBase
 from common import TimestampMixin
@@ -13,6 +14,9 @@ from sqlalchemy.orm import Mapped
 from sqlalchemy.orm import mapped_column
 from sqlalchemy.orm import relationship
 from sqlalchemy.orm import Session
+
+if TYPE_CHECKING:
+    from modules.auth import User
 
 
 class Conversation(ModelBase, TimestampMixin):

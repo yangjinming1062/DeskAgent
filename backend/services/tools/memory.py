@@ -42,7 +42,7 @@ FORGET_SCHEMA = {
 class NativeMemory:
     """Per-session memory view bound to a single DB session."""
 
-    def __init__(self, db: Session, user_id: int):
+    def __init__(self, db: Session, user_id: int) -> None:
         self.db = db
         self.user_id = user_id
 

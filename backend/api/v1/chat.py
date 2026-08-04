@@ -7,7 +7,7 @@ router = get_router()
 
 
 @router.websocket("/ws")
-async def chat_websocket(websocket: WebSocket, ticket: str | None = None, token: str | None = None):
+async def chat_websocket(websocket: WebSocket, ticket: str | None = None, token: str | None = None) -> None:
     # Renderers authenticate via short-lived ?ticket= JWT; ?token= is backend-internal only.
     credential = ticket or token
     if not credential:

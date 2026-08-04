@@ -40,7 +40,7 @@ preview_text 为试听文本——设计完成后会用它合成一段示例音�
         {"id": "male-qn-jingying", "label": "精英男声", "gender": "male", "language": "zh", "tags": ["精英", "沉稳", "成熟", "磁性", "男"], "description": "沉稳干练的精英男声。"},
     ]
 
-    def __init__(self, config: ProviderConfig):
+    def __init__(self, config: ProviderConfig) -> None:
         super().__init__(config)
         self._client = get_http(config.base_url, config.api_key)
 

@@ -103,8 +103,6 @@ class TestLLMClient:
         assert LANGUAGE_DIRECTIVES["zh"] not in parts["stable"]
 
     def test_unknown_language_falls_back_to_zh(self):
-        from modules.system import AgentPromptConfig
-        from services.chat.system_prompt import LANGUAGE_DIRECTIVES
         from services.chat.system_prompt import _resolve_language
 
         assert _resolve_language("fr") == "zh"
