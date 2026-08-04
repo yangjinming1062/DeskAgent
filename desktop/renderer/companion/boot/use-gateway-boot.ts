@@ -43,25 +43,13 @@ async function syncRunnerTools(gateway: DeskAgentGateway): Promise<void> {
       .filter(Boolean) as string[]
 
     const hasFileTools = names.includes('read_file') || names.includes('list_directory')
-    console.log(
-      `[tools.sync] runner reported ${tools.length} tools${
-        names.length
-          ? ` (read_file=${names.includes('read_file')}, list_directory=${names.includes('list_directory')})`
-          : ''
-      }`
-    )
-
-    if (names.length) {
-      console.log(`[tools.sync] names: ${names.join(', ')}`)
-    }
 
     if (!hasFileTools) {
       console.warn('[tools.sync] LLM will lack file tools in this session')
     }
 
     if (tools.length > 0) {
-      const result = await gateway.request<{ count: number }>('tools.sync', { tools })
-      console.log(`[tools.sync] backend accepted count=${result?.count}`)
+      await gateway.request<{ count: number }>('tools.sync', { tools })
     }
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error)
@@ -360,6 +348,7 @@ export function useGatewayBoot({ handleGatewayEvent, onConnectionReady, onGatewa
     return () => {
       cancelled = true
       clearReconnectTimer()
+      clearGraceTimer()
       clearSleepEscalation()
       window.removeEventListener('online', onOnline)
       document.removeEventListener('visibilitychange', onVisible)

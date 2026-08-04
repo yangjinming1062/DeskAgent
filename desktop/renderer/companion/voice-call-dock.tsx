@@ -28,6 +28,7 @@ const AWAITING_REPLY_TIMEOUT_MS = 60_000
 export function VoiceCallDock({ onClose }: VoiceCallDockProps) {
   const gatewayState = useStore($gatewayState)
   const messages = useStore($chatMessages)
+  const spriteState = useStore($spriteState)
   const [micActive, setMicActive] = useState(false)
   const [micError, setMicError] = useState<string | null>(null)
   const [durationSec, setDurationSec] = useState(0)
@@ -56,6 +57,8 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps) {
   gatewayStateRef.current = gatewayState
   const { requestGateway } = useGatewayRequest()
   const panelRef = useRef<HTMLDivElement>(null)
+  const onCloseRef = useRef(onClose)
+  onCloseRef.current = onClose
 
   useEffect(() => {
     registerInteractiveRegion('voice-call-dock', () => panelRef.current?.getBoundingClientRect() ?? null)
@@ -171,7 +174,7 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps) {
       durationSecRef.current += 1
       setDurationSec(durationSecRef.current)
 
-      if (durationSecRef.current >= 180) {onClose()}
+      if (durationSecRef.current >= 180) {onCloseRef.current()}
     }, 1000)
 
     async function transcribeAndSubmit() {
@@ -269,7 +272,7 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps) {
       setSpriteState('idle')
       void window.deskagent.sprite.setAlwaysOnTop({ on: true })
     }
-  }, [onClose, requestGateway])  // gatewayState intentionally omitted: a dep would re-mount the mic on reconnect flaps.
+  }, [requestGateway])  // gatewayState intentionally omitted: a dep would re-mount the mic on reconnect flaps.
 
   // Speak the assistant's completed reply, then return to listening. The chat
   // event stream (events.ts) owns the streaming + state machine; this effect
@@ -343,7 +346,7 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps) {
             <span className="h-1.5 w-1.5 rounded-full bg-white/60 animate-bounce" />
             <span className="h-1.5 w-1.5 rounded-full bg-white/60 animate-bounce [animation-delay:0.2s]" />
             <span className="h-1.5 w-1.5 rounded-full bg-white/60 animate-bounce [animation-delay:0.4s]" />
-            <span className="ml-1">{spriteLabel($spriteState.get())}</span>
+            <span className="ml-1">{spriteLabel(spriteState)}</span>
           </div>
         )}
 

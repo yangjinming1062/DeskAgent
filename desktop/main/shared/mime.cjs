@@ -35,15 +35,6 @@ function mimeTypeForPath(filePath) {
   return MEDIA_MIME_TYPES[ext] || 'application/octet-stream'
 }
 
-// Inverse of MEDIA_MIME_TYPES for image/*.
-const IMAGE_MIME_EXTENSIONS = new Set([
-  'image/png',
-  'image/jpeg',
-  'image/gif',
-  'image/webp',
-  'image/bmp',
-  'image/svg+xml'
-])
 function extensionForMimeType(mimeType) {
   const type = String(mimeType || '')
     .split(';')[0]
@@ -61,7 +52,6 @@ function extensionForMimeType(mimeType) {
 module.exports = {
   MEDIA_MIME_TYPES,
   STREAMABLE_MEDIA_EXTS,
-  IMAGE_MIME_EXTENSIONS,
   mimeTypeForPath,
   extensionForMimeType
 }

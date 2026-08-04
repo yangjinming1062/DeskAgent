@@ -29,10 +29,10 @@ const EMPTY_SERVER = {
 }
 
 function getServers(doc: Document | null): McpServers {
-  let raw = doc?.getIn(['mcp_servers'])
+  let raw: unknown = doc?.getIn(['mcp_servers'])
 
-  if (raw && typeof (raw as any).toJSON === 'function') {
-    raw = (raw as any).toJSON()
+  if (raw && typeof (raw as { toJSON?: () => unknown }).toJSON === 'function') {
+    raw = (raw as { toJSON: () => unknown }).toJSON()
   }
 
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {

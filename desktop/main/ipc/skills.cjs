@@ -1,7 +1,6 @@
 const path = require('node:path')
 
 const {
-  listSkillsFromDisk,
   readDisabledSet,
   buildSkillSummaries,
   invalidateDisabledCache
@@ -145,4 +144,4 @@ function registerSkillsIpc({ ipcMain, deps, deskagentHome }) {
   })
 }
 
-module.exports = { registerSkillsIpc, listSkillsFromDisk }
+module.exports = { registerSkillsIpc }
