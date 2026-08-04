@@ -30,32 +30,6 @@ class CommandContext:
     db_factory: type[Session]
 
 
-def cmd_yolo(_args_str: str, ctx: CommandContext) -> dict:  # noqa: ARG001 — dispatcher signature, yolo ignores args
-
-    current = ctx.user_settings.get("yolo_mode", "false").lower()
-    new_val = "false" if current == "true" else "true"
-
-    with ctx.db_factory() as db:
-        setting = (
-            db.query(UserSetting)
-            .filter(
-                UserSetting.user_id == ctx.user_id,
-                UserSetting.setting_key == "yolo_mode",
-            )
-            .one_or_none()
-        )
-        if setting is None:
-            setting = UserSetting(user_id=ctx.user_id, setting_key="yolo_mode", setting_value=new_val)
-            db.add(setting)
-        else:
-            setting.setting_value = new_val
-        db.commit()
-
-    ctx.user_settings["yolo_mode"] = new_val
-    state = "ON" if new_val == "true" else "OFF"
-    return CommandResult(output=f"YOLO mode {state}").model_dump()
-
-
 def cmd_reasoning(args_str: str, ctx: CommandContext) -> dict:
     """Set reasoning effort level (low / medium / high)."""
     level = args_str.strip().lower()
@@ -87,7 +61,6 @@ def cmd_reasoning(args_str: str, ctx: CommandContext) -> dict:
 
 
 _HANDLERS: dict[str, Any] = {
-    "yolo": cmd_yolo,
     "reasoning": cmd_reasoning,
 }
 
@@ -96,7 +69,6 @@ _HANDLERS: dict[str, Any] = {
 # Keys MUST stay in sync with ``_HANDLERS``; the catalog builder below iterates
 # both and the renderer filters out anything not in its own allow-list.
 _COMMAND_DESCRIPTIONS: dict[str, str] = {
-    "yolo": "Toggle YOLO — auto-approve dangerous commands",
     "reasoning": "Set reasoning effort level",
 }
 

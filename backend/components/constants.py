@@ -32,7 +32,6 @@ TOOL_CALL_ID_HEX_PREFIX_LEN: int = 24
 # Per-session setting key → global UserSetting key mapping.
 # Translates renderer-friendly aliases to the keys downstream reads.
 SESSION_TO_GLOBAL_KEY_ALIASES: dict[str, str] = {
-    "yolo": "yolo_mode",
     "reasoning": "reasoning_effort",
     "fast": "service_tier",
     "language": "language",

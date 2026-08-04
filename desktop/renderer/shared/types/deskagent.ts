@@ -100,7 +100,6 @@ export interface SessionRuntimeInfo {
   tools?: Record<string, string[]>
   usage?: Partial<UsageStats>
   version?: string
-  yolo?: boolean
 }
 
 export interface SessionSearchResult {
@@ -146,7 +145,6 @@ export interface DeskAgentConfigResponse {
     reasoning_effort?: string
     personalities?: Record<string, unknown>
     service_tier?: string
-    yolo_mode?: boolean
     enable_background_review?: boolean
   }
   display?: {
@@ -190,7 +188,6 @@ export interface DeskAgentConfigPutRequest {
     reasoning_effort?: string
     personalities?: Record<string, unknown>
     service_tier?: string
-    yolo_mode?: boolean
     enable_background_review?: boolean
   }
   display?: {
