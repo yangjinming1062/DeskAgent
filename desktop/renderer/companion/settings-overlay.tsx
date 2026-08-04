@@ -11,8 +11,8 @@ import { $companionVoiceId, $responseMode, type ResponseMode, setCompanionVoiceI
 import { speak } from '@/companion/tts'
 import { designVoice, fetchVoiceCatalog, GENDER_OPTIONS, LANGUAGE_LABELS, playDataUrl, sampleLine, type VoiceCatalog, type VoiceDesignPreview } from '@/companion/voice'
 
-import { PersonaSection } from './persona-editor'
 import { pushDevLog } from './developer-overlay'
+import { PersonaSection } from './persona-editor'
 
 interface SettingsOverlayProps {
   onClose: () => void

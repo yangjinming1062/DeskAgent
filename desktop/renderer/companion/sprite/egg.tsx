@@ -19,7 +19,8 @@ const CRACK_PATHS = [
   'M80 40 L72 62 L84 70 L74 88',
   'M96 50 L104 68 L92 76 L100 92',
   'M64 70 L56 84 L68 90 L60 104',
-  'M110 80 L118 94 L106 100'
+  'M110 80 L118 94 L106 100',
+  'M80 18 L74 60 L86 88 L72 120 L80 146'
 ]
 
 export function Egg({ cracks, mode }: EggProps) {
@@ -75,9 +76,8 @@ export function Egg({ cracks, mode }: EggProps) {
           {/* Cracks accumulate; on shatter the shell halves part slightly. */}
           <g fill="none" opacity={shattered ? 0.9 : 0.7} stroke="#b9a982" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.6">
             {CRACK_PATHS.slice(0, Math.min(cracks, CRACK_PATHS.length)).map((d, i) => (
-              <path d={d} key={i} />
+              <path d={d} key={i} strokeWidth={i === 4 ? 2 : 1.6} />
             ))}
-            {shattered && <path d="M80 18 L74 60 L86 88 L72 120 L80 146" strokeWidth="2" />}
           </g>
         </svg>
 

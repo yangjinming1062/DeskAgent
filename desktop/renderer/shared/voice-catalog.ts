@@ -10,6 +10,8 @@ export interface VoiceOption {
   language: string
   tags: readonly string[]
   description: string
+  // Provider-supplied design-voice guidance, surfaced in the hub gallery.
+  voice_design_guide?: string
 }
 
 export const LANGUAGE_LABELS: Record<string, string> = {

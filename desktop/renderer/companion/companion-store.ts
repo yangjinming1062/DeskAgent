@@ -48,6 +48,9 @@ export interface SpritePosition {
 
 export const $companionLifecycle = atom<CompanionLifecycle>('unauthed-egg')
 export const $spriteState = atom<SpriteStateName>('idle')
+// True during a live voice-call; read by useGatewayBoot to defer the
+// disconnected→sleeping escalation so a gateway flap doesn't clobber an active call.
+export const $voiceCallOpen = atom<boolean>(false)
 export const $spriteEmotion = atom<SpriteEmotion | null>(null)
 export const $previousState = atom<SpriteStateName>('idle')
 export const $spritePosition = atom<SpritePosition | null>(null)
@@ -117,8 +120,11 @@ export function setSpriteState(
     transientTimer = setTimeout(() => {
       transientTimer = null
       $spriteEmotion.set(null)
-      const prev = $previousState.get()
-      $spriteState.set(prev === 'emotional' || prev === 'interacting' ? 'idle' : prev)
+      // Prefer the current state if a higher-priority one arrived mid-transient.
+      const currentAfter = $spriteState.get()
+      const storedPrev = $previousState.get()
+      const target = currentAfter !== 'emotional' && currentAfter !== 'interacting' ? currentAfter : (storedPrev === 'emotional' || storedPrev === 'interacting' ? 'idle' : storedPrev)
+      $spriteState.set(target)
     }, ms)
 
     return

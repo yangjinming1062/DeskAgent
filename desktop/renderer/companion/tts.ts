@@ -78,6 +78,7 @@ export async function speak(text: string, voice?: string, context?: string): Pro
 
     return false
   } finally {
+    // Only the latest speak() generation owns the flag, else a stale one drags the sprite to idle mid-utterance.
     if (gen === speakGen) {$voicePreparing.set(false)}
   }
 }

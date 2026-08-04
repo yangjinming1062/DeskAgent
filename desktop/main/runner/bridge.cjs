@@ -37,7 +37,11 @@ function createRunnerBridge(options = {}) {
     phase: 'idle',
     startedAt: null,
     stoppedAt: null,
-    lastError: null
+    lastError: null,
+    // Runner-probed capability flags, surfaced to the renderer for UI branching.
+    capabilities: null,
+    runnerVersion: null,
+    probeFailed: null
   }
 
   function setState(patch) {
@@ -56,6 +60,10 @@ function createRunnerBridge(options = {}) {
     const err = error instanceof Error ? error : new Error(String(error))
     setState({ phase, lastError: err.message })
     emit.emit('event', { type: 'error', phase, error: err })
+    // Also emit 'stopped' on error so the renderer shows the recovery surface.
+    if (phase === 'error') {
+      emit.emit('event', { type: 'stopped', reason: err.message, errors: [err.message] })
+    }
     return err
   }
 
@@ -154,7 +162,7 @@ function createRunnerBridge(options = {}) {
 
     const offWs = wsServer.onEvent?.(ev => {
       if (ev.type === 'runner_ready') {
-        handleRunnerReady()
+        handleRunnerReady(ev)
       } else if (ev.type === 'tools_changed') {
         handleToolsChanged()
       } else if (ev.type === 'disconnected') {
@@ -207,11 +215,21 @@ function createRunnerBridge(options = {}) {
     return getStatus()
   }
 
-  async function handleRunnerReady() {
+  async function handleRunnerReady(payload) {
     log('[runner-bridge] runner_ready received')
 
     if (runnerProcess?.signalReady) {
       runnerProcess.signalReady()
+    }
+
+    // Stash the runner-probed capabilities so the renderer can decide
+    // Stash runner-probed capabilities so the renderer can branch on local-runtime support.
+    if (payload && typeof payload === 'object') {
+      setState({
+        capabilities: payload.capabilities ?? null,
+        runnerVersion: payload.version ?? null,
+        probeFailed: payload.probe_failed ?? null
+      })
     }
 
     if (state.phase !== 'starting') return
@@ -220,7 +238,7 @@ function createRunnerBridge(options = {}) {
     if (state.phase !== 'starting') return
 
     setState({ phase: 'running' })
-    emit.emit('event', { type: 'running', tools: cachedTools })
+    emit.emit('event', { type: 'running', tools: cachedTools, capabilities: state.capabilities, runnerVersion: state.runnerVersion, probeFailed: state.probeFailed })
   }
 
   // P2-13: debounce tools_changed — MCP servers can fire

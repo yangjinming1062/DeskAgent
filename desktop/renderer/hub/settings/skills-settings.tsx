@@ -5,7 +5,6 @@ import { Switch } from '@/shared/components/ui/switch'
 import { TextTab, TextTabMeta } from '@/shared/components/ui/text-tab'
 import { Sparkles } from '@/shared/lib/icons'
 import { refreshSession } from '@/shared/store/auth'
-import { $gateway } from '@/shared/store/gateway'
 import { notifyError } from '@/shared/store/notifications'
 import { strings } from '@/shared/strings'
 
@@ -103,10 +102,8 @@ export function SkillsSettings() {
 
       setSkills(res.skills)
 
-      // Drop the WS *before* refreshing the JWT so any in-flight tool.result
-      // is aborted before the server marks the old LoginRecord inactive.
-      $gateway.get()?.close()
-
+      // Refresh the JWT for the new skill-scoped permissions. Don't close the sprite's
+      // WS — it's owned by the companion and the permission delta is server-side.
       try {
         await refreshSession()
       } catch (err) {

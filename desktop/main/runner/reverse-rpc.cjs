@@ -8,7 +8,6 @@
 const DEFAULT_TIMEOUT_MS = 120_000
 // Guard against misbehaving Runner pushing arbitrarily large payloads.
 const MAX_REQUEST_PAYLOAD_BYTES = 1 * 1024 * 1024
-const MAX_MESSAGE_COUNT = 200
 
 // JSON-RPC 2.0 §5.1 — "Method not found".
 const METHOD_NOT_FOUND_CODE = -32601
@@ -21,6 +20,12 @@ function createReverseRpc(options = {}) {
     throw new TypeError('createReverseRpc requires options.backendSession.')
   }
 
+  // Per-session cumulative limits; the budget resets when the runner reconnects (fresh WS session).
+  const MAX_MESSAGES_PER_SESSION = 200
+  const MAX_BYTES_PER_SESSION = 1 * 1024 * 1024
+  let sessionMessagesSent = 0
+  let sessionBytesSent = 0
+
   async function handleRequestLlm(params) {
     const session = backendSession.getSession()
     if (!session?.hasToken) {
@@ -30,8 +35,8 @@ function createReverseRpc(options = {}) {
     const messages = params.messages || []
     const messageCount = messages.length
 
-    if (messageCount > MAX_MESSAGE_COUNT) {
-      throw new Error(`request_llm rejected: too many messages (${messageCount} > ${MAX_MESSAGE_COUNT}).`)
+    if (messageCount > MAX_MESSAGES_PER_SESSION) {
+      throw new Error(`request_llm rejected: too many messages in this call (${messageCount} > ${MAX_MESSAGES_PER_SESSION}).`)
     }
 
     const payloadBytes = Buffer.byteLength(JSON.stringify(messages), 'utf8')
@@ -42,7 +47,20 @@ function createReverseRpc(options = {}) {
       )
     }
 
-    log(`[reverse-rpc] request_llm (${messageCount} messages, ${payloadBytes} bytes)`)
+    sessionMessagesSent += messageCount
+    if (sessionMessagesSent > MAX_MESSAGES_PER_SESSION) {
+      throw new Error(
+        `request_llm rejected: session exceeded ${MAX_MESSAGES_PER_SESSION} messages (sent ${sessionMessagesSent}).`
+      )
+    }
+    sessionBytesSent += payloadBytes
+    if (sessionBytesSent > MAX_BYTES_PER_SESSION) {
+      throw new Error(
+        `request_llm rejected: session exceeded ${MAX_BYTES_PER_SESSION} bytes (sent ${sessionBytesSent}).`
+      )
+    }
+
+    log(`[reverse-rpc] request_llm (${messageCount} messages, ${payloadBytes} bytes, session ${sessionMessagesSent}/${sessionBytesSent})`)
 
     return backendSession.client().post('/api/llm/completion', {
       body: {

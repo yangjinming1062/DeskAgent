@@ -205,7 +205,7 @@ export function McpSettings({ gateway, onConfigSaved }: McpSettingsProps) {
         <Button onClick={() => setSelected(null)} size="xs" variant="text">
           {m.newServer}
         </Button>
-        <Button disabled={reloading} onClick={() => void reloadMcp()} size="xs" variant="text">
+        <Button disabled={!gateway || reloading} onClick={() => void reloadMcp()} size="xs" variant="text">
           {reloading ? m.reloading : m.reload}
         </Button>
       </div>

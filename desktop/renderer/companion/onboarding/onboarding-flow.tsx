@@ -207,9 +207,11 @@ async function savePersona(payload: ReturnType<typeof assemblePersona>): Promise
     return true
   } catch (error) {
     // Re-throw 4xx so retry3 doesn't burn 2.1s on a deterministic failure.
-    const msg = error instanceof Error ? error.message : String(error)
+    // The IPC envelope ("Error invoking remote method …: Error: <body>") masks the status code — strip it first.
+    const raw = error instanceof Error ? error.message : String(error)
+    const unwrapped = raw.match(/Error invoking remote method '[^']+': Error: (.+)$/)?.[1] ?? raw
 
-    if (/^4\d\d /.test(msg)) {throw error}
+    if (/^4\d\d /.test(unwrapped)) {throw error}
 
     return false
   }
@@ -347,7 +349,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
         }
 
         if (state?.answers) {
-          // Project all 12 backend keys into OnboardingAnswers uniformly; missing
+          // Project all 13 backend keys into OnboardingAnswers uniformly; missing
           // keys become undefined which is fine — they re-ask on resume. Legacy
           // drafts may still contain a stray ``self_intro`` key which is silently
           // ignored because it isn't an OnboardingAnswers field.
@@ -359,6 +361,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
             appearance: a.appearance,
             role: a.role,
             personality: a.personality,
+            speaking_style: a.speaking_style,
             user_call_name: a.user_call_name,
             user_gender: a.user_gender,
             user_age_bucket: a.user_age_bucket,
@@ -385,6 +388,9 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
   const answersRef = useRef(answers)
   answersRef.current = answers
 
+  // Component-scope for the render; the speak effect re-derives from answersRef so it stays out of the dep array.
+  const spokenText = question?.text.replace('{name}', answers.name?.trim() || '你') ?? ''
+
   // Speak each question as it appears (default neutral voice; plan §3.2).
   useEffect(() => {
     if (phase !== 'q') {return}
@@ -392,8 +398,8 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
     const current = answersRef.current
     setInput((current[q.key] as string) ?? '')
     setHint(null)
-    const spokenText = q.text.replace('{name}', current.name?.trim() || '你')
-    void speak(spokenText, undefined, `onboarding.q${qIndex}`)
+    const liveSpoken = q.text.replace('{name}', current.name?.trim() || '你')
+    void speak(liveSpoken, undefined, `onboarding.q${qIndex}`)
 
     return () => stopSpeaking()
   }, [phase, qIndex])
@@ -452,9 +458,18 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
     setHint(null)
     void speak('让我想想我该是什么样子…', undefined, 'onboarding.hatching')
 
-    // Finalize persona BEFORE the portrait — avatar generation requires
-    // is_complete=true. Proceeds even if save fails so the user isn't stranded.
-    const personaOk = await retry3(() => savePersona(assemblePersona(answers)), 700)
+    // Finalize persona before the portrait (avatar gen needs is_complete=true).
+    // savePersona re-throws 4xx; roll back to the form so the user can fix the field.
+    let personaOk = false
+    try {
+      personaOk = await retry3(() => savePersona(assemblePersona(answers)), 700) === true
+    } catch (err) {
+      setPhase('q')
+      setHint(err instanceof Error ? `记忆存不上：${err.message}` : '记忆存不上，请重试 onboarding')
+      void speak('刚才的回答有些问题，咱们再来一次。', undefined, 'onboarding.hatching.retry')
+
+      return
+    }
     let url: string | null = null
 
     if (personaOk) {
@@ -510,40 +525,6 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
         setPortraitPanelHint('暂时换不出来，稍后再试吧')
         setHint('暂时换不出来，稍后再试吧')
       }
-    // P0 (desktop audit): don't clear the clip catalog until the new
-    // portrait actually lands — ARCH §7.3 promises "portrait 重生
-    // 使衍生 clip 失效——只有新 portrait 成功后才失效旧 clip".
-    // Clearing eagerly means a transient regenerate failure
-    // leaves the user with no Tier 2/3 clips until the next
-    // list_clips refresh.
-
-    // P0-4: avatar.regenerate returns immediately with {queued, job_id}; the
-    // heavy image-gen runs as a background task on the backend and the result
-    // arrives as an ``avatar.regenerated`` event. Await the event so the
-    // portrait swaps only when the new image is ready.
-    try {
-      const queued = await requestGateway<{ queued?: boolean; job_id?: string; asset_url?: string }>('avatar.regenerate', { feedback: undefined })
-
-      if (queued?.asset_url) {
-        setPortraitUrl(queued.asset_url)
-        clearClipCatalog()
-        void speak('换一个样子，这样如何？', undefined, 'onboarding.portrait.regenerate')
-      } else if (queued?.queued && queued.job_id) {
-        const result = await awaitAvatarRegeneration(queued.job_id)
-
-        if (result.asset_url) {
-          setPortraitUrl(result.asset_url)
-          clearClipCatalog()
-          void speak('换一个样子，这样如何？', undefined, 'onboarding.portrait.regenerate')
-        } else {
-          // Failure path — keep the existing clip catalog intact so the
-          // user can keep their Tier 2/3 clips while the regenerate
-          // is retried.
-          setHint(result.error ?? '暂时换不出来，稍后再试吧')
-        }
-      } else {
-        setHint('暂时换不出来，稍后再试吧')
-      }
     } catch {
       // P1-14 (desktop re-audit): also surface the failure as a
       // busy overlay so the user doesn't have to look at the
@@ -587,9 +568,10 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
   }
 
   const confirmPortrait = async () => {
-    const { voice: matched } = await matchVoicePreference(requestGateway, answers.voice ?? '')
-    setVoice(matched)
-    setCompanionVoiceId(matched.id)
+    // Show the backend's ranked alternatives alongside the full ZH catalog; the matched voice is the default.
+    const matched = await matchVoicePreference(requestGateway, answers.voice ?? '')
+    setVoice(matched.voice)
+    setCompanionVoiceId(matched.voice.id)
     setPhase('voice')
     // Force the ZH tab on initial entry — even if a previous session left
     // voiceLangFilter='en' in storage, the new user gets the curation
@@ -598,8 +580,9 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
     // default voice on the first paint.
     setVoiceLangFilter('zh')
     const catalog = await fetchVoiceCatalog(requestGateway, 'zh')
-    setVoiceCatalog(catalog.voices)
-    void speak(sampleLine(answers.name || ''), matched.id || undefined, 'onboarding.voice.preview')
+    // Lead with the closest matches so the user can browse without scrolling the full catalog.
+    setVoiceCatalog([matched.voice, ...matched.alternatives, ...catalog.voices.filter(v => v.id !== matched.voice.id)])
+    void speak(sampleLine(answers.name || ''), matched.voice.id || undefined, 'onboarding.voice.preview')
   }
 
   const onVoiceLangTabClick = async (lang: VoiceLanguageFilter) => {
@@ -624,9 +607,16 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
   }
 
   const finish = async () => {
-    // Persona was finalized at hatching; this is a no-op safety net if that
-    // save failed — retry once more so chat has a personality injected.
-    await savePersona(assemblePersona(answers))
+    // Safety-net retry; roll back to 'voice' on failure so phase isn't stuck on 'finishing'.
+    try {
+      await savePersona(assemblePersona(answers))
+    } catch (err) {
+      setPhase('voice')
+      setHint(err instanceof Error ? `同步失败：${err.message}` : '同步失败，请稍后再试')
+      void speak('还差一点点，咱们再确认一次。', undefined, 'onboarding.finishing.retry')
+
+      return
+    }
 
     setPhase('greeting')
 
@@ -738,7 +728,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
         )}
 
         {(phase === 'portrait' || phase === 'voice' || phase === 'greeting') && (
-          <PortraitPanel name={answers.name?.trim() || '伙伴'} url={portraitUrl} hint={portraitPanelHint} />
+          <PortraitPanel hint={portraitPanelHint} name={answers.name?.trim() || '伙伴'} url={portraitUrl} />
         )}
 
         {phase === 'portrait' && (

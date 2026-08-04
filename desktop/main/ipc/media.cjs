@@ -61,7 +61,7 @@ async function postMultipart({ url, token, form, timeoutMs }) {
     throw new Error(`${res.status} ${new URL(url).pathname}: ${text || res.statusText}`)
   }
   const buf = Buffer.from(await res.arrayBuffer())
-  return { body: buf, contentType: res.headers.get('content-type') || '' }
+  return { body: buf, contentType: res.headers.get('content-type') || '', headers: res.headers }
 }
 
 // Local-availability probe: a Runner tool is usable iff the (check_fn-gated)
@@ -119,9 +119,10 @@ async function tryLocalStt({ bridge, mime, data, language }) {
 // UI.  Piper always uses its own default_voice from config.yaml
 // (audio.tts.default_voice).  Users who need a specific Piper voice set it
 // in Runner config, not through the companion picker.
-async function tryLocalTts({ bridge, text }) {
+async function tryLocalTts({ bridge, text, voice }) {
   try {
-    const result = await bridge.invoke('text_to_speech', { text })
+    // Forward the preferred voice so the runner can match the active provider when possible.
+    const result = await bridge.invoke('text_to_speech', { text, voice: voice || '' })
     if (result && result.success === true && result.path) {
       const buf = fs.readFileSync(result.path)
       return {
@@ -171,14 +172,16 @@ async function ttsViaBackend({ ensureBackend, text, voice, language }) {
   // consistent with STT (which already defaults to 'zh'). Callers that
   // want auto-detect can pass language=null / undefined explicitly.
   form.set('language', language || DEFAULT_TTS_LANGUAGE)
-  const { body, contentType } = await postMultipart({
+  const { body, contentType, headers } = await postMultipart({
     url: `${connection.baseUrl}/api/media/tts`,
     token: connection.token,
     form,
     timeoutMs: TTS_TIMEOUT_MS
   })
   const mime = contentType.split(';')[0].trim() || 'audio/mpeg'
-  return { dataUrl: `data:${mime};base64,${body.toString('base64')}`, mimeType: mime, voiceOut: voice }
+  // Server may substitute the voice (provider default); trust its reported id.
+  const voiceOut = headers.get('x-voice-used') || voice
+  return { dataUrl: `data:${mime};base64,${body.toString('base64')}`, mimeType: mime, voiceOut }
 }
 
 // Cached reader for `stt.engine` / `tts.engine` from GET /api/config. Short TTL
@@ -320,10 +323,11 @@ function registerMediaIpc({ ipcMain, ensureBackend, getRunnerBridge, getEnginePr
       context: context || null,
     })
     const startedAt = Date.now()
+    let fellBackToCloud = false
 
     if (engine !== 'cloud') {
       if (localToolAvailable(bridge(), 'text_to_speech')) {
-        const res = await tryLocalTts({ bridge: bridge(), text })
+        const res = await tryLocalTts({ bridge: bridge(), text, voice })
         if (res.ok) {
           ttsLog('done', {
             route: 'local',
@@ -338,6 +342,7 @@ function registerMediaIpc({ ipcMain, ensureBackend, getRunnerBridge, getEnginePr
           ttsLog('done', { route: 'local', error: res.error.message, ms: Date.now() - startedAt })
           throw res.error
         }
+        fellBackToCloud = true
         ttsLog('fallback', { from: 'local', to: 'cloud', reason: res.error.message })
       } else if (engine === 'local') {
         ttsLog('done', { route: 'local', error: 'Local TTS unavailable', ms: Date.now() - startedAt })
@@ -350,7 +355,8 @@ function registerMediaIpc({ ipcMain, ensureBackend, getRunnerBridge, getEnginePr
       route: 'cloud',
       voice_out: result.voiceOut || null,
       mime: result.mimeType,
-      ms: Date.now() - startedAt
+      ms: Date.now() - startedAt,
+      ...(fellBackToCloud ? { silent_fallback_used: true } : {})
     })
     return { dataUrl: result.dataUrl, mimeType: result.mimeType }
   })

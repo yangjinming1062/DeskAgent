@@ -378,10 +378,10 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps) {
       >
         <div
           className="flex cursor-grab items-center justify-between gap-2 border-b border-white/10 px-3 py-2 active:cursor-grabbing"
+          onPointerCancel={onHeaderPointerUp}
           onPointerDown={onHeaderPointerDown}
           onPointerMove={onHeaderPointerMove}
           onPointerUp={onHeaderPointerUp}
-          onPointerCancel={onHeaderPointerUp}
           title="拖动以移动对话框"
         >
           <div className="flex items-center gap-2">
