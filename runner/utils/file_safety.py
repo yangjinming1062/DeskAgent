@@ -244,13 +244,13 @@ def is_write_denied(path: str) -> bool:
 
 def get_read_block_error(path: str) -> str | None:
     try:
-        resolved = Path(path).expanduser().resolve()
+        resolved = Path(_resolve_long_path(str(path)))
     except Exception:
         return None
 
     deskagent_dirs = []
     with contextlib.suppress(Exception):
-        deskagent_dirs.append(_deskagent_home_path().resolve())
+        deskagent_dirs.append(Path(_resolve_long_path(str(_deskagent_home_path()))))
 
     for zd in deskagent_dirs:
         for blocked in (zd / "skills/.hub/index-cache", zd / "skills/.hub"):

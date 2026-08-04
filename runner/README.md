@@ -184,7 +184,7 @@ MCP 工具由 `discover_mcp_tools()` 在 `server_loop` 紧跟 `runner_ready` 之
 
 写拒绝列表：SSH 密钥、AWS/GCP/Kube 凭据、OAuth token、shell 配置、/etc/sudoers、/etc/passwd、/etc/shadow。
 
-**Windows 路径大小写不敏感**：`is_write_denied` 对**两侧**路径都做 `replace("\\", "/").lower()` 归一化再比对——`C:\Windows\System32` / `c:/windows/system32` / `C:/WINDOWS\System32\` 都命中同一前缀。POSIX 路径**不**做大小写折叠。`get_windows_sensitive_prefixes()` 经 `winapi.GetLogicalDrives` 枚举**所有**挂载盘符（不止 `C:`），所以 `D:\Windows\...`（Windows 装在 D: 的企业镜像）或网络共享里嵌的 `Windows` 目录树同样被拦截。
+**Windows 路径大小写与设备前缀归一化**：`is_write_denied` 与 `get_read_block_error` 先经过 `_resolve_long_path` 规范化——自动剥离 `\\?\UNC\`（转换为 `\\`）、`\\?\` 与 `\\.\` 设备路径前缀并展开 8.3 短名称（如 `PROGRA~1`），再对**两侧**路径做 `replace("\\", "/").lower()` 归一化后比对——`\\\\?\\C:\\Windows\\System32` / `C:\Windows\System32` / `c:/windows/system32` / `C:/WINDOWS\System32\` 都命中同一前缀。POSIX 路径**不**做大小写折叠。`get_windows_sensitive_prefixes()` 经 `winapi.GetLogicalDrives` 枚举**所有**挂载盘符（不止 `C:`），所以 `D:\Windows\...`（Windows 装在 D: 的企业镜像）或网络共享里嵌的 `Windows` 目录树同样被拦截。
 
 ### 跨 profile / 跨沙箱镜像写检测
 

@@ -217,6 +217,17 @@ class TestIsWriteDenied:
         # ``realpath`` resolves the escape back to ``tmp_path/auth.json``.
         assert is_write_denied(str(escaped)) is True
 
+    def test_device_prefix_stripping(self):
+        from utils.file_safety import _resolve_long_path
+        assert _resolve_long_path(r"\\?\C:\Windows\System32").replace("/", "\\").lower() == r"c:\windows\system32"
+        assert _resolve_long_path(r"\\.\C:\Windows\System32").replace("/", "\\").lower() == r"c:\windows\system32"
+
+    def test_device_prefix_read_block_bypass(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("DESKAGENT_HOME", str(tmp_path))
+        device_path = "\\\\?\\" + str(tmp_path / "auth.json")
+        err = get_read_block_error(device_path)
+        assert err is not None and "credential store" in err
+
     @pytest.mark.skipif(not IS_WINDOWS, reason="Windows 8.3 short names are Windows-only")
     def test_windows_8_3_short_name_resolves_to_long_form(self):
         """_resolve_long_path must expand 8.3 short names (PROGRA~1 → Program Files)."""
@@ -632,3 +643,15 @@ class TestConfigHelpers:
         finally:
             _CONFIG_CACHE = None
             _CONFIG_CACHE_MTIME = None
+
+
+class TestCheckRedirectUrlSafety:
+    def test_redirect_to_cloud_metadata_blocked(self):
+        from utils.url_safety import check_redirect_url_safety
+        assert check_redirect_url_safety("http://example.com", "http://169.254.169.254/latest/meta-data/") is False
+
+    def test_redirect_to_safe_url_allowed(self, monkeypatch):
+        import socket
+        from utils.url_safety import check_redirect_url_safety
+        monkeypatch.setattr(socket, "getaddrinfo", lambda *args, **kwargs: [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443))])
+        assert check_redirect_url_safety("http://example.com", "https://example.org/landing") is True
