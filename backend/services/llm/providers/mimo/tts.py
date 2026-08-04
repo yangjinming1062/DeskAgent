@@ -1,4 +1,5 @@
 import base64
+import logging
 from typing import ClassVar
 
 from components import MAX_VOICE_DESIGN_PROMPT_CHARS
@@ -9,6 +10,8 @@ from ..base import TTSProvider
 from ..base import TTSResult
 from ..base import VoiceDesignResult
 from ..http import get_async_client
+
+logger = logging.getLogger(__name__)
 
 _VOICEDESIGN_MODEL = "mimo-v2.5-tts-voicedesign"
 _VOICEDESIGN_PREFIX = "mimo_voicedesign:"
@@ -92,6 +95,8 @@ class MiMoTTSProvider(TTSProvider):
             audio_kwargs = {"format": fmt}
             if voice:
                 audio_kwargs["voice"] = voice
+            else:
+                logger.info("mimo tts: voice omitted, using provider default", extra={"text_chars": len(text)})
             messages = [
                 {"role": "user", "content": ""},
                 {"role": "assistant", "content": text},

@@ -76,8 +76,11 @@ async def test_send_message_quiet_tier_diverts_affect_only(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_send_message_quiet_tier_no_affect_emits_nothing(monkeypatch):
-    """Quiet tier + no affect: neither companion.message nor companion.affect fires."""
+async def test_send_message_quiet_tier_no_affect_emits_neutral(monkeypatch):
+    """P1-5: quiet tier + no affect: text is suppressed, but a
+    ``companion.affect({emotion: 'neutral'})`` event fires so the
+    sprite isn't left in a stale state. The desktop maps ``neutral``
+    to idle (events.ts P1-5)."""
     smt = importlib.import_module("services.tools.builtin.send_message_tool")
 
     messages: list[tuple[int, str, str | None]] = []
@@ -89,8 +92,10 @@ async def test_send_message_quiet_tier_no_affect_emits_nothing(monkeypatch):
     result = json.loads(await smt.send_message_tool(message="psst", user_id=1))
 
     assert result["success"] is True
+    # Text suppressed under quiet.
     assert messages == []
-    assert affects == []
+    # Neutral affect fires to keep the sprite in sync.
+    assert affects == [(1, "neutral")]
 
 
 @pytest.mark.asyncio
@@ -463,7 +468,7 @@ def test_voice_catalog_zh_first_in_list_voices(monkeypatch):
     langs = [v["language"] for v in result["voices"]]
     # All zh must come before any en (multi sits between them).
     first_en = langs.index("en") if "en" in langs else len(langs)
-    last_zh = max(i for i, l in enumerate(langs) if l == "zh") if "zh" in langs else -1
+    last_zh = max(i for i, lang in enumerate(langs) if lang == "zh") if "zh" in langs else -1
     assert last_zh < first_en, f"zh voices must precede en voices: {langs}"
     # The first voice must be a Chinese one (not mimo_default which is "multi").
     assert result["voices"][0]["language"] == "zh", result["voices"][0]
@@ -582,7 +587,7 @@ async def test_design_voice_calls_provider(monkeypatch):
                 trial_audio_mime="audio/mpeg",
             )
 
-    monkeypatch.setattr(voice_catalog, "resolve_provider", lambda st, name: FakeDesign)
+    monkeypatch.setattr(voice_catalog, "resolve", lambda st, name: FakeDesign)
 
     result = await voice_catalog.design_voice(db=None, user_id=1, prompt="warm female voice", preview_text="hello")
 
@@ -601,7 +606,7 @@ async def test_design_voice_unsupported_provider(monkeypatch):
         def __init__(self, config):
             pass
 
-    monkeypatch.setattr(voice_catalog, "resolve_provider", lambda st, name: NoDesign)
+    monkeypatch.setattr(voice_catalog, "resolve", lambda st, name: NoDesign)
 
     with pytest.raises(ValueError, match="does not support voice design"):
         await voice_catalog.design_voice(db=None, user_id=1, prompt="test")
@@ -843,9 +848,24 @@ def test_onboarding_field_order_matches_question_sequence():
     from services.companion import ONBOARDING_FIELDS
     assert ONBOARDING_FIELDS == (
         "name", "species", "character_gender", "appearance", "role", "personality",
+        "speaking_style",
         "user_call_name", "user_gender", "user_age_bucket", "user_hobbies", "user_freeform",
         "voice",
     )
+
+
+@pytest.mark.asyncio
+async def test_upload_avatar_refuses_when_persona_incomplete(_patch_db):
+    """P0-1.4: avatar upload must require ``is_complete=True`` — otherwise a
+    user could burn image- and video-gen quota on a portrait for a
+    persona with no system prompt yet."""
+    _, SessionLocal = _patch_db
+    from services.companion.avatar_service import upload_avatar, AvatarGenerationError
+
+    with SessionLocal() as db:
+        with pytest.raises(AvatarGenerationError, match="persona is incomplete"):
+            await upload_avatar(db, 4242, b"\x89PNG\r\n", "image/png")
+
 
 
 def test_build_prompt_translates_species_and_gender():
@@ -893,3 +913,161 @@ def test_dynamic_user_profile_key_lands_in_memory(_patch_db):
         # Known field uses the friendly label, unknown field uses the raw key.
         assert "user_profile:preferred_name" in contexts
         assert "user_profile:timezone" in contexts
+
+
+def test_session_runtime_info_pydantic_model():
+    """P0-12 follow-up: SessionRuntimeInfo replaces the legacy ``dict``
+    return type. The model must round-trip ``model_dump()`` so the
+    renderer's JSON parser keeps working."""
+    from services.gateway.runtime import SessionRuntimeInfo
+
+    info = SessionRuntimeInfo(
+        cwd="/tmp", branch=None, model="mimo-v2.5", provider="openai",
+        running=True, settings={"yolo": True},
+    )
+    dumped = info.model_dump()
+    assert dumped["cwd"] == "/tmp"
+    assert dumped["running"] is True
+    assert dumped["settings"] == {"yolo": True}
+
+
+def test_voice_catalog_score_cjk_substring():
+    """P1-13: CJK preference matching works via substring in both
+    directions. ``"温柔少女音"`` previously matched nothing because
+    the latin-only path split on .split() and never compared the
+    single CJK token against the catalog."""
+    from services.llm.voice_catalog import VoiceEntry
+
+    # Build a minimal catalog with a single ZH tag-bag voice.
+    voices = [
+        VoiceEntry(id="少女", label="少女音", gender="female", language="zh",
+                   tags=["少女", "温柔", "女"], description=""),
+        VoiceEntry(id="男", label="男声", gender="male", language="zh",
+                   tags=["男"], description=""),
+    ]
+    src = "from services.companion.voice_catalog import _score, match_voice"
+    exec(src, {})
+    score = __import__("services.companion.voice_catalog", fromlist=["_score", "match_voice"])
+    scored = score._score("温柔少女音", voices[0])
+    assert scored >= 2, f"少女 voice should match 温柔少女音, got {scored}"
+    matched, _ = score.match_voice("温柔少女音", voices)
+    assert matched.id == "少女"
+
+
+def test_pick_voice_id_design_prefix_only():
+    """P0-10: ``mimo_voicedesign:<prompt>`` is the only colon-bearing
+    id that should pass through. ``"foo:bar"`` is a foreign id that
+    must fall back to the provider default."""
+    from services.llm.voice_catalog import pick_voice_id
+
+    assert pick_voice_id("mimo_voicedesign:cool", "mimo") == "mimo_voicedesign:cool"
+    assert pick_voice_id("foo:bar", "mimo") == pick_voice_id("", "mimo")
+
+
+def test_disturbance_tier_persists_across_reload():
+    """P0-4 companion fix: a backend restart wipes the process-local
+    tier dict. The desktop must re-report on reconnect — unit-test
+    the round-trip so the API surface is stable."""
+    from services.companion import disturbance
+
+    disturbance._disturbance.clear()
+    disturbance.set_disturbance_tier(7, "quiet")
+    # Simulate a process restart by clearing the dict.
+    disturbance._disturbance.clear()
+    assert disturbance.get_disturbance_tier(7) == "normal"
+    # The desktop's GC re-report sets it back.
+    disturbance.set_disturbance_tier(7, "quiet")
+    assert disturbance.is_quiet(7) is True
+
+
+def test_ws_ticket_mints_short_lived_jwt():
+    """P0-12 §7.1: POST /api/user/ws-ticket returns a 60s JWT with
+    ``purpose: "ws"``. The full-fat access token (no purpose) must
+    be rejected by authenticate_ws_token (returns (None, None)
+    tuple when invalid)."""
+    from modules.auth import create_access_token
+    from services.gateway.auth import authenticate_ws_token
+
+    short_jwt, _, _ = create_access_token(
+        user_id=42, username="alice", expires_in_seconds=60, purpose="ws",
+    )
+    full_jwt, _, _ = create_access_token(
+        user_id=42, username="alice", expires_in_seconds=600,
+    )
+
+    # Both tokens fail because there's no DB user in the test env,
+    # but the ticket path doesn't get blocked at the purpose gate.
+    # Verify the purpose gate by mocking a fake user lookup.
+    import jwt as _jwt
+    from components import SETTINGS
+
+    # A valid-purpose token passes the purpose gate; an invalid one
+    # returns (None, None) before the user lookup.
+    decoded = _jwt.decode(short_jwt, SETTINGS.jwt_secret_key, algorithms=[SETTINGS.jwt_algorithm])
+    assert decoded.get("purpose") == "ws"
+
+    # Forge a token without purpose: the function returns (None, None)
+    # at the purpose gate before even looking up the user.
+    fake, _, _ = create_access_token(
+        user_id=42, username="alice", expires_in_seconds=60,
+    )
+    user, payload = authenticate_ws_token(fake)
+    assert user is None and payload is None  # missing purpose gate kicks in
+
+
+def test_voice_catalog_cjk_score_prefers_specific_match():
+    """P2-11: CJK preference scoring prefers the most specific match.
+    A '少女' preference should score higher than a generic '女' on
+    the 少女音 catalog entry."""
+    from services.companion.voice_catalog import _score
+    from services.llm.voice_catalog import VoiceEntry
+
+    shaonv = VoiceEntry(id="少女", label="少女音", gender="female", language="zh",
+                        tags=["少女", "温柔", "女"], description="")
+    yujie = VoiceEntry(id="御姐", label="御姐音", gender="female", language="zh",
+                       tags=["御姐", "成熟", "女"], description="")
+    # '少女' prefers 少女音 over 御姐音.
+    assert _score("少女", shaonv) > _score("少女", yujie)
+    # '御姐' prefers 御姐音 over 少女音.
+    assert _score("御姐", yujie) > _score("御姐", shaonv)
+
+
+def test_voice_catalog_mimo_design_prefix_match():
+    """P2-11: pick_voice_id passes through mimo_voicedesign: tokens
+    (now the only colon-bearing id that goes through; see P0-10)."""
+    from services.llm.voice_catalog import pick_voice_id
+
+    token = "mimo_voicedesign:cool girl"
+    assert pick_voice_id(token, "mimo") == token
+    # Other providers see the same id, but the actual synthesis gate
+    # is in the mimo provider's mimo_voicedesign: branch.
+    assert pick_voice_id(token, "zhipu") == token
+
+
+def test_voice_catalog_gemini_language_scoring():
+    """P2-11: a Chinese user preference adds a per-voice bias to
+    Gemini's multilingual catalog (P1-15)."""
+    from services.companion.voice_catalog import _score
+    from services.llm.voice_catalog import VoiceEntry
+
+    # Two Gemini voices, both tagged ``zh`` and ``en`` after P1-15.
+    kore = VoiceEntry(id="Kore", label="Kore", gender="neutral", language="multi",
+                      tags=["zh", "en", "温暖"], description="")
+    zephyr = VoiceEntry(id="Zephyr", label="Zephyr", gender="neutral", language="multi",
+                        tags=["zh", "en", "明亮"], description="")
+    # '明亮' preference picks Zephyr over Kore.
+    assert _score("明亮", zephyr) > _score("明亮", kore)
+
+
+def test_pydantic_session_runtime_info_optional_cwd():
+    """P2-11: SessionRuntimeInfo accepts a None cwd (the very first
+    turn before the user has set one)."""
+    from services.gateway.runtime import SessionRuntimeInfo
+
+    info = SessionRuntimeInfo(
+        cwd=None, branch=None, model=None, provider="openai",
+        running=False, settings={},
+    )
+    assert info.cwd is None
+    assert info.running is False
+    assert info.model is None

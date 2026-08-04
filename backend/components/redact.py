@@ -41,6 +41,12 @@ _REDACT_ENABLED = os.getenv("DESKAGENT_REDACT_SECRETS", "true").lower() in {"1",
 
 _PREFIX_PATTERNS = [
     r"sk-[A-Za-z0-9_-]{10,}",  # OpenAI / OpenRouter / Anthropic
+    r"rk_(?:live|test)_[A-Za-z0-9]{10,}",  # Resend (alternative)
+    r"DSN=[A-Za-z0-9_:/.\-@?&=%]+",  # Sentry DSN
+    r"postgres(?:ql)?://[^:]+:[^@]+@[^/\s]+",  # Postgres connection string
+    r"mongodb(?:\+srv)?://[^:]+:[^@]+@[^/\s]+",  # Mongo connection string
+    r"redis://[^:]+:[^@]+@[^/\s]+",  # Redis connection string
+    r"amqp://[^:]+:[^@]+@[^/\s]+",  # RabbitMQ connection string
     r"ghp_[A-Za-z0-9]{10,}",  # GitHub PAT (classic)
     r"github_pat_[A-Za-z0-9_]{10,}",  # GitHub PAT (fine-grained)
     r"gho_[A-Za-z0-9]{10,}",  # GitHub OAuth
@@ -80,7 +86,7 @@ _PREFIX_PATTERNS = [
 
 _SECRET_ENV_NAMES = r"(?:API_?KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|AUTH)"
 _ENV_ASSIGN_RE = re.compile(rf"([A-Z0-9_]{{0,50}}{_SECRET_ENV_NAMES}[A-Z0-9_]{{0,50}})\s*=\s*(['\"]?)(\S+)\2")
-_JSON_KEY_NAMES = r"(?:api_?[Kk]ey|token|secret|password|access_token|refresh_token|auth_token|bearer|secret_value|raw_secret|secret_input|key_material)"
+_JSON_KEY_NAMES = r"(?:api_?[Kk]ey|token|secret|password|access_token|refresh_token|auth_token|bearer|secret_value|raw_secret|secret_input|key_material|connection_string|dsn)"
 _JSON_FIELD_RE = re.compile(rf'("{_JSON_KEY_NAMES}")\s*:\s*"([^"]+)"', re.IGNORECASE)
 _AUTH_HEADER_RE = re.compile(r"(Authorization:\s*Bearer\s+)(\S+)", re.IGNORECASE)
 _TELEGRAM_RE = re.compile(r"(bot)?(\d{8,}):([-A-Za-z0-9_]{30,})")

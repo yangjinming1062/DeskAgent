@@ -1,4 +1,4 @@
-from services.llm import resolve as resolve_provider
+from services.llm import resolve
 from services.llm import resolve_provider_chain
 from services.llm import ServiceType
 from services.llm import VoiceDesignResult
@@ -77,6 +77,9 @@ def _score(preference: str, voice: VoiceEntry) -> int:
             score += 2
         elif any(tok and tok in t for tok in p_tokens):
             score += 1
+        # CJK preference blob won't token-split; substring-match both directions.
+        elif any(tok and (tok in t or t in p) for tok in p_tokens if any("一" <= c <= "鿿" for c in tok)):
+            score += 1
     if voice.label.lower() in p:
         score += 2
     if voice.language and voice.language != "multi":
@@ -88,6 +91,10 @@ def _score(preference: str, voice: VoiceEntry) -> int:
     if voice.gender in _GENDER_KEYWORDS:
         for kw in _GENDER_KEYWORDS[voice.gender]:
             if kw.lower() in p_tokens:
+                score += 2
+                break
+            # CJK gender keyword; substring against the whole preference blob.
+            if any("一" <= c <= "鿿" for c in kw) and kw.lower() in p:
                 score += 2
                 break
     return score
@@ -121,7 +128,7 @@ async def design_voice(db: Session, user_id: int, prompt: str, *, preview_text: 
     if not chain:
         raise ValueError("no TTS provider configured")
     config = chain[0]
-    cls = resolve_provider(ServiceType.tts, config.provider_name)
+    cls = resolve(ServiceType.tts, config.provider_name)
     if cls.VOICE_DESIGN_GUIDE is None:
         raise ValueError(f"{config.provider_name} does not support voice design")
     provider = cls(config)

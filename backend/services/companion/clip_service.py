@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from datetime import timedelta
 from pathlib import Path
+from uuid import uuid4
 
 import httpx
 from components import get_file_path
@@ -370,6 +371,29 @@ def list_clips(db: Session, user_id: int) -> list[ClipStatusResponse]:
     return out
 
 
+def cleanup_stale_video_jobs(db: Session, ttl_seconds: int = 24 * 3600) -> int:
+    """Best-effort eviction of terminal, orphaned (clip wiped), aged VideoGenJob rows."""
+    VideoGenJob = _VideoGenJob()
+    cutoff = naive_utc_now() - timedelta(seconds=ttl_seconds)
+    orphan_ids = (
+        db.query(VideoGenJob.id)
+        .outerjoin(AvatarClip, AvatarClip.video_job_id == VideoGenJob.id)
+        .filter(
+            VideoGenJob.status.in_(("succeeded", "failed")),
+            VideoGenJob.created_at < cutoff,
+            AvatarClip.id.is_(None),
+        )
+        .all()
+    )
+    ids = [i for (i,) in orphan_ids]
+    if not ids:
+        return 0
+    deleted = db.query(VideoGenJob).filter(VideoGenJob.id.in_(ids)).delete(synchronize_session=False)
+    db.commit()
+    logger.info("cleaned stale VideoGenJob rows", extra={"count": deleted, "ttl_seconds": ttl_seconds})
+    return deleted
+
+
 def invalidate_user_clips(db: Session, user_id: int) -> int:
     """Delete all of the user's clips, cancel underlying video jobs, and remove
     durable assets (design §7.2 derivative invalidation on portrait regen)."""
@@ -410,6 +434,8 @@ async def _submit_scene_video(db: Session, clip: AvatarClip, portrait_url: str) 
 
     provider_seed_url = _re_sign_avatar_seed(portrait_url, build_signed_avatar_url)
     spec = CLIP_SCENES[clip.scene]
+    # Stable per-(user, scene, day) id so a failed-and-retried submission counts once against the budget.
+    submission_id = f"sub_{clip.user_id}_{clip.scene}_{naive_utc_now().strftime('%Y%m%d')}_{uuid4().hex[:8]}"
     job = await enqueue_video_job(
         db,
         user_id=clip.user_id,
@@ -423,6 +449,7 @@ async def _submit_scene_video(db: Session, clip: AvatarClip, portrait_url: str) 
         emit_event=False,
     )
     clip.video_job_id = job.id
+    job.companion_submission_id = submission_id
     db.commit()
 
 
@@ -605,17 +632,34 @@ async def _finalize_terminal_videos(db: Session) -> None:
 
 
 def _companion_video_submissions_today(db: Session, user_id: int) -> int:
-    """Count companion-clip video jobs submitted since local midnight — the
-    daily budget gate that keeps a 2-3 gens/day subscription plan sustainable."""
+    """Count distinct submission_ids so retried scenes don't bypass the daily budget."""
     VideoGenJob = _VideoGenJob()
     start = naive_utc_now().replace(hour=0, minute=0, second=0, microsecond=0)
-    job_ids = [jid for (jid,) in db.query(AvatarClip.video_job_id).filter(AvatarClip.user_id == user_id, AvatarClip.video_job_id.is_not(None)).all()]
-    if not job_ids:
-        return 0
-    return db.query(VideoGenJob).filter(VideoGenJob.id.in_(job_ids), VideoGenJob.created_at >= start).count()
+    return (
+        db.query(VideoGenJob.companion_submission_id)
+        .filter(
+            VideoGenJob.user_id == user_id,
+            VideoGenJob.companion_submission_id.is_not(None),
+            VideoGenJob.created_at >= start,
+        )
+        .distinct()
+        .count()
+    )
 
 
 _KEYFRAME_DAILY_BUDGET = 20  # max Tier-2 keyframe submissions per user per UTC day
+
+# Rate-limit cleanup to once per minute.
+_cleanup_last_run: dict[int, datetime] = {}
+
+
+def _cleanup_run_lockout(now: datetime) -> bool:
+    """Return True if the cleanup ran within the last 60s."""
+    last = _cleanup_last_run.get(0)
+    if last is None or (now - last).total_seconds() >= 60:
+        _cleanup_last_run[0] = now
+        return False
+    return True
 
 
 async def escalation_tick() -> None:
@@ -632,6 +676,9 @@ async def escalation_tick() -> None:
     now = naive_utc_now()
     with SESSION_LOCAL() as db:
         await _finalize_terminal_videos(db)
+        # Opportunistic stale-row cleanup, rate-limited to once per minute.
+        if not _cleanup_run_lockout(now):
+            cleanup_stale_video_jobs(db)
 
         due_video = (
             db.query(AvatarClip)

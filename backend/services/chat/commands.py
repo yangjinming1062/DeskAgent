@@ -3,9 +3,20 @@ from typing import Any
 
 from components import get_logger
 from modules.settings import UserSetting
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 logger = get_logger(__name__)
+
+
+# Pydantic shapes that preserve the legacy on-wire keys for slash-command dispatch.
+class CommandResult(BaseModel):
+    output: str | None = None
+    warning: str | None = None
+
+
+class CommandsCatalogResult(BaseModel):
+    pairs: list[list[str]]
 
 
 @dataclass
@@ -41,18 +52,18 @@ def cmd_yolo(args_str: str, ctx: CommandContext) -> dict:
 
     ctx.user_settings["yolo_mode"] = new_val
     state = "ON" if new_val == "true" else "OFF"
-    return {"output": f"YOLO mode {state}"}
+    return CommandResult(output=f"YOLO mode {state}").model_dump()
 
 
 def cmd_reasoning(args_str: str, ctx: CommandContext) -> dict:
     """Set reasoning effort level (low / medium / high)."""
     level = args_str.strip().lower()
     if level not in ("low", "medium", "high", ""):
-        return {"warning": f"Unknown reasoning level: {level!r}. Use low, medium, or high."}
+        return CommandResult(warning=f"Unknown reasoning level: {level!r}. Use low, medium, or high.").model_dump()
 
     if not level:
         current = ctx.user_settings.get("reasoning_effort", "medium")
-        return {"output": f"Current reasoning effort: {current}"}
+        return CommandResult(output=f"Current reasoning effort: {current}").model_dump()
 
     with ctx.db_factory() as db:
         setting = (
@@ -71,7 +82,7 @@ def cmd_reasoning(args_str: str, ctx: CommandContext) -> dict:
         db.commit()
 
     ctx.user_settings["reasoning_effort"] = level
-    return {"output": f"Reasoning effort set to {level}"}
+    return CommandResult(output=f"Reasoning effort set to {level}").model_dump()
 
 
 _HANDLERS: dict[str, Any] = {
@@ -96,9 +107,9 @@ def commands_catalog() -> dict:
     handler dict guarantees the catalog never lists a command the dispatcher
     can't actually run.
     """
-    return {
-        "pairs": [[f"/{name}", _COMMAND_DESCRIPTIONS.get(name, "")] for name in _HANDLERS],
-    }
+    return CommandsCatalogResult(
+        pairs=[[f"/{name}", _COMMAND_DESCRIPTIONS.get(name, "")] for name in _HANDLERS],
+    ).model_dump()
 
 
 def exec_slash_command(command: str, ctx: CommandContext) -> dict:
@@ -108,15 +119,15 @@ def exec_slash_command(command: str, ctx: CommandContext) -> dict:
     """
     parts = command.strip().split(None, 1)
     if not parts:
-        return {"warning": "Empty command"}
+        return CommandResult(warning="Empty command").model_dump()
     name = parts[0].lstrip("/").lower()
     args_str = parts[1] if len(parts) > 1 else ""
 
     handler = _HANDLERS.get(name)
     if handler is None:
-        return {"warning": f"Unknown command: /{name}"}
+        return CommandResult(warning=f"Unknown command: /{name}").model_dump()
     try:
         return handler(args_str, ctx)
     except Exception:
         logger.exception("slash command failed", extra={"command_name": name})
-        return {"warning": f"Command /{name} failed unexpectedly"}
+        return CommandResult(warning=f"Command /{name} failed unexpectedly").model_dump()

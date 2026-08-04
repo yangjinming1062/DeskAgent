@@ -1,3 +1,4 @@
+import logging
 from typing import ClassVar
 
 from .._provider_errors import raise_for_provider_response
@@ -5,6 +6,8 @@ from ..base import ProviderConfig
 from ..base import TTSProvider
 from ..base import TTSResult
 from ..http import get_http
+
+logger = logging.getLogger(__name__)
 
 
 class ZhipuTTSProvider(TTSProvider):
@@ -39,10 +42,13 @@ class ZhipuTTSProvider(TTSProvider):
         speed: float | None = None,
     ) -> TTSResult:
         response_format = fmt or "wav"
+        chosen_voice = voice or self.VOICE_CATALOG[0]["id"]
+        if voice != chosen_voice:
+            logger.info("zhipu tts: substituted voice", extra={"requested": voice, "used": chosen_voice})
         payload: dict = {
             "model": self.config.model,
             "input": text,
-            "voice": voice or self.VOICE_CATALOG[0]["id"],
+            "voice": chosen_voice,
             "response_format": response_format,
         }
         if speed is not None:

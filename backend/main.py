@@ -25,7 +25,7 @@ from services.companion import start_clip_escalation
 from services.companion import stop_clip_escalation
 from services.gateway import start_ws_event_loop
 from services.gateway import stop_ws_event_loop
-from services.media import aclose_all as media_aclose_all
+from services.media import aclose_all
 from services.media import resume_pending_video_jobs
 from services.rate_limit import limiter
 from services.rate_limit import rate_limit_exception_handler
@@ -201,7 +201,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
             await global_pool.close()
 
         await aclose()
-        await media_aclose_all()
+        await aclose_all()
 
 
 app = FastAPI(title=SETTINGS.app_name, lifespan=lifespan)

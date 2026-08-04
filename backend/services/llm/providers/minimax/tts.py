@@ -1,3 +1,4 @@
+import logging
 from typing import ClassVar
 
 from ..base import ProviderConfig
@@ -7,6 +8,8 @@ from ..base import VoiceDesignResult
 from ..http import get_http
 from ._errors import extract_minimax_audio
 from ._errors import raise_for_minimax_response
+
+logger = logging.getLogger(__name__)
 
 
 class MiniMaxTTSProvider(TTSProvider):
@@ -49,11 +52,14 @@ preview_text 为试听文本——设计完成后会用它合成一段示例音�
         fmt: str = "mp3",
         speed: float | None = None,
     ) -> TTSResult:
+        chosen_voice = voice or self.VOICE_CATALOG[0]["id"]
+        if voice != chosen_voice:
+            logger.info("minimax tts: substituted voice", extra={"requested": voice, "used": chosen_voice})
         payload: dict = {
             "model": self.config.model,
             "text": text,
             "voice_setting": {
-                "voice_id": voice or self.VOICE_CATALOG[0]["id"],
+                "voice_id": chosen_voice,
                 "speed": speed if speed is not None else 1.0,
                 "vol": 1.0,
                 "pitch": 0,

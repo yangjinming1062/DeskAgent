@@ -20,12 +20,7 @@ async def _open_heartbeat_bracket(emitter: Emitter, llm_config: dict, runtime: R
     """
     if runtime is None:
         return None
-    await emitter.send_json(
-        {
-            "type": "session.info",
-            **runtime_info_snapshot(llm_config, runtime, running_override=True),
-        }
-    )
+    await emitter.send_json({"type": "session.info", **runtime_info_snapshot(llm_config, runtime, running_override=True)})
     return asyncio.ensure_future(_periodic_heartbeat(emitter, llm_config, runtime))
 
 
@@ -53,12 +48,7 @@ async def _close_heartbeat_bracket(emitter: Emitter, heartbeat_task: asyncio.Tas
     if runtime is None:
         return
     try:
-        await emitter.send_json(
-            {
-                "type": "session.info",
-                **runtime_info_snapshot(llm_config, runtime, running_override=False),
-            }
-        )
+        await emitter.send_json({"type": "session.info", **runtime_info_snapshot(llm_config, runtime, running_override=False)})
     except Exception:
         # Swallow so the original exception (if any) propagates cleanly.
         logger.warning("session.info heartbeat (running:false) failed", exc_info=True)

@@ -6,6 +6,7 @@ import pytest
 import sqlalchemy
 from common import ModelBase
 from sqlalchemy import create_engine
+from sqlalchemy import text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -18,6 +19,18 @@ def sqlite_engine():
         poolclass=StaticPool,
     )
     ModelBase.metadata.create_all(bind=engine)
+    # P2-11: ``ModelBase.metadata.create_all`` only emits indexes that
+    # SQLAlchemy's ``__table_args__`` declares. The
+    # ``uq_memories_user_context`` partial-unique index is created
+    # at the schema-migration layer outside the declarative ORM
+    # metadata, so the auth fixture previously couldn't exercise the
+    # upsert path. Explicit ``CREATE UNIQUE INDEX`` brings the
+    # SQLite fixture in line with the production Postgres schema.
+    with engine.begin() as conn:
+        conn.execute(text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_memories_user_context "
+            "ON memories (user_id, context)"
+        ))
     return engine
 
 
@@ -156,6 +169,25 @@ def test_token(_patch_db):
     """Create a valid JWT with an active LoginRecord in the test DB."""
     _, SessionLocal = _patch_db
     return _seed_user(SessionLocal)
+
+
+@pytest.fixture()
+def ws_ticket(_patch_db):
+    """Create a 60-second ``purpose: "ws"`` JWT for the WS handshake.
+
+    ARCHITECTURE.md §7.1: the long-lived bearer never reaches the WS
+    path. Tests that exercise the WS endpoint should use this fixture
+    and pass ``?ticket=...`` rather than minting a bearer and passing
+    ``?token=...``.
+    """
+    _, SessionLocal = _patch_db
+    from modules.auth import create_access_token
+    from modules.auth import User
+
+    with SessionLocal() as db:
+        user = db.query(User).filter(User.is_active.is_(True)).first()
+        token, _, _ = create_access_token(user_id=user.id, username=user.username, expires_in_seconds=60, purpose="ws")
+    return token
 
 
 @pytest.fixture(autouse=True)

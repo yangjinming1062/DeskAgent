@@ -51,7 +51,8 @@ def _estimate_context_length(model_name: str) -> int:
 
 
 def load_user_settings(db: Session, user_id: int) -> dict[str, str]:
-    return {s.setting_key: s.setting_value for s in db.query(UserSetting).filter(UserSetting.user_id == user_id).all()}
+    rows = db.query(UserSetting).filter(UserSetting.user_id == user_id).all()
+    return {s.setting_key: s.setting_value for s in rows}
 
 
 def _merge_session_settings(user_settings: dict, runtime: RuntimeSession | None) -> dict:
