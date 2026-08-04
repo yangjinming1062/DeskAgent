@@ -213,8 +213,48 @@ export type DesktopRunnerUpdateEvent =
 // where the `running` and `tools_changed` variants both trigger a
 // tool-schema sync to backend.
 export type DesktopRunnerStatusEvent =
-  | { type: 'running'; tools: unknown[] }
-  | { type: 'tools_changed'; tools: unknown[] }
+  | {
+      type: 'running'
+      tools: unknown[]
+      capabilities?: {
+        microphone?: boolean
+        screen_capture?: boolean
+        local_stt?: boolean
+        local_tts?: boolean
+        system_activity?: boolean
+        platform?: string
+        python?: string
+      } | null
+      runnerVersion?: string | null
+      probeFailed?: boolean | null
+    }
+  | {
+      type: 'runner_ready'
+      capabilities?: {
+        microphone?: boolean
+        screen_capture?: boolean
+        local_stt?: boolean
+        local_tts?: boolean
+        system_activity?: boolean
+        platform?: string
+        python?: string
+      } | null
+      runnerVersion?: string | null
+      probeFailed?: boolean | null
+    }
+  | {
+      type: 'tools_changed'
+      tools: unknown[]
+      capabilities?: {
+        microphone?: boolean
+        screen_capture?: boolean
+        local_stt?: boolean
+        local_tts?: boolean
+        system_activity?: boolean
+        platform?: string
+        python?: string
+      } | null
+    }
   | { type: 'stopped'; reason?: string; errors: string[] }
   | { type: 'error'; phase: string; error: Error }
 

@@ -106,9 +106,9 @@ def create_job(user_id: int, prompt: str, schedule: str, name: str = "cron job",
         return _job_to_dict(job)
 
 
-def get_job(job_id: int) -> dict[str, Any] | None:
+def get_job(user_id: int, job_id: int) -> dict[str, Any] | None:
     with session_scope() as db:
-        job = db.get(CronJob, job_id)
+        job = db.query(CronJob).filter(CronJob.id == job_id, CronJob.user_id == user_id).first()
         return _job_to_dict(job) if job else None
 
 
@@ -120,9 +120,9 @@ def list_jobs(user_id: int, include_paused: bool = False) -> list[dict[str, Any]
         return [_job_to_dict(j) for j in query.all()]
 
 
-def update_job(job_id: int, updates: dict[str, Any]) -> dict[str, Any] | None:
+def update_job(user_id: int, job_id: int, updates: dict[str, Any]) -> dict[str, Any] | None:
     with session_scope() as db:
-        job = db.get(CronJob, job_id)
+        job = db.query(CronJob).filter(CronJob.id == job_id, CronJob.user_id == user_id).first()
         if not job:
             return None
         for key, value in updates.items():
@@ -137,17 +137,17 @@ def update_job(job_id: int, updates: dict[str, Any]) -> dict[str, Any] | None:
         return _job_to_dict(job)
 
 
-def pause_job(job_id: int) -> dict[str, Any] | None:
-    return update_job(job_id, {"is_paused": True})
+def pause_job(user_id: int, job_id: int) -> dict[str, Any] | None:
+    return update_job(user_id, job_id, {"is_paused": True})
 
 
-def resume_job(job_id: int) -> dict[str, Any] | None:
-    return update_job(job_id, {"is_paused": False})
+def resume_job(user_id: int, job_id: int) -> dict[str, Any] | None:
+    return update_job(user_id, job_id, {"is_paused": False})
 
 
-def remove_job(job_id: int) -> bool:
+def remove_job(user_id: int, job_id: int) -> bool:
     with session_scope() as db:
-        job = db.get(CronJob, job_id)
+        job = db.query(CronJob).filter(CronJob.id == job_id, CronJob.user_id == user_id).first()
         if not job:
             return False
         db.delete(job)

@@ -97,7 +97,7 @@ async def send_message_tool(
             )
 
     try:
-        async with httpx.AsyncClient(event_hooks={"connect": [_verify_connect_ip]}) as client:
+        async with httpx.AsyncClient(follow_redirects=False, event_hooks={"connect": [_verify_connect_ip]}) as client:
             # Webhooks vary on payload shape; send both common keys.
             response = await client.post(target_webhook, json={"text": message, "content": message}, timeout=WEBHOOK_TIMEOUT)
             response.raise_for_status()

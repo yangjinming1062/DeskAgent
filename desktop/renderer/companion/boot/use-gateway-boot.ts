@@ -15,6 +15,7 @@ import {
   reportPrimaryGatewayState,
   setConnection,
   setPrimaryGateway,
+  setRunnerCapabilities,
   setRunnerOnline,
   tearDownPrimaryGateway
 } from '@/shared/store/gateway'
@@ -313,14 +314,19 @@ export function useGatewayBoot({ handleGatewayEvent, onConnectionReady, onGatewa
     document.addEventListener('visibilitychange', onVisible)
 
     const offRunnerStatus = desktop.onRunnerStatus?.(ev => {
-      if (ev.type === 'running' || ev.type === 'tools_changed') {
+      if (ev.type === 'running' || ev.type === 'runner_ready' || ev.type === 'tools_changed') {
         setRunnerOnline(true)
+
+        if (ev.capabilities) {
+          setRunnerCapabilities(ev.capabilities)
+        }
 
         if (gateway.connectionState === 'open') {
           void syncRunnerTools(gateway)
         }
       } else if (ev.type === 'stopped' || ev.type === 'error') {
         setRunnerOnline(false)
+        setRunnerCapabilities(null)
       }
     })
 

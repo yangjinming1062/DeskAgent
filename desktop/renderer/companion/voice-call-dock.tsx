@@ -37,7 +37,7 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps) {
   const durationSecRef = useRef(0)
   const audioAnimRef = useRef<number | null>(null)
   const recorderRef = useRef<MediaRecorder | null>(null)
-  const chunksRef = useRef<Blob[]>([])
+  const lastActivityTimeRef = useRef<number>(Date.now())
   const analyserRef = useRef<AnalyserNode | null>(null)
   const userSpeakingRef = useRef(false)
   const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -97,12 +97,16 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps) {
 
               try {
                 const rec = new MediaRecorder(stream)
-                chunksRef.current = []
+                const utteranceChunks: Blob[] = []
 
                 rec.ondataavailable = e => {
                   if (e.data.size > 0) {
-                    chunksRef.current.push(e.data)
+                    utteranceChunks.push(e.data)
                   }
+                }
+
+                rec.onstop = () => {
+                  void transcribeAndSubmit(utteranceChunks)
                 }
 
                 rec.start()
@@ -114,6 +118,7 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps) {
 
             const finishUtterance = () => {
               const rec = recorderRef.current
+              recorderRef.current = null
 
               if (!rec || rec.state !== 'recording') {
                 userSpeakingRef.current = false
@@ -121,7 +126,6 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps) {
                 return
               }
 
-              rec.onstop = () => void transcribeAndSubmit()
               rec.stop()
               userSpeakingRef.current = false
             }
@@ -129,6 +133,10 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps) {
             const checkVolume = () => {
               analyser.getByteFrequencyData(dataArray)
               const avg = dataArray.reduce((acc, val) => acc + val, 0) / dataArray.length
+
+              if (avg > SPEECH_THRESHOLD || assistantSpeakingRef.current) {
+                lastActivityTimeRef.current = Date.now()
+              }
 
               // Barge-in: user speaks while the companion is talking.
               if (avg > BARGEIN_THRESHOLD && assistantSpeakingRef.current) {
@@ -181,14 +189,19 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps) {
       durationSecRef.current += 1
       setDurationSec(durationSecRef.current)
 
-      if (durationSecRef.current >= 180) {
+      const inactiveSec = Math.floor((Date.now() - lastActivityTimeRef.current) / 1000)
+
+      if (inactiveSec >= 180) {
         onCloseRef.current()
       }
     }, 1000)
 
-    async function transcribeAndSubmit() {
-      const blob = new Blob(chunksRef.current, { type: 'audio/webm' })
-      chunksRef.current = []
+    async function transcribeAndSubmit(chunks: Blob[]) {
+      if (!chunks.length) {
+        return
+      }
+
+      const blob = new Blob(chunks, { type: 'audio/webm' })
       let text = ''
 
       try {
