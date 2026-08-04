@@ -84,6 +84,50 @@ class TestLLMClient:
         parts = build_system_prompt_parts(AgentPromptConfig(prompt_family="google", valid_tool_names=["terminal"]))
         assert GOOGLE_MODEL_OPERATIONAL_GUIDANCE in parts["stable"]
 
+
+    def test_zh_language_directive_injected_by_default(self):
+        from modules.system import AgentPromptConfig
+        from services.chat.system_prompt import LANGUAGE_DIRECTIVES
+        from services.chat.system_prompt import build_system_prompt_parts
+
+        parts = build_system_prompt_parts(AgentPromptConfig(valid_tool_names=["terminal"]))
+        assert LANGUAGE_DIRECTIVES["zh"] in parts["stable"]
+
+    def test_en_language_directive_injected_when_en(self):
+        from modules.system import AgentPromptConfig
+        from services.chat.system_prompt import LANGUAGE_DIRECTIVES
+        from services.chat.system_prompt import build_system_prompt_parts
+
+        parts = build_system_prompt_parts(AgentPromptConfig(valid_tool_names=["terminal"], language="en"))
+        assert LANGUAGE_DIRECTIVES["en"] in parts["stable"]
+        assert LANGUAGE_DIRECTIVES["zh"] not in parts["stable"]
+
+    def test_unknown_language_falls_back_to_zh(self):
+        from modules.system import AgentPromptConfig
+        from services.chat.system_prompt import LANGUAGE_DIRECTIVES
+        from services.chat.system_prompt import _resolve_language
+
+        assert _resolve_language("fr") == "zh"
+        assert _resolve_language("") == "zh"
+        assert _resolve_language("EN") == "en"
+
+    def test_volatile_header_localized_for_zh(self):
+        from modules.system import AgentPromptConfig
+        from services.chat.system_prompt import _format_volatile_header
+
+        hdr = _format_volatile_header(AgentPromptConfig(language="zh", model="test"))
+        assert "对话开始时间" in hdr
+        assert "模型" in hdr
+
+    def test_volatile_header_english_for_en(self):
+        from modules.system import AgentPromptConfig
+        from services.chat.system_prompt import _format_volatile_header
+
+        hdr = _format_volatile_header(AgentPromptConfig(language="en", model="test"))
+        assert "Conversation started" in hdr
+        assert "Model" in hdr
+
+
     def test_image_attachment_uses_image_url_part(self):
         from services.chat.persistence import _build_persisted_content
         from modules.system import ChatMessageRequest

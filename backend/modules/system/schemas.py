@@ -1,5 +1,6 @@
 from typing import Literal
 
+from components import DEFAULT_LANGUAGE
 from pydantic import BaseModel
 from pydantic import Field
 
@@ -62,3 +63,4 @@ class AgentPromptConfig(BaseModel):
     prompt_family: str = "openai"
     persona_extras: str | None = None
     user_profile_extras: str | None = None
+    language: str = DEFAULT_LANGUAGE

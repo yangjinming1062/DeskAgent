@@ -13,6 +13,7 @@ from .constants import BACKGROUND_REVIEW_DEFAULT
 from .constants import CHARS_PER_TOKEN
 from .constants import CONTEXT_SUMMARY_HEADROOM_FACTOR
 from .constants import DEFAULT_INSIGHTS_DAYS
+from .constants import DEFAULT_LANGUAGE
 from .constants import DEFAULT_LLM_CONTEXT_TOKENS
 from .constants import DEFAULT_SESSION_TITLE
 from .constants import JSON_RPC_VERSION
@@ -42,6 +43,7 @@ from .constants import SESSION_PREVIEW_MAX_CHARS
 from .constants import SESSION_TO_GLOBAL_KEY_ALIASES
 from .constants import SQL_LIKE_ESCAPE_CHAR
 from .constants import STT_MAX_AUDIO_BYTES
+from .constants import SUPPORTED_LANGUAGES
 from .constants import TITLE_GENERATION_MAX_TOKENS
 from .constants import TITLE_GENERATION_TEMPERATURE
 from .constants import TITLE_MAX_CHARS
@@ -115,6 +117,7 @@ __all__ = [
     "DEFAULT_INSIGHTS_DAYS",
     "DEFAULT_LLM_CONTEXT_TOKENS",
     "DEFAULT_SESSION_TITLE",
+    "DEFAULT_LANGUAGE",
     "JSON_RPC_VERSION",
     "JSONRPC_INTERNAL_ERROR",
     "JSONRPC_INVALID_PARAMS",
@@ -141,6 +144,7 @@ __all__ = [
     "SESSION_PREVIEW_MAX_CHARS",
     "SESSION_TO_GLOBAL_KEY_ALIASES",
     "SQL_LIKE_ESCAPE_CHAR",
+    "SUPPORTED_LANGUAGES",
     "STT_MAX_AUDIO_BYTES",
     "TITLE_GENERATION_MAX_TOKENS",
     "TITLE_GENERATION_TEMPERATURE",

@@ -3,6 +3,7 @@ from typing import Any
 
 from components import CHARS_PER_TOKEN
 from components import CONTEXT_SUMMARY_HEADROOM_FACTOR
+from components import DEFAULT_LANGUAGE
 from components import get_logger
 from components import SETTINGS
 
@@ -10,23 +11,56 @@ from .llm_retry import call_with_retry
 
 logger = get_logger(__name__)
 
-_SUMMARY_PROMPT = (
-    "You are compressing a portion of an ongoing conversation history "
-    "into a concise summary. The summary will be used as the only "
-    "context for the conversation going forward, so preserve:\n\n"
-    "  * All user-stated goals, constraints, and decisions.\n"
-    "  * Tool results that resolved the user's request (file paths, "
-    "command output, search findings).\n"
-    "  * Errors encountered and the recovery path taken.\n"
-    "  * Any code snippets, URLs, or identifiers the user asked to remember.\n\n"
-    "Omit:\n"
-    "  * Filler pleasantries and repeated clarifications.\n"
-    "  * Speculation about future turns.\n"
-    "  * Meta-commentary about the conversation itself.\n\n"
-    "Write the summary in markdown. Be specific — prefer 'edited "
-    "~/.deskagent/config.yaml to set context_compression_threshold=0.8' over "
-    "'discussed configuration'. Target length: 300-800 words."
-)
+_SUMMARY_PROMPTS: dict[str, str] = {
+    "zh": (
+        "你正在压缩一段用户与桌面伙伴之间的对话历史。"
+        "该摘要将替换原始消息，作为后续对话的唯一上下文，"
+        "因此需同时保留任务连续性与伙伴关系的关键信息。\n\n"
+        "保留：\n"
+        "  * 用户提出的所有目标、约束、决策和未解决的问题。\n"
+        "  * 解决用户请求的工具结果（文件路径、命令输出、搜索发现、生成物）。\n"
+        "  * 遇到的错误及恢复路径。\n"
+        "  * 用户要求记住的代码片段、URL、标识符或产物。\n"
+        "  * 影响后续互动的情感基调变化或伙伴人格时刻。\n\n"
+        "省略：\n"
+        "  * 纯装饰性的客套话和重复的澄清。\n"
+        "  * 对未来轮次的推测。\n"
+        "  * 关于对话本身的元评论。\n\n"
+        "用 markdown 格式撰写摘要，语言与用户主要使用的语言保持一致。"
+        "要具体——优先保留‘编辑了 config.yaml 设置压缩阈值’而非‘讨论了配置’。"
+        "目标长度：300-800 字。"
+    ),
+    "en": (
+        "You are compressing a portion of an ongoing conversation between a user "
+        "and their desktop companion. This summary replaces the original messages "
+        "as the sole context for the conversation going forward, so preserve "
+        "everything that matters for both task continuity and the companion "
+        "relationship.\n\n"
+        "Preserve:\n"
+        "  * All user-stated goals, constraints, decisions, and unresolved questions.\n"
+        "  * Tool results that resolved the user's request (file paths, command "
+        "output, search findings, generated artifacts).\n"
+        "  * Errors encountered and the recovery path taken.\n"
+        "  * Code snippets, URLs, identifiers, or artifacts the user asked to "
+        "remember.\n"
+        "  * Notable shifts in emotional tone or companion-persona moments that "
+        "shape the ongoing interaction.\n\n"
+        "Omit:\n"
+        "  * Purely decorative pleasantries and repeated clarifications with no "
+        "information value.\n"
+        "  * Speculation about future turns.\n"
+        "  * Meta-commentary about the conversation itself.\n\n"
+        "Write the summary in markdown, in the same language the user "
+        "predominantly used. Be specific \u2014 prefer 'edited config.yaml to set "
+        "compression threshold' over 'discussed configuration'. Target length: "
+        "300-800 words."
+    ),
+}
+
+
+def _summary_prompt(language: str) -> str:
+    lang = (language or "").strip().lower()
+    return _SUMMARY_PROMPTS.get(lang, _SUMMARY_PROMPTS[DEFAULT_LANGUAGE])
 
 
 def _approx_tokens(messages: list[dict[str, Any]] | None) -> int:
@@ -70,14 +104,14 @@ def _pick_compressible_block(rest: list[dict[str, Any]], *, max_input_messages: 
     return block, keep
 
 
-async def _summarize_block(block: list[dict[str, Any]], *, client: Any, model: str, target_tokens: int) -> tuple[str, bool]:
+async def _summarize_block(block: list[dict[str, Any]], *, client: Any, model: str, target_tokens: int, language: str = DEFAULT_LANGUAGE) -> tuple[str, bool]:
     """Summarize ``block`` via the LLM. Returns ``(summary_text, was_truncated)``.
 
     ``was_truncated`` is True when ``finish_reason == "length"`` — caller should
     fall back to ``truncate_chat_history`` because the summary may be incomplete.
     """
     summary_messages = [
-        {"role": "system", "content": _SUMMARY_PROMPT},
+        {"role": "system", "content": _summary_prompt(language)},
         {"role": "user", "content": f"Summarize this conversation history. Target: ~{target_tokens} tokens.\n\n{json.dumps(block, ensure_ascii=False, default=str)}"},
     ]
     response = await call_with_retry(client, model=model, messages=summary_messages, temperature=0.0, max_tokens=target_tokens * CONTEXT_SUMMARY_HEADROOM_FACTOR)
@@ -97,6 +131,7 @@ async def compress_history_if_needed(
     target_tokens: int | None = None,
     max_input_messages: int | None = None,
     consent_callback=None,
+    language: str = DEFAULT_LANGUAGE,
 ) -> list[dict[str, Any]]:
     """Return a history list with the oldest non-system block replaced by an LLM summary.
 
@@ -131,7 +166,7 @@ async def compress_history_if_needed(
         return messages
 
     try:
-        summary, was_truncated = await _summarize_block(block, client=client, model=model, target_tokens=target)
+        summary, was_truncated = await _summarize_block(block, client=client, model=model, target_tokens=target, language=language)
     except Exception as exc:
         logger.warning("context_compressor: summary call failed, leaving history unchanged", extra={"error": str(exc)})
         return messages

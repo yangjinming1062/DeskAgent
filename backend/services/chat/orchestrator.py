@@ -3,6 +3,7 @@ from collections.abc import Callable
 from typing import Any
 
 from components import AGENT_MAX_LOOP_TURNS
+from components import DEFAULT_LANGUAGE
 from components import get_logger
 from components import SETTINGS
 from modules.auth import ChatRequestClientContext
@@ -106,7 +107,12 @@ async def run_chat_turn(
 
         ask_consent = _make_ask_consent(emitter, sid, pending_compression_consents)
         compressed_messages = await compress_history_if_needed(
-            inputs.messages, client=inputs.client, model=inputs.model_name, context_length=inputs.ctx_length, consent_callback=ask_consent
+            inputs.messages,
+            client=inputs.client,
+            model=inputs.model_name,
+            context_length=inputs.ctx_length,
+            consent_callback=ask_consent,
+            language=effective_settings.get("language", DEFAULT_LANGUAGE),
         )
         current_messages = truncate_chat_history(compressed_messages)
 

@@ -1,4 +1,6 @@
+from components import DEFAULT_LANGUAGE
 from components import naive_utc_now
+from components import SUPPORTED_LANGUAGES
 from components import TOOL_ENFORCE_OFF_VALUES
 from modules.system import AgentPromptConfig
 
@@ -406,12 +408,35 @@ def _join_nonempty(parts: list[str]) -> str:
     return "\n\n".join(s for p in parts if p and (s := p.strip()))
 
 
+# Short per-language directive injected right after the identity prompt.
+# The system prompt itself stays in English (engineering instructions for
+# the model); this directive controls the language of the model's
+# user-facing output.
+LANGUAGE_DIRECTIVES: dict[str, str] = {
+    "zh": ("回复用户时默认使用简体中文，除非用户明确使用其他语言或要求你切换语言。代码、命令、文件路径、API 参数等技术内容保持原文。"),
+    "en": (
+        "Respond to the user in English by default, unless the user explicitly uses another language or asks you to switch. Keep code, commands, file paths, and API parameters in their original form."
+    ),
+}
+
+
+def _resolve_language(language: str) -> str:
+    """Normalise to a supported language code; fall back to default."""
+    lang = (language or "").strip().lower()
+    return lang if lang in SUPPORTED_LANGUAGES else DEFAULT_LANGUAGE
+
+
+def _language_directive(language: str) -> str:
+    return LANGUAGE_DIRECTIVES[_resolve_language(language)]
+
+
 def build_system_prompt_parts(config: AgentPromptConfig, system_message: str | None = None) -> dict[str, str]:
     stable_parts: list[str] = []
     valid_tools = config.valid_tool_names
     client_ctx = config.client_context
 
     stable_parts.append(config.identity_prompt or DEFAULT_AGENT_IDENTITY)
+    stable_parts.append(_language_directive(config.language))
     stable_parts.append(DESK_AGENT_HELP_GUIDANCE)
     if config.persona_extras:
         stable_parts.append(config.persona_extras)
@@ -481,12 +506,28 @@ def _should_inject_tool_use_enforcement(setting: str) -> bool:
     return setting.lower() not in TOOL_ENFORCE_OFF_VALUES
 
 
+# Localised labels for the volatile header. The header is internal model
+# context, but a locale-appropriate date avoids leaking English weekday
+# names into a zh conversation.
+_VOLATILE_LABELS: dict[str, dict[str, str]] = {
+    "zh": {"started": "对话开始时间：", "session_id": "\n会话 ID：", "model": "\n模型："},
+    "en": {"started": "Conversation started: ", "session_id": "\nSession ID: ", "model": "\nModel: "},
+}
+
+
 def _format_volatile_header(config: AgentPromptConfig) -> str:
-    line = f"Conversation started: {naive_utc_now().strftime('%A, %B %d, %Y')}"
+    now = naive_utc_now()
+    lang = _resolve_language(config.language)
+    labels = _VOLATILE_LABELS.get(lang, _VOLATILE_LABELS[DEFAULT_LANGUAGE])
+    if lang == "zh":
+        date_str = f"{now.year}年{now.month}月{now.day}日"
+    else:
+        date_str = now.strftime("%A, %B %d, %Y")
+    line = f"{labels['started']}{date_str}"
     if config.pass_session_id and config.session_id:
-        line += f"\nSession ID: {config.session_id}"
+        line += f"{labels['session_id']}{config.session_id}"
     if config.model:
-        line += f"\nModel: {config.model}"
+        line += f"{labels['model']}{config.model}"
     return line
 
 

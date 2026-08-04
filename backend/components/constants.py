@@ -35,6 +35,7 @@ SESSION_TO_GLOBAL_KEY_ALIASES: dict[str, str] = {
     "yolo": "yolo_mode",
     "reasoning": "reasoning_effort",
     "fast": "service_tier",
+    "language": "language",
 }
 
 # Default for enable_background_review setting (string, not bool —
@@ -176,3 +177,12 @@ MAX_VOICE_DESIGN_PROMPT_CHARS: int = 200
 # accepts image attachments only — vision-capable models consume them as
 # ``image_url`` parts.
 ATTACHMENT_TYPE_IMAGE: str = "image"
+
+# User-facing response language. Defaults to Chinese so new installs
+# talk in zh; switchable to English system-wide via the ``language``
+# UserSetting / session override.
+DEFAULT_LANGUAGE: str = "zh"
+
+# Supported values for the ``language`` setting. Anything outside this
+# set falls back to ``DEFAULT_LANGUAGE``.
+SUPPORTED_LANGUAGES: frozenset[str] = frozenset({"zh", "en"})
