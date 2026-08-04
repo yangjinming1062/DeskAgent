@@ -119,7 +119,7 @@ clip 的就绪/失败通知走**单一 `clip.updated` 通道**。companion 服�
 LLM (Generate tool_call)
     │
     ▼ (Stream output)
-Backend [core/chat_service.py]
+Backend [services/chat/orchestrator.py]
     │  1. 拦截 reserved 字段、检查 iteration_budget
     │  2. 创建 ipc.create_future(user_id, call_id)
     ▼ (WebSocket Push: method="event", type="tool.call")
@@ -133,7 +133,7 @@ Runner [server.py]
 Desktop [runner-rpc-ws.cjs]
     │  6. 捕获连接异常，Runner 离线快速 fail-fast
     ▼ (WebSocket Request: method="tool.result", params={"call_id", "result"})
-Backend [routers/chat.py]
+Backend [api/v1/chat.py]
     │  7. 匹配 ipc.resolve_future(user_id, call_id) 唤醒 chat_service 协程
     ▼
 LLM (Receive tool result & continue)
@@ -216,7 +216,7 @@ onboarding 产出的结构化角色定义持久化在 Backend 用户维度，作
 
 - **portrait 是全部 clip 的生成种子**：所有 clip 经图生视频（portrait 为种子图 + 场景/动作文本，复用 `media/video_jobs` 流水线）产出。同一颗种子图从机制上保证跨 clip 的角色一致性，无需额外的风格锁。
 - **衍生失效**：portrait 重生（`avatar.regenerate`）时所有 clip 必然失配，须全部失效并从新种子重新排队，绝不跨 portrait 版本复用。
-- **资产 URL 无 TTL**：portrait 与 clip 产物落持久目录（`companion-avatars/` / `companion-assets/`），暴露无 TTL 的文件路由 URL——换设备登录可直接拉取，无需重新生成。Desktop 收到后仍应本地缓存避免重复拉取。
+- **资产 URL 5 分钟 HMAC 签名**：portrait 与 clip 产物落持久目录（`companion-avatars/` / `companion-assets/`），对外通过 `/api/companion/avatar/file/...?signature=...` 短 TTL 签名 URL 暴露（`signed_url_expiry_seconds=300`）——换设备登录需重新生成签名，不能直接分享原 URL。Desktop 收到后仍应本地缓存避免重复拉取。Backend 的 `verify_signed_asset_request` 强制校验签名，丢了就 401。
 - **受控再生成**：形象在多次会话间保持稳定，构成伙伴的视觉身份。变更只在用户主动要求时发生，走 Backend 主导的再生成流程并同步更新 Desktop 本地缓存。
 - **渐进式生成**：portrait + idle clip 在 onboarding 同步生成（批次 0）；其余 clip 按优先级后台排队，就绪后经 `clip.updated` 事件下发。分批策略与降级细节见 [COMPANION_DESIGN.md §1.3 / §1.4](COMPANION_DESIGN.md)。
 
@@ -224,7 +224,7 @@ onboarding 产出的结构化角色定义持久化在 Backend 用户维度，作
 
 伙伴"说什么"由 LLM 产出，"怎么动、什么情绪"由 Desktop 渲染。以下是两者之间的语义契约：
 
-- **情绪 cue（affect）**：Backend 在对话响应/主动消息中携带 `affect: {emotion}` 语义字段，Desktop 据此驱动动画状态机。emotion 为有限枚举集（`happy / sad / surprised / excited / confused / concerned / shy / proud / grateful / playful / bored` + `neutral`），可扩展——但每次扩展须同步 Backend 产出 allowlist 与 Desktop clip 目录，否则未覆盖的 emotion 一律按 `neutral` 处理。
+- **情绪 cue（affect）**：Backend 在对话响应/主动消息中携带 `affect: {emotion}` 语义字段，Desktop 据此驱动动画状态机。emotion 为有限枚举集（`happy / sad / surprised / excited / confused / concerned / shy / proud / grateful / playful / bored / lonely / sleepy / curious / embarrassed / apologetic + neutral`，共 17 项），与 `services/chat/affect.py::ALLOWED_EMOTIONS` 完全对齐。可扩展——但每次扩展须同步 Backend 产出 allowlist 与 Desktop clip 目录，否则未覆盖的 emotion 一律按 `neutral` 处理。
 - **语义与渲染解耦**：Backend 只产出 emotion 语义，绝不指定 clip 文件或渲染方式。Desktop 据本地可用资产决定渲染——有对应 clip 则播放，否则回退 idle loop + 状态轻量提示。这使 clip 渐进生成与语义层互不阻塞。
 - **affect 继承角色定义的抗注入保证**：affect 由已注入角色定义的 LLM 产出，自然符合人格；角色定义本身受 §7.2 reserved 键与不可信包围机制保护，affect 因此继承同一保证，无需额外的情绪过滤层。
 - **affect 与 text 同帧，TTS 由 Desktop 拉取式合成**：对话响应的 `message.complete` 帧内联 `{text, affect}`，不内联 TTS 音频。Desktop 收到后先据 affect 切 EMOTIONAL，再据 text 拉 TTS（`POST /api/media/tts`）切 SPEAKING，保证情绪基调先于语音进入。Backend 只产出语义（emotion + text），TTS 合成归 Desktop 渲染层。

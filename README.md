@@ -64,7 +64,7 @@ cd backend && docker compose up  # 监听 :8000，PostgreSQL 数据库；默认�
 
 ```bash
 cd desktop && pnpm install && pnpm dev  # Vite + Electron
-# Backend URL 经 desktop/config.json（默认 127.0.0.1，假设后端也在本机）或 electron/config.cjs 配置
+# Backend URL 经 desktop/config.json（默认 127.0.0.1，假设后端也在本机）或 $DESKAGENT_HOME/desktop-config.json 配置
 ```
 
 ### Runner
