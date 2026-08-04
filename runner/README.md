@@ -232,7 +232,7 @@ Toolsets 是用户可平移的 LLM-facing schema 过滤单位。Catalog 是**三
 
 启用/禁用配置在 `$DESKAGENT_HOME/config.yaml::toolsets.disabled`（Desktop IPC 写、Runner `toolsets/helpers.py::get_disabled_toolset_ids` 读）。过滤在 `registry.get_schemas_for_llm(set_of_disabled_ids)` 生效——被禁工具集对应 catalog 中的 `prefixes` 项扫实际注册表的 tool 名命中即排除；`extra_tools` 按名命中即排除；**MCP 工具（`mcp_*`）无条件排除**（它们的 toggle 在 MCP settings 页）。
 
-**与 backend CORE_TOOLS 的分层语义**：`backend/core/chat_service.py::CORE_TOOLS` 是 Backend 侧的**硬保证**白名单；工具集过滤在更上游（Runner `get_tools` RPC），是**软补充**。两层语义独立。
+**与 backend CORE_TOOLS 的分层语义**：`backend/services/chat/types.py::CORE_TOOLS` 是 Backend 侧的**硬保证**白名单；工具集过滤在更上游（Runner `get_tools` RPC），是**软补充**。两层语义独立。
 
 **重启语义**：`deskagent:toolset:set-enabled` 走 atomic write + `restartRunnerBridge()`——Registry 是一次性 init，没有热重载入口，进程级 restart 是唯一路径。
 

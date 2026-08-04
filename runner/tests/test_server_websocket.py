@@ -357,6 +357,21 @@ async def test_unknown_method_returns_method_not_found():
     assert sent[0]["error"]["code"] == -32601
 
 
+@pytest.mark.asyncio
+async def test_notification_without_id_is_ignored():
+    """Notifications (no ``id``) like ``runner.ping`` must be silently dropped."""
+    sent: list[dict[str, Any]] = []
+
+    class _FakeWS:
+        async def send(self, payload):
+            sent.append(json.loads(payload))
+
+    # A notification: has method but no id.
+    req = {"method": "runner.ping"}
+    await server.process_request(_FakeWS(), req)
+    assert len(sent) == 0, "notification should not produce any response"
+
+
 @pytest.mark.timeout(15)
 @pytest.mark.asyncio
 async def test_execute_tool_routes_to_registry_read_file(tmp_path):

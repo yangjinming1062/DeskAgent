@@ -98,8 +98,8 @@ def test_explicit_language_skips_confidence_check():
     assert payload["text"] == "hello"
 
 
-def test_explicit_language_empty_result_still_returns():
-    """Audio was successfully processed; empty result is fine when caller asked for explicit language."""
+def test_explicit_language_empty_result_returns_error():
+    """Explicit language with empty text → tool_error so desktop silent_fallback promotes to cloud (P1-9)."""
     payload = json.loads(_run(
         _invoke(
             {"audio_base64": _one_sample_wav_b64(), "language": "zh"},
@@ -107,8 +107,8 @@ def test_explicit_language_empty_result_still_returns():
         )
     ))
 
-    assert payload["success"] is True
-    assert payload["text"] == ""
+    assert payload["success"] is False
+    assert "no segments" in payload["error"].lower()
 
 
 def test_no_language_arg_defaults_to_auto_detect():

@@ -205,11 +205,15 @@ def test_ensure_voice_installed_download_success(tmp_path: Path):
 
 
 def _patch_voice_dir(tmp_path, monkeypatch, tts_tool):
-    """Redirect both tts_tool.piper_voice_dir and piper_runtime's — the call site resolves via each function's own module namespace."""
+    """Redirect both tts_tool.piper_voice_dir and piper_runtime's — the call site resolves via each function's own module namespace. Also stub ``piper_available`` and ``pyttsx3_available`` so the auto-mode chain doesn't bail on the optional dependency."""
     from tools.multimodal.audio import piper_runtime as pr
 
     monkeypatch.setattr(tts_tool, "piper_voice_dir", lambda: tmp_path)
     monkeypatch.setattr(pr, "piper_voice_dir", lambda: tmp_path)
+    monkeypatch.setattr(tts_tool, "piper_available", lambda: True)
+    monkeypatch.setattr(pr, "piper_available", lambda: True)
+    monkeypatch.setattr(tts_tool, "pyttsx3_available", lambda: True)
+    monkeypatch.setattr(pr, "pyttsx3_available", lambda: True)
 
 
 def _make_on_disk_voice(tmp_path: Path, voice_id: str) -> None:

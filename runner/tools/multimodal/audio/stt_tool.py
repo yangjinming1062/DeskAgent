@@ -145,6 +145,9 @@ def _check_faster_whisper() -> bool:
         return False
 
 
+_CLOUD_FALLBACK_HINT = "Set stt.engine=cloud in config.yaml to fall back to a stronger multilingual model, or pass language='zh'/'en' explicitly to bias the local result."
+
+
 async def speech_to_text_tool(args: dict[str, Any], **kw: Any) -> str:
     audio_path_arg = args.get("audio_path")
     audio_b64 = args.get("audio_base64")
@@ -212,21 +215,20 @@ async def speech_to_text_tool(args: dict[str, Any], **kw: Any) -> str:
         logger.exception("speech_to_text decode failed")
         return tool_error(f"whisper decode failed: {e}", success=False)
 
-    # Auto-detect mode: return tool_error (not empty success) when whisper was uncertain or
-    # filtered every segment — the desktop's local→cloud fallback then kicks in cleanly.
-    # Explicit `language=` calls skip this: the caller said "transcribe as zh", honor it.
+    # Empty text or low auto-detect confidence -> tool_error so the desktop silent_fallback path promotes to cloud (ISSUES.md P1-9).
+    text = result.get("text") or ""
+    if not text:
+        return tool_error(
+            "local STT produced no segments (audio may be silent or all segments filtered by confidence gate)",
+            hint=_CLOUD_FALLBACK_HINT,
+            success=False,
+        )
     if is_auto_detect:
-        text = result.get("text") or ""
         prob = result.get("language_probability")
-        reason: str | None = None
-        if not text:
-            reason = "produced no segments (audio may be silent or all segments filtered by confidence gate)"
-        elif prob is not None and prob < 0.5:
-            reason = f"language detection confidence too low: {prob:.2f}"
-        if reason:
+        if prob is not None and prob < 0.5:
             return tool_error(
-                f"local STT {reason}",
-                hint=("Set stt.engine=cloud in config.yaml to fall back to a stronger " "multilingual model, or pass language='zh'/'en' explicitly to bias the local result."),
+                f"local STT language detection confidence too low: {prob:.2f}",
+                hint=_CLOUD_FALLBACK_HINT,
                 success=False,
             )
 
