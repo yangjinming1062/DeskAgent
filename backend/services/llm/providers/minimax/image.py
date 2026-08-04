@@ -23,6 +23,9 @@ class MiniMaxImageGenProvider(ImageGenProvider):
 
     provider_name = "minimax"
     DEFAULT_MODELS: ClassVar[dict[str, str]] = {"image_gen": "image-01"}
+    # Native i2i via ``subject_reference`` — ``image_file`` accepts a public
+    # URL or a ``data:image/*;base64,...`` data URI.
+    supports_reference_image: ClassVar[bool] = True
 
     def __init__(self, config: ProviderConfig):
         super().__init__(config)

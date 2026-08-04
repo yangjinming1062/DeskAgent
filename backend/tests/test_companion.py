@@ -1071,3 +1071,140 @@ def test_pydantic_session_runtime_info_optional_cwd():
     assert info.cwd is None
     assert info.running is False
     assert info.model is None
+
+# ── Avatar generation from a user-uploaded base image ────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_regenerate_avatar_from_image_uses_reference_and_seeds_clips(monkeypatch, _patch_db):
+    """A user-uploaded base image is passed inline as a data-URI reference,
+    the description is folded into the prompt, and the regenerated portrait
+    becomes active with batch-0 clips seeded."""
+    import json as _json
+
+    from modules.auth import User
+    from modules.companion import AvatarClip
+    from modules.companion import Persona
+    from services.companion import avatar_service
+
+    _, SessionLocal = _patch_db
+    calls: dict = {}
+
+    async def fake_gen(**kwargs):
+        calls.update(kwargs)
+        return _json.dumps({"success": True, "urls": ["http://provider/gen.png"]})
+
+    async def fake_download(url):
+        return b"\x89PNG\r\n\x1a\n", "image/png"
+
+    monkeypatch.setattr(avatar_service, "image_generation_tool", fake_gen)
+    monkeypatch.setattr(avatar_service, "_download_to_bytes", fake_download)
+
+    with SessionLocal() as db:
+        user = User(username="imguser", password_hash="x", is_active=True, can_use=True)
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+        persona = Persona(
+            user_id=user.id,
+            definition_json=_json.dumps({"name": "小光", "biological_type": "人类", "appearance": "金发绿眼"}),
+            system_prompt_extras="",
+            is_complete=True,
+        )
+        db.add(persona)
+        db.commit()
+        db.refresh(persona)
+
+        asset = await avatar_service.regenerate_avatar_from_image(
+            db, user.id, persona, b"ref-image-bytes", "image/png", description="把背景改成纯白",
+        )
+        db.refresh(asset)
+
+        ref = calls["reference_image"]
+        assert ref.startswith("data:image/png;base64,")
+        assert "把背景改成纯白" in calls["prompt"]
+        assert asset.active is True
+        payload = _json.loads(asset.prompt_json)
+        # Audit row keeps a marker, not the base64 blob.
+        assert payload["reference_image"] == "data:image/png;base64"
+        assert payload["feedback"] == "把背景改成纯白"
+
+        clips = db.query(AvatarClip).filter(AvatarClip.user_id == user.id).count()
+        assert clips > 0
+
+
+@pytest.mark.asyncio
+async def test_regenerate_avatar_from_image_refuses_when_persona_incomplete(_patch_db):
+    """The from-image path must require a finalized persona so a half-finished
+    onboarding cannot burn image-gen quota on a portrait without a prompt."""
+    import json as _json
+
+    from modules.auth import User
+    from modules.companion import Persona
+    from services.companion.avatar_service import AvatarGenerationError
+    from services.companion.avatar_service import regenerate_avatar_from_image
+
+    _, SessionLocal = _patch_db
+    with SessionLocal() as db:
+        user = User(username="incomplete", password_hash="x", is_active=True, can_use=True)
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+        persona = Persona(
+            user_id=user.id, definition_json=_json.dumps({"name": "小光"}), system_prompt_extras="", is_complete=False,
+        )
+        db.add(persona)
+        db.commit()
+        with pytest.raises(AvatarGenerationError, match="persona is incomplete"):
+            await regenerate_avatar_from_image(db, user.id, persona, b"ref", "image/png")
+
+
+def test_avatar_from_image_route_validation(_patch_db, monkeypatch):
+    """POST /avatar/from-image rejects unsupported MIME with 415 and maps an
+    incomplete persona to 409 (provider failures stay 502)."""
+    from components import get_db
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from modules.auth import get_current_session
+    from services.companion import AvatarGenerationError
+    from services.rate_limit import limiter
+
+    from api.v1 import companion as companion_api
+
+    _, SessionLocal = _patch_db
+    app = FastAPI()
+    app.state.limiter = limiter
+
+    def _test_get_db():
+        db = SessionLocal()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    fake_user = type("U", (), {"id": 1})()
+
+    async def _fake_auth():
+        return fake_user, None
+
+    app.dependency_overrides[get_db] = _test_get_db
+    app.dependency_overrides[get_current_session] = _fake_auth
+    app.include_router(companion_api.router)
+    client = TestClient(app)
+
+    resp = client.post(
+        "/api/companion/avatar/from-image",
+        json={"image": "aGVsbG8=", "content_type": "image/bmp"},
+    )
+    assert resp.status_code == 415
+
+    async def boom(db, user_id, persona, data, content_type, description=None, style="portrait"):
+        raise AvatarGenerationError("persona is incomplete; finish onboarding first")
+
+    monkeypatch.setattr(companion_api, "regenerate_avatar_from_image", boom)
+    resp = client.post(
+        "/api/companion/avatar/from-image",
+        json={"image": "aGVsbG8=", "content_type": "image/png"},
+    )
+    assert resp.status_code == 409
+    assert resp.json()["detail"]["error"]

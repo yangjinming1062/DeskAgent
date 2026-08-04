@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import contextlib
 import json
 import secrets
@@ -209,7 +210,15 @@ async def _download_to_bytes(url: str) -> tuple[bytes, str] | None:
         return None
 
 
-async def _generate_and_persist(db: Session, user_id: int, *, prompt: str, style: str, feedback: str | None = None) -> AvatarAsset:
+async def _generate_and_persist(
+    db: Session,
+    user_id: int,
+    *,
+    prompt: str,
+    style: str,
+    feedback: str | None = None,
+    reference_image: str | None = None,
+) -> AvatarAsset:
     """Shared image-gen + persistence core. Calls the provider, downloads the
     result into the persistent ``companion-avatars/`` dir (temp-media URLs are
     24h-TTL, so we mirror locally to survive cross-device login and Tier-3
@@ -228,6 +237,7 @@ async def _generate_and_persist(db: Session, user_id: int, *, prompt: str, style
         quality=_AVATAR_QUALITY,
         n=1,
         user_id=user_id,
+        reference_image=reference_image,
     )
 
     source_url = _extract_first_url(result_json)
@@ -249,6 +259,9 @@ async def _generate_and_persist(db: Session, user_id: int, *, prompt: str, style
     prompt_payload: dict = {"prompt": prompt, "style": style, "source_url": source_url}
     if feedback is not None:
         prompt_payload["feedback"] = feedback
+    if reference_image is not None:
+        # Audit row keeps a marker (``data:image/png``), not the base64 blob.
+        prompt_payload["reference_image"] = reference_image.split(",", 1)[0]
     asset = AvatarAsset(
         user_id=user_id,
         prompt_json=json.dumps(prompt_payload, ensure_ascii=False),
@@ -388,6 +401,56 @@ async def regenerate_avatar(db: Session, user_id: int, persona: Persona, feedbac
     if feedback and feedback.strip():
         prompt = f"{prompt}. Adjustment requested: {feedback.strip()}"
     asset = await _generate_and_persist(db, user_id, prompt=prompt, style=style, feedback=feedback)
+    invalidate_user_clips(db, user_id)
+    await _seed_batch0(db, user_id, asset)
+    return asset
+
+
+def _reference_data_uri(data: bytes, content_type: str) -> str:
+    """Encode upload bytes as a ``data:<mime>;base64,...`` reference.
+
+    The provider consumes the seed image inline (MiniMax ``subject_reference``,
+    Gemini ``inlineData``, or the vision-describe step) so generation does not
+    depend on the backend being publicly reachable — a signed URL breaks when
+    ``public_url_prefix`` is empty because providers reject private/localhost
+    hosts outright.
+    """
+    mime = content_type.split(";")[0].strip().lower() or "image/png"
+    return f"data:{mime};base64,{base64.b64encode(data).decode('ascii')}"
+
+
+async def regenerate_avatar_from_image(
+    db: Session,
+    user_id: int,
+    persona: Persona,
+    data: bytes,
+    content_type: str,
+    description: str | None = None,
+    style: str = _DEFAULT_STYLE,
+) -> AvatarAsset:
+    """Generate a portrait using a user-uploaded image as the subject
+    reference, optionally refined by free-text ``description``, then re-seed
+    the clip pipeline.
+
+    The upload is NOT used as-is (``upload_avatar`` serves that path); the
+    provider re-renders it so the result meets the portrait seed contract
+    (flat white background, clean framing) even when the user's image has a
+    busy background. The reference is passed inline as a data URI, so no temp
+    file is created and no public URL is required.
+    """
+    if not persona.is_complete:
+        raise AvatarGenerationError("persona is incomplete; finish onboarding first")
+    prompt = _build_prompt(persona, style)
+    if description and description.strip():
+        prompt = f"{prompt}. {description.strip()}"
+    asset = await _generate_and_persist(
+        db,
+        user_id,
+        prompt=prompt,
+        style=style,
+        feedback=description,
+        reference_image=_reference_data_uri(data, content_type),
+    )
     invalidate_user_clips(db, user_id)
     await _seed_batch0(db, user_id, asset)
     return asset

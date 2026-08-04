@@ -124,6 +124,11 @@ class ImageGenResult:
 class ImageGenProvider(BaseProvider):
     service_type: ServiceType = ServiceType.image_gen
 
+    # False → text-only wire protocol; ``image_generation_tool`` folds a
+    # vision-model description of the reference into the prompt first.
+    # True → provider consumes ``reference_image`` natively.
+    supports_reference_image: ClassVar[bool] = False
+
     @abstractmethod
     async def generate(self, req: ImageGenRequest) -> ImageGenResult: ...
 

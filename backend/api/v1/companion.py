@@ -11,6 +11,7 @@ from modules.auth import get_current_session
 from modules.auth import LoginRecord
 from modules.auth import User
 from modules.companion import AvatarAssetResponse
+from modules.companion import AvatarFromImageRequest
 from modules.companion import AvatarGenerateRequest
 from modules.companion import AvatarHistoryResponse
 from modules.companion import AvatarUploadRequest
@@ -26,6 +27,7 @@ from services.companion import list_avatar_history
 from services.companion import list_tts_voices
 from services.companion import normalize_voice_language
 from services.companion import PersonaValidationError
+from services.companion import regenerate_avatar_from_image
 from services.companion import resolve_companion_asset_path
 from services.companion import resolve_uploaded_avatar_path
 from services.companion import update_persona
@@ -147,6 +149,43 @@ async def upload_avatar_route(
         if "persona is incomplete" in str(exc):
             raise HTTPException(status_code=409, detail={"error": "请先完成 onboarding 再上传形象", "reason": str(exc)})
         raise HTTPException(status_code=502, detail={"error": "伙伴形象上传失败，请稍后重试", "reason": str(exc)})
+    return AvatarAssetResponse.model_validate(asset)
+
+
+@router.post("/avatar/from-image", response_model=AvatarAssetResponse, status_code=201)
+@limiter.limit(f"{SETTINGS.companion_avatar_generate_rate_limit_per_minute}/minute")
+async def avatar_from_image_route(
+    request: Request,  # noqa: ARG001 — required by @limiter.limit
+    body: AvatarFromImageRequest,
+    auth: tuple[User, LoginRecord] = Depends(get_current_session),
+    db: Session = Depends(get_db),
+) -> AvatarAssetResponse:
+    """Generate a portrait using a user-uploaded image as the subject
+    reference, optionally refined by ``description``. The upload is re-rendered
+    to a seed-compliant portrait (flat white background, clean framing), never
+    used as-is — ``POST /avatar/upload`` keeps the raw image."""
+    user, _ = auth
+    content_type = (body.content_type or "image/png").split(";")[0].strip().lower()
+    if content_type not in ALLOWED_AVATAR_UPLOAD_MIME_TYPES:
+        raise HTTPException(status_code=415, detail={"error": "仅支持 PNG / JPEG / WebP / GIF 图片"})
+    try:
+        data = base64.b64decode(body.image)
+    except ValueError:
+        raise HTTPException(status_code=400, detail={"error": "图片编码无效"})
+    persona = get_or_create_persona(db, user.id)
+    try:
+        asset = await regenerate_avatar_from_image(
+            db,
+            user.id,
+            persona,
+            data,
+            content_type,
+            description=body.description,
+        )
+    except AvatarGenerationError as exc:
+        if "persona is incomplete" in str(exc):
+            raise HTTPException(status_code=409, detail={"error": "请先完成 onboarding 再基于图片生成形象", "reason": str(exc)})
+        raise HTTPException(status_code=502, detail={"error": "伙伴形象生成失败，请稍后重试", "reason": str(exc)})
     return AvatarAssetResponse.model_validate(asset)
 
 

@@ -190,6 +190,10 @@ DeskAgent 伙伴的"人格"与"形象"是跨 Backend↔Desktop 的核心契约�
 
 **avatar.regenerate** JSON-RPC：带可选 `feedback` 文本（如"头发长一点"），折入 prompt 做增量重生成。旧 clip 在新 portrait 成功后才失效（避免生图失败时用户失去全部 clip），然后 batch-0 重新排队。
 
+**基于上传图片生成**（`POST /api/companion/avatar/from-image`）：用户上传一张图片作为角色基准形象，可选附一段描述。上传图以 `data:` URI 作为 `reference_image` 内联传给生图 provider（不依赖后端公网可达，provider 会拒绝私有/localhost 地址），让 provider 以该图为角色参照重新渲染出符合种子图契约的 portrait（纯白背景、干净构图）——用户原图可能背景复杂或构图不符，不能直接作种子图；"直接用原图"由 `POST /api/companion/avatar/upload` 提供。参考图随请求内联传递，不落盘。
+
+`reference_image` 是 image_gen 的通用能力：原生图生图 provider 直接消费种子图（MiniMax `subject_reference`、Gemini `inlineData`）；纯文本生图 provider（MiMo/OpenAI 兼容、Zhipu）没有原生 i2i，`image_generation_tool` 先经用户配置的 chat（视觉）provider 把参考图描述为文本再折入 prompt——因此依赖用户 chat 模型具备视觉能力。clip Tier-2 keyframe 走同一工具入口，同样生效。
+
 ### 动画 clip 流水线（AvatarClip）
 
 `AvatarClip` 表存以 portrait 为种子的图生视频 clip，每个 clip 绑定一个 `scene` 标签（与 Desktop 动画状态机状态对齐：`idle` / `speaking` / `thinking` / `happy` / ...）。scene 目录 + 批次优先级定义在 `services/companion/clip_service.CLIP_SCENES`。

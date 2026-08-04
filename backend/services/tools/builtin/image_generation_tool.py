@@ -5,14 +5,36 @@ from components import get_logger
 from components import save_file
 from components import SESSION_LOCAL
 from components import tool_error
+from sqlalchemy.orm import Session
 
 from .. import ALWAYS_AVAILABLE
 from .. import REGISTRY
+from ...llm import BaseProvider
+from ...llm import describe_reference_image
 from ...llm import execute_with_fallback
 from ...llm import ImageGenRequest
+from ...llm import ImageGenResult
 from ...llm import MissingLlmConfigError
 
 logger = get_logger(__name__)
+
+
+async def _generate_with_reference(req: ImageGenRequest, provider: BaseProvider, db: Session | None, user_id: int | None) -> ImageGenResult:
+    """Run ``provider.generate``, honoring ``reference_image`` on every
+    provider: native ones (MiniMax/Gemini) get the seed image as-is; text-only
+    ones get a vision-model description of it folded into the prompt first."""
+    if req.reference_image and not provider.supports_reference_image:
+        description = await describe_reference_image(db, user_id, req.reference_image)
+        req = ImageGenRequest(
+            prompt=f"{req.prompt}. Subject reference: {description}",
+            n=req.n,
+            size=req.size,
+            aspect_ratio=req.aspect_ratio,
+            quality=req.quality,
+            reference_image=None,
+            response_format=req.response_format,
+        )
+    return await provider.generate(req)
 
 
 async def image_generation_tool(
@@ -24,22 +46,23 @@ async def image_generation_tool(
     reference_image: str | None = None,
     **kwargs,  # noqa: ARG001 — absorbs dispatcher extras
 ) -> str:
-    """Image generation via the per-service provider chain (MiniMax image-01
-    or OpenAI DALL·E 3). base64 payloads are saved locally and returned as
-    our own /api/media/files/<id> URLs so the LLM can safely reference them
-    in image_url parts even after the upstream CDN evicts.
+    """Image generation via the per-service provider chain. base64 payloads
+    are saved locally and returned as our own /api/media/files/<id> URLs so
+    the LLM can safely reference them in image_url parts even after the
+    upstream CDN evicts.
 
-    ``reference_image`` is the URL or base64 of a seed image the provider
-    should keep consistent with the generation (MiniMax wires this through
-    as ``subject_reference``). Used by the companion Tier-2 keyframe path to
-    keep the same character across the tier ladder."""
+    ``reference_image`` is the URL or base64 of a seed image the output
+    should stay consistent with. Used by the companion avatar-from-image
+    flow and the Tier-2 keyframe path to keep the same character across
+    generations. Providers consume it natively (MiniMax ``subject_reference``,
+    Gemini ``inlineData``) or via a folded-in vision description."""
     req = ImageGenRequest(prompt=prompt, size=size, n=n, reference_image=reference_image)
     try:
         if user_id is not None:
             with SESSION_LOCAL() as db:
-                result = await execute_with_fallback(db, user_id, "image_gen", call_fn=lambda p: p.generate(req))
+                result = await execute_with_fallback(db, user_id, "image_gen", call_fn=lambda p: _generate_with_reference(req, p, db, user_id))
         else:
-            result = await execute_with_fallback(None, None, "image_gen", call_fn=lambda p: p.generate(req))
+            result = await execute_with_fallback(None, None, "image_gen", call_fn=lambda p: _generate_with_reference(req, p, None, None))
     except MissingLlmConfigError:
         return tool_error("图片生成服务未配置")
     except Exception as e:

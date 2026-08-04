@@ -166,7 +166,7 @@ DeskAgent 区别于一切既有桌面宠物 / 桌面 Agent 的核心，在于伙
 
 ### 4.4 形象确认
 
-portrait 生成完成，silhouette 散开变为完整形象展示。操作：**确认** / **重新生成**（`avatar.regenerate`，旧 clip 在新 portrait 成功后才失效重排）/ **自己上传**（`POST /api/companion/avatar/upload`，base64 JSON；上传图无云端参考，衍生 clip 可能更慢）。不一次生成多个候选让用户挑——单次确认 + 反馈式重生成更经济也更聚焦。
+portrait 生成完成，silhouette 散开变为完整形象展示。操作：**确认** / **重新生成**（`avatar.regenerate`，旧 clip 在新 portrait 成功后才失效重排）/ **自己上传**（上传一张图片作为角色基准形象）。上传图先进入预览态而非直接生效：用户可**就用这张**（`POST /api/companion/avatar/upload`，原图即 portrait，无云端角色参照）或**以它为基准重绘**（`POST /api/companion/avatar/from-image`，可附加一段描述；上传图作为 provider 的 `reference_image` 角色参照重新渲染成符合种子图契约的 portrait——用户原图背景复杂/构图不符时由 provider 重绘修正；原生 i2i provider 直接消费参考图，纯文本生图 provider 先经视觉模型描述再折入 prompt）。不一次生成多个候选让用户挑——单次确认 + 反馈式重生成更经济也更聚焦。
 
 ### 4.5 音色确认
 

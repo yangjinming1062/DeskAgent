@@ -1,5 +1,7 @@
+import json
 from typing import ClassVar
 
+import httpx
 import pytest
 from services.llm import ImageGenRequest
 from services.llm import MissingLlmConfigError
@@ -529,10 +531,6 @@ class TestExecuteWithFallback:
 
 # ── MiniMax providers (commit 2) ────────────────────────────────────
 
-import json
-
-import httpx
-
 
 def _async_handler(responses: list):
     """Build an async httpx handler that returns the next queued response."""
@@ -668,6 +666,215 @@ class TestMiniMaxImageGen:
             )
         )
         assert provider.raw_client() is None
+
+    @pytest.mark.asyncio
+    async def test_generate_with_reference_passes_subject_reference(self):
+        captured: list[dict] = []
+
+        async def capture(req: httpx.Request) -> httpx.Response:
+            captured.append(json.loads(req.content))
+            return httpx.Response(200, json={"base_resp": {"status_code": 0}, "data": {"image_base64": ["aGVsbG8="]}})
+
+        provider = self._make_provider(capture)
+        await provider.generate(ImageGenRequest(prompt="x", reference_image="https://ref/seed.png"))
+        assert captured[0]["subject_reference"] == [{"type": "character", "image_file": "https://ref/seed.png"}]
+        assert captured[0]["prompt"] == "x"
+
+
+class TestReferenceImageCapability:
+    def test_native_providers_support_reference(self):
+        from services.llm.providers.gemini import GeminiImageGenProvider
+        from services.llm.providers.minimax import MiniMaxImageGenProvider
+
+        assert MiniMaxImageGenProvider.supports_reference_image is True
+        assert GeminiImageGenProvider.supports_reference_image is True
+
+    def test_text_only_providers_declare_no_native_support(self):
+        from services.llm.providers.zhipu import ZhipuImageGenProvider
+
+        assert MiMoImageGenProvider.supports_reference_image is False
+        assert ZhipuImageGenProvider.supports_reference_image is False
+
+
+class TestResolveReferenceBytes:
+    @pytest.mark.asyncio
+    async def test_data_uri_decoded(self):
+        from services.llm.providers._reference import resolve_reference_bytes
+
+        data, mime = await resolve_reference_bytes("data:image/png;base64,aGVsbG8=")
+        assert data == b"hello"
+        assert mime == "image/png"
+
+    @pytest.mark.asyncio
+    async def test_rejects_non_http_scheme(self):
+        from services.llm.providers._reference import resolve_reference_bytes
+
+        with pytest.raises(ValueError, match="data URI or http"):
+            await resolve_reference_bytes("file:///etc/passwd")
+
+    @pytest.mark.asyncio
+    async def test_rejects_private_host(self):
+        from services.llm.providers._reference import resolve_reference_bytes
+
+        with pytest.raises(RuntimeError, match="unsafe reference host"):
+            await resolve_reference_bytes("http://127.0.0.1/ref.png")
+
+
+class TestGeminiImageGen:
+    def _make_provider(self, handler):
+        from services.llm.providers.gemini import GeminiImageGenProvider
+
+        client = httpx.AsyncClient(
+            base_url="https://generativelanguage.googleapis.com",
+            transport=httpx.MockTransport(handler),
+        )
+        provider = GeminiImageGenProvider(
+            ProviderConfig(
+                base_url="https://generativelanguage.googleapis.com",
+                api_key="sk-gemini",
+                model="gemini-2.5-flash-image",
+                service_type=ServiceType.image_gen,
+                provider_name="gemini",
+            )
+        )
+        provider._client = client
+        return provider
+
+    @staticmethod
+    def _ok_response():
+        return httpx.Response(
+            200,
+            json={"candidates": [{"content": {"parts": [{"inlineData": {"mimeType": "image/png", "data": "aGVsbG8="}}]}}]},
+        )
+
+    @pytest.mark.asyncio
+    async def test_generate_text_only(self):
+        captured: list[dict] = []
+
+        async def capture(req: httpx.Request) -> httpx.Response:
+            captured.append(json.loads(req.content))
+            return self._ok_response()
+
+        provider = self._make_provider(capture)
+        result = await provider.generate(ImageGenRequest(prompt="a cat"))
+        assert result.images[0].b64 == "aGVsbG8="
+        assert captured[0]["contents"][0]["parts"] == [{"text": "a cat"}]
+
+    @pytest.mark.asyncio
+    async def test_generate_with_data_uri_reference(self):
+        captured: list[dict] = []
+
+        async def capture(req: httpx.Request) -> httpx.Response:
+            captured.append(json.loads(req.content))
+            return self._ok_response()
+
+        provider = self._make_provider(capture)
+        await provider.generate(ImageGenRequest(prompt="re-render", reference_image="data:image/jpeg;base64,AAA="))
+        parts = captured[0]["contents"][0]["parts"]
+        assert parts[0]["inlineData"] == {"mimeType": "image/jpeg", "data": "AAA="}
+        assert parts[1] == {"text": "re-render"}
+
+    @pytest.mark.asyncio
+    async def test_generate_with_url_reference_downloads(self, monkeypatch):
+        import services.llm.providers.gemini.image as gemini_image
+
+        captured: list[dict] = []
+
+        async def capture(req: httpx.Request) -> httpx.Response:
+            captured.append(json.loads(req.content))
+            return self._ok_response()
+
+        async def fake_resolve(url: str):
+            assert url == "https://cdn.example/ref.png"
+            return b"\x89PNG", "image/png"
+
+        monkeypatch.setattr(gemini_image, "resolve_reference_bytes", fake_resolve)
+        provider = self._make_provider(capture)
+        await provider.generate(ImageGenRequest(prompt="x", reference_image="https://cdn.example/ref.png"))
+        parts = captured[0]["contents"][0]["parts"]
+        assert parts[0]["inlineData"] == {"mimeType": "image/png", "data": "iVBORw=="}
+        assert parts[1] == {"text": "x"}
+
+
+
+
+class TestMiMoImageGenReference:
+    """The real MiMo provider is text-only: a caller-supplied
+    ``reference_image`` never reaches ``images.generate`` (the tool layer
+    strips it after folding a vision description into the prompt)."""
+
+    @pytest.mark.asyncio
+    async def test_generate_ignores_reference_image(self):
+        from services.llm.providers.mimo import MiMoImageGenProvider
+
+        seen: dict = {}
+
+        class _Images:
+            async def generate(self, **kwargs):
+                seen["kwargs"] = kwargs
+                return type("_Resp", (), {"data": [type("_Item", (), {"url": "http://out/1.png", "b64_json": None})()]})()
+
+        provider = MiMoImageGenProvider(
+            ProviderConfig(
+                base_url="https://api.xiaomimimo.com/v1",
+                api_key="sk-mimo",
+                model="dall-e-3",
+                service_type=ServiceType.image_gen,
+                provider_name="mimo",
+            )
+        )
+        provider._client = type("_Client", (), {"images": _Images()})()
+        result = await provider.generate(ImageGenRequest(prompt="a cat", reference_image="https://ref/seed.png"))
+        assert result.images[0].url == "http://out/1.png"
+        assert seen["kwargs"]["prompt"] == "a cat"
+        assert "reference" not in seen["kwargs"]
+
+
+class TestZhipuImageGenReference:
+    """The real Zhipu provider is text-only: ``reference_image`` is ignored at
+    the wire level (the tool layer folds a description into the prompt)."""
+
+    def _make_provider(self, handler):
+        from services.llm.providers.zhipu import ZhipuImageGenProvider
+
+        client = _mock_http(handler)
+        provider = ZhipuImageGenProvider(
+            ProviderConfig(
+                base_url="https://open.bigmodel.cn/api/paas/v4",
+                api_key="sk-zhipu",
+                model="glm-image",
+                service_type=ServiceType.image_gen,
+                provider_name="zhipu",
+            )
+        )
+        provider._client = client
+        return provider
+
+    @pytest.mark.asyncio
+    async def test_generate_ignores_reference_image(self, monkeypatch):
+        import services.llm.providers.zhipu.image as zhipu_image
+
+        captured: list[dict] = []
+
+        async def capture(req: httpx.Request) -> httpx.Response:
+            captured.append(json.loads(req.content))
+            return httpx.Response(200, json={"data": [{"url": "https://cdn.bigmodel.cn/1.png"}]})
+
+        async def cdn_handler(req: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, content=b"\x89PNG")
+
+        provider = self._make_provider(capture)
+        # Patch AFTER building the provider so ``_make_provider``'s own client
+        # keeps the real transport; only the anonymous CDN download client is
+        # swapped for the mock.
+        cdn_client = httpx.AsyncClient(transport=httpx.MockTransport(cdn_handler))
+        monkeypatch.setattr(zhipu_image.httpx, "AsyncClient", lambda **kw: cdn_client)
+
+        result = await provider.generate(ImageGenRequest(prompt="a cat", reference_image="https://ref/seed.png"))
+        assert result.images[0].b64 == "iVBORw=="
+        assert captured[0]["prompt"] == "a cat"
+        assert "reference" not in captured[0]
+
 
 
 class TestMiniMaxTTS:

@@ -37,6 +37,7 @@ from .providers import VideoGenProvider
 from .providers import VideoGenRequest
 from .providers import VideoJobStatus
 from .providers import VoiceDesignResult
+from .reference_image import describe_reference_image
 from .user_config import resolve_user_llm_config
 from .voice_catalog import default_voice_id
 from .voice_catalog import pick_voice_id
@@ -87,5 +88,6 @@ __all__ = [
     "ClassifiedError",
     "FailoverReason",
     "compress_history_if_needed",
+    "describe_reference_image",
     "resolve_user_llm_config",
 ]
