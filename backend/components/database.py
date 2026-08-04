@@ -24,6 +24,9 @@ def session_scope() -> Iterator[Session]:
     db = SESSION_LOCAL()
     try:
         yield db
+    except Exception:
+        db.rollback()
+        raise
     finally:
         db.close()
 

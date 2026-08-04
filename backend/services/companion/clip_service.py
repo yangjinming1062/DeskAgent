@@ -547,6 +547,14 @@ async def _finalize_terminal_videos(db: Session) -> None:
             db.refresh(clip)
             _emit_clip_event(clip.user_id, clip)
         elif job.status == "failed":
+            logger.warning(
+                "video job %s failed for clip %s (reason: %s): %s",
+                job.id,
+                clip.id,
+                job.error_reason,
+                job.error_message,
+                extra={"user_id": clip.user_id, "scene": clip.scene},
+            )
             clip.video_job_id = None
             _arm_video_retry(clip)
             db.commit()
