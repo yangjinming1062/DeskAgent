@@ -983,10 +983,13 @@ def terminal_tool(
                 output = output[:head_chars] + truncated_notice + output[-tail_chars:]
             output = clean_output(output.strip()) if output else ""
             exit_note = _interpret_exit_code(command, returncode)
+            error_msg = result.get("error")
+            if not error_msg and returncode != 0:
+                error_msg = f"Process exited with non-zero code {returncode}"
             result_dict = {
                 "output": output,
                 "exit_code": returncode,
-                "error": None,
+                "error": error_msg,
             }
             if exit_note:
                 result_dict["exit_code_meaning"] = exit_note

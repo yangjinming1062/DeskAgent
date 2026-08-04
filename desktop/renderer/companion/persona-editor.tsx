@@ -79,8 +79,15 @@ export function PersonaSection() {
       setEditing(false)
 
       if (window.confirm('角色更新啦，要重新生成我的形象吗？')) {
-        clearClipCatalog()
-        void requestGateway('avatar.regenerate', {}).catch(() => {})
+        try {
+          const res = (await requestGateway('avatar.regenerate', {})) as { queued?: boolean } | undefined
+
+          if (res?.queued) {
+            clearClipCatalog()
+          }
+        } catch {
+          /* generation failed or rejected */
+        }
       }
     } catch {
       setHint('保存失败了，稍后再试')

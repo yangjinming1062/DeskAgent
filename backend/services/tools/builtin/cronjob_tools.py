@@ -43,7 +43,10 @@ def _handle_cron_action(
         case "create":
             if not schedule or not prompt:
                 return tool_error("schedule and prompt are required for create")
-            job = create_job(user_id=user_id, prompt=prompt, schedule=schedule, name=name or "cron job", deliver=deliver)
+            try:
+                job = create_job(user_id=user_id, prompt=prompt, schedule=schedule, name=name or "cron job", deliver=deliver)
+            except ValueError as e:
+                return tool_error(str(e))
             return json.dumps({"success": True, "message": f"Cron job '{job.get('name')}' created.", "job": job}, ensure_ascii=False)
         case "list":
             jobs = list_jobs(user_id=user_id)
