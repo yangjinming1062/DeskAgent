@@ -19,14 +19,13 @@ logger = get_logger(__name__)
 
 async def video_generation_tool(
     prompt: str,
-    llm_config: dict,
     duration: int = 6,
     resolution: str = "768P",
     first_frame_image: str | None = None,
     aspect_ratio: str | None = None,
     user_id: int | None = None,
     session_id: str | None = None,
-    **kwargs,
+    **_,
 ) -> str:
     """Video generation via MiniMax Hailuo. Submits an async job and waits
     up to ``video_gen_tool_wait_seconds`` (default 180s) for completion;
@@ -88,7 +87,7 @@ async def video_generation_tool(
     )
 
 
-async def video_generate_status_tool(task_id: int, llm_config: dict, user_id: int | None = None, **kwargs) -> str:
+async def video_generate_status_tool(task_id: int, user_id: int | None = None, **_) -> str:
     """Poll the status of a previously-submitted video generation job."""
     if user_id is None:
         return tool_error("需要用户上下文")

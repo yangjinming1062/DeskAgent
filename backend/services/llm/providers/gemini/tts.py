@@ -88,8 +88,8 @@ class GeminiTTSProvider(TTSProvider):
         text: str,
         *,
         voice: str = "",
-        fmt: str = "mp3",
-        speed: float | None = None,
+        fmt: str = "mp3",  # noqa: ARG002 — abstract TTS contract; gemini ignores
+        speed: float | None = None,  # noqa: ARG002 — abstract TTS contract; gemini ignores
     ) -> TTSResult:
         chosen_voice = voice or self.VOICE_CATALOG[0]["id"]
         if voice != chosen_voice:

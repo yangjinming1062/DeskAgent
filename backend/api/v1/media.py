@@ -105,7 +105,7 @@ async def serve_file(file_id: str):
 @router.post("/stt")
 @limiter.limit(f"{SETTINGS.media_stt_rate_limit_per_minute}/minute")
 async def speech_to_text(
-    request: Request,
+    request: Request,  # noqa: ARG001 — required by @limiter.limit
     audio_file: UploadFile = File(...),
     auth_data: tuple[User, LoginRecord] = Depends(get_current_session),
 ):
@@ -161,7 +161,7 @@ async def speech_to_text(
 @router.post("/tts")
 @limiter.limit(f"{SETTINGS.media_tts_rate_limit_per_minute}/minute")
 async def text_to_speech(
-    request: Request,
+    request: Request,  # noqa: ARG001 — required by @limiter.limit
     text: str = Form(...),
     voice: str = Form(default=""),
     auth_data: tuple[User, LoginRecord] = Depends(get_current_session),
@@ -205,7 +205,7 @@ async def text_to_speech(
 @router.post("/image_gen")
 @limiter.limit(f"{SETTINGS.media_image_gen_rate_limit_per_minute}/minute")
 async def image_gen(
-    request: Request,
+    request: Request,  # noqa: ARG001 — required by @limiter.limit
     prompt: str = Form(...),
     auth_data: tuple[User, LoginRecord] = Depends(get_current_session),
 ):
@@ -255,7 +255,7 @@ async def image_gen(
 @router.post("/video_gen")
 @limiter.limit(f"{SETTINGS.media_video_gen_rate_limit_per_minute}/minute")
 async def video_gen(
-    request: Request,
+    request: Request,  # noqa: ARG001 — required by @limiter.limit
     prompt: str = Form(...),
     duration: int = Form(default=6),
     resolution: str = Form(default="768P"),

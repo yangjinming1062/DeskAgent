@@ -42,6 +42,10 @@ class PersonaValidationError(ValueError):
     """``field`` is the offending field name when known; ``None`` for
     structural errors (e.g. not-a-dict)."""
 
+    def __init__(self, message: str, field: str | None = None) -> None:
+        super().__init__(message)
+        self.field = field
+
 
 def _validate_definition(definition: dict[str, Any]) -> dict[str, str]:
     if not isinstance(definition, dict):
@@ -64,12 +68,11 @@ def _validate_definition(definition: dict[str, Any]) -> dict[str, str]:
 
 def get_or_create_persona(db: Session, user_id: int) -> Persona:
     """Look up the user's persona, or stage an insert for one if none
-    exists. P1-16: does NOT ``db.commit()`` so the caller can keep the
-    whole ``user_profile + persona`` write in a single transaction
-    (ARCH §7.5 single-PUT dual-write contract). The previous version
-    committed here, which would commit any unflushed Memory rows from
-    ``record_user_profile`` and create a half-write state if the
-    follow-up commit failed.
+    exists. Does NOT ``db.commit()`` so the caller can keep the whole
+    ``user_profile + persona`` write in a single transaction (ARCH §7.5
+    single-PUT dual-write contract) — committing here would flush any
+    uncommitted Memory rows from ``record_user_profile`` and create a
+    half-write state if the follow-up commit failed.
     """
     persona = db.query(Persona).filter(Persona.user_id == user_id).one_or_none()
     if persona is None:
@@ -137,21 +140,7 @@ def get_onboarding_state(db: Session, user_id: int) -> dict[str, Any]:
 
 
 def submit_onboarding_field(db: Session, user_id: int, field: str, value: str | None) -> dict[str, Any]:
-    """Persist one onboarding answer incrementally. ``None``/empty clears
-    the field (lets the user redo a question). Returns the post-submit
-    state so the desktop gets ``next_field`` without a separate round-trip.
-
-    P1-7 (backend audit): once the persona is finalized
-    (``is_complete=True``) the draft is supposed to be frozen — the
-    canonical persona lives in the explicit columns and the system
-    prompt. The previous code would still accept \`onboarding.submit\`
-    and silently rewrite \`definition_json\`; the avatar / system
-    prompt would then read the polluted draft and the user would
-    see "old persona, new image / new system prompt" without an
-    error. Reject with \`PersonaValidationError\` (which the JSON-RPC
-    handler maps to -32602 Invalid Params) so the desktop gets a
-    clear "persona already finalized" message.
-    """
+    """Persist one onboarding answer incrementally."""
     if field not in ONBOARDING_FIELDS:
         raise PersonaValidationError(f"unknown onboarding field: {field!r}", field)
     persona = get_or_create_persona(db, user_id)

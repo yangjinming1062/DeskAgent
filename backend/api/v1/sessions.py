@@ -3,6 +3,7 @@ from typing import Literal
 from common import get_router
 from components import attachments_gc_session
 from components import get_db
+from components import get_logger
 from components import SEARCH_INPUT_MAX_LEN
 from components import SESSION_PREVIEW_MAX_CHARS
 from components import SETTINGS
@@ -29,8 +30,6 @@ from sqlalchemy.orm import selectinload
 from sqlalchemy.orm import Session
 
 router = get_router(dependencies=[Depends(get_current_session)])
-
-from components import get_logger
 
 logger = get_logger(__name__)
 

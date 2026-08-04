@@ -15,7 +15,7 @@ from ...llm import TTSResult
 logger = get_logger(__name__)
 
 
-async def text_to_speech_tool(text: str, llm_config: dict, voice: str = "", user_id: int | None = None, **kwargs) -> str:
+async def text_to_speech_tool(text: str, voice: str = "", user_id: int | None = None, **_) -> str:
     """TTS via the provider chain (MiMo chat completions API or MiniMax TTS)."""
 
     def _call(p):

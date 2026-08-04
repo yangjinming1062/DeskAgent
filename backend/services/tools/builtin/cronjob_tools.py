@@ -88,7 +88,7 @@ def cronjob(
     schedule: str | None = None,
     name: str | None = None,
     deliver: str = "local",
-    **kwargs,
+    **_,
 ) -> str:
     normalized = (action or "").strip().lower()
     try:

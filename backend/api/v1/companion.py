@@ -30,20 +30,12 @@ from services.companion import resolve_companion_asset_path
 from services.companion import resolve_uploaded_avatar_path
 from services.companion import update_persona
 from services.companion import upload_avatar
-from services.companion.asset_store import verify_signed_asset_request
-from services.companion.asset_store import verify_signed_avatar_request
+from services.companion import verify_signed_asset_request
+from services.companion import verify_signed_avatar_request
 from services.rate_limit import limiter
 from sqlalchemy.orm import Session
 
 router = get_router(dependencies=[Depends(get_current_session)])
-
-
-def _persona_to_response(persona) -> PersonaResponse:
-    return PersonaResponse.model_validate(persona)
-
-
-def _avatar_to_response(asset) -> AvatarAssetResponse:
-    return AvatarAssetResponse.model_validate(asset)
 
 
 @router.get("/persona", response_model=PersonaResponse)
@@ -52,7 +44,7 @@ def get_persona(
     db: Session = Depends(get_db),
 ) -> PersonaResponse:
     user, _ = auth
-    return _persona_to_response(get_or_create_persona(db, user.id))
+    return PersonaResponse.model_validate(get_or_create_persona(db, user.id))
 
 
 @router.put("/persona", response_model=PersonaResponse)
@@ -66,7 +58,7 @@ def put_persona(
         persona = update_persona(db, user.id, body.model_dump(exclude_none=True))
     except PersonaValidationError as exc:
         raise HTTPException(status_code=400, detail={"error": str(exc), "field": getattr(exc, "field", None)})
-    return _persona_to_response(persona)
+    return PersonaResponse.model_validate(persona)
 
 
 @router.get("/persona/extras")
@@ -99,7 +91,7 @@ def get_avatar(
 ) -> AvatarAssetResponse | None:
     user, _ = auth
     asset = get_active_avatar(db, user.id)
-    return _avatar_to_response(asset) if asset else None
+    return AvatarAssetResponse.model_validate(asset) if asset else None
 
 
 @router.get("/avatar/history", response_model=AvatarHistoryResponse)
@@ -108,13 +100,13 @@ def get_avatar_history(
     db: Session = Depends(get_db),
 ) -> AvatarHistoryResponse:
     user, _ = auth
-    return AvatarHistoryResponse(items=[_avatar_to_response(a) for a in list_avatar_history(db, user.id)])
+    return AvatarHistoryResponse(items=[AvatarAssetResponse.model_validate(a) for a in list_avatar_history(db, user.id)])
 
 
 @router.post("/avatar", response_model=AvatarAssetResponse, status_code=201)
 @limiter.limit(f"{SETTINGS.companion_avatar_generate_rate_limit_per_minute}/minute")
 async def post_avatar(
-    request: Request,
+    request: Request,  # noqa: ARG001 — required by @limiter.limit
     body: AvatarGenerateRequest,
     auth: tuple[User, LoginRecord] = Depends(get_current_session),
     db: Session = Depends(get_db),
@@ -124,27 +116,22 @@ async def post_avatar(
     try:
         asset = await generate_avatar(db, user.id, persona, style=body.style)
     except AvatarGenerationError as exc:
-        # P2-3: onboarding-not-complete is a client error, surface as 409
-        # Conflict so the desktop can show "finish onboarding first" instead
-        # of "image-gen failed — try again". Provider failures still 502.
+        # Incomplete onboarding is a client error (409), not a provider failure (502).
         if "persona is incomplete" in str(exc):
             raise HTTPException(status_code=409, detail={"error": "请先完成 onboarding 再生成形象", "reason": str(exc)})
         raise HTTPException(status_code=502, detail={"error": "伙伴形象生成失败，请稍后重试", "reason": str(exc)})
-    return _avatar_to_response(asset)
+    return AvatarAssetResponse.model_validate(asset)
 
 
 @router.post("/avatar/upload", response_model=AvatarAssetResponse, status_code=201)
 @limiter.limit(f"{SETTINGS.companion_avatar_upload_rate_limit_per_minute}/minute")
 async def upload_avatar_route(
-    request: Request,
+    request: Request,  # noqa: ARG001 — required by @limiter.limit
     body: AvatarUploadRequest,
     auth: tuple[User, LoginRecord] = Depends(get_current_session),
     db: Session = Depends(get_db),
 ) -> AvatarAssetResponse:
-    """Accept a user-supplied image as the portrait (plan §3.4 self-upload).
-
-    Takes base64 JSON (``{image, content_type}``) so the desktop's REST IPC —
-    which speaks JSON, not multipart — can post the picked file directly."""
+    """Takes base64 JSON so the desktop's REST IPC — which speaks JSON, not multipart — can post the picked file directly."""
     user, _ = auth
     content_type = (body.content_type or "image/png").split(";")[0].strip().lower()
     if content_type not in ALLOWED_AVATAR_UPLOAD_MIME_TYPES:
@@ -160,18 +147,14 @@ async def upload_avatar_route(
         if "persona is incomplete" in str(exc):
             raise HTTPException(status_code=409, detail={"error": "请先完成 onboarding 再上传形象", "reason": str(exc)})
         raise HTTPException(status_code=502, detail={"error": "伙伴形象上传失败，请稍后重试", "reason": str(exc)})
-    return _avatar_to_response(asset)
+    return AvatarAssetResponse.model_validate(asset)
 
 
-# Public file route — the companion <img>/<video> tags load avatars
-# without JWT headers, but Contract P2-15 requires a signed URL with
-# 5-min HMAC expiry so a leaked URL is useless past the window and a
-# brute-force token scan is infeasible.
 public_router = get_router()
 
 
 @public_router.get("/avatar/file/{filename}")
-async def serve_avatar_file(filename: str, expires: int | None = None, sig: str | None = None):
+async def serve_avatar_file(filename: str, expires: int | None = None, sig: str | None = None) -> FileResponse:
     if not verify_signed_avatar_request(filename, expires, sig):
         raise HTTPException(status_code=403, detail="Invalid or expired signature")
     result = resolve_uploaded_avatar_path(filename)
@@ -182,13 +165,8 @@ async def serve_avatar_file(filename: str, expires: int | None = None, sig: str 
 
 
 @public_router.get("/asset/{user_id}/{filename:path}")
-async def serve_companion_asset(user_id: int, filename: str, expires: int | None = None, sig: str | None = None):
-    """Serve a durable companion clip asset (tier-2 keyframes / tier-3 video).
-
-    Contract P2-15: HMAC-signed URL with 5-min expiry. The signature
-    binds (user_id, filename, expires_at) so a leak can't be replayed
-    cross-user or cross-file, and a token scan is bounded by the
-    5-minute window."""
+async def serve_companion_asset(user_id: int, filename: str, expires: int | None = None, sig: str | None = None) -> FileResponse:
+    """Serve a durable companion clip asset (tier-2 keyframes / tier-3 video)."""
     if not verify_signed_asset_request(user_id, filename, expires, sig):
         raise HTTPException(status_code=403, detail="Invalid or expired signature")
     result = resolve_companion_asset_path(user_id, filename)

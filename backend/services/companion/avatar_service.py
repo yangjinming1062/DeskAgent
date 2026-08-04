@@ -2,15 +2,20 @@ import asyncio
 import contextlib
 import json
 import secrets
+from io import BytesIO
 from pathlib import Path
+from urllib.parse import urlparse
 
 import httpx
 from components import get_file_path
 from components import get_logger
+from components import is_safe_outbound
 from components import safe_json_loads
 from components import SETTINGS
 from modules.companion import AvatarAsset
 from modules.companion import Persona
+from PIL import Image
+from PIL import ImageChops
 from sqlalchemy.orm import Session
 
 from ..tools.builtin import image_generation_tool
@@ -26,6 +31,9 @@ _AVATAR_SIZE: str = "1024x1024"
 _AVATAR_QUALITY: str = "standard"
 _UPLOAD_EXTS: dict[str, str] = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp", "image/gif": "gif"}
 ALLOWED_AVATAR_UPLOAD_MIME_TYPES: frozenset[str] = frozenset(_UPLOAD_EXTS)
+# Per-channel 8-bit value above which a portrait pixel counts as flat-white
+# background and is keyed to transparent.
+_WHITE_ALPHA_THRESHOLD = 240
 
 # Chinese onboarding chips → English tokens for image-gen providers; free-text
 # inputs pass through verbatim via _to_en_token's table.get(value, value).
@@ -69,9 +77,8 @@ def _build_prompt(persona: Persona, style: str) -> str:
     appearance = definition.get("appearance") or ""
     background = definition.get("background") or ""
 
-    # P2-16: \`style\` defaults to "portrait" so the previous \`a portrait
-    # portrait of ...\` literal slipped into every prompt. Use \`style\` only
-    # when it differs from the default to keep the prompt natural.
+    # ``style`` defaults to "portrait"; use it only when it differs from the
+    # default so the prompt stays natural.
     style_prefix = f"{style} " if style and style != _DEFAULT_STYLE else ""
     parts: list[str] = [f"a {style_prefix}portrait of a {species}, named {name}" if species else f"a {style_prefix}portrait of {name}"]
     if gender:
@@ -80,14 +87,11 @@ def _build_prompt(persona: Persona, style: str) -> str:
         parts.append(appearance)
     if background:
         parts.append(f"set in {background}")
-    # P1-14: ask the provider for a flat white background so the
-    # renderer's chroma-key CSS filter can pull the background out
-    # cleanly. The backend ``_persist_portrait_bytes`` then
-    # post-processes the result: when the provider returns JPEG we
-    # re-encode to PNG and synthesize a clean alpha channel from
-    # the white pixels (Pillow optional — falls back to JPEG if
-    # Pillow is missing). The result composites cleanly over the
-    # desktop without the previous CSS-circular-mask cheat.
+    # Ask the provider for a flat white background so the renderer's
+    # chroma-key CSS filter can pull it out cleanly. ``_persist_portrait_bytes``
+    # post-processes: when the provider returns JPEG we re-encode to PNG and
+    # synthesize a clean alpha channel from the white pixels (Pillow optional —
+    # falls back to JPEG if Pillow is missing).
     parts.append("digital illustration, clean linework, full character on pure flat white background, no scenery, no gradient, no shadow")
     return ", ".join(parts)
 
@@ -96,14 +100,14 @@ async def _persist_portrait_bytes(data: bytes, content_type: str) -> tuple[str, 
     """Write portrait bytes to the persistent ``companion-avatars/`` dir and
     return ``(bare_storage_path, file_id, ext)``. Mirrors ``upload_avatar``'s
     storage path so generated portraits survive the temp-media TTL window (24h)
-    and are reachable on a fresh device login (P0-1).
+    and are reachable on a fresh device login.
 
-    P1-14: prefer PNG over JPEG when the provider can serve it. The
-    image-gen pipeline returns JPEG by default (smaller payload, no
-    alpha); we re-encode to PNG via Pillow when available so the
-    desktop's chroma-key filter has a clean alpha channel to work
-    with. If Pillow is missing we fall back to whatever the provider
-    returned — the CSS filter still keys out the white background.
+    Prefer PNG over JPEG when the provider can serve it. The image-gen
+    pipeline returns JPEG by default (smaller payload, no alpha); we re-encode
+    to PNG via Pillow when available so the desktop's chroma-key filter has a
+    clean alpha channel to work with. If Pillow is missing we fall back to
+    whatever the provider returned — the CSS filter still keys out the white
+    background.
     """
     src_content_type = content_type.split(";")[0].strip().lower()
     src_ext = _UPLOAD_EXTS.get(src_content_type, "jpg")
@@ -115,9 +119,6 @@ async def _persist_portrait_bytes(data: bytes, content_type: str) -> tuple[str, 
     final_ext = "png"
     final_bytes: bytes | None = None
     try:
-        from io import BytesIO
-        from PIL import Image
-
         with Image.open(BytesIO(data)) as img:
             if img.mode in ("RGBA", "LA") or "transparency" in img.info:
                 alpha_img = img.convert("RGBA")
@@ -125,33 +126,15 @@ async def _persist_portrait_bytes(data: bytes, content_type: str) -> tuple[str, 
                 # Synthesize a clean alpha channel: white background
                 # → transparent. This makes the chroma-key CSS filter
                 # work uniformly regardless of the provider's
-                # background choice. P0-1 (backend audit): the
-                # previous code assigned the PIL ``Image`` object
-                # directly to ``final_bytes`` and let the for-loop
-                # use Python ``pixels[x, y]`` reads — that's
-                # quadratic-time per pixel AND the final file write
-                # raised ``TypeError`` because ``BufferedWriter.write``
-                # needs a buffer-protocol object, not an ``Image``.
-                # Encode the canvas back to PNG bytes via ``Image.save``
-                # and use numpy-style array ops for the threshold
-                # sweep so we don't block the event loop on a 1M-pixel
-                # Python loop either.
+                # background choice. Thresholding goes through Pillow's
+                # C-level channel ops — a Python per-pixel sweep would
+                # block the event loop on a megapixel portrait.
                 if img.mode != "RGB":
                     img = img.convert("RGB")
-                rgba = Image.new("RGBA", img.size, (255, 255, 255, 0))
-                pixels = img.load()
-                out = rgba.load()
-                w, h = img.size
-                for y in range(h):
-                    row_src = pixels[y]
-                    row_out = out[y]
-                    for x in range(w):
-                        r, g, b = row_src[x]
-                        if r > 240 and g > 240 and b > 240:
-                            row_out[x] = (255, 255, 255, 0)
-                        else:
-                            row_out[x] = (r, g, b, 255)
-                alpha_img = rgba
+                masks = [ch.point(lambda v: 255 if v > _WHITE_ALPHA_THRESHOLD else 0) for ch in img.split()]
+                is_background = ImageChops.darker(ImageChops.darker(masks[0], masks[1]), masks[2])
+                alpha_img = img.copy()
+                alpha_img.putalpha(ImageChops.invert(is_background))
             # Always re-encode to PNG bytes via Image.save — never
             # hand a PIL Image to ``open(...).write`` (TypeError).
             buf = BytesIO()
@@ -167,21 +150,16 @@ async def _persist_portrait_bytes(data: bytes, content_type: str) -> tuple[str, 
     with open(filepath, "wb") as f:
         f.write(final_bytes if final_bytes is not None else data)
 
-    # P0-3 (contract audit): the row stores the *bare* path under
-    # ``companion-avatars/`` rather than a signed URL — the previous
-    # code persisted a 5-minute-TTL signed URL which expired on
-    # cross-device re-login, restart-after-5-min, or any device
-    # that only refreshes via /api/companion/avatar at gateway
-    # boot. ``get_active_avatar`` (and the public file route)
-    # re-sign on read so the URL is always fresh.
+    # The row stores the *bare* path under ``companion-avatars/`` rather than
+    # a signed URL, so it never expires. ``get_active_avatar`` and the public
+    # file route re-sign on read so the URL is always fresh.
     return _avatar_storage_path(file_id, final_ext), file_id, final_ext
 
 
 def _avatar_storage_path(file_id: str, ext: str) -> str:
     """Return the canonical *bare* storage path for an uploaded /
-    generated portrait. Returned as ``companion-avatars/<file_id>.<ext>``
-    so the URL is regenerated by ``get_active_avatar`` /
-    ``avatar_router`` at every read — see P0-3 audit."""
+    generated portrait, as ``companion-avatars/<file_id>.<ext>`` — re-signed
+    to a URL by ``get_active_avatar`` at every read."""
     return f"companion-avatars/{file_id}.{ext}"
 
 
@@ -193,12 +171,11 @@ async def _download_to_bytes(url: str) -> tuple[bytes, str] | None:
     friendly ``AvatarGenerationError`` instead of crashing on a missing
     temp file.
 
-    P0-2 (backend audit): the previous ``follow_redirects=True`` allowed
-    an attacker who poisoned the LLM's image-gen response to redirect
-    the backend into ``http://169.254.169.254/...`` and exfiltrate cloud
-    metadata. Disable redirects at the HTTP layer and reuse the existing
-    ``is_safe_outbound`` check (which blocks loopback, link-local,
-    private, multicast, and reserved IPs at the DNS-resolution layer).
+    Remote URLs are fetched with ``follow_redirects=False`` and pass the
+    ``is_safe_outbound`` check (which blocks loopback, link-local, private,
+    multicast, and reserved IPs at the DNS-resolution layer) so a poisoned
+    provider response can't redirect into cloud metadata or other internal
+    hosts.
     """
     if "/api/media/files/" in url:
         fid = url.rsplit("/", 1)[-1].split("?")[0]
@@ -207,19 +184,24 @@ async def _download_to_bytes(url: str) -> tuple[bytes, str] | None:
             path, content_type = res
             return Path(path).read_bytes(), content_type
     # Out-of-scope provider URL: same SSRF guard as send_message_tool.
-    from urllib.parse import urlparse
-
     parsed = urlparse(url)
     if parsed.scheme not in ("http", "https"):
         raise RuntimeError(f"refusing to fetch non-http asset url: {url}")
     hostname = parsed.hostname or ""
-    from services.tools.builtin.send_message_tool import is_safe_outbound
 
     safe, reason = is_safe_outbound(hostname)
     if not safe:
         raise RuntimeError(f"refusing to fetch unsafe outbound host: {hostname} ({reason})")
+
+    # TOCTOU: re-verify the connect-time destination so a DNS rebinding
+    # between the pre-check and the TCP connect can't land on a private host.
+    def _verify_connect_ip(request: httpx.Request) -> None:
+        verify, _ = is_safe_outbound(request.url.host or "")
+        if not verify:
+            raise httpx.ConnectError(f"refusing to connect to {request.url.host} (TOCTOU: DNS rebinding)")
+
     try:
-        async with httpx.AsyncClient(timeout=120.0, follow_redirects=False) as client:
+        async with httpx.AsyncClient(timeout=120.0, follow_redirects=False, event_hooks={"connect": [_verify_connect_ip]}) as client:
             resp = await client.get(url)
             resp.raise_for_status()
             return resp.content, (resp.headers.get("content-type") or "image/jpeg").split(";")[0].strip().lower()
@@ -229,11 +211,11 @@ async def _download_to_bytes(url: str) -> tuple[bytes, str] | None:
 
 async def _generate_and_persist(db: Session, user_id: int, *, prompt: str, style: str, feedback: str | None = None) -> AvatarAsset:
     """Shared image-gen + persistence core. Calls the provider, downloads the
-    result into the persistent ``companion-avatars/`` dir (P0-1: temp-media
-    URLs are 24h-TTL so we must mirror locally to survive cross-device login
-    and Tier-3 escalation across days), deactivates the previous active asset,
-    inserts + commits the new row. Does NOT touch clips — callers compose
-    clip lifecycle around this.
+    result into the persistent ``companion-avatars/`` dir (temp-media URLs are
+    24h-TTL, so we mirror locally to survive cross-device login and Tier-3
+    escalation across days), deactivates the previous active asset, inserts +
+    commits the new row. Does NOT touch clips — callers compose clip lifecycle
+    around this.
 
     ``image_generation_tool`` catches provider errors internally and returns a
     JSON ``{success: false}`` string — it never raises. So this function
@@ -258,11 +240,10 @@ async def _generate_and_persist(db: Session, user_id: int, *, prompt: str, style
     data, content_type = downloaded
     asset_url, file_id, final_ext = await _persist_portrait_bytes(data, content_type)
 
-    # P1-15: best-effort delete the previous active portrait's file on
-    # disk. We rely on the row's ``asset_url`` to compute the path; rows
-    # written before the persistent-dir migration (P0-1) pointed at temp-
-    # media URLs that have long since been GC'd, in which case the
-    # delete is a no-op.
+    # Best-effort delete the previous active portrait's file on disk. We rely
+    # on the row's ``asset_url`` to compute the path; rows from before the
+    # persistent-dir migration pointed at temp-media URLs that have long since
+    # been GC'd, in which case the delete is a no-op.
     previous = db.query(AvatarAsset).filter(AvatarAsset.user_id == user_id, AvatarAsset.active.is_(True)).one_or_none()
     db.query(AvatarAsset).filter(AvatarAsset.user_id == user_id, AvatarAsset.active.is_(True)).update({"active": False})
     prompt_payload: dict = {"prompt": prompt, "style": style, "source_url": source_url}
@@ -280,14 +261,10 @@ async def _generate_and_persist(db: Session, user_id: int, *, prompt: str, style
     db.commit()
     db.refresh(asset)
 
-    # P0 (contract re-audit): re-sign the bare storage path
-    # before returning so the caller (REST route or WS handler
-    # emitting ``avatar.regenerated``) hands the renderer a
-    # URL it can actually ``<img src>`` immediately. Without
-    # this, ``generate_avatar`` / ``regenerate_avatar`` /
-    # ``upload_avatar`` returned the bare path and the renderer's
-    # portrait panel silently 404'd until the next
-    # ``avatar.list_clips`` round-trip re-signed the URL.
+    # Re-sign the bare storage path before returning so the caller (REST
+    # route or WS handler emitting ``avatar.regenerated``) hands the renderer
+    # a URL it can ``<img src>`` immediately — otherwise the portrait panel
+    # 404s until the next ``avatar.list_clips`` round-trip re-signs it.
     asset.asset_url = build_signed_avatar_url(file_id, final_ext)
 
     if previous is not None:
@@ -327,7 +304,7 @@ async def _seed_batch0(db: Session, user_id: int, asset: AvatarAsset) -> None:
     last: Exception | None = None
     for attempt in range(3):
         try:
-            await seed_all_clips(db, user_id=user_id, portrait_asset_url=asset.asset_url, portrait_id=asset.id)
+            await seed_all_clips(db, user_id=user_id, portrait_id=asset.id)
 
             return
         except Exception as e:
@@ -345,16 +322,9 @@ async def generate_avatar(db: Session, user_id: int, persona: Persona, style: st
     the provider fails so the route can map it to a 502 with a friendly
     payload.
 
-    P0-6 (backend re-audit): the prior P1-7 fix moved
-    ``invalidate_user_clips`` BEFORE the generation. That was
-    BACKWARDS — if generation fails (provider outage, rate
-    limit, network) the user loses every clip with no path to
-    recovery until the next list_clips call. ARCH §7.3 + the
-    desktop's P0-1.2 fix (commit 6200f32) BOTH promise
-    'portrait 重生使衍生 clip 失效——只有新 portrait 成功后才失效
-    旧 clip'. Move the invalidate back to AFTER a successful
-    generation so the failure path leaves existing clips
-    intact.
+    Old derivative clips are invalidated only AFTER the new portrait
+    succeeds — if generation fails (provider outage, rate limit, network)
+    the existing clips survive (ARCH §7.3).
     """
     if not persona.is_complete:
         raise AvatarGenerationError("persona is incomplete; finish onboarding first")
@@ -393,16 +363,6 @@ def list_avatar_history(db: Session, user_id: int, limit: int = 20) -> list[Avat
 
 
 def _re_sign_avatar_url(asset: AvatarAsset) -> None:
-    """P0-3 (contract audit): rewrite the stored ``asset_url`` in
-    place to a fresh signed URL on every read. The row now stores
-    the bare storage path (see ``_avatar_storage_path``); without
-    this step cross-device re-login / restart-after-5-min would
-    hand the renderer a 403 on every portrait fetch. The rewrite
-    is in-place (no DB write) so the next read still gets a fresh
-    signature.
-    """
-    from .asset_store import build_signed_avatar_url
-
     if not asset.asset_url or not asset.asset_url.startswith("companion-avatars/"):
         return
     filename = asset.asset_url.split("/", 1)[1]
@@ -427,13 +387,6 @@ async def regenerate_avatar(db: Session, user_id: int, persona: Persona, feedbac
     prompt = _build_prompt(persona, style)
     if feedback and feedback.strip():
         prompt = f"{prompt}. Adjustment requested: {feedback.strip()}"
-    # P0-6 (backend re-audit): the prior P1-7 fix put
-    # ``invalidate_user_clips`` BEFORE the generation — that's
-    # BACKWARDS. A failed regenerate would delete every clip and
-    # leave the user with no path to recovery. Move the invalidate
-    # back to AFTER a successful generation so the failure path
-    # leaves existing clips intact, matching ARCH §7.3.
-    # Invalidate after success so a failed regen leaves existing clips intact.
     asset = await _generate_and_persist(db, user_id, prompt=prompt, style=style, feedback=feedback)
     invalidate_user_clips(db, user_id)
     await _seed_batch0(db, user_id, asset)
@@ -452,11 +405,10 @@ async def upload_avatar(db: Session, user_id: int, data: bytes, content_type: st
     filepath = avatars_dir / f"{file_id}.{ext}"
     with open(filepath, "wb") as f:
         f.write(data)
-    # P0-3 (contract audit): persist the *bare* storage path; the
-    # route re-signs on read. See `_avatar_storage_path` docstring.
+    # Persist the *bare* storage path; the route re-signs on read.
     public_url = _avatar_storage_path(file_id, ext)
 
-    # P1-15: best-effort delete the previous portrait file.
+    # Best-effort delete the previous portrait file.
     previous = db.query(AvatarAsset).filter(AvatarAsset.user_id == user_id, AvatarAsset.active.is_(True)).one_or_none()
     db.query(AvatarAsset).filter(AvatarAsset.user_id == user_id, AvatarAsset.active.is_(True)).update({"active": False})
     asset = AvatarAsset(
@@ -470,19 +422,15 @@ async def upload_avatar(db: Session, user_id: int, data: bytes, content_type: st
     db.commit()
     db.refresh(asset)
 
-    # P0-2.2 (contract re-audit): re-sign before returning so the
-    # REST route / WS handler can hand the renderer a URL it can
-    # ``<img src>`` immediately. Without this, the upload route
-    # returned the bare path and the renderer's portrait panel
-    # 404'd until the next ``avatar.list_clips`` round-trip.
+    # Re-sign before returning so the REST route / WS handler can hand the
+    # renderer a URL it can ``<img src>`` immediately.
     asset.asset_url = build_signed_avatar_url(file_id, ext)
     invalidate_user_clips(db, user_id)
-    # Seed the Tier-1 baseline so the uploaded portrait gets the same
-    # clip ladder as a generated one. Without this, an uploaded portrait
-    # permanently sits at Tier 1 (P1-9). Note: clips generated from a
-    # user-supplied image may diverge stylistically — there's no cloud-
-    # side subject reference, so the seed-only portrait drives the
-    # first_frame_image as-is.
+    # Seed the Tier-1 baseline so the uploaded portrait gets the same clip
+    # ladder as a generated one — without it an uploaded portrait would
+    # permanently sit at Tier 1. Clips generated from a user-supplied image
+    # may diverge stylistically (no cloud-side subject reference), so the
+    # seed-only portrait drives the first_frame_image as-is.
     await _seed_batch0(db, user_id, asset)
     if previous is not None:
         _delete_portrait_file(previous.asset_url)

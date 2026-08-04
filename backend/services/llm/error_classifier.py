@@ -924,8 +924,8 @@ def _classify_400(
     error_code: str,
     body: dict,
     *,
-    provider: str,
-    model: str,
+    provider: str,  # noqa: ARG001 — kept for signature parity with _classify_by_status
+    model: str,  # noqa: ARG001 — kept for signature parity with _classify_by_status
     approx_tokens: int,
     context_length: int,
     num_messages: int = 0,
@@ -1046,7 +1046,7 @@ def _classify_400(
 
 def _classify_by_error_code(
     error_code: str,
-    error_msg: str,
+    error_msg: str,  # noqa: ARG001 — shared helper signature; message patterns handled by callers
     result_fn: _ClassifierBuilder,
 ) -> ClassifiedError | None:
     """Classify by structured error codes from the response body."""
@@ -1090,10 +1090,10 @@ def _classify_by_error_code(
 
 def _classify_by_message(
     error_msg: str,
-    error_type: str,
+    error_type: str,  # noqa: ARG001 — shared helper signature; patterns keyed on message text
     *,
-    approx_tokens: int,
-    context_length: int,
+    approx_tokens: int,  # noqa: ARG001 — kept for signature parity with _classify_400
+    context_length: int,  # noqa: ARG001 — kept for signature parity with _classify_400
     result_fn: _ClassifierBuilder,
 ) -> ClassifiedError | None:
     """Classify based on error message patterns when no status code is available."""

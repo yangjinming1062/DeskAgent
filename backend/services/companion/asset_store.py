@@ -10,13 +10,11 @@ from components import SETTINGS
 
 logger = get_logger(__name__)
 
-# Contract P2-15: companion asset URLs now carry a short-lived HMAC
-# signature so the no-auth file route can verify the request was
-# issued for the same user + filename. The previous design relied on
-# ``secrets.token_urlsafe(8)`` entropy as the only secret (64 bit)
-# which is brute-forceable in days at provider CDN scale. With a
-# signed URL the attacker must either know the server secret or
-# replay within the expiry window (5 min default).
+# Companion asset URLs carry a short-lived HMAC signature so the no-auth
+# file route can verify the request was issued for the same user + filename.
+# Entropy-only tokens (``secrets.token_urlsafe(8)``, 64 bit) are brute-forceable
+# in days at provider CDN scale; with a signed URL the attacker must either
+# know the server secret or replay within the expiry window (5 min default).
 _ASSET_URL_TTL_SECONDS = 300  # 5 min — desktop re-fetches frequently anyway
 
 logger.info("Signed asset URL TTL set", extra={"ttl_seconds": _ASSET_URL_TTL_SECONDS})
@@ -27,14 +25,12 @@ def _assets_root() -> Path:
 
 
 def _signing_key() -> bytes:
-    """HMAC key for asset-URL signing. P0 / P1-3 (contract audit):
-    no fallback to a derived-from-public-url key — that was a
-    security hole because ``public_url_prefix`` is public. The
-    backend's ``init_database`` fail-fast check guarantees the
-    env var is set in production; the field can still be empty
-    in tests (see ``_test_signer_key`` below) since ``engine`` is
-    passed there and the production guard short-circuits before
-    this point."""
+    """HMAC key for asset-URL signing. Never fall back to a key derived from
+    the public URL prefix — that would be forgeable because
+    ``public_url_prefix`` is public. ``init_database`` fail-fast checks the
+    env var is set in production; the field may be empty in tests (see
+    ``_test_signer_key``) since ``engine`` is passed there and the production
+    guard short-circuits before this point."""
     secret = getattr(SETTINGS, "companion_asset_signing_key", None)
     if secret:
         return secret.encode("utf-8")
@@ -114,8 +110,8 @@ def save_companion_asset(
 ) -> str:
     """Write asset bytes to companion-assets/<user_id>/<scene>_<kind>_<token>.<ext>
     and return the canonical *bare* storage path. The read paths
-    (list_clips / _emit_clip_event / public file route) re-sign on
-    demand so a 5-min signed URL never reaches the renderer (P0-3).
+    (list_clips / _emit_clip_event / public file route) re-sign on demand so
+    a 5-min signed URL never reaches the renderer.
 
     ``kind`` is "keyframes" (tier 2) or "video" (tier 3). A new token per
     write means regeneration does not collide with a cached older file.

@@ -53,6 +53,3 @@ def record_user_profile(db: Session, user_id: int, profile: dict[str, str]) -> N
             continue
         db.add(Memory(user_id=user_id, content=val, context=ctx, tags=_USER_PROFILE_TAGS_JSON))
         db.flush()
-
-
-__all__ = ["extract_user_profile", "record_user_profile", "build_user_profile_extras"]

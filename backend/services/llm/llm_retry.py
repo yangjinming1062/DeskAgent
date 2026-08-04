@@ -44,10 +44,9 @@ class LLMRuntimeError(Exception):
 async def _stream_with_timeout(stream: Any, timeout: float, *, model: str) -> AsyncIterator:
     """Wrap a streaming response so the *entire* iteration is deadline-bounded.
 
-    Per-chunk deadline catches "provider sends one chunk then stops" stalls
-    that a single ``wait_for(coro)`` cannot detect.  The underlying stream is
-    always aclose()'d in finally so a chat-loop cancel doesn't leak the HTTP
-    connection back to the SDK pool.
+    ``timeout`` is the budget for the whole stream, not per chunk. The
+    underlying stream is always aclose()'d in finally so a chat-loop cancel
+    doesn't leak the HTTP connection back to the SDK pool.
     """
     loop = asyncio.get_running_loop()
     deadline = loop.time() + timeout
@@ -125,14 +124,12 @@ async def call_with_retry(
         try:
             coro = client.chat.completions.create(**create_kwargs)
             if is_stream:
-                # Single deadline shared between connection and iteration.
-                # Previously the connection got min(timeout, 60) and the
-                # stream got a fresh full `timeout`, allowing ~2x the
-                # intended wall time.
-                connect_timeout = min(timeout, 60)
+                # One deadline covers connection + iteration so a stream can't
+                # spend ``timeout`` connecting and another ``timeout`` streaming;
+                # the connect leg is additionally capped at 60s.
                 loop = asyncio.get_running_loop()
-                deadline = loop.time() + connect_timeout
-                stream = await asyncio.wait_for(coro, timeout=connect_timeout)
+                deadline = loop.time() + timeout
+                stream = await asyncio.wait_for(coro, timeout=min(timeout, 60))
                 remaining = max(deadline - loop.time(), 0.1)
                 return _stream_with_timeout(stream, remaining, model=model)
             return await asyncio.wait_for(coro, timeout=timeout)

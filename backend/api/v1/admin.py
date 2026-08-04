@@ -8,6 +8,7 @@ from components import get_db
 from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import status
+from modules.auth import fingerprint_api_key
 from modules.auth import get_current_admin_token
 from modules.auth import hash_password
 from modules.auth import public_provider_slots
@@ -80,13 +81,6 @@ def toggle_user_active(user_id: int, _admin: str = Depends(get_current_admin_tok
 
 
 def _config_list_item(r: UserModelConfig) -> UserModelConfigListItem:
-    # Built explicitly (not from_attributes): the model has no ``*_api_key_set``
-    # properties, and provider_config is a JSON string that must be parsed.
-    # P0-5 (backend re-audit): never serialize the raw LLM key — return
-    # its SHA-256 fingerprint + a presence boolean so admins can confirm
-    # a key is configured without the ability to exfiltrate it.
-    from modules.auth.security import fingerprint_api_key
-
     return UserModelConfigListItem(
         user_id=r.user_id,
         llm_base_url=r.llm_base_url,

@@ -42,11 +42,9 @@ def _web_extract_available(user_settings: dict[str, str]) -> bool:
 
 
 def _build_backend_entry(func: Callable, availability_check: AvailabilityCheck) -> dict[str, Any]:
-    sig = inspect.signature(func)
     return {
         "func": func,
         "is_coro": inspect.iscoroutinefunction(func),
-        "accepts_kwargs": any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()),
         "availability_check": availability_check,
     }
 

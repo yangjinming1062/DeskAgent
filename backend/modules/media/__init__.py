@@ -1,1 +1,3 @@
-# VideoGenJob is imported lazily by callers; this package re-exports nothing.
+from .models import VideoGenJob
+
+__all__ = ["VideoGenJob"]

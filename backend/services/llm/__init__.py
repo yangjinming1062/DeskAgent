@@ -3,7 +3,6 @@ from .error_classifier import ClassifiedError
 from .error_classifier import classify_api_error
 from .error_classifier import FailoverReason
 from .llm_client import client_for_config
-from .llm_client import client_for_service
 from .llm_client import client_for_user
 from .llm_client import get_async_client
 from .llm_client import MissingLlmConfigError
@@ -17,8 +16,6 @@ from .llm_retry import LLMRuntimeError
 from .providers import aclose_all
 from .providers import BaseProvider
 from .providers import ChatProvider
-from .providers import ChatResult
-from .providers import ChatStreamEvent
 from .providers import default_model_for
 from .providers import ImageAsset
 from .providers import ImageGenProvider
@@ -49,7 +46,6 @@ from .voice_catalog import voices_for_provider
 __all__ = [
     "aclose_all",
     "client_for_config",
-    "client_for_service",
     "client_for_user",
     "get_async_client",
     "MissingLlmConfigError",
@@ -60,8 +56,6 @@ __all__ = [
     "execute_with_fallback",
     "BaseProvider",
     "ChatProvider",
-    "ChatResult",
-    "ChatStreamEvent",
     "ImageAsset",
     "ImageGenProvider",
     "ImageGenRequest",

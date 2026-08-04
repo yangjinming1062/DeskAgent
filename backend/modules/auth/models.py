@@ -51,11 +51,8 @@ class LoginRecord(ModelBase):
     user: Mapped[User] = relationship(back_populates="login_records")
 
 
-# P0-11 (backend re-audit): admin tokens used to have no DB
-# record at all — the only way to revoke was waiting for the
-# JWT's natural expiry. Mirror the user LoginRecord shape so
-# admins can be force-logged-out by setting ``is_active=False``
-# (e.g. on suspected key compromise).
+# Admin tokens carry a DB-backed ``jti`` so they can be force-revoked by
+# setting ``is_active=False`` (e.g. on suspected key compromise).
 class AdminSession(ModelBase):
     __tablename__ = "admin_sessions"
     __table_args__ = (UniqueConstraint("token_jti", name="uq_admin_sessions_token_jti"),)
@@ -77,26 +74,20 @@ class UserModelConfig(ModelBase, TimestampMixin):
     llm_base_url: Mapped[str] = mapped_column(String(255), default="")
     llm_api_key: Mapped[str] = mapped_column(Text, default="")
     llm_model_name: Mapped[str] = mapped_column(String(128), default="")
-    # STT configuration
     stt_base_url: Mapped[str] = mapped_column(String(255), default="")
     stt_api_key: Mapped[str] = mapped_column(Text, default="")
     stt_model_name: Mapped[str] = mapped_column(String(128), default="")
-    # TTS configuration
     tts_base_url: Mapped[str] = mapped_column(String(255), default="")
     tts_api_key: Mapped[str] = mapped_column(Text, default="")
     tts_model_name: Mapped[str] = mapped_column(String(128), default="")
-    # Image generation configuration
     image_gen_base_url: Mapped[str] = mapped_column(String(255), default="")
     image_gen_api_key: Mapped[str] = mapped_column(Text, default="")
     image_gen_model_name: Mapped[str] = mapped_column(String(128), default="")
-    # Video generation configuration
     video_gen_base_url: Mapped[str] = mapped_column(String(255), default="")
     video_gen_api_key: Mapped[str] = mapped_column(Text, default="")
     video_gen_model_name: Mapped[str] = mapped_column(String(128), default="")
-    # Per-user provider slots as JSON: an ordered list of
-    # ``{"name", "api_key", "base_url"}`` tried before capability credentials
-    # (services/llm/llm_client.resolve_provider_chain, tier 1). JSON shape so
-    # adding a provider family later needs no DB schema change.
+    # Per-user provider slots as JSON — schema-free so a new provider family
+    # can be added without a migration. Tried before capability credentials.
     provider_config: Mapped[str] = mapped_column(Text, default="[]")
 
     user: Mapped[User] = relationship(back_populates="model_config")

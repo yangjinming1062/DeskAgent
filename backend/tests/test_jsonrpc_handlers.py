@@ -21,7 +21,7 @@ def pin_handlers():
 def test_companion_set_disturbance_tier_normalizes_unknown(pin_handlers):
     """``companion.set_disturbance_tier`` must reject unknown tiers
     by falling back to the default — never raise JSONRPC_INVALID_PARAMS."""
-    from services.companion import set_disturbance_tier
+    from services.disturbance import set_disturbance_tier
     assert set_disturbance_tier(1, "quiet") == "quiet"
     assert set_disturbance_tier(1, "bogus") == "normal"
     assert set_disturbance_tier(1, "") == "normal"
@@ -30,8 +30,8 @@ def test_companion_set_disturbance_tier_normalizes_unknown(pin_handlers):
 def test_companion_check_affect_validates_inputs(pin_handlers):
     """``companion.check_affect`` accepts only ``idle_seconds >= 0`` (float)
     and ``local_hour`` in ``0..23``."""
-    from services.companion import is_quiet
-    from services.companion.disturbance import set_disturbance_tier
+    from services.disturbance import is_quiet
+    from services.disturbance import set_disturbance_tier
 
     # Service-level: handler normalizes bad inputs to 0 / -1.
     set_disturbance_tier(1, "normal")
@@ -41,8 +41,8 @@ def test_companion_check_affect_validates_inputs(pin_handlers):
 def test_companion_set_disturbance_tier_persists(pin_handlers):
     """Persistence contract: ``quiet`` survives across reads until
     overwritten (mirrors the P0-4 desktop re-report on reconnect)."""
-    from services.companion.disturbance import set_disturbance_tier
-    from services.companion.disturbance import get_disturbance_tier
+    from services.disturbance import set_disturbance_tier
+    from services.disturbance import get_disturbance_tier
 
     set_disturbance_tier(42, "quiet")
     assert get_disturbance_tier(42) == "quiet"

@@ -17,12 +17,12 @@ logger = get_logger(__name__)
 
 async def image_generation_tool(
     prompt: str,
-    llm_config: dict,
+    llm_config: dict,  # noqa: ARG001 — shared tool signature; dispatch passes it
     size: str = "1024x1024",
     n: int = 1,
     user_id: int | None = None,
     reference_image: str | None = None,
-    **kwargs,
+    **kwargs,  # noqa: ARG001 — absorbs dispatcher extras
 ) -> str:
     """Image generation via the per-service provider chain (MiniMax image-01
     or OpenAI DALL·E 3). base64 payloads are saved locally and returned as
@@ -31,8 +31,8 @@ async def image_generation_tool(
 
     ``reference_image`` is the URL or base64 of a seed image the provider
     should keep consistent with the generation (MiniMax wires this through
-    as ``subject_reference``). Used by the companion Tier-2 keyframe path
-    (P1-8) to keep the same character across the tier ladder."""
+    as ``subject_reference``). Used by the companion Tier-2 keyframe path to
+    keep the same character across the tier ladder."""
     req = ImageGenRequest(prompt=prompt, size=size, n=n, reference_image=reference_image)
     try:
         if user_id is not None:

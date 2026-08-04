@@ -115,7 +115,6 @@ def _build_turn_inputs(
     conv: Conversation,
     user_id: int,
     req: ChatRequest,
-    llm_config: dict,
     session_client_context: ChatRequestClientContext | None,
     user_settings: dict,
 ) -> _TurnInputs:

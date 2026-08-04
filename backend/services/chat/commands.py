@@ -30,7 +30,8 @@ class CommandContext:
     db_factory: type[Session]
 
 
-def cmd_yolo(args_str: str, ctx: CommandContext) -> dict:
+def cmd_yolo(_args_str: str, ctx: CommandContext) -> dict:  # noqa: ARG001 — dispatcher signature, yolo ignores args
+
     current = ctx.user_settings.get("yolo_mode", "false").lower()
     new_val = "false" if current == "true" else "true"
 

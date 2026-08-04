@@ -102,7 +102,7 @@ async def run_chat_turn(
         # Built once and shared by both the registry gate and tool dispatch
         # so schema visibility matches runtime behavior.
         effective_settings = _merge_session_settings(user_settings, runtime)
-        inputs = _build_turn_inputs(db, conv, user_id, req, llm_config, session_client_context, effective_settings)
+        inputs = _build_turn_inputs(db, conv, user_id, req, session_client_context, effective_settings)
 
         ask_consent = _make_ask_consent(emitter, sid, pending_compression_consents)
         compressed_messages = await compress_history_if_needed(

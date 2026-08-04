@@ -48,23 +48,18 @@ class TokenResponse(BaseModel):
 
 
 class ProviderSlot(BaseModel):
-    """One entry in a user's per-user provider_config (write shape)."""
-
     name: str = Field(min_length=1, max_length=64)
     api_key: str = Field(default="", max_length=255)
     base_url: str = Field(default="", max_length=255)
 
 
 class ProviderSlotPublic(BaseModel):
-    """Read shape: the api_key is masked as ``api_key_set``."""
-
     name: str
     base_url: str
     api_key_set: bool
 
 
 def public_provider_slots(raw: str | None) -> list[ProviderSlotPublic]:
-    """Parse a user's provider_config JSON into the masked read shape."""
     return [ProviderSlotPublic(name=s.get("name", ""), base_url=s.get("base_url", ""), api_key_set=bool(s.get("api_key"))) for s in json.loads(raw or "[]")]
 
 
@@ -112,15 +107,9 @@ class UserModelConfigRequest(BaseModel):
 
 
 class UserModelConfigListItem(BaseModel):
-    """Admin-facing view of ``UserModelConfig``.
-
-    P0-5 (backend re-audit): the previous schema returned
-    ``llm_api_key: str`` which serialized the raw API key value.
-    Any caller with an admin token could exfiltrate every user's
-    LLM credentials in one round-trip. Mirror the user-facing
-    ``UserModelConfigResponse`` shape — return the SHA-256
-    fingerprint (``fingerprint_api_key``) plus a ``*_set`` boolean
-    so admins can confirm a key is configured without seeing it.
+    """Admin-facing view of ``UserModelConfig`` — mirrors ``UserModelConfigResponse``
+    so admins see ``llm_api_key_fingerprint`` + ``*_set`` flags instead of raw
+    credentials.
     """
 
     model_config = ConfigDict(from_attributes=True)

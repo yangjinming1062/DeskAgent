@@ -56,9 +56,8 @@ def resolve_service_row(db: Session | None, user_id: int | None, prefix: str) ->
 
     DB row wins when present (an explicit user-cleared empty field is
     honored); when no row exists or no user context is available, falls
-    back to ``SETTINGS.<prefix>_*``. The renderer-facing handler
-    (``routers/user.py:model_config``) and the client builder
-    (``client_for_service``) both consult this so the field-shape stays
+    back to ``SETTINGS.<prefix>_*``. The renderer-facing handler and the
+    provider builder both consult this so the field-shape stays
     in one place.
     """
     config = db.query(UserModelConfig).filter(UserModelConfig.user_id == user_id).first() if db is not None and user_id is not None else None
@@ -238,19 +237,3 @@ def provider_for_service(db: Session | None, user_id: int | None, service_type: 
     config = resolve_provider_config(db, user_id, service_type)
     cls = resolve(config.service_type, config.provider_name)
     return cls(config)
-
-
-def client_for_service(db: Session | None, user_id: int | None, service_type: str = "llm") -> tuple[AsyncOpenAI, str]:
-    """Unified entry point for legacy callers: resolve config → ``(client, model_name)``.
-
-    This is a compatibility shim over :func:`provider_for_service` — kept
-    stable so existing chat / tts / stt / image_gen call sites (which use
-    ``client.images.generate()`` / ``client.chat.completions.create()``
-    directly) need no changes. Raises :class:`MissingLlmConfigError` when
-    the resolved provider is not OpenAI-compatible (e.g. MiniMax video).
-    """
-    provider = provider_for_service(db, user_id, service_type)
-    raw = provider.raw_client()
-    if raw is None:
-        raise MissingLlmConfigError(f"{service_type} provider '{provider.provider_name}' is not OpenAI-compatible; use provider_for_service() instead")
-    return raw, provider.config.model

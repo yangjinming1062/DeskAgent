@@ -1,6 +1,10 @@
 from .affect_check import check_affect
+from .asset_store import build_signed_asset_url
+from .asset_store import build_signed_avatar_url
 from .asset_store import delete_user_assets
 from .asset_store import resolve_companion_asset_path
+from .asset_store import verify_signed_asset_request
+from .asset_store import verify_signed_avatar_request
 from .avatar_service import ALLOWED_AVATAR_UPLOAD_MIME_TYPES
 from .avatar_service import AvatarGenerationError
 from .avatar_service import generate_avatar
@@ -14,10 +18,6 @@ from .clip_service import invalidate_user_clips
 from .clip_service import list_clips
 from .clip_service import scenes_for_batch
 from .clip_service import seed_all_clips
-from .disturbance import ALLOWED_TIERS
-from .disturbance import get_disturbance_tier
-from .disturbance import is_quiet
-from .disturbance import set_disturbance_tier
 from .escalation_loop import start_clip_escalation
 from .escalation_loop import stop_clip_escalation
 from .memory_bootstrap import build_user_profile_extras
@@ -37,11 +37,14 @@ from .voice_catalog import normalize_voice_language
 
 __all__ = [
     "ALLOWED_AVATAR_UPLOAD_MIME_TYPES",
-    "ALLOWED_TIERS",
     "CLIP_SCENES",
     "ONBOARDING_FIELDS",
     "AvatarGenerationError",
     "PersonaValidationError",
+    "build_signed_asset_url",
+    "build_signed_avatar_url",
+    "verify_signed_asset_request",
+    "verify_signed_avatar_request",
     "build_system_prompt_extras",
     "check_affect",
     "build_user_profile_extras",
@@ -50,11 +53,9 @@ __all__ = [
     "extract_user_profile",
     "generate_avatar",
     "get_active_avatar",
-    "get_disturbance_tier",
     "get_onboarding_state",
     "get_or_create_persona",
     "invalidate_user_clips",
-    "is_quiet",
     "list_avatar_history",
     "list_clips",
     "list_tts_voices",
@@ -66,7 +67,6 @@ __all__ = [
     "resolve_uploaded_avatar_path",
     "scenes_for_batch",
     "seed_all_clips",
-    "set_disturbance_tier",
     "start_clip_escalation",
     "stop_clip_escalation",
     "submit_onboarding_field",

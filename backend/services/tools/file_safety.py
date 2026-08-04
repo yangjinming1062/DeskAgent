@@ -101,13 +101,13 @@ def is_write_denied(path: str) -> bool:
 
 
 @functools.lru_cache(maxsize=4)
-def _read_block_messages(home: str) -> tuple[tuple[str, str], ...]:
+def _read_block_messages() -> tuple[tuple[str, str], ...]:
     """Pre-resolved (real_path, error_message) pairs for credential files."""
     return tuple((_join_real(_deskagent_home(), name), f"Blocked: cannot read DeskAgent credential file ({name}).") for name in DESKAGENT_CONTROL_FILE_BASENAMES)
 
 
 @functools.lru_cache(maxsize=4)
-def _read_block_prefixes(home: str) -> tuple[tuple[str, str], ...]:
+def _read_block_prefixes() -> tuple[tuple[str, str], ...]:
     deskagent_home = _deskagent_home()
     return (
         (_join_real(deskagent_home, "mcp-tokens") + os.sep, "Blocked: cannot read DeskAgent credential directory (~/.deskagent/mcp-tokens/)."),
@@ -128,11 +128,10 @@ def get_read_block_error(path: str) -> str | None:
     except Exception:
         return None
 
-    home = os.path.expanduser("~")
-    for real_path, message in _read_block_messages(home):
+    for real_path, message in _read_block_messages():
         if resolved == real_path:
             return message
-    for prefix, message in _read_block_prefixes(home):
+    for prefix, message in _read_block_prefixes():
         if resolved.startswith(prefix):
             return message
 

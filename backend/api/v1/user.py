@@ -139,7 +139,7 @@ def model_config(current: tuple[User, LoginRecord] = Depends(get_current_session
     Raw API keys are NEVER returned — the renderer only sees a
     ``*_api_key_set`` boolean per service so the UI can confirm whether a
     key is on file. Full keys are read server-side when the LLM/STT/TTS/
-    image-gen client is actually built (see ``core/llm/client_for_service``).
+    image-gen client is actually built.
     """
     user, _session = current
     llm_base_url, llm_api_key, llm_model_name = resolve_service_row(db, user.id, "llm")

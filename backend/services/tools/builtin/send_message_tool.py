@@ -1,85 +1,20 @@
-import ipaddress
 import json
-import socket
 from urllib.parse import urlparse
 
 import httpx
 from components import get_logger
+from components import is_safe_outbound
 from components import SESSION_LOCAL
 from components import tool_error
 from modules.ws import WSEvent
-from services.companion.disturbance import is_quiet
+from services.disturbance import is_quiet
 
 from .. import ALWAYS_AVAILABLE
 from .. import REGISTRY
 
-# ``is_quiet`` is imported from the leaf submodule (not the companion package
-# __init__) because companion.__init__ → avatar_service → tools.builtin → this
-# module forms a cycle if send_message_tool imports from the companion root.
-# ``_emit_companion_affect`` below is an inlined mirror of
-# companion/affect_emit.py::emit_companion_affect for the same reason — the
-# canonical copy lives in the companion package and is used by affect_check.
-
 logger = get_logger(__name__)
 
 WEBHOOK_TIMEOUT = 10.0
-
-# Cloud-metadata hostnames that may resolve to a public IP.
-BLOCKED_HOSTNAMES = frozenset(
-    {
-        "metadata.google.internal",
-        "metadata.goog",
-        "metadata",
-        "instance-data.ec2.internal",
-        "instance-data",
-        "kubernetes.default.svc",
-    }
-)
-
-
-def _ip_in_blocked(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
-    """Extra metadata/CGNAT ranges the stdlib is_private family misses."""
-    # CGNAT (RFC 6598).
-    if ip in ipaddress.ip_network("100.64.0.0/10"):
-        return True
-    # Aliyun ECS IAM metadata (not in any private range).
-    if ip == ipaddress.ip_address("100.100.100.200"):
-        return True
-    # IPv6 metadata (GCP/Azure).
-    if ip == ipaddress.ip_address("fd00:ec2::254"):
-        return True
-    return False
-
-
-def is_safe_outbound(host: str) -> tuple[bool, str]:
-    """Reject hosts that resolve to loopback, link-local, or private networks.
-
-    LLM-controlled ``target_webhook`` URLs must not be redirected at
-    internal services (e.g. cloud metadata ``169.254.169.254``, LAN admin
-    panels, or the loopback interface). We resolve the hostname at call
-    time so a DNS-rebinding trick still gets caught on the actual connect.
-    """
-    if not host:
-        return False, "missing host"
-    if host.lower() in BLOCKED_HOSTNAMES:
-        return False, f"refusing to connect to blocked hostname {host!r}"
-    try:
-        infos = socket.getaddrinfo(host, None)
-    except socket.gaierror as exc:
-        return False, f"DNS resolution failed: {exc}"
-
-    for info in infos:
-        ip_str = info[4][0]
-        try:
-            ip = ipaddress.ip_address(ip_str)
-        except ValueError:
-            return False, f"unparseable address {ip_str!r}"
-        if ip.is_loopback or ip.is_link_local or ip.is_private or ip.is_multicast or ip.is_reserved or ip.is_unspecified:
-            return False, f"refusing to connect to {ip_str} (loopback/link-local/private/multicast)"
-        if _ip_in_blocked(ip):
-            return False, f"refusing to connect to {ip_str} (cloud-metadata / CGNAT)"
-
-    return True, ""
 
 
 def _emit_companion_message(user_id: int, text: str, affect: str | None = None) -> None:
@@ -90,7 +25,7 @@ def _emit_companion_message(user_id: int, text: str, affect: str | None = None) 
     The backend never short-circuits the emit — the desktop owns the
     presentation gate so a future multi-replica deployment doesn't lose
     quiet/normal/proactive semantics when the WS and the chat turn land
-    on different replicas (P1-17)."""
+    on different replicas."""
     payload: dict = {"text": text}
     if affect:
         payload["affect"] = {"emotion": affect}
@@ -115,14 +50,13 @@ async def send_message_tool(
     # user's desktop as a companion.message (ARCHITECTURE.md §7.4 repurposes this
     # tool as the companion's proactive-reach-out channel).
     #
-    # P0-5 (contract audit): the desktop is the source of truth for the
-    # disturbance tier, but the backend also acts as a defense-in-depth
-    # gate. If a non-official client connects via /api/chat/ws, the
-    # desktop-side filter doesn't apply, so the backend suppresses at
-    # the source. Quiet → no WSEvent; normal/proactive → emit.
-    # The cron-driven autonomous turn also checks this gate before
-    # kicking off (services/scheduler/cron.py::_kick_autonomous_turn)
-    # so a quiet user doesn't burn LLM quota on suppressed messages.
+    # The desktop is the source of truth for the disturbance tier, but the
+    # backend also gates at the source as defense-in-depth: a non-official
+    # client connecting via /api/chat/ws bypasses the desktop-side filter, so
+    # quiet → no WSEvent, normal/proactive → emit. The cron-driven autonomous
+    # turn checks the same gate before kicking off
+    # (services/scheduler/cron.py::_kick_autonomous_turn) so a quiet user
+    # doesn't burn LLM quota on suppressed messages.
     if not target_webhook:
         user_id = kwargs.get("user_id")
         if isinstance(user_id, int):
