@@ -1100,10 +1100,13 @@ class CDPSupervisor:
             with self._state_lock:
                 self._pending_dialogs[dialog.id] = dialog
             loop = asyncio.get_running_loop()
-            handle = loop.call_later(
-                self.dialog_timeout_s,
-                lambda: asyncio.create_task(self._dialog_timeout_expired(dialog.id)),
-            )
+
+            def _on_timeout_1(did: str = dialog.id) -> None:
+                t_exp = asyncio.create_task(self._dialog_timeout_expired(did))
+                self._bg_tasks.add(t_exp)
+                t_exp.add_done_callback(self._bg_tasks.discard)
+
+            handle = loop.call_later(self.dialog_timeout_s, _on_timeout_1)
             self._dialog_watchdogs[dialog.id] = handle
 
     async def _auto_handle_dialog(self, dialog: PendingDialog, *, accept: bool, prompt_text: str) -> None:
@@ -1306,10 +1309,13 @@ class CDPSupervisor:
             with self._state_lock:
                 self._pending_dialogs[dialog.id] = dialog
             loop = asyncio.get_running_loop()
-            handle = loop.call_later(
-                self.dialog_timeout_s,
-                lambda: asyncio.create_task(self._dialog_timeout_expired(dialog.id)),
-            )
+
+            def _on_timeout_2(did: str = dialog.id) -> None:
+                t_exp = asyncio.create_task(self._dialog_timeout_expired(did))
+                self._bg_tasks.add(t_exp)
+                t_exp.add_done_callback(self._bg_tasks.discard)
+
+            handle = loop.call_later(self.dialog_timeout_s, _on_timeout_2)
             self._dialog_watchdogs[dialog.id] = handle
 
     async def _fulfill_bridge_request(self, dialog: PendingDialog, *, accept: bool, prompt_text: str) -> None:

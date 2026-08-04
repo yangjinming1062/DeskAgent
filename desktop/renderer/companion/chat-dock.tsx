@@ -184,6 +184,22 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps) {
     setRecording(false)
   }
 
+  useEffect(() => {
+    if (!recording) {
+      return
+    }
+
+    const handleGlobalMouseUp = () => {
+      void stopRecording()
+    }
+
+    window.addEventListener('mouseup', handleGlobalMouseUp)
+
+    return () => {
+      window.removeEventListener('mouseup', handleGlobalMouseUp)
+    }
+  }, [recording])
+
   // Push-to-talk voice message: record → cloud STT (media.stt) → send the
   // transcribed text as a normal prompt. Falls back to a typed hint when STT
   // is unavailable so the user is never stuck (plan §5 always-fallback-text).
@@ -476,8 +492,19 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps) {
                   : 'border-white/20 bg-white/5 text-white/70 hover:bg-white/15 hover:text-white'
               }`}
               onMouseDown={() => void startRecording()}
-              onMouseUp={stopRecording}
-              onTouchEnd={stopRecording}
+              onMouseLeave={() => {
+                if (recording) {
+                  void stopRecording()
+                }
+              }}
+              onMouseUp={() => void stopRecording()}
+              onPointerCancel={() => void stopRecording()}
+              onPointerLeave={() => {
+                if (recording) {
+                  void stopRecording()
+                }
+              }}
+              onTouchEnd={() => void stopRecording()}
               onTouchStart={() => void startRecording()}
               title="按住录制语音消息"
               type="button"

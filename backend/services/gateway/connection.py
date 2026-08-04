@@ -134,7 +134,6 @@ async def _process_events(wakeup: asyncio.Event):
             if stale_result.rowcount:
                 logger.info("WS event GC reaped", extra={"reaped": stale_result.rowcount})
 
-        # Delete only after successful dispatch: a transient push failure leaves the row for retry.
         claimed: list[tuple[int, str, dict, int]] = []
         local_user_ids = MANAGER.local_user_ids()
         if not local_user_ids:
@@ -143,28 +142,21 @@ async def _process_events(wakeup: asyncio.Event):
             rows = db.execute(select(WSEvent).where(WSEvent.user_id.in_(local_user_ids)).order_by(WSEvent.created_at).with_for_update(skip_locked=True)).scalars().all()
             for r in rows:
                 payload = safe_json_loads(r.payload)
-                if payload is None:
+                if payload is not None:
+                    claimed.append((r.id, r.event_type, payload, r.user_id))
+                else:
                     logger.warning("Skipping unparseable WSEvent", extra={"event_id": r.id})
-                    db.delete(r)
-                    continue
-                claimed.append((r.id, r.event_type, payload, r.user_id))
+                db.delete(r)
             db.commit()
 
-        dispatched_ids: list[int] = []
         for event_id, event_type, payload, user_id in claimed:
             try:
                 await MANAGER.send_personal_event(event_type, payload, user_id)
-                dispatched_ids.append(event_id)
             except Exception as e:
                 logger.error(
-                    "Failed to dispatch event to user; row will be retried",
+                    "Failed to dispatch event to user",
                     extra={"event_id": event_id, "event_type": event_type, "user_id": user_id, "error": str(e)},
                 )
-
-        if dispatched_ids:
-            with session_scope() as db:
-                db.execute(delete(WSEvent).where(WSEvent.id.in_(dispatched_ids)))
-                db.commit()
     except Exception as e:
         logger.error("Error processing events", extra={"error": str(e)})
 

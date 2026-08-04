@@ -49,32 +49,45 @@ def _handle_cron_action(
             jobs = list_jobs(user_id=user_id)
             return json.dumps({"success": True, "jobs": jobs}, ensure_ascii=False)
         case "update":
-            if job_id_raw is None:
+            job_id = coerce_int(job_id_raw, None)
+            if job_id is None:
                 return tool_error("job_id is required for update")
             updates = _build_updates(prompt, name, schedule)
-            job = update_job(user_id=user_id, job_id=coerce_int(job_id_raw, None), updates=updates)
+            job = update_job(user_id=user_id, job_id=job_id, updates=updates)
+            if not job:
+                return tool_error(f"Cron job #{job_id_raw} not found.")
             return json.dumps({"success": True, "message": f"Cron job #{job['id']} updated.", "job": job}, ensure_ascii=False)
         case "remove":
-            if job_id_raw is None:
+            job_id = coerce_int(job_id_raw, None)
+            if job_id is None:
                 return tool_error("job_id is required for remove")
-            remove_job(user_id=user_id, job_id=coerce_int(job_id_raw, None))
+            ok = remove_job(user_id=user_id, job_id=job_id)
+            if not ok:
+                return tool_error(f"Cron job #{job_id_raw} not found.")
             return json.dumps({"success": True, "message": f"Cron job #{job_id_raw} removed."}, ensure_ascii=False)
         case "pause":
-            if job_id_raw is None:
+            job_id = coerce_int(job_id_raw, None)
+            if job_id is None:
                 return tool_error("job_id is required for pause")
-            job = pause_job(user_id=user_id, job_id=coerce_int(job_id_raw, None))
+            job = pause_job(user_id=user_id, job_id=job_id)
+            if not job:
+                return tool_error(f"Cron job #{job_id_raw} not found.")
             return json.dumps({"success": True, "message": f"Cron job #{job['id']} paused.", "job": job}, ensure_ascii=False)
         case "resume":
-            if job_id_raw is None:
+            job_id = coerce_int(job_id_raw, None)
+            if job_id is None:
                 return tool_error("job_id is required for resume")
-            job = resume_job(user_id=user_id, job_id=coerce_int(job_id_raw, None))
+            job = resume_job(user_id=user_id, job_id=job_id)
+            if not job:
+                return tool_error(f"Cron job #{job_id_raw} not found.")
             return json.dumps({"success": True, "message": f"Cron job #{job['id']} resumed.", "job": job}, ensure_ascii=False)
         case "get":
-            if job_id_raw is None:
+            job_id = coerce_int(job_id_raw, None)
+            if job_id is None:
                 return tool_error("job_id is required for get")
-            job = get_job(user_id=user_id, job_id=coerce_int(job_id_raw, None))
+            job = get_job(user_id=user_id, job_id=job_id)
             if not job:
-                return tool_error(f"Job {job_id_raw} not found")
+                return tool_error(f"Cron job #{job_id_raw} not found")
             return json.dumps({"success": True, "job": job}, ensure_ascii=False)
         case _:
             return tool_error(f"Unknown cronjob action: {action!r}. Allowed: create, list, update, remove, pause, resume, get.")

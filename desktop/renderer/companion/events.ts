@@ -51,7 +51,7 @@ export function handleCompanionEvent(event: RpcEvent): void {
       // "neutral" is the LLM's no-op emotion; treat it like no affect so it doesn't ping a badge.
       const hasEmotion = Boolean(emotion && emotion !== 'neutral')
 
-      if (hasEmotion && !quiet && !screenLocked) {
+      if (hasEmotion && !screenLocked) {
         setSpriteState('emotional', { emotion: emotion as SpriteEmotion })
       } else {
         setSpriteState('idle')

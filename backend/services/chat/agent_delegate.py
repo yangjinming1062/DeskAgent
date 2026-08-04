@@ -1,4 +1,5 @@
 import json
+from typing import Any
 
 from components import get_logger
 from components import SESSION_LOCAL
@@ -66,19 +67,26 @@ async def agent_delegate_tool(
             await run_chat_turn(db, req, llm_config, user_settings, user_id, headless, session_client_context=None, track_task=None)
 
         chunks: list[str] = []
+        last_affect: dict | None = None
         for msg in headless.messages:
             if msg.get("type") == "chunk":
                 chunks.append(msg.get("content", ""))
+            elif msg.get("type") == "message.complete" and msg.get("affect"):
+                last_affect = msg.get("affect")
             elif msg.get("type") == "error":
                 err = msg.get("message") or "subagent failed"
                 await safe_emit(emitter, "subagent_complete", session_id=sid, status="error", error=err)
                 return tool_error(err)
 
         final_answer = "".join(chunks) or "Subagent completed without producing text output."
-        await safe_emit(emitter, "subagent_complete", session_id=sid, status="completed", result=final_answer[:500])
+        await safe_emit(emitter, "subagent_complete", session_id=sid, status="completed", result=final_answer[:500], affect=last_affect)
+
+        result_dict: dict[str, Any] = {"success": True, "result": final_answer, "subagent_session_id": sid}
+        if last_affect:
+            result_dict["affect"] = last_affect
 
         return json.dumps(
-            {"success": True, "result": final_answer, "subagent_session_id": sid},
+            result_dict,
             ensure_ascii=False,
         )
     except Exception as e:

@@ -4,13 +4,28 @@ import type { DeskAgentGateway } from '@/shared/deskagent'
 import type { ConnectionState } from '@/shared/lib/gateway-protocol'
 import type { DeskAgentConnection } from '@/shared/types/global'
 
+export interface RunnerCapabilities {
+  microphone?: boolean
+  screen_capture?: boolean
+  local_stt?: boolean
+  local_tts?: boolean
+  system_activity?: boolean
+  platform?: string
+  python?: string
+}
+
 // Tracks whether the local Runner is online and has synced its tools — lets
 // the message-stream handler fast-fail tool.call instead of parking on the
 // 300s IPC future.
 export const $runnerOnline = atom(false)
+export const $runnerCapabilities = atom<RunnerCapabilities | null>(null)
 
 export function setRunnerOnline(online: boolean): void {
   $runnerOnline.set(online)
+}
+
+export function setRunnerCapabilities(capabilities: RunnerCapabilities | null): void {
+  $runnerCapabilities.set(capabilities)
 }
 
 // Single primary gateway — desktop talks to one Backend.

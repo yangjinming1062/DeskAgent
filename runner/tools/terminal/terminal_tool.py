@@ -781,7 +781,7 @@ def terminal_tool(
                     logger.info("%s environment ready for task %s", env_type, effective_task_id[:8])
         if not force:
             tirith_err = check_command_security(command)
-            if tirith_err:
+            if tirith_err and tirith_err.get("action") == "block":
                 return json.dumps({"output": "", "exit_code": -1, "error": tirith_err, "status": "error"}, ensure_ascii=False)
         if workdir:
             workdir_error = _validate_workdir(workdir)
