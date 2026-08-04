@@ -133,6 +133,10 @@ async def process_request(ws, req):
     method = req.get("method")
     params = req.get("params", {})
 
+    # Notifications carry no id; drop early so the liveness ping doesn't spam -32601 log noise.
+    if req_id is None and method:
+        return
+
     # A new request just arrived. Clear any stale per-thread interrupt
     # left over from a previous request so the current request's tools
     # don't immediately bail.  For cancel requests we also set the

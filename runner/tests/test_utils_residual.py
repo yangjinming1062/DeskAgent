@@ -10,6 +10,7 @@ Targets:
 - ``utils.reverse_rpc`` — handler not configured + happy path
 - ``utils.config`` — cfg_* coercers
 """
+import os
 import sys
 from pathlib import Path
 
@@ -215,6 +216,27 @@ class TestIsWriteDenied:
         escaped = tmp_path / ".." / tmp_path.name / "auth.json"
         # ``realpath`` resolves the escape back to ``tmp_path/auth.json``.
         assert is_write_denied(str(escaped)) is True
+
+    @pytest.mark.skipif(not IS_WINDOWS, reason="Windows 8.3 short names are Windows-only")
+    def test_windows_8_3_short_name_resolves_to_long_form(self):
+        """_resolve_long_path must expand 8.3 short names (PROGRA~1 → Program Files)."""
+        import ctypes
+        from ctypes import wintypes
+
+        # Get the short name for C:\Windows (typically C:\WINDOWS or similar).
+        windows_dir = os.environ.get("SystemRoot", r"C:\Windows")
+        buf = ctypes.create_unicode_buffer(wintypes.MAX_PATH)
+        # GetShortPathNameW returns the short path length.
+        length = ctypes.windll.kernel32.GetShortPathNameW(
+            wintypes.LPCWSTR(windows_dir), buf, wintypes.MAX_PATH,
+        )
+        if length == 0:
+            pytest.skip("Cannot get short path name for Windows directory")
+        short_path = buf.value
+        # The short path should be resolved back to the long form.
+        from utils.file_safety import _resolve_long_path
+        resolved = _resolve_long_path(short_path)
+        assert resolved.lower() == windows_dir.lower()
 
 
 class TestGetReadBlockError:

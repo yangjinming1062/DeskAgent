@@ -1,6 +1,7 @@
 import contextlib
-import functools
 import os
+import ctypes
+from ctypes import wintypes
 from pathlib import Path
 
 from .config import cfg_get
@@ -140,18 +141,11 @@ def get_windows_sensitive_prefixes() -> tuple[str, ...]:
     return tuple(f"{drv}:/{rel}" for drv in drives for rel in rel_entries)
 
 
-@functools.lru_cache(maxsize=1)
 def _enumerate_windows_drives() -> tuple[str, ...]:
-    """Return mounted Windows drive letters (a-z) as lowercase, no colon.
-
-    Empty on non-Windows; ``("c",)`` on enumeration failure. Result is
-    memoized — drive topology doesn't change for the runner's lifetime.
-    """
+    """Return mounted Windows drive letters (a-z) lowercase, no colon; re-enumerated each call so hot-plugged drives stay in sync with the denylist."""
     if not IS_WINDOWS:
         return ()
     try:
-        import ctypes
-
         bitmask = ctypes.windll.kernel32.GetLogicalDrives()
         drives = tuple(chr(ord("a") + i) for i in range(26) if bitmask & (1 << i))
         return drives or ("c",)
@@ -167,10 +161,28 @@ def _get_safe_write_root() -> str | None:
         return None
 
 
+def _resolve_long_path(path: str) -> str:
+    """Resolve 8.3 short names (PROGRA~1) to long form; realpath skips them, which would bypass the write-deny prefix check."""
+    expanded = os.path.expanduser(path)
+    if not IS_WINDOWS:
+        return os.path.realpath(expanded)
+    try:
+        buf = ctypes.create_unicode_buffer(wintypes.MAX_PATH)
+        # GetLongPathNameW returns the long path length; 0 means error.
+        length = ctypes.windll.kernel32.GetLongPathNameW(  # type: ignore[attr-defined]
+            wintypes.LPCWSTR(expanded), buf, wintypes.MAX_PATH,
+        )
+        if length > 0 and length <= wintypes.MAX_PATH:
+            return buf.value
+    except Exception:
+        pass
+    return os.path.realpath(expanded)
+
+
 def is_write_denied(path: str) -> bool:
     try:
-        home = os.path.realpath(os.path.expanduser("~"))
-        resolved = os.path.realpath(os.path.expanduser(str(path)))
+        home = _resolve_long_path("~")
+        resolved = _resolve_long_path(str(path))
     except Exception:
         return True
 
