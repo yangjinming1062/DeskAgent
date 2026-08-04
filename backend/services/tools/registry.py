@@ -58,7 +58,7 @@ WEB_EXTRACT_AVAILABILITY: AvailabilityCheck = _web_extract_available
 class ToolsRegistry:
     """Three buckets: backend (in-process), memory (DB), runner (per-user IPC)."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._backend_tools: dict[str, dict[str, Any]] = {}
         self._memory_tools: dict[str, dict[str, Any]] = {}
         self._runner_tools: dict[int, dict[str, dict[str, Any]]] = {}

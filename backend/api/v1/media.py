@@ -1,6 +1,7 @@
 import asyncio
 import base64
 from datetime import timedelta
+from typing import Any
 
 from common import get_router
 from components import get_file_path
@@ -90,7 +91,7 @@ def _upload_size_or_none(audio_file: UploadFile) -> int | None:
 
 
 @router.get("/files/{file_id}")
-async def serve_file(file_id: str):
+async def serve_file(file_id: str) -> FileResponse:
     """Serve a temporary media file. No auth required (public URL for LLM access)."""
     result = get_file_path(file_id)
     if result is None:
@@ -108,7 +109,7 @@ async def speech_to_text(
     request: Request,  # noqa: ARG001 — required by @limiter.limit
     audio_file: UploadFile = File(...),
     auth_data: tuple[User, LoginRecord] = Depends(get_current_session),
-):
+) -> dict[str, Any]:
     """Speech-to-text via the provider chain (MiMo ASR; only MiMo registers STT)."""
     user, _ = auth_data
 
@@ -165,7 +166,7 @@ async def text_to_speech(
     text: str = Form(...),
     voice: str = Form(default=""),
     auth_data: tuple[User, LoginRecord] = Depends(get_current_session),
-):
+) -> StreamingResponse:
     """Text-to-speech via the provider chain (MiMo TTS or MiniMax TTS)."""
     user, _ = auth_data
     if not text:
@@ -208,7 +209,7 @@ async def image_gen(
     request: Request,  # noqa: ARG001 — required by @limiter.limit
     prompt: str = Form(...),
     auth_data: tuple[User, LoginRecord] = Depends(get_current_session),
-):
+) -> dict[str, Any]:
     """Image generation via the provider chain. Returns 501 when no image-gen provider is configured."""
     user, _ = auth_data
     if not prompt:
@@ -264,7 +265,7 @@ async def video_gen(
     model: str | None = Form(default=None),
     wait_seconds: int = Form(default=0),
     auth_data: tuple[User, LoginRecord] = Depends(get_current_session),
-):
+) -> dict[str, Any]:
     """Submit a video generation job. Default response is 202 + task_id; if
     ``wait_seconds`` > 0, the handler polls for up to that many seconds and
     returns the resulting URL directly when the job finishes."""
@@ -324,7 +325,7 @@ async def video_gen(
 async def video_gen_status(
     task_id: int,
     auth_data: tuple[User, LoginRecord] = Depends(get_current_session),
-):
+) -> dict[str, Any]:
     user, _ = auth_data
     with SESSION_LOCAL() as db:
         row = get_job(db, task_id, user.id)

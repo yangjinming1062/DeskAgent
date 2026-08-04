@@ -1,3 +1,5 @@
+from typing import TYPE_CHECKING
+
 from common import ModelBase
 from common import TimestampMixin
 from sqlalchemy import ForeignKey
@@ -5,6 +7,9 @@ from sqlalchemy import Text
 from sqlalchemy.orm import Mapped
 from sqlalchemy.orm import mapped_column
 from sqlalchemy.orm import relationship
+
+if TYPE_CHECKING:
+    from modules.auth import User
 
 
 class Memory(ModelBase, TimestampMixin):

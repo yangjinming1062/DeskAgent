@@ -1,5 +1,6 @@
 from datetime import datetime
 from typing import Any
+from typing import TYPE_CHECKING
 
 from common import ModelBase
 from sqlalchemy import Boolean
@@ -12,6 +13,9 @@ from sqlalchemy import text
 from sqlalchemy.orm import Mapped
 from sqlalchemy.orm import mapped_column
 from sqlalchemy.orm import relationship
+
+if TYPE_CHECKING:
+    from modules.auth import User
 
 
 class CronJob(ModelBase):

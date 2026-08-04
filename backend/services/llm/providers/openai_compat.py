@@ -11,7 +11,7 @@ class OpenAICompatChatProvider(ChatProvider):
     OpenRouter, etc.). Subclasses only customize request shaping and event
     emission — the SDK does the heavy lifting."""
 
-    def __init__(self, config: ProviderConfig):
+    def __init__(self, config: ProviderConfig) -> None:
         super().__init__(config)
         self._client: AsyncOpenAI = get_async_client(config.api_key, config.base_url)
 

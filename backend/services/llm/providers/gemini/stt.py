@@ -15,7 +15,7 @@ class GeminiSTTProvider(STTProvider):
     provider_name = "gemini"
     DEFAULT_MODELS: ClassVar[dict[str, str]] = {"stt": "gemini-2.5-flash"}
 
-    def __init__(self, config: ProviderConfig):
+    def __init__(self, config: ProviderConfig) -> None:
         super().__init__(config)
         self._client = get_http(config.base_url, config.api_key, auth_header={"x-goog-api-key": "{api_key}"})
 

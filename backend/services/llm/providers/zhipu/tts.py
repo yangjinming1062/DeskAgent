@@ -29,7 +29,7 @@ class ZhipuTTSProvider(TTSProvider):
         {"id": "luodo", "label": "萝卜", "gender": "neutral", "language": "zh", "tags": ["温柔", "中文", "动物"], "description": "动动动物圈萝卜音色。"},
     ]
 
-    def __init__(self, config: ProviderConfig):
+    def __init__(self, config: ProviderConfig) -> None:
         super().__init__(config)
         self._client = get_http(config.base_url, config.api_key)
 

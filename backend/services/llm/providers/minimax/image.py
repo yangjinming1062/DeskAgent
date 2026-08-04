@@ -27,7 +27,7 @@ class MiniMaxImageGenProvider(ImageGenProvider):
     # URL or a ``data:image/*;base64,...`` data URI.
     supports_reference_image: ClassVar[bool] = True
 
-    def __init__(self, config: ProviderConfig):
+    def __init__(self, config: ProviderConfig) -> None:
         super().__init__(config)
         self._client = get_http(config.base_url, config.api_key)
 

@@ -22,7 +22,7 @@ class MiMoImageGenProvider(ImageGenProvider):
     provider_name = "mimo"
     DEFAULT_MODELS: ClassVar[dict[str, str]] = {"image_gen": "dall-e-3"}
 
-    def __init__(self, config: ProviderConfig):
+    def __init__(self, config: ProviderConfig) -> None:
         super().__init__(config)
         self._client: AsyncOpenAI = get_async_client(config.api_key, config.base_url)
 

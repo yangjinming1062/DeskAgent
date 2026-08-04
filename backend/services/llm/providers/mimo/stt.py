@@ -20,15 +20,12 @@ class MiMoSTTProvider(STTProvider):
     provider_name = "mimo"
     DEFAULT_MODELS: ClassVar[dict[str, str]] = {"stt": "mimo-v2.5-asr"}
 
-    def __init__(self, config: ProviderConfig):
+    def __init__(self, config: ProviderConfig) -> None:
         super().__init__(config)
         self._client: AsyncOpenAI = get_async_client(config.api_key, config.base_url)
 
     def raw_client(self) -> AsyncOpenAI | None:
-        """Back-compat shim: STT REST handler still calls
-        ``client.chat.completions.create(...)`` with custom input_audio /
-        asr_options. Can be removed once the handler routes through
-        ``provider.transcribe()``."""
+        """Return the underlying AsyncOpenAI client."""
         return self._client
 
     async def transcribe(

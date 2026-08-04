@@ -38,7 +38,7 @@ class CompletionRequest(BaseModel):
 @limiter.limit(f"{SETTINGS.llm_completion_rate_limit_per_ip_per_minute}/minute", key_func=get_remote_address)
 async def create_completion(
     req: CompletionRequest, request: Request, current: tuple[User, LoginRecord] = Depends(get_current_session)  # noqa: ARG001 — request required by @limiter.limit
-):
+) -> dict[str, Any]:
     """A stateless completion endpoint for the Desktop Runner to proxy LLM calls.
 
     Error contract: surfaces a classified, non-leaking envelope. Full exception

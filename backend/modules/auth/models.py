@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from common import ModelBase
 from common import TimestampMixin
@@ -13,6 +14,14 @@ from sqlalchemy import UniqueConstraint
 from sqlalchemy.orm import Mapped
 from sqlalchemy.orm import mapped_column
 from sqlalchemy.orm import relationship
+
+if TYPE_CHECKING:
+    from modules.companion import AvatarAsset
+    from modules.companion import Persona
+    from modules.conversation import Conversation
+    from modules.memory import Memory
+    from modules.scheduler import CronJob
+    from modules.settings import UserSetting
 
 
 class User(ModelBase, TimestampMixin):

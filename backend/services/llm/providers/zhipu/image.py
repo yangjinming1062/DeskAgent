@@ -24,7 +24,7 @@ class ZhipuImageGenProvider(ImageGenProvider):
     provider_name = "zhipu"
     DEFAULT_MODELS: ClassVar[dict[str, str]] = {"image_gen": "glm-image"}
 
-    def __init__(self, config: ProviderConfig):
+    def __init__(self, config: ProviderConfig) -> None:
         super().__init__(config)
         self._client = get_http(config.base_url, config.api_key)
 

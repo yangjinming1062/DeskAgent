@@ -38,7 +38,7 @@ async def run_background_memory_review(
     *,
     emitter=None,
     session_id: str | None = None,
-):
+) -> None:
     """Fire-and-forget: review the conversation and save any durable memories.
 
     When ``emitter`` is provided, a terminal ``background_complete`` frame is

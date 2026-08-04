@@ -61,7 +61,7 @@ class MiMoTTSProvider(TTSProvider):
         {"id": "Dean", "label": "Dean", "gender": "male", "language": "en", "tags": ["Dean", "calm", "deep", "male", "english"], "description": "Calm deep English male voice."},
     ]
 
-    def __init__(self, config: ProviderConfig):
+    def __init__(self, config: ProviderConfig) -> None:
         super().__init__(config)
         self._client: AsyncOpenAI = get_async_client(config.api_key, config.base_url)
 

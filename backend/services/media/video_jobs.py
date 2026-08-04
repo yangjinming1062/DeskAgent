@@ -44,9 +44,12 @@ def _update_job(job_id: int, **fields) -> None:
 
 
 def _emit_ws_event(user_id: int, event_type: str, payload: dict) -> None:
-    """Insert a ws_events row; the ws_event_loop outbox picks it up and
-    forwards to the user's connected desktop. The payload ``task_id``
-    matches the REST endpoint's ``poll_url`` segment and the
+    """Write a WSEvent row to PostgreSQL outbox.
+
+    PostgreSQL NOTIFY automatically triggers and ws_events worker delivers it to
+    connected desktop WS clients. This guarantees desktop gets progress even when
+    the task was submitted out-of-band via REST or when WS reconnected mid-job.
+    Payload keys ``task_id`` and ``video_url`` match Desktop JSON-RPC format for
     ``video_generate`` tool's return value."""
     payload_json = json.dumps(payload, ensure_ascii=False, default=str)
     with SESSION_LOCAL() as db:
@@ -54,7 +57,7 @@ def _emit_ws_event(user_id: int, event_type: str, payload: dict) -> None:
         db.commit()
 
 
-def get_job(db: Session, job_id: int, user_id: int):
+def get_job(db: Session, job_id: int, user_id: int) -> VideoGenJob | None:
     """Filter by user_id so the GET endpoint doesn't leak other users' jobs."""
 
     stmt = select(VideoGenJob).where(VideoGenJob.id == job_id, VideoGenJob.user_id == user_id)
