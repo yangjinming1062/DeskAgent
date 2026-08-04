@@ -14,11 +14,13 @@ import { speak } from '@/companion/tts'
 import { $gateway } from '@/shared/store/gateway'
 import type { RpcEvent } from '@/shared/types/deskagent'
 
-import { pushDevLog } from './developer-overlay'
+import { $devMode, pushDevLog } from './developer-overlay'
 import { speakProactive } from './proactive/proactive'
 
 export function handleCompanionEvent(event: RpcEvent): void {
-  pushDevLog(event.type, JSON.stringify(event.payload ?? {}))
+  if ($devMode.get()) {
+    pushDevLog(event.type, JSON.stringify(event.payload ?? {}))
+  }
 
   switch (event.type) {
     case 'message.start':

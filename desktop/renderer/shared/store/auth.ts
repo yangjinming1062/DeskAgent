@@ -63,7 +63,7 @@ export async function login(payload: {
   }
 }
 
-export async function refreshSession(payload?: any): Promise<void> {
+export async function refreshSession(payload?: Record<string, unknown>): Promise<void> {
   // Refresh failure does NOT auto-logout (unlike login()): the old JWT may
   // still work, and the caller can decide whether to surface the error.
   const snapshot = await window.deskagent.refreshSession(payload)

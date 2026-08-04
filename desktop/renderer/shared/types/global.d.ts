@@ -7,7 +7,7 @@ declare global {
       getGatewayWsUrl: () => Promise<string>
       getBootProgress: () => Promise<DesktopBootProgress>
       login: (payload: DesktopLoginPayload) => Promise<DesktopAuthSnapshot>
-      refreshSession: (payload?: any) => Promise<DesktopAuthSnapshot>
+      refreshSession: (payload?: Record<string, unknown>) => Promise<DesktopAuthSnapshot>
       logout: () => Promise<DesktopLogoutResult>
       getSession: () => Promise<DesktopAuthSnapshot | null>
       getDefaultBackendUrl: () => Promise<string | null>
