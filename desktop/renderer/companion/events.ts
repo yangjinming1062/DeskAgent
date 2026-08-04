@@ -11,6 +11,7 @@ import { applyClipUpdate, type ClipMeta } from '@/companion/clip-store'
 import { $disturbanceTier, $voiceCallOpen, setSpriteState, type SpriteEmotion } from '@/companion/companion-store'
 import { $responseMode } from '@/companion/prefs'
 import { speak } from '@/companion/tts'
+import { $gateway } from '@/shared/store/gateway'
 import type { RpcEvent } from '@/shared/types/deskagent'
 
 import { pushDevLog } from './developer-overlay'
@@ -35,6 +36,8 @@ export function handleCompanionEvent(event: RpcEvent): void {
 
     case 'message.complete': {
       const payload = event.payload as { text?: string; affect?: { emotion?: string } } | undefined
+      const text = payload?.text ?? ''
+      const emotion = payload?.affect?.emotion
       // Suppress render-side cues for quiet users and when the screen is locked.
       const quiet = $disturbanceTier.get() === 'quiet'
       const screenLocked = $screenLocked.get()
@@ -42,26 +45,28 @@ export function handleCompanionEvent(event: RpcEvent): void {
       finalizeAssistantMessage(payload?.text)
 
       // "neutral" is the LLM's no-op emotion; treat it like no affect so it doesn't ping a badge.
-      const hasEmotion = payload?.affect?.emotion && payload.affect.emotion !== 'neutral'
+      const hasEmotion = Boolean(emotion && emotion !== 'neutral')
 
       if (hasEmotion && !quiet && !screenLocked) {
-        setSpriteState('emotional', { emotion: payload!.affect!.emotion as SpriteEmotion })
+        setSpriteState('emotional', { emotion: emotion as SpriteEmotion })
       } else {
         setSpriteState('idle')
       }
 
-      // Speak chat replies in "always voice" mode (plan §4.1). Skip while a voice-call is active
-      // (its dock speaks) or the screen is locked. Defer speaking a frame so EMOTIONAL is
+      // Speak chat replies in "always voice" mode (plan §4.1); skip during an
+      // active voice call or a locked screen. Defer a frame so EMOTIONAL is
       // observable before SPEAKING overwrites it (ARCH §7.5).
-      if ($responseMode.get() === 'voice' && payload?.text?.trim() && !$voiceCallOpen.get() && !screenLocked) {
+      if ($responseMode.get() === 'voice' && text.trim() && !$voiceCallOpen.get() && !screenLocked) {
+        const say = () => void speak(text).then(() => setSpriteState('idle'))
+
         if (hasEmotion) {
           setTimeout(() => {
             setSpriteState('speaking')
-            void speak(payload!.text!).then(() => setSpriteState('idle'))
+            say()
           }, 1200)
         } else {
           setSpriteState('speaking')
-          void speak(payload.text).then(() => setSpriteState('idle'))
+          say()
         }
       }
 
@@ -69,12 +74,10 @@ export function handleCompanionEvent(event: RpcEvent): void {
     }
 
     case 'companion.affect': {
-      // Affect-only cue from the backend — either send_message_tool's quiet-tier
-      // pass-through (§6: 断消息不断 affect) or affect_check's idle-triggered
-      // LLM reasoning (§7.6). Switches to EMOTIONAL without a bubble or TTS.
+      // Affect-only cue — quiet-tier pass-through or idle-triggered reasoning:
+      // switch to EMOTIONAL without a bubble or TTS.
       const emotion = (event.payload as { emotion?: string } | undefined)?.emotion
 
-      // ``neutral`` → no state change (see P1-5 note above).
       if (emotion && emotion !== 'neutral') {
         setSpriteState('emotional', { emotion: emotion as SpriteEmotion })
       }
@@ -83,16 +86,8 @@ export function handleCompanionEvent(event: RpcEvent): void {
     }
 
     case 'tool.call': {
-      // P0 (contract re-audit): the previous handler only toggled
-      // the sprite state — it never actually invoked the Runner or
-      // returned the result to the backend. Backend's
-      // ``_dispatch_runner_tool`` (``backend/services/chat/
-      // tool_dispatch.py``) awaits ``await_future(user_id, call_id)``
-      // with a 300s timeout; without a corresponding
-      // ``tool.result`` frame the LLM is stuck for 300s and the
-      // partner's "help the user do things" promise is broken for
-      // every runner-localized tool (terminal, browser, file ops).
       const p = (event.payload as { status?: string; name?: string; args?: Record<string, unknown>; call_id?: string } | undefined) ?? {}
+      const runnerInvoke = window.deskagent?.runnerInvoke
 
       if (p.status === 'complete') {
         setAssistantTool(null)
@@ -105,31 +100,26 @@ export function handleCompanionEvent(event: RpcEvent): void {
       setAssistantTool(name)
       setSpriteState('working')
 
-      if (!p.call_id || !window.deskagent?.runnerInvoke) {
-        // We don't have the bridge or call_id — leave sprite in
-        // 'working' so the user can see the partner is trying.
-        // Backend will time out at 300s and surface an error.
-        break
-      }
-      // Fire-and-forget: invoke the Runner, send the result back as
-      // a JSON-RPC request so the backend's await_future resolves
-      // and the LLM can continue. We use ``void`` + ``.catch`` so
-      // tool errors don't bubble into the events handler.
+      // Without a bridge or call_id the sprite stays 'working'; the backend's
+      // await_future times out at 300s and surfaces the error.
+      if (!p.call_id || !runnerInvoke) {break}
+
+      // Fire-and-forget the Runner call and post the result so the backend's
+      // await_future resolves; tool errors must not bubble into this handler.
+      const gateway = $gateway.get()
+
       void (async () => {
         try {
-          const result = await window.deskagent.runnerInvoke(name, p.args ?? {})
-          await window.deskagent.gateway?.request('tool.result', { call_id: p.call_id, result })
+          const result = await runnerInvoke(name, p.args ?? {})
+          await gateway?.request('tool.result', { call_id: p.call_id, result })
         } catch (err) {
-          // Surface as a tool.result error so the LLM gets a
-          // structured failure instead of waiting the full 300s
-          // for the future to time out.
           try {
-            await window.deskagent.gateway?.request('tool.result', {
+            await gateway?.request('tool.result', {
               call_id: p.call_id,
               result: { ok: false, error: err instanceof Error ? err.message : String(err) },
             })
           } catch {
-            /* best effort — backend's 300s fallback will catch it */
+            /* best effort — backend's 300s fallback covers it */
           }
         }
       })()
@@ -162,9 +152,8 @@ export function handleCompanionEvent(event: RpcEvent): void {
     }
 
     case 'avatar.regenerated': {
-      // P0-4: avatar.regenerate is now a background task; the handler returns
-      // {queued: true, job_id} and the real result lands here. Resolve the
-      // pending promise keyed by job_id so the awaiter can swap the portrait.
+      // Background regeneration result — resolve the pending awaiter by job_id
+      // so the portrait can swap without blocking the handler.
       const p = event.payload as { job_id?: string; asset_url?: string; id?: number; error?: string } | undefined
 
       if (p?.job_id) {
@@ -175,30 +164,11 @@ export function handleCompanionEvent(event: RpcEvent): void {
     }
 
     case 'error': {
-      // P0 (desktop audit, second pass): the previous P0 fix used
-      // a conditional `if (idle/thinking/listening) setSpriteState('idle')`
-      // but the priority gate
-      // (``STATE_PRIORITY['idle']=10 < STATE_PRIORITY['thinking']=50``)
-      // rejects those calls silently — the sprite was still stuck
-      // on 'thinking' after an error. Force the reset so the gate
-      // is bypassed; the tool / speaking cases keep their state
-      // because we explicitly want to clobber the abandoned LLM
-      // stream.
+      // Force the idle reset — the priority gate silently rejects a plain
+      // transition while the sprite is on 'thinking'/'working'.
       const message = (event.payload as { message?: string } | undefined)?.message ?? '出了点小问题'
       setAssistantError(message)
       setSpriteState('idle', { force: true })
-
-      break
-    }
-
-    case 'cron.trigger': {
-      // P0-5: the autonomous chat turn is now the actual product path (the
-      // LLM runs the cron prompt and may call send_message_tool, which
-      // produces a companion.message that flows through the normal TTS
-      // pipeline). This event is informational — the desktop can use it
-      // to show a "scheduled message" indicator before the actual reply
-      // arrives, or to log the schedule hit for the developer overlay.
-      pushDevLog('cron.trigger', JSON.stringify(event.payload ?? {}))
 
       break
     }
@@ -209,20 +179,12 @@ export function handleCompanionEvent(event: RpcEvent): void {
       const currentTier = $disturbanceTier.get()
       const affectEmotion = payload?.affect?.emotion
 
-      // Affect always flows first — the user can see the companion react
-      // even when the text is suppressed.
-      // ``neutral`` is filtered at this boundary too (P1-5) so a
-      // system-prompt-driven default doesn't ping a meaningless badge.
+      // Affect flows before text so the reaction shows even when text is suppressed.
       if (affectEmotion && affectEmotion !== 'neutral') {
         setSpriteState('emotional', { emotion: affectEmotion as SpriteEmotion })
       }
 
-      // The backend's quiet tier already diverts affect-only cues to
-      // ``companion.affect`` (never emitting ``companion.message`` for
-      // quiet users — see send_message_tool). This quiet check is
-      // defense-in-depth: if a companion.message somehow reaches a quiet
-      // user, suppress the text but the affect above already flowed.
-      // Screen-lock silence is itself silent — no bubble over a locked screen.
+      // Quiet tier and locked screen suppress the bubble; the affect above still flows.
       const textSuppressed = currentTier === 'quiet' || $screenLocked.get()
 
       if (text && !textSuppressed) {

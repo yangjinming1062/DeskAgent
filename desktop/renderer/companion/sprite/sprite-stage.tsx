@@ -1,5 +1,5 @@
 import { useStore } from '@nanostores/react'
-import { type ReactNode, type PointerEvent as ReactPointerEvent, useEffect, useRef, useState } from 'react'
+import { type ReactNode, type PointerEvent as ReactPointerEvent, useCallback, useEffect, useRef, useState } from 'react'
 
 import { $chatOpen } from '@/companion/chat-store'
 import { setSpritePosition } from '@/companion/companion-store'
@@ -20,12 +20,7 @@ interface SpriteStageProps {
 const REST_MARGIN = 24
 const EGG_W = 160
 const EGG_H = 184
-// 1.3 (desktop audit): the previous DRAG_THRESHOLD = 6px was too
-// tight — a trackpad user with a 1-2px jitter on the first tap
-// would land just over the threshold and have the second tap
-// classified as drag, never reaching the double-tap branch.
-// Bump to 12px (well under the "user actually dragged" visual
-// signal of ~24px) so micro-jitter is no longer misclassified.
+// 12px keeps trackpad micro-jitter from misclassifying a double-tap as a drag.
 const DRAG_THRESHOLD = 12
 const DOUBLE_TAP_MS = 320
 // Covers the sprite's CSS glow halos that overflow the inner box: egg-glow
@@ -54,37 +49,35 @@ export function SpriteStage({ children, onTap, onDoubleTap, onContextMenu }: Spr
     ? { x: Math.round((window.innerWidth - EGG_W) / 2), y: Math.round(window.innerHeight * 0.16) }
     : pos
 
-  // 1.9 (desktop audit): on a high-refresh trackpad the previous
-  // release() ran setIgnoreMouseEvents on every mousemove that
-  // crossed the sprite boundary, causing rapid capture↔release
-  // toggles that flash the desktop behind the sprite. Coalesce
-  // multiple toggles within 50ms via a single-flight debounce so
-  // a fast cursor only triggers one IPC per settle.
-  let _pendingToggle: ReturnType<typeof setTimeout> | null = null
-  const _toggle = (capture: boolean) => {
-    if (_pendingToggle) {clearTimeout(_pendingToggle)}
-    _pendingToggle = setTimeout(() => {
-      _pendingToggle = null
-      if (capture) {
+  // Coalesce capture/release toggles within 50ms so a fast cursor crossing
+  // the boundary triggers one IPC per settle instead of flashing the desktop.
+  const pendingToggleRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const toggle = useCallback((enable: boolean) => {
+    if (pendingToggleRef.current) {clearTimeout(pendingToggleRef.current)}
+    pendingToggleRef.current = setTimeout(() => {
+      pendingToggleRef.current = null
+
+      if (enable) {
         void window.deskagent.sprite.setIgnoreMouseEvents({ ignore: false })
       } else {
         void window.deskagent.sprite.setIgnoreMouseEvents({ ignore: true, forward: true })
       }
     }, 50)
-  }
+  }, [])
 
-  const capture = () => {
+  const capture = useCallback(() => {
     if (capturedRef.current) {return}
     capturedRef.current = true
     handleHoverInteraction()
-    _toggle(true)
-  }
+    toggle(true)
+  }, [toggle])
 
-  const release = () => {
+  const release = useCallback(() => {
     if (!capturedRef.current) {return}
     capturedRef.current = false
-    _toggle(false)
-  }
+    toggle(false)
+  }, [toggle])
 
   useEffect(() => {
     registerInteractiveRegion(SPRITE_REGION_ID, () => {
@@ -129,7 +122,7 @@ export function SpriteStage({ children, onTap, onDoubleTap, onContextMenu }: Spr
       setCaptureProbe(null)
       release()
     }
-  }, [])
+  }, [capture, release])
 
   const onPointerDown = (e: ReactPointerEvent) => {
     capture()

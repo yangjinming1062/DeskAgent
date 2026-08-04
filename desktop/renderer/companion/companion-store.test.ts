@@ -54,7 +54,7 @@ describe('companion-store Phase 2 state machine', () => {
     expect($spriteState.get()).toBe('listening')
   })
 
-  it('returns to idle after 10s of inactivity while in working (P0-9)', () => {
+  it('returns to idle after 10s of inactivity while in working', () => {
     setSpriteState('idle', { force: true })
     expect($spriteState.get()).toBe('idle')
 
@@ -62,6 +62,7 @@ describe('companion-store Phase 2 state machine', () => {
     for (let i = 0; i < 6; i++) {
       reportUserActivity()
     }
+
     expect($spriteState.get()).toBe('working')
 
     // Working (pri 70) gates idle (pri 10) — without force, the 10s

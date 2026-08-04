@@ -98,11 +98,8 @@ async function restartRunnerBridge(deps) {
   return await startRunnerBridgeForCurrentSession(deps)
 }
 
-// P2-17: token bucket so a renderer bug (or a misbehaving tool loop) can't
-// loop-bomb the runner. Reverse-RPC already caps at 200 frames / 1 MB per
-// session (desktop/main/runner/reverse-rpc.cjs); the inbound IPC side had
-// no such guard. 60 calls per second is well above any plausible tool-loop
-// cadence but trips on a runaway ``while`` loop within a few hundred ms.
+// Token bucket so a misbehaving tool loop can't loop-bomb the runner; the
+// inbound IPC side had no guard (reverse-RPC caps the outbound side).
 const _invokeBucket = { tokens: 60, lastRefill: Date.now() }
 const _INVOKE_RATE = 60 // tokens per second
 const _INVOKE_BURST = 60

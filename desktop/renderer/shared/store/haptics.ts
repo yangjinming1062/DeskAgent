@@ -8,6 +8,3 @@ export const $hapticsMuted = atom(storedBoolean(HAPTICS_MUTED_STORAGE_KEY, false
 
 $hapticsMuted.subscribe(muted => persistBoolean(HAPTICS_MUTED_STORAGE_KEY, muted))
 
-export function toggleHapticsMuted() {
-  $hapticsMuted.set(!$hapticsMuted.get())
-}

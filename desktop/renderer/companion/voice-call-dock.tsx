@@ -33,6 +33,7 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps) {
   const [durationSec, setDurationSec] = useState(0)
   const streamRef = useRef<MediaStream | null>(null)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const durationSecRef = useRef(0)
   const audioAnimRef = useRef<number | null>(null)
   const recorderRef = useRef<MediaRecorder | null>(null)
   const chunksRef = useRef<Blob[]>([])
@@ -167,15 +168,10 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps) {
       })
 
     timerRef.current = setInterval(() => {
-      setDurationSec(prev => {
-        if (prev >= 180) {
-          onClose()
+      durationSecRef.current += 1
+      setDurationSec(durationSecRef.current)
 
-          return prev
-        }
-
-        return prev + 1
-      })
+      if (durationSecRef.current >= 180) {onClose()}
     }, 1000)
 
     async function transcribeAndSubmit() {
@@ -208,12 +204,15 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps) {
 
       awaitingReplyRef.current = true
       setSpriteState('thinking')
+
       // Recover if the WS dies before any message.start lands; cleared on normal completion.
       if (awaitingReplyTimerRef.current) {
         clearTimeout(awaitingReplyTimerRef.current)
       }
+
       awaitingReplyTimerRef.current = setTimeout(() => {
         awaitingReplyTimerRef.current = null
+
         if (awaitingReplyRef.current) {
           awaitingReplyRef.current = false
           setSpriteState('listening')
@@ -225,10 +224,12 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps) {
         await requestGateway('prompt.submit', { session_id: id, text })
       } catch {
         awaitingReplyRef.current = false
+
         if (awaitingReplyTimerRef.current) {
           clearTimeout(awaitingReplyTimerRef.current)
           awaitingReplyTimerRef.current = null
         }
+
         setSpriteState('listening')
       }
     }
@@ -249,6 +250,11 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps) {
       if (timerRef.current) {clearInterval(timerRef.current)}
 
       if (silenceTimerRef.current) {clearTimeout(silenceTimerRef.current)}
+
+      if (awaitingReplyTimerRef.current) {
+        clearTimeout(awaitingReplyTimerRef.current)
+        awaitingReplyTimerRef.current = null
+      }
 
       if (recorderRef.current && recorderRef.current.state !== 'inactive') {
         recorderRef.current.stop()
@@ -277,6 +283,7 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps) {
     if (last.id === lastSpokenIdRef.current) {return}
     lastSpokenIdRef.current = last.id
     awaitingReplyRef.current = false
+
     if (awaitingReplyTimerRef.current) {
       clearTimeout(awaitingReplyTimerRef.current)
       awaitingReplyTimerRef.current = null

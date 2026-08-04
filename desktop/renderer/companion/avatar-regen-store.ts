@@ -16,6 +16,7 @@ const REGEN_TIMEOUT_MS = 120_000
 
 function _pruneTombstones() {
   const cutoff = Date.now() - TOMBSTONE_TTL_MS
+
   for (const [jobId, t] of _timedOut) {
     if (t < cutoff) {
       _timedOut.delete(jobId)
@@ -33,12 +34,14 @@ export interface AvatarRegeneratedPayload {
 export function awaitAvatarRegeneration(jobId: string): Promise<AvatarRegeneratedPayload> {
   return new Promise<AvatarRegeneratedPayload>((resolve, reject) => {
     const late = _lateArrivals.get(jobId)
+
     if (late) {
       _lateArrivals.delete(jobId)
       resolve(late)
 
       return
     }
+
     const timer = setTimeout(() => {
       if (_pending.get(jobId) === settle) {
         _pending.delete(jobId)
@@ -48,26 +51,31 @@ export function awaitAvatarRegeneration(jobId: string): Promise<AvatarRegenerate
         reject(new Error(`avatar regeneration timed out for job ${jobId}`))
       }
     }, REGEN_TIMEOUT_MS)
+
     const settle: Resolver = (payload) => {
       clearTimeout(timer)
       resolve(payload)
     }
+
     _pending.set(jobId, settle)
   })
 }
 
 export function resolveAvatarRegeneration(payload: AvatarRegeneratedPayload): void {
   const jobId = payload.job_id
+
   if (!jobId) {return}
   _pruneTombstones()
 
   if (_timedOut.has(jobId)) {return}
   const cb = _pending.get(jobId)
+
   if (cb) {
     _pending.delete(jobId)
     cb(payload)
 
     return
   }
+
   _lateArrivals.set(jobId, payload)
 }

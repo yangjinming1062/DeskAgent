@@ -13,9 +13,7 @@ export function setRunnerOnline(online: boolean): void {
   $runnerOnline.set(online)
 }
 
-// Single primary gateway — desktop talks to one Backend. The previous
-// multi-profile pool (secondaries Map, prune/reconnect helpers) was removed
-// with the profile subsystem.
+// Single primary gateway — desktop talks to one Backend.
 
 // The active gateway instance, exposed for inline message-stream components
 // (e.g. model overlays) that call gateway methods without the instance

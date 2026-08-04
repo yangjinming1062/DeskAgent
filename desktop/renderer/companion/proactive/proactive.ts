@@ -1,7 +1,3 @@
-// Receives a proactive companion message (ARCHITECTURE.md §5.1.A `companion.message`,
-// emitted by the Backend's send_message path) and presents it: TTS + a bubble
-// when chat is closed. Gated by the disturbance tier — `quiet` blocks the
-// companion's proactive outreach (but never the user's own actions).
 import { $chatOpen, setProactiveBubble } from '@/companion/chat-store'
 import { $disturbanceTier, setSpriteState } from '@/companion/companion-store'
 
@@ -13,21 +9,18 @@ export async function speakProactive(
 ): Promise<void> {
   if (!text.trim()) {return}
 
-  // Quiet tier suppresses the companion's proactive outreach, but user-
-  // initiated reactions (poke/drag) always voice (plan §4.2: 用户主动发起的
-  // 交互永远不受限). Affect is never gated — callers set emotional state directly.
+  // Quiet tier suppresses proactive outreach, but user-initiated reactions
+  // (poke/drag) always voice (plan §4.2). Affect is never gated — callers set
+  // emotional state directly.
   const tier = $disturbanceTier.get()
+
   if (!opts?.userInitiated && tier === 'quiet') {return}
 
-  // Normal tier: bubble only, no TTS (plan §4.2: 仅轻量气泡/文字消息, 无 TTS 语音).
-  // Proactive tier: bubble + TTS.
   if (!$chatOpen.get()) {setProactiveBubble(text.trim())}
+
   if (tier === 'proactive' || opts?.userInitiated) {
-    // P1 (desktop re-audit): the previous code called
-    // setSpriteState('speaking') (priority 60) which was
-    // silently gated by 'working' (priority 70). Proactive
-    // messages and user-initiated reactions must visually
-    // interrupt the working state — force the transition.
+    // Force the speaking transition — priority 60 is otherwise gated silently
+    // by 'working' (pri 70), so proactive/initiated speech wouldn't show.
     setSpriteState('speaking', { force: true })
     const ok = await speak(text)
     setSpriteState('idle')
@@ -35,8 +28,7 @@ export async function speakProactive(
     const linger = ok ? 4200 : 5000
     setTimeout(() => setProactiveBubble(null), linger)
   } else {
-    // Normal tier: dismiss the bubble after a longer linger so the user has
-    // time to read it without spoken narration competing with their work.
+    // Normal tier: longer linger so the text reads without spoken narration.
     setTimeout(() => setProactiveBubble(null), 8000)
   }
 }

@@ -24,9 +24,7 @@ const TTS_TIMEOUT_MS = 60_000
 const TTS_MAX_TEXT_CHARS = 4000
 const STT_MAX_AUDIO_BYTES = 24 * 1024 * 1024
 const CONFIG_CACHE_TTL_MS = 10_000
-// P2-8 / runtime P1-2: TTS-to-backend had no language hint, so the cloud
-// provider auto-detected and occasionally picked an English voice for
-// Chinese text (TTS is the mirror of STT which already defaults to zh).
+// Cloud TTS auto-detection can pick an English voice for Chinese text — default zh like STT.
 const DEFAULT_TTS_LANGUAGE = 'zh'
 // Product direction is "default Chinese" for STT — see CLAUDE.md / product brief.
 // Renderer callers that want auto-detect can pass `language: 'auto'` explicitly.
@@ -95,11 +93,7 @@ async function tryLocalStt({ bridge, mime, data, language }) {
     const result = await bridge.invoke('speech_to_text', {
       audio_base64: data.toString('base64'),
       mime_type: mime,
-      // P0-3 (runtime audit): forward the default language to local
-      // STT so faster-whisper's auto-detect heuristic isn't forced
-      // on every turn. The runner's stt_tool auto-probes when
-      // language is in (None, "", "auto"); explicit "zh" picks
-      // the zh model directly.
+      // Forward the language so faster-whisper doesn't auto-detect every turn; explicit "zh" picks the zh model.
       ...(language ? { language } : {}),
     })
     if (result && result.success === true && typeof result.text === 'string') {
@@ -168,9 +162,7 @@ async function ttsViaBackend({ ensureBackend, text, voice, language }) {
   const form = new FormData()
   form.set('text', text)
   form.set('voice', voice)
-  // P2-8: explicit language hint so the cloud provider picks a voice
-  // consistent with STT (which already defaults to 'zh'). Callers that
-  // want auto-detect can pass language=null / undefined explicitly.
+  // Explicit language hint so cloud picks a voice consistent with STT's 'zh' default.
   form.set('language', language || DEFAULT_TTS_LANGUAGE)
   const { body, contentType, headers } = await postMultipart({
     url: `${connection.baseUrl}/api/media/tts`,
@@ -245,8 +237,7 @@ function registerMediaIpc({ ipcMain, ensureBackend, getRunnerBridge, getEnginePr
     const sttLog = makeLog(log, `[stt#${sttId}]`, { engine_pref: engine, ...(silentFallback ? {} : { silent_fallback: false }), context: context || null, ...(mime ? { mime } : {}) })
     const startedAt = Date.now()
 
-    // P2-9: track whether we actually fell back from a local attempt so
-    // the renderer can show a one-shot "我们已切换到云端 STT" hint.
+    // Track a real local→cloud fallback so the renderer can show a one-shot hint.
     let fellBackFromLocal = false
 
     if (engine !== 'cloud') {
@@ -281,9 +272,7 @@ function registerMediaIpc({ ipcMain, ensureBackend, getRunnerBridge, getEnginePr
       text_chars: result.text.length,
       language,
       ms: Date.now() - startedAt,
-      // P2-9: surface a one-shot hint to the renderer when the
-      // silent_fallback path actually fires so the user can disable
-      // it (privacy/cost-sensitive) from settings.
+      // One-shot hint so privacy/cost-sensitive users can disable silent fallback in settings.
       ...(silentFallback && engine === 'auto' && fellBackFromLocal ? { silent_fallback_used: true } : {}),
     })
     return result
@@ -310,11 +299,7 @@ function registerMediaIpc({ ipcMain, ensureBackend, getRunnerBridge, getEnginePr
     const isDesigned = voice.startsWith(VOICEDESIGN_PREFIX)
     const engine = isDesigned ? 'cloud' : prefs.tts
 
-    // P1-1 (runtime audit): the trace previously hid when a
-    // ``mimo_voicedesign:`` token forced the cloud path against the
-    // user's prefs (silent surprise). Surface the override in the log
-    // so a 'I set local but it went cloud' bug is debuggable from the
-    // structured log alone.
+    // Surface the voicedesign-forced cloud override in the trace so a local-but-went-cloud case is debuggable.
     const ttsLog = makeLog(log, `[tts#${ttsId}]`, {
       voice_in: voice || '',
       engine_pref: isDesigned ? 'cloud' : prefs.tts,

@@ -47,15 +47,8 @@ function truncate(value: string | undefined, max: number): string | undefined {
   return trimmed.slice(0, max)
 }
 
-// 1-6 (backend audit): ``speaking_style`` is required by the
-// persona schema, but the previous mapping synthesized a value
-// from the ``personality`` key chips without the user actually
-// selecting a speaking style. Lock each preset to a fixed,
-// user-visible mapping (the user *did* pick a preset on the
-// personality question) so the persona's speaking_style is
-// always a direct reflection of the user's actual selection.
-// Free-text personality (custom input) still falls through to
-// the default '温柔亲切' so the schema is satisfied.
+// speaking_style must reflect a real user selection: presets map to a fixed
+// style; free-text personality falls back to the default so the schema holds.
 export function deriveSpeakingStyle(role: string | undefined, personality: string | undefined): string {
   const p = personality || ''
 
@@ -79,6 +72,7 @@ export function assemblePersona(answers: OnboardingAnswers): PersonaPayload {
   // skipped Q13, fall back to the persona-key map so the persona
   // still satisfies the backend's required speaking_style field.
   const userPickedStyle = answers.speaking_style?.trim()
+
   const payload: PersonaPayload = {
     name,
     personality,

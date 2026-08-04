@@ -241,10 +241,8 @@ function createRunnerBridge(options = {}) {
     emit.emit('event', { type: 'running', tools: cachedTools, capabilities: state.capabilities, runnerVersion: state.runnerVersion, probeFailed: state.probeFailed })
   }
 
-  // P2-13: debounce tools_changed — MCP servers can fire
-  // ToolListChangedNotification back-to-back during discovery, each
-  // round-trip costs a get_tools RPC. 300ms coalesces them into a
-  // single re-fetch + emit.
+  // Debounce tools_changed — MCP discovery can fire back-to-back; 300ms
+  // coalesces them into a single re-fetch + emit.
   let _toolsChangedDebounce = null
   async function handleToolsChanged() {
     log('[runner-bridge] tools_changed received')
