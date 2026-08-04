@@ -1,3 +1,4 @@
+import asyncio
 import contextlib
 import json
 import secrets
@@ -16,6 +17,7 @@ from ..tools.builtin import image_generation_tool
 from .asset_store import build_signed_avatar_url
 from .clip_service import invalidate_user_clips
 from .clip_service import seed_all_clips
+from .persona_service import get_or_create_persona
 
 logger = get_logger(__name__)
 
@@ -294,18 +296,26 @@ async def _generate_and_persist(db: Session, user_id: int, *, prompt: str, style
 
 
 def _delete_portrait_file(asset_url: str | None) -> None:
-    """Best-effort delete of a portrait file by its public URL. No-op when
-    the URL isn't in the persistent ``companion-avatars/`` dir (e.g. a
-    legacy temp-media row from before P0-1, or a remote URL the upload
-    path never persisted)."""
+    """Best-effort unlink of a portrait file, accepting signed URL or bare companion-avatars/ path."""
     if not asset_url:
         return
-    prefix = f"/api/companion/avatar/file/"
-    idx = asset_url.find(prefix)
-    if idx < 0:
+
+    name: str | None = None
+
+    # Signed URL form.
+    idx = asset_url.find("/api/companion/avatar/file/")
+    if idx >= 0:
+        name = Path(asset_url[idx + len("/api/companion/avatar/file/") :]).name
+
+    # Bare persisted path form.
+    if name is None:
+        marker = "companion-avatars/"
+        idx = asset_url.find(marker)
+        if idx >= 0:
+            name = Path(asset_url[idx + len(marker) :]).name
+
+    if not name:
         return
-    filename = asset_url[idx + len(prefix) :]
-    name = Path(filename).name
     if "/" in name or "\\" in name or ".." in name:
         return
     with contextlib.suppress(OSError):
@@ -313,13 +323,18 @@ def _delete_portrait_file(asset_url: str | None) -> None:
 
 
 async def _seed_batch0(db: Session, user_id: int, asset: AvatarAsset) -> None:
-    """Seed Tier-1 baseline rows for every catalog scene from a freshly
-    committed portrait. Fire-and-forget — the escalation loop then climbs each
-    scene toward Tier 2 (keyframes) and Tier 3 (video) in the background."""
-    try:
-        await seed_all_clips(db, user_id=user_id, portrait_asset_url=asset.asset_url, portrait_id=asset.id)
-    except Exception:
-        logger.warning("batch-0 clip enqueue failed", extra={"user_id": user_id}, exc_info=True)
+    """Seed Tier-1 clips with retry; exhaustion is non-fatal (late-init guard re-seeds on next pickup)."""
+    last: Exception | None = None
+    for attempt in range(3):
+        try:
+            await seed_all_clips(db, user_id=user_id, portrait_asset_url=asset.asset_url, portrait_id=asset.id)
+
+            return
+        except Exception as e:
+            last = e
+            logger.warning("batch-0 clip enqueue failed (attempt %d/3)", attempt + 1, extra={"user_id": user_id}, exc_info=True)
+            await asyncio.sleep(0.5 * (attempt + 1))
+    logger.error("batch-0 clip enqueue exhausted retries", extra={"user_id": user_id, "error": str(last) if last else None})
 
 
 async def generate_avatar(db: Session, user_id: int, persona: Persona, style: str = _DEFAULT_STYLE) -> AvatarAsset:
@@ -418,6 +433,7 @@ async def regenerate_avatar(db: Session, user_id: int, persona: Persona, feedbac
     # leave the user with no path to recovery. Move the invalidate
     # back to AFTER a successful generation so the failure path
     # leaves existing clips intact, matching ARCH §7.3.
+    # Invalidate after success so a failed regen leaves existing clips intact.
     asset = await _generate_and_persist(db, user_id, prompt=prompt, style=style, feedback=feedback)
     invalidate_user_clips(db, user_id)
     await _seed_batch0(db, user_id, asset)
@@ -425,15 +441,10 @@ async def regenerate_avatar(db: Session, user_id: int, persona: Persona, feedbac
 
 
 async def upload_avatar(db: Session, user_id: int, data: bytes, content_type: str) -> AvatarAsset:
-    """Persist a user-supplied image as the active portrait (plan §3.4 self-
-    upload). Stored under a dedicated persistent dir (not temp-media, which is
-    TTL-cleaned) and served via the companion file route. Derivative clips are
-    invalidated and re-seeded so an uploaded portrait gets the same Tier-1
-    baseline as a generated one (P1-9 — previously upload left the user
-    permanently at Tier 1).
-
-    Note: clips generated from an uploaded portrait may be lower-fidelity or
-    slower — there is no cloud-side reference, only the single image."""
+    """Persist a user image as the active portrait and re-seed Tier-1 clips; no cloud-side reference, so derivatives may be lower-fidelity."""
+    persona = get_or_create_persona(db, user_id)
+    if not persona.is_complete:
+        raise AvatarGenerationError("persona is incomplete; finish onboarding first")
     ext = _UPLOAD_EXTS.get(content_type.split(";")[0].strip().lower(), "png")
     file_id = secrets.token_urlsafe(16)
     avatars_dir = Path(SETTINGS.data_dir) / "companion-avatars"

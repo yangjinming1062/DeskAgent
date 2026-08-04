@@ -71,7 +71,9 @@ async def check_affect(user_id: int, idle_seconds: float, local_hour: int, llm_c
         persona_extras = persona.system_prompt_extras
         memories_block = _format_memories(db, user_id)
 
-    idle_minutes = int(idle_seconds // 60) if isinstance(idle_seconds, (int, float)) else 0
+    idle_seconds = float(idle_seconds) if isinstance(idle_seconds, (int, float)) and idle_seconds >= 0 else 0.0
+    local_hour = int(local_hour) if isinstance(local_hour, int) and 0 <= local_hour <= 23 else -1
+    idle_minutes = round(idle_seconds / 60, 2)
     prompt = _AFFECT_CHECK_PROMPT.format(
         persona=persona_extras,
         memories=memories_block,

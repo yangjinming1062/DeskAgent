@@ -6,7 +6,9 @@ from .chat_emitter import Emitter
 from .chat_emitter import HeadlessEmitter
 from .chat_emitter import safe_emit
 from .commands import CommandContext
+from .commands import CommandResult
 from .commands import commands_catalog
+from .commands import CommandsCatalogResult
 from .commands import exec_slash_command
 from .history import build_session_messages
 from .message_sanitization import truncate_chat_history
@@ -54,6 +56,8 @@ __all__ = [
     "HeadlessEmitter",
     "safe_emit",
     "CommandContext",
+    "CommandResult",
+    "CommandsCatalogResult",
     "commands_catalog",
     "exec_slash_command",
     "build_session_messages",

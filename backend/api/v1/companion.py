@@ -153,7 +153,13 @@ async def upload_avatar_route(
         data = base64.b64decode(body.image)
     except ValueError:
         raise HTTPException(status_code=400, detail={"error": "图片编码无效"})
-    asset = await upload_avatar(db, user.id, data, content_type)
+    try:
+        asset = await upload_avatar(db, user.id, data, content_type)
+    except AvatarGenerationError as exc:
+        # Surface persona-incomplete as 409 so the desktop can prompt onboarding.
+        if "persona is incomplete" in str(exc):
+            raise HTTPException(status_code=409, detail={"error": "请先完成 onboarding 再上传形象", "reason": str(exc)})
+        raise HTTPException(status_code=502, detail={"error": "伙伴形象上传失败，请稍后重试", "reason": str(exc)})
     return _avatar_to_response(asset)
 
 

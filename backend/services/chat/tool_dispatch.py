@@ -17,6 +17,7 @@ from ..tools import is_multimodal_tool_result
 from ..tools import make_tool_result_message
 from ..tools import NativeMemory
 from ..tools import REGISTRY
+from ..tools import RESERVED_KEYS
 from ..tools import should_parallelize_tool_batch
 from ..tools import ToolCallGuardrailController
 from ..tools import toolguard_synthetic_result
@@ -90,6 +91,10 @@ async def _execute_single_tool(tc: dict, ctx: _ToolDispatchContext) -> dict:
             args = {}
 
         args = coerce_tool_args(name, args, REGISTRY.get_schema(ctx.user_id, name))
+
+        # Strip reserved keys at the entry point so all three tool locations (backend/memory/runner) get the filter.
+        if isinstance(args, dict):
+            args = {k: v for k, v in args.items() if k not in RESERVED_KEYS}
 
         safety_decision = check_file_safety(name, args)
         if safety_decision is not None and safety_decision.should_halt:

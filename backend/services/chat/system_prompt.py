@@ -483,7 +483,11 @@ def build_system_prompt_parts(config: AgentPromptConfig, system_message: str | N
     context_parts: list[str] = [system_message] if system_message is not None else []
     volatile_parts: list[str] = [_format_volatile_header(config)]
 
-    return {"stable": _join_nonempty(stable_parts), "context": _join_nonempty(context_parts), "volatile": _join_nonempty(volatile_parts)}
+    return {
+        "stable": _join_nonempty(stable_parts),
+        "context": _join_nonempty(context_parts),
+        "volatile": _join_nonempty(volatile_parts),
+    }
 
 
 def _should_inject_tool_use_enforcement(setting: str) -> bool:

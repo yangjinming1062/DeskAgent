@@ -16,12 +16,21 @@ from .runtime import new_runtime_session
 from .runtime import runtime_info_snapshot
 from .runtime import RuntimeSession
 from .runtime import serialize_settings
+from .runtime import SessionCreateResult
+from .runtime import SessionCwdSetResult
+from .runtime import SessionResumeResult
+from .runtime import SessionRuntimeInfo
+from .runtime import SessionSteerResult
+from .runtime import SessionTitleResult
+from .runtime import SessionUsageResult
+from .runtime import SetupRuntimeResult
+from .runtime import SetupStatusResult
+from .runtime import ToolsSyncResult
 
 # ``handlers`` pulls the entire service graph (chat orchestrator + llm + tools),
-# so it is deferred via ``__getattr__`` to avoid forcing that load when a caller
-# only needs e.g. ``MANAGER`` — and to keep this package importable during the
-# chat↔gateway cycle (handlers imports services.chat, which must not re-enter
-# gateway's __init__ before it finishes).
+# so it is deferred via ``__getattr__`` to keep this package importable during
+# the chat<->gateway cycle (handlers imports services.chat, which must not
+# re-enter gateway's __init__ before it finishes).
 _HANDLER_NAMES = frozenset({"handle_chat_websocket"})
 
 __all__ = [
@@ -34,6 +43,16 @@ __all__ = [
     "JsonRpcEmitter",
     "Handler",
     "RuntimeSession",
+    "SessionRuntimeInfo",
+    "SessionCreateResult",
+    "SessionResumeResult",
+    "SessionTitleResult",
+    "SessionSteerResult",
+    "SessionCwdSetResult",
+    "SessionUsageResult",
+    "SetupStatusResult",
+    "SetupRuntimeResult",
+    "ToolsSyncResult",
     "new_runtime_session",
     "serialize_settings",
     "runtime_info_snapshot",

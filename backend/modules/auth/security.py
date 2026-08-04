@@ -62,13 +62,20 @@ def verify_password(password: str, password_hash: str) -> bool:
     return hmac.compare_digest(actual_digest, expected_digest)
 
 
-def create_access_token(*, user_id: int, username: str, jti: str | None = None, client_context: dict | None = None) -> tuple[str, int, str]:
+def create_access_token(
+    *, user_id: int, username: str, jti: str | None = None, client_context: dict | None = None, expires_in_seconds: int | None = None, purpose: str | None = None
+) -> tuple[str, int, str]:
     token_jti = jti or uuid4().hex
-    expires_delta = timedelta(minutes=SETTINGS.access_token_expire_minutes)
+    if expires_in_seconds is None:
+        expires_delta = timedelta(minutes=SETTINGS.access_token_expire_minutes)
+    else:
+        expires_delta = timedelta(seconds=expires_in_seconds)
     expires_at = datetime.now(UTC) + expires_delta
     payload = {"sub": str(user_id), "username": username, "jti": token_jti, "exp": expires_at}
     if client_context:
         payload["ctx"] = client_context
+    if purpose:
+        payload["purpose"] = purpose
     token = jwt.encode(payload, SETTINGS.jwt_secret_key, algorithm=SETTINGS.jwt_algorithm)
     return token, int(expires_delta.total_seconds()), token_jti
 

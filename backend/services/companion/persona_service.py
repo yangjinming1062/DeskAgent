@@ -3,6 +3,7 @@ from typing import Any
 
 from components import safe_json_loads
 from modules.companion import Persona
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from .memory_bootstrap import extract_user_profile
@@ -26,6 +27,7 @@ ONBOARDING_FIELDS: tuple[str, ...] = (
     "appearance",
     "role",
     "personality",
+    "speaking_style",
     "user_call_name",
     "user_gender",
     "user_age_bucket",
@@ -86,11 +88,13 @@ def update_persona(db: Session, user_id: int, definition: dict[str, Any]) -> Per
     persona.definition_json = json.dumps(cleaned, ensure_ascii=False)
     persona.system_prompt_extras = render_extras(cleaned)
     persona.is_complete = True
-    # P1-16: single commit lands both the Memory rows from
-    # ``record_user_profile`` and the persona mutation atomically. The
-    # prior implementation committed during ``get_or_create_persona``,
-    # which would persist Memory even if this later commit failed.
-    db.commit()
+    # Retry on the partial-unique race; record_user_profile is idempotent.
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        record_user_profile(db, user_id, user_profile)
+        db.commit()
     db.refresh(persona)
     return persona
 

@@ -15,7 +15,7 @@ from ..llm import FailoverReason
 from ..llm import LLMRuntimeError
 from .affect import AffectScrubber
 from .chat_emitter import Emitter
-from .think_scrubber import StreamingThinkScrubber as ThinkScrubber
+from .think_scrubber import StreamingThinkScrubber
 
 logger = get_logger(__name__)
 
@@ -171,7 +171,7 @@ async def _stream_llm_response(
     def _on_reasoning_sync(text: str) -> None:
         _reasoning_queue.put_nowait(text)
 
-    scrubber = ThinkScrubber(on_reasoning=_on_reasoning_sync)
+    scrubber = StreamingThinkScrubber(on_reasoning=_on_reasoning_sync)
     affect = AffectScrubber()
     clean_tail = ""  # assigned in try; read in finally to flush on stream errors
 

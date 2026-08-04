@@ -138,14 +138,36 @@ class TestDailyBudget:
     def test_counts_today_submissions(self, _patch_db):
         with components.SESSION_LOCAL() as db:
             uid, asset = _seed_user_and_avatar(db)
-            j1 = VideoGenJob(user_id=uid, provider="minimax", model="m", prompt="p", status="failed")
-            j2 = VideoGenJob(user_id=uid, provider="minimax", model="m", prompt="p", status="succeeded")
+            j1 = VideoGenJob(user_id=uid, provider="minimax", model="m", prompt="p", status="failed", companion_submission_id="sub_idle")
+            j2 = VideoGenJob(user_id=uid, provider="minimax", model="m", prompt="p", status="succeeded", companion_submission_id="sub_happy")
             db.add_all([j1, j2])
             db.commit()
             db.refresh(j1)
             db.refresh(j2)
             _clip(db, uid, asset, "idle", video_job_id=j1.id)
             _clip(db, uid, asset, "happy", video_job_id=j2.id)
+            assert _companion_video_submissions_today(db, uid) == 2
+
+    def test_failed_scene_retry_counts_once(self, _patch_db):
+        """P1-1: a failed scene that retries 3× must only count as ONE
+        submission against the daily budget. The previous per-video_job_id
+        counting reset to 0 every time ``_finalize_terminal_videos``
+        cleared the clip's video_job_id, so a single scene could exceed
+        the 3/day budget by an arbitrary amount.
+        """
+        with components.SESSION_LOCAL() as db:
+            uid, asset = _seed_user_and_avatar(db)
+            # Same submission_id stamped on 3 retries (failed → failed → succeeded).
+            j1 = VideoGenJob(user_id=uid, provider="minimax", model="m", prompt="p", status="failed", companion_submission_id="same_sub")
+            j2 = VideoGenJob(user_id=uid, provider="minimax", model="m", prompt="p", status="failed", companion_submission_id="same_sub")
+            j3 = VideoGenJob(user_id=uid, provider="minimax", model="m", prompt="p", status="succeeded", companion_submission_id="same_sub")
+            # Different submission_id (different scene) — should count separately.
+            j4 = VideoGenJob(user_id=uid, provider="minimax", model="m", prompt="p", status="queued", companion_submission_id="other_sub")
+            db.add_all([j1, j2, j3, j4])
+            db.commit()
+            _clip(db, uid, asset, "idle", video_job_id=j1.id)
+            _clip(db, uid, asset, "happy", video_job_id=j4.id)
+            # 1 submission_id for the retry chain + 1 for the other scene = 2.
             assert _companion_video_submissions_today(db, uid) == 2
 
 
@@ -166,3 +188,20 @@ class TestEscalationTickBudgetGate:
             _clip(db, uid, asset, "happy", video_next_retry_at=naive_utc_now() - timedelta(seconds=5))
         await escalation_tick()
         assert submitted == []
+
+
+class TestMidnightUtcBudgetWindow:
+    """P1-1 follow-up: the budget window is local-midnight UTC. A row
+    submitted at 23:59:59 yesterday's UTC day shouldn't count
+    against today's count. Smoke-test the date filter without
+    faking the clock."""
+
+    def test_today_only_window(self, _patch_db):
+        with components.SESSION_LOCAL() as db:
+            uid, asset = _seed_user_and_avatar(db)
+            # Today's row.
+            db.add(VideoGenJob(user_id=uid, provider="minimax", model="m", prompt="p", status="succeeded", companion_submission_id="today"))
+            db.commit()
+            assert _companion_video_submissions_today(db, uid) == 1
+
+

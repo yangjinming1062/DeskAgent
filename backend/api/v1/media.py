@@ -29,7 +29,7 @@ from services.llm import MissingLlmConfigError
 from services.llm import pick_voice_id
 from services.llm import resolve_provider_chain
 from services.media import enqueue_video_job
-from services.media import get_job as get_video_job
+from services.media import get_job
 from services.rate_limit import limiter
 
 from ._http_errors import classified_http_exception
@@ -195,7 +195,8 @@ async def text_to_speech(
     except Exception as e:
         raise _llm_http_error(e, "tts") from e
 
-    return StreamingResponse(iter([result.audio]), media_type=result.mime)
+    # Report the actually-used voice so the desktop stays in sync after provider substitution.
+    return StreamingResponse(iter([result.audio]), media_type=result.mime, headers={"X-Voice-Used": result.voice or ""})
 
 
 # ── Image Generation (图片生成) ────────────────────────────────────────
@@ -303,7 +304,7 @@ async def video_gen(
         while naive_utc_now() < deadline:
             await asyncio.sleep(2)
             with SESSION_LOCAL() as db:
-                row = get_video_job(db, job.id, user.id)
+                row = get_job(db, job.id, user.id)
                 if row is None:
                     break
                 if row.status == "succeeded":
@@ -326,7 +327,7 @@ async def video_gen_status(
 ):
     user, _ = auth_data
     with SESSION_LOCAL() as db:
-        row = get_video_job(db, task_id, user.id)
+        row = get_job(db, task_id, user.id)
     if row is None:
         raise HTTPException(status_code=404, detail={"error": "video job not found", "reason": "not_found", "status": 404})
     return {

@@ -4,6 +4,7 @@ import contextlib
 import itertools
 import json
 import secrets
+import time
 
 from components import adopt_inbound
 from components import ATTACHMENT_TYPE_IMAGE
@@ -34,16 +35,16 @@ from services.chat import load_user_settings
 from services.chat import run_chat_turn
 from services.companion import AvatarGenerationError
 from services.companion import check_affect
-from services.companion import design_voice as design_companion_voice
+from services.companion import design_voice
 from services.companion import get_onboarding_state
 from services.companion import get_or_create_persona
-from services.companion import list_clips as list_companion_clips
+from services.companion import list_clips
 from services.companion import list_tts_voices
 from services.companion import match_user_voice
 from services.companion import normalize_voice_language
 from services.companion import PersonaValidationError
-from services.companion import regenerate_avatar as regenerate_companion_avatar
-from services.companion import set_disturbance_tier as set_companion_disturbance_tier
+from services.companion import regenerate_avatar
+from services.companion import set_disturbance_tier
 from services.companion import submit_onboarding_field
 from services.gateway import authenticate_ws_token
 from services.gateway import discard_user
@@ -57,6 +58,15 @@ from services.gateway import resolve_future
 from services.gateway import runtime_info_snapshot
 from services.gateway import RuntimeSession
 from services.gateway import serialize_settings
+from services.gateway import SessionCreateResult
+from services.gateway import SessionCwdSetResult
+from services.gateway import SessionResumeResult
+from services.gateway import SessionSteerResult
+from services.gateway import SessionTitleResult
+from services.gateway import SessionUsageResult
+from services.gateway import SetupRuntimeResult
+from services.gateway import SetupStatusResult
+from services.gateway import ToolsSyncResult
 from services.llm import client_for_config
 from services.llm import MissingLlmConfigError
 from services.llm import resolve_user_llm_config
@@ -65,6 +75,14 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 logger = get_logger(__name__)
+
+# Process-local throttle: a buggy renderer can spam check_affect and burn LLM quota.
+CHECK_AFFECT_MIN_INTERVAL_SECONDS = 2.0
+_last_check_affect_ts: dict[int, float] = {}
+
+# Per-user lock: a double-tap on regenerate must not fork two image-gen flows racing on the same DB rows.
+_avatar_regen_locks: dict[int, asyncio.Lock] = {}
+_avatar_regen_tasks: set[asyncio.Task] = set()
 
 
 class WSEmitter:
@@ -280,7 +298,7 @@ async def handle_chat_websocket(websocket: WebSocket, token: str):
         if not isinstance(tools, list):
             raise JsonRpcError(JSONRPC_INVALID_PARAMS, "tools must be a list")
         REGISTRY.update_runner_tools(user_id, tools)
-        return {"count": len(tools)}
+        return ToolsSyncResult(count=len(tools)).model_dump()
 
     dispatcher.register("tools.sync", tools_sync)
 
@@ -323,11 +341,11 @@ def _llm_configured(cfg: dict) -> bool:
 
 def _register_setup_handlers(dispatcher: JsonRpcDispatcher, llm_config: dict, user_id: int) -> None:
     async def setup_status(_params: dict) -> dict:
-        return {"provider_configured": _llm_configured(llm_config)}
+        return SetupStatusResult(provider_configured=_llm_configured(llm_config)).model_dump()
 
     async def setup_runtime_check(_params: dict) -> dict:
         if not _llm_configured(llm_config):
-            return {"ok": False, "error": "LLM not configured"}
+            return SetupRuntimeResult(ok=False, error="LLM not configured").model_dump()
 
         # Reuse the cached client factory — same (api_key, base_url) pair
         # shares a connection pool as the chat turn path, so a successful
@@ -338,7 +356,7 @@ def _register_setup_handlers(dispatcher: JsonRpcDispatcher, llm_config: dict, us
         try:
             await asyncio.wait_for(client.models.list(), timeout=RUNTIME_CHECK_TIMEOUT_SECONDS)
         except TimeoutError:
-            return {"ok": False, "error": f"timeout after {RUNTIME_CHECK_TIMEOUT_SECONDS}s"}
+            return SetupRuntimeResult(ok=False, error=f"timeout after {RUNTIME_CHECK_TIMEOUT_SECONDS}s").model_dump()
         except Exception as e:
             # Log the full cause server-side; surface a short label to the
             # renderer. The exception class name is enough to distinguish
@@ -349,7 +367,7 @@ def _register_setup_handlers(dispatcher: JsonRpcDispatcher, llm_config: dict, us
             # total stays close to 200 regardless of class name length.
             type_label = type(e).__name__
             msg = str(e)[: 200 - len(type_label) - 2]
-            return {"ok": False, "error": f"{type_label}: {msg}"}
+            return SetupRuntimeResult(ok=False, error=f"{type_label}: {msg}").model_dump()
         return {"ok": True}
 
     dispatcher.register("setup.status", setup_status)
@@ -465,10 +483,10 @@ def _register_session_handlers(
             db.refresh(conv)
         runtime = _mount_runtime(conv, cwd)
         logger.info("session.create", extra={"user_id": user_id, "session_id": runtime.session_id, "cwd": cwd})
-        return {
-            "session_id": runtime.session_id,
-            "info": runtime_info_snapshot(llm_config, runtime),
-        }
+        return SessionCreateResult(
+            session_id=runtime.session_id,
+            info=runtime_info_snapshot(llm_config, runtime),
+        ).model_dump()
 
     async def session_resume(params: dict) -> dict:
         stored_id = _require_str(params, "session_id")
@@ -479,12 +497,12 @@ def _register_session_handlers(
             messages = build_session_messages(conv.id, db)
         runtime = _mount_runtime(conv, conv.cwd)
         logger.info("session.resume", extra={"user_id": user_id, "session_id": runtime.session_id})
-        return {
-            "session_id": runtime.session_id,
-            "message_count": len(messages),
-            "messages": messages,
-            "info": runtime_info_snapshot(llm_config, runtime),
-        }
+        return SessionResumeResult(
+            session_id=runtime.session_id,
+            message_count=len(messages),
+            messages=messages,
+            info=runtime_info_snapshot(llm_config, runtime),
+        ).model_dump()
 
     async def session_title(params: dict) -> dict:
         runtime = _get_runtime(runtime_sessions, params)
@@ -495,12 +513,12 @@ def _register_session_handlers(
                 raise JsonRpcError(JSONRPC_METHOD_NOT_FOUND, f"stored session vanished: {runtime.conversation_id!r}")
             conv.title = title
             db.commit()
-        return {"title": title}
+        return SessionTitleResult(title=title).model_dump()
 
     async def session_steer(params: dict) -> dict:
         runtime = _get_runtime(runtime_sessions, params)
         runtime.ensure_steer_queue().put_nowait(_require_str(params, "text"))
-        return {"status": "queued"}
+        return SessionSteerResult(status="queued").model_dump()
 
     async def session_interrupt(params: dict) -> dict:
         runtime = _get_runtime(runtime_sessions, params)
@@ -523,7 +541,7 @@ def _register_session_handlers(
             if conv is not None:
                 conv.cwd = runtime.cwd
                 db.commit()
-        return runtime_info_snapshot(llm_config, runtime)
+        return SessionCwdSetResult(info=runtime_info_snapshot(llm_config, runtime)).model_dump()
 
     async def session_usage(params: dict) -> dict:
         runtime = _get_runtime(runtime_sessions, params)
@@ -537,12 +555,12 @@ def _register_session_handlers(
                 .filter(Message.conversation_id == runtime.conversation_id)
                 .one()
             )
-        return {
-            "calls": int(row.calls or 0),
-            "input": int(row.input_tok or 0),
-            "output": int(row.output_tok or 0),
-            "total": int((row.input_tok or 0) + (row.output_tok or 0)),
-        }
+        return SessionUsageResult(
+            calls=int(row.calls or 0),
+            input=int(row.input_tok or 0),
+            output=int(row.output_tok or 0),
+            total=int((row.input_tok or 0) + (row.output_tok or 0)),
+        ).model_dump()
 
     async def session_close(params: dict) -> dict:
         # Best-effort cleanup per renderer contract (use-session-actions.ts:336):
@@ -664,7 +682,7 @@ def _register_session_handlers(
             removed = attachments_remove(SETTINGS.data_dir, runtime.session_id, path)
         except ValueError:
             removed = False
-        return {"detached": True, "removed": removed}
+        return {"detached": True, "removed": removed, "path": path}
 
     async def complete_path(params: dict) -> dict:
         # Filesystem-bound: the desktop intercepts this call locally in
@@ -716,7 +734,7 @@ def _register_session_handlers(
         # gated by it. The desktop also gates playback client-side, so this is
         # defense-in-depth.
         tier_param = params.get("tier")
-        normalized = set_companion_disturbance_tier(user_id, tier_param if isinstance(tier_param, str) else "normal")
+        normalized = set_disturbance_tier(user_id, tier_param if isinstance(tier_param, str) else "normal")
         return {"tier": normalized}
 
     dispatcher.register("companion.set_disturbance_tier", companion_set_disturbance_tier)
@@ -728,13 +746,20 @@ def _register_session_handlers(
         # whether the companion should express a contextual emotion right now;
         # on a positive decision it emits ``companion.affect`` so the existing
         # event handler switches the sprite to EMOTIONAL (no bubble, no TTS).
+        now = time.monotonic()
+        last = _last_check_affect_ts.get(user_id, 0.0)
+        if now - last < CHECK_AFFECT_MIN_INTERVAL_SECONDS:
+            logger.debug("check_affect: throttled", extra={"user_id": user_id, "since_sec": round(now - last, 3)})
+            return {"emotion": None, "reason": "throttled"}
+        _last_check_affect_ts[user_id] = now
+
         idle_seconds = params.get("idle_seconds")
         if not isinstance(idle_seconds, (int, float)) or idle_seconds < 0:
             idle_seconds = 0
         local_hour = params.get("local_hour")
         if not isinstance(local_hour, int) or not 0 <= local_hour <= 23:
             local_hour = -1
-        return await check_affect(user_id, idle_seconds, local_hour, llm_config)
+        return await check_affect(user_id, float(idle_seconds), local_hour, llm_config)
 
     dispatcher.register("companion.check_affect", companion_check_affect)
 
@@ -777,14 +802,6 @@ def _register_session_handlers(
         # a ``job_id`` + ``queued: true``; the result arrives over the new
         # ``avatar.regenerated`` event so the desktop swaps the portrait when
         # the work lands without blocking other WS traffic.
-        #
-        # P0 (contract audit): the previous code used ``_track(task)`` but
-        # ``_track`` lives in ``handle_chat_websocket``'s closure and isn't
-        # visible here — the call raised NameError AFTER the background task
-        # had already mutated the DB (clips invalidated, new portrait
-        # committed) so the desktop saw -32603 while the side effects
-        # persisted. Use ``background_tasks`` directly (it IS in scope, defined
-        # in ``handle_chat_websocket`` line 134).
         feedback = params.get("feedback")
         if feedback is not None and not isinstance(feedback, str):
             raise JsonRpcError(JSONRPC_INVALID_PARAMS, "feedback must be a string")
@@ -793,27 +810,35 @@ def _register_session_handlers(
             if not persona.is_complete:
                 raise JsonRpcError(JSONRPC_INVALID_PARAMS, "finish onboarding before regenerating avatar")
         job_id = f"avatar_regen_{user_id}_{secrets.token_urlsafe(6)}"
+        lock = _avatar_regen_locks.setdefault(user_id, asyncio.Lock())
+        if lock.locked():
+            # A previous regen is still running for this user. The
+            # desktop's UI is optimistic; tell the renderer that this
+            # request was queued behind the active one so it doesn't
+            # straddle the cycle.
+            return {"queued": False, "job_id": job_id, "reason": "already_running"}
 
         async def _run() -> None:
-            try:
-                with SESSION_LOCAL() as db:
-                    persona = get_or_create_persona(db, user_id)
-                    asset = await regenerate_companion_avatar(db, user_id, persona, feedback=feedback)
-                    payload = {"job_id": job_id, "asset_url": asset.asset_url, "id": asset.id}
-            except AvatarGenerationError as exc:
-                logger.warning("avatar regenerate failed", extra={"user_id": user_id, "error": str(exc)})
-                payload = {"job_id": job_id, "error": f"伙伴形象生成失败：{exc}"}
-            except Exception:
-                logger.exception("avatar regenerate unexpected failure", extra={"user_id": user_id})
-                payload = {"job_id": job_id, "error": "伙伴形象生成失败，请稍后重试"}
+            async with lock:
+                try:
+                    with SESSION_LOCAL() as db:
+                        persona = get_or_create_persona(db, user_id)
+                        asset = await regenerate_avatar(db, user_id, persona, feedback=feedback)
+                        payload = {"job_id": job_id, "asset_url": asset.asset_url, "id": asset.id}
+                except AvatarGenerationError as exc:
+                    logger.warning("avatar regenerate failed", extra={"user_id": user_id, "error": str(exc)})
+                    payload = {"job_id": job_id, "error": f"伙伴形象生成失败：{exc}"}
+                except Exception:
+                    logger.exception("avatar regenerate unexpected failure", extra={"user_id": user_id})
+                    payload = {"job_id": job_id, "error": "伙伴形象生成失败，请稍后重试"}
             try:
                 await dispatcher.push_event("avatar.regenerated", payload, session_id=None)
             except Exception:
                 logger.debug("avatar.regenerated event push failed", extra={"user_id": user_id}, exc_info=True)
 
         task = asyncio.create_task(_run())
-        background_tasks.add(task)
-        task.add_done_callback(background_tasks.discard)
+        _avatar_regen_tasks.add(task)
+        task.add_done_callback(_avatar_regen_tasks.discard)
         return {"queued": True, "job_id": job_id}
 
     async def avatar_list_clips(_params: dict) -> dict:
@@ -821,7 +846,7 @@ def _register_session_handlers(
         # §5.1.A). The desktop calls this on gateway open / reconnect to sync its
         # cache; incremental updates flow over the ``clip.updated`` event channel.
         with SESSION_LOCAL() as db:
-            return {"clips": [c.model_dump() for c in list_companion_clips(db, user_id)]}
+            return {"clips": [c.model_dump() for c in list_clips(db, user_id)]}
 
     dispatcher.register("avatar.regenerate", avatar_regenerate)
     dispatcher.register("avatar.list_clips", avatar_list_clips)
@@ -859,7 +884,7 @@ def _register_session_handlers(
             preview_text = ""
         with SESSION_LOCAL() as db:
             try:
-                result = await design_companion_voice(db, user_id, prompt, preview_text=preview_text)
+                result = await design_voice(db, user_id, prompt, preview_text=preview_text)
             except (ValueError, MissingLlmConfigError) as exc:
                 raise JsonRpcError(JSONRPC_INVALID_PARAMS, str(exc)) from exc
         return {

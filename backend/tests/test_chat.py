@@ -171,9 +171,9 @@ class TestChatE2E:
         assert body["content"] is not None
         assert len(body["content"]) > 0
 
-    def test_websocket_chat_flow(self, test_client, test_token):
+    def test_websocket_chat_flow(self, test_client, ws_ticket):
         """Test the actual WebSocket chat flow from session creation to prompt completion without mocks."""
-        with test_client.websocket_connect(f"/api/chat/ws?token={test_token}") as ws:
+        with test_client.websocket_connect(f"/api/chat/ws?ticket={ws_ticket}") as ws:
             # 1. Create a new session
             ws.send_json({"jsonrpc": "2.0", "id": 1, "method": "session.create", "params": {}})
             resp = ws.receive_json()
@@ -212,12 +212,12 @@ class TestChatE2E:
         from starlette.testclient import WebSocketDisconnect
 
         with pytest.raises((WebSocketDisconnect, Exception)):
-            with test_client.websocket_connect("/api/chat/ws?token=invalid-token-abc"):
+            with test_client.websocket_connect("/api/chat/ws?ticket=invalid-ticket-abc"):
                 pass
 
-    def test_websocket_session_lifecycle(self, test_client, test_token):
+    def test_websocket_session_lifecycle(self, test_client, ws_ticket):
         """Test creating a session, closing it, and verifying it is no longer usable."""
-        with test_client.websocket_connect(f"/api/chat/ws?token={test_token}") as ws:
+        with test_client.websocket_connect(f"/api/chat/ws?ticket={ws_ticket}") as ws:
             # Create session
             ws.send_json({"jsonrpc": "2.0", "id": 1, "method": "session.create", "params": {}})
             resp = ws.receive_json()

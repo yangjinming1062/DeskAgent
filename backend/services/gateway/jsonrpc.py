@@ -76,6 +76,17 @@ def _redact_message(message: str) -> str:
     return out[:512]
 
 
+def _redact_data(data: Any) -> Any:
+    """Recursively scrub string leaves in structured error data through the redact pipeline."""
+    if isinstance(data, str):
+        return _redact_message(data)
+    if isinstance(data, dict):
+        return {k: _redact_data(v) for k, v in data.items()}
+    if isinstance(data, (list, tuple)):
+        return [_redact_data(v) for v in data]
+    return data
+
+
 class JsonRpcDispatcher:
     def __init__(self, send_json: Callable[[dict], Awaitable[None]]):
         self._send = send_json
@@ -152,5 +163,5 @@ class JsonRpcDispatcher:
         # raise sites that synthesize messages (handler except branches,
         # session.resume "not found", etc.) are responsible for keeping
         # them user-friendly; we still run the redact pass as a backstop.
-        error = {"code": code, "message": _redact_message(message), **({"data": data} if data is not None else {})}
+        error = {"code": code, "message": _redact_message(message), **({"data": _redact_data(data)} if data is not None else {})}
         await self._send({"jsonrpc": JSON_RPC_VERSION, "id": msg_id, "error": error})

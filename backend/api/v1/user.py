@@ -29,6 +29,9 @@ from sqlalchemy.orm import Session
 
 router = get_router()
 
+# Short-lived ticket TTL: wide enough to open the WS, narrow enough to expire before replay.
+WS_TICKET_TTL_SECONDS = 60
+
 
 @router.post("/login", response_model=TokenResponse)
 @limiter.limit(f"{SETTINGS.login_rate_limit_per_minute}/minute", key_func=get_remote_address)
@@ -60,6 +63,19 @@ def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)
         )
     )
     db.commit()
+    return TokenResponse(access_token=token, expires_in=expires_in, user=UserInfo.model_validate(user))
+
+
+@router.post("/ws-ticket", response_model=TokenResponse)
+def mint_ws_ticket(current: tuple[User, LoginRecord] = Depends(get_current_session)) -> TokenResponse:
+    """Mint a short-lived WS-only JWT so the renderer never holds the long-lived bearer."""
+    user, _session = current
+    token, expires_in, _ = create_access_token(
+        user_id=user.id,
+        username=user.username,
+        expires_in_seconds=WS_TICKET_TTL_SECONDS,
+        purpose="ws",
+    )
     return TokenResponse(access_token=token, expires_in=expires_in, user=UserInfo.model_validate(user))
 
 

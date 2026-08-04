@@ -28,7 +28,11 @@ def voices_for_provider(provider_name: str) -> list[VoiceEntry]:
 
 
 def default_voice_id(provider_name: str) -> str:
+    # Prefer a neutral voice so a no-match preference doesn't lock onto the first gendered entry.
     voices = voices_for_provider(provider_name)
+    for v in voices:
+        if v.gender == "neutral":
+            return v.id
     return voices[0].id if voices else ""
 
 
@@ -38,9 +42,8 @@ def pick_voice_id(voice: str, provider_name: str) -> str:
     # default so a foreign id never reaches ``synthesize()`` and 400s.
     #
     # Design tokens (e.g. ``mimo_voicedesign:<prompt>``) are dynamic and never
-    # appear in VOICE_CATALOG — pass them through so synthesize() can route by
-    # prefix.
-    if voice and ":" in voice:
+    # appear in VOICE_CATALOG — pass them through so synthesize() can route by prefix.
+    if voice and voice.startswith("mimo_voicedesign:"):
         return voice
     if voice and voice in (v.id for v in voices_for_provider(provider_name)):
         return voice

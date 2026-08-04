@@ -4,6 +4,61 @@ from dataclasses import dataclass
 from dataclasses import field
 
 from components import safe_json_loads
+from pydantic import BaseModel
+from pydantic import Field
+
+
+class SessionRuntimeInfo(BaseModel):
+    cwd: str | None
+    branch: str | None
+    model: str | None
+    provider: str
+    running: bool
+    settings: dict = Field(default_factory=dict)
+
+
+class SessionCreateResult(BaseModel):
+    session_id: str
+    info: SessionRuntimeInfo
+
+
+class SessionResumeResult(BaseModel):
+    session_id: str
+    message_count: int
+    messages: list
+    info: SessionRuntimeInfo
+
+
+class SessionTitleResult(BaseModel):
+    title: str
+
+
+class SessionSteerResult(BaseModel):
+    status: str
+
+
+class SessionCwdSetResult(BaseModel):
+    info: SessionRuntimeInfo
+
+
+class SessionUsageResult(BaseModel):
+    calls: int
+    input: int
+    output: int
+    total: int
+
+
+class ToolsSyncResult(BaseModel):
+    count: int
+
+
+class SetupStatusResult(BaseModel):
+    provider_configured: bool
+
+
+class SetupRuntimeResult(BaseModel):
+    ok: bool
+    error: str | None = None
 
 
 @dataclass

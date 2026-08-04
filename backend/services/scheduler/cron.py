@@ -335,6 +335,7 @@ async def _kick_autonomous_turn(job_id: int, meta: dict[str, Any]) -> None:
     cron fires; falls back to a fresh session if none exists yet.
     """
     from services.chat.orchestrator import run_chat_turn
+    from services.companion import is_quiet
     from services.gateway.connection import MANAGER
     from services.gateway.emitter import JsonRpcEmitter
     from modules.conversation import Conversation
@@ -346,6 +347,11 @@ async def _kick_autonomous_turn(job_id: int, meta: dict[str, Any]) -> None:
     user_id = meta["user_id"]
     prompt = (meta["payload"].get("prompt") or "").strip()
     if not prompt:
+        return
+
+    if is_quiet(user_id):
+        # Quiet suppresses autonomous outreach; gate before DB/turn.
+        logger.debug("cron: user is quiet, skipping autonomous turn", extra={"user_id": user_id, "job_id": job_id})
         return
 
     dispatcher = MANAGER._dispatchers.get(user_id)

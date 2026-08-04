@@ -20,7 +20,7 @@ def schema_name(schema: dict[str, Any]) -> str:
 # Tools may declare ``user_id``, ``llm_config``, ``user_settings`` as
 # normal kwargs without fearing LLM-injection — those keys are silently
 # dropped from the LLM-supplied args dict.
-_RESERVED_KEYS = frozenset({"user_id", "llm_config", "user_settings"})
+RESERVED_KEYS = frozenset({"user_id", "llm_config", "user_settings"})
 
 AvailabilityCheck = Callable[[dict[str, str]], bool]
 
@@ -139,7 +139,7 @@ class ToolsRegistry:
             return tool_error(f"Tool {name} not found in backend registry.")
 
         # Reserved keys must always win — see module docstring.
-        call_args: dict[str, Any] = {k: v for k, v in (args or {}).items() if k not in _RESERVED_KEYS}
+        call_args: dict[str, Any] = {k: v for k, v in (args or {}).items() if k not in RESERVED_KEYS}
         for k, v in context.items():
             call_args.setdefault(k, v)
 

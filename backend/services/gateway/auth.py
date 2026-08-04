@@ -2,7 +2,6 @@ import jwt
 from components import get_logger
 from components import SESSION_LOCAL
 from modules.auth import decode_access_token
-from modules.auth import LoginRecord
 from modules.auth import User
 
 logger = get_logger(__name__)
@@ -18,13 +17,16 @@ def authenticate_ws_token(token: str | None) -> tuple[User | None, dict | None]:
         logger.info("WS token decode failed", extra={"error": str(exc)})
         return None, None
 
-    user_id = payload.get("sub")
-    token_jti = payload.get("jti")
-    if not user_id or not token_jti:
+    if payload.get("purpose") != "ws":
+        logger.info("WS token missing purpose=ws claim; renderer must use /api/chat/ws-ticket")
         return None, None
 
+    user_id = payload.get("sub")
+    if not user_id:
+        return None, None
+
+    # WS tickets aren't tracked in LoginRecord; revocation flows through session deactivation.
     with SESSION_LOCAL() as db:
-        login = db.query(LoginRecord).filter(LoginRecord.token_jti == token_jti, LoginRecord.is_active.is_(True)).one_or_none()
-        user = db.query(User).filter(User.id == int(user_id), User.is_active.is_(True)).one_or_none() if login is not None else None
+        user = db.query(User).filter(User.id == int(user_id), User.is_active.is_(True)).one_or_none()
 
     return (user, payload) if user else (None, None)

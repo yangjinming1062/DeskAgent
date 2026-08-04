@@ -182,7 +182,7 @@ DeskAgent 伙伴的"人格"与"形象"是跨 Backend↔Desktop 的核心契约�
 
 **onboarding 断点恢复**（design §6.3）：onboarding 逐字段增量持久化经两个 JSON-RPC 方法：`onboarding.get_state` 返回已采集字段 + 下一个未答问题（`next_field`）；`onboarding.submit {field, value}` 即时落盘单个字段。Desktop 启动时调 `get_state`，未完成则从 `next_field` 恢复，崩溃/退出不丢进度。draft 存在 `Persona.definition_json`（`is_complete=False`），完成后 Desktop 发 `PUT /api/companion/persona` 覆盖为最终角色定义（`is_complete=True`）。
 
-**12 步 onboarding + 角色/用户单 PUT 双写**：onboarding 采集 12 个字段（4 旧 + 3 角色 —— `species` / `character_gender` / `appearance` —— + 5 结构化用户字段 `user_call_name` / `user_gender` / `user_age_bucket` / `user_hobbies` / `user_freeform`）。`PersonaUpdate` schema 把 user_* 字段显式声明为 optional 仍在 `extra="forbid"` 严格校验下；`update_persona` 在 `_validate_definition(persona_def)` 之前先把 user_* 字段抽出交给 `services.companion.memory_bootstrap.record_user_profile` 落到 `Memory` 表（query-then-update 幂等 upsert，tags `["onboarding","user_profile"]`，context `user_profile:*`，与 `NativeMemory._retain` 同一模式保证 SQLite 单测与生产 Postgres 同行为），然后写 persona 字段 + `is_complete=True`，**同一 `db.commit()` 让两路写入具备原子性**——失败要么都回滚、要么都落。生产 Postgres `main.py::_install_schema_extensions` 加 `uq_memories_user_context` 部分唯一索引做并发 race 兜底。avatar 生图 prompt 经 `_SPECIES_EN` / `_GENDER_EN` 查表把中文物种/性别翻成稳定英文 token（`灵兽` → `spirit beast`、`女` → `female`…），未知值/自由输入原文回退保留用户原意。
+**13 步 onboarding + 角色/用户单 PUT 双写**：onboarding 采集 13 个字段（4 旧 + 3 角色 —— `species` / `character_gender` / `appearance` —— + 5 结构化用户字段 `user_call_name` / `user_gender` / `user_age_bucket` / `user_hobbies` / `user_freeform`）。`PersonaUpdate` schema 把 user_* 字段显式声明为 optional 仍在 `extra="forbid"` 严格校验下；`update_persona` 在 `_validate_definition(persona_def)` 之前先把 user_* 字段抽出交给 `services.companion.memory_bootstrap.record_user_profile` 落到 `Memory` 表（query-then-update 幂等 upsert，tags `["onboarding","user_profile"]`，context `user_profile:*`，与 `NativeMemory._retain` 同一模式保证 SQLite 单测与生产 Postgres 同行为），然后写 persona 字段 + `is_complete=True`，**同一 `db.commit()` 让两路写入具备原子性**——失败要么都回滚、要么都落。生产 Postgres `main.py::_install_schema_extensions` 加 `uq_memories_user_context` 部分唯一索引做并发 race 兜底。avatar 生图 prompt 经 `_SPECIES_EN` / `_GENDER_EN` 查表把中文物种/性别翻成稳定英文 token（`灵兽` → `spirit beast`、`女` → `female`…），未知值/自由输入原文回退保留用户原意。
 
 ### 形象资产（AvatarAsset）
 
@@ -257,12 +257,15 @@ Backend 在对话响应的 `message.complete` 帧内联 `affect: {emotion}` 字�
 | Runner tools 在 desktop 离线时延迟返回 | ipc.await_future 有 300s 超时；三层 fast-fail 通常 < 100ms 返回，仅绕过三层后才进入超时 |
 | 并行 terminal 不可用 | Runner 端共享 LocalEnvironment 实例，快照文件不可并发写。架构决定 |
 | `apply_partial` 抹除"清空"语义 | PATCH 无法用 null 清字段 |
-| 形象资产 URL 有 TTL | `AvatarAsset.asset_url` 直接保存 provider 返回的 URL；Desktop 必须在收到时立刻本地缓存，过期后需重新生成 |
+| 形象资产 URL 有 TTL | 持久路径 ``companion-avatars/<id>.<ext>`` + 读时 5 分钟 HMAC 签名（`X-Signed-Url-Expiry`）。`verify_signed_asset_request` 强制校验，缺签名 401。Desktop 收到签名 URL 时本地缓存，过期后走 `/api/companion/avatar/list` 重新拉 |
 | `image_generate` / `text_to_speech_tool` / `video_generate` 不参与 config-aware 过滤 | 可用性取决于 provider；调用时按 `llm_config` 拉 `provider_for_service` |
 | MiniMax 文件 URL 9 小时有效期 | video_gen `provider.fetch` 拿到的 `download_url` 仅 9 小时有效，必须立即下载落 `data_dir/temp-media`，**不能**直接返给前端 |
 | MiniMax 内容风控 1027 不重试 | `base_resp.status_code=1027` 映射到 `content_policy_blocked` 且 `retryable=False`，避免重试三次白烧配额 |
 | clip 生成依赖 video_gen provider | `AvatarClip` 排队需 video_gen 配置（默认 MiniMax Hailuo）；未配置时 clip 排队静默失败（有日志），portrait 仍正常生成 |
 | clip 的 first_frame_image 需公网可达 | portrait `asset_url` 作为图生视频种子图传给 provider；本地 `/api/media/files/<id>` URL 在 Docker 内网不可达，需正确配置 `PUBLIC_URL_PREFIX` |
+| IPC future 跨副本 race | `_disturbance` 表/companion_submission_id 锁、escalation `video_next_retry_at` 时间戳 CAS — 都在 process-local 内存里，多副本部署下同一用户可能被两副本同时打 CAS。架构决定：当前是单副本；多副本迁移路径见 `services/gateway/ipc.py` 顶部 TODO |
+| Cron 跨副本 race | `_kick_autonomous_turn` 守卫只在 dispatcher 表里查 "用户在线"，多副本部署下两副本都会触发。当前 `kick` 内部 `is_quiet` 守卫 + per-user `asyncio.Lock` 兜底，**单副本**安全；多副本需要 LISTEN-NOTIFY 路径（见 category 8 backend README） |
+| video_gen 9h URL 过期 | `provider.fetch` 拿到的 `download_url` 仅 9 小时有效；下载测试必须确保 9h 内落地；CI fixture 用 fake provider 跳过此路径 |
 
 ## MiniMax 注意事项
 

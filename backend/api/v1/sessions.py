@@ -1,13 +1,13 @@
 from typing import Literal
 
 from common import get_router
-from components import attachments_gc_session as attachments_gc
+from components import attachments_gc_session
 from components import get_db
 from components import SEARCH_INPUT_MAX_LEN
 from components import SESSION_PREVIEW_MAX_CHARS
 from components import SETTINGS
 from components import SQL_LIKE_ESCAPE_CHAR
-from components import temp_files_gc_session as temp_files_gc
+from components import temp_files_gc_session
 from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Query
@@ -291,16 +291,16 @@ def delete_session(
     # shape and refuses path traversal; the underlying rmtree is bounded
     # by SETTINGS.data_dir/desktop-attachments/.
     try:
-        attachments_gc(SETTINGS.data_dir, str(deleted_id))
+        attachments_gc_session(SETTINGS.data_dir, str(deleted_id))
     except Exception:
         logger.warning(
-            "attachments_gc failed for session %s",
+            "attachments_gc_session failed for session %s",
             deleted_id,
             exc_info=True,
         )
     # Also clean up temp media files for this session
     try:
-        temp_files_gc(str(deleted_id))
+        temp_files_gc_session(str(deleted_id))
     except Exception:
         logger.warning("temp_files_gc failed for session %s", deleted_id, exc_info=True)
     return {"ok": True}

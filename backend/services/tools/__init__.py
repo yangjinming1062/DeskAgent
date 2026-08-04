@@ -10,6 +10,7 @@ from .memory import RETAIN_SCHEMA
 from .model_tools import coerce_tool_args
 from .registry import ALWAYS_AVAILABLE
 from .registry import REGISTRY
+from .registry import RESERVED_KEYS
 from .registry import schema_name
 from .registry import ToolsRegistry
 from .registry import WEB_EXTRACT_AVAILABILITY
@@ -35,6 +36,7 @@ from .tool_result_classification import file_mutation_result_landed
 __all__ = [
     # registry
     "REGISTRY",
+    "RESERVED_KEYS",
     "ToolsRegistry",
     "schema_name",
     "ALWAYS_AVAILABLE",

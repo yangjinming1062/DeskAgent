@@ -24,6 +24,32 @@ logger = get_logger(__name__)
 
 WEBHOOK_TIMEOUT = 10.0
 
+# Cloud-metadata hostnames that may resolve to a public IP.
+BLOCKED_HOSTNAMES = frozenset(
+    {
+        "metadata.google.internal",
+        "metadata.goog",
+        "metadata",
+        "instance-data.ec2.internal",
+        "instance-data",
+        "kubernetes.default.svc",
+    }
+)
+
+
+def _ip_in_blocked(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    """Extra metadata/CGNAT ranges the stdlib is_private family misses."""
+    # CGNAT (RFC 6598).
+    if ip in ipaddress.ip_network("100.64.0.0/10"):
+        return True
+    # Aliyun ECS IAM metadata (not in any private range).
+    if ip == ipaddress.ip_address("100.100.100.200"):
+        return True
+    # IPv6 metadata (GCP/Azure).
+    if ip == ipaddress.ip_address("fd00:ec2::254"):
+        return True
+    return False
+
 
 def is_safe_outbound(host: str) -> tuple[bool, str]:
     """Reject hosts that resolve to loopback, link-local, or private networks.
@@ -35,6 +61,8 @@ def is_safe_outbound(host: str) -> tuple[bool, str]:
     """
     if not host:
         return False, "missing host"
+    if host.lower() in BLOCKED_HOSTNAMES:
+        return False, f"refusing to connect to blocked hostname {host!r}"
     try:
         infos = socket.getaddrinfo(host, None)
     except socket.gaierror as exc:
@@ -48,6 +76,8 @@ def is_safe_outbound(host: str) -> tuple[bool, str]:
             return False, f"unparseable address {ip_str!r}"
         if ip.is_loopback or ip.is_link_local or ip.is_private or ip.is_multicast or ip.is_reserved or ip.is_unspecified:
             return False, f"refusing to connect to {ip_str} (loopback/link-local/private/multicast)"
+        if _ip_in_blocked(ip):
+            return False, f"refusing to connect to {ip_str} (cloud-metadata / CGNAT)"
 
     return True, ""
 
@@ -104,6 +134,9 @@ async def send_message_tool(
             if is_quiet(user_id):
                 if affect:
                     _emit_companion_affect(user_id, affect)
+                # Quiet + no affect: emit neutral so the sprite returns to idle.
+                else:
+                    _emit_companion_affect(user_id, "neutral")
             else:
                 _emit_companion_message(user_id, message, affect=affect)
         return json.dumps({"success": True, "channel": "companion", "quiet_suppressed": isinstance(user_id, int) and is_quiet(user_id)}, ensure_ascii=False)
@@ -116,8 +149,21 @@ async def send_message_tool(
     if not safe:
         return tool_error(f"Refusing to POST to {parsed.hostname}: {reason}")
 
+    # TOCTOU defense: the pre-check above resolves the hostname NOW,
+    # but between then and the actual TCP connect an attacker could
+    # rebind DNS to a private IP. ``httpx``'s connect-time hook runs
+    # once the kernel has chosen the destination; we re-verify that
+    # destination is still safelisted.
+    # Re-resolve the hostname at connect time to mitigate DNS rebinding between the pre-check and the TCP connect.
+    def _verify_connect_ip(request: httpx.Request) -> None:
+        verify, _ = is_safe_outbound(request.url.host or "")
+        if not verify:
+            raise httpx.ConnectError(
+                f"refusing to connect to {request.url.host} (TOCTOU: DNS rebinding)",
+            )
+
     try:
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(event_hooks={"connect": [_verify_connect_ip]}) as client:
             # Webhooks vary on payload shape; send both common keys.
             response = await client.post(target_webhook, json={"text": message, "content": message}, timeout=WEBHOOK_TIMEOUT)
             response.raise_for_status()
@@ -144,7 +190,7 @@ SEND_MESSAGE_SCHEMA = {
             "target_webhook": {"type": "string", "description": "Optional webhook URL to POST to (external bot). Omit to deliver to the user's desktop companion."},
             "affect": {
                 "type": "string",
-                "description": "Optional emotion token to attach to the proactive message so the desktop can drive the EMOTIONAL state (one of: happy, sad, surprised, excited, confused, concerned, shy, proud, grateful, playful, bored, lonely, neutral). The desktop still applies the disturbance tier gate — quiet suppresses text but keeps the affect cue.",
+                "description": "Optional emotion token to attach to the proactive message so the desktop can drive the EMOTIONAL state (one of: happy, sad, surprised, excited, confused, concerned, shy, proud, grateful, playful, bored, lonely, sleepy, curious, embarrassed, apologetic, neutral). The desktop still applies the disturbance tier gate — quiet suppresses text but keeps the affect cue.",
             },
         },
         "required": ["message"],
