@@ -27,15 +27,19 @@ async def video_generation_tool(
     session_id: str | None = None,
     **_,
 ) -> str:
-    """Video generation via MiniMax Hailuo. Submits an async job and waits
+    """Video generation via MiniMax-H3. Submits an async job and waits
     up to ``video_gen_tool_wait_seconds`` (default 180s) for completion;
     returns the local /api/media/files/<id> URL on success, or a pending
     marker with the task_id for long-running jobs that the model can
     re-query via :func:`video_generate_status`."""
-    if duration not in (6, 10):
-        return tool_error("duration must be 6 or 10 seconds")
-    if resolution not in ("512P", "768P", "1080P"):
-        return tool_error("resolution must be one of 512P / 768P / 1080P")
+    if not 4 <= duration <= 15:
+        return tool_error("duration must be an integer between 4 and 15 seconds")
+    if resolution not in ("768P", "2K"):
+        return tool_error("resolution must be one of 768P / 2K")
+    # t2v (content 仅含 text) requires ratio; H3 derives it from the image
+    # in i2v mode and ignores an explicit ratio. docs: VideoGenerationV2Req.
+    if first_frame_image is None and not aspect_ratio:
+        return tool_error("t2v mode requires aspect_ratio (one of 16:9, 9:16, 1:1, 4:3, 3:4, 21:9)")
 
     try:
         if user_id is not None:
@@ -112,15 +116,19 @@ async def video_generate_status_tool(task_id: int, user_id: int | None = None, *
 
 VIDEO_GENERATION_SCHEMA = {
     "name": "video_generate",
-    "description": "Generate a short video from a text prompt (and optionally a first-frame image). Returns the video URL on success, or a pending marker with a task_id for long jobs. Supported models: MiniMax-Hailuo-02 / Hailuo-2.3. The provider file URL is only valid for 9 hours — we download and host locally, so the returned URL stays usable.",
+    "description": "Generate a short video from a text prompt (and optionally a first-frame image). Returns the video URL on success, or a pending marker with a task_id for long jobs. Default model: MiniMax-H3 (4-15s, 768P/2K). The provider URL is short-lived — we download and host locally, so the returned URL stays usable.",
     "parameters": {
         "type": "object",
         "properties": {
             "prompt": {"type": "string", "description": "Describe the video content."},
-            "duration": {"type": "integer", "enum": [6, 10], "description": "Clip length in seconds."},
-            "resolution": {"type": "string", "enum": ["512P", "768P", "1080P"], "description": "Output resolution."},
-            "first_frame_image": {"type": "string", "description": "Public URL or data URL of the first frame (i2v mode)."},
-            "aspect_ratio": {"type": "string", "enum": ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"], "description": "Output aspect ratio."},
+            "duration": {"type": "integer", "minimum": 4, "maximum": 15, "description": "Clip length in seconds (4-15, integer)."},
+            "resolution": {"type": "string", "enum": ["768P", "2K"], "description": "Output resolution."},
+            "first_frame_image": {"type": "string", "description": "Public URL or data URL of the first frame (i2v mode). When set, the provider derives the aspect ratio from the image; aspect_ratio is ignored."},
+            "aspect_ratio": {
+                "type": "string",
+                "enum": ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"],
+                "description": "Output aspect ratio. Required for t2v (no first_frame_image); ignored when first_frame_image is set (i2v).",
+            },
         },
         "required": ["prompt"],
     },

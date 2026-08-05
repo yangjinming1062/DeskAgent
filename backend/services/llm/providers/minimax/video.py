@@ -8,31 +8,66 @@ from ..base import VideoJobStatus
 from ..http import get_http
 from ._errors import raise_for_minimax_response
 
+# MiniMax-H3 v2 task.status enum (docs: VideoTask.status). All values are
+# lowercase; we collapse "running" into the internal "processing" state but
+# keep "queued" distinct so callers can tell "not yet started" from
+# "running". "cancelled" is routed to "failed" — Backend's lifecycle has no
+# dedicated cancelled state and the user-visible behavior is the same.
 _STATUS_MAP = {
-    "Queueing": "queued",
-    "Processing": "processing",
-    "Success": "succeeded",
-    "Fail": "failed",
+    "queued": "queued",
+    "running": "processing",
+    "succeeded": "succeeded",
+    "failed": "failed",
+    "cancelled": "failed",
 }
+
+# Docs limit on ContentItem.text; the API rejects longer prompts with
+# bad_request_error, so fail fast client-side instead of round-tripping.
+_MAX_PROMPT_CHARS = 7000
+
+
+def _build_content(req: VideoGenRequest) -> list[dict]:
+    """Assemble the multimodal ``content[]`` array required by MiniMax-H3.
+
+    The text element is always present and bounded to 7000 chars (docs
+    limit on ``ContentItem.text``). A ``first_frame_image`` (i2v mode)
+    flips the ratio into ``adaptive`` per the API spec — H3 derives the
+    aspect ratio from the image and ignores an explicit ``ratio`` here.
+    """
+    if len(req.prompt) > _MAX_PROMPT_CHARS:
+        raise ValueError(
+            f"prompt exceeds MiniMax limit ({_MAX_PROMPT_CHARS} chars per ContentItem.text)"
+        )
+    content: list[dict] = [{"type": "text", "text": req.prompt}]
+    if req.first_frame_image:
+        content.append(
+            {
+                "type": "image_url",
+                "image_url": {"url": req.first_frame_image},
+                "role": "first_frame",
+            }
+        )
+    return content
 
 
 class MiniMaxVideoGenProvider(VideoGenProvider):
-    """Video generation via MiniMax's three-stage async pipeline:
+    """Video generation via MiniMax-H3 (v2 API):
 
-    1. ``submit``   → ``POST /v1/video_generation`` returns ``task_id``
-    2. ``poll``     → ``GET /v1/query/video_generation?task_id=...``
-                      returns status (``Success`` / ``Fail`` / ``Queueing`` /
-                      ``Processing``) and on success a ``file_id``
-    3. ``fetch``    → ``GET /v1/files/retrieve?file_id=...``
-                      returns the file's ``download_url`` (valid 9 hours)
+    1. ``submit``  → ``POST /v2/video_generation`` returns ``task_id``
+    2. ``poll``    → ``GET /v2/query/video_generation/{task_id}`` returns
+                     ``task.status`` and on success directly returns
+                     ``task.content.url`` (no separate files/retrieve hop)
+    3. ``fetch``   → unused for H3; ``poll`` already carries the URL inline
+                     on success, so ``video_jobs._download_and_store`` uses
+                     ``status.download_url`` directly and only falls back to
+                     ``fetch`` for providers that need it.
 
-    Default model is ``MiniMax-Hailuo-02`` (1080p, 10s); pass
-    ``MiniMax-Hailuo-2.3`` via env for the latest gen. ``first_frame_image``
-    enables i2v mode.
+    Default model is ``MiniMax-H3`` (768P / 2K, 4–15s integer). t2v mode
+    requires ``ratio``; i2v mode forces ``ratio=adaptive``.
     """
 
     provider_name = "minimax"
-    DEFAULT_MODELS: ClassVar[dict[str, str]] = {"video_gen": "MiniMax-Hailuo-02"}
+    DEFAULT_MODELS: ClassVar[dict[str, str]] = {"video_gen": "MiniMax-H3"}
 
     def __init__(self, config: ProviderConfig) -> None:
         super().__init__(config)
@@ -42,16 +77,18 @@ class MiniMaxVideoGenProvider(VideoGenProvider):
         model = req.model or self.config.model
         payload: dict = {
             "model": model,
-            "prompt": req.prompt,
+            "content": _build_content(req),
             "duration": req.duration,
             "resolution": req.resolution,
         }
-        if req.aspect_ratio:
-            payload["aspect_ratio"] = req.aspect_ratio
+        # t2v → ratio is required and must not be adaptive; i2v → H3 picks
+        # the ratio from the first-frame image so we must not pass one.
         if req.first_frame_image:
-            payload["first_frame_image"] = req.first_frame_image
+            payload["ratio"] = "adaptive"
+        elif req.aspect_ratio:
+            payload["ratio"] = req.aspect_ratio
 
-        resp = await self._client.post("/v1/video_generation", json=payload)
+        resp = await self._client.post("/v2/video_generation", json=payload)
         body = raise_for_minimax_response(resp, provider="minimax", model=model)
         task_id = body.get("task_id", "")
         if not task_id:
@@ -59,31 +96,44 @@ class MiniMaxVideoGenProvider(VideoGenProvider):
         return VideoJobStatus(task_id=task_id, status="queued", raw=body)
 
     async def poll(self, task_id: str) -> VideoJobStatus:
-        resp = await self._client.get("/v1/query/video_generation", params={"task_id": task_id})
+        resp = await self._client.get(f"/v2/query/video_generation/{task_id}")
         body = raise_for_minimax_response(resp, provider="minimax", model=self.config.model)
-        raw_status = body.get("status", "Processing")
+        # Docs: GetVideoGenerationV2Resp = {task: VideoTask} (strict wrap).
+        # Anything else is a contract break — raise so the worker records
+        # poll_failed instead of silently writing a half-parsed status row.
+        if not isinstance(body, dict) or not isinstance(body.get("task"), dict):
+            raise RuntimeError(f"MiniMax poll returned unexpected body shape: {body!r}")
+        task = body["task"]
+        raw_status = str(task.get("status", "")).lower()
         norm = _STATUS_MAP.get(raw_status, "processing")
-        file_id = body.get("file_id") if norm == "succeeded" else None
+        content = task.get("content") or {}
+        # video_generation / video_regeneration expose content.url; H3-Context-IR
+        # exposes content.prompt (no URL) — _download_and_store only fires
+        # when the task is succeeded AND a URL is present.
+        download_url = content.get("url") if norm == "succeeded" else None
+        # VideoTaskError = {code, message} per docs. A non-dict `error` is a
+        # contract drift; surface its repr rather than passing the raw value
+        # through as the user-facing message.
+        err = task.get("error")
+        if isinstance(err, dict):
+            error_message = err.get("message") or err.get("code")
+        elif err is None:
+            error_message = None
+        else:
+            error_message = f"provider returned non-standard error: {err!r}"
         return VideoJobStatus(
             task_id=task_id,
             status=norm,
-            file_id=file_id,
-            error=body.get("error_message") or body.get("error"),
+            file_id=None,
+            download_url=download_url,
+            error=error_message,
             raw=body,
         )
 
     async def fetch(self, file_id: str) -> VideoAsset:
-        resp = await self._client.get("/v1/files/retrieve", params={"file_id": file_id})
-        body = raise_for_minimax_response(resp, provider="minimax", model=self.config.model)
-        file_obj = body.get("file") or {}
-        download_url = file_obj.get("download_url") or ""
-        if not download_url:
-            raise RuntimeError(f"MiniMax file retrieve returned no download_url: {body}")
-        return VideoAsset(
-            download_url=download_url,
-            content_type=file_obj.get("content_type") or "video/mp4",
-            size=file_obj.get("bytes"),
-        )
+        # H3 v2 returns the download URL inline from ``poll``; ``fetch`` is
+        # unreachable for this provider and is only kept to satisfy the ABC.
+        raise RuntimeError("MiniMax-H3 returns the download URL via poll(); fetch() is not used")
 
     def raw_client(self) -> "object | None":
         return None
