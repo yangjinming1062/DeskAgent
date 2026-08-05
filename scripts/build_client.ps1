@@ -176,8 +176,8 @@ function Build-UpdateZip {
       runner/pyproject.toml); the desktop never sees a separate skills tar.
 
       Output: {OutputDir}/DeskAgent-{ver}-update.zip, containing:
-        - desktop artifacts (exe / dmg / zip / AppImage + blockmap)
-        - latest.yml / latest-mac.yml / latest-linux.yml (re-signed defensively)
+        - desktop artifacts (exe / dmg / zip + blockmap)
+        - latest.yml / latest-mac.yml (re-signed defensively)
         - latest-runner.yml (signed by New-RunnerManifest)
         - app-update.yml (electron-builder output; the URL placeholder is
           ignored by the desktop client, which resolves the host at runtime)
@@ -238,7 +238,7 @@ function Build-UpdateZip {
         # (see Sign-Manifest in lib/UpdateManifest.ps1); this catches the case
         # where electron-builder emitted an unsigned manifest on a cross-host
         # build.
-        foreach ($name in @('latest.yml', 'latest-mac.yml', 'latest-linux.yml')) {
+        foreach ($name in @('latest.yml', 'latest-mac.yml')) {
             $manifestPath = Join-Path $stageDir $name
             if (-not (Test-Path $manifestPath)) { continue }
             $raw = Get-Content -Raw $manifestPath
@@ -267,7 +267,7 @@ function Build-UpdateZip {
             desktop_path   = if ($desktopExe) { $desktopExe.Name } else { $null }
             runner_wheel   = "runner/$(Split-Path -Leaf $RunnerWheelPath)"
             server_py      = 'runner/server.py'
-            manifests      = @('latest.yml', 'latest-mac.yml', 'latest-linux.yml', 'latest-runner.yml')
+            manifests      = @('latest.yml', 'latest-mac.yml', 'latest-runner.yml')
         }
         ($manifest | ConvertTo-Json -Depth 5) | Set-Content -Path (Join-Path $stageDir 'manifest.json') -NoNewline
 

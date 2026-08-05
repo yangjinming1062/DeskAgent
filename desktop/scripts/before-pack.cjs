@@ -23,7 +23,7 @@ const fs = require('node:fs')
  * rename a `electron` file that no longer exists. The build dies with:
  *
  *   ENOENT: no such file or directory, rename
- *   '.../release/linux-unpacked/electron' -> '.../release/linux-unpacked/DeskAgent'
+ *   '.../release/win-unpacked/electron' -> '.../release/win-unpacked/DeskAgent'
  *
  * This is a hard failure with no obvious cause for the user — `deskagent desktop`
  * just prints "Desktop GUI build failed" and the only fix is to manually
@@ -45,7 +45,7 @@ const fs = require('node:fs')
  *
  * electron-builder passes a context with:
  *   - appOutDir:            the unpacked app directory about to be staged
- *   - electronPlatformName: 'win32' | 'darwin' | 'linux'
+ *   - electronPlatformName: 'win32' | 'darwin'
  */
 
 function cleanStaleAppOutDir(appOutDir) {

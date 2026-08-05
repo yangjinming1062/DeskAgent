@@ -1,7 +1,6 @@
 import logging
 import shutil
 import socket
-import subprocess
 import sys
 from pathlib import Path
 from typing import Any
@@ -10,7 +9,6 @@ logger = logging.getLogger(__name__)
 
 IS_WINDOWS = sys.platform == "win32"
 IS_MACOS = sys.platform == "darwin"
-IS_LINUX = sys.platform.startswith("linux")
 
 
 def _binary_exists(name: str) -> bool:
@@ -24,8 +22,6 @@ def microphone_available() -> bool:
       endpoints; treat non-empty capture set as "available".
     * macOS — AVFoundation's device list, proxied through ``sounddevice``
       (same import as Windows) so we get one consistent code path.
-    * Linux — ALSA ``arecord -l`` shows at least one capture card;
-      PipeWire ``wpctl status`` is an alternative when ALSA is masked.
 
     Returns ``True`` only when at least one capture device is
     enumerable. The probe never opens the device, never holds an
@@ -50,23 +46,6 @@ def microphone_available() -> bool:
             return False
         except (ImportError, OSError) as e:
             logger.debug("microphone_available sounddevice path failed: %s", e)
-    if IS_LINUX:
-        for cmd in (("arecord", "-l"), ("wpctl", "status")):
-            if _binary_exists(cmd[0]):
-                try:
-                    out = subprocess.run(cmd, capture_output=True, timeout=1.5, text=True, check=False)
-                    if out.returncode == 0 and out.stdout.strip():
-                        # ``arecord -l`` shows "card N: ..."; wpctl
-                        # lists capture sinks / sources. Either way,
-                        # non-empty stdout with rc=0 means at least
-                        # one capture device was enumerated.
-                        if cmd[0] == "arecord" and "card" in out.stdout.lower():
-                            return True
-                        if cmd[0] == "wpctl" and ("capture" in out.stdout.lower() or "source" in out.stdout.lower()):
-                            return True
-                except (OSError, subprocess.TimeoutExpired) as e:
-                    logger.debug("%s probe failed: %s", cmd[0], e)
-        return False
     return False
 
 
@@ -84,14 +63,7 @@ def screen_capture_available() -> bool:
     if IS_MACOS:
         # screencapture binary is always present.
         return _binary_exists("screencapture")
-    if _binary_exists("grim") or _binary_exists("gnome-screenshot") or _binary_exists("scrot"):
-        return True
-    try:
-        import mss  # noqa: F401 — capability check
-
-        return True
-    except ImportError:
-        return False
+    return False
 
 
 def local_stt_available() -> bool:
@@ -135,9 +107,9 @@ def system_activity_available() -> bool:
     Unlike the old "does ``ctypes.wintypes`` import" check, this probe
     exercises a representative call for each platform and reports
     ``True`` only when the call answers. If ``GetLastInputInfo`` /
-    ``CGSessionCopyCurrentDictionary`` / ``loginctl`` would raise in a
-    realistic call, we report ``False`` so the Desktop doesn't keep
-    polling a probe that always returns "unknown".
+    ``CGSessionCopyCurrentDictionary`` would raise in a realistic call,
+    we report ``False`` so the Desktop doesn't keep polling a probe
+    that always returns "unknown".
     """
     if IS_WINDOWS:
         try:
@@ -167,15 +139,6 @@ def system_activity_available() -> bool:
         except Exception as e:
             logger.debug("macos system-activity probe failed: %s", e)
             return False
-    # Linux: any one of loginctl / wmctrl / xset being present AND callable.
-    for cmd in (("loginctl", "show-session", "self"), ("wmctrl", "-lp")):
-        if _binary_exists(cmd[0]):
-            try:
-                out = subprocess.run(cmd, capture_output=True, timeout=1.0, check=False)
-                if out.returncode == 0:
-                    return True
-            except (OSError, subprocess.TimeoutExpired):
-                continue
     return False
 
 

@@ -58,7 +58,7 @@ _CUA_DRIVER_SAFE_ENV_EXACT = frozenset(
         "TMPDIR",
         "TMP",
         "TEMP",
-        # Linux display servers
+        # X11 / Wayland display server hint
         "DISPLAY",
         "QT5",
         "QT6",
@@ -68,18 +68,16 @@ _CUA_DRIVER_SAFE_ENV_PREFIXES = (
     # locale, XDG / freedesktop
     "LC_",
     "XDG_",
-    # GUI platform env (GTK / Qt / SDL / EGL / GL — needed for the capture
-    # pipeline to bind to a display surface on Linux)
+    # GUI platform env (Qt / SDL / EGL / GL — needed for the capture
+    # pipeline to bind to a display surface)
     "GTK_",
     "QT_",
     "SDL_",
     "EGL_",
     "GL_",
-    # macOS / Linux shared library paths
+    # macOS shared library paths
     "DYLD_",
     "LD_",
-    # Linux display servers + keymap (KEYBOARD_ matches KEYBOARD_LAYOUT etc.)
-    "WAYLAND_",
     "XKB_",
     "XKB_DEFAULT_",
     "KEYBOARD",
@@ -131,7 +129,7 @@ def _is_macos() -> bool:
 def cua_driver_binary_available() -> bool:
     """True if a working cua-driver binary is on PATH and matches the host
     architecture. A bare ``shutil.which`` accepts a copy built for a
-    different OS / arch (e.g. a macOS binary scp'd into a Linux VM) and
+    different OS / arch (e.g. a macOS binary scp'd onto a Windows host) and
     only fails at exec time with an unhelpful loader error — a quick
     ``subprocess.run([_CUA_DRIVER_CMD, '--version'])`` surfaces the
     mismatch early.
@@ -177,8 +175,9 @@ def _build_cua_driver_env() -> dict[str, str]:
 
     Compared to passing ``os.environ.copy()`` (the pre-fix behavior), this
     keeps Desktop's JWT, the Backend base URL, and any safeStorage ciphertext
-    out of the cua-driver process tree — they don't leak via ``/proc/<pid>/environ``
-    on Linux or ``ps -E`` on macOS.
+    out of the cua-driver process tree — they don't leak via ``ps -E`` on macOS
+    (or, on Windows, ``wmic process`` queries that the cua-driver doesn't
+    support anyway).
 
     The weak-secret substrings (``KEY``, ``AUTH``) match only at a word
     boundary, so ``KEYBOARD_LAYOUT`` / ``XKB_KEYMAP`` / ``OAUTH_CLIENT_ID``
@@ -492,13 +491,11 @@ class CuaDriverBackend(ComputerUseBackend):
             self._bridge.stop()
 
     def is_available(self) -> bool:
-        # cua-driver 0.5.x+ ships the same MCP surface on darwin, win32 and
-        # linux (X11 / Wayland-via-XWayland). The Python side is OS-agnostic;
-        # we only check that cua-driver is on PATH and we're not running on
-        # a host the driver doesn't support.
+        # cua-driver ships for darwin and win32 only. We only check that
+        # cua-driver is on PATH and we're not running on an unsupported host.
         if not cua_driver_binary_available():
             return False
-        return sys.platform in {"darwin", "win32"} or sys.platform.startswith("linux")
+        return sys.platform in {"darwin", "win32"}
 
     def capture(self, mode: str = "som", app: str | None = None) -> CaptureResult:
         lw_out = self._session.call_tool("list_windows", {"on_screen_only": True})

@@ -86,11 +86,6 @@ function quitAppFully() {
 function installTray(deps) {
   trayDeps = deps
 
-  if (deps.IS_WSL) {
-    deps.rememberLog('[tray] skipped: WSL — Tray API unavailable, hide-only fallback')
-    return null
-  }
-
   let image
   try {
     const iconPath = trayDeps.getAppIconPath()
@@ -113,13 +108,6 @@ function installTray(deps) {
 
   trayInstance.setToolTip('DeskAgent')
   trayInstance.setContextMenu(buildTrayMenu())
-
-  // On Linux, left-click on the tray icon opens the window. On Windows,
-  // `setContextMenu` makes a left-click surface the context menu and
-  // suppresses the click event — so the click handler is Linux-only.
-  if (process.platform === 'linux') {
-    trayInstance.on('click', () => showMainWindow())
-  }
 
   // macOS dock stays visible — the user can click the dock icon to bring
   // the window back (handled by `app.on('activate')` in main.cjs), so we

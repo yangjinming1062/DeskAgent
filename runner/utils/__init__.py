@@ -1,7 +1,6 @@
 from .async_bridge import in_async_loop
 from .async_bridge import safe_schedule_threadsafe
 from .capabilities import disk_free_bytes
-from .capabilities import IS_LINUX
 from .capabilities import IS_MACOS
 from .capabilities import local_stt_available
 from .capabilities import local_tts_available
@@ -88,7 +87,6 @@ __all__ = [
     "network_reachable",
     "screen_capture_available",
     "system_activity_available",
-    "IS_LINUX",
     "IS_MACOS",
     "IS_WINDOWS",
     "cfg_bool",

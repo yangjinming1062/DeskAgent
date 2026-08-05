@@ -93,7 +93,7 @@ clip 通过 `clip.updated` 事件单通道下发。`video_gen.*` 事件由 compa
 ## 6. 自主行为（IDLE 时）
 
 - **微动作**：10–25s 随机间隔切 `idle` / `idle_look_around` / `idle_blink` / `idle_stretch` scene。已加入 CLIP_SCENES batch 2，可升档到 Tier 2 / 3。
-- **情境动作**：基于 `$focusContext`（[activity.ts](activity.ts) 维护）。focused-app 分类（ide/music/reader/gaming/browsing/other/unknown）按平台白名单映射（Windows 进程名、macOS bundle id、Linux class 名）。IDLE 微动作池按分类切换：
+- **情境动作**：基于 `$focusContext`（[activity.ts](activity.ts) 维护）。focused-app 分类（ide/music/reader/gaming/browsing/other/unknown）按平台白名单映射（Windows 进程名、macOS bundle id）。IDLE 微动作池按分类切换：
 
   | 分类 | 微动作池（未就绪 fallback 到 `idle`） |
   |------|----------------------------------|

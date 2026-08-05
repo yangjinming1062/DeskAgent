@@ -70,7 +70,7 @@ backend/
 
 伙伴主动陪伴（问候、提醒、情境闲聊）经 PostgreSQL LISTEN/NOTIFY + Outbox 表支撑（[ARCHITECTURE.md §5](../ARCHITECTURE.md)）。
 
-`services/scheduler/cron.scheduler_loop` 每 60s `_tick()`：扫描到期任务，CAS 推进 `next_run_at`（多副本安全），写 `cron.trigger` 到 `ws_events` outbox。`_tick` 不 await WS 推送——慢客户端不卡 cron 事务。PostgreSQL trigger 在 `ws_events` INSERT 时 `NOTIFY ws_events_channel`，每个 Backend 副本独立 `LISTEN` + `DELETE ... RETURNING` 原子认领消费（行锁保证不重复投递）。无效 cron 表达式自动暂停 job。
+`services/scheduler/cron.scheduler_loop` 每 60s `_tick()`：扫描到期任务，CAS 推进 `next_run_at`，写 `cron.trigger` 到 `ws_events` outbox。`_tick` 不 await WS 推送——慢客户端不卡 cron 事务。PostgreSQL trigger 在 `ws_events` INSERT 时 `NOTIFY ws_events_channel`，每个 Backend 进程独立 `LISTEN` + `DELETE ... RETURNING` 原子认领消费（行锁保证不重复投递）。无效 cron 表达式自动暂停 job。
 
 **伙伴主动消息通道**：`send_message_tool` 无 `target_webhook` 时走 companion 原生路径——`_emit_companion_message` 写 `companion.message {text}` 到 `ws_events` outbox，经同一套 LISTEN/NOTIFY 推到桌面端（伙伴 TTS + 气泡呈现，[ARCHITECTURE.md §4.1.A](../ARCHITECTURE.md)）。带 `target_webhook` 时仍是外部 webhook POST（Slack/Discord 等）。
 
@@ -80,7 +80,7 @@ backend/
 
 **戳/拖 LLM 反应**：`companion.interact {tone, kind, poke_count, idle_seconds, local_hour}` JSON-RPC（`services/companion/interact.py::check_interact`）由 Desktop 在本地文案池基础上延迟 200ms 触发，返回 `{text, emotion, reason}`。per-user inflight 取消 + 1.5s 节流（`handlers.py`），tone 服务端独立推导（`毒舌`/`傲娇`→snarky 等）。
 
-**互动统计聚合**：`companion.record_interaction_stats {kind, hour}` JSON-RPC（`services/companion/interaction_stats.py::record_interaction`，无 LLM）按 UTC 自然日聚合三类计数（poke/drag/chat_turn）+ 24h hour_buckets；当三类**各自** ≥ 10（双门限）时 upsert `Memory(context="interaction_stats:<date>")`；同日多次跨门限同 row 覆盖。**多副本约束**：`interaction_stats._counters` 是 process-local dict（见 `services/companion/interaction_stats.py` 顶部注释），单副本安全，多副本需迁 Redis（与 IPC future 同属 [ARCHITECTURE.md §5 已知限制](../ARCHITECTURE.md)）。
+**互动统计聚合**：`companion.record_interaction_stats {kind, hour}` JSON-RPC（`services/companion/interaction_stats.py::record_interaction`，无 LLM）按 UTC 自然日聚合三类计数（poke/drag/chat_turn）+ 24h hour_buckets；当三类**各自** ≥ 10（双门限）时 upsert `Memory(context="interaction_stats:<date>")`；同日多次跨门限同 row 覆盖。**单实例**：`interaction_stats._counters` 是 process-local dict（`services/companion/interaction_stats.py`）；架构按单实例部署，本地 dict 是 final state。
 
 ## 系统提示词与上下文管理
 
@@ -248,7 +248,7 @@ Backend 在对话响应的 `message.complete` 帧内联 `affect: {emotion}` 字�
 
 **per-user key 设计**：middleware 仅做 JWT 签名校验 + 解析 `sub` stash `user_id`（不做 DB 查），handler 的 `Depends(get_current_session)` 做完整校验。伪造 token 要么签名失败（降级 per-IP）要么通过验证（拿到合法 user 的桶），无安全放大风险。
 
-**多副本约束**：in-memory storage 意味着 N 副本 = N× 单副本有效配额，未来迁 Redis 是单点改动。**fail-open**：slowapi 内部异常不阻断请求。
+**单实例**：in-memory storage 是当前设计；架构不支持多实例水平扩展。**fail-open**：slowapi 内部异常不阻断请求。
 
 ## 数据库
 
@@ -275,8 +275,8 @@ Backend 在对话响应的 `message.complete` 帧内联 `affect: {emotion}` 字�
 | MiniMax 内容风控 1027 不重试 | `base_resp.status_code=1027` 映射到 `content_policy_blocked` 且 `retryable=False`，避免重试三次白烧配额 |
 | clip 生成依赖 video_gen provider | `AvatarClip` 排队需 video_gen 配置（默认 MiniMax Hailuo）；未配置时 clip 排队静默失败（有日志），portrait 仍正常生成 |
 | clip 的 first_frame_image 需公网可达 | portrait `asset_url` 作为图生视频种子图传给 provider；本地 `/api/media/files/<id>` URL 在 Docker 内网不可达，需正确配置 `PUBLIC_URL_PREFIX` |
-| IPC future 跨副本 race | `_disturbance` 表/companion_submission_id 锁、escalation `video_next_retry_at` 时间戳 CAS — 都在 process-local 内存里，多副本部署下同一用户可能被两副本同时打 CAS。架构决定：当前是单副本；多副本迁移路径见 `services/gateway/ipc.py` 顶部 TODO |
-| Cron 跨副本 race | `_kick_autonomous_turn` 守卫只在 dispatcher 表里查 "用户在线"，多副本部署下两副本都会触发。当前 `kick` 内部 `is_quiet` 守卫 + per-user `asyncio.Lock` 兜底，**单副本**安全；多副本需要 LISTEN-NOTIFY 路径（见 category 8 backend README） |
+| 单实例 IPC future | `_disturbance`、companion_submission_id 锁、`video_next_retry_at` CAS 都在 process-local 内存里；架构按单实例部署 |
+| Cron kick 守卫 | `_kick_autonomous_turn` 仅在 dispatcher 表里查"用户在线"；`kick` 内部 `is_quiet` 守卫 + per-user `asyncio.Lock` 兜底 |
 | video_gen 9h URL 过期 | `provider.fetch` 拿到的 `download_url` 仅 9 小时有效；下载测试必须确保 9h 内落地；CI fixture 用 fake provider 跳过此路径 |
 
 ## MiniMax 注意事项

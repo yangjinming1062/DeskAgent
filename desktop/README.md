@@ -28,7 +28,7 @@ DeskAgent 是**双层叠加**的单 Electron 应用：
 - **双 runtime**：`main/*.cjs`（CommonJS，不经 vite/tsc）+ `renderer/**/*.{ts,tsx}`（ESM, Vite 编译）。绝不混用——main 用 `.cjs`，renderer 用 `.ts/.tsx`。
 - **单 chunk 构建**：Vite 产出单 JS bundle（避免 electron-builder OOM 扫描千级 chunk）。
 - **hoisted nodeLinker**：Electron 42 + pnpm 11 兼容性要求。
-- **关闭按钮语义**：Win/Linux/WSL 上 close = hide to tray；macOS 上 close = hide window，Dock icon 保留。统一由 `main/lifecycle/tray.cjs::installCloseInterceptor` 实现。
+- **关闭按钮语义**：Windows 上 close = hide to tray；macOS 上 close = hide window、Dock icon 保留。统一由 `main/lifecycle/tray.cjs::installCloseInterceptor` 实现。
 - **单实例锁**：`app.requestSingleInstanceLock()` 在 `app.whenReady()` 之前调用；`second-instance` 唤起现有窗口。dev opt-out：`DESKAGENT_DESKTOP_DISABLE_SINGLE_INSTANCE_LOCK=1`。
 - **Windows AppUserModelID**：`'io.deskagent.agent'`（与 `package.json#build.appId` 对齐），Windows 通知分组依赖此 ID。
 - **精灵窗口透明需要双重保证**：BrowserWindow `transparent: true` **加** 渲染层 `body` 透明（`html[data-role='sprite'] body { background: transparent }`，`data-role` 由 `index.html` 内嵌脚本在 `<head>` 解析时同步设置）。两者缺一，body 背景色（`var(--ui-chat-surface-background)`）会在桌面剩余区域盖满屏幕——违背"伙伴应不干扰用户正常工作"的契约。
@@ -78,7 +78,7 @@ renderer 通过 `window.deskagent.*`（preload contextBridge）调 main；main �
 
 ### 打扰档位的权威边界
 
-**Desktop 是 disturbance tier 的唯一权威**（[ARCHITECTURE.md §5](../ARCHITECTURE.md)）：`$userPreferredTier` 持久化在 `localStorage`、`$effectiveTierOverride` 由活动感知器（`companion/activity.ts`）写入、`$effectiveTier` 是 computed 派生。Desktop 每次有效值变化都经 `companion.set_disturbance_tier` 单向 push 给 Backend，**Backend 端 `_disturbance[user_id]` 只是过程镜像，不独立推导**——服务端 gate（`send_message_tool` / `cron._kick_autonomous_turn`）读镜像，但用户偏好与活动上下文只在 Desktop 持有。WS 重连后 Desktop 立刻再推一次同步（`use-gateway-boot.syncDisturbanceTier`）。这条边界避免 Backend 在多副本/重启时漂移用户意图，也防止 LLM 在 server-side 推导时绕过用户的手动 quiet 选择。
+**Desktop 是 disturbance tier 的唯一权威**（[ARCHITECTURE.md §5](../ARCHITECTURE.md)）：`$userPreferredTier` 持久化在 `localStorage`、`$effectiveTierOverride` 由活动感知器（`companion/activity.ts`）写入、`$effectiveTier` 是 computed 派生。Desktop 每次有效值变化都经 `companion.set_disturbance_tier` 单向 push 给 Backend，**Backend 端 `_disturbance[user_id]` 只是过程镜像，不独立推导**——服务端 gate（`send_message_tool` / `cron._kick_autonomous_turn`）读镜像，但用户偏好与活动上下文只在 Desktop 持有。WS 重连后 Desktop 立刻再推一次同步（`use-gateway-boot.syncDisturbanceTier`）。这条边界让 Backend 重启或 WS 短暂掉线时也不漂移用户意图，也防止 LLM 在 server-side 推导时绕过用户的手动 quiet 选择。
 
 ### 本地文件系统拦截
 
@@ -144,6 +144,6 @@ Desktop 走 `electron-updater` 从 Backend `/api/update` 拉取预构建安装�
 | `voice-call-dock.tsx` useEffect 依赖故意省略 `[gatewayState]` | 麦克风挂载/take-down 由 `[requestGateway]` 触发；reconnect 重入若再加 `gatewayState` 会再次重新挂麦克风导致当前通话被打断。代码注释内已说明，依赖列表是当下决策。 |
 | Electron 42 + pnpm 11 需 hoisted | 失去 phantom-deps 防护；等 Electron ESM 主进程支持 |
 | `.cjs` + `.ts` 双 runtime | 新增 main 模块用 `.cjs`，renderer 用 `.ts/.tsx`；等 Electron ESM 主进程支持 |
-| 透明窗口平台差异 | 远程显示（X11/VNC/RDP）无法合成透明层，精灵窗口降级为非透明（`SPRITE_TRANSPARENT`）；Linux 无 compositor 仍可能黑底——macOS/Windows 支持良好 |
+| 透明窗口平台差异 | 远程显示（X11/VNC/RDP）无法合成透明层，精灵窗口降级为非透明（`SPRITE_TRANSPARENT`）；macOS / Windows 本地会话支持良好 |
 | 托盘 Settings 中"重载 MCP"不可用 | gateway 仅在精灵窗口 boot；从托盘打开的 framed 工具窗口无 gateway，`hub/settings/mcp-settings.tsx` 的 reload 按钮优雅报"gateway 不可用"。其余 settings（runnerConfig 等 REST）不受影响 |
-| WSL 下无系统托盘 | Electron Tray API 在 WSL 不可用；降级为 hide-only；托盘菜单在 WSL 下不可达 |
+| Windows 单实例锁 dev opt-out | `DESKAGENT_DESKTOP_DISABLE_SINGLE_INSTANCE_LOCK=1` 强制多实例运行，便于并行调试窗口 |

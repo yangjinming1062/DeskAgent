@@ -91,8 +91,6 @@ def _get_backend() -> ComputerUseBackend:
                     from .cu_win_backend import WinBackend
 
                     _backend = WinBackend()
-                elif sys.platform.startswith("linux") and cua_driver_binary_available():
-                    _backend = CuaDriverBackend()
                 else:
                     _backend = _NoopBackend()
             else:

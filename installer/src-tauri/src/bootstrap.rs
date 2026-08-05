@@ -228,17 +228,17 @@ pub(crate) fn desktop_install_root() -> PathBuf {
             .map(|p| p.join("Programs").join("DeskAgent"))
             .unwrap_or_else(|| PathBuf::from("C:/Program Files/DeskAgent"))
     }
-    #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
-        // Linux: install.{sh,ps1} doesn't run on Linux; this is the path
-        // install.sh writes the AppImage to (in $DESKAGENT_HOME/bin). Use that
-        // so launch_deskagent_desktop works the same way.
-        crate::paths::deskagent_home().join("bin")
+        // Unreachable: installer only ships for macOS / Windows. An empty
+        // PathBuf keeps the function total without pretending any real
+        // path exists on an unsupported host.
+        PathBuf::new()
     }
 }
 
 /// Resolves the installed desktop binary at its platform-canonical path.
-/// Returns the .app bundle on macOS, the .exe on Windows, the AppImage on Linux.
+/// Returns the .app bundle on macOS, the .exe on Windows.
 pub(crate) fn resolve_deskagent_desktop_exe() -> Option<PathBuf> {
     #[cfg(target_os = "macos")]
     {
@@ -250,15 +250,6 @@ pub(crate) fn resolve_deskagent_desktop_exe() -> Option<PathBuf> {
     #[cfg(target_os = "windows")]
     {
         let exe = desktop_install_root().join("DeskAgent.exe");
-        if exe.exists() {
-            return Some(exe);
-        }
-    }
-    #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
-    {
-        // Linux AppImage lives at $DESKAGENT_HOME/bin/DeskAgent.AppImage
-        // (set by install.sh Stage-UnpackDesktop).
-        let exe = desktop_install_root().join("DeskAgent.AppImage");
         if exe.exists() {
             return Some(exe);
         }
@@ -815,10 +806,8 @@ fn build_bundle_context(app: &AppHandle) -> BundleContext {
 
     let installer_format = if cfg!(target_os = "macos") {
         "dmg"
-    } else if cfg!(target_os = "windows") {
-        "nsis"
     } else {
-        "AppImage"
+        "nsis"
     }
     .to_string();
 
@@ -920,10 +909,8 @@ mod tests {
                 .join("MacOS");
             std::fs::create_dir_all(&macos_dir).unwrap();
             std::fs::write(macos_dir.join("DeskAgent"), b"#!/bin/sh\n").unwrap();
-        } else if cfg!(target_os = "windows") {
-            std::fs::write(install_root.join("DeskAgent.exe"), b"stub").unwrap();
         } else {
-            std::fs::write(install_root.join("DeskAgent.AppImage"), b"stub").unwrap();
+            std::fs::write(install_root.join("DeskAgent.exe"), b"stub").unwrap();
         }
         install_root.to_path_buf()
     }

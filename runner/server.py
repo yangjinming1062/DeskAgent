@@ -30,6 +30,22 @@ from utils import snapshot
 logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger("deskagent_runner")
 
+
+def _require_supported_host() -> None:
+    """Runner only ships for Windows + macOS. Refuse to start elsewhere.
+
+    Running on an unsupported host leaves several subsystems silently
+    unavailable: microphone probes, the system-activity backends, the
+    cu_* tools, and the language-specific Tirith advisories.
+    Rather than fail later with a confusing capability error, fail fast here
+    with a clear message the operator / CI can act on.
+    """
+    if sys.platform not in {"win32", "darwin"}:
+        raise SystemExit(f"DeskAgent Runner does not support the {sys.platform!r} host. " "Supported hosts are Windows and macOS only.")
+
+
+_require_supported_host()
+
 _ACTIVE_WS = None
 _RUNNER_LOOP: asyncio.AbstractEventLoop | None = None
 _PENDING_RPC: dict[str, asyncio.Future] = {}

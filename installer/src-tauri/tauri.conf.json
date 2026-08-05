@@ -35,13 +35,12 @@
     "active": true,
     "category": "DeveloperTool",
     "shortDescription": "DeskAgent",
-    "longDescription": "Installs DeskAgent Agent on your machine. Drives installer/install.ps1 (Windows) and installer/install.sh (macOS/Linux).",
+    "longDescription": "Installs DeskAgent Agent on your machine. Drives installer/install.ps1 (Windows) and installer/install.sh (macOS).",
     "publisher": "DeskAgent",
     "copyright": "Copyright © 2026 DeskAgent",
     "targets": [
       "app",
-      "dmg",
-      "appimage"
+      "dmg"
     ],
     "resources": [
       "../payload/runner/",

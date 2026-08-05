@@ -1019,7 +1019,6 @@ function renderVersions(data) {
             <td class="td-platforms">
                 ${plat('Windows', !!v.exe_filename)}
                 ${plat('macOS', !!v.mac_filename)}
-                ${plat('Linux', !!v.linux_filename)}
                 ${plat('Runner', !!v.runner_filename)}
             </td>
             <td>${v.is_active ? pill('上线', 'green') : pill('下线', 'muted')}</td>

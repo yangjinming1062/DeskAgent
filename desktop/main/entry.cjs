@@ -24,8 +24,7 @@ const http = require('node:http')
 const https = require('node:https')
 const path = require('node:path')
 const { fileURLToPath, pathToFileURL } = require('node:url')
-const { spawn } = require('node:child_process')
-const { detectRemoteDisplay, isWslEnvironment } = require('./lifecycle/platform.cjs')
+const { detectRemoteDisplay } = require('./lifecycle/platform.cjs')
 const {
   DATA_URL_READ_MAX_BYTES,
   DEFAULT_FETCH_TIMEOUT_MS,
@@ -72,7 +71,6 @@ if (USER_DATA_OVERRIDE) {
 const DEV_SERVER = process.env.DESKAGENT_DESKTOP_DEV_SERVER
 const IS_PACKAGED = app.isPackaged
 const IS_MAC = process.platform === 'darwin'
-const IS_WSL = isWslEnvironment()
 const APP_ROOT = app.getAppPath()
 
 // Single-instance lock: must run before `app.whenReady()` (Electron docs).
@@ -90,7 +88,7 @@ if (process.env.DESKAGENT_DESKTOP_DISABLE_SINGLE_INSTANCE_LOCK !== '1') {
 // Remote displays (SSH X11 forwarding, VNC, RDP) make Chromium's GPU
 // compositor flicker — accelerated layers can't be presented cleanly over the
 // wire, so the window flashes during scroll/streaming/animation. Local
-// Windows/macOS (and WSLg, which renders locally via vGPU) composite on the
+// Windows/macOS composite on the GPU and never see it. Fall back to software
 // GPU and never see it. Fall back to software rendering when a remote display
 // is detected; it's rock-steady over the wire and the CPU cost is negligible
 // next to the connection's latency. Must run before app `ready` — these
@@ -170,7 +168,7 @@ const WINDOW_BUTTON_POSITION = {
   x: 24,
   y: TITLEBAR_HEIGHT / 2 - MACOS_TRAFFIC_LIGHTS_HEIGHT / 2
 }
-// Width Electron reserves for the Windows/Linux native min/max/close cluster
+// Width Electron reserves for the Windows native min/max/close cluster
 // when `titleBarOverlay` is enabled. The OS paints these buttons in the
 // top-right corner of the renderer; we have to leave that much room on the
 // right edge so our system tools (file browser, haptics, settings) don't sit
@@ -525,63 +523,9 @@ function openExternalUrl(rawUrl) {
 
   const url = parsed.toString()
 
-  if (IS_WSL) {
-    rememberLog(`[link] opening via WSL→Windows: ${url}`)
-    const proc = spawn('cmd.exe', ['/c', 'start', '""', url], {
-      detached: true,
-      stdio: 'ignore',
-      windowsHide: true
-    })
-    proc.on('error', error => {
-      rememberLog(`[link] cmd.exe start failed: ${error.message}; falling back to xdg-open`)
-      shell.openExternal(url).catch(fallback => rememberLog(`[link] xdg-open failed: ${fallback.message}`))
-    })
-    proc.unref()
-
-    return true
-  }
-
   shell.openExternal(url).catch(error => rememberLog(`[link] openExternal failed: ${error.message}`))
 
   return true
-}
-
-function ensureWslWindowsFonts() {
-  if (!IS_WSL) return
-
-  const fontsDir = ['/mnt/c/Windows/Fonts', '/mnt/c/windows/fonts'].find(candidate => {
-    try {
-      return fs.statSync(candidate).isDirectory()
-    } catch {
-      return false
-    }
-  })
-  if (!fontsDir) return
-
-  try {
-    const confDir = path.join(app.getPath('home'), '.config', 'fontconfig', 'conf.d')
-    const confPath = path.join(confDir, '99-deskagent-wsl-windows-fonts.conf')
-    let existing = ''
-    try {
-      existing = fs.readFileSync(confPath, 'utf8')
-    } catch {
-      existing = ''
-    }
-    if (existing.includes(fontsDir)) return
-
-    fs.mkdirSync(confDir, { recursive: true })
-    fs.writeFileSync(
-      confPath,
-      `<?xml version="1.0"?>\n<!DOCTYPE fontconfig SYSTEM "fonts.dtd">\n<fontconfig>\n  <dir>${fontsDir}</dir>\n</fontconfig>\n`
-    )
-    rememberLog(`[fonts] wired WSL Windows fonts for renderer: ${fontsDir}`)
-
-    const cache = spawn('fc-cache', ['-f', fontsDir], { detached: true, stdio: 'ignore' })
-    cache.on('error', () => undefined)
-    cache.unref()
-  } catch (error) {
-    rememberLog(`[fonts] WSL font setup skipped: ${error.message}`)
-  }
 }
 
 function clampBootProgress(value) {
@@ -895,8 +839,8 @@ function getWindowButtonPosition() {
 
 function getNativeOverlayWidth() {
   // macOS reports traffic-light coords via windowButtonPosition; the
-  // titlebarOverlay there doesn't reserve right-edge space. Windows/Linux
-  // render the native window-controls overlay on the right, so the renderer
+  // titlebarOverlay there doesn't reserve right-edge space. Windows
+  // renders the native window-controls overlay on the right, so the renderer
   // needs to inset its right cluster by this much to clear them.
   return IS_MAC ? 0 : NATIVE_OVERLAY_BUTTON_WIDTH
 }
@@ -1131,7 +1075,7 @@ function restorePersistedZoomLevel(window) {
 function installZoomShortcuts(window) {
   // Override Ctrl/Cmd + +/-/0 with half the default zoom step (0.1 vs 0.2).
   // The menu items handle this on macOS (where the menu is always present),
-  // but on Linux/Windows the menu is null and Chromium's default handler
+  // but on Windows the menu is null and Chromium's default handler
   // would use the full 0.2 step, so we intercept here for consistency.
   const ZOOM_STEP = 0.1
   window.webContents.on('before-input-event', (event, input) => {
@@ -1582,7 +1526,7 @@ function createToolWindow() {
     minHeight: 620,
     title: 'DeskAgent',
     // Frameless title bar on every platform so the renderer can paint the
-    // titlebar tools flush with the top edge. On Windows/Linux titleBarOverlay
+    // titlebar tools flush with the top edge. On Windows titleBarOverlay
     // paints native min/max/close in the top-right of the renderer; on macOS it
     // reserves a content inset alongside the traffic lights.
     titleBarStyle: 'hidden',
@@ -1637,7 +1581,7 @@ function createToolWindow() {
 // render as absolutely positioned overlays inside it; non-interactive regions
 // are click-through (setIgnoreMouseEvents + forward). Remote displays (X11 /
 // VNC / RDP) can't composite transparency, so the sprite degrades to a
-// non-transparent window there (Linux-no-compositor degradation is a known
+// non-transparent window there (no compositor degradation is a known
 // limitation, see desktop/README.md).
 const SPRITE_TRANSPARENT = !REMOTE_DISPLAY_REASON
 
@@ -1996,7 +1940,6 @@ app.whenReady().then(async () => {
   }
   installMediaPermissions()
   registerMediaProtocol()
-  ensureWslWindowsFonts()
   configureSpellChecker()
   registerPowerResumeListeners()
   setupAutoUpdater()
@@ -2028,7 +1971,6 @@ app.whenReady().then(async () => {
     Tray,
     nativeImage,
     IS_MAC,
-    IS_WSL,
     getAppIconPath,
     rememberLog,
     bridgeDeps,
@@ -2054,7 +1996,7 @@ app.whenReady().then(async () => {
 
 // Seed Chromium's spellchecker with the system locale (falling back to en-US).
 // On macOS Electron uses the native spellchecker which ignores this list, but
-// on Windows/Linux Chromium downloads Hunspell dictionaries on demand and
+// on Windows Chromium downloads Hunspell dictionaries on demand and
 // won't enable any without an explicit language.
 function configureSpellChecker() {
   try {

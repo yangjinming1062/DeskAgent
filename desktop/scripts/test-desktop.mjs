@@ -37,15 +37,7 @@ const APP = (() => {
       unpackedDistIndex: path.join(unpacked, 'resources', 'app.asar.unpacked', 'dist', 'index.html')
     }
   }
-  // linux unpacked layout matches windows but with different binary name
-  const unpacked = path.join(RELEASE_ROOT, 'linux-unpacked')
-  return {
-    appPath: unpacked,
-    binary: path.join(unpacked, 'DeskAgent'),
-    resourcesPath: path.join(unpacked, 'resources'),
-    asarPath: path.join(unpacked, 'resources', 'app.asar'),
-    unpackedDistIndex: path.join(unpacked, 'resources', 'app.asar.unpacked', 'dist', 'index.html')
-  }
+  die(`Unsupported platform for desktop bundle validation: ${PLATFORM}`)
 })()
 
 // Default DESKAGENT_HOME for non-sandboxed runs -- matches main.cjs's
@@ -101,11 +93,7 @@ function expectedNativeDepPaths() {
 function ensurePlatformBuilds() {
   if (PLATFORM === 'darwin') return
   if (PLATFORM === 'win32') return
-  die(
-    `Desktop bundle validation is only wired for darwin / win32 today; platform=${PLATFORM} ` +
-      `is not yet supported. Linux packaging is owned by the installer module's Tauri ` +
-      `\`DeskAgent-Setup\` binary.`
-  )
+  die(`Desktop bundle validation is only wired for darwin / win32; platform=${PLATFORM} is not supported.`)
 }
 
 function ensurePackagedApp() {
@@ -179,10 +167,8 @@ function openApp() {
 
   if (PLATFORM === 'darwin') {
     run('open', ['-n', APP.appPath])
-  } else if (PLATFORM === 'win32') {
-    // Spawn detached so the test script exits while the app keeps running.
-    spawn(APP.binary, [], { detached: true, stdio: 'ignore' }).unref()
   } else {
+    // Spawn detached so the test script exits while the app keeps running.
     spawn(APP.binary, [], { detached: true, stdio: 'ignore' }).unref()
   }
 }

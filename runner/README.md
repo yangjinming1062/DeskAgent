@@ -20,7 +20,7 @@
 
 Wheel 产物：`dist/deskagent-agent-*.whl`。Desktop spawn `$DESKAGENT_HOME/runner/.venv/{bin/python,Scripts/python.exe} $DESKAGENT_HOME/runner/server.py --desktop-ws <ws-url>`。安装布局详 [installer/README.md §10](../installer/README.md)。
 
-**音频引擎默认在基础 wheel 内**：`faster-whisper` / `piper-tts` / `sounddevice` / `numpy` 是伴侣语音栈的核心依赖（[COMPANION_DESIGN §5 语音交互](../COMPANION_DESIGN.md#5-语音交互stt--tts)），从基础 wheel 直接可用。`pyttsx3` 用平台 marker 限制（Linux 上 voice 栈走 Piper 单一引擎即可）。运行时仍要求系统 PATH 有 `ffmpeg`（`audio_io.wav_to_wav_pcm16` 用）。
+**音频引擎默认在基础 wheel 内**：`faster-whisper` / `piper-tts` / `sounddevice` / `numpy` 是伴侣语音栈的核心依赖（[COMPANION_DESIGN §5 语音交互](../COMPANION_DESIGN.md#5-语音交互stt--tts)），从基础 wheel 直接可用。`pyttsx3` 用平台 marker 限制（macOS / Windows 上有 SAPI5 / NSSpeechSynthesizer 兜底）。运行时仍要求系统 PATH 有 `ffmpeg`（`audio_io.wav_to_wav_pcm16` 用）。
 
 要确认 capability 是否在当前 venv 内为真，调 `deskagent.info` 看 `capabilities.local_stt / local_tts` 字段——运行时检测比静态 extra 标记更准（依赖可能在 import 时报警但运行时仍可用，反过来亦然）。
 
@@ -226,7 +226,7 @@ Skills 由安装器 seed 到 `$DESKAGENT_HOME/skills/`。启用/禁用配置在 
 
 **路径单一来源**：所有 skills 模块都通过 `utils.get_skills_dir()` 解析运行时 skills 路径，不允许再各自 `DESKAGENT_HOME / "skills"`。新增 skill 模块前先 `from utils import get_skills_dir`。
 
-**平台过滤**：`skills_tool.py::skill_matches_platform` 将 SKILL.md frontmatter 的 `platforms`（`macos` / `windows` / `linux`）通过 `_PLATFORM_MAP` 翻译成 `sys.platform` 字符串（`darwin` / `win32` / `linux`）再比较。两套字符串不能直接对比——必须走 `_PLATFORM_MAP` 翻译。Desktop `lib/skill-index.cjs` 在 main 进程同样做翻译；两套表结构不同但语义对齐，新增平台时需同步更新两边。
+**平台过滤**：`skills_tool.py::skill_matches_platform` 将 SKILL.md frontmatter 的 `platforms`（`macos` / `windows`，加历史 `linux` 别名）通过 `_PLATFORM_MAP` 翻译成 `sys.platform` 字符串（`darwin` / `win32`）再比较。两套字符串不能直接对比——必须走 `_PLATFORM_MAP` 翻译。Desktop `lib/skill-index.cjs` 在 main 进程同样做翻译；两套表结构不同但语义对齐，新增平台时需同步更新两边。
 
 ## 工具集系统（Toolsets）
 
@@ -261,7 +261,7 @@ CDP Supervisor（`browser_supervisor.py`）：持久 WebSocket 到 CDP，dialog 
 
 | 问题 | 影响 | 缓解 |
 |------|------|------|
-| `piper-tts` 不在 Linux ARMv7 wheels | 部分嵌入式 Linux 装不上 | 检查 `platform.machine()` 后允许 pyttsx3 兜底或返回 `no_engine_installed` 友好错误 |
+| `piper-tts` 不在某些 Python 平台 wheels | 该平台 pip install 直接失败 | 检查 `platform.machine()` 后允许 pyttsx3 兜底或返回 `no_engine_installed` 友好错误 |
 | `pyttsx3` 在 macOS 上 `import` 会触发 kTCCServiceMediaLibrary 弹窗 | 影响开发启动体验 | `_audio_capability` 在握手阶段检查 import，false 时 Desktop 隐藏语音 UI（不阻塞启动） |
 | Whisper 模型首次下载需要出网（huggingface / hf-mirror） | 冷启动延迟 30–300 s | 模型下载到 `$DESKAGENT_HOME/models/whisper/` 后即永久离线；首次大调用前 Desktop 可预热 |
 | ffmpeg 缺 PATH | `speech_to_text` 失败 | tool 返回 `"audio decode failed: ffmpeg binary not found"`；Desktop 据此引导用户装 ffmpeg |

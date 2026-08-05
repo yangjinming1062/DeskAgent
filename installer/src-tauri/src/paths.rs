@@ -2,8 +2,7 @@
 //!
 //! Mirrors `deskagent_constants.get_deskagent_home()` from the Python CLI:
 //!   Windows: %LOCALAPPDATA%\deskagent
-//!   macOS:   ~/.deskagent
-//!   Linux:   ~/.deskagent  (override via $DESKAGENT_HOME)
+//!   macOS:   ~/.deskagent  (override via $DESKAGENT_HOME)
 //!
 //! NOTE (macOS): Python's get_deskagent_home(), installer/install.sh, and the
 //! Electron desktop's resolveDeskAgentHome() ALL use ~/.deskagent on macOS — there
@@ -37,7 +36,7 @@ pub fn deskagent_home() -> PathBuf {
         }
     }
 
-    // macOS + Linux + fallback: ~/.deskagent (matches Python get_deskagent_home(),
+    // macOS + fallback: ~/.deskagent (matches Python get_deskagent_home(),
     // install.sh, and the Electron desktop's resolveDeskAgentHome()).
     if let Some(home) = dirs::home_dir() {
         return home.join(".deskagent");

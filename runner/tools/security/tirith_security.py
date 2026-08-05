@@ -109,9 +109,14 @@ def _deskagent_bin_dir() -> str:
 
 
 def _detect_target() -> str | None:
-    plat = "apple-darwin" if (sys := platform.system()) == "Darwin" else "unknown-linux-gnu" if sys in {"Linux", "Android"} else None
+    if (sysname := platform.system()) == "Darwin":
+        plat = "apple-darwin"
+    elif sysname == "Windows":
+        plat = "pc-windows-msvc"
+    else:
+        return None
     arch = "x86_64" if (mach := platform.machine().lower()) in {"x86_64", "amd64"} else "aarch64" if mach in {"aarch64", "arm64"} else None
-    return f"{arch}-{plat}" if plat and arch else None
+    return f"{arch}-{plat}" if arch else None
 
 
 def is_platform_supported() -> bool:

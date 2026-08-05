@@ -51,20 +51,6 @@ describe('classifyFocusedApp', () => {
     }
   })
 
-  it('classifies Linux class names via name/title substrings', () => {
-    Object.defineProperty(navigator, 'platform', { value: 'Linux x86_64', configurable: true })
-
-    try {
-      expect(classifyFocusedApp({ name: 'code' })).toBe('ide')
-      expect(classifyFocusedApp({ name: 'spotify', title: 'Spotify' })).toBe('music')
-      expect(classifyFocusedApp({ name: 'zathura', title: 'document.pdf' })).toBe('reader')
-      expect(classifyFocusedApp({ name: 'steam', title: 'Library' })).toBe('gaming')
-      expect(classifyFocusedApp({ name: 'firefox', title: 'Mozilla Firefox' })).toBe('browsing')
-    } finally {
-      Object.defineProperty(navigator, 'platform', { value: '', configurable: true })
-    }
-  })
-
   it('returns "unknown" for unrecognised processes', () => {
     Object.defineProperty(navigator, 'platform', { value: 'Win32', configurable: true })
 

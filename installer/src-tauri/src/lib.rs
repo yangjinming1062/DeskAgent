@@ -78,12 +78,12 @@ pub fn run() {
             // later run launches instantly). The window is kept hidden until
             // here via `"visible": false` so this path never flashes a window.
             //
-            // Gated to macOS deliberately: on Windows/Linux the installer keeps
+            // Gated to macOS deliberately: on Windows the installer keeps
             // its existing behavior (Windows users relaunch via the Start
             // Menu/Desktop "DeskAgent" shortcuts that install.ps1 creates, and a
             // reliable detached relaunch there needs the DETACHED_PROCESS +
             // startup-grace handling used by launch_deskagent_desktop — out of
-            // scope here). So this is a pure no-op on non-macOS.
+            // scope here). So this is a pure no-op on Windows.
             //
             // `--reinstall`/`--repair` opts out so a broken install can be
             // repaired by re-running setup instead of launching the bad app.

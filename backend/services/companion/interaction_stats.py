@@ -26,9 +26,8 @@ class _DailyCounters:
     hour_buckets: dict[int, int] = field(default_factory=dict)
 
 
-# Process-local aggregation. Per ARCHITECTURE.md §5 "已知限制（多副本）"
-# this is a known limitation requiring eventual migration to Redis — kept
-# here intentionally so the daily-aggregate lives next to its consumer.
+# Process-local aggregation. Per ARCHITECTURE.md §5 "单实例语义", the
+# architecture ships single-instance; this dict is the source of truth.
 _counters: dict[int, _DailyCounters] = {}
 
 
@@ -82,9 +81,9 @@ def _upsert_memory(user_id: int, counters: _DailyCounters) -> None:
         # Use ``first()`` not ``one_or_none()``: production Postgres has a
         # PARTIAL unique index only on ``user_profile:*`` contexts (see
         # ``backend/main.py:99``). The ``interaction_stats:*`` rows have
-        # no uniqueness constraint, so a multi-replica race that writes
-        # two summary rows for the same user+date would otherwise raise
-        # ``MultipleResultsFound`` and the whole RPC error.
+        # no uniqueness constraint, so the first read-then-write race
+        # would otherwise raise ``MultipleResultsFound`` and the whole
+        # RPC error.
         existing = db.query(Memory).filter(Memory.user_id == user_id, Memory.context == ctx).first()
         if existing is not None:
             existing.content = content
