@@ -8,6 +8,10 @@ import { $gateway } from '@/shared/store/gateway'
 // while the Runner is offline and the atoms keep their defaults.
 
 export const $screenLocked = atom<boolean>(false)
+// Last finite idle-seconds reading from the activity poll. -1 means no signal
+// yet (runner offline, probe failed, etc.) — callers should treat that as
+// "unknown" and either skip the field or send 0.
+export const $lastIdleSeconds = atom<number>(-1)
 
 export type FocusCategory = 'ide' | 'music' | 'reader' | 'gaming' | 'browsing' | 'other' | 'unknown'
 
@@ -313,6 +317,12 @@ async function pollOnce(): Promise<void> {
   if (!Number.isFinite(idleSeconds)) {
     return
   }
+
+  // Cache the latest finite idle reading so other modules (interaction.ts
+  // sending companion.interact) can read it on demand without re-querying
+  // the runner. -1 here means "no signal this cycle" — callers treat that as
+  // unknown and either skip the field or send 0 with a stale flag.
+  $lastIdleSeconds.set(idleSeconds)
 
   const isLockedKnown = lockedResult !== null
   maybeTriggerAffectCheck(isLockedKnown ? idleSeconds : -1, $screenLocked.get())

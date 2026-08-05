@@ -197,6 +197,7 @@ export interface Translations {
     resetToDefaults: string
     resetConfirm: string
     exportFailed: string
+    importFailed: string
     resetFailed: string
     nav: {
       account: string

@@ -4,6 +4,17 @@ import { type PointerEvent as ReactPointerEvent, useEffect, useRef, useState } f
 import { awaitAvatarRegeneration } from '@/companion/avatar-regen-store'
 import { useGatewayRequest } from '@/companion/boot/use-gateway-request'
 import { registerInteractiveRegion, unregisterInteractiveRegion } from '@/companion/interactive-regions'
+import {
+  APPEARANCE_PRESETS,
+  CHARACTER_GENDER_PRESETS,
+  PERSONALITY_PRESETS,
+  ROLE_PRESETS,
+  SPEAKING_STYLE_PRESETS,
+  SPECIES_PRESETS,
+  USER_AGE_BUCKET_PRESETS,
+  USER_GENDER_PRESETS,
+  VOICE_PRESETS
+} from '@/companion/persona-presets'
 import { $gatewayState } from '@/shared/store/gateway'
 
 import { clearClipCatalog, playTransitionClip } from '../clip-store'
@@ -50,7 +61,7 @@ const QUESTIONS: readonly Question[] = [
     placeholder: '或者自由描述…',
     required: false,
     multiline: false,
-    presets: ['人类', '灵兽', '精灵', '机甲', '幻形']
+    presets: SPECIES_PRESETS
   },
   {
     key: 'character_gender',
@@ -58,7 +69,7 @@ const QUESTIONS: readonly Question[] = [
     placeholder: '或者自由描述…',
     required: false,
     multiline: false,
-    presets: ['女', '男', '其他', '不指定']
+    presets: CHARACTER_GENDER_PRESETS
   },
   {
     key: 'appearance',
@@ -67,7 +78,7 @@ const QUESTIONS: readonly Question[] = [
     required: false,
     multiline: true,
     max: MAX_APPEARANCE,
-    presets: ['优雅古典', '现代利落', '萌系可爱', '冷酷暗黑']
+    presets: APPEARANCE_PRESETS
   },
   {
     key: 'role',
@@ -75,7 +86,7 @@ const QUESTIONS: readonly Question[] = [
     placeholder: '或者自由描述…',
     required: false,
     multiline: false,
-    presets: ['爱人', '秘书', '专属管家', '无话不谈的朋友']
+    presets: ROLE_PRESETS
   },
   {
     key: 'personality',
@@ -83,7 +94,7 @@ const QUESTIONS: readonly Question[] = [
     placeholder: '自由描述…',
     required: false,
     multiline: false,
-    presets: ['温柔体贴', '活泼好动', '冷静理性', '毒舌傲娇']
+    presets: PERSONALITY_PRESETS
   },
   {
     key: 'user_call_name',
@@ -101,7 +112,7 @@ const QUESTIONS: readonly Question[] = [
     required: false,
     multiline: false,
     max: MAX_USER_TEXT,
-    presets: ['女', '男', '其他', '不愿说']
+    presets: USER_GENDER_PRESETS
   },
   {
     key: 'user_age_bucket',
@@ -110,7 +121,7 @@ const QUESTIONS: readonly Question[] = [
     required: false,
     multiline: false,
     max: MAX_USER_TEXT,
-    presets: ['18 以下', '18-25', '26-35', '36-50', '50+']
+    presets: USER_AGE_BUCKET_PRESETS
   },
   {
     key: 'user_hobbies',
@@ -130,7 +141,7 @@ const QUESTIONS: readonly Question[] = [
     required: false,
     multiline: true,
     max: 500,
-    presets: ['温柔亲切', '俏皮带点小傲娇', '沉稳简洁', '轻快活泼', '专业干练']
+    presets: SPEAKING_STYLE_PRESETS
   },
   {
     key: 'user_freeform',
@@ -147,7 +158,7 @@ const QUESTIONS: readonly Question[] = [
     placeholder: '描述你想要的声音…',
     required: false,
     multiline: false,
-    presets: ['温柔少女音', '沉稳男声', '活泼正太', '清冷御姐']
+    presets: VOICE_PRESETS
   }
 ]
 

@@ -8,7 +8,7 @@
 |---|---|---|---|
 | `disconnected` | 100 | Backend WS 断连 | 持续；恢复需 WS 重连 + 5min grace 后升级为 `sleeping` |
 | `interacting` | 80 | 用户戳 / 拖 / 悬停 | 瞬态 1.5–2.0s，回到 `previousState` |
-| `working` | 70 | 用户活动 ≥ 6 次/10s | 持续；10s 无活动 `force: true` 回 `idle`（**P0-9**） |
+| `working` | 70 | 用户活动 ≥ 6 次/10s | 持续；10s 无活动 `force: true` 回 `idle` |
 | `speaking` | 60 | TTS 播放 | 与 TTS 音频等长 |
 | `thinking` | 50 | LLM 流式响应开始 | 持续至 `message.complete` |
 | `listening` | 40 | 用户开始输入 | 持续至用户停止输入或后端响应 |
@@ -18,7 +18,7 @@
 
 ### 1.1 状态切换规则
 
-- **低优先级不能打断高优先级**（`setSpriteState(name)` 默认 `force: false`）—— 已在 `working` 时调用 `setSpriteState('idle')` 被门控逻辑直接吞掉。需强制回退必须传 `{ force: true }`（P0-9 working 10s 退出）。
+- **低优先级不能打断高优先级**（`setSpriteState(name)` 默认 `force: false`）—— 已在 `working` 时调用 `setSpriteState('idle')` 被门控逻辑直接吞掉。需强制回退必须传 `{ force: true }`（working 状态 10s 无活动自动 force 回 idle）。
 - **`emotional` / `interacting` 是叠加而非抢占**：进入前若当前不是这两个状态，原子 `$previousState` 记录原态；瞬态 timer 结束后回到 `previousState`（若 prev 也是 emotional/interacting，则回 `idle`）。
 - **crossfade ~250ms**：clip 切换通过 sprite-stage 的 fade 层处理，避免硬切。
 
@@ -27,10 +27,10 @@
 `message.complete` 帧内联 `affect: {emotion}` 字段。当 emotion 存在且 ≠ `neutral`：
 
 1. 立即 `setSpriteState('emotional', { emotion })`
-2. 若 `responseMode === 'voice'`，**延迟 1.2s** 后再 `setSpriteState('speaking')` + `speak()` —— 让 EMOTIONAL 帧可见（P1-13）
+2. 若 `responseMode === 'voice'`，**延迟 1.2s** 后再 `setSpriteState('speaking')` + `speak()` —— 让 EMOTIONAL 帧可见
 3. 若 `responseMode === 'text'`，直接进入下一句渲染，不强制 speaking 状态
 
-`emotion === 'neutral'` 不触发 EMOTIONAL 状态，直接回 `idle`（P1-5）。这是 LLM 的"无特定情绪"答案，不是"中性情绪"。
+`emotion === 'neutral'` 不触发 EMOTIONAL 状态，直接回 `idle`。这是 LLM 的"无特定情绪"答案，不是"中性情绪"。
 
 ## 2. 表情枚举
 
@@ -48,17 +48,17 @@
 | `playful` | 3 | ✓ | |
 | `bored` | 3 | ✓ | |
 | `lonely` | 3 | ✓ | |
-| `sleepy` | 3 | ✓ | P1-5 新增 |
-| `curious` | 3 | ✓ | P1-5 新增 |
-| `embarrassed` | 3 | ✓ | P1-5 新增 |
-| `apologetic` | 3 | ✓ | P1-5 新增 |
+| `sleepy` | 3 | ✓ | |
+| `curious` | 3 | ✓ | |
+| `embarrassed` | 3 | ✓ | |
+| `apologetic` | 3 | ✓ | |
 | `neutral` | (无 scene) | (无 SpriteEmotion) | **过滤掉**，不触发 EMOTIONAL |
 
 LLM 任何 `joyful` / `happy_excited` 等未注册 token 走 `affect.py::_try_resolve` 的 neutral 回退，tag 剥离后归 `idle`。
 
 ## 3. 三档打扰（双层模型）
 
-`disturbance_tier` 由 `setDisturbanceTier` 写入并经 `companion.set_disturbance_tier` 上报后端。**后端永远 emit 事件，由 Desktop 决定如何呈现**（P0-7，P1-17 跨副本路由前提）：
+`disturbance_tier` 由 `setDisturbanceTier` 写入并经 `companion.set_disturbance_tier` 上报后端。**后端永远 emit 事件，由 Desktop 决定如何呈现**：
 
 | 档位 | `companion.message` 行为 | `affect` 行为 | `speak()` TTS |
 |---|---|---|---|
@@ -68,7 +68,7 @@ LLM 任何 `joyful` / `happy_excited` 等未注册 token 走 `affect.py::_try_re
 
 `is_screen_locked` 等同 `quiet`（plan §5.5 / §5.2 锁屏静默）。
 
-**双层档位模型**（`companion-store.ts`）：`$userPreferredTier` 是用户手动选择的源真值；活动感知器写入 `$effectiveTierOverride`；其余模块读 `$effectiveTier = override ?? preferred` 做静默判定。设置面板 / chat-dock 仍显示 user_preferred。**手动 quiet 永远不被覆盖**（manual lock-in）通过 atom 内部的 `preferred === 'quiet' ? 'quiet' : ...` 短路保证。失败回滚：若后端拒绝新档位，Desktop 回滚 `$userPreferredTier` 到旧值并写 dev log（P2-15）。
+**双层档位模型**（`companion-store.ts`）：`$userPreferredTier` 是用户手动选择的源真值；活动感知器写入 `$effectiveTierOverride`；其余模块读 `$effectiveTier = override ?? preferred` 做静默判定。设置面板 / chat-dock 仍显示 user_preferred。**手动 quiet 永远不被覆盖**（manual lock-in）通过 atom 内部的 `preferred === 'quiet' ? 'quiet' : ...` 短路保证。失败回滚：若后端拒绝新档位，Desktop 回滚 `$userPreferredTier` 到旧值并写 dev log。
 
 **活动感知降级**：30s 轮询 `system.get_focused_app` + `system.is_fullscreen`（[activity.ts](activity.ts)）。当分类进入 `ide`/`gaming`/`reader` 或 `is_fullscreen` 为真时，覆盖 effective 为 quiet；focus 清除后 5s 节流推回 user_preferred。
 
@@ -82,7 +82,7 @@ LLM 任何 `joyful` / `happy_excited` 等未注册 token 走 `affect.py::_try_re
 | 2 | 单张多帧 sprite PNG | `KeyframeSprite` 步进 |
 | 3 | 图生视频（i2v） | `<video autoplay loop muted playsinline>` |
 
-clip 通过 `clip.updated` 事件单通道下发（P0-8）。`video_gen.*` 事件由 companion 抑制（`enqueue_video_job(emit_event=False)`）。Tier 1 不可用时回退 idle loop + 状态徽章，用户永不见空白。
+clip 通过 `clip.updated` 事件单通道下发。`video_gen.*` 事件由 companion 抑制（`enqueue_video_job(emit_event=False)`）。Tier 1 不可用时回退 idle loop + 状态徽章，用户永不见空白。
 
 ## 5. 屏锁与端忙
 
@@ -92,7 +92,7 @@ clip 通过 `clip.updated` 事件单通道下发（P0-8）。`video_gen.*` 事�
 
 ## 6. 自主行为（IDLE 时）
 
-- **微动作**：10–25s 随机间隔切 `idle` / `idle_look_around` / `idle_blink` / `idle_stretch` scene。已加入 CLIP_SCENES batch 2（P1-3），可升档到 Tier 2 / 3。
+- **微动作**：10–25s 随机间隔切 `idle` / `idle_look_around` / `idle_blink` / `idle_stretch` scene。已加入 CLIP_SCENES batch 2，可升档到 Tier 2 / 3。
 - **情境动作**：基于 `$focusContext`（[activity.ts](activity.ts) 维护）。focused-app 分类（ide/music/reader/gaming/browsing/other/unknown）按平台白名单映射（Windows 进程名、macOS bundle id、Linux class 名）。IDLE 微动作池按分类切换：
 
   | 分类 | 微动作池（未就绪 fallback 到 `idle`） |
@@ -116,7 +116,7 @@ clip 通过 `clip.updated` 事件单通道下发（P0-8）。`video_gen.*` 事�
 
 ## 8. cron 主动陪伴链路
 
-`cron.trigger` 事件 + 后端自主 turn 入口（`services/scheduler/cron.py::_kick_autonomous_turn`）实现完整链路（P0-5）：
+`cron.trigger` 事件 + 后端自主 turn 入口（`services/scheduler/cron.py::_kick_autonomous_turn`）实现完整链路：
 
 1. Cron CAS 赢得本 tick
 2. 写 `cron.trigger` WSEvent + 启动 `_kick_autonomous_turn` task
@@ -131,10 +131,10 @@ clip 通过 `clip.updated` 事件单通道下发（P0-8）。`video_gen.*` 事�
 - **3 种 token 通过守卫**：
   - `STT` 数据 > 25 MiB → runner 端拒绝（`audio_io.DEFAULT_MAX_INPUT_BYTES`）
   - `TTS` 文本 > 4000 字符 → 拒绝
-  - `runner:invoke` 60 次/秒 token bucket（P2-17）
+  - `runner:invoke` 60 次/秒 token bucket
 - **持久化键**：
-  - `da.companion.voiceId` / `da.companion.responseMode` / `da.companion.disturbanceTier` / `da.companion.chatDockOffset`（P1-18 + P2-5）
+  - `da.companion.voiceId` / `da.companion.responseMode` / `da.companion.disturbanceTier` / `da.companion.chatDockOffset`
   - 仅 `disturbanceTier` + `chatDockOffset` 跨重启保留；`voiceId` 在 onMount 由 `voice-validity.ts` 校验 provider 目录变化。
 - **角色编辑双路径**：`PersonaSection`（表单式直接改 6 个字段）+ `PersonaRetune`（[persona-retune.tsx](persona-retune.tsx) 5–6 步对话式 wizard 含 user_*），后者单 PUT 收尾、保留 `is_complete=True`、不重置 `is_complete`、修复前者静默 `deriveSpeakingStyle` 覆盖 `speaking_style` 的坑。
 - **`/api/companion/asset/*` 文件路由**：已切到 HMAC 签名 URL（`user_id` + `filename` + 5 分钟 expiry + HMAC），后端 `verify_signed_asset_request` 强制校验，丢签名 401。Asset 落持久目录（`companion-avatars/` / `companion-assets/`），URL 一次性 5 分钟有效。
-- **CORS / 跨窗口**：精灵窗口与对话面板共享同一 Electron 渲染进程（panel 是 React child of sprite window），`setAlwaysOnTop` 不再被 chat-dock 切换（P1-4）。
+- **CORS / 跨窗口**：精灵窗口与对话面板共享同一 Electron 渲染进程（panel 是 React child of sprite window），`setAlwaysOnTop` 不再被 chat-dock 切换。
