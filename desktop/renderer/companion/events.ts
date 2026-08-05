@@ -1,4 +1,5 @@
 import { $screenLocked } from '@/companion/activity'
+import { reportInteractionStat } from '@/companion/activity'
 import { resolveAvatarRegeneration } from '@/companion/avatar-regen-store'
 import {
   appendAssistantDelta,
@@ -8,7 +9,7 @@ import {
   setAssistantTool
 } from '@/companion/chat-store'
 import { applyClipUpdate, type ClipMeta } from '@/companion/clip-store'
-import { $disturbanceTier, $voiceCallOpen, setSpriteState, type SpriteEmotion } from '@/companion/companion-store'
+import { $effectiveTier, $voiceCallOpen, setSpriteState, type SpriteEmotion } from '@/companion/companion-store'
 import { $responseMode } from '@/companion/prefs'
 import { speak } from '@/companion/tts'
 import { $gateway } from '@/shared/store/gateway'
@@ -43,7 +44,7 @@ export function handleCompanionEvent(event: RpcEvent): void {
       const text = payload?.text ?? ''
       const emotion = payload?.affect?.emotion
       // Suppress render-side cues for quiet users and when the screen is locked.
-      const quiet = $disturbanceTier.get() === 'quiet'
+      const quiet = $effectiveTier.get() === 'quiet'
       const screenLocked = $screenLocked.get()
 
       finalizeAssistantMessage(payload?.text)
@@ -72,6 +73,13 @@ export function handleCompanionEvent(event: RpcEvent): void {
           setSpriteState('speaking')
           say()
         }
+      }
+
+      // Daily interaction stats — chat_turn counts only when there's actual
+      // text to count (matches the TTS gate above). The shared helper in
+      // activity.ts owns the fire-and-forget RPC.
+      if (text.trim()) {
+        reportInteractionStat('chat_turn')
       }
 
       break
@@ -188,7 +196,7 @@ export function handleCompanionEvent(event: RpcEvent): void {
     case 'companion.message': {
       const payload = event.payload as { text?: string; affect?: { emotion?: string } } | undefined
       const text = payload?.text ?? ''
-      const currentTier = $disturbanceTier.get()
+      const currentTier = $effectiveTier.get()
       const affectEmotion = payload?.affect?.emotion
 
       // Affect flows before text so the reaction shows even when text is suppressed.

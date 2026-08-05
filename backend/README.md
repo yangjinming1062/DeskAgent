@@ -72,7 +72,15 @@ backend/
 
 `services/scheduler/cron.scheduler_loop` 每 60s `_tick()`：扫描到期任务，CAS 推进 `next_run_at`（多副本安全），写 `cron.trigger` 到 `ws_events` outbox。`_tick` 不 await WS 推送——慢客户端不卡 cron 事务。PostgreSQL trigger 在 `ws_events` INSERT 时 `NOTIFY ws_events_channel`，每个 Backend 副本独立 `LISTEN` + `DELETE ... RETURNING` 原子认领消费（行锁保证不重复投递）。无效 cron 表达式自动暂停 job。
 
-**伙伴主动消息通道**：`send_message_tool` 无 `target_webhook` 时走 companion 原生路径——`_emit_companion_message` 写 `companion.message {text}` 到 `ws_events` outbox，经同一套 LISTEN/NOTIFY 推到桌面端（伙伴 TTS + 气泡呈现，[ARCHITECTURE.md §4.1.A](../ARCHITECTURE.md)）。带 `target_webhook` 时仍是外部 webhook POST（Slack/Discord 等）。**打扰档位**：`companion.set_disturbance_tier {tier}` JSON-RPC（`services/disturbance.py` 进程内 per-user 存储，默认 `normal`）——`quiet` 档时 `send_message_tool` 把消息文本吞掉，但 LLM 推理出的 affect 经 `companion.affect` 事件透传（断消息不断 affect，`services/companion/affect_emit.py::emit_companion_affect`）。**情境化 affect**：`companion.check_affect {idle_seconds, local_hour}` JSON-RPC（`services/companion/affect_check.py::check_affect`）由 Desktop idle 轮询触发，Backend 加载 persona + 最近记忆跑一次 LLM 推理，决定是否 emit `companion.affect`——触发时机由 Desktop 控制（知道真实 idle），情绪推理由 Backend LLM 承担（有 persona + 记忆）。Desktop 侧也客户端过滤，此为防御层。
+**伙伴主动消息通道**：`send_message_tool` 无 `target_webhook` 时走 companion 原生路径——`_emit_companion_message` 写 `companion.message {text}` 到 `ws_events` outbox，经同一套 LISTEN/NOTIFY 推到桌面端（伙伴 TTS + 气泡呈现，[ARCHITECTURE.md §4.1.A](../ARCHITECTURE.md)）。带 `target_webhook` 时仍是外部 webhook POST（Slack/Discord 等）。
+
+**打扰档位**（双层模型，`services/disturbance.py`）：`companion.set_disturbance_tier {tier}` 写 effective 字典；`set_user_preferred_tier` 记录 user_preferred；`record_focus_context` 接收 Desktop 30s 轮询的 focused_app + is_fullscreen；`compute_effective_tier` 应用「手动 quiet 永远不被覆盖」规则后产出 effective。`quiet` 档时 `send_message_tool` 把消息文本吞掉，但 LLM 推理出的 affect 经 `companion.affect` 事件透传（断消息不断 affect，`services/companion/affect_emit.py::emit_companion_affect`）。
+
+**情境化 affect**：`companion.check_affect {idle_seconds, local_hour}` JSON-RPC（`services/companion/affect_check.py::check_affect`）由 Desktop idle 轮询触发，Backend 加载 persona + 最近记忆跑一次 LLM 推理，决定是否 emit `companion.affect`——触发时机由 Desktop 控制（知道真实 idle），情绪推理由 Backend LLM 承担（有 persona + 记忆）。Desktop 侧也客户端过滤，此为防御层。
+
+**戳/拖 LLM 反应**：`companion.interact {tone, kind, poke_count, idle_seconds, local_hour}` JSON-RPC（`services/companion/interact.py::check_interact`）由 Desktop 在本地文案池基础上延迟 200ms 触发，返回 `{text, emotion, reason}`。per-user inflight 取消 + 1.5s 节流（`handlers.py`），tone 服务端独立推导（`毒舌`/`傲娇`→snarky 等）。
+
+**互动统计聚合**：`companion.record_interaction_stats {kind, hour}` JSON-RPC（`services/companion/interaction_stats.py::record_interaction`，无 LLM）按 UTC 自然日聚合三类计数（poke/drag/chat_turn）+ 24h hour_buckets；当三类**各自** ≥ 10（双门限）时 upsert `Memory(context="interaction_stats:<date>")`；同日多次跨门限同 row 覆盖。
 
 ## 系统提示词与上下文管理
 
@@ -196,7 +204,7 @@ DeskAgent 伙伴的"人格"与"形象"是跨 Backend↔Desktop 的核心契约�
 
 ### 动画 clip 流水线（AvatarClip）
 
-`AvatarClip` 表存以 portrait 为种子的图生视频 clip，每个 clip 绑定一个 `scene` 标签（与 Desktop 动画状态机状态对齐：`idle` / `speaking` / `thinking` / `happy` / ...）。scene 目录 + 批次优先级定义在 `services/companion/clip_service.CLIP_SCENES`。
+`AvatarClip` 表存以 portrait 为种子的图生视频 clip，每个 clip 绑定一个 `scene` 标签（与 Desktop 动画状态机状态对齐：`idle` / `speaking` / `thinking` / `happy` / ...）。scene 目录 + 批次优先级定义在 `services/companion/clip_service.CLIP_SCENES`。本批次新增 batch-2 idle 场景：`idle_thinking`/`idle_typing`/`idle_bounce`/`idle_sway`/`idle_calm`/`idle_engaged`，由 `escalation_loop` 自动消化，受 `clip_video_daily_budget` 约束。
 
 - **渐进式生成**：batch 0（idle）在 portrait 生成时同步排队；其余批次（speaking/thinking/working → 生命周期 → 情绪变体）后台渐进生成
 - **事件下发**：clip 通过 `clip.updated` 单通道下发（payload 携 scene + tier + url + keyframe_url + keyframe_meta + status），companion 服务以 `enqueue_video_job(..., emit_event=False)` 抑制通用 `video_gen.*` 事件避免双通知；`avatar.list_clips` 是拉取式同步入口（首次启动 / 断线重连补齐）

@@ -1,12 +1,19 @@
 import { useStore } from '@nanostores/react'
+import type React from 'react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { awaitAvatarRegeneration } from '@/companion/avatar-regen-store'
 import { useGatewayRequest } from '@/companion/boot/use-gateway-request'
 import { clearClipCatalog } from '@/companion/clip-store'
-import { $disturbanceTier, type DisturbanceTier, setDisturbanceTier } from '@/companion/companion-store'
+import {
+  $effectiveTier,
+  $userPreferredTier,
+  type DisturbanceTier,
+  setDisturbanceTier
+} from '@/companion/companion-store'
 import { registerInteractiveRegion, unregisterInteractiveRegion } from '@/companion/interactive-regions'
-import { $persona } from '@/companion/persona-store'
+import { PersonaRetune } from '@/companion/persona-retune'
+import { $persona, hydratePersona } from '@/companion/persona-store'
 import {
   $companionVoiceId,
   $responseMode,
@@ -43,8 +50,8 @@ const TIERS: { id: DisturbanceTier; label: string; hint: string }[] = [
 // boots) rather than the framed tool window, because voice/clip/avatar calls
 // are JSON-RPC over the gateway. General app settings stay in the tray tool
 // window. Covers plan §6 companion items: voice, avatar, response mode, tier.
-export function CompanionSettings({ onClose }: SettingsOverlayProps) {
-  const tier = useStore($disturbanceTier)
+export function CompanionSettings({ onClose }: SettingsOverlayProps): React.ReactElement {
+  const tier = useStore($userPreferredTier)
   const responseMode = useStore($responseMode)
   const currentVoice = useStore($companionVoiceId)
   const persona = useStore($persona)
@@ -61,6 +68,66 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps) {
   const [genderFilter, setGenderFilter] = useState('')
   const [regenerating, setRegenerating] = useState(false)
   const [avatarHint, setAvatarHint] = useState<string | null>(null)
+  const [retuneOpen, setRetuneOpen] = useState(false)
+
+  const [retuneInitial, setRetuneInitial] = useState<{
+    name: string
+    personality: string
+    speaking_style: string
+    biological_type: string
+    gender: string
+    appearance: string
+    background: string
+    user_call_name: string
+    user_gender: string
+    user_age_bucket: string
+    user_hobbies: string
+    user_freeform: string
+  } | null>(null)
+
+  // Hydrate the retune wizard's user_* step from the backend before
+  // showing the modal. Without this, step 5 shows blank fields and the
+  // review screen renders '—' for each, misrepresenting the saved state.
+  const openRetune = async () => {
+    setRetuneOpen(true)
+
+    try {
+      const profile = (await requestGateway<Record<string, string>>('companion.get_user_profile', {})) ?? {}
+
+      setRetuneInitial({
+        name: persona?.name ?? '',
+        personality: persona?.personality ?? '',
+        speaking_style: persona?.speakingStyle ?? '',
+        biological_type: persona?.biological_type ?? '',
+        gender: persona?.gender ?? '',
+        appearance: persona?.appearance ?? '',
+        background: persona?.background ?? '',
+        user_call_name: profile.user_call_name ?? '',
+        user_gender: profile.user_gender ?? '',
+        user_age_bucket: profile.user_age_bucket ?? '',
+        user_hobbies: profile.user_hobbies ?? '',
+        user_freeform: profile.user_freeform ?? ''
+      })
+    } catch {
+      // Backend offline — fall back to the empty wizard. user_* defaults
+      // remain blank; the user can still edit.
+      setRetuneInitial({
+        name: persona?.name ?? '',
+        personality: persona?.personality ?? '',
+        speaking_style: persona?.speakingStyle ?? '',
+        biological_type: persona?.biological_type ?? '',
+        gender: persona?.gender ?? '',
+        appearance: persona?.appearance ?? '',
+        background: persona?.background ?? '',
+        user_call_name: '',
+        user_gender: '',
+        user_age_bucket: '',
+        user_hobbies: '',
+        user_freeform: ''
+      })
+    }
+  }
+
   const [showDesign, setShowDesign] = useState(false)
   const [designPrompt, setDesignPrompt] = useState('')
   const [designPreview, setDesignPreview] = useState<VoiceDesignPreview | null>(null)
@@ -222,6 +289,19 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps) {
         <div className="flex-1 space-y-5 overflow-y-auto px-4 py-4 text-sm">
           <PersonaSection />
 
+          {persona?.name && (
+            <div className="-mt-3">
+              <button
+                className="rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-[11px] text-white/70 transition hover:bg-white/15"
+                onClick={() => void openRetune()}
+                type="button"
+              >
+                重新对话微调性格
+              </button>
+              <p className="mt-1 text-[10px] text-white/30">以对话方式分步调整（不会清除现有长期记忆）</p>
+            </div>
+          )}
+
           {/* Response mode */}
           <Section hint="语音通话模式始终语音，不受此设置影响" title="对话回应方式">
             <div className="flex gap-2">
@@ -246,10 +326,16 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps) {
                   className={`flex w-full items-center justify-between rounded-lg border px-3 py-2 text-left text-xs transition ${tier === t.id ? 'border-white/60 bg-white/15' : 'border-white/10 bg-white/5 hover:bg-white/10'}`}
                   key={t.id}
                   onClick={() => {
-                    const previous = $disturbanceTier.get()
+                    const previous = $userPreferredTier.get()
                     setDisturbanceTier(t.id)
+                    // Push the EFFECTIVE tier (incorporates the activity
+                    // override) so the backend gate stays consistent with the
+                    // renderer's view. Without this, an immersive focus
+                    // context would un-mute the backend for the full poll-cycle
+                    // window after a manual click.
+                    const effectiveNow = $effectiveTier.get()
                     // Roll back locally if the backend rejects the tier.
-                    requestGateway('companion.set_disturbance_tier', { tier: t.id }).catch(err => {
+                    requestGateway('companion.set_disturbance_tier', { tier: effectiveNow }).catch(err => {
                       setDisturbanceTier(previous)
                       pushDevLog(
                         'disturbance_tier_rejected',
@@ -413,11 +499,29 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps) {
           </Section>
         </div>
       </div>
+
+      {retuneOpen && persona?.name && retuneInitial && (
+        <PersonaRetune
+          initial={retuneInitial}
+          onClose={() => setRetuneOpen(false)}
+          onSaved={() => {
+            void hydratePersona()
+          }}
+        />
+      )}
     </div>
   )
 }
 
-function Section({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
+function Section({
+  title,
+  hint,
+  children
+}: {
+  title: string
+  hint?: string
+  children: React.ReactNode
+}): React.ReactElement {
   return (
     <div>
       <p className="mb-1.5 text-xs font-medium text-white/80">{title}</p>

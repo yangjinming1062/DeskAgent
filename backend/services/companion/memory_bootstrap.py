@@ -15,9 +15,25 @@ _CONTEXT_LABELS: dict[str, str] = {
     "user_freeform": "user_profile:freeform",
 }
 
+_REVERSE_CONTEXT_LABELS: dict[str, str] = {v: k for k, v in _CONTEXT_LABELS.items()}
+
 
 def extract_user_profile(payload: dict[str, Any]) -> dict[str, str]:
     return {k: (payload.get(k) or "").strip() for k in payload if k.startswith("user_")}
+
+
+def read_user_profile(db: Session, user_id: int) -> dict[str, str]:
+    """Reverse of ``record_user_profile``: return the user's current
+    ``user_*`` answers as ``{raw_key: content}``, e.g.
+    ``{"user_call_name": "小明", "user_hobbies": "摄影"}``. Used by the
+    retune wizard to pre-populate its user_* step."""
+    rows = db.query(Memory).filter(Memory.user_id == user_id, Memory.context.like("user_profile:%")).all()
+    out: dict[str, str] = {}
+    for row in rows:
+        suffix = row.context.split(":", 1)[1]  # preferred_name, gender, ...
+        raw_key = _REVERSE_CONTEXT_LABELS.get(row.context, f"user_{suffix}")
+        out[raw_key] = row.content or ""
+    return out
 
 
 def build_user_profile_extras(db: Session, user_id: int) -> str:

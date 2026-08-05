@@ -5,6 +5,7 @@ import itertools
 import json
 import secrets
 import time
+from typing import Any
 
 from components import adopt_inbound
 from components import ATTACHMENT_TYPE_IMAGE
@@ -35,6 +36,7 @@ from services.chat import load_user_settings
 from services.chat import run_chat_turn
 from services.companion import AvatarGenerationError
 from services.companion import check_affect
+from services.companion import check_interact
 from services.companion import design_voice
 from services.companion import get_onboarding_state
 from services.companion import get_or_create_persona
@@ -43,8 +45,10 @@ from services.companion import list_tts_voices
 from services.companion import match_user_voice
 from services.companion import normalize_voice_language
 from services.companion import PersonaValidationError
+from services.companion import record_interaction
 from services.companion import regenerate_avatar
 from services.companion import submit_onboarding_field
+from services.companion.memory_bootstrap import read_user_profile
 from services.disturbance import set_disturbance_tier
 from services.llm import client_for_config
 from services.llm import MissingLlmConfigError
@@ -81,6 +85,14 @@ logger = get_logger(__name__)
 CHECK_AFFECT_MIN_INTERVAL_SECONDS = 2.0
 _last_check_affect_ts: dict[int, float] = {}
 
+# Per-user throttle + inflight cancellation for `companion.interact`. The
+# desktop mirrors the inflight cancellation client-side; the server-side
+# map catches the case where two concurrent RPCs arrive on the same WS
+# connection before the client had a chance to abort the older request.
+INTERACT_MIN_INTERVAL_SECONDS = 1.5
+_last_interact_ts: dict[int, float] = {}
+_interact_inflight: dict[int, asyncio.Task] = {}
+
 # Per-user lock: a double-tap on regenerate must not fork two image-gen flows racing on the same DB rows.
 _avatar_regen_locks: dict[int, asyncio.Lock] = {}
 _avatar_regen_tasks: set[asyncio.Task] = set()
@@ -90,7 +102,7 @@ class WSEmitter:
     def __init__(self, websocket: WebSocket):
         self.websocket = websocket
 
-    async def send_json(self, data: dict) -> None:
+    async def send_json(self, data: dict[str, Any]) -> None:
         try:
             await self.websocket.send_json(data)
         except WebSocketDisconnect:
@@ -335,7 +347,7 @@ async def handle_chat_websocket(websocket: WebSocket, token: str):
             REGISTRY.clear_runner_tools(user_id)
 
 
-def _llm_configured(cfg: dict) -> bool:
+def _llm_configured(cfg: dict[str, Any]) -> bool:
     return bool(cfg.get("base_url") and cfg.get("api_key") and cfg.get("model_name"))
 
 
@@ -383,7 +395,7 @@ def _find_owned_conv(db: Session, user_id: int, session_id: str) -> Conversation
     return Conversation.by_session_id(db, session_id, user_id=user_id)
 
 
-def _require_str(params: dict, key: str) -> str:
+def _require_str(params: dict[str, Any], key: str) -> str:
     """Extract a required string param or raise JSONRPC_INVALID_PARAMS."""
     v = params.get(key)
     if not isinstance(v, str):
@@ -391,7 +403,7 @@ def _require_str(params: dict, key: str) -> str:
     return v
 
 
-def _validate_attachments(params: dict) -> list[dict] | None:
+def _validate_attachments(params: dict[str, Any]) -> list[dict[str, Any]] | None:
     """Validate + normalize the ``attachments`` payload. Returns the cleaned
     list (every item reshaped to ``{type, file_url}``) or ``None`` when the
     caller sent no attachments.
@@ -405,7 +417,7 @@ def _validate_attachments(params: dict) -> list[dict] | None:
         raise JsonRpcError(JSONRPC_INVALID_PARAMS, "attachments must be a list")
     if len(raw) > MAX_ATTACHMENTS_PER_TURN:
         raise JsonRpcError(JSONRPC_INVALID_PARAMS, f"too many attachments (max {MAX_ATTACHMENTS_PER_TURN})")
-    cleaned: list[dict] = []
+    cleaned: list[dict[str, Any]] = []
     for idx, att in enumerate(raw):
         if not isinstance(att, dict):
             raise JsonRpcError(JSONRPC_INVALID_PARAMS, f"attachments[{idx}] must be an object")
@@ -423,7 +435,7 @@ def _validate_attachments(params: dict) -> list[dict] | None:
     return cleaned
 
 
-def _get_runtime(runtime_sessions: dict[str, RuntimeSession], params: dict) -> RuntimeSession:
+def _get_runtime(runtime_sessions: dict[str, RuntimeSession], params: dict[str, Any]) -> RuntimeSession:
     """Look up the runtime by ``session_id`` param or raise JSONRPC_METHOD_NOT_FOUND."""
     session_id = _require_str(params, "session_id")
     runtime = runtime_sessions.get(session_id)
@@ -758,6 +770,83 @@ def _register_session_handlers(
         return await check_affect(user_id, float(idle_seconds), local_hour, llm_config)
 
     dispatcher.register("companion.check_affect", companion_check_affect)
+
+    async def companion_interact(params: dict) -> dict:
+        # LLM-driven reaction to a poke/drag. The desktop owns trigger timing;
+        # the backend owns LLM reasoning (persona + memory). Per-user throttle
+        # keeps rapid pokes from burning LLM quota, and per-user inflight
+        # cancellation supersedes any still-running call with the latest one.
+        now = time.monotonic()
+        last = _last_interact_ts.get(user_id, 0.0)
+        if now - last < INTERACT_MIN_INTERVAL_SECONDS:
+            logger.debug(
+                "interact: throttled",
+                extra={"user_id": user_id, "since_sec": round(now - last, 3)},
+            )
+            return {"text": "", "emotion": None, "reason": "throttled"}
+        _last_interact_ts[user_id] = now
+
+        existing = _interact_inflight.get(user_id)
+        if existing is not None and not existing.done():
+            existing.cancel()
+
+        task = asyncio.create_task(check_interact(user_id, params, llm_config))
+        _interact_inflight[user_id] = task
+        # A CancelledError reaching ``await task`` has two sources we must
+        # distinguish: (a) the newer poke above called ``existing.cancel()``
+        # on the inner task — return a normal payload so the WS dispatcher's
+        # call resolves; (b) the WS dispatcher cancelled *this* handler
+        # coroutine itself (client disconnect / server shutdown) — re-raise
+        # so the dispatcher can wind the connection down cleanly. We tag the
+        # inner task with ``_interact_task_is_ours`` and only treat that
+        # cancel as benign. A ``current_task().cancelling()`` check captures
+        # case (b) — if THIS handler is being cancelled the flag flips.
+        try:
+            return await task
+        except asyncio.CancelledError:
+            # If the cancellation targets the handler (not the inner task),
+            # the inner task is our descendant; cancelling it also cancelled
+            # us. Re-raise so the dispatcher unwinds the WS.
+            current = asyncio.current_task()
+            if current is not None and current.cancelling() > 0:
+                raise
+            logger.debug("interact: superseded", extra={"user_id": user_id})
+            return {"text": "", "emotion": None, "reason": "cancelled"}
+        finally:
+            current = _interact_inflight.get(user_id)
+            if current is task:
+                del _interact_inflight[user_id]
+
+    dispatcher.register("companion.interact", companion_interact)
+
+    async def companion_record_interaction_stats(params: dict) -> dict:
+        # Per-event statistics (poke / drag / chat_turn) for daily Memory
+        # rollups. No LLM cost. ``INTERACT_MIN_INTERVAL_SECONDS`` is a
+        # SEPARATE throttle that gates only the LLM-backed ``companion.interact``
+        # RPC — stats fire on every event the desktop reports, which means
+        # a heavy clicker drives one WS roundtrip per poke. Once the dual
+        # threshold trips, each event is also a DB upsert; a future
+        # optimisation is to batch stats RPCs client-side.
+        kind = params.get("kind")
+        hour = params.get("hour")
+        if not isinstance(hour, int) or not 0 <= hour <= 23:
+            raise JsonRpcError(JSONRPC_INVALID_PARAMS, "hour must be int in [0, 23]")
+        if kind not in ("poke", "drag", "chat_turn"):
+            raise JsonRpcError(
+                JSONRPC_INVALID_PARAMS,
+                f"kind must be one of poke/drag/chat_turn, got {kind!r}",
+            )
+        return record_interaction(user_id, kind, hour)
+
+    dispatcher.register("companion.record_interaction_stats", companion_record_interaction_stats)
+
+    async def companion_get_user_profile(_params: dict) -> dict:
+        # Reverse of ``record_user_profile`` — the retune wizard calls this
+        # before opening to pre-populate its user_* step.
+        with SESSION_LOCAL() as db:
+            return read_user_profile(db, user_id)
+
+    dispatcher.register("companion.get_user_profile", companion_get_user_profile)
 
     async def onboarding_get_state(_params: dict) -> dict:
         # Breakpoint recovery: the desktop calls this on boot to learn which

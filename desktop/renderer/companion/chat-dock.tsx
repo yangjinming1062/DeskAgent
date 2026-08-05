@@ -1,4 +1,5 @@
 import { useStore } from '@nanostores/react'
+import type React from 'react'
 import { type PointerEvent as ReactPointerEvent, useEffect, useMemo, useRef, useState } from 'react'
 
 import { useGatewayRequest } from '@/companion/boot/use-gateway-request'
@@ -10,7 +11,13 @@ import {
   setAssistantError,
   setChatSession
 } from '@/companion/chat-store'
-import { $disturbanceTier, type DisturbanceTier, setDisturbanceTier, setSpriteState } from '@/companion/companion-store'
+import {
+  $effectiveTier,
+  $userPreferredTier,
+  type DisturbanceTier,
+  setDisturbanceTier,
+  setSpriteState
+} from '@/companion/companion-store'
 import { registerInteractiveRegion, unregisterInteractiveRegion } from '@/companion/interactive-regions'
 import { $gatewayState } from '@/shared/store/gateway'
 
@@ -25,11 +32,11 @@ interface ChatDockProps {
   onOpenVoiceCall?: () => void
 }
 
-export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps) {
+export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.ReactElement {
   const messages = useStore($chatMessages)
   const sessionId = useStore($chatSessionId)
   const gatewayState = useStore($gatewayState)
-  const tier = useStore($disturbanceTier)
+  const tier = useStore($userPreferredTier)
   const { requestGateway } = useGatewayRequest()
   const [text, setText] = useState('')
   const [pendingImage, setPendingImage] = useState<string | null>(null)
@@ -93,9 +100,11 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps) {
 
   const changeTier = (next: DisturbanceTier) => {
     setDisturbanceTier(next)
-    // Report to Backend (companion.set_disturbance_tier). No-op until the
-    // Backend endpoint ships — never block the UI on the report.
-    void requestGateway('companion.set_disturbance_tier', { tier: next }).catch(() => {})
+    // Push the EFFECTIVE tier (which incorporates both user choice and the
+    // activity-monitor override) so the backend gates on the same value the
+    // renderer reads. Without this, an immersive IDE context would un-mute
+    // the backend for the full poll-cycle window after a manual click.
+    void requestGateway('companion.set_disturbance_tier', { tier: $effectiveTier.get() }).catch(() => {})
   }
 
   const onPaste = async (e: React.ClipboardEvent) => {
@@ -127,6 +136,11 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps) {
   // stopRecording waits for an in-flight getUserMedia so a quick tap
   // doesn't land in stopRecording before the recorder exists.
   const startPendingRef = useRef<Promise<void> | null>(null)
+
+  // Latest-callback ref so the global-mouseup effect below can subscribe
+  // without depending on stopRecording's identity (which changes every render
+  // and would otherwise re-subscribe the listener on every keystroke).
+  const stopRecordingRef = useRef<() => Promise<void>>(async () => {})
 
   const startRecording = () => {
     let pending: Promise<void> | null = null
@@ -184,13 +198,17 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps) {
     setRecording(false)
   }
 
+  // Keep the ref pointing at the latest closure so the global mouseup
+  // handler always sees fresh state.
+  stopRecordingRef.current = stopRecording
+
   useEffect(() => {
     if (!recording) {
       return
     }
 
     const handleGlobalMouseUp = () => {
-      void stopRecording()
+      void stopRecordingRef.current()
     }
 
     window.addEventListener('mouseup', handleGlobalMouseUp)

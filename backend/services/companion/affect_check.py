@@ -1,22 +1,20 @@
 import asyncio
+from typing import Any
 
 from components import get_logger
 from components import safe_json_loads
 from components import SESSION_LOCAL
 from modules.companion import Persona
-from modules.memory import Memory
-from sqlalchemy.orm import Session
 
 from ..chat import ALLOWED_EMOTIONS
 from ..llm import call_with_retry
 from ..llm import client_for_config
 from ..llm import LLMRuntimeError
 from .affect_emit import emit_companion_affect
+from .memory_format import format_memories_block
 
 logger = get_logger(__name__)
 
-_MAX_MEMORIES = 10
-_MAX_MEMORY_SNIPPET_LEN = 200
 _MAX_RESPONSE_TOKENS = 200
 
 _AFFECT_CHECK_PROMPT = (
@@ -42,34 +40,17 @@ _AFFECT_CHECK_PROMPT = (
 )
 
 
-def _format_memories(db: Session, user_id: int) -> str:
-    rows = db.query(Memory).filter(Memory.user_id == user_id, ~Memory.context.like("user_profile:%")).order_by(Memory.updated_at.desc()).limit(_MAX_MEMORIES).all()
-    if not rows:
-        return "（暂无长期记忆）"
-    lines = []
-    for r in rows:
-        snippet = (r.content or "")[:_MAX_MEMORY_SNIPPET_LEN]
-        ctx = f" [{r.context}]" if r.context else ""
-        lines.append(f"- {snippet}{ctx}")
-    return "\n".join(lines)
-
-
-async def check_affect(user_id: int, idle_seconds: float, local_hour: int, llm_config: dict) -> dict:
-    """Idle-triggered LLM reasoning: should the companion express a contextual
-    emotion right now? (§7.6: affect is memory-driven runtime behaviour, not a
-    Desktop rule-engine output.)
-
-    The desktop owns trigger timing (it knows the real idle state); the backend
-    owns emotion reasoning (persona + memory + LLM). Emits ``companion.affect``
-    on a positive decision so the sprite switches to EMOTIONAL without a bubble
-    or TTS.
-    """
+async def check_affect(user_id: int, idle_seconds: float, local_hour: int, llm_config: dict[str, Any]) -> dict[str, Any]:
+    """Idle-triggered LLM reasoning for companion contextual emotion expression."""
     with SESSION_LOCAL() as db:
         persona = db.query(Persona).filter(Persona.user_id == user_id).one_or_none()
         if persona is None or not persona.is_complete or not persona.system_prompt_extras:
             return {"expressed": False, "reason": "persona not ready"}
         persona_extras = persona.system_prompt_extras
-        memories_block = _format_memories(db, user_id)
+        memories_block = format_memories_block(db, user_id)
+
+    if not isinstance(llm_config, dict) or "model_name" not in llm_config:
+        return {"expressed": False, "reason": "llm_error"}
 
     idle_seconds = float(idle_seconds) if isinstance(idle_seconds, (int, float)) and idle_seconds >= 0 else 0.0
     local_hour = int(local_hour) if isinstance(local_hour, int) and 0 <= local_hour <= 23 else -1

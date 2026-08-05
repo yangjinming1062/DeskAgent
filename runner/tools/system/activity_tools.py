@@ -6,6 +6,7 @@ from ..registry import registry
 from .activity import get_focused_app
 from .activity import get_idle_seconds
 from .activity import get_power_state
+from .activity import is_fullscreen
 from .activity import is_screen_locked
 
 logger = logging.getLogger(__name__)
@@ -34,6 +35,13 @@ SYSTEM_FOCUS_SCHEMA = {
 }
 
 
+SYSTEM_IS_FULLSCREEN_SCHEMA = {
+    "name": "system.is_fullscreen",
+    "description": ("True iff the foreground window covers ≥95% of its monitor's " "working area. False when unknown. Feeds the desktop's " "auto-downgrade-to-quiet signal."),
+    "parameters": {"type": "object", "properties": {}, "required": []},
+}
+
+
 SYSTEM_POWER_SCHEMA = {
     "name": "system.get_power_state",
     "description": "{on_battery, screen_on, charging} — booleans default to False/True.",
@@ -53,6 +61,10 @@ def _focus_handler(args: dict[str, Any], **kw: Any) -> str:
     return json.dumps({"focused_app": get_focused_app()})
 
 
+def _fullscreen_handler(args: dict[str, Any], **kw: Any) -> str:
+    return json.dumps({"fullscreen": is_fullscreen()})
+
+
 def _power_handler(args: dict[str, Any], **kw: Any) -> str:
     return json.dumps(get_power_state())
 
@@ -60,4 +72,5 @@ def _power_handler(args: dict[str, Any], **kw: Any) -> str:
 registry.register_tool("system.get_idle_seconds", schema=SYSTEM_GET_IDLE_SCHEMA)(_idle_handler)
 registry.register_tool("system.is_screen_locked", schema=SYSTEM_IS_LOCKED_SCHEMA)(_locked_handler)
 registry.register_tool("system.get_focused_app", schema=SYSTEM_FOCUS_SCHEMA)(_focus_handler)
+registry.register_tool("system.is_fullscreen", schema=SYSTEM_IS_FULLSCREEN_SCHEMA)(_fullscreen_handler)
 registry.register_tool("system.get_power_state", schema=SYSTEM_POWER_SCHEMA)(_power_handler)

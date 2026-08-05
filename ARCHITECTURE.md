@@ -101,6 +101,8 @@ DeskAgent 是一个**根据用户描述定制的、具有专属形象的陪伴�
 | Backend → Desktop | `event.type="companion.affect"` `{emotion}` | affect-only 情绪 cue（无消息文本、无 TTS），驱动 EMOTIONAL 状态——quiet 档透传或 idle 触发 LLM 推理产出（详见 §4.2.IV / §5 / §6.3） |
 | Desktop → Backend | `companion.set_disturbance_tier` `{tier}` | 上报当前打扰档位（积极主动/常规/保持安静），约束 Backend 主动消息 |
 | Desktop → Backend | `companion.check_affect` `{idle_seconds, local_hour}` | idle 触发的情境化 affect 推理：Backend 加载 persona + 记忆跑一次 LLM 推理，决定是否 emit `companion.affect`（详见 §5 / §6.4） |
+| Desktop → Backend | `companion.interact` `{tone, poke_count, idle_seconds, local_hour}` | 单次戳/拖的 LLM 反应推理：返回 `{text, emotion, reason}`。per-user inflight 取消 + 1.5s 节流。零延迟本地文案池由 Desktop 自管，LLM 响应仅作文本/情绪增强，不打断本地 TTS（详见 §6.3）。 |
+| Desktop → Backend | `companion.record_interaction_stats` `{kind: 'poke'\|'drag'\|'chat_turn', hour}` | 互动统计上报，无 LLM。Backend 按 UTC 自然日聚合三类计数 + 24h hour_buckets；当 poke、drag、chat_turn 三者**各自** ≥ 10 时 upsert `Memory(context="interaction_stats:<date>", content="<date>: poke=N, drag=N, chat_turns=N; peak=HH-HHh", tags=["interaction","stats","daily_summary"])`；同日多次跨门限同 row 覆盖。 |
 
 clip 的就绪/失败通知走**单一 `clip.updated` 通道**。companion 服务以 portrait 为种子经图生视频生成 clip，复用 `media/video_jobs` 流水线（通过 `enqueue_video_job(..., emit_event=False)` 抑制标准 `video_gen.*` 事件，避免双通知与字段名错位）。Desktop 另调 `avatar.list_clips` 查询整批 clip 目录与各自生成状态。
 
@@ -194,7 +196,16 @@ Backend clip 生成队列（portrait 种子图 + 场景文本 → 图生视频�
 
 `send_message`（主动消息）、Cron（定时任务）、形象/角色变更通知等所有"伙伴主动行为"都经此通道下发至 Desktop。调度循环与 LISTEN/NOTIFY 消费实现见 [backend/README.md](backend/README.md)。
 
-**打扰档位约束**：所有"伙伴主动行为"受三档打扰等级约束（积极主动 / 常规 / 保持安静），档位由用户设置 + Desktop 检测到的用户活动共同决定，Desktop 经 `companion.set_disturbance_tier` 上报。Backend 据此放行或抑制：`quiet` 档时主动消息被吞掉，但 LLM 推理出的 affect 仍经独立的 `companion.affect` 事件流出——即**断消息不断 affect**，Desktop 收到后切 EMOTIONAL 状态但不弹气泡、不做 TTS。档位的交互表现见 [COMPANION_DESIGN.md §5.2](COMPANION_DESIGN.md)；Backend 门控实现见 [backend/README.md](backend/README.md)。
+**打扰档位约束**：所有"伙伴主动行为"受三档打扰等级约束（积极主动 / 常规 / 保持安静），档位由用户设置 + Desktop 检测到的用户活动共同决定，Desktop 经 `companion.set_disturbance_tier` 上报。
+
+档位状态分两层（`desktop/renderer/companion/companion-store.ts`）：
+- `$userPreferredTier`：用户手动选择，源真值，持久化在 `localStorage`。
+- `$effectiveTierOverride`：活动感知器写入的临时覆盖，null 表示无覆盖。
+- `$effectiveTier = $effectiveTierOverride ?? $userPreferredTier`：其余模块读取这一原子做静默判定。
+
+Backend 镜像同样的双层（`backend/services/disturbance.py`）：`set_user_preferred_tier` 记录用户偏好，`record_focus_context` 接收 Desktop 30s 轮询的 `system.get_focused_app` + `system.is_fullscreen` 结果，`compute_effective_tier(user_preferred)` 应用「手动 quiet 永远不被覆盖」规则后产出 effective 值。Desktop 上报的 `companion.set_disturbance_tier` 写入 `_disturbance`（effective 字典），与 user_preferred 分离存储。
+
+Backend 据此放行或抑制：`quiet` 档时主动消息被吞掉，但 LLM 推理出的 affect 仍经独立的 `companion.affect` 事件流出——即**断消息不断 affect**，Desktop 收到后切 EMOTIONAL 状态但不弹气泡、不做 TTS。档位的交互表现见 [COMPANION_DESIGN.md §5.2](COMPANION_DESIGN.md)；Backend 门控实现见 [backend/README.md](backend/README.md)。
 
 **情境化 affect（无 turn 触发）**：用户长时间无活动时，Desktop 的 idle 轮询跨过阈值时调 `companion.check_affect {idle_seconds, local_hour}`，Backend 加载 persona + 最近记忆跑一次 LLM 推理，决定是否 emit `companion.affect`。**触发时机由 Desktop 控制（知道真实 idle 状态），情绪推理由 Backend LLM 承担（有 persona + 记忆）**——各取所长，Desktop 不退化成规则驱动的文案池。这条路径是 §6.4"记忆驱动运行时行为"不变量的落地。
 
@@ -238,6 +249,8 @@ onboarding 产出的结构化角色定义持久化在 Backend 用户维度，作
 - **记忆（动态，随互动累积）→ 运行时行为表达**：记忆注入 LLM 上下文，驱动**说什么、表现什么情绪、何时主动搭话、主动频率**。用户随口表达的偏好（"我喜欢你多笑"）写入记忆后，LLM 在后续交互中更频繁地产出 `happy` affect——伙伴"笑得更多"。
 
 **核心不变量**：记忆驱动的个性化通过**运行时行为**（affect / 言语 / 主动频率）实现，**不通过 clip 重生实现**。clip 只随角色定义变更而重生。这避免了"每学到一条新偏好就重生成全部视频"的不可行开销，同时让伙伴随关系深入而"表现得不一样"。
+
+**互动统计信号**：高频戳/拖/对话活动通过 `companion.record_interaction_stats`（无 LLM）按 UTC 自然日聚合到 `Memory(context="interaction_stats:<date>")`，为后续 LLM 提供「用户当日活跃度 + 高峰时段」信号，区别于单条 user_profile / 个人记忆的细粒度反馈。门限为 poke、drag、chat_turn 三者各自 ≥ 10（双门限），避免日常轻度使用产生噪音。
 
 ---
 

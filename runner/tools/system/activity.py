@@ -25,13 +25,19 @@ except ImportError:
 try:
     from Quartz import (  # type: ignore[import-not-found]
         CGEventSourceSecondsSinceLastEventType,
+        CGWindowListCopyWindowInfo,
         kCGAnyInputEventType,
         kCGEventSourceStateHIDSystemState,
+        kCGNullWindowId,
+        kCGWindowListOptionOnScreenOnly,
     )
 except ImportError:
     CGEventSourceSecondsSinceLastEventType = None  # type: ignore[assignment,misc]
+    CGWindowListCopyWindowInfo = None  # type: ignore[assignment,misc]
     kCGAnyInputEventType = None  # type: ignore[assignment,misc]
     kCGEventSourceStateHIDSystemState = None  # type: ignore[assignment,misc]
+    kCGNullWindowId = None  # type: ignore[assignment,misc]
+    kCGWindowListOptionOnScreenOnly = None  # type: ignore[assignment,misc]
 try:
     import Quartz  # type: ignore[import-not-found]
 except ImportError:
@@ -73,6 +79,18 @@ def get_focused_app() -> dict[str, Any]:
     if IS_LINUX:
         return _focus_linux()
     return {}
+
+
+def is_fullscreen() -> bool:
+    """True iff the foreground window covers (≥95%) of its monitor's
+    working area. ``False`` when unknown / unavailable."""
+    if IS_WINDOWS:
+        return _fullscreen_windows()
+    if IS_MACOS:
+        return _fullscreen_macos()
+    if IS_LINUX:
+        return _fullscreen_linux()
+    return False
 
 
 def get_power_state() -> dict[str, Any]:
@@ -337,3 +355,162 @@ def _focus_linux() -> dict[str, Any]:
     except (OSError, subprocess.TimeoutExpired) as e:
         logger.debug("linux focus probe failed: %s", e)
     return {}
+
+
+# ---------------------------------------------------------------------------
+# Fullscreen detection — companion's "immersive focus" signal
+# ---------------------------------------------------------------------------
+
+_FULLSCREEN_COVERAGE_RATIO = 0.95
+
+
+def _fullscreen_windows() -> bool:
+    """Foreground window covers ≥95% of its monitor's working area."""
+    if ctypes is None or wintypes is None:
+        return False
+    try:
+        user32 = ctypes.windll.user32
+
+        hwnd = user32.GetForegroundWindow()
+        if not hwnd:
+            return False
+
+        class _Rect(ctypes.Structure):
+            _fields_ = [  # noqa: RUF012
+                ("left", wintypes.LONG),
+                ("top", wintypes.LONG),
+                ("right", wintypes.LONG),
+                ("bottom", wintypes.LONG),
+            ]
+
+        win = _Rect()
+        if not user32.GetWindowRect(hwnd, ctypes.byref(win)):
+            return False
+        win_w = max(0, win.right - win.left)
+        win_h = max(0, win.bottom - win.top)
+        if win_w <= 0 or win_h <= 0:
+            return False
+
+        monitor = user32.MonitorFromWindow(hwnd, 0x00000002)  # MONITOR_DEFAULTTONEAREST
+        if not monitor:
+            return False
+        monitor_info = type(
+            "MI",
+            (ctypes.Structure,),
+            {
+                "_fields_": [
+                    ("cbSize", wintypes.DWORD),
+                    ("rcMonitor", _Rect),
+                    ("rcWork", _Rect),
+                    ("dwFlags", wintypes.DWORD),
+                ]
+            },
+        )()
+        monitor_info.cbSize = ctypes.sizeof(monitor_info)
+        if not user32.GetMonitorInfoW(monitor, ctypes.byref(monitor_info)):
+            return False
+        # Compare against the FULL monitor (rcMonitor), not the work area
+        # (rcWork). rcWork excludes the taskbar; a maximized window already
+        # covers rcWork so work-based comparison fires for every window the
+        # user has maximized, which is the normal working state for most
+        # people. rcMonitor includes the taskbar area, so only a true
+        # fullscreen window (taskbar auto-hidden) reaches the threshold.
+        monitor = monitor_info.rcMonitor
+        monitor_w = max(1, monitor.right - monitor.left)
+        monitor_h = max(1, monitor.bottom - monitor.top)
+        ratio = min(win_w / monitor_w, win_h / monitor_h)
+        return ratio >= _FULLSCREEN_COVERAGE_RATIO
+    except Exception as e:
+        logger.debug("win fullscreen probe failed: %s", e)
+        return False
+
+
+def _fullscreen_macos() -> bool:
+    """True iff the focused app's key window is in native full-screen
+    mode (the green-window traffic-light full screen). Returns ``False``
+    when the API is unavailable or the focused window can't be read.
+
+    ``NSApplication.sharedApplication().windows()`` enumerates the *Runner's*
+    own NSWindows (the Runner is a headless Python process with none), not
+    the frontmost user app's. Cross-process window enumeration requires the
+    CoreGraphics ``CGWindowListCopyWindowInfo`` API, which we use here with
+    the focused app's PID obtained from ``NSWorkspace``.
+    """
+    if NSWorkspace is None or Quartz is None or CGWindowListCopyWindowInfo is None:
+        return False
+    try:
+        app = NSWorkspace.sharedWorkspace().frontmostApplication()
+        if not app:
+            return False
+        focused_pid = app.processIdentifier()
+        # kCGWindowListOptionOnScreenOnly excludes off-screen / minimized
+        # windows. We then filter by PID and check for the kCGWindowIsInWindowList
+        # + full-screen bits the AppKit headers expose.
+        windows = CGWindowListCopyWindowInfo(kCGWindowListOptionOnScreenOnly, kCGNullWindowId)
+        NSWindowStyleMaskFullScreen = 1 << 14  # from AppKit headers
+        for win in windows:
+            owner_pid = win.get("kCGWindowOwnerPID", -1)
+            if owner_pid != focused_pid:
+                continue
+            # Window state bit 1 << 9 is ``kCGWindowStateIsInFullscreen`` on
+            # modern macOS — older headers expose the constant; fall back to
+            # the raw bitmask if absent.
+            if win.get("kCGWindowIsInFullscreen", 0) & 1:
+                return True
+            style_mask = win.get("kCGWindowStyleMask", 0)
+            if style_mask & NSWindowStyleMaskFullScreen:
+                return True
+        return False
+    except Exception as e:
+        logger.debug("macos fullscreen probe failed: %s", e)
+        return False
+
+
+def _fullscreen_linux() -> bool:
+    """Compare the focused window's geometry to the screen work area via
+    ``xdotool``. ``False`` when ``xdotool`` is unavailable."""
+    if not shutil.which("xdotool"):
+        return False
+    try:
+        geom_out = subprocess.run(
+            ["xdotool", "getactivewindow", "getgeometry"],
+            capture_output=True,
+            timeout=1.0,
+            text=True,
+            check=False,
+        )
+        if geom_out.returncode != 0:
+            return False
+        # Output is "Window <id>\n  Position: X,Y (screen: N)\n  Geometry: WxH+0+0".
+        # Strip the position offset suffix before the isdigit() check.
+        win_w = win_h = 0
+        for ln in geom_out.stdout.splitlines():
+            if ln.strip().startswith("Geometry:"):
+                wh = ln.split("Geometry:", 1)[1].strip().split("x", 1)
+                if len(wh) == 2:
+                    w = wh[0]
+                    h = wh[1].split("+", 1)[0].split("-", 1)[0]
+                    if w.isdigit() and h.isdigit():
+                        win_w, win_h = int(w), int(h)
+                        break
+        if win_w <= 0 or win_h <= 0:
+            return False
+
+        work_out = subprocess.run(
+            ["xdotool", "getdisplaygeometry"],
+            capture_output=True,
+            timeout=1.0,
+            text=True,
+            check=False,
+        )
+        if work_out.returncode != 0:
+            return False
+        parts = work_out.stdout.strip().split()
+        if len(parts) != 2 or not parts[0].isdigit() or not parts[1].isdigit():
+            return False
+        work_w, work_h = max(1, int(parts[0])), max(1, int(parts[1]))
+        ratio = min(win_w / work_w, win_h / work_h)
+        return ratio >= _FULLSCREEN_COVERAGE_RATIO
+    except (OSError, subprocess.TimeoutExpired) as e:
+        logger.debug("linux fullscreen probe failed: %s", e)
+    return False

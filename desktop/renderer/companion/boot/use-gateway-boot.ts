@@ -6,7 +6,7 @@ import {
   failDesktopBoot,
   setDesktopBootStep
 } from '@/companion/boot-store'
-import { $disturbanceTier, $spriteState, $voiceCallOpen, setSpriteState } from '@/companion/companion-store'
+import { $effectiveTier, $spriteState, $voiceCallOpen, setSpriteState } from '@/companion/companion-store'
 import { DeskAgentGateway } from '@/shared/deskagent'
 import { resolveGatewayWsUrl } from '@/shared/lib/gateway-ws-url'
 import { reconnectBackoffMs } from '@/shared/lib/reconnect'
@@ -29,9 +29,12 @@ import type { DeskAgentConnection } from '@/shared/types/global'
 const WS_CLOSE_POLICY_VIOLATION = 1008
 
 // Re-report the tier after every (re)open: backend stores it in a process-local
-// dict that a restart silently resets. Fire-and-forget to match chat-dock's pattern.
+// dict that a restart silently resets. Push the EFFECTIVE value (not
+// user_preferred alone) so an immersive focus context survives the reconnect
+// — otherwise a fresh WS handshake would briefly un-mute the backend while
+// the user is still in an IDE/fullscreen window. Fire-and-forget.
 function syncDisturbanceTier(gateway: DeskAgentGateway): void {
-  const tier = $disturbanceTier.get()
+  const tier = $effectiveTier.get()
 
   if (!tier) {
     return
@@ -77,7 +80,7 @@ interface GatewayBootOptions {
   onGatewayReady: (gateway: DeskAgentGateway | null) => void
 }
 
-export function useGatewayBoot({ handleGatewayEvent, onConnectionReady, onGatewayReady }: GatewayBootOptions) {
+export function useGatewayBoot({ handleGatewayEvent, onConnectionReady, onGatewayReady }: GatewayBootOptions): void {
   const callbacksRef = useRef({ handleGatewayEvent, onConnectionReady, onGatewayReady })
 
   callbacksRef.current = { handleGatewayEvent, onConnectionReady, onGatewayReady }

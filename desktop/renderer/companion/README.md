@@ -56,7 +56,7 @@
 
 LLM 任何 `joyful` / `happy_excited` 等未注册 token 走 `affect.py::_try_resolve` 的 neutral 回退，tag 剥离后归 `idle`。
 
-## 3. 三档打扰
+## 3. 三档打扰（双层模型）
 
 `disturbance_tier` 由 `setDisturbanceTier` 写入并经 `companion.set_disturbance_tier` 上报后端。**后端永远 emit 事件，由 Desktop 决定如何呈现**（P0-7，P1-17 跨副本路由前提）：
 
@@ -66,7 +66,11 @@ LLM 任何 `joyful` / `happy_excited` 等未注册 token 走 `affect.py::_try_re
 | `normal` | 文本（气泡） | ✓ | ✗ |
 | `quiet` | 抑制文本与气泡 | ✓（仍可切 EMOTIONAL） | ✗ |
 
-`is_screen_locked` 等同 `quiet`（plan §5.5 / §5.2 锁屏静默）。失败回滚：若后端拒绝新档位，Desktop 回滚 `$disturbanceTier` 到旧值并写 dev log（P2-15）。
+`is_screen_locked` 等同 `quiet`（plan §5.5 / §5.2 锁屏静默）。
+
+**双层档位模型**（`companion-store.ts`）：`$userPreferredTier` 是用户手动选择的源真值；活动感知器写入 `$effectiveTierOverride`；其余模块读 `$effectiveTier = override ?? preferred` 做静默判定。设置面板 / chat-dock 仍显示 user_preferred。**手动 quiet 永远不被覆盖**（manual lock-in）。失败回滚：若后端拒绝新档位，Desktop 回滚 `$userPreferredTier` 到旧值并写 dev log（P2-15）。
+
+**活动感知降级**：30s 轮询 `system.get_focused_app` + `system.is_fullscreen`（[activity.ts](activity.ts)）。当分类进入 `ide`/`gaming`/`reader` 或 `is_fullscreen` 为真时，覆盖 effective 为 quiet；focus 清除后 5s 节流推回 user_preferred。
 
 ## 4. 精灵资源降级
 
@@ -89,14 +93,26 @@ clip 通过 `clip.updated` 事件单通道下发（P0-8）。`video_gen.*` 事�
 ## 6. 自主行为（IDLE 时）
 
 - **微动作**：10–25s 随机间隔切 `idle` / `idle_look_around` / `idle_blink` / `idle_stretch` scene。已加入 CLIP_SCENES batch 2（P1-3），可升档到 Tier 2 / 3。
-- **情境动作**：`system.get_idle_seconds` / `get_focused_app` / `get_power_state` 轮询直接进情境判定（**不经 LLM**），未启用——仅占位。
+- **情境动作**：基于 `$focusContext`（[activity.ts](activity.ts) 维护）。focused-app 分类（ide/music/reader/gaming/browsing/other/unknown）按平台白名单映射（Windows 进程名、macOS bundle id、Linux class 名）。IDLE 微动作池按分类切换：
+
+  | 分类 | 微动作池（未就绪 fallback 到 `idle`） |
+  |------|----------------------------------|
+  | ide | `idle_thinking` → `idle_typing` → `idle_look_around` → `idle` |
+  | music | `idle_bounce` → `idle_sway` → `idle_blink` → `idle` |
+  | reader | `idle_calm` → `idle_look_around` → `idle` |
+  | gaming | `idle_engaged` → `idle_stretch` → `idle` |
+  | 其他 | 沿用既有 `idle_look_around` / `idle_blink` / `idle_stretch` |
+
+  全部走 batch 2 `CLIP_SCENES` 新增的 6 个场景；Tier 2/3 未就绪时安全 fallback 到 `idle`，符合 §1.3 "永不空白" 不变量。
 
 ## 7. 用户直接交互
 
-- **戳**（`onTap`）：根据连戳频次 `light / medium / heavy` 反应文案池。`interacting` 瞬态 2s 回到 `previousState`。
-- **拖**（`onDragEnd`）：`interacting` 瞬态 + 拖放反应文案。P2-5 之后 dock 自身也可拖（chat panel 单独可拖；sprite 位置独立）。
+- **戳**（`onTap`）：[interaction.ts](interaction.ts) 零延迟本地池（`POKE_LIGHT`/`MEDIUM`/`HEAVY`，按 tone 选）+ **可选 LLM 增强**（`companion.interact` 同步 request-response）。LLM 响应不打断本地 TTS，仅作文本气泡叠加并缓存入 tone-keyed 队列（下次同 tone 单次戳优先用缓存）。后端 throttle 1.5s，Desktop debounce 2s，per-user inflight 取消。
+- **拖**（`onDragEnd`）：`interacting` 瞬态 + 拖放反应文案 + fire-and-forget `companion.record_interaction_stats {kind: 'drag'}`。
 - **悬停**：10s 节流，`interacting` 1.5s。
 - **右键**：托盘菜单入口（声音切换、伙伴设置、登出）。
+
+**每日互动统计**：poke / drag / chat_turn 三类事件经 `companion.record_interaction_stats`（无 LLM）上报，Backend 按 UTC 自然日聚合 + 双门限（每类 ≥ 10）upsert `Memory(context="interaction_stats:<date>")`，喂给后续 LLM "用户当日活跃度 + 高峰时段" 信号。
 
 ## 8. cron 主动陪伴链路
 
@@ -119,5 +135,6 @@ clip 通过 `clip.updated` 事件单通道下发（P0-8）。`video_gen.*` 事�
 - **持久化键**：
   - `da.companion.voiceId` / `da.companion.responseMode` / `da.companion.disturbanceTier` / `da.companion.chatDockOffset`（P1-18 + P2-5）
   - 仅 `disturbanceTier` + `chatDockOffset` 跨重启保留；`voiceId` 在 onMount 由 `voice-validity.ts` 校验 provider 目录变化。
+- **角色编辑双路径**：`PersonaSection`（表单式直接改 6 个字段）+ `PersonaRetune`（[persona-retune.tsx](persona-retune.tsx) 5–6 步对话式 wizard 含 user_*），后者单 PUT 收尾、保留 `is_complete=True`、不重置 `is_complete`、修复前者静默 `deriveSpeakingStyle` 覆盖 `speaking_style` 的坑。
 - **`/api/companion/asset/*` 文件路由**：已切到 HMAC 签名 URL（`user_id` + `filename` + 5 分钟 expiry + HMAC），后端 `verify_signed_asset_request` 强制校验，丢签名 401。Asset 落持久目录（`companion-avatars/` / `companion-assets/`），URL 一次性 5 分钟有效。
 - **CORS / 跨窗口**：精灵窗口与对话面板共享同一 Electron 渲染进程（panel 是 React child of sprite window），`setAlwaysOnTop` 不再被 chat-dock 切换（P1-4）。
