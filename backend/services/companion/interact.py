@@ -42,10 +42,12 @@ _INTERACT_PROMPT_TEMPLATE = (
     "- 互动类型: {interaction_kind}\n"
     "- 当前角色语气分类: {tone}（gentle/lively/snarky/calm）\n"
     "- 用户已连续互动次数（poke 计数）: {poke_count}\n"
+    "- 用户空闲秒数（自上次活动以来）: {idle_seconds}\n"
     "- 用户本地小时: {local_hour}\n\n"
     "判断原则：\n"
     "- 文案应契合当前 tone，符合角色性格；不要泛泛而谈\n"
     "- 如用户连续戳（poke_count >= 5）已属高频，文案可带轻微'被缠住'的意味\n"
+    "- 用户长时间空闲（idle_seconds >= 600）后突然戳一下，可带轻微'被冷落后又被找到'的情绪\n"
     "- 记忆里有相关信息时可调用（如用户喜欢被叫某个昵称、最近常聊的话题）\n"
     '- 情绪应是角色个性的自然流露；没有合适情绪时 emotion 设 "none"\n\n'
     "只返回 JSON，不要有任何其他文字：\n"
@@ -95,12 +97,17 @@ async def check_interact(user_id: int, params: dict, llm_config: dict) -> dict:
     else:
         local_hour_str = "未知"
 
+    # Renderer always sends a non-negative finite int via `Math.max(0,
+    # $lastIdleSeconds.get())`. Fall back to 0 on missing/bad input.
+    idle_seconds = max(0, int(params.get("idle_seconds") or 0))
+
     prompt = _INTERACT_PROMPT_TEMPLATE.format(
         persona=persona_extras,
         memories=memories_block,
         interaction_kind=interaction_kind,
         tone=tone,
         poke_count=poke_count,
+        idle_seconds=idle_seconds,
         local_hour=local_hour_str,
         emotions=", ".join(sorted(ALLOWED_EMOTIONS)),
     )

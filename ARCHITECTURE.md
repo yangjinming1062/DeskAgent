@@ -101,7 +101,7 @@ DeskAgent 是一个**根据用户描述定制的、具有专属形象的陪伴�
 | Backend → Desktop | `event.type="companion.affect"` `{emotion}` | affect-only 情绪 cue（无消息文本、无 TTS），驱动 EMOTIONAL 状态——quiet 档透传或 idle 触发 LLM 推理产出（详见 §4.2.IV / §5 / §6.3） |
 | Desktop → Backend | `companion.set_disturbance_tier` `{tier}` | 上报当前打扰档位（积极主动/常规/保持安静），约束 Backend 主动消息 |
 | Desktop → Backend | `companion.check_affect` `{idle_seconds, local_hour}` | idle 触发的情境化 affect 推理：Backend 加载 persona + 记忆跑一次 LLM 推理，决定是否 emit `companion.affect`（详见 §5 / §6.4） |
-| Desktop → Backend | `companion.interact` `{tone, poke_count, idle_seconds, local_hour}` | 单次戳/拖的 LLM 反应推理：返回 `{text, emotion, reason}`。per-user inflight 取消 + 1.5s 节流。零延迟本地文案池由 Desktop 自管，LLM 响应仅作文本/情绪增强，不打断本地 TTS（详见 §6.3）。 |
+| Desktop → Backend | `companion.interact` `{kind: 'poke'\|'drag', tone, poke_count, idle_seconds, local_hour}` | 单次戳/拖的 LLM 反应推理：返回 `{text, emotion, reason}`。per-user inflight 取消 + 1.5s 节流。零延迟本地文案池由 Desktop 自管，LLM 响应仅作文本/情绪增强，不打断本地 TTS（详见 §6.3）。 |
 | Desktop → Backend | `companion.record_interaction_stats` `{kind: 'poke'\|'drag'\|'chat_turn', hour}` | 互动统计上报，无 LLM。Backend 按 UTC 自然日聚合三类计数 + 24h hour_buckets；当 poke、drag、chat_turn 三者**各自** ≥ 10 时 upsert `Memory(context="interaction_stats:<date>", content="<date>: poke=N, drag=N, chat_turns=N; peak=HH-HHh", tags=["interaction","stats","daily_summary"])`；同日多次跨门限同 row 覆盖。 |
 
 clip 的就绪/失败通知走**单一 `clip.updated` 通道**。companion 服务以 portrait 为种子经图生视频生成 clip，复用 `media/video_jobs` 流水线（通过 `enqueue_video_job(..., emit_event=False)` 抑制标准 `video_gen.*` 事件，避免双通知与字段名错位）。Desktop 另调 `avatar.list_clips` 查询整批 clip 目录与各自生成状态。

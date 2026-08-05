@@ -4,13 +4,14 @@ import { useState } from 'react'
 import { useGatewayRequest } from '@/companion/boot/use-gateway-request'
 import { clearClipCatalog } from '@/companion/clip-store'
 import { assemblePersona, MAX_APPEARANCE } from '@/companion/persona'
+import {
+  APPEARANCE_PRESETS,
+  CHARACTER_GENDER_PRESETS,
+  PERSONALITY_PRESETS,
+  ROLE_PRESETS,
+  SPECIES_PRESETS
+} from '@/companion/persona-presets'
 import { $persona, hydratePersona } from '@/companion/persona-store'
-
-const ROLE_PRESETS = ['爱人', '秘书', '专属管家', '无话不谈的朋友']
-const PERSONALITY_PRESETS = ['温柔体贴', '活泼好动', '冷静理性', '毒舌傲娇']
-const SPECIES_PRESETS = ['人类', '灵兽', '精灵', '机甲', '幻形']
-const CHARACTER_GENDER_PRESETS = ['女', '男', '其他', '不指定']
-const APPEARANCE_PRESETS = ['优雅古典', '现代利落', '萌系可爱', '冷酷暗黑']
 
 const inputClass =
   'w-full rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-xs text-white placeholder:text-white/30 outline-none focus:border-white/40'

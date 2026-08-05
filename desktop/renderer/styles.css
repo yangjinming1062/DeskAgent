@@ -1170,3 +1170,78 @@ body:has(.recording-toolbar-root) {
   background: color-mix(in srgb, var(--theme-primary) 9%, var(--ui-bg-elevated));
   box-shadow: none;
 }
+
+/* Boot-failure recovery surface. Full-screen veil with a centered card; the
+   card registers itself as an interactive region so the Retry button stays
+   clickable through the otherwise click-through sprite window. */
+.boot-failure-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1500;
+  display: grid;
+  place-items: center;
+  background: rgba(8, 10, 16, 0.78);
+  backdrop-filter: blur(6px);
+  pointer-events: auto;
+}
+
+.boot-failure-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: min(420px, calc(100vw - 48px));
+  padding: 24px;
+  border-radius: 16px;
+  border: 1px solid color-mix(in srgb, var(--ui-stroke-secondary) 80%, transparent);
+  background: var(--ui-bg-elevated, #14181f);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
+  color: var(--dt-foreground, #f5f6fa);
+}
+
+.boot-failure-card h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.boot-failure-message {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: color-mix(in srgb, var(--dt-foreground) 78%, transparent);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.boot-failure-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 4px;
+}
+
+.boot-failure-retry {
+  padding: 8px 18px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--theme-primary) 55%, var(--ui-stroke-secondary));
+  background: color-mix(in srgb, var(--theme-primary) 18%, transparent);
+  color: var(--dt-foreground, #f5f6fa);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+
+.boot-failure-retry:hover {
+  background: color-mix(in srgb, var(--theme-primary) 28%, transparent);
+  border-color: color-mix(in srgb, var(--theme-primary) 75%, var(--ui-stroke-secondary));
+}
+
+.boot-failure-retry:active {
+  background: color-mix(in srgb, var(--theme-primary) 38%, transparent);
+}
+
+.boot-failure-retry:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--theme-primary) 70%, transparent);
+  outline-offset: 2px;
+}

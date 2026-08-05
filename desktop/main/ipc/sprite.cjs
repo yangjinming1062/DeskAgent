@@ -3,14 +3,11 @@
 const fs = require('node:fs')
 const path = require('node:path')
 
-const { screen } = require('electron')
-
 // Sprite-window control surface for the renderer: click-through toggling,
 // dynamic always-on-top (dropped while the chat dialog is focused so other
-// apps can cover it), work-area queries for rest/center positioning math, and
-// rest-position persistence. Every handler no-ops when the sprite window is
-// gone (hidden/destroyed) rather than throwing — the renderer may race a call
-// against teardown.
+// apps can cover it), and rest-position persistence. Every handler no-ops
+// when the sprite window is gone (hidden/destroyed) rather than throwing —
+// the renderer may race a call against teardown.
 const POSITION_FILE = 'companion-position.json'
 
 function readRestPosition(userDataDir) {
@@ -48,10 +45,10 @@ function registerSpriteIpc({ ipcMain, deps }) {
     withWindow(win => win.setAlwaysOnTop(on, on ? 'floating' : undefined))
   })
 
-  ipcMain.handle('deskagent:sprite:get-work-area', async () => {
-    const win = getSpriteWindow()
-    const display = win && !win.isDestroyed() ? screen.getDisplayMatching(win.getBounds()) : screen.getPrimaryDisplay()
-    return display.workArea
+  ipcMain.handle('deskagent:sprite:get-position', async () => {
+    const dir = getUserDataDir()
+    if (!dir) return null
+    return readRestPosition(dir)
   })
 
   ipcMain.handle('deskagent:sprite:set-position', async (_event, payload) => {

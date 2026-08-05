@@ -4,6 +4,14 @@ import { useEffect, useRef, useState } from 'react'
 import { useGatewayRequest } from '@/companion/boot/use-gateway-request'
 import { clearClipCatalog } from '@/companion/clip-store'
 import { assemblePersona, MAX_APPEARANCE } from '@/companion/persona'
+import {
+  APPEARANCE_PRESETS,
+  CHARACTER_GENDER_PRESETS,
+  PERSONALITY_PRESETS,
+  ROLE_PRESETS,
+  SPEAKING_STYLE_PRESETS,
+  SPECIES_PRESETS
+} from '@/companion/persona-presets'
 import { hydratePersona } from '@/companion/persona-store'
 
 interface PersonaRetuneProps {
@@ -25,18 +33,6 @@ interface PersonaRetuneProps {
   onSaved: () => void
 }
 
-// Speaking-style chips that the user can explicitly pick. Each chip maps to
-// the same string the backend stores; the wizard passes the chip verbatim so
-// the user's choice is preserved end-to-end (overriding the persona-key
-// derivation in ``assemblePersona``). The free-text option below also
-// accepts arbitrary strings, with the same null-on-empty contract.
-const SPEAKING_STYLE_PRESETS = ['温柔亲切', '俏皮带点小傲娇', '沉稳简洁', '轻快活泼', '专业干练']
-const PERSONALITY_PRESETS = ['温柔体贴', '活泼好动', '冷静理性', '毒舌傲娇']
-const SPECIES_PRESETS = ['人类', '灵兽', '精灵', '机甲', '幻形']
-const CHARACTER_GENDER_PRESETS = ['女', '男', '其他', '不指定']
-const APPEARANCE_PRESETS = ['优雅古典', '现代利落', '萌系可爱', '冷酷暗黑']
-const ROLE_PRESETS = ['爱人', '秘书', '专属管家', '无话不谈的朋友']
-
 const inputClass =
   'w-full rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-xs text-white placeholder:text-white/30 outline-none focus:border-white/40'
 
@@ -51,7 +47,6 @@ const presetClass =
 type FieldSchema = {
   key: keyof typeof EMPTY
   label: string
-  set: (v: string) => void
   presets?: readonly string[]
   max?: number
   placeholder?: string
@@ -77,11 +72,10 @@ const STEPS: { title: string; fields: FieldSchema[] }[] = [
   {
     title: '名字 与 形象性别',
     fields: [
-      { key: 'name', label: '名字', set: () => {} },
+      { key: 'name', label: '名字' },
       {
         key: 'characterGender',
         label: '形象性别',
-        set: () => {},
         max: 64,
         presets: CHARACTER_GENDER_PRESETS
       }
@@ -90,18 +84,17 @@ const STEPS: { title: string; fields: FieldSchema[] }[] = [
   {
     title: '物种 与 关系',
     fields: [
-      { key: 'species', label: '物种', set: () => {}, max: 64, presets: SPECIES_PRESETS },
-      { key: 'background', label: '关系 / 角色定位', set: () => {}, presets: ROLE_PRESETS }
+      { key: 'species', label: '物种', max: 64, presets: SPECIES_PRESETS },
+      { key: 'background', label: '关系 / 角色定位', presets: ROLE_PRESETS }
     ]
   },
   {
-    title: '性格 与 语气（修复 speaking_style 被静默覆盖的坑）',
+    title: '性格 与 说话风格',
     fields: [
-      { key: 'personality', label: '性格', set: () => {}, presets: PERSONALITY_PRESETS },
+      { key: 'personality', label: '性格', presets: PERSONALITY_PRESETS },
       {
         key: 'speakingStyle',
         label: '说话风格（显式可选）',
-        set: () => {},
         placeholder: '留空将根据性格自动派生',
         presets: [...SPEAKING_STYLE_PRESETS, '']
       }
@@ -113,7 +106,6 @@ const STEPS: { title: string; fields: FieldSchema[] }[] = [
       {
         key: 'appearance',
         label: '形象',
-        set: () => {},
         max: MAX_APPEARANCE,
         presets: APPEARANCE_PRESETS,
         multiline: true
@@ -123,11 +115,11 @@ const STEPS: { title: string; fields: FieldSchema[] }[] = [
   {
     title: '让伙伴更了解你',
     fields: [
-      { key: 'userCallName', label: '希望被怎么称呼', set: () => {} },
-      { key: 'userGender', label: '你的性别', set: () => {} },
-      { key: 'userAgeBucket', label: '年龄段', set: () => {} },
-      { key: 'userHobbies', label: '爱好', set: () => {} },
-      { key: 'userFreeform', label: '还有什么想告诉我', set: () => {}, multiline: true }
+      { key: 'userCallName', label: '希望被怎么称呼' },
+      { key: 'userGender', label: '你的性别' },
+      { key: 'userAgeBucket', label: '年龄段' },
+      { key: 'userHobbies', label: '爱好' },
+      { key: 'userFreeform', label: '还有什么想告诉我', multiline: true }
     ]
   }
 ]

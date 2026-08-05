@@ -1,9 +1,10 @@
 import { atom, computed } from 'nanostores'
 
-// Companion lifecycle drives what the sprite window renders. Slice 1 only
-// exercises unauthed-egg (pre-auth teaser) → ready (post-auth, gateway booted);
-// onboarding/hatching arrive in Slice 2.
-export type CompanionLifecycle = 'unauthed-egg' | 'onboarding' | 'hatching' | 'ready'
+// Companion lifecycle drives what the sprite window renders. The renderer
+// transitions unauthed-egg → onboarding (during the wizard) → ready (after
+// onboarding completes). Hatching is an onboarding-internal Phase, not a
+// top-level lifecycle state, so it lives in the wizard's local Phase union.
+export type CompanionLifecycle = 'unauthed-egg' | 'onboarding' | 'ready'
 
 // Phase 2 state-machine (plan.md §2):
 // IDLE / LISTENING / THINKING / SPEAKING / WORKING / EMOTIONAL / SLEEPING / INTERACTING / DISCONNECTED
@@ -38,11 +39,6 @@ export type SpriteEmotion =
   | 'embarrassed'
   | 'apologetic'
 
-export interface SpritePosition {
-  x: number
-  y: number
-}
-
 export const $companionLifecycle = atom<CompanionLifecycle>('unauthed-egg')
 export const $spriteState = atom<SpriteStateName>('idle')
 // True during a live voice-call; read by useGatewayBoot to defer the
@@ -50,7 +46,6 @@ export const $spriteState = atom<SpriteStateName>('idle')
 export const $voiceCallOpen = atom<boolean>(false)
 export const $spriteEmotion = atom<SpriteEmotion | null>(null)
 export const $previousState = atom<SpriteStateName>('idle')
-export const $spritePosition = atom<SpritePosition | null>(null)
 
 // Disturbance tier gates the companion's proactive behaviour (ARCHITECTURE.md §6 /
 // plan.md §4.2). User-initiated actions are never gated — only proactive
@@ -226,10 +221,6 @@ export function reportUserActivity(): void {
       setSpriteState('idle', { force: true })
     }
   }, 10000)
-}
-
-export function setSpritePosition(pos: SpritePosition | null): void {
-  $spritePosition.set(pos)
 }
 
 export function setDisturbanceTier(tier: DisturbanceTier): void {

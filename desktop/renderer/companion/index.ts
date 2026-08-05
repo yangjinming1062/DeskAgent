@@ -9,12 +9,10 @@ export {
   $companionLifecycle,
   $effectiveTier,
   $effectiveTierOverride,
-  $spritePosition,
   $spriteState,
   $userPreferredTier,
   setCompanionLifecycle,
   setDisturbanceTier,
-  setSpritePosition,
   setSpriteState
 } from './companion-store'
 

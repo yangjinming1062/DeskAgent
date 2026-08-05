@@ -25,6 +25,7 @@ contextBridge.exposeInMainWorld('deskagent', {
   selectPaths: options => ipcRenderer.invoke('deskagent:selectPaths', options),
   writeClipboard: text => ipcRenderer.invoke('deskagent:writeClipboard', text),
   saveImageFromUrl: url => ipcRenderer.invoke('deskagent:saveImageFromUrl', url),
+  saveClipboardImage: () => ipcRenderer.invoke('deskagent:saveClipboardImage'),
   runnerInvoke: (name, args) => ipcRenderer.invoke('deskagent:runner:invoke', name, args),
   runnerDispatch: (method, params) => ipcRenderer.invoke('deskagent:runner:dispatch', method, params),
   runnerGetTools: () => ipcRenderer.invoke('deskagent:runner:get-tools'),
@@ -66,7 +67,7 @@ contextBridge.exposeInMainWorld('deskagent', {
   sprite: {
     setIgnoreMouseEvents: payload => ipcRenderer.invoke('deskagent:sprite:set-ignore-mouse-events', payload),
     setAlwaysOnTop: payload => ipcRenderer.invoke('deskagent:sprite:set-always-on-top', payload),
-    getWorkArea: () => ipcRenderer.invoke('deskagent:sprite:get-work-area'),
+    getPosition: () => ipcRenderer.invoke('deskagent:sprite:get-position'),
     setPosition: payload => ipcRenderer.invoke('deskagent:sprite:set-position', payload)
   },
   onWindowStateChanged: callback => {
@@ -102,11 +103,6 @@ contextBridge.exposeInMainWorld('deskagent', {
     const listener = (_event, payload) => callback(payload)
     ipcRenderer.on('deskagent:runner:status', listener)
     return () => ipcRenderer.removeListener('deskagent:runner:status', listener)
-  },
-  onOpenSettings: callback => {
-    const listener = () => callback()
-    ipcRenderer.on('deskagent:tray:open-settings', listener)
-    return () => ipcRenderer.removeListener('deskagent:tray:open-settings', listener)
   },
   onTrayLogout: callback => {
     const listener = () => callback()
