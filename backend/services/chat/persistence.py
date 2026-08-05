@@ -138,12 +138,18 @@ async def _persist_assistant_no_tool_turn(
         if track_task:
             track_task(review_task)
 
+    # Always emit ``affect`` even when ``emotion`` is None — the desktop state
+    # machine keys off its presence, and a missing field vs an explicit
+    # ``{emotion: null}`` would force a second branch. A None emotion here
+    # means the LLM didn't emit a ``[affect:...]`` tag (the scrubber resolves
+    # unknown / partial tags to neutral upstream; see services/chat/affect.py),
+    # which the desktop treats as "switch to idle" per ARCHITECTURE §6.3.
     await emitter.send_json(
         {
             "type": "message.complete",
             "text": turn_content,
+            "affect": {"emotion": emotion},
             **({"usage": final_usage_payload} if final_usage_payload else {}),
-            **({"affect": {"emotion": emotion}} if emotion else {}),
         }
     )
 

@@ -1,6 +1,9 @@
 import time
 
+import pytest
 
+from services.companion import asset_store
+from services.companion.asset_store import _signing_key
 from services.companion.asset_store import build_signed_asset_url
 from services.companion.asset_store import build_signed_avatar_url
 from services.companion.asset_store import verify_signed_asset_request
@@ -105,3 +108,14 @@ def test_signed_avatar_url_rejects_wrong_filename():
         int(qs["expires"][0]),
         qs["sig"][0],
     )
+
+
+def test_signer_key_raises_outside_test_mode(monkeypatch):
+    """P2-12 belt-and-suspenders: if the deploy reaches ``_signing_key()``
+    with an empty signing key AND test mode was not flipped on, refuse to
+    sign URLs with the public test key. Catch misconfiguration loudly."""
+    monkeypatch.setattr(asset_store.SETTINGS, "companion_asset_signing_key", "")
+    monkeypatch.setattr(asset_store, "_TEST_MODE", False)
+
+    with pytest.raises(RuntimeError, match="empty outside test mode"):
+        _signing_key()

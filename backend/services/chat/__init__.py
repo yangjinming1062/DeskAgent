@@ -18,22 +18,12 @@ from .think_scrubber import StreamingThinkScrubber
 from .types import CORE_TOOLS
 from .types import IterationBudget
 
-# The chat↔gateway import cycle converges on ``chat_emitter`` (gateway/emitter.py
-# imports ``chat.chat_emitter.Emitter``), so ``chat_emitter`` must stay
-# eagerly importable without dragging in the rest of the package. The heavy
-# modules are therefore deferred via ``__getattr__``: ``orchestrator`` pulls
-# the whole service graph (gateway/llm/tools), and loading it eagerly here
-# would mean importing gateway (for RuntimeSession) while gateway's own
-# ``__init__`` may still be mid-import — fragile. ``main.py`` does eagerly
-# import ``agent_delegate`` (which pulls orchestrator) for tool registration,
-# so the graph loads at startup regardless; the deferral is structural
-# (cycle safety), not a startup-time optimization.
-#
-# Resolution is try-each-lazy-submodule: first ``getattr`` call for any
-# name triggers the matching submodule's import, then we hand back the
-# attribute. New public functions added to ``orchestrator`` /
-# ``turn_inputs`` / ``agent_delegate`` are automatically accessible via
-# ``from services.chat import <name>`` without updating a curated list.
+# Lazy-load the heavy modules that pull the full service graph (gateway / llm /
+# tools). Importing them eagerly here breaks the chat↔gateway cycle (gateway's
+# own __init__ may still be mid-import when chat is first touched). The list
+# is structural, not curated — adding a new public symbol in orchestrator /
+# turn_inputs / agent_delegate does NOT require updating it; __getattr__
+# resolves on demand.
 _LAZY_SUBMODULES = ("orchestrator", "turn_inputs", "agent_delegate")
 
 
@@ -67,10 +57,10 @@ __all__ = [
     "StreamingThinkScrubber",
     "CORE_TOOLS",
     "IterationBudget",
-    # Names exposed via __getattr__ from the lazy submodules — listed here
-    # only so wildcard imports (`from services.chat import *`) keep working.
-    # Adding a new public function in ``orchestrator`` does NOT require
-    # updating this list; it's resolved on demand by ``__getattr__``.
+    # Names exposed via __getattr__ on the lazy submodules — listed only so
+    # ``from services.chat import *`` keeps working. New symbols added inside
+    # orchestrator / turn_inputs / agent_delegate are resolved on demand by
+    # __getattr__ above without updating this list.
     "load_user_settings",
     "run_chat_turn",
     "agent_delegate_tool",

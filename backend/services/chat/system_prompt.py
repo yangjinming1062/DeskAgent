@@ -508,7 +508,10 @@ def _should_inject_tool_use_enforcement(setting: str) -> bool:
 
 # Localised labels for the volatile header. The header is internal model
 # context, but a locale-appropriate date avoids leaking English weekday
-# names into a zh conversation.
+# names into a zh conversation. If a third language is added to
+# ``SUPPORTED_LANGUAGES``, add its label set here — until then the loader
+# silently falls back to the default (en) and emits a one-shot warning so the
+# gap surfaces in startup logs instead of the user's first session.
 _VOLATILE_LABELS: dict[str, dict[str, str]] = {
     "zh": {"started": "对话开始时间：", "session_id": "\n会话 ID：", "model": "\n模型："},
     "en": {"started": "Conversation started: ", "session_id": "\nSession ID: ", "model": "\nModel: "},
@@ -518,10 +521,20 @@ _VOLATILE_LABELS: dict[str, dict[str, str]] = {
 def _format_volatile_header(config: AgentPromptConfig) -> str:
     now = naive_utc_now()
     lang = _resolve_language(config.language)
+    if lang not in _VOLATILE_LABELS:
+        # Unsupported language for the volatile header (the rest of the system
+        # prompt already localises). One-shot warning so adding a language
+        # elsewhere without updating _VOLATILE_LABELS surfaces in logs.
+        logger.warning("volatile header: unknown language %r, falling back to %s", lang, DEFAULT_LANGUAGE)
     labels = _VOLATILE_LABELS.get(lang, _VOLATILE_LABELS[DEFAULT_LANGUAGE])
     if lang == "zh":
         date_str = f"{now.year}年{now.month}月{now.day}日"
+    elif lang in _VOLATILE_LABELS:
+        date_str = now.strftime("%A, %B %d, %Y")
     else:
+        # Mirror the label language on the date format too: an English date
+        # inside a non-English (non-zh) header is the same family of leak
+        # the localised labels were meant to prevent.
         date_str = now.strftime("%A, %B %d, %Y")
     line = f"{labels['started']}{date_str}"
     if config.pass_session_id and config.session_id:

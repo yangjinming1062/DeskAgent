@@ -80,7 +80,7 @@ backend/
 
 **戳/拖 LLM 反应**：`companion.interact {tone, kind, poke_count, idle_seconds, local_hour}` JSON-RPC（`services/companion/interact.py::check_interact`）由 Desktop 在本地文案池基础上延迟 200ms 触发，返回 `{text, emotion, reason}`。per-user inflight 取消 + 1.5s 节流（`handlers.py`），tone 服务端独立推导（`毒舌`/`傲娇`→snarky 等）。
 
-**互动统计聚合**：`companion.record_interaction_stats {kind, hour}` JSON-RPC（`services/companion/interaction_stats.py::record_interaction`，无 LLM）按 UTC 自然日聚合三类计数（poke/drag/chat_turn）+ 24h hour_buckets；当三类**各自** ≥ 10（双门限）时 upsert `Memory(context="interaction_stats:<date>")`；同日多次跨门限同 row 覆盖。
+**互动统计聚合**：`companion.record_interaction_stats {kind, hour}` JSON-RPC（`services/companion/interaction_stats.py::record_interaction`，无 LLM）按 UTC 自然日聚合三类计数（poke/drag/chat_turn）+ 24h hour_buckets；当三类**各自** ≥ 10（双门限）时 upsert `Memory(context="interaction_stats:<date>")`；同日多次跨门限同 row 覆盖。**多副本约束**：`interaction_stats._counters` 是 process-local dict（见 `services/companion/interaction_stats.py` 顶部注释），单副本安全，多副本需迁 Redis（与 IPC future 同属 [ARCHITECTURE.md §5 已知限制](../ARCHITECTURE.md)）。
 
 ## 系统提示词与上下文管理
 

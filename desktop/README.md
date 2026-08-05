@@ -76,6 +76,10 @@ renderer 通过 `window.deskagent.*`（preload contextBridge）调 main；main �
 
 `main/runner/reverse-rpc.cjs`：处理 Runner 的 `request_llm` → 调 Backend `POST /api/llm/completion` → 透传响应体。守卫：max 200 messages、max 1MB payload。
 
+### 打扰档位的权威边界
+
+**Desktop 是 disturbance tier 的唯一权威**（[ARCHITECTURE.md §5](../ARCHITECTURE.md)）：`$userPreferredTier` 持久化在 `localStorage`、`$effectiveTierOverride` 由活动感知器（`companion/activity.ts`）写入、`$effectiveTier` 是 computed 派生。Desktop 每次有效值变化都经 `companion.set_disturbance_tier` 单向 push 给 Backend，**Backend 端 `_disturbance[user_id]` 只是过程镜像，不独立推导**——服务端 gate（`send_message_tool` / `cron._kick_autonomous_turn`）读镜像，但用户偏好与活动上下文只在 Desktop 持有。WS 重连后 Desktop 立刻再推一次同步（`use-gateway-boot.syncDisturbanceTier`）。这条边界避免 Backend 在多副本/重启时漂移用户意图，也防止 LLM 在 server-side 推导时绕过用户的手动 quiet 选择。
+
 ### 本地文件系统拦截
 
 `renderer/companion/boot/use-gateway-request.ts::tryLocalIntercept` 在 WS 请求入口处拦截依赖本地文件系统的方法——后端在 Docker 中无法访问：
@@ -100,6 +104,8 @@ renderer 通过 `window.deskagent.*`（preload contextBridge）调 main；main �
 本地可用性由 runner 工具 schema 决定——`speech_to_text` / `text_to_speech` 是否出现在 `runnerBridge.getTools()`(已被 runner `check_fn` 过滤)。media.cjs 在路由层桥接两侧契约:STT 把 dataUrl 解码为 base64 喂给 runner;TTS 把 runner 产出的本地 WAV 路径读回转 dataUrl。renderer 的 `media.*` 接口因此不感知路由。
 
 **voice id 不跨引擎**：云端 voice id（provider 目录中的 id）与本地 voice id（Piper `en_US-amy-medium` 格式）属于不同命名空间。`media.cjs` 路由到本地时不传 caller 的 voice——Piper 用 `config.yaml::audio.tts.default_voice` 自行决定音色；路由到云端时才透传 caller 的 voice id。用户在伙伴设置中选的音色仅在云端路径生效。Voice 设计 token `mimo_voicedesign:<prompt>` 路由到 `cloud`（`media.cjs:300`）因为 Piper 解析不动这种自描述 token。
+
+**STT/TTS 引擎选择不在 Desktop 设置面板暴露**：三档（`auto` / `local` / `cloud`）+ `stt.silent_fallback` 走 Backend 配置（`stt.engine` / `tts.engine`），由 `main/ipc/media.cjs` 在 IPC 边界读 short-TTL 缓存决策。伙伴设置面板只管"音色"——voice_id 选择、试听、按 `tts.match_voice` / `tts.design_voice` 切档；引擎路由策略属于运维/部署侧决策（用户在自托管/企业场景下要可控可通过 Backend `config.set` JSON-RPC 写全局 setting，不暴露在 sprite UI）。
 
 **Voice picker 语言 tabs**（`onboarding-flow.tsx` 语音预览阶段）：三个 tab——`中文` / `English` / `全部`。默认 `中文`（产品方向"默认中文"）。点击 tab → `fetchVoiceCatalog(requestGateway, lang)` 重新拉取后端 `/api/media/tts.list_voices`（带 `language` 过滤参数），用 zh-first 排序的子集刷新 `voiceCatalog` 列表。catalog 空时回退到 `DEFAULT_VOICE`。
 
@@ -135,6 +141,7 @@ Desktop 走 `electron-updater` 从 Backend `/api/update` 拉取预构建安装�
 | 限制 | 说明 |
 |------|------|
 | Runner 崩溃后重连窗口有限 | 端点文件 + 重连循环（~5 分钟），超时后 Runner 退出 |
+| `voice-call-dock.tsx` useEffect 依赖故意省略 `[gatewayState]` | 麦克风挂载/take-down 由 `[requestGateway]` 触发；reconnect 重入若再加 `gatewayState` 会再次重新挂麦克风导致当前通话被打断。代码注释内已说明，依赖列表是当下决策。 |
 | Electron 42 + pnpm 11 需 hoisted | 失去 phantom-deps 防护；等 Electron ESM 主进程支持 |
 | `.cjs` + `.ts` 双 runtime | 新增 main 模块用 `.cjs`，renderer 用 `.ts/.tsx`；等 Electron ESM 主进程支持 |
 | 透明窗口平台差异 | 远程显示（X11/VNC/RDP）无法合成透明层，精灵窗口降级为非透明（`SPRITE_TRANSPARENT`）；Linux 无 compositor 仍可能黑底——macOS/Windows 支持良好 |

@@ -57,6 +57,7 @@ from services.llm import MissingLlmConfigError
 from services.llm import resolve_user_llm_config
 from services.tools import REGISTRY
 from sqlalchemy import func
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from . import authenticate_ws_token
@@ -98,6 +99,12 @@ _interact_inflight: dict[int, asyncio.Task] = {}
 # Per-user lock: a double-tap on regenerate must not fork two image-gen flows racing on the same DB rows.
 _avatar_regen_locks: dict[int, asyncio.Lock] = {}
 _avatar_regen_tasks: set[asyncio.Task] = set()
+
+# Advisory-lock keyspace for cross-replica regen serialization. The ``xact``
+# variant auto-releases on commit/rollback, so no explicit unlock is needed.
+# Kept distinct from other lock keys used elsewhere in the codebase by leading
+# bits; combined with ``user_id`` to give one slot per user.
+_AVATAR_REGEN_ADVISORY_NAMESPACE = 0x4156_4156
 
 
 class WSEmitter:
@@ -819,12 +826,12 @@ def _register_session_handlers(
 
     async def companion_record_interaction_stats(params: dict) -> dict:
         # Per-event statistics (poke / drag / chat_turn) for daily Memory
-        # rollups. No LLM cost. ``INTERACT_MIN_INTERVAL_SECONDS`` is a
-        # SEPARATE throttle that gates only the LLM-backed ``companion.interact``
-        # RPC — stats fire on every event the desktop reports, which means
-        # a heavy clicker drives one WS roundtrip per poke. Once the dual
-        # threshold trips, each event is also a DB upsert; a future
-        # optimisation is to batch stats RPCs client-side.
+        # rollups. No LLM cost. ``INTERACT_MIN_INTERVAL_SECONDS`` is a SEPARATE
+        # throttle for the LLM-backed ``companion.interact`` RPC. The desktop
+        # coalesces stats RPCs itself: it sends every event until
+        # ``STATS_THRESHOLD`` is reached, then switches to one RPC per minute
+        # per kind (see activity.ts::STATS_POST_THRESHROTTLE_MS), so a heavy
+        # clicker past the threshold no longer drives a per-poke WS roundtrip.
         kind = params.get("kind")
         hour = params.get("hour")
         if not isinstance(hour, int) or not 0 <= hour <= 23:
@@ -905,6 +912,25 @@ def _register_session_handlers(
                 async with lock:
                     try:
                         with SESSION_LOCAL() as db:
+                            # Cross-replica CAS: a peer replica may already be
+                            # mid-regen for this user. The xact advisory lock
+                            # auto-releases on the matching commit/rollback
+                            # below — fail-open on driver errors so a Postgres
+                            # blip doesn't block portrait gen; the in-process
+                            # ``lock`` above still serializes within this
+                            # replica.
+                            cross_replica_busy = False
+                            try:
+                                got = db.execute(
+                                    text("SELECT pg_try_advisory_xact_lock(:k)"),
+                                    {"k": _AVATAR_REGEN_ADVISORY_NAMESPACE + int(user_id)},
+                                ).scalar()
+                                cross_replica_busy = not bool(got)
+                            except Exception:
+                                cross_replica_busy = False
+                            if cross_replica_busy:
+                                payload = {"job_id": job_id, "error": "伙伴正在生成形象，请稍候"}
+                                return
                             persona = get_or_create_persona(db, user_id)
                             asset = await regenerate_avatar(db, user_id, persona, feedback=feedback)
                             payload = {"job_id": job_id, "asset_url": asset.asset_url, "id": asset.id}

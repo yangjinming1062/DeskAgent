@@ -3867,9 +3867,7 @@ def browser_vision(question: str, annotate: bool = False, task_id: str | None = 
 
         if not result.get("success"):
             error_detail = result.get("error", "Unknown error")
-            _cp = None
-            mode = "local"
-            error_response = {"success": False, "error": f"Failed to take screenshot ({mode} mode): {error_detail}"}
+            error_response = {"success": False, "error": f"Failed to take screenshot (local mode): {error_detail}"}
             return json.dumps(_copy_fallback_warning(error_response, result), ensure_ascii=False)
 
         actual_screenshot_path = result.get("data", {}).get("path")
@@ -3877,13 +3875,11 @@ def browser_vision(question: str, annotate: bool = False, task_id: str | None = 
             screenshot_path = Path(actual_screenshot_path)
 
         if not screenshot_path.exists():
-            _cp = None
-            mode = "local"
             return json.dumps(
                 {
                     "success": False,
                     "error": (
-                        f"Screenshot file was not created at {screenshot_path} ({mode} mode). "
+                        f"Screenshot file was not created at {screenshot_path} (local mode). "
                         f"This may indicate a socket path issue (macOS /var/folders/), "
                         f"a missing Chromium install ('agent-browser install'), "
                         f"or a stale daemon process."

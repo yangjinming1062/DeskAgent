@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from typing import Any
+from typing import Callable
 
 from components import get_logger
 from modules.settings import UserSetting
@@ -30,6 +31,22 @@ class CommandContext:
     db_factory: type[Session]
 
 
+# Slash command registry. A single tuple of (name, description, handler) keeps
+# the description next to the handler so adding a new command only touches one
+# list. ``commands_catalog`` iterates this list — the catalog can never list a
+# command the dispatcher can't actually run.
+_COMMANDS: list[tuple[str, str, Callable[[str, "CommandContext"], dict]]] = []
+
+
+def _register_command(name: str, description: str) -> Callable[[Callable[[str, "CommandContext"], dict]], Callable[[str, "CommandContext"], dict]]:
+    def decorator(fn: Callable[[str, "CommandContext"], dict]) -> Callable[[str, "CommandContext"], dict]:
+        _COMMANDS.append((name, description, fn))
+        return fn
+
+    return decorator
+
+
+@_register_command("reasoning", "Set reasoning effort level")
 def cmd_reasoning(args_str: str, ctx: CommandContext) -> dict:
     """Set reasoning effort level (low / medium / high)."""
     level = args_str.strip().lower()
@@ -60,28 +77,10 @@ def cmd_reasoning(args_str: str, ctx: CommandContext) -> dict:
     return CommandResult(output=f"Reasoning effort set to {level}").model_dump()
 
 
-_HANDLERS: dict[str, Any] = {
-    "reasoning": cmd_reasoning,
-}
-
-
-# Human-facing descriptions for the JSON-RPC ``commands.catalog`` response.
-# Keys MUST stay in sync with ``_HANDLERS``; the catalog builder below iterates
-# both and the renderer filters out anything not in its own allow-list.
-_COMMAND_DESCRIPTIONS: dict[str, str] = {
-    "reasoning": "Set reasoning effort level",
-}
-
-
 def commands_catalog() -> dict:
-    """Build the JSON-RPC ``commands.catalog`` payload from ``_HANDLERS``.
-
-    Returns ``{"pairs": [["/<name>", "<description>"], ...]}``. Iterating the
-    handler dict guarantees the catalog never lists a command the dispatcher
-    can't actually run.
-    """
+    """Build the JSON-RPC ``commands.catalog`` payload from ``_COMMANDS``."""
     return CommandsCatalogResult(
-        pairs=[[f"/{name}", _COMMAND_DESCRIPTIONS.get(name, "")] for name in _HANDLERS],
+        pairs=[[f"/{name}", description] for name, description, _fn in _COMMANDS],
     ).model_dump()
 
 
@@ -96,7 +95,7 @@ def exec_slash_command(command: str, ctx: CommandContext) -> dict:
     name = parts[0].lstrip("/").lower()
     args_str = parts[1] if len(parts) > 1 else ""
 
-    handler = _HANDLERS.get(name)
+    handler = next((fn for cmd_name, _desc, fn in _COMMANDS if cmd_name == name), None)
     if handler is None:
         return CommandResult(warning=f"Unknown command: /{name}").model_dump()
     try:

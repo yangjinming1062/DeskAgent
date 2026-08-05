@@ -33,6 +33,13 @@ def sqlite_engine():
             "ON memories (user_id, context) "
             "WHERE context LIKE 'user_profile:%'"
         ))
+    # Tests load the asset signer via ``_signing_key()`` which now raises
+    # when the key is empty AND test mode is off (see P2-12 belt-and-suspenders
+    # in services/companion/asset_store.py). Flip the flag here so all
+    # tests that exercise companion asset URLs don't need to also call
+    # ``_enable_test_signer_key`` themselves.
+    from services.companion import asset_store
+    asset_store._enable_test_signer_key()
     return engine
 
 
