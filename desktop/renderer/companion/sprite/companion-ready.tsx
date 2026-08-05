@@ -1,6 +1,7 @@
 import { useStore } from '@nanostores/react'
 import { useEffect, useState } from 'react'
 
+import { $focusContext, type FocusCategory } from '@/companion/activity'
 import { useGatewayRequest } from '@/companion/boot/use-gateway-request'
 import {
   $activeTransitionClip,
@@ -19,6 +20,25 @@ import { $gatewayState } from '@/shared/store/gateway'
 //   Tier 1 - portrait + state-driven procedural animation (never blank)
 // Tier 1 needs no generated asset, so the companion is alive the instant a
 // portrait exists — video generation cost/quotas never block startup.
+
+// Idle micro-action variant pool. Each entry maps a focused-app category
+// (set by the activity monitor) to a curated list of scenes that fit the
+// context. ``'idle'`` is always the safe last entry — until every category-
+// specific scene reaches Tier 2+, the renderer silently falls back to it,
+// honouring the "永不空白" invariant. Scenes that don't yet exist on the
+// backend (no Tier 2+ asset ready) are filtered out at swap time.
+const IDLE_VARIANTS_DEFAULT = ['idle', 'idle_look_around', 'idle_blink', 'idle_stretch']
+
+// Partial map: only the four bespoke categories opt out of the default
+// idle pool. The fallback ``?? IDLE_VARIANTS_DEFAULT`` at the lookup
+// makes the "unknown / other / browsing share the default" contract
+// explicit at the call site rather than via duplicate table entries.
+const IDLE_VARIANTS_BY_FOCUS: Partial<Record<FocusCategory, readonly string[]>> = {
+  ide: ['idle_thinking', 'idle_typing', 'idle_look_around', 'idle'],
+  music: ['idle_bounce', 'idle_sway', 'idle_blink', 'idle'],
+  reader: ['idle_calm', 'idle_look_around', 'idle'],
+  gaming: ['idle_engaged', 'idle_stretch', 'idle']
+}
 
 const CELL = 160
 
@@ -89,6 +109,7 @@ export function CompanionReady() {
   const spriteState = useStore($spriteState)
   const emotion = useStore($spriteEmotion)
   const transitionClip = useStore($activeTransitionClip)
+  const focusContext = useStore($focusContext)
   useStore($clipCatalog)
   const { requestGateway } = useGatewayRequest()
   // Drowsy filter only when the gateway is explicitly disconnected — not
@@ -102,16 +123,27 @@ export function CompanionReady() {
       return
     }
 
-    const IDLE_VARIANTS = ['idle', 'idle_look_around', 'idle_blink', 'idle_stretch']
-    const nextInterval = Math.floor(Math.random() * 15000) + 10000
+    const pool = focusContext
+      ? (IDLE_VARIANTS_BY_FOCUS[focusContext.category] ?? IDLE_VARIANTS_DEFAULT)
+      : IDLE_VARIANTS_DEFAULT
 
-    const timer = setTimeout(() => {
-      const available = IDLE_VARIANTS.filter(v => v === 'idle' || getClipAsset(v).tier >= 2)
+    // Self-rearming micro-action loop via setInterval: a stable focus
+    // context or stable clip asset shouldn't reset the timer (the previous
+    // setTimeout + activeUrl dep design broke under dedup'd $focusContext
+    // updates and stopped swapping after the first tick). The interval
+    // picks a fresh 10–25s wait each tick so consecutive swaps still
+    // look organic.
+    const tick = () => {
+      const available = pool.filter(v => v === 'idle' || getClipAsset(v).tier >= 2)
+      const next = Math.floor(Math.random() * 15000) + 10000
       setIdleVariant(available[Math.floor(Math.random() * available.length)] ?? 'idle')
-    }, nextInterval)
+      timer = setTimeout(tick, next)
+    }
+
+    let timer: ReturnType<typeof setTimeout> = setTimeout(tick, Math.floor(Math.random() * 15000) + 10000)
 
     return () => clearTimeout(timer)
-  }, [spriteState, drowsy, activeUrl])
+  }, [spriteState, drowsy, focusContext])
 
   const activeScene =
     transitionClip ??

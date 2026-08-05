@@ -7,9 +7,11 @@ export { $chatOpen, setChatOpen } from './chat-store'
 
 export {
   $companionLifecycle,
-  $disturbanceTier,
+  $effectiveTier,
+  $effectiveTierOverride,
   $spritePosition,
   $spriteState,
+  $userPreferredTier,
   setCompanionLifecycle,
   setDisturbanceTier,
   setSpritePosition,

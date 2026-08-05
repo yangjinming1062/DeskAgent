@@ -158,6 +158,7 @@ def test_activity_probes_safe_defaults(monkeypatch):
     assert activity.get_idle_seconds() == -1.0
     assert activity.is_screen_locked() is False
     assert activity.get_focused_app() == {}
+    assert activity.is_fullscreen() is False
     power = activity.get_power_state()
     assert set(power) == {"on_battery", "screen_on", "charging"}
     assert isinstance(power["on_battery"], bool)

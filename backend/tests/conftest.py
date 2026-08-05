@@ -19,17 +19,19 @@ def sqlite_engine():
         poolclass=StaticPool,
     )
     ModelBase.metadata.create_all(bind=engine)
-    # P2-11: ``ModelBase.metadata.create_all`` only emits indexes that
-    # SQLAlchemy's ``__table_args__`` declares. The
-    # ``uq_memories_user_context`` partial-unique index is created
-    # at the schema-migration layer outside the declarative ORM
-    # metadata, so the auth fixture previously couldn't exercise the
-    # upsert path. Explicit ``CREATE UNIQUE INDEX`` brings the
-    # SQLite fixture in line with the production Postgres schema.
+    # Production Postgres has a PARTIAL unique index on
+    # ``(user_id, context) WHERE context LIKE 'user_profile:%'``
+    # (see backend/main.py:99) — only ``user_profile:*`` rows are
+    # uniquely keyed. Other contexts (e.g. ``interaction_stats:<date>``)
+    # have no uniqueness constraint, so a multi-replica race that writes
+    # two summary rows for the same user+date would persist both. We
+    # mirror the production partial index here so the fixture exercises
+    # the same upsert contract.
     with engine.begin() as conn:
         conn.execute(text(
             "CREATE UNIQUE INDEX IF NOT EXISTS uq_memories_user_context "
-            "ON memories (user_id, context)"
+            "ON memories (user_id, context) "
+            "WHERE context LIKE 'user_profile:%'"
         ))
     return engine
 
@@ -73,6 +75,8 @@ def _patch_db(monkeypatch, sqlite_engine):
         "services.companion.clip_service",
         "services.companion.affect_emit",
         "services.companion.affect_check",
+        "services.companion.interact",
+        "services.companion.interaction_stats",
         "api.v1.chat",
         "api.v1.llm",
         "api.v1.media",

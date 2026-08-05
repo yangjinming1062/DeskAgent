@@ -88,6 +88,16 @@ CLIP_SCENES: dict[str, _SceneSpec] = {
     "idle_look_around": _SceneSpec(2, "casual glance around the room, head turn to the side with curious eyes"),
     "idle_blink": _SceneSpec(2, "single slow blink with a soft smile, idle micro-expression"),
     "idle_stretch": _SceneSpec(2, "gentle stretch with arms overhead, relaxed yawn micro-motion"),
+    # Context-aware idle variants — picked by the desktop activity monitor based
+    # on the focused-app category (IDE / music / reader / gaming). Until Tier 2+
+    # assets land for these, the desktop silently falls back to plain `idle`,
+    # which is the documented "永不空白" graceful-degradation behaviour.
+    "idle_thinking": _SceneSpec(2, "thoughtful coder pose, looking at an imaginary screen with a focused gaze and small head tilt"),
+    "idle_typing": _SceneSpec(2, "typing on an invisible keyboard with intent focus, slight forward lean"),
+    "idle_bounce": _SceneSpec(2, "rhythmic gentle bounce to unheard music, soft head sway"),
+    "idle_sway": _SceneSpec(2, "slower side-to-side sway with closed eyes, as if lost in a melody"),
+    "idle_calm": _SceneSpec(2, "calm seated reading posture, slight neck tilt down, page-turning micro-motion"),
+    "idle_engaged": _SceneSpec(2, "engaged gamer lean forward, hands poised, intense focused expression"),
 }
 
 

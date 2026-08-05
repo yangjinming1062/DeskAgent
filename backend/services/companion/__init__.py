@@ -21,9 +21,12 @@ from .clip_service import scenes_for_batch
 from .clip_service import seed_all_clips
 from .escalation_loop import start_clip_escalation
 from .escalation_loop import stop_clip_escalation
+from .interact import check_interact
+from .interaction_stats import record_interaction
 from .memory_bootstrap import build_user_profile_extras
 from .memory_bootstrap import extract_user_profile
 from .memory_bootstrap import record_user_profile
+from .memory_format import format_memories_block
 from .persona_service import build_system_prompt_extras
 from .persona_service import get_onboarding_state
 from .persona_service import get_or_create_persona
@@ -48,7 +51,9 @@ __all__ = [
     "verify_signed_avatar_request",
     "build_system_prompt_extras",
     "check_affect",
+    "check_interact",
     "build_user_profile_extras",
+    "format_memories_block",
     "delete_user_assets",
     "design_voice",
     "extract_user_profile",
@@ -62,6 +67,7 @@ __all__ = [
     "list_tts_voices",
     "match_user_voice",
     "normalize_voice_language",
+    "record_interaction",
     "record_user_profile",
     "regenerate_avatar",
     "regenerate_avatar_from_image",

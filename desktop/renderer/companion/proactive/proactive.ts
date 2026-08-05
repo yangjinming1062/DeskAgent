@@ -1,5 +1,5 @@
 import { $chatOpen, setProactiveBubble } from '@/companion/chat-store'
-import { $disturbanceTier, setSpriteState } from '@/companion/companion-store'
+import { $effectiveTier, setSpriteState } from '@/companion/companion-store'
 
 import { speak } from '../tts'
 
@@ -11,7 +11,7 @@ export async function speakProactive(text: string, opts?: { userInitiated?: bool
   // Quiet tier suppresses proactive outreach, but user-initiated reactions
   // (poke/drag) always voice (plan §4.2). Affect is never gated — callers set
   // emotional state directly.
-  const tier = $disturbanceTier.get()
+  const tier = $effectiveTier.get()
 
   if (!opts?.userInitiated && tier === 'quiet') {
     return

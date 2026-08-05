@@ -1,4 +1,4 @@
-import { atom } from 'nanostores'
+import { atom, computed } from 'nanostores'
 
 // Companion lifecycle drives what the sprite window renders. Slice 1 only
 // exercises unauthed-egg (pre-auth teaser) → ready (post-auth, gateway booted);
@@ -56,6 +56,19 @@ export const $spritePosition = atom<SpritePosition | null>(null)
 // plan.md §4.2). User-initiated actions are never gated — only proactive
 // outbound (companion.message). `quiet` blocks proactive messages but keeps
 // the affect channel open (phase 2).
+//
+// Two-atoms model:
+// - ``$userPreferredTier`` — the user's manual choice in the settings UI,
+//   persisted to localStorage, source of truth. The activity monitor reads
+//   this when deciding whether to override.
+// - ``$effectiveTierOverride`` — set by the activity monitor when the user
+//   is in an immersive / fullscreen focus context. ``null`` means "no
+//   override; effective = user preferred".
+// - ``$effectiveTier`` — derived from the two above. This is what the
+//   rest of the renderer reads to decide whether to gate proactive
+//   channels; the settings-overlay / chat-dock pills still display the
+//   user_preferred value so the chip reflects the user's actual choice
+//   rather than a transient override.
 export type DisturbanceTier = 'proactive' | 'normal' | 'quiet'
 
 // Persist the chosen tier in localStorage so a Desktop restart
@@ -69,7 +82,18 @@ const _storedTier = (typeof localStorage !== 'undefined' &&
 const _validStored: DisturbanceTier | null =
   _storedTier === 'proactive' || _storedTier === 'normal' || _storedTier === 'quiet' ? _storedTier : null
 
-export const $disturbanceTier = atom<DisturbanceTier>(_validStored ?? 'normal')
+export const $userPreferredTier = atom<DisturbanceTier>(_validStored ?? 'normal')
+// ``null`` means "no override active; effective falls back to user_preferred".
+// The activity monitor (activity.ts) is the only writer.
+export const $effectiveTierOverride = atom<DisturbanceTier | null>(null)
+
+// Manual quiet is a hard lock-in: even if the activity monitor writes an
+// override while the user has manually chosen quiet, the rendered effective
+// tier stays quiet. Other overrides (proactive / normal) only apply when the
+// user has not picked quiet.
+export const $effectiveTier = computed([$userPreferredTier, $effectiveTierOverride], (preferred, override) =>
+  preferred === 'quiet' ? 'quiet' : (override ?? preferred)
+)
 
 const STATE_PRIORITY: Record<SpriteStateName, number> = {
   disconnected: 100,
@@ -209,7 +233,7 @@ export function setSpritePosition(pos: SpritePosition | null): void {
 }
 
 export function setDisturbanceTier(tier: DisturbanceTier): void {
-  $disturbanceTier.set(tier)
+  $userPreferredTier.set(tier)
 
   if (typeof localStorage !== 'undefined') {
     try {

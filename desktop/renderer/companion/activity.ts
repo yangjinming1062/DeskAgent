@@ -1,5 +1,6 @@
 import { atom } from 'nanostores'
 
+import { $effectiveTierOverride, $userPreferredTier, type DisturbanceTier } from '@/companion/companion-store'
 import { $gateway } from '@/shared/store/gateway'
 
 // Local environment signals polled from the Runner's system.* tools (plan §8),
@@ -7,6 +8,15 @@ import { $gateway } from '@/shared/store/gateway'
 // while the Runner is offline and the atoms keep their defaults.
 
 export const $screenLocked = atom<boolean>(false)
+
+export type FocusCategory = 'ide' | 'music' | 'reader' | 'gaming' | 'browsing' | 'other' | 'unknown'
+
+export interface FocusContext {
+  category: FocusCategory
+  fullscreen: boolean
+}
+
+export const $focusContext = atom<FocusContext | null>(null)
 
 const POLL_INTERVAL_MS = 30_000
 
@@ -18,8 +28,12 @@ const POLL_INTERVAL_MS = 30_000
 const IDLE_THRESHOLD_SECONDS = 30 * 60
 const CHECK_COOLDOWN_MS = 60 * 60 * 1000
 
+// Tier-push dedup: only push to the backend when the effective tier value
+// changes; the polling cadence (POLL_INTERVAL_MS, 30s) is much larger than
+// any reasonable throttle, so dedup on value alone is sufficient.
 let timer: ReturnType<typeof setInterval> | null = null
 let lastAffectCheckAt = 0
+let lastTierPushed: { value: DisturbanceTier; at: number } | null = null
 
 function maybeTriggerAffectCheck(idleSeconds: number, locked: boolean): void {
   if (locked || idleSeconds < IDLE_THRESHOLD_SECONDS) {
@@ -52,6 +66,215 @@ function maybeTriggerAffectCheck(idleSeconds: number, locked: boolean): void {
     })
 }
 
+// ---------------------------------------------------------------------------
+// Focused-app classification
+// ---------------------------------------------------------------------------
+
+interface FocusedAppInfo {
+  name?: string
+  title?: string
+  bundle?: string
+}
+
+type CategoryTable = Record<Exclude<FocusCategory, 'unknown' | 'other'>, readonly string[]>
+
+const WINDOWS_ALLOWLIST = {
+  ide: [
+    'code.exe',
+    'devenv.exe',
+    'idea64.exe',
+    'pycharm64.exe',
+    'webstorm64.exe',
+    'sublime_text.exe',
+    'nvim.exe',
+    'vim.exe',
+    'clion.exe',
+    'rider.exe',
+    'rubymine64.exe',
+    'goland64.exe',
+    'atom.exe'
+  ],
+  music: ['spotify.exe', 'qqmusic.exe', 'cloudmusic.exe', 'musicbee.exe', 'foobar2000.exe'],
+  reader: [
+    'acrobat.exe',
+    'acrord32.exe',
+    'sumatrapdf.exe',
+    'zathura.exe',
+    'calibre.exe',
+    'ebookreader.exe',
+    'foxitreader.exe'
+  ],
+  gaming: [
+    'steam.exe',
+    'epicgameslauncher.exe',
+    'minecraft.exe',
+    'riotclientux.exe',
+    'riotclientservices.exe',
+    'battle.net.exe',
+    'origin.exe',
+    'steamwebhelper.exe'
+  ],
+  browsing: ['chrome.exe', 'firefox.exe', 'msedge.exe', 'brave.exe', 'opera.exe', 'vivaldi.exe']
+} as const satisfies CategoryTable
+
+const MACOS_BUNDLE_PREFIXES = {
+  ide: [
+    'com.microsoft.vscode',
+    'com.jetbrains.',
+    'com.sublimetext.',
+    'com.qvacua.vim',
+    'org.vim.macvim',
+    'com.github.atom'
+  ],
+  music: ['com.spotify.client', 'com.netease.163music', 'com.apple.music'],
+  reader: ['com.adobe.acrobat', 'com.adobe.reader', 'com.apple.ibooks', 'read.amazon.kindle'],
+  gaming: ['com.valvesoftware.steam', 'com.epicgames.epicgameslauncher'],
+  browsing: [
+    'com.google.chrome',
+    'org.mozilla.firefox',
+    'com.microsoft.edgemac',
+    'com.brave.browser',
+    'com.operasoftware.opera'
+  ]
+} as const satisfies CategoryTable
+
+const LINUX_CLASS_NAMES = {
+  ide: ['code', 'code-oss', 'idea', 'pycharm', 'webstorm', 'sublime_text', 'nvim', 'vim', 'atom'],
+  music: ['spotify', 'netease-cloud-music', 'qqmusic', 'pragha'],
+  reader: ['zathura', 'evince', 'okular', 'calibre', 'foliate'],
+  gaming: ['steam', 'lutris', 'heroic'],
+  browsing: ['chrome', 'google-chrome', 'chromium', 'firefox', 'brave-browser', 'microsoft-edge']
+} as const satisfies CategoryTable
+
+function classifyWindows(info: FocusedAppInfo): FocusCategory {
+  const name = (info.name ?? '').toLowerCase()
+
+  for (const cat of ['ide', 'music', 'reader', 'gaming', 'browsing'] as const) {
+    for (const token of WINDOWS_ALLOWLIST[cat]) {
+      if (name === token || name.endsWith(`\\${token}`)) {
+        return cat
+      }
+    }
+  }
+
+  return 'unknown'
+}
+
+function classifyMacos(info: FocusedAppInfo): FocusCategory {
+  const bundle = (info.bundle ?? '').toLowerCase()
+  const name = (info.name ?? '').toLowerCase()
+
+  for (const cat of ['ide', 'music', 'reader', 'gaming', 'browsing'] as const) {
+    for (const prefix of MACOS_BUNDLE_PREFIXES[cat]) {
+      if (bundle.startsWith(prefix) || name.includes(prefix.replace('com.', ''))) {
+        return cat
+      }
+    }
+  }
+
+  return 'unknown'
+}
+
+function classifyLinux(info: FocusedAppInfo): FocusCategory {
+  const name = (info.name ?? '').toLowerCase()
+  const title = (info.title ?? '').toLowerCase()
+
+  for (const cat of ['ide', 'music', 'reader', 'gaming', 'browsing'] as const) {
+    for (const token of LINUX_CLASS_NAMES[cat]) {
+      if (name.includes(token) || title.includes(token)) {
+        return cat
+      }
+    }
+  }
+
+  return 'unknown'
+}
+
+export function classifyFocusedApp(info: FocusedAppInfo): FocusCategory {
+  if (!info || Object.keys(info).length === 0) {
+    return 'unknown'
+  }
+
+  const platform =
+    typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)
+      ? 'macos'
+      : typeof navigator !== 'undefined' && /Linux/.test(navigator.platform)
+        ? 'linux'
+        : 'windows'
+
+  switch (platform) {
+    case 'macos':
+      return classifyMacos(info)
+
+    case 'linux':
+      return classifyLinux(info)
+
+    default:
+      return classifyWindows(info)
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Tier-override derivation + push
+// ---------------------------------------------------------------------------
+
+const IMMERSIVE_CATEGORIES: ReadonlySet<FocusCategory> = new Set(['ide', 'gaming', 'reader'])
+
+function computeLocalEffectiveTier(userPreferred: DisturbanceTier, ctx: FocusContext | null): DisturbanceTier {
+  // Manual ``quiet`` lock-in: never overridden.
+  if (userPreferred === 'quiet') {
+    return 'quiet'
+  }
+
+  if (!ctx) {
+    return userPreferred
+  }
+
+  if (ctx.fullscreen || IMMERSIVE_CATEGORIES.has(ctx.category)) {
+    return 'quiet'
+  }
+
+  return userPreferred
+}
+
+function maybePushTierOverride(): void {
+  const preferred = $userPreferredTier.get()
+  const ctx = $focusContext.get()
+  const desired = computeLocalEffectiveTier(preferred, ctx)
+
+  // Mirror the backend's sidecar: write the override atom so $effectiveTier
+  // recomputes, and push the derived effective tier to the backend. Skip the
+  // set when unchanged — atom updates cascade to all subscribers.
+  const nextOverride = desired === preferred ? null : desired
+
+  if ($effectiveTierOverride.get() !== nextOverride) {
+    $effectiveTierOverride.set(nextOverride)
+  }
+
+  // Skip the RPC when the effective value hasn't changed. The earlier
+  // TIER_PUSH_MIN_INTERVAL_MS dedup could never fire because
+  // POLL_INTERVAL_MS (30s) > 5s; dedup on value alone implements the
+  // documented "only push when it actually changes" behavior.
+  if (lastTierPushed && lastTierPushed.value === desired) {
+    return
+  }
+
+  lastTierPushed = { value: desired, at: Date.now() }
+
+  const gateway = $gateway.get()
+  void gateway?.request('companion.set_disturbance_tier', { tier: desired }).catch(() => {
+    /* backend offline — push will retry on next poll cycle */
+  })
+}
+
+// ---------------------------------------------------------------------------
+// Poll loop
+// ---------------------------------------------------------------------------
+
+interface IsFullscreenResult {
+  fullscreen?: boolean
+}
+
 async function pollOnce(): Promise<void> {
   const desktop = window.deskagent
 
@@ -59,24 +282,78 @@ async function pollOnce(): Promise<void> {
     return
   }
 
-  try {
-    const locked = await desktop.runnerInvoke('system.is_screen_locked', {})
-    const isLocked = Boolean((locked as { locked?: boolean } | null)?.locked)
-    $screenLocked.set(isLocked)
+  // Per-probe try/catch preserves the original "sticky on probe failure"
+  // semantics: any rejection leaves the corresponding atom untouched instead
+  // of being coerced to a safe-default false. ``null`` from the catch is
+  // treated as "no fresh signal this cycle".
+  const [lockedResult, idleResult, focusedResult, fullscreenResult] = await Promise.all([
+    desktop.runnerInvoke('system.is_screen_locked', {}).catch(() => null),
+    desktop.runnerInvoke('system.get_idle_seconds', {}).catch(() => null),
+    desktop.runnerInvoke('system.get_focused_app', {}).catch(() => null),
+    desktop.runnerInvoke('system.is_fullscreen', {}).catch(() => null)
+  ])
 
-    let idleSeconds = 0
+  // Screen-lock: only update the atom when the probe succeeded. A failed
+  // probe (runner offline / IPC dropped / laptop resuming) keeps the last
+  // known value rather than silently un-suppressing proactive messages on
+  // a locked workstation.
+  if (lockedResult !== null) {
+    const isLocked = Boolean((lockedResult as { locked?: boolean }).locked)
 
-    try {
-      const idle = await desktop.runnerInvoke('system.get_idle_seconds', {})
-      idleSeconds = Number((idle as { idle_seconds?: number } | null)?.idle_seconds ?? 0)
-    } catch {
-      /* get_idle_seconds unavailable on this runner — skip affect check */
+    if (isLocked !== $screenLocked.get()) {
+      $screenLocked.set(isLocked)
     }
-
-    maybeTriggerAffectCheck(idleSeconds, isLocked)
-  } catch {
-    /* runner offline or is_screen_locked unavailable — leave previous values */
   }
+
+  const idleSeconds = idleResult !== null ? Number((idleResult as { idle_seconds?: number }).idle_seconds ?? 0) : -1
+
+  // ``Number('abc')`` returns NaN; ``NaN < N`` is always false, so without an
+  // explicit guard the cooldown gate below would pass NaN through to the
+  // backend LLM prompt. Treat any non-finite value as a missing signal.
+  if (!Number.isFinite(idleSeconds)) {
+    return
+  }
+
+  const isLockedKnown = lockedResult !== null
+  maybeTriggerAffectCheck(isLockedKnown ? idleSeconds : -1, $screenLocked.get())
+
+  // Fullscreen is independent of focused-app: we still track it on its own
+  // even if focused-app classification failed, so an active fullscreen
+  // window always suppresses proactive outreach regardless of why focus
+  // classification is missing.
+  const fullscreenProbeOk = fullscreenResult !== null
+
+  const fullscreen = fullscreenProbeOk
+    ? Boolean((fullscreenResult as IsFullscreenResult).fullscreen)
+    : ($focusContext.get()?.fullscreen ?? false)
+
+  if (focusedResult !== null) {
+    const focused = (focusedResult as { focused_app?: FocusedAppInfo }).focused_app ?? null
+
+    if (focused !== null) {
+      const category = classifyFocusedApp(focused)
+      // Skip the atom update when nothing changed — otherwise every poll
+      // would reset the sprite's idle-swap timer and recompute
+      // $effectiveTier for no reason.
+      const cur = $focusContext.get()
+
+      if (!cur || cur.category !== category || cur.fullscreen !== fullscreen) {
+        $focusContext.set({ category, fullscreen })
+      }
+    }
+  } else if (fullscreenProbeOk) {
+    // focused-app probe failed but fullscreen succeeded: keep the
+    // category (and the override atom if any) but still update the
+    // fullscreen bit so a freshly-detected fullscreen window doesn't
+    // require a successful focused-app probe.
+    const cur = $focusContext.get()
+
+    if (cur && cur.fullscreen !== fullscreen) {
+      $focusContext.set({ category: cur.category, fullscreen })
+    }
+  }
+
+  maybePushTierOverride()
 }
 
 export function startActivityMonitor(): () => void {
@@ -95,4 +372,16 @@ export function stopActivityMonitor(): void {
     clearInterval(timer)
     timer = null
   }
+}
+
+export function reportInteractionStat(kind: 'poke' | 'drag' | 'chat_turn'): void {
+  const gateway = $gateway.get()
+
+  if (!gateway) {
+    return
+  }
+
+  void gateway.request('companion.record_interaction_stats', { kind, hour: new Date().getHours() }).catch(() => {
+    /* fire-and-forget; failure silently swallowed */
+  })
 }

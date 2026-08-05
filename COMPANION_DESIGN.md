@@ -207,6 +207,14 @@ Backend 的 Cron / `send_message` 经 WS 推送主动消息（[ARCHITECTURE.md �
 | **常规** | 仅轻量气泡/文字消息（无 TTS 语音）、affect |
 | **保持安静** | **禁止任何主动消息（语音+文字）**；但 LLM 推理出的 affect 仍经 `companion.affect` 事件流出，精灵切 EMOTIONAL 状态（无气泡无 TTS） |
 
+**双层档位模型**：用户手动选择 vs Desktop 检测到的焦点上下文（沉浸工作/全屏）会叠加派生 effective 档位。具体规则（`services/disturbance.py::compute_effective_tier`）：
+
+- **手动 quiet 永远不被覆盖**（manual lock-in）。用户在「保持安静」时即使打开全屏视频，活动感知器也不会再下调——已经没有更低档位可下调。
+- **immersive / fullscreen 焦点上下文**（IDE / gaming / reader 分类，或 `system.is_fullscreen` 真值）→ effective = quiet。
+- **其他情况** → effective = user_preferred。
+
+Desktop 30s 轮询 `system.get_focused_app` + `system.is_fullscreen`，变化时 push effective 值给 Backend（5s 节流，仅在 derived 变化时推）。
+
 **消息与情绪是两个独立通道**（[ARCHITECTURE.md §6.3](ARCHITECTURE.md)）：保持安静 / 屏幕锁定时 Backend 静默切断主动消息推送（`send_message_tool` 在 `quiet` 档把消息文本吞掉），但 LLM 推理出的 affect 经独立的 `companion.affect` 事件流出，精灵切 EMOTIONAL 状态（无气泡无 TTS）。用户长时间无活动时，Desktop 的 idle 轮询还会主动调 `companion.check_affect` 触发 Backend LLM 推理情境化情绪（粘人型被冷落的委屈等）——情绪始终由 Backend LLM 产出，不退化成 Desktop 规则判断。屏幕锁定（Runner `system.is_screen_locked`）同样静默切断主动消息但保留 affect，解锁后静默恢复。
 
 Desktop 收到主动消息后：形象切 SPEAKING + 播 TTS；对话框未开则在形象旁冒气泡，已开则在对话框加一条。典型场景：定时问候、日程提醒、长时间无交互后搭话、节日/天气情境化闲聊。
@@ -215,14 +223,16 @@ Desktop 收到主动消息后：形象切 SPEAKING + 播 TTS；对话框未开�
 
 用户对形象本身的直接操作（不经过对话框）是情绪价值的核心——**形象"有脾气"**：单击戳（高频戳触发递进反应）、双击唤起对话、长按/拖拽（松手回弹）、右键快捷菜单、悬停（注意到鼠标）。
 
-反应由**角色性格**驱动分层：粘人型被戳后撒娇、毒舌型吐槽、管家型礼貌——同一操作不同人格不同反应（Desktop 据角色定义的性格关键词选 reaction tone，轻/中/重三层按戳的频率递进）。反应文案与动画从 affect 对应的可用变体中挑选。**完整 LLM + 记忆驱动的反应生成**（反应本身写回记忆、关系深度影响反应）是后续增强方向。
+反应由**角色性格**驱动分层：粘人型被戳后撒娇、毒舌型吐槽、管家型礼貌——同一操作不同人格不同反应（Desktop 据角色定义的性格关键词选 reaction tone，轻/中/重三层按戳的频率递进）。反应文案与动画从 affect 对应的可用变体中挑选。
+
+**LLM + 记忆驱动的反应增强**：在零延迟本地文案池（`POKE_LIGHT`/`MEDIUM`/`HEAVY`）之上叠加可选 LLM 通道——Desktop 戳后 debounce 200ms 调 `companion.interact` RPC，Backend 据 persona + 长期记忆推一条 ≤ 40 字符的反应文案 + 可选 emotion。响应到达时**不打断**正在播的本地 TTS，仅作文本气泡叠加（缓存入 tone-keyed 队列，下次同 tone 单次戳优先使用 LLM 缓存）。后端 throttle 1.5s，Desktop 端 debounce 2s，per-user inflight 取消。RPC 失败/超时/解析失败/无 persona 时静默吞掉，本地池兜底。
 
 ### 5.4 自主行为（让形象"活着"）
 
 IDLE 时形象不是静止贴图。两类自主行为，**都不触发 TTS、不弹气泡，纯视觉**：
 
 - **微动作**（10–25s 随机间隔）：眨眼、换重心、看四周、伸懒腰等 idle 变体随机切换（clip 就绪时；未就绪回退 idle）。
-- **情境动作**（检测本机状态）：Runner `system.get_idle_seconds` / `get_focused_app` 等环境感知工具的轮询结果直接进情境判定，**不经 LLM**。
+- **情境动作**（检测本机状态）：Runner `system.get_idle_seconds` / `system.is_fullscreen` / `system.get_focused_app` 等环境感知工具的轮询结果直接进情境判定，**不经 LLM**。30s 轮询：分类结果（ide/music/reader/gaming/browsing/other/unknown）按平台白名单映射（Windows 进程名、macOS bundle id、Linux class 名），对应 CLIPS_SCENES 中 batch 2 的 idle 变体集（`idle_thinking`/`idle_typing`/`idle_bounce`/`idle_sway`/`idle_calm`/`idle_engaged`），未就绪时安全 fallback 到 `idle`，符合 §1.3 "永不空白" 不变量。
 
 ### 5.5 故障态与降级行为（伙伴永不"死"）
 
@@ -253,7 +263,7 @@ IDLE 时形象不是静止贴图。两类自主行为，**都不触发 TTS、不
 
 两类设置分处两个窗口，由**网关可用性**决定归属：
 
-- **伙伴设置**（精灵窗口，网关可用）：右键精灵 → 伙伴设置。包括角色管理（名字/定位/性格编辑，改后可选重生形象）、响应模式（默认文字 / 始终语音）、打扰档位、音色管理（目录切换 + 试听，`tts.list_voices` + speak 预览）、形象管理（`avatar.regenerate` / 上传）。
+- **伙伴设置**（精灵窗口，网关可用）：右键精灵 → 伙伴设置。包括角色管理（**两套路径**：「编辑角色」表单式直接改 6 个字段，**或**「重新对话微调性格」5 步对话式 wizard 引导改 11 个字段含 user_* — wizard 单 PUT 收尾，**保留既有长期记忆**，不重置 `is_complete`，修复 PersonaSection 静默 `deriveSpeakingStyle` 覆盖的坑，由 `persona-retune.tsx` 实现）、响应模式（默认文字 / 始终语音）、打扰档位（chip 反映 user_preferred，effective 状态由活动感知器覆盖，UI 不直接显示 override）、音色管理（目录切换 + 试听，`tts.list_voices` + speak 预览）、形象管理（`avatar.regenerate` / 上传）。
 - **应用设置**（托盘 → Settings...，framed 工具窗口，无网关）：账户、语音（STT 开关 / `silent_fallback` / 录音时长 / 引擎）、音色目录（只读浏览 + 试听，走 REST `GET /api/companion/voices`）、Runner、Skills/MCP 等通用配置。
 
 > **设计约束**：JSON-RPC（`tts.list_voices` / `avatar.*` / `onboarding.*`）只在精灵窗口的 WS 网关上可用——工具窗口不 boot 网关。因此依赖这些方法的伙伴设置必须住在精灵窗口；工具窗口的设置只走 REST（音色目录页是 `tts.list_voices` 的 REST 镜像，专为工具窗口而设）。
@@ -277,11 +287,3 @@ Runner 端提供与伴侣场景直接对接的本地能力，Desktop 按以下�
 - **环境感知工具** `system.get_idle_seconds` / `is_screen_locked` / `get_focused_app` / `get_power_state`：经标准 `execute_tool` 通道轮询（Desktop 经 `runnerInvoke`）。`get_idle_seconds` 跨过阈值时额外触发 `companion.check_affect` 让 Backend LLM 推理情境化 affect（[ARCHITECTURE.md §5](ARCHITECTURE.md)）；其余工具的结果直接进 §5.4 情境判定，**不经 LLM**。`is_screen_locked=true` 时静默切断主动消息（仍可 affect），解锁后静默恢复。
 - **本地语音** `speech_to_text`（faster-whisper）/ `text_to_speech`（Piper 主、pyttsx3 降级）/ `list_tts_voices`:STT/TTS 的零成本主路径。Desktop 经 `media.stt`/`media.tts` IPC 路由——默认本地优先(`auto`),本地不可用或失败时回退云端;`local` 档纯本地不回退,`cloud` 档强制云端(见 §6)。
 
----
-
-## 已知限制与后续增强
-
-- **LLM + 记忆驱动的交互反应**：戳/拖反应目前是角色性格分层的客户端文案池；完整"反应文案由 Backend LLM 据角色定义 + 记忆即时生成、反应写回记忆"是后续增强。
-- **活动检测驱动的自动档位**：打扰档位目前由用户手动设置；据本机活动信号自动覆盖档位是后续增强。安静档的人格化 affect 已实现（`companion.affect` 透传 + `companion.check_affect` idle 触发 LLM 推理）。
-- **情境自主行为**：检测键盘/音乐活动 → 精灵坐下看书/跟着节拍轻晃等情境动作，依赖对应 clip 资产就绪。
-- **角色定义编辑**：重新进入对话式 onboarding 编辑角色（而非重生）尚未在设置中提供入口。
