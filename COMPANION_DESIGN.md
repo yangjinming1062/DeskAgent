@@ -174,6 +174,8 @@ portrait 确认后进入音色环节：`tts.match_voice {preference}` 把 onboar
 
 > **设计决策**：音色匹配是即时确定性的标签评分，而非 LLM。一个窄域标签任务用 LLM 反而引入不必要的延迟与成本；curated 目录已足够。无匹配时优先中性默认音色。
 
+**二次定制通道**：设置面板 → 伙伴设置 → 音色管理，除了目录浏览 + 试听外，还可通过 `tts.design_voice {prompt, preview_text?}` 走 LLM 生成**专属音色**：基于自然语言描述（"温柔女声、节奏偏慢"）设计 voice id 并返回一段试音 mp3/base64。属于 LLM-backed 增强路径而非主流程，onboarding 仍走 `tts.match_voice` 标签评分；生成结果可像其他候选一样试听/选择/覆盖持久化的 voice id。
+
 ### 4.6 最终孵化与问候
 
 形象 + 音色就位，idle loop（batch 0）已在 portrait 生成时由 Backend 自动排队。形象以 idle 动画"活"起来，用确认后的音色说出第一句问候。onboarding 结束，进入持续陪伴。
@@ -233,7 +235,7 @@ Desktop 收到主动消息后：形象切 SPEAKING + 播 TTS；对话框未开�
 
 IDLE 时形象不是静止贴图。两类自主行为，**都不触发 TTS、不弹气泡，纯视觉**：
 
-- **微动作**（10–25s 随机间隔）：眨眼、换重心、看四周、伸懒腰等 idle 变体随机切换（clip 就绪时；未就绪回退 idle）。
+- **微动作**（10–25s 随机间隔）：眨眼、换重心、看四周、伸懒腰等 idle 变体随机切换（clip 就绪时；未就绪回退 idle）。Tier 1 默认池复用 portrait + CSS 变换实现 `idle_look_around` / `idle_blink` / `idle_stretch` 三个最常用的微动作变体，不依赖 Tier 2/3 资源；这些场景由 Batch 0 自动生成（与 portrait 同批），是"永不空白"不变量的兜底层（详见 §1.3）。
 - **情境动作**（检测本机状态）：Runner `system.get_idle_seconds` / `system.is_fullscreen` / `system.get_focused_app` 等环境感知工具的轮询结果直接进情境判定，**不经 LLM**。30s 轮询：分类结果（ide/music/reader/gaming/browsing/other/unknown）按平台白名单映射（Windows 进程名、macOS bundle id、Linux class 名），对应 CLIPS_SCENES 中 batch 2 的 idle 变体集（`idle_thinking`/`idle_typing`/`idle_bounce`/`idle_sway`/`idle_calm`/`idle_engaged`），未就绪时安全 fallback 到 `idle`，符合 §1.3 "永不空白" 不变量。
 
 ### 5.5 故障态与降级行为（伙伴永不"死"）

@@ -103,6 +103,13 @@ def init_database(engine: Engine | None = None) -> None:
     """Idempotent schema setup."""
     if engine is None and not SETTINGS.companion_asset_signing_key:
         raise RuntimeError("DESKAGENT_COMPANION_ASSET_SIGNING_KEY must be set.")
+    if engine is not None:
+        # An explicit engine means we're in a test/seed context — flip the
+        # companion-asset signer into test mode so ``_signing_key()`` can
+        # fall back to ``_TEST_SIGNER_KEY`` without raising.
+        from services.companion import asset_store
+
+        asset_store._enable_test_signer_key()
     target = engine if engine is not None else ENGINE
     ModelBase.metadata.create_all(bind=target)
     with target.begin() as conn:

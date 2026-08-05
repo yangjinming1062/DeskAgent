@@ -5,18 +5,15 @@ from components import get_logger
 
 logger = get_logger(__name__)
 
-# OpenAI / Anthropic / Gemini image part types — shared with tool_dispatch_helpers
-# to keep the trajectory normaliser and message sanitiser from drifting.
+# OpenAI / Anthropic / Gemini image part types. Single source — the trajectory
+# normaliser below is the only consumer; tool dispatch doesn't need to
+# normalise persisted history (it operates on already-stored conversations).
 _IMAGE_PART_TYPES = frozenset({"image_url", "image", "input_image"})
 
 
 def _trajectory_normalize_msg(msg: dict) -> dict:
-    """Strip image blobs (replace with [screenshot] placeholders) before persistence.
-
-    Mirrors tool_dispatch_helpers._trajectory_normalize_msg but operates on a
-    content list directly to avoid the message_sanitization → tool_dispatch_helpers
-    import cycle.
-    """
+    """Replace image blobs in a stored message with ``[screenshot]`` placeholders
+    so old turns stay readable when rendered without re-fetching the asset."""
     if not isinstance(msg, dict):
         return msg
     content = msg.get("content")
@@ -150,8 +147,15 @@ def truncate_chat_history(
             processed = {**processed, "content": c[:max_chars_per_message] + f"\n\n[... Truncated from {len(c)} chars to save context ...]"}
         out.append(processed)
 
-    if keep_start > 0 and non_sys[0].get("role") == "user":
-        out.insert(0, _trajectory_normalize_msg(non_sys[0]))
+    if keep_start > 0:
+        # Always preserve an anchor message so the model has a continuous
+        # history: a user message when one is the first non-sys turn, or the
+        # earliest user message we can find (handles sub-agent contexts where
+        # the head is an assistant turn), or a generic placeholder if no user
+        # message exists at all.
+        anchor = next((m for m in non_sys if m.get("role") == "user"), None)
+        if anchor is not None:
+            out.insert(0, _trajectory_normalize_msg(anchor))
         out.insert(1, {"role": "user", "content": f"[... {keep_start - 1} early conversation turns removed for context window management ...]"})
 
     return sys_msgs + out

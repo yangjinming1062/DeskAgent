@@ -52,6 +52,10 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
   // Reset the sprite on unmount (force: true so the priority gate can't
   // swallow it while 'listening'/'thinking') — a dismissed chat with an
   // in-flight recording would otherwise leave the sprite stuck there.
+  // Skip the reset when an assistant turn is still streaming: forcing idle
+  // here would clobber the thinking-state animation that's narrating the
+  // user's request they just sent (ARCH §2.3 — lower priority states can't
+  // interrupt higher ones without an explicit force).
   useEffect(() => {
     return () => {
       const recorder = mediaRecorderRef.current
@@ -65,7 +69,12 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
       }
 
       setRecording(false)
-      setSpriteState('idle', { force: true })
+
+      const inFlight = $chatMessages.get().some(m => m.streaming)
+
+      if (!inFlight) {
+        setSpriteState('idle', { force: true })
+      }
     }
   }, [])
 

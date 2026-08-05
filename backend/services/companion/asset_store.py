@@ -30,11 +30,37 @@ def _signing_key() -> bytes:
     ``public_url_prefix`` is public. ``init_database`` fail-fast checks the
     env var is set in production; the field may be empty in tests (see
     ``_test_signer_key``) since ``engine`` is passed there and the production
-    guard short-circuits before this point."""
+    guard short-circuits before this point. ``_TEST_MODE`` is flipped on by
+    ``init_database(engine=...)`` so a defense-in-depth check here catches the
+    case where init_database runs with a real engine but the signing key is
+    still empty (config drift between deploys)."""
     secret = getattr(SETTINGS, "companion_asset_signing_key", None)
     if secret:
         return secret.encode("utf-8")
-    return _test_signer_key()
+    if not _TEST_MODE:
+        raise RuntimeError(
+            "companion_asset_signing_key is empty outside test mode — "
+            "init_database() should have failed before this point. "
+            "Refusing to sign URLs with the public test key in production."
+        )
+    return _TEST_SIGNER_KEY
+
+
+# Flipped to True by ``init_database(engine=<explicit>)`` and by pytest's
+# sqlite_engine fixture via ``_enable_test_signer_key``. Production callers
+# never touch this — they reach ``_signing_key()`` after init_database raises
+# if the key is missing.
+_TEST_MODE = False
+
+
+def _enable_test_signer_key() -> None:
+    """Module-level entry point: tell ``_signing_key()`` the empty-key path is
+    intentional. Audit agent flagged this as the missing belt-and-suspenders
+    layer; ``init_database(engine=...)`` and tests using ``sqlite_engine``
+    call this so a config drift in production doesn't silently start signing
+    URLs with the public test key."""
+    global _TEST_MODE
+    _TEST_MODE = True
 
 
 # Stable test-only signing key. Production paths must set
