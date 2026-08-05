@@ -4,7 +4,7 @@ import { BUILTIN_THEME_LIST, DEFAULT_TYPOGRAPHY, EMOJI_FALLBACK } from './preset
 
 // #40364: none of the UI text/mono fonts carry emoji glyphs, so every font
 // stack must end with a color-emoji fallback or emoji render as tofu on
-// platforms whose default font lacks them (e.g. Linux).
+// platforms whose default font lacks them.
 describe('theme typography emoji fallback (#40364)', () => {
   const stacks: Array<[string, string]> = [
     ['DEFAULT_TYPOGRAPHY.fontSans', DEFAULT_TYPOGRAPHY.fontSans],

@@ -23,10 +23,9 @@ def sqlite_engine():
     # ``(user_id, context) WHERE context LIKE 'user_profile:%'``
     # (see backend/main.py:99) — only ``user_profile:*`` rows are
     # uniquely keyed. Other contexts (e.g. ``interaction_stats:<date>``)
-    # have no uniqueness constraint, so a multi-replica race that writes
-    # two summary rows for the same user+date would persist both. We
-    # mirror the production partial index here so the fixture exercises
-    # the same upsert contract.
+    # have no uniqueness constraint, so the read-then-write path can
+    # persist both rows across write boundaries. We mirror the production
+    # partial index here so the fixture exercises the same upsert contract.
     with engine.begin() as conn:
         conn.execute(text(
             "CREATE UNIQUE INDEX IF NOT EXISTS uq_memories_user_context "

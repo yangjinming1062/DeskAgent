@@ -32,7 +32,7 @@ _JOB_IMMUTABLE_FIELDS = frozenset({"id", "user_id"})
 _SCHEDULE_KEYS = ("schedule", "is_paused")
 
 # Hard cap on due jobs processed per tick — bounds event-loop blocking on
-# backlog catch-up after a replica was offline (e.g. 60 minutes of
+# backlog catch-up after a long pause (e.g. 60 minutes of
 # ``* * * * *`` schedules = 3,600 due jobs on the first tick). Jobs past
 # the cap keep their old ``next_run_at`` and re-fire on the next tick.
 _MAX_DUE_PER_TICK = 200
@@ -190,9 +190,9 @@ def _select_due_jobs() -> list[CronJob]:
 def _bulk_cas_advance(due_jobs: list[CronJob], now: datetime) -> dict[int, dict[str, Any]]:
     """Per-row CAS UPDATE advancing ``next_run_at`` for every due job.
 
-    The CAS predicate ``(id, next_run_at, schedule)`` preserves multi-replica
-    safety — another replica's tick or a user-driven ``update_job`` advances
-    ``next_run_at``, breaking the match and silently skipping the loser.
+    The CAS predicate ``(id, next_run_at, schedule)`` guards against a
+    user-driven ``update_job`` advancing ``next_run_at`` mid-tick —
+    breaking the match silently skips the loser.
     Returns ``{job_id: {user_id, is_paused, payload}}`` for the jobs that
     won the CAS. Jobs that lost (0 rows updated) are dropped.
 
@@ -397,8 +397,8 @@ async def _tick() -> None:
 
     Delivery happens out-of-band via the ws_events outbox (see
     ``services/gateway/connection.ws_event_loop``), so the cron session stays
-    closed across the WS round-trip and multiple replicas can tick in
-    parallel without double-firing.
+    closed across the WS round-trip and ticks stay independent of WS
+    delivery latency — no double-fire hazard.
 
     Tx1 (bulk CAS UPDATE) + Tx2 (bulk WSEvent INSERT, per-row fallback on
     IntegrityError) preserve the per-row isolation the previous loop had

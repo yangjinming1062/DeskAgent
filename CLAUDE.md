@@ -9,8 +9,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 全局已知限制与平台支持策略
 
-- **Backend**：通过 Docker 部署，仅需保障 Linux (Docker) 容器内运行正常，**无需维护 Windows 兼容性**。
-- **Runner / Desktop / Installer**：需要在 Windows、macOS 和 Linux 上原生运行。由于依赖了如 pty、原生 subprocess 等与系统紧密相关的操作，需高度关注这三个平台（特别是 Windows）的兼容性。相关的 Windows 兼容性缓解措施均记录在各自模块的 `README.md` 与 `runner/README.md` 中。
+- **Backend**：通过 Docker 部署，仅在 Docker (Linux 基础镜像) 内运行，**无需维护 Windows / macOS 兼容性**。
+- **Runner / Desktop / Installer**：仅在 **Windows** 与 **macOS** 上原生运行（**不支持 Linux**）。由于依赖了如 pty、原生 subprocess 等与系统紧密相关的操作，需重点关注 Windows 的兼容性。Windows 兼容性缓解措施记录在各自模块的 `README.md` 与 `runner/README.md` 中。
 
 ## Commit 消息规范
 

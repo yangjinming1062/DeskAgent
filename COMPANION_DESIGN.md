@@ -34,7 +34,7 @@
 - **透明背景视频**：WebM (VP9 + alpha) 是 Electron/Chromium 跨平台原生支持的最佳选项；sprite sheet（逐帧）作为备选。
 - **窗口架构**：精灵窗口（透明置顶、click-through 可控的 `BrowserWindow`）是**唯一常驻主窗口**，承载形象本身，并在对话激活时与对话框一同居中（见 §3、§6.1）。登录与应用设置是从托盘唤起的按需工具窗口，不常驻——"对话发生在角色身边"。
 - **性能基线**：常驻视频解码必须硬件加速；idle loop 应能 24fps 循环且 CPU 占用 < 5%。
-- **平台降级**：Linux 无 compositor 时透明窗口可能黑底——降级为带背景窗口或纯 sprite（[desktop/README.md 已知限制](desktop/README.md)）。
+- **远程显示降级**：远程 / 转发显示（X11/VNC/RDP）无法合成透明层时，精灵窗口降级为非透明（`SPRITE_TRANSPARENT` 路径）；桌面图标枚举在 macOS 上不可用时降级为"找不到图标"人格化表达。
 
 ### 1.3 渐进式生成与不变量
 
@@ -196,7 +196,7 @@ walk / fly 作为新 scene 加入 §1 的批次队列（与 idle 同批生成，
 
 ### 3.8 跨模块契约
 
-**Runner 新增能力**（详见 §10）：`system.get_windows`（枚举可见窗口几何 + z-order + focused 标记）、`system.get_work_area`（可用区域）、`system.get_cursor_pos`（鼠标位置）；可选 `system.click_at`（坐标点击，ritual walk 操作执行）。桌面图标位置平台差异大——Windows 可枚举，macOS/Linux 降级为"找不到图标"人格化表达。
+**Runner 新增能力**（详见 §10）：`system.get_windows`（枚举可见窗口几何 + z-order + focused 标记）、`system.get_work_area`（可用区域）、`system.get_cursor_pos`（鼠标位置）；可选 `system.click_at`（坐标点击，ritual walk 操作执行）。桌面图标位置仅 Windows 经 Shell API 可枚举，macOS 降级为"找不到图标"人格化表达。
 
 **与 §2 状态机的组合**：移动期间默认显示 IDLE 动画（除非状态机正处更高优先级状态）；抵达 target 后切 INTERACTING；SLEEPING 期间不主动换位（除非被用户唤醒）。**Backend 不感知空间行为**——所有位置决策在 Desktop 本地完成，无需新增 WS 事件或 RPC。
 
@@ -341,7 +341,7 @@ Desktop 收到主动消息后：形象切 SPEAKING + 播 TTS；对话框未开�
 IDLE 时形象不是静止贴图。两类自主行为，**都不触发 TTS、不弹气泡，纯视觉**（空间层面的自主行为——漫游、栖息、换位——见 §3，本节聚焦动画层面）：
 
 - **微动作**（10–25s 随机间隔）：眨眼、换重心、看四周、伸懒腰等 idle 变体随机切换（clip 就绪时；未就绪回退 idle）。Tier 1 默认池复用 portrait + CSS 变换实现 `idle_look_around` / `idle_blink` / `idle_stretch` 三个最常用的微动作变体，不依赖 Tier 2/3 资源；这些场景由 Batch 0 自动生成（与 portrait 同批），是"永不空白"不变量的兜底层（详见 §1.3）。
-- **情境动作**（检测本机状态）：Runner `system.get_idle_seconds` / `system.is_fullscreen` / `system.get_focused_app` 等环境感知工具的轮询结果直接进情境判定，**不经 LLM**。30s 轮询：分类结果（ide/music/reader/gaming/browsing/other/unknown）按平台白名单映射（Windows 进程名、macOS bundle id、Linux class 名），对应 CLIPS_SCENES 中 batch 2 的 idle 变体集（`idle_thinking`/`idle_typing`/`idle_bounce`/`idle_sway`/`idle_calm`/`idle_engaged`），未就绪时安全 fallback 到 `idle`，符合 §1.3 "永不空白" 不变量。
+- **情境动作**（检测本机状态）：Runner `system.get_idle_seconds` / `system.is_fullscreen` / `system.get_focused_app` 等环境感知工具的轮询结果直接进情境判定，**不经 LLM**。30s 轮询：分类结果（ide/music/reader/gaming/browsing/other/unknown）按平台白名单映射（Windows 进程名、macOS bundle id），对应 CLIPS_SCENES 中 batch 2 的 idle 变体集（`idle_thinking`/`idle_typing`/`idle_bounce`/`idle_sway`/`idle_calm`/`idle_engaged`），未就绪时安全 fallback 到 `idle`，符合 §1.3 "永不空白" 不变量。
 
 ### 5.5 故障态与降级行为（伙伴永不"死"）
 
@@ -396,5 +396,5 @@ Runner 端提供与伴侣场景直接对接的本地能力，Desktop 按以下�
 - **环境感知工具** `system.get_idle_seconds` / `is_screen_locked` / `get_focused_app` / `get_power_state`：经标准 `execute_tool` 通道轮询（Desktop 经 `runnerInvoke`）。`get_idle_seconds` 跨过阈值时额外触发 `companion.check_affect` 让 Backend LLM 推理情境化 affect（[ARCHITECTURE.md §5](ARCHITECTURE.md)）；其余工具的结果直接进 §6.4 情境判定，**不经 LLM**。`is_screen_locked=true` 时静默切断主动消息（仍可 affect），解锁后静默恢复。
 - **本地语音** `speech_to_text`（faster-whisper）/ `text_to_speech`（Piper 主、pyttsx3 降级）/ `list_tts_voices`:STT/TTS 的零成本主路径。Desktop 经 `media.stt`/`media.tts` IPC 路由——默认本地优先(`auto`),本地不可用或失败时回退云端;`local` 档纯本地不回退,`cloud` 档强制云端(见 §7)。
 - **窗口几何与目标解析** `system.get_windows` / `get_work_area` / `get_cursor_pos`：空间行为（§3）所需的本机感知。`get_windows` 枚举可见窗口（标题、进程名、几何 {x,y,w,h}、z-order、focused 标记）——perch 选择与 ritual walk 目标解析依赖此项；`get_work_area` 返回屏幕可用区域（去除任务栏/dock），路径规划依赖此项；`get_cursor_pos` 返回鼠标位置，"朝用户方向走"等行为依赖此项。
-- **坐标操作**（可选）`system.click_at`：ritual walk（§3.6）目标达成后精灵"亲手操作"的执行通道——在指定坐标模拟点击。不可用时不阻塞 ritual walk，精灵走到目标旁后操作以常规工具调用兜底（用户无感）。桌面图标枚举平台差异大：Windows 经 Shell API 可枚举；macOS/Linux 暂不支持，降级为"找不到图标"人格化表达。
+- **坐标操作**（可选）`system.click_at`：ritual walk（§3.6）目标达成后精灵"亲手操作"的执行通道——在指定坐标模拟点击。不可用时不阻塞 ritual walk，精灵走到目标旁后操作以常规工具调用兜底（用户无感）。桌面图标枚举仅 Windows 可枚举；macOS 降级为"找不到图标"人格化表达。
 

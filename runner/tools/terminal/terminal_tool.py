@@ -482,7 +482,7 @@ def _transform_sudo_command(command: str | None) -> tuple[str | None, str | None
     return command, None
 
 
-TERMINAL_TOOL_DESCRIPTION = """Execute shell commands on a Linux environment. Filesystem usually persists between calls.
+TERMINAL_TOOL_DESCRIPTION = """Execute shell commands on a POSIX environment. Filesystem usually persists between calls.
 
 Do NOT use cat/head/tail to read files — use read_file instead.
 Do NOT use grep/rg/find to search — use search_files instead.

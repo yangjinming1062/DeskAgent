@@ -6,8 +6,8 @@ import type { DesktopTheme, DesktopThemeTypography } from './types'
 
 // Color-emoji fonts to append to every stack as a last resort. None of the UI
 // text/mono fonts carry emoji glyphs, so without this emoji render as tofu
-// boxes on platforms whose default text font lacks them (e.g. Linux/#40364).
-// Covers macOS, Windows, Linux, plus the `emoji` generic for anything else.
+// boxes on platforms whose default text font lacks them. Covers macOS,
+// Windows, plus the `emoji` generic for anything else.
 export const EMOJI_FALLBACK = '"Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji", emoji'
 
 const SYSTEM_SANS =

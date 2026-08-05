@@ -153,7 +153,6 @@ def test_activity_probes_safe_defaults(monkeypatch):
     # handle, exercising the safe-default branches.
     monkeypatch.setattr(activity, "IS_WINDOWS", False)
     monkeypatch.setattr(activity, "IS_MACOS", False)
-    monkeypatch.setattr(activity, "IS_LINUX", False)
 
     assert activity.get_idle_seconds() == -1.0
     assert activity.is_screen_locked() is False
@@ -297,7 +296,6 @@ def test_capabilities_microphone_uses_sounddevice(monkeypatch):
     monkeypatch.setitem(__import__("sys").modules, "sounddevice", _Stub())
     monkeypatch.setattr(caps, "IS_WINDOWS", True)
     monkeypatch.setattr(caps, "IS_MACOS", False)
-    monkeypatch.setattr(caps, "IS_LINUX", False)
     assert caps.microphone_available() is True
 
     class _Empty:

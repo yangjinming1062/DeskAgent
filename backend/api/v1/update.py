@@ -30,11 +30,10 @@ router = get_router()
 VERSIONS_DIR = Path("updates/versions")
 CHUNK_SIZE = 8192
 
-# File suffixes electron-builder emits across the three platforms we ship.
+# File suffixes electron-builder emits across the two platforms we ship.
 # Squirrel.Windows is the legacy `-Setup.exe`/`-full.nupkg` set; Squirrel.Mac
-# uses a `*.zip`; Linux AppImage uses `*.AppImage`. `.dmg` is also kept for
-# the macOS direct-download (not consumed by electron-updater, but the admin
-# zip can carry it).
+# uses a `*.zip`. `.dmg` is also kept for the macOS direct-download (not
+# consumed by electron-updater, but the admin zip can carry it).
 #
 # The runner-half suffixes (`server.py`, `.whl`, `latest-runner.yml`,
 # `manifest.json`, `app-update.yml`) come from `scripts/build_client.ps1`'s
@@ -48,7 +47,6 @@ _ALLOWED_ARCHIVE_SUFFIXES = (
     ".blockmap",
     ".zip",
     ".dmg",
-    ".AppImage",
     ".whl",
     "server.py",
     "manifest.json",
@@ -63,7 +61,6 @@ _DOWNLOAD_SUFFIXES = (
     ".zip",
     ".dmg",
     ".dmg.blockmap",
-    ".AppImage",
     ".whl",
     "server.py",
     "latest-runner.yml",
@@ -96,8 +93,8 @@ def _build_manifest(latest: UpdateVersion, filename: str | None, sha512: str | N
     """Shape one Squirrel/electron-updater manifest for a single platform asset.
 
     The filename and hash are the per-platform DB columns; size falls back to a
-    live stat when the column is NULL (older rows from before the macOS / Linux
-    columns existed).
+    live stat when the column is NULL (older rows from before the macOS column
+    existed).
     """
     if not filename or not sha512:
         raise HTTPException(status_code=404, detail="No active release for this platform")
@@ -128,12 +125,6 @@ def get_latest_yml(db: Session = Depends(get_db)) -> dict:
 def get_latest_mac_yml(db: Session = Depends(get_db)) -> dict:
     latest = _get_latest(db)
     return _build_manifest(latest, latest.mac_filename, latest.mac_sha512, latest.mac_size)
-
-
-@router.get("/latest-linux.yml")
-def get_latest_linux_yml(db: Session = Depends(get_db)) -> dict:
-    latest = _get_latest(db)
-    return _build_manifest(latest, latest.linux_filename, latest.linux_sha512, latest.linux_size)
 
 
 @router.get("/latest-runner.yml", response_class=FileResponse)
@@ -243,7 +234,6 @@ async def create_version(
         raise HTTPException(status_code=400, detail="Zip must contain a *.exe file")
 
     mac_file = _pick_asset(versions_dir, "*.zip", "*.dmg")
-    linux_file = _pick_asset(versions_dir, "*.AppImage")
 
     # Runner-half. The wheel + server.py are extracted into runner/ by
     # _extract_archive_entries; latest-runner.yml lives at the root.
@@ -258,9 +248,6 @@ async def create_version(
         mac_filename=mac_file.name if mac_file else None,
         mac_sha512=sha512_b64(mac_file) if mac_file else None,
         mac_size=mac_file.stat().st_size if mac_file else None,
-        linux_filename=linux_file.name if linux_file else None,
-        linux_sha512=sha512_b64(linux_file) if linux_file else None,
-        linux_size=linux_file.stat().st_size if linux_file else None,
         runner_filename=f"runner/{wheel_file.name}" if wheel_file else None,
         runner_sha512=sha512_b64(wheel_file) if wheel_file else None,
         runner_size=wheel_file.stat().st_size if wheel_file else None,

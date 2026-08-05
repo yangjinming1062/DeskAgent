@@ -248,7 +248,7 @@ def _connect():
 
     DESKAGENT_RPC_SOCKET can be either:
       - a filesystem path (POSIX Unix domain socket — the default on
-        Linux and macOS)
+        macOS)
       - a string of the form ``tcp://127.0.0.1:<port>`` (Windows, where
         AF_UNIX is unreliable — the parent falls back to loopback TCP)
     """

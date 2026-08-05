@@ -100,10 +100,10 @@ _interact_inflight: dict[int, asyncio.Task] = {}
 _avatar_regen_locks: dict[int, asyncio.Lock] = {}
 _avatar_regen_tasks: set[asyncio.Task] = set()
 
-# Advisory-lock keyspace for cross-replica regen serialization. The ``xact``
-# variant auto-releases on commit/rollback, so no explicit unlock is needed.
-# Kept distinct from other lock keys used elsewhere in the codebase by leading
-# bits; combined with ``user_id`` to give one slot per user.
+# Advisory lock for avatar regen: prevents concurrent regen submissions
+# from clobbering each other. ``xact`` variant auto-releases on commit/
+# rollback, so no explicit unlock is needed. Combined with ``user_id``
+# to give one slot per user.
 _AVATAR_REGEN_ADVISORY_NAMESPACE = 0x4156_4156
 
 
@@ -912,23 +912,23 @@ def _register_session_handlers(
                 async with lock:
                     try:
                         with SESSION_LOCAL() as db:
-                            # Cross-replica CAS: a peer replica may already be
-                            # mid-regen for this user. The xact advisory lock
-                            # auto-releases on the matching commit/rollback
-                            # below — fail-open on driver errors so a Postgres
-                            # blip doesn't block portrait gen; the in-process
-                            # ``lock`` above still serializes within this
-                            # replica.
-                            cross_replica_busy = False
+                            # Advisory lock serializes avatar regen per user
+                            # within this process. The ``xact`` variant
+                            # auto-releases on commit/rollback, so no explicit
+                            # unlock is needed. Fail-open on driver errors so a
+                            # Postgres blip doesn't block portrait gen; the
+                            # in-process ``lock`` above still serializes within
+                            # the event loop.
+                            regen_busy = False
                             try:
                                 got = db.execute(
                                     text("SELECT pg_try_advisory_xact_lock(:k)"),
                                     {"k": _AVATAR_REGEN_ADVISORY_NAMESPACE + int(user_id)},
                                 ).scalar()
-                                cross_replica_busy = not bool(got)
+                                regen_busy = not bool(got)
                             except Exception:
-                                cross_replica_busy = False
-                            if cross_replica_busy:
+                                regen_busy = False
+                            if regen_busy:
                                 payload = {"job_id": job_id, "error": "伙伴正在生成形象，请稍候"}
                                 return
                             persona = get_or_create_persona(db, user_id)

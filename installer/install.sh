@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# DeskAgent Agent installer (POSIX / macOS / Linux).
+# DeskAgent Agent installer (POSIX / macOS).
 #
 # 6-stage payload release. Tauri DeskAgent-Setup.app is the GUI shell that
 # spawns this script; the script's job is to install Python (if needed),
@@ -350,9 +350,6 @@ stage_unpack_desktop() {
     dmg)
       artifact=$(ls -1 "$BUNDLED_DESKTOP_DIR"/*.dmg 2>/dev/null | head -1 || true)
       ;;
-    AppImage)
-      artifact=$(ls -1 "$BUNDLED_DESKTOP_DIR"/*.AppImage 2>/dev/null | head -1 || true)
-      ;;
     nsis)
       artifact=$(ls -1 "$BUNDLED_DESKTOP_DIR"/*.exe 2>/dev/null | head -1 || true)
       ;;
@@ -393,26 +390,6 @@ stage_unpack_desktop() {
       hdiutil detach "$mount_point" 2>/dev/null || true
       xattr -cr /Applications/DeskAgent.app 2>/dev/null || true
       printf '{"ok": true, "stage": "unpack-desktop", "data": {"installed_path": "/Applications/DeskAgent.app", "format": "dmg"}}\n'
-      ;;
-    AppImage)
-      # Linux: copy AppImage to $DESKAGENT_HOME/bin/, chmod, write .desktop entry.
-      local appimage_name
-      appimage_name=$(basename "$artifact")
-      mkdir -p "$DESKAGENT_HOME_RESOLVED/bin"
-      cp -f "$artifact" "$DESKAGENT_HOME_RESOLVED/bin/$appimage_name"
-      chmod +x "$DESKAGENT_HOME_RESOLVED/bin/$appimage_name"
-      mkdir -p "$HOME/.local/share/applications"
-      cat > "$HOME/.local/share/applications/deskagent.desktop" <<EOF2
-[Desktop Entry]
-Type=Application
-Name=DeskAgent
-Exec=$DESKAGENT_HOME_RESOLVED/bin/$appimage_name %U
-Icon=deskagent
-Terminal=false
-Categories=Development;
-EOF2
-      printf '{"ok": true, "stage": "unpack-desktop", "data": {"installed_path": "%s/bin/%s", "format": "AppImage"}}\n' \
-        "$DESKAGENT_HOME_RESOLVED" "$appimage_name"
       ;;
     nsis|zip)
       # install.sh doesn't run on Windows; on POSIX this format is unsupported

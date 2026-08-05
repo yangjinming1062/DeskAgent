@@ -742,8 +742,7 @@ def _socket_safe_tmpdir() -> str:
     104-byte macOS limit for ``AF_UNIX`` addresses, causing agent-browser to
     fail with "Failed to create socket directory" or silent screenshot failures.
 
-    Linux ``tempfile.gettempdir()`` already returns ``/tmp``, so this is a
-    no-op there.  On macOS we bypass ``TMPDIR`` and use ``/tmp`` directly
+    On macOS we bypass ``TMPDIR`` and use ``/tmp`` directly
     (symlink to ``/private/tmp``, sticky-bit protected, always available).
     """
     if sys.platform == "darwin":
@@ -4151,7 +4150,7 @@ def _chromium_search_roots() -> list[str]:
 
     1. ``PLAYWRIGHT_BROWSERS_PATH`` when set (Docker image sets this to
        ``/opt/deskagent/.playwright``).
-    2. ``~/.cache/ms-playwright`` — Playwright's default on Linux/macOS.
+    2. ``~/.cache/ms-playwright`` — Playwright's default on macOS.
     3. ``~/Library/Caches/ms-playwright`` — Playwright's default on macOS.
     4. ``%USERPROFILE%\\AppData\\Local\\ms-playwright`` — Playwright's default
        on Windows.

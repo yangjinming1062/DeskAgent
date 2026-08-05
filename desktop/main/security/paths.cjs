@@ -8,7 +8,7 @@ const os = require('node:os')
  * and `runner/utils/constants.py::get_deskagent_home()`:
  *   - $DESKAGENT_HOME env var, if set, wins
  *   - Windows: %LOCALAPPDATA%\deskagent (or ~/.deskagent legacy fallback when `directoryExists` is provided)
- *   - macOS / Linux / other POSIX: ~/.deskagent
+ *   - macOS / other POSIX: ~/.deskagent
  *
  * Returns absolute path. Falls back to a writable homedir-derived path even
  * if the env var resolves to a non-existent directory — callers should not

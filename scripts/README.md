@@ -4,11 +4,10 @@
 
 ## 1. 构建安装器 — `build_client.{sh,ps1}`
 
-单一入口，端到端编排 **runner (uv build wheel) → desktop (electron-builder) → stage → Tauri (installer)**。末尾 `build_client.ps1`（Windows）额外构建 `release/DeskAgent-{ver}-update.zip`（`Build-UpdateZip`）——合并 desktop 二进制与 runner wheel 的自更新 artifact，供 desktop `electron-updater` 消费。`build_client.sh`（macOS/Linux）不构建此 zip，各平台 update artifact 由 electron-builder 直接产出。
+单一入口，端到端编排 **runner (uv build wheel) → desktop (electron-builder) → stage → Tauri (installer)**。末尾 `build_client.ps1`（Windows）额外构建 `release/DeskAgent-{ver}-update.zip`（`Build-UpdateZip`）——合并 desktop 二进制与 runner wheel 的自更新 artifact，供 desktop `electron-updater` 消费。`build_client.sh`（macOS）不构建此 zip，各平台 update artifact 由 electron-builder 直接产出。
 
 ```bash
 scripts/build_client.sh --version 0.16.0 --target mac
-scripts/build_client.sh --version 0.16.0 --target linux
 pwsh scripts/build_client.ps1 -Version 0.16.0
 ```
 

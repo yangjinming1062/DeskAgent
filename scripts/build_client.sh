@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# Build the DeskAgent client installer for macOS / Linux.
+# Build the DeskAgent client installer for macOS.
 #
 # Single entry point that orchestrates:
 #   1. uv build wheel → runner/dist/deskagent-agent-*.whl
-#   2. electron-builder → desktop/release/DeskAgent-{ver}-{platform}.{dmg,AppImage,zip}
+#   2. electron-builder → desktop/release/DeskAgent-{ver}-mac-*.dmg
 #   3. Stage payload (runner wheel + desktop + skills + config) to installer/payload/
 #   4. Patch tauri.conf.json so bundle.resources contains the current host's
 #      desktop artifact (Tauri 2 fails on missing resources).
-#   5. Tauri build → installer/src-tauri/target/release/bundle/.../DeskAgent-Setup.*
+#   5. Tauri build → installer/src-tauri/target/release/bundle/.../DeskAgent-Setup.dmg
 #   6. Restore tauri.conf.json (git state preserved).
 #   7. Print the final installer path under release/.
 #
@@ -15,14 +15,13 @@
 #
 # Usage:
 #   scripts/build_client.sh --version 0.16.0 --target mac
-#   scripts/build_client.sh --version 0.16.0 --target linux
 #
 # Options:
 #   --version X.Y.Z           Required. Written into desktop + installer package.json
 #                             and runner/pyproject.toml.
-#   --target {mac|linux}      Build target. Defaults to current host. macOS and
-#                             Linux must be built on their native host
-#                             (electron-builder / Tauri can't cross-build).
+#   --target mac              Build target. Defaults to current host. macOS must
+#                             be built on its native host (electron-builder /
+#                             Tauri can't cross-build).
 #   --skip-runner             Don't build runner wheel (use existing dist/deskagent-agent-*.whl).
 #   --skip-desktop            Don't build desktop (use existing release/DeskAgent-*).
 #   --sign-identity ID        macOS code-sign identity (Developer ID Application: ...).
@@ -53,7 +52,7 @@ TAURI_BUNDLE_DIR=""
 
 usage() {
   cat <<EOF
-Usage: $0 --version X.Y.Z [--target mac|linux] [--skip-runner] [--skip-desktop] \\
+Usage: $0 --version X.Y.Z [--target mac] [--skip-runner] [--skip-desktop] \\
        [--sign-identity ID] [--notary-profile NAME] [--output DIR]
 
 Backend (Docker) is built separately. This script only builds the client
@@ -67,8 +66,8 @@ while [[ $# -gt 0 ]]; do
     --target)
       TARGET="$2"
       case "$TARGET" in
-        mac|linux) ;;
-        *) echo "error: --target must be 'mac' or 'linux' (got '$TARGET')" >&2; exit 2 ;;
+        mac) ;;
+        *) echo "error: --target must be 'mac' (got '$TARGET')" >&2; exit 2 ;;
       esac
       shift 2 ;;
     --skip-runner)     SKIP_RUNNER=1; shift ;;
@@ -93,34 +92,19 @@ HOST_OS="$(uname -s)"
 if [[ -z "$TARGET" ]]; then
   case "$HOST_OS" in
     Darwin)  TARGET="mac" ;;
-    Linux)   TARGET="linux" ;;
     *)       echo "error: cannot infer target from host OS '$HOST_OS'. Pass --target." >&2; exit 1 ;;
   esac
 fi
 
 # Validate host/target match (no cross-build).
-case "$TARGET" in
-  mac)
-    if [[ "$HOST_OS" != "Darwin" ]]; then
-      echo "error: --target mac requires a macOS host (got '$HOST_OS')" >&2
-      exit 1
-    fi
-    DESKTOP_PNPM_TARGET="dist:mac:dmg"
-    DESKTOP_ARTIFACT_GLOB="DeskAgent-${VERSION}-mac-*.dmg"
-    DESKTOP_FORMAT="dmg"
-    TAURI_BUNDLE_DIR="dmg"
-    ;;
-  linux)
-    if [[ "$HOST_OS" != "Linux" ]]; then
-      echo "error: --target linux requires a Linux host (got '$HOST_OS')" >&2
-      exit 1
-    fi
-    DESKTOP_PNPM_TARGET="dist:linux"
-    DESKTOP_ARTIFACT_GLOB="DeskAgent-${VERSION}-linux-*.AppImage"
-    DESKTOP_FORMAT="AppImage"
-    TAURI_BUNDLE_DIR="appimage"
-    ;;
-esac
+if [[ "$TARGET" == "mac" && "$HOST_OS" != "Darwin" ]]; then
+  echo "error: --target mac requires a macOS host (got '$HOST_OS')" >&2
+  exit 1
+fi
+DESKTOP_PNPM_TARGET="dist:mac:dmg"
+DESKTOP_ARTIFACT_GLOB="DeskAgent-${VERSION}-mac-*.dmg"
+DESKTOP_FORMAT="dmg"
+TAURI_BUNDLE_DIR="dmg"
 
 # --- preflight --------------------------------------------------------------
 
@@ -135,15 +119,13 @@ for cmd in uv pnpm node python3 rsync; do
   fi
 done
 
-# macOS-only build deps.
-if [[ "$TARGET" == "mac" ]]; then
-  for cmd in hdiutil codesign; do
-    if ! command -v "$cmd" >/dev/null 2>&1; then
-      echo "error: required command '$cmd' not found in PATH" >&2
-      exit 1
-    fi
-  done
-fi
+# macOS build deps.
+for cmd in hdiutil codesign; do
+  if ! command -v "$cmd" >/dev/null 2>&1; then
+    echo "error: required command '$cmd' not found in PATH" >&2
+    exit 1
+  fi
+done
 
 # jq is used by patch_tauri_config (further down). Check it here so a
 # missing jq fails the build with a clear error pointing at the right
@@ -341,7 +323,7 @@ cp "$DESKTOP_ARTIFACT" "installer/payload/desktop/"
 write_staging_metadata
 
 # 6. macOS code-sign + notarize.
-if [[ "$TARGET" == "mac" && -n "$SIGN_IDENTITY" ]]; then
+if [[ -n "$SIGN_IDENTITY" ]]; then
   echo "==> Code-signing $DESKTOP_ARTIFACT"
   cp "$DESKTOP_ARTIFACT" "${DESKTOP_ARTIFACT}.unsigned"
   codesign --deep --force --options runtime --sign "$SIGN_IDENTITY" "$DESKTOP_ARTIFACT"
@@ -363,14 +345,7 @@ echo "==> Tauri build"
 
 # 8. Locate final installer.
 FINAL_DIR="installer/src-tauri/target/release/bundle/$TAURI_BUNDLE_DIR"
-case "$TARGET" in
-  mac)
-    FINAL_GLOB="DeskAgent-Setup_${VERSION}_*.dmg"
-    ;;
-  linux)
-    FINAL_GLOB="DeskAgent-Setup_${VERSION}_*.AppImage"
-    ;;
-esac
+FINAL_GLOB="DeskAgent-Setup_${VERSION}_*.dmg"
 FINAL="$(ls -1 $FINAL_DIR/$FINAL_GLOB 2>/dev/null | head -1 || true)"
 if [[ -z "$FINAL" ]]; then
   echo "error: Tauri build did not produce $FINAL_DIR/$FINAL_GLOB" >&2

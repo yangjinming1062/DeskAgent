@@ -81,9 +81,10 @@ def skill_matches_platform(frontmatter: dict[str, Any]) -> bool:
     meaningful check is: are there any platforms listed, and if so is the
     current host among them? Missing / empty list means "all platforms".
 
-    Frontmatter values are ``macos`` / ``linux`` / ``windows`` (human-readable
-    aliases). ``_PLATFORM_MAP`` translates each declared value to the
-    ``sys.platform`` string it must match (``darwin`` / ``linux`` / ``win32``).
+    Frontmatter values are ``macos`` / ``windows`` (and the historical ``linux``
+    alias, kept for back-compat with skill manifests authored before Linux
+    support was dropped). ``_PLATFORM_MAP`` translates each declared value
+    to the ``sys.platform`` string it must match (``darwin`` / ``win32``).
     Without that translation the OS string never matches — e.g. macOS-only
     skills would be filtered out on the only OS that can run them.
     """

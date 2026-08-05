@@ -9,8 +9,6 @@ logger = logging.getLogger(__name__)
 
 IS_WINDOWS = sys.platform == "win32"
 IS_MACOS = sys.platform == "darwin"
-IS_LINUX = sys.platform.startswith("linux")
-
 # Platform-conditional optional imports at module top per CLAUDE.md.
 try:
     import psutil  # type: ignore[import-not-found]
@@ -54,8 +52,6 @@ def get_idle_seconds() -> float:
         return _idle_windows()
     if IS_MACOS:
         return _idle_macos()
-    if IS_LINUX:
-        return _idle_linux()
     return -1.0
 
 
@@ -65,8 +61,6 @@ def is_screen_locked() -> bool:
         return _locked_windows()
     if IS_MACOS:
         return _locked_macos()
-    if IS_LINUX:
-        return _locked_linux()
     return False
 
 
@@ -76,8 +70,6 @@ def get_focused_app() -> dict[str, Any]:
         return _focus_windows()
     if IS_MACOS:
         return _focus_macos()
-    if IS_LINUX:
-        return _focus_linux()
     return {}
 
 
@@ -88,8 +80,6 @@ def is_fullscreen() -> bool:
         return _fullscreen_windows()
     if IS_MACOS:
         return _fullscreen_macos()
-    if IS_LINUX:
-        return _fullscreen_linux()
     return False
 
 
@@ -115,8 +105,6 @@ def get_windows() -> dict[str, Any]:
         return _windows_windows()
     if IS_MACOS:
         return _windows_macos()
-    if IS_LINUX:
-        return _windows_linux()
     return {"windows": []}
 
 
@@ -127,8 +115,6 @@ def open_application(name: str) -> dict[str, Any]:
             subprocess.Popen(["cmd", "/c", "start", "", name])
         elif IS_MACOS:
             subprocess.Popen(["open", "-a", name])
-        elif IS_LINUX:
-            subprocess.Popen([name])
         return {"opened": True, "name": name}
     except Exception as e:
         logger.debug("open_application failed: %s", e)
@@ -163,33 +149,6 @@ def _idle_macos() -> float:
         return -1.0
     secs = CGEventSourceSecondsSinceLastEventType(kCGEventSourceStateHIDSystemState, kCGAnyInputEventType)
     return float(max(0.0, secs))
-
-
-def _idle_linux() -> float:
-    """``loginctl -p IdleSinceHintMonotonic`` minus current monotonic clock."""
-    if not shutil.which("loginctl"):
-        return -1.0
-    try:
-        out = subprocess.run(
-            ["loginctl", "show-session", "self", "-p", "IdleSinceHintMonotonic"],
-            capture_output=True,
-            timeout=1.0,
-            text=True,
-            check=False,
-        )
-    except (OSError, subprocess.TimeoutExpired):
-        return -1.0
-    if out.returncode != 0:
-        return -1.0
-    value = out.stdout.strip().split("=", 1)[-1].strip()
-    if not value:
-        return 0.0
-    try:
-        monotonic_us = int(value)
-        now_us = time.monotonic_ns() // 1_000
-    except ValueError:
-        return -1.0
-    return max(0.0, (now_us - monotonic_us) / 1_000_000.0)
 
 
 def _locked_windows() -> bool:
@@ -255,23 +214,6 @@ def _locked_macos() -> bool:
     on_console = bool(d.get("kCGSSessionOnConsoleKey", 0))
     legacy_locked = "CGSSessionOnConsoleKey" in d and d.get("CGSSessionOnConsoleKey") is not None
     return legacy_locked or not on_console
-
-
-def _locked_linux() -> bool:
-    if not shutil.which("loginctl"):
-        return False
-    try:
-        out = subprocess.run(
-            ["loginctl", "show-session", "self", "-p", "LockedHint"],
-            capture_output=True,
-            timeout=1.0,
-            text=True,
-            check=False,
-        )
-    except (OSError, subprocess.TimeoutExpired) as e:
-        logger.debug("linux lock probe failed: %s", e)
-        return False
-    return out.returncode == 0 and "yes" in out.stdout.lower()
 
 
 def _focus_windows() -> dict[str, Any]:
@@ -375,42 +317,6 @@ def _focus_macos() -> dict[str, Any]:
     except Exception as e:
         logger.debug("macos focus probe failed: %s", e)
         return {}
-
-
-def _focus_linux() -> dict[str, Any]:
-    if not shutil.which("wmctrl"):
-        return {}
-    try:
-        out = subprocess.run(
-            ["wmctrl", "-lG"],
-            capture_output=True,
-            timeout=1.0,
-            text=True,
-            check=False,
-        )
-        if out.returncode != 0:
-            return {}
-        for line in out.stdout.splitlines():
-            parts = line.split(None, 7)
-            if len(parts) < 7 or "*" not in parts[0]:
-                continue
-            title = parts[7] if len(parts) > 7 else ""
-            try:
-                x, y, w, h = int(parts[3]), int(parts[4]), int(parts[5]), int(parts[6])
-            except ValueError:
-                continue
-            return {
-                "name": title,
-                "title": title,
-                "kind": "user",
-                "x": x,
-                "y": y,
-                "w": w,
-                "h": h,
-            }
-    except (OSError, subprocess.TimeoutExpired) as e:
-        logger.debug("linux focus probe failed: %s", e)
-    return {}
 
 
 # ---------------------------------------------------------------------------
@@ -522,56 +428,6 @@ def _fullscreen_macos() -> bool:
         return False
 
 
-def _fullscreen_linux() -> bool:
-    """Compare the focused window's geometry to the screen work area via
-    ``xdotool``. ``False`` when ``xdotool`` is unavailable."""
-    if not shutil.which("xdotool"):
-        return False
-    try:
-        geom_out = subprocess.run(
-            ["xdotool", "getactivewindow", "getgeometry"],
-            capture_output=True,
-            timeout=1.0,
-            text=True,
-            check=False,
-        )
-        if geom_out.returncode != 0:
-            return False
-        # Output is "Window <id>\n  Position: X,Y (screen: N)\n  Geometry: WxH+0+0".
-        # Strip the position offset suffix before the isdigit() check.
-        win_w = win_h = 0
-        for ln in geom_out.stdout.splitlines():
-            if ln.strip().startswith("Geometry:"):
-                wh = ln.split("Geometry:", 1)[1].strip().split("x", 1)
-                if len(wh) == 2:
-                    w = wh[0]
-                    h = wh[1].split("+", 1)[0].split("-", 1)[0]
-                    if w.isdigit() and h.isdigit():
-                        win_w, win_h = int(w), int(h)
-                        break
-        if win_w <= 0 or win_h <= 0:
-            return False
-
-        work_out = subprocess.run(
-            ["xdotool", "getdisplaygeometry"],
-            capture_output=True,
-            timeout=1.0,
-            text=True,
-            check=False,
-        )
-        if work_out.returncode != 0:
-            return False
-        parts = work_out.stdout.strip().split()
-        if len(parts) != 2 or not parts[0].isdigit() or not parts[1].isdigit():
-            return False
-        work_w, work_h = max(1, int(parts[0])), max(1, int(parts[1]))
-        ratio = min(win_w / work_w, win_h / work_h)
-        return ratio >= _FULLSCREEN_COVERAGE_RATIO
-    except (OSError, subprocess.TimeoutExpired) as e:
-        logger.debug("linux fullscreen probe failed: %s", e)
-    return False
-
-
 # ---------------------------------------------------------------------------
 # Window enumeration — companion spatial behavior (perch / roam / ritual walk)
 # ---------------------------------------------------------------------------
@@ -681,46 +537,4 @@ def _windows_macos() -> dict[str, Any]:
         return {"windows": results}
     except Exception as e:
         logger.debug("macos get_windows failed: %s", e)
-        return {"windows": []}
-
-
-def _windows_linux() -> dict[str, Any]:
-    if not shutil.which("wmctrl"):
-        return {"windows": []}
-    try:
-        out = subprocess.run(
-            ["wmctrl", "-lG"],
-            capture_output=True,
-            timeout=1.0,
-            text=True,
-            check=False,
-        )
-        if out.returncode != 0:
-            return {"windows": []}
-        results: list[dict[str, Any]] = []
-        for line in out.stdout.splitlines():
-            parts = line.split(None, 7)
-            if len(parts) < 7:
-                continue
-            try:
-                x, y, w, h = int(parts[3]), int(parts[4]), int(parts[5]), int(parts[6])
-            except ValueError:
-                continue
-            if w <= 0 or h <= 0:
-                continue
-            title = parts[7] if len(parts) > 7 else ""
-            results.append(
-                {
-                    "title": title,
-                    "name": title,
-                    "x": x,
-                    "y": y,
-                    "w": w,
-                    "h": h,
-                    "focused": "*" in parts[0],
-                }
-            )
-        return {"windows": results}
-    except (OSError, subprocess.TimeoutExpired) as e:
-        logger.debug("linux get_windows failed: %s", e)
         return {"windows": []}

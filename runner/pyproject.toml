@@ -24,7 +24,7 @@ dependencies = [
   "aiohttp==3.13.4",
   "faster-whisper>=1.0.3",
   "piper-tts>=1.2.0; python_version >= '3.10'",
-  "pyttsx3>=2.90; sys_platform != 'linux'",
+  "pyttsx3>=2.90; sys_platform == 'win32' or sys_platform == 'darwin'",
   "sounddevice>=0.4.6",
   "numpy>=1.26.0",
   "pywinauto>=0.6.8; sys_platform == 'win32'",

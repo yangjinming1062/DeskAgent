@@ -147,14 +147,6 @@ const MACOS_BUNDLE_PREFIXES = {
   ]
 } as const satisfies CategoryTable
 
-const LINUX_CLASS_NAMES = {
-  ide: ['code', 'code-oss', 'idea', 'pycharm', 'webstorm', 'sublime_text', 'nvim', 'vim', 'atom'],
-  music: ['spotify', 'netease-cloud-music', 'qqmusic', 'pragha'],
-  reader: ['zathura', 'evince', 'okular', 'calibre', 'foliate'],
-  gaming: ['steam', 'lutris', 'heroic'],
-  browsing: ['chrome', 'google-chrome', 'chromium', 'firefox', 'brave-browser', 'microsoft-edge']
-} as const satisfies CategoryTable
-
 function classifyWindows(info: FocusedAppInfo): FocusCategory {
   const name = (info.name ?? '').toLowerCase()
 
@@ -184,43 +176,14 @@ function classifyMacos(info: FocusedAppInfo): FocusCategory {
   return 'unknown'
 }
 
-function classifyLinux(info: FocusedAppInfo): FocusCategory {
-  const name = (info.name ?? '').toLowerCase()
-  const title = (info.title ?? '').toLowerCase()
-
-  for (const cat of ['ide', 'music', 'reader', 'gaming', 'browsing'] as const) {
-    for (const token of LINUX_CLASS_NAMES[cat]) {
-      if (name.includes(token) || title.includes(token)) {
-        return cat
-      }
-    }
-  }
-
-  return 'unknown'
-}
-
 export function classifyFocusedApp(info: FocusedAppInfo): FocusCategory {
   if (!info || Object.keys(info).length === 0) {
     return 'unknown'
   }
 
-  const platform =
-    typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)
-      ? 'macos'
-      : typeof navigator !== 'undefined' && /Linux/.test(navigator.platform)
-        ? 'linux'
-        : 'windows'
+  const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)
 
-  switch (platform) {
-    case 'macos':
-      return classifyMacos(info)
-
-    case 'linux':
-      return classifyLinux(info)
-
-    default:
-      return classifyWindows(info)
-  }
+  return isMac ? classifyMacos(info) : classifyWindows(info)
 }
 
 // ---------------------------------------------------------------------------

@@ -29,10 +29,8 @@ def _user_key(request: Request) -> str:
     return f"ip:{get_remote_address(request)}"
 
 
-# In-memory backend. N replicas = N× effective rate per user; the project
-# can run multi-replica (cron uses PG CAS), so this is a known constraint
-# documented at the rate-limit section in CLAUDE.md. When
-# ``rate_limit_enabled`` is False slowapi's ``enabled`` flag short-circuits
+# in-memory backend serves the single-process deployment this project targets.
+# When ``rate_limit_enabled`` is False slowapi's ``enabled`` flag short-circuits
 # the decorator so ``@limiter.limit(...)`` stays inert — no per-call
 # noop stub needed.
 limiter = Limiter(key_func=_user_key, enabled=SETTINGS.rate_limit_enabled)

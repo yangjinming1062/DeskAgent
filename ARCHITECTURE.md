@@ -72,7 +72,7 @@ DeskAgent 是一个**根据用户描述定制的、具有专属形象的陪伴�
 
 | 维度 | Backend (云端大脑) | Desktop (伙伴载体 + 本地枢纽) | Runner (本地手脚) |
 |---|---|---|---|
-| **运行环境** | 容器/云端服务器 (Linux Docker) | 用户本机原生环境 (Win/Mac/Linux) | 本地静默进程 (venv Python 运行时) |
+| **运行环境** | 容器/云端服务器 (Linux Docker) | 用户本机原生环境 (Win/macOS) | 本地静默进程 (venv Python 运行时) |
 | **状态持有** | 伙伴角色定义、形象资产、长期记忆、PostgreSQL、LLM API 凭证、用户会话历史 | 用户身份 JWT (加密)、Runner 进程 PID、本地工具集 Schema 缓存、伙伴形象资产本地缓存 | 终端环境快照、CDP 浏览器会话、本地 MCP Server 句柄 |
 | **核心职责** | 接收用户消息、装配角色定义+记忆上下文、流式调度 LLM、按需生成/再生形象资产、解析工具调用并路由 | 渲染桌面伙伴形象、承载陪伴式交互、引导 onboarding；维护本地安全防线、中转 WS 工具帧、代理 Runner 的反向 LLM 请求 | 纯粹执行底层工具逻辑，上报真实可用的工具 Schema 列表 |
 | **安全准则** | `<untrusted_tool_result>` 包裹一切外部输入；Reserved 键覆盖保护；脱敏日志；角色定义属用户隐私数据 | Renderer 进程隐藏 JWT；仅暴露本地文件系统代理拦截 | Hardline 危险命令阻断；Windows 路径不敏感写限制；SSRF 防护 |
@@ -211,7 +211,7 @@ Backend 据此放行或抑制：`quiet` 档时主动消息被吞掉，但 LLM �
 
 **情境化 affect（无 turn 触发）**：用户长时间无活动时，Desktop 的 idle 轮询跨过阈值时调 `companion.check_affect {idle_seconds, local_hour}`，Backend 加载 persona + 最近记忆跑一次 LLM 推理，决定是否 emit `companion.affect`。**触发时机由 Desktop 控制（知道真实 idle 状态），情绪推理由 Backend LLM 承担（有 persona + 记忆）**——各取所长，Desktop 不退化成规则驱动的文案池。这条路径是 §6.4"记忆驱动运行时行为"不变量的落地。
 
-**已知限制（多副本）**：`disturbance_tier` 与 IPC future 均为 process-local，多副本部署下用户必须连到同一副本；多副本横向扩展需先将这两处迁至共享存储（Redis 等）。当前设计假设单副本语义。
+**单实例语义**：`disturbance_tier` 与 IPC future 由 process-local 状态承载，架构不支持多实例水平扩展；任何"水平扩容"需求必须先把这两处迁出进程并相应修改多个 IPC 路径——本项目不准备这条路径，按单实例设计并部署即可。
 
 ---
 

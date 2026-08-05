@@ -23,9 +23,8 @@ def _emit_companion_message(user_id: int, text: str, affect: str | None = None) 
     and decides text-vs-affect-vs-bubble based on the user's disturbance tier.
 
     The backend never short-circuits the emit — the desktop owns the
-    presentation gate so a future multi-replica deployment doesn't lose
-    quiet/normal/proactive semantics when the WS and the chat turn land
-    on different replicas."""
+    presentation gate, so disturbance tier and event delivery stay
+    consistent regardless of which thread enqueues the outbox row."""
     payload: dict = {"text": text}
     if affect:
         payload["affect"] = {"emotion": affect}

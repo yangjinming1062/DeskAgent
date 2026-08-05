@@ -19,7 +19,7 @@ DeskAgent 是一个**根据用户描述定制的、具有专属形象的陪伴�
 │  • LLM 流式编排 + 提示词   │
 │  • 云端工具(搜索/TTS/生图/视频) │
 │  • Cron 主动陪伴调度       │
-│  Docker / Linux 容器      │
+│  Docker 容器（Linux 基础镜像）      │
 └────────────┬─────────────┘
              │  REST + WebSocket (JSON-RPC 2.0)
              │  唯一通道: WS /api/chat/ws?token=<jwt>
@@ -32,7 +32,7 @@ DeskAgent 是一个**根据用户描述定制的、具有专属形象的陪伴�
 │  • JWT 加密落盘           │
 │  • Runner 编排 + WS 中转  │
 │  • 统一自更新             │
-│  Windows/macOS/Linux 原生 │
+│  Windows / macOS 原生 │
 └────────────┬─────────────┘
              │  本地 WebSocket (127.0.0.1:0 动态端口)
              │  JSON-RPC 2.0 + 反向 RPC (request_llm)
@@ -43,7 +43,7 @@ DeskAgent 是一个**根据用户描述定制的、具有专属形象的陪伴�
 │  • 终端 / 文件 / 浏览器   │
 │  • 代码执行沙箱           │
 │  • MCP 动态工具 + Skills  │
-│  Windows/macOS/Linux 原生 │
+│  Windows / macOS 原生 │
 └──────────────────────────┘
 ```
 
@@ -77,12 +77,12 @@ cd desktop && pnpm install && pnpm dev  # Vite + Electron
 # Windows
 pwsh scripts/build_client.ps1
 
-# macOS / Linux
+# macOS
 bash scripts/build_client.sh
 ```
 
 产物：
-- `release/DeskAgent-Setup-{ver}.{exe|dmg|AppImage}` —— 首次安装 / 卸载 / repair
+- `release/DeskAgent-Setup-{ver}.{exe|dmg}` —— 首次安装 / 卸载 / repair
 - `release/DeskAgent-{ver}-update.zip` —— 运行期自更新 payload（走 `electron-updater` 通道）
 
 发布运维：登录 `https://<your-backend>/admin/` → "版本管理" → 选 `release/DeskAgent-{ver}-update.zip` → 上传并发布。
@@ -106,9 +106,9 @@ bash scripts/build_client.sh
 | 模块 | 部署目标 | 兼容性要求 |
 |------|---------|-----------|
 | Backend | Linux (Docker 容器) | 仅 Linux，无 Windows 兼容要求 |
-| Runner | Windows / macOS / Linux 原生 | Windows 是已知风险面（见 [runner/README.md §已知限制](runner/README.md)） |
-| Desktop | Windows / macOS / Linux 原生 | Windows 兼容性是已知风险面（见 [desktop/README.md §已知限制](desktop/README.md)） |
-| Installer | Windows / macOS / Linux 原生 | Tauri 2 cross-platform；当前 install 协议 v2（含 install-python stage） |
+| Runner | Windows / macOS 原生 | Windows 是已知风险面（见 [runner/README.md §已知限制](runner/README.md)） |
+| Desktop | Windows / macOS 原生 | Windows 兼容性是已知风险面（见 [desktop/README.md §已知限制](desktop/README.md)） |
+| Installer | Windows / macOS 原生 | Tauri 2；install 协议 v2（含 install-python stage） |
 
 ## 信任与安全
 

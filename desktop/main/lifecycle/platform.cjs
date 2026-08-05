@@ -1,17 +1,3 @@
-const fs = require('node:fs')
-
-function isWslEnvironment(env = process.env, platform = process.platform, kernelRelease = null) {
-  if (platform !== 'linux') return false
-  if (env.WSL_DISTRO_NAME || env.WSL_INTEROP) return true
-
-  try {
-    const release = kernelRelease ?? fs.readFileSync('/proc/sys/kernel/osrelease', 'utf8')
-    return /microsoft|wsl/i.test(release)
-  } catch {
-    return false
-  }
-}
-
 const GPU_OVERRIDE_ON = new Set(['1', 'true', 'yes', 'on'])
 const GPU_OVERRIDE_OFF = new Set(['0', 'false', 'no', 'off'])
 
@@ -32,16 +18,8 @@ function detectRemoteDisplay(options = {}) {
   if (GPU_OVERRIDE_ON.has(override)) return 'override (DESKAGENT_DESKTOP_DISABLE_GPU)'
   if (GPU_OVERRIDE_OFF.has(override)) return null
 
-  // Launched from an SSH session → display is X11-forwarded or remote.
+  // SSH-session → display is X11-forwarded or remote.
   if (env.SSH_CONNECTION || env.SSH_CLIENT || env.SSH_TTY) return 'ssh-session'
-
-  if (platform === 'linux') {
-    // X11 forwarding: DISPLAY "<host>:N" (e.g. "localhost:10.0"); local is ":0"/":1".
-    const display = String(env.DISPLAY || '')
-    if (display.includes(':') && display.split(':')[0]) {
-      return `x11-forwarding (DISPLAY=${display})`
-    }
-  }
 
   if (platform === 'win32') {
     // RDP sessions report SESSIONNAME like "RDP-Tcp#7"; local console is "Console".
@@ -53,6 +31,5 @@ function detectRemoteDisplay(options = {}) {
 }
 
 module.exports = {
-  detectRemoteDisplay,
-  isWslEnvironment
+  detectRemoteDisplay
 }

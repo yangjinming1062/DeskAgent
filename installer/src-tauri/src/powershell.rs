@@ -43,7 +43,7 @@ pub struct BundleContext {
     /// `<bundle>/payload/runner/` — holds the runner wheel (`desk_agent-*.whl`) and `server.py`.
     pub bundled_runner_dir: Option<std::path::PathBuf>,
     /// `<bundle>/payload/desktop/` — holds the platform's desktop installer
-    /// (dmg / nsis / AppImage). Filename is `DeskAgent-{version}-{platform}.{ext}`.
+    /// (dmg / nsis). Filename is `DeskAgent-{version}-{platform}.{ext}`.
     pub bundled_desktop_dir: Option<std::path::PathBuf>,
     /// `<bundle>/payload/skills/` — Stage-InstallSkills source.
     pub bundled_skills_dir: Option<std::path::PathBuf>,
@@ -53,8 +53,8 @@ pub struct BundleContext {
     pub bundled_voices_dir: Option<std::path::PathBuf>,
     /// `<bundle>/payload/config.yaml` — Stage-WriteConfig source.
     pub config_path: Option<std::path::PathBuf>,
-    /// `dmg` | `nsis` | `AppImage` — tells the unpack-desktop stage what to do
-    /// with the desktop artifact (hdiutil attach / NSIS /S / AppImage chmod).
+    /// `dmg` | `nsis` — tells the unpack-desktop stage what to do
+    /// with the desktop artifact (hdiutil attach / NSIS /S).
     pub installer_format: Option<String>,
 }
 
