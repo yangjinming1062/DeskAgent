@@ -31,7 +31,6 @@ interface PersonaRetuneProps {
 // derivation in ``assemblePersona``). The free-text option below also
 // accepts arbitrary strings, with the same null-on-empty contract.
 const SPEAKING_STYLE_PRESETS = ['温柔亲切', '俏皮带点小傲娇', '沉稳简洁', '轻快活泼', '专业干练']
-
 const PERSONALITY_PRESETS = ['温柔体贴', '活泼好动', '冷静理性', '毒舌傲娇']
 const SPECIES_PRESETS = ['人类', '灵兽', '精灵', '机甲', '幻形']
 const CHARACTER_GENDER_PRESETS = ['女', '男', '其他', '不指定']
@@ -44,14 +43,110 @@ const inputClass =
 const presetClass =
   'rounded-full border border-white/15 bg-white/5 px-2.5 py-1 text-[11px] text-white/70 transition hover:bg-white/15'
 
-const STEPS = [
-  'name + gender',
-  'species + role',
-  'personality + speaking_style',
-  'appearance',
-  'user_*',
-  'review'
-] as const
+// Field schema: each step owns a list of fields. ``set`` is the setter
+// for the corresponding local state slice; ``max`` truncates long inputs
+// (only used by appearance). ``presets`` is optional; when present,
+// chips appear under the input. ``placeholder`` only matters when the
+// field is empty at mount (drives e.g. the speaking_style hint).
+type FieldSchema = {
+  key: keyof typeof EMPTY
+  label: string
+  set: (v: string) => void
+  presets?: readonly string[]
+  max?: number
+  placeholder?: string
+  multiline?: boolean
+}
+
+const EMPTY = {
+  name: '',
+  characterGender: '',
+  species: '',
+  background: '',
+  personality: '',
+  speakingStyle: '',
+  appearance: '',
+  userCallName: '',
+  userGender: '',
+  userAgeBucket: '',
+  userHobbies: '',
+  userFreeform: ''
+} as const
+
+const STEPS: { title: string; fields: FieldSchema[] }[] = [
+  {
+    title: '名字 与 形象性别',
+    fields: [
+      { key: 'name', label: '名字', set: () => {} },
+      {
+        key: 'characterGender',
+        label: '形象性别',
+        set: () => {},
+        max: 64,
+        presets: CHARACTER_GENDER_PRESETS
+      }
+    ]
+  },
+  {
+    title: '物种 与 关系',
+    fields: [
+      { key: 'species', label: '物种', set: () => {}, max: 64, presets: SPECIES_PRESETS },
+      { key: 'background', label: '关系 / 角色定位', set: () => {}, presets: ROLE_PRESETS }
+    ]
+  },
+  {
+    title: '性格 与 语气（修复 speaking_style 被静默覆盖的坑）',
+    fields: [
+      { key: 'personality', label: '性格', set: () => {}, presets: PERSONALITY_PRESETS },
+      {
+        key: 'speakingStyle',
+        label: '说话风格（显式可选）',
+        set: () => {},
+        placeholder: '留空将根据性格自动派生',
+        presets: [...SPEAKING_STYLE_PRESETS, '']
+      }
+    ]
+  },
+  {
+    title: '形象描述',
+    fields: [
+      {
+        key: 'appearance',
+        label: '形象',
+        set: () => {},
+        max: MAX_APPEARANCE,
+        presets: APPEARANCE_PRESETS,
+        multiline: true
+      }
+    ]
+  },
+  {
+    title: '让伙伴更了解你',
+    fields: [
+      { key: 'userCallName', label: '希望被怎么称呼', set: () => {} },
+      { key: 'userGender', label: '你的性别', set: () => {} },
+      { key: 'userAgeBucket', label: '年龄段', set: () => {} },
+      { key: 'userHobbies', label: '爱好', set: () => {} },
+      { key: 'userFreeform', label: '还有什么想告诉我', set: () => {}, multiline: true }
+    ]
+  }
+]
+
+// Review step is data-driven too: a single Row per state slice, labeled.
+const REVIEW_ROWS: { key: keyof typeof EMPTY; label: string; fallback?: string }[] = [
+  { key: 'name', label: '名字' },
+  { key: 'characterGender', label: '形象性别' },
+  { key: 'species', label: '物种' },
+  { key: 'background', label: '关系' },
+  { key: 'personality', label: '性格' },
+  { key: 'speakingStyle', label: '说话风格', fallback: '自动派生' },
+  { key: 'appearance', label: '形象' },
+  { key: 'userCallName', label: '称呼' },
+  { key: 'userGender', label: '我的性别' },
+  { key: 'userAgeBucket', label: '年龄段' },
+  { key: 'userHobbies', label: '爱好' },
+  { key: 'userFreeform', label: '补充' }
+]
 
 export function PersonaRetune({ initial, onClose, onSaved }: PersonaRetuneProps): React.ReactElement {
   const { requestGateway } = useGatewayRequest()
@@ -87,7 +182,41 @@ export function PersonaRetune({ initial, onClose, onSaved }: PersonaRetuneProps)
   const [userHobbies, setUserHobbies] = useState(initial.user_hobbies)
   const [userFreeform, setUserFreeform] = useState(initial.user_freeform)
 
-  const next = () => setStep(s => Math.min(s + 1, STEPS.length - 1))
+  // Setter map keyed by field ``key``. Avoids a switch/case per step.
+  const setters: Record<keyof typeof EMPTY, (v: string) => void> = {
+    name: setName,
+    characterGender: setCharacterGender,
+    species: setSpecies,
+    background: setBackground,
+    personality: setPersonality,
+    speakingStyle: setSpeakingStyle,
+    appearance: setAppearance,
+    userCallName: setUserCallName,
+    userGender: setUserGender,
+    userAgeBucket: setUserAgeBucket,
+    userHobbies: setUserHobbies,
+    userFreeform: setUserFreeform
+  }
+
+  const values: Record<keyof typeof EMPTY, string> = {
+    name,
+    characterGender,
+    species,
+    background,
+    personality,
+    speakingStyle,
+    appearance,
+    userCallName,
+    userGender,
+    userAgeBucket,
+    userHobbies,
+    userFreeform
+  }
+
+  const totalSteps = STEPS.length + 1
+  const isReview = step === STEPS.length
+
+  const next = () => setStep(s => Math.min(s + 1, totalSteps - 1))
   const prev = () => setStep(s => Math.max(s - 1, 0))
 
   const save = async () => {
@@ -125,9 +254,6 @@ export function PersonaRetune({ initial, onClose, onSaved }: PersonaRetuneProps)
       await hydratePersona()
 
       if (!mountedRef.current) {
-        // User dismissed the wizard during the PUT; skip the post-save
-        // UI (confirm + onSaved) which would otherwise appear with no
-        // visible source. onClose already ran on the dismiss.
         return
       }
 
@@ -174,175 +300,30 @@ export function PersonaRetune({ initial, onClose, onSaved }: PersonaRetuneProps)
         <div className="flex-1 overflow-y-auto px-4 py-4 text-xs">
           {hint && <p className="mb-2 text-amber-300/80">{hint}</p>}
 
-          {step === 0 && (
+          {!isReview && (
             <div className="space-y-2.5">
-              <p className="text-[11px] text-white/60">第 1 步 · 名字 与 形象性别</p>
-              <label className="block">
-                <span className="mb-1 block text-[11px] text-white/50">名字</span>
-                <input className={inputClass} onChange={e => setName(e.target.value)} value={name} />
-              </label>
-              <label className="block">
-                <span className="mb-1 block text-[11px] text-white/50">形象性别</span>
-                <input
-                  className={inputClass}
-                  onChange={e => setCharacterGender(e.target.value.slice(0, 64))}
-                  value={characterGender}
+              <p className="text-[11px] text-white/60">
+                第 {step + 1} 步 · {STEPS[step].title}
+              </p>
+              {STEPS[step].fields.map(field => (
+                <Field
+                  field={field}
+                  key={field.key}
+                  onChange={setters[field.key]}
+                  placeholder={field.placeholder}
+                  value={values[field.key]}
                 />
-                <div className="mt-1.5 flex flex-wrap gap-1.5">
-                  {CHARACTER_GENDER_PRESETS.map(p => (
-                    <button className={presetClass} key={p} onClick={() => setCharacterGender(p)} type="button">
-                      {p}
-                    </button>
-                  ))}
-                </div>
-              </label>
+              ))}
             </div>
           )}
 
-          {step === 1 && (
-            <div className="space-y-2.5">
-              <p className="text-[11px] text-white/60">第 2 步 · 物种 与 关系</p>
-              <label className="block">
-                <span className="mb-1 block text-[11px] text-white/50">物种</span>
-                <input className={inputClass} onChange={e => setSpecies(e.target.value.slice(0, 64))} value={species} />
-                <div className="mt-1.5 flex flex-wrap gap-1.5">
-                  {SPECIES_PRESETS.map(p => (
-                    <button className={presetClass} key={p} onClick={() => setSpecies(p)} type="button">
-                      {p}
-                    </button>
-                  ))}
-                </div>
-              </label>
-              <label className="block">
-                <span className="mb-1 block text-[11px] text-white/50">关系 / 角色定位</span>
-                <input className={inputClass} onChange={e => setBackground(e.target.value)} value={background} />
-                <div className="mt-1.5 flex flex-wrap gap-1.5">
-                  {ROLE_PRESETS.map(p => (
-                    <button className={presetClass} key={p} onClick={() => setBackground(p)} type="button">
-                      {p}
-                    </button>
-                  ))}
-                </div>
-              </label>
-            </div>
-          )}
-
-          {step === 2 && (
-            <div className="space-y-2.5">
-              <p className="text-[11px] text-white/60">第 3 步 · 性格 与 语气（修复 speaking_style 被静默覆盖的坑）</p>
-              <label className="block">
-                <span className="mb-1 block text-[11px] text-white/50">性格</span>
-                <input className={inputClass} onChange={e => setPersonality(e.target.value)} value={personality} />
-                <div className="mt-1.5 flex flex-wrap gap-1.5">
-                  {PERSONALITY_PRESETS.map(p => (
-                    <button className={presetClass} key={p} onClick={() => setPersonality(p)} type="button">
-                      {p}
-                    </button>
-                  ))}
-                </div>
-              </label>
-              <label className="block">
-                <span className="mb-1 block text-[11px] text-white/50">说话风格（显式可选）</span>
-                <input
-                  className={inputClass}
-                  onChange={e => setSpeakingStyle(e.target.value)}
-                  placeholder="留空将根据性格自动派生"
-                  value={speakingStyle}
-                />
-                <div className="mt-1.5 flex flex-wrap gap-1.5">
-                  {SPEAKING_STYLE_PRESETS.map(s => (
-                    <button
-                      className={`${presetClass} ${speakingStyle === s ? 'border-white/40 bg-white/20 text-white' : ''}`}
-                      key={s}
-                      onClick={() => setSpeakingStyle(s)}
-                      type="button"
-                    >
-                      {s}
-                    </button>
-                  ))}
-                  <button
-                    className={`${presetClass} ${speakingStyle === '' ? 'border-white/40 bg-white/20 text-white' : ''}`}
-                    onClick={() => setSpeakingStyle('')}
-                    type="button"
-                  >
-                    自动派生
-                  </button>
-                </div>
-              </label>
-            </div>
-          )}
-
-          {step === 3 && (
-            <div className="space-y-2.5">
-              <p className="text-[11px] text-white/60">第 4 步 · 形象描述</p>
-              <label className="block">
-                <textarea
-                  className={`${inputClass} resize-none`}
-                  onChange={e => setAppearance(e.target.value.slice(0, MAX_APPEARANCE))}
-                  rows={3}
-                  value={appearance}
-                />
-                <div className="mt-1.5 flex flex-wrap gap-1.5">
-                  {APPEARANCE_PRESETS.map(p => (
-                    <button className={presetClass} key={p} onClick={() => setAppearance(p)} type="button">
-                      {p}
-                    </button>
-                  ))}
-                </div>
-                <span className="mt-1 block text-[10px] text-white/40">
-                  {appearance.length} / {MAX_APPEARANCE}
-                </span>
-              </label>
-            </div>
-          )}
-
-          {step === 4 && (
-            <div className="space-y-2.5">
-              <p className="text-[11px] text-white/60">第 5 步 · 让伙伴更了解你</p>
-              <label className="block">
-                <span className="mb-1 block text-[11px] text-white/50">希望被怎么称呼</span>
-                <input className={inputClass} onChange={e => setUserCallName(e.target.value)} value={userCallName} />
-              </label>
-              <label className="block">
-                <span className="mb-1 block text-[11px] text-white/50">你的性别</span>
-                <input className={inputClass} onChange={e => setUserGender(e.target.value)} value={userGender} />
-              </label>
-              <label className="block">
-                <span className="mb-1 block text-[11px] text-white/50">年龄段</span>
-                <input className={inputClass} onChange={e => setUserAgeBucket(e.target.value)} value={userAgeBucket} />
-              </label>
-              <label className="block">
-                <span className="mb-1 block text-[11px] text-white/50">爱好</span>
-                <input className={inputClass} onChange={e => setUserHobbies(e.target.value)} value={userHobbies} />
-              </label>
-              <label className="block">
-                <span className="mb-1 block text-[11px] text-white/50">还有什么想告诉我</span>
-                <textarea
-                  className={`${inputClass} resize-none`}
-                  onChange={e => setUserFreeform(e.target.value)}
-                  rows={2}
-                  value={userFreeform}
-                />
-              </label>
-            </div>
-          )}
-
-          {step === 5 && (
+          {isReview && (
             <div className="space-y-2">
-              <p className="text-[11px] text-white/60">第 6 步 · 回顾</p>
+              <p className="text-[11px] text-white/60">第 {step + 1} 步 · 回顾</p>
               <dl className="space-y-1 rounded-lg border border-white/10 bg-white/5 p-3 text-[11px]">
-                <Row label="名字" value={name} />
-                <Row label="形象性别" value={characterGender} />
-                <Row label="物种" value={species} />
-                <Row label="关系" value={background} />
-                <Row label="性格" value={personality} />
-                <Row label="说话风格" value={speakingStyle || '自动派生'} />
-                <Row label="形象" value={appearance} />
-                <Row label="称呼" value={userCallName} />
-                <Row label="我的性别" value={userGender} />
-                <Row label="年龄段" value={userAgeBucket} />
-                <Row label="爱好" value={userHobbies} />
-                <Row label="补充" value={userFreeform} />
+                {REVIEW_ROWS.map(row => (
+                  <Row key={row.key} label={row.label} value={values[row.key] || row.fallback || ''} />
+                ))}
               </dl>
             </div>
           )}
@@ -358,9 +339,9 @@ export function PersonaRetune({ initial, onClose, onSaved }: PersonaRetuneProps)
             上一步
           </button>
           <span className="ml-auto text-[10px] text-white/40">
-            {step + 1} / {STEPS.length}
+            {step + 1} / {totalSteps}
           </span>
-          {step < STEPS.length - 1 ? (
+          {!isReview ? (
             <button
               className="rounded-lg border border-white/40 bg-white/15 px-3 py-1.5 text-[11px] font-medium text-white transition hover:bg-white/25 disabled:opacity-40"
               disabled={saving}
@@ -382,6 +363,68 @@ export function PersonaRetune({ initial, onClose, onSaved }: PersonaRetuneProps)
         </div>
       </div>
     </div>
+  )
+}
+
+interface FieldProps {
+  field: FieldSchema
+  value: string
+  onChange: (v: string) => void
+  placeholder?: string
+}
+
+function Field({ field, value, onChange, placeholder }: FieldProps): React.ReactElement {
+  // Last entry of the presets list, when an empty string, is the
+  // "auto-derive / clear" affordance — only meaningful for speaking_style.
+  const isClearPreset = field.presets && field.presets[field.presets.length - 1] === ''
+  const max = field.max ?? Infinity
+  const handleChange = (v: string) => onChange(max === Infinity ? v : v.slice(0, max))
+
+  return (
+    <label className="block">
+      <span className="mb-1 block text-[11px] text-white/50">{field.label}</span>
+      {field.multiline ? (
+        <textarea
+          className={`${inputClass} resize-none`}
+          onChange={e => handleChange(e.target.value)}
+          placeholder={placeholder}
+          rows={field.key === 'appearance' ? 3 : 2}
+          value={value}
+        />
+      ) : (
+        <input
+          className={inputClass}
+          onChange={e => handleChange(e.target.value)}
+          placeholder={placeholder}
+          value={value}
+        />
+      )}
+      {field.presets && field.presets.length > 0 && (
+        <div className="mt-1.5 flex flex-wrap gap-1.5">
+          {field.presets.map(p => {
+            const isClear = p === '' && isClearPreset
+            const active = isClear ? value === '' : value === p
+            const labelText = isClear ? '自动派生' : p
+
+            return (
+              <button
+                className={`${presetClass} ${active ? 'border-white/40 bg-white/20 text-white' : ''}`}
+                key={p || 'clear'}
+                onClick={() => handleChange(p)}
+                type="button"
+              >
+                {labelText}
+              </button>
+            )
+          })}
+        </div>
+      )}
+      {field.key === 'appearance' && (
+        <span className="mt-1 block text-[10px] text-white/40">
+          {value.length} / {MAX_APPEARANCE}
+        </span>
+      )}
+    </label>
   )
 }
 

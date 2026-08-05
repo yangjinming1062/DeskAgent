@@ -374,12 +374,52 @@ export function stopActivityMonitor(): void {
   }
 }
 
+// Client-side throttle for stats RPCs. Pre-threshold (any kind < 10)
+// the desktop fires every event so the backend's daily counter ticks
+// up promptly; once a kind crosses the threshold the row is already
+// written, so subsequent events of the same kind only need to refresh
+// the row content. Sampling at most every 60s per kind keeps the
+// post-threshold DB-write rate bounded without losing meaningful
+// aggregation. The backend's ``record_interaction`` still increments
+// the in-memory counter, so a brief client-side drop never causes a
+// regression to ``threshold_met=false`` (the counter only resets on
+// UTC day rollover).
+const STATS_POST_THRESHROTTLE_MS = 60_000
+
+const _localStatsCounters: Record<'poke' | 'drag' | 'chat_turn', number> = {
+  poke: 0,
+  drag: 0,
+  chat_turn: 0
+}
+
+const _lastStatsSentAt: Record<'poke' | 'drag' | 'chat_turn', number> = {
+  poke: 0,
+  drag: 0,
+  chat_turn: 0
+}
+
 export function reportInteractionStat(kind: 'poke' | 'drag' | 'chat_turn'): void {
   const gateway = $gateway.get()
 
   if (!gateway) {
     return
   }
+
+  _localStatsCounters[kind] += 1
+
+  // Threshold matches the backend's ``STATS_THRESHOLD = 10``. Below it,
+  // fire every event so the daily counter ticks promptly; above it,
+  // coalesce to one RPC per minute per kind — the daily row is already
+  // persisted, and the in-memory counter on the backend is the source
+  // of truth for ``threshold_met``. Subsequent events still update the
+  // row content (peak hour / hour_buckets) on each coalesced send.
+  const now = Date.now()
+
+  if (_localStatsCounters[kind] > 10 && now - _lastStatsSentAt[kind] < STATS_POST_THRESHROTTLE_MS) {
+    return
+  }
+
+  _lastStatsSentAt[kind] = now
 
   void gateway.request('companion.record_interaction_stats', { kind, hour: new Date().getHours() }).catch(() => {
     /* fire-and-forget; failure silently swallowed */
