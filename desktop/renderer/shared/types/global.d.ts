@@ -20,19 +20,13 @@ declare global {
       selectPaths: (options?: DeskAgentSelectPathsOptions) => Promise<string[]>
       writeClipboard: (text: string) => Promise<boolean>
       saveImageFromUrl: (url: string) => Promise<boolean>
-      saveImageBuffer: (data: ArrayBuffer | Uint8Array, ext: string) => Promise<string>
       saveClipboardImage: () => Promise<string>
       runnerInvoke?: (name: string, args: Record<string, unknown>) => Promise<unknown>
       runnerDispatch?: (method: string, params?: Record<string, unknown>) => Promise<unknown>
       runnerGetTools?: () => Promise<Array<Record<string, unknown>>>
       getPathForFile: (file: File) => string
-      normalizePreviewTarget: (target: string, baseDir?: string) => Promise<DeskAgentPreviewTarget | null>
-      watchPreviewFile: (url: string) => Promise<DeskAgentPreviewWatch>
-      stopPreviewFileWatch: (id: string) => Promise<boolean>
       setTitleBarTheme?: (payload: DeskAgentTitleBarTheme) => void
-      setPreviewShortcutActive?: (active: boolean) => void
       openExternal: (url: string) => Promise<void>
-      fetchLinkTitle: (url: string) => Promise<string>
       settings: {
         getDefaultProjectDir: () => Promise<{ defaultLabel: string; dir: null | string }>
         pickDefaultProjectDir: () => Promise<{ canceled: boolean; dir: null | string }>
@@ -121,26 +115,15 @@ declare global {
       sprite: {
         setIgnoreMouseEvents: (payload: { ignore: boolean; forward?: boolean }) => Promise<void>
         setAlwaysOnTop: (payload: { on: boolean }) => Promise<void>
-        getWorkArea: () => Promise<{ x: number; y: number; width: number; height: number }>
+        getPosition: () => Promise<{ x: number; y: number } | null>
         setPosition: (payload: { x: number; y: number }) => Promise<void>
       }
-      terminal: {
-        dispose: (id: string) => Promise<boolean>
-        onData: (id: string, callback: (payload: string) => void) => () => void
-        onExit: (id: string, callback: (payload: DeskAgentTerminalExit) => void) => () => void
-        resize: (id: string, size: { cols: number; rows: number }) => Promise<boolean>
-        start: (options?: { cols?: number; cwd?: string; rows?: number }) => Promise<DeskAgentTerminalSession>
-        write: (id: string, data: string) => Promise<boolean>
-      }
-      onClosePreviewRequested?: (callback: () => void) => () => void
       onWindowStateChanged?: (callback: (payload: DeskAgentWindowState) => void) => () => void
-      onPreviewFileChanged: (callback: (payload: DeskAgentPreviewFileChanged) => void) => () => void
       onPowerResume?: (callback: () => void) => () => void
       onBootProgress: (callback: (payload: DesktopBootProgress) => void) => () => void
       onSessionExpired: (callback: () => void) => () => void
       onAuthChanged: (callback: (payload: DesktopAuthBroadcast) => void) => () => void
       onRunnerStatus?: (callback: (payload: DesktopRunnerStatusEvent) => void) => () => void
-      onOpenSettings?: (callback: () => void) => () => void
       onTrayLogout?: (callback: () => void) => () => void
       getVersion: () => Promise<DesktopVersionInfo>
       update?: {
@@ -154,17 +137,6 @@ declare global {
       }
     }
   }
-}
-
-export interface DeskAgentTerminalSession {
-  cwd: string
-  id: string
-  shell: string
-}
-
-export interface DeskAgentTerminalExit {
-  code: number | null
-  signal: string | null
 }
 
 export interface DesktopVersionInfo {
@@ -207,6 +179,20 @@ export type DesktopRunnerUpdateEvent =
   | { kind: 'runner-installed'; version: string }
   | { kind: 'runner-failed'; error: string; recoverable: boolean; version?: string }
 
+// Runner capabilities probe result. Reflected from `runner_ready` events in
+// runner-bridge.cjs and the `running` / `tools_changed` lifecycle variants —
+// each capability maps to a real per-platform subsystem probe
+// (sounddevice, Win32 GetLastInputInfo, Quartz, loginctl, …).
+export interface RunnerCapabilities {
+  microphone?: boolean
+  screen_capture?: boolean
+  local_stt?: boolean
+  local_tts?: boolean
+  system_activity?: boolean
+  platform?: string
+  python?: string
+}
+
 // Runner lifecycle events from runner-bridge.cjs (`running` / `stopped` /
 // `error` / `tools_changed`), forwarded over the `deskagent:runner:status` IPC
 // channel. Renderer subscribes via `onRunnerStatus`; see use-gateway-boot.ts
@@ -216,44 +202,20 @@ export type DesktopRunnerStatusEvent =
   | {
       type: 'running'
       tools: unknown[]
-      capabilities?: {
-        microphone?: boolean
-        screen_capture?: boolean
-        local_stt?: boolean
-        local_tts?: boolean
-        system_activity?: boolean
-        platform?: string
-        python?: string
-      } | null
+      capabilities?: RunnerCapabilities | null
       runnerVersion?: string | null
       probeFailed?: boolean | null
     }
   | {
       type: 'runner_ready'
-      capabilities?: {
-        microphone?: boolean
-        screen_capture?: boolean
-        local_stt?: boolean
-        local_tts?: boolean
-        system_activity?: boolean
-        platform?: string
-        python?: string
-      } | null
+      capabilities?: RunnerCapabilities | null
       runnerVersion?: string | null
       probeFailed?: boolean | null
     }
   | {
       type: 'tools_changed'
       tools: unknown[]
-      capabilities?: {
-        microphone?: boolean
-        screen_capture?: boolean
-        local_stt?: boolean
-        local_tts?: boolean
-        system_activity?: boolean
-        platform?: string
-        python?: string
-      } | null
+      capabilities?: RunnerCapabilities | null
     }
   | { type: 'stopped'; reason?: string; errors: string[] }
   | { type: 'error'; phase: string; error: Error }
@@ -337,21 +299,6 @@ export interface DeskAgentNotification {
   title?: string
 }
 
-export interface DeskAgentPreviewTarget {
-  binary?: boolean
-  byteSize?: number
-  kind: 'file' | 'url'
-  label: string
-  large?: boolean
-  language?: string
-  mimeType?: string
-  path?: string
-  previewKind?: 'binary' | 'html' | 'image' | 'text'
-  renderMode?: 'preview' | 'source'
-  source: string
-  url: string
-}
-
 export interface DeskAgentReadFileTextResult {
   binary?: boolean
   byteSize?: number
@@ -360,11 +307,6 @@ export interface DeskAgentReadFileTextResult {
   path: string
   text: string
   truncated?: boolean
-}
-
-export interface DeskAgentPreviewWatch {
-  id: string
-  path: string
 }
 
 export interface DeskAgentReadDirEntry {
@@ -376,12 +318,6 @@ export interface DeskAgentReadDirEntry {
 export interface DeskAgentReadDirResult {
   entries: DeskAgentReadDirEntry[]
   error?: string
-}
-
-export interface DeskAgentPreviewFileChanged {
-  id: string
-  path: string
-  url: string
 }
 
 export interface DeskAgentSelectPathsOptions {

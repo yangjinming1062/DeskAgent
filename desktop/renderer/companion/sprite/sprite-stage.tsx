@@ -2,7 +2,6 @@ import { useStore } from '@nanostores/react'
 import { type ReactNode, type PointerEvent as ReactPointerEvent, useCallback, useEffect, useRef, useState } from 'react'
 
 import { $chatOpen } from '@/companion/chat-store'
-import { setSpritePosition } from '@/companion/companion-store'
 import {
   isPointInteractive,
   registerInteractiveRegion,
@@ -50,6 +49,42 @@ export function SpriteStage({ children, onTap, onDoubleTap, onContextMenu }: Spr
     x: Math.max(REST_MARGIN, window.innerWidth - EGG_W - REST_MARGIN),
     y: Math.max(REST_MARGIN, window.innerHeight - EGG_H - REST_MARGIN)
   }))
+
+  // Restore the dragged position from disk on mount so the companion lands
+  // where the user last left it (COMPANION_DESIGN §5.1 "可拖到任意处 … 精灵
+  // 回到拖拽位置"). The async fetch won't reorder past the synchronous
+  // initial state — once the value arrives we adopt it via setPos if the
+  // user hasn't already moved the sprite.
+  useEffect(() => {
+    let cancelled = false
+
+    void window.deskagent.sprite
+      .getPosition()
+      .then(saved => {
+        if (cancelled || !saved) {
+          return
+        }
+
+        const restX = Math.max(REST_MARGIN, window.innerWidth - EGG_W - REST_MARGIN)
+        const restY = Math.max(REST_MARGIN, window.innerHeight - EGG_H - REST_MARGIN)
+
+        const next = {
+          x: Math.max(REST_MARGIN, Math.min(saved.x, restX)),
+          y: Math.max(REST_MARGIN, Math.min(saved.y, restY))
+        }
+
+        // Only adopt the saved position if the user hasn't dragged yet; once
+        // they interact the live `pos` is the source of truth.
+        setPos(prev => (prev.x === restX && prev.y === restY ? next : prev))
+      })
+      .catch(() => {
+        /* no saved position yet — keep default */
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   // Plan §4.1 "对话发生在角色身边": when chat opens the sprite joins the
   // dialog in the centered column (upper area, dialog below). Voice-call mode
@@ -190,7 +225,6 @@ export function SpriteStage({ children, onTap, onDoubleTap, onContextMenu }: Spr
     const drag = endDrag()
 
     if (drag?.moved) {
-      setSpritePosition(pos)
       void window.deskagent.sprite.setPosition(pos)
       handleDragEndInteraction()
 

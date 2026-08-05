@@ -1,6 +1,6 @@
 import { $gateway } from '@/shared/store/gateway'
 
-import { reportInteractionStat } from './activity'
+import { $lastIdleSeconds, reportInteractionStat } from './activity'
 import { $chatOpen, setProactiveBubble } from './chat-store'
 import { setSpriteState } from './companion-store'
 import { $effectiveTier } from './companion-store'
@@ -113,6 +113,12 @@ async function fetchLLMInteraction(tone: ReactionTone, currentPokeCount: number)
       kind: 'poke',
       tone,
       poke_count: currentPokeCount,
+      // Backend expects idle_seconds (ARCH §4.2 contract); -1 means the
+      // activity probe hasn't produced a reading yet, in which case we send
+      // 0 to keep the LLM prompt populated without fabricating a long-idle
+      // reaction. The persona-side context (personality, memories) carries
+      // most of the signal anyway.
+      idle_seconds: Math.max(0, $lastIdleSeconds.get()),
       local_hour: new Date().getHours()
     })
   } catch {
