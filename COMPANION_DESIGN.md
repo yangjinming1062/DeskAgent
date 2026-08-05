@@ -32,7 +32,7 @@
 ### 1.2 渲染约束
 
 - **透明背景视频**：WebM (VP9 + alpha) 是 Electron/Chromium 跨平台原生支持的最佳选项；sprite sheet（逐帧）作为备选。
-- **窗口架构**：精灵窗口（透明置顶、click-through 可控的 `BrowserWindow`）是**唯一常驻主窗口**，承载形象本身，并在对话激活时与对话框一同居中（见 §5.1）。登录与应用设置是从托盘唤起的按需工具窗口，不常驻——"对话发生在角色身边"。
+- **窗口架构**：精灵窗口（透明置顶、click-through 可控的 `BrowserWindow`）是**唯一常驻主窗口**，承载形象本身，并在对话激活时与对话框一同居中（见 §3、§6.1）。登录与应用设置是从托盘唤起的按需工具窗口，不常驻——"对话发生在角色身边"。
 - **性能基线**：常驻视频解码必须硬件加速；idle loop 应能 24fps 循环且 CPU 占用 < 5%。
 - **平台降级**：Linux 无 compositor 时透明窗口可能黑底——降级为带背景窗口或纯 sprite（[desktop/README.md 已知限制](desktop/README.md)）。
 
@@ -70,7 +70,7 @@
 
 | 状态 | 触发源 | 说明 |
 |------|--------|------|
-| **IDLE** | 默认 | 呼吸/微动作循环；间歇性随机插入自主微动作（见 §5.4） |
+| **IDLE** | 默认 | 呼吸/微动作循环；间歇性随机插入自主微动作（见 §6.4） |
 | **LISTENING** | 用户开始输入/说话 | 专注倾听姿态 |
 | **THINKING** | LLM 处理中 | 思考/沉吟动画 |
 | **SPEAKING** | TTS 播放中 | 说话循环动画，时长与 TTS 音频同步 |
@@ -78,7 +78,7 @@
 | **EMOTIONAL** | LLM/规则事件 | 瞬态情绪（happy/sad/surprised/…），播放一次后回到被中断的状态 |
 | **SLEEPING** | 时间触发（深夜）/ 长断连 | 睡眠循环；用户交互可唤醒 |
 | **INTERACTING** | 用户直接操作形象 | 被戳/被拖/被抚摸的反应动画 |
-| **DISCONNECTED** | Backend 断连 | 打哈欠、歪头发呆（见 §5.5） |
+| **DISCONNECTED** | Backend 断连 | 打哈欠、歪头发呆（见 §6.5） |
 
 ### 2.2 四类触发源
 
@@ -87,7 +87,7 @@
 1. **规则触发（Desktop 本地，零延迟）**：app 启动/退出、工具调用状态（WORKING）、用户输入起止（LISTENING/THINKING）、TTS 播放起止（SPEAKING）、时间（SLEEPING）。Desktop 按规则自主决定，不问 Backend。
 2. **LLM 触发（Backend 下发，高延迟 1–5s）**：无法靠规则判定的语义/情绪场景。Backend 在对话响应帧中附带 `affect: {emotion}`，Desktop 收到后切 EMOTIONAL。判断逻辑在 Backend（[ARCHITECTURE.md §6.3](ARCHITECTURE.md)），Desktop 只执行 cue。
 3. **用户触发（Desktop 本地，零延迟）**：用户对形象本身的直接操作——戳、拖、悬停。
-4. **自主行为（Desktop 调度，无延迟感）**：IDLE 下随机插入微动作（10–25s 间隔），纯视觉，不触发 TTS、不弹气泡（见 §5.4）。
+4. **自主行为（Desktop 调度，无延迟感）**：IDLE 下随机插入微动作（10–25s 间隔），纯视觉，不触发 TTS、不弹气泡（见 §6.4）。
 
 ### 2.3 切换规则
 
@@ -97,7 +97,112 @@
 
 ---
 
-## 3. 伙伴生命周期
+## 3. 空间行为与移动
+
+精灵不是钉在角落的贴纸——它有空间自主性。它在哪里、如何到达，是和动画状态机（§2）同等重要的情感表达层。本章定义与 §2 状态正交的空间层：动画状态管"在做什么"，空间状态管"在哪里、怎么过去"。
+
+### 3.1 三轴：位置 × 移动方式 × 缩放
+
+空间状态分三层：
+
+- **Locale（场所）**：语义位置——精灵在什么"地方"。切换 locale 由触发源驱动（§3.4），与 §2 的状态切换独立但协同。
+- **Locomotion（移动方式）**：到达目标 locale 的方式——still / walk / fly / drag。
+- **Scale（缩放）**：形象的显示比例——用户设定默认值，运行时按上下文自适应（§3.3）。
+
+任一时刻精灵处于一个 locale + 一种 locomotion + 一个 scale。三个轴与 §2 状态自由组合：可以"home + still + 1× + IDLE"、"IDE 旁 + still + 0.7× + WORKING"、"飞向目标 + fly + 1× + SPEAKING"。
+
+### 3.2 Locales
+
+| Locale | 语义 | 何时处于 |
+|--------|------|----------|
+| **home** | 栖息地 | 休息态默认位置（屏幕右下角，可由用户拖拽重设并持久化） |
+| **chat** | 对话位 | 对话模式开启（屏幕水平中央上方，对话框锚在下方，§6.1） |
+| **perch** | 栖息在某窗口旁 | 用户沉浸工作于某窗口时精灵主动过来"陪"——如趴在 IDE 窗口边缘 |
+| **target** | 某交互对象旁 | 仪式性行走（§3.6）：精灵"亲手"操作 UI 前先走到目标旁 |
+| **roam** | 漫游中 | 桌面空闲 + 高活跃档位时随机游走 |
+| **sleep** | 睡觉点 | SLEEPING 状态触发后，从 home 移到安静的角落（屏幕边缘/底部） |
+
+home 是唯一持久化的 locale。其余 locale 从 home 与上下文派生，是临时位置。
+
+任何 locale 都可以有"扒边变体"（edge variant）：精灵部分移出屏幕边缘，只露头或上半身往里看——趴在屏幕底边、从侧边探头。扒边让屏幕边界感觉像可攀爬、可趴的物理表面。允许部分出屏的边界规则见 §3.7 不变量。
+
+### 3.3 Locomotion、缩放与资产三档
+
+移动本身是动画，纳入 §1.4 三档降级：
+
+| | walk | fly |
+|---|------|-----|
+| **Tier 1（程序化）** | 窗口平移 + CSS 上下浮动模拟脚步 | 窗口平移 + CSS 摇摆模拟漂浮/振翅 |
+| **Tier 2（多帧）** | walk sprite sheet 逐帧 | fly sprite sheet 逐帧 |
+| **Tier 3（视频）** | walk loop clip | fly loop clip |
+
+walk / fly 作为新 scene 加入 §1 的批次队列（与 idle 同批生成，优先级仅次于 idle）。**Tier 1 永远兜底**——窗口平移 + CSS 变换即可表达"在动"，零资产依赖；这是空间行为永不阻塞产品的不变量。
+
+**速度感**：walk ≈ 60–100 px/s（慢，过程可见，闲适感）；fly ≈ 300–500 px/s（快，赶路感）；drag 瞬时（用户操作不能有延迟）。**朝向**：移动方向决定精灵面朝方向，水平翻转 portrait/clip 实现，无需额外资产。
+
+**缩放（Scale）** 同样纳入三档降级——Tier 1 = CSS `transform: scale()`，零资产依赖，永远可用；Tier 2/3 的 sprite/clip 按当前 scale 渲染，不生成额外资产。缩放由两层决定：
+
+- **默认比例**：用户在设置中设定（§8），持久化，是 home locale 下的基准大小。
+- **运行时自适应**（平滑过渡 ~300ms）：空间紧张时缩小（perch 到窗口旁但边缘空间不够 → 等比例缩到能舒适栖身，如 0.6–0.75×，窗口移走后恢复）；搞怪/情绪时刻放大（特定 EMOTIONAL 情绪或高活跃档位下的自主搞怪 → 短暂放到 1.5–2× 在桌面上蹦跳，情绪结束后平滑回默认）；扒边时按需收缩让"探头"比例自然（§3.2）。
+
+缩放范围 0.5×–2×（默认 1×）。超出此范围影响可交互性（点击命中区域过小/过大）与观感。
+
+### 3.4 四类移动触发源
+
+镜像 §2.2 的触发源分类：
+
+1. **规则触发（Desktop 本地，零延迟）**：对话模式开启/关闭 → home ↔ chat；onboarding 流程的位置引导；屏幕布局变化（分辨率改变/显示器插拔）→ 重定位 home。
+2. **上下文触发（Desktop 调度，秒级延迟）**：focused app 切换 → 决定是否换 perch；长 idle → 移到 sleep locale；桌面空闲 → 进入 roam。与 §6.4 情境判定共用环境感知轮询结果，不另起通道。
+3. **任务触发（工具调用驱动）**：涉及 UI 对象的工具调用（"帮我打开浏览器"）→ 先 walk/fly 到 target locale，再执行（§3.6）。
+4. **用户触发**：拖拽（瞬时，覆盖一切其他移动）；可选"过来"语音/文字指令 → 朝用户当前焦点或屏幕中央走。
+
+### 3.5 打扰档位下的空间策略
+
+这是空间行为的核心调音旋钮——高活跃档位时精灵应该在桌面上动来动去才显得活泼。空间策略读 effective 档位（派生规则见 §6.2）：
+
+| 档位 | 允许的空间行为 |
+|------|----------------|
+| **积极主动** | 全部开放：换 perch、roam、ritual walk、主动找 sleep 点、走过去搭话、放大搞怪 |
+| **常规** | home + perch（跟随焦点窗口）+ ritual walk；**不 roam、不主动换 sleep 点** |
+| **保持安静** | **仅 home**（除非用户拖动）；SLEEPING 时移到 home 附近的安静角落；不响应焦点/空闲触发的位置切换 |
+
+档位只约束自动空间行为——用户拖拽、"过来"命令等永远生效，与 §6.2"用户主动发起的交互永远不受限"一致。
+
+### 3.6 仪式性行走（Ritual Walk）
+
+精灵"动手"做事——打开应用、点击按钮、操作文件——之前先走到目标旁。仪式感来源：精灵的"动手"不是后台 RPC，而是有空间过程的角色行为。
+
+1. 用户请求涉及某 UI 对象（"帮我打开浏览器"）→ Desktop 解析目标坐标（窗口/图标/控件）。
+2. 精灵从当前位置 fly（远距离）或 walk（近距离）到 target locale，切 INTERACTING 状态。
+3. 抵达后播放"操作"动画（点击/触碰），Runner 同步在目标坐标执行点击，叙事上是"精灵在做"。
+4. 完成后回到原 locale 或 home。
+
+**不确定性兜底**：找不到目标 / 目标不可达（屏幕外/被遮挡）→ 精灵人格化表达（"找不到…" / "够不着…"），Desktop 直接以常规工具调用兜底，不阻塞功能。整个 ritual walk 通道失败时降级为精灵原地 WORKING——仪式是增强层，不是必要层。
+
+### 3.7 不变量与反模式
+
+**不变量**：
+
+- **移动始终可被用户打断**——用户拖拽或点击时，正在进行的自动移动立即放弃，用户输入永远高于自动行为。
+- **精灵面部始终在屏内**——精灵可以部分移出屏幕（身体在屏外、头扒在边缘往里看是允许且鼓励的"扒边"姿态，§3.2），但识别度最高的部分（面部）必须始终可见。全部移出 = 消失，违反不变量。多显示器时待在精灵当前所在屏。
+- **z-order 永远置顶**——移动中与移动后，精灵窗口永远在其他窗口之上（用户全屏应用除外）。
+- **Tier 1 永远兜底**——没有 walk/fly 资产，窗口平移 + CSS 浮动即可表达移动，不阻塞功能。
+
+**反模式**：
+
+- 不让精灵挡住用户正在用的 UI（perch 选窗口边缘/空隙，不选中央）。
+- 不让精灵频繁移动——移动是事件而非常态，常态是"在某处待着"。
+- 不让用户看到"瞬移"（debug/全屏切换等场景除外）。
+
+### 3.8 跨模块契约
+
+**Runner 新增能力**（详见 §10）：`system.get_windows`（枚举可见窗口几何 + z-order + focused 标记）、`system.get_work_area`（可用区域）、`system.get_cursor_pos`（鼠标位置）；可选 `system.click_at`（坐标点击，ritual walk 操作执行）。桌面图标位置平台差异大——Windows 可枚举，macOS/Linux 降级为"找不到图标"人格化表达。
+
+**与 §2 状态机的组合**：移动期间默认显示 IDLE 动画（除非状态机正处更高优先级状态）；抵达 target 后切 INTERACTING；SLEEPING 期间不主动换位（除非被用户唤醒）。**Backend 不感知空间行为**——所有位置决策在 Desktop 本地完成，无需新增 WS 事件或 RPC。
+
+---
+
+## 4. 伙伴生命周期
 
 DeskAgent 区别于一切既有桌面宠物 / 桌面 Agent 的核心，在于伙伴有一个**从无到有的诞生过程**，以及诞生后**持续陪伴的长期关系**。这是产品体验的骨架：
 
@@ -138,11 +243,11 @@ DeskAgent 区别于一切既有桌面宠物 / 桌面 Agent 的核心，在于伙
 └────────────────────────────────────────────────────────┘
 ```
 
-诞生的详细交互设计（蛋的交互、对话式信息采集、孵化动画、形象/音色确认）见 §4；持续陪伴的交互范式（双模式对话、主动陪伴、用户直接交互、自主行为、故障态）见 §5。后续可在此基础上扩展"成长 / 进化"机制（伙伴随互动阶段性地演变形象或人格），具体设计待补。
+诞生的详细交互设计（蛋的交互、对话式信息采集、孵化动画、形象/音色确认）见 §5；空间行为与移动见 §3；持续陪伴的交互范式（双模式对话、主动陪伴、用户直接交互、自主行为、故障态）见 §6。后续可在此基础上扩展"成长 / 进化"机制（伙伴随互动阶段性地演变形象或人格），具体设计待补。
 
 ---
 
-## 4. 初始化与 Onboarding
+## 5. 初始化与 Onboarding
 
 设计目标：让用户在第一次见面时建立情感连接——**不是"填表"，而是"和一个正在成形的新朋友对话"**。
 
@@ -182,7 +287,7 @@ portrait 确认后进入音色环节：`tts.match_voice {preference}` 把 onboar
 
 ---
 
-## 5. 持续陪伴交互
+## 6. 持续陪伴交互
 
 ### 5.1 双模式对话
 
@@ -191,13 +296,13 @@ portrait 确认后进入音色环节：`tts.match_voice {preference}` 把 onboar
 | **对话模式（Chat）** | 点击精灵 / 托盘 / 热键 / 双击 | IM 式气泡（精灵左、用户右），支持文字、粘贴图片、语音条 | 仅录语音条时短暂开启 |
 | **语音通话模式（Voice Call）** | 通话按钮 / 右键菜单 | 精灵带"通话中"光环与波形指示，极简 UI + 双向字幕 | 持续开启（live-mic 指示） |
 
-**位置语义——"对话发生在角色身边"**：休息态精灵常驻屏幕右下角（可拖到任意处）；开启对话模式后，**精灵移到屏幕水平中央、上方区域，对话框锚在下方**，两者在同一中央列紧邻呈现，营造面对面交流；关闭对话 → 精灵回到拖拽位置。语音通话模式不强制居中——精灵留在原位，用户可边干活边说话（ambient 陪伴）。
+**位置语义——"对话发生在角色身边"**（一般空间行为见 §3；本节仅述对话模式特有规则）：休息态精灵在 home locale（默认屏幕右下角，可拖到任意处）；开启对话模式后，**精灵移到屏幕水平中央、上方区域，对话框锚在下方**，两者在同一中央列紧邻呈现，营造面对面交流；关闭对话 → 精灵回到拖拽位置。语音通话模式不强制居中——精灵留在原位，用户可边干活边说话（ambient 陪伴）。
 
 **对话模式细节**：气泡流精灵在左、用户在右；支持粘贴截图（→ 视觉理解）、拖拽文件。语音条按住录音、松开发送——录音经云端 STT 转写为文字后作为普通 prompt 发送。思考中精灵切 THINKING + 气泡区显示省略号。
 
 **语音通话模式细节**：麦克风持续收音，音量分析器做**半双工分段**——检测到说话（音量超阈值）开始录制，持续静默 ~1.3s 判定一句结束 → 转写 → 发送 → 精灵切 THINKING；助手回复完成（`message.complete`）后用 TTS 说出，说完回到倾听。**打断（barge-in）**：精灵说话时用户开口（音量超更高阈值）→ 立即止 TTS、转回 LISTENING。**静默超时**：~3 分钟无活动自动退出。**双向字幕**（可 toggle）在精灵下方显示。**live-mic 可见性**：通话期间有醒目的录音指示（红圈/波形）。
 
-**响应模式**（设置项，见 §7）：默认文字（对话模式下精灵以文字应答，不打扰）/ 始终语音（对话模式下精灵也以 TTS 说出回复）。语音通话模式始终语音。主动陪伴消息（§5.2）不受此设置约束。
+**响应模式**（设置项，见 §8）：默认文字（对话模式下精灵以文字应答，不打扰）/ 始终语音（对话模式下精灵也以 TTS 说出回复）。语音通话模式始终语音。主动陪伴消息（§6.2）不受此设置约束。
 
 ### 5.2 主动陪伴与打扰档位
 
@@ -233,7 +338,7 @@ Desktop 收到主动消息后：形象切 SPEAKING + 播 TTS；对话框未开�
 
 ### 5.4 自主行为（让形象"活着"）
 
-IDLE 时形象不是静止贴图。两类自主行为，**都不触发 TTS、不弹气泡，纯视觉**：
+IDLE 时形象不是静止贴图。两类自主行为，**都不触发 TTS、不弹气泡，纯视觉**（空间层面的自主行为——漫游、栖息、换位——见 §3，本节聚焦动画层面）：
 
 - **微动作**（10–25s 随机间隔）：眨眼、换重心、看四周、伸懒腰等 idle 变体随机切换（clip 就绪时；未就绪回退 idle）。Tier 1 默认池复用 portrait + CSS 变换实现 `idle_look_around` / `idle_blink` / `idle_stretch` 三个最常用的微动作变体，不依赖 Tier 2/3 资源；这些场景由 Batch 0 自动生成（与 portrait 同批），是"永不空白"不变量的兜底层（详见 §1.3）。
 - **情境动作**（检测本机状态）：Runner `system.get_idle_seconds` / `system.is_fullscreen` / `system.get_focused_app` 等环境感知工具的轮询结果直接进情境判定，**不经 LLM**。30s 轮询：分类结果（ide/music/reader/gaming/browsing/other/unknown）按平台白名单映射（Windows 进程名、macOS bundle id、Linux class 名），对应 CLIPS_SCENES 中 batch 2 的 idle 变体集（`idle_thinking`/`idle_typing`/`idle_bounce`/`idle_sway`/`idle_calm`/`idle_engaged`），未就绪时安全 fallback 到 `idle`，符合 §1.3 "永不空白" 不变量。
@@ -254,27 +359,27 @@ IDLE 时形象不是静止贴图。两类自主行为，**都不触发 TTS、不
 
 ---
 
-## 6. 语音交互（STT + TTS）
+## 7. 语音交互（STT + TTS）
 
 - **TTS（输出）**：默认**本地优先**——Runner 本地引擎（Piper 主、pyttsx3 降级）作为零成本主路径,本地不可用或失败时回退 Backend 云端引擎（`POST /api/media/tts`,`voice` 透传给 provider）。三档可切（设置 `tts.engine`:`auto` 本地优先+云端回退 / `local` 纯本地失败不回退 / `cloud` 永远云端）。用于:语音通话应答、"始终语音"响应模式、主动陪伴消息、onboarding。播放期间精灵处于 SPEAKING,音频结束退出。
 - **STT（输入）**:默认**本地优先**（Runner faster-whisper),同样三档可切（`stt.engine`)。`auto` 档下本地识别不确定（低置信度/空文本）时，由 `stt.silent_fallback`（默认 `true`）决定是否静默改跑云端（`/api/media/stt`，MiMo ASR）——`true` 用户无感、`false` 直接暴露本地弱结果（隐私/成本敏感用户不想偷偷走云端）。两条输入路径:语音条(对话模式,按住录音→转写→发送);语音通话模式(持续收音 + VAD 分段→转写→发送)。
-- **音色匹配**：`tts.list_voices` 返回当前 provider 候选目录，`tts.match_voice` 把偏好映射到 voice id（见 §4.5）。缓存的 voice id 失效（provider 目录变化）时，精灵窗口就绪后检测并提示重选（后端对未知 id 容错，TTS 不断）。
+- **音色匹配**：`tts.list_voices` 返回当前 provider 候选目录，`tts.match_voice` 把偏好映射到 voice id（见 §5.5）。缓存的 voice id 失效（provider 目录变化）时，精灵窗口就绪后检测并提示重选（后端对未知 id 容错，TTS 不断）。
 - **始终可回退文字**：TTS/STT 任一失败不阻断交互——TTS 失败仅显示文字，STT 失败提示"没听清，用打字吧"。
 
 ---
 
-## 7. 设置与个性化
+## 8. 设置与个性化
 
 两类设置分处两个窗口，由**网关可用性**决定归属：
 
-- **伙伴设置**（精灵窗口，网关可用）：右键精灵 → 伙伴设置。包括角色管理（**两套路径**：「编辑角色」表单式直接改 6 个字段，**或**「重新对话微调性格」5 步对话式 wizard 引导改 11 个字段含 user_* — wizard 单 PUT 收尾，**保留既有长期记忆**，不重置 `is_complete`，修复 PersonaSection 静默 `deriveSpeakingStyle` 覆盖的坑，由 `persona-retune.tsx` 实现）、响应模式（默认文字 / 始终语音）、打扰档位（chip 反映 user_preferred，effective 状态由活动感知器覆盖，UI 不直接显示 override）、音色管理（目录切换 + 试听，`tts.list_voices` + speak 预览）、形象管理（`avatar.regenerate` / 上传）。
+- **伙伴设置**（精灵窗口，网关可用）：右键精灵 → 伙伴设置。包括角色管理（**两套路径**：「编辑角色」表单式直接改 6 个字段，**或**「重新对话微调性格」5 步对话式 wizard 引导改 11 个字段含 user_* — wizard 单 PUT 收尾，**保留既有长期记忆**，不重置 `is_complete`，修复 PersonaSection 静默 `deriveSpeakingStyle` 覆盖的坑，由 `persona-retune.tsx` 实现）、响应模式（默认文字 / 始终语音）、打扰档位（chip 反映 user_preferred，effective 状态由活动感知器覆盖，UI 不直接显示 override）、音色管理（目录切换 + 试听，`tts.list_voices` + speak 预览）、形象管理（`avatar.regenerate` / 上传）、形象缩放（默认比例 0.5×–2×）。
 - **应用设置**（托盘 → Settings...，framed 工具窗口，无网关）：账户、语音（STT 开关 / `silent_fallback` / 录音时长 / 引擎）、音色目录（只读浏览 + 试听，走 REST `GET /api/companion/voices`）、Runner、Skills/MCP 等通用配置。
 
 > **设计约束**：JSON-RPC（`tts.list_voices` / `avatar.*` / `onboarding.*`）只在精灵窗口的 WS 网关上可用——工具窗口不 boot 网关。因此依赖这些方法的伙伴设置必须住在精灵窗口；工具窗口的设置只走 REST（音色目录页是 `tts.list_voices` 的 REST 镜像，专为工具窗口而设）。
 
 ---
 
-## 8. 跨模块契约
+## 9. 跨模块契约
 
 伙伴层依赖的跨模块协议与不变量定义在 [ARCHITECTURE.md](ARCHITECTURE.md)：通信协议与数据流（§4）、事件调度与打扰档位（§5）、角色定义与表达层契约（§6）、全局不变量（§10）。
 
@@ -282,12 +387,14 @@ IDLE 时形象不是静止贴图。两类自主行为，**都不触发 TTS、不
 
 ---
 
-## 9. Runner runtime surface
+## 10. Runner runtime surface
 
 Runner 端提供与伴侣场景直接对接的本地能力，Desktop 按以下契约消费（[desktop/README.md](desktop/README.md) §Runner）：
 
 - **`runner_ready` payload**：含 `version` 与 `capabilities`（`microphone` / `screen_capture` / `local_stt` / `local_tts` / `system_activity` / `platform` / `python`），由 Runner **真实探测**各平台子系统得出，非硬编码。不全可装的环境不阻塞启动。
-- **`deskagent.info` RPC**：任何时候可调，返回完整进程 / OS / 网络 / 磁盘快照。失败态降级（§5.5）依据此 RPC 与 WS 连通性双源判定。
-- **环境感知工具** `system.get_idle_seconds` / `is_screen_locked` / `get_focused_app` / `get_power_state`：经标准 `execute_tool` 通道轮询（Desktop 经 `runnerInvoke`）。`get_idle_seconds` 跨过阈值时额外触发 `companion.check_affect` 让 Backend LLM 推理情境化 affect（[ARCHITECTURE.md §5](ARCHITECTURE.md)）；其余工具的结果直接进 §5.4 情境判定，**不经 LLM**。`is_screen_locked=true` 时静默切断主动消息（仍可 affect），解锁后静默恢复。
-- **本地语音** `speech_to_text`（faster-whisper）/ `text_to_speech`（Piper 主、pyttsx3 降级）/ `list_tts_voices`:STT/TTS 的零成本主路径。Desktop 经 `media.stt`/`media.tts` IPC 路由——默认本地优先(`auto`),本地不可用或失败时回退云端;`local` 档纯本地不回退,`cloud` 档强制云端(见 §6)。
+- **`deskagent.info` RPC**：任何时候可调，返回完整进程 / OS / 网络 / 磁盘快照。失败态降级（§6.5）依据此 RPC 与 WS 连通性双源判定。
+- **环境感知工具** `system.get_idle_seconds` / `is_screen_locked` / `get_focused_app` / `get_power_state`：经标准 `execute_tool` 通道轮询（Desktop 经 `runnerInvoke`）。`get_idle_seconds` 跨过阈值时额外触发 `companion.check_affect` 让 Backend LLM 推理情境化 affect（[ARCHITECTURE.md §5](ARCHITECTURE.md)）；其余工具的结果直接进 §6.4 情境判定，**不经 LLM**。`is_screen_locked=true` 时静默切断主动消息（仍可 affect），解锁后静默恢复。
+- **本地语音** `speech_to_text`（faster-whisper）/ `text_to_speech`（Piper 主、pyttsx3 降级）/ `list_tts_voices`:STT/TTS 的零成本主路径。Desktop 经 `media.stt`/`media.tts` IPC 路由——默认本地优先(`auto`),本地不可用或失败时回退云端;`local` 档纯本地不回退,`cloud` 档强制云端(见 §7)。
+- **窗口几何与目标解析** `system.get_windows` / `get_work_area` / `get_cursor_pos`：空间行为（§3）所需的本机感知。`get_windows` 枚举可见窗口（标题、进程名、几何 {x,y,w,h}、z-order、focused 标记）——perch 选择与 ritual walk 目标解析依赖此项；`get_work_area` 返回屏幕可用区域（去除任务栏/dock），路径规划依赖此项；`get_cursor_pos` 返回鼠标位置，"朝用户方向走"等行为依赖此项。
+- **坐标操作**（可选）`system.click_at`：ritual walk（§3.6）目标达成后精灵"亲手操作"的执行通道——在指定坐标模拟点击。不可用时不阻塞 ritual walk，精灵走到目标旁后操作以常规工具调用兜底（用户无感）。桌面图标枚举平台差异大：Windows 经 Shell API 可枚举；macOS/Linux 暂不支持，降级为"找不到图标"人格化表达。
 

@@ -133,8 +133,31 @@ clip 通过 `clip.updated` 事件单通道下发。`video_gen.*` 事件由 compa
   - `TTS` 文本 > 4000 字符 → 拒绝
   - `runner:invoke` 60 次/秒 token bucket
 - **持久化键**：
-  - `da.companion.voiceId` / `da.companion.responseMode` / `da.companion.disturbanceTier` / `da.companion.chatDockOffset`
-  - 仅 `disturbanceTier` + `chatDockOffset` 跨重启保留；`voiceId` 在 onMount 由 `voice-validity.ts` 校验 provider 目录变化。
+  - `da.companion.voiceId` / `da.companion.responseMode` / `da.companion.disturbanceTier` / `da.companion.chatDockOffset` / `da.companion.defaultScale`
+  - 仅 `disturbanceTier` + `chatDockOffset` + `defaultScale` 跨重启保留；`voiceId` 在 onMount 由 `voice-validity.ts` 校验 provider 目录变化。
+  - 精灵位置持久化在 `companion-position.json`（Electron userData 目录，非 localStorage）。
 - **角色编辑双路径**：`PersonaSection`（表单式直接改 6 个字段）+ `PersonaRetune`（[persona-retune.tsx](persona-retune.tsx) 5–6 步对话式 wizard 含 user_*），后者单 PUT 收尾、保留 `is_complete=True`、不重置 `is_complete`、修复前者静默 `deriveSpeakingStyle` 覆盖 `speaking_style` 的坑。
 - **`/api/companion/asset/*` 文件路由**：已切到 HMAC 签名 URL（`user_id` + `filename` + 5 分钟 expiry + HMAC），后端 `verify_signed_asset_request` 强制校验，丢签名 401。Asset 落持久目录（`companion-avatars/` / `companion-assets/`），URL 一次性 5 分钟有效。
 - **CORS / 跨窗口**：精灵窗口与对话面板共享同一 Electron 渲染进程（panel 是 React child of sprite window），`setAlwaysOnTop` 不再被 chat-dock 切换。
+
+## 10. 空间行为（位置 × 移动 × 缩放）
+
+设计意图见 [COMPANION_DESIGN.md §3](../../../COMPANION_DESIGN.md)。本节记录 Desktop 侧的实现契约。
+
+**单一权威源**：[spatial.ts](spatial.ts) 拥有所有空间状态——`$spatialPos`、`$spatialScale`、`$spatialLocale`、`$spatialLocomotion`。sprite-stage.tsx 是纯消费者（`useStore` + 事件转发到 spatial 函数），不再持有本地位置 state。
+
+**移动引擎**：rAF 插值（非 CSS transition），walk ≈ 80 px/s、fly ≈ 400 px/s。用户拖拽瞬时覆盖一切其他移动。任何新 `moveTo` 或 drag 自动取消正在进行的动画。
+
+**`initSpatial()`**：在 root.tsx mount 时调用一次，注册所有空间反应——$chatOpen（home ↔ chat 动画切换）、$spriteState（sleep 位 + 自适应缩放）、$effectiveTier（空间策略 + 缩放）、$focusContext（perch 决策）。返回 cleanup 函数。
+
+**决策树**（`updateSpatialDecision`）：drag > chat(listener) > sleeping → sleep 位 > quiet → home > 有焦点窗口几何 + tier ≠ quiet + category ∉ {unknown, gaming} + !fullscreen → perch > proactive + idle + 无 perch 目标 → roam > home。每次 tier / focus / state 变化触发重评估。
+
+**perch 位置**：从焦点窗口几何（`$focusContext.windowGeom`）计算——优先窗口右下角外侧，右溢出则尝试左侧，两侧均溢出则放弃（窗口太宽）。perch 仅在 idle 时发起；进入 perch 后 work/think/speak 状态不踢出（"陪"语义）。
+
+**roam**：自补充式 waypoint 循环（每个点停 5–15s），waypoint 在屏幕下半部随机生成。仅 proactive + idle + 无 perch 目标时触发。任何 drag / chat / focus / tier 变化通过 `stopRoam` 终止。
+
+**缩放**：`$defaultScale`（用户设置，localStorage）是基准。EMOTIONAL 状态的 excited/surprised/playful 触发 1.3–1.6× 临时放大，quiet 档不放大。缩放也是 rAF 动画（~300ms），通过容器 `transform: scale()` 实现——与 sprite 内部的程序化动画（呼吸/浮动）在不同 DOM 层，不冲突。
+
+**Backend 零感知**：所有空间决策在 Desktop 本地完成，无 WS 事件或 RPC 新增。Runner 提供感知能力（`system.get_windows` 窗口枚举、`system.get_focused_app` 焦点窗口几何）但 Runner 也不知道空间行为存在。
+
+**Ritual walk**（[ritual-walk.ts](ritual-walk.ts)）：`system.open_application` 工具调用经 events.ts 拦截——执行工具后等 1.5s 窗口出现 → `system.get_windows` 按名称匹配窗口 → fly 到目标 → INTERACTING 1.5s → 返回原 locale。任一步骤失败则静默跳过（仪式是增强层）。chat 开启或屏锁时直接执行不走路。

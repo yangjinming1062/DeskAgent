@@ -143,9 +143,11 @@ MCP 工具由 `discover_mcp_tools()` 在 `server_loop` 紧跟 `runner_ready` 之
 
 ### 环境感知 (`system.*`)
 
-驱动 [COMPANION_DESIGN §4.4 情境动作](../COMPANION_DESIGN.md#44-自主行为让形象活着) 与 [COMPANION_DESIGN §4.2 打扰档位](../COMPANION_DESIGN.md#42-主动陪伴与打扰档位backend-驱动)。Desktop 用 `setInterval` 轮询这些工具（标准 `execute_tool` 通道），结果完全脱离 LLM 直接进状态机判定——这不是 LLM 工具，是采样探针。
+驱动 [COMPANION_DESIGN §3 空间行为](../COMPANION_DESIGN.md#3-空间行为与移动)（perch / roam / ritual walk）、[§5.4 情境动作](../COMPANION_DESIGN.md) 与 [§6.2 打扰档位](../COMPANION_DESIGN.md)。Desktop 用 `setInterval` 轮询这些工具（标准 `execute_tool` 通道），结果完全脱离 LLM 直接进状态机判定——这不是 LLM 工具，是采样探针。
 
 每个 probe **失败返回 safe default**（`-1.0` / `False` / `{}`）——错的"已锁屏"信号会直接静默伴侣，不接受。
+
+`system.get_focused_app` 的返回值包含焦点窗口几何 `{x, y, w, h}`（各平台通过 `GetWindowRect` / `CGWindowBounds` / `wmctrl -lG` 获取），Desktop 用于计算 perch 位。`system.get_windows` 枚举全部可见顶层窗口（含几何 + focused 标记），供 roam 自由空间判定与 ritual walk 目标解析。`system.open_application` 是 LLM 可调工具（非探针），Desktop 在 events.ts 拦截它以触发 ritual walk——执行工具后按名称匹配窗口、精灵飞到目标旁播放 INTERACTING 动画。三个工具均无 toolset 条目，永远对 LLM 可见。
 
 ### computer_use 增强
 

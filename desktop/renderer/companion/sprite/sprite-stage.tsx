@@ -1,14 +1,11 @@
 import { useStore } from '@nanostores/react'
-import { type ReactNode, type PointerEvent as ReactPointerEvent, useCallback, useEffect, useRef, useState } from 'react'
+import { type ReactNode, type PointerEvent as ReactPointerEvent, useCallback, useEffect, useRef } from 'react'
 
-import { $chatOpen } from '@/companion/chat-store'
 import { isPointInteractive, setCaptureProbe, useInteractiveRegion } from '@/companion/interactive-regions'
 
 import { handleDragEndInteraction, handleHoverInteraction } from '../interaction'
+import { $spatialPos, $spatialScale, cancelMovement, endDragAt, startDrag, updateDragPosition } from '../spatial'
 
-// Hit-test the forwarded mousemove against registered interactive regions
-// (see companion/interactive-regions.ts); capture only while the cursor is
-// over one. Tap vs drag is resolved by movement.
 interface SpriteStageProps {
   children: ReactNode
   onTap?: () => void
@@ -16,9 +13,6 @@ interface SpriteStageProps {
   onContextMenu?: (e: React.MouseEvent) => void
 }
 
-const REST_MARGIN = 24
-const EGG_W = 160
-const EGG_H = 184
 // 12px keeps trackpad micro-jitter from misclassifying a double-tap as a drag.
 const DRAG_THRESHOLD = 12
 const DOUBLE_TAP_MS = 320
@@ -38,58 +32,9 @@ export function SpriteStage({ children, onTap, onDoubleTap, onContextMenu }: Spr
   )
 
   const lastTapRef = useRef(0)
-  const chatOpen = useStore($chatOpen)
+  const pos = useStore($spatialPos)
+  const scale = useStore($spatialScale)
 
-  const [pos, setPos] = useState<{ x: number; y: number }>(() => ({
-    x: Math.max(REST_MARGIN, window.innerWidth - EGG_W - REST_MARGIN),
-    y: Math.max(REST_MARGIN, window.innerHeight - EGG_H - REST_MARGIN)
-  }))
-
-  // Restore the dragged position from disk on mount so the companion lands
-  // where the user last left it (COMPANION_DESIGN §5.1 "可拖到任意处 … 精灵
-  // 回到拖拽位置"). The async fetch won't reorder past the synchronous
-  // initial state — once the value arrives we adopt it via setPos if the
-  // user hasn't already moved the sprite.
-  useEffect(() => {
-    let cancelled = false
-
-    void window.deskagent.sprite
-      .getPosition()
-      .then(saved => {
-        if (cancelled || !saved) {
-          return
-        }
-
-        const restX = Math.max(REST_MARGIN, window.innerWidth - EGG_W - REST_MARGIN)
-        const restY = Math.max(REST_MARGIN, window.innerHeight - EGG_H - REST_MARGIN)
-
-        const next = {
-          x: Math.max(REST_MARGIN, Math.min(saved.x, restX)),
-          y: Math.max(REST_MARGIN, Math.min(saved.y, restY))
-        }
-
-        // Only adopt the saved position if the user hasn't dragged yet; once
-        // they interact the live `pos` is the source of truth.
-        setPos(prev => (prev.x === restX && prev.y === restY ? next : prev))
-      })
-      .catch(() => {
-        /* no saved position yet — keep default */
-      })
-
-    return () => {
-      cancelled = true
-    }
-  }, [])
-
-  // Plan §4.1 "对话发生在角色身边": when chat opens the sprite joins the
-  // dialog in the centered column (upper area, dialog below). Voice-call mode
-  // leaves the sprite in place (ambient). Restores the dragged position on close.
-  const displayPos = chatOpen
-    ? { x: Math.round((window.innerWidth - EGG_W) / 2), y: Math.round(window.innerHeight * 0.16) }
-    : pos
-
-  // Coalesce capture/release toggles within 50ms so a fast cursor crossing
-  // the boundary triggers one IPC per settle instead of flashing the desktop.
   const pendingToggleRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const toggle = useCallback((enable: boolean) => {
@@ -139,17 +84,8 @@ export function SpriteStage({ children, onTap, onDoubleTap, onContextMenu }: Spr
 
   useEffect(() => {
     const onMove = (e: MouseEvent) => {
-      // Track every forwarded move so the captureProbe (fired when an
-      // overlay registers / unregisters) can re-evaluate against the
-      // current cursor position. Skipping the write while captured would
-      // leave the probe blind to a cursor that just moved inside a newly
-      // registered panel without firing another mousemove first.
       lastPointRef.current = { x: e.clientX, y: e.clientY }
 
-      // Two-way: cursor inside a registered region → capture; outside all →
-      // release. Mouseleave alone wouldn't catch "cursor moves within the
-      // window but exits the sprite" — that's the whole point of the
-      // region hit-test, so do it on every move.
       if (isPointInteractive(e.clientX, e.clientY)) {
         capture()
       } else if (!dragRef.current) {
@@ -178,7 +114,9 @@ export function SpriteStage({ children, onTap, onDoubleTap, onContextMenu }: Spr
   const onPointerDown = (e: ReactPointerEvent) => {
     capture()
     ;(e.currentTarget as Element).setPointerCapture?.(e.pointerId)
-    dragRef.current = { startX: e.clientX, startY: e.clientY, originX: pos.x, originY: pos.y, moved: false }
+    const current = $spatialPos.get()
+    dragRef.current = { startX: e.clientX, startY: e.clientY, originX: current.x, originY: current.y, moved: false }
+    cancelMovement()
   }
 
   const onPointerMove = (e: ReactPointerEvent) => {
@@ -195,31 +133,23 @@ export function SpriteStage({ children, onTap, onDoubleTap, onContextMenu }: Spr
       return
     }
 
+    if (!drag.moved) {
+      startDrag()
+    }
+
     drag.moved = true
-    setPos({ x: drag.originX + dx, y: drag.originY + dy })
-  }
-
-  const endDrag = () => {
-    const drag = dragRef.current
-    dragRef.current = null
-
-    return drag
+    updateDragPosition({ x: drag.originX + dx, y: drag.originY + dy })
   }
 
   const onPointerUp = (e: ReactPointerEvent) => {
     ;(e.currentTarget as Element).releasePointerCapture?.(e.pointerId)
-    const drag = endDrag()
+    const drag = dragRef.current
+    dragRef.current = null
 
     if (drag?.moved) {
-      void window.deskagent.sprite.setPosition(pos)
+      endDragAt($spatialPos.get())
       handleDragEndInteraction()
 
-      // Don't release here — the next mousemove reconciles based on cursor
-      // position. Releasing unconditionally leaves the window click-through
-      // while the cursor sits still over the just-dragged sprite, so a
-      // tap-without-move on the new position falls through to the apps
-      // behind. The pointer capture was already released above; nothing else
-      // needs to happen synchronously.
       return
     }
 
@@ -247,7 +177,7 @@ export function SpriteStage({ children, onTap, onDoubleTap, onContextMenu }: Spr
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         ref={mountRef}
-        style={{ left: displayPos.x, top: displayPos.y, pointerEvents: 'auto', touchAction: 'none' }}
+        style={{ left: pos.x, top: pos.y, pointerEvents: 'auto', touchAction: 'none', transform: `scale(${scale})` }}
       >
         {children}
       </div>

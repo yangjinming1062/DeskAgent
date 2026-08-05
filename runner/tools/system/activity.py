@@ -108,6 +108,33 @@ def get_power_state() -> dict[str, Any]:
     return state
 
 
+def get_windows() -> dict[str, Any]:
+    """``{"windows": [{title, name, x, y, w, h, focused}, ...]}`` for visible
+    top-level windows. Empty list when unavailable."""
+    if IS_WINDOWS:
+        return _windows_windows()
+    if IS_MACOS:
+        return _windows_macos()
+    if IS_LINUX:
+        return _windows_linux()
+    return {"windows": []}
+
+
+def open_application(name: str) -> dict[str, Any]:
+    """Launch *name* (exe / app name / path). Returns ``{opened, name}``."""
+    try:
+        if IS_WINDOWS:
+            subprocess.Popen(["cmd", "/c", "start", "", name])
+        elif IS_MACOS:
+            subprocess.Popen(["open", "-a", name])
+        elif IS_LINUX:
+            subprocess.Popen([name])
+        return {"opened": True, "name": name}
+    except Exception as e:
+        logger.debug("open_application failed: %s", e)
+        return {"opened": False, "error": str(e)}
+
+
 # ---------------------------------------------------------------------------
 # Platform implementations
 # ---------------------------------------------------------------------------
@@ -258,8 +285,6 @@ def _focus_windows() -> dict[str, Any]:
         return {}
     try:
         user32 = ctypes.windll.user32
-        kernel32 = ctypes.windll.kernel32
-        psapi = ctypes.windll.psapi
 
         hwnd = user32.GetForegroundWindow()
         if not hwnd:
@@ -304,10 +329,19 @@ def _focus_windows() -> dict[str, Any]:
         title_buf = ctypes.create_unicode_buffer(512)
         length = user32.GetWindowTextW(top, title_buf, 512)
         title = title_buf.value[:length]
-        exe_buf = ctypes.create_unicode_buffer(512)
-        psapi.GetModuleFileNameExW(kernel32.OpenProcess(0x1000, False, pid), None, exe_buf, 512)
-        exe = exe_buf.value.rsplit("\\", 1)[-1] if exe_buf.value else ""
-        return {"name": exe or title, "pid": pid.value, "title": title, "kind": "user"}
+        exe = _process_exe(pid.value)
+        rect = wintypes.RECT()
+        user32.GetWindowRect(top, ctypes.byref(rect))
+        return {
+            "name": exe or title,
+            "pid": pid.value,
+            "title": title,
+            "kind": "user",
+            "x": rect.left,
+            "y": rect.top,
+            "w": max(0, rect.right - rect.left),
+            "h": max(0, rect.bottom - rect.top),
+        }
     except Exception as e:
         logger.debug("win focus probe failed: %s", e)
         return {}
@@ -320,12 +354,24 @@ def _focus_macos() -> dict[str, Any]:
         app = NSWorkspace.sharedWorkspace().frontmostApplication()
         if not app:
             return {}
-        return {
+        result: dict[str, Any] = {
             "name": app.localizedName() or "",
             "pid": app.processIdentifier(),
             "bundle": app.bundleIdentifier() or "",
             "kind": "user",
         }
+        if CGWindowListCopyWindowInfo is not None:
+            for win in CGWindowListCopyWindowInfo(kCGWindowListOptionOnScreenOnly, kCGNullWindowId):
+                if win.get("kCGWindowOwnerPID", -1) != app.processIdentifier():
+                    continue
+                b = win.get("kCGWindowBounds")
+                if b and b.get("Width", 0) > 0:
+                    result["x"] = int(b.get("X", 0))
+                    result["y"] = int(b.get("Y", 0))
+                    result["w"] = int(b["Width"])
+                    result["h"] = int(b["Height"])
+                    break
+        return result
     except Exception as e:
         logger.debug("macos focus probe failed: %s", e)
         return {}
@@ -336,7 +382,7 @@ def _focus_linux() -> dict[str, Any]:
         return {}
     try:
         out = subprocess.run(
-            ["wmctrl", "-lp"],
+            ["wmctrl", "-lG"],
             capture_output=True,
             timeout=1.0,
             text=True,
@@ -345,13 +391,23 @@ def _focus_linux() -> dict[str, Any]:
         if out.returncode != 0:
             return {}
         for line in out.stdout.splitlines():
-            parts = line.split()
-            if len(parts) < 5 or "*" not in parts[0]:
+            parts = line.split(None, 7)
+            if len(parts) < 7 or "*" not in parts[0]:
                 continue
-            pid = parts[2]
-            host = parts[3]
-            title = " ".join(parts[4:])
-            return {"name": host or title, "pid": int(pid) if pid.isdigit() else 0, "title": title, "kind": "user"}
+            title = parts[7] if len(parts) > 7 else ""
+            try:
+                x, y, w, h = int(parts[3]), int(parts[4]), int(parts[5]), int(parts[6])
+            except ValueError:
+                continue
+            return {
+                "name": title,
+                "title": title,
+                "kind": "user",
+                "x": x,
+                "y": y,
+                "w": w,
+                "h": h,
+            }
     except (OSError, subprocess.TimeoutExpired) as e:
         logger.debug("linux focus probe failed: %s", e)
     return {}
@@ -514,3 +570,157 @@ def _fullscreen_linux() -> bool:
     except (OSError, subprocess.TimeoutExpired) as e:
         logger.debug("linux fullscreen probe failed: %s", e)
     return False
+
+
+# ---------------------------------------------------------------------------
+# Window enumeration — companion spatial behavior (perch / roam / ritual walk)
+# ---------------------------------------------------------------------------
+
+_SHELL_WINDOW_CLASSES = frozenset(("Shell_TrayWnd", "WorkerW", "Progman"))
+
+
+def _process_exe(pid: int) -> str:
+    """Best-effort exe name for *pid*; empty string on failure."""
+    if ctypes is None or wintypes is None:
+        return ""
+    try:
+        kernel32 = ctypes.windll.kernel32
+        psapi = ctypes.windll.psapi
+        h = kernel32.OpenProcess(0x1000, False, pid)
+        try:
+            buf = ctypes.create_unicode_buffer(512)
+            psapi.GetModuleFileNameExW(h, None, buf, 512)
+            return buf.value.rsplit("\\", 1)[-1] if buf.value else ""
+        finally:
+            kernel32.CloseHandle(h)
+    except Exception:
+        return ""
+
+
+def _windows_windows() -> dict[str, Any]:
+    if ctypes is None or wintypes is None:
+        return {"windows": []}
+    try:
+        user32 = ctypes.windll.user32
+        foreground = user32.GetForegroundWindow()
+        results: list[dict[str, Any]] = []
+        exe_cache: dict[int, str] = {}
+
+        @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+        def cb(hwnd: int, _lparam: int) -> bool:
+            if not user32.IsWindowVisible(hwnd):
+                return True
+            buf = ctypes.create_unicode_buffer(256)
+            user32.GetClassNameW(hwnd, buf, 256)
+            if buf.value in _SHELL_WINDOW_CLASSES:
+                return True
+            rect = wintypes.RECT()
+            if not user32.GetWindowRect(hwnd, ctypes.byref(rect)):
+                return True
+            w = max(0, rect.right - rect.left)
+            h = max(0, rect.bottom - rect.top)
+            if w <= 0 or h <= 0:
+                return True
+            length = user32.GetWindowTextLengthW(hwnd)
+            if length == 0:
+                return True
+            tb = ctypes.create_unicode_buffer(length + 1)
+            user32.GetWindowTextW(hwnd, tb, length + 1)
+            pid = wintypes.DWORD()
+            user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+            pid_val = pid.value
+            exe = exe_cache.get(pid_val) or exe_cache.setdefault(pid_val, _process_exe(pid_val))
+            results.append(
+                {
+                    "title": tb.value,
+                    "name": exe or tb.value,
+                    "x": rect.left,
+                    "y": rect.top,
+                    "w": w,
+                    "h": h,
+                    "focused": hwnd == foreground,
+                }
+            )
+            return True
+
+        user32.EnumWindows(cb, 0)
+        return {"windows": results}
+    except Exception as e:
+        logger.debug("win get_windows failed: %s", e)
+        return {"windows": []}
+
+
+def _windows_macos() -> dict[str, Any]:
+    if Quartz is None or CGWindowListCopyWindowInfo is None:
+        return {"windows": []}
+    try:
+        focused_pid = 0
+        if NSWorkspace is not None:
+            app = NSWorkspace.sharedWorkspace().frontmostApplication()
+            if app:
+                focused_pid = app.processIdentifier()
+        results: list[dict[str, Any]] = []
+        for win in CGWindowListCopyWindowInfo(kCGWindowListOptionOnScreenOnly, kCGNullWindowId):
+            if win.get("kCGWindowLayer", 0) != 0:
+                continue
+            b = win.get("kCGWindowBounds")
+            if not b or b.get("Width", 0) <= 0:
+                continue
+            owner = win.get("kCGWindowOwnerName", "")
+            results.append(
+                {
+                    "title": win.get("kCGWindowName", "") or owner,
+                    "name": owner,
+                    "x": int(b.get("X", 0)),
+                    "y": int(b.get("Y", 0)),
+                    "w": int(b["Width"]),
+                    "h": int(b["Height"]),
+                    "focused": win.get("kCGWindowOwnerPID", -1) == focused_pid,
+                }
+            )
+        return {"windows": results}
+    except Exception as e:
+        logger.debug("macos get_windows failed: %s", e)
+        return {"windows": []}
+
+
+def _windows_linux() -> dict[str, Any]:
+    if not shutil.which("wmctrl"):
+        return {"windows": []}
+    try:
+        out = subprocess.run(
+            ["wmctrl", "-lG"],
+            capture_output=True,
+            timeout=1.0,
+            text=True,
+            check=False,
+        )
+        if out.returncode != 0:
+            return {"windows": []}
+        results: list[dict[str, Any]] = []
+        for line in out.stdout.splitlines():
+            parts = line.split(None, 7)
+            if len(parts) < 7:
+                continue
+            try:
+                x, y, w, h = int(parts[3]), int(parts[4]), int(parts[5]), int(parts[6])
+            except ValueError:
+                continue
+            if w <= 0 or h <= 0:
+                continue
+            title = parts[7] if len(parts) > 7 else ""
+            results.append(
+                {
+                    "title": title,
+                    "name": title,
+                    "x": x,
+                    "y": y,
+                    "w": w,
+                    "h": h,
+                    "focused": "*" in parts[0],
+                }
+            )
+        return {"windows": results}
+    except (OSError, subprocess.TimeoutExpired) as e:
+        logger.debug("linux get_windows failed: %s", e)
+        return {"windows": []}

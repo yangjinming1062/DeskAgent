@@ -18,3 +18,16 @@ export {
 
 export { handleCompanionEvent } from './events'
 export { CompanionRoot } from './root'
+export {
+  $defaultScale,
+  $homePosition,
+  $spatialLocale,
+  $spatialLocomotion,
+  $spatialPos,
+  $spatialScale,
+  initSpatial,
+  type Locomotion,
+  setDefaultScale,
+  setLocale,
+  type SpatialLocale
+} from './spatial'

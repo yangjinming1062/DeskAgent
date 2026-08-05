@@ -17,6 +17,7 @@ import type { RpcEvent } from '@/shared/types/deskagent'
 
 import { $devMode, pushDevLog } from './developer-overlay'
 import { speakProactive } from './proactive/proactive'
+import { findWindowByKeyword, performRitualWalk } from './ritual-walk'
 
 export function handleCompanionEvent(event: RpcEvent): void {
   if ($devMode.get()) {
@@ -128,7 +129,14 @@ export function handleCompanionEvent(event: RpcEvent): void {
 
       void (async () => {
         try {
-          const result = await runnerInvoke(name, p.args ?? {})
+          const result =
+            name === 'system.open_application'
+              ? await performRitualWalk(
+                  () => findWindowByKeyword(String(p.args?.name ?? '')),
+                  () => runnerInvoke(name, p.args ?? {})
+                )
+              : await runnerInvoke(name, p.args ?? {})
+
           await gateway?.request('tool.result', { call_id: p.call_id, result })
         } catch (err) {
           try {

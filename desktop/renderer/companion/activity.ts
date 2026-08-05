@@ -18,6 +18,7 @@ export type FocusCategory = 'ide' | 'music' | 'reader' | 'gaming' | 'browsing' |
 export interface FocusContext {
   category: FocusCategory
   fullscreen: boolean
+  windowGeom?: { x: number; y: number; w: number; h: number }
 }
 
 export const $focusContext = atom<FocusContext | null>(null)
@@ -78,6 +79,10 @@ interface FocusedAppInfo {
   name?: string
   title?: string
   bundle?: string
+  x?: number
+  y?: number
+  w?: number
+  h?: number
 }
 
 type CategoryTable = Record<Exclude<FocusCategory, 'unknown' | 'other'>, readonly string[]>
@@ -342,13 +347,19 @@ async function pollOnce(): Promise<void> {
 
     if (focused !== null) {
       const category = classifyFocusedApp(focused)
-      // Skip the atom update when nothing changed — otherwise every poll
-      // would reset the sprite's idle-swap timer and recompute
-      // $effectiveTier for no reason.
+
+      const windowGeom =
+        focused.w != null && focused.h != null
+          ? { x: focused.x ?? 0, y: focused.y ?? 0, w: focused.w, h: focused.h }
+          : undefined
+
       const cur = $focusContext.get()
 
-      if (!cur || cur.category !== category || cur.fullscreen !== fullscreen) {
-        $focusContext.set({ category, fullscreen })
+      const geomChanged =
+        (windowGeom?.x ?? -1) !== (cur?.windowGeom?.x ?? -1) || (windowGeom?.y ?? -1) !== (cur?.windowGeom?.y ?? -1)
+
+      if (!cur || cur.category !== category || cur.fullscreen !== fullscreen || geomChanged) {
+        $focusContext.set({ category, fullscreen, windowGeom })
       }
     }
   } else if (fullscreenProbeOk) {
@@ -359,7 +370,7 @@ async function pollOnce(): Promise<void> {
     const cur = $focusContext.get()
 
     if (cur && cur.fullscreen !== fullscreen) {
-      $focusContext.set({ category: cur.category, fullscreen })
+      $focusContext.set({ category: cur.category, fullscreen, windowGeom: cur.windowGeom })
     }
   }
 
