@@ -140,4 +140,3 @@ Desktop 走 `electron-updater` 从 Backend `/api/update` 拉取预构建安装�
 | 透明窗口平台差异 | 远程显示（X11/VNC/RDP）无法合成透明层，精灵窗口降级为非透明（`SPRITE_TRANSPARENT`）；Linux 无 compositor 仍可能黑底——macOS/Windows 支持良好 |
 | 托盘 Settings 中"重载 MCP"不可用 | gateway 仅在精灵窗口 boot；从托盘打开的 framed 工具窗口无 gateway，`hub/settings/mcp-settings.tsx` 的 reload 按钮优雅报"gateway 不可用"。其余 settings（runnerConfig 等 REST）不受影响 |
 | WSL 下无系统托盘 | Electron Tray API 在 WSL 不可用；降级为 hide-only；托盘菜单在 WSL 下不可达 |
-| 死 IPC 模块待清理 | `main/ipc/terminal.cjs`、`preview.cjs`、`link-title.cjs`、`images.cjs` 的 renderer 消费方已移除，但模块仍在且 `entry.cjs` 仍调用四个 `register*Ipc`、`preload.cjs` 仍暴露 `terminal.*`/`preview.*` API。node-pty 编织进 native-deps 打包链（`scripts/stage-native-deps.cjs` + `test-desktop.mjs` 断言），彻底清理需改构建管线 |

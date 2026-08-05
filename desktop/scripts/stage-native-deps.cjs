@@ -16,31 +16,9 @@ const STAGE_ROOT = path.join(APP_ROOT, 'build', 'native-deps')
 const TARGET_ARCH = process.env.npm_config_arch || process.arch
 const TARGET_PLATFORM = process.platform
 
-// Modules to stage. The "from" path is the hoisted location in the workspace
-// root; "to" is the layout we want inside build/native-deps/.  The "include"
-// globs (relative to "from") select the runtime-essential files.  Anything
-// outside the include list is left behind (source, deps/, scripts/, etc.).
-const NATIVE_DEPS = [
-  {
-    from: path.join(REPO_ROOT, 'node_modules', 'node-pty'),
-    to: path.join(STAGE_ROOT, 'node-pty'),
-    include: [
-      'package.json',
-      'lib/*.js',
-      'lib/**/*.js',
-      'build/Release/*.node',
-      // Per-arch runtime payload. Explicit file types so we don't ship the
-      // ~25 MB of .pdb debug symbols that prebuild-install bundles for
-      // Windows crash analysis -- not used at runtime, would just bloat
-      // the installer.
-      `prebuilds/${TARGET_PLATFORM}-${TARGET_ARCH}/*.node`,
-      `prebuilds/${TARGET_PLATFORM}-${TARGET_ARCH}/*.dll`,
-      `prebuilds/${TARGET_PLATFORM}-${TARGET_ARCH}/*.exe`,
-      `prebuilds/${TARGET_PLATFORM}-${TARGET_ARCH}/spawn-helper`,
-      `prebuilds/${TARGET_PLATFORM}-${TARGET_ARCH}/conpty/*`
-    ]
-  }
-]
+// Native modules to stage inside build/native-deps/.
+// Empty after removing node-pty — kept so the build step pipeline remains clean.
+const NATIVE_DEPS = []
 
 function rmrf(target) {
   fs.rmSync(target, { recursive: true, force: true })

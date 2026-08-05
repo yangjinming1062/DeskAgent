@@ -194,6 +194,35 @@ function createEnginePrefsCache({ ensureBackend, ttlMs = CONFIG_CACHE_TTL_MS }) 
   }
 }
 
+const TTS_CACHE_MAX_ENTRIES = 100
+const TTS_CACHE_TTL_MS = 10 * 60 * 1000 // 10 minutes
+
+// Simple LRU cache for TTS DataURLs to eliminate redundant cloud/local synthesis calls.
+const ttsAudioCache = new Map()
+
+function getCachedTts(key) {
+  const entry = ttsAudioCache.get(key)
+  if (!entry) return null
+  if (Date.now() > entry.expiresAt) {
+    ttsAudioCache.delete(key)
+    return null
+  }
+  // Refresh LRU order on hit
+  ttsAudioCache.delete(key)
+  ttsAudioCache.set(key, entry)
+  return entry
+}
+
+function setCachedTts(key, value) {
+  if (ttsAudioCache.size >= TTS_CACHE_MAX_ENTRIES) {
+    const oldestKey = ttsAudioCache.keys().next().value
+    if (oldestKey !== undefined) {
+      ttsAudioCache.delete(oldestKey)
+    }
+  }
+  ttsAudioCache.set(key, { ...value, expiresAt: Date.now() + TTS_CACHE_TTL_MS })
+}
+
 // Backend media proxy (STT/TTS). Kept separate from ipc/connection.cjs
 // because the generic deskagent:api proxy only ships JSON and audio endpoints
 // need multipart upload (STT) and binary download (TTS).
@@ -274,9 +303,12 @@ function registerMediaIpc({ ipcMain, ensureBackend, getRunnerBridge, getEnginePr
       throw new Error(`text exceeds ${TTS_MAX_TEXT_CHARS} chars`)
     }
     const voice = String(payload?.voice || '')
+    const language = typeof payload?.language === 'string' && payload.language ? payload.language : DEFAULT_TTS_LANGUAGE
     const context = typeof payload?.context === 'string' ? payload.context : null
 
-    const prefs = await resolvePrefs()
+    const cacheKey = `${voice}::${language}::${text}`
+    const startedAt = Date.now()
+
     // Designed voices are encoded as ``mimo_voicedesign:<prompt>`` tokens
     // (see MiMoTTSProvider.synthesize). The local Piper engine has no
     // notion of these — even under ``tts.engine='auto'`` we must route to
@@ -285,23 +317,29 @@ function registerMediaIpc({ ipcMain, ensureBackend, getRunnerBridge, getEnginePr
     // desktop/renderer/shared/voice-catalog.ts (VOICEDESIGN_PREFIX).
     const VOICEDESIGN_PREFIX = 'mimo_voicedesign:'
     const isDesigned = voice.startsWith(VOICEDESIGN_PREFIX)
-    const engine = isDesigned ? 'cloud' : prefs.tts
 
-    // Surface the voicedesign-forced cloud override in the trace so a local-but-went-cloud case is debuggable.
     const ttsLog = makeLog(log, `[tts#${ttsId}]`, {
       voice_in: voice || '',
-      engine_pref: isDesigned ? 'cloud' : prefs.tts,
-      engine_pref_forced: isDesigned && prefs.tts !== 'cloud' ? 'cloud' : null,
       is_designed: isDesigned,
       context: context || null
     })
-    const startedAt = Date.now()
+
+    const cached = getCachedTts(cacheKey)
+    if (cached) {
+      ttsLog('done', { route: 'cache', cached: true, mime: cached.mimeType, ms: Date.now() - startedAt })
+      return { dataUrl: cached.dataUrl, mimeType: cached.mimeType }
+    }
+
+    const prefs = await resolvePrefs()
+    const engine = isDesigned ? 'cloud' : prefs.tts
+
     let fellBackToCloud = false
 
     if (engine !== 'cloud') {
       if (localToolAvailable(bridge(), 'text_to_speech')) {
         const res = await tryLocalTts({ bridge: bridge(), text, voice })
         if (res.ok) {
+          setCachedTts(cacheKey, { dataUrl: res.value.dataUrl, mimeType: res.value.mimeType })
           ttsLog('done', {
             route: 'local',
             engine: res.value.engine,
@@ -323,7 +361,8 @@ function registerMediaIpc({ ipcMain, ensureBackend, getRunnerBridge, getEnginePr
       }
     }
 
-    const result = await ttsViaBackend({ ensureBackend, text, voice })
+    const result = await ttsViaBackend({ ensureBackend, text, voice, language })
+    setCachedTts(cacheKey, { dataUrl: result.dataUrl, mimeType: result.mimeType })
     ttsLog('done', {
       route: 'cloud',
       voice_out: result.voiceOut || null,
@@ -335,4 +374,4 @@ function registerMediaIpc({ ipcMain, ensureBackend, getRunnerBridge, getEnginePr
   })
 }
 
-module.exports = { registerMediaIpc, createEnginePrefsCache }
+module.exports = { registerMediaIpc, createEnginePrefsCache, ttsAudioCache }

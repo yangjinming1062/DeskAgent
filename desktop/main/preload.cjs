@@ -25,8 +25,6 @@ contextBridge.exposeInMainWorld('deskagent', {
   selectPaths: options => ipcRenderer.invoke('deskagent:selectPaths', options),
   writeClipboard: text => ipcRenderer.invoke('deskagent:writeClipboard', text),
   saveImageFromUrl: url => ipcRenderer.invoke('deskagent:saveImageFromUrl', url),
-  saveImageBuffer: (data, ext) => ipcRenderer.invoke('deskagent:saveImageBuffer', { data, ext }),
-  saveClipboardImage: () => ipcRenderer.invoke('deskagent:saveClipboardImage'),
   runnerInvoke: (name, args) => ipcRenderer.invoke('deskagent:runner:invoke', name, args),
   runnerDispatch: (method, params) => ipcRenderer.invoke('deskagent:runner:dispatch', method, params),
   runnerGetTools: () => ipcRenderer.invoke('deskagent:runner:get-tools'),
@@ -37,13 +35,8 @@ contextBridge.exposeInMainWorld('deskagent', {
       return ''
     }
   },
-  normalizePreviewTarget: (target, baseDir) => ipcRenderer.invoke('deskagent:normalizePreviewTarget', target, baseDir),
-  watchPreviewFile: url => ipcRenderer.invoke('deskagent:watchPreviewFile', url),
-  stopPreviewFileWatch: id => ipcRenderer.invoke('deskagent:stopPreviewFileWatch', id),
   setTitleBarTheme: payload => ipcRenderer.send('deskagent:titlebar-theme', payload),
-  setPreviewShortcutActive: active => ipcRenderer.send('deskagent:previewShortcutActive', Boolean(active)),
   openExternal: url => ipcRenderer.invoke('deskagent:openExternal', url),
-  fetchLinkTitle: url => ipcRenderer.invoke('deskagent:fetchLinkTitle', url),
   settings: {
     getDefaultProjectDir: () => ipcRenderer.invoke('deskagent:setting:defaultProjectDir:get'),
     setDefaultProjectDir: dir => ipcRenderer.invoke('deskagent:setting:defaultProjectDir:set', dir),
@@ -76,38 +69,10 @@ contextBridge.exposeInMainWorld('deskagent', {
     getWorkArea: () => ipcRenderer.invoke('deskagent:sprite:get-work-area'),
     setPosition: payload => ipcRenderer.invoke('deskagent:sprite:set-position', payload)
   },
-  terminal: {
-    dispose: id => ipcRenderer.invoke('deskagent:terminal:dispose', id),
-    resize: (id, size) => ipcRenderer.invoke('deskagent:terminal:resize', id, size),
-    start: options => ipcRenderer.invoke('deskagent:terminal:start', options),
-    write: (id, data) => ipcRenderer.invoke('deskagent:terminal:write', id, data),
-    onData: (id, callback) => {
-      const channel = `deskagent:terminal:${id}:data`
-      const listener = (_event, payload) => callback(payload)
-      ipcRenderer.on(channel, listener)
-      return () => ipcRenderer.removeListener(channel, listener)
-    },
-    onExit: (id, callback) => {
-      const channel = `deskagent:terminal:${id}:exit`
-      const listener = (_event, payload) => callback(payload)
-      ipcRenderer.on(channel, listener)
-      return () => ipcRenderer.removeListener(channel, listener)
-    }
-  },
-  onClosePreviewRequested: callback => {
-    const listener = () => callback()
-    ipcRenderer.on('deskagent:close-preview-requested', listener)
-    return () => ipcRenderer.removeListener('deskagent:close-preview-requested', listener)
-  },
   onWindowStateChanged: callback => {
     const listener = (_event, payload) => callback(payload)
     ipcRenderer.on('deskagent:window-state-changed', listener)
     return () => ipcRenderer.removeListener('deskagent:window-state-changed', listener)
-  },
-  onPreviewFileChanged: callback => {
-    const listener = (_event, payload) => callback(payload)
-    ipcRenderer.on('deskagent:preview-file-changed', listener)
-    return () => ipcRenderer.removeListener('deskagent:preview-file-changed', listener)
   },
   onPowerResume: callback => {
     const listener = () => callback()

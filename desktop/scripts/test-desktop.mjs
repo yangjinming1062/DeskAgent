@@ -314,31 +314,7 @@ function validateBundle() {
     die(`install-stamp.json is missing the branch field: ${JSON.stringify(stamp)}`)
   }
 
-  // Positive assertion: node-pty native deps shipped
-  const native = expectedNativeDepPaths()
-  if (!exists(native.packageJson)) {
-    die(`Missing node-pty package.json in resources/native-deps: ${native.packageJson}`)
-  }
-  if (!exists(native.libIndex)) {
-    die(`Missing node-pty lib/index.js in resources/native-deps: ${native.libIndex}`)
-  }
-  if (!exists(native.prebuildsDir)) {
-    die(`Missing node-pty prebuilds dir for ${PLATFORM}-${ARCH}: ${native.prebuildsDir}`)
-  }
-  const nodeBinaries = fs.readdirSync(native.prebuildsDir).filter(name => name.endsWith('.node'))
-  if (nodeBinaries.length === 0) {
-    die(`No .node native binaries found in: ${native.prebuildsDir}`)
-  }
-  // Darwin requires a runtime-execed spawn-helper alongside pty.node; missing
-  // it manifests as "ENOENT: spawn-helper" on first pty.spawn() call.
-  if (PLATFORM === 'darwin') {
-    const spawnHelper = path.join(native.prebuildsDir, 'spawn-helper')
-    if (!exists(spawnHelper)) {
-      die(`Missing node-pty spawn-helper (required on darwin): ${spawnHelper}`)
-    }
-  }
-
-  // Renderer payload check (either unpacked or in the asar)
+  const nodeBinaries = []
   if (exists(APP.unpackedDistIndex)) {
     return { stamp, nodeBinaries }
   }
