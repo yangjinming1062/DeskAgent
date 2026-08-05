@@ -1,0 +1,542 @@
+import { atom } from 'nanostores'
+
+import { $focusContext } from '@/companion/activity'
+import { $chatOpen } from '@/companion/chat-store'
+import { $effectiveTier, $spriteEmotion, $spriteState, type SpriteEmotion } from '@/companion/companion-store'
+import { persistString, storedString } from '@/shared/lib/storage'
+
+export const SPRITE_W = 160
+export const SPRITE_H = 184
+const REST_MARGIN = 24
+
+const WALK_SPEED = 80
+const FLY_SPEED = 400
+const SCALE_TRANSITION_MS = 300
+
+export const MIN_SCALE = 0.5
+export const MAX_SCALE = 2
+
+export type SpatialLocale = 'home' | 'chat' | 'perch' | 'target' | 'roam' | 'sleep'
+export type Locomotion = 'still' | 'walk' | 'fly' | 'drag'
+
+export const $spatialLocale = atom<SpatialLocale>('home')
+export const $spatialPos = atom<{ x: number; y: number }>(getHomePosition())
+export const $homePosition = atom<{ x: number; y: number }>(getHomePosition())
+export const $defaultScale = atom<number>(readDefaultScale())
+export const $spatialScale = atom<number>($defaultScale.get())
+export const $spatialLocomotion = atom<Locomotion>('still')
+
+const SCALE_KEY = 'da.companion.defaultScale'
+
+export function getHomePosition(): { x: number; y: number } {
+  if (typeof window === 'undefined') {
+    return { x: 0, y: 0 }
+  }
+
+  return {
+    x: Math.max(REST_MARGIN, window.innerWidth - SPRITE_W - REST_MARGIN),
+    y: Math.max(REST_MARGIN, window.innerHeight - SPRITE_H - REST_MARGIN)
+  }
+}
+
+export function getChatPosition(): { x: number; y: number } {
+  if (typeof window === 'undefined') {
+    return { x: 0, y: 0 }
+  }
+
+  return {
+    x: Math.round((window.innerWidth - SPRITE_W) / 2),
+    y: Math.round(window.innerHeight * 0.16)
+  }
+}
+
+export function getSleepPosition(): { x: number; y: number } {
+  if (typeof window === 'undefined') {
+    return { x: 0, y: 0 }
+  }
+
+  return {
+    x: REST_MARGIN,
+    y: Math.max(REST_MARGIN, window.innerHeight - SPRITE_H - REST_MARGIN)
+  }
+}
+
+export function computePerchPosition(geom: {
+  x: number
+  y: number
+  w: number
+  h: number
+}): { x: number; y: number } | null {
+  if (typeof window === 'undefined') {
+    return null
+  }
+
+  const margin = 8
+  let x = geom.x + geom.w + margin
+
+  const y = Math.max(
+    REST_MARGIN,
+    Math.min(geom.y + geom.h - SPRITE_H - margin, window.innerHeight - SPRITE_H - REST_MARGIN)
+  )
+
+  if (x + SPRITE_W > window.innerWidth - REST_MARGIN) {
+    x = geom.x - SPRITE_W - margin
+  }
+
+  if (x < REST_MARGIN) {
+    return null
+  }
+
+  return { x, y }
+}
+
+function easeInOut(t: number): number {
+  return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2
+}
+
+let rafId: number | null = null
+let moveStart: { x: number; y: number } | null = null
+let moveTarget: { x: number; y: number } | null = null
+let moveStartTime = 0
+let moveDuration = 0
+let moveOnArrive: (() => void) | null = null
+
+function tick(now: number): void {
+  if (!moveStart || !moveTarget) {
+    rafId = null
+
+    return
+  }
+
+  const t = Math.min(1, (now - moveStartTime) / moveDuration)
+  const eased = easeInOut(t)
+
+  $spatialPos.set({
+    x: moveStart.x + (moveTarget.x - moveStart.x) * eased,
+    y: moveStart.y + (moveTarget.y - moveStart.y) * eased
+  })
+
+  if (t < 1) {
+    rafId = requestAnimationFrame(tick)
+  } else {
+    const cb = moveOnArrive
+    moveStart = null
+    moveTarget = null
+    moveOnArrive = null
+    rafId = null
+    $spatialLocomotion.set('still')
+    cb?.()
+  }
+}
+
+export function moveTo(target: { x: number; y: number }, locomotion: 'walk' | 'fly', onArrive?: () => void): void {
+  cancelMovement()
+
+  const current = $spatialPos.get()
+  const dist = Math.hypot(target.x - current.x, target.y - current.y)
+
+  if (dist < 2) {
+    onArrive?.()
+
+    return
+  }
+
+  const speed = locomotion === 'walk' ? WALK_SPEED : FLY_SPEED
+
+  moveStart = { ...current }
+  moveTarget = target
+  moveStartTime = performance.now()
+  moveDuration = Math.max((dist / speed) * 1000, 200)
+  moveOnArrive = onArrive ?? null
+  $spatialLocomotion.set(locomotion)
+  rafId = requestAnimationFrame(tick)
+}
+
+export function cancelMovement(): void {
+  if (rafId !== null) {
+    cancelAnimationFrame(rafId)
+    rafId = null
+  }
+
+  const cb = moveOnArrive
+  moveStart = null
+  moveTarget = null
+  moveOnArrive = null
+
+  if ($spatialLocomotion.get() !== 'drag') {
+    $spatialLocomotion.set('still')
+  }
+
+  cb?.()
+}
+
+let scaleRafId: number | null = null
+let scaleStartVal = 1
+let scaleTargetVal = 1
+let scaleStartTime = 0
+
+function tickScale(now: number): void {
+  const t = Math.min(1, (now - scaleStartTime) / SCALE_TRANSITION_MS)
+  const eased = easeInOut(t)
+
+  $spatialScale.set(scaleStartVal + (scaleTargetVal - scaleStartVal) * eased)
+
+  if (t < 1) {
+    scaleRafId = requestAnimationFrame(tickScale)
+  } else {
+    scaleRafId = null
+  }
+}
+
+export function setScaleTarget(scale: number, instant = false): void {
+  const clamped = Math.max(MIN_SCALE, Math.min(MAX_SCALE, scale))
+
+  if (instant || Math.abs(clamped - $spatialScale.get()) < 0.01) {
+    if (scaleRafId !== null) {
+      cancelAnimationFrame(scaleRafId)
+      scaleRafId = null
+    }
+
+    $spatialScale.set(clamped)
+
+    return
+  }
+
+  scaleStartVal = $spatialScale.get()
+  scaleTargetVal = clamped
+  scaleStartTime = performance.now()
+
+  if (scaleRafId === null) {
+    scaleRafId = requestAnimationFrame(tickScale)
+  }
+}
+
+const EMOTION_SCALE_BOOST: Partial<Record<SpriteEmotion, number>> = {
+  excited: 1.5,
+  playful: 1.3,
+  surprised: 1.6
+}
+
+function readDefaultScale(): number {
+  const stored = storedString(SCALE_KEY)
+
+  if (stored) {
+    const n = Number(stored)
+
+    if (!Number.isNaN(n) && n >= MIN_SCALE && n <= MAX_SCALE) {
+      return n
+    }
+  }
+
+  return 1
+}
+
+function computeTargetScale(): number {
+  const base = $defaultScale.get()
+
+  if ($effectiveTier.get() === 'quiet') {
+    return base
+  }
+
+  const emotion = $spriteEmotion.get()
+
+  if ($spriteState.get() === 'emotional' && emotion) {
+    const factor = EMOTION_SCALE_BOOST[emotion]
+
+    return factor ? Math.min(base * factor, MAX_SCALE) : base
+  }
+
+  return base
+}
+
+function updateAdaptiveScale(): void {
+  setScaleTarget(computeTargetScale())
+}
+
+export function setDefaultScale(scale: number): void {
+  const clamped = Math.max(MIN_SCALE, Math.min(MAX_SCALE, scale))
+  $defaultScale.set(clamped)
+  persistString(SCALE_KEY, String(clamped))
+  updateAdaptiveScale()
+}
+
+function localePosition(locale: SpatialLocale): { x: number; y: number } {
+  switch (locale) {
+    case 'home':
+      return $homePosition.get()
+
+    case 'chat':
+      return getChatPosition()
+
+    case 'sleep':
+      return getSleepPosition()
+
+    default:
+      return $homePosition.get()
+  }
+}
+
+function defaultLocomotion(locale: SpatialLocale): 'walk' | 'fly' | 'still' {
+  switch (locale) {
+    case 'chat':
+      return 'fly'
+
+    case 'target':
+      return 'fly'
+
+    default:
+      return 'walk'
+  }
+}
+
+export function setLocale(
+  locale: SpatialLocale,
+  opts?: {
+    position?: { x: number; y: number }
+    locomotion?: 'walk' | 'fly'
+    instant?: boolean
+    onArrive?: () => void
+  }
+): void {
+  $spatialLocale.set(locale)
+
+  const target = opts?.position ?? localePosition(locale)
+  const locomotion = opts?.locomotion ?? defaultLocomotion(locale)
+
+  if (opts?.instant || locomotion === 'still') {
+    cancelMovement()
+    $spatialPos.set(target)
+    $spatialLocomotion.set('still')
+    opts?.onArrive?.()
+  } else {
+    moveTo(target, locomotion, opts?.onArrive)
+  }
+}
+
+let userInteracted = false
+
+function updateSpatialDecision(): void {
+  if ($spatialLocomotion.get() === 'drag' || $chatOpen.get()) {
+    return
+  }
+
+  const state = $spriteState.get()
+
+  if (state === 'sleeping') {
+    stopRoam()
+
+    if ($spatialLocale.get() !== 'sleep') {
+      setLocale('sleep')
+    }
+
+    return
+  }
+
+  if ($spatialLocale.get() === 'sleep') {
+    setLocale('home')
+
+    return
+  }
+
+  const tier = $effectiveTier.get()
+
+  if (tier === 'quiet') {
+    stopRoam()
+
+    if ($spatialLocale.get() !== 'home') {
+      setLocale('home')
+    }
+
+    return
+  }
+
+  const ctx = $focusContext.get()
+  const canPerch = ctx?.windowGeom && ctx.category !== 'unknown' && ctx.category !== 'gaming' && !ctx.fullscreen
+
+  if (canPerch) {
+    stopRoam()
+
+    if ($spatialLocale.get() !== 'perch' && state === 'idle') {
+      const perch = computePerchPosition(ctx!.windowGeom!)
+
+      if (perch) {
+        setLocale('perch', { position: perch })
+      }
+    }
+
+    return
+  }
+
+  if (tier === 'proactive' && state === 'idle') {
+    if ($spatialLocale.get() !== 'roam') {
+      startRoam()
+    }
+
+    return
+  }
+
+  stopRoam()
+
+  if ($spatialLocale.get() === 'perch' || $spatialLocale.get() === 'roam') {
+    setLocale('home')
+  }
+}
+
+let roamTimer: ReturnType<typeof setTimeout> | null = null
+let roaming = false
+
+function generateRoamWaypoint(): { x: number; y: number } {
+  if (typeof window === 'undefined') {
+    return { x: 0, y: 0 }
+  }
+
+  const vw = window.innerWidth
+  const vh = window.innerHeight
+
+  return {
+    x: REST_MARGIN + Math.random() * Math.max(0, vw - SPRITE_W - 2 * REST_MARGIN),
+    y: Math.max(REST_MARGIN, vh * 0.5 + Math.random() * Math.max(0, vh * 0.4 - SPRITE_H))
+  }
+}
+
+function startRoam(): void {
+  if (roaming) {
+    return
+  }
+
+  roaming = true
+  $spatialLocale.set('roam')
+  roamStep()
+}
+
+function roamStep(): void {
+  moveTo(generateRoamWaypoint(), 'walk', () => {
+    if (!roaming) {
+      return
+    }
+
+    roamTimer = setTimeout(
+      () => {
+        roamTimer = null
+
+        if (roaming && $spriteState.get() === 'idle') {
+          roamStep()
+        }
+      },
+      5000 + Math.random() * 10000
+    )
+  })
+}
+
+function stopRoam(): void {
+  roaming = false
+
+  if (roamTimer !== null) {
+    clearTimeout(roamTimer)
+    roamTimer = null
+  }
+
+  cancelMovement()
+}
+
+export function reevaluateSpatialDecision(): void {
+  updateSpatialDecision()
+}
+
+export function startDrag(): void {
+  userInteracted = true
+  stopRoam()
+  cancelMovement()
+  $spatialLocomotion.set('drag')
+}
+
+export function updateDragPosition(pos: { x: number; y: number }): void {
+  $spatialPos.set(pos)
+}
+
+export function endDragAt(pos: { x: number; y: number }): void {
+  $spatialPos.set(pos)
+  $homePosition.set(pos)
+  $spatialLocomotion.set('still')
+  $spatialLocale.set('home')
+  void window.deskagent.sprite.setPosition(pos)
+}
+
+export function initSpatial(): () => void {
+  void window.deskagent.sprite
+    .getPosition()
+    .then(saved => {
+      if (!saved || userInteracted) {
+        return
+      }
+
+      const next = {
+        x: Math.max(REST_MARGIN, Math.min(saved.x, window.innerWidth - SPRITE_W - REST_MARGIN)),
+        y: Math.max(REST_MARGIN, Math.min(saved.y, window.innerHeight - SPRITE_H - REST_MARGIN))
+      }
+
+      $homePosition.set(next)
+
+      if ($spatialLocale.get() === 'home') {
+        $spatialPos.set(next)
+      }
+    })
+    .catch(() => {})
+
+  const unlistenChat = $chatOpen.listen(open => {
+    if ($spatialLocomotion.get() === 'drag') {
+      return
+    }
+
+    setLocale(open ? 'chat' : 'home')
+  })
+
+  const unlistenState = $spriteState.listen(() => {
+    updateAdaptiveScale()
+    updateSpatialDecision()
+  })
+
+  const unlistenEmotion = $spriteEmotion.listen(() => updateAdaptiveScale())
+
+  const unlistenTier = $effectiveTier.listen(() => {
+    updateAdaptiveScale()
+    updateSpatialDecision()
+  })
+
+  const unlistenFocus = $focusContext.listen(() => updateSpatialDecision())
+
+  const onResize = () => {
+    const home = $homePosition.get()
+
+    const clamped = {
+      x: Math.max(REST_MARGIN, Math.min(home.x, window.innerWidth - SPRITE_W - REST_MARGIN)),
+      y: Math.max(REST_MARGIN, Math.min(home.y, window.innerHeight - SPRITE_H - REST_MARGIN))
+    }
+
+    $homePosition.set(clamped)
+
+    const locale = $spatialLocale.get()
+
+    if (locale === 'home' || locale === 'chat') {
+      setLocale(locale, { instant: true })
+    }
+  }
+
+  window.addEventListener('resize', onResize)
+
+  return () => {
+    unlistenChat()
+    unlistenState()
+    unlistenEmotion()
+    unlistenTier()
+    unlistenFocus()
+    window.removeEventListener('resize', onResize)
+    stopRoam()
+    cancelMovement()
+
+    if (scaleRafId !== null) {
+      cancelAnimationFrame(scaleRafId)
+      scaleRafId = null
+    }
+  }
+}

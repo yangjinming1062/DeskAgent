@@ -15,6 +15,7 @@ import {
   wakeUpFromSleep
 } from '@/companion/companion-store'
 import { hydratePersona } from '@/companion/persona-store'
+import { initSpatial } from '@/companion/spatial'
 import { $auth, applyAuthBroadcast, hydrateAuth, logout } from '@/shared/store/auth'
 import { $gatewayState } from '@/shared/store/gateway'
 import { notify } from '@/shared/store/notifications'
@@ -69,6 +70,8 @@ export function CompanionRoot() {
   useEffect(() => {
     void hydrateAuth()
   }, [])
+
+  useEffect(() => initSpatial(), [])
 
   useEffect(() => {
     const off = window.deskagent.onAuthChanged(payload => applyAuthBroadcast(payload))

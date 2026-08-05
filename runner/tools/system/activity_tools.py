@@ -6,8 +6,10 @@ from ..registry import registry
 from .activity import get_focused_app
 from .activity import get_idle_seconds
 from .activity import get_power_state
+from .activity import get_windows
 from .activity import is_fullscreen
 from .activity import is_screen_locked
+from .activity import open_application
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +51,26 @@ SYSTEM_POWER_SCHEMA = {
 }
 
 
+SYSTEM_GET_WINDOWS_SCHEMA = {
+    "name": "system.get_windows",
+    "description": (
+        "Visible top-level windows with geometry: " "{windows: [{title, name, x, y, w, h, focused}, ...]}. " "Feeds the companion's perch / roam / ritual-walk spatial behaviour."
+    ),
+    "parameters": {"type": "object", "properties": {}, "required": []},
+}
+
+
+SYSTEM_OPEN_APP_SCHEMA = {
+    "name": "system.open_application",
+    "description": ("Open an application by name (e.g. 'chrome', 'notepad', 'Calculator'). " "Returns {opened: bool, name: str}."),
+    "parameters": {
+        "type": "object",
+        "properties": {"name": {"type": "string", "description": "Application name or executable path"}},
+        "required": ["name"],
+    },
+}
+
+
 def _idle_handler(args: dict[str, Any], **kw: Any) -> str:
     return json.dumps({"idle_seconds": get_idle_seconds()})
 
@@ -69,8 +91,18 @@ def _power_handler(args: dict[str, Any], **kw: Any) -> str:
     return json.dumps(get_power_state())
 
 
+def _windows_handler(args: dict[str, Any], **kw: Any) -> str:
+    return json.dumps(get_windows())
+
+
+def _open_app_handler(args: dict[str, Any], **kw: Any) -> str:
+    return json.dumps(open_application(str(args.get("name", ""))))
+
+
 registry.register_tool("system.get_idle_seconds", schema=SYSTEM_GET_IDLE_SCHEMA)(_idle_handler)
 registry.register_tool("system.is_screen_locked", schema=SYSTEM_IS_LOCKED_SCHEMA)(_locked_handler)
 registry.register_tool("system.get_focused_app", schema=SYSTEM_FOCUS_SCHEMA)(_focus_handler)
 registry.register_tool("system.is_fullscreen", schema=SYSTEM_IS_FULLSCREEN_SCHEMA)(_fullscreen_handler)
 registry.register_tool("system.get_power_state", schema=SYSTEM_POWER_SCHEMA)(_power_handler)
+registry.register_tool("system.get_windows", schema=SYSTEM_GET_WINDOWS_SCHEMA)(_windows_handler)
+registry.register_tool("system.open_application", schema=SYSTEM_OPEN_APP_SCHEMA)(_open_app_handler)

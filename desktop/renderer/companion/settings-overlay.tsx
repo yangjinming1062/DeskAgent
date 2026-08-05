@@ -17,6 +17,7 @@ import {
   setCompanionVoiceId,
   setResponseMode
 } from '@/companion/prefs'
+import { $defaultScale, setDefaultScale } from '@/companion/spatial'
 import { speak } from '@/companion/tts'
 import {
   designVoice,
@@ -47,6 +48,7 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps): React.Reac
   const responseMode = useStore($responseMode)
   const currentVoice = useStore($companionVoiceId)
   const persona = useStore($persona)
+  const defaultScale = useStore($defaultScale)
   const { requestGateway } = useGatewayRequest()
 
   const [catalog, setCatalog] = useState<VoiceCatalog>({
@@ -483,6 +485,21 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps): React.Reac
               </button>
             </div>
             {avatarHint && <p className="mt-2 text-xs text-amber-300/80">{avatarHint}</p>}
+          </Section>
+
+          <Section hint="精灵在桌面上的默认显示比例" title="形象大小">
+            <div className="flex gap-2">
+              {[0.5, 0.75, 1, 1.5, 2].map(s => (
+                <button
+                  className={`flex-1 rounded-lg border px-2 py-2 text-xs transition ${Math.abs(defaultScale - s) < 0.05 ? 'border-white/60 bg-white/15 font-medium' : 'border-white/15 bg-white/5 text-white/70 hover:bg-white/10'}`}
+                  key={s}
+                  onClick={() => setDefaultScale(s)}
+                  type="button"
+                >
+                  {s === 1 ? '默认' : `${s}×`}
+                </button>
+              ))}
+            </div>
           </Section>
         </div>
       </div>
