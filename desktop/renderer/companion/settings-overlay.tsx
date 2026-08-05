@@ -5,13 +5,9 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { awaitAvatarRegeneration } from '@/companion/avatar-regen-store'
 import { useGatewayRequest } from '@/companion/boot/use-gateway-request'
 import { clearClipCatalog } from '@/companion/clip-store'
-import {
-  $effectiveTier,
-  $userPreferredTier,
-  type DisturbanceTier,
-  setDisturbanceTier
-} from '@/companion/companion-store'
-import { registerInteractiveRegion, unregisterInteractiveRegion } from '@/companion/interactive-regions'
+import { $effectiveTier, $userPreferredTier, setDisturbanceTier } from '@/companion/companion-store'
+import { DISTURBANCE_TIERS } from '@/companion/disturbance-tiers'
+import { useInteractiveRegion } from '@/companion/interactive-regions'
 import { PersonaRetune } from '@/companion/persona-retune'
 import { $persona, hydratePersona } from '@/companion/persona-store'
 import {
@@ -40,11 +36,7 @@ interface SettingsOverlayProps {
   onClose: () => void
 }
 
-const TIERS: { id: DisturbanceTier; label: string; hint: string }[] = [
-  { id: 'proactive', label: '积极主动', hint: '语音、气泡、主动消息全开放' },
-  { id: 'normal', label: '常规', hint: '仅轻量文字消息' },
-  { id: 'quiet', label: '保持安静', hint: '不发消息，但情绪仍流动' }
-]
+const TIERS = DISTURBANCE_TIERS
 
 // Companion-specific settings live in the sprite window (where the WS gateway
 // boots) rather than the framed tool window, because voice/clip/avatar calls
@@ -134,12 +126,7 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps): React.Reac
   const [designing, setDesigning] = useState(false)
   const [designHint, setDesignHint] = useState<string | null>(null)
   const panelRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    registerInteractiveRegion('companion-settings', () => panelRef.current?.getBoundingClientRect() ?? null)
-
-    return () => unregisterInteractiveRegion('companion-settings')
-  }, [])
+  useInteractiveRegion('companion-settings', panelRef)
 
   const filteredVoices = useMemo(
     () =>

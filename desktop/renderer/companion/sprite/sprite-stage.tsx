@@ -2,12 +2,7 @@ import { useStore } from '@nanostores/react'
 import { type ReactNode, type PointerEvent as ReactPointerEvent, useCallback, useEffect, useRef, useState } from 'react'
 
 import { $chatOpen } from '@/companion/chat-store'
-import {
-  isPointInteractive,
-  registerInteractiveRegion,
-  setCaptureProbe,
-  unregisterInteractiveRegion
-} from '@/companion/interactive-regions'
+import { isPointInteractive, setCaptureProbe, useInteractiveRegion } from '@/companion/interactive-regions'
 
 import { handleDragEndInteraction, handleHoverInteraction } from '../interaction'
 
@@ -132,24 +127,15 @@ export function SpriteStage({ children, onTap, onDoubleTap, onContextMenu }: Spr
     toggle(false)
   }, [toggle])
 
-  useEffect(() => {
-    registerInteractiveRegion(SPRITE_REGION_ID, () => {
-      const rect = mountRef.current?.getBoundingClientRect() ?? null
+  useInteractiveRegion(SPRITE_REGION_ID, mountRef, el => {
+    const rect = el.getBoundingClientRect()
 
-      if (!rect || rect.width === 0 || rect.height === 0) {
-        return null
-      }
+    if (rect.width === 0 || rect.height === 0) {
+      return null
+    }
 
-      return new DOMRect(
-        rect.left - HALO_PAD,
-        rect.top - HALO_PAD,
-        rect.width + 2 * HALO_PAD,
-        rect.height + 2 * HALO_PAD
-      )
-    })
-
-    return () => unregisterInteractiveRegion(SPRITE_REGION_ID)
-  }, [])
+    return new DOMRect(rect.left - HALO_PAD, rect.top - HALO_PAD, rect.width + 2 * HALO_PAD, rect.height + 2 * HALO_PAD)
+  })
 
   useEffect(() => {
     const onMove = (e: MouseEvent) => {

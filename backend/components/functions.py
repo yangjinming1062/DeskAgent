@@ -73,6 +73,27 @@ def coerce_int(value: Any, default: int | None) -> int | None:
         return default
 
 
+def coerce_non_negative_int(value: Any, default: int = 0) -> int:
+    """``max(0, int(value))`` with fallback. For activity-context fields like
+    ``idle_seconds`` where the renderer always sends a non-negative int but a
+    bad value should silently fall back to ``default`` rather than raise."""
+    if value is None:
+        return default
+    try:
+        return max(0, int(value))
+    except (TypeError, ValueError):
+        return default
+
+
+def coerce_hour_0_23(value: Any) -> int:
+    """``int(value)`` in [0, 23], or -1 for "unknown / out of range". For
+    ``local_hour`` and similar time-of-day fields where -1 has a documented
+    "unknown" semantic."""
+    if not isinstance(value, int) or isinstance(value, bool) or not 0 <= value <= 23:
+        return -1
+    return value
+
+
 def unquote_user_setting(val: str | None) -> str | None:
     """Undo ``put_config._flatten``'s ``json.dumps`` quoting for string-valued settings."""
     if val is None:

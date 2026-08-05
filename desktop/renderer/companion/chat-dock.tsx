@@ -18,14 +18,10 @@ import {
   setDisturbanceTier,
   setSpriteState
 } from '@/companion/companion-store'
-import { registerInteractiveRegion, unregisterInteractiveRegion } from '@/companion/interactive-regions'
+import { useInteractiveRegion } from '@/companion/interactive-regions'
 import { $gatewayState } from '@/shared/store/gateway'
 
-const TIERS: { id: DisturbanceTier; label: string }[] = [
-  { id: 'proactive', label: '积极' },
-  { id: 'normal', label: '常规' },
-  { id: 'quiet', label: '安静' }
-]
+import { DISTURBANCE_TIERS } from './disturbance-tiers'
 
 interface ChatDockProps {
   onClose: () => void
@@ -74,12 +70,7 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
   }, [])
 
   const panelRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    registerInteractiveRegion('chat-dock', () => panelRef.current?.getBoundingClientRect() ?? null)
-
-    return () => unregisterInteractiveRegion('chat-dock')
-  }, [])
+  useInteractiveRegion('chat-dock', panelRef)
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
@@ -434,7 +425,7 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
         >
           <div className="flex items-center gap-2">
             <div className="flex items-center gap-0.5 rounded-full bg-white/5 p-0.5 text-[11px]" title="打扰档位">
-              {TIERS.map(t => (
+              {DISTURBANCE_TIERS.map(t => (
                 <button
                   className={`rounded-full px-2.5 py-1 transition ${tier === t.id ? 'bg-white/80 font-medium text-black' : 'text-white/60 hover:text-white'}`}
                   key={t.id}

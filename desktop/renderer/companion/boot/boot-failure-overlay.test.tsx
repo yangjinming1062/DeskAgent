@@ -6,16 +6,14 @@ import { BootFailureOverlay } from '@/companion/boot/boot-failure-overlay'
 
 const setPrimaryGatewayMock = vi.fn()
 const reloadMock = vi.fn()
-const registerInteractiveRegionMock = vi.fn()
-const unregisterInteractiveRegionMock = vi.fn()
+const useInteractiveRegionMock = vi.fn()
 
 vi.mock('@/shared/store/gateway', () => ({
   setPrimaryGateway: (...args: unknown[]) => setPrimaryGatewayMock(...args)
 }))
 
 vi.mock('@/companion/interactive-regions', () => ({
-  registerInteractiveRegion: (...args: unknown[]) => registerInteractiveRegionMock(...args),
-  unregisterInteractiveRegion: (...args: unknown[]) => unregisterInteractiveRegionMock(...args)
+  useInteractiveRegion: (...args: unknown[]) => useInteractiveRegionMock(...args)
 }))
 
 const makeBootState = (overrides: Partial<DesktopBootState>): DesktopBootState => ({
@@ -36,8 +34,7 @@ describe('BootFailureOverlay', () => {
   beforeEach(() => {
     setPrimaryGatewayMock.mockReset()
     reloadMock.mockReset()
-    registerInteractiveRegionMock.mockReset()
-    unregisterInteractiveRegionMock.mockReset()
+    useInteractiveRegionMock.mockReset()
     Object.defineProperty(window, 'location', {
       configurable: true,
       value: { ...window.location, reload: reloadMock }
@@ -58,7 +55,8 @@ describe('BootFailureOverlay', () => {
     $desktopBoot.set(makeBootState({}))
     const { container } = render(<BootFailureOverlay />)
     expect(container.firstChild).toBeNull()
-    expect(registerInteractiveRegionMock).not.toHaveBeenCalled()
+    // Hook still called once (region callback returns null when ref is unset).
+    expect(useInteractiveRegionMock).toHaveBeenCalledTimes(1)
   })
 
   it('renders the failure card with a message when boot errored', () => {
@@ -68,17 +66,24 @@ describe('BootFailureOverlay', () => {
     expect(screen.getByText('测试失败')).toBeTruthy()
   })
 
-  it('registers an interactive region so Retry stays clickable', () => {
+  it('registers a fullscreen interactive region so Retry stays clickable', () => {
     // The whole point of the CSS + interactive-region fix: without this the
     // sprite window's click-through swallows the Retry click.
     $desktopBoot.set(makeBootState({ error: 'BOOT_FAIL', message: '...', phase: 'renderer.error' }))
     render(<BootFailureOverlay />)
 
-    expect(registerInteractiveRegionMock).toHaveBeenCalledTimes(1)
-    expect(registerInteractiveRegionMock.mock.calls[0][0]).toBe('boot-failure')
+    expect(useInteractiveRegionMock).toHaveBeenCalledTimes(1)
+    const [id, , getRect] = useInteractiveRegionMock.mock.calls[0]
+    expect(id).toBe('boot-failure')
 
-    cleanup()
-    expect(unregisterInteractiveRegionMock).toHaveBeenCalledWith('boot-failure')
+    // The rect is a compile-time viewport constant — invoking getRect with any
+    // ref returns the full window dimensions, so isPointInteractive will
+    // resolve a hit anywhere on screen during the failure state.
+    const rect = getRect(null as unknown as HTMLElement)
+    expect(rect.width).toBe(window.innerWidth)
+    expect(rect.height).toBe(window.innerHeight)
+    expect(rect.left).toBe(0)
+    expect(rect.top).toBe(0)
   })
 
   it('triggers reload and gateway reset on Retry click', () => {

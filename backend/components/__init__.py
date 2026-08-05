@@ -65,7 +65,9 @@ from .database import session_scope
 from .functions import apply_partial
 from .functions import approx_message_tokens
 from .functions import as_bool
+from .functions import coerce_hour_0_23
 from .functions import coerce_int
+from .functions import coerce_non_negative_int
 from .functions import naive_utc_now
 from .functions import positive_int
 from .functions import safe_json_loads
