@@ -5,6 +5,9 @@
 // else. Each overlay registers its bbox here; the SpriteStage's global
 // mousemove listener hit-tests against the union and is the sole caller of
 // `setIgnoreMouseEvents`.
+
+import { type RefObject, useEffect } from 'react'
+
 export type InteractiveRegion = {
   getRect: () => DOMRect | null
   id: string
@@ -66,4 +69,25 @@ export function isPointInteractive(x: number, y: number, windowId: number = 0): 
   }
 
   return false
+}
+
+// React hook: register an interactive region for the lifetime of the
+// component, deriving the rectangle from a ref's getBoundingClientRect().
+// Pass `getRect` to override (e.g. the sprite stage applies HALO_PAD padding,
+// the boot-failure overlay covers the full viewport). Return `null` from
+// `getRect` to opt out of the region for that frame.
+export function useInteractiveRegion(
+  id: string,
+  ref: RefObject<HTMLElement | null>,
+  getRect: (el: HTMLElement) => DOMRect | null = el => el.getBoundingClientRect()
+): void {
+  useEffect(() => {
+    registerInteractiveRegion(id, () => {
+      const el = ref.current
+
+      return el ? getRect(el) : null
+    })
+
+    return () => unregisterInteractiveRegion(id)
+  }, [id, ref, getRect])
 }

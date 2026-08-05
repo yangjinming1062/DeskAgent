@@ -10,6 +10,8 @@ from typing import Any
 from components import adopt_inbound
 from components import ATTACHMENT_TYPE_IMAGE
 from components import attachments_remove
+from components import coerce_hour_0_23
+from components import coerce_non_negative_int
 from components import get_logger
 from components import JSONRPC_INVALID_PARAMS
 from components import JSONRPC_METHOD_NOT_FOUND
@@ -761,12 +763,8 @@ def _register_session_handlers(
             return {"emotion": None, "reason": "throttled"}
         _last_check_affect_ts[user_id] = now
 
-        idle_seconds = params.get("idle_seconds")
-        if not isinstance(idle_seconds, (int, float)) or idle_seconds < 0:
-            idle_seconds = 0
-        local_hour = params.get("local_hour")
-        if not isinstance(local_hour, int) or not 0 <= local_hour <= 23:
-            local_hour = -1
+        idle_seconds = coerce_non_negative_int(params.get("idle_seconds"))
+        local_hour = coerce_hour_0_23(params.get("local_hour"))
         return await check_affect(user_id, float(idle_seconds), local_hour, llm_config)
 
     dispatcher.register("companion.check_affect", companion_check_affect)

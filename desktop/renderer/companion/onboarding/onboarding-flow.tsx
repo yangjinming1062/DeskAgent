@@ -3,7 +3,7 @@ import { type PointerEvent as ReactPointerEvent, useEffect, useRef, useState } f
 
 import { awaitAvatarRegeneration } from '@/companion/avatar-regen-store'
 import { useGatewayRequest } from '@/companion/boot/use-gateway-request'
-import { registerInteractiveRegion, unregisterInteractiveRegion } from '@/companion/interactive-regions'
+import { useInteractiveRegion } from '@/companion/interactive-regions'
 import {
   APPEARANCE_PRESETS,
   CHARACTER_GENDER_PRESETS,
@@ -300,20 +300,15 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
   // (170% × 170%) overflows by ~56px on each side but stays well inside this
   // container's bounding box (silhouette is centered in the 448px row with
   // `flex items-center`), so no extra padding is needed.
+  useInteractiveRegion('onboarding', containerRef, el => {
+    const rect = el.getBoundingClientRect()
+
+    return rect.width === 0 || rect.height === 0 ? null : rect
+  })
+
   useEffect(() => {
-    registerInteractiveRegion('onboarding', () => {
-      const rect = containerRef.current?.getBoundingClientRect() ?? null
-
-      if (!rect || rect.width === 0 || rect.height === 0) {
-        return null
-      }
-
-      return rect
-    })
-
     return () => {
       stopSpeaking()
-      unregisterInteractiveRegion('onboarding')
     }
   }, [])
 

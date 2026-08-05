@@ -2,6 +2,8 @@ import asyncio
 import json
 import math
 
+from components import coerce_hour_0_23
+from components import coerce_non_negative_int
 from components import get_logger
 from components import safe_json_loads
 from components import SESSION_LOCAL
@@ -91,15 +93,12 @@ async def check_interact(user_id: int, params: dict, llm_config: dict) -> dict:
     else:
         poke_count = 0
 
-    raw_local_hour = params.get("local_hour")
-    if isinstance(raw_local_hour, int) and not isinstance(raw_local_hour, bool) and 0 <= raw_local_hour <= 23:
-        local_hour_str = str(raw_local_hour)
-    else:
-        local_hour_str = "未知"
+    local_hour = coerce_hour_0_23(params.get("local_hour"))
+    local_hour_str = str(local_hour) if local_hour >= 0 else "未知"
 
     # Renderer always sends a non-negative finite int via `Math.max(0,
     # $lastIdleSeconds.get())`. Fall back to 0 on missing/bad input.
-    idle_seconds = max(0, int(params.get("idle_seconds") or 0))
+    idle_seconds = coerce_non_negative_int(params.get("idle_seconds"))
 
     prompt = _INTERACT_PROMPT_TEMPLATE.format(
         persona=persona_extras,

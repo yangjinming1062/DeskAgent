@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useGatewayRequest } from '@/companion/boot/use-gateway-request'
 import { $chatMessages, $chatSessionId, setAssistantError, setChatOpen, setChatSession } from '@/companion/chat-store'
 import { $spriteState, setSpriteState } from '@/companion/companion-store'
-import { registerInteractiveRegion, unregisterInteractiveRegion } from '@/companion/interactive-regions'
+import { useInteractiveRegion } from '@/companion/interactive-regions'
 import { speak, stopSpeaking } from '@/companion/tts'
 import { $gatewayState } from '@/shared/store/gateway'
 
@@ -60,11 +60,7 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps) {
   const onCloseRef = useRef(onClose)
   onCloseRef.current = onClose
 
-  useEffect(() => {
-    registerInteractiveRegion('voice-call-dock', () => panelRef.current?.getBoundingClientRect() ?? null)
-
-    return () => unregisterInteractiveRegion('voice-call-dock')
-  }, [])
+  useInteractiveRegion('voice-call-dock', panelRef)
 
   useEffect(() => {
     void window.deskagent.sprite.setAlwaysOnTop({ on: false })

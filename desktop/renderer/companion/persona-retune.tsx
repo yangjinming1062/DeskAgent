@@ -6,11 +6,17 @@ import { clearClipCatalog } from '@/companion/clip-store'
 import { assemblePersona, MAX_APPEARANCE } from '@/companion/persona'
 import {
   APPEARANCE_PRESETS,
+  type AppearancePreset,
   CHARACTER_GENDER_PRESETS,
+  type CharacterGenderPreset,
   PERSONALITY_PRESETS,
+  type PersonalityPreset,
   ROLE_PRESETS,
+  type RolePreset,
   SPEAKING_STYLE_PRESETS,
-  SPECIES_PRESETS
+  type SpeakingStylePreset,
+  SPECIES_PRESETS,
+  type SpeciesPreset
 } from '@/companion/persona-presets'
 import { hydratePersona } from '@/companion/persona-store'
 
@@ -39,15 +45,25 @@ const inputClass =
 const presetClass =
   'rounded-full border border-white/15 bg-white/5 px-2.5 py-1 text-[11px] text-white/70 transition hover:bg-white/15'
 
-// Field schema: each step owns a list of fields. ``set`` is the setter
-// for the corresponding local state slice; ``max`` truncates long inputs
-// (only used by appearance). ``presets`` is optional; when present,
-// chips appear under the input. ``placeholder`` only matters when the
-// field is empty at mount (drives e.g. the speaking_style hint).
+// Field schema: each step owns a list of fields. ``presets`` is typed as
+// the union of all known preset tokens plus '' (the "auto-derive" marker
+// used by speakingStyle). This means a typo like '喜爱' in a STEPS entry
+// fails to compile instead of silently rendering an empty chip. The
+// `string` cast on the speakingStyle line is the only place a value
+// outside the typed unions appears, and that path is intentional.
+type PresetValue =
+  | AppearancePreset
+  | CharacterGenderPreset
+  | PersonalityPreset
+  | RolePreset
+  | SpeciesPreset
+  | SpeakingStylePreset
+  | ''
+
 type FieldSchema = {
   key: keyof typeof EMPTY
   label: string
-  presets?: readonly string[]
+  presets?: readonly PresetValue[]
   max?: number
   placeholder?: string
   multiline?: boolean
