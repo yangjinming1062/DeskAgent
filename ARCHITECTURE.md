@@ -203,7 +203,7 @@ Backend clip 生成队列（portrait 种子图 + 场景文本 → 图生视频�
 - `$effectiveTierOverride`：活动感知器写入的临时覆盖，null 表示无覆盖。
 - `$effectiveTier = $effectiveTierOverride ?? $userPreferredTier`：其余模块读取这一原子做静默判定。
 
-Backend 镜像同样的双层（`backend/services/disturbance.py`）：`set_user_preferred_tier` 记录用户偏好，`record_focus_context` 接收 Desktop 30s 轮询的 `system.get_focused_app` + `system.is_fullscreen` 结果，`compute_effective_tier(user_preferred)` 应用「手动 quiet 永远不被覆盖」规则后产出 effective 值。Desktop 上报的 `companion.set_disturbance_tier` 写入 `_disturbance`（effective 字典），与 user_preferred 分离存储。
+Desktop 是档位的唯一权威：它持有用户偏好 + 活动上下文，独立计算 effective 值（`activity.ts::computeLocalEffectiveTier` 应用「手动 quiet 永远不被覆盖」+ immersive/fullscreen → quiet 规则），并通过 `companion.set_disturbance_tier` 把最终结果单向推给 backend。Backend 只在 `_disturbance[user_id]` 字典里镜像这个值供 server-side gate（`send_message_tool`、`cron._kick_autonomous_turn`）使用——既不独立推导，也不存储 user_preferred 或 focus_context。
 
 Backend 据此放行或抑制：`quiet` 档时主动消息被吞掉，但 LLM 推理出的 affect 仍经独立的 `companion.affect` 事件流出——即**断消息不断 affect**，Desktop 收到后切 EMOTIONAL 状态但不弹气泡、不做 TTS。档位的交互表现见 [COMPANION_DESIGN.md §5.2](COMPANION_DESIGN.md)；Backend 门控实现见 [backend/README.md](backend/README.md)。
 

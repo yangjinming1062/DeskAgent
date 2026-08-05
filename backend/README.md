@@ -74,7 +74,7 @@ backend/
 
 **伙伴主动消息通道**：`send_message_tool` 无 `target_webhook` 时走 companion 原生路径——`_emit_companion_message` 写 `companion.message {text}` 到 `ws_events` outbox，经同一套 LISTEN/NOTIFY 推到桌面端（伙伴 TTS + 气泡呈现，[ARCHITECTURE.md §4.1.A](../ARCHITECTURE.md)）。带 `target_webhook` 时仍是外部 webhook POST（Slack/Discord 等）。
 
-**打扰档位**（双层模型，`services/disturbance.py`）：`companion.set_disturbance_tier {tier}` 写 effective 字典；`set_user_preferred_tier` 记录 user_preferred；`record_focus_context` 接收 Desktop 30s 轮询的 focused_app + is_fullscreen；`compute_effective_tier` 应用「手动 quiet 永远不被覆盖」规则后产出 effective。`quiet` 档时 `send_message_tool` 把消息文本吞掉，但 LLM 推理出的 affect 经 `companion.affect` 事件透传（断消息不断 affect，`services/companion/affect_emit.py::emit_companion_affect`）。
+**打扰档位**（Desktop 权威，`services/disturbance.py`）：`companion.set_disturbance_tier {tier}` 写后端 effective 字典；Desktop 端在 `activity.ts::computeLocalEffectiveTier` 独立计算（应用「手动 quiet 永远不被覆盖」+ immersive/fullscreen → quiet 规则），推单一结果到后端。后端 `_disturbance` 字典是 mirror，server-side gate (`send_message_tool`、`cron`) 读它。`quiet` 档时 `send_message_tool` 把消息文本吞掉，但 LLM 推理出的 affect 经 `companion.affect` 事件透传（断消息不断 affect，`services/companion/affect_emit.py::emit_companion_affect`）。
 
 **情境化 affect**：`companion.check_affect {idle_seconds, local_hour}` JSON-RPC（`services/companion/affect_check.py::check_affect`）由 Desktop idle 轮询触发，Backend 加载 persona + 最近记忆跑一次 LLM 推理，决定是否 emit `companion.affect`——触发时机由 Desktop 控制（知道真实 idle），情绪推理由 Backend LLM 承担（有 persona + 记忆）。Desktop 侧也客户端过滤，此为防御层。
 

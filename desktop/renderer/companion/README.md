@@ -68,7 +68,7 @@ LLM 任何 `joyful` / `happy_excited` 等未注册 token 走 `affect.py::_try_re
 
 `is_screen_locked` 等同 `quiet`（plan §5.5 / §5.2 锁屏静默）。
 
-**双层档位模型**（`companion-store.ts`）：`$userPreferredTier` 是用户手动选择的源真值；活动感知器写入 `$effectiveTierOverride`；其余模块读 `$effectiveTier = override ?? preferred` 做静默判定。设置面板 / chat-dock 仍显示 user_preferred。**手动 quiet 永远不被覆盖**（manual lock-in）。失败回滚：若后端拒绝新档位，Desktop 回滚 `$userPreferredTier` 到旧值并写 dev log（P2-15）。
+**双层档位模型**（`companion-store.ts`）：`$userPreferredTier` 是用户手动选择的源真值；活动感知器写入 `$effectiveTierOverride`；其余模块读 `$effectiveTier = override ?? preferred` 做静默判定。设置面板 / chat-dock 仍显示 user_preferred。**手动 quiet 永远不被覆盖**（manual lock-in）通过 atom 内部的 `preferred === 'quiet' ? 'quiet' : ...` 短路保证。失败回滚：若后端拒绝新档位，Desktop 回滚 `$userPreferredTier` 到旧值并写 dev log（P2-15）。
 
 **活动感知降级**：30s 轮询 `system.get_focused_app` + `system.is_fullscreen`（[activity.ts](activity.ts)）。当分类进入 `ide`/`gaming`/`reader` 或 `is_fullscreen` 为真时，覆盖 effective 为 quiet；focus 清除后 5s 节流推回 user_preferred。
 

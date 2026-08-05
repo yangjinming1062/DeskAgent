@@ -207,13 +207,15 @@ Backend 的 Cron / `send_message` 经 WS 推送主动消息（[ARCHITECTURE.md �
 | **常规** | 仅轻量气泡/文字消息（无 TTS 语音）、affect |
 | **保持安静** | **禁止任何主动消息（语音+文字）**；但 LLM 推理出的 affect 仍经 `companion.affect` 事件流出，精灵切 EMOTIONAL 状态（无气泡无 TTS） |
 
-**双层档位模型**：用户手动选择 vs Desktop 检测到的焦点上下文（沉浸工作/全屏）会叠加派生 effective 档位。具体规则（`services/disturbance.py::compute_effective_tier`）：
+**双层档位模型**：用户手动选择 vs Desktop 检测到的焦点上下文（沉浸工作/全屏）会叠加派生 effective 档位。具体规则（`activity.ts::computeLocalEffectiveTier`）：
 
 - **手动 quiet 永远不被覆盖**（manual lock-in）。用户在「保持安静」时即使打开全屏视频，活动感知器也不会再下调——已经没有更低档位可下调。
 - **immersive / fullscreen 焦点上下文**（IDE / gaming / reader 分类，或 `system.is_fullscreen` 真值）→ effective = quiet。
 - **其他情况** → effective = user_preferred。
 
-Desktop 30s 轮询 `system.get_focused_app` + `system.is_fullscreen`，变化时 push effective 值给 Backend（5s 节流，仅在 derived 变化时推）。
+Desktop 30s 轮询 `system.get_focused_app` + `system.is_fullscreen`，变化时 push effective 值给 Backend（仅在 derived 变化时推；无节流 — 30s 轮询本身就够稀疏）。
+
+Backend 只镜像这个最终值（`services/disturbance.py::_disturbance`），server-side gate (`send_message_tool`、`cron`) 读 `_disturbance[user_id]`。Desktop 是档位的唯一权威。
 
 **消息与情绪是两个独立通道**（[ARCHITECTURE.md §6.3](ARCHITECTURE.md)）：保持安静 / 屏幕锁定时 Backend 静默切断主动消息推送（`send_message_tool` 在 `quiet` 档把消息文本吞掉），但 LLM 推理出的 affect 经独立的 `companion.affect` 事件流出，精灵切 EMOTIONAL 状态（无气泡无 TTS）。用户长时间无活动时，Desktop 的 idle 轮询还会主动调 `companion.check_affect` 触发 Backend LLM 推理情境化情绪（粘人型被冷落的委屈等）——情绪始终由 Backend LLM 产出，不退化成 Desktop 规则判断。屏幕锁定（Runner `system.is_screen_locked`）同样静默切断主动消息但保留 affect，解锁后静默恢复。
 
