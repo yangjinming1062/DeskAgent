@@ -48,6 +48,36 @@ export function SettingsView({ gateway, onClose, onConfigSaved }: SettingsPagePr
     }
   }
 
+  const importConfig = async (file: File) => {
+    // Refuse anything >2 MiB up front. The accept filter is a hint only —
+    // the user can pick any file, and a large file.text() + JSON.parse on
+    // the renderer thread would freeze the window with no feedback.
+    const MAX_IMPORT_BYTES = 2 * 1024 * 1024
+
+    if (file.size > MAX_IMPORT_BYTES) {
+      notifyError(new Error('config too large'), t.settings.importFailed)
+
+      return
+    }
+
+    try {
+      const text = await file.text()
+      const parsed = JSON.parse(text) as unknown
+
+      if (!parsed || typeof parsed !== 'object') {
+        notifyError(new Error('invalid config shape'), t.settings.importFailed)
+
+        return
+      }
+
+      await saveDeskAgentConfig(parsed as Parameters<typeof saveDeskAgentConfig>[0])
+      triggerHaptic('success')
+      onConfigSaved?.()
+    } catch (err) {
+      notifyError(err, t.settings.importFailed)
+    }
+  }
+
   const resetConfig = async () => {
     if (!window.confirm(t.settings.resetConfirm)) {
       return
@@ -158,6 +188,22 @@ export function SettingsView({ gateway, onClose, onConfigSaved }: SettingsPagePr
           )}
         </OverlayMain>
       </OverlaySplitLayout>
+      <input
+        accept="application/json,.json"
+        hidden
+        onChange={e => {
+          const file = e.target.files?.[0]
+
+          if (file) {
+            void importConfig(file)
+          }
+
+          // Reset so selecting the same file twice still fires onChange.
+          e.target.value = ''
+        }}
+        ref={importInputRef}
+        type="file"
+      />
     </OverlayView>
   )
 }
