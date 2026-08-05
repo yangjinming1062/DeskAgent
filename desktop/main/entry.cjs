@@ -41,11 +41,7 @@ const { registerSettingsIpc } = require('./ipc/settings.cjs')
 const { registerFsIpc } = require('./ipc/fs.cjs')
 const { registerFilesIpc } = require('./ipc/files.cjs')
 const { registerConnectionIpc } = require('./ipc/connection.cjs')
-const { registerImagesIpc } = require('./ipc/images.cjs')
 const { registerMediaIpc, createEnginePrefsCache } = require('./ipc/media.cjs')
-const { registerLinkTitleIpc } = require('./ipc/link-title.cjs')
-const { registerTerminalIpc } = require('./ipc/terminal.cjs')
-const { registerPreviewIpc, closePreviewWatchers } = require('./ipc/preview.cjs')
 const { registerAuthIpc } = require('./ipc/auth.cjs')
 const { registerRunnerIpc, autoStartBridge, autoStopBridge, restartRunnerBridge } = require('./ipc/runner.cjs')
 const { registerRunnerConfigIpc } = require('./ipc/runner-config.cjs')
@@ -53,7 +49,7 @@ const { registerSkillsIpc } = require('./ipc/skills.cjs')
 const { registerSpriteIpc } = require('./ipc/sprite.cjs')
 const { registerUpdateIpc } = require('./ipc/update.cjs')
 const { RunnerUpdater } = require('./runner/updater.cjs')
-const { looksBinary, fileExists, directoryExists, sendToMain, atomicWriteFile } = require('./shared/utils.cjs')
+const { fileExists, directoryExists, sendToMain, atomicWriteFile } = require('./shared/utils.cjs')
 const {
   installTray,
   installCloseInterceptor,
@@ -65,29 +61,6 @@ const {
 const { deskagentHome } = require('./security/paths.cjs')
 const { STREAMABLE_MEDIA_EXTS, mimeTypeForPath, extensionForMimeType } = require('./shared/mime.cjs')
 const log = require('electron-log/main')
-
-let nodePty = null
-
-try {
-  nodePty = require('node-pty')
-} catch {
-  // Packaged builds set `files:` in package.json, which excludes node_modules
-  // from the asar.  Workspace dedup also hoists this native dep to the repo
-  // root's node_modules, out of reach of electron-builder's collector.  We
-  // ship a minimal copy under resources/native-deps/ via extraResources +
-  // scripts/stage-native-deps.cjs; resolve from there when the normal
-  // require() fails.  Dev mode never reaches this branch -- the hoisted
-  // resolve succeeds via Node's normal module lookup.
-  try {
-    const path = require('node:path')
-    const resourcesPath = process.resourcesPath
-    if (resourcesPath) {
-      nodePty = require(path.join(resourcesPath, 'native-deps', 'node-pty'))
-    }
-  } catch {
-    nodePty = null
-  }
-}
 
 const USER_DATA_OVERRIDE = process.env.DESKAGENT_DESKTOP_USER_DATA_DIR
 if (USER_DATA_OVERRIDE) {
@@ -217,7 +190,6 @@ const APP_ICON_PATHS = [
 ]
 
 let rendererTitleBarTheme = null
-const terminalSessions = new Map()
 
 function getTitleBarOverlayOptions() {
   if (IS_MAC) {
@@ -241,7 +213,6 @@ function getTitleBarOverlayOptions() {
   }
 }
 
-const TEXT_PREVIEW_MAX_BYTES = 512 * 1024
 const PREVIEW_LANGUAGE_BY_EXT = {
   '.c': 'c',
   '.conf': 'ini',
@@ -275,36 +246,6 @@ const PREVIEW_LANGUAGE_BY_EXT = {
   '.yaml': 'yaml',
   '.yml': 'yaml',
   '.zsh': 'shell'
-}
-
-async function previewFileMetadata(filePath, mimeType) {
-  let byteSize = 0
-  let binary = false
-
-  try {
-    const stat = await fs.promises.stat(filePath)
-    byteSize = stat.size
-
-    if (!mimeType.startsWith('image/')) {
-      const fd = await fs.promises.open(filePath, 'r')
-
-      try {
-        const sample = Buffer.alloc(Math.min(byteSize, 4096))
-        const { bytesRead } = await fd.read(sample, 0, sample.length, 0)
-        binary = looksBinary(sample.subarray(0, bytesRead))
-      } finally {
-        await fd.close()
-      }
-    }
-  } catch {
-    // Metadata is best-effort; the read handlers surface hard errors later.
-  }
-
-  return {
-    binary,
-    byteSize,
-    large: byteSize > TEXT_PREVIEW_MAX_BYTES
-  }
 }
 
 app.setName(APP_NAME)
@@ -389,7 +330,6 @@ const RENDERER_RELOAD_WINDOW_MS = 60_000
 const RENDERER_RELOAD_MAX = 3
 let rendererReloadTimes = []
 const deskagentLog = []
-const previewWatchers = new Map()
 let previewShortcutActive = false
 let desktopLogBuffer = ''
 let desktopLogFlushTimer = null
@@ -728,30 +668,6 @@ function writeDefaultProjectDir(dir) {
   } catch (error) {
     rememberLog(`[settings] write default project dir failed: ${error.message}`)
   }
-}
-
-// resolveDeskAgentCwd — resolve the directory the agent should treat as cwd for
-// operations that don't have an explicit base. Honors a stored "default
-// project directory" preference (settings → sessions), then env hints, then
-// the platform default. Mirrors the Python deskagent_cli cwd-resolution chain so
-// the desktop and the spawned local CLI agree on what "the project dir" is.
-function resolveDeskAgentCwd() {
-  const candidates = [
-    readDefaultProjectDir(),
-    process.env.DESKAGENT_DESKTOP_CWD,
-    process.env.INIT_CWD,
-    IS_PACKAGED ? null : process.cwd(),
-    !IS_PACKAGED ? path.resolve(__dirname, '..', '..') : null,
-    app.getPath('home')
-  ]
-
-  for (const candidate of candidates) {
-    if (!candidate) continue
-    const resolved = path.resolve(String(candidate))
-    if (directoryExists(resolved)) return resolved
-  }
-
-  return app.getPath('home')
 }
 
 // Resolve the renderer bundle entry point. In a packaged build the
@@ -1880,28 +1796,6 @@ registerMediaIpc({
   // desktop log file and the dev terminal under `pnpm dev`.
   log: chunk => rememberLog(chunk)
 })
-registerImagesIpc({
-  ipcMain,
-  saveImageFromUrl,
-  writeComposerImage
-})
-registerTerminalIpc({
-  ipcMain,
-  nodePty,
-  terminalSessions
-})
-registerLinkTitleIpc({ ipcMain })
-registerPreviewIpc({
-  ipcMain,
-  deps: {
-    previewWatchers,
-    getMainWindow: () => mainWindow,
-    resolveDeskAgentCwd,
-    previewFileMetadata,
-    mimeTypeForPath,
-    previewLanguageByExt: PREVIEW_LANGUAGE_BY_EXT
-  }
-})
 
 // Re-seed the native About panel right before opening it. The value still
 // comes from `app.getVersion()`, so it reflects the running process's
@@ -2206,14 +2100,6 @@ app.on('before-quit', () => {
     desktopLogFlushTimer = null
   }
   flushDesktopLogBufferSync()
-  closePreviewWatchers({
-    previewWatchers,
-    getMainWindow: () => mainWindow,
-    resolveDeskAgentCwd,
-    previewFileMetadata,
-    mimeTypeForPath,
-    previewLanguageByExt: PREVIEW_LANGUAGE_BY_EXT
-  })
 })
 
 app.on('window-all-closed', () => {

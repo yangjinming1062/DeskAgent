@@ -80,7 +80,7 @@ test('packaged electron entrypoints do not require unpackaged npm modules', () =
   //   /main subpath on electron-log is a normal export declared in its
   //   package.json (./main.js). Both are first-party runtime deps of the
   //   auto-update channel, not dev-only tooling.
-  const allowedBareRequires = new Set(['electron', 'node-pty', 'electron-updater', 'electron-log', 'electron-log/main'])
+  const allowedBareRequires = new Set(['electron', 'electron-updater', 'electron-log', 'electron-log/main'])
   const requirePattern = /require\(['"]([^'"]+)['"]\)/g
 
   for (const entrypoint of entrypoints) {
