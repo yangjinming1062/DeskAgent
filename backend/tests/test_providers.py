@@ -247,7 +247,7 @@ class TestDefaultModels:
         assert default_model_for("mimo", "image_gen") == "dall-e-3"
         assert default_model_for("minimax", "llm") == "MiniMax-Text-01"
         assert default_model_for("minimax", "image_gen") == "image-01"
-        assert default_model_for("minimax", "video_gen") == "MiniMax-Hailuo-02"
+        assert default_model_for("minimax", "video_gen") == "MiniMax-H3"
         assert default_model_for("minimax", "tts") == "speech-2.8-hd"
         assert default_model_for("zhipu", "llm") == "glm-5.2"
         assert default_model_for("zhipu", "stt") == "glm-asr-2512"
@@ -920,7 +920,7 @@ class TestMiniMaxVideoGen:
             ProviderConfig(
                 base_url="https://api.minimaxi.com",
                 api_key="sk-minimax",
-                model="MiniMax-Hailuo-02",
+                model="MiniMax-H3",
                 service_type=ServiceType.video_gen,
                 provider_name="minimax",
             )
@@ -937,72 +937,161 @@ class TestMiniMaxVideoGen:
         assert job.status == "queued"
 
     @pytest.mark.asyncio
-    async def test_submit_passes_aspect_ratio(self):
+    async def test_submit_builds_content_array(self):
         captured: list[dict] = []
 
         async def capture(req: httpx.Request) -> httpx.Response:
             captured.append(json.loads(req.content))
-            return httpx.Response(200, json={"base_resp": {"status_code": 0}, "task_id": "task-arc"})
+            return httpx.Response(200, json={"base_resp": {"status_code": 0}, "task_id": "task-content"})
 
         provider = self._make_provider(capture)
-        await provider.submit(VideoGenRequest(prompt="x", aspect_ratio="9:16"))
-        assert captured[0]["aspect_ratio"] == "9:16"
+        await provider.submit(VideoGenRequest(prompt="a cat", duration=6, resolution="768P", aspect_ratio="9:16"))
+        body = captured[0]
+        assert body["model"] == "MiniMax-H3"
+        assert body["content"] == [{"type": "text", "text": "a cat"}]
+        assert body["duration"] == 6
+        assert body["resolution"] == "768P"
+        assert body["ratio"] == "9:16"
+        assert "first_frame_image" not in body
 
     @pytest.mark.asyncio
-    async def test_submit_omits_aspect_ratio_when_none(self):
+    async def test_submit_i2v_uses_adaptive_ratio_and_image_role(self):
         captured: list[dict] = []
 
         async def capture(req: httpx.Request) -> httpx.Response:
             captured.append(json.loads(req.content))
-            return httpx.Response(200, json={"base_resp": {"status_code": 0}, "task_id": "task-no-arc"})
+            return httpx.Response(200, json={"base_resp": {"status_code": 0}, "task_id": "task-i2v"})
 
         provider = self._make_provider(capture)
-        await provider.submit(VideoGenRequest(prompt="x"))
-        assert "aspect_ratio" not in captured[0]
+        await provider.submit(
+            VideoGenRequest(
+                prompt="x",
+                first_frame_image="https://example.com/seed.png",
+                aspect_ratio="9:16",
+            )
+        )
+        body = captured[0]
+        assert body["content"][1] == {
+            "type": "image_url",
+            "image_url": {"url": "https://example.com/seed.png"},
+            "role": "first_frame",
+        }
+        assert body["ratio"] == "adaptive"
 
     @pytest.mark.asyncio
-    async def test_poll_success(self):
-        handler = _async_handler([{"base_resp": {"status_code": 0}, "status": "Success", "file_id": "file-xyz"}])
-        provider = self._make_provider(handler)
-        job = await provider.poll("task-abc")
-        assert job.status == "succeeded"
-        assert job.file_id == "file-xyz"
-
-    @pytest.mark.asyncio
-    async def test_poll_processing(self):
-        handler = _async_handler([{"base_resp": {"status_code": 0}, "status": "Processing"}])
-        provider = self._make_provider(handler)
-        job = await provider.poll("task-abc")
-        assert job.status == "processing"
-        assert job.file_id is None
-
-    @pytest.mark.asyncio
-    async def test_poll_fail(self):
-        handler = _async_handler([{"base_resp": {"status_code": 0}, "status": "Fail", "error_message": "bad prompt"}])
-        provider = self._make_provider(handler)
-        job = await provider.poll("task-abc")
-        assert job.status == "failed"
-        assert job.error == "bad prompt"
-
-    @pytest.mark.asyncio
-    async def test_fetch_returns_download_url(self):
+    async def test_poll_success_returns_inline_download_url(self):
         handler = _async_handler(
             [
                 {
                     "base_resp": {"status_code": 0},
-                    "file": {
-                        "download_url": "https://filecdn.minimax.chat/abc.mp4",
-                        "content_type": "video/mp4",
-                        "bytes": 12345,
+                    "task": {
+                        "status": "succeeded",
+                        "content": {"url": "https://filecdn.minimax.chat/abc.mp4"},
                     },
                 }
             ]
         )
         provider = self._make_provider(handler)
-        asset = await provider.fetch("file-xyz")
-        assert asset.download_url == "https://filecdn.minimax.chat/abc.mp4"
-        assert asset.content_type == "video/mp4"
-        assert asset.size == 12345
+        job = await provider.poll("task-abc")
+        assert job.status == "succeeded"
+        assert job.download_url == "https://filecdn.minimax.chat/abc.mp4"
+
+    @pytest.mark.asyncio
+    async def test_poll_queued(self):
+        # "queued" is its own lifecycle state per docs; do NOT collapse to processing.
+        handler = _async_handler(
+            [{"base_resp": {"status_code": 0}, "task": {"status": "queued"}}]
+        )
+        provider = self._make_provider(handler)
+        job = await provider.poll("task-abc")
+        assert job.status == "queued"
+        assert job.download_url is None
+
+    @pytest.mark.asyncio
+    async def test_poll_running_maps_to_processing(self):
+        handler = _async_handler(
+            [{"base_resp": {"status_code": 0}, "task": {"status": "running"}}]
+        )
+        provider = self._make_provider(handler)
+        job = await provider.poll("task-abc")
+        assert job.status == "processing"
+        assert job.download_url is None
+
+    @pytest.mark.asyncio
+    async def test_poll_cancelled_maps_to_failed(self):
+        # Backend has no dedicated cancelled state; surface as failed so the
+        # caller sees a terminal status instead of polling forever.
+        handler = _async_handler(
+            [{"base_resp": {"status_code": 0}, "task": {"status": "cancelled"}}]
+        )
+        provider = self._make_provider(handler)
+        job = await provider.poll("task-abc")
+        assert job.status == "failed"
+
+    @pytest.mark.asyncio
+    async def test_poll_fail_extracts_error_message(self):
+        handler = _async_handler(
+            [
+                {
+                    "base_resp": {"status_code": 0},
+                    "task": {
+                        "status": "failed",
+                        "error": {"code": "bad_prompt", "message": "prompt too long"},
+                    },
+                }
+            ]
+        )
+        provider = self._make_provider(handler)
+        job = await provider.poll("task-abc")
+        assert job.status == "failed"
+        assert job.error == "prompt too long"
+
+    @pytest.mark.asyncio
+    async def test_poll_unexpected_body_shape_raises(self):
+        # docs strictly defines {task: VideoTask}; anything else must surface
+        # as poll_failed (not a half-parsed silent "processing").
+        handler = _async_handler([{"base_resp": {"status_code": 0}, "status": "succeeded"}])
+        provider = self._make_provider(handler)
+        with pytest.raises(RuntimeError, match="unexpected body shape"):
+            await provider.poll("task-abc")
+
+    @pytest.mark.asyncio
+    async def test_poll_non_dict_error_does_not_pollute_message(self):
+        # Defensive: if docs ever drift to a non-dict error, do not stringify
+        # the whole blob into the user-visible message field.
+        handler = _async_handler(
+            [
+                {
+                    "base_resp": {"status_code": 0},
+                    "task": {
+                        "status": "failed",
+                        "error": "some string error",
+                    },
+                }
+            ]
+        )
+        provider = self._make_provider(handler)
+        job = await provider.poll("task-abc")
+        assert job.status == "failed"
+        assert job.error is not None
+        assert "non-standard error" in job.error
+
+    @pytest.mark.asyncio
+    async def test_submit_rejects_prompt_over_7000_chars(self):
+        # docs: ContentItem.text ≤ 7000 chars. Catch before hitting the API.
+        from services.llm.providers.minimax.video import _MAX_PROMPT_CHARS
+
+        provider = self._make_provider(_async_handler([]))
+        big_prompt = "x" * (_MAX_PROMPT_CHARS + 1)
+        with pytest.raises(ValueError, match="exceeds MiniMax limit"):
+            await provider.submit(VideoGenRequest(prompt=big_prompt, aspect_ratio="16:9"))
+
+    @pytest.mark.asyncio
+    async def test_fetch_is_unreachable_on_h3(self):
+        # H3 v2 returns the URL inline from poll(); fetch() must not be hit.
+        provider = self._make_provider(_async_handler([]))
+        with pytest.raises(RuntimeError, match="H3"):
+            await provider.fetch("file-xyz")
 
 
 class TestPerUserProviderChain:

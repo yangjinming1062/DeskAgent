@@ -91,13 +91,12 @@ class TestVideoGenJobRoundtrip:
             cfg = db.query(UserModelConfig).filter(UserModelConfig.user_id == user_id).first()
             cfg.video_gen_base_url = "https://api.minimaxi.com"
             cfg.video_gen_api_key = "sk-test"
-            cfg.video_gen_model_name = "MiniMax-Hailuo-02"
+            cfg.video_gen_model_name = "MiniMax-H3"
             db.commit()
 
-        # Mock transport: submit returns task_id, poll returns succeeded, fetch returns asset
+        # Mock transport: submit returns task_id, poll returns succeeded with inline download_url
         submit_calls = []
         poll_calls = []
-        fetch_calls = []
 
         async def handler(request: httpx.Request) -> httpx.Response:
             path = request.url.path
@@ -108,16 +107,20 @@ class TestVideoGenJobRoundtrip:
                     content=b"\x00\x00\x00\x18ftypmoov",
                     headers={"content-type": "video/mp4"},
                 )
-            if path == "/v1/video_generation":
+            if path == "/v2/video_generation":
                 submit_calls.append(json.loads(request.content))
                 return httpx.Response(200, json={"base_resp": {"status_code": 0}, "task_id": "task-test-1"})
-            if path == "/v1/query/video_generation":
-                poll_calls.append(dict(request.url.params))
-                return httpx.Response(200, json={"base_resp": {"status_code": 0}, "status": "Success", "file_id": "file-test-1"})
-            if path == "/v1/files/retrieve":
-                fetch_calls.append(dict(request.url.params))
+            if path.startswith("/v2/query/video_generation/"):
+                poll_calls.append(path.split("/")[-1])
                 return httpx.Response(
-                    200, json={"base_resp": {"status_code": 0}, "file": {"download_url": "https://example.com/video.mp4", "content_type": "video/mp4", "bytes": 100}}
+                    200,
+                    json={
+                        "base_resp": {"status_code": 0},
+                        "task": {
+                            "status": "succeeded",
+                            "content": {"url": "https://example.com/video.mp4"},
+                        },
+                    },
                 )
             return httpx.Response(404, json={"error": "not found", "path": path})
 
@@ -178,7 +181,7 @@ class TestVideoGenJobRoundtrip:
         assert row.status == "succeeded", f"job ended in {row.status}: {row.error_message}"
         assert row.video_url.startswith("http"), f"video_url should be our public URL, got {row.video_url!r}"
         assert row.file_id is not None
-        assert submit_calls and poll_calls and fetch_calls, "all three endpoints should have been hit"
+        assert submit_calls and poll_calls, "submit + poll endpoints should have been hit"
 
     @pytest.mark.asyncio
     async def test_provider_failure_marks_job_failed(self, monkeypatch, _patch_db, test_token):
@@ -191,7 +194,7 @@ class TestVideoGenJobRoundtrip:
         import services.llm.providers.http as http_mod
 
         async def handler(request: httpx.Request) -> httpx.Response:
-            if request.url.path == "/v1/video_generation":
+            if request.url.path == "/v2/video_generation":
                 return httpx.Response(200, json={"base_resp": {"status_code": 1004, "status_msg": "auth fail"}})
             return httpx.Response(404)
 
@@ -209,7 +212,7 @@ class TestVideoGenJobRoundtrip:
             cfg = db.query(UserModelConfig).filter(UserModelConfig.user_id == user_id).first()
             cfg.video_gen_base_url = "https://api.minimaxi.com"
             cfg.video_gen_api_key = "sk-test"
-            cfg.video_gen_model_name = "MiniMax-Hailuo-02"
+            cfg.video_gen_model_name = "MiniMax-H3"
             db.commit()
 
             with pytest.raises((MissingLlmConfigError, ProviderError, ValueError)):

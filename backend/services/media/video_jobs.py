@@ -320,7 +320,7 @@ async def _poll_and_finalize_locked(job_id: int) -> None:
                     if not claimed:
                         return
                 try:
-                    file_id, public_url = await _download_and_store(provider, status.file_id)
+                    file_id, public_url = await _download_and_store(provider, status.file_id, download_url=status.download_url)
                 except Exception as e:
                     logger.exception("video download failed", extra={"job_id": job_id})
                     _update_job(job_id, status="failed", error_reason="download_failed", error_message=str(e))
@@ -352,12 +352,25 @@ async def _poll_and_finalize_locked(job_id: int) -> None:
             _evt("video_gen.failed", {"task_id": str(job_id), "error": str(exc)})
 
 
-async def _download_and_store(provider, file_id: str) -> tuple[str, str]:
-    """Download the video bytes from the provider (within its 9h window) and
-    persist locally via ``components.save_file``."""
-    asset = await provider.fetch(file_id)
-    data = await _stream_download(asset.download_url)
-    return save_file(data, session_id="", content_type=asset.content_type or "video/mp4", ext="mp4")
+async def _download_and_store(provider, file_id: str | None, *, download_url: str | None = None) -> tuple[str, str]:
+    """Download the video bytes from the provider (within its URL window) and
+    persist locally via ``components.save_file``.
+
+    Providers whose success path returns the URL inline (MiniMax-H3 v2)
+    populate ``download_url`` and skip the second ``fetch()`` hop; providers
+    that gate the URL behind a separate ``files/retrieve`` call (legacy
+    MiniMax-Hailuo v1) populate ``file_id`` and we go through ``fetch()``.
+    """
+    if download_url:
+        asset_content_type = "video/mp4"
+    else:
+        if not file_id:
+            raise RuntimeError("provider.poll succeeded without file_id or download_url")
+        asset = await provider.fetch(file_id)
+        download_url = asset.download_url
+        asset_content_type = asset.content_type or "video/mp4"
+    data = await _stream_download(download_url)
+    return save_file(data, session_id="", content_type=asset_content_type, ext="mp4")
 
 
 async def _stream_download(url: str) -> bytes:

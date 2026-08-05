@@ -151,6 +151,10 @@ class VideoJobStatus:
     task_id: str
     status: Literal["queued", "processing", "succeeded", "failed"]
     file_id: str | None = None
+    # Providers whose success path returns the file URL inline (no separate
+    # ``files/retrieve`` step — MiniMax H3 v2) populate this so the job
+    # worker can skip the second hop. ``None`` means "call fetch(file_id)".
+    download_url: str | None = None
     error: str | None = None
     raw: Any = None
 
