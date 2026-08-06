@@ -32,9 +32,7 @@ const AVATAR_SLOW_PATH_PATTERN = /^\/api\/companion\/avatar(?:\/upload|\/from-im
 // POST only — reads are DB lookups with no provider call.
 function resolvePathTimeoutMs(path, method, fallbackMs = DEFAULT_FETCH_TIMEOUT_MS) {
   const isAvatarPost =
-    String(method || 'GET').toUpperCase() === 'POST' &&
-    typeof path === 'string' &&
-    AVATAR_SLOW_PATH_PATTERN.test(path)
+    String(method || 'GET').toUpperCase() === 'POST' && typeof path === 'string' && AVATAR_SLOW_PATH_PATTERN.test(path)
 
   return isAvatarPost ? AVATAR_FETCH_TIMEOUT_MS : resolveTimeoutMs(undefined, fallbackMs)
 }

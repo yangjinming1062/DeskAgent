@@ -1,6 +1,7 @@
 import { useStore } from '@nanostores/react'
 import { type PointerEvent as ReactPointerEvent, useEffect, useRef, useState } from 'react'
 
+import { pickAvatarImage, type PickedImage } from '@/companion/avatar-image'
 import { awaitAvatarRegeneration } from '@/companion/avatar-regen-store'
 import { useGatewayRequest } from '@/companion/boot/use-gateway-request'
 import { useInteractiveRegion } from '@/companion/interactive-regions'
@@ -37,15 +38,44 @@ const VOICE_LANGUAGE_TABS: { id: VoiceLanguageFilter; label: string }[] = [
 
 type QKey = keyof OnboardingAnswers
 
+// A chip that picks *what kind* of answer the user is about to give instead of
+// being the answer itself — see CALL_NAME_KINDS.
+interface AnswerKind {
+  chip: string
+  label: string
+  placeholder: string
+  values?: readonly string[]
+}
+
 interface Question {
   key: QKey
   text: string
   placeholder: string
   required: boolean
   multiline: boolean
-  presets: readonly string[]
+  presets?: readonly string[]
   max?: number
+  // Lets the user hand over a reference image alongside the text answer.
+  allowImage?: boolean
+  // Mutually exclusive with `presets`: two-level entry instead of chip-fills-input.
+  kinds?: readonly AnswerKind[]
 }
+
+// "名字 / 昵称" are categories of appellation, not appellations — filling the
+// input with the literal chip text would store "昵称" as the way to address the
+// user. Picking a chip re-labels the input and asks for the concrete value;
+// 称号 additionally offers ready-made values because those *are* answers.
+const CALL_NAME_KINDS: readonly AnswerKind[] = [
+  { chip: '名字', label: '那，您的名字是？', placeholder: '比如：张三' },
+  { chip: '昵称', label: '那，您的昵称是？', placeholder: '比如：小明、阿棠' },
+  {
+    chip: '称号',
+    label: '想让我用哪个称号？',
+    placeholder: '或者自己写一个…',
+    values: ['老板', '主人', '老师', '大人']
+  },
+  { chip: '自填', label: '那，想让我怎么叫您？', placeholder: '随便写，我记住就是了…' }
+]
 
 const QUESTIONS: readonly Question[] = [
   {
@@ -53,8 +83,7 @@ const QUESTIONS: readonly Question[] = [
     text: '您好…我还不认识自己。您愿意给我一个名字吗？',
     placeholder: '给我起个名字吧',
     required: true,
-    multiline: false,
-    presets: []
+    multiline: false
   },
   {
     key: 'species',
@@ -79,7 +108,8 @@ const QUESTIONS: readonly Question[] = [
     required: false,
     multiline: true,
     max: MAX_APPEARANCE,
-    presets: APPEARANCE_PRESETS
+    presets: APPEARANCE_PRESETS,
+    allowImage: true
   },
   {
     key: 'role',
@@ -104,7 +134,7 @@ const QUESTIONS: readonly Question[] = [
     required: false,
     multiline: false,
     max: MAX_USER_TEXT,
-    presets: ['名字', '昵称', '老板', '自填']
+    kinds: CALL_NAME_KINDS
   },
   {
     key: 'user_gender',
@@ -130,8 +160,7 @@ const QUESTIONS: readonly Question[] = [
     placeholder: '可以多写几个…',
     required: false,
     multiline: true,
-    max: MAX_USER_TEXT,
-    presets: []
+    max: MAX_USER_TEXT
   },
   // speaking_style is required by the backend schema — the dedicated
   // question makes the user's choice the direct source of truth.
@@ -150,8 +179,7 @@ const QUESTIONS: readonly Question[] = [
     placeholder: '可跳过…',
     required: false,
     multiline: true,
-    max: MAX_USER_TEXT,
-    presets: []
+    max: MAX_USER_TEXT
   },
   {
     key: 'voice',
@@ -207,12 +235,15 @@ const BACKEND_FIELD: Record<QKey, string> = {
   voice: 'voice'
 }
 
-async function generatePortrait(): Promise<string | null> {
+// A reference image routes generation through /avatar/from-image so the portrait
+// is rendered *as* the uploaded character; the persona prompt already carries
+// the appearance text, so no extra description is sent from here.
+async function generatePortrait(reference: PickedImage | null): Promise<string | null> {
   try {
     const res = await window.deskagent.api<{ asset_url?: string }>({
-      path: '/api/companion/avatar',
+      path: reference ? '/api/companion/avatar/from-image' : '/api/companion/avatar',
       method: 'POST',
-      body: { style: 'portrait' }
+      body: reference ? { content_type: reference.contentType, image: reference.base64 } : { style: 'portrait' }
     })
 
     return res.asset_url ?? null
@@ -264,9 +295,13 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
   // A picked base image sits in a preview state: the user can use it as-is or
   // re-render it with an optional description on top (the upload may not meet
   // the portrait seed contract, e.g. a busy background).
-  const [pickedImage, setPickedImage] = useState<{ base64: string; contentType: string; previewUrl: string } | null>(
-    null
-  )
+  const [pickedImage, setPickedImage] = useState<PickedImage | null>(null)
+
+  // Reference image handed over at the 形象描述 question. Session-scoped on
+  // purpose — `onboarding.submit` persists text answers only, so a resumed
+  // draft asks for the image again rather than silently generating without it.
+  const [refImage, setRefImage] = useState<PickedImage | null>(null)
+  const [answerKind, setAnswerKind] = useState<AnswerKind | null>(null)
 
   const [refineDescription, setRefineDescription] = useState('')
   const [hint, setHint] = useState<string | null>(null)
@@ -457,6 +492,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
     const q = QUESTIONS[qIndex]
     const current = answersRef.current
     setInput((current[q.key] as string) ?? '')
+    setAnswerKind(null)
     setHint(null)
     const liveSpoken = q.text.replace('{name}', current.name?.trim() || '你')
     void speak(liveSpoken, undefined, `onboarding.q${qIndex}`)
@@ -543,11 +579,23 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
     let url: string | null = null
 
     if (personaOk) {
-      url = await retryTransient(generatePortrait, 1500, 2)
+      try {
+        url = await retryTransient(() => generatePortrait(refImage), 1500, 2)
+      } catch {
+        // A deterministic 4xx (unusable reference image, incomplete persona)
+        // must not strand the flow on 'hatching' — fall through to the portrait
+        // phase, where regenerate / upload are still available.
+        url = null
+      }
 
       if (!url) {
-        setHint('我还没想好…')
+        // The portrait panel is what renders next; `hint` is only visible in the form.
+        setPortraitPanelHint(refImage ? '这张参考图我没能用上…待会儿再换一张吧' : '我还没想好…')
       }
+
+      // Its only reader has run — drop the (up to 8 MiB) base64 rather than
+      // holding it for the rest of the session.
+      setRefImage(null)
     } else {
       setHint('记忆还没存好，稍后再试试形象吧…')
     }
@@ -604,31 +652,38 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
   }
 
   const uploadPortrait = async () => {
-    try {
-      const [path] = await window.deskagent.selectPaths({
-        title: '选择一张图片作为基准形象',
-        filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif'] }]
-      })
+    const picked = await pickAvatarImage('选择一张图片作为基准形象')
 
-      if (!path) {
-        return
-      }
-
-      const dataUrl = await window.deskagent.readFileDataUrl(path)
-      const comma = dataUrl.indexOf(',')
-      const mime = comma > 0 ? dataUrl.slice(5, comma) : 'image/png'
-      const base64 = comma > 0 ? dataUrl.slice(comma + 1) : ''
-
-      if (!base64) {
-        return
-      }
-
-      setPickedImage({ base64, contentType: mime, previewUrl: dataUrl })
-      setRefineDescription('')
-      setPortraitPanelHint(null)
-    } catch {
-      setHint('选择图片失败了，换个方式试试？')
+    if (!picked) {
+      return
     }
+
+    if ('error' in picked) {
+      setPortraitPanelHint(picked.error)
+
+      return
+    }
+
+    setPickedImage(picked.image)
+    setRefineDescription('')
+    setPortraitPanelHint(null)
+  }
+
+  const pickReferenceImage = async () => {
+    const picked = await pickAvatarImage('选择一张参考图')
+
+    if (!picked) {
+      return
+    }
+
+    if ('error' in picked) {
+      setHint(picked.error)
+
+      return
+    }
+
+    setRefImage(picked.image)
+    setHint(null)
   }
 
   const confirmPickedImage = async () => {
@@ -804,16 +859,37 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
               {presetValues.length > 0 && (
                 <div className="mt-3 flex flex-wrap gap-2">
                   {presetValues.map(p => (
-                    <button
-                      className="rounded-full border border-white/20 bg-white/5 px-3 py-1 text-xs transition hover:bg-white/15"
-                      key={p}
-                      onClick={() => setInput(p)}
-                      type="button"
-                    >
-                      {p}
-                    </button>
+                    <Chip key={p} label={p} onClick={() => setInput(p)} />
                   ))}
                 </div>
+              )}
+              {question.kinds && (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {question.kinds.map(k => (
+                    <Chip
+                      active={answerKind?.chip === k.chip}
+                      key={k.chip}
+                      label={k.chip}
+                      onClick={() => {
+                        setAnswerKind(k)
+                        setInput('')
+                        inputRef.current?.focus()
+                      }}
+                    />
+                  ))}
+                </div>
+              )}
+              {answerKind && (
+                <>
+                  <p className="mt-3 text-xs text-white/55">{answerKind.label}</p>
+                  {answerKind.values && (
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {answerKind.values.map(v => (
+                        <Chip active={input === v} key={v} label={v} onClick={() => setInput(v)} />
+                      ))}
+                    </div>
+                  )}
+                </>
               )}
               {question.multiline ? (
                 <textarea
@@ -833,10 +909,34 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
                       onSend()
                     }
                   }}
-                  placeholder={question.placeholder}
+                  placeholder={answerKind?.placeholder ?? question.placeholder}
                   ref={inputRef}
                   value={input}
                 />
+              )}
+              {question.allowImage && (
+                <div className="mt-3 flex items-center gap-2 text-xs">
+                  <button
+                    className="rounded-full border border-dashed border-white/25 px-3 py-1 text-white/70 transition hover:bg-white/10"
+                    onClick={() => void pickReferenceImage()}
+                    type="button"
+                  >
+                    {refImage ? '换一张参考图' : '＋ 上传参考图'}
+                  </button>
+                  {refImage && (
+                    <>
+                      <img alt="参考图" className="h-9 w-9 rounded-md object-cover" src={refImage.previewUrl} />
+                      <span className="text-[10px] text-white/35">我会照着它画自己</span>
+                      <button
+                        className="ml-auto text-white/40 transition hover:text-white"
+                        onClick={() => setRefImage(null)}
+                        type="button"
+                      >
+                        移除
+                      </button>
+                    </>
+                  )}
+                </div>
               )}
               <div className="mt-4 flex items-center justify-between text-xs">
                 <button
@@ -1024,6 +1124,18 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
         </div>
       </div>
     </div>
+  )
+}
+
+function Chip({ label, onClick, active }: { label: string; onClick: () => void; active?: boolean }) {
+  return (
+    <button
+      className={`rounded-full border px-3 py-1 text-xs transition ${active ? 'border-white/60 bg-white/25' : 'border-white/20 bg-white/5 hover:bg-white/15'}`}
+      onClick={onClick}
+      type="button"
+    >
+      {label}
+    </button>
   )
 }
 
