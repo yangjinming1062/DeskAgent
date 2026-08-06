@@ -35,9 +35,7 @@ def _build_content(req: VideoGenRequest) -> list[dict]:
     aspect ratio from the image and ignores an explicit ``ratio`` here.
     """
     if len(req.prompt) > _MAX_PROMPT_CHARS:
-        raise ValueError(
-            f"prompt exceeds MiniMax limit ({_MAX_PROMPT_CHARS} chars per ContentItem.text)"
-        )
+        raise ValueError(f"prompt exceeds MiniMax limit ({_MAX_PROMPT_CHARS} chars per ContentItem.text)")
     content: list[dict] = [{"type": "text", "text": req.prompt}]
     if req.first_frame_image:
         content.append(

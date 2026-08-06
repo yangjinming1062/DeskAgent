@@ -6,6 +6,8 @@ from typing import Any
 from components import BackgroundTask
 from components import begin_local_scope
 from components import get_logger
+from components import MEMORY_CONSOLIDATE_INTERVAL_SECONDS
+from components import MEMORY_CONSOLIDATE_TRIGGER_ROWS
 from components import naive_utc_now
 from components import session_scope
 from croniter import croniter
@@ -21,6 +23,8 @@ from services.llm import resolve_user_llm_config
 from sqlalchemy import insert
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
+
+from .memory_consolidator import maybe_consolidate_one_user
 
 logger = get_logger(__name__)
 
@@ -392,6 +396,18 @@ async def _kick_autonomous_turn(job_id: int, meta: dict[str, Any]) -> None:
         logger.exception("cron: autonomous turn failed", extra={"user_id": user_id, "job_id": job_id})
 
 
+# Per-user timestamp of last consolidator run. Process-local — matches the
+# ARCH §5 single-instance semantic (multi-replica would split state).
+_LAST_MEMORY_CONSOLIDATE: dict[int, float] = {}
+
+# Outer throttle on the recall-pool scan itself. The scan is cheap (partial
+# index) but pointless every minute when no user qualifies. 10 min keeps
+# the discovery lag low while the per-user 6 h throttle keeps the heavy
+# LLM call rate bounded.
+_LAST_CONSOLIDATE_SCAN: float = 0.0
+_CONSOLIDATE_SCAN_INTERVAL_SECONDS: int = 600
+
+
 async def _tick() -> None:
     """CAS-advance ``next_run_at`` for due jobs and enqueue ``cron.trigger`` WSEvents.
 
@@ -405,6 +421,10 @@ async def _tick() -> None:
     — one bad FK doesn't roll back the healthy winners' CAS advances.
     """
     now = naive_utc_now()
+    # Memory consolidator runs independently of cron-job dispatch — it must
+    # not be gated by ``if not due_jobs`` because installs with no cron jobs
+    # would otherwise never trigger consolidation.
+    await _maybe_run_memory_consolidator(now)
     due_jobs = _select_due_jobs()
     if len(due_jobs) > _MAX_DUE_PER_TICK:
         logger.warning(
@@ -415,6 +435,48 @@ async def _tick() -> None:
     if not due_jobs:
         return
     _advance_due_jobs(due_jobs, now)
+
+
+async def _maybe_run_memory_consolidator(now: datetime) -> None:
+    """Run the recall consolidator for users whose recall pool is over threshold.
+
+    Outer scan is throttled (``_CONSOLIDATE_SCAN_INTERVAL_SECONDS``); per-user
+    throttle (``MEMORY_CONSOLIDATE_INTERVAL_SECONDS``) keeps the same user
+    from being merged repeatedly. Per-user calls run concurrently via
+    ``asyncio.gather`` so the tick pays max-LLM-latency instead of sum.
+    """
+    global _LAST_CONSOLIDATE_SCAN
+    if now.timestamp() - _LAST_CONSOLIDATE_SCAN < _CONSOLIDATE_SCAN_INTERVAL_SECONDS:
+        return
+    _LAST_CONSOLIDATE_SCAN = now.timestamp()
+
+    with session_scope() as db:
+        rows = db.execute(
+            text("SELECT user_id FROM memories WHERE context LIKE 'recall:%' " "GROUP BY user_id HAVING COUNT(*) > :t"),
+            {"t": MEMORY_CONSOLIDATE_TRIGGER_ROWS},
+        ).all()
+    eligible: list[int] = []
+    for (user_id,) in rows:
+        uid = int(user_id)
+        if now.timestamp() - _LAST_MEMORY_CONSOLIDATE.get(uid, 0.0) < MEMORY_CONSOLIDATE_INTERVAL_SECONDS:
+            continue
+        eligible.append(uid)
+    if not eligible:
+        return
+
+    # Apply the per-user throttle only after the consolidator actually
+    # ran for that user — a failed LLM call must not lock the user out
+    # of future attempts.
+    results = await asyncio.gather(
+        *(maybe_consolidate_one_user(uid) for uid in eligible),
+        return_exceptions=True,
+    )
+    for uid, result in zip(eligible, results, strict=True):
+        if isinstance(result, Exception):
+            logger.exception("memory_consolidator: tick failed", extra={"user_id": uid})
+            continue
+        if result is True:
+            _LAST_MEMORY_CONSOLIDATE[uid] = now.timestamp()
 
 
 async def scheduler_loop() -> None:

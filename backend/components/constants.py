@@ -84,6 +84,27 @@ CONTEXT_SUMMARY_HEADROOM_FACTOR: int = 2
 # Max memories returned by memory_recall.
 MEMORY_RECALL_MAX_RESULTS: int = 10
 
+# Hard cap on a single auto_inject row's content (chars). Enforced at
+# write time in NativeMemory._retain — LLM-side discipline, not a render-
+# time truncate, so the prompt receives the full row verbatim.
+MAX_AUTO_INJECT_CONTENT_CHARS: int = 500
+
+# Hard cap on a single recall row's content (chars).
+MAX_RECALL_CONTENT_CHARS: int = 4_000
+
+# Recall consolidator triggers once the user's recall pool exceeds this
+# row count; consolidates down to TARGET rows.
+MEMORY_CONSOLIDATE_TRIGGER_ROWS: int = 50
+# Read window the consolidator pulls when triggered — distinct from
+# TRIGGER_ROWS so the policy "fire when ≥N, read the most-recent M" is
+# expressible. Default equals TRIGGER for the simple case.
+MEMORY_CONSOLIDATE_WINDOW_ROWS: int = 50
+MEMORY_CONSOLIDATE_TARGET_ROWS: int = 20
+
+# Minimum seconds between consolidator runs for the same user. Prevents
+# repeated merging of the same pool.
+MEMORY_CONSOLIDATE_INTERVAL_SECONDS: int = 6 * 3600
+
 
 # ── JSON-RPC Protocol ────────────────────────────────────────────────
 

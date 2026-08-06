@@ -1,0 +1,130 @@
+from datetime import datetime
+from typing import Any
+
+from components import MAX_AUTO_INJECT_CONTENT_CHARS
+from components import MAX_RECALL_CONTENT_CHARS
+from modules.memory import Memory
+from services.tools import AUTO_INJECT_SLOTS
+from services.tools import KIND_TO_PREFIX
+from services.tools import RECALL_TAGS
+from sqlalchemy import or_
+from sqlalchemy.orm import Session
+
+# Bounds: UI list pagination + length cap on edit.
+_LIST_DEFAULT_LIMIT = 100
+_LIST_MAX_LIMIT = 500
+
+_OTHER_BUCKET = "other"
+
+
+def _owned(db: Session, user_id: int, memory_id: int) -> Memory | None:
+    return db.query(Memory).filter(Memory.id == memory_id, Memory.user_id == user_id).first()
+
+
+def _row_to_dict(row: Memory) -> dict[str, Any]:
+    return {
+        "id": row.id,
+        "context": row.context,
+        "tags": row.tags,
+        "content": row.content,
+        "created_at": row.created_at.isoformat() if isinstance(row.created_at, datetime) else None,
+        "updated_at": row.updated_at.isoformat() if isinstance(row.updated_at, datetime) else None,
+    }
+
+
+def list_memories(
+    db: Session,
+    user_id: int,
+    *,
+    kind: str | None = None,
+    tag: str | None = None,
+    q: str | None = None,
+    limit: int = _LIST_DEFAULT_LIMIT,
+) -> list[dict[str, Any]]:
+    """Return the user's memories, optionally filtered.
+
+    ``kind`` ∈ {recall, auto_inject, user_profile, interaction_stats};
+    ``tag`` must be in ``RECALL_TAGS`` when given; ``q`` does a substring
+    match on ``content`` and ``context``.
+    """
+    if kind is not None and kind not in KIND_TO_PREFIX:
+        raise ValueError(f"kind must be one of {sorted(KIND_TO_PREFIX)}")
+    if tag is not None and tag not in RECALL_TAGS:
+        raise ValueError(f"tag must be in {sorted(RECALL_TAGS)}")
+    if limit <= 0 or limit > _LIST_MAX_LIMIT:
+        limit = _LIST_DEFAULT_LIMIT
+
+    query = db.query(Memory).filter(Memory.user_id == user_id)
+    if kind is not None:
+        query = query.filter(Memory.context.like(KIND_TO_PREFIX[kind] + "%"))
+    if tag:
+        # tags is JSON; substring match is good enough for the UI (each row
+        # carries ≤ a handful of short tokens).
+        query = query.filter(Memory.tags.ilike(f'%"{tag}"%'))
+    if q:
+        like = f"%{q}%"
+        query = query.filter(or_(Memory.content.ilike(like), Memory.context.ilike(like)))
+
+    rows = query.order_by(Memory.updated_at.desc(), Memory.id.desc()).limit(limit).all()
+    return [_row_to_dict(r) for r in rows]
+
+
+def get_memory(db: Session, user_id: int, memory_id: int) -> dict[str, Any] | None:
+    row = _owned(db, user_id, memory_id)
+    return _row_to_dict(row) if row else None
+
+
+def update_memory(db: Session, user_id: int, memory_id: int, *, content: str) -> dict[str, Any] | None:
+    """Update ``content`` only. ``context``/tags cannot change here — that
+    requires writing a new row (auto_inject slots auto-upsert by design).
+
+    The cap is context-aware: auto_inject slots are 500 chars (the LLM
+    write path enforces this too — keeping the admin path consistent
+    matters because partial unique index + later consolidator both
+    rely on auto_inject slots being short). All other rows use the
+    recall-pool cap.
+    """
+    content = (content or "").strip()
+    if not content:
+        raise ValueError("content must be non-empty")
+    row = _owned(db, user_id, memory_id)
+    if row is None:
+        return None
+    cap = MAX_AUTO_INJECT_CONTENT_CHARS if row.context in AUTO_INJECT_SLOTS else MAX_RECALL_CONTENT_CHARS
+    if len(content) > cap:
+        raise ValueError(f"content exceeds {cap} chars for {row.context or 'recall'}")
+    row.content = content
+    db.commit()
+    db.refresh(row)
+    return _row_to_dict(row)
+
+
+def delete_memory(db: Session, user_id: int, memory_id: int) -> bool:
+    row = _owned(db, user_id, memory_id)
+    if row is None:
+        return False
+    db.delete(row)
+    db.commit()
+    return True
+
+
+def memory_counts(db: Session, user_id: int) -> dict[str, int]:
+    """Bucket the user's rows by namespace prefix. Row set is bounded
+    (≈5 auto_inject + ≤50 recall + ≤5 user_profile + ~1 interaction_stats
+    per active day) so a Python pass is cheaper than a hand-rolled SQL
+    CASE-WHEN aggregate. Rows with NULL or unknown context bucket under
+    ``"other"``.
+    """
+    counts: dict[str, int] = {label: 0 for label in KIND_TO_PREFIX}
+    counts[_OTHER_BUCKET] = 0
+    for (ctx,) in db.query(Memory.context).filter(Memory.user_id == user_id).all():
+        if ctx is None:
+            counts[_OTHER_BUCKET] += 1
+            continue
+        for label, prefix in KIND_TO_PREFIX.items():
+            if ctx.startswith(prefix):
+                counts[label] += 1
+                break
+        else:
+            counts[_OTHER_BUCKET] += 1
+    return counts
