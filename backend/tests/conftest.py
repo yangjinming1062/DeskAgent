@@ -32,6 +32,21 @@ def sqlite_engine():
             "ON memories (user_id, context) "
             "WHERE context LIKE 'user_profile:%'"
         ))
+        # Mirror the production partial-unique index on ``auto_inject:%``
+        # (see backend/main.py). One row per (user, slot) so the
+        # ``memory_retain(kind='auto_inject')`` upsert is atomic.
+        conn.execute(text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_memories_auto_inject_slot "
+            "ON memories (user_id, context) "
+            "WHERE context LIKE 'auto_inject:%'"
+        ))
+        # SQLite ignores ``DESC`` in older builds; the index is still
+        # useful for the partial scan even without the explicit order.
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_memories_recall_user_updated "
+            "ON memories (user_id, updated_at) "
+            "WHERE context LIKE 'recall:%'"
+        ))
     # Tests load the asset signer via ``_signing_key()`` which now raises
     # when the key is empty AND test mode is off (see P2-12 belt-and-suspenders
     # in services/companion/asset_store.py). Flip the flag here so all
@@ -72,6 +87,7 @@ def _patch_db(monkeypatch, sqlite_engine):
         "services.tools.memory",
         "services.gateway.runtime",
         "services.scheduler.title_generator",
+        "services.scheduler.memory_consolidator",
         "services.tools.registry",
         "services.chat.agent_delegate",
         "services.tools.builtin.image_generation_tool",
@@ -83,6 +99,7 @@ def _patch_db(monkeypatch, sqlite_engine):
         "services.companion.affect_check",
         "services.companion.interact",
         "services.companion.interaction_stats",
+        "services.companion.memory_admin",
         "api.v1.chat",
         "api.v1.llm",
         "api.v1.media",

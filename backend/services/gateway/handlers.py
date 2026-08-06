@@ -39,17 +39,21 @@ from services.chat import run_chat_turn
 from services.companion import AvatarGenerationError
 from services.companion import check_affect
 from services.companion import check_interact
+from services.companion import delete_memory
 from services.companion import design_voice
 from services.companion import get_onboarding_state
 from services.companion import get_or_create_persona
 from services.companion import list_clips
+from services.companion import list_memories
 from services.companion import list_tts_voices
 from services.companion import match_user_voice
+from services.companion import memory_counts
 from services.companion import normalize_voice_language
 from services.companion import PersonaValidationError
 from services.companion import record_interaction
 from services.companion import regenerate_avatar
 from services.companion import submit_onboarding_field
+from services.companion import update_memory
 from services.companion.memory_bootstrap import read_user_profile
 from services.disturbance import set_disturbance_tier
 from services.llm import client_for_config
@@ -852,6 +856,52 @@ def _register_session_handlers(
             return read_user_profile(db, user_id)
 
     dispatcher.register("companion.get_user_profile", companion_get_user_profile)
+
+    async def memory_list(params: dict) -> dict:
+        kind = params.get("kind")
+        tag = params.get("tag")
+        q = params.get("q")
+        limit = params.get("limit")
+        try:
+            with SESSION_LOCAL() as db:
+                rows = list_memories(
+                    db,
+                    user_id,
+                    kind=kind if isinstance(kind, str) else None,
+                    tag=tag if isinstance(tag, str) else None,
+                    q=q if isinstance(q, str) else None,
+                    limit=int(limit) if isinstance(limit, int) else 100,
+                )
+                counts = memory_counts(db, user_id)
+        except ValueError as exc:
+            raise JsonRpcError(JSONRPC_INVALID_PARAMS, str(exc))
+        return {"memories": rows, "counts": counts}
+
+    async def memory_update(params: dict) -> dict:
+        memory_id = params.get("memory_id")
+        content = params.get("content")
+        if not isinstance(memory_id, int) or not isinstance(content, str):
+            raise JsonRpcError(JSONRPC_INVALID_PARAMS, "memory_id (int) and content (str) required")
+        try:
+            with SESSION_LOCAL() as db:
+                row = update_memory(db, user_id, memory_id, content=content)
+        except ValueError as exc:
+            raise JsonRpcError(JSONRPC_INVALID_PARAMS, str(exc))
+        if row is None:
+            raise JsonRpcError(JSONRPC_METHOD_NOT_FOUND, f"memory {memory_id} not found")
+        return row
+
+    async def memory_delete(params: dict) -> dict:
+        memory_id = params.get("memory_id")
+        if not isinstance(memory_id, int):
+            raise JsonRpcError(JSONRPC_INVALID_PARAMS, "memory_id (int) required")
+        with SESSION_LOCAL() as db:
+            ok = delete_memory(db, user_id, memory_id)
+        return {"deleted": ok}
+
+    dispatcher.register("memory.list", memory_list)
+    dispatcher.register("memory.update", memory_update)
+    dispatcher.register("memory.delete", memory_delete)
 
     async def onboarding_get_state(_params: dict) -> dict:
         # Breakpoint recovery: the desktop calls this on boot to learn which

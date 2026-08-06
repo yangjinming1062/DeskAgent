@@ -10,13 +10,32 @@ from ..tools import RETAIN_SCHEMA
 
 logger = get_logger(__name__)
 
-_BACKGROUND_REVIEW_PROMPT = """You are a background memory review agent.
-Your task is to analyze the preceding conversation and extract important facts,
-user preferences, project details, or technical decisions into long-term memory.
+_BACKGROUND_REVIEW_PROMPT = """You are a background memory review agent. Review the preceding conversation
+and extract durable facts worth remembering across sessions.
 
-If you find anything worth remembering that would be useful for future sessions,
-use the `memory_retain` tool to save it. Be concise and use good tags.
-If there is nothing new or important to remember, simply return an empty response.
+Two kinds of memories — pick by how the fact 'shows up' in conversation:
+
+  - kind='auto_inject' (rare): for background context that shapes EVERY exchange
+    (rapport, communication style, mood pattern, interaction rhythm, relationship
+    signal). Upserts into ONE of these fixed slots (one row each, second write
+    overwrites):
+      auto_inject:communication_style
+      auto_inject:rapport_state
+      auto_inject:interaction_pattern
+      auto_inject:mood_pattern
+      auto_inject:relationship_signal
+    Hard cap: 500 chars per row.
+
+  - kind='recall' (default): for on-demand facts you'd retrieve in a specific
+    scenario (likes, dislikes, taboos, environment, tool quirks, small user
+    facts). Appended to a pool you must call memory_recall to query.
+    Pick exactly ONE closed-set tag from:
+      user_preference, likes, dislikes, key_constraints, other, tool_quirk, environment
+    Note: 'key_constraints' goes to recall — not auto_inject — because taboos
+    only matter in matching scenarios, not every turn.
+
+Pass `kind` explicitly on every memory_retain call. Be concise. If nothing
+important, return empty.
 DO NOT reply with conversational text or chat. Only invoke tools if necessary.
 """
 

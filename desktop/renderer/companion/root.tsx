@@ -25,6 +25,7 @@ import { ChatDock } from './chat-dock'
 import { DeveloperOverlay } from './developer-overlay'
 import { handleCompanionEvent } from './events'
 import { handlePokeInteraction } from './interaction'
+import { MemoryBrowser } from './memory-browser'
 import { OnboardingFlow } from './onboarding/onboarding-flow'
 import { speakProactive } from './proactive/proactive'
 import { ProactiveBubble } from './proactive/proactive-bubble'
@@ -63,6 +64,7 @@ export function CompanionRoot() {
     $voiceCallOpen.set(voiceCallOpen)
   }, [voiceCallOpen])
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [memoryOpen, setMemoryOpen] = useState(false)
   const [contextMenuPos, setContextMenuPos] = useState<{ x: number; y: number } | null>(null)
   const { requestGateway } = useGatewayRequest()
   const validityCheckedRef = useRef(false)
@@ -248,6 +250,11 @@ export function CompanionRoot() {
       {showReady && contextMenuPos && (
         <SpriteContextMenu
           onClose={() => setContextMenuPos(null)}
+          onOpenMemory={() => {
+            setChatOpen(false)
+            setVoiceCallOpen(false)
+            setMemoryOpen(true)
+          }}
           onOpenSettings={() => {
             setChatOpen(false)
             setVoiceCallOpen(false)
@@ -272,6 +279,7 @@ export function CompanionRoot() {
       )}
       {showReady && voiceCallOpen && <VoiceCallDock onClose={() => setVoiceCallOpen(false)} />}
       {showReady && settingsOpen && <CompanionSettings onClose={() => setSettingsOpen(false)} />}
+      {showReady && memoryOpen && <MemoryBrowser onClose={() => setMemoryOpen(false)} />}
       {showReady && <ProactiveBubble />}
       <BootFailureOverlay />
       <DeveloperOverlay />

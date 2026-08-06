@@ -10,9 +10,10 @@ interface ContextMenuProps {
   onClose: () => void
   onOpenVoiceCall: () => void
   onOpenSettings: () => void
+  onOpenMemory: () => void
 }
 
-export function SpriteContextMenu({ x, y, onClose, onOpenVoiceCall, onOpenSettings }: ContextMenuProps) {
+export function SpriteContextMenu({ x, y, onClose, onOpenVoiceCall, onOpenSettings, onOpenMemory }: ContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null)
   useInteractiveRegion('sprite-context-menu', menuRef)
 
@@ -63,6 +64,16 @@ export function SpriteContextMenu({ x, y, onClose, onOpenVoiceCall, onOpenSettin
         type="button"
       >
         <span>🎛️</span> 伙伴设置
+      </button>
+      <button
+        className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left transition hover:bg-white/15"
+        onClick={() => {
+          onOpenMemory()
+          onClose()
+        }}
+        type="button"
+      >
+        <span>🧠</span> 长期记忆
       </button>
       <button
         className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left transition hover:bg-white/15"

@@ -3,9 +3,15 @@ from .extract_provider import resolve_extract_provider
 from .extract_provider import resolve_search_provider
 from .file_safety import get_read_block_error
 from .file_safety import is_write_denied
+from .memory import AUTO_INJECT_SLOTS
+from .memory import context_not_in
 from .memory import FORGET_SCHEMA
+from .memory import KIND_TO_PREFIX
 from .memory import NativeMemory
+from .memory import normalize_recall_context
+from .memory import normalize_recall_tags
 from .memory import RECALL_SCHEMA
+from .memory import RECALL_TAGS
 from .memory import RETAIN_SCHEMA
 from .model_tools import coerce_tool_args
 from .registry import ALWAYS_AVAILABLE
@@ -47,10 +53,16 @@ __all__ = [
     "is_write_denied",
     "get_read_block_error",
     # memory
+    "AUTO_INJECT_SLOTS",
     "FORGET_SCHEMA",
-    "RECALL_SCHEMA",
-    "RETAIN_SCHEMA",
+    "KIND_TO_PREFIX",
     "NativeMemory",
+    "RECALL_SCHEMA",
+    "RECALL_TAGS",
+    "RETAIN_SCHEMA",
+    "context_not_in",
+    "normalize_recall_context",
+    "normalize_recall_tags",
     # search_tools_tool
     "SEARCH_TOOLS_SCHEMA",
     "search_tools_tool",

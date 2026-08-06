@@ -26,20 +26,44 @@ DESK_AGENT_HELP_GUIDANCE = (
 )
 
 MEMORY_GUIDANCE = (
-    "You have persistent memory across sessions. Save durable facts using the memory "
-    "tool: user preferences, environment details, tool quirks, and stable conventions. "
-    "Memory is injected into every turn, so keep it compact and focused on facts that "
-    "will still matter later.\n"
-    "Prioritize what reduces future user steering — the most valuable memory is one "
-    "that prevents the user from having to correct or remind you again. "
-    "User preferences and recurring corrections matter more than procedural task details.\n"
+    "You have persistent memory across sessions via the memory tool. There are TWO kinds — "
+    "pick the right one at write time. The kind cannot be changed later; rewriting a fact "
+    "to a different kind means writing a new row.\n\n"
+    "## Pick by how the fact 'shows up' in conversation\n"
+    "Before writing, ask: does the fact shape EVERY exchange (background context I always "
+    "carry), or is it something I'd only reach for in a specific scenario (a small fact "
+    "I'd recall on demand)?\n"
+    "  - If background context → kind='auto_inject' (injected into every conversation).\n"
+    "  - If on-demand fact → kind='recall' (you must call memory_recall to retrieve).\n\n"
+    "## kind='auto_inject' — use sparingly, only for things that ARE always present\n"
+    "Two people in conversation don't consciously think 'oh, my rapport with this person "
+    "is X, my mood pattern is Y, they prefer Z communication' — they just act on it. "
+    "These facts are present in every turn.\n"
+    "Fixed slots (one row each; a second write OVERWRITES):\n"
+    "  - auto_inject:communication_style — how the user wants responses framed\n"
+    "  - auto_inject:rapport_state — current relationship/familiarity stage\n"
+    "  - auto_inject:interaction_pattern — typical use rhythm (night owl, short bursts, etc.)\n"
+    "  - auto_inject:mood_pattern — user's emotional tendency (pattern, not moment-to-moment)\n"
+    "  - auto_inject:relationship_signal — trust level, tease frequency, formality\n"
+    "Hard cap: 500 chars per row. Longer content is rejected at write time — keep it tight.\n"
+    "Do NOT use auto_inject for things you only think about in specific scenarios (the "
+    "user's taboos, an opinion they shared once, a one-off preference). Those go to recall.\n\n"
+    "## kind='recall' — most facts belong here\n"
+    "Append-only pool you must query via memory_recall(query=...) to retrieve. Pick ONE "
+    "closed-set tag from this list (free-form tags are rejected):\n"
+    "  user_preference, likes, dislikes, key_constraints, other, tool_quirk, environment\n"
+    "Use 'key_constraints' for hard taboos the user has shared — these only matter in "
+    "matching scenarios, not every turn, so recall is the right home (NOT auto_inject).\n\n"
+    "## General\n"
+    "Prioritize what reduces future user steering — the most valuable memory is one that "
+    "prevents the user from having to correct or remind you again. User preferences and "
+    "recurring corrections matter more than procedural task details.\n"
     "Do NOT save task progress, session outcomes, completed-work logs, or temporary TODO "
-    "state to memory; use session_search to recall those from past transcripts. "
-    "Specifically: do not record PR numbers, issue numbers, commit SHAs, 'fixed bug X', "
-    "'submitted PR Y', 'Phase N done', file counts, or any artifact that will be stale "
-    "in 7 days. If a fact will be stale in a week, it does not belong in memory. "
-    "If you've discovered a new way to do something, solved a problem that could be "
-    "necessary later, save it as a skill with the skill tool.\n"
+    "state; use session_search for those. Specifically: do not record PR numbers, issue "
+    "numbers, commit SHAs, 'fixed bug X', 'submitted PR Y', 'Phase N done', file counts, or "
+    "any artifact that will be stale in 7 days. If a fact will be stale in a week, it does "
+    "not belong in memory. If you've discovered a new way to do something, solved a problem "
+    "that could be necessary later, save it as a skill instead.\n"
     "Write memories as declarative facts, not instructions to yourself. "
     "'User prefers concise responses' ✓ — 'Always respond concisely' ✗. "
     "'Project uses pytest with xdist' ✓ — 'Run tests with pytest -n 4' ✗. "
@@ -448,6 +472,11 @@ def build_system_prompt_parts(config: AgentPromptConfig, system_message: str | N
         # Inject structured user identity so the LLM doesn't need a memory_recall
         # round-trip just to know "this user is 老板, male, 26-35, likes music".
         stable_parts.append(config.user_profile_extras)
+    if config.auto_inject_extras:
+        # LLM-maintained background context that shapes every exchange (rapport,
+        # interaction rhythm, communication style, mood pattern, relationship
+        # signal). Slot length is bounded at write time, no render-time cap.
+        stable_parts.append(config.auto_inject_extras)
     if config.task_completion_guidance and valid_tools:
         stable_parts.append(TASK_COMPLETION_GUIDANCE)
 

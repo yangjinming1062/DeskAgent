@@ -1,3 +1,4 @@
+from . import memory_admin
 from .affect_check import check_affect
 from .asset_store import build_signed_asset_url
 from .asset_store import build_signed_avatar_url
@@ -23,9 +24,15 @@ from .escalation_loop import start_clip_escalation
 from .escalation_loop import stop_clip_escalation
 from .interact import check_interact
 from .interaction_stats import record_interaction
+from .memory_admin import delete_memory
+from .memory_admin import get_memory
+from .memory_admin import list_memories
+from .memory_admin import memory_counts
+from .memory_admin import update_memory
 from .memory_bootstrap import build_user_profile_extras
 from .memory_bootstrap import extract_user_profile
 from .memory_bootstrap import record_user_profile
+from .memory_format import format_auto_inject_block
 from .memory_format import format_memories_block
 from .persona_service import build_system_prompt_extras
 from .persona_service import get_onboarding_state
@@ -53,6 +60,8 @@ __all__ = [
     "check_affect",
     "check_interact",
     "build_user_profile_extras",
+    "delete_memory",
+    "format_auto_inject_block",
     "format_memories_block",
     "delete_user_assets",
     "design_voice",
@@ -64,8 +73,12 @@ __all__ = [
     "invalidate_user_clips",
     "list_avatar_history",
     "list_clips",
+    "memory_admin",
+    "list_memories",
     "list_tts_voices",
     "match_user_voice",
+    "memory_counts",
+    "get_memory",
     "normalize_voice_language",
     "record_interaction",
     "record_user_profile",
@@ -78,6 +91,7 @@ __all__ = [
     "start_clip_escalation",
     "stop_clip_escalation",
     "submit_onboarding_field",
+    "update_memory",
     "update_persona",
     "upload_avatar",
 ]

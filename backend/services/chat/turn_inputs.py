@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 
 from ..companion import build_system_prompt_extras
 from ..companion import build_user_profile_extras
+from ..companion import format_auto_inject_block
 from ..gateway import RuntimeSession
 from ..llm import MissingLlmConfigError
 from ..llm import provider_for_service
@@ -142,6 +143,9 @@ def _build_turn_inputs(
     persona = db.query(Persona).filter(Persona.user_id == user_id).one_or_none()
     # Pre-onboarding users have no user_profile rows — skip the SELECT.
     user_profile_extras = build_user_profile_extras(db, user_id) if persona is not None and persona.is_complete else ""
+    # auto_inject memories are independent of persona completion: even an
+    # unstated persona can carry LLM-maintained background context.
+    auto_inject_extras = format_auto_inject_block(db, user_id)
     agent_config = AgentPromptConfig(
         valid_tool_names=[schema_name(s) for s in all_schemas],
         model=model_name,
@@ -151,6 +155,7 @@ def _build_turn_inputs(
         prompt_family=provider.PROMPT_FAMILY,
         persona_extras=build_system_prompt_extras(persona),
         user_profile_extras=user_profile_extras,
+        auto_inject_extras=auto_inject_extras,
         language=user_settings.get("language", DEFAULT_LANGUAGE),
     )
     messages = _history_to_messages(history, build_system_prompt(agent_config))

@@ -43,7 +43,7 @@ backend/
 | `text_to_speech_tool` | 伙伴语音（让伙伴"能说"） |
 | `send_message_tool` | 伙伴主动发起对话（问候/提醒/闲聊）——无 webhook 时投递 companion.message 到桌面 |
 | `web_search` / `web_extract` | 伙伴帮用户查信息、聊时事 |
-| `memory_*` | 伙伴对用户的长期记忆 |
+| `memory_*` | 伙伴对用户的长期记忆（按 `auto_inject` 背景上下文与 `recall` 主动召回池分拆，含 `memory_consolidator` 定期归并与 `memory.*` 管理 RPC） |
 
 ## IPC Future 桥接
 

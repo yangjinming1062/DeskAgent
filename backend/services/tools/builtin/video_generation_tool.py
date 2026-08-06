@@ -123,7 +123,10 @@ VIDEO_GENERATION_SCHEMA = {
             "prompt": {"type": "string", "description": "Describe the video content."},
             "duration": {"type": "integer", "minimum": 4, "maximum": 15, "description": "Clip length in seconds (4-15, integer)."},
             "resolution": {"type": "string", "enum": ["768P", "2K"], "description": "Output resolution."},
-            "first_frame_image": {"type": "string", "description": "Public URL or data URL of the first frame (i2v mode). When set, the provider derives the aspect ratio from the image; aspect_ratio is ignored."},
+            "first_frame_image": {
+                "type": "string",
+                "description": "Public URL or data URL of the first frame (i2v mode). When set, the provider derives the aspect ratio from the image; aspect_ratio is ignored.",
+            },
             "aspect_ratio": {
                 "type": "string",
                 "enum": ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"],
