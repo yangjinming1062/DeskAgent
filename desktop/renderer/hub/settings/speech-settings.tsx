@@ -15,21 +15,29 @@ import type { DeskAgentConfigResponse } from '@/shared/types/deskagent'
 import { ListRow, LoadingState, Pill, SettingsContent, SettingsSubsection } from './primitives'
 
 interface SpeechFormState {
+  sttEnabled: boolean
   sttEngine: SpeechEngine
   sttSilentFallback: boolean
   ttsEngine: SpeechEngine
+  maxRecordingSeconds: number
 }
 
+const RECORDING_OPTIONS = [15, 30, 60, 120, 300] as const
+
 const DEFAULTS: SpeechFormState = {
+  sttEnabled: true,
   sttEngine: 'auto',
   sttSilentFallback: true,
-  ttsEngine: 'auto'
+  ttsEngine: 'auto',
+  maxRecordingSeconds: 60
 }
 
 const readState = (config: DeskAgentConfigResponse): SpeechFormState => ({
+  sttEnabled: config.stt?.enabled ?? DEFAULTS.sttEnabled,
   sttEngine: config.stt?.engine ?? DEFAULTS.sttEngine,
   sttSilentFallback: config.stt?.silent_fallback ?? DEFAULTS.sttSilentFallback,
-  ttsEngine: config.tts?.engine ?? DEFAULTS.ttsEngine
+  ttsEngine: config.tts?.engine ?? DEFAULTS.ttsEngine,
+  maxRecordingSeconds: config.voice?.max_recording_seconds ?? DEFAULTS.maxRecordingSeconds
 })
 
 export function SpeechSettings() {
@@ -112,9 +120,11 @@ export function SpeechSettings() {
   }, [])
 
   const isDirty =
+    state.sttEnabled !== original.sttEnabled ||
     state.sttEngine !== original.sttEngine ||
     state.sttSilentFallback !== original.sttSilentFallback ||
-    state.ttsEngine !== original.ttsEngine
+    state.ttsEngine !== original.ttsEngine ||
+    state.maxRecordingSeconds !== original.maxRecordingSeconds
 
   const update = (patch: Partial<SpeechFormState>) => {
     setState(prev => ({ ...prev, ...patch }))
@@ -125,8 +135,13 @@ export function SpeechSettings() {
 
     try {
       const { config } = await saveDeskAgentConfig({
-        stt: { engine: state.sttEngine, silent_fallback: state.sttSilentFallback },
-        tts: { engine: state.ttsEngine }
+        stt: {
+          enabled: state.sttEnabled,
+          engine: state.sttEngine,
+          silent_fallback: state.sttSilentFallback
+        },
+        tts: { engine: state.ttsEngine },
+        voice: { max_recording_seconds: state.maxRecordingSeconds }
       })
 
       const next = readState(config)
@@ -165,6 +180,11 @@ export function SpeechSettings() {
       <SettingsSubsection icon={IconVolume} intro={s.intro} title={s.title}>
         <div className="divide-y divide-(--ui-stroke-tertiary)">
           <ListRow
+            action={<Switch checked={state.sttEnabled} onCheckedChange={v => update({ sttEnabled: v })} />}
+            description={s.sttEnabledDesc}
+            title={s.sttEnabledTitle}
+          />
+          <ListRow
             action={
               <div className="flex flex-col items-end gap-1.5">
                 <SegmentedControl
@@ -200,6 +220,23 @@ export function SpeechSettings() {
             }
             description={s.ttsEngineDesc}
             title={s.ttsEngineTitle}
+          />
+          <ListRow
+            action={
+              <select
+                className="rounded-lg border border-(--ui-stroke-tertiary) bg-(--ui-input) px-3 py-1.5 text-sm text-foreground outline-none"
+                onChange={e => update({ maxRecordingSeconds: Number(e.currentTarget.value) })}
+                value={state.maxRecordingSeconds}
+              >
+                {RECORDING_OPTIONS.map(s => (
+                  <option key={s} value={s}>
+                    {s}s
+                  </option>
+                ))}
+              </select>
+            }
+            description={s.recordingDesc}
+            title={s.recordingTitle}
           />
         </div>
 

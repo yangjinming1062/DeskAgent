@@ -27,51 +27,8 @@ function setUpdateStatus(next: UpdateStatus) {
   $updateStatus.set(next)
 }
 
-// The update dialog (banner + Restart/Later buttons). Mounted once at the app
-// root; opened by the status-bar badge or the About-panel "Check for
-// updates" button. Idempotent: re-opening with the dialog already visible
-// is a no-op so the auto-downloaded event can re-fire without stacking.
-const $updateDialogOpen = atom<boolean>(false)
-
-function openUpdateDialog() {
-  $updateDialogOpen.set(true)
-}
-
-function closeUpdateDialog() {
-  $updateDialogOpen.set(false)
-}
-
-// Runner-side update state. The desktop auto-updates the inner Electron
-// binary, then in the same flow prefetches the Python runner wheel +
-// server.py to $DESKAGENT_HOME/runner.staging/ (Phase 1, in the OLD Electron),
-// and on next launch `pip install --upgrade` the wheel into the existing
-// venv and overwrites server.py (Phase 2, in the NEW Electron). The toast
-// renders this state to keep the user informed through the full lifecycle.
-export type RunnerUpdateStatus =
-  | { status: 'idle' }
-  | { status: 'prefetching'; version: string; phase: 'manifest' | 'wheel' | 'server'; percent?: number }
-  | { status: 'ready'; version: string }
-  | { status: 'installing'; version: string; phase: 'pip' | 'starting'; percent?: number }
-  | { status: 'installed'; version: string }
-  | { status: 'failed'; error: string; recoverable: boolean; version?: string }
-
-const $runnerUpdateStatus = atom<RunnerUpdateStatus>({ status: 'idle' })
-
-function setRunnerUpdateStatus(next: RunnerUpdateStatus) {
-  $runnerUpdateStatus.set(next)
-}
-
 function selectTargetVersion(status: UpdateStatus): string {
   return 'version' in status && status.version ? status.version : ''
 }
 
-export {
-  $runnerUpdateStatus,
-  $updateDialogOpen,
-  $updateStatus,
-  closeUpdateDialog,
-  openUpdateDialog,
-  selectTargetVersion,
-  setRunnerUpdateStatus,
-  setUpdateStatus
-}
+export { $updateStatus, selectTargetVersion, setUpdateStatus }

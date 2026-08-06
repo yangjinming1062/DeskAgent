@@ -63,7 +63,7 @@ export function handleCompanionEvent(event: RpcEvent): void {
       // active voice call or a locked screen. Defer a frame so EMOTIONAL is
       // observable before SPEAKING overwrites it (ARCH §7.5).
       if ($responseMode.get() === 'voice' && text.trim() && !$voiceCallOpen.get() && !screenLocked) {
-        const say = () => void speak(text).then(() => setSpriteState('idle'))
+        const say = () => void speak(text).then(() => setSpriteState('idle', { force: true }))
 
         if (hasEmotion) {
           setTimeout(() => {
@@ -98,30 +98,32 @@ export function handleCompanionEvent(event: RpcEvent): void {
       break
     }
 
+    case 'tool.start': {
+      // Universal WORKING entry — tool_start is emitted for ALL tools (backend,
+      // memory, runner) before execution begins, so the sprite enters WORKING
+      // regardless of tool location. tool.call (below) only fires for runner
+      // tools and carries the args for IPC dispatch.
+      const p = event.payload as { name?: string } | undefined
+
+      setAssistantTool(p?.name ?? '工具')
+      setSpriteState('working')
+
+      break
+    }
+
     case 'tool.call': {
-      const p =
-        (event.payload as
-          | { status?: string; name?: string; args?: Record<string, unknown>; call_id?: string }
-          | undefined) ?? {}
+      // Runner dispatch only — WORKING was already set by tool.start.
+      // tool.call carries the args needed for runner IPC; without a bridge or
+      // call_id the backend's await_future times out at 300s and surfaces the error.
+      const p = (event.payload as { name?: string; args?: Record<string, unknown>; call_id?: string } | undefined) ?? {}
 
       const runnerInvoke = window.deskagent?.runnerInvoke
 
-      if (p.status === 'complete') {
-        setAssistantTool(null)
-        setSpriteState('thinking')
-
-        break
-      }
-
-      const name = p.name ?? '工具'
-      setAssistantTool(name)
-      setSpriteState('working')
-
-      // Without a bridge or call_id the sprite stays 'working'; the backend's
-      // await_future times out at 300s and surfaces the error.
       if (!p.call_id || !runnerInvoke) {
         break
       }
+
+      const name = p.name ?? ''
 
       // Fire-and-forget the Runner call and post the result so the backend's
       // await_future resolves; tool errors must not bubble into this handler.
@@ -149,6 +151,16 @@ export function handleCompanionEvent(event: RpcEvent): void {
           }
         }
       })()
+
+      break
+    }
+
+    case 'tool.complete': {
+      // Universal WORKING exit — tool_end is emitted for ALL tools in the
+      // finally block. force: THINKING (50) < WORKING (70), so the priority
+      // gate would silently reject the transition without it.
+      setAssistantTool(null)
+      setSpriteState('thinking', { force: true })
 
       break
     }

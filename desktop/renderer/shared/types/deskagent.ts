@@ -132,6 +132,7 @@ export type SpeechEngine = 'auto' | 'local' | 'cloud'
 export interface DeskAgentConfigResponse {
   agent?: {
     reasoning_effort?: string
+    service_tier?: string
     enable_background_review?: boolean
   }
   chat?: {
@@ -139,6 +140,9 @@ export interface DeskAgentConfigResponse {
     context_compression_threshold?: number
   }
   stt?: {
+    /** Master switch — when false, deskagent:media:stt rejects without doing
+     * any local/cloud work. See media.cjs. */
+    enabled?: boolean
     engine?: SpeechEngine
     /** When false, a weak/low-confidence local STT result surfaces to the user
      * instead of silently retrying on cloud. Default true. See media.cjs. */
@@ -146,6 +150,11 @@ export interface DeskAgentConfigResponse {
   }
   tts?: {
     engine?: SpeechEngine
+  }
+  voice?: {
+    /** Maximum duration (seconds) of a single voice recording. The companion
+     * dock auto-stops the MediaRecorder at this cap. */
+    max_recording_seconds?: number
   }
   web?: {
     backend?: string
@@ -163,6 +172,7 @@ export interface DeskAgentConfigResponse {
 export interface DeskAgentConfigPutRequest {
   agent?: {
     reasoning_effort?: string
+    service_tier?: string
     enable_background_review?: boolean
   }
   chat?: {
@@ -170,11 +180,15 @@ export interface DeskAgentConfigPutRequest {
     context_compression_threshold?: number
   }
   stt?: {
+    enabled?: boolean
     engine?: SpeechEngine
     silent_fallback?: boolean
   }
   tts?: {
     engine?: SpeechEngine
+  }
+  voice?: {
+    max_recording_seconds?: number
   }
   web?: {
     backend?: string

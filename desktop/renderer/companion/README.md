@@ -116,15 +116,14 @@ clip 通过 `clip.updated` 事件单通道下发。`video_gen.*` 事件由 compa
 
 ## 8. cron 主动陪伴链路
 
-`cron.trigger` 事件 + 后端自主 turn 入口（`services/scheduler/cron.py::_kick_autonomous_turn`）实现完整链路：
+后端自主 turn 入口（`services/scheduler/cron.py::_kick_autonomous_turn`）实现完整链路：
 
-1. Cron CAS 赢得本 tick
-2. 写 `cron.trigger` WSEvent + 启动 `_kick_autonomous_turn` task
-3. 任务用用户最后 session + JsonRpcEmitter + 用户 dispatcher
-4. LLM 可调 `send_message_tool(affect=...)` 产出 `companion.message`
-5. Desktop 按 §3 三档规则消费
+1. Cron CAS 赢得本 tick，直接启动自主回合 task（无 WSEvent 中转）
+2. 任务用用户最后 session + JsonRpcEmitter + 用户 dispatcher
+3. LLM 可调 `send_message_tool(affect=...)` 产出 `companion.message`
+4. Desktop 按 §3 三档规则消费
 
-用户离线（无 dispatcher）→ 任务静默跳过，事件留 outbox 等待重连。
+用户离线（无 dispatcher）→ 任务静默跳过；`next_run_at` 已被 CAS 推进，下一个调度周期重新到期后再尝试。
 
 ## 9. 不能从代码结构直接读出的边界
 

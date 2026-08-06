@@ -87,6 +87,15 @@ export function CompanionRoot() {
     return () => off()
   }, [])
 
+  // Tray menu "Log out" entry fires this bridge; the main-side logout also
+  // triggers `onSessionExpired` on the next session check, but routing this
+  // explicitly keeps the UI snappy when the user clicks the tray item.
+  useEffect(() => {
+    const off = window.deskagent.onTrayLogout?.(() => void logout())
+
+    return () => off?.()
+  }, [])
+
   // Dev-only: inject a test proactive message (Ctrl+Shift+P) to exercise the
   // companion.message receiver + bubble + TTS without the Backend send_message
   // path. Stripped in production builds.

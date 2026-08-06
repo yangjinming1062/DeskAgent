@@ -1,7 +1,7 @@
 import { useStore } from '@nanostores/react'
 import { useCallback, useEffect } from 'react'
 
-import { $updateStatus, openUpdateDialog, selectTargetVersion } from '@/hub/settings-store'
+import { $updateStatus, selectTargetVersion } from '@/hub/settings-store'
 import { BrandMark } from '@/shared/components/brand-mark'
 import { Button } from '@/shared/components/ui/button'
 import { Loader2, RefreshCw } from '@/shared/lib/icons'
@@ -21,11 +21,9 @@ export function AboutSettings() {
   }, [])
 
   const onCheckClick = useCallback(() => {
-    // Open the dialog immediately so the user sees the transition, then
-    // kick off the manual check. The dialog's progress copy reacts to the
-    // `$updateStatus` atom — even if the check resolves to "none" the
-    // dialog reports it inline.
-    openUpdateDialog()
+    // Kick off the manual check. The status bar badge + statusLine below
+    // both react to `$updateStatus` so the user sees the transition without
+    // a separate dialog.
     void window.deskagent?.update?.check?.()
   }, [])
 

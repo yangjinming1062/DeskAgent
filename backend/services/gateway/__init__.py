@@ -5,7 +5,6 @@ from .connection import start_ws_event_loop
 from .connection import stop_ws_event_loop
 from .emitter import JsonRpcEmitter
 from .ipc import await_future
-from .ipc import discard_call
 from .ipc import discard_user
 from .ipc import dispatch_user_event
 from .ipc import resolve_future
@@ -16,12 +15,8 @@ from .runtime import new_runtime_session
 from .runtime import runtime_info_snapshot
 from .runtime import RuntimeSession
 from .runtime import SessionCreateResult
-from .runtime import SessionCwdSetResult
 from .runtime import SessionResumeResult
 from .runtime import SessionRuntimeInfo
-from .runtime import SessionSteerResult
-from .runtime import SessionTitleResult
-from .runtime import SessionUsageResult
 from .runtime import ToolsSyncResult
 
 # ``handlers`` pulls the entire service graph (chat orchestrator + llm + tools),
@@ -43,15 +38,10 @@ __all__ = [
     "SessionRuntimeInfo",
     "SessionCreateResult",
     "SessionResumeResult",
-    "SessionTitleResult",
-    "SessionSteerResult",
-    "SessionCwdSetResult",
-    "SessionUsageResult",
     "ToolsSyncResult",
     "new_runtime_session",
     "runtime_info_snapshot",
     "await_future",
-    "discard_call",
     "discard_user",
     "dispatch_user_event",
     "resolve_future",

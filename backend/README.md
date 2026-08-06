@@ -60,7 +60,7 @@ backend/
 
 `/api/chat/ws` 每个连接持有一份 `runtime_sessions: dict[str, RuntimeSession]`，键是 `Conversation.id` 的 str 形式。
 
-**预创建 DB 行**：`session.create` 先开 DB 行返回 ID，renderer 无需等待首次 turn 即拿到可路由标识。WS 重连后 `session.resume` 重新挂载 in-memory runtime 恢复 cwd/branch 上下文。turn 期间每 20s 发 `session.info` heartbeat 保持字段新鲜、保证 renderer `busy` 状态在每个出口清空。
+**预创建 DB 行**：`session.create` 先开 DB 行返回 ID，renderer 无需等待首次 turn 即拿到可路由标识。WS 重连后 `session.resume` 重新挂载 in-memory runtime 恢复 cwd/branch 上下文。`session.interrupt` 取消进行中的 chat_task；本地 finalize 由 renderer 在收到中断后自行处理（无 `message.complete` 抵达的场景）。
 
 **配置层级**：全局 `UserSetting` 表（可热改，经 `PUT /api/config` 写入）+ `Settings`（pydantic-settings，env / .env，需重启）两层。`/api/config` PUT 把嵌套 dict 展平为 dot-separated key（如 `{agent: {reasoning_effort: "high"}}` → `agent.reasoning_effort`）；后端 consumer 按同样 namespace 读取。`_merge_session_settings` 把 per-session overrides（`Conversation.settings_json`）翻译为全局 key 命名空间。
 
@@ -68,7 +68,7 @@ backend/
 
 伙伴主动陪伴（问候、提醒、情境闲聊）经 PostgreSQL LISTEN/NOTIFY + Outbox 表支撑（[ARCHITECTURE.md §5](../ARCHITECTURE.md)）。
 
-`services/scheduler/cron.scheduler_loop` 每 60s `_tick()`：扫描到期任务，CAS 推进 `next_run_at`，写 `cron.trigger` 到 `ws_events` outbox。`_tick` 不 await WS 推送——慢客户端不卡 cron 事务。PostgreSQL trigger 在 `ws_events` INSERT 时 `NOTIFY ws_events_channel`，每个 Backend 进程独立 `LISTEN` + `DELETE ... RETURNING` 原子认领消费（行锁保证不重复投递）。无效 cron 表达式自动暂停 job。
+`services/scheduler/cron.scheduler_loop` 每 60s `_tick()`：扫描到期任务，CAS 推进 `next_run_at`，命中者直接启动 `_kick_autonomous_turn` 自主回合 task（帧经用户当前 WS dispatcher 推送，不走 outbox）。`_tick` 不 await 回合完成——慢 LLM 不卡 cron 事务。无效 cron 表达式自动暂停 job。
 
 **伙伴主动消息通道**：`send_message_tool` 无 `target_webhook` 时走 companion 原生路径——`_emit_companion_message` 写 `companion.message {text}` 到 `ws_events` outbox，经同一套 LISTEN/NOTIFY 推到桌面端（伙伴 TTS + 气泡呈现，[ARCHITECTURE.md §4.1.A](../ARCHITECTURE.md)）。带 `target_webhook` 时仍是外部 webhook POST（Slack/Discord 等）。
 

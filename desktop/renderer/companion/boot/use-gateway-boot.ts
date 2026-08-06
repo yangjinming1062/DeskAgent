@@ -6,23 +6,16 @@ import {
   failDesktopBoot,
   setDesktopBootStep
 } from '@/companion/boot-store'
+import { $chatSessionId, setChatSession } from '@/companion/chat-store'
 import { $effectiveTier, $spriteState, $voiceCallOpen, setSpriteState } from '@/companion/companion-store'
 import { DeskAgentGateway } from '@/shared/deskagent'
 import { resolveGatewayWsUrl } from '@/shared/lib/gateway-ws-url'
 import { reconnectBackoffMs } from '@/shared/lib/reconnect'
 import { logout } from '@/shared/store/auth'
-import {
-  reportPrimaryGatewayState,
-  setConnection,
-  setPrimaryGateway,
-  setRunnerCapabilities,
-  setRunnerOnline,
-  tearDownPrimaryGateway
-} from '@/shared/store/gateway'
+import { reportPrimaryGatewayState, setPrimaryGateway, tearDownPrimaryGateway } from '@/shared/store/gateway'
 import { notifyError } from '@/shared/store/notifications'
 import { strings } from '@/shared/strings'
 import type { RpcEvent } from '@/shared/types/deskagent'
-import type { DeskAgentConnection } from '@/shared/types/global'
 
 // Backend uses WS close 1008 for auth failures (token expired/revoked) —
 // trigger logout instead of looping reconnect with a dead token.
@@ -89,9 +82,8 @@ export function useGatewayBoot({ handleGatewayEvent, onConnectionReady, onGatewa
     let cancelled = false
     const desktop = window.deskagent
 
-    const publish = (next: DeskAgentConnection | null) => {
+    const publish = (next: Awaited<ReturnType<NonNullable<typeof window.deskagent>['getConnection']>> | null) => {
       callbacksRef.current.onConnectionReady(next)
-      setConnection(next)
     }
 
     if (!desktop) {
@@ -262,6 +254,16 @@ export function useGatewayBoot({ handleGatewayEvent, onConnectionReady, onGatewa
           if (cur === 'disconnected' || cur === 'sleeping') {
             setSpriteState('idle', { force: true })
           }
+
+          // Re-mount the existing conversation so the next prompt.submit
+          // doesn't hit "session not found". The backend clears its in-memory
+          // runtime_sessions on every WS disconnect; session.resume re-derives
+          // the runtime from the persisted DB conversation.
+          const sid = $chatSessionId.get()
+
+          if (sid) {
+            void gateway.request('session.resume', { session_id: sid }).catch(() => setChatSession(null))
+          }
         }
       } else if (bootCompleted && (st === 'closed' || st === 'error')) {
         if (st === 'closed' && gateway.lastCloseCode === WS_CLOSE_POLICY_VIOLATION) {
@@ -318,18 +320,9 @@ export function useGatewayBoot({ handleGatewayEvent, onConnectionReady, onGatewa
 
     const offRunnerStatus = desktop.onRunnerStatus?.(ev => {
       if (ev.type === 'running' || ev.type === 'runner_ready' || ev.type === 'tools_changed') {
-        setRunnerOnline(true)
-
-        if (ev.capabilities) {
-          setRunnerCapabilities(ev.capabilities)
-        }
-
         if (gateway.connectionState === 'open') {
           void syncRunnerTools(gateway)
         }
-      } else if (ev.type === 'stopped' || ev.type === 'error') {
-        setRunnerOnline(false)
-        setRunnerCapabilities(null)
       }
     })
 

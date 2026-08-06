@@ -8,6 +8,8 @@ export interface ChatMessage {
   attachments?: string[]
   toolName?: string | null
   error?: string
+  /** User-initiated stop (vs an error). Rendered neutrally, not as 😬. */
+  cancelled?: boolean
 }
 
 export const $chatMessages = atom<ChatMessage[]>([])
@@ -102,6 +104,21 @@ export function setAssistantError(message: string): void {
       : { id: nextId(), role: 'assistant', text: '', error: message }
 
   $chatMessages.set(last ? [...msgs.slice(0, -1), error] : [error])
+}
+
+// User-initiated stop before the first assistant chunk arrived. Distinct from
+// setAssistantError because cancellation isn't a failure — the bubble should
+// render neutrally, not with the 😬 error glyph.
+export function setAssistantCancelled(): void {
+  const msgs = $chatMessages.get()
+  const last = msgs[msgs.length - 1]
+
+  const cancelled: ChatMessage =
+    last?.role === 'assistant' && last.streaming
+      ? { ...last, streaming: false, cancelled: true }
+      : { id: nextId(), role: 'assistant', text: '', cancelled: true }
+
+  $chatMessages.set(last ? [...msgs.slice(0, -1), cancelled] : [cancelled])
 }
 
 export function clearChat(): void {

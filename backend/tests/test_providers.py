@@ -7,9 +7,9 @@ from services.llm import ImageGenRequest
 from services.llm import MissingLlmConfigError
 from services.llm import provider_for_service
 from services.llm import ProviderConfig
-from services.llm import resolve_provider_config
 from services.llm import ServiceType
 from services.llm import VideoGenRequest
+from services.llm.llm_client import resolve_provider_config
 from services.llm.providers.mimo import MiMoChatProvider
 from services.llm.providers.mimo import MiMoImageGenProvider
 from services.llm.providers.mimo import MiMoSTTProvider

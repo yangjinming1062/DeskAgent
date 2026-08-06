@@ -178,6 +178,10 @@ function createEnginePrefsCache({ ensureBackend, ttlMs = CONFIG_CACHE_TTL_MS }) 
       const body = await res.json()
       const config = body?.config || {}
       cached = {
+        // Master switch from the per-user settings. Defaults to true when the
+        // user has never opened the settings page (no row yet) — same UX as
+        // before the toggle existed.
+        sttEnabled: config.stt?.enabled !== false,
         stt: config.stt?.engine || 'auto',
         // When false, a weak/errored local STT result surfaces to the renderer
         // instead of silently retrying on cloud (privacy/cost-conscious users).
@@ -188,7 +192,7 @@ function createEnginePrefsCache({ ensureBackend, ttlMs = CONFIG_CACHE_TTL_MS }) 
         expiresAt: now + ttlMs
       }
     } catch {
-      cached = { stt: 'auto', sttSilentFallback: true, tts: 'auto', expiresAt: now + ttlMs }
+      cached = { sttEnabled: true, stt: 'auto', sttSilentFallback: true, tts: 'auto', expiresAt: now + ttlMs }
     }
     return cached
   }
@@ -244,6 +248,11 @@ function registerMediaIpc({ ipcMain, ensureBackend, getRunnerBridge, getEnginePr
     const language = typeof payload?.language === 'string' && payload.language ? payload.language : DEFAULT_STT_LANGUAGE
 
     const prefs = await resolvePrefs()
+    // Master switch from settings. Surfaces as an IPC error so the renderer's
+    // mic UI can show "voice input disabled" without touching the network.
+    if (prefs.sttEnabled === false) {
+      throw new Error('STT is disabled in settings')
+    }
     const engine = prefs.stt
     const silentFallback = prefs.sttSilentFallback
     const sttLog = makeLog(log, `[stt#${sttId}]`, {

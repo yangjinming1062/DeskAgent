@@ -2,7 +2,6 @@ from components import get_logger
 from components import safe_json_loads
 from components import session_scope
 
-from ..chat import safe_emit
 from ..llm import call_with_retry
 from ..llm import client_for_config
 from ..llm import resolve_context_tokens
@@ -56,16 +55,8 @@ async def run_background_memory_review(
     user_id: int,
     llm_config: dict,
     messages_snapshot: list[dict],
-    *,
-    emitter=None,
-    session_id: str | None = None,
 ) -> None:
-    """Fire-and-forget: review the conversation and save any durable memories.
-
-    When ``emitter`` is provided, a terminal ``background_complete`` frame is
-    sent (success, skipped, or failed) so the renderer can update any
-    in-flight UI. The emit always fires — never short-circuit before it.
-    """
+    """Fire-and-forget: review the conversation and save any durable memories."""
     messages = [{"role": "system", "content": _BACKGROUND_REVIEW_PROMPT}]
     for msg in messages_snapshot:
         if msg.get("role") == "system":
@@ -77,13 +68,10 @@ async def run_background_memory_review(
     base_url = llm_config.get("base_url")
     model_name = llm_config.get("model_name")
     if not api_key or not base_url or not model_name:
-        await safe_emit(emitter, "background_complete", session_id=session_id, status="skipped", reason="missing_llm_config")
         return
 
     client = client_for_config(llm_config)
 
-    status = "completed"
-    error: str | None = None
     try:
         with session_scope() as db:
             native_memory = NativeMemory(db, user_id)
@@ -105,10 +93,6 @@ async def run_background_memory_review(
                     if args and isinstance(args, dict):
                         logger.info("Background review extracting memory", extra={"func_args": args})
                         native_memory.execute_tool(fn.name, args)
-            # If no tool calls, status stays "completed" — review simply found nothing to remember.
+            # If no tool calls, review simply found nothing to remember.
     except Exception as exc:
         logger.warning("Background memory review failed", extra={"error": str(exc)})
-        status = "failed"
-        error = str(exc)
-
-    await safe_emit(emitter, "background_complete", session_id=session_id, status=status, error=error)

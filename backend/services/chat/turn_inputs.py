@@ -181,6 +181,31 @@ def _build_turn_inputs(
     )
 
 
+# OpenAI reasoning_effort accepts this exact set; older models ignore it.
+ALLOWED_REASONING_EFFORTS = frozenset({"minimal", "low", "medium", "high", "max"})
+# OpenAI service_tier accepts this exact set; older models ignore it.
+ALLOWED_SERVICE_TIERS = frozenset({"auto", "default", "flex"})
+
+
+def _parse_reasoning_effort(raw: str | None) -> str | None:
+    """Normalize the persisted reasoning_effort value to a string the OpenAI
+    SDK accepts. ``None`` or an out-of-set value means "don't pass the param" —
+    the API rejects unknown values, so we only forward recognized ones.
+    """
+    if not raw:
+        return None
+    raw = raw.strip().lower()
+    return raw if raw in ALLOWED_REASONING_EFFORTS else None
+
+
+def _parse_service_tier(raw: str | None) -> str | None:
+    """Normalize the persisted service_tier value. Same policy as reasoning_effort."""
+    if not raw:
+        return None
+    raw = raw.strip().lower()
+    return raw if raw in ALLOWED_SERVICE_TIERS else None
+
+
 def _sanitize_steer_text(text: str) -> str:
     """Sanitize steer text to prevent forgery of OUT-OF-BAND markers."""
     return text.replace("[OUT-OF-BAND", "[OUT-OF-BAND-ESCAPED")

@@ -7,7 +7,9 @@ import {
   $chatMessages,
   $chatSessionId,
   type ChatMessage,
+  finalizeAssistantMessage,
   pushUserMessage,
+  setAssistantCancelled,
   setAssistantError,
   setChatSession
 } from '@/companion/chat-store'
@@ -19,6 +21,7 @@ import {
   setSpriteState
 } from '@/companion/companion-store'
 import { useInteractiveRegion } from '@/companion/interactive-regions'
+import { getDeskAgentConfig } from '@/shared/deskagent/config'
 import { $gatewayState } from '@/shared/store/gateway'
 
 import { DISTURBANCE_TIERS } from './disturbance-tiers'
@@ -38,10 +41,12 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
   const [pendingImage, setPendingImage] = useState<string | null>(null)
   const [sending, setSending] = useState(false)
   const [recording, setRecording] = useState(false)
+  const [config, setConfig] = useState<{ voice?: { max_recording_seconds?: number } }>({})
   const scrollRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const voiceChunksRef = useRef<Blob[]>([])
+  const autoStopTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // The chat panel inherits the sprite window's topmost flag — no toggling;
   // an unmount-time toggle would race the closing dock.
@@ -68,6 +73,11 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
         }
       }
 
+      if (autoStopTimeoutRef.current) {
+        clearTimeout(autoStopTimeoutRef.current)
+        autoStopTimeoutRef.current = null
+      }
+
       setRecording(false)
 
       const inFlight = $chatMessages.get().some(m => m.streaming)
@@ -84,6 +94,15 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
   }, [messages])
+
+  // Load the persisted cap for voice recordings. Cheap GET — only rerun
+  // when the dock mounts; settings changes while recording won't snap the
+  // current recording to a new cap.
+  useEffect(() => {
+    void getDeskAgentConfig()
+      .then(c => setConfig({ voice: c.voice }))
+      .catch(() => setConfig({}))
+  }, [])
 
   const ensureSession = async (): Promise<string> => {
     const existing = $chatSessionId.get()
@@ -150,6 +169,7 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
         const recorder = new MediaRecorder(stream)
         mediaRecorderRef.current = recorder
         voiceChunksRef.current = []
+        autoStopTimeoutRef.current = null
 
         recorder.ondataavailable = e => {
           if (e.data.size > 0) {
@@ -160,6 +180,19 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
         setRecording(true)
         setSpriteState('listening')
         recorder.start()
+
+        // Honor the voice.max_recording_seconds cap. The renderer is the
+        // authority on recording length because the audio stream lives in
+        // Chromium; the backend can't stop it mid-capture.
+        const cap = config.voice?.max_recording_seconds ?? 60
+
+        if (cap > 0) {
+          autoStopTimeoutRef.current = setTimeout(() => {
+            if (mediaRecorderRef.current?.state === 'recording') {
+              void stopRecording()
+            }
+          }, cap * 1000)
+        }
       } catch {
         setAssistantError('无法使用麦克风录制语音')
       } finally {
@@ -179,6 +212,12 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
       } catch {
         /* surfaced via startRecording */
       }
+    }
+
+    // Clear the auto-stop timer — manual stop fires before the cap.
+    if (autoStopTimeoutRef.current) {
+      clearTimeout(autoStopTimeoutRef.current)
+      autoStopTimeoutRef.current = null
     }
 
     const recorder = mediaRecorderRef.current
@@ -334,6 +373,43 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
   // renders its own "…".
   const lastIsUser = messages[messages.length - 1]?.role === 'user'
   const showTyping = lastIsUser && gatewayState === 'open'
+
+  // Generating covers both the pre-response gap (showTyping) and the streaming
+  // phase (last assistant bubble still streaming). Either way the user should
+  // be able to interrupt.
+  const lastMsg = messages[messages.length - 1]
+
+  const isGenerating =
+    gatewayState === 'open' && (showTyping || (lastMsg?.role === 'assistant' && lastMsg.streaming === true))
+
+  const handleStop = async () => {
+    const sid = $chatSessionId.get()
+
+    if (sid) {
+      try {
+        await requestGateway('session.interrupt', { session_id: sid })
+      } catch {
+        /* best effort — local finalize below covers the UX */
+      }
+    }
+
+    // Backend cancellation aborts run_chat_turn mid-stream — no message.complete
+    // arrives, so we must finalize the streaming bubble locally to avoid a
+    // stuck "…" indicator. If the user clicked Stop during the pre-response
+    // window (last message is still the user one), append a cancelled
+    // assistant placeholder so `showTyping` clears and Send comes back.
+    const last = $chatMessages.get().at(-1)
+
+    if (last?.role === 'assistant' && last.streaming) {
+      finalizeAssistantMessage()
+    } else {
+      // User-initiated stop before the first chunk arrived — render a
+      // neutral cancelled placeholder (not the 😬 error bubble).
+      setAssistantCancelled()
+    }
+
+    setSpriteState('idle', { force: true })
+  }
 
   // Drag the panel via translate3d (GPU motion, no re-render per pointermove)
   // and persist the offset so the choice survives a restart.
@@ -532,11 +608,11 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
             </button>
             <button
               className="rounded-lg bg-white/90 px-4 py-2 text-sm font-medium text-black transition hover:bg-white disabled:opacity-40"
-              disabled={sending || gatewayState !== 'open' || (!text.trim() && !pendingImage)}
-              onClick={() => void send()}
+              disabled={!isGenerating && (sending || gatewayState !== 'open' || (!text.trim() && !pendingImage))}
+              onClick={() => void (isGenerating ? handleStop() : send())}
               type="button"
             >
-              发送
+              {isGenerating ? '停止' : '发送'}
             </button>
           </div>
         </div>
@@ -557,6 +633,8 @@ function MessageBubble({ message }: { message: ChatMessage }) {
       >
         {message.error ? (
           <span className="text-amber-300/90">😬 {message.error}</span>
+        ) : message.cancelled ? (
+          <span className="text-white/50">已停止</span>
         ) : message.toolName ? (
           <span className="text-white/60">🔧 正在使用 {message.toolName}…</span>
         ) : message.text ? (

@@ -6,14 +6,7 @@ export { LoginPage } from './login/login-page'
 export { ToolRoot } from './root'
 export { SettingsView } from './settings'
 
-export {
-  $runnerUpdateStatus,
-  $updateDialogOpen,
-  $updateStatus,
-  closeUpdateDialog,
-  openUpdateDialog,
-  selectTargetVersion
-} from './settings-store'
+export { $updateStatus, selectTargetVersion } from './settings-store'
 export type { SettingsPageProps } from './settings/types'
 
 export type { SettingsView as SettingsViewId } from './settings/types'

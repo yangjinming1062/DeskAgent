@@ -14,7 +14,6 @@ from .functions import coerce_int
 class Settings(BaseSettings):
     # ── Runtime ──
     app_name: str = "DeskAgent Backend"
-    app_env: str = "development"
     api_prefix: str = "/api"
 
     # ── Database ──
@@ -111,6 +110,13 @@ class Settings(BaseSettings):
     # Terminal fallback for ``resolve_context_tokens`` when neither the per-cap
     # env override nor the provider's DEFAULT_CONTEXT_TOKENS applies.
     default_llm_context_tokens: int = Field(default=1_000_000, gt=0)
+
+    # ── Voice / STT switches ──
+    # Operator-side defaults when the user has no /api/config row yet. The
+    # per-user values (see api/v1/config.py DEFAULT_CONFIG) are authoritative
+    # once the settings UI has run; these only seed fresh installs.
+    enable_stt: bool = True
+    max_recording_seconds: int = Field(default=60, gt=0)
 
     # ── Rate limiting ──
     rate_limit_enabled: bool = True

@@ -134,4 +134,4 @@ async function _commit(content, { configPath, deps }, { mutated } = {}) {
   return { ok: true, restarted: true, mutated }
 }
 
-module.exports = { patchAndCommit, commitRaw, stripDeprecated, MAX_CONTENT_BYTES, DEPRECATED_KEY_PATHS }
+module.exports = { patchAndCommit, commitRaw, MAX_CONTENT_BYTES }
