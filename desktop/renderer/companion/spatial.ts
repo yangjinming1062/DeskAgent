@@ -12,6 +12,7 @@ const REST_MARGIN = 24
 const WALK_SPEED = 80
 const FLY_SPEED = 400
 const SCALE_TRANSITION_MS = 300
+const SCALE_KEY = 'da.companion.defaultScale'
 
 export const MIN_SCALE = 0.5
 export const MAX_SCALE = 2
@@ -25,8 +26,6 @@ export const $homePosition = atom<{ x: number; y: number }>(getHomePosition())
 export const $defaultScale = atom<number>(readDefaultScale())
 export const $spatialScale = atom<number>($defaultScale.get())
 export const $spatialLocomotion = atom<Locomotion>('still')
-
-const SCALE_KEY = 'da.companion.defaultScale'
 
 export function getHomePosition(): { x: number; y: number } {
   if (typeof window === 'undefined') {
