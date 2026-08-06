@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/shared/components/ui/switch'
 import { getDeskAgentConfig, saveDeskAgentConfig } from '@/shared/deskagent/config'
 import { triggerHaptic } from '@/shared/lib/haptics'
-import { Eye, EyeOff, Globe, KeyRound, Loader2, LogOut, SlidersHorizontal, X } from '@/shared/lib/icons'
+import { Archive, Eye, EyeOff, Globe, KeyRound, Loader2, LogOut, SlidersHorizontal, X } from '@/shared/lib/icons'
 import { $auth, logout } from '@/shared/store/auth'
 import { notify, notifyError } from '@/shared/store/notifications'
 import { strings } from '@/shared/strings'
@@ -45,6 +45,11 @@ interface AgentFormState {
   show_subagents_in_sidebar: boolean
 }
 
+interface ChatFormState {
+  enable_context_compression: boolean
+  context_compression_threshold: number
+}
+
 const EMPTY_WEB: WebFormState = {
   backend: 'ddgs',
   extract_backend: 'tavily',
@@ -65,6 +70,13 @@ const EMPTY_AGENT: AgentFormState = {
   enable_background_review: true,
   show_subagents_in_sidebar: false
 }
+
+const EMPTY_CHAT: ChatFormState = {
+  enable_context_compression: true,
+  context_compression_threshold: 0.7
+}
+
+const THRESHOLD_OPTIONS = ['0.5', '0.6', '0.7', '0.8', '0.9'] as const
 
 const readWebState = (config: DeskAgentConfigResponse): WebFormState => {
   const web = config.web
@@ -96,6 +108,11 @@ const readAgentState = (config: DeskAgentConfigResponse): AgentFormState => {
   }
 }
 
+const readChatState = (config: DeskAgentConfigResponse): ChatFormState => ({
+  enable_context_compression: config.chat?.enable_context_compression ?? EMPTY_CHAT.enable_context_compression,
+  context_compression_threshold: config.chat?.context_compression_threshold ?? EMPTY_CHAT.context_compression_threshold
+})
+
 export function AccountSettings({ onConfigSaved }: { onConfigSaved?: () => void } = {}) {
   const t = strings
   const a = t.settings.account
@@ -106,8 +123,10 @@ export function AccountSettings({ onConfigSaved }: { onConfigSaved?: () => void 
   const [loadError, setLoadError] = useState<string | null>(null)
   const [originalWeb, setOriginalWeb] = useState<WebFormState>(EMPTY_WEB)
   const [originalAgent, setOriginalAgent] = useState<AgentFormState>(EMPTY_AGENT)
+  const [originalChat, setOriginalChat] = useState<ChatFormState>(EMPTY_CHAT)
   const [web, setWeb] = useState<WebFormState>(EMPTY_WEB)
   const [agent, setAgent] = useState<AgentFormState>(EMPTY_AGENT)
+  const [chat, setChat] = useState<ChatFormState>(EMPTY_CHAT)
 
   useEffect(() => {
     let cancelled = false
@@ -122,10 +141,13 @@ export function AccountSettings({ onConfigSaved }: { onConfigSaved?: () => void 
 
         const nextWeb = readWebState(config)
         const nextAgent = readAgentState(config)
+        const nextChat = readChatState(config)
         setOriginalWeb(nextWeb)
         setOriginalAgent(nextAgent)
+        setOriginalChat(nextChat)
         setWeb(nextWeb)
         setAgent(nextAgent)
+        setChat(nextChat)
         setLoadError(null)
       } catch (err) {
         if (!cancelled) {
@@ -158,7 +180,11 @@ export function AccountSettings({ onConfigSaved }: { onConfigSaved?: () => void 
     agent.enable_background_review !== originalAgent.enable_background_review ||
     agent.show_subagents_in_sidebar !== originalAgent.show_subagents_in_sidebar
 
-  const isDirty = isWebDirty || isAgentDirty
+  const isChatDirty =
+    chat.enable_context_compression !== originalChat.enable_context_compression ||
+    chat.context_compression_threshold !== originalChat.context_compression_threshold
+
+  const isDirty = isWebDirty || isAgentDirty || isChatDirty
 
   const updateWeb = (patch: Partial<WebFormState>) => {
     setWeb(prev => ({ ...prev, ...patch }))
@@ -166,6 +192,10 @@ export function AccountSettings({ onConfigSaved }: { onConfigSaved?: () => void 
 
   const updateAgent = (patch: Partial<AgentFormState>) => {
     setAgent(prev => ({ ...prev, ...patch }))
+  }
+
+  const updateChat = (patch: Partial<ChatFormState>) => {
+    setChat(prev => ({ ...prev, ...patch }))
   }
 
   const onApiKeyChange = (key: 'brave_api_key' | 'tavily_api_key', value: string) => {
@@ -211,6 +241,10 @@ export function AccountSettings({ onConfigSaved }: { onConfigSaved?: () => void 
           reasoning_effort: agent.reasoning_effort,
           service_tier: agent.service_tier
         },
+        chat: {
+          enable_context_compression: chat.enable_context_compression,
+          context_compression_threshold: chat.context_compression_threshold
+        },
         display: {
           show_subagents_in_sidebar: agent.show_subagents_in_sidebar
         },
@@ -219,10 +253,13 @@ export function AccountSettings({ onConfigSaved }: { onConfigSaved?: () => void 
 
       const nextWeb = readWebState(config)
       const nextAgent = readAgentState(config)
+      const nextChat = readChatState(config)
       setOriginalWeb(nextWeb)
       setOriginalAgent(nextAgent)
+      setOriginalChat(nextChat)
       setWeb(nextWeb)
       setAgent(nextAgent)
+      setChat(nextChat)
       triggerHaptic('success')
       notify({ kind: 'success', title: a.heading, message: a.saved })
       onConfigSaved?.()
@@ -277,6 +314,10 @@ export function AccountSettings({ onConfigSaved }: { onConfigSaved?: () => void 
       <div className="my-4 h-px bg-border/30" />
 
       <AgentDefaultsSection disabled={isSaving} state={agent} t={a.agentDefaults} update={updateAgent} />
+
+      <div className="my-4 h-px bg-border/30" />
+
+      <ContextCompressionSection disabled={isSaving} state={chat} t={a.contextCompression} update={updateChat} />
 
       <div className="my-4 h-px bg-border/30" />
 
@@ -407,6 +448,7 @@ function ChangePasswordForm() {
 
 type WebSearchCopy = (typeof strings)['settings']['account']['webSearch']
 type AgentDefaultsCopy = (typeof strings)['settings']['account']['agentDefaults']
+type ContextCompressionCopy = (typeof strings)['settings']['account']['contextCompression']
 
 function WebSearchSection({
   disabled,
@@ -596,6 +638,56 @@ function AgentDefaultsSection({
         }
         description={t.showSubagentsInSidebarDesc}
         title={t.showSubagentsInSidebar}
+      />
+    </SettingsSubsection>
+  )
+}
+
+function ContextCompressionSection({
+  disabled,
+  state,
+  t,
+  update
+}: {
+  disabled: boolean
+  state: ChatFormState
+  t: ContextCompressionCopy
+  update: (patch: Partial<ChatFormState>) => void
+}) {
+  return (
+    <SettingsSubsection icon={Archive} intro={t.intro} title={t.heading}>
+      <ListRow
+        action={
+          <Switch
+            checked={state.enable_context_compression}
+            disabled={disabled}
+            onCheckedChange={value => update({ enable_context_compression: value })}
+          />
+        }
+        description={t.enableCompressionDesc}
+        title={t.enableCompression}
+      />
+      <ListRow
+        action={
+          <Select
+            disabled={disabled}
+            onValueChange={value => update({ context_compression_threshold: Number(value) })}
+            value={String(state.context_compression_threshold)}
+          >
+            <SelectTrigger className="w-36">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {THRESHOLD_OPTIONS.map(opt => (
+                <SelectItem key={opt} value={opt}>
+                  {t.thresholdOptions[opt]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        }
+        description={t.thresholdDesc}
+        title={t.threshold}
       />
     </SettingsSubsection>
   )

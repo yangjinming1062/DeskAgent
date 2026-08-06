@@ -21,9 +21,12 @@ DEFAULT_CONFIG = {
         "reasoning_effort": "medium",
         "service_tier": "standard",
     },
+    "chat": {
+        "enable_context_compression": True,
+        "context_compression_threshold": 0.70,
+    },
     "display": {
         "personality": "",
-        "skin": "default",
         "show_subagents_in_sidebar": False,
     },
     "terminal": {

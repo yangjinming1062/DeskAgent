@@ -1,13 +1,13 @@
 import { type ReactNode, useEffect } from 'react'
 
-import { BUILTIN_THEMES, DEFAULT_SKIN_NAME, DEFAULT_TYPOGRAPHY, deskagentTheme } from './presets'
+import { DEFAULT_TYPOGRAPHY, deskagentTheme } from './presets'
 import type { DesktopTheme, DesktopThemeColors } from './types'
 
 export type ThemeMode = 'light' | 'dark' | 'system'
 
 const INJECTED_FONT_URLS = new Set<string>()
 
-// ─── Color math (for synthesised light variants of dark-only skins) ────────
+// ─── Color math (for synthesised light variants) ────────────────────────
 
 function hexToRgb(hex: string): [number, number, number] | null {
   const clean = hex.trim().replace(/^#/, '')
@@ -83,26 +83,21 @@ function synthLightColors(seed: DesktopTheme): DesktopThemeColors {
   }
 }
 
-/** Returns the seed palette for a given skin + mode (no overrides applied). */
-export function getBaseColors(skinName: string, mode: 'light' | 'dark'): DesktopThemeColors {
-  const seed = BUILTIN_THEMES[skinName] ?? deskagentTheme
-
+function getBaseColors(mode: 'light' | 'dark'): DesktopThemeColors {
   if (mode === 'dark') {
-    return seed.darkColors ?? seed.colors
+    return deskagentTheme.darkColors ?? deskagentTheme.colors
   }
 
-  return seed.darkColors ? seed.colors : synthLightColors(seed)
+  return deskagentTheme.darkColors ? deskagentTheme.colors : synthLightColors(deskagentTheme)
 }
 
-function deriveTheme(skinName: string, mode: 'light' | 'dark'): DesktopTheme {
-  const seed = BUILTIN_THEMES[skinName] ?? deskagentTheme
-
+function deriveTheme(mode: 'light' | 'dark'): DesktopTheme {
   return {
-    ...seed,
-    name: `${skinName}-${mode}`,
-    label: `${seed.label} ${mode === 'light' ? 'Light' : 'Dark'}`,
-    description: `${seed.label} ${mode} palette`,
-    colors: getBaseColors(skinName, mode)
+    ...deskagentTheme,
+    name: `deskagent-${mode}`,
+    label: `${deskagentTheme.label} ${mode === 'light' ? 'Light' : 'Dark'}`,
+    description: `${deskagentTheme.label} ${mode} palette`,
+    colors: getBaseColors(mode)
   }
 }
 
@@ -139,10 +134,8 @@ function applyTheme(theme: DesktopTheme, mode: 'light' | 'dark') {
   const rendered = renderedModeFor(c, mode)
   const isDark = rendered === 'dark'
   const midground = c.midground ?? c.ring
-  const skinName = theme.name.endsWith(`-${mode}`) ? theme.name.slice(0, -mode.length - 1) : theme.name
 
   root.style.setProperty('color-scheme', rendered)
-  root.dataset.deskagentTheme = skinName
   root.dataset.deskagentMode = rendered
   root.classList.toggle('dark', isDark)
 
@@ -202,11 +195,11 @@ function applyTheme(theme: DesktopTheme, mode: 'light' | 'dark') {
 
 // Boot-time paint to avoid a flash before <ThemeProvider> mounts.
 if (typeof window !== 'undefined') {
-  applyTheme(deriveTheme(DEFAULT_SKIN_NAME, 'light'), 'light')
+  applyTheme(deriveTheme('light'), 'light')
 }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  useEffect(() => applyTheme(deriveTheme(DEFAULT_SKIN_NAME, 'light'), 'light'), [])
+  useEffect(() => applyTheme(deriveTheme('light'), 'light'), [])
 
   return <>{children}</>
 }

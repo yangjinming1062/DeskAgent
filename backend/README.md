@@ -88,6 +88,8 @@ backend/
 
 消息截断（`message_sanitization.truncate_chat_history`）：保留最近 40 条非 system 消息；单条字符上限 15000。
 
+消息压缩（`services/llm/context_compressor.compress_history_if_needed`）：在确定性截断之前插入一层 best-effort 的 LLM 摘要——估算 token 超过 `context_length × threshold` 时，把最老的连续块（不含 system 段、保留最近 4 条）交给 LLM 摘要为一条占位消息。任何失败（关闭、未达阈值、摘要调用异常或被截断）原样返回，由 `truncate_chat_history` 确定性兜底，故永不抛错。开关与阈值是 **per-user** 配置（`chat.enable_context_compression` / `chat.context_compression_threshold`，经 `/api/config` 读写，与 `agent.*` 同模式）；`SETTINGS` 中的同名字段仅作用户未设置时的回退默认（当前 True / 0.70）。
+
 ## 错误分类管道
 
 `services/llm/error_classifier.py` 将所有 API 层或依赖项错误收拢为 `FailoverReason`，分类决定恢复策略（退避重试 / 凭证轮换 / 压缩上下文 / 不重试）。

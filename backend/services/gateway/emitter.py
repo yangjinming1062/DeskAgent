@@ -17,8 +17,6 @@ _TRANSLATED: dict[str, str] = {
     "thinking": "thinking.delta",
     "tool_call": "tool.call",
     "references": "references",
-    "require_compression_consent": "compression.request",
-    "compression_consent_timeout": "compression.timeout",
     "subagent_spawn": "subagent.spawn_requested",
     "subagent_start": "subagent.start",
     "subagent_thinking": "subagent.thinking",
@@ -93,10 +91,6 @@ class JsonRpcEmitter:
             return {"name": data.get("name"), "args": data.get("args"), "call_id": data.get("call_id")}
         if raw_type == "references":
             return {"items": data.get("items", [])}
-        if raw_type == "require_compression_consent":
-            return {"reason": data.get("reason"), "session_id": data.get("session_id")}
-        if raw_type == "compression_consent_timeout":
-            return {"session_id": data.get("session_id")}
         # Pass-through shape — every non-type field is part of the payload.
         # Covers: session.info, subagent_*, tool_progress, tool_generating,
         # reasoning_available, background_complete.

@@ -97,12 +97,15 @@ class Settings(BaseSettings):
     clip_video_daily_budget: int = 3
 
     # ── Chat service ──
-    context_compression_threshold: float = 0.85
+    # Fallback defaults when a user hasn't set chat.enable_context_compression /
+    # chat.context_compression_threshold via /api/config. The per-user values
+    # (see api/v1/config.py DEFAULT_CONFIG) are authoritative; these are only
+    # read when the user_settings row is absent.
+    context_compression_threshold: float = 0.70
     context_summary_target_tokens: int = 2000
     context_summary_max_input_messages: int = 30
-    enable_context_compression: bool = False
+    enable_context_compression: bool = True
     ipc_future_timeout_seconds: float = 300.0
-    compression_consent_timeout_seconds: float = 300.0
     chat_active_window_minutes: int = 30
 
     # Terminal fallback for ``resolve_context_tokens`` when neither the per-cap

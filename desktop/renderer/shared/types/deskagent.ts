@@ -147,9 +147,12 @@ export interface DeskAgentConfigResponse {
     service_tier?: string
     enable_background_review?: boolean
   }
+  chat?: {
+    enable_context_compression?: boolean
+    context_compression_threshold?: number
+  }
   display?: {
     personality?: string
-    skin?: string
     /** Hides subagent conversations from the sidebar by default. */
     show_subagents_in_sidebar?: boolean
   }
@@ -190,9 +193,12 @@ export interface DeskAgentConfigPutRequest {
     service_tier?: string
     enable_background_review?: boolean
   }
+  chat?: {
+    enable_context_compression?: boolean
+    context_compression_threshold?: number
+  }
   display?: {
     personality?: string
-    skin?: string
     show_subagents_in_sidebar?: boolean
   }
   mcp_servers?: Record<string, Record<string, unknown>>

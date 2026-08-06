@@ -127,19 +127,25 @@ async def compress_history_if_needed(
     client: Any,
     model: str,
     context_length: int,
+    enabled: bool | None = None,
     threshold_ratio: float | None = None,
     target_tokens: int | None = None,
     max_input_messages: int | None = None,
-    consent_callback=None,
     language: str = DEFAULT_LANGUAGE,
 ) -> list[dict[str, Any]]:
     """Return a history list with the oldest non-system block replaced by an LLM summary.
 
-    Best-effort: any failure (compression disabled, below threshold, rejected
-    consent, summary call failed/truncated/empty) returns the original list
-    unchanged so ``truncate_chat_history`` is always a deterministic fallback.
+    ``enabled`` is resolved per-user by the caller (orchestrator reads
+    ``chat.enable_context_compression`` from user_settings). When None it
+    falls back to the global ``SETTINGS.enable_context_compression``.
+
+    Best-effort: any failure (compression disabled, below threshold, summary
+    call failed/truncated/empty) returns the original list unchanged so
+    ``truncate_chat_history`` is always a deterministic fallback.
     """
-    if not SETTINGS.enable_context_compression:
+    if enabled is None:
+        enabled = SETTINGS.enable_context_compression
+    if not enabled:
         return messages
 
     threshold = threshold_ratio if threshold_ratio is not None else SETTINGS.context_compression_threshold
@@ -149,16 +155,6 @@ async def compress_history_if_needed(
     current_tokens = _approx_tokens(messages)
     if context_length <= 0 or current_tokens < context_length * threshold:
         return messages
-
-    if consent_callback:
-        reason = f"Context length is ~{current_tokens} tokens, exceeding {threshold * 100}% of the max window."
-        try:
-            if not await consent_callback(reason):
-                logger.info("context_compressor: user rejected compression consent")
-                return messages
-        except Exception as e:
-            logger.warning("context_compressor: consent_callback failed", extra={"error": str(e)})
-            return messages
 
     system_msgs, rest = _split_system_and_rest(messages)
     block, keep = _pick_compressible_block(rest, max_input_messages=cap)
