@@ -79,7 +79,6 @@ async def _execute_single_tool(tc: dict, ctx: _ToolDispatchContext) -> dict:
     raw_args_str = tc["function"]["arguments"]
 
     await ctx.emitter.send_json({"type": "tool_start", "name": name, "call_id": tc["id"]})
-    await ctx.emitter.send_json({"type": "tool_generating", "name": name, "call_id": tc["id"]})
 
     try:
         args = safe_json_loads(_repair_tool_call_arguments(raw_args_str, name), default={}) if raw_args_str else {}
@@ -134,7 +133,6 @@ async def _execute_single_tool(tc: dict, ctx: _ToolDispatchContext) -> dict:
         final_content = _redact_tool_payload(result_str)
         return make_tool_result_message(name, final_content, tc["id"])
     finally:
-        await ctx.emitter.send_json({"type": "tool_progress", "name": name, "call_id": tc["id"]})
         await ctx.emitter.send_json({"type": "tool_end", "name": name, "call_id": tc["id"]})
 
 

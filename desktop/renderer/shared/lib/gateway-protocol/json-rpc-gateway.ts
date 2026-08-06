@@ -2,33 +2,14 @@
  * Wire-level JSON-RPC event names sent by the Backend over `/api/chat/ws`.
  * The trailing `(string & {})` preserves autocomplete for future server-side
  * events without breaking exhaustiveness checks today.
- *
- * `thinking.delta` is declared but the renderer intentionally no-ops it
- * — reasoning content is delivered via `reasoning.delta` / `reasoning.available`,
- * and `thinking.delta` carries only state-class UI hints (e.g. spinner toggles)
- * that are surfaced through `$busy`/`$sessionState` instead.
  */
 type GatewayEventName =
-  | 'session.info'
   | 'message.start'
   | 'message.delta'
   | 'message.complete'
-  | 'thinking.delta'
-  | 'reasoning.delta'
-  | 'reasoning.available'
   | 'tool.start'
-  | 'tool.progress'
   | 'tool.complete'
-  | 'tool.generating'
   | 'tool.call'
-  | 'references'
-  | 'subagent.spawn_requested'
-  | 'subagent.start'
-  | 'subagent.thinking'
-  | 'subagent.tool'
-  | 'subagent.progress'
-  | 'subagent.complete'
-  | 'background.complete'
   | 'error'
   | (string & {})
 

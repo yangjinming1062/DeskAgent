@@ -28,25 +28,6 @@ class SessionResumeResult(BaseModel):
     info: SessionRuntimeInfo
 
 
-class SessionTitleResult(BaseModel):
-    title: str
-
-
-class SessionSteerResult(BaseModel):
-    status: str
-
-
-class SessionCwdSetResult(BaseModel):
-    info: SessionRuntimeInfo
-
-
-class SessionUsageResult(BaseModel):
-    calls: int
-    input: int
-    output: int
-    total: int
-
-
 class ToolsSyncResult(BaseModel):
     count: int
 
@@ -93,27 +74,19 @@ def new_runtime_session(conversation_id: int, cwd: str | None, settings_json: st
     return RuntimeSession(conversation_id=conversation_id, cwd=cwd, settings=settings)
 
 
-def runtime_info_snapshot(llm_config: dict, runtime: RuntimeSession, *, running_override: bool | None = None) -> dict:
+def runtime_info_snapshot(llm_config: dict, runtime: RuntimeSession) -> dict:
     """Renderer-facing SessionRuntimeInfo payload.
 
     Shape: ``{cwd, branch, model, provider, running, settings}``. The renderer
-    tolerates missing fields, so personality / reasoning_effort / service_tier
-    / fast / skills / tools / version / desktop_contract / usage stay
-    unset here and are not part of the contract yet.
-
-    ``running_override`` lets callers force a specific value (the heartbeat
-    bracket needs ``running=False`` after ``task.cancel()`` even though the
-    task object isn't ``done()`` yet).
+    tolerates missing fields, so any settings keys the renderer doesn't read
+    (personality, service_tier, version, etc.) stay unset here and are not
+    part of the contract yet.
     """
-    if running_override is None:
-        running = bool(runtime.chat_task and not runtime.chat_task.done())
-    else:
-        running = running_override
     return {
         "cwd": runtime.cwd,
         "branch": None,
         "model": llm_config.get("model_name"),
         "provider": "openai",
-        "running": running,
+        "running": bool(runtime.chat_task and not runtime.chat_task.done()),
         "settings": dict(runtime.settings),
     }

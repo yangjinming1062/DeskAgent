@@ -19,6 +19,10 @@ import { ListRow, LoadingState, SectionHeading, SettingsContent, SettingsSubsect
 const WEB_BACKEND_OPTIONS = ['ddgs', 'brave-free', 'tavily'] as const
 const EXTRACT_BACKEND_OPTIONS = ['tavily', 'brave-free', 'ddgs'] as const
 const REASONING_OPTIONS = ['minimal', 'low', 'medium', 'high', 'max'] as const
+// OpenAI service_tier accepts exactly {auto, default, flex}. UI must mirror
+// the API's allowed set — anything outside is silently dropped by the
+// backend's whitelist before reaching the model.
+const SERVICE_TIER_OPTIONS = ['auto', 'default', 'flex'] as const
 
 interface WebFormState {
   backend: string
@@ -36,6 +40,7 @@ interface WebFormState {
 
 interface AgentFormState {
   reasoning_effort: string
+  service_tier: string
   enable_background_review: boolean
 }
 
@@ -60,6 +65,7 @@ const EMPTY_WEB: WebFormState = {
 
 const EMPTY_AGENT: AgentFormState = {
   reasoning_effort: 'medium',
+  service_tier: 'auto',
   enable_background_review: true
 }
 
@@ -93,6 +99,7 @@ const readAgentState = (config: DeskAgentConfigResponse): AgentFormState => {
 
   return {
     reasoning_effort: agent?.reasoning_effort ?? EMPTY_AGENT.reasoning_effort,
+    service_tier: agent?.service_tier ?? EMPTY_AGENT.service_tier,
     enable_background_review: agent?.enable_background_review ?? EMPTY_AGENT.enable_background_review
   }
 }
@@ -165,6 +172,7 @@ export function AccountSettings({ onConfigSaved }: { onConfigSaved?: () => void 
 
   const isAgentDirty =
     agent.reasoning_effort !== originalAgent.reasoning_effort ||
+    agent.service_tier !== originalAgent.service_tier ||
     agent.enable_background_review !== originalAgent.enable_background_review
 
   const isChatDirty =
@@ -225,7 +233,8 @@ export function AccountSettings({ onConfigSaved }: { onConfigSaved?: () => void 
       const { config } = await saveDeskAgentConfig({
         agent: {
           enable_background_review: agent.enable_background_review,
-          reasoning_effort: agent.reasoning_effort
+          reasoning_effort: agent.reasoning_effort,
+          service_tier: agent.service_tier
         },
         chat: {
           enable_context_compression: chat.enable_context_compression,
@@ -574,6 +583,29 @@ function AgentDefaultsSection({
         }
         description={t.reasoningEffortDesc}
         title={t.reasoningEffort}
+      />
+
+      <ListRow
+        action={
+          <Select
+            disabled={disabled}
+            onValueChange={value => update({ service_tier: value })}
+            value={state.service_tier}
+          >
+            <SelectTrigger className="w-36">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {SERVICE_TIER_OPTIONS.map(opt => (
+                <SelectItem key={opt} value={opt}>
+                  {t.serviceTierOptions[opt]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        }
+        description={t.serviceTierDesc}
+        title={t.serviceTier}
       />
 
       <ListRow

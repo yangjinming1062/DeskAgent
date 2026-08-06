@@ -110,8 +110,10 @@ async def _persist_assistant_no_tool_turn(
 
     Takes ``effective_settings`` (per-session overrides merged over
     ``UserSetting``) so per-session config like
-    ``enable_background_review=false`` is honored here just like it is
-    on the tool path (``dispatch_ctx.user_settings``).
+    ``agent.enable_background_review=false`` is honored here just like it
+    is on the tool path (``dispatch_ctx.user_settings``). Bare-key
+    ``enable_background_review`` is also read as a fallback for legacy
+    sessions that predate the namespaced key.
     """
     if turn_content:
         db.add(
@@ -137,7 +139,7 @@ async def _persist_assistant_no_tool_turn(
     # fall back to bare ``enable_background_review`` for legacy data.
     bg_review = effective_settings.get("agent.enable_background_review") or effective_settings.get("enable_background_review") or BACKGROUND_REVIEW_DEFAULT
     if bg_review.lower() == BACKGROUND_REVIEW_DEFAULT:
-        review_task = asyncio.create_task(run_background_memory_review(user_id, llm_config, current_messages.copy(), emitter=emitter, session_id=req.session_id))
+        review_task = asyncio.create_task(run_background_memory_review(user_id, llm_config, current_messages.copy()))
         if track_task:
             track_task(review_task)
 

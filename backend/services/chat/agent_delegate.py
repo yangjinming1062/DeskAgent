@@ -12,7 +12,6 @@ from modules.system import ChatRequest
 from ..tools import REGISTRY
 from .chat_emitter import Emitter
 from .chat_emitter import HeadlessEmitter
-from .chat_emitter import safe_emit
 from .orchestrator import run_chat_turn
 
 logger = get_logger(__name__)
@@ -42,15 +41,10 @@ async def agent_delegate_tool(
             db.refresh(conv)
             sid = str(conv.id)
 
-        # Build the headless emitter AFTER ``sid`` is known so streamed
-        # ``chunk`` / ``reasoning`` / ``tool_call`` frames can be translated
-        # into ``subagent_*`` events tagged with the subagent's session_id
-        # rather than the parent's.
-        headless = HeadlessEmitter(parent_emitter=emitter, sid=sid)
-
-        goal = task_description[:200]
-        await safe_emit(emitter, "subagent_spawn", session_id=sid, goal=goal)
-        await safe_emit(emitter, "subagent_start", session_id=sid, goal=goal)
+        # HeadlessEmitter captures all frames so the final answer can be
+        # drained from chunk/message.complete/error events. Subagent progress
+        # forwarding was removed — the companion never consumed the frames.
+        headless = HeadlessEmitter()
 
         with SESSION_LOCAL() as db:
             req = ChatRequest(
@@ -75,11 +69,9 @@ async def agent_delegate_tool(
                 last_affect = msg.get("affect")
             elif msg.get("type") == "error":
                 err = msg.get("message") or "subagent failed"
-                await safe_emit(emitter, "subagent_complete", session_id=sid, status="error", error=err)
                 return tool_error(err)
 
         final_answer = "".join(chunks) or "Subagent completed without producing text output."
-        await safe_emit(emitter, "subagent_complete", session_id=sid, status="completed", result=final_answer[:500], affect=last_affect)
 
         result_dict: dict[str, Any] = {"success": True, "result": final_answer, "subagent_session_id": sid}
         if last_affect:
@@ -91,7 +83,6 @@ async def agent_delegate_tool(
         )
     except Exception as e:
         logger.exception("Agent delegation failed")
-        await safe_emit(emitter, "subagent_complete", session_id=sid, status="error", error=str(e))
         return tool_error(str(e))
 
 

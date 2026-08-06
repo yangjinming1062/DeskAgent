@@ -1,6 +1,5 @@
 import asyncio
 import contextlib
-import re
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -18,8 +17,6 @@ from .chat_emitter import Emitter
 from .think_scrubber import StreamingThinkScrubber
 
 logger = get_logger(__name__)
-
-_FILE_REFERENCE_PATTERN = re.compile(r"\[([^\]]+)\]\((file://[^\)]+)\)")
 
 
 @dataclass
@@ -106,6 +103,8 @@ async def _stream_llm_response(
     client: Any,
     *,
     on_first_chunk: Callable[[], None] | None = None,
+    reasoning_effort: str | None = None,
+    service_tier: str | None = None,
 ) -> _LLMTurnResult:
     """One LLM call: stream text + accumulate tool calls + capture usage.
 
@@ -122,6 +121,10 @@ async def _stream_llm_response(
     kwargs: dict = {"model": model_name, "messages": current_messages, "stream": True, "stream_options": {"include_usage": True}}
     if active_schemas:
         kwargs["tools"] = active_schemas
+    if reasoning_effort:
+        kwargs["reasoning_effort"] = reasoning_effort
+    if service_tier:
+        kwargs["service_tier"] = service_tier
 
     # Log the part shape going to the LLM (multimodal only). A 400
     # ``INVALID_ARGUMENT`` from the Vertex beta API almost always means
@@ -151,29 +154,11 @@ async def _stream_llm_response(
 
     await emitter.send_json({"type": "message.start"})
 
-    # Queue + drain task are scoped inside this try/finally so they are
-    # never created when call_with_retry raises above — eliminating the
-    # orphan path between LLM-call attempts.
-    _reasoning_queue: asyncio.Queue[str | None] = asyncio.Queue()
-    _reasoning_task: asyncio.Task | None = None
-
-    async def _reasoning_drain() -> None:
-        while True:
-            text = await _reasoning_queue.get()
-            if text is None:
-                break
-            with contextlib.suppress(Exception):
-                await emitter.send_json({"type": "reasoning", "content": text})
-
-    def _on_reasoning_sync(text: str) -> None:
-        _reasoning_queue.put_nowait(text)
-
-    scrubber = StreamingThinkScrubber(on_reasoning=_on_reasoning_sync)
+    scrubber = StreamingThinkScrubber()
     affect = AffectScrubber()
     clean_tail = ""  # assigned in try; read in finally to flush on stream errors
 
     try:
-        _reasoning_task = asyncio.ensure_future(_reasoning_drain())
         try:
             async for chunk in stream:
                 # A usage-only chunk still proves the stream is live and
@@ -220,17 +205,8 @@ async def _stream_llm_response(
         if clean_tail:
             turn_content += clean_tail
             await emitter.send_json({"type": "chunk", "content": clean_tail})
-        if _reasoning_task is not None:
-            try:
-                await _reasoning_queue.put(None)
-                await _reasoning_task
-            except (asyncio.CancelledError, Exception):
-                _reasoning_task.cancel()
 
     turn_duration_ms = int((time.monotonic() - turn_start_time) * 1000)
-
-    if refs := _FILE_REFERENCE_PATTERN.findall(turn_content):
-        await emitter.send_json({"type": "references", "items": [{"text": t, "url": u} for t, u in refs]})
 
     tool_calls_list = list(tool_calls_dict.values())  # insertion order == streaming order
 

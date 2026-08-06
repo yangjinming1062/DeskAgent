@@ -40,7 +40,6 @@ from .constants import SEARCH_INPUT_MAX_LEN
 from .constants import SECRET_MASK_HEAD_CHARS
 from .constants import SECRET_MASK_MIN_LENGTH
 from .constants import SECRET_MASK_TAIL_CHARS
-from .constants import SESSION_HEARTBEAT_INTERVAL_S
 from .constants import SESSION_PREVIEW_MAX_CHARS
 from .constants import SESSION_TO_GLOBAL_KEY_ALIASES
 from .constants import SQL_LIKE_ESCAPE_CHAR
@@ -58,7 +57,6 @@ from .correlation import begin_local_scope
 from .correlation import correlated_exception_response
 from .correlation import correlation_id_middleware
 from .correlation import new_request_id
-from .correlation import normalize_inbound
 from .correlation import REQUEST_ID_HEADER
 from .database import ENGINE
 from .database import get_db
@@ -78,9 +76,7 @@ from .functions import unquote_user_setting
 from .hashing import normalize_sha512
 from .hashing import sha256_hex
 from .hashing import sha512_b64
-from .logger import current_request_id
 from .logger import get_logger
-from .logger import set_request_id
 from .logger import set_request_user_id
 from .logger import setup_logging
 from .network import is_safe_outbound
@@ -146,7 +142,6 @@ __all__ = [
     "SECRET_MASK_HEAD_CHARS",
     "SECRET_MASK_MIN_LENGTH",
     "SECRET_MASK_TAIL_CHARS",
-    "SESSION_HEARTBEAT_INTERVAL_S",
     "SESSION_PREVIEW_MAX_CHARS",
     "SESSION_TO_GLOBAL_KEY_ALIASES",
     "SQL_LIKE_ESCAPE_CHAR",
@@ -159,9 +154,7 @@ __all__ = [
     "TOOL_CALL_ID_HEX_PREFIX_LEN",
     "TOOL_ENFORCE_OFF_VALUES",
     "TTS_MAX_TEXT_CHARS",
-    "current_request_id",
     "get_logger",
-    "set_request_id",
     "set_request_user_id",
     "setup_logging",
     "adopt_inbound",
@@ -169,7 +162,6 @@ __all__ = [
     "correlated_exception_response",
     "correlation_id_middleware",
     "new_request_id",
-    "normalize_inbound",
     "REQUEST_ID_HEADER",
     "mask_secret",
     "redact_sensitive_text",

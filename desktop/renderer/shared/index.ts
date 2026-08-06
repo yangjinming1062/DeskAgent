@@ -37,9 +37,7 @@ export {
   $gateway,
   $gatewayState,
   reportPrimaryGatewayState,
-  setConnection,
   setPrimaryGateway,
-  setRunnerOnline,
   tearDownPrimaryGateway
 } from './store/gateway'
 export { $hapticsMuted } from './store/haptics'

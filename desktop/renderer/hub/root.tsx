@@ -31,6 +31,15 @@ export function ToolRoot() {
     return () => off()
   }, [])
 
+  // Tray menu "Log out" entry fires this bridge; subscribe so clicking the
+  // tray item actually logs the user out (the menu fires this IPC and the
+  // renderer is the only place that can drive the in-app logout flow).
+  useEffect(() => {
+    const off = window.deskagent.onTrayLogout?.(() => void logout())
+
+    return () => off?.()
+  }, [])
+
   if (auth.kind === 'pending') {
     return (
       <div className="fixed inset-0 z-[1300] flex items-center justify-center bg-(--ui-chat-surface-background)">

@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef } from 'react'
 
 import type { DeskAgentGateway } from '@/shared/deskagent'
 import { resolveGatewayWsUrl } from '@/shared/lib/gateway-ws-url'
-import { $gateway, $gatewayState, setConnection } from '@/shared/store/gateway'
+import { $gateway, $gatewayState } from '@/shared/store/gateway'
 
 export function useGatewayRequest() {
   const gatewayState = useStore($gatewayState)
@@ -52,7 +52,6 @@ export function useGatewayRequest() {
       try {
         const conn = await desktop.getConnection()
         connectionRef.current = conn
-        setConnection(conn)
         // Re-mint the WS URL before reconnecting. OAuth tickets are single-use
         // and short-lived, so the cached conn.wsUrl ticket is dead here;
         // resolveGatewayWsUrl() throws a reauth error in OAuth mode rather than
@@ -64,7 +63,6 @@ export function useGatewayRequest() {
         return existing
       } catch {
         connectionRef.current = null
-        setConnection(null)
 
         return null
       } finally {

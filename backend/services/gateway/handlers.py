@@ -26,9 +26,6 @@ from modules.conversation import Message
 from modules.system import ChatMessageRequest
 from modules.system import ChatRequest
 from services.chat import build_session_messages
-from services.chat import CommandContext
-from services.chat import commands_catalog
-from services.chat import exec_slash_command
 from services.chat import load_user_settings
 from services.chat import run_chat_turn
 from services.companion import AvatarGenerationError
@@ -54,7 +51,6 @@ from services.disturbance import set_disturbance_tier
 from services.llm import MissingLlmConfigError
 from services.llm import resolve_user_llm_config
 from services.tools import REGISTRY
-from sqlalchemy import func
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -70,11 +66,7 @@ from . import resolve_future
 from . import runtime_info_snapshot
 from . import RuntimeSession
 from . import SessionCreateResult
-from . import SessionCwdSetResult
 from . import SessionResumeResult
-from . import SessionSteerResult
-from . import SessionTitleResult
-from . import SessionUsageResult
 from . import ToolsSyncResult
 
 logger = get_logger(__name__)
@@ -246,41 +238,6 @@ async def handle_chat_websocket(websocket: WebSocket, token: str):
 
     dispatcher.register("prompt.submit", prompt_submit)
 
-    # slash.exec / command.dispatch / commands.catalog — the handlers
-    # capture llm_config and user_settings as closure variables so /model
-    # and /reasoning can mutate the per-WS state.
-    cmd_ctx = CommandContext(
-        user_id=user_id,
-        llm_config=llm_config,
-        user_settings=user_settings,
-        runtime_sessions=runtime_sessions,
-        db_factory=SESSION_LOCAL,
-    )
-
-    async def slash_exec(params: dict) -> dict:
-        command = _require_str(params, "command")
-        return exec_slash_command(command, cmd_ctx)
-
-    async def command_dispatch(params: dict) -> dict:
-        # Fallback: try slash.exec first, then return a generic send.
-        name = params.get("name", "")
-        arg = params.get("arg", "")
-        command = f"{name} {arg}".strip()
-        result = exec_slash_command(command, cmd_ctx)
-        if "warning" not in result:
-            return {"type": "exec", **result}
-        return {"type": "send", "message": f"/{name} {arg}".strip()}
-
-    async def commands_catalog_handler(_params: dict) -> dict:
-        # Catalog is derived from services.chat.commands._HANDLERS so it never
-        # lists a command the dispatcher can't actually run. The desktop
-        # further filters this through its own allow-list before rendering.
-        return commands_catalog()
-
-    dispatcher.register("slash.exec", slash_exec)
-    dispatcher.register("command.dispatch", command_dispatch)
-    dispatcher.register("commands.catalog", commands_catalog_handler)
-
     async def tool_result_handler(params: dict) -> dict:
         call_id = params.get("call_id")
         result = params.get("result")
@@ -436,68 +393,10 @@ def _register_session_handlers(
             info=runtime_info_snapshot(llm_config, runtime),
         ).model_dump()
 
-    async def session_title(params: dict) -> dict:
-        runtime = _get_runtime(runtime_sessions, params)
-        title = _require_str(params, "title")
-        with SESSION_LOCAL() as db:
-            conv = _find_owned_conv(db, user_id, runtime.session_id)
-            if conv is None:
-                raise JsonRpcError(JSONRPC_METHOD_NOT_FOUND, f"stored session vanished: {runtime.conversation_id!r}")
-            conv.title = title
-            db.commit()
-        return SessionTitleResult(title=title).model_dump()
-
-    async def session_steer(params: dict) -> dict:
-        runtime = _get_runtime(runtime_sessions, params)
-        runtime.ensure_steer_queue().put_nowait(_require_str(params, "text"))
-        return SessionSteerResult(status="queued").model_dump()
-
     async def session_interrupt(params: dict) -> dict:
         runtime = _get_runtime(runtime_sessions, params)
         if runtime.chat_task and not runtime.chat_task.done():
             runtime.chat_task.cancel()
-        else:
-            snapshot = runtime_info_snapshot(llm_config, runtime, running_override=False)
-            await dispatcher.push_event("session.info", snapshot, session_id=runtime.session_id)
-        return {}
-
-    async def session_cwd_set(params: dict) -> dict:
-        runtime = _get_runtime(runtime_sessions, params)
-        runtime.cwd = _require_str(params, "cwd")
-        with SESSION_LOCAL() as db:
-            conv = _find_owned_conv(db, user_id, runtime.session_id)
-            if conv is not None:
-                conv.cwd = runtime.cwd
-                db.commit()
-        return SessionCwdSetResult(info=runtime_info_snapshot(llm_config, runtime)).model_dump()
-
-    async def session_usage(params: dict) -> dict:
-        runtime = _get_runtime(runtime_sessions, params)
-        with SESSION_LOCAL() as db:
-            row = (
-                db.query(
-                    func.count(Message.id).label("calls"),
-                    func.coalesce(func.sum(Message.prompt_tokens), 0).label("input_tok"),
-                    func.coalesce(func.sum(Message.completion_tokens), 0).label("output_tok"),
-                )
-                .filter(Message.conversation_id == runtime.conversation_id)
-                .one()
-            )
-        return SessionUsageResult(
-            calls=int(row.calls or 0),
-            input=int(row.input_tok or 0),
-            output=int(row.output_tok or 0),
-            total=int((row.input_tok or 0) + (row.output_tok or 0)),
-        ).model_dump()
-
-    async def session_close(params: dict) -> dict:
-        # Best-effort cleanup per renderer contract (use-session-actions.ts:336):
-        # missing runtime, malformed id, or empty params all map to no-op.
-        session_id = params.get("session_id")
-        if isinstance(session_id, str):
-            runtime = runtime_sessions.pop(session_id, None)
-            if runtime is not None and runtime.chat_task and not runtime.chat_task.done():
-                runtime.chat_task.cancel()
         return {}
 
     async def image_attach(params: dict) -> dict:
@@ -526,12 +425,7 @@ def _register_session_handlers(
 
     dispatcher.register("session.create", session_create)
     dispatcher.register("session.resume", session_resume)
-    dispatcher.register("session.title", session_title)
-    dispatcher.register("session.steer", session_steer)
     dispatcher.register("session.interrupt", session_interrupt)
-    dispatcher.register("session.cwd.set", session_cwd_set)
-    dispatcher.register("session.usage", session_usage)
-    dispatcher.register("session.close", session_close)
     dispatcher.register("image.attach", image_attach)
     dispatcher.register("reload.mcp", reload_mcp)
 

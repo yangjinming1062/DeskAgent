@@ -2,7 +2,7 @@ import { atom } from 'nanostores'
 
 import type { DesktopAuthBroadcast, DesktopAuthSnapshot } from '@/shared/types/global'
 
-import { setRunnerOnline, tearDownPrimaryGateway } from './gateway'
+import { tearDownPrimaryGateway } from './gateway'
 
 export type AuthState =
   | { kind: 'pending' }
@@ -71,9 +71,6 @@ export async function logout(): Promise<void> {
     await window.deskagent.logout()
   } finally {
     tearDownPrimaryGateway()
-    // Reset Runner online state — a stale `true` would defeat the tool-call
-    // fast-fail for the next user on the same Electron profile.
-    setRunnerOnline(false)
     $auth.set({ kind: 'unauthenticated' })
   }
 }

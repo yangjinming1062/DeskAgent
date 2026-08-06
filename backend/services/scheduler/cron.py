@@ -1,5 +1,4 @@
 import asyncio
-import json
 from datetime import datetime
 from typing import Any
 
@@ -15,14 +14,11 @@ from modules.conversation import Conversation
 from modules.scheduler import CronJob
 from modules.system import ChatMessageRequest
 from modules.system import ChatRequest
-from modules.ws import WSEvent
 from services.disturbance import is_quiet
 from services.gateway import JsonRpcEmitter
 from services.gateway import MANAGER
 from services.llm import resolve_user_llm_config
-from sqlalchemy import insert
 from sqlalchemy import text
-from sqlalchemy.exc import IntegrityError
 
 from .memory_consolidator import maybe_consolidate_one_user
 
@@ -54,30 +50,6 @@ def _compute_next_run_at(schedule: str, base: datetime) -> datetime | None:
 
 def _job_to_dict(job: CronJob) -> dict[str, Any]:
     return job.to_dict()
-
-
-def _cron_trigger_payload(job: CronJob) -> dict[str, Any]:
-    """Fields the renderer's cron.trigger handler reads — keep this and
-    `_job_to_dict` in sync when the schema changes."""
-    return {"job_id": job.id, "name": job.name, "prompt": job.prompt, "enabled_toolsets": job.enabled_toolsets}
-
-
-def _mark_job_unprocessable(job_id: int, reason: str) -> None:
-    """Pause a job permanently with a logged reason. Used when the row
-    cannot be processed as configured (FK violation, bad prompt, etc.)
-    so the tick stops retrying it every minute."""
-    logger.warning("Cron job marked unprocessable", extra={"job_id": job_id, "reason": reason})
-    try:
-        with session_scope() as db:
-            db.query(CronJob).filter(CronJob.id == job_id).update(
-                {
-                    CronJob.is_paused: True,
-                    CronJob.next_run_at: None,
-                }
-            )
-            db.commit()
-    except Exception as exc:
-        logger.error("cron: _mark_job_unprocessable failed", extra={"job_id": job_id, "reason": reason, "error": str(exc)}, exc_info=True)
 
 
 def _refresh_schedule(job: CronJob) -> None:
@@ -168,19 +140,19 @@ def remove_job(user_id: int, job_id: int) -> bool:
 def _select_due_jobs() -> list[CronJob]:
     """Read due jobs.
 
-    Selects only the columns the CAS + payload pipeline needs (drops
-    ``deliver``, ``created_at``, ``updated_at``, ``is_paused``).
-    ``prompt`` is kept because the WSEvent payload includes it — see
-    :func:`_cron_trigger_payload` — and ``CronJob.prompt`` is a Text
-    column that may be MB-sized, so the cost is real. The
-    ``ORDER BY next_run_at, id`` clause gives a deterministic subset when
-    the ``_MAX_DUE_PER_TICK`` cap slices a backlog.
+    Selects only the columns the CAS + autonomous-turn kickoff need
+    (drops ``deliver``, ``created_at``, ``updated_at``, ``is_paused``).
+    ``prompt`` is kept because the autonomous-turn kickoff reads it
+    directly, and ``CronJob.prompt`` is a Text column that may be
+    MB-sized, so the cost is real. The ``ORDER BY next_run_at, id``
+    clause gives a deterministic subset when the ``_MAX_DUE_PER_TICK``
+    cap slices a backlog.
     """
     now = naive_utc_now()
     with session_scope() as db:
         return (
             db.query(CronJob)
-            .with_entities(CronJob.id, CronJob.user_id, CronJob.name, CronJob.schedule, CronJob.next_run_at, CronJob.prompt, CronJob.enabled_toolsets)
+            .with_entities(CronJob.id, CronJob.user_id, CronJob.name, CronJob.schedule, CronJob.next_run_at, CronJob.prompt)
             .filter(
                 CronJob.is_paused.is_(False),
                 CronJob.next_run_at.is_not(None),
@@ -220,7 +192,7 @@ def _bulk_cas_advance(due_jobs: list[CronJob], now: datetime) -> dict[int, dict[
         winners[job.id] = {
             "user_id": job.user_id,
             "is_paused": next_run is None,
-            "payload": _cron_trigger_payload(job),
+            "payload": {"prompt": job.prompt},
         }
 
     with session_scope() as db:
@@ -243,81 +215,17 @@ def _bulk_cas_advance(due_jobs: list[CronJob], now: datetime) -> dict[int, dict[
     return {jid: winners[jid] for jid in won_ids}
 
 
-def _insert_wsevents(winners: dict[int, dict[str, Any]]) -> None:
-    """Bulk-insert one WSEvent per CAS winner. Falls back to per-row insert
-    on IntegrityError so a single bad FK (orphaned ``user_id``) cannot
-    roll back the whole batch and silently drop events for healthy jobs.
-
-    CAS-won-but-invalid-schedule jobs (``is_paused=True``) are skipped —
-    we just paused them and don't want to enqueue a trigger event for
-    a job we just disabled.
-
-    Per-row rollback after IntegrityError is mandatory: SQLAlchemy leaves
-    the session in an aborted state, and any subsequent operation on the
-    same ``db`` raises ``PendingRollbackError`` until ``db.rollback()``
-    resets it.
-
-    Each branch explicitly ``db.commit()``s — ``session_scope`` does not
-    auto-commit, and ``db.close()`` discards an uncommitted transaction on
-    connection return.
-    """
-    events = [
-        {
-            "user_id": meta["user_id"],
-            "event_type": "cron.trigger",
-            "payload": json.dumps(meta["payload"]),
-        }
-        for meta in winners.values()
-        if not meta["is_paused"]
-    ]
-    if not events:
-        return
-
-    try:
-        with session_scope() as db:
-            db.execute(insert(WSEvent).values(events))
-            db.commit()
-    except IntegrityError as exc:
-        logger.warning(
-            "cron: bulk WSEvent insert failed, falling back to per-row",
-            extra={"batch_size": len(events), "error": str(exc)},
-        )
-        # One ``db.rollback()`` to reset session state after the bulk
-        # INSERT aborted. Each per-row attempt opens its own session,
-        # so this is the only place we need to clean up.
-        for evt in events:
-            try:
-                with session_scope() as db:
-                    db.execute(insert(WSEvent).values([evt]))
-                    db.commit()
-            except IntegrityError as inner_exc:
-                # ``job_id`` is embedded in the payload JSON we just built,
-                # so we can attribute the failure precisely even when the
-                # same user owns multiple winning jobs in this tick.
-                failing_job_id = json.loads(evt["payload"]).get("job_id")
-                logger.warning(
-                    "cron: per-row WSEvent insert failed",
-                    extra={"user_id": evt["user_id"], "job_id": failing_job_id, "error": str(inner_exc)},
-                )
-                if failing_job_id is not None:
-                    _mark_job_unprocessable(failing_job_id, f"wsevent insert integrity: {inner_exc.orig}")
-
-
 def _advance_due_jobs(due_jobs: list[CronJob], now: datetime) -> None:
-    """Tx1 (bulk CAS) + Tx2 (bulk WSEvent with per-row fallback) +
-    Tx3 (autonomous chat turn kickoff).
+    """Tx1 (bulk CAS) + autonomous chat turn kickoff.
 
     The autonomous turn is the actual product path — cron is the
-    infrastructure for the companion to reach out proactively, not a
-    notification system for the renderer. The ``cron.trigger`` WSEvent
-    remains for the desktop UI to show a 'scheduled' indicator, but the
-    real delivery flows through the same ``message.complete`` /
-    ``companion.message`` pipeline as a user-typed message, so the LLM
-    can call ``send_message_tool`` and the desktop's disturbance-tier
-    gate applies (plan §4.2).
+    infrastructure for the companion to reach out proactively. Delivery
+    flows through the same ``message.complete`` / ``companion.message``
+    pipeline as a user-typed message, so the LLM can call
+    ``send_message_tool`` and the desktop's disturbance-tier gate applies
+    (plan §4.2).
     """
     winners = _bulk_cas_advance(due_jobs, now)
-    _insert_wsevents(winners)
     for job_id, meta in winners.items():
         if meta.get("is_paused"):
             continue
@@ -326,20 +234,9 @@ def _advance_due_jobs(due_jobs: list[CronJob], now: datetime) -> None:
             _BG_TASKS.add(t)
             t.add_done_callback(_BG_TASKS.discard)
         except RuntimeError:
-            # No running loop — defer; the WSEvent is still queued and the
-            # next tick will retry, plus the renderer can drive the turn
-            # manually if it ships a cron.trigger handler.
+            # No running loop — drop this tick; the job's next_run_at was
+            # already advanced, so the next tick will pick it up again.
             logger.warning("cron: no running loop, skipping autonomous turn", extra={"job_id": job_id})
-
-
-class _NullEmitter:
-    """Drop-in no-op for JsonRpcEmitter's ``raw`` argument when the
-    autonomous cron turn has no live WS to forward unknown event types
-    to. All translated types (chunk / tool_* / message.*) still flow
-    through the dispatcher; only raw passthroughs are dropped."""
-
-    async def send_json(self, _data: dict) -> None:  # noqa: ARG002 — JsonRpcEmitter raw-arg contract
-        return None
 
 
 async def _kick_autonomous_turn(job_id: int, meta: dict[str, Any]) -> None:
@@ -381,7 +278,7 @@ async def _kick_autonomous_turn(job_id: int, meta: dict[str, Any]) -> None:
             message=ChatMessageRequest(role="user", content=prompt),
         )
 
-    emitter = JsonRpcEmitter(raw=_NullEmitter(), dispatcher=dispatcher, session_id=session_id)
+    emitter = JsonRpcEmitter(raw=None, dispatcher=dispatcher, session_id=session_id)
     try:
         with session_scope() as db:
             await run_chat_turn(
@@ -409,16 +306,12 @@ _CONSOLIDATE_SCAN_INTERVAL_SECONDS: int = 600
 
 
 async def _tick() -> None:
-    """CAS-advance ``next_run_at`` for due jobs and enqueue ``cron.trigger`` WSEvents.
+    """CAS-advance ``next_run_at`` for due jobs and kick autonomous turns.
 
-    Delivery happens out-of-band via the ws_events outbox (see
-    ``services/gateway/connection.ws_event_loop``), so the cron session stays
-    closed across the WS round-trip and ticks stay independent of WS
-    delivery latency — no double-fire hazard.
-
-    Tx1 (bulk CAS UPDATE) + Tx2 (bulk WSEvent INSERT, per-row fallback on
-    IntegrityError) preserve the per-row isolation the previous loop had
-    — one bad FK doesn't roll back the healthy winners' CAS advances.
+    Each due job runs ``_kick_autonomous_turn`` directly (no WSEvent outbox):
+    the job runs an in-process chat turn whose emitter talks to the user's
+    open WS dispatcher. Crons stay independent of WS round-trip latency and
+    there is no double-fire hazard because the CAS UPDATE serialises winners.
     """
     now = naive_utc_now()
     # Memory consolidator runs independently of cron-job dispatch — it must
@@ -507,6 +400,6 @@ def start_scheduler() -> None:
 
 async def stop_scheduler() -> None:
     """Cancel the scheduler task and await its exit. Awaiting prevents
-    late ticks from committing WSEvent rows after the WS event loop has
-    already been stopped (those rows would be silently lost)."""
+    late ticks from kicking autonomous turns after the dispatcher has
+    already been torn down (those turns would lose their emitter)."""
     await _SCHEDULER.stop()

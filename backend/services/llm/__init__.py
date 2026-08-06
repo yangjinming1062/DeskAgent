@@ -8,7 +8,6 @@ from .llm_client import get_async_client
 from .llm_client import MissingLlmConfigError
 from .llm_client import provider_for_service
 from .llm_client import resolve_provider_chain
-from .llm_client import resolve_provider_config
 from .llm_client import resolve_service_row
 from .llm_fallback import execute_with_fallback
 from .llm_retry import call_with_retry
@@ -54,7 +53,6 @@ __all__ = [
     "MissingLlmConfigError",
     "resolve_service_row",
     "resolve_provider_chain",
-    "resolve_provider_config",
     "provider_for_service",
     "execute_with_fallback",
     "BaseProvider",

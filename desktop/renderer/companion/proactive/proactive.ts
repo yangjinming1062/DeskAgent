@@ -26,7 +26,7 @@ export async function speakProactive(text: string, opts?: { userInitiated?: bool
     // by 'working' (pri 70), so proactive/initiated speech wouldn't show.
     setSpriteState('speaking', { force: true })
     const ok = await speak(text)
-    setSpriteState('idle')
+    setSpriteState('idle', { force: true })
     // Let the bubble linger briefly after the voice ends, then dismiss.
     const linger = ok ? 4200 : 5000
     setTimeout(() => setProactiveBubble(null), linger)

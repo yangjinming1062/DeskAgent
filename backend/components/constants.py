@@ -135,10 +135,6 @@ ACTIVITY_DAY_BUCKETS: int = 30
 
 # ── HTTP & Auth ───────────────────────────────────────────────────────
 
-# Periodic session.info heartbeat sent to the desktop so its busy indicator
-# and model/provider fields stay fresh on long-running turns.
-SESSION_HEARTBEAT_INTERVAL_S: int = 20
-
 # Max image attachments per single prompt.submit turn.
 MAX_ATTACHMENTS_PER_TURN: int = 16
 

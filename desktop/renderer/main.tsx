@@ -10,10 +10,10 @@ import { HapticsProvider } from '@/shared/components/haptics-provider'
 import { installClipboardShim } from '@/shared/lib/clipboard'
 import { queryClient } from '@/shared/lib/query-client'
 import { ThemeProvider } from '@/shared/themes/context'
-import type { DesktopRunnerUpdateEvent, DesktopUpdateEvent } from '@/shared/types/global'
+import type { DesktopUpdateEvent } from '@/shared/types/global'
 
 import App from './app'
-import { setRunnerUpdateStatus, setUpdateStatus } from './hub/settings-store'
+import { setUpdateStatus } from './hub/settings-store'
 
 installClipboardShim()
 
@@ -65,50 +65,11 @@ window.deskagent?.update?.onEvent?.((payload: DesktopUpdateEvent) => {
 
 // Subscribe to runner-side update events. Phase 1 (prefetch) runs in the OLD
 // Electron after `update-downloaded`; phase 2 (install) runs in the NEW
-// Electron at startup. The toast renders this state to keep the user
-// informed through the full lifecycle. See runner-updater.cjs for details.
-window.deskagent?.update?.onRunnerEvent?.((payload: DesktopRunnerUpdateEvent) => {
-  switch (payload.kind) {
-    case 'runner-prefetching':
-      setRunnerUpdateStatus({
-        status: 'prefetching',
-        version: payload.version,
-        phase: payload.phase,
-        percent: payload.percent
-      })
-
-      break
-
-    case 'runner-ready':
-      setRunnerUpdateStatus({ status: 'ready', version: payload.version })
-
-      break
-
-    case 'runner-installing':
-      setRunnerUpdateStatus({
-        status: 'installing',
-        version: payload.version,
-        phase: payload.phase,
-        percent: payload.percent
-      })
-
-      break
-
-    case 'runner-installed':
-      setRunnerUpdateStatus({ status: 'installed', version: payload.version })
-
-      break
-
-    case 'runner-failed':
-      setRunnerUpdateStatus({
-        status: 'failed',
-        error: payload.error,
-        recoverable: payload.recoverable,
-        version: payload.version
-      })
-
-      break
-  }
+// Electron at startup. The desktop status bar surfaces these via the
+// $updateStatus atom (handled in main.tsx above) — runner-internal phase
+// transitions are intentionally not user-visible in the renderer.
+window.deskagent?.update?.onRunnerEvent?.(() => {
+  // Intentionally a no-op: see runner-updater.cjs for the full lifecycle.
 })
 
 createRoot(document.getElementById('root')!).render(

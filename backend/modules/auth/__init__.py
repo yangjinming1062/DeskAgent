@@ -8,7 +8,6 @@ from .schemas import AdminTokenResponse
 from .schemas import ChangePasswordRequest
 from .schemas import ChatRequestClientContext
 from .schemas import LoginRequest
-from .schemas import ProviderSlot
 from .schemas import ProviderSlotPublic
 from .schemas import public_provider_slots
 from .schemas import RefreshRequest
@@ -22,7 +21,6 @@ from .schemas import UserModelConfigRequest
 from .schemas import UserModelConfigResponse
 from .schemas import UserResponse
 from .schemas import UserUpdate
-from .security import BEARER_SCHEME
 from .security import create_access_token
 from .security import create_admin_token
 from .security import decode_access_token
@@ -39,7 +37,6 @@ __all__ = [
     "ChangePasswordRequest",
     "ChatRequestClientContext",
     "LoginRequest",
-    "ProviderSlot",
     "ProviderSlotPublic",
     "public_provider_slots",
     "RefreshRequest",
@@ -53,7 +50,6 @@ __all__ = [
     "UserModelConfigResponse",
     "UserResponse",
     "UserUpdate",
-    "BEARER_SCHEME",
     "create_access_token",
     "create_admin_token",
     "decode_access_token",
