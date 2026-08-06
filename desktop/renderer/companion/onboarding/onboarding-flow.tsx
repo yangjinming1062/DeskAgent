@@ -15,6 +15,7 @@ import {
   USER_GENDER_PRESETS,
   VOICE_PRESETS
 } from '@/companion/persona-presets'
+import { isClientErrorIpc } from '@/shared/lib/ipc-error'
 import { $gatewayState } from '@/shared/store/gateway'
 
 import { clearClipCatalog, playTransitionClip } from '../clip-store'
@@ -164,16 +165,20 @@ const QUESTIONS: readonly Question[] = [
 
 const sleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms))
 
-// Trailing comma disambiguates the generic from JSX in .tsx files.
-const retry3 = async <T,>(fn: () => Promise<T | null | undefined>, delayMs: number): Promise<T | null> => {
-  for (let i = 0; i < 3; i++) {
+// Throws from `fn` propagate so callers can rethrow 4xx and short-circuit retries.
+const retryTransient = async <T,>(
+  fn: () => Promise<T | null | undefined>,
+  delayMs: number,
+  maxAttempts = 3
+): Promise<T | null> => {
+  for (let i = 0; i < maxAttempts; i++) {
     const result = await fn()
 
     if (result) {
       return result
     }
 
-    if (i < 2) {
+    if (i < maxAttempts - 1) {
       await sleep(delayMs)
     }
   }
@@ -211,7 +216,12 @@ async function generatePortrait(): Promise<string | null> {
     })
 
     return res.asset_url ?? null
-  } catch {
+  } catch (error) {
+    // Rethrow deterministic failures so retryTransient doesn't burn the 120s avatar budget.
+    if (isClientErrorIpc(error)) {
+      throw error
+    }
+
     return null
   }
 }
@@ -222,12 +232,8 @@ async function savePersona(payload: ReturnType<typeof assemblePersona>): Promise
 
     return true
   } catch (error) {
-    // Re-throw 4xx so retry3 doesn't burn 2.1s on a deterministic failure.
-    // The IPC envelope ("Error invoking remote method …: Error: <body>") masks the status code — strip it first.
-    const raw = error instanceof Error ? error.message : String(error)
-    const unwrapped = raw.match(/Error invoking remote method '[^']+': Error: (.+)$/)?.[1] ?? raw
-
-    if (/^4\d\d /.test(unwrapped)) {
+    // Rethrow 4xx so retryTransient doesn't burn retries on a deterministic failure.
+    if (isClientErrorIpc(error)) {
       throw error
     }
 
@@ -525,7 +531,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
     let personaOk = false
 
     try {
-      personaOk = (await retry3(() => savePersona(assemblePersona(answers)), 700)) === true
+      personaOk = (await retryTransient(() => savePersona(assemblePersona(answers)), 700)) === true
     } catch (err) {
       setPhase('q')
       setHint(err instanceof Error ? `记忆存不上：${err.message}` : '记忆存不上，请重试 onboarding')
@@ -537,7 +543,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
     let url: string | null = null
 
     if (personaOk) {
-      url = await retry3(generatePortrait, 900)
+      url = await retryTransient(generatePortrait, 1500, 2)
 
       if (!url) {
         setHint('我还没想好…')

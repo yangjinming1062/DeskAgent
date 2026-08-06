@@ -6,8 +6,10 @@ const test = require('node:test')
 const { pathToFileURL } = require('node:url')
 
 const {
+  AVATAR_FETCH_TIMEOUT_MS,
   DEFAULT_FETCH_TIMEOUT_MS,
   encryptDesktopSecret,
+  resolvePathTimeoutMs,
   resolveReadableFileForIpc,
   resolveTimeoutMs,
   sensitiveFileBlockReason
@@ -18,6 +20,38 @@ test('resolveTimeoutMs falls back to defaults and accepts overrides', () => {
   assert.equal(resolveTimeoutMs(0), DEFAULT_FETCH_TIMEOUT_MS)
   assert.equal(resolveTimeoutMs(-25), DEFAULT_FETCH_TIMEOUT_MS)
   assert.equal(resolveTimeoutMs('2750'), 2750)
+})
+
+test('resolvePathTimeoutMs routes avatar POSTs to the slow bucket', () => {
+  assert.equal(resolvePathTimeoutMs('/api/companion/avatar', 'POST'), AVATAR_FETCH_TIMEOUT_MS)
+  assert.equal(resolvePathTimeoutMs('/api/companion/avatar/upload', 'POST'), AVATAR_FETCH_TIMEOUT_MS)
+  assert.equal(resolvePathTimeoutMs('/api/companion/avatar/from-image', 'POST'), AVATAR_FETCH_TIMEOUT_MS)
+  assert.equal(resolvePathTimeoutMs('/API/COMPANION/AVATAR', 'post'), AVATAR_FETCH_TIMEOUT_MS)
+})
+
+test('resolvePathTimeoutMs keeps reads and PUTs on the fast default', () => {
+  assert.equal(resolvePathTimeoutMs('/api/companion/avatar', 'GET'), DEFAULT_FETCH_TIMEOUT_MS)
+  assert.equal(resolvePathTimeoutMs('/api/companion/avatar', 'PUT'), DEFAULT_FETCH_TIMEOUT_MS)
+  assert.equal(resolvePathTimeoutMs('/api/companion/avatar/history', 'GET'), DEFAULT_FETCH_TIMEOUT_MS)
+})
+
+test('resolvePathTimeoutMs ignores unrelated paths', () => {
+  assert.equal(resolvePathTimeoutMs('/api/config', 'POST'), DEFAULT_FETCH_TIMEOUT_MS)
+  assert.equal(resolvePathTimeoutMs('/api/user/model-config', 'PUT'), DEFAULT_FETCH_TIMEOUT_MS)
+  assert.equal(resolvePathTimeoutMs('/api/companion/persona', 'PUT'), DEFAULT_FETCH_TIMEOUT_MS)
+  assert.equal(resolvePathTimeoutMs('/api/companion/voices', 'GET'), DEFAULT_FETCH_TIMEOUT_MS)
+})
+
+test('resolvePathTimeoutMs tolerates garbage inputs', () => {
+  assert.equal(resolvePathTimeoutMs(undefined, 'POST'), DEFAULT_FETCH_TIMEOUT_MS)
+  assert.equal(resolvePathTimeoutMs('', 'POST'), DEFAULT_FETCH_TIMEOUT_MS)
+  assert.equal(resolvePathTimeoutMs(null, 'POST'), DEFAULT_FETCH_TIMEOUT_MS)
+  assert.equal(resolvePathTimeoutMs(42, 'POST'), DEFAULT_FETCH_TIMEOUT_MS)
+})
+
+test('resolvePathTimeoutMs honors a custom fallbackMs', () => {
+  assert.equal(resolvePathTimeoutMs('/api/config', 'POST', 9_000), 9_000)
+  assert.equal(resolvePathTimeoutMs('/api/companion/avatar', 'POST', 9_000), AVATAR_FETCH_TIMEOUT_MS)
 })
 
 test('encryptDesktopSecret requires available secure storage', () => {

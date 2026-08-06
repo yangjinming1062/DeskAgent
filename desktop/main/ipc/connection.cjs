@@ -7,6 +7,7 @@ function registerConnectionIpc({
   resetBackendCache,
   getBootProgressState,
   fetchJson,
+  resolvePathTimeoutMs,
   resolveTimeoutMs,
   defaultFetchTimeoutMs
 }) {
@@ -19,7 +20,8 @@ function registerConnectionIpc({
 
   ipcMain.handle('deskagent:api', async (_event, request) => {
     const connection = await ensureBackend()
-    const timeoutMs = resolveTimeoutMs(request?.timeoutMs, defaultFetchTimeoutMs)
+    const fallback = resolvePathTimeoutMs(request?.path, request?.method, defaultFetchTimeoutMs)
+    const timeoutMs = resolveTimeoutMs(request?.timeoutMs, fallback)
     const url = `${connection.baseUrl}${request.path}`
     try {
       return await fetchJson(url, connection.token, {

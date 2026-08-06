@@ -6,19 +6,37 @@ const DEFAULT_FETCH_TIMEOUT_MS = 15_000
 const DATA_URL_READ_MAX_BYTES = 16 * 1024 * 1024
 const TEXT_PREVIEW_SOURCE_MAX_BYTES = 64 * 1024 * 1024
 
+// Avatar generation: provider call + Pillow re-encode + clip seeding routinely
+// run 15–25s, so the 15s default fires before the backend returns 201.
+const AVATAR_FETCH_TIMEOUT_MS = 120_000
+
 const SAFE_ENV_SUFFIXES = new Set(['dist', 'example', 'sample', 'template'])
 const SENSITIVE_EXTENSIONS = new Set(['.kdbx', '.p12', '.pem', '.pfx'])
 
 function resolveTimeoutMs(timeoutMs, fallbackMs = DEFAULT_FETCH_TIMEOUT_MS) {
-  const fallback =
-    Number.isFinite(fallbackMs) && Number(fallbackMs) > 0 ? Math.round(Number(fallbackMs)) : DEFAULT_FETCH_TIMEOUT_MS
-  const parsed = Number(timeoutMs)
+  if (timeoutMs !== undefined && timeoutMs !== null) {
+    const parsed = Number(timeoutMs)
 
-  if (Number.isFinite(parsed) && parsed > 0) {
-    return Math.round(parsed)
+    if (Number.isFinite(parsed) && parsed > 0) {
+      return Math.round(parsed)
+    }
   }
 
-  return fallback
+  const fallbackNum = Number(fallbackMs)
+
+  return Number.isFinite(fallbackNum) && fallbackNum > 0 ? Math.round(fallbackNum) : DEFAULT_FETCH_TIMEOUT_MS
+}
+
+const AVATAR_SLOW_PATH_PATTERN = /^\/api\/companion\/avatar(?:\/upload|\/from-image)?$/i
+
+// POST only — reads are DB lookups with no provider call.
+function resolvePathTimeoutMs(path, method, fallbackMs = DEFAULT_FETCH_TIMEOUT_MS) {
+  const isAvatarPost =
+    String(method || 'GET').toUpperCase() === 'POST' &&
+    typeof path === 'string' &&
+    AVATAR_SLOW_PATH_PATTERN.test(path)
+
+  return isAvatarPost ? AVATAR_FETCH_TIMEOUT_MS : resolveTimeoutMs(undefined, fallbackMs)
 }
 
 function encryptDesktopSecret(value, safeStorageApi) {
@@ -181,10 +199,12 @@ async function resolveReadableFileForIpc(filePath, options = {}) {
 }
 
 module.exports = {
+  AVATAR_FETCH_TIMEOUT_MS,
   DATA_URL_READ_MAX_BYTES,
   DEFAULT_FETCH_TIMEOUT_MS,
   TEXT_PREVIEW_SOURCE_MAX_BYTES,
   encryptDesktopSecret,
+  resolvePathTimeoutMs,
   resolveReadableFileForIpc,
   resolveTimeoutMs,
   sensitiveFileBlockReason
