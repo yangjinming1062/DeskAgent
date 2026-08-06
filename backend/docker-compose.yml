@@ -32,6 +32,7 @@ services:
       - "8000:8000"
     volumes:
       - ./updates:/app/backend/updates
+      - ./data:/app/backend/data
 
 volumes:
   postgres_data:
