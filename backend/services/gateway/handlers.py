@@ -1,7 +1,6 @@
 import asyncio
 import base64
 import contextlib
-import itertools
 import json
 import secrets
 import time
@@ -9,7 +8,6 @@ from typing import Any
 
 from components import adopt_inbound
 from components import ATTACHMENT_TYPE_IMAGE
-from components import attachments_remove
 from components import coerce_hour_0_23
 from components import coerce_non_negative_int
 from components import get_logger
@@ -19,15 +17,12 @@ from components import MAX_ATTACHMENTS_PER_TURN
 from components import MAX_VOICE_DESIGN_PROMPT_CHARS
 from components import path_attach_ref
 from components import REQUEST_ID_HEADER
-from components import RUNTIME_CHECK_TIMEOUT_SECONDS
 from components import SESSION_LOCAL
-from components import SETTINGS
 from fastapi import WebSocket
 from fastapi import WebSocketDisconnect
 from modules.auth import ChatRequestClientContext
 from modules.conversation import Conversation
 from modules.conversation import Message
-from modules.settings import UserSetting
 from modules.system import ChatMessageRequest
 from modules.system import ChatRequest
 from services.chat import build_session_messages
@@ -56,7 +51,6 @@ from services.companion import submit_onboarding_field
 from services.companion import update_memory
 from services.companion.memory_bootstrap import read_user_profile
 from services.disturbance import set_disturbance_tier
-from services.llm import client_for_config
 from services.llm import MissingLlmConfigError
 from services.llm import resolve_user_llm_config
 from services.tools import REGISTRY
@@ -75,15 +69,12 @@ from . import new_runtime_session
 from . import resolve_future
 from . import runtime_info_snapshot
 from . import RuntimeSession
-from . import serialize_settings
 from . import SessionCreateResult
 from . import SessionCwdSetResult
 from . import SessionResumeResult
 from . import SessionSteerResult
 from . import SessionTitleResult
 from . import SessionUsageResult
-from . import SetupRuntimeResult
-from . import SetupStatusResult
 from . import ToolsSyncResult
 
 logger = get_logger(__name__)
@@ -166,14 +157,13 @@ async def handle_chat_websocket(websocket: WebSocket, token: str):
     ws_emitter = WSEmitter(websocket)
     dispatcher = JsonRpcDispatcher(ws_emitter.send_json)
     MANAGER.register_dispatcher(user_id, dispatcher)
-    _register_setup_handlers(dispatcher, llm_config, user_id)
 
     # Runtime sessions — see services/gateway/runtime.py. Per-WS map keyed
     # by the renderer-facing session_id (= conversation_id string from
     # `Conversation.id`). Cleared on disconnect below; recovery uses
     # ``session.resume`` which re-derives the same key.
     runtime_sessions: dict[str, RuntimeSession] = {}
-    _register_session_handlers(dispatcher, runtime_sessions, llm_config, user_id, user_settings)
+    _register_session_handlers(dispatcher, runtime_sessions, llm_config, user_id)
 
     background_tasks: set[asyncio.Task] = set()
 
@@ -341,45 +331,6 @@ async def handle_chat_websocket(websocket: WebSocket, token: str):
             REGISTRY.clear_runner_tools(user_id)
 
 
-def _llm_configured(cfg: dict[str, Any]) -> bool:
-    return bool(cfg.get("base_url") and cfg.get("api_key") and cfg.get("model_name"))
-
-
-def _register_setup_handlers(dispatcher: JsonRpcDispatcher, llm_config: dict, user_id: int) -> None:
-    async def setup_status(_params: dict) -> dict:
-        return SetupStatusResult(provider_configured=_llm_configured(llm_config)).model_dump()
-
-    async def setup_runtime_check(_params: dict) -> dict:
-        if not _llm_configured(llm_config):
-            return SetupRuntimeResult(ok=False, error="LLM not configured").model_dump()
-
-        # Reuse the cached client factory — same (api_key, base_url) pair
-        # shares a connection pool as the chat turn path, so a successful
-        # probe means the next prompt.submit also has warm connections.
-        # Positional args (not kwargs) so the lru_cache key stays consistent
-        # with media/llm.py — kwargs would create a separate cache entry.
-        client = client_for_config(llm_config)
-        try:
-            await asyncio.wait_for(client.models.list(), timeout=RUNTIME_CHECK_TIMEOUT_SECONDS)
-        except TimeoutError:
-            return SetupRuntimeResult(ok=False, error=f"timeout after {RUNTIME_CHECK_TIMEOUT_SECONDS}s").model_dump()
-        except Exception as e:
-            # Log the full cause server-side; surface a short label to the
-            # renderer. The exception class name is enough to distinguish
-            # auth errors, DNS failures, rate limits, etc. for the user.
-            logger.warning("setup.runtime_check failed", extra={"user_id": user_id, "error": str(e)})
-            # 200-char cap is approximate; the intent is to keep secrets / URL
-            # fragments out of the renderer. Truncate before prefixing so the
-            # total stays close to 200 regardless of class name length.
-            type_label = type(e).__name__
-            msg = str(e)[: 200 - len(type_label) - 2]
-            return SetupRuntimeResult(ok=False, error=f"{type_label}: {msg}").model_dump()
-        return {"ok": True}
-
-    dispatcher.register("setup.status", setup_status)
-    dispatcher.register("setup.runtime_check", setup_runtime_check)
-
-
 def _find_owned_conv(db: Session, user_id: int, session_id: str) -> Conversation | None:
     """Resolve a renderer-supplied session_id (the stored DB id) to a Conversation.
 
@@ -443,7 +394,6 @@ def _register_session_handlers(
     runtime_sessions: dict[str, RuntimeSession],
     llm_config: dict,
     user_id: int,
-    user_settings: dict[str, str],
 ) -> None:
     def _mount_runtime(conv: Conversation, cwd: str | None) -> RuntimeSession:
         """Cancel any in-memory runtime for the same conversation, then mount a fresh one."""
@@ -455,29 +405,6 @@ def _register_session_handlers(
         runtime = new_runtime_session(conversation_id=conv.id, cwd=cwd, settings_json=conv.settings_json)
         runtime_sessions[runtime.session_id] = runtime
         return runtime
-
-    def _persist_session_settings(runtime: RuntimeSession) -> None:
-        """Write ``runtime.settings`` back to ``Conversation.settings_json``."""
-        with SESSION_LOCAL() as db:
-            conv = db.query(Conversation).filter(Conversation.id == runtime.conversation_id).one_or_none()
-            if conv is None:
-                return
-            conv.settings_json = serialize_settings(runtime.settings) if runtime.settings else None
-            db.commit()
-
-    _ALLOWED_SESSION_KEYS = {"reasoning", "fast"}
-    # Keys that may be written to UserSetting via ``config.set({scope:'global',...})``.
-    # Prevents a renderer bug (or hostile local file) from injecting arbitrary
-    # UserSetting rows that downstream _merge_session_settings would then carry
-    # into the per-turn tool dispatch context. ``identity_prompt`` is read-only
-    # via the user router. MCP server configs live in $DESKAGENT_HOME/config.yaml
-    # on the runner host (managed by Desktop's MCP settings page), not here.
-    _ALLOWED_GLOBAL_KEYS = {
-        "reasoning_effort",
-        "service_tier",
-        "fast",
-        "enable_background_review",
-    }
 
     async def session_create(params: dict) -> dict:
         cwd = params.get("cwd") or None
@@ -573,126 +500,10 @@ def _register_session_handlers(
                 runtime.chat_task.cancel()
         return {}
 
-    async def config_get(params: dict) -> dict:
-        # ``project`` key needs filesystem access; desktop intercepts this
-        # call locally (gateway-level intercept in src/deskagent/gateway.ts).
-        # Defensive handler returns ``{}`` so a misrouted call doesn't 500.
-        key = params.get("key")
-        if not isinstance(key, str) or not key:
-            raise JsonRpcError(JSONRPC_INVALID_PARAMS, "key must be a non-empty string")
-        if key == "project":
-            return {}
-        with SESSION_LOCAL() as db:
-            row = db.query(UserSetting).filter(UserSetting.user_id == user_id, UserSetting.setting_key == key).first()
-        return {"value": row.setting_value if row else None}
-
-    async def config_set(params: dict) -> dict:
-        key = params.get("key")
-        value = params.get("value")
-        if not isinstance(key, str) or not key:
-            raise JsonRpcError(JSONRPC_INVALID_PARAMS, "key must be a non-empty string")
-        scope = params.get("scope")
-        session_id_param = params.get("session_id")
-        if isinstance(session_id_param, str) and not session_id_param:
-            session_id_param = None
-        has_global = scope == "global"
-        has_session = bool(session_id_param)
-
-        if has_global and has_session:
-            raise JsonRpcError(JSONRPC_INVALID_PARAMS, "config.set accepts scope='global' OR session_id, not both")
-        if not has_global and not has_session:
-            raise JsonRpcError(JSONRPC_INVALID_PARAMS, "config.set requires scope='global' or session_id")
-
-        # Coerce non-string values to the canonical string form. Booleans must
-        # become lowercase ``true``/``false`` so downstream consumer checks
-        # (e.g. ``user_settings.get('enable_background_review') in {'true', '1'}``) see the
-        # intended value rather than Python's str(True)=='True' (truthy).
-        if value is None:
-            encoded_value = ""
-        elif isinstance(value, bool):
-            encoded_value = "true" if value else "false"
-        elif isinstance(value, (int, float)):
-            encoded_value = str(value)
-        elif isinstance(value, str):
-            encoded_value = value
-        else:
-            # Dict / list / etc. — JSON-encode so structural configs round-trip
-            # rather than being str()'d into Python reprs like ``[{'a': 1}]``.
-            encoded_value = json.dumps(value, ensure_ascii=False)
-
-        if has_global:
-            if key not in _ALLOWED_GLOBAL_KEYS:
-                raise JsonRpcError(
-                    JSONRPC_INVALID_PARAMS,
-                    f"global key {key!r} not allowed; allowed: {sorted(_ALLOWED_GLOBAL_KEYS)}",
-                )
-            with SESSION_LOCAL() as db:
-                row = db.query(UserSetting).filter(UserSetting.user_id == user_id, UserSetting.setting_key == key).first()
-                if row is None:
-                    db.add(UserSetting(user_id=user_id, setting_key=key, setting_value=encoded_value))
-                else:
-                    row.setting_value = encoded_value
-                db.commit()
-            # Mirror the write into the in-memory user_settings dict the WS captured
-            # at connect time — otherwise per-turn effective_settings (chat_service.py
-            # _merge_session_settings) sees the stale value until reconnect.
-            user_settings[key] = encoded_value
-            return {"key": key, "scope": "global", "value": value}
-
-        # session-scoped
-        if key not in _ALLOWED_SESSION_KEYS:
-            raise JsonRpcError(JSONRPC_INVALID_PARAMS, f"per-session key {key!r} not allowed; allowed: {sorted(_ALLOWED_SESSION_KEYS)}")
-        runtime = runtime_sessions.get(session_id_param)
-        if runtime is None:
-            raise JsonRpcError(JSONRPC_METHOD_NOT_FOUND, f"session not found: {session_id_param!r}")
-        runtime.settings[key] = encoded_value
-        _persist_session_settings(runtime)
-        return {"key": key, "session_id": runtime.session_id, "value": runtime.settings[key]}
-
-    async def complete_slash(params: dict) -> dict:
-        text = _require_str(params, "text")
-        catalog = commands_catalog()
-        pairs = catalog.get("pairs", [])
-        # Empty / slash-only text returns every command, but split on '/' AFTER
-        # stripping whitespace so text=='/' doesn't IndexError (split()[0]).
-        stripped = text.strip()
-        needle = stripped.lstrip("/").lower().split()[0] if stripped.strip("/") else ""
-        # Wrap in {text, display, meta} to match the desktop's CompletionEntry shape
-        # (use-live-completion-adapter.ts:4). islice caps the result at 20.
-        items = list(
-            itertools.islice(
-                ({"text": name, "display": name, "meta": _desc} for (name, _desc) in pairs if needle in name.lower()),
-                20,
-            )
-        )
-        return {"items": items}
-
     async def image_attach(params: dict) -> dict:
         # Path-mode: backend doesn't read the bytes; LLM reads via Runner file tools.
         path = _require_str(params, "path")
         return path_attach_ref(path)
-
-    async def image_detach(params: dict) -> dict:
-        runtime = _get_runtime(runtime_sessions, params)
-        path = _require_str(params, "path")
-        # Path-mode detach: only attempt removal when the path lives under
-        # the attachment root (server-managed storage). Local-mode paths on
-        # the client are left for the desktop to delete itself; we return
-        # detached=True so the renderer's optimistic UI clears the row.
-        try:
-            removed = attachments_remove(SETTINGS.data_dir, runtime.session_id, path)
-        except ValueError:
-            removed = False
-        return {"detached": True, "removed": removed, "path": path}
-
-    async def complete_path(params: dict) -> dict:  # noqa: ARG001 — dispatcher signature; stub returns empty
-        # Filesystem-bound: the desktop intercepts this call locally in
-        # ``use-gateway-request.ts::tryLocalIntercept`` and resolves ``@``-prefixed
-        # paths via the ``deskagent:fs:completePath`` IPC handler. That runs against
-        # the user's real filesystem which the backend (in Docker) cannot see.
-        # Registered as a defensive stub so a misrouted frame does NOT surface
-        # as ``-32601 JSONRPC_METHOD_NOT_FOUND``.
-        return {"items": []}
 
     async def reload_mcp(params: dict) -> dict:
         confirm = bool(params.get("confirm"))
@@ -721,12 +532,7 @@ def _register_session_handlers(
     dispatcher.register("session.cwd.set", session_cwd_set)
     dispatcher.register("session.usage", session_usage)
     dispatcher.register("session.close", session_close)
-    dispatcher.register("config.get", config_get)
-    dispatcher.register("config.set", config_set)
-    dispatcher.register("complete.slash", complete_slash)
-    dispatcher.register("complete.path", complete_path)
     dispatcher.register("image.attach", image_attach)
-    dispatcher.register("image.detach", image_detach)
     dispatcher.register("reload.mcp", reload_mcp)
 
     async def companion_set_disturbance_tier(params: dict) -> dict:

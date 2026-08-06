@@ -59,9 +59,8 @@ def _merge_session_settings(user_settings: dict, runtime: RuntimeSession | None)
 
     Per-session overrides (``runtime.settings``, populated from
     ``Conversation.settings_json``) win over global ``UserSetting`` values,
-    so a tool that reads ``user_settings.get('reasoning_effort')`` sees the
-    session-scoped value when the renderer set ``config.set({key:'reasoning',
-    session_id, value:'high'})``.
+    so a tool that reads ``user_settings.get('agent.reasoning_effort')`` sees the
+    session-scoped value when set via the session settings path.
 
     Per-session keys defined in ``SESSION_TO_GLOBAL_KEY_ALIASES`` are translated into
     their global counterparts so consumer code (slash commands, guardrails,

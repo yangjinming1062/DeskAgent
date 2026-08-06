@@ -133,7 +133,10 @@ async def _persist_assistant_no_tool_turn(
         if track_task:
             track_task(title_task)
 
-    if effective_settings.get("enable_background_review", BACKGROUND_REVIEW_DEFAULT).lower() == BACKGROUND_REVIEW_DEFAULT:
+    # Read namespaced key first (settings UI writes ``agent.enable_background_review``);
+    # fall back to bare ``enable_background_review`` for legacy data.
+    bg_review = effective_settings.get("agent.enable_background_review") or effective_settings.get("enable_background_review") or BACKGROUND_REVIEW_DEFAULT
+    if bg_review.lower() == BACKGROUND_REVIEW_DEFAULT:
         review_task = asyncio.create_task(run_background_memory_review(user_id, llm_config, current_messages.copy(), emitter=emitter, session_id=req.session_id))
         if track_task:
             track_task(review_task)

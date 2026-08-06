@@ -1,5 +1,4 @@
 import asyncio
-import json
 from dataclasses import dataclass
 from dataclasses import field
 
@@ -52,15 +51,6 @@ class ToolsSyncResult(BaseModel):
     count: int
 
 
-class SetupStatusResult(BaseModel):
-    provider_configured: bool
-
-
-class SetupRuntimeResult(BaseModel):
-    ok: bool
-    error: str | None = None
-
-
 @dataclass
 class RuntimeSession:
     conversation_id: int
@@ -101,11 +91,6 @@ def new_runtime_session(conversation_id: int, cwd: str | None, settings_json: st
     decoded = safe_json_loads(settings_json)
     settings = decoded if isinstance(decoded, dict) else {}
     return RuntimeSession(conversation_id=conversation_id, cwd=cwd, settings=settings)
-
-
-def serialize_settings(settings: dict) -> str:
-    """Encode ``settings`` for storage in ``Conversation.settings_json``."""
-    return json.dumps(settings, ensure_ascii=False)
 
 
 def runtime_info_snapshot(llm_config: dict, runtime: RuntimeSession, *, running_override: bool | None = None) -> dict:

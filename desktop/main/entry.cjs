@@ -2,7 +2,6 @@ const {
   app,
   BrowserWindow,
   Menu,
-  Notification,
   Tray,
   clipboard,
   dialog,
@@ -15,8 +14,7 @@ const {
   safeStorage,
   screen,
   session,
-  shell,
-  systemPreferences
+  shell
 } = require('electron')
 const crypto = require('node:crypto')
 const fs = require('node:fs')
@@ -37,7 +35,6 @@ const { registerTitlebarIpc } = require('./ipc/titlebar.cjs')
 const { registerClipboardIpc } = require('./ipc/clipboard.cjs')
 const { registerExternalIpc } = require('./ipc/external.cjs')
 const { registerSettingsIpc } = require('./ipc/settings.cjs')
-const { registerFsIpc } = require('./ipc/fs.cjs')
 const { registerFilesIpc } = require('./ipc/files.cjs')
 const { registerConnectionIpc } = require('./ipc/connection.cjs')
 const { registerMediaIpc, createEnginePrefsCache } = require('./ipc/media.cjs')
@@ -570,48 +567,6 @@ async function advanceBootProgress(phase, message, progress) {
 
 function unpackedPathFor(filePath) {
   return filePath.replace(/app\.asar(?=$|[\\/])/, 'app.asar.unpacked')
-}
-
-// Persisted "Default project directory" — surfaced as a setting in the
-// renderer (settings → sessions). Stored as JSON in userData so it survives
-// self-updates without bleeding into the new install. `null` means "no
-// preference, fall back to the usual chain".
-const DEFAULT_PROJECT_DIR_CONFIG_FILENAME = 'project-dir.json'
-
-function defaultProjectDirConfigPath() {
-  return path.join(app.getPath('userData'), DEFAULT_PROJECT_DIR_CONFIG_FILENAME)
-}
-
-function readDefaultProjectDir() {
-  try {
-    const raw = fs.readFileSync(defaultProjectDirConfigPath(), 'utf8')
-    const parsed = JSON.parse(raw)
-
-    if (parsed && typeof parsed.dir === 'string' && parsed.dir.trim()) {
-      const resolved = path.resolve(parsed.dir)
-
-      if (directoryExists(resolved)) {
-        return resolved
-      }
-    }
-  } catch {
-    // Missing / unreadable / malformed → fall through to the rest of the
-    // candidate chain.
-  }
-
-  return null
-}
-
-function writeDefaultProjectDir(dir) {
-  const target = defaultProjectDirConfigPath()
-  const payload = dir ? JSON.stringify({ dir: path.resolve(dir) }, null, 2) : JSON.stringify({}, null, 2)
-
-  try {
-    fs.mkdirSync(path.dirname(target), { recursive: true })
-    fs.writeFileSync(target, payload, 'utf8')
-  } catch (error) {
-    rememberLog(`[settings] write default project dir failed: ${error.message}`)
-  }
 }
 
 // Resolve the renderer bundle entry point. In a packaged build the
@@ -1673,10 +1628,6 @@ function broadcastAuthChanged(snapshot) {
   }
 }
 
-ipcMain.on('deskagent:previewShortcutActive', (_event, active) => {
-  previewShortcutActive = Boolean(active)
-})
-
 // IPC handlers split out into per-namespace modules under ./ipc. Each module
 // takes its own deps (no global bag) so the seam between main.cjs (lifecycle,
 // shared state) and the modules (channels) stays explicit. Modules added
@@ -1685,7 +1636,7 @@ ipcMain.on('deskagent:previewShortcutActive', (_event, active) => {
 // extraction.
 registerSystemIpc({
   ipcMain,
-  electron: { app, Notification, systemPreferences }
+  electron: { app }
 })
 registerTitlebarIpc({
   ipcMain,
@@ -1700,17 +1651,8 @@ registerClipboardIpc({
   electron: { clipboard },
   writeComposerImage
 })
-registerExternalIpc({
-  ipcMain,
-  openExternalUrl
-})
-registerSettingsIpc({
-  ipcMain,
-  electron: { app, dialog },
-  readDefaultProjectDir,
-  writeDefaultProjectDir
-})
-registerFsIpc({ ipcMain })
+registerExternalIpc()
+registerSettingsIpc()
 registerFilesIpc({
   ipcMain,
   electron: { dialog, getMainWindow: () => mainWindow },
@@ -1852,8 +1794,7 @@ registerUpdateIpc({
   ipcMain,
   electron: { app },
   sendToMain,
-  getMainWindow: () => mainWindow,
-  runnerUpdater: getRunnerUpdater()
+  getMainWindow: () => mainWindow
 })
 
 registerSpriteIpc({

@@ -14,20 +14,12 @@ contextBridge.exposeInMainWorld('deskagent', {
   // gesture calls this to hand the user off to the login form.
   showToolWindow: () => ipcRenderer.invoke('deskagent:window:show-tool'),
   changePassword: payload => ipcRenderer.invoke('deskagent:auth:change-password', payload),
-  modelConfig: {
-    get: () => ipcRenderer.invoke('deskagent:model-config:get')
-  },
   api: request => ipcRenderer.invoke('deskagent:api', request),
-  notify: payload => ipcRenderer.invoke('deskagent:notify', payload),
-  requestMicrophoneAccess: () => ipcRenderer.invoke('deskagent:requestMicrophoneAccess'),
   readFileDataUrl: filePath => ipcRenderer.invoke('deskagent:readFileDataUrl', filePath),
-  readFileText: filePath => ipcRenderer.invoke('deskagent:readFileText', filePath),
   selectPaths: options => ipcRenderer.invoke('deskagent:selectPaths', options),
   writeClipboard: text => ipcRenderer.invoke('deskagent:writeClipboard', text),
-  saveImageFromUrl: url => ipcRenderer.invoke('deskagent:saveImageFromUrl', url),
   saveClipboardImage: () => ipcRenderer.invoke('deskagent:saveClipboardImage'),
   runnerInvoke: (name, args) => ipcRenderer.invoke('deskagent:runner:invoke', name, args),
-  runnerDispatch: (method, params) => ipcRenderer.invoke('deskagent:runner:dispatch', method, params),
   runnerGetTools: () => ipcRenderer.invoke('deskagent:runner:get-tools'),
   getPathForFile: file => {
     try {
@@ -37,12 +29,6 @@ contextBridge.exposeInMainWorld('deskagent', {
     }
   },
   setTitleBarTheme: payload => ipcRenderer.send('deskagent:titlebar-theme', payload),
-  openExternal: url => ipcRenderer.invoke('deskagent:openExternal', url),
-  settings: {
-    getDefaultProjectDir: () => ipcRenderer.invoke('deskagent:setting:defaultProjectDir:get'),
-    setDefaultProjectDir: dir => ipcRenderer.invoke('deskagent:setting:defaultProjectDir:set', dir),
-    pickDefaultProjectDir: () => ipcRenderer.invoke('deskagent:setting:defaultProjectDir:pick')
-  },
   runnerConfig: {
     read: () => ipcRenderer.invoke('deskagent:runner-config:read'),
     write: configString => ipcRenderer.invoke('deskagent:runner-config:write', configString),
@@ -56,10 +42,6 @@ contextBridge.exposeInMainWorld('deskagent', {
     list: () => ipcRenderer.invoke('deskagent:toolsets:list'),
     setEnabled: payload => ipcRenderer.invoke('deskagent:toolset:set-enabled', payload)
   },
-  readDir: dirPath => ipcRenderer.invoke('deskagent:fs:readDir', dirPath),
-  gitRoot: startPath => ipcRenderer.invoke('deskagent:fs:gitRoot', startPath),
-  gitBranch: startPath => ipcRenderer.invoke('deskagent:fs:gitBranch', startPath),
-  completePath: params => ipcRenderer.invoke('deskagent:fs:completePath', params),
   media: {
     stt: payload => ipcRenderer.invoke('deskagent:media:stt', payload),
     tts: payload => ipcRenderer.invoke('deskagent:media:tts', payload)
@@ -112,10 +94,6 @@ contextBridge.exposeInMainWorld('deskagent', {
   getVersion: () => ipcRenderer.invoke('deskagent:version'),
   update: {
     check: () => ipcRenderer.invoke('deskagent:update:check'),
-    download: () => ipcRenderer.invoke('deskagent:update:download'),
-    install: () => ipcRenderer.invoke('deskagent:update:install'),
-    status: () => ipcRenderer.invoke('deskagent:update:status'),
-    retryRunnerInstall: () => ipcRenderer.invoke('deskagent:update:runner:install'),
     onEvent: callback => {
       const listener = (_event, payload) => callback(payload)
       ipcRenderer.on('deskagent:update-event', listener)

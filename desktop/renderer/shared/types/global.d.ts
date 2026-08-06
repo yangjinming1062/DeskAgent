@@ -13,25 +13,14 @@ declare global {
       getDefaultBackendUrl: () => Promise<string | null>
       showToolWindow: () => Promise<void>
       api: <T>(request: DeskAgentApiRequest) => Promise<T>
-      notify: (payload: DeskAgentNotification) => Promise<boolean>
-      requestMicrophoneAccess: () => Promise<boolean>
       readFileDataUrl: (filePath: string) => Promise<string>
-      readFileText: (filePath: string) => Promise<DeskAgentReadFileTextResult>
       selectPaths: (options?: DeskAgentSelectPathsOptions) => Promise<string[]>
       writeClipboard: (text: string) => Promise<boolean>
-      saveImageFromUrl: (url: string) => Promise<boolean>
       saveClipboardImage: () => Promise<string>
       runnerInvoke?: (name: string, args: Record<string, unknown>) => Promise<unknown>
-      runnerDispatch?: (method: string, params?: Record<string, unknown>) => Promise<unknown>
       runnerGetTools?: () => Promise<Array<Record<string, unknown>>>
       getPathForFile: (file: File) => string
       setTitleBarTheme?: (payload: DeskAgentTitleBarTheme) => void
-      openExternal: (url: string) => Promise<void>
-      settings: {
-        getDefaultProjectDir: () => Promise<{ defaultLabel: string; dir: null | string }>
-        pickDefaultProjectDir: () => Promise<{ canceled: boolean; dir: null | string }>
-        setDefaultProjectDir: (dir: null | string) => Promise<{ dir: null | string }>
-      }
       runnerConfig: {
         read: () => Promise<{ ok: boolean; content?: string; error?: string }>
         write: (
@@ -81,24 +70,10 @@ declare global {
           error?: string
         }>
       }
-      readDir: (path: string) => Promise<DeskAgentReadDirResult>
-      gitRoot?: (path: string) => Promise<string | null>
-      gitBranch?: (path: string) => Promise<{ branch: string; root: string | null }>
-      completePath?: (params: { word: string; cwd?: string }) => Promise<{
-        items: Array<{ label: string; value: string; isDirectory: boolean }>
-      }>
       changePassword: (payload: {
         current_password: string
         new_password: string
       }) => Promise<{ ok: boolean; message?: string }>
-      modelConfig: {
-        get: () => Promise<{
-          llm_model_name: string
-          llm_base_url: string
-          llm_api_key_fingerprint: string
-          llm_api_key_set: boolean
-        }>
-      }
       media: {
         stt: (payload: {
           context?: string | null
@@ -127,11 +102,7 @@ declare global {
       onTrayLogout?: (callback: () => void) => () => void
       getVersion: () => Promise<DesktopVersionInfo>
       update?: {
-        check: () => Promise<{ ok: boolean; reason?: string }>
-        download: () => Promise<{ ok: boolean; reason?: string }>
-        install: () => Promise<{ ok: boolean; reason?: string }>
-        status: () => Promise<{ currentVersion: string } | { ok: false; reason: string }>
-        retryRunnerInstall: () => Promise<{ ok: boolean; noop?: boolean; error?: string }>
+        check: () => Promise<void>
         onEvent: (callback: (payload: DesktopUpdateEvent) => void) => () => void
         onRunnerEvent: (callback: (payload: DesktopRunnerUpdateEvent) => void) => () => void
       }
@@ -291,33 +262,6 @@ export interface DeskAgentApiRequest {
   method?: string
   path: string
   timeoutMs?: number
-}
-
-export interface DeskAgentNotification {
-  body?: string
-  silent?: boolean
-  title?: string
-}
-
-export interface DeskAgentReadFileTextResult {
-  binary?: boolean
-  byteSize?: number
-  language?: string
-  mimeType?: string
-  path: string
-  text: string
-  truncated?: boolean
-}
-
-export interface DeskAgentReadDirEntry {
-  isDirectory: boolean
-  name: string
-  path: string
-}
-
-export interface DeskAgentReadDirResult {
-  entries: DeskAgentReadDirEntry[]
-  error?: string
 }
 
 export interface DeskAgentSelectPathsOptions {

@@ -73,7 +73,7 @@ async function readBranchFromHead(gitRoot) {
 }
 
 async function listDirents(dir, { prefix, limit } = {}) {
-  // Shared dirent walker used by readDir and completePath. Reads ``dir``,
+  // Shared dirent walker used by completePath. Reads ``dir``,
   // drops FS_READDIR_HIDDEN entries, sorts directories first then by name,
   // and returns the trimmed {name, path, isDirectory} list. ``prefix`` is a
   // case-insensitive filter on entry names; ``limit`` caps the result.
@@ -109,16 +109,6 @@ function registerFsIpc({ ipcMain }) {
       return resolved
     }
   }
-
-  ipcMain.handle('deskagent:fs:readDir', async (_event, dirPath) => {
-    const resolved = path.resolve(String(dirPath || ''))
-    if (!resolved) return { entries: [], error: 'invalid-path' }
-    return listDirents(resolved)
-  })
-
-  ipcMain.handle('deskagent:fs:gitRoot', async (_event, startPath) => {
-    return findGitRoot(await resolveStartDir(startPath))
-  })
 
   // Branch extraction by reading .git/HEAD directly. The backend can't do
   // this (Docker has no access to user disk) and we don't want to depend on

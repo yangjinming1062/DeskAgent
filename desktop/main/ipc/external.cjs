@@ -1,14 +1,9 @@
 'use strict'
 
-// Thin wrapper around main/entry.cjs::openExternalUrl — caller owns the
-// platform-specific dispatch; here we just call it and surface false-return
-// as a renderer-visible error.
-function registerExternalIpc({ ipcMain, openExternalUrl }) {
-  ipcMain.handle('deskagent:openExternal', (_event, url) => {
-    if (!openExternalUrl(url)) {
-      throw new Error('Invalid external URL')
-    }
-  })
-}
+// All channels that lived here (deskagent:openExternal) have been removed —
+// no renderer callers. `openExternalUrl` is still invoked directly from
+// entry.cjs for shell-link / context-menu navigation. Kept as a no-op so the
+// registration call site in entry.cjs does not need to feature-flag.
+function registerExternalIpc() {}
 
 module.exports = { registerExternalIpc }

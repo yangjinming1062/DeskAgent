@@ -2,7 +2,6 @@ import { IconVolume } from '@tabler/icons-react'
 import { useEffect, useState } from 'react'
 
 import { Button } from '@/shared/components/ui/button'
-import { Input } from '@/shared/components/ui/input'
 import { SegmentedControl } from '@/shared/components/ui/segmented-control'
 import type { SegmentedControlOption } from '@/shared/components/ui/segmented-control'
 import { Switch } from '@/shared/components/ui/switch'
@@ -16,27 +15,21 @@ import type { DeskAgentConfigResponse } from '@/shared/types/deskagent'
 import { ListRow, LoadingState, Pill, SettingsContent, SettingsSubsection } from './primitives'
 
 interface SpeechFormState {
-  sttEnabled: boolean
   sttEngine: SpeechEngine
   sttSilentFallback: boolean
   ttsEngine: SpeechEngine
-  maxRecordingSeconds: number
 }
 
 const DEFAULTS: SpeechFormState = {
-  sttEnabled: true,
   sttEngine: 'auto',
   sttSilentFallback: true,
-  ttsEngine: 'auto',
-  maxRecordingSeconds: 60
+  ttsEngine: 'auto'
 }
 
 const readState = (config: DeskAgentConfigResponse): SpeechFormState => ({
-  sttEnabled: config.stt?.enabled ?? DEFAULTS.sttEnabled,
   sttEngine: config.stt?.engine ?? DEFAULTS.sttEngine,
   sttSilentFallback: config.stt?.silent_fallback ?? DEFAULTS.sttSilentFallback,
-  ttsEngine: config.tts?.engine ?? DEFAULTS.ttsEngine,
-  maxRecordingSeconds: config.voice?.max_recording_seconds ?? DEFAULTS.maxRecordingSeconds
+  ttsEngine: config.tts?.engine ?? DEFAULTS.ttsEngine
 })
 
 export function SpeechSettings() {
@@ -119,11 +112,9 @@ export function SpeechSettings() {
   }, [])
 
   const isDirty =
-    state.sttEnabled !== original.sttEnabled ||
     state.sttEngine !== original.sttEngine ||
     state.sttSilentFallback !== original.sttSilentFallback ||
-    state.ttsEngine !== original.ttsEngine ||
-    state.maxRecordingSeconds !== original.maxRecordingSeconds
+    state.ttsEngine !== original.ttsEngine
 
   const update = (patch: Partial<SpeechFormState>) => {
     setState(prev => ({ ...prev, ...patch }))
@@ -134,9 +125,8 @@ export function SpeechSettings() {
 
     try {
       const { config } = await saveDeskAgentConfig({
-        stt: { enabled: state.sttEnabled, engine: state.sttEngine, silent_fallback: state.sttSilentFallback },
-        tts: { engine: state.ttsEngine },
-        voice: { max_recording_seconds: state.maxRecordingSeconds }
+        stt: { engine: state.sttEngine, silent_fallback: state.sttSilentFallback },
+        tts: { engine: state.ttsEngine }
       })
 
       const next = readState(config)
@@ -175,11 +165,6 @@ export function SpeechSettings() {
       <SettingsSubsection icon={IconVolume} intro={s.intro} title={s.title}>
         <div className="divide-y divide-(--ui-stroke-tertiary)">
           <ListRow
-            action={<Switch checked={state.sttEnabled} onCheckedChange={v => update({ sttEnabled: v })} />}
-            description={s.sttDesc}
-            title={s.sttTitle}
-          />
-          <ListRow
             action={
               <div className="flex flex-col items-end gap-1.5">
                 <SegmentedControl
@@ -215,23 +200,6 @@ export function SpeechSettings() {
             }
             description={s.ttsEngineDesc}
             title={s.ttsEngineTitle}
-          />
-          <ListRow
-            action={
-              <Input
-                className="w-28"
-                min={5}
-                onChange={e => {
-                  const v = e.target.value === '' ? NaN : Number(e.target.value)
-
-                  update({ maxRecordingSeconds: isNaN(v) ? DEFAULTS.maxRecordingSeconds : v })
-                }}
-                type="number"
-                value={state.maxRecordingSeconds}
-              />
-            }
-            description={s.recordingDesc}
-            title={s.recordingTitle}
           />
         </div>
 

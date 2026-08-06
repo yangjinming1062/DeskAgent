@@ -85,21 +85,10 @@ export interface SessionResumeResponse {
 
 export interface SessionRuntimeInfo {
   branch?: string
-  config_warning?: string
-  credential_warning?: string
   cwd?: string
-  desktop_contract?: number
-  fast?: boolean
   model?: string
-  personality?: string
   provider?: string
-  reasoning_effort?: string
   running?: boolean
-  service_tier?: string
-  skills?: Record<string, string[]> | string[]
-  tools?: Record<string, string[]>
-  usage?: Partial<UsageStats>
-  version?: string
 }
 
 export interface SessionSearchResult {
@@ -143,25 +132,13 @@ export type SpeechEngine = 'auto' | 'local' | 'cloud'
 export interface DeskAgentConfigResponse {
   agent?: {
     reasoning_effort?: string
-    personalities?: Record<string, unknown>
-    service_tier?: string
     enable_background_review?: boolean
   }
   chat?: {
     enable_context_compression?: boolean
     context_compression_threshold?: number
   }
-  display?: {
-    personality?: string
-    /** Hides subagent conversations from the sidebar by default. */
-    show_subagents_in_sidebar?: boolean
-  }
-  mcp_servers?: Record<string, Record<string, unknown>>
-  terminal?: {
-    cwd?: string
-  }
   stt?: {
-    enabled?: boolean
     engine?: SpeechEngine
     /** When false, a weak/low-confidence local STT result surfaces to the user
      * instead of silently retrying on cloud. Default true. See media.cjs. */
@@ -169,9 +146,6 @@ export interface DeskAgentConfigResponse {
   }
   tts?: {
     engine?: SpeechEngine
-  }
-  voice?: {
-    max_recording_seconds?: number
   }
   web?: {
     backend?: string
@@ -189,32 +163,18 @@ export interface DeskAgentConfigResponse {
 export interface DeskAgentConfigPutRequest {
   agent?: {
     reasoning_effort?: string
-    personalities?: Record<string, unknown>
-    service_tier?: string
     enable_background_review?: boolean
   }
   chat?: {
     enable_context_compression?: boolean
     context_compression_threshold?: number
   }
-  display?: {
-    personality?: string
-    show_subagents_in_sidebar?: boolean
-  }
-  mcp_servers?: Record<string, Record<string, unknown>>
-  terminal?: {
-    cwd?: string
-  }
   stt?: {
-    enabled?: boolean
     engine?: SpeechEngine
     silent_fallback?: boolean
   }
   tts?: {
     engine?: SpeechEngine
-  }
-  voice?: {
-    max_recording_seconds?: number
   }
   web?: {
     backend?: string

@@ -62,9 +62,7 @@ backend/
 
 **预创建 DB 行**：`session.create` 先开 DB 行返回 ID，renderer 无需等待首次 turn 即拿到可路由标识。WS 重连后 `session.resume` 重新挂载 in-memory runtime 恢复 cwd/branch 上下文。turn 期间每 20s 发 `session.info` heartbeat 保持字段新鲜、保证 renderer `busy` 状态在每个出口清空。
 
-**配置层级**：全局 `UserSetting` 表（可热改）+ `Settings`（pydantic-settings，env / .env，需重启）两层。`config.set` 的 `scope == "global"` 与 `session_id` **互斥**（同时给 = INVALID_PARAMS）；写入只接受 allow-listed keys，MCP server 配置不在列（存 runner 主机 `$DESKAGENT_HOME/config.yaml`，由 Desktop `deskagent:runner-config:write` 写入）。`session_id` 写 `Conversation.settings_json`（同步更新 in-memory runtime），`_merge_session_settings` 把 per-session overrides 翻译为全局 key 命名空间。
-
-**`config.get({key:"project"})`** 返回 `{}`——filesystem-bound，由 Desktop 在 WS 请求入口处本地拦截（读 `.git/HEAD`），后端在 Docker 中看不到客户端文件系统。
+**配置层级**：全局 `UserSetting` 表（可热改，经 `PUT /api/config` 写入）+ `Settings`（pydantic-settings，env / .env，需重启）两层。`/api/config` PUT 把嵌套 dict 展平为 dot-separated key（如 `{agent: {reasoning_effort: "high"}}` → `agent.reasoning_effort`）；后端 consumer 按同样 namespace 读取。`_merge_session_settings` 把 per-session overrides（`Conversation.settings_json`）翻译为全局 key 命名空间。
 
 ## Cron 与事件下发
 
