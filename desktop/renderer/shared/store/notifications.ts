@@ -1,5 +1,6 @@
 import { atom } from 'nanostores'
 
+import { unwrapIpcErrorMessage } from '@/shared/lib/ipc-error'
 import { strings } from '@/shared/strings'
 
 export type NotificationKind = 'error' | 'warning' | 'info' | 'success'
@@ -92,7 +93,7 @@ function summarizeErrorMessage(message: string, fallback: string) {
 
 function readableError(error: unknown, fallback: string): { message: string; detail?: string } {
   const raw = error instanceof Error ? error.message : typeof error === 'string' ? error : fallback
-  const unwrapped = raw.match(/Error invoking remote method '[^']+': Error: (.+)$/)?.[1] ?? raw
+  const unwrapped = unwrapIpcErrorMessage(raw)
   const cleaned = cleanErrorText(unwrapped)
   const detail = cleaned.match(/"detail"\s*:\s*"([^"]+)"/)?.[1] ?? cleaned
   const summary = summarizeErrorMessage(detail, fallback)

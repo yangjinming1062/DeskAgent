@@ -27,6 +27,7 @@ const {
   DATA_URL_READ_MAX_BYTES,
   DEFAULT_FETCH_TIMEOUT_MS,
   TEXT_PREVIEW_SOURCE_MAX_BYTES,
+  resolvePathTimeoutMs,
   resolveReadableFileForIpc,
   resolveTimeoutMs
 } = require('./security/hardening.cjs')
@@ -1666,6 +1667,7 @@ registerConnectionIpc({
   resetBackendCache,
   getBootProgressState: () => bootProgressState,
   fetchJson,
+  resolvePathTimeoutMs,
   resolveTimeoutMs,
   defaultFetchTimeoutMs: DEFAULT_FETCH_TIMEOUT_MS
 })
