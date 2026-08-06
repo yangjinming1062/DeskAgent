@@ -2,6 +2,7 @@ import { useStore } from '@nanostores/react'
 import type React from 'react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
+import { pickAvatarImage } from '@/companion/avatar-image'
 import { awaitAvatarRegeneration } from '@/companion/avatar-regen-store'
 import { useGatewayRequest } from '@/companion/boot/use-gateway-request'
 import { clearClipCatalog } from '@/companion/clip-store'
@@ -199,31 +200,25 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps): React.Reac
   }
 
   const upload = async () => {
+    const picked = await pickAvatarImage('选择一张图片作为形象')
+
+    if (!picked) {
+      return
+    }
+
+    if ('error' in picked) {
+      setAvatarHint(picked.error)
+
+      return
+    }
+
+    setRegenerating(true)
+
     try {
-      const [path] = await window.deskagent.selectPaths({
-        title: '选择一张图片作为形象',
-        filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif'] }]
-      })
-
-      if (!path) {
-        return
-      }
-
-      const dataUrl = await window.deskagent.readFileDataUrl(path)
-      const comma = dataUrl.indexOf(',')
-      const mime = comma > 0 ? dataUrl.slice(5, comma) : 'image/png'
-      const base64 = comma > 0 ? dataUrl.slice(comma + 1) : ''
-
-      if (!base64) {
-        return
-      }
-
-      setRegenerating(true)
-
       const res = await window.deskagent.api<{ asset_url?: string }>({
         path: '/api/companion/avatar/upload',
         method: 'POST',
-        body: { image: base64, content_type: mime }
+        body: { image: picked.image.base64, content_type: picked.image.contentType }
       })
 
       clearClipCatalog()
