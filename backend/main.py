@@ -7,6 +7,7 @@ import asyncpg
 import modules.auth.models
 import modules.media.models  # noqa: F401
 import services.chat.agent_delegate
+import services.scheduler.cronjob_tool  # noqa: F401 — cronjob tool owned by scheduler, not tools.builtin
 import services.tools.builtin  # noqa: F401
 from api import ROUTERS
 from common import ModelBase

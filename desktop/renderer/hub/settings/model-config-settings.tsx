@@ -78,7 +78,7 @@ function buildPutBody(form: FormState, providers: ProviderSlotInput[]): ModelCon
   for (const c of CAPABILITIES) {
     const state = form[c.key as CapabilityKey]
     body[`${c.prefix}_base_url`] = state.base_url
-    body[`${c.prefix}_api_key`] = state.cleared_api_key ? '' : state.api_key
+    body[`${c.prefix}_api_key`] = state.cleared_api_key ? null : state.api_key
     body[`${c.prefix}_model_name`] = state.model_name
   }
 
@@ -217,7 +217,6 @@ export function ModelConfigSettings({
 
     const cleared = emptyForm()
 
-    // Mark api_key fields as cleared so the backend writes empty strings.
     for (const c of CAPABILITIES) {
       cleared[c.key as CapabilityKey].cleared_api_key = originalForm[c.key as CapabilityKey].api_key_set
     }

@@ -19,7 +19,7 @@ backend/
 
 **循环断路器**：`chat ↔ gateway`、`chat ↔ scheduler`、`chat → companion → tools.builtin → scheduler → chat` 三条 import 环全部经 `services/chat/chat_emitter.py`（`Emitter` 协议，零内部依赖）收敛——`chat/__init__.py` 急切 import `chat_emitter` + `types`，重编排器/`turn_inputs`/`agent_delegate` 经 `__getattr__` 懒加载，保证 import chat 包不会触发整张服务图。`gateway/emitter.py`（`JsonRpcEmitter`）import `chat.chat_emitter.Emitter`，是 chat↔gateway 环的接合点——两个 emitter 文件不要混淆。
 
-**工具自注册**：每个工具模块在 module bottom 调 `REGISTRY.register(...)`；`main.py` 显式 `import services.tools.builtin` / `import services.chat.agent_delegate` 触发注册（首条 chat turn 前完成）。
+**工具自注册**：每个工具模块在 module bottom 调 `REGISTRY.register(...)`；`main.py` 显式 `import services.tools.builtin` / `import services.chat.agent_delegate` 触发注册（首条 chat turn 前完成）。`cronjob` 工具归属 scheduler，由 `import services.scheduler.cronjob_tool` 触发。
 
 ## 工具三层分类
 

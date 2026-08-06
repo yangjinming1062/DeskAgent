@@ -125,11 +125,16 @@ class UserModelConfigSelfRequest(_UserModelConfigBase):
     """User self-service model config — all fields optional.
 
     Empty ``api_key`` means "keep existing" (the GET endpoint never returns
-    raw keys, so the user cannot re-type the current value). Empty
-    ``base_url`` / ``model_name`` means "clear — use server default".
+    raw keys, so the user cannot re-type the current value). ``None`` (JSON
+    ``null``) means "clear the stored key". Empty ``base_url`` /
+    ``model_name`` means "clear — use server default".
     """
 
-    pass
+    llm_api_key: str | None = Field(default="", max_length=255)
+    stt_api_key: str | None = Field(default="", max_length=255)
+    tts_api_key: str | None = Field(default="", max_length=255)
+    image_gen_api_key: str | None = Field(default="", max_length=255)
+    video_gen_api_key: str | None = Field(default="", max_length=255)
 
 
 class UserModelConfigListItem(BaseModel):
