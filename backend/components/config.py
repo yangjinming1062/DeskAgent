@@ -34,9 +34,9 @@ class Settings(BaseSettings):
     data_dir: str = "./data"
 
     # HMAC key for signed companion asset URLs. Must be set via
-    # ``DESKAGENT_COMPANION_ASSET_SIGNING_KEY`` (or a deployment-injected
-    # secret); an empty value fails fast at startup so an attacker who can
-    # guess ``public_url_prefix`` can't forge a signature.
+    # ``COMPANION_ASSET_SIGNING_KEY``; an empty value fails fast at startup
+    # so an attacker who can guess ``public_url_prefix`` can't forge a
+    # signature.
     companion_asset_signing_key: str = ""
 
     # ── Provider chain ──
