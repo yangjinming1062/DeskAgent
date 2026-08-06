@@ -27,6 +27,8 @@ import { speak, stopSpeaking } from '../tts'
 import { fetchVoiceCatalog, matchVoicePreference, nextVoice, sampleLine, type VoiceOption } from '../voice'
 import { $voicePreparing } from '../voice-state'
 
+import { playOnboardingAudio } from './onboarding-audio'
+
 type Phase = 'q' | 'hatching' | 'portrait' | 'voice' | 'finishing' | 'greeting'
 type VoiceLanguageFilter = '' | 'zh' | 'en'
 
@@ -113,7 +115,7 @@ const QUESTIONS: readonly Question[] = [
   },
   {
     key: 'role',
-    text: '好的，我会是 {name}。那您希望我是什么样的身份？',
+    text: '好的，那您希望我是什么样的身份？',
     placeholder: '或者自由描述…',
     required: false,
     multiline: false,
@@ -480,8 +482,8 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
   const answersRef = useRef(answers)
   answersRef.current = answers
 
-  // Component-scope for the render; the speak effect re-derives from answersRef so it stays out of the dep array.
-  const spokenText = question?.text.replace('{name}', answers.name?.trim() || '你') ?? ''
+  // Question text rendered under the input.
+  const spokenText = question?.text ?? ''
 
   // Speak each question as it appears (default neutral voice; plan §3.2).
   useEffect(() => {
@@ -494,8 +496,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
     setInput((current[q.key] as string) ?? '')
     setAnswerKind(null)
     setHint(null)
-    const liveSpoken = q.text.replace('{name}', current.name?.trim() || '你')
-    void speak(liveSpoken, undefined, `onboarding.q${qIndex}`)
+    void playOnboardingAudio(`onboarding.q${qIndex}`)
 
     return () => stopSpeaking()
   }, [phase, qIndex])
@@ -560,7 +561,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
   const enterHatching = async () => {
     setPhase('hatching')
     setHint(null)
-    void speak('让我想想我该是什么样子…', undefined, 'onboarding.hatching')
+    void playOnboardingAudio('onboarding.hatching')
 
     // Finalize persona before the portrait (avatar gen needs is_complete=true).
     // savePersona re-throws 4xx; roll back to the form so the user can fix the field.
@@ -571,7 +572,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
     } catch (err) {
       setPhase('q')
       setHint(err instanceof Error ? `记忆存不上：${err.message}` : '记忆存不上，请重试 onboarding')
-      void speak('刚才的回答有些问题，咱们再来一次。', undefined, 'onboarding.hatching.retry')
+      void playOnboardingAudio('onboarding.hatching.retry')
 
       return
     }
@@ -602,7 +603,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
 
     setPortraitUrl(url)
     setPhase('portrait')
-    void speak(url ? '嗯…这就是我，您觉得怎么样？' : '我大概长这样，您觉得呢？', undefined, 'onboarding.portrait')
+    void playOnboardingAudio(url ? 'onboarding.portrait.ok' : 'onboarding.portrait.failed')
   }
 
   const regeneratePortrait = async () => {
@@ -623,14 +624,14 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
       if (queued?.asset_url) {
         setPortraitUrl(queued.asset_url)
         clearClipCatalog()
-        void speak('换一个样子，这样如何？', undefined, 'onboarding.portrait.regenerate')
+        void playOnboardingAudio('onboarding.portrait.regenerate')
       } else if (queued?.queued && queued.job_id) {
         const result = await awaitAvatarRegeneration(queued.job_id)
 
         if (result.asset_url) {
           setPortraitUrl(result.asset_url)
           clearClipCatalog()
-          void speak('换一个样子，这样如何？', undefined, 'onboarding.portrait.regenerate')
+          void playOnboardingAudio('onboarding.portrait.regenerate')
         } else {
           // Failure path — keep the existing clip catalog intact so the
           // user can keep their Tier 2/3 clips while the regenerate
@@ -707,7 +708,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
         setPortraitUrl(res.asset_url)
         setPickedImage(null)
         setRefineDescription('')
-        void speak('用你给的样子，这样如何？', undefined, 'onboarding.portrait.upload')
+        void playOnboardingAudio('onboarding.portrait.upload')
       }
     } catch {
       setPortraitPanelHint('上传失败了，换张图试试？')
@@ -743,7 +744,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
         setPortraitUrl(res.asset_url)
         setPickedImage(null)
         setRefineDescription('')
-        void speak('按你给的参考重新画好了，这样如何？', undefined, 'onboarding.portrait.fromimage')
+        void playOnboardingAudio('onboarding.portrait.fromimage')
       }
     } catch {
       setPortraitPanelHint('按参考重绘失败了，稍后再试吧')
@@ -804,7 +805,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
     } catch (err) {
       setPhase('voice')
       setHint(err instanceof Error ? `同步失败：${err.message}` : '同步失败，请稍后再试')
-      void speak('还差一点点，咱们再确认一次。', undefined, 'onboarding.finishing.retry')
+      void playOnboardingAudio('onboarding.finishing.retry')
 
       return
     }
@@ -814,11 +815,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
     // Play a 3s greeting transition so the companion visibly hatches (Tier 1 fallback if no clip).
     playTransitionClip('greeting', 3000)
 
-    const ok = await speak(
-      `您好，我是${answers.name?.trim() || '您的伙伴'}。很高兴见到您！`,
-      undefined,
-      'onboarding.greeting'
-    )
+    const ok = await playOnboardingAudio('onboarding.greeting')
 
     if (!ok) {
       setHint('（声音暂时不可用）')

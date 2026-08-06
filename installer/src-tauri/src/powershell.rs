@@ -51,6 +51,10 @@ pub struct BundleContext {
     /// install script copies them into `$DESKAGENT_HOME/models/piper/` during
     /// unpack-runner so local TTS works offline on day 1.
     pub bundled_voices_dir: Option<std::path::PathBuf>,
+    /// `<bundle>/payload/onboarding-audio/<lang>/` — pre-rendered cloud-TTS clips
+    /// grouped by language. Copied to `$DESKAGENT_HOME/audio/onboarding/<lang>/`
+    /// during unpack-runner.
+    pub bundled_onboarding_audio_dir: Option<std::path::PathBuf>,
     /// `<bundle>/payload/config.yaml` — Stage-WriteConfig source.
     pub config_path: Option<std::path::PathBuf>,
     /// `dmg` | `nsis` — tells the unpack-desktop stage what to do
@@ -103,6 +107,9 @@ pub async fn run_script(
     }
     if let Some(p) = &bundle.bundled_voices_dir {
         cmd.env("DESKAGENT_BUNDLED_VOICES_DIR", p);
+    }
+    if let Some(p) = &bundle.bundled_onboarding_audio_dir {
+        cmd.env("DESKAGENT_BUNDLED_ONBOARDING_AUDIO_DIR", p);
     }
     if let Some(p) = &bundle.config_path {
         cmd.env("DESKAGENT_CONFIG_PATH", p);

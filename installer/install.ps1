@@ -25,6 +25,7 @@ param(
     [string]$BundledDesktopDir,
     [string]$BundledSkillsDir,
     [string]$BundledVoicesDir,
+    [string]$BundledOnboardingAudioDir,
     [string]$ConfigPath,
     [string]$InstallerFormat
 )
@@ -51,6 +52,7 @@ if (-not $BundledRunnerDir -and $env:DESKAGENT_BUNDLED_RUNNER_DIR) { $BundledRun
 if (-not $BundledDesktopDir -and $env:DESKAGENT_BUNDLED_DESKTOP_DIR) { $BundledDesktopDir = $env:DESKAGENT_BUNDLED_DESKTOP_DIR }
 if (-not $BundledSkillsDir -and $env:DESKAGENT_BUNDLED_SKILLS_DIR) { $BundledSkillsDir = $env:DESKAGENT_BUNDLED_SKILLS_DIR }
 if (-not $BundledVoicesDir -and $env:DESKAGENT_BUNDLED_VOICES_DIR) { $BundledVoicesDir = $env:DESKAGENT_BUNDLED_VOICES_DIR }
+if (-not $BundledOnboardingAudioDir -and $env:DESKAGENT_BUNDLED_ONBOARDING_AUDIO_DIR) { $BundledOnboardingAudioDir = $env:DESKAGENT_BUNDLED_ONBOARDING_AUDIO_DIR }
 if (-not $ConfigPath -and $env:DESKAGENT_CONFIG_PATH) { $ConfigPath = $env:DESKAGENT_CONFIG_PATH }
 if (-not $InstallerFormat) {
     if ($env:DESKAGENT_INSTALLER_FORMAT) { $InstallerFormat = $env:DESKAGENT_INSTALLER_FORMAT }
@@ -288,10 +290,23 @@ function Stage-UnpackRunner {
         $voiceCount = (Get-ChildItem -Path $voicesTarget -Filter "*.onnx" -File -ErrorAction SilentlyContinue).Count
     }
 
+    # Copy bundled onboarding guidance audio — language subdirs (zh\, en\, …) map
+    # 1:1 to $DeskAgentHome\audio\onboarding\<lang>\.
+    $audioCount = 0
+    if ($BundledOnboardingAudioDir -and (Test-Path $BundledOnboardingAudioDir -PathType Container)) {
+        Get-ChildItem -Path $BundledOnboardingAudioDir -Directory | ForEach-Object {
+            $audioTarget = Join-Path (Join-Path (Join-Path $DeskAgentHome "audio") "onboarding") $_.Name
+            if (-not (Test-Path $audioTarget)) { New-Item -ItemType Directory -Force -Path $audioTarget | Out-Null }
+            Copy-Item -Recurse -Force (Join-Path $_.FullName "*") $audioTarget
+        }
+        $audioRoot = Join-Path (Join-Path $DeskAgentHome "audio") "onboarding"
+        $audioCount = (Get-ChildItem -Path $audioRoot -Filter "*.mp3" -Recurse -File -ErrorAction SilentlyContinue).Count
+    }
+
     $size = $wheel.Length
     $escVenv = Escape-JsonString $venvDir
     $escWheel = Escape-JsonString $wheel.Name
-    Write-Output "{`"ok`": true, `"stage`": `"unpack-runner`", `"data`": {`"venv`": `"$escVenv`", `"wheel`": `"$escWheel`", `"size_bytes`": $size, `"voices_copied`": $voiceCount}}"
+    Write-Output "{`"ok`": true, `"stage`": `"unpack-runner`", `"data`": {`"venv`": `"$escVenv`", `"wheel`": `"$escWheel`", `"size_bytes`": $size, `"voices_copied`": $voiceCount, `"onboarding_audio_copied`": $audioCount}}"
     return 0
 }
 

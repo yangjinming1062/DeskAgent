@@ -44,7 +44,10 @@ contextBridge.exposeInMainWorld('deskagent', {
   },
   media: {
     stt: payload => ipcRenderer.invoke('deskagent:media:stt', payload),
-    tts: payload => ipcRenderer.invoke('deskagent:media:tts', payload)
+    tts: payload => ipcRenderer.invoke('deskagent:media:tts', payload),
+    onboardingAudio: {
+      read: tag => ipcRenderer.invoke('deskagent:onboardingAudio:read', tag)
+    }
   },
   sprite: {
     setIgnoreMouseEvents: payload => ipcRenderer.invoke('deskagent:sprite:set-ignore-mouse-events', payload),

@@ -37,6 +37,7 @@ const { registerClipboardIpc } = require('./ipc/clipboard.cjs')
 const { registerExternalIpc } = require('./ipc/external.cjs')
 const { registerSettingsIpc } = require('./ipc/settings.cjs')
 const { registerFilesIpc } = require('./ipc/files.cjs')
+const { registerOnboardingAudioIpc } = require('./ipc/onboarding-audio.cjs')
 const { registerConnectionIpc } = require('./ipc/connection.cjs')
 const { registerMediaIpc, createEnginePrefsCache } = require('./ipc/media.cjs')
 const { registerAuthIpc } = require('./ipc/auth.cjs')
@@ -1660,6 +1661,12 @@ registerFilesIpc({
   hardening: { DATA_URL_READ_MAX_BYTES, TEXT_PREVIEW_SOURCE_MAX_BYTES, resolveReadableFileForIpc },
   mimeTypeForPath,
   previewLanguageByExt: PREVIEW_LANGUAGE_BY_EXT
+})
+registerOnboardingAudioIpc({
+  ipcMain,
+  deskagentHome: DESKAGENT_HOME,
+  mimeTypeForPath,
+  hardening: { resolveReadableFileForIpc }
 })
 registerConnectionIpc({
   ipcMain,

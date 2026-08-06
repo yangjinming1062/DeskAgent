@@ -1,0 +1,35 @@
+'use strict'
+
+const fs = require('node:fs')
+const path = require('node:path')
+
+const TAG_RE = /^onboarding\.[a-z0-9.]+$/
+// ~50KB expected per clip; 256KB cap absorbs quiet/wide-form variations without
+// letting a misplaced large file blow up the IPC payload.
+const MAX_BYTES = 256 * 1024
+
+function registerOnboardingAudioIpc({ ipcMain, deskagentHome, mimeTypeForPath, hardening }) {
+  if (!hardening) throw new Error('registerOnboardingAudioIpc: hardening is required')
+  if (!deskagentHome) throw new Error('registerOnboardingAudioIpc: deskagentHome is required')
+  if (typeof mimeTypeForPath !== 'function') throw new Error('registerOnboardingAudioIpc: mimeTypeForPath is required')
+
+  const audioRoot = path.resolve(deskagentHome, 'audio', 'onboarding', 'zh')
+
+  ipcMain.handle('deskagent:onboardingAudio:read', async (_event, tag) => {
+    if (typeof tag !== 'string' || !TAG_RE.test(tag)) {
+      throw new Error(`invalid onboarding audio tag: ${tag}`)
+    }
+
+    // TAG_RE blocks `/`, `\`, and `..`, so the join can't escape audioRoot.
+    // resolveReadableFileForIpc then handles ENOENT, sensitive files, and size cap.
+    const { resolvedPath } = await hardening.resolveReadableFileForIpc(path.join(audioRoot, `${tag}.mp3`), {
+      maxBytes: MAX_BYTES,
+      purpose: 'Onboarding audio'
+    })
+    const data = await fs.promises.readFile(resolvedPath)
+    const mimeType = mimeTypeForPath(resolvedPath)
+    return { dataUrl: `data:${mimeType};base64,${data.toString('base64')}`, mimeType, tag, bytes: data.length }
+  })
+}
+
+module.exports = { registerOnboardingAudioIpc }

@@ -86,6 +86,9 @@ declare global {
           text: string
           voice?: string
         }) => Promise<{ dataUrl: string; mimeType: string }>
+        onboardingAudio: {
+          read: (tag: string) => Promise<{ dataUrl: string; mimeType: string; tag: string; bytes: number }>
+        }
       }
       sprite: {
         setIgnoreMouseEvents: (payload: { ignore: boolean; forward?: boolean }) => Promise<void>
