@@ -134,17 +134,6 @@ function registerRunnerIpc({ ipcMain, deps }) {
     const bridge = ensureRunnerBridge(deps)
     return bridge.invoke(name, args && typeof args === 'object' ? args : {})
   })
-
-  ipcMain.handle('deskagent:runner:dispatch', async (_event, method, params) => {
-    if (typeof method !== 'string' || !method) {
-      throw new Error('runner:dispatch requires a non-empty method name')
-    }
-    if (!_consumeToken()) {
-      throw new Error('runner:dispatch rate limit exceeded (token bucket empty)')
-    }
-    const bridge = ensureRunnerBridge(deps)
-    return bridge.dispatch(method, params && typeof params === 'object' ? params : {})
-  })
 }
 
 module.exports = {

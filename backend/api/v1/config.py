@@ -19,21 +19,13 @@ router = get_router()
 DEFAULT_CONFIG = {
     "agent": {
         "reasoning_effort": "medium",
-        "service_tier": "standard",
     },
     "chat": {
         "enable_context_compression": True,
         "context_compression_threshold": 0.70,
     },
-    "display": {
-        "personality": "",
-        "show_subagents_in_sidebar": False,
-    },
-    "terminal": {
-        "cwd": "",
-    },
+    "display": {},
     "stt": {
-        "enabled": True,
         "engine": "auto",
         "silent_fallback": True,
     },

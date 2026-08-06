@@ -92,17 +92,6 @@ function registerAuthIpc({ ipcMain, deps }) {
     const session = ensureBackendSession(deps)
     return session.changePassword(payload || {})
   })
-
-  ipcMain.handle('deskagent:model-config:get', async () => {
-    const session = ensureBackendSession(deps)
-    const full = await session.getModelConfig()
-    return {
-      llm_model_name: full?.llm_model_name ?? '',
-      llm_base_url: full?.llm_base_url ?? '',
-      llm_api_key_fingerprint: full?.llm_api_key_fingerprint ?? '',
-      llm_api_key_set: Boolean(full?.llm_api_key_set)
-    }
-  })
 }
 
 module.exports = { registerAuthIpc, ensureBackendSession }

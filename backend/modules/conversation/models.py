@@ -26,10 +26,10 @@ class Conversation(ModelBase, TimestampMixin):
     parent_id: Mapped[int | None] = mapped_column(ForeignKey("conversations.id", ondelete="CASCADE"), nullable=True, index=True)
     title: Mapped[str] = mapped_column(Text, default="New Conversation")
     cwd: Mapped[str | None] = mapped_column(String(1024), nullable=True)
-    # Per-session key-value overrides (reasoning/fast/language). Populated by
-    # ``config.set`` when the renderer passes ``session_id``; cleared on
-    # session delete via the conversation cascade. Survives WS reconnects
-    # (unlike RuntimeSession.settings, which is in-memory).
+    # Per-session key-value overrides (reasoning/language). Populated at
+    # session mount from this column; cleared on session delete via the
+    # conversation cascade. Survives WS reconnects (unlike
+    # RuntimeSession.settings, which is in-memory).
     settings_json: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     user: Mapped["User"] = relationship(back_populates="conversations")

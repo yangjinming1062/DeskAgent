@@ -36,7 +36,6 @@ from .constants import MEMORY_CONSOLIDATE_WINDOW_ROWS
 from .constants import MEMORY_RECALL_MAX_RESULTS
 from .constants import MS_PER_HOUR
 from .constants import REDACT_PHONE_DIGIT_THRESHOLD
-from .constants import RUNTIME_CHECK_TIMEOUT_SECONDS
 from .constants import SEARCH_INPUT_MAX_LEN
 from .constants import SECRET_MASK_HEAD_CHARS
 from .constants import SECRET_MASK_MIN_LENGTH
@@ -143,7 +142,6 @@ __all__ = [
     "MEMORY_RECALL_MAX_RESULTS",
     "MS_PER_HOUR",
     "REDACT_PHONE_DIGIT_THRESHOLD",
-    "RUNTIME_CHECK_TIMEOUT_SECONDS",
     "SEARCH_INPUT_MAX_LEN",
     "SECRET_MASK_HEAD_CHARS",
     "SECRET_MASK_MIN_LENGTH",

@@ -80,15 +80,6 @@ renderer 通过 `window.deskagent.*`（preload contextBridge）调 main；main �
 
 **Desktop 是 disturbance tier 的唯一权威**（[ARCHITECTURE.md §5](../ARCHITECTURE.md)）：`$userPreferredTier` 持久化在 `localStorage`、`$effectiveTierOverride` 由活动感知器（`companion/activity.ts`）写入、`$effectiveTier` 是 computed 派生。Desktop 每次有效值变化都经 `companion.set_disturbance_tier` 单向 push 给 Backend，**Backend 端 `_disturbance[user_id]` 只是过程镜像，不独立推导**——服务端 gate（`send_message_tool` / `cron._kick_autonomous_turn`）读镜像，但用户偏好与活动上下文只在 Desktop 持有。WS 重连后 Desktop 立刻再推一次同步（`use-gateway-boot.syncDisturbanceTier`）。这条边界让 Backend 重启或 WS 短暂掉线时也不漂移用户意图，也防止 LLM 在 server-side 推导时绕过用户的手动 quiet 选择。
 
-### 本地文件系统拦截
-
-`renderer/companion/boot/use-gateway-request.ts::tryLocalIntercept` 在 WS 请求入口处拦截依赖本地文件系统的方法——后端在 Docker 中无法访问：
-
-| 方法 | 拦截逻辑 |
-|------|----------|
-| `config.get({key:"project", cwd})` | 读 `.git/HEAD` 解析分支 |
-| `complete.path({word, cwd})` | 解析 `@` 后路径前缀，列目录项 |
-
 ### STT/TTS 引擎路由
 
 `main/ipc/media.cjs` 是 `media.stt` / `media.tts` 的唯一路由点，在 Backend 云端引擎与 Runner 本地引擎之间决策。**默认本地优先**（本地引擎零成本），三档偏好由 backend config 的 `stt.engine` / `tts.engine`（`auto` / `local` / `cloud`）控制，经短 TTL 缓存读取：

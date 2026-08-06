@@ -19,7 +19,6 @@ import { ListRow, LoadingState, SectionHeading, SettingsContent, SettingsSubsect
 const WEB_BACKEND_OPTIONS = ['ddgs', 'brave-free', 'tavily'] as const
 const EXTRACT_BACKEND_OPTIONS = ['tavily', 'brave-free', 'ddgs'] as const
 const REASONING_OPTIONS = ['minimal', 'low', 'medium', 'high', 'max'] as const
-const SERVICE_TIER_OPTIONS = ['standard', 'fast', 'priority', 'on', 'auto'] as const
 
 interface WebFormState {
   backend: string
@@ -37,12 +36,7 @@ interface WebFormState {
 
 interface AgentFormState {
   reasoning_effort: string
-  service_tier: string
   enable_background_review: boolean
-  // Display preference — lives under `display.*` in /api/config, not
-  // `agent.*`. Grouped into the agent defaults section UI to avoid a
-  // new section header; the save handler writes it to the display block.
-  show_subagents_in_sidebar: boolean
 }
 
 interface ChatFormState {
@@ -66,9 +60,7 @@ const EMPTY_WEB: WebFormState = {
 
 const EMPTY_AGENT: AgentFormState = {
   reasoning_effort: 'medium',
-  service_tier: 'standard',
-  enable_background_review: true,
-  show_subagents_in_sidebar: false
+  enable_background_review: true
 }
 
 const EMPTY_CHAT: ChatFormState = {
@@ -98,13 +90,10 @@ const readWebState = (config: DeskAgentConfigResponse): WebFormState => {
 
 const readAgentState = (config: DeskAgentConfigResponse): AgentFormState => {
   const agent = config.agent
-  const display = config.display
 
   return {
     reasoning_effort: agent?.reasoning_effort ?? EMPTY_AGENT.reasoning_effort,
-    service_tier: agent?.service_tier ?? EMPTY_AGENT.service_tier,
-    enable_background_review: agent?.enable_background_review ?? EMPTY_AGENT.enable_background_review,
-    show_subagents_in_sidebar: display?.show_subagents_in_sidebar ?? EMPTY_AGENT.show_subagents_in_sidebar
+    enable_background_review: agent?.enable_background_review ?? EMPTY_AGENT.enable_background_review
   }
 }
 
@@ -176,9 +165,7 @@ export function AccountSettings({ onConfigSaved }: { onConfigSaved?: () => void 
 
   const isAgentDirty =
     agent.reasoning_effort !== originalAgent.reasoning_effort ||
-    agent.service_tier !== originalAgent.service_tier ||
-    agent.enable_background_review !== originalAgent.enable_background_review ||
-    agent.show_subagents_in_sidebar !== originalAgent.show_subagents_in_sidebar
+    agent.enable_background_review !== originalAgent.enable_background_review
 
   const isChatDirty =
     chat.enable_context_compression !== originalChat.enable_context_compression ||
@@ -238,15 +225,11 @@ export function AccountSettings({ onConfigSaved }: { onConfigSaved?: () => void 
       const { config } = await saveDeskAgentConfig({
         agent: {
           enable_background_review: agent.enable_background_review,
-          reasoning_effort: agent.reasoning_effort,
-          service_tier: agent.service_tier
+          reasoning_effort: agent.reasoning_effort
         },
         chat: {
           enable_context_compression: chat.enable_context_compression,
           context_compression_threshold: chat.context_compression_threshold
-        },
-        display: {
-          show_subagents_in_sidebar: agent.show_subagents_in_sidebar
         },
         web: bodyWeb
       })
@@ -595,29 +578,6 @@ function AgentDefaultsSection({
 
       <ListRow
         action={
-          <Select
-            disabled={disabled}
-            onValueChange={value => update({ service_tier: value })}
-            value={state.service_tier}
-          >
-            <SelectTrigger className="w-36">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {SERVICE_TIER_OPTIONS.map(opt => (
-                <SelectItem key={opt} value={opt}>
-                  {t.serviceTierOptions[opt]}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        }
-        description={t.serviceTierDesc}
-        title={t.serviceTier}
-      />
-
-      <ListRow
-        action={
           <Switch
             checked={state.enable_background_review}
             disabled={disabled}
@@ -626,18 +586,6 @@ function AgentDefaultsSection({
         }
         description={t.backgroundReviewDesc}
         title={t.backgroundReview}
-      />
-
-      <ListRow
-        action={
-          <Switch
-            checked={state.show_subagents_in_sidebar}
-            disabled={disabled}
-            onCheckedChange={value => update({ show_subagents_in_sidebar: value })}
-          />
-        }
-        description={t.showSubagentsInSidebarDesc}
-        title={t.showSubagentsInSidebar}
       />
     </SettingsSubsection>
   )

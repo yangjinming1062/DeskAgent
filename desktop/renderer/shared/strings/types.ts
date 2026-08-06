@@ -127,8 +127,6 @@ export interface Translations {
       invalidAction: string
     }
     events: {
-      referencesTitle: string
-      referencesMessage: (items: string) => string
       compressionTimeoutTitle: string
       compressionTimeoutMessage: string
       cronTriggeredTitle: string
@@ -1254,30 +1252,6 @@ export interface Translations {
       goForward: string
       sendEdited: string
     }
-    approval: {
-      gatewayDisconnected: string
-      sendFailed: string
-      run: string
-      moreOptions: string
-      allowSession: string
-      alwaysAllowMenu: string
-      reject: string
-      alwaysTitle: string
-      alwaysDescription: (pattern: string) => string
-      alwaysAllow: string
-    }
-    clarify: {
-      notReady: string
-      gatewayDisconnected: string
-      sendFailed: string
-      loadingQuestion: string
-      other: string
-      placeholder: string
-      shortcut: string
-      back: string
-      skip: string
-      send: string
-    }
     tool: {
       code: string
       copyCode: string
@@ -1302,18 +1276,6 @@ export interface Translations {
       statusRecovered: string
       statusDone: string
     }
-  }
-
-  prompts: {
-    gatewayDisconnected: string
-    sudoSendFailed: string
-    secretSendFailed: string
-    sudoTitle: string
-    sudoDesc: string
-    sudoPlaceholder: string
-    secretTitle: string
-    secretDesc: string
-    secretPlaceholder: string
   }
 
   desktop: {

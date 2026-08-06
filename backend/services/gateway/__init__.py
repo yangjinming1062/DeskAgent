@@ -15,7 +15,6 @@ from .jsonrpc import JsonRpcError
 from .runtime import new_runtime_session
 from .runtime import runtime_info_snapshot
 from .runtime import RuntimeSession
-from .runtime import serialize_settings
 from .runtime import SessionCreateResult
 from .runtime import SessionCwdSetResult
 from .runtime import SessionResumeResult
@@ -23,8 +22,6 @@ from .runtime import SessionRuntimeInfo
 from .runtime import SessionSteerResult
 from .runtime import SessionTitleResult
 from .runtime import SessionUsageResult
-from .runtime import SetupRuntimeResult
-from .runtime import SetupStatusResult
 from .runtime import ToolsSyncResult
 
 # ``handlers`` pulls the entire service graph (chat orchestrator + llm + tools),
@@ -50,11 +47,8 @@ __all__ = [
     "SessionSteerResult",
     "SessionCwdSetResult",
     "SessionUsageResult",
-    "SetupStatusResult",
-    "SetupRuntimeResult",
     "ToolsSyncResult",
     "new_runtime_session",
-    "serialize_settings",
     "runtime_info_snapshot",
     "await_future",
     "discard_call",

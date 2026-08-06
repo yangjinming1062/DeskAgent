@@ -14,8 +14,7 @@ TOOL_CALL_ID_HEX_PREFIX_LEN: int = 24
 # Per-session setting key → global UserSetting key mapping.
 # Translates renderer-friendly aliases to the keys downstream reads.
 SESSION_TO_GLOBAL_KEY_ALIASES: dict[str, str] = {
-    "reasoning": "reasoning_effort",
-    "fast": "service_tier",
+    "reasoning": "agent.reasoning_effort",
     "language": "language",
 }
 
@@ -136,13 +135,8 @@ ACTIVITY_DAY_BUCKETS: int = 30
 
 # ── HTTP & Auth ───────────────────────────────────────────────────────
 
-# Timeout for setup.runtime_check LLM probe (seconds).
-RUNTIME_CHECK_TIMEOUT_SECONDS: int = 10
-
 # Periodic session.info heartbeat sent to the desktop so its busy indicator
-# and model/provider fields stay fresh on long-running turns. Sits next to
-# SCHEDULER_INTERVAL_SECONDS / RUNTIME_CHECK_TIMEOUT_SECONDS so all
-# per-loop cadence knobs live in one place.
+# and model/provider fields stay fresh on long-running turns.
 SESSION_HEARTBEAT_INTERVAL_S: int = 20
 
 # Max image attachments per single prompt.submit turn.

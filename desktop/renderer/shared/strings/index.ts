@@ -112,8 +112,6 @@ export const strings: Translations = {
       invalidAction: '去设置'
     },
     events: {
-      referencesTitle: '引用',
-      referencesMessage: items => items,
       compressionTimeoutTitle: '上下文压缩',
       compressionTimeoutMessage: '压缩请求超时 — 继续而不压缩。',
       cronTriggeredTitle: '定时任务已触发',
@@ -1799,31 +1797,6 @@ export const strings: Translations = {
       goForward: '前进',
       sendEdited: '发送编辑后的消息'
     },
-    approval: {
-      gatewayDisconnected: 'DeskAgent 网关未连接',
-      sendFailed: '无法发送审批响应',
-      run: '运行',
-      moreOptions: '更多审批选项',
-      allowSession: '允许本会话',
-      alwaysAllowMenu: '始终允许…',
-      reject: '拒绝',
-      alwaysTitle: '始终允许此命令？',
-      alwaysDescription: pattern =>
-        `这会将“${pattern}”模式加入永久允许列表 (~/.deskagent/config.yaml)。DeskAgent 对类似命令将不再询问，包括当前会话和未来会话。`,
-      alwaysAllow: '始终允许'
-    },
-    clarify: {
-      notReady: '澄清请求尚未就绪',
-      gatewayDisconnected: 'DeskAgent 网关未连接',
-      sendFailed: '无法发送澄清响应',
-      loadingQuestion: '正在加载问题…',
-      other: '其他 (输入你的答案)',
-      placeholder: '输入你的答案…',
-      shortcut: '⌘/Ctrl + Enter 发送',
-      back: '返回',
-      skip: '跳过',
-      send: '发送'
-    },
     tool: {
       code: '代码',
       copyCode: '复制代码',
@@ -1848,18 +1821,6 @@ export const strings: Translations = {
       statusRecovered: '已恢复',
       statusDone: '完成'
     }
-  },
-
-  prompts: {
-    gatewayDisconnected: 'DeskAgent 网关未连接',
-    sudoSendFailed: '无法发送 sudo 密码',
-    secretSendFailed: '无法发送密钥',
-    sudoTitle: '管理员密码',
-    sudoDesc: 'DeskAgent 需要你的 sudo 密码来运行特权命令。它只会发送给你的本地 agent。',
-    sudoPlaceholder: 'sudo 密码',
-    secretTitle: '需要密钥',
-    secretDesc: 'DeskAgent 需要一个凭据才能继续。',
-    secretPlaceholder: '密钥值'
   },
 
   desktop: {

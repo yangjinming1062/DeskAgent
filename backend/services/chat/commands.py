@@ -54,26 +54,31 @@ def cmd_reasoning(args_str: str, ctx: CommandContext) -> dict:
         return CommandResult(warning=f"Unknown reasoning level: {level!r}. Use low, medium, or high.").model_dump()
 
     if not level:
-        current = ctx.user_settings.get("reasoning_effort", "medium")
+        # Read namespaced key first (settings UI writes ``agent.reasoning_effort``);
+        # fall back to bare ``reasoning_effort`` for legacy slash-command data.
+        current = ctx.user_settings.get("agent.reasoning_effort") or ctx.user_settings.get("reasoning_effort", "medium")
         return CommandResult(output=f"Current reasoning effort: {current}").model_dump()
 
+    # Write the namespaced key so /api/config GET (which reconstructs the nested
+    # ``agent.reasoning_effort`` from the dot key) reflects the change in the
+    # settings UI on next load.
     with ctx.db_factory() as db:
         setting = (
             db.query(UserSetting)
             .filter(
                 UserSetting.user_id == ctx.user_id,
-                UserSetting.setting_key == "reasoning_effort",
+                UserSetting.setting_key == "agent.reasoning_effort",
             )
             .one_or_none()
         )
         if setting is None:
-            setting = UserSetting(user_id=ctx.user_id, setting_key="reasoning_effort", setting_value=level)
+            setting = UserSetting(user_id=ctx.user_id, setting_key="agent.reasoning_effort", setting_value=level)
             db.add(setting)
         else:
             setting.setting_value = level
         db.commit()
 
-    ctx.user_settings["reasoning_effort"] = level
+    ctx.user_settings["agent.reasoning_effort"] = level
     return CommandResult(output=f"Reasoning effort set to {level}").model_dump()
 
 

@@ -79,54 +79,7 @@ export function useGatewayRequest() {
   // the backend. The backend runs in Docker and can't access the user disk,
   // so these would otherwise return -32601. Returns the local result, or
   // ``null`` to fall through to the WS gateway.
-  const tryLocalIntercept = useCallback(async (method: string, params: Record<string, unknown>): Promise<unknown> => {
-    const desktop = window.deskagent
-
-    if (method === 'config.get') {
-      if (params.key !== 'project') {
-        return null
-      }
-
-      const cwd = typeof params.cwd === 'string' ? params.cwd : ''
-
-      if (!desktop?.gitBranch || !cwd) {
-        return { cwd, branch: '' }
-      }
-
-      try {
-        const result = await desktop.gitBranch(cwd)
-
-        return { cwd, branch: result.branch ?? '' }
-      } catch {
-        return { cwd, branch: '' }
-      }
-    }
-
-    if (method === 'complete.path') {
-      if (!desktop?.completePath) {
-        return { items: [] }
-      }
-
-      const word = typeof params.word === 'string' ? params.word : ''
-      const cwd = typeof params.cwd === 'string' ? params.cwd : undefined
-
-      try {
-        const out = await desktop.completePath({ word, cwd })
-        const prefixMatch = /^(@[a-z]+:)/i.exec(word)
-        const prefix = prefixMatch ? prefixMatch[1] : '@file:'
-
-        const items = (out.items as { label: string; value: string }[]).map(item => ({
-          text: `${prefix}${item.label}`,
-          display: item.label,
-          meta: item.value
-        }))
-
-        return { items }
-      } catch {
-        return { items: [] }
-      }
-    }
-
+  const tryLocalIntercept = useCallback(async (_method: string, _params: Record<string, unknown>): Promise<unknown> => {
     return null
   }, [])
 
