@@ -97,13 +97,15 @@ export function finalizeAssistantMessage(text?: string): void {
 export function setAssistantError(message: string): void {
   const msgs = $chatMessages.get()
   const last = msgs[msgs.length - 1]
+  const isStreaming = last?.role === 'assistant' && last.streaming
 
-  const error: ChatMessage =
-    last?.role === 'assistant' && last.streaming
-      ? { ...last, streaming: false, error: message }
-      : { id: nextId(), role: 'assistant', text: '', error: message }
+  const error: ChatMessage = isStreaming
+    ? { ...last, streaming: false, error: message }
+    : { id: nextId(), role: 'assistant', text: '', error: message }
 
-  $chatMessages.set(last ? [...msgs.slice(0, -1), error] : [error])
+  // Replace when finalizing a streaming assistant message; otherwise append
+  // so we don't clobber the user's last message.
+  $chatMessages.set(isStreaming ? [...msgs.slice(0, -1), error] : [...msgs, error])
 }
 
 // User-initiated stop before the first assistant chunk arrived. Distinct from
@@ -112,13 +114,15 @@ export function setAssistantError(message: string): void {
 export function setAssistantCancelled(): void {
   const msgs = $chatMessages.get()
   const last = msgs[msgs.length - 1]
+  const isStreaming = last?.role === 'assistant' && last.streaming
 
-  const cancelled: ChatMessage =
-    last?.role === 'assistant' && last.streaming
-      ? { ...last, streaming: false, cancelled: true }
-      : { id: nextId(), role: 'assistant', text: '', cancelled: true }
+  const cancelled: ChatMessage = isStreaming
+    ? { ...last, streaming: false, cancelled: true }
+    : { id: nextId(), role: 'assistant', text: '', cancelled: true }
 
-  $chatMessages.set(last ? [...msgs.slice(0, -1), cancelled] : [cancelled])
+  // Replace when finalizing a streaming assistant message; otherwise append
+  // so we don't clobber the user's last message.
+  $chatMessages.set(isStreaming ? [...msgs.slice(0, -1), cancelled] : [...msgs, cancelled])
 }
 
 export function clearChat(): void {

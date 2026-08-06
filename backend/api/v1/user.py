@@ -1,4 +1,5 @@
 from common import get_router
+from components import apply_partial
 from components import get_db
 from components import naive_utc_now
 from components import SETTINGS
@@ -20,9 +21,10 @@ from modules.auth import User
 from modules.auth import UserInfo
 from modules.auth import UserModelConfig
 from modules.auth import UserModelConfigResponse
+from modules.auth import UserModelConfigSelfRequest
 from modules.auth import verify_password
 from modules.system import MessageResponse
-from services.llm import resolve_service_row
+from services.llm import merge_provider_json
 from services.rate_limit import limiter
 from slowapi.util import get_remote_address
 from sqlalchemy.orm import Session
@@ -132,41 +134,71 @@ def change_password(payload: ChangePasswordRequest, current: tuple[User, LoginRe
     return MessageResponse(message="密码已更新。")
 
 
+_CAPABILITIES = ("llm", "stt", "tts", "image_gen", "video_gen")
+
+
+def _build_config_response(cfg: UserModelConfig | None) -> UserModelConfigResponse:
+    """Assemble the public view of a user's model config from the raw DB row.
+
+    Only the user's explicitly-set values are returned — empty strings when
+    nothing is stored, so the desktop UI never sees server-wide defaults.
+    """
+    data: dict = {}
+    for cap in _CAPABILITIES:
+        data[f"{cap}_base_url"] = getattr(cfg, f"{cap}_base_url") or "" if cfg else ""
+        data[f"{cap}_api_key_set"] = bool(cfg and getattr(cfg, f"{cap}_api_key"))
+        data[f"{cap}_model_name"] = getattr(cfg, f"{cap}_model_name") or "" if cfg else ""
+    data["llm_api_key_fingerprint"] = fingerprint_api_key(cfg.llm_api_key) if cfg else ""
+    data["provider_config"] = public_provider_slots(cfg.provider_config if cfg else None)
+    return UserModelConfigResponse(**data)
+
+
 @router.get("/model-config", response_model=UserModelConfigResponse)
 def model_config(current: tuple[User, LoginRecord] = Depends(get_current_session), db: Session = Depends(get_db)) -> UserModelConfigResponse:
-    """Return the user's effective per-service model config.
+    """Return the user's own per-service model config.
 
-    Raw API keys are NEVER returned — the renderer only sees a
-    ``*_api_key_set`` boolean per service so the UI can confirm whether a
-    key is on file. Full keys are read server-side when the LLM/STT/TTS/
-    image-gen client is actually built.
+    Only values the user has explicitly set are returned — empty strings
+    when nothing is stored, so the desktop UI never sees server-wide
+    defaults from ``SETTINGS``. Raw API keys are NEVER returned; the
+    renderer only sees ``*_api_key_set`` + ``llm_api_key_fingerprint``.
     """
     user, _session = current
-    llm_base_url, llm_api_key, llm_model_name = resolve_service_row(db, user.id, "llm")
-    stt_base_url, stt_api_key, stt_model_name = resolve_service_row(db, user.id, "stt")
-    tts_base_url, tts_api_key, tts_model_name = resolve_service_row(db, user.id, "tts")
-    img_base_url, img_api_key, img_model_name = resolve_service_row(db, user.id, "image_gen")
-    vid_base_url, vid_api_key, vid_model_name = resolve_service_row(db, user.id, "video_gen")
-    # Provider-level config lives directly on the user's row (no global
-    # fallback — empty means "inherit global provider resolution").
     cfg = db.query(UserModelConfig).filter(UserModelConfig.user_id == user.id).first()
+    return _build_config_response(cfg)
 
-    return UserModelConfigResponse(
-        llm_base_url=llm_base_url,
-        llm_api_key_fingerprint=fingerprint_api_key(llm_api_key),
-        llm_api_key_set=bool(llm_api_key),
-        llm_model_name=llm_model_name,
-        stt_base_url=stt_base_url,
-        stt_api_key_set=bool(stt_api_key),
-        stt_model_name=stt_model_name,
-        tts_base_url=tts_base_url,
-        tts_api_key_set=bool(tts_api_key),
-        tts_model_name=tts_model_name,
-        image_gen_base_url=img_base_url,
-        image_gen_api_key_set=bool(img_api_key),
-        image_gen_model_name=img_model_name,
-        video_gen_base_url=vid_base_url,
-        video_gen_api_key_set=bool(vid_api_key),
-        video_gen_model_name=vid_model_name,
-        provider_config=public_provider_slots(cfg.provider_config if cfg else None),
-    )
+
+@router.put("/model-config", response_model=UserModelConfigResponse)
+def update_model_config(
+    payload: UserModelConfigSelfRequest,
+    current: tuple[User, LoginRecord] = Depends(get_current_session),
+    db: Session = Depends(get_db),
+) -> UserModelConfigResponse:
+    """User self-service model config update.
+
+    Empty ``api_key`` fields keep the existing value (the GET endpoint never
+    returns raw keys, so the user cannot re-type them). Empty ``base_url``
+    and ``model_name`` clear the field so the provider chain falls back to
+    server defaults. Returns the updated public config so the caller can
+    refresh badges without a second round-trip.
+    """
+    user, _session = current
+    config = db.query(UserModelConfig).filter(UserModelConfig.user_id == user.id).first()
+
+    # Preserve existing api_keys when the user submits an empty one.
+    for cap in _CAPABILITIES:
+        attr = f"{cap}_api_key"
+        if not getattr(payload, attr) and config:
+            setattr(payload, attr, getattr(config, attr))
+
+    provider_json = merge_provider_json(payload.provider_config, config)
+
+    if config:
+        apply_partial(config, payload, exclude=frozenset({"provider_config"}))
+        config.provider_config = provider_json
+    else:
+        data = payload.model_dump()
+        data["provider_config"] = provider_json
+        config = UserModelConfig(user_id=user.id, **data)
+        db.add(config)
+    db.commit()
+    return _build_config_response(config)

@@ -1,2 +1,9 @@
-export { getDeskAgentConfig, getDeskAgentConfigDefaults, getDeskAgentConfigRecord, saveDeskAgentConfig } from './config'
+export {
+  getDeskAgentConfig,
+  getDeskAgentConfigDefaults,
+  getDeskAgentConfigRecord,
+  getModelConfig,
+  saveDeskAgentConfig,
+  saveModelConfig
+} from './config'
 export { DeskAgentGateway } from './gateway'

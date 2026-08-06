@@ -256,8 +256,9 @@ async def _kick_autonomous_turn(job_id: int, meta: dict[str, Any]) -> None:
 
     dispatcher = MANAGER._dispatchers.get(user_id)
     if dispatcher is None:
-        # User offline — the WS outbox row for ``cron.trigger`` is still
-        # queued, but the autonomous turn has no emitter; drop silently.
+        # User offline — no dispatcher to emit through. The job's
+        # next_run_at was already CAS-advanced, so the next scheduled
+        # interval will re-fire when the user reconnects.
         logger.debug("cron: user offline, skipping autonomous turn", extra={"user_id": user_id, "job_id": job_id})
         return
 

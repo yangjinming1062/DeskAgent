@@ -203,18 +203,63 @@ export interface DeskAgentConfigPutRequest {
 
 export type DeskAgentConfigRecord = Record<string, unknown>
 
-/** LLM model config projected by the `deskagent:model-config:get` IPC.
- *
- * GCS secrets (`gcs_access_key` / `gcs_secret_key` / `gcs_bucket_name`) are
- * intentionally NOT included — they are stripped at the IPC boundary in
- * `main/ipc/auth.cjs::deskagent:model-config:get`. The full object (with GCS
- * fields) lives only in main-process code paths that need it for uploads.
- */
+/** Shape returned by `GET /api/user/model-config`. Contains only the user's
+ * explicitly-set values — empty strings when nothing is stored, so the desktop
+ * UI never sees server-wide defaults. Raw API keys are NEVER returned. */
 export interface ModelConfigResponse {
+  llm_base_url: string
   llm_api_key_fingerprint: string
   llm_api_key_set: boolean
-  llm_base_url: string
   llm_model_name: string
+  stt_base_url: string
+  stt_api_key_set: boolean
+  stt_model_name: string
+  tts_base_url: string
+  tts_api_key_set: boolean
+  tts_model_name: string
+  image_gen_base_url: string
+  image_gen_api_key_set: boolean
+  image_gen_model_name: string
+  video_gen_base_url: string
+  video_gen_api_key_set: boolean
+  video_gen_model_name: string
+  provider_config: ProviderSlotPublic[]
+}
+
+/** Redacted provider slot returned by the backend (no raw api_key). */
+export interface ProviderSlotPublic {
+  name: string
+  base_url: string
+  api_key_set: boolean
+}
+
+/** Writable provider slot for PUT requests. Empty api_key = keep existing. */
+export interface ProviderSlotInput {
+  name: string
+  api_key: string
+  base_url: string
+}
+
+/** Body shape accepted by `PUT /api/user/model-config`. All fields default to
+ * empty string. Empty `*_api_key` = keep existing; empty `*_base_url` /
+ * `*_model_name` = clear (fall back to server default). */
+export interface ModelConfigPutRequest {
+  llm_base_url: string
+  llm_api_key: string
+  llm_model_name: string
+  stt_base_url: string
+  stt_api_key: string
+  stt_model_name: string
+  tts_base_url: string
+  tts_api_key: string
+  tts_model_name: string
+  image_gen_base_url: string
+  image_gen_api_key: string
+  image_gen_model_name: string
+  video_gen_base_url: string
+  video_gen_api_key: string
+  video_gen_model_name: string
+  provider_config: ProviderSlotInput[]
 }
 
 /** Shape returned by `GET /api/insights/overview?days=N`.

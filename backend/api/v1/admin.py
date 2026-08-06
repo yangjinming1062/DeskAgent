@@ -1,5 +1,3 @@
-import json
-
 from common import get_or_404
 from common import get_router
 from common import list_response
@@ -21,6 +19,7 @@ from modules.auth import UserModelConfigListResponse
 from modules.auth import UserModelConfigRequest
 from modules.auth import UserResponse
 from modules.auth import UserUpdate
+from services.llm import merge_provider_json
 from sqlalchemy.orm import Session
 
 router = get_router()
@@ -103,19 +102,6 @@ def _config_list_item(r: UserModelConfig) -> UserModelConfigListItem:
     )
 
 
-def _merged_provider_json(payload: UserModelConfigRequest, existing: UserModelConfig | None) -> str:
-    # An empty api_key keeps the existing key for that provider — the admin
-    # can't see the raw value, so "leave blank" must mean "no change".
-    prev = {s["name"]: s.get("api_key", "") for s in json.loads(existing.provider_config or "[]")} if existing else {}
-    out = []
-    for slot in payload.provider_config:
-        d = slot.model_dump()
-        if not d.get("api_key") and d["name"] in prev:
-            d["api_key"] = prev[d["name"]]
-        out.append(d)
-    return json.dumps(out)
-
-
 @router.get("/model-configs", response_model=UserModelConfigListResponse)
 def list_model_configs(_admin: str = Depends(get_current_admin_token), db: Session = Depends(get_db)) -> UserModelConfigListResponse:
     return UserModelConfigListResponse(items=[_config_list_item(r) for r in db.query(UserModelConfig).all()])
@@ -125,7 +111,7 @@ def list_model_configs(_admin: str = Depends(get_current_admin_token), db: Sessi
 def upsert_model_config(user_id: int, payload: UserModelConfigRequest, _admin: str = Depends(get_current_admin_token), db: Session = Depends(get_db)) -> dict:
     get_or_404(db, User, id=user_id, detail="用户不存在。")
     config = db.query(UserModelConfig).filter(UserModelConfig.user_id == user_id).one_or_none()
-    provider_json = _merged_provider_json(payload, config)
+    provider_json = merge_provider_json(payload.provider_config, config)
     if config:
         apply_partial(config, payload, exclude=frozenset({"provider_config"}))
         config.provider_config = provider_json

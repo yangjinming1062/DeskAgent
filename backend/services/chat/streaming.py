@@ -108,11 +108,6 @@ async def _stream_llm_response(
 ) -> _LLMTurnResult:
     """One LLM call: stream text + accumulate tool calls + capture usage.
 
-    Owns the reasoning queue + drain task scoped inside this function so
-    the inner ``try/finally`` guarantees the drain task is shut down and
-    awaited before we return; leaving it alive across iterations would
-    orphan it on ``LLMRuntimeError``.
-
     ``on_first_chunk`` fires exactly once after the first chunk ships to
     the emitter — the fallback dispatcher uses this to decide whether
     provider failure can still trigger fallback (no chunks emitted) or

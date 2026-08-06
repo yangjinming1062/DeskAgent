@@ -85,12 +85,19 @@ class UserModelConfigResponse(BaseModel):
     provider_config: list[ProviderSlotPublic]
 
 
-class UserModelConfigRequest(BaseModel):
+class _UserModelConfigBase(BaseModel):
+    """Shared per-capability fields for admin and self-service requests.
+
+    Every field defaults to ``""`` so the user can clear any capability.
+    ``UserModelConfigRequest`` (admin) tightens the 3 ``llm_*`` fields to
+    ``min_length=1``.
+    """
+
     model_config = ConfigDict(extra="forbid")
 
-    llm_base_url: str = Field(min_length=1, max_length=255)
-    llm_api_key: str = Field(min_length=1, max_length=255)
-    llm_model_name: str = Field(min_length=1, max_length=128)
+    llm_base_url: str = Field(default="", max_length=255)
+    llm_api_key: str = Field(default="", max_length=255)
+    llm_model_name: str = Field(default="", max_length=128)
     stt_base_url: str = Field(default="", max_length=255)
     stt_api_key: str = Field(default="", max_length=255)
     stt_model_name: str = Field(default="", max_length=128)
@@ -104,6 +111,25 @@ class UserModelConfigRequest(BaseModel):
     video_gen_api_key: str = Field(default="", max_length=255)
     video_gen_model_name: str = Field(default="", max_length=128)
     provider_config: list[ProviderSlot] = Field(default_factory=list)
+
+
+class UserModelConfigRequest(_UserModelConfigBase):
+    """Admin model config — LLM credentials are required (``min_length=1``)."""
+
+    llm_base_url: str = Field(min_length=1, max_length=255)
+    llm_api_key: str = Field(min_length=1, max_length=255)
+    llm_model_name: str = Field(min_length=1, max_length=128)
+
+
+class UserModelConfigSelfRequest(_UserModelConfigBase):
+    """User self-service model config — all fields optional.
+
+    Empty ``api_key`` means "keep existing" (the GET endpoint never returns
+    raw keys, so the user cannot re-type the current value). Empty
+    ``base_url`` / ``model_name`` means "clear — use server default".
+    """
+
+    pass
 
 
 class UserModelConfigListItem(BaseModel):
