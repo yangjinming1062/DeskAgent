@@ -46,6 +46,7 @@
       "../payload/runner/",
       "../payload/skills",
       "../payload/voices",
+      "../payload/onboarding-audio",
       "../payload/config.yaml",
       "../payload/.staging.json",
       "../payload/desktop/.gitkeep",

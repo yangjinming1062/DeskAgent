@@ -40,6 +40,7 @@ BUNDLED_RUNNER_DIR_ARG=""
 BUNDLED_DESKTOP_DIR_ARG=""
 BUNDLED_SKILLS_DIR_ARG=""
 BUNDLED_VOICES_DIR_ARG=""
+BUNDLED_ONBOARDING_AUDIO_DIR_ARG=""
 CONFIG_PATH_ARG=""
 
 MODE="stage"     # "manifest" | "stage"
@@ -58,7 +59,8 @@ Usage:
       [--bundled-runner-dir PATH] \\
       [--bundled-desktop-dir PATH] \\
       [--bundled-skills-dir PATH] \\
-      [--bundled-voices-dir PATH] \\
+      [--bundled-voices-dir PATH] \
+      [--bundled-onboarding-audio-dir PATH] \\
       [--config-path PATH]
 
 Stages: welcome, install-python, unpack-runner, unpack-desktop, install-skills, write-config.
@@ -76,6 +78,7 @@ while [[ $# -gt 0 ]]; do
     --bundled-desktop-dir)        BUNDLED_DESKTOP_DIR_ARG="$2"; shift 2 ;;
     --bundled-skills-dir)         BUNDLED_SKILLS_DIR_ARG="$2"; shift 2 ;;
     --bundled-voices-dir)         BUNDLED_VOICES_DIR_ARG="$2"; shift 2 ;;
+    --bundled-onboarding-audio-dir) BUNDLED_ONBOARDING_AUDIO_DIR_ARG="$2"; shift 2 ;;
     --config-path)                CONFIG_PATH_ARG="$2"; shift 2 ;;
     -h|--help)                    usage; exit 0 ;;
     *)                            echo "unknown arg: $1" >&2; exit 2 ;;
@@ -96,6 +99,7 @@ BUNDLED_RUNNER_DIR="${DESKAGENT_BUNDLED_RUNNER_DIR:-$BUNDLED_RUNNER_DIR_ARG}"
 BUNDLED_DESKTOP_DIR="${DESKAGENT_BUNDLED_DESKTOP_DIR:-$BUNDLED_DESKTOP_DIR_ARG}"
 BUNDLED_SKILLS_DIR="${DESKAGENT_BUNDLED_SKILLS_DIR:-$BUNDLED_SKILLS_DIR_ARG}"
 BUNDLED_VOICES_DIR="${DESKAGENT_BUNDLED_VOICES_DIR:-$BUNDLED_VOICES_DIR_ARG}"
+BUNDLED_ONBOARDING_AUDIO_DIR="${DESKAGENT_BUNDLED_ONBOARDING_AUDIO_DIR:-$BUNDLED_ONBOARDING_AUDIO_DIR_ARG}"
 CONFIG_PATH="${DESKAGENT_CONFIG_PATH:-$CONFIG_PATH_ARG}"
 DESKTOP_FORMAT="${DESKAGENT_INSTALLER_FORMAT:-$DEFAULT_DESKTOP_FORMAT}"
 
@@ -326,10 +330,25 @@ stage_unpack_runner() {
     shopt -u nullglob
   fi
 
+  # Copy bundled onboarding guidance audio — language subdirs (zh/, en/, …) map
+  # 1:1 to $DESKAGENT_HOME/audio/onboarding/<lang>/.
+  local audio_count=0
+  if [[ -n "$BUNDLED_ONBOARDING_AUDIO_DIR" && -d "$BUNDLED_ONBOARDING_AUDIO_DIR" ]]; then
+    for lang_dir in "$BUNDLED_ONBOARDING_AUDIO_DIR"/*/; do
+      [[ -d "$lang_dir" ]] || continue
+      local lang
+      lang=$(basename "$lang_dir")
+      local audio_target="$DESKAGENT_HOME_RESOLVED/audio/onboarding/$lang"
+      mkdir -p "$audio_target"
+      cp -R "$lang_dir"/. "$audio_target"/
+    done
+    audio_count=$(find "$DESKAGENT_HOME_RESOLVED/audio/onboarding" -name '*.mp3' -type f | wc -l | tr -d ' ')
+  fi
+
   local size
   size=$(stat -c%s "$wheel" 2>/dev/null || stat -f%z "$wheel" 2>/dev/null || echo 0)
-  printf '{"ok": true, "stage": "unpack-runner", "data": {"venv": "%s/runner/.venv", "wheel": "%s", "size_bytes": %s, "voices_copied": %s}}\n' \
-    "$DESKAGENT_HOME_RESOLVED" "$(basename "$wheel")" "$size" "$voice_count"
+  printf '{"ok": true, "stage": "unpack-runner", "data": {"venv": "%s/runner/.venv", "wheel": "%s", "size_bytes": %s, "voices_copied": %s, "onboarding_audio_copied": %s}}\n' \
+    "$DESKAGENT_HOME_RESOLVED" "$(basename "$wheel")" "$size" "$voice_count" "$audio_count"
 }
 
 # --- stage 4: unpack-desktop ------------------------------------------------
