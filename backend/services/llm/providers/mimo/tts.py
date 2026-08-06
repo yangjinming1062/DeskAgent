@@ -27,6 +27,7 @@ class MiMoTTSProvider(TTSProvider):
 
     provider_name = "mimo"
     DEFAULT_MODELS: ClassVar[dict[str, str]] = {"tts": "mimo-v2.5-tts"}
+    DEFAULT_CONTEXT_TOKENS: ClassVar[dict[str, int]] = {"tts": 8_000}
     VOICE_DESIGN_GUIDE = """\
 关键维度（不需要面面俱到）：
 • 性别与年龄：如"二十多岁的年轻女性"、"五十岁的中年男性"

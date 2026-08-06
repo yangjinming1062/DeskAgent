@@ -16,6 +16,8 @@ from ..llm import compress_history_if_needed
 from ..llm import execute_with_fallback
 from ..llm import LLMRuntimeError
 from ..llm import MissingLlmConfigError
+from ..llm import resolve_context_tokens
+from ..llm import ServiceType
 from ..tools import schema_name
 from ..tools import ToolCallGuardrailController
 from .chat_emitter import Emitter
@@ -153,12 +155,18 @@ async def run_chat_turn(
                 if client is None:
                     raise RuntimeError(f"provider {provider.provider_name} is not OpenAI-compatible")
                 model_for_slot = inputs.model_override or provider.config.model
+                # Renderer-pinned window wins; else re-resolve so a
+                # fallback provider's smaller default applies.
+                if inputs.context_tokens_override is not None:
+                    slot_ctx_length = inputs.ctx_length
+                else:
+                    slot_ctx_length = resolve_context_tokens(provider.provider_name, ServiceType.llm)
                 return await _stream_llm_response(
                     emitter,
                     model_for_slot,
                     current_messages,
                     active_schemas,
-                    inputs.ctx_length,
+                    slot_ctx_length,
                     client,
                     on_first_chunk=set_stream_emitted,
                 )

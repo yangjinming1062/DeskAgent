@@ -265,6 +265,48 @@ class TestDefaultModels:
         assert default_model_for("zhipu", "video_gen") == ""
 
 
+class TestDefaultContextTokens:
+    # Mirror of TestDefaultModels for the CONTEXT_TOKENS table; 0 means
+    # "no default published" so the resolver falls through.
+
+    def test_default_context_tokens_published(self):
+        from services.llm import default_context_tokens_for
+
+        assert default_context_tokens_for("mimo", "llm") == 1_000_000
+        assert default_context_tokens_for("mimo", "stt") == 8_000
+        assert default_context_tokens_for("mimo", "tts") == 8_000
+        assert default_context_tokens_for("mimo", "image_gen") == 8_000
+        assert default_context_tokens_for("minimax", "llm") == 1_000_000
+        assert default_context_tokens_for("minimax", "tts") == 8_000
+        assert default_context_tokens_for("minimax", "image_gen") == 8_000
+        assert default_context_tokens_for("minimax", "video_gen") == 8_000
+        assert default_context_tokens_for("gemini", "llm") == 1_000_000
+        assert default_context_tokens_for("gemini", "stt") == 8_000
+        assert default_context_tokens_for("gemini", "tts") == 8_000
+        assert default_context_tokens_for("gemini", "image_gen") == 8_000
+        assert default_context_tokens_for("zhipu", "llm") == 1_000_000
+        assert default_context_tokens_for("zhipu", "stt") == 8_000
+        assert default_context_tokens_for("zhipu", "tts") == 8_000
+        assert default_context_tokens_for("zhipu", "image_gen") == 8_000
+
+    def test_unsupported_cap_returns_zero(self):
+        from services.llm import default_context_tokens_for
+
+        # mimo doesn't register video_gen.
+        assert default_context_tokens_for("mimo", "video_gen") == 0
+        # minimax doesn't register stt.
+        assert default_context_tokens_for("minimax", "stt") == 0
+        # gemini doesn't register video_gen.
+        assert default_context_tokens_for("gemini", "video_gen") == 0
+        # zhipu doesn't register video_gen.
+        assert default_context_tokens_for("zhipu", "video_gen") == 0
+
+    def test_unknown_provider_returns_zero(self):
+        from services.llm import default_context_tokens_for
+
+        assert default_context_tokens_for("not-a-provider", "llm") == 0
+
+
 class TestProvidersSupporting:
     def test_supporting_providers_for_each_capability(self):
         from services.llm import providers_supporting
@@ -1162,3 +1204,53 @@ class TestPerUserProviderChain:
         monkeypatch.setattr("components.SETTINGS.minimax_api_key", "sk-mm")
         chain = resolve_provider_chain(None, None, "llm")
         assert [c.provider_name for c in chain] == ["mimo", "minimax"]
+
+
+class TestResolveUserLlmConfigCredentials:
+    # Credentials must come from chain[0] — not the stale per-cap row.
+
+    _EMPTY = TestProviderChain._EMPTY_DEFAULTS
+
+    def _reset(self, monkeypatch):
+        for field, default in self._EMPTY.items():
+            monkeypatch.setattr(f"components.SETTINGS.{field}", default)
+
+    def test_tier1_provider_config_drives_credentials(self, _patch_db, monkeypatch):
+        from services.llm import resolve_user_llm_config
+
+        self._reset(monkeypatch)
+        monkeypatch.setattr("components.SETTINGS.providers", ["mimo", "minimax"])
+        monkeypatch.setattr("components.SETTINGS.mimo_api_key", "sk-global-mimo")
+        monkeypatch.setattr("components.SETTINGS.minimax_api_key", "sk-global-mm")
+        # User has tier 1 only — no per-cap llm_* row, so the chain slot's
+        # default model (``default_model_for("minimax", "llm")``) wins.
+        _, SessionLocal = _patch_db
+        with SessionLocal() as db:
+            from modules.auth import User, UserModelConfig, hash_password
+
+            user = User(username="u", password_hash=hash_password("p1234567"), is_active=True, can_use=True)
+            db.add(user)
+            db.commit()
+            db.refresh(user)
+            db.add(
+                UserModelConfig(
+                    user_id=user.id,
+                    provider_config=json.dumps([{"name": "minimax", "api_key": "sk-user-mm", "base_url": "https://user-mm.example/v1"}]),
+                )
+            )
+            db.commit()
+            cfg = resolve_user_llm_config(db, user.id)
+
+        assert cfg["provider_name"] == "minimax"
+        assert cfg["api_key"] == "sk-user-mm"
+        assert cfg["base_url"] == "https://user-mm.example/v1"
+        assert cfg["model_name"] == "MiniMax-Text-01"
+
+    def test_empty_chain_returns_empty_credentials(self, monkeypatch):
+        # Empty chain → all-empty dict so schedulers' falsy skip fires.
+        from services.llm import resolve_user_llm_config
+
+        self._reset(monkeypatch)
+        monkeypatch.setattr("components.SETTINGS.providers", [])
+        cfg = resolve_user_llm_config(None, None)
+        assert cfg == {"api_key": "", "base_url": "", "model_name": "", "provider_name": ""}

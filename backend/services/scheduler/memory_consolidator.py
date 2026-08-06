@@ -16,7 +16,9 @@ from sqlalchemy.orm import Session
 from ..companion import memory_admin
 from ..llm import call_with_retry
 from ..llm import client_for_config
+from ..llm import resolve_context_tokens
 from ..llm import resolve_user_llm_config
+from ..llm import ServiceType
 
 logger = get_logger(__name__)
 
@@ -81,9 +83,13 @@ async def maybe_consolidate_one_user(user_id: int) -> bool:
 
     try:
         client = client_for_config(llm_cfg)
+        provider_name = llm_cfg.get("provider_name", "")
+        if not provider_name:
+            logger.warning("memory_consolidator: empty provider_name", extra={"user_id": user_id})
+        context_length = resolve_context_tokens(provider_name, ServiceType.llm)
         resp = await call_with_retry(
             client,
-            context_length=128000,
+            context_length=context_length,
             model=llm_cfg["model_name"],
             messages=[
                 {"role": "system", "content": _CONSOLIDATE_PROMPT},

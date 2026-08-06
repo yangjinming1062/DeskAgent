@@ -15,6 +15,7 @@ class ZhipuSTTProvider(STTProvider):
 
     provider_name = "zhipu"
     DEFAULT_MODELS: ClassVar[dict[str, str]] = {"stt": "glm-asr-2512"}
+    DEFAULT_CONTEXT_TOKENS: ClassVar[dict[str, int]] = {"stt": 8_000}
 
     def __init__(self, config: ProviderConfig) -> None:
         super().__init__(config)

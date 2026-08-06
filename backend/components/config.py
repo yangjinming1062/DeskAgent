@@ -8,6 +8,8 @@ from pydantic_settings import BaseSettings
 from pydantic_settings import NoDecode
 from pydantic_settings import SettingsConfigDict
 
+from .functions import coerce_int
+
 
 class Settings(BaseSettings):
     # ── Runtime ──
@@ -54,6 +56,7 @@ class Settings(BaseSettings):
     llm_base_url: str = ""
     llm_api_key: str = Field(default="", validation_alias=AliasChoices("LLM_API_KEY", "MIMO_KEY"))
     llm_model_name: str = ""
+    llm_context_tokens: int | None = Field(default=None, gt=0)
     llm_request_timeout_seconds: float = 300.0
     llm_max_retry_attempts: int = 3
     llm_base_retry_delay: float = 5.0
@@ -64,24 +67,28 @@ class Settings(BaseSettings):
     stt_base_url: str = ""
     stt_api_key: str = ""
     stt_model_name: str = ""
+    stt_context_tokens: int | None = Field(default=None, gt=0)
 
     # ── TTS (text-to-speech) ──
     tts_provider: str = ""
     tts_base_url: str = ""
     tts_api_key: str = ""
     tts_model_name: str = ""
+    tts_context_tokens: int | None = Field(default=None, gt=0)
 
     # ── Image Gen ──
     image_gen_provider: str = ""
     image_gen_base_url: str = ""
     image_gen_api_key: str = ""
     image_gen_model_name: str = ""
+    image_gen_context_tokens: int | None = Field(default=None, gt=0)
 
     # ── Video Gen ──
     video_gen_provider: str = ""
     video_gen_base_url: str = ""
     video_gen_api_key: str = ""
     video_gen_model_name: str = ""
+    video_gen_context_tokens: int | None = Field(default=None, gt=0)
     video_gen_poll_interval_seconds: float = 5.0
     video_gen_max_poll_seconds: float = 900.0
     video_gen_tool_wait_seconds: float = 180.0
@@ -97,6 +104,10 @@ class Settings(BaseSettings):
     ipc_future_timeout_seconds: float = 300.0
     compression_consent_timeout_seconds: float = 300.0
     chat_active_window_minutes: int = 30
+
+    # Terminal fallback for ``resolve_context_tokens`` when neither the per-cap
+    # env override nor the provider's DEFAULT_CONTEXT_TOKENS applies.
+    default_llm_context_tokens: int = Field(default=1_000_000, gt=0)
 
     # ── Rate limiting ──
     rate_limit_enabled: bool = True
@@ -126,6 +137,22 @@ class Settings(BaseSettings):
         if isinstance(v, str):
             return [p.strip() for p in v.split(",") if p.strip()]
         return v
+
+    # ``.env`` blank keys must collapse to None rather than tripping
+    # ``Field(gt=0)``; 0/negative collapse the same way since no model
+    # publishes a 0-token window.
+    @field_validator(
+        "llm_context_tokens",
+        "stt_context_tokens",
+        "tts_context_tokens",
+        "image_gen_context_tokens",
+        "video_gen_context_tokens",
+        mode="before",
+    )
+    @classmethod
+    def _coerce_optional_positive_int(cls, v):
+        coerced = coerce_int(v, None)
+        return None if coerced is None or coerced <= 0 else coerced
 
 
 SETTINGS = Settings()

@@ -23,6 +23,7 @@ class ZhipuImageGenProvider(ImageGenProvider):
 
     provider_name = "zhipu"
     DEFAULT_MODELS: ClassVar[dict[str, str]] = {"image_gen": "glm-image"}
+    DEFAULT_CONTEXT_TOKENS: ClassVar[dict[str, int]] = {"image_gen": 8_000}
 
     def __init__(self, config: ProviderConfig) -> None:
         super().__init__(config)

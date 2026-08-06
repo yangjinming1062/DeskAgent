@@ -11,6 +11,14 @@ _REGISTRY: dict[tuple[ServiceType, str], type[BaseProvider]] = {}
 # `default_model_for()`. Per-cap `*_MODEL_NAME` env overrides win at resolve.
 _PROVIDER_DEFAULT_MODELS: dict[str, dict[str, str]] = {}
 
+# provider_name → service_type → default CONTEXT_TOKENS. Populated at
+# register() time from each provider class's `DEFAULT_CONTEXT_TOKENS`
+# ClassVar; looked up by `default_context_tokens_for()`. The global
+# ``SETTINGS.default_llm_context_tokens`` fallback is applied by the
+# ``resolve_context_tokens`` wrapper in ``providers/__init__.py`` — this
+# cache stays a pure lookup table.
+_PROVIDER_DEFAULT_CONTEXT_TOKENS: dict[str, dict[str, int]] = {}
+
 # Provider families DeskAgent ships. ``*_PROVIDER`` env vars must be one
 # of these; adding a new family means registering its classes AND extending
 # the dicts below.
@@ -70,6 +78,8 @@ def register(service_type: ServiceType, provider_name: str, cls: type[BaseProvid
     # don't need to know about individual provider classes.
     for svc, model in getattr(cls, "DEFAULT_MODELS", {}).items():
         _PROVIDER_DEFAULT_MODELS.setdefault(provider_name, {})[svc] = model
+    for svc, ctx in getattr(cls, "DEFAULT_CONTEXT_TOKENS", {}).items():
+        _PROVIDER_DEFAULT_CONTEXT_TOKENS.setdefault(provider_name, {})[svc] = ctx
 
 
 def resolve(service_type: ServiceType, provider_name: str) -> type[BaseProvider]:
@@ -94,6 +104,12 @@ def default_model_for(provider: str, service_type: str) -> str:
     to `SETTINGS.<svc>_model_name` or the chain terminal.
     """
     return _PROVIDER_DEFAULT_MODELS.get(provider, {}).get(service_type, "")
+
+
+def default_context_tokens_for(provider: str, service_type: str) -> int:
+    # 0 signals "no default published" so the resolver can fall through
+    # to its terminal fallback. Caller decides what 0 means.
+    return _PROVIDER_DEFAULT_CONTEXT_TOKENS.get(provider, {}).get(service_type, 0)
 
 
 def providers_supporting(service_type: ServiceType | str) -> list[str]:

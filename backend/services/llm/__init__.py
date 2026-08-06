@@ -16,6 +16,7 @@ from .llm_retry import LLMRuntimeError
 from .providers import aclose_all
 from .providers import BaseProvider
 from .providers import ChatProvider
+from .providers import default_context_tokens_for
 from .providers import default_model_for
 from .providers import ImageAsset
 from .providers import ImageGenProvider
@@ -26,6 +27,7 @@ from .providers import ProviderError
 from .providers import providers_supporting
 from .providers import register
 from .providers import resolve
+from .providers import resolve_context_tokens
 from .providers import ServiceType
 from .providers import STTProvider
 from .providers import STTResult
@@ -79,8 +81,10 @@ __all__ = [
     "ServiceType",
     "register",
     "resolve",
+    "resolve_context_tokens",
     "try_resolve",
     "providers_supporting",
+    "default_context_tokens_for",
     "default_model_for",
     "call_with_retry",
     "LLMRuntimeError",

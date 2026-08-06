@@ -104,6 +104,8 @@ backend/
 
 `PROVIDERS` env（逗号分隔）声明可用 provider 的优先级顺序。每个 provider 有自己的 `{NAME}_API_KEY` 和可选 `{NAME}_BASE_URL`，覆盖在该 provider 涉及的每个能力上。**provider 自带的默认 MODEL_NAME** 通过每个 provider 类的 `DEFAULT_MODELS: ClassVar[dict[str, str]]` 声明，注册时 `registry.register()` 同步进 `_PROVIDER_DEFAULT_MODELS`——resolve 链不需 import 每个 provider 类就能拿到默认 model。
 
+**provider 自带的默认 CONTEXT_TOKENS** 同样以 `DEFAULT_CONTEXT_TOKENS: ClassVar[dict[str, int]]` 在每个 provider 类声明，与 `DEFAULT_MODELS` 一一对应（同 `(provider, capability)` 行）。`resolve_context_tokens(provider, service_type)` 三层合并：`<cap>_CONTEXT_TOKENS` env 覆盖 → provider-class 默认 → `SETTINGS.default_llm_context_tokens`（terminal fallback，当前 1_000_000）。每个能力 `*_MODEL_NAME` 旁边的 `*_CONTEXT_TOKENS` 即覆盖窗口用——MODEL 选哪个，CONTEXT_TOKENS 才管多长，两者独立。
+
 两套体系**共存**（用户明确要求）：
 - `PROVIDERS` + `{NAME}_API_KEY` 是面向"一个 provider 覆盖多种能力"的统一凭证
 - 老的 `<svc>_PROVIDER` / `<svc>_API_KEY` / `<svc>_BASE_URL` / `<svc>_MODEL_NAME` 仍是面向"某个具体能力直接配凭证"的定向凭证，**优先级更高**

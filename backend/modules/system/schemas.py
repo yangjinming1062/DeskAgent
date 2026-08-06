@@ -44,7 +44,8 @@ class ChatMessageRequest(BaseModel):
 class ChatRequest(BaseModel):
     session_id: str = Field(pattern=r"^\d+$")
     message: ChatMessageRequest
-    model: str | None = None  # Optional override
+    model: str | None = None  # Optional override; pair with context_tokens when the override model's window differs from the provider default
+    context_tokens: int | None = Field(default=None, gt=0)
     client_context: ChatRequestClientContext | None = None
     tools: list[dict] | None = None
 

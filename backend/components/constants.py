@@ -1,22 +1,4 @@
 # ── LLM & Context Window ──────────────────────────────────────────────
-# Fallback context window (tokens) when model not in hints below.
-DEFAULT_LLM_CONTEXT_TOKENS: int = 200_000
-
-# Model-name substring → context-window-size mapping. Used to pick the
-# right window for truncation / compression decisions.
-MODEL_CONTEXT_TOKEN_HINTS: dict[str, int] = {
-    "mimo-v2.5-pro": 1_000_000,
-    "mimo-v2.5": 1_000_000,
-    "mimo-v2.5-asr": 8_000,
-    "mimo-v2.5-tts": 8_000,
-    "mimo-v2.5-tts-voiceclone": 8_000,
-    "mimo-v2.5-tts-voicedesign": 8_000,
-}
-
-# Longest-first sorted keys so "gpt-4o-mini" doesn't shadow under
-# a shorter "gpt-4o" during substring matching.
-MODEL_CONTEXT_HINT_KEYS: tuple[str, ...] = tuple(sorted(MODEL_CONTEXT_TOKEN_HINTS, key=len, reverse=True))
-
 # ~4 chars/token — heuristic used by chat loop and context compressor.
 CHARS_PER_TOKEN: int = 4
 

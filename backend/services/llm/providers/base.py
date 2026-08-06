@@ -47,6 +47,8 @@ class BaseProvider(ABC):
     # class. Subclasses populate the keys for capabilities they implement;
     # absent keys fall back to ``SETTINGS.<svc>_model_name``.
     DEFAULT_MODELS: ClassVar[dict[str, str]] = {}
+    # Per-capability default CONTEXT_TOKENS paired with DEFAULT_MODELS rows.
+    DEFAULT_CONTEXT_TOKENS: ClassVar[dict[str, int]] = {}
 
     def __init__(self, config: ProviderConfig) -> None:
         self.config = config

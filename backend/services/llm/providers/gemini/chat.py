@@ -15,3 +15,4 @@ class GeminiChatProvider(OpenAICompatChatProvider):
     service_type = ServiceType.llm
     PROMPT_FAMILY: ClassVar[str] = "google"
     DEFAULT_MODELS: ClassVar[dict[str, str]] = {"llm": "gemini-3.6-flash"}
+    DEFAULT_CONTEXT_TOKENS: ClassVar[dict[str, int]] = {"llm": 1_000_000}

@@ -320,7 +320,7 @@ async def test_consolidator_replaces_old_rows(seeded, monkeypatch):
 
     monkeypatch.setattr(memory_consolidator, "client_for_config", lambda cfg: object())
     monkeypatch.setattr(memory_consolidator, "call_with_retry", fake_call_with_retry)
-    monkeypatch.setattr(memory_consolidator, "resolve_user_llm_config", lambda db, uid: {"api_key": "x", "base_url": "y", "model_name": "z"})
+    monkeypatch.setattr(memory_consolidator, "resolve_user_llm_config", lambda db, uid: {"api_key": "x", "base_url": "y", "model_name": "z", "provider_name": "mimo"})
 
     ran = await memory_consolidator.maybe_consolidate_one_user(1001)
     assert ran is True
@@ -358,7 +358,7 @@ async def test_consolidator_keeps_source_rows_when_all_summaries_empty(seeded, m
 
     monkeypatch.setattr(memory_consolidator, "client_for_config", lambda cfg: object())
     monkeypatch.setattr(memory_consolidator, "call_with_retry", fake_call_with_retry := fake_call)
-    monkeypatch.setattr(memory_consolidator, "resolve_user_llm_config", lambda db, uid: {"api_key": "x", "base_url": "y", "model_name": "z"})
+    monkeypatch.setattr(memory_consolidator, "resolve_user_llm_config", lambda db, uid: {"api_key": "x", "base_url": "y", "model_name": "z", "provider_name": "mimo"})
 
     ran = await memory_consolidator.maybe_consolidate_one_user(1001)
     assert ran is False
