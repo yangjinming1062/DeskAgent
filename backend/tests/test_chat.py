@@ -37,28 +37,6 @@ class TestLLMClient:
         with pytest.raises(KeyError):
             client_for_config({"api_key": "sk-only"})
 
-    def test_mimo_models_in_hints(self):
-        from components import MODEL_CONTEXT_TOKEN_HINTS
-
-        assert "mimo-v2.5-pro" in MODEL_CONTEXT_TOKEN_HINTS
-        assert "mimo-v2.5" in MODEL_CONTEXT_TOKEN_HINTS
-        assert "mimo-v2.5-asr" in MODEL_CONTEXT_TOKEN_HINTS
-        assert "mimo-v2.5-tts" in MODEL_CONTEXT_TOKEN_HINTS
-
-    def test_no_openai_models_in_hints(self):
-        from components import MODEL_CONTEXT_TOKEN_HINTS
-
-        assert "gpt-4o" not in MODEL_CONTEXT_TOKEN_HINTS
-        assert "claude-3-5-sonnet" not in MODEL_CONTEXT_TOKEN_HINTS
-        assert "gemini-1.5-pro" not in MODEL_CONTEXT_TOKEN_HINTS
-
-    def test_context_lengths(self):
-        from components import MODEL_CONTEXT_TOKEN_HINTS
-
-        assert MODEL_CONTEXT_TOKEN_HINTS["mimo-v2.5-pro"] == 1_000_000
-        assert MODEL_CONTEXT_TOKEN_HINTS["mimo-v2.5-asr"] == 8_000
-        assert MODEL_CONTEXT_TOKEN_HINTS["mimo-v2.5-tts"] == 8_000
-
     def test_chat_providers_declare_prompt_family(self):
         from services.llm.providers.base import ServiceType
         from services.llm.providers.registry import resolve
@@ -67,6 +45,68 @@ class TestLLMClient:
         assert resolve(ServiceType.llm, "minimax").PROMPT_FAMILY == "openai"
         assert resolve(ServiceType.llm, "gemini").PROMPT_FAMILY == "google"
         assert resolve(ServiceType.llm, "zhipu").PROMPT_FAMILY == "openai"
+
+
+class TestResolveContextTokens:
+    # Three layers: env override → provider default → terminal fallback.
+
+    def test_per_provider_default_mimo_llm(self):
+        from services.llm import resolve_context_tokens
+
+        assert resolve_context_tokens("mimo", "llm") == 1_000_000
+
+    def test_per_provider_default_gemini_llm(self):
+        from services.llm import resolve_context_tokens
+
+        assert resolve_context_tokens("gemini", "llm") == 1_000_000
+
+    def test_per_provider_default_zhipu_tts(self):
+        from services.llm import resolve_context_tokens
+
+        assert resolve_context_tokens("zhipu", "tts") == 8_000
+
+    def test_env_override_wins(self, monkeypatch):
+        from components import SETTINGS
+        from services.llm import resolve_context_tokens
+
+        monkeypatch.setattr(SETTINGS, "llm_context_tokens", 500_000)
+        assert resolve_context_tokens("mimo", "llm") == 500_000
+
+    def test_env_override_supersedes_global(self, monkeypatch):
+        from components import SETTINGS
+        from services.llm import resolve_context_tokens
+
+        monkeypatch.setattr(SETTINGS, "llm_context_tokens", 250_000)
+        assert resolve_context_tokens("gemini", "llm") == 250_000
+
+    def test_global_fallback_on_unsupported_capability(self, caplog):
+        # Provider publishes no default for the cap → terminal fallback wins
+        # AND a warning surfaces so the silent miss is visible.
+        import logging
+
+        from services.llm import resolve_context_tokens
+
+        with caplog.at_level(logging.WARNING, logger="services.llm.providers"):
+            assert resolve_context_tokens("mimo", "video_gen") == 1_000_000
+        assert any(
+            "no default published" in rec.message and rec.levelno == logging.WARNING
+            for rec in caplog.records
+        )
+
+    def test_none_override_falls_through(self, monkeypatch):
+        from components import SETTINGS
+        from services.llm import resolve_context_tokens
+
+        monkeypatch.setattr(SETTINGS, "llm_context_tokens", None)
+        assert resolve_context_tokens("mimo", "llm") == 1_000_000
+
+    def test_zero_string_override_falls_through(self):
+        # ``.env`` blank/0/non-numeric must collapse to None instead of
+        # tripping Pydantic's ``Field(gt=0)``.
+        from components.config import Settings
+
+        for raw in ("0", "-1", "", "abc"):
+            assert Settings.model_validate({"llm_context_tokens": raw}).llm_context_tokens is None, raw
 
     def test_openai_family_injects_openai_guidance(self):
         from modules.system import AgentPromptConfig
@@ -108,6 +148,36 @@ class TestLLMClient:
         assert _resolve_language("fr") == "zh"
         assert _resolve_language("") == "zh"
         assert _resolve_language("EN") == "en"
+
+    def test_chat_request_accepts_context_tokens_override(self):
+        from modules.system import ChatMessageRequest, ChatRequest
+
+        req = ChatRequest(
+            session_id="1",
+            message=ChatMessageRequest(role="user", content="hi"),
+            model="custom-32k",
+            context_tokens=32_000,
+        )
+        assert req.context_tokens == 32_000
+        assert req.model == "custom-32k"
+
+    def test_turn_inputs_has_context_tokens_override_field(self):
+        from services.chat.turn_inputs import _TurnInputs
+
+        fields = {f.name for f in _TurnInputs.__dataclass_fields__.values()}
+        assert "context_tokens_override" in fields
+        assert "ctx_length" in fields
+
+    def test_orchestrator_honors_context_tokens_override_per_slot(self):
+        # ``is not None`` (not truthy) — schema forbids 0 today but a
+        # future relaxation shouldn't silently drop the override.
+        import inspect
+
+        from services.chat import orchestrator
+
+        src = inspect.getsource(orchestrator.run_chat_turn)
+        assert "inputs.context_tokens_override is not None" in src
+        assert "inputs.ctx_length" in src
 
     def test_volatile_header_localized_for_zh(self):
         from modules.system import AgentPromptConfig

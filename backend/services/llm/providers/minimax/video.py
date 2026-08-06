@@ -66,6 +66,7 @@ class MiniMaxVideoGenProvider(VideoGenProvider):
 
     provider_name = "minimax"
     DEFAULT_MODELS: ClassVar[dict[str, str]] = {"video_gen": "MiniMax-H3"}
+    DEFAULT_CONTEXT_TOKENS: ClassVar[dict[str, int]] = {"video_gen": 8_000}
 
     def __init__(self, config: ProviderConfig) -> None:
         super().__init__(config)

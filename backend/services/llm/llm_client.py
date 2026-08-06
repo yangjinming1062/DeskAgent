@@ -51,16 +51,19 @@ def client_for_user(db: Session, user_id: int) -> AsyncOpenAI:
     return get_async_client(api_key, base_url)
 
 
-def resolve_service_row(db: Session | None, user_id: int | None, prefix: str) -> tuple[str, str, str]:
+def resolve_service_row(db: Session | None, user_id: int | None, prefix: str, *, user_cfg: UserModelConfig | None = None) -> tuple[str, str, str]:
     """Return ``(base_url, api_key, model_name)`` for a service prefix.
 
     DB row wins when present (an explicit user-cleared empty field is
     honored); when no row exists or no user context is available, falls
     back to ``SETTINGS.<prefix>_*``. The renderer-facing handler and the
     provider builder both consult this so the field-shape stays
-    in one place.
+    in one place. ``user_cfg`` lets callers that already loaded the row
+    pass it through instead of re-querying.
     """
-    config = db.query(UserModelConfig).filter(UserModelConfig.user_id == user_id).first() if db is not None and user_id is not None else None
+    config = user_cfg
+    if config is None and db is not None and user_id is not None:
+        config = db.query(UserModelConfig).filter(UserModelConfig.user_id == user_id).first()
     return tuple(getattr(config or SETTINGS, f"{prefix}_{suffix}", "") or "" for suffix in ("base_url", "api_key", "model_name"))
 
 
@@ -178,7 +181,7 @@ def _user_provider_slots(user_cfg: UserModelConfig, service_type: str) -> list[P
     return slots
 
 
-def resolve_provider_chain(db: Session | None, user_id: int | None, service_type: str) -> list[ProviderConfig]:
+def resolve_provider_chain(db: Session | None, user_id: int | None, service_type: str, *, user_cfg: UserModelConfig | None = None) -> list[ProviderConfig]:
     """Resolve the ordered fallback chain for ``service_type``.
 
     Resolution tiers (first provider with both a key and a base_url wins):
@@ -190,13 +193,16 @@ def resolve_provider_chain(db: Session | None, user_id: int | None, service_type
     Tiers 2-4 reuse the per-cap/provider fold-in (``_resolve_slot_config``)
     so legacy single-key deployments keep working unchanged; tier 1 is
     prepended and deduped by provider name. Empty list → the dispatcher
-    raises ``MissingLlmConfigError``.
+    raises ``MissingLlmConfigError``. ``user_cfg`` lets callers that
+    already loaded the row (e.g. ``resolve_user_llm_config``) pass it
+    through to avoid a duplicate ``UserModelConfig`` query.
     """
+    if user_cfg is None:
+        user_cfg = _load_user_config(db, user_id)
     # ``resolve_service_row`` hits the DB; the row is per-user-per-service
     # and identical across chain slots, so hoist once.
-    row = resolve_service_row(db, user_id, service_type)
+    row = resolve_service_row(db, user_id, service_type, user_cfg=user_cfg)
     chain: list[ProviderConfig | None] = []
-    user_cfg = _load_user_config(db, user_id)
     if user_cfg is not None:
         chain.extend(_user_provider_slots(user_cfg, service_type))
     chain.extend(_resolve_slot_config(name, service_type, row) for name in _build_chain_order(service_type))

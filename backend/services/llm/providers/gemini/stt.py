@@ -14,6 +14,7 @@ class GeminiSTTProvider(STTProvider):
 
     provider_name = "gemini"
     DEFAULT_MODELS: ClassVar[dict[str, str]] = {"stt": "gemini-2.5-flash"}
+    DEFAULT_CONTEXT_TOKENS: ClassVar[dict[str, int]] = {"stt": 8_000}
 
     def __init__(self, config: ProviderConfig) -> None:
         super().__init__(config)

@@ -2,9 +2,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from components import DEFAULT_LANGUAGE
-from components import DEFAULT_LLM_CONTEXT_TOKENS
-from components import MODEL_CONTEXT_HINT_KEYS
-from components import MODEL_CONTEXT_TOKEN_HINTS
+from components import get_logger
 from components import safe_json_loads
 from components import SESSION_TO_GLOBAL_KEY_ALIASES
 from modules.auth import ChatRequestClientContext
@@ -22,12 +20,16 @@ from ..companion import format_auto_inject_block
 from ..gateway import RuntimeSession
 from ..llm import MissingLlmConfigError
 from ..llm import provider_for_service
+from ..llm import resolve_context_tokens
+from ..llm import ServiceType
 from ..tools import NativeMemory
 from ..tools import REGISTRY
 from ..tools import schema_name
 from .system_prompt import build_system_prompt
 from .system_prompt import STEER_MARKER_CLOSE
 from .system_prompt import STEER_MARKER_OPEN
+
+logger = get_logger(__name__)
 
 
 @dataclass(frozen=True)
@@ -42,16 +44,9 @@ class _TurnInputs:
     model_name: str
     model_override: str | None
     ctx_length: int
+    context_tokens_override: int | None
     all_schemas: list[dict]
     first_user_msg_content: str | None
-
-
-def _estimate_context_length(model_name: str) -> int:
-    lower = (model_name or "").lower()
-    for needle in MODEL_CONTEXT_HINT_KEYS:
-        if needle in lower:
-            return MODEL_CONTEXT_TOKEN_HINTS[needle]
-    return DEFAULT_LLM_CONTEXT_TOKENS
 
 
 def load_user_settings(db: Session, user_id: int) -> dict[str, str]:
@@ -135,7 +130,17 @@ def _build_turn_inputs(
     if client is None:
         raise MissingLlmConfigError(f"llm provider '{provider.provider_name}' is not OpenAI-compatible")
     model_name = req.model or provider.config.model
-    ctx_length = _estimate_context_length(model_name)
+    if req.context_tokens is not None:
+        ctx_length = req.context_tokens
+    else:
+        if req.model and req.model != provider.config.model:
+            # Renderer overrode the model but didn't pin the window — warn
+            # so a budget mismatch surfaces in logs.
+            logger.warning(
+                "request model override without context_tokens",
+                extra={"provider": provider.provider_name, "request_model": req.model},
+            )
+        ctx_length = resolve_context_tokens(provider.provider_name, ServiceType.llm)
 
     identity_prompt = db.query(UserSetting.setting_value).filter(UserSetting.user_id == user_id, UserSetting.setting_key == "identity_prompt").scalar()
 
@@ -171,6 +176,7 @@ def _build_turn_inputs(
         model_name=model_name,
         model_override=req.model,
         ctx_length=ctx_length,
+        context_tokens_override=req.context_tokens,
         all_schemas=all_schemas,
         first_user_msg_content=first_user_msg_content,
     )

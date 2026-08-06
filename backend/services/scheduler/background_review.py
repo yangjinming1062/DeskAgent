@@ -5,6 +5,8 @@ from components import session_scope
 from ..chat import safe_emit
 from ..llm import call_with_retry
 from ..llm import client_for_config
+from ..llm import resolve_context_tokens
+from ..llm import ServiceType
 from ..tools import NativeMemory
 from ..tools import RETAIN_SCHEMA
 
@@ -87,7 +89,13 @@ async def run_background_memory_review(
             native_memory = NativeMemory(db, user_id)
             schemas = [RETAIN_SCHEMA]
 
-            response = await call_with_retry(client, context_length=128000, model=model_name, messages=messages, tools=schemas, stream=False, max_tokens=500)
+            provider_name = llm_config.get("provider_name", "")
+            if not provider_name:
+                # Resolver will fall through to the global default; warn so a
+                # misconfigured chain doesn't silently use a 1M budget.
+                logger.warning("background_review: empty provider_name", extra={"user_id": user_id})
+            context_length = resolve_context_tokens(provider_name, ServiceType.llm)
+            response = await call_with_retry(client, context_length=context_length, model=model_name, messages=messages, tools=schemas, stream=False, max_tokens=500)
             if response.choices and response.choices[0].message.tool_calls:
                 for tc in response.choices[0].message.tool_calls:
                     fn = tc.function

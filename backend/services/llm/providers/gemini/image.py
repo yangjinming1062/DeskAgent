@@ -21,6 +21,7 @@ class GeminiImageGenProvider(ImageGenProvider):
 
     provider_name = "gemini"
     DEFAULT_MODELS: ClassVar[dict[str, str]] = {"image_gen": "gemini-2.5-flash-image"}
+    DEFAULT_CONTEXT_TOKENS: ClassVar[dict[str, int]] = {"image_gen": 8_000}
     supports_reference_image: ClassVar[bool] = True
 
     def __init__(self, config: ProviderConfig) -> None:

@@ -14,7 +14,6 @@ from .constants import CHARS_PER_TOKEN
 from .constants import CONTEXT_SUMMARY_HEADROOM_FACTOR
 from .constants import DEFAULT_INSIGHTS_DAYS
 from .constants import DEFAULT_LANGUAGE
-from .constants import DEFAULT_LLM_CONTEXT_TOKENS
 from .constants import DEFAULT_SESSION_TITLE
 from .constants import JSON_RPC_VERSION
 from .constants import JSONRPC_INTERNAL_ERROR
@@ -35,8 +34,6 @@ from .constants import MEMORY_CONSOLIDATE_TARGET_ROWS
 from .constants import MEMORY_CONSOLIDATE_TRIGGER_ROWS
 from .constants import MEMORY_CONSOLIDATE_WINDOW_ROWS
 from .constants import MEMORY_RECALL_MAX_RESULTS
-from .constants import MODEL_CONTEXT_HINT_KEYS
-from .constants import MODEL_CONTEXT_TOKEN_HINTS
 from .constants import MS_PER_HOUR
 from .constants import REDACT_PHONE_DIGIT_THRESHOLD
 from .constants import RUNTIME_CHECK_TIMEOUT_SECONDS
@@ -123,7 +120,6 @@ __all__ = [
     "CHARS_PER_TOKEN",
     "CONTEXT_SUMMARY_HEADROOM_FACTOR",
     "DEFAULT_INSIGHTS_DAYS",
-    "DEFAULT_LLM_CONTEXT_TOKENS",
     "DEFAULT_SESSION_TITLE",
     "DEFAULT_LANGUAGE",
     "JSON_RPC_VERSION",
@@ -145,8 +141,6 @@ __all__ = [
     "MEMORY_CONSOLIDATE_TRIGGER_ROWS",
     "MEMORY_CONSOLIDATE_WINDOW_ROWS",
     "MEMORY_RECALL_MAX_RESULTS",
-    "MODEL_CONTEXT_HINT_KEYS",
-    "MODEL_CONTEXT_TOKEN_HINTS",
     "MS_PER_HOUR",
     "REDACT_PHONE_DIGIT_THRESHOLD",
     "RUNTIME_CHECK_TIMEOUT_SECONDS",

@@ -17,6 +17,7 @@ class GeminiTTSProvider(TTSProvider):
 
     provider_name = "gemini"
     DEFAULT_MODELS: ClassVar[dict[str, str]] = {"tts": "gemini-2.5-flash-preview-tts"}
+    DEFAULT_CONTEXT_TOKENS: ClassVar[dict[str, int]] = {"tts": 8_000}
     # Tag zh/en so language-keyword scoring applies even though every voice is multilingual.
     VOICE_CATALOG: ClassVar[list[dict]] = [
         {"id": "Kore", "label": "Kore", "gender": "neutral", "language": "multi", "tags": ["坚定", "温柔", "温暖", "自然", "中性", "zh", "en"], "description": "坚定温暖的音色。"},

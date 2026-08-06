@@ -16,3 +16,4 @@ class MiniMaxChatProvider(OpenAICompatChatProvider):
     provider_name = "minimax"
     service_type = ServiceType.llm
     DEFAULT_MODELS: ClassVar[dict[str, str]] = {"llm": "MiniMax-Text-01"}
+    DEFAULT_CONTEXT_TOKENS: ClassVar[dict[str, int]] = {"llm": 1_000_000}

@@ -19,6 +19,7 @@ class MiMoSTTProvider(STTProvider):
 
     provider_name = "mimo"
     DEFAULT_MODELS: ClassVar[dict[str, str]] = {"stt": "mimo-v2.5-asr"}
+    DEFAULT_CONTEXT_TOKENS: ClassVar[dict[str, int]] = {"stt": 8_000}
 
     def __init__(self, config: ProviderConfig) -> None:
         super().__init__(config)
