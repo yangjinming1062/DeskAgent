@@ -29,7 +29,6 @@ from .streaming import _ensure_tool_call_ids
 from .streaming import _stream_llm_response
 from .tool_dispatch import _ToolDispatchContext
 from .turn_inputs import _build_turn_inputs
-from .turn_inputs import _drain_steer_queue
 from .turn_inputs import _merge_session_settings
 from .turn_inputs import _parse_reasoning_effort
 from .turn_inputs import _parse_service_tier
@@ -206,11 +205,6 @@ async def run_chat_turn(
             active_tool_names,
             schemas_by_name,
         )
-
-        # Drain steer queue AFTER tool persistence so the OpenAI message
-        # ordering [assistant(tool_calls), tool(results), user(steer)] is
-        # preserved (see ARCHITECTURE.md §3.1 tool-call message ordering).
-        _drain_steer_queue(runtime, current_messages)
 
         if guardrails.halt_decision:
             await emitter.send_json({"type": "error", "message": f"Tool execution loop halted by guardrails: {guardrails.halt_decision.message}"})

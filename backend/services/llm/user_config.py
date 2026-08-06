@@ -1,5 +1,28 @@
+import json
+
+from modules.auth import ProviderSlot
 from modules.auth import UserModelConfig
 from sqlalchemy.orm import Session
+
+
+def merge_provider_json(
+    slots: list[ProviderSlot],
+    existing: UserModelConfig | None,
+) -> str:
+    """Serialize provider slots to JSON, preserving existing keys on empty submit.
+
+    An empty ``api_key`` keeps the existing key for that provider — the caller
+    can't see the raw value, so "leave blank" must mean "no change".
+    Shared by the admin and user self-service model-config endpoints.
+    """
+    prev = {s["name"]: s.get("api_key", "") for s in json.loads(existing.provider_config or "[]")} if existing else {}
+    out = []
+    for slot in slots:
+        d = slot.model_dump()
+        if not d.get("api_key") and d["name"] in prev:
+            d["api_key"] = prev[d["name"]]
+        out.append(d)
+    return json.dumps(out)
 
 
 def resolve_user_llm_config(db: Session, user_id: int) -> dict:

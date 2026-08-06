@@ -36,13 +36,6 @@ class ToolsSyncResult(BaseModel):
 class RuntimeSession:
     conversation_id: int
     chat_task: asyncio.Task | None = None
-    # Lazy-initialised: the Queue binds to whichever loop is current at first use,
-    # not at mount time. ``new_runtime_session`` is called from sync code paths
-    # (test fixtures, import-time setup, future code that builds runtimes outside
-    # the WS handler). Holding a real asyncio.Queue here risks ``RuntimeError:
-    # Queue is bound to a different event loop`` after a reconnect or a future
-    # call from a different loop context. ``steer_queue()`` creates + caches.
-    steer_queue: asyncio.Queue[str] | None = None
     cwd: str | None = None
     # Per-session overrides (reasoning/fast/language). Mirrors
     # ``Conversation.settings_json`` at mount time. Mutated by ``set_setting``
@@ -53,13 +46,6 @@ class RuntimeSession:
     def session_id(self) -> str:
         """Renderer-facing id (Conversation.id stringified once)."""
         return str(self.conversation_id)
-
-    def ensure_steer_queue(self) -> asyncio.Queue[str]:
-        """Return the steer queue, creating it on first use so it binds to
-        whichever event loop is running when first awaited."""
-        if self.steer_queue is None:
-            self.steer_queue = asyncio.Queue()
-        return self.steer_queue
 
 
 def new_runtime_session(conversation_id: int, cwd: str | None, settings_json: str | None = None) -> RuntimeSession:

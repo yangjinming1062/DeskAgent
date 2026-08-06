@@ -26,8 +26,6 @@ from ..tools import NativeMemory
 from ..tools import REGISTRY
 from ..tools import schema_name
 from .system_prompt import build_system_prompt
-from .system_prompt import STEER_MARKER_CLOSE
-from .system_prompt import STEER_MARKER_OPEN
 
 logger = get_logger(__name__)
 
@@ -204,30 +202,3 @@ def _parse_service_tier(raw: str | None) -> str | None:
         return None
     raw = raw.strip().lower()
     return raw if raw in ALLOWED_SERVICE_TIERS else None
-
-
-def _sanitize_steer_text(text: str) -> str:
-    """Sanitize steer text to prevent forgery of OUT-OF-BAND markers."""
-    return text.replace("[OUT-OF-BAND", "[OUT-OF-BAND-ESCAPED")
-
-
-def _drain_steer_queue(runtime: Any, current_messages: list[dict]) -> None:
-    """Pull all queued steer messages into the in-flight chat history.
-
-    Must run AFTER tool result persistence so the OpenAI message ordering
-    ``[assistant(tool_calls), tool(results), user(steer)]`` is preserved.
-    Single producer (WS handler) + single consumer (this coroutine) → safe
-    to use ``get_nowait`` without awaiting.
-    """
-    if runtime is None or runtime.steer_queue is None:
-        return
-    steer_q = runtime.ensure_steer_queue()
-    while not steer_q.empty():
-        steer_text = steer_q.get_nowait()
-        safe_text = _sanitize_steer_text(steer_text)
-        current_messages.append(
-            {
-                "role": "user",
-                "content": f"{STEER_MARKER_OPEN}\n{safe_text}\n{STEER_MARKER_CLOSE}",
-            }
-        )

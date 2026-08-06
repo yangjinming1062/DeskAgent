@@ -14,10 +14,6 @@ const SESSION_SCHEMA_VERSION = 1
 const KNOWN_TOKEN_TTL_MS = 8 * 60 * 60 * 1000
 // Proactive refresh fires this many ms before tokenExpiresAt.
 const REFRESH_LEAD_MS = 5 * 60 * 1000
-// Model-config cache TTL. The renderer reads this for the Settings → Account
-// block; both paths funnel through `getModelConfig()` so they share one
-// network round trip.
-const MODEL_CONFIG_CACHE_TTL_MS = 5 * 60 * 1000
 
 class SessionError extends Error {
   constructor({ code, message, cause, status }) {
@@ -128,7 +124,6 @@ function createBackendSession(options = {}) {
   let backendClient = null
   let backendClientBaseUrl = null
   let loginPromise = null
-  let cachedModelConfig = null // { value, expiresAt } — shared across renderer reads
   let refreshTimer = null // proactive token refresh timer
 
   function persistCurrent() {
@@ -270,11 +265,9 @@ function createBackendSession(options = {}) {
     }
 
     // Invalidate the cached BackendClient so the next request hits the
-    // freshly applied baseUrl. Also drop the model-config cache — the
-    // new session may belong to a different user with a different config.
+    // freshly applied baseUrl.
     backendClient = null
     backendClientBaseUrl = null
-    cachedModelConfig = null
 
     persistCurrent()
     scheduleRefresh()
@@ -410,7 +403,6 @@ function createBackendSession(options = {}) {
     cached = null
     backendClient = null
     backendClientBaseUrl = null
-    cachedModelConfig = null
     try {
       fs.unlinkSync(sessionPath)
     } catch (error) {
@@ -447,31 +439,6 @@ function createBackendSession(options = {}) {
             : 'Password updated.'
         log('[session] change-password ok')
         return { ok: true, message }
-      })
-      .catch(translateBackendError)
-  }
-
-  function getModelConfig({ force = false } = {}) {
-    if (!cached?.token) {
-      throw new SessionError({
-        code: 'no-session',
-        message: 'Not signed in.'
-      })
-    }
-
-    const nowMs = now()
-    if (!force && cachedModelConfig && cachedModelConfig.expiresAt > nowMs) {
-      return Promise.resolve(cachedModelConfig.value)
-    }
-
-    return client()
-      .get('/api/user/model-config', { headers: authHeaders() })
-      .then(value => {
-        cachedModelConfig = {
-          value,
-          expiresAt: nowMs + MODEL_CONFIG_CACHE_TTL_MS
-        }
-        return value
       })
       .catch(translateBackendError)
   }
@@ -530,7 +497,6 @@ function createBackendSession(options = {}) {
     clearSession,
     getSession,
     getToken,
-    getModelConfig,
     authHeaders,
     _sessionPath: sessionPath
   }
@@ -543,6 +509,5 @@ module.exports = {
   decryptToken,
   SESSION_FILENAME,
   SESSION_SCHEMA_VERSION,
-  KNOWN_TOKEN_TTL_MS,
-  MODEL_CONFIG_CACHE_TTL_MS
+  KNOWN_TOKEN_TTL_MS
 }

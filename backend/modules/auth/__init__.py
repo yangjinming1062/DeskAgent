@@ -8,6 +8,7 @@ from .schemas import AdminTokenResponse
 from .schemas import ChangePasswordRequest
 from .schemas import ChatRequestClientContext
 from .schemas import LoginRequest
+from .schemas import ProviderSlot
 from .schemas import ProviderSlotPublic
 from .schemas import public_provider_slots
 from .schemas import RefreshRequest
@@ -19,6 +20,7 @@ from .schemas import UserModelConfigListItem
 from .schemas import UserModelConfigListResponse
 from .schemas import UserModelConfigRequest
 from .schemas import UserModelConfigResponse
+from .schemas import UserModelConfigSelfRequest
 from .schemas import UserResponse
 from .schemas import UserUpdate
 from .security import create_access_token
@@ -37,6 +39,7 @@ __all__ = [
     "ChangePasswordRequest",
     "ChatRequestClientContext",
     "LoginRequest",
+    "ProviderSlot",
     "ProviderSlotPublic",
     "public_provider_slots",
     "RefreshRequest",
@@ -48,6 +51,7 @@ __all__ = [
     "UserModelConfigListResponse",
     "UserModelConfigRequest",
     "UserModelConfigResponse",
+    "UserModelConfigSelfRequest",
     "UserResponse",
     "UserUpdate",
     "create_access_token",

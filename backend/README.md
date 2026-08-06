@@ -194,7 +194,7 @@ MiniMax-H3（v2 API）异步两段式：`POST /v2/video_generation`（task_id）
 - **DNS Rebinding 防护**：所有出站外呼（`send_message_tool` webhook、companion 的 `avatar_service` / `clip_service` 下载 provider 生成资产）在发起连接前 `getaddrinfo` 校验目标 IP，拒绝 loopback/private/multicast/CGNAT/metadata；连接时再经 httpx `event_hooks.connect` 复核，阻断预检与建连之间的 DNS 重绑定。
 - **Think Block 清洗**：`StreamingThinkScrubber` 流式过滤 `<think>`/`<thinking>`/`<reasoning>` 标签。
 - **Secret Redaction**：`redact_sensitive_text` 36 prefix patterns + regex rules。import 时快照 `DESKAGENT_REDACT_SECRETS`（anti-tamper）。
-- **API Key Fingerprinting**：`GET /api/user/model-config` 返回的 `llm_api_key` 用 `fingerprint_api_key` 派生稳定但不可逆的展示标签（如 `sk-…89`），原始 key 永不离开后端——LLM 调用走服务端路径读 DB。
+- **Model Config 安全边界**：`GET /api/user/model-config` 只返回用户在 `UserModelConfig` 行里**显式设置**的字段——未设置的字段返回空字符串，绝不透传 `SETTINGS`（`.env`）里的服务器默认值。原始 API key 永不离开后端，仅返回 `*_api_key_set` 布尔 + `llm_api_key_fingerprint` 指纹。`PUT /api/user/model-config` 允许用户自助修改（空 `api_key` = 保留原值；空 `base_url`/`model_name` = 清空回退默认）。Admin 端点 `PUT /api/admin/{user_id}/model-config` 仍存在，区别是 admin 要求 `llm_*` 三字段非空。
 
 ## Web Providers
 

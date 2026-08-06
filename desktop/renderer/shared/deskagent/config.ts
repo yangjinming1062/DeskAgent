@@ -1,7 +1,9 @@
 import type {
   DeskAgentConfigPutRequest,
   DeskAgentConfigRecord,
-  DeskAgentConfigResponse
+  DeskAgentConfigResponse,
+  ModelConfigPutRequest,
+  ModelConfigResponse
 } from '@/shared/types/deskagent'
 
 export function getDeskAgentConfig(): Promise<DeskAgentConfigResponse> {
@@ -32,4 +34,18 @@ export async function saveDeskAgentConfig(
   })
 
   return { config: response.config }
+}
+
+export function getModelConfig(): Promise<ModelConfigResponse> {
+  return window.deskagent.api<ModelConfigResponse>({
+    path: '/api/user/model-config'
+  })
+}
+
+export async function saveModelConfig(config: ModelConfigPutRequest): Promise<ModelConfigResponse> {
+  return window.deskagent.api<ModelConfigResponse>({
+    body: config,
+    method: 'PUT',
+    path: '/api/user/model-config'
+  })
 }
