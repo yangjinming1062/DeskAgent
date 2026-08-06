@@ -454,6 +454,21 @@ export interface Translations {
           auto: string
         }
       }
+      contextCompression: {
+        heading: string
+        intro: string
+        enableCompression: string
+        enableCompressionDesc: string
+        threshold: string
+        thresholdDesc: string
+        thresholdOptions: {
+          '0.5': string
+          '0.6': string
+          '0.7': string
+          '0.8': string
+          '0.9': string
+        }
+      }
       signOut: string
       signOutConfirm: string
     }

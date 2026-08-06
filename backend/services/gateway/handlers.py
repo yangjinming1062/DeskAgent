@@ -176,14 +176,13 @@ async def handle_chat_websocket(websocket: WebSocket, token: str):
     _register_session_handlers(dispatcher, runtime_sessions, llm_config, user_id, user_settings)
 
     background_tasks: set[asyncio.Task] = set()
-    pending_compression_consents: dict[str, asyncio.Future] = {}
 
     def _track(task: asyncio.Task) -> None:
         background_tasks.add(task)
         task.add_done_callback(background_tasks.discard)
 
     # prompt.submit lives here as a nested function because it captures
-    # _track, pending_compression_consents, and other WS-local state.
+    # _track and other WS-local state.
     async def prompt_submit(params: dict) -> dict:
         runtime = _get_runtime(runtime_sessions, params)
         text = _require_str(params, "text")
@@ -223,7 +222,7 @@ async def handle_chat_websocket(websocket: WebSocket, token: str):
 
         # JsonRpcEmitter translates raw chat_service frames (chunk,
         # tool_start/end, error, message.start/complete, tool_call,
-        # references, compression_consent*) into JSON-RPC event envelopes.
+        # references) into JSON-RPC event envelopes.
         emitter = JsonRpcEmitter(
             raw=ws_emitter,
             dispatcher=dispatcher,
@@ -242,7 +241,6 @@ async def handle_chat_websocket(websocket: WebSocket, token: str):
                         emitter,
                         session_client_context=session_client_context,
                         track_task=_track,
-                        pending_compression_consents=pending_compression_consents,
                         runtime=runtime,
                     )
                 except (WebSocketDisconnect, asyncio.CancelledError):
@@ -306,18 +304,6 @@ async def handle_chat_websocket(websocket: WebSocket, token: str):
 
     dispatcher.register("tool.result", tool_result_handler)
 
-    async def compression_respond(params: dict) -> dict:
-        session_id = params.get("session_id")
-        consent = bool(params.get("consent", False))
-        if not isinstance(session_id, str):
-            return {}
-        future = pending_compression_consents.get(session_id)
-        if future is not None and not future.done():
-            future.set_result(consent)
-        return {}
-
-    dispatcher.register("compression.respond", compression_respond)
-
     async def tools_sync(params: dict) -> dict:
         tools = params.get("tools", [])
         if not isinstance(tools, list):
@@ -345,11 +331,6 @@ async def handle_chat_websocket(websocket: WebSocket, token: str):
         MANAGER.disconnect(websocket, user_id)
         for task in list(background_tasks):
             task.cancel()
-        # Each pending consent future pops itself in its own `finally:` in chat_service,
-        # so cancelling here is enough — the dict drains as the awaits raise.
-        for fut in list(pending_compression_consents.values()):
-            if not fut.done():
-                fut.cancel()
         # ``runtime_sessions`` is keyed by the same ``session_id`` value
         # the renderer holds. On a reconnect, the new WS re-mounts via
         # ``session.resume``, which populates the map from scratch; clearing

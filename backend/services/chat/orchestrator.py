@@ -1,10 +1,9 @@
-import asyncio
-from collections.abc import Callable
 from typing import Any
 
 from components import AGENT_MAX_LOOP_TURNS
 from components import DEFAULT_LANGUAGE
 from components import get_logger
+from components import safe_json_loads
 from components import SETTINGS
 from modules.auth import ChatRequestClientContext
 from modules.conversation import Conversation
@@ -40,44 +39,6 @@ from .types import TrackTask
 logger = get_logger(__name__)
 
 
-def _make_ask_consent(
-    emitter: Emitter,
-    sid: str,
-    pending_compression_consents: dict[str, asyncio.Future] | None,
-) -> Callable[[str], Any]:
-    """Build the per-turn ``ask_consent`` closure for ``compress_history_if_needed``.
-
-    Returns a coroutine that resolves True on consent, False on timeout or
-    no-op when ``pending_compression_consents`` is None (subagent path).
-    The ``finally`` block pops the entry from the dict so a stale
-    ``compression.respond`` after timeout cannot crash on a future that's
-    already been timed out.
-
-    Clears any stale entry for ``sid`` before installing the new future —
-    a cancelled mid-turn chat can race a fresh ``_make_ask_consent`` call
-    and leave a settled future at the same key; without the clear, the
-    stale future's set/timeout races with the new wait_for.
-    """
-
-    async def ask_consent(reason: str) -> bool:
-        if pending_compression_consents is None:
-            return True
-        pending_compression_consents.pop(sid, None)  # clear stale entry from a cancelled previous turn
-        future: asyncio.Future = asyncio.Future()
-        pending_compression_consents[sid] = future
-        try:
-            await emitter.send_json({"type": "require_compression_consent", "reason": reason, "session_id": sid})
-            return await asyncio.wait_for(future, timeout=SETTINGS.compression_consent_timeout_seconds)
-        except asyncio.TimeoutError:
-            # Surface the timeout so the desktop closes its consent dialog.
-            await emitter.send_json({"type": "compression_consent_timeout", "session_id": sid})
-            return False
-        finally:
-            pending_compression_consents.pop(sid, None)
-
-    return ask_consent
-
-
 async def run_chat_turn(
     db: Session,
     req: ChatRequest,
@@ -87,7 +48,6 @@ async def run_chat_turn(
     emitter: Emitter,
     session_client_context: ChatRequestClientContext | None = None,
     track_task: TrackTask | None = None,
-    pending_compression_consents: dict[str, asyncio.Future] | None = None,
     *,
     runtime: RuntimeSession | None = None,
 ) -> None:
@@ -107,13 +67,21 @@ async def run_chat_turn(
         effective_settings = _merge_session_settings(user_settings, runtime)
         inputs = _build_turn_inputs(db, conv, user_id, req, session_client_context, effective_settings)
 
-        ask_consent = _make_ask_consent(emitter, sid, pending_compression_consents)
+        compression_enabled = safe_json_loads(
+            effective_settings.get("chat.enable_context_compression", ""),
+            default=SETTINGS.enable_context_compression,
+        )
+        compression_threshold = safe_json_loads(
+            effective_settings.get("chat.context_compression_threshold", ""),
+            default=SETTINGS.context_compression_threshold,
+        )
         compressed_messages = await compress_history_if_needed(
             inputs.messages,
             client=inputs.client,
             model=inputs.model_name,
             context_length=inputs.ctx_length,
-            consent_callback=ask_consent,
+            enabled=compression_enabled,
+            threshold_ratio=compression_threshold,
             language=effective_settings.get("language", DEFAULT_LANGUAGE),
         )
         current_messages = truncate_chat_history(compressed_messages)

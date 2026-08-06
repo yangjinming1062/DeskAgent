@@ -7,7 +7,6 @@
  *   typography  — font families + optional stylesheet URL.
  *
  * Everything else (layout, sizing, radius, line-height) lives in styles.css.
- * Add new themes in `presets.ts` — no other code changes needed.
  */
 
 export interface DesktopThemeColors {
@@ -60,7 +59,7 @@ export interface DesktopTheme {
   description: string
   /** Light palette (also reused for dark when `darkColors` is omitted). */
   colors: DesktopThemeColors
-  /** Hand-tuned dark palette. Skins like `deskagent` ship one. */
+  /** Hand-tuned dark palette; when omitted, `colors` is reused for dark. */
   darkColors?: DesktopThemeColors
   typography?: Partial<DesktopThemeTypography>
 }
