@@ -25,7 +25,6 @@ class CronJob(ModelBase):
     name: Mapped[str] = mapped_column(String(128), index=True)
     schedule: Mapped[str] = mapped_column(String(128))
     prompt: Mapped[str] = mapped_column(Text)
-    enabled_toolsets: Mapped[str | None] = mapped_column(Text, nullable=True)
     deliver: Mapped[str] = mapped_column(String(64), default="local")
     is_paused: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("FALSE"))
     next_run_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
@@ -40,7 +39,6 @@ class CronJob(ModelBase):
             "name": self.name,
             "schedule": self.schedule,
             "prompt": self.prompt,
-            "enabled_toolsets": self.enabled_toolsets,
             "deliver": self.deliver,
             "is_paused": self.is_paused,
             "next_run_at": self.next_run_at.isoformat() if self.next_run_at else None,

@@ -184,10 +184,14 @@ def update_model_config(
     user, _session = current
     config = db.query(UserModelConfig).filter(UserModelConfig.user_id == user.id).first()
 
-    # Preserve existing api_keys when the user submits an empty one.
+    # Preserve existing api_keys when the user submits an empty one (the GET
+    # endpoint never returns raw keys); ``None`` (JSON null) means "clear".
     for cap in _CAPABILITIES:
         attr = f"{cap}_api_key"
-        if not getattr(payload, attr) and config:
+        val = getattr(payload, attr)
+        if val is None:
+            setattr(payload, attr, "")
+        elif not val and config:
             setattr(payload, attr, getattr(config, attr))
 
     provider_json = merge_provider_json(payload.provider_config, config)

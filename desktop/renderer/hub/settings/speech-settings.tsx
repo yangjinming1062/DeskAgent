@@ -175,6 +175,9 @@ export function SpeechSettings() {
       <Pill tone={avail ? 'primary' : 'muted'}>{avail ? s.engineLocalAvail : s.engineLocalUnavail}</Pill>
     )
 
+  // Include the current value so non-standard values still show a matching <option>.
+  const recordingOptions = Array.from(new Set([...RECORDING_OPTIONS, state.maxRecordingSeconds])).sort((a, b) => a - b)
+
   return (
     <SettingsContent>
       <SettingsSubsection icon={IconVolume} intro={s.intro} title={s.title}>
@@ -228,7 +231,7 @@ export function SpeechSettings() {
                 onChange={e => update({ maxRecordingSeconds: Number(e.currentTarget.value) })}
                 value={state.maxRecordingSeconds}
               >
-                {RECORDING_OPTIONS.map(s => (
+                {recordingOptions.map(s => (
                   <option key={s} value={s}>
                     {s}s
                   </option>

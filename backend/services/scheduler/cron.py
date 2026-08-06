@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 from datetime import datetime
 from typing import Any
 
@@ -64,7 +65,7 @@ def _refresh_schedule(job: CronJob) -> None:
 MAX_ACTIVE_CRON_JOBS = 10
 
 
-def create_job(user_id: int, prompt: str, schedule: str, name: str = "cron job", enabled_toolsets: str | None = None, deliver: str = "local") -> dict[str, Any]:
+def create_job(user_id: int, prompt: str, schedule: str, name: str = "cron job", deliver: str = "local") -> dict[str, Any]:
     with session_scope() as db:
         active_count = db.query(CronJob).filter(CronJob.user_id == user_id, CronJob.is_paused.is_(False)).count()
         if active_count >= MAX_ACTIVE_CRON_JOBS:
@@ -74,7 +75,6 @@ def create_job(user_id: int, prompt: str, schedule: str, name: str = "cron job",
             name=name,
             schedule=schedule,
             prompt=prompt,
-            enabled_toolsets=enabled_toolsets,
             deliver=deliver,
         )
         # Same invalid-schedule handling as update_job — a bad expression
@@ -290,8 +290,10 @@ async def _kick_autonomous_turn(job_id: int, meta: dict[str, Any]) -> None:
                 user_id,
                 emitter,
             )
-    except Exception:
+    except Exception as e:
         logger.exception("cron: autonomous turn failed", extra={"user_id": user_id, "job_id": job_id})
+        with contextlib.suppress(Exception):
+            await dispatcher.push_event("error", {"message": str(e)}, session_id=session_id)
 
 
 # Per-user timestamp of last consolidator run. Process-local — matches the

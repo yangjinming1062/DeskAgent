@@ -1,39 +1,40 @@
 import json
+from typing import Any
 
 from components import coerce_int
 from components import get_logger
 from components import tool_error
 
-from .. import ALWAYS_AVAILABLE
-from .. import REGISTRY
-from ...scheduler import create_job
-from ...scheduler import get_job
-from ...scheduler import list_jobs
-from ...scheduler import pause_job
-from ...scheduler import remove_job
-from ...scheduler import resume_job
-from ...scheduler import update_job
+from ..tools import ALWAYS_AVAILABLE
+from ..tools import REGISTRY
+from .cron import create_job
+from .cron import get_job
+from .cron import list_jobs
+from .cron import pause_job
+from .cron import remove_job
+from .cron import resume_job
+from .cron import update_job
 
 logger = get_logger(__name__)
 
 
-def _build_updates(prompt: str | None, name: str | None, schedule: str | None) -> dict | None:
-    updates: dict = {}
+def _build_updates(prompt: str | None, name: str | None, schedule: str | None) -> dict[str, Any]:
+    updates: dict[str, Any] = {}
     if prompt is not None:
         updates["prompt"] = prompt
     if name is not None:
         updates["name"] = name
     if schedule is not None:
         updates["schedule"] = schedule
-        # Providing a new schedule unpauses the job.
+        # A new schedule implicitly unpauses the job.
         updates["is_paused"] = False
-    return updates or None
+    return updates
 
 
 def _handle_cron_action(
     action: str,
     user_id: int,
-    job_id_raw,
+    job_id_raw: int | str | None,
     prompt: str | None,
     schedule: str | None,
     name: str | None,

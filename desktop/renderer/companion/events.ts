@@ -56,7 +56,7 @@ export function handleCompanionEvent(event: RpcEvent): void {
       if (hasEmotion && !screenLocked) {
         setSpriteState('emotional', { emotion: emotion as SpriteEmotion })
       } else {
-        setSpriteState('idle')
+        setSpriteState('idle', { force: true })
       }
 
       // Speak chat replies in "always voice" mode (plan §4.1); skip during an
