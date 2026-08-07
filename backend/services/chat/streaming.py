@@ -35,6 +35,8 @@ class _LLMTurnResult:
     final_usage_payload: dict | None
     turn_duration_ms: int
     emotion: str | None = None
+    spatial_locale: str | None = None
+    spatial_target: str | None = None
 
 
 def _llm_error_user_message(exc: LLMRuntimeError) -> str:
@@ -213,4 +215,6 @@ async def _stream_llm_response(
         final_usage_payload=final_usage_payload,
         turn_duration_ms=turn_duration_ms,
         emotion=affect.emotion,
+        spatial_locale=affect.spatial_locale,
+        spatial_target=affect.spatial_target,
     )

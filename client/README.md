@@ -27,7 +27,7 @@ DeskAgent 是**双层叠加**的单 Electron 应用：
 - `model-store.ts` — nanostores 状态：`$modelInfo` 跟踪当前 3D 模型 URL + species，`$wardrobe` / `$equippedItem` 跟踪换装目录；订阅 `model.ready` / `wardrobe.updated` 网关事件
 - `companion-3d.tsx` — React 组件：挂载 `<canvas>` 到 `SpriteStage`，订阅状态机 + 换装 + look-at + TTS 口型振幅
 
-3D 模型的 GLB 由后端 `/api/companion/model`（base_texture provider 即时返回预打包 GLB）下发；换装纹理经 `/api/companion/wardrobe/generate`（AI 生图）+ `/equip` 装备。
+3D 模型的 GLB 由后端 `/api/companion/model`（base_texture provider 即时返回预打包 GLB）下发；换装纹理经 `POST /api/companion/wardrobe`（AI 生图）+ `PUT /api/companion/wardrobe/equip` 装备。
 
 
 ## 顶层目录

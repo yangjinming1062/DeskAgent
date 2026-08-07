@@ -13,6 +13,7 @@ from fastapi import WebSocket
 from modules.ws import WSEvent
 from sqlalchemy import delete
 from sqlalchemy import select
+from sqlalchemy.exc import OperationalError
 
 from .jsonrpc import JsonRpcDispatcher
 
@@ -139,18 +140,29 @@ async def _process_events(wakeup: asyncio.Event):
         if not local_user_ids:
             return
         with session_scope() as db:
-            deleted_rows = db.execute(
-                delete(WSEvent).where(WSEvent.user_id.in_(local_user_ids)).returning(WSEvent.id, WSEvent.event_type, WSEvent.payload, WSEvent.user_id, WSEvent.created_at)
-            ).all()
-            # DELETE ... RETURNING has no ordering guarantee; restore the
-            # creation-order FIFO the old SELECT ... ORDER BY claimed with.
-            deleted_rows.sort(key=lambda r: r[4])
-            for event_id, event_type, payload_str, user_id, _created_at in deleted_rows:
-                payload = safe_json_loads(payload_str)
-                if payload is not None:
-                    claimed.append((event_id, event_type, payload, user_id))
-                else:
-                    logger.warning("Skipping unparseable WSEvent", extra={"event_id": event_id})
+            try:
+                deleted_rows = db.execute(
+                    delete(WSEvent).where(WSEvent.user_id.in_(local_user_ids)).returning(WSEvent.id, WSEvent.event_type, WSEvent.payload, WSEvent.user_id, WSEvent.created_at)
+                ).all()
+                # DELETE ... RETURNING has no ordering guarantee; restore the
+                # creation-order FIFO the old SELECT ... ORDER BY claimed with.
+                deleted_rows.sort(key=lambda r: r[4])
+                for event_id, event_type, payload_str, user_id, _created_at in deleted_rows:
+                    payload = safe_json_loads(payload_str)
+                    if payload is not None:
+                        claimed.append((event_id, event_type, payload, user_id))
+                    else:
+                        logger.warning("Skipping unparseable WSEvent", extra={"event_id": event_id})
+            except (NotImplementedError, OperationalError):
+                # Fallback for older SQLite engines (<3.35) without RETURNING support
+                rows = db.execute(select(WSEvent).where(WSEvent.user_id.in_(local_user_ids)).order_by(WSEvent.created_at).with_for_update(skip_locked=True)).scalars().all()
+                for r in rows:
+                    payload = safe_json_loads(r.payload)
+                    if payload is not None:
+                        claimed.append((r.id, r.event_type, payload, r.user_id))
+                    else:
+                        logger.warning("Skipping unparseable WSEvent", extra={"event_id": r.id})
+                    db.delete(r)
             db.commit()
 
         for event_id, event_type, payload, user_id in claimed:

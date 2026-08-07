@@ -182,6 +182,8 @@ async def run_chat_turn(
                 current_messages,
                 track_task,
                 emotion=llm_result.emotion,
+                spatial_locale=llm_result.spatial_locale,
+                spatial_target=llm_result.spatial_target,
             )
             return
 

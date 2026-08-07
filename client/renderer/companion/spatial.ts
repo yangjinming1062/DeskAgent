@@ -446,7 +446,7 @@ function generateRoamWaypoint(): { x: number; y: number } {
   }
 }
 
-function startRoam(): void {
+export function startRoam(): void {
   if (roaming) {
     return
   }

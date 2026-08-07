@@ -13,6 +13,8 @@ interface WindowGeom {
   h: number
 }
 
+export type { WindowGeom }
+
 export async function findWindowByKeyword(keyword: string): Promise<WindowGeom | null> {
   if (!window.deskagent?.runnerInvoke) {
     return null

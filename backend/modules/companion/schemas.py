@@ -1,14 +1,19 @@
+from typing import Literal
+
 from pydantic import BaseModel
 from pydantic import ConfigDict
 from pydantic import Field
+
+# Persona blob travels as one JSON string; 32 KiB caps DoS at the HTTP
+# boundary while leaving headroom for the largest persona field (2000 chars)
+# plus user_* fields and JSON overhead.
+_PERSONA_JSON_MAX_LEN: int = 32 * 1024
 
 
 class PersonaUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    # The full persona definition (including user_* fields routed to Memory)
-    # travels as one JSON blob; the backend parses + validates it.
-    definition_json: str = Field(min_length=1)
+    definition_json: str = Field(min_length=1, max_length=_PERSONA_JSON_MAX_LEN)
 
 
 class PersonaResponse(BaseModel):
@@ -16,12 +21,16 @@ class PersonaResponse(BaseModel):
     is_complete: bool
 
 
+# Generation is synchronous — every persisted asset is succeeded. Pinning
+# the literal keeps the contract honest if async generation ever lands.
+SucceededStatus = Literal["succeeded"]
+
+
 class AvatarAssetResponse(BaseModel):
     id: int
     asset_url: str
-    # Generation completes synchronously, so every returned asset is succeeded.
     prompt: str = ""
-    status: str = "succeeded"
+    status: SucceededStatus = "succeeded"
 
 
 class AvatarGenerateRequest(BaseModel):
@@ -71,7 +80,7 @@ class CompanionModelResponse(BaseModel):
     provider: str
     species: str = "人类"
     morph_params: dict = Field(default_factory=dict)
-    status: str = "succeeded"
+    status: SucceededStatus = "succeeded"
     has_rig: bool
     has_morph_targets: bool
 

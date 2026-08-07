@@ -64,7 +64,11 @@ SPECIES_MODEL_MAP: dict[str, str] = {
 
 async def _load_base_model(db: Session, user_id: int, species_override: str | None = None) -> tuple[bytes, str]:
     """Disk read deferred to a thread — a multi-MB GLB would stall the event loop."""
-    species = species_override or _persona_species(db, user_id)
+    species = species_override
+    if species is None:
+        persona = get_or_create_persona(db, user_id)
+        definition = safe_json_loads(persona.definition_json or "{}", default={})
+        species = definition.get("biological_type", "人类") if isinstance(definition, dict) else "人类"
 
     model_file = SPECIES_MODEL_MAP.get(species, SPECIES_MODEL_MAP["人类"])
     local = Path(SETTINGS.companion_base_model_dir) / model_file
@@ -77,12 +81,6 @@ async def _load_base_model(db: Session, user_id: int, species_override: str | No
         raise ModelGenerationError(f"未找到 {species} 的基底模型（{local}）。请将 rigged GLB 放到该路径，或放入 {fallback} 作为通用兜底。")
 
     return await asyncio.to_thread(local.read_bytes), species
-
-
-def _persona_species(db: Session, user_id: int) -> str:
-    persona = get_or_create_persona(db, user_id)
-    definition = safe_json_loads(persona.definition_json or "{}", default={})
-    return definition.get("biological_type", "人类")
 
 
 def _extract_morph_names_from_glb(glb_data: bytes) -> list[str]:
@@ -198,7 +196,7 @@ async def _generate_custom_textures(user_id: int) -> None:
             )
             db.commit()
 
-        _emit_wardrobe_updated(user_id)
+        emit_wardrobe_updated(user_id)
         logger.info("Custom texture generated for user", extra={"user_id": user_id})
     except Exception:
         logger.warning("Custom texture generation failed", extra={"user_id": user_id}, exc_info=True)
@@ -222,7 +220,7 @@ def _emit_model_ready(user_id: int, model_id: int, asset_url: str, *, species: s
         logger.warning("Failed to emit model.ready event", exc_info=True)
 
 
-def _emit_wardrobe_updated(user_id: int) -> None:
+def emit_wardrobe_updated(user_id: int) -> None:
     try:
         with SESSION_LOCAL() as db:
             db.add(WSEvent(user_id=user_id, event_type="wardrobe.updated", payload="{}"))

@@ -1,5 +1,7 @@
 import { atom } from 'nanostores'
 
+import { safeJsonParse } from '@/shared/lib/safe-json'
+
 export interface PersonaDefinition {
   name: string
   personality: string
@@ -26,15 +28,7 @@ export async function hydratePersona(): Promise<void> {
       return
     }
 
-    let parsed: Record<string, string> = {}
-
-    try {
-      const out = p.definition_json ? JSON.parse(p.definition_json) : null
-
-      parsed = typeof out === 'object' && out !== null ? (out as Record<string, string>) : {}
-    } catch {
-      parsed = {}
-    }
+    const parsed = safeJsonParse<Record<string, string>>(p.definition_json, {})
 
     $persona.set({
       name: parsed.name ?? '伙伴',

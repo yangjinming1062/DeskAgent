@@ -2,6 +2,7 @@ import * as THREE from 'three'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 
 import type { SpriteEmotion, SpriteStateName } from '@/companion/companion-store'
+import { safeJsonParse } from '@/shared/lib/safe-json'
 
 import { resolveClip } from './AnimationMap'
 import { MorphController } from './MorphController'
@@ -181,17 +182,12 @@ export class CharacterController {
       return
     }
 
-    let overrides: Record<string, { color?: string; roughness?: number; metalness?: number }> = {}
+    const parsed = safeJsonParse<unknown>(item.material_overrides_json, {})
 
-    try {
-      const parsed = item.material_overrides_json ? JSON.parse(item.material_overrides_json) : {}
-
-      if (parsed && typeof parsed === 'object') {
-        overrides = parsed
-      }
-    } catch {
-      overrides = {}
-    }
+    const overrides: Record<string, { color?: string; roughness?: number; metalness?: number }> =
+      parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+        ? (parsed as Record<string, { color?: string; roughness?: number; metalness?: number }>)
+        : {}
 
     const wildcard = overrides['*']
 
