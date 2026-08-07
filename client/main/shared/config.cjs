@@ -7,7 +7,7 @@ const { app } = require('electron')
 // Resolution priority (first hit wins):
 //   1. $DESKAGENT_HOME/desktop-config.json — last user-confirmed backend URL
 //   2. process.resourcesPath/config.json — packaged default
-//   3. <repo>/desktop/config.json — dev default
+//   3. <repo>/client/config.json — dev default
 //   4. DEFAULT_BACKEND_URL — last-resort fallback
 
 const DEFAULT_BACKEND_URL = 'http://localhost:8000'

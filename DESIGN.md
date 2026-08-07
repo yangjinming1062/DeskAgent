@@ -1,7 +1,7 @@
 # 伙伴层交互设计
 
 > 桌面伙伴（companion）的交互设计描述：形象资产、动画状态机、伙伴生命周期、onboarding、陪伴交互范式、语音、故障态。
-> 这是**描述性文档**（记设计意图与跨模块契约，不记可从代码推出的结构）。协议契约与跨模块架构见 [ARCHITECTURE.md](ARCHITECTURE.md)；3D 渲染引擎实现见 [client/README.md](client/README.md)；Desktop 实现见 [client/README.md](client/README.md)。
+> 这是**描述性文档**（记设计意图与跨模块契约，不记可从代码推出的结构）。协议契约与跨模块架构见 [ARCHITECTURE.md](ARCHITECTURE.md)。
 
 ## 设计哲学
 
@@ -78,10 +78,10 @@
 
 区分触发源的关键是**延迟特性**——决定是否需要 fallback 动画。
 
-1. **规则触发（Desktop 本地，零延迟）**：app 启动/退出、工具调用状态（WORKING）、用户输入起止（LISTENING/THINKING）、TTS 播放起止（SPEAKING）、时间（SLEEPING）。Desktop 按规则自主决定，不问 Backend。
-2. **LLM 触发（Backend 下发，高延迟 1–5s）**：无法靠规则判定的语义/情绪场景。Backend 在对话响应帧中附带 `affect: {emotion}`，Desktop 收到后切 EMOTIONAL。判断逻辑在 Backend（[ARCHITECTURE.md §6.3](ARCHITECTURE.md)），Desktop 只执行 cue。
-3. **用户触发（Desktop 本地，零延迟）**：用户对形象本身的直接操作——戳、拖、悬停。
-4. **自主行为（Desktop 调度，无延迟感）**：IDLE 下随机插入微动作（10–25s 间隔），纯视觉，不触发 TTS、不弹气泡（见 §6.4）。
+1. **规则触发（Client 本地，零延迟）**：app 启动/退出、工具调用状态（WORKING）、用户输入起止（LISTENING/THINKING）、TTS 播放起止（SPEAKING）、时间（SLEEPING）。Client 按规则自主决定，不问 Backend。
+2. **LLM 触发（Backend 下发，高延迟 1–5s）**：无法靠规则判定的语义/情绪场景。Backend 在对话响应帧中附带 `affect: {emotion}`，Client 收到后切 EMOTIONAL。判断逻辑在 Backend（[ARCHITECTURE.md §6.3](ARCHITECTURE.md)），Client 只执行 cue。
+3. **用户触发（Client 本地，零延迟）**：用户对形象本身的直接操作——戳、拖、悬停。
+4. **自主行为（Client 调度，无延迟感）**：IDLE 下随机插入微动作（10–25s 间隔），纯视觉，不触发 TTS、不弹气泡（见 §6.4）。
 
 ### 2.3 切换规则
 
@@ -137,8 +137,8 @@ home 是唯一持久化的 locale。其余 locale 从 home 与上下文派生，
 
 镜像 §2.2 的触发源分类：
 
-1. **规则触发（Desktop 本地，零延迟）**：对话模式开启/关闭 → home ↔ chat；onboarding 流程的位置引导；屏幕布局变化（分辨率改变/显示器插拔）→ 重定位 home。
-2. **上下文触发（Desktop 调度，秒级延迟）**：focused app 切换 → 决定是否换 perch；长 idle → 移到 sleep locale；桌面空闲 → 进入 roam。与 §6.4 情境判定共用环境感知轮询结果，不另起通道。
+1. **规则触发（Client 本地，零延迟）**：对话模式开启/关闭 → home ↔ chat；onboarding 流程的位置引导；屏幕布局变化（分辨率改变/显示器插拔）→ 重定位 home。
+2. **上下文触发（Client 调度，秒级延迟）**：focused app 切换 → 决定是否换 perch；长 idle → 移到 sleep locale；桌面空闲 → 进入 roam。与 §6.4 情境判定共用环境感知轮询结果，不另起通道。
 3. **任务触发（工具调用驱动）**：涉及 UI 对象的工具调用（"帮我打开浏览器"）→ 先 walk/fly 到 target locale，再执行（§3.6）。
 4. **用户触发**：拖拽（瞬时，覆盖一切其他移动）；可选"过来"语音/文字指令 → 朝用户当前焦点或屏幕中央走。
 
@@ -158,12 +158,12 @@ home 是唯一持久化的 locale。其余 locale 从 home 与上下文派生，
 
 精灵"动手"做事——打开应用、点击按钮、操作文件——之前先走到目标旁。仪式感来源：精灵的"动手"不是后台 RPC，而是有空间过程的角色行为。
 
-1. 用户请求涉及某 UI 对象（"帮我打开浏览器"）→ Desktop 解析目标坐标（窗口/图标/控件）。
+1. 用户请求涉及某 UI 对象（"帮我打开浏览器"）→ Client 解析目标坐标（窗口/图标/控件）。
 2. 精灵从当前位置 fly（远距离）或 walk（近距离）到 target locale，切 INTERACTING 状态。
 3. 抵达后播放"操作"动画（点击/触碰），Runner 同步在目标坐标执行点击，叙事上是"精灵在做"。
 4. 完成后回到原 locale 或 home。
 
-**不确定性兜底**：找不到目标 / 目标不可达（屏幕外/被遮挡）→ 精灵人格化表达（"找不到…" / "够不着…"），Desktop 直接以常规工具调用兜底，不阻塞功能。整个 ritual walk 通道失败时降级为精灵原地 WORKING——仪式是增强层，不是必要层。
+**不确定性兜底**：找不到目标 / 目标不可达（屏幕外/被遮挡）→ 精灵人格化表达（"找不到…" / "够不着…"），Client 直接以常规工具调用兜底，不阻塞功能。整个 ritual walk 通道失败时降级为精灵原地 WORKING——仪式是增强层，不是必要层。
 
 ### 3.7 不变量与反模式
 
@@ -184,7 +184,7 @@ home 是唯一持久化的 locale。其余 locale 从 home 与上下文派生，
 
 **Runner 新增能力**（详见 §10）：`system.get_windows`（枚举可见窗口几何 + z-order + focused 标记）、`system.get_work_area`（可用区域）、`system.get_cursor_pos`（鼠标位置）；可选 `system.click_at`（坐标点击，ritual walk 操作执行）。桌面图标位置仅 Windows 经 Shell API 可枚举，macOS 降级为"找不到图标"人格化表达。
 
-**与 §2 状态机的组合**：移动期间默认显示 IDLE 动画（除非状态机正处更高优先级状态）；抵达 target 后切 INTERACTING；SLEEPING 期间不主动换位（除非被用户唤醒）。**Backend 不感知空间行为**——所有位置决策在 Desktop 本地完成，无需新增 WS 事件或 RPC。
+**与 §2 状态机的组合**：移动期间默认显示 IDLE 动画（除非状态机正处更高优先级状态）；抵达 target 后切 INTERACTING；SLEEPING 期间不主动换位（除非被用户唤醒）。**Backend 不感知空间行为**——所有位置决策在 Client 本地完成，无需新增 WS 事件或 RPC。
 
 ---
 
@@ -197,7 +197,7 @@ DeskAgent 区别于一切既有桌面宠物 / 桌面 Agent 的核心，在于伙
     │
     ▼
 ┌─ 蛋 (Egg) ─────────────────────────────────────────────┐
-│  角色定义完成前，Desktop 以"蛋"作为占位形象常驻桌面。    │
+│  角色定义完成前，Client 以"蛋"作为占位形象常驻桌面。    │
 │  蛋是产品意象，技术本质是"形象生成未完成时的默认形象"。   │
 └──────────────────────────┬─────────────────────────────┘
                            │  用户点击/唤醒，进入 onboarding
@@ -214,10 +214,10 @@ DeskAgent 区别于一切既有桌面宠物 / 桌面 Agent 的核心，在于伙
 │  Backend 据角色定义装配生图 prompt，调用云端图片生成工具 │
 │  产出专属形象资产，与角色定义一同在用户维度持久化。      │
 └──────────────────────────┬─────────────────────────────┘
-                           │  资产下发至 Desktop
+                           │  资产下发至 Client
                            ▼
 ┌─ 孵化 (Hatch) ─────────────────────────────────────────┐
-│  Desktop 将桌面上的"蛋"替换为生成的专属形象，配以仪式感 │
+│  Client 将桌面上的"蛋"替换为生成的专属形象，配以仪式感 │
 │  过渡动画。这一刻是产品核心的情感锚点。                  │
 └──────────────────────────┬─────────────────────────────┘
                            ▼
@@ -249,11 +249,11 @@ DeskAgent 区别于一切既有桌面宠物 / 桌面 Agent 的核心，在于伙
 
 **标签的两种语义**：多数问题的标签就是答案本身，点击即填入输入框；但「我该怎么称呼您？」的标签（名字 / 昵称 / 称号 / 自填）是**称呼类型选择器**——点「昵称」不该把"昵称"二字当成称呼存下来，而是把输入框改问"那，您的昵称是？"再收具体值。只有「称号」这类本身就是称呼的才展开现成候选（老板 / 主人 / …）直接填入。落库的 `user_call_name` 始终是用户录入的具体称呼，类型本身不入库。
 
-**断点恢复**（[ARCHITECTURE.md §6.3](ARCHITECTURE.md)）：每个回答经 `onboarding.submit {field, value}` 即时落盘单个字段，Desktop 启动时调 `onboarding.get_state` 从下一个未答问题恢复——崩溃/退出不丢进度。
+**断点恢复**（[ARCHITECTURE.md §6.3](ARCHITECTURE.md)）：每个回答经 `onboarding.submit {field, value}` 即时落盘单个字段，Client 启动时调 `onboarding.get_state` 从下一个未答问题恢复——崩溃/退出不丢进度。
 
 ### 4.3 孵化与形象生成（单 PUT 双写）
 
-问题收齐后进入孵化动画。关键不变量：**Backend 的形象生成要求 persona 已完成（`is_complete=True`）**，因此 Desktop 在孵化开始时**先把 13 个答案（角色定义 + 5 用户结构化字段）经同一次 `PUT /api/companion/persona` 落库完成**——`update_persona` 服务端按 `extra="forbid"` schema 严格校验角色定义字段、把 5 个 user_* 字段无侵入地分流到 `Memory` 表（context 为 `user_profile:*`，tags 为 `"onboarding,user_profile"`），单 `db.commit()` 同时落 persona 与 memory。voice 字段已被消费（用于音色匹配）。生图超时/失败时 silhouette 说"我还没想好…"并自动重试（最多 3 次），不暴露技术错误；三次失败后允许稍后再试，不阻断用户。
+问题收齐后进入孵化动画。关键不变量：**Backend 的形象生成要求 persona 已完成（`is_complete=True`）**，因此 Client 在孵化开始时**先把 13 个答案（角色定义 + 5 用户结构化字段）经同一次 `PUT /api/companion/persona` 落库完成**——`update_persona` 服务端按 `extra="forbid"` schema 严格校验角色定义字段、把 5 个 user_* 字段无侵入地分流到 `Memory` 表（context 为 `user_profile:*`，tags 为 `"onboarding,user_profile"`），单 `db.commit()` 同时落 persona 与 memory。voice 字段已被消费（用于音色匹配）。生图超时/失败时 silhouette 说"我还没想好…"并自动重试（最多 3 次），不暴露技术错误；三次失败后允许稍后再试，不阻断用户。
 
 如果前一次 PUT 因网络问题失败，client `enterHatching` 自带的 3 次重试循环会把所有 13 个字段（包括 user_*）一起再发，由服务端的 query-then-update 幂等 upsert 避免重复或丢字段。
 
@@ -263,7 +263,7 @@ portrait 生成完成，silhouette 散开变为完整形象展示。操作：**�
 
 ### 4.5 音色确认
 
-portrait 确认后进入音色环节：`tts.match_voice {preference}` 把 onboarding 的音色偏好经标签评分映射到当前 TTS provider 目录中最贴合的 voice id，展示推荐音色 + 候选。操作：使用这个 / 换一个（从候选另选，每个可试听）。匹配到的 voice id 由 Desktop 持久化，后续 TTS 透传给 provider。
+portrait 确认后进入音色环节：`tts.match_voice {preference}` 把 onboarding 的音色偏好经标签评分映射到当前 TTS provider 目录中最贴合的 voice id，展示推荐音色 + 候选。操作：使用这个 / 换一个（从候选另选，每个可试听）。匹配到的 voice id 由 Client 持久化，后续 TTS 透传给 provider。
 
 > **设计决策**：音色匹配是即时确定性的标签评分，而非 LLM。一个窄域标签任务用 LLM 反而引入不必要的延迟与成本；curated 目录已足够。无匹配时优先中性默认音色。
 
@@ -294,7 +294,7 @@ portrait 确认后进入音色环节：`tts.match_voice {preference}` 把 onboar
 
 ### 5.2 主动陪伴与打扰档位
 
-Backend 的 Cron / `send_message` 经 WS 推送主动消息（[ARCHITECTURE.md §5](ARCHITECTURE.md)）。**伙伴的一切主动行为受三档打扰等级约束**，档位由用户设置 + Desktop 检测到的用户活动共同决定，Desktop 经 `companion.set_disturbance_tier` 上报当前生效档位。**档位只约束伙伴的主动行为；用户主动发起的交互永远不受限。**
+Backend 的 Cron / `send_message` 经 WS 推送主动消息（[ARCHITECTURE.md §5](ARCHITECTURE.md)）。**伙伴的一切主动行为受三档打扰等级约束**，档位由用户设置 + Client 检测到的用户活动共同决定，Client 经 `companion.set_disturbance_tier` 上报当前生效档位。**档位只约束伙伴的主动行为；用户主动发起的交互永远不受限。**
 
 | 档位 | 允许的主动行为 |
 |------|----------------|
@@ -302,27 +302,27 @@ Backend 的 Cron / `send_message` 经 WS 推送主动消息（[ARCHITECTURE.md �
 | **常规** | 仅轻量气泡/文字消息（无 TTS 语音）、affect |
 | **保持安静** | **禁止任何主动消息（语音+文字）**；但 LLM 推理出的 affect 仍经 `companion.affect` 事件流出，精灵切 EMOTIONAL 状态（无气泡无 TTS） |
 
-**双层档位模型**：用户手动选择 vs Desktop 检测到的焦点上下文（沉浸工作/全屏）会叠加派生 effective 档位。具体规则（`activity.ts::computeLocalEffectiveTier`）：
+**双层档位模型**：用户手动选择 vs Client 检测到的焦点上下文（沉浸工作/全屏）会叠加派生 effective 档位。具体规则（`activity.ts::computeLocalEffectiveTier`）：
 
 - **手动 quiet 永远不被覆盖**（manual lock-in）。用户在「保持安静」时即使打开全屏视频，活动感知器也不会再下调——已经没有更低档位可下调。
 - **immersive / fullscreen 焦点上下文**（IDE / gaming / reader 分类，或 `system.is_fullscreen` 真值）→ effective = quiet。
 - **其他情况** → effective = user_preferred。
 
-Desktop 30s 轮询 `system.get_focused_app` + `system.is_fullscreen`，变化时 push effective 值给 Backend（仅在 derived 变化时推；无节流 — 30s 轮询本身就够稀疏）。
+Client 30s 轮询 `system.get_focused_app` + `system.is_fullscreen`，变化时 push effective 值给 Backend（仅在 derived 变化时推；无节流 — 30s 轮询本身就够稀疏）。
 
-Backend 只镜像这个最终值（`services/disturbance.py::_disturbance`），server-side gate (`send_message_tool`、`cron`) 读 `_disturbance[user_id]`。Desktop 是档位的唯一权威。
+Backend 只镜像这个最终值（`services/disturbance.py::_disturbance`），server-side gate (`send_message_tool`、`cron`) 读 `_disturbance[user_id]`。Client 是档位的唯一权威。
 
-**消息与情绪是两个独立通道**（[ARCHITECTURE.md §6.3](ARCHITECTURE.md)）：保持安静 / 屏幕锁定时 Backend 静默切断主动消息推送（`send_message_tool` 在 `quiet` 档把消息文本吞掉），但 LLM 推理出的 affect 经独立的 `companion.affect` 事件流出，精灵切 EMOTIONAL 状态（无气泡无 TTS）。用户长时间无活动时，Desktop 的 idle 轮询还会主动调 `companion.check_affect` 触发 Backend LLM 推理情境化情绪（粘人型被冷落的委屈等）——情绪始终由 Backend LLM 产出，不退化成 Desktop 规则判断。屏幕锁定（Runner `system.is_screen_locked`）同样静默切断主动消息但保留 affect，解锁后静默恢复。
+**消息与情绪是两个独立通道**（[ARCHITECTURE.md §6.3](ARCHITECTURE.md)）：保持安静 / 屏幕锁定时 Backend 静默切断主动消息推送（`send_message_tool` 在 `quiet` 档把消息文本吞掉），但 LLM 推理出的 affect 经独立的 `companion.affect` 事件流出，精灵切 EMOTIONAL 状态（无气泡无 TTS）。用户长时间无活动时，Client 的 idle 轮询还会主动调 `companion.check_affect` 触发 Backend LLM 推理情境化情绪（粘人型被冷落的委屈等）——情绪始终由 Backend LLM 产出，不退化成 Client 规则判断。屏幕锁定（Runner `system.is_screen_locked`）同样静默切断主动消息但保留 affect，解锁后静默恢复。
 
-Desktop 收到主动消息后：形象切 SPEAKING + 播 TTS；对话框未开则在形象旁冒气泡，已开则在对话框加一条。典型场景：定时问候、日程提醒、长时间无交互后搭话、节日/天气情境化闲聊。
+Client 收到主动消息后：形象切 SPEAKING + 播 TTS；对话框未开则在形象旁冒气泡，已开则在对话框加一条。典型场景：定时问候、日程提醒、长时间无交互后搭话、节日/天气情境化闲聊。
 
 ### 5.3 用户直接交互（形象本体）
 
 用户对形象本身的直接操作（不经过对话框）是情绪价值的核心——**形象"有脾气"**：单击戳（高频戳触发递进反应）、双击唤起对话、长按/拖拽（松手回弹）、右键快捷菜单、悬停（注意到鼠标）。
 
-反应由**角色性格**驱动分层：粘人型被戳后撒娇、毒舌型吐槽、管家型礼貌——同一操作不同人格不同反应（Desktop 据角色定义的性格关键词选 reaction tone，轻/中/重三层按戳的频率递进）。反应文案与动画从 affect 对应的可用变体中挑选。
+反应由**角色性格**驱动分层：粘人型被戳后撒娇、毒舌型吐槽、管家型礼貌——同一操作不同人格不同反应（Client 据角色定义的性格关键词选 reaction tone，轻/中/重三层按戳的频率递进）。反应文案与动画从 affect 对应的可用变体中挑选。
 
-**LLM + 记忆驱动的反应增强**：在零延迟本地文案池（`POKE_LIGHT`/`MEDIUM`/`HEAVY`）之上叠加可选 LLM 通道——Desktop 戳后 debounce 200ms 调 `companion.interact` RPC，Backend 据 persona + 长期记忆推一条 ≤ 40 字符的反应文案 + 可选 emotion。响应到达时**不打断**正在播的本地 TTS，仅作文本气泡叠加（缓存入 tone-keyed 队列，下次同 tone 单次戳优先使用 LLM 缓存）。后端 throttle 1.5s，Desktop 端 debounce 2s，per-user inflight 取消。RPC 失败/超时/解析失败/无 persona 时静默吞掉，本地池兜底。
+**LLM + 记忆驱动的反应增强**：在零延迟本地文案池（`POKE_LIGHT`/`MEDIUM`/`HEAVY`）之上叠加可选 LLM 通道——Client 戳后 debounce 200ms 调 `companion.interact` RPC，Backend 据 persona + 长期记忆推一条 ≤ 40 字符的反应文案 + 可选 emotion。响应到达时**不打断**正在播的本地 TTS，仅作文本气泡叠加（缓存入 tone-keyed 队列，下次同 tone 单次戳优先使用 LLM 缓存）。后端 throttle 1.5s，Client 端 debounce 2s，per-user inflight 取消。RPC 失败/超时/解析失败/无 persona 时静默吞掉，本地池兜底。
 
 ### 5.4 自主行为（让形象"活着"）
 
@@ -377,12 +377,12 @@ IDLE 时形象不是静止贴图。两类自主行为，**都不触发 TTS、不
 
 ## 10. Runner runtime surface
 
-Runner 端提供与伴侣场景直接对接的本地能力，Desktop 按以下契约消费（[client/README.md](client/README.md) §Runner）：
+Runner 端提供与伴侣场景直接对接的本地能力，Client 按以下契约消费（[client/README.md](client/README.md) §Runner）：
 
 - **`runner_ready` payload**：含 `version` 与 `capabilities`（`microphone` / `screen_capture` / `local_stt` / `local_tts` / `system_activity` / `platform` / `python`），由 Runner **真实探测**各平台子系统得出，非硬编码。不全可装的环境不阻塞启动。
 - **`deskagent.info` RPC**：任何时候可调，返回完整进程 / OS / 网络 / 磁盘快照。失败态降级（§6.5）依据此 RPC 与 WS 连通性双源判定。
-- **环境感知工具** `system.get_idle_seconds` / `is_screen_locked` / `get_focused_app` / `get_power_state`：经标准 `execute_tool` 通道轮询（Desktop 经 `runnerInvoke`）。`get_idle_seconds` 跨过阈值时额外触发 `companion.check_affect` 让 Backend LLM 推理情境化 affect（[ARCHITECTURE.md §5](ARCHITECTURE.md)）；其余工具的结果直接进 §6.4 情境判定，**不经 LLM**。`is_screen_locked=true` 时静默切断主动消息（仍可 affect），解锁后静默恢复。
-- **本地语音** `speech_to_text`（faster-whisper）/ `text_to_speech`（Piper 主、pyttsx3 降级）/ `list_tts_voices`:STT/TTS 的零成本主路径。Desktop 经 `media.stt`/`media.tts` IPC 路由——默认本地优先(`auto`),本地不可用或失败时回退云端;`local` 档纯本地不回退,`cloud` 档强制云端(见 §7)。
+- **环境感知工具** `system.get_idle_seconds` / `is_screen_locked` / `get_focused_app` / `get_power_state`：经标准 `execute_tool` 通道轮询（Client 经 `runnerInvoke`）。`get_idle_seconds` 跨过阈值时额外触发 `companion.check_affect` 让 Backend LLM 推理情境化 affect（[ARCHITECTURE.md §5](ARCHITECTURE.md)）；其余工具的结果直接进 §6.4 情境判定，**不经 LLM**。`is_screen_locked=true` 时静默切断主动消息（仍可 affect），解锁后静默恢复。
+- **本地语音** `speech_to_text`（faster-whisper）/ `text_to_speech`（Piper 主、pyttsx3 降级）/ `list_tts_voices`:STT/TTS 的零成本主路径。Client 经 `media.stt`/`media.tts` IPC 路由——默认本地优先(`auto`),本地不可用或失败时回退云端;`local` 档纯本地不回退,`cloud` 档强制云端(见 §7)。
 - **窗口几何与目标解析** `system.get_windows` / `get_work_area` / `get_cursor_pos`：空间行为（§3）所需的本机感知。`get_windows` 枚举可见窗口（标题、进程名、几何 {x,y,w,h}、z-order、focused 标记）——perch 选择与 ritual walk 目标解析依赖此项；`get_work_area` 返回屏幕可用区域（去除任务栏/dock），路径规划依赖此项；`get_cursor_pos` 返回鼠标位置，"朝用户方向走"等行为依赖此项。
 - **坐标操作**（可选）`system.click_at`：ritual walk（§3.6）目标达成后精灵"亲手操作"的执行通道——在指定坐标模拟点击。不可用时不阻塞 ritual walk，精灵走到目标旁后操作以常规工具调用兜底（用户无感）。桌面图标枚举仅 Windows 可枚举；macOS 降级为"找不到图标"人格化表达。
 

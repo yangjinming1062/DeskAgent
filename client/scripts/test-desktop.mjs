@@ -76,7 +76,7 @@ function exists(target) {
 }
 
 // Match nodepty native binding location to what main.cjs's resolver fallback
-// expects (desktop/main/main.cjs, packaged-build branch).  Upstream
+// expects (client/main/main.cjs, packaged-build branch).  Upstream
 // node-pty 1.x is N-API based and ships per-arch prebuilts under
 // prebuilds/<platform>-<arch>/ instead of build/Release/.  We check the
 // per-arch dir since that's what stage-native-deps actually copies.

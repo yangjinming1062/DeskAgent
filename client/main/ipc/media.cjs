@@ -323,7 +323,7 @@ function registerMediaIpc({ ipcMain, ensureBackend, getRunnerBridge, getEnginePr
     // notion of these — even under ``tts.engine='auto'`` we must route to
     // the cloud backend or the user pays for a voicedesign call and hears
     // Piper's default voice instead. Same prefix is mirrored in
-    // desktop/renderer/shared/voice-catalog.ts (VOICEDESIGN_PREFIX).
+    // client/renderer/shared/voice-catalog.ts (VOICEDESIGN_PREFIX).
     const VOICEDESIGN_PREFIX = 'mimo_voicedesign:'
     const isDesigned = voice.startsWith(VOICEDESIGN_PREFIX)
 

@@ -124,7 +124,7 @@ export interface UsageStats {
 
 /** STT/TTS engine routing preference, resolved by the Desktop main process.
  * `auto` = local Runner engine first with cloud fallback; `local` = local only
- * (no cloud fallback); `cloud` = backend always. See desktop/main/ipc/media.cjs. */
+ * (no cloud fallback); `cloud` = backend always. See client/main/ipc/media.cjs. */
 export type SpeechEngine = 'auto' | 'local' | 'cloud'
 
 /** Shape returned by `GET /api/config`. Includes computed siblings like `*_set` / `*_fingerprint`

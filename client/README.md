@@ -2,7 +2,7 @@
 
 桌面伙伴形象载体 + 本地枢纽——单 Electron 应用，承担双职责。
 
-设计文档：[ARCHITECTURE.md](../ARCHITECTURE.md) §2 / §4 / §6 / §9；伙伴层详细交互见 [COMPANION_DESIGN.md](../COMPANION_DESIGN.md)。
+设计文档：[ARCHITECTURE.md](../ARCHITECTURE.md) §2 / §4 / §6 / §9；伙伴层详细交互见 [DESIGN.md](../DESIGN.md)。
 
 ## 双层定位
 
@@ -17,7 +17,7 @@ DeskAgent 是**双层叠加**的单 Electron 应用：
 
 ### 3D 渲染引擎
 
-`renderer/companion/3d/` 是桌面伙伴的实时渲染核心（替换了此前的预渲染视频管线）：
+`renderer/companion/3d/` 是桌面伙伴的实时渲染核心：
 
 - `engine.ts` — `Engine` 编排器：WebGLRenderer（alpha 透明 + ACES tone mapping + 阴影）、`PerspectiveCamera`、渲染循环
 - `character-controller.ts` — GLB 加载 + AnimationMixer + 程序化 fallback、动画状态机、口型振幅接管、换装纹理热替
@@ -29,7 +29,6 @@ DeskAgent 是**双层叠加**的单 Electron 应用：
 
 3D 模型的 GLB 由后端 `/api/companion/model`（base_texture provider 即时返回预打包 GLB）下发；换装纹理经 `/api/companion/wardrobe/generate`（AI 生图）+ `/equip` 装备。
 
-历史 `client/` 原型（Three.js 实验独立子项目，已废弃删除）→ 引擎代码全部并入本目录。
 
 ## 顶层目录
 
@@ -130,7 +129,7 @@ Desktop 走 `electron-updater` 从 Backend `/api/update` 拉取预构建安装�
 - **Phase 2 — install（NEW Electron 里跑）**：`runner-updater.installPending()` 读 sentinel 后原地升级 wheel 与 `server.py`，冒烟 `import deskagent_agent, server` 后重启 bridge。**`runnerBridge.stop()` 必须在 pip install 前**——释放 Python 句柄避免 Windows EPERM。**降级语义**：pip / smoke / start 任一失败 → rollback marker（升级前 `pip show` 快照的 `Name==Version`）还原 site-packages → emit `runner-failed {recoverable: true}`；`attempt_count >= 3` → 删 sentinel，emit `runner-failed {recoverable: false}`。对应 ARCH §9 "失败 → 降级到旧版 Runner 并向用户警告"。
 - **venv 永不被改名/移动**——只有 venv 内部 wheel 被升级。
 
-签名 keypair：私钥 `scripts/secrets/update.key`、公钥 `scripts/secrets/update.pub`（经 `desktop/package.json#build.extraResources` 复制到 packaged desktop，`main/runner/updater.cjs` 启动时读取校验）。**生产构建签名密钥在构建机上**——开发分支留 `update.key` 在本地是因为出包验证需要测试签名链路。
+签名 keypair：私钥 `scripts/secrets/update.key`、公钥 `scripts/secrets/update.pub`（经 `client/package.json#build.extraResources` 复制到 packaged desktop，`main/runner/updater.cjs` 启动时读取校验）。**生产构建签名密钥在构建机上**——开发分支留 `update.key` 在本地是因为出包验证需要测试签名链路。
 
 伙伴形象资产与角色定义云端持久化（[ARCHITECTURE.md §6](../ARCHITECTURE.md)），自更新只影响本地代码与运行时，不触碰用户的伙伴身份。
 

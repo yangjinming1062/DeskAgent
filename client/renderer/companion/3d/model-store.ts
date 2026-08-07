@@ -1,7 +1,6 @@
 import { atom } from 'nanostores'
 
-// Model + wardrobe asset catalog for the 3D companion. Replaces the old
-// clip-store (which tracked pre-rendered video clips for every state).
+// Model + wardrobe asset catalog for the 3D companion.
 // Backed by the backend /api/companion/model + /api/companion/wardrobe
 // endpoints; pushed over the gateway as model.ready / wardrobe.updated events.
 

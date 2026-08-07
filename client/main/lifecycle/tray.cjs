@@ -1,4 +1,4 @@
-// Tray + close-to-tray + single-instance lock — see desktop/CLAUDE.md for
+// Tray + close-to-tray + single-instance lock — see client/README.md for
 // the contract (`isQuitting` ownership, close-to-tray semantics, dock-hide
 // decision). `installCloseInterceptor` must be re-applied by main.cjs for
 // every newly created BrowserWindow.

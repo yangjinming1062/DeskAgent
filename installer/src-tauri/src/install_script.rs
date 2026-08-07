@@ -8,7 +8,7 @@
 //!      `DeskAgent-Setup` binary is self-contained — no network, no GitHub, no
 //!      cache. The script version IS the installer build version.
 //!
-//! Mirrors `desktop/main/lifecycle/platform.cjs`'s `resolveInstallScript`,
+//! Mirrors `client/main/lifecycle/platform.cjs`'s `resolveInstallScript`,
 //! but the dev-checkout resolution is driven by an env var rather than the
 //! Electron app's APP_ROOT/.. trick, because DeskAgent-Setup.exe is meant to
 //! live OUTSIDE any repo checkout.

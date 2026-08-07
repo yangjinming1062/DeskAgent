@@ -242,7 +242,7 @@ DeskAgent 伙伴的"人格"与"形象"是跨 Backend↔Desktop 的核心契约�
 
 ### 音色匹配（voice catalog）
 
-onboarding 的音色偏好（`voice` 草稿字段）经 JSON-RPC 落到具体 voice id（COMPANION_DESIGN.md §4.2 / §4.5）：
+onboarding 的音色偏好（`voice` 草稿字段）经 JSON-RPC 落到具体 voice id（DESIGN.md §4.2 / §4.5）：
 
 - **`tts.list_voices`**：返回当前用户激活的 TTS provider 的候选音色目录（`{provider, voices:[{id,label,gender,language,tags,description}], supports_voice_design, voice_design_guide}`）。voice id 是 provider 私有的；`language`（`"zh"`/`"en"`/`"multi"`）驱动语言偏好匹配。`supports_voice_design` 标记该 provider 是否支持用户自定义音色设计，`voice_design_guide` 是写法指南文本供前端展示。**列表按 `language` 排序**对应"默认中文"的产品方向（[runner/README.md §音频工具](../runner/README.md#音频工具-stt--tts)）。
   - **可选 `language` 过滤**（`{language: "zh"}` / `{"language": "en"}` / `{"language": "multi"}`）：返回仅该语言的子集。未知 / 空字符串值走全量未过滤路径。用于 voice picker UI 的"中文 / English / 全部"tabs——后端过滤避免前端在 `voices` 数组上做二次筛选，让 render-side 的 catalog 始终是策划好的 zh-first 顺序。Filter 后 default_voice 退化到第一个匹配的 voice；过滤后空则回退到 `DEFAULT_VOICE` 兜底，shape 永远存在。

@@ -1,6 +1,6 @@
 # DeskAgent
 
-> 定制化陪伴型桌面伙伴 —— **Backend** 云端承载人格与形象，**Desktop** 本地渲染伙伴并中转，**Runner** 隔离执行本机操作。
+> 定制化陪伴型桌面伙伴 —— **Backend** 云端承载人格与形象，**Client** 本地渲染伙伴并中转，**Runner** 隔离执行本机操作。
 
 DeskAgent 是一个**根据用户描述定制的、具有专属形象的陪伴型桌面伙伴**。用户首次安装时以一颗"蛋"的形态见到它，通过 onboarding 描述自己想要的伙伴（名字、性格、说话风格、外貌偏好），系统据此即时生成专属桌面形象；此后伙伴常驻桌面、能主动陪伴、也能调用本机能力帮用户做事。
 
@@ -25,7 +25,7 @@ DeskAgent 是一个**根据用户描述定制的、具有专属形象的陪伴�
              │  唯一通道: WS /api/chat/ws?token=<jwt>
              ▼
 ┌──────────────────────────┐
-│  Desktop (伙伴载体+枢纽)  │
+│  Client (伙伴载体+枢纽)  │
 │  Electron 42 + React 19  │
 │  • 桌面精灵 3D 实时渲染（Three.js + WebGL） │
 │  • 陪伴交互 + onboarding  │
@@ -49,7 +49,7 @@ DeskAgent 是一个**根据用户描述定制的、具有专属形象的陪伴�
 
 **职责一句话**：
 - **Backend = 大脑**：持久化伙伴角色定义与形象资产、编排对话、装配提示词、调度云端工具与 Cron 主动陪伴
-- **Desktop = 伙伴载体 + 枢纽**：渲染桌面精灵形象、承载陪伴交互；持有用户凭证、中转工具调用、管理 Runner 生命周期与自更新
+- **Client = 伙伴载体 + 枢纽**：渲染桌面精灵形象、承载陪伴交互；持有用户凭证、中转工具调用、管理 Runner 生命周期与自更新
 - **Runner = 手脚**：零凭证执行本地工具，需要 LLM 时借 Desktop 代为调用
 
 ## 快速开始
@@ -96,7 +96,7 @@ bash scripts/build_client.sh
 | 项目总览 / 架构机制 / 通信协议与不变量 / 伙伴生命周期 | [ARCHITECTURE.md](ARCHITECTURE.md) |
 | Backend 模块结构与实现 | [backend/README.md](backend/README.md) |
 | Runner 模块结构与实现 | [runner/README.md](runner/README.md) |
-| Desktop 模块结构与实现 | [client/README.md](client/README.md) |
+| Client 模块结构与实现 | [client/README.md](client/README.md) |
 | Installer 模块结构与协议 | [installer/README.md](installer/README.md) |
 | 构建 / 测试 / 发布脚本 | [scripts/README.md](scripts/README.md) |
 | 仓库级 AI 协作规范 | [CLAUDE.md](CLAUDE.md) |
@@ -107,14 +107,14 @@ bash scripts/build_client.sh
 |------|---------|-----------|
 | Backend | Linux (Docker 容器) | 仅 Linux，无 Windows 兼容要求 |
 | Runner | Windows / macOS 原生 | Windows 是已知风险面（见 [runner/README.md §已知限制](runner/README.md)） |
-| Desktop | Windows / macOS 原生 | Windows 兼容性是已知风险面（见 [client/README.md §已知限制](client/README.md)） |
+| Client | Windows / macOS 原生 | Windows 兼容性是已知风险面（见 [client/README.md §已知限制](client/README.md)） |
 | Installer | Windows / macOS 原生 | Tauri 2；install 协议 v2（含 install-python stage） |
 
 ## 信任与安全
 
 跨模块安全契约详见 [ARCHITECTURE.md §7](ARCHITECTURE.md)；核心要点：
 
-- **Runner 零凭证**：不持有 Backend token；需借 LLM 时通过反向 RPC 经 Desktop 代调 `POST /api/llm/completion`
+- **Runner 零凭证**：不持有 Backend token；需借 LLM 时通过反向 RPC 经 Client 代调 `POST /api/llm/completion`
 - **JWT 加密落盘**：Electron `safeStorage` 跨平台统一（DPAPI / Keychain / libsecret）
 - **自更新签名**：Electron 二进制走 `electron-updater` RSA；Python runner wheel 走 `scripts/secrets/update.pub` RSA + SHA-512 双重校验
 - **API key fingerprinting**：`GET /api/user/model-config` 只返回 `sk-…XX` 形式的 fingerprint，原始 key 永不离开 Backend
