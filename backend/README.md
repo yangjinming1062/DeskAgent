@@ -185,13 +185,13 @@ MiniMax-H3（v2 API）异步两段式：`POST /v2/video_generation`（task_id）
 
 **Tool**：`video_generate`（schema: prompt/duration/resolution/first_frame_image/aspect_ratio）+ `video_generate_status`（schema: task_id）。前者最多等 `video_gen_tool_wait_seconds`（180s）；超时返回 `{success:true, pending:true, task_id, hint:"用 video_generate_status 查询"}`——后台任务继续跑。MiniMax 不暴露 ASR，所以 `stt` provider 没有 `minimax` 实现。
 
-**伙伴层 clip 的种子图**：`companion/avatar_service` 生成角色动画 clip 时，`first_frame_image` 固定为该用户当前 portrait，prompt 描述场景/动作——所有 clip 共享同一颗种子图以保证跨 clip 角色一致；portrait 重生时全部 clip 失效重排（[ARCHITECTURE.md §6.2](../ARCHITECTURE.md)）。clip 通过 `clip.updated` 事件（payload 携 scene + tier）单通道下发，`enqueue_video_job(..., emit_event=False)` 抑制通用的 `video_gen.completed/failed` 避免双通知。
+**3D 模型生成**：`companion/model_service` 的 `generate_companion_model` 按 `companion_model_provider` 配置选择 provider：`base_texture`（默认）按物种取预制 rigged GLB 即时下发 + 后台异步用 portrait 为参考图经 image-gen 生成全身纹理；`meshy` 走外部 image-to-3D API 异步轮询。模型就绪经 `model.ready {model_id, asset_url, species}` 事件推送。
 
 ## 安全设计
 
 - **Tool Reserved Keys 防注入**：`registry.execute_backend_tool` 把 `user_id`、`llm_config`、`user_settings` 标记为 reserved——LLM 塞同名 key 静默丢弃。角色定义同样受此保护，防止用户对话内容注入改写伙伴人格。
 - **不可信工具结果包裹**：`web_search`/`web_extract`/`browser_*`/`mcp_*` 的字符串结果用 `<untrusted_tool_result>` 包裹。短字符串（`untrusted_wrap_min_chars`，默认 32）不包——注入风险低 + 节省 token。
-- **DNS Rebinding 防护**：所有出站外呼（`send_message_tool` webhook、companion 的 `avatar_service` / `clip_service` 下载 provider 生成资产）在发起连接前 `getaddrinfo` 校验目标 IP，拒绝 loopback/private/multicast/CGNAT/metadata；连接时再经 httpx `event_hooks.connect` 复核，阻断预检与建连之间的 DNS 重绑定。
+- **DNS Rebinding 防护**：所有出站外呼（`send_message_tool` webhook、companion 的 `avatar_service` / `model_service` / `wardrobe_service` 下载 provider 生成资产）在发起连接前 `getaddrinfo` 校验目标 IP，拒绝 loopback/private/multicast/CGNAT/metadata；连接时再经 httpx `event_hooks.connect` 复核，阻断预检与建连之间的 DNS 重绑定。
 - **Think Block 清洗**：`StreamingThinkScrubber` 流式过滤 `<think>`/`<thinking>`/`<reasoning>` 标签。
 - **Secret Redaction**：`redact_sensitive_text` 36 prefix patterns + regex rules。import 时快照 `DESKAGENT_REDACT_SECRETS`（anti-tamper）。
 - **Model Config 安全边界**：`GET /api/user/model-config` 只返回用户在 `UserModelConfig` 行里**显式设置**的字段——未设置的字段返回空字符串，绝不透传 `SETTINGS`（`.env`）里的服务器默认值。原始 API key 永不离开后端，仅返回 `*_api_key_set` 布尔 + `llm_api_key_fingerprint` 指纹。`PUT /api/user/model-config` 允许用户自助修改（空 `api_key` = 保留原值；空 `base_url`/`model_name` = 清空回退默认）。Admin 端点 `PUT /api/admin/{user_id}/model-config` 仍存在，区别是 admin 要求 `llm_*` 三字段非空。
@@ -216,22 +216,30 @@ DeskAgent 伙伴的"人格"与"形象"是跨 Backend↔Desktop 的核心契约�
 
 ### 形象资产（AvatarAsset）
 
-`AvatarAsset` 表存历次生成的专属形象资产（provider 返回的 URL + 元数据 + 生成状态），按用户维度持久化。Postgres partial unique index 约束"每个用户最多一条 active 记录"。`/api/companion/avatar` POST 时 Backend 据角色定义装配生图 prompt → 调 `image_generate` → 写行并置 active → 自动从新 portrait 种子 batch-0 idle clip。形象生成失败时返回 `502` + 友好文案（`伙伴形象生成失败，请稍后重试`），不泄露 provider 原始错误。
+`AvatarAsset` 表存历次生成的专属形象资产（provider 返回的 URL + 元数据 + 生成状态），按用户维度持久化。Postgres partial unique index 约束"每个用户最多一条 active 记录"。`/api/companion/avatar` POST 时 Backend 据角色定义装配生图 prompt → 调 `image_generate` → 写行并置 active。形象生成失败时返回 `502` + 友好文案（`伙伴形象生成失败，请稍后重试`），不泄露 provider 原始错误。
 
-**avatar.regenerate** JSON-RPC：带可选 `feedback` 文本（如"头发长一点"），折入 prompt 做增量重生成。旧 clip 在新 portrait 成功后才失效（避免生图失败时用户失去全部 clip），然后 batch-0 重新排队。
+**avatar.regenerate** JSON-RPC：带可选 `feedback` 文本（如"头发长一点"），折入 prompt 做增量重生成。不触发 3D 模型失效——模型独立于 portrait，只随物种变更或用户显式请求重生。
 
 **基于上传图片生成**（`POST /api/companion/avatar/from-image`）：用户上传一张图片作为角色基准形象，可选附一段描述。上传图以 `data:` URI 作为 `reference_image` 内联传给生图 provider（不依赖后端公网可达，provider 会拒绝私有/localhost 地址），让 provider 以该图为角色参照重新渲染出符合种子图契约的 portrait（纯白背景、干净构图）——用户原图可能背景复杂或构图不符，不能直接作种子图；"直接用原图"由 `POST /api/companion/avatar/upload` 提供。参考图随请求内联传递，不落盘。
 
-`reference_image` 是 image_gen 的通用能力：原生图生图 provider 直接消费种子图（MiniMax `subject_reference`、Gemini `inlineData`）；纯文本生图 provider（MiMo/OpenAI 兼容、Zhipu）没有原生 i2i，`image_generation_tool` 先经用户配置的 chat（视觉）provider 把参考图描述为文本再折入 prompt——因此依赖用户 chat 模型具备视觉能力。clip Tier-2 keyframe 走同一工具入口，同样生效。
+`reference_image` 是 image_gen 的通用能力：原生图生图 provider 直接消费种子图（MiniMax `subject_reference`、Gemini `inlineData`）；纯文本生图 provider（MiMo/OpenAI 兼容、Zhipu）没有原生 i2i，`image_generation_tool` 先经用户配置的 chat（视觉）provider 把参考图描述为文本再折入 prompt——因此依赖用户 chat 模型具备视觉能力。
 
-### 动画 clip 流水线（AvatarClip）
+### 3D 模型管线（CompanionModel）
 
-`AvatarClip` 表存以 portrait 为种子的图生视频 clip，每个 clip 绑定一个 `scene` 标签（与 Desktop 动画状态机状态对齐：`idle` / `speaking` / `thinking` / `happy` / ...）。scene 目录 + 批次优先级定义在 `services/companion/clip_service.CLIP_SCENES`。本批次新增 batch-2 idle 场景：`idle_thinking`/`idle_typing`/`idle_bounce`/`idle_sway`/`idle_calm`/`idle_engaged`，由 `escalation_loop` 自动消化，受 `clip_video_daily_budget` 约束。
+`CompanionModel` 表存 3D 模型资产（species、provider、asset_url、morph_params_json、has_rig、has_morph_targets），按用户维度持久化，每用户最多一条 active。`companion_model_provider` 配置选择：
 
-- **渐进式生成**：batch 0（idle）在 portrait 生成时同步排队；其余批次（speaking/thinking/working → 生命周期 → 情绪变体）后台渐进生成
-- **事件下发**：clip 通过 `clip.updated` 单通道下发（payload 携 scene + tier + url + keyframe_url + keyframe_meta + status），companion 服务以 `enqueue_video_job(..., emit_event=False)` 抑制通用 `video_gen.*` 事件避免双通知；`avatar.list_clips` 是拉取式同步入口（首次启动 / 断线重连补齐）
-- **avatar.list_clips** JSON-RPC：返回全部 clip + 实时生成状态（JOIN `VideoGenJob` 行）
-- **衍生失效**：portrait 重生时所有 clip 失效（design §6.2——同一颗种子图从机制上保证跨 clip 一致性，跨版本不可复用）
+- **base_texture（默认）**：按 `persona.definition_json` 的 `biological_type` 映射到 `assets/base-models/` 下的预制 rigged GLB（人类/精灵/灵兽/机甲/幻形 + `character.glb` 通用兜底），即时复制到 `companion-models/` 持久目录并经 `model.ready` 事件下发。零 3D API 成本。模型规格（动画/morph/骨骼/材质）见 [`../assets/base-models/GLB_MODEL_SPEC.md`](../assets/base-models/GLB_MODEL_SPEC.md)。模型下发后后台异步用 portrait 为参考图调 image-gen 生成全身纹理，就绪作 `WardrobeItem` 写库 + `wardrobe.updated` 推送。
+- **meshy（可选）**：需 `MESHY_API_KEY`，走 `POST /v2/image-to-3d` 异步轮询（`companion_model_max_poll_seconds`），生成定制 mesh。
+- **morph 发现**：`_extract_morph_names_from_glb` 解析 GLB JSON chunk 的 `meshes[].extras.targetNames`，写入 `CompanionModel.has_morph_targets`，供客户端知道模型支持哪些表情。
+
+### 换装系统（WardrobeItem）
+
+`WardrobeItem` 表存换装资产（材质覆盖 + 可选纹理），每用户最多一条 equipped。
+
+- **材质预设**：6 种配色（`material_overrides_json`），即时生效，零生成成本。
+- **AI 纹理**：`POST /api/companion/wardrobe`（prompt → image-gen → 纹理 URL）。
+- **非破坏性热替**：客户端覆盖材质/加载纹理，不动骨骼动画与 morph targets。
+
 
 ### 音色匹配（voice catalog）
 
@@ -295,8 +303,6 @@ Backend 在对话响应的 `message.complete` 帧内联 `affect: {emotion}` 字�
 | `image_generate` / `text_to_speech_tool` / `video_generate` 不参与 config-aware 过滤 | 可用性取决于 provider；调用时按 `llm_config` 拉 `provider_for_service` |
 | MiniMax-H3 视频 URL 短时效 | video_gen H3 v2 协议下 `poll` 直接返回 `download_url`（旧 v1 还有 `files/retrieve` 第二跳），URL 仍是短时效的，必须立即下载落 `data_dir/temp-media`，**不能**直接返给前端 |
 | MiniMax 内容风控 1027 不重试 | `base_resp.status_code=1027` 映射到 `content_policy_blocked` 且 `retryable=False`，避免重试三次白烧配额 |
-| clip 生成依赖 video_gen provider | `AvatarClip` 排队需 video_gen 配置（默认 MiniMax-H3）；未配置时 clip 排队静默失败（有日志），portrait 仍正常生成 |
-| clip 的 first_frame_image 需公网可达 | portrait `asset_url` 作为图生视频种子图传给 provider；本地 `/api/media/files/<id>` URL 在 Docker 内网不可达，需正确配置 `PUBLIC_URL_PREFIX` |
 | 单实例 IPC future | `_disturbance`、companion_submission_id 锁、`video_next_retry_at` CAS 都在 process-local 内存里；架构按单实例部署 |
 | Cron kick 守卫 | `_kick_autonomous_turn` 仅在 dispatcher 表里查"用户在线"；`kick` 内部 `is_quiet` 守卫 + per-user `asyncio.Lock` 兜底 |
 | video_gen URL 短时效过期 | H3 v2 协议下 `provider.poll` 直接返回的 `download_url` 是短时效的；下载测试必须确保 URL 失效前落地；CI fixture 用 fake provider 跳过此路径 |

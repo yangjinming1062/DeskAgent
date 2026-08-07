@@ -1,28 +1,29 @@
 import type { SpriteStateName } from '../state/companion-store'
 
-/** Alternate clip names per state. The state's own name is tried first by
- * the resolver, so the canonical name is intentionally absent from these
- * alias lists. Names follow common conventions from Mixamo, Ready Player
- * Me, and our own asset-pack naming. */
-const STATE_CLIP_ALIASES: Record<SpriteStateName, string[]> = {
-  idle: ['Idle', 'Idle_Neutral', 'breathing_idle', 'Breathing Idle'],
-  listening: ['Listen', 'Idle_Listening', 'listening_idle'],
-  thinking: ['Think', 'Thinking', 'Idle_Thinking', 'thinking_pose'],
-  speaking: ['Talk', 'Talking', 'talking gesture', 'talking'],
-  working: ['Work', 'Working', 'typing', 'Typing', 'computer_typing'],
-  sleeping: ['Sleep', 'Sleeping', 'lying_down', 'sleep_pose'],
-  interacting: ['wave', 'Wave', 'Waving', 'interacting', 'greeting'],
-  emotional: ['Idle', 'Idle_Neutral'],
-  disconnected: ['Sleep', 'Sleeping', 'Idle']
+// Clip names follow GLB_MODEL_SPEC.md §3. The spec's canonical name for each
+// state is the first entry; fallbacks handle Mixamo / Ready Player Me / ad-hoc
+// models that predate the spec. resolveClip tries names in order, first hit
+// wins. If none match, returns null — the engine falls back to procedural.
+
+const STATE_CLIPS: Record<SpriteStateName, string[]> = {
+  // Spec §3.1 MUST clips
+  idle: ['idle', 'Idle', 'Idle_Neutral', 'breathing_idle'],
+  listening: ['listening', 'Listen', 'Idle_Listening'],
+  thinking: ['thinking', 'Think', 'Thinking', 'Idle_Thinking'],
+  speaking: ['speaking', 'Talk', 'Talking'],
+  working: ['working', 'Work', 'Working', 'typing', 'Typing'],
+  sleeping: ['sleeping', 'Sleep', 'Sleeping'],
+  interacting: ['interacting', 'poke_reaction_light', 'wave', 'Wave'],
+  emotional: ['emotional_idle', 'idle', 'Idle'],
+  disconnected: ['disconnected', 'Sleep', 'Sleeping', 'idle']
 }
 
 export function resolveClip(
   state: SpriteStateName,
   available: Set<string>
 ): string | null {
-  if (available.has(state)) return state
-  for (const alias of STATE_CLIP_ALIASES[state] ?? []) {
-    if (available.has(alias)) return alias
+  for (const name of STATE_CLIPS[state] ?? ['idle']) {
+    if (available.has(name)) return name
   }
   return null
 }

@@ -8,17 +8,17 @@
 |------|-------------|
 | `GLB_MODEL_SPEC.md` | 3D character model delivery spec |
 | `generate_base_models.py` | Blender Python generator script |
-| `backend/assets/base-models/*.glb` | Generated GLB files (written by script) |
+| `*.glb` | Generated GLB files (written by this script) |
 
 ## Generation
 
 ```powershell
 & "C:\Program Files\Blender Foundation\Blender 5.2\blender.exe" `
     --background --factory-startup `
-    --python assets/base-models/generate_base_models.py
+    --python backend/assets/base-models/generate_base_models.py
 ```
 
-Output: `backend/assets/base-models/` (read by backend `companion_base_model_dir`).
+Output: same directory (`backend/assets/base-models/`), read by backend `companion_base_model_dir`.
 
 ## Species
 
@@ -35,9 +35,9 @@ Each model includes:
 - 25 bones (Mixamo/HumanIK naming)
 - 22 morph targets (ARKit facial + body-shape)
 - 3 PBR textures (baseColor / metallicRoughness / normal)
-- 4 animation clips (idle / speaking / thinking / wave)
+- Animation clips: see GLB_MODEL_SPEC.md §3 (MUST: 9 core states + walk; SHOULD: 21 more)
 
 ## Replacing with Artist Assets
 
-Drop artist-made rigged GLBs into `backend/assets/base-models/` with matching filenames.
+Drop artist-made rigged GLBs into this directory with matching filenames.
 See `GLB_MODEL_SPEC.md` sections 4-5 for bone and morph naming requirements.
