@@ -19,7 +19,6 @@ import {
 import { isClientErrorIpc } from '@/shared/lib/ipc-error'
 import { $gatewayState } from '@/shared/store/gateway'
 
-import { clearClipCatalog, playTransitionClip } from '../clip-store'
 import { assemblePersona, MAX_APPEARANCE, MAX_USER_TEXT, type OnboardingAnswers } from '../persona'
 import { setCompanionVoiceId } from '../prefs'
 import { Silhouette } from '../sprite/silhouette'
@@ -623,14 +622,12 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
 
       if (queued?.asset_url) {
         setPortraitUrl(queued.asset_url)
-        clearClipCatalog()
         void playOnboardingAudio('onboarding.portrait.regenerate')
       } else if (queued?.queued && queued.job_id) {
         const result = await awaitAvatarRegeneration(queued.job_id)
 
         if (result.asset_url) {
           setPortraitUrl(result.asset_url)
-          clearClipCatalog()
           void playOnboardingAudio('onboarding.portrait.regenerate')
         } else {
           // Failure path — keep the existing clip catalog intact so the
@@ -704,7 +701,6 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
       })
 
       if (res?.asset_url) {
-        clearClipCatalog()
         setPortraitUrl(res.asset_url)
         setPickedImage(null)
         setRefineDescription('')
@@ -740,7 +736,6 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
       })
 
       if (res?.asset_url) {
-        clearClipCatalog()
         setPortraitUrl(res.asset_url)
         setPickedImage(null)
         setRefineDescription('')
@@ -811,9 +806,6 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
     }
 
     setPhase('greeting')
-
-    // Play a 3s greeting transition so the companion visibly hatches (Tier 1 fallback if no clip).
-    playTransitionClip('greeting', 3000)
 
     const ok = await playOnboardingAudio('onboarding.greeting')
 

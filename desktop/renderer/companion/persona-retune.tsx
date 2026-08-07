@@ -2,7 +2,6 @@ import type React from 'react'
 import { useEffect, useRef, useState } from 'react'
 
 import { useGatewayRequest } from '@/companion/boot/use-gateway-request'
-import { clearClipCatalog } from '@/companion/clip-store'
 import { assemblePersona, MAX_APPEARANCE } from '@/companion/persona'
 import {
   APPEARANCE_PRESETS,
@@ -269,11 +268,7 @@ export function PersonaRetune({ initial, onClose, onSaved }: PersonaRetuneProps)
 
       if (window.confirm('角色更新啦，要重新生成我的形象吗？')) {
         try {
-          const res = (await requestGateway('avatar.regenerate', {})) as { queued?: boolean } | undefined
-
-          if (res?.queued) {
-            clearClipCatalog()
-          }
+          await requestGateway('avatar.regenerate', {})
         } catch {
           /* generation failed or rejected — silent */
         }

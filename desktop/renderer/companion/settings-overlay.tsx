@@ -5,7 +5,12 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { pickAvatarImage } from '@/companion/avatar-image'
 import { awaitAvatarRegeneration } from '@/companion/avatar-regen-store'
 import { useGatewayRequest } from '@/companion/boot/use-gateway-request'
-import { clearClipCatalog } from '@/companion/clip-store'
+import {
+  $wardrobe,
+  refreshEquippedAndApply,
+  setWardrobe,
+  type WardrobeItem
+} from '@/companion/3d/model-store'
 import { $effectiveTier, $userPreferredTier, setDisturbanceTier } from '@/companion/companion-store'
 import { DISTURBANCE_TIERS } from '@/companion/disturbance-tiers'
 import { useInteractiveRegion } from '@/companion/interactive-regions'
@@ -64,6 +69,11 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps): React.Reac
   const [regenerating, setRegenerating] = useState(false)
   const [avatarHint, setAvatarHint] = useState<string | null>(null)
   const [retuneOpen, setRetuneOpen] = useState(false)
+  const wardrobe = useStore($wardrobe)
+  const [wardrobeBusy, setWardrobeBusy] = useState(false)
+  const [wardrobeHint, setWardrobeHint] = useState<string | null>(null)
+  const [modelBusy, setModelBusy] = useState(false)
+  const [modelHint, setModelHint] = useState<string | null>(null)
 
   const [retuneInitial, setRetuneInitial] = useState<{
     name: string
@@ -170,21 +180,11 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps): React.Reac
       )
 
       if (res?.asset_url) {
-        if (!cleared) {
-          clearClipCatalog()
-          cleared = true
-        }
-
         setAvatarHint('换好啦，新形象已生成～')
       } else if (res?.queued && res.job_id) {
         const result = await awaitAvatarRegeneration(res.job_id)
 
         if (result.asset_url) {
-          if (!cleared) {
-            clearClipCatalog()
-            cleared = true
-          }
-
           setAvatarHint('换好啦，新形象已生成～')
         } else {
           setAvatarHint(result.error ?? '暂时换不出来，稍后再试')
@@ -221,7 +221,6 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps): React.Reac
         body: { image: picked.image.base64, content_type: picked.image.contentType }
       })
 
-      clearClipCatalog()
       setAvatarHint(res?.asset_url ? '上传成功～' : '上传失败了')
     } catch {
       setAvatarHint('上传失败了，换张图试试？')
@@ -248,6 +247,72 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps): React.Reac
       setDesignHint('生成失败，换个描述试试？')
     } finally {
       setDesigning(false)
+    }
+  }
+
+  // Trigger a fresh 3D model generation — backend pushes `model.ready` over
+  // the gateway; events.ts forwards into model-store which the engine
+  // listens to.
+  const generateModel = async () => {
+    setModelBusy(true)
+    setModelHint(null)
+    try {
+      await window.deskagent.api<{ id?: number; asset_url?: string; status?: string }>({
+        path: '/api/companion/model',
+        method: 'POST'
+      })
+      setModelHint('已生成，加载中…')
+    } catch (err) {
+      setModelHint(err instanceof Error ? err.message : '生成失败')
+    } finally {
+      setModelBusy(false)
+    }
+  }
+
+  // Pull the full wardrobe catalog — called on settings open; the
+  // wardrobe.updated event also refreshes on backend-side mutations.
+  useEffect(() => {
+    void window.deskagent
+      .api<WardrobeItem[]>({ path: '/api/companion/wardrobe' })
+      .then(items => setWardrobe(items ?? []))
+      .catch(() => {})
+  }, [])
+
+  const generateWardrobe = async () => {
+    setWardrobeBusy(true)
+    setWardrobeHint(null)
+    try {
+      await window.deskagent.api<WardrobeItem>({
+        path: '/api/companion/wardrobe/generate',
+        method: 'POST',
+        body: { name: '新造型', description: 'AI 生成的自定义纹理' }
+      })
+      // Backend will push wardrobe.updated; the events.ts handler refreshes
+      // the catalog. We optimistically re-pull here too in case the event
+      // arrives before the user closes the panel.
+      const items = await window.deskagent.api<WardrobeItem[]>({ path: '/api/companion/wardrobe' })
+      setWardrobe(items ?? [])
+      refreshEquippedAndApply()
+      setWardrobeHint('生成好了')
+    } catch (err) {
+      setWardrobeHint(err instanceof Error ? err.message : '生成失败')
+    } finally {
+      setWardrobeBusy(false)
+    }
+  }
+
+  const equipWardrobe = async (itemId: number) => {
+    try {
+      await window.deskagent.api<WardrobeItem>({
+        path: '/api/companion/wardrobe/equip',
+        method: 'PUT',
+        body: { item_id: itemId }
+      })
+      const items = await window.deskagent.api<WardrobeItem[]>({ path: '/api/companion/wardrobe' })
+      setWardrobe(items ?? [])
+      refreshEquippedAndApply()
+    } catch (err) {
+      setWardrobeHint(err instanceof Error ? err.message : '装备失败')
     }
   }
 
@@ -480,6 +545,60 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps): React.Reac
               </button>
             </div>
             {avatarHint && <p className="mt-2 text-xs text-amber-300/80">{avatarHint}</p>}
+          </Section>
+
+          {/* 3D model + wardrobe */}
+          <Section hint="3D 模型 + 自定义换装纹理" title="3D 形象">
+            <div className="flex gap-2">
+              <button
+                className="flex-1 rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-xs text-white/80 transition hover:bg-white/15 disabled:opacity-40"
+                disabled={modelBusy}
+                onClick={generateModel}
+                type="button"
+              >
+                {modelBusy ? '生成中…' : '重新生成模型'}
+              </button>
+              <button
+                className="flex-1 rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-xs text-white/80 transition hover:bg-white/15 disabled:opacity-40"
+                disabled={wardrobeBusy}
+                onClick={generateWardrobe}
+                type="button"
+              >
+                {wardrobeBusy ? '生成中…' : '新造型'}
+              </button>
+            </div>
+            {modelHint && <p className="mt-2 text-xs text-amber-300/80">{modelHint}</p>}
+            {wardrobe.length > 0 && (
+              <div className="mt-3 grid grid-cols-3 gap-2">
+                {wardrobe.map(item => (
+                  <button
+                    className={`flex flex-col items-center gap-1 rounded-lg border p-2 text-[10px] transition ${
+                      item.equipped
+                        ? 'border-white/60 bg-white/15 text-white'
+                        : 'border-white/15 bg-white/5 text-white/70 hover:bg-white/10'
+                    }`}
+                    key={item.id}
+                    onClick={() => void equipWardrobe(item.id)}
+                    type="button"
+                  >
+                    {item.texture_url ? (
+                      <img
+                        alt={item.name}
+                        className="h-12 w-12 rounded object-cover"
+                        src={item.texture_url}
+                      />
+                    ) : (
+                      <span className="grid h-12 w-12 place-items-center rounded bg-white/10 text-base">
+                        {item.category?.[0] ?? '?'}
+                      </span>
+                    )}
+                    <span className="truncate">{item.name}</span>
+                    {item.equipped && <span className="text-[9px] text-emerald-300">已装备</span>}
+                  </button>
+                ))}
+              </div>
+            )}
+            {wardrobeHint && <p className="mt-2 text-xs text-amber-300/80">{wardrobeHint}</p>}
           </Section>
 
           <Section hint="精灵在桌面上的默认显示比例" title="形象大小">
