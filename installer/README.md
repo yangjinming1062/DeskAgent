@@ -74,6 +74,8 @@ Tauri 进程把 bundle.resources 解压根通过 env var 传给 `install.{sh,ps1
 - **macOS**: `/Applications/DeskAgent.app`（与 macOS 启动器约定一致）
 - **Windows**: `%LOCALAPPDATA%\Programs\DeskAgent\`（NSIS `/D=` 目标）
 
+ZIP 安装格式（`DESKAGENT_INSTALLER_FORMAT=zip`）解压到 `$DESKAGENT_HOME` 时 desktop 不在上述 canonical 路径——`resolve_deskagent_desktop_exe` 会额外回退检查 `$DESKAGENT_HOME/apps/DeskAgent/DeskAgent.exe` 再决定启动。
+
 `install.sh` `Stage-UnpackDesktop` 的 macOS 分支用 `hdiutil attach` + `cp -R` + `xattr -cr`；Windows 分支用 `Start-Process /S /D=...` 调 NSIS 静默安装。
 
 ## 7. macOS fast path
@@ -115,7 +117,7 @@ $DESKAGENT_HOME/runner/
         └── utils/          # wheel 安装的 top-level package
 ```
 
-`unpack-runner` stage 流程：找 wheel → 复制 `server.py` → `uv venv` 创建 venv → `uv pip install <wheel>` → 冒烟 `import tools, utils` → 清理旧 `deskagent-runner{,.exe}`。
+`unpack-runner` stage 流程：找 wheel → 复制 `server.py` → `uv venv` 创建 venv → `uv pip install <wheel>` → 冒烟 `import tools, utils` → 清理旧 `deskagent-runner{,.exe}`。`uv pip install` 失败后自动用镜像重试，镜像地址优先读 `DESKAGENT_PYPI_INDEX_URL` / `PIP_INDEX_URL` 环境变量，缺省回退阿里云镜像 `https://mirrors.aliyun.com/pypi/simple/`。
 
 Client spawn 命令：`$DESKAGENT_HOME/runner/.venv/{bin/python,Scripts/python.exe} $DESKAGENT_HOME/runner/server.py --desktop-ws <ws-url>`。运行时路径 knob 仍是 `DESKAGENT_HOME`。
 

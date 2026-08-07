@@ -147,7 +147,7 @@ MCP 工具由 `discover_mcp_tools()` 在 `server_loop` 紧跟 `runner_ready` 之
 
 每个 probe **失败返回 safe default**（`-1.0` / `False` / `{}`）——错的"已锁屏"信号会直接静默伴侣，不接受。
 
-`system.get_focused_app` 的返回值包含焦点窗口几何 `{x, y, w, h}`（各平台通过 `GetWindowRect` / `CGWindowBounds` / `wmctrl -lG` 获取），Client 用于计算 perch 位。`system.get_windows` 枚举全部可见顶层窗口（含几何 + focused 标记），供 roam 自由空间判定与 ritual walk 目标解析。`system.open_application` 是 LLM 可调工具（非探针），Client 在 events.ts 拦截它以触发 ritual walk——执行工具后按名称匹配窗口、精灵飞到目标旁播放 INTERACTING 动画。三个工具均无 toolset 条目，永远对 LLM 可见。
+`system.get_focused_app` 的返回值包含焦点窗口几何 `{x, y, w, h}`（各平台通过 `GetWindowRect` / `CGWindowBounds` / `wmctrl -lG` 获取），Client 用于计算 perch 位。`system.get_windows` 枚举全部可见顶层窗口（含几何 + focused 标记），供 roam 自由空间判定与 ritual walk 目标解析。`system.open_application` 是 LLM 可调工具（非探针），Client 在 events.ts 拦截它以触发 ritual walk——执行工具后按名称匹配窗口、精灵飞到目标旁播放 INTERACTING 动画。`system.get_work_area` / `system.get_cursor_pos` / `system.click_at` 提供全局屏幕坐标能力：分别返回主屏工作区 `{x, y, w, h}`（排除任务栏/Dock，`SPI_GETWORKAREA` / `NSScreen.visibleFrame`）、当前光标位置，并可在全局坐标模拟左/中/右键点击（win/mac 原生 API）。后三个与 `open_application` 一样是 LLM 可调工具（非探针）。六个工具均无 toolset 条目，永远对 LLM 可见。
 
 ### computer_use 增强
 
