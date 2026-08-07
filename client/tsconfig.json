@@ -3,6 +3,7 @@
     "target": "ES2023",
     "useDefineForClassFields": true,
     "lib": ["DOM", "DOM.Iterable", "ES2023"],
+    "allowJs": false,
     "skipLibCheck": true,
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
@@ -14,8 +15,13 @@
     "isolatedModules": true,
     "noEmit": true,
     "jsx": "react-jsx",
-    "noUnusedLocals": true,
-    "noUnusedParameters": true
+    "paths": {
+      "@/*": ["./renderer/*"],
+      "@shared/*": ["./renderer/shared/*"],
+      "@companion/*": ["./renderer/companion/*"],
+      "@hub/*": ["./renderer/hub/*"]
+    }
   },
-  "include": ["src"]
+  "include": ["renderer"],
+  "references": []
 }

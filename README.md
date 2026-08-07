@@ -60,16 +60,16 @@ DeskAgent 是一个**根据用户描述定制的、具有专属形象的陪伴�
 cd backend && docker compose up  # 监听 :8000，PostgreSQL 数据库；默认管理员 deskagent/deskagent@admin123（生产前修改）
 ```
 
-### 桌面 (Desktop，开发模式)
+### 桌面客户端 (Client，开发模式)
 
 ```bash
-cd desktop && pnpm install && pnpm dev  # Vite + Electron
-# Backend URL 经 desktop/config.json（默认 127.0.0.1，假设后端也在本机）或 $DESKAGENT_HOME/desktop-config.json 配置
+cd client && pnpm install && pnpm dev  # Vite + Electron
+# Backend URL 经 client/config.json（默认 127.0.0.1，假设后端也在本机）或 $DESKAGENT_HOME/desktop-config.json 配置
 ```
 
 ### Runner
 
-由 installer 安装到 `$DESKAGENT_HOME/runner/.venv`，desktop 启动时自动 spawn。dev 模式手动启动见 [runner/README.md](runner/README.md)。
+由 installer 安装到 `$DESKAGENT_HOME/runner/.venv`，client 启动时自动 spawn。dev 模式手动启动见 [runner/README.md](runner/README.md)。
 
 ### 安装包 (Installer)
 
@@ -96,7 +96,7 @@ bash scripts/build_client.sh
 | 项目总览 / 架构机制 / 通信协议与不变量 / 伙伴生命周期 | [ARCHITECTURE.md](ARCHITECTURE.md) |
 | Backend 模块结构与实现 | [backend/README.md](backend/README.md) |
 | Runner 模块结构与实现 | [runner/README.md](runner/README.md) |
-| Desktop 模块结构与实现 | [desktop/README.md](desktop/README.md) |
+| Desktop 模块结构与实现 | [client/README.md](client/README.md) |
 | Installer 模块结构与协议 | [installer/README.md](installer/README.md) |
 | 构建 / 测试 / 发布脚本 | [scripts/README.md](scripts/README.md) |
 | 仓库级 AI 协作规范 | [CLAUDE.md](CLAUDE.md) |
@@ -107,7 +107,7 @@ bash scripts/build_client.sh
 |------|---------|-----------|
 | Backend | Linux (Docker 容器) | 仅 Linux，无 Windows 兼容要求 |
 | Runner | Windows / macOS 原生 | Windows 是已知风险面（见 [runner/README.md §已知限制](runner/README.md)） |
-| Desktop | Windows / macOS 原生 | Windows 兼容性是已知风险面（见 [desktop/README.md §已知限制](desktop/README.md)） |
+| Desktop | Windows / macOS 原生 | Windows 兼容性是已知风险面（见 [client/README.md §已知限制](client/README.md)） |
 | Installer | Windows / macOS 原生 | Tauri 2；install 协议 v2（含 install-python stage） |
 
 ## 信任与安全
@@ -118,7 +118,7 @@ bash scripts/build_client.sh
 - **JWT 加密落盘**：Electron `safeStorage` 跨平台统一（DPAPI / Keychain / libsecret）
 - **自更新签名**：Electron 二进制走 `electron-updater` RSA；Python runner wheel 走 `scripts/secrets/update.pub` RSA + SHA-512 双重校验
 - **API key fingerprinting**：`GET /api/user/model-config` 只返回 `sk-…XX` 形式的 fingerprint，原始 key 永不离开 Backend
-- **Skills 走单独通道**：由 installer 在首装 seed，desktop 自更新不下载
+- **Skills 走单独通道**：由 installer 在首装 seed，client 自更新不下载
 
 ## 开发约定
 

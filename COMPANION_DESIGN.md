@@ -1,7 +1,7 @@
 # 伙伴层交互设计
 
 > 桌面伙伴（companion）的交互设计描述：形象资产、动画状态机、伙伴生命周期、onboarding、陪伴交互范式、语音、故障态。
-> 这是**描述性文档**（记设计意图与跨模块契约，不记可从代码推出的结构）。协议契约与跨模块架构见 [ARCHITECTURE.md](ARCHITECTURE.md)；3D 渲染引擎实现见 [desktop/README.md](desktop/README.md)；Desktop 实现见 [desktop/README.md](desktop/README.md)。
+> 这是**描述性文档**（记设计意图与跨模块契约，不记可从代码推出的结构）。协议契约与跨模块架构见 [ARCHITECTURE.md](ARCHITECTURE.md)；3D 渲染引擎实现见 [client/README.md](client/README.md)；Desktop 实现见 [client/README.md](client/README.md)。
 
 ## 设计哲学
 
@@ -255,7 +255,7 @@ DeskAgent 区别于一切既有桌面宠物 / 桌面 Agent 的核心，在于伙
 
 问题收齐后进入孵化动画。关键不变量：**Backend 的形象生成要求 persona 已完成（`is_complete=True`）**，因此 Desktop 在孵化开始时**先把 13 个答案（角色定义 + 5 用户结构化字段）经同一次 `PUT /api/companion/persona` 落库完成**——`update_persona` 服务端按 `extra="forbid"` schema 严格校验角色定义字段、把 5 个 user_* 字段无侵入地分流到 `Memory` 表（context 为 `user_profile:*`，tags 为 `"onboarding,user_profile"`），单 `db.commit()` 同时落 persona 与 memory。voice 字段已被消费（用于音色匹配）。生图超时/失败时 silhouette 说"我还没想好…"并自动重试（最多 3 次），不暴露技术错误；三次失败后允许稍后再试，不阻断用户。
 
-如果前一次 PUT 因网络问题失败，desktop `enterHatching` 自带的 3 次重试循环会把所有 13 个字段（包括 user_*）一起再发，由服务端的 query-then-update 幂等 upsert 避免重复或丢字段。
+如果前一次 PUT 因网络问题失败，client `enterHatching` 自带的 3 次重试循环会把所有 13 个字段（包括 user_*）一起再发，由服务端的 query-then-update 幂等 upsert 避免重复或丢字段。
 
 ### 4.4 形象确认
 
@@ -377,7 +377,7 @@ IDLE 时形象不是静止贴图。两类自主行为，**都不触发 TTS、不
 
 ## 10. Runner runtime surface
 
-Runner 端提供与伴侣场景直接对接的本地能力，Desktop 按以下契约消费（[desktop/README.md](desktop/README.md) §Runner）：
+Runner 端提供与伴侣场景直接对接的本地能力，Desktop 按以下契约消费（[client/README.md](client/README.md) §Runner）：
 
 - **`runner_ready` payload**：含 `version` 与 `capabilities`（`microphone` / `screen_capture` / `local_stt` / `local_tts` / `system_activity` / `platform` / `python`），由 Runner **真实探测**各平台子系统得出，非硬编码。不全可装的环境不阻塞启动。
 - **`deskagent.info` RPC**：任何时候可调，返回完整进程 / OS / 网络 / 磁盘快照。失败态降级（§6.5）依据此 RPC 与 WS 连通性双源判定。
