@@ -98,10 +98,9 @@ async function tryLocalStt({ bridge, mime, data, language }) {
 // UI.  Piper always uses its own default_voice from config.yaml
 // (audio.tts.default_voice).  Users who need a specific Piper voice set it
 // in Runner config, not through the companion picker.
-async function tryLocalTts({ bridge, text, voice }) {
+async function tryLocalTts({ bridge, text }) {
   try {
-    // Forward the preferred voice so the runner can match the active provider when possible.
-    const result = await bridge.invoke('text_to_speech', { text, voice: voice || '' })
+    const result = await bridge.invoke('text_to_speech', { text })
     if (result && result.success === true && result.path) {
       const buf = fs.readFileSync(result.path)
       return {
@@ -348,7 +347,7 @@ function registerMediaIpc({ ipcMain, ensureBackend, getRunnerBridge, getEnginePr
 
     if (engine !== 'cloud') {
       if (localToolAvailable(bridge(), 'text_to_speech')) {
-        const res = await tryLocalTts({ bridge: bridge(), text, voice })
+        const res = await tryLocalTts({ bridge: bridge(), text })
         if (res.ok) {
           setCachedTts(cacheKey, { dataUrl: res.value.dataUrl, mimeType: res.value.mimeType })
           ttsLog('done', {

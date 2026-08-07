@@ -219,7 +219,7 @@ test('TTS local invoke omits voice when empty', async () => {
   const bridge = makeBridge({ tools: [toolSchema('text_to_speech')], invokeResult: { success: true, path: tmpWav } })
   const ipc = setup({ tts: 'auto', bridge })
 
-  await ipc.invoke('deskagent:media:tts', { text: 'hi' })
+  await ipc.invoke('deskagent:media:tts', { text: 'omit-voice' })
 
   assert.equal(Object.prototype.hasOwnProperty.call(bridge.calls[0].args, 'voice'), false)
 })
@@ -232,7 +232,7 @@ test('TTS auto + local fails → falls back to cloud', async () => {
   const ipc = setup({ tts: 'auto', bridge })
   global.fetch = cloudFetch({ bytes: Buffer.from('audio'), contentType: 'audio/mpeg' })
 
-  const res = await ipc.invoke('deskagent:media:tts', { text: 'hi' })
+  const res = await ipc.invoke('deskagent:media:tts', { text: 'local-fails' })
 
   assert.equal(res.mimeType, 'audio/mpeg')
 })
@@ -242,7 +242,7 @@ test('TTS cloud → always cloud', async () => {
   const ipc = setup({ tts: 'cloud', bridge })
   global.fetch = cloudFetch({ bytes: Buffer.from('audio'), contentType: 'audio/mpeg' })
 
-  const res = await ipc.invoke('deskagent:media:tts', { text: 'hi' })
+  const res = await ipc.invoke('deskagent:media:tts', { text: 'always-cloud' })
 
   assert.equal(res.mimeType, 'audio/mpeg')
   assert.equal(bridge.calls.length, 0)
@@ -256,7 +256,7 @@ test('TTS local + failure → throws, no cloud fallback', async () => {
   const ipc = setup({ tts: 'local', bridge })
   global.fetch = cloudFetch({ bytes: Buffer.from('audio') })
 
-  await assert.rejects(ipc.invoke('deskagent:media:tts', { text: 'hi' }), /no engine/)
+  await assert.rejects(ipc.invoke('deskagent:media:tts', { text: 'local-throws' }), /no engine/)
 })
 
 test('TTS local + unavailable → throws, no cloud fallback', async () => {
@@ -264,7 +264,7 @@ test('TTS local + unavailable → throws, no cloud fallback', async () => {
   const ipc = setup({ tts: 'local', bridge })
   global.fetch = cloudFetch({ bytes: Buffer.from('audio') })
 
-  await assert.rejects(ipc.invoke('deskagent:media:tts', { text: 'hi' }), /Local TTS unavailable/)
+  await assert.rejects(ipc.invoke('deskagent:media:tts', { text: 'local-missing' }), /Local TTS unavailable/)
 })
 
 test('TTS rejects empty text', async () => {
