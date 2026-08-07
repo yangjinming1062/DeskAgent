@@ -14,6 +14,7 @@ The repo already maintains thorough, authoritative docs in Chinese. Read **[RULE
 | How to run, build, test, release (quick start, commands) | [README.md](README.md) |
 | Backend module structure & behavior | [backend/README.md](backend/README.md) |
 | Desktop module structure & behavior | [desktop/README.md](desktop/README.md) |
+| Client (3D rendering prototype) structure & behavior | [client/README.md](client/README.md) |
 | Runner module structure & behavior | [runner/README.md](runner/README.md) |
 | Installer module & install protocol | [installer/README.md](installer/README.md) |
 | Build / test / release scripts | [scripts/README.md](scripts/README.md) |

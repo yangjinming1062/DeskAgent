@@ -10,7 +10,7 @@ DeskAgent 是**双层叠加**的单 Electron 应用：
 
 | 层 | 职责 | 状态 |
 |----|------|------|
-| **伙伴层**（上层） | 桌面精灵形象渲染、onboarding（蛋→13 步角色定义含形象/物种/性别 + speaking_style → 孵化）、陪伴式交互 UI | MVP 已落地：精灵窗口 + 蛋 + 双窗口 auth 同步 + 对话式 onboarding + Chat 模式 + Voice Call 模式 + 长期记忆管理 + 主动陪伴 + 故障兜底 + 角色管理 + 资产 3 档降级（程序化 → sprite → video）|
+| **伙伴层**（上层） | 3D 渲染引擎（Three.js WebGL，移植自 client/ 到 desktop/renderer/companion/3d/）、onboarding（蛋→13 步角色定义含形象/物种/性别 + speaking_style → 孵化）、陪伴式交互 UI | MVP 已落地：精灵窗口 + 蛋 + 双窗口 auth 同步 + 对话式 onboarding + Chat 模式 + Voice Call 模式 + 长期记忆管理 + 主动陪伴 + 故障兜底 + 角色管理 + 资产 3 档降级（程序化 → sprite → video）|
 | **枢纽层**（下层） | 凭证加密落盘、WS 中转、Runner 进程编排、反向 RPC 代理、两阶段自更新、本地文件系统拦截 | **保留复用** |
 
 两层共享同一个 Electron 主进程（CommonJS，preload contextBridge 隔离），伙伴层不直接接触凭证或 Runner 句柄——一切经枢纽层 IPC。

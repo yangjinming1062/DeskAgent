@@ -1,7 +1,7 @@
-# 伙伴层交互设计
+﻿# 伙伴层交互设计
 
 > 桌面伙伴（companion）的交互设计描述：形象资产、动画状态机、伙伴生命周期、onboarding、陪伴交互范式、语音、故障态。
-> 这是**描述性文档**（记设计意图与跨模块契约，不记可从代码推出的结构）。协议契约与跨模块架构见 [ARCHITECTURE.md](ARCHITECTURE.md)；Desktop 实现见 [desktop/README.md](desktop/README.md)。
+> 这是**描述性文档**（记设计意图与跨模块契约，不记可从代码推出的结构）。协议契约与跨模块架构见 [ARCHITECTURE.md](ARCHITECTURE.md)；3D 渲染引擎实现见 [desktop/README.md](desktop/README.md)；Desktop 实现见 [desktop/README.md](desktop/README.md)。
 
 ## 设计哲学
 
@@ -10,7 +10,7 @@
 - **以游戏设计思维做交互**：每次点击、每次状态切换都应有"有意思"的反馈，而非冷冰冰的功能响应。点击不是"触发回调"，是"戳了一下活的东西"。
 - **永远不要完全静态**：静态贴图承载不了情感。形象必须时刻"活着"——呼吸、微动作、反应。用户不操作时它也得自己动。
 - **陪伴叙事优于工具叙事**：所有加载、等待、错误都以"伙伴正在做某事"呈现，不暴露技术过程。"生成形象中"是"它正在想自己该长什么样"，不是 spinner。
-- **渐进式丰富**：首批资产只覆盖最小可用集，其余后台生成、就绪后无缝接入，不一次性耗尽生图/视频配额。
+- **渐进式丰富**：3D 基底模型（按物种预制的 rigged GLB）立即可用，个性化纹理与服装后台异步生成、就绪后热替，不一次性耗尽生图配额。
 - **个性化驱动，非模板化**：伙伴的动作与反应从其**角色定义 + 对用户的记忆**派生。角色定义（静态、用户定义）决定"长什么样、性格如何"——驱动形象与动画资产生成；记忆（动态、随互动累积）决定"此刻怎么表现"——驱动运行时言语、情绪、主动频率。
 
 ---
@@ -21,50 +21,44 @@
 
 | 层 | 形态 | 用途 |
 |----|------|------|
-| **portrait（静态形象图）** | PNG | 视觉身份基准；未加载视频时的占位、设置页展示 |
-| **loop clip（循环动画）** | 3–5s 无缝循环、透明背景 | 常驻状态承载（idle / sleeping / working / speaking / …） |
-| **transition clip（过场动画）** | 一次性、透明背景 | 仪式感时刻——孵化、问候、告别 |
+| **portrait（静态形象图）** | PNG | onboarding 身份基准、设置页展示、3D 纹理生成的参考图；不再直接渲染到桌面 |
+| **3D 模型（rigged GLB）** | glTF 二进制，含骨骼动画 + morph targets | 桌面常驻渲染的唯一形象载体（idle / sleeping / working / speaking / … 全部经实时 3D 驱动） |
+| **换装（wardrobe）** | 材质覆盖（颜色/粗糙度/金属度）+ 可选 PBR 纹理贴图 | 外观定制——颜色预设即时生效、AI 纹理后台生成热替，**零模型重生** |
 
-每个 loop clip 绑定一个"状态"（见 §2）。切换状态 = 切换播放的 clip。
+伙伴的"身体"由 3D 模型提供，"穿什么"由换装层提供。切换状态 = 切换播放的骨骼动画（§2）；切换情绪 = 切换 morph target 表情；换装 = 热替材质/纹理——三者正交组合，互不阻塞。
 
-所有 clip 以 portrait 为种子图、结合场景描述经**图生视频**（MiniMax image-to-video，`video_generate` 的 `first_frame_image`）产出，复用 Backend 既有 `media/video_jobs` 流水线——同一颗种子图从机制上保证跨 clip 角色一致（[ARCHITECTURE.md §6.2](ARCHITECTURE.md)）。
+模型生成由 Backend 双 provider 架构支撑（[ARCHITECTURE.md §6.2](ARCHITECTURE.md)）：**base_texture**（默认）按角色定义的物种选择预制 rigged GLB（人类/精灵/灵兽/机甲/幻形 + 通用兜底），即时下发、零 3D API 成本，同时后台异步用 portrait 为参考图生成个性化纹理；**meshy**（可选）走外部 image-to-3D API 生成定制 mesh。
 
 ### 1.2 渲染约束
 
-- **透明背景视频**：WebM (VP9 + alpha) 是 Electron/Chromium 跨平台原生支持的最佳选项；sprite sheet（逐帧）作为备选。
-- **窗口架构**：精灵窗口（透明置顶、click-through 可控的 `BrowserWindow`）是**唯一常驻主窗口**，承载形象本身，并在对话激活时与对话框一同居中（见 §3、§6.1）。登录与应用设置是从托盘唤起的按需工具窗口，不常驻——"对话发生在角色身边"。
-- **性能基线**：常驻视频解码必须硬件加速；idle loop 应能 24fps 循环且 CPU 占用 < 5%。
-- **远程显示降级**：远程 / 转发显示（X11/VNC/RDP）无法合成透明层时，精灵窗口降级为非透明（`SPRITE_TRANSPARENT` 路径）；桌面图标枚举在 macOS 上不可用时降级为"找不到图标"人格化表达。
+- **实时 3D 渲染引擎**：Three.js WebGL（WebGLRenderer alpha 透明），PBR 材质（MeshStandardMaterial），三点光照 + PMREM 环境贴图提供真实反射。写实风格——皮肤 SSS 近似、头发 card mesh、物理光照。
+- **窗口架构**：精灵窗口（透明置顶、click-through 可控的 BrowserWindow）是**唯一常驻主窗口**，承载形象本身，并在对话激活时与对话框一同居中（见 §3、§6.1）。登录与应用设置是从托盘唤起的按需工具窗口，不常驻——"对话发生在角色身边"。
+- **性能基线**：渲染循环目标 60fps；idle 状态骨骼动画 + 自动眨眼 + morph 微表情的总 GPU 负载应低于 5%（Electron Chromium WebGL 硬件加速）。
+- **远程显示降级**：远程 / 转发显示（X11/VNC/RDP）无法合成透明层时，精灵窗口降级为非透明（SPRITE_TRANSPARENT 路径）；桌面图标枚举在 macOS 上不可用时降级为"找不到图标"人格化表达。
 
-### 1.3 渐进式生成与不变量
+### 1.3 模型即用与程序化兜底
 
-按优先级分批，避免 onboarding 期间一次性耗尽配额：batch 0（idle）在 portrait 生成时**同步排队**；其余批次（speaking/thinking/working → 生命周期 → 情绪变体）后台渐进生成。
+**伙伴表达永不空白**（[ARCHITECTURE.md §10 #9](ARCHITECTURE.md) 不变量）：3D 引擎始终在渲染——GLB 加载成功后骨骼动画 + morph 表情覆盖全部状态（§2），无需等待逐状态生成；GLB 加载失败时引擎渲染程序化兜底角色（Three.js 基本体组合 + 正弦驱动呼吸/眨眼/说话浮动），保证形象从启动第一帧起就"活着"。portrait 重生不触发模型失效——模型只随物种变更或用户显式请求重生。
 
-**伙伴表达永不空白**（[ARCHITECTURE.md §10 #9](ARCHITECTURE.md) 不变量）：任何 clip 未就绪时，对应状态回退到 idle loop + 该状态的轻量图标徽章（⚙️ 工作、💭 思考、💤 睡眠…）。用户永远看不到"这个功能还没生成"的空白。clip 目录在 Desktop 本地缓存（`clip-store`），首屏经 `avatar.list_clips` 拉取已生成项，后续就绪/失败经 `clip.updated`（payload 携 `scene` + `tier` 标识）增量更新。portrait 重生时所有衍生 clip 失效重排——只有新 portrait 成功后才失效旧 clip，避免生图失败时用户失去全部 clip。
+个性化纹理在模型下发后后台异步生成：base_texture provider 以 portrait 为参考图调用 image-gen 生成全身纹理，就绪后经 model.ready / wardrobe.updated 事件推送热替默认材质，用户全程可见基底模型——纹理升级是增强而非前置条件。
 
 ---
 
-### 1.4 三档降级与持久化（视频配额不再阻塞产品）
+### 1.4 换装系统（零模型重生的外观定制）
 
-视频生成昂贵且受订阅配额约束（每日仅数次），而产品交互需要覆盖全部状态。为避免"视频没生成就无法启动/呆滞"，每个 scene 的视觉表达走**三档降级阶梯**，优先尝试最高档、失败自动降到最低档、后台逐级升档，直到全部 scene 达到视频档才算完整：
+换装是实时 3D 渲染的核心优势——不重生模型即可改变伙伴外观。两层换装通道：
 
-| 档位 | 形态 | 成本 | 就绪时机 |
+| 通道 | 形态 | 成本 | 就绪时机 |
 |------|------|------|----------|
-| **Tier 1（程序化）** | portrait + 状态驱动 CSS 变换（呼吸/说话浮动/思考倾斜/睡眠漂移…） | 零生成 | portrait 一好即全场景即时可用 |
-| **Tier 2（多帧）** | 单张 image-gen sprite sheet，客户端逐帧循环 | 每场景一次生图 | 后台渐进生成，就绪即替换 Tier 1 |
-| **Tier 3（视频）** | 图生视频（i2v，portrait 为种子） | 每场景一段视频 | 配额允许时尝试，就绪即替换 Tier 2/1 |
+| **材质预设** | 颜色/粗糙度/金属度覆盖（6 种预设配色） | 零生成 | 立即生效 |
+| **AI 纹理** | image-gen 全身 PBR 纹理贴图 | 一次生图 | 后台异步生成，就绪热替 |
 
-- **active_tier = max(就绪档)**（3 > 2 > 1，计算得出不落库）。Tier 1 永远兜底，故**产品零视频即可启动且不呆滞**。
-- **升档引擎**（Backend 单一后台循环 `escalation_loop`）：收尾终态视频任务 → 重试失败的视频（指数退避）→ 生成 Tier 2 关键帧。**每场景每日视频提交受 `clip_video_daily_budget` 约束**，使 2–3 次/天的订阅计划可持续——Tier 1/2 在此期间保证体验，跨多天逐步把全部 scene 升到视频档。
-- **失败场景持久记录 + 定时重试**：视频/关键帧生成失败不丢弃，写入 `*_attempts`/`*_next_retry_at`，循环按退避重试，直到成功。
-- **产物云端持久化（跨设备复用）**：T2/T3 产物落 `companion-assets/` 持久目录（非 temp-media，不被 TTL 清理），经无鉴权文件路由下发。用户换设备登录 → `avatar.list_clips` 返回各 scene 的当前档位 + 持久 URL → 直接拉取，**不重生成**。portrait 重生时旧档位产物与行一并失效重排。
-- **事件流**：档位/资产变更统一走 `clip.updated {scene, tier, url, keyframe_*}` 单通道下发；Desktop 据档位选择渲染器（视频 / sprite 逐帧 / 程序化），实现了 §1.3"永不空白"不变量的真正兜底——任何 scene 无视频也有程序化动画。
+换装在客户端是**非破坏性操作**——覆盖材质属性或加载新纹理贴图，不动骨骼动画和 morph targets。换一件衣服不会打断正在播放的任何状态动画。换装产物落 companion-assets/ 持久目录，跨设备复用。事件流走 wardrobe.updated 单通道推送。
 
 ---
-
 ## 2. 动画状态机
 
-伙伴形象在任何时刻处于一个状态，每个状态绑定一个 loop clip。状态切换由**四类触发源**驱动——这是整个交互系统的骨架。
+伙伴形象在任何时刻处于一个状态，每个状态驱动一组骨骼动画 + morph target 表情。状态切换由**四类触发源**驱动——这是整个交互系统的骨架。
 
 ### 2.1 状态定义
 
@@ -93,7 +87,7 @@
 
 - **优先级**（高 → 低）：DISCONNECTED > INTERACTING > WORKING > SPEAKING > THINKING > LISTENING > EMOTIONAL > SLEEPING > IDLE。低优先级状态不可中断高优先级状态（`force` 选项除外）。
 - **EMOTIONAL / INTERACTING 是叠加而非抢占**：瞬态播放一次后，回到被它打断的状态。
-- **平滑过渡**：clip 切换 crossfade（~250ms），避免硬切。
+- **平滑过渡**：骨骼动画 crossFade（~250ms），避免硬切。
 
 ---
 
@@ -126,21 +120,13 @@ home 是唯一持久化的 locale。其余 locale 从 home 与上下文派生，
 
 任何 locale 都可以有"扒边变体"（edge variant）：精灵部分移出屏幕边缘，只露头或上半身往里看——趴在屏幕底边、从侧边探头。扒边让屏幕边界感觉像可攀爬、可趴的物理表面。允许部分出屏的边界规则见 §3.7 不变量。
 
-### 3.3 Locomotion、缩放与资产三档
+### 3.3 Locomotion、缩放与渲染
 
-移动本身是动画，纳入 §1.4 三档降级：
+移动本身是动画，由 3D 引擎直接驱动——walk/fly 作为骨骼动画 clip 内置于 GLB 模型，与 idle/speaking 等状态动画同等可用。**程序化兜底永远兜底**——GLB 加载失败时窗口平移 + CSS 变换仍能表达"在动"，零资产依赖；这是空间行为永不阻塞产品的不变量。
 
-| | walk | fly |
-|---|------|-----|
-| **Tier 1（程序化）** | 窗口平移 + CSS 上下浮动模拟脚步 | 窗口平移 + CSS 摇摆模拟漂浮/振翅 |
-| **Tier 2（多帧）** | walk sprite sheet 逐帧 | fly sprite sheet 逐帧 |
-| **Tier 3（视频）** | walk loop clip | fly loop clip |
+**速度感**：walk ≈ 60–100 px/s（慢，过程可见，闲适感）；fly ≈ 300–500 px/s（快，赶路感）；drag 瞬时（用户操作不能有延迟）。**朝向**：移动方向决定精灵面朝方向，3D 模型旋转实现。
 
-walk / fly 作为新 scene 加入 §1 的批次队列（与 idle 同批生成，优先级仅次于 idle）。**Tier 1 永远兜底**——窗口平移 + CSS 变换即可表达"在动"，零资产依赖；这是空间行为永不阻塞产品的不变量。
-
-**速度感**：walk ≈ 60–100 px/s（慢，过程可见，闲适感）；fly ≈ 300–500 px/s（快，赶路感）；drag 瞬时（用户操作不能有延迟）。**朝向**：移动方向决定精灵面朝方向，水平翻转 portrait/clip 实现，无需额外资产。
-
-**缩放（Scale）** 同样纳入三档降级——Tier 1 = CSS `transform: scale()`，零资产依赖，永远可用；Tier 2/3 的 sprite/clip 按当前 scale 渲染，不生成额外资产。缩放由两层决定：
+**缩放（Scale）** 由 3D 引擎直接控制模型 scale，不生成额外资产。缩放由两层决定：
 
 - **默认比例**：用户在设置中设定（§8），持久化，是 home locale 下的基准大小。
 - **运行时自适应**（平滑过渡 ~300ms）：空间紧张时缩小（perch 到窗口旁但边缘空间不够 → 等比例缩到能舒适栖身，如 0.6–0.75×，窗口移走后恢复）；搞怪/情绪时刻放大（特定 EMOTIONAL 情绪或高活跃档位下的自主搞怪 → 短暂放到 1.5–2× 在桌面上蹦跳，情绪结束后平滑回默认）；扒边时按需收缩让"探头"比例自然（§3.2）。
@@ -186,7 +172,7 @@ walk / fly 作为新 scene 加入 §1 的批次队列（与 idle 同批生成，
 - **移动始终可被用户打断**——用户拖拽或点击时，正在进行的自动移动立即放弃，用户输入永远高于自动行为。
 - **精灵面部始终在屏内**——精灵可以部分移出屏幕（身体在屏外、头扒在边缘往里看是允许且鼓励的"扒边"姿态，§3.2），但识别度最高的部分（面部）必须始终可见。全部移出 = 消失，违反不变量。多显示器时待在精灵当前所在屏。
 - **z-order 永远置顶**——移动中与移动后，精灵窗口永远在其他窗口之上（用户全屏应用除外）。
-- **Tier 1 永远兜底**——没有 walk/fly 资产，窗口平移 + CSS 浮动即可表达移动，不阻塞功能。
+- **程序化兜底永远兜底**——GLB 加载失败时窗口平移 + CSS 浮动即可表达移动，不阻塞功能。
 
 **反模式**：
 
@@ -273,7 +259,7 @@ DeskAgent 区别于一切既有桌面宠物 / 桌面 Agent 的核心，在于伙
 
 ### 4.4 形象确认
 
-portrait 生成完成，silhouette 散开变为完整形象展示。操作：**确认** / **重新生成**（`avatar.regenerate`，旧 clip 在新 portrait 成功后才失效重排）/ **自己上传**（上传一张图片作为角色基准形象）。上传图先进入预览态而非直接生效：用户可**就用这张**（`POST /api/companion/avatar/upload`，原图即 portrait，无云端角色参照）或**以它为基准重绘**（`POST /api/companion/avatar/from-image`，可附加一段描述；上传图作为 provider 的 `reference_image` 角色参照重新渲染成符合种子图契约的 portrait——用户原图背景复杂/构图不符时由 provider 重绘修正；原生 i2i provider 直接消费参考图，纯文本生图 provider 先经视觉模型描述再折入 prompt）。不一次生成多个候选让用户挑——单次确认 + 反馈式重生成更经济也更聚焦。
+portrait 生成完成，silhouette 散开变为完整形象展示。操作：**确认** / **重新生成**（`avatar.regenerate`，重生 portrait 作为身份参考图与纹理种子）/ **自己上传**（上传一张图片作为角色基准形象）。上传图先进入预览态而非直接生效：用户可**就用这张**（`POST /api/companion/avatar/upload`，原图即 portrait，无云端角色参照）或**以它为基准重绘**（`POST /api/companion/avatar/from-image`，可附加一段描述；上传图作为 provider 的 `reference_image` 角色参照重新渲染成符合种子图契约的 portrait——用户原图背景复杂/构图不符时由 provider 重绘修正；原生 i2i provider 直接消费参考图，纯文本生图 provider 先经视觉模型描述再折入 prompt）。不一次生成多个候选让用户挑——单次确认 + 反馈式重生成更经济也更聚焦。
 
 ### 4.5 音色确认
 
@@ -285,7 +271,7 @@ portrait 确认后进入音色环节：`tts.match_voice {preference}` 把 onboar
 
 ### 4.6 最终孵化与问候
 
-形象 + 音色就位，idle loop（batch 0）已在 portrait 生成时由 Backend 自动排队。形象以 idle 动画"活"起来，用确认后的音色说出第一句问候。onboarding 结束，进入持续陪伴。
+形象 + 音色就位，3D 模型经 `POST /api/companion/model` 即时下发（base_texture provider 按物种取预制 GLB）。形象以 idle 骨骼动画"活"起来，用确认后的音色说出第一句问候。onboarding 结束，进入持续陪伴。
 
 ---
 
@@ -342,8 +328,8 @@ Desktop 收到主动消息后：形象切 SPEAKING + 播 TTS；对话框未开�
 
 IDLE 时形象不是静止贴图。两类自主行为，**都不触发 TTS、不弹气泡，纯视觉**（空间层面的自主行为——漫游、栖息、换位——见 §3，本节聚焦动画层面）：
 
-- **微动作**（10–25s 随机间隔）：眨眼、换重心、看四周、伸懒腰等 idle 变体随机切换（clip 就绪时；未就绪回退 idle）。Tier 1 默认池复用 portrait + CSS 变换实现 `idle_look_around` / `idle_blink` / `idle_stretch` 三个最常用的微动作变体，不依赖 Tier 2/3 资源；这些场景由 Batch 0 自动生成（与 portrait 同批），是"永不空白"不变量的兜底层（详见 §1.3）。
-- **情境动作**（检测本机状态）：Runner `system.get_idle_seconds` / `system.is_fullscreen` / `system.get_focused_app` 等环境感知工具的轮询结果直接进情境判定，**不经 LLM**。30s 轮询：分类结果（ide/music/reader/gaming/browsing/other/unknown）按平台白名单映射（Windows 进程名、macOS bundle id），对应 CLIPS_SCENES 中 batch 2 的 idle 变体集（`idle_thinking`/`idle_typing`/`idle_bounce`/`idle_sway`/`idle_calm`/`idle_engaged`），未就绪时安全 fallback 到 `idle`，符合 §1.3 "永不空白" 不变量。
+- **微动作**（10–25s 随机间隔）：眨眼、换重心、看四周、伸懒腰等 idle 变体随机切换。3D 引擎经 morph target（眨眼）+ 骨骼动画变体（换重心、看四周、伸懒腰）直接驱动，不需要逐变体生成资产。GLB 模型内置的动画 clip 覆盖 `idle_look_around` / `idle_blink` / `idle_stretch` 这些变体。"永不空白"
+- **情境动作**（检测本机状态）：Runner `system.get_idle_seconds` / `system.is_fullscreen` / `system.get_focused_app` 等环境感知工具的轮询结果直接进情境判定，**不经 LLM**。30s 轮询：分类结果（ide/music/reader/gaming/browsing/other/unknown）按平台白名单映射（Windows 进程名、macOS bundle id），对应 3D 模型中不同的 idle 动画变体（思考/打字/弹跳/摇摆/安静/投入），引擎按可用 clip 名称回退到 `idle`，符合 §1.3 "永不空白" 不变量。
 
 ### 5.5 故障态与降级行为（伙伴永不"死"）
 
@@ -353,7 +339,7 @@ IDLE 时形象不是静止贴图。两类自主行为，**都不触发 TTS、不
 |--------|------|----------|
 | **Backend（脑）断连** | 犯困/走神 | DISCONNECTED：打哈欠、歪头发呆；**久不恢复（~5 分钟）→ 进入 SLEEPING**，重连后"醒来" |
 | **Runner（手）宕机** | 手不听使唤 | 对话与陪伴正常；仅当用户要它做事时人格化拒绝 |
-| **资产缺失（身）** | 无症状 | 回退 idle loop + 轻量图标，用户完全无感（§1.3 不变量） |
+| **资产缺失（身）** | 无症状 | GLB 加载失败时渲染程序化兜底角色，用户完全无感（§1.3 不变量） |
 
 **DISCONNECTED 的分级表达**（避免网络抖动让精灵频繁犯困）：后台断连（用户没在等响应）长 grace（~30s）才打盹；前台断连（用户刚发消息在等回复）短 grace（~3s）即表达。重连成功 → 精灵"回神"；**仅在降级曾被表达过时**才补一句，静默降级则静默恢复。
 
@@ -374,7 +360,7 @@ IDLE 时形象不是静止贴图。两类自主行为，**都不触发 TTS、不
 
 两类设置分处两个窗口，由**网关可用性**决定归属：
 
-- **伙伴设置**（精灵窗口，网关可用）：右键精灵 → 伙伴设置。包括角色管理（**两套路径**：「编辑角色」表单式直接改 6 个字段，**或**「重新对话微调性格」5 步对话式 wizard 引导改 11 个字段含 user_* — wizard 单 PUT 收尾，**保留既有长期记忆**，不重置 `is_complete`，修复 PersonaSection 静默 `deriveSpeakingStyle` 覆盖的坑，由 `persona-retune.tsx` 实现）、响应模式（默认文字 / 始终语音）、打扰档位（chip 反映 user_preferred，effective 状态由活动感知器覆盖，UI 不直接显示 override）、音色管理（目录切换 + 试听，`tts.list_voices` + speak 预览）、形象管理（`avatar.regenerate` / 上传）、形象缩放（默认比例 0.5×–2×）。
+- **伙伴设置**（精灵窗口，网关可用）：右键精灵 → 伙伴设置。包括角色管理（**两套路径**：「编辑角色」表单式直接改 6 个字段，**或**「重新对话微调性格」5 步对话式 wizard 引导改 11 个字段含 user_* — wizard 单 PUT 收尾，**保留既有长期记忆**，不重置 `is_complete`，修复 PersonaSection 静默 `deriveSpeakingStyle` 覆盖的坑，由 `persona-retune.tsx` 实现）、响应模式（默认文字 / 始终语音）、打扰档位（chip 反映 user_preferred，effective 状态由活动感知器覆盖，UI 不直接显示 override）、音色管理（目录切换 + 试听，`tts.list_voices` + speak 预览）、形象管理（`avatar.regenerate` / 上传）、换装管理（浏览预设配色 + 已生成 AI 纹理，点击即换）、形象缩放（默认比例 0.5×–2×）。
 - **应用设置**（托盘 → Settings...，framed 工具窗口，无网关）：账户、语音（STT 开关 / `silent_fallback` / 录音时长 / 引擎）、音色目录（只读浏览 + 试听，走 REST `GET /api/companion/voices`）、Runner、Skills/MCP 等通用配置。
 
 > **设计约束**：JSON-RPC（`tts.list_voices` / `avatar.*` / `onboarding.*`）只在精灵窗口的 WS 网关上可用——工具窗口不 boot 网关。因此依赖这些方法的伙伴设置必须住在精灵窗口；工具窗口的设置只走 REST（音色目录页是 `tts.list_voices` 的 REST 镜像，专为工具窗口而设）。
@@ -385,7 +371,7 @@ IDLE 时形象不是静止贴图。两类自主行为，**都不触发 TTS、不
 
 伙伴层依赖的跨模块协议与不变量定义在 [ARCHITECTURE.md](ARCHITECTURE.md)：通信协议与数据流（§4）、事件调度与打扰档位（§5）、角色定义与表达层契约（§6）、全局不变量（§10）。
 
-**Desktop scene 标识符体系**：`clip.updated` payload 的 `scene` 字段与 Backend clip 生成队列对齐——scene 名直接取自状态机状态（§2）与 emotion 枚举（`idle` / `speaking` / `working` / `thinking` / `sleeping` / `happy` / …），无需另造命名空间。Backend 的 scene 目录与批次优先级定义在 `services/companion/clip_service.CLIP_SCENES`。
+**3D 动画与模型事件**：`model.ready {model_id, asset_url, species}` 事件通知客户端 3D 模型就绪（base_texture 即时 / meshy 异步轮询完成）；`wardrobe.updated` 事件通知客户端换装产物就绪。状态机的状态名（§2）与 emotion 枚举在客户端经 `AnimationMap` 映射到 GLB 内置的骨骼动画 clip 名称，由引擎按可用性回退。
 
 ---
 
