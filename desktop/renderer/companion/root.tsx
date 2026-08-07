@@ -22,6 +22,7 @@ import { notify } from '@/shared/store/notifications'
 import { strings } from '@/shared/strings'
 
 import { ChatDock } from './chat-dock'
+import { Companion3D } from './3d/companion-3d'
 import { DeveloperOverlay } from './developer-overlay'
 import { handleCompanionEvent } from './events'
 import { handlePokeInteraction } from './interaction'
@@ -30,7 +31,6 @@ import { OnboardingFlow } from './onboarding/onboarding-flow'
 import { speakProactive } from './proactive/proactive'
 import { ProactiveBubble } from './proactive/proactive-bubble'
 import { CompanionSettings } from './settings-overlay'
-import { CompanionReady } from './sprite/companion-ready'
 import { SpriteContextMenu } from './sprite/context-menu'
 import { Egg, type EggMode } from './sprite/egg'
 import { SpriteStage } from './sprite/sprite-stage'
@@ -242,9 +242,19 @@ export function CompanionRoot() {
     }
   }
 
+  // Onboarding completion fires the 3D model generation (base_texture
+  // provider is instant — model.ready arrives in the same tick and the
+  // engine reloads). Failure is silent: the user can retry from settings.
+  const onOnboardingComplete = () => {
+    setCompanionLifecycle('ready')
+    void window.deskagent
+      .api<{ id?: number; status?: string }>({ path: '/api/companion/model', method: 'POST' })
+      .catch(err => console.warn('[companion] initial model generation failed:', err))
+  }
+
   return (
     <>
-      {showOnboarding && <OnboardingFlow onCompleted={() => setCompanionLifecycle('ready')} />}
+      {showOnboarding && <OnboardingFlow onCompleted={onOnboardingComplete} />}
       <SpriteStage
         onContextMenu={e => {
           if (showReady) {
@@ -254,7 +264,7 @@ export function CompanionRoot() {
         onDoubleTap={onDoubleTap}
         onTap={onTap}
       >
-        {showReady ? <CompanionReady /> : showEgg ? <Egg cracks={cracks} mode={mode} /> : null}
+        {showReady ? <Companion3D /> : showEgg ? <Egg cracks={cracks} mode={mode} /> : null}
       </SpriteStage>
       {showReady && contextMenuPos && (
         <SpriteContextMenu

@@ -8,8 +8,8 @@ import {
   setAssistantError,
   setAssistantTool
 } from '@/companion/chat-store'
-import { applyClipUpdate, type ClipMeta } from '@/companion/clip-store'
 import { $effectiveTier, $voiceCallOpen, setSpriteState, type SpriteEmotion } from '@/companion/companion-store'
+import { setModelInfo, setWardrobe, type WardrobeItem } from '@/companion/3d/model-store'
 import { $responseMode } from '@/companion/prefs'
 import { speak } from '@/companion/tts'
 import { $gateway } from '@/shared/store/gateway'
@@ -18,6 +18,18 @@ import type { RpcEvent } from '@/shared/types/deskagent'
 import { $devMode, pushDevLog } from './developer-overlay'
 import { speakProactive } from './proactive/proactive'
 import { findWindowByKeyword, performRitualWalk } from './ritual-walk'
+
+// Pull the full wardrobe list and push it into the model-store. Used by the
+// wardrobe.updated event — no request is needed otherwise; the UI triggers
+// generate / equip / delete via direct REST and refreshes locally.
+async function refreshWardrobe(): Promise<void> {
+  try {
+    const res = await window.deskagent.api<WardrobeItem[]>({ path: '/api/companion/wardrobe' })
+    setWardrobe(res ?? [])
+  } catch (err) {
+    console.warn('[events] wardrobe refresh failed:', err)
+  }
+}
 
 export function handleCompanionEvent(event: RpcEvent): void {
   if ($devMode.get()) {
@@ -165,29 +177,34 @@ export function handleCompanionEvent(event: RpcEvent): void {
       break
     }
 
-    case 'clip.updated': {
+    case 'model.ready': {
+      // Backend pushes this after a /api/companion/model generation finishes.
+      // The 3D engine reloads whenever $modelInfo.asset_url changes (see
+      // companion-3d.tsx). error field surfaces generation failures; the UI
+      // logs it for now — recovery flow is a later slice.
       const p = event.payload as
-        | {
-            scene?: string
-            tier?: number
-            status?: string
-            url?: string | null
-            keyframe_url?: string | null
-            keyframe_meta?: ClipMeta | null
-          }
+        | { model_id?: number; asset_url?: string; species?: string; error?: string }
         | undefined
 
-      if (p?.scene && typeof p.tier === 'number') {
-        applyClipUpdate({
-          scene: p.scene,
-          tier: p.tier,
-          status: p.status,
-          url: p.url ?? null,
-          keyframe_url: p.keyframe_url ?? null,
-          keyframe_meta: p.keyframe_meta ?? null
-        })
+      if (p?.error) {
+        console.warn('[events] model.ready error:', p.error)
+        break
       }
 
+      setModelInfo({
+        id: p?.model_id ?? null,
+        asset_url: p?.asset_url ?? null,
+        species: p?.species ?? null,
+        status: 'succeeded'
+      })
+
+      break
+    }
+
+    case 'wardrobe.updated': {
+      // Backend fires this after a wardrobe item is generated, equipped, or
+      // deleted. Re-pull the full list so the equipped atom stays in sync.
+      void refreshWardrobe()
       break
     }
 
