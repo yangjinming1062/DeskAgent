@@ -95,6 +95,20 @@ class Settings(BaseSettings):
     clip_escalation_interval_seconds: float = 60.0
     clip_video_daily_budget: int = 3
 
+    # ── 3D Model Gen (companion 3D rendering pipeline) ──
+    # Provider: "base_texture" (default, zero-cost: pre-bundled rigged GLB +
+    # AI-generated textures via existing image gen) or "meshy" (external
+    # image-to-3D API, requires MESHY_API_KEY).
+    companion_model_provider: str = "base_texture"
+    # Source assets path — separate from runtime data_dir so base GLBs ship
+    # with the code rather than living alongside generated outputs.
+    companion_base_model_dir: str = "./assets/base-models"
+    companion_base_model_url: str = ""
+    meshy_api_key: str = ""
+    meshy_base_url: str = "https://api.meshy.ai"
+    companion_model_max_poll_seconds: float = 600.0
+    companion_model_poll_interval_seconds: float = 5.0
+
     # ── Chat service ──
     # Fallback defaults when a user hasn't set chat.enable_context_compression /
     # chat.context_compression_threshold via /api/config. The per-user values
@@ -131,10 +145,19 @@ class Settings(BaseSettings):
     # the user's paid image-gen quota through repeated generate calls.
     companion_avatar_generate_rate_limit_per_minute: int = 3
     companion_avatar_upload_rate_limit_per_minute: int = 5
+    # 3D model generation (POST /model) is a long async poll — keep its own
+    # cap so a retry-storm on the modal can't burn the avatar budget.
+    companion_model_generate_rate_limit_per_minute: int = 1
+    # Wardrobe texture generation also calls a paid image-gen provider.
+    companion_wardrobe_generate_rate_limit_per_minute: int = 5
 
     # ── Logging ──
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
     log_format: Literal["json", "text"] = "json"
+
+    # ── CORS ──
+    # Empty = CORS off; only the standalone web client needs cross-origin (desktop/runner are loopback).
+    cors_allowed_origins: str = "http://localhost:5173,http://localhost:5174,http://localhost:5175"
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", case_sensitive=False, extra="ignore")
 

@@ -21,7 +21,9 @@ from components import get_logger
 from components import SETTINGS
 from components import setup_logging
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from services.companion import asset_store
 from services.companion import start_clip_escalation
 from services.companion import stop_clip_escalation
 from services.gateway import start_ws_event_loop
@@ -84,6 +86,10 @@ def _install_schema_extensions(conn: Connection) -> None:
     ):
         conn.execute(text(f"ALTER TABLE user_model_configs ADD COLUMN IF NOT EXISTS {column} {ddl_type}"))
     conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_avatar_assets_one_active ON avatar_assets (user_id) WHERE active"))
+    # Concurrent POST /model would otherwise leave two active rows.
+    conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_companion_models_one_active ON companion_models (user_id) WHERE active"))
+    # _ensure_presets relies on this index for dedup instead of a SELECT.
+    conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_wardrobe_items_user_name ON wardrobe_items (user_id, name)"))
     conn.execute(text("CREATE INDEX IF NOT EXISTS ix_avatar_clips_user_batch ON avatar_clips (user_id, batch)"))
     for column, ddl_type in (
         ("video_asset_url", "TEXT"),
@@ -110,11 +116,7 @@ def init_database(engine: Engine | None = None) -> None:
     if engine is None and not SETTINGS.companion_asset_signing_key:
         raise RuntimeError("COMPANION_ASSET_SIGNING_KEY must be set.")
     if engine is not None:
-        # An explicit engine means we're in a test/seed context — flip the
-        # companion-asset signer into test mode so ``_signing_key()`` can
-        # fall back to ``_TEST_SIGNER_KEY`` without raising.
-        from services.companion import asset_store
-
+        # Explicit engine = test/seed context — let _signing_key() fall back to _TEST_SIGNER_KEY.
         asset_store._enable_test_signer_key()
     target = engine if engine is not None else ENGINE
     ModelBase.metadata.create_all(bind=target)
@@ -136,16 +138,15 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
 
     if not SETTINGS.public_url_prefix:
         try:
-            ip = fetch_public_ip()
-            if ip:
+            if ip := fetch_public_ip():
                 SETTINGS.public_ip = ip
                 logger.info("Public IP detected", extra={"ip": ip})
             else:
-                SETTINGS.public_ip = "127.0.0.1"
                 logger.warning("Could not detect public IP, falling back to 127.0.0.1")
+                SETTINGS.public_ip = "127.0.0.1"
         except Exception:
-            SETTINGS.public_ip = "127.0.0.1"
             logger.warning("Public IP detection failed, falling back to 127.0.0.1")
+            SETTINGS.public_ip = "127.0.0.1"
 
     # asyncpg requires a plain postgresql:// URL without SQLAlchemy driver suffixes
     sa_url = make_url(SETTINGS.database_url)
@@ -184,6 +185,17 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
 
 
 app = FastAPI(title=SETTINGS.app_name, lifespan=lifespan)
+# API is LAN-reachable — an unrestricted origin list would expose companion endpoints to any browser.
+cors_origins = [o.strip() for o in SETTINGS.cors_allowed_origins.split(",") if o.strip()]
+if cors_origins:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=cors_origins,
+        allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        allow_headers=["Authorization", "Content-Type", "X-Request-ID"],
+        # Auth is a bearer header, not a cookie — credentials stay off.
+        allow_credentials=False,
+    )
 app.state.limiter = limiter
 app.middleware("http")(stash_user_id_middleware)
 # correlation_id_middleware 后注册 = Starlette 外层 wrapper, inbound 它先跑,

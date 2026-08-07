@@ -19,12 +19,41 @@ if TYPE_CHECKING:
     from modules.auth import User
 
 
+class CompanionModel(ModelBase, TimestampMixin):
+    """status: pending→processing→succeeded/failed; a model.ready WS event fires on completion."""
+
+    __tablename__ = "companion_models"
+
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    asset_url: Mapped[str] = mapped_column(Text, default="")
+    source_portrait_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    provider: Mapped[str] = mapped_column(String(64), default="base_texture")
+    provider_task_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    species: Mapped[str] = mapped_column(String(64), default="人类", server_default=text("'人类'"))
+    morph_params_json: Mapped[str] = mapped_column(Text, default="{}", server_default=text("'{}'"))
+    status: Mapped[str] = mapped_column(String(32), default="pending")
+    has_rig: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("FALSE"))
+    has_morph_targets: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("FALSE"))
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    active: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("FALSE"), index=True)
+
+
+class WardrobeItem(ModelBase, TimestampMixin):
+    """material_overrides_json keys are mesh names; "*" applies to all meshes."""
+
+    __tablename__ = "wardrobe_items"
+
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(128))
+    category: Mapped[str] = mapped_column(String(64), default="preset")
+    material_overrides_json: Mapped[str] = mapped_column(Text, default="{}")
+    texture_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    prompt: Mapped[str | None] = mapped_column(Text, nullable=True)
+    equipped: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("FALSE"), index=True)
+
+
 class Persona(ModelBase, TimestampMixin):
-    """Per-user companion persona — source of truth for the companion's
-    voice, personality, and behavioral biases. ``system_prompt_extras``
-    is kept as a separate column from ``definition_json`` so persona
-    edits only re-render one row instead of every historical message.
-    """
+    """system_prompt_extras is its own column so a persona edit re-renders one row, not every historical message."""
 
     __tablename__ = "personas"
 
@@ -37,20 +66,10 @@ class Persona(ModelBase, TimestampMixin):
 
 
 class AvatarAsset(ModelBase):
-    """A generated companion avatar. Each successful generation writes a new
-    row; ``active`` flips off the previous row in the same transaction so
-    only one avatar per user is "current" at any time. ``asset_url`` points
-    to a persistent copy in ``companion-avatars/`` (durable storage, not
-    temp-media) so cross-device re-login and Tier-3 escalation survive the
-    24h temp-media TTL.
-    """
+    """asset_url lives in companion-avatars/ (durable) so re-login survives the 24h temp-media TTL."""
 
     __tablename__ = "avatar_assets"
-    __table_args__ = (
-        # Only one active asset per user — enforced via partial unique index
-        # in ``_install_schema_extensions`` (cannot be expressed in vanilla
-        # ``UniqueConstraint`` because Postgres needs ``WHERE``).
-    )
+    # Partial unique index (one active per user) lives in _install_schema_extensions — needs WHERE.
 
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     prompt_json: Mapped[str] = mapped_column(Text)
@@ -64,14 +83,7 @@ class AvatarAsset(ModelBase):
 
 
 class AvatarClip(ModelBase, TimestampMixin):
-    """A companion animation clip with a three-tier fallback ladder
-    (procedural → sprite-sheet → video) so the companion is never blocked
-    on video generation. ``active_tier`` is computed (3 > 2 > 1), never
-    stored. T2/T3 products persist on durable ``companion-assets`` storage
-    (not temp-media) so a re-login re-fetches already-generated assets;
-    failed tiers are retried on a schedule by the escalation loop with
-    exponential backoff, aiming for Tier 3 on every scene.
-    """
+    """active_tier is computed (3>2>1), never stored."""
 
     __tablename__ = "avatar_clips"
 
