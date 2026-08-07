@@ -241,20 +241,24 @@ export function PersonaRetune({ initial, onClose, onSaved }: PersonaRetuneProps)
 
     try {
       await window.deskagent.api({
-        body: assemblePersona({
-          name: trimmed,
-          personality,
-          speaking_style: speakingStyle,
-          species,
-          character_gender: characterGender,
-          appearance: appearance.slice(0, MAX_APPEARANCE),
-          role: background,
-          user_call_name: userCallName,
-          user_gender: userGender,
-          user_age_bucket: userAgeBucket,
-          user_hobbies: userHobbies,
-          user_freeform: userFreeform
-        }),
+        body: {
+          definition_json: JSON.stringify(
+            assemblePersona({
+              name: trimmed,
+              personality,
+              speaking_style: speakingStyle,
+              species,
+              character_gender: characterGender,
+              appearance: appearance.slice(0, MAX_APPEARANCE),
+              role: background,
+              user_call_name: userCallName,
+              user_gender: userGender,
+              user_age_bucket: userAgeBucket,
+              user_hobbies: userHobbies,
+              user_freeform: userFreeform
+            })
+          )
+        },
         method: 'PUT',
         path: '/api/companion/persona'
       })

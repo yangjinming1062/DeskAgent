@@ -1,5 +1,3 @@
-from datetime import datetime
-
 from pydantic import BaseModel
 from pydantic import ConfigDict
 from pydantic import Field
@@ -8,48 +6,29 @@ from pydantic import Field
 class PersonaUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    name: str = Field(min_length=1, max_length=128)
-    personality: str = Field(min_length=1, max_length=500)
-    speaking_style: str = Field(min_length=1, max_length=500)
-    appearance: str | None = Field(default=None, max_length=500)
-    background: str | None = Field(default=None, max_length=500)
-    biological_type: str | None = Field(default=None, max_length=64)
-    gender: str | None = Field(default=None, max_length=64)
-    user_call_name: str | None = Field(default=None, max_length=2000)
-    user_gender: str | None = Field(default=None, max_length=2000)
-    user_age_bucket: str | None = Field(default=None, max_length=2000)
-    user_hobbies: str | None = Field(default=None, max_length=2000)
-    user_freeform: str | None = Field(default=None, max_length=2000)
+    # The full persona definition (including user_* fields routed to Memory)
+    # travels as one JSON blob; the backend parses + validates it.
+    definition_json: str = Field(min_length=1)
 
 
 class PersonaResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
-    user_id: int
     definition_json: str
-    system_prompt_extras: str
     is_complete: bool
-    created_at: datetime
-    updated_at: datetime
 
 
 class AvatarAssetResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
     id: int
-    user_id: int
     asset_url: str
-    style: str
-    seed: int | None
-    active: bool
-    created_at: datetime
+    # Generation completes synchronously, so every returned asset is succeeded.
+    prompt: str = ""
+    status: str = "succeeded"
 
 
 class AvatarGenerateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    style: str = Field(default="portrait", min_length=1, max_length=64)
+    # Optional verbatim prompt override; omitted → prompt built from persona.
+    prompt_override: str | None = Field(default=None, max_length=2000)
 
 
 class AvatarUploadRequest(BaseModel):
@@ -71,7 +50,7 @@ class AvatarFromImageRequest(BaseModel):
 
 
 class AvatarHistoryResponse(BaseModel):
-    items: list[AvatarAssetResponse]
+    history: list[AvatarAssetResponse]
 
 
 class ClipStatusResponse(BaseModel):
@@ -87,35 +66,31 @@ class ClipStatusResponse(BaseModel):
 
 
 class CompanionModelResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
     id: int
-    user_id: int
     asset_url: str | None = None
     provider: str
     species: str = "人类"
     morph_params: dict = Field(default_factory=dict)
-    status: str
+    status: str = "succeeded"
     has_rig: bool
     has_morph_targets: bool
-    active: bool
-    created_at: datetime
 
 
 class ModelGenerateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    # Optional species override; omitted → species derived from the persona.
+    species_override: str | None = Field(default=None, max_length=64)
+
 
 class WardrobeItemResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
     id: int
     name: str
     category: str
-    material_overrides: dict = Field(default_factory=dict)
+    material_overrides_json: str = "{}"
     texture_url: str | None = None
+    prompt: str | None = None
     equipped: bool
-    created_at: datetime
 
 
 class WardrobeGenerateRequest(BaseModel):

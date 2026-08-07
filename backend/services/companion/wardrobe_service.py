@@ -67,20 +67,27 @@ _DEFAULT_PRESETS: list[dict] = [
 
 
 def _ensure_presets(db: Session, user_id: int) -> None:
-    """Per-preset savepoint so a concurrent insert conflict rolls back one row, not the session."""
+    """Per-preset savepoint so a concurrent insert conflict rolls back one row, not the session.
+
+    Explicit savepoint commit/rollback (not ``with db.begin_nested():``) —
+    the test fixture's ``after_transaction_end`` savepoint-restart listener
+    would otherwise re-enter ``begin_nested`` while the context manager of
+    the just-ended savepoint is still registered.
+    """
     for preset in _DEFAULT_PRESETS:
+        savepoint = db.begin_nested()
         try:
-            with db.begin_nested():
-                db.add(
-                    WardrobeItem(
-                        user_id=user_id,
-                        name=preset["name"],
-                        category=preset["category"],
-                        material_overrides_json=json.dumps(preset["material_overrides"]),
-                    )
+            db.add(
+                WardrobeItem(
+                    user_id=user_id,
+                    name=preset["name"],
+                    category=preset["category"],
+                    material_overrides_json=json.dumps(preset["material_overrides"]),
                 )
+            )
+            savepoint.commit()
         except IntegrityError:
-            continue
+            savepoint.rollback()
     db.commit()
 
 

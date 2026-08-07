@@ -176,15 +176,23 @@ export class CharacterController {
   /** Hot-swap outfit: apply material color/roughness/metalness overrides to
    * all meshes (wildcard "*") or specific mesh names. Optionally load and
    * apply a generated texture as the albedo map. */
-  setOutfit(item: {
-    material_overrides: Record<string, { color?: string; roughness?: number; metalness?: number }>
-    texture_url?: string | null
-  }): void {
+  setOutfit(item: { material_overrides_json?: string | null; texture_url?: string | null }): void {
     if (this.isProcedural) {
       return
     }
 
-    const overrides = item.material_overrides
+    let overrides: Record<string, { color?: string; roughness?: number; metalness?: number }> = {}
+
+    try {
+      const parsed = item.material_overrides_json ? JSON.parse(item.material_overrides_json) : {}
+
+      if (parsed && typeof parsed === 'object') {
+        overrides = parsed
+      }
+    } catch {
+      overrides = {}
+    }
+
     const wildcard = overrides['*']
 
     this.root.traverse(child => {

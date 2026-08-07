@@ -64,14 +64,18 @@ export function PersonaSection() {
 
     try {
       await window.deskagent.api({
-        body: assemblePersona({
-          name: trimmed,
-          personality,
-          role,
-          species,
-          character_gender: characterGender,
-          appearance: appearance.slice(0, MAX_APPEARANCE)
-        }),
+        body: {
+          definition_json: JSON.stringify(
+            assemblePersona({
+              name: trimmed,
+              personality,
+              role,
+              species,
+              character_gender: characterGender,
+              appearance: appearance.slice(0, MAX_APPEARANCE)
+            })
+          )
+        },
         method: 'PUT',
         path: '/api/companion/persona'
       })

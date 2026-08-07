@@ -14,18 +14,14 @@ export interface ModelInfo {
   status: string
 }
 
-export interface MaterialOverride {
-  color?: string
-  roughness?: number
-  metalness?: number
-}
-
 export interface WardrobeItem {
   id: number
   name: string
   category: string
-  material_overrides: Record<string, MaterialOverride>
+  // Raw JSON blob from the backend — parse before applying material overrides.
+  material_overrides_json: string
   texture_url: string | null
+  prompt?: string | null
   equipped: boolean
 }
 
