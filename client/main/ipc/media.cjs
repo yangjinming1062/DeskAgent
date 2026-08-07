@@ -2,6 +2,8 @@
 
 const fs = require('node:fs')
 
+const { dataUrlFromBuffer } = require('../shared/mime.cjs')
+
 const STT_TIMEOUT_MS = 60_000
 const TTS_TIMEOUT_MS = 60_000
 const TTS_MAX_TEXT_CHARS = 4000
@@ -156,7 +158,7 @@ async function ttsViaBackend({ ensureBackend, text, voice, language }) {
   const mime = contentType.split(';')[0].trim() || 'audio/mpeg'
   // Server may substitute the voice (provider default); trust its reported id.
   const voiceOut = headers.get('x-voice-used') || voice
-  return { dataUrl: `data:${mime};base64,${body.toString('base64')}`, mimeType: mime, voiceOut }
+  return { dataUrl: dataUrlFromBuffer(body, mime), mimeType: mime, voiceOut }
 }
 
 // Cached reader for `stt.engine` / `tts.engine` from GET /api/config. Short TTL

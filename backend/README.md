@@ -258,7 +258,7 @@ onboarding 的音色偏好（`voice` 草稿字段）经 JSON-RPC 落到具体 vo
 
 ### 伙伴情绪（affect）
 
-Backend 在对话响应的 `message.complete` 帧内联 `affect: {emotion}` 字段（design §6.3 inline affect 原则）。实现：当角色定义存在时，系统提示词注入 affect 指令（`COMPANION_AFFECT_GUIDANCE`），要求 LLM 在每条文字回复前缀 `[affect:EMOTION]` 标签。`services/chat/affect.AffectScrubber` 在流式路径中剥离该标签（用户不可见），捕获的 emotion 附加到 `message.complete`。emotion 词汇表在 `ALLOWED_EMOTIONS`（有限枚举，可扩展但需同步 Desktop clip 目录）。
+Backend 在对话响应的 `message.complete` 帧内联 `affect: {emotion}` 字段（design §6.3 inline affect 原则）。实现：当角色定义存在时，系统提示词注入 affect 指令（`COMPANION_AFFECT_GUIDANCE`），要求 LLM 在每条文字回复前缀 `[affect:EMOTION]` 标签。`services/chat/affect.AffectScrubber` 在流式路径中剥离该标签（用户不可见），捕获的 emotion 附加到 `message.complete`。emotion 词汇表在 `ALLOWED_EMOTIONS`（有限枚举，可扩展但需同步 GLB 的 morph / 动画 clip 命名）。
 
 ### 复用映射
 
@@ -298,11 +298,11 @@ Backend 在对话响应的 `message.complete` 帧内联 `affect: {emotion}` 字�
 | Runner tools 在 desktop 离线时延迟返回 | ipc.await_future 有 300s 超时；三层 fast-fail 通常 < 100ms 返回，仅绕过三层后才进入超时 |
 | 并行 terminal 不可用 | Runner 端共享 LocalEnvironment 实例，快照文件不可并发写。架构决定 |
 | `apply_partial` 抹除"清空"语义 | PATCH 无法用 null 清字段 |
-| 形象资产 URL 有 TTL | 持久路径 ``companion-avatars/<id>.<ext>`` + 读时 5 分钟 HMAC 签名（`X-Signed-Url-Expiry`）。`verify_signed_asset_request` 强制校验，缺签名 401。Desktop 收到签名 URL 时本地缓存，过期后走 `/api/companion/avatar/list` 重新拉 |
+| 形象资产 URL 有 TTL | 持久路径 ``companion-avatars/<id>.<ext>`` + 读时 5 分钟 HMAC 签名（`X-Signed-Url-Expiry`）。`verify_signed_asset_request` 强制校验，缺签名 401。签名 URL 的 host 来自 `public_url_prefix`，Desktop 不能假定可达——渲染进程一律经主进程 `deskagent:api:asset` 取字节转 data URL |
 | `image_generate` / `text_to_speech_tool` / `video_generate` 不参与 config-aware 过滤 | 可用性取决于 provider；调用时按 `llm_config` 拉 `provider_for_service` |
 | MiniMax-H3 视频 URL 短时效 | video_gen H3 v2 协议下 `poll` 直接返回 `download_url`（旧 v1 还有 `files/retrieve` 第二跳），URL 仍是短时效的，必须立即下载落 `data_dir/temp-media`，**不能**直接返给前端 |
 | MiniMax 内容风控 1027 不重试 | `base_resp.status_code=1027` 映射到 `content_policy_blocked` 且 `retryable=False`，避免重试三次白烧配额 |
-| 单实例 IPC future | `_disturbance`、companion_submission_id 锁、`video_next_retry_at` CAS 都在 process-local 内存里；架构按单实例部署 |
+| 单实例 IPC future | `_disturbance` 锁在 process-local 内存里；架构按单实例部署 |
 | Cron kick 守卫 | `_kick_autonomous_turn` 仅在 dispatcher 表里查"用户在线"；`kick` 内部 `is_quiet` 守卫 + per-user `asyncio.Lock` 兜底 |
 | video_gen URL 短时效过期 | H3 v2 协议下 `provider.poll` 直接返回的 `download_url` 是短时效的；下载测试必须确保 URL 失效前落地；CI fixture 用 fake provider 跳过此路径 |
 

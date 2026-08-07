@@ -49,9 +49,14 @@ function extensionForMimeType(mimeType) {
   return ''
 }
 
+function dataUrlFromBuffer(buffer, mimeType) {
+  return `data:${mimeType};base64,${buffer.toString('base64')}`
+}
+
 module.exports = {
   MEDIA_MIME_TYPES,
   STREAMABLE_MEDIA_EXTS,
   mimeTypeForPath,
-  extensionForMimeType
+  extensionForMimeType,
+  dataUrlFromBuffer
 }

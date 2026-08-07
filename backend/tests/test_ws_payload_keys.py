@@ -75,18 +75,3 @@ def test_failed_event_uses_task_id(monkeypatch):
     assert payload["error"] == "timeout"
     assert "job_id" not in payload
 
-
-def test_emit_disabled_recognises_suppression_flag():
-    """Companion clip pipeline uses ``enqueue_video_job(..., emit_event=False)``
-    so the standard ``video_gen.*`` events don't double-fire alongside the
-    companion's own ``clip.updated`` channel (P0-8)."""
-    from services.media.video_jobs import _emit_disabled
-
-    assert _emit_disabled(None) is False
-    assert _emit_disabled("") is False
-    assert _emit_disabled("{}") is False
-    assert _emit_disabled(json.dumps({"_event_extras": {"scene": "idle"}})) is False
-    assert _emit_disabled(json.dumps({"_emit_event": False})) is True
-    # Defensive: corrupted JSON / non-dict types should fall back to "emit enabled"
-    assert _emit_disabled("not json") is False
-    assert _emit_disabled(json.dumps("_emit_event: false")) is False

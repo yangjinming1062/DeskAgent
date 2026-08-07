@@ -3,7 +3,6 @@ from .affect_check import check_affect
 from .asset_store import build_signed_asset_url
 from .asset_store import build_signed_avatar_url
 from .asset_store import build_signed_model_url
-from .asset_store import delete_user_assets
 from .asset_store import resolve_companion_asset_path
 from .asset_store import resolve_companion_model_path
 from .asset_store import verify_signed_asset_request
@@ -17,13 +16,6 @@ from .avatar_service import regenerate_avatar
 from .avatar_service import regenerate_avatar_from_image
 from .avatar_service import resolve_uploaded_avatar_path
 from .avatar_service import upload_avatar
-from .clip_service import CLIP_SCENES
-from .clip_service import invalidate_user_clips
-from .clip_service import list_clips
-from .clip_service import scenes_for_batch
-from .clip_service import seed_all_clips
-from .escalation_loop import start_clip_escalation
-from .escalation_loop import stop_clip_escalation
 from .interact import check_interact
 from .interaction_stats import record_interaction
 from .memory_admin import delete_memory
@@ -61,7 +53,6 @@ from .wardrobe_service import list_wardrobe
 __all__ = [
     "ALLOWED_AVATAR_UPLOAD_MIME_TYPES",
     "AvatarGenerationError",
-    "CLIP_SCENES",
     "ModelGenerationError",
     "ONBOARDING_FIELDS",
     "PersonaValidationError",
@@ -73,7 +64,6 @@ __all__ = [
     "check_affect",
     "check_interact",
     "delete_memory",
-    "delete_user_assets",
     "delete_wardrobe_item",
     "design_voice",
     "emit_wardrobe_updated",
@@ -90,9 +80,7 @@ __all__ = [
     "get_memory",
     "get_onboarding_state",
     "get_or_create_persona",
-    "invalidate_user_clips",
     "list_avatar_history",
-    "list_clips",
     "list_memories",
     "list_tts_voices",
     "list_wardrobe",
@@ -107,11 +95,7 @@ __all__ = [
     "resolve_companion_asset_path",
     "resolve_companion_model_path",
     "resolve_uploaded_avatar_path",
-    "scenes_for_batch",
-    "seed_all_clips",
     "signed_model_url",
-    "start_clip_escalation",
-    "stop_clip_escalation",
     "submit_onboarding_field",
     "update_memory",
     "update_persona",

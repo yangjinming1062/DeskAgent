@@ -81,6 +81,7 @@ renderer 通过 `window.deskagent.*`（preload contextBridge）调 main；main �
 ### Renderer ↔ Backend（REST + WS）
 
 - **REST**：renderer 经 `window.deskagent.api({ path, method, body })` → `main/ipc/connection.cjs` 转发到 Backend（携带 JWT）。401 时发 `deskagent:auth:session-expired`。
+- **二进制资产**：Backend 签名资产 URL 的 host 取自 `public_url_prefix`，renderer 不能假定可达（NAT / 多网卡 / 容器桥接，为空时更会退化成无 host 的 `http://:8000`），签名 TTL 也只有 5 分钟。故 renderer 经 `window.deskagent.apiAsset({ url })` 把 URL 剥到 path+query、由 main 重新拼到已解析的 `baseUrl` 上取字节，返回 data URL。取不到时返回 `null`——原 URL 正是渲染进程够不着的那个，回退它只会渲染出裂图。**已知限制**：目前仅立绘走这条路径，GLB 模型与衣柜贴图仍由 renderer 直接加载签名 URL（见「已知限制」）。
 - **WS**：`DeskAgentGateway extends JsonRpcGatewayClient`（`renderer/shared/deskagent/`），在 renderer 内直接连接 `ws://<backend>/api/chat/ws?token=<jwt>`。main 进程只通过 `deskagent:gateway:ws-url` 把 URL 推给 renderer——chat WS **不走** preload 命名空间。
 
 ### Main ↔ Runner（本地 WS）
@@ -147,6 +148,7 @@ Desktop 走 `electron-updater` 从 Backend `/api/update` 拉取预构建安装�
 | 限制 | 说明 |
 |------|------|
 | Runner 崩溃后重连窗口有限 | 端点文件 + 重连循环（~5 分钟），超时后 Runner 退出 |
+| GLB / 衣柜贴图不走 `deskagent:api:asset` | `3d/CharacterController.ts` 的 `GLTFLoader` 与 `TextureLoader`、`settings-overlay.tsx` 的衣柜缩略图仍直接加载 Backend 签名 URL，`public_url_prefix` 不可达时静默失败（GLB 退化为程序化兜底角色，贴图不生效）。data URL 方案不适用于 GLB（数十 MB，base64 再涨 33%），彻底解法是改 URL 本身——Backend 下发根相对 URL，或 main 用 `webRequest` 重定向 |
 | `voice-call-dock.tsx` useEffect 依赖故意省略 `[gatewayState]` | 麦克风挂载/take-down 由 `[requestGateway]` 触发；reconnect 重入若再加 `gatewayState` 会再次重新挂麦克风导致当前通话被打断。代码注释内已说明，依赖列表是当下决策。 |
 | Electron 42 + pnpm 11 需 hoisted | 失去 phantom-deps 防护；等 Electron ESM 主进程支持 |
 | `.cjs` + `.ts` 双 runtime | 新增 main 模块用 `.cjs`，renderer 用 `.ts/.tsx`；等 Electron ESM 主进程支持 |

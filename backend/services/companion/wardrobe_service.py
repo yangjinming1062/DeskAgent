@@ -134,7 +134,7 @@ async def generate_wardrobe_item(db: Session, *, user_id: int, name: str, descri
     if data is None:
         raise RuntimeError("Texture download failed")
 
-    texture_url = save_companion_asset(data, user_id=user_id, scene="wardrobe", kind="texture", ext="png")
+    texture_url = save_companion_asset(data, user_id=user_id, label="wardrobe_texture", ext="png")
     item = WardrobeItem(
         user_id=user_id,
         name=name,

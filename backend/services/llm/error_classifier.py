@@ -110,6 +110,9 @@ _BILLING_PATTERNS = [
     "balance_depleted",
     "model_not_supported_on_free_tier",
     "not available on the free tier",
+    "余额不足",
+    "额度不足",
+    "配额不足",
 ]
 
 # Patterns that indicate rate limiting (transient, will resolve)

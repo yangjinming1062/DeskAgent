@@ -13,6 +13,8 @@ declare global {
       getDefaultBackendUrl: () => Promise<string | null>
       showToolWindow: () => Promise<void>
       api: <T>(request: DeskAgentApiRequest) => Promise<T>
+      /** Fetch a backend-served binary asset as a data URL (see connection.cjs). */
+      apiAsset: (request: { url: string }) => Promise<string>
       readFileDataUrl: (filePath: string) => Promise<string>
       selectPaths: (options?: DeskAgentSelectPathsOptions) => Promise<string[]>
       writeClipboard: (text: string) => Promise<boolean>

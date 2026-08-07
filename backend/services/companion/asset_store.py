@@ -94,20 +94,19 @@ def save_companion_asset(
     data: bytes,
     *,
     user_id: int,
-    scene: str,
-    kind: str,
+    label: str,
     ext: str,
 ) -> str:
-    """Returns the bare storage path; read paths re-sign on demand."""
-    safe_scene = "".join(c if c.isalnum() or c in "-_" else "_" for c in scene)[:48] or "scene"
+    """Returns the bare storage path; read paths re-sign on demand. ``label`` is a filename prefix only, never a lookup key."""
+    safe_label = "".join(c if c.isalnum() or c in "-_" else "_" for c in label)[:48] or "asset"
     user_dir = _assets_root() / str(user_id)
     user_dir.mkdir(parents=True, exist_ok=True)
     token = secrets.token_urlsafe(8)
-    filename = f"{safe_scene}_{kind}_{token}.{ext}"
+    filename = f"{safe_label}_{token}.{ext}"
     filepath = user_dir / filename
     with open(filepath, "wb") as f:
         f.write(data)
-    logger.info("Saved companion asset", extra={"user_id": user_id, "scene": scene, "kind": kind, "size": len(data)})
+    logger.info("Saved companion asset", extra={"user_id": user_id, "label": label, "size": len(data)})
     return f"companion-assets/{user_id}/{filename}"
 
 
@@ -124,26 +123,8 @@ def resolve_companion_asset_path(user_id: int, filename: str) -> tuple[Path, str
         "jpg": "image/jpeg",
         "jpeg": "image/jpeg",
         "webp": "image/webp",
-        "webm": "video/webm",
-        "mp4": "video/mp4",
     }.get(ext, "application/octet-stream")
     return filepath, content_type
-
-
-def delete_user_assets(user_id: int) -> int:
-    """Best-effort — the DB row is the source of truth, orphan files are harmless."""
-    user_dir = _assets_root() / str(user_id)
-    if not user_dir.exists():
-        return 0
-    count = 0
-    for f in user_dir.iterdir():
-        if f.is_file():
-            try:
-                f.unlink()
-                count += 1
-            except OSError:
-                pass
-    return count
 
 
 # ── 3D model storage ─────────────────────────────────────────

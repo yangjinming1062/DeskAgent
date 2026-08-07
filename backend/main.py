@@ -24,8 +24,6 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from services.companion import asset_store
-from services.companion import start_clip_escalation
-from services.companion import stop_clip_escalation
 from services.gateway import start_ws_event_loop
 from services.gateway import stop_ws_event_loop
 from services.media import aclose_all
@@ -67,7 +65,7 @@ def _install_ws_notify_trigger(conn: Connection) -> None:
 
 
 def _install_schema_extensions(conn: Connection) -> None:
-    """Idempotent ALTERs for columns added after the initial create_all rollout."""
+    """Idempotent ALTERs for columns added after the initial create_all rollout. Additive only — modelless schema is left in place, never dropped."""
     conn.execute(text("ALTER TABLE conversations ADD COLUMN IF NOT EXISTS settings_json TEXT"))
     for column, ddl_type in (
         ("stt_base_url", "VARCHAR(255) DEFAULT ''"),
@@ -90,19 +88,6 @@ def _install_schema_extensions(conn: Connection) -> None:
     conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_companion_models_one_active ON companion_models (user_id) WHERE active"))
     # _ensure_presets relies on this index for dedup instead of a SELECT.
     conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_wardrobe_items_user_name ON wardrobe_items (user_id, name)"))
-    conn.execute(text("CREATE INDEX IF NOT EXISTS ix_avatar_clips_user_batch ON avatar_clips (user_id, batch)"))
-    for column, ddl_type in (
-        ("video_asset_url", "TEXT"),
-        ("video_attempts", "INTEGER DEFAULT 0"),
-        ("video_next_retry_at", "TIMESTAMP"),
-        ("keyframe_url", "TEXT"),
-        ("keyframe_meta_json", "TEXT"),
-        ("keyframe_attempts", "INTEGER DEFAULT 0"),
-        ("keyframe_next_retry_at", "TIMESTAMP"),
-    ):
-        conn.execute(text(f"ALTER TABLE avatar_clips ADD COLUMN IF NOT EXISTS {column} {ddl_type}"))
-    conn.execute(text("CREATE INDEX IF NOT EXISTS ix_avatar_clips_video_retry ON avatar_clips (video_next_retry_at)"))
-    conn.execute(text("CREATE INDEX IF NOT EXISTS ix_avatar_clips_keyframe_retry ON avatar_clips (keyframe_next_retry_at)"))
     conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_memories_user_context ON memories (user_id, context) WHERE context LIKE 'user_profile:%'"))
     # Partial unique for auto_inject slots — enforces one row per (user, slot)
     # so ``memory_retain(kind='auto_inject', context=<slot>)`` upserts atomically.
@@ -154,7 +139,6 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     global_pool = await asyncpg.create_pool(pool_url)
 
     start_scheduler()
-    start_clip_escalation()
     start_ws_event_loop(global_pool)
     resume_pending_video_jobs()
 
@@ -174,7 +158,6 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
         cleanup_task.cancel()
 
         await stop_scheduler()
-        await stop_clip_escalation()
         await stop_ws_event_loop()
 
         if global_pool:

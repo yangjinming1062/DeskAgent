@@ -16,6 +16,10 @@ _BASE_RESP_TO_HTTP: dict[int, int] = {
     2013: 400,  # invalid param
 }
 
+# MiniMax bills plan/credit refusals under its generic invalid-param codes, so
+# the inner code alone can't distinguish them from a genuinely malformed request.
+_ENTITLEMENT_SIGNALS = ("tokenplan", "credit")
+
 
 def raise_for_minimax_response(resp, *, provider: str, model: str) -> dict:
     """Translate a MiniMax HTTP response into a dict body or raise
@@ -45,7 +49,9 @@ def raise_for_minimax_response(resp, *, provider: str, model: str) -> dict:
                 inner_int = int(inner_code)
             except (TypeError, ValueError):
                 inner_int = 0
-            if inner_int in _BASE_RESP_TO_HTTP:
+            if inner_int in (1013, 2013) and any(s in inner_msg.lower() for s in _ENTITLEMENT_SIGNALS):
+                http = 402
+            elif inner_int in _BASE_RESP_TO_HTTP:
                 http = _BASE_RESP_TO_HTTP[inner_int]
             else:
                 # Don't fall back to resp.status_code (likely 200); surface

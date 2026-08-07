@@ -179,7 +179,7 @@ async def _generate_custom_textures(user_id: int) -> None:
         if data is None:
             return
 
-        texture_url = save_companion_asset(data, user_id=user_id, scene="custom", kind="texture", ext="png")
+        texture_url = save_companion_asset(data, user_id=user_id, label="custom_texture", ext="png")
 
         with SESSION_LOCAL() as db:
             db.query(WardrobeItem).filter(WardrobeItem.user_id == user_id, WardrobeItem.equipped.is_(True)).update({"equipped": False})

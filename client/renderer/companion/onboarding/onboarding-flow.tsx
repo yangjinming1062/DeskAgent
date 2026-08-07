@@ -1,7 +1,7 @@
 import { useStore } from '@nanostores/react'
 import { type PointerEvent as ReactPointerEvent, useEffect, useRef, useState } from 'react'
 
-import { pickAvatarImage, type PickedImage } from '@/companion/avatar-image'
+import { pickAvatarImage, type PickedImage, resolvePortraitUrl } from '@/companion/avatar-image'
 import { awaitAvatarRegeneration } from '@/companion/avatar-regen-store'
 import { useGatewayRequest } from '@/companion/boot/use-gateway-request'
 import { useInteractiveRegion } from '@/companion/interactive-regions'
@@ -241,6 +241,7 @@ const BACKEND_FIELD: Record<QKey, string> = {
 // A reference image routes generation through /avatar/from-image so the portrait
 // is rendered *as* the uploaded character; the persona prompt already carries
 // the appearance text, so no extra description is sent from here.
+// Returns the raw backend `asset_url` — `applyPortrait` owns the resolve step.
 async function generatePortrait(reference: PickedImage | null): Promise<string | null> {
   try {
     const res = await window.deskagent.api<{ asset_url?: string }>({
@@ -292,6 +293,18 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
   const [answers, setAnswers] = useState<OnboardingAnswers>({})
   const [input, setInput] = useState('')
   const [portraitUrl, setPortraitUrl] = useState<string | null>(null)
+
+  // Failure keeps the current portrait: it already holds resolved bytes.
+  const applyPortrait = async (assetUrl: string | null | undefined): Promise<string | null> => {
+    const resolved = await resolvePortraitUrl(assetUrl)
+
+    if (resolved) {
+      setPortraitUrl(resolved)
+    }
+
+    return resolved
+  }
+
   const [voice, setVoice] = useState<VoiceOption | null>(null)
   const [voiceCatalog, setVoiceCatalog] = useState<VoiceOption[]>([])
   const [voiceLangFilter, setVoiceLangFilter] = useState<VoiceLanguageFilter>('zh')
@@ -587,7 +600,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
 
     if (personaOk) {
       try {
-        url = await retryTransient(() => generatePortrait(refImage), 1500, 2)
+        url = await applyPortrait(await retryTransient(() => generatePortrait(refImage), 1500, 2))
       } catch {
         // A deterministic 4xx (unusable reference image, incomplete persona)
         // must not strand the flow on 'hatching' — fall through to the portrait
@@ -603,7 +616,6 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
       setHint('记忆还没存好，稍后再试试形象吧…')
     }
 
-    setPortraitUrl(url)
     setPhase('portrait')
     void playOnboardingAudio(url ? 'onboarding.portrait.ok' : 'onboarding.portrait.failed')
   }
@@ -624,8 +636,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
           }
         })
 
-        if (res?.asset_url) {
-          setPortraitUrl(res.asset_url)
+        if (res?.asset_url && (await applyPortrait(res.asset_url))) {
           void playOnboardingAudio('onboarding.portrait.regenerate')
 
           return
@@ -638,18 +649,15 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
       )
 
       if (queued?.asset_url) {
-        setPortraitUrl(queued.asset_url)
-        void playOnboardingAudio('onboarding.portrait.regenerate')
+        if (await applyPortrait(queued.asset_url)) {
+          void playOnboardingAudio('onboarding.portrait.regenerate')
+        }
       } else if (queued?.queued && queued.job_id) {
         const result = await awaitAvatarRegeneration(queued.job_id)
 
-        if (result.asset_url) {
-          setPortraitUrl(result.asset_url)
+        if (result.asset_url && (await applyPortrait(result.asset_url))) {
           void playOnboardingAudio('onboarding.portrait.regenerate')
         } else {
-          // Failure path — keep the existing clip catalog intact so the
-          // user can keep their Tier 2/3 clips while the regenerate
-          // is retried.
           setPortraitPanelHint(result.error ?? '暂时换不出来，稍后再试吧')
           setHint(result.error ?? '暂时换不出来，稍后再试吧')
         }
@@ -717,11 +725,12 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
         body: { image: pickedImage.base64, content_type: pickedImage.contentType }
       })
 
-      if (res?.asset_url) {
-        setPortraitUrl(res.asset_url)
+      if (res?.asset_url && (await applyPortrait(res.asset_url))) {
         setPickedImage(null)
         setRefineDescription('')
         void playOnboardingAudio('onboarding.portrait.upload')
+      } else {
+        setPortraitPanelHint('上传失败了，换张图试试？')
       }
     } catch {
       setPortraitPanelHint('上传失败了，换张图试试？')
@@ -752,11 +761,12 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
         }
       })
 
-      if (res?.asset_url) {
-        setPortraitUrl(res.asset_url)
+      if (res?.asset_url && (await applyPortrait(res.asset_url))) {
         setPickedImage(null)
         setRefineDescription('')
         void playOnboardingAudio('onboarding.portrait.fromimage')
+      } else {
+        setPortraitPanelHint('按参考重绘失败了，稍后再试吧')
       }
     } catch {
       setPortraitPanelHint('按参考重绘失败了，稍后再试吧')

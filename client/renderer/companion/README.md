@@ -95,7 +95,7 @@ GLB 加载成功后骨骼动画覆盖全部状态；加载失败时渲染程序�
   | gaming | `idle_engaged` → `idle_stretch` → `idle` |
   | 其他 | 沿用既有 `idle_look_around` / `idle_blink` / `idle_stretch` |
 
-  全部走 batch 2 `` 新增的 6 个场景；Tier 2/3 未就绪时安全 fallback 到 `idle`，符合 §1.3 "永不空白" 不变量。
+  每个变体对应 GLB 内置的一个骨骼动画 clip；模型未提供该 clip 时引擎回退到 `idle`，符合 §1.3 "永不空白" 不变量。
 
 ## 7. 用户直接交互
 

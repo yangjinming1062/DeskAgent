@@ -1254,3 +1254,38 @@ class TestResolveUserLlmConfigCredentials:
         monkeypatch.setattr("components.SETTINGS.providers", [])
         cfg = resolve_user_llm_config(None, None)
         assert cfg == {"api_key": "", "base_url": "", "model_name": "", "provider_name": ""}
+
+
+class TestMiniMaxInnerCodes:
+    """MiniMax returns HTTP 200 with the real error in ``base_resp``; entitlement
+    refusals share the generic invalid-param code and must not read as format_error."""
+
+    @staticmethod
+    def _classify(status_msg: str, status_code: int):
+        from services.llm.error_classifier import classify_api_error
+        from services.llm.providers.base import ProviderError
+        from services.llm.providers.minimax._errors import raise_for_minimax_response
+
+        resp = type("R", (), {"status_code": 200, "json": lambda self: {"base_resp": {"status_code": status_code, "status_msg": status_msg}}})()
+        with pytest.raises(ProviderError) as exc:
+            raise_for_minimax_response(resp, provider="minimax", model="MiniMax-H3")
+        return exc.value, classify_api_error(exc.value, provider="minimax", model="MiniMax-H3")
+
+    def test_plan_refusal_is_billing_not_format_error(self):
+        err, classified = self._classify("invalid params, TokenPlan 或 Credit 暂不支持 MiniMax-H3 系列模型 (2013)", 2013)
+        assert err.status_code == 402
+        assert classified.reason.value == "billing"
+        # A model gated on this key may be enabled on another one.
+        assert classified.should_rotate_credential is True
+
+    def test_genuine_bad_param_stays_format_error(self):
+        err, classified = self._classify("invalid params, prompt is required", 2013)
+        assert err.status_code == 400
+        assert classified.reason.value == "format_error"
+        assert classified.should_rotate_credential is False
+
+    def test_unknown_inner_code_is_retryable_not_success(self):
+        # Falling back to resp.status_code (200) would read as a success.
+        err, classified = self._classify("something new upstream", 9999)
+        assert err.status_code == 502
+        assert classified.retryable is True
