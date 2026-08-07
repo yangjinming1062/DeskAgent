@@ -60,7 +60,7 @@ pnpm dev          # → http://127.0.0.1:5175
 
 ## 后续阶段
 
-- **Phase 2**：backend 3D 素材生成管线（多物种 GLB 基底 + base_texture/meshy 双 provider + AI 纹理）——已完成
+- **Phase 2**：backend 3D 素材生成管线（多物种 GLB 基底 + 预制 GLB 即时下发 + AI 纹理）——已完成
 - **Phase 3**：完整客户端（auth + WS gateway + chat + TTS 口型同步）——已完成
 - **Phase 4**：换装系统（材质预设 + AI 纹理生成 + 热替 + wardrobe UI）——已完成
 - **Phase 5**：将引擎核心（engine/ + state/ + tts.ts）移植到 desktop/renderer/companion/3d/，替换 `companion-ready.tsx` 视频管线。UI 层（auth/chat/wardrobe）与 desktop 现有的 hub 窗口结构融合，非精灵部分（设置页等）保留复用。模型规格见 [GLB_MODEL_SPEC.md](../assets/base-models/GLB_MODEL_SPEC.md)。

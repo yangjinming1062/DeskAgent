@@ -1,4 +1,4 @@
-﻿# 伙伴层交互设计
+# 伙伴层交互设计
 
 > 桌面伙伴（companion）的交互设计描述：形象资产、动画状态机、伙伴生命周期、onboarding、陪伴交互范式、语音、故障态。
 > 这是**描述性文档**（记设计意图与跨模块契约，不记可从代码推出的结构）。协议契约与跨模块架构见 [ARCHITECTURE.md](ARCHITECTURE.md)；3D 渲染引擎实现见 [desktop/README.md](desktop/README.md)；Desktop 实现见 [desktop/README.md](desktop/README.md)。
@@ -27,7 +27,7 @@
 
 伙伴的"身体"由 3D 模型提供，"穿什么"由换装层提供。切换状态 = 切换播放的骨骼动画（§2）；切换情绪 = 切换 morph target 表情；换装 = 热替材质/纹理——三者正交组合，互不阻塞。
 
-模型生成由 Backend 双 provider 架构支撑（[ARCHITECTURE.md §6.2](ARCHITECTURE.md)）：**base_texture**（默认）按角色定义的物种选择预制 rigged GLB（人类/精灵/灵兽/机甲/幻形 + 通用兜底），即时下发、零 3D API 成本，同时后台异步用 portrait 为参考图生成个性化纹理；**meshy**（可选）走外部 image-to-3D API 生成定制 mesh。
+模型生成由 Backend 单一路径支撑（[ARCHITECTURE.md §6.2](ARCHITECTURE.md)）：按角色定义的物种选择预制 rigged GLB（人类/精灵/灵兽/机甲/幻形 + 通用兜底），即时下发、零 3D API 成本，同时后台异步用 portrait 为参考图生成个性化纹理。
 
 ### 1.2 渲染约束
 
@@ -371,7 +371,7 @@ IDLE 时形象不是静止贴图。两类自主行为，**都不触发 TTS、不
 
 伙伴层依赖的跨模块协议与不变量定义在 [ARCHITECTURE.md](ARCHITECTURE.md)：通信协议与数据流（§4）、事件调度与打扰档位（§5）、角色定义与表达层契约（§6）、全局不变量（§10）。
 
-**3D 动画与模型事件**：`model.ready {model_id, asset_url, species}` 事件通知客户端 3D 模型就绪（base_texture 即时 / meshy 异步轮询完成）；`wardrobe.updated` 事件通知客户端换装产物就绪。状态机的状态名（§2）与 emotion 枚举在客户端经 `AnimationMap` 映射到 GLB 内置的骨骼动画 clip 名称，由引擎按可用性回退。
+**3D 动画与模型事件**：`model.ready {model_id, asset_url, species}` 事件通知客户端 3D 模型就绪（预制 GLB 即时下发）；`wardrobe.updated` 事件通知客户端换装产物就绪。状态机的状态名（§2）与 emotion 枚举在客户端经 `AnimationMap` 映射到 GLB 内置的骨骼动画 clip 名称，由引擎按可用性回退。
 
 ---
 

@@ -1,9 +1,7 @@
 import asyncio
 import json
 from pathlib import Path
-from urllib.parse import urlparse
 
-import httpx
 from components import get_logger
 from components import safe_json_loads
 from components import SESSION_LOCAL
@@ -53,18 +51,6 @@ def signed_model_url(model: CompanionModel | None) -> str | None:
         return None
     return build_signed_model_url(int(parts[1]), parts[2])
 
-
-# ── Dispatch ─────────────────────────────────────────────────
-
-
-async def generate_companion_model(db: Session, *, user_id: int) -> CompanionModel:
-    provider = SETTINGS.companion_model_provider
-    if provider == "meshy":
-        return await _generate_meshy_model(db, user_id=user_id)
-    return await _generate_base_texture_model(db, user_id=user_id)
-
-
-# ── Provider: base_texture (default, zero-cost) ──────────────
 
 # Maps persona biological_type → base model filename in data/base-models/.
 SPECIES_MODEL_MAP: dict[str, str] = {
@@ -126,7 +112,7 @@ def _extract_morph_names_from_glb(glb_data: bytes) -> list[str]:
     return sorted(names)
 
 
-async def _generate_base_texture_model(db: Session, *, user_id: int) -> CompanionModel:
+async def generate_companion_model(db: Session, *, user_id: int) -> CompanionModel:
     glb_data, species = await _load_base_model(db, user_id)
     morph_names = _extract_morph_names_from_glb(glb_data)
 
@@ -214,138 +200,16 @@ async def _generate_custom_textures(user_id: int) -> None:
         logger.warning("Custom texture generation failed", extra={"user_id": user_id}, exc_info=True)
 
 
-# ── Provider: meshy (external image-to-3D API) ───────────────
-
-
-async def _generate_meshy_model(db: Session, *, user_id: int) -> CompanionModel:
-    if not SETTINGS.meshy_api_key:
-        raise ModelGenerationError("MESHY_API_KEY 未配置")
-
-    portrait_url = _active_portrait(db, user_id)
-    if portrait_url is None:
-        raise ModelGenerationError("没有可用的形象图，请先生成 portrait")
-
-    # Meshy fetches the portrait server-side — a LAN address makes the job PENDING until the 10-min budget expires.
-    host = urlparse(portrait_url).hostname or ""
-    if host and (host.startswith(("127.", "10.", "192.168.", "169.254.")) or host == "localhost" or host == "::1"):
-        raise ModelGenerationError(
-            f"Meshy 无法访问内网地址 {host}。" "请设置 PUBLIC_URL_PREFIX 指向公网可达的 https://… 地址，" "或在桌面环境内网部署时改用 base_texture provider。"
-        )
-
-    task_id = await _submit_meshy_job(portrait_url)
-
-    db.query(CompanionModel).filter(CompanionModel.user_id == user_id, CompanionModel.active.is_(True)).update({"active": False})
-
-    model = CompanionModel(
-        user_id=user_id,
-        provider="meshy",
-        provider_task_id=task_id,
-        status="processing",
-    )
-    db.add(model)
-    db.commit()
-    db.refresh(model)
-
-    asyncio.create_task(_poll_meshy_and_finalize(user_id, model.id, task_id))
-    return model
-
-
-async def _submit_meshy_job(image_url: str) -> str:
-    async with httpx.AsyncClient(timeout=60.0) as client:
-        resp = await client.post(
-            f"{SETTINGS.meshy_base_url}/v2/image-to-3d",
-            headers={"Authorization": f"Bearer {SETTINGS.meshy_api_key}"},
-            json={"image_url": image_url, "enable_pbr": True, "ai_model": "meshy-4"},
-        )
-        if resp.status_code != 200:
-            raise ModelGenerationError(f"Meshy submit failed ({resp.status_code}): {resp.text[:200]}")
-        data = resp.json()
-        task_id = data.get("result")
-        if not task_id:
-            raise ModelGenerationError(f"Meshy returned no task id: {data}")
-        return task_id
-
-
-async def _poll_meshy_and_finalize(user_id: int, model_id: int, task_id: str) -> None:
-    max_wait = SETTINGS.companion_model_max_poll_seconds
-    interval = SETTINGS.companion_model_poll_interval_seconds
-    # Wall-clock deadline — summing intervals ignores HTTP round-trip time and overruns the budget.
-    deadline = asyncio.get_event_loop().time() + max_wait
-
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        while True:
-            remaining = deadline - asyncio.get_event_loop().time()
-            if remaining <= 0:
-                await _mark_failed(user_id, model_id, "3D 模型生成超时")
-                return
-            await asyncio.sleep(min(interval, remaining))
-
-            try:
-                resp = await client.get(
-                    f"{SETTINGS.meshy_base_url}/v2/image-to-3d/{task_id}",
-                    headers={"Authorization": f"Bearer {SETTINGS.meshy_api_key}"},
-                )
-                if resp.status_code != 200:
-                    continue
-                data = resp.json()
-            except Exception:
-                continue
-
-            status = data.get("status", "")
-
-            if status == "SUCCEEDED":
-                glb_url = (data.get("model_urls") or {}).get("glb")
-                if not glb_url:
-                    await _mark_failed(user_id, model_id, "Meshy 返回结果中无 GLB URL")
-                    return
-                try:
-                    resp = await client.get(glb_url, timeout=120.0)
-                    resp.raise_for_status()
-                except Exception as exc:
-                    await _mark_failed(user_id, model_id, f"GLB 下载失败: {exc}")
-                    return
-
-                asset_url = save_companion_model(resp.content, user_id=user_id)
-                with SESSION_LOCAL() as db:
-                    db.query(CompanionModel).filter(CompanionModel.id == model_id).update({"asset_url": asset_url, "status": "succeeded", "has_rig": True, "active": True})
-                    db.commit()
-                _emit_model_ready(user_id, model_id, asset_url)
-                logger.info("Meshy 3D model generated", extra={"user_id": user_id, "model_id": model_id})
-                return
-
-            if status == "FAILED":
-                await _mark_failed(user_id, model_id, data.get("message", "Meshy 生成失败"))
-                return
-
-            # Terminal-but-not-FAILED states — Meshy will never progress these.
-            if status in ("EXPIRED", "CANCELED", "UNKNOWN"):
-                await _mark_failed(user_id, model_id, f"Meshy 任务终止: {status}")
-                return
-
-            # PENDING / IN_PROGRESS / etc — keep polling.
-
-
 # ── Shared helpers ───────────────────────────────────────────
 
 
-async def _mark_failed(user_id: int, model_id: int, error: str) -> None:
-    with SESSION_LOCAL() as db:
-        db.query(CompanionModel).filter(CompanionModel.id == model_id).update({"status": "failed", "error": error[:500]})
-        db.commit()
-    _emit_model_ready(user_id, model_id, None, error=error)
-    logger.warning("3D model generation failed", extra={"user_id": user_id, "error": error})
-
-
-def _emit_model_ready(user_id: int, model_id: int, asset_url: str | None, *, error: str | None = None, species: str | None = None) -> None:
+def _emit_model_ready(user_id: int, model_id: int, asset_url: str, *, species: str | None = None) -> None:
     payload: dict = {"model_id": model_id}
     if species:
         payload["species"] = species
-    if asset_url:
-        parts = asset_url.split("/", 2)
-        if len(parts) == 3:
-            payload["asset_url"] = build_signed_model_url(int(parts[1]), parts[2])
-    if error:
-        payload["error"] = error[:200]
+    parts = asset_url.split("/", 2)
+    if len(parts) == 3:
+        payload["asset_url"] = build_signed_model_url(int(parts[1]), parts[2])
     try:
         with SESSION_LOCAL() as db:
             db.add(WSEvent(user_id=user_id, event_type="model.ready", payload=json.dumps(payload, ensure_ascii=False)))
