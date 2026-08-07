@@ -14,15 +14,22 @@ function registerOnboardingAudioIpc({ ipcMain, deskagentHome, mimeTypeForPath, h
   if (typeof mimeTypeForPath !== 'function') throw new Error('registerOnboardingAudioIpc: mimeTypeForPath is required')
 
   const audioRoot = path.resolve(deskagentHome, 'audio', 'onboarding', 'zh')
+  const devAudioRoot = path.resolve(__dirname, '../../../installer/payload/onboarding-audio/zh')
 
   ipcMain.handle('deskagent:onboardingAudio:read', async (_event, tag) => {
     if (typeof tag !== 'string' || !TAG_RE.test(tag)) {
       throw new Error(`invalid onboarding audio tag: ${tag}`)
     }
 
-    // TAG_RE blocks `/`, `\`, and `..`, so the join can't escape audioRoot.
-    // resolveReadableFileForIpc then handles ENOENT, sensitive files, and size cap.
-    const { resolvedPath } = await hardening.resolveReadableFileForIpc(path.join(audioRoot, `${tag}.mp3`), {
+    let targetPath = path.join(audioRoot, `${tag}.mp3`)
+    if (!fs.existsSync(targetPath)) {
+      const devPath = path.join(devAudioRoot, `${tag}.mp3`)
+      if (fs.existsSync(devPath)) {
+        targetPath = devPath
+      }
+    }
+
+    const { resolvedPath } = await hardening.resolveReadableFileForIpc(targetPath, {
       maxBytes: MAX_BYTES,
       purpose: 'Onboarding audio'
     })
