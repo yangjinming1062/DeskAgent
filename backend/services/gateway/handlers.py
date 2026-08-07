@@ -35,7 +35,6 @@ from services.companion import delete_memory
 from services.companion import design_voice
 from services.companion import get_onboarding_state
 from services.companion import get_or_create_persona
-from services.companion import list_clips
 from services.companion import list_memories
 from services.companion import list_tts_voices
 from services.companion import match_user_voice
@@ -613,8 +612,7 @@ def _register_session_handlers(
 
     async def avatar_regenerate(params: dict) -> dict:
         # Regenerate the portrait from the current persona, with optional
-        # free-text feedback folded into the prompt. All derivative clips
-        # are invalidated and batch 0 re-seeded.
+        # free-text feedback folded into the prompt.
         #
         # The 10-60s image-gen call runs as a background task and returns
         # immediately with a ``job_id`` + ``queued: true`` so the WS
@@ -683,15 +681,7 @@ def _register_session_handlers(
         task.add_done_callback(_avatar_regen_tasks.discard)
         return {"queued": True, "job_id": job_id}
 
-    async def avatar_list_clips(_params: dict) -> dict:
-        # Query the full clip directory with live generation status (ARCHITECTURE.md
-        # §5.1.A). The desktop calls this on gateway open / reconnect to sync its
-        # cache; incremental updates flow over the ``clip.updated`` event channel.
-        with SESSION_LOCAL() as db:
-            return {"clips": [c.model_dump() for c in list_clips(db, user_id)]}
-
     dispatcher.register("avatar.regenerate", avatar_regenerate)
-    dispatcher.register("avatar.list_clips", avatar_list_clips)
 
     async def tts_list_voices(params: dict) -> dict:
         # Voice catalog (plan §3.5 / §6). Optional ``language`` filter — unknown

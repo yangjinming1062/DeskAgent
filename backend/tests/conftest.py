@@ -94,7 +94,6 @@ def _patch_db(monkeypatch, sqlite_engine):
         "services.tools.builtin.tts_tool",
         "services.tools.builtin.video_generation_tool",
         "services.media.video_jobs",
-        "services.companion.clip_service",
         "services.companion.affect_emit",
         "services.companion.affect_check",
         "services.companion.interact",

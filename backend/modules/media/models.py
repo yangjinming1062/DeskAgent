@@ -46,7 +46,5 @@ class VideoGenJob(ModelBase):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
     expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    # Stable logical id for (user, scene, day) so the daily budget survives retry cycles.
-    companion_submission_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
 
     __table_args__ = (Index("ix_video_gen_jobs_user_status", "user_id", "status"),)

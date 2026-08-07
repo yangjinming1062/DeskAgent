@@ -351,63 +351,6 @@ def test_message_complete_emits_nested_affect_object():
     assert out == "hi"
 
 
-# ── Clip scene catalog + service ──
-
-
-def test_clip_scenes_cover_all_batches():
-    from services.companion import CLIP_SCENES, scenes_for_batch
-
-    assert scenes_for_batch(0) == ["idle"]
-    assert set(scenes_for_batch(1)) == {"speaking", "thinking", "working"}
-    # Batch 3 should contain emotion variants.
-    batch3 = scenes_for_batch(3)
-    assert "happy" in batch3 and "sad" in batch3
-    # Every scene maps to a known batch.
-    assert all(spec.batch in (0, 1, 2, 3) for spec in CLIP_SCENES.values())
-
-
-def test_clip_list_and_invalidate(_patch_db):
-    _, SessionLocal = _patch_db
-    from modules.companion import AvatarClip
-    from services.companion import invalidate_user_clips, list_clips
-
-    with SessionLocal() as db:
-        # No clips → empty list.
-        assert list_clips(db, 200) == []
-
-        # Insert a clip row directly (bypassing video-gen for unit test speed).
-        from modules.companion import AvatarAsset
-
-        asset = AvatarAsset(user_id=200, prompt_json="{}", asset_url="http://x/p.png", active=True)
-        db.add(asset)
-        db.commit()
-        db.refresh(asset)
-        db.add(AvatarClip(user_id=200, scene="idle", batch=0, portrait_id=asset.id))
-        db.commit()
-
-        clips = list_clips(db, 200)
-        assert len(clips) == 1
-        assert clips[0].scene == "idle"
-        assert clips[0].status == "pending"  # no video_job_id
-
-        # Invalidation deletes all clips.
-        count = invalidate_user_clips(db, 200)
-        assert count == 1
-        assert list_clips(db, 200) == []
-
-
-# ── Video-gen event-extras threading ──
-
-
-def test_video_job_extras_from_params(_patch_db):
-    from services.media.video_jobs import _extras_from_params
-
-    assert _extras_from_params('{"_event_extras": {"scene": "idle"}, "duration": 5}') == {"scene": "idle"}
-    assert _extras_from_params('{"duration": 5}') == {}
-    assert _extras_from_params(None) == {}
-    assert _extras_from_params("not json") == {}
-
-
 # ── Voice catalog + matching ──
 
 
@@ -1082,14 +1025,13 @@ def test_pydantic_session_runtime_info_optional_cwd():
 
 
 @pytest.mark.asyncio
-async def test_regenerate_avatar_from_image_uses_reference_and_seeds_clips(monkeypatch, _patch_db):
+async def test_regenerate_avatar_from_image_uses_reference(monkeypatch, _patch_db):
     """A user-uploaded base image is passed inline as a data-URI reference,
     the description is folded into the prompt, and the regenerated portrait
-    becomes active with batch-0 clips seeded."""
+    becomes active."""
     import json as _json
 
     from modules.auth import User
-    from modules.companion import AvatarClip
     from modules.companion import Persona
     from services.companion import avatar_service
 
@@ -1134,9 +1076,6 @@ async def test_regenerate_avatar_from_image_uses_reference_and_seeds_clips(monke
         # Audit row keeps a marker, not the base64 blob.
         assert payload["reference_image"] == "data:image/png;base64"
         assert payload["feedback"] == "把背景改成纯白"
-
-        clips = db.query(AvatarClip).filter(AvatarClip.user_id == user.id).count()
-        assert clips > 0
 
 
 @pytest.mark.asyncio

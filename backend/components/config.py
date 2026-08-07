@@ -92,8 +92,6 @@ class Settings(BaseSettings):
     video_gen_max_poll_seconds: float = 900.0
     video_gen_tool_wait_seconds: float = 180.0
     video_gen_download_max_bytes: int = 200 * 1024 * 1024
-    clip_escalation_interval_seconds: float = 60.0
-    clip_video_daily_budget: int = 3
 
     # ── 3D Model Gen (companion 3D rendering pipeline) ──
     # Source assets path — separate from runtime data_dir so base GLBs ship

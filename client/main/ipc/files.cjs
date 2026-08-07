@@ -3,6 +3,8 @@
 const path = require('node:path')
 const fs = require('node:fs')
 
+const { dataUrlFromBuffer } = require('../shared/mime.cjs')
+
 function registerFilesIpc({ ipcMain, electron, hardening, mimeTypeForPath }) {
   const { dialog, getMainWindow } = electron
 
@@ -12,7 +14,7 @@ function registerFilesIpc({ ipcMain, electron, hardening, mimeTypeForPath }) {
       purpose: 'File preview'
     })
     const data = await fs.promises.readFile(resolvedPath)
-    return `data:${mimeTypeForPath(resolvedPath)};base64,${data.toString('base64')}`
+    return dataUrlFromBuffer(data, mimeTypeForPath(resolvedPath))
   })
 
   ipcMain.handle('deskagent:selectPaths', async (_event, options = {}) => {

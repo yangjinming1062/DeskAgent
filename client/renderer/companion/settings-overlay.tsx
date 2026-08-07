@@ -164,9 +164,6 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps): React.Reac
   const regenerate = async () => {
     setRegenerating(true)
     setAvatarHint(null)
-    // Clear the clip catalog only after the new portrait lands — an eager
-    // clear on a transient failure would leave Tier 2/3 clips gone.
-    let cleared = false
 
     try {
       const res = await requestGateway<{ asset_url?: string; queued?: boolean; job_id?: string }>(

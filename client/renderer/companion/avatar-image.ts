@@ -42,3 +42,16 @@ export async function pickAvatarImage(title: string): Promise<{ image: PickedIma
     return { error: '选择图片失败了，换个方式试试？' }
   }
 }
+
+/** `null` on failure — the raw URL is the thing the renderer can't reach, so returning it would render a broken image. */
+export async function resolvePortraitUrl(assetUrl: string | null | undefined): Promise<string | null> {
+  if (!assetUrl) {
+    return null
+  }
+
+  try {
+    return await window.deskagent.apiAsset({ url: assetUrl })
+  } catch {
+    return null
+  }
+}

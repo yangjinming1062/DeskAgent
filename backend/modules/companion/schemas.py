@@ -62,18 +62,6 @@ class AvatarHistoryResponse(BaseModel):
     history: list[AvatarAssetResponse]
 
 
-class ClipStatusResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    scene: str
-    batch: int
-    status: str
-    url: str | None = None
-    tier: int = 1
-    keyframe_url: str | None = None
-    keyframe_meta: dict | None = None
-
-
 class CompanionModelResponse(BaseModel):
     id: int
     asset_url: str | None = None

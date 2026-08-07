@@ -79,26 +79,3 @@ class AvatarAsset(ModelBase):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     user: Mapped["User"] = relationship(back_populates="avatar_assets")
-
-
-class AvatarClip(ModelBase, TimestampMixin):
-    """active_tier is computed (3>2>1), never stored."""
-
-    __tablename__ = "avatar_clips"
-
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
-    scene: Mapped[str] = mapped_column(String(64), index=True)
-    batch: Mapped[int] = mapped_column(Integer, default=0)
-    # Plain int (no SQLAlchemy FK) — avoids a hard cross-module dependency on
-    # modules.media, which is intentionally not auto-imported.
-    video_job_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
-    portrait_id: Mapped[int] = mapped_column(ForeignKey("avatar_assets.id", ondelete="CASCADE"))
-
-    video_asset_url: Mapped[str | None] = mapped_column(Text, nullable=True)
-    video_attempts: Mapped[int] = mapped_column(Integer, default=0, server_default=text("0"))
-    video_next_retry_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
-
-    keyframe_url: Mapped[str | None] = mapped_column(Text, nullable=True)
-    keyframe_meta_json: Mapped[str | None] = mapped_column(Text, nullable=True)
-    keyframe_attempts: Mapped[int] = mapped_column(Integer, default=0, server_default=text("0"))
-    keyframe_next_retry_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)

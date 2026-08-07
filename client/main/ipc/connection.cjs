@@ -1,5 +1,7 @@
 'use strict'
 
+const { dataUrlFromBuffer } = require('../shared/mime.cjs')
+
 // Backend connection resolver + REST proxy + boot-progress snapshot.
 function registerConnectionIpc({
   ipcMain,
@@ -41,6 +43,37 @@ function registerConnectionIpc({
       }
       throw error
     }
+  })
+
+  // Signed asset URLs carry a host the renderer may not reach; re-base onto the
+  // connection main already resolved and return bytes. See README 通信模型.
+  ipcMain.handle('deskagent:api:asset', async (_event, request) => {
+    const connection = await ensureBackend()
+    const raw = String(request?.url || '')
+    if (!raw) throw new Error('asset url is required')
+
+    // Keep only path + query so a stale/unreachable host never leaks through.
+    const { pathname, search } = new URL(raw, connection.baseUrl)
+    const pathAndQuery = `${pathname}${search}`
+
+    const res = await fetch(`${connection.baseUrl}${pathAndQuery}`, {
+      headers: { ...(connection.token ? { Authorization: `Bearer ${connection.token}` } : {}) },
+      signal: AbortSignal.timeout(defaultFetchTimeoutMs)
+    })
+    if (!res.ok) {
+      // Same signal as the sibling REST proxy so the renderer can show login.
+      if (res.status === 401 && connection.token) {
+        try {
+          _event.sender.send('deskagent:auth:session-expired')
+        } catch {
+          /* window may have been destroyed */
+        }
+      }
+      const text = await res.text().catch(() => '')
+      throw new Error(`${res.status} ${pathname}: ${text || res.statusText}`)
+    }
+    const mime = res.headers.get('content-type') || 'application/octet-stream'
+    return dataUrlFromBuffer(Buffer.from(await res.arrayBuffer()), mime)
   })
 
   // Expose cache reset so auth IPC can invalidate the cached connection

@@ -1,8 +1,7 @@
 // Code-rendered default companion visual for the pre-generation phases: the
 // egg (plan.md §3.1) and its waking/drowsy states. No binary art dependency —
-// the real companion is a Backend-generated portrait + WebM clips (Slice 3+);
-// until then this SVG is what the user sees, and it doubles as the
-// clip-not-ready fallback (ARCHITECTURE.md §11#9).
+// the real companion is the rigged GLB the 3D engine renders; until that model
+// lands this SVG is what the user sees.
 
 const EGG_SIZE = 160
 

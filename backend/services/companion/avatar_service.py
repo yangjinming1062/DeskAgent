@@ -1,4 +1,3 @@
-import asyncio
 import base64
 import contextlib
 import json
@@ -21,8 +20,6 @@ from sqlalchemy.orm import Session
 
 from ..tools.builtin import image_generation_tool
 from .asset_store import build_signed_avatar_url
-from .clip_service import invalidate_user_clips
-from .clip_service import seed_all_clips
 from .persona_service import get_or_create_persona
 
 logger = get_logger(__name__)
@@ -221,10 +218,8 @@ async def _generate_and_persist(
 ) -> AvatarAsset:
     """Shared image-gen + persistence core. Calls the provider, downloads the
     result into the persistent ``companion-avatars/`` dir (temp-media URLs are
-    24h-TTL, so we mirror locally to survive cross-device login and Tier-3
-    escalation across days), deactivates the previous active asset, inserts +
-    commits the new row. Does NOT touch clips — callers compose clip lifecycle
-    around this.
+    24h-TTL, so we mirror locally to survive cross-device login), deactivates
+    the previous active asset, inserts + commits the new row.
 
     ``image_generation_tool`` catches provider errors internally and returns a
     JSON ``{success: false}`` string — it never raises. So this function
@@ -277,7 +272,7 @@ async def _generate_and_persist(
     # Re-sign the bare storage path before returning so the caller (REST
     # route or WS handler emitting ``avatar.regenerated``) hands the renderer
     # a URL it can ``<img src>`` immediately — otherwise the portrait panel
-    # 404s until the next ``avatar.list_clips`` round-trip re-signs it.
+    # 404s until the next avatar round-trip re-signs it.
     asset.asset_url = build_signed_avatar_url(file_id, final_ext)
 
     if previous is not None:
@@ -312,23 +307,8 @@ def _delete_portrait_file(asset_url: str | None) -> None:
         (Path(SETTINGS.data_dir) / "companion-avatars" / name).unlink(missing_ok=True)
 
 
-async def _seed_batch0(db: Session, user_id: int, asset: AvatarAsset) -> None:
-    """Seed Tier-1 clips with retry; exhaustion is non-fatal (late-init guard re-seeds on next pickup)."""
-    last: Exception | None = None
-    for attempt in range(3):
-        try:
-            await seed_all_clips(db, user_id=user_id, portrait_id=asset.id)
-
-            return
-        except Exception as e:
-            last = e
-            logger.warning("batch-0 clip enqueue failed (attempt %d/3)", attempt + 1, extra={"user_id": user_id}, exc_info=True)
-            await asyncio.sleep(0.5 * (attempt + 1))
-    logger.error("batch-0 clip enqueue exhausted retries", extra={"user_id": user_id, "error": str(last) if last else None})
-
-
 async def generate_avatar(db: Session, *, user_id: int, prompt_override: str | None = None) -> AvatarAsset:
-    """Generate a new avatar asset and flip it active, then seed batch-0 clips.
+    """Generate a new avatar asset and flip it active.
 
     ``prompt_override`` replaces the persona-derived prompt verbatim when
     given (trimmed); otherwise the prompt is assembled from the persona.
@@ -337,17 +317,12 @@ async def generate_avatar(db: Session, *, user_id: int, prompt_override: str | N
     the provider fails so the route can map it to a 502 with a friendly
     payload.
 
-    Old derivative clips are invalidated only AFTER the new portrait
-    succeeds — if generation fails (provider outage, rate limit, network)
-    the existing clips survive (ARCH §7.3).
     """
     persona = get_or_create_persona(db, user_id)
     if not persona.is_complete:
         raise AvatarGenerationError("persona is incomplete; finish onboarding first")
     prompt = (prompt_override or "").strip() or _build_prompt(persona, _DEFAULT_STYLE)
     asset = await _generate_and_persist(db, user_id, prompt=prompt, style=_DEFAULT_STYLE)
-    invalidate_user_clips(db, user_id)
-    await _seed_batch0(db, user_id, asset)
     return asset
 
 
@@ -392,12 +367,11 @@ def _re_sign_avatar_url(asset: AvatarAsset) -> None:
 
 
 async def regenerate_avatar(db: Session, user_id: int, persona: Persona, feedback: str | None = None, style: str = _DEFAULT_STYLE) -> AvatarAsset:
-    """Regenerate the portrait and re-seed the clip pipeline.
+    """Regenerate the portrait.
 
     Optional ``feedback`` (e.g. "longer hair") is folded into the prompt so
-    iterative regeneration converges. Old derivative clips are invalidated
-    only AFTER the new portrait succeeds — if image-gen fails, the existing
-    clips (matching the still-active old portrait) survive.
+    iterative regeneration converges. The portrait is the seed for the GLB
+    texture pass, so a failed image-gen leaves the previous portrait active.
     """
     if not persona.is_complete:
         raise AvatarGenerationError("persona is incomplete; finish onboarding first")
@@ -405,8 +379,6 @@ async def regenerate_avatar(db: Session, user_id: int, persona: Persona, feedbac
     if feedback and feedback.strip():
         prompt = f"{prompt}. Adjustment requested: {feedback.strip()}"
     asset = await _generate_and_persist(db, user_id, prompt=prompt, style=style, feedback=feedback)
-    invalidate_user_clips(db, user_id)
-    await _seed_batch0(db, user_id, asset)
     return asset
 
 
@@ -433,8 +405,7 @@ async def regenerate_avatar_from_image(
     style: str = _DEFAULT_STYLE,
 ) -> AvatarAsset:
     """Generate a portrait using a user-uploaded image as the subject
-    reference, optionally refined by free-text ``description``, then re-seed
-    the clip pipeline.
+    reference, optionally refined by free-text ``description``.
 
     The upload is NOT used as-is (``upload_avatar`` serves that path); the
     provider re-renders it so the result meets the portrait seed contract
@@ -455,13 +426,11 @@ async def regenerate_avatar_from_image(
         feedback=description,
         reference_image=_reference_data_uri(data, content_type),
     )
-    invalidate_user_clips(db, user_id)
-    await _seed_batch0(db, user_id, asset)
     return asset
 
 
 async def upload_avatar(db: Session, user_id: int, data: bytes, content_type: str) -> AvatarAsset:
-    """Persist a user image as the active portrait and re-seed Tier-1 clips; no cloud-side reference, so derivatives may be lower-fidelity."""
+    """Persist a user image as the active portrait; no cloud-side reference, so the GLB texture pass may be lower-fidelity."""
     persona = get_or_create_persona(db, user_id)
     if not persona.is_complete:
         raise AvatarGenerationError("persona is incomplete; finish onboarding first")
@@ -492,13 +461,6 @@ async def upload_avatar(db: Session, user_id: int, data: bytes, content_type: st
     # Re-sign before returning so the REST route / WS handler can hand the
     # renderer a URL it can ``<img src>`` immediately.
     asset.asset_url = build_signed_avatar_url(file_id, ext)
-    invalidate_user_clips(db, user_id)
-    # Seed the Tier-1 baseline so the uploaded portrait gets the same clip
-    # ladder as a generated one — without it an uploaded portrait would
-    # permanently sit at Tier 1. Clips generated from a user-supplied image
-    # may diverge stylistically (no cloud-side subject reference), so the
-    # seed-only portrait drives the first_frame_image as-is.
-    await _seed_batch0(db, user_id, asset)
     if previous is not None:
         _delete_portrait_file(previous.asset_url)
     return asset

@@ -3,6 +3,8 @@
 const fs = require('node:fs')
 const path = require('node:path')
 
+const { dataUrlFromBuffer } = require('../shared/mime.cjs')
+
 const TAG_RE = /^onboarding\.[a-z0-9.]+$/
 // ~50KB expected per clip; 256KB cap absorbs quiet/wide-form variations without
 // letting a misplaced large file blow up the IPC payload.
@@ -35,7 +37,7 @@ function registerOnboardingAudioIpc({ ipcMain, deskagentHome, mimeTypeForPath, h
     })
     const data = await fs.promises.readFile(resolvedPath)
     const mimeType = mimeTypeForPath(resolvedPath)
-    return { dataUrl: `data:${mimeType};base64,${data.toString('base64')}`, mimeType, tag, bytes: data.length }
+    return { dataUrl: dataUrlFromBuffer(data, mimeType), mimeType, tag, bytes: data.length }
   })
 }
 

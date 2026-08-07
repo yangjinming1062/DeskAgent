@@ -74,8 +74,12 @@ async def execute_with_fallback(
                 extra={
                     "service": service_type,
                     "failed_provider": config.provider_name,
+                    "model": config.model,
                     "reason": classified.reason.value,
                     "status_code": classified.status_code,
+                    # The reason bucket alone is unactionable when a provider
+                    # hides the cause in a 200 body (MiniMax ``base_resp``).
+                    "error": classified.message,
                     "next_provider": next_provider,
                 },
             )
