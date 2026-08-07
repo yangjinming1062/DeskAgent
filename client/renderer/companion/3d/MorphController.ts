@@ -69,20 +69,29 @@ export class MorphController {
         this.meshes.push(child)
       }
     })
-    if (this.meshes.length === 0) return
+
+    if (this.meshes.length === 0) {
+      return
+    }
 
     for (const [semantic, aliases] of Object.entries(ALIASES)) {
       const hits: [number, number][] = []
+
       for (let mi = 0; mi < this.meshes.length; mi++) {
         const dict = this.meshes[mi].morphTargetDictionary!
+
         for (const alias of aliases) {
           if (alias in dict) {
             hits.push([mi, dict[alias]])
+
             break
           }
         }
       }
-      if (hits.length > 0) this.resolved[semantic] = hits
+
+      if (hits.length > 0) {
+        this.resolved[semantic] = hits
+      }
     }
 
     this.resolvedEntries = Object.entries(this.resolved)
@@ -95,34 +104,47 @@ export class MorphController {
 
   targetNames(): string[] {
     const names = new Set<string>()
+
     for (const mesh of this.meshes) {
       if (mesh.morphTargetDictionary) {
-        for (const name of Object.keys(mesh.morphTargetDictionary)) names.add(name)
+        for (const name of Object.keys(mesh.morphTargetDictionary)) {
+          names.add(name)
+        }
       }
     }
+
     return [...names]
   }
 
   setExpression(emotion: SpriteEmotion | null): void {
     this.targets = {}
+
     if (emotion) {
       const preset = EMOTION_PRESETS[emotion]
+
       if (preset) {
         for (const [semantic, weight] of Object.entries(preset)) {
-          if (semantic in this.resolved) this.targets[semantic] = weight
+          if (semantic in this.resolved) {
+            this.targets[semantic] = weight
+          }
         }
       }
     }
   }
 
   update(delta: number): void {
-    if (this.meshes.length === 0) return
+    if (this.meshes.length === 0) {
+      return
+    }
+
     const speed = Math.min(1, 8 * delta)
 
     for (const [semantic, hits] of this.resolvedEntries) {
       const target = this.targets[semantic] ?? 0
+
       for (const [mi, ti] of hits) {
         const infls = this.meshes[mi].morphTargetInfluences!
+
         if (infls[ti] !== undefined) {
           infls[ti] = THREE.MathUtils.lerp(infls[ti], target, speed)
         }
@@ -133,9 +155,11 @@ export class MorphController {
 
     if (this.lipSyncAmplitude > 0.01) {
       const jawHits = this.resolved['jawOpen']
+
       if (jawHits) {
         for (const [mi, ti] of jawHits) {
           const infls = this.meshes[mi].morphTargetInfluences!
+
           if (infls[ti] !== undefined) {
             infls[ti] = Math.max(infls[ti], this.lipSyncAmplitude * 0.6)
           }
@@ -145,22 +169,27 @@ export class MorphController {
   }
 
   private updateBlink(delta: number): void {
-    if (this.blinkHits.length === 0) return
+    if (this.blinkHits.length === 0) {
+      return
+    }
 
     if (this.blinkPhase === 'idle') {
       this.blinkTimer += delta
+
       if (this.blinkTimer >= this.blinkInterval) {
         this.blinkPhase = 'closing'
         this.blinkElapsed = 0
         this.blinkTimer = 0
         this.blinkInterval = 3 + Math.random() * 3
       }
+
       return
     }
 
     this.blinkElapsed += delta
     const half = 0.12
     let amount: number
+
     if (this.blinkElapsed < half) {
       amount = this.blinkElapsed / half
     } else if (this.blinkElapsed < half * 2) {
@@ -172,7 +201,10 @@ export class MorphController {
 
     for (const [mi, ti] of this.blinkHits) {
       const infls = this.meshes[mi].morphTargetInfluences!
-      if (infls[ti] !== undefined) infls[ti] = amount
+
+      if (infls[ti] !== undefined) {
+        infls[ti] = amount
+      }
     }
   }
 }

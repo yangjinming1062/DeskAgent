@@ -114,6 +114,11 @@ export function setSpriteState(
 ): void {
   const current = $spriteState.get()
 
+  if (!options?.force && STATE_PRIORITY[name] < STATE_PRIORITY[current] && current !== 'idle') {
+    // Lower priority state cannot interrupt higher priority state
+    return
+  }
+
   if (options?.force) {
     if (transientTimer) {
       clearTimeout(transientTimer)
@@ -154,11 +159,6 @@ export function setSpriteState(
       $spriteState.set(target)
     }, ms)
 
-    return
-  }
-
-  if (!options?.force && STATE_PRIORITY[name] < STATE_PRIORITY[current] && current !== 'idle') {
-    // Lower priority state cannot interrupt higher priority state
     return
   }
 

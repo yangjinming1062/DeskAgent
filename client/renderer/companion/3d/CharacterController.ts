@@ -16,8 +16,14 @@ interface ProcParts {
 }
 
 const PBR_TEXTURE_KEYS = [
-  'map', 'normalMap', 'roughnessMap', 'metalnessMap', 'aoMap',
-  'emissiveMap', 'bumpMap', 'displacementMap'
+  'map',
+  'normalMap',
+  'roughnessMap',
+  'metalnessMap',
+  'aoMap',
+  'emissiveMap',
+  'bumpMap',
+  'displacementMap'
 ] as const
 
 export class CharacterController {
@@ -53,12 +59,15 @@ export class CharacterController {
         })
         scene.add(this.root)
         this.mixer = new THREE.AnimationMixer(this.root)
+
         for (const clip of gltf.animations) {
           this.actions.set(clip.name, this.mixer.clipAction(clip))
         }
+
         this.actionNames = new Set(this.actions.keys())
         this.morph.discover(this.root)
         this.applyState(this.currentState, null)
+
         return {
           hasMorphTargets: this.morph.hasTargets(),
           hasAnimations: this.actions.size > 0,
@@ -69,12 +78,17 @@ export class CharacterController {
         console.warn('[CharacterController] GLB load failed, using procedural fallback:', err)
       }
     }
+
     this.createProcedural(scene)
+
     return { hasMorphTargets: false, hasAnimations: false, clipNames: [], morphNames: [] }
   }
 
   private disposeRoot(scene: THREE.Scene | null): void {
-    if (this.root.parent) scene?.remove(this.root)
+    if (this.root.parent) {
+      scene?.remove(this.root)
+    }
+
     this.mixer?.stopAllAction()
     this.mixer = null
     this.actions.clear()
@@ -87,14 +101,22 @@ export class CharacterController {
       if (child instanceof THREE.Mesh) {
         child.geometry?.dispose()
         const mats = Array.isArray(child.material) ? child.material : [child.material]
+
         for (const mat of mats) {
-          if (!mat) continue
+          if (!mat) {
+            continue
+          }
+
           // Dispose PBR textures before the material — the material.dispose()
           // call below doesn't release GPU texture refs.
           for (const key of PBR_TEXTURE_KEYS) {
             const tex = (mat as unknown as Record<string, THREE.Texture | null>)[key]
-            if (tex) tex.dispose()
+
+            if (tex) {
+              tex.dispose()
+            }
           }
+
           mat.dispose()
         }
       }
@@ -108,7 +130,10 @@ export class CharacterController {
 
     if (!this.isProcedural && this.mixer) {
       const clipName = resolveClip(state, this.actionNames)
-      if (clipName) this.playClip(clipName, 0.3)
+
+      if (clipName) {
+        this.playClip(clipName, 0.25)
+      }
     }
 
     this.morph.setExpression(state === 'emotional' ? emotion : null)
@@ -117,6 +142,7 @@ export class CharacterController {
   /** Audio amplitude [0..1] for TTS-driven lip sync. */
   setLipSyncAmplitude(amp: number): void {
     this.morph.setLipSyncAmplitude(amp)
+
     if (this.isProcedural && this.proc) {
       this.proc.mouth.scale.y = 1 + amp * 5
     }
@@ -126,13 +152,23 @@ export class CharacterController {
    * Keys are morph target names from the loaded GLB; values are 0.0–1.0. */
   setMorphs(params: Record<string, number>): void {
     this.root.traverse(child => {
-      if (!(child instanceof THREE.Mesh)) return
+      if (!(child instanceof THREE.Mesh)) {
+        return
+      }
+
       const dict = child.morphTargetDictionary
       const infls = child.morphTargetInfluences
-      if (!dict || !infls) return
+
+      if (!dict || !infls) {
+        return
+      }
+
       for (const [name, value] of Object.entries(params)) {
         const idx = dict[name]
-        if (idx !== undefined) infls[idx] = value
+
+        if (idx !== undefined) {
+          infls[idx] = value
+        }
       }
     })
   }
@@ -144,19 +180,41 @@ export class CharacterController {
     material_overrides: Record<string, { color?: string; roughness?: number; metalness?: number }>
     texture_url?: string | null
   }): void {
-    if (this.isProcedural) return
+    if (this.isProcedural) {
+      return
+    }
+
     const overrides = item.material_overrides
     const wildcard = overrides['*']
 
     this.root.traverse(child => {
-      if (!(child instanceof THREE.Mesh)) return
+      if (!(child instanceof THREE.Mesh)) {
+        return
+      }
+
       const mat = child.material as THREE.MeshStandardMaterial
-      if (!mat?.color) return
+
+      if (!mat?.color) {
+        return
+      }
+
       const ov = overrides[child.name] ?? wildcard
-      if (!ov) return
-      if (ov.color) mat.color.set(ov.color)
-      if (ov.roughness !== undefined) mat.roughness = ov.roughness
-      if (ov.metalness !== undefined) mat.metalness = ov.metalness
+
+      if (!ov) {
+        return
+      }
+
+      if (ov.color) {
+        mat.color.set(ov.color)
+      }
+
+      if (ov.roughness !== undefined) {
+        mat.roughness = ov.roughness
+      }
+
+      if (ov.metalness !== undefined) {
+        mat.metalness = ov.metalness
+      }
     })
 
     if (item.texture_url) {
@@ -165,9 +223,16 @@ export class CharacterController {
         this.currentOutfitTex?.dispose()
         this.currentOutfitTex = tex
         this.root.traverse(child => {
-          if (!(child instanceof THREE.Mesh)) return
+          if (!(child instanceof THREE.Mesh)) {
+            return
+          }
+
           const m = child.material as THREE.MeshStandardMaterial
-          if (m) { m.map = tex; m.needsUpdate = true }
+
+          if (m) {
+            m.map = tex
+            m.needsUpdate = true
+          }
         })
       })
     }
@@ -190,6 +255,7 @@ export class CharacterController {
       // Subtle idle float for GLB characters whose clip may not include it
       this.root.position.y = Math.sin(this.breathPhase * 0.8) * 0.01
     }
+
     this.applyLookAt()
   }
 
@@ -199,7 +265,11 @@ export class CharacterController {
 
   private playClip(name: string, fade: number): void {
     const next = this.actions.get(name)
-    if (!next || next === this.currentAction) return
+
+    if (!next || next === this.currentAction) {
+      return
+    }
+
     next.reset().setEffectiveWeight(1).setEffectiveTimeScale(1)
     this.currentAction?.crossFadeTo(next, fade, false)
     next.play()
@@ -220,11 +290,13 @@ export class CharacterController {
     const group = new THREE.Group()
 
     const bodyGeo = new THREE.SphereGeometry(0.5, 48, 48)
+
     const bodyMat = new THREE.MeshStandardMaterial({
       color: 0xeae0d0,
       roughness: 0.55,
       metalness: 0.0
     })
+
     const body = new THREE.Mesh(bodyGeo, bodyMat)
     body.scale.set(0.82, 1.08, 0.82)
     body.position.y = 1.0
@@ -253,7 +325,10 @@ export class CharacterController {
   }
 
   private updateProcedural(_delta: number): void {
-    if (!this.proc) return
+    if (!this.proc) {
+      return
+    }
+
     const t = this.breathPhase
     const breath = Math.sin(t * 1.7) * 0.5 + 0.5
 
@@ -266,29 +341,40 @@ export class CharacterController {
     switch (this.currentState) {
       case 'speaking': {
         this.proc.group.position.y = Math.sin(t * 5) * 0.015
+
         // Mouth scale driven by setLipSyncAmplitude, not sine wave
         break
       }
+
       case 'thinking': {
         this.proc.body.rotation.z = Math.sin(t * 0.8) * 0.08
+
         break
       }
+
       case 'sleeping': {
         this.proc.body.scale.set(0.8, 1.0 + breath * 0.01, 0.8)
         this.proc.leftEye.scale.y = 0.1
         this.proc.rightEye.scale.y = 0.1
+
         return // skip eye reset below
       }
+
       case 'working': {
         this.proc.group.position.y = Math.sin(t * 3) * 0.008
+
         break
       }
+
       case 'interacting': {
         this.proc.group.position.y = Math.abs(Math.sin(t * 4)) * 0.06
+
         break
       }
+
       case 'disconnected': {
         this.proc.body.rotation.z = -0.12
+
         break
       }
     }

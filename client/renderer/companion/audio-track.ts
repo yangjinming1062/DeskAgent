@@ -15,6 +15,7 @@ function detachListeners(audio: HTMLAudioElement): void {
   for (const [type, fn] of currentListeners) {
     audio.removeEventListener(type, fn)
   }
+
   currentListeners = []
 }
 
@@ -28,10 +29,12 @@ export function stopAudio(): void {
     detachListeners(current)
     current = null
   }
+
   if (currentDone) {
     currentDone()
     currentDone = null
   }
+
   // Also flag the amplitude loop to bail so it doesn't try to read from a
   // detached AnalyserNode on the next frame.
   amplitudeActive = false
@@ -56,19 +59,30 @@ export async function playDataUrl(dataUrl: string): Promise<boolean> {
   try {
     await audio.play()
   } catch {
-    if (current === audio) { current = null }
+    if (current === audio) {
+      current = null
+    }
+
     return false
   }
 
-  await new Promise<void>((resolve) => {
+  await new Promise<void>(resolve => {
     currentDone = resolve
+
     const done: EventListener = () => {
-      if (currentDone === resolve) { currentDone = null }
+      if (currentDone === resolve) {
+        currentDone = null
+      }
+
       resolve()
     }
+
     audio.addEventListener('ended', done, { once: true })
     audio.addEventListener('error', done, { once: true })
-    currentListeners = [['ended', done], ['error', done]]
+    currentListeners = [
+      ['ended', done],
+      ['error', done]
+    ]
   })
 
   return true
@@ -89,14 +103,24 @@ export function registerAmplitudeSink(fn: ((amp: number) => void) | null): () =>
   amplitudeSink = fn
 
   return () => {
-    if (amplitudeSink === fn) amplitudeSink = null
+    if (amplitudeSink === fn) {
+      amplitudeSink = null
+    }
   }
 }
 
 function ensureAnalyser(): void {
-  if (analyser && audioCtx) return
-  const Ctor = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
-  if (!Ctor) return
+  if (analyser && audioCtx) {
+    return
+  }
+
+  const Ctor =
+    window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
+
+  if (!Ctor) {
+    return
+  }
+
   audioCtx = new Ctor()
   analyser = audioCtx.createAnalyser()
   analyser.fftSize = 1024
@@ -105,10 +129,12 @@ function ensureAnalyser(): void {
 
 function startAmplitudeLoop(audio: HTMLAudioElement): void {
   ensureAnalyser()
+
   if (!audioCtx || !analyser || !amplitudeBuffer) {
     // Web Audio unsupported — silently skip lip sync rather than crash.
     return
   }
+
   // Create one MediaElementSource per audio element. Reusing across swaps
   // (e.g. back-to-back speak() calls) leaks graph nodes and triggers the
   // "HTMLMediaElement already connected" DOMException.
@@ -116,6 +142,7 @@ function startAmplitudeLoop(audio: HTMLAudioElement): void {
     if (audioCtx.state === 'suspended') {
       void audioCtx.resume()
     }
+
     analyserSource?.disconnect()
     analyserSource = audioCtx.createMediaElementSource(audio)
     analyserSource.connect(analyser)
@@ -131,19 +158,25 @@ function startAmplitudeLoop(audio: HTMLAudioElement): void {
   const buf = amplitudeBuffer as Uint8Array<ArrayBuffer>
 
   const tick = () => {
-    if (!amplitudeActive || !analyser) return
+    if (!amplitudeActive || !analyser) {
+      return
+    }
+
     analyser.getByteTimeDomainData(buf)
     // Sum the deviation from 0x80 (silence centre) and normalise.
     let sum = 0
+
     for (let i = 0; i < buf.length; i++) {
       const dev = buf[i] - 128
       sum += dev < 0 ? -dev : dev
     }
+
     const avg = sum / buf.length
     // 128 is the theoretical max for a full-scale square wave; clamp to 1.
     amplitudeSink?.(Math.min(1, avg / 96))
     amplitudeRaf = requestAnimationFrame(tick)
   }
+
   amplitudeRaf = requestAnimationFrame(tick)
 }
 

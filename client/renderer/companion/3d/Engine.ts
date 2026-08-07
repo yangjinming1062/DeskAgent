@@ -46,14 +46,21 @@ export class Engine {
   }
 
   start(): void {
-    if (this.rafId !== null) return
+    if (this.rafId !== null) {
+      return
+    }
+
     const loop = () => {
-      if (this.disposed) return
+      if (this.disposed) {
+        return
+      }
+
       this.rafId = requestAnimationFrame(loop)
       const delta = this.clock.getDelta()
       this.character.update(delta)
       this.renderer.render(this.scene, this.camera)
     }
+
     this.rafId = requestAnimationFrame(loop)
   }
 

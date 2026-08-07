@@ -49,9 +49,57 @@ export function getChatPosition(): { x: number; y: number } {
   }
 }
 
+export type EdgeVariant = 'bottom' | 'left' | 'right' | null
+export const $edgeVariant = atom<EdgeVariant>(null)
+
+export function getEdgeVariantPosition(variant: 'bottom' | 'left' | 'right'): { x: number; y: number } {
+  if (typeof window === 'undefined') {
+    return { x: 0, y: 0 }
+  }
+
+  const currentScale = $spatialScale.get()
+  const spriteW = Math.round(SPRITE_W * currentScale)
+  const spriteH = Math.round(SPRITE_H * currentScale)
+
+  switch (variant) {
+    case 'bottom':
+      return {
+        x: Math.max(
+          REST_MARGIN,
+          Math.min(window.innerWidth - spriteW - REST_MARGIN, Math.round((window.innerWidth - spriteW) * 0.7))
+        ),
+        y: Math.round(window.innerHeight - spriteH * 0.45)
+      }
+
+    case 'left':
+      return {
+        x: -Math.round(spriteW * 0.55),
+        y: Math.max(
+          REST_MARGIN,
+          Math.min(window.innerHeight - spriteH - REST_MARGIN, Math.round((window.innerHeight - spriteH) * 0.6))
+        )
+      }
+
+    case 'right':
+      return {
+        x: Math.round(window.innerWidth - spriteW * 0.45),
+        y: Math.max(
+          REST_MARGIN,
+          Math.min(window.innerHeight - spriteH - REST_MARGIN, Math.round((window.innerHeight - spriteH) * 0.6))
+        )
+      }
+  }
+}
+
 export function getSleepPosition(): { x: number; y: number } {
   if (typeof window === 'undefined') {
     return { x: 0, y: 0 }
+  }
+
+  const variant = $edgeVariant.get()
+
+  if (variant) {
+    return getEdgeVariantPosition(variant)
   }
 
   return {

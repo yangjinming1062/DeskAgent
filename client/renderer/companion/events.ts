@@ -1,3 +1,4 @@
+import { setModelInfo, setWardrobe, type WardrobeItem } from '@/companion/3d/model-store'
 import { $screenLocked } from '@/companion/activity'
 import { reportInteractionStat } from '@/companion/activity'
 import { resolveAvatarRegeneration } from '@/companion/avatar-regen-store'
@@ -9,7 +10,6 @@ import {
   setAssistantTool
 } from '@/companion/chat-store'
 import { $effectiveTier, $voiceCallOpen, setSpriteState, type SpriteEmotion } from '@/companion/companion-store'
-import { setModelInfo, setWardrobe, type WardrobeItem } from '@/companion/3d/model-store'
 import { $responseMode } from '@/companion/prefs'
 import { speak } from '@/companion/tts'
 import { $gateway } from '@/shared/store/gateway'
@@ -143,13 +143,15 @@ export function handleCompanionEvent(event: RpcEvent): void {
 
       void (async () => {
         try {
-          const result =
-            name === 'system.open_application'
-              ? await performRitualWalk(
-                  () => findWindowByKeyword(String(p.args?.name ?? '')),
-                  () => runnerInvoke(name, p.args ?? {})
-                )
-              : await runnerInvoke(name, p.args ?? {})
+          const isInteractiveTool =
+            name === 'system.open_application' || name.startsWith('browser_') || name === 'system.click_at'
+
+          const result = isInteractiveTool
+            ? await performRitualWalk(
+                () => findWindowByKeyword(String(p.args?.name ?? p.args?.url ?? p.args?.keyword ?? '')),
+                () => runnerInvoke(name, p.args ?? {})
+              )
+            : await runnerInvoke(name, p.args ?? {})
 
           await gateway?.request('tool.result', { call_id: p.call_id, result })
         } catch (err) {
@@ -182,12 +184,11 @@ export function handleCompanionEvent(event: RpcEvent): void {
       // The 3D engine reloads whenever $modelInfo.asset_url changes (see
       // companion-3d.tsx). error field surfaces generation failures; the UI
       // logs it for now — recovery flow is a later slice.
-      const p = event.payload as
-        | { model_id?: number; asset_url?: string; species?: string; error?: string }
-        | undefined
+      const p = event.payload as { model_id?: number; asset_url?: string; species?: string; error?: string } | undefined
 
       if (p?.error) {
         console.warn('[events] model.ready error:', p.error)
+
         break
       }
 
@@ -205,6 +206,7 @@ export function handleCompanionEvent(event: RpcEvent): void {
       // Backend fires this after a wardrobe item is generated, equipped, or
       // deleted. Re-pull the full list so the equipped atom stays in sync.
       void refreshWardrobe()
+
       break
     }
 

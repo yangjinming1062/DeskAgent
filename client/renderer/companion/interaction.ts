@@ -241,6 +241,23 @@ export function handleHoverInteraction(): void {
 
 export function handleDragEndInteraction(): void {
   setSpriteState('interacting', { durationMs: 2000 })
-  void speakProactive(pick(DRAG_REACTIONS[personaTone()]), { userInitiated: true })
+  const tone = personaTone()
+  const cached = popCachedLLM(tone)
+  const text = cached ?? pick(DRAG_REACTIONS[tone])
+  void speakProactive(text, { userInitiated: true })
   reportInteractionStat('drag')
+
+  pendingLLMArgs = { tone, pokeCount: 1 }
+
+  if (pendingLLMTimer === null) {
+    pendingLLMTimer = setTimeout(() => {
+      pendingLLMTimer = null
+      const args = pendingLLMArgs
+      pendingLLMArgs = null
+
+      if (args) {
+        void fetchLLMInteraction(args.tone, args.pokeCount)
+      }
+    }, LLM_FETCH_DEBOUNCE_MS)
+  }
 }
