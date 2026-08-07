@@ -106,7 +106,7 @@ DeskAgent 是一个**根据用户描述定制的、具有专属形象的陪伴�
 | Desktop → Backend | `companion.record_interaction_stats` `{kind: 'poke'\|'drag'\|'chat_turn', hour}` | 互动统计上报，无 LLM。Backend 按 UTC 自然日聚合三类计数 + 24h hour_buckets；当 poke、drag、chat_turn 三者**各自** ≥ 10 时 upsert `Memory(context="interaction_stats:<date>", content="<date>: poke=N, drag=N, chat_turns=N; peak=HH-HHh", tags=["interaction","stats","daily_summary"])`；同日多次跨门限同 row 覆盖。 |
 | Desktop → Backend | `companion.get_user_profile` | 拉取 `Memory(context="user_profile:*")` 的 5 条结构化字段——persona-retune wizard 第 5 步预填用 |
 
-3D 模型就绪通知走 **\model.ready {model_id, asset_url, species}\** 事件：base_texture provider 即时下发（按物种取预制 rigged GLB），meshy provider 异步轮询完成后下发。换装产物就绪走 **\wardrobe.updated\** 事件。客户端另调 \GET /api/companion/model\ 查询当前模型状态。
+3D 模型就绪通知走 **\model.ready {model_id, asset_url, species}\** 事件：按物种取预制 rigged GLB 即时下发。换装产物就绪走 **\wardrobe.updated\** 事件。客户端另调 \GET /api/companion/model\ 查询当前模型状态。
 
 #### B. Desktop ↔ Runner
 本地环回 WebSocket `ws://127.0.0.1:<port>/rpc`。Desktop 充当 RPC Server，Runner 启动时作为 Client 主动连入。
@@ -228,7 +228,7 @@ onboarding 产出的结构化角色定义持久化在 Backend 用户维度，作
 伙伴的视觉表达由 portrait、3D 模型、换装三层资产构成，均归属用户、在用户维度持久化。资产体系的形态、用途、渲染约束与换装设计见 [COMPANION_DESIGN.md §1](COMPANION_DESIGN.md)；此处只锁定跨模块契约：
 
 - **portrait 是身份参考图与纹理种子**：portrait 经 image-gen 生成（persona 驱动 prompt），作为 onboarding 身份确认、设置页展示与 3D 纹理生成的参考图。portrait 不再直接渲染到桌面——桌面渲染由 3D 模型承担。
-- **3D 模型按物种即时下发**：base_texture provider（默认）按角色定义的 biological_type 选择预制 rigged GLB（人类/精灵/灵兽/机甲/幻形 + 通用兜底），经 `POST /api/companion/model` 即时下发，零 3D API 成本。模型自带骨骼动画与 morph targets，覆盖全部状态（§2）。meshy provider（可选）走外部 image-to-3D API 异步生成定制 mesh。
+- **3D 模型按物种即时下发**：按角色定义的 biological_type 选择预制 rigged GLB（人类/精灵/灵兽/机甲/幻形 + 通用兜底），经 `POST /api/companion/model` 即时下发，零 3D API 成本。模型自带骨骼动画与 morph targets，覆盖全部状态（§2）。
 - **portrait 重生不触发模型失效**：portrait 只影响身份参考与纹理生成种子，3D 模型（基底 mesh + 骨骼动画）独立于 portrait。换外观 = 换装（纹理热替），不重生模型。
 - **资产 URL 5 分钟 HMAC 签名**：portrait、模型 GLB、换装产物落持久目录（`companion-avatars/` / `companion-models/` / `companion-assets/`），对外通过短 TTL 签名 URL 暴露（`signed_url_expiry_seconds=300`）——换设备登录需重新生成签名，不能直接分享原 URL。客户端收到后应本地缓存避免重复拉取。
 - **受控再生成**：形象在多次会话间保持稳定。变更只在用户主动要求时发生（重生 portrait / 重生模型 / 换装）。

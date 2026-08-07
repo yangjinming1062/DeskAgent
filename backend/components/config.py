@@ -96,18 +96,10 @@ class Settings(BaseSettings):
     clip_video_daily_budget: int = 3
 
     # ── 3D Model Gen (companion 3D rendering pipeline) ──
-    # Provider: "base_texture" (default, zero-cost: pre-bundled rigged GLB +
-    # AI-generated textures via existing image gen) or "meshy" (external
-    # image-to-3D API, requires MESHY_API_KEY).
-    companion_model_provider: str = "base_texture"
     # Source assets path — separate from runtime data_dir so base GLBs ship
     # with the code rather than living alongside generated outputs.
     companion_base_model_dir: str = "./assets/base-models"
     companion_base_model_url: str = ""
-    meshy_api_key: str = ""
-    meshy_base_url: str = "https://api.meshy.ai"
-    companion_model_max_poll_seconds: float = 600.0
-    companion_model_poll_interval_seconds: float = 5.0
 
     # ── Chat service ──
     # Fallback defaults when a user hasn't set chat.enable_context_compression /

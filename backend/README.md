@@ -185,7 +185,7 @@ MiniMax-H3（v2 API）异步两段式：`POST /v2/video_generation`（task_id）
 
 **Tool**：`video_generate`（schema: prompt/duration/resolution/first_frame_image/aspect_ratio）+ `video_generate_status`（schema: task_id）。前者最多等 `video_gen_tool_wait_seconds`（180s）；超时返回 `{success:true, pending:true, task_id, hint:"用 video_generate_status 查询"}`——后台任务继续跑。MiniMax 不暴露 ASR，所以 `stt` provider 没有 `minimax` 实现。
 
-**3D 模型生成**：`companion/model_service` 的 `generate_companion_model` 按 `companion_model_provider` 配置选择 provider：`base_texture`（默认）按物种取预制 rigged GLB 即时下发 + 后台异步用 portrait 为参考图经 image-gen 生成全身纹理；`meshy` 走外部 image-to-3D API 异步轮询。模型就绪经 `model.ready {model_id, asset_url, species}` 事件推送。
+**3D 模型生成**：`companion/model_service` 的 `generate_companion_model` 按物种取预制 rigged GLB 即时下发，后台异步用 portrait 为参考图经 image-gen 生成全身纹理。模型就绪经 `model.ready {model_id, asset_url, species}` 事件推送。
 
 ## 安全设计
 
@@ -226,10 +226,9 @@ DeskAgent 伙伴的"人格"与"形象"是跨 Backend↔Desktop 的核心契约�
 
 ### 3D 模型管线（CompanionModel）
 
-`CompanionModel` 表存 3D 模型资产（species、provider、asset_url、morph_params_json、has_rig、has_morph_targets），按用户维度持久化，每用户最多一条 active。`companion_model_provider` 配置选择：
+`CompanionModel` 表存 3D 模型资产（species、provider、asset_url、morph_params_json、has_rig、has_morph_targets），按用户维度持久化，每用户最多一条 active。生成管线为单一路径：
 
-- **base_texture（默认）**：按 `persona.definition_json` 的 `biological_type` 映射到 `assets/base-models/` 下的预制 rigged GLB（人类/精灵/灵兽/机甲/幻形 + `character.glb` 通用兜底），即时复制到 `companion-models/` 持久目录并经 `model.ready` 事件下发。零 3D API 成本。模型规格（动画/morph/骨骼/材质）见 [`../assets/base-models/GLB_MODEL_SPEC.md`](../assets/base-models/GLB_MODEL_SPEC.md)。模型下发后后台异步用 portrait 为参考图调 image-gen 生成全身纹理，就绪作 `WardrobeItem` 写库 + `wardrobe.updated` 推送。
-- **meshy（可选）**：需 `MESHY_API_KEY`，走 `POST /v2/image-to-3d` 异步轮询（`companion_model_max_poll_seconds`），生成定制 mesh。
+- **预制 GLB**：按 `persona.definition_json` 的 `biological_type` 映射到 `assets/base-models/` 下的预制 rigged GLB（人类/精灵/灵兽/机甲/幻形 + `character.glb` 通用兜底），即时复制到 `companion-models/` 持久目录并经 `model.ready` 事件下发。零 3D API 成本。模型规格（动画/morph/骨骼/材质）见 [`../assets/base-models/GLB_MODEL_SPEC.md`](../assets/base-models/GLB_MODEL_SPEC.md)。模型下发后后台异步用 portrait 为参考图调 image-gen 生成全身纹理，就绪作 `WardrobeItem` 写库 + `wardrobe.updated` 推送。
 - **morph 发现**：`_extract_morph_names_from_glb` 解析 GLB JSON chunk 的 `meshes[].extras.targetNames`，写入 `CompanionModel.has_morph_targets`，供客户端知道模型支持哪些表情。
 
 ### 换装系统（WardrobeItem）

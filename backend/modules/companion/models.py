@@ -20,7 +20,7 @@ if TYPE_CHECKING:
 
 
 class CompanionModel(ModelBase, TimestampMixin):
-    """status: pending→processing→succeeded/failed; a model.ready WS event fires on completion."""
+    """status is always 'succeeded' — the pre-built GLB path completes synchronously."""
 
     __tablename__ = "companion_models"
 
@@ -28,7 +28,6 @@ class CompanionModel(ModelBase, TimestampMixin):
     asset_url: Mapped[str] = mapped_column(Text, default="")
     source_portrait_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     provider: Mapped[str] = mapped_column(String(64), default="base_texture")
-    provider_task_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     species: Mapped[str] = mapped_column(String(64), default="人类", server_default=text("'人类'"))
     morph_params_json: Mapped[str] = mapped_column(Text, default="{}", server_default=text("'{}'"))
     status: Mapped[str] = mapped_column(String(32), default="pending")
