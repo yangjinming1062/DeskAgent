@@ -1,22 +1,26 @@
-<!DOCTYPE html>
-<html lang="zh-CN">
+<!doctype html>
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>DeskAgent Client</title>
-    <link rel="stylesheet" href="/src/style.css" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#0a0a0a" />
+    <!-- Stamp <html data-role="sprite|tool"> synchronously before <body>
+         parses so the sprite window's "background: transparent" rule in
+         styles.css applies on the very first paint. Without this, the body
+         briefly fills white (browser default), defeating the point of the
+         transparent BrowserWindow. The renderer branch in app.tsx reads the
+         same value; this just runs earlier. -->
+    <script>
+      document.documentElement.dataset.role = new URLSearchParams(location.search).get('role') || 'tool'
+    </script>
+    <link rel="icon" type="image/png" href="/icon.png" />
+    <link rel="apple-touch-icon" href="/icon.png" />
+    <link rel="shortcut icon" href="/icon.png" />
+    <title>DeskAgent</title>
   </head>
   <body>
-    <div id="app">
-      <canvas id="canvas"></canvas>
-      <div id="hud">
-        <div id="state-display"></div>
-        <div id="instructions">
-          Click to cycle states · Drag to move ·
-          <span id="model-status">Loading model…</span>
-        </div>
-      </div>
-    </div>
-    <script type="module" src="/src/main.tsx"></script>
+    <div id="root" class="scrollbar-dt"></div>
+    <script type="module" src="/renderer/main.tsx"></script>
   </body>
 </html>

@@ -2,7 +2,7 @@
 #
 # Single entry point that orchestrates:
 #   1. uv build wheel → runner/dist/deskagent-agent-*.whl
-#   2. electron-builder → desktop/release/DeskAgent-{ver}-win-x64-nsis.exe
+#   2. electron-builder → client/release/DeskAgent-{ver}-win-x64-nsis.exe
 #   3. Stage payload (runner wheel + desktop + skills + config) to installer/payload/
 #   4. Patch tauri.conf.json so bundle.resources contains the current host's
 #      desktop artifact (Tauri 2 fails on missing resources).
@@ -58,7 +58,7 @@ $TauriBundleDir = "nsis"
 
 function Set-Version([string]$v) {
     Write-Output "==> Writing version $v to package.json/pyproject.toml"
-    $desktopPkg = Join-Path $RepoRoot "desktop\package.json"
+    $desktopPkg = Join-Path $RepoRoot "client\package.json"
     $installerPkg = Join-Path $RepoRoot "installer\package.json"
     $tauriConf = Join-Path $RepoRoot "installer\src-tauri\tauri.conf.json"
     $cargoToml = Join-Path $RepoRoot "installer\src-tauri\Cargo.toml"
@@ -82,7 +82,7 @@ function Set-Version([string]$v) {
 function Stage-Payload {
     Write-Output "==> Staging payload in installer\payload\"
     $payloadRunner = Join-Path $RepoRoot "installer\payload\runner"
-    $payloadDesktop = Join-Path $RepoRoot "installer\payload\desktop"
+    $payloadDesktop = Join-Path $RepoRoot "installer\payload\client"
     if (Test-Path $payloadRunner) { Remove-Item -Recurse -Force $payloadRunner }
     if (Test-Path $payloadDesktop) { Remove-Item -Recurse -Force $payloadDesktop }
     New-Item -ItemType Directory -Force -Path $payloadRunner | Out-Null
@@ -130,7 +130,7 @@ function Write-StagingMetadata {
 
     $runnerWheelFile = Get-ChildItem -Path (Join-Path $RepoRoot "installer\payload\runner") -Filter "deskagent-agent-*.whl" -File | Select-Object -First 1
     $runnerSha = (Get-FileHash -Path $runnerWheelFile.FullName -Algorithm SHA256).Hash
-    $desktopDir = Join-Path $RepoRoot "installer\payload\desktop"
+    $desktopDir = Join-Path $RepoRoot "installer\payload\client"
     $desktop = Get-ChildItem -Path $desktopDir -File | Select-Object -First 1
     $desktopSha = $null
     $desktopName = $null
@@ -287,14 +287,14 @@ function Patch-TauriConfig {
     $bak = "$conf.build_client.bak"
     Copy-Item -Force $conf $bak
 
-    $desktopDir = Join-Path $RepoRoot "installer\payload\desktop"
+    $desktopDir = Join-Path $RepoRoot "installer\payload\client"
     $desktopFile = Get-ChildItem -Path $desktopDir -File | Select-Object -First 1
     if (-not $desktopFile) { throw "no desktop artifact in $desktopDir" }
     $desktopRel = "..\payload\desktop\$($desktopFile.Name)"
 
     Write-Output "==> Patching ${conf}: bundle.resources → $desktopRel"
     $json = Get-Content $conf -Raw -Encoding UTF8 | ConvertFrom-Json
-    $resources = @($json.bundle.resources | Where-Object { $_ -ne "../payload/desktop/.gitkeep" })
+    $resources = @($json.bundle.resources | Where-Object { $_ -ne "../payload/client/.gitkeep" })
     $resources = @($resources + $desktopRel)
     $json.bundle.resources = $resources
     $jsonStr = ($json | ConvertTo-Json -Depth 100)
@@ -347,7 +347,7 @@ try {
     # 2. Build desktop.
     if (-not $SkipDesktop) {
         Write-Output "==> Building desktop (electron-builder → release\DeskAgent-${Version}-win-*-nsis.exe)"
-        Push-Location (Join-Path $RepoRoot "desktop")
+        Push-Location (Join-Path $RepoRoot "client")
         try {
             & pnpm install --frozen-lockfile
             if ($LASTEXITCODE -ne 0) { throw "pnpm install failed" }
@@ -359,7 +359,7 @@ try {
     }
 
     # 3. Locate desktop artifact.
-    $desktopArtifact = Get-ChildItem -Path (Join-Path $RepoRoot "desktop\release") -Filter $DesktopArtifactGlob -File -ErrorAction SilentlyContinue | Select-Object -First 1
+    $desktopArtifact = Get-ChildItem -Path (Join-Path $RepoRoot "client\release") -Filter $DesktopArtifactGlob -File -ErrorAction SilentlyContinue | Select-Object -First 1
     if (-not $desktopArtifact) {
         throw "no desktop artifact matching '$DesktopArtifactGlob' in desktop\release\"
     }

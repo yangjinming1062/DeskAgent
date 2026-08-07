@@ -4,15 +4,15 @@ DeskAgent 安装器产品。本目录容纳 **Tauri 2 桌面程序**（`src/` + 
 
 ## 1. 顶层模块解耦
 
-**installer 是独立的顶级模块，禁止依赖 `desktop/`、`backend/`、`runner/` 的资源**——任何"借用"对方样式 / 组件 / 构建产物的做法都会让 Stage 2.x 的边界退化。`src/styles.css` 的设计 token、`src/components/button.tsx` 的 button variants、`fit-text` 工具类等**均为本地副本**；桌面端的设计系统演进时，installer 端独立决定是否跟随，不自动 link。
+**installer 是独立的顶级模块，禁止依赖 `client/`、`backend/`、`runner/` 的资源**——任何"借用"对方样式 / 组件 / 构建产物的做法都会让 Stage 2.x 的边界退化。`src/styles.css` 的设计 token、`src/components/button.tsx` 的 button variants、`fit-text` 工具类等**均为本地副本**；桌面端的设计系统演进时，installer 端独立决定是否跟随，不自动 link。
 
 manifest 字段、`install.{ps1,sh}` 的 stage 名、JSON-RPC frame 等**协议级契约**可以跨模块引用——这些是公共接口，不是私有资源。
 
-**Install 脚本为什么在 `installer/` 而不是 `scripts/`**：`install.{sh,ps1,cmd}` 是 Tauri 进程的 worker（被 `src-tauri/src/powershell.rs::run_script` spawn 出来干活），dev fallback 解析在 `DESKAGENT_SETUP_DEV_REPO_ROOT/installer/`，生产路径从 Tauri `bundle.resources` (`payload/install.{sh,ps1}`) 读取——与 installer 是 1:1 耦合关系，放在 `installer/` 让该模块自洽。`scripts/build_client.{sh,ps1}` 是跨 runner/desktop/installer 三模块的 repo 级 orchestrator，留在 `scripts/`。
+**Install 脚本为什么在 `installer/` 而不是 `scripts/`**：`install.{sh,ps1,cmd}` 是 Tauri 进程的 worker（被 `src-tauri/src/powershell.rs::run_script` spawn 出来干活），dev fallback 解析在 `DESKAGENT_SETUP_DEV_REPO_ROOT/installer/`，生产路径从 Tauri `bundle.resources` (`payload/install.{sh,ps1}`) 读取——与 installer 是 1:1 耦合关系，放在 `installer/` 让该模块自洽。`scripts/build_client.{sh,ps1}` 是跨 runner/client/installer 三模块的 repo 级 orchestrator，留在 `scripts/`。
 
 **Installer binary is self-contained** —— install 脚本由 `scripts/build_client.{sh,ps1}` 在 `stage_payload()` 时硬链接 / 符号链接到 `installer/payload/`，Tauri 自动嵌入。`DeskAgent-Setup` 二进制运行时**零网络依赖**：不下载 install 脚本，不下载 payload（payload 都在 `bundle.resources` 里），不查更新（更新流走 backend `updates/` HTTP endpoint）。
 
-**Desktop 启动后不做 install / uninstall** —— Desktop 启动时只连云端 Backend，不调 `install.ps1` / `DeskAgent-Setup --uninstall`。本模块（Tauri DeskAgent-Setup）拥有所有平台变更职责，desktop 是只读消费方。Electron 二进制自更新由 desktop 自己负责（`electron-updater` 从 Backend `/api/update` 拉取），详见 [desktop/README.md](../desktop/README.md)。
+**Desktop 启动后不做 install / uninstall** —— Desktop 启动时只连云端 Backend，不调 `install.ps1` / `DeskAgent-Setup --uninstall`。本模块（Tauri DeskAgent-Setup）拥有所有平台变更职责，desktop 是只读消费方。Electron 二进制自更新由 desktop 自己负责（`electron-updater` 从 Backend `/api/update` 拉取），详见 [client/README.md](../client/README.md)。
 
 ## 2. 同目录三类内容
 
@@ -33,7 +33,7 @@ manifest 字段、`install.{ps1,sh}` 的 stage 名、JSON-RPC frame 等**协议�
 - `../payload/voices` — 三份 Piper 离线 voice（见 §11）
 - `../payload/config.yaml` — Runner 默认配置（运行期释放到 `~/.deskagent/config.yaml`）
 - `../payload/.staging.json` — build metadata（version / sha256 / host）
-- `../payload/desktop/.gitkeep` — **占位符**。`scripts/build_client` 在 tauri build 前 patch 为实际 desktop artifact，build 后 restore
+- `../payload/client/.gitkeep` — **占位符**。`scripts/build_client` 在 tauri build 前 patch 为实际 client artifact，build 后 restore
 - `../payload/install.sh` / `../payload/install.ps1` — install 协议后端脚本
 - `../payload/install.cmd` — Windows cmd.exe 兜底（dev 路径，生产 Tauri 不嵌入）
 
@@ -43,7 +43,7 @@ Tauri 进程把 bundle.resources 解压根通过 env var 传给 `install.{sh,ps1
 |---------|------|
 | `DESKAGENT_BUNDLE_DIR` | bundle.resources 解压根 |
 | `DESKAGENT_BUNDLED_RUNNER_DIR` | `<bundle>/payload/runner/` |
-| `DESKAGENT_BUNDLED_DESKTOP_DIR` | `<bundle>/payload/desktop/` |
+| `DESKAGENT_BUNDLED_DESKTOP_DIR` | `<bundle>/payload/client/` |
 | `DESKAGENT_BUNDLED_SKILLS_DIR` | `<bundle>/payload/skills/` |
 | `DESKAGENT_BUNDLED_VOICES_DIR` | `<bundle>/payload/voices/` |
 | `DESKAGENT_CONFIG_PATH` | `<bundle>/payload/config.yaml` |

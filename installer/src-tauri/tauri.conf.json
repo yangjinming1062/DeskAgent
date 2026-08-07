@@ -49,7 +49,7 @@
       "../payload/onboarding-audio",
       "../payload/config.yaml",
       "../payload/.staging.json",
-      "../payload/desktop/.gitkeep",
+      "../payload/client/.gitkeep",
       "../payload/install.sh",
       "../payload/install.ps1"
     ],

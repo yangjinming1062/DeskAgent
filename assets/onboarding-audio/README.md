@@ -1,12 +1,12 @@
 # Onboarding audio assets
 
-预渲染的 onboarding 引导词音频。云端 TTS 一次合成、随安装包分发，desktop 在 onboarding 阶段只读盘播放——零网络、零本地合成。
+预渲染的 onboarding 引导词音频。云端 TTS 一次合成、随安装包分发，client 在 onboarding 阶段只读盘播放——零网络、零本地合成。
 
 ## 文件清单
 
 - `manifest.json` — 文案与 voice 元信息（tracked source of truth）。`generate_onboarding_audio.py` 据此生成 mp3。
 - `generate_onboarding_audio.py` — 一次性合成脚本。需要 `MIMO_API_KEY`（或 `TTS_API_KEY`）环境变量。
-- 生成的 mp3 落到 `installer/payload/onboarding-audio/zh/<tag>.mp3`（gitignored，Tauri 构建产物）。tag 与 `desktop/renderer/companion/onboarding/onboarding-flow.tsx` 里 `playOnboardingAudio(tag)` 调用的字符串一一对应。
+- 生成的 mp3 落到 `installer/payload/onboarding-audio/zh/<tag>.mp3`（gitignored，Tauri 构建产物）。tag 与 `client/renderer/companion/onboarding/onboarding-flow.tsx` 里 `playOnboardingAudio(tag)` 调用的字符串一一对应。
 
 ## 添加 / 修改流程
 

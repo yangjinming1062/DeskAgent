@@ -3,7 +3,7 @@
 #
 # Single entry point that orchestrates:
 #   1. uv build wheel → runner/dist/deskagent-agent-*.whl
-#   2. electron-builder → desktop/release/DeskAgent-{ver}-mac-*.dmg
+#   2. electron-builder → client/release/DeskAgent-{ver}-mac-*.dmg
 #   3. Stage payload (runner wheel + desktop + skills + config) to installer/payload/
 #   4. Patch tauri.conf.json so bundle.resources contains the current host's
 #      desktop artifact (Tauri 2 fails on missing resources).
@@ -144,8 +144,8 @@ set_version() {
 import json, sys, re, pathlib
 v = sys.argv[1]
 
-# desktop/package.json
-p = pathlib.Path("desktop/package.json")
+# client/package.json
+p = pathlib.Path("client/package.json")
 data = json.loads(p.read_text())
 data["version"] = v
 p.write_text(json.dumps(data, indent=2) + "\n")
@@ -178,8 +178,8 @@ PY
 
 stage_payload() {
   echo "==> Staging payload in installer/payload/"
-  rm -rf installer/payload/runner installer/payload/desktop
-  mkdir -p installer/payload/runner installer/payload/desktop
+  rm -rf installer/payload/runner installer/payload/client
+  mkdir -p installer/payload/runner installer/payload/client
 
   local wheel
   wheel=$(ls -1 runner/dist/deskagent-agent-*.whl 2>/dev/null | head -1 || true)
@@ -202,7 +202,7 @@ stage_payload() {
   ln -s ../install.ps1 installer/payload/install.ps1
   cp installer/config.yaml installer/payload/config.yaml
   echo "    runner: $(ls -l installer/payload/runner/*.whl | awk '{print $5}') bytes"
-  echo "    desktop: $(ls -1 installer/payload/desktop/ | tr '\n' ' ')"
+  echo "    desktop: $(ls -1 installer/payload/client/ | tr '\n' ' ')"
   echo "    install scripts: $(ls -1 installer/payload/install.{sh,ps1} 2>/dev/null | tr '\n' ' ')"
 }
 
@@ -231,7 +231,7 @@ meta = {
     "runner_wheel": os.path.basename(sorted(glob.glob("installer/payload/runner/deskagent-agent-*.whl"))[0]),
     "runner_sha256": sha(sorted(glob.glob("installer/payload/runner/deskagent-agent-*.whl"))[0]),
 }
-desktop_glob = "installer/payload/desktop/*"
+desktop_glob = "installer/payload/client/*"
 desktops = sorted(glob.glob(desktop_glob))
 if desktops:
     meta["desktop_sha256"] = sha(desktops[0])
@@ -254,12 +254,12 @@ patch_tauri_config() {
   local bak="$conf.build_client.bak"
   cp "$conf" "$bak"
 
-  local desktop_rel="payload/desktop/$(ls -1 installer/payload/desktop/ | head -1)"
+  local desktop_rel="payload/client/$(ls -1 installer/payload/client/ | head -1)"
   echo "==> Patching $conf: bundle.resources → ../${desktop_rel}"
   # Replace the .gitkeep placeholder entry with the actual desktop artifact
   # path. Install scripts and other entries are untouched.
   jq --arg d "../$desktop_rel" \
-     '.bundle.resources |= map(if . == "../payload/desktop/.gitkeep" then $d else . end)' \
+     '.bundle.resources |= map(if . == "../payload/client/.gitkeep" then $d else . end)' \
      "$conf" > "$conf.new"
   mv "$conf.new" "$conf"
 }
@@ -299,25 +299,25 @@ else
   echo "==> Skipping runner build (--skip-runner)"
 fi
 
-# 2. Build desktop.
+# 2. Build client.
 if [[ $SKIP_DESKTOP -eq 0 ]]; then
-  echo "==> Building desktop (electron-builder → release/DeskAgent-${VERSION}-${TARGET}*)"
-  ( cd desktop && pnpm install --frozen-lockfile && pnpm run $DESKTOP_PNPM_TARGET )
+  echo "==> Building client (electron-builder → release/DeskAgent-${VERSION}-${TARGET}*)"
+  ( cd client && pnpm install --frozen-lockfile && pnpm run $DESKTOP_PNPM_TARGET )
 else
-  echo "==> Skipping desktop build (--skip-desktop)"
+  echo "==> Skipping client build (--skip-desktop)"
 fi
 
 # 3. Locate desktop artifact.
-DESKTOP_ARTIFACT="$(ls -1 desktop/release/${DESKTOP_ARTIFACT_GLOB} 2>/dev/null | head -1 || true)"
+DESKTOP_ARTIFACT="$(ls -1 client/release/${DESKTOP_ARTIFACT_GLOB} 2>/dev/null | head -1 || true)"
 if [[ -z "$DESKTOP_ARTIFACT" ]]; then
-  echo "error: no desktop artifact matching '$DESKTOP_ARTIFACT_GLOB' found in desktop/release/" >&2
+  echo "error: no desktop artifact matching '$DESKTOP_ARTIFACT_GLOB' found in client/release/" >&2
   exit 1
 fi
 echo "==> Desktop artifact: $DESKTOP_ARTIFACT"
 
 # 4. Stage payload.
 stage_payload
-cp "$DESKTOP_ARTIFACT" "installer/payload/desktop/"
+cp "$DESKTOP_ARTIFACT" "installer/payload/client/"
 
 # 5. Staging metadata.
 write_staging_metadata
@@ -333,7 +333,7 @@ if [[ -n "$SIGN_IDENTITY" ]]; then
     xcrun stapler staple "$DESKTOP_ARTIFACT"
   fi
   # Re-copy the signed artifact into the payload.
-  cp "$DESKTOP_ARTIFACT" "installer/payload/desktop/"
+  cp "$DESKTOP_ARTIFACT" "installer/payload/client/"
 fi
 
 # 7. Patch tauri.conf.json for the current host's desktop artifact, then

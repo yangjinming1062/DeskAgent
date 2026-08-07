@@ -5,13 +5,13 @@ import * as React from 'react'
 import { cn } from '../lib/utils'
 
 /*
- * Button — copied verbatim from desktop/src/components/ui/button.tsx.
+ * Button — copied verbatim from client/src/components/ui/button.tsx.
  *
- * We import the desktop's local shadcn-style Button rather than
+ * We import the client's local shadcn-style Button rather than
  * @nous-research/ui's <Button>, because the DS Button uses bg-midground /
  * text-background-base utilities that resolve to the DS's hardcoded
  * gold/brown brand defaults (#ffac02 / #170d02) unless overridden in
- * runtime. The desktop never sets those vars; it routes through its
+ * runtime. The client never sets those vars; it routes through its
  * own --dt-* token chain via shadcn classes like bg-primary. We do
  * the same so visuals match exactly.
  */

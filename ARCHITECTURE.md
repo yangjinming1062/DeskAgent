@@ -200,7 +200,7 @@ Backend POST /api/companion/model（按物种取预制 GLB → 即时下发）�
 
 **打扰档位约束**：所有"伙伴主动行为"受三档打扰等级约束（积极主动 / 常规 / 保持安静），档位由用户设置 + Desktop 检测到的用户活动共同决定，Desktop 经 `companion.set_disturbance_tier` 上报。
 
-档位状态分两层（`desktop/renderer/companion/companion-store.ts`）：
+档位状态分两层（`client/renderer/companion/companion-store.ts`）：
 - `$userPreferredTier`：用户手动选择，源真值，持久化在 `localStorage`。
 - `$effectiveTierOverride`：活动感知器写入的临时覆盖，null 表示无覆盖。
 - `$effectiveTier = $effectiveTierOverride ?? $userPreferredTier`：其余模块读取这一原子做静默判定。
@@ -217,7 +217,7 @@ Backend 据此放行或抑制：`quiet` 档时主动消息被吞掉，但 LLM �
 
 ## 6. 角色定义与表达层契约
 
-Backend/Desktop 之间的核心契约：角色定义如何驱动伙伴、形象资产如何生成与下发、情绪如何表达。实现细节（schema、存储表、渲染管线）留给 [backend/README.md](backend/README.md) 与 [desktop/README.md](desktop/README.md)，本文只锁定跨模块的设计意图与不变量。
+Backend/Desktop 之间的核心契约：角色定义如何驱动伙伴、形象资产如何生成与下发、情绪如何表达。实现细节（schema、存储表、渲染管线）留给 [backend/README.md](backend/README.md) 与 [client/README.md](client/README.md)，本文只锁定跨模块的设计意图与不变量。
 
 ### 6.1 角色定义（唯一真相源）
 
@@ -369,7 +369,6 @@ Desktop 的更新通过 `/api/update` 获取 Electron 二进制与 Runner wheel 
 
 - **Backend（云端大脑）**：角色定义与形象资产的数据模型、生图 prompt 装配、记忆管理、LLM 编排——[backend/README.md](backend/README.md)
 - **Runner（本地手脚）**：执行器与工具库、6 个终端环境后端、浏览器多后端——[runner/README.md](runner/README.md)
-- **Desktop（伙伴载体 + 本地枢纽）**：3D 渲染引擨（Three.js WebGL，移植自 client/）、onboarding/孵化流程、IPC 命名空间、自更新——[desktop/README.md](desktop/README.md)
+- **Client（伙伴载体 + 本地枢纽）**：3D 实时渲染引擎（Three.js WebGL）、骨骼动画 + morph target 驱动、换装热替、onboarding/孵化流程、IPC 命名空间、自更新——[client/README.md](client/README.md)
 - **Installer（安装器）**：引导协议、Python 运行时分发、首装进入"蛋"阶段——[installer/README.md](installer/README.md)
-- **Client（3D 渲染引擎原型）**：Three.js WebGL 实时 3D 渲染引擎、骨骼动画 + morph target 驱动、换装热替、WS JSON-RPC 网关、TTS 口型同步——[client/README.md](client/README.md)。**Phase 5 移植到 desktop/renderer/companion/3d/**，替换现有视频管线
 - **Scripts（发布与集成）**：构建链与导入规范检查——[scripts/README.md](scripts/README.md)
