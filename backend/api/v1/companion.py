@@ -1,4 +1,5 @@
 import base64
+import json
 
 from common import get_router
 from components import get_db
@@ -15,21 +16,38 @@ from modules.companion import AvatarFromImageRequest
 from modules.companion import AvatarGenerateRequest
 from modules.companion import AvatarHistoryResponse
 from modules.companion import AvatarUploadRequest
+from modules.companion import CompanionModel
+from modules.companion import CompanionModelResponse
+from modules.companion import ModelGenerateRequest
 from modules.companion import PersonaResponse
 from modules.companion import PersonaUpdate
+from modules.companion import WardrobeEquipRequest
+from modules.companion import WardrobeGenerateRequest
+from modules.companion import WardrobeItem
+from modules.companion import WardrobeItemResponse
 from services.companion import ALLOWED_AVATAR_UPLOAD_MIME_TYPES
 from services.companion import AvatarGenerationError
 from services.companion import build_system_prompt_extras
+from services.companion import delete_wardrobe_item
+from services.companion import equip_wardrobe_item
 from services.companion import generate_avatar
+from services.companion import generate_companion_model
+from services.companion import generate_wardrobe_item
 from services.companion import get_active_avatar
+from services.companion import get_active_model
+from services.companion import get_equipped_item
 from services.companion import get_or_create_persona
 from services.companion import list_avatar_history
 from services.companion import list_tts_voices
+from services.companion import list_wardrobe
+from services.companion import ModelGenerationError
 from services.companion import normalize_voice_language
 from services.companion import PersonaValidationError
 from services.companion import regenerate_avatar_from_image
 from services.companion import resolve_companion_asset_path
+from services.companion import resolve_companion_model_path
 from services.companion import resolve_uploaded_avatar_path
+from services.companion import signed_model_url
 from services.companion import update_persona
 from services.companion import upload_avatar
 from services.companion import verify_signed_asset_request
@@ -73,9 +91,7 @@ def get_persona_extras(
     return {"extras": build_system_prompt_extras(persona)}
 
 
-# REST mirror of the gateway `tts.list_voices` method — the framed tool window
-# (hub) has no gateway, so its voice-gallery page reaches the same catalog via
-# REST here. Unknown ``language`` values fall through to the full catalog.
+# Hub has no gateway — REST mirror of the gateway tts.list_voices method.
 @router.get("/voices")
 def list_voices(
     language: str | None = None,
@@ -118,7 +134,6 @@ async def post_avatar(
     try:
         asset = await generate_avatar(db, user.id, persona, style=body.style)
     except AvatarGenerationError as exc:
-        # Incomplete onboarding is a client error (409), not a provider failure (502).
         if "persona is incomplete" in str(exc):
             raise HTTPException(status_code=409, detail={"error": "请先完成 onboarding 再生成形象", "reason": str(exc)})
         raise HTTPException(status_code=502, detail={"error": "伙伴形象生成失败，请稍后重试", "reason": str(exc)})
@@ -145,7 +160,6 @@ async def upload_avatar_route(
     try:
         asset = await upload_avatar(db, user.id, data, content_type)
     except AvatarGenerationError as exc:
-        # Surface persona-incomplete as 409 so the desktop can prompt onboarding.
         if "persona is incomplete" in str(exc):
             raise HTTPException(status_code=409, detail={"error": "请先完成 onboarding 再上传形象", "reason": str(exc)})
         raise HTTPException(status_code=502, detail={"error": "伙伴形象上传失败，请稍后重试", "reason": str(exc)})
@@ -160,10 +174,7 @@ async def avatar_from_image_route(
     auth: tuple[User, LoginRecord] = Depends(get_current_session),
     db: Session = Depends(get_db),
 ) -> AvatarAssetResponse:
-    """Generate a portrait using a user-uploaded image as the subject
-    reference, optionally refined by ``description``. The upload is re-rendered
-    to a seed-compliant portrait (flat white background, clean framing), never
-    used as-is — ``POST /avatar/upload`` keeps the raw image."""
+    """The upload is re-rendered to a seed-compliant portrait, never used as-is — POST /avatar/upload keeps the raw image."""
     user, _ = auth
     content_type = (body.content_type or "image/png").split(";")[0].strip().lower()
     if content_type not in ALLOWED_AVATAR_UPLOAD_MIME_TYPES:
@@ -189,6 +200,128 @@ async def avatar_from_image_route(
     return AvatarAssetResponse.model_validate(asset)
 
 
+# ── 3D Model ──
+
+
+def _model_response(model: CompanionModel) -> CompanionModelResponse:
+    # Signing mutates nothing — an ORM write would leak the expiring URL into the next autoflush.
+    return CompanionModelResponse(
+        id=model.id,
+        user_id=model.user_id,
+        asset_url=signed_model_url(model),
+        provider=model.provider,
+        species=model.species,
+        morph_params=json.loads(model.morph_params_json or "{}"),
+        status=model.status,
+        has_rig=model.has_rig,
+        has_morph_targets=model.has_morph_targets,
+        active=model.active,
+        created_at=model.created_at,
+    )
+
+
+@router.get("/model", response_model=CompanionModelResponse | None)
+def get_model(
+    auth: tuple[User, LoginRecord] = Depends(get_current_session),
+    db: Session = Depends(get_db),
+) -> CompanionModelResponse | None:
+    user, _ = auth
+    model = get_active_model(db, user.id)
+    return _model_response(model) if model else None
+
+
+@router.post("/model", response_model=CompanionModelResponse, status_code=201)
+@limiter.limit(f"{SETTINGS.companion_model_generate_rate_limit_per_minute}/minute")
+async def post_model(
+    request: Request,  # noqa: ARG001 — required by @limiter.limit
+    body: ModelGenerateRequest,
+    auth: tuple[User, LoginRecord] = Depends(get_current_session),
+    db: Session = Depends(get_db),
+) -> CompanionModelResponse:
+    user, _ = auth
+    try:
+        model = await generate_companion_model(db, user_id=user.id)
+    except ModelGenerationError as exc:
+        raise HTTPException(status_code=502, detail={"error": str(exc)})
+    return _model_response(model)
+
+
+# ── Wardrobe ──
+
+
+def _wardrobe_response(item: WardrobeItem) -> WardrobeItemResponse:
+    return WardrobeItemResponse(
+        id=item.id,
+        name=item.name,
+        category=item.category,
+        material_overrides=json.loads(item.material_overrides_json or "{}"),
+        texture_url=item.texture_url,
+        equipped=item.equipped,
+        created_at=item.created_at,
+    )
+
+
+@router.get("/wardrobe")
+def get_wardrobe(
+    auth: tuple[User, LoginRecord] = Depends(get_current_session),
+    db: Session = Depends(get_db),
+) -> list[WardrobeItemResponse]:
+    user, _ = auth
+    return [_wardrobe_response(i) for i in list_wardrobe(db, user.id)]
+
+
+@router.get("/wardrobe/equipped", response_model=WardrobeItemResponse | None)
+def get_equipped(
+    auth: tuple[User, LoginRecord] = Depends(get_current_session),
+    db: Session = Depends(get_db),
+) -> WardrobeItemResponse | None:
+    user, _ = auth
+    item = get_equipped_item(db, user.id)
+    return _wardrobe_response(item) if item else None
+
+
+@router.post("/wardrobe/generate", response_model=WardrobeItemResponse, status_code=201)
+@limiter.limit(f"{SETTINGS.companion_wardrobe_generate_rate_limit_per_minute}/minute")
+async def post_wardrobe_generate(
+    request: Request,  # noqa: ARG001 — required by @limiter.limit
+    body: WardrobeGenerateRequest,
+    auth: tuple[User, LoginRecord] = Depends(get_current_session),
+    db: Session = Depends(get_db),
+) -> WardrobeItemResponse:
+    user, _ = auth
+    try:
+        item = await generate_wardrobe_item(db, user_id=user.id, name=body.name, description=body.description)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail={"error": str(exc)})
+    return _wardrobe_response(item)
+
+
+@router.put("/wardrobe/equip", response_model=WardrobeItemResponse)
+def put_wardrobe_equip(
+    body: WardrobeEquipRequest,
+    auth: tuple[User, LoginRecord] = Depends(get_current_session),
+    db: Session = Depends(get_db),
+) -> WardrobeItemResponse:
+    user, _ = auth
+    try:
+        item = equip_wardrobe_item(db, user.id, body.item_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Wardrobe item not found")
+    return _wardrobe_response(item)
+
+
+@router.delete("/wardrobe/{item_id}")
+def delete_wardrobe(
+    item_id: int,
+    auth: tuple[User, LoginRecord] = Depends(get_current_session),
+    db: Session = Depends(get_db),
+) -> dict:
+    user, _ = auth
+    if not delete_wardrobe_item(db, user.id, item_id):
+        raise HTTPException(status_code=404, detail="Wardrobe item not found")
+    return {"ok": True}
+
+
 public_router = get_router()
 
 
@@ -205,11 +338,21 @@ async def serve_avatar_file(filename: str, expires: int | None = None, sig: str 
 
 @public_router.get("/asset/{user_id}/{filename:path}")
 async def serve_companion_asset(user_id: int, filename: str, expires: int | None = None, sig: str | None = None) -> FileResponse:
-    """Serve a durable companion clip asset (tier-2 keyframes / tier-3 video)."""
     if not verify_signed_asset_request(user_id, filename, expires, sig):
         raise HTTPException(status_code=403, detail="Invalid or expired signature")
     result = resolve_companion_asset_path(user_id, filename)
     if result is None:
         raise HTTPException(status_code=404, detail="Asset not found")
+    path, content_type = result
+    return FileResponse(path, media_type=content_type)
+
+
+@public_router.get("/model/file/{user_id}/{filename:path}")
+async def serve_model_file(user_id: int, filename: str, expires: int | None = None, sig: str | None = None) -> FileResponse:
+    if not verify_signed_asset_request(user_id, filename, expires, sig):
+        raise HTTPException(status_code=403, detail="Invalid or expired signature")
+    result = resolve_companion_model_path(user_id, filename)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Model not found")
     path, content_type = result
     return FileResponse(path, media_type=content_type)

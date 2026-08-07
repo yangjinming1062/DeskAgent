@@ -84,3 +84,48 @@ class ClipStatusResponse(BaseModel):
     tier: int = 1
     keyframe_url: str | None = None
     keyframe_meta: dict | None = None
+
+
+class CompanionModelResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    user_id: int
+    asset_url: str | None = None
+    provider: str
+    species: str = "人类"
+    morph_params: dict = Field(default_factory=dict)
+    status: str
+    has_rig: bool
+    has_morph_targets: bool
+    active: bool
+    created_at: datetime
+
+
+class ModelGenerateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+class WardrobeItemResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    category: str
+    material_overrides: dict = Field(default_factory=dict)
+    texture_url: str | None = None
+    equipped: bool
+    created_at: datetime
+
+
+class WardrobeGenerateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=1, max_length=128)
+    description: str = Field(min_length=1, max_length=500)
+
+
+class WardrobeEquipRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    item_id: int
