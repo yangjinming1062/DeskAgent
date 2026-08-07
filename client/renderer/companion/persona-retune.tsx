@@ -63,6 +63,7 @@ type FieldSchema = {
   key: keyof typeof EMPTY
   label: string
   presets?: readonly PresetValue[]
+  selectOnly?: boolean
   max?: number
   placeholder?: string
   multiline?: boolean
@@ -85,12 +86,12 @@ const EMPTY = {
 
 const STEPS: { title: string; fields: FieldSchema[] }[] = [
   {
-    title: '名字 与 形象性别',
+    title: '角色定义：名称 与 性别',
     fields: [
-      { key: 'name', label: '名字' },
+      { key: 'name', label: '角色名', max: 64, placeholder: '给你起个名字' },
       {
         key: 'characterGender',
-        label: '形象性别',
+        label: '角色性别',
         max: 64,
         presets: CHARACTER_GENDER_PRESETS
       }
@@ -99,7 +100,7 @@ const STEPS: { title: string; fields: FieldSchema[] }[] = [
   {
     title: '物种 与 关系',
     fields: [
-      { key: 'species', label: '物种', max: 64, presets: SPECIES_PRESETS },
+      { key: 'species', label: '物种', max: 64, presets: SPECIES_PRESETS, selectOnly: true },
       { key: 'background', label: '关系 / 角色定位', presets: ROLE_PRESETS }
     ]
   },
@@ -390,22 +391,23 @@ function Field({ field, value, onChange, placeholder }: FieldProps): React.React
   return (
     <label className="block">
       <span className="mb-1 block text-[11px] text-white/50">{field.label}</span>
-      {field.multiline ? (
-        <textarea
-          className={`${inputClass} resize-none`}
-          onChange={e => handleChange(e.target.value)}
-          placeholder={placeholder}
-          rows={field.key === 'appearance' ? 3 : 2}
-          value={value}
-        />
-      ) : (
-        <input
-          className={inputClass}
-          onChange={e => handleChange(e.target.value)}
-          placeholder={placeholder}
-          value={value}
-        />
-      )}
+      {!field.selectOnly &&
+        (field.multiline ? (
+          <textarea
+            className={`${inputClass} resize-none`}
+            onChange={e => handleChange(e.target.value)}
+            placeholder={placeholder}
+            rows={field.key === 'appearance' ? 3 : 2}
+            value={value}
+          />
+        ) : (
+          <input
+            className={inputClass}
+            onChange={e => handleChange(e.target.value)}
+            placeholder={placeholder}
+            value={value}
+          />
+        ))}
       {field.presets && field.presets.length > 0 && (
         <div className="mt-1.5 flex flex-wrap gap-1.5">
           {field.presets.map(p => {

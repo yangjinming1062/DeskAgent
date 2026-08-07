@@ -134,15 +134,14 @@ export function PersonaSection() {
         </label>
         <label className="block">
           <span className="mb-1 block text-[11px] text-white/50">生物类型</span>
-          <input
-            className={inputClass}
-            onChange={e => setSpecies(e.target.value.slice(0, 64))}
-            placeholder="比如：人类、灵兽…"
-            value={species}
-          />
           <div className="mt-1.5 flex flex-wrap gap-1.5">
             {SPECIES_PRESETS.map(p => (
-              <button className={presetClass} key={p} onClick={() => setSpecies(p)} type="button">
+              <button
+                className={`${presetClass} ${species === p ? 'border-white/40 bg-white/20 text-white' : ''}`}
+                key={p}
+                onClick={() => setSpecies(p)}
+                type="button"
+              >
                 {p}
               </button>
             ))}
