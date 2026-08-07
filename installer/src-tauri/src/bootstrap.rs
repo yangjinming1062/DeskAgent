@@ -253,6 +253,14 @@ pub(crate) fn resolve_deskagent_desktop_exe() -> Option<PathBuf> {
         if exe.exists() {
             return Some(exe);
         }
+        // Fallback for ZIP layout unpacked into $DESKAGENT_HOME/apps/DeskAgent/DeskAgent.exe
+        let zip_exe = crate::paths::deskagent_home()
+            .join("apps")
+            .join("DeskAgent")
+            .join("DeskAgent.exe");
+        if zip_exe.exists() {
+            return Some(zip_exe);
+        }
     }
     None
 }
@@ -956,5 +964,21 @@ mod tests {
             "no resolved app when nothing has been installed"
         );
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    #[cfg(target_os = "windows")]
+    fn test_resolve_deskagent_desktop_exe_zip_fallback() {
+        let home = crate::paths::deskagent_home();
+        let zip_dir = home.join("apps").join("DeskAgent");
+        let _ = std::fs::create_dir_all(&zip_dir);
+        let zip_exe = zip_dir.join("DeskAgent.exe");
+        let _ = std::fs::write(&zip_exe, b"stub");
+
+        let resolved = resolve_deskagent_desktop_exe();
+        assert!(resolved.is_some(), "should resolve desktop exe in zip_layout path");
+        assert_eq!(resolved.unwrap(), zip_exe);
+
+        let _ = std::fs::remove_file(&zip_exe);
     }
 }

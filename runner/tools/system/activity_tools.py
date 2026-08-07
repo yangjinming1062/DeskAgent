@@ -3,10 +3,13 @@ import logging
 from typing import Any
 
 from ..registry import registry
+from .activity import click_at
+from .activity import get_cursor_pos
 from .activity import get_focused_app
 from .activity import get_idle_seconds
 from .activity import get_power_state
 from .activity import get_windows
+from .activity import get_work_area
 from .activity import is_fullscreen
 from .activity import is_screen_locked
 from .activity import open_application
@@ -71,6 +74,36 @@ SYSTEM_OPEN_APP_SCHEMA = {
 }
 
 
+SYSTEM_GET_WORK_AREA_SCHEMA = {
+    "name": "system.get_work_area",
+    "description": "Returns primary display's working area bounds: {x, y, w, h} excluding taskbars/docks.",
+    "parameters": {"type": "object", "properties": {}, "required": []},
+}
+
+
+SYSTEM_GET_CURSOR_POS_SCHEMA = {
+    "name": "system.get_cursor_pos",
+    "description": "Returns current global mouse cursor position: {x, y}.",
+    "parameters": {"type": "object", "properties": {}, "required": []},
+}
+
+
+SYSTEM_CLICK_AT_SCHEMA = {
+    "name": "system.click_at",
+    "description": "Simulate a mouse click at specific global screen coordinates (x, y).",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "x": {"type": "integer", "description": "Screen X coordinate"},
+            "y": {"type": "integer", "description": "Screen Y coordinate"},
+            "button": {"type": "string", "enum": ["left", "right", "middle"], "default": "left"},
+            "clicks": {"type": "integer", "default": 1},
+        },
+        "required": ["x", "y"],
+    },
+}
+
+
 def _idle_handler(args: dict[str, Any], **kw: Any) -> str:
     return json.dumps({"idle_seconds": get_idle_seconds()})
 
@@ -99,6 +132,22 @@ def _open_app_handler(args: dict[str, Any], **kw: Any) -> str:
     return json.dumps(open_application(str(args.get("name", ""))))
 
 
+def _work_area_handler(args: dict[str, Any], **kw: Any) -> str:
+    return json.dumps(get_work_area())
+
+
+def _cursor_pos_handler(args: dict[str, Any], **kw: Any) -> str:
+    return json.dumps(get_cursor_pos())
+
+
+def _click_at_handler(args: dict[str, Any], **kw: Any) -> str:
+    x = int(args.get("x", 0))
+    y = int(args.get("y", 0))
+    button = str(args.get("button", "left"))
+    clicks = int(args.get("clicks", 1))
+    return json.dumps(click_at(x, y, button, clicks))
+
+
 registry.register_tool("system.get_idle_seconds", schema=SYSTEM_GET_IDLE_SCHEMA)(_idle_handler)
 registry.register_tool("system.is_screen_locked", schema=SYSTEM_IS_LOCKED_SCHEMA)(_locked_handler)
 registry.register_tool("system.get_focused_app", schema=SYSTEM_FOCUS_SCHEMA)(_focus_handler)
@@ -106,3 +155,6 @@ registry.register_tool("system.is_fullscreen", schema=SYSTEM_IS_FULLSCREEN_SCHEM
 registry.register_tool("system.get_power_state", schema=SYSTEM_POWER_SCHEMA)(_power_handler)
 registry.register_tool("system.get_windows", schema=SYSTEM_GET_WINDOWS_SCHEMA)(_windows_handler)
 registry.register_tool("system.open_application", schema=SYSTEM_OPEN_APP_SCHEMA)(_open_app_handler)
+registry.register_tool("system.get_work_area", schema=SYSTEM_GET_WORK_AREA_SCHEMA)(_work_area_handler)
+registry.register_tool("system.get_cursor_pos", schema=SYSTEM_GET_CURSOR_POS_SCHEMA)(_cursor_pos_handler)
+registry.register_tool("system.click_at", schema=SYSTEM_CLICK_AT_SCHEMA)(_click_at_handler)

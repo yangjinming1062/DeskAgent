@@ -121,9 +121,163 @@ def open_application(name: str) -> dict[str, Any]:
         return {"opened": False, "error": str(e)}
 
 
+def get_work_area() -> dict[str, Any]:
+    """``{x, y, w, h}`` representing the primary display's work area."""
+    if IS_WINDOWS:
+        return _work_area_windows()
+    if IS_MACOS:
+        return _work_area_macos()
+    return {"x": 0, "y": 0, "w": 1920, "h": 1080}
+
+
+def get_cursor_pos() -> dict[str, Any]:
+    """``{x, y}`` representing current global cursor location."""
+    if IS_WINDOWS:
+        return _cursor_windows()
+    if IS_MACOS:
+        return _cursor_macos()
+    return {"x": 0, "y": 0}
+
+
+def click_at(x: int, y: int, button: str = "left", clicks: int = 1) -> dict[str, Any]:
+    """Simulate a mouse click at global screen coordinates (x, y)."""
+    if IS_WINDOWS:
+        return _click_at_windows(x, y, button, clicks)
+    if IS_MACOS:
+        return _click_at_macos(x, y, button, clicks)
+    return {"clicked": False, "error": "unsupported platform"}
+
+
 # ---------------------------------------------------------------------------
 # Platform implementations
 # ---------------------------------------------------------------------------
+
+
+def _work_area_windows() -> dict[str, int]:
+    if ctypes is None or wintypes is None:
+        return {"x": 0, "y": 0, "w": 1920, "h": 1080}
+    try:
+        user32 = ctypes.windll.user32
+
+        class _RECT(ctypes.Structure):
+            _fields_ = [
+                ("left", wintypes.LONG),
+                ("top", wintypes.LONG),
+                ("right", wintypes.LONG),
+                ("bottom", wintypes.LONG),
+            ]
+
+        rect = _RECT()
+        # SPI_GETWORKAREA = 0x0030
+        if user32.SystemParametersInfoW(0x0030, 0, ctypes.byref(rect), 0):
+            return {
+                "x": int(rect.left),
+                "y": int(rect.top),
+                "w": int(max(0, rect.right - rect.left)),
+                "h": int(max(0, rect.bottom - rect.top)),
+            }
+    except Exception as e:
+        logger.debug("win work_area probe failed: %s", e)
+    return {"x": 0, "y": 0, "w": 1920, "h": 1080}
+
+
+def _work_area_macos() -> dict[str, int]:
+    if NSWorkspace is None:
+        return {"x": 0, "y": 0, "w": 1920, "h": 1080}
+    try:
+        from AppKit import NSScreen  # type: ignore[import-not-found]
+
+        screen = NSScreen.mainScreen()
+        if screen:
+            frame = screen.visibleFrame()
+            return {
+                "x": int(frame.origin.x),
+                "y": int(frame.origin.y),
+                "w": int(frame.size.width),
+                "h": int(frame.size.height),
+            }
+    except Exception as e:
+        logger.debug("macos work_area probe failed: %s", e)
+    return {"x": 0, "y": 0, "w": 1920, "h": 1080}
+
+
+def _cursor_windows() -> dict[str, int]:
+    if ctypes is None or wintypes is None:
+        return {"x": 0, "y": 0}
+    try:
+        user32 = ctypes.windll.user32
+        pt = wintypes.POINT()
+        if user32.GetCursorPos(ctypes.byref(pt)):
+            return {"x": int(pt.x), "y": int(pt.y)}
+    except Exception as e:
+        logger.debug("win cursor probe failed: %s", e)
+    return {"x": 0, "y": 0}
+
+
+def _cursor_macos() -> dict[str, int]:
+    if Quartz is None:
+        return {"x": 0, "y": 0}
+    try:
+        event = Quartz.CGEventCreate(None)
+        if event:
+            loc = Quartz.CGEventGetLocation(event)
+            return {"x": int(loc.x), "y": int(loc.y)}
+    except Exception as e:
+        logger.debug("macos cursor probe failed: %s", e)
+    return {"x": 0, "y": 0}
+
+
+def _click_at_windows(x: int, y: int, button: str = "left", clicks: int = 1) -> dict[str, Any]:
+    if ctypes is None:
+        return {"clicked": False, "error": "ctypes unavailable"}
+    try:
+        user32 = ctypes.windll.user32
+        user32.SetCursorPos(x, y)
+        time.sleep(0.02)
+        btn_lower = button.lower()
+        if btn_lower == "right":
+            down_flag, up_flag = 0x0008, 0x0010
+        elif btn_lower == "middle":
+            down_flag, up_flag = 0x0020, 0x0040
+        else:
+            down_flag, up_flag = 0x0002, 0x0004
+
+        for _ in range(max(1, clicks)):
+            user32.mouse_event(down_flag, 0, 0, 0, 0)
+            time.sleep(0.01)
+            user32.mouse_event(up_flag, 0, 0, 0, 0)
+            time.sleep(0.02)
+        return {"clicked": True, "x": x, "y": y, "button": button, "clicks": clicks}
+    except Exception as e:
+        logger.debug("win click_at failed: %s", e)
+        return {"clicked": False, "error": str(e)}
+
+
+def _click_at_macos(x: int, y: int, button: str = "left", clicks: int = 1) -> dict[str, Any]:
+    if Quartz is None:
+        return {"clicked": False, "error": "Quartz unavailable"}
+    try:
+        btn_lower = button.lower()
+        if btn_lower == "right":
+            down_evt = Quartz.kCGEventRightMouseDown
+            up_evt = Quartz.kCGEventRightMouseUp
+            btn_type = Quartz.kCGMouseButtonRight
+        else:
+            down_evt = Quartz.kCGEventLeftMouseDown
+            up_evt = Quartz.kCGEventLeftMouseUp
+            btn_type = Quartz.kCGMouseButtonLeft
+
+        for _ in range(max(1, clicks)):
+            event_down = Quartz.CGEventCreateMouseEvent(None, down_evt, (x, y), btn_type)
+            Quartz.CGEventPost(Quartz.kCGHIDEventTap, event_down)
+            time.sleep(0.01)
+            event_up = Quartz.CGEventCreateMouseEvent(None, up_evt, (x, y), btn_type)
+            Quartz.CGEventPost(Quartz.kCGHIDEventTap, event_up)
+            time.sleep(0.02)
+        return {"clicked": True, "x": x, "y": y, "button": button, "clicks": clicks}
+    except Exception as e:
+        logger.debug("macos click_at failed: %s", e)
+        return {"clicked": False, "error": str(e)}
 
 
 def _idle_windows() -> float:
