@@ -184,7 +184,9 @@ home 是唯一持久化的 locale。其余 locale 从 home 与上下文派生，
 
 **Runner 新增能力**（详见 §10）：`system.get_windows`（枚举可见窗口几何 + z-order + focused 标记）、`system.get_work_area`（可用区域）、`system.get_cursor_pos`（鼠标位置）；可选 `system.click_at`（坐标点击，ritual walk 操作执行）。桌面图标位置仅 Windows 经 Shell API 可枚举，macOS 降级为"找不到图标"人格化表达。
 
-**与 §2 状态机的组合**：移动期间默认显示 IDLE 动画（除非状态机正处更高优先级状态）；抵达 target 后切 INTERACTING；SLEEPING 期间不主动换位（除非被用户唤醒）。**Backend 不感知空间行为**——所有位置决策在 Client 本地完成，无需新增 WS 事件或 RPC。
+**与 §2 状态机的组合**：移动期间默认显示 IDLE 动画（除非状态机正处更高优先级状态）；抵达 target 后切 INTERACTING；SLEEPING 期间不主动换位（除非被用户唤醒）。
+
+**Backend ↔ Client 空间协议**：LLM 可在回复中前缀 `[spatial:LOCALE,target:KEYWORD]` 表达"想去某处"，由 Backend 的 `AffectScrubber` 解析后随 `message.complete.affect.locale / .target` 透传给 Client。Client 据 §3 档位与当前 chat-open 状态决定是否落位——Backend 仍不知像素坐标或当前 locale。Client 本地触发的空间决策（焦点切换、长 idle、drag 等）不经过 Backend；只有 LLM 显式表达"想去某处"时才走 `message.complete.affect.locale` 这条带外通道。
 
 ---
 

@@ -102,6 +102,12 @@ const STATE_PRIORITY: Record<SpriteStateName, number> = {
   idle: 10
 }
 
+// States that auto-revert via ``$previousState`` + the timer below. They
+// bypass the priority gate so an in-flight WORKING/SPEAKING animation
+// doesn't suppress a transient emotion/interaction cue — adding a new
+// transient state is one entry here, not three code sites.
+const TRANSIENT_STATES: ReadonlySet<SpriteStateName> = new Set(['emotional', 'interacting'])
+
 let transientTimer: ReturnType<typeof setTimeout> | null = null
 
 export function setCompanionLifecycle(next: CompanionLifecycle): void {
@@ -114,8 +120,14 @@ export function setSpriteState(
 ): void {
   const current = $spriteState.get()
 
-  if (!options?.force && STATE_PRIORITY[name] < STATE_PRIORITY[current] && current !== 'idle') {
-    // Lower priority state cannot interrupt higher priority state
+  if (
+    !options?.force &&
+    STATE_PRIORITY[name] < STATE_PRIORITY[current] &&
+    current !== 'idle' &&
+    !TRANSIENT_STATES.has(name)
+  ) {
+    // Lower priority state cannot interrupt higher priority state —
+    // except transient states, which auto-revert via the timer below.
     return
   }
 
@@ -126,7 +138,7 @@ export function setSpriteState(
     }
   }
 
-  if (name === 'emotional' || name === 'interacting') {
+  if (TRANSIENT_STATES.has(name)) {
     if (current !== 'emotional' && current !== 'interacting') {
       $previousState.set(current)
     }

@@ -1,5 +1,4 @@
 import base64
-import json
 
 from common import get_router
 from components import get_db
@@ -8,6 +7,7 @@ from components import SETTINGS
 from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Request
+from fastapi import status
 from fastapi.responses import FileResponse
 from modules.auth import get_current_session
 from modules.auth import LoginRecord
@@ -18,6 +18,7 @@ from modules.companion import AvatarFromImageRequest
 from modules.companion import AvatarGenerateRequest
 from modules.companion import AvatarHistoryResponse
 from modules.companion import AvatarUploadRequest
+from modules.companion import CompanionModel
 from modules.companion import CompanionModelResponse
 from modules.companion import ModelGenerateRequest
 from modules.companion import PersonaResponse
@@ -60,21 +61,28 @@ from sqlalchemy.orm import Session
 router = get_router()
 
 
-def _avatar_prompt(asset: AvatarAsset) -> str:
-    """The prompt that produced the portrait, when the row has one
-    (uploads store ``{"source": "upload"}`` and have no prompt)."""
-    payload = safe_json_loads(asset.prompt_json, default={})
-    return payload.get("prompt", "") if isinstance(payload, dict) else ""
-
-
 def _avatar_response(asset: AvatarAsset) -> AvatarAssetResponse:
-    # Generation is synchronous, so any persisted asset is by definition
-    # succeeded — no async pending state exists on the avatar pipeline.
+    # Generation is synchronous, so every persisted asset is succeeded —
+    # no async pending state exists on the avatar pipeline.
+    prompt_payload = safe_json_loads(asset.prompt_json, default={})
     return AvatarAssetResponse(
         id=asset.id,
         asset_url=asset.asset_url,
-        prompt=_avatar_prompt(asset),
+        prompt=prompt_payload.get("prompt", "") if isinstance(prompt_payload, dict) else "",
         status="succeeded",
+    )
+
+
+def _model_response(model: CompanionModel) -> CompanionModelResponse:
+    return CompanionModelResponse(
+        id=model.id,
+        species=model.species,
+        provider=model.provider,
+        asset_url=signed_model_url(model) or model.asset_url,
+        morph_params=safe_json_loads(model.morph_params_json or "{}", default={}),
+        status=model.status,
+        has_rig=model.has_rig,
+        has_morph_targets=model.has_morph_targets,
     )
 
 
@@ -132,7 +140,7 @@ def get_avatar(
     return _avatar_response(asset)
 
 
-@router.post("/avatar", response_model=AvatarAssetResponse)
+@router.post("/avatar", response_model=AvatarAssetResponse, status_code=status.HTTP_201_CREATED)
 @limiter.limit(f"{SETTINGS.companion_avatar_generate_rate_limit_per_minute}/minute")
 async def post_avatar(
     request: Request,  # noqa: ARG001 — required by @limiter.limit
@@ -150,7 +158,7 @@ async def post_avatar(
     return _avatar_response(asset)
 
 
-@router.post("/avatar/upload", response_model=AvatarAssetResponse)
+@router.post("/avatar/upload", response_model=AvatarAssetResponse, status_code=status.HTTP_201_CREATED)
 @limiter.limit(f"{SETTINGS.companion_avatar_upload_rate_limit_per_minute}/minute")
 async def post_avatar_upload(
     request: Request,  # noqa: ARG001 — required by @limiter.limit
@@ -177,7 +185,7 @@ async def post_avatar_upload(
     return _avatar_response(asset)
 
 
-@router.post("/avatar/from-image", response_model=AvatarAssetResponse)
+@router.post("/avatar/from-image", response_model=AvatarAssetResponse, status_code=status.HTTP_201_CREATED)
 @limiter.limit(f"{SETTINGS.companion_avatar_generate_rate_limit_per_minute}/minute")
 async def post_avatar_from_image(
     request: Request,  # noqa: ARG001 — required by @limiter.limit
@@ -231,20 +239,10 @@ def get_model(
     model = get_active_model(db, user.id)
     if model is None:
         raise HTTPException(status_code=404, detail="No companion model found")
-
-    return CompanionModelResponse(
-        id=model.id,
-        species=model.species,
-        provider=model.provider,
-        asset_url=signed_model_url(model) or model.asset_url,
-        morph_params=json.loads(model.morph_params_json or "{}"),
-        status=model.status,
-        has_rig=model.has_rig,
-        has_morph_targets=model.has_morph_targets,
-    )
+    return _model_response(model)
 
 
-@router.post("/model", response_model=CompanionModelResponse)
+@router.post("/model", response_model=CompanionModelResponse, status_code=status.HTTP_201_CREATED)
 @limiter.limit(f"{SETTINGS.companion_model_generate_rate_limit_per_minute}/minute")
 async def post_model(
     request: Request,  # noqa: ARG001 — required by @limiter.limit
@@ -257,16 +255,7 @@ async def post_model(
         model = await generate_companion_model(db, user_id=user.id, species_override=body.species_override)
     except ModelGenerationError as exc:
         raise HTTPException(status_code=502, detail={"error": str(exc)})
-    return CompanionModelResponse(
-        id=model.id,
-        species=model.species,
-        provider=model.provider,
-        asset_url=signed_model_url(model) or model.asset_url,
-        morph_params=json.loads(model.morph_params_json or "{}"),
-        status=model.status,
-        has_rig=model.has_rig,
-        has_morph_targets=model.has_morph_targets,
-    )
+    return _model_response(model)
 
 
 def _wardrobe_response(item: WardrobeItem) -> WardrobeItemResponse:
@@ -302,7 +291,7 @@ def get_wardrobe_equipped(
     return _wardrobe_response(item)
 
 
-@router.post("/wardrobe", response_model=WardrobeItemResponse)
+@router.post("/wardrobe", response_model=WardrobeItemResponse, status_code=status.HTTP_201_CREATED)
 @limiter.limit(f"{SETTINGS.companion_wardrobe_generate_rate_limit_per_minute}/minute")
 async def post_wardrobe(
     request: Request,  # noqa: ARG001 — required by @limiter.limit

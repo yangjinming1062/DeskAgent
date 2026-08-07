@@ -184,7 +184,8 @@ Backend POST /api/companion/model（按物种取预制 GLB → 即时下发）�
 ```
 
 - **inline affect 原则**：情绪 cue 随其所属话语在同一响应帧（`message.complete`）下发，Client 无需二次猜测"这句话该配什么情绪"。独立的 `companion.affect` 事件用于非言语的情境化情绪反应——两条路径产出它：(1) `send_message_tool` 在 `quiet` 档下消息被吞但 affect 透传；(2) `companion.check_affect` 的 idle 触发 LLM 推理（详见 §5）。
-- **语义/渲染解耦**：Backend 只产出 `emotion` 语义，绝不指定渲染方式；客户端据 3D 模型可用动画决定如何渲染。这条解耦使模型加载不影响语义层（详见 §6.3）。
+- **inline 空间 cue（可选，与 affect 同帧）**：LLM 在 `message.complete` 上可附带 `affect: {emotion, locale, target}` 三元组，Backend 解析后下发；Client 决定是否落位（§3 档位门控 + chat-open 抑制）。Backend 只产出 `locale` 语义 + 可选 `target` 关键字（窗口/进程名），具体像素位置由 Client `spatial.ts` 的 `setLocale()` 计算——Backend 仍不知渲染坐标。
+- **语义/渲染解耦**：Backend 只产出 emotion + 可选 locale 语义，绝不指定渲染方式；客户端据 3D 模型可用动画与当前空间决策决定如何渲染。这条解耦使模型加载不影响语义层（详见 §6.3）。
 
 ---
 
@@ -238,7 +239,8 @@ onboarding 产出的结构化角色定义持久化在 Backend 用户维度，作
 伙伴"说什么"由 LLM 产出，"怎么动、什么情绪"由 Client 渲染。以下是两者之间的语义契约：
 
 - **情绪 cue（affect）**：Backend 在对话响应/主动消息中携带 `affect: {emotion}` 语义字段，Client 据此驱动动画状态机。emotion 为有限枚举集（`happy / sad / surprised / excited / confused / concerned / shy / proud / grateful / playful / bored / lonely / sleepy / curious / embarrassed / apologetic + neutral`，共 17 项），与 `services/chat/affect.py::ALLOWED_EMOTIONS` 完全对齐。可扩展——但每次扩展须同步 Backend 产出 allowlist 与客户端 morph target 目录，否则未覆盖的 emotion 一律按 `neutral` 处理。
-- **语义与渲染解耦**：Backend 只产出 emotion 语义，绝不指定渲染方式。客户端据 3D 模型可用动画与 morph target 决定渲染——emotion 经 MorphController 映射到 GLB 内置的表情 morph，无对应 morph 时回退 idle 动画。这使模型加载与语义层互不阻塞。
+- **空间 cue（spatial）**：Backend 可在 `message.complete` 的 `affect` 中附带可选 `locale`（`home / chat / perch / roam / sleep`，与 `services/chat/affect.py::ALLOWED_LOCALES` 对齐）与可选 `target`（窗口/进程名关键字，CJK/空格/大小写允许）。LLM 在回复前自填 `[spatial:LOCALE,target:KEYWORD]` 由 `AffectScrubber` 解析后转发给 Client。**Backend 不产出像素坐标**——Client 据 locale + 当前空间状态（§3 `setLocale` / `updateSpatialDecision`）决定最终位置与 locomotion；`target` 仅在 `perch` 时由 Client 经 `system.get_windows` 解析为窗口几何后计算 perch 点。
+- **语义与渲染解耦**：Backend 只产出 emotion + 可选 locale 语义，绝不指定渲染方式或具体坐标。客户端据 3D 模型可用动画与 morph target 决定渲染——emotion 经 MorphController 映射到 GLB 内置的表情 morph，无对应 morph 时回退 idle 动画。这使模型加载与语义层互不阻塞。
 - **affect 继承角色定义的抗注入保证**：affect 由已注入角色定义的 LLM 产出，自然符合人格；角色定义本身受 §7.2 reserved 键与不可信包围机制保护，affect 因此继承同一保证，无需额外的情绪过滤层。
 - **affect 与 text 同帧，TTS 由 Client 拉取式合成**：对话响应的 `message.complete` 帧内联 `{text, affect}`，不内联 TTS 音频。Client 收到后先据 affect 切 EMOTIONAL，再据 text 拉 TTS（`POST /api/media/tts`）切 SPEAKING，保证情绪基调先于语音进入。Backend 只产出语义（emotion + text），TTS 合成归 Client 渲染层。
 - **user_profile 自动召回**：5 条结构化用户字段（称呼/性别/年龄段/爱好/自由文本）在 chat 入口渲染成 markdown 片段注入 system prompt stable 段，紧跟角色定义之后。LLM 每个 turn 都能直接看到用户身份事实，不依赖 `memory_recall` 工具调用——§6.4 双层模型中"记忆驱动行为"在结构化字段上不靠 LLM 是否记得调工具来决定。

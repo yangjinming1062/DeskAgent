@@ -83,6 +83,8 @@ def get_or_create_persona(db: Session, user_id: int) -> Persona:
 
 
 def update_persona(db: Session, user_id: int, definition: dict[str, Any]) -> Persona:
+    if not isinstance(definition, dict):
+        raise PersonaValidationError("persona definition must be an object")
     user_profile = extract_user_profile(definition)
     persona_def = {k: v for k, v in definition.items() if not k.startswith("user_")}
     cleaned = _validate_definition(persona_def)

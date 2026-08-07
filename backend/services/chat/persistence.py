@@ -94,9 +94,11 @@ async def _persist_assistant_no_tool_turn(
     llm_config: dict,
     first_user_msg_content: str | None,
     current_messages: list[dict],
-    track_task: TrackTask | None,
+    track_task: TrackTask | None = None,
     *,
     emotion: str | None = None,
+    spatial_locale: str | None = None,
+    spatial_target: str | None = None,
 ) -> None:
     """Terminal path: assistant produced text only. Persist Message, kick
     off optional title + background review, emit ``message.complete``.
@@ -143,17 +145,17 @@ async def _persist_assistant_no_tool_turn(
         if track_task:
             track_task(review_task)
 
-    # Always emit ``affect`` even when ``emotion`` is None — the desktop state
-    # machine keys off its presence, and a missing field vs an explicit
-    # ``{emotion: null}`` would force a second branch. A None emotion here
-    # means the LLM didn't emit a ``[affect:...]`` tag (the scrubber resolves
-    # unknown / partial tags to neutral upstream; see services/chat/affect.py),
-    # which the desktop treats as "switch to idle" per ARCHITECTURE §6.3.
+    affect_payload: dict[str, Any] = {"emotion": emotion}
+    if spatial_locale:
+        affect_payload["locale"] = spatial_locale
+    if spatial_target:
+        affect_payload["target"] = spatial_target
+
     await emitter.send_json(
         {
             "type": "message.complete",
             "text": turn_content,
-            "affect": {"emotion": emotion},
+            "affect": affect_payload,
             **({"usage": final_usage_payload} if final_usage_payload else {}),
         }
     )

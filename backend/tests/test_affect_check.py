@@ -184,3 +184,102 @@ async def test_check_affect_invalid_config_returns_no_throw(monkeypatch, _patch_
 
     assert result == {"expressed": False, "reason": "llm_error"}
     assert called["n"] == 0
+
+
+def test_affect_scrubber_spatial_tag_parsing():
+    from services.chat.affect import AffectScrubber
+
+    scrubber = AffectScrubber()
+    text = "[affect:curious]\n[spatial:perch,target:bilibili]\nHello user!"
+    clean = scrubber.feed(text)
+    clean += scrubber.flush()
+
+    assert clean == "Hello user!"
+    assert scrubber.emotion == "curious"
+    assert scrubber.spatial_locale == "perch"
+    assert scrubber.spatial_target == "bilibili"
+
+
+def test_affect_scrubber_split_stream_parsing():
+    from services.chat.affect import AffectScrubber
+
+    scrubber = AffectScrubber()
+    chunk1 = scrubber.feed("[aff")
+    assert chunk1 == ""  # Waiting for more tag text
+
+    chunk2 = scrubber.feed("ect:happy]\nHello world!")
+    clean = (chunk1 + chunk2) + scrubber.flush()
+
+    assert clean == "Hello world!"
+    assert scrubber.emotion == "happy"
+
+
+def test_affect_scrubber_truncated_flush():
+    from services.chat.affect import AffectScrubber
+
+    scrubber = AffectScrubber()
+    chunk = scrubber.feed("[affect:happy")  # Connection dies without closing bracket
+    clean = chunk + scrubber.flush()
+
+    assert clean == ""  # Trailing partial tag stripped, not leaked to user
+    assert scrubber.emotion == "happy"
+
+
+def test_affect_scrubber_tags_split_across_chunks():
+    """Real bug: the affect tag completes in one SSE chunk and the spatial
+    tag arrives in the next. The scrubber must keep buffering the spatial
+    tag, not short-circuit on the resolved affect and leak the second tag
+    to the user."""
+    from services.chat.affect import AffectScrubber
+
+    scrubber = AffectScrubber()
+    assert scrubber.feed("[affect:happy]\n") == ""
+    assert scrubber.feed("[spatial:perch,target:bilibili]\n") == ""
+    assert scrubber.feed("Hello!") == "Hello!"
+
+    assert scrubber.emotion == "happy"
+    assert scrubber.spatial_locale == "perch"
+    assert scrubber.spatial_target == "bilibili"
+
+
+def test_affect_scrubber_partial_second_tag_in_separate_chunk():
+    """Edge of the multi-tag split: the spatial tag itself arrives split."""
+    from services.chat.affect import AffectScrubber
+
+    scrubber = AffectScrubber()
+    assert scrubber.feed("[affect:happy]\n") == ""
+    assert scrubber.feed("[spatial:perch,target:bil") == ""  # partial
+    clean = scrubber.feed("ibili]\nGreetings!") + scrubber.flush()
+
+    assert clean == "Greetings!"
+    assert scrubber.emotion == "happy"
+    assert scrubber.spatial_locale == "perch"
+    assert scrubber.spatial_target == "bilibili"
+
+
+def test_affect_scrubber_cjk_and_space_in_target():
+    """Localized app names (``微信``) and spaces (``Visual Studio Code``)
+    must survive the spatial regex — only ``]`` and newline are disallowed."""
+    from services.chat.affect import AffectScrubber
+
+    scrubber = AffectScrubber()
+    clean = scrubber.feed("[affect:curious]\n[spatial:perch,target:微信]\nHi!") + scrubber.flush()
+    assert clean == "Hi!"
+    assert scrubber.spatial_target == "微信"
+
+    scrubber = AffectScrubber()
+    clean = scrubber.feed("[affect:curious]\n[spatial:perch,target:Visual Studio Code]\nHi!") + scrubber.flush()
+    assert clean == "Hi!"
+    assert scrubber.spatial_target == "Visual Studio Code"
+
+
+def test_affect_scrubber_truncated_spatial_flush():
+    """Stream dies mid-spatial-tag — partial regex drops the leading '[' so
+    the user never sees a literal ``[spatial:perch,target:foo`` fragment."""
+    from services.chat.affect import AffectScrubber
+
+    scrubber = AffectScrubber()
+    assert scrubber.feed("[spatial:perch,target:bilibili") == ""  # connection dies
+    assert scrubber.flush() == ""
+    # Partial spatial doesn't expose a captured locale/target — the renderer
+    # treats it as no cue, the user never sees the literal fragment.

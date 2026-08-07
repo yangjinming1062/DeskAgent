@@ -3,6 +3,7 @@ import { $screenLocked } from '@/companion/activity'
 import { reportInteractionStat } from '@/companion/activity'
 import { resolveAvatarRegeneration } from '@/companion/avatar-regen-store'
 import {
+  $chatOpen,
   appendAssistantDelta,
   beginAssistantMessage,
   finalizeAssistantMessage,
@@ -11,13 +12,14 @@ import {
 } from '@/companion/chat-store'
 import { $effectiveTier, $voiceCallOpen, setSpriteState, type SpriteEmotion } from '@/companion/companion-store'
 import { $responseMode } from '@/companion/prefs'
+import { computePerchPosition, setLocale, startRoam } from '@/companion/spatial'
 import { speak } from '@/companion/tts'
 import { $gateway } from '@/shared/store/gateway'
 import type { RpcEvent } from '@/shared/types/deskagent'
 
 import { $devMode, pushDevLog } from './developer-overlay'
 import { speakProactive } from './proactive/proactive'
-import { findWindowByKeyword, performRitualWalk } from './ritual-walk'
+import { findWindowByKeyword, performRitualWalk, type WindowGeom } from './ritual-walk'
 
 // Pull the full wardrobe list and push it into the model-store. Used by the
 // wardrobe.updated event — no request is needed otherwise; the UI triggers
@@ -29,6 +31,64 @@ async function refreshWardrobe(): Promise<void> {
   } catch (err) {
     console.warn('[events] wardrobe refresh failed:', err)
   }
+}
+
+const PERCH_RETRY_MS = 300
+const PERCH_RETRY_COUNT = 5
+
+async function findWindowWithRetry(keyword: string): Promise<WindowGeom | null> {
+  for (let attempt = 0; attempt <= PERCH_RETRY_COUNT; attempt++) {
+    const geom = await findWindowByKeyword(keyword)
+
+    if (geom) {
+      return geom
+    }
+
+    if (attempt < PERCH_RETRY_COUNT) {
+      await new Promise(resolve => setTimeout(resolve, PERCH_RETRY_MS))
+    }
+  }
+
+  return null
+}
+
+function applySpatialCue(locale?: string, target?: string): void {
+  if (!locale || $screenLocked.get() || $effectiveTier.get() === 'quiet') {
+    return
+  }
+
+  // Don't yank the sprite away from an open chat dock.
+  if ($chatOpen.get() && (locale === 'home' || locale === 'roam')) {
+    return
+  }
+
+  void (async () => {
+    if (locale === 'perch' && target) {
+      const geom = await findWindowWithRetry(target)
+
+      if (!geom) {
+        return
+      }
+
+      const perch = computePerchPosition(geom)
+
+      if (!perch) {
+        return
+      }
+
+      setLocale('perch', { position: perch, locomotion: 'fly' })
+    } else if (locale === 'sleep') {
+      setLocale('sleep')
+    } else if (locale === 'home' && !$chatOpen.get()) {
+      setLocale('home', { locomotion: 'fly' })
+    } else if (locale === 'chat') {
+      setLocale('chat')
+    } else if (locale === 'roam') {
+      startRoam()
+    }
+  })().catch(err => {
+    console.error('applySpatialCue error:', err)
+  })
 }
 
 export function handleCompanionEvent(event: RpcEvent): void {
@@ -53,9 +113,15 @@ export function handleCompanionEvent(event: RpcEvent): void {
     }
 
     case 'message.complete': {
-      const payload = event.payload as { text?: string; affect?: { emotion?: string } } | undefined
+      const payload = event.payload as
+        | { text?: string; affect?: { emotion?: string; locale?: string; target?: string } }
+        | undefined
+
       const text = payload?.text ?? ''
       const emotion = payload?.affect?.emotion
+      const locale = payload?.affect?.locale
+      const target = payload?.affect?.target
+
       // Suppress render-side cues for quiet users and when the screen is locked.
       const quiet = $effectiveTier.get() === 'quiet'
       const screenLocked = $screenLocked.get()
@@ -70,6 +136,8 @@ export function handleCompanionEvent(event: RpcEvent): void {
       } else {
         setSpriteState('idle', { force: true })
       }
+
+      applySpatialCue(locale, target)
 
       // Speak chat replies in "always voice" mode (plan §4.1); skip during an
       // active voice call or a locked screen. Defer a frame so EMOTIONAL is
@@ -99,13 +167,17 @@ export function handleCompanionEvent(event: RpcEvent): void {
     }
 
     case 'companion.affect': {
-      // Affect-only cue — quiet-tier pass-through or idle-triggered reasoning:
-      // switch to EMOTIONAL without a bubble or TTS.
-      const emotion = (event.payload as { emotion?: string } | undefined)?.emotion
+      // Affect & spatial embodied cue from LLM or backend:
+      const payload = event.payload as { emotion?: string; locale?: string; target?: string } | undefined
+      const emotion = payload?.emotion
+      const locale = payload?.locale
+      const target = payload?.target
 
       if (emotion && emotion !== 'neutral' && !$screenLocked.get()) {
         setSpriteState('emotional', { emotion: emotion as SpriteEmotion })
       }
+
+      applySpatialCue(locale, target)
 
       break
     }
