@@ -290,7 +290,7 @@ function Patch-TauriConfig {
     $desktopDir = Join-Path $RepoRoot "installer\payload\client"
     $desktopFile = Get-ChildItem -Path $desktopDir -File | Select-Object -First 1
     if (-not $desktopFile) { throw "no desktop artifact in $desktopDir" }
-    $desktopRel = "..\payload\desktop\$($desktopFile.Name)"
+    $desktopRel = "..\payload\client\$($desktopFile.Name)"
 
     Write-Output "==> Patching ${conf}: bundle.resources → $desktopRel"
     $json = Get-Content $conf -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -361,13 +361,13 @@ try {
     # 3. Locate desktop artifact.
     $desktopArtifact = Get-ChildItem -Path (Join-Path $RepoRoot "client\release") -Filter $DesktopArtifactGlob -File -ErrorAction SilentlyContinue | Select-Object -First 1
     if (-not $desktopArtifact) {
-        throw "no desktop artifact matching '$DesktopArtifactGlob' in desktop\release\"
+        throw "no desktop artifact matching '$DesktopArtifactGlob' in client\release\"
     }
     Write-Output "==> Desktop artifact: $($desktopArtifact.FullName)"
 
     # 4. Stage payload.
     Stage-Payload
-    Copy-Item -Force $desktopArtifact.FullName (Join-Path $RepoRoot "installer\payload\desktop\$($desktopArtifact.Name)")
+    Copy-Item -Force $desktopArtifact.FullName (Join-Path $RepoRoot "installer\payload\client\$($desktopArtifact.Name)")
 
     # 5. Staging metadata.
     Write-StagingMetadata -fmt $DesktopFormat
@@ -377,7 +377,7 @@ try {
         Write-Output "==> Code-signing $($desktopArtifact.Name)"
         & $SignTool sign /tr http://timestamp.digicert.com /td sha256 /fd sha256 /a /sha1 $CertThumbprint $desktopArtifact.FullName
         if ($LASTEXITCODE -ne 0) { throw "signtool sign failed" }
-        Copy-Item -Force $desktopArtifact.FullName (Join-Path $RepoRoot "installer\payload\desktop\$($desktopArtifact.Name)")
+        Copy-Item -Force $desktopArtifact.FullName (Join-Path $RepoRoot "installer\payload\client\$($desktopArtifact.Name)")
     }
 
     # 7. Patch tauri.conf.json, then Tauri build, then restore.

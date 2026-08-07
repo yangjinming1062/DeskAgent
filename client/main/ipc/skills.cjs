@@ -78,7 +78,7 @@ function registerSkillsIpc({ ipcMain, deps, deskagentHome }) {
   // `runnerBridge.getTools()`; `[]` when Runner isn't ready). The disabled
   // toolset ids are mtime-cached from `toolsets.disabled` in config.yaml.
   // The renderer cross-references each rosterset's id with the static
-  // `desktop/src/lib/toolset-catalog.ts` for label/icon/description.
+  // `client/renderer/shared/lib/toolset-catalog.ts` for label/icon/description.
   ipcMain.handle('deskagent:toolsets:list', () => {
     let schemas = []
     try {

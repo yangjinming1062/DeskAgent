@@ -170,7 +170,7 @@ pub fn runner_venv_python() -> Option<PathBuf> {
 // `bootstrap_session.rs`) so they're discoverable next to the other
 // cross-language strings (`likely_bootstrap_marker` above, the
 // `.deskagent-bootstrap-complete` file name), and so the Rust side is
-// the single canonical source — `desktop/main/backend/bootstrap-session.cjs`
+// the single canonical source — `client/main/backend/bootstrap-session.cjs`
 // mirrors them with a `// MUST match paths.rs` comment and a sync test
 // (`bootstrap-session.test.cjs::bootstrap_constants_match_rust_paths`)
 // that fails fast on drift.

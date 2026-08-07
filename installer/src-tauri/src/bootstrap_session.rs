@@ -5,7 +5,7 @@
 //! directly. The renderer collects the credentials, calls these Tauri
 //! commands, and on success the new JWT is written to a user-only file
 //! under canonical `$DESKAGENT_HOME` — see [`bootstrap_session_path`].
-//! Desktop consumes that file at startup (desktop/main/entry.cjs),
+//! Desktop consumes that file at startup (client/main/entry.cjs),
 //! validates the JWT against the backend's `/api/user/refresh`, and
 //! hands the token to the normal BackendSession persistence path
 //! (encrypted via Electron `safeStorage`). The bootstrap file is then
@@ -16,7 +16,7 @@
 //!
 //! Cross-language constants (filename, schema version, consumed suffix)
 //! live in [`crate::paths`] as the canonical Rust source. The desktop
-//! side mirrors them in `desktop/main/backend/bootstrap-session.cjs`
+//! side mirrors them in `client/main/backend/bootstrap-session.cjs`
 //! and a sync test (`bootstrap-session.test.cjs`) catches drift.
 
 use std::path::{Path, PathBuf};

@@ -1,6 +1,6 @@
 # DeskAgent Runner 默认配置文件
 # 此文件在安装时释放到 ~/.deskagent/config.yaml
-# 所有配置项都可通过 Desktop 设置页面修改
+# 所有配置项都可通过 Client 设置页面修改
 
 # =============================================================================
 # 终端配置
@@ -110,7 +110,7 @@ auxiliary:
     download_timeout: 30
 
   # 本地音频（语音合成 / 语音转写）配置。
-  # 本地 TTS 引擎（Piper / pyttsx3）在 Desktop 端是默认主路径：免费、零成本。
+  # 本地 TTS 引擎（Piper / pyttsx3）在 Client 端是默认主路径：免费、零成本。
   # 但 Piper voice 必须先下载到 $DESKAGENT_HOME/models/piper/ 才能用。
   # onboarding 期间 silhouette 的问句全是中文，runner 始终用 bundled
   # zh_CN Piper voice（无论 CJK 还是英文文本——产品方向"默认中文"，

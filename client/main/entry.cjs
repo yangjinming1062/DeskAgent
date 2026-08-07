@@ -176,7 +176,7 @@ const WINDOW_BUTTON_POSITION = {
 // non-macOS platforms.
 const NATIVE_OVERLAY_BUTTON_WIDTH = 144
 // Canonical app icon paths, in resolution priority order (first hit wins):
-//   1. dev: assets/icon.png — the canonical mark, present at <repo>/desktop/assets/.
+//   1. dev: assets/icon.png — the canonical mark, present at <repo>/client/assets/.
 //   2. packaged: extraResources copies assets/icon.ico → <resources>/icon.ico, so
 //      `process.resourcesPath/icon.ico` resolves on every install target.
 //   3. unpacked-asar fallback: when the asar is split, look inside the unpacked tree.
@@ -1539,7 +1539,7 @@ function createToolWindow() {
 // are click-through (setIgnoreMouseEvents + forward). Remote displays (X11 /
 // VNC / RDP) can't composite transparency, so the sprite degrades to a
 // non-transparent window there (no compositor degradation is a known
-// limitation, see desktop/README.md).
+// limitation, see client/README.md).
 const SPRITE_TRANSPARENT = !REMOTE_DISPLAY_REASON
 
 function applySpriteBounds() {

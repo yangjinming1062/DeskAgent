@@ -1,6 +1,6 @@
 # Companion 状态机与表情契约
 
-> Desktop 伙伴层的运行时契约。`ARCHITECTURE.md` 锁定跨模块设计意图，本文件记录 Desktop 侧独有的状态机优先级、表情覆盖、过渡语义与不能从代码结构直接读出的边界。
+> Client 伙伴层的运行时契约。`ARCHITECTURE.md` 锁定跨模块设计意图，本文件记录 Client 侧独有的状态机优先级、表情覆盖、过渡语义与不能从代码结构直接读出的边界。
 
 ## 1. 动画状态机（9 态）
 
@@ -34,31 +34,31 @@
 
 ## 2. 表情枚举
 
-| 枚举值 | CLIP_SCENES batch | SpriteEmotion | 备注 |
+| 枚举值 | MorphController | 备注 |
 |---|---|---|---|
-| `happy` | 3 | ✓ | |
-| `sad` | 3 | ✓ | |
-| `surprised` | 3 | ✓ | |
-| `excited` | 3 | ✓ | |
-| `confused` | 3 | ✓ | |
-| `concerned` | 3 | ✓ | |
-| `shy` | 3 | ✓ | |
-| `proud` | 3 | ✓ | |
-| `grateful` | 3 | ✓ | |
-| `playful` | 3 | ✓ | |
-| `bored` | 3 | ✓ | |
-| `lonely` | 3 | ✓ | |
-| `sleepy` | 3 | ✓ | |
-| `curious` | 3 | ✓ | |
-| `embarrassed` | 3 | ✓ | |
-| `apologetic` | 3 | ✓ | |
-| `neutral` | (无 scene) | (无 SpriteEmotion) | **过滤掉**，不触发 EMOTIONAL |
+| `happy` | ✓ | |
+| `sad` | ✓ | |
+| `surprised` | ✓ | |
+| `excited` | ✓ | |
+| `confused` | ✓ | |
+| `concerned` | ✓ | |
+| `shy` | ✓ | |
+| `proud` | ✓ | |
+| `grateful` | ✓ | |
+| `playful` | ✓ | |
+| `bored` | ✓ | |
+| `lonely` | ✓ | |
+| `sleepy` | ✓ | |
+| `curious` | ✓ | |
+| `embarrassed` | ✓ | |
+| `apologetic` | ✓ | |
+| `neutral` | (无) | **过滤掉**，不触发 EMOTIONAL |
 
 LLM 任何 `joyful` / `happy_excited` 等未注册 token 走 `affect.py::_try_resolve` 的 neutral 回退，tag 剥离后归 `idle`。
 
 ## 3. 三档打扰（双层模型）
 
-`disturbance_tier` 由 `setDisturbanceTier` 写入并经 `companion.set_disturbance_tier` 上报后端。**后端永远 emit 事件，由 Desktop 决定如何呈现**：
+`disturbance_tier` 由 `setDisturbanceTier` 写入并经 `companion.set_disturbance_tier` 上报后端。**后端永远 emit 事件，由 Client 决定如何呈现**：
 
 | 档位 | `companion.message` 行为 | `affect` 行为 | `speak()` TTS |
 |---|---|---|---|
@@ -68,21 +68,13 @@ LLM 任何 `joyful` / `happy_excited` 等未注册 token 走 `affect.py::_try_re
 
 `is_screen_locked` 等同 `quiet`（plan §5.5 / §5.2 锁屏静默）。
 
-**双层档位模型**（`companion-store.ts`）：`$userPreferredTier` 是用户手动选择的源真值；活动感知器写入 `$effectiveTierOverride`；其余模块读 `$effectiveTier = override ?? preferred` 做静默判定。设置面板 / chat-dock 仍显示 user_preferred。**手动 quiet 永远不被覆盖**（manual lock-in）通过 atom 内部的 `preferred === 'quiet' ? 'quiet' : ...` 短路保证。失败回滚：若后端拒绝新档位，Desktop 回滚 `$userPreferredTier` 到旧值并写 dev log。
+**双层档位模型**（`companion-store.ts`）：`$userPreferredTier` 是用户手动选择的源真值；活动感知器写入 `$effectiveTierOverride`；其余模块读 `$effectiveTier = override ?? preferred` 做静默判定。设置面板 / chat-dock 仍显示 user_preferred。**手动 quiet 永远不被覆盖**（manual lock-in）通过 atom 内部的 `preferred === 'quiet' ? 'quiet' : ...` 短路保证。失败回滚：若后端拒绝新档位，Client 回滚 `$userPreferredTier` 到旧值并写 dev log。
 
 **活动感知降级**：30s 轮询 `system.get_focused_app` + `system.is_fullscreen`（[activity.ts](activity.ts)）。当分类进入 `ide`/`gaming`/`reader` 或 `is_fullscreen` 为真时，覆盖 effective 为 quiet；focus 清除后 5s 节流推回 user_preferred。
 
-## 4. 精灵资源降级
+## 4. 3D 渲染资源降级
 
-每 scene 计算 `active_tier = max(就绪档)`（3 > 2 > 1，不落库）。Tier 1 永远兜底——即使 zero 视频仍可启动（ARCH §10#9）。
-
-| Tier | 形态 | 渲染 |
-|---|---|---|
-| 1 | 程序化 CSS 变换（呼吸 / 说话浮动 / 思考倾斜 / 睡眠漂移） | 由 `companion-ready.tsx::proceduralKey()` 选择 |
-| 2 | 单张多帧 sprite PNG | `KeyframeSprite` 步进 |
-| 3 | 图生视频（i2v） | `<video autoplay loop muted playsinline>` |
-
-clip 通过 `clip.updated` 事件单通道下发。`video_gen.*` 事件由 companion 抑制（`enqueue_video_job(emit_event=False)`）。Tier 1 不可用时回退 idle loop + 状态徽章，用户永不见空白。
+GLB 加载成功后骨骼动画覆盖全部状态；加载失败时渲染程序化兜底角色（Three.js 基本体组合 + 正弦驱动呼吸/眨眼/说话浮动）。MorphController 经语义别名映射到 GLB 内置的 ARKit morph targets——缺失的情绪 morph 静默回退为 idle 面部。模型经 \model.ready\ 事件下发，换装经 \wardrobe.updated\ 下发。
 
 ## 5. 屏锁与端忙
 
@@ -92,7 +84,7 @@ clip 通过 `clip.updated` 事件单通道下发。`video_gen.*` 事件由 compa
 
 ## 6. 自主行为（IDLE 时）
 
-- **微动作**：10–25s 随机间隔切 `idle` / `idle_look_around` / `idle_blink` / `idle_stretch` scene。已加入 CLIP_SCENES batch 2，可升档到 Tier 2 / 3。
+- **微动作**：10–25s 随机间隔切 `idle` / `idle_look_around` / `idle_blink` / `idle_stretch` scene。由 3D 引擎骨骼动画直接驱动，不需生成资产。
 - **情境动作**：基于 `$focusContext`（[activity.ts](activity.ts) 维护）。focused-app 分类（ide/music/reader/gaming/browsing/other/unknown）按平台白名单映射（Windows 进程名、macOS bundle id）。IDLE 微动作池按分类切换：
 
   | 分类 | 微动作池（未就绪 fallback 到 `idle`） |
@@ -103,11 +95,11 @@ clip 通过 `clip.updated` 事件单通道下发。`video_gen.*` 事件由 compa
   | gaming | `idle_engaged` → `idle_stretch` → `idle` |
   | 其他 | 沿用既有 `idle_look_around` / `idle_blink` / `idle_stretch` |
 
-  全部走 batch 2 `CLIP_SCENES` 新增的 6 个场景；Tier 2/3 未就绪时安全 fallback 到 `idle`，符合 §1.3 "永不空白" 不变量。
+  全部走 batch 2 `` 新增的 6 个场景；Tier 2/3 未就绪时安全 fallback 到 `idle`，符合 §1.3 "永不空白" 不变量。
 
 ## 7. 用户直接交互
 
-- **戳**（`onTap`）：[interaction.ts](interaction.ts) 零延迟本地池（`POKE_LIGHT`/`MEDIUM`/`HEAVY`，按 tone 选）+ **可选 LLM 增强**（`companion.interact` 同步 request-response）。LLM 响应不打断本地 TTS，仅作文本气泡叠加并缓存入 tone-keyed 队列（下次同 tone 单次戳优先用缓存）。后端 throttle 1.5s，Desktop debounce 2s，per-user inflight 取消。
+- **戳**（`onTap`）：[interaction.ts](interaction.ts) 零延迟本地池（`POKE_LIGHT`/`MEDIUM`/`HEAVY`，按 tone 选）+ **可选 LLM 增强**（`companion.interact` 同步 request-response）。LLM 响应不打断本地 TTS，仅作文本气泡叠加并缓存入 tone-keyed 队列（下次同 tone 单次戳优先用缓存）。后端 throttle 1.5s，Client debounce 2s，per-user inflight 取消。
 - **拖**（`onDragEnd`）：`interacting` 瞬态 + 拖放反应文案 + fire-and-forget `companion.record_interaction_stats {kind: 'drag'}`。
 - **悬停**：10s 节流，`interacting` 1.5s。
 - **右键**：托盘菜单入口（声音切换、伙伴设置、登出）。
@@ -121,7 +113,7 @@ clip 通过 `clip.updated` 事件单通道下发。`video_gen.*` 事件由 compa
 1. Cron CAS 赢得本 tick，直接启动自主回合 task（无 WSEvent 中转）
 2. 任务用用户最后 session + JsonRpcEmitter + 用户 dispatcher
 3. LLM 可调 `send_message_tool(affect=...)` 产出 `companion.message`
-4. Desktop 按 §3 三档规则消费
+4. Client 按 §3 三档规则消费
 
 用户离线（无 dispatcher）→ 任务静默跳过；`next_run_at` 已被 CAS 推进，下一个调度周期重新到期后再尝试。
 
@@ -141,7 +133,7 @@ clip 通过 `clip.updated` 事件单通道下发。`video_gen.*` 事件由 compa
 
 ## 10. 空间行为（位置 × 移动 × 缩放）
 
-设计意图见 [COMPANION_DESIGN.md §3](../../../COMPANION_DESIGN.md)。本节记录 Desktop 侧的实现契约。
+设计意图见 [DESIGN.md §3](../../../DESIGN.md)。本节记录 Client 侧的实现契约。
 
 **单一权威源**：[spatial.ts](spatial.ts) 拥有所有空间状态——`$spatialPos`、`$spatialScale`、`$spatialLocale`、`$spatialLocomotion`。sprite-stage.tsx 是纯消费者（`useStore` + 事件转发到 spatial 函数），不再持有本地位置 state。
 
@@ -157,6 +149,6 @@ clip 通过 `clip.updated` 事件单通道下发。`video_gen.*` 事件由 compa
 
 **缩放**：`$defaultScale`（用户设置，localStorage）是基准。EMOTIONAL 状态的 excited/surprised/playful 触发 1.3–1.6× 临时放大，quiet 档不放大。缩放也是 rAF 动画（~300ms），通过容器 `transform: scale()` 实现——与 sprite 内部的程序化动画（呼吸/浮动）在不同 DOM 层，不冲突。
 
-**Backend 零感知**：所有空间决策在 Desktop 本地完成，无 WS 事件或 RPC 新增。Runner 提供感知能力（`system.get_windows` 窗口枚举、`system.get_focused_app` 焦点窗口几何）但 Runner 也不知道空间行为存在。
+**Backend 零感知**：所有空间决策在 Client 本地完成，无 WS 事件或 RPC 新增。Runner 提供感知能力（`system.get_windows` 窗口枚举、`system.get_focused_app` 焦点窗口几何）但 Runner 也不知道空间行为存在。
 
 **Ritual walk**（[ritual-walk.ts](ritual-walk.ts)）：`system.open_application` 工具调用经 events.ts 拦截——执行工具后等 1.5s 窗口出现 → `system.get_windows` 按名称匹配窗口 → fly 到目标 → INTERACTING 1.5s → 返回原 locale。任一步骤失败则静默跳过（仪式是增强层）。chat 开启或屏锁时直接执行不走路。

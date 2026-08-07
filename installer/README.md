@@ -1,6 +1,6 @@
 # installer/
 
-DeskAgent 安装器产品。本目录容纳 **Tauri 2 桌面程序**（`src/` + `src-tauri/`，产 `DeskAgent-Setup.exe` / `DeskAgent-Setup.app` / `deskagent-setup`）、它要释放的安装 payload（`skills/`、`config.yaml`、`voices/`）、以及 Tauri 进程 spawn 出来的 **install 协议后端**（`install.sh` / `install.ps1` / `install.cmd`）。首装完成释放 Desktop 后，Desktop 以"蛋"形态首次启动，进入 [COMPANION_DESIGN.md §3](../COMPANION_DESIGN.md) 的伙伴生命周期 onboarding。
+DeskAgent 安装器产品。本目录容纳 **Tauri 2 桌面程序**（`src/` + `src-tauri/`，产 `DeskAgent-Setup.exe` / `DeskAgent-Setup.app` / `deskagent-setup`）、它要释放的安装 payload（`skills/`、`config.yaml`、`voices/`）、以及 Tauri 进程 spawn 出来的 **install 协议后端**（`install.sh` / `install.ps1` / `install.cmd`）。首装完成释放 Client 后，Client 以"蛋"形态首次启动，进入 [DESIGN.md §3](../DESIGN.md) 的伙伴生命周期 onboarding。
 
 ## 1. 顶层模块解耦
 
@@ -12,7 +12,7 @@ manifest 字段、`install.{ps1,sh}` 的 stage 名、JSON-RPC frame 等**协议�
 
 **Installer binary is self-contained** —— install 脚本由 `scripts/build_client.{sh,ps1}` 在 `stage_payload()` 时硬链接 / 符号链接到 `installer/payload/`，Tauri 自动嵌入。`DeskAgent-Setup` 二进制运行时**零网络依赖**：不下载 install 脚本，不下载 payload（payload 都在 `bundle.resources` 里），不查更新（更新流走 backend `updates/` HTTP endpoint）。
 
-**Desktop 启动后不做 install / uninstall** —— Desktop 启动时只连云端 Backend，不调 `install.ps1` / `DeskAgent-Setup --uninstall`。本模块（Tauri DeskAgent-Setup）拥有所有平台变更职责，desktop 是只读消费方。Electron 二进制自更新由 desktop 自己负责（`electron-updater` 从 Backend `/api/update` 拉取），详见 [client/README.md](../client/README.md)。
+**Client 启动后不做 install / uninstall** —— Client 启动时只连云端 Backend，不调 `install.ps1` / `DeskAgent-Setup --uninstall`。本模块（Tauri DeskAgent-Setup）拥有所有平台变更职责，desktop 是只读消费方。Electron 二进制自更新由 desktop 自己负责（`electron-updater` 从 Backend `/api/update` 拉取），详见 [client/README.md](../client/README.md)。
 
 ## 2. 同目录三类内容
 
@@ -22,7 +22,7 @@ manifest 字段、`install.{ps1,sh}` 的 stage 名、JSON-RPC frame 等**协议�
 
 **源位置 vs 嵌入位置**：`installer/skills/`（源，仓库随附）由 `scripts/build_client.{sh,ps1}` 的 `stage_payload()` 在 build 期建立 symlink 到 `installer/payload/skills/`，再由 Tauri `bundle.resources` 嵌入到 `DeskAgent-Setup` 二进制。install 脚本运行时读的是 `<bundle>/payload/skills/`（= §3 的 `DESKAGENT_BUNDLED_SKILLS_DIR`），不是源位置。
 
-**Skills frontmatter**：`SKILL.md` 用 frontmatter 声明 `platforms: [macos | windows]`（缺省表示全平台；历史 `linux` 值仍被翻译表兼容，详见两边的过滤代码）。安装器对 frontmatter 完全透明——不解析，按文件整体 seed 到 `$DESKAGENT_HOME/skills/`；filter / 翻译由 Desktop `electron/lib/skill-index.cjs` 和 Runner `tools/skills/skills_tool.py::skill_matches_platform` 各自做（两套翻译表语义对齐，新增平台时需同步更新两边）。
+**Skills frontmatter**：`SKILL.md` 用 frontmatter 声明 `platforms: [macos | windows]`（缺省表示全平台；历史 `linux` 值仍被翻译表兼容，详见两边的过滤代码）。安装器对 frontmatter 完全透明——不解析，按文件整体 seed 到 `$DESKAGENT_HOME/skills/`；filter / 翻译由 Client `electron/lib/skill-index.cjs` 和 Runner `tools/skills/skills_tool.py::skill_matches_platform` 各自做（两套翻译表语义对齐，新增平台时需同步更新两边）。
 
 ## 3. Tauri `bundle.resources` 嵌入 payload
 
@@ -65,7 +65,7 @@ Tauri 进程把 bundle.resources 解压根通过 env var 传给 `install.{sh,ps1
 - 路径：`$DESKAGENT_HOME/agent-session-bootstrap.json`（`installer/src-tauri/src/paths.rs::deskagent_home()`）
 - schema（`schema_version: 1`）：`{ base_url, token (raw jwt), token_expires_at, user, saved_at }`（serde 默认 snake_case 序列化，desktop 端按此字段名读取）
 - POSIX 0600；Windows 由父目录 ACL 控制访问
-- Desktop 启动时消费该文件：校验 schema + 调用 backend `POST /api/user/refresh` 验证 token；成功则原子重命名为 `.consumed` 并交给 `BackendSession::adoptSession` 走 `safeStorage` 落盘到 `agent-session.json`；任何失败（缺字段、解析错、refresh 401/网络失败）都静默删除文件并回落到未登录态。环境变量 `DESKAGENT_DESKTOP_BOOTSTRAP_SESSION` 覆盖消费路径。
+- Client 启动时消费该文件：校验 schema + 调用 backend `POST /api/user/refresh` 验证 token；成功则原子重命名为 `.consumed` 并交给 `BackendSession::adoptSession` 走 `safeStorage` 落盘到 `agent-session.json`；任何失败（缺字段、解析错、refresh 401/网络失败）都静默删除文件并回落到未登录态。环境变量 `DESKAGENT_DESKTOP_BOOTSTRAP_SESSION` 覆盖消费路径。
 
 ## 6. 平台标准安装位置
 
@@ -117,11 +117,11 @@ $DESKAGENT_HOME/runner/
 
 `unpack-runner` stage 流程：找 wheel → 复制 `server.py` → `uv venv` 创建 venv → `uv pip install <wheel>` → 冒烟 `import tools, utils` → 清理旧 `deskagent-runner{,.exe}`。
 
-Desktop spawn 命令：`$DESKAGENT_HOME/runner/.venv/{bin/python,Scripts/python.exe} $DESKAGENT_HOME/runner/server.py --desktop-ws <ws-url>`。运行时路径 knob 仍是 `DESKAGENT_HOME`。
+Client spawn 命令：`$DESKAGENT_HOME/runner/.venv/{bin/python,Scripts/python.exe} $DESKAGENT_HOME/runner/server.py --desktop-ws <ws-url>`。运行时路径 knob 仍是 `DESKAGENT_HOME`。
 
 ## 已知限制
 
-- **蛋形象不随 installer 分发**：角色定义完成前的"蛋"占位形象由 Desktop 内置默认渲染（`BrandMark` 组件），不经 installer seed payload。这避免了 payload 与形象资产版本耦合——installer 只负责代码与运行时分发，形象资产完全由 Backend 生成并下发（[ARCHITECTURE.md §6](../ARCHITECTURE.md)）。
+- **蛋形象不随 installer 分发**：角色定义完成前的"蛋"占位形象由 Client 内置默认渲染（`BrandMark` 组件），不经 installer seed payload。这避免了 payload 与形象资产版本耦合——installer 只负责代码与运行时分发，形象资产完全由 Backend 生成并下发（[ARCHITECTURE.md §6](../ARCHITECTURE.md)）。
 
 ## 11. 本地 TTS voice 打包
 

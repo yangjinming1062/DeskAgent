@@ -1,6 +1,6 @@
 //! Event types streamed from Rust → React.
 //!
-//! These mirror `desktop/main/lifecycle/platform.cjs`'s event shape
+//! These mirror `client/main/lifecycle/platform.cjs`'s event shape
 //! 1:1 so the React installer code can be roughly identical to the Electron
 //! install-overlay we'll replace.
 //!

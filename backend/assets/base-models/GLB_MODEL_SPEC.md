@@ -4,7 +4,7 @@
 
 ## 设计原则
 
-- **完整覆盖交互状态机**：每个状态（[COMPANION_DESIGN.md §2](../../../COMPANION_DESIGN.md)）至少有一个对应动画 clip；每个情绪（§2.1 / `ALLOWED_EMOTIONS`）至少能被 morph target 组合表达。
+- **完整覆盖交互状态机**：每个状态（[DESIGN.md §2](../../../../DESIGN.md)）至少有一个对应动画 clip；每个情绪（§2.1 / `ALLOWED_EMOTIONS`）至少能被 morph target 组合表达。
 - **ARKit BlendShape 标准**：面部 morph target 采用 ARKit 52 BlendShape 命名（跨行业通用、Three.js / Blender / Unity 无缝识别），不使用 VRM 或 Daz 专有命名。
 - **Mixamo Humanoid 骨骼**：25 关节标准 humanoid rig（Hips → Head + 四肢），Mixamo / Unreal / Unity 原生兼容，保证第三方动捕资产可直接 retarget。
 - **最小必选 + 可选扩展**：每个模型必须包含核心动画集（MUST），可选包含微动作/情境变体/交互反应（SHOULD）。引擎按可用性回退，缺失的动画静默降级到 idle。
@@ -57,7 +57,7 @@ Hips
 
 ### 3.1 核心状态动画（MUST — 9 个）
 
-覆盖 [COMPANION_DESIGN.md §2.1](../../../COMPANION_DESIGN.md) 全部状态。引擎经 `AnimationMap` 按状态名查找：
+覆盖 [DESIGN.md §2.1](../../../../DESIGN.md) 全部状态。引擎经 `AnimationMap` 按状态名查找：
 
 | clip 名 | 类型 | 时长 | 状态 | 动作描述 |
 |---------|------|------|------|----------|
@@ -73,7 +73,7 @@ Hips
 
 ### 3.2 微动作变体（SHOULD — 4 个）
 
-[COMPANION_DESIGN.md §5.4](../../../COMPANION_DESIGN.md) 定义 IDLE 时 10–25s 间隔随机插入的微动作。引擎按名称回退到 `idle`：
+[DESIGN.md §5.4](../../../../DESIGN.md) 定义 IDLE 时 10–25s 间隔随机插入的微动作。引擎按名称回退到 `idle`：
 
 | clip 名 | 类型 | 时长 | 动作描述 |
 |---------|------|------|----------|
@@ -84,7 +84,7 @@ Hips
 
 ### 3.3 情境化 idle 变体（SHOULD — 6 个）
 
-[COMPANION_DESIGN.md §5.4](../../../COMPANION_DESIGN.md) 定义检测到 focused app 分类后切换的情境 idle。引擎按名称回退到 `idle`：
+[DESIGN.md §5.4](../../../../DESIGN.md) 定义检测到 focused app 分类后切换的情境 idle。引擎按名称回退到 `idle`：
 
 | clip 名 | 适用焦点分类 | 动作描述 |
 |---------|-------------|----------|
@@ -97,7 +97,7 @@ Hips
 
 ### 3.4 移动动画（MUST walk / SHOULD 其他 — 5 个）
 
-[COMPANION_DESIGN.md §3.3](../../../COMPANION_DESIGN.md) 的空间移动：
+[DESIGN.md §3.3](../../../../DESIGN.md) 的空间移动：
 
 | clip 名 | 类型 | 时长 | 动作描述 |
 |---------|------|------|----------|
@@ -109,7 +109,7 @@ Hips
 
 ### 3.5 交互反应动画（SHOULD — 4 个）
 
-[COMPANION_DESIGN.md §5.3](../../../COMPANION_DESIGN.md) 定义的用户直接交互反应。引擎按名称回退到 `interacting`：
+[DESIGN.md §5.3](../../../../DESIGN.md) 定义的用户直接交互反应。引擎按名称回退到 `interacting`：
 
 | clip 名 | 类型 | 时长 | 触发场景 | 动作描述 |
 |---------|------|------|----------|----------|
@@ -120,7 +120,7 @@ Hips
 
 ### 3.6 仪式性过场动画（SHOULD — 3 个）
 
-[COMPANION_DESIGN.md §1.1 / §4.6](../../../COMPANION_DESIGN.md) 的仪式感时刻：
+[DESIGN.md §1.1 / §4.6](../../../../DESIGN.md) 的仪式感时刻：
 
 | clip 名 | 类型 | 时长 | 场景 | 动作描述 |
 |---------|------|------|------|----------|

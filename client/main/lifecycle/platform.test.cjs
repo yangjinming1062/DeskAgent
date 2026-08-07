@@ -49,7 +49,7 @@ test('packaged electron entrypoints do not require unpackaged npm modules', () =
   //   has a try/catch fallback at line ~38 that resolves the staged copy when the
   //   bare require fails in the packaged asar, so the bare require itself is by
   //   design rather than an oversight.
-  // - electron-updater, electron-log: declared in desktop/package.json
+  // - electron-updater, electron-log: declared in client/package.json
   //   `dependencies`, so electron-builder packs them into app.asar. The
   //   /main subpath on electron-log is a normal export declared in its
   //   package.json (./main.js). Both are first-party runtime deps of the
