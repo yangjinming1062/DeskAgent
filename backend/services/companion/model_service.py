@@ -62,11 +62,9 @@ SPECIES_MODEL_MAP: dict[str, str] = {
 }
 
 
-async def _load_base_model(db: Session, user_id: int) -> tuple[bytes, str]:
+async def _load_base_model(db: Session, user_id: int, species_override: str | None = None) -> tuple[bytes, str]:
     """Disk read deferred to a thread — a multi-MB GLB would stall the event loop."""
-    persona = get_or_create_persona(db, user_id)
-    definition = safe_json_loads(persona.definition_json or "{}", default={})
-    species = definition.get("biological_type", "人类")
+    species = species_override or _persona_species(db, user_id)
 
     model_file = SPECIES_MODEL_MAP.get(species, SPECIES_MODEL_MAP["人类"])
     local = Path(SETTINGS.companion_base_model_dir) / model_file
@@ -79,6 +77,12 @@ async def _load_base_model(db: Session, user_id: int) -> tuple[bytes, str]:
         raise ModelGenerationError(f"未找到 {species} 的基底模型（{local}）。请将 rigged GLB 放到该路径，或放入 {fallback} 作为通用兜底。")
 
     return await asyncio.to_thread(local.read_bytes), species
+
+
+def _persona_species(db: Session, user_id: int) -> str:
+    persona = get_or_create_persona(db, user_id)
+    definition = safe_json_loads(persona.definition_json or "{}", default={})
+    return definition.get("biological_type", "人类")
 
 
 def _extract_morph_names_from_glb(glb_data: bytes) -> list[str]:
@@ -112,8 +116,8 @@ def _extract_morph_names_from_glb(glb_data: bytes) -> list[str]:
     return sorted(names)
 
 
-async def generate_companion_model(db: Session, *, user_id: int) -> CompanionModel:
-    glb_data, species = await _load_base_model(db, user_id)
+async def generate_companion_model(db: Session, *, user_id: int, species_override: str | None = None) -> CompanionModel:
+    glb_data, species = await _load_base_model(db, user_id, species_override)
     morph_names = _extract_morph_names_from_glb(glb_data)
 
     db.query(CompanionModel).filter(CompanionModel.user_id == user_id, CompanionModel.active.is_(True)).update({"active": False})

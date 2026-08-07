@@ -244,7 +244,7 @@ async function generatePortrait(reference: PickedImage | null): Promise<string |
     const res = await window.deskagent.api<{ asset_url?: string }>({
       path: reference ? '/api/companion/avatar/from-image' : '/api/companion/avatar',
       method: 'POST',
-      body: reference ? { content_type: reference.contentType, image: reference.base64 } : { style: 'portrait' }
+      body: reference ? { content_type: reference.contentType, image: reference.base64 } : {}
     })
 
     return res.asset_url ?? null
@@ -260,7 +260,11 @@ async function generatePortrait(reference: PickedImage | null): Promise<string |
 
 async function savePersona(payload: ReturnType<typeof assemblePersona>): Promise<boolean> {
   try {
-    await window.deskagent.api({ path: '/api/companion/persona', method: 'PUT', body: payload })
+    await window.deskagent.api({
+      path: '/api/companion/persona',
+      method: 'PUT',
+      body: { definition_json: JSON.stringify(payload) }
+    })
 
     return true
   } catch (error) {

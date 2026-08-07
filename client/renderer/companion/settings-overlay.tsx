@@ -280,7 +280,7 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps): React.Reac
 
     try {
       await window.deskagent.api<WardrobeItem>({
-        path: '/api/companion/wardrobe/generate',
+        path: '/api/companion/wardrobe',
         method: 'POST',
         body: { name: '新造型', description: 'AI 生成的自定义纹理' }
       })

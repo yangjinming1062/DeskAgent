@@ -327,9 +327,11 @@ async def _seed_batch0(db: Session, user_id: int, asset: AvatarAsset) -> None:
     logger.error("batch-0 clip enqueue exhausted retries", extra={"user_id": user_id, "error": str(last) if last else None})
 
 
-async def generate_avatar(db: Session, user_id: int, persona: Persona, style: str = _DEFAULT_STYLE) -> AvatarAsset:
+async def generate_avatar(db: Session, *, user_id: int, prompt_override: str | None = None) -> AvatarAsset:
     """Generate a new avatar asset and flip it active, then seed batch-0 clips.
 
+    ``prompt_override`` replaces the persona-derived prompt verbatim when
+    given (trimmed); otherwise the prompt is assembled from the persona.
     Caller is responsible for ensuring the persona is complete; this
     function raises ``AvatarGenerationError`` (not validation error) when
     the provider fails so the route can map it to a 502 with a friendly
@@ -339,9 +341,11 @@ async def generate_avatar(db: Session, user_id: int, persona: Persona, style: st
     succeeds — if generation fails (provider outage, rate limit, network)
     the existing clips survive (ARCH §7.3).
     """
+    persona = get_or_create_persona(db, user_id)
     if not persona.is_complete:
         raise AvatarGenerationError("persona is incomplete; finish onboarding first")
-    asset = await _generate_and_persist(db, user_id, prompt=_build_prompt(persona, style), style=style)
+    prompt = (prompt_override or "").strip() or _build_prompt(persona, _DEFAULT_STYLE)
+    asset = await _generate_and_persist(db, user_id, prompt=prompt, style=_DEFAULT_STYLE)
     invalidate_user_clips(db, user_id)
     await _seed_batch0(db, user_id, asset)
     return asset

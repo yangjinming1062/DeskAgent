@@ -826,22 +826,28 @@ def test_render_extras_includes_new_character_fields():
     assert "Appearance" in out and "金发" in out
 
 
-def test_persona_update_schema_accepts_new_fields():
+def test_persona_update_schema_accepts_definition_json():
     from modules.companion.schemas import PersonaUpdate
     p = PersonaUpdate(
-        name="梦鳞", personality="温柔", speaking_style="轻柔",
-        biological_type="灵兽", gender="女", appearance="金发绿眼",
-        user_call_name="老板", user_gender="男", user_age_bucket="26-35",
-        user_hobbies="音乐", user_freeform="早起型",
+        definition_json=json.dumps({
+            "name": "梦鳞", "personality": "温柔", "speaking_style": "轻柔",
+            "biological_type": "灵兽", "gender": "女", "appearance": "金发绿眼",
+            "user_call_name": "老板", "user_gender": "男", "user_age_bucket": "26-35",
+            "user_hobbies": "音乐", "user_freeform": "早起型",
+        })
     )
-    assert p.biological_type == "灵兽" and p.user_call_name == "老板"
+    assert json.loads(p.definition_json)["biological_type"] == "灵兽"
 
 
 def test_persona_update_schema_rejects_unknown_keys():
     from modules.companion.schemas import PersonaUpdate
     from pydantic import ValidationError
     with pytest.raises(ValidationError):
-        PersonaUpdate(name="x", personality="y", speaking_style="z", totally_unknown_key="oops")
+        PersonaUpdate(definition_json="{}", totally_unknown_key="oops")
+    # Flat persona fields are no longer accepted at the top level — the
+    # whole definition travels as definition_json.
+    with pytest.raises(ValidationError):
+        PersonaUpdate(name="x", personality="y", speaking_style="z")
 
 
 def test_onboarding_field_order_matches_question_sequence():
@@ -1208,3 +1214,63 @@ def test_avatar_from_image_route_validation(_patch_db, monkeypatch):
     )
     assert resp.status_code == 409
     assert resp.json()["detail"]["error"]
+
+
+def test_companion_rest_contract(_patch_db):
+    """New-contract shapes for persona / avatar / model / wardrobe endpoints.
+
+    Regression guard for the route↔schema mismatch that used to 500 every
+    endpoint: GET /persona returns only {definition_json, is_complete},
+    PUT /persona takes definition_json, absent assets are 404 (not null),
+    and wardrobe items carry the raw material_overrides_json blob.
+    """
+    from components import get_db
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from modules.auth import get_current_session
+    from services.rate_limit import limiter
+
+    from api.v1 import companion as companion_api
+
+    _, SessionLocal = _patch_db
+    app = FastAPI()
+    app.state.limiter = limiter
+
+    def _test_get_db():
+        db = SessionLocal()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    fake_user = type("U", (), {"id": 1})()
+
+    async def _fake_auth():
+        return fake_user, None
+
+    app.dependency_overrides[get_db] = _test_get_db
+    app.dependency_overrides[get_current_session] = _fake_auth
+    app.include_router(companion_api.router)
+    client = TestClient(app)
+
+    resp = client.get("/api/companion/persona")
+    assert resp.status_code == 200
+    assert set(resp.json()) == {"definition_json", "is_complete"}
+
+    assert client.put("/api/companion/persona", json={"definition_json": "not json"}).status_code == 422
+    ok = client.put(
+        "/api/companion/persona",
+        json={"definition_json": json.dumps({"name": "小光", "personality": "温柔", "speaking_style": "轻柔"})},
+    )
+    assert ok.status_code == 200
+    assert ok.json()["is_complete"] is True
+
+    assert client.get("/api/companion/avatar").status_code == 404
+    assert client.get("/api/companion/model").status_code == 404
+    assert client.get("/api/companion/wardrobe/equipped").status_code == 404
+
+    items = client.get("/api/companion/wardrobe")
+    assert items.status_code == 200
+    first = items.json()[0]
+    assert "material_overrides_json" in first and "prompt" in first
+    assert "material_overrides" not in first

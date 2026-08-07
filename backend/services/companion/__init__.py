@@ -36,6 +36,7 @@ from .memory_bootstrap import extract_user_profile
 from .memory_bootstrap import record_user_profile
 from .memory_format import format_auto_inject_block
 from .memory_format import format_memories_block
+from .model_service import _emit_wardrobe_updated as emit_wardrobe_updated
 from .model_service import generate_companion_model
 from .model_service import get_active_model
 from .model_service import ModelGenerationError
@@ -75,6 +76,7 @@ __all__ = [
     "delete_user_assets",
     "delete_wardrobe_item",
     "design_voice",
+    "emit_wardrobe_updated",
     "equip_wardrobe_item",
     "extract_user_profile",
     "format_auto_inject_block",
