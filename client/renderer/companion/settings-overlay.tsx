@@ -2,15 +2,10 @@ import { useStore } from '@nanostores/react'
 import type React from 'react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
+import { $wardrobe, refreshEquippedAndApply, setWardrobe, type WardrobeItem } from '@/companion/3d/model-store'
 import { pickAvatarImage } from '@/companion/avatar-image'
 import { awaitAvatarRegeneration } from '@/companion/avatar-regen-store'
 import { useGatewayRequest } from '@/companion/boot/use-gateway-request'
-import {
-  $wardrobe,
-  refreshEquippedAndApply,
-  setWardrobe,
-  type WardrobeItem
-} from '@/companion/3d/model-store'
 import { $effectiveTier, $userPreferredTier, setDisturbanceTier } from '@/companion/companion-store'
 import { DISTURBANCE_TIERS } from '@/companion/disturbance-tiers'
 import { useInteractiveRegion } from '@/companion/interactive-regions'
@@ -256,6 +251,7 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps): React.Reac
   const generateModel = async () => {
     setModelBusy(true)
     setModelHint(null)
+
     try {
       await window.deskagent.api<{ id?: number; asset_url?: string; status?: string }>({
         path: '/api/companion/model',
@@ -281,6 +277,7 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps): React.Reac
   const generateWardrobe = async () => {
     setWardrobeBusy(true)
     setWardrobeHint(null)
+
     try {
       await window.deskagent.api<WardrobeItem>({
         path: '/api/companion/wardrobe/generate',
@@ -582,11 +579,7 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps): React.Reac
                     type="button"
                   >
                     {item.texture_url ? (
-                      <img
-                        alt={item.name}
-                        className="h-12 w-12 rounded object-cover"
-                        src={item.texture_url}
-                      />
+                      <img alt={item.name} className="h-12 w-12 rounded object-cover" src={item.texture_url} />
                     ) : (
                       <span className="grid h-12 w-12 place-items-center rounded bg-white/10 text-base">
                         {item.category?.[0] ?? '?'}

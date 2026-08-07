@@ -3,12 +3,7 @@ import { useEffect, useRef } from 'react'
 
 import { registerAmplitudeSink } from '@/companion/audio-track'
 import { $chatOpen } from '@/companion/chat-store'
-import {
-  $spriteEmotion,
-  $spriteState,
-  type SpriteEmotion,
-  type SpriteStateName
-} from '@/companion/companion-store'
+import { $spriteEmotion, $spriteState, type SpriteEmotion, type SpriteStateName } from '@/companion/companion-store'
 
 import { Engine } from './Engine'
 import { $equippedItem, $modelInfo, refreshEquippedAndApply } from './model-store'
@@ -43,13 +38,17 @@ export function Companion3D() {
   // Mount engine, wire subscriptions, and kick off initial model load.
   useEffect(() => {
     const canvas = canvasRef.current
-    if (!canvas) return
+
+    if (!canvas) {
+      return
+    }
 
     const engine = new Engine({
       canvas,
       width: canvas.clientWidth || 320,
       height: canvas.clientHeight || 320
     })
+
     engineRef.current = engine
 
     const initial = captureSpriteSnapshot()
@@ -58,6 +57,7 @@ export function Companion3D() {
     const unsubState = $spriteState.listen(state => {
       engine.character.applyState(state, $spriteEmotion.get())
     })
+
     const unsubEmotion = $spriteEmotion.listen(emotion => {
       engine.character.applyState($spriteState.get(), emotion)
     })
@@ -71,18 +71,23 @@ export function Companion3D() {
       const h = canvas.clientHeight || window.innerHeight
       engine.resize(w, h)
     }
+
     const ro = new ResizeObserver(onResize)
     ro.observe(canvas)
     window.addEventListener('resize', onResize)
 
     // Look-at — only when chat is closed (avoid head twitching while typing).
     const onPointerMove = (e: PointerEvent) => {
-      if ($chatOpen.get()) return
+      if ($chatOpen.get()) {
+        return
+      }
+
       const rect = canvas.getBoundingClientRect()
       const nx = ((e.clientX - rect.left) / rect.width) * 2 - 1
       const ny = ((e.clientY - rect.top) / rect.height) * 2 - 1
       engine.character.setLookTarget(nx, ny)
     }
+
     canvas.addEventListener('pointermove', onPointerMove)
 
     engine.start()
@@ -102,23 +107,35 @@ export function Companion3D() {
   // Load (or reload) the GLB whenever the model's asset URL changes.
   useEffect(() => {
     const engine = engineRef.current
-    if (!engine) return
+
+    if (!engine) {
+      return
+    }
+
     let cancelled = false
     void engine
       .loadCharacter(modelInfo.asset_url)
       .then(() => {
-        if (cancelled) return
+        if (cancelled) {
+          return
+        }
+
         // Re-apply morph params + the currently equipped outfit so reloads
         // preserve the user's customisation.
         if (Object.keys(modelInfo.morph_params).length) {
           engine.character.setMorphs(modelInfo.morph_params)
         }
+
         refreshEquippedAndApply()
       })
       .catch(err => {
-        if (cancelled) return
+        if (cancelled) {
+          return
+        }
+
         console.error('[companion-3d] loadCharacter failed:', err)
       })
+
     return () => {
       cancelled = true
     }
@@ -128,11 +145,15 @@ export function Companion3D() {
   // character is the procedural fallback (no GLB materials to edit).
   useEffect(() => {
     const engine = engineRef.current
-    if (!engine) return
+
+    if (!engine) {
+      return
+    }
+
     if (equipped) {
       engine.character.setOutfit(equipped)
     }
   }, [equipped])
 
-  return <canvas ref={canvasRef} className="companion-3d-canvas" />
+  return <canvas className="companion-3d-canvas" ref={canvasRef} />
 }

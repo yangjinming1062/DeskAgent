@@ -20,7 +20,10 @@ const STATE_CLIPS: Record<SpriteStateName, string[]> = {
 
 export function resolveClip(state: SpriteStateName, available: Set<string>): string | null {
   for (const name of STATE_CLIPS[state] ?? ['idle']) {
-    if (available.has(name)) return name
+    if (available.has(name)) {
+      return name
+    }
   }
+
   return null
 }

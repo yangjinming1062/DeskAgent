@@ -592,10 +592,6 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
         // The portrait panel is what renders next; `hint` is only visible in the form.
         setPortraitPanelHint(refImage ? '这张参考图我没能用上…待会儿再换一张吧' : '我还没想好…')
       }
-
-      // Its only reader has run — drop the (up to 8 MiB) base64 rather than
-      // holding it for the rest of the session.
-      setRefImage(null)
     } else {
       setHint('记忆还没存好，稍后再试试形象吧…')
     }
@@ -610,11 +606,25 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
     setHint(null)
     setPortraitPanelHint(null)
 
-    // Clear the clip catalog only after the new portrait lands — an eager
-    // clear on a transient failure would leave Tier 2/3 clips gone.
-    // avatar.regenerate returns {queued, job_id}; the real result arrives
-    // via the avatar.regenerated event — await it before swapping.
     try {
+      if (refImage) {
+        const res = await window.deskagent.api<{ asset_url?: string }>({
+          path: '/api/companion/avatar/from-image',
+          method: 'POST',
+          body: {
+            content_type: refImage.contentType,
+            image: refImage.base64
+          }
+        })
+
+        if (res?.asset_url) {
+          setPortraitUrl(res.asset_url)
+          void playOnboardingAudio('onboarding.portrait.regenerate')
+
+          return
+        }
+      }
+
       const queued = await requestGateway<{ queued?: boolean; job_id?: string; asset_url?: string }>(
         'avatar.regenerate',
         { feedback: undefined }
@@ -755,6 +765,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
   }
 
   const confirmPortrait = async () => {
+    setRefImage(null)
     // Show the backend's ranked alternatives alongside the full ZH catalog; the matched voice is the default.
     const matched = await matchVoicePreference(requestGateway, answers.voice ?? '')
     setVoice(matched.voice)

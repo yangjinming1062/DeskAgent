@@ -44,8 +44,6 @@ export async function performRitualWalk<T>(
     return execute()
   }
 
-  const result = await execute()
-
   let geom = await findTarget()
 
   for (let attempt = 0; !geom && attempt < RETRY_COUNT; attempt++) {
@@ -54,20 +52,31 @@ export async function performRitualWalk<T>(
   }
 
   if (!geom) {
-    return result
+    return execute()
   }
 
   const perch = computePerchPosition(geom)
 
   if (!perch) {
-    return result
+    return execute()
   }
 
   await new Promise<void>(resolve => moveTo(perch, 'fly', resolve))
 
   setSpriteState('interacting', { durationMs: 1500 })
-  await new Promise(resolve => setTimeout(resolve, 1200))
 
+  const targetCenterX = Math.round(geom.x + geom.w / 2)
+  const targetCenterY = Math.round(geom.y + geom.h / 2)
+
+  if (window.deskagent?.runnerInvoke) {
+    window.deskagent.runnerInvoke('system.click_at', { x: targetCenterX, y: targetCenterY }).catch(() => {})
+  }
+
+  await new Promise(resolve => setTimeout(resolve, 400))
+
+  const result = await execute()
+
+  await new Promise(resolve => setTimeout(resolve, 800))
   reevaluateSpatialDecision()
 
   return result
