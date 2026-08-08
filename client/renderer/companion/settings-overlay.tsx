@@ -11,6 +11,7 @@ import { DISTURBANCE_TIERS } from '@/companion/disturbance-tiers'
 import { useInteractiveRegion } from '@/companion/interactive-regions'
 import { PersonaRetune } from '@/companion/persona-retune'
 import { $persona, hydratePersona } from '@/companion/persona-store'
+import { $portraitUrl, applyPortrait } from '@/companion/portrait-store'
 import {
   $companionVoiceId,
   $responseMode,
@@ -63,6 +64,8 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps): React.Reac
   const [genderFilter, setGenderFilter] = useState('')
   const [regenerating, setRegenerating] = useState(false)
   const [avatarHint, setAvatarHint] = useState<string | null>(null)
+  const portraitUrl = useStore($portraitUrl)
+
   const [retuneOpen, setRetuneOpen] = useState(false)
   const wardrobe = useStore($wardrobe)
   const [wardrobeBusy, setWardrobeBusy] = useState(false)
@@ -173,11 +176,13 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps): React.Reac
 
       if (res?.asset_url) {
         setAvatarHint('换好啦，新形象已生成～')
+        void applyPortrait(res.asset_url)
       } else if (res?.queued && res.job_id) {
         const result = await awaitAvatarRegeneration(res.job_id)
 
         if (result.asset_url) {
           setAvatarHint('换好啦，新形象已生成～')
+          void applyPortrait(result.asset_url)
         } else {
           setAvatarHint(result.error ?? '暂时换不出来，稍后再试')
         }
@@ -213,7 +218,12 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps): React.Reac
         body: { image: picked.image.base64, content_type: picked.image.contentType }
       })
 
-      setAvatarHint(res?.asset_url ? '上传成功～' : '上传失败了')
+      if (res?.asset_url) {
+        setAvatarHint('上传成功～')
+        void applyPortrait(res.asset_url)
+      } else {
+        setAvatarHint('上传失败了')
+      }
     } catch {
       setAvatarHint('上传失败了，换张图试试？')
     } finally {
@@ -520,25 +530,36 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps): React.Reac
 
           {/* Avatar */}
           <Section hint="重新生成或上传自定义形象；衍生动画会重新生成" title="形象">
-            <div className="flex gap-2">
-              <button
-                className="flex-1 rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-xs text-white/80 transition hover:bg-white/15 disabled:opacity-40"
-                disabled={regenerating}
-                onClick={regenerate}
-                type="button"
-              >
-                {regenerating ? '生成中…' : '重新生成'}
-              </button>
-              <button
-                className="flex-1 rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-xs text-white/80 transition hover:bg-white/15 disabled:opacity-40"
-                disabled={regenerating}
-                onClick={upload}
-                type="button"
-              >
-                上传图片
-              </button>
+            <div className="flex items-start gap-3">
+              <div className="grid h-20 w-20 shrink-0 place-items-center overflow-hidden rounded-xl border border-white/10 bg-white/5">
+                {portraitUrl ? (
+                  <img alt="当前形象" className="h-full w-full object-cover" src={portraitUrl} />
+                ) : (
+                  <span className="text-[10px] text-white/40">暂无</span>
+                )}
+              </div>
+              <div className="flex flex-1 flex-col gap-2">
+                <div className="flex gap-2">
+                  <button
+                    className="flex-1 rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-xs text-white/80 transition hover:bg-white/15 disabled:opacity-40"
+                    disabled={regenerating}
+                    onClick={regenerate}
+                    type="button"
+                  >
+                    {regenerating ? '生成中…' : '重新生成'}
+                  </button>
+                  <button
+                    className="flex-1 rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-xs text-white/80 transition hover:bg-white/15 disabled:opacity-40"
+                    disabled={regenerating}
+                    onClick={upload}
+                    type="button"
+                  >
+                    上传图片
+                  </button>
+                </div>
+                {avatarHint && <p className="text-xs text-amber-300/80">{avatarHint}</p>}
+              </div>
             </div>
-            {avatarHint && <p className="mt-2 text-xs text-amber-300/80">{avatarHint}</p>}
           </Section>
 
           {/* 3D model + wardrobe */}

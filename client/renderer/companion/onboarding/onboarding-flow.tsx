@@ -1,7 +1,7 @@
 import { useStore } from '@nanostores/react'
 import { type PointerEvent as ReactPointerEvent, useEffect, useRef, useState } from 'react'
 
-import { pickAvatarImage, type PickedImage, resolvePortraitUrl } from '@/companion/avatar-image'
+import { pickAvatarImage, type PickedImage } from '@/companion/avatar-image'
 import { awaitAvatarRegeneration } from '@/companion/avatar-regen-store'
 import { useGatewayRequest } from '@/companion/boot/use-gateway-request'
 import { useInteractiveRegion } from '@/companion/interactive-regions'
@@ -16,6 +16,7 @@ import {
   USER_GENDER_PRESETS,
   VOICE_PRESETS
 } from '@/companion/persona-presets'
+import { applyPortrait } from '@/companion/portrait-store'
 import { isClientErrorIpc } from '@/shared/lib/ipc-error'
 import { $gatewayState } from '@/shared/store/gateway'
 
@@ -295,8 +296,10 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
   const [portraitUrl, setPortraitUrl] = useState<string | null>(null)
 
   // Failure keeps the current portrait: it already holds resolved bytes.
-  const applyPortrait = async (assetUrl: string | null | undefined): Promise<string | null> => {
-    const resolved = await resolvePortraitUrl(assetUrl)
+  // The shared `applyPortrait` writes the global atom; we mirror to local
+  // state so the in-flow preview updates without waiting for a re-mount.
+  const applyLocalPortrait = async (assetUrl: string | null | undefined): Promise<string | null> => {
+    const resolved = await applyPortrait(assetUrl)
 
     if (resolved) {
       setPortraitUrl(resolved)
@@ -600,7 +603,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
 
     if (personaOk) {
       try {
-        url = await applyPortrait(await retryTransient(() => generatePortrait(refImage), 1500, 2))
+        url = await applyLocalPortrait(await retryTransient(() => generatePortrait(refImage), 1500, 2))
       } catch {
         // A deterministic 4xx (unusable reference image, incomplete persona)
         // must not strand the flow on 'hatching' — fall through to the portrait
@@ -636,7 +639,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
           }
         })
 
-        if (res?.asset_url && (await applyPortrait(res.asset_url))) {
+        if (res?.asset_url && (await applyLocalPortrait(res.asset_url))) {
           void playOnboardingAudio('onboarding.portrait.regenerate')
 
           return
@@ -649,13 +652,13 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
       )
 
       if (queued?.asset_url) {
-        if (await applyPortrait(queued.asset_url)) {
+        if (await applyLocalPortrait(queued.asset_url)) {
           void playOnboardingAudio('onboarding.portrait.regenerate')
         }
       } else if (queued?.queued && queued.job_id) {
         const result = await awaitAvatarRegeneration(queued.job_id)
 
-        if (result.asset_url && (await applyPortrait(result.asset_url))) {
+        if (result.asset_url && (await applyLocalPortrait(result.asset_url))) {
           void playOnboardingAudio('onboarding.portrait.regenerate')
         } else {
           setPortraitPanelHint(result.error ?? '暂时换不出来，稍后再试吧')
@@ -725,7 +728,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
         body: { image: pickedImage.base64, content_type: pickedImage.contentType }
       })
 
-      if (res?.asset_url && (await applyPortrait(res.asset_url))) {
+      if (res?.asset_url && (await applyLocalPortrait(res.asset_url))) {
         setPickedImage(null)
         setRefineDescription('')
         void playOnboardingAudio('onboarding.portrait.upload')
@@ -761,7 +764,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
         }
       })
 
-      if (res?.asset_url && (await applyPortrait(res.asset_url))) {
+      if (res?.asset_url && (await applyLocalPortrait(res.asset_url))) {
         setPickedImage(null)
         setRefineDescription('')
         void playOnboardingAudio('onboarding.portrait.fromimage')
