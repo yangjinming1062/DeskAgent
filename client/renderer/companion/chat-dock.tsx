@@ -21,10 +21,18 @@ import {
   setSpriteState
 } from '@/companion/companion-store'
 import { useInteractiveRegion } from '@/companion/interactive-regions'
+import { $portraitUrl } from '@/companion/portrait-store'
+import { $spatialPos, $spatialScale, $viewport, computeOverlayAnchorBesideSprite } from '@/companion/spatial'
 import { getDeskAgentConfig } from '@/shared/deskagent/config'
 import { $gatewayState } from '@/shared/store/gateway'
 
 import { DISTURBANCE_TIERS } from './disturbance-tiers'
+
+// matches the panel's max-w-lg (32rem) so we can position it before mount
+const DOCK_MAX_W = 512
+const DOCK_MAX_H = 520
+const DOCK_GAP = 16
+const DOCK_HEAD_OFFSET_RATIO = 0.1
 
 interface ChatDockProps {
   onClose: () => void
@@ -36,6 +44,7 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
   const sessionId = useStore($chatSessionId)
   const gatewayState = useStore($gatewayState)
   const tier = useStore($userPreferredTier)
+  const portraitUrl = useStore($portraitUrl)
   const { requestGateway } = useGatewayRequest()
   const [text, setText] = useState('')
   const [pendingImage, setPendingImage] = useState<string | null>(null)
@@ -413,6 +422,21 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
 
   // Drag the panel via translate3d (GPU motion, no re-render per pointermove)
   // and persist the offset so the choice survives a restart.
+  const pos = useStore($spatialPos)
+  const scale = useStore($spatialScale)
+  const viewport = useStore($viewport)
+
+  const { left: baseLeft, top: baseTop } = computeOverlayAnchorBesideSprite({
+    pos,
+    scale,
+    gap: DOCK_GAP,
+    overlayMaxW: DOCK_MAX_W,
+    overlayH: DOCK_MAX_H,
+    vw: viewport.width,
+    vh: viewport.height,
+    verticalRatio: DOCK_HEAD_OFFSET_RATIO
+  })
+
   const storedOffset = useMemo(() => {
     if (typeof localStorage === 'undefined') {
       return null
@@ -486,16 +510,18 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
   }
 
   return (
-    // Anchor the panel under the centered sprite (SPEC §4.1 对话发生在角色身边),
-    // not against the screen bottom where the dragged sprite may be far away.
-    <div
-      className="fixed inset-0 z-40 flex flex-col items-center justify-end px-6 pb-24"
-      style={{ pointerEvents: 'none' }}
-    >
+    // Anchor the panel beside the sprite (SPEC §4.1 对话发生在角色身边) so it
+    // follows wherever the user has dragged or routed the companion, rather
+    // than pinning to the screen bottom and drifting away from the character.
+    <div className="fixed inset-0 z-40 pointer-events-none">
       <div
-        className="flex h-[min(60vh,520px)] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-white/10 bg-black/55 text-white shadow-2xl backdrop-blur-md"
+        className="flex h-[min(60vh,520px)] max-w-lg flex-col overflow-hidden rounded-2xl border border-white/10 bg-black/55 text-white shadow-2xl backdrop-blur-md"
         ref={panelRef}
         style={{
+          position: 'fixed',
+          left: baseLeft,
+          top: baseTop,
+          width: 'min(calc(100vw - 2rem), 32rem)',
           pointerEvents: 'auto',
           transform: storedOffset ? `translate3d(${storedOffset.dx}px, ${storedOffset.dy}px, 0)` : undefined
         }}
@@ -509,6 +535,13 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
           title="拖动以移动对话框"
         >
           <div className="flex items-center gap-2">
+            {portraitUrl && (
+              <img
+                alt="伙伴形象"
+                className="h-7 w-7 rounded-full border border-white/15 object-cover"
+                src={portraitUrl}
+              />
+            )}
             <div className="flex items-center gap-0.5 rounded-full bg-white/5 p-0.5 text-[11px]" title="打扰档位">
               {DISTURBANCE_TIERS.map(t => (
                 <button

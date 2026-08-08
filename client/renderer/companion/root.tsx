@@ -15,6 +15,7 @@ import {
   wakeUpFromSleep
 } from '@/companion/companion-store'
 import { hydratePersona } from '@/companion/persona-store'
+import { hydratePortrait } from '@/companion/portrait-store'
 import { initSpatial } from '@/companion/spatial'
 import { $auth, applyAuthBroadcast, hydrateAuth, logout } from '@/shared/store/auth'
 import { $gatewayState } from '@/shared/store/gateway'
@@ -127,6 +128,8 @@ export function CompanionRoot() {
 
     let cancelled = false
     setCompanionLifecycle('unauthed-egg')
+    // Pull the active portrait so the 形象 section has a preview immediately.
+    void hydratePortrait()
     window.deskagent
       .api<{ is_complete?: boolean }>({ path: '/api/companion/persona' })
       .then(p => {

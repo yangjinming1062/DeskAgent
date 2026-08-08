@@ -27,6 +27,18 @@ export const $defaultScale = atom<number>(readDefaultScale())
 export const $spatialScale = atom<number>($defaultScale.get())
 export const $spatialLocomotion = atom<Locomotion>('still')
 
+// Window viewport size — single source of truth, updated by initSpatial's
+// existing resize listener. Overlays (chat-dock, proactive bubble) subscribe
+// here instead of running their own listener.
+export interface ViewportSize {
+  width: number
+  height: number
+}
+
+export const $viewport = atom<ViewportSize>(
+  typeof window === 'undefined' ? { width: 0, height: 0 } : { width: window.innerWidth, height: window.innerHeight }
+)
+
 export function getHomePosition(): { x: number; y: number } {
   if (typeof window === 'undefined') {
     return { x: 0, y: 0 }
@@ -135,6 +147,40 @@ export function computePerchPosition(geom: {
   }
 
   return { x, y }
+}
+
+// Anchor for transient overlays (chat panel, proactive bubble) that float next
+// to the sprite: place to the right of the sprite, flip to the left if the
+// overlay would overflow the viewport. `gap` is the gap between sprite and
+// overlay; `overlayMaxW` is the largest width the overlay can grow to (used
+// only for the flip check). `top` is anchored to the sprite's head area
+// (top + verticalRatio * scaled height) and clamped into the viewport.
+export function computeOverlayAnchorBesideSprite(opts: {
+  pos: { x: number; y: number }
+  scale: number
+  gap: number
+  overlayMaxW: number
+  overlayH?: number
+  vw: number
+  vh: number
+  verticalRatio?: number
+}): { left: number; top: number } {
+  const { pos, scale, gap, overlayMaxW, overlayH = 0, vw, vh, verticalRatio = 0 } = opts
+  const spriteW = SPRITE_W * scale
+  const spriteH = SPRITE_H * scale
+  const spriteRight = pos.x + spriteW
+  const fitsRight = spriteRight + gap + overlayMaxW <= vw
+
+  const left = fitsRight
+    ? spriteRight + gap
+    : Math.max(0, pos.x - gap - overlayMaxW)
+
+  const top = Math.max(
+    0,
+    overlayH > 0 ? Math.min(vh - overlayH, pos.y + spriteH * verticalRatio) : pos.y + spriteH * verticalRatio
+  )
+
+  return { left, top }
 }
 
 function easeInOut(t: number): number {
@@ -553,6 +599,8 @@ export function initSpatial(): () => void {
   const unlistenFocus = $focusContext.listen(() => updateSpatialDecision())
 
   const onResize = () => {
+    $viewport.set({ width: window.innerWidth, height: window.innerHeight })
+
     const home = $homePosition.get()
 
     const clamped = {
