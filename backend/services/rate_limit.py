@@ -33,7 +33,14 @@ def _user_key(request: Request) -> str:
 # When ``rate_limit_enabled`` is False slowapi's ``enabled`` flag short-circuits
 # the decorator so ``@limiter.limit(...)`` stays inert — no per-call
 # noop stub needed.
-limiter = Limiter(key_func=_user_key, enabled=SETTINGS.rate_limit_enabled)
+#
+# ``config_filename=""`` skips slowapi's auto-read of ``./.env`` — the
+# rate-limit keys never look at it (slowapi doesn't read ``app_config``
+# anywhere in this codebase), and starlette's default ``open(file_name)``
+# crashes on Windows + cp936 locales when ``.env`` carries a UTF-8 BOM.
+# Settings themselves are loaded by pydantic-settings in
+# ``components.SETTINGS``.
+limiter = Limiter(key_func=_user_key, enabled=SETTINGS.rate_limit_enabled, config_filename="")
 
 
 async def stash_user_id_middleware(request: Request, call_next):  # type: ignore[no-untyped-def]
