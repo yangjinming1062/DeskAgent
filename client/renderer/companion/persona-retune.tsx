@@ -161,12 +161,13 @@ export function PersonaRetune({ initial, onClose, onSaved }: PersonaRetuneProps)
   const [step, setStep] = useState<number>(0)
   const [saving, setSaving] = useState(false)
   const [hint, setHint] = useState<string | null>(null)
-  const { regenerate: regeneratePortrait, hint: regenHint } = useRegeneratePortrait()
+  const [phase, setPhase] = useState<'edit' | 'confirm'>('edit')
+  const { regenerate: regeneratePortrait, hint: regenHint, busy: regenBusy } = useRegeneratePortrait()
   // Tracks whether the wizard is still mounted. Closing the modal mid-save
   // unmounts the component; the in-flight ``save()`` continues to run,
-  // and the resulting ``window.confirm`` would appear as an orphan
-  // dialog with no visible source. Suppress confirm + onSaved when the
-  // user already dismissed the wizard.
+  // so the post-save phase flip would otherwise strand the user on a
+  // confirm panel with no visible source. Suppress the phase flip when
+  // the user already dismissed the wizard.
   const mountedRef = useRef(true)
   useEffect(
     () => () => {
@@ -271,22 +272,48 @@ export function PersonaRetune({ initial, onClose, onSaved }: PersonaRetuneProps)
       }
 
       onSaved()
-
-      if (window.confirm('角色更新啦，要重新生成我的形象吗？')) {
-        setRegenFeedback(appearance.slice(0, MAX_APPEARANCE))
-        await regeneratePortrait()
-
-        if (regenHint) {
-          setHint(regenHint)
-        }
-      }
-
-      onClose()
+      setPhase('confirm')
     } catch {
       setHint('保存失败了，稍后再试')
     } finally {
       setSaving(false)
     }
+  }
+
+  if (phase === 'confirm') {
+    return (
+      <div
+        className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 px-6 py-6 backdrop-blur-sm"
+        style={{ pointerEvents: 'auto' }}
+      >
+        <div className="flex w-full max-w-md flex-col rounded-2xl border border-white/15 bg-black/80 px-6 py-6 text-white shadow-2xl">
+          <p className="mb-1 text-sm font-medium">已保存！</p>
+          <p className="mb-4 text-xs text-white/60">要按新性格重新生成形象吗？</p>
+          {regenHint && <p className="mb-3 text-xs text-amber-300/80">{regenHint}</p>}
+          <div className="flex gap-2">
+            <button
+              className="flex-1 rounded-lg border border-white/40 bg-white/15 px-3 py-2 text-xs font-medium text-white transition hover:bg-white/25 disabled:opacity-40"
+              disabled={regenBusy}
+              onClick={async () => {
+                setRegenFeedback(appearance.slice(0, MAX_APPEARANCE))
+                await regeneratePortrait()
+              }}
+              type="button"
+            >
+              {regenBusy ? '生成中…' : '重新生成'}
+            </button>
+            <button
+              className="flex-1 rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-xs text-white/70 transition hover:bg-white/15 disabled:opacity-40"
+              disabled={regenBusy}
+              onClick={onClose}
+              type="button"
+            >
+              暂后
+            </button>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   return (

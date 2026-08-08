@@ -38,7 +38,8 @@ export function PersonaSection() {
   const [appearance, setAppearance] = useState(persona?.appearance ?? '')
   const [saving, setSaving] = useState(false)
   const [hint, setHint] = useState<string | null>(null)
-  const { regenerate: regeneratePortrait, hint: regenHint } = useRegeneratePortrait()
+  const [showPostSave, setShowPostSave] = useState(false)
+  const { regenerate: regeneratePortrait, hint: regenHint, busy: regenBusy } = useRegeneratePortrait()
 
   const startEdit = () => {
     setName(persona?.name ?? '')
@@ -48,6 +49,7 @@ export function PersonaSection() {
     setCharacterGender(persona?.gender ?? '')
     setAppearance(persona?.appearance ?? '')
     setHint(null)
+    setShowPostSave(false)
     setEditing(true)
   }
 
@@ -83,14 +85,7 @@ export function PersonaSection() {
       await hydratePersona()
       setEditing(false)
 
-      if (window.confirm('角色更新啦，要重新生成我的形象吗？')) {
-        setRegenFeedback(appearance.slice(0, MAX_APPEARANCE))
-        await regeneratePortrait()
-
-        if (regenHint) {
-          setHint(regenHint)
-        }
-      }
+      setShowPostSave(true)
     } catch {
       setHint('保存失败了，稍后再试')
     } finally {
@@ -109,6 +104,34 @@ export function PersonaSection() {
           <p className="text-white/50">{tags.length ? tags.join(' · ') : '还没设定性格'}</p>
           {persona?.appearance && <p className="text-white/40">{persona.appearance}</p>}
         </div>
+        {showPostSave && (
+          <div className="mt-2 space-y-2 rounded-lg border border-white/15 bg-white/5 px-3 py-2">
+            <p className="text-xs text-white/80">已保存 — 要按新性格重新生成形象吗？</p>
+            {regenHint && <p className="text-[11px] text-amber-300/80">{regenHint}</p>}
+            <div className="flex gap-2">
+              <button
+                className="flex-1 rounded-lg border border-white/40 bg-white/15 px-3 py-1.5 text-[11px] font-medium text-white transition hover:bg-white/25 disabled:opacity-40"
+                disabled={regenBusy}
+                onClick={async () => {
+                  setRegenFeedback(appearance.slice(0, MAX_APPEARANCE))
+                  await regeneratePortrait()
+                  setShowPostSave(false)
+                }}
+                type="button"
+              >
+                {regenBusy ? '生成中…' : '重新生成'}
+              </button>
+              <button
+                className="flex-1 rounded-lg border border-white/15 bg-white/5 px-3 py-1.5 text-[11px] text-white/70 transition hover:bg-white/15 disabled:opacity-40"
+                disabled={regenBusy}
+                onClick={() => setShowPostSave(false)}
+                type="button"
+              >
+                暂后
+              </button>
+            </div>
+          </div>
+        )}
         <button
           className="mt-1.5 rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-xs text-white/80 transition hover:bg-white/15"
           onClick={startEdit}
