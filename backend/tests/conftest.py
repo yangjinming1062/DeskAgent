@@ -58,13 +58,17 @@ def sqlite_engine():
 
 
 @pytest.fixture(autouse=True)
-def _patch_db(monkeypatch, sqlite_engine):
+def _patch_db(monkeypatch, sqlite_engine, tmp_path):
     """All DB access goes to a SAVEPOINT in in-memory SQLite.
 
     Each test gets its own connection with a SAVEPOINT.  The outer
     transaction is never committed — after the test the SAVEPOINT is
     rolled back, guaranteeing zero side-effects on other tests.
     """
+    import components
+
+    monkeypatch.setattr(components.SETTINGS, "data_dir", str(tmp_path))
+
     connection = sqlite_engine.connect()
     transaction = connection.begin()
     savepoint = connection.begin_nested()
