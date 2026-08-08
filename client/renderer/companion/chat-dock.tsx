@@ -6,7 +6,6 @@ import { useGatewayRequest } from '@/companion/boot/use-gateway-request'
 import {
   $chatMessages,
   $chatSessionId,
-  type ChatMessage,
   finalizeAssistantMessage,
   pushUserMessage,
   setAssistantCancelled,
@@ -20,13 +19,13 @@ import {
   setDisturbanceTier,
   setSpriteState
 } from '@/companion/companion-store'
-import { useInteractiveRegion } from '@/companion/interactive-regions'
 import { $portraitUrl } from '@/companion/portrait-store'
 import { $spatialPos, $spatialScale, $viewport, computeOverlayAnchorBesideSprite } from '@/companion/spatial'
-import { getDeskAgentConfig } from '@/shared/deskagent'
 import { $gatewayState } from '@/shared/store/gateway'
 
+import { MessageBubble } from './chat-dock-message-bubble'
 import { DISTURBANCE_TIERS } from './disturbance-tiers'
+import { useVoiceRecorder } from './hooks/use-voice-recorder'
 
 // matches the panel's max-w-lg (32rem) so we can position it before mount
 const DOCK_MAX_W = 512
@@ -49,79 +48,27 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
   const [text, setText] = useState('')
   const [pendingImage, setPendingImage] = useState<string | null>(null)
   const [sending, setSending] = useState(false)
-  const [recording, setRecording] = useState(false)
-  const [config, setConfig] = useState<{ voice?: { max_recording_seconds?: number } }>({})
+
+  const { recording, start: startRecording, stop: stopRecording } = useVoiceRecorder({
+    requestGateway,
+    onTranscribed: text => {
+      pushUserMessage(text)
+    }
+  })
+
   const scrollRef = useRef<HTMLDivElement>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
-  const voiceChunksRef = useRef<Blob[]>([])
-  const autoStopTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // The chat panel inherits the sprite window's topmost flag — no toggling;
   // an unmount-time toggle would race the closing dock.
   useEffect(() => {
     inputRef.current?.focus()
   }, [])
-
-  // Reset the sprite on unmount (force: true so the priority gate can't
-  // swallow it while 'listening'/'thinking') — a dismissed chat with an
-  // in-flight recording would otherwise leave the sprite stuck there.
-  // Skip the reset when an assistant turn is still streaming: forcing idle
-  // here would clobber the thinking-state animation that's narrating the
-  // user's request they just sent (ARCH §2.3 — lower priority states can't
-  // interrupt higher ones without an explicit force).
-  useEffect(() => {
-    return () => {
-      const recorder = mediaRecorderRef.current
-
-      if (recorder && recorder.state !== 'inactive') {
-        // Stop tracks before stopping the recorder — `onstop` only fires
-        // when `stopRecording()` was called, not when the dock unmounts
-        // mid-recording. Without this, the MediaStream keeps the mic LED on
-        // until the OS times out.
-        try {
-          recorder.stream.getTracks().forEach(t => t.stop())
-        } catch {
-          /* stream may already be closed */
-        }
-
-        try {
-          recorder.stop()
-        } catch {
-          /* already stopped */
-        }
-      }
-
-      if (autoStopTimeoutRef.current) {
-        clearTimeout(autoStopTimeoutRef.current)
-        autoStopTimeoutRef.current = null
-      }
-
-      setRecording(false)
-
-      const inFlight = $chatMessages.get().some(m => m.streaming)
-
-      if (!inFlight) {
-        setSpriteState('idle', { force: true })
-      }
-    }
-  }, [])
-
-  const panelRef = useRef<HTMLDivElement>(null)
-  useInteractiveRegion('chat-dock', panelRef)
-
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
   }, [messages])
 
-  // Load the persisted cap for voice recordings. Cheap GET — only rerun
-  // when the dock mounts; settings changes while recording won't snap the
-  // current recording to a new cap.
-  useEffect(() => {
-    void getDeskAgentConfig()
-      .then(c => setConfig({ voice: c.voice }))
-      .catch(() => setConfig({}))
-  }, [])
 
   const ensureSession = async (): Promise<string> => {
     const existing = $chatSessionId.get()
@@ -168,156 +115,6 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
 
         return
       }
-    }
-  }
-
-  // stopRecording waits for an in-flight getUserMedia so a quick tap
-  // doesn't land in stopRecording before the recorder exists.
-  const startPendingRef = useRef<Promise<void> | null>(null)
-
-  // Latest-callback ref so the global-mouseup effect below can subscribe
-  // without depending on stopRecording's identity (which changes every render
-  // and would otherwise re-subscribe the listener on every keystroke).
-  const stopRecordingRef = useRef<() => Promise<void>>(async () => {})
-
-  const startRecording = () => {
-    let pending: Promise<void> | null = null
-    pending = (async () => {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-        const recorder = new MediaRecorder(stream)
-        mediaRecorderRef.current = recorder
-        voiceChunksRef.current = []
-        autoStopTimeoutRef.current = null
-
-        recorder.ondataavailable = e => {
-          if (e.data.size > 0) {
-            voiceChunksRef.current.push(e.data)
-          }
-        }
-
-        setRecording(true)
-        setSpriteState('listening')
-        recorder.start()
-
-        // Honor the voice.max_recording_seconds cap. The renderer is the
-        // authority on recording length because the audio stream lives in
-        // Chromium; the backend can't stop it mid-capture.
-        const cap = config.voice?.max_recording_seconds ?? 60
-
-        if (cap > 0) {
-          autoStopTimeoutRef.current = setTimeout(() => {
-            if (mediaRecorderRef.current?.state === 'recording') {
-              void stopRecording()
-            }
-          }, cap * 1000)
-        }
-      } catch {
-        setAssistantError('无法使用麦克风录制语音')
-      } finally {
-        if (startPendingRef.current === pending) {
-          startPendingRef.current = null
-        }
-      }
-    })()
-    startPendingRef.current = pending
-  }
-
-  const stopRecording = async () => {
-    // Wait for the start promise so the recorder exists before deciding what to do.
-    if (startPendingRef.current) {
-      try {
-        await startPendingRef.current
-      } catch {
-        /* surfaced via startRecording */
-      }
-    }
-
-    // Clear the auto-stop timer — manual stop fires before the cap.
-    if (autoStopTimeoutRef.current) {
-      clearTimeout(autoStopTimeoutRef.current)
-      autoStopTimeoutRef.current = null
-    }
-
-    const recorder = mediaRecorderRef.current
-
-    if (!recorder || recorder.state === 'inactive') {
-      setRecording(false)
-
-      return
-    }
-
-    recorder.onstop = () => {
-      recorder.stream.getTracks().forEach(t => t.stop())
-      void transcribeAndSend()
-    }
-
-    recorder.stop()
-    setRecording(false)
-  }
-
-  // Keep the ref pointing at the latest closure so the global mouseup
-  // handler always sees fresh state.
-  stopRecordingRef.current = stopRecording
-
-  useEffect(() => {
-    if (!recording) {
-      return
-    }
-
-    const handleGlobalMouseUp = () => {
-      void stopRecordingRef.current()
-    }
-
-    window.addEventListener('mouseup', handleGlobalMouseUp)
-
-    return () => {
-      window.removeEventListener('mouseup', handleGlobalMouseUp)
-    }
-  }, [recording])
-
-  // Push-to-talk voice message: record → cloud STT (media.stt) → send the
-  // transcribed text as a normal prompt. Falls back to a typed hint when STT
-  // is unavailable so the user is never stuck (plan §5 always-fallback-text).
-  const transcribeAndSend = async () => {
-    setSpriteState('thinking')
-    const blob = new Blob(voiceChunksRef.current, { type: 'audio/webm' })
-    voiceChunksRef.current = []
-    let text = ''
-
-    try {
-      const reader = new FileReader()
-
-      const dataUrl: string = await new Promise((resolve, reject) => {
-        reader.onload = () => resolve(reader.result as string)
-        reader.onerror = () => reject(new Error('read failed'))
-        reader.readAsDataURL(blob)
-      })
-
-      const res = await window.deskagent.media.stt({ dataUrl, filename: 'voice.webm' })
-      text = (res.text ?? '').trim()
-    } catch {
-      setAssistantError('没听清，用打字吧～')
-      setSpriteState('idle')
-
-      return
-    }
-
-    if (!text) {
-      setAssistantError('没听清，用打字吧～')
-      setSpriteState('idle')
-
-      return
-    }
-
-    pushUserMessage(text)
-
-    try {
-      const id = await ensureSession()
-      await requestGateway('prompt.submit', { session_id: id, text })
-    } catch (err) {
-      setAssistantError(err instanceof Error ? err.message : '发送失败')
-      setSpriteState('idle')
     }
   }
 
@@ -664,28 +461,3 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
   )
 }
 
-function MessageBubble({ message }: { message: ChatMessage }): React.JSX.Element {
-  const isUser = message.role === 'user'
-
-  return (
-    <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
-      <div
-        className={`max-w-[80%] whitespace-pre-wrap break-words rounded-2xl px-3.5 py-2 text-sm leading-relaxed ${
-          isUser ? 'rounded-br-sm bg-(--theme-primary, #6c8aff) text-white' : 'rounded-bl-sm bg-white/10 text-white/90'
-        }`}
-      >
-        {message.error ? (
-          <span className="text-amber-300/90">😬 {message.error}</span>
-        ) : message.cancelled ? (
-          <span className="text-white/50">已停止</span>
-        ) : message.toolName ? (
-          <span className="text-white/60">🔧 正在使用 {message.toolName}…</span>
-        ) : message.text ? (
-          message.text
-        ) : (
-          '…'
-        )}
-      </div>
-    </div>
-  )
-}
