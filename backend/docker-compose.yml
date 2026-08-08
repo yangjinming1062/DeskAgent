@@ -31,8 +31,8 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - ./updates:/app/backend/updates
-      - ./data:/app/backend/data
+      - ./updates:/app/updates
+      - ./data:/app/data
 
 volumes:
   postgres_data:
