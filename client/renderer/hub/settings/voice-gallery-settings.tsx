@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 
 import { Button } from '@/shared/components/ui'
+import { useAsyncLoader } from '@/shared/hooks/use-async-loader'
 import { AudioLines } from '@/shared/lib/icons'
 import { notifyError } from '@/shared/store/notifications'
 import { strings } from '@/shared/strings'
@@ -25,39 +26,24 @@ const PREVIEW_LINE = '你好呀，这是我的声音～'
 
 export function VoiceGallerySettings(): React.JSX.Element {
   const t = strings.voiceGallery
-  const [catalog, setCatalog] = useState<VoiceCatalog | null>(null)
-  const [isLoading, setIsLoading] = useState(true)
-  const [loadError, setLoadError] = useState(false)
   const [langFilter, setLangFilter] = useState('')
   const [genderFilter, setGenderFilter] = useState('')
   const [previewingId, setPreviewingId] = useState<string | null>(null)
 
+  const loader = useAsyncLoader<VoiceCatalog>(async () => {
+    return window.deskagent.api<VoiceCatalog>({ path: '/api/companion/voices' })
+  })
+
+  const [catalog, setCatalog] = useState<VoiceCatalog | null>(null)
+
   useEffect(() => {
-    let cancelled = false
-
-    void (async () => {
-      try {
-        const res = await window.deskagent.api<VoiceCatalog>({ path: '/api/companion/voices' })
-
-        if (!cancelled) {
-          setCatalog(res)
-          setLoadError(false)
-        }
-      } catch {
-        if (!cancelled) {
-          setLoadError(true)
-        }
-      } finally {
-        if (!cancelled) {
-          setIsLoading(false)
-        }
-      }
-    })()
-
-    return () => {
-      cancelled = true
+    if (loader.data) {
+      setCatalog(loader.data)
     }
-  }, [])
+  }, [loader.data])
+
+  const isLoading = loader.isLoading
+  const loadError = loader.error !== null
 
   const langOptions = useMemo(() => {
     const langs = new Set((catalog?.voices ?? []).map(v => v.language).filter(Boolean))

@@ -4,6 +4,7 @@ import { type FormEvent, useEffect, useState } from 'react'
 import { BrandMark } from '@/shared/components/brand-mark'
 import { InlineNotice } from '@/shared/components/notifications'
 import { Button, Input } from '@/shared/components/ui'
+import { useAsyncLoader } from '@/shared/hooks/use-async-loader'
 import { Loader2, LogIn } from '@/shared/lib/icons'
 import { $auth, login } from '@/shared/store/auth'
 import { strings } from '@/shared/strings'
@@ -21,21 +22,17 @@ export function LoginPage(): React.JSX.Element {
   // successful login) so re-login after a logout keeps the same target.
   // On a fresh install with no desktop-config.json, the persisted default
   // falls back to the bundled config.json entry via main's resolver.
-  useEffect(() => {
-    let cancelled = false
-    window.deskagent
-      .getDefaultBackendUrl()
-      .then(value => {
-        if (!cancelled && typeof value === 'string') {
-          setBackendUrl(value)
-        }
-      })
-      .catch(() => undefined)
+  const urlLoader = useAsyncLoader<string | null>(async () => {
+    const value = await window.deskagent.getDefaultBackendUrl()
 
-    return () => {
-      cancelled = true
+    return typeof value === 'string' ? value : null
+  })
+
+  useEffect(() => {
+    if (typeof urlLoader.data === 'string') {
+      setBackendUrl(urlLoader.data)
     }
-  }, [])
+  }, [urlLoader.data])
 
   const error = auth.kind === 'unauthenticated' ? auth.error : undefined
 

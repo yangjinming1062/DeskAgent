@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 
 import { Button, SegmentedControl, type SegmentedControlOption, Switch } from '@/shared/components/ui'
 import { getDeskAgentConfig, saveDeskAgentConfig } from '@/shared/deskagent'
+import { useAsyncLoader } from '@/shared/hooks/use-async-loader'
 import { triggerHaptic } from '@/shared/lib/haptics'
 import { notify, notifyError } from '@/shared/store/notifications'
 import { strings } from '@/shared/strings'
@@ -39,7 +40,7 @@ const readState = (config: DeskAgentConfigResponse): SpeechFormState => ({
 
 export function SpeechSettings(): React.JSX.Element {
   const s = strings.speech
-  const [isLoading, setIsLoading] = useState(true)
+  const configLoader = useAsyncLoader<DeskAgentConfigResponse>(() => getDeskAgentConfig())
   const [isSaving, setIsSaving] = useState(false)
   const [original, setOriginal] = useState<SpeechFormState>(DEFAULTS)
   const [state, setState] = useState<SpeechFormState>(DEFAULTS)
@@ -48,32 +49,14 @@ export function SpeechSettings(): React.JSX.Element {
   const [localTtsAvailable, setLocalTtsAvailable] = useState<boolean | null>(null)
 
   useEffect(() => {
-    let cancelled = false
-
-    void (async () => {
-      try {
-        const config = await getDeskAgentConfig()
-
-        if (cancelled) {
-          return
-        }
-
-        const next = readState(config)
-        setOriginal(next)
-        setState(next)
-      } catch {
-        // leave defaults on load failure
-      } finally {
-        if (!cancelled) {
-          setIsLoading(false)
-        }
-      }
-    })()
-
-    return () => {
-      cancelled = true
+    if (configLoader.data) {
+      const next = readState(configLoader.data)
+      setOriginal(next)
+      setState(next)
     }
-  }, [])
+  }, [configLoader.data])
+
+  const isLoading = configLoader.isLoading
 
   // Probe which local engines the Runner currently advertises (check_fn-gated),
   // so the user can see whether "local"/"auto" will actually use a local engine.

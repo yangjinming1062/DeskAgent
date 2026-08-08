@@ -1,0 +1,161 @@
+import { InlineNotice } from '@/shared/components/notifications'
+import { Input, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/shared/components/ui'
+import { Globe } from '@/shared/lib/icons'
+import type { strings } from '@/shared/strings'
+
+import { ListRow, SettingsSubsection } from '../primitives'
+
+import { ApiKeyField } from './api-key-field'
+
+export type WebSearchCopy = (typeof strings)['settings']['account']['webSearch']
+
+export interface WebFormState {
+  backend: string
+  extract_backend: string
+  brave_api_key: string
+  brave_api_key_set: boolean
+  brave_api_key_fingerprint: string
+  cleared_brave: boolean
+  tavily_api_key: string
+  tavily_api_key_set: boolean
+  tavily_api_key_fingerprint: string
+  cleared_tavily: boolean
+  tavily_base_url: string
+}
+
+const WEB_BACKEND_OPTIONS = ['ddgs', 'brave-free', 'tavily'] as const
+const EXTRACT_BACKEND_OPTIONS = ['tavily', 'brave-free', 'ddgs'] as const
+
+function computeNotices(state: WebFormState, t: WebSearchCopy): string[] {
+  const notices: string[] = []
+  const extractIsTavily = state.extract_backend === 'tavily'
+  const tavilyMissing = !state.tavily_api_key_set
+
+  // One extract-related notice; the two negative conditions stay mutually
+  // exclusive because the inner ternary collapses (extract_backend, key_set)
+  // → one of three keys or none.
+  if (extractIsTavily && tavilyMissing) {
+    notices.push(t.unavailable.extractTavilyNoKey)
+  } else if (!extractIsTavily && tavilyMissing) {
+    notices.push(t.unavailable.extractNonTavilyNoKey)
+  } else if (!extractIsTavily) {
+    notices.push(t.unavailable.extractNonTavilyWithKey)
+  }
+
+  // Search: only surface the Tavily-missing-key banner when no extract notice
+  // already covers the same root cause — the user already knows to add a key.
+  if (state.backend === 'brave-free' && !state.brave_api_key_set) {
+    notices.push(t.unavailable.searchKeyFallback('Brave'))
+  } else if (state.backend === 'tavily' && tavilyMissing && !notices.length) {
+    notices.push(t.unavailable.searchKeyFallback('Tavily'))
+  }
+
+  return notices
+}
+
+export function WebSearchSection({
+  disabled,
+  onApiKeyChange,
+  onClearApiKey,
+  state,
+  t,
+  update
+}: {
+  disabled: boolean
+  onApiKeyChange: (key: 'brave_api_key' | 'tavily_api_key', value: string) => void
+  onClearApiKey: (key: 'brave_api_key' | 'tavily_api_key') => void
+  state: WebFormState
+  t: WebSearchCopy
+  update: (patch: Partial<WebFormState>) => void
+}): React.JSX.Element {
+  return (
+    <SettingsSubsection icon={Globe} intro={t.intro} title={t.heading}>
+      <ListRow
+        action={
+          <Select disabled={disabled} onValueChange={value => update({ backend: value })} value={state.backend}>
+            <SelectTrigger className="w-44">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {WEB_BACKEND_OPTIONS.map(opt => (
+                <SelectItem key={opt} value={opt}>
+                  {t.backendOptions[opt]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        }
+        description={t.backendDesc}
+        title={t.backend}
+      />
+
+      <ListRow
+        action={
+          <Select
+            disabled={disabled}
+            onValueChange={value => update({ extract_backend: value })}
+            value={state.extract_backend}
+          >
+            <SelectTrigger className="w-44">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {EXTRACT_BACKEND_OPTIONS.map(opt => (
+                <SelectItem key={opt} value={opt}>
+                  {t.extractBackendOptions[opt]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        }
+        description={t.extractBackendDesc}
+        title={t.extractBackend}
+      />
+
+      {computeNotices(state, t).map(message => (
+        <InlineNotice key={message} kind="warning">
+          {message}
+        </InlineNotice>
+      ))}
+
+      <ApiKeyField
+        copy={t}
+        description={t.braveApiKeyDesc}
+        disabled={disabled}
+        fingerprint={state.brave_api_key_fingerprint}
+        isSet={state.brave_api_key_set}
+        onChange={value => onApiKeyChange('brave_api_key', value)}
+        onClear={() => onClearApiKey('brave_api_key')}
+        placeholder={t.braveApiKeyPlaceholder}
+        title={t.braveApiKey}
+        value={state.brave_api_key}
+      />
+
+      <ApiKeyField
+        copy={t}
+        description={t.tavilyApiKeyDesc}
+        disabled={disabled}
+        fingerprint={state.tavily_api_key_fingerprint}
+        isSet={state.tavily_api_key_set}
+        onChange={value => onApiKeyChange('tavily_api_key', value)}
+        onClear={() => onClearApiKey('tavily_api_key')}
+        placeholder={t.tavilyApiKeyPlaceholder}
+        title={t.tavilyApiKey}
+        value={state.tavily_api_key}
+      />
+
+      <ListRow
+        action={
+          <Input
+            className="max-w-sm"
+            disabled={disabled}
+            onChange={event => update({ tavily_base_url: event.currentTarget.value })}
+            placeholder={t.tavilyBaseUrlPlaceholder}
+            value={state.tavily_base_url}
+          />
+        }
+        title={t.tavilyBaseUrl}
+      />
+    </SettingsSubsection>
+  )
+}
