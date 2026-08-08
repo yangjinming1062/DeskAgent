@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 
 import { SearchField, Switch } from '@/shared/components/ui'
+import { useAsyncLoader } from '@/shared/hooks/use-async-loader'
 import { useLatestRef } from '@/shared/hooks/use-latest-ref'
 import { Wrench } from '@/shared/lib/icons'
 import { TOOLSET_CATALOG, type ToolsetCatalogEntry } from '@/shared/lib/toolset-catalog'
@@ -27,51 +28,33 @@ export function ToolsetsSettings(): React.JSX.Element {
   const sk = t.skills
   const toolsetText = t.toolsets
 
-  const [toolsets, setToolsets] = useState<ToolsetRosterEntry[]>([])
-  const [loadFailed, setLoadFailed] = useState(false)
-  const [loading, setLoading] = useState(true)
-  const [searchTerm, setSearchTerm] = useState('')
-  const [savingId, setSavingId] = useState<string | null>(null)
-
   const loadErrorLabelRef = useLatestRef(sk.skillsLoadFailed)
   const saveErrorLabelRef = useLatestRef(sk.toolsetsRefreshFailed)
 
-  useEffect(() => {
-    let cancelled = false
+  const loader = useAsyncLoader<ToolsetRosterEntry[]>(async () => {
+    const res = await window.deskagent.toolsets.list()
 
-    void (async () => {
-      try {
-        const res = await window.deskagent.toolsets.list()
+    if (!res.ok) {
+      notifyError(res.error ?? 'load-failed', loadErrorLabelRef.current)
 
-        if (cancelled) {
-          return
-        }
-
-        if (res.ok) {
-          setToolsets(res.toolsets ?? [])
-          setLoadFailed(false)
-        } else {
-          setLoadFailed(true)
-          notifyError(res.error ?? 'load-failed', loadErrorLabelRef.current)
-        }
-      } catch (err) {
-        if (cancelled) {
-          return
-        }
-
-        setLoadFailed(true)
-        notifyError(err, loadErrorLabelRef.current)
-      } finally {
-        if (!cancelled) {
-          setLoading(false)
-        }
-      }
-    })()
-
-    return () => {
-      cancelled = true
+      return []
     }
-  }, [loadErrorLabelRef, saveErrorLabelRef])
+
+    return res.toolsets ?? []
+  })
+
+  const [toolsets, setToolsets] = useState<ToolsetRosterEntry[]>([])
+  const loading = loader.isLoading
+  const loadFailed = loader.error !== null
+
+  useEffect(() => {
+    if (loader.data) {
+      setToolsets(loader.data)
+    }
+  }, [loader.data])
+
+  const [searchTerm, setSearchTerm] = useState('')
+  const [savingId, setSavingId] = useState<string | null>(null)
 
   const rosterById = useMemo(() => {
     const map = new Map<string, ToolsetRosterEntry>()

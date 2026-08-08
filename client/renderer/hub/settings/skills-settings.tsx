@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 
 import { SearchField, Switch, TextTab, TextTabMeta } from '@/shared/components/ui'
+import { useAsyncLoader } from '@/shared/hooks/use-async-loader'
 import { useLatestRef } from '@/shared/hooks/use-latest-ref'
 import { Sparkles } from '@/shared/lib/icons'
 import { refreshSession } from '@/shared/store/auth'
@@ -31,50 +32,35 @@ export function SkillsSettings(): React.JSX.Element {
   const t = strings
   const s = t.settings.skills
   const sk = t.skills
+  const loadErrorLabel = s.loadError
+  const loadErrorLabelRef = useLatestRef(loadErrorLabel)
+
+  const loader = useAsyncLoader<SkillSummary[]>(async () => {
+    const res = await window.deskagent.skills.list()
+
+    if (!res.ok) {
+      notifyError(res.error ?? 'load-failed', loadErrorLabelRef.current)
+
+      return []
+    }
+
+    return res.skills ?? []
+  })
+
   const [skills, setSkills] = useState<SkillSummary[]>([])
-  const [loadFailed, setLoadFailed] = useState(false)
-  const [loading, setLoading] = useState(true)
+  const loading = loader.isLoading
+  const loadFailed = loader.error !== null
+
+  // Mirror loader.data into local state so optimistic-toggle `setSkills` works
+  // — the loader is the source of truth at mount, local writes win afterwards.
+  useEffect(() => {
+    if (loader.data) {
+      setSkills(loader.data)
+    }
+  }, [loader.data])
+
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
-
-  const loadErrorLabelRef = useLatestRef(s.loadError)
-
-  useEffect(() => {
-    let cancelled = false
-
-    void (async () => {
-      try {
-        const res = await window.deskagent.skills.list()
-
-        if (cancelled) {
-          return
-        }
-
-        if (res.ok) {
-          setSkills(res.skills ?? [])
-          setLoadFailed(false)
-        } else {
-          setLoadFailed(true)
-          notifyError(res.error ?? 'load-failed', loadErrorLabelRef.current)
-        }
-      } catch (err) {
-        if (cancelled) {
-          return
-        }
-
-        setLoadFailed(true)
-        notifyError(err, loadErrorLabelRef.current)
-      } finally {
-        if (!cancelled) {
-          setLoading(false)
-        }
-      }
-    })()
-
-    return () => {
-      cancelled = true
-    }
-  }, [loadErrorLabelRef])
 
   const skillsRef = useLatestRef(skills)
   const saveErrorRef = useLatestRef(s.saveError)

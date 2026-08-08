@@ -1,7 +1,7 @@
 import * as Cmdk from 'cmdk'
 import * as React from 'react'
 
-import { SearchIcon } from '@/shared/lib/icons'
+import { Search } from '@/shared/lib/icons'
 import { cn } from '@/shared/lib/utils'
 
 function Command({ className, ...props }: React.ComponentProps<typeof Cmdk.Command>): React.JSX.Element {
@@ -20,7 +20,7 @@ function Command({ className, ...props }: React.ComponentProps<typeof Cmdk.Comma
 function CommandInput({ className, ...props }: React.ComponentProps<typeof Cmdk.Command.Input>): React.JSX.Element {
   return (
     <div className="flex h-11 items-center gap-2 border-b border-border px-3" data-slot="command-input-wrapper">
-      <SearchIcon className="size-4 shrink-0 text-muted-foreground" />
+      <Search className="size-4 shrink-0 text-muted-foreground" />
       <Cmdk.Command.Input
         className={cn(
           'flex h-10 w-full rounded-md bg-transparent py-3 text-sm outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50',
