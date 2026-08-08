@@ -120,7 +120,7 @@ Tier 2-4 保持原 fold-in 语义（per-cap 覆盖 provider-level），兼容老
 
 `<svc>_PROVIDER` 不参与单 slot 凭证解析；它**只软重排** chain——把命名的 provider 提到第一位，chain 仍保留其它 provider 作为 fallback（设计决策：用户希望链不塌缩）。空 `<svc>_provider` + `PROVIDERS` 未设 → `SERVICE_DEFAULT_PROVIDER[svc]` 兜底（chat/stt/tts→`mimo`、image/video→`minimax`），chain 退化为单元素。
 
-**provider 默认 URL**（`PROVIDER_DEFAULT_URLS`）：MiMo 含 `/v1`（OpenAI SDK 需完整 base_url）；MiniMax 仅 chat（llm）URL 含 `/v1`，其余能力（tts/image_gen）路径已自带 `/v1`、base_url 不含；video_gen（H3 v2）路径自含版本前缀 `/v2/...`，base_url 不带版本；Gemini chat 含 `/v1beta/openai/`（Google OpenAI 兼容端点），其余能力（stt/tts/image_gen）用 `generativelanguage.googleapis.com` 原生端点，`video_gen` 为空字符串（Veo 需 Vertex AI，暂不支持）。**key 隔离**：minimax provider 始终用 `MINIMAX_API_KEY`，不继承 MiMo key（host 不同会 401）；gemini provider 用 `GEMINI_API_KEY`（兼容 `GEMINI_KEY` 别名）；其他 provider 链路最终回落 `LLM_API_KEY` 兼容老部署。`MIMO_KEY` / `MINIMAX_KEY` / `GEMINI_KEY` 是 legacy 别名。
+**provider 默认 URL**（`PROVIDER_DEFAULT_URLS`）：MiMo 含 `/v1`（OpenAI SDK 需完整 base_url）；MiniMax 仅 chat（llm）URL 含 `/v1`，其余能力（tts/image_gen）路径已自带 `/v1`、base_url 不含；video_gen 路径自含版本前缀（v1 Hailuo → `/v1/...`，v2 H3 → `/v2/...`，按模型名路由），base_url 不带版本；Gemini chat 含 `/v1beta/openai/`（Google OpenAI 兼容端点），其余能力（stt/tts/image_gen）用 `generativelanguage.googleapis.com` 原生端点，`video_gen` 为空字符串（Veo 需 Vertex AI，暂不支持）。**key 隔离**：minimax provider 始终用 `MINIMAX_API_KEY`，不继承 MiMo key（host 不同会 401）；gemini provider 用 `GEMINI_API_KEY`（兼容 `GEMINI_KEY` 别名）；其他 provider 链路最终回落 `LLM_API_KEY` 兼容老部署。`MIMO_KEY` / `MINIMAX_KEY` / `GEMINI_KEY` 是 legacy 别名。
 
 `backend/.env.example` 是完整模板。**最小配置**：`LLM_API_KEY` + `MINIMAX_API_KEY`——每 provider 用自己的默认 URL + model。
 
@@ -150,25 +150,38 @@ Tier 2-4 保持原 fold-in 语义（per-cap 覆盖 provider-level），兼容老
 
 ## 视频生成
 
-MiniMax-H3（v2 API）异步两段式：`POST /v2/video_generation`（task_id）→ `GET /v2/query/video_generation/{task_id}` 轮询，**成功后 poll 直接返回 `task.content.url`**——不再有第三段 `files/retrieve`，但 URL 仍是短时效的，必须在 provider URL 失效前**立即**下载落盘。`services/media/video_jobs.py` 把这条流水编排成：
+MiniMax 有**两套互不兼容的视频 API，本 provider 同时支持、按模型名自动路由**（`minimax/video.py::_api_version`：模型名以 `MiniMax-H3` 开头 → v2，其余（含未知名）→ v1）：
+
+| | **v1（Hailuo 家族，默认）** | **v2（H3）** |
+|---|---|---|
+| 默认/示例模型 | `MiniMax-Hailuo-2.3`（当前默认）、`MiniMax-Hailuo-02` | `MiniMax-H3` |
+| submit | `POST /v1/video_generation`，扁平 `prompt` / `aspect_ratio` / `first_frame_image` | `POST /v2/video_generation`，多模态 `content[]` + `ratio` |
+| poll | `GET /v1/query/video_generation?task_id=` → 扁平 body + `file_id` | `GET /v2/query/video_generation/{task_id}` → `{task:{...}}` + 内联 `content.url` |
+| fetch | `GET /v1/files/retrieve?file_id=` → `download_url`（9h 有效） | 不存在（v2 路径调 `fetch` 直接 raise） |
+| 状态枚举 | `Queueing` / `Processing` / `Success` / `Fail` | `queued` / `running` / `succeeded` / `failed` / `cancelled` |
+| duration | 6 或 10 | 4–15 整数 |
+| resolution | 512P / 768P / 1080P | 768P / 2K |
+
+**为什么默认是 v1**：MiniMax-H3（v2）**不在标准 token-plan 覆盖范围内**，需要单独付费订阅——把它设成默认会让开箱即用的视频生成全部失败。v2 能力完整保留，通过 `VIDEO_GEN_MODEL_NAME=MiniMax-H3`（或 per-user 模型配置）显式切入。
+
+无论哪条路径，provider 返回的 URL 都是**短时效**的，必须在失效前立即下载落盘。`services/media/video_jobs.py` 把这条流水编排成：
 
 - `enqueue_video_job` 入库 + 提交 + `asyncio.create_task` 起后台 polling
 - `_poll_and_finalize` 每 `video_gen_poll_interval_seconds`（5s）查一次，最长 `video_gen_max_poll_seconds`（900s）
-- succeeded 后若 `status.download_url` 已带（H3 v2 路径）直接走 httpx streaming 下载；缺则回退 `provider.fetch(file_id)`（兼容旧 v1 provider）；统一落 `data_dir/temp-media` 并通过 `components.save_file` 暴露为自家 `/api/media/files/<id>` URL
+- 轮询前把 `ProviderConfig.model` 钉到 **job 行记录的 model**（`dataclasses.replace`）——用户中途改模型配置不会让轮询打到另一套协议的端点
+- succeeded 后若 `status.download_url` 已带（v2 路径）直接走 httpx streaming 下载；缺则回退 `provider.fetch(file_id)`（v1 路径）；统一落 `data_dir/temp-media` 并通过 `components.save_file` 暴露为自家 `/api/media/files/<id>` URL
 - 写 `WSEvent(user_id, "video_gen.completed"|"video_gen.failed", payload)`，复用 `services/gateway/connection` 的 LISTEN/NOTIFY outbox 推到桌面端
 
-**模型支持**：默认 `MiniMax-H3`（768P / 2K，4–15s 整数）。t2v 模式要求必填 `ratio`；i2v 模式（带 `first_frame_image`）由 provider 自动传 `ratio=adaptive`，由 H3 按输入图决定宽高比。tool 层 `duration` 范围 [4, 15]、`resolution` ∈ {768P, 2K}。t2v ratio 必填校验放在工具层（`video_generation_tool`），provider 收到非法请求会在 t2v 路径发缺 ratio 字段的 payload、API 直接 400。
+**校验分层**：调用方（tool / REST）拿不到实际解析出的模型名，所以只做两套参数空间的**并集**宽松校验（duration 4–15、resolution ∈ {512P, 768P, 1080P, 2K}）；**精确的按版本校验收敛在 provider**（`_payload_v1` / `_payload_v2`），非法组合在 submit 阶段 raise `ValueError`，job 行记 `submit_failed`，错误信息带上模型名与该版本的合法取值。
 
-**MiniMax-H3 v2 状态机**（docs `VideoTask.status` enum）：
-- `queued` 排队 → `running` 运行中 → `succeeded` / `failed` / `cancelled` 终态
-- provider.poll 把 `running` 归一为内部 `processing`，`cancelled` 归一为 `failed`（Backend 生命周期无独立 cancelled 态）；`queued` 保持独立以便上层区分"未开始"与"运行中"
+**状态归一**：v1 的 `Success`/`Fail` 与 v2 的 `succeeded`/`failed` 分别由 `_V1_STATUS_MAP` / `_STATUS_MAP` 映射到内部四态（`queued` / `processing` / `succeeded` / `failed`）。v2 的 `running` 归一为 `processing`、`cancelled` 归一为 `failed`（Backend 生命周期无独立 cancelled 态）；`queued` 保持独立以便上层区分"未开始"与"运行中"。
+
+**客户端早 fail**（v2 路径）：
+- prompt 字符上限 7000（docs `ContentItem.text` 限制）— `_build_content` 入口 raise `ValueError`，避免 round-trip API 拿 400
+- t2v 必填 `ratio` — `_payload_v2` raise（v1 的 `aspect_ratio` 是可选的，服务端有默认值）
 - `download_url` 仅在 `succeeded` 时被读取；`H3-Context-IR` 任务的产物是 `content.prompt`（无 URL），落到该 provider 上既无 `download_url` 也无 `file_id`，当前会进 `download_failed`——本 provider 只覆盖视频任务，H3-Context-IR 不在范围内
 
-**客户端早 fail**：
-- prompt 字符上限 7000（docs `ContentItem.text` 限制）— provider 端 `_build_content` 入口 raise `ValueError`，避免 round-trip API 拿 400
-- t2v ratio 必填 — 工具层早 fail；下游 provider 不会发缺 ratio 的 payload
-
-**MiniMax-H3 协议下未实现的 capabilities**（功能缺口，记入便于未来排期）：
+**MiniMax-H3（v2）协议下未实现的 capabilities**（功能缺口，记入便于未来排期；仅适用于 v2 路径）：
 - `last_frame` / `i2v 首尾帧` — `_build_content` 与 `VideoGenRequest` 只识别 `first_frame_image`，未暴露 `last_frame_image`；ContentItem.role enum 的 5 个值里只支持 1 个
 - `r2va` 多模态参考生视频（`role=reference_image` / `reference_video` / `reference_audio`）— 当前 content[] 数组里没有 video_url / audio_url 元素
 - `POST /v2/h3_context_ir`（独立端点，task_type=h3_context_ir）— 未实现，结构化提示词增强能力缺失
@@ -309,19 +322,19 @@ Backend 在对话响应的 `message.complete` 帧内联 `affect: {emotion}` 字�
 | `apply_partial` 抹除"清空"语义 | PATCH 无法用 null 清字段 |
 | 形象资产 URL 有 TTL | 持久路径 ``companion-avatars/<id>.<ext>`` + 读时 5 分钟 HMAC 签名（`X-Signed-Url-Expiry`）。`verify_signed_asset_request` 强制校验，缺签名 401。签名 URL 的 host 来自 `public_url_prefix`，Desktop 不能假定可达——渲染进程一律经主进程 `deskagent:api:asset` 取字节转 data URL |
 | `image_generate` / `text_to_speech_tool` / `video_generate` 不参与 config-aware 过滤 | 可用性取决于 provider；调用时按 `llm_config` 拉 `provider_for_service` |
-| MiniMax-H3 视频 URL 短时效 | video_gen H3 v2 协议下 `poll` 直接返回 `download_url`（旧 v1 还有 `files/retrieve` 第二跳），URL 仍是短时效的，必须立即下载落 `data_dir/temp-media`，**不能**直接返给前端 |
+| MiniMax 视频 URL 短时效 | video_gen v2（H3）协议下 `poll` 直接返回 `download_url`，v1（Hailuo）还有 `files/retrieve` 第二跳；两者 URL 都是短时效的，必须立即下载落 `data_dir/temp-media`，**不能**直接返给前端 |
 | MiniMax 内容风控 1027 不重试 | `base_resp.status_code=1027` 映射到 `content_policy_blocked` 且 `retryable=False`，避免重试三次白烧配额 |
 | 单实例 IPC future | `_disturbance` 锁在 process-local 内存里；架构按单实例部署 |
 | Cron kick 守卫 | `_kick_autonomous_turn` 仅在 dispatcher 表里查"用户在线"；`kick` 内部 `is_quiet` 守卫 + per-user `asyncio.Lock` 兜底 |
-| video_gen URL 短时效过期 | H3 v2 协议下 `provider.poll` 直接返回的 `download_url` 是短时效的；下载测试必须确保 URL 失效前落地；CI fixture 用 fake provider 跳过此路径 |
+| video_gen URL 短时效过期 | v2 由 `provider.poll` 直接返回、v1 由 `provider.fetch` 返回的 `download_url` 都是短时效的；下载测试必须确保 URL 失效前落地；CI fixture 用 fake provider 跳过此路径 |
 
 ## MiniMax 注意事项
 
 仅与启用 MiniMax provider 的部署相关（默认配置即开）：
 
-- **国内 / 国际双域名**：`https://api.minimaxi.com/v1`（国内）+ `https://api.minimax.io/v1`（国际）。切换域名单独改对应 `*_base_url` env 即可。注：MiniMax llm 端用 OpenAI SDK 需要 `/v1` 后缀；tts / image_gen 路径已自带 `/v1`，video_gen（H3 v2）路径自含 `/v2/...`，`_provider_level_url` 会自动剥掉 env 末尾的 `/v1` 避免 `/v1/v1/...` 404
+- **国内 / 国际双域名**：`https://api.minimaxi.com/v1`（国内）+ `https://api.minimax.io/v1`（国际）。切换域名单独改对应 `*_base_url` env 即可。注：MiniMax llm 端用 OpenAI SDK 需要 `/v1` 后缀；tts / image_gen 路径已自带 `/v1`，video_gen 路径自含 `/v1/...` 或 `/v2/...`（按模型名路由），`_provider_level_url` 会自动剥掉 env 末尾的 `/v1` 避免 `/v1/v1/...` 404
 - **API Key 单源**：`MINIMAX_API_KEY` 是 chat/image/video/tts 通用 key；`MINIMAX_API_KEY` 与 `LLM_API_KEY`（MiMo）相互独立。**不要**让 MiniMax 配置继承 MiMo key（host 不同会 401）——`resolve_provider_config` 在 provider 推断为 minimax 时强制把回落链截断在 `minimax_api_key`
-- **单 key 多能力计费**：image-01 按张、H3 按秒/分辨率、speech-2.8 按字符。`media_video_gen_rate_limit_per_minute=3` 是按秒计费的限流保守默认
+- **单 key 多能力计费**：image-01 按张、视频按秒/分辨率（H3 需额外付费订阅，标准 token-plan 不含）、speech-2.8 按字符。`media_video_gen_rate_limit_per_minute=3` 是按秒计费的限流保守默认
 - **视频下载大小上限**：`video_gen_download_max_bytes=200MB` 兜底，避免 provider 返回巨型文件撑爆 `data_dir`；2K/15s 实测可能接近上限
 - **桌面端必须独立缓存**：服务端已 download 落本地（`/api/media/files/<id>`），不要把 MiniMax 原 URL 透传到桌面
 - **ASR 不在 MiniMax 公开 API**：stt 仍走 MiMo（input_audio chat completions 扩展），未来要切其他 ASR provider 时直接挂一个新 provider 类到 `(ServiceType.stt, "<name>")` registry slot
