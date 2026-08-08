@@ -5,11 +5,12 @@ import { InlineNotice } from '@/shared/components/notifications'
 import { Button } from '@/shared/components/ui/button'
 import { ConfirmDialog } from '@/shared/components/ui/confirm-dialog'
 import { Input } from '@/shared/components/ui/input'
+import { SecretInputField } from '@/shared/components/ui/secret-input-field'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/shared/components/ui/select'
 import { Switch } from '@/shared/components/ui/switch'
 import { getDeskAgentConfig, saveDeskAgentConfig } from '@/shared/deskagent/config'
 import { triggerHaptic } from '@/shared/lib/haptics'
-import { Archive, Eye, EyeOff, Globe, KeyRound, Loader2, LogOut, SlidersHorizontal, X } from '@/shared/lib/icons'
+import { Archive, Globe, KeyRound, Loader2, LogOut, SlidersHorizontal } from '@/shared/lib/icons'
 import { $auth, logout } from '@/shared/store/auth'
 import { notify, notifyError } from '@/shared/store/notifications'
 import { strings } from '@/shared/strings'
@@ -724,44 +725,21 @@ function ApiKeyField({
   title: string
   value: string
 }) {
-  const [revealed, setRevealed] = useState(false)
   const status = isSet ? copy.set : copy.notSet
 
   return (
     <ListRow
       action={
-        <div className="flex items-center gap-2">
-          <Input
-            className="max-w-sm"
-            disabled={disabled}
-            onChange={event => onChange(event.currentTarget.value)}
-            placeholder={placeholder}
-            type={revealed ? 'text' : 'password'}
-            value={value}
-          />
-          <Button
-            aria-label={revealed ? copy.hide : copy.reveal}
-            disabled={disabled}
-            onClick={() => setRevealed(prev => !prev)}
-            size="icon"
-            type="button"
-            variant="ghost"
-          >
-            {revealed ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
-          </Button>
-          {isSet ? (
-            <Button
-              aria-label={copy.clearKey}
-              disabled={disabled}
-              onClick={onClear}
-              size="icon"
-              type="button"
-              variant="ghost"
-            >
-              <X className="size-4" />
-            </Button>
-          ) : null}
-        </div>
+        <SecretInputField
+          copy={copy}
+          disabled={disabled}
+          fingerprint={fingerprint}
+          isSet={isSet}
+          onChange={onChange}
+          onClear={onClear}
+          placeholder={placeholder}
+          value={value}
+        />
       }
       description={description}
       hint={isSet ? copy.fingerprint(fingerprint) : undefined}
