@@ -1011,26 +1011,27 @@ async def test_regenerate_avatar_from_image_uses_reference(monkeypatch, _patch_d
     from services.companion import avatar_service
 
     _, SessionLocal = _patch_db
-    calls: dict = {}
+    all_calls: list[dict] = []
 
     async def fake_gen(**kwargs):
-        calls.update(kwargs)
+        all_calls.append(kwargs)
         return _json.dumps({"success": True, "urls": ["http://provider/gen.png"]})
 
     async def fake_download(url):
         return b"\x89PNG\r\n\x1a\n", "image/png"
 
-    async def fake_enhance(db, user_id, persona, *, style="portrait", feedback=None, provider_config=None):
-        # Build a deterministic prompt that the test can still assert on —
-        # mimics what the LLM would return without actually calling one.
-        # The LLM weaves feedback into the description; the mock does the same
-        # so the test can verify the description reaches the final prompt.
+    async def fake_enhance(db, user_id, persona, *, feedback=None, provider_config=None):
+        # Build deterministic prompts that the test can assert on — mimics
+        # what the LLM would return without actually calling one.
         suffix = f", 追加：{feedback}" if feedback else ""
-        return f"portrait portrait of 测试角色, 纯白平面背景, no scenery, no gradient, no shadow{suffix}"
+        return {
+            "avatar": f"bust portrait of 测试角色, 纯白平面背景, no scenery, no gradient, no shadow{suffix}",
+            "seed": f"full body portrait of 测试角色, 纯白平面背景{suffix}",
+        }
 
     monkeypatch.setattr(avatar_service, "image_generation_tool", fake_gen)
     monkeypatch.setattr(avatar_service, "_download_to_bytes", fake_download)
-    monkeypatch.setattr(avatar_service, "enhance_portrait_prompt", fake_enhance)
+    monkeypatch.setattr(avatar_service, "enhance_character_image_prompts", fake_enhance)
 
     with SessionLocal() as db:
         user = User(username="imguser", password_hash="x", is_active=True, can_use=True)
@@ -1052,14 +1053,23 @@ async def test_regenerate_avatar_from_image_uses_reference(monkeypatch, _patch_d
         )
         db.refresh(asset)
 
-        ref = calls["reference_image"]
-        assert ref.startswith("data:image/png;base64,")
-        assert "把背景改成纯白" in calls["prompt"]
+        # Both avatar + seed image-gen calls should fire.
+        assert len(all_calls) == 2
+        prompts = sorted(c["prompt"] for c in all_calls)
+        # One bust prompt (avatar) + one full body prompt (seed).
+        assert any(p.startswith("bust portrait") for p in prompts)
+        assert any(p.startswith("full body portrait") for p in prompts)
+        # Both calls receive the inline reference image.
+        for c in all_calls:
+            assert c["reference_image"].startswith("data:image/png;base64,")
+            assert "把背景改成纯白" in c["prompt"]
         assert asset.active is True
+        assert asset.seed_url is not None
         payload = _json.loads(asset.prompt_json)
         # Audit row keeps a marker, not the base64 blob.
         assert payload["reference_image"] == "data:image/png;base64"
         assert payload["feedback"] == "把背景改成纯白"
+        assert payload["source_url"] == "http://provider/gen.png"
 
 
 @pytest.mark.asyncio
@@ -1191,6 +1201,20 @@ def test_companion_rest_contract(_patch_db):
     assert client.get("/api/companion/avatar").status_code == 404
     assert client.get("/api/companion/model").status_code == 404
     assert client.get("/api/companion/wardrobe/equipped").status_code == 404
+
+    # POST /api/companion/model succeeds with no body or empty body
+    model_resp = client.post("/api/companion/model")
+    assert model_resp.status_code == 201
+    assert model_resp.json()["status"] == "succeeded"
+
+    # Reset the in-memory rate limiter so the second POST within the same
+    # minute window isn't 429'd (rate limit is 1/min for model generation).
+    from services.rate_limit import limiter
+
+    limiter.reset()
+
+    model_resp_json = client.post("/api/companion/model", json={})
+    assert model_resp_json.status_code == 201
 
     items = client.get("/api/companion/wardrobe")
     assert items.status_code == 200

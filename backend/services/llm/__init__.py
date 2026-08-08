@@ -14,8 +14,8 @@ from .llm_client import resolve_service_row
 from .llm_fallback import execute_with_fallback
 from .llm_retry import call_with_retry
 from .llm_retry import LLMRuntimeError
+from .prompt_engineer import enhance_character_image_prompts
 from .prompt_engineer import enhance_pbr_channels
-from .prompt_engineer import enhance_portrait_prompt
 from .prompt_engineer import enhance_texture_prompt
 from .prompt_engineer import PBR_KEYS
 from .providers import aclose_all
@@ -100,7 +100,7 @@ __all__ = [
     "FailoverReason",
     "compress_history_if_needed",
     "describe_reference_image",
-    "enhance_portrait_prompt",
+    "enhance_character_image_prompts",
     "enhance_texture_prompt",
     "enhance_pbr_channels",
     "PBR_KEYS",

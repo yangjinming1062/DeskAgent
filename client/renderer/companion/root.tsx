@@ -258,7 +258,7 @@ export function CompanionRoot() {
   const onOnboardingComplete = () => {
     setCompanionLifecycle('ready')
     void window.deskagent
-      .api<{ id?: number; status?: string }>({ path: '/api/companion/model', method: 'POST' })
+      .api<{ id?: number; status?: string }>({ path: '/api/companion/model', method: 'POST', body: {} })
       .catch(err => console.warn('[companion] initial model generation failed:', err))
   }
 

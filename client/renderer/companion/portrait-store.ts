@@ -1,5 +1,7 @@
 import { atom } from 'nanostores'
 
+import { isClientErrorIpc } from '@/shared/lib/ipc-error'
+
 import { resolvePortraitUrl } from './avatar-image'
 
 // Resolved data URL of the companion's 2D portrait. Hydrated on app start from
@@ -33,7 +35,13 @@ export async function hydratePortrait(): Promise<void> {
     const res = await window.deskagent.api<{ asset_url?: string }>({ path: '/api/companion/avatar' })
 
     await applyPortrait(res?.asset_url)
-  } catch {
-    // No avatar yet — leave the atom null so subscribers can show their placeholder.
+  } catch (error) {
+    // 4xx (404 = no avatar yet during onboarding, 401 = token expired) are
+    // expected; leave the atom null so subscribers show their placeholder.
+    // 5xx / network errors surface as console warnings — a silently missing
+    // portrait forever is worse than a diagnostic.
+    if (!isClientErrorIpc(error)) {
+      console.warn('hydratePortrait failed', error)
+    }
   }
 }

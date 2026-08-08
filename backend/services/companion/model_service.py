@@ -35,11 +35,14 @@ def _active_portrait(db: Session, user_id: int) -> str | None:
     a = db.query(AvatarAsset).filter(AvatarAsset.user_id == user_id, AvatarAsset.active.is_(True)).one_or_none()
     if a is None:
         return None
-    if a.asset_url and a.asset_url.startswith("companion-avatars/"):
-        filename = a.asset_url.split("/", 1)[1]
+    # Prefer the dedicated full-body seed image; fall back to the avatar
+    # (bust) for legacy rows that predate the avatar/seed split.
+    url = a.seed_url or a.asset_url
+    if url and url.startswith("companion-avatars/"):
+        filename = url.split("/", 1)[1]
         file_id, _, ext = filename.partition(".")
         return build_signed_avatar_url(file_id, ext)
-    return a.asset_url
+    return url
 
 
 def get_active_model(db: Session, user_id: int) -> CompanionModel | None:
