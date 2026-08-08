@@ -76,6 +76,36 @@ function registerConnectionIpc({
     return dataUrlFromBuffer(Buffer.from(await res.arrayBuffer()), mime)
   })
 
+  // Like ``api:asset`` but returns the raw bytes via Electron IPC structured
+  // clone (no base64). For large binary payloads (GLB, wardrobe PBR textures)
+  // where base64 inflation in ``api:asset`` would round-trip a 30 MB GLB into
+  // a 40 MB string. Same host-strip + rebase behaviour.
+  ipcMain.handle('deskagent:api:asset-buffer', async (_event, request) => {
+    const connection = await ensureBackend()
+    const raw = String(request?.url || '')
+    if (!raw) throw new Error('asset url is required')
+
+    const { pathname, search } = new URL(raw, connection.baseUrl)
+    const pathAndQuery = `${pathname}${search}`
+
+    const res = await fetch(`${connection.baseUrl}${pathAndQuery}`, {
+      headers: { ...(connection.token ? { Authorization: `Bearer ${connection.token}` } : {}) },
+      signal: AbortSignal.timeout(defaultFetchTimeoutMs)
+    })
+    if (!res.ok) {
+      if (res.status === 401 && connection.token) {
+        try {
+          _event.sender.send('deskagent:auth:session-expired')
+        } catch {
+          /* window may have been destroyed */
+        }
+      }
+      const text = await res.text().catch(() => '')
+      throw new Error(`${res.status} ${pathname}: ${text || res.statusText}`)
+    }
+    return Buffer.from(await res.arrayBuffer())
+  })
+
   // Expose cache reset so auth IPC can invalidate the cached connection
   // after login/logout when the JWT changes.
   return { resetBackendCache: resetBackendCache || (() => {}) }

@@ -145,14 +145,6 @@ class Settings(BaseSettings):
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
     log_format: Literal["json", "text"] = "json"
 
-    # ── CORS ──
-    # Wildcard ("*") — accept any origin. The API uses bearer-token auth
-    # (not cookies), so credentialed cross-origin requests aren't a concern;
-    # the LAN-reachable companion endpoints are gated by signature + bearer
-    # anyway. Override via env to a comma-separated origin list if a tighter
-    # policy is ever needed.
-    cors_allowed_origins: str = "*"
-
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", case_sensitive=False, extra="ignore")
 
     @field_validator("providers", mode="before")

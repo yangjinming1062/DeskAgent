@@ -168,21 +168,15 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
 
 
 app = FastAPI(title=SETTINGS.app_name, lifespan=lifespan)
-# CORS — defaults to wildcard (`*`) so deployed frontends on any host can
-# call the API; bearer-token auth means cookies aren't in play, so
-# allow_credentials stays False (FastAPI rejects `*` + credentials).
-# Override via ``CORS_ALLOWED_ORIGINS`` to a comma-separated origin list
-# when a tighter policy is needed.
-cors_origins = [o.strip() for o in SETTINGS.cors_allowed_origins.split(",") if o.strip()]
-if cors_origins:
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=cors_origins,
-        allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-        allow_headers=["Authorization", "Content-Type", "X-Request-ID"],
-        # Auth is a bearer header, not a cookie — credentials stay off.
-        allow_credentials=False,
-    )
+# CORS — wildcard. Bearer-token auth (not cookies) means credentialed
+# cross-origin requests aren't a concern (FastAPI rejects `*` + credentials).
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-Request-ID"],
+    allow_credentials=False,
+)
 app.state.limiter = limiter
 app.middleware("http")(stash_user_id_middleware)
 # correlation_id_middleware 后注册 = Starlette 外层 wrapper, inbound 它先跑,

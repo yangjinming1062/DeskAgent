@@ -41,8 +41,8 @@ export class Engine {
     this.lighting = new LightingRig(this.scene, this.renderer)
   }
 
-  async loadCharacter(url: string | null): Promise<LoadedModelInfo> {
-    return this.character.load(url, this.scene)
+  async loadCharacter(bytes: ArrayBuffer | null): Promise<LoadedModelInfo> {
+    return this.character.load(bytes, this.scene)
   }
 
   start(): void {
