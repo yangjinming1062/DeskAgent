@@ -38,7 +38,13 @@ class CompanionModel(ModelBase, TimestampMixin):
 
 
 class WardrobeItem(ModelBase, TimestampMixin):
-    """material_overrides_json keys are mesh names; "*" applies to all meshes."""
+    """material_overrides_json keys are mesh names; "*" applies to all meshes.
+
+    ``texture_url`` is the albedo channel; ``normal_url`` / ``roughness_url`` /
+    ``metalness_url`` are the matching PBR channels for the GLB texture pass.
+    All four are nullable so legacy rows (albedo-only) and colour-preset
+    rows (no textures at all) coexist with full PBR sets.
+    """
 
     __tablename__ = "wardrobe_items"
 
@@ -47,6 +53,9 @@ class WardrobeItem(ModelBase, TimestampMixin):
     category: Mapped[str] = mapped_column(String(64), default="preset")
     material_overrides_json: Mapped[str] = mapped_column(Text, default="{}")
     texture_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    normal_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    roughness_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    metalness_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     prompt: Mapped[str | None] = mapped_column(Text, nullable=True)
     equipped: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("FALSE"), index=True)
 

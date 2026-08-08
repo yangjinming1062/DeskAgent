@@ -212,11 +212,19 @@ DeskAgent 伙伴的"人格"与"形象"是跨 Backend↔Desktop 的核心契约�
 
 **onboarding 断点恢复**（design §6.3）：onboarding 逐字段增量持久化经两个 JSON-RPC 方法：`onboarding.get_state` 返回已采集字段 + 下一个未答问题（`next_field`）；`onboarding.submit {field, value}` 即时落盘单个字段。Desktop 启动时调 `get_state`，未完成则从 `next_field` 恢复，崩溃/退出不丢进度。draft 存在 `Persona.definition_json`（`is_complete=False`），完成后 Desktop 发 `PUT /api/companion/persona` 覆盖为最终角色定义（`is_complete=True`）。
 
-**13 步 onboarding + 角色/用户单 PUT 双写**：onboarding 采集 13 个字段（4 旧 + 3 角色 —— `species` / `character_gender` / `appearance` —— + 5 结构化用户字段 `user_call_name` / `user_gender` / `user_age_bucket` / `user_hobbies` / `user_freeform`）。`PersonaUpdate` 只收 `definition_json` 一个字段（`extra="forbid"` 严格校验，整份角色定义以 JSON blob 传输，由 Backend 解析校验）；`update_persona` 在 `_validate_definition(persona_def)` 之前先把 user_* 字段抽出交给 `services.companion.memory_bootstrap.record_user_profile` 落到 `Memory` 表（query-then-update 幂等 upsert，tags `["onboarding","user_profile"]`，context `user_profile:*`，与 `NativeMemory._retain` 同一模式保证 SQLite 单测与生产 Postgres 同行为），然后写 persona 字段 + `is_complete=True`，**同一 `db.commit()` 让两路写入具备原子性**——失败要么都回滚、要么都落。生产 Postgres `main.py::_install_schema_extensions` 加 `uq_memories_user_context` 部分唯一索引做并发 race 兜底。avatar 生图 prompt 经 `_SPECIES_EN` / `_GENDER_EN` 查表把中文物种/性别翻成稳定英文 token（`灵兽` → `spirit beast`、`女` → `female`…），未知值/自由输入原文回退保留用户原意。
+**13 步 onboarding + 角色/用户单 PUT 双写**：onboarding 采集 13 个字段（4 旧 + 3 角色 —— `species` / `character_gender` / `appearance` —— + 5 结构化用户字段 `user_call_name` / `user_gender` / `user_age_bucket` / `user_hobbies` / `user_freeform`）。`PersonaUpdate` 只收 `definition_json` 一个字段（`extra="forbid"` 严格校验，整份角色定义以 JSON blob 传输，由 Backend 解析校验）；`update_persona` 在 `_validate_definition(persona_def)` 之前先把 user_* 字段抽出交给 `services.companion.memory_bootstrap.record_user_profile` 落到 `Memory` 表（query-then-update 幂等 upsert，tags `["onboarding","user_profile"]`，context `user_profile:*`，与 `NativeMemory._retain` 同一模式保证 SQLite 单测与生产 Postgres 同行为），然后写 persona 字段 + `is_complete=True`，**同一 `db.commit()` 让两路写入具备原子性**——失败要么都回滚、要么都落。生产 Postgres `main.py::_install_schema_extensions` 加 `uq_memories_user_context` 部分唯一索引做并发 race 兜底。
+
+**avatar / 纹理生图 prompt 经 LLM 精修**：所有发往 image-gen provider 的 prompt 都先经 `services.llm.prompt_engineer` 的三个 enhancer 改写为详细中文 prompt：
+
+- `enhance_portrait_prompt(persona, style, feedback)` —— portrait 三处调用（`generate_avatar` / `regenerate_avatar` / `regenerate_avatar_from_image`）共用，硬性包含「纯白平面背景，无场景、无渐变、无阴影」子句（chroma-key 渲染依赖）。
+- `enhance_texture_prompt(description)` —— wardrobe（新造型流）单独使用；旧版 `scene="full_body"` 分支已下线，3D 自定义纹理现在走 `enhance_pbr_channels` 的 4 通道 JSON 一次性产出。
+- `enhance_pbr_channels(db, user_id, *, base_description)` —— 一次性产出 albedo / normal / roughness / metalness 四张 PBR 通道图 prompt。reference image 由调用方在 image-gen 阶段传入（model_service 仅 albedo 通道传 portrait 参考图，保证色彩一致）。
+
+LLM 异常（`MissingLlmConfigError` / 网络异常 / JSON 解析失败）**直接向上抛**——chat / affect / persona / agent_delegate 全链路都依赖同一个 llm service，没有为图像生成单独搞 graceful degradation 的理由。prompt 增强是**只读**操作：角色定义永不被 LLM 改写。
 
 ### 形象资产（AvatarAsset）
 
-`AvatarAsset` 表存历次生成的专属形象资产（provider 返回的 URL + 元数据 + 生成状态），按用户维度持久化。Postgres partial unique index 约束"每个用户最多一条 active 记录"。`/api/companion/avatar` POST 时 Backend 据角色定义装配生图 prompt（可选 `prompt_override` 原文覆盖）→ 调 `image_generate` → 写行并置 active。形象生成失败时：persona 未完成返回 `409` + "请先完成 onboarding" 文案，provider 失败返回 `502` + 友好文案（`伙伴形象生成失败，请稍后重试`），不泄露 provider 原始错误。生成是同步的，`AvatarAssetResponse` 的 `status` 恒为 `succeeded`，`prompt` 为生成时所用 prompt（上传行为空）。生成类端点（avatar 生成/上传/from-image、model、wardrobe）均有 per-user 限流（`SETTINGS.companion_*_rate_limit_per_minute`）。
+`AvatarAsset` 表存历次生成的专属形象资产（provider 返回的 URL + 元数据 + 生成状态），按用户维度持久化。Postgres partial unique index 约束"每个用户最多一条 active 记录"。`/api/companion/avatar` POST 时 Backend 先经 `enhance_portrait_prompt` 把角色定义 + `style` 改写为详细中文 prompt（可选 `prompt_override` 原文覆盖）→ 调 `image_generate` → 写行并置 active。形象生成失败时：persona 未完成返回 `409` + "请先完成 onboarding" 文案，provider 失败返回 `502` + 友好文案（`伙伴形象生成失败，请稍后重试`），不泄露 provider 原始错误。生成是同步的，`AvatarAssetResponse` 的 `status` 恒为 `succeeded`，`prompt` 为生成时所用 prompt（上传行为空）。生成类端点（avatar 生成/上传/from-image、model、wardrobe）均有 per-user 限流（`SETTINGS.companion_*_rate_limit_per_minute`）。
 
 **avatar.regenerate** JSON-RPC：带可选 `feedback` 文本（如"头发长一点"），折入 prompt 做增量重生成。不触发 3D 模型失效——模型独立于 portrait，只随物种变更或用户显式请求重生。
 
@@ -228,16 +236,17 @@ DeskAgent 伙伴的"人格"与"形象"是跨 Backend↔Desktop 的核心契约�
 
 `CompanionModel` 表存 3D 模型资产（species、provider、asset_url、morph_params_json、has_rig、has_morph_targets），按用户维度持久化，每用户最多一条 active。生成管线为单一路径：
 
-- **预制 GLB**：按 `persona.definition_json` 的 `biological_type` 映射到 `assets/base-models/` 下的预制 rigged GLB（人类/精灵/灵兽/机甲/幻形 + `character.glb` 通用兜底），即时复制到 `companion-models/` 持久目录并经 `model.ready` 事件下发。零 3D API 成本。模型规格（动画/morph/骨骼/材质）见 [`../assets/base-models/GLB_MODEL_SPEC.md`](../assets/base-models/GLB_MODEL_SPEC.md)。模型下发后后台异步用 portrait 为参考图调 image-gen 生成全身纹理，就绪作 `WardrobeItem` 写库 + `wardrobe.updated` 推送。
+- **预制 GLB**：按 `persona.definition_json` 的 `biological_type` 映射到 `assets/base-models/` 下的预制 rigged GLB（人类/精灵/灵兽/机甲/幻形 + `character.glb` 通用兜底），即时复制到 `companion-models/` 持久目录并经 `model.ready` 事件下发。零 3D API 成本。模型规格（动画/morph/骨骼/材质）见 [`../assets/base-models/GLB_MODEL_SPEC.md`](../assets/base-models/GLB_MODEL_SPEC.md)。模型下发后后台异步经 `enhance_pbr_channels` 一次性产出 albedo + normal + roughness + metalness 四张 PBR 通道图 prompt → `image_generation_tool` 并发 4 路（albedo 复用 portrait 作颜色参考；normal/roughness/metalness 不接参考图）→ 任一通道失败即整组放弃（避免 albedo 应用而 normal 缺失的"半 PBR"状态）→ 全成功时写 `WardrobeItem` 4 个 URL + `wardrobe.updated` 推送。
 - **morph 发现**：`_extract_morph_names_from_glb` 解析 GLB JSON chunk 的 `meshes[].extras.targetNames`，写入 `CompanionModel.has_morph_targets`，供客户端知道模型支持哪些表情。
 
 ### 换装系统（WardrobeItem）
 
-`WardrobeItem` 表存换装资产（材质覆盖 + 可选纹理），每用户最多一条 equipped。
+`WardrobeItem` 表存换装资产（材质覆盖 + 可选纹理），每用户最多一条 equipped。纹理字段为 albedo + normal + roughness + metalness 四个独立 URL，全部 nullable——legacy 行与色彩预设行只填 `texture_url`（albedo）或不填。
 
 - **材质预设**：6 种配色（`material_overrides_json`），即时生效，零生成成本。
-- **AI 纹理**：`POST /api/companion/wardrobe`（prompt → image-gen → 纹理 URL）。
-- **非破坏性热替**：客户端覆盖材质/加载纹理，不动骨骼动画与 morph targets。
+- **AI 纹理**：`POST /api/companion/wardrobe`（描述 → `enhance_texture_prompt(description)` → image-gen → albedo 纹理 URL）；首启模型时后台异步经 `enhance_pbr_channels` 一次性产出 4 张 PBR 通道图（albedo + normal + roughness + metalness），全部成功才写库（任一通道失败则把已写盘的 PNG unlink 掉，避免 `companion-assets/<user_id>/` 累积孤儿）。
+- **非破坏性热替**：客户端覆盖材质 / 加载纹理，不动骨骼动画与 morph targets。PBR 多通道加载彼此独立——albedo 用 SRGBColorSpace，normal/roughness/metalness 用 NoColorSpace（normal map 携带 XYZ 方向向量不能 sRGB 解码）。
+- **签名 URL**：`_re_sign_texture` 在每次 wardrobe 读取时对 albedo + 3 个 PBR 通道 URL 重新签发（5 分钟 HMAC TTL，跨设备不持久）。`delete_wardrobe_item` 一并清理 4 个文件。
 
 
 ### 音色匹配（voice catalog）

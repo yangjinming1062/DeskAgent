@@ -231,15 +231,12 @@ def resolve_provider_config(db: Session | None, user_id: int | None, service_typ
     return chain[0]
 
 
-def provider_for_service(db: Session | None, user_id: int | None, service_type: str) -> BaseProvider:
-    """Unified entry point: resolve config → instantiate provider class.
-
-    Provider classes are not cached (cheap, immutable config) — the
-    expensive objects (httpx/AsyncOpenAI clients) are cached inside the
-    provider constructors via :mod:`providers.http` /
-    :mod:`providers.openai_compat`. Returns chain[0]; for multi-provider
-    fallback, see :func:`services.llm.llm_fallback.execute_with_fallback`.
-    """
-    config = resolve_provider_config(db, user_id, service_type)
+def provider_from_config(config: ProviderConfig) -> BaseProvider:
+    """Construct a provider from a pre-resolved config; skips the DB lookup ``provider_for_service`` does."""
     cls = resolve(config.service_type, config.provider_name)
     return cls(config)
+
+
+def provider_for_service(db: Session | None, user_id: int | None, service_type: str) -> BaseProvider:
+    """Resolve config → instantiate provider. Returns chain[0]; for multi-provider fallback see ``execute_with_fallback``."""
+    return provider_from_config(resolve_provider_config(db, user_id, service_type))

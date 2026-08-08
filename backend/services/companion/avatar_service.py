@@ -9,12 +9,14 @@ import httpx
 from components import get_file_path
 from components import get_logger
 from components import is_safe_outbound
-from components import safe_json_loads
 from components import SETTINGS
 from modules.companion import AvatarAsset
 from modules.companion import Persona
 from sqlalchemy.orm import Session
 
+from ..llm import enhance_portrait_prompt
+from ..llm import resolve_provider_config
+from ..tools.builtin import first_image_url
 from ..tools.builtin import image_generation_tool
 from .asset_store import build_signed_avatar_url
 from .persona_service import get_or_create_persona
@@ -27,60 +29,11 @@ _AVATAR_QUALITY: str = "standard"
 _UPLOAD_EXTS: dict[str, str] = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp", "image/gif": "gif"}
 ALLOWED_AVATAR_UPLOAD_MIME_TYPES: frozenset[str] = frozenset(_UPLOAD_EXTS)
 
-# Chinese onboarding chips → English tokens for image-gen providers; free-text
-# inputs pass through verbatim via _to_en_token's table.get(value, value).
-_SPECIES_EN: dict[str, str] = {
-    "人类": "human",
-    "灵兽": "spirit beast",
-    "精灵": "elf",
-    "机甲": "mecha",
-    "幻形": "shapeshifting entity",
-}
-_GENDER_EN: dict[str, str] = {
-    "女": "female",
-    "男": "male",
-    "其他": "androgynous",
-    "不指定": "",
-}
-
-
-def _to_en_token(value: str | None, table: dict[str, str]) -> str:
-    """Look up ``value`` in ``table``; unknown / free-text passes through
-    verbatim so user-typed input still lands in the prompt."""
-    if not value:
-        return ""
-    return table.get(value, value)
-
 
 class AvatarGenerationError(RuntimeError):
     """Raised when avatar generation cannot complete. Distinct from a
     provider rate-limit retry so callers can render a user-friendly
     "伙伴形象生成失败，请稍后重试" UI without leaking the upstream error."""
-
-
-def _build_prompt(persona: Persona, style: str) -> str:
-    """Assemble the image-generation prompt from persona fields. Word order
-    is species → named → gender → appearance → background so the subject
-    reference is unambiguous (``a fox named X`` not ``of X a fox``)."""
-    definition = safe_json_loads(persona.definition_json or "{}", default={})
-    name = definition.get("name") or "a friendly companion"
-    species = _to_en_token(definition.get("biological_type"), _SPECIES_EN)
-    gender = _to_en_token(definition.get("gender"), _GENDER_EN)
-    appearance = definition.get("appearance") or ""
-    background = definition.get("background") or ""
-
-    # ``style`` defaults to "portrait"; use it only when it differs from the
-    # default so the prompt stays natural.
-    style_prefix = f"{style} " if style and style != _DEFAULT_STYLE else ""
-    parts: list[str] = [f"a {style_prefix}portrait of a {species}, named {name}" if species else f"a {style_prefix}portrait of {name}"]
-    if gender:
-        parts.append(f"({gender})")
-    if appearance:
-        parts.append(appearance)
-    if background:
-        parts.append(f"set in {background}")
-    parts.append("digital illustration, clean linework, full character, no scenery, no gradient, no shadow")
-    return ", ".join(parts)
 
 
 async def _persist_portrait_bytes(data: bytes, content_type: str) -> tuple[str, str, str]:
@@ -179,7 +132,7 @@ async def _generate_and_persist(
 
     ``image_generation_tool`` catches provider errors internally and returns a
     JSON ``{success: false}`` string — it never raises. So this function
-    surfaces failures via ``_extract_first_url → None → AvatarGenerationError``.
+    surfaces failures via ``first_image_url → None → AvatarGenerationError``.
     """
     result_json = await image_generation_tool(
         prompt=prompt,
@@ -191,7 +144,7 @@ async def _generate_and_persist(
         reference_image=reference_image,
     )
 
-    source_url = _extract_first_url(result_json)
+    source_url = first_image_url(result_json)
     if source_url is None:
         raise AvatarGenerationError("image-gen provider returned no URL")
 
@@ -264,36 +217,25 @@ def _delete_portrait_file(asset_url: str | None) -> None:
 
 
 async def generate_avatar(db: Session, *, user_id: int, prompt_override: str | None = None) -> AvatarAsset:
-    """Generate a new avatar asset and flip it active.
-
-    ``prompt_override`` replaces the persona-derived prompt verbatim when
-    given (trimmed); otherwise the prompt is assembled from the persona.
-    Caller is responsible for ensuring the persona is complete; this
-    function raises ``AvatarGenerationError`` (not validation error) when
-    the provider fails so the route can map it to a 502 with a friendly
-    payload.
-
-    """
+    """Generate a new avatar asset and flip it active. Raises ``AvatarGenerationError`` on provider failure (mapped to 502 by the route)."""
     persona = get_or_create_persona(db, user_id)
     if not persona.is_complete:
         raise AvatarGenerationError("persona is incomplete; finish onboarding first")
-    prompt = (prompt_override or "").strip() or _build_prompt(persona, _DEFAULT_STYLE)
+    if (prompt_override or "").strip():
+        prompt = prompt_override.strip()
+    else:
+        # Pre-resolve so the long chat round-trip doesn't re-query the DB
+        # while the caller's session (advisory lock + pool slot) is still held.
+        provider_config = resolve_provider_config(db, user_id, "llm")
+        prompt = await enhance_portrait_prompt(
+            None,
+            user_id,
+            persona,
+            style=_DEFAULT_STYLE,
+            provider_config=provider_config,
+        )
     asset = await _generate_and_persist(db, user_id, prompt=prompt, style=_DEFAULT_STYLE)
     return asset
-
-
-def _extract_first_url(result_json: str) -> str | None:
-    """Pull the first image URL out of ``image_generation_tool``'s JSON
-    result. The tool returns ``{"success": true, "urls": [...]}`` on
-    success and ``{"success": false, "error": ...}`` on failure."""
-    parsed = safe_json_loads(result_json, default=None)
-    if not isinstance(parsed, dict) or not parsed.get("success"):
-        return None
-    urls = parsed.get("urls")
-    if not isinstance(urls, list) or not urls:
-        return None
-    first = urls[0]
-    return first if isinstance(first, str) and first else None
 
 
 def get_active_avatar(db: Session, user_id: int) -> AvatarAsset | None:
@@ -323,17 +265,20 @@ def _re_sign_avatar_url(asset: AvatarAsset) -> None:
 
 
 async def regenerate_avatar(db: Session, user_id: int, persona: Persona, feedback: str | None = None, style: str = _DEFAULT_STYLE) -> AvatarAsset:
-    """Regenerate the portrait.
-
-    Optional ``feedback`` (e.g. "longer hair") is folded into the prompt so
-    iterative regeneration converges. The portrait is the seed for the GLB
-    texture pass, so a failed image-gen leaves the previous portrait active.
-    """
+    """Regenerate the portrait. Optional ``feedback`` (e.g. "longer hair") is folded into the prompt."""
     if not persona.is_complete:
         raise AvatarGenerationError("persona is incomplete; finish onboarding first")
-    prompt = _build_prompt(persona, style)
-    if feedback and feedback.strip():
-        prompt = f"{prompt}. Adjustment requested: {feedback.strip()}"
+    # Pre-resolve so the long chat round-trip doesn't re-query the DB
+    # while the caller's session (advisory lock + pool slot) is still held.
+    provider_config = resolve_provider_config(db, user_id, "llm")
+    prompt = await enhance_portrait_prompt(
+        None,
+        user_id,
+        persona,
+        style=style,
+        feedback=feedback,
+        provider_config=provider_config,
+    )
     asset = await _generate_and_persist(db, user_id, prompt=prompt, style=style, feedback=feedback)
     return asset
 
@@ -360,20 +305,20 @@ async def regenerate_avatar_from_image(
     description: str | None = None,
     style: str = _DEFAULT_STYLE,
 ) -> AvatarAsset:
-    """Generate a portrait using a user-uploaded image as the subject
-    reference, optionally refined by free-text ``description``.
-
-    The upload is NOT used as-is (``upload_avatar`` serves that path); the
-    provider re-renders it so the result meets the portrait seed contract
-    (flat white background, clean framing) even when the user's image has a
-    busy background. The reference is passed inline as a data URI, so no temp
-    file is created and no public URL is required.
-    """
+    """Regenerate the portrait using a user-uploaded image as the subject reference (inline data URI)."""
     if not persona.is_complete:
         raise AvatarGenerationError("persona is incomplete; finish onboarding first")
-    prompt = _build_prompt(persona, style)
-    if description and description.strip():
-        prompt = f"{prompt}. {description.strip()}"
+    # Pre-resolve so the long chat round-trip doesn't re-query the DB
+    # while the caller's session (advisory lock + pool slot) is still held.
+    provider_config = resolve_provider_config(db, user_id, "llm")
+    prompt = await enhance_portrait_prompt(
+        None,
+        user_id,
+        persona,
+        style=style,
+        feedback=description,
+        provider_config=provider_config,
+    )
     asset = await _generate_and_persist(
         db,
         user_id,

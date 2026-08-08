@@ -1,5 +1,6 @@
 from .. import SEARCH_TOOLS_SCHEMA
 from .. import search_tools_tool
+from .image_generation_tool import first_image_url
 from .image_generation_tool import IMAGE_GENERATION_SCHEMA
 from .image_generation_tool import image_generation_tool
 from .send_message_tool import SEND_MESSAGE_SCHEMA
@@ -18,6 +19,7 @@ __all__ = [
     "web_extract_tool",
     "IMAGE_GENERATION_SCHEMA",
     "image_generation_tool",
+    "first_image_url",
     "TTS_SCHEMA",
     "text_to_speech_tool",
     "SEND_MESSAGE_SCHEMA",

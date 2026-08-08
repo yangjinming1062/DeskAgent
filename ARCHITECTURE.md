@@ -228,7 +228,7 @@ onboarding 产出的结构化角色定义持久化在 Backend 用户维度，作
 
 伙伴的视觉表达由 portrait、3D 模型、换装三层资产构成，均归属用户、在用户维度持久化。资产体系的形态、用途、渲染约束与换装设计见 [DESIGN.md §1](DESIGN.md)；此处只锁定跨模块契约：
 
-- **portrait 是身份参考图与纹理种子**：portrait 经 image-gen 生成（persona 驱动 prompt），作为 onboarding 身份确认、设置页展示与 3D 纹理生成的参考图。portrait 不再直接渲染到桌面——桌面渲染由 3D 模型承担。
+- **portrait 是身份参考图与纹理种子**：portrait 经 image-gen 生成（prompt 先经 `services.llm.prompt_engineer.enhance_portrait_prompt` 由 chat provider 改写为详细中文 prompt），作为 onboarding 身份确认、设置页展示与 3D 纹理生成的参考图。portrait 不再直接渲染到桌面——桌面渲染由 3D 模型承担。prompt 增强是**读取型**操作——角色定义不被 LLM 改写，LLM 异常向上传播。
 - **3D 模型按物种即时下发**：按角色定义的 biological_type 选择预制 rigged GLB（人类/精灵/灵兽/机甲/幻形 + 通用兜底），经 `POST /api/companion/model` 即时下发，零 3D API 成本。模型自带骨骼动画与 morph targets，覆盖全部状态（§2）。
 - **portrait 重生不触发模型失效**：portrait 只影响身份参考与纹理生成种子，3D 模型（基底 mesh + 骨骼动画）独立于 portrait。换外观 = 换装（纹理热替），不重生模型。
 - **资产 URL 5 分钟 HMAC 签名**：portrait、模型 GLB、换装产物落持久目录（`companion-avatars/` / `companion-models/` / `companion-assets/`），对外通过短 TTL 签名 URL 暴露（`signed_url_expiry_seconds=300`）——换设备登录需重新生成签名，不能直接分享原 URL。客户端收到后应本地缓存避免重复拉取。

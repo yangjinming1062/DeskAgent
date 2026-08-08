@@ -1,5 +1,6 @@
 import asyncio
 import json
+from collections.abc import Iterator
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -7,15 +8,16 @@ import httpx
 from components import get_file_path
 from components import get_logger
 from components import is_safe_outbound
-from components import safe_json_loads
 from modules.companion import WardrobeItem
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from ..llm import enhance_texture_prompt
+from ..tools.builtin import first_image_url
 from ..tools.builtin import image_generation_tool
 from .asset_store import build_signed_asset_url
-from .asset_store import resolve_companion_asset_path
 from .asset_store import save_companion_asset
+from .asset_store import unlink_companion_asset
 
 logger = get_logger(__name__)
 
@@ -46,7 +48,7 @@ async def fetch_texture_bytes(url: str) -> bytes | None:
             if not verify:
                 raise httpx.ConnectError(f"refusing to connect to {request.url.host} (TOCTOU: DNS rebinding)")
 
-        async with httpx.AsyncClient(timeout=60.0, follow_redirects=False, event_hooks={"connect": [_verify_connect_ip]}) as client:
+        async with httpx.AsyncClient(timeout=120.0, follow_redirects=False, event_hooks={"connect": [_verify_connect_ip]}) as client:
             resp = await client.get(url)
             resp.raise_for_status()
             return resp.content
@@ -64,6 +66,24 @@ _DEFAULT_PRESETS: list[dict] = [
     {"name": "暗夜", "category": "preset", "material_overrides": {"*": {"color": "#2c3e50", "roughness": 0.3, "metalness": 0.5}}},
     {"name": "黄金", "category": "preset", "material_overrides": {"*": {"color": "#f39c12", "metalness": 0.8, "roughness": 0.2}}},
 ]
+
+# All four PBR channel URL fields on WardrobeItem — single source of truth
+# for both re-signing (read path) and unlink-on-delete (write path).
+_PBR_URL_ATTRS: tuple[str, ...] = ("texture_url", "normal_url", "roughness_url", "metalness_url")
+
+
+def _iter_companion_asset_paths(item: WardrobeItem) -> Iterator[tuple[str, str, str]]:
+    """Yield ``(attr_name, uid, filename)`` for every PBR URL on ``item`` that lives under ``companion-assets/``."""
+    for attr in _PBR_URL_ATTRS:
+        url = getattr(item, attr, None)
+        if not url or not url.startswith("companion-assets/"):
+            continue
+        # Schema is companion-assets/<uid>/<filename> with no subdirs;
+        # extra slashes silently mis-pair uid / filename and 404 the signed URL.
+        parts = url.split("/", 2)
+        if len(parts) != 3 or "/" in parts[2] or "\\" in parts[2]:
+            continue
+        yield attr, parts[1], parts[2]
 
 
 def _ensure_presets(db: Session, user_id: int) -> None:
@@ -96,11 +116,10 @@ def _ensure_presets(db: Session, user_id: int) -> None:
 
 
 def _re_sign_texture(item: WardrobeItem) -> None:
-    if not item.texture_url or not item.texture_url.startswith("companion-assets/"):
-        return
-    parts = item.texture_url.split("/", 2)
-    if len(parts) == 3:
-        item.texture_url = build_signed_asset_url(int(parts[1]), parts[2])
+    """Re-sign every companion-assets/ URL on the item so signed URLs are
+    always fresh on read (5-min TTL). Covers the albedo + 3 PBR channels."""
+    for attr, uid, filename in _iter_companion_asset_paths(item):
+        setattr(item, attr, build_signed_asset_url(int(uid), filename))
 
 
 def list_wardrobe(db: Session, user_id: int) -> list[WardrobeItem]:
@@ -119,16 +138,14 @@ def get_equipped_item(db: Session, user_id: int) -> WardrobeItem | None:
 
 
 async def generate_wardrobe_item(db: Session, *, user_id: int, name: str, description: str) -> WardrobeItem:
-    prompt = f"seamless PBR texture map for clothing, {description}, flat top-down lighting, high detail, tileable"
+    # LLM rewrites the user's short description into a detailed Chinese PBR
+    # texture prompt. Any provider / network failure bubbles up as a
+    # RuntimeError that the API route maps to 502.
+    prompt = await enhance_texture_prompt(db, user_id, description=description)
     result_json = await image_generation_tool(prompt=prompt, llm_config={}, size="1024x1024", n=1, user_id=user_id)
-    parsed = safe_json_loads(result_json, default=None)
-    if not isinstance(parsed, dict) or not parsed.get("success"):
-        raise RuntimeError("Texture generation failed")
-
-    urls = parsed.get("urls") or []
-    src_url = urls[0] if urls and isinstance(urls[0], str) else None
+    src_url = first_image_url(result_json)
     if not src_url:
-        raise RuntimeError("No texture URL returned")
+        raise RuntimeError("Texture generation failed: no URL in provider response")
 
     data = await fetch_texture_bytes(src_url)
     if data is None:
@@ -164,20 +181,14 @@ def equip_wardrobe_item(db: Session, user_id: int, item_id: int) -> WardrobeItem
 
 
 def delete_wardrobe_item(db: Session, user_id: int, item_id: int) -> bool:
-    # Capture the path before delete — nothing sweeps orphaned companion-assets.
+    # Capture paths before delete — nothing sweeps orphaned companion-assets.
     item = db.query(WardrobeItem).filter(WardrobeItem.user_id == user_id, WardrobeItem.id == item_id).one_or_none()
     if item is None:
         return False
-    texture_path: str | None = item.texture_url
+    paths = [(attr, uid, filename) for attr, uid, filename in _iter_companion_asset_paths(item)]
     db.delete(item)
     db.commit()
-    if texture_path and texture_path.startswith("companion-assets/"):
-        parts = texture_path.split("/", 2)
-        if len(parts) == 3:
-            resolved = resolve_companion_asset_path(int(parts[1]), parts[2])
-            if resolved is not None:
-                try:
-                    resolved[0].unlink(missing_ok=True)
-                except OSError:
-                    logger.warning("Failed to unlink wardrobe texture", extra={"user_id": user_id, "path": texture_path})
+    for _attr, uid, filename in paths:
+        if unlink_companion_asset(f"companion-assets/{uid}/{filename}") is None:
+            logger.warning("Failed to unlink wardrobe asset", extra={"user_id": user_id, "path": f"companion-assets/{uid}/{filename}"})
     return True

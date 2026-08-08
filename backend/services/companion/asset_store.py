@@ -127,6 +127,25 @@ def resolve_companion_asset_path(user_id: int, filename: str) -> tuple[Path, str
     return filepath, content_type
 
 
+def unlink_companion_asset(storage_path: str | None) -> Path | None:
+    """Best-effort unlink of a bare ``companion-assets/<uid>/<filename>`` path. Returns the path that was targeted, or ``None`` on malformed/missing."""
+    if not storage_path or not storage_path.startswith("companion-assets/"):
+        return None
+    parts = storage_path.split("/", 2)
+    # Schema is companion-assets/<uid>/<filename> with no subdirs;
+    # extra slashes silently mis-pair uid / filename and 404 the signed URL.
+    if len(parts) != 3 or "/" in parts[2] or "\\" in parts[2]:
+        return None
+    resolved = resolve_companion_asset_path(int(parts[1]), parts[2])
+    if resolved is None:
+        return None
+    try:
+        resolved[0].unlink(missing_ok=True)
+        return resolved[0]
+    except OSError:
+        return None
+
+
 # ── 3D model storage ─────────────────────────────────────────
 
 

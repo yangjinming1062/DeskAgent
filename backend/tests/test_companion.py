@@ -817,31 +817,6 @@ async def test_upload_avatar_refuses_when_persona_incomplete(_patch_db):
 
 
 
-def test_build_prompt_translates_species_and_gender():
-    from services.companion.avatar_service import _build_prompt
-    persona = type("P", (), {"definition_json": json.dumps({"name": "小光", "biological_type": "灵兽", "gender": "女", "appearance": "金发绿眼"})})()
-    prompt = _build_prompt(persona, "portrait")
-    # species → "spirit beast", name follows, gender in parens, then appearance
-    assert "spirit beast" in prompt and "named 小光" in prompt and "(female)" in prompt and "金发绿眼" in prompt
-
-
-def test_build_prompt_free_text_species_passthrough():
-    from services.companion.avatar_service import _build_prompt
-    persona = type("P", (), {"definition_json": json.dumps({"name": "阿离", "biological_type": "九尾狐", "gender": "女"})})()
-    prompt = _build_prompt(persona, "portrait")
-    # "九尾狐" not in the lookup table → keep verbatim (user-typed value)
-    assert "九尾狐" in prompt
-
-
-def test_build_prompt_without_species_skips_token():
-    from services.companion.avatar_service import _build_prompt
-    persona = type("P", (), {"definition_json": json.dumps({"name": "小光", "appearance": "书生模样"})})()
-    prompt = _build_prompt(persona, "portrait")
-    # No species → no "named X" pattern; layout still starts with name
-    assert prompt.startswith("a portrait portrait of 小光") or prompt.startswith("a portrait of 小光")
-    assert "书生模样" in prompt
-
-
 def test_dynamic_user_profile_key_lands_in_memory(_patch_db):
     """Adding a new ``user_*`` field to PersonaUpdate must not 400 —
     extract_user_profile picks it up via the ``user_`` prefix and lands
@@ -1045,8 +1020,17 @@ async def test_regenerate_avatar_from_image_uses_reference(monkeypatch, _patch_d
     async def fake_download(url):
         return b"\x89PNG\r\n\x1a\n", "image/png"
 
+    async def fake_enhance(db, user_id, persona, *, style="portrait", feedback=None, provider_config=None):
+        # Build a deterministic prompt that the test can still assert on —
+        # mimics what the LLM would return without actually calling one.
+        # The LLM weaves feedback into the description; the mock does the same
+        # so the test can verify the description reaches the final prompt.
+        suffix = f", 追加：{feedback}" if feedback else ""
+        return f"portrait portrait of 测试角色, 纯白平面背景, no scenery, no gradient, no shadow{suffix}"
+
     monkeypatch.setattr(avatar_service, "image_generation_tool", fake_gen)
     monkeypatch.setattr(avatar_service, "_download_to_bytes", fake_download)
+    monkeypatch.setattr(avatar_service, "enhance_portrait_prompt", fake_enhance)
 
     with SessionLocal() as db:
         user = User(username="imguser", password_hash="x", is_active=True, can_use=True)
