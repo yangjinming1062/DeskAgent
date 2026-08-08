@@ -20,12 +20,10 @@ import { ModelConfigSettings } from './model-config-settings'
 import { RunnerSettings } from './runner-settings'
 import { SkillsToolsTabs } from './skills-tools-tabs'
 import { SpeechSettings } from './speech-settings'
-import type { SettingsPageProps } from './types'
+import type { SettingsPageProps, SettingsView as SettingsViewId } from './types'
 import { VoiceGallerySettings } from './voice-gallery-settings'
 
-type SettingsViewId = 'about' | 'account' | 'mcp' | 'models' | 'runner' | 'skills' | 'speech' | 'voices'
-
-const SETTINGS_VIEWS: readonly SettingsViewId[] = [
+const SETTINGS_VIEWS = [
   'account',
   'speech',
   'voices',
@@ -34,7 +32,7 @@ const SETTINGS_VIEWS: readonly SettingsViewId[] = [
   'skills',
   'mcp',
   'about'
-]
+] as const satisfies readonly SettingsViewId[]
 
 export function SettingsView({ gateway, onClose, onConfigSaved }: SettingsPageProps): React.JSX.Element {
   const t = strings

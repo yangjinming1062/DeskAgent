@@ -6,6 +6,7 @@ import { $chatMessages, $chatSessionId, setAssistantError, setChatOpen, setChatS
 import { $spriteState, setSpriteState } from '@/companion/companion-store'
 import { useInteractiveRegion } from '@/companion/interactive-regions'
 import { speak, stopSpeaking } from '@/companion/tts'
+import { getAudioContextCtor } from '@/shared/lib/audio-context-ctor'
 import { $gatewayState } from '@/shared/store/gateway'
 
 import { SubtitlesOverlay } from './subtitles-overlay'
@@ -74,8 +75,7 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps): React.JSX.Elemen
         setSpriteState('listening')
 
         try {
-          const AudioContextClass =
-            window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
+          const AudioContextClass = getAudioContextCtor()
 
           if (AudioContextClass) {
             ctx = new AudioContextClass()

@@ -81,18 +81,68 @@ function readForm(cfg: ModelConfigResponse): FormState {
 }
 
 function buildPutBody(form: FormState, providers: ProviderSlotInput[]): ModelConfigPutRequest {
-  const body: Record<string, unknown> = {}
+  const body: ModelConfigPutRequest = {
+    llm_base_url: '',
+    llm_api_key: null,
+    llm_model_name: '',
+    stt_base_url: '',
+    stt_api_key: null,
+    stt_model_name: '',
+    tts_base_url: '',
+    tts_api_key: null,
+    tts_model_name: '',
+    image_gen_base_url: '',
+    image_gen_api_key: null,
+    image_gen_model_name: '',
+    video_gen_base_url: '',
+    video_gen_api_key: null,
+    video_gen_model_name: '',
+    provider_config: providers
+  }
 
   for (const c of CAPABILITIES) {
     const state = form[c.key as CapabilityKey]
-    body[`${c.prefix}_base_url`] = state.base_url
-    body[`${c.prefix}_api_key`] = state.cleared_api_key ? null : state.api_key
-    body[`${c.prefix}_model_name`] = state.model_name
+    const apiKey = state.cleared_api_key ? null : state.api_key
+
+    switch (c.prefix) {
+      case 'llm':
+        body.llm_base_url = state.base_url
+        body.llm_api_key = apiKey
+        body.llm_model_name = state.model_name
+
+        break
+
+      case 'stt':
+        body.stt_base_url = state.base_url
+        body.stt_api_key = apiKey
+        body.stt_model_name = state.model_name
+
+        break
+
+      case 'tts':
+        body.tts_base_url = state.base_url
+        body.tts_api_key = apiKey
+        body.tts_model_name = state.model_name
+
+        break
+
+      case 'image_gen':
+        body.image_gen_base_url = state.base_url
+        body.image_gen_api_key = apiKey
+        body.image_gen_model_name = state.model_name
+
+        break
+
+      case 'video_gen':
+        body.video_gen_base_url = state.base_url
+        body.video_gen_api_key = apiKey
+        body.video_gen_model_name = state.model_name
+
+        break
+    }
   }
 
-  body.provider_config = providers
-
-  return body as unknown as ModelConfigPutRequest
+  return body
 }
 
 export function ModelConfigSettings({

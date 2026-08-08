@@ -11,13 +11,17 @@ export type AuthState =
 
 export const $auth = atom<AuthState>({ kind: 'pending' })
 
+function isExpiredSnapshot(snapshot: DesktopAuthSnapshot | null | undefined): boolean {
+  const expiresAt = snapshot?.tokenExpiresAt
+
+  return typeof expiresAt !== 'number' || !Number.isFinite(expiresAt) || expiresAt <= Date.now()
+}
+
 export async function hydrateAuth(): Promise<void> {
   try {
     const snapshot = await window.deskagent.getSession()
-    const expiresAt = snapshot?.tokenExpiresAt
-    const expired = typeof expiresAt !== 'number' || !Number.isFinite(expiresAt) || expiresAt <= Date.now()
 
-    if (snapshot && snapshot.hasToken && !expired) {
+    if (snapshot && snapshot.hasToken && !isExpiredSnapshot(snapshot)) {
       $auth.set({ kind: 'authenticated', snapshot })
     } else {
       $auth.set({ kind: 'unauthenticated' })
@@ -36,10 +40,8 @@ export async function hydrateAuth(): Promise<void> {
 // (conditional render on $auth), so here we only flip auth state.
 export function applyAuthBroadcast(payload: DesktopAuthBroadcast): void {
   const { snapshot } = payload
-  const expiresAt = snapshot?.tokenExpiresAt
-  const expired = typeof expiresAt !== 'number' || !Number.isFinite(expiresAt) || expiresAt <= Date.now()
 
-  if (payload.authenticated && snapshot && snapshot.hasToken && !expired) {
+  if (payload.authenticated && snapshot && snapshot.hasToken && !isExpiredSnapshot(snapshot)) {
     $auth.set({ kind: 'authenticated', snapshot })
   } else {
     $auth.set({ kind: 'unauthenticated' })

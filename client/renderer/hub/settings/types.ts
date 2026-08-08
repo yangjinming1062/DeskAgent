@@ -1,6 +1,6 @@
 import type { DeskAgentGateway } from '@/shared/deskagent'
 
-export type SettingsView = 'about' | 'account' | 'mcp' | 'models' | 'runner' | 'sessions' | 'skills' | 'speech'
+export type SettingsView = 'about' | 'account' | 'mcp' | 'models' | 'runner' | 'skills' | 'speech' | 'voices'
 
 export interface SettingsPageProps {
   gateway?: DeskAgentGateway | null

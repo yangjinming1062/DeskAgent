@@ -1,3 +1,5 @@
+import { getAudioContextCtor } from '@/shared/lib/audio-context-ctor'
+
 let current: HTMLAudioElement | null = null
 let currentDone: (() => void) | null = null
 let currentListeners: [string, EventListener][] = []
@@ -111,8 +113,7 @@ function ensureAnalyser(): void {
     return
   }
 
-  const Ctor =
-    window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
+  const Ctor = getAudioContextCtor()
 
   if (!Ctor) {
     return
