@@ -26,7 +26,11 @@ from .persona_service import get_or_create_persona
 logger = get_logger(__name__)
 
 _DEFAULT_STYLE: str = "portrait"
+# Square fits a bust; the full-body seed needs portrait orientation so
+# the model renders head-to-toe at natural proportions instead of
+# cropping or tilting to fit a 1:1 canvas.
 _AVATAR_SIZE: str = "1024x1024"
+_AVATAR_FULL_SIZE: str = "1024x1792"
 _AVATAR_QUALITY: str = "standard"
 _UPLOAD_EXTS: dict[str, str] = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp", "image/gif": "gif"}
 ALLOWED_AVATAR_UPLOAD_MIME_TYPES: frozenset[str] = frozenset(_UPLOAD_EXTS)
@@ -123,6 +127,7 @@ async def _generate_one_portrait(
     user_id: int,
     *,
     reference_image: str | None = None,
+    size: str = _AVATAR_SIZE,
 ) -> tuple[str, str, str, str]:
     """Generate, download, and persist one portrait image.
 
@@ -132,7 +137,7 @@ async def _generate_one_portrait(
     result_json = await image_generation_tool(
         prompt=prompt,
         llm_config={},
-        size=_AVATAR_SIZE,
+        size=size,
         quality=_AVATAR_QUALITY,
         n=1,
         user_id=user_id,
@@ -174,7 +179,7 @@ async def _generate_and_persist(
     # Run avatar + seed in parallel. Either failure is fatal.
     results = await asyncio.gather(
         _generate_one_portrait(avatar_prompt, user_id, reference_image=reference_image),
-        _generate_one_portrait(seed_prompt, user_id, reference_image=reference_image),
+        _generate_one_portrait(seed_prompt, user_id, reference_image=reference_image, size=_AVATAR_FULL_SIZE),
     )
     asset_url, file_id, final_ext, avatar_source_url = results[0]
     seed_url, _, _, _ = results[1]

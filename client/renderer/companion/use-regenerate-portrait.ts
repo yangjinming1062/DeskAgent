@@ -31,6 +31,14 @@ export interface UseRegeneratePortraitOptions {
    * wins. Typed explicitly so the unsafe cast at line 65 stays gone.
    */
   feedback?: string
+  /**
+   * Fired with the freshly-resolved data URLs after each successful regen.
+   * Surfaces that mirror the global `$portraitUrl` into their own local
+   * state (e.g. onboarding's paired preview) wire this up to mirror the
+   * atom update; surfaces already subscribed via `useStore($portraitUrl)`
+   * can omit it.
+   */
+  onRegenerated?: (urls: { avatar: string | null; seed: string | null }) => void
 }
 
 export interface UseRegeneratePortraitResult {
@@ -63,7 +71,8 @@ export function useRegeneratePortrait(options: UseRegeneratePortraitOptions = {}
     playAudioOnSuccess = false,
     successHint = DEFAULT_SUCCESS_HINT,
     failureHint = DEFAULT_FAILURE_HINT,
-    feedback: optionFeedback
+    feedback: optionFeedback,
+    onRegenerated
   } = options
 
   const regenerate = useCallback(
@@ -97,7 +106,8 @@ export function useRegeneratePortrait(options: UseRegeneratePortraitOptions = {}
           })
 
           if (res?.asset_url) {
-            await applyPortrait({ assetUrl: res.asset_url, seedUrl: res.seed_url })
+            const applied = await applyPortrait({ assetUrl: res.asset_url, seedUrl: res.seed_url })
+            onRegenerated?.(applied)
             onApplied()
             setHint(successHint)
 
@@ -113,14 +123,16 @@ export function useRegeneratePortrait(options: UseRegeneratePortraitOptions = {}
         }>('avatar.regenerate', { feedback })
 
         if (queued?.asset_url) {
-          await applyPortrait({ assetUrl: queued.asset_url, seedUrl: queued.seed_url })
+          const applied = await applyPortrait({ assetUrl: queued.asset_url, seedUrl: queued.seed_url })
+          onRegenerated?.(applied)
           onApplied()
           setHint(successHint)
         } else if (queued?.queued && queued.job_id) {
           const result = await awaitAvatarRegeneration(queued.job_id)
 
           if (result.asset_url) {
-            await applyPortrait({ assetUrl: result.asset_url, seedUrl: result.seed_url })
+            const applied = await applyPortrait({ assetUrl: result.asset_url, seedUrl: result.seed_url })
+            onRegenerated?.(applied)
             onApplied()
             setHint(successHint)
           } else {
@@ -142,7 +154,7 @@ export function useRegeneratePortrait(options: UseRegeneratePortraitOptions = {}
     // otherwise give `regenerate` a new identity every render and defeat
     // downstream React.memo. optionFeedback participates so a caller can
     // change it without remounting the hook.
-    [requestGateway, refImage, playAudioOnSuccess, successHint, failureHint, optionFeedback]
+    [requestGateway, refImage, playAudioOnSuccess, successHint, failureHint, optionFeedback, onRegenerated]
   )
 
   const clearHint = useCallback(() => setHint(null), [])
