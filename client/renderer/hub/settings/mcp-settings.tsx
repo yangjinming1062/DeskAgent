@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { type Document } from 'yaml'
+import { type Document, isNode } from 'yaml'
 
 import { Button, Input, Textarea } from '@/shared/components/ui'
 import type { DeskAgentGateway } from '@/shared/deskagent'
@@ -29,8 +29,8 @@ const EMPTY_SERVER = {
 function getServers(doc: Document | null): McpServers {
   let raw: unknown = doc?.getIn(['mcp_servers'])
 
-  if (raw && typeof (raw as { toJSON?: () => unknown }).toJSON === 'function') {
-    raw = (raw as { toJSON: () => unknown }).toJSON()
+  if (isNode(raw)) {
+    raw = raw.toJSON()
   }
 
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {

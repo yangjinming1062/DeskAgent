@@ -30,11 +30,32 @@ interface OutfitItem {
 // means a new field on the ORM + schema + this table.
 type PbrChannel = 'albedo' | 'normal' | 'roughness' | 'metalness'
 
+type PbrSlot =
+  | 'map'
+  | 'normalMap'
+  | 'roughnessMap'
+  | 'metalnessMap'
+  | 'aoMap'
+  | 'emissiveMap'
+  | 'bumpMap'
+  | 'displacementMap'
+
+const getPbrSlot = (mat: THREE.MeshStandardMaterial, slot: PbrSlot): THREE.Texture | null =>
+  mat[slot]
+
+const setPbrSlot = (mat: THREE.MeshStandardMaterial, slot: PbrSlot, tex: THREE.Texture | null): void => {
+  mat[slot] = tex
+
+  if (tex) {
+    mat.needsUpdate = true
+  }
+}
+
 const PBR_CHANNEL_DEFS: Record<
   PbrChannel,
   {
     urlField: keyof OutfitItem
-    slot: 'map' | 'normalMap' | 'roughnessMap' | 'metalnessMap'
+    slot: Exclude<PbrSlot, 'aoMap' | 'emissiveMap' | 'bumpMap' | 'displacementMap'>
     colorSpace: THREE.ColorSpace
   }
 > = {
@@ -155,7 +176,7 @@ export class CharacterController {
           // Dispose PBR textures before the material — material.dispose() doesn't release GPU texture refs.
           // currentPbrTex tracks the setOutfit-loaded ones (disposed above); this sweep also covers GLB-baked textures that live only on materials. dispose() is idempotent.
           for (const key of PBR_TEXTURE_KEYS) {
-            const tex = (mat as unknown as Record<string, THREE.Texture | null>)[key]
+            const tex = getPbrSlot(mat, key)
 
             if (tex) {
               tex.dispose()
@@ -308,8 +329,7 @@ export class CharacterController {
         const m = child.material as THREE.MeshStandardMaterial
 
         if (m) {
-          ;(m as unknown as Record<string, THREE.Texture | null>)[slot] = tex
-          m.needsUpdate = true
+          setPbrSlot(m, slot, tex)
         }
       })
     })
@@ -331,8 +351,7 @@ export class CharacterController {
       const m = child.material as THREE.MeshStandardMaterial
 
       if (m) {
-        ;(m as unknown as Record<string, THREE.Texture | null>)[slot] = null
-        m.needsUpdate = true
+        setPbrSlot(m, slot, null)
       }
     })
   }
