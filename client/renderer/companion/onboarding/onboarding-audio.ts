@@ -11,8 +11,6 @@ export type OnboardingAudioTag =
   | 'onboarding.portrait.ok'
   | 'onboarding.portrait.failed'
   | 'onboarding.portrait.regenerate'
-  | 'onboarding.portrait.upload'
-  | 'onboarding.portrait.fromimage'
   | 'onboarding.finishing.retry'
   | 'onboarding.greeting'
 
