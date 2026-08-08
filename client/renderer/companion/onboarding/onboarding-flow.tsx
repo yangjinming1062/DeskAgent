@@ -23,7 +23,6 @@ import { $gatewayState } from '@/shared/store/gateway'
 
 import { assemblePersona, MAX_APPEARANCE, MAX_USER_TEXT, type OnboardingAnswers } from '../persona'
 import { setCompanionVoiceId } from '../prefs'
-import { Silhouette } from '../sprite/silhouette'
 import { speak, stopSpeaking } from '../tts'
 import { fetchVoiceCatalog, matchVoicePreference, nextVoice, sampleLine, type VoiceOption } from '../voice'
 import { $voicePreparing } from '../voice-state'
@@ -360,11 +359,8 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
 
   // Onboarding dialog is fully interactive — register its actual visible rect
   // with the global interactive-regions registry so SpriteStage's hit-test
-  // captures only while the cursor is over the dialog silhouette + form.
-  // SpriteStage restores click-through on unmount. The silhouette's CSS glow
-  // (170% × 170%) overflows by ~56px on each side but stays well inside this
-  // container's bounding box (silhouette is centered in the 448px row with
-  // `flex items-center`), so no extra padding is needed.
+  // captures only while the cursor is over the dialog form card.
+  // SpriteStage restores click-through on unmount.
   useInteractiveRegion('onboarding', containerRef, el => {
     const rect = el.getBoundingClientRect()
 
@@ -849,7 +845,6 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
     onCompleted()
   }
 
-  const clarity = phase === 'q' ? (qIndex + (input ? 0.5 : 0)) / QUESTIONS.length : 1
   const presetValues = question?.presets ?? []
 
   return (
@@ -867,8 +862,6 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
           touchAction: 'none'
         }}
       >
-        <Silhouette clarity={clarity} size={160} spin={phase === 'hatching'} />
-
         <div
           className="w-full rounded-2xl border border-white/10 bg-black/45 p-5 text-white shadow-2xl backdrop-blur-md"
           style={{ pointerEvents: 'auto' }}
@@ -1205,10 +1198,8 @@ function PortraitLightbox({ url, name, onClose }: { url: string; name: string; o
   // Register the full viewport as an interactive region while the lightbox is open
   // so clicks on the image and its backdrop don't pass through to the windows below.
   // Stabilized so useInteractiveRegion's effect doesn't re-subscribe on every render.
-  const getLightboxRect = useCallback(
-    () => new DOMRect(0, 0, window.innerWidth, window.innerHeight),
-    []
-  )
+  const getLightboxRect = useCallback(() => new DOMRect(0, 0, window.innerWidth, window.innerHeight), [])
+
   useInteractiveRegion('portrait-lightbox', overlayRef, getLightboxRect)
 
   useEffect(() => {

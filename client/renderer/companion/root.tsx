@@ -33,12 +33,9 @@ import { speakProactive } from './proactive/proactive'
 import { ProactiveBubble } from './proactive/proactive-bubble'
 import { CompanionSettings } from './settings-overlay'
 import { SpriteContextMenu } from './sprite/context-menu'
-import { Egg, type EggMode } from './sprite/egg'
 import { SpriteStage } from './sprite/sprite-stage'
 import { VoiceCallDock } from './voice-call-dock'
 import { checkCompanionVoiceValidity } from './voice-validity'
-
-const HATCH_AT = 5
 
 // Boots the gateway as a mount effect — so it only runs while authenticated.
 // When $auth flips back to unauthenticated (logout/expiry) this unmounts and
@@ -59,7 +56,7 @@ export function CompanionRoot() {
   const gatewayState = useStore($gatewayState)
   const lifecycle = useStore($companionLifecycle)
   const chatOpen = useStore($chatOpen)
-  const [cracks, setCracks] = useState(0)
+  const [onboardingOpen, setOnboardingOpen] = useState(false)
   const [voiceCallOpen, setVoiceCallOpen] = useState(false)
   useEffect(() => {
     $voiceCallOpen.set(voiceCallOpen)
@@ -118,16 +115,17 @@ export function CompanionRoot() {
   }, [])
 
   // On auth, route by persona completeness: incomplete → onboarding, complete
-  // → ready. While resolving we stay in `unauthed-egg` so the waking egg shows.
+  // → ready.
   useEffect(() => {
     if (auth.kind !== 'authenticated') {
-      setCompanionLifecycle('unauthed-egg')
+      setCompanionLifecycle('unauthed')
+      setOnboardingOpen(false)
 
       return
     }
 
     let cancelled = false
-    setCompanionLifecycle('unauthed-egg')
+    setCompanionLifecycle('unauthed')
     window.deskagent
       .api<{ is_complete?: boolean }>({ path: '/api/companion/persona' })
       .then(p => {
@@ -156,11 +154,8 @@ export function CompanionRoot() {
   }, [auth.kind])
 
   const authed = auth.kind === 'authenticated'
-  const resolving = authed && lifecycle === 'unauthed-egg'
-  const showEgg = !authed || resolving
-  const showOnboarding = authed && lifecycle === 'onboarding'
+  const showOnboarding = authed && lifecycle === 'onboarding' && onboardingOpen
   const showReady = authed && lifecycle === 'ready'
-  const mode: EggMode = !authed ? 'teaser' : gatewayState === 'open' ? 'awake' : 'drowsy'
 
   useEffect(() => {
     if (lifecycle !== 'ready') {
@@ -210,13 +205,6 @@ export function CompanionRoot() {
     })
   }, [lifecycle, gatewayState, requestGateway])
 
-  // Reset the crack counter on logout so a returning user's first tap counts.
-  useEffect(() => {
-    if (auth.kind !== 'authenticated') {
-      setCracks(0)
-    }
-  }, [auth.kind])
-
   const onTap = () => {
     if (showReady) {
       wakeUpFromSleep()
@@ -225,22 +213,16 @@ export function CompanionRoot() {
       return
     }
 
-    // Pre-auth: each tap cracks the egg; 5 cracks shatter it and summon login.
-    if (authed) {
-      return
-    }
-
-    if (cracks >= HATCH_AT) {
+    // Pre-auth: click directly summons login.
+    if (!authed) {
       void window.deskagent.showToolWindow()
 
       return
     }
 
-    const next = cracks + 1
-    setCracks(next)
-
-    if (next >= HATCH_AT) {
-      void window.deskagent.showToolWindow()
+    // Authenticated but onboarding incomplete: click opens the onboarding flow.
+    if (lifecycle === 'onboarding') {
+      setOnboardingOpen(true)
     }
   }
 
@@ -256,6 +238,7 @@ export function CompanionRoot() {
   // provider is instant — model.ready arrives in the same tick and the
   // engine reloads). Failure is silent: the user can retry from settings.
   const onOnboardingComplete = () => {
+    setOnboardingOpen(false)
     setCompanionLifecycle('ready')
     void window.deskagent
       .api<{ id?: number; status?: string }>({ path: '/api/companion/model', method: 'POST', body: {} })
@@ -274,7 +257,7 @@ export function CompanionRoot() {
         onDoubleTap={onDoubleTap}
         onTap={onTap}
       >
-        {showReady ? <Companion3D /> : showEgg ? <Egg cracks={cracks} mode={mode} /> : null}
+        {showOnboarding ? null : <Companion3D />}
       </SpriteStage>
       {showReady && contextMenuPos && (
         <SpriteContextMenu
