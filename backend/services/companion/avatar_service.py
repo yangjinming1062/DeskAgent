@@ -156,40 +156,28 @@ async def _generate_and_persist(
     user_id: int,
     *,
     avatar_prompt: str,
-    seed_prompt: str | None = None,
+    seed_prompt: str,
     style: str,
     feedback: str | None = None,
     reference_image: str | None = None,
 ) -> AvatarAsset:
     """Shared image-gen + persistence core. Generates the avatar (bust) and
-    optional seed (full body) in parallel, downloads both into the persistent
+    seed (full body) in parallel, downloads both into the persistent
     ``companion-avatars/`` dir, deactivates the previous active asset, inserts
-    + commits the new row.
+    + commits the new row. Seed failure is fatal — any image-gen failure
+    propagates as ``AvatarGenerationError``.
 
     ``image_generation_tool`` catches provider errors internally and returns a
     JSON ``{success: false}`` string — it never raises. So this function
     surfaces failures via ``first_image_url -> None -> AvatarGenerationError``.
     """
-    # Run avatar + seed in parallel. Avatar failure is fatal; seed failure
-    # is non-fatal so the user always gets their new portrait even if the
-    # full-body reference image didn't render.
-    tasks = [_generate_one_portrait(avatar_prompt, user_id, reference_image=reference_image)]
-    if seed_prompt:
-        tasks.append(_generate_one_portrait(seed_prompt, user_id, reference_image=reference_image))
-
-    results = await asyncio.gather(*tasks, return_exceptions=True)
-
-    # Avatar failure is always fatal.
-    if isinstance(results[0], Exception):
-        raise results[0]
+    # Run avatar + seed in parallel. Either failure is fatal.
+    results = await asyncio.gather(
+        _generate_one_portrait(avatar_prompt, user_id, reference_image=reference_image),
+        _generate_one_portrait(seed_prompt, user_id, reference_image=reference_image),
+    )
     asset_url, file_id, final_ext, avatar_source_url = results[0]
-
-    seed_url: str | None = None
-    if seed_prompt:
-        if isinstance(results[1], Exception):
-            logger.warning("Seed image generation failed; proceeding without", extra={"user_id": user_id}, exc_info=results[1])
-        else:
-            seed_url = results[1][0]
+    seed_url, _, _, _ = results[1]
 
     # Best-effort delete the previous active portrait files on disk. Rows from
     # before the persistent-dir migration pointed at temp-media URLs that have
@@ -197,8 +185,7 @@ async def _generate_and_persist(
     previous = db.query(AvatarAsset).filter(AvatarAsset.user_id == user_id, AvatarAsset.active.is_(True)).one_or_none()
     db.query(AvatarAsset).filter(AvatarAsset.user_id == user_id, AvatarAsset.active.is_(True)).update({"active": False})
     prompt_payload: dict = {"prompt": avatar_prompt, "style": style, "source_url": avatar_source_url}
-    if seed_prompt:
-        prompt_payload["seed_prompt"] = seed_prompt
+    prompt_payload["seed_prompt"] = seed_prompt
     if feedback is not None:
         prompt_payload["feedback"] = feedback
     if reference_image is not None:
@@ -222,6 +209,7 @@ async def _generate_and_persist(
     # a URL it can ``<img src>`` immediately — otherwise the portrait panel
     # 404s until the next avatar round-trip re-signs it.
     asset.asset_url = build_signed_avatar_url(file_id, final_ext)
+    asset.seed_url = _re_sign_bare_path(asset.seed_url)
 
     if previous is not None:
         _delete_portrait_file(previous.asset_url)
@@ -256,36 +244,28 @@ def _delete_portrait_file(asset_url: str | None) -> None:
         (Path(SETTINGS.data_dir) / "companion-avatars" / name).unlink(missing_ok=True)
 
 
-async def generate_avatar(db: Session, *, user_id: int, prompt_override: str | None = None) -> AvatarAsset:
+async def generate_avatar(db: Session, *, user_id: int) -> AvatarAsset:
     """Generate a new avatar asset and flip it active. Raises ``AvatarGenerationError`` on provider failure (mapped to 502 by the route)."""
     persona = get_or_create_persona(db, user_id)
     if not persona.is_complete:
         raise AvatarGenerationError("persona is incomplete; finish onboarding first")
-    override = (prompt_override or "").strip()
-    if override:
-        # prompt_override bypasses the LLM enhancer; seed is skipped (legacy path).
-        avatar_prompt = override
-        seed_prompt = None
-    else:
-        # Pre-resolve so the long chat round-trip doesn't re-query the DB
-        # while the caller's session (advisory lock + pool slot) is still held.
-        provider_config = resolve_provider_config(db, user_id, "llm")
-        try:
-            prompts = await enhance_character_image_prompts(
-                None,
-                user_id,
-                persona,
-                provider_config=provider_config,
-            )
-        except (ValidationError, RuntimeError) as exc:
-            raise AvatarGenerationError(f"prompt enhancement failed: {exc}") from exc
-        avatar_prompt = prompts["avatar"]
-        seed_prompt = prompts["seed"]
+    # Pre-resolve so the long chat round-trip doesn't re-query the DB
+    # while the caller's session (advisory lock + pool slot) is still held.
+    provider_config = resolve_provider_config(db, user_id, "llm")
+    try:
+        prompts = await enhance_character_image_prompts(
+            None,
+            user_id,
+            persona,
+            provider_config=provider_config,
+        )
+    except (ValidationError, RuntimeError) as exc:
+        raise AvatarGenerationError(f"prompt enhancement failed: {exc}") from exc
     asset = await _generate_and_persist(
         db,
         user_id,
-        avatar_prompt=avatar_prompt,
-        seed_prompt=seed_prompt,
+        avatar_prompt=prompts["avatar"],
+        seed_prompt=prompts["seed"],
         style=_DEFAULT_STYLE,
     )
     return asset
@@ -315,6 +295,26 @@ def _re_sign_avatar_url(asset: AvatarAsset) -> None:
     if not file_id:
         return
     asset.asset_url = build_signed_avatar_url(file_id, ext)
+    signed_seed = _re_sign_bare_path(asset.seed_url)
+    if signed_seed is not None:
+        asset.seed_url = signed_seed
+
+
+def _re_sign_bare_path(bare_path: str | None) -> str | None:
+    """Re-sign a bare ``companion-avatars/<file_id>.<ext>`` path into a fresh URL.
+
+    Returns ``None`` for empty input, non-matching prefixes, or path-traversal
+    patterns so callers can decide whether to fall back to the existing value.
+    """
+    if not bare_path or not bare_path.startswith("companion-avatars/"):
+        return None
+    filename = bare_path.split("/", 1)[1]
+    if "/" in filename or "\\" in filename or ".." in filename:
+        return None
+    file_id, _, ext = filename.partition(".")
+    if not file_id:
+        return None
+    return build_signed_avatar_url(file_id, ext)
 
 
 async def regenerate_avatar(db: Session, user_id: int, persona: Persona, feedback: str | None = None, style: str = _DEFAULT_STYLE) -> AvatarAsset:

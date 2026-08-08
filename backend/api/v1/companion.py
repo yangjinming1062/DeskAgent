@@ -70,6 +70,7 @@ def _avatar_response(asset: AvatarAsset) -> AvatarAssetResponse:
     return AvatarAssetResponse(
         id=asset.id,
         asset_url=asset.asset_url,
+        seed_url=asset.seed_url,
         prompt=prompt_payload.get("prompt", "") if isinstance(prompt_payload, dict) else "",
         status="succeeded",
     )
@@ -152,7 +153,7 @@ async def post_avatar(
 ) -> AvatarAssetResponse:
     user, _ = auth
     try:
-        asset = await generate_avatar(db, user_id=user.id, prompt_override=body.prompt_override)
+        asset = await generate_avatar(db, user_id=user.id)
     except AvatarGenerationError as exc:
         if "persona is incomplete" in str(exc):
             raise HTTPException(status_code=409, detail={"error": "请先完成 onboarding 再生成形象", "reason": str(exc)})
