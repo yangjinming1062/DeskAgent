@@ -243,15 +243,17 @@ const BACKEND_FIELD: Record<QKey, string> = {
 // is rendered *as* the uploaded character; the persona prompt already carries
 // the appearance text, so no extra description is sent from here.
 // Returns the raw backend `asset_url` — `applyPortrait` owns the resolve step.
-async function generatePortrait(reference: PickedImage | null): Promise<string | null> {
+async function generatePortrait(
+  reference: PickedImage | null
+): Promise<{ asset_url?: string; seed_url?: string } | null> {
   try {
-    const res = await window.deskagent.api<{ asset_url?: string }>({
+    const res = await window.deskagent.api<{ asset_url?: string; seed_url?: string }>({
       path: reference ? '/api/companion/avatar/from-image' : '/api/companion/avatar',
       method: 'POST',
       body: reference ? { content_type: reference.contentType, image: reference.base64 } : {}
     })
 
-    return res.asset_url ?? null
+    return res
   } catch (error) {
     // Rethrow deterministic failures so retryTransient doesn't burn the 120s avatar budget.
     if (isClientErrorIpc(error)) {
@@ -294,18 +296,26 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
   const [answers, setAnswers] = useState<OnboardingAnswers>({})
   const [input, setInput] = useState('')
   const [portraitUrl, setPortraitUrl] = useState<string | null>(null)
+  const [seedUrl, setSeedUrl] = useState<string | null>(null)
 
   // Failure keeps the current portrait: it already holds resolved bytes.
   // The shared `applyPortrait` writes the global atom; we mirror to local
   // state so the in-flow preview updates without waiting for a re-mount.
-  const applyLocalPortrait = async (assetUrl: string | null | undefined): Promise<string | null> => {
-    const resolved = await applyPortrait(assetUrl)
+  const applyLocalPortrait = async (
+    response: { asset_url?: string | null; seed_url?: string | null } | null | undefined
+  ): Promise<string | null> => {
+    const { avatar, seed } = await applyPortrait({
+      assetUrl: response?.asset_url,
+      seedUrl: response?.seed_url
+    })
 
-    if (resolved) {
-      setPortraitUrl(resolved)
+    if (avatar) {
+      setPortraitUrl(avatar)
     }
 
-    return resolved
+    setSeedUrl(seed)
+
+    return avatar
   }
 
   const [voice, setVoice] = useState<VoiceOption | null>(null)
@@ -627,7 +637,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
 
     try {
       if (refImage) {
-        const res = await window.deskagent.api<{ asset_url?: string }>({
+        const res = await window.deskagent.api<{ asset_url?: string; seed_url?: string }>({
           path: '/api/companion/avatar/from-image',
           method: 'POST',
           body: {
@@ -636,26 +646,26 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
           }
         })
 
-        if (res?.asset_url && (await applyLocalPortrait(res.asset_url))) {
+        if (res?.asset_url && (await applyLocalPortrait(res))) {
           void playOnboardingAudio('onboarding.portrait.regenerate')
 
           return
         }
       }
 
-      const queued = await requestGateway<{ queued?: boolean; job_id?: string; asset_url?: string }>(
+      const queued = await requestGateway<{ queued?: boolean; job_id?: string; asset_url?: string; seed_url?: string }>(
         'avatar.regenerate',
         { feedback: undefined }
       )
 
       if (queued?.asset_url) {
-        if (await applyLocalPortrait(queued.asset_url)) {
+        if (await applyLocalPortrait(queued)) {
           void playOnboardingAudio('onboarding.portrait.regenerate')
         }
       } else if (queued?.queued && queued.job_id) {
         const result = await awaitAvatarRegeneration(queued.job_id)
 
-        if (result.asset_url && (await applyLocalPortrait(result.asset_url))) {
+        if (result.asset_url && (await applyLocalPortrait(result))) {
           void playOnboardingAudio('onboarding.portrait.regenerate')
         } else {
           setPortraitPanelHint(result.error ?? '暂时换不出来，稍后再试吧')
@@ -725,7 +735,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
         body: { image: pickedImage.base64, content_type: pickedImage.contentType }
       })
 
-      if (res?.asset_url && (await applyLocalPortrait(res.asset_url))) {
+      if (res?.asset_url && (await applyLocalPortrait(res))) {
         setPickedImage(null)
         setRefineDescription('')
         void playOnboardingAudio('onboarding.portrait.upload')
@@ -751,7 +761,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
       // The upload may not meet the portrait seed contract (busy background,
       // off-character framing) — the backend re-renders it from the image as a
       // subject reference, with the description folded in as an adjustment.
-      const res = await window.deskagent.api<{ asset_url?: string }>({
+      const res = await window.deskagent.api<{ asset_url?: string; seed_url?: string }>({
         path: '/api/companion/avatar/from-image',
         method: 'POST',
         body: {
@@ -761,7 +771,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
         }
       })
 
-      if (res?.asset_url && (await applyLocalPortrait(res.asset_url))) {
+      if (res?.asset_url && (await applyLocalPortrait(res))) {
         setPickedImage(null)
         setRefineDescription('')
         void playOnboardingAudio('onboarding.portrait.fromimage')
@@ -989,7 +999,12 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
           )}
 
           {(phase === 'voice' || phase === 'greeting' || (phase === 'portrait' && !pickedImage)) && (
-            <PortraitPanel hint={portraitPanelHint} name={answers.name?.trim() || '伙伴'} url={portraitUrl} />
+            <PortraitPanel
+              avatarUrl={portraitUrl}
+              hint={portraitPanelHint}
+              name={answers.name?.trim() || '伙伴'}
+              seedUrl={seedUrl}
+            />
           )}
 
           {phase === 'portrait' && pickedImage && (
@@ -1154,29 +1169,69 @@ function Chip({ label, onClick, active }: { label: string; onClick: () => void; 
   )
 }
 
-function PortraitPanel({ url, name, hint }: { url: string | null; name: string; hint: string | null }) {
-  const [zoomed, setZoomed] = useState(false)
+function PortraitPanel({
+  avatarUrl,
+  seedUrl,
+  name,
+  hint
+}: {
+  avatarUrl: string | null
+  seedUrl: string | null
+  name: string
+  hint: string | null
+}) {
+  const [zoomedUrl, setZoomedUrl] = useState<string | null>(null)
 
   return (
     <div className="flex flex-col items-center gap-2">
-      <div className="flex justify-center">
-        {url ? (
-          <button
-            aria-label="放大查看"
-            className="block cursor-zoom-in overflow-hidden rounded-xl border-0 bg-transparent p-0"
-            onClick={() => setZoomed(true)}
-            type="button"
-          >
-            <img alt={name} className="h-40 w-40 object-cover shadow-lg" src={url} />
-          </button>
-        ) : (
-          <div className="grid h-40 w-40 place-items-center rounded-xl bg-white/5 text-center text-xs text-white/50">
-            {name}
-          </div>
-        )}
+      <div className="flex justify-center gap-3">
+        <PortraitThumb
+          label="头像"
+          name={name}
+          onZoom={avatarUrl ? () => setZoomedUrl(avatarUrl) : undefined}
+          url={avatarUrl}
+        />
+        <PortraitThumb
+          label="全身"
+          name={name}
+          onZoom={seedUrl ? () => setZoomedUrl(seedUrl) : undefined}
+          url={seedUrl}
+        />
       </div>
       {hint && <p className="text-xs text-rose-300/90">{hint}</p>}
-      {zoomed && url && <PortraitLightbox name={name} onClose={() => setZoomed(false)} url={url} />}
+      {zoomedUrl && <PortraitLightbox name={name} onClose={() => setZoomedUrl(null)} url={zoomedUrl} />}
+    </div>
+  )
+}
+
+function PortraitThumb({
+  label,
+  name,
+  onZoom,
+  url
+}: {
+  label: string
+  name: string
+  onZoom: (() => void) | undefined
+  url: string | null
+}) {
+  return (
+    <div className="flex flex-col items-center gap-1">
+      {url ? (
+        <button
+          aria-label="放大查看"
+          className="block cursor-zoom-in overflow-hidden rounded-xl border-0 bg-transparent p-0"
+          onClick={onZoom}
+          type="button"
+        >
+          <img alt={name} className="h-36 w-36 object-cover shadow-lg" src={url} />
+        </button>
+      ) : (
+        <div className="grid h-36 w-36 place-items-center rounded-xl bg-white/5 text-center text-[10px] text-white/30">
+          —
+        </div>
+      )}
+      <span className="text-[10px] text-white/40">{label}</span>
     </div>
   )
 }

@@ -99,7 +99,7 @@ DeskAgent 是一个**根据用户描述定制的、具有专属形象的陪伴�
 | Client → Backend | `avatar.regenerate` `{feedback?}` | 重生 portrait（身份参考图与纹理生成种子） |
 | Client → Backend | `GET /api/companion/model` | 查询当前 3D 模型状态（species / provider / asset_url） |
 | Backend → Client | `event.type="companion.affect"` `{emotion}` | affect-only 情绪 cue（无消息文本、无 TTS），驱动 EMOTIONAL 状态——quiet 档透传或 idle 触发 LLM 推理产出（详见 §4.2.IV / §5 / §6.3） |
-| Backend → Client | `event.type="avatar.regenerated"` `{job_id, asset_url?, id?, error?}` | `avatar.regenerate` 的最终结果通知（含成功 / 失败 payload），Client 据此替换 portrait 或展示失败提示；portrait 重生不触发 3D 模型失效 |
+| Backend → Client | `event.type="avatar.regenerated"` `{job_id, asset_url?, seed_url?, id?, error?}` | `avatar.regenerate` 的最终结果通知（含成功 / 失败 payload），Client 据此替换头像 + 全身种子图或展示失败提示；portrait 重生不触发 3D 模型失效 |
 | Client → Backend | `companion.set_disturbance_tier` `{tier}` | 上报当前打扰档位（积极主动/常规/保持安静），约束 Backend 主动消息 |
 | Client → Backend | `companion.check_affect` `{idle_seconds, local_hour}` | idle 触发的情境化 affect 推理：Backend 加载 persona + 记忆跑一次 LLM 推理，决定是否 emit `companion.affect`（详见 §5 / §6.4） |
 | Client → Backend | `companion.interact` `{kind: 'poke'\|'drag', tone, poke_count, idle_seconds, local_hour}` | 单次戳/拖的 LLM 反应推理：返回 `{text, emotion, reason}`。per-user inflight 取消 + 1.5s 节流。零延迟本地文案池由 Client 自管，LLM 响应仅作文本/情绪增强，不打断本地 TTS（详见 §6.3）。 |
@@ -228,9 +228,9 @@ onboarding 产出的结构化角色定义持久化在 Backend 用户维度，作
 
 伙伴的视觉表达由 portrait、3D 模型、换装三层资产构成，均归属用户、在用户维度持久化。资产体系的形态、用途、渲染约束与换装设计见 [DESIGN.md §1](DESIGN.md)；此处只锁定跨模块契约：
 
-- **portrait 是身份参考图与纹理种子**：portrait 经 image-gen 生成（prompt 先经 `services.llm.prompt_engineer.enhance_portrait_prompt` 由 chat provider 改写为详细中文 prompt），作为 onboarding 身份确认、设置页展示与 3D 纹理生成的参考图。portrait 不再直接渲染到桌面——桌面渲染由 3D 模型承担。prompt 增强是**读取型**操作——角色定义不被 LLM 改写，LLM 异常向上传播。
+- **portrait 拆为头像（avatar）+ 种子图（seed）配对**：每次生成经 `enhance_character_image_prompts` 由 chat provider 一次性产出 `{avatar, seed}` 两份中文 prompt，再并行调 image-gen 生成两张图。avatar 是聚焦头部细节的半身像（onboarding 身份确认、设置页展示、聊天头像），seed 是正面站立的全身参考图（3D 纹理生成的输入）。两张图任一失败即整体失败。avatar prompt 硬性包含「纯白平面背景，无场景、无渐变、无阴影」子句（chroma-key 渲染依赖）。prompt 增强是**读取型**操作——角色定义不被 LLM 改写，LLM 异常向上传播。
 - **3D 模型按物种即时下发**：按角色定义的 biological_type 选择预制 rigged GLB（人类/精灵/灵兽/机甲/幻形 + 通用兜底），经 `POST /api/companion/model` 即时下发，零 3D API 成本。模型自带骨骼动画与 morph targets，覆盖全部状态（§2）。
-- **portrait 重生不触发模型失效**：portrait 只影响身份参考与纹理生成种子，3D 模型（基底 mesh + 骨骼动画）独立于 portrait。换外观 = 换装（纹理热替），不重生模型。
+- **portrait 重生不触发模型失效**：avatar/seed 只影响身份参考与纹理生成种子，3D 模型（基底 mesh + 骨骼动画）独立于 portrait。换外观 = 换装（纹理热替），不重生模型。
 - **资产 URL 5 分钟 HMAC 签名**：portrait、模型 GLB、换装产物落持久目录（`companion-avatars/` / `companion-models/` / `companion-assets/`），对外通过短 TTL 签名 URL 暴露（`signed_url_expiry_seconds=300`）——换设备登录需重新生成签名，不能直接分享原 URL。客户端收到后应本地缓存避免重复拉取。
 - **受控再生成**：形象在多次会话间保持稳定。变更只在用户主动要求时发生（重生 portrait / 重生模型 / 换装）。
 

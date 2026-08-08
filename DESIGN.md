@@ -21,13 +21,13 @@
 
 | 层 | 形态 | 用途 |
 |----|------|------|
-| **portrait（静态形象图）** | PNG | onboarding 身份基准、设置页展示、3D 纹理生成的参考图；不再直接渲染到桌面 |
+| **portrait（配对形象图）** | 两张 PNG：avatar（半身头像）+ seed（全身种子图） | avatar：onboarding 身份确认、设置页展示、聊天头像；seed：正面站立的全身参考图，驱动 3D 纹理生成。两张配对生成、一并展示，引导流程中可分别点击查看大图 |
 | **3D 模型（rigged GLB）** | glTF 二进制，含骨骼动画 + morph targets | 桌面常驻渲染的唯一形象载体（idle / sleeping / working / speaking / … 全部经实时 3D 驱动） |
 | **换装（wardrobe）** | 材质覆盖（颜色/粗糙度/金属度）+ 可选 PBR 纹理贴图 | 外观定制——颜色预设即时生效、AI 纹理后台生成热替，**零模型重生** |
 
 伙伴的"身体"由 3D 模型提供，"穿什么"由换装层提供。切换状态 = 切换播放的骨骼动画（§2）；切换情绪 = 切换 morph target 表情；换装 = 热替材质/纹理——三者正交组合，互不阻塞。
 
-模型生成由 Backend 单一路径支撑（[ARCHITECTURE.md §6.2](ARCHITECTURE.md)）：按角色定义的物种选择预制 rigged GLB（人类/精灵/灵兽/机甲/幻形 + 通用兜底），即时下发、零 3D API 成本，同时后台异步用 portrait 为参考图生成个性化纹理。
+模型生成由 Backend 单一路径支撑（[ARCHITECTURE.md §6.2](ARCHITECTURE.md)）：按角色定义的物种选择预制 rigged GLB（人类/精灵/灵兽/机甲/幻形 + 通用兜底），即时下发、零 3D API 成本，同时后台异步用 seed 全身种子图为参考图生成个性化纹理。
 
 ### 1.2 渲染约束
 
@@ -40,7 +40,7 @@
 
 **伙伴表达永不空白**（[ARCHITECTURE.md §10 #9](ARCHITECTURE.md) 不变量）：3D 引擎始终在渲染——GLB 加载成功后骨骼动画 + morph 表情覆盖全部状态（§2），无需等待逐状态生成；GLB 加载失败时引擎渲染程序化兜底角色（Three.js 基本体组合 + 正弦驱动呼吸/眨眼/说话浮动），保证形象从启动第一帧起就"活着"。portrait 重生不触发模型失效——模型只随物种变更或用户显式请求重生。
 
-个性化纹理在模型下发后后台异步生成：base_texture provider 以 portrait 为参考图调用 image-gen 生成全身纹理，就绪后经 model.ready / wardrobe.updated 事件推送热替默认材质，用户全程可见基底模型——纹理升级是增强而非前置条件。
+个性化纹理在模型下发后后台异步生成：base_texture provider 以 seed 全身种子图为参考图调用 image-gen 生成全身纹理，就绪后经 model.ready / wardrobe.updated 事件推送热替默认材质，用户全程可见基底模型——纹理升级是增强而非前置条件。
 
 ---
 

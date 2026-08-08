@@ -662,7 +662,7 @@ def _register_session_handlers(
                                 return
                             persona = get_or_create_persona(db, user_id)
                             asset = await regenerate_avatar(db, user_id, persona, feedback=feedback)
-                            payload = {"job_id": job_id, "asset_url": asset.asset_url, "id": asset.id}
+                            payload = {"job_id": job_id, "asset_url": asset.asset_url, "seed_url": asset.seed_url, "id": asset.id}
                     except AvatarGenerationError as exc:
                         logger.warning("avatar regenerate failed", extra={"user_id": user_id, "error": str(exc)})
                         payload = {"job_id": job_id, "error": f"伙伴形象生成失败：{exc}"}

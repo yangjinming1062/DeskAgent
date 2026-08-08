@@ -285,7 +285,9 @@ export function handleCompanionEvent(event: RpcEvent): void {
     case 'avatar.regenerated': {
       // Background regeneration result — resolve the pending awaiter by job_id
       // so the portrait can swap without blocking the handler.
-      const p = event.payload as { job_id?: string; asset_url?: string; id?: number; error?: string } | undefined
+      const p = event.payload as
+        | { job_id?: string; asset_url?: string; seed_url?: string; id?: number; error?: string }
+        | undefined
 
       if (p?.job_id) {
         resolveAvatarRegeneration(p)

@@ -27,6 +27,7 @@ function _pruneTombstones() {
 export interface AvatarRegeneratedPayload {
   job_id?: string
   asset_url?: string
+  seed_url?: string
   id?: number
   error?: string
 }

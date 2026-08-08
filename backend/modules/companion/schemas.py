@@ -29,15 +29,13 @@ SucceededStatus = Literal["succeeded"]
 class AvatarAssetResponse(BaseModel):
     id: int
     asset_url: str
+    seed_url: str
     prompt: str = ""
     status: SucceededStatus = "succeeded"
 
 
 class AvatarGenerateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
-
-    # Optional verbatim prompt override; omitted → prompt built from persona.
-    prompt_override: str | None = Field(default=None, max_length=2000)
 
 
 class AvatarUploadRequest(BaseModel):

@@ -185,7 +185,7 @@ MiniMax-H3（v2 API）异步两段式：`POST /v2/video_generation`（task_id）
 
 **Tool**：`video_generate`（schema: prompt/duration/resolution/first_frame_image/aspect_ratio）+ `video_generate_status`（schema: task_id）。前者最多等 `video_gen_tool_wait_seconds`（180s）；超时返回 `{success:true, pending:true, task_id, hint:"用 video_generate_status 查询"}`——后台任务继续跑。MiniMax 不暴露 ASR，所以 `stt` provider 没有 `minimax` 实现。
 
-**3D 模型生成**：`companion/model_service` 的 `generate_companion_model` 按物种取预制 rigged GLB 即时下发，后台异步用 portrait 为参考图经 image-gen 生成全身纹理。模型就绪经 `model.ready {model_id, asset_url, species}` 事件推送。
+**3D 模型生成**：`companion/model_service` 的 `generate_companion_model` 按物种取预制 rigged GLB 即时下发，后台异步用 seed 全身种子图为参考图经 image-gen 生成全身纹理。模型就绪经 `model.ready {model_id, asset_url, species}` 事件推送。
 
 ## 安全设计
 
@@ -216,15 +216,15 @@ DeskAgent 伙伴的"人格"与"形象"是跨 Backend↔Desktop 的核心契约�
 
 **avatar / 纹理生图 prompt 经 LLM 精修**：所有发往 image-gen provider 的 prompt 都先经 `services.llm.prompt_engineer` 的三个 enhancer 改写为详细中文 prompt：
 
-- `enhance_portrait_prompt(persona, style, feedback)` —— portrait 三处调用（`generate_avatar` / `regenerate_avatar` / `regenerate_avatar_from_image`）共用，硬性包含「纯白平面背景，无场景、无渐变、无阴影」子句（chroma-key 渲染依赖）。
+- `enhance_character_image_prompts(persona, feedback)` —— LLM 一次性输出 JSON `{avatar, seed}` 两份 prompt，avatar 是聚焦头部细节的半身像（硬性包含「纯白平面背景，无场景、无渐变、无阴影」子句，chroma-key 渲染依赖），seed 是正面站立的全身参考图（驱动 3D 纹理生成）。两张图并行生成，任一失败即整体失败。
 - `enhance_texture_prompt(description)` —— wardrobe（新造型流）单独使用；旧版 `scene="full_body"` 分支已下线，3D 自定义纹理现在走 `enhance_pbr_channels` 的 4 通道 JSON 一次性产出。
-- `enhance_pbr_channels(db, user_id, *, base_description)` —— 一次性产出 albedo / normal / roughness / metalness 四张 PBR 通道图 prompt。reference image 由调用方在 image-gen 阶段传入（model_service 仅 albedo 通道传 portrait 参考图，保证色彩一致）。
+- `enhance_pbr_channels(db, user_id, *, base_description)` —— 一次性产出 albedo / normal / roughness / metalness 四张 PBR 通道图 prompt。reference image 由调用方在 image-gen 阶段传入（model_service 仅 albedo 通道传 seed 参考图，保证色彩一致）。
 
 LLM 异常（`MissingLlmConfigError` / 网络异常 / JSON 解析失败）**直接向上抛**——chat / affect / persona / agent_delegate 全链路都依赖同一个 llm service，没有为图像生成单独搞 graceful degradation 的理由。prompt 增强是**只读**操作：角色定义永不被 LLM 改写。
 
 ### 形象资产（AvatarAsset）
 
-`AvatarAsset` 表存历次生成的专属形象资产（provider 返回的 URL + 元数据 + 生成状态），按用户维度持久化。Postgres partial unique index 约束"每个用户最多一条 active 记录"。`/api/companion/avatar` POST 时 Backend 先经 `enhance_portrait_prompt` 把角色定义 + `style` 改写为详细中文 prompt（可选 `prompt_override` 原文覆盖）→ 调 `image_generate` → 写行并置 active。形象生成失败时：persona 未完成返回 `409` + "请先完成 onboarding" 文案，provider 失败返回 `502` + 友好文案（`伙伴形象生成失败，请稍后重试`），不泄露 provider 原始错误。生成是同步的，`AvatarAssetResponse` 的 `status` 恒为 `succeeded`，`prompt` 为生成时所用 prompt（上传行为空）。生成类端点（avatar 生成/上传/from-image、model、wardrobe）均有 per-user 限流（`SETTINGS.companion_*_rate_limit_per_minute`）。
+`AvatarAsset` 表存历次生成的专属形象资产（provider 返回的 URL + 元数据 + 生成状态），按用户维度持久化。Postgres partial unique index 约束"每个用户最多一条 active 记录"。`/api/companion/avatar` POST 时 Backend 先经 `enhance_character_image_prompts` 把角色定义改写为详细中文 avatar + seed 两份 prompt → 并行调 `image_generate` → 写行并置 active。形象生成失败时：persona 未完成返回 `409` + "请先完成 onboarding" 文案，provider 失败返回 `502` + 友好文案（`伙伴形象生成失败，请稍后重试`），不泄露 provider 原始错误。生成是同步的，`AvatarAssetResponse` 的 `status` 恒为 `succeeded`，`prompt` 为 avatar 生成时所用 prompt（上传行为空）。响应同时包含 `seed_url`（全身种子图 URL，上传行为空字符串——上传路径不生成种子图）。生成类端点（avatar 生成/上传/from-image、model、wardrobe）均有 per-user 限流（`SETTINGS.companion_*_rate_limit_per_minute`）。
 
 **avatar.regenerate** JSON-RPC：带可选 `feedback` 文本（如"头发长一点"），折入 prompt 做增量重生成。不触发 3D 模型失效——模型独立于 portrait，只随物种变更或用户显式请求重生。
 
@@ -236,7 +236,7 @@ LLM 异常（`MissingLlmConfigError` / 网络异常 / JSON 解析失败）**直�
 
 `CompanionModel` 表存 3D 模型资产（species、provider、asset_url、morph_params_json、has_rig、has_morph_targets），按用户维度持久化，每用户最多一条 active。生成管线为单一路径：
 
-- **预制 GLB**：按 `persona.definition_json` 的 `biological_type` 映射到 `assets/base-models/` 下的预制 rigged GLB（人类/精灵/灵兽/机甲/幻形 + `character.glb` 通用兜底），即时复制到 `companion-models/` 持久目录并经 `model.ready` 事件下发。零 3D API 成本。模型规格（动画/morph/骨骼/材质）见 [`../assets/base-models/GLB_MODEL_SPEC.md`](../assets/base-models/GLB_MODEL_SPEC.md)。模型下发后后台异步经 `enhance_pbr_channels` 一次性产出 albedo + normal + roughness + metalness 四张 PBR 通道图 prompt → `image_generation_tool` 并发 4 路（albedo 复用 portrait 作颜色参考；normal/roughness/metalness 不接参考图）→ 任一通道失败即整组放弃（避免 albedo 应用而 normal 缺失的"半 PBR"状态）→ 全成功时写 `WardrobeItem` 4 个 URL + `wardrobe.updated` 推送。
+- **预制 GLB**：按 `persona.definition_json` 的 `biological_type` 映射到 `assets/base-models/` 下的预制 rigged GLB（人类/精灵/灵兽/机甲/幻形 + `character.glb` 通用兜底），即时复制到 `companion-models/` 持久目录并经 `model.ready` 事件下发。零 3D API 成本。模型规格（动画/morph/骨骼/材质）见 [`../assets/base-models/GLB_MODEL_SPEC.md`](../assets/base-models/GLB_MODEL_SPEC.md)。模型下发后后台异步经 `enhance_pbr_channels` 一次性产出 albedo + normal + roughness + metalness 四张 PBR 通道图 prompt → `image_generation_tool` 并发 4 路（albedo 复用 seed 作颜色参考；normal/roughness/metalness 不接参考图）→ 任一通道失败即整组放弃（避免 albedo 应用而 normal 缺失的"半 PBR"状态）→ 全成功时写 `WardrobeItem` 4 个 URL + `wardrobe.updated` 推送。
 - **morph 发现**：`_extract_morph_names_from_glb` 解析 GLB JSON chunk 的 `meshes[].extras.targetNames`，写入 `CompanionModel.has_morph_targets`，供客户端知道模型支持哪些表情。
 
 ### 换装系统（WardrobeItem）

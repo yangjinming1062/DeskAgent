@@ -169,20 +169,20 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps): React.Reac
     setAvatarHint(null)
 
     try {
-      const res = await requestGateway<{ asset_url?: string; queued?: boolean; job_id?: string }>(
+      const res = await requestGateway<{ asset_url?: string; seed_url?: string; queued?: boolean; job_id?: string }>(
         'avatar.regenerate',
         {}
       )
 
       if (res?.asset_url) {
         setAvatarHint('换好啦，新形象已生成～')
-        void applyPortrait(res.asset_url)
+        void applyPortrait({ assetUrl: res.asset_url, seedUrl: res.seed_url })
       } else if (res?.queued && res.job_id) {
         const result = await awaitAvatarRegeneration(res.job_id)
 
         if (result.asset_url) {
           setAvatarHint('换好啦，新形象已生成～')
-          void applyPortrait(result.asset_url)
+          void applyPortrait({ assetUrl: result.asset_url, seedUrl: result.seed_url })
         } else {
           setAvatarHint(result.error ?? '暂时换不出来，稍后再试')
         }
@@ -220,7 +220,7 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps): React.Reac
 
       if (res?.asset_url) {
         setAvatarHint('上传成功～')
-        void applyPortrait(res.asset_url)
+        void applyPortrait({ assetUrl: res.asset_url })
       } else {
         setAvatarHint('上传失败了')
       }
