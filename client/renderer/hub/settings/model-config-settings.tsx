@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 
 import { InlineNotice } from '@/shared/components/notifications'
 import { Button } from '@/shared/components/ui/button'
+import { ConfirmDialog } from '@/shared/components/ui/confirm-dialog'
 import { Input } from '@/shared/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/shared/components/ui/select'
 import type { DeskAgentGateway } from '@/shared/deskagent'
@@ -104,6 +105,8 @@ export function ModelConfigSettings({
   const [originalForm, setOriginalForm] = useState<FormState>(emptyForm)
   const [providers, setProviders] = useState<ProviderSlotInput[]>([])
   const [originalProviders, setOriginalProviders] = useState<ProviderSlotInput[]>([])
+  const [clearingCap, setClearingCap] = useState<CapabilityKey | null>(null)
+  const [clearAllOpen, setClearAllOpen] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -149,11 +152,13 @@ export function ModelConfigSettings({
   }
 
   const onClearApiKey = (cap: CapabilityKey) => {
-    if (!window.confirm(m.clearKeyConfirm)) {
-      return
-    }
+    setClearingCap(cap)
+  }
 
-    updateCap(cap, { api_key: '', cleared_api_key: true })
+  const confirmClearApiKey = () => {
+    if (clearingCap) {
+      updateCap(clearingCap, { api_key: '', cleared_api_key: true })
+    }
   }
 
   // --- dirty detection ---
@@ -211,10 +216,6 @@ export function ModelConfigSettings({
   }
 
   const handleClearAll = () => {
-    if (!window.confirm(m.clearAllConfirm)) {
-      return
-    }
-
     const cleared = emptyForm()
 
     for (const c of CAPABILITIES) {
@@ -361,7 +362,7 @@ export function ModelConfigSettings({
         <Button
           className="text-muted-foreground hover:text-destructive"
           disabled={isSaving}
-          onClick={handleClearAll}
+          onClick={() => setClearAllOpen(true)}
           variant="ghost"
         >
           {m.clearAll}
@@ -371,6 +372,31 @@ export function ModelConfigSettings({
           {isSaving ? t.common.saving : t.common.save}
         </Button>
       </div>
+
+      <ConfirmDialog
+        cancelLabel={t.common.cancel}
+        confirmLabel={m.clearKey}
+        description={m.clearKeyConfirm}
+        onConfirm={confirmClearApiKey}
+        onOpenChange={open => {
+          if (!open) {
+            setClearingCap(null)
+          }
+        }}
+        open={clearingCap !== null}
+        title={m.clearKey}
+        variant="destructive"
+      />
+      <ConfirmDialog
+        cancelLabel={t.common.cancel}
+        confirmLabel={m.clearAll}
+        description={m.clearAllConfirm}
+        onConfirm={handleClearAll}
+        onOpenChange={setClearAllOpen}
+        open={clearAllOpen}
+        title={m.clearAll}
+        variant="destructive"
+      />
     </SettingsContent>
   )
 }

@@ -1,6 +1,7 @@
 import { IconDownload, IconRefresh, IconUpload, IconVolume } from '@tabler/icons-react'
-import { useRef } from 'react'
+import { useRef, useState } from 'react'
 
+import { ConfirmDialog } from '@/shared/components/ui/confirm-dialog'
 import { Tip } from '@/shared/components/ui/tooltip'
 import { getDeskAgentConfigDefaults, getDeskAgentConfigRecord, saveDeskAgentConfig } from '@/shared/deskagent'
 import { useRouteEnumParam } from '@/shared/hooks/use-route-enum-param'
@@ -41,6 +42,7 @@ export function SettingsView({ gateway, onClose, onConfigSaved }: SettingsPagePr
   const [activeView, setActiveView] = useRouteEnumParam('tab', SETTINGS_VIEWS, 'account')
 
   const importInputRef = useRef<HTMLInputElement | null>(null)
+  const [resetOpen, setResetOpen] = useState(false)
 
   const exportConfig = async () => {
     try {
@@ -89,10 +91,6 @@ export function SettingsView({ gateway, onClose, onConfigSaved }: SettingsPagePr
   }
 
   const resetConfig = async () => {
-    if (!window.confirm(t.settings.resetConfirm)) {
-      return
-    }
-
     try {
       await saveDeskAgentConfig(await getDeskAgentConfigDefaults())
       triggerHaptic('success')
@@ -177,7 +175,7 @@ export function SettingsView({ gateway, onClose, onConfigSaved }: SettingsPagePr
                 className="hover:text-destructive"
                 onClick={() => {
                   triggerHaptic('warning')
-                  void resetConfig()
+                  setResetOpen(true)
                 }}
               >
                 <IconRefresh className="size-3.5" />
@@ -221,6 +219,18 @@ export function SettingsView({ gateway, onClose, onConfigSaved }: SettingsPagePr
         }}
         ref={importInputRef}
         type="file"
+      />
+      <ConfirmDialog
+        cancelLabel={t.common.cancel}
+        confirmLabel={t.settings.resetToDefaults}
+        description={t.settings.resetConfirm}
+        onConfirm={() => {
+          void resetConfig()
+        }}
+        onOpenChange={setResetOpen}
+        open={resetOpen}
+        title={t.settings.resetToDefaults}
+        variant="destructive"
       />
     </OverlayView>
   )
