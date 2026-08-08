@@ -171,9 +171,7 @@ export function computeOverlayAnchorBesideSprite(opts: {
   const spriteRight = pos.x + spriteW
   const fitsRight = spriteRight + gap + overlayMaxW <= vw
 
-  const left = fitsRight
-    ? spriteRight + gap
-    : Math.max(0, pos.x - gap - overlayMaxW)
+  const left = fitsRight ? spriteRight + gap : Math.max(0, pos.x - gap - overlayMaxW)
 
   const top = Math.max(
     0,

@@ -128,13 +128,20 @@ export function CompanionRoot() {
 
     let cancelled = false
     setCompanionLifecycle('unauthed-egg')
-    // Pull the active portrait so the 形象 section has a preview immediately.
-    void hydratePortrait()
     window.deskagent
       .api<{ is_complete?: boolean }>({ path: '/api/companion/persona' })
       .then(p => {
-        if (!cancelled) {
-          setCompanionLifecycle(p?.is_complete ? 'ready' : 'onboarding')
+        if (cancelled) {
+          return
+        }
+
+        setCompanionLifecycle(p?.is_complete ? 'ready' : 'onboarding')
+
+        // Only pull the portrait once we know one exists — during onboarding
+        // the GET would 404, which the renderer would silently catch but the
+        // main process still logs to stderr.
+        if (p?.is_complete) {
+          void hydratePortrait()
         }
       })
       .catch(() => {

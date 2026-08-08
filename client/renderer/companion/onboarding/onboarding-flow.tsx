@@ -1,5 +1,6 @@
 import { useStore } from '@nanostores/react'
 import { type PointerEvent as ReactPointerEvent, useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 
 import { pickAvatarImage, type PickedImage } from '@/companion/avatar-image'
 import { awaitAvatarRegeneration } from '@/companion/avatar-regen-store'
@@ -1161,19 +1162,79 @@ function Chip({ label, onClick, active }: { label: string; onClick: () => void; 
 }
 
 function PortraitPanel({ url, name, hint }: { url: string | null; name: string; hint: string | null }) {
+  const [zoomed, setZoomed] = useState(false)
+
   return (
     <div className="flex flex-col items-center gap-2">
       <div className="flex justify-center">
         {url ? (
-          <img alt={name} className="h-40 w-40 rounded-xl object-cover shadow-lg" src={url} />
+          <button
+            aria-label="放大查看"
+            className="block cursor-zoom-in overflow-hidden rounded-xl border-0 bg-transparent p-0"
+            onClick={() => setZoomed(true)}
+            type="button"
+          >
+            <img alt={name} className="h-40 w-40 object-cover shadow-lg" src={url} />
+          </button>
         ) : (
           <div className="grid h-40 w-40 place-items-center rounded-xl bg-white/5 text-center text-xs text-white/50">
             {name}
           </div>
         )}
       </div>
-      {/* Regenerate failures surface on the portrait panel itself. */}
       {hint && <p className="text-xs text-rose-300/90">{hint}</p>}
+      {zoomed && url && <PortraitLightbox name={name} onClose={() => setZoomed(false)} url={url} />}
     </div>
+  )
+}
+
+// Lightbox sized to the portrait itself — no full-screen dark overlay. The
+// image is the window; the X is overlaid on its top-right corner; a faint
+// transparent backdrop catches outside clicks. Rendered via createPortal at
+// document.body so the onboarding container's `backdrop-filter` doesn't trap
+// our `position: fixed` inside the small dialog box (per CSS Containing Block
+// rules).
+function PortraitLightbox({ url, name, onClose }: { url: string; name: string; onClose: () => void }) {
+  const overlayRef = useRef<HTMLDivElement>(null)
+
+  // Register the full viewport as an interactive region while the lightbox is open
+  // so clicks on the image and its backdrop don't pass through to the windows below.
+  useInteractiveRegion('portrait-lightbox', overlayRef, () => new DOMRect(0, 0, window.innerWidth, window.innerHeight))
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose()
+      }
+    }
+
+    window.addEventListener('keydown', onKey)
+
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+
+  if (typeof document === 'undefined') {
+    return null
+  }
+
+  return createPortal(
+    <div
+      aria-label="点击关闭"
+      className="fixed inset-0 z-[100] flex items-center justify-center p-6"
+      onClick={onClose}
+      ref={overlayRef}
+      role="dialog"
+      style={{ pointerEvents: 'auto', background: 'rgba(0,0,0,0.35)' }}
+    >
+      <button
+        aria-label="关闭预览"
+        className="block cursor-zoom-out rounded-2xl border-0 bg-transparent p-0"
+        onClick={onClose}
+        type="button"
+      >
+        <img alt={name} className="block max-h-[90vh] max-w-[90vw] rounded-2xl object-contain shadow-2xl" src={url} />
+      </button>
+    </div>,
+    document.body
   )
 }
