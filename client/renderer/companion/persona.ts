@@ -52,29 +52,9 @@ function truncate(value: string | undefined, max: number): string | undefined {
   return trimmed.slice(0, max)
 }
 
-// speaking_style must reflect a real user selection: presets map to a fixed
-// style; free-text personality falls back to the default so the schema holds.
-export function deriveSpeakingStyle(role: string | undefined, personality: string | undefined): string {
-  const p = personality || ''
+import { classifyPersonality, deriveSpeakingStyle, type PersonalityClass } from './persona-classify'
 
-  if (p.includes('毒舌') || p.includes('傲娇')) {
-    return '俏皮带点小傲娇'
-  }
-
-  if (p.includes('冷静') || p.includes('理性')) {
-    return '沉稳简洁'
-  }
-
-  if (p.includes('活泼')) {
-    return '轻快活泼'
-  }
-
-  if (role && (role.includes('管家') || role.includes('秘书') || role.includes('贾维斯'))) {
-    return '专业干练'
-  }
-
-  return '温柔亲切'
-}
+export { classifyPersonality, deriveSpeakingStyle, type PersonalityClass }
 
 export function assemblePersona(answers: OnboardingAnswers): PersonaPayload {
   const name = answers.name?.trim() || '伙伴'

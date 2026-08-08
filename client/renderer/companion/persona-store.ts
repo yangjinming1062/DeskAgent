@@ -1,5 +1,6 @@
 import { atom } from 'nanostores'
 
+import { classifyPersonality } from './persona-classify'
 import { safeJsonParse } from '@/shared/lib/safe-json'
 
 export interface PersonaDefinition {
@@ -61,19 +62,7 @@ export async function hydratePersona(opts: { silent?: boolean } = {}): Promise<{
 export type ReactionTone = 'gentle' | 'lively' | 'snarky' | 'calm'
 
 export function personaTone(): ReactionTone {
-  const p = ($persona.get()?.personality ?? '').toLowerCase()
+  const persona = $persona.get()
 
-  if (p.includes('毒舌') || p.includes('傲娇')) {
-    return 'snarky'
-  }
-
-  if (p.includes('活泼') || p.includes('好动')) {
-    return 'lively'
-  }
-
-  if (p.includes('冷静') || p.includes('理性')) {
-    return 'calm'
-  }
-
-  return 'gentle'
+  return classifyPersonality(persona?.personality, persona?.background)
 }
