@@ -1,6 +1,7 @@
 import { useStore } from '@nanostores/react'
 import { useEffect, useRef, useState } from 'react'
 
+import { hydrateModel, hydrateWardrobe } from '@/companion/3d/model-store'
 import { startActivityMonitor } from '@/companion/activity'
 import { BootFailureOverlay } from '@/companion/boot/boot-failure-overlay'
 import { useGatewayBoot } from '@/companion/boot/use-gateway-boot'
@@ -172,7 +173,7 @@ export function CompanionRoot(): React.JSX.Element {
     window.addEventListener('keydown', onKey)
 
     const stopActivity = startActivityMonitor()
-    void hydratePersona()
+    void Promise.all([hydratePersona(), hydrateModel(), hydrateWardrobe()])
 
     return () => {
       clearInterval(timer)

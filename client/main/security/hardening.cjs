@@ -10,6 +10,11 @@ const TEXT_PREVIEW_SOURCE_MAX_BYTES = 64 * 1024 * 1024
 // run 15–25s, so the 15s default fires before the backend returns 201.
 const AVATAR_FETCH_TIMEOUT_MS = 120_000
 
+// 3D model GLBs can be 10–30 MB; cold disk cache + containerised backend can
+// push the read past the 15s default. Bump to 60s for the model-file endpoint
+// so a fresh restart doesn't fail mid-download on a slow read.
+const MODEL_FILE_TIMEOUT_MS = 60_000
+
 const SAFE_ENV_SUFFIXES = new Set(['dist', 'example', 'sample', 'template'])
 const SENSITIVE_EXTENSIONS = new Set(['.kdbx', '.p12', '.pem', '.pfx'])
 
@@ -28,6 +33,7 @@ function resolveTimeoutMs(timeoutMs, fallbackMs = DEFAULT_FETCH_TIMEOUT_MS) {
 }
 
 const AVATAR_SLOW_PATH_PATTERN = /^\/api\/companion\/avatar(?:\/upload|\/from-image)?$/i
+const MODEL_FILE_PATH_PATTERN = /^\/api\/companion\/model\/file\//
 
 // POST only — reads are DB lookups with no provider call.
 function resolvePathTimeoutMs(path, method, fallbackMs = DEFAULT_FETCH_TIMEOUT_MS) {
@@ -200,6 +206,8 @@ module.exports = {
   AVATAR_FETCH_TIMEOUT_MS,
   DATA_URL_READ_MAX_BYTES,
   DEFAULT_FETCH_TIMEOUT_MS,
+  MODEL_FILE_PATH_PATTERN,
+  MODEL_FILE_TIMEOUT_MS,
   TEXT_PREVIEW_SOURCE_MAX_BYTES,
   encryptDesktopSecret,
   resolvePathTimeoutMs,

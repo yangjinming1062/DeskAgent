@@ -1,4 +1,4 @@
-import { setModelInfo, setWardrobe, type WardrobeItem } from '@/companion/3d/model-store'
+import { hydrateWardrobe, setModelInfo } from '@/companion/3d/model-store'
 import { $screenLocked } from '@/companion/activity'
 import { reportInteractionStat } from '@/companion/activity'
 import { resolveAvatarRegeneration } from '@/companion/avatar-regen-store'
@@ -20,18 +20,6 @@ import type { RpcEvent } from '@/shared/types/deskagent'
 import { $devMode, pushDevLog } from './developer-overlay'
 import { speakProactive } from './proactive/proactive'
 import { findWindowByKeyword, performRitualWalk, type WindowGeom } from './ritual-walk'
-
-// Pull the full wardrobe list and push it into the model-store. Used by the
-// wardrobe.updated event — no request is needed otherwise; the UI triggers
-// generate / equip / delete via direct REST and refreshes locally.
-async function refreshWardrobe(): Promise<void> {
-  try {
-    const res = await window.deskagent.api<WardrobeItem[]>({ path: '/api/companion/wardrobe' })
-    setWardrobe(res ?? [])
-  } catch (err) {
-    console.warn('[events] wardrobe refresh failed:', err)
-  }
-}
 
 const PERCH_RETRY_MS = 300
 const PERCH_RETRY_COUNT = 5
@@ -277,7 +265,7 @@ export function handleCompanionEvent(event: RpcEvent): void {
     case 'wardrobe.updated': {
       // Backend fires this after a wardrobe item is generated, equipped, or
       // deleted. Re-pull the full list so the equipped atom stays in sync.
-      void refreshWardrobe()
+      void hydrateWardrobe()
 
       break
     }

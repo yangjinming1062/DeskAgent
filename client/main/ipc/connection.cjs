@@ -1,6 +1,12 @@
 'use strict'
 
 const { dataUrlFromBuffer } = require('../shared/mime.cjs')
+const { MODEL_FILE_PATH_PATTERN, MODEL_FILE_TIMEOUT_MS } = require('../security/hardening.cjs')
+
+// Match the signed-URL host strip below so a large GLB gets a 60s budget.
+function isModelFilePath(pathname) {
+  return typeof pathname === 'string' && MODEL_FILE_PATH_PATTERN.test(pathname)
+}
 
 // Backend connection resolver + REST proxy + boot-progress snapshot.
 function registerConnectionIpc({
@@ -56,9 +62,10 @@ function registerConnectionIpc({
     const { pathname, search } = new URL(raw, connection.baseUrl)
     const pathAndQuery = `${pathname}${search}`
 
+    const timeoutMs = isModelFilePath(pathname) ? MODEL_FILE_TIMEOUT_MS : defaultFetchTimeoutMs
     const res = await fetch(`${connection.baseUrl}${pathAndQuery}`, {
       headers: { ...(connection.token ? { Authorization: `Bearer ${connection.token}` } : {}) },
-      signal: AbortSignal.timeout(defaultFetchTimeoutMs)
+      signal: AbortSignal.timeout(timeoutMs)
     })
     if (!res.ok) {
       // Same signal as the sibling REST proxy so the renderer can show login.
@@ -88,9 +95,10 @@ function registerConnectionIpc({
     const { pathname, search } = new URL(raw, connection.baseUrl)
     const pathAndQuery = `${pathname}${search}`
 
+    const timeoutMs = isModelFilePath(pathname) ? MODEL_FILE_TIMEOUT_MS : defaultFetchTimeoutMs
     const res = await fetch(`${connection.baseUrl}${pathAndQuery}`, {
       headers: { ...(connection.token ? { Authorization: `Bearer ${connection.token}` } : {}) },
-      signal: AbortSignal.timeout(defaultFetchTimeoutMs)
+      signal: AbortSignal.timeout(timeoutMs)
     })
     if (!res.ok) {
       if (res.status === 401 && connection.token) {

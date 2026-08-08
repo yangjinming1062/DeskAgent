@@ -1,13 +1,17 @@
 import { atom } from 'nanostores'
 
+import { isClientErrorIpc } from '@/shared/lib/ipc-error'
+
 // Model + wardrobe asset catalog for the 3D companion.
 // Backed by the backend /api/companion/model + /api/companion/wardrobe
-// endpoints; pushed over the gateway as model.ready / wardrobe.updated events.
+// endpoints; pushed over the gateway as model.ready / wardrobe.updated events,
+// and pulled on lifecycle=ready via ``hydrateModel`` / ``hydrateWardrobe``.
 
 export interface ModelInfo {
   id: number | null
   asset_url: string | null
   species: string | null
+  provider: string | null
   morph_params: Record<string, number>
   has_rig: boolean
   has_morph_targets: boolean
@@ -30,10 +34,22 @@ export interface WardrobeItem {
   equipped: boolean
 }
 
+interface CompanionModelResponse {
+  id: number
+  asset_url: string | null
+  provider: string
+  species: string
+  morph_params: Record<string, number>
+  status: string
+  has_rig: boolean
+  has_morph_targets: boolean
+}
+
 export const $modelInfo = atom<ModelInfo>({
   id: null,
   asset_url: null,
   species: null,
+  provider: null,
   morph_params: {},
   has_rig: false,
   has_morph_targets: false,
@@ -57,4 +73,50 @@ export function refreshEquippedAndApply(): WardrobeItem | null {
   $equippedItem.set(equipped)
 
   return equipped
+}
+
+// Pull the active model from the backend on lifecycle=ready. The backend
+// re-signs ``asset_url`` every call (5-minute TTL); we never cache it. 404
+// (no model yet during onboarding) is swallowed silently so the initial
+// atom stays at its default; 5xx / network errors warn so a missing model
+// doesn't go unnoticed in production.
+export async function hydrateModel(): Promise<void> {
+  try {
+    const res = await window.deskagent.api<CompanionModelResponse>({
+      path: '/api/companion/model'
+    })
+
+    if (!res) {
+      return
+    }
+
+    setModelInfo({
+      id: res.id,
+      asset_url: res.asset_url,
+      species: res.species,
+      provider: res.provider,
+      morph_params: res.morph_params ?? {},
+      has_rig: res.has_rig,
+      has_morph_targets: res.has_morph_targets,
+      status: res.status
+    })
+  } catch (error) {
+    if (!isClientErrorIpc(error)) {
+      console.warn('hydrateModel failed', error)
+    }
+  }
+}
+
+// Same shape as ``hydrateModel`` — GET /api/companion/wardrobe, publish to
+// ``$wardrobe`` (which also derives ``$equippedItem``). Shared between the
+// lifecycle=ready hydration and the ``wardrobe.updated`` WS event handler.
+export async function hydrateWardrobe(): Promise<void> {
+  try {
+    const res = await window.deskagent.api<WardrobeItem[]>({ path: '/api/companion/wardrobe' })
+    setWardrobe(res ?? [])
+  } catch (error) {
+    if (!isClientErrorIpc(error)) {
+      console.warn('hydrateWardrobe failed', error)
+    }
+  }
 }
