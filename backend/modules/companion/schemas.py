@@ -86,6 +86,11 @@ class WardrobeItemResponse(BaseModel):
     category: str
     material_overrides_json: str = "{}"
     texture_url: str | None = None
+    # PBR channels paired with ``texture_url`` (albedo). Legacy rows and
+    # colour-preset rows carry ``None`` for all three.
+    normal_url: str | None = None
+    roughness_url: str | None = None
+    metalness_url: str | None = None
     prompt: str | None = None
     equipped: bool
 

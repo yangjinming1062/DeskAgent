@@ -2,6 +2,7 @@ import base64
 import json
 
 from components import get_logger
+from components import safe_json_loads
 from components import save_file
 from components import SESSION_LOCAL
 from components import tool_error
@@ -82,6 +83,22 @@ async def image_generation_tool(
             urls.append(public_url)
     logger.info("Generated images", extra={"image_count": len(urls), "prompt": prompt})
     return json.dumps({"success": True, "urls": urls}, ensure_ascii=False)
+
+
+def first_image_url(result_json: str) -> str | None:
+    """Pull the first image URL out of ``image_generation_tool``'s JSON
+    result. The tool returns ``{"success": true, "urls": [...]}`` on success
+    and ``{"success": false, "error": ...}`` on failure. Centralised here
+    so the 3 call sites (avatar / wardrobe / model PBR channels) all share
+    one definition of "first usable URL"."""
+    parsed = safe_json_loads(result_json, default=None)
+    if not isinstance(parsed, dict) or not parsed.get("success"):
+        return None
+    urls = parsed.get("urls")
+    if not isinstance(urls, list) or not urls:
+        return None
+    first = urls[0]
+    return first if isinstance(first, str) and first else None
 
 
 # MiniMax aspect ratios + the legacy DALL·E pixel sizes that map to them via

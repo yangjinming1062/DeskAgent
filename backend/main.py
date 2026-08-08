@@ -88,6 +88,11 @@ def _install_schema_extensions(conn: Connection) -> None:
     conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_companion_models_one_active ON companion_models (user_id) WHERE active"))
     # _ensure_presets relies on this index for dedup instead of a SELECT.
     conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_wardrobe_items_user_name ON wardrobe_items (user_id, name)"))
+    # PBR multi-channel rollout: add the normal / roughness / metalness columns
+    # to legacy wardrobe rows (albedo-only) without breaking reads. All three
+    # are nullable so preset rows + old generated rows continue to load.
+    for column in ("normal_url", "roughness_url", "metalness_url"):
+        conn.execute(text(f"ALTER TABLE wardrobe_items ADD COLUMN IF NOT EXISTS {column} TEXT"))
     conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_memories_user_context ON memories (user_id, context) WHERE context LIKE 'user_profile:%'"))
     # Partial unique for auto_inject slots — enforces one row per (user, slot)
     # so ``memory_retain(kind='auto_inject', context=<slot>)`` upserts atomically.

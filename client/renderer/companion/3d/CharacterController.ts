@@ -16,6 +16,34 @@ interface ProcParts {
   group: THREE.Group
 }
 
+interface OutfitItem {
+  material_overrides_json?: string | null
+  texture_url?: string | null
+  normal_url?: string | null
+  roughness_url?: string | null
+  metalness_url?: string | null
+}
+
+// Channels the wardrobe pipeline can populate on a WardrobeItem. The keys
+// are the URL field names on the JSON response; the values name the
+// MeshStandardMaterial slot each texture binds to. Adding a new channel
+// means a new field on the ORM + schema + this table.
+type PbrChannel = 'albedo' | 'normal' | 'roughness' | 'metalness'
+
+const PBR_CHANNEL_DEFS: Record<
+  PbrChannel,
+  {
+    urlField: keyof OutfitItem
+    slot: 'map' | 'normalMap' | 'roughnessMap' | 'metalnessMap'
+    colorSpace: THREE.ColorSpace
+  }
+> = {
+  albedo: { urlField: 'texture_url', slot: 'map', colorSpace: THREE.SRGBColorSpace },
+  normal: { urlField: 'normal_url', slot: 'normalMap', colorSpace: THREE.NoColorSpace },
+  roughness: { urlField: 'roughness_url', slot: 'roughnessMap', colorSpace: THREE.NoColorSpace },
+  metalness: { urlField: 'metalness_url', slot: 'metalnessMap', colorSpace: THREE.NoColorSpace }
+}
+
 const PBR_TEXTURE_KEYS = [
   'map',
   'normalMap',
@@ -35,7 +63,6 @@ export class CharacterController {
   private actions = new Map<string, THREE.AnimationAction>()
   private actionNames = new Set<string>()
   private currentAction: THREE.AnimationAction | null = null
-  private currentOutfitTex: THREE.Texture | null = null
   private isProcedural = false
   private proc: ProcParts | null = null
 
@@ -43,6 +70,16 @@ export class CharacterController {
   private breathPhase = 0
   private lookX = 0
   private lookY = 0
+  // Track PBR channel textures we last applied so a hot-swap can dispose the previous set before replacing it.
+  private currentPbrTex: Record<PbrChannel, THREE.Texture | null> = {
+    albedo: null,
+    normal: null,
+    roughness: null,
+    metalness: null
+  }
+  // Monotonic epoch so stale textureLoader callbacks (e.g. reverse load-completion order on rapid setOutfit) dispose their texture and bail.
+  private textureEpoch = 0
+  private readonly textureLoader = new THREE.TextureLoader()
 
   /** GLB: async-load model + animations; falls back to procedural on error. */
   async load(url: string | null, scene: THREE.Scene): Promise<LoadedModelInfo> {
@@ -86,6 +123,9 @@ export class CharacterController {
   }
 
   private disposeRoot(scene: THREE.Scene | null): void {
+    // Bump epoch first so in-flight textureLoader callbacks dispose their freshly-decoded texture and bail.
+    this.textureEpoch++
+
     if (this.root.parent) {
       scene?.remove(this.root)
     }
@@ -94,8 +134,12 @@ export class CharacterController {
     this.mixer = null
     this.actions.clear()
     this.actionNames.clear()
-    this.currentOutfitTex?.dispose()
-    this.currentOutfitTex = null
+
+    for (const channel of Object.keys(this.currentPbrTex) as PbrChannel[]) {
+      this.currentPbrTex[channel]?.dispose()
+      this.currentPbrTex[channel] = null
+    }
+
     this.isProcedural = false
     this.proc = null
     this.root.traverse(child => {
@@ -108,8 +152,8 @@ export class CharacterController {
             continue
           }
 
-          // Dispose PBR textures before the material — the material.dispose()
-          // call below doesn't release GPU texture refs.
+          // Dispose PBR textures before the material — material.dispose() doesn't release GPU texture refs.
+          // currentPbrTex tracks the setOutfit-loaded ones (disposed above); this sweep also covers GLB-baked textures that live only on materials. dispose() is idempotent.
           for (const key of PBR_TEXTURE_KEYS) {
             const tex = (mat as unknown as Record<string, THREE.Texture | null>)[key]
 
@@ -174,13 +218,14 @@ export class CharacterController {
     })
   }
 
-  /** Hot-swap outfit: apply material color/roughness/metalness overrides to
-   * all meshes (wildcard "*") or specific mesh names. Optionally load and
-   * apply a generated texture as the albedo map. */
-  setOutfit(item: { material_overrides_json?: string | null; texture_url?: string | null }): void {
+  /** Hot-swap outfit. A missing PBR channel clears the prior binding so preset items don't show stale textures. */
+  setOutfit(item: OutfitItem): void {
     if (this.isProcedural) {
       return
     }
+
+    // Invalidate in-flight loadPbrChannel callbacks from a previous setOutfit.
+    this.textureEpoch++
 
     const parsed = safeJsonParse<unknown>(item.material_overrides_json, {})
 
@@ -221,25 +266,76 @@ export class CharacterController {
       }
     })
 
-    if (item.texture_url) {
-      new THREE.TextureLoader().load(item.texture_url, tex => {
-        tex.colorSpace = THREE.SRGBColorSpace
-        this.currentOutfitTex?.dispose()
-        this.currentOutfitTex = tex
-        this.root.traverse(child => {
-          if (!(child instanceof THREE.Mesh)) {
-            return
-          }
+    for (const channel of Object.keys(PBR_CHANNEL_DEFS) as PbrChannel[]) {
+      const def = PBR_CHANNEL_DEFS[channel]
+      const url = item[def.urlField]
 
-          const m = child.material as THREE.MeshStandardMaterial
+      if (!url) {
+        this.clearPbrChannel(channel, def.slot)
 
-          if (m) {
-            m.map = tex
-            m.needsUpdate = true
-          }
-        })
-      })
+        continue
+      }
+
+      this.loadPbrChannel(url, channel, def.colorSpace, def.slot)
     }
+  }
+
+  /** Load one PBR channel texture and bind it. Captures ``textureEpoch``; stale callbacks dispose and bail. */
+  private loadPbrChannel(
+    url: string,
+    channel: PbrChannel,
+    colorSpace: THREE.ColorSpace,
+    slot: 'map' | 'normalMap' | 'roughnessMap' | 'metalnessMap'
+  ): void {
+    const epoch = this.textureEpoch
+    this.textureLoader.load(url, tex => {
+      // Stale callback: a newer setOutfit / disposeRoot invalidated this load.
+      // Dispose the freshly-decoded texture (never bound to a mesh) and bail.
+      if (epoch < this.textureEpoch) {
+        tex.dispose()
+
+        return
+      }
+
+      tex.colorSpace = colorSpace
+      this.currentPbrTex[channel]?.dispose()
+      this.currentPbrTex[channel] = tex
+      this.root.traverse(child => {
+        if (!(child instanceof THREE.Mesh)) {
+          return
+        }
+
+        const m = child.material as THREE.MeshStandardMaterial
+
+        if (m) {
+          ;(m as unknown as Record<string, THREE.Texture | null>)[slot] = tex
+          m.needsUpdate = true
+        }
+      })
+    })
+  }
+
+  /** Clear the texture slot on every mesh for a PBR channel and dispose the previously-bound texture. */
+  private clearPbrChannel(channel: PbrChannel, slot: 'map' | 'normalMap' | 'roughnessMap' | 'metalnessMap'): void {
+    const previous = this.currentPbrTex[channel]
+
+    if (previous) {
+      this.currentPbrTex[channel] = null
+      previous.dispose()
+    }
+
+    this.root.traverse(child => {
+      if (!(child instanceof THREE.Mesh)) {
+        return
+      }
+
+      const m = child.material as THREE.MeshStandardMaterial
+
+      if (m) {
+        ;(m as unknown as Record<string, THREE.Texture | null>)[slot] = null
+        m.needsUpdate = true
+      }
+    })
   }
 
   setLookTarget(nx: number, ny: number): void {

@@ -7,11 +7,17 @@ from .llm_client import client_for_user
 from .llm_client import get_async_client
 from .llm_client import MissingLlmConfigError
 from .llm_client import provider_for_service
+from .llm_client import provider_from_config
 from .llm_client import resolve_provider_chain
+from .llm_client import resolve_provider_config
 from .llm_client import resolve_service_row
 from .llm_fallback import execute_with_fallback
 from .llm_retry import call_with_retry
 from .llm_retry import LLMRuntimeError
+from .prompt_engineer import enhance_pbr_channels
+from .prompt_engineer import enhance_portrait_prompt
+from .prompt_engineer import enhance_texture_prompt
+from .prompt_engineer import PBR_KEYS
 from .providers import aclose_all
 from .providers import BaseProvider
 from .providers import ChatProvider
@@ -54,6 +60,8 @@ __all__ = [
     "MissingLlmConfigError",
     "resolve_service_row",
     "resolve_provider_chain",
+    "resolve_provider_config",
+    "provider_from_config",
     "provider_for_service",
     "execute_with_fallback",
     "BaseProvider",
@@ -92,6 +100,10 @@ __all__ = [
     "FailoverReason",
     "compress_history_if_needed",
     "describe_reference_image",
+    "enhance_portrait_prompt",
+    "enhance_texture_prompt",
+    "enhance_pbr_channels",
+    "PBR_KEYS",
     "resolve_user_llm_config",
     "merge_provider_json",
 ]

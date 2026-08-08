@@ -12,11 +12,15 @@ from modules.companion import WardrobeItem
 from modules.ws import WSEvent
 from sqlalchemy.orm import Session
 
+from ..llm import enhance_pbr_channels
+from ..llm import PBR_KEYS
+from ..tools.builtin import first_image_url
 from ..tools.builtin import image_generation_tool
 from .asset_store import build_signed_avatar_url
 from .asset_store import build_signed_model_url
 from .asset_store import save_companion_asset
 from .asset_store import save_companion_model
+from .asset_store import unlink_companion_asset
 from .persona_service import get_or_create_persona
 from .wardrobe_service import fetch_texture_bytes
 
@@ -146,6 +150,50 @@ async def generate_companion_model(db: Session, *, user_id: int, species_overrid
     return model
 
 
+# PBR channel order matches the JSON contract owned by
+# ``prompt_engineer.enhance_pbr_channels``; we import rather than redeclare
+# so the iteration order and the LLM contract can't drift apart.
+
+
+async def _generate_one_pbr_channel(
+    *,
+    channel_key: str,
+    prompt: str,
+    user_id: int,
+    reference_image: str | None,
+) -> str | None:
+    """Generate, download, and persist a single PBR texture channel.
+
+    Returns the bare storage path on success; ``None`` on any failure
+    (image-gen provider error, unreachable URL, disk write error). The
+    caller runs all 4 channels concurrently and treats partial success
+    as total failure to avoid the "albedo applied, normal still missing"
+    half-PBR state.
+    """
+    try:
+        result_json = await image_generation_tool(
+            prompt=prompt,
+            llm_config={},
+            size="1024x1024",
+            n=1,
+            user_id=user_id,
+            reference_image=reference_image,
+        )
+        src_url = first_image_url(result_json)
+        if not src_url:
+            return None
+
+        data = await fetch_texture_bytes(src_url)
+        if data is None:
+            return None
+
+        return save_companion_asset(data, user_id=user_id, label=f"custom_texture_{channel_key}", ext="png")
+    except Exception:
+        # Per-channel isolation: a transport blip on one channel must not
+        # abort the other 3 concurrent generations.
+        return None
+
+
 async def _generate_custom_textures(user_id: int) -> None:
     try:
         with SESSION_LOCAL() as db:
@@ -154,32 +202,50 @@ async def _generate_custom_textures(user_id: int) -> None:
             appearance = definition.get("appearance", "")
             portrait_url = _active_portrait(db, user_id)
 
-        if not appearance and not portrait_url:
-            return
+            if not appearance and not portrait_url:
+                return
 
-        prompt = f"full body character texture map, {appearance or 'casual clothing'}, seamless PBR albedo, flat even lighting, neutral pose"
-        result = await image_generation_tool(
-            prompt=prompt,
-            llm_config={},
-            size="1024x1024",
-            n=1,
-            user_id=user_id,
-            reference_image=portrait_url,
+            # LLM rewrites the persona's short appearance into 4 PBR-channel
+            # prompts in one round-trip. The session stays open here because
+            # ``enhance_pbr_channels`` reads the user's chat provider config
+            # from the DB; close it before the long image-gen + download
+            # phase. MissingLlmConfigError / transport errors propagate up —
+            # the outer try/except logs and returns so the user's current
+            # outfit stays intact.
+            channels = await enhance_pbr_channels(
+                db,
+                user_id,
+                base_description=appearance or "casual clothing",
+            )
+
+        results = await asyncio.gather(
+            *(
+                _generate_one_pbr_channel(
+                    channel_key=key,
+                    prompt=channels[key],
+                    user_id=user_id,
+                    # Vision reference is colour-consistency for albedo only;
+                    # normal / roughness / metalness are channel maps and don't
+                    # benefit from re-rendering through a portrait visual reference.
+                    reference_image=portrait_url if key == "albedo" else None,
+                )
+                for key in PBR_KEYS
+            )
         )
-        parsed = safe_json_loads(result, default=None)
-        if not isinstance(parsed, dict) or not parsed.get("success"):
+        # All-or-nothing: any channel failure discards the entire set so the GLB never
+        # lands in an "albedo applied, normal still missing" half-PBR state. The
+        # 1-3 channels that wrote files via ``save_companion_asset`` must be
+        # unlinked here — no GC sweep exists, so partial failures otherwise leak
+        # PNGs under companion-assets/<user_id>/.
+        if any(r is None for r in results):
+            logger.warning("Custom texture generation aborted (partial failure)", extra={"user_id": user_id})
+            for storage_path in results:
+                if storage_path is None:
+                    continue
+                if unlink_companion_asset(storage_path) is None:
+                    logger.warning("Failed to unlink orphaned PBR asset", extra={"user_id": user_id, "path": storage_path})
             return
-
-        urls = parsed.get("urls") or []
-        src_url = urls[0] if urls and isinstance(urls[0], str) else None
-        if not src_url:
-            return
-
-        data = await fetch_texture_bytes(src_url)
-        if data is None:
-            return
-
-        texture_url = save_companion_asset(data, user_id=user_id, label="custom_texture", ext="png")
+        albedo_url, normal_url, roughness_url, metalness_url = results
 
         with SESSION_LOCAL() as db:
             db.query(WardrobeItem).filter(WardrobeItem.user_id == user_id, WardrobeItem.equipped.is_(True)).update({"equipped": False})
@@ -189,7 +255,10 @@ async def _generate_custom_textures(user_id: int) -> None:
                     name="专属外观",
                     category="generated",
                     material_overrides_json="{}",
-                    texture_url=texture_url,
+                    texture_url=albedo_url,
+                    normal_url=normal_url,
+                    roughness_url=roughness_url,
+                    metalness_url=metalness_url,
                     prompt=appearance,
                     equipped=True,
                 )
@@ -197,7 +266,7 @@ async def _generate_custom_textures(user_id: int) -> None:
             db.commit()
 
         emit_wardrobe_updated(user_id)
-        logger.info("Custom texture generated for user", extra={"user_id": user_id})
+        logger.info("Custom texture (4 PBR channels) generated for user", extra={"user_id": user_id})
     except Exception:
         logger.warning("Custom texture generation failed", extra={"user_id": user_id}, exc_info=True)
 

@@ -55,6 +55,7 @@ from services.companion import update_persona
 from services.companion import upload_avatar
 from services.companion import verify_signed_asset_request
 from services.companion import verify_signed_avatar_request
+from services.llm import MissingLlmConfigError
 from services.rate_limit import limiter
 from sqlalchemy.orm import Session
 
@@ -155,6 +156,8 @@ async def post_avatar(
         if "persona is incomplete" in str(exc):
             raise HTTPException(status_code=409, detail={"error": "请先完成 onboarding 再生成形象", "reason": str(exc)})
         raise HTTPException(status_code=502, detail={"error": "伙伴形象生成失败，请稍后重试", "reason": str(exc)})
+    except MissingLlmConfigError as exc:
+        raise HTTPException(status_code=502, detail={"error": "LLM provider 未配置，请先在设置中配置 chat provider", "reason": str(exc)})
     return _avatar_response(asset)
 
 
@@ -216,6 +219,8 @@ async def post_avatar_from_image(
         if "persona is incomplete" in str(exc):
             raise HTTPException(status_code=409, detail={"error": "请先完成 onboarding 再基于图片生成形象", "reason": str(exc)})
         raise HTTPException(status_code=502, detail={"error": "按参考重绘失败，请稍后重试", "reason": str(exc)})
+    except MissingLlmConfigError as exc:
+        raise HTTPException(status_code=502, detail={"error": "LLM provider 未配置，请先在设置中配置 chat provider", "reason": str(exc)})
 
     return _avatar_response(asset)
 
@@ -265,6 +270,9 @@ def _wardrobe_response(item: WardrobeItem) -> WardrobeItemResponse:
         category=item.category,
         material_overrides_json=item.material_overrides_json,
         texture_url=item.texture_url,
+        normal_url=item.normal_url,
+        roughness_url=item.roughness_url,
+        metalness_url=item.metalness_url,
         prompt=item.prompt,
         equipped=item.equipped,
     )
@@ -302,7 +310,7 @@ async def post_wardrobe(
     user, _ = auth
     try:
         item = await generate_wardrobe_item(db, user_id=user.id, name=body.name, description=body.description)
-    except RuntimeError as exc:
+    except (RuntimeError, MissingLlmConfigError) as exc:
         raise HTTPException(status_code=502, detail={"error": str(exc)})
     return _wardrobe_response(item)
 
