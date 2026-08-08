@@ -1,11 +1,3 @@
-// Single-track audio shared by runtime TTS and pre-rendered onboarding clips.
-//
-// Also routes the audio through a Web Audio AnalyserNode so the 3D engine can
-// drive lip sync (jawOpen morph) from the live waveform amplitude. The
-// analyser is created lazily on first use — some renderers block
-// AudioContext construction until a user gesture, so we defer until playDataUrl.
-
-// ── Playback state ────────────────────────────────────────────────────────
 let current: HTMLAudioElement | null = null
 let currentDone: (() => void) | null = null
 let currentListeners: [string, EventListener][] = []
@@ -35,9 +27,14 @@ export function stopAudio(): void {
     currentDone = null
   }
 
-  // Also flag the amplitude loop to bail so it doesn't try to read from a
-  // detached AnalyserNode on the next frame.
+  // Also flag the amplitude loop to bail and immediately cancel pending frame.
   amplitudeActive = false
+
+  if (amplitudeRaf !== null) {
+    cancelAnimationFrame(amplitudeRaf)
+    amplitudeRaf = null
+  }
+
   amplitudeSink?.(0)
 }
 
@@ -154,7 +151,12 @@ function startAmplitudeLoop(audio: HTMLAudioElement): void {
   }
 
   amplitudeActive = true
-  cancelAnimationFrame(amplitudeRaf ?? 0)
+
+  if (amplitudeRaf !== null) {
+    cancelAnimationFrame(amplitudeRaf)
+    amplitudeRaf = null
+  }
+
   const buf = amplitudeBuffer as Uint8Array<ArrayBuffer>
 
   const tick = () => {

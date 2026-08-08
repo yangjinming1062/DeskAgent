@@ -9,7 +9,7 @@ import { ErrorBoundary } from '@/shared/components/error-boundary'
 import { HapticsProvider } from '@/shared/components/haptics-provider'
 import { installClipboardShim } from '@/shared/lib/clipboard'
 import { queryClient } from '@/shared/lib/query-client'
-import { ThemeProvider } from '@/shared/themes/context'
+import { ThemeProvider } from '@/shared/themes'
 import type { DesktopUpdateEvent } from '@/shared/types/global'
 
 import App from './app'

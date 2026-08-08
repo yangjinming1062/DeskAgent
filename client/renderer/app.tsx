@@ -1,13 +1,12 @@
+import type React from 'react'
+
 import { CompanionRoot } from '@/companion'
 import { ToolRoot } from '@/hub'
 
-// The shared renderer bundle branches at the root on a `?role=` query param
-// stamped by main (rendererUrlFor): the transparent sprite window runs
-// CompanionRoot, the framed tool window runs ToolRoot (Login / Settings).
 function readRole(): 'sprite' | 'tool' {
   return new URLSearchParams(window.location.search).get('role') === 'sprite' ? 'sprite' : 'tool'
 }
 
-export default function App() {
+export default function App(): React.JSX.Element {
   return readRole() === 'sprite' ? <CompanionRoot /> : <ToolRoot />
 }

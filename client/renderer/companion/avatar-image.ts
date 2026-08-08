@@ -1,8 +1,3 @@
-/**
- * Picking a local image for the companion's portrait — shared by onboarding
- * (reference image + 形象确认 upload) and 伙伴设置 → 形象管理.
- */
-
 export interface PickedImage {
   base64: string
   contentType: string

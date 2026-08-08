@@ -1,8 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 
-import { SearchField } from '@/shared/components/ui/search-field'
-import { Switch } from '@/shared/components/ui/switch'
-import { TextTab, TextTabMeta } from '@/shared/components/ui/text-tab'
+import { SearchField, Switch, TextTab, TextTabMeta } from '@/shared/components/ui'
 import { Sparkles } from '@/shared/lib/icons'
 import { refreshSession } from '@/shared/store/auth'
 import { notifyError } from '@/shared/store/notifications'
@@ -28,7 +26,7 @@ function isUserCategory(key: string): boolean {
   return key !== UNCATEGORIZED_KEY
 }
 
-export function SkillsSettings() {
+export function SkillsSettings(): React.JSX.Element {
   const t = strings
   const s = t.settings.skills
   const sk = t.skills

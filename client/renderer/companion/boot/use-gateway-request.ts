@@ -5,7 +5,13 @@ import type { DeskAgentGateway } from '@/shared/deskagent'
 import { resolveGatewayWsUrl } from '@/shared/lib/gateway-ws-url'
 import { $gateway, $gatewayState } from '@/shared/store/gateway'
 
-export function useGatewayRequest() {
+export interface UseGatewayRequestResult {
+  connectionRef: React.RefObject<Awaited<ReturnType<NonNullable<typeof window.deskagent>['getConnection']>> | null>
+  gatewayRef: React.RefObject<DeskAgentGateway | null>
+  requestGateway: <T>(method: string, params?: Record<string, unknown>) => Promise<T>
+}
+
+export function useGatewayRequest(): UseGatewayRequestResult {
   const gatewayState = useStore($gatewayState)
   const gatewayRef = useRef<DeskAgentGateway | null>(null)
 

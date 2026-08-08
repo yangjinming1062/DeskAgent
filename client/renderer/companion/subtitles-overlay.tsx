@@ -6,7 +6,7 @@ interface SubtitlesOverlayProps {
   visible?: boolean
 }
 
-export function SubtitlesOverlay({ visible = true }: SubtitlesOverlayProps) {
+export function SubtitlesOverlay({ visible = true }: SubtitlesOverlayProps): React.JSX.Element | null {
   const messages = useStore($chatMessages)
   const lastMessage = messages[messages.length - 1]
 

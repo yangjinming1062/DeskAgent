@@ -4,7 +4,12 @@ import { cn } from '@/shared/lib/utils'
 
 import { type ControlVariantProps, controlVariants } from './control'
 
-function Input({ className, type, size, ...props }: Omit<React.ComponentProps<'input'>, 'size'> & ControlVariantProps) {
+function Input({
+  className,
+  type,
+  size,
+  ...props
+}: Omit<React.ComponentProps<'input'>, 'size'> & ControlVariantProps): React.JSX.Element {
   return (
     <input
       className={cn(

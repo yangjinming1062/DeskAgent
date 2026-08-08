@@ -19,7 +19,12 @@ interface SegmentedControlProps<T extends string> {
  * (color mode, tool-call display, usage period, etc.). Flat by design —
  * no per-option borders, just a tinted track with a raised active pill.
  */
-export function SegmentedControl<T extends string>({ options, value, onChange, className }: SegmentedControlProps<T>) {
+export function SegmentedControl<T extends string>({
+  options,
+  value,
+  onChange,
+  className
+}: SegmentedControlProps<T>): React.JSX.Element {
   return (
     <div
       className={cn(

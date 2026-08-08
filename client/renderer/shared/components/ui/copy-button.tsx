@@ -1,12 +1,13 @@
 import * as React from 'react'
 
-import { Button } from '@/shared/components/ui/button'
-import { DropdownMenuItem } from '@/shared/components/ui/dropdown-menu'
-import { Tip } from '@/shared/components/ui/tooltip'
 import { triggerHaptic } from '@/shared/lib/haptics'
 import { Check, Copy, X } from '@/shared/lib/icons'
 import { cn } from '@/shared/lib/utils'
 import { strings } from '@/shared/strings'
+
+import { Button } from './button'
+import { DropdownMenuItem } from './dropdown-menu'
+import { Tip } from './tooltip'
 
 type CopyPayload = string | (() => Promise<string> | string)
 type CopyButtonAppearance = 'button' | 'icon' | 'inline' | 'menu-item' | 'tool-row'
@@ -63,7 +64,7 @@ export function CopyButton({
   errorMessage,
   haptic = true,
   iconClassName,
-  label,
+  label = strings.common.copy,
   onCopied,
   onCopyError,
   preventDefault = false,
@@ -71,7 +72,7 @@ export function CopyButton({
   stopPropagation = false,
   text,
   title
-}: CopyButtonProps) {
+}: CopyButtonProps): React.JSX.Element {
   const t = strings
   const resolvedErrorMessage = errorMessage ?? t.common.copyFailed
   const resolvedLabel = label ?? t.common.copy

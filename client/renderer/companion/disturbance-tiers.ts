@@ -1,9 +1,3 @@
-// Single source of truth for the three disturbance tiers. The id matches the
-// `DisturbanceTier` union in companion-store.ts. The `label` is the user-visible
-// chip text; the optional `hint` is a longer one-line description used in
-// settings surfaces (chat-dock's compact chip omits it). Order is the
-// display order: most permissive → most restrictive.
-
 import type { DisturbanceTier } from './companion-store'
 
 export interface DisturbanceTierOption {

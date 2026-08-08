@@ -1,3 +1,4 @@
+import type React from 'react'
 import { useEffect, useState } from 'react'
 import { type Document, parseDocument } from 'yaml'
 
@@ -11,6 +12,14 @@ type Patch = {
   op?: 'set' | 'delete'
 }
 
+export interface UseRunnerConfigResult {
+  yamlDoc: Document | null
+  setYamlDoc: React.Dispatch<React.SetStateAction<Document | null>>
+  isLoading: boolean
+  write: (content: string) => Promise<SaveResult>
+  patch: (p: Patch) => Promise<SaveResult>
+}
+
 /**
  * Shared lifecycle for settings pages that read/write `$DESKAGENT_HOME/config.yaml`
  * via the `deskagent:runner-config:*` IPC channels.
@@ -22,7 +31,7 @@ type Patch = {
  * update). Both paths go through the main-process IPC handler that performs
  * deprecated-key cleanup + atomic write + Runner bridge restart.
  */
-export function useRunnerConfig(errorKey: string) {
+export function useRunnerConfig(errorKey: string): UseRunnerConfigResult {
   const [yamlDoc, setYamlDoc] = useState<Document | null>(null)
   const [isLoading, setIsLoading] = useState(true)
 

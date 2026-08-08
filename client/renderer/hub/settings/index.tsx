@@ -1,8 +1,7 @@
 import { IconDownload, IconRefresh, IconUpload, IconVolume } from '@tabler/icons-react'
 import { useRef, useState } from 'react'
 
-import { ConfirmDialog } from '@/shared/components/ui/confirm-dialog'
-import { Tip } from '@/shared/components/ui/tooltip'
+import { ConfirmDialog, Tip } from '@/shared/components/ui'
 import { getDeskAgentConfig, getDeskAgentConfigDefaults, saveDeskAgentConfig } from '@/shared/deskagent'
 import { useRouteEnumParam } from '@/shared/hooks/use-route-enum-param'
 import { triggerHaptic } from '@/shared/lib/haptics'
@@ -37,7 +36,7 @@ const SETTINGS_VIEWS: readonly SettingsViewId[] = [
   'about'
 ]
 
-export function SettingsView({ gateway, onClose, onConfigSaved }: SettingsPageProps) {
+export function SettingsView({ gateway, onClose, onConfigSaved }: SettingsPageProps): React.JSX.Element {
   const t = strings
   const [activeView, setActiveView] = useRouteEnumParam('tab', SETTINGS_VIEWS, 'account')
 

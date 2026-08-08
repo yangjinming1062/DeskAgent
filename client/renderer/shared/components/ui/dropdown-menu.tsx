@@ -1,8 +1,11 @@
-import { DropdownMenu as DropdownMenuPrimitive } from 'radix-ui'
+import * as RadixUI from 'radix-ui'
 import * as React from 'react'
 
-import { Codicon } from '@/shared/components/ui/codicon'
 import { cn } from '@/shared/lib/utils'
+
+import { Codicon } from './codicon'
+
+const DropdownMenuPrimitive = RadixUI.DropdownMenu
 
 // Shared class tokens for edge-to-edge menus (use with `p-0` content): rows go
 // full-width, square, and compact so the highlight spans the whole surface.
@@ -15,15 +18,19 @@ export const dropdownMenuSectionLabel = 'px-2.5 pt-1 pb-0.5 text-[0.625rem] font
 // is a filter keystroke and is stopped so the menu's typeahead doesn't hijack it.
 const DROPDOWN_NAV_KEYS = new Set(['ArrowDown', 'ArrowUp', 'Enter', 'Escape', 'Tab'])
 
-function DropdownMenu({ ...props }: React.ComponentProps<typeof DropdownMenuPrimitive.Root>) {
+function DropdownMenu({ ...props }: React.ComponentProps<typeof DropdownMenuPrimitive.Root>): React.JSX.Element {
   return <DropdownMenuPrimitive.Root data-slot="dropdown-menu" {...props} />
 }
 
-function DropdownMenuPortal({ ...props }: React.ComponentProps<typeof DropdownMenuPrimitive.Portal>) {
+function DropdownMenuPortal({
+  ...props
+}: React.ComponentProps<typeof DropdownMenuPrimitive.Portal>): React.JSX.Element {
   return <DropdownMenuPrimitive.Portal data-slot="dropdown-menu-portal" {...props} />
 }
 
-function DropdownMenuTrigger({ ...props }: React.ComponentProps<typeof DropdownMenuPrimitive.Trigger>) {
+function DropdownMenuTrigger({
+  ...props
+}: React.ComponentProps<typeof DropdownMenuPrimitive.Trigger>): React.JSX.Element {
   return <DropdownMenuPrimitive.Trigger data-slot="dropdown-menu-trigger" {...props} />
 }
 
@@ -40,7 +47,7 @@ function DropdownMenuSearch({
   ...props
 }: Omit<React.ComponentProps<'input'>, 'type'> & {
   onValueChange?: (value: string) => void
-}) {
+}): React.JSX.Element {
   return (
     <div className="px-2.5 py-1.5" data-slot="dropdown-menu-search">
       <input
@@ -72,7 +79,7 @@ function DropdownMenuContent({
   collisionPadding = 8,
   sideOffset = 4,
   ...props
-}: React.ComponentProps<typeof DropdownMenuPrimitive.Content>) {
+}: React.ComponentProps<typeof DropdownMenuPrimitive.Content>): React.JSX.Element {
   return (
     <DropdownMenuPrimitive.Portal>
       <DropdownMenuPrimitive.Content
@@ -94,7 +101,7 @@ function DropdownMenuContent({
   )
 }
 
-function DropdownMenuGroup({ ...props }: React.ComponentProps<typeof DropdownMenuPrimitive.Group>) {
+function DropdownMenuGroup({ ...props }: React.ComponentProps<typeof DropdownMenuPrimitive.Group>): React.JSX.Element {
   return <DropdownMenuPrimitive.Group data-slot="dropdown-menu-group" {...props} />
 }
 
@@ -106,7 +113,7 @@ function DropdownMenuItem({
 }: React.ComponentProps<typeof DropdownMenuPrimitive.Item> & {
   inset?: boolean
   variant?: 'default' | 'destructive'
-}) {
+}): React.JSX.Element {
   return (
     <DropdownMenuPrimitive.Item
       className={cn(
@@ -126,7 +133,7 @@ function DropdownMenuCheckboxItem({
   children,
   checked,
   ...props
-}: React.ComponentProps<typeof DropdownMenuPrimitive.CheckboxItem>) {
+}: React.ComponentProps<typeof DropdownMenuPrimitive.CheckboxItem>): React.JSX.Element {
   return (
     <DropdownMenuPrimitive.CheckboxItem
       checked={checked}
@@ -145,7 +152,9 @@ function DropdownMenuCheckboxItem({
   )
 }
 
-function DropdownMenuRadioGroup({ ...props }: React.ComponentProps<typeof DropdownMenuPrimitive.RadioGroup>) {
+function DropdownMenuRadioGroup({
+  ...props
+}: React.ComponentProps<typeof DropdownMenuPrimitive.RadioGroup>): React.JSX.Element {
   return <DropdownMenuPrimitive.RadioGroup data-slot="dropdown-menu-radio-group" {...props} />
 }
 
@@ -153,7 +162,7 @@ function DropdownMenuRadioItem({
   className,
   children,
   ...props
-}: React.ComponentProps<typeof DropdownMenuPrimitive.RadioItem>) {
+}: React.ComponentProps<typeof DropdownMenuPrimitive.RadioItem>): React.JSX.Element {
   return (
     <DropdownMenuPrimitive.RadioItem
       className={cn(
@@ -177,7 +186,7 @@ function DropdownMenuLabel({
   ...props
 }: React.ComponentProps<typeof DropdownMenuPrimitive.Label> & {
   inset?: boolean
-}) {
+}): React.JSX.Element {
   return (
     <DropdownMenuPrimitive.Label
       className={cn('px-2 py-1 text-xs font-medium text-(--ui-text-tertiary) data-[inset]:pl-7', className)}
@@ -188,7 +197,10 @@ function DropdownMenuLabel({
   )
 }
 
-function DropdownMenuSeparator({ className, ...props }: React.ComponentProps<typeof DropdownMenuPrimitive.Separator>) {
+function DropdownMenuSeparator({
+  className,
+  ...props
+}: React.ComponentProps<typeof DropdownMenuPrimitive.Separator>): React.JSX.Element {
   return (
     <DropdownMenuPrimitive.Separator
       className={cn('-mx-1 my-1 h-px bg-(--ui-stroke-tertiary)', className)}
@@ -198,7 +210,7 @@ function DropdownMenuSeparator({ className, ...props }: React.ComponentProps<typ
   )
 }
 
-function DropdownMenuShortcut({ className, ...props }: React.ComponentProps<'span'>) {
+function DropdownMenuShortcut({ className, ...props }: React.ComponentProps<'span'>): React.JSX.Element {
   return (
     <span
       className={cn('ml-auto text-xs tracking-widest text-muted-foreground', className)}
@@ -208,7 +220,7 @@ function DropdownMenuShortcut({ className, ...props }: React.ComponentProps<'spa
   )
 }
 
-function DropdownMenuSub({ ...props }: React.ComponentProps<typeof DropdownMenuPrimitive.Sub>) {
+function DropdownMenuSub({ ...props }: React.ComponentProps<typeof DropdownMenuPrimitive.Sub>): React.JSX.Element {
   return <DropdownMenuPrimitive.Sub data-slot="dropdown-menu-sub" {...props} />
 }
 
@@ -222,7 +234,7 @@ function DropdownMenuSubTrigger({
   inset?: boolean
   /** Suppress the trailing caret — for triggers that own their right-side affordance. */
   hideChevron?: boolean
-}) {
+}): React.JSX.Element {
   return (
     <DropdownMenuPrimitive.SubTrigger
       className={cn(
@@ -243,7 +255,7 @@ function DropdownMenuSubContent({
   className,
   collisionPadding = 8,
   ...props
-}: React.ComponentProps<typeof DropdownMenuPrimitive.SubContent>) {
+}: React.ComponentProps<typeof DropdownMenuPrimitive.SubContent>): React.JSX.Element {
   return (
     // Portal the submenu out of the parent Content so it escapes that Content's
     // `overflow` clip. Without this, a submenu opening from a scrollable menu
@@ -257,7 +269,7 @@ function DropdownMenuSubContent({
         // only published on Content, NOT SubContent — using it here collapses
         // the submenu to 0px height.
         className={cn(
-          'dt-portal-scrollbar z-50 max-h-80 min-w-36 origin-(--radix-dropdown-menu-content-transform-origin) overflow-y-auto rounded-lg border border-(--ui-stroke-secondary) bg-[color-mix(in_srgb,var(--ui-bg-elevated)_96%,transparent)] p-1 text-[length:var(--conversation-text-font-size)] text-popover-foreground shadow-md backdrop-blur-md data-[side=bottom]:slide-in-from-top-1 data-[side=left]:slide-in-from-right-1 data-[side=right]:slide-in-from-left-1 data-[side=top]:slide-in-from-bottom-1 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95',
+          'dt-portal-scrollbar z-50 max-h-80 min-w-36 origin-(--radix-dropdown-menu-content-transform-origin) overflow-x-hidden overflow-y-auto rounded-lg border border-(--ui-stroke-secondary) bg-[color-mix(in_srgb,var(--ui-bg-elevated)_96%,transparent)] p-1 text-[length:var(--conversation-text-font-size)] text-popover-foreground shadow-md backdrop-blur-md data-[side=bottom]:slide-in-from-top-1 data-[side=left]:slide-in-from-right-1 data-[side=right]:slide-in-from-left-1 data-[side=top]:slide-in-from-bottom-1 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95',
           className
         )}
         // Flip to the other side / shift vertically when near a viewport edge

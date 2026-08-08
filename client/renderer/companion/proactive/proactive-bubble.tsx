@@ -14,7 +14,7 @@ const BUBBLE_GAP = 8
 const BUBBLE_MAX_W = 256
 const BUBBLE_VERTICAL_RATIO = 0.1
 
-export function ProactiveBubble() {
+export function ProactiveBubble(): React.JSX.Element | null {
   const text = useStore($proactiveBubble)
   const chatOpen = useStore($chatOpen)
 
@@ -25,7 +25,7 @@ export function ProactiveBubble() {
   return <ProactiveBubbleView text={text} />
 }
 
-function ProactiveBubbleView({ text }: { text: string }) {
+function ProactiveBubbleView({ text }: { text: string }): React.JSX.Element {
   const pos = useStore($spatialPos)
   const scale = useStore($spatialScale)
   const viewport = useStore($viewport)

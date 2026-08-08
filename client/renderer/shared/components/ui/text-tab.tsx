@@ -2,7 +2,7 @@ import * as React from 'react'
 
 import { cn } from '@/shared/lib/utils'
 
-function TextTabMeta({ className, ...props }: React.ComponentProps<'span'>) {
+function TextTabMeta({ className, ...props }: React.ComponentProps<'span'>): React.JSX.Element {
   return <span className={cn('text-[0.72em] font-normal text-(--ui-text-tertiary)', className)} {...props} />
 }
 
@@ -10,7 +10,7 @@ interface TextTabProps extends React.ComponentProps<'button'> {
   active?: boolean
 }
 
-function TextTab({ active = false, children, className, type = 'button', ...props }: TextTabProps) {
+function TextTab({ active = false, children, className, type = 'button', ...props }: TextTabProps): React.JSX.Element {
   return (
     <button
       className={cn(

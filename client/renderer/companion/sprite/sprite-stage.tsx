@@ -1,5 +1,5 @@
 import { useStore } from '@nanostores/react'
-import { type ReactNode, type PointerEvent as ReactPointerEvent, useCallback, useEffect, useRef } from 'react'
+import { type PointerEvent, type ReactNode, useCallback, useEffect, useRef } from 'react'
 
 import { isPointInteractive, setCaptureProbe, useInteractiveRegion } from '@/companion/interactive-regions'
 
@@ -22,7 +22,7 @@ const HALO_PAD = 70
 
 const SPRITE_REGION_ID = 'sprite-stage'
 
-export function SpriteStage({ children, onTap, onDoubleTap, onContextMenu }: SpriteStageProps) {
+export function SpriteStage({ children, onTap, onDoubleTap, onContextMenu }: SpriteStageProps): React.JSX.Element {
   const mountRef = useRef<HTMLDivElement>(null)
   const capturedRef = useRef(false)
   const lastPointRef = useRef<{ x: number; y: number } | null>(null)
@@ -111,37 +111,46 @@ export function SpriteStage({ children, onTap, onDoubleTap, onContextMenu }: Spr
     }
   }, [capture, release])
 
-  const onPointerDown = (e: ReactPointerEvent) => {
-    capture()
-    ;(e.currentTarget as Element).setPointerCapture?.(e.pointerId)
-    const current = $spatialPos.get()
-    dragRef.current = { startX: e.clientX, startY: e.clientY, originX: current.x, originY: current.y, moved: false }
+  const onPointerDown = (e: PointerEvent<HTMLDivElement>) => {
+    lastPointRef.current = { x: e.clientX, y: e.clientY }
+
+    // Only capture when left-button is pressed
+    if (e.button !== 0) {
+      return
+    }
+
+    dragRef.current = { startX: e.clientX, startY: e.clientY, originX: pos.x, originY: pos.y, moved: false }
     cancelMovement()
   }
 
-  const onPointerMove = (e: ReactPointerEvent) => {
-    const drag = dragRef.current
+  const onPointerMove = (e: PointerEvent<HTMLDivElement>) => {
+    lastPointRef.current = { x: e.clientX, y: e.clientY }
+    const d = dragRef.current
 
-    if (!drag) {
+    if (!d) {
+      handleHoverInteraction()
+
       return
     }
 
-    const dx = e.clientX - drag.startX
-    const dy = e.clientY - drag.startY
+    const dx = e.clientX - d.startX
+    const dy = e.clientY - d.startY
 
-    if (!drag.moved && Math.hypot(dx, dy) < DRAG_THRESHOLD) {
-      return
-    }
-
-    if (!drag.moved) {
+    if (!d.moved && Math.hypot(dx, dy) > DRAG_THRESHOLD) {
+      d.moved = true
       startDrag()
+      e.currentTarget.setPointerCapture(e.pointerId)
+      capturedRef.current = true
     }
 
-    drag.moved = true
-    updateDragPosition({ x: drag.originX + dx, y: drag.originY + dy })
+    if (d.moved) {
+      const nextX = Math.round(d.originX + dx)
+      const nextY = Math.round(d.originY + dy)
+      updateDragPosition({ x: nextX, y: nextY })
+    }
   }
 
-  const onPointerUp = (e: ReactPointerEvent) => {
+  const onPointerUp = (e: PointerEvent<HTMLDivElement>) => {
     ;(e.currentTarget as Element).releasePointerCapture?.(e.pointerId)
     const drag = dragRef.current
     dragRef.current = null

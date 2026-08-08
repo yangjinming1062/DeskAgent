@@ -1,17 +1,19 @@
-import { Popover as PopoverPrimitive } from 'radix-ui'
+import * as RadixUI from 'radix-ui'
 import * as React from 'react'
 
 import { cn } from '@/shared/lib/utils'
 
-function Popover({ ...props }: React.ComponentProps<typeof PopoverPrimitive.Root>) {
+const PopoverPrimitive = RadixUI.Popover
+
+function Popover({ ...props }: React.ComponentProps<typeof PopoverPrimitive.Root>): React.JSX.Element {
   return <PopoverPrimitive.Root data-slot="popover" {...props} />
 }
 
-function PopoverTrigger({ ...props }: React.ComponentProps<typeof PopoverPrimitive.Trigger>) {
+function PopoverTrigger({ ...props }: React.ComponentProps<typeof PopoverPrimitive.Trigger>): React.JSX.Element {
   return <PopoverPrimitive.Trigger data-slot="popover-trigger" {...props} />
 }
 
-function PopoverAnchor({ ...props }: React.ComponentProps<typeof PopoverPrimitive.Anchor>) {
+function PopoverAnchor({ ...props }: React.ComponentProps<typeof PopoverPrimitive.Anchor>): React.JSX.Element {
   return <PopoverPrimitive.Anchor data-slot="popover-anchor" {...props} />
 }
 
@@ -21,7 +23,7 @@ function PopoverContent({
   collisionPadding = 8,
   sideOffset = 6,
   ...props
-}: React.ComponentProps<typeof PopoverPrimitive.Content>) {
+}: React.ComponentProps<typeof PopoverPrimitive.Content>): React.JSX.Element {
   return (
     <PopoverPrimitive.Portal>
       <PopoverPrimitive.Content

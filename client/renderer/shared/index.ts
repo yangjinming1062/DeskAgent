@@ -1,6 +1,3 @@
-// Public surface of renderer/shared. Imports outside this barrel go via
-// `@/shared/<module>`/<file>` directly, never `@shared` to peer module internals.
-
 export { BrandMark } from './components/brand-mark'
 export { ErrorBoundary } from './components/error-boundary'
 

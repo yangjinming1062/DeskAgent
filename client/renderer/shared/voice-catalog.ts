@@ -1,8 +1,3 @@
-// Voice catalog types + labels shared between the companion sprite window
-// (which fetches via JSON-RPC) and the hub tool window (which fetches via
-// REST). Both reach the same Backend catalog; only the transport and the
-// gateway-side snake→camel mapping differ.
-
 export interface VoiceOption {
   id: string
   label: string

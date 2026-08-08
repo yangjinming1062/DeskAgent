@@ -253,10 +253,8 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps): React.Reac
         setWardrobe(items ?? [])
         refreshEquippedAndApply()
       } catch (refreshErr) {
-        // H2: surface the refresh failure rather than swallowing it. The
-        // equip call already succeeded on the backend — the catalogue
-        // re-pull is best-effort. The `wardrobe.updated` event will fix
-        // the UI on its own; this hint is a courtesy.
+        // Surface the refresh failure rather than swallowing it. The equip call already
+        // succeeded on the backend; the wardrobe.updated event will update the UI.
         setWardrobeHint(
           refreshErr instanceof Error ? `已装备，但目录刷新失败：${refreshErr.message}` : '已装备，但目录刷新失败'
         )

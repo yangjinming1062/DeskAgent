@@ -7,7 +7,7 @@ import type { DesktopVersionInfo } from '@/shared/types/global'
 // build even after a recent re-launch).
 const $desktopVersion = atom<DesktopVersionInfo | null>(null)
 
-async function refreshDesktopVersion() {
+async function refreshDesktopVersion(): Promise<void> {
   try {
     const next = await window.deskagent?.getVersion()
 

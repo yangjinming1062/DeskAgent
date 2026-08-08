@@ -1,11 +1,13 @@
 'use client'
 
-import { Dialog as DialogPrimitive } from 'radix-ui'
+import * as RadixUI from 'radix-ui'
 import { useState } from 'react'
 
 import { strings } from '@/shared/strings'
 
 import { Button } from './button'
+
+const DialogPrimitive = RadixUI.Dialog
 
 interface ConfirmDialogProps {
   open: boolean
@@ -33,7 +35,7 @@ export function ConfirmDialog({
   cancelLabel,
   variant = 'default',
   onConfirm
-}: ConfirmDialogProps) {
+}: ConfirmDialogProps): React.JSX.Element {
   const [busy, setBusy] = useState(false)
   const isDestructive = variant === 'destructive'
 

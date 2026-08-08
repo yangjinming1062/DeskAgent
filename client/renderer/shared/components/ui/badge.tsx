@@ -26,7 +26,7 @@ export interface BadgeProps extends React.ComponentProps<'span'>, VariantProps<t
   asChild?: boolean
 }
 
-export function Badge({ asChild = false, className, variant, ...props }: BadgeProps) {
+export function Badge({ asChild = false, className, variant, ...props }: BadgeProps): React.JSX.Element {
   const Comp = asChild ? Slot.Root : 'span'
 
   return <Comp className={cn(badgeVariants({ variant }), className)} data-slot="badge" {...props} />

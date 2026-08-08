@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 
-import { Button } from '@/shared/components/ui/button'
+import { Button } from '@/shared/components/ui'
 import { AudioLines } from '@/shared/lib/icons'
 import { notifyError } from '@/shared/store/notifications'
 import { strings } from '@/shared/strings'
@@ -23,7 +23,7 @@ interface VoiceCatalog {
 
 const PREVIEW_LINE = '你好呀，这是我的声音～'
 
-export function VoiceGallerySettings() {
+export function VoiceGallerySettings(): React.JSX.Element {
   const t = strings.voiceGallery
   const [catalog, setCatalog] = useState<VoiceCatalog | null>(null)
   const [isLoading, setIsLoading] = useState(true)

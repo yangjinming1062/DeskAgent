@@ -12,7 +12,7 @@ import { LoginPage } from './login/login-page'
 // gracefully. `gateway={null}` encodes that.
 const SettingsView = lazy(() => import('./settings').then(m => ({ default: m.SettingsView })))
 
-export function ToolRoot() {
+export function ToolRoot(): React.JSX.Element {
   const auth = useStore($auth)
 
   useEffect(() => {

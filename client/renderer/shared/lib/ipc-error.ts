@@ -1,7 +1,3 @@
-// Electron's IPC `invoke` does not reliably preserve non-Error fields across
-// the boundary, so we parse the wrapped message string instead of attaching
-// `statusCode` to the Error.
-
 const IPC_ENVELOPE_RE = /Error invoking remote method '[^']+': Error: (.+)$/
 
 export function unwrapIpcErrorMessage(error: unknown): string {

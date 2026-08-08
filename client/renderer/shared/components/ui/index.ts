@@ -1,12 +1,9 @@
-// Barrel for the design-system primitives. Uses `export *` so adding a new
-// primitive doesn't require updating this file. The barrel failing closed at
-// type-check is the intended guard against partial exports.
-
 export * from './alert'
 export * from './badge'
 export * from './button'
 export * from './codicon'
 export * from './command'
+export * from './confirm-dialog'
 export * from './control'
 export * from './copy-button'
 export * from './dropdown-menu'
@@ -15,6 +12,7 @@ export * from './input'
 export * from './loader'
 export * from './popover'
 export * from './search-field'
+export * from './secret-input-field'
 export * from './segmented-control'
 export * from './select'
 export * from './sheet'

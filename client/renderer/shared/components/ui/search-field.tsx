@@ -1,10 +1,11 @@
 import type { ReactNode, RefObject } from 'react'
 
-import { Button } from '@/shared/components/ui/button'
-import { Codicon } from '@/shared/components/ui/codicon'
 import { Loader2, Search } from '@/shared/lib/icons'
 import { cn } from '@/shared/lib/utils'
 import { strings } from '@/shared/strings'
+
+import { Button } from './button'
+import { Codicon } from './codicon'
 
 interface SearchFieldProps {
   placeholder: string
@@ -19,11 +20,6 @@ interface SearchFieldProps {
   'aria-label'?: string
 }
 
-/**
- * Shared search field used everywhere (sessions sidebar, pages, overlays,
- * command center, cron). No box — borderless until focus, then an underline.
- * Width/placement come from `containerClassName`.
- */
 export function SearchField({
   placeholder,
   value,
@@ -35,7 +31,7 @@ export function SearchField({
   inputRef,
   trailingAction,
   'aria-label': ariaLabel
-}: SearchFieldProps) {
+}: SearchFieldProps): React.JSX.Element {
   const t = strings
   const clear = onClear ?? (() => onChange(''))
 

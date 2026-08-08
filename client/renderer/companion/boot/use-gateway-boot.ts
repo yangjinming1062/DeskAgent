@@ -176,7 +176,7 @@ export function useGatewayBoot({ handleGatewayEvent, onConnectionReady, onGatewa
       }
     }
 
-    function scheduleReconnect() {
+    function scheduleReconnect(): void {
       if (cancelled || reconnecting || reconnectTimer !== null || gatewayOpen()) {
         return
       }
@@ -326,7 +326,7 @@ export function useGatewayBoot({ handleGatewayEvent, onConnectionReady, onGatewa
       }
     })
 
-    async function boot() {
+    async function boot(): Promise<void> {
       try {
         const conn = await desktop.getConnection()
 

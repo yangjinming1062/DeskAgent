@@ -1,8 +1,8 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react'
 
-import { Button } from '@/shared/components/ui/button'
-import { ErrorState } from '@/shared/components/ui/error-state'
 import { strings } from '@/shared/strings'
+
+import { Button, ErrorState } from './ui'
 
 export interface ErrorBoundaryFallbackProps {
   error: Error
@@ -52,7 +52,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
   }
 }
 
-function RootErrorFallback({ error, reset }: ErrorBoundaryFallbackProps) {
+function RootErrorFallback({ error, reset }: ErrorBoundaryFallbackProps): React.JSX.Element {
   const t = strings
 
   return (

@@ -1,4 +1,4 @@
-import { SegmentedControl } from '@/shared/components/ui/segmented-control'
+import { SegmentedControl } from '@/shared/components/ui'
 import { useRouteEnumParam } from '@/shared/hooks/use-route-enum-param'
 import { strings } from '@/shared/strings'
 
@@ -9,7 +9,7 @@ import { ToolsetsSettings } from './toolsets-settings'
 const SUBTABS = ['skills', 'toolsets'] as const
 type SkillsToolsSubtab = (typeof SUBTABS)[number]
 
-export function SkillsToolsTabs() {
+export function SkillsToolsTabs(): React.JSX.Element {
   const t = strings
   const [subtab, setSubtab] = useRouteEnumParam('subtab', SUBTABS, 'skills')
 

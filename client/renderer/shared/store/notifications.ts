@@ -33,11 +33,11 @@ interface NotificationInput {
 }
 
 let notificationCounter = 0
-const timers = new Map<string, number>()
+const timers = new Map<string, ReturnType<typeof setTimeout>>()
 
 export const $notifications = atom<AppNotification[]>([])
 
-function defaultDuration(kind: NotificationKind) {
+function defaultDuration(kind: NotificationKind): number {
   if (kind === 'error' || kind === 'warning') {
     return 0
   }
@@ -45,7 +45,7 @@ function defaultDuration(kind: NotificationKind) {
   return 5_000
 }
 
-function cleanErrorText(value: string) {
+function cleanErrorText(value: string): string {
   return value.replace(/^Error:\s*/, '').trim()
 }
 
@@ -81,7 +81,7 @@ const ERROR_SUMMARIES: { test: (msg: string) => boolean; summarize: (msg: string
   }
 ]
 
-function summarizeErrorMessage(message: string, fallback: string) {
+function summarizeErrorMessage(message: string, fallback: string): string {
   const rule = ERROR_SUMMARIES.find(r => r.test(message))
 
   if (rule) {

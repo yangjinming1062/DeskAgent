@@ -13,7 +13,7 @@ export function pushDevLog(type: string, details: string): void {
   $devLogs.set([{ time, type, details }, ...current.slice(0, 49)])
 }
 
-export function DeveloperOverlay() {
+export function DeveloperOverlay(): React.JSX.Element | null {
   const isDev = useStore($devMode)
   const spriteState = useStore($spriteState)
   const emotion = useStore($spriteEmotion)

@@ -2,10 +2,6 @@ import { useStore } from '@nanostores/react'
 import { type ReactNode, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 
-import { Alert, AlertDescription, AlertTitle } from '@/shared/components/ui/alert'
-import { Button } from '@/shared/components/ui/button'
-import { Codicon } from '@/shared/components/ui/codicon'
-import { CopyButton } from '@/shared/components/ui/copy-button'
 import { triggerHaptic } from '@/shared/lib/haptics'
 import { AlertCircle, AlertTriangle, CheckCircle2, type IconComponent, Info } from '@/shared/lib/icons'
 import { cn } from '@/shared/lib/utils'
@@ -17,6 +13,8 @@ import {
   type NotificationKind
 } from '@/shared/store/notifications'
 import { strings } from '@/shared/strings'
+
+import { Alert, AlertDescription, AlertTitle, Button, Codicon, CopyButton } from './ui'
 
 type ToneVariant = 'default' | 'destructive' | 'warning' | 'success'
 
@@ -30,7 +28,7 @@ const tone: Record<NotificationKind, { icon: IconComponent; iconClass: string; v
 const STACK_SURFACE =
   'pointer-events-auto border border-(--stroke-deskagent) bg-popover/95 shadow-deskagent backdrop-blur-md'
 
-export function NotificationStack() {
+export function NotificationStack(): React.JSX.Element | null {
   const notifications = useStore($notifications)
   const t = strings
   const lastNotificationIdRef = useRef<string | null>(null)
@@ -103,7 +101,7 @@ export function NotificationStack() {
   )
 }
 
-function NotificationItem({ notification }: { notification: AppNotification }) {
+function NotificationItem({ notification }: { notification: AppNotification }): React.JSX.Element {
   const styles = tone[notification.kind]
   const Icon = styles.icon
   const hasDetail = Boolean(notification.detail && notification.detail !== notification.message)
@@ -153,7 +151,7 @@ function NotificationItem({ notification }: { notification: AppNotification }) {
   )
 }
 
-function NotificationDetail({ detail }: { detail: string }) {
+function NotificationDetail({ detail }: { detail: string }): React.JSX.Element {
   const t = strings
   const copy = t.notifications
 
@@ -189,7 +187,7 @@ export function InlineNotice({
   title?: string
   children: ReactNode
   className?: string
-}) {
+}): React.JSX.Element {
   const styles = tone[kind]
   const Icon = styles.icon
 

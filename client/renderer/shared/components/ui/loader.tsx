@@ -323,7 +323,7 @@ export function Loader({
   strokeScale = 1,
   type = 'rose-curve',
   ...props
-}: LoaderProps) {
+}: LoaderProps): React.JSX.Element {
   const config = LOADER_CURVES[type]
   const groupRef = useRef<SVGGElement | null>(null)
   const particleRefs = useRef<Array<SVGCircleElement | null>>([])
@@ -513,7 +513,7 @@ function cardioidCurve(
   }
 }
 
-function buildPath(config: LoaderCurve, detailScale: number, steps: number) {
+function buildPath(config: LoaderCurve, detailScale: number, steps: number): string {
   return Array.from({ length: steps + 1 }, (_, index) => {
     const point = config.point(index / steps, detailScale)
 
@@ -521,7 +521,7 @@ function buildPath(config: LoaderCurve, detailScale: number, steps: number) {
   }).join(' ')
 }
 
-function detailScaleFor(time: number, config: LoaderCurve, phaseOffset: number) {
+function detailScaleFor(time: number, config: LoaderCurve, phaseOffset: number): number {
   const pulseProgress =
     ((time + phaseOffset * config.pulseDurationMs) % config.pulseDurationMs) / config.pulseDurationMs
 
@@ -530,11 +530,17 @@ function detailScaleFor(time: number, config: LoaderCurve, phaseOffset: number) 
   return 0.52 + ((Math.sin(pulseAngle + 0.55) + 1) / 2) * 0.48
 }
 
-function normalizeProgress(progress: number) {
+function normalizeProgress(progress: number): number {
   return ((progress % 1) + 1) % 1
 }
 
-function particleFor(config: LoaderCurve, index: number, progress: number, detailScale: number, strokeScale: number) {
+function particleFor(
+  config: LoaderCurve,
+  index: number,
+  progress: number,
+  detailScale: number,
+  strokeScale: number
+): { opacity: number; radius: number; x: number; y: number } {
   const tailOffset = index / (config.particleCount - 1)
   const point = config.point(normalizeProgress(progress - tailOffset * config.trailSpan), detailScale)
   const fade = (1 - tailOffset) ** 0.56
@@ -547,7 +553,7 @@ function particleFor(config: LoaderCurve, index: number, progress: number, detai
   }
 }
 
-function rotationFor(time: number, config: LoaderCurve, phaseOffset: number) {
+function rotationFor(time: number, config: LoaderCurve, phaseOffset: number): number {
   if (!config.rotate) {
     return 0
   }

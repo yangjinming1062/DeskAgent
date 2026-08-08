@@ -25,7 +25,7 @@ const AWAITING_REPLY_TIMEOUT_MS = 60_000
 // utterance is transcribed (cloud STT), sent as a prompt, and the streamed
 // reply is spoken aloud when it completes. Barge-in: speaking aloud while the
 // companion talks cuts off the TTS and returns to listening (plan §4.1).
-export function VoiceCallDock({ onClose }: VoiceCallDockProps) {
+export function VoiceCallDock({ onClose }: VoiceCallDockProps): React.JSX.Element {
   const gatewayState = useStore($gatewayState)
   const messages = useStore($chatMessages)
   const spriteState = useStore($spriteState)
@@ -192,7 +192,7 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps) {
       }
     }, 1000)
 
-    async function transcribeAndSubmit(chunks: Blob[]) {
+    async function transcribeAndSubmit(chunks: Blob[]): Promise<void> {
       if (!chunks.length) {
         return
       }

@@ -31,7 +31,7 @@ interface OverlayNavItemProps {
   trailing?: ReactNode
 }
 
-export function OverlaySplitLayout({ children, className }: OverlaySplitLayoutProps) {
+export function OverlaySplitLayout({ children, className }: OverlaySplitLayoutProps): React.JSX.Element {
   return (
     <div
       className={cn(
@@ -44,7 +44,7 @@ export function OverlaySplitLayout({ children, className }: OverlaySplitLayoutPr
   )
 }
 
-export function OverlaySidebar({ children, className }: OverlaySidebarProps) {
+export function OverlaySidebar({ children, className }: OverlaySidebarProps): React.JSX.Element {
   return (
     <aside
       className={cn(
@@ -59,7 +59,7 @@ export function OverlaySidebar({ children, className }: OverlaySidebarProps) {
   )
 }
 
-export function OverlayMain({ children, className }: OverlayMainProps) {
+export function OverlayMain({ children, className }: OverlayMainProps): React.JSX.Element {
   return (
     <main
       className={cn(
@@ -73,7 +73,14 @@ export function OverlayMain({ children, className }: OverlayMainProps) {
   )
 }
 
-export function OverlayNavItem({ active, icon: Icon, label, nested, onClick, trailing }: OverlayNavItemProps) {
+export function OverlayNavItem({
+  active,
+  icon: Icon,
+  label,
+  nested,
+  onClick,
+  trailing
+}: OverlayNavItemProps): React.JSX.Element {
   return (
     <button
       className={cn(
