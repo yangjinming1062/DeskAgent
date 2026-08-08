@@ -247,7 +247,7 @@ class TestDefaultModels:
         assert default_model_for("mimo", "image_gen") == "dall-e-3"
         assert default_model_for("minimax", "llm") == "MiniMax-Text-01"
         assert default_model_for("minimax", "image_gen") == "image-01"
-        assert default_model_for("minimax", "video_gen") == "MiniMax-H3"
+        assert default_model_for("minimax", "video_gen") == "MiniMax-Hailuo-2.3"
         assert default_model_for("minimax", "tts") == "speech-2.8-hd"
         assert default_model_for("zhipu", "llm") == "glm-5.2"
         assert default_model_for("zhipu", "stt") == "glm-asr-2512"
@@ -954,6 +954,8 @@ class TestMiniMaxTTS:
 
 
 class TestMiniMaxVideoGen:
+    """v2 (MiniMax-H3) protocol path — selected by the model-name prefix."""
+
     def _make_provider(self, handler):
         from services.llm.providers.minimax import MiniMaxVideoGenProvider
 
@@ -974,7 +976,7 @@ class TestMiniMaxVideoGen:
     async def test_submit_returns_task_id(self):
         handler = _async_handler([{"base_resp": {"status_code": 0}, "task_id": "task-abc-123"}])
         provider = self._make_provider(handler)
-        job = await provider.submit(VideoGenRequest(prompt="a cat"))
+        job = await provider.submit(VideoGenRequest(prompt="a cat", aspect_ratio="16:9"))
         assert job.task_id == "task-abc-123"
         assert job.status == "queued"
 
@@ -1134,6 +1136,171 @@ class TestMiniMaxVideoGen:
         provider = self._make_provider(_async_handler([]))
         with pytest.raises(RuntimeError, match="H3"):
             await provider.fetch("file-xyz")
+
+    @pytest.mark.asyncio
+    async def test_submit_rejects_v1_only_params(self):
+        # 10s is legal on v1 but 1080P is not a v2 resolution.
+        provider = self._make_provider(_async_handler([]))
+        with pytest.raises(ValueError, match="v2. requires resolution"):
+            await provider.submit(VideoGenRequest(prompt="x", duration=10, resolution="1080P", aspect_ratio="16:9"))
+
+    @pytest.mark.asyncio
+    async def test_submit_t2v_requires_aspect_ratio(self):
+        provider = self._make_provider(_async_handler([]))
+        with pytest.raises(ValueError, match="requires aspect_ratio"):
+            await provider.submit(VideoGenRequest(prompt="x", resolution="768P"))
+
+
+class TestMiniMaxVideoGenV1:
+    """v1 (Hailuo) protocol path — the default, since MiniMax-H3 (v2) is not
+    covered by the standard token-plan."""
+
+    def _make_provider(self, handler, model: str = "MiniMax-Hailuo-2.3"):
+        from services.llm.providers.minimax import MiniMaxVideoGenProvider
+
+        client = _mock_http(handler)
+        provider = MiniMaxVideoGenProvider(
+            ProviderConfig(
+                base_url="https://api.minimaxi.com",
+                api_key="sk-minimax",
+                model=model,
+                service_type=ServiceType.video_gen,
+                provider_name="minimax",
+            )
+        )
+        provider._client = client
+        return provider
+
+    @pytest.mark.asyncio
+    async def test_submit_uses_v1_endpoint_and_flat_payload(self):
+        captured: list[httpx.Request] = []
+        bodies: list[dict] = []
+
+        async def capture(req: httpx.Request) -> httpx.Response:
+            captured.append(req)
+            bodies.append(json.loads(req.content))
+            return httpx.Response(200, json={"base_resp": {"status_code": 0}, "task_id": "task-v1"})
+
+        provider = self._make_provider(capture)
+        job = await provider.submit(
+            VideoGenRequest(
+                prompt="a cat",
+                duration=10,
+                resolution="1080P",
+                aspect_ratio="16:9",
+                first_frame_image="https://example.com/seed.png",
+            )
+        )
+        assert job.task_id == "task-v1"
+        assert captured[0].url.path == "/v1/video_generation"
+        body = bodies[0]
+        assert body["model"] == "MiniMax-Hailuo-2.3"
+        assert body["prompt"] == "a cat"  # flat prompt, not a content[] array
+        assert "content" not in body
+        assert body["duration"] == 10
+        assert body["resolution"] == "1080P"
+        assert body["aspect_ratio"] == "16:9"
+        assert body["first_frame_image"] == "https://example.com/seed.png"
+
+    @pytest.mark.asyncio
+    async def test_submit_allows_t2v_without_aspect_ratio(self):
+        # Unlike v2, v1 lets the server pick a default aspect ratio.
+        handler = _async_handler([{"base_resp": {"status_code": 0}, "task_id": "task-v1-t2v"}])
+        provider = self._make_provider(handler)
+        job = await provider.submit(VideoGenRequest(prompt="a cat"))
+        assert job.status == "queued"
+
+    @pytest.mark.asyncio
+    async def test_submit_rejects_v2_only_params(self):
+        provider = self._make_provider(_async_handler([]))
+        with pytest.raises(ValueError, match="v1. requires duration"):
+            await provider.submit(VideoGenRequest(prompt="x", duration=15, resolution="768P"))
+        with pytest.raises(ValueError, match="v1. requires resolution"):
+            await provider.submit(VideoGenRequest(prompt="x", duration=6, resolution="2K"))
+
+    @pytest.mark.asyncio
+    async def test_poll_success_returns_file_id_and_no_inline_url(self):
+        captured: list[httpx.Request] = []
+
+        async def handler(req: httpx.Request) -> httpx.Response:
+            captured.append(req)
+            return httpx.Response(200, json={"base_resp": {"status_code": 0}, "status": "Success", "file_id": "file-42"})
+
+        provider = self._make_provider(handler)
+        job = await provider.poll("task-v1")
+        assert captured[0].url.path == "/v1/query/video_generation"
+        assert captured[0].url.params["task_id"] == "task-v1"
+        assert job.status == "succeeded"
+        assert job.file_id == "file-42"
+        # v1 gates the URL behind fetch() — the worker must take that branch.
+        assert job.download_url is None
+
+    @pytest.mark.asyncio
+    async def test_poll_maps_v1_status_enum(self):
+        for raw, expected in (("Queueing", "queued"), ("Processing", "processing"), ("Fail", "failed")):
+            handler = _async_handler([{"base_resp": {"status_code": 0}, "status": raw}])
+            provider = self._make_provider(handler)
+            job = await provider.poll("task-v1")
+            assert job.status == expected, raw
+
+    @pytest.mark.asyncio
+    async def test_poll_fail_extracts_error_message(self):
+        handler = _async_handler(
+            [{"base_resp": {"status_code": 0}, "status": "Fail", "error_message": "content rejected"}]
+        )
+        provider = self._make_provider(handler)
+        job = await provider.poll("task-v1")
+        assert job.status == "failed"
+        assert job.error == "content rejected"
+
+    @pytest.mark.asyncio
+    async def test_fetch_retrieves_download_url(self):
+        captured: list[httpx.Request] = []
+
+        async def handler(req: httpx.Request) -> httpx.Response:
+            captured.append(req)
+            return httpx.Response(
+                200,
+                json={
+                    "base_resp": {"status_code": 0},
+                    "file": {"download_url": "https://cdn.minimax.chat/v1.mp4", "content_type": "video/mp4", "bytes": 123},
+                },
+            )
+
+        provider = self._make_provider(handler)
+        asset = await provider.fetch("file-42")
+        assert captured[0].url.path == "/v1/files/retrieve"
+        assert captured[0].url.params["file_id"] == "file-42"
+        assert asset.download_url == "https://cdn.minimax.chat/v1.mp4"
+        assert asset.size == 123
+
+    @pytest.mark.asyncio
+    async def test_fetch_without_download_url_raises(self):
+        handler = _async_handler([{"base_resp": {"status_code": 0}, "file": {}}])
+        provider = self._make_provider(handler)
+        with pytest.raises(RuntimeError, match="no download_url"):
+            await provider.fetch("file-42")
+
+    @pytest.mark.asyncio
+    async def test_unknown_model_routes_to_v1(self):
+        # Safe side: an unrecognized model name must not land on the paid v2
+        # endpoint the standard token-plan doesn't cover.
+        from services.llm.providers.minimax.video import _api_version
+
+        assert _api_version("some-future-model") == "v1"
+        assert _api_version("") == "v1"
+        assert _api_version("MiniMax-Hailuo-02") == "v1"
+        assert _api_version("MiniMax-H3") == "v2"
+
+        captured: list[httpx.Request] = []
+
+        async def capture(req: httpx.Request) -> httpx.Response:
+            captured.append(req)
+            return httpx.Response(200, json={"base_resp": {"status_code": 0}, "task_id": "t"})
+
+        provider = self._make_provider(capture, model="some-future-model")
+        await provider.submit(VideoGenRequest(prompt="x"))
+        assert captured[0].url.path == "/v1/video_generation"
 
 
 class TestPerUserProviderChain:

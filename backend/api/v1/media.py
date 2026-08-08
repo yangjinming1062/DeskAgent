@@ -272,10 +272,13 @@ async def video_gen(
     user, _ = auth_data
     if not prompt:
         raise HTTPException(status_code=400, detail={"error": "prompt is required", "reason": "missing_params", "status": 400})
-    if duration not in (6, 10):
-        raise HTTPException(status_code=400, detail={"error": "duration must be 6 or 10", "reason": "invalid_params", "status": 400})
-    if resolution not in ("512P", "768P", "1080P"):
-        raise HTTPException(status_code=400, detail={"error": "resolution must be 512P/768P/1080P", "reason": "invalid_params", "status": 400})
+    # Permissive union of the v1 (Hailuo: 6/10s, 512P/768P/1080P) and v2
+    # (H3: 4-15s, 768P/2K) parameter spaces — the exact per-model rules are
+    # enforced in the provider and surface via _llm_http_error below.
+    if not 4 <= duration <= 15:
+        raise HTTPException(status_code=400, detail={"error": "duration must be between 4 and 15 seconds", "reason": "invalid_params", "status": 400})
+    if resolution not in ("512P", "768P", "1080P", "2K"):
+        raise HTTPException(status_code=400, detail={"error": "resolution must be 512P/768P/1080P/2K", "reason": "invalid_params", "status": 400})
     if wait_seconds < 0 or wait_seconds > 60:
         wait_seconds = min(max(wait_seconds, 0), 60)
 

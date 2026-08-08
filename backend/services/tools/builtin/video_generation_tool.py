@@ -27,19 +27,20 @@ async def video_generation_tool(
     session_id: str | None = None,
     **_,
 ) -> str:
-    """Video generation via MiniMax-H3. Submits an async job and waits
+    """Video generation via MiniMax. Submits an async job and waits
     up to ``video_gen_tool_wait_seconds`` (default 180s) for completion;
     returns the local /api/media/files/<id> URL on success, or a pending
     marker with the task_id for long-running jobs that the model can
-    re-query via :func:`video_generate_status`."""
-    if not 4 <= duration <= 15:
+    re-query via :func:`video_generate_status`.
+
+    Validation here is the permissive *union* of the v1 (Hailuo) and v2 (H3)
+    parameter spaces — the tool can't know which model resolves for this
+    user. The exact per-version rules live in the provider and fail the
+    submit with a precise message."""
+    if not isinstance(duration, int) or not 4 <= duration <= 15:
         return tool_error("duration must be an integer between 4 and 15 seconds")
-    if resolution not in ("768P", "2K"):
-        return tool_error("resolution must be one of 768P / 2K")
-    # t2v (content 仅含 text) requires ratio; H3 derives it from the image
-    # in i2v mode and ignores an explicit ratio. docs: VideoGenerationV2Req.
-    if first_frame_image is None and not aspect_ratio:
-        return tool_error("t2v mode requires aspect_ratio (one of 16:9, 9:16, 1:1, 4:3, 3:4, 21:9)")
+    if resolution not in ("512P", "768P", "1080P", "2K"):
+        return tool_error("resolution must be one of 512P / 768P / 1080P / 2K")
 
     try:
         if user_id is not None:
@@ -116,13 +117,22 @@ async def video_generate_status_tool(task_id: int, user_id: int | None = None, *
 
 VIDEO_GENERATION_SCHEMA = {
     "name": "video_generate",
-    "description": "Generate a short video from a text prompt (and optionally a first-frame image). Returns the video URL on success, or a pending marker with a task_id for long jobs. Default model: MiniMax-H3 (4-15s, 768P/2K). The provider URL is short-lived — we download and host locally, so the returned URL stays usable.",
+    "description": "Generate a short video from a text prompt (and optionally a first-frame image). Returns the video URL on success, or a pending marker with a task_id for long jobs. Default model: MiniMax-Hailuo-2.3 (v1 API: duration 6 or 10 seconds, resolution 512P/768P/1080P). If the deployment is configured with MiniMax-H3 (v2, paid plan) the limits are instead 4-15 seconds and 768P/2K, and aspect_ratio is mandatory for text-to-video. The provider URL is short-lived — we download and host locally, so the returned URL stays usable.",
     "parameters": {
         "type": "object",
         "properties": {
             "prompt": {"type": "string", "description": "Describe the video content."},
-            "duration": {"type": "integer", "minimum": 4, "maximum": 15, "description": "Clip length in seconds (4-15, integer)."},
-            "resolution": {"type": "string", "enum": ["768P", "2K"], "description": "Output resolution."},
+            "duration": {
+                "type": "integer",
+                "minimum": 4,
+                "maximum": 15,
+                "description": "Clip length in seconds. MiniMax-Hailuo (default): must be 6 or 10. MiniMax-H3: any integer 4-15.",
+            },
+            "resolution": {
+                "type": "string",
+                "enum": ["512P", "768P", "1080P", "2K"],
+                "description": "Output resolution. MiniMax-Hailuo (default): 512P/768P/1080P. MiniMax-H3: 768P/2K.",
+            },
             "first_frame_image": {
                 "type": "string",
                 "description": "Public URL or data URL of the first frame (i2v mode). When set, the provider derives the aspect ratio from the image; aspect_ratio is ignored.",
@@ -130,7 +140,7 @@ VIDEO_GENERATION_SCHEMA = {
             "aspect_ratio": {
                 "type": "string",
                 "enum": ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"],
-                "description": "Output aspect ratio. Required for t2v (no first_frame_image); ignored when first_frame_image is set (i2v).",
+                "description": "Output aspect ratio. Ignored when first_frame_image is set (i2v). Required for text-to-video on MiniMax-H3; optional on MiniMax-Hailuo.",
             },
         },
         "required": ["prompt"],

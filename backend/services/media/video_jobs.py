@@ -1,5 +1,6 @@
 import asyncio
 import json
+from dataclasses import replace
 from datetime import timedelta
 
 import httpx
@@ -218,8 +219,15 @@ async def _poll_and_finalize_locked(job_id: int) -> None:
             # ``task_id`` — task_ids are per-provider and not portable.
             job_row = db.get(VideoGenJob, job_id)
             provider_name = job_row.provider if job_row else ""
+            job_model = (job_row.model if job_row else "") or ""
             chain = resolve_provider_chain(db, user_id, "video_gen")
             provider_cfg = next((cfg for cfg in chain if cfg.provider_name == provider_name), None)
+        # Pin the config to the model the job was submitted with. A provider
+        # may switch API protocol by model name (MiniMax v1 vs H3 v2), so if
+        # the user edited their model config mid-flight the re-resolved chain
+        # would otherwise poll the wrong endpoint for this task_id.
+        if provider_cfg is not None and job_model and job_model != provider_cfg.model:
+            provider_cfg = replace(provider_cfg, model=job_model)
         if provider_cfg is None:
             _update_job(
                 job_id,
