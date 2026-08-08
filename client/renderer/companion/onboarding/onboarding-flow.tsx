@@ -38,6 +38,13 @@ const VOICE_LANGUAGE_TABS: { id: VoiceLanguageFilter; label: string }[] = [
   { id: 'en', label: 'English' }
 ]
 
+// Shared chrome for the glass-overlay textareas. Each call site composes its
+// own size (text-xs / text-sm) on top of this base.
+const INPUT_CLASS =
+  'w-full resize-none rounded-lg border border-white/15 bg-white/10 px-3 py-2 outline-none placeholder:text-white/40 focus:border-white/40'
+
+const PORTRAIT_FAILED_HINT = '暂时换不出来，稍后再试吧'
+
 type QKey = keyof OnboardingAnswers
 
 // A chip that picks *what kind* of answer the user is about to give instead of
@@ -325,18 +332,13 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
   // Failure hints live on the portrait panel — the form area is hidden behind it.
   const [portraitPanelHint, setPortraitPanelHint] = useState<string | null>(null)
 
-  // A picked base image sits in a preview state: the user can use it as-is or
-  // re-render it with an optional description on top (the upload may not meet
-  // the portrait seed contract, e.g. a busy background).
-  const [pickedImage, setPickedImage] = useState<PickedImage | null>(null)
-
   // Reference image handed over at the 形象描述 question. Session-scoped on
   // purpose — `onboarding.submit` persists text answers only, so a resumed
   // draft asks for the image again rather than silently generating without it.
   const [refImage, setRefImage] = useState<PickedImage | null>(null)
   const [answerKind, setAnswerKind] = useState<AnswerKind | null>(null)
 
-  const [refineDescription, setRefineDescription] = useState('')
+  const [portraitFeedback, setPortraitFeedback] = useState('')
   const [hint, setHint] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -614,7 +616,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
       } catch {
         // A deterministic 4xx (unusable reference image, incomplete persona)
         // must not strand the flow on 'hatching' — fall through to the portrait
-        // phase, where regenerate / upload are still available.
+        // phase, where regenerate with optional feedback is still available.
         url = null
       }
 
@@ -631,9 +633,23 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
   }
 
   const regeneratePortrait = async () => {
+    const regenerateFeedback = portraitFeedback.trim() || undefined
     setBusy(true)
     setHint(null)
     setPortraitPanelHint(null)
+
+    // Both the portrait panel and the Q&A form render the hint; the form sits
+    // hidden behind the panel during the portrait phase, so writing to both is
+    // harmless and keeps the message visible if the user later backs out.
+    const setPortraitError = (msg: string) => {
+      setPortraitPanelHint(msg)
+      setHint(msg)
+    }
+
+    const onPortraitApplied = () => {
+      setPortraitFeedback('')
+      void playOnboardingAudio('onboarding.portrait.regenerate')
+    }
 
     try {
       if (refImage) {
@@ -642,12 +658,13 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
           method: 'POST',
           body: {
             content_type: refImage.contentType,
-            image: refImage.base64
+            image: refImage.base64,
+            description: regenerateFeedback
           }
         })
 
         if (res?.asset_url && (await applyLocalPortrait(res))) {
-          void playOnboardingAudio('onboarding.portrait.regenerate')
+          onPortraitApplied()
 
           return
         }
@@ -655,51 +672,29 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
 
       const queued = await requestGateway<{ queued?: boolean; job_id?: string; asset_url?: string; seed_url?: string }>(
         'avatar.regenerate',
-        { feedback: undefined }
+        { feedback: regenerateFeedback }
       )
 
       if (queued?.asset_url) {
         if (await applyLocalPortrait(queued)) {
-          void playOnboardingAudio('onboarding.portrait.regenerate')
+          onPortraitApplied()
         }
       } else if (queued?.queued && queued.job_id) {
         const result = await awaitAvatarRegeneration(queued.job_id)
 
         if (result.asset_url && (await applyLocalPortrait(result))) {
-          void playOnboardingAudio('onboarding.portrait.regenerate')
+          onPortraitApplied()
         } else {
-          setPortraitPanelHint(result.error ?? '暂时换不出来，稍后再试吧')
-          setHint(result.error ?? '暂时换不出来，稍后再试吧')
+          setPortraitError(result.error ?? PORTRAIT_FAILED_HINT)
         }
       } else {
-        setPortraitPanelHint('暂时换不出来，稍后再试吧')
-        setHint('暂时换不出来，稍后再试吧')
+        setPortraitError(PORTRAIT_FAILED_HINT)
       }
     } catch {
-      // Surface the failure on the portrait panel too — the form hint is hidden behind it.
-      setPortraitPanelHint('暂时换不出来，稍后再试吧')
-      setHint('暂时换不出来，稍后再试吧')
+      setPortraitError(PORTRAIT_FAILED_HINT)
     } finally {
       setBusy(false)
     }
-  }
-
-  const uploadPortrait = async () => {
-    const picked = await pickAvatarImage('选择一张图片作为基准形象')
-
-    if (!picked) {
-      return
-    }
-
-    if ('error' in picked) {
-      setPortraitPanelHint(picked.error)
-
-      return
-    }
-
-    setPickedImage(picked.image)
-    setRefineDescription('')
-    setPortraitPanelHint(null)
   }
 
   const pickReferenceImage = async () => {
@@ -717,78 +712,6 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
 
     setRefImage(picked.image)
     setHint(null)
-  }
-
-  const confirmPickedImage = async () => {
-    if (!pickedImage) {
-      return
-    }
-
-    setBusy(true)
-    setPortraitPanelHint(null)
-
-    try {
-      // POST base64 JSON — the desktop REST IPC speaks JSON, not multipart.
-      const res = await window.deskagent.api<{ asset_url?: string }>({
-        path: '/api/companion/avatar/upload',
-        method: 'POST',
-        body: { image: pickedImage.base64, content_type: pickedImage.contentType }
-      })
-
-      if (res?.asset_url && (await applyLocalPortrait(res))) {
-        setPickedImage(null)
-        setRefineDescription('')
-        void playOnboardingAudio('onboarding.portrait.upload')
-      } else {
-        setPortraitPanelHint('上传失败了，换张图试试？')
-      }
-    } catch {
-      setPortraitPanelHint('上传失败了，换张图试试？')
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  const refinePickedImage = async () => {
-    if (!pickedImage) {
-      return
-    }
-
-    setBusy(true)
-    setPortraitPanelHint(null)
-
-    try {
-      // The upload may not meet the portrait seed contract (busy background,
-      // off-character framing) — the backend re-renders it from the image as a
-      // subject reference, with the description folded in as an adjustment.
-      const res = await window.deskagent.api<{ asset_url?: string; seed_url?: string }>({
-        path: '/api/companion/avatar/from-image',
-        method: 'POST',
-        body: {
-          content_type: pickedImage.contentType,
-          description: refineDescription.trim() || undefined,
-          image: pickedImage.base64
-        }
-      })
-
-      if (res?.asset_url && (await applyLocalPortrait(res))) {
-        setPickedImage(null)
-        setRefineDescription('')
-        void playOnboardingAudio('onboarding.portrait.fromimage')
-      } else {
-        setPortraitPanelHint('按参考重绘失败了，稍后再试吧')
-      }
-    } catch {
-      setPortraitPanelHint('按参考重绘失败了，稍后再试吧')
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  const cancelPickedImage = () => {
-    setPickedImage(null)
-    setRefineDescription('')
-    setPortraitPanelHint(null)
   }
 
   const confirmPortrait = async () => {
@@ -918,7 +841,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
               {!question.selectOnly &&
                 (question.multiline ? (
                   <textarea
-                    className="mt-3 w-full resize-none rounded-lg border border-white/15 bg-white/10 px-3 py-2 text-sm outline-none placeholder:text-white/40 focus:border-white/40"
+                    className={`mt-3 ${INPUT_CLASS} text-sm`}
                     onChange={e => setInput(e.target.value)}
                     placeholder={question.placeholder}
                     ref={textareaRef}
@@ -998,7 +921,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
             <p className="py-6 text-center text-sm text-white/80">{hint || '让我想想我该是什么样子…'}</p>
           )}
 
-          {(phase === 'voice' || phase === 'greeting' || (phase === 'portrait' && !pickedImage)) && (
+          {(phase === 'voice' || phase === 'greeting' || phase === 'portrait') && (
             <PortraitPanel
               avatarUrl={portraitUrl}
               hint={portraitPanelHint}
@@ -1007,58 +930,18 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
             />
           )}
 
-          {phase === 'portrait' && pickedImage && (
+          {phase === 'portrait' && (
             <div className="mt-4">
-              <div className="flex justify-center">
-                <img
-                  alt={answers.name?.trim() || '伙伴'}
-                  className="h-40 w-40 rounded-xl object-cover shadow-lg"
-                  src={pickedImage.previewUrl}
-                />
-              </div>
               <textarea
-                className="mt-3 w-full resize-none rounded-lg border border-white/15 bg-white/10 px-3 py-2 text-xs outline-none placeholder:text-white/40 focus:border-white/40"
+                className={`${INPUT_CLASS} text-xs`}
                 disabled={busy}
-                onChange={e => setRefineDescription(e.target.value.slice(0, MAX_APPEARANCE))}
-                placeholder="可补充描述，比如：背景要纯白、头发换成黑色…（可留空）"
+                maxLength={MAX_APPEARANCE}
+                onChange={e => setPortraitFeedback(e.target.value)}
+                placeholder="哪里不满意？比如：头发再短一点、眼睛再大一点、表情更温和…（可留空直接重新生成）"
                 rows={2}
-                value={refineDescription}
+                value={portraitFeedback}
               />
               <div className="mt-3 flex items-center justify-between text-xs">
-                <div className="flex gap-3">
-                  <button
-                    className="text-white/70 transition hover:text-white disabled:opacity-40"
-                    disabled={busy}
-                    onClick={() => void confirmPickedImage()}
-                    type="button"
-                  >
-                    {busy ? '处理中…' : '就用这张'}
-                  </button>
-                  <button
-                    className="text-white/70 transition hover:text-white disabled:opacity-40"
-                    disabled={busy}
-                    onClick={() => void refinePickedImage()}
-                    type="button"
-                  >
-                    {busy ? '重绘中…' : '以它为基准重绘'}
-                  </button>
-                  <button
-                    className="text-white/40 transition hover:text-white disabled:opacity-40"
-                    disabled={busy}
-                    onClick={cancelPickedImage}
-                    type="button"
-                  >
-                    取消
-                  </button>
-                </div>
-              </div>
-              {portraitPanelHint && <p className="mt-2 text-xs text-rose-300/90">{portraitPanelHint}</p>}
-            </div>
-          )}
-
-          {phase === 'portrait' && !pickedImage && (
-            <div className="mt-4 flex items-center justify-between text-xs">
-              <div className="flex gap-3">
                 <button
                   className="text-white/70 transition hover:text-white disabled:opacity-40"
                   disabled={busy}
@@ -1068,21 +951,14 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
                   {busy ? '生成中…' : '重新生成'}
                 </button>
                 <button
-                  className="text-white/70 transition hover:text-white disabled:opacity-40"
-                  disabled={busy}
-                  onClick={uploadPortrait}
+                  className="rounded-full bg-white/90 px-4 py-1 font-medium text-black transition hover:bg-white"
+                  onClick={confirmPortrait}
                   type="button"
                 >
-                  自己上传
+                  就这样吧
                 </button>
               </div>
-              <button
-                className="rounded-full bg-white/90 px-4 py-1 font-medium text-black transition hover:bg-white"
-                onClick={confirmPortrait}
-                type="button"
-              >
-                就这样吧
-              </button>
+              {portraitPanelHint && <p className="mt-2 text-xs text-rose-300/90">{portraitPanelHint}</p>}
             </div>
           )}
 
