@@ -55,3 +55,18 @@ export async function hydratePortrait(): Promise<void> {
     }
   }
 }
+
+// Free-text feedback the user typed before pressing "重新生成". Shared across
+// every surface that exposes the regenerate flow (onboarding / 伙伴设置 /
+// 重新对话微调性格 / 角色 inline 编辑) so a half-typed draft survives the
+// user closing one panel and reopening another. Cleared on each successful
+// regenerate by useRegeneratePortrait.
+export const $regenFeedback = atom<string>('')
+
+export function setRegenFeedback(value: string): void {
+  $regenFeedback.set(value)
+}
+
+export function clearRegenFeedback(): void {
+  $regenFeedback.set('')
+}

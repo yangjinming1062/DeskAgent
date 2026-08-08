@@ -1,7 +1,6 @@
 import { useStore } from '@nanostores/react'
 import { useState } from 'react'
 
-import { useGatewayRequest } from '@/companion/boot/use-gateway-request'
 import { assemblePersona, MAX_APPEARANCE } from '@/companion/persona'
 import {
   APPEARANCE_PRESETS,
@@ -11,6 +10,8 @@ import {
   SPECIES_PRESETS
 } from '@/companion/persona-presets'
 import { $persona, hydratePersona } from '@/companion/persona-store'
+import { setRegenFeedback } from '@/companion/portrait-store'
+import { useRegeneratePortrait } from '@/companion/use-regenerate-portrait'
 
 const inputClass =
   'w-full rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-xs text-white placeholder:text-white/30 outline-none focus:border-white/40'
@@ -28,7 +29,6 @@ const presetClass =
 // memory_forget tools.
 export function PersonaSection() {
   const persona = useStore($persona)
-  const { requestGateway } = useGatewayRequest()
   const [editing, setEditing] = useState(false)
   const [name, setName] = useState(persona?.name ?? '')
   const [role, setRole] = useState(persona?.background ?? '')
@@ -38,6 +38,7 @@ export function PersonaSection() {
   const [appearance, setAppearance] = useState(persona?.appearance ?? '')
   const [saving, setSaving] = useState(false)
   const [hint, setHint] = useState<string | null>(null)
+  const { regenerate: regeneratePortrait, hint: regenHint } = useRegeneratePortrait()
 
   const startEdit = () => {
     setName(persona?.name ?? '')
@@ -83,10 +84,11 @@ export function PersonaSection() {
       setEditing(false)
 
       if (window.confirm('角色更新啦，要重新生成我的形象吗？')) {
-        try {
-          await requestGateway('avatar.regenerate', {})
-        } catch {
-          /* generation failed or rejected */
+        setRegenFeedback(appearance.slice(0, MAX_APPEARANCE))
+        await regeneratePortrait()
+
+        if (regenHint) {
+          setHint(regenHint)
         }
       }
     } catch {

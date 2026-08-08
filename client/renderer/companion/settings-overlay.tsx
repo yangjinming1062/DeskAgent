@@ -3,15 +3,15 @@ import type React from 'react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { $wardrobe, refreshEquippedAndApply, setWardrobe, type WardrobeItem } from '@/companion/3d/model-store'
-import { pickAvatarImage } from '@/companion/avatar-image'
-import { awaitAvatarRegeneration } from '@/companion/avatar-regen-store'
 import { useGatewayRequest } from '@/companion/boot/use-gateway-request'
 import { $effectiveTier, $userPreferredTier, setDisturbanceTier } from '@/companion/companion-store'
 import { DISTURBANCE_TIERS } from '@/companion/disturbance-tiers'
+import { INPUT_CLASS } from '@/companion/input-class'
 import { useInteractiveRegion } from '@/companion/interactive-regions'
+import { MAX_APPEARANCE } from '@/companion/persona'
 import { PersonaRetune } from '@/companion/persona-retune'
 import { $persona, hydratePersona } from '@/companion/persona-store'
-import { $portraitUrl, applyPortrait } from '@/companion/portrait-store'
+import { $portraitUrl, $regenFeedback, setRegenFeedback } from '@/companion/portrait-store'
 import {
   $companionVoiceId,
   $responseMode,
@@ -21,6 +21,7 @@ import {
 } from '@/companion/prefs'
 import { $defaultScale, setDefaultScale } from '@/companion/spatial'
 import { speak } from '@/companion/tts'
+import { useRegeneratePortrait } from '@/companion/use-regenerate-portrait'
 import {
   designVoice,
   fetchVoiceCatalog,
@@ -62,9 +63,9 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps): React.Reac
 
   const [langFilter, setLangFilter] = useState('')
   const [genderFilter, setGenderFilter] = useState('')
-  const [regenerating, setRegenerating] = useState(false)
-  const [avatarHint, setAvatarHint] = useState<string | null>(null)
   const portraitUrl = useStore($portraitUrl)
+  const regenFeedback = useStore($regenFeedback)
+  const { regenerate: regeneratePortrait, busy: regenerating, hint: avatarHint } = useRegeneratePortrait()
 
   const [retuneOpen, setRetuneOpen] = useState(false)
   const wardrobe = useStore($wardrobe)
@@ -163,73 +164,6 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps): React.Reac
       void window.deskagent.sprite.setAlwaysOnTop({ on: true })
     }
   }, [requestGateway])
-
-  const regenerate = async () => {
-    setRegenerating(true)
-    setAvatarHint(null)
-
-    try {
-      const res = await requestGateway<{ asset_url?: string; seed_url?: string; queued?: boolean; job_id?: string }>(
-        'avatar.regenerate',
-        {}
-      )
-
-      if (res?.asset_url) {
-        setAvatarHint('换好啦，新形象已生成～')
-        void applyPortrait({ assetUrl: res.asset_url, seedUrl: res.seed_url })
-      } else if (res?.queued && res.job_id) {
-        const result = await awaitAvatarRegeneration(res.job_id)
-
-        if (result.asset_url) {
-          setAvatarHint('换好啦，新形象已生成～')
-          void applyPortrait({ assetUrl: result.asset_url, seedUrl: result.seed_url })
-        } else {
-          setAvatarHint(result.error ?? '暂时换不出来，稍后再试')
-        }
-      } else {
-        setAvatarHint('暂时换不出来，稍后再试')
-      }
-    } catch {
-      setAvatarHint('暂时换不出来，稍后再试')
-    } finally {
-      setRegenerating(false)
-    }
-  }
-
-  const upload = async () => {
-    const picked = await pickAvatarImage('选择一张图片作为形象')
-
-    if (!picked) {
-      return
-    }
-
-    if ('error' in picked) {
-      setAvatarHint(picked.error)
-
-      return
-    }
-
-    setRegenerating(true)
-
-    try {
-      const res = await window.deskagent.api<{ asset_url?: string }>({
-        path: '/api/companion/avatar/upload',
-        method: 'POST',
-        body: { image: picked.image.base64, content_type: picked.image.contentType }
-      })
-
-      if (res?.asset_url) {
-        setAvatarHint('上传成功～')
-        void applyPortrait({ assetUrl: res.asset_url })
-      } else {
-        setAvatarHint('上传失败了')
-      }
-    } catch {
-      setAvatarHint('上传失败了，换张图试试？')
-    } finally {
-      setRegenerating(false)
-    }
-  }
 
   const runDesign = async () => {
     const prompt = designPrompt.trim()
@@ -530,7 +464,7 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps): React.Reac
           </Section>
 
           {/* Avatar */}
-          <Section hint="重新生成或上传自定义形象；衍生动画会重新生成" title="形象">
+          <Section hint="重新生成；衍生动画会重新生成" title="形象">
             <div className="flex items-start gap-3">
               <div className="grid h-20 w-20 shrink-0 place-items-center overflow-hidden rounded-xl border border-white/10 bg-white/5">
                 {portraitUrl ? (
@@ -540,24 +474,23 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps): React.Reac
                 )}
               </div>
               <div className="flex flex-1 flex-col gap-2">
-                <div className="flex gap-2">
-                  <button
-                    className="flex-1 rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-xs text-white/80 transition hover:bg-white/15 disabled:opacity-40"
-                    disabled={regenerating}
-                    onClick={regenerate}
-                    type="button"
-                  >
-                    {regenerating ? '生成中…' : '重新生成'}
-                  </button>
-                  <button
-                    className="flex-1 rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-xs text-white/80 transition hover:bg-white/15 disabled:opacity-40"
-                    disabled={regenerating}
-                    onClick={upload}
-                    type="button"
-                  >
-                    上传图片
-                  </button>
-                </div>
+                <textarea
+                  className={`${INPUT_CLASS} text-xs`}
+                  disabled={regenerating}
+                  maxLength={MAX_APPEARANCE}
+                  onChange={e => setRegenFeedback(e.target.value)}
+                  placeholder="哪里不满意？比如：头发再短一点、眼睛再大一点、表情更温和…（可留空直接重新生成）"
+                  rows={2}
+                  value={regenFeedback}
+                />
+                <button
+                  className="rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-xs text-white/80 transition hover:bg-white/15 disabled:opacity-40"
+                  disabled={regenerating}
+                  onClick={() => void regeneratePortrait()}
+                  type="button"
+                >
+                  {regenerating ? '生成中…' : '重新生成'}
+                </button>
                 {avatarHint && <p className="text-xs text-amber-300/80">{avatarHint}</p>}
               </div>
             </div>

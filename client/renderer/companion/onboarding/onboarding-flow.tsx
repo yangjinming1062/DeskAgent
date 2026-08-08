@@ -3,8 +3,8 @@ import { type PointerEvent as ReactPointerEvent, useCallback, useEffect, useRef,
 import { createPortal } from 'react-dom'
 
 import { pickAvatarImage, type PickedImage } from '@/companion/avatar-image'
-import { awaitAvatarRegeneration } from '@/companion/avatar-regen-store'
 import { useGatewayRequest } from '@/companion/boot/use-gateway-request'
+import { INPUT_CLASS } from '@/companion/input-class'
 import { useInteractiveRegion } from '@/companion/interactive-regions'
 import {
   APPEARANCE_PRESETS,
@@ -17,7 +17,8 @@ import {
   USER_GENDER_PRESETS,
   VOICE_PRESETS
 } from '@/companion/persona-presets'
-import { applyPortrait } from '@/companion/portrait-store'
+import { $regenFeedback, applyPortrait, setRegenFeedback } from '@/companion/portrait-store'
+import { useRegeneratePortrait } from '@/companion/use-regenerate-portrait'
 import { isClientErrorIpc } from '@/shared/lib/ipc-error'
 import { $gatewayState } from '@/shared/store/gateway'
 
@@ -37,13 +38,6 @@ const VOICE_LANGUAGE_TABS: { id: VoiceLanguageFilter; label: string }[] = [
   { id: 'zh', label: '中文' },
   { id: 'en', label: 'English' }
 ]
-
-// Shared chrome for the glass-overlay textareas. Each call site composes its
-// own size (text-xs / text-sm) on top of this base.
-const INPUT_CLASS =
-  'w-full resize-none rounded-lg border border-white/15 bg-white/10 px-3 py-2 outline-none placeholder:text-white/40 focus:border-white/40'
-
-const PORTRAIT_FAILED_HINT = '暂时换不出来，稍后再试吧'
 
 type QKey = keyof OnboardingAnswers
 
@@ -328,7 +322,6 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
   const [voice, setVoice] = useState<VoiceOption | null>(null)
   const [voiceCatalog, setVoiceCatalog] = useState<VoiceOption[]>([])
   const [voiceLangFilter, setVoiceLangFilter] = useState<VoiceLanguageFilter>('zh')
-  const [busy, setBusy] = useState(false)
   // Failure hints live on the portrait panel — the form area is hidden behind it.
   const [portraitPanelHint, setPortraitPanelHint] = useState<string | null>(null)
 
@@ -338,7 +331,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
   const [refImage, setRefImage] = useState<PickedImage | null>(null)
   const [answerKind, setAnswerKind] = useState<AnswerKind | null>(null)
 
-  const [portraitFeedback, setPortraitFeedback] = useState('')
+  const portraitFeedback = useStore($regenFeedback)
   const [hint, setHint] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -632,70 +625,10 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
     void playOnboardingAudio(url ? 'onboarding.portrait.ok' : 'onboarding.portrait.failed')
   }
 
-  const regeneratePortrait = async () => {
-    const regenerateFeedback = portraitFeedback.trim() || undefined
-    setBusy(true)
-    setHint(null)
-    setPortraitPanelHint(null)
-
-    // Both the portrait panel and the Q&A form render the hint; the form sits
-    // hidden behind the panel during the portrait phase, so writing to both is
-    // harmless and keeps the message visible if the user later backs out.
-    const setPortraitError = (msg: string) => {
-      setPortraitPanelHint(msg)
-      setHint(msg)
-    }
-
-    const onPortraitApplied = () => {
-      setPortraitFeedback('')
-      void playOnboardingAudio('onboarding.portrait.regenerate')
-    }
-
-    try {
-      if (refImage) {
-        const res = await window.deskagent.api<{ asset_url?: string; seed_url?: string }>({
-          path: '/api/companion/avatar/from-image',
-          method: 'POST',
-          body: {
-            content_type: refImage.contentType,
-            image: refImage.base64,
-            description: regenerateFeedback
-          }
-        })
-
-        if (res?.asset_url && (await applyLocalPortrait(res))) {
-          onPortraitApplied()
-
-          return
-        }
-      }
-
-      const queued = await requestGateway<{ queued?: boolean; job_id?: string; asset_url?: string; seed_url?: string }>(
-        'avatar.regenerate',
-        { feedback: regenerateFeedback }
-      )
-
-      if (queued?.asset_url) {
-        if (await applyLocalPortrait(queued)) {
-          onPortraitApplied()
-        }
-      } else if (queued?.queued && queued.job_id) {
-        const result = await awaitAvatarRegeneration(queued.job_id)
-
-        if (result.asset_url && (await applyLocalPortrait(result))) {
-          onPortraitApplied()
-        } else {
-          setPortraitError(result.error ?? PORTRAIT_FAILED_HINT)
-        }
-      } else {
-        setPortraitError(PORTRAIT_FAILED_HINT)
-      }
-    } catch {
-      setPortraitError(PORTRAIT_FAILED_HINT)
-    } finally {
-      setBusy(false)
-    }
-  }
+  const { regenerate: regeneratePortrait, busy: portraitBusy } = useRegeneratePortrait({
+    refImage,
+    playAudioOnSuccess: true
+  })
 
   const pickReferenceImage = async () => {
     const picked = await pickAvatarImage('选择一张参考图')
@@ -934,9 +867,9 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
             <div className="mt-4">
               <textarea
                 className={`${INPUT_CLASS} text-xs`}
-                disabled={busy}
+                disabled={portraitBusy}
                 maxLength={MAX_APPEARANCE}
-                onChange={e => setPortraitFeedback(e.target.value)}
+                onChange={e => setRegenFeedback(e.target.value)}
                 placeholder="哪里不满意？比如：头发再短一点、眼睛再大一点、表情更温和…（可留空直接重新生成）"
                 rows={2}
                 value={portraitFeedback}
@@ -944,11 +877,11 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
               <div className="mt-3 flex items-center justify-between text-xs">
                 <button
                   className="text-white/70 transition hover:text-white disabled:opacity-40"
-                  disabled={busy}
-                  onClick={regeneratePortrait}
+                  disabled={portraitBusy}
+                  onClick={() => regeneratePortrait()}
                   type="button"
                 >
-                  {busy ? '生成中…' : '重新生成'}
+                  {portraitBusy ? '生成中…' : '重新生成'}
                 </button>
                 <button
                   className="rounded-full bg-white/90 px-4 py-1 font-medium text-black transition hover:bg-white"

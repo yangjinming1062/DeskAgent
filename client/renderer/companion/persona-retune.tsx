@@ -1,7 +1,6 @@
 import type React from 'react'
 import { useEffect, useRef, useState } from 'react'
 
-import { useGatewayRequest } from '@/companion/boot/use-gateway-request'
 import { assemblePersona, MAX_APPEARANCE } from '@/companion/persona'
 import {
   APPEARANCE_PRESETS,
@@ -18,6 +17,8 @@ import {
   type SpeciesPreset
 } from '@/companion/persona-presets'
 import { hydratePersona } from '@/companion/persona-store'
+import { setRegenFeedback } from '@/companion/portrait-store'
+import { useRegeneratePortrait } from '@/companion/use-regenerate-portrait'
 
 interface PersonaRetuneProps {
   initial: {
@@ -157,10 +158,10 @@ const REVIEW_ROWS: { key: keyof typeof EMPTY; label: string; fallback?: string }
 ]
 
 export function PersonaRetune({ initial, onClose, onSaved }: PersonaRetuneProps): React.ReactElement {
-  const { requestGateway } = useGatewayRequest()
   const [step, setStep] = useState<number>(0)
   const [saving, setSaving] = useState(false)
   const [hint, setHint] = useState<string | null>(null)
+  const { regenerate: regeneratePortrait, hint: regenHint } = useRegeneratePortrait()
   // Tracks whether the wizard is still mounted. Closing the modal mid-save
   // unmounts the component; the in-flight ``save()`` continues to run,
   // and the resulting ``window.confirm`` would appear as an orphan
@@ -272,10 +273,11 @@ export function PersonaRetune({ initial, onClose, onSaved }: PersonaRetuneProps)
       onSaved()
 
       if (window.confirm('角色更新啦，要重新生成我的形象吗？')) {
-        try {
-          await requestGateway('avatar.regenerate', {})
-        } catch {
-          /* generation failed or rejected — silent */
+        setRegenFeedback(appearance.slice(0, MAX_APPEARANCE))
+        await regeneratePortrait()
+
+        if (regenHint) {
+          setHint(regenHint)
         }
       }
 
