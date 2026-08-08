@@ -2,7 +2,7 @@
 
 const fs = require('node:fs')
 
-const { dataUrlFromBuffer } = require('../shared/mime.cjs')
+const { dataUrlFromBuffer, dataUrlToBuffer } = require('../shared/mime.cjs')
 
 const STT_TIMEOUT_MS = 60_000
 const TTS_TIMEOUT_MS = 60_000
@@ -22,14 +22,11 @@ let ttsSeq = 0
 let sttSeq = 0
 
 function decodeDataUrl(dataUrl) {
-  // data:[<mime>][;base64],<payload>
+  // data:[<mime>][;base64],<payload> — body bytes via shared/mime.cjs.
   const match = /^data:([^;,]+)?(;base64)?,(.*)$/s.exec(String(dataUrl || ''))
   if (!match) throw new Error('Expected a base64 data URL')
   const mime = match[1] || 'application/octet-stream'
-  const isBase64 = Boolean(match[2])
-  const payload = match[3]
-  const data = isBase64 ? Buffer.from(payload, 'base64') : Buffer.from(decodeURIComponent(payload), 'utf8')
-  return { mime, data }
+  return { mime, data: dataUrlToBuffer(dataUrl) }
 }
 
 async function postMultipart({ url, token, form, timeoutMs }) {
@@ -162,8 +159,12 @@ async function ttsViaBackend({ ensureBackend, text, voice, language }) {
 
 // Cached reader for `stt.engine` / `tts.engine` from GET /api/config. Short TTL
 // keeps each request off the backend while bounding staleness after a settings
-// change. On any fetch failure we default to "auto" (local-first) so media
-// still works when the backend is unreachable — local engines need no cloud.
+// change. On any fetch failure we default to "auto" (cloud-first, local
+// fallback) so cloud still goes through when the user's settings have never
+// been written. Local engines never receive cloud voice ids under 'auto'.
+// STT keeps its own local-first semantics — the product feedback that drove
+// "default to cloud for TTS" was specifically about Piper voice quality, not
+// STT privacy/quietness.
 function createEnginePrefsCache({ ensureBackend, ttlMs = CONFIG_CACHE_TTL_MS }) {
   let cached = null
   return async function getEnginePrefs() {
@@ -343,45 +344,72 @@ function registerMediaIpc({ ipcMain, ensureBackend, getRunnerBridge, getEnginePr
     const prefs = await resolvePrefs()
     const engine = isDesigned ? 'cloud' : prefs.tts
 
-    let fellBackToCloud = false
+    let fellBackToLocal = false
 
-    if (engine !== 'cloud') {
-      if (localToolAvailable(bridge(), 'text_to_speech')) {
-        const res = await tryLocalTts({ bridge: bridge(), text })
-        if (res.ok) {
-          setCachedTts(cacheKey, { dataUrl: res.value.dataUrl, mimeType: res.value.mimeType })
-          ttsLog('done', {
-            route: 'local',
-            engine: res.value.engine,
-            voice: res.value.voice,
-            mime: res.value.mimeType,
-            ms: Date.now() - startedAt
-          })
-          return { dataUrl: res.value.dataUrl, mimeType: res.value.mimeType }
-        }
-        if (engine === 'local') {
-          ttsLog('done', { route: 'local', error: res.error.message, ms: Date.now() - startedAt })
-          throw res.error
-        }
-        fellBackToCloud = true
-        ttsLog('fallback', { from: 'local', to: 'cloud', reason: res.error.message })
-      } else if (engine === 'local') {
-        ttsLog('done', { route: 'local', error: 'Local TTS unavailable', ms: Date.now() - startedAt })
-        throw new Error('Local TTS unavailable: runner not connected or text_to_speech tool missing')
+    // Routing precedence:
+    //   - 'cloud'  → cloud only; throw on failure (user explicitly chose cloud).
+    //   - 'local'  → local only; throw on failure / unavailability (user explicitly chose local).
+    //   - 'auto'   → cloud first to honor the voice the user picked during
+    //                onboarding; fall back to local Piper only when the cloud
+    //                backend is unreachable. Local voice quality is poor —
+    //                cloud is always preferred unless the network is down or
+    //                the user explicitly opted in to local.
+    if (engine === 'auto') {
+      try {
+        const result = await ttsViaBackend({ ensureBackend, text, voice, language })
+        setCachedTts(cacheKey, { dataUrl: result.dataUrl, mimeType: result.mimeType })
+        ttsLog('done', {
+          route: 'cloud',
+          voice_out: result.voiceOut || null,
+          mime: result.mimeType,
+          ms: Date.now() - startedAt
+        })
+        return { dataUrl: result.dataUrl, mimeType: result.mimeType }
+      } catch (err) {
+        fellBackToLocal = true
+        ttsLog('fallback', { from: 'cloud', to: 'local', reason: err.message })
       }
+    } else if (engine === 'cloud') {
+      const result = await ttsViaBackend({ ensureBackend, text, voice, language })
+      setCachedTts(cacheKey, { dataUrl: result.dataUrl, mimeType: result.mimeType })
+      ttsLog('done', {
+        route: 'cloud',
+        voice_out: result.voiceOut || null,
+        mime: result.mimeType,
+        ms: Date.now() - startedAt
+      })
+      return { dataUrl: result.dataUrl, mimeType: result.mimeType }
     }
 
-    const result = await ttsViaBackend({ ensureBackend, text, voice, language })
-    setCachedTts(cacheKey, { dataUrl: result.dataUrl, mimeType: result.mimeType })
-    ttsLog('done', {
-      route: 'cloud',
-      voice_out: result.voiceOut || null,
-      mime: result.mimeType,
-      ms: Date.now() - startedAt,
-      ...(fellBackToCloud ? { silent_fallback_used: true } : {})
-    })
-    return { dataUrl: result.dataUrl, mimeType: result.mimeType }
+    // 'local' OR 'auto' falling back from cloud
+    if (localToolAvailable(bridge(), 'text_to_speech')) {
+      const res = await tryLocalTts({ bridge: bridge(), text })
+      if (res.ok) {
+        setCachedTts(cacheKey, { dataUrl: res.value.dataUrl, mimeType: res.value.mimeType })
+        ttsLog('done', {
+          route: 'local',
+          engine: res.value.engine,
+          // Surface the caller's voice choice alongside the Piper voice that
+          // actually voiced the line — operators can tell the user's voice
+          // was silently dropped when these don't match.
+          voice: res.value.voice,
+          voice_requested: voice || null,
+          mime: res.value.mimeType,
+          ms: Date.now() - startedAt,
+          ...(fellBackToLocal ? { silent_fallback_used: true } : {})
+        })
+        return { dataUrl: res.value.dataUrl, mimeType: res.value.mimeType }
+      }
+      ttsLog('done', { route: 'local', error: res.error.message, ms: Date.now() - startedAt })
+      throw res.error
+    }
+
+    ttsLog('done', { route: 'local', error: 'Local TTS unavailable', ms: Date.now() - startedAt })
+    if (engine === 'local') {
+      throw new Error('Local TTS unavailable: runner not connected or text_to_speech tool missing')
+    }
+    throw new Error('TTS failed: cloud unreachable and local TTS unavailable')
   })
 }
 
-module.exports = { registerMediaIpc, createEnginePrefsCache, ttsAudioCache }
+module.exports = { registerMediaIpc, createEnginePrefsCache, ttsAudioCache, ttsViaBackend }

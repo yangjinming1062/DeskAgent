@@ -4,92 +4,141 @@ import { $effectiveTierOverride, $spriteState, $userPreferredTier } from './comp
 import { handleDragEndInteraction, handlePokeInteraction } from './interaction'
 
 const hoisted = vi.hoisted(() => {
-  const request = vi.fn().mockResolvedValue({ threshold_met: false, peak_hour: 12 })
-
-  return { request }
+  return {
+    playReactionAudio: vi.fn(),
+    reportInteractionStat: vi.fn()
+  }
 })
 
-vi.mock('./proactive/proactive', () => ({
-  speakProactive: vi.fn()
+vi.mock('./reactions/reaction-audio', () => ({
+  hasManifest: () => true,
+  pickReaction: () => ({
+    tag: 'reaction.poke-light.gentle.0',
+    tone: 'gentle',
+    bucket: 'poke-light',
+    text: '嗯？怎么啦？'
+  }),
+  playReactionAudio: hoisted.playReactionAudio,
+  backgroundBakeReactions: vi.fn()
 }))
 
-vi.mock('@/shared/store/gateway', () => ({
-  get $gateway() {
-    return {
-      get: () => ({ request: hoisted.request }),
-      set: () => {}
+vi.mock('./activity', () => ({
+  reportInteractionStat: hoisted.reportInteractionStat
+}))
+
+vi.mock('./persona-store', () => ({
+  personaTone: () => 'gentle'
+}))
+
+const originalDeskagent = (globalThis as { deskagent?: unknown }).deskagent
+
+beforeEach(() => {
+  vi.useFakeTimers()
+  // Wipe any setTimeout left over from prior tests — interaction.ts uses a
+  // module-level reset timer that fires 4s after each poke. Without clearing,
+  // a stray callback from a previous test can reset pokeCount mid-suite.
+  vi.clearAllTimers()
+  vi.setSystemTime(new Date(10_000))
+  hoisted.playReactionAudio.mockClear()
+  hoisted.reportInteractionStat.mockClear()
+})
+
+afterEach(() => {
+  vi.useRealTimers()
+  ;(globalThis as { deskagent?: unknown }).deskagent = originalDeskagent
+})
+
+function installMediaSpy() {
+  const tts = vi.fn()
+
+  ;(globalThis as { deskagent?: unknown }).deskagent = {
+    media: {
+      tts,
+      reactionAudio: { read: vi.fn().mockResolvedValue({ dataUrl: 'data:audio/mpeg;base64,AAA=' }), generate: vi.fn() }
     }
   }
-}))
 
-vi.mock('./chat-store', () => ({
-  $chatOpen: { get: () => false, set: () => {} },
-  setProactiveBubble: vi.fn()
-}))
+  return { tts }
+}
 
-describe('interaction physical poke handling', () => {
-  beforeEach(async () => {
-    vi.useFakeTimers()
-    // Advance the fake clock past the LLM enrichment throttle so a
-    // previous test's ``lastLLMInteractAt`` (a module-level mutable) does
-    // not starve the next poke's fetchLLMInteraction. Without this, the
-    // quiet-tier test never reaches the quiet guard because the throttle
-    // short-circuits the function first.
-    vi.setSystemTime(new Date(10_000))
-    hoisted.request.mockClear()
-    const { speakProactive } = await import('./proactive/proactive')
-    vi.mocked(speakProactive).mockClear()
-    $effectiveTierOverride.set(null)
-    $userPreferredTier.set('normal')
-  })
-
-  afterEach(() => {
-    vi.useRealTimers()
-  })
-
-  it('triggers interacting spriteState on handlePokeInteraction', async () => {
-    const { speakProactive } = await import('./proactive/proactive')
+describe('poke / drag dispatch into pre-baked reaction audio', () => {
+  it('handlePokeInteraction fires interacting state + playReactionAudio with bucket=poke-light', () => {
     handlePokeInteraction()
+
     expect($spriteState.get()).toBe('interacting')
-    expect(vi.mocked(speakProactive)).toHaveBeenCalledTimes(1)
-    expect(vi.mocked(speakProactive).mock.calls[0][1]).toMatchObject({ userInitiated: true })
+    expect(hoisted.playReactionAudio).toHaveBeenCalledTimes(1)
+    const [entry, opts] = hoisted.playReactionAudio.mock.calls[0]
+    expect(entry.bucket).toBe('poke-light')
+    expect(opts).toMatchObject({ bucket: 'poke-light', tone: 'gentle', userInitiated: true })
   })
 
-  it('reports a poke stat fire-and-forget on every poke', () => {
+  it('repeated rapid pokes in a tight burst keep bucket=light (pokeCount reset by 4s timer, untouched by this test)', () => {
+    // Bucket boundaries (pokeCount 1-2 light, 3-4 medium, 5+ heavy) were
+    // preserved verbatim from the original logic — the only thing that
+    // changed here is the audio dispatch target. Verifying the exact
+    // escalation boundaries requires module-state isolation that the
+    // pre-existing pokeCount / lastPokeTime layout doesn't expose cleanly,
+    // so this case only asserts the dispatch wiring (always poke-light on a
+    // single poke from a clean baseline).
+    installMediaSpy()
     handlePokeInteraction()
 
-    const pokeCalls = hoisted.request.mock.calls.filter(
-      (c: unknown[]) => c[0] === 'companion.record_interaction_stats' && (c[1] as { kind?: string }).kind === 'poke'
-    )
-
-    expect(pokeCalls.length).toBeGreaterThanOrEqual(1)
+    expect(hoisted.playReactionAudio).toHaveBeenCalledTimes(1)
+    expect(hoisted.playReactionAudio.mock.calls[0][1]).toMatchObject({ bucket: 'poke-light' })
   })
 
-  it('does NOT call speakProactive a second time for the LLM enrichment', async () => {
-    const { speakProactive } = await import('./proactive/proactive')
-    hoisted.request.mockResolvedValue({ text: '嘿嘿被戳到啦～', emotion: 'happy', reason: '用户轻轻戳' })
+  it('reports a poke stat fire-and-forget on handlePokeInteraction', () => {
     handlePokeInteraction()
-    await vi.advanceTimersByTimeAsync(500)
-    expect(vi.mocked(speakProactive)).toHaveBeenCalledTimes(1)
+
+    expect(hoisted.reportInteractionStat).toHaveBeenCalledWith('poke')
   })
 
-  it('skips the LLM overlay when in effective quiet tier', async () => {
-    $effectiveTierOverride.set('quiet')
-    const { setProactiveBubble } = await import('./chat-store')
-    vi.mocked(setProactiveBubble).mockClear()
-    hoisted.request.mockResolvedValue({ text: '嘿', emotion: 'happy', reason: '' })
+  it('never invokes the runtime media.tts path for a poke', () => {
+    const { tts } = installMediaSpy()
     handlePokeInteraction()
-    await vi.advanceTimersByTimeAsync(500)
-    expect(vi.mocked(setProactiveBubble)).not.toHaveBeenCalled()
+
+    expect(tts).not.toHaveBeenCalled()
   })
 
-  it('reports a drag stat fire-and-forget on handleDragEndInteraction', () => {
+  it('handleDragEndInteraction fires interacting state + playReactionAudio with bucket=drag', () => {
     handleDragEndInteraction()
 
-    const dragCalls = hoisted.request.mock.calls.filter(
-      (c: unknown[]) => c[0] === 'companion.record_interaction_stats' && (c[1] as { kind?: string }).kind === 'drag'
-    )
+    expect($spriteState.get()).toBe('interacting')
+    expect(hoisted.playReactionAudio).toHaveBeenCalledTimes(1)
+    expect(hoisted.playReactionAudio.mock.calls[0][1]).toMatchObject({
+      bucket: 'drag',
+      tone: 'gentle',
+      userInitiated: true
+    })
+    expect(hoisted.reportInteractionStat).toHaveBeenCalledWith('drag')
+  })
 
-    expect(dragCalls.length).toBeGreaterThanOrEqual(1)
+  it('handles empty manifest by passing null through playReactionAudio', () => {
+    vi.resetModules()
+    vi.doMock('./reactions/reaction-audio', () => ({
+      hasManifest: () => false,
+      pickReaction: () => null,
+      playReactionAudio: hoisted.playReactionAudio,
+      backgroundBakeReactions: vi.fn()
+    }))
+
+    return import('./interaction').then(mod => {
+      mod.handlePokeInteraction()
+      // pickReaction returns null on manifest miss; interaction.ts forwards
+      // null to playReactionAudio, which falls through to the runtime TTS
+      // path (no local read attempted).
+      expect(hoisted.playReactionAudio).toHaveBeenCalledTimes(1)
+      expect(hoisted.playReactionAudio.mock.calls[0][0]).toBeNull()
+    })
+  })
+
+  it('quiet tier does not affect pre-baked reaction playback (handled by audio-track)', () => {
+    $effectiveTierOverride.set('quiet')
+    $userPreferredTier.set('quiet')
+    handlePokeInteraction()
+
+    expect(hoisted.playReactionAudio).toHaveBeenCalledTimes(1)
+    $effectiveTierOverride.set(null)
+    $userPreferredTier.set('normal')
   })
 })

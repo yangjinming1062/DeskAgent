@@ -76,8 +76,7 @@ export function useRunnerConfig(errorKey: string): UseRunnerConfigResult {
   const write = async (content: string): Promise<SaveResult> =>
     toWriteResult(await window.deskagent.runnerConfig.write(content))
 
-  const patch = async (p: Patch): Promise<SaveResult> =>
-    toWriteResult(await window.deskagent.runnerConfig.patch(p))
+  const patch = async (p: Patch): Promise<SaveResult> => toWriteResult(await window.deskagent.runnerConfig.patch(p))
 
   return { yamlDoc, setYamlDoc, isLoading, write, patch }
 }

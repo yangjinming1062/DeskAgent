@@ -53,10 +53,22 @@ function dataUrlFromBuffer(buffer, mimeType) {
   return `data:${mimeType};base64,${buffer.toString('base64')}`
 }
 
+// Decode a `data:<mime>[;base64],<payload>` URL back to the raw bytes.
+// Single source of truth shared by media.cjs (STT decode) and
+// reaction-audio.cjs (TTS response → mp3 disk write).
+function dataUrlToBuffer(dataUrl) {
+  const match = /^data:([^;,]+)?(;base64)?,(.*)$/s.exec(String(dataUrl || ''))
+  if (!match) throw new Error('Expected a base64 data URL')
+  const isBase64 = Boolean(match[2])
+  const payload = match[3]
+  return isBase64 ? Buffer.from(payload, 'base64') : Buffer.from(decodeURIComponent(payload), 'utf8')
+}
+
 module.exports = {
   MEDIA_MIME_TYPES,
   STREAMABLE_MEDIA_EXTS,
   mimeTypeForPath,
   extensionForMimeType,
-  dataUrlFromBuffer
+  dataUrlFromBuffer,
+  dataUrlToBuffer
 }

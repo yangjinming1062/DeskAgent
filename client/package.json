@@ -23,7 +23,7 @@
     "dist:win": "pnpm run build && pnpm run builder -- --win",
     "dist:win:nsis": "pnpm run build && pnpm run builder -- --win nsis",
     "test:desktop:dist": "node scripts/test-desktop.mjs all",
-    "test:desktop:platforms": "node --test main/lifecycle/platform.test.cjs main/security/hardening.test.cjs main/backend/ws-probe.test.cjs main/backend/bootstrap-session.test.cjs main/backend/session.test.cjs main/shared/config.test.cjs main/runner/rpc-ws.test.cjs main/runner/reverse-rpc.test.cjs main/runner/bridge.test.cjs main/preload-contract.test.cjs main/ipc/onboarding-audio.test.cjs main/ipc/media.test.cjs",
+    "test:desktop:platforms": "node --test main/lifecycle/platform.test.cjs main/security/hardening.test.cjs main/backend/ws-probe.test.cjs main/backend/bootstrap-session.test.cjs main/backend/session.test.cjs main/shared/config.test.cjs main/runner/rpc-ws.test.cjs main/runner/reverse-rpc.test.cjs main/runner/bridge.test.cjs main/preload-contract.test.cjs main/ipc/onboarding-audio.test.cjs main/ipc/reaction-audio.test.cjs main/ipc/media.test.cjs",
     "type-check": "tsc -b",
     "lint": "eslint renderer/ main/",
     "lint:fix": "eslint renderer/ main/ --fix",

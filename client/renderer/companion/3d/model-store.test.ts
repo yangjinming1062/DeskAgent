@@ -1,13 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import {
-  $equippedItem,
-  $modelInfo,
-  $wardrobe,
-  hydrateModel,
-  hydrateWardrobe,
-  type WardrobeItem
-} from './model-store'
+import { $equippedItem, $modelInfo, $wardrobe, hydrateModel, hydrateWardrobe, type WardrobeItem } from './model-store'
 
 const baseModelResponse = {
   id: 7,

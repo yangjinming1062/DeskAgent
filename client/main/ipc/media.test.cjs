@@ -200,41 +200,59 @@ test.after(() => {
   }
 })
 
-test('TTS auto + local available + success → reads WAV, returns audio/wav dataUrl', async () => {
+test('TTS auto + cloud available + success → uses cloud, never invokes local', async () => {
+  // Local engine is registered; auto should still prefer cloud so the user
+  // hears the voice they picked during onboarding. Local is reserved as a
+  // fallback for when the backend is unreachable.
   const bridge = makeBridge({ tools: [toolSchema('text_to_speech')], invokeResult: { success: true, path: tmpWav } })
   const ipc = setup({ tts: 'auto', bridge })
+  global.fetch = cloudFetch({ bytes: Buffer.from('audio'), contentType: 'audio/mpeg' })
 
   const res = await ipc.invoke('deskagent:media:tts', { text: 'hi', voice: 'en_US-amy-medium' })
+
+  assert.equal(res.mimeType, 'audio/mpeg')
+  assert.ok(res.dataUrl.startsWith('data:audio/mpeg;base64,'))
+  assert.equal(bridge.calls.length, 0, 'auto must not invoke local TTS when cloud succeeds')
+})
+
+test('TTS auto + cloud fails → falls back to local', async () => {
+  // Cloud returned non-2xx — auto should silently fall back to local Piper.
+  const bridge = makeBridge({ tools: [toolSchema('text_to_speech')], invokeResult: { success: true, path: tmpWav } })
+  const ipc = setup({ tts: 'auto', bridge })
+  global.fetch = cloudFetch({ status: 503, bytes: Buffer.from('upstream down'), contentType: 'text/plain' })
+
+  const res = await ipc.invoke('deskagent:media:tts', { text: 'cloud-fails' })
 
   assert.equal(res.mimeType, 'audio/wav')
   assert.ok(res.dataUrl.startsWith('data:audio/wav;base64,'))
   assert.equal(bridge.calls[0].name, 'text_to_speech')
-  assert.equal(bridge.calls[0].args.text, 'hi')
+  assert.equal(bridge.calls[0].args.text, 'cloud-fails')
   // Local engine never receives the caller's voice — Piper falls back to its
-  // own default (config.yaml::audio.tts.default_voice). See media.cjs:79-81.
+  // own default (config.yaml::audio.tts.default_voice).
   assert.equal(Object.prototype.hasOwnProperty.call(bridge.calls[0].args, 'voice'), false)
 })
 
 test('TTS local invoke omits voice when empty', async () => {
+  // 'local' makes the cloud path unreachable; we exercise the local caller's
+  // argument shape here instead of routing through auto.
   const bridge = makeBridge({ tools: [toolSchema('text_to_speech')], invokeResult: { success: true, path: tmpWav } })
-  const ipc = setup({ tts: 'auto', bridge })
+  const ipc = setup({ tts: 'local', bridge })
 
   await ipc.invoke('deskagent:media:tts', { text: 'omit-voice' })
 
   assert.equal(Object.prototype.hasOwnProperty.call(bridge.calls[0].args, 'voice'), false)
 })
 
-test('TTS auto + local fails → falls back to cloud', async () => {
-  const bridge = makeBridge({
-    tools: [toolSchema('text_to_speech')],
-    invokeResult: { success: false, error: 'no piper voice' }
-  })
-  const ipc = setup({ tts: 'auto', bridge })
-  global.fetch = cloudFetch({ bytes: Buffer.from('audio'), contentType: 'audio/mpeg' })
+test('TTS local + cloud-throw irrelevant → still returns local wav', async () => {
+  // Sanity: even if cloud would 503, a 'local' preference never tries cloud.
+  const bridge = makeBridge({ tools: [toolSchema('text_to_speech')], invokeResult: { success: true, path: tmpWav } })
+  const ipc = setup({ tts: 'local', bridge })
+  global.fetch = cloudFetch({ status: 503, bytes: Buffer.from('unused') })
 
-  const res = await ipc.invoke('deskagent:media:tts', { text: 'local-fails' })
+  const res = await ipc.invoke('deskagent:media:tts', { text: 'local-pref' })
 
-  assert.equal(res.mimeType, 'audio/mpeg')
+  assert.equal(res.mimeType, 'audio/wav')
+  assert.equal(bridge.calls.length, 1)
 })
 
 test('TTS cloud → always cloud', async () => {

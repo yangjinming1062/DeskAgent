@@ -16,7 +16,6 @@ from .avatar_service import regenerate_avatar
 from .avatar_service import regenerate_avatar_from_image
 from .avatar_service import resolve_uploaded_avatar_path
 from .avatar_service import upload_avatar
-from .interact import check_interact
 from .interaction_stats import record_interaction
 from .memory_admin import delete_memory
 from .memory_admin import get_memory
@@ -62,7 +61,6 @@ __all__ = [
     "build_system_prompt_extras",
     "build_user_profile_extras",
     "check_affect",
-    "check_interact",
     "delete_memory",
     "delete_wardrobe_item",
     "design_voice",

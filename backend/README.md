@@ -76,8 +76,6 @@ backend/
 
 **情境化 affect**：`companion.check_affect {idle_seconds, local_hour}` JSON-RPC（`services/companion/affect_check.py::check_affect`）由 Desktop idle 轮询触发，Backend 加载 persona + 最近记忆跑一次 LLM 推理，决定是否 emit `companion.affect`——触发时机由 Desktop 控制（知道真实 idle），情绪推理由 Backend LLM 承担（有 persona + 记忆）。Desktop 侧也客户端过滤，此为防御层。
 
-**戳/拖 LLM 反应**：`companion.interact {tone, kind, poke_count, idle_seconds, local_hour}` JSON-RPC（`services/companion/interact.py::check_interact`）由 Desktop 在本地文案池基础上延迟 200ms 触发，返回 `{text, emotion, reason}`。per-user inflight 取消 + 1.5s 节流（`handlers.py`），tone 服务端独立推导（`毒舌`/`傲娇`→snarky 等）。
-
 **互动统计聚合**：`companion.record_interaction_stats {kind, hour}` JSON-RPC（`services/companion/interaction_stats.py::record_interaction`，无 LLM）按 UTC 自然日聚合三类计数（poke/drag/chat_turn）+ 24h hour_buckets；当三类**各自** ≥ 10（双门限）时 upsert `Memory(context="interaction_stats:<date>")`；同日多次跨门限同 row 覆盖。**单实例**：`interaction_stats._counters` 是 process-local dict（`services/companion/interaction_stats.py`）；架构按单实例部署，本地 dict 是 final state。
 
 ## 系统提示词与上下文管理

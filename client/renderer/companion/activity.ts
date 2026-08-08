@@ -283,10 +283,9 @@ async function pollOnce(): Promise<void> {
     return
   }
 
-  // Cache the latest finite idle reading so other modules (interaction.ts
-  // sending companion.interact) can read it on demand without re-querying
-  // the runner. -1 here means "no signal this cycle" — callers treat that as
-  // unknown and either skip the field or send 0 with a stale flag.
+  // Cache the latest finite idle reading so other modules can read it on
+  // demand without re-querying the runner. -1 here means "no signal this
+  // cycle" — callers treat that as unknown and skip the field.
   $lastIdleSeconds.set(idleSeconds)
 
   const isLockedKnown = lockedResult !== null

@@ -30,7 +30,6 @@ from services.chat import load_user_settings
 from services.chat import run_chat_turn
 from services.companion import AvatarGenerationError
 from services.companion import check_affect
-from services.companion import check_interact
 from services.companion import delete_memory
 from services.companion import design_voice
 from services.companion import get_onboarding_state
@@ -73,14 +72,6 @@ logger = get_logger(__name__)
 # Process-local throttle: a buggy renderer can spam check_affect and burn LLM quota.
 CHECK_AFFECT_MIN_INTERVAL_SECONDS = 2.0
 _last_check_affect_ts: dict[int, float] = {}
-
-# Per-user throttle + inflight cancellation for `companion.interact`. The
-# desktop mirrors the inflight cancellation client-side; the server-side
-# map catches the case where two concurrent RPCs arrive on the same WS
-# connection before the client had a chance to abort the older request.
-INTERACT_MIN_INTERVAL_SECONDS = 1.5
-_last_interact_ts: dict[int, float] = {}
-_interact_inflight: dict[int, asyncio.Task] = {}
 
 # Per-user lock: a double-tap on regenerate must not fork two image-gen flows racing on the same DB rows.
 _avatar_regen_locks: dict[int, asyncio.Lock] = {}
@@ -460,62 +451,13 @@ def _register_session_handlers(
 
     dispatcher.register("companion.check_affect", companion_check_affect)
 
-    async def companion_interact(params: dict) -> dict:
-        # LLM-driven reaction to a poke/drag. The desktop owns trigger timing;
-        # the backend owns LLM reasoning (persona + memory). Per-user throttle
-        # keeps rapid pokes from burning LLM quota, and per-user inflight
-        # cancellation supersedes any still-running call with the latest one.
-        now = time.monotonic()
-        last = _last_interact_ts.get(user_id, 0.0)
-        if now - last < INTERACT_MIN_INTERVAL_SECONDS:
-            logger.debug(
-                "interact: throttled",
-                extra={"user_id": user_id, "since_sec": round(now - last, 3)},
-            )
-            return {"text": "", "emotion": None, "reason": "throttled"}
-        _last_interact_ts[user_id] = now
-
-        existing = _interact_inflight.get(user_id)
-        if existing is not None and not existing.done():
-            existing.cancel()
-
-        task = asyncio.create_task(check_interact(user_id, params, llm_config))
-        _interact_inflight[user_id] = task
-        # A CancelledError reaching ``await task`` has two sources we must
-        # distinguish: (a) the newer poke above called ``existing.cancel()``
-        # on the inner task — return a normal payload so the WS dispatcher's
-        # call resolves; (b) the WS dispatcher cancelled *this* handler
-        # coroutine itself (client disconnect / server shutdown) — re-raise
-        # so the dispatcher can wind the connection down cleanly. We tag the
-        # inner task with ``_interact_task_is_ours`` and only treat that
-        # cancel as benign. A ``current_task().cancelling()`` check captures
-        # case (b) — if THIS handler is being cancelled the flag flips.
-        try:
-            return await task
-        except asyncio.CancelledError:
-            # If the cancellation targets the handler (not the inner task),
-            # the inner task is our descendant; cancelling it also cancelled
-            # us. Re-raise so the dispatcher unwinds the WS.
-            current = asyncio.current_task()
-            if current is not None and current.cancelling() > 0:
-                raise
-            logger.debug("interact: superseded", extra={"user_id": user_id})
-            return {"text": "", "emotion": None, "reason": "cancelled"}
-        finally:
-            current = _interact_inflight.get(user_id)
-            if current is task:
-                del _interact_inflight[user_id]
-
-    dispatcher.register("companion.interact", companion_interact)
-
     async def companion_record_interaction_stats(params: dict) -> dict:
         # Per-event statistics (poke / drag / chat_turn) for daily Memory
-        # rollups. No LLM cost. ``INTERACT_MIN_INTERVAL_SECONDS`` is a SEPARATE
-        # throttle for the LLM-backed ``companion.interact`` RPC. The desktop
-        # coalesces stats RPCs itself: it sends every event until
-        # ``STATS_THRESHOLD`` is reached, then switches to one RPC per minute
-        # per kind (see activity.ts::STATS_POST_THRESHROTTLE_MS), so a heavy
-        # clicker past the threshold no longer drives a per-poke WS roundtrip.
+        # rollups. No LLM cost. The desktop coalesces stats RPCs itself: it
+        # sends every event until ``STATS_THRESHOLD`` is reached, then switches
+        # to one RPC per minute per kind (see
+        # activity.ts::STATS_POST_THRESHROTTLE_MS), so a heavy clicker past
+        # the threshold no longer drives a per-poke WS roundtrip.
         kind = params.get("kind")
         hour = params.get("hour")
         if not isinstance(hour, int) or not 0 <= hour <= 23:

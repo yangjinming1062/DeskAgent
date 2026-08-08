@@ -100,7 +100,6 @@ def _patch_db(monkeypatch, sqlite_engine, tmp_path):
         "services.media.video_jobs",
         "services.companion.affect_emit",
         "services.companion.affect_check",
-        "services.companion.interact",
         "services.companion.interaction_stats",
         "services.companion.memory_admin",
         "services.companion.model_service",

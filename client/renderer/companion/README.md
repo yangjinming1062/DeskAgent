@@ -99,9 +99,8 @@ GLB 加载成功后骨骼动画覆盖全部状态；加载失败时渲染程序�
 
 ## 7. 用户直接交互
 
-- **戳**（`onTap`）：[interaction.ts](interaction.ts) 零延迟本地池（`POKE_LIGHT`/`MEDIUM`/`HEAVY`，按 tone 选）+ **可选 LLM 增强**（`companion.interact` 同步 request-response）。LLM 响应不打断本地 TTS，仅作文本气泡叠加并缓存入 tone-keyed 队列（下次同 tone 单次戳优先用缓存）。后端 throttle 1.5s，Client debounce 2s，per-user inflight 取消。
-- **拖**（`onDragEnd`）：`interacting` 瞬态 + 拖放反应文案 + fire-and-forget `companion.record_interaction_stats {kind: 'drag'}`。
-- **悬停**：10s 节流，`interacting` 1.5s。
+- **戳 / 拖**（`onTap` / `onDragEnd`）：[interaction.ts](interaction.ts) 从 `client/renderer/companion/reactions/manifest.json` 的 52 条文案里按 (bucket, tone) 随机抽一条（[reactions/reaction-audio.ts](reactions/reaction-audio.ts)），调 `deskagent:reactionAudio:read` 读 `$DESKAGENT_HOME/audio/reactions/zh/<tag>.mp3`。本地缺失时回退 `deskagent:media:tts`（按 `tts.engine` 偏好，云端优先，本地兜底）+ 单条 fire-and-forget 再烘焙。Onboarding 完成后调 `backgroundBakeReactions` 把 52 条一次性烘焙到磁盘；用户切换音色时再触发一次。
+- **悬停**：10s 节流，`interacting` 1.5s（不放音）。
 - **右键**：托盘菜单入口（声音切换、伙伴设置、登出）。
 
 **每日互动统计**：poke / drag / chat_turn 三类事件经 `companion.record_interaction_stats`（无 LLM）上报，Backend 按 UTC 自然日聚合 + 双门限（每类 ≥ 10）upsert `Memory(context="interaction_stats:<date>")`，喂给后续 LLM "用户当日活跃度 + 高峰时段" 信号。

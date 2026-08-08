@@ -1,3 +1,5 @@
+import type { ReactionBucket, ReactionTone } from './reactions'
+
 export {}
 
 declare global {
@@ -92,6 +94,19 @@ declare global {
         }) => Promise<{ dataUrl: string; mimeType: string }>
         onboardingAudio: {
           read: (tag: string) => Promise<{ dataUrl: string; mimeType: string; tag: string; bytes: number }>
+        }
+        reactionAudio: {
+          read: (tag: string) => Promise<{ dataUrl: string; mimeType: string; tag: string; bytes: number }>
+          generate: (payload: {
+            voice: string
+            language: string
+            entries: Array<{
+              tag: string
+              text: string
+              tone: ReactionTone
+              bucket: ReactionBucket
+            }>
+          }) => Promise<{ results: Array<{ tag: string; ok: boolean; reason?: string; bytes?: number }> }>
         }
       }
       sprite: {

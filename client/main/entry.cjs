@@ -38,6 +38,7 @@ const { registerExternalIpc } = require('./ipc/external.cjs')
 const { registerSettingsIpc } = require('./ipc/settings.cjs')
 const { registerFilesIpc } = require('./ipc/files.cjs')
 const { registerOnboardingAudioIpc } = require('./ipc/onboarding-audio.cjs')
+const { registerReactionAudioIpc } = require('./ipc/reaction-audio.cjs')
 const { registerConnectionIpc } = require('./ipc/connection.cjs')
 const { registerMediaIpc, createEnginePrefsCache } = require('./ipc/media.cjs')
 const { registerAuthIpc } = require('./ipc/auth.cjs')
@@ -1667,6 +1668,13 @@ registerOnboardingAudioIpc({
   deskagentHome: DESKAGENT_HOME,
   mimeTypeForPath,
   hardening: { resolveReadableFileForIpc }
+})
+registerReactionAudioIpc({
+  ipcMain,
+  deskagentHome: DESKAGENT_HOME,
+  mimeTypeForPath,
+  hardening: { resolveReadableFileForIpc },
+  ensureBackend
 })
 registerConnectionIpc({
   ipcMain,

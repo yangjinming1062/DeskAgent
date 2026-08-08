@@ -19,6 +19,7 @@ import {
   setCompanionVoiceId,
   setResponseMode
 } from '@/companion/prefs'
+import { backgroundBakeReactions } from '@/companion/reactions/reaction-audio'
 import { $defaultScale, setDefaultScale } from '@/companion/spatial'
 import { speak } from '@/companion/tts'
 import { useRegeneratePortrait } from '@/companion/use-regenerate-portrait'
@@ -72,6 +73,21 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps): React.Reac
   const wardrobe = useStore($wardrobe)
   const [wardrobeBusy, setWardrobeBusy] = useState(false)
   const [wardrobeHint, setWardrobeHint] = useState<string | null>(null)
+
+  // Dedup on voice id — clicking the same voice twice (or `setCompanionVoiceId`
+  // racing with itself) does not re-fire the bake. Held in a ref so HMR
+  // doesn't keep state across module reloads.
+  const lastBakeVoiceRef = useRef('')
+
+  const triggerBake = (voice: string): void => {
+    if (!voice || voice === lastBakeVoiceRef.current) {
+      return
+    }
+
+    lastBakeVoiceRef.current = voice
+    void backgroundBakeReactions({ voice })
+  }
+
   const [modelBusy, setModelBusy] = useState(false)
   const [modelHint, setModelHint] = useState<string | null>(null)
 
@@ -400,7 +416,10 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps): React.Reac
                         </button>
                         <button
                           className={`transition ${currentVoice === v.id ? 'text-emerald-400' : 'text-white/60 hover:text-white'}`}
-                          onClick={() => setCompanionVoiceId(v.id)}
+                          onClick={() => {
+                            setCompanionVoiceId(v.id)
+                            triggerBake(v.id)
+                          }}
                           type="button"
                         >
                           {currentVoice === v.id ? '✓ 使用中' : '使用'}
@@ -455,7 +474,10 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps): React.Reac
                               </button>
                               <button
                                 className={`transition ${currentVoice === designPreview.voiceId ? 'text-emerald-400' : 'text-white/60 hover:text-white'}`}
-                                onClick={() => setCompanionVoiceId(designPreview.voiceId)}
+                                onClick={() => {
+                                  setCompanionVoiceId(designPreview.voiceId)
+                                  triggerBake(designPreview.voiceId)
+                                }}
                                 type="button"
                               >
                                 {currentVoice === designPreview.voiceId ? '✓ 使用中' : '使用'}
