@@ -1,10 +1,9 @@
 import { atom, computed } from 'nanostores'
 
 // Companion lifecycle drives what the sprite window renders. The renderer
-// transitions unauthed-egg → onboarding (during the wizard) → ready (after
-// onboarding completes). Hatching is an onboarding-internal Phase, not a
-// top-level lifecycle state, so it lives in the wizard's local Phase union.
-export type CompanionLifecycle = 'unauthed-egg' | 'onboarding' | 'ready'
+// transitions unauthed → onboarding (during the wizard) → ready (after
+// onboarding completes).
+export type CompanionLifecycle = 'unauthed' | 'onboarding' | 'ready'
 
 // Phase 2 state-machine (plan.md §2):
 // IDLE / LISTENING / THINKING / SPEAKING / WORKING / EMOTIONAL / SLEEPING / INTERACTING / DISCONNECTED
@@ -39,7 +38,7 @@ export type SpriteEmotion =
   | 'embarrassed'
   | 'apologetic'
 
-export const $companionLifecycle = atom<CompanionLifecycle>('unauthed-egg')
+export const $companionLifecycle = atom<CompanionLifecycle>('unauthed')
 export const $spriteState = atom<SpriteStateName>('idle')
 // True during a live voice-call; read by useGatewayBoot to defer the
 // disconnected→sleeping escalation so a gateway flap doesn't clobber an active call.

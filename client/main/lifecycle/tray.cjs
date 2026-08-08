@@ -14,7 +14,8 @@ let trayDeps = null
 // login/logout. rebuildTrayMenu() re-runs after auth changes so the label set
 // (Show/Sign in, Settings, Log out) stays correct.
 function isAuthenticated() {
-  return trayDeps.bridgeDeps.backendSession?.getSession?.()?.hasToken === true
+  const session = trayDeps?.bridgeDeps?.backendSession || trayDeps?.bridgeDeps?.ensureBackendSession?.()
+  return session?.getSession?.()?.hasToken === true
 }
 
 function sendToMainWindow(channel) {
@@ -28,7 +29,7 @@ function buildTrayMenu() {
   const authed = isAuthenticated()
   const template = [
     {
-      label: authed ? 'Show DeskAgent' : 'Sign in...',
+      label: authed ? '显示 DeskAgent' : '登录...',
       click: () => (authed ? showMainWindow() : trayDeps.bridgeDeps.showToolWindow())
     }
   ]
@@ -36,11 +37,11 @@ function buildTrayMenu() {
     template.push(
       { type: 'separator' },
       // The framed tool window self-selects Settings (authed) from $auth.
-      { label: 'Settings...', click: () => trayDeps.bridgeDeps.showToolWindow() },
-      { label: 'Log out', click: () => sendToMainWindow('deskagent:tray:logout') }
+      { label: '设置...', click: () => trayDeps.bridgeDeps.showToolWindow() },
+      { label: '退出登录', click: () => sendToMainWindow('deskagent:tray:logout') }
     )
   }
-  template.push({ type: 'separator' }, { label: 'Quit DeskAgent', click: () => quitAppFully() })
+  template.push({ type: 'separator' }, { label: '退出 DeskAgent', click: () => quitAppFully() })
   return trayDeps.Menu.buildFromTemplate(template)
 }
 
