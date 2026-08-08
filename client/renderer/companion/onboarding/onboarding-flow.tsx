@@ -634,7 +634,15 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
 
   const { regenerate: regeneratePortrait, busy: portraitBusy } = useRegeneratePortrait({
     refImage,
-    playAudioOnSuccess: true
+    playAudioOnSuccess: true,
+    // Mirror the global atom update into this component's paired local seedUrl state.
+    onRegenerated: ({ avatar, seed }) => {
+      if (avatar) {
+        setPortraitUrl(avatar)
+      }
+
+      setSeedUrl(seed)
+    }
   })
 
   const pickReferenceImage = async () => {
