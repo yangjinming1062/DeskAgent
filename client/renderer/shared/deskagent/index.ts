@@ -1,7 +1,6 @@
 export {
   getDeskAgentConfig,
   getDeskAgentConfigDefaults,
-  getDeskAgentConfigRecord,
   getModelConfig,
   saveDeskAgentConfig,
   saveModelConfig

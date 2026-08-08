@@ -8,16 +8,8 @@ export { HapticsProvider } from './components/haptics-provider'
 export { InlineNotice, NotificationStack } from './components/notifications'
 export { PageLoader } from './components/page-loader'
 export * from './components/ui'
-export {
-  getDeskAgentConfig,
-  getDeskAgentConfigDefaults,
-  getDeskAgentConfigRecord,
-  saveDeskAgentConfig
-} from './deskagent/config'
+export { getDeskAgentConfig, getDeskAgentConfigDefaults, saveDeskAgentConfig } from './deskagent/config'
 export { DeskAgentGateway } from './deskagent/gateway'
-export { useMediaQuery } from './hooks/use-media-query'
-
-export { useIsMobile } from './hooks/use-mobile'
 export { useRouteEnumParam } from './hooks/use-route-enum-param'
 
 export { PAGE_INSET_X } from './layout/page-inset'

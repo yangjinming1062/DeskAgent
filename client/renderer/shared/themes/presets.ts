@@ -19,8 +19,11 @@ const DESKAGENT_BLUE = '#0053FD'
 const PSYCHE_BLUE = '#1540B1'
 const PSYCHE_WARM = '#FFE6CB'
 
-const deskagentTint = (pct: number) => `color-mix(in srgb, ${DESKAGENT_BLUE} ${pct}%, #FFFFFF)`
-const deskagentTintTransparent = (pct: number) => `color-mix(in srgb, ${DESKAGENT_BLUE} ${pct}%, transparent)`
+// B5: collapse the two near-identical tints into one. The transparent
+// variant differs only in the second `color-mix` argument — pass it in
+// rather than carrying two copies of the same template.
+const deskagentTint = (pct: number, base: '#FFFFFF' | 'transparent' = '#FFFFFF') =>
+  `color-mix(in srgb, ${DESKAGENT_BLUE} ${pct}%, ${base})`
 
 /** DeskAgent — canonical desktop identity. The palette keeps the current
  * glass geometry neutral, then lets the old bb/gui blue and psyche cream
@@ -44,17 +47,17 @@ export const deskagentTheme: DesktopTheme = {
     secondaryForeground: '#242432',
     accent: deskagentTint(10),
     accentForeground: '#202030',
-    border: deskagentTintTransparent(22),
-    input: deskagentTintTransparent(30),
+    border: deskagentTint(22, 'transparent'),
+    input: deskagentTint(30, 'transparent'),
     ring: DESKAGENT_BLUE,
     midground: DESKAGENT_BLUE,
     composerRing: DESKAGENT_BLUE,
     destructive: '#C72E4D',
     destructiveForeground: '#FFFFFF',
     sidebarBackground: '#F3F7FF',
-    sidebarBorder: deskagentTintTransparent(18),
+    sidebarBorder: deskagentTint(18, 'transparent'),
     userBubble: deskagentTint(6),
-    userBubbleBorder: deskagentTintTransparent(24)
+    userBubbleBorder: deskagentTint(24, 'transparent')
   },
   darkColors: {
     background: '#0D2F86',
