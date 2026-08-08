@@ -428,14 +428,28 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
       dragRef.current = null
     }
 
+    const onLeave = (e: PointerEvent) => {
+      // H10: pointer leaving the window mid-drag (e.g. dragging across
+      // monitors) doesn't fire pointerup on document. Clear the drag
+      // state so subsequent moves don't keep translating the dialog
+      // with stale origin coordinates.
+      const drag = dragRef.current
+
+      if (drag && drag.pointerId === e.pointerId) {
+        dragRef.current = null
+      }
+    }
+
     document.addEventListener('pointermove', onMove)
     document.addEventListener('pointerup', onUp)
     document.addEventListener('pointercancel', onUp)
+    document.addEventListener('pointerleave', onLeave)
 
     return () => {
       document.removeEventListener('pointermove', onMove)
       document.removeEventListener('pointerup', onUp)
       document.removeEventListener('pointercancel', onUp)
+      document.removeEventListener('pointerleave', onLeave)
     }
   }, [])
 
@@ -464,25 +478,26 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
         }
 
         if (state?.answers) {
-          // Project all 13 backend keys into OnboardingAnswers uniformly; missing
-          // keys become undefined which is fine — they re-ask on resume. Legacy
-          // drafts may still contain a stray ``self_intro`` key which is silently
-          // ignored because it isn't an OnboardingAnswers field.
+          // H6: merge the server draft with any answers the user has typed
+          // in the current session before the resume fired. A flat
+          // `setAnswers(state.answers)` would clobber typed-but-not-yet-
+          // submitted local edits: every `commit()` fires an async
+          // `onboarding.submit` IPC, and the server response may land after
+          // the user has already typed a different value locally. Local
+          // non-empty edits win so the user's most recent intent survives.
+          // Legacy drafts may still contain a stray ``self_intro`` key which
+          // is silently ignored because it isn't an OnboardingAnswers field.
           const a = state.answers
-          setAnswers({
-            name: a.name,
-            species: a.species,
-            character_gender: a.character_gender,
-            appearance: a.appearance,
-            role: a.role,
-            personality: a.personality,
-            speaking_style: a.speaking_style,
-            user_call_name: a.user_call_name,
-            user_gender: a.user_gender,
-            user_age_bucket: a.user_age_bucket,
-            user_hobbies: a.user_hobbies,
-            user_freeform: a.user_freeform,
-            voice: a.voice
+          setAnswers(prev => {
+            const next: OnboardingAnswers = { ...prev }
+
+            for (const k of Object.keys(a) as (keyof OnboardingAnswers)[]) {
+              if (next[k] == null || next[k] === '') {
+                next[k] = a[k] as never
+              }
+            }
+
+            return next
           })
           const idx = QUESTIONS.findIndex(q => BACKEND_FIELD[q.key] === state.next_field)
 
@@ -649,6 +664,12 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
 
   const confirmPortrait = async () => {
     setRefImage(null)
+    // H1: stop any audio still playing from the previous phase. The
+    // `onboarding.portrait.ok` narration fired in `enterHatching`'s tail
+    // can outlast the portrait phase; without this stop, the voice-phase
+    // first-play sample renders on top of that narration. Also guards
+    // against any other in-flight `speak()` from earlier in the flow.
+    stopSpeaking()
     // Show the backend's ranked alternatives alongside the full ZH catalog; the matched voice is the default.
     const matched = await matchVoicePreference(requestGateway, answers.voice ?? '')
     setVoice(matched.voice)

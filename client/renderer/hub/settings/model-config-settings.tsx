@@ -222,8 +222,15 @@ export function ModelConfigSettings({
       cleared[c.key as CapabilityKey].cleared_api_key = originalForm[c.key as CapabilityKey].api_key_set
     }
 
+    // H5: persist immediately rather than staging the change locally and
+    // waiting for the user to click Save. The dialog copy
+    // ("确定要清除所有自定义模型配置吗？将回退到服务器默认。") implies an
+    // immediate action; without this, the cleared form is lost the moment
+    // the user navigates away. handleSave also reconnects the WS gateway
+    // since the LLM config is frozen at connect time.
     setForm(cleared)
     setProviders([])
+    void handleSave()
   }
 
   // --- provider slots ---

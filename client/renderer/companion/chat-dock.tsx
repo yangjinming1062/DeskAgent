@@ -75,6 +75,16 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
       const recorder = mediaRecorderRef.current
 
       if (recorder && recorder.state !== 'inactive') {
+        // Stop tracks before stopping the recorder — `onstop` only fires
+        // when `stopRecording()` was called, not when the dock unmounts
+        // mid-recording. Without this, the MediaStream keeps the mic LED on
+        // until the OS times out.
+        try {
+          recorder.stream.getTracks().forEach(t => t.stop())
+        } catch {
+          /* stream may already be closed */
+        }
+
         try {
           recorder.stop()
         } catch {

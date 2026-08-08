@@ -242,6 +242,11 @@ export function PersonaRetune({ initial, onClose, onSaved }: PersonaRetuneProps)
     setSaving(true)
     setHint(null)
 
+    // C2: separate the PUT (write) and hydrate (read) failure modes —
+    // same rationale as persona-editor. A transient GET failure after a
+    // successful PUT must NOT look like a save failure.
+    let putOk = false
+
     try {
       await window.deskagent.api({
         body: {
@@ -265,19 +270,40 @@ export function PersonaRetune({ initial, onClose, onSaved }: PersonaRetuneProps)
         method: 'PUT',
         path: '/api/companion/persona'
       })
-      await hydratePersona()
-
-      if (!mountedRef.current) {
-        return
+      putOk = true
+    } catch {
+      if (mountedRef.current) {
+        setHint('保存失败了，稍后再试')
+        setSaving(false)
       }
 
-      onSaved()
-      setPhase('confirm')
-    } catch {
-      setHint('保存失败了，稍后再试')
-    } finally {
-      setSaving(false)
+      return
     }
+
+    if (!putOk) {
+      return
+    }
+
+    const result = await hydratePersona({ silent: true })
+
+    if (!mountedRef.current) {
+      return
+    }
+
+    if (!result.ok) {
+      // Backend has the persona; the local copy didn't refresh. Show a
+      // softer hint and DO NOT advance to the confirm phase — the
+      // regenerate call downstream needs fresh $persona state. The user
+      // can retry by re-opening the wizard or wait for the next hydrate.
+      setHint('已保存，但本地刷新失败，稍后再试')
+      setSaving(false)
+
+      return
+    }
+
+    onSaved()
+    setPhase('confirm')
+    setSaving(false)
   }
 
   if (phase === 'confirm') {
