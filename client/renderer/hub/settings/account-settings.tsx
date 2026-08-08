@@ -3,26 +3,28 @@ import { useEffect, useState } from 'react'
 
 import {
   Button,
-  ConfirmDialog,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-  Switch
+  ConfirmDialog
 } from '@/shared/components/ui'
 import { getDeskAgentConfig, saveDeskAgentConfig } from '@/shared/deskagent'
 import { triggerHaptic } from '@/shared/lib/haptics'
-import { Archive, KeyRound, Loader2, LogOut, SlidersHorizontal } from '@/shared/lib/icons'
+import { KeyRound, Loader2, LogOut } from '@/shared/lib/icons'
 import { buildSecretFieldBody } from '@/shared/lib/secret-field-body'
 import { $auth, logout } from '@/shared/store/auth'
 import { notify, notifyError } from '@/shared/store/notifications'
 import { strings } from '@/shared/strings'
 import type { DeskAgentConfigResponse } from '@/shared/types/deskagent'
 
+import {
+  AgentDefaultsSection,
+  type AgentFormState
+} from './account/agent-defaults-section'
 import { ChangePasswordForm } from './account/change-password-form'
+import {
+  type ChatFormState,
+  ContextCompressionSection
+} from './account/context-compression-section'
 import { type WebFormState, WebSearchSection } from './account/web-search-section'
-import { ListRow, LoadingState, SectionHeading, SettingsContent, SettingsSubsection } from './primitives'
+import { ListRow, LoadingState, SectionHeading, SettingsContent } from './primitives'
 
 const WEB_BACKEND_OPTIONS = ['ddgs', 'brave-free', 'tavily'] as const
 const REASONING_OPTIONS = ['minimal', 'low', 'medium', 'high', 'max'] as const
@@ -30,17 +32,6 @@ const REASONING_OPTIONS = ['minimal', 'low', 'medium', 'high', 'max'] as const
 // the API's allowed set — anything outside is silently dropped by the
 // backend's whitelist before reaching the model.
 const SERVICE_TIER_OPTIONS = ['auto', 'default', 'flex'] as const
-
-interface AgentFormState {
-  reasoning_effort: string
-  service_tier: string
-  enable_background_review: boolean
-}
-
-interface ChatFormState {
-  enable_context_compression: boolean
-  context_compression_threshold: number
-}
 
 const EMPTY_WEB: WebFormState = {
   backend: 'ddgs',
@@ -365,128 +356,4 @@ export function AccountSettings({ onConfigSaved }: { onConfigSaved?: () => void 
 
 type AgentDefaultsCopy = (typeof strings)['settings']['account']['agentDefaults']
 type ContextCompressionCopy = (typeof strings)['settings']['account']['contextCompression']
-
-function AgentDefaultsSection({
-  disabled,
-  state,
-  t,
-  update
-}: {
-  disabled: boolean
-  state: AgentFormState
-  t: AgentDefaultsCopy
-  update: (patch: Partial<AgentFormState>) => void
-}): React.JSX.Element {
-  return (
-    <SettingsSubsection icon={SlidersHorizontal} intro={t.intro} title={t.heading}>
-      <ListRow
-        action={
-          <Select
-            disabled={disabled}
-            onValueChange={value => update({ reasoning_effort: value })}
-            value={state.reasoning_effort}
-          >
-            <SelectTrigger className="w-36">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {REASONING_OPTIONS.map(opt => (
-                <SelectItem key={opt} value={opt}>
-                  {t.reasoningOptions[opt]}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        }
-        description={t.reasoningEffortDesc}
-        title={t.reasoningEffort}
-      />
-
-      <ListRow
-        action={
-          <Select
-            disabled={disabled}
-            onValueChange={value => update({ service_tier: value })}
-            value={state.service_tier}
-          >
-            <SelectTrigger className="w-36">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {SERVICE_TIER_OPTIONS.map(opt => (
-                <SelectItem key={opt} value={opt}>
-                  {t.serviceTierOptions[opt]}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        }
-        description={t.serviceTierDesc}
-        title={t.serviceTier}
-      />
-
-      <ListRow
-        action={
-          <Switch
-            checked={state.enable_background_review}
-            disabled={disabled}
-            onCheckedChange={value => update({ enable_background_review: value })}
-          />
-        }
-        description={t.backgroundReviewDesc}
-        title={t.backgroundReview}
-      />
-    </SettingsSubsection>
-  )
-}
-
-function ContextCompressionSection({
-  disabled,
-  state,
-  t,
-  update
-}: {
-  disabled: boolean
-  state: ChatFormState
-  t: ContextCompressionCopy
-  update: (patch: Partial<ChatFormState>) => void
-}): React.JSX.Element {
-  return (
-    <SettingsSubsection icon={Archive} intro={t.intro} title={t.heading}>
-      <ListRow
-        action={
-          <Switch
-            checked={state.enable_context_compression}
-            disabled={disabled}
-            onCheckedChange={value => update({ enable_context_compression: value })}
-          />
-        }
-        description={t.enableCompressionDesc}
-        title={t.enableCompression}
-      />
-      <ListRow
-        action={
-          <Select
-            disabled={disabled}
-            onValueChange={value => update({ context_compression_threshold: Number(value) })}
-            value={String(state.context_compression_threshold)}
-          >
-            <SelectTrigger className="w-36">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {THRESHOLD_OPTIONS.map(opt => (
-                <SelectItem key={opt} value={opt}>
-                  {t.thresholdOptions[opt]}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        }
-        description={t.thresholdDesc}
-        title={t.threshold}
-      />
-    </SettingsSubsection>
-  )
-}
 
