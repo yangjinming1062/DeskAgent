@@ -17,7 +17,17 @@ export {
 } from './companion-store'
 
 export { handleCompanionEvent } from './events'
+export {
+  $portraitUrl,
+  $regenFeedback,
+  applyPortrait,
+  clearRegenFeedback,
+  hydratePortrait,
+  setPortraitUrl,
+  setRegenFeedback
+} from './portrait-store'
 export { CompanionRoot } from './root'
+
 export {
   $defaultScale,
   $homePosition,
@@ -31,3 +41,9 @@ export {
   setLocale,
   type SpatialLocale
 } from './spatial'
+
+export {
+  useRegeneratePortrait,
+  type UseRegeneratePortraitOptions,
+  type UseRegeneratePortraitResult
+} from './use-regenerate-portrait'
