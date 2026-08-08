@@ -12,12 +12,6 @@ export function getDeskAgentConfig(): Promise<DeskAgentConfigResponse> {
   })
 }
 
-export function getDeskAgentConfigRecord(): Promise<DeskAgentConfigRecord> {
-  return window.deskagent.api<DeskAgentConfigRecord>({
-    path: '/api/config'
-  })
-}
-
 export function getDeskAgentConfigDefaults(): Promise<DeskAgentConfigRecord> {
   return window.deskagent.api<DeskAgentConfigRecord>({
     path: '/api/config/defaults'

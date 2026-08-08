@@ -1,11 +1,9 @@
-import { type ReactNode, useEffect } from 'react'
+import { type ReactNode } from 'react'
 
 import { DEFAULT_TYPOGRAPHY, deskagentTheme } from './presets'
 import type { DesktopTheme, DesktopThemeColors } from './types'
 
 export type ThemeMode = 'light' | 'dark' | 'system'
-
-const INJECTED_FONT_URLS = new Set<string>()
 
 // ─── Color math (for synthesised light variants) ────────────────────────
 
@@ -130,7 +128,20 @@ function applyTheme(theme: DesktopTheme, mode: 'light' | 'dark') {
 
   const root = document.documentElement
   const c = theme.colors
-  const typo = { ...DEFAULT_TYPOGRAPHY, ...deskagentTheme.typography, ...theme.typography }
+
+  // B4: deskagentTheme.typography covers both fontSans and fontMono, so the
+  // DEFAULT_TYPOGRAPHY fallback is dead in practice for our shipped themes.
+  // The remaining `theme.typography` spread still lets consumers override
+  // per-theme. We coalesce against `DEFAULT_TYPOGRAPHY` because
+  // `DesktopTheme.typography` is `Partial<...>` so even deskagentTheme's
+  // values are typed `string | undefined`. The default matches what we
+  // used to spread in.
+  const typo = {
+    fontSans: theme.typography?.fontSans ?? deskagentTheme.typography?.fontSans ?? DEFAULT_TYPOGRAPHY.fontSans,
+    fontMono: theme.typography?.fontMono ?? deskagentTheme.typography?.fontMono ?? DEFAULT_TYPOGRAPHY.fontMono,
+    fontUrl: theme.typography?.fontUrl ?? deskagentTheme.typography?.fontUrl
+  }
+
   const rendered = renderedModeFor(c, mode)
   const isDark = rendered === 'dark'
   const midground = c.midground ?? c.ring
@@ -183,23 +194,28 @@ function applyTheme(theme: DesktopTheme, mode: 'light' | 'dark') {
     foreground: c.foreground
   })
 
-  if (typo.fontUrl && !INJECTED_FONT_URLS.has(typo.fontUrl)) {
+  // B6: inject the theme stylesheet here. There's exactly one font URL
+  // (Courier Prime from deskagentTheme.typography.fontUrl), and
+  // applyTheme is now only called from the module-load boot block below.
+  // The previous Set + dataset guard was dead overhead for a single URL.
+  if (typo.fontUrl && !document.head.querySelector(`link[data-deskagent-theme-font]`)) {
     const link = document.createElement('link')
+
     link.rel = 'stylesheet'
     link.href = typo.fontUrl
     link.dataset.deskagentThemeFont = 'true'
     document.head.appendChild(link)
-    INJECTED_FONT_URLS.add(typo.fontUrl)
   }
 }
 
-// Boot-time paint to avoid a flash before <ThemeProvider> mounts.
+// Boot-time paint to avoid a flash before <ThemeProvider> mounts. The
+// module-load call alone covers initial paint; B3 dropped the redundant
+// useEffect in <ThemeProvider> because it duplicated this work and would
+// race against the boot block on HMR remount.
 if (typeof window !== 'undefined') {
   applyTheme(deriveTheme('light'), 'light')
 }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  useEffect(() => applyTheme(deriveTheme('light'), 'light'), [])
-
   return <>{children}</>
 }

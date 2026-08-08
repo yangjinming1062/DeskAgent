@@ -3,7 +3,7 @@ import { useRef, useState } from 'react'
 
 import { ConfirmDialog } from '@/shared/components/ui/confirm-dialog'
 import { Tip } from '@/shared/components/ui/tooltip'
-import { getDeskAgentConfigDefaults, getDeskAgentConfigRecord, saveDeskAgentConfig } from '@/shared/deskagent'
+import { getDeskAgentConfig, getDeskAgentConfigDefaults, saveDeskAgentConfig } from '@/shared/deskagent'
 import { useRouteEnumParam } from '@/shared/hooks/use-route-enum-param'
 import { triggerHaptic } from '@/shared/lib/haptics'
 import { AudioLines, Brain, Info, KeyRound, Settings, Sparkles, Wrench } from '@/shared/lib/icons'
@@ -46,7 +46,11 @@ export function SettingsView({ gateway, onClose, onConfigSaved }: SettingsPagePr
 
   const exportConfig = async () => {
     try {
-      const cfg = await getDeskAgentConfigRecord()
+      // Reuse the typed getter instead of the loose `Record<string, unknown>`
+      // variant — both come from the same `/api/config` endpoint, but the
+      // structured shape gives us better safety on round-trip without
+      // changing the JSON.stringify behaviour (B1).
+      const cfg = await getDeskAgentConfig()
       const blob = new Blob([JSON.stringify(cfg, null, 2)], { type: 'application/json' })
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
