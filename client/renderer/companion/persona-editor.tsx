@@ -1,6 +1,7 @@
 import { useStore } from '@nanostores/react'
 import { useState } from 'react'
 
+import { PERSONA_INPUT_CLASS, PERSONA_PRESET_CLASS } from '@/companion/input-class'
 import { assemblePersona, MAX_APPEARANCE } from '@/companion/persona'
 import {
   APPEARANCE_PRESETS,
@@ -13,11 +14,8 @@ import { $persona, hydratePersona } from '@/companion/persona-store'
 import { setRegenFeedback } from '@/companion/portrait-store'
 import { useRegeneratePortrait } from '@/companion/use-regenerate-portrait'
 
-const inputClass =
-  'w-full rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-xs text-white placeholder:text-white/30 outline-none focus:border-white/40'
-
-const presetClass =
-  'rounded-full border border-white/15 bg-white/5 px-2.5 py-1 text-[11px] text-white/70 transition hover:bg-white/15'
+const inputClass = PERSONA_INPUT_CLASS
+const presetClass = PERSONA_PRESET_CLASS
 
 // Runtime persona editor: revisits the onboarding fields prefilled with the
 // current persona, PUTs the assembled payload (now including species /

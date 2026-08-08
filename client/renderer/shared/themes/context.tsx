@@ -1,5 +1,3 @@
-import { type ReactNode } from 'react'
-
 import { DEFAULT_TYPOGRAPHY, deskagentTheme } from './presets'
 import type { DesktopTheme, DesktopThemeColors } from './types'
 
@@ -208,11 +206,9 @@ function applyTheme(theme: DesktopTheme, mode: 'light' | 'dark'): void {
   }
 }
 
-// Boot-time paint to avoid a flash before <ThemeProvider> mounts.
+// Boot-time paint: imported once during initial render, applied synchronously
+// so the page never flashes the default theme.
 if (typeof window !== 'undefined') {
   applyTheme(deriveTheme('light'), 'light')
 }
 
-export function ThemeProvider({ children }: { children: ReactNode }): React.JSX.Element {
-  return <>{children}</>
-}

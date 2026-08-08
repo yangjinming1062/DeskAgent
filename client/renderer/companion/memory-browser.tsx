@@ -3,6 +3,7 @@ import type React from 'react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { useGatewayRequest } from '@/companion/boot/use-gateway-request'
+import { PERSONA_INPUT_CLASS } from '@/companion/input-class'
 import { useInteractiveRegion } from '@/companion/interactive-regions'
 import { notifyError } from '@/shared/store/notifications'
 
@@ -32,8 +33,7 @@ interface ListResponse {
   counts: MemoryCounts
 }
 
-const inputClass =
-  'w-full rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-xs text-white placeholder:text-white/30 outline-none focus:border-white/40'
+const inputClass = PERSONA_INPUT_CLASS
 
 const chipClass =
   'rounded-full border border-white/15 bg-white/5 px-2.5 py-0.5 text-[11px] text-white/70 transition hover:bg-white/15'

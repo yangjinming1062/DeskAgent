@@ -1,6 +1,7 @@
 import type React from 'react'
 import { useEffect, useRef, useState } from 'react'
 
+import { PERSONA_INPUT_CLASS, PERSONA_PRESET_CLASS } from '@/companion/input-class'
 import { assemblePersona, MAX_APPEARANCE } from '@/companion/persona'
 import {
   APPEARANCE_PRESETS,
@@ -39,11 +40,8 @@ interface PersonaRetuneProps {
   onSaved: () => void
 }
 
-const inputClass =
-  'w-full rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-xs text-white placeholder:text-white/30 outline-none focus:border-white/40'
-
-const presetClass =
-  'rounded-full border border-white/15 bg-white/5 px-2.5 py-1 text-[11px] text-white/70 transition hover:bg-white/15'
+const inputClass = PERSONA_INPUT_CLASS
+const presetClass = PERSONA_PRESET_CLASS
 
 // Field schema: each step owns a list of fields. ``presets`` is typed as
 // the union of all known preset tokens plus '' (the "auto-derive" marker
