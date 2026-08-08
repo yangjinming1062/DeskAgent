@@ -4,6 +4,7 @@ from common import get_router
 from components import get_db
 from components import safe_json_loads
 from components import SETTINGS
+from fastapi import Body
 from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Request
@@ -145,7 +146,7 @@ def get_avatar(
 @limiter.limit(f"{SETTINGS.companion_avatar_generate_rate_limit_per_minute}/minute")
 async def post_avatar(
     request: Request,  # noqa: ARG001 — required by @limiter.limit
-    body: AvatarGenerateRequest,
+    body: AvatarGenerateRequest = Body(default_factory=AvatarGenerateRequest),
     auth: tuple[User, LoginRecord] = Depends(get_current_session),
     db: Session = Depends(get_db),
 ) -> AvatarAssetResponse:
@@ -251,7 +252,7 @@ def get_model(
 @limiter.limit(f"{SETTINGS.companion_model_generate_rate_limit_per_minute}/minute")
 async def post_model(
     request: Request,  # noqa: ARG001 — required by @limiter.limit
-    body: ModelGenerateRequest,
+    body: ModelGenerateRequest = Body(default_factory=ModelGenerateRequest),
     auth: tuple[User, LoginRecord] = Depends(get_current_session),
     db: Session = Depends(get_db),
 ) -> CompanionModelResponse:

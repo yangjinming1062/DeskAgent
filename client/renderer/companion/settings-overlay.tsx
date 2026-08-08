@@ -262,7 +262,8 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps): React.Reac
     try {
       await window.deskagent.api<{ id?: number; asset_url?: string; status?: string }>({
         path: '/api/companion/model',
-        method: 'POST'
+        method: 'POST',
+        body: {}
       })
       setModelHint('已生成，加载中…')
     } catch (err) {

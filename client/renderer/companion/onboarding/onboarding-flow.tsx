@@ -1,5 +1,5 @@
 import { useStore } from '@nanostores/react'
-import { type PointerEvent as ReactPointerEvent, useEffect, useRef, useState } from 'react'
+import { type PointerEvent as ReactPointerEvent, useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 
 import { pickAvatarImage, type PickedImage } from '@/companion/avatar-image'
@@ -1197,21 +1197,31 @@ function PortraitPanel({ url, name, hint }: { url: string | null; name: string; 
 function PortraitLightbox({ url, name, onClose }: { url: string; name: string; onClose: () => void }) {
   const overlayRef = useRef<HTMLDivElement>(null)
 
+  // Stable ref so the keydown listener attaches once, not on every parent
+  // re-render that creates a fresh onClose closure.
+  const onCloseRef = useRef(onClose)
+  onCloseRef.current = onClose
+
   // Register the full viewport as an interactive region while the lightbox is open
   // so clicks on the image and its backdrop don't pass through to the windows below.
-  useInteractiveRegion('portrait-lightbox', overlayRef, () => new DOMRect(0, 0, window.innerWidth, window.innerHeight))
+  // Stabilized so useInteractiveRegion's effect doesn't re-subscribe on every render.
+  const getLightboxRect = useCallback(
+    () => new DOMRect(0, 0, window.innerWidth, window.innerHeight),
+    []
+  )
+  useInteractiveRegion('portrait-lightbox', overlayRef, getLightboxRect)
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        onClose()
+        onCloseRef.current()
       }
     }
 
     window.addEventListener('keydown', onKey)
 
     return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
+  }, [])
 
   if (typeof document === 'undefined') {
     return null

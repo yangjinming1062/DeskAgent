@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import contextlib
 import json
@@ -12,9 +13,10 @@ from components import is_safe_outbound
 from components import SETTINGS
 from modules.companion import AvatarAsset
 from modules.companion import Persona
+from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
-from ..llm import enhance_portrait_prompt
+from ..llm import enhance_character_image_prompts
 from ..llm import resolve_provider_config
 from ..tools.builtin import first_image_url
 from ..tools.builtin import image_generation_tool
@@ -116,23 +118,16 @@ async def _download_to_bytes(url: str) -> tuple[bytes, str] | None:
         return None
 
 
-async def _generate_and_persist(
-    db: Session,
+async def _generate_one_portrait(
+    prompt: str,
     user_id: int,
     *,
-    prompt: str,
-    style: str,
-    feedback: str | None = None,
     reference_image: str | None = None,
-) -> AvatarAsset:
-    """Shared image-gen + persistence core. Calls the provider, downloads the
-    result into the persistent ``companion-avatars/`` dir (temp-media URLs are
-    24h-TTL, so we mirror locally to survive cross-device login), deactivates
-    the previous active asset, inserts + commits the new row.
+) -> tuple[str, str, str, str]:
+    """Generate, download, and persist one portrait image.
 
-    ``image_generation_tool`` catches provider errors internally and returns a
-    JSON ``{success: false}`` string — it never raises. So this function
-    surfaces failures via ``first_image_url → None → AvatarGenerationError``.
+    Returns ``(bare_storage_path, file_id, ext, source_url)``. Raises
+    ``AvatarGenerationError`` on provider failure or unreachable download.
     """
     result_json = await image_generation_tool(
         prompt=prompt,
@@ -153,14 +148,57 @@ async def _generate_and_persist(
         raise AvatarGenerationError("image-gen result is unreachable")
     data, content_type = downloaded
     asset_url, file_id, final_ext = await _persist_portrait_bytes(data, content_type)
+    return asset_url, file_id, final_ext, source_url
 
-    # Best-effort delete the previous active portrait's file on disk. We rely
-    # on the row's ``asset_url`` to compute the path; rows from before the
-    # persistent-dir migration pointed at temp-media URLs that have long since
-    # been GC'd, in which case the delete is a no-op.
+
+async def _generate_and_persist(
+    db: Session,
+    user_id: int,
+    *,
+    avatar_prompt: str,
+    seed_prompt: str | None = None,
+    style: str,
+    feedback: str | None = None,
+    reference_image: str | None = None,
+) -> AvatarAsset:
+    """Shared image-gen + persistence core. Generates the avatar (bust) and
+    optional seed (full body) in parallel, downloads both into the persistent
+    ``companion-avatars/`` dir, deactivates the previous active asset, inserts
+    + commits the new row.
+
+    ``image_generation_tool`` catches provider errors internally and returns a
+    JSON ``{success: false}`` string — it never raises. So this function
+    surfaces failures via ``first_image_url -> None -> AvatarGenerationError``.
+    """
+    # Run avatar + seed in parallel. Avatar failure is fatal; seed failure
+    # is non-fatal so the user always gets their new portrait even if the
+    # full-body reference image didn't render.
+    tasks = [_generate_one_portrait(avatar_prompt, user_id, reference_image=reference_image)]
+    if seed_prompt:
+        tasks.append(_generate_one_portrait(seed_prompt, user_id, reference_image=reference_image))
+
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    # Avatar failure is always fatal.
+    if isinstance(results[0], Exception):
+        raise results[0]
+    asset_url, file_id, final_ext, avatar_source_url = results[0]
+
+    seed_url: str | None = None
+    if seed_prompt:
+        if isinstance(results[1], Exception):
+            logger.warning("Seed image generation failed; proceeding without", extra={"user_id": user_id}, exc_info=results[1])
+        else:
+            seed_url = results[1][0]
+
+    # Best-effort delete the previous active portrait files on disk. Rows from
+    # before the persistent-dir migration pointed at temp-media URLs that have
+    # long since been GC'd, in which case the delete is a no-op.
     previous = db.query(AvatarAsset).filter(AvatarAsset.user_id == user_id, AvatarAsset.active.is_(True)).one_or_none()
     db.query(AvatarAsset).filter(AvatarAsset.user_id == user_id, AvatarAsset.active.is_(True)).update({"active": False})
-    prompt_payload: dict = {"prompt": prompt, "style": style, "source_url": source_url}
+    prompt_payload: dict = {"prompt": avatar_prompt, "style": style, "source_url": avatar_source_url}
+    if seed_prompt:
+        prompt_payload["seed_prompt"] = seed_prompt
     if feedback is not None:
         prompt_payload["feedback"] = feedback
     if reference_image is not None:
@@ -170,6 +208,7 @@ async def _generate_and_persist(
         user_id=user_id,
         prompt_json=json.dumps(prompt_payload, ensure_ascii=False),
         asset_url=asset_url,
+        seed_url=seed_url,
         style=style,
         seed=secrets.randbelow(2**31),
         active=True,
@@ -186,6 +225,7 @@ async def _generate_and_persist(
 
     if previous is not None:
         _delete_portrait_file(previous.asset_url)
+        _delete_portrait_file(previous.seed_url)
     return asset
 
 
@@ -221,20 +261,33 @@ async def generate_avatar(db: Session, *, user_id: int, prompt_override: str | N
     persona = get_or_create_persona(db, user_id)
     if not persona.is_complete:
         raise AvatarGenerationError("persona is incomplete; finish onboarding first")
-    if (prompt_override or "").strip():
-        prompt = prompt_override.strip()
+    override = (prompt_override or "").strip()
+    if override:
+        # prompt_override bypasses the LLM enhancer; seed is skipped (legacy path).
+        avatar_prompt = override
+        seed_prompt = None
     else:
         # Pre-resolve so the long chat round-trip doesn't re-query the DB
         # while the caller's session (advisory lock + pool slot) is still held.
         provider_config = resolve_provider_config(db, user_id, "llm")
-        prompt = await enhance_portrait_prompt(
-            None,
-            user_id,
-            persona,
-            style=_DEFAULT_STYLE,
-            provider_config=provider_config,
-        )
-    asset = await _generate_and_persist(db, user_id, prompt=prompt, style=_DEFAULT_STYLE)
+        try:
+            prompts = await enhance_character_image_prompts(
+                None,
+                user_id,
+                persona,
+                provider_config=provider_config,
+            )
+        except (ValidationError, RuntimeError) as exc:
+            raise AvatarGenerationError(f"prompt enhancement failed: {exc}") from exc
+        avatar_prompt = prompts["avatar"]
+        seed_prompt = prompts["seed"]
+    asset = await _generate_and_persist(
+        db,
+        user_id,
+        avatar_prompt=avatar_prompt,
+        seed_prompt=seed_prompt,
+        style=_DEFAULT_STYLE,
+    )
     return asset
 
 
@@ -271,15 +324,24 @@ async def regenerate_avatar(db: Session, user_id: int, persona: Persona, feedbac
     # Pre-resolve so the long chat round-trip doesn't re-query the DB
     # while the caller's session (advisory lock + pool slot) is still held.
     provider_config = resolve_provider_config(db, user_id, "llm")
-    prompt = await enhance_portrait_prompt(
-        None,
+    try:
+        prompts = await enhance_character_image_prompts(
+            None,
+            user_id,
+            persona,
+            feedback=feedback,
+            provider_config=provider_config,
+        )
+    except (ValidationError, RuntimeError) as exc:
+        raise AvatarGenerationError(f"prompt enhancement failed: {exc}") from exc
+    asset = await _generate_and_persist(
+        db,
         user_id,
-        persona,
+        avatar_prompt=prompts["avatar"],
+        seed_prompt=prompts["seed"],
         style=style,
         feedback=feedback,
-        provider_config=provider_config,
     )
-    asset = await _generate_and_persist(db, user_id, prompt=prompt, style=style, feedback=feedback)
     return asset
 
 
@@ -311,18 +373,21 @@ async def regenerate_avatar_from_image(
     # Pre-resolve so the long chat round-trip doesn't re-query the DB
     # while the caller's session (advisory lock + pool slot) is still held.
     provider_config = resolve_provider_config(db, user_id, "llm")
-    prompt = await enhance_portrait_prompt(
-        None,
-        user_id,
-        persona,
-        style=style,
-        feedback=description,
-        provider_config=provider_config,
-    )
+    try:
+        prompts = await enhance_character_image_prompts(
+            None,
+            user_id,
+            persona,
+            feedback=description,
+            provider_config=provider_config,
+        )
+    except (ValidationError, RuntimeError) as exc:
+        raise AvatarGenerationError(f"prompt enhancement failed: {exc}") from exc
     asset = await _generate_and_persist(
         db,
         user_id,
-        prompt=prompt,
+        avatar_prompt=prompts["avatar"],
+        seed_prompt=prompts["seed"],
         style=style,
         feedback=description,
         reference_image=_reference_data_uri(data, content_type),

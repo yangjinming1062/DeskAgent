@@ -99,6 +99,7 @@ def _patch_db(monkeypatch, sqlite_engine):
         "services.companion.interact",
         "services.companion.interaction_stats",
         "services.companion.memory_admin",
+        "services.companion.model_service",
         "api.v1.chat",
         "api.v1.llm",
         "api.v1.media",

@@ -11,17 +11,38 @@ from .llm_client import provider_for_service
 from .llm_client import provider_from_config
 from .providers.base import ProviderConfig
 
-# Chinese-first (persona is Chinese, minimax handles it natively); the 纯白平面背景
-# clause is a hard contract with the desktop chroma-key renderer.
+# Chinese-first (persona is Chinese, minimax handles it natively); the
+# 纯白平面背景 clause is a hard contract with the desktop chroma-key renderer.
 _PORTRAIT_SYSTEM_PROMPT = (
-    "你是一个专业的图像生成提示词工程师。你的任务是把用户提供的角色描述改写为一段详尽的中文图像生成提示词，"
-    "用于驱动下游文生图模型。\n"
-    "硬性要求：\n"
-    "1. 必须以「{style} portrait of ...」开头（{style} 是英文单词，例如 portrait / bust / full body）；\n"
-    "2. 必须包含「纯白平面背景，无场景、无渐变、无阴影」这一子句（桌面端 chroma-key 渲染依赖此约束）；\n"
-    "3. 详细描述：脸型、眼睛颜色与神态、发型与发色、肤色、体型、服装款式与配色、配饰、姿态、表情、光线、画风；\n"
-    "4. 全文使用中文，只保留专业术语与英文画风关键词（如 digital illustration、soft lighting）；\n"
-    "5. 不要解释、不要寒暄，直接输出最终的中文 prompt 文本。"
+    "你是一个专业的角色形象设计提示词工程师。你需要为同一个角色生成两张配套的图像提示词：\n"
+    "一张头像图（avatar）和一张全身种子图（seed）。两张图描述的角色外貌必须完全一致。\n"
+    "\n"
+    '严格输出 JSON：{"avatar": "...", "seed": "..."}，不要任何额外文字或 Markdown 代码块。\n'
+    "\n"
+    "## 头像图（avatar）\n"
+    "1. 胸部以上的半身特写（bust portrait），以「bust portrait of ...」开头；\n"
+    "2. 重点呈现面部细节：脸型轮廓、眼睛形状与瞳色、鼻子、嘴唇、表情、发型与发色；\n"
+    "3. 包含上身着装与配色、配饰（如可见）；\n"
+    "4. 必须包含「纯白平面背景，无场景、无渐变、无阴影」（桌面端 chroma-key 渲染依赖此约束）；\n"
+    "\n"
+    "## 种子图（seed）\n"
+    "5. 全身正面立绘（full body front view），以「full body portrait of ...」开头；\n"
+    "6. 完整展示角色全身：从头到脚，包括服装、鞋靴、全部配饰；\n"
+    "7. 用于下游 3D 纹理生成的参考图，身体各部位的细节与比例至关重要；\n"
+    "8. 必须包含「纯白平面背景，无场景、无渐变、无阴影」；\n"
+    "\n"
+    "## 共同约束（两张图都必须严格遵守）\n"
+    "视角：正面朝向观众（front-facing），禁止侧面、斜侧面（3/4 view）、背面、俯视或仰视角度；\n"
+    "姿态：中性自然站姿，身体直立，双肩平齐；双臂自然下垂，禁止交叉抱胸或复杂手势；\n"
+    "解剖学精度：每只手五根手指完整清晰可辨，无多余或缺失；面部五官左右对称；四肢比例正确；\n"
+    "一致性：两张图必须描述同一个角色——同一张脸、同一套服装、同一发色、同一配饰；\n"
+    "光线：柔和均匀的正面打光（soft even front lighting），无强烈阴影；\n"
+    "画风：digital illustration, clean linework, high detail, professional character design；\n"
+    "语言：全文使用中文，只保留专业术语与英文画风关键词；\n"
+    "细节覆盖：每张图都必须详细描述肤色、体型、服装面料质感、层次搭配等所有可见特征；\n"
+    "用户提供的反馈（如有）必须显式体现在两张图的描述中。\n"
+    "\n"
+    "不要解释、不要寒暄，直接输出 JSON。"
 )
 
 # Tiled across UV islands on a 3D humanoid — a directional light baked into
@@ -72,10 +93,33 @@ class _PbrChannelsResponse(BaseModel):
     metalness: str
 
 
+class _CharacterImagePromptsResponse(BaseModel):
+    """Strict 2-field contract for paired avatar + seed prompts."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    avatar: str
+    seed: str
+
+
 def _persona_payload(persona: Persona) -> dict:
     """Falls back to ``{}`` so a half-finished persona still yields a prompt."""
     raw = getattr(persona, "definition_json", None) or "{}"
     return safe_json_loads(raw, default={})
+
+
+def _strip_markdown_fence(raw: str) -> str:
+    """Strip a single outer ```...``` wrapper.
+
+    Only matches the first opening fence and a closing fence at end-of-string,
+    so an inner ``` substring inside the JSON body is preserved.
+    """
+    cleaned = raw.strip()
+    if cleaned.startswith("```"):
+        first_newline = cleaned.find("\n")
+        if first_newline != -1 and cleaned.endswith("```") and len(cleaned) > first_newline + 3:
+            cleaned = cleaned[first_newline + 1 : -3].strip()
+    return cleaned
 
 
 async def _chat(
@@ -104,16 +148,19 @@ async def _chat(
     return text
 
 
-async def enhance_portrait_prompt(
+async def enhance_character_image_prompts(
     db: Session | None,
     user_id: int | None,
     persona: Persona,
     *,
-    style: str = "portrait",
     feedback: str | None = None,
     provider_config: ProviderConfig | None = None,
-) -> str:
-    """Rewrite the persona-derived portrait prompt as a detailed Chinese image-gen prompt."""
+) -> dict[str, str]:
+    """One LLM round-trip returning paired avatar (bust) + seed (full body) prompts as JSON.
+
+    The avatar is the user-facing identity image; the seed is the full-body reference
+    for downstream 3D texture generation. Both describe the same character.
+    """
     definition = _persona_payload(persona)
     payload = {
         "name": definition.get("name") or "",
@@ -122,12 +169,12 @@ async def enhance_portrait_prompt(
         "appearance": definition.get("appearance") or "",
         "background": definition.get("background") or "",
         "personality": definition.get("personality") or "",
-        "style": style,
         "feedback": (feedback or "").strip(),
     }
-    user_payload = "请根据以下角色定义生成图像提示词：\n" f"```json\n{json.dumps(payload, ensure_ascii=False)}\n```"
-    system_prompt = _PORTRAIT_SYSTEM_PROMPT.format(style=style)
-    return await _chat(db, user_id, system_prompt, user_payload, provider_config=provider_config)
+    user_payload = "请根据以下角色定义生成头像与全身种子图的提示词（严格 JSON）：\n" f"```json\n{json.dumps(payload, ensure_ascii=False)}\n```"
+    raw = await _chat(db, user_id, _PORTRAIT_SYSTEM_PROMPT, user_payload, provider_config=provider_config)
+    cleaned = _strip_markdown_fence(raw)
+    return _CharacterImagePromptsResponse.model_validate(safe_json_loads(cleaned, default={})).model_dump()
 
 
 async def enhance_texture_prompt(
@@ -154,14 +201,5 @@ async def enhance_pbr_channels(
     payload = {"base_description": base_description}
     user_payload = "请根据以下角色外观描述生成 4 张 PBR 通道图的提示词（严格 JSON）：\n" f"```json\n{json.dumps(payload, ensure_ascii=False)}\n```"
     raw = await _chat(db, user_id, _PBR_CHANNELS_SYSTEM_PROMPT, user_payload)
-
-    # Strip optional Markdown code fences some chat models still emit even
-    # when told not to — the JSON itself is the contract, the wrapper isn't.
-    cleaned = raw.strip()
-    if cleaned.startswith("```"):
-        first_newline = cleaned.find("\n")
-        last_fence = cleaned.rfind("```")
-        if first_newline != -1 and last_fence > first_newline:
-            cleaned = cleaned[first_newline + 1 : last_fence].strip()
-
+    cleaned = _strip_markdown_fence(raw)
     return _PbrChannelsResponse.model_validate(safe_json_loads(cleaned, default={})).model_dump()
