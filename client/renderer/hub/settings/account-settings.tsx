@@ -6,7 +6,6 @@ import {
   Button,
   ConfirmDialog,
   Input,
-  SecretInputField,
   Select,
   SelectContent,
   SelectItem,
@@ -23,6 +22,8 @@ import { notify, notifyError } from '@/shared/store/notifications'
 import { strings } from '@/shared/strings'
 import type { DeskAgentConfigResponse } from '@/shared/types/deskagent'
 
+import { ApiKeyField } from './account/api-key-field'
+import { ChangePasswordForm } from './account/change-password-form'
 import { ListRow, LoadingState, SectionHeading, SettingsContent, SettingsSubsection } from './primitives'
 
 const WEB_BACKEND_OPTIONS = ['ddgs', 'brave-free', 'tavily'] as const
@@ -379,101 +380,6 @@ export function AccountSettings({ onConfigSaved }: { onConfigSaved?: () => void 
   )
 }
 
-function ChangePasswordForm(): React.JSX.Element {
-  const t = strings
-  const a = t.settings.account.changePassword
-
-  const [currentPassword, setCurrentPassword] = useState('')
-  const [newPassword, setNewPassword] = useState('')
-  const [confirm, setConfirm] = useState('')
-  const [busy, setBusy] = useState(false)
-
-  const handleSubmit = async () => {
-    if (busy) {
-      return
-    }
-
-    if (newPassword.length < 8) {
-      notify({ kind: 'error', title: a.title, message: a.tooShort })
-
-      return
-    }
-
-    if (newPassword !== confirm) {
-      notify({ kind: 'error', title: a.title, message: a.mismatch })
-
-      return
-    }
-
-    if (currentPassword === newPassword) {
-      notify({ kind: 'error', title: a.title, message: a.sameAsOld })
-
-      return
-    }
-
-    setBusy(true)
-
-    try {
-      const result = await window.deskagent.changePassword({
-        current_password: currentPassword,
-        new_password: newPassword
-      })
-
-      notify({ kind: 'success', title: a.title, message: result.message || a.success })
-      setCurrentPassword('')
-      setNewPassword('')
-      setConfirm('')
-    } catch (err) {
-      notifyError(err, a.title)
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  return (
-    <ListRow
-      description={a.title}
-      title={
-        <div className="flex items-center gap-3">
-          <Input
-            className="max-w-xs"
-            disabled={busy}
-            onChange={event => setCurrentPassword(event.currentTarget.value)}
-            placeholder={a.currentPassword}
-            type="password"
-            value={currentPassword}
-          />
-          <Input
-            className="max-w-xs"
-            disabled={busy}
-            onChange={event => setNewPassword(event.currentTarget.value)}
-            placeholder={a.newPassword}
-            type="password"
-            value={newPassword}
-          />
-          <Input
-            className="max-w-xs"
-            disabled={busy}
-            onChange={event => setConfirm(event.currentTarget.value)}
-            placeholder={a.confirmPassword}
-            type="password"
-            value={confirm}
-          />
-          <Button
-            disabled={busy || !currentPassword || !newPassword || !confirm}
-            onClick={() => void handleSubmit()}
-            size="sm"
-          >
-            {busy ? <Loader2 className="size-3.5 animate-spin" /> : null}
-            {a.submit}
-          </Button>
-        </div>
-      }
-      wide
-    />
-  )
-}
-
 type WebSearchCopy = (typeof strings)['settings']['account']['webSearch']
 type AgentDefaultsCopy = (typeof strings)['settings']['account']['agentDefaults']
 type ContextCompressionCopy = (typeof strings)['settings']['account']['contextCompression']
@@ -709,58 +615,6 @@ function ContextCompressionSection({
   )
 }
 
-function ApiKeyField({
-  copy,
-  description,
-  disabled,
-  fingerprint,
-  isSet,
-  onChange,
-  onClear,
-  placeholder,
-  title,
-  value
-}: {
-  copy: WebSearchCopy
-  description: string
-  disabled: boolean
-  fingerprint: string
-  isSet: boolean
-  onChange: (value: string) => void
-  onClear: () => void
-  placeholder: string
-  title: string
-  value: string
-}): React.JSX.Element {
-  const status = isSet ? copy.set : copy.notSet
-
-  return (
-    <ListRow
-      action={
-        <SecretInputField
-          copy={copy}
-          disabled={disabled}
-          fingerprint={fingerprint}
-          isSet={isSet}
-          onChange={onChange}
-          onClear={onClear}
-          placeholder={placeholder}
-          value={value}
-        />
-      }
-      description={description}
-      hint={isSet ? copy.fingerprint(fingerprint) : undefined}
-      title={
-        <div className="flex items-center gap-2">
-          <span>{title}</span>
-          <span className="text-[length:var(--conversation-caption-font-size)] font-normal text-(--ui-text-tertiary)">
-            · {status}
-          </span>
-        </div>
-      }
-    />
-  )
-}
 
 function computeNotices(state: WebFormState, t: WebSearchCopy): string[] {
   const notices: string[] = []

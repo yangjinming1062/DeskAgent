@@ -1,7 +1,8 @@
 import { atom } from 'nanostores'
 
-import { classifyPersonality } from './persona-classify'
 import { safeJsonParse } from '@/shared/lib/safe-json'
+
+import { classifyPersonality } from './persona-classify'
 
 export interface PersonaDefinition {
   name: string
