@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 import { SearchField, Switch, TextTab, TextTabMeta } from '@/shared/components/ui'
+import { useLatestRef } from '@/shared/hooks/use-latest-ref'
 import { Sparkles } from '@/shared/lib/icons'
 import { refreshSession } from '@/shared/store/auth'
 import { notifyError } from '@/shared/store/notifications'
@@ -36,8 +37,7 @@ export function SkillsSettings(): React.JSX.Element {
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
 
-  const loadErrorLabelRef = useRef(s.loadError)
-  loadErrorLabelRef.current = s.loadError
+  const loadErrorLabelRef = useLatestRef(s.loadError)
 
   useEffect(() => {
     let cancelled = false
@@ -74,14 +74,11 @@ export function SkillsSettings(): React.JSX.Element {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [loadErrorLabelRef])
 
-  const skillsRef = useRef(skills)
-  skillsRef.current = skills
-  const saveErrorRef = useRef(s.saveError)
-  saveErrorRef.current = s.saveError
-  const refreshErrorRef = useRef(s.refreshError)
-  refreshErrorRef.current = s.refreshError
+  const skillsRef = useLatestRef(skills)
+  const saveErrorRef = useLatestRef(s.saveError)
+  const refreshErrorRef = useLatestRef(s.refreshError)
 
   // Read latest skills via ref so a toggle's identity isn't tied to array
   // length; the IPC failure path rolls back to the pre-click snapshot.

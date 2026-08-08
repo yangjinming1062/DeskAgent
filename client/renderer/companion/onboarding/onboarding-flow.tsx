@@ -20,6 +20,7 @@ import {
 } from '@/companion/persona-presets'
 import { $regenFeedback, applyPortrait, setRegenFeedback } from '@/companion/portrait-store'
 import { useRegeneratePortrait } from '@/companion/use-regenerate-portrait'
+import { useLatestRef } from '@/shared/hooks/use-latest-ref'
 import { isClientErrorIpc } from '@/shared/lib/ipc-error'
 import { $gatewayState } from '@/shared/store/gateway'
 
@@ -509,8 +510,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
   // Latest-answers ref so the speak/focus effects only re-run on phase/qIndex,
   // not on every keystroke (the rule's exhaustive-deps lint can't see the
   // intent).
-  const answersRef = useRef(answers)
-  answersRef.current = answers
+  const answersRef = useLatestRef(answers)
 
   // Question text rendered under the input.
   const spokenText = question?.text ?? ''
@@ -530,7 +530,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
     void playOnboardingAudio(`onboarding.q${qIndex}`)
 
     return () => stopSpeaking()
-  }, [phase, qIndex])
+  }, [phase, qIndex, answersRef])
 
   useEffect(() => {
     if (phase === 'q' && !QUESTIONS[qIndex].selectOnly) {
@@ -1081,8 +1081,7 @@ function PortraitLightbox({
 
   // Stable ref so the keydown listener attaches once, not on every parent
   // re-render that creates a fresh onClose closure.
-  const onCloseRef = useRef(onClose)
-  onCloseRef.current = onClose
+  const onCloseRef = useLatestRef(onClose)
 
   // Register the full viewport as an interactive region while the lightbox is open
   // so clicks on the image and its backdrop don't pass through to the windows below.
@@ -1101,7 +1100,7 @@ function PortraitLightbox({
     window.addEventListener('keydown', onKey)
 
     return () => window.removeEventListener('keydown', onKey)
-  }, [])
+  }, [onCloseRef])
 
   if (typeof document === 'undefined') {
     return null

@@ -2,11 +2,11 @@ import { useStore } from '@nanostores/react'
 import { useCallback, useEffect, useRef } from 'react'
 
 import type { DeskAgentGateway } from '@/shared/deskagent'
+import { useLatestRef } from '@/shared/hooks/use-latest-ref'
 import { resolveGatewayWsUrl } from '@/shared/lib/gateway-ws-url'
 import { $gateway, $gatewayState } from '@/shared/store/gateway'
 
 export interface UseGatewayRequestResult {
-  connectionRef: React.RefObject<Awaited<ReturnType<NonNullable<typeof window.deskagent>['getConnection']>> | null>
   gatewayRef: React.RefObject<DeskAgentGateway | null>
   requestGateway: <T>(method: string, params?: Record<string, unknown>) => Promise<T>
 }
@@ -14,14 +14,8 @@ export interface UseGatewayRequestResult {
 export function useGatewayRequest(): UseGatewayRequestResult {
   const gatewayState = useStore($gatewayState)
   const gatewayRef = useRef<DeskAgentGateway | null>(null)
-
-  const connectionRef = useRef<Awaited<ReturnType<NonNullable<typeof window.deskagent>['getConnection']>> | null>(null)
-
-  const gatewayStateRef = useRef(gatewayState)
+  const gatewayStateRef = useLatestRef(gatewayState)
   const reconnectingRef = useRef<Promise<DeskAgentGateway | null> | null>(null)
-  useEffect(() => {
-    gatewayStateRef.current = gatewayState
-  }, [gatewayState])
 
   // Track the active gateway so outbound requests and overlay props always
   // target the focused socket.
@@ -57,19 +51,15 @@ export function useGatewayRequest(): UseGatewayRequestResult {
 
       try {
         const conn = await desktop.getConnection()
-        connectionRef.current = conn
         // Re-mint the WS URL before reconnecting. OAuth tickets are single-use
         // and short-lived, so the cached conn.wsUrl ticket is dead here;
         // resolveGatewayWsUrl() throws a reauth error in OAuth mode rather than
-        // connecting with a stale ticket. Stash it so requestGateway can show
-        // the actionable "sign in again" message.
+        // connecting with a stale ticket.
         const wsUrl = await resolveGatewayWsUrl(desktop, conn)
         await existing.connect(wsUrl)
 
         return existing
       } catch {
-        connectionRef.current = null
-
         return null
       } finally {
         reconnectingRef.current = null
@@ -77,24 +67,10 @@ export function useGatewayRequest(): UseGatewayRequestResult {
     })()
 
     return reconnectingRef.current
-  }, [])
-
-  // Filesystem-bound calls handled by the desktop main process instead of
-  // the backend. The backend runs in Docker and can't access the user disk,
-  // so these would otherwise return -32601. Returns the local result, or
-  // ``null`` to fall through to the WS gateway.
-  const tryLocalIntercept = useCallback(async (_method: string, _params: Record<string, unknown>): Promise<unknown> => {
-    return null
-  }, [])
+  }, [gatewayStateRef])
 
   const requestGateway = useCallback(
     async <T>(method: string, params: Record<string, unknown> = {}) => {
-      const intercepted = await tryLocalIntercept(method, params)
-
-      if (intercepted !== null) {
-        return intercepted as T
-      }
-
       const gateway = gatewayRef.current
 
       if (!gateway) {
@@ -122,8 +98,8 @@ export function useGatewayRequest(): UseGatewayRequestResult {
         return recovered.request<T>(method, params)
       }
     },
-    [ensureGatewayOpen, tryLocalIntercept]
+    [ensureGatewayOpen]
   )
 
-  return { connectionRef, gatewayRef, requestGateway }
+  return { gatewayRef, requestGateway }
 }

@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { type Document, isNode } from 'yaml'
 
 import { Button, Input, Textarea } from '@/shared/components/ui'
 import type { DeskAgentGateway } from '@/shared/deskagent'
+import { useLatestRef } from '@/shared/hooks/use-latest-ref'
 import { Wrench } from '@/shared/lib/icons'
 import { cn } from '@/shared/lib/utils'
 import { notify, notifyError } from '@/shared/store/notifications'
@@ -69,8 +70,7 @@ export function McpSettings({ gateway, onConfigSaved }: McpSettingsProps): React
   }, [yamlDoc])
 
   const servers = useMemo(() => getServers(yamlDoc), [yamlDoc])
-  const serversRef = useRef(servers)
-  serversRef.current = servers
+  const serversRef = useLatestRef(servers)
   const names = useMemo(() => Object.keys(servers).sort(), [servers])
 
   useDeepLinkHighlight({
@@ -86,7 +86,7 @@ export function McpSettings({ gateway, onConfigSaved }: McpSettingsProps): React
 
     setName(selected ?? '')
     setBody(JSON.stringify(server ?? EMPTY_SERVER, null, 2))
-  }, [selected])
+  }, [selected, serversRef])
 
   if (!yamlDoc) {
     return <LoadingState label={m.loading} />

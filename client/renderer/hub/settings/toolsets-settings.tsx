@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 import { SearchField, Switch } from '@/shared/components/ui'
+import { useLatestRef } from '@/shared/hooks/use-latest-ref'
 import { Wrench } from '@/shared/lib/icons'
 import { TOOLSET_CATALOG, type ToolsetCatalogEntry } from '@/shared/lib/toolset-catalog'
 import { notifyError } from '@/shared/store/notifications'
@@ -32,10 +33,8 @@ export function ToolsetsSettings(): React.JSX.Element {
   const [searchTerm, setSearchTerm] = useState('')
   const [savingId, setSavingId] = useState<string | null>(null)
 
-  const loadErrorLabelRef = useRef(sk.skillsLoadFailed)
-  loadErrorLabelRef.current = sk.skillsLoadFailed
-  const saveErrorLabelRef = useRef(sk.toolsetsRefreshFailed)
-  saveErrorLabelRef.current = sk.toolsetsRefreshFailed
+  const loadErrorLabelRef = useLatestRef(sk.skillsLoadFailed)
+  const saveErrorLabelRef = useLatestRef(sk.toolsetsRefreshFailed)
 
   useEffect(() => {
     let cancelled = false
@@ -72,7 +71,7 @@ export function ToolsetsSettings(): React.JSX.Element {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [loadErrorLabelRef, saveErrorLabelRef])
 
   const rosterById = useMemo(() => {
     const map = new Map<string, ToolsetRosterEntry>()

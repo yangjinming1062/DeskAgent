@@ -17,6 +17,7 @@ import {
 import { getDeskAgentConfig, saveDeskAgentConfig } from '@/shared/deskagent'
 import { triggerHaptic } from '@/shared/lib/haptics'
 import { Archive, Globe, KeyRound, Loader2, LogOut, SlidersHorizontal } from '@/shared/lib/icons'
+import { buildSecretFieldBody } from '@/shared/lib/secret-field-body'
 import { $auth, logout } from '@/shared/store/auth'
 import { notify, notifyError } from '@/shared/store/notifications'
 import { strings } from '@/shared/strings'
@@ -223,16 +224,16 @@ export function AccountSettings({ onConfigSaved }: { onConfigSaved?: () => void 
       bodyWeb.extract_backend = web.extract_backend
       bodyWeb.tavily_base_url = web.tavily_base_url
 
-      if (web.brave_api_key !== '') {
-        bodyWeb.brave_api_key = web.brave_api_key
-      } else if (web.cleared_brave) {
-        bodyWeb.brave_api_key = ''
+      const brave = buildSecretFieldBody(web.brave_api_key, web.cleared_brave, '')
+
+      if (!brave.omit) {
+        bodyWeb.brave_api_key = brave.value
       }
 
-      if (web.tavily_api_key !== '') {
-        bodyWeb.tavily_api_key = web.tavily_api_key
-      } else if (web.cleared_tavily) {
-        bodyWeb.tavily_api_key = ''
+      const tavily = buildSecretFieldBody(web.tavily_api_key, web.cleared_tavily, '')
+
+      if (!tavily.omit) {
+        bodyWeb.tavily_api_key = tavily.value
       }
 
       const { config } = await saveDeskAgentConfig({

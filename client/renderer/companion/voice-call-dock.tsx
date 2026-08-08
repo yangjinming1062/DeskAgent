@@ -6,6 +6,7 @@ import { $chatMessages, $chatSessionId, setAssistantError, setChatOpen, setChatS
 import { $spriteState, setSpriteState } from '@/companion/companion-store'
 import { useInteractiveRegion } from '@/companion/interactive-regions'
 import { speak, stopSpeaking } from '@/companion/tts'
+import { useLatestRef } from '@/shared/hooks/use-latest-ref'
 import { getAudioContextCtor } from '@/shared/lib/audio-context-ctor'
 import { $gatewayState } from '@/shared/store/gateway'
 
@@ -53,13 +54,10 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps): React.JSX.Elemen
   }, [chatSessionId])
   // Stale speak() promises can't drag the sprite to idle after a newer utterance starts.
   const speakGenRef = useRef(0)
-  // Mirror gatewayState into a ref so mount effects read it live without re-mounting on reconnects.
-  const gatewayStateRef = useRef(gatewayState)
-  gatewayStateRef.current = gatewayState
+  const gatewayStateRef = useLatestRef(gatewayState)
   const { requestGateway } = useGatewayRequest()
   const panelRef = useRef<HTMLDivElement>(null)
-  const onCloseRef = useRef(onClose)
-  onCloseRef.current = onClose
+  const onCloseRef = useLatestRef(onClose)
 
   useInteractiveRegion('voice-call-dock', panelRef)
 
@@ -299,7 +297,7 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps): React.JSX.Elemen
       setSpriteState('idle')
       void window.deskagent.sprite.setAlwaysOnTop({ on: true })
     }
-  }, [requestGateway]) // gatewayState intentionally omitted: a dep would re-mount the mic on reconnect flaps.
+  }, [requestGateway, gatewayStateRef, onCloseRef])
 
   // Speak the assistant's completed reply, then return to listening. The chat
   // event stream (events.ts) owns the streaming + state machine; this effect
