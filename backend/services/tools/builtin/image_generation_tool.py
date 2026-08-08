@@ -53,9 +53,9 @@ async def image_generation_tool(
 
     ``reference_image`` is the URL or base64 of a seed image the output
     should stay consistent with. Used by the companion avatar-from-image
-    flow and the Tier-2 keyframe path to keep the same character across
-    generations. Providers consume it natively (MiniMax ``subject_reference``,
-    Gemini ``inlineData``) or via a folded-in vision description."""
+    flow to keep the same character across generations. Providers consume
+    it natively (MiniMax ``subject_reference``, Gemini ``inlineData``) or
+    via a folded-in vision description."""
     req = ImageGenRequest(prompt=prompt, size=size, n=n, reference_image=reference_image)
     try:
         if user_id is not None:
