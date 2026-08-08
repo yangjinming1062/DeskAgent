@@ -2,7 +2,6 @@ import base64
 import contextlib
 import json
 import secrets
-from io import BytesIO
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -14,8 +13,6 @@ from components import safe_json_loads
 from components import SETTINGS
 from modules.companion import AvatarAsset
 from modules.companion import Persona
-from PIL import Image
-from PIL import ImageChops
 from sqlalchemy.orm import Session
 
 from ..tools.builtin import image_generation_tool
@@ -29,9 +26,6 @@ _AVATAR_SIZE: str = "1024x1024"
 _AVATAR_QUALITY: str = "standard"
 _UPLOAD_EXTS: dict[str, str] = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp", "image/gif": "gif"}
 ALLOWED_AVATAR_UPLOAD_MIME_TYPES: frozenset[str] = frozenset(_UPLOAD_EXTS)
-# Per-channel 8-bit value above which a portrait pixel counts as flat-white
-# background and is keyed to transparent.
-_WHITE_ALPHA_THRESHOLD = 240
 
 # Chinese onboarding chips → English tokens for image-gen providers; free-text
 # inputs pass through verbatim via _to_en_token's table.get(value, value).
@@ -85,12 +79,7 @@ def _build_prompt(persona: Persona, style: str) -> str:
         parts.append(appearance)
     if background:
         parts.append(f"set in {background}")
-    # Ask the provider for a flat white background so the renderer's
-    # chroma-key CSS filter can pull it out cleanly. ``_persist_portrait_bytes``
-    # post-processes: when the provider returns JPEG we re-encode to PNG and
-    # synthesize a clean alpha channel from the white pixels (Pillow optional —
-    # falls back to JPEG if Pillow is missing).
-    parts.append("digital illustration, clean linework, full character on pure flat white background, no scenery, no gradient, no shadow")
+    parts.append("digital illustration, clean linework, full character, no scenery, no gradient, no shadow")
     return ", ".join(parts)
 
 
@@ -100,53 +89,20 @@ async def _persist_portrait_bytes(data: bytes, content_type: str) -> tuple[str, 
     storage path so generated portraits survive the temp-media TTL window (24h)
     and are reachable on a fresh device login.
 
-    Prefer PNG over JPEG when the provider can serve it. The image-gen
-    pipeline returns JPEG by default (smaller payload, no alpha); we re-encode
-    to PNG via Pillow when available so the desktop's chroma-key filter has a
-    clean alpha channel to work with. If Pillow is missing we fall back to
-    whatever the provider returned — the CSS filter still keys out the white
-    background.
+    The bytes are written verbatim; the extension follows the response
+    content_type. Portrait is consumed as an opaque image (avatar panel
+    crops with object-cover; GLB texture pass uses it as a provider
+    reference image), so there is no in-process re-encoding.
     """
     src_content_type = content_type.split(";")[0].strip().lower()
-    src_ext = _UPLOAD_EXTS.get(src_content_type, "jpg")
+    final_ext = _UPLOAD_EXTS.get(src_content_type, "jpg")
     file_id = secrets.token_urlsafe(16)
     avatars_dir = Path(SETTINGS.data_dir) / "companion-avatars"
     avatars_dir.mkdir(parents=True, exist_ok=True)
 
-    # Prefer PNG output for the chroma-key pipeline.
-    final_ext = "png"
-    final_bytes: bytes | None = None
-    try:
-        with Image.open(BytesIO(data)) as img:
-            if img.mode in ("RGBA", "LA") or "transparency" in img.info:
-                alpha_img = img.convert("RGBA")
-            else:
-                # Synthesize a clean alpha channel: white background
-                # → transparent. This makes the chroma-key CSS filter
-                # work uniformly regardless of the provider's
-                # background choice. Thresholding goes through Pillow's
-                # C-level channel ops — a Python per-pixel sweep would
-                # block the event loop on a megapixel portrait.
-                if img.mode != "RGB":
-                    img = img.convert("RGB")
-                masks = [ch.point(lambda v: 255 if v > _WHITE_ALPHA_THRESHOLD else 0) for ch in img.split()]
-                is_background = ImageChops.darker(ImageChops.darker(masks[0], masks[1]), masks[2])
-                alpha_img = img.copy()
-                alpha_img.putalpha(ImageChops.invert(is_background))
-            # Always re-encode to PNG bytes via Image.save — never
-            # hand a PIL Image to ``open(...).write`` (TypeError).
-            buf = BytesIO()
-            alpha_img.save(buf, "PNG")
-            final_bytes = buf.getvalue()
-    except Exception:
-        # Pillow missing or decode failed — fall back to the raw
-        # provider bytes so we never break the request path.
-        final_ext = src_ext
-        final_bytes = None
-
     filepath = avatars_dir / f"{file_id}.{final_ext}"
     with open(filepath, "wb") as f:
-        f.write(final_bytes if final_bytes is not None else data)
+        f.write(data)
 
     # The row stores the *bare* path under ``companion-avatars/`` rather than
     # a signed URL, so it never expires. ``get_active_avatar`` and the public
