@@ -4,11 +4,12 @@ import { InlineNotice } from '@/shared/components/notifications'
 import { Button } from '@/shared/components/ui/button'
 import { ConfirmDialog } from '@/shared/components/ui/confirm-dialog'
 import { Input } from '@/shared/components/ui/input'
+import { SecretInputField } from '@/shared/components/ui/secret-input-field'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/shared/components/ui/select'
 import type { DeskAgentGateway } from '@/shared/deskagent'
 import { getModelConfig, saveModelConfig } from '@/shared/deskagent/config'
 import { triggerHaptic } from '@/shared/lib/haptics'
-import { Brain, Cpu, Eye, EyeOff, ImageIcon, Loader2, Mic, MonitorPlay, Plus, Volume2, X } from '@/shared/lib/icons'
+import { Brain, Cpu, ImageIcon, Loader2, Mic, MonitorPlay, Plus, Volume2, X } from '@/shared/lib/icons'
 import type { IconComponent } from '@/shared/lib/icons'
 import { notify, notifyError } from '@/shared/store/notifications'
 import { strings } from '@/shared/strings'
@@ -431,7 +432,6 @@ function CapabilitySection({
   updateBaseUrl: (value: string) => void
   updateModelName: (value: string) => void
 }) {
-  const [revealed, setRevealed] = useState(false)
   const status = state.api_key_set ? t.set : t.notSet
 
   return (
@@ -451,38 +451,23 @@ function CapabilitySection({
 
       <ListRow
         action={
-          <div className="flex items-center gap-2">
-            <Input
-              className="max-w-sm"
-              disabled={disabled}
-              onChange={e => onApiKeyChange(e.currentTarget.value)}
-              placeholder={t.apiKeyPlaceholder}
-              type={revealed ? 'text' : 'password'}
-              value={state.api_key}
-            />
-            <Button
-              aria-label={revealed ? t.hide : t.reveal}
-              disabled={disabled}
-              onClick={() => setRevealed(prev => !prev)}
-              size="icon"
-              type="button"
-              variant="ghost"
-            >
-              {revealed ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
-            </Button>
-            {state.api_key_set ? (
-              <Button
-                aria-label={t.clearKey}
-                disabled={disabled}
-                onClick={onClearApiKey}
-                size="icon"
-                type="button"
-                variant="ghost"
-              >
-                <X className="size-4" />
-              </Button>
-            ) : null}
-          </div>
+          <SecretInputField
+            copy={{
+              set: t.set,
+              notSet: t.notSet,
+              reveal: t.reveal,
+              hide: t.hide,
+              clearKey: t.clearKey,
+              fingerprint: t.fingerprint
+            }}
+            disabled={disabled}
+            fingerprint={state.api_key_fingerprint}
+            isSet={state.api_key_set}
+            onChange={onApiKeyChange}
+            onClear={onClearApiKey}
+            placeholder={t.apiKeyPlaceholder}
+            value={state.api_key}
+          />
         }
         hint={state.api_key_set && state.api_key_fingerprint ? t.fingerprint(state.api_key_fingerprint) : undefined}
         title={
