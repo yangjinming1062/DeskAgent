@@ -1,9 +1,15 @@
 import { useState } from 'react'
 
-import { Button } from '@/shared/components/ui/button'
-import { Input } from '@/shared/components/ui/input'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/shared/components/ui/select'
-import { Switch } from '@/shared/components/ui/switch'
+import {
+  Button,
+  Input,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  Switch
+} from '@/shared/components/ui'
 import { triggerHaptic } from '@/shared/lib/haptics'
 import { Settings } from '@/shared/lib/icons'
 import { notify, notifyError } from '@/shared/store/notifications'
@@ -50,7 +56,7 @@ const BROWSER_ENGINE_OPTIONS = [
   { value: 'chrome', label: 'Chrome' }
 ]
 
-export function RunnerSettings() {
+export function RunnerSettings(): React.JSX.Element {
   const t = strings
   const r = t.settings.runner
 

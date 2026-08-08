@@ -1,29 +1,3 @@
-/**
- * Live WebSocket validation for the remote-gateway "Test remote" button.
- *
- * Background: the desktop boot does two independent things to a remote gateway:
- *
- *   1. The MAIN process hits ``GET /api/health`` over HTTP (token in a header)
- *      to confirm the backend is up. This is what the boot logs print as
- *      "Remote DeskAgent backend is ready".
- *   2. The RENDERER then opens a live WebSocket to ``/api/ws`` (credential in a
- *      query param) via ``gateway.connect()``. The chat surface only works once
- *      THIS succeeds.
- *
- * Those two paths use different processes, transports, and credentials, and the
- * server applies extra guards to the WS upgrade that the HTTP status route never
- * sees (Host/Origin checks, ws-ticket/token auth, peer-IP checks). So a gateway
- * can pass the HTTP status check yet reject the WebSocket — which surfaces to
- * the user as a green "Test remote" followed by an opaque "Could not connect to
- * DeskAgent gateway" on the boot overlay.
- *
- * This module performs the second half of the check: it actually opens the WS
- * URL and confirms the upgrade is accepted (and isn't immediately torn down by
- * a post-upgrade auth rejection). The ``WebSocketImpl`` is injectable so the
- * unit tests can drive the handshake without a real socket; in production the
- * caller passes the Node/Electron global ``WebSocket``.
- */
-
 const DEFAULT_CONNECT_TIMEOUT_MS = 10_000
 // After the upgrade is accepted, a gateway that rejects the credential
 // post-handshake closes the socket almost immediately. Wait a short grace

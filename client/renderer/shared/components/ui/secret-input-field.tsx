@@ -48,7 +48,7 @@ export function SecretInputField({
   onClear,
   placeholder,
   disabled
-}: SecretInputFieldProps) {
+}: SecretInputFieldProps): React.JSX.Element {
   const [revealed, setRevealed] = useState(false)
 
   return (

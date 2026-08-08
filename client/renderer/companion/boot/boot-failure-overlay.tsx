@@ -1,17 +1,14 @@
 import { useStore } from '@nanostores/react'
+import type React from 'react'
 import { useRef } from 'react'
 
 import { $desktopBoot } from '@/companion/boot-store'
 import { useInteractiveRegion } from '@/companion/interactive-regions'
-import { Button } from '@/shared/components/ui/button'
-import { ErrorState } from '@/shared/components/ui/error-state'
+import { Button, ErrorState } from '@/shared/components/ui'
 import { setPrimaryGateway } from '@/shared/store/gateway'
 import { strings } from '@/shared/strings'
 
-// Recovery surface for the boot-failure path; shown when failDesktopBoot flips the store to 'renderer.error'.
-// Mirrors the ErrorBoundary full-screen pattern (RootErrorFallback) — same
-// ErrorState + Button primitives, same z-index, same backdrop.
-export function BootFailureOverlay() {
+export function BootFailureOverlay(): React.JSX.Element | null {
   const boot = useStore($desktopBoot)
   const overlayRef = useRef<HTMLDivElement>(null)
   const isError = boot.phase === 'renderer.error' && boot.error

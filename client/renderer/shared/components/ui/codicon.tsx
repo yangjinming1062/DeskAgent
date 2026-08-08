@@ -8,7 +8,7 @@ export interface CodiconProps extends React.HTMLAttributes<HTMLElement> {
   spinning?: boolean
 }
 
-export function Codicon({ className, name, size, spinning, style, ...props }: CodiconProps) {
+export function Codicon({ className, name, size, spinning, style, ...props }: CodiconProps): React.JSX.Element {
   return (
     <i
       aria-hidden="true"

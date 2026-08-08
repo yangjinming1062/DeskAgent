@@ -121,7 +121,7 @@ const mixesFor = (isDark: boolean): Record<string, string> => ({
   '--theme-mix-bubble': isDark ? '46%' : '0%'
 })
 
-function applyTheme(theme: DesktopTheme, mode: 'light' | 'dark') {
+function applyTheme(theme: DesktopTheme, mode: 'light' | 'dark'): void {
   if (typeof document === 'undefined') {
     return
   }
@@ -208,14 +208,11 @@ function applyTheme(theme: DesktopTheme, mode: 'light' | 'dark') {
   }
 }
 
-// Boot-time paint to avoid a flash before <ThemeProvider> mounts. The
-// module-load call alone covers initial paint; B3 dropped the redundant
-// useEffect in <ThemeProvider> because it duplicated this work and would
-// race against the boot block on HMR remount.
+// Boot-time paint to avoid a flash before <ThemeProvider> mounts.
 if (typeof window !== 'undefined') {
   applyTheme(deriveTheme('light'), 'light')
 }
 
-export function ThemeProvider({ children }: { children: ReactNode }) {
+export function ThemeProvider({ children }: { children: ReactNode }): React.JSX.Element {
   return <>{children}</>
 }

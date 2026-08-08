@@ -3,14 +3,14 @@ import { useCallback, useEffect } from 'react'
 
 import { $updateStatus, selectTargetVersion } from '@/hub/settings-store'
 import { BrandMark } from '@/shared/components/brand-mark'
-import { Button } from '@/shared/components/ui/button'
+import { Button } from '@/shared/components/ui'
 import { Loader2, RefreshCw } from '@/shared/lib/icons'
 import { $desktopVersion, refreshDesktopVersion } from '@/shared/store/version'
 import { strings } from '@/shared/strings'
 
 import { SettingsContent } from './primitives'
 
-export function AboutSettings() {
+export function AboutSettings(): React.JSX.Element {
   const t = strings
   const a = t.settings.about
   const version = useStore($desktopVersion)

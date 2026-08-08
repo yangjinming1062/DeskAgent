@@ -1,8 +1,3 @@
-/**
- * Wire-level JSON-RPC event names sent by the Backend over `/api/chat/ws`.
- * The trailing `(string & {})` preserves autocomplete for future server-side
- * events without breaking exhaustiveness checks today.
- */
 type GatewayEventName =
   | 'message.start'
   | 'message.delta'

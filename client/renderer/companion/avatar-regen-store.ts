@@ -1,6 +1,3 @@
-// One-shot resolvers for the async avatar.regenerate flow: the RPC returns
-// {queued, job_id} immediately and the result lands later as avatar.regenerated.
-
 type Resolver = (payload: AvatarRegeneratedPayload) => void
 
 const _pending = new Map<string, Resolver>()
@@ -14,7 +11,7 @@ const TOMBSTONE_TTL_MS = 10 * 60_000
 // Above the 60s+ slow-provider image-gen ceiling so legitimate requests don't trip.
 const REGEN_TIMEOUT_MS = 120_000
 
-function _pruneTombstones() {
+function _pruneTombstones(): void {
   const cutoff = Date.now() - TOMBSTONE_TTL_MS
 
   for (const [jobId, t] of _timedOut) {

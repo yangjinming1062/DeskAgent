@@ -5,7 +5,7 @@ import { useWebHaptics } from 'web-haptics/react'
 import { registerHapticTrigger } from '@/shared/lib/haptics'
 import { $hapticsMuted } from '@/shared/store/haptics'
 
-export function HapticsProvider({ children }: { children: ReactNode }) {
+export function HapticsProvider({ children }: { children: ReactNode }): React.JSX.Element {
   const muted = useStore($hapticsMuted)
   const { trigger } = useWebHaptics({ debug: true, showSwitch: false })
 

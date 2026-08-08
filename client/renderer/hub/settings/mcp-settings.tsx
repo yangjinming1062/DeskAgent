@@ -1,9 +1,7 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { type Document } from 'yaml'
 
-import { Button } from '@/shared/components/ui/button'
-import { Input } from '@/shared/components/ui/input'
-import { Textarea } from '@/shared/components/ui/textarea'
+import { Button, Input, Textarea } from '@/shared/components/ui'
 import type { DeskAgentGateway } from '@/shared/deskagent'
 import { Wrench } from '@/shared/lib/icons'
 import { cn } from '@/shared/lib/utils'
@@ -51,7 +49,7 @@ const transportLabel = (server: Record<string, unknown>) =>
         ? 'stdio'
         : 'custom'
 
-export function McpSettings({ gateway, onConfigSaved }: McpSettingsProps) {
+export function McpSettings({ gateway, onConfigSaved }: McpSettingsProps): React.JSX.Element {
   const t = strings
   const m = t.settings.mcp
   const { yamlDoc, setYamlDoc, patch } = useRunnerConfig(m.failedLoad)
@@ -71,6 +69,8 @@ export function McpSettings({ gateway, onConfigSaved }: McpSettingsProps) {
   }, [yamlDoc])
 
   const servers = useMemo(() => getServers(yamlDoc), [yamlDoc])
+  const serversRef = useRef(servers)
+  serversRef.current = servers
   const names = useMemo(() => Object.keys(servers).sort(), [servers])
 
   useDeepLinkHighlight({
@@ -82,15 +82,10 @@ export function McpSettings({ gateway, onConfigSaved }: McpSettingsProps) {
   })
 
   useEffect(() => {
-    const server = selected ? servers[selected] : null
+    const server = selected ? serversRef.current[selected] : null
 
     setName(selected ?? '')
     setBody(JSON.stringify(server ?? EMPTY_SERVER, null, 2))
-    // Seed name/body only on selection change. Earlier this listed `servers`
-    // too — `servers` is a fresh object ref every time `yamlDoc` mutates,
-    // which fires this effect on any save and wipes the in-flight edit
-    // buffer (H4). The save flow re-selects the edited row, so re-seeding
-    // here would be redundant.
   }, [selected])
 
   if (!yamlDoc) {

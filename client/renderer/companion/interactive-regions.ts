@@ -1,11 +1,3 @@
-// `setIgnoreMouseEvents` on Electron is window-level binary: it either captures
-// the whole window or lets every click pass through to the apps behind. The
-// sprite window is screen-sized + transparent, so we want to capture ONLY the
-// visible rects (sprite + any open overlay) and stay click-through everywhere
-// else. Each overlay registers its bbox here; the SpriteStage's global
-// mousemove listener hit-tests against the union and is the sole caller of
-// `setIgnoreMouseEvents`.
-
 import { type RefObject, useEffect } from 'react'
 
 export type InteractiveRegion = {

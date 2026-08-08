@@ -13,7 +13,14 @@ interface ContextMenuProps {
   onOpenMemory: () => void
 }
 
-export function SpriteContextMenu({ x, y, onClose, onOpenVoiceCall, onOpenSettings, onOpenMemory }: ContextMenuProps) {
+export function SpriteContextMenu({
+  x,
+  y,
+  onClose,
+  onOpenVoiceCall,
+  onOpenSettings,
+  onOpenMemory
+}: ContextMenuProps): React.JSX.Element {
   const menuRef = useRef<HTMLDivElement>(null)
   useInteractiveRegion('sprite-context-menu', menuRef)
 

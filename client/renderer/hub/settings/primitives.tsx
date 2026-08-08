@@ -1,14 +1,13 @@
 import type { ReactNode } from 'react'
 
 import { PageLoader } from '@/shared/components/page-loader'
-import { Badge } from '@/shared/components/ui/badge'
-import { Button } from '@/shared/components/ui/button'
+import { Badge, Button } from '@/shared/components/ui'
 import type { IconComponent } from '@/shared/lib/icons'
 import { cn } from '@/shared/lib/utils'
 
 import { PAGE_INSET_X } from '../../shared/layout/page-inset'
 
-export function SettingsContent({ children }: { children: ReactNode }) {
+export function SettingsContent({ children }: { children: ReactNode }): React.JSX.Element {
   return (
     <section className="min-h-0 overflow-hidden">
       <div className={cn('h-full min-h-0 overflow-y-auto pb-20', PAGE_INSET_X)}>
@@ -18,7 +17,13 @@ export function SettingsContent({ children }: { children: ReactNode }) {
   )
 }
 
-export function Pill({ tone = 'muted', children }: { tone?: 'muted' | 'primary'; children: ReactNode }) {
+export function Pill({
+  tone = 'muted',
+  children
+}: {
+  tone?: 'muted' | 'primary'
+  children: ReactNode
+}): React.JSX.Element {
   return <Badge variant={tone === 'primary' ? 'default' : 'muted'}>{children}</Badge>
 }
 
@@ -30,7 +35,7 @@ export function FilterPill({
   active: boolean
   children: ReactNode
   onClick: () => void
-}) {
+}): React.JSX.Element {
   return (
     <button
       className={cn(
@@ -47,7 +52,15 @@ export function FilterPill({
   )
 }
 
-export function SectionHeading({ icon: Icon, title, meta }: { icon: IconComponent; title: string; meta?: string }) {
+export function SectionHeading({
+  icon: Icon,
+  title,
+  meta
+}: {
+  icon: IconComponent
+  title: string
+  meta?: string
+}): React.JSX.Element {
   return (
     <div className="mb-2.5 flex items-center gap-2 pt-2 text-[length:var(--conversation-text-font-size)] font-medium">
       <Icon className="size-4 text-muted-foreground" />
@@ -67,7 +80,7 @@ export function SettingsSubsection({
   icon: IconComponent
   intro?: string
   title: string
-}) {
+}): React.JSX.Element {
   return (
     <div className="space-y-2.5">
       <SectionHeading icon={Icon} title={title} />
@@ -91,7 +104,7 @@ export function NavLink({
   label: string
   active: boolean
   onClick: () => void
-}) {
+}): React.JSX.Element {
   return (
     <Button
       className={cn(
@@ -125,7 +138,7 @@ export function ListRow({
   action?: ReactNode
   below?: ReactNode
   wide?: boolean
-}) {
+}): React.JSX.Element {
   return (
     <div
       className={cn(
@@ -148,11 +161,11 @@ export function ListRow({
   )
 }
 
-export function LoadingState({ label }: { label: string }) {
+export function LoadingState({ label }: { label: string }): React.JSX.Element {
   return <PageLoader label={label} />
 }
 
-export function EmptyState({ title, description }: { title: string; description: string }) {
+export function EmptyState({ title, description }: { title: string; description: string }): React.JSX.Element {
   return (
     <div className="grid min-h-48 place-items-center text-center">
       <div>

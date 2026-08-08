@@ -1,17 +1,22 @@
-import { Tooltip as TooltipPrimitive } from 'radix-ui'
+import * as RadixUI from 'radix-ui'
 import * as React from 'react'
 
 import { cn } from '@/shared/lib/utils'
 
-function TooltipProvider({ delayDuration = 0, ...props }: React.ComponentProps<typeof TooltipPrimitive.Provider>) {
+const TooltipPrimitive = RadixUI.Tooltip
+
+function TooltipProvider({
+  delayDuration = 0,
+  ...props
+}: React.ComponentProps<typeof TooltipPrimitive.Provider>): React.JSX.Element {
   return <TooltipPrimitive.Provider data-slot="tooltip-provider" delayDuration={delayDuration} {...props} />
 }
 
-function Tooltip({ ...props }: React.ComponentProps<typeof TooltipPrimitive.Root>) {
+function Tooltip({ ...props }: React.ComponentProps<typeof TooltipPrimitive.Root>): React.JSX.Element {
   return <TooltipPrimitive.Root data-slot="tooltip" {...props} />
 }
 
-function TooltipTrigger({ ...props }: React.ComponentProps<typeof TooltipPrimitive.Trigger>) {
+function TooltipTrigger({ ...props }: React.ComponentProps<typeof TooltipPrimitive.Trigger>): React.JSX.Element {
   return <TooltipPrimitive.Trigger data-slot="tooltip-trigger" {...props} />
 }
 
@@ -20,7 +25,7 @@ function TooltipContent({
   sideOffset = 6,
   children,
   ...props
-}: React.ComponentProps<typeof TooltipPrimitive.Content>) {
+}: React.ComponentProps<typeof TooltipPrimitive.Content>): React.JSX.Element {
   return (
     <TooltipPrimitive.Portal>
       <TooltipPrimitive.Content
@@ -51,7 +56,7 @@ interface TipProps extends Omit<React.ComponentProps<typeof TooltipPrimitive.Con
 // position-aware, themed. Self-contained (carries its own Provider) so it works
 // anywhere without a provider ancestor. Renders the child untouched when label
 // is falsy.
-function Tip({ label, children, delayDuration = 0, ...props }: TipProps) {
+function Tip({ label, children, delayDuration = 0, ...props }: TipProps): React.JSX.Element {
   if (!label) {
     return <>{children}</>
   }

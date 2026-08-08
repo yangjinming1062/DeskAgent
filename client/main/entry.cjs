@@ -1765,9 +1765,7 @@ const bridgeDeps = {
   },
   fetchJson,
   rememberLog,
-  // Wire the forward-declared getAuthToken() to the live backendSession.
-  // ensureBackend() (defined earlier in the file) calls this on every
-  // resolve so the JWT reflects the most recent login/logout.
+  // Wire forward-declared getAuthToken() to the live backendSession on every resolve.
   rewireAuthToken: () => {
     getAuthToken = () => bridgeDeps.ensureBackendSession().getToken() ?? null
   },
@@ -1831,9 +1829,7 @@ ipcMain.handle('deskagent:runner:get-tools', async () => {
 
 bridgeDeps.rewireAuthToken()
 
-// One-shot: when the user previously logged in and quit, ensureBackendSession()'s
-// restoreSession() rehydrates the JWT before any IPC fires, so the IPC
-// handlers can't catch that initial "already-logged-in" state.
+// Restore already-logged-in session state after launch.
 setTimeout(() => {
   if (bridgeDeps.ensureBackendSession().getSession()?.hasToken) {
     autoStartBridge(bridgeDeps)

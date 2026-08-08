@@ -2,13 +2,19 @@ import { useStore } from '@nanostores/react'
 import { useEffect, useState } from 'react'
 
 import { InlineNotice } from '@/shared/components/notifications'
-import { Button } from '@/shared/components/ui/button'
-import { ConfirmDialog } from '@/shared/components/ui/confirm-dialog'
-import { Input } from '@/shared/components/ui/input'
-import { SecretInputField } from '@/shared/components/ui/secret-input-field'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/shared/components/ui/select'
-import { Switch } from '@/shared/components/ui/switch'
-import { getDeskAgentConfig, saveDeskAgentConfig } from '@/shared/deskagent/config'
+import {
+  Button,
+  ConfirmDialog,
+  Input,
+  SecretInputField,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  Switch
+} from '@/shared/components/ui'
+import { getDeskAgentConfig, saveDeskAgentConfig } from '@/shared/deskagent'
 import { triggerHaptic } from '@/shared/lib/haptics'
 import { Archive, Globe, KeyRound, Loader2, LogOut, SlidersHorizontal } from '@/shared/lib/icons'
 import { $auth, logout } from '@/shared/store/auth'
@@ -111,7 +117,7 @@ const readChatState = (config: DeskAgentConfigResponse): ChatFormState => ({
   context_compression_threshold: config.chat?.context_compression_threshold ?? EMPTY_CHAT.context_compression_threshold
 })
 
-export function AccountSettings({ onConfigSaved }: { onConfigSaved?: () => void } = {}) {
+export function AccountSettings({ onConfigSaved }: { onConfigSaved?: () => void } = {}): React.JSX.Element {
   const t = strings
   const a = t.settings.account
   const auth = useStore($auth)
@@ -347,7 +353,7 @@ export function AccountSettings({ onConfigSaved }: { onConfigSaved?: () => void 
           const clearedField = clearingKey === 'brave_api_key' ? 'cleared_brave' : 'cleared_tavily'
           setWeb(prev => ({ ...prev, [clearingKey]: '', [clearedField]: true }))
         }}
-        onOpenChange={open => {
+        onOpenChange={(open: boolean) => {
           if (!open) {
             setClearingKey(null)
           }
@@ -372,7 +378,7 @@ export function AccountSettings({ onConfigSaved }: { onConfigSaved?: () => void 
   )
 }
 
-function ChangePasswordForm() {
+function ChangePasswordForm(): React.JSX.Element {
   const t = strings
   const a = t.settings.account.changePassword
 
@@ -485,7 +491,7 @@ function WebSearchSection({
   state: WebFormState
   t: WebSearchCopy
   update: (patch: Partial<WebFormState>) => void
-}) {
+}): React.JSX.Element {
   return (
     <SettingsSubsection icon={Globe} intro={t.intro} title={t.heading}>
       <ListRow
@@ -588,7 +594,7 @@ function AgentDefaultsSection({
   state: AgentFormState
   t: AgentDefaultsCopy
   update: (patch: Partial<AgentFormState>) => void
-}) {
+}): React.JSX.Element {
   return (
     <SettingsSubsection icon={SlidersHorizontal} intro={t.intro} title={t.heading}>
       <ListRow
@@ -662,7 +668,7 @@ function ContextCompressionSection({
   state: ChatFormState
   t: ContextCompressionCopy
   update: (patch: Partial<ChatFormState>) => void
-}) {
+}): React.JSX.Element {
   return (
     <SettingsSubsection icon={Archive} intro={t.intro} title={t.heading}>
       <ListRow
@@ -724,7 +730,7 @@ function ApiKeyField({
   placeholder: string
   title: string
   value: string
-}) {
+}): React.JSX.Element {
   const status = isSet ? copy.set : copy.notSet
 
   return (

@@ -1,11 +1,14 @@
-import { Select as SelectPrimitive } from 'radix-ui'
+import * as RadixUI from 'radix-ui'
 import * as React from 'react'
 
-import { Codicon } from '@/shared/components/ui/codicon'
-import { type ControlVariantProps, controlVariants } from '@/shared/components/ui/control'
 import { cn } from '@/shared/lib/utils'
 
-function Select({ ...props }: React.ComponentProps<typeof SelectPrimitive.Root>) {
+import { Codicon } from './codicon'
+import { type ControlVariantProps, controlVariants } from './control'
+
+const SelectPrimitive = RadixUI.Select
+
+function Select({ ...props }: React.ComponentProps<typeof SelectPrimitive.Root>): React.JSX.Element {
   return <SelectPrimitive.Root data-slot="select" {...props} />
 }
 
@@ -14,7 +17,7 @@ function SelectTrigger({
   children,
   size,
   ...props
-}: React.ComponentProps<typeof SelectPrimitive.Trigger> & ControlVariantProps) {
+}: React.ComponentProps<typeof SelectPrimitive.Trigger> & ControlVariantProps): React.JSX.Element {
   return (
     <SelectPrimitive.Trigger
       className={cn(
@@ -33,7 +36,7 @@ function SelectTrigger({
   )
 }
 
-function SelectValue({ ...props }: React.ComponentProps<typeof SelectPrimitive.Value>) {
+function SelectValue({ ...props }: React.ComponentProps<typeof SelectPrimitive.Value>): React.JSX.Element {
   return <SelectPrimitive.Value data-slot="select-value" {...props} />
 }
 
@@ -42,7 +45,7 @@ function SelectContent({
   children,
   position = 'popper',
   ...props
-}: React.ComponentProps<typeof SelectPrimitive.Content>) {
+}: React.ComponentProps<typeof SelectPrimitive.Content>): React.JSX.Element {
   return (
     <SelectPrimitive.Portal>
       <SelectPrimitive.Content
@@ -69,7 +72,11 @@ function SelectContent({
   )
 }
 
-function SelectItem({ className, children, ...props }: React.ComponentProps<typeof SelectPrimitive.Item>) {
+function SelectItem({
+  className,
+  children,
+  ...props
+}: React.ComponentProps<typeof SelectPrimitive.Item>): React.JSX.Element {
   return (
     <SelectPrimitive.Item
       className={cn(

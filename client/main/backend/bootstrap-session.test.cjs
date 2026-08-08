@@ -111,8 +111,7 @@ test('consumeBootstrapSession honors DESKAGENT_DESKTOP_BOOTSTRAP_SESSION env ove
   assert.equal(result.status, 'ok')
   assert.equal(result.snapshot.token, 'jwt-refreshed')
   assert.equal(result.snapshot.baseUrl, 'https://api.example.com')
-  // The override path was renamed to `.consumed`, leaving the default
-  // home path alone.
+  // Override file is claimed to .consumed, leaving default path untouched.
   assert.ok(fs.existsSync(`${alt}${CONSUMED_SUFFIX}`), 'override file should be claimed')
   assert.ok(!fs.existsSync(defaultBootstrapPath(home)), 'home path should be untouched')
 })

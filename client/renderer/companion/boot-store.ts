@@ -20,7 +20,7 @@ const INITIAL_BOOT_STATE: DesktopBootState = {
 
 export const $desktopBoot = atom<DesktopBootState>(INITIAL_BOOT_STATE)
 
-function clampProgress(value: number) {
+function clampProgress(value: number): number {
   if (!Number.isFinite(value)) {
     return 0
   }

@@ -27,7 +27,7 @@ const presetClass =
 // costly. user_* fields are intentionally not edited here — by arch §7.6 they
 // live in the memory layer and any edits go through memory_retain /
 // memory_forget tools.
-export function PersonaSection() {
+export function PersonaSection(): React.JSX.Element {
   const persona = useStore($persona)
   const [editing, setEditing] = useState(false)
   const [name, setName] = useState(persona?.name ?? '')

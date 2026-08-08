@@ -41,7 +41,7 @@ import { checkCompanionVoiceValidity } from './voice-validity'
 // When $auth flips back to unauthenticated (logout/expiry) this unmounts and
 // useGatewayBoot's cleanup tears the WS down. handleGatewayEvent dispatches the
 // streaming chat frames onto the chat store + state machine (events.ts).
-function GatewayBooter() {
+function GatewayBooter(): null {
   useGatewayBoot({
     handleGatewayEvent: handleCompanionEvent,
     onConnectionReady: () => {},
@@ -51,7 +51,7 @@ function GatewayBooter() {
   return null
 }
 
-export function CompanionRoot() {
+export function CompanionRoot(): React.JSX.Element {
   const auth = useStore($auth)
   const gatewayState = useStore($gatewayState)
   const lifecycle = useStore($companionLifecycle)

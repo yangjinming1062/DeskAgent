@@ -1,11 +1,8 @@
 import { IconVolume } from '@tabler/icons-react'
 import { useEffect, useState } from 'react'
 
-import { Button } from '@/shared/components/ui/button'
-import { SegmentedControl } from '@/shared/components/ui/segmented-control'
-import type { SegmentedControlOption } from '@/shared/components/ui/segmented-control'
-import { Switch } from '@/shared/components/ui/switch'
-import { getDeskAgentConfig, saveDeskAgentConfig } from '@/shared/deskagent/config'
+import { Button, SegmentedControl, type SegmentedControlOption, Switch } from '@/shared/components/ui'
+import { getDeskAgentConfig, saveDeskAgentConfig } from '@/shared/deskagent'
 import { triggerHaptic } from '@/shared/lib/haptics'
 import { notify, notifyError } from '@/shared/store/notifications'
 import { strings } from '@/shared/strings'
@@ -40,7 +37,7 @@ const readState = (config: DeskAgentConfigResponse): SpeechFormState => ({
   maxRecordingSeconds: config.voice?.max_recording_seconds ?? DEFAULTS.maxRecordingSeconds
 })
 
-export function SpeechSettings() {
+export function SpeechSettings(): React.JSX.Element {
   const s = strings.speech
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)

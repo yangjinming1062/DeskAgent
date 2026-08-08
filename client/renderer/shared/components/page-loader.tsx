@@ -1,7 +1,8 @@
 import type { ComponentProps } from 'react'
 
-import { Loader } from '@/shared/components/ui/loader'
 import { cn } from '@/shared/lib/utils'
+
+import { Loader } from './ui'
 
 interface PageLoaderProps extends Omit<ComponentProps<'div'>, 'children'> {
   label?: string
@@ -13,7 +14,7 @@ export function PageLoader({
   label = 'Loading',
   role = 'status',
   ...props
-}: PageLoaderProps) {
+}: PageLoaderProps): React.JSX.Element {
   return (
     <div
       {...props}

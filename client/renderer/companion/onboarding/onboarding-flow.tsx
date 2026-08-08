@@ -1,5 +1,6 @@
 import { useStore } from '@nanostores/react'
-import { type PointerEvent as ReactPointerEvent, useCallback, useEffect, useRef, useState } from 'react'
+import * as React from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 
 import { pickAvatarImage, type PickedImage } from '@/companion/avatar-image'
@@ -288,7 +289,7 @@ interface OnboardingFlowProps {
   onCompleted: () => void
 }
 
-export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
+export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.Element | null {
   const gatewayState = useStore($gatewayState)
   const voicePreparing = useStore($voicePreparing)
   const { requestGateway } = useGatewayRequest()
@@ -382,7 +383,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
   // container) so the drag survives the cursor leaving the dialog rect and
   // still updates while the cursor is over an unrelated region. setPointerCapture
   // would interfere with click events fired on the form's buttons/inputs.
-  const onDialogPointerDown = (e: ReactPointerEvent) => {
+  const onDialogPointerDown = (e: React.PointerEvent<HTMLDivElement>): void => {
     const target = e.target as HTMLElement
 
     if (target.closest('button, input, textarea, [contenteditable="true"]')) {
@@ -429,10 +430,8 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
     }
 
     const onLeave = (e: PointerEvent) => {
-      // H10: pointer leaving the window mid-drag (e.g. dragging across
-      // monitors) doesn't fire pointerup on document. Clear the drag
-      // state so subsequent moves don't keep translating the dialog
-      // with stale origin coordinates.
+      // Pointer leaving the window mid-drag clears the drag state so subsequent
+      // moves don't translate with stale origin coordinates.
       const drag = dragRef.current
 
       if (drag && drag.pointerId === e.pointerId) {
@@ -478,15 +477,8 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
         }
 
         if (state?.answers) {
-          // H6: merge the server draft with any answers the user has typed
-          // in the current session before the resume fired. A flat
-          // `setAnswers(state.answers)` would clobber typed-but-not-yet-
-          // submitted local edits: every `commit()` fires an async
-          // `onboarding.submit` IPC, and the server response may land after
-          // the user has already typed a different value locally. Local
-          // non-empty edits win so the user's most recent intent survives.
-          // Legacy drafts may still contain a stray ``self_intro`` key which
-          // is silently ignored because it isn't an OnboardingAnswers field.
+          // Merge server draft with answers typed in the current session;
+          // local non-empty edits win so recent user intent survives.
           const a = state.answers
           setAnswers(prev => {
             const next: OnboardingAnswers = { ...prev }
@@ -664,11 +656,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
 
   const confirmPortrait = async () => {
     setRefImage(null)
-    // H1: stop any audio still playing from the previous phase. The
-    // `onboarding.portrait.ok` narration fired in `enterHatching`'s tail
-    // can outlast the portrait phase; without this stop, the voice-phase
-    // first-play sample renders on top of that narration. Also guards
-    // against any other in-flight `speak()` from earlier in the flow.
+    // Stop any audio still playing from the previous phase before starting voice preview.
     stopSpeaking()
     // Show the backend's ranked alternatives alongside the full ZH catalog; the matched voice is the default.
     const matched = await matchVoicePreference(requestGateway, answers.voice ?? '')
@@ -987,7 +975,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps) {
   )
 }
 
-function Chip({ label, onClick, active }: { label: string; onClick: () => void; active?: boolean }) {
+function Chip({ label, onClick, active }: { label: string; onClick: () => void; active?: boolean }): React.JSX.Element {
   return (
     <button
       className={`rounded-full border px-3 py-1 text-xs transition ${active ? 'border-white/60 bg-white/25' : 'border-white/20 bg-white/5 hover:bg-white/15'}`}
@@ -1009,7 +997,7 @@ function PortraitPanel({
   seedUrl: string | null
   name: string
   hint: string | null
-}) {
+}): React.JSX.Element {
   const [zoomedUrl, setZoomedUrl] = useState<string | null>(null)
 
   return (
@@ -1044,7 +1032,7 @@ function PortraitThumb({
   name: string
   onZoom: (() => void) | undefined
   url: string | null
-}) {
+}): React.JSX.Element {
   return (
     <div className="flex flex-col items-center gap-1">
       {url ? (
@@ -1072,7 +1060,15 @@ function PortraitThumb({
 // document.body so the onboarding container's `backdrop-filter` doesn't trap
 // our `position: fixed` inside the small dialog box (per CSS Containing Block
 // rules).
-function PortraitLightbox({ url, name, onClose }: { url: string; name: string; onClose: () => void }) {
+function PortraitLightbox({
+  url,
+  name,
+  onClose
+}: {
+  url: string
+  name: string
+  onClose: () => void
+}): React.ReactPortal | null {
   const overlayRef = useRef<HTMLDivElement>(null)
 
   // Stable ref so the keydown listener attaches once, not on every parent

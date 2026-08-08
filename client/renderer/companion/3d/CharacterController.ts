@@ -315,7 +315,6 @@ export class CharacterController {
     })
   }
 
-  /** Clear the texture slot on every mesh for a PBR channel and dispose the previously-bound texture. */
   private clearPbrChannel(channel: PbrChannel, slot: 'map' | 'normalMap' | 'roughnessMap' | 'metalnessMap'): void {
     const previous = this.currentPbrTex[channel]
 

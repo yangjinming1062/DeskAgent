@@ -12,7 +12,7 @@ export function OverlayActionButton({
   tone = 'default',
   type = 'button',
   ...props
-}: OverlayActionButtonProps) {
+}: OverlayActionButtonProps): React.JSX.Element {
   return (
     <button
       className={cn(
@@ -37,7 +37,12 @@ interface OverlayIconButtonProps extends ButtonHTMLAttributes<HTMLButtonElement>
   children: ReactNode
 }
 
-export function OverlayIconButton({ children, className, type = 'button', ...props }: OverlayIconButtonProps) {
+export function OverlayIconButton({
+  children,
+  className,
+  type = 'button',
+  ...props
+}: OverlayIconButtonProps): React.JSX.Element {
   return (
     <OverlayActionButton
       className={cn('h-7 w-7 justify-center px-0 [&_svg]:size-4', className)}

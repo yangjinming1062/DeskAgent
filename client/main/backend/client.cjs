@@ -1,9 +1,3 @@
-/**
- * Thin HTTP wrapper for the DeskAgent cloud backend. Owns base URL resolution,
- * request building, timeout, JSON encoding, and error normalization.
- * Electron-free — wires in via main.cjs's ipcMain.handle callers.
- */
-
 const DEFAULT_TIMEOUT_MS = 15_000
 
 class BackendRequestError extends Error {

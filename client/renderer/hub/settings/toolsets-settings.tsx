@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 
-import { SearchField } from '@/shared/components/ui/search-field'
-import { Switch } from '@/shared/components/ui/switch'
+import { SearchField, Switch } from '@/shared/components/ui'
 import { Wrench } from '@/shared/lib/icons'
 import { TOOLSET_CATALOG, type ToolsetCatalogEntry } from '@/shared/lib/toolset-catalog'
 import { notifyError } from '@/shared/store/notifications'
@@ -22,7 +21,7 @@ type ToolsetView = {
   roster: ToolsetRosterEntry | undefined
 }
 
-export function ToolsetsSettings() {
+export function ToolsetsSettings(): React.JSX.Element {
   const t = strings
   const sk = t.skills
   const toolsetText = t.toolsets

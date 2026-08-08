@@ -3,13 +3,12 @@ import { type FormEvent, useEffect, useState } from 'react'
 
 import { BrandMark } from '@/shared/components/brand-mark'
 import { InlineNotice } from '@/shared/components/notifications'
-import { Button } from '@/shared/components/ui/button'
-import { Input } from '@/shared/components/ui/input'
+import { Button, Input } from '@/shared/components/ui'
 import { Loader2, LogIn } from '@/shared/lib/icons'
 import { $auth, login } from '@/shared/store/auth'
 import { strings } from '@/shared/strings'
 
-export function LoginPage() {
+export function LoginPage(): React.JSX.Element {
   const t = strings
   const a = t.login
   const auth = useStore($auth)

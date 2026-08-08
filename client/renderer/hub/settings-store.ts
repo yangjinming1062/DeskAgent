@@ -23,7 +23,7 @@ export type UpdateStatus =
 
 const $updateStatus = atom<UpdateStatus>({ status: 'idle' })
 
-function setUpdateStatus(next: UpdateStatus) {
+function setUpdateStatus(next: UpdateStatus): void {
   $updateStatus.set(next)
 }
 

@@ -29,7 +29,7 @@ function captureSpriteSnapshot(): CharacterSnapshot {
   return { state: $spriteState.get(), emotion: $spriteEmotion.get() }
 }
 
-export function Companion3D() {
+export function Companion3D(): React.JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const engineRef = useRef<Engine | null>(null)
   const equipped = useStore($equippedItem)

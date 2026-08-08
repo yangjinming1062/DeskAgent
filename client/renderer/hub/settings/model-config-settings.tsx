@@ -1,13 +1,19 @@
 import { useEffect, useState } from 'react'
 
 import { InlineNotice } from '@/shared/components/notifications'
-import { Button } from '@/shared/components/ui/button'
-import { ConfirmDialog } from '@/shared/components/ui/confirm-dialog'
-import { Input } from '@/shared/components/ui/input'
-import { SecretInputField } from '@/shared/components/ui/secret-input-field'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/shared/components/ui/select'
+import {
+  Button,
+  ConfirmDialog,
+  Input,
+  SecretInputField,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue
+} from '@/shared/components/ui'
 import type { DeskAgentGateway } from '@/shared/deskagent'
-import { getModelConfig, saveModelConfig } from '@/shared/deskagent/config'
+import { getModelConfig, saveModelConfig } from '@/shared/deskagent'
 import { triggerHaptic } from '@/shared/lib/haptics'
 import { Brain, Cpu, ImageIcon, Loader2, Mic, MonitorPlay, Plus, Volume2, X } from '@/shared/lib/icons'
 import type { IconComponent } from '@/shared/lib/icons'
@@ -95,7 +101,7 @@ export function ModelConfigSettings({
 }: {
   gateway?: DeskAgentGateway | null
   onConfigSaved?: () => void
-} = {}) {
+} = {}): React.JSX.Element {
   const t = strings
   const m = t.settings.models
 
@@ -223,12 +229,8 @@ export function ModelConfigSettings({
       cleared[c.key as CapabilityKey].cleared_api_key = originalForm[c.key as CapabilityKey].api_key_set
     }
 
-    // H5: persist immediately rather than staging the change locally and
-    // waiting for the user to click Save. The dialog copy
-    // ("确定要清除所有自定义模型配置吗？将回退到服务器默认。") implies an
-    // immediate action; without this, the cleared form is lost the moment
-    // the user navigates away. handleSave also reconnects the WS gateway
-    // since the LLM config is frozen at connect time.
+    // Persist immediately rather than staging the change locally and waiting for save.
+    // handleSave also reconnects the WS gateway since LLM config is frozen at connect time.
     setForm(cleared)
     setProviders([])
     void handleSave()
@@ -386,7 +388,7 @@ export function ModelConfigSettings({
         confirmLabel={m.clearKey}
         description={m.clearKeyConfirm}
         onConfirm={confirmClearApiKey}
-        onOpenChange={open => {
+        onOpenChange={(open: boolean) => {
           if (!open) {
             setClearingCap(null)
           }
@@ -431,7 +433,7 @@ function CapabilitySection({
   title: string
   updateBaseUrl: (value: string) => void
   updateModelName: (value: string) => void
-}) {
+}): React.JSX.Element {
   const status = state.api_key_set ? t.set : t.notSet
 
   return (

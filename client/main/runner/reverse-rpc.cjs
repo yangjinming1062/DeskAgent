@@ -1,10 +1,3 @@
-/**
- * Handles reverse RPC requests from Runner — currently `request_llm`,
- * which proxies an LLM completion through Backend's POST /api/llm/completion.
- *
- * Pure: no electron require. Call sites inject `backendSession`.
- */
-
 const DEFAULT_TIMEOUT_MS = 120_000
 // Guard against misbehaving Runner pushing arbitrarily large payloads.
 const MAX_REQUEST_PAYLOAD_BYTES = 1 * 1024 * 1024

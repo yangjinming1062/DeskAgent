@@ -223,10 +223,7 @@ function maybePushTierOverride(): void {
     $effectiveTierOverride.set(nextOverride)
   }
 
-  // Skip the RPC when the effective value hasn't changed. The earlier
-  // TIER_PUSH_MIN_INTERVAL_MS dedup could never fire because
-  // POLL_INTERVAL_MS (30s) > 5s; dedup on value alone implements the
-  // documented "only push when it actually changes" behavior.
+  // Dedup on value alone: only push when the effective value changes.
   if (lastTierPushed && lastTierPushed.value === desired) {
     return
   }

@@ -1,6 +1,6 @@
 import { useStore } from '@nanostores/react'
 import type React from 'react'
-import { type PointerEvent as ReactPointerEvent, useEffect, useMemo, useRef, useState } from 'react'
+import { type PointerEvent, useEffect, useMemo, useRef, useState } from 'react'
 
 import { useGatewayRequest } from '@/companion/boot/use-gateway-request'
 import {
@@ -23,7 +23,7 @@ import {
 import { useInteractiveRegion } from '@/companion/interactive-regions'
 import { $portraitUrl } from '@/companion/portrait-store'
 import { $spatialPos, $spatialScale, $viewport, computeOverlayAnchorBesideSprite } from '@/companion/spatial'
-import { getDeskAgentConfig } from '@/shared/deskagent/config'
+import { getDeskAgentConfig } from '@/shared/deskagent'
 import { $gatewayState } from '@/shared/store/gateway'
 
 import { DISTURBANCE_TIERS } from './disturbance-tiers'
@@ -464,7 +464,7 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
   const offsetRef = useRef<{ dx: number; dy: number }>(storedOffset ?? { dx: 0, dy: 0 })
   const dragRef = useRef<{ startX: number; startY: number; baseDx: number; baseDy: number } | null>(null)
 
-  const onHeaderPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
+  const onHeaderPointerDown = (e: PointerEvent<HTMLDivElement>) => {
     // Only left-button drags; ignore middle/right click and modifier-hold.
     if (e.button !== 0 || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) {
       return
@@ -487,7 +487,7 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
     }
   }
 
-  const onHeaderPointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
+  const onHeaderPointerMove = (e: PointerEvent<HTMLDivElement>) => {
     const d = dragRef.current
 
     if (!d) {
@@ -502,7 +502,7 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
     }
   }
 
-  const onHeaderPointerUp = (e: ReactPointerEvent<HTMLDivElement>) => {
+  const onHeaderPointerUp = (e: PointerEvent<HTMLDivElement>) => {
     if (!dragRef.current) {
       return
     }
@@ -664,7 +664,7 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
   )
 }
 
-function MessageBubble({ message }: { message: ChatMessage }) {
+function MessageBubble({ message }: { message: ChatMessage }): React.JSX.Element {
   const isUser = message.role === 'user'
 
   return (
