@@ -16,6 +16,7 @@ contextBridge.exposeInMainWorld('deskagent', {
   changePassword: payload => ipcRenderer.invoke('deskagent:auth:change-password', payload),
   api: request => ipcRenderer.invoke('deskagent:api', request),
   apiAsset: request => ipcRenderer.invoke('deskagent:api:asset', request),
+  apiAssetBuffer: request => ipcRenderer.invoke('deskagent:api:asset-buffer', request),
   readFileDataUrl: filePath => ipcRenderer.invoke('deskagent:readFileDataUrl', filePath),
   selectPaths: options => ipcRenderer.invoke('deskagent:selectPaths', options),
   writeClipboard: text => ipcRenderer.invoke('deskagent:writeClipboard', text),

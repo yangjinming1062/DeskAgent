@@ -113,28 +113,55 @@ export function Companion3D(): React.JSX.Element {
     }
 
     let cancelled = false
-    void engine
-      .loadCharacter(modelInfo.asset_url)
-      .then(() => {
-        if (cancelled) {
-          return
-        }
+    const url = modelInfo.asset_url
 
-        // Re-apply morph params + the currently equipped outfit so reloads
-        // preserve the user's customisation.
-        if (Object.keys(modelInfo.morph_params).length) {
-          engine.character.setMorphs(modelInfo.morph_params)
-        }
+    // Fetch signed bytes via IPC — main re-bases the host, so no CORS preflight.
+    // Null on fetch failure lets CharacterController fall through to procedural.
+    void (async () => {
+      let bytes: ArrayBuffer | null = null
 
-        refreshEquippedAndApply()
-      })
-      .catch(err => {
+      if (url) {
+        try {
+          const u8 = await window.deskagent.apiAssetBuffer({ url })
+
+          if (cancelled) {
+            return
+          }
+
+          bytes = u8.slice().buffer
+        } catch (err) {
+          if (cancelled) {
+            return
+          }
+
+          console.warn('[companion-3d] GLB fetch failed, using procedural fallback:', err)
+        }
+      }
+
+      try {
+        await engine.loadCharacter(bytes)
+      } catch (err) {
         if (cancelled) {
           return
         }
 
         console.error('[companion-3d] loadCharacter failed:', err)
-      })
+
+        return
+      }
+
+      if (cancelled) {
+        return
+      }
+
+      // Re-apply morph params + the currently equipped outfit so reloads
+      // preserve the user's customisation.
+      if (Object.keys(modelInfo.morph_params).length) {
+        engine.character.setMorphs(modelInfo.morph_params)
+      }
+
+      refreshEquippedAndApply()
+    })()
 
     return () => {
       cancelled = true

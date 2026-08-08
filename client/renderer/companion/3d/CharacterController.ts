@@ -40,8 +40,7 @@ type PbrSlot =
   | 'bumpMap'
   | 'displacementMap'
 
-const getPbrSlot = (mat: THREE.MeshStandardMaterial, slot: PbrSlot): THREE.Texture | null =>
-  mat[slot]
+const getPbrSlot = (mat: THREE.MeshStandardMaterial, slot: PbrSlot): THREE.Texture | null => mat[slot]
 
 const setPbrSlot = (mat: THREE.MeshStandardMaterial, slot: PbrSlot, tex: THREE.Texture | null): void => {
   mat[slot] = tex
@@ -102,13 +101,16 @@ export class CharacterController {
   private textureEpoch = 0
   private readonly textureLoader = new THREE.TextureLoader()
 
-  /** GLB: async-load model + animations; falls back to procedural on error. */
-  async load(url: string | null, scene: THREE.Scene): Promise<LoadedModelInfo> {
-    if (url) {
+  /** GLB: parse pre-fetched bytes + animations; falls back to procedural on error.
+   * Bytes arrive from the renderer's `apiAssetBuffer` IPC (host-stripped + re-based
+   * onto the local backend by main), so no CORS preflight against the signed
+   * URL's host. See connection.cjs::deskagent:api:asset-buffer. */
+  async load(bytes: ArrayBuffer | null, scene: THREE.Scene): Promise<LoadedModelInfo> {
+    if (bytes) {
       try {
         this.disposeRoot(scene)
         const loader = new GLTFLoader()
-        const gltf = await loader.loadAsync(url)
+        const gltf = await loader.parseAsync(bytes, '')
         this.root = gltf.scene
         this.root.traverse(child => {
           if (child instanceof THREE.Mesh) {
@@ -309,30 +311,50 @@ export class CharacterController {
     slot: 'map' | 'normalMap' | 'roughnessMap' | 'metalnessMap'
   ): void {
     const epoch = this.textureEpoch
-    this.textureLoader.load(url, tex => {
-      // Stale callback: a newer setOutfit / disposeRoot invalidated this load.
-      // Dispose the freshly-decoded texture (never bound to a mesh) and bail.
-      if (epoch < this.textureEpoch) {
-        tex.dispose()
+    const desktop = window.deskagent
+
+    void (async () => {
+      // Same host-strip via IPC as the GLB path; data URL is fine for textures
+      // (≪ GLB) and ``THREE.TextureLoader`` accepts them.
+      let dataUrl: string | null = null
+
+      try {
+        dataUrl = await desktop.apiAsset({ url })
+      } catch (err) {
+        console.warn(`[CharacterController] PBR channel '${channel}' fetch failed:`, err)
 
         return
       }
 
-      tex.colorSpace = colorSpace
-      this.currentPbrTex[channel]?.dispose()
-      this.currentPbrTex[channel] = tex
-      this.root.traverse(child => {
-        if (!(child instanceof THREE.Mesh)) {
+      if (epoch < this.textureEpoch || !dataUrl) {
+        return
+      }
+
+      this.textureLoader.load(dataUrl, tex => {
+        // Stale callback: a newer setOutfit / disposeRoot invalidated this load.
+        // Dispose the freshly-decoded texture (never bound to a mesh) and bail.
+        if (epoch < this.textureEpoch) {
+          tex.dispose()
+
           return
         }
 
-        const m = child.material as THREE.MeshStandardMaterial
+        tex.colorSpace = colorSpace
+        this.currentPbrTex[channel]?.dispose()
+        this.currentPbrTex[channel] = tex
+        this.root.traverse(child => {
+          if (!(child instanceof THREE.Mesh)) {
+            return
+          }
 
-        if (m) {
-          setPbrSlot(m, slot, tex)
-        }
+          const m = child.material as THREE.MeshStandardMaterial
+
+          if (m) {
+            setPbrSlot(m, slot, tex)
+          }
+        })
       })
-    })
+    })()
   }
 
   private clearPbrChannel(channel: PbrChannel, slot: 'map' | 'normalMap' | 'roughnessMap' | 'metalnessMap'): void {
