@@ -65,6 +65,12 @@ export function PersonaSection() {
     setSaving(true)
     setHint(null)
 
+    // C2: separate the PUT (write) and hydrate (read) failure modes. A
+    // transient GET failure after a successful PUT must NOT look like a
+    // save failure — the backend has the data; surfacing "保存失败"
+    // would tempt the user to retry and double-write.
+    let putOk = false
+
     try {
       await window.deskagent.api({
         body: {
@@ -82,15 +88,28 @@ export function PersonaSection() {
         method: 'PUT',
         path: '/api/companion/persona'
       })
-      await hydratePersona()
-      setEditing(false)
-
-      setShowPostSave(true)
+      putOk = true
     } catch {
       setHint('保存失败了，稍后再试')
-    } finally {
       setSaving(false)
+
+      return
     }
+
+    if (putOk) {
+      const result = await hydratePersona({ silent: true })
+
+      if (!result.ok) {
+        // Backend has the persona; the local copy didn't refresh. Show a
+        // softer hint so the user knows to expect a stale view until the
+        // next hydrate (next save, restart, etc.).
+        setHint('已保存，但本地刷新失败，稍后再试')
+      }
+    }
+
+    setEditing(false)
+    setShowPostSave(true)
+    setSaving(false)
   }
 
   if (!editing) {

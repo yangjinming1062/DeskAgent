@@ -32,6 +32,7 @@ import {
   type VoiceCatalog,
   type VoiceDesignPreview
 } from '@/companion/voice'
+import { notifyError } from '@/shared/store/notifications'
 
 import { pushDevLog } from './developer-overlay'
 import { PersonaSection } from './persona-editor'
@@ -93,6 +94,14 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps): React.Reac
   // showing the modal. Without this, step 5 shows blank fields and the
   // review screen renders '—' for each, misrepresenting the saved state.
   const openRetune = async () => {
+    // A11: dedupe concurrent clicks — two rapid clicks would otherwise
+    // issue two parallel `get_user_profile` fetches, both setting
+    // `retuneInitial`. The second write wins but the first fetch's work
+    // is wasted.
+    if (retuneOpen) {
+      return
+    }
+
     setRetuneOpen(true)
 
     try {
@@ -112,23 +121,14 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps): React.Reac
         user_hobbies: profile.user_hobbies ?? '',
         user_freeform: profile.user_freeform ?? ''
       })
-    } catch {
-      // Backend offline — fall back to the empty wizard. user_* defaults
-      // remain blank; the user can still edit.
-      setRetuneInitial({
-        name: persona?.name ?? '',
-        personality: persona?.personality ?? '',
-        speaking_style: persona?.speakingStyle ?? '',
-        biological_type: persona?.biological_type ?? '',
-        gender: persona?.gender ?? '',
-        appearance: persona?.appearance ?? '',
-        background: persona?.background ?? '',
-        user_call_name: '',
-        user_gender: '',
-        user_age_bucket: '',
-        user_hobbies: '',
-        user_freeform: ''
-      })
+    } catch (err) {
+      // C1: refuse to open with empty user_* values — the wizard saves
+      // whatever the form holds, so a blank fallback would PUT '' over the
+      // user's saved `user_call_name`, `user_gender`, `user_hobbies`, etc.
+      // and silently erase them. Close the modal and notify instead; the
+      // user can retry once the backend is reachable.
+      setRetuneOpen(false)
+      notifyError(err, '暂时拉不到个人资料，稍后再试')
     }
   }
 
@@ -247,9 +247,20 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps): React.Reac
         method: 'PUT',
         body: { item_id: itemId }
       })
-      const items = await window.deskagent.api<WardrobeItem[]>({ path: '/api/companion/wardrobe' })
-      setWardrobe(items ?? [])
-      refreshEquippedAndApply()
+
+      try {
+        const items = await window.deskagent.api<WardrobeItem[]>({ path: '/api/companion/wardrobe' })
+        setWardrobe(items ?? [])
+        refreshEquippedAndApply()
+      } catch (refreshErr) {
+        // H2: surface the refresh failure rather than swallowing it. The
+        // equip call already succeeded on the backend — the catalogue
+        // re-pull is best-effort. The `wardrobe.updated` event will fix
+        // the UI on its own; this hint is a courtesy.
+        setWardrobeHint(
+          refreshErr instanceof Error ? `已装备，但目录刷新失败：${refreshErr.message}` : '已装备，但目录刷新失败'
+        )
+      }
     } catch (err) {
       setWardrobeHint(err instanceof Error ? err.message : '装备失败')
     }

@@ -86,7 +86,12 @@ export function McpSettings({ gateway, onConfigSaved }: McpSettingsProps) {
 
     setName(selected ?? '')
     setBody(JSON.stringify(server ?? EMPTY_SERVER, null, 2))
-  }, [selected, servers])
+    // Seed name/body only on selection change. Earlier this listed `servers`
+    // too — `servers` is a fresh object ref every time `yamlDoc` mutates,
+    // which fires this effect on any save and wipes the in-flight edit
+    // buffer (H4). The save flow re-selects the edited row, so re-seeding
+    // here would be redundant.
+  }, [selected])
 
   if (!yamlDoc) {
     return <LoadingState label={m.loading} />

@@ -25,6 +25,12 @@ export interface UseRegeneratePortraitOptions {
   successHint?: string
   /** Override failure copy. */
   failureHint?: string
+  /**
+   * Optional per-call feedback passed via `regenerate(feedback)`. When set,
+   * the hook's own copy doesn't shadow the per-call value — callFeedback
+   * wins. Typed explicitly so the unsafe cast at line 65 stays gone.
+   */
+  feedback?: string
 }
 
 export interface UseRegeneratePortraitResult {
@@ -56,13 +62,14 @@ export function useRegeneratePortrait(options: UseRegeneratePortraitOptions = {}
     refImage,
     playAudioOnSuccess = false,
     successHint = DEFAULT_SUCCESS_HINT,
-    failureHint = DEFAULT_FAILURE_HINT
+    failureHint = DEFAULT_FAILURE_HINT,
+    feedback: optionFeedback
   } = options
 
   const regenerate = useCallback(
     async (callFeedback?: string) => {
       const fromCall = callFeedback?.trim() || undefined
-      const fromOptions = (options as { feedback?: string }).feedback?.trim() || undefined
+      const fromOptions = optionFeedback?.trim() || undefined
       const fromAtom = $regenFeedback.get().trim() || undefined
       const feedback = fromCall ?? fromOptions ?? fromAtom
 
@@ -130,7 +137,12 @@ export function useRegeneratePortrait(options: UseRegeneratePortraitOptions = {}
         setBusy(false)
       }
     },
-    [requestGateway, refImage, playAudioOnSuccess, successHint, failureHint, options]
+    // Depend on the destructured primitives, not on the `options` object
+    // itself — callers pass a fresh literal each render, which would
+    // otherwise give `regenerate` a new identity every render and defeat
+    // downstream React.memo. optionFeedback participates so a caller can
+    // change it without remounting the hook.
+    [requestGateway, refImage, playAudioOnSuccess, successHint, failureHint, optionFeedback]
   )
 
   const clearHint = useCallback(() => setHint(null), [])
