@@ -47,7 +47,16 @@ router = get_router()
 def _llm_http_error(e: Exception, op: str) -> HTTPException:
     """Classify and surface a non-leaking error envelope for upstream LLM/media errors."""
     classified = classify_api_error(e, model=op)
-    logger.warning("media operation failed", extra={"operation": op, "reason": classified.reason.value, "status_code": classified.status_code, "error": str(e)})
+    # ``exc_info`` keeps the full traceback in backend logs — the API
+    # response stays non-leaking (only the classified reason + message
+    # reach the renderer), but the next time a TTS/STT/image call goes
+    # sideways, operators have the actual exception chain instead of just
+    # the one-line reason string the renderer echoes back.
+    logger.warning(
+        "media operation failed",
+        extra={"operation": op, "reason": classified.reason.value, "status_code": classified.status_code, "error": str(e)},
+        exc_info=True,
+    )
     return classified_http_exception(classified)
 
 

@@ -168,7 +168,11 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
 
 
 app = FastAPI(title=SETTINGS.app_name, lifespan=lifespan)
-# API is LAN-reachable — an unrestricted origin list would expose companion endpoints to any browser.
+# CORS — defaults to wildcard (`*`) so deployed frontends on any host can
+# call the API; bearer-token auth means cookies aren't in play, so
+# allow_credentials stays False (FastAPI rejects `*` + credentials).
+# Override via ``CORS_ALLOWED_ORIGINS`` to a comma-separated origin list
+# when a tighter policy is needed.
 cors_origins = [o.strip() for o in SETTINGS.cors_allowed_origins.split(",") if o.strip()]
 if cors_origins:
     app.add_middleware(

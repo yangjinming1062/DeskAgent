@@ -146,8 +146,12 @@ class Settings(BaseSettings):
     log_format: Literal["json", "text"] = "json"
 
     # ── CORS ──
-    # Empty = CORS off; only the standalone web client needs cross-origin (desktop/runner are loopback).
-    cors_allowed_origins: str = "http://localhost:5173,http://localhost:5174,http://localhost:5175"
+    # Wildcard ("*") — accept any origin. The API uses bearer-token auth
+    # (not cookies), so credentialed cross-origin requests aren't a concern;
+    # the LAN-reachable companion endpoints are gated by signature + bearer
+    # anyway. Override via env to a comma-separated origin list if a tighter
+    # policy is ever needed.
+    cors_allowed_origins: str = "*"
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", case_sensitive=False, extra="ignore")
 
