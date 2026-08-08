@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 
 import { InlineNotice } from '@/shared/components/notifications'
 import { Button } from '@/shared/components/ui/button'
+import { ConfirmDialog } from '@/shared/components/ui/confirm-dialog'
 import { Input } from '@/shared/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/shared/components/ui/select'
 import { Switch } from '@/shared/components/ui/switch'
@@ -123,6 +124,8 @@ export function AccountSettings({ onConfigSaved }: { onConfigSaved?: () => void 
   const [web, setWeb] = useState<WebFormState>(EMPTY_WEB)
   const [agent, setAgent] = useState<AgentFormState>(EMPTY_AGENT)
   const [chat, setChat] = useState<ChatFormState>(EMPTY_CHAT)
+  const [clearingKey, setClearingKey] = useState<'brave_api_key' | 'tavily_api_key' | null>(null)
+  const [signOutOpen, setSignOutOpen] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -199,12 +202,7 @@ export function AccountSettings({ onConfigSaved }: { onConfigSaved?: () => void 
   }
 
   const onClearApiKey = (key: 'brave_api_key' | 'tavily_api_key') => {
-    if (!window.confirm(a.webSearch.clearKeyConfirm)) {
-      return
-    }
-
-    const clearedField = key === 'brave_api_key' ? 'cleared_brave' : 'cleared_tavily'
-    setWeb(prev => ({ ...prev, [key]: '', [clearedField]: true }))
+    setClearingKey(key)
   }
 
   const handleSave = async () => {
@@ -317,11 +315,7 @@ export function AccountSettings({ onConfigSaved }: { onConfigSaved?: () => void 
         action={
           <Button
             className="text-destructive hover:text-destructive"
-            onClick={() => {
-              if (window.confirm(a.signOutConfirm)) {
-                void logout()
-              }
-            }}
+            onClick={() => setSignOutOpen(true)}
             size="sm"
             variant="outline"
           >
@@ -339,6 +333,40 @@ export function AccountSettings({ onConfigSaved }: { onConfigSaved?: () => void 
           {isSaving ? t.common.saving : t.common.save}
         </Button>
       </div>
+
+      <ConfirmDialog
+        cancelLabel={t.common.cancel}
+        confirmLabel={a.webSearch.clearKey}
+        description={a.webSearch.clearKeyConfirm}
+        onConfirm={() => {
+          if (!clearingKey) {
+            return
+          }
+
+          const clearedField = clearingKey === 'brave_api_key' ? 'cleared_brave' : 'cleared_tavily'
+          setWeb(prev => ({ ...prev, [clearingKey]: '', [clearedField]: true }))
+        }}
+        onOpenChange={open => {
+          if (!open) {
+            setClearingKey(null)
+          }
+        }}
+        open={clearingKey !== null}
+        title={a.webSearch.clearKey}
+        variant="destructive"
+      />
+      <ConfirmDialog
+        cancelLabel={t.common.cancel}
+        confirmLabel={a.signOut}
+        description={a.signOutConfirm}
+        onConfirm={() => {
+          void logout()
+        }}
+        onOpenChange={setSignOutOpen}
+        open={signOutOpen}
+        title={a.signOut}
+        variant="destructive"
+      />
     </SettingsContent>
   )
 }
