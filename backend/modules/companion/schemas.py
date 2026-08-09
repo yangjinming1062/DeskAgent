@@ -29,10 +29,11 @@ SucceededStatus = Literal["succeeded"]
 class AvatarAssetResponse(BaseModel):
     id: int
     asset_url: str
-    # Step-1 (avatar-only) rows leave the seed empty until the user confirms
-    # the face and triggers ``POST /avatar/{id}/fullbody``. Older clients see
-    # ``""`` and skip the seed pane; new clients branch on truthiness.
-    seed_url: str | None = ""
+    # Step-1 (avatar-only) rows leave seed URLs empty until the user confirms
+    # the face and triggers ``POST /avatar/{id}/fullbody``.
+    seed_front_url: str | None = ""
+    seed_right_url: str | None = ""
+    seed_back_url: str | None = ""
     prompt: str = ""
     status: SucceededStatus = "succeeded"
 
@@ -43,14 +44,6 @@ class FullbodyGenerateRequest(BaseModel):
 
 class AvatarGenerateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
-
-
-class AvatarUploadRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    # 8 MiB of base64 caps the decoded image well below disk-write size.
-    image: str = Field(min_length=1, max_length=8 * 1024 * 1024)
-    content_type: str | None = Field(default=None, max_length=64)
 
 
 class AvatarFromImageRequest(BaseModel):

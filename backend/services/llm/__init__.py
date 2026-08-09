@@ -15,7 +15,8 @@ from .llm_fallback import execute_with_fallback
 from .llm_retry import call_with_retry
 from .llm_retry import LLMRuntimeError
 from .prompt_engineer import chat
-from .prompt_engineer import enhance_character_image_prompts
+from .prompt_engineer import enhance_avatar_prompt
+from .prompt_engineer import enhance_fullbody_multiview_prompts
 from .prompt_engineer import enhance_texture_prompt
 from .providers import aclose_all
 from .providers import BaseProvider
@@ -100,7 +101,8 @@ __all__ = [
     "FailoverReason",
     "compress_history_if_needed",
     "describe_reference_image",
-    "enhance_character_image_prompts",
+    "enhance_avatar_prompt",
+    "enhance_fullbody_multiview_prompts",
     "enhance_texture_prompt",
     "resolve_user_llm_config",
     "merge_provider_json",

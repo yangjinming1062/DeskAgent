@@ -6,7 +6,6 @@ from .schemas import AvatarAssetResponse
 from .schemas import AvatarFromImageRequest
 from .schemas import AvatarGenerateRequest
 from .schemas import AvatarHistoryResponse
-from .schemas import AvatarUploadRequest
 from .schemas import CompanionModelResponse
 from .schemas import FullbodyGenerateRequest
 from .schemas import ModelGenerateRequest
@@ -22,7 +21,6 @@ __all__ = [
     "AvatarFromImageRequest",
     "AvatarGenerateRequest",
     "AvatarHistoryResponse",
-    "AvatarUploadRequest",
     "CompanionModel",
     "CompanionModelResponse",
     "FullbodyGenerateRequest",

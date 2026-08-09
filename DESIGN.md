@@ -10,7 +10,7 @@
 - **以游戏设计思维做交互**：每次点击、每次状态切换都应有"有意思"的反馈，而非冷冰冰的功能响应。点击不是"触发回调"，是"戳了一下活的东西"。
 - **永远不要完全静态**：静态贴图承载不了情感。形象必须时刻"活着"——呼吸、微动作、反应。用户不操作时它也得自己动。
 - **陪伴叙事优于工具叙事**：所有加载、等待、错误都以"伙伴正在做某事"呈现，不暴露技术过程。"生成形象中"是"它正在想自己该长什么样"，不是 spinner。
-- **渐进式丰富**：3D 基底模型（按物种预制的 rigged GLB）立即可用，个性化纹理与服装后台异步生成、就绪后热替，不一次性耗尽生图配额。
+- **表达永不空白与渐进式定制**：模型生成期间及异常时由程序化蛋形（procedural fallback egg）确保桌面始终有生命体渲染；通过用户个性化描述与三视图生成定制专属 3D 模型；换装系统（材质预设与 AI 纹理）支持后台热替而无需重新生成模型。
 - **个性化驱动，非模板化**：伙伴的动作与反应从其**角色定义 + 对用户的记忆**派生。角色定义（静态、用户定义）决定"长什么样、性格如何"——驱动形象与动画资产生成；记忆（动态、随互动累积）决定"此刻怎么表现"——驱动运行时言语、情绪、主动频率。
 
 ---
@@ -21,24 +21,23 @@
 
 | 层 | 形态 | 用途 |
 |----|------|------|
-| **portrait（配对形象图）** | 两张 PNG：avatar（半身头像）+ seed（全身种子图） | avatar：onboarding 身份确认、设置页展示、聊天头像；seed：正面站立的全身参考图，驱动 3D 模型生成。两张配对生成、一并展示，引导流程中可分别点击查看大图 |
-| **3D 模型（rigged GLB）** | glTF 二进制（Tripo3D 生成 + Blender 注入 morph），骨骼动画由客户端注入 | 桌面常驻渲染的唯一形象载体（idle / sleeping / working / speaking / … 全部经实时 3D 驱动） |
+| **portrait（形象与三视图）** | 四张 PNG：avatar（半身头像）+ 三视角 seed（正面/右侧面/背面全身立绘） | avatar：onboarding 身份确认、设置页展示、聊天头像；seed：正面、右侧面、背面三视角全身参考图（A-pose、白底），驱动 3D 模型生成。两步生成：先确认头像，再生成三视图并排展示，引导流程与设置页中可分别点击查看大图 |
+| **3D 模型（rigged GLB）** | glTF 二进制（Tripo3D 多视图生成 + Blender 注入 morph），骨骼动画由客户端注入 | 桌面常驻渲染的唯一形象载体（idle / sleeping / working / speaking / … 全部经实时 3D 驱动） |
 | **换装（wardrobe）** | 材质覆盖（颜色/粗糙度/金属度）+ 可选 PBR 纹理贴图 | 外观定制——颜色预设即时生效、AI 纹理后台生成热替，**零模型重生** |
 
 伙伴的"身体"由 3D 模型提供，"穿什么"由换装层提供。切换状态 = 切换播放的骨骼动画（§2）；切换情绪 = 切换 morph target 表情；换装 = 热替材质/纹理——三者正交组合，互不阻塞。
 
-模型生成由 Backend 单一路径支撑（[ARCHITECTURE.md §6.2](ARCHITECTURE.md)）：以 seed 全身种子图为唯一输入，经 Tripo3D image-to-3D + rig（Mixamo）生成 rigged GLB，Blender 注入 morph targets 后下发。动画不内嵌 GLB——全部 ~85 个 clip 由客户端 TypeScript 骨骼旋转关键帧注入。生成失败时客户端渲染程序化蛋形兜底角色。
+模型生成由 Backend 单一路径支撑（[ARCHITECTURE.md §6.2](ARCHITECTURE.md)）：以正面、右侧面、背面三视角全身种子图为输入，经 Tripo3D multiview-to-3D + rig（Mixamo/Tripo）生成 rigged GLB，Blender 注入 morph targets 后下发。动画不内嵌 GLB——全部动画 clip 由客户端 TypeScript 骨骼旋转关键帧注入（具体动画设计见[MODEL_SPEC.md](docs/MODEL_SPEC.md)）。生成失败时客户端渲染程序化蛋形兜底角色。
 
 ### 1.2 渲染约束
 
 - **实时 3D 渲染引擎**：Three.js WebGL（WebGLRenderer alpha 透明），PBR 材质（MeshStandardMaterial），三点光照 + PMREM 环境贴图提供真实反射。写实风格——皮肤 SSS 近似、头发 card mesh、物理光照。
 - **窗口架构**：精灵窗口（透明置顶、click-through 可控的 BrowserWindow）是**唯一常驻主窗口**，承载形象本身，并在对话激活时与对话框一同居中（见 §3、§6.1）。登录与应用设置是从托盘唤起的按需工具窗口，不常驻——"对话发生在角色身边"。
 - **性能基线**：渲染循环目标 60fps；idle 状态骨骼动画 + 自动眨眼 + morph 微表情的总 GPU 负载应低于 5%（Electron Chromium WebGL 硬件加速）。
-- **远程显示降级**：远程 / 转发显示（X11/VNC/RDP）无法合成透明层时，精灵窗口降级为非透明（SPRITE_TRANSPARENT 路径）；桌面图标枚举在 macOS 上不可用时降级为"找不到图标"人格化表达。
 
 ### 1.3 模型即用与程序化兜底
 
-**伙伴表达永不空白**（[ARCHITECTURE.md §10 #9](ARCHITECTURE.md) 不变量）：3D 引擎始终在渲染——GLB 加载成功后骨骼动画 + morph 表情覆盖全部状态（§2），无需等待逐状态生成；GLB 加载失败时引擎渲染程序化兜底角色（Three.js 基本体组合 + 正弦驱动呼吸/眨眼/说话浮动），保证形象从启动第一帧起就"活着"。portrait 重生不触发模型失效——模型只随物种变更或用户显式请求重生。
+**伙伴表达永不空白**（[ARCHITECTURE.md §10 #9](ARCHITECTURE.md) 不变量）：3D 引擎始终在渲染——GLB 加载成功后骨骼动画 + morph 表情覆盖全部状态（§2），无需等待逐状态生成；GLB 加载失败或未完成时引擎渲染程序化兜底角色（Three.js 基本体组合 + 正弦驱动呼吸/眨眼/说话浮动），保证形象从启动第一帧起就"活着"。portrait 重生不触发模型失效——模型只随物种变更或用户显式请求重生。
 
 Tripo3D 生成的 PBR 纹理内嵌于 GLB，模型下发即完整可用；表情由注入的 morph targets 驱动。纹理升级是增强而非前置条件。
 
@@ -53,7 +52,7 @@ Tripo3D 生成的 PBR 纹理内嵌于 GLB，模型下发即完整可用；表情
 | **材质预设** | 颜色/粗糙度/金属度覆盖（6 种预设配色） | 零生成 | 立即生效 |
 | **AI 纹理** | image-gen 全身 PBR 纹理贴图 | 一次生图 | 后台异步生成，就绪热替 |
 
-换装在客户端是**非破坏性操作**——覆盖材质属性或加载新纹理贴图，不动骨骼动画和 morph targets。换一件衣服不会打断正在播放的任何状态动画。换装产物落 companion-assets/ 持久目录，跨设备复用。事件流走 wardrobe.updated 单通道推送。
+换装在客户端是**非破坏性操作**——覆盖材质属性或加载新纹理贴图，不动骨骼动画和 morph targets。换一件衣服不会打断正在播放的任何状态动画。
 
 ---
 ## 2. 动画状态机
@@ -180,14 +179,6 @@ home 是唯一持久化的 locale。其余 locale 从 home 与上下文派生，
 - 不让精灵频繁移动——移动是事件而非常态，常态是"在某处待着"。
 - 不让用户看到"瞬移"（debug/全屏切换等场景除外）。
 
-### 3.8 跨模块契约
-
-**Runner 新增能力**（详见 §10）：`system.get_windows`（枚举可见窗口几何 + z-order + focused 标记）、`system.get_work_area`（可用区域）、`system.get_cursor_pos`（鼠标位置）；可选 `system.click_at`（坐标点击，ritual walk 操作执行）。桌面图标位置仅 Windows 经 Shell API 可枚举，macOS 降级为"找不到图标"人格化表达。
-
-**与 §2 状态机的组合**：移动期间默认显示 IDLE 动画（除非状态机正处更高优先级状态）；抵达 target 后切 INTERACTING；SLEEPING 期间不主动换位（除非被用户唤醒）。
-
-**Backend ↔ Client 空间协议**：LLM 可在回复中前缀 `[spatial:LOCALE,target:KEYWORD]` 表达"想去某处"，由 Backend 的 `AffectScrubber` 解析后随 `message.complete.affect.locale / .target` 透传给 Client。Client 据 §3 档位与当前 chat-open 状态决定是否落位——Backend 仍不知像素坐标或当前 locale。Client 本地触发的空间决策（焦点切换、长 idle、drag 等）不经过 Backend；只有 LLM 显式表达"想去某处"时才走 `message.complete.affect.locale` 这条带外通道。
-
 ---
 
 ## 4. 伙伴生命周期
@@ -210,17 +201,17 @@ DeskAgent 区别于一切既有桌面宠物 / 桌面 Agent 的核心，在于伙
 │  最终确认权。                                            │
 │  产出：一份结构化的角色定义，持久化在用户维度。          │
 └──────────────────────────┬─────────────────────────────┘
-                           │  用户确认
+                           │  用户确认角色描述
                            ▼
-┌─ 形象生成 (Avatar Generation) ─────────────────────────┐
-│  Backend 据角色定义装配生图 prompt，调用云端图片生成工具 │
-│  产出专属形象资产，与角色定义一同在用户维度持久化。      │
+┌─ 两步生图与形象确认 (Avatar & Fullbody) ───────────────┐
+│  • 步 1 生成半身头像（avatar），用户确认或反馈微调      │
+│  • 步 2 以头像为锚点生成正/右/背三视角全身立绘（seed）  │
 └──────────────────────────┬─────────────────────────────┘
-                           │  资产下发至 Client
+                           │  形象 + 音色确认完成
                            ▼
-┌─ 孵化 (Hatch) ─────────────────────────────────────────┐
-│  Client 将桌面上的"蛋"替换为生成的专属形象，配以仪式感 │
-│  过渡动画。这一刻是产品核心的情感锚点。                  │
+┌─ 3D 建模与孵化 (3D Model Generation & Hatch) ───────────┐
+│  • 三视角立绘作为输入经 Tripo3D 多视图建模产出 3D 模型  │
+│  • 客户端将桌面"蛋"替换为生成的专属形象，播放初次问候   │
 └──────────────────────────┬─────────────────────────────┘
                            ▼
 ┌─ 持续陪伴 (Ongoing Companionship) ─────────────────────┐
@@ -231,7 +222,7 @@ DeskAgent 区别于一切既有桌面宠物 / 桌面 Agent 的核心，在于伙
 └────────────────────────────────────────────────────────┘
 ```
 
-诞生的详细交互设计（蛋的交互、对话式信息采集、孵化动画、形象/音色确认）见 §5；空间行为与移动见 §3；持续陪伴的交互范式（双模式对话、主动陪伴、用户直接交互、自主行为、故障态）见 §6。后续可在此基础上扩展"成长 / 进化"机制（伙伴随互动阶段性地演变形象或人格），具体设计待补。
+诞生的详细交互设计（蛋的交互、对话式信息采集、形象两步生成/确认、音色确认、3D 建模孵化）见 §5；空间行为与移动见 §3；持续陪伴的交互范式（双模式对话、主动陪伴、用户直接交互、自主行为、故障态）见 §6。后续可在此基础上扩展"成长 / 进化"机制（伙伴随互动阶段性地演变形象或人格），具体设计待补。
 
 ---
 
@@ -239,57 +230,57 @@ DeskAgent 区别于一切既有桌面宠物 / 桌面 Agent 的核心，在于伙
 
 设计目标：让用户在第一次见面时建立情感连接——**不是"填表"，而是"和一个正在成形的新朋友对话"**。
 
-### 4.1 蛋阶段（Egg）
+### 5.1 蛋阶段（Egg）
 
-安装完成 → 蛋以默认形象出现在桌面（透明置顶窗口），带轻微 idle 动画。用户每次点击产生新裂纹，累计 5 次蛋完全碎裂并唤起登录。不在蛋上贴"点我"提示——让 idle 动画引导好奇心。未登录时蛋是"teaser"，登录后变"drowsy"（半醒），网关连上变"awake"。
+安装完成 → 蛋以默认形象出现在桌面（透明置顶窗口）。
 
-### 4.2 对话式信息采集（3 子阶段、13 步）
+### 5.2 对话式信息采集（3 子阶段、13 步）
 
-蛋破碎后，一个发光的、尚未定形的轮廓（silhouette）开始与用户对话——叙事上是"这个新生命在问你怎么定义它"。问题分三个子阶段：
+蛋破碎后，开始与用户对话。问题分三个子阶段：
 
 - **角色子阶段**（Q1–Q6）：名字 → 物种 → 角色性别 → 形象描述 → 角色定位 → 性格。物种 / 性别 / 形象描述三步连排形成视觉锚点，前一个答案塑造后一个的语境。
 - **用户子阶段**（Q7–Q12）：怎么称呼您 → 您的性别 → 年龄段 → 您的爱好 → 说话风格 → 还有什么想告诉我。
-- **音色子阶段**（Q13）：音色偏好（描述句，喂给 §4.5 标签评分）。
+- **音色子阶段**（Q13）：音色偏好（描述句，喂给 §5.5 标签评分）。
 
-每个问题由 silhouette 以默认中性语音 TTS 说出（同时显示文字气泡），让用户从第一步就建立"它会说话"的预期。全部支持"跳过/返回上一步"；只有名字必填。角色子阶段答完即触发孵化（§4.3），portrait 生成期间用户可以同步填后两个子阶段——把 10–60s 的云端图像生成时间隐藏在用户输入里。
+每个问题由预制 TTS 说出（同时显示文字气泡），让用户从第一步就建立"它会说话"的预期。全部支持"跳过/返回上一步"；只有名字必填。角色子阶段答完即触发孵化（§5.3），portrait 生成期间用户可以同步填后两个子阶段——把 10–60s 的云端图像生成时间隐藏在用户输入里。
 
-形象描述这一步把 `PersonaUpdate.appearance` 字段真正接通到 silhouette → portrait 生图链路，让用户主动告诉伙伴"希望我长什么样"，避免单纯基于姓名 / 性格 / 角色定位生成的随机性。这一步同时可**附一张参考图**（图与文字并存，不互斥）：有参考图时孵化阶段的首次 portrait 走 `POST /api/companion/avatar/from-image`，让伙伴一次就"照着这张图画自己"，而不是只能在 §4.4 事后推翻重来；描述由服务端从 persona prompt 取（appearance 已在其中），客户端只传图。参考图只活在会话内存里——`onboarding.submit` 只落文本答案，断点恢复后重新询问图片而非静默按无图生成。
+形象描述这一步让用户主动告诉伙伴"希望我长什么样"。同时可**附一张参考图**（图与文字并存，不互斥）：有参考图时让伙伴一次就"照着这张图画自己"，而不是只能在事后推翻重来；描述由服务端从 persona prompt 取（appearance 已在其中）。参考图只活在会话内存里——`onboarding.submit` 只落文本答案，断点恢复后重新询问图片而非静默按无图生成。
 
 **标签的两种语义**：多数问题的标签就是答案本身，点击即填入输入框；但「我该怎么称呼您？」的标签（名字 / 昵称 / 称号 / 自填）是**称呼类型选择器**——点「昵称」不该把"昵称"二字当成称呼存下来，而是把输入框改问"那，您的昵称是？"再收具体值。只有「称号」这类本身就是称呼的才展开现成候选（老板 / 主人 / …）直接填入。落库的 `user_call_name` 始终是用户录入的具体称呼，类型本身不入库。
 
 **断点恢复**（[ARCHITECTURE.md §6.3](ARCHITECTURE.md)）：每个回答经 `onboarding.submit {field, value}` 即时落盘单个字段，Client 启动时调 `onboarding.get_state` 从下一个未答问题恢复——崩溃/退出不丢进度。**关键差异**：`is_complete=True` 在角色子阶段答完即被设置，但 `get_onboarding_state` 只在 user_* + voice 全部答齐后才返回 `complete=True`；中途崩溃后 client 会恢复进入用户子阶段而不是直接跳到 onboarding 结束。
 
-### 4.3 孵化与形象生成
+### 5.3 孵化与两步形象生成
 
-孵化在角色子阶段（Q1–Q6）答完即触发——不等 13 题收齐。**关键不变量**：Backend 的形象生成要求 `persona.is_complete=True`，因此 Client 在孵化开始时**先把 6 个角色字段（无 user_*、无 voice）经 `PUT /api/companion/persona` 落库完成**——`update_persona` 服务端按 `extra="forbid"` schema 严格校验角色定义字段（包含由 `deriveSpeakingStyle(role, personality)` 推导的 `speaking_style` 占位）、user_* 字段此时为空 dict 被 `extract_user_profile` 无侵入分流、单 `db.commit()` 同时落 persona 与 memory draft。`is_complete=True` 此时被设置，后续 `onboarding.submit` 走 post-finalization 分支（详见 §4.2 末尾）。
+孵化在角色子阶段（Q1–Q6）答完即触发——不等 13 题收齐。
 
-用户子阶段（Q7–Q12）和音色描述（Q13）通过 `onboarding.submit` 逐字段增量提交，persona 已 finalized 时走 `submit_onboarding_field` 的 post-finalization 分支：`user_*` 路由到 Memory 表（同事务 upsert `user_profile:*` 行），`voice` / `speaking_style` 直接 patch `definition_json`（draft）。所有 13 题答齐后 `finish()` 调 `savePersona(assemblePersona(answers))` 做全量 PUT safety net，把 user_* 字段最终落到 Memory——与 `update_persona` 的 dual-write 行为一致。
+用户子阶段（Q7–Q12）和音色描述（Q13）通过 `onboarding.submit` 逐字段增量提交。
 
 生图超时/失败时 silhouette 说"我还没想好…"并自动重试（最多 3 次），不暴露技术错误；三次失败后允许稍后再试，不阻断用户。
 
-### 4.4 形象确认
+### 5.4 形象确认与三视图
 
-portrait 生成完成，silhouette 散开变为完整形象展示。操作：**确认** / **重新生成**（`avatar.regenerate`，重生 portrait 作为身份参考图与纹理种子）/ **自己上传**（上传一张图片作为角色基准形象）。上传图先进入预览态而非直接生效：用户可**就用这张**（`POST /api/companion/avatar/upload`，原图即 portrait，无云端角色参照）或**以它为基准重绘**（`POST /api/companion/avatar/from-image`，可附加一段描述；上传图作为 provider 的 `reference_image` 角色参照重新渲染成符合种子图契约的 portrait——用户原图背景复杂/构图不符时由 provider 重绘修正；原生 i2i provider 直接消费参考图，纯文本生图 provider 先经视觉模型描述再折入 prompt）。不一次生成多个候选让用户挑——单次确认 + 反馈式重生成更经济也更聚焦。
+步 1 头像（portrait avatar）生成完成，silhouette 散开变为头像展示。操作：**确认** / **重新生成**（`avatar.regenerate`，重生头像，可带反馈）/ **自己上传**（上传一张图片作为角色基准形象，`POST /api/companion/avatar/from-image` 重绘为符合契约的 portrait）。
+
+头像确认后自动触发步 2 全身三视图生成，以确认的头像特征与描述为锚点，并发生成正面、右侧面、背面三视角全身立绘并排展示，作为后续 3D 建模的输入。不一次生成多个候选让用户挑——单次确认 + 反馈式重生成更经济也更聚焦。
 
 形象确认后才进入用户子阶段，因此用户在 Q7–Q12 输入时任何 portrait regenerate 都不会阻塞 UI。
 
-### 4.5 音色确认
+### 5.5 音色确认
 
 音色子阶段包含两步：**先**录入 Q13 描述句（"温柔的少女音、节奏偏慢…"），**后**浏览目录。描述提交后 `tts.match_voice {preference}` 把描述经标签评分映射到当前 TTS provider 目录中最贴合的 voice id，展示推荐音色 + 候选。操作：使用这个 / 换一个（从候选另选，每个可试听）。匹配到的 voice id 由 Client 持久化，后续 TTS 透传给 provider。
 
-> **设计决策**：音色匹配是即时确定性的标签评分，而非 LLM。一个窄域标签任务用 LLM 反而引入不必要的延迟与成本；curated 目录已足够。无匹配时优先中性默认音色。
-
 **二次定制通道**：设置面板 → 伙伴设置 → 音色管理，除了目录浏览 + 试听外，还可通过 `tts.design_voice {prompt, preview_text?}` 走 LLM 生成**专属音色**：基于自然语言描述（"温柔女声、节奏偏慢"）设计 voice id 并返回一段试音 mp3/base64。属于 LLM-backed 增强路径而非主流程，onboarding 仍走 `tts.match_voice` 标签评分；生成结果可像其他候选一样试听/选择/覆盖持久化的 voice id。
 
-### 4.6 最终孵化与问候
+### 5.6 3D 模型生成与最终孵化
 
-形象 + 音色就位，3D 模型经 `POST /api/companion/model` 异步生成（Tripo3D image-to-3D，以 seed 种子图为输入），就绪后经 `model.ready` 事件下发。形象以 idle 骨骼动画"活"起来，用确认后的音色说出第一句问候。onboarding 结束，进入持续陪伴。
+形象 + 音色就位，3D 模型经 `POST /api/companion/model` 异步生成（Tripo3D multiview-to-3D，以正面/右侧面/背面三视角全身种子图为输入），就绪后经 `model.ready` 事件下发。形象以 idle 骨骼动画"活"起来，用确认后的音色说出第一句问候。onboarding 结束，进入持续陪伴。
 
 ---
 
 ## 6. 持续陪伴交互
 
-### 5.1 双模式对话
+### 6.1 双模式对话
 
 | 模式 | 触发 | 形态 | 麦克风 |
 |------|------|------|--------|
@@ -304,7 +295,7 @@ portrait 生成完成，silhouette 散开变为完整形象展示。操作：**�
 
 **响应模式**（设置项，见 §8）：默认文字（对话模式下精灵以文字应答，不打扰）/ 始终语音（对话模式下精灵也以 TTS 说出回复）。语音通话模式始终语音。主动陪伴消息（§6.2）不受此设置约束。
 
-### 5.2 主动陪伴与打扰档位
+### 6.2 主动陪伴与打扰档位
 
 Backend 的 Cron / `send_message` 经 WS 推送主动消息（[ARCHITECTURE.md §5](ARCHITECTURE.md)）。**伙伴的一切主动行为受三档打扰等级约束**，档位由用户设置 + Client 检测到的用户活动共同决定，Client 经 `companion.set_disturbance_tier` 上报当前生效档位。**档位只约束伙伴的主动行为；用户主动发起的交互永远不受限。**
 
@@ -328,7 +319,7 @@ Backend 只镜像这个最终值（`services/disturbance.py::_disturbance`），
 
 Client 收到主动消息后：形象切 SPEAKING + 播 TTS；对话框未开则在形象旁冒气泡，已开则在对话框加一条。典型场景：定时问候、日程提醒、长时间无交互后搭话、节日/天气情境化闲聊。
 
-### 5.3 用户直接交互（形象本体）
+### 6.3 用户直接交互（形象本体）
 
 用户对形象本身的直接操作（不经过对话框）是情绪价值的核心——**形象"有脾气"**：单击戳（高频戳触发递进反应）、双击唤起对话、长按/拖拽（松手回弹）、右键快捷菜单、悬停（注意到鼠标）。
 
@@ -336,14 +327,14 @@ Client 收到主动消息后：形象切 SPEAKING + 播 TTS；对话框未开则
 
 **LLM + 记忆驱动的反应增强**：在零延迟本地文案池（`POKE_LIGHT`/`MEDIUM`/`HEAVY`）之上叠加可选 LLM 通道——Client 戳后 debounce 200ms 调 `companion.interact` RPC，Backend 据 persona + 长期记忆推一条 ≤ 40 字符的反应文案 + 可选 emotion。响应到达时**不打断**正在播的本地 TTS，仅作文本气泡叠加（缓存入 tone-keyed 队列，下次同 tone 单次戳优先使用 LLM 缓存）。后端 throttle 1.5s，Client 端 debounce 2s，per-user inflight 取消。RPC 失败/超时/解析失败/无 persona 时静默吞掉，本地池兜底。
 
-### 5.4 自主行为（让形象"活着"）
+### 6.4 自主行为（让形象"活着"）
 
 IDLE 时形象不是静止贴图。两类自主行为，**都不触发 TTS、不弹气泡，纯视觉**（空间层面的自主行为——漫游、栖息、换位——见 §3，本节聚焦动画层面）：
 
 - **微动作**（10–25s 随机间隔）：眨眼、换重心、看四周、伸懒腰等 idle 变体随机切换。3D 引擎经 morph target（眨眼）+ 骨骼动画变体（换重心、看四周、伸懒腰）直接驱动，不需要逐变体生成资产。注入的动画 clip 覆盖 `idle_look_around` / `idle_blink` / `idle_stretch` 这些变体。"永不空白"
 - **情境动作**（检测本机状态）：Runner `system.get_idle_seconds` / `system.is_fullscreen` / `system.get_focused_app` 等环境感知工具的轮询结果直接进情境判定，**不经 LLM**。30s 轮询：分类结果（ide/music/reader/gaming/browsing/other/unknown）按平台白名单映射（Windows 进程名、macOS bundle id），对应注入的 idle 动画变体（思考/打字/弹跳/摇摆/安静/投入），引擎按可用 clip 名称回退到 `idle`，符合 §1.3 "永不空白" 不变量。
 
-### 5.5 故障态与降级行为（伙伴永不"死"）
+### 6.5 故障态与降级行为（伙伴永不"死"）
 
 伙伴不能"死"、不能弹原始错误框——一切故障以符合人格的方式表达，用户始终觉得"它活着，只是遇到点状况"。故障按脑/手/身隐喻映射到症状，降级状态叠加在 §2 状态机之上、优先级高于常规状态：
 
@@ -361,9 +352,8 @@ IDLE 时形象不是静止贴图。两类自主行为，**都不触发 TTS、不
 
 ## 7. 语音交互（STT + TTS）
 
-- **TTS（输出）**：默认**本地优先**——Runner 本地引擎（Piper 主、pyttsx3 降级）作为零成本主路径,本地不可用或失败时回退 Backend 云端引擎（`POST /api/media/tts`,`voice` 透传给 provider）。三档可切（设置 `tts.engine`:`auto` 本地优先+云端回退 / `local` 纯本地失败不回退 / `cloud` 永远云端）。用于:语音通话应答、"始终语音"响应模式、主动陪伴消息、onboarding。播放期间精灵处于 SPEAKING,音频结束退出。
-- **STT（输入）**:默认**本地优先**（Runner faster-whisper),同样三档可切（`stt.engine`)。`auto` 档下本地识别不确定（低置信度/空文本）时，由 `stt.silent_fallback`（默认 `true`）决定是否静默改跑云端（`/api/media/stt`，MiMo ASR）——`true` 用户无感、`false` 直接暴露本地弱结果（隐私/成本敏感用户不想偷偷走云端）。两条输入路径:语音条(对话模式,按住录音→转写→发送);语音通话模式(持续收音 + VAD 分段→转写→发送)。
-- **音色匹配**：`tts.list_voices` 返回当前 provider 候选目录，`tts.match_voice` 把偏好映射到 voice id（见 §5.5）。缓存的 voice id 失效（provider 目录变化）时，精灵窗口就绪后检测并提示重选（后端对未知 id 容错，TTS 不断）。
+- **TTS（输出）**：默认**云端优先**
+- **STT（输入）**:默认**本地优先**
 - **始终可回退文字**：TTS/STT 任一失败不阻断交互——TTS 失败仅显示文字，STT 失败提示"没听清，用打字吧"。
 
 ---
@@ -372,29 +362,7 @@ IDLE 时形象不是静止贴图。两类自主行为，**都不触发 TTS、不
 
 两类设置分处两个窗口，由**网关可用性**决定归属：
 
-- **伙伴设置**（精灵窗口，网关可用）：右键精灵 → 伙伴设置。包括角色管理（**两套路径**：「编辑角色」表单式直接改 6 个字段，**或**「重新对话微调性格」5 步对话式 wizard 引导改 11 个字段含 user_* — wizard 单 PUT 收尾，**保留既有长期记忆**，不重置 `is_complete`，修复 PersonaSection 静默 `deriveSpeakingStyle` 覆盖的坑，由 `persona-retune.tsx` 实现）、响应模式（默认文字 / 始终语音）、打扰档位（chip 反映 user_preferred，effective 状态由活动感知器覆盖，UI 不直接显示 override）、音色管理（目录切换 + 试听，`tts.list_voices` + speak 预览）、形象管理（`avatar.regenerate` / 上传）、换装管理（浏览预设配色 + 已生成 AI 纹理，点击即换）、形象缩放（默认比例 0.5×–2×）。
+- **伙伴设置**（精灵窗口，网关可用）：右键精灵 → 伙伴设置。包括角色管理（**两套路径**：「编辑角色」表单式直接改 6 个字段，**或**「重新对话微调性格」5 步对话式 wizard 引导改 11 个字段含 user_* — wizard 单 PUT 收尾，**保留既有长期记忆**，不重置 `is_complete`，修复 PersonaSection 静默 `deriveSpeakingStyle` 覆盖的坑，由 `persona-retune.tsx` 实现）、响应模式（默认文字 / 始终语音）、打扰档位（chip 反映 user_preferred，effective 状态由活动感知器覆盖，UI 不直接显示 override）、音色管理（目录切换 + 试听，`tts.list_voices` + speak 预览）、形象管理（`avatar.regenerate` / 参考图重绘）、换装管理（浏览预设配色 + 已生成 AI 纹理，点击即换）、形象缩放（默认比例 0.5×–2×）。
 - **应用设置**（托盘 → Settings...，framed 工具窗口，无网关）：账户、语音（STT 开关 / `silent_fallback` / 录音时长 / 引擎）、音色目录（只读浏览 + 试听，走 REST `GET /api/companion/voices`）、Runner、Skills/MCP 等通用配置。
 
 > **设计约束**：JSON-RPC（`tts.list_voices` / `avatar.*` / `onboarding.*`）只在精灵窗口的 WS 网关上可用——工具窗口不 boot 网关。因此依赖这些方法的伙伴设置必须住在精灵窗口；工具窗口的设置只走 REST（音色目录页是 `tts.list_voices` 的 REST 镜像，专为工具窗口而设）。
-
----
-
-## 9. 跨模块契约
-
-伙伴层依赖的跨模块协议与不变量定义在 [ARCHITECTURE.md](ARCHITECTURE.md)：通信协议与数据流（§4）、事件调度与打扰档位（§5）、角色定义与表达层契约（§6）、全局不变量（§10）。
-
-**3D 动画与模型事件**：`model.ready {model_id, asset_url, species}` 事件通知客户端 3D 模型就绪（预制 GLB 即时下发）；`wardrobe.updated` 事件通知客户端换装产物就绪。状态机的状态名（§2）与 emotion 枚举在客户端经 `AnimationMap` 映射到 GLB 内置的骨骼动画 clip 名称，由引擎按可用性回退。
-
----
-
-## 10. Runner runtime surface
-
-Runner 端提供与伴侣场景直接对接的本地能力，Client 按以下契约消费（[client/README.md](client/README.md) §Runner）：
-
-- **`runner_ready` payload**：含 `version` 与 `capabilities`（`microphone` / `screen_capture` / `local_stt` / `local_tts` / `system_activity` / `platform` / `python`），由 Runner **真实探测**各平台子系统得出，非硬编码。不全可装的环境不阻塞启动。
-- **`deskagent.info` RPC**：任何时候可调，返回完整进程 / OS / 网络 / 磁盘快照。失败态降级（§6.5）依据此 RPC 与 WS 连通性双源判定。
-- **环境感知工具** `system.get_idle_seconds` / `is_screen_locked` / `get_focused_app` / `get_power_state`：经标准 `execute_tool` 通道轮询（Client 经 `runnerInvoke`）。`get_idle_seconds` 跨过阈值时额外触发 `companion.check_affect` 让 Backend LLM 推理情境化 affect（[ARCHITECTURE.md §5](ARCHITECTURE.md)）；其余工具的结果直接进 §6.4 情境判定，**不经 LLM**。`is_screen_locked=true` 时静默切断主动消息（仍可 affect），解锁后静默恢复。
-- **本地语音** `speech_to_text`（faster-whisper）/ `text_to_speech`（Piper 主、pyttsx3 降级）/ `list_tts_voices`:STT/TTS 的零成本主路径。Client 经 `media.stt`/`media.tts` IPC 路由——默认本地优先(`auto`),本地不可用或失败时回退云端;`local` 档纯本地不回退,`cloud` 档强制云端(见 §7)。
-- **窗口几何与目标解析** `system.get_windows` / `get_work_area` / `get_cursor_pos`：空间行为（§3）所需的本机感知。`get_windows` 枚举可见窗口（标题、进程名、几何 {x,y,w,h}、z-order、focused 标记）——perch 选择与 ritual walk 目标解析依赖此项；`get_work_area` 返回屏幕可用区域（去除任务栏/dock），路径规划依赖此项；`get_cursor_pos` 返回鼠标位置，"朝用户方向走"等行为依赖此项。
-- **坐标操作**（可选）`system.click_at`：ritual walk（§3.6）目标达成后精灵"亲手操作"的执行通道——在指定坐标模拟点击。不可用时不阻塞 ritual walk，精灵走到目标旁后操作以常规工具调用兜底（用户无感）。桌面图标枚举仅 Windows 可枚举；macOS 降级为"找不到图标"人格化表达。
-

@@ -20,7 +20,6 @@ from .avatar_service import regenerate_avatar
 from .avatar_service import regenerate_avatar_from_image
 from .avatar_service import resolve_uploaded_avatar_path
 from .avatar_service import SeedPromptMissingError
-from .avatar_service import upload_avatar
 from .interaction_stats import record_interaction
 from .memory_admin import delete_memory
 from .memory_admin import get_memory
@@ -46,11 +45,9 @@ from .persona_service import PersonaValidationError
 from .persona_service import submit_onboarding_field
 from .persona_service import update_persona
 from .rig_type_selector import select_rig_type
-from .seed_stylizer import StylizationResult
-from .seed_stylizer import stylize_seed_for_tripo
 from .tripo_client import account_balance
 from .tripo_client import BASE_URL as TRIPO_BASE_URL
-from .tripo_client import create_image_to_model
+from .tripo_client import create_multiview_to_model
 from .tripo_client import create_text_to_model
 from .tripo_client import download_model
 from .tripo_client import MODEL_VERSION_DEFAULT
@@ -122,17 +119,15 @@ __all__ = [
     "record_user_profile",
     "regenerate_avatar",
     "regenerate_avatar_from_image",
+    "create_multiview_to_model",
     "resolve_companion_asset_path",
     "resolve_companion_model_path",
     "resolve_uploaded_avatar_path",
-    "stylize_seed_for_tripo",
-    "StylizationResult",
     "select_rig_type",
     "signed_model_url",
     "submit_onboarding_field",
     "update_memory",
     "update_persona",
-    "upload_avatar",
     "verify_signed_asset_request",
     "verify_signed_avatar_request",
 ]

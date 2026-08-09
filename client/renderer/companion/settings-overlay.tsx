@@ -3,7 +3,6 @@ import type React from 'react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { $wardrobe, refreshEquippedAndApply, setWardrobe, type WardrobeItem } from '@/companion/3d/model-store'
-import { resolvePortraitUrl } from '@/companion/avatar-image'
 import { useGatewayRequest } from '@/companion/boot/use-gateway-request'
 import { $effectiveTier, $userPreferredTier, setDisturbanceTier } from '@/companion/companion-store'
 import { DISTURBANCE_TIERS } from '@/companion/disturbance-tiers'
@@ -13,7 +12,7 @@ import { MAX_APPEARANCE } from '@/companion/persona'
 import { PersonaRetune } from '@/companion/persona-retune'
 import { $persona, hydratePersona } from '@/companion/persona-store'
 import { TWO_STEP_INTRO_HINT } from '@/companion/portrait-flow-copy'
-import { $activeAvatarId, $portraitUrl, $regenFeedback, setRegenFeedback } from '@/companion/portrait-store'
+import { $activeAvatarId, $portraitUrl, $regenFeedback, $seedUrls, setRegenFeedback } from '@/companion/portrait-store'
 import {
   $companionVoiceId,
   $responseMode,
@@ -35,7 +34,6 @@ import {
   type VoiceCatalog,
   type VoiceDesignPreview
 } from '@/companion/voice'
-import { isClientErrorIpc } from '@/shared/lib/ipc-error'
 import { notifyError } from '@/shared/store/notifications'
 
 import { pushDevLog } from './developer-overlay'
@@ -69,52 +67,22 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps): React.Reac
   const [langFilter, setLangFilter] = useState('')
   const [genderFilter, setGenderFilter] = useState('')
   const portraitUrl = useStore($portraitUrl)
+  const seedUrls = useStore($seedUrls)
   const regenFeedback = useStore($regenFeedback)
 
   // Two-step portrait flow mirrors onboarding: step 1 regenerates the bust,
   // step 2 re-runs the fullbody seed on top of the just-confirmed row.
   const [portraitStep, setPortraitStep] = useState<'avatar' | 'fullbody'>('avatar')
-  const [seedUrl, setSeedUrl] = useState<string | null>(null)
   // Read the active avatar id from the atom (populated by hydratePortrait
   // on app start + by every avatar regen via applyPortrait).
   const activeAvatarId = useStore($activeAvatarId)
-
-  // Pull the seed bytes — settings is the only surface that renders both
-  // thumbnails simultaneously, and the seed isn't in the global atom.
-  useEffect(() => {
-    void (async () => {
-      try {
-        const res = await window.deskagent.api<{ seed_url?: string | null }>({
-          path: '/api/companion/avatar'
-        })
-
-        if (res?.seed_url) {
-          setSeedUrl(await resolvePortraitUrl(res.seed_url))
-        }
-      } catch (error) {
-        if (!isClientErrorIpc(error)) {
-          console.warn('[settings] portrait hydrate failed', error)
-        }
-      }
-    })()
-  }, [])
 
   const {
     regenerate: regenerateAvatarPortrait,
     busy: avatarBusy,
     hint: avatarHint
   } = useRegeneratePortrait({
-    step: 'avatar',
-    onRegenerated: ({ seed }) => {
-      // A step-1 regen creates a new row whose seed is empty; any prior
-      // seedUrl in the panel belongs to the old row and would mislead the
-      // user when they click "下一步".
-      if (seed) {
-        void resolvePortraitUrl(seed).then(setSeedUrl)
-      } else {
-        setSeedUrl(null)
-      }
-    }
+    step: 'avatar'
   })
 
   const {
@@ -123,12 +91,7 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps): React.Reac
     hint: fullbodyHint
   } = useRegeneratePortrait({
     step: 'fullbody',
-    avatarId: activeAvatarId,
-    onRegenerated: ({ seed }) => {
-      if (seed) {
-        void resolvePortraitUrl(seed).then(setSeedUrl)
-      }
-    }
+    avatarId: activeAvatarId
   })
 
   const [retuneOpen, setRetuneOpen] = useState(false)
@@ -570,12 +533,28 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps): React.Reac
                 )}
               </div>
               {portraitStep === 'fullbody' && (
-                <div className="grid h-20 w-20 shrink-0 place-items-center overflow-hidden rounded-xl border border-white/10 bg-white/5">
-                  {seedUrl ? (
-                    <img alt="当前全身" className="h-full w-full object-cover" src={seedUrl} />
-                  ) : (
-                    <span className="text-[10px] text-white/40">暂无</span>
-                  )}
+                <div className="flex gap-1">
+                  <div className="grid h-20 w-14 shrink-0 place-items-center overflow-hidden rounded-lg border border-white/10 bg-white/5">
+                    {seedUrls?.front ? (
+                      <img alt="正面" className="h-full w-full object-cover" src={seedUrls.front} />
+                    ) : (
+                      <span className="text-[9px] text-white/40">正面</span>
+                    )}
+                  </div>
+                  <div className="grid h-20 w-14 shrink-0 place-items-center overflow-hidden rounded-lg border border-white/10 bg-white/5">
+                    {seedUrls?.right ? (
+                      <img alt="右侧" className="h-full w-full object-cover" src={seedUrls.right} />
+                    ) : (
+                      <span className="text-[9px] text-white/40">右侧</span>
+                    )}
+                  </div>
+                  <div className="grid h-20 w-14 shrink-0 place-items-center overflow-hidden rounded-lg border border-white/10 bg-white/5">
+                    {seedUrls?.back ? (
+                      <img alt="背面" className="h-full w-full object-cover" src={seedUrls.back} />
+                    ) : (
+                      <span className="text-[9px] text-white/40">背面</span>
+                    )}
+                  </div>
                 </div>
               )}
               <div className="flex flex-1 flex-col gap-2">

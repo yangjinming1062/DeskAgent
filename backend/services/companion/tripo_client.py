@@ -76,8 +76,8 @@ async def create_text_to_model(prompt: str, *, model_version: str = MODEL_VERSIO
     return _envelope(resp.json())["task_id"]
 
 
-async def create_image_to_model(
-    image: str,
+async def create_multiview_to_model(
+    views: dict[str, str],
     *,
     model_version: str = MODEL_VERSION_DEFAULT,
     pbr: bool = True,
@@ -87,22 +87,29 @@ async def create_image_to_model(
     texture_alignment: str = "original_image",
     orientation: str = "align_image",
 ) -> str:
-    """``image`` is a file_token (from prior upload) or a publicly reachable URL."""
-    payload: dict[str, Any] = {"input": image, "model": model_version, "pbr": pbr}
+    """views maps perspective keys ∈ {front, left, back, right} to file_token or public URL.
+
+    'front' is required; at least 2 views must be provided.
+    """
+    if not views.get("front"):
+        raise ValueError("multiview-to-model requires a 'front' view")
+    if len(views) < 2:
+        raise ValueError("multiview-to-model requires at least 2 views")
+    inputs = [{view: views[view]} for view in ("front", "right", "back", "left") if views.get(view)]
+    payload: dict[str, Any] = {"inputs": inputs, "model": model_version, "pbr": pbr}
     if texture_quality:
         payload["texture_quality"] = texture_quality
     if face_limit:
         payload["face_limit"] = face_limit
     if enable_autofix is not None:
         payload["enable_image_autofix"] = enable_autofix
-    # geometry_quality only valid for H-series (v3.x)
     if model_version.startswith("v3") and SETTINGS.tripo_geometry_quality:
         payload["geometry_quality"] = SETTINGS.tripo_geometry_quality
     payload["texture_alignment"] = texture_alignment
     payload["orientation"] = orientation
     async with httpx.AsyncClient(timeout=60.0) as client:
         resp = await client.post(
-            f"{BASE_URL}/generation/image-to-model",
+            f"{BASE_URL}/generation/multiview-to-model",
             headers=_auth_headers(),
             json=payload,
         )

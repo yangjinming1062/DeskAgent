@@ -99,14 +99,14 @@ DeskAgent 是一个**根据用户描述定制的、具有专属形象的陪伴�
 | Client → Backend | `avatar.regenerate` `{feedback?}` | 重生 portrait（身份参考图与纹理生成种子） |
 | Client → Backend | `GET /api/companion/model` | 查询当前 3D 模型状态（species / provider / asset_url） |
 | Backend → Client | `event.type="companion.affect"` `{emotion}` | affect-only 情绪 cue（无消息文本、无 TTS），驱动 EMOTIONAL 状态——quiet 档透传或 idle 触发 LLM 推理产出（详见 §4.2.IV / §5 / §6.3） |
-| Backend → Client | `event.type="avatar.regenerated"` `{job_id, asset_url?, seed_url?, id?, error?}` | `avatar.regenerate` 的最终结果通知（含成功 / 失败 payload），Client 据此替换头像 + 全身种子图或展示失败提示；portrait 重生不触发 3D 模型失效 |
+| Backend → Client | `event.type="avatar.regenerated"` `{job_id, asset_url?, seed_front_url?, seed_right_url?, seed_back_url?, id?, error?}` | `avatar.regenerate` 的最终结果通知（含成功 / 失败 payload），Client 据此替换头像或展示失败提示；portrait 重生不触发 3D 模型失效 |
 | Client → Backend | `companion.set_disturbance_tier` `{tier}` | 上报当前打扰档位（积极主动/常规/保持安静），约束 Backend 主动消息 |
 | Client → Backend | `companion.check_affect` `{idle_seconds, local_hour}` | idle 触发的情境化 affect 推理：Backend 加载 persona + 记忆跑一次 LLM 推理，决定是否 emit `companion.affect`（详见 §5 / §6.4） |
 | Client → Backend | `companion.interact` `{kind: 'poke'\|'drag', tone, poke_count, idle_seconds, local_hour}` | 单次戳/拖的 LLM 反应推理：返回 `{text, emotion, reason}`。per-user inflight 取消 + 1.5s 节流。零延迟本地文案池由 Client 自管，LLM 响应仅作文本/情绪增强，不打断本地 TTS（详见 §6.3）。 |
 | Client → Backend | `companion.record_interaction_stats` `{kind: 'poke'\|'drag'\|'chat_turn', hour}` | 互动统计上报，无 LLM。Backend 按 UTC 自然日聚合三类计数 + 24h hour_buckets；当 poke、drag、chat_turn 三者**各自** ≥ 10 时 upsert `Memory(context="interaction_stats:<date>", content="<date>: poke=N, drag=N, chat_turns=N; peak=HH-HHh", tags=["interaction","stats","daily_summary"])`；同日多次跨门限同 row 覆盖。 |
 | Client → Backend | `companion.get_user_profile` | 拉取 `Memory(context="user_profile:*")` 的 5 条结构化字段——persona-retune wizard 第 5 步预填用 |
 
-3D 模型就绪通知走 **`model.ready` {model_id, asset_url, species}** 事件：`POST /api/companion/model` 以种子图经 Tripo3D image-to-3D + rig 异步生成，进度经 **`model.gen.progress`**、失败经 **`model.failed`** 事件推送。换装产物就绪走 **`wardrobe.updated`** 事件。客户端另调 `GET /api/companion/model` 查询当前模型状态。
+3D 模型就绪通知走 **`model.ready` {model_id, asset_url, species}** 事件：`POST /api/companion/model` 以全身三视图（正面 / 右侧 / 背面）经 Tripo3D multiview-to-3D + rig 异步生成，进度经 **`model.gen.progress`**、失败经 **`model.failed`** 事件推送。换装产物就绪走 **`wardrobe.updated`** 事件。客户端另调 `GET /api/companion/model` 查询当前模型状态。
 
 #### B. Client ↔ Runner
 本地环回 WebSocket `ws://127.0.0.1:<port>/rpc`。Client 充当 RPC Server，Runner 启动时作为 Client 主动连入。

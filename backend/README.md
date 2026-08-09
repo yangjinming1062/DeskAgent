@@ -231,20 +231,21 @@ DeskAgent 伙伴的"人格"与"形象"是跨 Backend↔Desktop 的核心契约�
 
 **avatar / 纹理生图 prompt 经 LLM 精修**：所有发往 image-gen provider 的 prompt 都先经 `services.llm.prompt_engineer` 的 enhancer 改写为详细中文 prompt：
 
-- `enhance_character_image_prompts(persona, feedback)` —— LLM 一次性输出 JSON `{avatar, seed}` 两份 prompt，avatar 是聚焦头部细节的半身像（硬性包含「纯白平面背景，无场景、无渐变、无阴影」子句，chroma-key 渲染依赖），seed 是正面站立的全身参考图（驱动 3D 模型生成）。**不**传角色 `name`——图像 provider 不会把名字渲成画面文本，name 只是浪费 token + 引入偏好偏差。两份 prompt **不并行调 image-gen**：avatar 先单独跑（步 1），用户确认脸部后用这张头像 + 已缓存的 seed prompt 跑步 2（avatar 作为 `reference_image` 内联）——确保全身图的脸与头像对齐。任意一步失败即整体失败。
+- `enhance_avatar_prompt(persona, feedback)` —— 步 1 专注生成头像（bust portrait）提示词，聚焦面部轮廓、五官、眼神与发型质感，硬性包含「纯白平面背景，无场景、无渐变、无阴影」子句，chroma-key 渲染依赖。
+- `enhance_fullbody_multiview_prompts(persona, avatar_prompt, feedback)` —— 步 2 以确认的头像描述 `avatar_prompt` 为外貌锚点，输出 JSON `{"front": "...", "right": "...", "back": "..."}` 三视角全身立绘提示词。硬性要求自适应 A-pose 站姿、头顶至脚底 100% 完整无裁切、纯白平面背景与平光打光。
 - `enhance_texture_prompt(description)` —— wardrobe（新造型流）单独使用。
 
 LLM 异常（`MissingLlmConfigError` / 网络异常 / JSON 解析失败）**直接向上抛**——chat / affect / persona / agent_delegate 全链路都依赖同一个 llm service，没有为图像生成单独搞 graceful degradation 的理由。prompt 增强是**只读**操作：角色定义永不被 LLM 改写。
 
 ### 形象资产（AvatarAsset）
 
-`AvatarAsset` 表存历次生成的专属形象资产（provider 返回的 URL + 元数据 + 生成状态），按用户维度持久化。Postgres partial unique index 约束"每个用户最多一条 active 记录"。**两步生成**：步 1 `POST /api/companion/avatar`（或 `/from-image`）只跑头像半身，写行时 `seed_url=""`，把 `seed_prompt` 缓存在 `prompt_json` 里；用户确认脸部后步 2 调 `POST /api/companion/avatar/{avatar_id}/fullbody`，把头像字节作为 `subject_reference`（内联 `data:` URI，规避 `public_url_prefix` 为空时 provider 拒绝私有地址）+ 缓存的 `seed_prompt` 跑全身图，写回**同一行** `seed_url` 字段。整条流水不再调第二次 LLM。形象生成失败时：persona 未完成返回 `409` + "请先完成 onboarding" 文案；步 2 时头像不存在返回 `404`，头像无缓存 `seed_prompt`（上传行）或源文件不可读返回 `409`，重复调 fullbody 会**替换**旧 seed（REST 与 RPC 语义一致），并发生成返回 `429`；provider 失败返回 `502` + 友好文案（`伙伴形象生成失败，请稍后重试`），不泄露 provider 原始错误。生成是同步的，`AvatarAssetResponse` 的 `status` 恒为 `succeeded`，`prompt` 为 avatar 生成时所用 prompt（上传行为空）；步 1 响应 `seed_url` 为 `None`（旧客户端视作空字符串），步 2 响应复用 `AvatarAssetResponse`。生成类端点（avatar 生成/上传/from-image、fullbody、model、wardrobe）均有 per-user 限流（`SETTINGS.companion_*_rate_limit_per_minute`）。
+`AvatarAsset` 表存历次生成的专属形象资产（provider 返回的 URL + 元数据 + 生成状态），按用户维度持久化。Postgres partial unique index 约束"每个用户最多一条 active 记录"。**两步生成**：步 1 `POST /api/companion/avatar`（或 `/from-image`）只跑头像半身，写行时 `seed_front_url=""`、`seed_right_url=""`、`seed_back_url=""`，把 `avatar_prompt` 缓存在 `prompt_json` 里；用户确认脸部后步 2 调 `POST /api/companion/avatar/{avatar_id}/fullbody`，把头像字节作为 `subject_reference`（内联 `data:` URI，规避 `public_url_prefix` 为空时 provider 拒绝私有地址）+ 缓存的 `avatar_prompt` 跑正面/右侧/背面三视角全身图，写回**同一行** `seed_front_url` / `seed_right_url` / `seed_back_url` 字段。形象生成失败时：persona 未完成返回 `409` + "请先完成 onboarding" 文案；步 2 时头像不存在返回 `404`，头像无缓存 `avatar_prompt` 或源文件不可读返回 `409`，重复调 fullbody 会**替换**旧 seed（REST 与 RPC 语义一致），并发生成返回 `429`；provider 失败返回 `502` + 友好文案（`伙伴形象生成失败，请稍后重试`），不泄露 provider 原始错误。生成是同步的，`AvatarAssetResponse` 的 `status` 恒为 `succeeded`，`prompt` 为 avatar 生成时所用 prompt；步 1 响应 seed 字段为 `None`，步 2 响应复用 `AvatarAssetResponse`。生成类端点（avatar 生成/from-image、fullbody、model、wardrobe）均有 per-user 限流（`SETTINGS.companion_*_rate_limit_per_minute`）。
 
-**avatar.regenerate** JSON-RPC：带可选 `feedback` 文本（如"头发长一点"），折入 prompt 做头像单步重生成（`seed_url: null`），不重跑全身——若用户想要新全身再调 `avatar.generate_fullbody`。不触发 3D 模型失效——模型独立于 portrait，只随物种变更或用户显式请求重生。
+**avatar.regenerate** JSON-RPC：带可选 `feedback` 文本（如"头发长一点"），折入 prompt 做头像单步重生成（seed 字段置 `null`），不重跑全身——若用户想要新全身再调 `avatar.generate_fullbody`。不触发 3D 模型失效——模型独立于 portrait，只随物种变更或用户显式请求重生。
 
-**avatar.generate_fullbody** JSON-RPC：`{avatar_id: int}` 触发步 2，按缓存的 `seed_prompt` + 持久化头像字节生成全身并写回同 row 的 `seed_url`（重复调替换旧 seed），push `avatar.fullbody_generated` 事件。avatar 不存在返回 `404`；并发时返回 `{queued: false, reason: "already_running"}`。步 1（`avatar.regenerate`）与步 2 共用 per-user 锁 `get_avatar_job_lock`，REST fullbody 路由同样持有（并发返回 `429`）。
+**avatar.generate_fullbody** JSON-RPC：`{avatar_id: int}` 触发步 2，按缓存的 `avatar_prompt` + 持久化头像字节生成全身三视图并写回同 row 的 `seed_front_url` / `seed_right_url` / `seed_back_url`（重复调替换旧 seed），push `avatar.fullbody_generated` 事件。avatar 不存在返回 `404`；并发时返回 `{queued: false, reason: "already_running"}`。步 1（`avatar.regenerate`）与步 2 共用 per-user 锁 `get_avatar_job_lock`，REST fullbody 路由同样持有（并发返回 `429`）。
 
-**基于上传图片生成**（`POST /api/companion/avatar/from-image`）：用户上传一张图片作为角色基准形象，可选附一段描述。上传图以 `data:` URI 作为 `reference_image` 内联传给生图 provider（不依赖后端公网可达，provider 会拒绝私有/localhost 地址），让 provider 以该图为角色参照重新渲染出符合种子图契约的 portrait（纯白背景、干净构图）——用户原图可能背景复杂或构图不符，不能直接作种子图；"直接用原图"由 `POST /api/companion/avatar/upload` 提供。参考图随请求内联传递，不落盘。
+**基于上传图片生成**（`POST /api/companion/avatar/from-image`）：用户上传一张图片作为角色基准形象，可选附一段描述。上传图以 `data:` URI 作为 `reference_image` 内联传给生图 provider（不依赖后端公网可达，provider 会拒绝私有/localhost 地址），让 provider 以该图为角色参照重新渲染出符合种子图契约的 portrait（纯白背景、干净构图）。参考图随请求内联传递，不落盘。
 
 `reference_image` 是 image_gen 的通用能力：原生图生图 provider 直接消费种子图（MiniMax `subject_reference`、Gemini `inlineData`）；纯文本生图 provider（MiMo/OpenAI 兼容、Zhipu）没有原生 i2i，`image_generation_tool` 先经用户配置的 chat（视觉）provider 把参考图描述为文本再折入 prompt——因此依赖用户 chat 模型具备视觉能力。
 
@@ -252,7 +253,7 @@ LLM 异常（`MissingLlmConfigError` / 网络异常 / JSON 解析失败）**直�
 
 `CompanionModel` 表存 3D 模型资产（species、provider、asset_url、morph_params_json、has_rig、has_morph_targets），按用户维度持久化，每用户最多一条 active。生成管线为单一路径：
 
-- **Tripo3D image-to-3D**：`POST /api/companion/model` 以 seed 全身种子图为唯一输入调 Tripo3D 生成（upload → image-to-model → rig-check → rig（biped 用 mixamo，其余 rig_type 用 tripo）），下载 rigged GLB 后由 Blender headless 注入 ~50 个 morph target（Tripo3D 不生成 blendshape），保存到 `companion-models/` 持久目录并经 `model.ready` 事件下发；进度经 `model.gen.progress`、失败经 `model.failed` 事件推送，客户端渲染程序化蛋形兜底角色。模型规格（骨骼/morph/动画/材质）见 [docs/MODEL_SPEC.md](../docs/MODEL_SPEC.md)。动画不内嵌 GLB——全部动画 clip 由客户端 TypeScript 骨骼旋转关键帧定义（`client/renderer/companion/3d/clips-*.ts`，biped 109 个，其余 rig 24–27 个），按 rig_type 经 `clips-registry.ts` 注入。生成期间拒绝并发生成（`409 ModelGenerationInProgressError`），上一份 active 模型保持可用直到新模型成功。
+- **Tripo3D multiview-to-3D**：`POST /api/companion/model` 以正面 / 右侧面 / 背面三视图为输入调 Tripo3D 多视图建模（upload 三张图 → multiview-to-model → rig-check → rig（biped 用 mixamo，其余 rig_type 用 tripo）），下载 rigged GLB 后由 Blender headless 注入 ~50 个 morph target（Tripo3D 不生成 blendshape），保存到 `companion-models/` 持久目录并经 `model.ready` 事件下发；进度经 `model.gen.progress`、失败经 `model.failed` 事件推送，客户端渲染程序化蛋形兜底角色。模型规格（骨骼/morph/动画/材质）见 [docs/MODEL_SPEC.md](../docs/MODEL_SPEC.md)。动画不内嵌 GLB——全部动画 clip 由客户端 TypeScript 骨骼旋转关键帧定义（`client/renderer/companion/3d/clips-*.ts`，biped 109 个，其余 rig 24–27 个），按 rig_type 经 `clips-registry.ts` 注入。生成期间拒绝并发生成（`409 ModelGenerationInProgressError`），上一份 active 模型保持可用直到新模型成功。
 
 ### 换装系统（WardrobeItem）
 

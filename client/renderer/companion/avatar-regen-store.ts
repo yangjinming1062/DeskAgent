@@ -92,8 +92,10 @@ function _makeResolver<T>(store: PendingMap<T>): (payload: T & { job_id?: string
 export interface AvatarRegeneratedPayload {
   job_id?: string
   asset_url?: string | null
-  // Step-1 only — the backend pushes null; older servers may still emit a URL.
-  seed_url?: string | null
+  // Step-1 only — the backend pushes null.
+  seed_front_url?: string | null
+  seed_right_url?: string | null
+  seed_back_url?: string | null
   id?: number
   error?: string
 }
@@ -110,10 +112,12 @@ export const awaitAvatarRegeneration = _makeAwaiter<AvatarRegeneratedPayload>(
 )
 export const resolveAvatarRegeneration = _makeResolver<AvatarRegeneratedPayload>(_avatarStore)
 
-// Fullbody (seed) gen, kicked off after the avatar row is confirmed.
+// Fullbody (multiview seed) gen, kicked off after the avatar row is confirmed.
 export interface FullbodyGeneratedPayload {
   job_id?: string
-  seed_url?: string | null
+  seed_front_url?: string | null
+  seed_right_url?: string | null
+  seed_back_url?: string | null
   id?: number
   error?: string
 }

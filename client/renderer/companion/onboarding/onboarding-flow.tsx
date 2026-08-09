@@ -18,7 +18,7 @@ import {
   VOICE_PRESETS
 } from '@/companion/persona-presets'
 import { TWO_STEP_INTRO_HINT } from '@/companion/portrait-flow-copy'
-import { $activeAvatarId, $regenFeedback, applyPortrait, setRegenFeedback } from '@/companion/portrait-store'
+import { $activeAvatarId, $regenFeedback, $seedUrls, applyPortrait, setRegenFeedback } from '@/companion/portrait-store'
 import { useRegeneratePortrait } from '@/companion/use-regenerate-portrait'
 import { useLatestRef } from '@/shared/hooks/use-latest-ref'
 import { isClientErrorIpc } from '@/shared/lib/ipc-error'
@@ -291,11 +291,21 @@ const BACKEND_FIELD: Record<QKey, string> = {
 
 // Step-1: avatar only. Returns the raw backend response (id is captured for
 // step 2's fullbody call). applyPortrait owns the resolve step.
-async function generatePortrait(
-  reference: PickedImage | null
-): Promise<{ asset_url?: string; seed_url?: string | null; id?: number } | null> {
+async function generatePortrait(reference: PickedImage | null): Promise<{
+  asset_url?: string
+  seed_front_url?: string | null
+  seed_right_url?: string | null
+  seed_back_url?: string | null
+  id?: number
+} | null> {
   try {
-    const res = await window.deskagent.api<{ asset_url?: string; seed_url?: string | null; id?: number }>({
+    const res = await window.deskagent.api<{
+      asset_url?: string
+      seed_front_url?: string | null
+      seed_right_url?: string | null
+      seed_back_url?: string | null
+      id?: number
+    }>({
       path: reference ? '/api/companion/avatar/from-image' : '/api/companion/avatar',
       method: 'POST',
       body: reference ? { content_type: reference.contentType, image: reference.base64 } : {}
@@ -312,10 +322,17 @@ async function generatePortrait(
   }
 }
 
-// Step-2: full-body seed on top of the just-confirmed avatar row.
-async function generateFullbody(avatarId: number): Promise<{ id?: number; seed_url?: string } | null> {
+// Step-2: full-body multiview seeds on top of the just-confirmed avatar row.
+async function generateFullbody(
+  avatarId: number
+): Promise<{ id?: number; seed_front_url?: string; seed_right_url?: string; seed_back_url?: string } | null> {
   try {
-    const res = await window.deskagent.api<{ id?: number; seed_url?: string }>({
+    const res = await window.deskagent.api<{
+      id?: number
+      seed_front_url?: string
+      seed_right_url?: string
+      seed_back_url?: string
+    }>({
       path: `/api/companion/avatar/${avatarId}/fullbody`,
       method: 'POST'
     })
@@ -379,7 +396,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
   const [answers, setAnswers] = useState<OnboardingAnswers>({})
   const [input, setInput] = useState('')
   const [portraitUrl, setPortraitUrl] = useState<string | null>(null)
-  const [seedUrl, setSeedUrl] = useState<string | null>(null)
+  const seedUrls = useStore($seedUrls)
   // Active avatar row id is published to the global $activeAvatarId atom by
   // applyPortrait — subscribe to it so any step-1 regen propagates without
   // us wiring setState through every call site.
@@ -389,22 +406,30 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
 
   // Failure keeps the current portrait: it already holds resolved bytes.
   // The shared `applyPortrait` writes the global $portraitUrl + $activeAvatarId
-  // atoms; we mirror to local seedUrl state since the seed pane isn't a
-  // global concern.
+  // + $seedUrls atoms.
   const applyLocalPortrait = async (
-    response: { asset_url?: string | null; seed_url?: string | null; id?: number } | null | undefined
+    response:
+      | {
+          asset_url?: string | null
+          seed_front_url?: string | null
+          seed_right_url?: string | null
+          seed_back_url?: string | null
+          id?: number
+        }
+      | null
+      | undefined
   ): Promise<{ avatar: string | null; id: number | null }> => {
-    const { avatar, seed } = await applyPortrait({
+    const { avatar } = await applyPortrait({
       id: response?.id,
       assetUrl: response?.asset_url,
-      seedUrl: response?.seed_url
+      seedFrontUrl: response?.seed_front_url,
+      seedRightUrl: response?.seed_right_url,
+      seedBackUrl: response?.seed_back_url
     })
 
     if (avatar) {
       setPortraitUrl(avatar)
     }
-
-    setSeedUrl(seed)
 
     return { avatar, id: response?.id ?? null }
   }
@@ -421,21 +446,29 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
   // Resume path skips enterHatching, so the first-time-only portraitUrl state never gets set; re-pull here so voice-catalog PortraitPanel isn't empty. 404 (no portrait yet) is a no-op.
   const hydrateLocalPortrait = async () => {
     try {
-      const res = await window.deskagent.api<{ asset_url?: string; seed_url?: string }>({
+      const res = await window.deskagent.api<{
+        asset_url?: string
+        seed_front_url?: string
+        seed_right_url?: string
+        seed_back_url?: string
+      }>({
         path: '/api/companion/avatar'
       })
 
-      if (!res?.asset_url && !res?.seed_url) {
+      if (!res?.asset_url && !res?.seed_front_url) {
         return
       }
 
-      const applied = await applyPortrait({ assetUrl: res.asset_url, seedUrl: res.seed_url })
+      const applied = await applyPortrait({
+        assetUrl: res.asset_url,
+        seedFrontUrl: res.seed_front_url,
+        seedRightUrl: res.seed_right_url,
+        seedBackUrl: res.seed_back_url
+      })
 
       if (applied.avatar) {
         setPortraitUrl(applied.avatar)
       }
-
-      setSeedUrl(applied.seed)
     } catch (error) {
       if (!isClientErrorIpc(error)) {
         console.warn('[onboarding] portrait hydrate failed', error)
@@ -826,12 +859,10 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
     refImage,
     step: 'avatar',
     playAudioOnSuccess: true,
-    onRegenerated: ({ avatar, seed }) => {
+    onRegenerated: ({ avatar }) => {
       if (avatar) {
         setPortraitUrl(avatar)
       }
-
-      setSeedUrl(seed)
     }
   })
 
@@ -841,12 +872,10 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
     step: 'fullbody',
     avatarId: activeAvatarId,
     playAudioOnSuccess: true,
-    onRegenerated: ({ avatar, seed }) => {
+    onRegenerated: ({ avatar }) => {
       if (avatar) {
         setPortraitUrl(avatar)
       }
-
-      setSeedUrl(seed)
     }
   })
 
@@ -860,7 +889,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
     setPortraitPanelHint(null)
     setFullbodyLoading(true)
     const idAtCall = activeAvatarId
-    let res: { id?: number; seed_url?: string } | null = null
+    let res: { id?: number; seed_front_url?: string; seed_right_url?: string; seed_back_url?: string } | null = null
 
     try {
       res = await retryTransient(() => generateFullbody(idAtCall), 1500, 2)
@@ -870,16 +899,22 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
       setFullbodyLoading(false)
     }
 
-    if (!res?.seed_url) {
-      setPortraitPanelHint('全身图暂时没生成出来，可以再点一次「下一步」试试')
+    if (!res?.seed_front_url) {
+      setPortraitPanelHint('全身三视图暂时没生成出来，可以再点一次「下一步」试试')
 
       return
     }
 
-    // Only the seed URL is new — the avatar hasn't moved. Pass asset_url: null
+    // Only the seed URLs are new — the avatar hasn't moved. Pass asset_url: null
     // so applyPortrait keeps the existing $portraitUrl without re-resolving
     // the data URL through the IPC layer.
-    await applyLocalPortrait({ asset_url: null, seed_url: res.seed_url, id: idAtCall })
+    await applyLocalPortrait({
+      asset_url: null,
+      seed_front_url: res.seed_front_url,
+      seed_right_url: res.seed_right_url,
+      seed_back_url: res.seed_back_url,
+      id: idAtCall
+    })
     setPhase('portrait-fullbody')
   }
 
@@ -1111,7 +1146,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
               hint={portraitPanelHint}
               introHint={phase === 'portrait-avatar' ? TWO_STEP_INTRO_HINT : null}
               name={answers.name?.trim() || '伙伴'}
-              seedUrl={seedUrl}
+              seedUrls={seedUrls}
               step={phase === 'portrait-avatar' ? 'avatar' : 'fullbody'}
             />
           )}

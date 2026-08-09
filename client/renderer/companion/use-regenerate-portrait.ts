@@ -3,7 +3,7 @@ import { useCallback, useState } from 'react'
 import { type PickedImage } from '@/companion/avatar-image'
 import { awaitAvatarRegeneration, awaitFullbodyGeneration } from '@/companion/avatar-regen-store'
 import { useGatewayRequest } from '@/companion/boot/use-gateway-request'
-import { $regenFeedback, applyPortrait, clearRegenFeedback } from '@/companion/portrait-store'
+import { $regenFeedback, applyPortrait, clearRegenFeedback, type SeedUrls } from '@/companion/portrait-store'
 
 import { playOnboardingAudio } from './onboarding/onboarding-audio'
 
@@ -24,7 +24,7 @@ export interface UseRegeneratePortraitOptions {
   refImage?: PickedImage | null
   /**
    * Which pipeline this call drives. ``'avatar'`` (default) regenerates the
-   * bust and returns ``{avatar, seed}`` with seed empty/null. ``'fullbody'``
+   * bust and returns ``{avatar, seeds}`` with seeds empty/null. ``'fullbody'``
    * re-runs only the seed step on top of the already-confirmed avatar row;
    * pass ``avatarId`` so the backend knows which row to update.
    */
@@ -57,7 +57,7 @@ export interface UseRegeneratePortraitOptions {
    * can omit it. ``id`` is the avatar row id so callers driving the two-step
    * flow can keep ``pendingAvatarId`` in sync after a step-1 regen.
    */
-  onRegenerated?: (urls: { avatar: string | null; seed: string | null; id: number | null }) => void
+  onRegenerated?: (urls: { avatar: string | null; seeds: SeedUrls | null; id: number | null }) => void
 }
 
 export interface UseRegeneratePortraitResult {
@@ -133,20 +133,28 @@ export function useRegeneratePortrait(options: UseRegeneratePortraitOptions = {}
           const queued = await requestGateway<{
             queued?: boolean
             job_id?: string
-            seed_url?: string | null
+            seed_front_url?: string | null
+            seed_right_url?: string | null
+            seed_back_url?: string | null
             id?: number
             error?: string
           }>('avatar.generate_fullbody', { avatar_id: avatarId })
 
           const settled =
-            queued && 'seed_url' in queued
+            queued && 'seed_front_url' in queued
               ? queued
               : queued?.queued && queued.job_id
                 ? await awaitFullbodyGeneration(queued.job_id)
                 : null
 
-          if (settled?.seed_url) {
-            const applied = await applyPortrait({ assetUrl: null, seedUrl: settled.seed_url })
+          if (settled?.seed_front_url) {
+            const applied = await applyPortrait({
+              assetUrl: null,
+              seedFrontUrl: settled.seed_front_url,
+              seedRightUrl: settled.seed_right_url,
+              seedBackUrl: settled.seed_back_url
+            })
+
             onRegenerated?.({ ...applied, id: settled.id ?? null })
             onApplied()
             setHint(resolvedSuccess)
@@ -158,7 +166,13 @@ export function useRegeneratePortrait(options: UseRegeneratePortraitOptions = {}
         }
 
         if (refImage) {
-          const res = await window.deskagent.api<{ asset_url?: string | null; seed_url?: string | null; id?: number }>({
+          const res = await window.deskagent.api<{
+            asset_url?: string | null
+            seed_front_url?: string | null
+            seed_right_url?: string | null
+            seed_back_url?: string | null
+            id?: number
+          }>({
             path: '/api/companion/avatar/from-image',
             method: 'POST',
             body: {
@@ -169,7 +183,13 @@ export function useRegeneratePortrait(options: UseRegeneratePortraitOptions = {}
           })
 
           if (res?.asset_url) {
-            const applied = await applyPortrait({ assetUrl: res.asset_url, seedUrl: res.seed_url })
+            const applied = await applyPortrait({
+              assetUrl: res.asset_url,
+              seedFrontUrl: res.seed_front_url,
+              seedRightUrl: res.seed_right_url,
+              seedBackUrl: res.seed_back_url
+            })
+
             onRegenerated?.({ ...applied, id: res.id ?? null })
             onApplied()
             setHint(resolvedSuccess)
@@ -182,7 +202,9 @@ export function useRegeneratePortrait(options: UseRegeneratePortraitOptions = {}
           queued?: boolean
           job_id?: string
           asset_url?: string | null
-          seed_url?: string | null
+          seed_front_url?: string | null
+          seed_right_url?: string | null
+          seed_back_url?: string | null
           id?: number
         }>('avatar.regenerate', { feedback })
 
@@ -194,7 +216,13 @@ export function useRegeneratePortrait(options: UseRegeneratePortraitOptions = {}
               : null
 
         if (settled?.asset_url) {
-          const applied = await applyPortrait({ assetUrl: settled.asset_url, seedUrl: settled.seed_url })
+          const applied = await applyPortrait({
+            assetUrl: settled.asset_url,
+            seedFrontUrl: settled.seed_front_url,
+            seedRightUrl: settled.seed_right_url,
+            seedBackUrl: settled.seed_back_url
+          })
+
           onRegenerated?.({ ...applied, id: settled.id ?? null })
           onApplied()
           setHint(resolvedSuccess)

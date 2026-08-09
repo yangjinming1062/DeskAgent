@@ -68,11 +68,31 @@ async def test_create_text_to_model_returns_task_id(mock_http):
 
 
 @pytest.mark.asyncio
-async def test_create_image_to_model_uses_input_field(mock_http):
-    mock_http.responder = lambda _r: httpx.Response(200, json=_ok({"task_id": "task_img"}))
-    tid = await tripo_client.create_image_to_model("https://example.com/seed.png")
-    assert tid == "task_img"
-    assert mock_http.calls[0][2]["input"] == "https://example.com/seed.png"
+async def test_create_multiview_to_model_formats_inputs_correctly(mock_http):
+    mock_http.responder = lambda _r: httpx.Response(200, json=_ok({"task_id": "task_multi"}))
+    views = {
+        "front": "token_f",
+        "right": "token_r",
+        "back": "token_b",
+    }
+    tid = await tripo_client.create_multiview_to_model(views)
+    assert tid == "task_multi"
+    assert mock_http.calls[0][0] == "POST"
+    assert mock_http.calls[0][1] == "/v3/generation/multiview-to-model"
+    body = mock_http.calls[0][2]
+    assert body["inputs"] == [
+        {"front": "token_f"},
+        {"right": "token_r"},
+        {"back": "token_b"},
+    ]
+
+
+@pytest.mark.asyncio
+async def test_create_multiview_to_model_validates_front_and_min_views():
+    with pytest.raises(ValueError, match="front"):
+        await tripo_client.create_multiview_to_model({"right": "tok_r", "back": "tok_b"})
+    with pytest.raises(ValueError, match="at least 2 views"):
+        await tripo_client.create_multiview_to_model({"front": "tok_f"})
 
 
 @pytest.mark.asyncio

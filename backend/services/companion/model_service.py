@@ -18,8 +18,7 @@ from .asset_store import save_companion_model
 from .avatar_service import resolve_uploaded_avatar_path
 from .persona_service import get_or_create_persona
 from .rig_type_selector import select_rig_type
-from .seed_stylizer import stylize_seed_for_tripo
-from .tripo_client import create_image_to_model
+from .tripo_client import create_multiview_to_model
 from .tripo_client import download_model
 from .tripo_client import poll_rig_check
 from .tripo_client import poll_task
@@ -108,12 +107,18 @@ async def generate_companion_model(
         if in_flight is not None:
             raise ModelGenerationInProgressError("已有 3D 模型生成任务进行中，请稍候再试")
 
-        # Resolve seed image path
+        # Resolve multiview seed image paths
         avatar = db.query(AvatarAsset).filter(AvatarAsset.user_id == user_id, AvatarAsset.active.is_(True)).one_or_none()
-        if avatar is None or not (avatar.seed_url or avatar.asset_url):
+        if avatar is None:
             raise ModelGenerationError("没有找到种子图，请先完成引导流程中的形象生成")
 
-        seed_filename = (avatar.seed_url or avatar.asset_url).split("/")[-1]
+        front = (avatar.seed_front_url or "").split("/")[-1]
+        right = (avatar.seed_right_url or "").split("/")[-1]
+        back = (avatar.seed_back_url or "").split("/")[-1]
+        if not (front and right and back):
+            raise ModelGenerationError("请先完成全身三视图生成再生成模型")
+
+        view_filenames = {"front": front, "right": right, "back": back}
 
         # The previous active model stays active while this generation runs —
         # only a success claims the active slot. A failed regeneration therefore
@@ -130,7 +135,7 @@ async def generate_companion_model(
         db.refresh(model)
 
     # Fire-and-forget the background pipeline
-    asyncio.create_task(_run_tripo_pipeline(user_id, seed_filename, species, model.id))
+    asyncio.create_task(_run_tripo_pipeline(user_id, view_filenames, species, model.id))
     logger.info("Tripo3D generation started", extra={"user_id": user_id, "species": species})
     return model
 
@@ -138,53 +143,33 @@ async def generate_companion_model(
 # ── Background pipeline ─────────────────────────────────────────
 
 
-async def _run_tripo_pipeline(user_id: int, seed_filename: str, species: str, model_id: int) -> None:
-    """Full pipeline: upload → image-to-model → rig-check → rig → download → morph → save."""
+async def _run_tripo_pipeline(user_id: int, view_filenames: dict[str, str], species: str, model_id: int) -> None:
+    """Full pipeline: upload 3 views → multiview-to-model → rig-check → rig → download → morph → save."""
     try:
-        # ── Step 1: Read seed image from disk & upload to Tripo3D ──
+        # ── Step 1: Read multiview seed images from disk & upload to Tripo3D ──
         _emit_progress(user_id, "uploading", 5)
-        resolved = resolve_uploaded_avatar_path(seed_filename)
-        if resolved is None:
-            raise ModelGenerationError(f"种子图文件不可读: {seed_filename}")
-        path, content_type = resolved
-        image_bytes = await asyncio.to_thread(path.read_bytes)
 
-        # Step 1b: Pre-stylize the seed for Tripo3D image-to-3D.
-        # Real photos degrade Tripo3D's output badly; converting to a clean
-        # digital-illustration variant (A-pose, white BG) before upload gives
-        # a 3D model that much more faithfully resembles the character.
-        _emit_progress(user_id, "stylizing", 8)
-        stylization = await stylize_seed_for_tripo(
-            image_bytes,
-            content_type,
-            db=None,
-            user_id=user_id,
+        async def _read_and_upload(view_key: str, filename: str) -> tuple[str, str]:
+            resolved = resolve_uploaded_avatar_path(filename)
+            if resolved is None:
+                raise ModelGenerationError(f"{view_key} 视角种子图文件不可读: {filename}")
+            path, content_type = resolved
+            image_bytes = await asyncio.to_thread(path.read_bytes)
+            file_token = await upload_file(image_bytes, filename, content_type)
+            return view_key, file_token
+
+        uploaded_items = await asyncio.gather(
+            _read_and_upload("front", view_filenames["front"]),
+            _read_and_upload("right", view_filenames["right"]),
+            _read_and_upload("back", view_filenames["back"]),
         )
-        if stylization.used_stylization:
-            # Replace the upload payload with the stylized variant; the
-            # on-disk seed file is left untouched so the avatar UI still
-            # shows the original portrait.
-            mime_subtype = (stylization.mime.split("/", 1)[-1] or "jpg").lower()
-            stem = Path(seed_filename).stem
-            upload_bytes = stylization.bytes_
-            upload_mime = stylization.mime
-            upload_filename = f"{stem}_stylized.{mime_subtype}"
-            logger.info(
-                "seed pre-stylized for Tripo3D",
-                extra={"user_id": user_id, "provider": stylization.provider_name, "reason": stylization.reason},
-            )
-        else:
-            upload_bytes, upload_mime, upload_filename = image_bytes, content_type, seed_filename
-            logger.info(
-                "seed stylization bypassed; using original seed for Tripo3D",
-                extra={"user_id": user_id, "reason": stylization.reason},
-            )
-        file_token = await upload_file(upload_bytes, upload_filename, upload_mime)
-        # ── Step 2: image-to-model ──
+        view_tokens = dict(uploaded_items)
+
+        # ── Step 2: multiview-to-model ──
         _emit_progress(user_id, "generating", 10)
         model_version = SETTINGS.tripo_model_version
-        gen_task_id = await create_image_to_model(
-            file_token,
+        gen_task_id = await create_multiview_to_model(
+            view_tokens,
             model_version=model_version,
             pbr=True,
             texture_quality=SETTINGS.tripo_texture_quality,
@@ -243,7 +228,7 @@ async def _run_tripo_pipeline(user_id: int, seed_filename: str, species: str, mo
             )
             model.asset_url = asset_url
             model.rig_original_url = rig_original_url
-            model.provider = "tripo_image_to_3d"
+            model.provider = "tripo_multiview_to_3d"
             model.species = species
             model.rig_type = rig_type
             model.rig_naming = "mixamo" if rig_type == "biped" else "tripo"

@@ -4,7 +4,7 @@ export interface PickedImage {
   previewUrl: string
 }
 
-// Matches the backend's AvatarUploadRequest / AvatarFromImageRequest cap —
+// Matches the backend's AvatarFromImageRequest cap —
 // anything bigger comes back as a 422 the user can't act on, so reject it here
 // with a hint instead.
 const MAX_IMAGE_BASE64 = 8 * 1024 * 1024

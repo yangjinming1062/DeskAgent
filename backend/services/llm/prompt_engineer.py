@@ -13,41 +13,44 @@ from .providers.base import ProviderConfig
 
 # Chinese-first (persona is Chinese, minimax handles it natively); the
 # 纯白平面背景 clause is a hard contract with the desktop chroma-key renderer.
-_PORTRAIT_SYSTEM_PROMPT = (
-    "你是一个专业的角色形象设计提示词工程师。你需要为同一个角色生成两张配套的图像提示词：\n"
-    "一张头像图（avatar）和一张全身种子图（seed）。两张图描述的角色外貌必须完全一致。\n"
+_AVATAR_SYSTEM_PROMPT = (
+    "你是一个专业的角色头像提示词工程师。你需要为角色生成一张高精度的半身头像图（avatar）提示词。\n"
     "\n"
-    '严格输出 JSON：{"avatar": "...", "seed": "..."}，不要任何额外文字或 Markdown 代码块。\n'
-    "\n"
-    "## 头像图（avatar）\n"
+    "硬性要求：\n"
     "1. 胸部以上的半身特写（bust portrait），以「bust portrait of ...」开头；\n"
-    "2. 重点呈现面部细节：脸型轮廓、眼睛形状与瞳色、鼻子、嘴唇、表情、发型与发色；\n"
-    "3. 包含上身着装与配色、配饰（如可见）；\n"
-    "4. 必须包含「纯白平面背景，无场景、无渐变、无阴影」（桌面端 chroma-key 渲染依赖此约束）；\n"
+    "2. 重点呈现面部细节：脸型轮廓、五官比例、眼睛形状与瞳色瞳光、鼻子、嘴唇、眼神与神态、发型与发色质感；\n"
+    "3. 包含上身着装与配色、特色配饰（如可见）；\n"
+    "4. 视角：正面朝向观众（front-facing bust portrait），平视镜头；\n"
+    "5. 光线：柔和均匀的正面打光（soft even front lighting），无强烈阴影；\n"
+    "6. 画风：digital illustration, clean linework, high detail, masterwork, professional character design；\n"
+    "7. 必须包含「纯白平面背景，无场景、无渐变、无阴影」（桌面端 chroma-key 渲染依赖此约束）；\n"
+    "8. 全文使用中文，只保留专业术语与英文画风关键词；\n"
+    "9. 用户提供的反馈（如有）必须显式体现在描述中；若用户上传了参考图，提取角色的核心外观特征即可，不要过分在意参考图中的细节（如不需要和用户上传图像的动作、姿态一致，保持标准正面半身像）；\n"
+    "10. 不要解释、不要寒暄，直接输出最终中文 prompt 文本。"
+)
+
+_FULLBODY_MULTIVIEW_SYSTEM_PROMPT = (
+    "你是一个专业的三维建模多视图角色立绘提示词工程师。你需要为同一个角色生成三张配套的全身立绘提示词：\n"
+    "正面（front）、右侧面（right）、背面（back）。三张图描述的角色外貌、服装款式与配色必须完全一致，并作为下游 Tripo3D 多视图建模的原始输入。\n"
     "\n"
-    "## 种子图（seed）\n"
-    "5. 全身正面立绘（full body front view），以「full body portrait of ...」开头；\n"
-    "6. 完整展示角色全身：从头到脚，包括服装、鞋靴、全部配饰；\n"
-    "7. 用于下游 Tripo3D image-to-3D 重建的唯一输入源——角色几何、纹理、比例全部由此图决定；\n"
-    "8. 必须包含「纯白平面背景，无场景、无渐变、无阴影」；\n"
-    "9. 严格采用 A-pose 站姿（Tripo3D 绑骨硬性要求，非 A-pose 会导致骨骼畸形或断肢）：\n"
-    "    双臂自然张开与躯干约成 30-45 度夹角（禁止紧贴身体或完全垂直下垂）；\n"
-    "    双掌掌心朝向身体侧面、手指自然伸直并微微分开（五指清晰可辨）；\n"
-    "    双脚平行分开约与肩同宽、脚尖朝前；\n"
-    "    脊椎完全挺直、头颈水平正对前方（不得低头、仰头、侧倾或扭转）；\n"
-    "    四肢与躯干之间有可见间隙（腋下、腰侧、大腿内侧不粘连）；\n"
-    "    无手持道具、无遮挡身体的配件或衣物层叠。\n"
+    '严格输出 JSON：{"front": "...", "right": "...", "back": "..."}，不要任何额外文字或 Markdown 代码块。\n'
     "\n"
-    "## 共同约束（两张图都必须严格遵守）\n"
-    "视角：正面朝向观众（front-facing），禁止侧面、斜侧面（3/4 view）、背面、俯视或仰视角度；\n"
-    "姿态：身体直立，双肩平齐；禁止交叉抱胸、叉腰、插兜或任何复杂手势（手臂姿态由上方 avatar/seed 各自约束定义）；\n"
-    "解剖学精度：每只手五根手指完整清晰可辨，无多余或缺失；面部五官左右对称；四肢比例正确；\n"
-    "一致性：两张图必须描述同一个角色——同一张脸、同一套服装、同一发色、同一配饰；\n"
-    "光线：柔和均匀的正面打光（soft even front lighting），无强烈阴影；\n"
-    "画风：digital illustration, clean linework, high detail, professional character design；\n"
-    "语言：全文使用中文，只保留专业术语与英文画风关键词；\n"
-    "细节覆盖：每张图都必须详细描述肤色、体型、服装面料质感、层次搭配等所有可见特征；\n"
-    "用户提供的反馈（如有）必须显式体现在两张图的描述中。\n"
+    "## 各视角具体要求\n"
+    "1. 正面（front）：以「full body front view portrait of ...」开头；完整展示角色正面容貌、正面上身及下半身服装、鞋靴、配饰；\n"
+    "2. 右侧面（right）：以「full body right side view portrait of ...」开头；完整展示角色正右侧面轮廓、侧面发型层次、服饰侧面剪裁线条、手臂与鞋靴侧面、身体厚度；\n"
+    "3. 背面（back）：以「full body back view portrait of ...」开头；完整展示角色后脑发型发尾、背面服装款式（后背剪裁、拉链、纹理、后腰配饰等）、背影与鞋跟背面；\n"
+    "\n"
+    "## 核心约束（三张图都必须严格遵守）\n"
+    "1. 立绘完整性（最高优先级）：三视角均必须从头顶至脚底（从发梢到鞋底）100% 完整展示在画面内，四周必须留有适度安全边缘留白（safe margin / full body fully visible in frame），严禁裁切头顶、四肢或脚底；\n"
+    "2. 解剖学精度与 A-pose 规范（Tripo3D 建模与绑骨硬性要求）：\n"
+    "    - 双足人形（biped）：严格采用标准 A-pose 站姿。双臂向两侧自然张开与躯干呈 30-45 度夹角，五指自然分开伸直且清晰可辨；双脚平行分开约与肩同宽、脚尖朝前平立于地面；脊椎挺直平视前方，四肢与躯干之间有可见间隙（腋下、腰侧、大腿内侧不粘连）；\n"
+    "    - 非双足物种（按 biological_type 自适应）：保持该物种解剖学上的标准对称中立站姿，四肢与躯干结构清晰无重叠粘连；\n"
+    "    - 无手持道具、无遮挡身体轮廓的大型配件或衣物层叠；\n"
+    "3. 形象一致性：以传入的外貌锚点（avatar_prompt）为基准，三张图必须描述同一个角色——同一张脸、同一套服装、同一发型发色、同一配色与面料质感；结合 appearance 扩展连贯的下半身与鞋靴设计；\n"
+    "4. 背景与光线：必须包含「纯白平面背景，无场景、无渐变、无阴影」；采用均匀漫反射平光打光（soft even diffuse lighting，无明显方向性暗部阴影，便于 3D 贴图烘焙）；\n"
+    "5. 画风：digital illustration, clean linework, high detail, professional character design；\n"
+    "6. 语言：全文使用中文，只保留专业术语与英文画风关键词；\n"
+    "7. 用户提供的反馈（如有）必须显式体现在三张图的描述中。\n"
     "\n"
     "不要解释、不要寒暄，直接输出 JSON。"
 )
@@ -66,13 +69,14 @@ _TEXTURE_WARDROBE_SYSTEM_PROMPT = (
 )
 
 
-class _CharacterImagePromptsResponse(BaseModel):
-    """Strict 2-field contract for paired avatar + seed prompts."""
+class _FullbodyMultiviewResponse(BaseModel):
+    """Strict 3-field contract for front, right, back fullbody prompts."""
 
     model_config = ConfigDict(extra="forbid")
 
-    avatar: str
-    seed: str
+    front: str
+    right: str
+    back: str
 
 
 def _persona_payload(persona: Persona) -> dict:
@@ -121,23 +125,16 @@ async def chat(
     return text
 
 
-async def enhance_character_image_prompts(
+async def enhance_avatar_prompt(
     db: Session | None,
     user_id: int | None,
     persona: Persona,
     *,
     feedback: str | None = None,
     provider_config: ProviderConfig | None = None,
-) -> dict[str, str]:
-    """One LLM round-trip returning paired avatar (bust) + seed (full body) prompts as JSON.
-
-    The avatar is the user-facing identity image; the seed is the full-body reference
-    for downstream 3D texture generation. Both describe the same character.
-    """
+) -> str:
+    """Rewrite persona definition into a single focused Chinese avatar (bust) prompt."""
     definition = _persona_payload(persona)
-    # The character name is dropped on purpose — image providers render
-    # appearance, never the spoken name, so feeding it back wastes tokens
-    # and biases the model toward reproducing it as on-image text.
     payload = {
         "biological_type": definition.get("biological_type") or "",
         "gender": definition.get("gender") or "",
@@ -146,10 +143,35 @@ async def enhance_character_image_prompts(
         "personality": definition.get("personality") or "",
         "feedback": (feedback or "").strip(),
     }
-    user_payload = "请根据以下角色定义生成头像与全身种子图的提示词（严格 JSON）：\n" f"```json\n{json.dumps(payload, ensure_ascii=False)}\n```"
-    raw = await chat(db, user_id, _PORTRAIT_SYSTEM_PROMPT, user_payload, provider_config=provider_config)
+    user_payload = "请根据以下角色定义生成半身头像图的提示词：\n" f"```json\n{json.dumps(payload, ensure_ascii=False)}\n```"
+    raw = await chat(db, user_id, _AVATAR_SYSTEM_PROMPT, user_payload, provider_config=provider_config)
+    return _strip_markdown_fence(raw)
+
+
+async def enhance_fullbody_multiview_prompts(
+    db: Session | None,
+    user_id: int | None,
+    persona: Persona,
+    *,
+    avatar_prompt: str,
+    feedback: str | None = None,
+    provider_config: ProviderConfig | None = None,
+) -> dict[str, str]:
+    """Generate paired front, right, and back full-body prompts using avatar_prompt as the visual anchor."""
+    definition = _persona_payload(persona)
+    payload = {
+        "biological_type": definition.get("biological_type") or "",
+        "gender": definition.get("gender") or "",
+        "appearance": definition.get("appearance") or "",
+        "background": definition.get("background") or "",
+        "personality": definition.get("personality") or "",
+        "avatar_prompt": avatar_prompt,
+        "feedback": (feedback or "").strip(),
+    }
+    user_payload = "请根据以下角色定义与已确认的外貌锚点生成全身三视图（正面/右侧面/背面）提示词（严格 JSON）：\n" f"```json\n{json.dumps(payload, ensure_ascii=False)}\n```"
+    raw = await chat(db, user_id, _FULLBODY_MULTIVIEW_SYSTEM_PROMPT, user_payload, provider_config=provider_config)
     cleaned = _strip_markdown_fence(raw)
-    return _CharacterImagePromptsResponse.model_validate(safe_json_loads(cleaned, default={})).model_dump()
+    return _FullbodyMultiviewResponse.model_validate(safe_json_loads(cleaned, default={})).model_dump()
 
 
 async def enhance_texture_prompt(
@@ -160,7 +182,6 @@ async def enhance_texture_prompt(
 ) -> str:
     """Rewrite a wardrobe description as a detailed Chinese PBR texture prompt (top-down flat lay)."""
     system_prompt = _TEXTURE_WARDROBE_SYSTEM_PROMPT
-
     payload = {"description": description}
     user_payload = "请根据以下服装/外观描述生成 PBR 纹理图提示词：\n" f"```json\n{json.dumps(payload, ensure_ascii=False)}\n```"
     return await chat(db, user_id, system_prompt, user_payload)

@@ -17,8 +17,8 @@ from modules.companion import Persona
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
-from ..llm import enhance_character_image_prompts
-from ..llm import resolve_provider_config
+from ..llm import enhance_avatar_prompt
+from ..llm import enhance_fullbody_multiview_prompts
 from ..tools.builtin import first_image_url
 from ..tools.builtin import image_generation_tool
 from .asset_store import build_signed_avatar_url
@@ -49,8 +49,7 @@ class AvatarNotFoundError(AvatarGenerationError):
 
 
 class SeedPromptMissingError(AvatarGenerationError):
-    """The avatar row's prompt_json has no cached seed_prompt — only happens
-    for rows written by upload_avatar (no LLM call) or very old avatars."""
+    """The avatar row's prompt_json has no cached avatar_prompt visual anchor."""
 
 
 class AvatarSourceUnreadableError(AvatarGenerationError):
@@ -74,9 +73,7 @@ def get_avatar_job_lock(user_id: int) -> asyncio.Lock:
 
 async def _persist_portrait_bytes(data: bytes, content_type: str) -> tuple[str, str, str]:
     """Write portrait bytes to the persistent ``companion-avatars/`` dir and
-    return ``(bare_storage_path, file_id, ext)``. Mirrors ``upload_avatar``'s
-    storage path so generated portraits survive the temp-media TTL window (24h)
-    and are reachable on a fresh device login.
+    return ``(bare_storage_path, file_id, ext)``.
 
     The bytes are written verbatim; the extension follows the response
     content_type. Portrait is consumed as an opaque image (avatar panel
@@ -100,9 +97,9 @@ async def _persist_portrait_bytes(data: bytes, content_type: str) -> tuple[str, 
 
 
 def _avatar_storage_path(file_id: str, ext: str) -> str:
-    """Return the canonical *bare* storage path for an uploaded /
-    generated portrait, as ``companion-avatars/<file_id>.<ext>`` — re-signed
-    to a URL by ``get_active_avatar`` at every read."""
+    """Return the canonical *bare* storage path for a portrait, as
+    ``companion-avatars/<file_id>.<ext>`` — re-signed to a URL by
+    ``get_active_avatar`` at every read."""
     return f"companion-avatars/{file_id}.{ext}"
 
 
@@ -191,15 +188,14 @@ async def _generate_avatar_step(
     user_id: int,
     *,
     avatar_prompt: str,
-    seed_prompt: str,
     style: str,
     feedback: str | None = None,
     reference_image: str | None = None,
 ) -> AvatarAsset:
     """Avatar (bust) only. Inserts a fresh active ``AvatarAsset`` row with
-    ``seed_url=""``; the full-body seed lands later via ``generate_fullbody``
-    once the user confirms the face. ``seed_prompt`` is cached in ``prompt_json``
-    so step 2 can reuse it without a second LLM round-trip.
+    ``seed_front_url=""``, ``seed_right_url=""``, ``seed_back_url=""``; the full-body
+    multiview seeds land later via ``generate_fullbody`` once the user confirms
+    the face. ``avatar_prompt`` is cached in ``prompt_json`` as the visual anchor.
 
     Failure is fatal — ``image_generation_tool`` swallows provider errors and
     returns ``{success: false}``; ``first_image_url -> None`` surfaces that
@@ -209,8 +205,12 @@ async def _generate_avatar_step(
 
     previous = db.query(AvatarAsset).filter(AvatarAsset.user_id == user_id, AvatarAsset.active.is_(True)).one_or_none()
     db.query(AvatarAsset).filter(AvatarAsset.user_id == user_id, AvatarAsset.active.is_(True)).update({"active": False})
-    prompt_payload: dict = {"prompt": avatar_prompt, "style": style, "source_url": avatar_source_url}
-    prompt_payload["seed_prompt"] = seed_prompt
+    prompt_payload: dict = {
+        "prompt": avatar_prompt,
+        "avatar_prompt": avatar_prompt,
+        "style": style,
+        "source_url": avatar_source_url,
+    }
     if feedback is not None:
         prompt_payload["feedback"] = feedback
     if reference_image is not None:
@@ -220,7 +220,9 @@ async def _generate_avatar_step(
         user_id=user_id,
         prompt_json=json.dumps(prompt_payload, ensure_ascii=False),
         asset_url=asset_url,
-        seed_url="",
+        seed_front_url="",
+        seed_right_url="",
+        seed_back_url="",
         style=style,
         seed=secrets.randbelow(2**31),
         active=True,
@@ -233,7 +235,9 @@ async def _generate_avatar_step(
 
     if previous is not None:
         _delete_portrait_file(previous.asset_url)
-        _delete_portrait_file(previous.seed_url)
+        _delete_portrait_file(previous.seed_front_url)
+        _delete_portrait_file(previous.seed_right_url)
+        _delete_portrait_file(previous.seed_back_url)
     return asset
 
 
@@ -243,43 +247,62 @@ async def generate_fullbody(
     *,
     avatar_id: int,
 ) -> AvatarAsset:
-    """Step-2: render the full-body seed on top of the user-confirmed avatar.
+    """Step-2: render full-body multiview seeds (front, right, back) on top of the user-confirmed avatar.
 
-    Reads the avatar's cached ``seed_prompt`` and persisted bytes (so the
+    Reads the avatar's cached ``avatar_prompt`` and persisted bytes (so the
     subject reference survives even when ``public_url_prefix`` is empty),
-    generates the full-body portrait, and writes it back to the **same**
-    ``AvatarAsset`` row's ``seed_url``. A re-run **replaces** the previous
-    seed — the user can re-enter step 2 freely from any UI surface.
+    generates the three full-body portraits via a fresh LLM round-trip,
+    and writes them back to the same ``AvatarAsset`` row. A re-run replaces
+    previous seed files.
     """
     asset = db.query(AvatarAsset).filter(AvatarAsset.id == avatar_id, AvatarAsset.user_id == user_id).one_or_none()
     if asset is None:
         raise AvatarNotFoundError(f"avatar {avatar_id} not found")
 
     prompt_payload = safe_json_loads(asset.prompt_json, default={})
-    seed_prompt = prompt_payload.get("seed_prompt") if isinstance(prompt_payload, dict) else None
-    if not seed_prompt:
-        raise SeedPromptMissingError(f"avatar {avatar_id} has no cached seed_prompt")
+    avatar_prompt = prompt_payload.get("avatar_prompt") if isinstance(prompt_payload, dict) else None
+    if not avatar_prompt:
+        raise SeedPromptMissingError(f"avatar {avatar_id} has no cached avatar_prompt visual anchor")
 
     reference_image = _load_avatar_bytes_as_data_uri(asset.asset_url)
     if reference_image is None:
         raise AvatarSourceUnreadableError(f"avatar {avatar_id} source file is unreadable")
 
-    # Re-run replaces the previous seed file on disk so we don't leak orphans.
-    previous_seed_url = asset.seed_url
+    persona = get_or_create_persona(db, user_id)
+    feedback = prompt_payload.get("feedback") if isinstance(prompt_payload, dict) else None
 
-    seed_url, _, _, _ = await _generate_one_portrait(seed_prompt, user_id, reference_image=reference_image, size=_AVATAR_FULL_SIZE)
+    prompts = await enhance_fullbody_multiview_prompts(
+        db,
+        user_id,
+        persona,
+        avatar_prompt=avatar_prompt,
+        feedback=feedback,
+    )
 
-    asset.seed_url = seed_url
+    # Generate 3 views in parallel with the avatar as reference_image
+    front, right, back = await asyncio.gather(
+        _generate_one_portrait(prompts["front"], user_id, reference_image=reference_image, size=_AVATAR_FULL_SIZE),
+        _generate_one_portrait(prompts["right"], user_id, reference_image=reference_image, size=_AVATAR_FULL_SIZE),
+        _generate_one_portrait(prompts["back"], user_id, reference_image=reference_image, size=_AVATAR_FULL_SIZE),
+    )
+
+    # Re-run replaces previous seed files on disk so we don't leak orphans.
+    for old_url in (asset.seed_front_url, asset.seed_right_url, asset.seed_back_url):
+        _delete_portrait_file(old_url)
+
+    asset.seed_front_url = front[0]
+    asset.seed_right_url = right[0]
+    asset.seed_back_url = back[0]
+    prompt_payload["multiview_prompts"] = prompts
+    asset.prompt_json = json.dumps(prompt_payload, ensure_ascii=False)
     db.commit()
     db.refresh(asset)
-    # Re-sign both URLs in memory so the response carries the fresh signed
-    # forms — the DB row still stores bare paths until the next re-sign on
-    # read (see ``_re_sign_avatar_url``).
-    asset.asset_url = _re_sign_bare_path(asset.asset_url)
-    asset.seed_url = _re_sign_bare_path(asset.seed_url)
 
-    if previous_seed_url:
-        _delete_portrait_file(previous_seed_url)
+    # Re-sign URLs in memory
+    asset.asset_url = _re_sign_bare_path(asset.asset_url)
+    asset.seed_front_url = _re_sign_bare_path(asset.seed_front_url)
+    asset.seed_right_url = _re_sign_bare_path(asset.seed_right_url)
+    asset.seed_back_url = _re_sign_bare_path(asset.seed_back_url)
     return asset
 
 
@@ -310,28 +333,22 @@ def _delete_portrait_file(asset_url: str | None) -> None:
         (Path(SETTINGS.data_dir) / "companion-avatars" / name).unlink(missing_ok=True)
 
 
-async def generate_avatar(db: Session, *, user_id: int) -> AvatarAsset:
-    """Generate a new avatar asset and flip it active. Raises ``AvatarGenerationError`` on provider failure (mapped to 502 by the route)."""
-    persona = get_or_create_persona(db, user_id)
+async def generate_avatar(db: Session, user_id: int, persona: Persona) -> AvatarAsset:
+    """Generate the initial portrait after onboarding completes."""
     if not persona.is_complete:
         raise AvatarGenerationError("persona is incomplete; finish onboarding first")
-    # Pre-resolve so the long chat round-trip doesn't re-query the DB
-    # while the caller's session (advisory lock + pool slot) is still held.
-    provider_config = resolve_provider_config(db, user_id, "llm")
     try:
-        prompts = await enhance_character_image_prompts(
-            None,
+        avatar_prompt = await enhance_avatar_prompt(
+            db,
             user_id,
             persona,
-            provider_config=provider_config,
         )
     except (ValidationError, RuntimeError) as exc:
         raise AvatarGenerationError(f"prompt enhancement failed: {exc}") from exc
     asset = await _generate_avatar_step(
         db,
         user_id,
-        avatar_prompt=prompts["avatar"],
-        seed_prompt=prompts["seed"],
+        avatar_prompt=avatar_prompt,
         style=_DEFAULT_STYLE,
     )
     return asset
@@ -361,9 +378,12 @@ def _re_sign_avatar_url(asset: AvatarAsset) -> None:
     if not file_id:
         return
     asset.asset_url = build_signed_avatar_url(file_id, ext)
-    signed_seed = _re_sign_bare_path(asset.seed_url)
-    if signed_seed is not None:
-        asset.seed_url = signed_seed
+    if (signed_seed := _re_sign_bare_path(asset.seed_front_url)) is not None:
+        asset.seed_front_url = signed_seed
+    if (signed_right := _re_sign_bare_path(asset.seed_right_url)) is not None:
+        asset.seed_right_url = signed_right
+    if (signed_back := _re_sign_bare_path(asset.seed_back_url)) is not None:
+        asset.seed_back_url = signed_back
 
 
 def _re_sign_bare_path(bare_path: str | None) -> str | None:
@@ -387,24 +407,19 @@ async def regenerate_avatar(db: Session, user_id: int, persona: Persona, feedbac
     """Regenerate the portrait. Optional ``feedback`` (e.g. "longer hair") is folded into the prompt."""
     if not persona.is_complete:
         raise AvatarGenerationError("persona is incomplete; finish onboarding first")
-    # Pre-resolve so the long chat round-trip doesn't re-query the DB
-    # while the caller's session (advisory lock + pool slot) is still held.
-    provider_config = resolve_provider_config(db, user_id, "llm")
     try:
-        prompts = await enhance_character_image_prompts(
-            None,
+        avatar_prompt = await enhance_avatar_prompt(
+            db,
             user_id,
             persona,
             feedback=feedback,
-            provider_config=provider_config,
         )
     except (ValidationError, RuntimeError) as exc:
         raise AvatarGenerationError(f"prompt enhancement failed: {exc}") from exc
     asset = await _generate_avatar_step(
         db,
         user_id,
-        avatar_prompt=prompts["avatar"],
-        seed_prompt=prompts["seed"],
+        avatar_prompt=avatar_prompt,
         style=style,
         feedback=feedback,
     )
@@ -446,24 +461,18 @@ def _load_avatar_bytes_as_data_uri(asset_url_or_path: str | None) -> str | None:
     bare_idx = asset_url_or_path.find(bare_marker)
     if bare_idx >= 0:
         filename = asset_url_or_path[bare_idx + len(bare_marker) :].split("?")[0]
-
-    # Signed URL form: ``/api/companion/avatar/file/<file_id>.<ext>?sig=...``.
-    if filename is None:
-        url_marker = "/api/companion/avatar/file/"
-        url_idx = asset_url_or_path.find(url_marker)
-        if url_idx >= 0:
-            filename = asset_url_or_path[url_idx + len(url_marker) :].split("?")[0]
+    elif asset_url_or_path.startswith("/api/companion/avatar/file/"):
+        # Signed URL form: extract the <file_id>.<ext> path component.
+        path_only = asset_url_or_path.split("?")[0]
+        filename = path_only.rsplit("/", 1)[-1]
 
     if not filename:
         return None
-    if "/" in filename or "\\" in filename or ".." in filename:
-        return None
-    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
-    mime = _EXT_TO_MIME.get(ext)
-    if mime is None:
-        return None
 
-    path = Path(SETTINGS.data_dir) / "companion-avatars" / filename
+    resolved = resolve_uploaded_avatar_path(filename)
+    if resolved is None:
+        return None
+    path, mime = resolved
     try:
         data = path.read_bytes()
     except OSError:
@@ -483,24 +492,19 @@ async def regenerate_avatar_from_image(
     """Regenerate the portrait using a user-uploaded image as the subject reference (inline data URI)."""
     if not persona.is_complete:
         raise AvatarGenerationError("persona is incomplete; finish onboarding first")
-    # Pre-resolve so the long chat round-trip doesn't re-query the DB
-    # while the caller's session (advisory lock + pool slot) is still held.
-    provider_config = resolve_provider_config(db, user_id, "llm")
     try:
-        prompts = await enhance_character_image_prompts(
-            None,
+        avatar_prompt = await enhance_avatar_prompt(
+            db,
             user_id,
             persona,
             feedback=description,
-            provider_config=provider_config,
         )
     except (ValidationError, RuntimeError) as exc:
         raise AvatarGenerationError(f"prompt enhancement failed: {exc}") from exc
     asset = await _generate_avatar_step(
         db,
         user_id,
-        avatar_prompt=prompts["avatar"],
-        seed_prompt=prompts["seed"],
+        avatar_prompt=avatar_prompt,
         style=style,
         feedback=description,
         reference_image=_reference_data_uri(data, content_type),
@@ -508,45 +512,8 @@ async def regenerate_avatar_from_image(
     return asset
 
 
-async def upload_avatar(db: Session, user_id: int, data: bytes, content_type: str) -> AvatarAsset:
-    """Persist a user image as the active portrait; no cloud-side reference, so the GLB texture pass may be lower-fidelity."""
-    persona = get_or_create_persona(db, user_id)
-    if not persona.is_complete:
-        raise AvatarGenerationError("persona is incomplete; finish onboarding first")
-    ext = _UPLOAD_EXTS.get(content_type.split(";")[0].strip().lower(), "png")
-    file_id = secrets.token_urlsafe(16)
-    avatars_dir = Path(SETTINGS.data_dir) / "companion-avatars"
-    avatars_dir.mkdir(parents=True, exist_ok=True)
-    filepath = avatars_dir / f"{file_id}.{ext}"
-    with open(filepath, "wb") as f:
-        f.write(data)
-    # Persist the *bare* storage path; the route re-signs on read.
-    public_url = _avatar_storage_path(file_id, ext)
-
-    # Best-effort delete the previous portrait file.
-    previous = db.query(AvatarAsset).filter(AvatarAsset.user_id == user_id, AvatarAsset.active.is_(True)).one_or_none()
-    db.query(AvatarAsset).filter(AvatarAsset.user_id == user_id, AvatarAsset.active.is_(True)).update({"active": False})
-    asset = AvatarAsset(
-        user_id=user_id,
-        prompt_json=json.dumps({"source": "upload", "content_type": content_type}),
-        asset_url=public_url,
-        style="uploaded",
-        active=True,
-    )
-    db.add(asset)
-    db.commit()
-    db.refresh(asset)
-
-    # Re-sign before returning so the REST route / WS handler can hand the
-    # renderer a URL it can ``<img src>`` immediately.
-    asset.asset_url = build_signed_avatar_url(file_id, ext)
-    if previous is not None:
-        _delete_portrait_file(previous.asset_url)
-    return asset
-
-
 def resolve_uploaded_avatar_path(filename: str) -> tuple[Path, str] | None:
-    """Locate an uploaded avatar file on disk for the serving route."""
+    """Locate an avatar file on disk for the serving route."""
     name = Path(filename).name
     if "/" in name or "\\" in name or ".." in name:
         return None

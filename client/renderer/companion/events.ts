@@ -307,7 +307,15 @@ export function handleCompanionEvent(event: RpcEvent): void {
       // Background regeneration result — resolve the pending awaiter by job_id
       // so the portrait can swap without blocking the handler.
       const p = event.payload as
-        | { job_id?: string; asset_url?: string | null; seed_url?: string | null; id?: number; error?: string }
+        | {
+            job_id?: string
+            asset_url?: string | null
+            seed_front_url?: string | null
+            seed_right_url?: string | null
+            seed_back_url?: string | null
+            id?: number
+            error?: string
+          }
         | undefined
 
       if (p?.job_id) {
@@ -319,7 +327,16 @@ export function handleCompanionEvent(event: RpcEvent): void {
 
     case 'avatar.fullbody_generated': {
       // Step-2 result for the two-step avatar→fullbody flow.
-      const p = event.payload as { job_id?: string; seed_url?: string | null; id?: number; error?: string } | undefined
+      const p = event.payload as
+        | {
+            job_id?: string
+            seed_front_url?: string | null
+            seed_right_url?: string | null
+            seed_back_url?: string | null
+            id?: number
+            error?: string
+          }
+        | undefined
 
       if (p?.job_id) {
         resolveFullbodyGeneration(p)

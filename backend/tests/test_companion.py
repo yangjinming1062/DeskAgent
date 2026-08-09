@@ -1085,16 +1085,20 @@ def test_onboarding_field_order_matches_question_sequence():
 
 
 @pytest.mark.asyncio
-async def test_upload_avatar_refuses_when_persona_incomplete(_patch_db):
-    """P0-1.4: avatar upload must require ``is_complete=True`` — otherwise a
-    user could burn image- and video-gen quota on a portrait for a
+async def test_from_image_refuses_when_persona_incomplete(_patch_db):
+    """P0-1.4: from-image avatar generation must require ``is_complete=True`` —
+    otherwise a user could burn image- and video-gen quota on a portrait for a
     persona with no system prompt yet."""
     _, SessionLocal = _patch_db
-    from services.companion.avatar_service import AvatarGenerationError, upload_avatar
+    from modules.companion import Persona
+    from services.companion.avatar_service import AvatarGenerationError, regenerate_avatar_from_image
 
     with SessionLocal() as db:
+        persona = Persona(user_id=4242, definition_json="{}", is_complete=False)
+        db.add(persona)
+        db.commit()
         with pytest.raises(AvatarGenerationError, match="persona is incomplete"):
-            await upload_avatar(db, 4242, b"\x89PNG\r\n", "image/png")
+            await regenerate_avatar_from_image(db, 4242, persona, b"\x89PNG\r\n", "image/png")
 
 
 def test_dynamic_user_profile_key_lands_in_memory(_patch_db):
@@ -1367,20 +1371,15 @@ async def test_regenerate_avatar_from_image_uses_reference(monkeypatch, _patch_d
     async def fake_download(url):
         return b"\x89PNG\r\n\x1a\n", "image/png"
 
-    async def fake_enhance(
+    async def fake_enhance_avatar(
         db, user_id, persona, *, feedback=None, provider_config=None
     ):
-        # Build deterministic prompts that the test can assert on — mimics
-        # what the LLM would return without actually calling one.
         suffix = f", 追加：{feedback}" if feedback else ""
-        return {
-            "avatar": f"bust portrait of 测试角色, 纯白平面背景, no scenery, no gradient, no shadow{suffix}",
-            "seed": f"full body portrait of 测试角色, 纯白平面背景{suffix}",
-        }
+        return f"bust portrait of 测试角色, 纯白平面背景, no scenery, no gradient, no shadow{suffix}"
 
     monkeypatch.setattr(avatar_service, "image_generation_tool", fake_gen)
     monkeypatch.setattr(avatar_service, "_download_to_bytes", fake_download)
-    monkeypatch.setattr(avatar_service, "enhance_character_image_prompts", fake_enhance)
+    monkeypatch.setattr(avatar_service, "enhance_avatar_prompt", fake_enhance_avatar)
 
     with SessionLocal() as db:
         user = User(username="imguser", password_hash="x", is_active=True, can_use=True)
@@ -1409,23 +1408,23 @@ async def test_regenerate_avatar_from_image_uses_reference(monkeypatch, _patch_d
         )
         db.refresh(asset)
 
-        # Step-1 fires exactly one image-gen call (avatar bust only); the
-        # full-body seed prompt is cached for the later generate_fullbody step.
+        # Step-1 fires exactly one image-gen call (avatar bust only).
         assert len(all_calls) == 1
         call = all_calls[0]
         assert call["prompt"].startswith("bust portrait")
         assert call["reference_image"].startswith("data:image/png;base64,")
         assert "把背景改成纯白" in call["prompt"]
         assert asset.active is True
-        # Seed URL stays empty until step 2 writes it back.
-        assert asset.seed_url == ""
+        # Multiview seed URLs stay empty until step 2 writes them back.
+        assert asset.seed_front_url == ""
+        assert asset.seed_right_url == ""
+        assert asset.seed_back_url == ""
         payload = _json.loads(asset.prompt_json)
         # Audit row keeps a marker, not the base64 blob.
         assert payload["reference_image"] == "data:image/png;base64"
         assert payload["feedback"] == "把背景改成纯白"
         assert payload["source_url"] == "http://provider/gen.png"
-        # The cached seed prompt drives step 2 without a second LLM call.
-        assert payload["seed_prompt"].startswith("full body portrait")
+        assert payload["avatar_prompt"].startswith("bust portrait")
 
 
 @pytest.mark.asyncio
@@ -1464,9 +1463,9 @@ async def test_regenerate_avatar_from_image_refuses_when_persona_incomplete(_pat
 
 
 @pytest.mark.asyncio
-async def test_generate_fullbody_writes_seed_and_replaces_on_rerun(monkeypatch, _patch_db):
-    """Step-2 renders the seed on top of the persisted avatar and writes it
-    back to the same row; a re-run replaces the previous seed instead of 409."""
+async def test_generate_fullbody_writes_multiview_seeds_and_replaces_on_rerun(monkeypatch, _patch_db):
+    """Step-2 renders 3 multiview seeds (front/right/back) on top of the persisted avatar and writes them
+    back to the same row; a re-run replaces the previous seeds."""
     import json as _json
 
     from modules.auth import User
@@ -1483,8 +1482,16 @@ async def test_generate_fullbody_writes_seed_and_replaces_on_rerun(monkeypatch, 
     async def fake_download(url):
         return b"\x89PNG\r\n\x1a\n", "image/png"
 
+    async def fake_enhance_multiview(db, user_id, persona, *, avatar_prompt, feedback=None):
+        return {
+            "front": "full body front view",
+            "right": "full body right side view",
+            "back": "full body back view",
+        }
+
     monkeypatch.setattr(avatar_service, "image_generation_tool", fake_gen)
     monkeypatch.setattr(avatar_service, "_download_to_bytes", fake_download)
+    monkeypatch.setattr(avatar_service, "enhance_fullbody_multiview_prompts", fake_enhance_multiview)
 
     with SessionLocal() as db:
         user = User(username="fbuser", password_hash="x", is_active=True, can_use=True)
@@ -1492,14 +1499,14 @@ async def test_generate_fullbody_writes_seed_and_replaces_on_rerun(monkeypatch, 
         db.commit()
         db.refresh(user)
 
-        # A step-1 row with a real persisted avatar file — what
-        # ``_generate_avatar_step`` leaves behind before step 2.
         bare_path, _, _ = await avatar_service._persist_portrait_bytes(b"\x89PNG\r\n\x1a\n", "image/png")
         asset = AvatarAsset(
             user_id=user.id,
-            prompt_json=_json.dumps({"prompt": "bust", "seed_prompt": "full body portrait"}),
+            prompt_json=_json.dumps({"prompt": "bust portrait", "avatar_prompt": "bust portrait"}),
             asset_url=bare_path,
-            seed_url="",
+            seed_front_url="",
+            seed_right_url="",
+            seed_back_url="",
             active=True,
         )
         db.add(asset)
@@ -1509,31 +1516,37 @@ async def test_generate_fullbody_writes_seed_and_replaces_on_rerun(monkeypatch, 
         full = await avatar_service.generate_fullbody(db, user_id=user.id, avatar_id=asset.id)
         assert full.id == asset.id
         # The in-memory response carries the re-signed URLs.
-        assert "/api/companion/avatar/file/" in full.seed_url
+        assert "/api/companion/avatar/file/" in full.seed_front_url
+        assert "/api/companion/avatar/file/" in full.seed_right_url
+        assert "/api/companion/avatar/file/" in full.seed_back_url
         assert "/api/companion/avatar/file/" in full.asset_url
-        # The avatar bytes are fed back as the subject reference.
-        assert all_calls[0]["reference_image"].startswith("data:image/png;base64,")
-        assert len(all_calls) == 1
+        # 3 calls made concurrently for front, right, back
+        assert len(all_calls) == 3
+        for call in all_calls:
+            assert call["reference_image"].startswith("data:image/png;base64,")
         db.refresh(full)
-        # The DB row stores the bare path, not the signed URL.
-        assert full.seed_url.startswith("companion-avatars/")
+        assert full.seed_front_url.startswith("companion-avatars/")
+        assert full.seed_right_url.startswith("companion-avatars/")
+        assert full.seed_back_url.startswith("companion-avatars/")
 
-        # A re-run replaces the previous seed file (the returned object is
-        # the same identity-map instance, so compare against fresh DB reads).
-        def _db_seed() -> str:
+        # A re-run replaces the previous seed files
+        def _db_seeds() -> tuple[str, str, str]:
             db.expire_all()
-            return db.query(AvatarAsset).filter(AvatarAsset.id == asset.id).one().seed_url
+            row = db.query(AvatarAsset).filter(AvatarAsset.id == asset.id).one()
+            return row.seed_front_url, row.seed_right_url, row.seed_back_url
 
-        first_db_seed = _db_seed()
+        first_seeds = _db_seeds()
         await avatar_service.generate_fullbody(db, user_id=user.id, avatar_id=asset.id)
-        assert _db_seed() != first_db_seed
-        assert _db_seed().startswith("companion-avatars/")
-        assert len(all_calls) == 2
+        second_seeds = _db_seeds()
+        assert second_seeds[0] != first_seeds[0]
+        assert second_seeds[1] != first_seeds[1]
+        assert second_seeds[2] != first_seeds[2]
+        assert len(all_calls) == 6
 
 
 @pytest.mark.asyncio
 async def test_generate_fullbody_preconditions(monkeypatch, _patch_db):
-    """Step-2 raises typed errors for a missing row / unreadable source file."""
+    """Step-2 raises typed errors for a missing row / unreadable source file / missing avatar_prompt."""
     import json as _json
 
     from modules.auth import User
@@ -1548,8 +1561,12 @@ async def test_generate_fullbody_preconditions(monkeypatch, _patch_db):
     async def fake_download(url):
         return b"\x89PNG\r\n\x1a\n", "image/png"
 
+    async def fake_enhance_multiview(db, user_id, persona, *, avatar_prompt, feedback=None):
+        return {"front": "f", "right": "r", "back": "b"}
+
     monkeypatch.setattr(avatar_service, "image_generation_tool", fake_gen)
     monkeypatch.setattr(avatar_service, "_download_to_bytes", fake_download)
+    monkeypatch.setattr(avatar_service, "enhance_fullbody_multiview_prompts", fake_enhance_multiview)
 
     with SessionLocal() as db:
         user = User(username="fbuser2", password_hash="x", is_active=True, can_use=True)
@@ -1560,9 +1577,11 @@ async def test_generate_fullbody_preconditions(monkeypatch, _patch_db):
         bare_path, _, _ = await avatar_service._persist_portrait_bytes(b"\x89PNG\r\n\x1a\n", "image/png")
         asset = AvatarAsset(
             user_id=user.id,
-            prompt_json=_json.dumps({"prompt": "bust", "seed_prompt": "full body portrait"}),
+            prompt_json=_json.dumps({"prompt": "bust", "avatar_prompt": "bust"}),
             asset_url=bare_path,
-            seed_url="",
+            seed_front_url="",
+            seed_right_url="",
+            seed_back_url="",
             active=True,
         )
         db.add(asset)
@@ -1728,8 +1747,17 @@ async def test_model_generation_rejects_concurrent_run(_patch_db, monkeypatch):
         db.add(user)
         db.commit()
         db.refresh(user)
-        db.add(Persona(user_id=user.id, definition_json=_json.dumps({"name": "小光"}), system_prompt_extras="", is_complete=True))
-        db.add(AvatarAsset(user_id=user.id, prompt_json='{"source": "test"}', asset_url="companion-avatars/seed.png", seed_url="companion-avatars/seed.png", active=True))
+        db.add(
+            AvatarAsset(
+                user_id=user.id,
+                prompt_json='{"source": "test"}',
+                asset_url="companion-avatars/seed.png",
+                seed_front_url="companion-avatars/seed_front.png",
+                seed_right_url="companion-avatars/seed_right.png",
+                seed_back_url="companion-avatars/seed_back.png",
+                active=True,
+            )
+        )
         db.commit()
         uid = user.id
 
@@ -1773,7 +1801,17 @@ async def test_model_generation_failure_keeps_previous_model_active(_patch_db, m
         db.commit()
         db.refresh(user)
         db.add(Persona(user_id=user.id, definition_json=_json.dumps({"name": "小光"}), system_prompt_extras="", is_complete=True))
-        db.add(AvatarAsset(user_id=user.id, prompt_json='{"source": "test"}', asset_url="companion-avatars/seed.png", seed_url="companion-avatars/seed.png", active=True))
+        db.add(
+            AvatarAsset(
+                user_id=user.id,
+                prompt_json='{"source": "test"}',
+                asset_url="companion-avatars/seed.png",
+                seed_front_url="companion-avatars/seed_front.png",
+                seed_right_url="companion-avatars/seed_right.png",
+                seed_back_url="companion-avatars/seed_back.png",
+                active=True,
+            )
+        )
         previous = CompanionModel(user_id=user.id, status="succeeded", species="人类", asset_url="companion-models/1/old.glb", active=True, has_rig=True, has_morph_targets=True)
         db.add(previous)
         db.commit()

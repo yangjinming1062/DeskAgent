@@ -18,7 +18,6 @@ from modules.companion import AvatarAssetResponse
 from modules.companion import AvatarFromImageRequest
 from modules.companion import AvatarGenerateRequest
 from modules.companion import AvatarHistoryResponse
-from modules.companion import AvatarUploadRequest
 from modules.companion import CompanionModel
 from modules.companion import CompanionModelResponse
 from modules.companion import FullbodyGenerateRequest
@@ -59,7 +58,6 @@ from services.companion import resolve_uploaded_avatar_path
 from services.companion import SeedPromptMissingError
 from services.companion import signed_model_url
 from services.companion import update_persona
-from services.companion import upload_avatar
 from services.companion import verify_signed_asset_request
 from services.companion import verify_signed_avatar_request
 from services.llm import MissingLlmConfigError
@@ -76,7 +74,9 @@ def _avatar_response(asset: AvatarAsset) -> AvatarAssetResponse:
     return AvatarAssetResponse(
         id=asset.id,
         asset_url=asset.asset_url,
-        seed_url=asset.seed_url or None,
+        seed_front_url=asset.seed_front_url or None,
+        seed_right_url=asset.seed_right_url or None,
+        seed_back_url=asset.seed_back_url or None,
         prompt=prompt_payload.get("prompt", "") if isinstance(prompt_payload, dict) else "",
         status="succeeded",
     )
@@ -171,33 +171,6 @@ async def post_avatar(
     return _avatar_response(asset)
 
 
-@router.post("/avatar/upload", response_model=AvatarAssetResponse, status_code=status.HTTP_201_CREATED)
-@limiter.limit(f"{SETTINGS.companion_avatar_upload_rate_limit_per_minute}/minute")
-async def post_avatar_upload(
-    request: Request,  # required by @limiter.limit
-    body: AvatarUploadRequest,
-    auth: tuple[User, LoginRecord] = Depends(get_current_session),
-    db: Session = Depends(get_db),
-) -> AvatarAssetResponse:
-    """Takes base64 JSON so the desktop's REST IPC — which speaks JSON, not multipart — can post the picked file directly."""
-    user, _ = auth
-    content_type = (body.content_type or "image/png").split(";")[0].strip().lower()
-    if content_type not in ALLOWED_AVATAR_UPLOAD_MIME_TYPES:
-        raise HTTPException(status_code=415, detail={"error": "仅支持 PNG / JPEG / WebP / GIF 图片"})
-    try:
-        raw = base64.b64decode(body.image)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid base64 image data")
-    try:
-        asset = await upload_avatar(db, user_id=user.id, data=raw, content_type=content_type)
-    except AvatarGenerationError as exc:
-        if "persona is incomplete" in str(exc):
-            raise HTTPException(status_code=409, detail={"error": "请先完成 onboarding 再上传形象", "reason": str(exc)})
-        raise HTTPException(status_code=502, detail={"error": "伙伴形象上传失败，请稍后重试", "reason": str(exc)})
-
-    return _avatar_response(asset)
-
-
 @router.post("/avatar/from-image", response_model=AvatarAssetResponse, status_code=status.HTTP_201_CREATED)
 @limiter.limit(f"{SETTINGS.companion_avatar_generate_rate_limit_per_minute}/minute")
 async def post_avatar_from_image(
@@ -206,7 +179,7 @@ async def post_avatar_from_image(
     auth: tuple[User, LoginRecord] = Depends(get_current_session),
     db: Session = Depends(get_db),
 ) -> AvatarAssetResponse:
-    """The upload is re-rendered to a seed-compliant portrait, never used as-is — POST /avatar/upload keeps the raw image."""
+    """The upload is re-rendered to an avatar-compliant portrait via enhance_avatar_prompt."""
     user, _ = auth
     content_type = (body.content_type or "image/png").split(";")[0].strip().lower()
     if content_type not in ALLOWED_AVATAR_UPLOAD_MIME_TYPES:
@@ -244,10 +217,10 @@ async def post_avatar_fullbody(
     auth: tuple[User, LoginRecord] = Depends(get_current_session),
     db: Session = Depends(get_db),
 ) -> AvatarAssetResponse:
-    """Step-2: render the full-body seed on top of the user-confirmed avatar.
+    """Step-2: render full-body multiview seeds (front, right, back) on top of the user-confirmed avatar.
 
     Returns the same ``AvatarAssetResponse`` shape as the avatar endpoints —
-    the response is the updated row, with ``seed_url`` now populated.
+    the response is the updated row, with front/right/back seed URLs now populated.
     Generation failures (provider / network) map to 502; typed preconditions
     (404 / 409) come from the service layer's subclasses.
     """

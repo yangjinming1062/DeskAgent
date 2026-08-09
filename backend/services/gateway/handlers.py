@@ -608,7 +608,14 @@ def _register_session_handlers(
                         persona = get_or_create_persona(db, user_id)
                         asset = await regenerate_avatar(db, user_id, persona, feedback=feedback)
                         # Step-1 only: fullbody lands via avatar.generate_fullbody once the user confirms the face.
-                        payload = {"job_id": job_id, "asset_url": asset.asset_url, "seed_url": None, "id": asset.id}
+                        payload = {
+                            "job_id": job_id,
+                            "asset_url": asset.asset_url,
+                            "seed_front_url": None,
+                            "seed_right_url": None,
+                            "seed_back_url": None,
+                            "id": asset.id,
+                        }
                 except AvatarGenerationError as exc:
                     logger.warning("avatar regenerate failed", extra={"user_id": user_id, "error": str(exc)})
                     payload = {"job_id": job_id, "error": f"伙伴形象生成失败：{exc}"}
@@ -628,10 +635,8 @@ def _register_session_handlers(
     dispatcher.register("avatar.regenerate", avatar_regenerate)
 
     async def avatar_generate_fullbody(params: dict) -> dict:
-        # Step-2: render the full-body seed on top of a user-confirmed avatar
-        # row. The renderer hands us back the avatar ``id`` from the avatar
-        # step; we reuse the cached seed_prompt and the persisted avatar bytes
-        # as the subject reference, so this RPC never re-runs the LLM.
+        # Step-2: render full-body multiview seeds (front, right, back) on top of
+        # a user-confirmed avatar row using avatar_prompt as the visual anchor.
         raw_id = params.get("avatar_id")
         if not isinstance(raw_id, int) or isinstance(raw_id, bool) or raw_id <= 0:
             raise JsonRpcError(JSONRPC_INVALID_PARAMS, "avatar_id must be a positive integer")
@@ -661,7 +666,13 @@ def _register_session_handlers(
                             payload = {"job_id": job_id, "error": "伙伴正在生成形象，请稍候"}
                             return
                         asset = await generate_fullbody(db, user_id=user_id, avatar_id=raw_id)
-                        payload = {"job_id": job_id, "seed_url": asset.seed_url, "id": asset.id}
+                        payload = {
+                            "job_id": job_id,
+                            "seed_front_url": asset.seed_front_url,
+                            "seed_right_url": asset.seed_right_url,
+                            "seed_back_url": asset.seed_back_url,
+                            "id": asset.id,
+                        }
                 except AvatarNotFoundError:
                     logger.warning("avatar fullbody: avatar not found", extra={"user_id": user_id, "avatar_id": raw_id})
                     payload = {"job_id": job_id, "error": "找不到对应的形象"}

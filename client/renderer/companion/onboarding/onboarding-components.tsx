@@ -4,6 +4,8 @@ import { createPortal } from 'react-dom'
 import { useInteractiveRegion } from '@/companion/interactive-regions'
 import { useLatestRef } from '@/shared/hooks/use-latest-ref'
 
+import type { SeedUrls } from '../portrait-store'
+
 // Extracts of the four small JSX components that were co-located inside
 // onboarding-flow.tsx. All take their inputs as props — no shared module
 // state — so they're trivially testable in isolation.
@@ -30,14 +32,14 @@ export function Chip({
 
 export function PortraitPanel({
   avatarUrl,
-  seedUrl,
+  seedUrls,
   name,
   hint,
   step = 'fullbody',
   introHint
 }: {
   avatarUrl: string | null
-  seedUrl: string | null
+  seedUrls?: SeedUrls | null
   name: string
   hint: string | null
   step?: 'avatar' | 'fullbody'
@@ -64,18 +66,27 @@ export function PortraitPanel({
 
   return (
     <div className="flex flex-col items-center gap-2">
-      <div className="flex justify-center gap-3">
+      <div className="flex justify-center gap-2">
         <PortraitThumb
-          label="头像"
+          label="正面"
           name={name}
-          onZoom={avatarUrl ? () => setZoomedUrl(avatarUrl) : undefined}
-          url={avatarUrl}
+          onZoom={seedUrls?.front ? () => setZoomedUrl(seedUrls.front) : undefined}
+          size="sm"
+          url={seedUrls?.front ?? null}
         />
         <PortraitThumb
-          label="全身"
+          label="右侧"
           name={name}
-          onZoom={seedUrl ? () => setZoomedUrl(seedUrl) : undefined}
-          url={seedUrl}
+          onZoom={seedUrls?.right ? () => setZoomedUrl(seedUrls.right) : undefined}
+          size="sm"
+          url={seedUrls?.right ?? null}
+        />
+        <PortraitThumb
+          label="背面"
+          name={name}
+          onZoom={seedUrls?.back ? () => setZoomedUrl(seedUrls.back) : undefined}
+          size="sm"
+          url={seedUrls?.back ?? null}
         />
       </div>
       {hint && <p className="text-xs text-rose-300/90">{hint}</p>}
@@ -95,9 +106,9 @@ function PortraitThumb({
   name: string
   onZoom: (() => void) | undefined
   url: string | null
-  size?: 'sm' | 'lg'
+  size?: 'sm' | 'md' | 'lg'
 }): React.JSX.Element {
-  const sizeClass = size === 'lg' ? 'h-48 w-48' : 'h-36 w-36'
+  const sizeClass = size === 'lg' ? 'h-48 w-48' : size === 'sm' ? 'h-28 w-28' : 'h-36 w-36'
 
   return (
     <div className="flex flex-col items-center gap-1">

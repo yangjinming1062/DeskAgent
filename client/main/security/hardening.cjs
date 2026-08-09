@@ -32,7 +32,7 @@ function resolveTimeoutMs(timeoutMs, fallbackMs = DEFAULT_FETCH_TIMEOUT_MS) {
   return Number.isFinite(fallbackNum) && fallbackNum > 0 ? Math.round(fallbackNum) : DEFAULT_FETCH_TIMEOUT_MS
 }
 
-const AVATAR_SLOW_PATH_PATTERN = /^\/api\/companion\/avatar(?:\/upload|\/from-image)?$/i
+const AVATAR_SLOW_PATH_PATTERN = /^\/api\/companion\/avatar(?:\/from-image|\/\d+\/fullbody)?$/i
 const MODEL_FILE_PATH_PATTERN = /^\/api\/companion\/model\/file\//
 
 // POST only — reads are DB lookups with no provider call.
