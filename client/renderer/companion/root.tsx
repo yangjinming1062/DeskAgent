@@ -70,6 +70,9 @@ export function CompanionRoot(): React.JSX.Element {
   const [contextMenuPos, setContextMenuPos] = useState<{ x: number; y: number } | null>(null)
   const { requestGateway } = useGatewayRequest()
   const validityCheckedRef = useRef(false)
+  // Marks a sprite click that triggered the login flow — distinguishes a fresh
+  // login from a cached-session boot, where the user must tap to open the wizard.
+  const pendingOnboardingAutoOpenRef = useRef(false)
 
   useEffect(() => {
     void hydrateAuth()
@@ -104,6 +107,13 @@ export function CompanionRoot(): React.JSX.Element {
 
     return () => off?.()
   }, [])
+
+  // Clear on logout so the next login starts clean.
+  useEffect(() => {
+    if (auth.kind === 'unauthenticated') {
+      pendingOnboardingAutoOpenRef.current = false
+    }
+  }, [auth.kind])
 
   // Dev-only: inject a test proactive message (Ctrl+Shift+P) to exercise the
   // companion.message receiver + bubble + TTS without the Backend send_message
@@ -165,6 +175,19 @@ export function CompanionRoot(): React.JSX.Element {
       cancelled = true
     }
   }, [auth.kind, requestGateway])
+
+  // Auto-open the wizard once after a fresh login resolves to 'onboarding'.
+  useEffect(() => {
+    if (
+      auth.kind === 'authenticated' &&
+      lifecycle === 'onboarding' &&
+      !onboardingOpen &&
+      pendingOnboardingAutoOpenRef.current
+    ) {
+      pendingOnboardingAutoOpenRef.current = false
+      setOnboardingOpen(true)
+    }
+  }, [auth.kind, lifecycle, onboardingOpen])
 
   const authed = auth.kind === 'authenticated'
   const showOnboarding = authed && lifecycle === 'onboarding' && onboardingOpen
@@ -228,6 +251,7 @@ export function CompanionRoot(): React.JSX.Element {
 
     // Pre-auth: click directly summons login.
     if (!authed) {
+      pendingOnboardingAutoOpenRef.current = true
       void window.deskagent.showToolWindow()
 
       return
