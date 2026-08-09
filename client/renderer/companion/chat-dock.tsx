@@ -49,7 +49,11 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
   const [pendingImage, setPendingImage] = useState<string | null>(null)
   const [sending, setSending] = useState(false)
 
-  const { recording, start: startRecording, stop: stopRecording } = useVoiceRecorder({
+  const {
+    recording,
+    start: startRecording,
+    stop: stopRecording
+  } = useVoiceRecorder({
     requestGateway,
     onTranscribed: text => {
       pushUserMessage(text)
@@ -68,7 +72,6 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
   }, [messages])
-
 
   const ensureSession = async (): Promise<string> => {
     const existing = $chatSessionId.get()
@@ -460,4 +463,3 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
     </div>
   )
 }
-

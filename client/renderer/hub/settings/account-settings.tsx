@@ -1,10 +1,7 @@
 import { useStore } from '@nanostores/react'
 import { useEffect, useState } from 'react'
 
-import {
-  Button,
-  ConfirmDialog
-} from '@/shared/components/ui'
+import { Button, ConfirmDialog } from '@/shared/components/ui'
 import { getDeskAgentConfig, saveDeskAgentConfig } from '@/shared/deskagent'
 import { triggerHaptic } from '@/shared/lib/haptics'
 import { KeyRound, Loader2, LogOut } from '@/shared/lib/icons'
@@ -14,15 +11,9 @@ import { notify, notifyError } from '@/shared/store/notifications'
 import { strings } from '@/shared/strings'
 import type { DeskAgentConfigResponse } from '@/shared/types/deskagent'
 
-import {
-  AgentDefaultsSection,
-  type AgentFormState
-} from './account/agent-defaults-section'
+import { AgentDefaultsSection, type AgentFormState } from './account/agent-defaults-section'
 import { ChangePasswordForm } from './account/change-password-form'
-import {
-  type ChatFormState,
-  ContextCompressionSection
-} from './account/context-compression-section'
+import { type ChatFormState, ContextCompressionSection } from './account/context-compression-section'
 import { type WebFormState, WebSearchSection } from './account/web-search-section'
 import { ListRow, LoadingState, SectionHeading, SettingsContent } from './primitives'
 
@@ -356,4 +347,3 @@ export function AccountSettings({ onConfigSaved }: { onConfigSaved?: () => void 
 
 type AgentDefaultsCopy = (typeof strings)['settings']['account']['agentDefaults']
 type ContextCompressionCopy = (typeof strings)['settings']['account']['contextCompression']
-

@@ -13,9 +13,8 @@ type Options = {
 // timer + global-mouseup hook + STT submit. Caller just toggles `recording`
 // and listens for `onTranscribed` to push the result to its own state.
 //
-// The hook is responsible for stopping tracks + closing the AudioContext on
-// stop and on unmount; this was previously inlined in `ChatDock` and was the
-// single biggest source of mic-LED bugs.
+// The hook is responsible for stopping tracks on stop and on unmount so the
+// OS-level mic LED doesn't stay on after the recorder finishes.
 
 export function useVoiceRecorder({ requestGateway, onTranscribed }: Options): {
   recording: boolean
@@ -60,7 +59,7 @@ export function useVoiceRecorder({ requestGateway, onTranscribed }: Options): {
     }
   }
 
-  const ensureSession = async (): Promise<string> => {
+  const ensureSession = useCallback(async (): Promise<string> => {
     const existing = $chatSessionId.get()
 
     if (existing) {
@@ -71,7 +70,7 @@ export function useVoiceRecorder({ requestGateway, onTranscribed }: Options): {
     setChatSession(res.session_id)
 
     return res.session_id
-  }
+  }, [requestGateway])
 
   const transcribe = async (blob: Blob): Promise<string | null> => {
     try {
@@ -139,7 +138,7 @@ export function useVoiceRecorder({ requestGateway, onTranscribed }: Options): {
     }
 
     setSpriteState('idle')
-  }, [requestGateway, onTranscribed])
+  }, [requestGateway, onTranscribed, ensureSession])
 
   stopRef.current = stop
 

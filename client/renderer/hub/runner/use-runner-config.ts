@@ -37,7 +37,7 @@ export function useRunnerConfig(errorKey: string): UseRunnerConfigResult {
 
   const loader = useAsyncLoader<{ ok: boolean; error?: string; content?: string }>(
     () => window.deskagent.runnerConfig.read(),
-    [errorKey]
+    errorKey
   )
 
   useEffect(() => {

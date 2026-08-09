@@ -10,11 +10,7 @@
 // "explicitly empty" should toggle `cleared = true` instead.
 export type SecretFieldBody<T> = { omit: true } | { omit: false; value: T }
 
-export function buildSecretFieldBody<T>(
-  value: string,
-  cleared: boolean,
-  clearedSentinel: T
-): SecretFieldBody<T> {
+export function buildSecretFieldBody<T>(value: string, cleared: boolean, clearedSentinel: T): SecretFieldBody<T> {
   if (cleared) {
     return { omit: false, value: clearedSentinel }
   }

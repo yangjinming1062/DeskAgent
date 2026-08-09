@@ -211,4 +211,3 @@ function applyTheme(theme: DesktopTheme, mode: 'light' | 'dark'): void {
 if (typeof window !== 'undefined') {
   applyTheme(deriveTheme('light'), 'light')
 }
-
