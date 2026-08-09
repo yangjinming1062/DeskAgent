@@ -3,6 +3,7 @@ import { atom } from 'nanostores'
 import { safeJsonParse } from '@/shared/lib/safe-json'
 
 import { classifyPersonality } from './persona-classify'
+import { personaFromWire } from './persona-mappers'
 
 export interface PersonaDefinition {
   name: string
@@ -34,15 +35,17 @@ export async function hydratePersona(opts: { silent?: boolean } = {}): Promise<{
 
     const parsed = safeJsonParse<Record<string, string>>(p.definition_json, {})
 
-    $persona.set({
-      name: parsed.name ?? '伙伴',
-      personality: parsed.personality ?? '',
-      speakingStyle: parsed.speaking_style ?? '',
-      background: parsed.background,
-      biological_type: parsed.biological_type,
-      gender: parsed.gender,
-      appearance: parsed.appearance
-    })
+    $persona.set(
+      personaFromWire({
+        name: parsed.name ?? '伙伴',
+        personality: parsed.personality ?? '',
+        speaking_style: parsed.speaking_style ?? '',
+        background: parsed.background,
+        biological_type: parsed.biological_type,
+        gender: parsed.gender,
+        appearance: parsed.appearance
+      })
+    )
 
     return { ok: true }
   } catch (err) {

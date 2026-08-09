@@ -2,6 +2,7 @@ import type React from 'react'
 import { useEffect, useState } from 'react'
 import { type Document, parseDocument } from 'yaml'
 
+import { useAsyncLoader } from '@/shared/hooks/use-async-loader'
 import { notifyError } from '@/shared/store/notifications'
 
 type SaveResult = { ok: true; restarted: boolean; restartError?: string } | { ok: false; error: string }
@@ -33,40 +34,23 @@ export interface UseRunnerConfigResult {
  */
 export function useRunnerConfig(errorKey: string): UseRunnerConfigResult {
   const [yamlDoc, setYamlDoc] = useState<Document | null>(null)
-  const [isLoading, setIsLoading] = useState(true)
+
+  const loader = useAsyncLoader<{ ok: boolean; error?: string; content?: string }>(
+    () => window.deskagent.runnerConfig.read(),
+    [errorKey]
+  )
 
   useEffect(() => {
-    let cancelled = false
-
-    void (async () => {
-      try {
-        setIsLoading(true)
-        const res = await window.deskagent.runnerConfig.read()
-
-        if (cancelled) {
-          return
-        }
-
-        if (!res.ok) {
-          throw new Error(res.error)
-        }
-
-        setYamlDoc(parseDocument(res.content || ''))
-      } catch (err) {
-        if (!cancelled) {
-          notifyError(err, errorKey)
-        }
-      } finally {
-        if (!cancelled) {
-          setIsLoading(false)
-        }
-      }
-    })()
-
-    return () => {
-      cancelled = true
+    if (loader.error) {
+      notifyError(loader.error, errorKey)
     }
-  }, [errorKey])
+
+    if (loader.data?.ok && typeof loader.data.content === 'string') {
+      setYamlDoc(parseDocument(loader.data.content))
+    }
+  }, [loader.data, loader.error, errorKey])
+
+  const isLoading = loader.isLoading
 
   const toWriteResult = (res: Awaited<ReturnType<typeof window.deskagent.runnerConfig.write>>): SaveResult =>
     res.ok
