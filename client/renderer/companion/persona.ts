@@ -94,3 +94,16 @@ export function assemblePersona(answers: OnboardingAnswers): PersonaPayload {
 
   return payload
 }
+
+// Character-only subset of assemblePersona — strips user_* so enterHatching can finalize before q-user / voice are collected.
+export function assembleCharacterPersona(answers: OnboardingAnswers): PersonaPayload {
+  const payload = assemblePersona(answers)
+
+  for (const key of Object.keys(payload) as Array<keyof PersonaPayload>) {
+    if (key.startsWith('user_')) {
+      delete payload[key]
+    }
+  }
+
+  return payload
+}

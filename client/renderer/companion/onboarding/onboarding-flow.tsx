@@ -23,7 +23,13 @@ import { useLatestRef } from '@/shared/hooks/use-latest-ref'
 import { isClientErrorIpc } from '@/shared/lib/ipc-error'
 import { $gatewayState } from '@/shared/store/gateway'
 
-import { assemblePersona, MAX_APPEARANCE, MAX_USER_TEXT, type OnboardingAnswers } from '../persona'
+import {
+  assembleCharacterPersona,
+  assemblePersona,
+  MAX_APPEARANCE,
+  MAX_USER_TEXT,
+  type OnboardingAnswers
+} from '../persona'
 import { setCompanionVoiceId } from '../prefs'
 import { speak, stopSpeaking } from '../tts'
 import { fetchVoiceCatalog, matchVoicePreference, nextVoice, sampleLine, type VoiceOption } from '../voice'
@@ -32,7 +38,9 @@ import { $voicePreparing } from '../voice-state'
 import { playOnboardingAudio } from './onboarding-audio'
 import { Chip, PortraitPanel } from './onboarding-components'
 
-type Phase = 'q' | 'hatching' | 'portrait' | 'voice' | 'finishing' | 'greeting'
+type Phase = 'q-character' | 'hatching' | 'portrait' | 'q-user' | 'voice' | 'finishing' | 'greeting'
+
+type VoiceStage = 'describe' | 'catalog'
 type VoiceLanguageFilter = '' | 'zh' | 'en'
 
 const VOICE_LANGUAGE_TABS: { id: VoiceLanguageFilter; label: string }[] = [
@@ -198,6 +206,38 @@ const QUESTIONS: readonly Question[] = [
   }
 ]
 
+// Slice boundaries mirror backend ONBOARDING_FIELDS order — required for resume routing.
+const CHARACTER_QUESTIONS: readonly Question[] = QUESTIONS.slice(0, 6) // name, species, character_gender, appearance, role, personality
+const USER_QUESTIONS: readonly Question[] = QUESTIONS.slice(6, 12) // user_call_name, user_gender, user_age_bucket, user_hobbies, speaking_style, user_freeform
+const VOICE_QUESTIONS: readonly Question[] = QUESTIONS.slice(12, 13) // voice
+
+const PHASE_QUESTIONS: Record<Phase, readonly Question[]> = {
+  'q-character': CHARACTER_QUESTIONS,
+  'q-user': USER_QUESTIONS,
+  voice: VOICE_QUESTIONS,
+  hatching: [],
+  portrait: [],
+  finishing: [],
+  greeting: []
+}
+
+// Routes resume's next_field to q-user vs voice. Mirrors backend.services.companion._POST_CHARACTER_FIELDS.
+const POST_CHARACTER_FIELDS: ReadonlySet<string> = new Set([
+  'user_call_name',
+  'user_gender',
+  'user_age_bucket',
+  'user_hobbies',
+  'user_freeform',
+  'speaking_style'
+])
+
+// Hoisted: useInteractiveRegion's effect otherwise re-registers every render.
+const interactiveRegionRect = (el: HTMLElement): DOMRect | null => {
+  const rect = el.getBoundingClientRect()
+
+  return rect.width === 0 || rect.height === 0 ? null : rect
+}
+
 const sleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms))
 
 // Throws from `fn` propagate so callers can rethrow 4xx and short-circuit retries.
@@ -290,16 +330,35 @@ interface OnboardingFlowProps {
   onCompleted: () => void
 }
 
+// Lives outside OnboardingFlow: its $regenFeedback subscription would otherwise re-render the whole dialog on every keystroke.
+function RegenFeedbackInput({ disabled }: { disabled: boolean }): React.JSX.Element {
+  const value = useStore($regenFeedback)
+
+  return (
+    <textarea
+      className={`${INPUT_CLASS} text-xs`}
+      disabled={disabled}
+      maxLength={MAX_APPEARANCE}
+      onChange={e => setRegenFeedback(e.target.value)}
+      placeholder="哪里不满意？比如：头发再短一点、眼睛再大一点、表情更温和…（可留空直接重新生成）"
+      rows={2}
+      value={value}
+    />
+  )
+}
+
 export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.Element | null {
   const gatewayState = useStore($gatewayState)
   const voicePreparing = useStore($voicePreparing)
   const { requestGateway } = useGatewayRequest()
-  const [phase, setPhase] = useState<Phase>('q')
+  const [phase, setPhase] = useState<Phase>('q-character')
   const [qIndex, setQIndex] = useState(0)
   const [answers, setAnswers] = useState<OnboardingAnswers>({})
   const [input, setInput] = useState('')
   const [portraitUrl, setPortraitUrl] = useState<string | null>(null)
   const [seedUrl, setSeedUrl] = useState<string | null>(null)
+  // voice phase runs the Q13 description input first, then the catalogue picker.
+  const [voiceStage, setVoiceStage] = useState<VoiceStage>('describe')
 
   // Failure keeps the current portrait: it already holds resolved bytes.
   // The shared `applyPortrait` writes the global atom; we mirror to local
@@ -327,14 +386,39 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
   // Failure hints live on the portrait panel — the form area is hidden behind it.
   const [portraitPanelHint, setPortraitPanelHint] = useState<string | null>(null)
 
+  // Resume path skips enterHatching, so the first-time-only portraitUrl state never gets set; re-pull here so voice-catalog PortraitPanel isn't empty. 404 (no portrait yet) is a no-op.
+  const hydrateLocalPortrait = async () => {
+    try {
+      const res = await window.deskagent.api<{ asset_url?: string; seed_url?: string }>({
+        path: '/api/companion/avatar'
+      })
+
+      if (!res?.asset_url && !res?.seed_url) {
+        return
+      }
+
+      const applied = await applyPortrait({ assetUrl: res.asset_url, seedUrl: res.seed_url })
+
+      if (applied.avatar) {
+        setPortraitUrl(applied.avatar)
+      }
+
+      setSeedUrl(applied.seed)
+    } catch (error) {
+      if (!isClientErrorIpc(error)) {
+        console.warn('[onboarding] portrait hydrate failed', error)
+      }
+    }
+  }
+
   // Reference image handed over at the 形象描述 question. Session-scoped on
   // purpose — `onboarding.submit` persists text answers only, so a resumed
   // draft asks for the image again rather than silently generating without it.
   const [refImage, setRefImage] = useState<PickedImage | null>(null)
   const [answerKind, setAnswerKind] = useState<AnswerKind | null>(null)
 
-  const portraitFeedback = useStore($regenFeedback)
   const [hint, setHint] = useState<string | null>(null)
+
   const inputRef = useRef<HTMLInputElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const resumedRef = useRef(false)
@@ -368,11 +452,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
   // with the global interactive-regions registry so SpriteStage's hit-test
   // captures only while the cursor is over the dialog form card.
   // SpriteStage restores click-through on unmount.
-  useInteractiveRegion('onboarding', containerRef, el => {
-    const rect = el.getBoundingClientRect()
-
-    return rect.width === 0 || rect.height === 0 ? null : rect
-  })
+  useInteractiveRegion('onboarding', containerRef, interactiveRegionRect)
 
   useEffect(() => {
     return () => {
@@ -492,10 +572,23 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
 
             return next
           })
-          const idx = QUESTIONS.findIndex(q => BACKEND_FIELD[q.key] === state.next_field)
 
-          if (idx > 0) {
-            setQIndex(idx)
+          const nextField = state.next_field
+
+          if (nextField === 'voice') {
+            // Skip Q13 description — already answered.
+            setPhase('voice')
+            setVoiceStage('catalog')
+            setQIndex(0)
+            void hydrateLocalPortrait()
+          } else if (nextField && POST_CHARACTER_FIELDS.has(nextField)) {
+            const idx = USER_QUESTIONS.findIndex(q => BACKEND_FIELD[q.key] === nextField)
+            setPhase('q-user')
+            setQIndex(Math.max(0, idx))
+          } else if (nextField) {
+            const idx = CHARACTER_QUESTIONS.findIndex(q => BACKEND_FIELD[q.key] === nextField)
+            setPhase('q-character')
+            setQIndex(Math.max(0, idx))
           }
         }
       } catch {
@@ -506,7 +599,9 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
     })()
   }, [gatewayState, requestGateway, onCompleted])
 
-  const question = QUESTIONS[qIndex]
+  const currentList = PHASE_QUESTIONS[phase]
+
+  const question = currentList[qIndex]
   // Latest-answers ref so the speak/focus effects only re-run on phase/qIndex,
   // not on every keystroke (the rule's exhaustive-deps lint can't see the
   // intent).
@@ -517,29 +612,50 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
 
   // Speak each question as it appears (default neutral voice; plan §3.2).
   useEffect(() => {
-    if (phase !== 'q') {
+    if (phase !== 'q-character' && phase !== 'q-user' && phase !== 'voice') {
       return
     }
 
-    const q = QUESTIONS[qIndex]
+    const q = currentList[qIndex]
+
+    if (!q) {
+      return
+    }
+
     const current = answersRef.current
     const initialVal = (current[q.key] as string) ?? (q.selectOnly ? (q.presets?.[0] ?? '') : '')
     setInput(initialVal)
     setAnswerKind(null)
     setHint(null)
-    void playOnboardingAudio(`onboarding.q${qIndex}`)
+
+    // Audio manifest tags align with the original QUESTIONS positions, not the slice-local qIndex.
+    const globalQIndex =
+      phase === 'q-character'
+        ? qIndex
+        : phase === 'q-user'
+          ? qIndex + CHARACTER_QUESTIONS.length
+          : qIndex + CHARACTER_QUESTIONS.length + USER_QUESTIONS.length
+
+    void playOnboardingAudio(`onboarding.q${globalQIndex}`)
 
     return () => stopSpeaking()
-  }, [phase, qIndex, answersRef])
+  }, [phase, qIndex, currentList, answersRef])
 
   useEffect(() => {
-    if (phase === 'q' && !QUESTIONS[qIndex].selectOnly) {
-      ;(QUESTIONS[qIndex].multiline ? textareaRef.current : inputRef.current)?.focus()
+    const isQuestionPhase = phase === 'q-character' || phase === 'q-user' || phase === 'voice'
+
+    if (isQuestionPhase && currentList[qIndex] && !currentList[qIndex].selectOnly) {
+      ;(currentList[qIndex].multiline ? textareaRef.current : inputRef.current)?.focus()
     }
-  }, [phase, qIndex])
+  }, [phase, qIndex, currentList])
 
   const commit = (value: string | undefined) => {
-    const q = QUESTIONS[qIndex]
+    const q = currentList[qIndex]
+
+    if (!q) {
+      return
+    }
+
     const trimmed = value && value.trim() ? value.trim() : undefined
     const cleaned = trimmed && q.max ? trimmed.slice(0, q.max) : trimmed
     setAnswers((prev: OnboardingAnswers) => ({ ...prev, [q.key]: cleaned }))
@@ -552,17 +668,53 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
   }
 
   const advance = () => {
-    if (qIndex < QUESTIONS.length - 1) {
+    // Voice describe has a single question; advancing flips to catalog which the useEffect below loads.
+    if (phase === 'voice' && voiceStage === 'describe') {
+      setVoiceStage('catalog')
+
+      return
+    }
+
+    if (qIndex < currentList.length - 1) {
       setQIndex(qIndex + 1)
-    } else {
+
+      return
+    }
+
+    if (phase === 'q-character') {
       void enterHatching()
+    } else if (phase === 'q-user') {
+      setPhase('voice')
+      setQIndex(0)
+      setVoiceStage('describe')
     }
   }
 
-  const onSend = () => {
-    const q = QUESTIONS[qIndex]
+  // Loads catalogue + preview TTS on describe→catalog transition (and on resume into catalog).
+  useEffect(() => {
+    if (phase !== 'voice' || voiceStage !== 'catalog') {
+      return
+    }
+    void (async () => {
+      stopSpeaking()
+      const matched = await matchVoicePreference(requestGateway, answers.voice ?? '')
+      setVoice(matched.voice)
+      setCompanionVoiceId(matched.voice.id)
+      setVoiceLangFilter('zh')
+      const catalog = await fetchVoiceCatalog(requestGateway, 'zh')
+      setVoiceCatalog([
+        matched.voice,
+        ...matched.alternatives,
+        ...catalog.voices.filter(v => v.id !== matched.voice.id)
+      ])
+      void speak(sampleLine(answers.name || ''), matched.voice.id || undefined, 'onboarding.voice.preview')
+    })()
+  }, [phase, voiceStage, requestGateway, answers.voice, answers.name])
 
-    if (q.required && !input.trim()) {
+  const onSend = () => {
+    const q = currentList[qIndex]
+
+    if (q?.required && !input.trim()) {
       setHint('名字是必填的哦～')
 
       return
@@ -573,7 +725,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
   }
 
   const onSkip = () => {
-    if (question.required) {
+    if (question?.required) {
       return
     }
 
@@ -582,6 +734,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
   }
 
   const onBack = () => {
+    // Defense-in-depth: JSX already disables at qIndex === 0; guard keeps the invariant if state diverges.
     if (qIndex === 0) {
       return
     }
@@ -594,14 +747,14 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
     setHint(null)
     void playOnboardingAudio('onboarding.hatching')
 
-    // Finalize persona before the portrait (avatar gen needs is_complete=true).
+    // Finalize persona before portrait — avatar gen needs is_complete=true; user_* are routed to Memory later via submit_onboarding_field.
     // savePersona re-throws 4xx; roll back to the form so the user can fix the field.
     let personaOk = false
 
     try {
-      personaOk = (await retryTransient(() => savePersona(assemblePersona(answers)), 700)) === true
+      personaOk = (await retryTransient(() => savePersona(assembleCharacterPersona(answers)), 700)) === true
     } catch (err) {
-      setPhase('q')
+      setPhase('q-character')
       setHint(err instanceof Error ? `记忆存不上：${err.message}` : '记忆存不上，请重试 onboarding')
       void playOnboardingAudio('onboarding.hatching.retry')
 
@@ -664,23 +817,12 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
 
   const confirmPortrait = async () => {
     setRefImage(null)
-    // Stop any audio still playing from the previous phase before starting voice preview.
-    stopSpeaking()
-    // Show the backend's ranked alternatives alongside the full ZH catalog; the matched voice is the default.
-    const matched = await matchVoicePreference(requestGateway, answers.voice ?? '')
-    setVoice(matched.voice)
-    setCompanionVoiceId(matched.voice.id)
-    setPhase('voice')
-    // Force the ZH tab on initial entry — even if a previous session left
-    // voiceLangFilter='en' in storage, the new user gets the curation
-    // they signed up for. Pick the new voice id as the catalogue start
-    // BEFORE the network fetch so the catalog refresh picks the right
-    // default voice on the first paint.
-    setVoiceLangFilter('zh')
-    const catalog = await fetchVoiceCatalog(requestGateway, 'zh')
-    // Lead with the closest matches so the user can browse without scrolling the full catalog.
-    setVoiceCatalog([matched.voice, ...matched.alternatives, ...catalog.voices.filter(v => v.id !== matched.voice.id)])
-    void speak(sampleLine(answers.name || ''), matched.voice.id || undefined, 'onboarding.voice.preview')
+    // Portrait confirmed → user info (Q7-Q12) before voice, so any portrait regen overlaps with q-user typing.
+    setPhase('q-user')
+    setQIndex(0)
+    setInput('')
+    setAnswerKind(null)
+    setHint(null)
   }
 
   const onVoiceLangTabClick = async (lang: VoiceLanguageFilter) => {
@@ -750,128 +892,129 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
           style={{ pointerEvents: 'auto' }}
         >
           {voicePreparing && <p className="mb-2 text-center text-[10px] text-white/40">🔊 正在准备声音…</p>}
-          {phase === 'q' && (
-            <>
-              <p className="min-h-[3.5rem] text-[15px] leading-relaxed">{spokenText}</p>
-              {presetValues.length > 0 && (
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {presetValues.map(p => (
-                    <Chip active={input === p} key={p} label={p} onClick={() => setInput(p)} />
-                  ))}
-                </div>
-              )}
-              {question.kinds && (
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {question.kinds.map(k => (
-                    <Chip
-                      active={answerKind?.chip === k.chip}
-                      key={k.chip}
-                      label={k.chip}
-                      onClick={() => {
-                        setAnswerKind(k)
-                        setInput('')
-                        inputRef.current?.focus()
+          {(phase === 'q-character' || phase === 'q-user' || (phase === 'voice' && voiceStage === 'describe')) &&
+            question && (
+              <>
+                <p className="min-h-[3.5rem] text-[15px] leading-relaxed">{spokenText}</p>
+                {presetValues.length > 0 && (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {presetValues.map(p => (
+                      <Chip active={input === p} key={p} label={p} onClick={() => setInput(p)} />
+                    ))}
+                  </div>
+                )}
+                {question.kinds && (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {question.kinds.map(k => (
+                      <Chip
+                        active={answerKind?.chip === k.chip}
+                        key={k.chip}
+                        label={k.chip}
+                        onClick={() => {
+                          setAnswerKind(k)
+                          setInput('')
+                          inputRef.current?.focus()
+                        }}
+                      />
+                    ))}
+                  </div>
+                )}
+                {answerKind && (
+                  <>
+                    <p className="mt-3 text-xs text-white/55">{answerKind.label}</p>
+                    {answerKind.values && (
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {answerKind.values.map(v => (
+                          <Chip active={input === v} key={v} label={v} onClick={() => setInput(v)} />
+                        ))}
+                      </div>
+                    )}
+                  </>
+                )}
+                {!question.selectOnly &&
+                  (question.multiline ? (
+                    <textarea
+                      className={`mt-3 ${INPUT_CLASS} text-sm`}
+                      onChange={e => setInput(e.target.value)}
+                      placeholder={question.placeholder}
+                      ref={textareaRef}
+                      rows={3}
+                      value={input}
+                    />
+                  ) : (
+                    <input
+                      className="mt-3 w-full rounded-lg border border-white/15 bg-white/10 px-3 py-2 text-sm outline-none placeholder:text-white/40 focus:border-white/40"
+                      onChange={e => setInput(e.target.value)}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter' && !question.multiline) {
+                          onSend()
+                        }
                       }}
+                      placeholder={answerKind?.placeholder ?? question.placeholder}
+                      ref={inputRef}
+                      value={input}
                     />
                   ))}
-                </div>
-              )}
-              {answerKind && (
-                <>
-                  <p className="mt-3 text-xs text-white/55">{answerKind.label}</p>
-                  {answerKind.values && (
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      {answerKind.values.map(v => (
-                        <Chip active={input === v} key={v} label={v} onClick={() => setInput(v)} />
-                      ))}
-                    </div>
-                  )}
-                </>
-              )}
-              {!question.selectOnly &&
-                (question.multiline ? (
-                  <textarea
-                    className={`mt-3 ${INPUT_CLASS} text-sm`}
-                    onChange={e => setInput(e.target.value)}
-                    placeholder={question.placeholder}
-                    ref={textareaRef}
-                    rows={3}
-                    value={input}
-                  />
-                ) : (
-                  <input
-                    className="mt-3 w-full rounded-lg border border-white/15 bg-white/10 px-3 py-2 text-sm outline-none placeholder:text-white/40 focus:border-white/40"
-                    onChange={e => setInput(e.target.value)}
-                    onKeyDown={e => {
-                      if (e.key === 'Enter' && !question.multiline) {
-                        onSend()
-                      }
-                    }}
-                    placeholder={answerKind?.placeholder ?? question.placeholder}
-                    ref={inputRef}
-                    value={input}
-                  />
-                ))}
-              {question.allowImage && (
-                <div className="mt-3 flex items-center gap-2 text-xs">
-                  <button
-                    className="rounded-full border border-dashed border-white/25 px-3 py-1 text-white/70 transition hover:bg-white/10"
-                    onClick={() => void pickReferenceImage()}
-                    type="button"
-                  >
-                    {refImage ? '换一张参考图' : '＋ 上传参考图'}
-                  </button>
-                  {refImage && (
-                    <>
-                      <img alt="参考图" className="h-9 w-9 rounded-md object-cover" src={refImage.previewUrl} />
-                      <span className="text-[10px] text-white/35">我会照着它画自己</span>
-                      <button
-                        className="ml-auto text-white/40 transition hover:text-white"
-                        onClick={() => setRefImage(null)}
-                        type="button"
-                      >
-                        移除
-                      </button>
-                    </>
-                  )}
-                </div>
-              )}
-              <div className="mt-4 flex items-center justify-between text-xs">
-                <button
-                  className="text-white/60 transition hover:text-white disabled:opacity-30"
-                  disabled={qIndex === 0}
-                  onClick={onBack}
-                  type="button"
-                >
-                  上一题
-                </button>
-                <div className="flex gap-3">
-                  {!question.required && (
-                    <button className="text-white/60 transition hover:text-white" onClick={onSkip} type="button">
-                      跳过
+                {question.allowImage && (
+                  <div className="mt-3 flex items-center gap-2 text-xs">
+                    <button
+                      className="rounded-full border border-dashed border-white/25 px-3 py-1 text-white/70 transition hover:bg-white/10"
+                      onClick={() => void pickReferenceImage()}
+                      type="button"
+                    >
+                      {refImage ? '换一张参考图' : '＋ 上传参考图'}
                     </button>
-                  )}
+                    {refImage && (
+                      <>
+                        <img alt="参考图" className="h-9 w-9 rounded-md object-cover" src={refImage.previewUrl} />
+                        <span className="text-[10px] text-white/35">我会照着它画自己</span>
+                        <button
+                          className="ml-auto text-white/40 transition hover:text-white"
+                          onClick={() => setRefImage(null)}
+                          type="button"
+                        >
+                          移除
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )}
+                <div className="mt-4 flex items-center justify-between text-xs">
                   <button
-                    className="rounded-full bg-white/90 px-4 py-1 font-medium text-black transition hover:bg-white"
-                    onClick={onSend}
+                    className="text-white/60 transition hover:text-white disabled:opacity-30"
+                    disabled={qIndex === 0}
+                    onClick={onBack}
                     type="button"
                   >
-                    {qIndex === QUESTIONS.length - 1 ? '完成' : '发送'}
+                    上一题
                   </button>
+                  <div className="flex gap-3">
+                    {!question.required && (
+                      <button className="text-white/60 transition hover:text-white" onClick={onSkip} type="button">
+                        跳过
+                      </button>
+                    )}
+                    <button
+                      className="rounded-full bg-white/90 px-4 py-1 font-medium text-black transition hover:bg-white"
+                      onClick={onSend}
+                      type="button"
+                    >
+                      {qIndex === currentList.length - 1 ? '完成' : '发送'}
+                    </button>
+                  </div>
                 </div>
-              </div>
-              {hint && <p className="mt-2 text-xs text-amber-300/80">{hint}</p>}
-              <p className="mt-2 text-right text-[10px] text-white/30">
-                {qIndex + 1} / {QUESTIONS.length}
-              </p>
-            </>
-          )}
+                {hint && <p className="mt-2 text-xs text-amber-300/80">{hint}</p>}
+                <p className="mt-2 text-right text-[10px] text-white/30">
+                  {qIndex + 1} / {currentList.length}
+                </p>
+              </>
+            )}
 
           {phase === 'hatching' && (
             <p className="py-6 text-center text-sm text-white/80">{hint || '让我想想我该是什么样子…'}</p>
           )}
 
-          {(phase === 'voice' || phase === 'greeting' || phase === 'portrait') && (
+          {(phase === 'portrait' || phase === 'greeting' || (phase === 'voice' && voiceStage === 'catalog')) && (
             <PortraitPanel
               avatarUrl={portraitUrl}
               hint={portraitPanelHint}
@@ -882,15 +1025,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
 
           {phase === 'portrait' && (
             <div className="mt-4">
-              <textarea
-                className={`${INPUT_CLASS} text-xs`}
-                disabled={portraitBusy}
-                maxLength={MAX_APPEARANCE}
-                onChange={e => setRegenFeedback(e.target.value)}
-                placeholder="哪里不满意？比如：头发再短一点、眼睛再大一点、表情更温和…（可留空直接重新生成）"
-                rows={2}
-                value={portraitFeedback}
-              />
+              <RegenFeedbackInput disabled={portraitBusy} />
               <div className="mt-3 flex items-center justify-between text-xs">
                 <button
                   className="text-white/70 transition hover:text-white disabled:opacity-40"
@@ -912,7 +1047,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
             </div>
           )}
 
-          {phase === 'voice' && voice && (
+          {phase === 'voice' && voiceStage === 'catalog' && voice && (
             <div className="mt-4">
               <div className="mb-3 flex gap-1 rounded-full border border-white/10 bg-white/5 p-1 text-[10px]">
                 {VOICE_LANGUAGE_TABS.map(tab => (

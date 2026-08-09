@@ -112,7 +112,11 @@ class MiMoTTSProvider(TTSProvider):
         if not choice or not getattr(choice.message, "audio", None):
             raise RuntimeError("MiMo TTS returned no audio")
         mime = "audio/mpeg" if fmt == "mp3" else f"audio/{fmt}"
-        return TTSResult(audio=base64.b64decode(choice.message.audio.data), mime=mime)
+        return TTSResult(
+            audio=base64.b64decode(choice.message.audio.data),
+            mime=mime,
+            voice=audio_kwargs.get("voice", ""),
+        )
 
     async def design_voice(
         self,

@@ -7,6 +7,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from .memory_bootstrap import extract_user_profile
+from .memory_bootstrap import read_user_profile
 from .memory_bootstrap import record_user_profile
 
 # Persona field order — part of the contract downstream prompt consumers
@@ -36,6 +37,18 @@ ONBOARDING_FIELDS: tuple[str, ...] = (
     "voice",
 )
 _ONBOARDING_MAX_LEN: int = 2000
+
+# Fields collected in q-user / voice after is_complete=True; gating complete on these prevents skip-on-crash.
+_POST_CHARACTER_FIELDS: tuple[str, ...] = (
+    "user_call_name",
+    "user_gender",
+    "user_age_bucket",
+    "user_hobbies",
+    "user_freeform",
+)
+
+# Post-finalization fields that go to draft (not Memory); speaking_style lands here because q-user collects it.
+_POST_FINALIZATION_DRAFT_FIELDS: frozenset[str] = frozenset({"voice", "speaking_style"})
 
 
 class PersonaValidationError(ValueError):
@@ -130,11 +143,21 @@ def _load_draft(persona: Persona) -> dict[str, str]:
 
 
 def get_onboarding_state(db: Session, user_id: int) -> dict[str, Any]:
-    """``answers``: every field already submitted; ``next_field``: first
-    unanswered in order (``None`` when all answered); ``complete`` mirrors
-    ``Persona.is_complete`` so the desktop can skip onboarding on boot."""
+    """``answers``: every field already submitted; ``next_field``: first unanswered (``None`` when all answered).
+
+    ``complete`` is gated on user_* + voice being answered, not just is_complete, so a crash mid-flow resumes rather than skips.
+    """
     persona = get_or_create_persona(db, user_id)
     if persona.is_complete:
+        draft = _load_draft(persona)
+        user_profile = read_user_profile(db, user_id)
+        missing_users = [k for k in _POST_CHARACTER_FIELDS if not user_profile.get(k)]
+        voice_missing = not draft.get("voice")
+        if missing_users or voice_missing:
+            next_field = missing_users[0] if missing_users else "voice"
+            # Merge draft + Memory so the desktop rehydrates every answered field in one shot.
+            merged = {**draft, **user_profile}
+            return {"answers": merged, "next_field": next_field, "complete": False}
         return {"answers": {}, "next_field": None, "complete": True}
     draft = _load_draft(persona)
     next_field = next((f for f in ONBOARDING_FIELDS if not draft.get(f)), None)
@@ -142,11 +165,36 @@ def get_onboarding_state(db: Session, user_id: int) -> dict[str, Any]:
 
 
 def submit_onboarding_field(db: Session, user_id: int, field: str, value: str | None) -> dict[str, Any]:
-    """Persist one onboarding answer incrementally."""
+    """Persist one onboarding answer. After is_complete=True, only user_*/voice/speaking_style remain editable; character fields require PUT /persona."""
     if field not in ONBOARDING_FIELDS:
         raise PersonaValidationError(f"unknown onboarding field: {field!r}", field)
     persona = get_or_create_persona(db, user_id)
     if persona.is_complete:
+        # Post-character fields accepted here; see single-PUT dual-write contract.
+        if field.startswith("user_"):
+            if value and value.strip():
+                record_user_profile(
+                    db,
+                    user_id,
+                    {field: value.strip()[:_ONBOARDING_MAX_LEN]},
+                )
+                db.commit()
+            # Empty value: leave the Memory row alone so revocation stays the
+            # only path that wipes a user_* entry (memory_forget).
+            return {
+                "answers": _load_draft(persona),
+                "next_field": None,
+                "complete": True,
+            }
+        if field in _POST_FINALIZATION_DRAFT_FIELDS:
+            draft = _load_draft(persona)
+            if value and value.strip():
+                draft[field] = value.strip()[:_ONBOARDING_MAX_LEN]
+            else:
+                draft.pop(field, None)
+            persona.definition_json = json.dumps(draft, ensure_ascii=False)
+            db.commit()
+            return {"answers": draft, "next_field": None, "complete": True}
         raise PersonaValidationError(
             f"onboarding field {field!r} cannot be edited after persona is finalized; use PUT /api/companion/persona",
             field,

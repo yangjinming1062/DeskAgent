@@ -114,6 +114,7 @@ class GeminiTTSProvider(TTSProvider):
                 return TTSResult(
                     audio=base64.b64decode(inline["data"]),
                     mime=inline.get("mimeType", "audio/wav"),
+                    voice=chosen_voice,
                 )
 
         raise RuntimeError(f"Gemini TTS returned no audio: {body}")

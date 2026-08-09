@@ -189,6 +189,8 @@ class VideoGenProvider(BaseProvider):
 class TTSResult:
     audio: bytes
     mime: str
+    # Substituted voice id after provider fallback; surfaces in X-Voice-Used.
+    voice: str = ""
 
 
 @dataclass(frozen=True)

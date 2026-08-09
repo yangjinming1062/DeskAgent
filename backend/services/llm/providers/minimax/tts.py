@@ -76,7 +76,7 @@ preview_text 为试听文本——设计完成后会用它合成一段示例音�
         body = raise_for_minimax_response(resp, provider="minimax", model=self.config.model)
         audio = extract_minimax_audio(body)
         mime = "audio/mpeg" if fmt == "mp3" else f"audio/{fmt}"
-        return TTSResult(audio=audio, mime=mime)
+        return TTSResult(audio=audio, mime=mime, voice=chosen_voice)
 
     async def design_voice(
         self,

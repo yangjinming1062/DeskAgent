@@ -151,10 +151,118 @@ def test_onboarding_incremental_persistence_and_recovery(_patch_db):
         with pytest.raises(PersonaValidationError):
             submit_onboarding_field(db, 100, "bogus", "x")
 
-        # Once persona is finalized, get_state reports complete.
+        # Once persona is finalized but user_* are still pending, get_state
+        # reports complete=False with next_field pointing at the first missing
+        # user_* — the desktop must resume into q-user / voice rather than
+        # skip onboarding entirely.
         update_persona(db, 100, {"name": "小光", "personality": "温柔", "speaking_style": "轻柔"})
         state = get_onboarding_state(db, 100)
+        assert state["complete"] is False
+        assert state["next_field"] == "user_call_name"
+        assert state["answers"]["name"] == "小光"
+
+
+def test_post_character_onboarding_accepts_user_and_voice(_patch_db):
+    """Reordered onboarding: character is finalized before q-user / voice.
+    submit_onboarding_field must accept user_* → Memory and voice → draft
+    even when is_complete=True, while still rejecting character fields."""
+    _, SessionLocal = _patch_db
+    from services.companion import (
+        PersonaValidationError,
+        get_onboarding_state,
+        submit_onboarding_field,
+        update_persona,
+    )
+    from services.companion.memory_bootstrap import read_user_profile
+
+    with SessionLocal() as db:
+        update_persona(db, 100, {"name": "小光", "personality": "温柔", "speaking_style": "轻柔"})
+
+        # user_* lands in Memory, not persona draft.
+        submit_onboarding_field(db, 100, "user_call_name", "老板")
+        submit_onboarding_field(db, 100, "user_hobbies", "摄影")
+        profile = read_user_profile(db, 100)
+        assert profile["user_call_name"] == "老板"
+        assert profile["user_hobbies"] == "摄影"
+
+        # voice lands in draft.
+        submit_onboarding_field(db, 100, "voice", "温柔女声")
+        state = get_onboarding_state(db, 100)
+        assert state["answers"]["voice"] == "温柔女声"
+        assert state["answers"]["user_call_name"] == "老板"
+
+        # Empty user_* writes are a no-op (revocation goes through memory_forget).
+        before = read_user_profile(db, 100)
+        submit_onboarding_field(db, 100, "user_call_name", None)
+        after = read_user_profile(db, 100)
+        assert before == after
+
+        # Character fields are still rejected once persona is finalized.
+        with pytest.raises(PersonaValidationError):
+            submit_onboarding_field(db, 100, "name", "新名字")
+
+
+def test_onboarding_complete_only_when_post_character_fields_filled(_patch_db):
+    """get_onboarding_state must gate complete=True on user_* + voice being
+    answered, so a mid-onboarding crash resumes instead of skipping onboarding."""
+    _, SessionLocal = _patch_db
+    from services.companion import (
+        get_onboarding_state,
+        submit_onboarding_field,
+        update_persona,
+    )
+
+    with SessionLocal() as db:
+        update_persona(db, 100, {"name": "小光", "personality": "温柔", "speaking_style": "轻柔"})
+
+        # Partial: only user_call_name filled.
+        submit_onboarding_field(db, 100, "user_call_name", "老板")
+        state = get_onboarding_state(db, 100)
+        assert state["complete"] is False
+        assert state["next_field"] == "user_gender"
+
+        # Fill the rest of user_*.
+        for f in ("user_gender", "user_age_bucket", "user_hobbies", "user_freeform"):
+            submit_onboarding_field(db, 100, f, "x")
+
+        # Missing voice — still incomplete.
+        state = get_onboarding_state(db, 100)
+        assert state["complete"] is False
+        assert state["next_field"] == "voice"
+
+        # Voice answered → now complete.
+        submit_onboarding_field(db, 100, "voice", "温柔女声")
+        state = get_onboarding_state(db, 100)
         assert state["complete"] is True
+
+
+def test_post_finalization_speaking_style_overrides_draft(_patch_db):
+    """Q11 (speaking_style) is collected in q-user phase — after enterHatching
+    has already set is_complete=True with a derived speaking_style. The
+    desktop must be able to overwrite the derived value via
+    submit_onboarding_field."""
+    _, SessionLocal = _patch_db
+    from services.companion import submit_onboarding_field, update_persona
+    from services.companion.persona_service import _load_draft
+    from modules.companion import Persona
+
+    with SessionLocal() as db:
+        update_persona(
+            db,
+            100,
+            {
+                "name": "小光",
+                "personality": "毒舌傲娇",
+                "speaking_style": "俏皮带点小傲娇",
+            },
+        )
+
+        submit_onboarding_field(db, 100, "speaking_style", "专业干练")
+
+        with SessionLocal() as fresh:
+            persona = fresh.query(Persona).filter_by(user_id=100).one()
+            draft = _load_draft(persona)
+            assert draft["speaking_style"] == "专业干练"
 
 
 # ── Affect scrubber (design §7.5) ──

@@ -243,29 +243,39 @@ DeskAgent 区别于一切既有桌面宠物 / 桌面 Agent 的核心，在于伙
 
 安装完成 → 蛋以默认形象出现在桌面（透明置顶窗口），带轻微 idle 动画。用户每次点击产生新裂纹，累计 5 次蛋完全碎裂并唤起登录。不在蛋上贴"点我"提示——让 idle 动画引导好奇心。未登录时蛋是"teaser"，登录后变"drowsy"（半醒），网关连上变"awake"。
 
-### 4.2 对话式信息采集（13 步）
+### 4.2 对话式信息采集（3 子阶段、13 步）
 
-蛋破碎后，一个发光的、尚未定形的轮廓（silhouette）开始与用户对话——叙事上是"这个新生命在问你怎么定义它"。问题序列（按角色定义 → 用户信息的顺序组织，物种 / 性别 / 形象描述三步连排形成视觉锚点，前一个答案塑造后一个的语境）：名字 → 物种（生物类型）→ 角色性别 → 形象描述 → 角色定位 → 性格 → 怎么称呼您 → 您的性别 → 年龄段 → 您的爱好 → 说话风格 → 还有什么想告诉我 → 音色偏好。每个问题由 silhouette 以默认中性语音 TTS 说出（同时显示文字气泡），让用户从第一步就建立"它会说话"的预期。全部支持"跳过/返回上一步"；只有名字必填。
+蛋破碎后，一个发光的、尚未定形的轮廓（silhouette）开始与用户对话——叙事上是"这个新生命在问你怎么定义它"。问题分三个子阶段：
+
+- **角色子阶段**（Q1–Q6）：名字 → 物种 → 角色性别 → 形象描述 → 角色定位 → 性格。物种 / 性别 / 形象描述三步连排形成视觉锚点，前一个答案塑造后一个的语境。
+- **用户子阶段**（Q7–Q12）：怎么称呼您 → 您的性别 → 年龄段 → 您的爱好 → 说话风格 → 还有什么想告诉我。
+- **音色子阶段**（Q13）：音色偏好（描述句，喂给 §4.5 标签评分）。
+
+每个问题由 silhouette 以默认中性语音 TTS 说出（同时显示文字气泡），让用户从第一步就建立"它会说话"的预期。全部支持"跳过/返回上一步"；只有名字必填。角色子阶段答完即触发孵化（§4.3），portrait 生成期间用户可以同步填后两个子阶段——把 10–60s 的云端图像生成时间隐藏在用户输入里。
 
 形象描述这一步把 `PersonaUpdate.appearance` 字段真正接通到 silhouette → portrait 生图链路，让用户主动告诉伙伴"希望我长什么样"，避免单纯基于姓名 / 性格 / 角色定位生成的随机性。这一步同时可**附一张参考图**（图与文字并存，不互斥）：有参考图时孵化阶段的首次 portrait 走 `POST /api/companion/avatar/from-image`，让伙伴一次就"照着这张图画自己"，而不是只能在 §4.4 事后推翻重来；描述由服务端从 persona prompt 取（appearance 已在其中），客户端只传图。参考图只活在会话内存里——`onboarding.submit` 只落文本答案，断点恢复后重新询问图片而非静默按无图生成。
 
 **标签的两种语义**：多数问题的标签就是答案本身，点击即填入输入框；但「我该怎么称呼您？」的标签（名字 / 昵称 / 称号 / 自填）是**称呼类型选择器**——点「昵称」不该把"昵称"二字当成称呼存下来，而是把输入框改问"那，您的昵称是？"再收具体值。只有「称号」这类本身就是称呼的才展开现成候选（老板 / 主人 / …）直接填入。落库的 `user_call_name` 始终是用户录入的具体称呼，类型本身不入库。
 
-**断点恢复**（[ARCHITECTURE.md §6.3](ARCHITECTURE.md)）：每个回答经 `onboarding.submit {field, value}` 即时落盘单个字段，Client 启动时调 `onboarding.get_state` 从下一个未答问题恢复——崩溃/退出不丢进度。
+**断点恢复**（[ARCHITECTURE.md §6.3](ARCHITECTURE.md)）：每个回答经 `onboarding.submit {field, value}` 即时落盘单个字段，Client 启动时调 `onboarding.get_state` 从下一个未答问题恢复——崩溃/退出不丢进度。**关键差异**：`is_complete=True` 在角色子阶段答完即被设置，但 `get_onboarding_state` 只在 user_* + voice 全部答齐后才返回 `complete=True`；中途崩溃后 client 会恢复进入用户子阶段而不是直接跳到 onboarding 结束。
 
-### 4.3 孵化与形象生成（单 PUT 双写）
+### 4.3 孵化与形象生成
 
-问题收齐后进入孵化动画。关键不变量：**Backend 的形象生成要求 persona 已完成（`is_complete=True`）**，因此 Client 在孵化开始时**先把 13 个答案（角色定义 + 5 用户结构化字段）经同一次 `PUT /api/companion/persona` 落库完成**——`update_persona` 服务端按 `extra="forbid"` schema 严格校验角色定义字段、把 5 个 user_* 字段无侵入地分流到 `Memory` 表（context 为 `user_profile:*`，tags 为 `"onboarding,user_profile"`），单 `db.commit()` 同时落 persona 与 memory。voice 字段已被消费（用于音色匹配）。生图超时/失败时 silhouette 说"我还没想好…"并自动重试（最多 3 次），不暴露技术错误；三次失败后允许稍后再试，不阻断用户。
+孵化在角色子阶段（Q1–Q6）答完即触发——不等 13 题收齐。**关键不变量**：Backend 的形象生成要求 `persona.is_complete=True`，因此 Client 在孵化开始时**先把 6 个角色字段（无 user_*、无 voice）经 `PUT /api/companion/persona` 落库完成**——`update_persona` 服务端按 `extra="forbid"` schema 严格校验角色定义字段（包含由 `deriveSpeakingStyle(role, personality)` 推导的 `speaking_style` 占位）、user_* 字段此时为空 dict 被 `extract_user_profile` 无侵入分流、单 `db.commit()` 同时落 persona 与 memory draft。`is_complete=True` 此时被设置，后续 `onboarding.submit` 走 post-finalization 分支（详见 §4.2 末尾）。
 
-如果前一次 PUT 因网络问题失败，client `enterHatching` 自带的 3 次重试循环会把所有 13 个字段（包括 user_*）一起再发，由服务端的 query-then-update 幂等 upsert 避免重复或丢字段。
+用户子阶段（Q7–Q12）和音色描述（Q13）通过 `onboarding.submit` 逐字段增量提交，persona 已 finalized 时走 `submit_onboarding_field` 的 post-finalization 分支：`user_*` 路由到 Memory 表（同事务 upsert `user_profile:*` 行），`voice` / `speaking_style` 直接 patch `definition_json`（draft）。所有 13 题答齐后 `finish()` 调 `savePersona(assemblePersona(answers))` 做全量 PUT safety net，把 user_* 字段最终落到 Memory——与 `update_persona` 的 dual-write 行为一致。
+
+生图超时/失败时 silhouette 说"我还没想好…"并自动重试（最多 3 次），不暴露技术错误；三次失败后允许稍后再试，不阻断用户。
 
 ### 4.4 形象确认
 
 portrait 生成完成，silhouette 散开变为完整形象展示。操作：**确认** / **重新生成**（`avatar.regenerate`，重生 portrait 作为身份参考图与纹理种子）/ **自己上传**（上传一张图片作为角色基准形象）。上传图先进入预览态而非直接生效：用户可**就用这张**（`POST /api/companion/avatar/upload`，原图即 portrait，无云端角色参照）或**以它为基准重绘**（`POST /api/companion/avatar/from-image`，可附加一段描述；上传图作为 provider 的 `reference_image` 角色参照重新渲染成符合种子图契约的 portrait——用户原图背景复杂/构图不符时由 provider 重绘修正；原生 i2i provider 直接消费参考图，纯文本生图 provider 先经视觉模型描述再折入 prompt）。不一次生成多个候选让用户挑——单次确认 + 反馈式重生成更经济也更聚焦。
 
+形象确认后才进入用户子阶段，因此用户在 Q7–Q12 输入时任何 portrait regenerate 都不会阻塞 UI。
+
 ### 4.5 音色确认
 
-portrait 确认后进入音色环节：`tts.match_voice {preference}` 把 onboarding 的音色偏好经标签评分映射到当前 TTS provider 目录中最贴合的 voice id，展示推荐音色 + 候选。操作：使用这个 / 换一个（从候选另选，每个可试听）。匹配到的 voice id 由 Client 持久化，后续 TTS 透传给 provider。
+音色子阶段包含两步：**先**录入 Q13 描述句（"温柔的少女音、节奏偏慢…"），**后**浏览目录。描述提交后 `tts.match_voice {preference}` 把描述经标签评分映射到当前 TTS provider 目录中最贴合的 voice id，展示推荐音色 + 候选。操作：使用这个 / 换一个（从候选另选，每个可试听）。匹配到的 voice id 由 Client 持久化，后续 TTS 透传给 provider。
 
 > **设计决策**：音色匹配是即时确定性的标签评分，而非 LLM。一个窄域标签任务用 LLM 反而引入不必要的延迟与成本；curated 目录已足够。无匹配时优先中性默认音色。
 

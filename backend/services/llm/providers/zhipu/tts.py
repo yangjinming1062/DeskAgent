@@ -62,4 +62,4 @@ class ZhipuTTSProvider(TTSProvider):
         raise_for_provider_response(resp, family=self.provider_name, model=self.config.model)
 
         mime = "audio/mpeg" if response_format == "mp3" else f"audio/{response_format}"
-        return TTSResult(audio=resp.content, mime=mime)
+        return TTSResult(audio=resp.content, mime=mime, voice=chosen_voice)

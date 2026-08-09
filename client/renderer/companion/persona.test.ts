@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { assemblePersona, deriveSpeakingStyle } from './persona'
+import { assembleCharacterPersona, assemblePersona, deriveSpeakingStyle } from './persona'
 
 describe('assemblePersona', () => {
   it('maps name/personality and derives speaking_style', () => {
@@ -67,6 +67,81 @@ describe('assemblePersona', () => {
     // Backend PersonaUpdate is extra="forbid" — without role / species / character_gender /
     // appearance / user_* there's nothing extra in the payload.
     expect(Object.keys(p).sort()).toEqual(['name', 'personality', 'speaking_style'])
+  })
+})
+
+describe('assembleCharacterPersona', () => {
+  it('strips every user_* key so PUT never carries empty user fields', () => {
+    const p = assembleCharacterPersona({
+      name: '小光',
+      personality: '温柔',
+      user_call_name: '老板',
+      user_hobbies: '摄影'
+    })
+
+    expect(p).not.toHaveProperty('user_call_name')
+    expect(p).not.toHaveProperty('user_hobbies')
+    expect(p).not.toHaveProperty('user_gender')
+    expect(p).not.toHaveProperty('user_age_bucket')
+    expect(p).not.toHaveProperty('user_freeform')
+  })
+
+  it('preserves character fields verbatim (species/role/appearance/background)', () => {
+    const p = assembleCharacterPersona({
+      name: '梦鳞',
+      species: '灵兽',
+      character_gender: '女',
+      appearance: '金发',
+      role: '专属管家',
+      personality: '温柔体贴'
+    })
+
+    expect(p.name).toBe('梦鳞')
+    expect(p.biological_type).toBe('灵兽')
+    expect(p.gender).toBe('女')
+    expect(p.appearance).toBe('金发')
+    expect(p.background).toBe('专属管家')
+    expect(p.personality).toBe('温柔体贴')
+  })
+
+  it('still derives speaking_style fallback when the user has not picked one yet', () => {
+    // speaking_style isn't in q-character (Q1-Q6); derive it so PUT satisfies backend _validate_definition.
+    const p = assembleCharacterPersona({ name: '小光', personality: '温柔体贴' })
+    expect(p.speaking_style).toBe('温柔亲切')
+  })
+
+  it('never leaks voice (TTS field, not a persona field)', () => {
+    const p = assembleCharacterPersona({ name: '小光', voice: '少女音' })
+    expect(p).not.toHaveProperty('voice')
+  })
+
+  it('matches a full character + user answers payload modulo user_* keys', () => {
+    const full = assemblePersona({
+      name: '小光',
+      personality: '温柔',
+      species: '灵兽',
+      role: '专属管家',
+      user_call_name: '老板',
+      user_hobbies: '摄影'
+    })
+
+    const characterOnly = assembleCharacterPersona({
+      name: '小光',
+      personality: '温柔',
+      species: '灵兽',
+      role: '专属管家',
+      user_call_name: '老板',
+      user_hobbies: '摄影'
+    })
+
+    for (const key of Object.keys(characterOnly) as Array<keyof typeof characterOnly>) {
+      expect(full).toHaveProperty(key)
+      expect(full[key]).toEqual(characterOnly[key])
+    }
+
+    // And of course user_* are missing from the character-only payload.
+    expect(characterOnly).not.toHaveProperty('user_call_name')
+    expect(characterOnly).not.toHaveProperty('user_hobbies')
   })
 })
 

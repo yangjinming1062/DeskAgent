@@ -117,8 +117,7 @@ export function CompanionRoot(): React.JSX.Element {
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
-  // On auth, route by persona completeness: incomplete → onboarding, complete
-  // → ready.
+  // Route by onboarding.get_state.complete (not REST is_complete) so a mid-flow refresh after enterHatching doesn't kick the user out via a premature lifecycle='ready' + hydrateModel 404.
   useEffect(() => {
     if (auth.kind !== 'authenticated') {
       setCompanionLifecycle('unauthed')
@@ -129,19 +128,22 @@ export function CompanionRoot(): React.JSX.Element {
 
     let cancelled = false
     setCompanionLifecycle('unauthed')
-    window.deskagent
-      .api<{ is_complete?: boolean }>({ path: '/api/companion/persona' })
-      .then(p => {
+    Promise.all([
+      window.deskagent.api<{ is_complete?: boolean }>({ path: '/api/companion/persona' }),
+      requestGateway<{ complete?: boolean }>('onboarding.get_state', {})
+    ])
+      .then(([persona, state]) => {
         if (cancelled) {
           return
         }
 
-        setCompanionLifecycle(p?.is_complete ? 'ready' : 'onboarding')
+        const onboardingDone = state?.complete ?? persona?.is_complete ?? false
+        setCompanionLifecycle(onboardingDone ? 'ready' : 'onboarding')
 
         // Only pull the portrait once we know one exists — during onboarding
         // the GET would 404, which the renderer would silently catch but the
         // main process still logs to stderr.
-        if (p?.is_complete) {
+        if (onboardingDone) {
           void hydratePortrait()
         }
       })
@@ -154,7 +156,7 @@ export function CompanionRoot(): React.JSX.Element {
     return () => {
       cancelled = true
     }
-  }, [auth.kind])
+  }, [auth.kind, requestGateway])
 
   const authed = auth.kind === 'authenticated'
   const showOnboarding = authed && lifecycle === 'onboarding' && onboardingOpen
