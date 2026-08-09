@@ -47,8 +47,17 @@ describe('persona-presets', () => {
     // These three are user-visible anchors of the persona product. Changing
     // them is a product decision, not a refactor — encode the contract here
     // so a stray rewrite trips CI.
-    expect([...ROLE_PRESETS]).toEqual(['爱人', '秘书', '专属管家', '无话不谈的朋友'])
-    expect([...PERSONALITY_PRESETS]).toEqual(['温柔体贴', '活泼好动', '冷静理性', '毒舌傲娇'])
+    expect([...ROLE_PRESETS]).toEqual(['亲密的爱人', '灵魂伴侣', '赛博管家', '知己好友', '宠物', '伙伴'])
+    expect([...PERSONALITY_PRESETS]).toEqual([
+      '温柔体贴',
+      '活泼好动',
+      '阳光开朗',
+      '优雅知性',
+      '冷静理性',
+      '毒舌傲娇',
+      '腹黑呆萌',
+      '高冷清冷'
+    ])
     expect([...SPECIES_PRESETS]).toEqual(['人类', '灵兽', '精灵', '机甲', '幻形'])
   })
 
