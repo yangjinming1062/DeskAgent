@@ -1,7 +1,6 @@
 import { useStore } from '@nanostores/react'
 import * as React from 'react'
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { createPortal } from 'react-dom'
+import { useEffect, useRef, useState } from 'react'
 
 import { pickAvatarImage, type PickedImage } from '@/companion/avatar-image'
 import { useGatewayRequest } from '@/companion/boot/use-gateway-request'
@@ -31,6 +30,7 @@ import { fetchVoiceCatalog, matchVoicePreference, nextVoice, sampleLine, type Vo
 import { $voicePreparing } from '../voice-state'
 
 import { playOnboardingAudio } from './onboarding-audio'
+import { Chip, PortraitPanel } from './onboarding-components'
 
 type Phase = 'q' | 'hatching' | 'portrait' | 'voice' | 'finishing' | 'greeting'
 type VoiceLanguageFilter = '' | 'zh' | 'en'
@@ -980,150 +980,5 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
         </div>
       </div>
     </div>
-  )
-}
-
-function Chip({ label, onClick, active }: { label: string; onClick: () => void; active?: boolean }): React.JSX.Element {
-  return (
-    <button
-      className={`rounded-full border px-3 py-1 text-xs transition ${active ? 'border-white/60 bg-white/25' : 'border-white/20 bg-white/5 hover:bg-white/15'}`}
-      onClick={onClick}
-      type="button"
-    >
-      {label}
-    </button>
-  )
-}
-
-function PortraitPanel({
-  avatarUrl,
-  seedUrl,
-  name,
-  hint
-}: {
-  avatarUrl: string | null
-  seedUrl: string | null
-  name: string
-  hint: string | null
-}): React.JSX.Element {
-  const [zoomedUrl, setZoomedUrl] = useState<string | null>(null)
-
-  return (
-    <div className="flex flex-col items-center gap-2">
-      <div className="flex justify-center gap-3">
-        <PortraitThumb
-          label="头像"
-          name={name}
-          onZoom={avatarUrl ? () => setZoomedUrl(avatarUrl) : undefined}
-          url={avatarUrl}
-        />
-        <PortraitThumb
-          label="全身"
-          name={name}
-          onZoom={seedUrl ? () => setZoomedUrl(seedUrl) : undefined}
-          url={seedUrl}
-        />
-      </div>
-      {hint && <p className="text-xs text-rose-300/90">{hint}</p>}
-      {zoomedUrl && <PortraitLightbox name={name} onClose={() => setZoomedUrl(null)} url={zoomedUrl} />}
-    </div>
-  )
-}
-
-function PortraitThumb({
-  label,
-  name,
-  onZoom,
-  url
-}: {
-  label: string
-  name: string
-  onZoom: (() => void) | undefined
-  url: string | null
-}): React.JSX.Element {
-  return (
-    <div className="flex flex-col items-center gap-1">
-      {url ? (
-        <button
-          aria-label="放大查看"
-          className="block cursor-zoom-in overflow-hidden rounded-xl border-0 bg-transparent p-0"
-          onClick={onZoom}
-          type="button"
-        >
-          <img alt={name} className="h-36 w-36 object-cover shadow-lg" src={url} />
-        </button>
-      ) : (
-        <div className="grid h-36 w-36 place-items-center rounded-xl bg-white/5 text-center text-[10px] text-white/30">
-          —
-        </div>
-      )}
-      <span className="text-[10px] text-white/40">{label}</span>
-    </div>
-  )
-}
-
-// Lightbox sized to the portrait itself — no full-screen dark overlay. The
-// image is the window; the X is overlaid on its top-right corner; a faint
-// transparent backdrop catches outside clicks. Rendered via createPortal at
-// document.body so the onboarding container's `backdrop-filter` doesn't trap
-// our `position: fixed` inside the small dialog box (per CSS Containing Block
-// rules).
-function PortraitLightbox({
-  url,
-  name,
-  onClose
-}: {
-  url: string
-  name: string
-  onClose: () => void
-}): React.ReactPortal | null {
-  const overlayRef = useRef<HTMLDivElement>(null)
-
-  // Stable ref so the keydown listener attaches once, not on every parent
-  // re-render that creates a fresh onClose closure.
-  const onCloseRef = useLatestRef(onClose)
-
-  // Register the full viewport as an interactive region while the lightbox is open
-  // so clicks on the image and its backdrop don't pass through to the windows below.
-  // Stabilized so useInteractiveRegion's effect doesn't re-subscribe on every render.
-  const getLightboxRect = useCallback(() => new DOMRect(0, 0, window.innerWidth, window.innerHeight), [])
-
-  useInteractiveRegion('portrait-lightbox', overlayRef, getLightboxRect)
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        onCloseRef.current()
-      }
-    }
-
-    window.addEventListener('keydown', onKey)
-
-    return () => window.removeEventListener('keydown', onKey)
-  }, [onCloseRef])
-
-  if (typeof document === 'undefined') {
-    return null
-  }
-
-  return createPortal(
-    <div
-      aria-label="点击关闭"
-      className="fixed inset-0 z-[100] flex items-center justify-center p-6"
-      onClick={onClose}
-      ref={overlayRef}
-      role="dialog"
-      style={{ pointerEvents: 'auto', background: 'rgba(0,0,0,0.35)' }}
-    >
-      <button
-        aria-label="关闭预览"
-        className="block cursor-zoom-out rounded-2xl border-0 bg-transparent p-0"
-        onClick={onClose}
-        type="button"
-      >
-        <img alt={name} className="block max-h-[90vh] max-w-[90vw] rounded-2xl object-contain shadow-2xl" src={url} />
-      </button>
-    </div>,
-    document.body
   )
 }
