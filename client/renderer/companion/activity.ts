@@ -40,6 +40,16 @@ let timer: ReturnType<typeof setInterval> | null = null
 let lastAffectCheckAt = 0
 let lastTierPushed: { value: DisturbanceTier; at: number } | null = null
 
+// Runner-gate state. The poll only fires `runnerInvoke` once the bridge has
+// reached `running`; until then `pollOnce` would log four "Runner is not
+// connected" rejections per cycle in the main process for no value. We use
+// the subscribe + sync-getter pattern (mirrors hydrateAuth → auth:get-session
+// + onAuthChanged): subscribe to `onRunnerStatus` for future transitions,
+// AND query `runnerGetState` once on mount in case the bridge was already
+// `running` before we subscribed (Electron's IPC has no event replay).
+let runnerReady = false
+let offRunnerStatus: (() => void) | null = null
+
 function maybeTriggerAffectCheck(idleSeconds: number, locked: boolean): void {
   if (locked || idleSeconds < IDLE_THRESHOLD_SECONDS) {
     return
@@ -341,8 +351,52 @@ export function startActivityMonitor(): () => void {
     return stopActivityMonitor
   }
 
-  void pollOnce()
-  timer = setInterval(() => void pollOnce(), POLL_INTERVAL_MS)
+  const desktop = window.deskagent
+
+  let firstPollDone = false
+
+  const kickFirstPoll = () => {
+    if (firstPollDone) {return}
+    firstPollDone = true
+    void pollOnce()
+  }
+
+  // Sync + subscribe: query the bridge's current phase so a bridge that
+  // already reached `running` before we mounted (no event replay) still
+  // gets polled. If it's not up yet, the `onRunnerStatus` subscription below
+  // catches the eventual `running` event — no setTimeout, no race.
+  void desktop?.runnerGetState?.()
+    .then(state => {
+      if (state?.phase === 'running') {
+        runnerReady = true
+        kickFirstPoll()
+      }
+    })
+    .catch(() => {
+      // Bridge probe failed (older preload contract or IPC transport error).
+      // The subscription below is the fallback path; polls stay gated on
+      // `runnerReady` so we don't issue `runnerInvoke` against a bridge we
+      // couldn't introspect.
+    })
+
+  const subscribed = desktop?.onRunnerStatus?.(ev => {
+    if (ev.type === 'running') {
+      runnerReady = true
+      kickFirstPoll()
+    } else if (ev.type === 'stopped' || ev.type === 'error') {
+      // Bridge will re-emit `running` once it recovers; until then the
+      // setInterval tick is a no-op so we don't spam "Runner is not
+      // connected" through the IPC error log path.
+      runnerReady = false
+    }
+  })
+
+  offRunnerStatus = subscribed ?? null
+
+  timer = setInterval(() => {
+    if (!runnerReady) {return}
+    void pollOnce()
+  }, POLL_INTERVAL_MS)
 
   return stopActivityMonitor
 }
@@ -352,6 +406,13 @@ export function stopActivityMonitor(): void {
     clearInterval(timer)
     timer = null
   }
+
+  if (offRunnerStatus) {
+    offRunnerStatus()
+    offRunnerStatus = null
+  }
+
+  runnerReady = false
 }
 
 // Client-side throttle for stats RPCs. Pre-threshold (any kind < 10)

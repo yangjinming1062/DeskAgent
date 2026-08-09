@@ -134,6 +134,36 @@ function registerRunnerIpc({ ipcMain, deps }) {
     const bridge = ensureRunnerBridge(deps)
     return bridge.invoke(name, args && typeof args === 'object' ? args : {})
   })
+
+  // Synchronous snapshot of the bridge lifecycle. Renderer subscribes to
+  // ``deskagent:runner:status`` for future transitions, but Electron's
+  // ``ipcRenderer.on`` has no event replay — a renderer that mounts after
+  // the bridge already reached ``running`` would never observe it. This
+  // getter closes that window (the same pattern auth.cjs uses with
+  // ``auth:get-session`` + ``onAuthChanged``). Returns ``{ phase: 'idle' }``
+  // when the bridge hasn't been created yet, which is a valid early answer
+  // — the subsequent ``running`` event will flip it.
+  ipcMain.handle('deskagent:runner:get-state', async () => {
+    const bridge = deps.runnerBridge
+    if (!bridge) {
+      return { phase: 'idle' }
+    }
+    const status = bridge.getStatus()
+    // Project to the fields documented in ``DesktopRunnerState``. The nested
+    // ``runner`` / ``wsServer`` sub-statuses are bridge internals (process
+    // pid/port, ws connection state) that no renderer consumer reads today;
+    // leaking them through IPC would lock the contract to internal shape
+    // churn. If a future renderer needs them, add a dedicated channel.
+    return {
+      phase: status.phase,
+      startedAt: status.startedAt ?? null,
+      stoppedAt: status.stoppedAt ?? null,
+      lastError: status.lastError ?? null,
+      capabilities: status.capabilities ?? null,
+      runnerVersion: status.runnerVersion ?? null,
+      probeFailed: status.probeFailed ?? null
+    }
+  })
 }
 
 module.exports = {

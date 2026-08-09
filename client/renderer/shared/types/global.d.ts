@@ -24,6 +24,7 @@ declare global {
       writeClipboard: (text: string) => Promise<boolean>
       saveClipboardImage: () => Promise<string>
       runnerInvoke?: (name: string, args: Record<string, unknown>) => Promise<unknown>
+      runnerGetState?: () => Promise<DesktopRunnerState>
       runnerGetTools?: () => Promise<Array<Record<string, unknown>>>
       getPathForFile: (file: File) => string
       setTitleBarTheme?: (payload: DeskAgentTitleBarTheme) => void
@@ -212,6 +213,27 @@ export type DesktopRunnerStatusEvent =
     }
   | { type: 'stopped'; reason?: string; errors: string[] }
   | { type: 'error'; phase: string; error: Error }
+
+// Synchronous snapshot of the runner bridge lifecycle. Returned by
+// ``runnerGetState``; pairs with ``DesktopRunnerStatusEvent`` for future
+// transitions. Mirrors the phase values emitted by runner-bridge.cjs.
+export type DesktopRunnerPhase =
+  | 'idle'
+  | 'starting'
+  | 'running'
+  | 'stopping'
+  | 'stopped'
+  | 'error'
+
+export interface DesktopRunnerState {
+  phase: DesktopRunnerPhase
+  startedAt?: number | null
+  stoppedAt?: number | null
+  lastError?: string | null
+  capabilities?: RunnerCapabilities | null
+  runnerVersion?: string | null
+  probeFailed?: boolean | null
+}
 
 export interface DeskAgentConnection {
   baseUrl: string

@@ -23,6 +23,10 @@ contextBridge.exposeInMainWorld('deskagent', {
   saveClipboardImage: () => ipcRenderer.invoke('deskagent:saveClipboardImage'),
   runnerInvoke: (name, args) => ipcRenderer.invoke('deskagent:runner:invoke', name, args),
   runnerGetTools: () => ipcRenderer.invoke('deskagent:runner:get-tools'),
+  // Synchronous snapshot of bridge phase. Pairs with onRunnerStatus so a
+  // late subscriber doesn't miss an already-emitted `running` event — see
+  // companion/activity.ts startActivityMonitor.
+  runnerGetState: () => ipcRenderer.invoke('deskagent:runner:get-state'),
   getPathForFile: file => {
     try {
       return webUtils.getPathForFile(file) || ''

@@ -17,10 +17,13 @@ const TAG_RE = /^reaction\.[a-z0-9-]+\.(gentle|lively|snarky|calm)\.[0-9]+$/
 // IPC payload.
 const MAX_BYTES = 64 * 1024
 
-// Concurrent fan-out for the batch generator. Matches
-// assets/onboarding-audio/generate_onboarding_audio.py:23 so an upstream
-// throttle hitting one consumer hits both consistently.
-const BATCH_CONCURRENCY = 10
+// Per-entry throttle for the sequential bulk bake. The previous
+// BATCH_CONCURRENCY=10 fan-out hammered the cloud TTS endpoint hard enough
+// that a 52-entry bulk bake could lose ~half its clips to upstream rate
+// limits / timeouts (`[reaction-audio] batch: 29/52 ok, 23 failed`). Wall-
+// clock penalty (~41s of pure sleep for 52 entries) is acceptable — this
+// runs as a background bake after onboarding completes.
+const INTER_ENTRY_DELAY_MS = 800
 
 const KNOWN_TONES = new Set(['gentle', 'lively', 'snarky', 'calm'])
 const KNOWN_BUCKETS = new Set(['poke-light', 'poke-medium', 'poke-heavy', 'drag'])
@@ -84,30 +87,16 @@ function registerReactionAudioIpc({ ipcMain, deskagentHome, mimeTypeForPath, har
 
     await fsp.mkdir(audioRoot, { recursive: true })
 
-    // Sequential-runnable concurrency control. A simple `Promise.all` of all
-    // tasks would happily fire hundreds of MiMo requests at once; cap to the
-    // same fan-out the offline generator uses.
-    const sem = { active: 0, max: BATCH_CONCURRENCY, waiters: [] }
-    const acquire = () =>
-      new Promise(resolve => {
-        const tryAcquire = () => {
-          if (sem.active < sem.max) {
-            sem.active += 1
-            resolve(null)
-          } else {
-            sem.waiters.push(tryAcquire)
-          }
-        }
-        tryAcquire()
-      })
-    const release = () => {
-      sem.active -= 1
-      const next = sem.waiters.shift()
-      if (next) next()
-    }
-
-    async function process(entry) {
-      await acquire()
+    // Sequential bake with a per-entry throttle. A previous fan-out at
+    // BATCH_CONCURRENCY=10 still hammered the cloud TTS endpoint hard enough
+    // that a 52-entry bulk bake could lose ~half its clips to upstream rate
+    // limits / timeouts (`[reaction-audio] batch: 29/52 ok, 23 failed`).
+    // Wall-clock penalty (~41s of pure sleep for 52 entries) is acceptable —
+    // this runs as a background bake after onboarding completes.
+    const sleep = ms => new Promise(resolve => setTimeout(resolve, ms))
+    const results = []
+    for (let i = 0; i < valid.length; i += 1) {
+      const entry = valid[i]
       try {
         // Cloud-only path. We deliberately skip the local Piper TTS engine
         // even under the caller's `'auto'` preference because Piper voice
@@ -119,21 +108,23 @@ function registerReactionAudioIpc({ ipcMain, deskagentHome, mimeTypeForPath, har
         const { dataUrl } = await media.ttsViaBackend({ ensureBackend, text: entry.text, voice, language })
         const buf = dataUrlToBuffer(dataUrl)
         await atomicWriteFile(path.join(audioRoot, `${entry.tag}.mp3`), buf)
-        return { tag: entry.tag, ok: true, bytes: buf.length }
+        results.push({ tag: entry.tag, ok: true, bytes: buf.length })
       } catch (err) {
         const reason = err instanceof Error ? err.message : String(err)
-        return { tag: entry.tag, ok: false, reason }
-      } finally {
-        release()
+        results.push({ tag: entry.tag, ok: false, reason })
+      }
+
+      // Throttle between entries; skip after the last to avoid a wasted tick.
+      if (i < valid.length - 1) {
+        await sleep(INTER_ENTRY_DELAY_MS)
       }
     }
 
-    const settled = await Promise.all(valid.map(process))
-    const failed = settled.filter(r => !r.ok).length
+    const failed = results.filter(r => !r.ok).length
     if (failed > 0) {
-      console.warn(`[reaction-audio] batch: ${settled.length - failed}/${settled.length} ok, ${failed} failed`)
+      console.warn(`[reaction-audio] batch: ${results.length - failed}/${results.length} ok, ${failed} failed`)
     }
-    return { results: settled }
+    return { results }
   })
 }
 
