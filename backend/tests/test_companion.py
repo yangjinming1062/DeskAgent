@@ -558,7 +558,7 @@ def test_voice_catalog_gender_scoring():
     best, _ = match_voice("male", voices_for_provider("minimax"))
     assert best.gender == "male"
 
-    best, _ = match_voice("a deep male voice", voices_for_provider("gemini"))
+    best, _ = match_voice("male", voices_for_provider("mimo"))
     assert best.gender == "male"
 
     best, _ = match_voice("温柔的女声", voices_for_provider("minimax"))
@@ -566,8 +566,17 @@ def test_voice_catalog_gender_scoring():
 
 
 def test_voice_catalog_no_match_falls_back_neutral():
-    # Nonsense preference → neutral default preferred over arbitrary top voice.
-    best, _ = match_voice("xyzqwerty", voices_for_provider("gemini"))
+    # Non-empty catalog with a nonsense preference scores 0 on every voice;
+    # the matcher must fall back to a neutral entry rather than the first
+    # gendered voice.
+    from services.llm.voice_catalog import VoiceEntry
+
+    catalog = [
+        VoiceEntry(id="m1", label="男1", gender="male", language="zh", tags=["男"], description=""),
+        VoiceEntry(id="n1", label="中性1", gender="neutral", language="zh", tags=[], description=""),
+        VoiceEntry(id="f1", label="女1", gender="female", language="zh", tags=["女"], description=""),
+    ]
+    best, _ = match_voice("xyzqwerty", catalog)
     assert best.gender == "neutral"
 
 
@@ -584,8 +593,6 @@ def test_voice_catalog_language_field():
     en = [v for v in mimo if v.language == "en"]
     assert len(zh) == 4
     assert len(en) == 4
-    gemini = voices_for_provider("gemini")
-    assert all(v.language == "multi" for v in gemini)
 
 
 def test_voice_catalog_zh_first_in_list_voices(monkeypatch):
@@ -669,10 +676,9 @@ def test_voice_catalog_language_filter_none_returns_full(monkeypatch):
 
 
 def test_voice_catalog_language_filter_empty_zh_subset_keeps_default(monkeypatch):
-    """Filter-empty catalog keeps ``default_voice`` shape — falls back to the DEFAULT_VOICE stub."""
+    """Provider that registers no TTS catalog → empty voices + DEFAULT_VOICE stub."""
     from services.companion import voice_catalog as vc
 
-    # Gemini has only 'multi' voices — filtering by 'zh' should return empty.
     monkeypatch.setattr(vc, "active_tts_provider", lambda db, uid: "gemini")
     result = vc.list_voices(db=None, user_id=999, language="zh")
     assert result["voices"] == []
@@ -1302,31 +1308,20 @@ def test_voice_catalog_mimo_design_prefix_match():
     assert pick_voice_id(token, "zhipu") == token
 
 
-def test_voice_catalog_gemini_language_scoring():
-    """P2-11: a Chinese user preference adds a per-voice bias to
-    Gemini's multilingual catalog (P1-15)."""
+def test_voice_catalog_tag_scoring_picks_matching_voice():
+    """同一目录下，命中标签的 voice 得分更高。"""
     from services.companion.voice_catalog import _score
     from services.llm.voice_catalog import VoiceEntry
 
-    # Two Gemini voices, both tagged ``zh`` and ``en`` after P1-15.
-    kore = VoiceEntry(
-        id="Kore",
-        label="Kore",
-        gender="neutral",
-        language="multi",
-        tags=["zh", "en", "温暖"],
-        description="",
+    warm = VoiceEntry(
+        id="warm", label="warm", gender="neutral", language="multi",
+        tags=["温暖", "温柔"], description="",
     )
-    zephyr = VoiceEntry(
-        id="Zephyr",
-        label="Zephyr",
-        gender="neutral",
-        language="multi",
-        tags=["zh", "en", "明亮"],
-        description="",
+    bright = VoiceEntry(
+        id="bright", label="bright", gender="neutral", language="multi",
+        tags=["明亮", "清亮"], description="",
     )
-    # '明亮' preference picks Zephyr over Kore.
-    assert _score("明亮", zephyr) > _score("明亮", kore)
+    assert _score("明亮", bright) > _score("明亮", warm)
 
 
 def test_pydantic_session_runtime_info_optional_cwd():

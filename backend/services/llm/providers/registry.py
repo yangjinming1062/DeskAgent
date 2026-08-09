@@ -57,10 +57,7 @@ PROVIDER_DEFAULT_URLS: dict[str, dict[str, str]] = {
     },
     "gemini": {
         "llm": "https://generativelanguage.googleapis.com/v1beta/openai/",
-        "stt": "https://generativelanguage.googleapis.com",
-        "tts": "https://generativelanguage.googleapis.com",
         "image_gen": "https://generativelanguage.googleapis.com",
-        "video_gen": "",
     },
     "zhipu": {
         "llm": "https://open.bigmodel.cn/api/paas/v4",

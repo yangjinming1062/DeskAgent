@@ -217,6 +217,25 @@ class TestRegistry:
         with pytest.raises(LookupError):
             resolve(ServiceType.stt, "minimax")
 
+    def test_gemini_providers_registered(self):
+        """Gemini registers only chat and image_gen; STT/TTS are absent
+        because the all-multilingual voice catalog made cross-provider
+        tag matching ambiguous — mimo / minimax / zhipu cover those caps."""
+        from services.llm.providers.gemini import (
+            GeminiChatProvider,
+            GeminiImageGenProvider,
+        )
+        from services.llm.providers.registry import resolve
+
+        assert resolve(ServiceType.llm, "gemini") is GeminiChatProvider
+        assert resolve(ServiceType.image_gen, "gemini") is GeminiImageGenProvider
+        with pytest.raises(LookupError):
+            resolve(ServiceType.stt, "gemini")
+        with pytest.raises(LookupError):
+            resolve(ServiceType.tts, "gemini")
+        with pytest.raises(LookupError):
+            resolve(ServiceType.video_gen, "gemini")
+
     def test_zhipu_providers_registered(self):
         from services.llm.providers.zhipu import (
             ZhipuChatProvider,
@@ -281,8 +300,6 @@ class TestDefaultContextTokens:
         assert default_context_tokens_for("minimax", "image_gen") == 8_000
         assert default_context_tokens_for("minimax", "video_gen") == 8_000
         assert default_context_tokens_for("gemini", "llm") == 1_000_000
-        assert default_context_tokens_for("gemini", "stt") == 8_000
-        assert default_context_tokens_for("gemini", "tts") == 8_000
         assert default_context_tokens_for("gemini", "image_gen") == 8_000
         assert default_context_tokens_for("zhipu", "llm") == 1_000_000
         assert default_context_tokens_for("zhipu", "stt") == 8_000
@@ -296,7 +313,9 @@ class TestDefaultContextTokens:
         assert default_context_tokens_for("mimo", "video_gen") == 0
         # minimax doesn't register stt.
         assert default_context_tokens_for("minimax", "stt") == 0
-        # gemini doesn't register video_gen.
+        # gemini registers only llm / image_gen.
+        assert default_context_tokens_for("gemini", "stt") == 0
+        assert default_context_tokens_for("gemini", "tts") == 0
         assert default_context_tokens_for("gemini", "video_gen") == 0
         # zhipu doesn't register video_gen.
         assert default_context_tokens_for("zhipu", "video_gen") == 0
@@ -318,8 +337,8 @@ class TestProvidersSupporting:
         video_providers = set(providers_supporting("video_gen"))
 
         assert chat_providers == {"mimo", "minimax", "gemini", "zhipu"}
-        assert stt_providers == {"mimo", "gemini", "zhipu"}
-        assert tts_providers == {"mimo", "minimax", "gemini", "zhipu"}
+        assert stt_providers == {"mimo", "zhipu"}
+        assert tts_providers == {"mimo", "minimax", "zhipu"}
         assert image_providers == {"mimo", "minimax", "gemini", "zhipu"}
         assert video_providers == {"minimax"}
 
