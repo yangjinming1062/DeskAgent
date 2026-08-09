@@ -139,11 +139,13 @@ async function sttViaBackend({ ensureBackend, mime, data, filename, language }) 
   return { text: parsed.text || '' }
 }
 
-// Min gap between cloud TTS calls; a bulk bake (52 entries back-to-back)
-// without this hit the endpoint hard enough to lose ~half its clips
-// (`[reaction-audio] batch: 29/52 ok, 23 failed`). Single-shot chat TTS is
-// dominated by LLM latency so this is invisible in practice.
-const MIN_TTS_INTERVAL_MS = 800
+// Min gap between cloud TTS calls. The Backend caps /api/media/tts at
+// 30/min per user (components/config.py `media_tts_rate_limit_per_minute`),
+// counted per fixed minute window — 4000ms caps any window at ≤16 calls,
+// leaving generous headroom for the 52-entry reaction bake running
+// concurrently with chat TTS. Single-shot chat TTS is dominated by LLM
+// latency so the extra wait is invisible in practice.
+const MIN_TTS_INTERVAL_MS = 4000
 let lastTtsCallAt = performance.now()
 
 async function ttsViaBackend({ ensureBackend, text, voice, language }) {
