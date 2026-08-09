@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import json
 from pathlib import Path
 
@@ -16,11 +17,11 @@ from ..llm import enhance_pbr_channels
 from ..llm import PBR_KEYS
 from ..tools.builtin import first_image_url
 from ..tools.builtin import image_generation_tool
-from .asset_store import build_signed_avatar_url
 from .asset_store import build_signed_model_url
 from .asset_store import save_companion_asset
 from .asset_store import save_companion_model
 from .asset_store import unlink_companion_asset
+from .avatar_service import resolve_uploaded_avatar_path
 from .persona_service import get_or_create_persona
 from .wardrobe_service import fetch_texture_bytes
 
@@ -31,7 +32,10 @@ class ModelGenerationError(RuntimeError):
     """3D model generation failed."""
 
 
-def _active_portrait(db: Session, user_id: int) -> str | None:
+def _active_portrait_storage_path(db: Session, user_id: int) -> str | None:
+    """Bare ``companion-avatars/<file_id>.<ext>`` path of the active portrait, or
+    ``None`` if there isn't one. DB-only — the caller reads bytes outside this
+    session so the multi-MB image read doesn't hold the ORM connection."""
     a = db.query(AvatarAsset).filter(AvatarAsset.user_id == user_id, AvatarAsset.active.is_(True)).one_or_none()
     if a is None:
         return None
@@ -39,10 +43,31 @@ def _active_portrait(db: Session, user_id: int) -> str | None:
     # (bust) for legacy rows that predate the avatar/seed split.
     url = a.seed_url or a.asset_url
     if url and url.startswith("companion-avatars/"):
-        filename = url.split("/", 1)[1]
-        file_id, _, ext = filename.partition(".")
-        return build_signed_avatar_url(file_id, ext)
-    return url
+        return url
+    # Legacy: non-bare URLs (e.g. hosted CDN) — no disk file we can read;
+    # return None so the caller proceeds without a reference instead of
+    # forwarding an unreachable URL to the image-gen provider.
+    return None
+
+
+async def _portrait_as_data_uri(bare_path: str) -> str | None:
+    """Read an avatar file from disk and return ``data:<mime>;base64,...``.
+
+    Used as ``reference_image=`` so generation does not depend on the backend
+    being publicly reachable — providers can't fetch from inside the container
+    when ``public_url_prefix`` is empty and the auto-detected ``public_ip``
+    isn't routable back. Disk read is offloaded via ``asyncio.to_thread`` so
+    the event loop doesn't stall on multi-MB images.
+    """
+    filename = Path(bare_path).name
+    resolved = resolve_uploaded_avatar_path(filename)
+    if resolved is None:
+        return None
+    path, content_type = resolved
+
+    data = await asyncio.to_thread(path.read_bytes)
+    mime = content_type.split(";")[0].strip().lower() or "image/png"
+    return f"data:{mime};base64,{base64.b64encode(data).decode('ascii')}"
 
 
 def get_active_model(db: Session, user_id: int) -> CompanionModel | None:
@@ -83,7 +108,10 @@ async def _load_base_model(db: Session, user_id: int, species_override: str | No
     if not local.exists():
         fallback = Path(SETTINGS.companion_base_model_dir) / "character.glb"
         if fallback.exists():
-            logger.info("Species model not found, using generic fallback", extra={"species": species, "expected": str(local)})
+            logger.info(
+                "Species model not found, using generic fallback",
+                extra={"species": species, "expected": str(local)},
+            )
             return await asyncio.to_thread(fallback.read_bytes), species
         raise ModelGenerationError(f"未找到 {species} 的基底模型（{local}）。请将 rigged GLB 放到该路径，或放入 {fallback} 作为通用兜底。")
 
@@ -148,7 +176,12 @@ async def generate_companion_model(db: Session, *, user_id: int, species_overrid
     asyncio.create_task(_generate_custom_textures(user_id))
     logger.info(
         "Base model served",
-        extra={"user_id": user_id, "species": species, "morph_count": len(morph_names), "morphs": morph_names[:20]},
+        extra={
+            "user_id": user_id,
+            "species": species,
+            "morph_count": len(morph_names),
+            "morphs": morph_names[:20],
+        },
     )
     return model
 
@@ -203,23 +236,24 @@ async def _generate_custom_textures(user_id: int) -> None:
             persona = get_or_create_persona(db, user_id)
             definition = safe_json_loads(persona.definition_json or "{}", default={})
             appearance = definition.get("appearance", "")
-            portrait_url = _active_portrait(db, user_id)
+            portrait_path = _active_portrait_storage_path(db, user_id)
 
-            if not appearance and not portrait_url:
-                return
+        # Disk read outside the DB session so the ORM pool isn't held during
+        # the multi-MB read (the file goes through ``asyncio.to_thread``).
+        portrait_data_uri = await _portrait_as_data_uri(portrait_path) if portrait_path else None
 
-            # LLM rewrites the persona's short appearance into 4 PBR-channel
-            # prompts in one round-trip. The session stays open here because
-            # ``enhance_pbr_channels`` reads the user's chat provider config
-            # from the DB; close it before the long image-gen + download
-            # phase. MissingLlmConfigError / transport errors propagate up —
-            # the outer try/except logs and returns so the user's current
-            # outfit stays intact.
-            channels = await enhance_pbr_channels(
-                db,
-                user_id,
-                base_description=appearance or "casual clothing",
-            )
+        if not appearance and not portrait_data_uri:
+            return
+
+        # ``enhance_pbr_channels`` accepts ``None`` for db (session was
+        # closed above so the multi-MB portrait read doesn't hold the ORM
+        # pool); it opens its own session if needed. Errors propagate to
+        # the outer try/except, which keeps the user's current outfit intact.
+        channels = await enhance_pbr_channels(
+            None,
+            user_id,
+            base_description=appearance or "casual clothing",
+        )
 
         results = await asyncio.gather(
             *(
@@ -230,7 +264,7 @@ async def _generate_custom_textures(user_id: int) -> None:
                     # Vision reference is colour-consistency for albedo only;
                     # normal / roughness / metalness are channel maps and don't
                     # benefit from re-rendering through a portrait visual reference.
-                    reference_image=portrait_url if key == "albedo" else None,
+                    reference_image=portrait_data_uri if key == "albedo" else None,
                 )
                 for key in PBR_KEYS
             )
@@ -241,12 +275,18 @@ async def _generate_custom_textures(user_id: int) -> None:
         # unlinked here — no GC sweep exists, so partial failures otherwise leak
         # PNGs under companion-assets/<user_id>/.
         if any(r is None for r in results):
-            logger.warning("Custom texture generation aborted (partial failure)", extra={"user_id": user_id})
+            logger.warning(
+                "Custom texture generation aborted (partial failure)",
+                extra={"user_id": user_id},
+            )
             for storage_path in results:
                 if storage_path is None:
                     continue
                 if unlink_companion_asset(storage_path) is None:
-                    logger.warning("Failed to unlink orphaned PBR asset", extra={"user_id": user_id, "path": storage_path})
+                    logger.warning(
+                        "Failed to unlink orphaned PBR asset",
+                        extra={"user_id": user_id, "path": storage_path},
+                    )
             return
         albedo_url, normal_url, roughness_url, metalness_url = results
 
@@ -269,9 +309,16 @@ async def _generate_custom_textures(user_id: int) -> None:
             db.commit()
 
         emit_wardrobe_updated(user_id)
-        logger.info("Custom texture (4 PBR channels) generated for user", extra={"user_id": user_id})
+        logger.info(
+            "Custom texture (4 PBR channels) generated for user",
+            extra={"user_id": user_id},
+        )
     except Exception:
-        logger.warning("Custom texture generation failed", extra={"user_id": user_id}, exc_info=True)
+        logger.warning(
+            "Custom texture generation failed",
+            extra={"user_id": user_id},
+            exc_info=True,
+        )
 
 
 # ── Shared helpers ───────────────────────────────────────────
@@ -286,7 +333,13 @@ def _emit_model_ready(user_id: int, model_id: int, asset_url: str, *, species: s
         payload["asset_url"] = build_signed_model_url(int(parts[1]), parts[2])
     try:
         with SESSION_LOCAL() as db:
-            db.add(WSEvent(user_id=user_id, event_type="model.ready", payload=json.dumps(payload, ensure_ascii=False)))
+            db.add(
+                WSEvent(
+                    user_id=user_id,
+                    event_type="model.ready",
+                    payload=json.dumps(payload, ensure_ascii=False),
+                )
+            )
             db.commit()
     except Exception:
         logger.warning("Failed to emit model.ready event", exc_info=True)

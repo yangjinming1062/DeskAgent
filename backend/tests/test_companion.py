@@ -30,10 +30,16 @@ async def test_send_message_companion_path_emits_ws_event(monkeypatch):
     smt = importlib.import_module("services.tools.builtin.send_message_tool")
 
     captured: list[tuple[int, str, str | None]] = []
-    monkeypatch.setattr(smt, "_emit_companion_message", lambda uid, text, affect=None: captured.append((uid, text, affect)))
+    monkeypatch.setattr(
+        smt,
+        "_emit_companion_message",
+        lambda uid, text, affect=None: captured.append((uid, text, affect)),
+    )
     monkeypatch.setattr(smt, "is_quiet", lambda uid: False)
 
-    result = json.loads(await smt.send_message_tool(message="你好呀，想我了吗？", user_id=7))
+    result = json.loads(
+        await smt.send_message_tool(message="你好呀，想我了吗？", user_id=7)
+    )
 
     assert result["success"] is True
     assert result["channel"] == "companion"
@@ -46,10 +52,16 @@ async def test_send_message_companion_path_emits_with_affect(monkeypatch):
     smt = importlib.import_module("services.tools.builtin.send_message_tool")
 
     captured: list[tuple[int, str, str | None]] = []
-    monkeypatch.setattr(smt, "_emit_companion_message", lambda uid, text, affect=None: captured.append((uid, text, affect)))
+    monkeypatch.setattr(
+        smt,
+        "_emit_companion_message",
+        lambda uid, text, affect=None: captured.append((uid, text, affect)),
+    )
     monkeypatch.setattr(smt, "is_quiet", lambda uid: False)
 
-    result = json.loads(await smt.send_message_tool(message="晚上好呀！", affect="happy", user_id=3))
+    result = json.loads(
+        await smt.send_message_tool(message="晚上好呀！", affect="happy", user_id=3)
+    )
 
     assert result["success"] is True
     assert captured == [(3, "晚上好呀！", "happy")]
@@ -63,11 +75,21 @@ async def test_send_message_quiet_tier_diverts_affect_only(monkeypatch):
 
     messages: list[tuple[int, str, str | None]] = []
     affects: list[tuple[int, str]] = []
-    monkeypatch.setattr(smt, "_emit_companion_message", lambda uid, text, affect=None: messages.append((uid, text, affect)))
-    monkeypatch.setattr(smt, "_emit_companion_affect", lambda uid, emotion: affects.append((uid, emotion)))
+    monkeypatch.setattr(
+        smt,
+        "_emit_companion_message",
+        lambda uid, text, affect=None: messages.append((uid, text, affect)),
+    )
+    monkeypatch.setattr(
+        smt,
+        "_emit_companion_affect",
+        lambda uid, emotion: affects.append((uid, emotion)),
+    )
     monkeypatch.setattr(smt, "is_quiet", lambda uid: True)
 
-    result = json.loads(await smt.send_message_tool(message="psst", affect="concerned", user_id=1))
+    result = json.loads(
+        await smt.send_message_tool(message="psst", affect="concerned", user_id=1)
+    )
 
     assert result["success"] is True
     assert result["quiet_suppressed"] is True
@@ -85,8 +107,16 @@ async def test_send_message_quiet_tier_no_affect_emits_neutral(monkeypatch):
 
     messages: list[tuple[int, str, str | None]] = []
     affects: list[tuple[int, str]] = []
-    monkeypatch.setattr(smt, "_emit_companion_message", lambda uid, text, affect=None: messages.append((uid, text, affect)))
-    monkeypatch.setattr(smt, "_emit_companion_affect", lambda uid, emotion: affects.append((uid, emotion)))
+    monkeypatch.setattr(
+        smt,
+        "_emit_companion_message",
+        lambda uid, text, affect=None: messages.append((uid, text, affect)),
+    )
+    monkeypatch.setattr(
+        smt,
+        "_emit_companion_affect",
+        lambda uid, emotion: affects.append((uid, emotion)),
+    )
     monkeypatch.setattr(smt, "is_quiet", lambda uid: True)
 
     result = json.loads(await smt.send_message_tool(message="psst", user_id=1))
@@ -104,10 +134,16 @@ async def test_send_message_normal_tier_emits(monkeypatch):
     smt = importlib.import_module("services.tools.builtin.send_message_tool")
 
     captured: list[tuple[int, str, str | None]] = []
-    monkeypatch.setattr(smt, "_emit_companion_message", lambda uid, text, affect=None: captured.append((uid, text, affect)))
+    monkeypatch.setattr(
+        smt,
+        "_emit_companion_message",
+        lambda uid, text, affect=None: captured.append((uid, text, affect)),
+    )
     monkeypatch.setattr(smt, "is_quiet", lambda uid: False)
 
-    result = json.loads(await smt.send_message_tool(message="hi", affect="happy", user_id=7))
+    result = json.loads(
+        await smt.send_message_tool(message="hi", affect="happy", user_id=7)
+    )
 
     assert result["success"] is True
     assert captured == [(7, "hi", "happy")]
@@ -155,7 +191,9 @@ def test_onboarding_incremental_persistence_and_recovery(_patch_db):
         # reports complete=False with next_field pointing at the first missing
         # user_* — the desktop must resume into q-user / voice rather than
         # skip onboarding entirely.
-        update_persona(db, 100, {"name": "小光", "personality": "温柔", "speaking_style": "轻柔"})
+        update_persona(
+            db, 100, {"name": "小光", "personality": "温柔", "speaking_style": "轻柔"}
+        )
         state = get_onboarding_state(db, 100)
         assert state["complete"] is False
         assert state["next_field"] == "user_call_name"
@@ -176,7 +214,9 @@ def test_post_character_onboarding_accepts_user_and_voice(_patch_db):
     from services.companion.memory_bootstrap import read_user_profile
 
     with SessionLocal() as db:
-        update_persona(db, 100, {"name": "小光", "personality": "温柔", "speaking_style": "轻柔"})
+        update_persona(
+            db, 100, {"name": "小光", "personality": "温柔", "speaking_style": "轻柔"}
+        )
 
         # user_* lands in Memory, not persona draft.
         submit_onboarding_field(db, 100, "user_call_name", "老板")
@@ -213,7 +253,9 @@ def test_onboarding_complete_only_when_post_character_fields_filled(_patch_db):
     )
 
     with SessionLocal() as db:
-        update_persona(db, 100, {"name": "小光", "personality": "温柔", "speaking_style": "轻柔"})
+        update_persona(
+            db, 100, {"name": "小光", "personality": "温柔", "speaking_style": "轻柔"}
+        )
 
         # Partial: only user_call_name filled.
         submit_onboarding_field(db, 100, "user_call_name", "老板")
@@ -311,19 +353,25 @@ class _MockResponse:
     """Minimal stand-in for the OpenAI response shape check_affect reads."""
 
     def __init__(self, content: str):
-        self.choices = [type("Choice", (), {"message": type("Msg", (), {"content": content})()})()]
+        self.choices = [
+            type("Choice", (), {"message": type("Msg", (), {"content": content})()})()
+        ]
 
 
 def _seed_persona(SessionLocal, user_id: int, *, complete: bool = True):
     from modules.companion import Persona
 
     with SessionLocal() as db:
-        db.add(Persona(
-            user_id=user_id,
-            definition_json='{"name":"小光","personality":"温柔","speaking_style":"轻柔"}',
-            system_prompt_extras="你是小光，一个温柔的桌面伙伴。" if complete else "",
-            is_complete=complete,
-        ))
+        db.add(
+            Persona(
+                user_id=user_id,
+                definition_json='{"name":"小光","personality":"温柔","speaking_style":"轻柔"}',
+                system_prompt_extras="你是小光，一个温柔的桌面伙伴。"
+                if complete
+                else "",
+                is_complete=complete,
+            )
+        )
         db.commit()
 
 
@@ -333,9 +381,12 @@ async def test_affect_check_no_persona_skips_llm(monkeypatch, _patch_db):
 
     async def _fail_call(*a, **kw):
         raise AssertionError("LLM should not be called without a persona")
+
     monkeypatch.setattr(ac, "call_with_retry", _fail_call)
 
-    result = await ac.check_affect(user_id=888, idle_seconds=3600, local_hour=14, llm_config={"model_name": "test"})
+    result = await ac.check_affect(
+        user_id=888, idle_seconds=3600, local_hour=14, llm_config={"model_name": "test"}
+    )
 
     assert result["expressed"] is False
     assert result["reason"] == "persona not ready"
@@ -350,13 +401,20 @@ async def test_affect_check_llm_decides_express(monkeypatch, _patch_db):
     monkeypatch.setattr(ac, "client_for_config", lambda cfg: None)
 
     async def _mock_call(*a, **kw):
-        return _MockResponse('{"should_express": true, "emotion": "lonely", "reason": "用户离开很久了"}')
+        return _MockResponse(
+            '{"should_express": true, "emotion": "lonely", "reason": "用户离开很久了"}'
+        )
+
     monkeypatch.setattr(ac, "call_with_retry", _mock_call)
 
     emitted: list[tuple[int, str]] = []
-    monkeypatch.setattr(ac, "emit_companion_affect", lambda uid, emotion: emitted.append((uid, emotion)))
+    monkeypatch.setattr(
+        ac, "emit_companion_affect", lambda uid, emotion: emitted.append((uid, emotion))
+    )
 
-    result = await ac.check_affect(user_id=777, idle_seconds=3600, local_hour=14, llm_config={"model_name": "test"})
+    result = await ac.check_affect(
+        user_id=777, idle_seconds=3600, local_hour=14, llm_config={"model_name": "test"}
+    )
 
     assert result["expressed"] is True
     assert result["emotion"] == "lonely"
@@ -372,13 +430,20 @@ async def test_affect_check_llm_decides_no_express(monkeypatch, _patch_db):
     monkeypatch.setattr(ac, "client_for_config", lambda cfg: None)
 
     async def _mock_call(*a, **kw):
-        return _MockResponse('{"should_express": false, "emotion": "neutral", "reason": "刚离开不久"}')
+        return _MockResponse(
+            '{"should_express": false, "emotion": "neutral", "reason": "刚离开不久"}'
+        )
+
     monkeypatch.setattr(ac, "call_with_retry", _mock_call)
 
     emitted: list[tuple[int, str]] = []
-    monkeypatch.setattr(ac, "emit_companion_affect", lambda uid, emotion: emitted.append((uid, emotion)))
+    monkeypatch.setattr(
+        ac, "emit_companion_affect", lambda uid, emotion: emitted.append((uid, emotion))
+    )
 
-    result = await ac.check_affect(user_id=666, idle_seconds=120, local_hour=14, llm_config={"model_name": "test"})
+    result = await ac.check_affect(
+        user_id=666, idle_seconds=120, local_hour=14, llm_config={"model_name": "test"}
+    )
 
     assert result["expressed"] is False
     assert emitted == []
@@ -395,13 +460,20 @@ async def test_affect_check_neutral_emotion_not_emitted(monkeypatch, _patch_db):
     monkeypatch.setattr(ac, "client_for_config", lambda cfg: None)
 
     async def _mock_call(*a, **kw):
-        return _MockResponse('{"should_express": true, "emotion": "neutral", "reason": "..."}')
+        return _MockResponse(
+            '{"should_express": true, "emotion": "neutral", "reason": "..."}'
+        )
+
     monkeypatch.setattr(ac, "call_with_retry", _mock_call)
 
     emitted: list[tuple[int, str]] = []
-    monkeypatch.setattr(ac, "emit_companion_affect", lambda uid, emotion: emitted.append((uid, emotion)))
+    monkeypatch.setattr(
+        ac, "emit_companion_affect", lambda uid, emotion: emitted.append((uid, emotion))
+    )
 
-    result = await ac.check_affect(user_id=555, idle_seconds=3600, local_hour=14, llm_config={"model_name": "test"})
+    result = await ac.check_affect(
+        user_id=555, idle_seconds=3600, local_hour=14, llm_config={"model_name": "test"}
+    )
 
     assert result["expressed"] is False
     assert emitted == []
@@ -419,13 +491,20 @@ async def test_affect_check_llm_failure_is_silent(monkeypatch, _patch_db):
     monkeypatch.setattr(ac, "client_for_config", lambda cfg: None)
 
     async def _raise(*a, **kw):
-        raise LLMRuntimeError(ClassifiedError(reason=FailoverReason.unknown, message="boom"))
+        raise LLMRuntimeError(
+            ClassifiedError(reason=FailoverReason.unknown, message="boom")
+        )
+
     monkeypatch.setattr(ac, "call_with_retry", _raise)
 
     emitted: list[tuple[int, str]] = []
-    monkeypatch.setattr(ac, "emit_companion_affect", lambda uid, emotion: emitted.append((uid, emotion)))
+    monkeypatch.setattr(
+        ac, "emit_companion_affect", lambda uid, emotion: emitted.append((uid, emotion))
+    )
 
-    result = await ac.check_affect(user_id=444, idle_seconds=3600, local_hour=14, llm_config={"model_name": "test"})
+    result = await ac.check_affect(
+        user_id=444, idle_seconds=3600, local_hour=14, llm_config={"model_name": "test"}
+    )
 
     assert result["expressed"] is False
     assert result["reason"] == "llm_error"
@@ -519,7 +598,9 @@ def test_voice_catalog_zh_first_in_list_voices(monkeypatch):
     langs = [v["language"] for v in result["voices"]]
     # All zh must come before any en (multi sits between them).
     first_en = langs.index("en") if "en" in langs else len(langs)
-    last_zh = max(i for i, lang in enumerate(langs) if lang == "zh") if "zh" in langs else -1
+    last_zh = (
+        max(i for i, lang in enumerate(langs) if lang == "zh") if "zh" in langs else -1
+    )
     assert last_zh < first_en, f"zh voices must precede en voices: {langs}"
     # The first voice must be a Chinese one (not mimo_default which is "multi").
     assert result["voices"][0]["language"] == "zh", result["voices"][0]
@@ -620,7 +701,9 @@ def test_voice_catalog_supports_voice_design(monkeypatch):
 @pytest.mark.asyncio
 async def test_design_voice_calls_provider(monkeypatch):
     chain = [type("Cfg", (), {"provider_name": "minimax"})()]
-    monkeypatch.setattr(voice_catalog, "resolve_provider_chain", lambda db, uid, svc: chain)
+    monkeypatch.setattr(
+        voice_catalog, "resolve_provider_chain", lambda db, uid, svc: chain
+    )
 
     design_calls = []
 
@@ -640,7 +723,9 @@ async def test_design_voice_calls_provider(monkeypatch):
 
     monkeypatch.setattr(voice_catalog, "resolve", lambda st, name: FakeDesign)
 
-    result = await voice_catalog.design_voice(db=None, user_id=1, prompt="warm female voice", preview_text="hello")
+    result = await voice_catalog.design_voice(
+        db=None, user_id=1, prompt="warm female voice", preview_text="hello"
+    )
 
     assert result.voice_id == "custom-voice-123"
     assert design_calls == [("warm female voice", "hello")]
@@ -649,7 +734,9 @@ async def test_design_voice_calls_provider(monkeypatch):
 @pytest.mark.asyncio
 async def test_design_voice_unsupported_provider(monkeypatch):
     chain = [type("Cfg", (), {"provider_name": "zhipu"})()]
-    monkeypatch.setattr(voice_catalog, "resolve_provider_chain", lambda db, uid, svc: chain)
+    monkeypatch.setattr(
+        voice_catalog, "resolve_provider_chain", lambda db, uid, svc: chain
+    )
 
     class NoDesign:
         VOICE_DESIGN_GUIDE = None
@@ -732,10 +819,21 @@ def test_dual_write_routes_user_profile_to_memory(_patch_db):
         assert definition["gender"] == "女"
         assert definition["appearance"] == "金发绿眼"
         # user_* keys do NOT bleed into definition_json
-        for key in ("user_call_name", "user_gender", "user_age_bucket", "user_hobbies", "user_freeform"):
+        for key in (
+            "user_call_name",
+            "user_gender",
+            "user_age_bucket",
+            "user_hobbies",
+            "user_freeform",
+        ):
             assert key not in definition
 
-        rows = db.query(Memory).filter(Memory.user_id == 777, Memory.context.like("user_profile:%")).order_by(Memory.context).all()
+        rows = (
+            db.query(Memory)
+            .filter(Memory.user_id == 777, Memory.context.like("user_profile:%"))
+            .order_by(Memory.context)
+            .all()
+        )
         assert {r.context for r in rows} == {
             "user_profile:preferred_name",
             "user_profile:gender",
@@ -768,7 +866,13 @@ def test_dual_write_is_idempotent(_patch_db):
         update_persona(db, 555, payload)
         update_persona(db, 555, payload)
         update_persona(db, 555, {**payload, "user_call_name": "大佬"})
-        rows = db.query(Memory).filter(Memory.user_id == 555, Memory.context == "user_profile:preferred_name").all()
+        rows = (
+            db.query(Memory)
+            .filter(
+                Memory.user_id == 555, Memory.context == "user_profile:preferred_name"
+            )
+            .all()
+        )
         assert len(rows) == 1
         assert rows[0].content == "大佬"
 
@@ -784,9 +888,21 @@ def test_dual_write_editor_path_leaves_memory_alone(_patch_db):
     from modules.memory import Memory
 
     with SessionLocal() as db:
-        update_persona(db, 888, {"name": "梦鳞", "personality": "温柔", "speaking_style": "轻柔", "user_call_name": "老板", "user_hobbies": "音乐"})
+        update_persona(
+            db,
+            888,
+            {
+                "name": "梦鳞",
+                "personality": "温柔",
+                "speaking_style": "轻柔",
+                "user_call_name": "老板",
+                "user_hobbies": "音乐",
+            },
+        )
         # Editor re-saves persona only
-        update_persona(db, 888, {"name": "梦鳞", "personality": "俏皮", "speaking_style": "利落"})
+        update_persona(
+            db, 888, {"name": "梦鳞", "personality": "俏皮", "speaking_style": "利落"}
+        )
         rows = db.query(Memory).filter(Memory.user_id == 888).all()
         contents = {r.content for r in rows}
         assert "老板" in contents and "音乐" in contents
@@ -801,13 +917,23 @@ def test_dual_write_empty_user_fields_skip(_patch_db):
     from modules.memory import Memory
 
     with SessionLocal() as db:
-        update_persona(db, 666, {
-            "name": "梦鳞", "personality": "温柔", "speaking_style": "轻柔",
-            "user_call_name": "老板",
-            "user_gender": "",
-            "user_age_bucket": "   ",
-        })
-        rows = db.query(Memory).filter(Memory.user_id == 666, Memory.context.like("user_profile:%")).all()
+        update_persona(
+            db,
+            666,
+            {
+                "name": "梦鳞",
+                "personality": "温柔",
+                "speaking_style": "轻柔",
+                "user_call_name": "老板",
+                "user_gender": "",
+                "user_age_bucket": "   ",
+            },
+        )
+        rows = (
+            db.query(Memory)
+            .filter(Memory.user_id == 666, Memory.context.like("user_profile:%"))
+            .all()
+        )
         assert len(rows) == 1
         assert rows[0].context == "user_profile:preferred_name"
 
@@ -821,11 +947,20 @@ def test_build_user_profile_extras_renders_known_rows(_patch_db):
     from services.companion import build_user_profile_extras, update_persona
 
     with SessionLocal() as db:
-        update_persona(db, 333, {
-            "name": "梦鳞", "personality": "温柔", "speaking_style": "轻柔",
-            "user_call_name": "老板", "user_gender": "男", "user_age_bucket": "26-35",
-            "user_hobbies": "音乐, 摄影", "user_freeform": "早起型",
-        })
+        update_persona(
+            db,
+            333,
+            {
+                "name": "梦鳞",
+                "personality": "温柔",
+                "speaking_style": "轻柔",
+                "user_call_name": "老板",
+                "user_gender": "男",
+                "user_age_bucket": "26-35",
+                "user_hobbies": "音乐, 摄影",
+                "user_freeform": "早起型",
+            },
+        )
         out = build_user_profile_extras(db, 333)
 
     assert out.startswith("# User profile")
@@ -858,11 +993,18 @@ def test_build_user_profile_extras_partial_rows_keep_order(_patch_db):
     from services.companion import build_user_profile_extras, update_persona
 
     with SessionLocal() as db:
-        update_persona(db, 444, {
-            "name": "梦鳞", "personality": "温柔", "speaking_style": "轻柔",
-            "user_call_name": "老板", "user_hobbies": "音乐",
-            # user_gender / user_age_bucket / user_freeform intentionally not set
-        })
+        update_persona(
+            db,
+            444,
+            {
+                "name": "梦鳞",
+                "personality": "温柔",
+                "speaking_style": "轻柔",
+                "user_call_name": "老板",
+                "user_hobbies": "音乐",
+                # user_gender / user_age_bucket / user_freeform intentionally not set
+            },
+        )
         out = build_user_profile_extras(db, 444)
 
     assert "Preferred name" in out and "Hobbies" in out
@@ -871,7 +1013,17 @@ def test_build_user_profile_extras_partial_rows_keep_order(_patch_db):
 
 def test_render_extras_includes_new_character_fields():
     from services.companion.persona_service import render_extras
-    out = render_extras({"name": "小光", "personality": "温柔体贴", "speaking_style": "轻声细语", "biological_type": "灵兽", "gender": "女", "appearance": "金发"})
+
+    out = render_extras(
+        {
+            "name": "小光",
+            "personality": "温柔体贴",
+            "speaking_style": "轻声细语",
+            "biological_type": "灵兽",
+            "gender": "女",
+            "appearance": "金发",
+        }
+    )
     assert "Biological type" in out and "灵兽" in out
     assert "Gender" in out and "女" in out
     assert "Appearance" in out and "金发" in out
@@ -879,13 +1031,23 @@ def test_render_extras_includes_new_character_fields():
 
 def test_persona_update_schema_accepts_definition_json():
     from modules.companion.schemas import PersonaUpdate
+
     p = PersonaUpdate(
-        definition_json=json.dumps({
-            "name": "梦鳞", "personality": "温柔", "speaking_style": "轻柔",
-            "biological_type": "灵兽", "gender": "女", "appearance": "金发绿眼",
-            "user_call_name": "老板", "user_gender": "男", "user_age_bucket": "26-35",
-            "user_hobbies": "音乐", "user_freeform": "早起型",
-        })
+        definition_json=json.dumps(
+            {
+                "name": "梦鳞",
+                "personality": "温柔",
+                "speaking_style": "轻柔",
+                "biological_type": "灵兽",
+                "gender": "女",
+                "appearance": "金发绿眼",
+                "user_call_name": "老板",
+                "user_gender": "男",
+                "user_age_bucket": "26-35",
+                "user_hobbies": "音乐",
+                "user_freeform": "早起型",
+            }
+        )
     )
     assert json.loads(p.definition_json)["biological_type"] == "灵兽"
 
@@ -893,6 +1055,7 @@ def test_persona_update_schema_accepts_definition_json():
 def test_persona_update_schema_rejects_unknown_keys():
     from modules.companion.schemas import PersonaUpdate
     from pydantic import ValidationError
+
     with pytest.raises(ValidationError):
         PersonaUpdate(definition_json="{}", totally_unknown_key="oops")
     # Flat persona fields are no longer accepted at the top level — the
@@ -903,10 +1066,20 @@ def test_persona_update_schema_rejects_unknown_keys():
 
 def test_onboarding_field_order_matches_question_sequence():
     from services.companion import ONBOARDING_FIELDS
+
     assert ONBOARDING_FIELDS == (
-        "name", "species", "character_gender", "appearance", "role", "personality",
+        "name",
+        "species",
+        "character_gender",
+        "appearance",
+        "role",
+        "personality",
         "speaking_style",
-        "user_call_name", "user_gender", "user_age_bucket", "user_hobbies", "user_freeform",
+        "user_call_name",
+        "user_gender",
+        "user_age_bucket",
+        "user_hobbies",
+        "user_freeform",
         "voice",
     )
 
@@ -924,7 +1097,6 @@ async def test_upload_avatar_refuses_when_persona_incomplete(_patch_db):
             await upload_avatar(db, 4242, b"\x89PNG\r\n", "image/png")
 
 
-
 def test_dynamic_user_profile_key_lands_in_memory(_patch_db):
     """Adding a new ``user_*`` field to PersonaUpdate must not 400 —
     extract_user_profile picks it up via the ``user_`` prefix and lands
@@ -935,12 +1107,22 @@ def test_dynamic_user_profile_key_lands_in_memory(_patch_db):
     from modules.memory import Memory
 
     with SessionLocal() as db:
-        update_persona(db, 2222, {
-            "name": "梦鳞", "personality": "温柔", "speaking_style": "轻柔",
-            "user_call_name": "老板",
-            "user_timezone": "Asia/Shanghai",  # not in _CONTEXT_LABELS
-        })
-        rows = db.query(Memory).filter(Memory.user_id == 2222, Memory.context.like("user_profile:%")).all()
+        update_persona(
+            db,
+            2222,
+            {
+                "name": "梦鳞",
+                "personality": "温柔",
+                "speaking_style": "轻柔",
+                "user_call_name": "老板",
+                "user_timezone": "Asia/Shanghai",  # not in _CONTEXT_LABELS
+            },
+        )
+        rows = (
+            db.query(Memory)
+            .filter(Memory.user_id == 2222, Memory.context.like("user_profile:%"))
+            .all()
+        )
         contexts = {r.context for r in rows}
         # Known field uses the friendly label, unknown field uses the raw key.
         assert "user_profile:preferred_name" in contexts
@@ -954,8 +1136,12 @@ def test_session_runtime_info_pydantic_model():
     from services.gateway.runtime import SessionRuntimeInfo
 
     info = SessionRuntimeInfo(
-        cwd="/tmp", branch=None, model="mimo-v2.5", provider="openai",
-        running=True, settings={"fast": False},
+        cwd="/tmp",
+        branch=None,
+        model="mimo-v2.5",
+        provider="openai",
+        running=True,
+        settings={"fast": False},
     )
     dumped = info.model_dump()
     assert dumped["cwd"] == "/tmp"
@@ -972,14 +1158,28 @@ def test_voice_catalog_score_cjk_substring():
 
     # Build a minimal catalog with a single ZH tag-bag voice.
     voices = [
-        VoiceEntry(id="少女", label="少女音", gender="female", language="zh",
-                   tags=["少女", "温柔", "女"], description=""),
-        VoiceEntry(id="男", label="男声", gender="male", language="zh",
-                   tags=["男"], description=""),
+        VoiceEntry(
+            id="少女",
+            label="少女音",
+            gender="female",
+            language="zh",
+            tags=["少女", "温柔", "女"],
+            description="",
+        ),
+        VoiceEntry(
+            id="男",
+            label="男声",
+            gender="male",
+            language="zh",
+            tags=["男"],
+            description="",
+        ),
     ]
     src = "from services.companion.voice_catalog import _score, match_voice"
     exec(src, {})
-    score = __import__("services.companion.voice_catalog", fromlist=["_score", "match_voice"])
+    score = __import__(
+        "services.companion.voice_catalog", fromlist=["_score", "match_voice"]
+    )
     scored = score._score("温柔少女音", voices[0])
     assert scored >= 2, f"少女 voice should match 温柔少女音, got {scored}"
     matched, _ = score.match_voice("温柔少女音", voices)
@@ -1021,10 +1221,15 @@ def test_ws_ticket_mints_short_lived_jwt():
     from services.gateway.auth import authenticate_ws_token
 
     short_jwt, _, _ = create_access_token(
-        user_id=42, username="alice", expires_in_seconds=60, purpose="ws",
+        user_id=42,
+        username="alice",
+        expires_in_seconds=60,
+        purpose="ws",
     )
     full_jwt, _, _ = create_access_token(
-        user_id=42, username="alice", expires_in_seconds=600,
+        user_id=42,
+        username="alice",
+        expires_in_seconds=600,
     )
 
     # Both tokens fail because there's no DB user in the test env,
@@ -1035,13 +1240,17 @@ def test_ws_ticket_mints_short_lived_jwt():
 
     # A valid-purpose token passes the purpose gate; an invalid one
     # returns (None, None) before the user lookup.
-    decoded = _jwt.decode(short_jwt, SETTINGS.jwt_secret_key, algorithms=[SETTINGS.jwt_algorithm])
+    decoded = _jwt.decode(
+        short_jwt, SETTINGS.jwt_secret_key, algorithms=[SETTINGS.jwt_algorithm]
+    )
     assert decoded.get("purpose") == "ws"
 
     # Forge a token without purpose: the function returns (None, None)
     # at the purpose gate before even looking up the user.
     fake, _, _ = create_access_token(
-        user_id=42, username="alice", expires_in_seconds=60,
+        user_id=42,
+        username="alice",
+        expires_in_seconds=60,
     )
     user, payload = authenticate_ws_token(fake)
     assert user is None and payload is None  # missing purpose gate kicks in
@@ -1054,10 +1263,22 @@ def test_voice_catalog_cjk_score_prefers_specific_match():
     from services.companion.voice_catalog import _score
     from services.llm.voice_catalog import VoiceEntry
 
-    shaonv = VoiceEntry(id="少女", label="少女音", gender="female", language="zh",
-                        tags=["少女", "温柔", "女"], description="")
-    yujie = VoiceEntry(id="御姐", label="御姐音", gender="female", language="zh",
-                       tags=["御姐", "成熟", "女"], description="")
+    shaonv = VoiceEntry(
+        id="少女",
+        label="少女音",
+        gender="female",
+        language="zh",
+        tags=["少女", "温柔", "女"],
+        description="",
+    )
+    yujie = VoiceEntry(
+        id="御姐",
+        label="御姐音",
+        gender="female",
+        language="zh",
+        tags=["御姐", "成熟", "女"],
+        description="",
+    )
     # '少女' prefers 少女音 over 御姐音.
     assert _score("少女", shaonv) > _score("少女", yujie)
     # '御姐' prefers 御姐音 over 少女音.
@@ -1083,10 +1304,22 @@ def test_voice_catalog_gemini_language_scoring():
     from services.llm.voice_catalog import VoiceEntry
 
     # Two Gemini voices, both tagged ``zh`` and ``en`` after P1-15.
-    kore = VoiceEntry(id="Kore", label="Kore", gender="neutral", language="multi",
-                      tags=["zh", "en", "温暖"], description="")
-    zephyr = VoiceEntry(id="Zephyr", label="Zephyr", gender="neutral", language="multi",
-                        tags=["zh", "en", "明亮"], description="")
+    kore = VoiceEntry(
+        id="Kore",
+        label="Kore",
+        gender="neutral",
+        language="multi",
+        tags=["zh", "en", "温暖"],
+        description="",
+    )
+    zephyr = VoiceEntry(
+        id="Zephyr",
+        label="Zephyr",
+        gender="neutral",
+        language="multi",
+        tags=["zh", "en", "明亮"],
+        description="",
+    )
     # '明亮' preference picks Zephyr over Kore.
     assert _score("明亮", zephyr) > _score("明亮", kore)
 
@@ -1097,12 +1330,17 @@ def test_pydantic_session_runtime_info_optional_cwd():
     from services.gateway.runtime import SessionRuntimeInfo
 
     info = SessionRuntimeInfo(
-        cwd=None, branch=None, model=None, provider="openai",
-        running=False, settings={},
+        cwd=None,
+        branch=None,
+        model=None,
+        provider="openai",
+        running=False,
+        settings={},
     )
     assert info.cwd is None
     assert info.running is False
     assert info.model is None
+
 
 # ── Avatar generation from a user-uploaded base image ────────────────────────
 
@@ -1128,7 +1366,9 @@ async def test_regenerate_avatar_from_image_uses_reference(monkeypatch, _patch_d
     async def fake_download(url):
         return b"\x89PNG\r\n\x1a\n", "image/png"
 
-    async def fake_enhance(db, user_id, persona, *, feedback=None, provider_config=None):
+    async def fake_enhance(
+        db, user_id, persona, *, feedback=None, provider_config=None
+    ):
         # Build deterministic prompts that the test can assert on — mimics
         # what the LLM would return without actually calling one.
         suffix = f", 追加：{feedback}" if feedback else ""
@@ -1148,7 +1388,9 @@ async def test_regenerate_avatar_from_image_uses_reference(monkeypatch, _patch_d
         db.refresh(user)
         persona = Persona(
             user_id=user.id,
-            definition_json=_json.dumps({"name": "小光", "biological_type": "人类", "appearance": "金发绿眼"}),
+            definition_json=_json.dumps(
+                {"name": "小光", "biological_type": "人类", "appearance": "金发绿眼"}
+            ),
             system_prompt_extras="",
             is_complete=True,
         )
@@ -1157,7 +1399,12 @@ async def test_regenerate_avatar_from_image_uses_reference(monkeypatch, _patch_d
         db.refresh(persona)
 
         asset = await avatar_service.regenerate_avatar_from_image(
-            db, user.id, persona, b"ref-image-bytes", "image/png", description="把背景改成纯白",
+            db,
+            user.id,
+            persona,
+            b"ref-image-bytes",
+            "image/png",
+            description="把背景改成纯白",
         )
         db.refresh(asset)
 
@@ -1193,17 +1440,24 @@ async def test_regenerate_avatar_from_image_refuses_when_persona_incomplete(_pat
 
     _, SessionLocal = _patch_db
     with SessionLocal() as db:
-        user = User(username="incomplete", password_hash="x", is_active=True, can_use=True)
+        user = User(
+            username="incomplete", password_hash="x", is_active=True, can_use=True
+        )
         db.add(user)
         db.commit()
         db.refresh(user)
         persona = Persona(
-            user_id=user.id, definition_json=_json.dumps({"name": "小光"}), system_prompt_extras="", is_complete=False,
+            user_id=user.id,
+            definition_json=_json.dumps({"name": "小光"}),
+            system_prompt_extras="",
+            is_complete=False,
         )
         db.add(persona)
         db.commit()
         with pytest.raises(AvatarGenerationError, match="persona is incomplete"):
-            await regenerate_avatar_from_image(db, user.id, persona, b"ref", "image/png")
+            await regenerate_avatar_from_image(
+                db, user.id, persona, b"ref", "image/png"
+            )
 
 
 def test_avatar_from_image_route_validation(_patch_db, monkeypatch):
@@ -1245,7 +1499,9 @@ def test_avatar_from_image_route_validation(_patch_db, monkeypatch):
     )
     assert resp.status_code == 415
 
-    async def boom(db, user_id, persona, data, content_type, description=None, style="portrait"):
+    async def boom(
+        db, user_id, persona, data, content_type, description=None, style="portrait"
+    ):
         raise AvatarGenerationError("persona is incomplete; finish onboarding first")
 
     monkeypatch.setattr(companion_api, "regenerate_avatar_from_image", boom)
@@ -1298,10 +1554,19 @@ def test_companion_rest_contract(_patch_db):
     assert resp.status_code == 200
     assert set(resp.json()) == {"definition_json", "is_complete"}
 
-    assert client.put("/api/companion/persona", json={"definition_json": "not json"}).status_code == 422
+    assert (
+        client.put(
+            "/api/companion/persona", json={"definition_json": "not json"}
+        ).status_code
+        == 422
+    )
     ok = client.put(
         "/api/companion/persona",
-        json={"definition_json": json.dumps({"name": "小光", "personality": "温柔", "speaking_style": "轻柔"})},
+        json={
+            "definition_json": json.dumps(
+                {"name": "小光", "personality": "温柔", "speaking_style": "轻柔"}
+            )
+        },
     )
     assert ok.status_code == 200
     assert ok.json()["is_complete"] is True
@@ -1329,3 +1594,253 @@ def test_companion_rest_contract(_patch_db):
     first = items.json()[0]
     assert "material_overrides_json" in first and "prompt" in first
     assert "material_overrides" not in first
+
+
+# ── PBR albedo data-URI reference path ──────────────────────────────
+# Albedo passes the portrait bytes inline as a data URI so the image-gen
+# provider never has to fetch a self-hosted URL (which fails when the
+# container can't route back to its own public IP).
+
+
+def _write_fake_portrait(tmp_path, file_id: str = "abc123", ext: str = "png") -> bytes:
+    """Drop a fake PNG into the patched data_dir/companion-avatars/."""
+    import base64 as _b64
+    from components import SETTINGS
+
+    # Any non-empty bytes; the helper base64-encodes them verbatim — the
+    # test doesn't need a real PNG, just a deterministic payload.
+    raw = _b64.b64decode(
+        # 16-byte payload, base64 of the literal bytes b"\x00\x01\x02...\x0f"
+        "AAECAwQFBgcICQoLDA0ODw=="
+    )
+    avatars_dir = tmp_path / "companion-avatars"
+    avatars_dir.mkdir(parents=True, exist_ok=True)
+    (avatars_dir / f"{file_id}.{ext}").write_bytes(raw)
+    assert SETTINGS.data_dir == str(tmp_path)
+    return raw
+
+
+@pytest.mark.asyncio
+async def test_generate_custom_textures_albedo_uses_inline_data_uri(
+    monkeypatch, _patch_db, tmp_path
+):
+    """Albedo image-gen call receives ``data:image/png;base64,...`` derived
+    from the on-disk portrait — never a signed URL the provider has to fetch."""
+    import base64 as _b64
+    import json as _json
+
+    from modules.auth import User
+    from modules.companion import AvatarAsset, Persona
+    from services.companion import model_service
+
+    _, SessionLocal = _patch_db
+    file_id = "albedo123"
+    portrait_bytes = _write_fake_portrait(tmp_path, file_id=file_id, ext="png")
+
+    with SessionLocal() as db:
+        user = User(username="pbruser", password_hash="x", is_active=True, can_use=True)
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+        db.add(
+            Persona(
+                user_id=user.id,
+                definition_json=_json.dumps(
+                    {
+                        "name": "小光",
+                        "biological_type": "人类",
+                        "appearance": "金发绿眼",
+                    }
+                ),
+                system_prompt_extras="",
+                is_complete=True,
+            )
+        )
+        db.add(
+            AvatarAsset(
+                user_id=user.id,
+                prompt_json="{}",
+                asset_url=f"companion-avatars/{file_id}.png",
+                seed_url=f"companion-avatars/{file_id}.png",
+                style="uploaded",
+                active=True,
+            )
+        )
+        db.commit()
+
+    captured: list[dict] = []
+
+    async def fake_gen(**kwargs):
+        captured.append(kwargs)
+        return _json.dumps({"success": True, "urls": ["http://provider/gen.png"]})
+
+    async def fake_enhance(db, user_id, *, base_description):
+        return {
+            "albedo": "albedo-prompt",
+            "normal": "normal-prompt",
+            "roughness": "rough-prompt",
+            "metalness": "metal-prompt",
+        }
+
+    monkeypatch.setattr(model_service, "image_generation_tool", fake_gen)
+    monkeypatch.setattr(model_service, "enhance_pbr_channels", fake_enhance)
+    # Mock the downstream fetch + save so the test focuses on what the
+    # albedo channel receives — not the whole PBR pipeline.
+    monkeypatch.setattr(
+        model_service, "fetch_texture_bytes", lambda *_a, **_kw: b"\x89PNG\r\n\x1a\n"
+    )
+    monkeypatch.setattr(
+        model_service,
+        "save_companion_asset",
+        lambda data, **kw: f"companion-assets/{kw['user_id']}/{kw['label']}.png",
+    )
+    monkeypatch.setattr(model_service, "emit_wardrobe_updated", lambda *_a, **_kw: None)
+
+    await model_service._generate_custom_textures(user.id)
+
+    assert len(captured) == 4, captured
+    # ``_generate_one_pbr_channel`` consumes ``channel_key`` internally but
+    # doesn't pass it to ``image_generation_tool`` — identify each call by
+    # its prompt (set per-channel by ``fake_enhance``).
+    by_prompt = {c["prompt"]: c for c in captured}
+    # Albedo receives the inline data URI — never a http(s) URL the
+    # provider would have to fetch back.
+    albedo_ref = by_prompt["albedo-prompt"]["reference_image"]
+    assert albedo_ref is not None
+    assert albedo_ref.startswith("data:image/png;base64,"), albedo_ref[:64]
+    assert "http" not in albedo_ref
+    # The base64 payload decodes back to the bytes we wrote to disk.
+    payload = _b64.b64decode(albedo_ref.split(",", 1)[1])
+    assert payload == portrait_bytes
+    # The other 3 channels get no reference — they're channel maps, not
+    # colour-consistency re-renders.
+    for non_ref_prompt in ("normal-prompt", "rough-prompt", "metal-prompt"):
+        assert by_prompt[non_ref_prompt]["reference_image"] is None
+
+
+@pytest.mark.asyncio
+async def test_active_portrait_storage_path_legacy_non_bare_returns_none(_patch_db):
+    """A row with a non-bare URL (legacy CDN-hosted row) must not yield a
+    ``reference_image`` — there's no file we can read from disk to inline."""
+    from modules.auth import User
+    from modules.companion import AvatarAsset
+    from services.companion.model_service import _active_portrait_storage_path
+
+    _, SessionLocal = _patch_db
+    with SessionLocal() as db:
+        user = User(username="legacy", password_hash="x", is_active=True, can_use=True)
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+        db.add(
+            AvatarAsset(
+                user_id=user.id,
+                prompt_json="{}",
+                asset_url="https://legacy.cdn.example/old-avatar.png",
+                seed_url="https://legacy.cdn.example/old-avatar.png",
+                style="uploaded",
+                active=True,
+            )
+        )
+        db.commit()
+
+        assert _active_portrait_storage_path(db, user.id) is None
+
+
+@pytest.mark.asyncio
+async def test_active_portrait_storage_path_missing_user_returns_none(_patch_db):
+    """No avatar at all → ``_active_portrait_storage_path`` returns None."""
+    from modules.auth import User
+    from services.companion.model_service import _active_portrait_storage_path
+
+    _, SessionLocal = _patch_db
+    with SessionLocal() as db:
+        user = User(
+            username="noavatar", password_hash="x", is_active=True, can_use=True
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+        assert _active_portrait_storage_path(db, user.id) is None
+
+
+@pytest.mark.asyncio
+async def test_portrait_as_data_uri_reads_disk_and_encodes(_patch_db, tmp_path):
+    """``_portrait_as_data_uri`` reads the on-disk file via
+    ``asyncio.to_thread`` and returns a ``data:<mime>;base64,...`` URI whose
+    payload matches the bytes on disk. Missing files return None."""
+    import base64 as _b64
+    import secrets
+
+    from services.companion.model_service import _portrait_as_data_uri
+
+    portrait_bytes = _write_fake_portrait(tmp_path, file_id="diskread", ext="png")
+
+    uri = await _portrait_as_data_uri("companion-avatars/diskread.png")
+    assert uri is not None
+    assert uri.startswith("data:image/png;base64,"), uri[:64]
+    assert _b64.b64decode(uri.split(",", 1)[1]) == portrait_bytes
+
+    # Random missing file_id → resolve_uploaded_avatar_path returns None →
+    # _portrait_as_data_uri returns None instead of raising.
+    missing_id = secrets.token_urlsafe(8)
+    assert await _portrait_as_data_uri(f"companion-avatars/{missing_id}.png") is None
+
+
+@pytest.mark.asyncio
+async def test_generate_custom_textures_no_active_avatar_skips_albedo(
+    monkeypatch, _patch_db
+):
+    """A user with no avatar must still get PBR channels generated for
+    default appearance — only the albedo reference is None."""
+    import json as _json
+
+    from modules.auth import User
+    from modules.companion import Persona
+    from services.companion import model_service
+
+    _, SessionLocal = _patch_db
+    with SessionLocal() as db:
+        user = User(
+            username="pbrnoavatar", password_hash="x", is_active=True, can_use=True
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+        db.add(
+            Persona(
+                user_id=user.id,
+                definition_json=_json.dumps(
+                    {"name": "小光", "biological_type": "人类", "appearance": "金发"}
+                ),
+                system_prompt_extras="",
+                is_complete=True,
+            )
+        )
+        db.commit()
+
+    captured: list[dict] = []
+
+    async def fake_gen(**kwargs):
+        captured.append(kwargs)
+        return _json.dumps({"success": True, "urls": ["http://provider/gen.png"]})
+
+    async def fake_enhance(db, user_id, *, base_description):
+        return {"albedo": "a", "normal": "n", "roughness": "r", "metalness": "m"}
+
+    monkeypatch.setattr(model_service, "image_generation_tool", fake_gen)
+    monkeypatch.setattr(model_service, "enhance_pbr_channels", fake_enhance)
+    monkeypatch.setattr(
+        model_service, "fetch_texture_bytes", lambda *_a, **_kw: b"\x89PNG\r\n\x1a\n"
+    )
+    monkeypatch.setattr(
+        model_service,
+        "save_companion_asset",
+        lambda data, **kw: f"companion-assets/{kw['user_id']}/{kw['label']}.png",
+    )
+    monkeypatch.setattr(model_service, "emit_wardrobe_updated", lambda *_a, **_kw: None)
+
+    await model_service._generate_custom_textures(user.id)
+
+    assert len(captured) == 4
+    assert all(c["reference_image"] is None for c in captured)
