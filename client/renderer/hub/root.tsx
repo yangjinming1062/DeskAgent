@@ -3,6 +3,7 @@ import { lazy, Suspense, useEffect } from 'react'
 
 import { Loader2 } from '@/shared/lib/icons'
 import { $auth, applyAuthBroadcast, hydrateAuth, logout } from '@/shared/store/auth'
+import { hydrateRunnerStatus } from '@/shared/store/runner-status'
 
 import { LoginPage } from './login/login-page'
 
@@ -17,6 +18,13 @@ export function ToolRoot(): React.JSX.Element {
 
   useEffect(() => {
     void hydrateAuth()
+  }, [])
+
+  // Hydrate runner-status atom so hub-side consumers (speech-settings.tsx
+  // probes local engine availability) can subscribe to phase transitions
+  // without their own sync-getter.
+  useEffect(() => {
+    void hydrateRunnerStatus()
   }, [])
 
   useEffect(() => {

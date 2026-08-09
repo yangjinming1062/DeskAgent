@@ -2,6 +2,7 @@ import { atom } from 'nanostores'
 
 import { $effectiveTierOverride, $userPreferredTier, type DisturbanceTier } from '@/companion/companion-store'
 import { $gateway } from '@/shared/store/gateway'
+import { $runnerPhase } from '@/shared/store/runner-status'
 
 // Local environment signals polled from the Runner's system.* tools (plan §8),
 // bypassing the LLM — the companion reasons about them directly. Polls no-op
@@ -42,13 +43,12 @@ let lastTierPushed: { value: DisturbanceTier; at: number } | null = null
 
 // Runner-gate state. The poll only fires `runnerInvoke` once the bridge has
 // reached `running`; until then `pollOnce` would log four "Runner is not
-// connected" rejections per cycle in the main process for no value. We use
-// the subscribe + sync-getter pattern (mirrors hydrateAuth → auth:get-session
-// + onAuthChanged): subscribe to `onRunnerStatus` for future transitions,
-// AND query `runnerGetState` once on mount in case the bridge was already
-// `running` before we subscribed (Electron's IPC has no event replay).
+// connected" rejections per cycle in the main process for no value. The
+// bridge lifecycle lives in the shared `$runnerPhase` atom (see
+// `@/shared/store/runner-status`); this module subscribes for transitions
+// and caches the boolean locally for the setInterval tick gate.
 let runnerReady = false
-let offRunnerStatus: (() => void) | null = null
+let offPhaseSub: (() => void) | null = null
 
 function maybeTriggerAffectCheck(idleSeconds: number, locked: boolean): void {
   if (locked || idleSeconds < IDLE_THRESHOLD_SECONDS) {
@@ -250,7 +250,15 @@ function maybePushTierOverride(): void {
 // Poll loop
 // ---------------------------------------------------------------------------
 
-interface IsFullscreenResult {
+// Aggregated activity snapshot from the runner. Single ``system.snapshot``
+// round-trip replaces four separate ``system.*`` probes — same data shape,
+// one IPC + WS message instead of four. Returns the same per-probe safe
+// defaults the individual tools would (idle=-1.0, locked=false, focused={},
+// fullscreen=false) when their underlying OS APIs are missing.
+interface SystemSnapshot {
+  idle_seconds?: number
+  locked?: boolean
+  focused_app?: FocusedAppInfo | Record<string, never>
   fullscreen?: boolean
 }
 
@@ -261,30 +269,32 @@ async function pollOnce(): Promise<void> {
     return
   }
 
-  // Per-probe try/catch preserves the original "sticky on probe failure"
-  // semantics: any rejection leaves the corresponding atom untouched instead
-  // of being coerced to a safe-default false. ``null`` from the catch is
-  // treated as "no fresh signal this cycle".
-  const [lockedResult, idleResult, focusedResult, fullscreenResult] = await Promise.all([
-    desktop.runnerInvoke('system.is_screen_locked', {}).catch(() => null),
-    desktop.runnerInvoke('system.get_idle_seconds', {}).catch(() => null),
-    desktop.runnerInvoke('system.get_focused_app', {}).catch(() => null),
-    desktop.runnerInvoke('system.is_fullscreen', {}).catch(() => null)
-  ])
+  // ``system.snapshot`` aggregates all four signals. A single rejection
+  // leaves every atom untouched (sticky-on-probe-failure), matching the
+  // per-probe semantics the previous ``Promise.all`` of four calls had.
+  const snapshotResult = await desktop.runnerInvoke('system.snapshot', {}).catch(() => null)
 
-  // Screen-lock: only update the atom when the probe succeeded. A failed
-  // probe (runner offline / IPC dropped / laptop resuming) keeps the last
-  // known value rather than silently un-suppressing proactive messages on
-  // a locked workstation.
-  if (lockedResult !== null) {
-    const isLocked = Boolean((lockedResult as { locked?: boolean }).locked)
+  if (snapshotResult === null) {
+    // Probe failed — atoms keep their last known values. Re-evaluate the
+    // tier override from current atom state so a stale $focusContext doesn't
+    // pin a tier forever after a probe outage.
+    maybePushTierOverride()
+
+    return
+  }
+
+  const snapshot = snapshotResult as SystemSnapshot
+
+  // Screen-lock: only update the atom when the snapshot carried a value.
+  if (snapshot.locked !== undefined) {
+    const isLocked = Boolean(snapshot.locked)
 
     if (isLocked !== $screenLocked.get()) {
       $screenLocked.set(isLocked)
     }
   }
 
-  const idleSeconds = idleResult !== null ? Number((idleResult as { idle_seconds?: number }).idle_seconds ?? 0) : -1
+  const idleSeconds = Number(snapshot.idle_seconds ?? 0)
 
   // ``Number('abc')`` returns NaN; ``NaN < N`` is always false, so without an
   // explicit guard the cooldown gate below would pass NaN through to the
@@ -298,41 +308,36 @@ async function pollOnce(): Promise<void> {
   // cycle" — callers treat that as unknown and skip the field.
   $lastIdleSeconds.set(idleSeconds)
 
-  const isLockedKnown = lockedResult !== null
+  const isLockedKnown = snapshot.locked !== undefined
   maybeTriggerAffectCheck(isLockedKnown ? idleSeconds : -1, $screenLocked.get())
 
   // Fullscreen is independent of focused-app: we still track it on its own
   // even if focused-app classification failed, so an active fullscreen
   // window always suppresses proactive outreach regardless of why focus
   // classification is missing.
-  const fullscreenProbeOk = fullscreenResult !== null
+  const fullscreenProbeOk = snapshot.fullscreen !== undefined
 
-  const fullscreen = fullscreenProbeOk
-    ? Boolean((fullscreenResult as IsFullscreenResult).fullscreen)
-    : ($focusContext.get()?.fullscreen ?? false)
+  const fullscreen = fullscreenProbeOk ? Boolean(snapshot.fullscreen) : ($focusContext.get()?.fullscreen ?? false)
 
-  if (focusedResult !== null) {
-    const focused = (focusedResult as { focused_app?: FocusedAppInfo }).focused_app ?? null
+  if (snapshot.focused_app && Object.keys(snapshot.focused_app).length > 0) {
+    const focused = snapshot.focused_app as FocusedAppInfo
+    const category = classifyFocusedApp(focused)
 
-    if (focused !== null) {
-      const category = classifyFocusedApp(focused)
+    const windowGeom =
+      focused.w != null && focused.h != null
+        ? { x: focused.x ?? 0, y: focused.y ?? 0, w: focused.w, h: focused.h }
+        : undefined
 
-      const windowGeom =
-        focused.w != null && focused.h != null
-          ? { x: focused.x ?? 0, y: focused.y ?? 0, w: focused.w, h: focused.h }
-          : undefined
+    const cur = $focusContext.get()
 
-      const cur = $focusContext.get()
+    const geomChanged =
+      (windowGeom?.x ?? -1) !== (cur?.windowGeom?.x ?? -1) || (windowGeom?.y ?? -1) !== (cur?.windowGeom?.y ?? -1)
 
-      const geomChanged =
-        (windowGeom?.x ?? -1) !== (cur?.windowGeom?.x ?? -1) || (windowGeom?.y ?? -1) !== (cur?.windowGeom?.y ?? -1)
-
-      if (!cur || cur.category !== category || cur.fullscreen !== fullscreen || geomChanged) {
-        $focusContext.set({ category, fullscreen, windowGeom })
-      }
+    if (!cur || cur.category !== category || cur.fullscreen !== fullscreen || geomChanged) {
+      $focusContext.set({ category, fullscreen, windowGeom })
     }
   } else if (fullscreenProbeOk) {
-    // focused-app probe failed but fullscreen succeeded: keep the
+    // focused-app probe empty but fullscreen succeeded: keep the
     // category (and the override atom if any) but still update the
     // fullscreen bit so a freshly-detected fullscreen window doesn't
     // require a successful focused-app probe.
@@ -351,39 +356,28 @@ export function startActivityMonitor(): () => void {
     return stopActivityMonitor
   }
 
-  const desktop = window.deskagent
-
   let firstPollDone = false
 
   const kickFirstPoll = () => {
-    if (firstPollDone) {return}
+    if (firstPollDone) {
+      return
+    }
+
     firstPollDone = true
     void pollOnce()
   }
 
-  // Sync + subscribe: query the bridge's current phase so a bridge that
-  // already reached `running` before we mounted (no event replay) still
-  // gets polled. If it's not up yet, the `onRunnerStatus` subscription below
-  // catches the eventual `running` event — no setTimeout, no race.
-  void desktop?.runnerGetState?.()
-    .then(state => {
-      if (state?.phase === 'running') {
-        runnerReady = true
-        kickFirstPoll()
-      }
-    })
-    .catch(() => {
-      // Bridge probe failed (older preload contract or IPC transport error).
-      // The subscription below is the fallback path; polls stay gated on
-      // `runnerReady` so we don't issue `runnerInvoke` against a bridge we
-      // couldn't introspect.
-    })
-
-  const subscribed = desktop?.onRunnerStatus?.(ev => {
-    if (ev.type === 'running') {
+  // Subscribe to the shared phase atom (see @/shared/store/runner-status).
+  // nanostore fires the callback once with the current value on subscribe,
+  // so if the bridge was already `running` (atom hydrated via
+  // runnerGetState), firstPollDone kicks. Future `running` events keep
+  // `runnerReady` true but the one-shot latch avoids burst-polling on
+  // recovery (intentional: don't burst-poll, just rejoin the 30s cadence).
+  offPhaseSub = $runnerPhase.subscribe(phase => {
+    if (phase === 'running') {
       runnerReady = true
       kickFirstPoll()
-    } else if (ev.type === 'stopped' || ev.type === 'error') {
+    } else if (phase === 'stopped' || phase === 'error') {
       // Bridge will re-emit `running` once it recovers; until then the
       // setInterval tick is a no-op so we don't spam "Runner is not
       // connected" through the IPC error log path.
@@ -391,10 +385,11 @@ export function startActivityMonitor(): () => void {
     }
   })
 
-  offRunnerStatus = subscribed ?? null
-
   timer = setInterval(() => {
-    if (!runnerReady) {return}
+    if (!runnerReady) {
+      return
+    }
+
     void pollOnce()
   }, POLL_INTERVAL_MS)
 
@@ -407,9 +402,9 @@ export function stopActivityMonitor(): void {
     timer = null
   }
 
-  if (offRunnerStatus) {
-    offRunnerStatus()
-    offRunnerStatus = null
+  if (offPhaseSub) {
+    offPhaseSub()
+    offPhaseSub = null
   }
 
   runnerReady = false

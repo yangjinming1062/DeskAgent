@@ -6,6 +6,7 @@ import { getDeskAgentConfig, saveDeskAgentConfig } from '@/shared/deskagent'
 import { useAsyncLoader } from '@/shared/hooks/use-async-loader'
 import { triggerHaptic } from '@/shared/lib/haptics'
 import { notify, notifyError } from '@/shared/store/notifications'
+import { $runnerPhase } from '@/shared/store/runner-status'
 import { strings } from '@/shared/strings'
 import type { SpeechEngine } from '@/shared/types/deskagent'
 import type { DeskAgentConfigResponse } from '@/shared/types/deskagent'
@@ -60,7 +61,11 @@ export function SpeechSettings(): React.JSX.Element {
 
   // Probe which local engines the Runner currently advertises (check_fn-gated),
   // so the user can see whether "local"/"auto" will actually use a local engine.
-  // Re-probe on tools_changed/running so the badge flips once the Runner finishes loading.
+  // Re-probe on runner phase transitions — `running` means the bridge is up
+  // and tools have been fetched, `tools_changed` means MCP discovery finished
+  // post-startup. Both surface via the shared $runnerPhase atom (currently
+  // collapsed: only `running` is published, but the subscription wires up
+  // the same way if the atom grows new event types).
   useEffect(() => {
     let cancelled = false
 
@@ -87,15 +92,15 @@ export function SpeechSettings(): React.JSX.Element {
 
     void probe()
 
-    const off = window.deskagent.onRunnerStatus?.((ev: { type: string }) => {
-      if (ev.type === 'tools_changed' || ev.type === 'running') {
+    const off = $runnerPhase.subscribe(phase => {
+      if (phase === 'running') {
         void probe()
       }
     })
 
     return () => {
       cancelled = true
-      off?.()
+      off()
     }
   }, [])
 

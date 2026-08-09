@@ -5,6 +5,7 @@ const os = require('node:os')
 const path = require('node:path')
 
 const { registerReactionAudioIpc } = require('./reaction-audio.cjs')
+const { sleep } = require('../shared/utils.cjs')
 
 function makeFakeIpc() {
   const handlers = new Map()
@@ -95,7 +96,7 @@ test('reactionAudio:generate fans out concurrent calls and writes one mp3 per en
     calls += 1
     concurrent += 1
     peakConcurrent = Math.max(peakConcurrent, concurrent)
-    await new Promise(resolve => setTimeout(resolve, 5))
+    await sleep(5)
     concurrent -= 1
     return { dataUrl: fakeAudioDataUrl(text), mimeType: 'audio/mpeg', voiceOut: 'test' }
   }

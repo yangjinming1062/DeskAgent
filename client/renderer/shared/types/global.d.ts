@@ -217,13 +217,7 @@ export type DesktopRunnerStatusEvent =
 // Synchronous snapshot of the runner bridge lifecycle. Returned by
 // ``runnerGetState``; pairs with ``DesktopRunnerStatusEvent`` for future
 // transitions. Mirrors the phase values emitted by runner-bridge.cjs.
-export type DesktopRunnerPhase =
-  | 'idle'
-  | 'starting'
-  | 'running'
-  | 'stopping'
-  | 'stopped'
-  | 'error'
+export type DesktopRunnerPhase = 'idle' | 'starting' | 'running' | 'stopping' | 'stopped' | 'error'
 
 export interface DesktopRunnerState {
   phase: DesktopRunnerPhase

@@ -10,6 +10,7 @@ const { promisify } = require('node:util')
 const execFileP = promisify(execFile)
 
 const { deskagentHome } = require('../security/paths.cjs')
+const { sleep } = require('../shared/utils.cjs')
 const { venvPythonFor } = require('./venv.cjs')
 
 // Phase 1 / Phase 2 split — see CLAUDE.md §"Electron 二进制自更新".
@@ -78,7 +79,7 @@ class RunnerUpdater {
       } catch (err) {
         primaryErr = err
         if (attempt < MANIFEST_FETCH_ATTEMPTS) {
-          await new Promise(r => setTimeout(r, MANIFEST_FETCH_BACKOFF_MS * attempt))
+          await sleep(MANIFEST_FETCH_BACKOFF_MS * attempt)
         }
       }
     }

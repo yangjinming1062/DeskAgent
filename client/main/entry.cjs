@@ -48,7 +48,7 @@ const { registerSkillsIpc } = require('./ipc/skills.cjs')
 const { registerSpriteIpc } = require('./ipc/sprite.cjs')
 const { registerUpdateIpc } = require('./ipc/update.cjs')
 const { RunnerUpdater } = require('./runner/updater.cjs')
-const { fileExists, directoryExists, sendToMain, atomicWriteFile } = require('./shared/utils.cjs')
+const { fileExists, directoryExists, sendToMain, atomicWriteFile, sleep } = require('./shared/utils.cjs')
 const {
   installTray,
   installCloseInterceptor,
@@ -783,7 +783,7 @@ async function waitForDeskAgent(baseUrl, token) {
       return
     } catch (error) {
       lastError = error
-      await new Promise(resolve => setTimeout(resolve, 500))
+      await sleep(500)
     }
   }
 
@@ -1827,7 +1827,7 @@ ipcMain.handle('deskagent:runner:get-tools', async () => {
   // Wait up to 5s for the runner bridge so an early hub-page probe doesn't read empty.
   const deadline = Date.now() + 5000
   while (!bridgeDeps.runnerBridge && Date.now() < deadline) {
-    await new Promise(resolve => setTimeout(resolve, 100))
+    await sleep(100)
   }
   if (!bridgeDeps.runnerBridge) {
     return []

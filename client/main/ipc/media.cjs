@@ -2,6 +2,7 @@
 
 const fs = require('node:fs')
 
+const { sleep } = require('../shared/utils.cjs')
 const { dataUrlFromBuffer, dataUrlToBuffer } = require('../shared/mime.cjs')
 
 const STT_TIMEOUT_MS = 60_000
@@ -138,13 +139,30 @@ async function sttViaBackend({ ensureBackend, mime, data, filename, language }) 
   return { text: parsed.text || '' }
 }
 
+// Min gap between cloud TTS calls; a bulk bake (52 entries back-to-back)
+// without this hit the endpoint hard enough to lose ~half its clips
+// (`[reaction-audio] batch: 29/52 ok, 23 failed`). Single-shot chat TTS is
+// dominated by LLM latency so this is invisible in practice.
+const MIN_TTS_INTERVAL_MS = 800
+let lastTtsCallAt = performance.now()
+
 async function ttsViaBackend({ ensureBackend, text, voice, language }) {
+  // Use performance.now() (sub-ms) so two calls entering the same ms don't
+  // both stamp the same value and race past the gate.
+  const sinceLast = performance.now() - lastTtsCallAt
+  lastTtsCallAt = performance.now()
+
+  if (sinceLast < MIN_TTS_INTERVAL_MS) {
+    await sleep(MIN_TTS_INTERVAL_MS - sinceLast)
+  }
+
   const connection = await ensureBackend()
   const form = new FormData()
   form.set('text', text)
   form.set('voice', voice)
   // Explicit language hint so cloud picks a voice consistent with STT's 'zh' default.
   form.set('language', language || DEFAULT_TTS_LANGUAGE)
+
   const { body, contentType, headers } = await postMultipart({
     url: `${connection.baseUrl}/api/media/tts`,
     token: connection.token,

@@ -2,6 +2,7 @@ import { $screenLocked } from '@/companion/activity'
 import { $chatOpen } from '@/companion/chat-store'
 import { setSpriteState } from '@/companion/companion-store'
 import { computePerchPosition, moveTo, reevaluateSpatialDecision } from '@/companion/spatial'
+import { sleep } from '@/shared/lib/utils'
 
 const RETRY_MS = 300
 const RETRY_COUNT = 5
@@ -49,7 +50,7 @@ export async function performRitualWalk<T>(
   let geom = await findTarget()
 
   for (let attempt = 0; !geom && attempt < RETRY_COUNT; attempt++) {
-    await new Promise(resolve => setTimeout(resolve, RETRY_MS))
+    await sleep(RETRY_MS)
     geom = await findTarget()
   }
 
@@ -74,11 +75,11 @@ export async function performRitualWalk<T>(
     window.deskagent.runnerInvoke('system.click_at', { x: targetCenterX, y: targetCenterY }).catch(() => {})
   }
 
-  await new Promise(resolve => setTimeout(resolve, 400))
+  await sleep(400)
 
   const result = await execute()
 
-  await new Promise(resolve => setTimeout(resolve, 800))
+  await sleep(800)
   reevaluateSpatialDecision()
 
   return result

@@ -14,6 +14,7 @@ import { $effectiveTier, $voiceCallOpen, setSpriteState, type SpriteEmotion } fr
 import { $responseMode } from '@/companion/prefs'
 import { computePerchPosition, setLocale, startRoam } from '@/companion/spatial'
 import { speak } from '@/companion/tts'
+import { sleep } from '@/shared/lib/utils'
 import { $gateway } from '@/shared/store/gateway'
 import type { RpcEvent } from '@/shared/types/deskagent'
 
@@ -33,7 +34,7 @@ async function findWindowWithRetry(keyword: string): Promise<WindowGeom | null> 
     }
 
     if (attempt < PERCH_RETRY_COUNT) {
-      await new Promise(resolve => setTimeout(resolve, PERCH_RETRY_MS))
+      await sleep(PERCH_RETRY_MS)
     }
   }
 

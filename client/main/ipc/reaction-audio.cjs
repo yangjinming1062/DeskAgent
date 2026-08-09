@@ -17,14 +17,6 @@ const TAG_RE = /^reaction\.[a-z0-9-]+\.(gentle|lively|snarky|calm)\.[0-9]+$/
 // IPC payload.
 const MAX_BYTES = 64 * 1024
 
-// Per-entry throttle for the sequential bulk bake. The previous
-// BATCH_CONCURRENCY=10 fan-out hammered the cloud TTS endpoint hard enough
-// that a 52-entry bulk bake could lose ~half its clips to upstream rate
-// limits / timeouts (`[reaction-audio] batch: 29/52 ok, 23 failed`). Wall-
-// clock penalty (~41s of pure sleep for 52 entries) is acceptable — this
-// runs as a background bake after onboarding completes.
-const INTER_ENTRY_DELAY_MS = 800
-
 const KNOWN_TONES = new Set(['gentle', 'lively', 'snarky', 'calm'])
 const KNOWN_BUCKETS = new Set(['poke-light', 'poke-medium', 'poke-heavy', 'drag'])
 
@@ -87,24 +79,11 @@ function registerReactionAudioIpc({ ipcMain, deskagentHome, mimeTypeForPath, har
 
     await fsp.mkdir(audioRoot, { recursive: true })
 
-    // Sequential bake with a per-entry throttle. A previous fan-out at
-    // BATCH_CONCURRENCY=10 still hammered the cloud TTS endpoint hard enough
-    // that a 52-entry bulk bake could lose ~half its clips to upstream rate
-    // limits / timeouts (`[reaction-audio] batch: 29/52 ok, 23 failed`).
-    // Wall-clock penalty (~41s of pure sleep for 52 entries) is acceptable —
-    // this runs as a background bake after onboarding completes.
-    const sleep = ms => new Promise(resolve => setTimeout(resolve, ms))
+    // Cloud-only path (Piper quality is poor); throttle is enforced inside
+    // ttsViaBackend so this module no longer needs its own per-entry delay.
     const results = []
-    for (let i = 0; i < valid.length; i += 1) {
-      const entry = valid[i]
+    for (const entry of valid) {
       try {
-        // Cloud-only path. We deliberately skip the local Piper TTS engine
-        // even under the caller's `'auto'` preference because Piper voice
-        // quality is poor — the user's whole reason for letting us bake
-        // reactions in the first place is that they want their chosen voice.
-        // The cloud backend still respects `tts.engine = local` for users who
-        // explicitly opted into it (e.g. privacy), but for baking reactions in
-        // bulk this path is intentionally cloud-only.
         const { dataUrl } = await media.ttsViaBackend({ ensureBackend, text: entry.text, voice, language })
         const buf = dataUrlToBuffer(dataUrl)
         await atomicWriteFile(path.join(audioRoot, `${entry.tag}.mp3`), buf)
@@ -112,11 +91,6 @@ function registerReactionAudioIpc({ ipcMain, deskagentHome, mimeTypeForPath, har
       } catch (err) {
         const reason = err instanceof Error ? err.message : String(err)
         results.push({ tag: entry.tag, ok: false, reason })
-      }
-
-      // Throttle between entries; skip after the last to avoid a wasted tick.
-      if (i < valid.length - 1) {
-        await sleep(INTER_ENTRY_DELAY_MS)
       }
     }
 

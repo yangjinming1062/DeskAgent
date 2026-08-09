@@ -1,3 +1,4 @@
+import json
 import sys
 
 
@@ -163,6 +164,35 @@ def test_activity_probes_safe_defaults(monkeypatch):
     assert isinstance(power["on_battery"], bool)
     assert isinstance(power["screen_on"], bool)
     assert isinstance(power["charging"], bool)
+
+
+def test_system_snapshot_handler_aggregates_all_four_signals(monkeypatch):
+    """``system.snapshot`` must return all four activity probes in one
+    payload — same shapes the individual tools would, so the desktop can
+    replace its 4-invoke poll with one round-trip."""
+    from tools.system import activity
+    from tools.system import activity_tools
+
+    monkeypatch.setattr(activity, "IS_WINDOWS", False)
+    monkeypatch.setattr(activity, "IS_MACOS", False)
+
+    payload = activity_tools._snapshot_handler({})
+    decoded = json.loads(payload)
+    assert set(decoded) == {"idle_seconds", "locked", "focused_app", "fullscreen"}
+    assert decoded["idle_seconds"] == -1.0
+    assert decoded["locked"] is False
+    assert decoded["focused_app"] == {}
+    assert decoded["fullscreen"] is False
+
+
+def test_system_snapshot_tool_is_registered():
+    """The snapshot tool must register at import — the desktop relies on it
+    being available the moment the runner reaches the ``running`` phase."""
+    from tools import registry
+
+    schemas = registry.get_schemas_for_llm(set())
+    names = {s["name"] for s in schemas}
+    assert "system.snapshot" in names
 
 
 def test_audio_tool_schemas_registered():

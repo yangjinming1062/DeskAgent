@@ -22,6 +22,7 @@ import { initSpatial } from '@/companion/spatial'
 import { $auth, applyAuthBroadcast, hydrateAuth, logout } from '@/shared/store/auth'
 import { $gatewayState } from '@/shared/store/gateway'
 import { notify } from '@/shared/store/notifications'
+import { hydrateRunnerStatus } from '@/shared/store/runner-status'
 import { strings } from '@/shared/strings'
 
 import { Companion3D } from './3d/companion-3d'
@@ -75,6 +76,13 @@ export function CompanionRoot(): React.JSX.Element {
   }, [])
 
   useEffect(() => initSpatial(), [])
+
+  // Hydrate the runner-status atom once on mount — mirrors the hydrateAuth
+  // pattern so companion-side consumers (activity.ts, etc.) can read
+  // $runnerPhase without re-implementing the subscribe + sync-getter dance.
+  useEffect(() => {
+    void hydrateRunnerStatus()
+  }, [])
 
   useEffect(() => {
     const off = window.deskagent.onAuthChanged(payload => applyAuthBroadcast(payload))

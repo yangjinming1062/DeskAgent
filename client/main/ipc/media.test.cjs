@@ -291,3 +291,21 @@ test('TTS rejects empty text', async () => {
 
   await assert.rejects(ipc.invoke('deskagent:media:tts', { text: '' }), /text is required/)
 })
+
+test('TTS back-to-back calls throttle to MIN_TTS_INTERVAL_MS apart', async () => {
+  const ipc = setup({ tts: 'cloud' })
+  const timestamps = []
+  global.fetch = async () => {
+    timestamps.push(Date.now())
+    return cloudFetch({ bytes: Buffer.from('audio'), contentType: 'audio/mpeg' })()
+  }
+
+  await Promise.all([
+    ipc.invoke('deskagent:media:tts', { text: 'a' }),
+    ipc.invoke('deskagent:media:tts', { text: 'b' })
+  ])
+
+  assert.equal(timestamps.length, 2)
+  const gap = timestamps[1] - timestamps[0]
+  assert.ok(gap >= 750, `expected >=750ms gap, got ${gap}ms`)
+})

@@ -63,4 +63,12 @@ async function atomicWriteFile(targetPath, content) {
   }
 }
 
-module.exports = { looksBinary, fileExists, directoryExists, sendToMain, atomicWriteFile }
+// Resolves after `ms` milliseconds. Single shared implementation of the
+// `await new Promise(r => setTimeout(r, ms))` idiom that's been copied into
+// 11+ files — used for IPC retry backoff, TTS inter-call throttling, and
+// test fixture pacing.
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms))
+}
+
+module.exports = { looksBinary, fileExists, directoryExists, sendToMain, atomicWriteFile, sleep }

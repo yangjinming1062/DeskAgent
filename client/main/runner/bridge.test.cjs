@@ -2,6 +2,7 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 const { EventEmitter } = require('node:events')
 const { createRunnerBridge } = require('./bridge.cjs')
+const { sleep } = require('../shared/utils.cjs')
 
 function makeFakeProcess() {
   const emitter = new EventEmitter()
@@ -25,7 +26,7 @@ function makeFakeProcess() {
       return () => emitter.off('event', cb)
     },
     waitForReady: async () => {
-      await new Promise(r => setTimeout(r, 20))
+      await sleep(20)
       return { running: true, pid: 9999 }
     },
     signalReady: () => emitter.emit('event', { type: 'ready' })

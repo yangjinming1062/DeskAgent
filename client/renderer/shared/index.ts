@@ -31,5 +31,6 @@ export {
 } from './store/gateway'
 export { $hapticsMuted } from './store/haptics'
 export { $notifications, clearNotifications, dismissNotification, notify, notifyError } from './store/notifications'
+export { $runnerPhase, $runnerReady, hydrateRunnerStatus, teardownRunnerStatus } from './store/runner-status'
 
 export type * from './types/deskagent'

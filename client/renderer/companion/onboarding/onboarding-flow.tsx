@@ -21,6 +21,7 @@ import { $regenFeedback, applyPortrait, setRegenFeedback } from '@/companion/por
 import { useRegeneratePortrait } from '@/companion/use-regenerate-portrait'
 import { useLatestRef } from '@/shared/hooks/use-latest-ref'
 import { isClientErrorIpc } from '@/shared/lib/ipc-error'
+import { sleep } from '@/shared/lib/utils'
 import { $gatewayState } from '@/shared/store/gateway'
 
 import {
@@ -237,8 +238,6 @@ const interactiveRegionRect = (el: HTMLElement): DOMRect | null => {
 
   return rect.width === 0 || rect.height === 0 ? null : rect
 }
-
-const sleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms))
 
 // Throws from `fn` propagate so callers can rethrow 4xx and short-circuit retries.
 const retryTransient = async <T,>(

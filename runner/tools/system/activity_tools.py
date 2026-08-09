@@ -47,6 +47,20 @@ SYSTEM_IS_FULLSCREEN_SCHEMA = {
 }
 
 
+SYSTEM_SNAPSHOT_SCHEMA = {
+    "name": "system.snapshot",
+    "description": (
+        "Aggregated activity snapshot: {idle_seconds, locked, focused_app, fullscreen} "
+        "in one round-trip. The desktop's 30s activity poll uses this instead of "
+        "issuing the four system.* probes individually — same data shape, one IPC "
+        "message and one Python-to-OS-call chain instead of four. Returns the same "
+        "shapes as ``system.get_idle_seconds`` / ``system.is_screen_locked`` / "
+        "``system.get_focused_app`` / ``system.is_fullscreen``."
+    ),
+    "parameters": {"type": "object", "properties": {}, "required": []},
+}
+
+
 SYSTEM_POWER_SCHEMA = {
     "name": "system.get_power_state",
     "description": "{on_battery, screen_on, charging} — booleans default to False/True.",
@@ -120,6 +134,22 @@ def _fullscreen_handler(args: dict[str, Any], **kw: Any) -> str:
     return json.dumps({"fullscreen": is_fullscreen()})
 
 
+def _snapshot_handler(args: dict[str, Any], **kw: Any) -> str:
+    # Aggregates the four activity probes into one IPC message. Each probe is
+    # independent and sub-millisecond on the OS side, so we run them serially
+    # here rather than threading — the savings are in IPC + WS framing, not
+    # in syscall overlap. Failures are isolated per-probe (each returns its
+    # own safe default), so one broken probe can't blackhole the snapshot.
+    return json.dumps(
+        {
+            "idle_seconds": get_idle_seconds(),
+            "locked": is_screen_locked(),
+            "focused_app": get_focused_app(),
+            "fullscreen": is_fullscreen(),
+        }
+    )
+
+
 def _power_handler(args: dict[str, Any], **kw: Any) -> str:
     return json.dumps(get_power_state())
 
@@ -152,6 +182,7 @@ registry.register_tool("system.get_idle_seconds", schema=SYSTEM_GET_IDLE_SCHEMA)
 registry.register_tool("system.is_screen_locked", schema=SYSTEM_IS_LOCKED_SCHEMA)(_locked_handler)
 registry.register_tool("system.get_focused_app", schema=SYSTEM_FOCUS_SCHEMA)(_focus_handler)
 registry.register_tool("system.is_fullscreen", schema=SYSTEM_IS_FULLSCREEN_SCHEMA)(_fullscreen_handler)
+registry.register_tool("system.snapshot", schema=SYSTEM_SNAPSHOT_SCHEMA)(_snapshot_handler)
 registry.register_tool("system.get_power_state", schema=SYSTEM_POWER_SCHEMA)(_power_handler)
 registry.register_tool("system.get_windows", schema=SYSTEM_GET_WINDOWS_SCHEMA)(_windows_handler)
 registry.register_tool("system.open_application", schema=SYSTEM_OPEN_APP_SCHEMA)(_open_app_handler)
