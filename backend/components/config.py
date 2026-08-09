@@ -93,12 +93,6 @@ class Settings(BaseSettings):
     video_gen_tool_wait_seconds: float = 180.0
     video_gen_download_max_bytes: int = 200 * 1024 * 1024
 
-    # ── 3D Model Gen (companion 3D rendering pipeline) ──
-    # Source assets path — separate from runtime data_dir so base GLBs ship
-    # with the code rather than living alongside generated outputs.
-    companion_base_model_dir: str = "./assets/base-models"
-    companion_base_model_url: str = ""
-
     # ── Chat service ──
     # Fallback defaults when a user hasn't set chat.enable_context_compression /
     # chat.context_compression_threshold via /api/config. The per-user values

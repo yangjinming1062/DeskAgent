@@ -106,7 +106,7 @@ DeskAgent 是一个**根据用户描述定制的、具有专属形象的陪伴�
 | Client → Backend | `companion.record_interaction_stats` `{kind: 'poke'\|'drag'\|'chat_turn', hour}` | 互动统计上报，无 LLM。Backend 按 UTC 自然日聚合三类计数 + 24h hour_buckets；当 poke、drag、chat_turn 三者**各自** ≥ 10 时 upsert `Memory(context="interaction_stats:<date>", content="<date>: poke=N, drag=N, chat_turns=N; peak=HH-HHh", tags=["interaction","stats","daily_summary"])`；同日多次跨门限同 row 覆盖。 |
 | Client → Backend | `companion.get_user_profile` | 拉取 `Memory(context="user_profile:*")` 的 5 条结构化字段——persona-retune wizard 第 5 步预填用 |
 
-3D 模型就绪通知走 **`model.ready` {model_id, asset_url, species}** 事件：按物种取预制 rigged GLB 即时下发。换装产物就绪走 **`wardrobe.updated`** 事件。客户端另调 `GET /api/companion/model` 查询当前模型状态。
+3D 模型就绪通知走 **`model.ready` {model_id, asset_url, species}** 事件：`POST /api/companion/model` 以种子图经 Tripo3D image-to-3D + rig 异步生成，进度经 **`model.gen.progress`**、失败经 **`model.failed`** 事件推送。换装产物就绪走 **`wardrobe.updated`** 事件。客户端另调 `GET /api/companion/model` 查询当前模型状态。
 
 #### B. Client ↔ Runner
 本地环回 WebSocket `ws://127.0.0.1:<port>/rpc`。Client 充当 RPC Server，Runner 启动时作为 Client 主动连入。
@@ -174,13 +174,13 @@ Client 状态机：EMOTIONAL(affect) → SPEAKING(TTS) → IDLE
     │  affect 缺失时回退 SPEAKING(generic) → IDLE
 ```
 
-**3D 模型流（模型即用 + 纹理异步）：**
+**3D 模型流（Tripo3D 生成 + 动画注入）：**
 
 ```
-Backend POST /api/companion/model（按物种取预制 GLB → 即时下发）──event: model.ready──> 客户端加载 GLB + 状态机绑定
+Backend POST /api/companion/model（种子图 → Tripo3D image-to-model → rig(mixamo) → Blender 注入 morph）──event: model.ready──> 客户端加载 GLB + 注入 TS 动画 clip + 状态机绑定
     │                                          │
-    │  (客户端调 GET /api/companion/model 查状态)  └─ GLB 加载失败时渲染程序化兜底角色
-    └── 后台异步：portrait 为参考图 → image-gen 全身纹理 → event: wardrobe.updated
+    │  (客户端调 GET /api/companion/model 查状态)  └─ 生成失败(model.failed) / GLB 加载失败 → 程序化蛋形兜底角色
+    └── 动画不内嵌 GLB：~85 个 clip 由 client/renderer/companion/3d/companion-clips.ts 骨骼旋转关键帧注入
 ```
 
 - **inline affect 原则**：情绪 cue 随其所属话语在同一响应帧（`message.complete`）下发，Client 无需二次猜测"这句话该配什么情绪"。独立的 `companion.affect` 事件用于非言语的情境化情绪反应——两条路径产出它：(1) `send_message_tool` 在 `quiet` 档下消息被吞但 affect 透传；(2) `companion.check_affect` 的 idle 触发 LLM 推理（详见 §5）。
@@ -229,8 +229,8 @@ onboarding 产出的结构化角色定义持久化在 Backend 用户维度，作
 伙伴的视觉表达由 portrait、3D 模型、换装三层资产构成，均归属用户、在用户维度持久化。资产体系的形态、用途、渲染约束与换装设计见 [DESIGN.md §1](DESIGN.md)；此处只锁定跨模块契约：
 
 - **portrait 拆为头像（avatar）+ 种子图（seed）配对**：每次生成经 `enhance_character_image_prompts` 由 chat provider 一次性产出 `{avatar, seed}` 两份中文 prompt，再并行调 image-gen 生成两张图。avatar 是聚焦头部细节的半身像（onboarding 身份确认、设置页展示、聊天头像），seed 是正面站立的全身参考图（3D 纹理生成的输入）。两张图任一失败即整体失败。avatar prompt 硬性包含「纯白平面背景，无场景、无渐变、无阴影」子句（chroma-key 渲染依赖）。prompt 增强是**读取型**操作——角色定义不被 LLM 改写，LLM 异常向上传播。
-- **3D 模型按物种即时下发**：按角色定义的 biological_type 选择预制 rigged GLB（人类/精灵/灵兽/机甲/幻形 + 通用兜底），经 `POST /api/companion/model` 即时下发，零 3D API 成本。模型自带骨骼动画与 morph targets，覆盖全部状态（§2）。
-- **portrait 重生不触发模型失效**：avatar/seed 只影响身份参考与纹理生成种子，3D 模型（基底 mesh + 骨骼动画）独立于 portrait。换外观 = 换装（纹理热替），不重生模型。
+- **3D 模型由 Tripo3D 生成**：`POST /api/companion/model` 以 seed 全身种子图为唯一输入，经 Tripo3D image-to-model + rig（Mixamo）生成带 PBR 纹理的 rigged GLB，Blender 注入 morph targets，动画由客户端 TypeScript 关键帧注入——覆盖全部状态（§2）。失败时客户端渲染程序化蛋形兜底角色。
+- **portrait 重生不触发模型失效**：模型只随用户显式请求重生。换外观 = 换装（纹理热替），不重生模型。
 - **资产 URL 5 分钟 HMAC 签名**：portrait、模型 GLB、换装产物落持久目录（`companion-avatars/` / `companion-models/` / `companion-assets/`），对外通过短 TTL 签名 URL 暴露（`signed_url_expiry_seconds=300`）——换设备登录需重新生成签名，不能直接分享原 URL。客户端收到后应本地缓存避免重复拉取。
 - **受控再生成**：形象在多次会话间保持稳定。变更只在用户主动要求时发生（重生 portrait / 重生模型 / 换装）。
 
@@ -240,7 +240,7 @@ onboarding 产出的结构化角色定义持久化在 Backend 用户维度，作
 
 - **情绪 cue（affect）**：Backend 在对话响应/主动消息中携带 `affect: {emotion}` 语义字段，Client 据此驱动动画状态机。emotion 为有限枚举集（`happy / sad / surprised / excited / confused / concerned / shy / proud / grateful / playful / bored / lonely / sleepy / curious / embarrassed / apologetic + neutral`，共 17 项），与 `services/chat/affect.py::ALLOWED_EMOTIONS` 完全对齐。可扩展——但每次扩展须同步 Backend 产出 allowlist 与客户端 morph target 目录，否则未覆盖的 emotion 一律按 `neutral` 处理。
 - **空间 cue（spatial）**：Backend 可在 `message.complete` 的 `affect` 中附带可选 `locale`（`home / chat / perch / roam / sleep`，与 `services/chat/affect.py::ALLOWED_LOCALES` 对齐）与可选 `target`（窗口/进程名关键字，CJK/空格/大小写允许）。LLM 在回复前自填 `[spatial:LOCALE,target:KEYWORD]` 由 `AffectScrubber` 解析后转发给 Client。**Backend 不产出像素坐标**——Client 据 locale + 当前空间状态（§3 `setLocale` / `updateSpatialDecision`）决定最终位置与 locomotion；`target` 仅在 `perch` 时由 Client 经 `system.get_windows` 解析为窗口几何后计算 perch 点。
-- **语义与渲染解耦**：Backend 只产出 emotion + 可选 locale 语义，绝不指定渲染方式或具体坐标。客户端据 3D 模型可用动画与 morph target 决定渲染——emotion 经 MorphController 映射到 GLB 内置的表情 morph，无对应 morph 时回退 idle 动画。这使模型加载与语义层互不阻塞。
+- **语义与渲染解耦**：Backend 只产出 emotion + 可选 locale 语义，绝不指定渲染方式或具体坐标。客户端据 3D 模型可用动画与 morph target 决定渲染——emotion 经 MorphController 映射到模型注入的表情 morph，无对应 morph 时回退 idle 动画。这使模型加载与语义层互不阻塞。
 - **affect 继承角色定义的抗注入保证**：affect 由已注入角色定义的 LLM 产出，自然符合人格；角色定义本身受 §7.2 reserved 键与不可信包围机制保护，affect 因此继承同一保证，无需额外的情绪过滤层。
 - **affect 与 text 同帧，TTS 由 Client 拉取式合成**：对话响应的 `message.complete` 帧内联 `{text, affect}`，不内联 TTS 音频。Client 收到后先据 affect 切 EMOTIONAL，再据 text 拉 TTS（`POST /api/media/tts`）切 SPEAKING，保证情绪基调先于语音进入。Backend 只产出语义（emotion + text），TTS 合成归 Client 渲染层。
 - **user_profile 自动召回**：5 条结构化用户字段（称呼/性别/年龄段/爱好/自由文本）在 chat 入口渲染成 markdown 片段注入 system prompt stable 段，紧跟角色定义之后。LLM 每个 turn 都能直接看到用户身份事实，不依赖 `memory_recall` 工具调用——§6.4 双层模型中"记忆驱动行为"在结构化字段上不靠 LLM 是否记得调工具来决定。
@@ -249,7 +249,7 @@ onboarding 产出的结构化角色定义持久化在 Backend 用户维度，作
 
 伙伴"做什么、怎么做"由两个独立来源驱动，两者不可混淆、也不可错配：
 
-- **角色定义（静态，用户定义）→ 视觉身份与资产生成**：portrait 的生图 prompt 从角色定义装配（§6.2）。换风格 = 改角色定义 → 重生 portrait + 再生纹理。3D 基底模型按物种选择，不随 portrait 重生。这是伙伴"长什么样、动作风格如何"的唯一来源。
+- **角色定义（静态，用户定义）→ 视觉身份与资产生成**：portrait 的生图 prompt 从角色定义装配（§6.2）。换风格 = 改角色定义 → 重生 portrait + 再生纹理。3D 模型按用户显式请求重生，不随 portrait 重生。这是伙伴"长什么样、动作风格如何"的唯一来源。
 - **记忆（动态，随互动累积）→ 运行时行为表达**：记忆注入 LLM 上下文，驱动**说什么、表现什么情绪、何时主动搭话、主动频率**。用户随口表达的偏好（"我喜欢你多笑"）写入记忆后，LLM 在后续交互中更频繁地产出 `happy` affect——伙伴"笑得更多"。
 
 **核心不变量**：记忆驱动的个性化通过**运行时行为**（affect / 言语 / 主动频率）实现，**不通过模型重生实现**。模型只随物种变更或用户显式请求重生。这避免了"每学到一条新偏好就重生成全部模型"的不可行开销，同时让伙伴随关系深入而"表现得不一样"。

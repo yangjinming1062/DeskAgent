@@ -58,40 +58,6 @@ _TEXTURE_WARDROBE_SYSTEM_PROMPT = (
     "6. 不要解释，直接输出最终中文 prompt 文本。"
 )
 
-# Single round-trip, strict JSON, so the caller dispatches all four
-# image-gen calls in parallel and can extend to future channels later.
-_PBR_CHANNELS_SYSTEM_PROMPT = (
-    "你是一个专业的 PBR 纹理通道图提示词工程师。\n"
-    "你需要为同一个角色/服装生成 4 张 PBR 通道图，分别用于 albedo（反照率/底色）、"
-    "normal（法线凹凸）、roughness（粗糙度灰度）、metalness（金属度灰度）。\n"
-    "硬性要求：\n"
-    '1. 严格输出 JSON：{"albedo": "...", "normal": "...", "roughness": "...", "metalness": "..."}，\n'
-    "    不要任何额外文字、Markdown 代码块或注释；\n"
-    "2. 每个 prompt 各自独立、针对该通道优化：\n"
-    "   - albedo: 详细描述色彩、图案、材质外观，纯色背景，无阴影，无光照变化；\n"
-    "   - normal: 法线图风格（蓝紫色调），详细描述表面凹凸、褶皱、缝线起伏，明确要求「normal map style」；\n"
-    '   - roughness: 灰度图风格，明确描述各部位粗糙度差异（光面/哑面/织物），"roughness map, grayscale"；\n'
-    '   - metalness: 灰度图风格，明确指出哪些部位为金属/非金属，"metalness map, grayscale"；\n'
-    "3. 全部 prompt 使用中文，只保留专业 PBR / 绘画术语；\n"
-    "4. 所有 prompt 都需包含「seamless 平铺」与「均匀打光」；\n"
-    "5. 不要解释、不要寒暄，直接输出 JSON。"
-)
-
-# Public — model_service imports this to drive its asyncio.gather over the
-# 4 channels without re-declaring the contract.
-PBR_KEYS: tuple[str, ...] = ("albedo", "normal", "roughness", "metalness")
-
-
-class _PbrChannelsResponse(BaseModel):
-    """Strict 4-field JSON contract; ``extra="forbid"`` rejects hallucinated channels."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    albedo: str
-    normal: str
-    roughness: str
-    metalness: str
-
 
 class _CharacterImagePromptsResponse(BaseModel):
     """Strict 2-field contract for paired avatar + seed prompts."""
@@ -191,17 +157,3 @@ async def enhance_texture_prompt(
     payload = {"description": description}
     user_payload = "请根据以下服装/外观描述生成 PBR 纹理图提示词：\n" f"```json\n{json.dumps(payload, ensure_ascii=False)}\n```"
     return await _chat(db, user_id, system_prompt, user_payload)
-
-
-async def enhance_pbr_channels(
-    db: Session | None,
-    user_id: int | None,
-    *,
-    base_description: str,
-) -> dict[str, str]:
-    """One-shot LLM call returning four PBR-channel prompts as JSON. Raises ``ValidationError`` on malformed JSON."""
-    payload = {"base_description": base_description}
-    user_payload = "请根据以下角色外观描述生成 4 张 PBR 通道图的提示词（严格 JSON）：\n" f"```json\n{json.dumps(payload, ensure_ascii=False)}\n```"
-    raw = await _chat(db, user_id, _PBR_CHANNELS_SYSTEM_PROMPT, user_payload)
-    cleaned = _strip_markdown_fence(raw)
-    return _PbrChannelsResponse.model_validate(safe_json_loads(cleaned, default={})).model_dump()

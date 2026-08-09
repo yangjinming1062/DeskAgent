@@ -15,9 +15,7 @@ from .llm_fallback import execute_with_fallback
 from .llm_retry import call_with_retry
 from .llm_retry import LLMRuntimeError
 from .prompt_engineer import enhance_character_image_prompts
-from .prompt_engineer import enhance_pbr_channels
 from .prompt_engineer import enhance_texture_prompt
-from .prompt_engineer import PBR_KEYS
 from .providers import aclose_all
 from .providers import BaseProvider
 from .providers import ChatProvider
@@ -102,8 +100,6 @@ __all__ = [
     "describe_reference_image",
     "enhance_character_image_prompts",
     "enhance_texture_prompt",
-    "enhance_pbr_channels",
-    "PBR_KEYS",
     "resolve_user_llm_config",
     "merge_provider_json",
 ]

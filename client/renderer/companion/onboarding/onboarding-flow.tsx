@@ -77,7 +77,6 @@ interface Question {
   required: boolean
   multiline: boolean
   presets?: readonly string[]
-  selectOnly?: boolean
   max?: number
   // Lets the user hand over a reference image alongside the text answer.
   allowImage?: boolean
@@ -112,11 +111,10 @@ const QUESTIONS: readonly Question[] = [
   {
     key: 'species',
     text: '那我是哪种生灵呢？',
-    placeholder: '请选择物种…',
+    placeholder: '如：精灵、人类、龙…（可直接输入或选择标签）',
     required: true,
     multiline: false,
-    presets: SPECIES_PRESETS,
-    selectOnly: true
+    presets: SPECIES_PRESETS
   },
   {
     key: 'character_gender',
@@ -657,7 +655,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
     }
 
     const current = answersRef.current
-    const initialVal = (current[q.key] as string) ?? (q.selectOnly ? (q.presets?.[0] ?? '') : '')
+    const initialVal = (current[q.key] as string) ?? ''
     setInput(initialVal)
     setAnswerKind(null)
     setHint(null)
@@ -678,7 +676,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
   useEffect(() => {
     const isQuestionPhase = phase === 'q-character' || phase === 'q-user' || phase === 'voice'
 
-    if (isQuestionPhase && currentList[qIndex] && !currentList[qIndex].selectOnly) {
+    if (isQuestionPhase && currentList[qIndex]) {
       ;(currentList[qIndex].multiline ? textareaRef.current : inputRef.current)?.focus()
     }
   }, [phase, qIndex, currentList])
@@ -1022,30 +1020,29 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
                     )}
                   </>
                 )}
-                {!question.selectOnly &&
-                  (question.multiline ? (
-                    <textarea
-                      className={`mt-3 ${INPUT_CLASS} text-sm`}
-                      onChange={e => setInput(e.target.value)}
-                      placeholder={question.placeholder}
-                      ref={textareaRef}
-                      rows={3}
-                      value={input}
-                    />
-                  ) : (
-                    <input
-                      className="mt-3 w-full rounded-lg border border-white/15 bg-white/10 px-3 py-2 text-sm outline-none placeholder:text-white/40 focus:border-white/40"
-                      onChange={e => setInput(e.target.value)}
-                      onKeyDown={e => {
-                        if (e.key === 'Enter' && !question.multiline) {
-                          onSend()
-                        }
-                      }}
-                      placeholder={answerKind?.placeholder ?? question.placeholder}
-                      ref={inputRef}
-                      value={input}
-                    />
-                  ))}
+                {question.multiline ? (
+                  <textarea
+                    className={`mt-3 ${INPUT_CLASS} text-sm`}
+                    onChange={e => setInput(e.target.value)}
+                    placeholder={question.placeholder}
+                    ref={textareaRef}
+                    rows={3}
+                    value={input}
+                  />
+                ) : (
+                  <input
+                    className="mt-3 w-full rounded-lg border border-white/15 bg-white/10 px-3 py-2 text-sm outline-none placeholder:text-white/40 focus:border-white/40"
+                    onChange={e => setInput(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter' && !question.multiline) {
+                        onSend()
+                      }
+                    }}
+                    placeholder={answerKind?.placeholder ?? question.placeholder}
+                    ref={inputRef}
+                    value={input}
+                  />
+                )}
                 {question.allowImage && (
                   <div className="mt-3 flex items-center gap-2 text-xs">
                     <button

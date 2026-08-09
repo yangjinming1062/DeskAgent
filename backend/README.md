@@ -229,11 +229,10 @@ DeskAgent 伙伴的"人格"与"形象"是跨 Backend↔Desktop 的核心契约�
 
 `get_onboarding_state` 在 `is_complete=True` 之后还会查 Memory + draft 看 user_* + voice 是否答齐，仅当两者都齐才返回 `complete=True`——确保中途崩溃后 client 恢复进入用户子阶段，而不是被误判为"已完成"跳过 onboarding。Client 启动时 root.tsx 走 `onboarding.get_state` 而不是直接读 `Persona.is_complete`，避免 mid-flow 刷新被推进到 `lifecycle='ready'` 触发 `hydrateModel` 404（model 尚未生成）。
 
-**avatar / 纹理生图 prompt 经 LLM 精修**：所有发往 image-gen provider 的 prompt 都先经 `services.llm.prompt_engineer` 的三个 enhancer 改写为详细中文 prompt：
+**avatar / 纹理生图 prompt 经 LLM 精修**：所有发往 image-gen provider 的 prompt 都先经 `services.llm.prompt_engineer` 的 enhancer 改写为详细中文 prompt：
 
-- `enhance_character_image_prompts(persona, feedback)` —— LLM 一次性输出 JSON `{avatar, seed}` 两份 prompt，avatar 是聚焦头部细节的半身像（硬性包含「纯白平面背景，无场景、无渐变、无阴影」子句，chroma-key 渲染依赖），seed 是正面站立的全身参考图（驱动 3D 纹理生成）。**不**传角色 `name`——图像 provider 不会把名字渲成画面文本，name 只是浪费 token + 引入偏好偏差。两份 prompt **不并行调 image-gen**：avatar 先单独跑（步 1），用户确认脸部后用这张头像 + 已缓存的 seed prompt 跑步 2（avatar 作为 `reference_image` 内联）——确保全身图的脸与头像对齐。任意一步失败即整体失败。
-- `enhance_texture_prompt(description)` —— wardrobe（新造型流）单独使用；旧版 `scene="full_body"` 分支已下线，3D 自定义纹理现在走 `enhance_pbr_channels` 的 4 通道 JSON 一次性产出。
-- `enhance_pbr_channels(db, user_id, *, base_description)` —— 一次性产出 albedo / normal / roughness / metalness 四张 PBR 通道图 prompt。reference image 由调用方在 image-gen 阶段传入（model_service 仅 albedo 通道传 seed 参考图，保证色彩一致）。
+- `enhance_character_image_prompts(persona, feedback)` —— LLM 一次性输出 JSON `{avatar, seed}` 两份 prompt，avatar 是聚焦头部细节的半身像（硬性包含「纯白平面背景，无场景、无渐变、无阴影」子句，chroma-key 渲染依赖），seed 是正面站立的全身参考图（驱动 3D 模型生成）。**不**传角色 `name`——图像 provider 不会把名字渲成画面文本，name 只是浪费 token + 引入偏好偏差。两份 prompt **不并行调 image-gen**：avatar 先单独跑（步 1），用户确认脸部后用这张头像 + 已缓存的 seed prompt 跑步 2（avatar 作为 `reference_image` 内联）——确保全身图的脸与头像对齐。任意一步失败即整体失败。
+- `enhance_texture_prompt(description)` —— wardrobe（新造型流）单独使用。
 
 LLM 异常（`MissingLlmConfigError` / 网络异常 / JSON 解析失败）**直接向上抛**——chat / affect / persona / agent_delegate 全链路都依赖同一个 llm service，没有为图像生成单独搞 graceful degradation 的理由。prompt 增强是**只读**操作：角色定义永不被 LLM 改写。
 
@@ -253,15 +252,14 @@ LLM 异常（`MissingLlmConfigError` / 网络异常 / JSON 解析失败）**直�
 
 `CompanionModel` 表存 3D 模型资产（species、provider、asset_url、morph_params_json、has_rig、has_morph_targets），按用户维度持久化，每用户最多一条 active。生成管线为单一路径：
 
-- **预制 GLB**：按 `persona.definition_json` 的 `biological_type` 映射到 `assets/base-models/` 下的预制 rigged GLB（人类/精灵/灵兽/机甲/幻形 + `character.glb` 通用兜底），即时复制到 `companion-models/` 持久目录并经 `model.ready` 事件下发。零 3D API 成本。模型规格（动画/morph/骨骼/材质）见 [`../assets/base-models/GLB_MODEL_SPEC.md`](../assets/base-models/GLB_MODEL_SPEC.md)。模型下发后后台异步经 `enhance_pbr_channels` 一次性产出 albedo + normal + roughness + metalness 四张 PBR 通道图 prompt → `image_generation_tool` 并发 4 路（albedo 复用 seed 作颜色参考；normal/roughness/metalness 不接参考图）→ 任一通道失败即整组放弃（避免 albedo 应用而 normal 缺失的"半 PBR"状态）→ 全成功时写 `WardrobeItem` 4 个 URL + `wardrobe.updated` 推送。
-- **morph 发现**：`_extract_morph_names_from_glb` 解析 GLB JSON chunk 的 `meshes[].extras.targetNames`，写入 `CompanionModel.has_morph_targets`，供客户端知道模型支持哪些表情。
+- **Tripo3D image-to-3D**：`POST /api/companion/model` 以 seed 全身种子图为唯一输入调 Tripo3D 生成（upload → image-to-model → rig-check → rig(spec=mixamo)），下载 rigged GLB 后由 Blender headless 注入 ~50 个 morph target（Tripo3D 不生成 blendshape），保存到 `companion-models/` 持久目录并经 `model.ready` 事件下发；进度经 `model.gen.progress`、失败经 `model.failed` 事件推送，客户端渲染程序化蛋形兜底角色。模型规格（骨骼/morph/动画/材质）见 [`MODEL_SPEC.md`](MODEL_SPEC.md)。动画不内嵌 GLB——全部 ~85 个 clip 由客户端 TypeScript 骨骼旋转关键帧（`client/renderer/companion/3d/companion-clips.ts`）注入。
 
 ### 换装系统（WardrobeItem）
 
 `WardrobeItem` 表存换装资产（材质覆盖 + 可选纹理），每用户最多一条 equipped。纹理字段为 albedo + normal + roughness + metalness 四个独立 URL，全部 nullable——legacy 行与色彩预设行只填 `texture_url`（albedo）或不填。
 
 - **材质预设**：6 种配色（`material_overrides_json`），即时生效，零生成成本。
-- **AI 纹理**：`POST /api/companion/wardrobe`（描述 → `enhance_texture_prompt(description)` → image-gen → albedo 纹理 URL）；首启模型时后台异步经 `enhance_pbr_channels` 一次性产出 4 张 PBR 通道图（albedo + normal + roughness + metalness），全部成功才写库（任一通道失败则把已写盘的 PNG unlink 掉，避免 `companion-assets/<user_id>/` 累积孤儿）。
+- **AI 纹理**：`POST /api/companion/wardrobe`（描述 → `enhance_texture_prompt(description)` → image-gen → albedo 纹理 URL）。
 - **非破坏性热替**：客户端覆盖材质 / 加载纹理，不动骨骼动画与 morph targets。PBR 多通道加载彼此独立——albedo 用 SRGBColorSpace，normal/roughness/metalness 用 NoColorSpace（normal map 携带 XYZ 方向向量不能 sRGB 解码）。
 - **签名 URL**：`_re_sign_texture` 在每次 wardrobe 读取时对 albedo + 3 个 PBR 通道 URL 重新签发（5 分钟 HMAC TTL，跨设备不持久）。`delete_wardrobe_item` 一并清理 4 个文件。
 

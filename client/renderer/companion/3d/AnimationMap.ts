@@ -1,6 +1,6 @@
 import type { SpriteStateName } from '@/companion/companion-store'
 
-// Clip names follow GLB_MODEL_SPEC.md §3. The spec's canonical name for each
+// Clip names follow MODEL_SPEC.md §3. The spec's canonical name for each
 // state is the first entry; fallbacks handle Mixamo / Ready Player Me / ad-hoc
 // models that predate the spec. resolveClip tries names in order, first hit
 // wins. If none match, returns null — the engine falls back to procedural.
