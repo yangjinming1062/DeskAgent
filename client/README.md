@@ -1,170 +1,116 @@
 # Client
 
-桌面伙伴形象载体 + 本地枢纽——单 Electron 应用，承担双职责。
+桌面伙伴形象载体 + 本地枢纽——单 Electron 应用，承担双职责：底层是可信枢纽（凭证、中转、Runner 编排、自更新），上层是桌面伙伴形象与陪伴交互。两层共享同一个 Electron 主进程，但职责严格分离。
 
-设计文档：[ARCHITECTURE.md](../ARCHITECTURE.md) §2 / §4 / §6 / §9；伙伴层详细交互见 [DESIGN.md](../DESIGN.md)。
+## 1. 职责与边界
 
-## 双层定位
+**职责**：
+- 桌面精灵 3D 实时渲染（Three.js + 透明置顶窗口）+ 陪伴式交互 UI（chat / voice call / onboarding / settings）
+- 登录鉴权与用户凭证加密落盘（safeStorage）
+- 本地 WebSocket 服务端与 Runner 进程生命周期管理
+- 双向工具调用路由与反向 RPC 代理中转
+- 统一自更新（Electron 二进制 + Runner wheel，两阶段契约）
+- **disturbance_tier 的唯一权威**：持有用户偏好 + 活动上下文，独立计算 effective 值并单向推 Backend
 
-DeskAgent 是**双层叠加**的单 Electron 应用：
+**不**做：
+- **不渲染伙伴人格层**（角色定义 / 长期记忆 / 主动消息生成）——这是 Backend 责任
+- **不执行本机工具**——通过 IPC 委托给 Runner
+- **不持有 LLM API 凭证**——所有 LLM 调用经 Backend（即使是反向 RPC 也是经 Client → Backend → LLM）
+- **不解析协议 schema**（affect / morph target 等）——Backend 出枚举，Client 按枚举查找，不擅自扩展
 
-| 层 | 职责 | 状态 |
-|----|------|------|
-| **伙伴层**（上层） | 3D 实时渲染引擎（Three.js WebGL，骨骼动画 + morph target）、onboarding（角色/用户/音色三子阶段 13 步，角色子阶段后即孵化）、陪伴式交互 UI、AI 换装纹理 | MVP 已落地：精灵窗口 + 3D 兜底模型 + 双窗口 auth 同步 + 对话式 onboarding + Chat 模式 + Voice Call 模式 + 长期记忆管理 + 主动陪伴 + 故障兜底 + 角色管理 + 3D 模型 + 换装 |
-| **枢纽层**（下层） | 凭证加密落盘、WS 中转、Runner 进程编排、反向 RPC 代理、两阶段自更新、本地文件系统拦截 | **保留复用** |
+架构层定位见 [ARCHITECTURE.md §1 / §2](../ARCHITECTURE.md)；跨模块契约见 [PROTOCOL.md](../PROTOCOL.md)；产品设计见 [DESIGN.md](../DESIGN.md)。
 
-两层共享同一个 Electron 主进程（CommonJS，preload contextBridge 隔离），伙伴层不直接接触凭证或 Runner 句柄——一切经枢纽层 IPC。
+## 2. 设计意图
 
-### 3D 渲染引擎
+- **伙伴层与枢纽层共享主进程，职责严格分离**：底层处理协议与安全（凭证、中转、Runner 编排、自更新——这部分是 backend/runner 复用所依赖的不变契约），上层处理形象渲染与用户体验。两层共享同一个 Electron 主进程，但伙伴层不直接接触凭证或 Runner 句柄——一切经枢纽层 IPC。
+- **3D 实时渲染 + 程序化兜底**：3D 引擎始终在渲染——GLB 加载成功时骨骼动画 + morph 表情覆盖全部状态；GLB 加载失败时渲染程序化兜底角色（基本体 + 正弦驱动呼吸/眨眼/说话浮动），保证形象从启动第一帧起就"活着"。
+- **多骨骼动画库 + 性格标签驱动**：biped 109 clip，其余 6 大 rig（quadruped / avian / serpentine / aquatic / hexapod / octopod）各 20–45+ clip；客户端按 `rig_type` 注入对应动画库，按伴侣性格标签交集匹配驱动动作调度。详见 [docs/MODEL_SPEC.md §2](../docs/MODEL_SPEC.md)。
+- **disturbance_tier 唯一权威**：Client 持有用户偏好（`localStorage` 持久化）+ 活动上下文（活动感知器），独立计算 effective 值（应用「手动 quiet 永远不被覆盖」+ immersive/fullscreen → quiet 规则），通过 `companion.set_disturbance_tier` 单向推 Backend；Backend `_disturbance` 字典是镜像，不是独立推导。
+- **safeStorage 跨平台统一**：Windows DPAPI / macOS Keychain / Linux libsecret；Renderer 与 Preload **不可**访问 safeStorage 接口，阻断 XSS 窃取凭证。
+- **透明置顶精灵窗口作为唯一常驻主窗口**：登录、应用设置、登录态界面是从托盘唤起的按需工具窗口，不常驻——"对话发生在角色身边"。Windows close = hide to tray；macOS close = hide window 但保留 Dock 图标。
+- **自更新两阶段契约**（Stage 1 prefetch + Stage 2 install）：保证升级中途断网或崩溃不会变砖。Stage 1 在 OLD Electron 里下载并强校验签名 + SHA-512；Stage 2 在 NEW Electron 里原地升级 wheel 与 `server.py`，venv 永不被改名或移动。
 
-`renderer/companion/3d/` 是桌面伙伴的实时渲染核心：
+## 3. 架构地图
 
-- `engine.ts` — `Engine` 编排器：WebGLRenderer（alpha 透明 + ACES tone mapping + 阴影）、`PerspectiveCamera`、渲染循环
-- `character-controller.ts` — GLB 加载 + AnimationMixer + 程序化 fallback、动画状态机、口型振幅接管、换装纹理热替
-- `morph-controller.ts` — ARKit-style 语义 morph 别名解析（eyeBlinkLeft / jawOpen / mouthSmile…）+ 16 种情绪预设 + 自动眨眼
-- `lighting-rig.ts` — 三点照明 + PMREM RoomEnvironment（PBR 反射）+ dispose-safe 的 env target
-- `animation-map.ts` — state → GLB clip 名解析（spec canonical + Mixamo/RPM 兜底）
-- `model-store.ts` — nanostores 状态：`$modelInfo` 跟踪当前 3D 模型 URL + species，`$wardrobe` / `$equippedItem` 跟踪换装目录；订阅 `model.ready` / `wardrobe.updated` 网关事件
-- `companion-3d.tsx` — React 组件：挂载 `<canvas>` 到 `SpriteStage`，订阅状态机 + 换装 + look-at + TTS 口型振幅
+```
+client/
+├── main/                  # CommonJS *.cjs — Electron 主进程
+│   ├── entry.cjs          # 启动入口 + 自更新挂载
+│   ├── ipc/               # IPC handler 命名空间（auth / media / connection / runner）
+│   ├── runner/            # Runner 进程编排（bridge + reverse-rpc + updater）
+│   ├── security/          # 路径白名单 + 凭证保护
+│   └── lifecycle/         # tray + 单实例锁 + 关闭拦截
+├── renderer/              # ESM *.{ts,tsx} — Vite 编译
+│   ├── shared/            # 跨窗口共享层
+│   ├── companion/         # 伙伴层（精灵窗口 + 3D + onboarding + chat UI）
+│   │   └── 3d/            # Three.js 引擎 + 动画 clip 库 + MorphController
+│   ├── hub/               # 枢纽层（托盘唤起的工具窗口）
+│   ├── app.tsx            # 角色分发点
+│   └── main.tsx
+├── scripts/               # 构建/测试钩子（不进 package.json#scripts）
+└── assets/                # icon
+```
 
-3D 模型的 GLB 由后端 `/api/companion/model`（base_texture provider 即时返回预打包 GLB）下发；换装纹理经 `POST /api/companion/wardrobe`（AI 生图）+ `PUT /api/companion/wardrobe/equip` 装备。
+**双 runtime 不可混用**：`main/*.cjs`（CommonJS，不经 vite/tsc）+ `renderer/**/*.{ts,tsx}`（ESM, Vite 编译）。绝不能交叉用 `.cjs` 写 renderer 或 `.ts` 写 main。
 
-
-## 顶层目录
-
-`main/`（CommonJS *.cjs）+ `renderer/`（ESM *.{ts,tsx}，Vite 编译）两个 runtime，绝不混用。`renderer/` 内 `shared` / `companion` / `hub` 三子模块同级，与 `main.tsx` / `app.tsx` 平级，互不跨引（ESLint `no-restricted-imports` 拦截 `companion`↔`hub`，详见"跨模块边界"）。`scripts/` 是构建/测试钩子（不进 `package.json#scripts`）。`assets/` 放 icon。
-
-### `scripts/` —— 构建流水线
-
-构建/测试钩子。**因需特权路径或私有 key（`scripts/secrets/update.{pub,key}`）不进 `package.json#scripts`**——electron-updater 验签调用与 macOS 打包前的原生依赖 staging 都需要绕开 npm 生命周期约束。
-
-## 关键架构约束
-
-- **双 runtime**：`main/*.cjs`（CommonJS，不经 vite/tsc）+ `renderer/**/*.{ts,tsx}`（ESM, Vite 编译）。绝不混用——main 用 `.cjs`，renderer 用 `.ts/.tsx`。
-- **单 chunk 构建**：Vite 产出单 JS bundle（避免 electron-builder OOM 扫描千级 chunk）。
-- **hoisted nodeLinker**：Electron 42 + pnpm 11 兼容性要求。
-- **关闭按钮语义**：Windows 上 close = hide to tray；macOS 上 close = hide window、Dock icon 保留。统一由 `main/lifecycle/tray.cjs::installCloseInterceptor` 实现。
-- **单实例锁**：`app.requestSingleInstanceLock()` 在 `app.whenReady()` 之前调用；`second-instance` 唤起现有窗口。dev opt-out：`DESKAGENT_DESKTOP_DISABLE_SINGLE_INSTANCE_LOCK=1`。
-- **Windows AppUserModelID**：`'io.deskagent.agent'`（与 `package.json#build.appId` 对齐），Windows 通知分组依赖此 ID。
-- **精灵窗口透明需要双重保证**：BrowserWindow `transparent: true` **加** 渲染层 `body` 透明（`html[data-role='sprite'] body { background: transparent }`，`data-role` 由 `index.html` 内嵌脚本在 `<head>` 解析时同步设置）。两者缺一，body 背景色（`var(--ui-chat-surface-background)`）会在桌面剩余区域盖满屏幕——违背"伙伴应不干扰用户正常工作"的契约。
-- **交互范围仅限可见矩形**：Electron 的 `setIgnoreMouseEvents` 是窗口级二元开关；要在屏幕尺寸的透明窗口里只让"看得见"的区域捕获、其余继续穿透给桌面其它应用，所有 overlay（`SpriteStage` / `ChatDock` / `VoiceCallDock` / `CompanionSettings` / `OnboardingFlow`）把自己的面板 bbox 注册到 `companion/interactive-regions.ts`，由 `SpriteStage` 的全局 `mousemove` 唯一做命中测试再切换 `setIgnoreMouseEvents`。任何 overlay 都不能再用 `setIgnoreMouseEvents({ignore:false})` 一刀切捕获整个窗口——那会立刻把桌面的其它应用"锁死"。
-
-## 跨模块边界（renderer 内部）
-
-`renderer/companion/` ↔ `renderer/hub/` 是**两个窗口**而非一个工程的两个层——它们的代码历史上不该相互依赖：
+**renderer 内部跨模块边界**：`companion` ↔ `hub` 是**两个窗口**而非一个工程的两个层——它们的代码历史上不该相互依赖：
 
 | 起点 → 终点 | 许可 |
 |---|---|
 | `companion` → `shared` | ✓ |
 | `hub` → `shared` | ✓ |
 | `companion` ↔ `hub` | ✗（任何 `from '@/hub/...'` 出现在 companion 文件都会被 ESLint 拒绝） |
-| `shared` → 任何 | ✗（共享层不向上依赖） |
+| `shared` → 任何 | ✗ |
 
-ESLint `no-restricted-imports` 在 `renderer/companion/**` 与 `renderer/hub/**` 各设一道拦截。**唯一例外**是 `renderer/app.tsx`——这是角色分发点，需要同时 import `@companion` 的 root 和 `@hub` 的 root。
+ESLint `no-restricted-imports` 在 `renderer/companion/**` 与 `renderer/hub/**` 各设一道拦截。**唯一例外**是 `renderer/app.tsx`——这是角色分发点，需要同时 import 两个 root。
 
-模块公共面经 `index.ts` barrel 暴露（`@/companion`、`@/hub`、`@/shared`、`@/shared/components/ui`）。模块内部细节不出 barrel——`companion/boot/useGatewayBoot` 是 companion 内部实现，不应被 hub 直接引用；若 hub 也需要类似能力，应该在 `shared/lib/` 抽出一个通用 hook。
+模块公共面经 `index.ts` barrel 暴露（`@/companion`、`@/hub`、`@/shared`、`@/shared/components/ui`）。模块内部细节不出 barrel。
 
-## 托盘菜单 = 主入口
+## 4. 关键设计决策
 
-伙伴窗口刻意精简，**配置与账户动作的主入口在系统托盘右键菜单**，而非应用内 chrome。菜单按 `backendSession.getSession().hasToken` 动态生成（读 `main/lifecycle/tray.cjs::buildTrayMenu` 即得）。
+- **`safeStorage` 跨平台统一封装**：Windows DPAPI / macOS Keychain / Linux libsecret；所有平台走同一组 API（`safeStorage.encryptString` / `decryptString`）。Renderer 与 Preload 进程**不可**访问 safeStorage 接口——阻断 XSS 窃取凭证。**为什么不自己写加密**：OS 原生机制与用户登录态绑定，重启/换用户自动失效；自实现加密无法保证密钥生命周期。
+- **精灵窗口透明需要双重保证**：`BrowserWindow.transparent: true` **加** 渲染层 `body` 透明（`html[data-role='sprite'] body { background: transparent }`，`data-role` 由 `index.html` 内嵌脚本在 `<head>` 解析时同步设置）。两者缺一，body 背景色会在桌面剩余区域盖满屏幕——违背"伙伴应不干扰用户正常工作"的契约。
+- **交互范围仅限可见矩形**（透明窗口交互陷阱）：Electron `setIgnoreMouseEvents` 是窗口级二元开关——要么全捕获要么全穿透。要在屏幕尺寸的透明窗口里只让"看得见"的区域捕获，其余继续穿透给桌面其他应用，所有 overlay 把自己的面板 bbox 注册到 `companion/interactive-regions.ts`，由 `SpriteStage` 的全局 `mousemove` 唯一做命中测试再切换 `setIgnoreMouseEvents`。任何 overlay 都不能再用 `setIgnoreMouseEvents({ignore:false})` 一刀切捕获整个窗口——那会立刻把桌面的其他应用"锁死"。
+- **install → desktop auth bootstrap one-shot**：`$DESKAGENT_HOME/agent-session-bootstrap.json`（schema_version=1）由 installer 登录成功后写入；Desktop 主进程在 `restoreSession()` 后通过 `consumeBootstrapSession` 消费：原子重命名为 `.consumed` → POST `${baseUrl}/api/user/refresh` 校验 token → `BackendSession::adoptSession` 走 safeStorage 落盘到 `agent-session.json`。任何失败静默删文件回退到未登录态。**为什么不直接 adoptSession**：refresh 校验失败 / 网络断的情况下不能让用户处于"看起来登录但实际失效"的状态。
+- **`auth.bootstrap` 持久 baseUrl 而非 token**：`desktop-config.json` 只持久 `baseUrl`，不持久 token；登出只清 `agent-session.json`。登录页每次预填上次的 baseUrl，token 永远不被还原（即便 installer 写入过）。**为什么不持久 token**：token 一旦持久就要承担泄露 + 过期管理成本；refresh-then-adopt 模式更安全。
+- **自更新两阶段而非单阶段**：单阶段"下载后直接覆盖"在网络断 / 进程被杀时变砖；两阶段拆分让 Stage 1（旧 Electron 跑）只需下载+校验，Stage 2（新 Electron 跑）才做 file ops，失败回滚到旧版。**为什么不直接 atomic-rename**：atomic-rename 之前需要先完整下载到 staging，与两阶段本质等价，但语义上分阶段更易追踪 Sentinel 与降级。
+- **`runner venv 永不被改名或移动`**：升级只改 wheel（`pip install --upgrade`），venv 路径稳定；任意升级阶段崩溃时旧版 Runner 依赖树仍完全可用。
+- **STT 默认本地优先 / TTS 默认云端优先**（见 [DESIGN.md §7](../DESIGN.md)）：本地零成本，云端音色音质优；Engine 路由由 `main/ipc/media.cjs` 在 IPC 边界读 short-TTL 缓存决策（`auto` / `local` / `cloud` 三档），不暴露在 Desktop 设置面板——运维/部署侧决策。
+- **`voice id` 不跨引擎**：云端 voice id（provider 目录中的 id）与本地 voice id（Piper `en_US-amy-medium` 格式）属于不同命名空间；`media.cjs` 路由到本地时不传 caller 的 voice。用户在伙伴设置中选的音色仅在云端路径生效。
 
-跨文件契约：**Log out** 向精灵窗口发 `deskagent:tray:logout` → 精灵 renderer 走 logout 流 → `main/ipc/auth.cjs` 广播 `deskagent:auth:changed` 到两个窗口、并重新显示登录工具窗（精灵回初始 3D 兜底态）。
+## 5. 与外部的契约
 
-`rebuildTrayMenu()` 在 login / logout / 启动会话恢复后重跑 `setContextMenu`。
+| 契约 | 方向 | 在哪定义 |
+|------|------|---------|
+| 伙伴层 JSON-RPC 方法（onboarding / avatar / companion / model / tts） | 对 Backend | [PROTOCOL.md §1.1](../PROTOCOL.md) |
+| 事件类型（`companion.affect` / `model.ready` / `wardrobe.updated` 等） | 接 Backend 推送 | [PROTOCOL.md §1.2](../PROTOCOL.md) |
+| Affect emotion / locale 枚举消费 | 接 Backend | [PROTOCOL.md §1.3](../PROTOCOL.md) |
+| 资产 URL 5 分钟 HMAC 签名消费 + 本地缓存 | 接 Backend | [PROTOCOL.md §1.4](../PROTOCOL.md) |
+| 错误信封 `{error, reason, status}` + JSON-RPC 错误码脱敏消费 | 接 Backend | [PROTOCOL.md §1.5](../PROTOCOL.md) |
+| Runner `runner_ready` payload + capabilities 消费 | 对 Runner | [PROTOCOL.md §2.3](../PROTOCOL.md) |
+| 反向 RPC `request_llm` 代理 | 对 Runner + Backend | [PROTOCOL.md §3](../PROTOCOL.md) |
+| 反向 RPC 速率守卫（200 帧 / 1MB 上限） | 对 Runner（Client 转发前限流） | [PROTOCOL.md §3](../PROTOCOL.md) |
+| disturbance_tier 权威边界 | 对 Backend（Client 推、Backend 镜像） | [ARCHITECTURE.md §5](../ARCHITECTURE.md) + [DESIGN.md §6.2](../DESIGN.md) |
+| disturbance_tier 双层模型（`$userPreferredTier` + `$effectiveTierOverride` + `$effectiveTier`） | 本模块独有（持久层 + 活动感知器） | 本 README §2 + DESIGN §6.2 |
+| safeStorage 跨平台一致（DPAPI/Keychain/libsecret） | 平台 | [PROTOCOL.md §5.3](../PROTOCOL.md) |
+| Electron 二进制自更新（`electron-updater` RSA + Runner wheel RSA + SHA-512） | 对 Backend | [PROTOCOL.md §5.6](../PROTOCOL.md) |
+| 自更新两阶段契约（Stage 1 prefetch / Stage 2 install + Sentinel + 降级） | 对 Backend | [PROTOCOL.md §5.6](../PROTOCOL.md) + [ARCHITECTURE.md §9](../ARCHITECTURE.md) |
+| IPC 命名空间 `deskagent:*` 前缀（`deskagent:sprite:*` / `deskagent:auth:changed` 等） | 本模块独有 | 本 README §3 |
+| 动画状态机（`IDLE` / `LISTENING` / `THINKING` / `SPEAKING` / `WORKING` / `EMOTIONAL` / `SLEEPING` / `INTERACTING` / `DISCONNECTED`） | 本模块独有（消费 Backend `affect` + 用户操作） | 本 README §2 + DESIGN §2 |
+| 空间行为 locales（`home` / `chat` / `perch` / `target` / `roam` / `sleep`）+ 缩放范围 0.5×–2× | 本模块独有（消费 Backend `affect.locale/target`） | 本 README §2 + DESIGN §3 + PROTOCOL §1.3 |
+| Companion personality tag 驱动的动画调度（`selectClipByTags`） | 本模块独有 | 本 README §2 + [docs/MODEL_SPEC.md §2](../docs/MODEL_SPEC.md) |
+| auth bootstrap one-shot schema（`schema_version: 1`） | 接 installer | [installer/README.md §5](../installer/README.md) |
+| Skills frontmatter 平台过滤（仅 `macos` / `windows`，历史 `linux` 值兼容翻译表） | 本模块独有 | 本 README §3 + [installer/README.md §2](../installer/README.md) |
 
-## 通信模型
-
-### Renderer ↔ Main（IPC）
-
-renderer 通过 `window.deskagent.*`（preload contextBridge）调 main；main 通过 `webContents.send(...)` 推事件。所有 IPC 命名空间以 `deskagent:` 为前缀（`deskagent:sprite:*` 点击穿透/动态置顶/工作区/休息位；main→**两窗口**广播 `deskagent:auth:changed` 等）。
-
-### Renderer ↔ Backend（REST + WS）
-
-- **REST**：renderer 经 `window.deskagent.api({ path, method, body })` → `main/ipc/connection.cjs` 转发到 Backend（携带 JWT）。401 时发 `deskagent:auth:session-expired`。
-- **二进制资产**：Backend 签名资产 URL 的 host 取自 `public_url_prefix`，renderer 不能假定可达（NAT / 多网卡 / 容器桥接，为空时更会退化成无 host 的 `http://:8000`），签名 TTL 也只有 5 分钟。故 renderer 经 `window.deskagent.apiAsset({ url })` 把 URL 剥到 path+query、由 main 重新拼到已解析的 `baseUrl` 上取字节，返回 data URL。取不到时返回 `null`——原 URL 正是渲染进程够不着的那个，回退它只会渲染出裂图。**已知限制**：目前仅立绘走这条路径，GLB 模型与衣柜贴图仍由 renderer 直接加载签名 URL（见「已知限制」）。
-- **WS**：`DeskAgentGateway extends JsonRpcGatewayClient`（`renderer/shared/deskagent/`），在 renderer 内直接连接 `ws://<backend>/api/chat/ws?token=<jwt>`。main 进程只通过 `deskagent:gateway:ws-url` 把 URL 推给 renderer——chat WS **不走** preload 命名空间。
-
-### Main ↔ Runner（本地 WS）
-
-`main/runner/bridge.cjs` 编排 Runner 子进程（本地 WS，127.0.0.1:0）。Renderer 通过 `deskagent:runner:get-tools` IPC 拉到 bridge 缓存的 tool schema 后，调 `gateway.request('tools.sync', {tools})` 上报给 Backend。
-
-### 反向 RPC（Runner → Backend）
-
-`main/runner/reverse-rpc.cjs`：处理 Runner 的 `request_llm` → 调 Backend `POST /api/llm/completion` → 透传响应体。守卫：max 200 messages、max 1MB payload。
-
-### 打扰档位的权威边界
-
-**Desktop 是 disturbance tier 的唯一权威**（[ARCHITECTURE.md §5](../ARCHITECTURE.md)）：`$userPreferredTier` 持久化在 `localStorage`、`$effectiveTierOverride` 由活动感知器（`companion/activity.ts`）写入、`$effectiveTier` 是 computed 派生。Desktop 每次有效值变化都经 `companion.set_disturbance_tier` 单向 push 给 Backend，**Backend 端 `_disturbance[user_id]` 只是过程镜像，不独立推导**——服务端 gate（`send_message_tool` / `cron._kick_autonomous_turn`）读镜像，但用户偏好与活动上下文只在 Desktop 持有。WS 重连后 Desktop 立刻再推一次同步（`use-gateway-boot.syncDisturbanceTier`）。这条边界让 Backend 重启或 WS 短暂掉线时也不漂移用户意图，也防止 LLM 在 server-side 推导时绕过用户的手动 quiet 选择。
-
-### STT/TTS 引擎路由
-
-`main/ipc/media.cjs` 是 `media.stt` / `media.tts` 的唯一路由点，在 Backend 云端引擎与 Runner 本地引擎之间决策。三档偏好由 backend config 的 `stt.engine` / `tts.engine`（`auto` / `local` / `cloud`）控制，经短 TTL 缓存读取。**STT 默认本地优先**（本地引擎零成本），**TTS 默认云端优先**（Piper 音质差，云端音色优先，云端不通才回退 Piper）：
-
-| 档位 | 行为 |
-|------|------|
-| `auto`（STT 默认） | 本地优先;本地不可用或失败 → 回退云端 |
-| `auto`（TTS 默认） | 云端优先;云端不通 → 回退本地 Piper |
-| `local` | 纯本地;失败/不可用 → 抛错,不回退(由 renderer 兜底:STT 提示"没听清"、TTS 退纯文字) |
-| `cloud` | 永远云端 |
-
-**STT `silent_fallback`**（`stt.silent_fallback`，默认 `true`）：仅作用于 `auto` 档下"本地跑出了弱/错误结果"的回退。`true`（默认）静默改跑云端，用户无感；`false` 则把本地弱结果直接暴露给 renderer（隐私/成本敏感用户不想偷偷走云端）。"本地引擎整体不可用"（runner 未连 / 工具未注册）仍照常回退云端——那是 `auto` 的核心承诺，不属于"弱结果"，不受此开关影响。**TTS 回退**：TTS `auto` 链跑完后才抛"云端不可达"错误——即 `auto` 模式下 TTS 不区分"弱结果"，回退链路始终静默。日志结构化 `stt#N`/`tts#N` 行的 `silent_fallback_used` 字段让 dev 端能 grep 静默回退的实际发生频次。
-
-本地可用性由 runner 工具 schema 决定——`speech_to_text` / `text_to_speech` 是否出现在 `runnerBridge.getTools()`(已被 runner `check_fn` 过滤)。media.cjs 在路由层桥接两侧契约:STT 把 dataUrl 解码为 base64 喂给 runner;TTS 把 runner 产出的本地 WAV 路径读回转 dataUrl。renderer 的 `media.*` 接口因此不感知路由。
-
-**voice id 不跨引擎**：云端 voice id（provider 目录中的 id）与本地 voice id（Piper `en_US-amy-medium` 格式）属于不同命名空间。`media.cjs` 路由到本地时不传 caller 的 voice——Piper 用 `config.yaml::audio.tts.default_voice` 自行决定音色；路由到云端时才透传 caller 的 voice id。用户在伙伴设置中选的音色仅在云端路径生效。Voice 设计 token `mimo_voicedesign:<prompt>` 路由到 `cloud`（`media.cjs:300`）因为 Piper 解析不动这种自描述 token。
-
-**STT/TTS 引擎选择不在 Desktop 设置面板暴露**：三档（`auto` / `local` / `cloud`）+ `stt.silent_fallback` 走 Backend 配置（`stt.engine` / `tts.engine`），由 `main/ipc/media.cjs` 在 IPC 边界读 short-TTL 缓存决策。伙伴设置面板只管"音色"——voice_id 选择、试听、按 `tts.match_voice` / `tts.design_voice` 切档；引擎路由策略属于运维/部署侧决策（用户在自托管/企业场景下要可控可通过 Backend `config.set` JSON-RPC 写全局 setting，不暴露在 sprite UI）。
-
-**Voice picker 语言 tabs**（`onboarding-flow.tsx` 语音预览阶段）：三个 tab——`中文` / `English` / `全部`。默认 `中文`（产品方向"默认中文"）。点击 tab → `fetchVoiceCatalog(requestGateway, lang)` 重新拉取后端 `/api/media/tts.list_voices`（带 `language` 过滤参数），用 zh-first 排序的子集刷新 `voiceCatalog` 列表。catalog 空时回退到 `DEFAULT_VOICE`。
-
-**音色目录页**（`hub/settings/voice-gallery-settings.tsx`，托盘 Settings → 音色目录）：只读浏览 + 试听当前云端 provider 的全部音色。framed 工具窗口无 gateway，调不到 `tts.list_voices` JSON-RPC，故走 REST `GET /api/companion/voices`（与 gateway 方法复用同一 `list_tts_voices` 服务）；试听走 `deskagent:media:tts` IPC（两窗口皆可用）。**只读**——更换伙伴音色仍在精灵窗口的「伙伴设置」里进行。缓存于 `localStorage` 的 companion voice id 失效（provider 目录变化 / 用户切换 provider）时，精灵窗口就绪后经 `companion/voice-validity.ts` 检测并弹 warning 通知引导重选（区分 `fetch_failed` 静默 vs `catalog_miss` 提示；后端 `pick_voice_id` 已容错未知 id，TTS 不会断）。
-
-**Dev 终端 trace**：`media.cjs` 在每次 STT/TTS 请求收尾时发**一行**结构化日志（`[tts#N] done …` / `[stt#N] done …`），auto-fallback 多一行 `[tts#N] fallback from=cloud to=local reason=…`（TTS auto 云端失败）或 `[stt#N] fallback from=local to=cloud reason=…`（STT auto 本地弱/失败）。关键字段：`voice_in`（caller 想用的）、`engine_pref`（用户配置）、`route`（local/cloud）、`engine`（piper/pyttsx3/cloud）、`voice`（实际用的 voice id，**这里就能看到本地路径静默把 cloud voice id 丢成 Piper config 默认**）、`voice_out`（云端实际收到的）、`mime` / `ms` / `context` / `language`（STT 透传给 `/api/media/stt` 的 `language` 字段，默认 `zh`）。Renderer 调 `speak(text, voice?, context?)` 时可传一个短标签（`onboarding.q2` / `onboarding.voice.preview.try` 等），trace 行的 `context` 字段会带上。日志由 `entry.cjs` 注入的 `log: rememberLog` 落到 `desktop.log` 并镜像到 `pnpm dev` 的终端。
-
-## Electron 二进制自更新
-
-Desktop 走 `electron-updater` 从 Backend `/api/update` 拉取预构建安装包并原子替换。**一次更新同时刷新 desktop 二进制 + Python runner**（wheel + `server.py`），保证两端不会因版本错配而 broken。
-
-两阶段契约（network 在前、file ops 在后，避免网络断在重启后变砖）：
-
-- **Phase 1 — prefetch（OLD Electron 里跑）**：`main/entry.cjs::setupAutoUpdater` 在 `app.whenReady` 后挂载，延迟 30s 自检，下载 Electron 二进制；同时后台从 `/api/update/latest-runner.yml` 下载 wheel + `server.py` 到 `$DESKAGENT_HOME/runner.staging/`，验 RSA 签名 + SHA-512，写 sentinel。渲染端 "Restart now" 按钮只在 `runner-ready` 事件落地后才可点。
-- **Phase 2 — install（NEW Electron 里跑）**：`runner-updater.installPending()` 读 sentinel 后原地升级 wheel 与 `server.py`，冒烟 `import deskagent_agent, server` 后重启 bridge。**`runnerBridge.stop()` 必须在 pip install 前**——释放 Python 句柄避免 Windows EPERM。**降级语义**：pip / smoke / start 任一失败 → rollback marker（升级前 `pip show` 快照的 `Name==Version`）还原 site-packages → emit `runner-failed {recoverable: true}`；`attempt_count >= 3` → 删 sentinel，emit `runner-failed {recoverable: false}`。对应 ARCH §9 "失败 → 降级到旧版 Runner 并向用户警告"。
-- **venv 永不被改名/移动**——只有 venv 内部 wheel 被升级。
-
-签名 keypair：私钥 `scripts/secrets/update.key`、公钥 `scripts/secrets/update.pub`（经 `client/package.json#build.extraResources` 复制到 packaged desktop，`main/runner/updater.cjs` 启动时读取校验）。**生产构建签名密钥在构建机上**——开发分支留 `update.key` 在本地是因为出包验证需要测试签名链路。
-
-伙伴形象资产与角色定义云端持久化（[ARCHITECTURE.md §6](../ARCHITECTURE.md)），自更新只影响本地代码与运行时，不触碰用户的伙伴身份。
-
-## 安全
-
-- **Token 加密存储**：JWT 经 `safeStorage` 加密落盘，userData 目录权限由 OS 控制。Renderer 与 Preload 无法接触 safeStorage 接口。
-- **Installer → desktop one-shot auth handoff**：安装器登录成功后写 `$DESKAGENT_HOME/agent-session-bootstrap.json`（schemaVersion=1：raw jwt、baseUrl、tokenExpiresAt、user、savedAt）。Desktop 主进程在 `restoreSession()` 后、`autoStartBridge` 前通过 `main/backend/bootstrap-session.cjs::consumeBootstrapSession` 消费该文件：原子重命名为 `.consumed` → POST `${baseUrl}/api/user/refresh` 校验 token → `BackendSession::adoptSession` 走 safeStorage 落盘到 `agent-session.json` → 广播 `deskagent:auth:changed` 让 sprite 自动 boot gateway。任何失败（schema 不匹配、refresh 401、网络断）都静默删文件，回退到未登录态。路径可被 `DESKAGENT_DESKTOP_BOOTSTRAP_SESSION` 覆盖（测试用）。密码永不被持久化。
-- **Auth bootstrap 一致性**：用户登录成功的 baseUrl 写入 `$DESKAGENT_HOME/desktop-config.json`（POSIX 0600；Windows 由父目录 ACL 控制）；登出只清 `agent-session.json`，不动 desktop-config.json，所以登录页每次都会预填上次的 baseUrl 而 token 永远不会被还原。优先级：persisted `desktop-config.json` > bundled `config.json` > `null`。
-- **Model Config 经 REST proxy**：模型凭证读写通过 `deskagent:api` IPC proxy → `GET/PUT /api/user/model-config`，无独立 IPC channel 或缓存。GET 不回显原始 API key（仅 `*_set` + fingerprint）；保存后 `gateway.close()` 触发自动重连使新配置生效（LLM 配置在 WS 连接时冻结）。
-- **路径白名单**：`main/security/hardening.cjs` 的 `resolveReadableFileForIpc` 拒绝路径遍历、符号链接逃逸、超大读取、敏感文件（.env/.ssh/.pem 等）。
-- **Runner 进程隔离**：Runner 作为独立子进程，所有工具调用经本地 WS 中转。
-
-## 已知限制
+## 6. 已知限制
 
 | 限制 | 说明 |
 |------|------|
-| Runner 崩溃后重连窗口有限 | 端点文件 + 重连循环（~5 分钟），超时后 Runner 退出 |
-| GLB / 衣柜贴图不走 `deskagent:api:asset` | `3d/CharacterController.ts` 的 `GLTFLoader` 与 `TextureLoader`、`settings-overlay.tsx` 的衣柜缩略图仍直接加载 Backend 签名 URL，`public_url_prefix` 不可达时静默失败（GLB 退化为程序化兜底角色，贴图不生效）。data URL 方案不适用于 GLB（数十 MB，base64 再涨 33%），彻底解法是改 URL 本身——Backend 下发根相对 URL，或 main 用 `webRequest` 重定向 |
-| `voice-call-dock.tsx` useEffect 依赖故意省略 `[gatewayState]` | 麦克风挂载/take-down 由 `[requestGateway]` 触发；reconnect 重入若再加 `gatewayState` 会再次重新挂麦克风导致当前通话被打断。代码注释内已说明，依赖列表是当下决策。 |
-| Electron 42 + pnpm 11 需 hoisted | 失去 phantom-deps 防护；等 Electron ESM 主进程支持 |
-| `.cjs` + `.ts` 双 runtime | 新增 main 模块用 `.cjs`，renderer 用 `.ts/.tsx`；等 Electron ESM 主进程支持 |
-| 透明窗口平台差异 | 远程显示（X11/VNC/RDP）无法合成透明层，精灵窗口降级为非透明（`SPRITE_TRANSPARENT`）；macOS / Windows 本地会话支持良好 |
-| 托盘 Settings 中"重载 MCP"不可用 | gateway 仅在精灵窗口 boot；从托盘打开的 framed 工具窗口无 gateway，`hub/settings/mcp-settings.tsx` 的 reload 按钮优雅报"gateway 不可用"。其余 settings（runnerConfig 等 REST）不受影响 |
-| Windows 单实例锁 dev opt-out | `DESKAGENT_DESKTOP_DISABLE_SINGLE_INSTANCE_LOCK=1` 强制多实例运行，便于并行调试窗口 |
-
-## 3D 多骨骼动画库与性格标签驱动
-
-伙伴 3D 模型由后端按 `rig_type`（biped / quadruped / avian / serpentine / aquatic / hexapod / octopod）分别绑骨，客户端按 rig_type 注入对应动画库，并由伴侣性格标签驱动动作调度。详见 [docs/MODEL_SPEC.md](../docs/MODEL_SPEC.md) §1、§2。
-
-- `client/renderer/companion/3d/clips-biped.ts` — biped（Mixamo 25 骨）109 个 clip（核心状态 + 微动作 + 情境 idle + 移动 + 互动 + 仪式 + 14 类情绪 / 亲密 / 日常 / 惊喜）带性格标签。
-- `client/renderer/companion/3d/clips-quadruped.ts` 等 6 大非 biped 库 — 各含 9 个规范状态 clip 及 20~45+ 个多骨骼关键帧动作，带物种专属性格标签。
-- `client/renderer/companion/3d/clip-dispatch.ts` — 基于性格标签交集匹配（`selectClipByTags`）驱动互动动作、情绪状态及音频反应调度。
-- `client/renderer/companion/3d/clips-registry.ts` — `rig_type → clip 库` 路由；每个库都包含 `AnimationMap` 按状态名查找的 9 个规范状态 clip（`idle` / `listening` / `thinking` / `speaking` / `working` / `sleeping` / `interacting` / `emotional_idle` / `disconnected`）。
-- `CharacterController` — 支持静态骨骼动画装载及 `appendClipDefs` 运行时动态动作注入；`companion-3d.tsx` 监听 `$generatedClips` 实现与后端 LLM 动画生成管线的动态打通。
-- 客户端不感知 Tripo3D API；rig_type 由后端 `CompanionModelResponse.rig_type` 字段经 `model-store` 推给引擎。
-
+| **透明窗口平台差异** | 远程显示（X11/VNC/RDP）无法合成透明层，精灵窗口降级为非透明（`SPRITE_TRANSPARENT`）；macOS / Windows 本地会话支持良好 |
+| **GLB / 衣柜贴图不走 `deskagent:api:asset`** | `3d/CharacterController.ts` 的 `GLTFLoader` 与 `TextureLoader`、`settings-overlay.tsx` 的衣柜缩略图仍直接加载 Backend 签名 URL，`public_url_prefix` 不可达时静默失败（GLB 退化为程序化兜底角色，贴图不生效）。data URL 方案不适用于 GLB（数十 MB，base64 再涨 33%） |
+| **托盘 Settings 中"重载 MCP"不可用** | gateway 仅在精灵窗口 boot；从托盘打开的 framed 工具窗口无 gateway，`hub/settings/mcp-settings.tsx` 的 reload 按钮优雅报"gateway 不可用"。其余 settings（runnerConfig 等 REST）不受影响 |
+| **`voice-call-dock.tsx` useEffect 依赖故意省略 `[gatewayState]`** | 麦克风挂载/take-down 由 `[requestGateway]` 触发；reconnect 重入若再加 `gatewayState` 会再次重新挂麦克风导致当前通话被打断 |
+| **Electron 42 + pnpm 11 需 hoisted** | 失去 phantom-deps 防护；等 Electron ESM 主进程支持 |
+| **`.cjs` + `.ts` 双 runtime** | 新增 main 模块用 `.cjs`，renderer 用 `.ts/.tsx`；等 Electron ESM 主进程支持 |
+| **Windows 单实例锁 dev opt-out** | `DESKAGENT_DESKTOP_DISABLE_SINGLE_INSTANCE_LOCK=1` 强制多实例运行，便于并行调试窗口 |
+| **STT/TTS 引擎选择不在 Desktop 设置面板暴露** | 三档（`auto` / `local` / `cloud`）+ `stt.silent_fallback` 走 Backend 配置（`stt.engine` / `tts.engine`），不在 sprite UI 暴露 |

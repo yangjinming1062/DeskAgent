@@ -6,7 +6,7 @@ DeskAgent 是一个**根据用户描述定制的、具有专属形象的陪伴�
 
 三个关键词：**定制**（形象与人格由用户定义并生成）、**陪伴**（主动、持续、有记忆）、**伙伴**（交互对象是"他/她/它"，工具能力只是伙伴"会做的事"，不是产品的主角）。
 
-完整设计意图、伙伴生命周期、通信协议不变量见 [ARCHITECTURE.md](ARCHITECTURE.md)。
+完整设计意图、伙伴生命周期、通信协议不变量见 [ARCHITECTURE.md](ARCHITECTURE.md) + [PROTOCOL.md](PROTOCOL.md)。
 
 ## 模块架构
 
@@ -93,11 +93,15 @@ bash scripts/build_client.sh
 
 | 想了解什么 | 看哪里 |
 |-----------|--------|
-| 项目总览 / 架构机制 / 通信协议与不变量 / 伙伴生命周期 | [ARCHITECTURE.md](ARCHITECTURE.md) |
+| 项目总览 / 架构机制 / 通信链路与不变量 | [ARCHITECTURE.md](ARCHITECTURE.md) |
+| 伙伴层产品设计（形象、动画、生命周期、onboarding、陪伴范式） | [DESIGN.md](DESIGN.md) |
+| 跨模块协议契约（JSON-RPC 方法 / 枚举 / 事件 / 安全 / 凭据） | [PROTOCOL.md](PROTOCOL.md) |
 | Backend 模块结构与实现 | [backend/README.md](backend/README.md) |
 | Runner 模块结构与实现 | [runner/README.md](runner/README.md) |
 | Client 模块结构与实现 | [client/README.md](client/README.md) |
 | Installer 模块结构与协议 | [installer/README.md](installer/README.md) |
+| 3D 模型与动画规格（骨骼 / clip / morph） | [docs/MODEL_SPEC.md](docs/MODEL_SPEC.md) |
+| Tripo3D 骨骼命名权威参考（`spec=tripo` / `spec=mixamo`） | [docs/tripo-spec.md](docs/tripo-spec.md) + [docs/mixamo-spec.md](docs/mixamo-spec.md) |
 | 构建 / 测试 / 发布脚本 | [scripts/README.md](scripts/README.md) |
 | 仓库级 AI 协作规范 | [CLAUDE.md](CLAUDE.md) |
 
