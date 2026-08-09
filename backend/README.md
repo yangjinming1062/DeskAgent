@@ -253,7 +253,7 @@ LLM 异常（`MissingLlmConfigError` / 网络异常 / JSON 解析失败）**直�
 
 `CompanionModel` 表存 3D 模型资产（species、provider、asset_url、morph_params_json、has_rig、has_morph_targets），按用户维度持久化，每用户最多一条 active。生成管线为单一路径：
 
-- **Tripo3D multiview-to-3D**：`POST /api/companion/model` 以正面 / 右侧面 / 背面三视图为输入调 Tripo3D 多视图建模（upload 三张图 → multiview-to-model → rig-check → rig（biped 用 mixamo，其余 rig_type 用 tripo）），下载 rigged GLB 后由 Blender headless 注入 ~50 个 morph target（Tripo3D 不生成 blendshape），保存到 `companion-models/` 持久目录并经 `model.ready` 事件下发；进度经 `model.gen.progress`、失败经 `model.failed` 事件推送，客户端渲染程序化蛋形兜底角色。模型规格（骨骼/morph/动画/材质）见 [docs/MODEL_SPEC.md](../docs/MODEL_SPEC.md)。动画不内嵌 GLB——全部动画 clip 由客户端 TypeScript 骨骼旋转关键帧定义（`client/renderer/companion/3d/clips-*.ts`，biped 109 个，其余 rig 24–27 个），按 rig_type 经 `clips-registry.ts` 注入。生成期间拒绝并发生成（`409 ModelGenerationInProgressError`），上一份 active 模型保持可用直到新模型成功。
+- **Tripo3D multiview-to-3D 与动画管线**：`POST /api/companion/model` 以正面 / 右侧面 / 背面三视图为输入调 Tripo3D 多视图建模（upload 三张图 → multiview-to-model → rig-check → rig（biped 用 mixamo，其余 rig_type 用 tripo）），下载 rigged GLB 后由 Blender headless 注入 ~50 个 morph target（Tripo3D 不生成 blendshape），保存到 `companion-models/` 持久目录并经 `model.ready` 事件下发；进度经 `model.gen.progress`、失败经 `model.failed` 事件推送，客户端渲染程序化蛋形兜底角色。模型规格（骨骼/morph/动画/材质）见 [docs/MODEL_SPEC.md](../docs/MODEL_SPEC.md)。动画不内嵌 GLB——静态动作由客户端 TypeScript 骨骼旋转关键帧定义（`client/renderer/companion/3d/clips-*.ts`，biped 109 个，其余 6 大 rig 各 20~45+ 个）并打上性格标签，按伴侣性格标签交集匹配驱动；动态动作支持经 `POST /api/companion/animations/generate` 配合 LLM 生成并清洗，由客户端动态注入。生成期间拒绝并发生成（`409 ModelGenerationInProgressError`），上一份 active 模型保持可用直到新模型成功。
 
 ### 换装系统（WardrobeItem）
 

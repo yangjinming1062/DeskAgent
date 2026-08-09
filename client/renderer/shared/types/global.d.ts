@@ -1,4 +1,4 @@
-import type { ReactionBucket, ReactionTone } from './reactions'
+import type { ReactionBucket } from './reactions'
 
 export {}
 
@@ -97,17 +97,17 @@ declare global {
           read: (tag: string) => Promise<{ dataUrl: string; mimeType: string; tag: string; bytes: number }>
         }
         reactionAudio: {
-          read: (tag: string) => Promise<{ dataUrl: string; mimeType: string; tag: string; bytes: number }>
+          read: (id: string) => Promise<{ dataUrl: string; mimeType: string; id: string; bytes: number }>
           generate: (payload: {
             voice: string
             language: string
             entries: Array<{
-              tag: string
+              id: string
               text: string
-              tone: ReactionTone
+              tags?: string[]
               bucket: ReactionBucket
             }>
-          }) => Promise<{ results: Array<{ tag: string; ok: boolean; reason?: string; bytes?: number }> }>
+          }) => Promise<{ results: Array<{ id: string; ok: boolean; reason?: string; bytes?: number }> }>
         }
       }
       sprite: {

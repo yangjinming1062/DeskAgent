@@ -2,7 +2,6 @@ import { atom } from 'nanostores'
 
 import { safeJsonParse } from '@/shared/lib/safe-json'
 
-import { classifyPersonality } from './persona-classify'
 import { personaFromWire } from './persona-mappers'
 
 export interface PersonaDefinition {
@@ -16,12 +15,17 @@ export interface PersonaDefinition {
 }
 
 export const $persona = atom<PersonaDefinition | null>(null)
+export const $personalityTags = atom<string[]>([])
 
 export async function hydratePersona(opts: { silent?: boolean } = {}): Promise<{ ok: boolean; error?: unknown }> {
   try {
     // All structured persona fields live INSIDE definition_json (a JSON
     // string blob), not as flat top-level keys on the wire.
-    const p = await window.deskagent.api<{ definition_json?: string; is_complete?: boolean }>({
+    const p = await window.deskagent.api<{
+      definition_json?: string
+      is_complete?: boolean
+      personality_tags?: string[]
+    }>({
       path: '/api/companion/persona'
     })
 
@@ -47,6 +51,8 @@ export async function hydratePersona(opts: { silent?: boolean } = {}): Promise<{
       })
     )
 
+    $personalityTags.set(p.personality_tags ?? [])
+
     return { ok: true }
   } catch (err) {
     // C2: when the caller just successfully PUT a new persona, a transient
@@ -57,16 +63,9 @@ export async function hydratePersona(opts: { silent?: boolean } = {}): Promise<{
     // surfaces the GET failure as a soft hint instead.
     if (!opts.silent) {
       $persona.set(null)
+      $personalityTags.set([])
     }
 
     return { ok: false, error: err }
   }
-}
-
-export type ReactionTone = 'gentle' | 'lively' | 'snarky' | 'calm'
-
-export function personaTone(): ReactionTone {
-  const persona = $persona.get()
-
-  return classifyPersonality(persona?.personality, persona?.background)
 }

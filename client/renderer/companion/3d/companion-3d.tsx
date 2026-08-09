@@ -3,15 +3,24 @@ import { useEffect, useRef } from 'react'
 
 import { registerAmplitudeSink } from '@/companion/audio-track'
 import { $chatOpen } from '@/companion/chat-store'
-import { $spriteEmotion, $spriteState, type SpriteEmotion, type SpriteStateName } from '@/companion/companion-store'
+import {
+  $clipOverride,
+  $spriteEmotion,
+  $spriteState,
+  type SpriteEmotion,
+  type SpriteStateName
+} from '@/companion/companion-store'
+import { $personalityTags } from '@/companion/persona-store'
 
 import { Engine } from './Engine'
 import {
   $equippedItem,
+  $generatedClips,
   $modelGenError,
   $modelGenProgress,
   $modelGenState,
   $modelInfo,
+  hydrateGeneratedClips,
   refreshEquippedAndApply
 } from './model-store'
 
@@ -59,15 +68,43 @@ export function Companion3D(): React.JSX.Element {
     engineRef.current = engine
 
     const initial = captureSpriteSnapshot()
-    engine.character.applyState(initial.state, initial.emotion)
+    const initialTags = $personalityTags.get()
+    engine.character.applyState(initial.state, initial.emotion, {
+      companionTags: initialTags
+    })
+
+    const initialGenerated = $generatedClips.get()
+
+    if (initialGenerated.length > 0) {
+      engine.character.appendClipDefs(initialGenerated)
+    }
 
     const unsubState = $spriteState.listen(state => {
-      engine.character.applyState(state, $spriteEmotion.get())
+      const tags = $personalityTags.get()
+      const override = state === 'interacting' ? $clipOverride.get() : undefined
+      engine.character.applyState(state, $spriteEmotion.get(), {
+        companionTags: tags,
+        clipOverride: override
+      })
+
+      if (state !== 'interacting') {
+        $clipOverride.set(null)
+      }
     })
 
     const unsubEmotion = $spriteEmotion.listen(emotion => {
-      engine.character.applyState($spriteState.get(), emotion)
+      engine.character.applyState($spriteState.get(), emotion, {
+        companionTags: $personalityTags.get()
+      })
     })
+
+    const unsubGenerated = $generatedClips.listen(clips => {
+      if (clips.length > 0) {
+        engine.character.appendClipDefs(clips)
+      }
+    })
+
+    void hydrateGeneratedClips()
 
     // TTS lip-sync — the audio-track AnalyserNode pushes amplitude every frame
     // while audio is playing; we just forward it.
@@ -102,6 +139,7 @@ export function Companion3D(): React.JSX.Element {
     return () => {
       unsubState()
       unsubEmotion()
+      unsubGenerated()
       detachLipSync()
       window.removeEventListener('resize', onResize)
       ro.disconnect()

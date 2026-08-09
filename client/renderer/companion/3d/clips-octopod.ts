@@ -1,4 +1,4 @@
-import type { ClipDef } from './clips-biped'
+import type { ClipDef, Keyframe } from './clips-biped'
 import { buildStateClipsForBones } from './clips-biped'
 
 export interface OctopodBoneSlots {
@@ -21,39 +21,109 @@ export const TRIPO_OCTOPOD_BONES: OctopodBoneSlots = {
   tail: ['Tail1']
 }
 
-function _oManifest(name: string, duration: number, loop: boolean, category: ClipDef['category']): ClipDef {
-  return {
-    name,
-    duration,
-    loop,
-    category,
-    tracks: {
-      [TRIPO_OCTOPOD_BONES.body[0]]: [
-        { t: 0, r: [0.03, 0.0, 0.05] as const },
-        { t: duration / 2, r: [0.03, 0.0, 0.05] as const },
-        { t: duration, r: [0.03, 0.0, 0.05] as const }
-      ]
-    }
-  }
+function kf(t: number, x: number, y: number, z: number): Keyframe {
+  return { t, r: [x, y, z] as const }
+}
+
+const S0 = TRIPO_OCTOPOD_BONES.body[0]
+const HD = TRIPO_OCTOPOD_BONES.head
+const JW = TRIPO_OCTOPOD_BONES.jaw
+const L0 = TRIPO_OCTOPOD_BONES.leftLegs[0]
+const L1 = TRIPO_OCTOPOD_BONES.leftLegs[1]
+const L2 = TRIPO_OCTOPOD_BONES.leftLegs[2]
+const L3 = TRIPO_OCTOPOD_BONES.leftLegs[3]
+const R0 = TRIPO_OCTOPOD_BONES.rightLegs[0]
+const R1 = TRIPO_OCTOPOD_BONES.rightLegs[1]
+const R2 = TRIPO_OCTOPOD_BONES.rightLegs[2]
+const R3 = TRIPO_OCTOPOD_BONES.rightLegs[3]
+
+function _oClip(
+  name: string,
+  duration: number,
+  loop: boolean,
+  category: ClipDef['category'],
+  tags: readonly string[],
+  tracks: Record<string, Keyframe[]>
+): ClipDef {
+  return { name, duration, loop, category, tags, tracks }
 }
 
 export const OCTOPOD_CLIPS: Readonly<Record<string, ClipDef>> = {
-  ...buildStateClipsForBones(TRIPO_OCTOPOD_BONES.body[0], TRIPO_OCTOPOD_BONES.head),
-  oct_idle_perch: _oManifest('oct_idle_perch', 4, true, 'state'),
-  oct_sleep: _oManifest('oct_sleep', 6, true, 'state'),
-  oct_alert: _oManifest('oct_alert', 1.5, false, 'state'),
-  oct_listen: _oManifest('oct_listen', 3, true, 'state'),
-  oct_crawl: _oManifest('oct_crawl', 1.5, true, 'locomotion'),
-  oct_scuttle: _oManifest('oct_scuttle', 0.8, true, 'locomotion'),
-  oct_climb: _oManifest('oct_climb', 2, true, 'locomotion'),
-  oct_jet_propel: _oManifest('oct_jet_propel', 1, true, 'locomotion'),
-  oct_tentacle_reach: _oManifest('oct_tentacle_reach', 1.5, false, 'interaction'),
-  oct_leg_preen: _oManifest('oct_leg_preen', 3, true, 'interaction'),
-  oct_eat: _oManifest('oct_eat', 2.5, true, 'daily'),
-  oct_happy_dance: _oManifest('oct_happy_dance', 2, true, 'emotion-positive'),
-  oct_scared_hide: _oManifest('oct_scared_hide', 1.5, false, 'emotion-negative'),
-  oct_threat_display: _oManifest('oct_threat_display', 2.5, true, 'emotion-negative'),
-  oct_tentacle_cuddle: _oManifest('oct_tentacle_cuddle', 3, true, 'intimate'),
-  oct_web_spin: _oManifest('oct_web_spin', 4, false, 'ritual'),
-  oct_color_change: _oManifest('oct_color_change', 1.5, true, 'ritual')
+  ...buildStateClipsForBones(S0, HD),
+
+  // ── States & Locomotion ──
+  oct_idle_perch: _oClip('oct_idle_perch', 4, true, 'state', ['莫测', '深海潜行', '多智'], {
+    [S0]: [kf(0, 0.05, 0, 0), kf(2, 0.08, 0, 0), kf(4, 0.05, 0, 0)],
+    [L0]: [kf(0, 0, 0, 0.2), kf(2, 0, 0, 0.25), kf(4, 0, 0, 0.2)],
+    [R0]: [kf(0, 0, 0, -0.2), kf(2, 0, 0, -0.25), kf(4, 0, 0, -0.2)]
+  }),
+  oct_sleep: _oClip('oct_sleep', 6, true, 'state', ['不可名状', '幽暗', '蛰伏'], {
+    [S0]: [kf(0, -0.05, 0, 0), kf(3, -0.08, 0, 0), kf(6, -0.05, 0, 0)],
+    [L0]: [kf(0, 0.3, 0, 0.4), kf(3, 0.35, 0, 0.45), kf(6, 0.3, 0, 0.4)],
+    [R0]: [kf(0, 0.3, 0, -0.4), kf(3, 0.35, 0, -0.45), kf(6, 0.3, 0, -0.4)]
+  }),
+  oct_crawl: _oClip('oct_crawl', 1.6, true, 'locomotion', ['触手灵动', '怪诞', '多面'], {
+    [L0]: [kf(0, 0.4, 0, 0), kf(0.8, -0.3, 0, 0), kf(1.6, 0.4, 0, 0)],
+    [R0]: [kf(0, -0.3, 0, 0), kf(0.8, 0.4, 0, 0), kf(1.6, -0.3, 0, 0)],
+    [L1]: [kf(0, -0.2, 0, 0), kf(0.8, 0.3, 0, 0), kf(1.6, -0.2, 0, 0)],
+    [R1]: [kf(0, 0.3, 0, 0), kf(0.8, -0.2, 0, 0), kf(1.6, 0.3, 0, 0)],
+    [S0]: [kf(0, 0, 0.05, 0), kf(0.8, 0, -0.05, 0), kf(1.6, 0, 0.05, 0)]
+  }),
+  oct_jet_propel: _oClip('oct_jet_propel', 1.0, true, 'locomotion', ['喷墨', '迅捷', '灵动'], {
+    [S0]: [kf(0, -0.4, 0, 0), kf(0.5, 0.2, 0, 0), kf(1.0, -0.4, 0, 0)],
+    [L0]: [kf(0, -0.6, 0, 0.1), kf(0.5, 0.4, 0, 0.3), kf(1.0, -0.6, 0, 0.1)],
+    [R0]: [kf(0, -0.6, 0, -0.1), kf(0.5, 0.4, 0, -0.3), kf(1.0, -0.6, 0, -0.1)]
+  }),
+
+  // ── Interaction & Intimate ──
+  oct_tentacle_reach: _oClip('oct_tentacle_reach', 1.8, false, 'interaction', ['探知', '好奇', '多智'], {
+    [L0]: [kf(0, 0, 0, 0), kf(0.9, 0.8, 0, 0.3), kf(1.8, 0, 0, 0)],
+    [R0]: [kf(0, 0, 0, 0), kf(0.9, 0.6, 0, -0.2), kf(1.8, 0, 0, 0)],
+    [HD]: [kf(0, 0, 0, 0), kf(0.9, 0.1, 0, 0), kf(1.8, 0, 0, 0)]
+  }),
+  oct_tentacle_cuddle: _oClip('oct_tentacle_cuddle', 3.5, true, 'intimate', ['缠绕', '粘人', '克苏鲁', '深情'], {
+    [L0]: [kf(0, 0.5, 0, 0.4), kf(1.75, 0.55, 0, 0.45), kf(3.5, 0.5, 0, 0.4)],
+    [R0]: [kf(0, 0.5, 0, -0.4), kf(1.75, 0.55, 0, -0.45), kf(3.5, 0.5, 0, -0.4)],
+    [L1]: [kf(0, 0.4, 0, 0.3), kf(1.75, 0.45, 0, 0.35), kf(3.5, 0.4, 0, 0.3)],
+    [R1]: [kf(0, 0.4, 0, -0.3), kf(1.75, 0.45, 0, -0.35), kf(3.5, 0.4, 0, -0.3)],
+    [S0]: [kf(0, 0.05, 0, 0), kf(1.75, 0.07, 0, 0), kf(3.5, 0.05, 0, 0)]
+  }),
+  oct_head_pat_accept: _oClip('oct_head_pat_accept', 2.0, false, 'intimate', ['温顺', '亲人', '撒娇'], {
+    [HD]: [kf(0, 0, 0, 0), kf(1.0, 0.1, 0.1, 0), kf(2.0, 0, 0, 0)],
+    [L0]: [kf(0, 0, 0, 0), kf(1.0, 0.3, 0, 0.2), kf(2.0, 0, 0, 0)]
+  }),
+
+  // ── Positive & Ritual ──
+  oct_happy_wave: _oClip('oct_happy_wave', 2.0, true, 'emotion-positive', ['触手灵动', '欢腾', '怪诞', '俏皮'], {
+    [L0]: [kf(0, 0.3, 0, 0.5), kf(1.0, 0.3, 0, -0.2), kf(2.0, 0.3, 0, 0.5)],
+    [R0]: [kf(0, 0.3, 0, -0.5), kf(1.0, 0.3, 0, 0.2), kf(2.0, 0.3, 0, -0.5)],
+    [L1]: [kf(0, 0.2, 0, -0.3), kf(1.0, 0.2, 0, 0.4), kf(2.0, 0.2, 0, -0.3)],
+    [R1]: [kf(0, 0.2, 0, 0.3), kf(1.0, 0.2, 0, -0.4), kf(2.0, 0.2, 0, 0.3)]
+  }),
+  oct_camouflage_pose: _oClip('oct_camouflage_pose', 3.0, true, 'ritual', ['伪装', '莫测', '神秘'], {
+    [S0]: [kf(0, -0.1, 0, 0), kf(1.5, -0.12, 0, 0), kf(3.0, -0.1, 0, 0)],
+    [L0]: [kf(0, 0.6, 0, 0.6), kf(1.5, 0.62, 0, 0.65), kf(3.0, 0.6, 0, 0.6)],
+    [R0]: [kf(0, 0.6, 0, -0.6), kf(1.5, 0.62, 0, -0.65), kf(3.0, 0.6, 0, -0.6)]
+  }),
+
+  // ── Negative Emotion & Threat ──
+  oct_threat_display: _oClip(
+    'oct_threat_display',
+    2.5,
+    true,
+    'emotion-negative',
+    ['克苏鲁', '不可名状', '威严', '凶猛'],
+    {
+      [S0]: [kf(0, -0.2, 0, 0), kf(1.25, -0.25, 0, 0), kf(2.5, -0.2, 0, 0)],
+      [L0]: [kf(0, 0.8, 0, 0.8), kf(1.25, 1.0, 0, 1.0), kf(2.5, 0.8, 0, 0.8)],
+      [R0]: [kf(0, 0.8, 0, -0.8), kf(1.25, 1.0, 0, -1.0), kf(2.5, 0.8, 0, -0.8)],
+      [L1]: [kf(0, 0.7, 0, 0.6), kf(1.25, 0.9, 0, 0.8), kf(2.5, 0.7, 0, 0.6)],
+      [R1]: [kf(0, 0.7, 0, -0.6), kf(1.25, 0.9, 0, -0.8), kf(2.5, 0.7, 0, -0.6)]
+    }
+  ),
+  oct_ink_escape: _oClip('oct_ink_escape', 1.2, false, 'emotion-negative', ['喷墨', '诡异', '敏锐'], {
+    [S0]: [kf(0, 0, 0, 0), kf(0.4, -0.5, 0, 0), kf(1.2, 0, 0, 0)],
+    [L0]: [kf(0, 0, 0, 0), kf(0.4, -0.7, 0, 0.3), kf(1.2, 0, 0, 0)],
+    [R0]: [kf(0, 0, 0, 0), kf(0.4, -0.7, 0, -0.3), kf(1.2, 0, 0, 0)]
+  })
 }

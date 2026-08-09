@@ -2,6 +2,8 @@ import { atom } from 'nanostores'
 
 import { isClientErrorIpc } from '@/shared/lib/ipc-error'
 
+import type { ClipDef } from './clips-biped'
+
 // Model + wardrobe asset catalog for the 3D companion.
 // Backed by the backend /api/companion/model + /api/companion/wardrobe
 // endpoints; pushed over the gateway as model.ready / wardrobe.updated events,
@@ -64,6 +66,8 @@ export const $modelInfo = atom<ModelInfo>({
 
 export const $wardrobe = atom<WardrobeItem[]>([])
 export const $equippedItem = atom<WardrobeItem | null>(null)
+export const $availableClipNames = atom<Set<string>>(new Set())
+export const $generatedClips = atom<ClipDef[]>([])
 
 // ── Generation progress tracking ──
 // model.gen.progress → $modelGenState='generating' + $modelGenProgress
@@ -134,6 +138,20 @@ export async function hydrateWardrobe(): Promise<void> {
   } catch (error) {
     if (!isClientErrorIpc(error)) {
       console.warn('hydrateWardrobe failed', error)
+    }
+  }
+}
+
+export async function hydrateGeneratedClips(): Promise<void> {
+  try {
+    const res = await window.deskagent.api<{ clips: ClipDef[] }>({ path: '/api/companion/animations' })
+
+    if (res?.clips && Array.isArray(res.clips)) {
+      $generatedClips.set(res.clips)
+    }
+  } catch (error) {
+    if (!isClientErrorIpc(error)) {
+      console.warn('hydrateGeneratedClips failed', error)
     }
   }
 }

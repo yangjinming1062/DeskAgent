@@ -45,6 +45,7 @@ export const $spriteState = atom<SpriteStateName>('idle')
 export const $voiceCallOpen = atom<boolean>(false)
 export const $spriteEmotion = atom<SpriteEmotion | null>(null)
 export const $previousState = atom<SpriteStateName>('idle')
+export const $clipOverride = atom<string | null>(null)
 
 // Disturbance tier gates the companion's proactive behaviour (ARCHITECTURE.md §6 /
 // plan.md §4.2). User-initiated actions are never gated — only proactive

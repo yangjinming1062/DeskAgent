@@ -1,4 +1,5 @@
 import base64
+import json
 
 from common import get_router
 from components import get_db
@@ -13,6 +14,8 @@ from fastapi.responses import FileResponse
 from modules.auth import get_current_session
 from modules.auth import LoginRecord
 from modules.auth import User
+from modules.companion import AnimationClipResponse
+from modules.companion import AnimationGenerateRequest
 from modules.companion import AvatarAsset
 from modules.companion import AvatarAssetResponse
 from modules.companion import AvatarFromImageRequest
@@ -29,12 +32,14 @@ from modules.companion import WardrobeGenerateRequest
 from modules.companion import WardrobeItem
 from modules.companion import WardrobeItemResponse
 from services.companion import ALLOWED_AVATAR_UPLOAD_MIME_TYPES
+from services.companion import analyze_personality_tags
 from services.companion import AvatarGenerationError
 from services.companion import AvatarNotFoundError
 from services.companion import AvatarSourceUnreadableError
 from services.companion import delete_wardrobe_item
 from services.companion import emit_wardrobe_updated
 from services.companion import equip_wardrobe_item
+from services.companion import generate_animation_clips
 from services.companion import generate_avatar
 from services.companion import generate_companion_model
 from services.companion import generate_fullbody
@@ -44,6 +49,7 @@ from services.companion import get_active_model
 from services.companion import get_avatar_job_lock
 from services.companion import get_equipped_item
 from services.companion import get_or_create_persona
+from services.companion import get_rig_bones
 from services.companion import list_avatar_history
 from services.companion import list_tts_voices
 from services.companion import list_wardrobe
@@ -60,6 +66,7 @@ from services.companion import signed_model_url
 from services.companion import update_persona
 from services.companion import verify_signed_asset_request
 from services.companion import verify_signed_avatar_request
+from services.llm import chat
 from services.llm import MissingLlmConfigError
 from services.rate_limit import limiter
 from sqlalchemy.orm import Session
@@ -104,27 +111,101 @@ def get_persona(
 ) -> PersonaResponse:
     user, _ = auth
     persona = get_or_create_persona(db, user.id)
+    tags = safe_json_loads(persona.personality_tags_json or "[]", default=[])
     return PersonaResponse(
         is_complete=persona.is_complete,
         definition_json=persona.definition_json,
+        personality_tags=tags if isinstance(tags, list) else [],
     )
 
 
 @router.put("/persona", response_model=PersonaResponse)
-def put_persona(
+async def put_persona(
     body: PersonaUpdate,
     auth: tuple[User, LoginRecord] = Depends(get_current_session),
     db: Session = Depends(get_db),
 ) -> PersonaResponse:
     user, _ = auth
+    data = safe_json_loads(body.definition_json, default={})
     try:
-        persona = update_persona(db, user.id, safe_json_loads(body.definition_json, default={}))
+        persona = update_persona(db, user.id, data)
     except PersonaValidationError as exc:
         raise HTTPException(status_code=422, detail={"error": "Persona validation error", "reason": str(exc)})
+    try:
+        species = data.get("biological_type") if isinstance(data, dict) else None
+        tags = await analyze_personality_tags(chat, persona.definition_json, user_id=user.id, species=species, db=db)
+        persona.personality_tags_json = json.dumps(tags, ensure_ascii=False)
+        db.commit()
+    except Exception:
+        pass
+    tags = safe_json_loads(persona.personality_tags_json or "[]", default=[])
     return PersonaResponse(
         is_complete=persona.is_complete,
         definition_json=persona.definition_json,
+        personality_tags=tags if isinstance(tags, list) else [],
     )
+
+
+@router.get("/animations", response_model=AnimationClipResponse)
+def get_animations(
+    auth: tuple[User, LoginRecord] = Depends(get_current_session),
+    db: Session = Depends(get_db),
+) -> AnimationClipResponse:
+    user, _ = auth
+    model = get_active_model(db, user.id)
+    if model is None:
+        return AnimationClipResponse(clips=[])
+    clips = safe_json_loads(model.animation_clips_json or "[]", default=[])
+    return AnimationClipResponse(clips=clips if isinstance(clips, list) else [])
+
+
+@router.post("/animations/generate", response_model=AnimationClipResponse)
+async def post_animations_generate(
+    body: AnimationGenerateRequest = Body(default_factory=AnimationGenerateRequest),
+    auth: tuple[User, LoginRecord] = Depends(get_current_session),
+    db: Session = Depends(get_db),
+) -> AnimationClipResponse:
+    user, _ = auth
+    model = get_active_model(db, user.id)
+    if model is None:
+        raise HTTPException(status_code=404, detail="No active companion model found")
+    persona = get_or_create_persona(db, user.id)
+    tags = body.tags or safe_json_loads(persona.personality_tags_json or "[]", default=[])
+    if not tags:
+        tags = ["活泼", "温柔"]
+    existing = safe_json_loads(model.animation_clips_json or "[]", default=[])
+    bone_list = get_rig_bones(model.rig_type)
+    new_clips = await generate_animation_clips(
+        chat,
+        rig_type=model.rig_type,
+        bone_list=bone_list,
+        personality_tags=tags,
+        species=model.species,
+        categories=body.categories,
+        user_id=user.id,
+        db=db,
+    )
+    combined = (existing if isinstance(existing, list) else []) + new_clips
+    model.animation_clips_json = json.dumps(combined, ensure_ascii=False)
+    db.commit()
+    return AnimationClipResponse(clips=combined)
+
+
+@router.delete("/animations/{name}", response_model=AnimationClipResponse)
+def delete_animation(
+    name: str,
+    auth: tuple[User, LoginRecord] = Depends(get_current_session),
+    db: Session = Depends(get_db),
+) -> AnimationClipResponse:
+    user, _ = auth
+    model = get_active_model(db, user.id)
+    if model is None:
+        raise HTTPException(status_code=404, detail="No active companion model found")
+    existing = safe_json_loads(model.animation_clips_json or "[]", default=[])
+    filtered = [c for c in existing if isinstance(c, dict) and c.get("name") != name] if isinstance(existing, list) else []
+    model.animation_clips_json = json.dumps(filtered, ensure_ascii=False)
+    db.commit()
+    return AnimationClipResponse(clips=filtered)
 
 
 # Hub has no gateway — REST mirror of the gateway tts.list_voices method.

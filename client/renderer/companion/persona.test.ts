@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest'
 
-import { assembleCharacterPersona, assemblePersona, deriveSpeakingStyle } from './persona'
+import { assembleCharacterPersona, assemblePersona } from './persona'
 
 describe('assemblePersona', () => {
-  it('maps name/personality and derives speaking_style', () => {
+  it('maps name/personality and uses raw speaking_style or personality fallback', () => {
     const p = assemblePersona({ name: '小光', personality: '温柔体贴', role: '专属管家' })
-    expect(p).toEqual({ name: '小光', personality: '温柔体贴', speaking_style: '专业干练', background: '专属管家' })
+    expect(p).toEqual({ name: '小光', personality: '温柔体贴', speaking_style: '温柔体贴', background: '专属管家' })
   })
 
   it('maps species / character_gender to biological_type / gender', () => {
@@ -52,7 +52,7 @@ describe('assemblePersona', () => {
     const p = assemblePersona({ name: '小光' })
     expect(p.name).toBe('小光')
     expect(p.personality).toBe('温柔体贴')
-    expect(p.speaking_style).toBe('温柔亲切')
+    expect(p.speaking_style).toBe('温柔体贴')
     expect(p.background).toBeUndefined()
   })
 
@@ -61,12 +61,19 @@ describe('assemblePersona', () => {
   })
 
   it('never leaks voice into the persona (TTS layer, not persona; user_* go to memory, not persona either)', () => {
-    // voice is consumed by tts.match_voice, not assembled into the persona PUT.
     const p = assemblePersona({ name: '小光', voice: '少女音' })
     expect(p).not.toHaveProperty('voice')
-    // Backend PersonaUpdate is extra="forbid" — without role / species / character_gender /
-    // appearance / user_* there's nothing extra in the payload.
     expect(Object.keys(p).sort()).toEqual(['name', 'personality', 'speaking_style'])
+  })
+
+  it('uses user-picked speaking_style directly without heuristic modification', () => {
+    const p = assemblePersona({
+      name: '小光',
+      personality: '毒舌傲娇',
+      speaking_style: '专业干练'
+    })
+
+    expect(p.speaking_style).toBe('专业干练')
   })
 })
 
@@ -104,10 +111,9 @@ describe('assembleCharacterPersona', () => {
     expect(p.personality).toBe('温柔体贴')
   })
 
-  it('still derives speaking_style fallback when the user has not picked one yet', () => {
-    // speaking_style isn't in q-character (Q1-Q6); derive it so PUT satisfies backend _validate_definition.
+  it('falls back to personality string when the user has not picked speaking_style yet', () => {
     const p = assembleCharacterPersona({ name: '小光', personality: '温柔体贴' })
-    expect(p.speaking_style).toBe('温柔亲切')
+    expect(p.speaking_style).toBe('温柔体贴')
   })
 
   it('never leaks voice (TTS field, not a persona field)', () => {
@@ -139,42 +145,7 @@ describe('assembleCharacterPersona', () => {
       expect(full[key]).toEqual(characterOnly[key])
     }
 
-    // And of course user_* are missing from the character-only payload.
     expect(characterOnly).not.toHaveProperty('user_call_name')
     expect(characterOnly).not.toHaveProperty('user_hobbies')
-  })
-})
-
-describe('deriveSpeakingStyle', () => {
-  it.each([
-    ['毒舌傲娇', '俏皮带点小傲娇'],
-    ['冷静理性', '沉稳简洁'],
-    ['活泼好动', '轻快活泼'],
-    [undefined, '温柔亲切']
-  ])('personality %s → %s', (personality, expected) => {
-    expect(deriveSpeakingStyle(undefined, personality)).toBe(expected)
-  })
-
-  it('leans professional for secretary/steward/jarvis roles', () => {
-    expect(deriveSpeakingStyle('专属管家', undefined)).toBe('专业干练')
-    expect(deriveSpeakingStyle('贾维斯', undefined)).toBe('专业干练')
-  })
-
-  // 1-6 (backend audit): user-picked speaking_style from onboarding
-  // Q13 wins over the personality-key derivation so the persona is
-  // a direct reflection of the user's actual selection.
-  it('user-picked speaking_style overrides personality-key derivation', () => {
-    const p = assemblePersona({
-      name: '小光',
-      personality: '毒舌傲娇',
-      speaking_style: '专业干练'
-    })
-
-    expect(p.speaking_style).toBe('专业干练')
-  })
-
-  it('falls back to personality-key derivation when user skipped speaking_style', () => {
-    const p = assemblePersona({ name: '小光', personality: '毒舌傲娇' })
-    expect(p.speaking_style).toBe('俏皮带点小傲娇')
   })
 })

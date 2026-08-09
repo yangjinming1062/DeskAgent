@@ -1,5 +1,9 @@
 from . import memory_admin
 from .affect_check import check_affect
+from .animation_generator import find_unmatched_tags
+from .animation_generator import generate_animation_clips
+from .animation_generator import get_rig_bones
+from .animation_generator import RIG_DEFAULT_BONES
 from .asset_store import build_signed_asset_url
 from .asset_store import build_signed_avatar_url
 from .asset_store import build_signed_model_url
@@ -44,6 +48,7 @@ from .persona_service import ONBOARDING_FIELDS
 from .persona_service import PersonaValidationError
 from .persona_service import submit_onboarding_field
 from .persona_service import update_persona
+from .personality_tagger import analyze_personality_tags
 from .rig_type_selector import select_rig_type
 from .tripo_client import account_balance
 from .tripo_client import BASE_URL as TRIPO_BASE_URL
@@ -82,6 +87,7 @@ __all__ = [
     "ModelGenerationInProgressError",
     "PersonaValidationError",
     "SeedPromptMissingError",
+    "analyze_personality_tags",
     "build_signed_asset_url",
     "build_signed_avatar_url",
     "build_signed_model_url",
@@ -94,8 +100,10 @@ __all__ = [
     "emit_wardrobe_updated",
     "equip_wardrobe_item",
     "extract_user_profile",
+    "find_unmatched_tags",
     "format_auto_inject_block",
     "format_memories_block",
+    "generate_animation_clips",
     "generate_avatar",
     "generate_companion_model",
     "generate_fullbody",
@@ -107,6 +115,7 @@ __all__ = [
     "get_memory",
     "get_onboarding_state",
     "get_or_create_persona",
+    "get_rig_bones",
     "list_avatar_history",
     "list_memories",
     "list_tts_voices",
@@ -123,6 +132,7 @@ __all__ = [
     "resolve_companion_asset_path",
     "resolve_companion_model_path",
     "resolve_uploaded_avatar_path",
+    "RIG_DEFAULT_BONES",
     "select_rig_type",
     "signed_model_url",
     "submit_onboarding_field",

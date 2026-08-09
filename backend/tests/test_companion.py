@@ -1687,7 +1687,7 @@ def test_companion_rest_contract(_patch_db):
 
     resp = client.get("/api/companion/persona")
     assert resp.status_code == 200
-    assert set(resp.json()) == {"definition_json", "is_complete"}
+    assert set(resp.json()) == {"definition_json", "is_complete", "personality_tags"}
 
     assert (
         client.put(

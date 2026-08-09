@@ -1,8 +1,11 @@
 import type { ReactionBucket } from '@/shared/types/reactions'
 
+import { resolveInteractionClip } from './3d/clip-dispatch'
+import { getClipDefs } from './3d/clips-registry'
+import { $availableClipNames, $modelInfo } from './3d/model-store'
 import { reportInteractionStat } from './activity'
-import { setSpriteState } from './companion-store'
-import { personaTone } from './persona-store'
+import { $clipOverride, setSpriteState } from './companion-store'
+import { $personalityTags } from './persona-store'
 import { pickReaction, playReactionAudio } from './reactions/reaction-audio'
 
 let lastPokeTime = 0
@@ -41,13 +44,18 @@ export function handlePokeInteraction(): void {
     pokeCount = 0
   }, 4000)
 
+  const tags = $personalityTags.get()
+  const library = getClipDefs($modelInfo.get().rig_type)
+  const available = $availableClipNames.get()
+  const bucket = bucketForPokeCount()
+
+  const clip = resolveInteractionClip(bucket, tags, library, available)
+  $clipOverride.set(clip)
   setSpriteState('interacting', { durationMs: 2000 })
 
-  const tone = personaTone()
-  const bucket = bucketForPokeCount()
-  const entry = pickReaction(bucket, tone)
+  const entry = pickReaction(bucket, tags)
 
-  void playReactionAudio(entry, { tone, bucket, userInitiated: true })
+  void playReactionAudio(entry, { tags, bucket, userInitiated: true })
   reportInteractionStat('poke')
 }
 
@@ -63,11 +71,16 @@ export function handleHoverInteraction(): void {
 }
 
 export function handleDragEndInteraction(): void {
+  const tags = $personalityTags.get()
+  const library = getClipDefs($modelInfo.get().rig_type)
+  const available = $availableClipNames.get()
+
+  const clip = resolveInteractionClip('drag', tags, library, available)
+  $clipOverride.set(clip)
   setSpriteState('interacting', { durationMs: 2000 })
 
-  const tone = personaTone()
-  const entry = pickReaction('drag', tone)
+  const entry = pickReaction('drag', tags)
 
-  void playReactionAudio(entry, { tone, bucket: 'drag', userInitiated: true })
+  void playReactionAudio(entry, { tags, bucket: 'drag', userInitiated: true })
   reportInteractionStat('drag')
 }

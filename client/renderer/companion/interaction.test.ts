@@ -13,8 +13,8 @@ const hoisted = vi.hoisted(() => {
 vi.mock('./reactions/reaction-audio', () => ({
   hasManifest: () => true,
   pickReaction: () => ({
-    tag: 'reaction.poke-light.gentle.0',
-    tone: 'gentle',
+    id: 'reaction.poke-light.gentle.0',
+    tags: ['温柔'],
     bucket: 'poke-light',
     text: '嗯？怎么啦？'
   }),
@@ -27,7 +27,9 @@ vi.mock('./activity', () => ({
 }))
 
 vi.mock('./persona-store', () => ({
-  personaTone: () => 'gentle'
+  $personalityTags: {
+    get: () => ['温柔']
+  }
 }))
 
 const originalDeskagent = (globalThis as { deskagent?: unknown }).deskagent
@@ -69,17 +71,10 @@ describe('poke / drag dispatch into pre-baked reaction audio', () => {
     expect(hoisted.playReactionAudio).toHaveBeenCalledTimes(1)
     const [entry, opts] = hoisted.playReactionAudio.mock.calls[0]
     expect(entry.bucket).toBe('poke-light')
-    expect(opts).toMatchObject({ bucket: 'poke-light', tone: 'gentle', userInitiated: true })
+    expect(opts).toMatchObject({ bucket: 'poke-light', tags: ['温柔'], userInitiated: true })
   })
 
   it('repeated rapid pokes in a tight burst keep bucket=light (pokeCount reset by 4s timer, untouched by this test)', () => {
-    // Bucket boundaries (pokeCount 1-2 light, 3-4 medium, 5+ heavy) were
-    // preserved verbatim from the original logic — the only thing that
-    // changed here is the audio dispatch target. Verifying the exact
-    // escalation boundaries requires module-state isolation that the
-    // pre-existing pokeCount / lastPokeTime layout doesn't expose cleanly,
-    // so this case only asserts the dispatch wiring (always poke-light on a
-    // single poke from a clean baseline).
     installMediaSpy()
     handlePokeInteraction()
 
@@ -107,7 +102,7 @@ describe('poke / drag dispatch into pre-baked reaction audio', () => {
     expect(hoisted.playReactionAudio).toHaveBeenCalledTimes(1)
     expect(hoisted.playReactionAudio.mock.calls[0][1]).toMatchObject({
       bucket: 'drag',
-      tone: 'gentle',
+      tags: ['温柔'],
       userInitiated: true
     })
     expect(hoisted.reportInteractionStat).toHaveBeenCalledWith('drag')
@@ -124,9 +119,6 @@ describe('poke / drag dispatch into pre-baked reaction audio', () => {
 
     return import('./interaction').then(mod => {
       mod.handlePokeInteraction()
-      // pickReaction returns null on manifest miss; interaction.ts forwards
-      // null to playReactionAudio, which falls through to the runtime TTS
-      // path (no local read attempted).
       expect(hoisted.playReactionAudio).toHaveBeenCalledTimes(1)
       expect(hoisted.playReactionAudio.mock.calls[0][0]).toBeNull()
     })

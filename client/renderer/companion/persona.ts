@@ -5,9 +5,6 @@ export interface OnboardingAnswers {
   appearance?: string
   role?: string
   personality?: string
-  // 1-6 (backend audit): user-picked speaking style (chip + free-text).
-  // When non-empty, overrides the personality-key derivation in
-  // `assemblePersona` so the user is the source of truth.
   speaking_style?: string
   user_call_name?: string
   user_gender?: string
@@ -52,24 +49,18 @@ function truncate(value: string | undefined, max: number): string | undefined {
   return trimmed.slice(0, max)
 }
 
-import { classifyPersonality, deriveSpeakingStyle, type PersonalityClass } from './persona-classify'
-
-export { classifyPersonality, deriveSpeakingStyle, type PersonalityClass }
-
 export function assemblePersona(answers: OnboardingAnswers): PersonaPayload {
   const name = answers.name?.trim() || '伙伴'
   const personality = answers.personality?.trim() || DEFAULT_PERSONALITY
 
-  // 1-6: user-picked speaking_style (chip + free-text) wins over the
-  // personality-key derivation when both are present. If the user
-  // skipped Q13, fall back to the persona-key map so the persona
-  // still satisfies the backend's required speaking_style field.
+  // 客户端仅透传用户输入，不进行程序化转换；未填写时以性格设定兜底
   const userPickedStyle = answers.speaking_style?.trim()
+  const speakingStyle = userPickedStyle || personality
 
   const payload: PersonaPayload = {
     name,
     personality,
-    speaking_style: userPickedStyle || deriveSpeakingStyle(answers.role, answers.personality)
+    speaking_style: speakingStyle
   }
 
   const optional: Array<[keyof PersonaPayload, string | undefined, number]> = [
@@ -99,11 +90,11 @@ export function assemblePersona(answers: OnboardingAnswers): PersonaPayload {
 export function assembleCharacterPersona(answers: OnboardingAnswers): PersonaPayload {
   const payload = assemblePersona(answers)
 
-  for (const key of Object.keys(payload) as Array<keyof PersonaPayload>) {
-    if (key.startsWith('user_')) {
-      delete payload[key]
-    }
-  }
+  delete payload.user_call_name
+  delete payload.user_gender
+  delete payload.user_age_bucket
+  delete payload.user_hobbies
+  delete payload.user_freeform
 
   return payload
 }

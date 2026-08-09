@@ -3,12 +3,15 @@ from typing import Any
 
 from components import safe_json_loads
 from modules.companion import Persona
+from services.llm import chat as default_chat
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from .memory_bootstrap import extract_user_profile
 from .memory_bootstrap import read_user_profile
 from .memory_bootstrap import record_user_profile
+from .personality_tagger import analyze_personality_tags
+from .personality_tagger import ChatFn as _ChatFn
 
 # Persona field order — part of the contract downstream prompt consumers
 # reason about, since it dictates the rendered system-prompt snippet shape.
@@ -95,7 +98,11 @@ def get_or_create_persona(db: Session, user_id: int) -> Persona:
     return persona
 
 
-def update_persona(db: Session, user_id: int, definition: dict[str, Any]) -> Persona:
+def update_persona(
+    db: Session,
+    user_id: int,
+    definition: dict[str, Any],
+) -> Persona:
     if not isinstance(definition, dict):
         raise PersonaValidationError("persona definition must be an object")
     user_profile = extract_user_profile(definition)

@@ -19,6 +19,7 @@ class PersonaUpdate(BaseModel):
 class PersonaResponse(BaseModel):
     definition_json: str
     is_complete: bool
+    personality_tags: list[str] = Field(default_factory=list)
 
 
 # Generation is synchronous — every persisted asset is succeeded. Pinning
@@ -106,3 +107,14 @@ class WardrobeEquipRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     item_id: int
+
+
+class AnimationGenerateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    categories: list[str] | None = Field(default=None)
+    tags: list[str] | None = Field(default=None)
+
+
+class AnimationClipResponse(BaseModel):
+    clips: list[dict] = Field(default_factory=list)

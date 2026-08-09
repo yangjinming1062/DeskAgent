@@ -1,4 +1,4 @@
-import type { ClipDef } from './clips-biped'
+import type { ClipDef, Keyframe } from './clips-biped'
 import { buildStateClipsForBones } from './clips-biped'
 
 export interface HexapodBoneSlots {
@@ -33,39 +33,118 @@ export const TRIPO_HEXAPOD_BONES: HexapodBoneSlots = {
   tail: ['Tail1', 'Tail2']
 }
 
-function _hManifest(name: string, duration: number, loop: boolean, category: ClipDef['category']): ClipDef {
-  return {
-    name,
-    duration,
-    loop,
-    category,
-    tracks: {
-      [TRIPO_HEXAPOD_BONES.body[0]]: [
-        { t: 0, r: [0.04, 0.0, 0.03] as const },
-        { t: duration / 2, r: [0.04, 0.0, 0.03] as const },
-        { t: duration, r: [0.04, 0.0, 0.03] as const }
-      ]
-    }
-  }
+function kf(t: number, x: number, y: number, z: number): Keyframe {
+  return { t, r: [x, y, z] as const }
+}
+
+const S0 = TRIPO_HEXAPOD_BONES.body[0]
+const HD = TRIPO_HEXAPOD_BONES.head
+const JW = TRIPO_HEXAPOD_BONES.jaw
+const LA = TRIPO_HEXAPOD_BONES.leftAntenna[0]
+const RA = TRIPO_HEXAPOD_BONES.rightAntenna[0]
+const LF = TRIPO_HEXAPOD_BONES.leftFront[0]
+const LM = TRIPO_HEXAPOD_BONES.leftMid[0]
+const LH = TRIPO_HEXAPOD_BONES.leftHind[0]
+const RF = TRIPO_HEXAPOD_BONES.rightFront[0]
+const RM = TRIPO_HEXAPOD_BONES.rightMid[0]
+const RH = TRIPO_HEXAPOD_BONES.rightHind[0]
+
+function _hClip(
+  name: string,
+  duration: number,
+  loop: boolean,
+  category: ClipDef['category'],
+  tags: readonly string[],
+  tracks: Record<string, Keyframe[]>
+): ClipDef {
+  return { name, duration, loop, category, tags, tracks }
 }
 
 export const HEXAPOD_CLIPS: Readonly<Record<string, ClipDef>> = {
-  ...buildStateClipsForBones(TRIPO_HEXAPOD_BONES.body[0], TRIPO_HEXAPOD_BONES.head),
-  hex_idle_perch: _hManifest('hex_idle_perch', 4, true, 'state'),
-  hex_sleep: _hManifest('hex_sleep', 6, true, 'state'),
-  hex_alert_antenna: _hManifest('hex_alert_antenna', 1.5, false, 'state'),
-  hex_listen: _hManifest('hex_listen', 3, true, 'state'),
-  hex_crawl: _hManifest('hex_crawl', 1.5, true, 'locomotion'),
-  hex_scuttle: _hManifest('hex_scuttle', 0.8, true, 'locomotion'),
-  hex_climb: _hManifest('hex_climb', 2, true, 'locomotion'),
-  hex_jump: _hManifest('hex_jump', 1, false, 'locomotion'),
-  hex_antenna_wiggle: _hManifest('hex_antenna_wiggle', 2, true, 'interaction'),
-  hex_preen_legs: _hManifest('hex_preen_legs', 3, true, 'interaction'),
-  hex_eat_leaf: _hManifest('hex_eat_leaf', 2, true, 'daily'),
-  hex_happy_wings: _hManifest('hex_happy_wings', 1.5, true, 'emotion-positive'),
-  hex_scared_hide: _hManifest('hex_scared_hide', 1.5, false, 'emotion-negative'),
-  hex_territorial_puff: _hManifest('hex_territorial_puff', 2.5, true, 'emotion-negative'),
-  hex_antenna_caress: _hManifest('hex_antenna_caress', 2, true, 'intimate'),
-  hex_metamorphosis_dance: _hManifest('hex_metamorphosis_dance', 3, true, 'ritual'),
-  hex_territorial_display: _hManifest('hex_territorial_display', 2.5, true, 'ritual')
+  ...buildStateClipsForBones(S0, HD),
+
+  // ── States & Locomotion ──
+  hex_idle_perch: _hClip('hex_idle_perch', 4, true, 'state', ['秩序', '沉稳', '机械', '甲壳坚硬'], {
+    [S0]: [kf(0, 0, 0, 0), kf(2, 0.02, 0, 0), kf(4, 0, 0, 0)],
+    [LA]: [kf(0, 0, 0, 0), kf(2, 0.05, 0.08, 0), kf(4, 0, 0, 0)],
+    [RA]: [kf(0, 0, 0, 0), kf(2, 0.05, -0.08, 0), kf(4, 0, 0, 0)]
+  }),
+  hex_sleep: _hClip('hex_sleep', 6, true, 'state', ['蛰伏', '隐忍', '冷酷高效'], {
+    [S0]: [kf(0, -0.05, 0, 0), kf(3, -0.07, 0, 0), kf(6, -0.05, 0, 0)],
+    [HD]: [kf(0, 0.2, 0, 0), kf(3, 0.22, 0, 0), kf(6, 0.2, 0, 0)],
+    [LA]: [kf(0, 0.3, 0, 0), kf(3, 0.35, 0, 0), kf(6, 0.3, 0, 0)],
+    [RA]: [kf(0, 0.3, 0, 0), kf(3, 0.35, 0, 0), kf(6, 0.3, 0, 0)]
+  }),
+  hex_crawl: _hClip('hex_crawl', 1.2, true, 'locomotion', ['秩序', '机械', '勤劳'], {
+    // Tripod gait: LF + RM + LH move together; RF + LM + RH move together
+    [LF]: [kf(0, 0.3, 0, 0), kf(0.6, -0.2, 0, 0), kf(1.2, 0.3, 0, 0)],
+    [RM]: [kf(0, 0.3, 0, 0), kf(0.6, -0.2, 0, 0), kf(1.2, 0.3, 0, 0)],
+    [LH]: [kf(0, 0.3, 0, 0), kf(0.6, -0.2, 0, 0), kf(1.2, 0.3, 0, 0)],
+    [RF]: [kf(0, -0.2, 0, 0), kf(0.6, 0.3, 0, 0), kf(1.2, -0.2, 0, 0)],
+    [LM]: [kf(0, -0.2, 0, 0), kf(0.6, 0.3, 0, 0), kf(1.2, -0.2, 0, 0)],
+    [RH]: [kf(0, -0.2, 0, 0), kf(0.6, 0.3, 0, 0), kf(1.2, -0.2, 0, 0)],
+    [S0]: [kf(0, 0, 0.03, 0), kf(0.6, 0, -0.03, 0), kf(1.2, 0, 0.03, 0)]
+  }),
+  hex_scuttle: _hClip('hex_scuttle', 0.6, true, 'locomotion', ['迅捷', '敏锐', '探索'], {
+    [LF]: [kf(0, 0.4, 0, 0), kf(0.3, -0.3, 0, 0), kf(0.6, 0.4, 0, 0)],
+    [RM]: [kf(0, 0.4, 0, 0), kf(0.3, -0.3, 0, 0), kf(0.6, 0.4, 0, 0)],
+    [LH]: [kf(0, 0.4, 0, 0), kf(0.3, -0.3, 0, 0), kf(0.6, 0.4, 0, 0)],
+    [RF]: [kf(0, -0.3, 0, 0), kf(0.3, 0.4, 0, 0), kf(0.6, -0.3, 0, 0)],
+    [LM]: [kf(0, -0.3, 0, 0), kf(0.3, 0.4, 0, 0), kf(0.6, -0.3, 0, 0)],
+    [RH]: [kf(0, -0.3, 0, 0), kf(0.3, 0.4, 0, 0), kf(0.6, -0.3, 0, 0)]
+  }),
+
+  // ── Interaction & Micro ──
+  hex_antenna_explore: _hClip('hex_antenna_explore', 2.0, true, 'interaction', ['触角敏锐', '探索', '好奇'], {
+    [LA]: [kf(0, 0, 0.2, 0), kf(0.5, 0.1, -0.2, 0), kf(1.0, 0, 0.3, 0), kf(1.5, 0.1, -0.1, 0), kf(2.0, 0, 0.2, 0)],
+    [RA]: [kf(0, 0, -0.2, 0), kf(0.5, 0.1, 0.2, 0), kf(1.0, 0, -0.3, 0), kf(1.5, 0.1, 0.1, 0), kf(2.0, 0, -0.2, 0)],
+    [HD]: [kf(0, 0.05, 0, 0), kf(1.0, 0.08, 0, 0), kf(2.0, 0.05, 0, 0)]
+  }),
+  hex_mandible_click: _hClip('hex_mandible_click', 1.2, true, 'interaction', ['机械', '冷酷高效', '秩序'], {
+    [JW]: [
+      kf(0, 0, 0, 0),
+      kf(0.2, 0.25, 0, 0),
+      kf(0.4, 0, 0, 0),
+      kf(0.6, 0.25, 0, 0),
+      kf(0.8, 0, 0, 0),
+      kf(1.2, 0, 0, 0)
+    ]
+  }),
+  hex_clean_antenna: _hClip('hex_clean_antenna', 2.5, false, 'daily', ['严谨', '工蜂', '勤劳'], {
+    [LF]: [kf(0, 0, 0, 0), kf(0.8, 0.6, 0, 0.4), kf(1.6, 0.7, 0, 0.3), kf(2.5, 0, 0, 0)],
+    [LA]: [kf(0, 0, 0, 0), kf(0.8, 0.3, 0, 0), kf(1.6, 0.2, 0, 0), kf(2.5, 0, 0, 0)],
+    [HD]: [kf(0, 0, 0, 0), kf(0.8, 0.1, -0.15, 0), kf(2.5, 0, 0, 0)]
+  }),
+  hex_build_nest: _hClip('hex_build_nest', 3.5, true, 'daily', ['筑巢', '工蜂', '勤劳', '坚韧'], {
+    [LF]: [kf(0, 0.3, 0, 0), kf(0.6, -0.2, 0, 0), kf(1.2, 0.3, 0, 0)],
+    [RF]: [kf(0, -0.2, 0, 0), kf(0.6, 0.3, 0, 0), kf(1.2, -0.2, 0, 0)],
+    [JW]: [kf(0, 0.1, 0, 0), kf(0.6, 0.3, 0, 0), kf(1.2, 0.1, 0, 0)]
+  }),
+
+  // ── Positive & Social ──
+  hex_happy_vibrate: _hClip('hex_happy_vibrate', 1.0, true, 'emotion-positive', ['欢腾', '灵动', '服从'], {
+    [S0]: [kf(0, 0, 0.05, 0), kf(0.25, 0, -0.05, 0), kf(0.5, 0, 0.05, 0), kf(0.75, 0, -0.05, 0), kf(1.0, 0, 0.05, 0)],
+    [LA]: [kf(0, 0.1, 0, 0), kf(0.5, -0.1, 0, 0), kf(1.0, 0.1, 0, 0)],
+    [RA]: [kf(0, 0.1, 0, 0), kf(0.5, -0.1, 0, 0), kf(1.0, 0.1, 0, 0)]
+  }),
+  hex_mimic_pose: _hClip('hex_mimic_pose', 3.0, true, 'ritual', ['拟态', '神秘', '伪装'], {
+    [S0]: [kf(0, 0.1, 0, 0), kf(1.5, 0.12, 0, 0), kf(3.0, 0.1, 0, 0)],
+    [LF]: [kf(0, 0.8, 0, 0), kf(1.5, 0.82, 0, 0), kf(3.0, 0.8, 0, 0)],
+    [RF]: [kf(0, 0.8, 0, 0), kf(1.5, 0.82, 0, 0), kf(3.0, 0.8, 0, 0)]
+  }),
+  hex_swarm_sync: _hClip('hex_swarm_sync', 2.0, true, 'social', ['群集', '秩序', '服从'], {
+    [LA]: [kf(0, 0, 0.3, 0), kf(1.0, 0, -0.3, 0), kf(2.0, 0, 0.3, 0)],
+    [RA]: [kf(0, 0, -0.3, 0), kf(1.0, 0, 0.3, 0), kf(2.0, 0, -0.3, 0)]
+  }),
+
+  // ── Negative Emotion & Threat ──
+  hex_rage_frenzy: _hClip('hex_rage_frenzy', 1.0, true, 'emotion-negative', ['狂躁', '暴躁', '凶猛'], {
+    [JW]: [kf(0, 0, 0, 0), kf(0.2, 0.4, 0, 0), kf(0.4, 0, 0, 0), kf(0.6, 0.4, 0, 0), kf(1.0, 0, 0, 0)],
+    [LF]: [kf(0, 0.5, 0, 0), kf(0.5, -0.4, 0, 0), kf(1.0, 0.5, 0, 0)],
+    [RF]: [kf(0, -0.4, 0, 0), kf(0.5, 0.5, 0, 0), kf(1.0, -0.4, 0, 0)]
+  }),
+  hex_defend_curl: _hClip('hex_defend_curl', 2.0, true, 'emotion-negative', ['甲壳坚硬', '坚韧', '蛰伏'], {
+    [S0]: [kf(0, 0.4, 0, 0), kf(1.0, 0.45, 0, 0), kf(2.0, 0.4, 0, 0)],
+    [HD]: [kf(0, 0.3, 0, 0), kf(1.0, 0.35, 0, 0), kf(2.0, 0.3, 0, 0)]
+  })
 }

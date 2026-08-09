@@ -36,6 +36,7 @@ class CompanionModel(ModelBase, TimestampMixin):
     status: Mapped[str] = mapped_column(String(32), default="pending")
     has_rig: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("FALSE"))
     has_morph_targets: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("FALSE"))
+    animation_clips_json: Mapped[str] = mapped_column(Text, default="[]", server_default=text("'[]'"))
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     active: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("FALSE"), index=True)
 
@@ -70,6 +71,7 @@ class Persona(ModelBase, TimestampMixin):
 
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), unique=True, index=True)
     definition_json: Mapped[str] = mapped_column(Text, default="{}")
+    personality_tags_json: Mapped[str] = mapped_column(Text, default="[]", server_default=text("'[]'"))
     system_prompt_extras: Mapped[str] = mapped_column(Text, default="")
     is_complete: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("FALSE"), index=True)
 

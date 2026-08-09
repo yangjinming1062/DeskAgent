@@ -2,6 +2,8 @@ from .models import AvatarAsset
 from .models import CompanionModel
 from .models import Persona
 from .models import WardrobeItem
+from .schemas import AnimationClipResponse
+from .schemas import AnimationGenerateRequest
 from .schemas import AvatarAssetResponse
 from .schemas import AvatarFromImageRequest
 from .schemas import AvatarGenerateRequest
@@ -16,6 +18,8 @@ from .schemas import WardrobeGenerateRequest
 from .schemas import WardrobeItemResponse
 
 __all__ = [
+    "AnimationClipResponse",
+    "AnimationGenerateRequest",
     "AvatarAsset",
     "AvatarAssetResponse",
     "AvatarFromImageRequest",

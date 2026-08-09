@@ -171,14 +171,11 @@ IDLE 中每 10~15s 随机插入；缺失时退回 `idle`。
 
 `dance_sway`（循环）· `dance_spin` · `conduct_music`（循环）
 
-### 总览
+### 总览与性格标签驱动调度
 
-biped 库 = **109 clip**（9 MUST + 100 SHOULD）。其余 6 类 rig 各含 **9 个规范状态 clip**（`idle` /
-`listening` / `thinking` / `speaking` / `working` / `sleeping` / `interacting` / `emotional_idle` /
-`disconnected`，名称与 §2.1 相同——`AnimationMap` 按状态名查找，任何 rig 库缺一个状态 clip 该状态
-就无法播放）加各自的物种命名 clip：quadruped 15、serpentine 15、avian 18、aquatic 18、
-hexapod 17、octopod 17（合计 24 / 24 / 27 / 27 / 26 / 26）；物种 clip 的关节名以
-[tripo-spec.md](tripo-spec.md) 为准后由人工 / LLM 补关键帧，当前为占位微动。
+- **骨骼静态库**：biped 库包含 **109 clip**（9 MUST + 100 SHOULD），其余 6 类 rig（quadruped / avian / serpentine / aquatic / hexapod / octopod）均含 **9 个规范状态 clip**（`idle` / `listening` / `thinking` / `speaking` / `working` / `sleeping` / `interacting` / `emotional_idle` / `disconnected`）及各自物种多骨骼关键帧动作，各 rig 库动作数均达 20~45+。
+- **性格标签驱动调度**：每个 clip 可声明 `tags?: readonly string[]`（如 `["温柔", "活泼", "护主"]` 等），与伴侣当前性格标签求交集；在互动（poke / drag）、情绪状态切换与 idle 微动中优先命中重合度最高的动作，交集相同时随机挑选。
+- **LLM 动画生成与动态注入**：后端基于 `POST /api/companion/animations/generate` 支持依据 rig_type、骨骼结构及性格标签动态生成专属关键帧并清洗校验；客户端通过 `$generatedClips` 及 `CharacterController.appendClipDefs()` 实现运行时动态加载。
 
 ---
 

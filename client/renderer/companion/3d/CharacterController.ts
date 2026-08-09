@@ -3,9 +3,13 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 
 import type { SpriteEmotion, SpriteStateName } from '@/companion/companion-store'
 import { safeJsonParse } from '@/shared/lib/safe-json'
+import type { ReactionBucket } from '@/shared/types/reactions'
 
 import { resolveClip } from './AnimationMap'
-import { buildClipsForRig } from './clips-registry'
+import { resolveEmotionClip, resolveInteractionClip } from './clip-dispatch'
+import { buildClip, type ClipDef } from './clips-biped'
+import { buildClipsForRig, getClipDefs } from './clips-registry'
+import { $availableClipNames } from './model-store'
 import { MorphController } from './MorphController'
 import type { LoadedModelInfo } from './types'
 
@@ -83,9 +87,11 @@ export class CharacterController {
   private mixer: THREE.AnimationMixer | null = null
   private actions = new Map<string, THREE.AnimationAction>()
   private actionNames = new Set<string>()
+  private injectedClipDefs: ClipDef[] = []
   private currentAction: THREE.AnimationAction | null = null
   private isProcedural = false
   private proc: ProcParts | null = null
+  private rigType: string = 'biped'
 
   private currentState: SpriteStateName = 'idle'
   private breathPhase = 0
@@ -107,6 +113,8 @@ export class CharacterController {
    * onto the local backend by main), so no CORS preflight against the signed
    * URL's host. See connection.cjs::deskagent:api:asset-buffer. */
   async load(bytes: ArrayBuffer | null, scene: THREE.Scene, rigType: string = 'biped'): Promise<LoadedModelInfo> {
+    this.rigType = rigType
+
     if (bytes) {
       try {
         this.disposeRoot(scene)
@@ -130,7 +138,13 @@ export class CharacterController {
           this.actions.set(clip.name, this.mixer.clipAction(clip))
         }
 
+        for (const def of this.injectedClipDefs) {
+          const clip = buildClip(def)
+          this.actions.set(clip.name, this.mixer.clipAction(clip))
+        }
+
         this.actionNames = new Set(this.actions.keys())
+        $availableClipNames.set(new Set(this.actionNames))
         this.morph.discover(this.root)
         this.applyState(this.currentState, null)
 
@@ -197,12 +211,85 @@ export class CharacterController {
     this.root = new THREE.Group()
   }
 
+  /** 运行时注入 clip 定义（不重载模型）。 */
+  appendClipDefs(defs: readonly ClipDef[]): void {
+    for (const def of defs) {
+      this.injectedClipDefs = this.injectedClipDefs.filter(d => d.name !== def.name)
+      this.injectedClipDefs.push(def)
+
+      if (this.mixer) {
+        const clip = buildClip(def)
+        this.actions.set(clip.name, this.mixer.clipAction(clip))
+        this.actionNames.add(clip.name)
+      }
+    }
+
+    $availableClipNames.set(new Set(this.actionNames))
+  }
+
+  /** 移除指定的动态动作。 */
+  removeClip(name: string): void {
+    this.injectedClipDefs = this.injectedClipDefs.filter(d => d.name !== name)
+    const action = this.actions.get(name)
+
+    if (action) {
+      action.stop()
+      this.mixer?.uncacheClip(action.getClip())
+      this.actions.delete(name)
+      this.actionNames.delete(name)
+      $availableClipNames.set(new Set(this.actionNames))
+    }
+  }
+
+  /** 查询当前所有已注册的动作名称。 */
+  get availableClipNames(): Set<string> {
+    return new Set(this.actionNames)
+  }
+
+  /** 按名称播放指定动作。 */
+  playClipByName(name: string, fade = 0.25): boolean {
+    if (!this.actionNames.has(name)) {
+      return false
+    }
+
+    this.playClip(name, fade)
+
+    return true
+  }
+
   /** Drive animation + morphs from the companion state machine. */
-  applyState(state: SpriteStateName, emotion: SpriteEmotion | null): void {
+  applyState(
+    state: SpriteStateName,
+    emotion: SpriteEmotion | null,
+    ctx?: {
+      companionTags?: string[]
+      interactionBucket?: ReactionBucket
+      clipOverride?: string | null
+    }
+  ): void {
     this.currentState = state
 
     if (!this.isProcedural && this.mixer) {
-      const clipName = resolveClip(state, this.actionNames)
+      const tags = ctx?.companionTags ?? []
+      const library = getClipDefs(this.rigType)
+      const available = this.actionNames
+      let clipName: string | null = null
+
+      if (ctx?.clipOverride && this.actionNames.has(ctx.clipOverride)) {
+        // Caller already resolved and verified the override (e.g. interaction.ts)
+        clipName = ctx.clipOverride
+      } else if (ctx?.interactionBucket) {
+        // Tag-driven interaction clip selection
+        clipName = resolveInteractionClip(ctx.interactionBucket, tags, library, available)
+      } else if (state === 'emotional' && emotion) {
+        // Tag-driven emotion clip selection
+        clipName = resolveEmotionClip(emotion, tags, library, available)
+      }
+
+      // Fallback to legacy AnimationMap static mapping
+      if (!clipName) {
+        clipName = resolveClip(state, this.actionNames)
+      }
 
       if (clipName) {
         this.playClip(clipName, 0.25)
