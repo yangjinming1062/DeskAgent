@@ -37,7 +37,7 @@ import { speak, stopSpeaking } from '../tts'
 import { fetchVoiceCatalog, matchVoicePreference, nextVoice, sampleLine, type VoiceOption } from '../voice'
 import { $voicePreparing } from '../voice-state'
 
-import { playOnboardingAudio } from './onboarding-audio'
+import { type OnboardingAudioTag, playOnboardingAudio } from './onboarding-audio'
 import { Chip, PortraitPanel } from './onboarding-components'
 
 type Phase =
@@ -76,6 +76,9 @@ interface Question {
   placeholder: string
   required: boolean
   multiline: boolean
+  // Manifest tags are bound to the recorded line, not to a position — reordering
+  // QUESTIONS must not desync the audio.
+  audioTag: OnboardingAudioTag
   presets?: readonly string[]
   max?: number
   // Lets the user hand over a reference image alongside the text answer.
@@ -106,7 +109,8 @@ const QUESTIONS: readonly Question[] = [
     text: '您好…我还不认识自己。您愿意给我一个名字吗？',
     placeholder: '给我起个名字吧',
     required: true,
-    multiline: false
+    multiline: false,
+    audioTag: 'onboarding.q0'
   },
   {
     key: 'species',
@@ -114,6 +118,7 @@ const QUESTIONS: readonly Question[] = [
     placeholder: '如：精灵、人类、龙…（可直接输入或选择标签）',
     required: true,
     multiline: false,
+    audioTag: 'onboarding.q1',
     presets: SPECIES_PRESETS
   },
   {
@@ -122,6 +127,7 @@ const QUESTIONS: readonly Question[] = [
     placeholder: '或者自由描述…',
     required: false,
     multiline: false,
+    audioTag: 'onboarding.q2',
     presets: CHARACTER_GENDER_PRESETS
   },
   {
@@ -130,6 +136,7 @@ const QUESTIONS: readonly Question[] = [
     placeholder: '比如：金发绿眼、黑色礼帽…',
     required: false,
     multiline: true,
+    audioTag: 'onboarding.q3',
     max: MAX_APPEARANCE,
     presets: APPEARANCE_PRESETS,
     allowImage: true
@@ -140,6 +147,7 @@ const QUESTIONS: readonly Question[] = [
     placeholder: '或者自由描述…',
     required: false,
     multiline: false,
+    audioTag: 'onboarding.q4',
     presets: ROLE_PRESETS
   },
   {
@@ -148,7 +156,30 @@ const QUESTIONS: readonly Question[] = [
     placeholder: '自由描述…',
     required: false,
     multiline: false,
+    audioTag: 'onboarding.q5',
     presets: PERSONALITY_PRESETS
+  },
+  // speaking_style is required by the backend schema — the dedicated question
+  // makes the user's choice the direct source of truth, and being a character
+  // field it lands in the enterHatching PUT with the rest.
+  {
+    key: 'speaking_style',
+    text: '您希望我说话的风格是什么样的？',
+    placeholder: '比如：简短、爱用比喻、俏皮一点…',
+    required: false,
+    multiline: true,
+    audioTag: 'onboarding.q10',
+    max: 500,
+    presets: SPEAKING_STYLE_PRESETS
+  },
+  {
+    key: 'voice',
+    text: '您希望我听起来是什么样的？比如温柔的少女音、沉稳的男声、活泼的正太…',
+    placeholder: '描述你想要的声音…',
+    required: false,
+    multiline: false,
+    audioTag: 'onboarding.q12',
+    presets: VOICE_PRESETS
   },
   {
     key: 'user_call_name',
@@ -156,6 +187,7 @@ const QUESTIONS: readonly Question[] = [
     placeholder: '或者自由描述…',
     required: false,
     multiline: false,
+    audioTag: 'onboarding.q6',
     max: MAX_USER_TEXT,
     kinds: CALL_NAME_KINDS
   },
@@ -165,6 +197,7 @@ const QUESTIONS: readonly Question[] = [
     placeholder: '或自由描述…',
     required: false,
     multiline: false,
+    audioTag: 'onboarding.q7',
     max: MAX_USER_TEXT,
     presets: USER_GENDER_PRESETS
   },
@@ -174,6 +207,7 @@ const QUESTIONS: readonly Question[] = [
     placeholder: '或自由描述…',
     required: false,
     multiline: false,
+    audioTag: 'onboarding.q8',
     max: MAX_USER_TEXT,
     presets: USER_AGE_BUCKET_PRESETS
   },
@@ -183,18 +217,8 @@ const QUESTIONS: readonly Question[] = [
     placeholder: '可以多写几个…',
     required: false,
     multiline: true,
+    audioTag: 'onboarding.q9',
     max: MAX_USER_TEXT
-  },
-  // speaking_style is required by the backend schema — the dedicated
-  // question makes the user's choice the direct source of truth.
-  {
-    key: 'speaking_style',
-    text: '您希望我说话的风格是什么样的？',
-    placeholder: '比如：简短、爱用比喻、俏皮一点…',
-    required: false,
-    multiline: true,
-    max: 500,
-    presets: SPEAKING_STYLE_PRESETS
   },
   {
     key: 'user_freeform',
@@ -202,22 +226,17 @@ const QUESTIONS: readonly Question[] = [
     placeholder: '可跳过…',
     required: false,
     multiline: true,
+    audioTag: 'onboarding.q11',
     max: MAX_USER_TEXT
-  },
-  {
-    key: 'voice',
-    text: '您希望我听起来是什么样的？比如温柔的少女音、沉稳的男声、活泼的正太…',
-    placeholder: '描述你想要的声音…',
-    required: false,
-    multiline: false,
-    presets: VOICE_PRESETS
   }
 ]
 
 // Slice boundaries mirror backend ONBOARDING_FIELDS order — required for resume routing.
-const CHARACTER_QUESTIONS: readonly Question[] = QUESTIONS.slice(0, 6) // name, species, character_gender, appearance, role, personality
-const USER_QUESTIONS: readonly Question[] = QUESTIONS.slice(6, 12) // user_call_name, user_gender, user_age_bucket, user_hobbies, speaking_style, user_freeform
-const VOICE_QUESTIONS: readonly Question[] = QUESTIONS.slice(12, 13) // voice
+// Everything that defines the companion itself (character fields, speaking style,
+// portrait, voice) is settled before any user_* question is asked.
+const CHARACTER_QUESTIONS: readonly Question[] = QUESTIONS.slice(0, 7) // name, species, character_gender, appearance, role, personality, speaking_style
+const VOICE_QUESTIONS: readonly Question[] = QUESTIONS.slice(7, 8) // voice
+const USER_QUESTIONS: readonly Question[] = QUESTIONS.slice(8, 13) // user_call_name, user_gender, user_age_bucket, user_hobbies, user_freeform
 
 const PHASE_QUESTIONS: Record<Phase, readonly Question[]> = {
   'q-character': CHARACTER_QUESTIONS,
@@ -230,14 +249,14 @@ const PHASE_QUESTIONS: Record<Phase, readonly Question[]> = {
   greeting: []
 }
 
-// Routes resume's next_field to q-user vs voice. Mirrors backend.services.companion._POST_CHARACTER_FIELDS.
+// Routes resume's next_field to q-user; `voice` has its own branch. Mirrors
+// backend.services.companion._POST_CHARACTER_FIELDS.
 const POST_CHARACTER_FIELDS: ReadonlySet<string> = new Set([
   'user_call_name',
   'user_gender',
   'user_age_bucket',
   'user_hobbies',
-  'user_freeform',
-  'speaking_style'
+  'user_freeform'
 ])
 
 // Hoisted: useInteractiveRegion's effect otherwise re-registers every render.
@@ -436,45 +455,15 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
 
   const [voice, setVoice] = useState<VoiceOption | null>(null)
   const [voiceCatalog, setVoiceCatalog] = useState<VoiceOption[]>([])
+  // Matcher's runner-ups. Kept apart from the full catalog so the 推荐卡's
+  // 「换一个」 cycles the candidates instead of walking the whole directory.
+  const [voiceAlternatives, setVoiceAlternatives] = useState<VoiceOption[]>([])
   const [voiceLangFilter, setVoiceLangFilter] = useState<VoiceLanguageFilter>('zh')
   // Failure hints live on the portrait panel — the form area is hidden behind it.
   const [portraitPanelHint, setPortraitPanelHint] = useState<string | null>(null)
   // Step-2 transition has no avatar regen hook attached (the user already
   // confirmed the face), so track its loading here for button-disabled state.
   const [fullbodyLoading, setFullbodyLoading] = useState(false)
-
-  // Resume path skips enterHatching, so the first-time-only portraitUrl state never gets set; re-pull here so voice-catalog PortraitPanel isn't empty. 404 (no portrait yet) is a no-op.
-  const hydrateLocalPortrait = async () => {
-    try {
-      const res = await window.deskagent.api<{
-        asset_url?: string
-        seed_front_url?: string
-        seed_right_url?: string
-        seed_back_url?: string
-      }>({
-        path: '/api/companion/avatar'
-      })
-
-      if (!res?.asset_url && !res?.seed_front_url) {
-        return
-      }
-
-      const applied = await applyPortrait({
-        assetUrl: res.asset_url,
-        seedFrontUrl: res.seed_front_url,
-        seedRightUrl: res.seed_right_url,
-        seedBackUrl: res.seed_back_url
-      })
-
-      if (applied.avatar) {
-        setPortraitUrl(applied.avatar)
-      }
-    } catch (error) {
-      if (!isClientErrorIpc(error)) {
-        console.warn('[onboarding] portrait hydrate failed', error)
-      }
-    }
-  }
 
   // Reference image handed over at the 形象描述 question. Session-scoped on
   // purpose — `onboarding.submit` persists text answers only, so a resumed
@@ -641,11 +630,11 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
           const nextField = state.next_field
 
           if (nextField === 'voice') {
-            // Skip Q13 description — already answered.
+            // next_field==='voice' means the description sentence itself is
+            // still unanswered — land on describe, not the catalog.
             setPhase('voice')
-            setVoiceStage('catalog')
+            setVoiceStage('describe')
             setQIndex(0)
-            void hydrateLocalPortrait()
           } else if (nextField && POST_CHARACTER_FIELDS.has(nextField)) {
             const idx = USER_QUESTIONS.findIndex(q => BACKEND_FIELD[q.key] === nextField)
             setPhase('q-user')
@@ -693,15 +682,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
     setAnswerKind(null)
     setHint(null)
 
-    // Audio manifest tags align with the original QUESTIONS positions, not the slice-local qIndex.
-    const globalQIndex =
-      phase === 'q-character'
-        ? qIndex
-        : phase === 'q-user'
-          ? qIndex + CHARACTER_QUESTIONS.length
-          : qIndex + CHARACTER_QUESTIONS.length + USER_QUESTIONS.length
-
-    void playOnboardingAudio(`onboarding.q${globalQIndex}`)
+    void playOnboardingAudio(q.audioTag)
 
     return () => stopSpeaking()
   }, [phase, qIndex, currentList, answersRef])
@@ -749,9 +730,8 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
     if (phase === 'q-character') {
       void enterHatching()
     } else if (phase === 'q-user') {
-      setPhase('voice')
-      setQIndex(0)
-      setVoiceStage('describe')
+      setPhase('finishing')
+      void finish()
     }
   }
 
@@ -764,6 +744,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
       stopSpeaking()
       const matched = await matchVoicePreference(requestGateway, answers.voice ?? '')
       setVoice(matched.voice)
+      setVoiceAlternatives(matched.alternatives)
       setCompanionVoiceId(matched.voice.id)
       setVoiceLangFilter('zh')
       const catalog = await fetchVoiceCatalog(requestGateway, 'zh')
@@ -941,18 +922,32 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
 
   const confirmPortrait = async () => {
     setRefImage(null)
-    // Portrait confirmed → user info (Q7-Q12) before voice, so any portrait regen overlaps with q-user typing.
-    setPhase('q-user')
+    // Voice belongs with the portrait: both define the companion itself, so
+    // they run back-to-back before any user_* question.
+    setPhase('voice')
+    setVoiceStage('describe')
     setQIndex(0)
     setInput('')
     setAnswerKind(null)
     setHint(null)
   }
 
+  const previewVoice = (id: string, context: string) =>
+    void speak(sampleLine(answers.name || ''), id || undefined, context)
+
+  // Selecting always previews: the label alone says nothing about how it sounds.
+  const selectVoice = (next: VoiceOption, context: string) => {
+    setVoice(next)
+    setCompanionVoiceId(next.id)
+    previewVoice(next.id, context)
+  }
+
   const onVoiceLangTabClick = async (lang: VoiceLanguageFilter) => {
     setVoiceLangFilter(lang)
     const catalog = await fetchVoiceCatalog(requestGateway, lang)
     setVoiceCatalog(catalog.voices)
+    // Candidates were scored against the previous tab's language.
+    setVoiceAlternatives([])
     // Reset the current voice to the first of the filtered list so the
     // Try/Next cycle starts from a language-appropriate default. The
     // persisted voice id follows the displayed voice so a later
@@ -966,16 +961,20 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
   }
 
   const confirmVoice = () => {
-    setPhase('finishing')
-    void finish()
+    setPhase('q-user')
+    setQIndex(0)
+    setInput('')
+    setAnswerKind(null)
+    setHint(null)
   }
 
   const finish = async () => {
-    // Safety-net retry; roll back to 'voice' on failure so phase isn't stuck on 'finishing'.
+    // Safety-net retry; roll back to 'q-user' on failure so phase isn't stuck on 'finishing'.
     try {
       await savePersona(assemblePersona(answers))
     } catch (err) {
-      setPhase('voice')
+      setPhase('q-user')
+      setQIndex(USER_QUESTIONS.length - 1)
       setHint(err instanceof Error ? `同步失败：${err.message}` : '同步失败，请稍后再试')
       void playOnboardingAudio('onboarding.finishing.retry')
 
@@ -995,6 +994,9 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
   }
 
   const presetValues = question?.presets ?? []
+  const otherVoices = voice ? voiceCatalog.filter(v => v.id !== voice.id) : []
+  // 「换一个」 stays inside the matcher's candidates while we have them.
+  const voiceCandidates = voice ? [voice, ...(voiceAlternatives.length ? voiceAlternatives : otherVoices)] : []
 
   return (
     <div className="fixed inset-0 z-50 pointer-events-none" style={{ pointerEvents: 'none' }}>
@@ -1137,10 +1139,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
             <p className="py-6 text-center text-sm text-white/80">{hint || '让我想想我该是什么样子…'}</p>
           )}
 
-          {(phase === 'portrait-avatar' ||
-            phase === 'portrait-fullbody' ||
-            phase === 'greeting' ||
-            (phase === 'voice' && voiceStage === 'catalog')) && (
+          {(phase === 'portrait-avatar' || phase === 'portrait-fullbody' || phase === 'greeting') && (
             <PortraitPanel
               avatarUrl={portraitUrl}
               hint={portraitPanelHint}
@@ -1212,7 +1211,8 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
           )}
 
           {phase === 'voice' && voiceStage === 'catalog' && voice && (
-            <div className="mt-4">
+            <div className="mt-1">
+              <p className="mb-3 text-[13px] text-white/70">挑一个我说话的声音吧，随时可以试听。</p>
               <div className="mb-3 flex gap-1 rounded-full border border-white/10 bg-white/5 p-1 text-[10px]">
                 {VOICE_LANGUAGE_TABS.map(tab => (
                   <button
@@ -1225,33 +1225,60 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
                   </button>
                 ))}
               </div>
-              <div className="flex items-center justify-between text-xs text-white/70">
-                <span>{voice.label}</span>
-                <div className="flex gap-3">
-                  <button
-                    className="transition hover:text-white disabled:opacity-40"
-                    disabled={voicePreparing}
-                    onClick={() =>
-                      void speak(sampleLine(answers.name || ''), voice?.id || undefined, 'onboarding.voice.preview.try')
-                    }
-                    type="button"
-                  >
-                    试听
-                  </button>
-                  <button
-                    className="transition hover:text-white disabled:opacity-40"
-                    disabled={voicePreparing}
-                    onClick={() => {
-                      const n = nextVoice(voice.id, voiceCatalog.length ? voiceCatalog : [voice])
-                      setVoice(n)
-                      setCompanionVoiceId(n.id)
-                      void speak(sampleLine(answers.name || ''), n.id || undefined, 'onboarding.voice.preview.next')
-                    }}
-                    type="button"
-                  >
-                    换一个
-                  </button>
+
+              <div className="rounded-xl border border-white/25 bg-white/10 p-3">
+                <p className="mb-1 text-[10px] tracking-wide text-white/45">为你推荐</p>
+                <div className="flex items-start justify-between gap-3 text-xs text-white/85">
+                  <div className="min-w-0">
+                    <p className="truncate font-medium">{voice.label}</p>
+                    {voice.tags.length > 0 && (
+                      <p className="mt-0.5 truncate text-[10px] text-white/40">{voice.tags.join(' · ')}</p>
+                    )}
+                  </div>
+                  <div className="flex shrink-0 gap-3">
+                    <button
+                      className="transition hover:text-white disabled:opacity-40"
+                      disabled={voicePreparing}
+                      onClick={() => previewVoice(voice.id, 'onboarding.voice.preview.try')}
+                      type="button"
+                    >
+                      试听
+                    </button>
+                    <button
+                      className="transition hover:text-white disabled:opacity-40"
+                      disabled={voicePreparing}
+                      onClick={() => selectVoice(nextVoice(voice.id, voiceCandidates), 'onboarding.voice.preview.next')}
+                      type="button"
+                    >
+                      换一个
+                    </button>
+                  </div>
                 </div>
+              </div>
+
+              <p className="mt-3 mb-1 text-[10px] tracking-wide text-white/45">浏览目录</p>
+              <div className="max-h-48 overflow-y-auto rounded-xl border border-white/10 bg-white/5">
+                {otherVoices.length === 0 ? (
+                  <p className="px-3 py-4 text-center text-[10px] text-white/35">没有更多音色可选</p>
+                ) : (
+                  otherVoices.map(v => (
+                    <button
+                      className="flex w-full items-center justify-between gap-3 border-b border-white/5 px-3 py-2 text-left text-xs text-white/75 transition last:border-b-0 hover:bg-white/10 disabled:opacity-40"
+                      disabled={voicePreparing}
+                      key={v.id}
+                      onClick={() => selectVoice(v, 'onboarding.voice.preview.try')}
+                      type="button"
+                    >
+                      <span className="min-w-0">
+                        <span className="block truncate">{v.label}</span>
+                        {v.tags.length > 0 && (
+                          <span className="block truncate text-[10px] text-white/35">{v.tags.join(' · ')}</span>
+                        )}
+                      </span>
+                      <span className="shrink-0 text-[10px] text-white/35">试听并选择</span>
+                    </button>
+                  ))
+                )}
               </div>
               <p className="mt-1 text-[10px] text-white/40">
                 {voiceCatalog.length} 个音色 · 先挑个差不多的就行，以后随时能在设置里调。

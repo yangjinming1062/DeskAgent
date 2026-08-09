@@ -32,8 +32,8 @@
 
 | 方向 | 方法 | 用途 | 关键约束 |
 |------|------|------|----------|
-| Client → Backend | `onboarding.get_state` | 查询已采集字段 + 下一个未答问题（断点恢复） | 返回 `is_complete=True` 仅在 `Persona.is_complete` + `user_*` + `voice` 全部齐后才置位 |
-| Client → Backend | `onboarding.submit` `{field, value}` | 逐字段增量持久化 onboarding 答案 | 答案按子阶段分流——角色子阶段触发 `PUT /api/companion/persona`;用户子阶段 `user_*` upsert 到 `Memory` 表 |
+| Client → Backend | `onboarding.get_state` | 查询已采集字段 + 下一个未答问题（断点恢复） | 返回 `is_complete=True` 仅在 `Persona.is_complete` + `voice` + `user_*` 全部齐后才置位;`next_field` 优先级 **voice 先于 user_***（音色子阶段排在用户子阶段之前，见 DESIGN §5.2） |
+| Client → Backend | `onboarding.submit` `{field, value}` | 逐字段增量持久化 onboarding 答案 | 答案按子阶段分流——角色子阶段（含 `speaking_style`）触发 `PUT /api/companion/persona`;finalize 后只接受 `voice`（落 draft）与 `user_*`（upsert 到 `Memory` 表） |
 | Client → Backend | `avatar.regenerate` `{feedback?}` | 重生 portrait 头像（不重跑全身） | 不触发 3D 模型失效 |
 | Client → Backend | `avatar.generate_fullbody` `{avatar_id}` | 生成正/右/背三视图种子图 | 与 `avatar.regenerate` 共用 per-user 锁;并发返回 `already_running` |
 | Client → Backend | `tts.match_voice` `{preference}` | 描述句 → voice id（标签评分） | 主流程 |

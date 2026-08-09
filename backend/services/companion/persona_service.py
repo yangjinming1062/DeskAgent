@@ -20,8 +20,9 @@ _OPTIONAL_FIELDS: tuple[str, ...] = ("appearance", "background", "biological_typ
 _KNOWN_FIELDS: frozenset[str] = frozenset(_REQUIRED_FIELDS + _OPTIONAL_FIELDS)
 _MAX_FIELD_LEN: int = 500
 
-# Onboarding raw-answer fields, in question order. Stored as a draft in
-# ``Persona.definition_json`` while ``is_complete`` is False; user_* reach
+# Onboarding raw-answer fields, in question order: character sub-stage
+# (name..speaking_style) → 形象确认 → voice → user sub-stage. Stored as a draft
+# in ``Persona.definition_json`` while ``is_complete`` is False; user_* reach
 # Memory via ``update_persona`` server-side routing. ``voice`` rides the
 # draft for breakpoint recovery but is not a persona field.
 ONBOARDING_FIELDS: tuple[str, ...] = (
@@ -32,16 +33,16 @@ ONBOARDING_FIELDS: tuple[str, ...] = (
     "role",
     "personality",
     "speaking_style",
+    "voice",
     "user_call_name",
     "user_gender",
     "user_age_bucket",
     "user_hobbies",
     "user_freeform",
-    "voice",
 )
 _ONBOARDING_MAX_LEN: int = 2000
 
-# Fields collected in q-user / voice after is_complete=True; gating complete on these prevents skip-on-crash.
+# Fields collected in voice / q-user after is_complete=True; gating complete on these prevents skip-on-crash.
 _POST_CHARACTER_FIELDS: tuple[str, ...] = (
     "user_call_name",
     "user_gender",
@@ -49,9 +50,6 @@ _POST_CHARACTER_FIELDS: tuple[str, ...] = (
     "user_hobbies",
     "user_freeform",
 )
-
-# Post-finalization fields that go to draft (not Memory); speaking_style lands here because q-user collects it.
-_POST_FINALIZATION_DRAFT_FIELDS: frozenset[str] = frozenset({"voice", "speaking_style"})
 
 
 class PersonaValidationError(ValueError):
@@ -152,7 +150,8 @@ def _load_draft(persona: Persona) -> dict[str, str]:
 def get_onboarding_state(db: Session, user_id: int) -> dict[str, Any]:
     """``answers``: every field already submitted; ``next_field``: first unanswered (``None`` when all answered).
 
-    ``complete`` is gated on user_* + voice being answered, not just is_complete, so a crash mid-flow resumes rather than skips.
+    ``complete`` is gated on voice + user_* being answered, not just is_complete, so a crash mid-flow resumes rather than skips.
+    ``voice`` outranks ``user_*`` because the voice sub-stage runs right after 形象确认, before the user sub-stage.
     """
     persona = get_or_create_persona(db, user_id)
     if persona.is_complete:
@@ -160,8 +159,8 @@ def get_onboarding_state(db: Session, user_id: int) -> dict[str, Any]:
         user_profile = read_user_profile(db, user_id)
         missing_users = [k for k in _POST_CHARACTER_FIELDS if not user_profile.get(k)]
         voice_missing = not draft.get("voice")
-        if missing_users or voice_missing:
-            next_field = missing_users[0] if missing_users else "voice"
+        if voice_missing or missing_users:
+            next_field = "voice" if voice_missing else missing_users[0]
             # Merge draft + Memory so the desktop rehydrates every answered field in one shot.
             merged = {**draft, **user_profile}
             return {"answers": merged, "next_field": next_field, "complete": False}
@@ -172,7 +171,7 @@ def get_onboarding_state(db: Session, user_id: int) -> dict[str, Any]:
 
 
 def submit_onboarding_field(db: Session, user_id: int, field: str, value: str | None) -> dict[str, Any]:
-    """Persist one onboarding answer. After is_complete=True, only user_*/voice/speaking_style remain editable; character fields require PUT /persona."""
+    """Persist one onboarding answer. After is_complete=True, only user_*/voice remain editable; character fields (incl. speaking_style) require PUT /persona."""
     if field not in ONBOARDING_FIELDS:
         raise PersonaValidationError(f"unknown onboarding field: {field!r}", field)
     persona = get_or_create_persona(db, user_id)
@@ -193,24 +192,15 @@ def submit_onboarding_field(db: Session, user_id: int, field: str, value: str | 
                 "next_field": None,
                 "complete": True,
             }
-        if field in _POST_FINALIZATION_DRAFT_FIELDS:
+        # voice is not a persona field, so the draft is the only thing that
+        # moves here — system_prompt_extras stays as update_persona left it.
+        if field == "voice":
             draft = _load_draft(persona)
             if value and value.strip():
                 draft[field] = value.strip()[:_ONBOARDING_MAX_LEN]
-            elif field == "speaking_style":
-                # speaking_style is a required persona field — refusing to clear
-                # it keeps definition_json + system_prompt_extras consistent.
-                # Re-validate the would-be draft so the error references the
-                # offending field rather than the whole persona.
-                _validate_definition(draft)
-                raise PersonaValidationError("speaking_style cannot be cleared after persona is finalized", field)
             else:
                 draft.pop(field, None)
             persona.definition_json = json.dumps(draft, ensure_ascii=False)
-            # Re-render extras so the rendered prompt reflects the post-edit
-            # definition (system_prompt_extras was set once in update_persona
-            # and would otherwise drift from definition_json).
-            persona.system_prompt_extras = render_extras(draft)
             db.commit()
             return {"answers": draft, "next_field": None, "complete": True}
         raise PersonaValidationError(

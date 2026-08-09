@@ -8,6 +8,8 @@
 - `generate_onboarding_audio.py` — 一次性合成脚本。需要 `MIMO_API_KEY`（或 `TTS_API_KEY`）环境变量。
 - 生成的 mp3 落到 `installer/payload/onboarding-audio/zh/<tag>.mp3`（gitignored，Tauri 构建产物）。tag 与 `client/renderer/companion/onboarding/onboarding-flow.tsx` 里 `playOnboardingAudio(tag)` 调用的字符串一一对应。
 
+**tag 与文案绑定，不与题号绑定**：问题表里每题自带 `audioTag`，指向录了这句话的那条 manifest 条目。因此调整引导题序不触发任何重新合成；只有**改文案**才需要重生成对应 mp3。
+
 ## 添加 / 修改流程
 
 1. 改 `manifest.json`（新增条目或调整文案）

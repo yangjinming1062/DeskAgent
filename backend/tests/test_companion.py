@@ -186,16 +186,16 @@ def test_onboarding_incremental_persistence_and_recovery(_patch_db):
         with pytest.raises(PersonaValidationError):
             submit_onboarding_field(db, 100, "bogus", "x")
 
-        # Once persona is finalized but user_* are still pending, get_state
+        # Once persona is finalized but voice / user_* are still pending, get_state
         # reports complete=False with next_field pointing at the first missing
-        # user_* — the desktop must resume into q-user / voice rather than
-        # skip onboarding entirely.
+        # field — the desktop must resume into voice / q-user rather than
+        # skip onboarding entirely. voice comes first (it follows 形象确认).
         update_persona(
             db, 100, {"name": "小光", "personality": "温柔", "speaking_style": "轻柔"}
         )
         state = get_onboarding_state(db, 100)
         assert state["complete"] is False
-        assert state["next_field"] == "user_call_name"
+        assert state["next_field"] == "voice"
         assert state["answers"]["name"] == "小光"
 
 
@@ -242,8 +242,11 @@ def test_post_character_onboarding_accepts_user_and_voice(_patch_db):
 
 
 def test_onboarding_complete_only_when_post_character_fields_filled(_patch_db):
-    """get_onboarding_state must gate complete=True on user_* + voice being
-    answered, so a mid-onboarding crash resumes instead of skipping onboarding."""
+    """get_onboarding_state must gate complete=True on voice + user_* being
+    answered, so a mid-onboarding crash resumes instead of skipping onboarding.
+
+    voice outranks user_* because the voice sub-stage runs right after 形象确认,
+    before the user sub-stage."""
     _, SessionLocal = _patch_db
     from services.companion import (
         get_onboarding_state,
@@ -256,6 +259,18 @@ def test_onboarding_complete_only_when_post_character_fields_filled(_patch_db):
             db, 100, {"name": "小光", "personality": "温柔", "speaking_style": "轻柔"}
         )
 
+        # Nothing answered yet — voice wins over the (also missing) user_*.
+        state = get_onboarding_state(db, 100)
+        assert state["complete"] is False
+        assert state["next_field"] == "voice"
+
+        submit_onboarding_field(db, 100, "voice", "温柔女声")
+
+        # Voice answered, user_* all missing → first user field.
+        state = get_onboarding_state(db, 100)
+        assert state["complete"] is False
+        assert state["next_field"] == "user_call_name"
+
         # Partial: only user_call_name filled.
         submit_onboarding_field(db, 100, "user_call_name", "老板")
         state = get_onboarding_state(db, 100)
@@ -266,26 +281,26 @@ def test_onboarding_complete_only_when_post_character_fields_filled(_patch_db):
         for f in ("user_gender", "user_age_bucket", "user_hobbies", "user_freeform"):
             submit_onboarding_field(db, 100, f, "x")
 
-        # Missing voice — still incomplete.
+        state = get_onboarding_state(db, 100)
+        assert state["complete"] is True
+
+        # Clearing voice re-opens the flow at voice, ahead of the answered user_*.
+        submit_onboarding_field(db, 100, "voice", None)
         state = get_onboarding_state(db, 100)
         assert state["complete"] is False
         assert state["next_field"] == "voice"
 
-        # Voice answered → now complete.
-        submit_onboarding_field(db, 100, "voice", "温柔女声")
-        state = get_onboarding_state(db, 100)
-        assert state["complete"] is True
 
-
-def test_post_finalization_speaking_style_overrides_draft(_patch_db):
-    """Q11 (speaking_style) is collected in q-user phase — after enterHatching
-    has already set is_complete=True with a derived speaking_style. The
-    desktop must be able to overwrite the derived value via
-    submit_onboarding_field."""
+def test_speaking_style_rejected_after_finalization(_patch_db):
+    """speaking_style is collected in the character sub-stage and finalized by
+    the enterHatching PUT, so onboarding.submit must refuse it afterwards —
+    later edits go through PUT /api/companion/persona (retune wizard)."""
     _, SessionLocal = _patch_db
-    from modules.companion import Persona
-    from services.companion import submit_onboarding_field, update_persona
-    from services.companion.persona_service import _load_draft
+    from services.companion import (
+        PersonaValidationError,
+        submit_onboarding_field,
+        update_persona,
+    )
 
     with SessionLocal() as db:
         update_persona(
@@ -298,12 +313,8 @@ def test_post_finalization_speaking_style_overrides_draft(_patch_db):
             },
         )
 
-        submit_onboarding_field(db, 100, "speaking_style", "专业干练")
-
-        with SessionLocal() as fresh:
-            persona = fresh.query(Persona).filter_by(user_id=100).one()
-            draft = _load_draft(persona)
-            assert draft["speaking_style"] == "专业干练"
+        with pytest.raises(PersonaValidationError):
+            submit_onboarding_field(db, 100, "speaking_style", "专业干练")
 
 
 # ── Affect scrubber (design §7.5) ──
@@ -1081,12 +1092,12 @@ def test_onboarding_field_order_matches_question_sequence():
         "role",
         "personality",
         "speaking_style",
+        "voice",
         "user_call_name",
         "user_gender",
         "user_age_bucket",
         "user_hobbies",
         "user_freeform",
-        "voice",
     )
 
 
