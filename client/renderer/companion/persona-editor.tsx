@@ -11,7 +11,8 @@ import {
   SPECIES_PRESETS
 } from '@/companion/persona-presets'
 import { $persona, hydratePersona } from '@/companion/persona-store'
-import { setRegenFeedback } from '@/companion/portrait-store'
+import { TWO_STEP_AVATAR_PROMPT, TWO_STEP_FULLBODY_PROMPT } from '@/companion/portrait-flow-copy'
+import { $activeAvatarId, setRegenFeedback } from '@/companion/portrait-store'
 import { useRegeneratePortrait } from '@/companion/use-regenerate-portrait'
 
 const inputClass = PERSONA_INPUT_CLASS
@@ -37,7 +38,19 @@ export function PersonaSection(): React.JSX.Element {
   const [saving, setSaving] = useState(false)
   const [hint, setHint] = useState<string | null>(null)
   const [showPostSave, setShowPostSave] = useState(false)
-  const { regenerate: regeneratePortrait, hint: regenHint, busy: regenBusy } = useRegeneratePortrait()
+  // Two-step portrait regen after persona save — same flow as onboarding /
+  // settings. Avatar id flows from the global atom; we only own the local
+  // postSaveStep so the inline panel can swap its two CTAs.
+  const [postSaveStep, setPostSaveStep] = useState<'avatar' | 'fullbody' | null>(null)
+  const activeAvatarId = useStore($activeAvatarId)
+
+  const { regenerate: regenerateAvatar, hint: avatarHint, busy: avatarBusy } = useRegeneratePortrait({ step: 'avatar' })
+
+  const {
+    regenerate: regenerateFullbody,
+    hint: fullbodyHint,
+    busy: fullbodyBusy
+  } = useRegeneratePortrait({ step: 'fullbody', avatarId: activeAvatarId })
 
   const startEdit = () => {
     setName(persona?.name ?? '')
@@ -107,6 +120,7 @@ export function PersonaSection(): React.JSX.Element {
 
     setEditing(false)
     setShowPostSave(true)
+    setPostSaveStep('avatar')
     setSaving(false)
   }
 
@@ -123,30 +137,57 @@ export function PersonaSection(): React.JSX.Element {
         </div>
         {showPostSave && (
           <div className="mt-2 space-y-2 rounded-lg border border-white/15 bg-white/5 px-3 py-2">
-            <p className="text-xs text-white/80">已保存 — 要按新性格重新生成形象吗？</p>
-            {regenHint && <p className="text-[11px] text-amber-300/80">{regenHint}</p>}
-            <div className="flex gap-2">
-              <button
-                className="flex-1 rounded-lg border border-white/40 bg-white/15 px-3 py-1.5 text-[11px] font-medium text-white transition hover:bg-white/25 disabled:opacity-40"
-                disabled={regenBusy}
-                onClick={async () => {
-                  setRegenFeedback(appearance.slice(0, MAX_APPEARANCE))
-                  await regeneratePortrait()
-                  setShowPostSave(false)
-                }}
-                type="button"
-              >
-                {regenBusy ? '生成中…' : '重新生成'}
-              </button>
-              <button
-                className="flex-1 rounded-lg border border-white/15 bg-white/5 px-3 py-1.5 text-[11px] text-white/70 transition hover:bg-white/15 disabled:opacity-40"
-                disabled={regenBusy}
-                onClick={() => setShowPostSave(false)}
-                type="button"
-              >
-                暂后
-              </button>
-            </div>
+            <p className="text-xs text-white/80">
+              {postSaveStep === 'avatar' ? TWO_STEP_AVATAR_PROMPT : TWO_STEP_FULLBODY_PROMPT}
+            </p>
+            {avatarHint && <p className="text-[11px] text-amber-300/80">{avatarHint}</p>}
+            {fullbodyHint && <p className="text-[11px] text-amber-300/80">{fullbodyHint}</p>}
+            {postSaveStep === 'avatar' ? (
+              <div className="flex gap-2">
+                <button
+                  className="flex-1 rounded-lg border border-white/40 bg-white/15 px-3 py-1.5 text-[11px] font-medium text-white transition hover:bg-white/25 disabled:opacity-40"
+                  disabled={avatarBusy}
+                  onClick={async () => {
+                    setRegenFeedback(appearance.slice(0, MAX_APPEARANCE))
+                    await regenerateAvatar()
+                    setPostSaveStep('fullbody')
+                  }}
+                  type="button"
+                >
+                  {avatarBusy ? '生成中…' : '重新生成头像'}
+                </button>
+                <button
+                  className="flex-1 rounded-lg border border-white/15 bg-white/5 px-3 py-1.5 text-[11px] text-white/70 transition hover:bg-white/15 disabled:opacity-40"
+                  disabled={avatarBusy}
+                  onClick={() => setShowPostSave(false)}
+                  type="button"
+                >
+                  暂后
+                </button>
+              </div>
+            ) : (
+              <div className="flex gap-2">
+                <button
+                  className="flex-1 rounded-lg border border-white/40 bg-white/15 px-3 py-1.5 text-[11px] font-medium text-white transition hover:bg-white/25 disabled:opacity-40"
+                  disabled={fullbodyBusy}
+                  onClick={async () => {
+                    await regenerateFullbody()
+                    setShowPostSave(false)
+                  }}
+                  type="button"
+                >
+                  {fullbodyBusy ? '生成中…' : '生成全身图'}
+                </button>
+                <button
+                  className="flex-1 rounded-lg border border-white/15 bg-white/5 px-3 py-1.5 text-[11px] text-white/70 transition hover:bg-white/15 disabled:opacity-40"
+                  disabled={fullbodyBusy}
+                  onClick={() => setShowPostSave(false)}
+                  type="button"
+                >
+                  暂后
+                </button>
+              </div>
+            )}
           </div>
         )}
         <button

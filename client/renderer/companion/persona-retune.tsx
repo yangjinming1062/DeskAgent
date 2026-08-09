@@ -1,3 +1,4 @@
+import { useStore } from '@nanostores/react'
 import type React from 'react'
 import { useEffect, useRef, useState } from 'react'
 
@@ -18,7 +19,8 @@ import {
   type SpeciesPreset
 } from '@/companion/persona-presets'
 import { hydratePersona } from '@/companion/persona-store'
-import { setRegenFeedback } from '@/companion/portrait-store'
+import { TWO_STEP_AVATAR_PROMPT, TWO_STEP_FULLBODY_PROMPT } from '@/companion/portrait-flow-copy'
+import { $activeAvatarId, setRegenFeedback } from '@/companion/portrait-store'
 import { useRegeneratePortrait } from '@/companion/use-regenerate-portrait'
 
 interface PersonaRetuneProps {
@@ -159,8 +161,19 @@ export function PersonaRetune({ initial, onClose, onSaved }: PersonaRetuneProps)
   const [step, setStep] = useState<number>(0)
   const [saving, setSaving] = useState(false)
   const [hint, setHint] = useState<string | null>(null)
-  const [phase, setPhase] = useState<'edit' | 'confirm'>('edit')
-  const { regenerate: regeneratePortrait, hint: regenHint, busy: regenBusy } = useRegeneratePortrait()
+  const [phase, setPhase] = useState<'edit' | 'avatar' | 'fullbody'>('edit')
+  // Two-step portrait regen after persona save — same flow as onboarding /
+  // settings. Avatar id flows from the global atom.
+  const activeAvatarId = useStore($activeAvatarId)
+
+  const { regenerate: regenerateAvatar, hint: avatarHint, busy: avatarBusy } = useRegeneratePortrait({ step: 'avatar' })
+
+  const {
+    regenerate: regenerateFullbody,
+    hint: fullbodyHint,
+    busy: fullbodyBusy
+  } = useRegeneratePortrait({ step: 'fullbody', avatarId: activeAvatarId })
+
   // Tracks whether the wizard is still mounted. Closing the modal mid-save
   // unmounts the component; the in-flight ``save()`` continues to run,
   // so the post-save phase flip would otherwise strand the user on a
@@ -300,39 +313,57 @@ export function PersonaRetune({ initial, onClose, onSaved }: PersonaRetuneProps)
     }
 
     onSaved()
-    setPhase('confirm')
+    setPhase('avatar')
     setSaving(false)
   }
 
-  if (phase === 'confirm') {
+  if (phase !== 'edit') {
+    const isAvatarStep = phase === 'avatar'
+    const busy = isAvatarStep ? avatarBusy : fullbodyBusy
+    const stepHint = isAvatarStep ? avatarHint : fullbodyHint
+    const primaryLabel = isAvatarStep ? '重新生成头像' : '生成全身图'
+    const title = isAvatarStep ? TWO_STEP_AVATAR_PROMPT : TWO_STEP_FULLBODY_PROMPT
+
+    const onPrimary = async () => {
+      if (isAvatarStep) {
+        await regenerateAvatar()
+        setPhase('fullbody')
+      } else {
+        await regenerateFullbody()
+        onClose()
+      }
+    }
+
     return (
       <div
         className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 px-6 py-6 backdrop-blur-sm"
         style={{ pointerEvents: 'auto' }}
       >
         <div className="flex w-full max-w-md flex-col rounded-2xl border border-white/15 bg-black/80 px-6 py-6 text-white shadow-2xl">
-          <p className="mb-1 text-sm font-medium">已保存！</p>
-          <p className="mb-4 text-xs text-white/60">要按新性格重新生成形象吗？</p>
-          {regenHint && <p className="mb-3 text-xs text-amber-300/80">{regenHint}</p>}
+          <p className="mb-1 text-sm font-medium">{title}</p>
+          {stepHint && <p className="mb-3 text-xs text-amber-300/80">{stepHint}</p>}
           <div className="flex gap-2">
             <button
               className="flex-1 rounded-lg border border-white/40 bg-white/15 px-3 py-2 text-xs font-medium text-white transition hover:bg-white/25 disabled:opacity-40"
-              disabled={regenBusy}
+              disabled={busy}
               onClick={async () => {
-                setRegenFeedback(appearance.slice(0, MAX_APPEARANCE))
-                await regeneratePortrait()
+                if (isAvatarStep) {
+                  setRegenFeedback(appearance.slice(0, MAX_APPEARANCE))
+                }
+
+                await onPrimary()
               }}
               type="button"
             >
-              {regenBusy ? '生成中…' : '重新生成'}
+              {busy ? '生成中…' : primaryLabel}
             </button>
             <button
               className="flex-1 rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-xs text-white/70 transition hover:bg-white/15 disabled:opacity-40"
-              disabled={regenBusy}
+              disabled={busy}
               onClick={onClose}
               type="button"
             >
-              暂后
+              {isAvatarStep ? '暂后' : '就这样吧'}
             </button>
           </div>
         </div>

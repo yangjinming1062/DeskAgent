@@ -6,8 +6,7 @@ import pytest
 from services.companion import voice_catalog
 from services.companion.voice_catalog import match_voice
 from services.llm import VoiceDesignResult
-from services.llm.voice_catalog import pick_voice_id
-from services.llm.voice_catalog import voices_for_provider
+from services.llm.voice_catalog import pick_voice_id, voices_for_provider
 
 
 def test_disturbance_tier_store_defaults_and_normalizes():
@@ -284,9 +283,9 @@ def test_post_finalization_speaking_style_overrides_draft(_patch_db):
     desktop must be able to overwrite the derived value via
     submit_onboarding_field."""
     _, SessionLocal = _patch_db
+    from modules.companion import Persona
     from services.companion import submit_onboarding_field, update_persona
     from services.companion.persona_service import _load_draft
-    from modules.companion import Persona
 
     with SessionLocal() as db:
         update_persona(
@@ -608,8 +607,8 @@ def test_voice_catalog_zh_first_in_list_voices(monkeypatch):
 
 def test_voice_catalog_zh_first_preserves_within_language_order():
     """Catches accidental re-orderings that would break provider-curated within-language sequences."""
-    from services.llm.voice_catalog import voices_for_provider
     from services.companion.voice_catalog import _sort_voices_by_language
+    from services.llm.voice_catalog import voices_for_provider
 
     original = voices_for_provider("mimo")
     sorted_voices = _sort_voices_by_language(original)
@@ -620,8 +619,8 @@ def test_voice_catalog_zh_first_preserves_within_language_order():
 
 def test_voice_catalog_minimax_all_zh_stays_unchanged():
     """All-zh catalogs (MiniMax) keep their original order — sort is a no-op for them."""
-    from services.llm.voice_catalog import voices_for_provider
     from services.companion.voice_catalog import _sort_voices_by_language
+    from services.llm.voice_catalog import voices_for_provider
 
     original = voices_for_provider("minimax")
     sorted_voices = _sort_voices_by_language(original)
@@ -793,8 +792,8 @@ def test_dual_write_routes_user_profile_to_memory(_patch_db):
     persona validator runs, so the persona strict schema never sees them.
     """
     _, SessionLocal = _patch_db
-    from services.companion import update_persona
     from modules.memory import Memory
+    from services.companion import update_persona
 
     payload = {
         "name": "梦鳞",
@@ -853,8 +852,8 @@ def test_dual_write_is_idempotent(_patch_db):
     (query-then-update upsert, dialect-agnostic).
     """
     _, SessionLocal = _patch_db
-    from services.companion import update_persona
     from modules.memory import Memory
+    from services.companion import update_persona
 
     payload = {
         "name": "梦鳞",
@@ -884,8 +883,8 @@ def test_dual_write_editor_path_leaves_memory_alone(_patch_db):
     only; user info editing lives behind memory_retain/forget tools.)
     """
     _, SessionLocal = _patch_db
-    from services.companion import update_persona
     from modules.memory import Memory
+    from services.companion import update_persona
 
     with SessionLocal() as db:
         update_persona(
@@ -913,8 +912,8 @@ def test_dual_write_empty_user_fields_skip(_patch_db):
     delete of existing rows (user-revocation semantics).
     """
     _, SessionLocal = _patch_db
-    from services.companion import update_persona
     from modules.memory import Memory
+    from services.companion import update_persona
 
     with SessionLocal() as db:
         update_persona(
@@ -1053,8 +1052,9 @@ def test_persona_update_schema_accepts_definition_json():
 
 
 def test_persona_update_schema_rejects_unknown_keys():
-    from modules.companion.schemas import PersonaUpdate
     from pydantic import ValidationError
+
+    from modules.companion.schemas import PersonaUpdate
 
     with pytest.raises(ValidationError):
         PersonaUpdate(definition_json="{}", totally_unknown_key="oops")
@@ -1090,7 +1090,7 @@ async def test_upload_avatar_refuses_when_persona_incomplete(_patch_db):
     user could burn image- and video-gen quota on a portrait for a
     persona with no system prompt yet."""
     _, SessionLocal = _patch_db
-    from services.companion.avatar_service import upload_avatar, AvatarGenerationError
+    from services.companion.avatar_service import AvatarGenerationError, upload_avatar
 
     with SessionLocal() as db:
         with pytest.raises(AvatarGenerationError, match="persona is incomplete"):
@@ -1103,8 +1103,8 @@ def test_dynamic_user_profile_key_lands_in_memory(_patch_db):
     it in Memory as ``user_profile:<raw_key>``.
     """
     _, SessionLocal = _patch_db
-    from services.companion import update_persona
     from modules.memory import Memory
+    from services.companion import update_persona
 
     with SessionLocal() as db:
         update_persona(
@@ -1236,6 +1236,7 @@ def test_ws_ticket_mints_short_lived_jwt():
     # but the ticket path doesn't get blocked at the purpose gate.
     # Verify the purpose gate by mocking a fake user lookup.
     import jwt as _jwt
+
     from components import SETTINGS
 
     # A valid-purpose token passes the purpose gate; an invalid one
@@ -1408,23 +1409,23 @@ async def test_regenerate_avatar_from_image_uses_reference(monkeypatch, _patch_d
         )
         db.refresh(asset)
 
-        # Both avatar + seed image-gen calls should fire.
-        assert len(all_calls) == 2
-        prompts = sorted(c["prompt"] for c in all_calls)
-        # One bust prompt (avatar) + one full body prompt (seed).
-        assert any(p.startswith("bust portrait") for p in prompts)
-        assert any(p.startswith("full body portrait") for p in prompts)
-        # Both calls receive the inline reference image.
-        for c in all_calls:
-            assert c["reference_image"].startswith("data:image/png;base64,")
-            assert "把背景改成纯白" in c["prompt"]
+        # Step-1 fires exactly one image-gen call (avatar bust only); the
+        # full-body seed prompt is cached for the later generate_fullbody step.
+        assert len(all_calls) == 1
+        call = all_calls[0]
+        assert call["prompt"].startswith("bust portrait")
+        assert call["reference_image"].startswith("data:image/png;base64,")
+        assert "把背景改成纯白" in call["prompt"]
         assert asset.active is True
-        assert asset.seed_url is not None
+        # Seed URL stays empty until step 2 writes it back.
+        assert asset.seed_url == ""
         payload = _json.loads(asset.prompt_json)
         # Audit row keeps a marker, not the base64 blob.
         assert payload["reference_image"] == "data:image/png;base64"
         assert payload["feedback"] == "把背景改成纯白"
         assert payload["source_url"] == "http://provider/gen.png"
+        # The cached seed prompt drives step 2 without a second LLM call.
+        assert payload["seed_prompt"].startswith("full body portrait")
 
 
 @pytest.mark.asyncio
@@ -1435,8 +1436,10 @@ async def test_regenerate_avatar_from_image_refuses_when_persona_incomplete(_pat
 
     from modules.auth import User
     from modules.companion import Persona
-    from services.companion.avatar_service import AvatarGenerationError
-    from services.companion.avatar_service import regenerate_avatar_from_image
+    from services.companion.avatar_service import (
+        AvatarGenerationError,
+        regenerate_avatar_from_image,
+    )
 
     _, SessionLocal = _patch_db
     with SessionLocal() as db:
@@ -1460,17 +1463,130 @@ async def test_regenerate_avatar_from_image_refuses_when_persona_incomplete(_pat
             )
 
 
+@pytest.mark.asyncio
+async def test_generate_fullbody_writes_seed_and_replaces_on_rerun(monkeypatch, _patch_db):
+    """Step-2 renders the seed on top of the persisted avatar and writes it
+    back to the same row; a re-run replaces the previous seed instead of 409."""
+    import json as _json
+
+    from modules.auth import User
+    from modules.companion import AvatarAsset
+    from services.companion import avatar_service
+
+    _, SessionLocal = _patch_db
+    all_calls: list[dict] = []
+
+    async def fake_gen(**kwargs):
+        all_calls.append(kwargs)
+        return _json.dumps({"success": True, "urls": ["http://provider/fullbody.png"]})
+
+    async def fake_download(url):
+        return b"\x89PNG\r\n\x1a\n", "image/png"
+
+    monkeypatch.setattr(avatar_service, "image_generation_tool", fake_gen)
+    monkeypatch.setattr(avatar_service, "_download_to_bytes", fake_download)
+
+    with SessionLocal() as db:
+        user = User(username="fbuser", password_hash="x", is_active=True, can_use=True)
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+
+        # A step-1 row with a real persisted avatar file — what
+        # ``_generate_avatar_step`` leaves behind before step 2.
+        bare_path, _, _ = await avatar_service._persist_portrait_bytes(b"\x89PNG\r\n\x1a\n", "image/png")
+        asset = AvatarAsset(
+            user_id=user.id,
+            prompt_json=_json.dumps({"prompt": "bust", "seed_prompt": "full body portrait"}),
+            asset_url=bare_path,
+            seed_url="",
+            active=True,
+        )
+        db.add(asset)
+        db.commit()
+        db.refresh(asset)
+
+        full = await avatar_service.generate_fullbody(db, user_id=user.id, avatar_id=asset.id)
+        assert full.id == asset.id
+        # The in-memory response carries the re-signed URLs.
+        assert "/api/companion/avatar/file/" in full.seed_url
+        assert "/api/companion/avatar/file/" in full.asset_url
+        # The avatar bytes are fed back as the subject reference.
+        assert all_calls[0]["reference_image"].startswith("data:image/png;base64,")
+        assert len(all_calls) == 1
+        db.refresh(full)
+        # The DB row stores the bare path, not the signed URL.
+        assert full.seed_url.startswith("companion-avatars/")
+
+        # A re-run replaces the previous seed file (the returned object is
+        # the same identity-map instance, so compare against fresh DB reads).
+        def _db_seed() -> str:
+            db.expire_all()
+            return db.query(AvatarAsset).filter(AvatarAsset.id == asset.id).one().seed_url
+
+        first_db_seed = _db_seed()
+        await avatar_service.generate_fullbody(db, user_id=user.id, avatar_id=asset.id)
+        assert _db_seed() != first_db_seed
+        assert _db_seed().startswith("companion-avatars/")
+        assert len(all_calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_generate_fullbody_preconditions(monkeypatch, _patch_db):
+    """Step-2 raises typed errors for a missing row / unreadable source file."""
+    import json as _json
+
+    from modules.auth import User
+    from modules.companion import AvatarAsset
+    from services.companion import avatar_service
+
+    _, SessionLocal = _patch_db
+
+    async def fake_gen(**kwargs):
+        return _json.dumps({"success": True, "urls": ["http://provider/fullbody.png"]})
+
+    async def fake_download(url):
+        return b"\x89PNG\r\n\x1a\n", "image/png"
+
+    monkeypatch.setattr(avatar_service, "image_generation_tool", fake_gen)
+    monkeypatch.setattr(avatar_service, "_download_to_bytes", fake_download)
+
+    with SessionLocal() as db:
+        user = User(username="fbuser2", password_hash="x", is_active=True, can_use=True)
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+
+        bare_path, _, _ = await avatar_service._persist_portrait_bytes(b"\x89PNG\r\n\x1a\n", "image/png")
+        asset = AvatarAsset(
+            user_id=user.id,
+            prompt_json=_json.dumps({"prompt": "bust", "seed_prompt": "full body portrait"}),
+            asset_url=bare_path,
+            seed_url="",
+            active=True,
+        )
+        db.add(asset)
+        db.commit()
+
+        with pytest.raises(avatar_service.AvatarNotFoundError):
+            await avatar_service.generate_fullbody(db, user_id=user.id, avatar_id=asset.id + 1)
+
+        monkeypatch.setattr(avatar_service, "_load_avatar_bytes_as_data_uri", lambda _url: None)
+        with pytest.raises(avatar_service.AvatarSourceUnreadableError):
+            await avatar_service.generate_fullbody(db, user_id=user.id, avatar_id=asset.id)
+
+
 def test_avatar_from_image_route_validation(_patch_db, monkeypatch):
     """POST /avatar/from-image rejects unsupported MIME with 415 and maps an
     incomplete persona to 409 (provider failures stay 502)."""
-    from components import get_db
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
+
+    from api.v1 import companion as companion_api
+    from components import get_db
     from modules.auth import get_current_session
     from services.companion import AvatarGenerationError
     from services.rate_limit import limiter
-
-    from api.v1 import companion as companion_api
 
     _, SessionLocal = _patch_db
     app = FastAPI()
@@ -1521,13 +1637,13 @@ def test_companion_rest_contract(_patch_db):
     PUT /persona takes definition_json, absent assets are 404 (not null),
     and wardrobe items carry the raw material_overrides_json blob.
     """
-    from components import get_db
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
-    from modules.auth import get_current_session
-    from services.rate_limit import limiter
 
     from api.v1 import companion as companion_api
+    from components import get_db
+    from modules.auth import get_current_session
+    from services.rate_limit import limiter
 
     _, SessionLocal = _patch_db
     app = FastAPI()
@@ -1605,6 +1721,7 @@ def test_companion_rest_contract(_patch_db):
 def _write_fake_portrait(tmp_path, file_id: str = "abc123", ext: str = "png") -> bytes:
     """Drop a fake PNG into the patched data_dir/companion-avatars/."""
     import base64 as _b64
+
     from components import SETTINGS
 
     # Any non-empty bytes; the helper base64-encodes them verbatim — the

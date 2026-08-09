@@ -21,6 +21,7 @@ from modules.companion import AvatarHistoryResponse
 from modules.companion import AvatarUploadRequest
 from modules.companion import CompanionModel
 from modules.companion import CompanionModelResponse
+from modules.companion import FullbodyGenerateRequest
 from modules.companion import ModelGenerateRequest
 from modules.companion import PersonaResponse
 from modules.companion import PersonaUpdate
@@ -30,15 +31,18 @@ from modules.companion import WardrobeItem
 from modules.companion import WardrobeItemResponse
 from services.companion import ALLOWED_AVATAR_UPLOAD_MIME_TYPES
 from services.companion import AvatarGenerationError
-from services.companion import build_signed_avatar_url
+from services.companion import AvatarNotFoundError
+from services.companion import AvatarSourceUnreadableError
 from services.companion import delete_wardrobe_item
 from services.companion import emit_wardrobe_updated
 from services.companion import equip_wardrobe_item
 from services.companion import generate_avatar
 from services.companion import generate_companion_model
+from services.companion import generate_fullbody
 from services.companion import generate_wardrobe_item
 from services.companion import get_active_avatar
 from services.companion import get_active_model
+from services.companion import get_avatar_job_lock
 from services.companion import get_equipped_item
 from services.companion import get_or_create_persona
 from services.companion import list_avatar_history
@@ -51,6 +55,7 @@ from services.companion import regenerate_avatar_from_image
 from services.companion import resolve_companion_asset_path
 from services.companion import resolve_companion_model_path
 from services.companion import resolve_uploaded_avatar_path
+from services.companion import SeedPromptMissingError
 from services.companion import signed_model_url
 from services.companion import update_persona
 from services.companion import upload_avatar
@@ -70,7 +75,7 @@ def _avatar_response(asset: AvatarAsset) -> AvatarAssetResponse:
     return AvatarAssetResponse(
         id=asset.id,
         asset_url=asset.asset_url,
-        seed_url=asset.seed_url,
+        seed_url=asset.seed_url or None,
         prompt=prompt_payload.get("prompt", "") if isinstance(prompt_payload, dict) else "",
         status="succeeded",
     )
@@ -146,7 +151,7 @@ def get_avatar(
 @router.post("/avatar", response_model=AvatarAssetResponse, status_code=status.HTTP_201_CREATED)
 @limiter.limit(f"{SETTINGS.companion_avatar_generate_rate_limit_per_minute}/minute")
 async def post_avatar(
-    request: Request,  # noqa: ARG001 — required by @limiter.limit
+    request: Request,  # required by @limiter.limit
     body: AvatarGenerateRequest = Body(default_factory=AvatarGenerateRequest),
     auth: tuple[User, LoginRecord] = Depends(get_current_session),
     db: Session = Depends(get_db),
@@ -166,7 +171,7 @@ async def post_avatar(
 @router.post("/avatar/upload", response_model=AvatarAssetResponse, status_code=status.HTTP_201_CREATED)
 @limiter.limit(f"{SETTINGS.companion_avatar_upload_rate_limit_per_minute}/minute")
 async def post_avatar_upload(
-    request: Request,  # noqa: ARG001 — required by @limiter.limit
+    request: Request,  # required by @limiter.limit
     body: AvatarUploadRequest,
     auth: tuple[User, LoginRecord] = Depends(get_current_session),
     db: Session = Depends(get_db),
@@ -193,7 +198,7 @@ async def post_avatar_upload(
 @router.post("/avatar/from-image", response_model=AvatarAssetResponse, status_code=status.HTTP_201_CREATED)
 @limiter.limit(f"{SETTINGS.companion_avatar_generate_rate_limit_per_minute}/minute")
 async def post_avatar_from_image(
-    request: Request,  # noqa: ARG001 — required by @limiter.limit
+    request: Request,  # required by @limiter.limit
     body: AvatarFromImageRequest,
     auth: tuple[User, LoginRecord] = Depends(get_current_session),
     db: Session = Depends(get_db),
@@ -227,6 +232,42 @@ async def post_avatar_from_image(
     return _avatar_response(asset)
 
 
+@router.post("/avatar/{avatar_id}/fullbody", response_model=AvatarAssetResponse, status_code=status.HTTP_201_CREATED)
+@limiter.limit(f"{SETTINGS.companion_avatar_generate_rate_limit_per_minute}/minute")
+async def post_avatar_fullbody(
+    request: Request,  # required by @limiter.limit
+    avatar_id: int,
+    body: FullbodyGenerateRequest = Body(default_factory=FullbodyGenerateRequest),
+    auth: tuple[User, LoginRecord] = Depends(get_current_session),
+    db: Session = Depends(get_db),
+) -> AvatarAssetResponse:
+    """Step-2: render the full-body seed on top of the user-confirmed avatar.
+
+    Returns the same ``AvatarAssetResponse`` shape as the avatar endpoints —
+    the response is the updated row, with ``seed_url`` now populated.
+    Generation failures (provider / network) map to 502; typed preconditions
+    (404 / 409) come from the service layer's subclasses.
+    """
+    user, _ = auth
+    # Serialise against the WS avatar.regenerate RPC for the same user — both
+    # paths mutate the active row; without this lock, a concurrent regen
+    # could deactivate the row we're about to update.
+    lock = get_avatar_job_lock(user.id)
+    if lock.locked():
+        raise HTTPException(status_code=429, detail={"error": "伙伴正在生成形象，请稍候"})
+    async with lock:
+        try:
+            asset = await generate_fullbody(db, user_id=user.id, avatar_id=avatar_id)
+        except AvatarNotFoundError as exc:
+            raise HTTPException(status_code=404, detail={"error": "找不到对应的形象", "reason": str(exc)})
+        except (SeedPromptMissingError, AvatarSourceUnreadableError) as exc:
+            raise HTTPException(status_code=409, detail={"error": "请先重新生成头像再试", "reason": str(exc)})
+        except AvatarGenerationError as exc:
+            raise HTTPException(status_code=502, detail={"error": "伙伴全身图生成失败，请稍后重试", "reason": str(exc)})
+
+    return _avatar_response(asset)
+
+
 @router.get("/avatar/history", response_model=AvatarHistoryResponse)
 def get_avatar_history(
     auth: tuple[User, LoginRecord] = Depends(get_current_session),
@@ -252,7 +293,7 @@ def get_model(
 @router.post("/model", response_model=CompanionModelResponse, status_code=status.HTTP_201_CREATED)
 @limiter.limit(f"{SETTINGS.companion_model_generate_rate_limit_per_minute}/minute")
 async def post_model(
-    request: Request,  # noqa: ARG001 — required by @limiter.limit
+    request: Request,  # required by @limiter.limit
     body: ModelGenerateRequest = Body(default_factory=ModelGenerateRequest),
     auth: tuple[User, LoginRecord] = Depends(get_current_session),
     db: Session = Depends(get_db),
@@ -304,7 +345,7 @@ def get_wardrobe_equipped(
 @router.post("/wardrobe", response_model=WardrobeItemResponse, status_code=status.HTTP_201_CREATED)
 @limiter.limit(f"{SETTINGS.companion_wardrobe_generate_rate_limit_per_minute}/minute")
 async def post_wardrobe(
-    request: Request,  # noqa: ARG001 — required by @limiter.limit
+    request: Request,  # required by @limiter.limit
     body: WardrobeGenerateRequest,
     auth: tuple[User, LoginRecord] = Depends(get_current_session),
     db: Session = Depends(get_db),

@@ -29,9 +29,13 @@ from services.chat import build_session_messages
 from services.chat import load_user_settings
 from services.chat import run_chat_turn
 from services.companion import AvatarGenerationError
+from services.companion import AvatarNotFoundError
+from services.companion import AvatarSourceUnreadableError
 from services.companion import check_affect
 from services.companion import delete_memory
 from services.companion import design_voice
+from services.companion import generate_fullbody
+from services.companion import get_avatar_job_lock
 from services.companion import get_onboarding_state
 from services.companion import get_or_create_persona
 from services.companion import list_memories
@@ -42,6 +46,7 @@ from services.companion import normalize_voice_language
 from services.companion import PersonaValidationError
 from services.companion import record_interaction
 from services.companion import regenerate_avatar
+from services.companion import SeedPromptMissingError
 from services.companion import submit_onboarding_field
 from services.companion import update_memory
 from services.companion.memory_bootstrap import read_user_profile
@@ -73,8 +78,7 @@ logger = get_logger(__name__)
 CHECK_AFFECT_MIN_INTERVAL_SECONDS = 2.0
 _last_check_affect_ts: dict[int, float] = {}
 
-# Per-user lock: a double-tap on regenerate must not fork two image-gen flows racing on the same DB rows.
-_avatar_regen_locks: dict[int, asyncio.Lock] = {}
+# Tasks created by avatar.* RPCs so we can drain them on shutdown.
 _avatar_regen_tasks: set[asyncio.Task] = set()
 
 # Advisory lock for avatar regen: prevents concurrent regen submissions
@@ -570,7 +574,7 @@ def _register_session_handlers(
             if not persona.is_complete:
                 raise JsonRpcError(JSONRPC_INVALID_PARAMS, "finish onboarding before regenerating avatar")
         job_id = f"avatar_regen_{user_id}_{secrets.token_urlsafe(6)}"
-        lock = _avatar_regen_locks.setdefault(user_id, asyncio.Lock())
+        lock = get_avatar_job_lock(user_id)
         if lock.locked():
             # A previous regen is still running for this user. The
             # desktop's UI is optimistic; tell the renderer that this
@@ -579,44 +583,42 @@ def _register_session_handlers(
             return {"queued": False, "job_id": job_id, "reason": "already_running"}
 
         async def _run() -> None:
-            try:
-                async with lock:
-                    try:
-                        with SESSION_LOCAL() as db:
-                            # Advisory lock serializes avatar regen per user
-                            # within this process. The ``xact`` variant
-                            # auto-releases on commit/rollback, so no explicit
-                            # unlock is needed. Fail-open on driver errors so a
-                            # Postgres blip doesn't block portrait gen; the
-                            # in-process ``lock`` above still serializes within
-                            # the event loop.
-                            regen_busy = False
-                            try:
-                                got = db.execute(
-                                    text("SELECT pg_try_advisory_xact_lock(:k)"),
-                                    {"k": _AVATAR_REGEN_ADVISORY_NAMESPACE + int(user_id)},
-                                ).scalar()
-                                regen_busy = not bool(got)
-                            except Exception:
-                                regen_busy = False
-                            if regen_busy:
-                                payload = {"job_id": job_id, "error": "伙伴正在生成形象，请稍候"}
-                                return
-                            persona = get_or_create_persona(db, user_id)
-                            asset = await regenerate_avatar(db, user_id, persona, feedback=feedback)
-                            payload = {"job_id": job_id, "asset_url": asset.asset_url, "seed_url": asset.seed_url, "id": asset.id}
-                    except AvatarGenerationError as exc:
-                        logger.warning("avatar regenerate failed", extra={"user_id": user_id, "error": str(exc)})
-                        payload = {"job_id": job_id, "error": f"伙伴形象生成失败：{exc}"}
-                    except Exception:
-                        logger.exception("avatar regenerate unexpected failure", extra={"user_id": user_id})
-                        payload = {"job_id": job_id, "error": "伙伴形象生成失败，请稍后重试"}
+            async with lock:
                 try:
-                    await dispatcher.push_event("avatar.regenerated", payload, session_id=None)
+                    with SESSION_LOCAL() as db:
+                        # Advisory lock serializes avatar regen per user
+                        # within this process. The ``xact`` variant
+                        # auto-releases on commit/rollback, so no explicit
+                        # unlock is needed. Fail-open on driver errors so a
+                        # Postgres blip doesn't block portrait gen; the
+                        # in-process ``lock`` above still serializes within
+                        # the event loop.
+                        regen_busy = False
+                        try:
+                            got = db.execute(
+                                text("SELECT pg_try_advisory_xact_lock(:k)"),
+                                {"k": _AVATAR_REGEN_ADVISORY_NAMESPACE + int(user_id)},
+                            ).scalar()
+                            regen_busy = not bool(got)
+                        except Exception:
+                            regen_busy = False
+                        if regen_busy:
+                            payload = {"job_id": job_id, "error": "伙伴正在生成形象，请稍候"}
+                            return
+                        persona = get_or_create_persona(db, user_id)
+                        asset = await regenerate_avatar(db, user_id, persona, feedback=feedback)
+                        # Step-1 only: fullbody lands via avatar.generate_fullbody once the user confirms the face.
+                        payload = {"job_id": job_id, "asset_url": asset.asset_url, "seed_url": None, "id": asset.id}
+                except AvatarGenerationError as exc:
+                    logger.warning("avatar regenerate failed", extra={"user_id": user_id, "error": str(exc)})
+                    payload = {"job_id": job_id, "error": f"伙伴形象生成失败：{exc}"}
                 except Exception:
-                    logger.debug("avatar.regenerated event push failed", extra={"user_id": user_id}, exc_info=True)
-            finally:
-                _avatar_regen_locks.pop(user_id, None)
+                    logger.exception("avatar regenerate unexpected failure", extra={"user_id": user_id})
+                    payload = {"job_id": job_id, "error": "伙伴形象生成失败，请稍后重试"}
+            try:
+                await dispatcher.push_event("avatar.regenerated", payload, session_id=None)
+            except Exception:
+                logger.debug("avatar.regenerated event push failed", extra={"user_id": user_id}, exc_info=True)
 
         task = asyncio.create_task(_run())
         _avatar_regen_tasks.add(task)
@@ -624,6 +626,68 @@ def _register_session_handlers(
         return {"queued": True, "job_id": job_id}
 
     dispatcher.register("avatar.regenerate", avatar_regenerate)
+
+    async def avatar_generate_fullbody(params: dict) -> dict:
+        # Step-2: render the full-body seed on top of a user-confirmed avatar
+        # row. The renderer hands us back the avatar ``id`` from the avatar
+        # step; we reuse the cached seed_prompt and the persisted avatar bytes
+        # as the subject reference, so this RPC never re-runs the LLM.
+        raw_id = params.get("avatar_id")
+        if not isinstance(raw_id, int) or isinstance(raw_id, bool) or raw_id <= 0:
+            raise JsonRpcError(JSONRPC_INVALID_PARAMS, "avatar_id must be a positive integer")
+        with SESSION_LOCAL() as db:
+            persona = get_or_create_persona(db, user_id)
+            if not persona.is_complete:
+                raise JsonRpcError(JSONRPC_INVALID_PARAMS, "finish onboarding before generating fullbody")
+        job_id = f"avatar_fullbody_{user_id}_{secrets.token_urlsafe(6)}"
+        lock = get_avatar_job_lock(user_id)
+        if lock.locked():
+            return {"queued": False, "job_id": job_id, "reason": "already_running"}
+
+        async def _run() -> None:
+            async with lock:
+                try:
+                    with SESSION_LOCAL() as db:
+                        regen_busy = False
+                        try:
+                            got = db.execute(
+                                text("SELECT pg_try_advisory_xact_lock(:k)"),
+                                {"k": _AVATAR_REGEN_ADVISORY_NAMESPACE + int(user_id)},
+                            ).scalar()
+                            regen_busy = not bool(got)
+                        except Exception:
+                            regen_busy = False
+                        if regen_busy:
+                            payload = {"job_id": job_id, "error": "伙伴正在生成形象，请稍候"}
+                            return
+                        asset = await generate_fullbody(db, user_id=user_id, avatar_id=raw_id)
+                        payload = {"job_id": job_id, "seed_url": asset.seed_url, "id": asset.id}
+                except AvatarNotFoundError:
+                    logger.warning("avatar fullbody: avatar not found", extra={"user_id": user_id, "avatar_id": raw_id})
+                    payload = {"job_id": job_id, "error": "找不到对应的形象"}
+                except (SeedPromptMissingError, AvatarSourceUnreadableError):
+                    logger.warning(
+                        "avatar fullbody: avatar unusable",
+                        extra={"user_id": user_id, "avatar_id": raw_id},
+                    )
+                    payload = {"job_id": job_id, "error": "请先重新生成头像再试"}
+                except AvatarGenerationError as exc:
+                    logger.warning("avatar fullbody failed", extra={"user_id": user_id, "error": str(exc)})
+                    payload = {"job_id": job_id, "error": "伙伴全身图生成失败，请稍后重试"}
+                except Exception:
+                    logger.exception("avatar fullbody unexpected failure", extra={"user_id": user_id})
+                    payload = {"job_id": job_id, "error": "伙伴全身图生成失败，请稍后重试"}
+            try:
+                await dispatcher.push_event("avatar.fullbody_generated", payload, session_id=None)
+            except Exception:
+                logger.debug("avatar.fullbody_generated event push failed", extra={"user_id": user_id}, exc_info=True)
+
+        task = asyncio.create_task(_run())
+        _avatar_regen_tasks.add(task)
+        task.add_done_callback(_avatar_regen_tasks.discard)
+        return {"queued": True, "job_id": job_id}
+
+    dispatcher.register("avatar.generate_fullbody", avatar_generate_fullbody)
 
     async def tts_list_voices(params: dict) -> dict:
         # Voice catalog (plan §3.5 / §6). Optional ``language`` filter — unknown

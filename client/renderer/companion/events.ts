@@ -1,7 +1,7 @@
 import { hydrateWardrobe, setModelInfo } from '@/companion/3d/model-store'
 import { $screenLocked } from '@/companion/activity'
 import { reportInteractionStat } from '@/companion/activity'
-import { resolveAvatarRegeneration } from '@/companion/avatar-regen-store'
+import { resolveAvatarRegeneration, resolveFullbodyGeneration } from '@/companion/avatar-regen-store'
 import {
   $chatOpen,
   appendAssistantDelta,
@@ -275,11 +275,22 @@ export function handleCompanionEvent(event: RpcEvent): void {
       // Background regeneration result — resolve the pending awaiter by job_id
       // so the portrait can swap without blocking the handler.
       const p = event.payload as
-        | { job_id?: string; asset_url?: string; seed_url?: string; id?: number; error?: string }
+        | { job_id?: string; asset_url?: string | null; seed_url?: string | null; id?: number; error?: string }
         | undefined
 
       if (p?.job_id) {
         resolveAvatarRegeneration(p)
+      }
+
+      break
+    }
+
+    case 'avatar.fullbody_generated': {
+      // Step-2 result for the two-step avatar→fullbody flow.
+      const p = event.payload as { job_id?: string; seed_url?: string | null; id?: number; error?: string } | undefined
+
+      if (p?.job_id) {
+        resolveFullbodyGeneration(p)
       }
 
       break

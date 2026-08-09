@@ -29,9 +29,16 @@ SucceededStatus = Literal["succeeded"]
 class AvatarAssetResponse(BaseModel):
     id: int
     asset_url: str
-    seed_url: str
+    # Step-1 (avatar-only) rows leave the seed empty until the user confirms
+    # the face and triggers ``POST /avatar/{id}/fullbody``. Older clients see
+    # ``""`` and skip the seed pane; new clients branch on truthiness.
+    seed_url: str | None = ""
     prompt: str = ""
     status: SucceededStatus = "succeeded"
+
+
+class FullbodyGenerateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
 
 
 class AvatarGenerateRequest(BaseModel):

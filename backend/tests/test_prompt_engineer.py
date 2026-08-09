@@ -69,7 +69,9 @@ async def test_enhance_character_image_returns_avatar_and_seed(monkeypatch):
     assert "full body portrait of 小光" in out["seed"]
     assert captured["user_id"] == 7
     payload = json.loads(captured["user"].split("```json\n", 1)[1].split("\n```", 1)[0])
-    assert payload["name"] == "小光"
+    # The character name is intentionally dropped — providers render
+    # appearance, never the spoken name.
+    assert "name" not in payload
     assert payload["biological_type"] == "灵兽"
     assert "纯白平面背景" in captured["system"]
     assert "bust" in captured["system"]

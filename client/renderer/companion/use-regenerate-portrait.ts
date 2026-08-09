@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react'
 
 import { type PickedImage } from '@/companion/avatar-image'
-import { awaitAvatarRegeneration } from '@/companion/avatar-regen-store'
+import { awaitAvatarRegeneration, awaitFullbodyGeneration } from '@/companion/avatar-regen-store'
 import { useGatewayRequest } from '@/companion/boot/use-gateway-request'
 import { $regenFeedback, applyPortrait, clearRegenFeedback } from '@/companion/portrait-store'
 
@@ -9,13 +9,31 @@ import { playOnboardingAudio } from './onboarding/onboarding-audio'
 
 const DEFAULT_SUCCESS_HINT = '换好啦，新形象已生成～'
 const DEFAULT_FAILURE_HINT = '暂时换不出来，稍后再试吧'
+const FULLBODY_SUCCESS_HINT = '全身图已生成～'
+const FULLBODY_FAILURE_HINT = '全身图暂时换不出来，稍后再试吧'
+
+export type PortraitStep = 'avatar' | 'fullbody'
 
 export interface UseRegeneratePortraitOptions {
   /**
    * Take the refImage branch (POST /avatar/from-image) instead of the
    * avatar.regenerate RPC. Empty string clears any prior reference image.
+   * Only meaningful when ``step === 'avatar'`` — fullbody never uses refImage
+   * because the avatar already supplies the visual reference.
    */
   refImage?: PickedImage | null
+  /**
+   * Which pipeline this call drives. ``'avatar'`` (default) regenerates the
+   * bust and returns ``{avatar, seed}`` with seed empty/null. ``'fullbody'``
+   * re-runs only the seed step on top of the already-confirmed avatar row;
+   * pass ``avatarId`` so the backend knows which row to update.
+   */
+  step?: PortraitStep
+  /**
+   * Active avatar row id — required when ``step === 'fullbody'`` so the
+   * backend can locate the cached seed_prompt + persisted bytes.
+   */
+  avatarId?: number | null
   /**
    * Play onboarding.portrait.regenerate on success. Off by default so
    * non-onboarding surfaces don't grow audio behaviour they didn't ask for.
@@ -36,9 +54,10 @@ export interface UseRegeneratePortraitOptions {
    * Surfaces that mirror the global `$portraitUrl` into their own local
    * state (e.g. onboarding's paired preview) wire this up to mirror the
    * atom update; surfaces already subscribed via `useStore($portraitUrl)`
-   * can omit it.
+   * can omit it. ``id`` is the avatar row id so callers driving the two-step
+   * flow can keep ``pendingAvatarId`` in sync after a step-1 regen.
    */
-  onRegenerated?: (urls: { avatar: string | null; seed: string | null }) => void
+  onRegenerated?: (urls: { avatar: string | null; seed: string | null; id: number | null }) => void
 }
 
 export interface UseRegeneratePortraitResult {
@@ -60,6 +79,10 @@ export interface UseRegeneratePortraitResult {
  * sync/queued split, busy flag, hint copy, and audio cue; the caller
  * supplies a textarea bound to $regenFeedback (via setRegenFeedback /
  * useStore) or passes feedback per-call.
+ *
+ * Two-step avatar/fullbody flows (onboarding + settings) call this hook
+ * twice with different ``step`` values; the per-call call site owns the
+ * state machine so this hook stays a thin wrapper.
  */
 export function useRegeneratePortrait(options: UseRegeneratePortraitOptions = {}): UseRegeneratePortraitResult {
   const { requestGateway } = useGatewayRequest()
@@ -68,9 +91,11 @@ export function useRegeneratePortrait(options: UseRegeneratePortraitOptions = {}
 
   const {
     refImage,
+    step = 'avatar',
+    avatarId,
     playAudioOnSuccess = false,
-    successHint = DEFAULT_SUCCESS_HINT,
-    failureHint = DEFAULT_FAILURE_HINT,
+    successHint,
+    failureHint,
     feedback: optionFeedback,
     onRegenerated
   } = options
@@ -81,6 +106,10 @@ export function useRegeneratePortrait(options: UseRegeneratePortraitOptions = {}
       const fromOptions = optionFeedback?.trim() || undefined
       const fromAtom = $regenFeedback.get().trim() || undefined
       const feedback = fromCall ?? fromOptions ?? fromAtom
+
+      const isFullbody = step === 'fullbody'
+      const resolvedSuccess = successHint ?? (isFullbody ? FULLBODY_SUCCESS_HINT : DEFAULT_SUCCESS_HINT)
+      const resolvedFailure = failureHint ?? (isFullbody ? FULLBODY_FAILURE_HINT : DEFAULT_FAILURE_HINT)
 
       setBusy(true)
       setHint(null)
@@ -94,8 +123,42 @@ export function useRegeneratePortrait(options: UseRegeneratePortraitOptions = {}
       }
 
       try {
+        if (isFullbody) {
+          if (typeof avatarId !== 'number' || avatarId <= 0) {
+            setHint('找不到对应的形象，请重新打开设置')
+
+            return
+          }
+
+          const queued = await requestGateway<{
+            queued?: boolean
+            job_id?: string
+            seed_url?: string | null
+            id?: number
+            error?: string
+          }>('avatar.generate_fullbody', { avatar_id: avatarId })
+
+          const settled =
+            queued && 'seed_url' in queued
+              ? queued
+              : queued?.queued && queued.job_id
+                ? await awaitFullbodyGeneration(queued.job_id)
+                : null
+
+          if (settled?.seed_url) {
+            const applied = await applyPortrait({ assetUrl: null, seedUrl: settled.seed_url })
+            onRegenerated?.({ ...applied, id: settled.id ?? null })
+            onApplied()
+            setHint(resolvedSuccess)
+          } else {
+            setHint(settled?.error ?? resolvedFailure)
+          }
+
+          return
+        }
+
         if (refImage) {
-          const res = await window.deskagent.api<{ asset_url?: string; seed_url?: string }>({
+          const res = await window.deskagent.api<{ asset_url?: string | null; seed_url?: string | null; id?: number }>({
             path: '/api/companion/avatar/from-image',
             method: 'POST',
             body: {
@@ -107,9 +170,9 @@ export function useRegeneratePortrait(options: UseRegeneratePortraitOptions = {}
 
           if (res?.asset_url) {
             const applied = await applyPortrait({ assetUrl: res.asset_url, seedUrl: res.seed_url })
-            onRegenerated?.(applied)
+            onRegenerated?.({ ...applied, id: res.id ?? null })
             onApplied()
-            setHint(successHint)
+            setHint(resolvedSuccess)
 
             return
           }
@@ -118,33 +181,28 @@ export function useRegeneratePortrait(options: UseRegeneratePortraitOptions = {}
         const queued = await requestGateway<{
           queued?: boolean
           job_id?: string
-          asset_url?: string
-          seed_url?: string
+          asset_url?: string | null
+          seed_url?: string | null
+          id?: number
         }>('avatar.regenerate', { feedback })
 
-        if (queued?.asset_url) {
-          const applied = await applyPortrait({ assetUrl: queued.asset_url, seedUrl: queued.seed_url })
-          onRegenerated?.(applied)
-          onApplied()
-          setHint(successHint)
-        } else if (queued?.queued && queued.job_id) {
-          const result = await awaitAvatarRegeneration(queued.job_id)
+        const settled =
+          queued && 'asset_url' in queued
+            ? queued
+            : queued?.queued && queued.job_id
+              ? await awaitAvatarRegeneration(queued.job_id)
+              : null
 
-          if (result.asset_url) {
-            const applied = await applyPortrait({ assetUrl: result.asset_url, seedUrl: result.seed_url })
-            onRegenerated?.(applied)
-            onApplied()
-            setHint(successHint)
-          } else {
-            setHint(result.error ?? failureHint)
-          }
+        if (settled?.asset_url) {
+          const applied = await applyPortrait({ assetUrl: settled.asset_url, seedUrl: settled.seed_url })
+          onRegenerated?.({ ...applied, id: settled.id ?? null })
+          onApplied()
+          setHint(resolvedSuccess)
         } else {
-          setHint(failureHint)
+          setHint(settled && 'error' in settled ? (settled.error ?? resolvedFailure) : resolvedFailure)
         }
       } catch {
-        // The form hint is hidden behind the portrait panel, so duplicate to
-        // panel hint; same pattern as onboarding's regeneratePortrait had.
-        setHint(failureHint)
+        setHint(resolvedFailure)
       } finally {
         setBusy(false)
       }
@@ -154,7 +212,17 @@ export function useRegeneratePortrait(options: UseRegeneratePortraitOptions = {}
     // otherwise give `regenerate` a new identity every render and defeat
     // downstream React.memo. optionFeedback participates so a caller can
     // change it without remounting the hook.
-    [requestGateway, refImage, playAudioOnSuccess, successHint, failureHint, optionFeedback, onRegenerated]
+    [
+      requestGateway,
+      refImage,
+      step,
+      avatarId,
+      playAudioOnSuccess,
+      successHint,
+      failureHint,
+      optionFeedback,
+      onRegenerated
+    ]
   )
 
   const clearHint = useCallback(() => setHint(null), [])

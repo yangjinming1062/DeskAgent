@@ -10,27 +10,41 @@ import { resolvePortraitUrl } from './avatar-image'
 // 形象 section of 伙伴设置.
 export const $portraitUrl = atom<string | null>(null)
 
+// Active avatar row id — written by hydrate + by every regen that creates a
+// fresh row. Two-step flows read this to point the fullbody step at the
+// just-confirmed avatar without an extra GET /avatar round-trip.
+export const $activeAvatarId = atom<number | null>(null)
+
 export function setPortraitUrl(url: string | null): void {
   $portraitUrl.set(url)
+}
+
+export function setActiveAvatarId(id: number | null): void {
+  $activeAvatarId.set(id)
 }
 
 interface PortraitUrls {
   assetUrl?: string | null
   seedUrl?: string | null
+  id?: number | null
 }
 
 // Resolve fresh asset_url / seed_url into data URLs. Publishes the avatar to
 // the global $portraitUrl atom (consumed by chat-dock + settings); returns
-// both resolved URLs so callers can mirror to local state (e.g. onboarding
-// paired display).
+// the resolved avatar + seed so callers can mirror to local state (e.g.
+// onboarding's paired preview). Pass ``id`` to publish the active row id too.
 export async function applyPortrait(urls: PortraitUrls): Promise<{ avatar: string | null; seed: string | null }> {
-  const avatar = await resolvePortraitUrl(urls.assetUrl)
+  const avatar = urls.assetUrl === undefined ? null : await resolvePortraitUrl(urls.assetUrl)
 
   if (avatar) {
     setPortraitUrl(avatar)
   }
 
-  const seed = await resolvePortraitUrl(urls.seedUrl)
+  const seed = urls.seedUrl === undefined ? null : await resolvePortraitUrl(urls.seedUrl)
+
+  if (urls.id != null) {
+    setActiveAvatarId(urls.id)
+  }
 
   return { avatar, seed }
 }
@@ -40,11 +54,11 @@ export async function applyPortrait(urls: PortraitUrls): Promise<{ avatar: strin
 // is expected and leaves the atom null.
 export async function hydratePortrait(): Promise<void> {
   try {
-    const res = await window.deskagent.api<{ asset_url?: string; seed_url?: string }>({
+    const res = await window.deskagent.api<{ id?: number; asset_url?: string; seed_url?: string }>({
       path: '/api/companion/avatar'
     })
 
-    await applyPortrait({ assetUrl: res?.asset_url, seedUrl: res?.seed_url })
+    await applyPortrait({ id: res?.id, assetUrl: res?.asset_url, seedUrl: res?.seed_url })
   } catch (error) {
     // 4xx (404 = no avatar yet during onboarding, 401 = token expired) are
     // expected; leave the atom null so subscribers show their placeholder.

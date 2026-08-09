@@ -9,12 +9,17 @@ from .asset_store import verify_signed_asset_request
 from .asset_store import verify_signed_avatar_request
 from .avatar_service import ALLOWED_AVATAR_UPLOAD_MIME_TYPES
 from .avatar_service import AvatarGenerationError
+from .avatar_service import AvatarNotFoundError
+from .avatar_service import AvatarSourceUnreadableError
 from .avatar_service import generate_avatar
+from .avatar_service import generate_fullbody
 from .avatar_service import get_active_avatar
+from .avatar_service import get_avatar_job_lock
 from .avatar_service import list_avatar_history
 from .avatar_service import regenerate_avatar
 from .avatar_service import regenerate_avatar_from_image
 from .avatar_service import resolve_uploaded_avatar_path
+from .avatar_service import SeedPromptMissingError
 from .avatar_service import upload_avatar
 from .interaction_stats import record_interaction
 from .memory_admin import delete_memory
@@ -51,10 +56,13 @@ from .wardrobe_service import list_wardrobe
 
 __all__ = [
     "ALLOWED_AVATAR_UPLOAD_MIME_TYPES",
-    "AvatarGenerationError",
-    "ModelGenerationError",
     "ONBOARDING_FIELDS",
+    "AvatarGenerationError",
+    "AvatarNotFoundError",
+    "AvatarSourceUnreadableError",
+    "ModelGenerationError",
     "PersonaValidationError",
+    "SeedPromptMissingError",
     "build_signed_asset_url",
     "build_signed_avatar_url",
     "build_signed_model_url",
@@ -71,9 +79,11 @@ __all__ = [
     "format_memories_block",
     "generate_avatar",
     "generate_companion_model",
+    "generate_fullbody",
     "generate_wardrobe_item",
     "get_active_avatar",
     "get_active_model",
+    "get_avatar_job_lock",
     "get_equipped_item",
     "get_memory",
     "get_onboarding_state",

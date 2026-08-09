@@ -162,8 +162,10 @@ async def enhance_character_image_prompts(
     for downstream 3D texture generation. Both describe the same character.
     """
     definition = _persona_payload(persona)
+    # The character name is dropped on purpose — image providers render
+    # appearance, never the spoken name, so feeding it back wastes tokens
+    # and biases the model toward reproducing it as on-image text.
     payload = {
-        "name": definition.get("name") or "",
         "biological_type": definition.get("biological_type") or "",
         "gender": definition.get("gender") or "",
         "appearance": definition.get("appearance") or "",

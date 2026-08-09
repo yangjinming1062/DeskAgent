@@ -17,7 +17,8 @@ import {
   USER_GENDER_PRESETS,
   VOICE_PRESETS
 } from '@/companion/persona-presets'
-import { $regenFeedback, applyPortrait, setRegenFeedback } from '@/companion/portrait-store'
+import { TWO_STEP_INTRO_HINT } from '@/companion/portrait-flow-copy'
+import { $activeAvatarId, $regenFeedback, applyPortrait, setRegenFeedback } from '@/companion/portrait-store'
 import { useRegeneratePortrait } from '@/companion/use-regenerate-portrait'
 import { useLatestRef } from '@/shared/hooks/use-latest-ref'
 import { isClientErrorIpc } from '@/shared/lib/ipc-error'
@@ -39,7 +40,15 @@ import { $voicePreparing } from '../voice-state'
 import { playOnboardingAudio } from './onboarding-audio'
 import { Chip, PortraitPanel } from './onboarding-components'
 
-type Phase = 'q-character' | 'hatching' | 'portrait' | 'q-user' | 'voice' | 'finishing' | 'greeting'
+type Phase =
+  | 'q-character'
+  | 'hatching'
+  | 'portrait-avatar'
+  | 'portrait-fullbody'
+  | 'q-user'
+  | 'voice'
+  | 'finishing'
+  | 'greeting'
 
 type VoiceStage = 'describe' | 'catalog'
 type VoiceLanguageFilter = '' | 'zh' | 'en'
@@ -217,7 +226,8 @@ const PHASE_QUESTIONS: Record<Phase, readonly Question[]> = {
   'q-user': USER_QUESTIONS,
   voice: VOICE_QUESTIONS,
   hatching: [],
-  portrait: [],
+  'portrait-avatar': [],
+  'portrait-fullbody': [],
   finishing: [],
   greeting: []
 }
@@ -281,15 +291,13 @@ const BACKEND_FIELD: Record<QKey, string> = {
   voice: 'voice'
 }
 
-// A reference image routes generation through /avatar/from-image so the portrait
-// is rendered *as* the uploaded character; the persona prompt already carries
-// the appearance text, so no extra description is sent from here.
-// Returns the raw backend `asset_url` — `applyPortrait` owns the resolve step.
+// Step-1: avatar only. Returns the raw backend response (id is captured for
+// step 2's fullbody call). applyPortrait owns the resolve step.
 async function generatePortrait(
   reference: PickedImage | null
-): Promise<{ asset_url?: string; seed_url?: string } | null> {
+): Promise<{ asset_url?: string; seed_url?: string | null; id?: number } | null> {
   try {
-    const res = await window.deskagent.api<{ asset_url?: string; seed_url?: string }>({
+    const res = await window.deskagent.api<{ asset_url?: string; seed_url?: string | null; id?: number }>({
       path: reference ? '/api/companion/avatar/from-image' : '/api/companion/avatar',
       method: 'POST',
       body: reference ? { content_type: reference.contentType, image: reference.base64 } : {}
@@ -298,6 +306,24 @@ async function generatePortrait(
     return res
   } catch (error) {
     // Rethrow deterministic failures so retryTransient doesn't burn the 120s avatar budget.
+    if (isClientErrorIpc(error)) {
+      throw error
+    }
+
+    return null
+  }
+}
+
+// Step-2: full-body seed on top of the just-confirmed avatar row.
+async function generateFullbody(avatarId: number): Promise<{ id?: number; seed_url?: string } | null> {
+  try {
+    const res = await window.deskagent.api<{ id?: number; seed_url?: string }>({
+      path: `/api/companion/avatar/${avatarId}/fullbody`,
+      method: 'POST'
+    })
+
+    return res
+  } catch (error) {
     if (isClientErrorIpc(error)) {
       throw error
     }
@@ -356,16 +382,22 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
   const [input, setInput] = useState('')
   const [portraitUrl, setPortraitUrl] = useState<string | null>(null)
   const [seedUrl, setSeedUrl] = useState<string | null>(null)
+  // Active avatar row id is published to the global $activeAvatarId atom by
+  // applyPortrait — subscribe to it so any step-1 regen propagates without
+  // us wiring setState through every call site.
+  const activeAvatarId = useStore($activeAvatarId)
   // voice phase runs the Q13 description input first, then the catalogue picker.
   const [voiceStage, setVoiceStage] = useState<VoiceStage>('describe')
 
   // Failure keeps the current portrait: it already holds resolved bytes.
-  // The shared `applyPortrait` writes the global atom; we mirror to local
-  // state so the in-flow preview updates without waiting for a re-mount.
+  // The shared `applyPortrait` writes the global $portraitUrl + $activeAvatarId
+  // atoms; we mirror to local seedUrl state since the seed pane isn't a
+  // global concern.
   const applyLocalPortrait = async (
-    response: { asset_url?: string | null; seed_url?: string | null } | null | undefined
-  ): Promise<string | null> => {
+    response: { asset_url?: string | null; seed_url?: string | null; id?: number } | null | undefined
+  ): Promise<{ avatar: string | null; id: number | null }> => {
     const { avatar, seed } = await applyPortrait({
+      id: response?.id,
       assetUrl: response?.asset_url,
       seedUrl: response?.seed_url
     })
@@ -376,7 +408,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
 
     setSeedUrl(seed)
 
-    return avatar
+    return { avatar, id: response?.id ?? null }
   }
 
   const [voice, setVoice] = useState<VoiceOption | null>(null)
@@ -384,6 +416,9 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
   const [voiceLangFilter, setVoiceLangFilter] = useState<VoiceLanguageFilter>('zh')
   // Failure hints live on the portrait panel — the form area is hidden behind it.
   const [portraitPanelHint, setPortraitPanelHint] = useState<string | null>(null)
+  // Step-2 transition has no avatar regen hook attached (the user already
+  // confirmed the face), so track its loading here for button-disabled state.
+  const [fullbodyLoading, setFullbodyLoading] = useState(false)
 
   // Resume path skips enterHatching, so the first-time-only portraitUrl state never gets set; re-pull here so voice-catalog PortraitPanel isn't empty. 404 (no portrait yet) is a no-op.
   const hydrateLocalPortrait = async () => {
@@ -764,7 +799,8 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
 
     if (personaOk) {
       try {
-        url = await applyLocalPortrait(await retryTransient(() => generatePortrait(refImage), 1500, 2))
+        const applied = await applyLocalPortrait(await retryTransient(() => generatePortrait(refImage), 1500, 2))
+        url = applied.avatar
       } catch {
         // A deterministic 4xx (unusable reference image, incomplete persona)
         // must not strand the flow on 'hatching' — fall through to the portrait
@@ -780,14 +816,18 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
       setHint('记忆还没存好，稍后再试试形象吧…')
     }
 
-    setPhase('portrait')
+    // Step 1: avatar only. The fullbody step is triggered explicitly via
+    // 「下一步」 so the user reviews the face before locking in the body.
+    setPhase('portrait-avatar')
     void playOnboardingAudio(url ? 'onboarding.portrait.ok' : 'onboarding.portrait.failed')
   }
 
-  const { regenerate: regeneratePortrait, busy: portraitBusy } = useRegeneratePortrait({
+  // Step 1 — avatar regen: creates a new avatar row, the new id publishes to
+  // ``$activeAvatarId`` automatically (via applyPortrait inside the hook).
+  const { regenerate: regenerateAvatarPortrait, busy: avatarBusy } = useRegeneratePortrait({
     refImage,
+    step: 'avatar',
     playAudioOnSuccess: true,
-    // Mirror the global atom update into this component's paired local seedUrl state.
     onRegenerated: ({ avatar, seed }) => {
       if (avatar) {
         setPortraitUrl(avatar)
@@ -796,6 +836,58 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
       setSeedUrl(seed)
     }
   })
+
+  // Step 2 — fullbody regen: re-runs the seed step on top of the latest
+  // confirmed avatar row. ``avatarId`` flows from the atom, not local state.
+  const { regenerate: regenerateFullbodyPortrait, busy: fullbodyBusy } = useRegeneratePortrait({
+    step: 'fullbody',
+    avatarId: activeAvatarId,
+    playAudioOnSuccess: true,
+    onRegenerated: ({ avatar, seed }) => {
+      if (avatar) {
+        setPortraitUrl(avatar)
+      }
+
+      setSeedUrl(seed)
+    }
+  })
+
+  const advanceToFullbody = async () => {
+    if (activeAvatarId == null) {
+      setPortraitPanelHint('找不到对应的形象，请稍后重试')
+
+      return
+    }
+
+    setPortraitPanelHint(null)
+    setFullbodyLoading(true)
+    const idAtCall = activeAvatarId
+    let res: { id?: number; seed_url?: string } | null = null
+
+    try {
+      res = await retryTransient(() => generateFullbody(idAtCall), 1500, 2)
+    } catch {
+      res = null
+    } finally {
+      setFullbodyLoading(false)
+    }
+
+    if (!res?.seed_url) {
+      setPortraitPanelHint('全身图暂时没生成出来，可以再点一次「下一步」试试')
+
+      return
+    }
+
+    // Only the seed URL is new — the avatar hasn't moved. Pass asset_url: null
+    // so applyPortrait keeps the existing $portraitUrl without re-resolving
+    // the data URL through the IPC layer.
+    await applyLocalPortrait({ asset_url: null, seed_url: res.seed_url, id: idAtCall })
+    setPhase('portrait-fullbody')
+  }
+
+  const backToAvatar = () => {
+    setPhase('portrait-avatar')
+  }
 
   const pickReferenceImage = async () => {
     const picked = await pickAvatarImage('选择一张参考图')
@@ -1013,29 +1105,70 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
             <p className="py-6 text-center text-sm text-white/80">{hint || '让我想想我该是什么样子…'}</p>
           )}
 
-          {(phase === 'portrait' || phase === 'greeting' || (phase === 'voice' && voiceStage === 'catalog')) && (
+          {(phase === 'portrait-avatar' ||
+            phase === 'portrait-fullbody' ||
+            phase === 'greeting' ||
+            (phase === 'voice' && voiceStage === 'catalog')) && (
             <PortraitPanel
               avatarUrl={portraitUrl}
               hint={portraitPanelHint}
+              introHint={phase === 'portrait-avatar' ? TWO_STEP_INTRO_HINT : null}
               name={answers.name?.trim() || '伙伴'}
               seedUrl={seedUrl}
+              step={phase === 'portrait-avatar' ? 'avatar' : 'fullbody'}
             />
           )}
 
-          {phase === 'portrait' && (
+          {phase === 'portrait-avatar' && (
             <div className="mt-4">
-              <RegenFeedbackInput disabled={portraitBusy} />
+              <RegenFeedbackInput disabled={avatarBusy} />
               <div className="mt-3 flex items-center justify-between text-xs">
                 <button
                   className="text-white/70 transition hover:text-white disabled:opacity-40"
-                  disabled={portraitBusy}
-                  onClick={() => regeneratePortrait()}
+                  disabled={avatarBusy}
+                  onClick={() => void regenerateAvatarPortrait()}
                   type="button"
                 >
-                  {portraitBusy ? '生成中…' : '重新生成'}
+                  {avatarBusy ? '生成中…' : '重新生成'}
                 </button>
                 <button
                   className="rounded-full bg-white/90 px-4 py-1 font-medium text-black transition hover:bg-white"
+                  disabled={avatarBusy || fullbodyLoading || activeAvatarId == null}
+                  onClick={() => void advanceToFullbody()}
+                  type="button"
+                >
+                  {fullbodyLoading ? '生成中…' : '下一步'}
+                </button>
+              </div>
+              {portraitPanelHint && <p className="mt-2 text-xs text-rose-300/90">{portraitPanelHint}</p>}
+            </div>
+          )}
+
+          {phase === 'portrait-fullbody' && (
+            <div className="mt-4">
+              <RegenFeedbackInput disabled={fullbodyBusy} />
+              <div className="mt-3 flex items-center justify-between text-xs">
+                <div className="flex gap-3">
+                  <button
+                    className="text-white/60 transition hover:text-white disabled:opacity-40"
+                    disabled={fullbodyBusy}
+                    onClick={backToAvatar}
+                    type="button"
+                  >
+                    上一步
+                  </button>
+                  <button
+                    className="text-white/70 transition hover:text-white disabled:opacity-40"
+                    disabled={fullbodyBusy}
+                    onClick={() => void regenerateFullbodyPortrait()}
+                    type="button"
+                  >
+                    {fullbodyBusy ? '生成中…' : '重新生成'}
+                  </button>
+                </div>
+                <button
+                  className="rounded-full bg-white/90 px-4 py-1 font-medium text-black transition hover:bg-white"
+                  disabled={fullbodyBusy}
                   onClick={confirmPortrait}
                   type="button"
                 >

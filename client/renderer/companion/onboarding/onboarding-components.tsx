@@ -32,14 +32,35 @@ export function PortraitPanel({
   avatarUrl,
   seedUrl,
   name,
-  hint
+  hint,
+  step = 'fullbody',
+  introHint
 }: {
   avatarUrl: string | null
   seedUrl: string | null
   name: string
   hint: string | null
+  step?: 'avatar' | 'fullbody'
+  introHint?: string | null
 }): React.JSX.Element {
   const [zoomedUrl, setZoomedUrl] = useState<string | null>(null)
+
+  if (step === 'avatar') {
+    return (
+      <div className="flex flex-col items-center gap-2">
+        {introHint && <p className="text-center text-[10px] leading-relaxed text-white/45">{introHint}</p>}
+        <PortraitThumb
+          label="头像"
+          name={name}
+          onZoom={avatarUrl ? () => setZoomedUrl(avatarUrl) : undefined}
+          size="lg"
+          url={avatarUrl}
+        />
+        {hint && <p className="text-xs text-rose-300/90">{hint}</p>}
+        {zoomedUrl && <PortraitLightbox name={name} onClose={() => setZoomedUrl(null)} url={zoomedUrl} />}
+      </div>
+    )
+  }
 
   return (
     <div className="flex flex-col items-center gap-2">
@@ -67,13 +88,17 @@ function PortraitThumb({
   label,
   name,
   onZoom,
-  url
+  url,
+  size = 'sm'
 }: {
   label: string
   name: string
   onZoom: (() => void) | undefined
   url: string | null
+  size?: 'sm' | 'lg'
 }): React.JSX.Element {
+  const sizeClass = size === 'lg' ? 'h-48 w-48' : 'h-36 w-36'
+
   return (
     <div className="flex flex-col items-center gap-1">
       {url ? (
@@ -83,10 +108,12 @@ function PortraitThumb({
           onClick={onZoom}
           type="button"
         >
-          <img alt={name} className="h-36 w-36 object-cover shadow-lg" src={url} />
+          <img alt={name} className={`${sizeClass} object-cover shadow-lg`} src={url} />
         </button>
       ) : (
-        <div className="grid h-36 w-36 place-items-center rounded-xl bg-white/5 text-center text-[10px] text-white/30">
+        <div
+          className={`grid ${sizeClass} place-items-center rounded-xl bg-white/5 text-center text-[10px] text-white/30`}
+        >
           —
         </div>
       )}

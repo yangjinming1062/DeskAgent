@@ -3,6 +3,7 @@ import type React from 'react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { $wardrobe, refreshEquippedAndApply, setWardrobe, type WardrobeItem } from '@/companion/3d/model-store'
+import { resolvePortraitUrl } from '@/companion/avatar-image'
 import { useGatewayRequest } from '@/companion/boot/use-gateway-request'
 import { $effectiveTier, $userPreferredTier, setDisturbanceTier } from '@/companion/companion-store'
 import { DISTURBANCE_TIERS } from '@/companion/disturbance-tiers'
@@ -11,7 +12,8 @@ import { useInteractiveRegion } from '@/companion/interactive-regions'
 import { MAX_APPEARANCE } from '@/companion/persona'
 import { PersonaRetune } from '@/companion/persona-retune'
 import { $persona, hydratePersona } from '@/companion/persona-store'
-import { $portraitUrl, $regenFeedback, setRegenFeedback } from '@/companion/portrait-store'
+import { TWO_STEP_INTRO_HINT } from '@/companion/portrait-flow-copy'
+import { $activeAvatarId, $portraitUrl, $regenFeedback, setRegenFeedback } from '@/companion/portrait-store'
 import {
   $companionVoiceId,
   $responseMode,
@@ -33,6 +35,7 @@ import {
   type VoiceCatalog,
   type VoiceDesignPreview
 } from '@/companion/voice'
+import { isClientErrorIpc } from '@/shared/lib/ipc-error'
 import { notifyError } from '@/shared/store/notifications'
 
 import { pushDevLog } from './developer-overlay'
@@ -67,7 +70,66 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps): React.Reac
   const [genderFilter, setGenderFilter] = useState('')
   const portraitUrl = useStore($portraitUrl)
   const regenFeedback = useStore($regenFeedback)
-  const { regenerate: regeneratePortrait, busy: regenerating, hint: avatarHint } = useRegeneratePortrait()
+
+  // Two-step portrait flow mirrors onboarding: step 1 regenerates the bust,
+  // step 2 re-runs the fullbody seed on top of the just-confirmed row.
+  const [portraitStep, setPortraitStep] = useState<'avatar' | 'fullbody'>('avatar')
+  const [seedUrl, setSeedUrl] = useState<string | null>(null)
+  // Read the active avatar id from the atom (populated by hydratePortrait
+  // on app start + by every avatar regen via applyPortrait).
+  const activeAvatarId = useStore($activeAvatarId)
+
+  // Pull the seed bytes — settings is the only surface that renders both
+  // thumbnails simultaneously, and the seed isn't in the global atom.
+  useEffect(() => {
+    void (async () => {
+      try {
+        const res = await window.deskagent.api<{ seed_url?: string | null }>({
+          path: '/api/companion/avatar'
+        })
+
+        if (res?.seed_url) {
+          setSeedUrl(await resolvePortraitUrl(res.seed_url))
+        }
+      } catch (error) {
+        if (!isClientErrorIpc(error)) {
+          console.warn('[settings] portrait hydrate failed', error)
+        }
+      }
+    })()
+  }, [])
+
+  const {
+    regenerate: regenerateAvatarPortrait,
+    busy: avatarBusy,
+    hint: avatarHint
+  } = useRegeneratePortrait({
+    step: 'avatar',
+    onRegenerated: ({ seed }) => {
+      // A step-1 regen creates a new row whose seed is empty; any prior
+      // seedUrl in the panel belongs to the old row and would mislead the
+      // user when they click "下一步".
+      if (seed) {
+        void resolvePortraitUrl(seed).then(setSeedUrl)
+      } else {
+        setSeedUrl(null)
+      }
+    }
+  })
+
+  const {
+    regenerate: regenerateFullbodyPortrait,
+    busy: fullbodyBusy,
+    hint: fullbodyHint
+  } = useRegeneratePortrait({
+    step: 'fullbody',
+    avatarId: activeAvatarId,
+    onRegenerated: ({ seed }) => {
+      if (seed) {
+        void resolvePortraitUrl(seed).then(setSeedUrl)
+      }
+    }
+  })
 
   const [retuneOpen, setRetuneOpen] = useState(false)
   const wardrobe = useStore($wardrobe)
@@ -494,35 +556,79 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps): React.Reac
             )}
           </Section>
 
-          {/* Avatar */}
-          <Section hint="重新生成；衍生动画会重新生成" title="形象">
+          {/* Avatar — two-step regenerate (face first, then fullbody) mirrors onboarding. */}
+          <Section hint={TWO_STEP_INTRO_HINT} title="形象">
+            <p className="mb-2 text-[10px] text-white/45">
+              {portraitStep === 'avatar' ? '第 1 步：确认相貌' : '第 2 步：确认身材'}
+            </p>
             <div className="flex items-start gap-3">
               <div className="grid h-20 w-20 shrink-0 place-items-center overflow-hidden rounded-xl border border-white/10 bg-white/5">
                 {portraitUrl ? (
-                  <img alt="当前形象" className="h-full w-full object-cover" src={portraitUrl} />
+                  <img alt="当前头像" className="h-full w-full object-cover" src={portraitUrl} />
                 ) : (
                   <span className="text-[10px] text-white/40">暂无</span>
                 )}
               </div>
+              {portraitStep === 'fullbody' && (
+                <div className="grid h-20 w-20 shrink-0 place-items-center overflow-hidden rounded-xl border border-white/10 bg-white/5">
+                  {seedUrl ? (
+                    <img alt="当前全身" className="h-full w-full object-cover" src={seedUrl} />
+                  ) : (
+                    <span className="text-[10px] text-white/40">暂无</span>
+                  )}
+                </div>
+              )}
               <div className="flex flex-1 flex-col gap-2">
                 <textarea
                   className={`${INPUT_CLASS} text-xs`}
-                  disabled={regenerating}
+                  disabled={portraitStep === 'avatar' ? avatarBusy : fullbodyBusy}
                   maxLength={MAX_APPEARANCE}
                   onChange={e => setRegenFeedback(e.target.value)}
                   placeholder="哪里不满意？比如：头发再短一点、眼睛再大一点、表情更温和…（可留空直接重新生成）"
                   rows={2}
                   value={regenFeedback}
                 />
-                <button
-                  className="rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-xs text-white/80 transition hover:bg-white/15 disabled:opacity-40"
-                  disabled={regenerating}
-                  onClick={() => void regeneratePortrait()}
-                  type="button"
-                >
-                  {regenerating ? '生成中…' : '重新生成'}
-                </button>
+                {portraitStep === 'avatar' ? (
+                  <div className="flex gap-2">
+                    <button
+                      className="flex-1 rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-xs text-white/80 transition hover:bg-white/15 disabled:opacity-40"
+                      disabled={avatarBusy}
+                      onClick={() => void regenerateAvatarPortrait()}
+                      type="button"
+                    >
+                      {avatarBusy ? '生成中…' : '重新生成头像'}
+                    </button>
+                    <button
+                      className="flex-1 rounded-lg border border-white/40 bg-white/15 px-3 py-2 text-xs font-medium text-white transition hover:bg-white/25 disabled:opacity-40"
+                      disabled={avatarBusy || activeAvatarId == null}
+                      onClick={() => setPortraitStep('fullbody')}
+                      type="button"
+                    >
+                      下一步
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex gap-2">
+                    <button
+                      className="rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-xs text-white/70 transition hover:bg-white/15 disabled:opacity-40"
+                      disabled={fullbodyBusy}
+                      onClick={() => setPortraitStep('avatar')}
+                      type="button"
+                    >
+                      上一步
+                    </button>
+                    <button
+                      className="flex-1 rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-xs text-white/80 transition hover:bg-white/15 disabled:opacity-40"
+                      disabled={fullbodyBusy}
+                      onClick={() => void regenerateFullbodyPortrait()}
+                      type="button"
+                    >
+                      {fullbodyBusy ? '生成中…' : '重新生成全身'}
+                    </button>
+                  </div>
+                )}
                 {avatarHint && <p className="text-xs text-amber-300/80">{avatarHint}</p>}
+                {fullbodyHint && <p className="text-xs text-amber-300/80">{fullbodyHint}</p>}
               </div>
             </div>
           </Section>
