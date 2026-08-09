@@ -98,15 +98,16 @@ renderer 通过 `window.deskagent.*`（preload contextBridge）调 main；main �
 
 ### STT/TTS 引擎路由
 
-`main/ipc/media.cjs` 是 `media.stt` / `media.tts` 的唯一路由点，在 Backend 云端引擎与 Runner 本地引擎之间决策。**默认本地优先**（本地引擎零成本），三档偏好由 backend config 的 `stt.engine` / `tts.engine`（`auto` / `local` / `cloud`）控制，经短 TTL 缓存读取：
+`main/ipc/media.cjs` 是 `media.stt` / `media.tts` 的唯一路由点，在 Backend 云端引擎与 Runner 本地引擎之间决策。三档偏好由 backend config 的 `stt.engine` / `tts.engine`（`auto` / `local` / `cloud`）控制，经短 TTL 缓存读取。**STT 默认本地优先**（本地引擎零成本），**TTS 默认云端优先**（Piper 音质差，云端音色优先，云端不通才回退 Piper）：
 
 | 档位 | 行为 |
 |------|------|
-| `auto`（默认） | 本地优先;本地不可用或失败 → 回退云端 |
+| `auto`（STT 默认） | 本地优先;本地不可用或失败 → 回退云端 |
+| `auto`（TTS 默认） | 云端优先;云端不通 → 回退本地 Piper |
 | `local` | 纯本地;失败/不可用 → 抛错,不回退(由 renderer 兜底:STT 提示"没听清"、TTS 退纯文字) |
 | `cloud` | 永远云端 |
 
-**STT `silent_fallback`**（`stt.silent_fallback`，默认 `true`）：仅作用于 `auto` 档下"本地跑出了弱/错误结果"的回退。`true`（默认）静默改跑云端，用户无感；`false` 则把本地弱结果直接暴露给 renderer（隐私/成本敏感用户不想偷偷走云端）。"本地引擎整体不可用"（runner 未连 / 工具未注册）仍照常回退云端——那是 `auto` 的核心承诺，不属于"弱结果"，不受此开关影响。**TTS 回退**：本地链 piper → pyttsx3 任一失败静默下一引擎；TTS `auto` 链跑完后**才**抛 `Set tts.engine=cloud` 提示——即 `auto` 模式下 TTS 不区分"弱结果"，回退链路始终静默。日志结构化 `stt#N`/`tts#N` 行的 `silent_fallback_used` 字段让 dev 端能 grep 静默回退的实际发生频次。
+**STT `silent_fallback`**（`stt.silent_fallback`，默认 `true`）：仅作用于 `auto` 档下"本地跑出了弱/错误结果"的回退。`true`（默认）静默改跑云端，用户无感；`false` 则把本地弱结果直接暴露给 renderer（隐私/成本敏感用户不想偷偷走云端）。"本地引擎整体不可用"（runner 未连 / 工具未注册）仍照常回退云端——那是 `auto` 的核心承诺，不属于"弱结果"，不受此开关影响。**TTS 回退**：TTS `auto` 链跑完后才抛"云端不可达"错误——即 `auto` 模式下 TTS 不区分"弱结果"，回退链路始终静默。日志结构化 `stt#N`/`tts#N` 行的 `silent_fallback_used` 字段让 dev 端能 grep 静默回退的实际发生频次。
 
 本地可用性由 runner 工具 schema 决定——`speech_to_text` / `text_to_speech` 是否出现在 `runnerBridge.getTools()`(已被 runner `check_fn` 过滤)。media.cjs 在路由层桥接两侧契约:STT 把 dataUrl 解码为 base64 喂给 runner;TTS 把 runner 产出的本地 WAV 路径读回转 dataUrl。renderer 的 `media.*` 接口因此不感知路由。
 
@@ -118,7 +119,7 @@ renderer 通过 `window.deskagent.*`（preload contextBridge）调 main；main �
 
 **音色目录页**（`hub/settings/voice-gallery-settings.tsx`，托盘 Settings → 音色目录）：只读浏览 + 试听当前云端 provider 的全部音色。framed 工具窗口无 gateway，调不到 `tts.list_voices` JSON-RPC，故走 REST `GET /api/companion/voices`（与 gateway 方法复用同一 `list_tts_voices` 服务）；试听走 `deskagent:media:tts` IPC（两窗口皆可用）。**只读**——更换伙伴音色仍在精灵窗口的「伙伴设置」里进行。缓存于 `localStorage` 的 companion voice id 失效（provider 目录变化 / 用户切换 provider）时，精灵窗口就绪后经 `companion/voice-validity.ts` 检测并弹 warning 通知引导重选（区分 `fetch_failed` 静默 vs `catalog_miss` 提示；后端 `pick_voice_id` 已容错未知 id，TTS 不会断）。
 
-**Dev 终端 trace**：`media.cjs` 在每次 STT/TTS 请求收尾时发**一行**结构化日志（`[tts#N] done …` / `[stt#N] done …`），auto-fallback 多一行 `[tts#N] fallback from=local to=cloud reason=…`。关键字段：`voice_in`（caller 想用的）、`engine_pref`（用户配置）、`route`（local/cloud）、`engine`（piper/pyttsx3/cloud）、`voice`（实际用的 voice id，**这里就能看到本地路径静默把 cloud voice id 丢成 Piper config 默认**）、`voice_out`（云端实际收到的）、`mime` / `ms` / `context` / `language`（STT 透传给 `/api/media/stt` 的 `language` 字段，默认 `zh`）。Renderer 调 `speak(text, voice?, context?)` 时可传一个短标签（`onboarding.q2` / `onboarding.voice.preview.try` 等），trace 行的 `context` 字段会带上。日志由 `entry.cjs` 注入的 `log: rememberLog` 落到 `desktop.log` 并镜像到 `pnpm dev` 的终端。
+**Dev 终端 trace**：`media.cjs` 在每次 STT/TTS 请求收尾时发**一行**结构化日志（`[tts#N] done …` / `[stt#N] done …`），auto-fallback 多一行 `[tts#N] fallback from=cloud to=local reason=…`（TTS auto 云端失败）或 `[stt#N] fallback from=local to=cloud reason=…`（STT auto 本地弱/失败）。关键字段：`voice_in`（caller 想用的）、`engine_pref`（用户配置）、`route`（local/cloud）、`engine`（piper/pyttsx3/cloud）、`voice`（实际用的 voice id，**这里就能看到本地路径静默把 cloud voice id 丢成 Piper config 默认**）、`voice_out`（云端实际收到的）、`mime` / `ms` / `context` / `language`（STT 透传给 `/api/media/stt` 的 `language` 字段，默认 `zh`）。Renderer 调 `speak(text, voice?, context?)` 时可传一个短标签（`onboarding.q2` / `onboarding.voice.preview.try` 等），trace 行的 `context` 字段会带上。日志由 `entry.cjs` 注入的 `log: rememberLog` 落到 `desktop.log` 并镜像到 `pnpm dev` 的终端。
 
 ## Electron 二进制自更新
 

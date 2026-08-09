@@ -190,9 +190,20 @@ def submit_onboarding_field(db: Session, user_id: int, field: str, value: str | 
             draft = _load_draft(persona)
             if value and value.strip():
                 draft[field] = value.strip()[:_ONBOARDING_MAX_LEN]
+            elif field == "speaking_style":
+                # speaking_style is a required persona field — refusing to clear
+                # it keeps definition_json + system_prompt_extras consistent.
+                # Re-validate the would-be draft so the error references the
+                # offending field rather than the whole persona.
+                _validate_definition(draft)
+                raise PersonaValidationError("speaking_style cannot be cleared after persona is finalized", field)
             else:
                 draft.pop(field, None)
             persona.definition_json = json.dumps(draft, ensure_ascii=False)
+            # Re-render extras so the rendered prompt reflects the post-edit
+            # definition (system_prompt_extras was set once in update_persona
+            # and would otherwise drift from definition_json).
+            persona.system_prompt_extras = render_extras(draft)
             db.commit()
             return {"answers": draft, "next_field": None, "complete": True}
         raise PersonaValidationError(

@@ -17,7 +17,9 @@ interface RunnerDeskagent {
   emit: (ev: { type: string }) => void
 }
 
-function installRunnerDeskagent(opts: { initialState?: { phase: string }; getStateRejected?: boolean } = {}): RunnerDeskagent {
+function installRunnerDeskagent(
+  opts: { initialState?: { phase: string }; getStateRejected?: boolean } = {}
+): RunnerDeskagent {
   const listeners: RunnerStatusListener[] = []
   const runnerInvoke = vi.fn().mockResolvedValue({})
 

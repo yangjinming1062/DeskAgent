@@ -92,12 +92,12 @@ class MiMoTTSProvider(TTSProvider):
                 {"role": "assistant", "content": text},
             ]
             model = _VOICEDESIGN_MODEL
+            chosen_voice = ""
         else:
-            audio_kwargs = {"format": fmt}
-            if voice:
-                audio_kwargs["voice"] = voice
-            else:
-                logger.info("mimo tts: voice omitted, using provider default", extra={"text_chars": len(text)})
+            chosen_voice = voice or self.VOICE_CATALOG[0]["id"]
+            if voice != chosen_voice:
+                logger.info("mimo tts: substituted voice", extra={"requested": voice, "used": chosen_voice})
+            audio_kwargs = {"format": fmt, "voice": chosen_voice}
             messages = [
                 {"role": "user", "content": ""},
                 {"role": "assistant", "content": text},
@@ -115,7 +115,7 @@ class MiMoTTSProvider(TTSProvider):
         return TTSResult(
             audio=base64.b64decode(choice.message.audio.data),
             mime=mime,
-            voice=audio_kwargs.get("voice", ""),
+            voice=chosen_voice,
         )
 
     async def design_voice(

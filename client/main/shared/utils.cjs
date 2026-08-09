@@ -47,11 +47,10 @@ function sendToMain(mainWindow, channel, payload) {
 // Concurrent bake writers against the same target (e.g. reaction audio IPC
 // with 10-way fan-out) need a tmp name that doesn't collide on millisecond
 // boundaries; the UUID segment keeps each writer's tmp path unique.
+// `writeFile` omits the encoding arg so string callers get utf8 (Node default)
+// and Buffer callers get binary without per-call branching.
 async function atomicWriteFile(targetPath, content) {
   await fs.promises.mkdir(path.dirname(targetPath), { recursive: true })
-  // require() inline to avoid grabbing crypto on hot paths where the helper
-  // isn't needed (existing callers pass utf8 strings; new mp3 callers pass
-  // a Buffer, which `fs.promises.writeFile` writes as binary by default).
   const tmpPath = `${targetPath}.${process.pid}.${crypto.randomUUID()}.tmp`
 
   try {

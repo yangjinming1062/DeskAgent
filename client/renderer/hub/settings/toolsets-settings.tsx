@@ -37,7 +37,7 @@ export function ToolsetsSettings(): React.JSX.Element {
     if (!res.ok) {
       notifyError(res.error ?? 'load-failed', loadErrorLabelRef.current)
 
-      return []
+      throw new Error(res.error ?? 'toolsets list failed')
     }
 
     return res.toolsets ?? []

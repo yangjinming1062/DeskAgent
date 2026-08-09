@@ -344,6 +344,3 @@ export function AccountSettings({ onConfigSaved }: { onConfigSaved?: () => void 
     </SettingsContent>
   )
 }
-
-type AgentDefaultsCopy = (typeof strings)['settings']['account']['agentDefaults']
-type ContextCompressionCopy = (typeof strings)['settings']['account']['contextCompression']

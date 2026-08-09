@@ -41,7 +41,7 @@ export function SkillsSettings(): React.JSX.Element {
     if (!res.ok) {
       notifyError(res.error ?? 'load-failed', loadErrorLabelRef.current)
 
-      return []
+      throw new Error(res.error ?? 'skills list failed')
     }
 
     return res.skills ?? []
