@@ -156,3 +156,14 @@ Desktop 走 `electron-updater` 从 Backend `/api/update` 拉取预构建安装�
 | 透明窗口平台差异 | 远程显示（X11/VNC/RDP）无法合成透明层，精灵窗口降级为非透明（`SPRITE_TRANSPARENT`）；macOS / Windows 本地会话支持良好 |
 | 托盘 Settings 中"重载 MCP"不可用 | gateway 仅在精灵窗口 boot；从托盘打开的 framed 工具窗口无 gateway，`hub/settings/mcp-settings.tsx` 的 reload 按钮优雅报"gateway 不可用"。其余 settings（runnerConfig 等 REST）不受影响 |
 | Windows 单实例锁 dev opt-out | `DESKAGENT_DESKTOP_DISABLE_SINGLE_INSTANCE_LOCK=1` 强制多实例运行，便于并行调试窗口 |
+
+## 3D 多骨骼动画库
+
+伙伴 3D 模型由后端按 `rig_type`（biped / quadruped / avian / serpentine / aquatic / hexapod / octopod）分别绑骨，客户端按 rig_type 注入对应动画库。详见 [docs/MODEL_SPEC.md](../docs/MODEL_SPEC.md) §1、§2。
+
+- `client/renderer/companion/3d/clips-biped.ts` — biped（Mixamo 25 骨）109 个 clip（核心状态 + 微动作 + 情境 idle + 移动 + 互动 + 仪式 + 14 类情绪 / 亲密 / 日常 / 惊喜）。
+- `client/renderer/companion/3d/clips-quadruped.ts` — quadruped（Tripo tripo 命名，骨名待回填）15 个物种 clip + 9 个规范状态 clip。
+- `client/renderer/companion/3d/clips-registry.ts` — `rig_type → clip 库` 路由；每个库都包含 `AnimationMap` 按状态名查找的 9 个规范状态 clip（`idle` / `listening` / `thinking` / `speaking` / `working` / `sleeping` / `interacting` / `emotional_idle` / `disconnected`），保证任何 rig 都能播放核心动画；非 biped 库的其余 clip 为物种命名骨架（骨骼名待回填，mixer 对缺失骨骼的 track 静默跳过）。
+- `CharacterController.load(bytes, scene, rigType)` 在解析 GLB 后追加调用 `buildClipsForRig(rigType)`，把骨骼旋转关键帧注入 `AnimationMixer`；`AnimationMap.resolveClip` 按精灵状态名匹配 clip。
+- 客户端不感知 Tripo3D API；rig_type 由后端 `CompanionModelResponse.rig_type` 字段经 `model-store` 推给引擎。
+

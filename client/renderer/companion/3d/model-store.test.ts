@@ -9,6 +9,8 @@ const baseModelResponse = {
   species: '精灵',
   morph_params: { height: 0.4 },
   status: 'succeeded',
+  rig_type: 'biped',
+  rig_naming: 'mixamo',
   has_rig: true,
   has_morph_targets: true
 }
@@ -31,7 +33,9 @@ describe('hydrateModel', () => {
       morph_params: {},
       has_rig: false,
       has_morph_targets: false,
-      status: 'pending'
+      status: 'pending',
+      rig_type: 'biped',
+      rig_naming: 'mixamo'
     })
     vi.spyOn(console, 'warn').mockImplementation(() => undefined)
   })
@@ -56,7 +60,9 @@ describe('hydrateModel', () => {
       morph_params: { height: 0.4 },
       has_rig: true,
       has_morph_targets: true,
-      status: 'succeeded'
+      status: 'succeeded',
+      rig_type: 'biped',
+      rig_naming: 'mixamo'
     })
     expect(console.warn).not.toHaveBeenCalled()
   })

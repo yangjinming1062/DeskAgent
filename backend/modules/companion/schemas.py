@@ -72,8 +72,10 @@ class CompanionModelResponse(BaseModel):
     asset_url: str | None = None
     provider: str
     species: str = "人类"
+    rig_type: str = "biped"
+    rig_naming: str = "mixamo"
     morph_params: dict = Field(default_factory=dict)
-    status: SucceededStatus = "succeeded"
+    status: str = "succeeded"
     has_rig: bool
     has_morph_targets: bool
 

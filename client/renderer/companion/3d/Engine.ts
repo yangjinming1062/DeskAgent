@@ -41,8 +41,8 @@ export class Engine {
     this.lighting = new LightingRig(this.scene, this.renderer)
   }
 
-  async loadCharacter(bytes: ArrayBuffer | null): Promise<LoadedModelInfo> {
-    return this.character.load(bytes, this.scene)
+  async loadCharacter(bytes: ArrayBuffer | null, rigType: string = 'biped'): Promise<LoadedModelInfo> {
+    return this.character.load(bytes, this.scene, rigType)
   }
 
   start(): void {

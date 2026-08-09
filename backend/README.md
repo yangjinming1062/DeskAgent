@@ -252,7 +252,7 @@ LLM 异常（`MissingLlmConfigError` / 网络异常 / JSON 解析失败）**直�
 
 `CompanionModel` 表存 3D 模型资产（species、provider、asset_url、morph_params_json、has_rig、has_morph_targets），按用户维度持久化，每用户最多一条 active。生成管线为单一路径：
 
-- **Tripo3D image-to-3D**：`POST /api/companion/model` 以 seed 全身种子图为唯一输入调 Tripo3D 生成（upload → image-to-model → rig-check → rig(spec=mixamo)），下载 rigged GLB 后由 Blender headless 注入 ~50 个 morph target（Tripo3D 不生成 blendshape），保存到 `companion-models/` 持久目录并经 `model.ready` 事件下发；进度经 `model.gen.progress`、失败经 `model.failed` 事件推送，客户端渲染程序化蛋形兜底角色。模型规格（骨骼/morph/动画/材质）见 [`MODEL_SPEC.md`](MODEL_SPEC.md)。动画不内嵌 GLB——全部 ~85 个 clip 由客户端 TypeScript 骨骼旋转关键帧（`client/renderer/companion/3d/companion-clips.ts`）注入。
+- **Tripo3D image-to-3D**：`POST /api/companion/model` 以 seed 全身种子图为唯一输入调 Tripo3D 生成（upload → image-to-model → rig-check → rig（biped 用 mixamo，其余 rig_type 用 tripo）），下载 rigged GLB 后由 Blender headless 注入 ~50 个 morph target（Tripo3D 不生成 blendshape），保存到 `companion-models/` 持久目录并经 `model.ready` 事件下发；进度经 `model.gen.progress`、失败经 `model.failed` 事件推送，客户端渲染程序化蛋形兜底角色。模型规格（骨骼/morph/动画/材质）见 [docs/MODEL_SPEC.md](../docs/MODEL_SPEC.md)。动画不内嵌 GLB——全部动画 clip 由客户端 TypeScript 骨骼旋转关键帧定义（`client/renderer/companion/3d/clips-*.ts`，biped 109 个，其余 rig 24–27 个），按 rig_type 经 `clips-registry.ts` 注入。生成期间拒绝并发生成（`409 ModelGenerationInProgressError`），上一份 active 模型保持可用直到新模型成功。
 
 ### 换装系统（WardrobeItem）
 
@@ -343,3 +343,16 @@ Backend 在对话响应的 `message.complete` 帧内联 `affect: {emotion}` 字�
 ## Provider 客户端生命周期
 
 `services/llm/providers/http.py` 的 httpx 池与 `openai_compat` 的 `AsyncOpenAI` 客户端按 `(base_url, api_key)` 缓存，shutdown 时统一由 `services.llm.aclose_all()` 关闭。`main.py` lifespan 的 `finally` 调 `services.media.aclose_all()`（video gen 是该 httpx 池的主要消费方），后者委托 `services.llm.aclose_all`——滚动发布时释放连接池 / 文件描述符，而非等内核回收进程。`aclose_all` 因此是 `services.llm` 的公共 lifecycle 出口。
+
+## Tripo3D v3 集成（image-to-model + rig + Blender morph 注入）
+
+伙伴 3D 模型规格见 [docs/MODEL_SPEC.md](../docs/MODEL_SPEC.md)；生成流程（本节描述的单一路径）全程只触发 Tripo3D 的 `image-to-model` + `rig-check` + `rig` 三个任务，**不调** `retarget`（节省积分）。完整 API 文档：<https://developers.tripo3d.ai/zh/docs/quick-start>。
+
+- 端点基址：`https://openapi.tripo3d.ai/v3`（`services/companion/tripo_client.py:BASE_URL`）。
+- 默认 `model_version`：`v3.1-20260211`（`MODEL_VERSION_DEFAULT`）；rig 时 biped 走 `spec=mixamo` + `MODEL_VERSION_MIXAMO`，其余 rig_type 走 `spec=tripo` + `MODEL_VERSION_TRIPO`。
+- 配置：`TRIPO_API_KEY`（`components/config.py`）。空 key → `tripo_client._api_key()` 抛 `TripoApiError`，防止误用其他 provider 配额。
+- 任务轮询：`poll_task(task_id, interval=5s, timeout=1800s)` 直到 `status ∈ {success, failed, cancelled, banned}`；`output.model_url` 短时效，须立即下载落 `companion-models/{user_id}/model_{token}.glb`（原始绑骨，存 `rig_original_url`），再经 Blender 注入 morph 后保存为新的 `model_{token}.glb`（最终资产下发客户端）。
+- rig_type 选择：`services/companion/rig_type_selector.py:select_rig_type(chat, species)` 由 LLM 按物种选择；任何异常一律回退 `biped`（不抛），客户端按 `rig_type` 注入对应动画库，缺失的 clip / 骨骼由引擎静默降级。
+- Phase 1 命名探索状态：2026-08-09 用提供的 key 查询 `/v3/account/balance` 返回 `{"balance":0.00}`（积分耗尽，`text-to-model` 被 `code:2010` 拒绝）。`spec=tripo` 的实际骨骼命名只能通过一次成功的 rig 调用从 GLB 中提取，故 biped/mixamo + quadruped 命名槽已就位，其余 5 种 rig 类型 待 v3 文档给出 rig_type + 骨名后追加。
+- 单元测试：`backend/tests/test_tripo_client.py`（httpx 传输桩覆盖 12 个端点 + 参数路由 + 错误码），`backend/tests/test_rig_type_selector.py`（7 个 LLM 行为 case）。
+

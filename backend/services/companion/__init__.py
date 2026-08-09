@@ -36,6 +36,7 @@ from .model_service import emit_wardrobe_updated
 from .model_service import generate_companion_model
 from .model_service import get_active_model
 from .model_service import ModelGenerationError
+from .model_service import ModelGenerationInProgressError
 from .model_service import signed_model_url
 from .persona_service import build_system_prompt_extras
 from .persona_service import get_onboarding_state
@@ -44,6 +45,26 @@ from .persona_service import ONBOARDING_FIELDS
 from .persona_service import PersonaValidationError
 from .persona_service import submit_onboarding_field
 from .persona_service import update_persona
+from .rig_type_selector import select_rig_type
+from .seed_stylizer import StylizationResult
+from .seed_stylizer import stylize_seed_for_tripo
+from .tripo_client import account_balance
+from .tripo_client import BASE_URL as TRIPO_BASE_URL
+from .tripo_client import create_image_to_model
+from .tripo_client import create_text_to_model
+from .tripo_client import download_model
+from .tripo_client import MODEL_VERSION_DEFAULT
+from .tripo_client import MODEL_VERSION_MIXAMO
+from .tripo_client import MODEL_VERSION_TRIPO
+from .tripo_client import poll_rig_check
+from .tripo_client import poll_task
+from .tripo_client import rig
+from .tripo_client import rig_check
+from .tripo_client import rig_model_version
+from .tripo_client import rig_spec
+from .tripo_client import TripoApiError
+from .tripo_client import TripoTaskFailed
+from .tripo_client import upload_file
 from .voice_catalog import design_voice
 from .voice_catalog import list_voices as list_tts_voices
 from .voice_catalog import match_user_voice
@@ -61,6 +82,7 @@ __all__ = [
     "AvatarNotFoundError",
     "AvatarSourceUnreadableError",
     "ModelGenerationError",
+    "ModelGenerationInProgressError",
     "PersonaValidationError",
     "SeedPromptMissingError",
     "build_signed_asset_url",
@@ -103,6 +125,9 @@ __all__ = [
     "resolve_companion_asset_path",
     "resolve_companion_model_path",
     "resolve_uploaded_avatar_path",
+    "stylize_seed_for_tripo",
+    "StylizationResult",
+    "select_rig_type",
     "signed_model_url",
     "submit_onboarding_field",
     "update_memory",

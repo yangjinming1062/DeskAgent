@@ -1701,3 +1701,97 @@ def test_companion_rest_contract(_patch_db):
     assert items.status_code == 200
     # No generated "专属外观" item — model generation no longer triggers PBR textures.
     assert items.json() and all(i["category"] == "preset" for i in items.json())
+
+
+@pytest.mark.asyncio
+async def test_model_generation_rejects_concurrent_run(_patch_db, monkeypatch):
+    """A second generation while one is in flight is rejected (409) instead of
+    spawning overlapping pipelines that race over the active row."""
+    import json as _json
+
+    from modules.auth import User
+    from modules.companion import AvatarAsset
+    from modules.companion import CompanionModel
+    from modules.companion import Persona
+    from services.companion import generate_companion_model
+    from services.companion import ModelGenerationInProgressError
+
+    _, SessionLocal = _patch_db
+
+    async def _noop_pipeline(*_a, **_kw):
+        return None
+
+    monkeypatch.setattr("services.companion.model_service._run_tripo_pipeline", _noop_pipeline)
+
+    with SessionLocal() as db:
+        user = User(username="mgen", password_hash="x", is_active=True, can_use=True)
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+        db.add(Persona(user_id=user.id, definition_json=_json.dumps({"name": "小光"}), system_prompt_extras="", is_complete=True))
+        db.add(AvatarAsset(user_id=user.id, prompt_json='{"source": "test"}', asset_url="companion-avatars/seed.png", seed_url="companion-avatars/seed.png", active=True))
+        db.commit()
+        uid = user.id
+
+    with SessionLocal() as db:
+        first = await generate_companion_model(db, user_id=uid)
+        assert first.status == "generating"
+        assert first.active is False
+
+        with pytest.raises(ModelGenerationInProgressError):
+            await generate_companion_model(db, user_id=uid)
+
+    # The generating row is the durable in-flight marker: even after the
+    # no-op pipeline "finishes", a fresh call still sees the in-flight row.
+    with SessionLocal() as db:
+        assert db.query(CompanionModel).filter(CompanionModel.user_id == uid, CompanionModel.status == "generating").count() == 1
+
+
+@pytest.mark.asyncio
+async def test_model_generation_failure_keeps_previous_model_active(_patch_db, monkeypatch):
+    """A failed regeneration marks its own row failed (inactive) and never
+    touches the previously active model — the user keeps a working companion."""
+    import json as _json
+
+    from modules.auth import User
+    from modules.companion import AvatarAsset
+    from modules.companion import CompanionModel
+    from modules.companion import Persona
+    from services.companion import generate_companion_model
+    from services.companion.model_service import ModelGenerationError
+
+    _, SessionLocal = _patch_db
+
+    def _resolve_fails(*_a, **_kw):
+        raise ModelGenerationError("tripo down")
+
+    monkeypatch.setattr("services.companion.model_service.resolve_uploaded_avatar_path", _resolve_fails)
+
+    with SessionLocal() as db:
+        user = User(username="mgenfail", password_hash="x", is_active=True, can_use=True)
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+        db.add(Persona(user_id=user.id, definition_json=_json.dumps({"name": "小光"}), system_prompt_extras="", is_complete=True))
+        db.add(AvatarAsset(user_id=user.id, prompt_json='{"source": "test"}', asset_url="companion-avatars/seed.png", seed_url="companion-avatars/seed.png", active=True))
+        previous = CompanionModel(user_id=user.id, status="succeeded", species="人类", asset_url="companion-models/1/old.glb", active=True, has_rig=True, has_morph_targets=True)
+        db.add(previous)
+        db.commit()
+        db.refresh(previous)
+        uid = user.id
+        previous_id = previous.id
+
+    # The pipeline runs in a fire-and-forget task; let it complete.
+    import asyncio
+
+    with SessionLocal() as db:
+        await generate_companion_model(db, user_id=uid)
+    await asyncio.sleep(0.05)
+
+    with SessionLocal() as db:
+        failed = db.query(CompanionModel).filter(CompanionModel.user_id == uid, CompanionModel.status == "failed").one()
+        assert failed.error == "tripo down"
+        assert failed.active is False
+        prev = db.query(CompanionModel).filter(CompanionModel.id == previous_id).one()
+        assert prev.active is True
+        assert prev.status == "succeeded"

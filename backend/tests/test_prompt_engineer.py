@@ -9,7 +9,7 @@ from services.llm import prompt_engineer
 
 def _fake_response(content: str | None):
     """Mimic the OpenAI ``chat.completions.create`` response shape — only
-    the bits ``prompt_engineer._chat`` reads (``choices[0].message.content``).
+    the bits ``prompt_engineer.chat`` reads (``choices[0].message.content``).
     ``None`` produces a client that always raises (used for transport-error
     tests)."""
 
@@ -27,7 +27,7 @@ def _fake_response(content: str | None):
 
 def _fake_provider(content: str | None = "ok", *, raises: Exception | None = None):
     """Stub for the chat provider. ``raw_client()`` is the only call
-    ``prompt_engineer._chat`` makes — the chat completion itself goes
+    ``prompt_engineer.chat`` makes — the chat completion itself goes
     through that client's ``chat.completions.create`` coroutine."""
 
     if raises is not None:
@@ -58,7 +58,7 @@ async def test_enhance_character_image_returns_avatar_and_seed(monkeypatch):
             "seed": "full body portrait of 小光, 纯白平面背景, ...",
         }, ensure_ascii=False)
 
-    monkeypatch.setattr(prompt_engineer, "_chat", _fake_chat)
+    monkeypatch.setattr(prompt_engineer, "chat", _fake_chat)
 
     class _FakePersona:
         definition_json = json.dumps({"name": "小光", "biological_type": "灵兽", "gender": "女", "appearance": "金发绿眼"})
@@ -86,7 +86,7 @@ async def test_enhance_character_image_includes_feedback_in_payload(monkeypatch)
         seen["user_payload"] = user_payload
         return json.dumps({"avatar": "a", "seed": "s"})
 
-    monkeypatch.setattr(prompt_engineer, "_chat", _fake_chat)
+    monkeypatch.setattr(prompt_engineer, "chat", _fake_chat)
 
     class _FakePersona:
         definition_json = json.dumps({"name": "小光"})
@@ -112,7 +112,7 @@ async def test_enhance_character_image_propagates_llm_runtime_error(monkeypatch)
     async def _raise(*_a, **_kw):
         raise RuntimeError("upstream boom")
 
-    monkeypatch.setattr(prompt_engineer, "_chat", _raise)
+    monkeypatch.setattr(prompt_engineer, "chat", _raise)
 
     class _FakePersona:
         definition_json = "{}"
@@ -125,25 +125,25 @@ async def test_enhance_character_image_propagates_llm_runtime_error(monkeypatch)
 async def test_chat_rejects_empty_response(monkeypatch):
     """An empty completion is treated as an enhancer failure (never a blank
     prompt sent downstream) — guards against the silent-image bug. Tested
-    against ``_chat`` directly because that's where the check lives."""
+    against ``chat`` directly because that's where the check lives."""
 
     def _provider(_db, _uid, _svc):
         return SimpleNamespace(provider_name="test", config=SimpleNamespace(model="m"), raw_client=lambda: _fake_response(""))
 
     monkeypatch.setattr(prompt_engineer, "provider_for_service", _provider)
     with pytest.raises(RuntimeError, match="empty response"):
-        await prompt_engineer._chat(None, 1, "sys", "user")
+        await prompt_engineer.chat(None, 1, "sys", "user")
 
 
 @pytest.mark.asyncio
 async def test_enhance_character_image_propagates_empty_chat_response(monkeypatch):
     """The enhancer wrappers must let the empty-response error from
-    ``_chat`` bubble up — no silent retry, no blank prompt."""
+    ``chat`` bubble up — no silent retry, no blank prompt."""
 
     async def _empty_chat(*_a, **_kw):
         raise RuntimeError("prompt enhancer returned an empty response")
 
-    monkeypatch.setattr(prompt_engineer, "_chat", _empty_chat)
+    monkeypatch.setattr(prompt_engineer, "chat", _empty_chat)
 
     class _FakePersona:
         definition_json = "{}"
@@ -163,7 +163,7 @@ async def test_enhance_texture_wardrobe_includes_seamless_in_system(monkeypatch)
         captured["system"] = system_prompt
         return "texture prompt"
 
-    monkeypatch.setattr(prompt_engineer, "_chat", _fake_chat)
+    monkeypatch.setattr(prompt_engineer, "chat", _fake_chat)
 
     out = await prompt_engineer.enhance_texture_prompt(None, 1, description="未来风银色夹克")
     assert out == "texture prompt"
@@ -176,6 +176,6 @@ async def test_enhance_texture_propagates_llm_failure(monkeypatch):
     async def _boom(*_a, **_kw):
         raise RuntimeError("upstream boom")
 
-    monkeypatch.setattr(prompt_engineer, "_chat", _boom)
+    monkeypatch.setattr(prompt_engineer, "chat", _boom)
     with pytest.raises(RuntimeError, match="upstream boom"):
         await prompt_engineer.enhance_texture_prompt(None, 1, description="x")

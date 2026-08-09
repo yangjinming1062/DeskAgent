@@ -6,7 +6,14 @@ import { $chatOpen } from '@/companion/chat-store'
 import { $spriteEmotion, $spriteState, type SpriteEmotion, type SpriteStateName } from '@/companion/companion-store'
 
 import { Engine } from './Engine'
-import { $equippedItem, $modelInfo, refreshEquippedAndApply } from './model-store'
+import {
+  $equippedItem,
+  $modelGenError,
+  $modelGenProgress,
+  $modelGenState,
+  $modelInfo,
+  refreshEquippedAndApply
+} from './model-store'
 
 // Mounts the Three.js engine into the sprite-stage canvas. The sprite-stage
 // owns drag / click-through / region tracking; this component only renders.
@@ -139,7 +146,7 @@ export function Companion3D(): React.JSX.Element {
       }
 
       try {
-        await engine.loadCharacter(bytes)
+        await engine.loadCharacter(bytes, modelInfo.rig_type || 'biped')
       } catch (err) {
         if (cancelled) {
           return
@@ -166,7 +173,7 @@ export function Companion3D(): React.JSX.Element {
     return () => {
       cancelled = true
     }
-  }, [modelInfo.asset_url, modelInfo.morph_params])
+  }, [modelInfo.asset_url, modelInfo.morph_params, modelInfo.rig_type])
 
   // Apply equipped outfit on every change. setOutfit is a no-op when the
   // character is the procedural fallback (no GLB materials to edit).
@@ -182,5 +189,93 @@ export function Companion3D(): React.JSX.Element {
     }
   }, [equipped])
 
-  return <canvas className="companion-3d-canvas" ref={canvasRef} />
+  const genState = useStore($modelGenState)
+  const genProgress = useStore($modelGenProgress)
+  const genError = useStore($modelGenError)
+
+  return (
+    <div className="companion-3d-wrapper" style={{ position: 'relative', width: '100%', height: '100%' }}>
+      <canvas className="companion-3d-canvas" ref={canvasRef} />
+      {genState === 'generating' && (
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: 'rgba(0,0,0,0.4)',
+            backdropFilter: 'blur(2px)',
+            borderRadius: '50%',
+            pointerEvents: 'none'
+          }}
+        >
+          <div style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.8)', marginBottom: '0.4rem' }}>
+            ✨ 正在为你塑造形象…
+          </div>
+          <div
+            style={{
+              width: '60%',
+              height: '3px',
+              background: 'rgba(255,255,255,0.15)',
+              borderRadius: '2px',
+              overflow: 'hidden'
+            }}
+          >
+            <div
+              style={{
+                width: `${genProgress?.progress ?? 0}%`,
+                height: '100%',
+                background: 'rgba(255,255,255,0.7)',
+                borderRadius: '2px',
+                transition: 'width 0.5s ease'
+              }}
+            />
+          </div>
+          {genProgress?.stage && (
+            <div style={{ fontSize: '0.6rem', color: 'rgba(255,255,255,0.5)', marginTop: '0.3rem' }}>
+              {stageLabel(genProgress.stage)}
+            </div>
+          )}
+        </div>
+      )}
+      {genState === 'failed' && (
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: 'rgba(0,0,0,0.4)',
+            backdropFilter: 'blur(2px)',
+            borderRadius: '50%',
+            pointerEvents: 'none'
+          }}
+        >
+          <div style={{ fontSize: '0.65rem', color: 'rgba(255,180,180,0.9)', textAlign: 'center', maxWidth: '80%' }}>
+            {genError ?? '生成失败'}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+const STAGE_LABELS: Record<string, string> = {
+  stylizing: '风格化预处理…',
+  uploading: '上传种子图…',
+  generating: '生成 3D 几何…',
+  checking_rig: '检测骨骼结构…',
+  rigging: '绑定骨骼…',
+  downloading: '下载模型…',
+  injecting_morphs: '注入表情…',
+  finalizing: '保存中…',
+  done: '完成！'
+}
+
+function stageLabel(stage: string): string {
+  return STAGE_LABELS[stage] ?? stage
 }

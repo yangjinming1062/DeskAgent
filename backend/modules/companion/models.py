@@ -20,7 +20,7 @@ if TYPE_CHECKING:
 
 
 class CompanionModel(ModelBase, TimestampMixin):
-    """status is always 'succeeded' — the pre-built GLB path completes synchronously."""
+    """Tripo3D-generated 3D model. status transitions: pending → generating → succeeded | failed."""
 
     __tablename__ = "companion_models"
 
@@ -29,6 +29,9 @@ class CompanionModel(ModelBase, TimestampMixin):
     source_portrait_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     provider: Mapped[str] = mapped_column(String(64), default="base_texture")
     species: Mapped[str] = mapped_column(String(64), default="人类", server_default=text("'人类'"))
+    rig_type: Mapped[str] = mapped_column(String(32), default="biped", server_default=text("'biped'"), index=True)
+    rig_naming: Mapped[str] = mapped_column(String(16), default="mixamo", server_default=text("'mixamo'"))
+    rig_original_url: Mapped[str] = mapped_column(Text, default="", server_default=text("''"))
     morph_params_json: Mapped[str] = mapped_column(Text, default="{}", server_default=text("'{}'"))
     status: Mapped[str] = mapped_column(String(32), default="pending")
     has_rig: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("FALSE"))
@@ -40,8 +43,8 @@ class CompanionModel(ModelBase, TimestampMixin):
 class WardrobeItem(ModelBase, TimestampMixin):
     """material_overrides_json keys are mesh names; "*" applies to all meshes.
 
-    ``texture_url`` is the albedo channel; ``normal_url`` / ``roughness_url`` /
-    ``metalness_url`` are the matching PBR channels for the GLB texture pass.
+    `texture_url` is the albedo channel; `normal_url` / `roughness_url` /
+    `metalness_url` are the matching PBR channels for the GLB texture pass.
     All four are nullable so legacy rows (albedo-only) and colour-preset
     rows (no textures at all) coexist with full PBR sets.
     """

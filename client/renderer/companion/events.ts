@@ -1,4 +1,10 @@
-import { hydrateWardrobe, setModelInfo } from '@/companion/3d/model-store'
+import {
+  $modelGenError,
+  $modelGenProgress,
+  $modelGenState,
+  hydrateWardrobe,
+  setModelInfo
+} from '@/companion/3d/model-store'
 import { $screenLocked } from '@/companion/activity'
 import { reportInteractionStat } from '@/companion/activity'
 import { resolveAvatarRegeneration, resolveFullbodyGeneration } from '@/companion/avatar-regen-store'
@@ -245,20 +251,46 @@ export function handleCompanionEvent(event: RpcEvent): void {
       // The 3D engine reloads whenever $modelInfo.asset_url changes (see
       // companion-3d.tsx). error field surfaces generation failures; the UI
       // logs it for now — recovery flow is a later slice.
-      const p = event.payload as { model_id?: number; asset_url?: string; species?: string; error?: string } | undefined
+      const p = event.payload as
+        | { model_id?: number; asset_url?: string; species?: string; rig_type?: string; error?: string }
+        | undefined
 
       if (p?.error) {
         console.warn('[events] model.ready error:', p.error)
+        $modelGenState.set('failed')
+        $modelGenError.set(p.error)
+        $modelGenProgress.set(null)
 
         break
       }
 
+      $modelGenState.set('succeeded')
+      $modelGenProgress.set(null)
+      $modelGenError.set(null)
       setModelInfo({
         id: p?.model_id ?? null,
         asset_url: p?.asset_url ?? null,
         species: p?.species ?? null,
+        rig_type: p?.rig_type ?? 'biped',
         status: 'succeeded'
       })
+
+      break
+    }
+
+    case 'model.gen.progress': {
+      const p = event.payload as { stage?: string; progress?: number } | undefined
+      $modelGenState.set('generating')
+      $modelGenProgress.set({ stage: p?.stage ?? '', progress: p?.progress ?? 0 })
+
+      break
+    }
+
+    case 'model.failed': {
+      const p = event.payload as { reason?: string } | undefined
+      $modelGenState.set('failed')
+      $modelGenError.set(p?.reason ?? '3D 模型生成失败')
+      $modelGenProgress.set(null)
 
       break
     }

@@ -33,6 +33,16 @@ class Settings(BaseSettings):
     temp_file_ttl_hours: int = 24
     data_dir: str = "./data"
 
+    # ── Tripo3D image-to-3D (companion character generation) ──
+    tripo_api_key: str = Field(default="", validation_alias="TRIPO_API_KEY")
+    tripo_base_url: str = Field(default="https://openapi.tripo3d.ai/v3", validation_alias="TRIPO_BASE_URL")
+    # H 系列（更高质量更便宜）= v3.1-20260211；P 系列（低面数）= P1-20260311
+    tripo_model_version: str = Field(default="v3.1-20260211", validation_alias="TRIPO_MODEL_VERSION")
+    tripo_face_limit: int = Field(default=0, validation_alias="TRIPO_FACE_LIMIT")  # 0 = adaptive
+    tripo_texture_quality: str = Field(default="detailed", validation_alias="TRIPO_TEXTURE_QUALITY")
+    tripo_geometry_quality: str = Field(default="detailed", validation_alias="TRIPO_GEOMETRY_QUALITY")
+    tripo_enable_autofix: bool = Field(default=True, validation_alias="TRIPO_ENABLE_AUTOFIX")
+
     # HMAC key for signed companion asset URLs. Must be set via
     # ``COMPANION_ASSET_SIGNING_KEY``; an empty value fails fast at startup
     # so an attacker who can guess ``public_url_prefix`` can't forge a

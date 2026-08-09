@@ -16,6 +16,8 @@ export interface ModelInfo {
   has_rig: boolean
   has_morph_targets: boolean
   status: string
+  rig_type: string
+  rig_naming: string
 }
 
 export interface WardrobeItem {
@@ -41,6 +43,8 @@ interface CompanionModelResponse {
   species: string
   morph_params: Record<string, number>
   status: string
+  rig_type: string
+  rig_naming: string
   has_rig: boolean
   has_morph_targets: boolean
 }
@@ -53,11 +57,22 @@ export const $modelInfo = atom<ModelInfo>({
   morph_params: {},
   has_rig: false,
   has_morph_targets: false,
-  status: 'pending'
+  status: 'pending',
+  rig_type: 'biped',
+  rig_naming: 'mixamo'
 })
 
 export const $wardrobe = atom<WardrobeItem[]>([])
 export const $equippedItem = atom<WardrobeItem | null>(null)
+
+// ── Generation progress tracking ──
+// model.gen.progress → $modelGenState='generating' + $modelGenProgress
+// model.ready        → $modelGenState='succeeded'
+// model.failed       → $modelGenState='failed' + $modelGenError
+export type ModelGenState = 'idle' | 'generating' | 'succeeded' | 'failed'
+export const $modelGenState = atom<ModelGenState>('idle')
+export const $modelGenProgress = atom<{ stage: string; progress: number } | null>(null)
+export const $modelGenError = atom<string | null>(null)
 
 export function setModelInfo(next: Partial<ModelInfo>): void {
   $modelInfo.set({ ...$modelInfo.get(), ...next })
@@ -98,7 +113,9 @@ export async function hydrateModel(): Promise<void> {
       morph_params: res.morph_params ?? {},
       has_rig: res.has_rig,
       has_morph_targets: res.has_morph_targets,
-      status: res.status
+      status: res.status,
+      rig_type: res.rig_type ?? 'biped',
+      rig_naming: res.rig_naming ?? 'mixamo'
     })
   } catch (error) {
     if (!isClientErrorIpc(error)) {

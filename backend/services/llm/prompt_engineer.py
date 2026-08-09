@@ -28,12 +28,19 @@ _PORTRAIT_SYSTEM_PROMPT = (
     "## 种子图（seed）\n"
     "5. 全身正面立绘（full body front view），以「full body portrait of ...」开头；\n"
     "6. 完整展示角色全身：从头到脚，包括服装、鞋靴、全部配饰；\n"
-    "7. 用于下游 3D 纹理生成的参考图，身体各部位的细节与比例至关重要；\n"
+    "7. 用于下游 Tripo3D image-to-3D 重建的唯一输入源——角色几何、纹理、比例全部由此图决定；\n"
     "8. 必须包含「纯白平面背景，无场景、无渐变、无阴影」；\n"
+    "9. 严格采用 A-pose 站姿（Tripo3D 绑骨硬性要求，非 A-pose 会导致骨骼畸形或断肢）：\n"
+    "    双臂自然张开与躯干约成 30-45 度夹角（禁止紧贴身体或完全垂直下垂）；\n"
+    "    双掌掌心朝向身体侧面、手指自然伸直并微微分开（五指清晰可辨）；\n"
+    "    双脚平行分开约与肩同宽、脚尖朝前；\n"
+    "    脊椎完全挺直、头颈水平正对前方（不得低头、仰头、侧倾或扭转）；\n"
+    "    四肢与躯干之间有可见间隙（腋下、腰侧、大腿内侧不粘连）；\n"
+    "    无手持道具、无遮挡身体的配件或衣物层叠。\n"
     "\n"
     "## 共同约束（两张图都必须严格遵守）\n"
     "视角：正面朝向观众（front-facing），禁止侧面、斜侧面（3/4 view）、背面、俯视或仰视角度；\n"
-    "姿态：中性自然站姿，身体直立，双肩平齐；双臂自然下垂，禁止交叉抱胸或复杂手势；\n"
+    "姿态：身体直立，双肩平齐；禁止交叉抱胸、叉腰、插兜或任何复杂手势（手臂姿态由上方 avatar/seed 各自约束定义）；\n"
     "解剖学精度：每只手五根手指完整清晰可辨，无多余或缺失；面部五官左右对称；四肢比例正确；\n"
     "一致性：两张图必须描述同一个角色——同一张脸、同一套服装、同一发色、同一配饰；\n"
     "光线：柔和均匀的正面打光（soft even front lighting），无强烈阴影；\n"
@@ -88,7 +95,7 @@ def _strip_markdown_fence(raw: str) -> str:
     return cleaned
 
 
-async def _chat(
+async def chat(
     db: Session | None,
     user_id: int | None,
     system_prompt: str,
@@ -140,7 +147,7 @@ async def enhance_character_image_prompts(
         "feedback": (feedback or "").strip(),
     }
     user_payload = "请根据以下角色定义生成头像与全身种子图的提示词（严格 JSON）：\n" f"```json\n{json.dumps(payload, ensure_ascii=False)}\n```"
-    raw = await _chat(db, user_id, _PORTRAIT_SYSTEM_PROMPT, user_payload, provider_config=provider_config)
+    raw = await chat(db, user_id, _PORTRAIT_SYSTEM_PROMPT, user_payload, provider_config=provider_config)
     cleaned = _strip_markdown_fence(raw)
     return _CharacterImagePromptsResponse.model_validate(safe_json_loads(cleaned, default={})).model_dump()
 
@@ -156,4 +163,4 @@ async def enhance_texture_prompt(
 
     payload = {"description": description}
     user_payload = "请根据以下服装/外观描述生成 PBR 纹理图提示词：\n" f"```json\n{json.dumps(payload, ensure_ascii=False)}\n```"
-    return await _chat(db, user_id, system_prompt, user_payload)
+    return await chat(db, user_id, system_prompt, user_payload)

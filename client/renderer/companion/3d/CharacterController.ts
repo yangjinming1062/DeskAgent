@@ -5,6 +5,7 @@ import type { SpriteEmotion, SpriteStateName } from '@/companion/companion-store
 import { safeJsonParse } from '@/shared/lib/safe-json'
 
 import { resolveClip } from './AnimationMap'
+import { buildClipsForRig } from './clips-registry'
 import { MorphController } from './MorphController'
 import type { LoadedModelInfo } from './types'
 
@@ -105,7 +106,7 @@ export class CharacterController {
    * Bytes arrive from the renderer's `apiAssetBuffer` IPC (host-stripped + re-based
    * onto the local backend by main), so no CORS preflight against the signed
    * URL's host. See connection.cjs::deskagent:api:asset-buffer. */
-  async load(bytes: ArrayBuffer | null, scene: THREE.Scene): Promise<LoadedModelInfo> {
+  async load(bytes: ArrayBuffer | null, scene: THREE.Scene, rigType: string = 'biped'): Promise<LoadedModelInfo> {
     if (bytes) {
       try {
         this.disposeRoot(scene)
@@ -122,6 +123,10 @@ export class CharacterController {
         this.mixer = new THREE.AnimationMixer(this.root)
 
         for (const clip of gltf.animations) {
+          this.actions.set(clip.name, this.mixer.clipAction(clip))
+        }
+
+        for (const clip of buildClipsForRig(rigType)) {
           this.actions.set(clip.name, this.mixer.clipAction(clip))
         }
 

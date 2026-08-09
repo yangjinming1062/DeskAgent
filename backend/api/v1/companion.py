@@ -49,6 +49,7 @@ from services.companion import list_avatar_history
 from services.companion import list_tts_voices
 from services.companion import list_wardrobe
 from services.companion import ModelGenerationError
+from services.companion import ModelGenerationInProgressError
 from services.companion import normalize_voice_language
 from services.companion import PersonaValidationError
 from services.companion import regenerate_avatar_from_image
@@ -91,6 +92,8 @@ def _model_response(model: CompanionModel) -> CompanionModelResponse:
         status=model.status,
         has_rig=model.has_rig,
         has_morph_targets=model.has_morph_targets,
+        rig_type=model.rig_type,
+        rig_naming=model.rig_naming,
     )
 
 
@@ -301,6 +304,8 @@ async def post_model(
     user, _ = auth
     try:
         model = await generate_companion_model(db, user_id=user.id, species_override=body.species_override)
+    except ModelGenerationInProgressError as exc:
+        raise HTTPException(status_code=409, detail={"error": str(exc)})
     except ModelGenerationError as exc:
         raise HTTPException(status_code=502, detail={"error": str(exc)})
     return _model_response(model)

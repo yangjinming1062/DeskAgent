@@ -14,6 +14,7 @@ from .llm_client import resolve_service_row
 from .llm_fallback import execute_with_fallback
 from .llm_retry import call_with_retry
 from .llm_retry import LLMRuntimeError
+from .prompt_engineer import chat
 from .prompt_engineer import enhance_character_image_prompts
 from .prompt_engineer import enhance_texture_prompt
 from .providers import aclose_all
@@ -92,6 +93,7 @@ __all__ = [
     "default_context_tokens_for",
     "default_model_for",
     "call_with_retry",
+    "chat",
     "LLMRuntimeError",
     "classify_api_error",
     "ClassifiedError",
