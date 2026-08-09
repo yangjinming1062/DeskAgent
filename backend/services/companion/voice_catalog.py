@@ -103,12 +103,12 @@ def _score(preference: str, voice: VoiceEntry) -> int:
 def match_voice(preference: str, voices: list[VoiceEntry]) -> tuple[VoiceEntry, list[VoiceEntry]]:
     if not voices:
         return DEFAULT_VOICE, []
-    ranked = sorted(voices, key=lambda v: _score(preference, v), reverse=True)
-    best = ranked[0]
-    if _score(preference, best) == 0:
+    ranked = sorted(((_score(preference, v), v) for v in voices), key=lambda t: t[0], reverse=True)
+    best_score, best = ranked[0]
+    if best_score == 0:
         neutral = next((v for v in voices if v.gender == "neutral"), None)
         best = neutral or voices[0]
-    alternatives = [v for v in ranked if v.id != best.id][:4]
+    alternatives = [v for _, v in ranked if v.id != best.id][:4]
     return best, alternatives
 
 
