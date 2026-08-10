@@ -192,11 +192,8 @@ def _extract_tirith_binary(tar: tarfile.TarFile, dest_dir: str, log) -> tuple[st
                 log("tirith binary could not be read from archive")
                 return None, "binary_extract_failed"
             dest_path = os.path.join(dest_dir, "tirith")
-            try:
-                with open(dest_path, "wb") as out:
-                    shutil.copyfileobj(src_file, out)
-            finally:
-                src_file.close()
+            with src_file, open(dest_path, "wb") as out:
+                shutil.copyfileobj(src_file, out)
             return dest_path, ""
     log("tirith binary not found in archive")
     return None, "binary_not_in_archive"
