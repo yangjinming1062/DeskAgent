@@ -7,30 +7,21 @@ import { assemblePersona, MAX_APPEARANCE } from '@/companion/persona'
 import {
   APPEARANCE_PRESETS,
   type AppearancePreset,
-  CHARACTER_GENDER_PRESETS,
-  type CharacterGenderPreset,
   PERSONALITY_PRESETS,
   type PersonalityPreset,
   ROLE_PRESETS,
   type RolePreset,
   SPEAKING_STYLE_PRESETS,
-  type SpeakingStylePreset,
-  SPECIES_PRESETS,
-  type SpeciesPreset
+  type SpeakingStylePreset
 } from '@/companion/persona-presets'
-import { hydratePersona } from '@/companion/persona-store'
-import { TWO_STEP_AVATAR_PROMPT, TWO_STEP_FULLBODY_PROMPT } from '@/companion/portrait-flow-copy'
-import { $activeAvatarId, setRegenFeedback } from '@/companion/portrait-store'
-import { useRegeneratePortrait } from '@/companion/use-regenerate-portrait'
+import { $persona, hydratePersona } from '@/companion/persona-store'
 
 interface PersonaRetuneProps {
   initial: {
     name: string
     personality: string
     speaking_style: string
-    biological_type: string
-    gender: string
-    appearance: string
+    appearance_outfit: string
     background: string
     user_call_name: string
     user_gender: string
@@ -39,7 +30,6 @@ interface PersonaRetuneProps {
     user_freeform: string
   }
   onClose: () => void
-  onSaved: () => void
 }
 
 const inputClass = PERSONA_INPUT_CLASS
@@ -48,23 +38,18 @@ const presetClass = PERSONA_PRESET_CLASS
 // Field schema: each step owns a list of fields. ``presets`` is typed as
 // the union of all known preset tokens plus '' (the "auto-derive" marker
 // used by speakingStyle). This means a typo like '喜爱' in a STEPS entry
-// fails to compile instead of silently rendering an empty chip. The
-// `string` cast on the speakingStyle line is the only place a value
-// outside the typed unions appears, and that path is intentional.
-type PresetValue =
-  | AppearancePreset
-  | CharacterGenderPreset
-  | PersonalityPreset
-  | RolePreset
-  | SpeciesPreset
-  | SpeakingStylePreset
-  | ''
+// fails to compile instead of silently rendering an empty chip.
+//
+// NOTE: the original wizard had species / character_gender / appearance
+// (now appearance_core) steps; those are locked post-seed and no longer
+// editable here. The wizard is now name + personality/speaking_style +
+// appearance_outfit + relationship + user_* — the editable subset.
+type PresetValue = AppearancePreset | PersonalityPreset | RolePreset | SpeakingStylePreset | ''
 
 type FieldSchema = {
   key: keyof typeof EMPTY
   label: string
   presets?: readonly PresetValue[]
-  selectOnly?: boolean
   max?: number
   placeholder?: string
   multiline?: boolean
@@ -72,12 +57,10 @@ type FieldSchema = {
 
 const EMPTY = {
   name: '',
-  characterGender: '',
-  species: '',
   background: '',
   personality: '',
   speakingStyle: '',
-  appearance: '',
+  appearanceOutfit: '',
   userCallName: '',
   userGender: '',
   userAgeBucket: '',
@@ -87,27 +70,13 @@ const EMPTY = {
 
 const STEPS: { title: string; fields: FieldSchema[] }[] = [
   {
-    title: '角色定义：名称 与 性别',
-    fields: [
-      { key: 'name', label: '角色名', max: 64, placeholder: '给你起个名字' },
-      {
-        key: 'characterGender',
-        label: '角色性别',
-        max: 64,
-        presets: CHARACTER_GENDER_PRESETS
-      }
-    ]
+    title: '角色定义：名称',
+    fields: [{ key: 'name', label: '角色名', max: 64, placeholder: '给你起个名字' }]
   },
   {
-    title: '物种 与 关系',
+    title: '关系 与 性格',
     fields: [
-      { key: 'species', label: '物种', max: 64, presets: SPECIES_PRESETS, selectOnly: true },
-      { key: 'background', label: '关系 / 角色定位', presets: ROLE_PRESETS }
-    ]
-  },
-  {
-    title: '性格 与 说话风格',
-    fields: [
+      { key: 'background', label: '关系 / 角色定位', presets: ROLE_PRESETS },
       { key: 'personality', label: '性格', presets: PERSONALITY_PRESETS },
       {
         key: 'speakingStyle',
@@ -118,11 +87,11 @@ const STEPS: { title: string; fields: FieldSchema[] }[] = [
     ]
   },
   {
-    title: '形象描述',
+    title: '初始服装',
     fields: [
       {
-        key: 'appearance',
-        label: '形象',
+        key: 'appearanceOutfit',
+        label: '初始服装',
         max: MAX_APPEARANCE,
         presets: APPEARANCE_PRESETS,
         multiline: true
@@ -142,14 +111,14 @@ const STEPS: { title: string; fields: FieldSchema[] }[] = [
 ]
 
 // Review step is data-driven too: a single Row per state slice, labeled.
+// Locked visual-anchor fields (species / gender / appearance_core) are not
+// editable here; readers can see them in the persona section of settings.
 const REVIEW_ROWS: { key: keyof typeof EMPTY; label: string; fallback?: string }[] = [
   { key: 'name', label: '名字' },
-  { key: 'characterGender', label: '形象性别' },
-  { key: 'species', label: '物种' },
   { key: 'background', label: '关系' },
   { key: 'personality', label: '性格' },
   { key: 'speakingStyle', label: '说话风格', fallback: '自动派生' },
-  { key: 'appearance', label: '形象' },
+  { key: 'appearanceOutfit', label: '初始服装' },
   { key: 'userCallName', label: '称呼' },
   { key: 'userGender', label: '我的性别' },
   { key: 'userAgeBucket', label: '年龄段' },
@@ -157,28 +126,14 @@ const REVIEW_ROWS: { key: keyof typeof EMPTY; label: string; fallback?: string }
   { key: 'userFreeform', label: '补充' }
 ]
 
-export function PersonaRetune({ initial, onClose, onSaved }: PersonaRetuneProps): React.ReactElement {
+export function PersonaRetune({ initial, onClose }: PersonaRetuneProps): React.ReactElement {
+  const persona = useStore($persona)
   const [step, setStep] = useState<number>(0)
   const [saving, setSaving] = useState(false)
   const [hint, setHint] = useState<string | null>(null)
-  const [phase, setPhase] = useState<'edit' | 'avatar' | 'fullbody'>('edit')
-  // Two-step portrait regen after persona save — same flow as onboarding /
-  // settings. Avatar id flows from the global atom.
-  const activeAvatarId = useStore($activeAvatarId)
-
-  const { regenerate: regenerateAvatar, hint: avatarHint, busy: avatarBusy } = useRegeneratePortrait({ step: 'avatar' })
-
-  const {
-    regenerate: regenerateFullbody,
-    hint: fullbodyHint,
-    busy: fullbodyBusy
-  } = useRegeneratePortrait({ step: 'fullbody', avatarId: activeAvatarId })
 
   // Tracks whether the wizard is still mounted. Closing the modal mid-save
-  // unmounts the component; the in-flight ``save()`` continues to run,
-  // so the post-save phase flip would otherwise strand the user on a
-  // confirm panel with no visible source. Suppress the phase flip when
-  // the user already dismissed the wizard.
+  // unmounts the component; the in-flight ``save()`` continues to run.
   const mountedRef = useRef(true)
   useEffect(
     () => () => {
@@ -188,15 +143,10 @@ export function PersonaRetune({ initial, onClose, onSaved }: PersonaRetuneProps)
   )
 
   const [name, setName] = useState(initial.name)
-  const [characterGender, setCharacterGender] = useState(initial.gender)
-  const [species, setSpecies] = useState(initial.biological_type)
-  // Mirror the wire field name (``background``) directly so the rename
-  // round-trip through ``assemblePersona({role, ...})`` is not load-bearing
-  // for correctness — only for backwards compat with the existing schema.
   const [background, setBackground] = useState(initial.background)
   const [personality, setPersonality] = useState(initial.personality)
   const [speakingStyle, setSpeakingStyle] = useState(initial.speaking_style)
-  const [appearance, setAppearance] = useState(initial.appearance)
+  const [appearanceOutfit, setAppearanceOutfit] = useState(initial.appearance_outfit)
   const [userCallName, setUserCallName] = useState(initial.user_call_name)
   const [userGender, setUserGender] = useState(initial.user_gender)
   const [userAgeBucket, setUserAgeBucket] = useState(initial.user_age_bucket)
@@ -206,12 +156,10 @@ export function PersonaRetune({ initial, onClose, onSaved }: PersonaRetuneProps)
   // Setter map keyed by field ``key``. Avoids a switch/case per step.
   const setters: Record<keyof typeof EMPTY, (v: string) => void> = {
     name: setName,
-    characterGender: setCharacterGender,
-    species: setSpecies,
     background: setBackground,
     personality: setPersonality,
     speakingStyle: setSpeakingStyle,
-    appearance: setAppearance,
+    appearanceOutfit: setAppearanceOutfit,
     userCallName: setUserCallName,
     userGender: setUserGender,
     userAgeBucket: setUserAgeBucket,
@@ -221,12 +169,10 @@ export function PersonaRetune({ initial, onClose, onSaved }: PersonaRetuneProps)
 
   const values: Record<keyof typeof EMPTY, string> = {
     name,
-    characterGender,
-    species,
     background,
     personality,
     speakingStyle,
-    appearance,
+    appearanceOutfit,
     userCallName,
     userGender,
     userAgeBucket,
@@ -256,26 +202,30 @@ export function PersonaRetune({ initial, onClose, onSaved }: PersonaRetuneProps)
     // C2: separate the PUT (write) and hydrate (read) failure modes —
     // same rationale as persona-editor. A transient GET failure after a
     // successful PUT must NOT look like a save failure.
+    //
+    // Current persona passed as `previous` so locked visual-anchor fields
+    // are re-included verbatim; see DESIGN.md §5.4.
     let putOk = false
 
     try {
       await window.deskagent.api({
         body: {
           definition_json: JSON.stringify(
-            assemblePersona({
-              name: trimmed,
-              personality,
-              speaking_style: speakingStyle,
-              species,
-              character_gender: characterGender,
-              appearance: appearance.slice(0, MAX_APPEARANCE),
-              role: background,
-              user_call_name: userCallName,
-              user_gender: userGender,
-              user_age_bucket: userAgeBucket,
-              user_hobbies: userHobbies,
-              user_freeform: userFreeform
-            })
+            assemblePersona(
+              {
+                name: trimmed,
+                personality,
+                speaking_style: speakingStyle,
+                role: background,
+                appearance_outfit: appearanceOutfit,
+                user_call_name: userCallName,
+                user_gender: userGender,
+                user_age_bucket: userAgeBucket,
+                user_hobbies: userHobbies,
+                user_freeform: userFreeform
+              },
+              persona ?? undefined
+            )
           )
         },
         method: 'PUT',
@@ -303,72 +253,15 @@ export function PersonaRetune({ initial, onClose, onSaved }: PersonaRetuneProps)
 
     if (!result.ok) {
       // Backend has the persona; the local copy didn't refresh. Show a
-      // softer hint and DO NOT advance to the confirm phase — the
-      // regenerate call downstream needs fresh $persona state. The user
-      // can retry by re-opening the wizard or wait for the next hydrate.
+      // softer hint so the user knows to expect a stale view until the
+      // next hydrate (next save, restart, etc.).
       setHint('已保存，但本地刷新失败，稍后再试')
       setSaving(false)
 
       return
     }
 
-    onSaved()
-    setPhase('avatar')
     setSaving(false)
-  }
-
-  if (phase !== 'edit') {
-    const isAvatarStep = phase === 'avatar'
-    const busy = isAvatarStep ? avatarBusy : fullbodyBusy
-    const stepHint = isAvatarStep ? avatarHint : fullbodyHint
-    const primaryLabel = isAvatarStep ? '重新生成头像' : '生成全身图'
-    const title = isAvatarStep ? TWO_STEP_AVATAR_PROMPT : TWO_STEP_FULLBODY_PROMPT
-
-    const onPrimary = async () => {
-      if (isAvatarStep) {
-        await regenerateAvatar()
-        setPhase('fullbody')
-      } else {
-        await regenerateFullbody()
-        onClose()
-      }
-    }
-
-    return (
-      <div
-        className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 px-6 py-6 backdrop-blur-sm"
-        style={{ pointerEvents: 'auto' }}
-      >
-        <div className="flex w-full max-w-md flex-col rounded-2xl border border-white/15 bg-black/80 px-6 py-6 text-white shadow-2xl">
-          <p className="mb-1 text-sm font-medium">{title}</p>
-          {stepHint && <p className="mb-3 text-xs text-amber-300/80">{stepHint}</p>}
-          <div className="flex gap-2">
-            <button
-              className="flex-1 rounded-lg border border-white/40 bg-white/15 px-3 py-2 text-xs font-medium text-white transition hover:bg-white/25 disabled:opacity-40"
-              disabled={busy}
-              onClick={async () => {
-                if (isAvatarStep) {
-                  setRegenFeedback(appearance.slice(0, MAX_APPEARANCE))
-                }
-
-                await onPrimary()
-              }}
-              type="button"
-            >
-              {busy ? '生成中…' : primaryLabel}
-            </button>
-            <button
-              className="flex-1 rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-xs text-white/70 transition hover:bg-white/15 disabled:opacity-40"
-              disabled={busy}
-              onClick={onClose}
-              type="button"
-            >
-              {isAvatarStep ? '暂后' : '就这样吧'}
-            </button>
-          </div>
-        </div>
-      </div>
-    )
   }
 
   return (
@@ -398,13 +291,7 @@ export function PersonaRetune({ initial, onClose, onSaved }: PersonaRetuneProps)
                 第 {step + 1} 步 · {STEPS[step].title}
               </p>
               {STEPS[step].fields.map(field => (
-                <Field
-                  field={field}
-                  key={field.key}
-                  onChange={setters[field.key]}
-                  placeholder={field.placeholder}
-                  value={values[field.key]}
-                />
+                <Field field={field} key={field.key} onChange={setters[field.key]} value={values[field.key]} />
               ))}
             </div>
           )}
@@ -462,10 +349,9 @@ interface FieldProps {
   field: FieldSchema
   value: string
   onChange: (v: string) => void
-  placeholder?: string
 }
 
-function Field({ field, value, onChange, placeholder }: FieldProps): React.ReactElement {
+function Field({ field, value, onChange }: FieldProps): React.ReactElement {
   // Last entry of the presets list, when an empty string, is the
   // "auto-derive / clear" affordance — only meaningful for speaking_style.
   const isClearPreset = field.presets && field.presets[field.presets.length - 1] === ''
@@ -475,23 +361,22 @@ function Field({ field, value, onChange, placeholder }: FieldProps): React.React
   return (
     <label className="block">
       <span className="mb-1 block text-[11px] text-white/50">{field.label}</span>
-      {!field.selectOnly &&
-        (field.multiline ? (
-          <textarea
-            className={`${inputClass} resize-none`}
-            onChange={e => handleChange(e.target.value)}
-            placeholder={placeholder}
-            rows={field.key === 'appearance' ? 3 : 2}
-            value={value}
-          />
-        ) : (
-          <input
-            className={inputClass}
-            onChange={e => handleChange(e.target.value)}
-            placeholder={placeholder}
-            value={value}
-          />
-        ))}
+      {field.multiline ? (
+        <textarea
+          className={`${inputClass} resize-none`}
+          onChange={e => handleChange(e.target.value)}
+          placeholder={field.placeholder}
+          rows={field.key === 'appearanceOutfit' ? 3 : 2}
+          value={value}
+        />
+      ) : (
+        <input
+          className={inputClass}
+          onChange={e => handleChange(e.target.value)}
+          placeholder={field.placeholder}
+          value={value}
+        />
+      )}
       {field.presets && field.presets.length > 0 && (
         <div className="mt-1.5 flex flex-wrap gap-1.5">
           {field.presets.map(p => {
@@ -512,7 +397,7 @@ function Field({ field, value, onChange, placeholder }: FieldProps): React.React
           })}
         </div>
       )}
-      {field.key === 'appearance' && (
+      {field.key === 'appearanceOutfit' && (
         <span className="mt-1 block text-[10px] text-white/40">
           {value.length} / {MAX_APPEARANCE}
         </span>

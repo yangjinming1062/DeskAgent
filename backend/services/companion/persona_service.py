@@ -16,7 +16,9 @@ from .personality_tagger import ChatFn as _ChatFn
 # Persona field order — part of the contract downstream prompt consumers
 # reason about, since it dictates the rendered system-prompt snippet shape.
 _REQUIRED_FIELDS: tuple[str, ...] = ("name", "personality", "speaking_style")
-_OPTIONAL_FIELDS: tuple[str, ...] = ("appearance", "background", "biological_type", "gender")
+# Split from "appearance" so the locked-vs-outfit split is first-class:
+# `assemblePersona` preserves `appearance_core` across edits; outfit stays editable.
+_OPTIONAL_FIELDS: tuple[str, ...] = ("appearance_core", "appearance_outfit", "background", "biological_type", "gender")
 _KNOWN_FIELDS: frozenset[str] = frozenset(_REQUIRED_FIELDS + _OPTIONAL_FIELDS)
 _MAX_FIELD_LEN: int = 500
 
@@ -29,7 +31,8 @@ ONBOARDING_FIELDS: tuple[str, ...] = (
     "name",
     "species",
     "character_gender",
-    "appearance",
+    "appearance_core",
+    "appearance_outfit",
     "role",
     "personality",
     "speaking_style",

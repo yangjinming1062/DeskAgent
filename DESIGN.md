@@ -233,6 +233,10 @@ DeskAgent 区别于一切既有桌面宠物 / 桌面 Agent 的核心，在于伙
 
 头像确认后自动触发步 2 全身三视图生成，以确认的头像特征与描述为锚点，并发生成正面、右侧面、背面三视角全身立绘并排展示，作为后续 3D 建模的输入。不一次生成多个候选让用户挑——单次确认 + 反馈式重生成更经济也更聚焦。
 
+**形象确认后锁定**：三视图确认时点击「确认」即视为锁定形象——此后 3D 模型、头像、三视图重新生成路径对当前用户关闭；`PUT /api/companion/persona` 客户端会自动剥离 `biological_type` / `gender` / `appearance_core` 三个视觉字段；名称、性格、说话风格、关系定位、`appearance_outfit`（初始服装描述）、音色与 user_* 仍可编辑。换装（`POST /api/companion/wardrobe`）与动画生成（`POST /api/companion/animations/generate`）不受影响。**用户责任约束**：图生 3D 模型成本高（Tripo3D multiview-to-3D + rig），且形象与三视图一旦进入模型即永久冻结；onboarding 进入任一锁定字段时顶部 banner 直接提示「当前字段是形象确认后无法再次更改的重点内容」，强迫用户在初始引导阶段仔细选择。锁定在客户端剥夺提交能力实现——后端不做 schema 列、不加守卫、不加异常类型。
+
+注：原「形象描述」字段在引导阶段拆分为 Q4a「基础形象」(`appearance_core`，带 `*`) 与 Q4b「初始服装」(`appearance_outfit`)：前者描述脸型、体型、标志性细节等不可变特征，确认后锁定；后者描述默认穿着、配饰，可在「换装」与 persona 设置中随时调整。
+
 形象确认后进入音色子阶段（§5.5），音色确认后才进入用户子阶段（Q9–Q13）——用户在 Q9–Q13 输入时任何 portrait regenerate 都不会阻塞 UI。
 
 ### 5.5 音色确认
@@ -250,7 +254,7 @@ DeskAgent 区别于一切既有桌面宠物 / 桌面 Agent 的核心，在于伙
 
 ### 5.6 3D 模型生成与最终孵化
 
-形象 + 音色就位，3D 模型经 `POST /api/companion/model` 异步生成，以三视角全身种子图为输入，就绪后经 `model.ready` 事件下发。形象以 idle 骨骼动画"活"起来，用确认后的音色说出第一句问候。onboarding 结束，进入持续陪伴。
+形象 + 音色就位，3D 模型经 `POST /api/companion/model` 异步生成，以三视角全身种子图为输入，就绪后经 `model.ready` 事件下发。形象以 idle 骨骼动画"活"起来，用确认后的音色说出第一句问候。onboarding 结束，进入持续陪伴。**形象自此由客户端剥夺了对 3D 模型、头像、三视图以及 persona 中 `biological_type` / `gender` / `appearance_core` 的修改路径；用户可通过换装或编辑 `appearance_outfit` 调整外观**。
 
 ---
 
@@ -335,7 +339,7 @@ IDLE 时形象不是静止贴图。两类自主行为，**都不触发 TTS、不
 
 两类设置分处两个窗口，由**网关可用性**决定归属：
 
-- **伙伴设置**（精灵窗口，网关可用）：右键精灵 → 伙伴设置。包括角色管理（**两套路径**：「编辑角色」表单式直接改 6 个字段，**或**「重新对话微调性格」5 步对话式 wizard 引导改 11 个字段含 user_* — wizard 单 PUT 收尾，**保留既有长期记忆**，不重置 `is_complete`）、响应模式（默认文字 / 始终语音）、打扰档位（chip 反映 user_preferred，effective 状态由活动感知器覆盖，UI 不直接显示 override）、音色管理（目录切换 + 试听，`tts.list_voices` + speak 预览）、形象管理（`avatar.regenerate` / 参考图重绘）、换装管理（浏览预设配色 + 已生成 AI 纹理，点击即换）、形象缩放（默认比例 0.5×–2×）。
+- **伙伴设置**（精灵窗口，网关可用）：右键精灵 → 伙伴设置。形象确认后，**「形象」section 与「3D 模型重新生成」入口直接移除**；仅保留「换装」（浏览预设配色 + 已生成 AI 纹理，点击即换）。其余模块包括角色管理（**两套路径**：「编辑角色」表单式直接改 4 个可编辑字段（`name` / `role` / `personality` / `appearance_outfit`），**或**「重新对话微调性格」5 步对话式 wizard 引导改可编辑字段含 user_* — wizard 单 PUT 收尾，**保留既有长期记忆**，不重置 `is_complete`；客户端在保存时自动剥离 `species` / `gender` / `appearance_core` 三个锁定字段）、响应模式（默认文字 / 始终语音）、打扰档位（chip 反映 user_preferred，effective 状态由活动感知器覆盖，UI 不直接显示 override）、音色管理（目录切换 + 试听，`tts.list_voices` + speak 预览）、形象缩放（默认比例 0.5×–2×）。
 - **应用设置**（托盘 → Settings...，framed 工具窗口，无网关）：账户、语音（STT 开关 / `silent_fallback` / 录音时长 / 引擎）、音色目录（只读浏览 + 试听，走 REST `GET /api/companion/voices`）、Runner、Skills/MCP 等通用配置。
 
 > **设计约束**：JSON-RPC（`tts.list_voices` / `avatar.*` / `onboarding.*`）只在精灵窗口的 WS 网关上可用——工具窗口不 boot 网关。因此依赖这些方法的伙伴设置必须住在精灵窗口；工具窗口的设置只走 REST（音色目录页是 `tts.list_voices` 的 REST 镜像，专为工具窗口而设）。

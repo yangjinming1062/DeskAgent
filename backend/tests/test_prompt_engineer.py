@@ -58,7 +58,7 @@ async def test_enhance_avatar_prompt_returns_text(monkeypatch):
     monkeypatch.setattr(prompt_engineer, "chat", _fake_chat)
 
     class _FakePersona:
-        definition_json = json.dumps({"name": "小光", "biological_type": "灵兽", "gender": "女", "appearance": "金发绿眼"})
+        definition_json = json.dumps({"name": "小光", "biological_type": "灵兽", "gender": "女", "appearance_core": "金发绿眼"})
 
     out = await prompt_engineer.enhance_avatar_prompt(None, 7, _FakePersona())
     assert "正面上半身半身像" in out

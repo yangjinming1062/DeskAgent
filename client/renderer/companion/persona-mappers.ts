@@ -14,7 +14,8 @@ export function personaFromWire(payload: PersonaPayload): PersonaDefinition {
     ...(payload.background !== undefined && { background: payload.background }),
     ...(payload.biological_type !== undefined && { biological_type: payload.biological_type }),
     ...(payload.gender !== undefined && { gender: payload.gender }),
-    ...(payload.appearance !== undefined && { appearance: payload.appearance })
+    ...(payload.appearance_core !== undefined && { appearance_core: payload.appearance_core }),
+    ...(payload.appearance_outfit !== undefined && { appearance_outfit: payload.appearance_outfit })
   }
 }
 
@@ -26,6 +27,7 @@ export function personaToWire(def: PersonaDefinition): PersonaPayload {
     ...(def.background !== undefined && { background: def.background }),
     ...(def.biological_type !== undefined && { biological_type: def.biological_type }),
     ...(def.gender !== undefined && { gender: def.gender }),
-    ...(def.appearance !== undefined && { appearance: def.appearance })
+    ...(def.appearance_core !== undefined && { appearance_core: def.appearance_core }),
+    ...(def.appearance_outfit !== undefined && { appearance_outfit: def.appearance_outfit })
   }
 }

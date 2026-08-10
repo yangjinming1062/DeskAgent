@@ -131,15 +131,32 @@ const QUESTIONS: readonly Question[] = [
     presets: CHARACTER_GENDER_PRESETS
   },
   {
-    key: 'appearance',
-    text: '那您希望我长什么样？说说头发、眼睛、穿着、气质…',
-    placeholder: '比如：金发绿眼、黑色礼帽…',
+    // appearance_core: locked visual anchor — feeds the 3D model prompt and
+    // gets stripped from PUT /persona after the user confirms the seed
+    // image. The red `*` on the label is rendered inline in the JSX below.
+    key: 'appearance_core',
+    text: '您希望我长什么样？说说头发、眼睛、体型、标志性细节…',
+    placeholder: '比如：金发绿眼、额间一道疤、机械义眼…',
     required: false,
     multiline: true,
     audioTag: 'onboarding.q3',
     max: MAX_APPEARANCE,
     presets: APPEARANCE_PRESETS,
     allowImage: true
+  },
+  {
+    // appearance_outfit: editable; feeds the initial wardrobe hint but not
+    // the image-gen prompt. Free to revise anytime via the persona editor.
+    key: 'appearance_outfit',
+    text: '默认的穿着配饰？想描述就描述，想跳过也行…',
+    placeholder: '比如：黑色礼帽配军装风衣…（可跳过）',
+    required: false,
+    multiline: true,
+    // Distinct slot from appearance_core (q3) — reusing q3's audio would
+    // play the image-description line for the outfit question.
+    audioTag: 'onboarding.q13',
+    max: MAX_APPEARANCE,
+    presets: APPEARANCE_PRESETS
   },
   {
     key: 'role',
@@ -231,12 +248,17 @@ const QUESTIONS: readonly Question[] = [
   }
 ]
 
+// Fields whose value drives the 3D model and therefore can't change after the
+// user confirms the seed image. A red `*` is rendered inline beside the
+// question text + a top-of-wizard banner reminds the user of the rule.
+const LOCKED_FIELD_KEYS: ReadonlySet<QKey> = new Set(['species', 'character_gender', 'appearance_core'])
+
 // Slice boundaries mirror backend ONBOARDING_FIELDS order — required for resume routing.
 // Everything that defines the companion itself (character fields, speaking style,
 // portrait, voice) is settled before any user_* question is asked.
-const CHARACTER_QUESTIONS: readonly Question[] = QUESTIONS.slice(0, 7) // name, species, character_gender, appearance, role, personality, speaking_style
-const VOICE_QUESTIONS: readonly Question[] = QUESTIONS.slice(7, 8) // voice
-const USER_QUESTIONS: readonly Question[] = QUESTIONS.slice(8, 13) // user_call_name, user_gender, user_age_bucket, user_hobbies, user_freeform
+const CHARACTER_QUESTIONS: readonly Question[] = QUESTIONS.slice(0, 8) // name, species, character_gender, appearance_core, appearance_outfit, role, personality, speaking_style
+const VOICE_QUESTIONS: readonly Question[] = QUESTIONS.slice(8, 9) // voice
+const USER_QUESTIONS: readonly Question[] = QUESTIONS.slice(9, 14) // user_call_name, user_gender, user_age_bucket, user_hobbies, user_freeform
 
 const PHASE_QUESTIONS: Record<Phase, readonly Question[]> = {
   'q-character': CHARACTER_QUESTIONS,
@@ -296,7 +318,8 @@ const BACKEND_FIELD: Record<QKey, string> = {
   name: 'name',
   species: 'species',
   character_gender: 'character_gender',
-  appearance: 'appearance',
+  appearance_core: 'appearance_core',
+  appearance_outfit: 'appearance_outfit',
   role: 'role',
   personality: 'personality',
   speaking_style: 'speaking_style',
@@ -1018,6 +1041,11 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
           style={{ pointerEvents: 'auto' }}
         >
           {voicePreparing && <p className="mb-2 text-center text-[10px] text-white/40">🔊 正在准备声音…</p>}
+          {phase === 'q-character' && (
+            <p className="mb-2 rounded-md border border-amber-300/30 bg-amber-300/10 px-2 py-1 text-[10px] leading-relaxed text-amber-200/85">
+              当前字段是形象确认后无法再次更改的重点内容。
+            </p>
+          )}
           {(phase === 'q-character' || phase === 'q-user' || (phase === 'voice' && voiceStage === 'describe')) &&
             question && (
               <>
@@ -1203,7 +1231,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
                   onClick={confirmPortrait}
                   type="button"
                 >
-                  就这样吧
+                  确认
                 </button>
               </div>
               {portraitPanelHint && <p className="mt-2 text-xs text-rose-300/90">{portraitPanelHint}</p>}

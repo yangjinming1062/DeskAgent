@@ -16,6 +16,7 @@
     { "tag": "onboarding.q10", "text": "您希望我说话的风格是什么样的？" },
     { "tag": "onboarding.q11", "text": "还有什么想告诉我、或者想叮嘱我的吗？" },
     { "tag": "onboarding.q12", "text": "您希望我听起来是什么样的？比如温柔的少女音、沉稳的男声、活泼的正太…" },
+    { "tag": "onboarding.q13", "text": "默认的穿着配饰？想描述就描述，想跳过也行。" },
     { "tag": "onboarding.hatching",         "text": "让我想想我该是什么样子…" },
     { "tag": "onboarding.hatching.retry",  "text": "刚才的回答有些问题，咱们再来一次。" },
     { "tag": "onboarding.portrait.ok",         "text": "嗯…这就是我，您觉得怎么样？" },

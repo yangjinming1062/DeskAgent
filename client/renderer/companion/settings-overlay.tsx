@@ -6,13 +6,9 @@ import { $wardrobe, refreshEquippedAndApply, setWardrobe, type WardrobeItem } fr
 import { useGatewayRequest } from '@/companion/boot/use-gateway-request'
 import { $effectiveTier, $userPreferredTier, setDisturbanceTier } from '@/companion/companion-store'
 import { DISTURBANCE_TIERS } from '@/companion/disturbance-tiers'
-import { INPUT_CLASS } from '@/companion/input-class'
 import { useInteractiveRegion } from '@/companion/interactive-regions'
-import { MAX_APPEARANCE } from '@/companion/persona'
 import { PersonaRetune } from '@/companion/persona-retune'
-import { $persona, hydratePersona } from '@/companion/persona-store'
-import { TWO_STEP_INTRO_HINT } from '@/companion/portrait-flow-copy'
-import { $activeAvatarId, $portraitUrl, $regenFeedback, $seedUrls, setRegenFeedback } from '@/companion/portrait-store'
+import { $persona } from '@/companion/persona-store'
 import {
   $companionVoiceId,
   $responseMode,
@@ -22,7 +18,6 @@ import {
 } from '@/companion/prefs'
 import { $defaultScale, setDefaultScale } from '@/companion/spatial'
 import { speakScripted } from '@/companion/tts'
-import { useRegeneratePortrait } from '@/companion/use-regenerate-portrait'
 import {
   designVoice,
   fetchVoiceCatalog,
@@ -65,49 +60,17 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps): React.Reac
 
   const [langFilter, setLangFilter] = useState('')
   const [genderFilter, setGenderFilter] = useState('')
-  const portraitUrl = useStore($portraitUrl)
-  const seedUrls = useStore($seedUrls)
-  const regenFeedback = useStore($regenFeedback)
-
-  // Two-step portrait flow mirrors onboarding: step 1 regenerates the bust,
-  // step 2 re-runs the fullbody seed on top of the just-confirmed row.
-  const [portraitStep, setPortraitStep] = useState<'avatar' | 'fullbody'>('avatar')
-  // Read the active avatar id from the atom (populated by hydratePortrait
-  // on app start + by every avatar regen via applyPortrait).
-  const activeAvatarId = useStore($activeAvatarId)
-
-  const {
-    regenerate: regenerateAvatarPortrait,
-    busy: avatarBusy,
-    hint: avatarHint
-  } = useRegeneratePortrait({
-    step: 'avatar'
-  })
-
-  const {
-    regenerate: regenerateFullbodyPortrait,
-    busy: fullbodyBusy,
-    hint: fullbodyHint
-  } = useRegeneratePortrait({
-    step: 'fullbody',
-    avatarId: activeAvatarId
-  })
 
   const [retuneOpen, setRetuneOpen] = useState(false)
   const wardrobe = useStore($wardrobe)
   const [wardrobeBusy, setWardrobeBusy] = useState(false)
   const [wardrobeHint, setWardrobeHint] = useState<string | null>(null)
 
-  const [modelBusy, setModelBusy] = useState(false)
-  const [modelHint, setModelHint] = useState<string | null>(null)
-
   const [retuneInitial, setRetuneInitial] = useState<{
     name: string
     personality: string
     speaking_style: string
-    biological_type: string
-    gender: string
-    appearance: string
+    appearance_outfit: string
     background: string
     user_call_name: string
     user_gender: string
@@ -137,9 +100,7 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps): React.Reac
         name: persona?.name ?? '',
         personality: persona?.personality ?? '',
         speaking_style: persona?.speakingStyle ?? '',
-        biological_type: persona?.biological_type ?? '',
-        gender: persona?.gender ?? '',
-        appearance: persona?.appearance ?? '',
+        appearance_outfit: persona?.appearance_outfit ?? '',
         background: persona?.background ?? '',
         user_call_name: profile.user_call_name ?? '',
         user_gender: profile.user_gender ?? '',
@@ -212,26 +173,7 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps): React.Reac
     }
   }
 
-  // Trigger a fresh 3D model generation — backend pushes `model.ready` over
-  // the gateway; events.ts forwards into model-store which the engine
-  // listens to.
-  const generateModel = async () => {
-    setModelBusy(true)
-    setModelHint(null)
-
-    try {
-      await window.deskagent.api<{ id?: number; asset_url?: string; status?: string }>({
-        path: '/api/companion/model',
-        method: 'POST',
-        body: {}
-      })
-      setModelHint('已生成，加载中…')
-    } catch (err) {
-      setModelHint(err instanceof Error ? err.message : '生成失败')
-    } finally {
-      setModelBusy(false)
-    }
-  }
+  // 3D 模型生成入口已移除（形象确认后不可重生成）；只剩换装
 
   // Pull the full wardrobe catalog — called on settings open; the
   // wardrobe.updated event also refreshes on backend-side mutations.
@@ -500,110 +442,9 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps): React.Reac
             )}
           </Section>
 
-          {/* Avatar — two-step regenerate (face first, then fullbody) mirrors onboarding. */}
-          <Section hint={TWO_STEP_INTRO_HINT} title="形象">
-            <p className="mb-2 text-[10px] text-white/45">
-              {portraitStep === 'avatar' ? '第 1 步：确认相貌' : '第 2 步：确认身材'}
-            </p>
-            <div className="flex items-start gap-3">
-              <div className="grid h-20 w-20 shrink-0 place-items-center overflow-hidden rounded-xl border border-white/10 bg-white/5">
-                {portraitUrl ? (
-                  <img alt="当前头像" className="h-full w-full object-cover" src={portraitUrl} />
-                ) : (
-                  <span className="text-[10px] text-white/40">暂无</span>
-                )}
-              </div>
-              {portraitStep === 'fullbody' && (
-                <div className="flex gap-1">
-                  <div className="grid h-20 w-14 shrink-0 place-items-center overflow-hidden rounded-lg border border-white/10 bg-white/5">
-                    {seedUrls?.front ? (
-                      <img alt="正面" className="h-full w-full object-cover" src={seedUrls.front} />
-                    ) : (
-                      <span className="text-[9px] text-white/40">正面</span>
-                    )}
-                  </div>
-                  <div className="grid h-20 w-14 shrink-0 place-items-center overflow-hidden rounded-lg border border-white/10 bg-white/5">
-                    {seedUrls?.right ? (
-                      <img alt="右侧" className="h-full w-full object-cover" src={seedUrls.right} />
-                    ) : (
-                      <span className="text-[9px] text-white/40">右侧</span>
-                    )}
-                  </div>
-                  <div className="grid h-20 w-14 shrink-0 place-items-center overflow-hidden rounded-lg border border-white/10 bg-white/5">
-                    {seedUrls?.back ? (
-                      <img alt="背面" className="h-full w-full object-cover" src={seedUrls.back} />
-                    ) : (
-                      <span className="text-[9px] text-white/40">背面</span>
-                    )}
-                  </div>
-                </div>
-              )}
-              <div className="flex flex-1 flex-col gap-2">
-                <textarea
-                  className={`${INPUT_CLASS} text-xs`}
-                  disabled={portraitStep === 'avatar' ? avatarBusy : fullbodyBusy}
-                  maxLength={MAX_APPEARANCE}
-                  onChange={e => setRegenFeedback(e.target.value)}
-                  placeholder="哪里不满意？比如：头发再短一点、眼睛再大一点、表情更温和…（可留空直接重新生成）"
-                  rows={2}
-                  value={regenFeedback}
-                />
-                {portraitStep === 'avatar' ? (
-                  <div className="flex gap-2">
-                    <button
-                      className="flex-1 rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-xs text-white/80 transition hover:bg-white/15 disabled:opacity-40"
-                      disabled={avatarBusy}
-                      onClick={() => void regenerateAvatarPortrait()}
-                      type="button"
-                    >
-                      {avatarBusy ? '生成中…' : '重新生成头像'}
-                    </button>
-                    <button
-                      className="flex-1 rounded-lg border border-white/40 bg-white/15 px-3 py-2 text-xs font-medium text-white transition hover:bg-white/25 disabled:opacity-40"
-                      disabled={avatarBusy || activeAvatarId == null}
-                      onClick={() => setPortraitStep('fullbody')}
-                      type="button"
-                    >
-                      下一步
-                    </button>
-                  </div>
-                ) : (
-                  <div className="flex gap-2">
-                    <button
-                      className="rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-xs text-white/70 transition hover:bg-white/15 disabled:opacity-40"
-                      disabled={fullbodyBusy}
-                      onClick={() => setPortraitStep('avatar')}
-                      type="button"
-                    >
-                      上一步
-                    </button>
-                    <button
-                      className="flex-1 rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-xs text-white/80 transition hover:bg-white/15 disabled:opacity-40"
-                      disabled={fullbodyBusy}
-                      onClick={() => void regenerateFullbodyPortrait()}
-                      type="button"
-                    >
-                      {fullbodyBusy ? '生成中…' : '重新生成全身'}
-                    </button>
-                  </div>
-                )}
-                {avatarHint && <p className="text-xs text-amber-300/80">{avatarHint}</p>}
-                {fullbodyHint && <p className="text-xs text-amber-300/80">{fullbodyHint}</p>}
-              </div>
-            </div>
-          </Section>
-
-          {/* 3D model + wardrobe */}
-          <Section hint="3D 模型 + 自定义换装纹理" title="3D 形象">
-            <div className="flex gap-2">
-              <button
-                className="flex-1 rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-xs text-white/80 transition hover:bg-white/15 disabled:opacity-40"
-                disabled={modelBusy}
-                onClick={generateModel}
-                type="button"
-              >
-                {modelBusy ? '生成中…' : '重新生成模型'}
-              </button>
+          {/* 形象 + 3D 模型：形象确认后整体不再可改；只保留换装（纹理热替，零模型重生成） */}
+          <Section hint="形象已确认；换装只改纹理不动 3D 模型" title="换装">
+            <div className="flex">
               <button
                 className="flex-1 rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-xs text-white/80 transition hover:bg-white/15 disabled:opacity-40"
                 disabled={wardrobeBusy}
@@ -613,7 +454,6 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps): React.Reac
                 {wardrobeBusy ? '生成中…' : '新造型'}
               </button>
             </div>
-            {modelHint && <p className="mt-2 text-xs text-amber-300/80">{modelHint}</p>}
             {wardrobe.length > 0 && (
               <div className="mt-3 grid grid-cols-3 gap-2">
                 {wardrobe.map(item => (
@@ -661,13 +501,7 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps): React.Reac
       </div>
 
       {retuneOpen && persona?.name && retuneInitial && (
-        <PersonaRetune
-          initial={retuneInitial}
-          onClose={() => setRetuneOpen(false)}
-          onSaved={() => {
-            void hydratePersona()
-          }}
-        />
+        <PersonaRetune initial={retuneInitial} onClose={() => setRetuneOpen(false)} />
       )}
     </div>
   )

@@ -818,7 +818,7 @@ def test_dual_write_routes_user_profile_to_memory(_patch_db):
         "speaking_style": "轻柔",
         "biological_type": "灵兽",
         "gender": "女",
-        "appearance": "金发绿眼",
+        "appearance_core": "金发绿眼",
         "user_call_name": "老板",
         "user_gender": "男",
         "user_age_bucket": "26-35",
@@ -833,7 +833,7 @@ def test_dual_write_routes_user_profile_to_memory(_patch_db):
         definition = json.loads(persona.definition_json)
         assert definition["biological_type"] == "灵兽"
         assert definition["gender"] == "女"
-        assert definition["appearance"] == "金发绿眼"
+        assert definition["appearance_core"] == "金发绿眼"
         # user_* keys do NOT bleed into definition_json
         for key in (
             "user_call_name",
@@ -1037,12 +1037,12 @@ def test_render_extras_includes_new_character_fields():
             "speaking_style": "轻声细语",
             "biological_type": "灵兽",
             "gender": "女",
-            "appearance": "金发",
+            "appearance_core": "金发",
         }
     )
     assert "Biological type" in out and "灵兽" in out
     assert "Gender" in out and "女" in out
-    assert "Appearance" in out and "金发" in out
+    assert "Appearance core" in out and "金发" in out
 
 
 def test_persona_update_schema_accepts_definition_json():
@@ -1056,7 +1056,7 @@ def test_persona_update_schema_accepts_definition_json():
                 "speaking_style": "轻柔",
                 "biological_type": "灵兽",
                 "gender": "女",
-                "appearance": "金发绿眼",
+                "appearance_core": "金发绿眼",
                 "user_call_name": "老板",
                 "user_gender": "男",
                 "user_age_bucket": "26-35",
@@ -1088,7 +1088,8 @@ def test_onboarding_field_order_matches_question_sequence():
         "name",
         "species",
         "character_gender",
-        "appearance",
+        "appearance_core",
+        "appearance_outfit",
         "role",
         "personality",
         "speaking_style",
@@ -1395,7 +1396,7 @@ async def test_regenerate_avatar_from_image_uses_reference(monkeypatch, _patch_d
         persona = Persona(
             user_id=user.id,
             definition_json=_json.dumps(
-                {"name": "小光", "biological_type": "人类", "appearance": "金发绿眼"}
+                {"name": "小光", "biological_type": "人类", "appearance_core": "金发绿眼"}
             ),
             system_prompt_extras="",
             is_complete=True,

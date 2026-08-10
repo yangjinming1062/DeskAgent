@@ -11,7 +11,11 @@ export interface PersonaDefinition {
   background?: string
   biological_type?: string
   gender?: string
-  appearance?: string
+  // appearance_core: locked visual anchor — face / body / markings.
+  // assemblePersona preserves this across edits post seed confirmation.
+  appearance_core?: string
+  // appearance_outfit: initial outfit description; stays editable.
+  appearance_outfit?: string
 }
 
 export const $persona = atom<PersonaDefinition | null>(null)
@@ -47,7 +51,8 @@ export async function hydratePersona(opts: { silent?: boolean } = {}): Promise<{
         background: parsed.background,
         biological_type: parsed.biological_type,
         gender: parsed.gender,
-        appearance: parsed.appearance
+        appearance_core: parsed.appearance_core,
+        appearance_outfit: parsed.appearance_outfit
       })
     )
 
