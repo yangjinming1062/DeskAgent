@@ -265,7 +265,7 @@ class CDPSupervisor:
         dialog_timeout_s: float = DEFAULT_DIALOG_TIMEOUT_S,
     ) -> None:
         if dialog_policy not in _VALID_POLICIES:
-            raise ValueError(f"Invalid dialog_policy {dialog_policy!r}; " f"must be one of {sorted(_VALID_POLICIES)}")
+            raise ValueError(f"Invalid dialog_policy {dialog_policy!r}; must be one of {sorted(_VALID_POLICIES)}")
         self.task_id = task_id
         self.cdp_url = cdp_url
         self.dialog_policy = dialog_policy
@@ -334,7 +334,7 @@ class CDPSupervisor:
         self._thread.start()
         if not self._ready_event.wait(timeout=timeout):
             self.stop()
-            raise TimeoutError(f"CDP supervisor did not attach within {timeout}s " f"(cdp_url={self.cdp_url[:80]}...)")
+            raise TimeoutError(f"CDP supervisor did not attach within {timeout}s (cdp_url={self.cdp_url[:80]}...)")
         if self._start_error is not None:
             err = self._start_error
             self.stop()
@@ -412,12 +412,12 @@ class CDPSupervisor:
                 if dialog is None:
                     return {
                         "ok": False,
-                        "error": f"dialog_id {dialog_id!r} not found " f"(known: {sorted(self._pending_dialogs)})",
+                        "error": f"dialog_id {dialog_id!r} not found (known: {sorted(self._pending_dialogs)})",
                     }
             elif len(pending) > 1:
                 return {
                     "ok": False,
-                    "error": (f"{len(pending)} pending dialogs; specify dialog_id. " f"Candidates: {[d.id for d in pending]}"),
+                    "error": (f"{len(pending)} pending dialogs; specify dialog_id. Candidates: {[d.id for d in pending]}"),
                 }
             else:
                 dialog = pending[0]
@@ -1480,7 +1480,6 @@ class CDPSupervisor:
         with self._state_lock:
             for fid, frame in list(self._frames.items()):
                 if frame.cdp_session_id == sid:
-
                     # routing falls back to top-level page session if retried.
                     self._frames[fid] = FrameInfo(
                         frame_id=frame.frame_id,

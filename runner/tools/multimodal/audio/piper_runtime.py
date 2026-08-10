@@ -77,7 +77,7 @@ class PiperRuntime:
             onnx_path = voices_dir / f"{voice_id}.onnx"
             json_path = voices_dir / f"{voice_id}.onnx.json"
             if not onnx_path.is_file() or not json_path.is_file():
-                raise FileNotFoundError(f"Piper voice {voice_id!r} not found in {voices_dir}; " f"download {onnx_path.name} and {json_path.name} from rhasspy/piper-voices.")
+                raise FileNotFoundError(f"Piper voice {voice_id!r} not found in {voices_dir}; download {onnx_path.name} and {json_path.name} from rhasspy/piper-voices.")
             logger.info("loading Piper voice %s from %s", voice_id, voices_dir)
             voice = PiperVoice.load(str(onnx_path), config_path=str(json_path))
             self._voices[voice_id] = voice

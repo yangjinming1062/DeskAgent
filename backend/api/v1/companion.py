@@ -220,7 +220,7 @@ async def _refresh_personality_tags(persona_id: int, user_id: int) -> None:
                 db.commit()
                 t_commit = time.monotonic()
             logger.info(
-                "persona-tags-timing persona_id=%s attempt=%d " "open=%.3fs query=%.3fs llm=%.3fs commit=%.3fs total=%.3fs n_tags=%d",
+                "persona-tags-timing persona_id=%s attempt=%d open=%.3fs query=%.3fs llm=%.3fs commit=%.3fs total=%.3fs n_tags=%d",
                 persona_id,
                 attempt,
                 t_query - t_open,

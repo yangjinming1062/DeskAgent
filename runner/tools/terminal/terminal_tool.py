@@ -59,7 +59,6 @@ DISK_USAGE_WARNING_THRESHOLD_GB = float(cfg_get(_cfg, "terminal", "disk_warning_
 
 
 def _check_disk_usage_warning():
-
     try:
         scratch_dir = _get_scratch_dir()
         total_bytes = 0
@@ -88,12 +87,10 @@ _callback_tls = threading.local()
 
 
 def _get_sudo_password_callback():
-
     return getattr(_callback_tls, "sudo_password", None)
 
 
 def set_sudo_password_callback(cb):
-
     _callback_tls.sudo_password = cb
 
 
@@ -109,14 +106,12 @@ def _get_sudo_password_cache_scope() -> str:
 
 
 def _get_cached_sudo_password() -> str:
-
     scope = _get_sudo_password_cache_scope()
     with _sudo_password_cache_lock:
         return _sudo_password_cache.get(scope, "")
 
 
 def _set_cached_sudo_password(password: str) -> None:
-
     scope = _get_sudo_password_cache_scope()
     with _sudo_password_cache_lock:
         if password:
@@ -129,7 +124,6 @@ _WORKDIR_SAFE_RE = re.compile(r"^[A-Za-z0-9/\\:_\-.~ +@=,]+$")
 
 
 def _validate_workdir(workdir: str) -> str | None:
-
     if not workdir:
         return None
     if _WORKDIR_SAFE_RE.match(workdir):
@@ -245,7 +239,6 @@ def _prompt_for_sudo_password(timeout_seconds: int = 45) -> str:
 
 
 def _safe_command_preview(command: Any, limit: int = 200) -> str:
-
     if command is None:
         return "<None>"
     if isinstance(command, str):
@@ -257,7 +250,6 @@ def _safe_command_preview(command: Any, limit: int = 200) -> str:
 
 
 def _looks_like_env_assignment(token: str) -> bool:
-
     if "=" not in token or token.startswith("="):
         return False
     name, _value = token.split("=", 1)
@@ -265,7 +257,6 @@ def _looks_like_env_assignment(token: str) -> bool:
 
 
 def _read_shell_token(command: str, start: int) -> tuple[str, int]:
-
     i = start
     n = len(command)
     while i < n:
@@ -299,7 +290,6 @@ def _read_shell_token(command: str, start: int) -> tuple[str, int]:
 
 
 def _rewrite_real_sudo_invocations(command: str) -> tuple[str, bool]:
-
     out: list[str] = []
     i = 0
     n = len(command)
@@ -351,7 +341,6 @@ def _rewrite_real_sudo_invocations(command: str) -> tuple[str, bool]:
 
 
 def _sudo_nopasswd_works() -> bool:
-
     terminal_env = get_env_type()
     if terminal_env != "local":
         return False
@@ -370,7 +359,6 @@ def _sudo_nopasswd_works() -> bool:
 
 
 def _rewrite_compound_background(command: str) -> str:
-
     n = len(command)
     i = 0
     paren_depth = 0
@@ -463,7 +451,6 @@ def _rewrite_compound_background(command: str) -> str:
 
 
 def _transform_sudo_command(command: str | None) -> tuple[str | None, str | None]:
-
     if command is None:
         return None, None
     transformed, has_real_sudo = _rewrite_real_sudo_invocations(command)
@@ -506,7 +493,6 @@ Do NOT use vim/nano/interactive tools without pty=true — they hang without a p
 
 
 def _interpret_exit_code(command: str, exit_code: int) -> str | None:
-
     if exit_code == 0:
         return None
     segments = _EXIT_CODE_SPLIT_RE.split(command)
@@ -547,7 +533,6 @@ def _interpret_exit_code(command: str, exit_code: int) -> str | None:
 
 
 def _command_requires_pipe_stdin(command: str) -> bool:
-
     normalized = " ".join(command.lower().split())
     return normalized.startswith("gh auth login") and "--with-token" in normalized
 
@@ -560,7 +545,6 @@ _TRAILING_BACKGROUND_AMP_RE = re.compile(r"\s&\s*(?:#.*)?$")
 
 
 def _strip_quotes(command: str) -> str:
-
     result = _SINGLE_QUOTE_RE.sub("''", command)
     result = _DOUBLE_QUOTE_RE.sub('""', result)
     result = _BACKTICK_RE.sub("``", result)
@@ -580,13 +564,11 @@ _LONG_LIVED_FOREGROUND_PATTERNS = (
 
 
 def _looks_like_help_or_version_command(command: str) -> bool:
-
     normalized = " ".join(command.lower().split())
     return " --help" in normalized or normalized.endswith(" -h") or " --version" in normalized or normalized.endswith(" -v")
 
 
 def _foreground_background_guidance(command: str) -> str | None:
-
     if _looks_like_help_or_version_command(command):
         return None
     unquoted = _strip_quotes(command)
@@ -597,7 +579,7 @@ def _foreground_background_guidance(command: str) -> str | None:
             "readiness checks and tests in separate commands."
         )
     if _INLINE_BACKGROUND_AMP_RE.search(unquoted) or _TRAILING_BACKGROUND_AMP_RE.search(unquoted):
-        return "Foreground command uses '&' backgrounding. Use terminal(background=true) for long-lived " "processes, then run health checks and tests in follow-up terminal calls."
+        return "Foreground command uses '&' backgrounding. Use terminal(background=true) for long-lived processes, then run health checks and tests in follow-up terminal calls."
     for pattern in _LONG_LIVED_FOREGROUND_PATTERNS:
         if pattern.search(unquoted):
             return (
@@ -614,9 +596,8 @@ def _resolve_notification_flag_conflict(
     watch_patterns,
     background: bool,
 ) -> tuple:
-
     if background and notify_on_complete and watch_patterns:
-        note = "watch_patterns ignored because notify_on_complete=True; " "these two flags produce duplicate notifications when combined"
+        note = "watch_patterns ignored because notify_on_complete=True; these two flags produce duplicate notifications when combined"
         return None, note
     return watch_patterns, ""
 
@@ -627,7 +608,6 @@ def _resolve_command_cwd(
     env: Any,
     default_cwd: str,
 ) -> str:
-
     if workdir:
         return workdir
     live_cwd = getattr(env, "cwd", None)
@@ -905,20 +885,18 @@ def terminal_tool(
                     result_data["notify_on_complete"] = True
                     if proc_session.watcher_platform:
                         proc_session.watcher_interval = 5
-                        process_registry.pending_watchers.append(
-                            {
-                                "session_id": proc_session.id,
-                                "check_interval": 5,
-                                "session_key": session_key,
-                                "platform": proc_session.watcher_platform,
-                                "chat_id": proc_session.watcher_chat_id,
-                                "user_id": proc_session.watcher_user_id,
-                                "user_name": proc_session.watcher_user_name,
-                                "thread_id": proc_session.watcher_thread_id,
-                                "message_id": proc_session.watcher_message_id,
-                                "notify_on_complete": True,
-                            }
-                        )
+                        process_registry.pending_watchers.append({
+                            "session_id": proc_session.id,
+                            "check_interval": 5,
+                            "session_key": session_key,
+                            "platform": proc_session.watcher_platform,
+                            "chat_id": proc_session.watcher_chat_id,
+                            "user_id": proc_session.watcher_user_id,
+                            "user_name": proc_session.watcher_user_name,
+                            "thread_id": proc_session.watcher_thread_id,
+                            "message_id": proc_session.watcher_message_id,
+                            "notify_on_complete": True,
+                        })
                 if watch_patterns and background:
                     proc_session.watch_patterns = list(watch_patterns)
                     result_data["watch_patterns"] = proc_session.watch_patterns
@@ -1044,7 +1022,6 @@ TERMINAL_SCHEMA = {
 
 
 def _handle_terminal(args, **kw):
-
     return terminal_tool(
         command=args.get("command"),
         background=args.get("background", False),

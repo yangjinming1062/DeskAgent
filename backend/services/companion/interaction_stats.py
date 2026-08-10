@@ -69,7 +69,7 @@ def _format_content(counters: _DailyCounters) -> str:
         peak_str = "n/a"
     else:
         peak_str = f"{peak:02d}-{(peak + 1) % 24:02d}h"
-    return f"{counters.date}: poke={counters.poke}, drag={counters.drag}, " f"chat_turns={counters.chat_turn}; peak={peak_str}"
+    return f"{counters.date}: poke={counters.poke}, drag={counters.drag}, chat_turns={counters.chat_turn}; peak={peak_str}"
 
 
 def _upsert_memory(user_id: int, counters: _DailyCounters) -> None:

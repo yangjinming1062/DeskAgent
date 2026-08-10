@@ -416,7 +416,7 @@ SKILL_MANAGE_SCHEMA = {
             "action": {"type": "string", "enum": ["create", "patch", "edit", "delete", "write_file", "remove_file"], "description": "The action to perform."},
             "name": {
                 "type": "string",
-                "description": ("Skill name (lowercase, hyphens/underscores, max 64 chars). " "Must match an existing skill for patch/edit/delete/write_file/remove_file."),
+                "description": ("Skill name (lowercase, hyphens/underscores, max 64 chars). Must match an existing skill for patch/edit/delete/write_file/remove_file."),
             },
             "content": {
                 "type": "string",
@@ -429,15 +429,15 @@ SKILL_MANAGE_SCHEMA = {
             "old_string": {
                 "type": "string",
                 "description": (
-                    "Text to find in the file (required for 'patch'). Must be unique " "unless replace_all=true. Include enough surrounding context to " "ensure uniqueness."
+                    "Text to find in the file (required for 'patch'). Must be unique unless replace_all=true. Include enough surrounding context to ensure uniqueness."
                 ),
             },
-            "new_string": {"type": "string", "description": ("Replacement text (required for 'patch'). Can be empty string " "to delete the matched text.")},
+            "new_string": {"type": "string", "description": ("Replacement text (required for 'patch'). Can be empty string to delete the matched text.")},
             "replace_all": {"type": "boolean", "description": "For 'patch': replace all occurrences instead of requiring a unique match (default: false)."},
             "category": {
                 "type": "string",
                 "description": (
-                    "Optional category/domain for organizing the skill (e.g., 'devops', " "'data-science', 'mlops'). Creates a subdirectory grouping. " "Only used with 'create'."
+                    "Optional category/domain for organizing the skill (e.g., 'devops', 'data-science', 'mlops'). Creates a subdirectory grouping. Only used with 'create'."
                 ),
             },
             "file_path": {

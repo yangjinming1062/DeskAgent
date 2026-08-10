@@ -41,7 +41,7 @@ def _require_supported_host() -> None:
     with a clear message the operator / CI can act on.
     """
     if sys.platform not in {"win32", "darwin"}:
-        raise SystemExit(f"DeskAgent Runner does not support the {sys.platform!r} host. " "Supported hosts are Windows and macOS only.")
+        raise SystemExit(f"DeskAgent Runner does not support the {sys.platform!r} host. Supported hosts are Windows and macOS only.")
 
 
 _require_supported_host()

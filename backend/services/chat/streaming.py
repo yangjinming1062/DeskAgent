@@ -45,9 +45,7 @@ def _llm_error_user_message(exc: LLMRuntimeError) -> str:
     """
     if exc.classified.reason == FailoverReason.attachment_fetch_failed:
         return (
-            "The LLM provider couldn't fetch the media file attached to "
-            "this turn. The file may have expired or the URL may not be "
-            "publicly accessible. Try re-uploading the file."
+            "The LLM provider couldn't fetch the media file attached to this turn. The file may have expired or the URL may not be publicly accessible. Try re-uploading the file."
         )
     return f"LLM call failed: {exc.classified.reason.value} — {exc.classified.message}"
 

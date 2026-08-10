@@ -27,7 +27,7 @@ SYSTEM_GET_IDLE_SCHEMA = {
 SYSTEM_IS_LOCKED_SCHEMA = {
     "name": "system.is_screen_locked",
     "description": (
-        "True iff the workstation session is locked. False when the " "platform can't determine the lock state — a wrong 'locked' " "answer is worse than a conservative False."
+        "True iff the workstation session is locked. False when the platform can't determine the lock state — a wrong 'locked' answer is worse than a conservative False."
     ),
     "parameters": {"type": "object", "properties": {}, "required": []},
 }
@@ -35,14 +35,14 @@ SYSTEM_IS_LOCKED_SCHEMA = {
 
 SYSTEM_FOCUS_SCHEMA = {
     "name": "system.get_focused_app",
-    "description": ("{name, pid, kind} for the foreground app; {} when unknown. " "Feeds [desktop/plan §4.4] situational idle behaviour."),
+    "description": ("{name, pid, kind} for the foreground app; {} when unknown. Feeds [desktop/plan §4.4] situational idle behaviour."),
     "parameters": {"type": "object", "properties": {}, "required": []},
 }
 
 
 SYSTEM_IS_FULLSCREEN_SCHEMA = {
     "name": "system.is_fullscreen",
-    "description": ("True iff the foreground window covers ≥95% of its monitor's " "working area. False when unknown. Feeds the desktop's " "auto-downgrade-to-quiet signal."),
+    "description": ("True iff the foreground window covers ≥95% of its monitor's working area. False when unknown. Feeds the desktop's auto-downgrade-to-quiet signal."),
     "parameters": {"type": "object", "properties": {}, "required": []},
 }
 
@@ -71,7 +71,7 @@ SYSTEM_POWER_SCHEMA = {
 SYSTEM_GET_WINDOWS_SCHEMA = {
     "name": "system.get_windows",
     "description": (
-        "Visible top-level windows with geometry: " "{windows: [{title, name, x, y, w, h, focused}, ...]}. " "Feeds the companion's perch / roam / ritual-walk spatial behaviour."
+        "Visible top-level windows with geometry: {windows: [{title, name, x, y, w, h, focused}, ...]}. Feeds the companion's perch / roam / ritual-walk spatial behaviour."
     ),
     "parameters": {"type": "object", "properties": {}, "required": []},
 }
@@ -79,7 +79,7 @@ SYSTEM_GET_WINDOWS_SCHEMA = {
 
 SYSTEM_OPEN_APP_SCHEMA = {
     "name": "system.open_application",
-    "description": ("Open an application by name (e.g. 'chrome', 'notepad', 'Calculator'). " "Returns {opened: bool, name: str}."),
+    "description": ("Open an application by name (e.g. 'chrome', 'notepad', 'Calculator'). Returns {opened: bool, name: str}."),
     "parameters": {
         "type": "object",
         "properties": {"name": {"type": "string", "description": "Application name or executable path"}},
@@ -140,14 +140,12 @@ def _snapshot_handler(args: dict[str, Any], **kw: Any) -> str:
     # here rather than threading — the savings are in IPC + WS framing, not
     # in syscall overlap. Failures are isolated per-probe (each returns its
     # own safe default), so one broken probe can't blackhole the snapshot.
-    return json.dumps(
-        {
-            "idle_seconds": get_idle_seconds(),
-            "locked": is_screen_locked(),
-            "focused_app": get_focused_app(),
-            "fullscreen": is_fullscreen(),
-        }
-    )
+    return json.dumps({
+        "idle_seconds": get_idle_seconds(),
+        "locked": is_screen_locked(),
+        "focused_app": get_focused_app(),
+        "fullscreen": is_fullscreen(),
+    })
 
 
 def _power_handler(args: dict[str, Any], **kw: Any) -> str:

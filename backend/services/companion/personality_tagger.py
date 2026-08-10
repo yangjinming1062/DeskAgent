@@ -282,6 +282,6 @@ async def analyze_personality_tags(
 
         # LLM 解析为空时的默认 fallback
         return ["温柔", "体贴", "亲人"]
-    except Exception as exc:
+    except Exception:
         logger.warning("Failed to analyze personality tags with LLM, using fallback", exc_info=True)
         return ["温柔", "体贴", "亲人"]

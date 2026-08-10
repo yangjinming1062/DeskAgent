@@ -91,9 +91,9 @@ def get_skills_directory_mount(container_base: str = "/root/.deskagent") -> list
     deskagent_home = get_deskagent_home()
     base = container_base.rstrip("/")
     mounts = [{"host_path": _safe_skills_path(skills_dir), "container_path": f"{base}/skills"}] if (skills_dir := deskagent_home / "skills").is_dir() else []
-    mounts.extend(
-        [{"host_path": _safe_skills_path(ext_dir), "container_path": f"{base}/external_skills/{idx}"} for idx, ext_dir in enumerate(get_external_skills_dirs()) if ext_dir.is_dir()]
-    )
+    mounts.extend([
+        {"host_path": _safe_skills_path(ext_dir), "container_path": f"{base}/external_skills/{idx}"} for idx, ext_dir in enumerate(get_external_skills_dirs()) if ext_dir.is_dir()
+    ])
     return mounts
 
 

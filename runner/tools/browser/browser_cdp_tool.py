@@ -35,11 +35,11 @@ BROWSER_CDP_SCHEMA: dict[str, Any] = {
         "properties": {
             "method": {
                 "type": "string",
-                "description": ("CDP method name, e.g. 'Target.getTargets', " "'Runtime.evaluate', 'Page.handleJavaScriptDialog'."),
+                "description": ("CDP method name, e.g. 'Target.getTargets', 'Runtime.evaluate', 'Page.handleJavaScriptDialog'."),
             },
             "params": {
                 "type": "object",
-                "description": ("Method-specific parameters as a JSON object. Omit or " "pass {} for methods that take no parameters."),
+                "description": ("Method-specific parameters as a JSON object. Omit or pass {} for methods that take no parameters."),
                 "properties": {},
                 "additionalProperties": True,
             },
@@ -111,13 +111,11 @@ async def _cdp_call(
             attach_id = next_id
             next_id += 1
             await ws.send(
-                json.dumps(
-                    {
-                        "id": attach_id,
-                        "method": "Target.attachToTarget",
-                        "params": {"targetId": target_id, "flatten": True},
-                    }
-                )
+                json.dumps({
+                    "id": attach_id,
+                    "method": "Target.attachToTarget",
+                    "params": {"targetId": target_id, "flatten": True},
+                })
             )
             deadline = asyncio.get_running_loop().time() + timeout
             while True:

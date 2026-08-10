@@ -26,7 +26,6 @@ async def agent_delegate_tool(
     emitter: Emitter | None = None,
     **_,
 ) -> str:
-
     sid: str | None = None
 
     try:

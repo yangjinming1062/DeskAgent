@@ -181,7 +181,6 @@ async def _poll_and_finalize(job_id: int) -> None:
 
 
 async def _poll_and_finalize_locked(job_id: int) -> None:
-
     with SESSION_LOCAL() as db:
         job = db.get(VideoGenJob, job_id)
         if job is None:

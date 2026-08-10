@@ -237,19 +237,17 @@ class ProcessRegistry:
             if should_disable:
                 # summary event so the agent/user sees why things went quiet.
                 msg = self._watcher_event_base(session)
-                msg.update(
-                    {
-                        "type": "watch_disabled",
-                        "suppressed": session._watch_suppressed,
-                        "message": (
-                            f"Watch patterns disabled for process {session.id} — "
-                            f"{WATCH_STRIKE_LIMIT} consecutive rate-limit windows triggered "
-                            f"(min spacing {WATCH_MIN_INTERVAL_SECONDS}s). "
-                            f"Falling back to notify_on_complete semantics; you'll get "
-                            f"exactly one notification when the process exits."
-                        ),
-                    }
-                )
+                msg.update({
+                    "type": "watch_disabled",
+                    "suppressed": session._watch_suppressed,
+                    "message": (
+                        f"Watch patterns disabled for process {session.id} — "
+                        f"{WATCH_STRIKE_LIMIT} consecutive rate-limit windows triggered "
+                        f"(min spacing {WATCH_MIN_INTERVAL_SECONDS}s). "
+                        f"Falling back to notify_on_complete semantics; you'll get "
+                        f"exactly one notification when the process exits."
+                    ),
+                })
                 self.completion_queue.put(msg)
             return
 
@@ -260,14 +258,12 @@ class ProcessRegistry:
         if not self._global_watch_admit(now):
             return
         msg = self._watcher_event_base(session)
-        msg.update(
-            {
-                "type": "watch_match",
-                "pattern": matched_pattern,
-                "output": output,
-                "suppressed": suppressed,
-            }
-        )
+        msg.update({
+            "type": "watch_match",
+            "pattern": matched_pattern,
+            "output": output,
+            "suppressed": suppressed,
+        })
         self.completion_queue.put(msg)
 
     def _watcher_event_base(self, session: ProcessSession) -> dict[str, str]:
@@ -308,7 +304,7 @@ class ProcessRegistry:
                         "command": "",
                         "type": "watch_overflow_released",
                         "suppressed": suppressed,
-                        "message": (f"Watch-pattern notifications resumed. " f"{suppressed} match event(s) were suppressed during the flood."),
+                        "message": (f"Watch-pattern notifications resumed. {suppressed} match event(s) were suppressed during the flood."),
                         "platform": "",
                         "chat_id": "",
                         "user_id": "",
@@ -344,25 +340,23 @@ class ProcessRegistry:
         if release_msg is not None:
             self.completion_queue.put(release_msg)
         if trip_now is not None:
-            self.completion_queue.put(
-                {
-                    "session_id": "",
-                    "session_key": "",
-                    "command": "",
-                    "type": "watch_overflow_tripped",
-                    "message": (
-                        f"Watch-pattern overflow: >{WATCH_GLOBAL_MAX_PER_WINDOW} "
-                        f"notifications in {WATCH_GLOBAL_WINDOW_SECONDS}s across all processes. "
-                        f"Suppressing further watch_match events for "
-                        f"{WATCH_GLOBAL_COOLDOWN_SECONDS}s."
-                    ),
-                    "platform": "",
-                    "chat_id": "",
-                    "user_id": "",
-                    "user_name": "",
-                    "thread_id": "",
-                }
-            )
+            self.completion_queue.put({
+                "session_id": "",
+                "session_key": "",
+                "command": "",
+                "type": "watch_overflow_tripped",
+                "message": (
+                    f"Watch-pattern overflow: >{WATCH_GLOBAL_MAX_PER_WINDOW} "
+                    f"notifications in {WATCH_GLOBAL_WINDOW_SECONDS}s across all processes. "
+                    f"Suppressing further watch_match events for "
+                    f"{WATCH_GLOBAL_COOLDOWN_SECONDS}s."
+                ),
+                "platform": "",
+                "chat_id": "",
+                "user_id": "",
+                "user_name": "",
+                "thread_id": "",
+            })
         return admit
 
     @staticmethod
@@ -747,16 +741,14 @@ class ProcessRegistry:
         # _move_to_finished(), producing duplicate [IMPORTANT: ...] messages.
         if was_running and session.notify_on_complete:
             output_tail = clean_output(session.output_buffer[-2000:]) if session.output_buffer else ""
-            self.completion_queue.put(
-                {
-                    "type": "completion",
-                    "session_id": session.id,
-                    "session_key": session.session_key,
-                    "command": session.command,
-                    "exit_code": session.exit_code,
-                    "output": output_tail,
-                }
-            )
+            self.completion_queue.put({
+                "type": "completion",
+                "session_id": session.id,
+                "session_key": session.session_key,
+                "command": session.command,
+                "exit_code": session.exit_code,
+                "output": output_tail,
+            })
 
     # ----- Query Methods -----
     def is_completion_consumed(self, session_id: str) -> bool:
@@ -846,7 +838,7 @@ class ProcessRegistry:
             session.exited = True
             session.exit_code = rc
         logger.info(
-            "Reconciled session %s: direct child exited with code %s but reader " "was still blocked (orphaned pipe). Flipped to exited.",
+            "Reconciled session %s: direct child exited with code %s but reader was still blocked (orphaned pipe). Flipped to exited.",
             session.id,
             rc,
         )
@@ -922,7 +914,7 @@ class ProcessRegistry:
         timeout_note = None
         if requested_timeout and requested_timeout > max_timeout:
             effective_timeout = max_timeout
-            timeout_note = f"Requested wait of {requested_timeout}s was clamped " f"to configured limit of {max_timeout}s"
+            timeout_note = f"Requested wait of {requested_timeout}s was clamped to configured limit of {max_timeout}s"
         else:
             effective_timeout = requested_timeout or max_timeout
         session = self.get(session_id)
@@ -1020,7 +1012,7 @@ class ProcessRegistry:
             else:
                 return {
                     "status": "error",
-                    "error": ("Recovered process cannot be killed after restart because " "its original runtime handle is no longer available"),
+                    "error": ("Recovered process cannot be killed after restart because its original runtime handle is no longer available"),
                 }
             with session._lock:
                 session.exited = True
@@ -1183,27 +1175,25 @@ class ProcessRegistry:
                 entries = []
                 for s in self._running.values():
                     if not s.exited:
-                        entries.append(
-                            {
-                                "session_id": s.id,
-                                "command": s.command,
-                                "pid": s.pid,
-                                "pid_scope": s.pid_scope,
-                                "cwd": s.cwd,
-                                "started_at": s.started_at,
-                                "task_id": s.task_id,
-                                "session_key": s.session_key,
-                                "watcher_platform": s.watcher_platform,
-                                "watcher_chat_id": s.watcher_chat_id,
-                                "watcher_user_id": s.watcher_user_id,
-                                "watcher_user_name": s.watcher_user_name,
-                                "watcher_thread_id": s.watcher_thread_id,
-                                "watcher_message_id": s.watcher_message_id,
-                                "watcher_interval": s.watcher_interval,
-                                "notify_on_complete": s.notify_on_complete,
-                                "watch_patterns": s.watch_patterns,
-                            }
-                        )
+                        entries.append({
+                            "session_id": s.id,
+                            "command": s.command,
+                            "pid": s.pid,
+                            "pid_scope": s.pid_scope,
+                            "cwd": s.cwd,
+                            "started_at": s.started_at,
+                            "task_id": s.task_id,
+                            "session_key": s.session_key,
+                            "watcher_platform": s.watcher_platform,
+                            "watcher_chat_id": s.watcher_chat_id,
+                            "watcher_user_id": s.watcher_user_id,
+                            "watcher_user_name": s.watcher_user_name,
+                            "watcher_thread_id": s.watcher_thread_id,
+                            "watcher_message_id": s.watcher_message_id,
+                            "watcher_interval": s.watcher_interval,
+                            "notify_on_complete": s.notify_on_complete,
+                            "watch_patterns": s.watch_patterns,
+                        })
             atomic_replace(str(CHECKPOINT_PATH), json.dumps(entries))
         except Exception as e:
             logger.debug("Failed to write checkpoint file: %s", e, exc_info=True)
@@ -1264,20 +1254,18 @@ class ProcessRegistry:
                 logger.info("Recovered detached process: %s (pid=%d)", session.command[:60], pid)
                 # Re-enqueue watcher so gateway can resume notifications
                 if session.watcher_interval > 0:
-                    self.pending_watchers.append(
-                        {
-                            "session_id": session.id,
-                            "check_interval": session.watcher_interval,
-                            "session_key": session.session_key,
-                            "platform": session.watcher_platform,
-                            "chat_id": session.watcher_chat_id,
-                            "user_id": session.watcher_user_id,
-                            "user_name": session.watcher_user_name,
-                            "thread_id": session.watcher_thread_id,
-                            "message_id": session.watcher_message_id,
-                            "notify_on_complete": session.notify_on_complete,
-                        }
-                    )
+                    self.pending_watchers.append({
+                        "session_id": session.id,
+                        "check_interval": session.watcher_interval,
+                        "session_key": session.session_key,
+                        "platform": session.watcher_platform,
+                        "chat_id": session.watcher_chat_id,
+                        "user_id": session.watcher_user_id,
+                        "user_name": session.watcher_user_name,
+                        "thread_id": session.watcher_thread_id,
+                        "message_id": session.watcher_message_id,
+                        "notify_on_complete": session.notify_on_complete,
+                    })
         self._write_checkpoint()
         return recovered
 
@@ -1301,14 +1289,14 @@ def format_process_notification(evt: dict) -> "str | None":
         _pat = evt.get("pattern", "?")
         _out = evt.get("output", "")
         _sup = evt.get("suppressed", 0)
-        text = f"[IMPORTANT: Background process {_sid} matched " f'watch pattern "{_pat}".\n' f"Command: {_cmd}\n" f"Matched output:\n{_out}"
+        text = f'[IMPORTANT: Background process {_sid} matched watch pattern "{_pat}".\nCommand: {_cmd}\nMatched output:\n{_out}'
         if _sup:
             text += f"\n({_sup} earlier matches were suppressed by rate limit)"
         text += "]"
         return text
     _exit = evt.get("exit_code", "?")
     _out = evt.get("output", "")
-    return f"[IMPORTANT: Background process {_sid} completed " f"(exit code {_exit}).\n" f"Command: {_cmd}\n" f"Output:\n{_out}]"
+    return f"[IMPORTANT: Background process {_sid} completed (exit code {_exit}).\nCommand: {_cmd}\nOutput:\n{_out}]"
 
 
 # Registry -- the "process" tool schema + handler

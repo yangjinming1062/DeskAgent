@@ -45,26 +45,24 @@ _MACOS_SHELL_APP_NAMES = frozenset({"finder", "dock"})
 # Split into exact-match (single env-var names) and prefix-match (env-var
 # families) — the original combined list conflated the two shapes, hiding
 # which entries are names vs. namespaces.
-_CUA_DRIVER_SAFE_ENV_EXACT = frozenset(
-    {
-        # Path / identity / locale / shell
-        "PATH",
-        "HOME",
-        "USER",
-        "LOGNAME",
-        "SHELL",
-        "LANG",
-        "LANGUAGE",
-        "TERM",
-        "TMPDIR",
-        "TMP",
-        "TEMP",
-        # X11 / Wayland display server hint
-        "DISPLAY",
-        "QT5",
-        "QT6",
-    }
-)
+_CUA_DRIVER_SAFE_ENV_EXACT = frozenset({
+    # Path / identity / locale / shell
+    "PATH",
+    "HOME",
+    "USER",
+    "LOGNAME",
+    "SHELL",
+    "LANG",
+    "LANGUAGE",
+    "TERM",
+    "TMPDIR",
+    "TMP",
+    "TEMP",
+    # X11 / Wayland display server hint
+    "DISPLAY",
+    "QT5",
+    "QT6",
+})
 _CUA_DRIVER_SAFE_ENV_PREFIXES = (
     # locale, XDG / freedesktop
     "LC_",
@@ -100,18 +98,16 @@ _CUA_DRIVER_SECRET_SUBSTRINGS = ("TOKEN", "SECRET", "PASSWORD", "CREDENTIAL", "P
 _CUA_DRIVER_SECRET_WORD_BOUNDARY = ("KEY", "AUTH")
 # Explicit non-secret overrides for known-public identifiers that would
 # otherwise be lost to the prefix whitelist. Matched by exact variable name.
-_CUA_DRIVER_PUBLIC_OVERRIDES: frozenset[str] = frozenset(
-    {
-        "OAUTH_CLIENT_ID",
-        "OAUTH_ISSUER",
-        "OAUTH_AUTHORIZE_URL",
-        "OAUTH_TOKEN_URL",
-        "OAUTH_USER_INFO_URL",
-        "OAUTH_REDIRECT_URI",
-        "AUTHORITY",
-        "AUTHORITY_URL",
-    }
-)
+_CUA_DRIVER_PUBLIC_OVERRIDES: frozenset[str] = frozenset({
+    "OAUTH_CLIENT_ID",
+    "OAUTH_ISSUER",
+    "OAUTH_AUTHORIZE_URL",
+    "OAUTH_TOKEN_URL",
+    "OAUTH_USER_INFO_URL",
+    "OAUTH_REDIRECT_URI",
+    "AUTHORITY",
+    "AUTHORITY_URL",
+})
 # Exact-match drop list for vars whose names don't contain the substrings
 # above but are still sensitive (e.g. DESKAGENT_JWT contains "JWT" so it'd be
 # caught; DESKAGENT_DESKTOP_TOKEN contains "TOKEN" so it'd be caught too — kept

@@ -46,7 +46,7 @@ def _b64decode(value: str) -> bytes:
 def hash_password(password: str) -> str:
     salt = secrets.token_bytes(PBKDF2_SALT_BYTES)
     digest = hashlib.pbkdf2_hmac(PBKDF2_ALGORITHM, password.encode("utf-8"), salt, PBKDF2_ITERATIONS)
-    return f"{PASSWORD_HASH_PREFIX}" f"${PBKDF2_ITERATIONS}" f"${_b64encode(salt)}" f"${_b64encode(digest)}"
+    return f"{PASSWORD_HASH_PREFIX}${PBKDF2_ITERATIONS}${_b64encode(salt)}${_b64encode(digest)}"
 
 
 def verify_password(password: str, password_hash: str) -> bool:

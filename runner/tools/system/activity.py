@@ -639,17 +639,15 @@ def _windows_windows() -> dict[str, Any]:
             user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
             pid_val = pid.value
             exe = exe_cache.get(pid_val) or exe_cache.setdefault(pid_val, _process_exe(pid_val))
-            results.append(
-                {
-                    "title": tb.value,
-                    "name": exe or tb.value,
-                    "x": rect.left,
-                    "y": rect.top,
-                    "w": w,
-                    "h": h,
-                    "focused": hwnd == foreground,
-                }
-            )
+            results.append({
+                "title": tb.value,
+                "name": exe or tb.value,
+                "x": rect.left,
+                "y": rect.top,
+                "w": w,
+                "h": h,
+                "focused": hwnd == foreground,
+            })
             return True
 
         user32.EnumWindows(cb, 0)
@@ -676,17 +674,15 @@ def _windows_macos() -> dict[str, Any]:
             if not b or b.get("Width", 0) <= 0:
                 continue
             owner = win.get("kCGWindowOwnerName", "")
-            results.append(
-                {
-                    "title": win.get("kCGWindowName", "") or owner,
-                    "name": owner,
-                    "x": int(b.get("X", 0)),
-                    "y": int(b.get("Y", 0)),
-                    "w": int(b["Width"]),
-                    "h": int(b["Height"]),
-                    "focused": win.get("kCGWindowOwnerPID", -1) == focused_pid,
-                }
-            )
+            results.append({
+                "title": win.get("kCGWindowName", "") or owner,
+                "name": owner,
+                "x": int(b.get("X", 0)),
+                "y": int(b.get("Y", 0)),
+                "w": int(b["Width"]),
+                "h": int(b["Height"]),
+                "focused": win.get("kCGWindowOwnerPID", -1) == focused_pid,
+            })
         return {"windows": results}
     except Exception as e:
         logger.debug("macos get_windows failed: %s", e)

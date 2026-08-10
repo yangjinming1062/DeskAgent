@@ -27,7 +27,7 @@ BROWSER_COOKIES_GET_SCHEMA: dict[str, Any] = {
         "properties": {
             "url": {
                 "type": "string",
-                "description": ("Optional URL whose cookies to retrieve (e.g. " "'https://example.com'). If omitted, returns all cookies " "for the current browser context."),
+                "description": ("Optional URL whose cookies to retrieve (e.g. 'https://example.com'). If omitted, returns all cookies for the current browser context."),
             },
         },
         "required": [],
@@ -54,9 +54,7 @@ registry.register_tool("browser_cookies_get", schema=BROWSER_COOKIES_GET_SCHEMA)
 BROWSER_COOKIES_SET_SCHEMA: dict[str, Any] = {
     "name": "browser_cookies_set",
     "description": (
-        "Set a cookie via CDP ``Network.setCookie``. Useful for re-establishing "
-        "session state after restart, or injecting auth tokens for testing. "
-        "Requires a CDP-capable backend."
+        "Set a cookie via CDP ``Network.setCookie``. Useful for re-establishing session state after restart, or injecting auth tokens for testing. Requires a CDP-capable backend."
     ),
     "parameters": {
         "type": "object",

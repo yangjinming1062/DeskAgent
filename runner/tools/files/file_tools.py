@@ -71,7 +71,6 @@ def _get_max_read_chars() -> int:
     if _max_read_chars_cached is not None:
         return _max_read_chars_cached
     try:
-
         cfg = load_config()
         val = cfg.get("file_read_max_chars")
         if isinstance(val, (int, float)) and val > 0:
@@ -96,23 +95,21 @@ _LARGE_FILE_HINT_BYTES = 512_000  # 512 KB
 # Device path blocklist — reading these hangs the process (infinite output
 # or blocking on input).  Checked by path only (no I/O).
 
-_BLOCKED_DEVICE_PATHS = frozenset(
-    {
-        # Infinite output — never reach EOF
-        "/dev/zero",
-        "/dev/random",
-        "/dev/urandom",
-        "/dev/full",
-        "/dev/stdin",
-        "/dev/tty",
-        "/dev/console",
-        "/dev/stdout",
-        "/dev/stderr",
-        "/dev/fd/0",
-        "/dev/fd/1",
-        "/dev/fd/2",
-    }
-)
+_BLOCKED_DEVICE_PATHS = frozenset({
+    # Infinite output — never reach EOF
+    "/dev/zero",
+    "/dev/random",
+    "/dev/urandom",
+    "/dev/full",
+    "/dev/stdin",
+    "/dev/tty",
+    "/dev/console",
+    "/dev/stdout",
+    "/dev/stderr",
+    "/dev/fd/0",
+    "/dev/fd/1",
+    "/dev/fd/2",
+})
 
 
 def _resolve_path(filepath: str, task_id: str = "default") -> Path:
@@ -155,7 +152,6 @@ def _configured_terminal_cwd() -> str | None:
 def _get_live_tracking_cwd(task_id: str = "default") -> str | None:
     """Return the task's live terminal cwd for bookkeeping when available."""
     try:
-
         container_key = resolve_container_task_id(task_id)
     except Exception:
         container_key = task_id
@@ -168,7 +164,6 @@ def _get_live_tracking_cwd(task_id: str = "default") -> str | None:
             return live_cwd
 
     try:
-
         with _env_lock:
             env = _active_environments.get(container_key) or _active_environments.get(task_id)
             live_cwd = getattr(env, "cwd", None) if env is not None else None
@@ -397,7 +392,6 @@ def _get_deskagent_config_resolved() -> str | None:
         return _deskagent_config_resolved
     _deskagent_config_resolved_loaded = True
     try:
-
         _deskagent_config_resolved = str((get_deskagent_home() / "config.yaml").resolve())
     except Exception:
         try:
@@ -423,7 +417,7 @@ def _check_sensitive_path(filepath: str, task_id: str = "default") -> str | None
     if IS_WINDOWS:
         resolved = resolved.replace("\\", "/").lower()
         normalized = normalized.replace("\\", "/").lower()
-    _err = f"Refusing to write to sensitive system path: {filepath}\n" "Use the terminal tool with sudo if you need to modify system files."
+    _err = f"Refusing to write to sensitive system path: {filepath}\nUse the terminal tool with sudo if you need to modify system files."
     for prefix in _SENSITIVE_PATH_PREFIXES:
         if resolved.startswith(prefix) or normalized.startswith(prefix):
             return _err
@@ -452,7 +446,6 @@ def _check_sensitive_path(filepath: str, task_id: str = "default") -> str | None
 def _get_container_mirror_prefix_for_task(task_id: str = "default") -> str | None:
     """Return the container-side DeskAgent mirror prefix for Docker file tools."""
     try:
-
         container_key = resolve_container_task_id(task_id)
     except Exception:
         return None
@@ -608,7 +601,7 @@ _READ_HISTORY_CAP = 500  # set; used only by get_read_files_summary
 _DEDUP_CAP = 1000  # dict; skip-identical-reread guard
 _READ_TIMESTAMPS_CAP = 1000  # dict; external-edit detection for write/patch
 _READ_DEDUP_STATUS_MESSAGE = (
-    "File unchanged since last read. The content from " "the earlier read_file result in this conversation is " "still current — refer to that instead of re-reading."
+    "File unchanged since last read. The content from the earlier read_file result in this conversation is still current — refer to that instead of re-reading."
 )
 
 
@@ -742,7 +735,6 @@ def _get_file_ops(task_id: str = "default") -> ShellFileOperations:
                 terminal_env = None
 
         if terminal_env is None:
-
             config = get_env_config()
             env_type = config["env_type"]
             overrides = _task_env_overrides.get(task_id, {})
@@ -848,14 +840,12 @@ def list_directory_tool(path: str, task_id: str = "default") -> str:
         entries = []
         for p in _resolved.iterdir():
             stat = p.stat()
-            entries.append(
-                {
-                    "name": p.name + ("/" if p.is_dir() else ""),
-                    "is_dir": p.is_dir(),
-                    "size": stat.st_size,
-                    "mtime": stat.st_mtime,
-                }
-            )
+            entries.append({
+                "name": p.name + ("/" if p.is_dir() else ""),
+                "is_dir": p.is_dir(),
+                "size": stat.st_size,
+                "mtime": stat.st_mtime,
+            })
         entries.sort(key=lambda x: (not x["is_dir"], x["name"]))
         return json.dumps({"path": str(_resolved), "entries": entries})
     except Exception as e:
@@ -871,11 +861,9 @@ def read_file_tool(path: str, offset: int = 1, limit: int = 500, task_id: str = 
 
         # blocking on input).  Pure path check — no I/O.
         if _is_blocked_device(path):
-            return json.dumps(
-                {
-                    "error": (f"Cannot read '{path}': this is a device file that would " "block or produce infinite output."),
-                }
-            )
+            return json.dumps({
+                "error": (f"Cannot read '{path}': this is a device file that would block or produce infinite output."),
+            })
 
         _resolved = _resolve_path_for_task(path, task_id)
 
@@ -883,11 +871,9 @@ def read_file_tool(path: str, offset: int = 1, limit: int = 500, task_id: str = 
 
         if has_binary_extension(str(_resolved)):
             _ext = _resolved.suffix.lower()
-            return json.dumps(
-                {
-                    "error": (f"Cannot read binary file '{path}' ({_ext}). " "Use vision_analyze for images, or terminal to inspect binary files."),
-                }
-            )
+            return json.dumps({
+                "error": (f"Cannot read binary file '{path}' ({_ext}). Use vision_analyze for images, or terminal to inspect binary files."),
+            })
 
         # ── DeskAgent internal path guard ────────────────────────────────
         # Prevent prompt injection via catalog or hub metadata files,
@@ -1013,7 +999,7 @@ def read_file_tool(path: str, offset: int = 1, limit: int = 500, task_id: str = 
         # for a narrow window, nudge toward targeted reads.
         if file_size and file_size > _LARGE_FILE_HINT_BYTES and limit > 200 and result_dict.get("truncated"):
             result_dict.setdefault(
-                "_hint", (f"This file is large ({file_size:,} bytes). " "Consider reading only the section you need with offset and limit " "to keep context usage efficient.")
+                "_hint", (f"This file is large ({file_size:,} bytes). Consider reading only the section you need with offset and limit to keep context usage efficient.")
             )
 
         # ── Track for consecutive-loop detection ──────────────────────
@@ -1193,7 +1179,7 @@ def write_file_tool(path: str, content: str, task_id: str = "default", cross_pro
         if cross_warning:
             return tool_error(cross_warning)
     if _is_internal_file_status_text(content):
-        return tool_error("Refusing to write internal read_file status text as file content. " "Re-read the file or reconstruct the intended file contents before writing.")
+        return tool_error("Refusing to write internal read_file status text as file content. Re-read the file or reconstruct the intended file contents before writing.")
     try:
         # Resolve once for the registry lock + stale check.  Failures here
         # fall back to the legacy path — write proceeds, per-task staleness
@@ -1271,7 +1257,6 @@ def patch_tool(
     if path:
         _paths_to_check.append(path)
     if mode == "patch" and patch:
-
         for _m in _re.finditer(r"^\*\*\*\s+(?:Update|Add|Delete)\s+File:\s*(.+)$", patch, _re.MULTILINE):
             v4a_path = _m.group(1).strip()
             # V4A path headers come from patch CONTENT, not the explicit
@@ -1396,7 +1381,6 @@ def patch_tool(
                 failure_count = _record_patch_failure(task_id, resolved)
 
             if failure_count >= 3:
-
                 # same path.  Most common cause is a stale view of the file —
 
                 # content that has since changed.  Surface the failure count
@@ -1412,7 +1396,7 @@ def patch_tool(
                     "to anchor."
                 )
             elif "Did you mean one of these sections?" not in str(result_dict["error"]):
-                result_dict["_hint"] = "old_string not found. Use read_file to verify the current " "content, or search_files to locate the text."
+                result_dict["_hint"] = "old_string not found. Use read_file to verify the current content, or search_files to locate the text."
         return json.dumps(result_dict, ensure_ascii=False)
     except Exception as e:
         return tool_error(str(e))
@@ -1484,7 +1468,7 @@ def search_tool(
         result_dict = result.to_dict()
 
         if count >= 3:
-            result_dict["_warning"] = f"You have run this exact search {count} times consecutively. " "The results have not changed. Use the information you already have."
+            result_dict["_warning"] = f"You have run this exact search {count} times consecutively. The results have not changed. Use the information you already have."
 
         if result_dict.get("truncated"):
             next_offset = offset + limit

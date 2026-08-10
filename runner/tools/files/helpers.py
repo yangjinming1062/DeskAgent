@@ -544,9 +544,7 @@ class ShellFileOperations(FileOperations):
             # (the ``sed`` path is bounded by ``limit`` lines) so we allow it.
             return ReadResult(
                 file_size=file_size,
-                error=(
-                    f"File size {file_size:,} bytes exceeds safety cap of " f"{MAX_FILE_SIZE:,} bytes. Read with offset/limit or use the terminal tool " "for a paginated view."
-                ),
+                error=(f"File size {file_size:,} bytes exceeds safety cap of {MAX_FILE_SIZE:,} bytes. Read with offset/limit or use the terminal tool for a paginated view."),
             )
         if self._is_image(path):
             return ReadResult(
@@ -840,7 +838,7 @@ class ShellFileOperations(FileOperations):
                 output=post.output,
                 message="Pre-existing lint errors — this edit didn't introduce new ones but the file is still broken.",
             )
-        return LintResult(success=False, output=("New lint errors introduced by this edit " "(pre-existing errors filtered out):\n" + "\n".join(post_lines)))
+        return LintResult(success=False, output=("New lint errors introduced by this edit (pre-existing errors filtered out):\n" + "\n".join(post_lines)))
 
     def search(
         self,
@@ -904,9 +902,7 @@ class ShellFileOperations(FileOperations):
         )
         result = self._exec(cmd, timeout=60)
         if not result.stdout.strip():
-            cmd_simple = (
-                f"find {self._escape_shell_arg(path)}{hidden_filter_expr} -type f -name {self._escape_shell_arg(search_pattern)} " f"2>/dev/null | sort -rn{pagination_expr}"
-            )
+            cmd_simple = f"find {self._escape_shell_arg(path)}{hidden_filter_expr} -type f -name {self._escape_shell_arg(search_pattern)} 2>/dev/null | sort -rn{pagination_expr}"
             result = self._exec(cmd_simple, timeout=60)
         files = []
         for line in result.stdout.strip().split("\n"):
@@ -938,11 +934,11 @@ class ShellFileOperations(FileOperations):
         else:
             glob_pattern = pattern
         fetch_limit = limit + offset
-        cmd_sorted = f"rg --files --sortr=modified -g {self._escape_shell_arg(glob_pattern)} " f"{self._escape_shell_arg(path)} 2>/dev/null " f"| head -n {fetch_limit}"
+        cmd_sorted = f"rg --files --sortr=modified -g {self._escape_shell_arg(glob_pattern)} {self._escape_shell_arg(path)} 2>/dev/null | head -n {fetch_limit}"
         result = self._exec(cmd_sorted, timeout=60)
         all_files = [f for f in result.stdout.strip().split("\n") if f]
         if not all_files:
-            cmd_plain = f"rg --files -g {self._escape_shell_arg(glob_pattern)} " f"{self._escape_shell_arg(path)} 2>/dev/null " f"| head -n {fetch_limit}"
+            cmd_plain = f"rg --files -g {self._escape_shell_arg(glob_pattern)} {self._escape_shell_arg(path)} 2>/dev/null | head -n {fetch_limit}"
             result = self._exec(cmd_plain, timeout=60)
             all_files = [f for f in result.stdout.strip().split("\n") if f]
         page = all_files[offset : offset + limit]
@@ -1336,7 +1332,7 @@ def _insert_at_hint(text: str, hint: str, insert: str) -> tuple[str | None, str 
     if occurrences == 0:
         return text.rstrip("\n") + "\n" + insert + "\n", None
     if occurrences > 1:
-        return None, (f"Addition-only hunk: context hint '{hint}' is ambiguous " f"({occurrences} occurrences) — provide a more unique hint")
+        return None, (f"Addition-only hunk: context hint '{hint}' is ambiguous ({occurrences} occurrences) — provide a more unique hint")
     pos = text.find(hint)
     eol = text.find("\n", pos)
     if eol == -1:

@@ -374,6 +374,6 @@ async def generate_animation_clips(
                 results.append(sanitized)
 
         return results
-    except Exception as exc:
+    except Exception:
         logger.warning("Failed to generate animation clips via LLM", exc_info=True)
         return []

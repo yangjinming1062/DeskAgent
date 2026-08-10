@@ -42,11 +42,11 @@ BROWSER_DIALOG_SCHEMA: dict[str, Any] = {
             },
             "prompt_text": {
                 "type": "string",
-                "description": ("Response string for a ``prompt()`` dialog. Ignored for " "other dialog types. Defaults to empty string."),
+                "description": ("Response string for a ``prompt()`` dialog. Ignored for other dialog types. Defaults to empty string."),
             },
             "dialog_id": {
                 "type": "string",
-                "description": ("Specific dialog to respond to, from " "``browser_snapshot.pending_dialogs[].id``. Required " "only when multiple dialogs are queued."),
+                "description": ("Specific dialog to respond to, from ``browser_snapshot.pending_dialogs[].id``. Required only when multiple dialogs are queued."),
             },
         },
         "required": ["action"],

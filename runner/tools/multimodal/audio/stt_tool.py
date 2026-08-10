@@ -119,13 +119,11 @@ def _decode_and_transcribe(
             ns, avg_logprob = 0.0, 0.0
         if ns > 0.6 or avg_logprob < -1.0:
             continue
-        out_segments.append(
-            {
-                "start": getattr(seg, "start", None),
-                "end": getattr(seg, "end", None),
-                "text": getattr(seg, "text", "").strip(),
-            }
-        )
+        out_segments.append({
+            "start": getattr(seg, "start", None),
+            "end": getattr(seg, "end", None),
+            "text": getattr(seg, "text", "").strip(),
+        })
         text_parts.append(getattr(seg, "text", "").strip())
 
     return {
@@ -207,9 +205,7 @@ async def speech_to_text_tool(args: dict[str, Any], **kw: Any) -> str:
         return tool_error(
             f"failed to load faster-whisper model {model_size!r}: {e}",
             success=False,
-            hint="Whisper models are downloaded on first call to "
-            "$DESKAGENT_HOME/models/whisper/. Network access is required "
-            "only for the very first transcription per model.",
+            hint="Whisper models are downloaded on first call to $DESKAGENT_HOME/models/whisper/. Network access is required only for the very first transcription per model.",
         )
     except Exception as e:
         logger.exception("speech_to_text decode failed")

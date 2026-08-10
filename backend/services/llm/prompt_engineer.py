@@ -177,7 +177,7 @@ async def enhance_avatar_prompt(
 ) -> str:
     """Rewrite persona definition into a single focused Chinese avatar (bust) prompt."""
     payload = _persona_visual_payload(persona, feedback)
-    user_payload = "请根据以下角色定义生成半身头像图的提示词：\n" f"```json\n{json.dumps(payload, ensure_ascii=False)}\n```"
+    user_payload = f"请根据以下角色定义生成半身头像图的提示词：\n```json\n{json.dumps(payload, ensure_ascii=False)}\n```"
     raw = await chat(db, user_id, _AVATAR_SYSTEM_PROMPT, user_payload, provider_config=provider_config)
     return _strip_markdown_fence(raw)
 
@@ -212,5 +212,5 @@ async def enhance_texture_prompt(
     """Rewrite a wardrobe description as a detailed Chinese PBR texture prompt (top-down flat lay)."""
     system_prompt = _TEXTURE_WARDROBE_SYSTEM_PROMPT
     payload = {"description": description}
-    user_payload = "请根据以下服装/外观描述生成 PBR 纹理图提示词：\n" f"```json\n{json.dumps(payload, ensure_ascii=False)}\n```"
+    user_payload = f"请根据以下服装/外观描述生成 PBR 纹理图提示词：\n```json\n{json.dumps(payload, ensure_ascii=False)}\n```"
     return await chat(db, user_id, system_prompt, user_payload)

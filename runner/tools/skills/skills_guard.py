@@ -477,17 +477,17 @@ def should_allow_install(result: ScanResult, force: bool = False) -> tuple[bool,
         return True, f"Allowed ({result.trust_level} source, {result.verdict} verdict)"
 
     if force and not (result.verdict == "dangerous" and result.trust_level in ("community", "trusted")):
-        return True, (f"Force-installed despite {result.verdict} verdict " f"({len(result.findings)} findings)")
+        return True, (f"Force-installed despite {result.verdict} verdict ({len(result.findings)} findings)")
 
     if decision == "ask":
         # Return None to signal "needs user confirmation"
-        return None, (f"Requires confirmation ({result.trust_level} source + {result.verdict} verdict, " f"{len(result.findings)} findings)")
+        return None, (f"Requires confirmation ({result.trust_level} source + {result.verdict} verdict, {len(result.findings)} findings)")
 
     # Dangerous verdicts cannot be overridden by --force (community/trusted);
     # other blocks can.
     if result.verdict == "dangerous" and result.trust_level in ("community", "trusted"):
-        return False, (f"Blocked ({result.trust_level} source + dangerous verdict, " f"{len(result.findings)} findings). --force does not override a dangerous verdict.")
-    return False, (f"Blocked ({result.trust_level} source + {result.verdict} verdict, " f"{len(result.findings)} findings). Use --force to override.")
+        return False, (f"Blocked ({result.trust_level} source + dangerous verdict, {len(result.findings)} findings). --force does not override a dangerous verdict.")
+    return False, (f"Blocked ({result.trust_level} source + {result.verdict} verdict, {len(result.findings)} findings). Use --force to override.")
 
 
 def format_scan_report(result: ScanResult) -> str:

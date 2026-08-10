@@ -88,7 +88,7 @@ class NativeFileOperations(FileOperations):
             return ReadResult(error=f"Error accessing file: {e}")
 
         if file_size > MAX_FILE_SIZE and limit >= 500:
-            return ReadResult(file_size=file_size, error=(f"File size {file_size:,} bytes exceeds safety cap of {MAX_FILE_SIZE:,} bytes. " "Read with offset/limit."))
+            return ReadResult(file_size=file_size, error=(f"File size {file_size:,} bytes exceeds safety cap of {MAX_FILE_SIZE:,} bytes. Read with offset/limit."))
 
         if self._is_image(p):
             return ReadResult(is_image=True, is_binary=True, file_size=file_size, hint="Image file detected. Automatically redirected to vision_analyze tool.")

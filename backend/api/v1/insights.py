@@ -124,7 +124,7 @@ def _skill_summary(db: Session, user_id: int, since: datetime) -> dict[str, Any]
     """Aggregate counts from the memory table — closest thing we have to
     'skills' the user has built up (memories are extracted from past sessions)."""
     counts = db.execute(
-        text("SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE created_at >= :since) AS recent " "FROM memories WHERE user_id = :uid"),
+        text("SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE created_at >= :since) AS recent FROM memories WHERE user_id = :uid"),
         {"uid": user_id, "since": since},
     ).one()
     rows = db.query(Memory.tags).filter(Memory.user_id == user_id, Memory.tags.isnot(None)).all()

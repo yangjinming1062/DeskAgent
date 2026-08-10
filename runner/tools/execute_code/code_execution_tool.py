@@ -48,17 +48,15 @@ DEFAULT_EXECUTION_MODE = "project"
 
 SANDBOX_AVAILABLE = True
 
-SANDBOX_ALLOWED_TOOLS = frozenset(
-    [
-        "web_search",
-        "web_extract",
-        "read_file",
-        "write_file",
-        "search_files",
-        "patch",
-        "terminal",
-    ]
-)
+SANDBOX_ALLOWED_TOOLS = frozenset([
+    "web_search",
+    "web_extract",
+    "read_file",
+    "write_file",
+    "search_files",
+    "patch",
+    "terminal",
+])
 
 DEFAULT_TIMEOUT = 300
 
@@ -72,41 +70,37 @@ _SAFE_ENV_PREFIXES = ("PATH", "HOME", "USER", "LANG", "LC_", "TERM", "TMPDIR", "
 
 _SECRET_SUBSTRINGS = ("KEY", "TOKEN", "SECRET", "PASSWORD", "CREDENTIAL", "PASSWD", "AUTH", "DSN", "WEBHOOK")
 
-DESKAGENT_CHILD_ALLOWED = frozenset(
-    {
-        "DESKAGENT_HOME",
-        "DESKAGENT_PROFILE",
-        "DESKAGENT_CONFIG",
-        "DESKAGENT_ENV",
-    }
-)
+DESKAGENT_CHILD_ALLOWED = frozenset({
+    "DESKAGENT_HOME",
+    "DESKAGENT_PROFILE",
+    "DESKAGENT_CONFIG",
+    "DESKAGENT_ENV",
+})
 
-_WINDOWS_ESSENTIAL_ENV_VARS = frozenset(
-    {
-        "SYSTEMROOT",
-        "SYSTEMDRIVE",
-        "WINDIR",
-        "COMSPEC",
-        "PATHEXT",
-        "OS",
-        "PROCESSOR_ARCHITECTURE",
-        "NUMBER_OF_PROCESSORS",
-        "PUBLIC",
-        "ALLUSERSPROFILE",
-        "PROGRAMDATA",
-        "PROGRAMFILES",
-        "PROGRAMFILES(X86)",
-        "PROGRAMW6432",
-        "APPDATA",
-        "LOCALAPPDATA",
-        "USERPROFILE",
-        "USERDOMAIN",
-        "USERNAME",
-        "HOMEDRIVE",
-        "HOMEPATH",
-        "COMPUTERNAME",
-    }
-)
+_WINDOWS_ESSENTIAL_ENV_VARS = frozenset({
+    "SYSTEMROOT",
+    "SYSTEMDRIVE",
+    "WINDIR",
+    "COMSPEC",
+    "PATHEXT",
+    "OS",
+    "PROCESSOR_ARCHITECTURE",
+    "NUMBER_OF_PROCESSORS",
+    "PUBLIC",
+    "ALLUSERSPROFILE",
+    "PROGRAMDATA",
+    "PROGRAMFILES",
+    "PROGRAMFILES(X86)",
+    "PROGRAMW6432",
+    "APPDATA",
+    "LOCALAPPDATA",
+    "USERPROFILE",
+    "USERDOMAIN",
+    "USERNAME",
+    "HOMEDRIVE",
+    "HOMEPATH",
+    "COMPUTERNAME",
+})
 
 
 def _scrub_child_env(source_env, is_passthrough=None, is_windows=None):
@@ -201,7 +195,7 @@ def generate_deskagent_tools_module(enabled_tools: list[str], transport: str = "
         if tool_name not in _TOOL_STUBS:
             continue
         func_name, sig, doc, args_expr = _TOOL_STUBS[tool_name]
-        stub_functions.append(f"def {func_name}({sig}):\n" f"    {doc}\n" f"    return _call({func_name!r}, {args_expr})\n")
+        stub_functions.append(f"def {func_name}({sig}):\n    {doc}\n    return _call({func_name!r}, {args_expr})\n")
         export_names.append(func_name)
     header = _FILE_TRANSPORT_HEADER if transport == "file" else _UDS_TRANSPORT_HEADER
     return header + "\n".join(stub_functions)
@@ -241,7 +235,9 @@ def retry(fn, max_attempts=3, delay=2):
 
 '''
 
-_UDS_TRANSPORT_HEADER = _COMMON_HELPERS + '''\
+_UDS_TRANSPORT_HEADER = (
+    _COMMON_HELPERS
+    + '''\
 
 def _connect():
     """Connect to the parent's RPC server via the transport it picked.
@@ -292,8 +288,11 @@ def _call(tool_name, args):
     return result
 
 '''
+)
 
-_FILE_TRANSPORT_HEADER = _COMMON_HELPERS + '''\
+_FILE_TRANSPORT_HEADER = (
+    _COMMON_HELPERS
+    + '''\
 
 def _call(tool_name, args):
     """Send a tool call request via file-based RPC and wait for response."""
@@ -338,6 +337,7 @@ def _call(tool_name, args):
     return result
 
 '''
+)
 
 _TERMINAL_BLOCKED_PARAMS = {"background", "pty", "notify_on_complete", "watch_patterns"}
 
@@ -380,11 +380,11 @@ def _rpc_server_loop(
                 tool_args = request.get("args", {})
                 if tool_name not in allowed_tools:
                     available = ", ".join(sorted(allowed_tools))
-                    resp = json.dumps({"error": (f"Tool '{tool_name}' is not available in execute_code. " f"Available: {available}")})
+                    resp = json.dumps({"error": (f"Tool '{tool_name}' is not available in execute_code. Available: {available}")})
                     conn.sendall((resp + "\n").encode())
                     continue
                 if tool_call_counter[0] >= max_tool_calls:
-                    resp = json.dumps({"error": (f"Tool call limit reached ({max_tool_calls}). " "No more tool calls allowed in this execution.")})
+                    resp = json.dumps({"error": (f"Tool call limit reached ({max_tool_calls}). No more tool calls allowed in this execution.")})
                     conn.sendall((resp + "\n").encode())
                     continue
                 if tool_name == "terminal" and isinstance(tool_args, dict):
@@ -405,13 +405,11 @@ def _rpc_server_loop(
                 tool_call_counter[0] += 1
                 call_duration = time.monotonic() - call_start
                 args_preview = str(tool_args)[:80]
-                tool_call_log.append(
-                    {
-                        "tool": tool_name,
-                        "args_preview": args_preview,
-                        "duration": round(call_duration, 2),
-                    }
-                )
+                tool_call_log.append({
+                    "tool": tool_name,
+                    "args_preview": args_preview,
+                    "duration": round(call_duration, 2),
+                })
                 conn.sendall((result + "\n").encode())
     except TimeoutError:
         logger.debug("RPC listener socket timeout")
@@ -571,9 +569,9 @@ def _rpc_poll_loop(
                 quoted_res_file = shlex.quote(res_file)
                 if tool_name not in allowed_tools:
                     available = ", ".join(sorted(allowed_tools))
-                    tool_result = json.dumps({"error": (f"Tool '{tool_name}' is not available in execute_code. " f"Available: {available}")})
+                    tool_result = json.dumps({"error": (f"Tool '{tool_name}' is not available in execute_code. Available: {available}")})
                 elif tool_call_counter[0] >= max_tool_calls:
-                    tool_result = json.dumps({"error": (f"Tool call limit reached ({max_tool_calls}). " "No more tool calls allowed in this execution.")})
+                    tool_result = json.dumps({"error": (f"Tool call limit reached ({max_tool_calls}). No more tool calls allowed in this execution.")})
                 else:
                     if tool_name == "terminal" and isinstance(tool_args, dict):
                         for param in _TERMINAL_BLOCKED_PARAMS:
@@ -592,16 +590,14 @@ def _rpc_poll_loop(
                         tool_result = tool_error(str(exc))
                     tool_call_counter[0] += 1
                     call_duration = time.monotonic() - call_start
-                    tool_call_log.append(
-                        {
-                            "tool": tool_name,
-                            "args_preview": str(tool_args)[:80],
-                            "duration": round(call_duration, 2),
-                        }
-                    )
+                    tool_call_log.append({
+                        "tool": tool_name,
+                        "args_preview": str(tool_args)[:80],
+                        "duration": round(call_duration, 2),
+                    })
                 encoded_result = base64.b64encode(tool_result.encode("utf-8")).decode("ascii")
                 env.execute(
-                    f"echo '{encoded_result}' | base64 -d > {quoted_res_file}.tmp" f" && mv {quoted_res_file}.tmp {quoted_res_file}",
+                    f"echo '{encoded_result}' | base64 -d > {quoted_res_file}.tmp && mv {quoted_res_file}.tmp {quoted_res_file}",
                     cwd="/",
                     timeout=60,
                 )
@@ -644,14 +640,12 @@ def _execute_remote(
             timeout=15,
         )
         if "OK" not in py_check.get("output", ""):
-            return json.dumps(
-                {
-                    "status": "error",
-                    "error": (f"Python 3 is not available in the {env_type} terminal " "environment. Install Python to use execute_code with " "remote backends."),
-                    "tool_calls_made": 0,
-                    "duration_seconds": 0,
-                }
-            )
+            return json.dumps({
+                "status": "error",
+                "error": (f"Python 3 is not available in the {env_type} terminal environment. Install Python to use execute_code with remote backends."),
+                "tool_calls_made": 0,
+                "duration_seconds": 0,
+            })
         env.execute(
             f"mkdir -p {quoted_rpc_dir}",
             cwd="/",
@@ -678,7 +672,7 @@ def _execute_remote(
             daemon=True,
         )
         rpc_thread.start()
-        env_prefix = f"DESKAGENT_RPC_DIR={shlex.quote(f'{sandbox_dir}/rpc')} " f"PYTHONDONTWRITEBYTECODE=1"
+        env_prefix = f"DESKAGENT_RPC_DIR={shlex.quote(f'{sandbox_dir}/rpc')} PYTHONDONTWRITEBYTECODE=1"
         tz = str(cfg_get(load_config(), "terminal", "timezone", default="")).strip()
         if tz:
             env_prefix += f" TZ={tz}"
@@ -732,7 +726,7 @@ def _execute_remote(
         head = stdout_text[:head_bytes]
         tail = stdout_text[-tail_bytes:]
         omitted = len(stdout_text) - len(head) - len(tail)
-        stdout_text = head + f"\n\n... [OUTPUT TRUNCATED - {omitted:,} chars omitted " f"out of {len(stdout_text):,} total] ...\n\n" + tail
+        stdout_text = head + f"\n\n... [OUTPUT TRUNCATED - {omitted:,} chars omitted out of {len(stdout_text):,} total] ...\n\n" + tail
     stdout_text = clean_output(stdout_text)
     result: dict[str, Any] = {
         "status": status,
@@ -767,7 +761,7 @@ def execute_code(
     enabled_tools: list[str] | None = None,
 ) -> str:
     if not SANDBOX_AVAILABLE:
-        return json.dumps({"error": "execute_code sandbox is unavailable in this environment. " "Use normal tool calls (terminal, read_file, write_file, ...) instead."})
+        return json.dumps({"error": "execute_code sandbox is unavailable in this environment. Use normal tool calls (terminal, read_file, write_file, ...) instead."})
     if not code or not code.strip():
         return tool_error("No code provided.")
     env_type = get_env_config()["env_type"]
@@ -928,7 +922,7 @@ def execute_code(
         total_stdout = stdout_total_bytes[0]
         if total_stdout > MAX_STDOUT_BYTES and stdout_tail:
             omitted = total_stdout - len(stdout_head) - len(stdout_tail)
-            truncated_notice = f"\n\n... [OUTPUT TRUNCATED - {omitted:,} chars omitted " f"out of {total_stdout:,} total] ...\n\n"
+            truncated_notice = f"\n\n... [OUTPUT TRUNCATED - {omitted:,} chars omitted out of {total_stdout:,} total] ...\n\n"
             stdout_text = stdout_head + truncated_notice + stdout_tail
         else:
             stdout_text = stdout_head + stdout_tail
@@ -1129,7 +1123,7 @@ def _resolve_child_python(mode: str) -> str:
                 if _is_usable_python(candidate, os.environ.get("VIRTUAL_ENV", ""), os.environ.get("CONDA_PREFIX", "")):
                     return candidate
                 logger.info(
-                    "execute_code: skipping %s=%s (Python version < 3.8 or broken). " "Using sys.executable instead.",
+                    "execute_code: skipping %s=%s (Python version < 3.8 or broken). Using sys.executable instead.",
                     var,
                     candidate,
                 )
@@ -1152,17 +1146,17 @@ def _resolve_child_cwd(mode: str, staging_dir: str) -> str:
 
 
 _TOOL_DOC_LINES = [
-    ("web_search", "  web_search(query: str, limit: int = 5) -> dict\n" '    Returns {"data": {"web": [{"url", "title", "description"}, ...]}}'),
-    ("web_extract", "  web_extract(urls: list[str]) -> dict\n" '    Returns {"results": [{"url", "title", "content", "error"}, ...]} where content is markdown'),
-    ("read_file", "  read_file(path: str, offset: int = 1, limit: int = 500) -> dict\n" '    Lines are 1-indexed. Returns {"content": "...", "total_lines": N}'),
-    ("write_file", "  write_file(path: str, content: str) -> dict\n" "    Always overwrites the entire file."),
+    ("web_search", '  web_search(query: str, limit: int = 5) -> dict\n    Returns {"data": {"web": [{"url", "title", "description"}, ...]}}'),
+    ("web_extract", '  web_extract(urls: list[str]) -> dict\n    Returns {"results": [{"url", "title", "content", "error"}, ...]} where content is markdown'),
+    ("read_file", '  read_file(path: str, offset: int = 1, limit: int = 500) -> dict\n    Lines are 1-indexed. Returns {"content": "...", "total_lines": N}'),
+    ("write_file", "  write_file(path: str, content: str) -> dict\n    Always overwrites the entire file."),
     (
         "search_files",
         '  search_files(pattern: str, target="content", path=".", file_glob=None, limit=50) -> dict\n'
         '    target: "content" (search inside files) or "files" (find files by name). Returns {"matches": [...]}',
     ),
-    ("patch", "  patch(path: str, old_string: str, new_string: str, replace_all: bool = False) -> dict\n" "    Replaces old_string with new_string in the file."),
-    ("terminal", "  terminal(command: str, timeout=None, workdir=None) -> dict\n" '    Foreground only (no background/pty). Returns {"output": "...", "exit_code": N}'),
+    ("patch", "  patch(path: str, old_string: str, new_string: str, replace_all: bool = False) -> dict\n    Replaces old_string with new_string in the file."),
+    ("terminal", '  terminal(command: str, timeout=None, workdir=None) -> dict\n    Foreground only (no background/pty). Returns {"output": "...", "exit_code": N}'),
 ]
 
 EXECUTE_CODE_SCHEMA = {

@@ -199,7 +199,7 @@ def _bulk_cas_advance(due_jobs: list[CronJob], now: datetime) -> dict[int, dict[
         won_ids: list[int] = []
         for job in due_jobs:
             result = db.execute(
-                text("UPDATE cron_jobs " "SET next_run_at = :new_run, is_paused = :is_paused " "WHERE id = :id AND next_run_at = :old_run AND schedule = :sched"),
+                text("UPDATE cron_jobs SET next_run_at = :new_run, is_paused = :is_paused WHERE id = :id AND next_run_at = :old_run AND schedule = :sched"),
                 {
                     "id": job.id,
                     "old_run": job.next_run_at,
@@ -348,7 +348,7 @@ async def _maybe_run_memory_consolidator(now: datetime) -> None:
 
     with session_scope() as db:
         rows = db.execute(
-            text("SELECT user_id FROM memories WHERE context LIKE 'recall:%' " "GROUP BY user_id HAVING COUNT(*) > :t"),
+            text("SELECT user_id FROM memories WHERE context LIKE 'recall:%' GROUP BY user_id HAVING COUNT(*) > :t"),
             {"t": MEMORY_CONSOLIDATE_TRIGGER_ROWS},
         ).all()
     eligible: list[int] = []

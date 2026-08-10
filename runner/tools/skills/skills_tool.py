@@ -172,13 +172,11 @@ def _get_required_environment_variables(
             _append_required(item)
 
     for item in setup["collect_secrets"]:
-        _append_required(
-            {
-                "name": item.get("env_var"),
-                "prompt": item.get("prompt"),
-                "help": item.get("provider_url") or setup.get("help"),
-            }
-        )
+        _append_required({
+            "name": item.get("env_var"),
+            "prompt": item.get("prompt"),
+            "help": item.get("provider_url") or setup.get("help"),
+        })
 
     legacy = legacy_env_vars if legacy_env_vars is not None else _collect_prerequisite_values(frontmatter)[0]
     for env_var in legacy:
@@ -273,7 +271,6 @@ def _is_skill_disabled(name: str, category: str | None = None, platform: str | N
 
 
 def _find_all_skills(*, skip_disabled: bool = False) -> list[dict[str, Any]]:
-
     skills = []
     seen_names = set()
     disabled = set() if skip_disabled else get_disabled_skill_names()

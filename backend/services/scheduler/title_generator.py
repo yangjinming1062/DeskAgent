@@ -19,7 +19,7 @@ from ..llm import LLMRuntimeError
 logger = get_logger(__name__)
 
 _TITLE_PROMPTS: dict[str, str] = {
-    "zh": ("为以下对话生成一个简短、描述性的标题（3-7个词）。标题应概括对话的主题或意图。" "只返回标题文本，不要有其他内容。不要引号、结尾标点或前缀。"),
+    "zh": ("为以下对话生成一个简短、描述性的标题（3-7个词）。标题应概括对话的主题或意图。只返回标题文本，不要有其他内容。不要引号、结尾标点或前缀。"),
     "en": (
         "Generate a short, descriptive title (3-7 words) for a conversation that starts with the "
         "following exchange. The title should capture the main topic or intent. "

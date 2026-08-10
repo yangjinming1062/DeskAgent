@@ -133,7 +133,7 @@ class TavilyWebSearchProvider(WebSearchProvider):
         # message is what users see when ``web_extract`` fails for
         # missing creds. Point them at the settings UI rather than at
         # the env var they can't reach.
-        return "Tavily API key is not configured. " "Add it under Settings → Web Search to enable web_extract."
+        return "Tavily API key is not configured. Add it under Settings → Web Search to enable web_extract."
 
     async def search(self, query: str, limit: int = 5) -> dict[str, Any]:
         try:

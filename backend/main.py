@@ -49,19 +49,23 @@ def _install_ws_notify_trigger(conn: Connection) -> None:
     This cannot be expressed in SQLAlchemy's declarative models, so it
     must be created via raw DDL after ``create_all``.
     """
-    conn.execute(text("""
+    conn.execute(
+        text("""
     CREATE OR REPLACE FUNCTION notify_ws_event() RETURNS trigger AS $$
     BEGIN
       PERFORM pg_notify('ws_events_channel', 'wakeup');
       RETURN NEW;
     END;
     $$ LANGUAGE plpgsql;
-    """))
-    conn.execute(text("""
+    """)
+    )
+    conn.execute(
+        text("""
     CREATE OR REPLACE TRIGGER ws_event_notify_trigger
     AFTER INSERT ON ws_events
     FOR EACH STATEMENT EXECUTE FUNCTION notify_ws_event();
-    """))
+    """)
+    )
 
 
 def _install_schema_extensions(conn: Connection) -> None:

@@ -89,14 +89,14 @@ COMPUTER_USE_SCHEMA: dict[str, Any] = {
             },
             "element": {
                 "type": "integer",
-                "description": ("The 1-based SOM index returned by the last " "`capture(mode='som')` call. Strongly preferred over " "raw coordinates."),
+                "description": ("The 1-based SOM index returned by the last `capture(mode='som')` call. Strongly preferred over raw coordinates."),
             },
             "coordinate": {
                 "type": "array",
                 "items": {"type": "integer"},
                 "minItems": 2,
                 "maxItems": 2,
-                "description": ("Pixel coordinates [x, y] in logical screen space (as " "returned by capture width/height). Only use this if " "no element index is available."),
+                "description": ("Pixel coordinates [x, y] in logical screen space (as returned by capture width/height). Only use this if no element index is available."),
             },
             "button": {
                 "type": "string",
@@ -151,7 +151,7 @@ COMPUTER_USE_SCHEMA: dict[str, Any] = {
             },
             "keys": {
                 "type": "string",
-                "description": ("Key combo, e.g. 'cmd+s', 'ctrl+alt+t', 'return', " "'escape', 'tab'. Use '+' to combine."),
+                "description": ("Key combo, e.g. 'cmd+s', 'ctrl+alt+t', 'return', 'escape', 'tab'. Use '+' to combine."),
             },
             "seconds": {
                 "type": "number",
@@ -169,7 +169,7 @@ COMPUTER_USE_SCHEMA: dict[str, Any] = {
             "capture_after": {
                 "type": "boolean",
                 "description": (
-                    "If true, take a follow-up capture after the action and " "include it in the response. Saves a round-trip when you " "need to verify an action's effect."
+                    "If true, take a follow-up capture after the action and include it in the response. Saves a round-trip when you need to verify an action's effect."
                 ),
             },
             "delivery_mode": {

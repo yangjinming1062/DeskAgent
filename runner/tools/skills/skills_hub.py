@@ -177,7 +177,6 @@ def _validate_bundle_rel_path(rel_path: str) -> str:
 
 
 class GitHubAuth:
-
     def __init__(self):
         self._cached_token: str | None = None
         self._cached_method: str | None = None
@@ -251,7 +250,6 @@ class GitHubAuth:
 
 
 class SkillSource(ABC):
-
     @abstractmethod
     def search(self, query: str, limit: int = 10) -> list[SkillMeta]: ...
 
@@ -510,7 +508,7 @@ class GitHubSource(SkillSource):
             remaining = resp.headers.get("X-RateLimit-Remaining", "")
             if remaining == "0" or resp.status_code == 429:
                 self._rate_limited = True
-                logger.warning("GitHub API rate limit exhausted (unauthenticated: 60 req/hr). " "Set GITHUB_TOKEN or install the gh CLI to raise the limit to 5,000/hr.")
+                logger.warning("GitHub API rate limit exhausted (unauthenticated: 60 req/hr). Set GITHUB_TOKEN or install the gh CLI to raise the limit to 5,000/hr.")
 
     def _github_get(
         self,
@@ -1564,13 +1562,11 @@ class SkillsShSource(SkillSource):
         skill_token = parts[2].split("/")[-1]
         tokens = [skill_token]
         if isinstance(detail, dict):
-            tokens.extend(
-                [
-                    detail.get("install_skill", ""),
-                    detail.get("page_title", ""),
-                    detail.get("body_title", ""),
-                ]
-            )
+            tokens.extend([
+                detail.get("install_skill", ""),
+                detail.get("page_title", ""),
+                detail.get("body_title", ""),
+            ])
 
         base_paths = ["skills/", ".agents/skills/", ".claude/skills/"]
 
@@ -1908,16 +1904,14 @@ class ClawHubSource(SkillSource):
         if query_terms:
             base_slug = "-".join(query_terms)
             if len(query_terms) >= 2:
-                candidates.extend(
-                    [
-                        f"{base_slug}-agent",
-                        f"{base_slug}-skill",
-                        f"{base_slug}-tool",
-                        f"{base_slug}-assistant",
-                        f"{base_slug}-playbook",
-                        base_slug,
-                    ]
-                )
+                candidates.extend([
+                    f"{base_slug}-agent",
+                    f"{base_slug}-skill",
+                    f"{base_slug}-tool",
+                    f"{base_slug}-assistant",
+                    f"{base_slug}-playbook",
+                    base_slug,
+                ])
             else:
                 candidates.append(base_slug)
 
@@ -2630,16 +2624,14 @@ class BrowseShSource(SkillSource):
         query_lower = query.lower()
         results = []
         for item in catalog:
-            text = " ".join(
-                [
-                    item.get("name", ""),
-                    item.get("title", ""),
-                    item.get("description", ""),
-                    item.get("hostname", ""),
-                    item.get("category", ""),
-                    " ".join(item.get("tags", [])),
-                ]
-            ).lower()
+            text = " ".join([
+                item.get("name", ""),
+                item.get("title", ""),
+                item.get("description", ""),
+                item.get("hostname", ""),
+                item.get("category", ""),
+                " ".join(item.get("tags", [])),
+            ]).lower()
             if not query_lower or query_lower in text:
                 meta = self._item_to_meta(item)
                 if meta:
@@ -2782,7 +2774,6 @@ def _skill_meta_to_dict(meta: SkillMeta) -> dict:
 
 
 class HubLockFile:
-
     def __init__(self, path: Path = LOCK_FILE):
         self.path = path
 
@@ -2840,7 +2831,6 @@ class HubLockFile:
 
 
 class TapsManager:
-
     def __init__(self, path: Path = TAPS_FILE):
         self.path = path
 
@@ -3054,30 +3044,26 @@ def check_for_skill_updates(
                 break
 
         if not bundle:
-            results.append(
-                {
-                    "name": entry.get("name", ""),
-                    "identifier": identifier,
-                    "source": source_name,
-                    "status": "unavailable",
-                }
-            )
+            results.append({
+                "name": entry.get("name", ""),
+                "identifier": identifier,
+                "source": source_name,
+                "status": "unavailable",
+            })
             continue
 
         current_hash = entry.get("content_hash", "")
         latest_hash = bundle_content_hash(bundle)
         status = "up_to_date" if current_hash == latest_hash else "update_available"
-        results.append(
-            {
-                "name": entry.get("name", ""),
-                "identifier": identifier,
-                "source": source_name,
-                "status": status,
-                "current_hash": current_hash,
-                "latest_hash": latest_hash,
-                "bundle": bundle,
-            }
-        )
+        results.append({
+            "name": entry.get("name", ""),
+            "identifier": identifier,
+            "source": source_name,
+            "status": status,
+            "current_hash": current_hash,
+            "latest_hash": latest_hash,
+            "bundle": bundle,
+        })
 
     return results
 

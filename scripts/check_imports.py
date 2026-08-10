@@ -69,7 +69,7 @@ def check_type_checking_leak(path: Path) -> list[str]:
         return []
     used_outside = _names_referenced_outside_tc(tree, tc_ranges)
     leaks = sorted(tc_imports & used_outside)
-    return [f"{path}: '{name}' imported under TYPE_CHECKING but used outside it " f"(annotation evaluated at runtime → NameError)" for name in leaks]
+    return [f"{path}: '{name}' imported under TYPE_CHECKING but used outside it (annotation evaluated at runtime → NameError)" for name in leaks]
 
 
 # ---- B. runner/tools/* cross-subpackage eager import -------------------------

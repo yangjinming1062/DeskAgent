@@ -58,9 +58,8 @@ def fuzzy_find_and_replace(content: str, old_string: str, new_string: str, repla
         matches = strategy_fn(content, old_string)
 
         if matches:
-
             if len(matches) > 1 and not replace_all:
-                return content, 0, None, (f"Found {len(matches)} matches for old_string. " f"Provide more context to make it unique, or use replace_all=True.")
+                return content, 0, None, (f"Found {len(matches)} matches for old_string. Provide more context to make it unique, or use replace_all=True.")
 
             # Escape-drift guard: when the matched strategy is NOT `exact`,
             # we matched via some form of normalization. If new_string
@@ -373,7 +372,6 @@ def _strategy_escape_normalized(content: str, pattern: str) -> list[tuple[int, i
     """
 
     def unescape(s):
-
         return s.replace("\\n", "\n").replace("\\t", "\t").replace("\\r", "\r")
 
     pattern_unescaped = unescape(pattern)
@@ -542,7 +540,6 @@ def _strategy_block_anchor(content: str, pattern: str) -> list[tuple[int, int]]:
         if pattern_line_count <= 2:
             similarity = 1.0
         else:
-
             content_middle = "\n".join(norm_content_lines[i + 1 : i + pattern_line_count - 1])
             pattern_middle = "\n".join(pattern_lines[1:-1])
             similarity = SequenceMatcher(None, content_middle, pattern_middle).ratio()
@@ -626,7 +623,6 @@ def _find_normalized_matches(content: str, content_lines: list[str], content_nor
     matches = []
 
     for i in range(len(content_normalized_lines) - num_pattern_lines + 1):
-
         block = "\n".join(content_normalized_lines[i : i + num_pattern_lines])
 
         if block == pattern_normalized:
@@ -664,7 +660,6 @@ def _map_normalized_positions(original: str, normalized: str, normalized_matches
             if orig_idx < len(original) and original[orig_idx] not in " \t":
                 norm_idx += 1
         elif original[orig_idx] in " \t":
-
             orig_to_norm.append(norm_idx)
             orig_idx += 1
         else:
@@ -687,11 +682,9 @@ def _map_normalized_positions(original: str, normalized: str, normalized_matches
 
     original_matches = []
     for norm_start, norm_end in normalized_matches:
-
         if norm_start in norm_to_orig_start:
             orig_start = norm_to_orig_start[norm_start]
         else:
-
             orig_start = min(i for i, n in enumerate(orig_to_norm) if n >= norm_start)
 
         if norm_end - 1 in norm_to_orig_end:
@@ -724,7 +717,6 @@ def find_closest_lines(old_string: str, content: str, context_lines: int = 2, ma
 
     anchor = old_lines[0].strip()
     if not anchor:
-
         candidates = [l.strip() for l in old_lines if l.strip()]
         if not candidates:
             return ""

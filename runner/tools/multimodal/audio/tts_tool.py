@@ -69,7 +69,7 @@ TEXT_TO_SPEECH_SCHEMA = {
 
 LIST_VOICES_SCHEMA = {
     "name": "list_tts_voices",
-    "description": ("Returns the list of Piper voice ids installed under " "$DESKAGENT_HOME/models/piper/. Useful for the user to pick " "a voice in [desktop/plan §6 Settings]."),
+    "description": ("Returns the list of Piper voice ids installed under $DESKAGENT_HOME/models/piper/. Useful for the user to pick a voice in [desktop/plan §6 Settings]."),
     "parameters": {"type": "object", "properties": {}, "required": []},
 }
 
@@ -222,7 +222,7 @@ def _check_tts() -> bool:
 def _all_engines_failed(last_error: Exception | None) -> str:
     return tool_error(
         f"all engines failed: {last_error}",
-        hint=("Local Piper synthesis failed and pyttsx3 fallback also failed. " "Set tts.engine=cloud in config.yaml to route to /api/media/tts."),
+        hint=("Local Piper synthesis failed and pyttsx3 fallback also failed. Set tts.engine=cloud in config.yaml to route to /api/media/tts."),
         success=False,
     )
 
@@ -247,9 +247,7 @@ def text_to_speech_tool(args: dict[str, Any], **kw: Any) -> str:
     if raw_voice and _is_cloud_voice(raw_voice):
         return tool_error(
             f"voice {raw_voice!r} is a cloud-provider id, not a local Piper voice",
-            hint=(
-                "Set tts.engine=cloud in config.yaml, or omit the voice argument so the runner " "auto-picks a Chinese Piper voice for CJK text. See runner/README.md §音频工具."
-            ),
+            hint=("Set tts.engine=cloud in config.yaml, or omit the voice argument so the runner auto-picks a Chinese Piper voice for CJK text. See runner/README.md §音频工具."),
             success=False,
         )
 

@@ -297,7 +297,6 @@ def _ensure_cdp_supervisor(task_id: str) -> None:
     if not cdp_url:
         return
     try:
-
         policy, timeout_s = _get_dialog_policy_config()
         SUPERVISOR_REGISTRY.get_or_start(
             task_id=task_id,
@@ -316,7 +315,6 @@ def _ensure_cdp_supervisor(task_id: str) -> None:
 def _stop_cdp_supervisor(task_id: str) -> None:
     """Stop the CDP supervisor for ``task_id`` if one exists. No-op otherwise."""
     try:
-
         SUPERVISOR_REGISTRY.stop(task_id)
     except Exception as exc:
         logger.debug("CDP supervisor stop for task=%s failed (non-fatal): %s", task_id, exc)
@@ -344,7 +342,7 @@ def _requires_real_termux_browser_install(browser_cmd: str) -> bool:
 
 
 def _termux_browser_install_error() -> str:
-    return "Local browser automation on Termux cannot rely on the bare npx fallback. " f"Install agent-browser explicitly first: {_browser_install_hint()}"
+    return f"Local browser automation on Termux cannot rely on the bare npx fallback. Install agent-browser explicitly first: {_browser_install_hint()}"
 
 
 def _get_browser_engine() -> str:
@@ -430,8 +428,8 @@ def _lightpanda_fallback_reason(engine: str, command: str, result: dict[str, Any
             try:
                 size = os.path.getsize(path)
                 if size < 20480:
-                    logger.debug("Lightpanda screenshot is suspiciously small (%d bytes), " "triggering Chrome fallback", size)
-                    return f"Lightpanda screenshot was suspiciously small ({size} bytes); " "retried with Chrome."
+                    logger.debug("Lightpanda screenshot is suspiciously small (%d bytes), triggering Chrome fallback", size)
+                    return f"Lightpanda screenshot was suspiciously small ({size} bytes); retried with Chrome."
             except OSError:
                 return "Lightpanda screenshot file was missing/unreadable; retried with Chrome."
 
@@ -440,7 +438,7 @@ def _lightpanda_fallback_reason(engine: str, command: str, result: dict[str, Any
 
 def _annotate_lightpanda_fallback(result: dict[str, Any], reason: str) -> dict[str, Any]:
     """Add a user-visible Chrome fallback warning to a browser command result."""
-    warning = "⚠ Lightpanda fallback: Chrome was used for this browser action. " f"{reason}"
+    warning = f"⚠ Lightpanda fallback: Chrome was used for this browser action. {reason}"
     annotated = dict(result)
     annotated["fallback_warning"] = warning
     annotated["browser_engine"] = "chrome"
@@ -506,17 +504,9 @@ def _run_chrome_fallback_command(
 
     if not _chromium_installed():
         if _running_in_docker():
-            hint = (
-                "Chrome fallback requires Chromium, but it is missing. "
-                "You're running in Docker — pull the latest image: "
-                "docker pull ghcr.io/nousresearch/deskagent-agent:latest"
-            )
+            hint = "Chrome fallback requires Chromium, but it is missing. You're running in Docker — pull the latest image: docker pull ghcr.io/nousresearch/deskagent-agent:latest"
         else:
-            hint = (
-                "Chrome fallback requires Chromium, but it is missing. Install it with: "
-                "npx agent-browser install --with-deps "
-                "(or: npx playwright install --with-deps chromium)"
-            )
+            hint = "Chrome fallback requires Chromium, but it is missing. Install it with: npx agent-browser install --with-deps (or: npx playwright install --with-deps chromium)"
         return {"success": False, "error": hint}
 
     # On Windows npx is npx.cmd — use shutil.which so CreateProcessW can
@@ -984,7 +974,6 @@ def _reap_orphaned_browser_sessions():
         # Use the process-tree termination helper so Chromium children
         # (renderer, GPU, etc.) are cleaned up, not just the daemon parent.
         try:
-
             ProcessRegistry._terminate_host_pid(daemon_pid)
             logger.info("Reaped orphaned browser daemon PID %d (session %s)", daemon_pid, session_name)
             reaped += 1
@@ -1364,7 +1353,6 @@ BROWSER_TOOL_SCHEMAS = [
 
 
 def _create_local_session(task_id: str) -> dict[str, str]:
-
     session_name = f"h_{uuid.uuid4().hex[:10]}"
     logger.info("Created local browser session %s for task %s", session_name, task_id)
     profile_dir = resolve_profile_dir()
@@ -1418,7 +1406,6 @@ def _get_session_info(task_id: str | None = None) -> dict[str, str]:
     _update_session_activity(task_id)
 
     with _cleanup_lock:
-
         if task_id in _active_sessions:
             return _active_sessions[task_id]
 
@@ -1594,12 +1581,10 @@ def _run_browser_command(
     if not _chromium_installed() and _get_browser_engine() != "lightpanda":
         if _running_in_docker():
             hint = (
-                "Chromium browser is missing. You're running in Docker — pull "
-                "the latest image to get the bundled Chromium: "
-                "docker pull ghcr.io/nousresearch/deskagent-agent:latest"
+                "Chromium browser is missing. You're running in Docker — pull the latest image to get the bundled Chromium: docker pull ghcr.io/nousresearch/deskagent-agent:latest"
             )
         else:
-            hint = "Chromium browser is missing. Install it with: " "npx agent-browser install --with-deps " "(or: npx playwright install --with-deps chromium)"
+            hint = "Chromium browser is missing. Install it with: npx agent-browser install --with-deps (or: npx playwright install --with-deps chromium)"
         logger.warning("browser command blocked: %s", hint)
         return {"success": False, "error": hint}
 
@@ -1697,7 +1682,7 @@ def _run_browser_command(
                     with open(_userns_restrict, encoding="utf-8") as _f:
                         if _f.read().strip() == "1":
                             _needs_sandbox_bypass = True
-                            logger.debug("browser: AppArmor userns restrictions detected — " "injecting --no-sandbox")
+                            logger.debug("browser: AppArmor userns restrictions detected — injecting --no-sandbox")
                 except OSError:
                     pass
             if _needs_sandbox_bypass:
@@ -1781,7 +1766,7 @@ def _run_browser_command(
                     if command == "snapshot" and parsed.get("success"):
                         snap_data = parsed.get("data", {})
                         if not snap_data.get("snapshot") and not snap_data.get("refs"):
-                            logger.warning("snapshot returned empty content. " "Possible stale daemon or CDP connection issue. " "returncode=%s", returncode)
+                            logger.warning("snapshot returned empty content. Possible stale daemon or CDP connection issue. returncode=%s", returncode)
                     result = parsed
                 except json.JSONDecodeError:
                     raw = stdout_text[:2000]
@@ -1809,7 +1794,6 @@ def _run_browser_command(
                     else:
                         result = {"success": False, "error": f"Non-JSON output from agent-browser for '{command}': {raw}"}
             elif returncode != 0:
-
                 error_msg = stderr.strip() if stderr else f"Command failed with code {returncode}"
                 logger.warning("browser '%s' failed (rc=%s): %s", command, returncode, error_msg[:300])
                 result = {"success": False, "error": error_msg}
@@ -1860,21 +1844,17 @@ def browser_navigate(url: str, task_id: str | None = None) -> str:
 
     url_decoded = unquote(url)
     if _PREFIX_RE.search(url) or _PREFIX_RE.search(url_decoded):
-        return json.dumps(
-            {
-                "success": False,
-                "error": "Blocked: URL contains what appears to be an API key or token. " "Secrets must not be sent in URLs.",
-            }
-        )
+        return json.dumps({
+            "success": False,
+            "error": "Blocked: URL contains what appears to be an API key or token. Secrets must not be sent in URLs.",
+        })
     url = normalize_url_for_request(url)
     normalized_decoded = unquote(url)
     if _PREFIX_RE.search(url) or _PREFIX_RE.search(normalized_decoded):
-        return json.dumps(
-            {
-                "success": False,
-                "error": "Blocked: URL contains what appears to be an API key or token. " "Secrets must not be sent in URLs.",
-            }
-        )
+        return json.dumps({
+            "success": False,
+            "error": "Blocked: URL contains what appears to be an API key or token. Secrets must not be sent in URLs.",
+        })
 
     # SSRF protection — block private/internal addresses before navigating.
     # Skipped when the navigation is being routed to a per-task local
@@ -1891,35 +1871,28 @@ def browser_navigate(url: str, task_id: str | None = None) -> str:
     # via a browser, and routing those to a local Chromium sidecar
     # on an EC2/GCP/Azure host exfiltrates IAM credentials (#16234).
     if is_always_blocked_url(url):
-        return json.dumps(
-            {
-                "success": False,
-                "error": "Blocked: URL targets a cloud metadata endpoint",
-            }
-        )
+        return json.dumps({
+            "success": False,
+            "error": "Blocked: URL targets a cloud metadata endpoint",
+        })
 
     if not auto_local_this_nav and not _allow_private_urls() and not is_safe_url(url):
-        return json.dumps(
-            {
-                "success": False,
-                "error": "Blocked: URL targets a private or internal address",
-            }
-        )
+        return json.dumps({
+            "success": False,
+            "error": "Blocked: URL targets a private or internal address",
+        })
 
     # Website policy check — block before navigating
     blocked = check_website_access(url)
     if blocked:
-        return json.dumps(
-            {
-                "success": False,
-                "error": blocked["message"],
-                "blocked_by_policy": {"host": blocked["host"], "rule": blocked["rule"], "source": blocked["source"]},
-            }
-        )
+        return json.dumps({
+            "success": False,
+            "error": blocked["message"],
+            "blocked_by_policy": {"host": blocked["host"], "rule": blocked["rule"], "source": blocked["source"]},
+        })
 
     # Camofox backend — delegate after safety checks pass
     if is_camofox_mode():
-
         return camofox_navigate(url, task_id)
 
     if auto_local_this_nav:
@@ -1960,22 +1933,17 @@ def browser_navigate(url: str, task_id: str | None = None) -> str:
         # rationale (#16234).
         if final_url and final_url != url and is_always_blocked_url(final_url):
             _run_browser_command(nav_session_key, "open", ["about:blank"], timeout=10)
-            return json.dumps(
-                {
-                    "success": False,
-                    "error": "Blocked: redirect landed on a cloud metadata endpoint",
-                }
-            )
+            return json.dumps({
+                "success": False,
+                "error": "Blocked: redirect landed on a cloud metadata endpoint",
+            })
 
         if not auto_local_this_nav and not _allow_private_urls() and final_url and final_url != url and not is_safe_url(final_url):
-
             _run_browser_command(nav_session_key, "open", ["about:blank"], timeout=10)
-            return json.dumps(
-                {
-                    "success": False,
-                    "error": "Blocked: redirect landed on a private/internal address",
-                }
-            )
+            return json.dumps({
+                "success": False,
+                "error": "Blocked: redirect landed on a private/internal address",
+            })
 
         response = {"success": True, "url": final_url, "title": title}
         _copy_fallback_warning(response, result)
@@ -2050,7 +2018,6 @@ def browser_snapshot(full: bool = False, task_id: str | None = None, user_task: 
         JSON string with page snapshot
     """
     if is_camofox_mode():
-
         return camofox_snapshot(full, task_id, user_task)
 
     effective_task_id = _last_session_key(task_id or "default")
@@ -2077,7 +2044,6 @@ def browser_snapshot(full: bool = False, task_id: str | None = None, user_task: 
         # supervisor is attached to this task. No-op otherwise. See
         # website/docs/developer-guide/browser-supervisor.md.
         try:
-
             _supervisor = SUPERVISOR_REGISTRY.get(effective_task_id)
             if _supervisor is not None:
                 _sv_snap = _supervisor.snapshot()
@@ -2104,7 +2070,6 @@ def browser_click(ref: str, task_id: str | None = None) -> str:
         JSON string with click result
     """
     if is_camofox_mode():
-
         return camofox_click(ref, task_id)
 
     effective_task_id = _last_session_key(task_id or "default")
@@ -2136,7 +2101,6 @@ def browser_type(ref: str, text: str, task_id: str | None = None) -> str:
         JSON string with type result
     """
     if is_camofox_mode():
-
         return camofox_type(ref, text, task_id)
 
     effective_task_id = _last_session_key(task_id or "default")
@@ -2177,7 +2141,6 @@ def browser_scroll(direction: str, task_id: str | None = None) -> str:
     _SCROLL_PIXELS = 500
 
     if is_camofox_mode():
-
         # Camofox REST API doesn't support pixel args; use repeated calls
         _SCROLL_REPEATS = 5
         result = None
@@ -2207,7 +2170,6 @@ def browser_back(task_id: str | None = None) -> str:
         JSON string with navigation result
     """
     if is_camofox_mode():
-
         return camofox_back(task_id)
 
     effective_task_id = _last_session_key(task_id or "default")
@@ -2234,7 +2196,6 @@ def browser_press(key: str, task_id: str | None = None) -> str:
         JSON string with key press result
     """
     if is_camofox_mode():
-
         return camofox_press(key, task_id)
 
     effective_task_id = _last_session_key(task_id or "default")
@@ -2536,13 +2497,11 @@ def browser_find(
             if ref:
                 matches.append(ref)
         else:
-            matches.append(
-                {
-                    "tag": entry.get("tag"),
-                    "text": entry.get("textOriginal"),
-                    "ref": ref,
-                }
-            )
+            matches.append({
+                "tag": entry.get("tag"),
+                "text": entry.get("textOriginal"),
+                "ref": ref,
+            })
 
     return json.dumps(
         {"success": True, "count": len(matches), "matches": matches},
@@ -3474,7 +3433,6 @@ def browser_console(clear: bool = False, expression: str | None = None, task_id:
 
     # --- Console output mode (original behaviour) ---
     if is_camofox_mode():
-
         return camofox_console(clear, task_id)
 
     effective_task_id = _last_session_key(task_id or "default")
@@ -3488,23 +3446,19 @@ def browser_console(clear: bool = False, expression: str | None = None, task_id:
     messages = []
     if console_result.get("success"):
         for msg in console_result.get("data", {}).get("messages", []):
-            messages.append(
-                {
-                    "type": msg.get("type", "log"),
-                    "text": msg.get("text", ""),
-                    "source": "console",
-                }
-            )
+            messages.append({
+                "type": msg.get("type", "log"),
+                "text": msg.get("text", ""),
+                "source": "console",
+            })
 
     errors = []
     if errors_result.get("success"):
         for err in errors_result.get("data", {}).get("errors", []):
-            errors.append(
-                {
-                    "message": err.get("message", ""),
-                    "source": "exception",
-                }
-            )
+            errors.append({
+                "message": err.get("message", ""),
+                "source": "exception",
+            })
 
     response = {
         "success": True,
@@ -3533,7 +3487,6 @@ def _browser_eval(expression: str, task_id: str | None = None) -> str:
 
     # supervisor is running (e.g. plain agent-browser without a CDP backend).
     try:
-
         supervisor = SUPERVISOR_REGISTRY.get(effective_task_id)
         if supervisor is not None:
             sup_result = supervisor.evaluate_runtime(expression)
@@ -3648,12 +3601,10 @@ def _camofox_eval(expression: str, task_id: str | None = None) -> str:
         error_msg = str(e)
         # Graceful degradation — server may not support eval
         if any(code in error_msg for code in ("404", "405", "501")):
-            return json.dumps(
-                {
-                    "success": False,
-                    "error": "JavaScript evaluation is not supported by this Camofox server. " "Use browser_snapshot or browser_vision to inspect page state.",
-                }
-            )
+            return json.dumps({
+                "success": False,
+                "error": "JavaScript evaluation is not supported by this Camofox server. Use browser_snapshot or browser_vision to inspect page state.",
+            })
         return tool_error(error_msg, success=False)
 
 
@@ -3930,7 +3881,7 @@ def browser_vision(question: str, annotate: bool = False, task_id: str | None = 
 
             if _is_image_size_error(_api_err) and len(data_url) > _RESIZE_TARGET_BYTES:
                 logger.info(
-                    "Vision API rejected screenshot (%.1f MB); " "auto-resizing to ~%.0f MB and retrying...",
+                    "Vision API rejected screenshot (%.1f MB); auto-resizing to ~%.0f MB and retrying...",
                     len(data_url) / (1024 * 1024),
                     _RESIZE_TARGET_BYTES / (1024 * 1024),
                 )
@@ -4305,7 +4256,7 @@ if __name__ == "__main__":
                 searched = ", ".join(_chromium_search_roots()) or "(no candidate paths)"
                 print(f"     Searched: {searched}")
                 if _running_in_docker():
-                    print("     Docker: pull the latest image — the current one " "predates the bundled Chromium install")
+                    print("     Docker: pull the latest image — the current one predates the bundled Chromium install")
                     print("       docker pull ghcr.io/nousresearch/deskagent-agent:latest")
                 else:
                     print("     Install it with:")

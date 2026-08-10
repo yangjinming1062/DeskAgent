@@ -255,9 +255,11 @@ def camofox_navigate(url: str, task_id: str | None = None) -> str:
             "title": data.get("title", ""),
         }
         if rewrite_info:
-            result.update(
-                {"requested_url": url, "url_rewrite": rewrite_info, "warning": f"Rewrote loopback URL for Docker-hosted Camofox: {rewrite_info['from']} -> {rewrite_info['to']}"}
-            )
+            result.update({
+                "requested_url": url,
+                "url_rewrite": rewrite_info,
+                "warning": f"Rewrote loopback URL for Docker-hosted Camofox: {rewrite_info['from']} -> {rewrite_info['to']}",
+            })
         if vnc := get_vnc_url():
             result.update({"vnc_url": vnc, "vnc_hint": "Browser is visible via VNC. Share this link with the user so they can watch the browser live."})
         try:
@@ -273,7 +275,7 @@ def camofox_navigate(url: str, task_id: str | None = None) -> str:
     except requests.HTTPError as e:
         return tool_error(f"Navigation failed: {e}", success=False)
     except requests.ConnectionError:
-        return json.dumps({"success": False, "error": f"Cannot connect to Camofox at {get_camofox_url()}. " "Is the server running? Start it first."})
+        return json.dumps({"success": False, "error": f"Cannot connect to Camofox at {get_camofox_url()}. Is the server running? Start it first."})
     except Exception as e:
         return tool_error(str(e), success=False)
 
@@ -428,13 +430,11 @@ def camofox_vision(question: str, annotate: bool = False, task_id: str | None = 
 
 
 def camofox_console(clear: bool = False, task_id: str | None = None) -> str:
-    return json.dumps(
-        {
-            "success": True,
-            "console_messages": [],
-            "js_errors": [],
-            "total_messages": 0,
-            "total_errors": 0,
-            "note": "Console log capture is not available with the Camofox backend. Use browser_snapshot or browser_vision.",
-        }
-    )
+    return json.dumps({
+        "success": True,
+        "console_messages": [],
+        "js_errors": [],
+        "total_messages": 0,
+        "total_errors": 0,
+        "note": "Console log capture is not available with the Camofox backend. Use browser_snapshot or browser_vision.",
+    })

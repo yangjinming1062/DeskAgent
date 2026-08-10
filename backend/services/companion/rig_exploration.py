@@ -81,9 +81,9 @@ async def run() -> int:
         inspect_path = GLB_PATH
     print(f"  1. open {GLB_PATH} in Blender (5.2 LTS confirmed) or run")
     print(f"     ``glTF-Transform inspect {inspect_path}``")
-    print(f"  2. read the bone names from ``skins[].joints[]`` (probably named after the original glTF node names)")
-    print(f"  3. populate ``TRIPO_QUADRUPED_BONES`` in client/renderer/companion/3d/clips-quadruped.ts (and the other rig libraries)")
-    print(f"     with the actual names so the placeholder 2-keyframe clips become valid AnimationTracks.")
+    print("  2. read the bone names from ``skins[].joints[]`` (probably named after the original glTF node names)")
+    print("  3. populate ``TRIPO_QUADRUPED_BONES`` in client/renderer/companion/3d/clips-quadruped.ts (and the other rig libraries)")
+    print("     with the actual names so the placeholder 2-keyframe clips become valid AnimationTracks.")
     return 0
 
 
