@@ -188,5 +188,14 @@ app.middleware("http")(correlation_id_middleware)
 app.add_exception_handler(Exception, correlated_exception_response)
 app.add_exception_handler(RateLimitExceeded, rate_limit_exception_handler)
 app.mount("/updates", StaticFiles(directory=str(Path("updates").absolute())), name="updates")
+
+
+# Root-mounted so external Docker HEALTHCHECK / k8s livenessProbe /
+# uptime probes (which default to /health) don't 404.
+@app.get("/health")
+def health() -> dict[str, str]:
+    return {"status": "ok"}
+
+
 for _router in ROUTERS:
     app.include_router(_router)
