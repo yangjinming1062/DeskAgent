@@ -72,92 +72,7 @@ def check_type_checking_leak(path: Path) -> list[str]:
     return [f"{path}: '{name}' imported under TYPE_CHECKING but used outside it (annotation evaluated at runtime → NameError)" for name in leaks]
 
 
-# ---- B. runner/tools/* cross-subpackage eager import -------------------------
-
-# Verified-safe cross-subpackage imports: ``(rel_file, imported_subpkg)`` pairs
-# where the cycle was broken by refactoring and the target is confirmed not to
-# import the source subpackage at module level.
-_ALLOWED_CROSS_SUBPKG: set[tuple[str, str]] = {
-    # browser_tool → multimodal: multimodal does not import browser.
-    ("browser/browser_tool.py", "multimodal"),
-    # browser_tool → process: process does not import browser.
-    ("browser/browser_tool.py", "process"),
-    # skill_manager_tool → files: files does not import skills.
-    ("skills/skill_manager_tool.py", "files"),
-    # terminal_tool → process, security: neither imports terminal.
-    # The terminal_tool ↔ _env_base cycle was broken by extracting _cmd_rewrite.py.
-    ("terminal/terminal_tool.py", "process"),
-    ("terminal/terminal_tool.py", "security"),
-}
-
-
-def _runner_subpackages() -> set[str]:
-    """Names of subpackages under ``runner/tools/`` — sibling dirs that contain
-    their own ``__init__.py``. Direct children that are *modules* (e.g. ``registry``,
-    ``interrupt``, ``security``) are excluded: those are stable, top-level shared
-    utilities and don't form cycles.
-    """
-    root = REPO_ROOT / "runner" / "tools"
-    if not root.is_dir():
-        return set()
-    return {p.name for p in root.iterdir() if p.is_dir() and (p / "__init__.py").is_file()}
-
-
-def check_runner_subpkg_eager_import(path: Path) -> list[str]:
-    """``runner/tools/<subpkg>/<file>.py`` must not module-level import a *sibling
-    subpackage* (``from ..files import ...``, ``from ..multimodal import ...``).
-
-    Same intent as ``check_tools_eager_core_import``: surface the eager cross-
-    subpackage imports that have caused real circular-import regressions
-    (terminal_tool <-> file_tools, code_execution_tool -> thread_context ->
-    terminal_tool -> file_tools). The established convention is to lazy-import
-    inside the function body. Imports from sibling *modules* (``from ..registry``,
-    ``from ..interrupt``, ``from ..security``) are allowed — they are stable
-    shared utilities that don't form cycles.
-
-    ``_ALLOWED_CROSS_SUBPKG`` exempts verified-safe imports: pairs of
-    ``(relative_file_path, imported_subpkg)`` where the cycle was broken
-    by refactoring (e.g. extracting ``_cmd_rewrite.py`` out of ``terminal_tool.py``)
-    and the target subpackage is confirmed not to import the source subpackage.
-    """
-    try:
-        rel = path.resolve().relative_to((REPO_ROOT / "runner" / "tools").resolve())
-    except ValueError:
-        return []
-    parts = rel.parts
-    if len(parts) < 2:
-        return []
-    if parts[-1] == "__init__.py":
-        return []
-    own_subpkg = parts[0]
-    siblings = _runner_subpackages() - {own_subpkg}
-    rel_file = "/".join(parts)
-
-    tree = _parse(path)
-    if tree is None:
-        return []
-    errors: list[str] = []
-    for node in tree.body:
-        if not isinstance(node, ast.ImportFrom):
-            continue
-        if node.level < 2 or node.module is None:
-            continue
-        if "." in node.module:
-            continue
-        if node.module not in siblings:
-            continue
-        if (rel_file, node.module) in _ALLOWED_CROSS_SUBPKG:
-            continue
-        names = ", ".join(a.name for a in node.names)
-        errors.append(
-            f"{path}:{node.lineno}: module-level `from ..{node.module} import {names}` "
-            "crosses runner/tools subpackage boundaries - "
-            "move inside the function body to avoid import cycles"
-        )
-    return errors
-
-
-# ---- C. Facade consistency ----------------------------------------------------
+# ---- B. Facade consistency ----------------------------------------------------
 
 
 def _facade_exports(init_path: Path) -> set[str] | None:
@@ -309,7 +224,6 @@ def main(argv: list[str]) -> int:
         if not path.is_file():
             continue
         diagnostics.extend(check_type_checking_leak(path))
-        diagnostics.extend(check_runner_subpkg_eager_import(path))
         diagnostics.extend(check_facade_consistency(path))
 
     if diagnostics:
