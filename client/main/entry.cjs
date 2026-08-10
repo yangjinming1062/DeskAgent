@@ -778,7 +778,7 @@ async function waitForDeskAgent(baseUrl, token) {
 
   while (Date.now() < deadline) {
     try {
-      await fetchJson(`${baseUrl}/api/health`, token)
+      await fetchJson(`${baseUrl}/health`, token)
       return
     } catch (error) {
       lastError = error

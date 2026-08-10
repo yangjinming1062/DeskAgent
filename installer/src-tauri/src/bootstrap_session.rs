@@ -144,7 +144,7 @@ fn now_ms() -> i64 {
 #[tauri::command]
 pub async fn verify_backend(args: VerifyBackendArgs) -> Result<bool, String> {
     let normalized = normalize_base_url(&args.base_url)?;
-    let health_url = format!("{}/api/health", normalized);
+    let health_url = format!("{}/health", normalized);
     let response = HTTP
         .get(&health_url)
         .timeout(VERIFY_TIMEOUT)
