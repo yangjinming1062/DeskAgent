@@ -136,16 +136,21 @@ type BootstrapEvent =
   | BootstrapFailedEvent
 
 let unlisten: UnlistenFn | null = null
+let routeTimer: ReturnType<typeof setTimeout> | null = null
+
+function clearRouteTimer(): void {
+  if (routeTimer != null) {
+    clearTimeout(routeTimer)
+    routeTimer = null
+  }
+}
 
 export async function initialize(): Promise<void> {
   if (unlisten) return
 
-  // Install-mode listeners need cleanup too — the installer window is a long-
-  // lived route (welcome → progress → success/failure), and React 19's StrictMode
-  // double-invokes effects in dev, so without the cleanup registration the
-  // second mount leaves the first listener dangling. store.ts owns the singleton
-  // via the module-level `unlisten` so we can call it from a route teardown.
+  // Clean up IPC listeners and route timers when the installer window unloads.
   const cleanup = () => {
+    clearRouteTimer()
     if (unlisten) {
       unlisten()
       unlisten = null
@@ -173,6 +178,7 @@ export async function initialize(): Promise<void> {
     const cur = $bootstrap.get()
     switch (payload.type) {
       case 'manifest': {
+        clearRouteTimer()
         const stages: Record<string, StageRecord> = {}
         const order: string[] = []
         for (const s of payload.stages) {
@@ -222,22 +228,30 @@ export async function initialize(): Promise<void> {
         break
       }
       case 'complete':
+        clearRouteTimer()
         $bootstrap.set({
           ...cur,
           status: 'completed',
           installRoot: payload.installRoot,
           currentStage: null
         })
-        $route.set('success')
+        routeTimer = setTimeout(() => {
+          routeTimer = null
+          $route.set('success')
+        }, 2200)
         break
       case 'failed':
+        clearRouteTimer()
         $bootstrap.set({
           ...cur,
           status: 'failed',
           error: payload.error,
           currentStage: null
         })
-        $route.set('failure')
+        routeTimer = setTimeout(() => {
+          routeTimer = null
+          $route.set('failure')
+        }, 1500)
         break
     }
   })
@@ -248,6 +262,7 @@ export async function initialize(): Promise<void> {
 // ---------------------------------------------------------------------------
 
 export async function startInstall(): Promise<void> {
+  clearRouteTimer()
   // Reset before kicking off so a retry from the failure screen clears
   // the previous run's state. The optional `branch` field was removed —
   // the install script is bundled and pinned at build time
@@ -266,6 +281,7 @@ export async function startInstall(): Promise<void> {
 }
 
 export async function cancelInstall(): Promise<void> {
+  clearRouteTimer()
   await invoke('cancel_bootstrap')
 }
 

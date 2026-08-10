@@ -48,6 +48,9 @@
   --color-destructive-foreground: #ffffff;
   --color-midground: #0053fd;
   --color-midground-foreground: #ffffff;
+  --color-primary-soft: color-mix(in srgb, #0053fd 22%, transparent);
+  --color-egg-shell: #fff4d6;
+  --color-crack-glow: #ffd166;
 }
 
 @layer utilities {
@@ -143,8 +146,80 @@
   50% { opacity: 0.9; }
 }
 
+@keyframes deskagent-egg-pulse {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 0.85;
+  }
+  50% {
+    transform: scale(1.03);
+    opacity: 1;
+  }
+}
+
+.animate-egg-pulse {
+  animation: deskagent-egg-pulse 3.4s ease-in-out infinite;
+}
+
+@keyframes deskagent-crack-flash {
+  0% {
+    stroke-width: 5;
+    opacity: 1;
+    filter: drop-shadow(0 0 8px #ffd166);
+  }
+  50% {
+    stroke-width: 3.5;
+    opacity: 0.95;
+    filter: drop-shadow(0 0 4px #ffd166);
+  }
+  100% {
+    stroke-width: 2;
+    opacity: 0.85;
+    filter: none;
+  }
+}
+
+.animate-crack-flash {
+  animation: deskagent-crack-flash 0.6s ease-out;
+}
+
+@keyframes deskagent-egg-tremor {
+  0%, 100% { transform: translate(0, 0) rotate(0deg); }
+  20% { transform: translate(-3px, 1px) rotate(-1.5deg); }
+  40% { transform: translate(3px, -1px) rotate(1.5deg); }
+  60% { transform: translate(-2px, 0px) rotate(-1deg); }
+  80% { transform: translate(2px, 0px) rotate(1deg); }
+}
+
+.animate-egg-tremor {
+  animation: deskagent-egg-tremor 0.6s ease-in-out;
+}
+
+@keyframes deskagent-warm-glow {
+  0% {
+    transform: scale(0.5);
+    opacity: 0.3;
+  }
+  50% {
+    transform: scale(1.15);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 0.9;
+  }
+}
+
+.animate-warm-glow {
+  animation: deskagent-warm-glow 1.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .deskagent-glow {
-    animation: none;
+  .deskagent-glow,
+  .animate-egg-pulse,
+  .animate-crack-flash,
+  .animate-egg-tremor,
+  .animate-warm-glow {
+    animation: none !important;
   }
 }

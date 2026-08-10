@@ -18,6 +18,8 @@ interface ProcParts {
   leftEye: THREE.Mesh
   rightEye: THREE.Mesh
   mouth: THREE.Mesh
+  cracks?: THREE.Line[]
+  crackMats?: THREE.LineBasicMaterial[]
   group: THREE.Group
 }
 
@@ -182,10 +184,18 @@ export class CharacterController {
       this.currentPbrTex[channel] = null
     }
 
+    if (this.proc?.cracks) {
+      this.proc.cracks.forEach(c => c.geometry?.dispose())
+    }
+
+    if (this.proc?.crackMats) {
+      this.proc.crackMats.forEach(m => m.dispose())
+    }
+
     this.isProcedural = false
     this.proc = null
     this.root.traverse(child => {
-      if (child instanceof THREE.Mesh) {
+      if (child instanceof THREE.Mesh || child instanceof THREE.Line || child instanceof THREE.LineSegments) {
         child.geometry?.dispose()
         const mats = Array.isArray(child.material) ? child.material : [child.material]
 
@@ -196,11 +206,13 @@ export class CharacterController {
 
           // Dispose PBR textures before the material — material.dispose() doesn't release GPU texture refs.
           // currentPbrTex tracks the setOutfit-loaded ones (disposed above); this sweep also covers GLB-baked textures that live only on materials. dispose() is idempotent.
-          for (const key of PBR_TEXTURE_KEYS) {
-            const tex = getPbrSlot(mat, key)
+          if (mat instanceof THREE.MeshStandardMaterial) {
+            for (const key of PBR_TEXTURE_KEYS) {
+              const tex = getPbrSlot(mat, key)
 
-            if (tex) {
-              tex.dispose()
+              if (tex) {
+                tex.dispose()
+              }
             }
           }
 
@@ -524,7 +536,9 @@ export class CharacterController {
     const bodyGeo = new THREE.SphereGeometry(0.5, 48, 48)
 
     const bodyMat = new THREE.MeshStandardMaterial({
-      color: 0xeae0d0,
+      color: 0xfff4d6,
+      emissive: 0x332200,
+      emissiveIntensity: 0.15,
       roughness: 0.55,
       metalness: 0.0
     })
@@ -546,12 +560,50 @@ export class CharacterController {
     group.add(rightEye)
 
     const mouthGeo = new THREE.BoxGeometry(0.1, 0.015, 0.02)
-    const mouthMat = new THREE.MeshStandardMaterial({ color: 0x9a6b4a, roughness: 0.4 })
+    const mouthMat = new THREE.MeshStandardMaterial({ color: 0xc89060, roughness: 0.4 })
     const mouth = new THREE.Mesh(mouthGeo, mouthMat)
     mouth.position.set(0, 1.04, 0.4)
     group.add(mouth)
 
-    this.proc = { body, leftEye, rightEye, mouth, group }
+    // Prefabricated crack line decorations on shell surface
+    const cracks: THREE.Line[] = []
+    const crackMats: THREE.LineBasicMaterial[] = []
+
+    const crackPathsPoints = [
+      // Crack 1: Upper left
+      [
+        new THREE.Vector3(-0.15, 1.3, 0.42),
+        new THREE.Vector3(-0.25, 1.22, 0.38),
+        new THREE.Vector3(-0.2, 1.12, 0.43),
+        new THREE.Vector3(-0.32, 1.05, 0.35)
+      ],
+      // Crack 2: Mid right
+      [
+        new THREE.Vector3(0.25, 1.1, 0.4),
+        new THREE.Vector3(0.35, 1.0, 0.32),
+        new THREE.Vector3(0.28, 0.9, 0.39),
+        new THREE.Vector3(0.38, 0.82, 0.28)
+      ],
+      // Crack 3: Lower left
+      [new THREE.Vector3(-0.2, 0.85, 0.42), new THREE.Vector3(-0.28, 0.78, 0.36), new THREE.Vector3(-0.18, 0.7, 0.41)]
+    ]
+
+    crackPathsPoints.forEach(pts => {
+      const geo = new THREE.BufferGeometry().setFromPoints(pts)
+
+      const mat = new THREE.LineBasicMaterial({
+        color: 0xffd166,
+        transparent: true,
+        opacity: 0.4
+      })
+
+      const crackLine = new THREE.Line(geo, mat)
+      group.add(crackLine)
+      cracks.push(crackLine)
+      crackMats.push(mat)
+    })
+
+    this.proc = { body, leftEye, rightEye, mouth, cracks, crackMats, group }
     this.root = group
     scene.add(group)
   }
@@ -562,7 +614,33 @@ export class CharacterController {
     }
 
     const t = this.breathPhase
-    const breath = Math.sin(t * 1.7) * 0.5 + 0.5
+
+    // 3.4s emissive breathing cycle matching login-glow and installer glow
+    const reducedMotion =
+      typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches
+
+    const breath = reducedMotion ? 0.5 : Math.sin((t * 2 * Math.PI) / 3.4) * 0.5 + 0.5
+    const bodyMat = this.proc.body.material as THREE.MeshStandardMaterial
+
+    if (reducedMotion) {
+      bodyMat.emissiveIntensity = 0.35
+    } else {
+      bodyMat.emissiveIntensity = 0.15 + 0.4 * breath
+
+      // 12s periodic crack opacity flash
+      if (this.proc.crackMats && this.proc.crackMats.length > 0) {
+        const cycle = t % 12
+        const activeIdx = Math.floor(t / 12) % this.proc.crackMats.length
+        this.proc.crackMats.forEach((mat, idx) => {
+          if (idx === activeIdx && cycle < 0.6) {
+            const flashWave = Math.sin((cycle / 0.6) * Math.PI)
+            mat.opacity = 0.4 + 0.5 * flashWave
+          } else {
+            mat.opacity = 0.4
+          }
+        })
+      }
+    }
 
     // Reset transforms each frame
     this.proc.group.position.y = 0

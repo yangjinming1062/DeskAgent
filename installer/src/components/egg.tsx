@@ -1,0 +1,164 @@
+import { useEffect, useState } from 'react'
+import clsx from 'clsx'
+
+export type EggPhase = 'idle' | 'cracking' | 'hatching' | 'hatched' | 'failed'
+
+interface EggProps {
+  cracks: number
+  phase?: EggPhase
+  size?: number
+  className?: string
+}
+
+// 6 preset crack SVG path definitions radiating towards egg center
+const CRACK_PATHS = [
+  // Crack 1: Top-left fracture
+  'M 160 70 L 148 95 L 155 115 L 140 135',
+  // Crack 2: Upper-right branch
+  'M 230 140 L 205 148 L 195 135 L 180 155',
+  // Crack 3: Lower-left fork
+  'M 90 210 L 115 200 L 125 215 L 145 195',
+  // Crack 4: Mid-left zigzag
+  'M 80 145 L 105 150 L 115 165 L 138 160',
+  // Crack 5: Top-right deep notch
+  'M 175 60 L 180 88 L 168 105 L 175 125',
+  // Crack 6: Deep center split connecting core
+  'M 160 270 L 165 240 L 152 215 L 160 170'
+]
+
+export function Egg({
+  cracks,
+  phase = 'idle',
+  size = 320,
+  className
+}: EggProps) {
+  const [flashingIdx, setFlashingIdx] = useState<number | null>(null)
+
+  useEffect(() => {
+    if (cracks > 0) {
+      setFlashingIdx(cracks - 1)
+      const timer = setTimeout(() => setFlashingIdx(null), 600)
+      return () => clearTimeout(timer)
+    } else {
+      setFlashingIdx(null)
+    }
+  }, [cracks])
+
+  const visibleCracks = Math.min(6, Math.max(0, cracks))
+  const isFailed = phase === 'failed'
+  const isCracking = phase === 'cracking'
+  const isHatching = phase === 'hatching'
+  const isHatched = phase === 'hatched'
+
+  return (
+    <div
+      className={clsx(
+        'relative flex items-center justify-center select-none',
+        isFailed && 'animate-egg-tremor',
+        isCracking && !isFailed && 'scale-[1.01] transition-transform duration-300',
+        className
+      )}
+      style={{ width: size, height: size }}
+    >
+      <svg
+        viewBox="0 0 320 320"
+        width={size}
+        height={size}
+        className="overflow-visible"
+        aria-label="DeskAgent Egg"
+      >
+        <defs>
+          {/* Ambient background glow */}
+          <radialGradient id="egg-ambient-glow" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stopColor="#ffd166" stopOpacity="0.45" />
+            <stop offset="60%" stopColor="#ffd166" stopOpacity="0.15" />
+            <stop offset="100%" stopColor="#ffd166" stopOpacity="0" />
+          </radialGradient>
+
+          {/* Hatching core warm light */}
+          <radialGradient id="egg-core-light" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stopColor="#ffffff" stopOpacity="1" />
+            <stop offset="35%" stopColor="#fff4d6" stopOpacity="0.95" />
+            <stop offset="70%" stopColor="#ffd166" stopOpacity="0.8" />
+            <stop offset="100%" stopColor="#0053fd" stopOpacity="0" />
+          </radialGradient>
+
+          {/* Crack glow filter */}
+          <filter id="crack-glow-filter" x="-20%" y="-20%" width="140%" height="140%">
+            <feGaussianBlur stdDeviation="2" result="blur" />
+            <feMerge>
+              <feMergeNode in="blur" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+        </defs>
+
+        {/* Ambient radial glow behind egg */}
+        {!isHatched && (
+          <ellipse
+            cx="160"
+            cy="170"
+            rx="125"
+            ry="135"
+            fill="url(#egg-ambient-glow)"
+            className={clsx(!isFailed && 'animate-egg-pulse')}
+          />
+        )}
+
+        {/* Core warm orb revealed during hatching */}
+        {(isHatching || isHatched) && (
+          <g className="animate-warm-glow">
+            <circle cx="160" cy="170" r="75" fill="url(#egg-core-light)" />
+            <circle cx="160" cy="170" r="35" fill="#ffffff" opacity="0.9" />
+          </g>
+        )}
+
+        {/* Main Egg Shell */}
+        {!isHatched && (
+          <g
+            className={clsx(
+              'transition-all duration-700 ease-out',
+              isHatching && 'scale-125 opacity-0'
+            )}
+            style={{ transformOrigin: '160px 170px' }}
+          >
+            {/* Outer shell path */}
+            <path
+              d="M 160 50 C 95 50 75 135 75 185 C 75 245 112 290 160 290 C 208 290 245 245 245 185 C 245 135 225 50 160 50 Z"
+              fill="var(--color-egg-shell, #fff4d6)"
+              stroke="color-mix(in srgb, var(--color-foreground, #17171a) 12%, transparent)"
+              strokeWidth="2"
+            />
+
+            {/* Render cracks */}
+            {CRACK_PATHS.slice(0, visibleCracks).map((pathD, idx) => {
+              const isFlashing = flashingIdx === idx
+              const strokeColor = isFailed
+                ? 'var(--color-destructive, #cf2d56)'
+                : isFlashing
+                  ? 'var(--color-crack-glow, #ffd166)'
+                  : 'color-mix(in srgb, var(--color-foreground, #17171a) 55%, #ffd166)'
+
+              return (
+                <path
+                  key={idx}
+                  d={pathD}
+                  fill="none"
+                  stroke={strokeColor}
+                  strokeWidth={isFlashing ? 4 : 2.5}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  filter={isFailed ? undefined : 'url(#crack-glow-filter)'}
+                  className={clsx(
+                    'transition-all duration-300',
+                    isFlashing && 'animate-crack-flash'
+                  )}
+                />
+              )
+            })}
+          </g>
+        )}
+      </svg>
+    </div>
+  )
+}
