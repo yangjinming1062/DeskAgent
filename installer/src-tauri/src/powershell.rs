@@ -55,8 +55,6 @@ pub struct BundleContext {
     /// grouped by language. Copied to `$DESKAGENT_HOME/audio/onboarding/<lang>/`
     /// during unpack-runner.
     pub bundled_onboarding_audio_dir: Option<std::path::PathBuf>,
-    /// `<bundle>/payload/config.yaml` — Stage-WriteConfig source.
-    pub config_path: Option<std::path::PathBuf>,
     /// `dmg` | `nsis` — tells the unpack-desktop stage what to do
     /// with the desktop artifact (hdiutil attach / NSIS /S).
     pub installer_format: Option<String>,
@@ -110,9 +108,6 @@ pub async fn run_script(
     }
     if let Some(p) = &bundle.bundled_onboarding_audio_dir {
         cmd.env("DESKAGENT_BUNDLED_ONBOARDING_AUDIO_DIR", p);
-    }
-    if let Some(p) = &bundle.config_path {
-        cmd.env("DESKAGENT_CONFIG_PATH", p);
     }
     if let Some(fmt) = &bundle.installer_format {
         cmd.env("DESKAGENT_INSTALLER_FORMAT", fmt);

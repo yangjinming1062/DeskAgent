@@ -3352,7 +3352,7 @@ def reload_mcp_servers() -> dict:
 
     Called by the ``mcp.reload`` first-class JSON-RPC method (server.py) in
     response to a backend ``reload.mcp`` request. Re-reads
-    ``$DESKAGENT_HOME/config.yaml`` on each call so the next ``mcp_*`` tool call
+    the in-memory config on each call so the next ``mcp_*`` tool call
     has live tools without needing a Runner restart.
 
     Returns ``{"reloaded": int, "errors": int, "servers": int, "connected": int}``

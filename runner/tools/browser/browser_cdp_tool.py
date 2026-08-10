@@ -26,7 +26,7 @@ BROWSER_CDP_SCHEMA: dict[str, Any] = {
         "browser_console, etc.\n\n"
         "**Requires a reachable CDP endpoint.** Available when the user has "
         "run '/browser connect' to attach to a running Chrome, Brave, Chromium, "
-        "or Edge browser, or when 'browser.cdp_url' is set in config.yaml. "
+        "or Edge browser, or when 'browser.cdp_url' is set in Desktop settings. "
         "If the tool is in your toolset at all, a CDP endpoint is already reachable.\n\n"
         f"**CDP method reference:** {CDP_DOCS_URL}"
     ),

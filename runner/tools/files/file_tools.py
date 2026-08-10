@@ -54,7 +54,7 @@ _EXPECTED_WRITE_ERRNOS = {errno.EACCES, errno.EPERM, errno.EROFS}
 # this in a single read are a context-window hazard — the model should use
 # offset+limit to read the relevant section.
 #
-# Configurable via config.yaml:  file_read_max_chars: 200000
+# Configurable via the in-memory config (pushed by Desktop):  file_read_max_chars: 200000
 
 _DEFAULT_MAX_READ_CHARS = 100_000
 _max_read_chars_cached: int | None = None
@@ -63,8 +63,8 @@ _max_read_chars_cached: int | None = None
 def _get_max_read_chars() -> int:
     """Return the configured max characters per file read.
 
-    Reads ``file_read_max_chars`` from config.yaml on first call, caches
-    the result for the lifetime of the process.  Falls back to the
+    Reads ``file_read_max_chars`` from the in-memory config on first call,
+    caches the result for the lifetime of the process.  Falls back to the
     built-in default if the config is missing or invalid.
     """
     global _max_read_chars_cached
@@ -83,7 +83,7 @@ def _get_max_read_chars() -> int:
 
 
 def reset_max_read_chars_cache() -> None:
-    """Clear the cached file_read_max_chars so the next call re-reads config.yaml."""
+    """Clear the cached file_read_max_chars so the next call re-reads the config."""
     global _max_read_chars_cached
     _max_read_chars_cached = None
 
@@ -386,16 +386,22 @@ _deskagent_config_resolved_loaded = False
 
 
 def _get_deskagent_config_resolved() -> str | None:
-    """Return the resolved absolute path of the DeskAgent config file (cached)."""
+    """Return the resolved absolute path of the DeskAgent settings file (cached).
+
+    The Desktop persists runner config as ``desktop-settings.json`` in
+    ``$DESKAGENT_HOME``; protecting it from agent writes prevents a malicious
+    or prompt-injected agent from silently corrupting security-sensitive
+    configuration.
+    """
     global _deskagent_config_resolved, _deskagent_config_resolved_loaded
     if _deskagent_config_resolved_loaded:
         return _deskagent_config_resolved
     _deskagent_config_resolved_loaded = True
     try:
-        _deskagent_config_resolved = str((get_deskagent_home() / "config.yaml").resolve())
+        _deskagent_config_resolved = str((get_deskagent_home() / "desktop-settings.json").resolve())
     except Exception:
         try:
-            _deskagent_config_resolved = str(Path("~/.deskagent/config.yaml").expanduser().resolve())
+            _deskagent_config_resolved = str(Path("~/.deskagent/desktop-settings.json").expanduser().resolve())
         except Exception:
             _deskagent_config_resolved = None
     return _deskagent_config_resolved
@@ -429,16 +435,16 @@ def _check_sensitive_path(filepath: str, task_id: str = "default") -> str | None
             return _err
     if resolved in _SENSITIVE_EXACT_PATHS or normalized in _SENSITIVE_EXACT_PATHS:
         return _err
-    # Prevent agents from modifying the DeskAgent config file directly.
-    # approvals.mode and other security settings live here; a malicious or
+    # Prevent agents from modifying the DeskAgent settings file directly.
+    # Security-sensitive configuration lives here; a malicious or
     # prompt-injected agent could silently disable exec approval by writing to
     # this file.
     deskagent_config = _get_deskagent_config_resolved()
     if deskagent_config and (resolved == deskagent_config or normalized == deskagent_config):
         return (
-            f"Refusing to write to DeskAgent config file: {filepath}\n"
+            f"Refusing to write to DeskAgent settings file: {filepath}\n"
             "Agent cannot modify security-sensitive configuration. "
-            "Edit ~/.deskagent/config.yaml directly or use 'deskagent config' instead."
+            "Change settings via the Desktop settings page instead."
         )
     return None
 

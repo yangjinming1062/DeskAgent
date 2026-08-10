@@ -229,7 +229,7 @@ export const strings: Translations = {
     skills: {
       title: '技能',
       intro:
-        '下方每一项对应 $DESKAGENT_HOME/skills 下的一个 category 目录。开启或关闭会重写本地 config.yaml 并重启执行器;启用集会在每个对话轮次发给后端,让模型只看到你能调用的本地技能。',
+        '下方每一项对应 $DESKAGENT_HOME/skills 下的一个 category 目录。开启或关闭会即时推送给执行器;启用集会在每个对话轮次发给后端,让模型只看到你能调用的本地技能。',
       loading: '正在加载技能…',
       loadError: '无法从磁盘读取技能列表。',
       saveError: '无法保存技能开关。',

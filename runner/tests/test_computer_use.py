@@ -188,16 +188,14 @@ class TestHandleComputerUseEarlyReturns:
 
     def test_noop_backend_refuses_to_dispatch(self):
         # Force the noop backend to be selected by setting backend="noop".
-        from utils import load_config
+        from utils.config import set_inmemory_config
 
-        config = load_config()
-        config.setdefault("computer_use", {})["backend"] = "noop"
-        # Don't persist — we only need the in-memory cache to resolve to _NoopBackend.
+        set_inmemory_config({"computer_use": {"backend": "noop"}})
         try:
             result = json.loads(handle_computer_use({"action": "click", "coordinate": [10, 10]}))
             assert "backend unavailable" in result["error"]
         finally:
-            config.pop("computer_use", None)
+            set_inmemory_config({})
 
 
 # The eviction helper lives in the backend package — its tests are colocated

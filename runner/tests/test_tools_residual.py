@@ -459,38 +459,52 @@ class TestUrlSafety:
 
 
 class TestWebsitePolicy:
-    def test_check_access_normalizes_url(self, tmp_path, monkeypatch):
+    def test_check_access_normalizes_url(self):
         """Host normalization MUST lowercase and strip leading www. for matching."""
+        import utils.url_safety as url_safety
         from utils import check_website_access
+        from utils.config import set_inmemory_config
 
-        config = tmp_path / "policy.yaml"
-        config.write_text("block:\n  - example.com\n")
-        # No cache busting needed; this is a fresh module load per test process.
+        url_safety._cached_policy = None
+        set_inmemory_config({"security": {"website_blocklist": {"enabled": True, "domains": ["example.com"]}}})
+        try:
+            out = check_website_access("https://WWW.Example.COM/path")
+            if out is not None:
+                assert out.get("host") == "example.com" or "example.com" in str(out)
+        finally:
+            set_inmemory_config({})
+            url_safety._cached_policy = None
 
-        out = check_website_access("https://WWW.Example.COM/path", config_path=config)
-        # ``check_website_access`` returns either a denial dict or None.
-        if out is not None:
-            assert out.get("host") == "example.com" or "example.com" in str(out)
-
-    def test_load_blocklist_handles_missing_config(self, tmp_path):
+    def test_load_blocklist_empty_when_no_config(self):
+        import utils.url_safety as url_safety
         from utils import load_website_blocklist
+        from utils.config import set_inmemory_config
 
-        # Missing file → empty blocklist.
-        out = load_website_blocklist(config_path=tmp_path / "nope.yaml")
-        # Default shape: ``{"enabled": ..., "rules": [...]}``.
-        assert isinstance(out, dict)
-        rules = out.get("rules", [])
-        assert rules == []
+        url_safety._cached_policy = None
+        set_inmemory_config({})
+        try:
+            out = load_website_blocklist()
+            assert isinstance(out, dict)
+            assert out.get("rules", []) == []
+        finally:
+            set_inmemory_config({})
+            url_safety._cached_policy = None
 
-    def test_load_blocklist_reads_yaml(self, tmp_path):
+    def test_load_blocklist_reads_config(self):
+        import utils.url_safety as url_safety
         from utils import load_website_blocklist
+        from utils.config import set_inmemory_config
 
-        cfg = tmp_path / "policy.yaml"
-        cfg.write_text("security:\n  website_blocklist:\n    domains:\n      - foo.com\n      - bar.com\n")
-        out = load_website_blocklist(config_path=cfg)
-        rules = out.get("rules", [])
-        assert any(r.get("pattern") == "foo.com" for r in rules)
-        assert any(r.get("pattern") == "bar.com" for r in rules)
+        url_safety._cached_policy = None
+        set_inmemory_config({"security": {"website_blocklist": {"enabled": True, "domains": ["foo.com", "bar.com"]}}})
+        try:
+            out = load_website_blocklist()
+            rules = out.get("rules", [])
+            assert any(r.get("pattern") == "foo.com" for r in rules)
+            assert any(r.get("pattern") == "bar.com" for r in rules)
+        finally:
+            set_inmemory_config({})
+            url_safety._cached_policy = None
 
 
 # ---------------------------------------------------------------------------

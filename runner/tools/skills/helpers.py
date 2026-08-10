@@ -46,7 +46,7 @@ def get_deskagent_metadata(frontmatter: dict[str, Any] | None) -> dict[str, Any]
 
 
 def get_disabled_skill_names(section: str = "skills") -> set[str]:
-    """Read the ``<section>.disabled`` list from ``~/.deskagent/config.yaml``.
+    """Read the ``<section>.disabled`` list from the in-memory config.
 
     ``section`` defaults to ``"skills"``; pass ``"toolsets"`` to share the
     same parse path for the sibling toolsets section.

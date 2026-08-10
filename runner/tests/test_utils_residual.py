@@ -27,6 +27,7 @@ from utils.config import cfg_json
 from utils.config import cfg_str
 from utils.config import is_truthy_value
 from utils.config import load_config
+from utils.config import set_inmemory_config
 from utils.constants import CREATE_NO_WINDOW
 from utils.constants import get_deskagent_dir
 from utils.constants import get_deskagent_home
@@ -601,48 +602,46 @@ class TestConfigHelpers:
         finally:
             monkeypatch.setattr(config, "load_config", real)
 
-    def test_load_config_missing_returns_empty(self, monkeypatch, tmp_path):
-        """Missing config.yaml MUST NOT raise — return ``{}``."""
-        monkeypatch.setenv("DESKAGENT_HOME", str(tmp_path))
-        # Force cache reset so the new HOME is observed.
-        _CONFIG_CACHE = None
-        _CONFIG_CACHE_MTIME = None
+    def test_load_config_empty_before_first_push(self):
+        """Before the Desktop pushes config, load_config() returns ``{}``."""
+        import utils.config as config
+
+        saved = config._INMEMORY_CONFIG
+        config._INMEMORY_CONFIG = None
         try:
             assert load_config() == {}
         finally:
-            _CONFIG_CACHE = None
-            _CONFIG_CACHE_MTIME = None
+            config._INMEMORY_CONFIG = saved
 
-    def test_load_config_invalid_yaml_returns_empty(self, monkeypatch, tmp_path):
-        monkeypatch.setenv("DESKAGENT_HOME", str(tmp_path))
-        (tmp_path / "config.yaml").write_text(": not yaml [")
-        _CONFIG_CACHE = None
-        _CONFIG_CACHE_MTIME = None
+    def test_set_inmemory_config_then_load(self):
+        """set_inmemory_config makes load_config() return the pushed dict."""
+        import utils.config as config
+
+        saved = config._INMEMORY_CONFIG
         try:
+            set_inmemory_config({"terminal": {"timeout": 60}})
+            assert load_config() == {"terminal": {"timeout": 60}}
+            # A second push replaces the first.
+            set_inmemory_config({"security": {"redact_secrets": False}})
+            assert load_config() == {"security": {"redact_secrets": False}}
+        finally:
+            config._INMEMORY_CONFIG = saved
+
+    def test_set_inmemory_config_rejects_non_dict(self):
+        """Non-dict payloads must raise so a malformed push can't poison consumers."""
+        import utils.config as config
+
+        saved = config._INMEMORY_CONFIG
+        config._INMEMORY_CONFIG = None
+        try:
+            with pytest.raises(TypeError):
+                set_inmemory_config("not a dict")
+            with pytest.raises(TypeError):
+                set_inmemory_config(["list"])
+            # Rejection must not mutate the existing config.
             assert load_config() == {}
         finally:
-            _CONFIG_CACHE = None
-            _CONFIG_CACHE_MTIME = None
-
-    def test_load_config_caches_per_mtime(self, monkeypatch, tmp_path):
-        monkeypatch.setenv("DESKAGENT_HOME", str(tmp_path))
-        cfg_file = tmp_path / "config.yaml"
-        cfg_file.write_text("a: 1\n")
-        _CONFIG_CACHE = None
-        _CONFIG_CACHE_MTIME = None
-        try:
-            first = load_config()
-            assert first == {"a": 1}
-            # Without mtime change, second call returns cached object.
-            second = load_config()
-            assert second is first  # identity, not equality
-            # Edit config; mtime advances.
-            cfg_file.write_text("a: 2\n")
-            third = load_config()
-            assert third == {"a": 2}
-        finally:
-            _CONFIG_CACHE = None
-            _CONFIG_CACHE_MTIME = None
+            config._INMEMORY_CONFIG = saved
 
 
 class TestCheckRedirectUrlSafety:

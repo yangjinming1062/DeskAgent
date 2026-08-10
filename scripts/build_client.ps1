@@ -97,15 +97,14 @@ function Stage-Payload {
     # Also copy server.py into the payload so install scripts deploy it to $DESKAGENT_HOME/runner/
     Copy-Item -Force (Join-Path $RepoRoot "runner\server.py") (Join-Path $payloadRunner "server.py")
 
-    # Junction skills/install scripts/config.yaml into the payload dir.
+    # Junction skills/install scripts into the payload dir.
     # Junctions are Windows-native symbolic links to directories; hardlinks
     # work for the .sh / .ps1 files. All sources are inside the repo's
     # installer/ subtree so relative resolution at bundle time stays simple.
     $skillsLink = Join-Path $RepoRoot "installer\payload\skills"
     $installShLink = Join-Path $RepoRoot "installer\payload\install.sh"
     $installPs1Link = Join-Path $RepoRoot "installer\payload\install.ps1"
-    $cfgLink = Join-Path $RepoRoot "installer\payload\config.yaml"
-    foreach ($p in @($skillsLink, $installShLink, $installPs1Link, $cfgLink)) {
+    foreach ($p in @($skillsLink, $installShLink, $installPs1Link)) {
         if (Test-Path $p) { Remove-Item -Recurse -Force $p }
     }
 
@@ -116,7 +115,6 @@ function Stage-Payload {
     if ($LASTEXITCODE -ne 0) { throw "mklink install.sh failed: $cmdOutput" }
     $cmdOutput = & cmd /c "mklink /H `"$installPs1Link`" `"$RepoRoot\installer\install.ps1`"" 2>&1
     if ($LASTEXITCODE -ne 0) { throw "mklink install.ps1 failed: $cmdOutput" }
-    Copy-Item -Force (Join-Path $RepoRoot "installer\config.yaml") $cfgLink
 
     $size = (Get-Item (Join-Path $payloadRunner $runnerWheel.Name)).Length
     Write-Output "    runner: $size bytes"

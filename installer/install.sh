@@ -3,7 +3,7 @@
 #
 # 6-stage payload release. Tauri DeskAgent-Setup.app is the GUI shell that
 # spawns this script; the script's job is to install Python (if needed),
-# copy the bundled runner binary, desktop app, skills, and config.yaml
+# copy the bundled runner binary, desktop app, and skills
 # into the user's $DESKAGENT_HOME (and platform-canonical locations for the
 # desktop app).
 #
@@ -41,7 +41,6 @@ BUNDLED_DESKTOP_DIR_ARG=""
 BUNDLED_SKILLS_DIR_ARG=""
 BUNDLED_VOICES_DIR_ARG=""
 BUNDLED_ONBOARDING_AUDIO_DIR_ARG=""
-CONFIG_PATH_ARG=""
 
 MODE="stage"     # "manifest" | "stage"
 STAGE=""
@@ -60,8 +59,7 @@ Usage:
       [--bundled-desktop-dir PATH] \\
       [--bundled-skills-dir PATH] \\
       [--bundled-voices-dir PATH] \
-      [--bundled-onboarding-audio-dir PATH] \\
-      [--config-path PATH]
+      [--bundled-onboarding-audio-dir PATH]
 
 Stages: welcome, install-python, unpack-runner, unpack-desktop, install-skills, write-config.
 EOF
@@ -79,7 +77,6 @@ while [[ $# -gt 0 ]]; do
     --bundled-skills-dir)         BUNDLED_SKILLS_DIR_ARG="$2"; shift 2 ;;
     --bundled-voices-dir)         BUNDLED_VOICES_DIR_ARG="$2"; shift 2 ;;
     --bundled-onboarding-audio-dir) BUNDLED_ONBOARDING_AUDIO_DIR_ARG="$2"; shift 2 ;;
-    --config-path)                CONFIG_PATH_ARG="$2"; shift 2 ;;
     -h|--help)                    usage; exit 0 ;;
     *)                            echo "unknown arg: $1" >&2; exit 2 ;;
   esac
@@ -100,7 +97,6 @@ BUNDLED_DESKTOP_DIR="${DESKAGENT_BUNDLED_DESKTOP_DIR:-$BUNDLED_DESKTOP_DIR_ARG}"
 BUNDLED_SKILLS_DIR="${DESKAGENT_BUNDLED_SKILLS_DIR:-$BUNDLED_SKILLS_DIR_ARG}"
 BUNDLED_VOICES_DIR="${DESKAGENT_BUNDLED_VOICES_DIR:-$BUNDLED_VOICES_DIR_ARG}"
 BUNDLED_ONBOARDING_AUDIO_DIR="${DESKAGENT_BUNDLED_ONBOARDING_AUDIO_DIR:-$BUNDLED_ONBOARDING_AUDIO_DIR_ARG}"
-CONFIG_PATH="${DESKAGENT_CONFIG_PATH:-$CONFIG_PATH_ARG}"
 DESKTOP_FORMAT="${DESKAGENT_INSTALLER_FORMAT:-$DEFAULT_DESKTOP_FORMAT}"
 
 # --- output helpers ---------------------------------------------------------
@@ -455,23 +451,13 @@ stage_install_skills() {
 # --- stage 6: write-config --------------------------------------------------
 
 stage_write_config() {
-  if [[ -z "$CONFIG_PATH" ]]; then
-    emit_stage_err write-config "--config-path (or DESKAGENT_CONFIG_PATH) is required"
-    return 1
-  fi
-  if [[ ! -f "$CONFIG_PATH" ]]; then
-    emit_stage_err write-config "config not found: $CONFIG_PATH"
-    return 1
-  fi
-
-  local dst="$DESKAGENT_HOME_RESOLVED/config.yaml"
-  cp -f "$CONFIG_PATH" "$dst"
-
-  # bootstrap-complete marker — installer/CLAUDE.md §6 fast path checks this.
+  # Config is no longer shipped as a file — the Desktop owns it and pushes
+  # to the Runner over the WS protocol. This stage now only writes the
+  # bootstrap-complete marker that the macOS launcher fast-path checks.
   : > "$DESKAGENT_HOME_RESOLVED/.deskagent-bootstrap-complete"
 
-  printf '{"ok": true, "stage": "write-config", "data": {"config": "%s", "marker": "%s/.deskagent-bootstrap-complete"}}\n' \
-    "$dst" "$DESKAGENT_HOME_RESOLVED"
+  printf '{"ok": true, "stage": "write-config", "data": {"marker": "%s/.deskagent-bootstrap-complete"}}\n' \
+    "$DESKAGENT_HOME_RESOLVED"
 }
 
 # --- dispatch ---------------------------------------------------------------

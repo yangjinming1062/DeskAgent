@@ -22,7 +22,7 @@ export interface UseRunnerConfigResult {
 }
 
 /**
- * Shared lifecycle for settings pages that read/write `$DESKAGENT_HOME/config.yaml`
+ * Shared lifecycle for settings pages that read/write the runner config
  * via the `deskagent:runner-config:*` IPC channels.
  *
  * On mount the hook reads the file, parses it into a YAML `Document`, and

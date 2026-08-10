@@ -141,7 +141,7 @@ def _check_faster_whisper() -> bool:
     return WhisperModel is not None
 
 
-_CLOUD_FALLBACK_HINT = "Set stt.engine=cloud in config.yaml to fall back to a stronger multilingual model, or pass language='zh'/'en' explicitly to bias the local result."
+_CLOUD_FALLBACK_HINT = "Set stt.engine=cloud in Desktop settings to fall back to a stronger multilingual model, or pass language='zh'/'en' explicitly to bias the local result."
 
 
 async def speech_to_text_tool(args: dict[str, Any], **kw: Any) -> str:

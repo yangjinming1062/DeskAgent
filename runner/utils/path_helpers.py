@@ -74,7 +74,7 @@ def find_bash() -> str:
             return candidate
     if found := shutil.which("bash"):
         return found
-    raise RuntimeError("Git Bash not found. Install Git for Windows or set terminal.git_bash_path in config.yaml.")
+    raise RuntimeError("Git Bash not found. Install Git for Windows or set terminal.git_bash_path in Desktop settings.")
 
 
 def append_sane_path_entries(existing_path: str) -> str:

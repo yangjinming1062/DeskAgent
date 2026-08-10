@@ -23,7 +23,7 @@ BROWSER_DIALOG_SCHEMA: dict[str, Any] = {
         "pass ``dialog_id`` from the snapshot to disambiguate.\n\n"
         "**Availability:** only present when a CDP-capable backend is "
         "attached — local Chromium-family browser via ``/browser connect``, "
-        "or ``browser.cdp_url`` in config.yaml. "
+        "or ``browser.cdp_url`` in Desktop settings. "
         "Not available on Camofox (REST-only) or the default Playwright "
         "local browser (CDP port is hidden)."
     ),

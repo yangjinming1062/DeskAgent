@@ -186,7 +186,7 @@ def _get_required_environment_variables(
 
 
 def _env_overrides() -> dict[str, str]:
-    """Read the ``skills.env_overrides`` map from ``~/.deskagent/config.yaml``.
+    """Read the ``skills.env_overrides`` map from the in-memory config.
 
     The runner does not interactive-prompt for secrets. Operators declare
     per-skill env values in config.yaml; Desktop surfaces that map to the

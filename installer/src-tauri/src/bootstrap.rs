@@ -692,7 +692,7 @@ async fn run_bootstrap(
 
     // 4. Resolve install_root. The slim 5-stage install.{sh,ps1} no longer
     // clones the repo into a `<deskagent_home>/deskagent-agent/` subdir — payload goes
-    // straight into $DESKAGENT_HOME (bin/, skills/, config.yaml, .deskagent-bootstrap-
+    // straight into $DESKAGENT_HOME (bin/, skills/, .deskagent-bootstrap-
     // complete). So install_root IS deskagent_home.
     let deskagent_home = args
         .deskagent_home
@@ -826,7 +826,6 @@ fn build_bundle_context(app: &AppHandle) -> BundleContext {
         bundled_skills_dir: effective_payload.as_ref().map(|d| d.join("skills")),
         bundled_voices_dir: effective_payload.as_ref().map(|d| d.join("voices")),
         bundled_onboarding_audio_dir: effective_payload.as_ref().map(|d| d.join("onboarding-audio")),
-        config_path: effective_payload.as_ref().map(|d| d.join("config.yaml")),
         installer_format: Some(installer_format),
     }
 }

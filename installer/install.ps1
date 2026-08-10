@@ -2,7 +2,7 @@
 #
 # 6-stage payload release. Tauri DeskAgent-Setup.exe is the GUI shell that
 # spawns this script; the script's job is to install Python (if needed),
-# copy the bundled runner binary, desktop app, skills, and config.yaml
+# copy the bundled runner binary, desktop app, and skills
 # into the user's $DESKAGENT_HOME (and the platform-canonical desktop install
 # location).
 #
@@ -26,7 +26,6 @@ param(
     [string]$BundledSkillsDir,
     [string]$BundledVoicesDir,
     [string]$BundledOnboardingAudioDir,
-    [string]$ConfigPath,
     [string]$InstallerFormat
 )
 
@@ -53,7 +52,6 @@ if (-not $BundledDesktopDir -and $env:DESKAGENT_BUNDLED_DESKTOP_DIR) { $BundledD
 if (-not $BundledSkillsDir -and $env:DESKAGENT_BUNDLED_SKILLS_DIR) { $BundledSkillsDir = $env:DESKAGENT_BUNDLED_SKILLS_DIR }
 if (-not $BundledVoicesDir -and $env:DESKAGENT_BUNDLED_VOICES_DIR) { $BundledVoicesDir = $env:DESKAGENT_BUNDLED_VOICES_DIR }
 if (-not $BundledOnboardingAudioDir -and $env:DESKAGENT_BUNDLED_ONBOARDING_AUDIO_DIR) { $BundledOnboardingAudioDir = $env:DESKAGENT_BUNDLED_ONBOARDING_AUDIO_DIR }
-if (-not $ConfigPath -and $env:DESKAGENT_CONFIG_PATH) { $ConfigPath = $env:DESKAGENT_CONFIG_PATH }
 if (-not $InstallerFormat) {
     if ($env:DESKAGENT_INSTALLER_FORMAT) { $InstallerFormat = $env:DESKAGENT_INSTALLER_FORMAT }
     else { $InstallerFormat = $DefaultDesktopFormat }
@@ -429,24 +427,14 @@ function Stage-InstallSkills {
 # --- stage 6: write-config --------------------------------------------------
 
 function Stage-WriteConfig {
-    if (-not $ConfigPath) {
-        Emit-StageErr "write-config" "--ConfigPath (or DESKAGENT_CONFIG_PATH) is required"
-        return 1
-    }
-    if (-not (Test-Path $ConfigPath -PathType Leaf)) {
-        Emit-StageErr "write-config" "config not found: $ConfigPath"
-        return 1
-    }
-
-    $dst = Join-Path $DeskAgentHome "config.yaml"
-    Copy-Item -Force $ConfigPath $dst
-
+    # Config is no longer shipped as a file — the Desktop owns it and pushes
+    # to the Runner over the WS protocol. This stage now only writes the
+    # bootstrap-complete marker that the macOS launcher fast-path checks.
     $marker = Join-Path $DeskAgentHome ".deskagent-bootstrap-complete"
     Set-Content -Path $marker -Value "" -NoNewline
 
-    $escDst = Escape-JsonString $dst
     $escMarker = Escape-JsonString $marker
-    Write-Output "{`"ok`": true, `"stage`": `"write-config`", `"data`": {`"config`": `"$escDst`", `"marker`": `"$escMarker`"}}"
+    Write-Output "{`"ok`": true, `"stage`": `"write-config`", `"data`": {`"marker`": `"$escMarker`"}}"
     return 0
 }
 

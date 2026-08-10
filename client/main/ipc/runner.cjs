@@ -3,8 +3,18 @@
 // Runner bridge lifecycle: start/stop/restart/status/invoke on renderer side,
 // plus tool-call-forward and get-tools. Bridge stored on shared deps object.
 
+const store = require('../shared/lib/runner-config-store.cjs')
+
 function ensureRunnerBridge(deps) {
   if (deps.runnerBridge) return deps.runnerBridge
+
+  // Shared by bridge (no-arg → reads store) on runner-ready and store (with just-written config) on write.
+  const pushConfig = (config = store.read()) => {
+    const bridge = deps.runnerBridge
+    if (!bridge) return Promise.resolve()
+    return bridge.dispatch('deskagent.config.update', { config })
+  }
+
   deps.runnerBridge = deps.createRunnerBridge({
     deskagentHome: deps.deskagentHome,
     processFactory: () =>
@@ -26,8 +36,11 @@ function ensureRunnerBridge(deps) {
         backendSession,
         log: rpcLog || deps.taggedLogger('[runner-reverse]')
       }),
+    pushConfig,
     log: deps.taggedLogger('[runner-bridge]')
   })
+
+  store.setPushTarget(pushConfig)
 
   deps.runnerBridge.onEvent?.(ev => {
     const win = deps.getMainWindow?.()
@@ -85,7 +98,7 @@ function autoStopBridge(deps) {
 }
 
 // Awaited stop+start for callers that need a single resolved result — used by
-// the runner-config IPC after writing config.yaml so the renderer can show
+// the runner-config IPC after writing config so the renderer can show
 // accurate success/failure instead of fire-and-forget.
 async function restartRunnerBridge(deps) {
   const session = deps.ensureBackendSession().getSession()

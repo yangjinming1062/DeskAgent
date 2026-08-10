@@ -206,14 +206,14 @@ class ToolRegistry:
         """Return ``get_schemas()`` filtered by ``disabled_toolset_ids``.
 
         Symmetric with ``tools/skills/helpers.py::get_disabled_skill_names``
-        — reads ``toolsets.disabled`` from ``$DESKAGENT_HOME/config.yaml`` via
+        — reads ``toolsets.disabled`` from the in-memory config via
         ``runner/tools/toolsets/helpers.py``. Used by ``server.py``'s
         ``get_tools`` RPC handler so Desktop never advertises a disabled
         toolset to Backend's LLM-facing schema list.
 
-        Designed to be paired with ``patchAndCommit`` + ``restartRunnerBridge``
-        in Desktop's IPC: writes go through the shared atomic-write lock,
-        then the bridge cold-starts and the Runner re-fetches this method.
+        Desktop pushes config updates over the WS protocol
+        (``deskagent.config.update``); the Runner re-reads the disabled set
+        on the next ``get_tools`` call without a process restart.
 
         MCP tools are always excluded regardless of catalog membership —
         their toggle surface lives in the MCP settings page, not here.

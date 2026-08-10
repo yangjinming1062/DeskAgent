@@ -26,6 +26,7 @@ from utils import get_deskagent_home
 from utils import network_reachable
 from utils import pid_exists
 from utils import set_handler
+from utils import set_inmemory_config
 from utils import snapshot
 
 logging.basicConfig(level=logging.WARNING)
@@ -186,9 +187,20 @@ async def process_request(ws, req) -> None:
             await _send(ws, req_id, result=_build_info())
             return
 
+        if method == "deskagent.config.update":
+            # Cache resets mirror mcp.reload so derived limits pick up the new config immediately.
+            config = params.get("config")
+            if not isinstance(config, dict):
+                raise ValueError("deskagent.config.update requires a 'config' object")
+            set_inmemory_config(config)
+            reset_output_limits_cache()
+            reset_max_read_chars_cache()
+            await _send(ws, req_id, result={"ok": True})
+            return
+
         if method == "mcp.reload":
             # Clear config caches so tool_output_limits and file_read_max_chars
-            # pick up any config.yaml changes without requiring a runner restart.
+            # pick up any config changes without requiring a runner restart.
             reset_output_limits_cache()
             reset_max_read_chars_cache()
             # Off-load: reload_mcp_servers joins the MCP loop thread and waits

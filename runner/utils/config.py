@@ -1,18 +1,9 @@
 import json
 
-import yaml
-
-from .constants import get_deskagent_home
-
-CONFIG_FILENAME = "config.yaml"
-
 _TRUTHY_STRINGS = frozenset({"1", "true", "yes", "on"})
 
-# mtime-keyed cache: the runner reads config.yaml on every tool call, but the
-# file only changes when the operator edits it (or a live credential is
-# written).
-_CONFIG_CACHE: dict | None = None
-_CONFIG_CACHE_MTIME: float | None = None
+# ``None`` until the Desktop pushes via deskagent.config.update; consumers fall back to cfg_get(default=...).
+_INMEMORY_CONFIG: dict | None = None
 
 
 def is_truthy_value(value, default: bool = False) -> bool:
@@ -32,34 +23,16 @@ def is_truthy_value(value, default: bool = False) -> bool:
 
 
 def load_config() -> dict:
-    """Return parsed config.yaml; ``{}`` on missing / empty / invalid.
+    """Return the in-memory config dict (``{}`` before the Desktop's first push)."""
+    return _INMEMORY_CONFIG if _INMEMORY_CONFIG is not None else {}
 
-    Cached per mtime: the runner calls this on every tool invocation,
-    but the file only changes when the operator edits it. Cache is
-    invalidated automatically when the mtime advances.
-    """
-    global _CONFIG_CACHE, _CONFIG_CACHE_MTIME
-    path = get_deskagent_home() / CONFIG_FILENAME
-    try:
-        mtime = path.stat().st_mtime if path.is_file() else None
-    except OSError:
-        mtime = None
-    if _CONFIG_CACHE is not None and mtime == _CONFIG_CACHE_MTIME:
-        return _CONFIG_CACHE
-    if mtime is None:
-        _CONFIG_CACHE = {}
-        _CONFIG_CACHE_MTIME = None
-        return _CONFIG_CACHE
-    try:
-        with path.open("r", encoding="utf-8") as f:
-            data = yaml.safe_load(f) or {}
-    except Exception:
-        _CONFIG_CACHE = {}
-        _CONFIG_CACHE_MTIME = mtime
-        return _CONFIG_CACHE
-    _CONFIG_CACHE = data if isinstance(data, dict) else {}
-    _CONFIG_CACHE_MTIME = mtime
-    return _CONFIG_CACHE
+
+def set_inmemory_config(config: dict) -> None:
+    """Replace the in-memory config; called by the ``deskagent.config.update`` RPC handler."""
+    global _INMEMORY_CONFIG
+    if not isinstance(config, dict):
+        raise TypeError(f"config must be a dict, got {type(config).__name__}")
+    _INMEMORY_CONFIG = config
 
 
 def cfg_get(d: dict, *keys, default=None):
@@ -122,7 +95,7 @@ def cfg_json(section: dict, key: str, default=None):
 
 
 def get_disabled_config_names(section: str = "skills") -> set[str]:
-    """Read the ``{section}.disabled`` list from ``~/.deskagent/config.yaml``.
+    """Read the ``{section}.disabled`` list from the in-memory config.
 
     Works for ``skills``, ``toolsets``, etc.
     """

@@ -1,11 +1,11 @@
 # Installer
 
-DeskAgent 安装器产品。本目录容纳 **Tauri 2 桌面程序**（`src/` + `src-tauri/`，产 `DeskAgent-Setup.exe` / `DeskAgent-Setup.app` / `deskagent-setup`）、它要释放的安装 payload（`skills/`、`config.yaml`、`voices/`）、以及 Tauri 进程 spawn 出来的 **install 协议后端**（`install.sh` / `install.ps1` / `install.cmd`）。首装完成释放 Client 后，Client 以"蛋"形态首次启动，进入 [DESIGN.md §5](../DESIGN.md) 的伙伴生命周期 onboarding。
+DeskAgent 安装器产品。本目录容纳 **Tauri 2 桌面程序**（`src/` + `src-tauri/`，产 `DeskAgent-Setup.exe` / `DeskAgent-Setup.app` / `deskagent-setup`）、它要释放的安装 payload（`skills/`、`voices/`）、以及 Tauri 进程 spawn 出来的 **install 协议后端**（`install.sh` / `install.ps1` / `install.cmd`）。首装完成释放 Client 后，Client 以"蛋"形态首次启动，进入 [DESIGN.md §5](../DESIGN.md) 的伙伴生命周期 onboarding。
 
 ## 1. 职责与边界
 
 **职责**：
-- 首装引导 Python 运行时（uv-managed）+ 释放 Runner wheel / Client 二进制 / Skills / config 到平台标准路径
+- 首装引导 Python 运行时（uv-managed）+ 释放 Runner wheel / Client 二进制 / Skills 到平台标准路径
 - 用户登录 → 写 auth bootstrap one-shot → 退出，Client 启动接管
 - macOS fast path：`/Applications/DeskAgent.app` 兼任"首次启动走安装、之后是 launcher"
 - 自包含、无网络：install 脚本与 payload 全部嵌入 Tauri `bundle.resources`
@@ -50,7 +50,6 @@ installer/
 │   ├── runner/            # Runner wheel + server.py
 │   ├── client/            # Client build 产物
 │   ├── voices/            # Piper offline voices
-│   ├── config.yaml        # Runner 默认配置
 │   └── install.{sh,ps1,cmd}
 └── .staging.json          # build metadata（version / sha256 / host）
 ```
@@ -60,7 +59,7 @@ installer/
 ## 4. 关键设计决策
 
 - **uv-managed venv 而非 system Python**：通过 `uv` 安装 Python 到 uv 托管位置，venv 创建在 `$DESKAGENT_HOME/runner/.venv`。**为什么不依赖 system Python**：macOS 自带 Python 3（不会破坏）、Windows 默认无 Python、Linux 发行版差异大；依赖系统 Python 会让 install 兼容性变成无尽测试矩阵。**为什么不直接用 conda/venv**：uv 单一二进制 + 跨平台 + 5× 速度 + 内置 Python 安装，是当前最佳选择。
-- **install 协议 6 stage 拆分**：`welcome` → `install-python` → `unpack-runner` → `unpack-desktop` → `install-skills` → `write-config`。**为什么不一次性 `pip install` + `cp` + `write config`**：分阶段让 Tauri 可以单独 retry / 单独回滚单 stage；崩溃可以从断点恢复；进度条粒度更细。
+- **install 协议 6 stage 拆分**：`welcome` → `install-python` → `unpack-runner` → `unpack-desktop` → `install-skills` → `write-config`。`write-config` 现在只写 `.deskagent-bootstrap-complete` marker（runner 配置由 Client 经 WS 协议推送，不再经文件）。**为什么不一次性 `pip install` + `cp`**：分阶段让 Tauri 可以单独 retry / 单独回滚单 stage；崩溃可以从断点恢复；进度条粒度更细。
 - **uv pip install 失败后自动用镜像重试**：`DESKAGENT_PYPI_INDEX_URL` / `PIP_INDEX_URL` 环境变量优先，缺省阿里云镜像 `https://mirrors.aliyun.com/pypi/simple/`。**为什么不内置 pip mirror 配置**：用户自托管 / 企业代理场景下可能需要私有 index；env var 优先 + 兜底镜像覆盖大多数情况。
 - **macOS fast path**（前述）：让 `/Applications/DeskAgent.app` 兼任"首次启动走安装、之后是 launcher"——减少启动时的 UI 闪烁、避免每次启动都进入安装器界面。**代价**：fast path 跳过任何"组件已损坏需要 repair"的检测；用户需手动 `--repair`。
 - **`--reinstall` / `--repair` 跳过 fast path**：显式覆盖 fast path 进入完整 UI，让用户能修复已损坏的 install。**为什么不复用 fast path**：fast path 的本意是"已 install 一切正常，无需打扰用户"。
@@ -76,8 +75,8 @@ installer/
 | 错误信封 | — | 不适用 |
 | API Key 永不离后端 | — | Installer 不涉及 LLM 凭证 |
 | **Install 协议 v2**（含 `install-python` stage）6 stage 流程 | Tauri 进程 ↔ install 脚本 | 本模块独有 + `src-tauri/src/bootstrap.rs` |
-| **Tauri `bundle.resources` 嵌入清单**（runner / client / voices / config / skills / install scripts） | Tauri build 期 ↔ install 脚本运行期 | 本模块独有 + `src-tauri/tauri.conf.json` |
-| **`DESKAGENT_BUNDLE_DIR` / `DESKAGLED_RUNNER_DIR` / `DESKAGENT_BUNDLED_DESKTOP_DIR` / `DESKAGENT_BUNDLED_SKILLS_DIR` / `DESKAGENT_BUNDLED_VOICES_DIR` / `DESKAGENT_CONFIG_PATH` / `DESKAGENT_INSTALLER_FORMAT` env var 契约** | Tauri → install 脚本 | 本模块独有 |
+| **Tauri `bundle.resources` 嵌入清单**（runner / client / voices / skills / install scripts） | Tauri build 期 ↔ install 脚本运行期 | 本模块独有 + `src-tauri/tauri.conf.json` |
+| **`DESKAGENT_BUNDLE_DIR` / `DESKAGLED_RUNNER_DIR` / `DESKAGENT_BUNDLED_DESKTOP_DIR` / `DESKAGENT_BUNDLED_SKILLS_DIR` / `DESKAGENT_BUNDLED_VOICES_DIR` / `DESKAGENT_INSTALLER_FORMAT` env var 契约** | Tauri → install 脚本 | 本模块独有 |
 | **`$DESKAGENT_HOME` 路径**（含 platform canonical） | Tauri → install 脚本 → Client / Runner | 本模块独有 + [runner/README.md §1](../runner/README.md) + [client/README.md §2](../client/README.md) |
 | **`agent-session-bootstrap.json` schema_version=1 one-shot** | Installer → Client 消费 | [client/README.md §4](../client/README.md)（install bootstrap）+ [PROTOCOL.md §5.3](../PROTOCOL.md)（safeStorage） |
 | **`desktop_install_root()` platform canonical 路径** | Tauri | 本模块独有（macOS `/Applications/DeskAgent.app` / Windows `%LOCALAPPDATA%\Programs\DeskAgent\`） |

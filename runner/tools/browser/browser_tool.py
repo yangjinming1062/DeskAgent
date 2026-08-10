@@ -1974,7 +1974,7 @@ def browser_navigate(url: str, task_id: str | None = None) -> str:
                 f"Page title '{title}' suggests bot detection. The site may have blocked this request. "
                 "Options: 1) Try adding delays between actions, 2) Access different pages first, "
                 "3) Switch to the Camofox remote browser backend (set `browser.camofox.url` in "
-                "$DESKAGENT_HOME/config.yaml) for residential-IP routing, "
+                "Desktop settings) for residential-IP routing, "
                 "4) Some sites have very aggressive bot detection that may be unavoidable."
             )
 

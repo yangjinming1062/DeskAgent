@@ -191,16 +191,15 @@ stage_payload() {
   # Also copy server.py into the payload so install scripts deploy it to $DESKAGENT_HOME/runner/
   cp runner/server.py installer/payload/runner/server.py
 
-  # Symlink skills/config.yaml/install scripts so they're not duplicated in
-  # the repo. build_client.{sh,ps1} run as a single command — symlinks are
-  # fine for staging.
+  # Symlink skills/install scripts so they're not duplicated in the repo.
+  # build_client.{sh,ps1} run as a single command — symlinks are fine for
+  # staging.
   rm -rf installer/payload/skills \
          installer/payload/install.sh \
          installer/payload/install.ps1
   ln -s ../skills installer/payload/skills
   ln -s ../install.sh installer/payload/install.sh
   ln -s ../install.ps1 installer/payload/install.ps1
-  cp installer/config.yaml installer/payload/config.yaml
   echo "    runner: $(ls -l installer/payload/runner/*.whl | awk '{print $5}') bytes"
   echo "    desktop: $(ls -1 installer/payload/client/ | tr '\n' ' ')"
   echo "    install scripts: $(ls -1 installer/payload/install.{sh,ps1} 2>/dev/null | tr '\n' ' ')"

@@ -47,7 +47,6 @@
       "../payload/skills",
       "../payload/voices",
       "../payload/onboarding-audio",
-      "../payload/config.yaml",
       "../payload/.staging.json",
       "../payload/client/.gitkeep",
       "../payload/install.sh",

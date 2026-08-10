@@ -1,5 +1,3 @@
-const { readDisabledSet, invalidateDisabledCache } = require('./skill-index.cjs')
-
 // Mirror of catalog shape in renderer and runner.
 
 const EXCLUDED_PREFIXES = ['mcp_']
@@ -24,9 +22,6 @@ const TOOLSET_DEFS = [
   { id: 'computer_use', extraTools: ['computer_use'] },
   { id: 'media_analysis', extraTools: ['vision_analyze'] }
 ]
-
-const readDisabledToolsets = configPath => readDisabledSet(configPath, 'toolsets')
-const invalidateDisabledToolsetsCache = () => invalidateDisabledCache('toolsets')
 
 function toolNamesForToolset(def, availableNames) {
   const names = []
@@ -73,8 +68,6 @@ function buildToolsetRoster(schemas, disabledToolsetIds) {
 
 module.exports = {
   TOOLSET_DEFS,
-  readDisabledToolsets,
-  invalidateDisabledToolsetsCache,
   buildToolsetRoster,
   toolNamesForToolset
 }

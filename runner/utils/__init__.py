@@ -21,6 +21,7 @@ from .config import get_disabled_config_names
 from .config import get_env_type
 from .config import is_truthy_value
 from .config import load_config
+from .config import set_inmemory_config
 from .constants import CREATE_NO_WINDOW
 from .constants import get_deskagent_dir
 from .constants import get_deskagent_home
@@ -98,6 +99,7 @@ __all__ = [
     "get_env_type",
     "is_truthy_value",
     "load_config",
+    "set_inmemory_config",
     "get_skills_dir",
     "get_subprocess_home",
     "get_deskagent_dir",

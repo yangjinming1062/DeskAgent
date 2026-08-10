@@ -33,13 +33,6 @@ function platformMatches(declared) {
   return mapped.includes(HOST_PLATFORM)
 }
 
-// Mtime-keyed cache for `<section>.disabled` so per-login buildClientContext,
-// per-IPC `deskagent:skills:list`, and per-IPC `deskagent:toolsets:list` calls don't
-// re-parse $DESKAGENT_HOME/config.yaml on every invocation. Per-section state so
-// skills.disabled and toolsets.disabled don't collide. One stat per call to
-// detect writes.
-const cachedBySection = new Map()
-
 function listSkillsFromDisk(skillsRoot) {
   if (!skillsRoot) return []
   const skills = []
@@ -96,36 +89,6 @@ function listSkillsFromDisk(skillsRoot) {
   })
 }
 
-function readDisabledSet(configPath, section = 'skills') {
-  if (!configPath) return new Set()
-  try {
-    const mtime = fs.statSync(configPath).mtimeMs
-    const cache = cachedBySection.get(section)
-    if (cache && cache.path === configPath && cache.mtime === mtime) return cache.set
-    const doc = yaml.parse(fs.readFileSync(configPath, 'utf8'))
-    const arr = Array.isArray(doc?.[section]?.disabled) ? doc[section].disabled : []
-    const next = new Set(arr.map(String))
-    cachedBySection.set(section, { path: configPath, mtime, set: next })
-    return next
-  } catch {
-    return new Set()
-  }
-}
-
-// Mtime granularity is coarse on some filesystems (or two writes land in the
-// same tick); a stat-only cache could return the pre-write set for the next
-// read after a write. Writers call this immediately after a successful
-// atomic write so the next readDisabledSet unconditionally re-parses.
-function invalidateDisabledCache(section) {
-  if (section === undefined) {
-    cachedBySection.clear()
-
-    return
-  }
-
-  cachedBySection.delete(section)
-}
-
 // Field enumeration (not `...skill`) so internal-only fields added to
 // listSkillsFromDisk don't leak to the renderer.
 function projectSummary(skill, disabledSet) {
@@ -139,18 +102,12 @@ function projectSummary(skill, disabledSet) {
   }
 }
 
-// ``disabledSet`` is the mtime-cached value from readDisabledSet for the
-// ``deskagent:skills:list`` path, or the post-write set returned by
-// patchAndCommit for the ``deskagent:skill:set-enabled`` path (avoids a second
-// disk read).
 function buildSkillSummaries(skillsRoot, disabledSet) {
   return listSkillsFromDisk(skillsRoot).map(skill => projectSummary(skill, disabledSet))
 }
 
 module.exports = {
   listSkillsFromDisk,
-  readDisabledSet,
   buildSkillSummaries,
-  invalidateDisabledCache,
   HOST_PLATFORM
 }

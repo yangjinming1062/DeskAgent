@@ -133,6 +133,7 @@ WS JSON-RPC 错误使用标准 JSON-RPC 2.0 错误码（`-32700` 到 `-32603`）
 | `deskagent.info` | Client → Runner | 完整运行快照（version / uptime / capabilities / system / tool_count / mcp_servers / network_reachable / disk_free_bytes） | — |
 | `execute_tool` | Client → Runner | 执行工具调用,返回 `{ok, result|None, error?}` | — |
 | `mcp.reload` | Client → Runner | 重新加载 MCP server 配置 | — |
+| `deskagent.config.update` | Client → Runner | 推送完整配置 dict;Runner 持有在内存,下次 `load_config()` 即生效,无需重启 | §2.4 |
 | `request_llm` | Runner → Client | 反向 RPC——借大脑（见 §3） | §3 |
 
 ### 2.3 `runner_ready` payload
@@ -157,6 +158,83 @@ WS JSON-RPC 错误使用标准 JSON-RPC 2.0 错误码（`-32700` 到 `-32603`）
 - `capabilities.local_stt` / `local_tts` 等由运行时探测（实际枚举设备、调用底层 API）,**不**退化为 `import` 是否存在——后者欺骗 UI 让用户点不能用按钮。
 - `probe_failed == true` 表示 capability 探测整体抛异常,Client 应把这条 handshake 视为"功能状态不可信"。
 - 语音通话 / 唤醒词在 capability 为 `false` 时被 Client **静默隐藏**,伙伴不强提示。
+
+### 2.4 `deskagent.config.update` — Runner 配置推送
+
+Client 是配置的唯一拥有者,经此方法把完整配置 dict 推送给 Runner。Runner 持有在内存(`utils.config._INMEMORY_CONFIG`),每次工具调用经 `load_config()` 读取——**不再读取磁盘文件**。
+
+**时序**:Runner 就绪 handshake 后、首个 `execute_tool` 前,Client 推一次 full config。此后每次用户在设置页保存,Client 再推一次。Runner 进程重启后内存配置清空,Client 在下次 `runner_ready` 时重新推送。
+
+**Payload**:
+
+```json
+{
+  "method": "deskagent.config.update",
+  "params": {
+    "config": { /* 见下文 schema */ }
+  }
+}
+```
+
+**Config schema**(顶层 mapping;所有 key 可选,缺省走 Runner 代码默认值):
+
+| Section | Key | 类型 | 说明 |
+|---------|-----|------|------|
+| `terminal` | `env_type` | `local\|docker\|ssh\|singularity` | 终端环境类型 |
+| | `timeout` | int | 默认超时(秒) |
+| | `cwd` | str | 默认工作目录(留空用当前目录) |
+| | `timezone` | str | 时区(留空用系统) |
+| | `sudo_password` | str | sudo 密码 |
+| | `interactive_sudo_prompt` | bool | 交互式 sudo 提示 |
+| | `docker_binary` | str | Docker 二进制路径(留空自动检测) |
+| | `git_bash_path` | str | Git Bash 路径(仅 Windows) |
+| | `sandbox_dir` | str | 沙箱目录 |
+| | `shell_init_files` | list | Shell 初始化文件列表 |
+| | `auto_source_bashrc` | bool | 自动 source .bashrc |
+| | `env_passthrough` | list | 传递到子进程的环境变量 |
+| | `credential_files` | list | 挂载到容器的凭据文件 |
+| | `singularity.scratch_dir` | str | Singularity scratch 目录 |
+| `security` | `write_safe_root` | str | 写安全根目录 |
+| | `redact_secrets` | bool | 敏感信息脱敏 |
+| | `github_token` | str | GitHub Token(tirith 安全检查) |
+| | `website_blocklist` | dict | 网站访问黑名单(`{enabled, domains, shared_files}`) |
+| `browser` | `engine` | `auto\|lightpanda\|chrome` | 浏览器引擎 |
+| | `command_timeout` | int | 命令超时(秒) |
+| | `inactivity_timeout_seconds` | int | 会话无活动超时(秒) |
+| | `record_sessions` | bool | 录制浏览器会话 |
+| | `allow_private_urls` | bool | 允许访问私有 URL |
+| | `executable_path` | str | 浏览器可执行文件路径 |
+| | `playwright_browsers_path` | str | Playwright 浏览器路径 |
+| | `cdp_url` | str | CDP URL |
+| | `camofox.url` | str | Camofox 服务 URL |
+| `auxiliary.vision` | `timeout` | int | 视觉模型推理超时(秒) |
+| | `temperature` | float | 视觉模型推理温度 |
+| | `download_timeout` | int | 下载超时(秒) |
+| `auxiliary.audio.tts` | `default_voice` | str | 默认 Piper voice(留空用 bundled zh_CN) |
+| `skills` | `github.token` | str | GitHub PAT(技能市场) |
+| | `github.app_id` | str | GitHub App ID |
+| | `github.private_key_path` | str | GitHub App 私钥路径 |
+| | `github.installation_id` | str | GitHub App installation ID |
+| | `disabled` | list[str] | 禁用的技能 leaf 名 |
+| | `env_overrides` | dict | 技能环境变量覆盖 |
+| | `external_dirs` | list | 外部技能目录 |
+| | `guard_agent_created` | bool | 安全扫描 agent 创建的技能 |
+| `toolsets` | `disabled` | list[str] | 禁用的工具集 ID |
+| `mcp_servers` | (mapping) | dict | MCP server 配置(key=server 名) |
+| `debug` | `interrupt` | bool | 调试中断模式 |
+| | `vision_tools` | bool | 视觉工具调试 |
+| `file_state` | `disabled` | bool | 禁用跨 agent 文件状态跟踪 |
+| `computer_use` | `backend` | `auto\|cua\|win\|noop` | 后端选择 |
+| | `cua_driver_version` | str | CUA 驱动版本 |
+| | `cua_driver_cmd` | str | CUA 驱动命令 |
+| | `cua_telemetry` | bool | cua-driver PostHog 遥测 |
+| `osv` | `endpoint` | str | OSV API 端点 |
+| `tool_output` | `max_bytes` | int | 最大输出字节数 |
+| | `max_lines` | int | 最大行数 |
+| | `max_line_length` | int | 最大行长度 |
+| `file_read_max_chars` | int | — | 单次文件读取最大字符数 |
+
+**持久化**:Client 把配置以 JSON 存储在 `$DESKAGENT_HOME/desktop-settings.json`(非用户面向)。Runner 不再读写任何配置文件。
 
 ---
 

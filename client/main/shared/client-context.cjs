@@ -2,6 +2,7 @@ const os = require('node:os')
 const path = require('node:path')
 
 const { buildSkillSummaries } = require('./lib/skill-index.cjs')
+const store = require('./lib/runner-config-store.cjs')
 
 const SCHEMA_VERSION = 1
 
@@ -29,7 +30,6 @@ function buildClientContext(options = {}) {
   const userAgent = options.userAgent ?? null
   const deskagentHome = options.deskagentHome ?? resolveDeskAgentHome(options.env)
   const skillsRoot = options.skillsRoot ?? path.join(deskagentHome, 'skills')
-  const configPath = options.configPath ?? path.join(deskagentHome, 'config.yaml')
   const listSkills = options.listSkills ?? buildSkillSummaries
 
   const lines = [
@@ -40,7 +40,7 @@ function buildClientContext(options = {}) {
     deskagentHome ? `deskagent_home=${deskagentHome}` : null
   ].filter(Boolean)
 
-  const enabledNames = listSkills({ skillsRoot, configPath })
+  const enabledNames = listSkills(skillsRoot, store.getDisabledSet())
     // Skills tagged for a different OS are filtered here so the backend's
     // "Enabled local skills…" prompt block (system_prompt.py:64-68) never
     // lists an unavailable skill. Runtime filtering also happens at the

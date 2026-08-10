@@ -7,9 +7,8 @@ import os
 DESKAGENT_CONTROL_FILE_BASENAMES: tuple[str, ...] = (
     "auth.json",
     "auth.lock",
-    "config.yaml",
+    "desktop-settings.json",
     "webhook_subscriptions.json",
-    ".anthropic_oauth.json",
     ".env",
 )
 

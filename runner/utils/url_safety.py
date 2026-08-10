@@ -12,8 +12,6 @@ from urllib.parse import urlparse
 from urllib.parse import urlsplit
 from urllib.parse import urlunsplit
 
-import yaml
-
 from .config import is_truthy_value
 from .config import load_config
 from .constants import get_deskagent_home
@@ -72,20 +70,14 @@ _ALWAYS_BLOCKED_NETWORKS = (
 _TRUSTED_PRIVATE_IP_HOSTS = frozenset({"multimedia.nt.qq.com.cn"})
 _CGNAT_NETWORK = ipaddress.ip_network("100.64.0.0/10")
 
-_allow_private_resolved = False
-_cached_allow_private = False
-
 
 def _global_allow_private_urls() -> bool:
-    global _allow_private_resolved, _cached_allow_private
-    if not _allow_private_resolved:
-        _allow_private_resolved = True
-        try:
-            cfg = load_config()
-            _cached_allow_private = any(isinstance(d, dict) and is_truthy_value(d.get("allow_private_urls"), default=False) for d in (cfg.get("security"), cfg.get("browser")))
-        except Exception:
-            pass
-    return _cached_allow_private
+    """Read live from config — no caching because the value can change via ``deskagent.config.update``."""
+    try:
+        cfg = load_config()
+        return any(isinstance(d, dict) and is_truthy_value(d.get("allow_private_urls"), default=False) for d in (cfg.get("security"), cfg.get("browser")))
+    except Exception:
+        return False
 
 
 def _is_always_blocked(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
@@ -206,12 +198,7 @@ _DEFAULT_WEBSITE_BLOCKLIST = {
 _CACHE_TTL_SECONDS = 30.0
 _cache_lock = threading.Lock()
 _cached_policy: dict[str, Any] | None = None
-_cached_policy_path: str | None = None
 _cached_policy_time: float = 0.0
-
-
-def _get_default_config_path() -> Path:
-    return get_deskagent_home() / "config.yaml"
 
 
 class WebsitePolicyError(Exception):
@@ -244,19 +231,9 @@ def _iter_blocklist_file_rules(path: Path) -> list[str]:
     return []
 
 
-def _load_policy_config(config_path: Path | None = None) -> dict[str, Any]:
-    config_path = config_path or _get_default_config_path()
-    if not config_path.exists():
-        return _DEFAULT_WEBSITE_BLOCKLIST.copy()
-
-    try:
-        with open(config_path, encoding="utf-8") as f:
-            config = yaml.safe_load(f) or {}
-    except yaml.YAMLError as exc:
-        raise WebsitePolicyError(f"Invalid config YAML at {config_path}: {exc}") from exc
-    except OSError as exc:
-        raise WebsitePolicyError(f"Failed to read config file {config_path}: {exc}") from exc
-
+def _load_policy_config() -> dict[str, Any]:
+    """Read ``security.website_blocklist`` from the in-memory config."""
+    config = load_config()
     if not isinstance(config, dict):
         raise WebsitePolicyError("config root must be a mapping")
     if not isinstance(security := config.get("security") or {}, dict):
@@ -267,19 +244,15 @@ def _load_policy_config(config_path: Path | None = None) -> dict[str, Any]:
     return _DEFAULT_WEBSITE_BLOCKLIST | website_blocklist
 
 
-def load_website_blocklist(config_path: Path | None = None) -> dict[str, Any]:
-    global _cached_policy, _cached_policy_path, _cached_policy_time
+def load_website_blocklist() -> dict[str, Any]:
+    global _cached_policy, _cached_policy_time
 
-    resolved_path = str(config_path) if config_path else "__default__"
     now = time.monotonic()
+    with _cache_lock:
+        if _cached_policy is not None and (now - _cached_policy_time) < _CACHE_TTL_SECONDS:
+            return _cached_policy
 
-    if config_path is None:
-        with _cache_lock:
-            if _cached_policy is not None and _cached_policy_path == resolved_path and (now - _cached_policy_time) < _CACHE_TTL_SECONDS:
-                return _cached_policy
-
-    config_path = config_path or _get_default_config_path()
-    policy = _load_policy_config(config_path)
+    policy = _load_policy_config()
 
     if not isinstance(raw_domains := policy.get("domains") or [], list):
         raise WebsitePolicyError("security.website_blocklist.domains must be a list")
@@ -307,9 +280,8 @@ def load_website_blocklist(config_path: Path | None = None) -> dict[str, Any]:
 
     result = {"enabled": enabled, "rules": rules}
 
-    if config_path == _get_default_config_path() or config_path.resolve() == _get_default_config_path().resolve():
-        with _cache_lock:
-            _cached_policy, _cached_policy_path, _cached_policy_time = result, "__default__", now
+    with _cache_lock:
+        _cached_policy, _cached_policy_time = result, now
 
     return result
 
@@ -327,20 +299,17 @@ def _extract_host_from_urlish(url: str) -> str:
     return _normalize_host(s.hostname or s.netloc) if "://" not in url and (s := urlparse(f"//{url}")) else ""
 
 
-def check_website_access(url: str, config_path: Path | None = None) -> dict[str, str] | None:
-    if config_path is None:
-        with _cache_lock:
-            if _cached_policy is not None and not _cached_policy.get("enabled"):
-                return None
+def check_website_access(url: str) -> dict[str, str] | None:
+    with _cache_lock:
+        if _cached_policy is not None and not _cached_policy.get("enabled"):
+            return None
 
     if not (host := _extract_host_from_urlish(url)):
         return None
 
     try:
-        policy = load_website_blocklist(config_path)
+        policy = load_website_blocklist()
     except WebsitePolicyError as exc:
-        if config_path is not None:
-            raise
         logger.warning("Website policy config error (failing open): %s", exc)
         return None
     except Exception as exc:

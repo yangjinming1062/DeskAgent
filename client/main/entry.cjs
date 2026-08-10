@@ -45,6 +45,7 @@ const { registerRunnerIpc, autoStartBridge, autoStopBridge, restartRunnerBridge 
 const { registerRunnerConfigIpc } = require('./ipc/runner-config.cjs')
 const { registerSkillsIpc } = require('./ipc/skills.cjs')
 const { registerSpriteIpc } = require('./ipc/sprite.cjs')
+const runnerConfigStore = require('./shared/lib/runner-config-store.cjs')
 const { registerUpdateIpc } = require('./ipc/update.cjs')
 const { RunnerUpdater } = require('./runner/updater.cjs')
 const { fileExists, directoryExists, sendToMain, atomicWriteFile, sleep } = require('./shared/utils.cjs')
@@ -133,6 +134,10 @@ function resolveDeskAgentHome() {
 }
 
 const DESKAGENT_HOME = resolveDeskAgentHome()
+
+// Initialise the runner config store (desktop-settings.json) so every IPC
+// handler reads / writes the same in-memory object.
+runnerConfigStore.init({ deskagentHome: DESKAGENT_HOME })
 
 // active-profile.json records which DeskAgent profile the desktop is configured
 // desktop.log lives under DESKAGENT_HOME/logs/ so it sits next to agent.log,
@@ -1796,7 +1801,7 @@ const bridgeDeps = {
 
 registerAuthIpc({ ipcMain, deps: bridgeDeps })
 registerRunnerIpc({ ipcMain, deps: bridgeDeps })
-registerRunnerConfigIpc({ ipcMain, deps: bridgeDeps })
+registerRunnerConfigIpc({ ipcMain })
 registerSkillsIpc({ ipcMain, deps: bridgeDeps, deskagentHome: deskagentHome() })
 registerUpdateIpc({
   ipcMain,

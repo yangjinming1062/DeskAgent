@@ -19,6 +19,8 @@ function createRunnerBridge(options = {}) {
   const processFactory = options.processFactory || null
   const wsServerFactory = options.wsServerFactory || null
   const reverseRpcFactory = options.reverseRpcFactory || null
+  // Called on every runner_ready — push unconditionally: reconnect keeps config alive, process restart loses it.
+  const pushConfig = typeof options.pushConfig === 'function' ? options.pushConfig : null
 
   let runnerProcess = null
   let wsServer = null
@@ -225,6 +227,9 @@ function createRunnerBridge(options = {}) {
     }
 
     if (state.phase !== 'starting') {
+      if (pushConfig) {
+        pushConfig().catch(err => log(`[runner-bridge] config push on reconnect failed: ${err.message}`))
+      }
       emit.emit('event', {
         type: 'runner_ready',
         tools: cachedTools,
@@ -233,6 +238,15 @@ function createRunnerBridge(options = {}) {
         probeFailed: state.probeFailed
       })
       return
+    }
+
+    // Runner's in-memory config is empty on fresh process start — seed before any tool call.
+    if (pushConfig) {
+      try {
+        await pushConfig()
+      } catch (err) {
+        log(`[runner-bridge] initial config push failed: ${err.message}`)
+      }
     }
 
     await _fetchAndCacheTools()

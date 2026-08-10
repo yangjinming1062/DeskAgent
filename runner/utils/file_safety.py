@@ -230,7 +230,7 @@ def is_write_denied(path: str) -> bool:
 
     for base_real in deskagent_dirs:
         try:
-            if any(resolved == os.path.realpath(os.path.join(base_real, n)) for n in ("auth.json", "config.yaml", "webhook_subscriptions.json")):
+            if any(resolved == os.path.realpath(os.path.join(base_real, n)) for n in ("auth.json", "desktop-settings.json", "webhook_subscriptions.json")):
                 return True
             for sub in ("mcp-tokens", "pairing"):
                 sub_real = os.path.realpath(os.path.join(base_real, sub))
