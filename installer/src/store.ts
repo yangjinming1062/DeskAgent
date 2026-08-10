@@ -14,10 +14,7 @@ import { invoke } from '@tauri-apps/api/core'
  * the app only deals with React-friendly state.
  */
 
-// ---------------------------------------------------------------------------
 // Types — mirror src-tauri/src/events.rs
-// ---------------------------------------------------------------------------
-
 export interface StageInfo {
   name: string
   title: string
@@ -56,10 +53,7 @@ const INITIAL: BootstrapStateModel = {
   logs: []
 }
 
-// ---------------------------------------------------------------------------
 // Atoms
-// ---------------------------------------------------------------------------
-
 export type Route = 'welcome' | 'auth' | 'progress' | 'success' | 'failure'
 
 export const $route = atom<Route>('welcome')
@@ -85,10 +79,7 @@ export const $progress = computed($bootstrap, (b) => {
   return { done, total, fraction: done / total }
 })
 
-// ---------------------------------------------------------------------------
 // Tauri event subscription
-// ---------------------------------------------------------------------------
-
 interface BootstrapManifestEvent {
   type: 'manifest'
   stages: StageInfo[]
@@ -257,10 +248,7 @@ export async function initialize(): Promise<void> {
   })
 }
 
-// ---------------------------------------------------------------------------
 // Actions
-// ---------------------------------------------------------------------------
-
 export async function startInstall(): Promise<void> {
   clearRouteTimer()
   // Reset before kicking off so a retry from the failure screen clears

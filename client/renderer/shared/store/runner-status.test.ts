@@ -2,10 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { $runnerPhase, $runnerReady, hydrateRunnerStatus, teardownRunnerStatus } from './runner-status'
 
-// ---------------------------------------------------------------------------
 // $runnerPhase + hydrateRunnerStatus — IPC plumbing (sync getter + event sub)
-// ---------------------------------------------------------------------------
-
 interface RunnerStatusListener {
   (ev: { type: string; [k: string]: unknown }): void
 }

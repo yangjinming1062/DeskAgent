@@ -81,10 +81,7 @@ function maybeTriggerAffectCheck(idleSeconds: number, locked: boolean): void {
     })
 }
 
-// ---------------------------------------------------------------------------
 // Focused-app classification
-// ---------------------------------------------------------------------------
-
 interface FocusedAppInfo {
   name?: string
   title?: string
@@ -196,10 +193,7 @@ export function classifyFocusedApp(info: FocusedAppInfo): FocusCategory {
   return isMac ? classifyMacos(info) : classifyWindows(info)
 }
 
-// ---------------------------------------------------------------------------
 // Tier-override derivation + push
-// ---------------------------------------------------------------------------
-
 const IMMERSIVE_CATEGORIES: ReadonlySet<FocusCategory> = new Set(['ide', 'gaming', 'reader'])
 
 function computeLocalEffectiveTier(userPreferred: DisturbanceTier, ctx: FocusContext | null): DisturbanceTier {
@@ -246,10 +240,7 @@ function maybePushTierOverride(): void {
   })
 }
 
-// ---------------------------------------------------------------------------
 // Poll loop
-// ---------------------------------------------------------------------------
-
 // Aggregated activity snapshot from the runner. Single ``system.snapshot``
 // round-trip replaces four separate ``system.*`` probes — same data shape,
 // one IPC + WS message instead of four. Returns the same per-probe safe

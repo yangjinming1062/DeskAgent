@@ -850,7 +850,7 @@ class ProcessRegistry:
         if session is None:
             return {"status": "not_found", "error": f"No process with ID {session_id}"}
         # Reconcile against real child state before reading session.exited.
-        # Guards against orphaned-pipe reader hangs (issue #17327).
+        # Guards against orphaned-pipe reader hangs.
         self._reconcile_local_exit(session)
         with session._lock:
             output_preview = clean_output(session.output_buffer[-1000:]) if session.output_buffer else ""
@@ -924,7 +924,7 @@ class ProcessRegistry:
         while time.monotonic() < deadline:
             session = self._refresh_detached_session(session)
             # Reconcile against real child state — guards against orphaned-
-            # child has already exited (issue #17327).
+            # child has already exited.
             self._reconcile_local_exit(session)
             if session.exited:
                 self._completion_consumed.add(session_id)

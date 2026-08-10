@@ -24,9 +24,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-# ---------------------------------------------------------------------------
 # Constants
-# ---------------------------------------------------------------------------
 
 USER_AGENT = "HermesAgent/1.0 (contact: hermes@agent.ai)"
 DATA_SOURCE = "OpenStreetMap/Nominatim"
@@ -142,9 +140,7 @@ OSRM_PROFILES = {
     "cycling": "bike",
 }
 
-# ---------------------------------------------------------------------------
 # Output helpers
-# ---------------------------------------------------------------------------
 
 def print_json(data):
     """Print data as pretty-printed JSON to stdout."""
@@ -157,9 +153,7 @@ def error_exit(message, code=1):
     sys.exit(code)
 
 
-# ---------------------------------------------------------------------------
 # HTTP helpers
-# ---------------------------------------------------------------------------
 
 def http_get(url, params=None, retries=MAX_RETRIES, silent=False):
     """
@@ -293,9 +287,7 @@ def overpass_query(query):
     )
 
 
-# ---------------------------------------------------------------------------
 # Geo math
-# ---------------------------------------------------------------------------
 
 def haversine_m(lat1, lon1, lat2, lon2):
     """Return distance in metres between two lat/lon points (Haversine)."""
@@ -309,9 +301,7 @@ def haversine_m(lat1, lon1, lat2, lon2):
     return 2 * R * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
 
-# ---------------------------------------------------------------------------
 # Nominatim helpers
-# ---------------------------------------------------------------------------
 
 def nominatim_search(query, limit=5):
     """Geocode a free-text query. Returns list of result dicts."""
@@ -349,9 +339,7 @@ def geocode_single(query):
     return float(r["lat"]), float(r["lon"]), r.get("display_name", query)
 
 
-# ---------------------------------------------------------------------------
 # Overpass helpers
-# ---------------------------------------------------------------------------
 
 def build_overpass_nearby(tag_key, tag_val, lat, lon, radius, limit,
                           religion=None, tag_pairs=None):
@@ -494,9 +482,7 @@ def parse_overpass_elements(elements, ref_lat=None, ref_lon=None):
     return places
 
 
-# ---------------------------------------------------------------------------
 # Command: search
-# ---------------------------------------------------------------------------
 
 def cmd_search(args):
     """Geocode a place name and return top results."""
@@ -541,9 +527,7 @@ def cmd_search(args):
     })
 
 
-# ---------------------------------------------------------------------------
 # Command: reverse
-# ---------------------------------------------------------------------------
 
 def cmd_reverse(args):
     """Reverse geocode coordinates to a human-readable address."""
@@ -589,9 +573,7 @@ def cmd_reverse(args):
     })
 
 
-# ---------------------------------------------------------------------------
 # Command: nearby
-# ---------------------------------------------------------------------------
 
 def cmd_nearby(args):
     """Find nearby POIs using the Overpass API.
@@ -679,9 +661,7 @@ def cmd_nearby(args):
     })
 
 
-# ---------------------------------------------------------------------------
 # Command: distance
-# ---------------------------------------------------------------------------
 
 def cmd_distance(args):
     """Calculate road distance and travel time between two places."""
@@ -747,9 +727,7 @@ def cmd_distance(args):
     })
 
 
-# ---------------------------------------------------------------------------
 # Command: directions
-# ---------------------------------------------------------------------------
 
 def _format_duration(seconds):
     """Format seconds into a human-readable string."""
@@ -882,9 +860,7 @@ def cmd_directions(args):
     })
 
 
-# ---------------------------------------------------------------------------
 # Command: timezone
-# ---------------------------------------------------------------------------
 
 def cmd_timezone(args):
     """
@@ -962,9 +938,7 @@ def cmd_timezone(args):
     })
 
 
-# ---------------------------------------------------------------------------
 # Command: bbox
-# ---------------------------------------------------------------------------
 
 def cmd_bbox(args):
     """Find POIs within a bounding box using the Overpass API."""
@@ -1025,9 +999,7 @@ def cmd_bbox(args):
     })
 
 
-# ---------------------------------------------------------------------------
 # Command: area
-# ---------------------------------------------------------------------------
 
 def cmd_area(args):
     """Get bounding box and area info for a named place."""
@@ -1079,9 +1051,7 @@ def cmd_area(args):
     })
 
 
-# ---------------------------------------------------------------------------
 # CLI setup
-# ---------------------------------------------------------------------------
 
 def build_parser():
     parser = argparse.ArgumentParser(

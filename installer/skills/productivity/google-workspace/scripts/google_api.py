@@ -205,9 +205,7 @@ def build_service(api, version):
     return build(api, version, credentials=get_credentials())
 
 
-# =========================================================================
 # Gmail
-# =========================================================================
 
 
 def gmail_search(args):
@@ -462,9 +460,7 @@ def gmail_modify(args):
     print(json.dumps({"id": result["id"], "labels": result.get("labelIds", [])}, indent=2))
 
 
-# =========================================================================
 # Calendar
-# =========================================================================
 
 
 def calendar_list(args):
@@ -590,9 +586,7 @@ def calendar_delete(args):
     print(json.dumps({"status": "deleted", "eventId": args.event_id}))
 
 
-# =========================================================================
 # Drive
-# =========================================================================
 
 
 def drive_search(args):
@@ -874,9 +868,7 @@ def drive_delete(args):
     print(json.dumps({"status": "trashed", "fileId": args.file_id, "permanent": False}))
 
 
-# =========================================================================
 # Contacts
-# =========================================================================
 
 
 def contacts_list(args):
@@ -930,9 +922,7 @@ def contacts_list(args):
     print(json.dumps(contacts, indent=2, ensure_ascii=False))
 
 
-# =========================================================================
 # Sheets
-# =========================================================================
 
 
 def sheets_get(args):
@@ -1068,9 +1058,7 @@ def sheets_create(args):
     )
 
 
-# =========================================================================
 # Docs
-# =========================================================================
 
 
 def docs_get(args):
@@ -1181,9 +1169,7 @@ def _docs_insert_text(doc_id: str, text: str, index: int) -> None:
     service.documents().batchUpdate(documentId=doc_id, body={"requests": requests}).execute()
 
 
-# =========================================================================
 # CLI parser
-# =========================================================================
 
 
 def main():

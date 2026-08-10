@@ -2944,7 +2944,7 @@ def _register_server_tools(name: str, server: MCPServerTask, config: dict) -> li
     toolset_name = f"mcp-{name}"
 
     # Selective tool loading: honour include/exclude lists from config.
-    # Rules (matching issue #690 spec):
+    # Rules (matching spec):
     #   tools.include — whitelist: only these tool names are registered
     #   tools.exclude — blacklist: all tools EXCEPT these are registered
 

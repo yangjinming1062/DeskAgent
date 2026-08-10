@@ -62,15 +62,12 @@ describe('classifyFocusedApp', () => {
   })
 })
 
-// ---------------------------------------------------------------------------
 // startActivityMonitor — runner-gate
 //
 // The bridge lifecycle now lives in the shared `$runnerPhase` atom (see
 // `@/shared/store/runner-status`). Hydration IPC plumbing is tested in
 // runner-status.test.ts; here we drive `$runnerPhase` directly to exercise
 // activity.ts's consumer-side logic in isolation.
-// ---------------------------------------------------------------------------
-
 import { $runnerPhase, teardownRunnerStatus } from '@/shared/store/runner-status'
 
 interface ActivityDeskagent {

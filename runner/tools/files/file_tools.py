@@ -306,7 +306,7 @@ def _is_blocked_device_path(path: str) -> bool:
     if normalized.startswith("/proc/") and normalized.endswith(("/fd/0", "/fd/1", "/fd/2")):
         return True
     # /proc/*/environ, /proc/*/cmdline, /proc/*/maps can leak secrets,
-    # command-line args, and memory layout from the host process (issue #4427)
+    # command-line args, and memory layout from the host process
     if normalized.startswith("/proc/") and normalized.endswith(("/environ", "/cmdline", "/maps")):
         return True
     return False
