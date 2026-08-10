@@ -41,7 +41,7 @@ class NativeFileOperations(FileOperations):
     This avoids shell execution and works robustly on Windows for local environments.
     """
 
-    def __init__(self, cwd: str | None = None):
+    def __init__(self, cwd: str | None = None) -> None:
         self.cwd = cwd or os.getcwd()
 
     def _expand_path(self, path: str) -> Path:
@@ -307,7 +307,7 @@ class NativeFileOperations(FileOperations):
         total_count = 0
         truncated = False
 
-        def get_files():
+        def get_files() -> None:
             if not search_root.is_dir():
                 yield search_root
                 return

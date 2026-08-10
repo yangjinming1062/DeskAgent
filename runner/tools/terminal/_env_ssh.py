@@ -25,7 +25,7 @@ def _ensure_ssh_available() -> None:
 
 
 class SSHEnvironment(BaseEnvironment):
-    def __init__(self, host: str, user: str, cwd: str = "~", timeout: int = 60, port: int = 22, key_path: str = ""):
+    def __init__(self, host: str, user: str, cwd: str = "~", timeout: int = 60, port: int = 22, key_path: str = "") -> None:
         super().__init__(cwd=cwd, timeout=timeout)
         self.host = host
         self.user = user
@@ -74,7 +74,7 @@ class SSHEnvironment(BaseEnvironment):
         cmd.append(f"{self.user}@{self.host}")
         return cmd
 
-    def _establish_connection(self):
+    def _establish_connection(self) -> None:
         cmd = self._build_ssh_command()
         cmd.append("echo 'SSH connection established'")
         try:
@@ -185,7 +185,7 @@ class SSHEnvironment(BaseEnvironment):
         cmd.extend(["bash", "-l", "-c", shlex.quote(cmd_string)] if login else ["bash", "-c", shlex.quote(cmd_string)])
         return _popen_bash(cmd, stdin_data)
 
-    def cleanup(self):
+    def cleanup(self) -> None:
         if self._sync_manager:
             logger.info("SSH: syncing files from sandbox...")
             try:

@@ -177,7 +177,7 @@ def _validate_bundle_rel_path(rel_path: str) -> str:
 
 
 class GitHubAuth:
-    def __init__(self):
+    def __init__(self) -> None:
         self._cached_token: str | None = None
         self._cached_method: str | None = None
         self._app_token_expiry: float = 0
@@ -281,7 +281,7 @@ class GitHubSource(SkillSource):
         {"repo": "garrytan/gstack", "path": ""},
     ]
 
-    def __init__(self, auth: GitHubAuth, extra_taps: list[dict] | None = None):
+    def __init__(self, auth: GitHubAuth, extra_taps: list[dict] | None = None) -> None:
         self.auth = auth
         self.taps = list(self.DEFAULT_TAPS)
         if extra_taps:
@@ -1252,7 +1252,7 @@ class SkillsShSource(SkillSource):
     )
     _WEEKLY_INSTALLS_RE = re.compile(r'Weekly Installs.*?children\\":\\"(?P<count>[0-9.,Kk]+)\\"', re.DOTALL)
 
-    def __init__(self, auth: GitHubAuth):
+    def __init__(self, auth: GitHubAuth) -> None:
         self.auth = auth
         self.github = GitHubSource(auth=auth)
 
@@ -2303,7 +2303,7 @@ class ClaudeMarketplaceSource(SkillSource):
         "aiskillstore/marketplace",
     ]
 
-    def __init__(self, auth: GitHubAuth):
+    def __init__(self, auth: GitHubAuth) -> None:
         self.auth = auth
         # Persistent GitHubSource so rate-limit state survives across the
         # marketplace-index fetch + per-skill inspect calls and can be
@@ -2774,7 +2774,7 @@ def _skill_meta_to_dict(meta: SkillMeta) -> dict:
 
 
 class HubLockFile:
-    def __init__(self, path: Path = LOCK_FILE):
+    def __init__(self, path: Path = LOCK_FILE) -> None:
         self.path = path
 
     def load(self) -> dict:
@@ -2831,7 +2831,7 @@ class HubLockFile:
 
 
 class TapsManager:
-    def __init__(self, path: Path = TAPS_FILE):
+    def __init__(self, path: Path = TAPS_FILE) -> None:
         self.path = path
 
     def load(self) -> list[dict]:
@@ -3133,7 +3133,7 @@ class DeskAgentIndexSource(SkillSource):
     downstream sources take over transparently.
     """
 
-    def __init__(self, auth: GitHubAuth):
+    def __init__(self, auth: GitHubAuth) -> None:
         self._index: dict | None = None
         self._loaded = False
         self.auth = auth

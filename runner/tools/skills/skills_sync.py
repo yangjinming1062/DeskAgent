@@ -241,7 +241,7 @@ def sync_skills(quiet: bool = False) -> dict:
 
 
 def _rmtree_writable(path: Path) -> None:
-    def _on_error(func, fpath, exc_info):
+    def _on_error(func, fpath, exc_info) -> None:
         for target in (os.path.dirname(fpath), fpath):
             with contextlib.suppress(OSError):
                 os.chmod(target, stat.S_IRWXU)

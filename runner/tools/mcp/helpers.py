@@ -111,7 +111,7 @@ def _write_json(path: Path, data: dict) -> None:
 
 
 class DeskAgentTokenStorage:
-    def __init__(self, server_name: str):
+    def __init__(self, server_name: str) -> None:
         self._server_name = _safe_filename(server_name)
         self._token_dir = _get_token_dir()
 
@@ -361,7 +361,7 @@ def build_oauth_auth(server_name: str, server_url: str, oauth_config: dict | Non
 
 def _make_deskagent_provider_class() -> type:
     class DeskAgentMCPOAuthProvider(OAuthClientProvider):
-        def __init__(self, *args: Any, server_name: str = "", **kwargs: Any):
+        def __init__(self, *args: Any, server_name: str = "", **kwargs: Any) -> None:
             super().__init__(*args, **kwargs)
             self._deskagent_server_name = server_name
 
@@ -422,7 +422,7 @@ def _make_deskagent_provider_class() -> type:
             if existing is None or str(existing.token_endpoint) != str(meta.token_endpoint):
                 storage.save_oauth_metadata(meta)
 
-        async def async_auth_flow(self, request):
+        async def async_auth_flow(self, request) -> None:
             try:
                 await get_manager().invalidate_if_disk_changed(self._deskagent_server_name)
             except Exception as exc:

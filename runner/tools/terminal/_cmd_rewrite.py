@@ -37,7 +37,7 @@ def _get_sudo_password_callback():
     return getattr(_callback_tls, "sudo_password", None)
 
 
-def set_sudo_password_callback(cb):
+def set_sudo_password_callback(cb) -> None:
     _callback_tls.sudo_password = cb
 
 
@@ -79,7 +79,7 @@ def _prompt_for_sudo_password(timeout_seconds: int = 45) -> str:
             return ""
     result = {"password": None, "done": False}
 
-    def read_password_thread():
+    def read_password_thread() -> None:
         tty_fd = None
         old_attrs = None
         try:

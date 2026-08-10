@@ -10,6 +10,6 @@ from tools import discover_builtin_tools
 
 
 @pytest.fixture(scope="session", autouse=True)
-def _ensure_tools_discovered():
+def _ensure_tools_discovered() -> None:
     discover_builtin_tools()
     yield

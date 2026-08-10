@@ -113,7 +113,7 @@ async def _download_media(
     """
     destination.parent.mkdir(parents=True, exist_ok=True)
 
-    async def _guard(response):
+    async def _guard(response) -> None:
         if response.is_redirect and response.next_request and not await async_is_safe_url(redirect := str(response.next_request.url)):
             raise ValueError(f"Blocked redirect to private/internal address: {redirect}")
 

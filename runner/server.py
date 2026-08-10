@@ -57,11 +57,11 @@ _STARTED_AT = time.time()
 _RECONNECT_COUNT = 0
 
 
-async def _send(ws, req_id, **fields):
+async def _send(ws, req_id, **fields) -> None:
     await ws.send(json.dumps({"jsonrpc": "2.0", "id": req_id, **fields}))
 
 
-async def _send_notification(ws, method, params, id=None):
+async def _send_notification(ws, method, params, id=None) -> None:
     body = {"jsonrpc": "2.0", "method": method, "params": params}
     if id is not None:
         body["id"] = id
@@ -145,7 +145,7 @@ def _extract_llm_content(result: dict) -> str:
     return ""
 
 
-async def process_request(ws, req):
+async def process_request(ws, req) -> None:
     req_id = req.get("id")
     method = req.get("method")
     params = req.get("params", {})
@@ -440,7 +440,7 @@ def _active_mcp_server_names() -> list[str]:
         return []
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(description="DeskAgent Runner Server")
     parser.add_argument("--desktop-ws", required=True, help="Desktop WebSocket URL (e.g. ws://127.0.0.1:8080/rpc)")
     args = parser.parse_args()
@@ -454,14 +454,14 @@ def main():
         logger.info("Runner stopped.")
 
 
-def _schedule_background_mcp_discovery():
+def _schedule_background_mcp_discovery() -> None:
     """Run ``discover_mcp_tools()`` off the WS event loop. Process-scoped (no-op on reconnect) — concurrent discovery threads would race on the shared registry during the 60-120s stdio spawn window."""
     global _discovery_started
     if _discovery_started:
         return
     _discovery_started = True
 
-    def _run():
+    def _run() -> None:
         try:
             discover_mcp_tools()
         except Exception as e:
@@ -472,7 +472,7 @@ def _schedule_background_mcp_discovery():
     threading.Thread(target=_run, daemon=True).start()
 
 
-def _notify_tools_changed():
+def _notify_tools_changed() -> None:
     """Send `tools_changed` notification to the desktop via the active WS.
 
     No-op when the WS isn't yet connected (e.g. shutdown raced ahead of

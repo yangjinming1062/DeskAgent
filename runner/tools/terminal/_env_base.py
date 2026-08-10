@@ -64,7 +64,7 @@ def get_sandbox_dir() -> Path:
 
 
 def _pipe_stdin(proc: subprocess.Popen, data: str) -> None:
-    def _write():
+    def _write() -> None:
         try:
             (target := getattr(proc.stdin, "buffer", proc.stdin)).write(data.encode("utf-8") if isinstance(data, str) else data)
             target.close()
@@ -99,7 +99,7 @@ class ProcessHandle(Protocol):
 
 
 class _ThreadedProcessHandle:
-    def __init__(self, exec_fn: Callable[[], tuple[str, int]], cancel_fn: Callable[[], None] | None = None):
+    def __init__(self, exec_fn: Callable[[], tuple[str, int]], cancel_fn: Callable[[], None] | None = None) -> None:
         self._cancel_fn = cancel_fn
         self._done = threading.Event()
         self._returncode: int | None = None
@@ -108,7 +108,7 @@ class _ThreadedProcessHandle:
         self._stdout = os.fdopen(read_fd, "r", encoding="utf-8", errors="replace")
         self._write_fd = write_fd
 
-        def _worker():
+        def _worker() -> None:
             try:
                 output, exit_code = exec_fn()
                 self._returncode = exit_code
@@ -135,7 +135,7 @@ class _ThreadedProcessHandle:
     def poll(self) -> int | None:
         return self._returncode if self._done.is_set() else None
 
-    def kill(self):
+    def kill(self) -> None:
         if self._cancel_fn:
             with contextlib.suppress(Exception):
                 self._cancel_fn()
@@ -156,7 +156,7 @@ class BaseEnvironment(ABC):
     def get_temp_dir(self) -> str:
         return "/tmp"
 
-    def __init__(self, cwd: str, timeout: int, env: dict | None = None):
+    def __init__(self, cwd: str, timeout: int, env: dict | None = None) -> None:
         self.cwd = cwd
         self.timeout = timeout
         self.env = env or {}
@@ -179,7 +179,7 @@ class BaseEnvironment(ABC):
 
     @abstractmethod
     def cleanup(self): ...
-    def init_session(self):
+    def init_session(self) -> None:
         bootstrap = (
             f"export -p > {shlex.quote(self._snapshot_path)}\n"
             f"declare -f | grep -vE '^_[^_]' >> {shlex.quote(self._snapshot_path)}\n"
@@ -231,7 +231,7 @@ class BaseEnvironment(ABC):
         output_chunks: list[str] = []
         decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
 
-        def _drain_iterable(stream):
+        def _drain_iterable(stream) -> None:
             try:
                 for piece in stream:
                     if piece is not None:
@@ -239,7 +239,7 @@ class BaseEnvironment(ABC):
             except Exception:
                 pass
 
-        def _drain():
+        def _drain() -> None:
             if (stream := proc.stdout) is None:
                 return
             try:
@@ -300,14 +300,14 @@ class BaseEnvironment(ABC):
             proc.stdout.close()
         return {"output": "".join(output_chunks), "returncode": proc.returncode}
 
-    def _kill_process(self, proc: ProcessHandle):
+    def _kill_process(self, proc: ProcessHandle) -> None:
         with contextlib.suppress(ProcessLookupError, PermissionError, OSError):
             proc.kill()
 
-    def _update_cwd(self, result: dict):
+    def _update_cwd(self, result: dict) -> None:
         self._extract_cwd_from_output(result)
 
-    def _extract_cwd_from_output(self, result: dict):
+    def _extract_cwd_from_output(self, result: dict) -> None:
         output = result.get("output", "")
         marker = self._cwd_marker
         if (last := output.rfind(marker)) != -1 and (first := output.rfind(marker, max(0, last - 4096), last)) != -1 and first != last:
@@ -346,10 +346,10 @@ class BaseEnvironment(ABC):
         self._update_cwd(result)
         return result
 
-    def stop(self):
+    def stop(self) -> None:
         self.cleanup()
 
-    def __del__(self):
+    def __del__(self) -> None:
         with contextlib.suppress(Exception):
             self.cleanup()
 

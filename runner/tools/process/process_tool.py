@@ -139,7 +139,7 @@ class ProcessRegistry:
         "tcsetattr: Inappropriate ioctl for device",
     )
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._running: dict[str, ProcessSession] = {}
         self._finished: dict[str, ProcessSession] = {}
         self._lock = threading.Lock()
@@ -625,7 +625,7 @@ class ProcessRegistry:
         return session
 
     # ----- Reader / Poller Threads -----
-    def _reader_loop(self, session: ProcessSession):
+    def _reader_loop(self, session: ProcessSession) -> None:
         """Background thread: read stdout from a local Popen process."""
         first_chunk = True
         try:
@@ -653,7 +653,7 @@ class ProcessRegistry:
             session.exit_code = session.process.returncode
             self._move_to_finished(session)
 
-    def _env_poller_loop(self, session: ProcessSession, env: Any, log_path: str, pid_path: str, exit_path: str):
+    def _env_poller_loop(self, session: ProcessSession, env: Any, log_path: str, pid_path: str, exit_path: str) -> None:
         """Background thread: poll a sandbox log file for non-local backends."""
         quoted_log_path = shlex.quote(log_path)
         quoted_pid_path = shlex.quote(pid_path)
@@ -698,7 +698,7 @@ class ProcessRegistry:
                 self._move_to_finished(session)
                 return
 
-    def _pty_reader_loop(self, session: ProcessSession):
+    def _pty_reader_loop(self, session: ProcessSession) -> None:
         """Background thread: read output from a PTY process."""
         pty = session._pty
         try:
@@ -726,7 +726,7 @@ class ProcessRegistry:
         session.exit_code = pty.exitstatus if hasattr(pty, "exitstatus") else -1
         self._move_to_finished(session)
 
-    def _move_to_finished(self, session: ProcessSession):
+    def _move_to_finished(self, session: ProcessSession) -> None:
         """Move a session from running to finished.
         Idempotent: if the session was already moved (e.g. kill_process raced
         with the reader thread), the second call is a no-op — no duplicate
@@ -1147,7 +1147,7 @@ class ProcessRegistry:
         return killed
 
     # ----- Cleanup / Pruning -----
-    def _prune_if_needed(self):
+    def _prune_if_needed(self) -> None:
         """Remove oldest finished sessions if over MAX_PROCESSES. Must hold _lock."""
         now = time.time()
         expired = [sid for sid, s in self._finished.items() if (now - s.started_at) > FINISHED_TTL_SECONDS]
@@ -1168,7 +1168,7 @@ class ProcessRegistry:
             self._completion_consumed -= stale
 
     # ----- Checkpoint (crash recovery) -----
-    def _write_checkpoint(self):
+    def _write_checkpoint(self) -> None:
         """Write running process metadata to checkpoint file atomically."""
         try:
             with self._lock:

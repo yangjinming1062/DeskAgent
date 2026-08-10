@@ -397,7 +397,7 @@ def normalize_search_pagination(offset: Any = DEFAULT_SEARCH_OFFSET, limit: Any 
 class ShellFileOperations(FileOperations):
     """File operations implemented via shell commands."""
 
-    def __init__(self, terminal_env, cwd: str | None = None):
+    def __init__(self, terminal_env, cwd: str | None = None) -> None:
         self.env = terminal_env
         self.cwd = cwd or getattr(terminal_env, "cwd", None) or getattr(getattr(terminal_env, "config", None), "cwd", None) or "/"
         self._command_cache: dict[str, bool] = {}
@@ -1116,7 +1116,7 @@ class FileStateRegistry:
             return lock
 
     @contextmanager
-    def lock_path(self, resolved: str | Path):
+    def lock_path(self, resolved: str | Path) -> None:
         """Per-path lock for read→modify→write sections."""
         with self._lock_for(str(resolved)):
             yield

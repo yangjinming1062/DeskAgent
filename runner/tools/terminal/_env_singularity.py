@@ -127,7 +127,7 @@ class SingularityEnvironment(BaseEnvironment):
         self._start_instance()
         self.init_session()
 
-    def _start_instance(self):
+    def _start_instance(self) -> None:
         cmd = [self.executable, "instance", "start", "--containall", "--no-home"]
         if self._persistent and self._overlay_dir:
             cmd.extend(["--overlay", str(self._overlay_dir)])
@@ -159,7 +159,7 @@ class SingularityEnvironment(BaseEnvironment):
         cmd.extend(["bash", "-l", "-c", cmd_string] if login else ["bash", "-c", cmd_string])
         return _popen_bash(cmd, stdin_data)
 
-    def cleanup(self):
+    def cleanup(self) -> None:
         if self._instance_started:
             try:
                 subprocess.run([self.executable, "instance", "stop", self.instance_id], capture_output=True, text=True, timeout=30, stdin=subprocess.DEVNULL)

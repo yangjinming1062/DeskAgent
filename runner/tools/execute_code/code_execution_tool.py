@@ -852,7 +852,7 @@ def execute_code(
         _STDOUT_HEAD_BYTES = int(MAX_STDOUT_BYTES * 0.4)
         _STDOUT_TAIL_BYTES = MAX_STDOUT_BYTES - _STDOUT_HEAD_BYTES
 
-        def _drain(pipe, chunks, max_bytes):
+        def _drain(pipe, chunks, max_bytes) -> None:
             total = 0
             try:
                 while True:
@@ -868,7 +868,7 @@ def execute_code(
 
         stdout_total_bytes = [0]
 
-        def _drain_head_tail(pipe, head_chunks, tail_chunks, head_bytes, tail_bytes, total_ref):
+        def _drain_head_tail(pipe, head_chunks, tail_chunks, head_bytes, tail_bytes, total_ref) -> None:
             head_collected = 0
             tail_buf = deque()
             tail_collected = 0
@@ -992,7 +992,7 @@ def execute_code(
             pass
 
 
-def _kill_process_group(proc, escalate: bool = False):
+def _kill_process_group(proc, escalate: bool = False) -> None:
     if IS_WINDOWS:
         if not kill_tree(proc.pid, force=True):
             try:

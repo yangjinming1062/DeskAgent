@@ -71,7 +71,7 @@ def is_excluded_skill_path(path: Path) -> bool:
 
 
 @contextmanager
-def _usage_file_lock():
+def _usage_file_lock() -> None:
     lock_path = _usage_file().with_suffix(".json.lock")
     lock_path.parent.mkdir(parents=True, exist_ok=True)
     with open(lock_path, "a+", encoding="utf-8") as fd:

@@ -46,7 +46,7 @@ class ToolError(Exception):
 class ToolRegistry:
     """Singleton router mapping tool names to handlers."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._tools: dict[str, Callable] = {}
         self._toolset: dict[str, str] = {}
         self._toolset_aliases: dict[str, str] = {}

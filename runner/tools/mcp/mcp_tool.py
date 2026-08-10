@@ -514,7 +514,7 @@ class SamplingHandler:
 
     _STOP_REASON_MAP: ClassVar[dict[str, str]] = {"stop": "endTurn", "length": "maxTokens", "tool_calls": "toolUse"}
 
-    def __init__(self, server_name: str, config: dict):
+    def __init__(self, server_name: str, config: dict) -> None:
         self.server_name = server_name
         self.max_rpm = _safe_numeric(config.get("max_rpm", 10), 10, int)
         self.timeout = _safe_numeric(config.get("timeout", 30), 30, float)
@@ -848,7 +848,7 @@ class MCPServerTask:
         "initialize_result",
     )
 
-    def __init__(self, name: str):
+    def __init__(self, name: str) -> None:
         self.name = name
         self.session: Any | None = None
         self.tool_timeout: float = _DEFAULT_TOOL_TIMEOUT
@@ -889,7 +889,7 @@ class MCPServerTask:
 
     # ----- Dynamic tool discovery (notifications/tools/list_changed) -----
 
-    async def _refresh_tools_task(self):
+    async def _refresh_tools_task(self) -> None:
         """Run a dynamic tool refresh and log failures from background tasks."""
         try:
             await self._refresh_tools()
@@ -917,7 +917,7 @@ class MCPServerTask:
         send ``mcp.reload`` via the Desktop ``reload.mcp`` JSON-RPC path.
         """
 
-        async def _handler(message):
+        async def _handler(message) -> None:
             try:
                 if isinstance(message, Exception):
                     logger.debug("MCP message handler (%s): exception: %s", self.name, message)
@@ -946,7 +946,7 @@ class MCPServerTask:
 
         return _handler
 
-    async def _refresh_tools(self):
+    async def _refresh_tools(self) -> None:
         """Re-fetch tools from the server and update the registry.
 
         Called when the server sends ``notifications/tools/list_changed``.
@@ -1062,7 +1062,7 @@ class MCPServerTask:
         self._reconnect_event.clear()
         return "reconnect"
 
-    async def _run_stdio(self, config: dict):
+    async def _run_stdio(self, config: dict) -> None:
         """Run the server using stdio transport."""
         if not _MCP_AVAILABLE:
             raise ImportError(
@@ -1353,7 +1353,7 @@ class MCPServerTask:
 
             _original_url = httpx.URL(url)
 
-            async def _strip_auth_on_cross_origin_redirect(response):
+            async def _strip_auth_on_cross_origin_redirect(response) -> None:
                 """Strip Authorization headers when redirected to a different origin."""
                 if response.is_redirect and response.next_request:
                     target = response.next_request.url
@@ -1423,7 +1423,7 @@ class MCPServerTask:
                             self.name,
                         )
 
-    async def _discover_tools(self):
+    async def _discover_tools(self) -> None:
         """Discover tools from the connected session."""
         if self.session is None:
             return
@@ -1431,7 +1431,7 @@ class MCPServerTask:
             tools_result = await self.session.list_tools()
         self._tools = tools_result.tools if hasattr(tools_result, "tools") else []
 
-    async def run(self, config: dict):
+    async def run(self, config: dict) -> None:
         """Long-lived coroutine: connect, discover tools, wait, disconnect.
 
         Includes automatic reconnection with exponential backoff if the
@@ -1615,14 +1615,14 @@ class MCPServerTask:
             finally:
                 self.session = None
 
-    async def start(self, config: dict):
+    async def start(self, config: dict) -> None:
         """Create the background Task and wait until ready (or failed)."""
         self._task = asyncio.ensure_future(self.run(config))
         await self._ready.wait()
         if self._error:
             raise self._error
 
-    async def shutdown(self):
+    async def shutdown(self) -> None:
         """Signal the Task to exit and wait for clean resource teardown."""
 
         self._shutdown_event.set()
@@ -2040,7 +2040,7 @@ def _snapshot_child_pids() -> set:
     return set()
 
 
-def _mcp_loop_exception_handler(loop, context):
+def _mcp_loop_exception_handler(loop, context) -> None:
     """Suppress benign 'Event loop is closed' noise during shutdown.
 
     When the MCP event loop is stopped and closed, httpx/httpcore async
@@ -2055,7 +2055,7 @@ def _mcp_loop_exception_handler(loop, context):
     loop.default_exception_handler(context)
 
 
-def _ensure_mcp_loop():
+def _ensure_mcp_loop() -> None:
     """Start the background event loop thread if not already running."""
     global _mcp_loop, _mcp_thread
     with _lock:
@@ -3100,7 +3100,7 @@ def register_mcp_servers(servers: dict[str, dict]) -> list[str]:
         """Connect to a single server and return its registered tool names."""
         return await _discover_and_register_server(name, cfg)
 
-    async def _discover_all():
+    async def _discover_all() -> None:
         server_names = list(new_servers.keys())
 
         results = await asyncio.gather(
@@ -3278,7 +3278,7 @@ def probe_mcp_server_tools() -> dict[str, list[tuple]]:
     result: dict[str, list[tuple]] = {}
     probed_servers: list[MCPServerTask] = []
 
-    async def _probe_all():
+    async def _probe_all() -> None:
         names = list(enabled.keys())
         coros = []
         for name, cfg in enabled.items():
@@ -3313,7 +3313,7 @@ def probe_mcp_server_tools() -> dict[str, list[tuple]]:
     return result
 
 
-def shutdown_mcp_servers():
+def shutdown_mcp_servers() -> None:
     """Close all MCP server connections and stop the background loop.
 
     Each server Task is signalled to exit its ``async with`` block so that
@@ -3328,7 +3328,7 @@ def shutdown_mcp_servers():
         _stop_mcp_loop()
         return
 
-    async def _shutdown():
+    async def _shutdown() -> None:
         results = await asyncio.gather(
             *(server.shutdown() for server in servers_snapshot),
             return_exceptions=True,
@@ -3522,7 +3522,7 @@ def _kill_orphaned_mcp_children(include_active: bool = False) -> None:
         )
 
 
-def _stop_mcp_loop():
+def _stop_mcp_loop() -> None:
     """Stop the background event loop and join its thread."""
     global _mcp_loop, _mcp_thread
     with _lock:

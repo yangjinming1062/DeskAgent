@@ -70,7 +70,7 @@ def _prepend_shell_init(cmd_string: str, files: list[str]) -> str:
 
 
 class LocalEnvironment(BaseEnvironment):
-    def __init__(self, cwd: str = "", timeout: int = 60, env: dict | None = None, persistent: bool = False):
+    def __init__(self, cwd: str = "", timeout: int = 60, env: dict | None = None, persistent: bool = False) -> None:
         super().__init__(cwd=os.path.expanduser(cwd) if cwd else os.getcwd(), timeout=timeout, env=env)
         self._persistent = persistent
         self.init_session()
@@ -172,7 +172,7 @@ class LocalEnvironment(BaseEnvironment):
             with contextlib.suppress(Exception):
                 proc.kill()
 
-    def _update_cwd(self, result: dict):
+    def _update_cwd(self, result: dict) -> None:
         try:
             with open(self._cwd_file, encoding="utf-8") as f:
                 cwd_path = f.read().strip()
@@ -184,7 +184,7 @@ class LocalEnvironment(BaseEnvironment):
             pass
         self._extract_cwd_from_output(result)
 
-    def _extract_cwd_from_output(self, result: dict):
+    def _extract_cwd_from_output(self, result: dict) -> None:
         prev_cwd = self.cwd
         super()._extract_cwd_from_output(result)
         if self.cwd != prev_cwd:
@@ -194,7 +194,7 @@ class LocalEnvironment(BaseEnvironment):
             else:
                 self.cwd = prev_cwd
 
-    def cleanup(self):
+    def cleanup(self) -> None:
         for f in (self._snapshot_path, self._cwd_file):
             with contextlib.suppress(OSError):
                 os.unlink(f)

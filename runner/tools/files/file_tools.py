@@ -807,7 +807,7 @@ def _get_file_ops(task_id: str = "default") -> ShellFileOperations:
     return file_ops
 
 
-def clear_file_ops_cache(task_id: str | None = None):
+def clear_file_ops_cache(task_id: str | None = None) -> None:
     """Clear the file operations cache."""
     with _file_ops_lock:
         if task_id:

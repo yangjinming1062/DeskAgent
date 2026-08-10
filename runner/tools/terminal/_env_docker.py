@@ -463,7 +463,7 @@ class DockerEnvironment(BaseEnvironment):
             logger.debug("docker ps probe failed: %s", e)
         return None
 
-    def cleanup(self, *, force_remove: bool = False):
+    def cleanup(self, *, force_remove: bool = False) -> None:
         container_id = self._container_id
         if not container_id:
             if not self._persistent:

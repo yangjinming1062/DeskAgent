@@ -793,7 +793,7 @@ _cleanup_running = False
 _cleanup_lock = threading.Lock()
 
 
-def _emergency_cleanup_all_sessions():
+def _emergency_cleanup_all_sessions() -> None:
     """
     Emergency cleanup of all active browser sessions.
     Called on process exit or interrupt to prevent orphaned sessions.
@@ -838,7 +838,7 @@ def _emergency_cleanup_all_sessions():
 atexit.register(_emergency_cleanup_all_sessions)
 
 
-def _cleanup_inactive_browser_sessions():
+def _cleanup_inactive_browser_sessions() -> None:
     """
     Clean up browser sessions that have been inactive for longer than the timeout.
 
@@ -883,7 +883,7 @@ def _write_owner_pid(socket_dir: str, session_name: str) -> None:
         logger.debug("Could not write owner_pid file for %s: %s", session_name, exc)
 
 
-def _reap_orphaned_browser_sessions():
+def _reap_orphaned_browser_sessions() -> None:
     """Scan for orphaned agent-browser daemon processes from previous runs.
 
     When the Python process that created a browser session exits uncleanly
@@ -989,7 +989,7 @@ def _reap_orphaned_browser_sessions():
         logger.info("Reaped %d orphaned browser session(s) from previous run(s)", reaped)
 
 
-def _browser_cleanup_thread_worker():
+def _browser_cleanup_thread_worker() -> None:
     """
     Background thread that periodically cleans up inactive browser sessions.
 
@@ -1020,7 +1020,7 @@ def _browser_cleanup_thread_worker():
             time.sleep(1)
 
 
-def _start_browser_cleanup_thread():
+def _start_browser_cleanup_thread() -> None:
     """Start the background cleanup thread if not already running."""
     global _cleanup_thread, _cleanup_running
 
@@ -1032,7 +1032,7 @@ def _start_browser_cleanup_thread():
             logger.info("Started inactivity cleanup thread (timeout: %ss)", BROWSER_SESSION_INACTIVITY_TIMEOUT)
 
 
-def _stop_browser_cleanup_thread():
+def _stop_browser_cleanup_thread() -> None:
     """Stop the background cleanup thread."""
     global _cleanup_running
     _cleanup_running = False
@@ -1040,7 +1040,7 @@ def _stop_browser_cleanup_thread():
         _cleanup_thread.join(timeout=5)
 
 
-def _update_session_activity(task_id: str):
+def _update_session_activity(task_id: str) -> None:
     """Update the last activity timestamp for a session."""
     with _cleanup_lock:
         _session_last_activity[task_id] = time.time()
@@ -3611,7 +3611,7 @@ def _camofox_eval(expression: str, task_id: str | None = None) -> str:
         return tool_error(error_msg, success=False)
 
 
-def _maybe_start_recording(task_id: str):
+def _maybe_start_recording(task_id: str) -> None:
     """Start recording if browser.record_sessions is enabled in config."""
     with _cleanup_lock:
         if task_id in _recording_sessions:
@@ -3641,7 +3641,7 @@ def _maybe_start_recording(task_id: str):
         logger.debug("Auto-recording setup failed: %s", e)
 
 
-def _maybe_stop_recording(task_id: str):
+def _maybe_stop_recording(task_id: str) -> None:
     """Stop recording if one is active for this session."""
     with _cleanup_lock:
         if task_id not in _recording_sessions:
@@ -3919,7 +3919,7 @@ def browser_vision(question: str, annotate: bool = False, task_id: str | None = 
         return json.dumps(error_info, ensure_ascii=False)
 
 
-def _cleanup_old_screenshots(screenshots_dir, max_age_hours=24):
+def _cleanup_old_screenshots(screenshots_dir, max_age_hours=24) -> None:
     """Remove browser screenshots older than max_age_hours to prevent disk bloat.
 
     Throttled to run at most once per hour per directory to avoid repeated
@@ -3936,7 +3936,7 @@ def _cleanup_old_screenshots(screenshots_dir, max_age_hours=24):
         logger.debug("Screenshot cleanup error (non-critical): %s", e)
 
 
-def _cleanup_old_recordings(max_age_hours=72):
+def _cleanup_old_recordings(max_age_hours=72) -> None:
     """Remove browser recordings older than max_age_hours to prevent disk bloat."""
     try:
         recordings_dir = get_deskagent_home() / "browser_recordings"

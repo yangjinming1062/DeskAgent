@@ -48,7 +48,7 @@ def _stop_env(env) -> None:
 # ── Cleanup operations ────────────────────────────────────────────────
 
 
-def _cleanup_inactive_envs(lifetime_seconds: int = 300):
+def _cleanup_inactive_envs(lifetime_seconds: int = 300) -> None:
     from ...files import clear_file_ops_cache
     from ...process import process_registry
 
@@ -76,7 +76,7 @@ def _cleanup_inactive_envs(lifetime_seconds: int = 300):
             _log_cleanup_error(task_id, e)
 
 
-def _cleanup_thread_worker():
+def _cleanup_thread_worker() -> None:
     while _cleanup_running:
         try:
             config = get_env_config()
@@ -87,7 +87,7 @@ def _cleanup_thread_worker():
         _cleanup_stop_event.clear()
 
 
-def start_cleanup_thread():
+def start_cleanup_thread() -> None:
     global _cleanup_thread, _cleanup_running
     with _env_lock:
         if _cleanup_thread is None or not _cleanup_thread.is_alive():
@@ -96,7 +96,7 @@ def start_cleanup_thread():
             _cleanup_thread.start()
 
 
-def stop_cleanup_thread():
+def stop_cleanup_thread() -> None:
     global _cleanup_running
     _cleanup_running = False
     _cleanup_stop_event.set()
@@ -131,7 +131,7 @@ def cleanup_all_environments():
     return cleaned
 
 
-def cleanup_vm(task_id: str, *, force_remove: bool = False):
+def cleanup_vm(task_id: str, *, force_remove: bool = False) -> None:
     from ...files import clear_file_ops_cache
 
     env = None
@@ -157,7 +157,7 @@ def cleanup_vm(task_id: str, *, force_remove: bool = False):
         _log_cleanup_error(task_id, e)
 
 
-def _atexit_cleanup():
+def _atexit_cleanup() -> None:
     stop_cleanup_thread()
     if _active_environments:
         count = len(_active_environments)

@@ -347,7 +347,7 @@ class CDPSupervisor:
         if loop is not None and loop.is_running():
             # raw in self._ws`` return cleanly, ``_run`` hits its ``finally``,
             # pending tasks get cancelled in order, THEN the thread exits.
-            async def _close_ws():
+            async def _close_ws() -> None:
                 ws = self._ws
                 self._ws = None
                 if ws is not None:
