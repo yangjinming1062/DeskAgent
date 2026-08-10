@@ -122,6 +122,7 @@
 
 - **import 之前不要写注释或文档。** import 块之前绝不要放字符串描述、横幅注释、`# === ...` / `// === ...` 分隔线。import 必须在最前；它之后第一行非 import 是顶层常量或函数声明。模块级的设计说明写在模块的 `README.md`，而不是文件顶部。写了会导致 pre-commit / eslint 出现 Failed。
 - **import 必须放在模块顶部。** 不要写在函数内部。如果放在顶部会引发循环引用，那就重构代码（把共享部分抽到独立模块、调整依赖方向）来消除循环，而不是用 lazy import 临时绕开。
+- **全局变量统一定义在文件头部。** 单文件内所有模块级常量、全局变量必须在 import 块下方集中定义，不得散落在文件中部或函数之间。
 - **禁止越级深层导入。** 跨模块调用时，必须通过目标模块的公共入口（barrel file / `__init__`），绝不能直接深入到内部文件。正确：`from app.models import MessageType` / `import { MessageType } from '@/models'`；错误：`from app.models.message import MessageType` / `import { MessageType } from '@/models/message'`。
 - **保持目录入口干净。** 入口目录只放入口、配置和数据模型；业务逻辑下沉到领域模块（`core/`、`tools/`、`routers/` 等，或 `renderer/companion/`、`renderer/hub/` 等）。
 - **提交前先格式化。** Python 运行 `uvx pre-commit run -a`；Desktop 运行 `pnpm fix`（依次执行 `pnpm lint:fix` + `pnpm fmt` + `pnpm type-check`）。

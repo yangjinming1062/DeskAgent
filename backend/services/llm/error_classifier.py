@@ -342,6 +342,9 @@ _CONTENT_POLICY_BLOCKED_PATTERNS = [
     # safety pipeline. ``violated safety policy`` is enough to distinguish
     # from billing's "exceeded ... policy" without false positives.
     "violated safety policy",
+    # MiniMax (base_resp.status_code 1026) — sensitive input moderation.
+    # ``new_sensitive`` is the verbatim status_msg token for this code.
+    "new_sensitive",
     # Generic content-filter wording seen on Azure / OpenAI Responses.
     # ``content_filter`` (underscore) is the OpenAI-standard error/finish
     # token surfaced verbatim by their SDKs when a request is blocked.
@@ -352,6 +355,12 @@ _CONTENT_POLICY_BLOCKED_PATTERNS = [
     "content_filter",
     "responsibleaipolicyviolation",
 ]
+
+
+def is_content_policy_error_message(msg: str) -> bool:
+    """Checks the same pattern list as ``classify_api_error`` but on a raw string."""
+    return any(p in msg.lower() for p in _CONTENT_POLICY_BLOCKED_PATTERNS)
+
 
 # Auth patterns (non-status-code signals)
 _AUTH_PATTERNS = [

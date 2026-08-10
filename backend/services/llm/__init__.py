@@ -2,6 +2,7 @@ from .context_compressor import compress_history_if_needed
 from .error_classifier import ClassifiedError
 from .error_classifier import classify_api_error
 from .error_classifier import FailoverReason
+from .error_classifier import is_content_policy_error_message
 from .llm_client import client_for_config
 from .llm_client import client_for_user
 from .llm_client import get_async_client
@@ -99,6 +100,7 @@ __all__ = [
     "classify_api_error",
     "ClassifiedError",
     "FailoverReason",
+    "is_content_policy_error_message",
     "compress_history_if_needed",
     "describe_reference_image",
     "enhance_avatar_prompt",

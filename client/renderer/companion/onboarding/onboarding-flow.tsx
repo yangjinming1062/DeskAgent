@@ -1,6 +1,6 @@
 import { useStore } from '@nanostores/react'
 import * as React from 'react'
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 import {
   clearDraftRefImage,
@@ -24,10 +24,25 @@ import {
   VOICE_PRESETS
 } from '@/companion/persona-presets'
 import { TWO_STEP_INTRO_HINT } from '@/companion/portrait-flow-copy'
-import { $activeAvatarId, $regenFeedback, $seedUrls, applyPortrait, setRegenFeedback } from '@/companion/portrait-store'
+import {
+  $activeAvatarId,
+  $portraitHistory,
+  $portraitSelectedIdx,
+  $portraitUrl,
+  $regenFeedback,
+  $seedUrls,
+  applyPortrait,
+  clearPortraitHistory,
+  type PortraitEntry,
+  pushPortraitEntry,
+  selectPortraitEntry,
+  setRegenFeedback,
+  setSeedUrls
+} from '@/companion/portrait-store'
 import { useRegeneratePortrait } from '@/companion/use-regenerate-portrait'
 import { useLatestRef } from '@/shared/hooks/use-latest-ref'
-import { isClientErrorIpc } from '@/shared/lib/ipc-error'
+import { isClientErrorIpc, unwrapIpcErrorMessage } from '@/shared/lib/ipc-error'
+import { safeJsonParse } from '@/shared/lib/safe-json'
 import { sleep } from '@/shared/lib/utils'
 import { $gatewayState } from '@/shared/store/gateway'
 
@@ -419,19 +434,27 @@ interface OnboardingFlowProps {
 }
 
 // Lives outside OnboardingFlow: its $regenFeedback subscription would otherwise re-render the whole dialog on every keystroke.
-function RegenFeedbackInput({ disabled }: { disabled: boolean }): React.JSX.Element {
+function RegenFeedbackInput(): React.JSX.Element {
   const value = useStore($regenFeedback)
 
   return (
     <textarea
       className={`${INPUT_CLASS} text-xs`}
-      disabled={disabled}
       maxLength={MAX_APPEARANCE}
       onChange={e => setRegenFeedback(e.target.value)}
       placeholder="哪里不满意？比如：头发再短一点、眼睛再大一点、表情更温和…（可留空直接重新生成）"
       rows={2}
       value={value}
     />
+  )
+}
+
+function SpinnerWithText({ text, size = 'h-5 w-5' }: { text: string; size?: string }): React.JSX.Element {
+  return (
+    <div className="flex flex-col items-center gap-2 py-4">
+      <div className={`${size} animate-spin rounded-full border-2 border-white/30 border-t-white/80`} />
+      <p className="text-sm text-white/70">{text}</p>
+    </div>
   )
 }
 
@@ -449,6 +472,9 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
   // applyPortrait — subscribe to it so any step-1 regen propagates without
   // us wiring setState through every call site.
   const activeAvatarId = useStore($activeAvatarId)
+  // History gallery — thumbnails below the portrait/fullbody panel.
+  const portraitHistory = useStore($portraitHistory)
+  const portraitSelectedIdx = useStore($portraitSelectedIdx)
   // voice phase runs the Q13 description input first, then the catalogue picker.
   const [voiceStage, setVoiceStage] = useState<VoiceStage>('describe')
 
@@ -493,6 +519,9 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
   // Step-2 transition has no avatar regen hook attached (the user already
   // confirmed the face), so track its loading here for button-disabled state.
   const [fullbodyLoading, setFullbodyLoading] = useState(false)
+  // Per-view fullbody regeneration: tracks which view (if any) is currently
+  // being regenerated so the thumbnail shows a loading state.
+  const [singleViewBusy, setSingleViewBusy] = useState<string | null>(null)
 
   // Reference image handed over at the 形象描述 question. Persisted locally
   // via IndexedDB draft cache so a crash before bust generation resumes with it.
@@ -620,109 +649,6 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
       document.removeEventListener('pointerleave', onLeave)
     }
   }, [])
-
-  // Breakpoint recovery (plan §3 / design §7.5): once the gateway is open,
-  // pull any half-answered draft so a crash/exit mid-onboarding resumes from
-  // the next unanswered question. One-shot — never re-resumes.
-  useEffect(() => {
-    if (resumedRef.current || gatewayState !== 'open') {
-      return
-    }
-
-    resumedRef.current = true
-
-    void (async () => {
-      try {
-        const cachedRef = await loadDraftRefImage()
-
-        if (cachedRef) {
-          setRefImage(cachedRef)
-        }
-
-        const state = await requestGateway<{
-          answers?: Record<string, string>
-          next_field?: string | null
-          complete?: boolean
-        }>('onboarding.get_state', {})
-
-        if (state?.complete) {
-          void clearDraftRefImage()
-          onCompleted()
-
-          return
-        }
-
-        if (state?.answers) {
-          // Merge server draft with answers typed in the current session;
-          // local non-empty edits win so recent user intent survives.
-          const a = state.answers
-          let merged: OnboardingAnswers = {}
-          setAnswers(prev => {
-            const next: OnboardingAnswers = { ...prev }
-
-            for (const k of Object.keys(a) as (keyof OnboardingAnswers)[]) {
-              if (next[k] == null || next[k] === '') {
-                next[k] = a[k] as never
-              }
-            }
-
-            merged = next
-
-            return next
-          })
-
-          const nextField = state.next_field
-
-          if (nextField === 'portrait' || nextField === 'portrait-fullbody') {
-            try {
-              const avatarRes = await window.deskagent.api<{
-                asset_url?: string | null
-                seed_front_url?: string | null
-                seed_right_url?: string | null
-                seed_back_url?: string | null
-                id?: number
-              }>({
-                path: '/api/companion/avatar',
-                method: 'GET'
-              })
-
-              const applied = await applyLocalPortrait(avatarRes)
-
-              if (applied.avatar) {
-                if (nextField === 'portrait-fullbody' && avatarRes?.seed_front_url) {
-                  setPhase('portrait-fullbody')
-                } else {
-                  setPhase('portrait-avatar')
-                }
-              } else {
-                void enterHatchingRef.current(merged, cachedRef)
-              }
-            } catch {
-              void enterHatchingRef.current(merged, cachedRef)
-            }
-          } else if (nextField === 'voice') {
-            // next_field==='voice' means the description sentence itself is
-            // still unanswered — land on describe, not the catalog.
-            setPhase('voice')
-            setVoiceStage('describe')
-            setQIndex(0)
-          } else if (nextField && POST_CHARACTER_FIELDS.has(nextField)) {
-            const idx = USER_QUESTIONS.findIndex(q => BACKEND_FIELD[q.key] === nextField)
-            setPhase('q-user')
-            setQIndex(Math.max(0, idx))
-          } else if (nextField) {
-            const idx = CHARACTER_QUESTIONS.findIndex(q => BACKEND_FIELD[q.key] === nextField)
-            setPhase('q-character')
-            setQIndex(Math.max(0, idx))
-          }
-        }
-      } catch {
-        /* no draft yet — start fresh */
-      }
-
-      setVoiceCatalog((await fetchVoiceCatalog(requestGateway)).voices)
-    })()
-  }, [gatewayState, requestGateway, onCompleted])
 
   const currentList = PHASE_QUESTIONS[phase]
 
@@ -892,6 +818,16 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
   }
 
   const enterHatching = async (currentAnswers?: OnboardingAnswers, imageOverride?: PickedImage | null) => {
+    // Skip generation only when we have both a server row AND a valid portrait
+    // image. On resume after TTL expiry, $activeAvatarId is set but $portraitUrl
+    // is null — we must regenerate in that case.
+    if (activeAvatarId != null && $portraitUrl.get()) {
+      setPhase('portrait-avatar')
+      void playOnboardingAudio('onboarding.portrait.ok')
+
+      return
+    }
+
     const ans = currentAnswers ?? answers
     const img = imageOverride !== undefined ? imageOverride : refImage
     setPhase('hatching')
@@ -918,6 +854,14 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
       try {
         const applied = await applyLocalPortrait(await retryTransient(() => generatePortrait(img), 1500, 2))
         url = applied.avatar
+
+        if (url) {
+          pushPortraitEntry({
+            portraitUrl: url,
+            avatarId: applied.id ?? activeAvatarId,
+            seedUrls: $seedUrls.get()
+          })
+        }
       } catch {
         // A deterministic 4xx (unusable reference image, incomplete persona)
         // must not strand the flow on 'hatching' — fall through to the portrait
@@ -940,6 +884,109 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
   }
 
   const enterHatchingRef = useLatestRef(enterHatching)
+
+  // Breakpoint recovery (plan §3 / design §7.5): once the gateway is open,
+  // pull any half-answered draft so a crash/exit mid-onboarding resumes from
+  // the next unanswered question. One-shot — never re-resumes.
+  useEffect(() => {
+    if (resumedRef.current || gatewayState !== 'open') {
+      return
+    }
+
+    resumedRef.current = true
+
+    void (async () => {
+      try {
+        const cachedRef = await loadDraftRefImage()
+
+        if (cachedRef) {
+          setRefImage(cachedRef)
+        }
+
+        const state = await requestGateway<{
+          answers?: Record<string, string>
+          next_field?: string | null
+          complete?: boolean
+        }>('onboarding.get_state', {})
+
+        if (state?.complete) {
+          void clearDraftRefImage()
+          onCompleted()
+
+          return
+        }
+
+        if (state?.answers) {
+          // Merge server draft with answers typed in the current session;
+          // local non-empty edits win so recent user intent survives.
+          const a = state.answers
+          let merged: OnboardingAnswers = {}
+          setAnswers(prev => {
+            const next: OnboardingAnswers = { ...prev }
+
+            for (const k of Object.keys(a) as (keyof OnboardingAnswers)[]) {
+              if (next[k] == null || next[k] === '') {
+                next[k] = a[k] as never
+              }
+            }
+
+            merged = next
+
+            return next
+          })
+
+          const nextField = state.next_field
+
+          if (nextField === 'portrait' || nextField === 'portrait-fullbody') {
+            try {
+              const avatarRes = await window.deskagent.api<{
+                asset_url?: string | null
+                seed_front_url?: string | null
+                seed_right_url?: string | null
+                seed_back_url?: string | null
+                id?: number
+              }>({
+                path: '/api/companion/avatar',
+                method: 'GET'
+              })
+
+              const applied = await applyLocalPortrait(avatarRes)
+
+              if (applied.avatar) {
+                if (nextField === 'portrait-fullbody' && avatarRes?.seed_front_url) {
+                  setPhase('portrait-fullbody')
+                } else {
+                  setPhase('portrait-avatar')
+                }
+              } else {
+                void enterHatchingRef.current(merged, cachedRef)
+              }
+            } catch {
+              void enterHatchingRef.current(merged, cachedRef)
+            }
+          } else if (nextField === 'voice') {
+            // next_field==='voice' means the description sentence itself is
+            // still unanswered — land on describe, not the catalog.
+            setPhase('voice')
+            setVoiceStage('describe')
+            setQIndex(0)
+          } else if (nextField && POST_CHARACTER_FIELDS.has(nextField)) {
+            const idx = USER_QUESTIONS.findIndex(q => BACKEND_FIELD[q.key] === nextField)
+            setPhase('q-user')
+            setQIndex(Math.max(0, idx))
+          } else if (nextField) {
+            const idx = CHARACTER_QUESTIONS.findIndex(q => BACKEND_FIELD[q.key] === nextField)
+            setPhase('q-character')
+            setQIndex(Math.max(0, idx))
+          }
+        }
+      } catch {
+        /* no draft yet — start fresh */
+      }
+
+      setVoiceCatalog((await fetchVoiceCatalog(requestGateway)).voices)
+    })()
+  }, [gatewayState, requestGateway, onCompleted, enterHatchingRef])
 
   // Step 1 — avatar regen: creates a new avatar row, the new id publishes to
   // ``$activeAvatarId`` automatically (via applyPortrait inside the hook).
@@ -967,7 +1014,33 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
     }
   })
 
+  // Reset the history gallery to the latest entry, restoring the latest
+  // portrait/seeds to the display atoms. Called before forward actions
+  // (advance/confirm) so the displayed image always matches the server's
+  // active row.
+  const resetToLatestEntry = useCallback(() => {
+    const entries = $portraitHistory.get()
+    const latest = entries[entries.length - 1]
+
+    if (!latest || entries.length <= 1) {
+      return
+    }
+
+    selectPortraitEntry(entries.length - 1)
+
+    if (latest.portraitUrl) {
+      setPortraitUrl(latest.portraitUrl)
+      $portraitUrl.set(latest.portraitUrl)
+    }
+
+    if (latest.seedUrls) {
+      setSeedUrls(latest.seedUrls)
+    }
+  }, [])
+
   const advanceToFullbody = async () => {
+    resetToLatestEntry()
+
     if (activeAvatarId == null) {
       setPortraitPanelHint('找不到对应的形象，请稍后重试')
 
@@ -1003,11 +1076,84 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
       seed_back_url: res.seed_back_url,
       id: idAtCall
     })
+    pushPortraitEntry({
+      portraitUrl: $portraitUrl.get(),
+      avatarId: $activeAvatarId.get(),
+      seedUrls: $seedUrls.get()
+    })
     setPhase('portrait-fullbody')
   }
 
   const backToAvatar = () => {
     setPhase('portrait-avatar')
+  }
+
+  const onSelectHistoryEntry = useCallback((idx: number) => {
+    const entry: PortraitEntry | undefined = $portraitHistory.get()[idx]
+
+    if (!entry) {
+      return
+    }
+
+    selectPortraitEntry(idx)
+
+    if (entry.portraitUrl) {
+      setPortraitUrl(entry.portraitUrl)
+      $portraitUrl.set(entry.portraitUrl)
+    }
+
+    // A bust-regen entry pushed before fullbody has seedUrls: null — don't wipe current seeds.
+    if (entry.seedUrls) {
+      setSeedUrls(entry.seedUrls)
+    }
+    // Intentionally NOT restoring $activeAvatarId — history entries may point to
+    // inactive rows. The active row (always the newest) is what finalize_avatar
+    // and confirm_portrait operate on, so it must stay as-is.
+  }, [])
+
+  const regenerateSingleView = async (view: 'front' | 'right' | 'back') => {
+    if (activeAvatarId == null || singleViewBusy != null || fullbodyBusy) {
+      return
+    }
+
+    setSingleViewBusy(view)
+    setPortraitPanelHint(null)
+
+    try {
+      const res = await window.deskagent.api<{
+        id?: number
+        seed_front_url?: string
+        seed_right_url?: string
+        seed_back_url?: string
+      }>({
+        path: `/api/companion/avatar/${activeAvatarId}/fullbody`,
+        method: 'POST',
+        body: { view }
+      })
+
+      await applyLocalPortrait({
+        asset_url: null,
+        seed_front_url: res.seed_front_url,
+        seed_right_url: res.seed_right_url,
+        seed_back_url: res.seed_back_url,
+        id: res.id
+      })
+      pushPortraitEntry({
+        portraitUrl: $portraitUrl.get(),
+        avatarId: $activeAvatarId.get(),
+        seedUrls: $seedUrls.get()
+      })
+    } catch (error) {
+      const fallback = '这张图暂时没换出来，可以再试一次'
+      const unwrapped = unwrapIpcErrorMessage(error)
+      const jsonStart = unwrapped.indexOf('{')
+      const parsed = jsonStart >= 0 ? safeJsonParse(unwrapped.slice(jsonStart), null) : null
+      const hint = (parsed as { detail?: { error?: string } } | null)?.detail?.error ?? fallback
+
+      setPortraitPanelHint(hint)
+    } finally {
+      setSingleViewBusy(null)
+    }
   }
 
   const pickReferenceImage = async () => {
@@ -1028,15 +1174,33 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
   }
 
   const confirmPortrait = async () => {
+    resetToLatestEntry()
+
     try {
       await window.deskagent.api({
         path: '/api/companion/portrait/confirm',
         method: 'POST'
       })
-    } catch {
-      /* idempotent / best-effort */
+    } catch (error) {
+      // A 409 means temp-media expired — the avatar files are gone and
+      // we must NOT advance. Route back to the avatar phase so the user
+      // can regenerate.
+      if (isClientErrorIpc(error)) {
+        const unwrapped = unwrapIpcErrorMessage(error)
+        const jsonStart = unwrapped.indexOf('{')
+        const parsed = jsonStart >= 0 ? safeJsonParse(unwrapped.slice(jsonStart), null) : null
+        const backendError = (parsed as { detail?: { error?: string } } | null)?.detail?.error
+
+        if (backendError) {
+          setPortraitPanelHint(backendError)
+          setPhase('portrait-avatar')
+
+          return
+        }
+      }
     }
 
+    clearPortraitHistory()
     updateRefImage(null)
     // Voice belongs with the portrait: both define the companion itself, so
     // they run back-to-back before any user_* question.
@@ -1259,90 +1423,106 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
               </>
             )}
 
-          {phase === 'hatching' && (
-            <p className="py-6 text-center text-sm text-white/80">{hint || '让我想想我该是什么样子…'}</p>
-          )}
+          {phase === 'hatching' && <SpinnerWithText size="h-6 w-6" text={hint || '让我想想我该是什么样子…'} />}
 
           {(phase === 'portrait-avatar' || phase === 'portrait-fullbody' || phase === 'greeting') && (
             <PortraitPanel
               avatarUrl={portraitUrl}
+              busyView={singleViewBusy}
               hint={portraitPanelHint}
+              history={portraitHistory}
               introHint={phase === 'portrait-avatar' ? TWO_STEP_INTRO_HINT : null}
               name={answers.name?.trim() || '伙伴'}
+              onRegenerateView={phase === 'portrait-fullbody' ? regenerateSingleView : undefined}
+              onSelectEntry={onSelectHistoryEntry}
               seedUrls={seedUrls}
+              selectedIdx={portraitSelectedIdx}
               step={phase === 'portrait-avatar' ? 'avatar' : 'fullbody'}
             />
           )}
 
           {phase === 'portrait-avatar' && (
             <div className="mt-4">
-              <RegenFeedbackInput disabled={avatarBusy} />
-              <div className="mt-3 flex items-center justify-between text-xs">
-                <div className="flex gap-3">
-                  <button
-                    className="text-white/60 transition hover:text-white disabled:opacity-40"
-                    disabled={avatarBusy}
-                    onClick={() => {
-                      setPhase('q-character')
-                      setQIndex(CHARACTER_QUESTIONS.length - 1)
-                    }}
-                    type="button"
-                  >
-                    上一步
-                  </button>
-                  <button
-                    className="text-white/70 transition hover:text-white disabled:opacity-40"
-                    disabled={avatarBusy}
-                    onClick={() => void regenerateAvatarPortrait()}
-                    type="button"
-                  >
-                    {avatarBusy ? '生成中…' : '重新生成'}
-                  </button>
-                </div>
-                <button
-                  className="rounded-full bg-white/90 px-4 py-1 font-medium text-black transition hover:bg-white"
-                  disabled={avatarBusy || fullbodyLoading || activeAvatarId == null}
-                  onClick={() => void advanceToFullbody()}
-                  type="button"
-                >
-                  {fullbodyLoading ? '生成中…' : '下一步'}
-                </button>
-              </div>
+              {avatarBusy || fullbodyLoading ? (
+                <SpinnerWithText text={fullbodyLoading ? '正在生成全身图…' : '正在重新生成头像…'} />
+              ) : (
+                <>
+                  <RegenFeedbackInput />
+                  <div className="mt-3 flex items-center justify-between text-xs">
+                    <div className="flex gap-3">
+                      <button
+                        className="text-white/60 transition hover:text-white disabled:opacity-40"
+                        onClick={() => {
+                          setPhase('q-character')
+                          setQIndex(CHARACTER_QUESTIONS.length - 1)
+                        }}
+                        type="button"
+                      >
+                        上一步
+                      </button>
+                      <button
+                        className="text-white/70 transition hover:text-white disabled:opacity-40"
+                        onClick={() => void regenerateAvatarPortrait()}
+                        type="button"
+                      >
+                        重新生成
+                      </button>
+                    </div>
+                    <button
+                      className="rounded-full bg-white/90 px-4 py-1 font-medium text-black transition hover:bg-white"
+                      disabled={activeAvatarId == null}
+                      onClick={() => void advanceToFullbody()}
+                      type="button"
+                    >
+                      下一步
+                    </button>
+                  </div>
+                </>
+              )}
               {portraitPanelHint && <p className="mt-2 text-xs text-rose-300/90">{portraitPanelHint}</p>}
             </div>
           )}
 
           {phase === 'portrait-fullbody' && (
             <div className="mt-4">
-              <RegenFeedbackInput disabled={fullbodyBusy} />
-              <div className="mt-3 flex items-center justify-between text-xs">
-                <div className="flex gap-3">
-                  <button
-                    className="text-white/60 transition hover:text-white disabled:opacity-40"
-                    disabled={fullbodyBusy}
-                    onClick={backToAvatar}
-                    type="button"
-                  >
-                    上一步
-                  </button>
-                  <button
-                    className="text-white/70 transition hover:text-white disabled:opacity-40"
-                    disabled={fullbodyBusy}
-                    onClick={() => void regenerateFullbodyPortrait()}
-                    type="button"
-                  >
-                    {fullbodyBusy ? '生成中…' : '重新生成'}
-                  </button>
-                </div>
-                <button
-                  className="rounded-full bg-white/90 px-4 py-1 font-medium text-black transition hover:bg-white"
-                  disabled={fullbodyBusy}
-                  onClick={confirmPortrait}
-                  type="button"
-                >
-                  确认
-                </button>
-              </div>
+              {fullbodyBusy || singleViewBusy ? (
+                <SpinnerWithText
+                  text={
+                    fullbodyBusy
+                      ? '正在重新生成全身图…'
+                      : `正在重新生成${singleViewBusy === 'front' ? '正面' : singleViewBusy === 'right' ? '右侧' : '背面'}…`
+                  }
+                />
+              ) : (
+                <>
+                  <RegenFeedbackInput />
+                  <div className="mt-3 flex items-center justify-between text-xs">
+                    <div className="flex gap-3">
+                      <button
+                        className="text-white/60 transition hover:text-white"
+                        onClick={backToAvatar}
+                        type="button"
+                      >
+                        上一步
+                      </button>
+                      <button
+                        className="text-white/70 transition hover:text-white"
+                        onClick={() => void regenerateFullbodyPortrait()}
+                        type="button"
+                      >
+                        全部重新生成
+                      </button>
+                    </div>
+                    <button
+                      className="rounded-full bg-white/90 px-4 py-1 font-medium text-black transition hover:bg-white"
+                      onClick={confirmPortrait}
+                      type="button"
+                    >
+                      确认
+                    </button>
+                  </div>
+                </>
+              )}
               {portraitPanelHint && <p className="mt-2 text-xs text-rose-300/90">{portraitPanelHint}</p>}
             </div>
           )}

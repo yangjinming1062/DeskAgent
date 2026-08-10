@@ -640,6 +640,9 @@ def _register_session_handlers(
         raw_id = params.get("avatar_id")
         if not isinstance(raw_id, int) or isinstance(raw_id, bool) or raw_id <= 0:
             raise JsonRpcError(JSONRPC_INVALID_PARAMS, "avatar_id must be a positive integer")
+        view = params.get("view")
+        if view is not None and view not in ("front", "right", "back"):
+            raise JsonRpcError(JSONRPC_INVALID_PARAMS, "view must be 'front', 'right', 'back', or null")
         with SESSION_LOCAL() as db:
             persona = get_or_create_persona(db, user_id)
             if not persona.is_complete:
@@ -665,7 +668,7 @@ def _register_session_handlers(
                         if regen_busy:
                             payload = {"job_id": job_id, "error": "伙伴正在生成形象，请稍候"}
                             return
-                        asset = await generate_fullbody(db, user_id=user_id, avatar_id=raw_id)
+                        asset = await generate_fullbody(db, user_id=user_id, avatar_id=raw_id, view=view)
                         payload = {
                             "job_id": job_id,
                             "seed_front_url": asset.seed_front_url,

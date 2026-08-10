@@ -54,7 +54,7 @@ export async function applyPortrait(urls: PortraitUrls): Promise<{ avatar: strin
 
   let seeds: SeedUrls | null = null
 
-  if (urls.seedFrontUrl !== undefined || urls.seedRightUrl !== undefined || urls.seedBackUrl !== undefined) {
+  if (urls.seedFrontUrl || urls.seedRightUrl || urls.seedBackUrl) {
     const [front, right, back] = await Promise.all([
       urls.seedFrontUrl ? resolvePortraitUrl(urls.seedFrontUrl) : Promise.resolve(null),
       urls.seedRightUrl ? resolvePortraitUrl(urls.seedRightUrl) : Promise.resolve(null),
@@ -114,4 +114,40 @@ export function setRegenFeedback(value: string): void {
 
 export function clearRegenFeedback(): void {
   $regenFeedback.set('')
+}
+
+export interface PortraitEntry {
+  portraitUrl: string | null
+  avatarId: number | null
+  seedUrls: SeedUrls | null
+}
+
+const _MAX_HISTORY = 3
+
+export const $portraitHistory = atom<PortraitEntry[]>([])
+export const $portraitSelectedIdx = atom<number>(0)
+
+export function pushPortraitEntry(entry: PortraitEntry): void {
+  const current = $portraitHistory.get()
+  const next = [...current, entry]
+
+  if (next.length > _MAX_HISTORY) {
+    next.shift()
+  }
+
+  $portraitHistory.set(next)
+  $portraitSelectedIdx.set(next.length - 1)
+}
+
+export function selectPortraitEntry(idx: number): void {
+  const current = $portraitHistory.get()
+
+  if (idx >= 0 && idx < current.length) {
+    $portraitSelectedIdx.set(idx)
+  }
+}
+
+export function clearPortraitHistory(): void {
+  $portraitHistory.set([])
+  $portraitSelectedIdx.set(0)
 }

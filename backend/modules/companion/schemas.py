@@ -41,6 +41,7 @@ class AvatarAssetResponse(BaseModel):
 
 class FullbodyGenerateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
+    view: Literal["front", "right", "back"] | None = None
 
 
 class AvatarGenerateRequest(BaseModel):

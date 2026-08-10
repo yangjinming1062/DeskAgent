@@ -15,6 +15,7 @@ from .avatar_service import ALLOWED_AVATAR_UPLOAD_MIME_TYPES
 from .avatar_service import AvatarGenerationError
 from .avatar_service import AvatarNotFoundError
 from .avatar_service import AvatarSourceUnreadableError
+from .avatar_service import finalize_avatar
 from .avatar_service import generate_avatar
 from .avatar_service import generate_fullbody
 from .avatar_service import get_active_avatar
@@ -130,6 +131,7 @@ __all__ = [
     "record_user_profile",
     "regenerate_avatar",
     "regenerate_avatar_from_image",
+    "finalize_avatar",
     "create_multiview_to_model",
     "resolve_companion_asset_path",
     "resolve_companion_model_path",

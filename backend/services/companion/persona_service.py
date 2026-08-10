@@ -56,6 +56,18 @@ _POST_CHARACTER_FIELDS: tuple[str, ...] = (
     "user_freeform",
 )
 
+# Character raw-answer fields in question order (name..speaking_style).
+_CHARACTER_ONBOARDING_FIELDS: tuple[str, ...] = (
+    "name",
+    "species",
+    "character_gender",
+    "appearance_core",
+    "appearance_outfit",
+    "role",
+    "personality",
+    "speaking_style",
+)
+
 
 class PersonaValidationError(ValueError):
     """``field`` is the offending field name when known; ``None`` for
@@ -157,18 +169,6 @@ def render_extras(definition: dict[str, str]) -> str:
             lines.append(f"- **{label}**: {definition[key]}")
     return "\n".join(lines)
 
-
-# Character raw-answer fields in question order (name..speaking_style).
-_CHARACTER_ONBOARDING_FIELDS: tuple[str, ...] = (
-    "name",
-    "species",
-    "character_gender",
-    "appearance_core",
-    "appearance_outfit",
-    "role",
-    "personality",
-    "speaking_style",
-)
 
 def _load_draft(persona: Persona) -> dict[str, str]:
     draft = safe_json_loads(persona.definition_json or "{}", default={})

@@ -3,7 +3,16 @@ import { useCallback, useState } from 'react'
 import { type PickedImage } from '@/companion/avatar-image'
 import { awaitAvatarRegeneration, awaitFullbodyGeneration } from '@/companion/avatar-regen-store'
 import { useGatewayRequest } from '@/companion/boot/use-gateway-request'
-import { $regenFeedback, applyPortrait, clearRegenFeedback, type SeedUrls } from '@/companion/portrait-store'
+import {
+  $activeAvatarId,
+  $portraitUrl,
+  $regenFeedback,
+  $seedUrls,
+  applyPortrait,
+  clearRegenFeedback,
+  pushPortraitEntry,
+  type SeedUrls
+} from '@/companion/portrait-store'
 
 import { playOnboardingAudio } from './onboarding/onboarding-audio'
 
@@ -115,6 +124,11 @@ export function useRegeneratePortrait(options: UseRegeneratePortraitOptions = {}
       setHint(null)
 
       const onApplied = () => {
+        pushPortraitEntry({
+          portraitUrl: $portraitUrl.get(),
+          avatarId: $activeAvatarId.get(),
+          seedUrls: $seedUrls.get()
+        })
         clearRegenFeedback()
 
         if (playAudioOnSuccess) {

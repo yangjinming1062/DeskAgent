@@ -4,7 +4,7 @@ import { createPortal } from 'react-dom'
 import { useInteractiveRegion } from '@/companion/interactive-regions'
 import { useLatestRef } from '@/shared/hooks/use-latest-ref'
 
-import type { SeedUrls } from '../portrait-store'
+import type { PortraitEntry, SeedUrls } from '../portrait-store'
 
 // Extracts of the four small JSX components that were co-located inside
 // onboarding-flow.tsx. All take their inputs as props — no shared module
@@ -36,7 +36,12 @@ export function PortraitPanel({
   name,
   hint,
   step = 'fullbody',
-  introHint
+  introHint,
+  history,
+  selectedIdx,
+  onSelectEntry,
+  onRegenerateView,
+  busyView
 }: {
   avatarUrl: string | null
   seedUrls?: SeedUrls | null
@@ -44,8 +49,23 @@ export function PortraitPanel({
   hint: string | null
   step?: 'avatar' | 'fullbody'
   introHint?: string | null
+  history?: PortraitEntry[]
+  selectedIdx?: number
+  onSelectEntry?: (idx: number) => void
+  onRegenerateView?: (view: 'front' | 'right' | 'back') => void
+  busyView?: string | null
 }): React.JSX.Element {
   const [zoomedUrl, setZoomedUrl] = useState<string | null>(null)
+
+  const gallery =
+    history && history.length > 1 && onSelectEntry ? (
+      <HistoryGallery
+        entries={history}
+        onSelect={onSelectEntry}
+        selectedIdx={selectedIdx ?? history.length - 1}
+        step={step}
+      />
+    ) : null
 
   if (step === 'avatar') {
     return (
@@ -58,6 +78,7 @@ export function PortraitPanel({
           size="lg"
           url={avatarUrl}
         />
+        {gallery}
         {hint && <p className="text-xs text-rose-300/90">{hint}</p>}
         {zoomedUrl && <PortraitLightbox name={name} onClose={() => setZoomedUrl(null)} url={zoomedUrl} />}
       </div>
@@ -70,27 +91,71 @@ export function PortraitPanel({
         <PortraitThumb
           label="正面"
           name={name}
+          onRegenerate={onRegenerateView ? () => onRegenerateView('front') : undefined}
           onZoom={seedUrls?.front ? () => setZoomedUrl(seedUrls.front) : undefined}
+          regenerating={busyView === 'front'}
           size="sm"
           url={seedUrls?.front ?? null}
         />
         <PortraitThumb
           label="右侧"
           name={name}
+          onRegenerate={onRegenerateView ? () => onRegenerateView('right') : undefined}
           onZoom={seedUrls?.right ? () => setZoomedUrl(seedUrls.right) : undefined}
+          regenerating={busyView === 'right'}
           size="sm"
           url={seedUrls?.right ?? null}
         />
         <PortraitThumb
           label="背面"
           name={name}
+          onRegenerate={onRegenerateView ? () => onRegenerateView('back') : undefined}
           onZoom={seedUrls?.back ? () => setZoomedUrl(seedUrls.back) : undefined}
+          regenerating={busyView === 'back'}
           size="sm"
           url={seedUrls?.back ?? null}
         />
       </div>
+      {gallery}
       {hint && <p className="text-xs text-rose-300/90">{hint}</p>}
       {zoomedUrl && <PortraitLightbox name={name} onClose={() => setZoomedUrl(null)} url={zoomedUrl} />}
+    </div>
+  )
+}
+
+function HistoryGallery({
+  entries,
+  selectedIdx,
+  onSelect,
+  step
+}: {
+  entries: PortraitEntry[]
+  selectedIdx: number
+  onSelect: (idx: number) => void
+  step: 'avatar' | 'fullbody'
+}): React.JSX.Element {
+  return (
+    <div className="mt-1 flex justify-center gap-1.5">
+      {entries.map((entry, idx) => {
+        const thumb = step === 'avatar' ? entry.portraitUrl : entry.seedUrls?.front
+
+        return (
+          <button
+            className={`overflow-hidden rounded-md border transition ${
+              idx === selectedIdx ? 'border-white/80' : 'border-white/15 opacity-60 hover:opacity-90'
+            }`}
+            key={idx}
+            onClick={() => onSelect(idx)}
+            type="button"
+          >
+            {thumb ? (
+              <img alt="" className="h-10 w-10 object-cover" src={thumb} />
+            ) : (
+              <div className="grid h-10 w-10 place-items-center text-[10px] text-white/30">—</div>
+            )}
+          </button>
+        )
+      })}
     </div>
   )
 }
@@ -99,12 +164,16 @@ function PortraitThumb({
   label,
   name,
   onZoom,
+  onRegenerate,
+  regenerating,
   url,
   size = 'sm'
 }: {
   label: string
   name: string
   onZoom: (() => void) | undefined
+  onRegenerate?: () => void
+  regenerating?: boolean
   url: string | null
   size?: 'sm' | 'md' | 'lg'
 }): React.JSX.Element {
@@ -113,14 +182,34 @@ function PortraitThumb({
   return (
     <div className="flex flex-col items-center gap-1">
       {url ? (
-        <button
-          aria-label="放大查看"
-          className="block cursor-zoom-in overflow-hidden rounded-xl border-0 bg-transparent p-0"
-          onClick={onZoom}
-          type="button"
-        >
-          <img alt={name} className={`${sizeClass} object-cover shadow-lg`} src={url} />
-        </button>
+        <div className="group relative">
+          <button
+            aria-label="放大查看"
+            className="block cursor-zoom-in overflow-hidden rounded-xl border-0 bg-transparent p-0"
+            onClick={onZoom}
+            type="button"
+          >
+            <img alt={name} className={`${sizeClass} object-cover shadow-lg`} src={url} />
+          </button>
+          {onRegenerate && !regenerating && (
+            <button
+              aria-label="重新生成此视角"
+              className="absolute right-1 top-1 grid h-6 w-6 place-items-center rounded-full bg-black/50 text-white/60 opacity-0 transition hover:text-white group-hover:opacity-100"
+              onClick={e => {
+                e.stopPropagation()
+                onRegenerate()
+              }}
+              type="button"
+            >
+              ↻
+            </button>
+          )}
+          {regenerating && (
+            <div className={`absolute inset-0 grid ${sizeClass} place-items-center rounded-xl bg-black/50`}>
+              <div className="h-4 w-4 animate-spin rounded-full border border-white/30 border-t-white/80" />
+            </div>
+          )}
+        </div>
       ) : (
         <div
           className={`grid ${sizeClass} place-items-center rounded-xl bg-white/5 text-center text-[10px] text-white/30`}

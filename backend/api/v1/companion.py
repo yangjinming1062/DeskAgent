@@ -46,6 +46,7 @@ from services.companion import confirm_portrait
 from services.companion import delete_wardrobe_item
 from services.companion import emit_wardrobe_updated
 from services.companion import equip_wardrobe_item
+from services.companion import finalize_avatar
 from services.companion import generate_animation_clips
 from services.companion import generate_avatar
 from services.companion import generate_companion_model
@@ -165,11 +166,17 @@ async def put_persona(
 
 
 @router.post("/portrait/confirm")
-def post_portrait_confirm(
+async def post_portrait_confirm(
     auth: tuple[User, LoginRecord] = Depends(get_current_session),
     db: Session = Depends(get_db),
 ) -> dict:
     user, _ = auth
+    try:
+        await finalize_avatar(db, user.id)
+    except AvatarSourceUnreadableError as exc:
+        raise HTTPException(status_code=409, detail={"error": "形象草稿已过期，请重新生成头像", "reason": str(exc)})
+    # Only confirm the portrait after finalize succeeds — avoids a poisoned
+    # state where is_portrait_confirmed=True but avatar files are gone.
     confirm_portrait(db, user.id)
     return {"ok": True}
 
@@ -408,6 +415,9 @@ async def post_avatar_fullbody(
     (404 / 409) come from the service layer's subclasses.
     """
     user, _ = auth
+    persona = get_or_create_persona(db, user.id)
+    if not persona.is_complete:
+        raise HTTPException(status_code=409, detail={"error": "请先完成 onboarding 再生成全身图"})
     # Serialise against the WS avatar.regenerate RPC for the same user — both
     # paths mutate the active row; without this lock, a concurrent regen
     # could deactivate the row we're about to update.
@@ -416,7 +426,7 @@ async def post_avatar_fullbody(
         raise HTTPException(status_code=429, detail={"error": "伙伴正在生成形象，请稍候"})
     async with lock:
         try:
-            asset = await generate_fullbody(db, user_id=user.id, avatar_id=avatar_id)
+            asset = await generate_fullbody(db, user_id=user.id, avatar_id=avatar_id, view=body.view)
         except AvatarNotFoundError as exc:
             raise HTTPException(status_code=404, detail={"error": "找不到对应的形象", "reason": str(exc)})
         except (SeedPromptMissingError, AvatarSourceUnreadableError) as exc:

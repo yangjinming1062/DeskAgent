@@ -11,6 +11,7 @@ _BASE_RESP_TO_HTTP: dict[int, int] = {
     1004: 401,  # auth
     1008: 402,  # billing
     1013: 400,  # bad params
+    1026: 400,  # content moderation — sensitive input, classified by message keyword downstream
     1027: 400,  # content filter — classified by message keyword downstream
     1039: 429,  # concurrency / quota
     2013: 400,  # invalid param
