@@ -65,24 +65,7 @@ def _install_ws_notify_trigger(conn: Connection) -> None:
 
 
 def _install_schema_extensions(conn: Connection) -> None:
-    """Idempotent ALTERs for columns added after the initial create_all rollout. Additive only — modelless schema is left in place, never dropped."""
-    conn.execute(text("ALTER TABLE conversations ADD COLUMN IF NOT EXISTS settings_json TEXT"))
-    for column, ddl_type in (
-        ("stt_base_url", "VARCHAR(255) DEFAULT ''"),
-        ("stt_api_key", "TEXT DEFAULT ''"),
-        ("stt_model_name", "VARCHAR(128) DEFAULT ''"),
-        ("tts_base_url", "VARCHAR(255) DEFAULT ''"),
-        ("tts_api_key", "TEXT DEFAULT ''"),
-        ("tts_model_name", "VARCHAR(128) DEFAULT ''"),
-        ("image_gen_base_url", "VARCHAR(255) DEFAULT ''"),
-        ("image_gen_api_key", "TEXT DEFAULT ''"),
-        ("image_gen_model_name", "VARCHAR(128) DEFAULT ''"),
-        ("video_gen_base_url", "VARCHAR(255) DEFAULT ''"),
-        ("video_gen_api_key", "TEXT DEFAULT ''"),
-        ("video_gen_model_name", "VARCHAR(128) DEFAULT ''"),
-        ("provider_config", "TEXT DEFAULT '[]'"),
-    ):
-        conn.execute(text(f"ALTER TABLE user_model_configs ADD COLUMN IF NOT EXISTS {column} {ddl_type}"))
+    """Idempotent partial unique indexes for Postgres."""
     conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_avatar_assets_one_active ON avatar_assets (user_id) WHERE active"))
     # Concurrent POST /model would otherwise leave two active rows.
     conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_companion_models_one_active ON companion_models (user_id) WHERE active"))

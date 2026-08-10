@@ -50,3 +50,62 @@ export async function resolvePortraitUrl(assetUrl: string | null | undefined): P
     return null
   }
 }
+
+const DB_NAME = 'deskagent_onboarding'
+const STORE_NAME = 'draft_cache'
+const REF_IMAGE_KEY = 'ref_image'
+
+function openDraftDB(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(DB_NAME, 1)
+
+    request.onupgradeneeded = () => {
+      request.result.createObjectStore(STORE_NAME)
+    }
+
+    request.onsuccess = () => resolve(request.result)
+    request.onerror = () => reject(request.error)
+  })
+}
+
+export async function saveDraftRefImage(image: PickedImage | null): Promise<void> {
+  try {
+    const db = await openDraftDB()
+    const tx = db.transaction(STORE_NAME, 'readwrite')
+
+    if (image) {
+      tx.objectStore(STORE_NAME).put(image, REF_IMAGE_KEY)
+    } else {
+      tx.objectStore(STORE_NAME).delete(REF_IMAGE_KEY)
+    }
+  } catch {
+    /* ignore storage errors */
+  }
+}
+
+export async function loadDraftRefImage(): Promise<PickedImage | null> {
+  try {
+    const db = await openDraftDB()
+
+    return await new Promise(resolve => {
+      const tx = db.transaction(STORE_NAME, 'readonly')
+      const req = tx.objectStore(STORE_NAME).get(REF_IMAGE_KEY)
+
+      req.onsuccess = () => resolve((req.result as PickedImage) || null)
+      req.onerror = () => resolve(null)
+    })
+  } catch {
+    return null
+  }
+}
+
+export async function clearDraftRefImage(): Promise<void> {
+  try {
+    const db = await openDraftDB()
+    const tx = db.transaction(STORE_NAME, 'readwrite')
+
+    tx.objectStore(STORE_NAME).delete(REF_IMAGE_KEY)
+  } catch {
+    /* ignore storage errors */
+  }
+}

@@ -217,7 +217,7 @@ DeskAgent 区别于一切既有桌面宠物 / 桌面 Agent 的核心，在于伙
 
 **标签的两种语义**：多数问题的标签就是答案本身，点击即填入输入框；但「我该怎么称呼您？」的标签（名字 / 昵称 / 称号 / 自填）是**称呼类型选择器**——点「昵称」不该把"昵称"二字当成称呼存下来，而是把输入框改问"那，您的昵称是？"再收具体值。
 
-**断点恢复**：每个回答经 `onboarding.submit {field, value}` 即时落盘单个字段（见 [PROTOCOL.md §1.1](PROTOCOL.md)），Client 启动时调 `onboarding.get_state` 从下一个未答问题恢复——崩溃/退出不丢进度。**关键差异**：`is_complete=True` 在角色子阶段答完即被设置，但 `get_onboarding_state` 只在 voice + user_* 全部答齐后才返回 `complete=True`；`next_field` 的优先级是 **voice 先于 user_***，与题序一致，中途崩溃后 client 会恢复进入音色或用户子阶段而不是直接跳到 onboarding 结束。
+**断点恢复**：每个回答经 `onboarding.submit {field, value}` 即时落盘单个字段（见 [PROTOCOL.md §1.1](PROTOCOL.md)），Client 启动时调 `onboarding.get_state` 从下一个未答问题恢复——崩溃/退出不丢进度。**关键差异**：`is_complete=True` 在角色子阶段答完即被设置，但 `get_onboarding_state` 只在形象确认（`is_portrait_confirmed=True`）且 voice + user_* 全部答齐后才返回 `complete=True`；未确认形象时根据是否已生成全身三视图返回 `portrait` 或 `portrait-fullbody`，确认后按 **voice 先于 user_*** 路由，中途崩溃后 client 会恢复进入对应子阶段而不是直接跳到 onboarding 结束。
 
 ### 5.3 孵化与两步形象生成
 

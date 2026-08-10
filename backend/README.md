@@ -75,7 +75,7 @@ backend/
 | 限制 | 说明 |
 |------|------|
 | **单实例部署** | `disturbance_tier` 与 IPC future 锁在 process-local 内存；in-memory rate limit（slowapi）；架构不支持多实例水平扩展 |
-| **数据库无 Alembic** | 手动 DDL + `ADD COLUMN IF NOT EXISTS` 幂等迁移；可处理加列，**不**可处理重命名/类型变更/复杂回滚 |
+| **数据库无 Alembic** | 基于 SQLAlchemy `ModelBase.metadata.create_all` 初始化库表与索引，未正式部署前不维护迁移脚本 |
 | **`image_generate` / `text_to_speech_tool` / `video_generate` 不参与 config-aware 过滤** | 可用性取决于 provider；调用时按 `llm_config` 拉 `provider_for_service`；缺 key 会走 fallback chain |
 | **形象资产 URL 有 TTL** | 持久路径 `companion-avatars/<id>.<ext>` + 读时 5 分钟 HMAC 签名；`verify_signed_asset_request` 强制校验，缺签名 401。Client 必须走 `deskagent:api:asset` 代理而非直连 |
 | **MiniMax 视频 URL 短时效** | video_gen v2（H3）`poll` 直接返回 `download_url`，v1（Hailuo）还有 `files/retrieve` 第二跳；两者 URL 都是短时效的，必须**立即下载落 `data_dir/temp-media`**，不能直接返给前端 |

@@ -74,6 +74,8 @@ class Persona(ModelBase, TimestampMixin):
     personality_tags_json: Mapped[str] = mapped_column(Text, default="[]", server_default=text("'[]'"))
     system_prompt_extras: Mapped[str] = mapped_column(Text, default="")
     is_complete: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("FALSE"), index=True)
+    is_portrait_confirmed: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("FALSE"), index=True)
+    portrait_confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     user: Mapped["User"] = relationship(back_populates="persona")
 

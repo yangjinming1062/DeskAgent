@@ -2,7 +2,13 @@ import { useStore } from '@nanostores/react'
 import * as React from 'react'
 import { useEffect, useRef, useState } from 'react'
 
-import { pickAvatarImage, type PickedImage } from '@/companion/avatar-image'
+import {
+  clearDraftRefImage,
+  loadDraftRefImage,
+  pickAvatarImage,
+  type PickedImage,
+  saveDraftRefImage
+} from '@/companion/avatar-image'
 import { useGatewayRequest } from '@/companion/boot/use-gateway-request'
 import { INPUT_CLASS } from '@/companion/input-class'
 import { useInteractiveRegion } from '@/companion/interactive-regions'
@@ -488,10 +494,15 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
   // confirmed the face), so track its loading here for button-disabled state.
   const [fullbodyLoading, setFullbodyLoading] = useState(false)
 
-  // Reference image handed over at the 形象描述 question. Session-scoped on
-  // purpose — `onboarding.submit` persists text answers only, so a resumed
-  // draft asks for the image again rather than silently generating without it.
+  // Reference image handed over at the 形象描述 question. Persisted locally
+  // via IndexedDB draft cache so a crash before bust generation resumes with it.
   const [refImage, setRefImage] = useState<PickedImage | null>(null)
+
+  const updateRefImage = (img: PickedImage | null) => {
+    setRefImage(img)
+    void saveDraftRefImage(img)
+  }
+
   const [answerKind, setAnswerKind] = useState<AnswerKind | null>(null)
 
   const [hint, setHint] = useState<string | null>(null)
@@ -622,6 +633,12 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
 
     void (async () => {
       try {
+        const cachedRef = await loadDraftRefImage()
+
+        if (cachedRef) {
+          setRefImage(cachedRef)
+        }
+
         const state = await requestGateway<{
           answers?: Record<string, string>
           next_field?: string | null
@@ -629,6 +646,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
         }>('onboarding.get_state', {})
 
         if (state?.complete) {
+          void clearDraftRefImage()
           onCompleted()
 
           return
@@ -638,6 +656,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
           // Merge server draft with answers typed in the current session;
           // local non-empty edits win so recent user intent survives.
           const a = state.answers
+          let merged: OnboardingAnswers = {}
           setAnswers(prev => {
             const next: OnboardingAnswers = { ...prev }
 
@@ -647,12 +666,41 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
               }
             }
 
+            merged = next
+
             return next
           })
 
           const nextField = state.next_field
 
-          if (nextField === 'voice') {
+          if (nextField === 'portrait' || nextField === 'portrait-fullbody') {
+            try {
+              const avatarRes = await window.deskagent.api<{
+                asset_url?: string | null
+                seed_front_url?: string | null
+                seed_right_url?: string | null
+                seed_back_url?: string | null
+                id?: number
+              }>({
+                path: '/api/companion/avatar',
+                method: 'GET'
+              })
+
+              const applied = await applyLocalPortrait(avatarRes)
+
+              if (applied.avatar) {
+                if (nextField === 'portrait-fullbody' && avatarRes?.seed_front_url) {
+                  setPhase('portrait-fullbody')
+                } else {
+                  setPhase('portrait-avatar')
+                }
+              } else {
+                void enterHatchingRef.current(merged, cachedRef)
+              }
+            } catch {
+              void enterHatchingRef.current(merged, cachedRef)
+            }
+          } else if (nextField === 'voice') {
             // next_field==='voice' means the description sentence itself is
             // still unanswered — land on describe, not the catalog.
             setPhase('voice')
@@ -811,7 +859,9 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
     setQIndex(qIndex - 1)
   }
 
-  const enterHatching = async () => {
+  const enterHatching = async (currentAnswers?: OnboardingAnswers, imageOverride?: PickedImage | null) => {
+    const ans = currentAnswers ?? answers
+    const img = imageOverride !== undefined ? imageOverride : refImage
     setPhase('hatching')
     setHint(null)
     void playOnboardingAudio('onboarding.hatching')
@@ -821,7 +871,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
     let personaOk = false
 
     try {
-      personaOk = (await retryTransient(() => savePersona(assembleCharacterPersona(answers)), 700)) === true
+      personaOk = (await retryTransient(() => savePersona(assembleCharacterPersona(ans)), 700)) === true
     } catch (err) {
       setPhase('q-character')
       setHint(err instanceof Error ? `记忆存不上：${err.message}` : '记忆存不上，请重试 onboarding')
@@ -834,7 +884,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
 
     if (personaOk) {
       try {
-        const applied = await applyLocalPortrait(await retryTransient(() => generatePortrait(refImage), 1500, 2))
+        const applied = await applyLocalPortrait(await retryTransient(() => generatePortrait(img), 1500, 2))
         url = applied.avatar
       } catch {
         // A deterministic 4xx (unusable reference image, incomplete persona)
@@ -845,7 +895,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
 
       if (!url) {
         // The portrait panel is what renders next; `hint` is only visible in the form.
-        setPortraitPanelHint(refImage ? '这张参考图我没能用上…待会儿再换一张吧' : '我还没想好…')
+        setPortraitPanelHint(img ? '这张参考图我没能用上…待会儿再换一张吧' : '我还没想好…')
       }
     } else {
       setHint('记忆还没存好，稍后再试试形象吧…')
@@ -856,6 +906,8 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
     setPhase('portrait-avatar')
     void playOnboardingAudio(url ? 'onboarding.portrait.ok' : 'onboarding.portrait.failed')
   }
+
+  const enterHatchingRef = useLatestRef(enterHatching)
 
   // Step 1 — avatar regen: creates a new avatar row, the new id publishes to
   // ``$activeAvatarId`` automatically (via applyPortrait inside the hook).
@@ -939,12 +991,21 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
       return
     }
 
-    setRefImage(picked.image)
+    updateRefImage(picked.image)
     setHint(null)
   }
 
   const confirmPortrait = async () => {
-    setRefImage(null)
+    try {
+      await window.deskagent.api({
+        path: '/api/companion/portrait/confirm',
+        method: 'POST'
+      })
+    } catch {
+      /* idempotent / best-effort */
+    }
+
+    updateRefImage(null)
     // Voice belongs with the portrait: both define the companion itself, so
     // they run back-to-back before any user_* question.
     setPhase('voice')
@@ -1004,6 +1065,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
       return
     }
 
+    void clearDraftRefImage()
     setPhase('greeting')
 
     const ok = await playOnboardingAudio('onboarding.greeting')
@@ -1123,7 +1185,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
                         <span className="text-[10px] text-white/35">我会照着它画自己</span>
                         <button
                           className="ml-auto text-white/40 transition hover:text-white"
-                          onClick={() => setRefImage(null)}
+                          onClick={() => updateRefImage(null)}
                           type="button"
                         >
                           移除

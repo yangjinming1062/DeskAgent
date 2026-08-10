@@ -195,17 +195,22 @@ def test_onboarding_incremental_persistence_and_recovery(_patch_db):
         with pytest.raises(PersonaValidationError):
             submit_onboarding_field(db, 100, "bogus", "x")
 
-        # Once persona is finalized but voice / user_* are still pending, get_state
-        # reports complete=False with next_field pointing at the first missing
-        # field — the desktop must resume into voice / q-user rather than
-        # skip onboarding entirely. voice comes first (it follows 形象确认).
+        # Once persona is finalized but portrait is not yet confirmed, get_state
+        # routes to "portrait". Once confirmed, it routes to "voice".
         update_persona(
             db, 100, {"name": "小光", "personality": "温柔", "speaking_style": "轻柔"}
         )
         state = get_onboarding_state(db, 100)
         assert state["complete"] is False
-        assert state["next_field"] == "voice"
+        assert state["next_field"] == "portrait"
         assert state["answers"]["name"] == "小光"
+
+        from services.companion import confirm_portrait
+
+        confirm_portrait(db, 100)
+        state = get_onboarding_state(db, 100)
+        assert state["complete"] is False
+        assert state["next_field"] == "voice"
 
 
 def test_post_character_onboarding_accepts_user_and_voice(_patch_db):
@@ -215,6 +220,7 @@ def test_post_character_onboarding_accepts_user_and_voice(_patch_db):
     _, SessionLocal = _patch_db
     from services.companion import (
         PersonaValidationError,
+        confirm_portrait,
         get_onboarding_state,
         submit_onboarding_field,
         update_persona,
@@ -225,6 +231,7 @@ def test_post_character_onboarding_accepts_user_and_voice(_patch_db):
         update_persona(
             db, 100, {"name": "小光", "personality": "温柔", "speaking_style": "轻柔"}
         )
+        confirm_portrait(db, 100)
 
         # user_* lands in Memory, not persona draft.
         submit_onboarding_field(db, 100, "user_call_name", "老板")
@@ -251,13 +258,12 @@ def test_post_character_onboarding_accepts_user_and_voice(_patch_db):
 
 
 def test_onboarding_complete_only_when_post_character_fields_filled(_patch_db):
-    """get_onboarding_state must gate complete=True on voice + user_* being
-    answered, so a mid-onboarding crash resumes instead of skipping onboarding.
-
-    voice outranks user_* because the voice sub-stage runs right after 形象确认,
-    before the user sub-stage."""
+    """get_onboarding_state must gate complete=True on portrait confirmation +
+    voice + user_* being answered, so a mid-onboarding crash resumes instead of
+    skipping onboarding."""
     _, SessionLocal = _patch_db
     from services.companion import (
+        confirm_portrait,
         get_onboarding_state,
         submit_onboarding_field,
         update_persona,
@@ -268,7 +274,14 @@ def test_onboarding_complete_only_when_post_character_fields_filled(_patch_db):
             db, 100, {"name": "小光", "personality": "温柔", "speaking_style": "轻柔"}
         )
 
-        # Nothing answered yet — voice wins over the (also missing) user_*.
+        # Unconfirmed portrait routes to portrait.
+        state = get_onboarding_state(db, 100)
+        assert state["complete"] is False
+        assert state["next_field"] == "portrait"
+
+        confirm_portrait(db, 100)
+
+        # Portrait confirmed, voice missing → voice wins over (also missing) user_*.
         state = get_onboarding_state(db, 100)
         assert state["complete"] is False
         assert state["next_field"] == "voice"
@@ -298,6 +311,74 @@ def test_onboarding_complete_only_when_post_character_fields_filled(_patch_db):
         state = get_onboarding_state(db, 100)
         assert state["complete"] is False
         assert state["next_field"] == "voice"
+
+
+def test_portrait_confirmation_and_resume(_patch_db):
+    """Test full lifecycle of is_portrait_confirmed:
+    - Persona unconfirmed without avatar -> next_field="portrait"
+    - Persona unconfirmed with bust only -> next_field="portrait"
+    - Persona unconfirmed with fullbody seeds -> next_field="portrait-fullbody"
+    - POST /api/companion/portrait/confirm marks it confirmed
+    - update_persona / regen resets is_portrait_confirmed to False
+    """
+    _, SessionLocal = _patch_db
+    from modules.companion import AvatarAsset, Persona
+    from services.companion import (
+        confirm_portrait,
+        get_onboarding_state,
+        update_persona,
+    )
+
+    with SessionLocal() as db:
+        persona = update_persona(
+            db, 101, {"name": "小光", "personality": "温柔", "speaking_style": "轻柔"}
+        )
+        assert persona.is_portrait_confirmed is False
+        assert persona.portrait_confirmed_at is None
+
+        # 1. No avatar row yet -> portrait
+        state = get_onboarding_state(db, 101)
+        assert state["next_field"] == "portrait"
+        assert state["complete"] is False
+
+        # 2. Bust-only avatar row (no seed_front_url) -> portrait
+        avatar = AvatarAsset(
+            user_id=101,
+            prompt_json="{}",
+            asset_url="companion-avatars/test.jpg",
+            seed_front_url="",
+            active=True,
+        )
+        db.add(avatar)
+        db.commit()
+
+        state = get_onboarding_state(db, 101)
+        assert state["next_field"] == "portrait"
+
+        # 3. Fullbody seeds generated -> portrait-fullbody
+        avatar.seed_front_url = "companion-avatars/front.jpg"
+        db.commit()
+
+        state = get_onboarding_state(db, 101)
+        assert state["next_field"] == "portrait-fullbody"
+
+        # 4. Confirm portrait -> next_field moves past portrait to voice
+        confirmed = confirm_portrait(db, 101)
+        assert confirmed.is_portrait_confirmed is True
+        assert confirmed.portrait_confirmed_at is not None
+
+        state = get_onboarding_state(db, 101)
+        assert state["next_field"] == "voice"
+
+        # 5. Re-finalizing persona resets confirmation
+        updated = update_persona(
+            db, 101, {"name": "小光", "personality": "活泼", "speaking_style": "轻快"}
+        )
+        assert updated.is_portrait_confirmed is False
+        assert updated.portrait_confirmed_at is None
+
+        state = get_onboarding_state(db, 101)
+        assert state["next_field"] == "portrait-fullbody"
 
 
 def test_speaking_style_rejected_after_finalization(_patch_db):

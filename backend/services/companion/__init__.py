@@ -42,6 +42,7 @@ from .model_service import ModelGenerationError
 from .model_service import ModelGenerationInProgressError
 from .model_service import signed_model_url
 from .persona_service import build_system_prompt_extras
+from .persona_service import confirm_portrait
 from .persona_service import get_onboarding_state
 from .persona_service import get_or_create_persona
 from .persona_service import ONBOARDING_FIELDS
@@ -94,6 +95,7 @@ __all__ = [
     "build_system_prompt_extras",
     "build_user_profile_extras",
     "check_affect",
+    "confirm_portrait",
     "delete_memory",
     "delete_wardrobe_item",
     "design_voice",

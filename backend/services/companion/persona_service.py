@@ -2,8 +2,10 @@ import json
 from typing import Any
 
 from components import safe_json_loads
+from modules.companion import AvatarAsset
 from modules.companion import Persona
 from services.llm import chat as default_chat
+from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -114,6 +116,8 @@ def update_persona(
     persona.definition_json = json.dumps(cleaned, ensure_ascii=False)
     persona.system_prompt_extras = render_extras(cleaned)
     persona.is_complete = True
+    persona.is_portrait_confirmed = False
+    persona.portrait_confirmed_at = None
     # Retry on the partial-unique race; record_user_profile is idempotent.
     try:
         db.commit()
@@ -121,6 +125,15 @@ def update_persona(
         db.rollback()
         record_user_profile(db, user_id, user_profile)
         db.commit()
+    db.refresh(persona)
+    return persona
+
+
+def confirm_portrait(db: Session, user_id: int) -> Persona:
+    persona = get_or_create_persona(db, user_id)
+    persona.is_portrait_confirmed = True
+    persona.portrait_confirmed_at = func.now()
+    db.commit()
     db.refresh(persona)
     return persona
 
@@ -153,19 +166,23 @@ def _load_draft(persona: Persona) -> dict[str, str]:
 def get_onboarding_state(db: Session, user_id: int) -> dict[str, Any]:
     """``answers``: every field already submitted; ``next_field``: first unanswered (``None`` when all answered).
 
-    ``complete`` is gated on voice + user_* being answered, not just is_complete, so a crash mid-flow resumes rather than skips.
+    ``complete`` is gated on portrait confirmation, voice + user_* being answered, not just is_complete, so a crash mid-flow resumes rather than skips.
     ``voice`` outranks ``user_*`` because the voice sub-stage runs right after 形象确认, before the user sub-stage.
     """
     persona = get_or_create_persona(db, user_id)
     if persona.is_complete:
         draft = _load_draft(persona)
         user_profile = read_user_profile(db, user_id)
+        merged = {**draft, **user_profile}
+        if not persona.is_portrait_confirmed:
+            avatar = db.query(AvatarAsset).filter(AvatarAsset.user_id == user_id, AvatarAsset.active.is_(True)).one_or_none()
+            next_field = "portrait-fullbody" if avatar is not None and bool(avatar.seed_front_url) else "portrait"
+            return {"answers": merged, "next_field": next_field, "complete": False}
         missing_users = [k for k in _POST_CHARACTER_FIELDS if not user_profile.get(k)]
         voice_missing = not draft.get("voice")
         if voice_missing or missing_users:
             next_field = "voice" if voice_missing else missing_users[0]
             # Merge draft + Memory so the desktop rehydrates every answered field in one shot.
-            merged = {**draft, **user_profile}
             return {"answers": merged, "next_field": next_field, "complete": False}
         return {"answers": {}, "next_field": None, "complete": True}
     draft = _load_draft(persona)

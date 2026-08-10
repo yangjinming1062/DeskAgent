@@ -227,6 +227,9 @@ async def _generate_avatar_step(
         seed=secrets.randbelow(2**31),
         active=True,
     )
+    persona = get_or_create_persona(db, user_id)
+    persona.is_portrait_confirmed = False
+    persona.portrait_confirmed_at = None
     db.add(asset)
     db.commit()
     db.refresh(asset)
@@ -295,6 +298,8 @@ async def generate_fullbody(
     asset.seed_back_url = back[0]
     prompt_payload["multiview_prompts"] = prompts
     asset.prompt_json = json.dumps(prompt_payload, ensure_ascii=False)
+    persona.is_portrait_confirmed = False
+    persona.portrait_confirmed_at = None
     db.commit()
     db.refresh(asset)
 

@@ -42,6 +42,7 @@ from services.companion import analyze_personality_tags
 from services.companion import AvatarGenerationError
 from services.companion import AvatarNotFoundError
 from services.companion import AvatarSourceUnreadableError
+from services.companion import confirm_portrait
 from services.companion import delete_wardrobe_item
 from services.companion import emit_wardrobe_updated
 from services.companion import equip_wardrobe_item
@@ -161,6 +162,16 @@ async def put_persona(
         definition_json=persona.definition_json,
         personality_tags=tags if isinstance(tags, list) else [],
     )
+
+
+@router.post("/portrait/confirm")
+def post_portrait_confirm(
+    auth: tuple[User, LoginRecord] = Depends(get_current_session),
+    db: Session = Depends(get_db),
+) -> dict:
+    user, _ = auth
+    confirm_portrait(db, user.id)
+    return {"ok": True}
 
 
 def _schedule_personality_tag_refresh(persona_id: int, user_id: int) -> None:
