@@ -3,9 +3,9 @@ import { describe, expect, it } from 'vitest'
 import { assembleCharacterPersona, assemblePersona } from './persona'
 
 describe('assemblePersona', () => {
-  it('maps name/personality and uses raw speaking_style or personality fallback', () => {
-    const p = assemblePersona({ name: '小光', personality: '温柔体贴', role: '专属管家' })
-    expect(p).toEqual({ name: '小光', personality: '温柔体贴', speaking_style: '温柔体贴', background: '专属管家' })
+  it('maps name/personality and preserves background and speaking_style', () => {
+    const p = assemblePersona({ name: '小光', personality: '温柔体贴', role: '专属管家', speaking_style: '轻声细语' })
+    expect(p).toEqual({ name: '小光', personality: '温柔体贴', speaking_style: '轻声细语', background: '专属管家' })
   })
 
   it('maps species / character_gender to biological_type / gender', () => {
@@ -60,11 +60,11 @@ describe('assemblePersona', () => {
     expect(p.user_hobbies?.length).toBe(2000)
   })
 
-  it('defaults skipped required fields so the PUT always satisfies is_complete', () => {
+  it('defaults skipped required fields (name / personality) without injecting personality into speaking_style', () => {
     const p = assemblePersona({ name: '小光' })
     expect(p.name).toBe('小光')
     expect(p.personality).toBe('温柔体贴')
-    expect(p.speaking_style).toBe('温柔体贴')
+    expect(p.speaking_style).toBe('')
     expect(p.background).toBeUndefined()
   })
 
@@ -104,10 +104,10 @@ describe('assemblePersona', () => {
     expect(p.appearance_core).toBe('金发绿眼')
   })
 
-  it('prefers user-picked speaking_style, falling back to previous then personality', () => {
+  it('prefers user-picked speaking_style, falling back to previous otherwise', () => {
     const previous = { speaking_style: '上次选的说话风格' }
     expect(assemblePersona({ name: '小光', personality: '温柔' }, previous).speaking_style).toBe('上次选的说话风格')
-    expect(assemblePersona({ name: '小光', personality: '温柔' }).speaking_style).toBe('温柔')
+    expect(assemblePersona({ name: '小光', personality: '温柔' }).speaking_style).toBe('')
     expect(
       assemblePersona({ name: '小光', personality: '温柔', speaking_style: '专业干练' }, previous).speaking_style
     ).toBe('专业干练')
@@ -144,6 +144,12 @@ describe('assemblePersona', () => {
     const previous = { speaking_style: '上次选的说话风格' }
     const p = assemblePersona({ name: '小光', personality: '专业干练', role: '管家' }, previous)
     expect(p.speaking_style).toBe('上次选的说话风格')
+  })
+
+  it('regression: does not copy step 7 personality into step 8 speaking_style', () => {
+    const p = assemblePersona({ name: '小艾', personality: '活泼开朗' })
+    expect(p.personality).toBe('活泼开朗')
+    expect(p.speaking_style).toBe('')
   })
 
   it('falls back to a default name when name is missing', () => {
@@ -201,7 +207,8 @@ describe('assembleCharacterPersona', () => {
       character_gender: '女',
       appearance_core: '金发',
       role: '专属管家',
-      personality: '温柔体贴'
+      personality: '温柔体贴',
+      speaking_style: '利落'
     })
 
     expect(p.name).toBe('梦鳞')
@@ -210,11 +217,7 @@ describe('assembleCharacterPersona', () => {
     expect(p.appearance_core).toBe('金发')
     expect(p.background).toBe('专属管家')
     expect(p.personality).toBe('温柔体贴')
-  })
-
-  it('falls back to personality string when the user has not picked speaking_style yet', () => {
-    const p = assembleCharacterPersona({ name: '小光', personality: '温柔体贴' })
-    expect(p.speaking_style).toBe('温柔体贴')
+    expect(p.speaking_style).toBe('利落')
   })
 
   it('never leaks voice (TTS field, not a persona field)', () => {
@@ -226,6 +229,7 @@ describe('assembleCharacterPersona', () => {
     const full = assemblePersona({
       name: '小光',
       personality: '温柔',
+      speaking_style: '俏皮',
       species: '灵兽',
       role: '专属管家',
       user_call_name: '老板',
@@ -235,6 +239,7 @@ describe('assembleCharacterPersona', () => {
     const characterOnly = assembleCharacterPersona({
       name: '小光',
       personality: '温柔',
+      speaking_style: '俏皮',
       species: '灵兽',
       role: '专属管家',
       user_call_name: '老板',

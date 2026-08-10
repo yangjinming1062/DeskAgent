@@ -59,9 +59,9 @@ export function assemblePersona(answers: OnboardingAnswers, previous?: Partial<P
   const name = answers.name?.trim() || '伙伴'
   const personality = answers.personality?.trim() || DEFAULT_PERSONALITY
 
-  // 客户端仅透传用户输入，不进行程序化转换；未填写时以性格设定兜底
+  // 客户端仅透传用户输入，不进行程序化转换；未填写时不注入默认性格
   const userPickedStyle = answers.speaking_style?.trim()
-  const speakingStyle = userPickedStyle || previous?.speaking_style?.trim() || personality
+  const speakingStyle = userPickedStyle || previous?.speaking_style?.trim() || ''
 
   const payload: PersonaPayload = {
     name,

@@ -10,7 +10,7 @@ export function personaFromWire(payload: PersonaPayload): PersonaDefinition {
   return {
     name: payload.name,
     personality: payload.personality,
-    speakingStyle: payload.speaking_style,
+    speakingStyle: payload.speaking_style ?? '',
     ...(payload.background !== undefined && { background: payload.background }),
     ...(payload.biological_type !== undefined && { biological_type: payload.biological_type }),
     ...(payload.gender !== undefined && { gender: payload.gender }),
@@ -23,7 +23,7 @@ export function personaToWire(def: PersonaDefinition): PersonaPayload {
   return {
     name: def.name,
     personality: def.personality,
-    speaking_style: def.speakingStyle,
+    speaking_style: def.speakingStyle ?? '',
     ...(def.background !== undefined && { background: def.background }),
     ...(def.biological_type !== undefined && { biological_type: def.biological_type }),
     ...(def.gender !== undefined && { gender: def.gender }),

@@ -189,7 +189,7 @@ const QUESTIONS: readonly Question[] = [
     key: 'speaking_style',
     text: '您希望我说话的风格是什么样的？',
     placeholder: '比如：简短、爱用比喻、俏皮一点…',
-    required: false,
+    required: true,
     multiline: true,
     audioTag: 'onboarding.q10',
     max: 500,
@@ -766,25 +766,30 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
     }
   }, [phase, qIndex, currentList])
 
-  const commit = (value: string | undefined) => {
+  const commit = (value: string | undefined): OnboardingAnswers => {
     const q = currentList[qIndex]
 
     if (!q) {
-      return
+      return answers
     }
 
     const trimmed = value && value.trim() ? value.trim() : undefined
     const cleaned = trimmed && q.max ? trimmed.slice(0, q.max) : trimmed
-    setAnswers((prev: OnboardingAnswers) => ({ ...prev, [q.key]: cleaned }))
+    const nextAnswers: OnboardingAnswers = { ...answers, [q.key]: cleaned }
+    setAnswers(nextAnswers)
 
     // Per-field incremental persistence (design §7.5); fire-and-forget — never
     // block the UI on a draft save. No-op until the gateway is open.
     if (gatewayState === 'open') {
       void requestGateway('onboarding.submit', { field: BACKEND_FIELD[q.key], value: cleaned ?? null }).catch(() => {})
     }
+
+    return nextAnswers
   }
 
-  const advance = () => {
+  const advance = (updatedAnswers?: OnboardingAnswers) => {
+    const currentAnswers = updatedAnswers ?? answers
+
     // Voice describe has a single question; advancing flips to catalog which the useEffect below loads.
     if (phase === 'voice' && voiceStage === 'describe') {
       setVoiceStage('catalog')
@@ -799,10 +804,10 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
     }
 
     if (phase === 'q-character') {
-      void enterHatching()
+      void enterHatching(currentAnswers)
     } else if (phase === 'q-user') {
       setPhase('finishing')
-      void finish()
+      void finish(currentAnswers)
     }
   }
 
@@ -832,13 +837,19 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
     const q = currentList[qIndex]
 
     if (q?.required && !input.trim()) {
-      setHint('名字是必填的哦～')
+      const requiredHints: Record<string, string> = {
+        name: '名字是必填的哦～',
+        species: '生灵类型是必填的哦～',
+        speaking_style: '说话风格是必填的哦～'
+      }
+
+      setHint(requiredHints[q.key] ?? '此项是必填的哦～')
 
       return
     }
 
-    commit(input)
-    advance()
+    const nextAnswers = commit(input)
+    advance(nextAnswers)
   }
 
   const onSkip = () => {
@@ -846,8 +857,8 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
       return
     }
 
-    commit(undefined)
-    advance()
+    const nextAnswers = commit(undefined)
+    advance(nextAnswers)
   }
 
   const onBack = () => {
@@ -1052,10 +1063,12 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
     setHint(null)
   }
 
-  const finish = async () => {
+  const finish = async (currentAnswers?: OnboardingAnswers) => {
+    const ans = currentAnswers ?? answers
+
     // Safety-net retry; roll back to 'q-user' on failure so phase isn't stuck on 'finishing'.
     try {
-      await savePersona(assemblePersona(answers))
+      await savePersona(assemblePersona(ans))
     } catch (err) {
       setPhase('q-user')
       setQIndex(USER_QUESTIONS.length - 1)
