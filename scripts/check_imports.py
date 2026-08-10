@@ -74,6 +74,22 @@ def check_type_checking_leak(path: Path) -> list[str]:
 
 # ---- B. runner/tools/* cross-subpackage eager import -------------------------
 
+# Verified-safe cross-subpackage imports: ``(rel_file, imported_subpkg)`` pairs
+# where the cycle was broken by refactoring and the target is confirmed not to
+# import the source subpackage at module level.
+_ALLOWED_CROSS_SUBPKG: set[tuple[str, str]] = {
+    # browser_tool → multimodal: multimodal does not import browser.
+    ("browser/browser_tool.py", "multimodal"),
+    # browser_tool → process: process does not import browser.
+    ("browser/browser_tool.py", "process"),
+    # skill_manager_tool → files: files does not import skills.
+    ("skills/skill_manager_tool.py", "files"),
+    # terminal_tool → process, security: neither imports terminal.
+    # The terminal_tool ↔ _env_base cycle was broken by extracting _cmd_rewrite.py.
+    ("terminal/terminal_tool.py", "process"),
+    ("terminal/terminal_tool.py", "security"),
+}
+
 
 def _runner_subpackages() -> set[str]:
     """Names of subpackages under ``runner/tools/`` — sibling dirs that contain
@@ -98,6 +114,11 @@ def check_runner_subpkg_eager_import(path: Path) -> list[str]:
     inside the function body. Imports from sibling *modules* (``from ..registry``,
     ``from ..interrupt``, ``from ..security``) are allowed — they are stable
     shared utilities that don't form cycles.
+
+    ``_ALLOWED_CROSS_SUBPKG`` exempts verified-safe imports: pairs of
+    ``(relative_file_path, imported_subpkg)`` where the cycle was broken
+    by refactoring (e.g. extracting ``_cmd_rewrite.py`` out of ``terminal_tool.py``)
+    and the target subpackage is confirmed not to import the source subpackage.
     """
     try:
         rel = path.resolve().relative_to((REPO_ROOT / "runner" / "tools").resolve())
@@ -110,6 +131,7 @@ def check_runner_subpkg_eager_import(path: Path) -> list[str]:
         return []
     own_subpkg = parts[0]
     siblings = _runner_subpackages() - {own_subpkg}
+    rel_file = "/".join(parts)
 
     tree = _parse(path)
     if tree is None:
@@ -123,6 +145,8 @@ def check_runner_subpkg_eager_import(path: Path) -> list[str]:
         if "." in node.module:
             continue
         if node.module not in siblings:
+            continue
+        if (rel_file, node.module) in _ALLOWED_CROSS_SUBPKG:
             continue
         names = ", ".join(a.name for a in node.names)
         errors.append(
