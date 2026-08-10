@@ -1,3 +1,5 @@
+import logging
+
 from components import DEFAULT_LANGUAGE
 from components import naive_utc_now
 from components import SUPPORTED_LANGUAGES
@@ -5,6 +7,8 @@ from components import TOOL_ENFORCE_OFF_VALUES
 from modules.system import AgentPromptConfig
 
 from .affect import COMPANION_AFFECT_GUIDANCE
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_AGENT_IDENTITY = (
     "You are a companion, an intelligent AI partner on the user's desktop. "

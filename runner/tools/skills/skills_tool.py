@@ -339,64 +339,6 @@ def skills_list(category: str | None = None, task_id: str | None = None) -> str:
         return tool_error(str(e), success=False)
 
 
-def _serve_plugin_skill(
-    skill_md: Path,
-    namespace: str,
-    bare: str,
-    *,
-    preprocess: bool = True,
-    session_id: str | None = None,
-) -> str:
-    if namespace in _get_disabled_plugins():
-        return json.dumps({"success": False, "error": f"Plugin '{namespace}' is disabled. Re-enable with: deskagent plugins enable {namespace}"}, ensure_ascii=False)
-    try:
-        content = skill_md.read_text(encoding="utf-8")
-    except Exception as e:
-        return json.dumps({"success": False, "error": f"Failed to read skill '{namespace}:{bare}': {e}"}, ensure_ascii=False)
-
-    parsed = {}
-    with contextlib.suppress(Exception):
-        parsed, _ = parse_frontmatter(content)
-    if not skill_matches_platform(parsed):
-        return json.dumps(
-            {"success": False, "error": f"Skill '{namespace}:{bare}' is not supported on this platform.", "readiness_status": SkillReadinessStatus.UNSUPPORTED.value},
-            ensure_ascii=False,
-        )
-
-    if any(p in content.lower() for p in _INJECTION_PATTERNS):
-        logger.warning("Plugin skill '%s:%s' contains patterns that may indicate prompt injection", namespace, bare)
-
-    desc = str(parsed.get("description", ""))
-    if len(desc) > MAX_DESCRIPTION_LENGTH:
-        desc = desc[: MAX_DESCRIPTION_LENGTH - 3] + "..."
-
-    try:
-        siblings = [s for s in get_plugin_manager().list_plugin_skills(namespace) if s != bare]
-        banner = (
-            f"[Bundle context: This skill is part of the '{namespace}' plugin.\n"
-            f"Sibling skills: {', '.join(siblings)}.\n"
-            f"Use qualified form to invoke siblings (e.g. {namespace}:{siblings[0]}).]\n\n"
-            if siblings
-            else f"[Bundle context: This skill is part of the '{namespace}' plugin.]\n\n"
-        )
-    except Exception:
-        banner = ""
-
-    rendered = content
-
-    return json.dumps(
-        {
-            "success": True,
-            "name": f"{namespace}:{bare}",
-            "content": f"{banner}{rendered}" if banner else rendered,
-            "description": desc,
-            "linked_files": None,
-            "readiness_status": SkillReadinessStatus.AVAILABLE.value,
-        },
-        ensure_ascii=False,
-    )
-
-
 def skill_view(
     name: str,
     file_path: str | None = None,
@@ -409,32 +351,7 @@ def skill_view(
 
         local_category_name = None
         if ":" in name:
-            namespace, bare = parse_qualified_name(name)
-            if not is_valid_namespace(namespace):
-                return json.dumps({"success": False, "error": f"Invalid namespace '{namespace}' in '{name}'. Namespaces must match [a-zA-Z0-9_-]+."}, ensure_ascii=False)
-            discover_plugins()
-            pm = get_plugin_manager()
-            if (plugin_skill_md := pm.find_plugin_skill(name)) is not None:
-                if not plugin_skill_md.exists():
-                    pm.remove_plugin_skill(name)
-                    return json.dumps(
-                        {
-                            "success": False,
-                            "error": f"Skill '{name}' file no longer exists at {plugin_skill_md}. The registry entry has been cleaned up — try again after the plugin is reloaded.",
-                        },
-                        ensure_ascii=False,
-                    )
-                return _serve_plugin_skill(plugin_skill_md, namespace, bare, preprocess=preprocess, session_id=task_id)
-            if available := pm.list_plugin_skills(namespace):
-                return json.dumps(
-                    {
-                        "success": False,
-                        "error": f"Skill '{bare}' not found in plugin '{namespace}'.",
-                        "available_skills": [f"{namespace}:{s}" for s in available],
-                        "hint": f"The '{namespace}' plugin provides {len(available)} skill(s).",
-                    },
-                    ensure_ascii=False,
-                )
+            namespace, _, bare = name.partition(":")
             if bare:
                 local_category_name = f"{namespace}/{bare}"
 

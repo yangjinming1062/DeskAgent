@@ -5,10 +5,10 @@ import sys
 from pathlib import Path
 from typing import Any
 
-logger = logging.getLogger(__name__)
+from .constants import IS_MACOS
+from .constants import IS_WINDOWS
 
-IS_WINDOWS = sys.platform == "win32"
-IS_MACOS = sys.platform == "darwin"
+logger = logging.getLogger(__name__)
 
 
 def _binary_exists(name: str) -> bool:

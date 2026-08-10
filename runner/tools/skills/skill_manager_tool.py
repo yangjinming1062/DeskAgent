@@ -9,6 +9,7 @@ from typing import Any
 import yaml
 from utils import atomic_replace
 from utils import cfg_get
+from utils import get_external_skills_dirs
 from utils import get_skills_dir
 from utils import has_traversal_component
 from utils import is_truthy_value
@@ -22,12 +23,18 @@ from .skill_provenance import is_background_review
 from .skill_usage import bump_patch
 from .skill_usage import forget
 from .skill_usage import get_record
+from .skill_usage import is_excluded_skill_path
 from .skill_usage import mark_agent_created
 from .skills_guard import format_scan_report
 from .skills_guard import scan_skill
 from .skills_guard import should_allow_install
 
 logger = logging.getLogger(__name__)
+_GUARD_AVAILABLE = True
+
+
+def get_all_skills_dirs() -> list[Path]:
+    return [Path(get_skills_dir()), *get_external_skills_dirs()]
 
 
 def _guard_agent_created_enabled() -> bool:
@@ -356,8 +363,6 @@ def skill_manage(
         result = {"success": False, "error": f"Unknown action '{action}'."}
 
     if result.get("success"):
-        with contextlib.suppress(Exception):
-            clear_skills_system_prompt_cache(clear_snapshot=True)
         try:
             if action == "create" and is_background_review():
                 mark_agent_created(name)

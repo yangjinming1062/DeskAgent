@@ -303,8 +303,8 @@ def discover_builtin_tools() -> list[str]:
         try:
             importlib.import_module(name)
             imported.append(name)
-        except Exception as e:
-            logger.debug(f"Could not import {name}: {e}")
+        except Exception:
+            logger.error("Could not import %s", name, exc_info=True)
     return imported
 
 

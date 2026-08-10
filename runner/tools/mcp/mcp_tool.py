@@ -43,6 +43,7 @@ from mcp.types import ServerNotification
 from mcp.types import TextContent
 from mcp.types import ToolListChangedNotification
 from mcp.types import ToolUseContent
+from utils import call_llm
 from utils import get_deskagent_home
 from utils import IS_WINDOWS
 from utils import kill_tree
@@ -2174,10 +2175,6 @@ def _load_mcp_config() -> dict[str, dict]:
         servers = config.get("mcp_servers")
         if not servers or not isinstance(servers, dict):
             return {}
-        # Ensure .env vars are available for interpolation
-        with contextlib.suppress(Exception):
-
-            load_deskagent_dotenv()
         return {name: _interpolate_env_vars(cfg) for name, cfg in servers.items()}
     except Exception as exc:
         logger.debug("Failed to load MCP config: %s", exc)

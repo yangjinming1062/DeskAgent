@@ -42,11 +42,28 @@ from utils import is_truthy_value
 from utils import kill_tree
 from utils import load_config
 from utils import normalize_url_for_request
+from utils import pid_exists
+from utils import redact_sensitive_text
 
 from ..interrupt import is_interrupted
 from ..registry import registry
 from ..registry import tool_error
+from .browser_camofox import _ensure_tab
+from .browser_camofox import _post
+from .browser_camofox import camofox_back
+from .browser_camofox import camofox_click
+from .browser_camofox import camofox_close
+from .browser_camofox import camofox_console
+from .browser_camofox import camofox_get_images
+from .browser_camofox import camofox_navigate
+from .browser_camofox import camofox_press
+from .browser_camofox import camofox_scroll
+from .browser_camofox import camofox_soft_cleanup
+from .browser_camofox import camofox_snapshot
+from .browser_camofox import camofox_type
+from .browser_camofox import camofox_vision
 from .browser_camofox import is_camofox_mode
+from .browser_supervisor import _VALID_POLICIES
 from .browser_supervisor import DEFAULT_DIALOG_POLICY
 from .browser_supervisor import DEFAULT_DIALOG_TIMEOUT_S
 from .browser_supervisor import SUPERVISOR_REGISTRY
@@ -611,7 +628,7 @@ def _run_chrome_fallback_command(
         with contextlib.suppress(Exception):
             _run_tmp("close", [])
 
-        _shutil.rmtree(task_socket_dir, ignore_errors=True)
+        shutil.rmtree(task_socket_dir, ignore_errors=True)
 
 
 def _chrome_fallback_screenshot(
@@ -1502,29 +1519,6 @@ def _find_agent_browser() -> str:
         _cached_agent_browser = "npx agent-browser"
         _agent_browser_resolved = True
         return _cached_agent_browser
-
-    # Nothing found — try lazy installation before giving up.
-    try:
-
-        if ensure_dependency("browser"):
-            recheck = shutil.which("agent-browser")
-            if not recheck and extended_path:
-                recheck = shutil.which("agent-browser", path=extended_path)
-            if not recheck:
-                deskagent_nm = str(get_deskagent_home() / "node_modules" / ".bin")
-                recheck = shutil.which("agent-browser", path=deskagent_nm)
-            if not recheck:
-                deskagent_node_bin = str(get_deskagent_home() / "node" / "bin")
-                recheck = shutil.which("agent-browser", path=deskagent_node_bin)
-            if not recheck:
-                deskagent_node_root = str(get_deskagent_home() / "node")
-                recheck = shutil.which("agent-browser", path=deskagent_node_root)
-            if recheck:
-                _cached_agent_browser = recheck
-                _agent_browser_resolved = True
-                return recheck
-    except Exception:
-        pass
 
     _agent_browser_resolved = True
     raise FileNotFoundError(
@@ -2713,6 +2707,7 @@ def _browser_drag_js(
         "return true;"
         f"}})({fx},{fy},{tx},{ty})"
     )
+    effective_task_id = task_id or "default"
     eval_result = _browser_eval(js, task_id=effective_task_id)
     try:
         parsed = json.loads(eval_result)
@@ -3814,7 +3809,7 @@ def browser_vision(question: str, annotate: bool = False, task_id: str | None = 
                 screenshots_dir.mkdir(parents=True, exist_ok=True)
 
                 persistent_path = screenshots_dir / f"browser_screenshot_{uuid.uuid4().hex}.png"
-                _shutil_vision.copy2(fb_path, persistent_path)
+                shutil.copy2(fb_path, persistent_path)
                 screenshot_path = persistent_path
         else:
             logger.warning("Lightpanda Chrome fallback vision screenshot failed: %s", fb_result.get("error"))

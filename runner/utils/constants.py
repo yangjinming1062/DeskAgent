@@ -1,12 +1,14 @@
 import contextlib
 import os
-import platform
 import subprocess
 import sys
 from pathlib import Path
 
-IS_WINDOWS: bool = platform.system() == "Windows"
+IS_WINDOWS: bool = sys.platform == "win32"
 """Platform flag: True on Windows, False on POSIX."""
+
+IS_MACOS: bool = sys.platform == "darwin"
+"""Platform flag: True on macOS, False otherwise."""
 
 CREATE_NO_WINDOW: int = subprocess.CREATE_NO_WINDOW if IS_WINDOWS else 0
 """Windows subprocess flag for ``creationflags``; 0 on POSIX (no-op)."""

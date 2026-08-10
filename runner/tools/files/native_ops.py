@@ -200,8 +200,6 @@ class NativeFileOperations(FileOperations):
 
         occurrences = content.count(old_string)
         if occurrences == 0:
-            hint = format_no_match_hint(content, old_string)
-
             new_content, match_count, _strategy, error = fuzzy_find_and_replace(content, old_string, new_string, replace_all)
             if error or match_count == 0:
                 err_msg = error or f"Could not find match for old_string in {path}"

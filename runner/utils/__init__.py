@@ -1,7 +1,6 @@
 from .async_bridge import in_async_loop
 from .async_bridge import safe_schedule_threadsafe
 from .capabilities import disk_free_bytes
-from .capabilities import IS_MACOS
 from .capabilities import local_stt_available
 from .capabilities import local_tts_available
 from .capabilities import microphone_available
@@ -30,6 +29,7 @@ from .constants import get_deskagent_home_override
 from .constants import get_skills_dir
 from .constants import get_subprocess_home
 from .constants import is_termux
+from .constants import IS_MACOS
 from .constants import IS_WINDOWS
 from .constants import secure_parent_dir
 from .credential_files import get_cache_directory_mounts
@@ -68,6 +68,7 @@ from .redact import redact_sensitive_text
 from .reverse_rpc import call_llm
 from .reverse_rpc import set_handler
 from .url_safety import async_is_safe_url
+from .url_safety import check_redirect_url_safety
 from .url_safety import check_website_access
 from .url_safety import is_always_blocked_url
 from .url_safety import is_safe_url

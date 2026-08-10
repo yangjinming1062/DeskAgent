@@ -1,14 +1,14 @@
 import logging
 import shutil
 import subprocess
-import sys
 import time
 from typing import Any
 
+from utils import IS_MACOS
+from utils import IS_WINDOWS
+
 logger = logging.getLogger(__name__)
 
-IS_WINDOWS = sys.platform == "win32"
-IS_MACOS = sys.platform == "darwin"
 # Platform-conditional optional imports at module top per CLAUDE.md.
 try:
     import psutil  # type: ignore[import-not-found]
