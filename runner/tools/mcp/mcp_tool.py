@@ -815,9 +815,6 @@ class SamplingHandler:
         return self._build_text_result(choice, response)
 
 
-# Server task -- each MCP server lives in one long-lived asyncio Task
-
-
 class MCPServerTask:
     """Manages a single MCP server connection in a dedicated asyncio Task.
 
@@ -1655,8 +1652,6 @@ class MCPServerTask:
         self.session = None
 
 
-# Module-level state
-
 _servers: dict[str, MCPServerTask] = {}
 
 # Circuit breaker: consecutive error counts per server.  After
@@ -2180,9 +2175,6 @@ async def _connect_server(name: str, config: dict) -> MCPServerTask:
     return server
 
 
-# Handler / check-fn factories
-
-
 def _make_tool_handler(server_name: str, tool_name: str, tool_timeout: float):
     """Return a sync handler that calls an MCP tool via the background loop.
 
@@ -2600,9 +2592,6 @@ def _make_check_fn(server_name: str):
         return server is not None and server.session is not None
 
     return _check
-
-
-# Discovery & registration
 
 
 def _normalize_mcp_input_schema(schema: dict | None) -> dict:
@@ -3055,9 +3044,6 @@ async def _discover_and_register_server(name: str, config: dict) -> list[str]:
         ", ".join(registered_names),
     )
     return registered_names
-
-
-# Public API
 
 
 def register_mcp_servers(servers: dict[str, dict]) -> list[str]:

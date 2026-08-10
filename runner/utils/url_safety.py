@@ -197,7 +197,6 @@ def check_redirect_url_safety(original_url: str, redirect_url: str) -> bool:
     return True
 
 
-# Website Policy / Blocklist
 _DEFAULT_WEBSITE_BLOCKLIST = {
     "enabled": False,
     "domains": [],

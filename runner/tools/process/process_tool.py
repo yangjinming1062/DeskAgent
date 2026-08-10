@@ -1270,7 +1270,6 @@ class ProcessRegistry:
         return recovered
 
 
-# Module-level singleton
 process_registry = ProcessRegistry()
 
 
@@ -1298,8 +1297,6 @@ def format_process_notification(evt: dict) -> "str | None":
     _out = evt.get("output", "")
     return f"[IMPORTANT: Background process {_sid} completed (exit code {_exit}).\nCommand: {_cmd}\nOutput:\n{_out}]"
 
-
-# Registry -- the "process" tool schema + handler
 
 PROCESS_SCHEMA = {
     "name": "process",

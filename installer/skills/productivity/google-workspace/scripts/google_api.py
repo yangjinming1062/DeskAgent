@@ -205,9 +205,6 @@ def build_service(api, version):
     return build(api, version, credentials=get_credentials())
 
 
-# Gmail
-
-
 def gmail_search(args):
     if _gws_binary():
         results = _run_gws(
@@ -460,9 +457,6 @@ def gmail_modify(args):
     print(json.dumps({"id": result["id"], "labels": result.get("labelIds", [])}, indent=2))
 
 
-# Calendar
-
-
 def calendar_list(args):
     now = datetime.now(timezone.utc)
     time_min = _datetime_with_timezone(args.start or now.isoformat())
@@ -584,9 +578,6 @@ def calendar_delete(args):
     service = build_service("calendar", "v3")
     service.events().delete(calendarId=args.calendar, eventId=args.event_id).execute()
     print(json.dumps({"status": "deleted", "eventId": args.event_id}))
-
-
-# Drive
 
 
 def drive_search(args):
@@ -868,9 +859,6 @@ def drive_delete(args):
     print(json.dumps({"status": "trashed", "fileId": args.file_id, "permanent": False}))
 
 
-# Contacts
-
-
 def contacts_list(args):
     if _gws_binary():
         results = _run_gws(
@@ -920,9 +908,6 @@ def contacts_list(args):
             }
         )
     print(json.dumps(contacts, indent=2, ensure_ascii=False))
-
-
-# Sheets
 
 
 def sheets_get(args):
@@ -1058,9 +1043,6 @@ def sheets_create(args):
     )
 
 
-# Docs
-
-
 def docs_get(args):
     if _gws_binary():
         doc = _run_gws(["docs", "documents", "get"], params={"documentId": args.doc_id})
@@ -1167,9 +1149,6 @@ def _docs_insert_text(doc_id: str, text: str, index: int) -> None:
 
     service = build_service("docs", "v1")
     service.documents().batchUpdate(documentId=doc_id, body={"requests": requests}).execute()
-
-
-# CLI parser
 
 
 def main():

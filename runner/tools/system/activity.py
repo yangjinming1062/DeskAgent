@@ -149,9 +149,6 @@ def click_at(x: int, y: int, button: str = "left", clicks: int = 1) -> dict[str,
     return {"clicked": False, "error": "unsupported platform"}
 
 
-# Platform implementations
-
-
 def _work_area_windows() -> dict[str, int]:
     if ctypes is None or wintypes is None:
         return {"x": 0, "y": 0, "w": 1920, "h": 1080}
@@ -470,7 +467,6 @@ def _focus_macos() -> dict[str, Any]:
         return {}
 
 
-# Fullscreen detection — companion's "immersive focus" signal
 _FULLSCREEN_COVERAGE_RATIO = 0.95
 
 
@@ -576,7 +572,6 @@ def _fullscreen_macos() -> bool:
         return False
 
 
-# Window enumeration — companion spatial behavior (perch / roam / ritual walk)
 _SHELL_WINDOW_CLASSES = frozenset(("Shell_TrayWnd", "WorkerW", "Progman"))
 
 
