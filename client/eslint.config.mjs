@@ -146,7 +146,7 @@ export default [
     }
   },
   {
-    files: ['**/*.js', '**/*.cjs'],
+    files: ['**/*.js', '**/*.cjs', '**/*.mjs'],
     ignores: ['**/node_modules/**', '**/dist/**'],
     languageOptions: {
       ecmaVersion: 'latest',

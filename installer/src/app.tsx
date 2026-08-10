@@ -1,4 +1,5 @@
 import { useStore } from '@nanostores/react'
+import type React from 'react'
 import { useEffect } from 'react'
 import { $route, $bootstrap, initialize } from './store'
 import Welcome from './routes/welcome'
@@ -7,7 +8,7 @@ import Progress from './routes/progress'
 import Success from './routes/success'
 import Failure from './routes/failure'
 
-export default function App() {
+export default function App(): React.JSX.Element {
   const route = useStore($route)
   const bootstrap = useStore($bootstrap)
 

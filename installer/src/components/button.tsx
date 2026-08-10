@@ -63,7 +63,7 @@ export function Button({
   size = 'default',
   asChild = false,
   ...props
-}: ButtonProps) {
+}: ButtonProps): React.JSX.Element {
   const Comp = asChild ? Slot.Root : 'button'
 
   return (

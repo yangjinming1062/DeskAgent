@@ -1,3 +1,4 @@
+import type React from 'react'
 import clsx from 'clsx'
 
 interface HaloProps {
@@ -55,7 +56,7 @@ export function Halo({
   failedAt = null,
   size = 360,
   className
-}: HaloProps) {
+}: HaloProps): React.JSX.Element {
   const segments = Array.from({ length: total }, (_, i) => i)
   const segmentAngle = 360 / total
   const gapAngle = 4 // 4 degree gap between segments

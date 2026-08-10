@@ -1,3 +1,4 @@
+import type React from 'react'
 interface HatchOverlayProps {
   active: boolean
 }
@@ -5,7 +6,7 @@ interface HatchOverlayProps {
 /**
  * Visual overlay anchor during hatching sequence completion.
  */
-export function HatchOverlay({ active }: HatchOverlayProps) {
+export function HatchOverlay({ active }: HatchOverlayProps): React.JSX.Element | null {
   if (!active) return null
 
   return (

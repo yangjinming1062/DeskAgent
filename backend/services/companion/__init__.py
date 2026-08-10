@@ -33,6 +33,7 @@ from .memory_admin import memory_counts
 from .memory_admin import update_memory
 from .memory_bootstrap import build_user_profile_extras
 from .memory_bootstrap import extract_user_profile
+from .memory_bootstrap import read_user_profile
 from .memory_bootstrap import record_user_profile
 from .memory_format import format_auto_inject_block
 from .memory_format import format_memories_block
@@ -112,6 +113,7 @@ __all__ = [
     "memory_counts",
     "normalize_voice_language",
     "record_interaction",
+    "read_user_profile",
     "record_user_profile",
     "regenerate_avatar",
     "regenerate_avatar_from_image",

@@ -1,3 +1,4 @@
+import type React from 'react'
 import { useState } from 'react'
 import { useStore } from '@nanostores/react'
 import { Button } from '../components/button'
@@ -17,7 +18,7 @@ interface ProgressProps {
   bootstrap: BootstrapStateModel
 }
 
-export default function ProgressScreen({ bootstrap }: ProgressProps) {
+export default function ProgressScreen({ bootstrap }: ProgressProps): React.JSX.Element {
   const progress = useStore($progress)
   const [showDetails, setShowDetails] = useState(false)
 

@@ -1,3 +1,4 @@
+import type React from 'react'
 import { type CSSProperties } from 'react'
 import { useStore } from '@nanostores/react'
 import { Button } from '../components/button'
@@ -20,7 +21,7 @@ interface FailureProps {
  * The actual error message lives below in muted text. Two clear
  * affordances: Retry (primary) and Open log folder (secondary).
  */
-export default function Failure({ bootstrap }: FailureProps) {
+export default function Failure({ bootstrap }: FailureProps): React.JSX.Element {
   const logPath = useStore($logPath)
 
   return (

@@ -1,9 +1,10 @@
+import type React from 'react'
 import { type CSSProperties } from 'react'
 import { Button } from '../components/button'
 import { $route } from '../store'
 import { ArrowRight } from 'lucide-react'
 
-export default function Welcome() {
+export default function Welcome(): React.JSX.Element {
   return (
     <div className="deskagent-fade-in relative isolate flex h-full flex-col items-center justify-center gap-10 px-12 py-10">
       <span aria-hidden="true" className="deskagent-glow" />

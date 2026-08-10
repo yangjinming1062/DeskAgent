@@ -150,5 +150,6 @@ __all__ = [
     "iter_skills_files",
     "register_credential_file",
     "register_credential_files",
-    "WebsitePolicyError", "_PREFIX_RE",
+    "WebsitePolicyError",
+    "_PREFIX_RE",
 ]

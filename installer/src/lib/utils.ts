@@ -7,6 +7,6 @@ import { twMerge } from 'tailwind-merge'
  * conflicts so `cn('px-2', condition && 'px-4')` ends up with px-4 only,
  * not both.
  */
-export function cn(...inputs: ClassValue[]) {
+export function cn(...inputs: ClassValue[]): string {
   return twMerge(clsx(inputs))
 }

@@ -1,3 +1,4 @@
+import type React from 'react'
 import { useState } from 'react'
 import { type CSSProperties } from 'react'
 import { Button } from '../components/button'
@@ -15,7 +16,7 @@ import { Rocket, AlertCircle } from 'lucide-react'
  * had `onClick={() => void launchDeskAgentDesktop()}` which swallowed
  * the rejection and left the user staring at an unresponsive button.
  */
-export default function Success() {
+export default function Success(): React.JSX.Element {
   const [error, setError] = useState<string | null>(null)
   const [launching, setLaunching] = useState(false)
 

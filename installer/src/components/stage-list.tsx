@@ -1,3 +1,4 @@
+import type React from 'react'
 import { useEffect, useRef } from 'react'
 import { Check, X, ChevronRight, Loader2 } from 'lucide-react'
 import clsx from 'clsx'
@@ -7,7 +8,7 @@ interface StageListProps {
   bootstrap: BootstrapStateModel
 }
 
-export function StageList({ bootstrap }: StageListProps) {
+export function StageList({ bootstrap }: StageListProps): React.JSX.Element {
   const logEndRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {

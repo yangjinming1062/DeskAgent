@@ -1,3 +1,4 @@
+import type React from 'react'
 import { useEffect, useState } from 'react'
 import clsx from 'clsx'
 
@@ -31,7 +32,7 @@ export function Egg({
   phase = 'idle',
   size = 320,
   className
-}: EggProps) {
+}: EggProps): React.JSX.Element {
   const [flashingIdx, setFlashingIdx] = useState<number | null>(null)
 
   useEffect(() => {

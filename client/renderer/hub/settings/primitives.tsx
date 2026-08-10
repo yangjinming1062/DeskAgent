@@ -5,7 +5,7 @@ import { Badge, Button } from '@/shared/components/ui'
 import type { IconComponent } from '@/shared/lib/icons'
 import { cn } from '@/shared/lib/utils'
 
-import { PAGE_INSET_X } from '../../shared/layout/page-inset'
+import { PAGE_INSET_X } from '@/shared'
 
 export function SettingsContent({ children }: { children: ReactNode }): React.JSX.Element {
   return (

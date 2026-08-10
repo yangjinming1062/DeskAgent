@@ -3,7 +3,7 @@ import type { ReactNode } from 'react'
 import type { IconComponent } from '@/shared/lib/icons'
 import { cn } from '@/shared/lib/utils'
 
-import { PAGE_INSET_X } from '../../shared/layout/page-inset'
+import { PAGE_INSET_X } from '@/shared'
 
 interface OverlaySplitLayoutProps {
   children: ReactNode

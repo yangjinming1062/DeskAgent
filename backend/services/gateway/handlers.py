@@ -49,7 +49,7 @@ from services.companion import regenerate_avatar
 from services.companion import SeedPromptMissingError
 from services.companion import submit_onboarding_field
 from services.companion import update_memory
-from services.companion.memory_bootstrap import read_user_profile
+from services.companion import read_user_profile
 from services.disturbance import set_disturbance_tier
 from services.llm import MissingLlmConfigError
 from services.llm import resolve_user_llm_config

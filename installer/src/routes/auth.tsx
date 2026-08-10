@@ -1,3 +1,4 @@
+import type React from 'react'
 import { type CSSProperties, type FormEvent, useEffect, useState } from 'react'
 import { useStore } from '@nanostores/react'
 import { ArrowRight, AlertCircle, CheckCircle2, Loader2 } from 'lucide-react'
@@ -7,7 +8,7 @@ import { $auth, authenticateBackend, startInstall, verifyBackendUrl } from '../s
 
 const DEFAULT_BACKEND_URL = 'http://localhost:8000'
 
-export default function Auth() {
+export default function Auth(): React.JSX.Element {
   const auth = useStore($auth)
   const [backendUrl, setBackendUrl] = useState(DEFAULT_BACKEND_URL)
   const [username, setUsername] = useState('')
