@@ -3,8 +3,38 @@ import contextlib
 import ctypes.wintypes
 import io
 import logging
+import re
 import sys
 from typing import Any
+
+try:
+    import mss
+except ImportError:
+    mss = None  # type: ignore[assignment]
+try:
+    import psutil
+except ImportError:
+    psutil = None  # type: ignore[assignment]
+try:
+    import pyautogui
+except ImportError:
+    pyautogui = None  # type: ignore[assignment]
+try:
+    import pyperclip
+except ImportError:
+    pyperclip = None  # type: ignore[assignment]
+try:
+    import pywinauto
+except ImportError:
+    pywinauto = None  # type: ignore[assignment]
+try:
+    from PIL import Image
+    from PIL import ImageDraw
+    from PIL import ImageFont
+except ImportError:
+    Image = None  # type: ignore[assignment]
+    ImageDraw = None  # type: ignore[assignment]
+    ImageFont = None  # type: ignore[assignment]
 
 from .cu_backend import ActionResult
 from .cu_backend import CaptureResult
@@ -97,8 +127,6 @@ def _enum_windows_for_pid(pid: int) -> list[int]:
 
 
 def _capture_screen_region(x: int, y: int, w: int, h: int) -> bytes:
-    import mss
-
     with mss.MSS() as sct:
         monitor = {"left": x, "top": y, "width": w, "height": h}
         img = sct.grab(monitor)
@@ -150,8 +178,6 @@ def _capture_window_printwindow(hwnd: int) -> bytes | None:
             buf = ctypes.create_string_buffer(buf_size)
             ctypes.windll.gdi32.GetDIBits(hdc_mem, hbitmap, 0, height, buf, ctypes.byref(bmi), 0)
 
-            from PIL import Image
-
             img = Image.frombuffer("RGBA", (width, height), buf, "raw", "BGRA", 0, 1)
             png_io = io.BytesIO()
             img.save(png_io, format="PNG")
@@ -169,8 +195,6 @@ def _capture_window_printwindow(hwnd: int) -> bytes | None:
 
 
 def _draw_som_overlay(png_bytes: bytes, elements: list[UIElement]) -> tuple[str, int, int]:
-    from PIL import Image, ImageDraw, ImageFont
-
     img = Image.open(io.BytesIO(png_bytes))
     draw = ImageDraw.Draw(img)
     width, height = img.size
@@ -197,8 +221,6 @@ def _draw_som_overlay(png_bytes: bytes, elements: list[UIElement]) -> tuple[str,
 
 
 def _get_windows_for_pid(pid: int) -> list[dict[str, Any]]:
-    import psutil
-
     try:
         proc = psutil.Process(pid)
         name = proc.name()
@@ -228,14 +250,7 @@ class WinBackend(ComputerUseBackend):
     def is_available(self) -> bool:
         if not _is_win32():
             return False
-        try:
-            import pywinauto  # noqa: F401 — capability check
-            import mss  # noqa: F401 — capability check
-            import pyautogui  # noqa: F401 — capability check
-
-            return True
-        except ImportError:
-            return False
+        return pywinauto is not None and mss is not None and pyautogui is not None
 
     def capture(self, mode: str = "som", app: str | None = None) -> CaptureResult:
         if app and app.lower() in DESKTOP_SENTINELS:
@@ -285,8 +300,6 @@ class WinBackend(ComputerUseBackend):
                     png_bytes = base64.b64decode(png_b64)
                 else:
                     png_b64 = base64.b64encode(png_bytes).decode()
-                    from PIL import Image
-
                     img = Image.open(io.BytesIO(png_bytes))
                     width, height = img.size
                 png_bytes_len = len(png_bytes)
@@ -314,8 +327,6 @@ class WinBackend(ComputerUseBackend):
         click_count: int = 1,
         modifiers: list[str] | None = None,
     ) -> ActionResult:
-        import pyautogui
-
         if element is not None:
             if element < 0 or element >= len(self._element_cache):
                 return ActionResult(ok=False, action="click", message=f"element {element} out of range (0-{len(self._element_cache) - 1})")
@@ -346,8 +357,6 @@ class WinBackend(ComputerUseBackend):
         button: str = "left",
         modifiers: list[str] | None = None,
     ) -> ActionResult:
-        import pyautogui
-
         start = self._resolve_point(from_element, from_xy)
         end = self._resolve_point(to_element, to_xy)
         if start is None or end is None:
@@ -377,8 +386,6 @@ class WinBackend(ComputerUseBackend):
         y: int | None = None,
         modifiers: list[str] | None = None,
     ) -> ActionResult:
-        import pyautogui
-
         if element is not None:
             if element < 0 or element >= len(self._element_cache):
                 return ActionResult(ok=False, action="scroll", message=f"element {element} out of range")
@@ -403,14 +410,10 @@ class WinBackend(ComputerUseBackend):
             return ActionResult(ok=False, action="scroll", message=str(e))
 
     def type_text(self, text: str) -> ActionResult:
-        import pyautogui
-
         try:
             if all(ord(c) < 128 for c in text):
                 pyautogui.write(text, interval=0.02)
             else:
-                import pyperclip
-
                 pyperclip.copy(text)
                 pyautogui.hotkey("ctrl", "v")
             return ActionResult(ok=True, action="type_text", message=f"typed {len(text)} chars")
@@ -418,9 +421,6 @@ class WinBackend(ComputerUseBackend):
             return ActionResult(ok=False, action="type_text", message=str(e))
 
     def key(self, keys: str) -> ActionResult:
-        import pyautogui
-        import re
-
         parts = [p.strip().lower() for p in re.split(r"[+\-]", keys) if p.strip()]
         if not parts:
             return ActionResult(ok=False, action="key", message=f"empty key combo: {keys!r}")
@@ -436,8 +436,6 @@ class WinBackend(ComputerUseBackend):
             return ActionResult(ok=False, action="key", message=str(e))
 
     def list_apps(self) -> list[dict[str, Any]]:
-        import psutil
-
         seen = set()
         apps = []
         for proc in psutil.process_iter(["pid", "name"]):
@@ -504,8 +502,6 @@ class WinBackend(ComputerUseBackend):
 
     def _get_desktop(self):
         if self._desktop is None:
-            import pywinauto
-
             self._desktop = pywinauto.Desktop(backend="uia")
         return self._desktop
 
@@ -519,8 +515,6 @@ class WinBackend(ComputerUseBackend):
                     return win.handle, title
             except Exception:
                 continue
-
-        import psutil
 
         for proc in psutil.process_iter(["pid", "name"]):
             try:

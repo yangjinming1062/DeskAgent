@@ -40,8 +40,10 @@ try:
 except ImportError:
     Quartz = None  # type: ignore[assignment]
 try:
+    from AppKit import NSScreen  # type: ignore[import-not-found]
     from AppKit import NSWorkspace  # type: ignore[import-not-found]
 except ImportError:
+    NSScreen = None  # type: ignore[assignment,misc]
     NSWorkspace = None  # type: ignore[assignment]
 
 
@@ -184,8 +186,6 @@ def _work_area_macos() -> dict[str, int]:
     if NSWorkspace is None:
         return {"x": 0, "y": 0, "w": 1920, "h": 1080}
     try:
-        from AppKit import NSScreen  # type: ignore[import-not-found]
-
         screen = NSScreen.mainScreen()
         if screen:
             frame = screen.visibleFrame()

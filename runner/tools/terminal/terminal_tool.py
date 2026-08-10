@@ -25,6 +25,13 @@ from utils import clean_output
 
 from ..registry import registry
 from ..tool_output_limits import get_max_bytes
+from ..process import process_registry
+from ..security import check_command_security
+from ._cmd_rewrite import _get_sudo_password_callback
+from ._cmd_rewrite import _read_shell_token
+from ._cmd_rewrite import _rewrite_compound_background
+from ._cmd_rewrite import _transform_sudo_command
+from ._cmd_rewrite import set_sudo_password_callback
 from ._env_singularity import _get_scratch_dir
 from .environment import _active_environments
 from .environment import _creation_locks
@@ -37,9 +44,7 @@ from .environment import get_env_config
 from .environment import resolve_container_task_id
 from .environment import start_cleanup_thread
 from utils import cfg_get
-from utils import get_env_type
 from utils import IS_WINDOWS
-from utils import is_truthy_value
 from utils import load_config
 
 logger = logging.getLogger(__name__)
@@ -47,7 +52,6 @@ logger = logging.getLogger(__name__)
 DEFAULT_FOREGROUND_MAX_TIMEOUT = 600
 DEFAULT_DISK_USAGE_WARNING_GB = 500.0
 
-_ENV_ASSIGN_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _EXIT_CODE_SPLIT_RE = re.compile(r"\s*(?:\|\||&&|[|;])\s*")
 _SINGLE_QUOTE_RE = re.compile(r"'[^']*'")
 _DOUBLE_QUOTE_RE = re.compile(r'"(?:[^"\\]|\\.)*"')
@@ -79,47 +83,6 @@ def _check_disk_usage_warning():
         return False
 
 
-_sudo_password_cache: dict[str, str] = {}
-
-_sudo_password_cache_lock = threading.Lock()
-
-_callback_tls = threading.local()
-
-
-def _get_sudo_password_callback():
-    return getattr(_callback_tls, "sudo_password", None)
-
-
-def set_sudo_password_callback(cb):
-    _callback_tls.sudo_password = cb
-
-
-def _get_sudo_password_cache_scope() -> str:
-    callback = _get_sudo_password_callback()
-    if callback is not None:
-        owner = getattr(callback, "__self__", None)
-        func = getattr(callback, "__func__", None)
-        if owner is not None and func is not None:
-            return f"callback-owner:{id(owner)}:{id(func)}"
-        return f"callback:{id(callback)}"
-    return f"thread:{threading.get_ident()}"
-
-
-def _get_cached_sudo_password() -> str:
-    scope = _get_sudo_password_cache_scope()
-    with _sudo_password_cache_lock:
-        return _sudo_password_cache.get(scope, "")
-
-
-def _set_cached_sudo_password(password: str) -> None:
-    scope = _get_sudo_password_cache_scope()
-    with _sudo_password_cache_lock:
-        if password:
-            _sudo_password_cache[scope] = password
-        else:
-            _sudo_password_cache.pop(scope, None)
-
-
 _WORKDIR_SAFE_RE = re.compile(r"^[A-Za-z0-9/\\:_\-.~ +@=,]+$")
 
 
@@ -134,110 +97,6 @@ def _validate_workdir(workdir: str) -> str | None:
     return "Blocked: workdir contains disallowed characters."
 
 
-def _prompt_for_sudo_password(timeout_seconds: int = 45) -> str:
-    cached = _get_cached_sudo_password()
-    if cached:
-        return cached
-    _sudo_cb = _get_sudo_password_callback()
-    if _sudo_cb is not None:
-        try:
-            return _sudo_cb() or ""
-        except Exception:
-            return ""
-    result = {"password": None, "done": False}
-
-    def read_password_thread():
-        tty_fd = None
-        old_attrs = None
-        try:
-            if IS_WINDOWS:
-                msvcrt_mod = msvcrt
-                chars = []
-                while True:
-                    c = msvcrt_mod.getwch()
-                    if c in {"\r", "\n"}:
-                        break
-                    if c == "\x03":
-                        raise KeyboardInterrupt
-                    chars.append(c)
-                result["password"] = "".join(chars)
-            else:
-                tty_fd = os.open("/dev/tty", os.O_RDONLY)
-                old_attrs = termios.tcgetattr(tty_fd)
-                new_attrs = termios.tcgetattr(tty_fd)
-                new_attrs[3] = new_attrs[3] & ~termios.ECHO
-                termios.tcsetattr(tty_fd, termios.TCSAFLUSH, new_attrs)
-                chars = []
-                while True:
-                    b = os.read(tty_fd, 1)
-                    if not b or b in {b"\n", b"\r"}:
-                        break
-                    chars.append(b)
-                result["password"] = b"".join(chars).decode("utf-8", errors="replace")
-        except (EOFError, KeyboardInterrupt, OSError):
-            result["password"] = ""
-        except Exception:
-            result["password"] = ""
-        finally:
-            if tty_fd is not None and old_attrs is not None:
-                try:
-                    termios.tcsetattr(tty_fd, termios.TCSAFLUSH, old_attrs)
-                except Exception as e:
-                    logger.debug("Failed to restore terminal attributes: %s", e)
-            if tty_fd is not None:
-                try:
-                    os.close(tty_fd)
-                except Exception as e:
-                    logger.debug("Failed to close tty fd: %s", e)
-            result["done"] = True
-
-    try:
-        os.environ["DESKAGENT_SPINNER_PAUSE"] = "1"
-        time.sleep(0.2)
-        print()
-        print("┌" + "─" * 58 + "┐")
-        print("│  🔐 SUDO PASSWORD REQUIRED" + " " * 30 + "│")
-        print("├" + "─" * 58 + "┤")
-        print("│  Enter password below (input is hidden), or:            │")
-        print("│    • Press Enter to skip (command fails gracefully)     │")
-        print(f"│    • Wait {timeout_seconds}s to auto-skip" + " " * 27 + "│")
-        print("└" + "─" * 58 + "┘")
-        print()
-        print("  Password (hidden): ", end="", flush=True)
-        password_thread = threading.Thread(target=read_password_thread, daemon=True)
-        password_thread.start()
-        password_thread.join(timeout=timeout_seconds)
-        if result["done"]:
-            password = result["password"] or ""
-            print()
-            if password:
-                print("  ✓ Password received (cached for this session)")
-            else:
-                print("  ⏭ Skipped - continuing without sudo")
-            print()
-            sys.stdout.flush()
-            return password
-        else:
-            print("\n  ⏱ Timeout - continuing without sudo")
-            print("    (Press Enter to dismiss)")
-            print()
-            sys.stdout.flush()
-            return ""
-    except (EOFError, KeyboardInterrupt):
-        print()
-        print("  ⏭ Cancelled - continuing without sudo")
-        print()
-        sys.stdout.flush()
-        return ""
-    except Exception as e:
-        print(f"\n  [sudo prompt error: {e}] - continuing without sudo\n")
-        sys.stdout.flush()
-        return ""
-    finally:
-        if "DESKAGENT_SPINNER_PAUSE" in os.environ:
-            del os.environ["DESKAGENT_SPINNER_PAUSE"]
-
-
 def _safe_command_preview(command: Any, limit: int = 200) -> str:
     if command is None:
         return "<None>"
@@ -247,226 +106,6 @@ def _safe_command_preview(command: Any, limit: int = 200) -> str:
         return repr(command)[:limit]
     except Exception:
         return f"<{type(command).__name__}>"
-
-
-def _looks_like_env_assignment(token: str) -> bool:
-    if "=" not in token or token.startswith("="):
-        return False
-    name, _value = token.split("=", 1)
-    return bool(_ENV_ASSIGN_NAME_RE.match(name))
-
-
-def _read_shell_token(command: str, start: int) -> tuple[str, int]:
-    i = start
-    n = len(command)
-    while i < n:
-        ch = command[i]
-        if ch.isspace() or ch in ";|&()":
-            break
-        if ch == "'":
-            i += 1
-            while i < n and command[i] != "'":
-                i += 1
-            if i < n:
-                i += 1
-            continue
-        if ch == '"':
-            i += 1
-            while i < n:
-                inner = command[i]
-                if inner == "\\" and i + 1 < n:
-                    i += 2
-                    continue
-                if inner == '"':
-                    i += 1
-                    break
-                i += 1
-            continue
-        if ch == "\\" and i + 1 < n:
-            i += 2
-            continue
-        i += 1
-    return command[start:i], i
-
-
-def _rewrite_real_sudo_invocations(command: str) -> tuple[str, bool]:
-    out: list[str] = []
-    i = 0
-    n = len(command)
-    command_start = True
-    found = False
-    while i < n:
-        ch = command[i]
-        if ch.isspace():
-            out.append(ch)
-            if ch == "\n":
-                command_start = True
-            i += 1
-            continue
-        if ch == "#" and command_start:
-            comment_end = command.find("\n", i)
-            if comment_end == -1:
-                out.append(command[i:])
-                break
-            out.append(command[i:comment_end])
-            i = comment_end
-            continue
-        if command.startswith("&&", i) or command.startswith("||", i) or command.startswith(";;", i):
-            out.append(command[i : i + 2])
-            i += 2
-            command_start = True
-            continue
-        if ch in ";|&(":
-            out.append(ch)
-            i += 1
-            command_start = True
-            continue
-        if ch == ")":
-            out.append(ch)
-            i += 1
-            command_start = False
-            continue
-        token, next_i = _read_shell_token(command, i)
-        if command_start and token == "sudo":
-            out.append("sudo -S -p ''")
-            found = True
-        else:
-            out.append(token)
-        if command_start and _looks_like_env_assignment(token):
-            command_start = True
-        else:
-            command_start = False
-        i = next_i
-    return "".join(out), found
-
-
-def _sudo_nopasswd_works() -> bool:
-    terminal_env = get_env_type()
-    if terminal_env != "local":
-        return False
-    try:
-        probe = subprocess.run(
-            ["sudo", "-n", "true"],
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            timeout=3,
-            check=False,
-        )
-        return probe.returncode == 0
-    except Exception:
-        return False
-
-
-def _rewrite_compound_background(command: str) -> str:
-    n = len(command)
-    i = 0
-    paren_depth = 0
-    brace_depth = 0
-    last_chain_op_end = -1
-    rewrites: list[tuple[int, int]] = []
-    while i < n:
-        ch = command[i]
-        if ch == "\n" and paren_depth == 0 and brace_depth == 0:
-            last_chain_op_end = -1
-            i += 1
-            continue
-        if ch.isspace():
-            i += 1
-            continue
-        if ch == "#":
-            nl = command.find("\n", i)
-            if nl == -1:
-                break
-            i = nl
-            continue
-        if ch == "\\" and i + 1 < n:
-            i += 2
-            continue
-        if ch in {"'", '"'}:
-            _, next_i = _read_shell_token(command, i)
-            i = max(next_i, i + 1)
-            continue
-        if ch == "(":
-            paren_depth += 1
-            i += 1
-            continue
-        if ch == ")":
-            paren_depth = max(0, paren_depth - 1)
-            i += 1
-            continue
-        if ch == "{" and i + 1 < n and (command[i + 1].isspace() or command[i + 1] == "\n"):
-            brace_depth += 1
-            i += 1
-            continue
-        if ch == "}" and brace_depth > 0:
-            brace_depth -= 1
-            last_chain_op_end = -1
-            i += 1
-            continue
-        if paren_depth > 0 or brace_depth > 0:
-            i += 1
-            continue
-        if command.startswith("&&", i) or command.startswith("||", i):
-            last_chain_op_end = i + 2
-            i += 2
-            continue
-        if ch == ";":
-            last_chain_op_end = -1
-            i += 1
-            continue
-        if ch == "|":
-            last_chain_op_end = -1
-            i += 1
-            continue
-        if ch == "&":
-            if i + 1 < n and command[i + 1] == ">":
-                i += 2
-                continue
-            j = i - 1
-            while j >= 0 and command[j].isspace():
-                j -= 1
-            if j >= 0 and command[j] in "<>":
-                i += 1
-                continue
-            if last_chain_op_end >= 0:
-                rewrites.append((last_chain_op_end, i))
-            last_chain_op_end = -1
-            i += 1
-            continue
-        _, next_i = _read_shell_token(command, i)
-        i = max(next_i, i + 1)
-    if not rewrites:
-        return command
-    result = command
-    for chain_end, amp_pos in reversed(rewrites):
-        insert_pos = chain_end
-        while insert_pos < amp_pos and result[insert_pos].isspace():
-            insert_pos += 1
-        prefix = result[:insert_pos]
-        middle = result[insert_pos:amp_pos]
-        suffix = result[amp_pos + 1 :]
-        result = prefix + "{ " + middle + "& }" + suffix
-    return result
-
-
-def _transform_sudo_command(command: str | None) -> tuple[str | None, str | None]:
-    if command is None:
-        return None, None
-    transformed, has_real_sudo = _rewrite_real_sudo_invocations(command)
-    if not has_real_sudo:
-        return command, None
-    sudo_password = cfg_get(load_config(), "terminal", "sudo_password", default="")
-    has_configured_password = bool(sudo_password)
-    if not has_configured_password and not sudo_password and _sudo_nopasswd_works():
-        return command, None
-    if not has_configured_password and not sudo_password and is_truthy_value(cfg_get(load_config(), "terminal", "interactive_sudo_prompt", default=False)):
-        sudo_password = _prompt_for_sudo_password(timeout_seconds=45)
-        if sudo_password:
-            _set_cached_sudo_password(sudo_password)
-    if has_configured_password or sudo_password:
-        return transformed, sudo_password + "\n"
-    return command, None
 
 
 TERMINAL_TOOL_DESCRIPTION = """Execute shell commands on a POSIX environment. Filesystem usually persists between calls.
@@ -627,10 +266,6 @@ def terminal_tool(
     notify_on_complete: bool = False,
     watch_patterns: list[str] | None = None,
 ) -> str:
-    # Function-scope imports required here to prevent cross-subpackage import cycle (runner architecture requirement)
-    from ..process import process_registry
-    from ..security import check_command_security
-
     try:
         if not isinstance(command, str):
             logger.warning(

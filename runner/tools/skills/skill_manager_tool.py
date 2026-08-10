@@ -16,6 +16,8 @@ from utils import is_truthy_value
 from utils import load_config
 from utils import validate_within_dir
 
+from ..files import format_no_match_hint
+from ..files import fuzzy_find_and_replace
 from ..interrupt import is_interrupted
 from ..registry import registry
 from ..registry import tool_error
@@ -219,9 +221,6 @@ def _edit_skill(name: str, content: str) -> dict[str, Any]:
 
 
 def _patch_skill(name: str, old_string: str, new_string: str, file_path: str | None = None, replace_all: bool = False) -> dict[str, Any]:
-    from ..files import format_no_match_hint
-    from ..files import fuzzy_find_and_replace
-
     if not old_string:
         return {"success": False, "error": "old_string is required for 'patch'."}
     if new_string is None:

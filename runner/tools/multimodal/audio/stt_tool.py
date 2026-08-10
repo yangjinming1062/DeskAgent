@@ -7,6 +7,11 @@ from typing import Any
 
 from utils import get_deskagent_home
 
+try:
+    from faster_whisper import WhisperModel  # type: ignore[import-not-found]
+except (ImportError, OSError):
+    WhisperModel = None  # type: ignore[assignment,misc]
+
 from ...registry import registry
 from ...registry import tool_error
 from ...registry import tool_result
@@ -85,8 +90,6 @@ def _decode_and_transcribe(
     initial_prompt: str | None,
     beam_size: int = 1,
 ) -> dict[str, Any]:
-    from faster_whisper import WhisperModel  # type: ignore[import-not-found]
-
     model = WhisperModel if WhisperModel is None else get_whisper(size=model_size)  # type: ignore[truthy-function]
     # Normalize ``"auto"`` / ``None`` → None so the third-party API only sees the explicit-or-auto contract.
     whisper_language = None if language in (None, "auto") else language
@@ -135,12 +138,7 @@ def _decode_and_transcribe(
 
 
 def _check_faster_whisper() -> bool:
-    try:
-        from faster_whisper import WhisperModel  # type: ignore[import-not-found]  # noqa: F401 — capability check
-
-        return True
-    except (ImportError, OSError):
-        return False
+    return WhisperModel is not None
 
 
 _CLOUD_FALLBACK_HINT = "Set stt.engine=cloud in config.yaml to fall back to a stronger multilingual model, or pass language='zh'/'en' explicitly to bias the local result."

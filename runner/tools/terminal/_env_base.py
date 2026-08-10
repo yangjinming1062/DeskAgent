@@ -332,9 +332,9 @@ class BaseEnvironment(ABC):
         self._before_execute()
         exec_command, sudo_stdin = self._prepare_command(command)
         if rewrite_compound_background:
-            import tools.terminal.terminal_tool as _terminal_tool
+            from ._cmd_rewrite import _rewrite_compound_background
 
-            exec_command = _terminal_tool._rewrite_compound_background(exec_command)
+            exec_command = _rewrite_compound_background(exec_command)
         effective_stdin = sudo_stdin + stdin_data if sudo_stdin is not None and stdin_data is not None else (sudo_stdin or stdin_data)
         if effective_stdin and self._stdin_mode == "heredoc":
             exec_command = self._embed_stdin_heredoc(exec_command, effective_stdin)
@@ -354,6 +354,6 @@ class BaseEnvironment(ABC):
             self.cleanup()
 
     def _prepare_command(self, command: str) -> tuple[str, str | None]:
-        import tools.terminal.terminal_tool as _terminal_tool
+        from ._cmd_rewrite import _transform_sudo_command
 
-        return _terminal_tool._transform_sudo_command(command)
+        return _transform_sudo_command(command)

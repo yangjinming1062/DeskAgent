@@ -10,6 +10,18 @@ from typing import Any
 
 from utils import get_deskagent_dir
 
+try:
+    import pyttsx3
+except ImportError:
+    pyttsx3 = None  # type: ignore[assignment]
+if sys.platform == "win32":
+    try:
+        import pythoncom
+    except ImportError:
+        pythoncom = None  # type: ignore[assignment]
+else:
+    pythoncom = None  # type: ignore[assignment]
+
 from ...registry import registry
 from ...registry import tool_error
 from ...registry import tool_result
@@ -150,8 +162,6 @@ _PYTTSX3_VOICE_CACHE: list[dict[str, str]] | None = None
 
 
 def _synth_pyttsx3(text: str, voice: str | None, speed: float, dst: Path) -> dict[str, Any]:
-    import pyttsx3
-
     # pyttsx3 on Windows uses SAPI5 via COM. The runner's tools run on
     # asyncio worker threads that don't have COM initialized — SAPI5
     # raises ``OSError: [WinError -2147221008] CoInitialize has not
@@ -163,8 +173,6 @@ def _synth_pyttsx3(text: str, voice: str | None, speed: float, dst: Path) -> dic
     com_initialized = False
     if sys.platform == "win32":
         try:
-            import pythoncom
-
             pythoncom.CoInitialize()
             com_initialized = True
         except Exception:

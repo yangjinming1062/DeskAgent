@@ -46,6 +46,11 @@ from utils import pid_exists
 from utils import redact_sensitive_text
 
 from ..interrupt import is_interrupted
+from ..multimodal import _is_image_size_error
+from ..multimodal import _resize_image_for_vision
+from ..multimodal import _RESIZE_TARGET_BYTES
+from ..multimodal.helpers import _resolve_vision_params
+from ..process import ProcessRegistry
 from ..registry import registry
 from ..registry import tool_error
 from .browser_camofox import _ensure_tab
@@ -901,8 +906,6 @@ def _reap_orphaned_browser_sessions():
 
     Safe to call from any context — atexit, cleanup thread, or on demand.
     """
-    from ..process import ProcessRegistry
-
     tmpdir = _socket_safe_tmpdir()
     pattern = os.path.join(tmpdir, "agent-browser-h_*")
     socket_dirs = glob.glob(pattern)
@@ -3850,8 +3853,6 @@ def browser_vision(question: str, annotate: bool = False, task_id: str | None = 
 
         # Local vision models (llama.cpp, ollama) can take well over 30s for
         # screenshot analysis, so the default timeout must be generous.
-        from ..multimodal.helpers import _resolve_vision_params
-
         vision_timeout, vision_temperature = _resolve_vision_params()
 
         call_kwargs = {
@@ -3875,10 +3876,6 @@ def browser_vision(question: str, annotate: bool = False, task_id: str | None = 
                 return {"success": False, "error": "browser_vision requires no running event loop"}
             response = asyncio.run(call_llm(**call_kwargs))
         except Exception as _api_err:
-            from ..multimodal import _is_image_size_error
-            from ..multimodal import _resize_image_for_vision
-            from ..multimodal import _RESIZE_TARGET_BYTES
-
             if _is_image_size_error(_api_err) and len(data_url) > _RESIZE_TARGET_BYTES:
                 logger.info(
                     "Vision API rejected screenshot (%.1f MB); auto-resizing to ~%.0f MB and retrying...",
@@ -3993,8 +3990,6 @@ def cleanup_browser(task_id: str | None = None) -> None:
 
 def _cleanup_single_browser_session(task_id: str) -> None:
     """Internal: reap a single browser session by its exact session key."""
-    from ..process import ProcessRegistry
-
     # before the backend tears down the underlying CDP endpoint.
     _stop_cdp_supervisor(task_id)
 

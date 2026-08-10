@@ -23,6 +23,7 @@ from utils import CREATE_NO_WINDOW
 from utils import find_python
 from utils import get_subprocess_home
 from utils import IS_WINDOWS
+from utils import is_env_passthrough as _ep
 from utils import kill_tree
 from utils import load_config
 
@@ -104,8 +105,6 @@ _WINDOWS_ESSENTIAL_ENV_VARS = frozenset({
 
 
 def _scrub_child_env(source_env, is_passthrough=None, is_windows=None):
-    from utils import is_env_passthrough as _ep
-
     if is_passthrough is None:
         is_passthrough = _ep
     if is_windows is None:

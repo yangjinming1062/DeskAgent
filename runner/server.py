@@ -18,6 +18,7 @@ from tools.interrupt import set_global_interrupt
 from tools.interrupt import set_interrupt
 from tools.mcp import discover_mcp_tools
 from tools.mcp import reload_mcp_servers
+import tools.mcp.mcp_tool as mcp_tool
 from tools.tool_output_limits import reset_cache as reset_output_limits_cache
 from tools.toolsets import get_disabled_toolset_ids
 from utils import disk_free_bytes
@@ -431,8 +432,6 @@ def _active_mcp_server_names() -> list[str]:
     break ``deskagent.info``.
     """
     try:
-        from tools.mcp import mcp_tool
-
         servers = getattr(mcp_tool, "_servers", None)
         if not servers:
             return []

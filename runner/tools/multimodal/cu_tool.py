@@ -17,6 +17,8 @@ from .cu_backend import ComputerUseBackend
 from .cu_backend import UIElement
 from .cu_cua_backend import cua_driver_binary_available
 from .cu_cua_backend import CuaDriverBackend
+from .cu_permissions import get_permission_status
+from .cu_win_backend import WinBackend
 from .helpers import _MAX_BASE64_BYTES
 
 logger = logging.getLogger(__name__)
@@ -79,8 +81,6 @@ def _get_backend() -> ComputerUseBackend:
             if name in {"cua", "cua-driver"}:
                 _backend = CuaDriverBackend()
             elif name == "win":
-                from .cu_win_backend import WinBackend
-
                 _backend = WinBackend()
             elif name == "noop":
                 _backend = _NoopBackend()
@@ -88,8 +88,6 @@ def _get_backend() -> ComputerUseBackend:
                 if sys.platform == "darwin" and cua_driver_binary_available():
                     _backend = CuaDriverBackend()
                 elif sys.platform == "win32":
-                    from .cu_win_backend import WinBackend
-
                     _backend = WinBackend()
                 else:
                     _backend = _NoopBackend()
@@ -462,6 +460,4 @@ def _element_to_dict(e: UIElement) -> dict[str, Any]:
 def check_computer_use_requirements() -> bool:
     """Boolean wrapper over ``get_permission_status()`` for back-compat with
     any caller that was written before the dict-returning helper landed."""
-    from .cu_permissions import get_permission_status
-
     return get_permission_status()["ok"]

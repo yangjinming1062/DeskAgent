@@ -2,8 +2,8 @@ import contextvars
 import logging
 from collections.abc import Callable
 
-from .terminal.terminal_tool import _get_sudo_password_callback
-from .terminal.terminal_tool import set_sudo_password_callback
+from .terminal._cmd_rewrite import _get_sudo_password_callback
+from .terminal._cmd_rewrite import set_sudo_password_callback
 
 logger = logging.getLogger(__name__)
 
