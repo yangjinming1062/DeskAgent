@@ -8,7 +8,6 @@ platforms: [linux, macos, windows]
 metadata:
   deskagent:
     tags: [Web Scraping, Browser, Cloudflare, Stealth, Crawling, Spider]
-    related_skills: [duckduckgo-search, domain-intel]
 prerequisites:
   commands: [scrapling, python]
 ---

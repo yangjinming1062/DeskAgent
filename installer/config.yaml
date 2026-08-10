@@ -145,19 +145,8 @@ skills:
   # 安装时整段 cp -f 覆盖到 $DESKAGENT_HOME/config.yaml —— 用户在桌面端切换后,
   # reinstall 会重置回本默认(repair 同理)。填入 leaf 技能名而非 category 名:
   # Runner `_is_disabled` 匹配粒度为 name OR category,category 条目会一并禁用
-  # 该目录下的 bundled(always-on)技能。基础版本默认全部启用,以下 5 项需要外部
-  # CLI 或认证,需要用户从桌面端按需开启:
-  # - claude-code: 需要安装 Claude Code CLI (npm i -g @anthropic-ai/claude-code) + OAuth
-  # - codex: 需要安装 Codex CLI (npm i -g @openai/codex) + OAuth
-  # - fastmcp: 需要安装 FastMCP 库
-  # - mcporter: 需要安装 mcporter CLI
-  # - parallel-cli: 需要安装 parallel-cli 工具
-  disabled:
-    - claude-code
-    - codex
-    - fastmcp
-    - mcporter
-    - parallel-cli
+  # 该目录下的 bundled(always-on)技能。基础版本默认全部启用,无默认禁用项。
+  disabled: []
 
   # 技能环境变量覆盖
   env_overrides: {}

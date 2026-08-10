@@ -8,7 +8,7 @@ platforms: [linux, macos, windows]
 metadata:
   deskagent:
     tags: [Coding-Agent, Claude, Anthropic, Code-Review, Refactoring, PTY, Automation]
-    related_skills: [codex, opencode]
+    related_skills: [codex]
 ---
 
 # Claude Code — DeskAgent Orchestration Guide

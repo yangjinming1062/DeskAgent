@@ -8,7 +8,6 @@ platforms: [linux, macos, windows]
 metadata:
   deskagent:
     tags: [writing, editing, humanize, anti-ai-slop, voice, prose, text]
-    related_skills: [songwriting-and-ai-music]
 ---
 
 # Humanizer: Remove AI Writing Patterns
