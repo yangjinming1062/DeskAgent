@@ -158,6 +158,18 @@ def render_extras(definition: dict[str, str]) -> str:
     return "\n".join(lines)
 
 
+# Character raw-answer fields in question order (name..speaking_style).
+_CHARACTER_ONBOARDING_FIELDS: tuple[str, ...] = (
+    "name",
+    "species",
+    "character_gender",
+    "appearance_core",
+    "appearance_outfit",
+    "role",
+    "personality",
+    "speaking_style",
+)
+
 def _load_draft(persona: Persona) -> dict[str, str]:
     draft = safe_json_loads(persona.definition_json or "{}", default={})
     return draft if isinstance(draft, dict) else {}
@@ -186,7 +198,11 @@ def get_onboarding_state(db: Session, user_id: int) -> dict[str, Any]:
             return {"answers": merged, "next_field": next_field, "complete": False}
         return {"answers": {}, "next_field": None, "complete": True}
     draft = _load_draft(persona)
-    next_field = next((f for f in ONBOARDING_FIELDS if not draft.get(f)), None)
+    missing_character = next((f for f in _CHARACTER_ONBOARDING_FIELDS if not draft.get(f)), None)
+    if missing_character is not None:
+        return {"answers": draft, "next_field": missing_character, "complete": False}
+    avatar = db.query(AvatarAsset).filter(AvatarAsset.user_id == user_id, AvatarAsset.active.is_(True)).one_or_none()
+    next_field = "portrait-fullbody" if avatar is not None and bool(avatar.seed_front_url) else "portrait"
     return {"answers": draft, "next_field": next_field, "complete": False}
 
 
@@ -234,5 +250,6 @@ def submit_onboarding_field(db: Session, user_id: int, field: str, value: str | 
         draft.pop(field, None)
     persona.definition_json = json.dumps(draft, ensure_ascii=False)
     db.commit()
-    next_field = next((f for f in ONBOARDING_FIELDS if not draft.get(f)), None)
+    missing_character = next((f for f in _CHARACTER_ONBOARDING_FIELDS if not draft.get(f)), None)
+    next_field = missing_character if missing_character is not None else "portrait"
     return {"answers": draft, "next_field": next_field, "complete": False}

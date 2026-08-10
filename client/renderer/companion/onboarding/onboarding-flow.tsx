@@ -862,12 +862,33 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
   }
 
   const onBack = () => {
-    // Defense-in-depth: JSX already disables at qIndex === 0; guard keeps the invariant if state diverges.
-    if (qIndex === 0) {
+    if (phase === 'q-character') {
+      if (qIndex > 0) {
+        setQIndex(qIndex - 1)
+      }
+
       return
     }
 
-    setQIndex(qIndex - 1)
+    if (phase === 'voice') {
+      if (voiceStage === 'describe') {
+        setPhase('q-character')
+        setQIndex(CHARACTER_QUESTIONS.length - 1)
+      }
+
+      return
+    }
+
+    if (phase === 'q-user') {
+      if (qIndex > 0) {
+        setQIndex(qIndex - 1)
+      } else {
+        setPhase('voice')
+        setVoiceStage('catalog')
+      }
+
+      return
+    }
   }
 
   const enterHatching = async (currentAnswers?: OnboardingAnswers, imageOverride?: PickedImage | null) => {
@@ -1210,7 +1231,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
                 <div className="mt-4 flex items-center justify-between text-xs">
                   <button
                     className="text-white/60 transition hover:text-white disabled:opacity-30"
-                    disabled={qIndex === 0}
+                    disabled={phase === 'q-character' && qIndex === 0}
                     onClick={onBack}
                     type="button"
                   >
@@ -1257,14 +1278,27 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
             <div className="mt-4">
               <RegenFeedbackInput disabled={avatarBusy} />
               <div className="mt-3 flex items-center justify-between text-xs">
-                <button
-                  className="text-white/70 transition hover:text-white disabled:opacity-40"
-                  disabled={avatarBusy}
-                  onClick={() => void regenerateAvatarPortrait()}
-                  type="button"
-                >
-                  {avatarBusy ? '生成中…' : '重新生成'}
-                </button>
+                <div className="flex gap-3">
+                  <button
+                    className="text-white/60 transition hover:text-white disabled:opacity-40"
+                    disabled={avatarBusy}
+                    onClick={() => {
+                      setPhase('q-character')
+                      setQIndex(CHARACTER_QUESTIONS.length - 1)
+                    }}
+                    type="button"
+                  >
+                    上一步
+                  </button>
+                  <button
+                    className="text-white/70 transition hover:text-white disabled:opacity-40"
+                    disabled={avatarBusy}
+                    onClick={() => void regenerateAvatarPortrait()}
+                    type="button"
+                  >
+                    {avatarBusy ? '生成中…' : '重新生成'}
+                  </button>
+                </div>
                 <button
                   className="rounded-full bg-white/90 px-4 py-1 font-medium text-black transition hover:bg-white"
                   disabled={avatarBusy || fullbodyLoading || activeAvatarId == null}
@@ -1386,13 +1420,22 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
               <p className="mt-1 text-[10px] text-white/40">
                 {voiceCatalog.length} 个音色 · 先挑个差不多的就行，以后随时能在设置里调。
               </p>
-              <button
-                className="mt-3 w-full rounded-full bg-white/90 py-1.5 text-sm font-medium text-black transition hover:bg-white"
-                onClick={confirmVoice}
-                type="button"
-              >
-                使用这个
-              </button>
+              <div className="mt-3 flex items-center justify-between gap-3 text-xs">
+                <button
+                  className="text-white/60 transition hover:text-white"
+                  onClick={() => setVoiceStage('describe')}
+                  type="button"
+                >
+                  上一步
+                </button>
+                <button
+                  className="flex-1 rounded-full bg-white/90 py-1.5 text-sm font-medium text-black transition hover:bg-white"
+                  onClick={confirmVoice}
+                  type="button"
+                >
+                  使用这个
+                </button>
+              </div>
             </div>
           )}
 
