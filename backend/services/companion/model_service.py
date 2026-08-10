@@ -22,7 +22,7 @@ from .tripo_client import create_multiview_to_model
 from .tripo_client import download_model
 from .tripo_client import poll_rig_check
 from .tripo_client import poll_task
-from .tripo_client import rig as tripo_rig
+from .tripo_client import rig
 from .tripo_client import rig_check
 from .tripo_client import TripoApiError
 from .tripo_client import TripoTaskFailed
@@ -190,7 +190,7 @@ async def _run_tripo_pipeline(user_id: int, view_filenames: dict[str, str], spec
 
         # ── Step 5: rig ──
         _emit_progress(user_id, "rigging", 60)
-        rig_task_id = await tripo_rig(gen_task_id, rig_type)
+        rig_task_id = await rig(gen_task_id, rig_type)
         rig_result = await _poll_with_progress(user_id, rig_task_id, "rigging", 60, 85)
 
         # ── Step 6: Download rigged GLB ──

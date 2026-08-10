@@ -4,7 +4,6 @@ from typing import Any
 from components import safe_json_loads
 from modules.companion import AvatarAsset
 from modules.companion import Persona
-from services.llm import chat as default_chat
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -12,8 +11,6 @@ from sqlalchemy.orm import Session
 from .memory_bootstrap import extract_user_profile
 from .memory_bootstrap import read_user_profile
 from .memory_bootstrap import record_user_profile
-from .personality_tagger import analyze_personality_tags
-from .personality_tagger import ChatFn as _ChatFn
 
 # Persona field order — part of the contract downstream prompt consumers
 # reason about, since it dictates the rendered system-prompt snippet shape.

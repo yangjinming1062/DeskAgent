@@ -13,7 +13,6 @@ from ``constants.py`` using only the stdlib.
 All scripts under ``google-workspace/scripts/`` should import from here
 instead of duplicating the ``DESKAGENT_HOME = Path(os.getenv(...))`` pattern.
 """
-from __future__ import annotations
 
 import os
 from pathlib import Path

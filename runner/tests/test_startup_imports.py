@@ -13,7 +13,7 @@ STARTUP_IMPORTS = [
     ("tools.toolsets", "from tools.toolsets import get_disabled_toolset_ids"),
     ("tools.system.activity + activity_tools", "from tools.system import activity, activity_tools"),
     ("utils.core", "from utils import pid_exists, set_handler"),
-    ("utils.capabilities", "from utils.capabilities import snapshot as capabilities_snapshot"),
+    ("utils.capabilities", "from utils.capabilities import snapshot"),
     ("utils.constants", "from utils.constants import get_deskagent_home"),
 ]
 

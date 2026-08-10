@@ -1,4 +1,3 @@
-from typing import Any
 
 from components import AGENT_MAX_LOOP_TURNS
 from components import DEFAULT_LANGUAGE

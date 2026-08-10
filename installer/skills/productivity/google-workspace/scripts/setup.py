@@ -20,7 +20,6 @@ Agent workflow:
   5. User pastes the code. Agent runs --auth-code CODE.
   6. Run --check to verify. Done.
 """
-from __future__ import annotations  # allow PEP 604 `X | None` on Python 3.9+
 
 import argparse
 import json

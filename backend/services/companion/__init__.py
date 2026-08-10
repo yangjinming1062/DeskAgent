@@ -52,23 +52,7 @@ from .persona_service import submit_onboarding_field
 from .persona_service import update_persona
 from .personality_tagger import analyze_personality_tags
 from .rig_type_selector import select_rig_type
-from .tripo_client import account_balance
-from .tripo_client import BASE_URL as TRIPO_BASE_URL
 from .tripo_client import create_multiview_to_model
-from .tripo_client import create_text_to_model
-from .tripo_client import download_model
-from .tripo_client import MODEL_VERSION_DEFAULT
-from .tripo_client import MODEL_VERSION_MIXAMO
-from .tripo_client import MODEL_VERSION_TRIPO
-from .tripo_client import poll_rig_check
-from .tripo_client import poll_task
-from .tripo_client import rig
-from .tripo_client import rig_check
-from .tripo_client import rig_model_version
-from .tripo_client import rig_spec
-from .tripo_client import TripoApiError
-from .tripo_client import TripoTaskFailed
-from .tripo_client import upload_file
 from .voice_catalog import design_voice
 from .voice_catalog import list_voices as list_tts_voices
 from .voice_catalog import match_user_voice

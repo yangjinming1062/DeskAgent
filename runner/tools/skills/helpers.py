@@ -3,9 +3,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from utils import cfg_get
 from utils import get_disabled_config_names
-from utils import load_config
 
 _FRONTMATTER_RE = re.compile(r"^---\s*\n(.*?)\n---\s*(?:\n|$)", re.DOTALL)
 

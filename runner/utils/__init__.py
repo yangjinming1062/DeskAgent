@@ -7,7 +7,6 @@ from .capabilities import microphone_available
 from .capabilities import network_reachable
 from .capabilities import screen_capture_available
 from .capabilities import snapshot
-from .capabilities import snapshot as capabilities_snapshot
 from .capabilities import system_activity_available
 from .clean import clean_output
 from .clean import strip_ansi
@@ -28,8 +27,8 @@ from .constants import get_deskagent_home
 from .constants import get_deskagent_home_override
 from .constants import get_skills_dir
 from .constants import get_subprocess_home
-from .constants import is_termux
 from .constants import IS_MACOS
+from .constants import is_termux
 from .constants import IS_WINDOWS
 from .constants import secure_parent_dir
 from .credential_files import get_cache_directory_mounts
@@ -79,7 +78,6 @@ from .url_safety import WebsitePolicyError
 __all__ = [
     "in_async_loop",
     "safe_schedule_threadsafe",
-    "capabilities_snapshot",
     "snapshot",
     "disk_free_bytes",
     "local_stt_available",
@@ -152,5 +150,5 @@ __all__ = [
     "iter_skills_files",
     "register_credential_file",
     "register_credential_files",
-    "WebsitePolicyError",
+    "WebsitePolicyError", "_PREFIX_RE",
 ]

@@ -5,7 +5,6 @@ from components import get_logger
 from components import safe_json_loads
 from sqlalchemy.orm import Session
 
-from .personality_tagger import _TAG_SEEDS_BY_RIG
 from .personality_tagger import ChatFn
 
 logger = get_logger(__name__)

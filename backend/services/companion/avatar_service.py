@@ -18,7 +18,7 @@ from modules.companion import Persona
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
-from ..llm import chat as llm_chat
+from ..llm import chat
 from ..llm import enhance_avatar_prompt
 from ..llm import enhance_fullbody_multiview_prompts
 from ..llm import is_content_policy_error_message
@@ -59,7 +59,7 @@ async def _sanitize_prompt_for_moderation(user_id: int, prompt: str) -> str:
     Uses its own DB session — may run inside ``asyncio.gather`` where the caller's session is shared."""
     try:
         with SESSION_LOCAL() as db:
-            sanitized = await llm_chat(
+            sanitized = await chat(
                 db,
                 user_id,
                 _MODERATION_SANITIZATION_PROMPT,

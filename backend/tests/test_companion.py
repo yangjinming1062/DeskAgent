@@ -322,7 +322,7 @@ def test_portrait_confirmation_and_resume(_patch_db):
     - update_persona / regen resets is_portrait_confirmed to False
     """
     _, SessionLocal = _patch_db
-    from modules.companion import AvatarAsset, Persona
+    from modules.companion import AvatarAsset
     from services.companion import (
         confirm_portrait,
         get_onboarding_state,
@@ -2001,12 +2001,10 @@ async def test_persona_tag_refresh_gives_up_after_max_attempts(_patch_db, monkey
 async def test_model_generation_rejects_concurrent_run(_patch_db, monkeypatch):
     """A second generation while one is in flight is rejected (409) instead of
     spawning overlapping pipelines that race over the active row."""
-    import json as _json
 
     from modules.auth import User
     from modules.companion import AvatarAsset
     from modules.companion import CompanionModel
-    from modules.companion import Persona
     from services.companion import generate_companion_model
     from services.companion import ModelGenerationInProgressError
 

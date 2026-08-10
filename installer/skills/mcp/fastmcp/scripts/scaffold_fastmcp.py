@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 """Copy a FastMCP starter template into a working file."""
-from __future__ import annotations
 
 import argparse
 from pathlib import Path

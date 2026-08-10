@@ -1,7 +1,6 @@
 import argparse
 import os
 import sys
-from typing import Iterable
 
 import bpy
 from mathutils import Vector

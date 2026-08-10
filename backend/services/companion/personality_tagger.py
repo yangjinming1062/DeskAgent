@@ -1,4 +1,3 @@
-import json
 from typing import Protocol
 
 from components import get_logger

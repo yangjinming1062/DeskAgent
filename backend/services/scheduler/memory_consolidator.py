@@ -11,7 +11,6 @@ from services.tools import normalize_recall_context
 from services.tools import normalize_recall_tags
 from services.tools import RECALL_TAGS
 from sqlalchemy import delete
-from sqlalchemy.orm import Session
 
 from ..companion import memory_admin
 from ..llm import call_with_retry

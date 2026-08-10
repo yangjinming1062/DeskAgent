@@ -58,8 +58,8 @@ from .browser_camofox import camofox_get_images
 from .browser_camofox import camofox_navigate
 from .browser_camofox import camofox_press
 from .browser_camofox import camofox_scroll
-from .browser_camofox import camofox_soft_cleanup
 from .browser_camofox import camofox_snapshot
+from .browser_camofox import camofox_soft_cleanup
 from .browser_camofox import camofox_type
 from .browser_camofox import camofox_vision
 from .browser_camofox import is_camofox_mode

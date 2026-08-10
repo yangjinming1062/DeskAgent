@@ -54,12 +54,9 @@ def screen_capture_available() -> bool:
     if IS_WINDOWS:
         # pywinauto + mss are bundled only on Windows in pyproject.toml;
         # the absence of ``mss`` would have broken `computer_use` already.
-        try:
-            import mss
+        import importlib.util
 
-            return True
-        except ImportError:
-            return False
+        return importlib.util.find_spec("mss") is not None
     if IS_MACOS:
         # screencapture binary is always present.
         return _binary_exists("screencapture")

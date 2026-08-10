@@ -36,7 +36,6 @@ async def test_run_aborts_with_exit_code_2_when_balance_is_zero(transport, capsy
 @pytest.mark.asyncio
 async def test_run_completes_full_flow(transport, monkeypatch, tmp_path):
     """text-to-model → rig-check → rig → download must all run and land the GLB."""
-    from pathlib import Path
 
     monkeypatch.setattr(rig_exploration, "EXPLORATION_DIR", tmp_path)
     monkeypatch.setattr(rig_exploration, "GLB_PATH", tmp_path / "rig_exploration.glb")
