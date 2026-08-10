@@ -53,10 +53,6 @@ contextBridge.exposeInMainWorld('deskagent', {
     tts: payload => ipcRenderer.invoke('deskagent:media:tts', payload),
     onboardingAudio: {
       read: tag => ipcRenderer.invoke('deskagent:onboardingAudio:read', tag)
-    },
-    reactionAudio: {
-      read: tag => ipcRenderer.invoke('deskagent:reactionAudio:read', tag),
-      generate: payload => ipcRenderer.invoke('deskagent:reactionAudio:generate', payload)
     }
   },
   sprite: {

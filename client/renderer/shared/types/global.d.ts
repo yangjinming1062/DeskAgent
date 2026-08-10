@@ -1,5 +1,3 @@
-import type { ReactionBucket } from './reactions'
-
 export {}
 
 declare global {
@@ -90,24 +88,12 @@ declare global {
         }) => Promise<{ text: string }>
         tts: (payload: {
           context?: string | null
+          persist?: boolean
           text: string
           voice?: string
         }) => Promise<{ dataUrl: string; mimeType: string }>
         onboardingAudio: {
           read: (tag: string) => Promise<{ dataUrl: string; mimeType: string; tag: string; bytes: number }>
-        }
-        reactionAudio: {
-          read: (id: string) => Promise<{ dataUrl: string; mimeType: string; id: string; bytes: number }>
-          generate: (payload: {
-            voice: string
-            language: string
-            entries: Array<{
-              id: string
-              text: string
-              tags?: string[]
-              bucket: ReactionBucket
-            }>
-          }) => Promise<{ results: Array<{ id: string; ok: boolean; reason?: string; bytes?: number }> }>
         }
       }
       sprite: {

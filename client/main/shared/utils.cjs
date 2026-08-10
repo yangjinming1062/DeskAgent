@@ -44,9 +44,9 @@ function sendToMain(mainWindow, channel, payload) {
 
 // Write-then-rename so a crash mid-write leaves the previous file intact.
 // Unlinks the .tmp on failure to avoid accumulating orphans across crashed saves.
-// Concurrent bake writers against the same target (e.g. reaction audio IPC
-// with 10-way fan-out) need a tmp name that doesn't collide on millisecond
-// boundaries; the UUID segment keeps each writer's tmp path unique.
+// Concurrent writers against the same target need a tmp name that doesn't
+// collide on millisecond boundaries; the UUID segment keeps each writer's tmp
+// path unique.
 // `writeFile` omits the encoding arg so string callers get utf8 (Node default)
 // and Buffer callers get binary without per-call branching.
 async function atomicWriteFile(targetPath, content) {

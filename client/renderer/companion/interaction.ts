@@ -55,7 +55,7 @@ export function handlePokeInteraction(): void {
 
   const entry = pickReaction(bucket, tags)
 
-  void playReactionAudio(entry, { tags, bucket, userInitiated: true })
+  void playReactionAudio(entry)
   reportInteractionStat('poke')
 }
 
@@ -81,6 +81,6 @@ export function handleDragEndInteraction(): void {
 
   const entry = pickReaction('drag', tags)
 
-  void playReactionAudio(entry, { tags, bucket: 'drag', userInitiated: true })
+  void playReactionAudio(entry)
   reportInteractionStat('drag')
 }

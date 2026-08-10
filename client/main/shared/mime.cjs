@@ -54,8 +54,8 @@ function dataUrlFromBuffer(buffer, mimeType) {
 }
 
 // Decode a `data:<mime>[;base64],<payload>` URL back to the raw bytes.
-// Single source of truth shared by media.cjs (STT decode) and
-// reaction-audio.cjs (TTS response → mp3 disk write).
+// Single source of truth shared by media.cjs for STT decode and for writing
+// synthesised TTS into the on-disk scripted-line cache.
 function dataUrlToBuffer(dataUrl) {
   const match = /^data:([^;,]+)?(;base64)?,(.*)$/s.exec(String(dataUrl || ''))
   if (!match) throw new Error('Expected a base64 data URL')

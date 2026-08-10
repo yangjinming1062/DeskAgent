@@ -10,16 +10,16 @@ const hoisted = vi.hoisted(() => {
   }
 })
 
+// Echoes the requested bucket back through the entry so the dispatch
+// assertions below can tell poke-light from drag.
 vi.mock('./reactions/reaction-audio', () => ({
-  hasManifest: () => true,
-  pickReaction: () => ({
-    id: 'reaction.poke-light.gentle.0',
+  pickReaction: (bucket: string) => ({
+    id: `reaction.${bucket}.gentle.0`,
     tags: ['温柔'],
-    bucket: 'poke-light',
+    bucket,
     text: '嗯？怎么啦？'
   }),
-  playReactionAudio: hoisted.playReactionAudio,
-  backgroundBakeReactions: vi.fn()
+  playReactionAudio: hoisted.playReactionAudio
 }))
 
 vi.mock('./activity', () => ({
@@ -31,8 +31,6 @@ vi.mock('./persona-store', () => ({
     get: () => ['温柔']
   }
 }))
-
-const originalDeskagent = (globalThis as { deskagent?: unknown }).deskagent
 
 beforeEach(() => {
   vi.useFakeTimers()
@@ -47,39 +45,22 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers()
-  ;(globalThis as { deskagent?: unknown }).deskagent = originalDeskagent
 })
 
-function installMediaSpy() {
-  const tts = vi.fn()
-
-  ;(globalThis as { deskagent?: unknown }).deskagent = {
-    media: {
-      tts,
-      reactionAudio: { read: vi.fn().mockResolvedValue({ dataUrl: 'data:audio/mpeg;base64,AAA=' }), generate: vi.fn() }
-    }
-  }
-
-  return { tts }
-}
-
-describe('poke / drag dispatch into pre-baked reaction audio', () => {
+describe('poke / drag dispatch into reaction audio', () => {
   it('handlePokeInteraction fires interacting state + playReactionAudio with bucket=poke-light', () => {
     handlePokeInteraction()
 
     expect($spriteState.get()).toBe('interacting')
     expect(hoisted.playReactionAudio).toHaveBeenCalledTimes(1)
-    const [entry, opts] = hoisted.playReactionAudio.mock.calls[0]
-    expect(entry.bucket).toBe('poke-light')
-    expect(opts).toMatchObject({ bucket: 'poke-light', tags: ['温柔'], userInitiated: true })
+    expect(hoisted.playReactionAudio.mock.calls[0][0]).toMatchObject({ bucket: 'poke-light' })
   })
 
   it('repeated rapid pokes in a tight burst keep bucket=light (pokeCount reset by 4s timer, untouched by this test)', () => {
-    installMediaSpy()
     handlePokeInteraction()
 
     expect(hoisted.playReactionAudio).toHaveBeenCalledTimes(1)
-    expect(hoisted.playReactionAudio.mock.calls[0][1]).toMatchObject({ bucket: 'poke-light' })
+    expect(hoisted.playReactionAudio.mock.calls[0][0]).toMatchObject({ bucket: 'poke-light' })
   })
 
   it('reports a poke stat fire-and-forget on handlePokeInteraction', () => {
@@ -88,33 +69,20 @@ describe('poke / drag dispatch into pre-baked reaction audio', () => {
     expect(hoisted.reportInteractionStat).toHaveBeenCalledWith('poke')
   })
 
-  it('never invokes the runtime media.tts path for a poke', () => {
-    const { tts } = installMediaSpy()
-    handlePokeInteraction()
-
-    expect(tts).not.toHaveBeenCalled()
-  })
-
   it('handleDragEndInteraction fires interacting state + playReactionAudio with bucket=drag', () => {
     handleDragEndInteraction()
 
     expect($spriteState.get()).toBe('interacting')
     expect(hoisted.playReactionAudio).toHaveBeenCalledTimes(1)
-    expect(hoisted.playReactionAudio.mock.calls[0][1]).toMatchObject({
-      bucket: 'drag',
-      tags: ['温柔'],
-      userInitiated: true
-    })
+    expect(hoisted.playReactionAudio.mock.calls[0][0]).toMatchObject({ bucket: 'drag' })
     expect(hoisted.reportInteractionStat).toHaveBeenCalledWith('drag')
   })
 
   it('handles empty manifest by passing null through playReactionAudio', () => {
     vi.resetModules()
     vi.doMock('./reactions/reaction-audio', () => ({
-      hasManifest: () => false,
       pickReaction: () => null,
-      playReactionAudio: hoisted.playReactionAudio,
-      backgroundBakeReactions: vi.fn()
+      playReactionAudio: hoisted.playReactionAudio
     }))
 
     return import('./interaction').then(mod => {
@@ -124,7 +92,7 @@ describe('poke / drag dispatch into pre-baked reaction audio', () => {
     })
   })
 
-  it('quiet tier does not affect pre-baked reaction playback (handled by audio-track)', () => {
+  it('quiet tier does not affect reaction playback (handled by audio-track)', () => {
     $effectiveTierOverride.set('quiet')
     $userPreferredTier.set('quiet')
     handlePokeInteraction()

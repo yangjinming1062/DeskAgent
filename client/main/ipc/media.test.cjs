@@ -3,7 +3,8 @@ const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
-const { registerMediaIpc } = require('./media.cjs')
+const { registerMediaIpc, ttsAudioCache } = require('./media.cjs')
+const { cacheKey } = require('./tts-disk-cache.cjs')
 
 const ORIG_FETCH = global.fetch
 
@@ -37,11 +38,12 @@ function toolSchema(name) {
   return { function: { name } }
 }
 
-function setup({ stt = 'auto', tts = 'auto', sttSilentFallback = true, bridge = null }) {
+function setup({ stt = 'auto', tts = 'auto', sttSilentFallback = true, bridge = null, deskagentHome = null }) {
   const ipc = makeFakeIpc()
   registerMediaIpc({
     ipcMain: ipc,
     ensureBackend: async () => ({ baseUrl: 'https://backend.test', token: 'tok' }),
+    deskagentHome: deskagentHome ?? fs.mkdtempSync(path.join(os.tmpdir(), 'deskagent-media-test-')),
     getRunnerBridge: () => bridge,
     getEnginePrefs: async () => ({ stt, sttSilentFallback, tts })
   })
@@ -308,4 +310,96 @@ test('TTS back-to-back calls throttle to MIN_TTS_INTERVAL_MS apart', async () =>
   assert.equal(timestamps.length, 2)
   const gap = timestamps[1] - timestamps[0]
   assert.ok(gap >= 750, `expected >=750ms gap, got ${gap}ms`)
+})
+
+// ── TTS disk cache (persist) ─────────────────────────────────────────────
+//
+// The memory LRU would mask every disk read, so these tests clear it between
+// the two halves of a scenario to prove the bytes really came off disk.
+
+function makeHome() {
+  return fs.mkdtempSync(path.join(os.tmpdir(), 'deskagent-persist-test-'))
+}
+
+function cachedFiles(home, language = 'zh') {
+  const dir = path.join(home, 'audio', 'tts-cache', language)
+  return fs.existsSync(dir) ? fs.readdirSync(dir) : []
+}
+
+test('TTS persist → cloud result lands on disk and the next call skips synthesis', async () => {
+  const home = makeHome()
+  const ipc = setup({ tts: 'cloud', deskagentHome: home })
+  let fetches = 0
+  global.fetch = async (...args) => {
+    fetches += 1
+    return cloudFetch({ bytes: Buffer.from('mp3-bytes'), contentType: 'audio/mpeg' })(...args)
+  }
+
+  const first = await ipc.invoke('deskagent:media:tts', { text: 'persist-me', voice: '冰糖', persist: true })
+  assert.equal(fetches, 1)
+  assert.deepEqual(cachedFiles(home), [`${cacheKey('冰糖', 'persist-me')}.mp3`])
+
+  ttsAudioCache.clear()
+  const second = await ipc.invoke('deskagent:media:tts', { text: 'persist-me', voice: '冰糖', persist: true })
+
+  assert.equal(fetches, 1, 'second call must be served from disk')
+  assert.equal(second.dataUrl, first.dataUrl)
+  assert.equal(second.mimeType, 'audio/mpeg')
+})
+
+test('TTS without persist → nothing is written to disk', async () => {
+  const home = makeHome()
+  const ipc = setup({ tts: 'cloud', deskagentHome: home })
+  global.fetch = cloudFetch({ bytes: Buffer.from('mp3-bytes'), contentType: 'audio/mpeg' })
+
+  await ipc.invoke('deskagent:media:tts', { text: 'ephemeral-chat-reply', voice: '冰糖' })
+
+  assert.deepEqual(cachedFiles(home), [], 'dynamic speech must stay memory-only')
+})
+
+test('TTS persist + local engine → Piper output is not persisted', async () => {
+  // A Piper wav on disk would impersonate the chosen cloud voice on every
+  // later playback of this line.
+  const home = makeHome()
+  const bridge = makeBridge({ tools: [toolSchema('text_to_speech')], invokeResult: { success: true, path: tmpWav } })
+  const ipc = setup({ tts: 'local', bridge, deskagentHome: home })
+
+  const res = await ipc.invoke('deskagent:media:tts', { text: 'local-scripted', voice: '冰糖', persist: true })
+
+  assert.equal(res.mimeType, 'audio/wav')
+  assert.deepEqual(cachedFiles(home), [])
+})
+
+test('TTS persist → a disk hit is served even under tts.engine=local', async () => {
+  // Those bytes were already paid for and carry the voice the user picked,
+  // which Piper cannot reproduce. No bridge is wired, so a miss would throw.
+  const home = makeHome()
+  const dir = path.join(home, 'audio', 'tts-cache', 'zh')
+  fs.mkdirSync(dir, { recursive: true })
+  fs.writeFileSync(path.join(dir, `${cacheKey('冰糖', 'already-baked')}.mp3`), Buffer.from('disk-bytes'))
+
+  const ipc = setup({ tts: 'local', bridge: null, deskagentHome: home })
+  ttsAudioCache.clear()
+
+  const res = await ipc.invoke('deskagent:media:tts', { text: 'already-baked', voice: '冰糖', persist: true })
+
+  assert.equal(res.mimeType, 'audio/mpeg')
+  assert.equal(res.dataUrl, `data:audio/mpeg;base64,${Buffer.from('disk-bytes').toString('base64')}`)
+})
+
+test('TTS concurrent identical calls collapse to a single synthesis', async () => {
+  const ipc = setup({ tts: 'cloud', deskagentHome: makeHome() })
+  let fetches = 0
+  global.fetch = async (...args) => {
+    fetches += 1
+    return cloudFetch({ bytes: Buffer.from('mp3-bytes'), contentType: 'audio/mpeg' })(...args)
+  }
+
+  const [a, b] = await Promise.all([
+    ipc.invoke('deskagent:media:tts', { text: 'spam-poke', voice: '冰糖' }),
+    ipc.invoke('deskagent:media:tts', { text: 'spam-poke', voice: '冰糖' })
+  ])
+
+  assert.equal(fetches, 1, 'ten rapid pokes must not become ten cloud calls')
+  assert.equal(a.dataUrl, b.dataUrl)
 })

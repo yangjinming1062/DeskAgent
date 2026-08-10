@@ -8,7 +8,12 @@ export function stopSpeaking(): void {
   stopAudio()
 }
 
-export async function speak(text: string, voice?: string, context?: string): Promise<boolean> {
+async function synth(
+  text: string,
+  voice: string | undefined,
+  context: string | undefined,
+  persist: boolean
+): Promise<boolean> {
   const gen = nextGen()
   $voicePreparing.set(true)
 
@@ -16,7 +21,8 @@ export async function speak(text: string, voice?: string, context?: string): Pro
     const res = await window.deskagent.media.tts({
       text,
       voice: voice ?? $companionVoiceId.get(),
-      context: context ?? null
+      context: context ?? null,
+      persist
     })
 
     if (!isLatestGen(gen)) {
@@ -33,4 +39,15 @@ export async function speak(text: string, voice?: string, context?: string): Pro
       $voicePreparing.set(false)
     }
   }
+}
+
+/** 动态台词（聊天回复 / 主动消息 / 语音通话）。只走内存缓存，不落盘。 */
+export async function speak(text: string, voice?: string, context?: string): Promise<boolean> {
+  return await synth(text, voice, context, false)
+}
+
+/** 源码里写死的台词（戳一戳反应、音色试听句）。合成结果按内容寻址落盘，
+ *  同一组 (音色, 台词) 一辈子只花一次云端额度。 */
+export async function speakScripted(text: string, voice?: string, context?: string): Promise<boolean> {
+  return await synth(text, voice, context, true)
 }

@@ -17,7 +17,6 @@ import {
 } from '@/companion/companion-store'
 import { hydratePersona } from '@/companion/persona-store'
 import { hydratePortrait } from '@/companion/portrait-store'
-import { $companionVoiceId } from '@/companion/prefs'
 import { initSpatial } from '@/companion/spatial'
 import { $auth, applyAuthBroadcast, hydrateAuth, logout } from '@/shared/store/auth'
 import { $gatewayState } from '@/shared/store/gateway'
@@ -34,7 +33,6 @@ import { MemoryBrowser } from './memory-browser'
 import { OnboardingFlow } from './onboarding/onboarding-flow'
 import { speakProactive } from './proactive/proactive'
 import { ProactiveBubble } from './proactive/proactive-bubble'
-import { backgroundBakeReactions } from './reactions/reaction-audio'
 import { CompanionSettings } from './settings-overlay'
 import { SpriteContextMenu } from './sprite/context-menu'
 import { SpriteStage } from './sprite/sprite-stage'
@@ -280,15 +278,6 @@ export function CompanionRoot(): React.JSX.Element {
     void window.deskagent
       .api<{ id?: number; status?: string }>({ path: '/api/companion/model', method: 'POST', body: {} })
       .catch(err => console.warn('[companion] initial model generation failed:', err))
-
-    // Background-bake the 52 reaction clips in the user's chosen voice so
-    // pokes / drags hit the local mp3 file instead of round-tripping to
-    // cloud TTS every time. Returns immediately; failures are logged.
-    const voice = $companionVoiceId.get()
-
-    if (voice) {
-      void backgroundBakeReactions({ voice })
-    }
   }
 
   return (

@@ -33,7 +33,7 @@ import {
   type OnboardingAnswers
 } from '../persona'
 import { setCompanionVoiceId } from '../prefs'
-import { speak, stopSpeaking } from '../tts'
+import { speakScripted, stopSpeaking } from '../tts'
 import { fetchVoiceCatalog, matchVoicePreference, nextVoice, sampleLine, type VoiceOption } from '../voice'
 import { $voicePreparing } from '../voice-state'
 
@@ -753,7 +753,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
         ...matched.alternatives,
         ...catalog.voices.filter(v => v.id !== matched.voice.id)
       ])
-      void speak(sampleLine(answers.name || ''), matched.voice.id || undefined, 'onboarding.voice.preview')
+      void speakScripted(sampleLine(answers.name || ''), matched.voice.id || undefined, 'onboarding.voice.preview')
     })()
   }, [phase, voiceStage, requestGateway, answers.voice, answers.name])
 
@@ -933,7 +933,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
   }
 
   const previewVoice = (id: string, context: string) =>
-    void speak(sampleLine(answers.name || ''), id || undefined, context)
+    void speakScripted(sampleLine(answers.name || ''), id || undefined, context)
 
   // Selecting always previews: the label alone says nothing about how it sounds.
   const selectVoice = (next: VoiceOption, context: string) => {

@@ -5,6 +5,8 @@ const fs = require('node:fs')
 const { sleep } = require('../shared/utils.cjs')
 const { dataUrlFromBuffer, dataUrlToBuffer } = require('../shared/mime.cjs')
 
+const { createTtsDiskCache } = require('./tts-disk-cache.cjs')
+
 const STT_TIMEOUT_MS = 60_000
 const TTS_TIMEOUT_MS = 60_000
 const TTS_MAX_TEXT_CHARS = 4000
@@ -141,10 +143,10 @@ async function sttViaBackend({ ensureBackend, mime, data, filename, language }) 
 
 // Min gap between cloud TTS calls. The Backend caps /api/media/tts at
 // 30/min per user (components/config.py `media_tts_rate_limit_per_minute`),
-// counted per fixed minute window — 4000ms caps any window at ≤16 calls,
-// leaving generous headroom for the 52-entry reaction bake running
-// concurrently with chat TTS. Single-shot chat TTS is dominated by LLM
-// latency so the extra wait is invisible in practice.
+// counted per fixed minute window — 4000ms caps any window at ≤16 calls.
+// Nothing bursts on purpose any more, so this is a defensive ceiling: chat TTS
+// is dominated by LLM latency and scripted lines are synthesised at most once
+// each, which makes the extra wait invisible in practice.
 const MIN_TTS_INTERVAL_MS = 4000
 let lastTtsCallAt = performance.now()
 
@@ -226,6 +228,10 @@ const TTS_CACHE_TTL_MS = 10 * 60 * 1000 // 10 minutes
 // Simple LRU cache for TTS DataURLs to eliminate redundant cloud/local synthesis calls.
 const ttsAudioCache = new Map()
 
+// In-flight synthesis by cache key. The LRU only helps once a call has
+// finished; this collapses requests that overlap in time.
+const inflightTts = new Map()
+
 function getCachedTts(key) {
   const entry = ttsAudioCache.get(key)
   if (!entry) return null
@@ -254,9 +260,10 @@ function setCachedTts(key, value) {
 // need multipart upload (STT) and binary download (TTS).
 //
 // `log` is the dev-terminal trace sink. Optional so unit tests can skip it.
-function registerMediaIpc({ ipcMain, ensureBackend, getRunnerBridge, getEnginePrefs, log = () => {} }) {
+function registerMediaIpc({ ipcMain, ensureBackend, deskagentHome, getRunnerBridge, getEnginePrefs, log = () => {} }) {
   const resolvePrefs = typeof getEnginePrefs === 'function' ? getEnginePrefs : createEnginePrefsCache({ ensureBackend })
   const bridge = () => (typeof getRunnerBridge === 'function' ? getRunnerBridge() : null)
+  const diskCache = createTtsDiskCache({ deskagentHome })
 
   ipcMain.handle('deskagent:media:stt', async (_event, payload) => {
     const sttId = ++sttSeq
@@ -336,6 +343,10 @@ function registerMediaIpc({ ipcMain, ensureBackend, getRunnerBridge, getEnginePr
     const voice = String(payload?.voice || '')
     const language = typeof payload?.language === 'string' && payload.language ? payload.language : DEFAULT_TTS_LANGUAGE
     const context = typeof payload?.context === 'string' ? payload.context : null
+    // Scripted lines (poke/drag reactions, voice preview samples) opt into the
+    // on-disk cache so each (voice, text) pair costs one cloud call ever.
+    // Dynamic speech leaves this false and stays memory-only.
+    const persist = payload?.persist === true
 
     const cacheKey = `${voice}::${language}::${text}`
     const startedAt = Date.now()
@@ -361,10 +372,63 @@ function registerMediaIpc({ ipcMain, ensureBackend, getRunnerBridge, getEnginePr
       return { dataUrl: cached.dataUrl, mimeType: cached.mimeType }
     }
 
+    // Concurrent requests for the same line share one synthesis — ten rapid
+    // pokes on an uncached reaction must not become ten cloud calls.
+    const pending = inflightTts.get(cacheKey)
+    if (pending) {
+      ttsLog('join', { route: 'inflight' })
+      return await pending
+    }
+
+    const task = synthesizeTts({ cacheKey, text, voice, language, persist, isDesigned, startedAt, ttsLog })
+    inflightTts.set(cacheKey, task)
+
+    try {
+      return await task
+    } finally {
+      inflightTts.delete(cacheKey)
+    }
+  })
+
+  async function synthesizeTts({ cacheKey, text, voice, language, persist, isDesigned, startedAt, ttsLog }) {
+    if (persist) {
+      const hit = await diskCache.read({ voice, text, language })
+      if (hit) {
+        // Served regardless of `tts.engine`: these bytes are already paid for
+        // and carry the voice the user picked, which Piper could not reproduce.
+        const value = { dataUrl: dataUrlFromBuffer(hit, 'audio/mpeg'), mimeType: 'audio/mpeg' }
+        setCachedTts(cacheKey, value)
+        ttsLog('done', { route: 'disk', cached: true, bytes: hit.length, ms: Date.now() - startedAt })
+        return value
+      }
+    }
+
     const prefs = await resolvePrefs()
     const engine = isDesigned ? 'cloud' : prefs.tts
 
     let fellBackToLocal = false
+
+    const finishCloud = async result => {
+      const value = { dataUrl: result.dataUrl, mimeType: result.mimeType }
+      setCachedTts(cacheKey, value)
+      if (persist) {
+        await diskCache.write({
+          voice,
+          text,
+          language,
+          buffer: dataUrlToBuffer(result.dataUrl),
+          mimeType: result.mimeType
+        })
+      }
+      ttsLog('done', {
+        route: 'cloud',
+        voice_out: result.voiceOut || null,
+        mime: result.mimeType,
+        persisted: persist,
+        ms: Date.now() - startedAt
+      })
+      return value
+    }
 
     // Routing precedence:
     //   - 'cloud'  → cloud only; throw on failure (user explicitly chose cloud).
@@ -376,35 +440,21 @@ function registerMediaIpc({ ipcMain, ensureBackend, getRunnerBridge, getEnginePr
     //                the user explicitly opted in to local.
     if (engine === 'auto') {
       try {
-        const result = await ttsViaBackend({ ensureBackend, text, voice, language })
-        setCachedTts(cacheKey, { dataUrl: result.dataUrl, mimeType: result.mimeType })
-        ttsLog('done', {
-          route: 'cloud',
-          voice_out: result.voiceOut || null,
-          mime: result.mimeType,
-          ms: Date.now() - startedAt
-        })
-        return { dataUrl: result.dataUrl, mimeType: result.mimeType }
+        return await finishCloud(await ttsViaBackend({ ensureBackend, text, voice, language }))
       } catch (err) {
         fellBackToLocal = true
         ttsLog('fallback', { from: 'cloud', to: 'local', reason: err.message })
       }
     } else if (engine === 'cloud') {
-      const result = await ttsViaBackend({ ensureBackend, text, voice, language })
-      setCachedTts(cacheKey, { dataUrl: result.dataUrl, mimeType: result.mimeType })
-      ttsLog('done', {
-        route: 'cloud',
-        voice_out: result.voiceOut || null,
-        mime: result.mimeType,
-        ms: Date.now() - startedAt
-      })
-      return { dataUrl: result.dataUrl, mimeType: result.mimeType }
+      return await finishCloud(await ttsViaBackend({ ensureBackend, text, voice, language }))
     }
 
     // 'local' OR 'auto' falling back from cloud
     if (localToolAvailable(bridge(), 'text_to_speech')) {
       const res = await tryLocalTts({ bridge: bridge(), text })
       if (res.ok) {
+        // Deliberately not persisted: a Piper clip on disk would impersonate
+        // the chosen cloud voice for every later playback of this line.
         setCachedTts(cacheKey, { dataUrl: res.value.dataUrl, mimeType: res.value.mimeType })
         ttsLog('done', {
           route: 'local',
@@ -429,7 +479,7 @@ function registerMediaIpc({ ipcMain, ensureBackend, getRunnerBridge, getEnginePr
       throw new Error('Local TTS unavailable: runner not connected or text_to_speech tool missing')
     }
     throw new Error('TTS failed: cloud unreachable and local TTS unavailable')
-  })
+  }
 }
 
 module.exports = { registerMediaIpc, createEnginePrefsCache, ttsAudioCache, ttsViaBackend }

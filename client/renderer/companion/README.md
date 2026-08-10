@@ -99,7 +99,7 @@ GLB 加载成功后骨骼动画覆盖全部状态；加载失败时渲染程序�
 
 ## 7. 用户直接交互
 
-- **戳 / 拖**（`onTap` / `onDragEnd`）：[interaction.ts](interaction.ts) 从 `client/renderer/companion/reactions/manifest.json` 的 52 条文案里按 (bucket, tone) 随机抽一条（[reactions/reaction-audio.ts](reactions/reaction-audio.ts)），调 `deskagent:reactionAudio:read` 读 `$DESKAGENT_HOME/audio/reactions/zh/<tag>.mp3`。本地缺失时回退 `deskagent:media:tts`（按 `tts.engine` 偏好，云端优先，本地兜底）+ 单条 fire-and-forget 再烘焙。Onboarding 完成后调 `backgroundBakeReactions` 把 52 条一次性烘焙到磁盘；用户切换音色时再触发一次。
+- **戳 / 拖**（`onTap` / `onDragEnd`）：[interaction.ts](interaction.ts) 从 `client/renderer/companion/reactions/manifest.json` 的 52 条文案里按 (bucket, tone) 随机抽一条（[reactions/reaction-audio.ts](reactions/reaction-audio.ts)），交给 `speakScripted`（[tts.ts](tts.ts)）→ `deskagent:media:tts { persist: true }`。合成结果按 `sha1(音色 + 台词)` 内容寻址缓存在 `$DESKAGENT_HOME/audio/tts-cache/<lang>/`：首次播放合成一次并落盘，之后都是本地读盘，同一组 (音色, 台词) 一辈子只花一次云端额度。换音色或改台词会让缓存键变化从而自然失效，没有需要维护的失效逻辑；只有云端结果落盘，Piper 兜底产物不写，否则它会冒充用户选定的云端音色。音色试听句走同一条路径。
 - **悬停**：10s 节流，`interacting` 1.5s（不放音）。
 - **右键**：托盘菜单入口（声音切换、伙伴设置、登出）。
 

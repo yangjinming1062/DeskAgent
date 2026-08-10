@@ -70,7 +70,13 @@ export function VoiceGallerySettings(): React.JSX.Element {
     setPreviewingId(voice.id)
 
     try {
-      const res = await window.deskagent.media.tts({ text: PREVIEW_LINE, voice: voice.id, context: 'gallery.preview' })
+      const res = await window.deskagent.media.tts({
+        text: PREVIEW_LINE,
+        voice: voice.id,
+        context: 'gallery.preview',
+        persist: true
+      })
+
       const audio = new Audio(res.dataUrl)
       audio.addEventListener('ended', () => setPreviewingId(null), { once: true })
       audio.addEventListener('error', () => setPreviewingId(null), { once: true })
