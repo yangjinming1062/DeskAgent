@@ -2,6 +2,7 @@ import asyncio
 import base64
 from datetime import timedelta
 from typing import Any
+from urllib.parse import quote
 
 from common import get_router
 from components import get_file_path
@@ -206,7 +207,7 @@ async def text_to_speech(
         raise _llm_http_error(e, "tts") from e
 
     # Report the actually-used voice so the desktop stays in sync after provider substitution.
-    return StreamingResponse(iter([result.audio]), media_type=result.mime, headers={"X-Voice-Used": result.voice or ""})
+    return StreamingResponse(iter([result.audio]), media_type=result.mime, headers={"X-Voice-Used": quote(result.voice or "", safe="")})
 
 
 # ── Image Generation (图片生成) ────────────────────────────────────────

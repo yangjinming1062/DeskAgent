@@ -174,8 +174,14 @@ async function ttsViaBackend({ ensureBackend, text, voice, language }) {
     timeoutMs: TTS_TIMEOUT_MS
   })
   const mime = contentType.split(';')[0].trim() || 'audio/mpeg'
-  // Server may substitute the voice (provider default); trust its reported id.
-  const voiceOut = headers.get('x-voice-used') || voice
+  // HTTP headers are Latin-1 on the wire; the backend percent-encodes voice ids
+  // so designed voices and other non-ASCII ids survive the response safely.
+  let voiceOut = headers.get('x-voice-used') || voice
+  try {
+    voiceOut = decodeURIComponent(voiceOut)
+  } catch {
+    // Keep the raw value for compatibility with older backends.
+  }
   return { dataUrl: dataUrlFromBuffer(body, mime), mimeType: mime, voiceOut }
 }
 
