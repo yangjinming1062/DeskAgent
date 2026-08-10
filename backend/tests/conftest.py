@@ -104,6 +104,7 @@ def _patch_db(monkeypatch, sqlite_engine, tmp_path):
         "services.companion.memory_admin",
         "services.companion.model_service",
         "api.v1.chat",
+        "api.v1.companion",
         "api.v1.llm",
         "api.v1.media",
     ):
@@ -176,13 +177,16 @@ def test_app(_patch_db):
     app.dependency_overrides[get_db] = _test_get_db
 
     from api.v1 import chat
-    from api.v1 import health
     from api.v1 import llm
     from api.v1 import media
     from api.v1 import sessions
     from api.v1 import user
 
-    for _r in (health.router, user.router, chat.router, sessions.router, media.router, llm.router):
+    # ``/health`` is mounted at app root in ``main.py`` since commit 3963571
+    # (moved off the /api prefix so Docker HEALTHCHECK / k8s livenessProbe
+    # hit 200). The conftest's ``test_app`` fixture only assembles the
+    # /api routers; tests that need /health should mount it explicitly.
+    for _r in (user.router, chat.router, sessions.router, media.router, llm.router):
         app.include_router(_r)
     yield app
 

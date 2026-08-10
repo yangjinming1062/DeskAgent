@@ -1,9 +1,14 @@
+import asyncio
 import base64
 import json
+import random
+import time
 
 from common import get_router
 from components import get_db
+from components import get_logger
 from components import safe_json_loads
+from components import SESSION_LOCAL
 from components import SETTINGS
 from fastapi import Body
 from fastapi import Depends
@@ -25,6 +30,7 @@ from modules.companion import CompanionModel
 from modules.companion import CompanionModelResponse
 from modules.companion import FullbodyGenerateRequest
 from modules.companion import ModelGenerateRequest
+from modules.companion import Persona
 from modules.companion import PersonaResponse
 from modules.companion import PersonaUpdate
 from modules.companion import WardrobeEquipRequest
@@ -72,6 +78,20 @@ from services.rate_limit import limiter
 from sqlalchemy.orm import Session
 
 router = get_router()
+
+logger = get_logger(__name__)
+
+# Strong-ref set so create_task'd refreshes aren't GC'd; tests and shutdown
+# drains can introspect the in-flight work.
+_PERSONA_TAGS_TASKS: set[asyncio.Task] = set()
+
+# Per-attempt timeout deliberately much shorter than ``call_with_retry``'s
+# 300s default — these tasks run forever in the background and a hung tag
+# refresh must not pin a worker indefinitely.
+_TAG_REFRESH_PER_ATTEMPT_TIMEOUT = 30.0
+_TAG_REFRESH_MAX_ATTEMPTS = 3
+_TAG_REFRESH_BASE_DELAY = 5.0
+_TAG_REFRESH_MAX_DELAY = 30.0
 
 
 def _avatar_response(asset: AvatarAsset) -> AvatarAssetResponse:
@@ -131,18 +151,89 @@ async def put_persona(
         persona = update_persona(db, user.id, data)
     except PersonaValidationError as exc:
         raise HTTPException(status_code=422, detail={"error": "Persona validation error", "reason": str(exc)})
-    try:
-        species = data.get("biological_type") if isinstance(data, dict) else None
-        tags = await analyze_personality_tags(chat, persona.definition_json, user_id=user.id, species=species, db=db)
-        persona.personality_tags_json = json.dumps(tags, ensure_ascii=False)
-        db.commit()
-    except Exception:
-        pass
+    # Tag LLM extraction is deferred — keeping it inline would block the PUT
+    # past the renderer's 15s socket timeout, preventing the follow-up
+    # ``POST /avatar`` from ever firing during onboarding.
+    _schedule_personality_tag_refresh(persona.id, user.id)
     tags = safe_json_loads(persona.personality_tags_json or "[]", default=[])
     return PersonaResponse(
         is_complete=persona.is_complete,
         definition_json=persona.definition_json,
         personality_tags=tags if isinstance(tags, list) else [],
+    )
+
+
+def _schedule_personality_tag_refresh(persona_id: int, user_id: int) -> None:
+    task = asyncio.create_task(
+        _refresh_personality_tags(persona_id, user_id),
+        name=f"persona-tags-{persona_id}",
+    )
+    _PERSONA_TAGS_TASKS.add(task)
+    task.add_done_callback(_PERSONA_TAGS_TASKS.discard)
+
+
+async def _refresh_personality_tags(persona_id: int, user_id: int) -> None:
+    # Re-queries the Persona row at the start of every attempt so a concurrent
+    # PUT wins the last-write-wins race with the freshest definition_json.
+    last_exc: BaseException | None = None
+    for attempt in range(1, _TAG_REFRESH_MAX_ATTEMPTS + 1):
+        try:
+            t_open = time.monotonic()
+            with SESSION_LOCAL() as db:
+                t_query = time.monotonic()
+                persona = db.query(Persona).filter(Persona.id == persona_id).one_or_none()
+                if persona is None:
+                    return  # row vanished (user deleted?) — nothing to do
+                definition = safe_json_loads(persona.definition_json, default={})
+                species = definition.get("biological_type") if isinstance(definition, dict) else None
+                t_llm_start = time.monotonic()
+                tags = await asyncio.wait_for(
+                    analyze_personality_tags(
+                        chat,
+                        persona.definition_json,
+                        user_id=user_id,
+                        species=species,
+                        db=db,
+                    ),
+                    timeout=_TAG_REFRESH_PER_ATTEMPT_TIMEOUT,
+                )
+                t_llm_end = time.monotonic()
+                persona.personality_tags_json = json.dumps(tags, ensure_ascii=False)
+                db.commit()
+                t_commit = time.monotonic()
+            logger.info(
+                "persona-tags-timing persona_id=%s attempt=%d " "open=%.3fs query=%.3fs llm=%.3fs commit=%.3fs total=%.3fs n_tags=%d",
+                persona_id,
+                attempt,
+                t_query - t_open,
+                t_llm_start - t_query,
+                t_llm_end - t_llm_start,
+                t_commit - t_llm_end,
+                t_commit - t_open,
+                len(tags) if isinstance(tags, list) else -1,
+            )
+            return
+        except asyncio.TimeoutError as exc:
+            last_exc = exc
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            last_exc = exc
+            if isinstance(exc, MissingLlmConfigError):
+                break  # retrying a missing provider never helps
+        if attempt < _TAG_REFRESH_MAX_ATTEMPTS:
+            delay = min(
+                _TAG_REFRESH_MAX_DELAY,
+                _TAG_REFRESH_BASE_DELAY * (2 ** (attempt - 1)),
+            )
+            delay *= 0.5 + 0.5 * random.random()  # full jitter
+            await asyncio.sleep(delay)
+    logger.warning(
+        "personality tag refresh failed after %d attempts for persona_id=%s user_id=%s: %s",
+        _TAG_REFRESH_MAX_ATTEMPTS,
+        persona_id,
+        user_id,
+        last_exc,
     )
 
 

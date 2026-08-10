@@ -1,12 +1,21 @@
+import asyncio
 import importlib
 import json
 
 import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 
+from api.v1 import companion as companion_api
+from components import get_db
+from modules.auth import get_current_session
+from modules.companion import Persona
+from services import companion as companion_svc
 from services.companion import voice_catalog
 from services.companion.voice_catalog import match_voice
 from services.llm import VoiceDesignResult
 from services.llm.voice_catalog import pick_voice_id, voices_for_provider
+from services.rate_limit import limiter
 
 
 def test_disturbance_tier_store_defaults_and_normalizes():
@@ -1655,7 +1664,7 @@ def test_avatar_from_image_route_validation(_patch_db, monkeypatch):
     assert resp.json()["detail"]["error"]
 
 
-def test_companion_rest_contract(_patch_db):
+def test_companion_rest_contract(_patch_db, monkeypatch):
     """New-contract shapes for persona / avatar / model / wardrobe endpoints.
 
     Regression guard for the route↔schema mismatch that used to 500 every
@@ -1692,6 +1701,17 @@ def test_companion_rest_contract(_patch_db):
     app.include_router(companion_api.router)
     client = TestClient(app)
 
+    # The PUT handler now schedules a background personality-tag refresh
+    # task. The conftest's single-connection SAVEPOINT can't tolerate a
+    # second session on the same connection releasing that SAVEPOINT
+    # mid-test, so suppress the schedule here — the dedicated
+    # ``test_persona_put_schedules_background_tag_refresh`` and
+    # ``test_persona_tag_refresh_retries_transient_failures`` tests
+    # cover the background behaviour on their own.
+    monkeypatch.setattr(
+        companion_api, "_schedule_personality_tag_refresh", lambda *a, **kw: None
+    )
+
     resp = client.get("/api/companion/persona")
     assert resp.status_code == 200
     assert set(resp.json()) == {"definition_json", "is_complete", "personality_tags"}
@@ -1727,6 +1747,173 @@ def test_companion_rest_contract(_patch_db):
     assert items.status_code == 200
     # No generated "专属外观" item — model generation no longer triggers PBR textures.
     assert items.json() and all(i["category"] == "preset" for i in items.json())
+
+
+@pytest.mark.asyncio
+async def test_persona_put_schedules_background_tag_refresh(_patch_db, monkeypatch):
+    """``PUT /api/companion/persona`` must not block on the LLM call —
+    it persists the persona and hands the LLM-tag work off to a
+    background task. End-to-end row writes are covered by
+    ``test_persona_tag_refresh_retries_transient_failures``; this test
+    focuses on the schedule contract.
+    """
+    _, SessionLocal = _patch_db
+
+    # Seed a finalized persona so update_persona runs on an existing row
+    # (the post-character-onboarding state the renderer actually hits).
+    with SessionLocal() as db:
+        persona = Persona(
+            user_id=4242,
+            definition_json=json.dumps(
+                {"name": "小光", "personality": "温柔体贴", "speaking_style": "轻柔"}
+            ),
+            is_complete=True,
+        )
+        db.add(persona)
+        db.commit()
+        db.refresh(persona)
+        seeded_persona_id = persona.id
+
+    scheduled: list[tuple[int, int]] = []
+
+    def _record_schedule(persona_id: int, user_id: int) -> None:
+        scheduled.append((persona_id, user_id))
+
+    monkeypatch.setattr(companion_api, "_schedule_personality_tag_refresh", _record_schedule)
+
+    # Tripwire: if the handler ever awaits the LLM inline, the explode
+    # below surfaces it as a test failure rather than a silent regression.
+    def _explode_if_called(*_a, **_kw):  # pragma: no cover
+        raise AssertionError("analyze_personality_tags should NOT be awaited inline")
+
+    monkeypatch.setattr(companion_svc, "analyze_personality_tags", _explode_if_called)
+    monkeypatch.setattr(companion_api, "analyze_personality_tags", _explode_if_called)
+
+    fake_user_id = 4242
+
+    class _FakeUser:
+        id = fake_user_id
+        is_active = True
+        can_use = True
+
+    async def _fake_auth():
+        return _FakeUser(), None
+
+    def _test_get_db():
+        db = SessionLocal()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    app = FastAPI()
+    app.state.limiter = limiter
+    app.dependency_overrides[get_db] = _test_get_db
+    app.dependency_overrides[get_current_session] = _fake_auth
+    app.include_router(companion_api.router)
+
+    resp = TestClient(app).put(
+        "/api/companion/persona",
+        json={"definition_json": json.dumps(
+            {"name": "小光", "personality": "温柔体贴", "speaking_style": "轻柔"}
+        )},
+    )
+    assert resp.status_code == 200, resp.text
+    assert scheduled == [(seeded_persona_id, fake_user_id)], (
+        f"expected schedule call with (persona_id, user_id), got {scheduled!r}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_persona_tag_refresh_retries_transient_failures(_patch_db, monkeypatch):
+    """A flaky LLM that fails twice then succeeds still produces tags on
+    the third attempt; the PUT response itself never sees the LLM call.
+    """
+    _, SessionLocal = _patch_db
+
+    attempts = {"n": 0}
+
+    async def _flaky_tag_extract(*_a, **_kw):
+        attempts["n"] += 1
+        if attempts["n"] < 3:
+            raise RuntimeError("simulated transient LLM error")
+        return ["retry", "ok"]
+
+    monkeypatch.setattr(companion_svc, "analyze_personality_tags", _flaky_tag_extract)
+    monkeypatch.setattr(companion_api, "analyze_personality_tags", _flaky_tag_extract)
+
+    async def _noop_chat(*_a, **_kw):
+        return ""
+
+    monkeypatch.setattr(companion_api, "chat", _noop_chat)
+    # Shrink the backoff so the test runs in well under a second total.
+    monkeypatch.setattr(companion_api, "_TAG_REFRESH_BASE_DELAY", 0.01)
+    monkeypatch.setattr(companion_api, "_TAG_REFRESH_MAX_DELAY", 0.05)
+    monkeypatch.setattr(companion_api, "_TAG_REFRESH_PER_ATTEMPT_TIMEOUT", 5.0)
+
+    with SessionLocal() as db:
+        persona = Persona(
+            user_id=31337,
+            definition_json=json.dumps(
+                {"name": "梦鳞", "personality": "俏皮", "speaking_style": "利落"}
+            ),
+            is_complete=True,
+        )
+        db.add(persona)
+        db.commit()
+        db.refresh(persona)
+        persona_id = persona.id
+
+    companion_api._schedule_personality_tag_refresh(persona_id, 31337)
+    await asyncio.gather(*companion_api._PERSONA_TAGS_TASKS, return_exceptions=True)
+
+    assert attempts["n"] == 3, f"expected 3 attempts, got {attempts['n']}"
+    with SessionLocal() as db:
+        persona = db.query(Persona).filter(Persona.id == persona_id).one()
+        tags = json.loads(persona.personality_tags_json or "[]")
+    assert tags == ["retry", "ok"]
+
+
+@pytest.mark.asyncio
+async def test_persona_tag_refresh_gives_up_after_max_attempts(_patch_db, monkeypatch):
+    """All retries exhausted → leave prior tags untouched. The downstream
+    animation pipeline tolerates an empty list, so the warning log is
+    the only signal that something went wrong.
+    """
+    _, SessionLocal = _patch_db
+
+    async def _always_fail(*_a, **_kw):
+        raise RuntimeError("simulated permanent LLM error")
+
+    monkeypatch.setattr(companion_svc, "analyze_personality_tags", _always_fail)
+    monkeypatch.setattr(companion_api, "analyze_personality_tags", _always_fail)
+
+    async def _noop_chat(*_a, **_kw):
+        return ""
+
+    monkeypatch.setattr(companion_api, "chat", _noop_chat)
+    monkeypatch.setattr(companion_api, "_TAG_REFRESH_BASE_DELAY", 0.01)
+    monkeypatch.setattr(companion_api, "_TAG_REFRESH_MAX_DELAY", 0.05)
+
+    with SessionLocal() as db:
+        persona = Persona(
+            user_id=31338,
+            definition_json=json.dumps({"name": "x", "personality": "p", "speaking_style": "s"}),
+            is_complete=True,
+            personality_tags_json=json.dumps(["pre-existing"]),
+        )
+        db.add(persona)
+        db.commit()
+        db.refresh(persona)
+        persona_id = persona.id
+
+    companion_api._schedule_personality_tag_refresh(persona_id, 31338)
+    await asyncio.gather(*companion_api._PERSONA_TAGS_TASKS, return_exceptions=True)
+
+    with SessionLocal() as db:
+        persona = db.query(Persona).filter(Persona.id == persona_id).one()
+        tags = json.loads(persona.personality_tags_json or "[]")
+    assert tags == ["pre-existing"]
 
 
 @pytest.mark.asyncio
