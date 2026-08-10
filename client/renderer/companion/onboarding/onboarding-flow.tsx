@@ -1041,7 +1041,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
           style={{ pointerEvents: 'auto' }}
         >
           {voicePreparing && <p className="mb-2 text-center text-[10px] text-white/40">🔊 正在准备声音…</p>}
-          {phase === 'q-character' && (
+          {phase === 'q-character' && question && LOCKED_FIELD_KEYS.has(question.key) && (
             <p className="mb-2 rounded-md border border-amber-300/30 bg-amber-300/10 px-2 py-1 text-[10px] leading-relaxed text-amber-200/85">
               当前字段是形象确认后无法再次更改的重点内容。
             </p>
