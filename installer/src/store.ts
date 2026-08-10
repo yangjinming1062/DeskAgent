@@ -264,10 +264,8 @@ export async function initialize(): Promise<void> {
 export async function startInstall(): Promise<void> {
   clearRouteTimer()
   // Reset before kicking off so a retry from the failure screen clears
-  // the previous run's state. The optional `branch` field was removed —
-  // the install script is bundled and pinned at build time
-  // (BUILD_PIN_BRANCH), so a runtime branch override would silently shadow
-  // the pin and produce a manifest the desktop can't recognize.
+  // the previous run's state. The install script is bundled and pinned at
+  // build time (BUILD_PIN_BRANCH) — branch/commit are always null here.
   $bootstrap.set(INITIAL)
   $route.set('progress')
   await invoke('start_bootstrap', {
@@ -287,11 +285,8 @@ export async function cancelInstall(): Promise<void> {
 
 export async function launchDeskAgentDesktop(): Promise<void> {
   if (!$bootstrap.get().installRoot) throw new Error('no install root')
-  // launch_deskagent_desktop resolves the desktop binary from $DESKAGENT_HOME on the
-  // Rust side (see src-tauri/src/bootstrap.rs::launch_deskagent_desktop) — the
-  // previous shape passed installRoot here but the Rust signature is
-  // parameterless, so the field was being silently dropped and the
-  // mismatch surfaced as confusion when tracing through logs.
+  // launch_deskagent_desktop resolves the desktop binary from $DESKAGENT_HOME
+  // on the Rust side (see src-tauri/src/bootstrap.rs).
   await invoke('launch_deskagent_desktop')
 }
 

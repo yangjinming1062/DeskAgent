@@ -40,10 +40,9 @@ const presetClass = PERSONA_PRESET_CLASS
 // used by speakingStyle). This means a typo like '喜爱' in a STEPS entry
 // fails to compile instead of silently rendering an empty chip.
 //
-// NOTE: the original wizard had species / character_gender / appearance
-// (now appearance_core) steps; those are locked post-seed and no longer
-// editable here. The wizard is now name + personality/speaking_style +
-// appearance_outfit + relationship + user_* — the editable subset.
+// Species / character_gender / appearance_core are locked post-seed;
+// the editable fields are name + personality/speaking_style +
+// appearance_outfit + relationship + user_*.
 type PresetValue = AppearancePreset | PersonalityPreset | RolePreset | SpeakingStylePreset | ''
 
 type FieldSchema = {

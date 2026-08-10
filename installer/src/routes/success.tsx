@@ -10,11 +10,9 @@ import { Rocket, AlertCircle } from 'lucide-react'
  * (same Collapse Bold treatment as Welcome + the desktop chat intro),
  * with a status line below.
  *
- * Launching the desktop can fail (e.g. Stage-Desktop was skipped and
- * DeskAgent.exe doesn't exist). We catch the Tauri error and surface it
- * inline rather than silently doing nothing — the previous version
- * had `onClick={() => void launchDeskAgentDesktop()}` which swallowed
- * the rejection and left the user staring at an unresponsive button.
+ * Launching the desktop can fail (e.g. Stage-Desktop was skipped).
+ * We catch the Tauri error and surface it inline rather than swallowing
+ * the rejection and leaving the user with an unresponsive button.
  */
 export default function Success(): React.JSX.Element {
   const [error, setError] = useState<string | null>(null)

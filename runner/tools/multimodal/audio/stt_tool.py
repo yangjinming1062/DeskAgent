@@ -215,7 +215,7 @@ async def speech_to_text_tool(args: dict[str, Any], **kw: Any) -> str:
         logger.exception("speech_to_text decode failed")
         return tool_error(f"whisper decode failed: {e}", success=False)
 
-    # Empty text or low auto-detect confidence -> tool_error so the desktop silent_fallback path promotes to cloud (ISSUES.md P1-9).
+    # Empty text or low confidence → tool_error so the desktop silent_fallback path promotes to cloud.
     text = result.get("text") or ""
     if not text:
         return tool_error(

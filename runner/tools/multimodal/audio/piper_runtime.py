@@ -99,15 +99,8 @@ class PiperRuntime:
         output_wav = Path(output_wav)
         output_wav.parent.mkdir(parents=True, exist_ok=True)
         cfg = SynthesisConfig(length_scale=max(0.5, min(2.0, 1.0 / max(0.5, speed))))
-        # piper-tts' modernize ``synthesize(text, syn_config)`` returns an
-        # ``Iterable[AudioChunk]`` and writes nothing itself — the older
-        # ``synthesize(text, wav_file, syn_config=...)`` API no longer
-        # accepts a wav_file argument (would raise ``TypeError: got
-        # multiple values for syn_config`` against the modern signature).
-        # ``synthesize_wav`` is the right bridge: it takes an already-opened
-        # ``wave.Wave_write`` and ``set_wav_format=True`` lets Piper set the
-        # wave header from the audio chunk's sample_rate / sample_width /
-        # sample_channels so we don't need to hardcode 22050/mono/16-bit.
+        # ``synthesize_wav`` with ``set_wav_format=True`` lets Piper set the
+        # wave header from the audio chunk's sample rate/width/channels.
         with wave.open(str(output_wav), "wb") as wf:
             voice.synthesize_wav(text, wf, syn_config=cfg, set_wav_format=True)
         return output_wav

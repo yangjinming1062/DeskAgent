@@ -182,9 +182,3 @@ function startAmplitudeLoop(audio: HTMLAudioElement): void {
 
   amplitudeRaf = requestAnimationFrame(tick)
 }
-
-// stopAudio() flips amplitudeActive off via the next stop; ensure the loop
-// bails when the audio element unloads mid-track.
-export function isAudioActive(): boolean {
-  return amplitudeActive && current !== null
-}
