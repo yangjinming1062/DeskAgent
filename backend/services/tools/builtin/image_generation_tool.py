@@ -45,6 +45,7 @@ def _image_gen_chain(
         multi = [c for c in capable if resolve(ServiceType.image_gen, c.provider_name).supports_multiple_reference_images]
         if multi:
             return multi, None
+        logger.info("no multi-reference image provider; dropping secondary reference", extra={"user_id": user_id})
     return capable, None
 
 

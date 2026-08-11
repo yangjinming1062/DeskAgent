@@ -33,7 +33,9 @@ class MiniMaxImageGenProvider(ImageGenProvider):
     # Native i2i via ``subject_reference`` — ``image_file`` accepts a public
     # URL or a ``data:image/*;base64,...`` data URI.
     supports_reference_image: ClassVar[bool] = True
-    supports_multiple_reference_images: ClassVar[bool] = True
+    # subject_reference[] only accepts a single entry — MiniMax rejects two
+    # ("image_reference must be one"). The array is for multi-character scenes.
+    supports_multiple_reference_images: ClassVar[bool] = False
 
     def __init__(self, config: ProviderConfig) -> None:
         super().__init__(config)
@@ -50,10 +52,7 @@ class MiniMaxImageGenProvider(ImageGenProvider):
             "n": req.n,
         }
         if req.reference_image:
-            subject_ref = [{"type": "character", "image_file": req.reference_image}]
-            if req.secondary_reference_image:
-                subject_ref.append({"type": "character", "image_file": req.secondary_reference_image})
-            payload["subject_reference"] = subject_ref
+            payload["subject_reference"] = [{"type": "character", "image_file": req.reference_image}]
 
         resp = await self._client.post("/v1/image_generation", json=payload)
         body = raise_for_minimax_response(resp, provider="minimax", model=self.config.model)
