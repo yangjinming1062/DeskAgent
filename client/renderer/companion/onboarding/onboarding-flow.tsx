@@ -166,20 +166,6 @@ const QUESTIONS: readonly Question[] = [
     allowImage: true
   },
   {
-    // appearance_outfit: editable; feeds the initial wardrobe hint but not
-    // the image-gen prompt. Free to revise anytime via the persona editor.
-    key: 'appearance_outfit',
-    text: '默认的穿着配饰？想描述就描述，想跳过也行…',
-    placeholder: '比如：黑色礼帽配军装风衣…（可跳过）',
-    required: false,
-    multiline: true,
-    // Distinct slot from appearance_core (q3) — reusing q3's audio would
-    // play the image-description line for the outfit question.
-    audioTag: 'onboarding.q13',
-    max: MAX_APPEARANCE,
-    presets: APPEARANCE_PRESETS
-  },
-  {
     key: 'role',
     text: '好的，那您希望我是什么样的身份？',
     placeholder: '或者自由描述…',
@@ -274,12 +260,13 @@ const QUESTIONS: readonly Question[] = [
 // question text + a top-of-wizard banner reminds the user of the rule.
 const LOCKED_FIELD_KEYS: ReadonlySet<QKey> = new Set(['species', 'character_gender', 'appearance_core'])
 
-// Slice boundaries mirror backend ONBOARDING_FIELDS order — required for resume routing.
-// Everything that defines the companion itself (character fields, speaking style,
-// portrait, voice) is settled before any user_* question is asked.
-const CHARACTER_QUESTIONS: readonly Question[] = QUESTIONS.slice(0, 8) // name, species, character_gender, appearance_core, appearance_outfit, role, personality, speaking_style
-const VOICE_QUESTIONS: readonly Question[] = QUESTIONS.slice(8, 9) // voice
-const USER_QUESTIONS: readonly Question[] = QUESTIONS.slice(9, 14) // user_call_name, user_gender, user_age_bucket, user_hobbies, user_freeform
+// Slice boundaries derive from the ``voice`` question position — everything
+// before it is character sub-stage, it alone is the voice sub-stage, and
+// everything after is user sub-stage. Mirrors backend ONBOARDING_FIELDS order.
+const _VOICE_Q_INDEX = QUESTIONS.findIndex(q => q.key === 'voice')
+const CHARACTER_QUESTIONS: readonly Question[] = QUESTIONS.slice(0, _VOICE_Q_INDEX)
+const VOICE_QUESTIONS: readonly Question[] = QUESTIONS.slice(_VOICE_Q_INDEX, _VOICE_Q_INDEX + 1)
+const USER_QUESTIONS: readonly Question[] = QUESTIONS.slice(_VOICE_Q_INDEX + 1)
 
 const PHASE_QUESTIONS: Record<Phase, readonly Question[]> = {
   'q-character': CHARACTER_QUESTIONS,
@@ -292,15 +279,9 @@ const PHASE_QUESTIONS: Record<Phase, readonly Question[]> = {
   greeting: []
 }
 
-// Routes resume's next_field to q-user; `voice` has its own branch. Mirrors
-// backend.services.companion._POST_CHARACTER_FIELDS.
-const POST_CHARACTER_FIELDS: ReadonlySet<string> = new Set([
-  'user_call_name',
-  'user_gender',
-  'user_age_bucket',
-  'user_hobbies',
-  'user_freeform'
-])
+// Routes resume's next_field to q-user; `voice` has its own branch. Derived
+// from USER_QUESTIONS so it stays in sync when questions are added/removed.
+const POST_CHARACTER_FIELDS: ReadonlySet<string> = new Set(USER_QUESTIONS.map(q => q.key))
 
 // Hoisted: useInteractiveRegion's effect otherwise re-registers every render.
 const interactiveRegionRect = (el: HTMLElement): DOMRect | null => {
@@ -332,25 +313,25 @@ const retryTransient = async <T,>(
 
 const DRAG_THRESHOLD = 6
 
-// Desktop answer keys → Backend ONBOARDING_FIELDS. species / character_gender
-// become biological_type / gender via assemblePersona; user_* travel in the
-// same PUT and the backend routes them to Memory.
-const BACKEND_FIELD: Record<QKey, string> = {
-  name: 'name',
-  species: 'species',
-  character_gender: 'character_gender',
-  appearance_core: 'appearance_core',
-  appearance_outfit: 'appearance_outfit',
-  role: 'role',
-  personality: 'personality',
-  speaking_style: 'speaking_style',
-  user_call_name: 'user_call_name',
-  user_gender: 'user_gender',
-  user_age_bucket: 'user_age_bucket',
-  user_hobbies: 'user_hobbies',
-  user_freeform: 'user_freeform',
-  voice: 'voice'
-}
+// Question keys submittable via onboarding.submit — mirrors backend
+// ONBOARDING_FIELDS. All mappings are identity (question key === backend
+// field name), so a Set suffices. appearance_outfit is absent: it's a Persona
+// field edited via persona-editor / persona-retune, not collected at onboarding.
+const ONBOARDING_FIELD_KEYS: ReadonlySet<QKey> = new Set<QKey>([
+  'name',
+  'species',
+  'character_gender',
+  'appearance_core',
+  'role',
+  'personality',
+  'speaking_style',
+  'user_call_name',
+  'user_gender',
+  'user_age_bucket',
+  'user_hobbies',
+  'user_freeform',
+  'voice'
+])
 
 // Step-1: avatar only. Returns the raw backend response (id is captured for
 // step 2's fullbody call). applyPortrait owns the resolve step.
@@ -475,7 +456,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
   // History gallery — thumbnails below the portrait/fullbody panel.
   const portraitHistory = useStore($portraitHistory)
   const portraitSelectedIdx = useStore($portraitSelectedIdx)
-  // voice phase runs the Q13 description input first, then the catalogue picker.
+  // voice phase runs the Q7 description input first, then the catalogue picker.
   const [voiceStage, setVoiceStage] = useState<VoiceStage>('describe')
 
   // Failure keeps the current portrait: it already holds resolved bytes.
@@ -706,8 +687,8 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
 
     // Per-field incremental persistence (design §7.5); fire-and-forget — never
     // block the UI on a draft save. No-op until the gateway is open.
-    if (gatewayState === 'open') {
-      void requestGateway('onboarding.submit', { field: BACKEND_FIELD[q.key], value: cleaned ?? null }).catch(() => {})
+    if (gatewayState === 'open' && ONBOARDING_FIELD_KEYS.has(q.key)) {
+      void requestGateway('onboarding.submit', { field: q.key, value: cleaned ?? null }).catch(() => {})
     }
 
     return nextAnswers
@@ -971,11 +952,11 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
             setVoiceStage('describe')
             setQIndex(0)
           } else if (nextField && POST_CHARACTER_FIELDS.has(nextField)) {
-            const idx = USER_QUESTIONS.findIndex(q => BACKEND_FIELD[q.key] === nextField)
+            const idx = USER_QUESTIONS.findIndex(q => q.key === nextField)
             setPhase('q-user')
             setQIndex(Math.max(0, idx))
           } else if (nextField) {
-            const idx = CHARACTER_QUESTIONS.findIndex(q => BACKEND_FIELD[q.key] === nextField)
+            const idx = CHARACTER_QUESTIONS.findIndex(q => q.key === nextField)
             setPhase('q-character')
             setQIndex(Math.max(0, idx))
           }

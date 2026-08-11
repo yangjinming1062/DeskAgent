@@ -20,7 +20,6 @@ _AVATAR_SYSTEM_PROMPT = (
     "  - biological_type：物种；\n"
     "  - gender：性别；\n"
     "  - appearance：基础形象（脸型、体型、标志性细节等）；\n"
-    "  - appearance_outfit：用户描述的初始穿着与配饰（如有则需在提示词中如实渲染用户所描述的服装款式与配色）；\n"
     "  - background：角色定位；\n"
     "  - personality：性格；\n"
     "  - feedback：用户最近的反馈（可为空）。\n"
@@ -28,7 +27,7 @@ _AVATAR_SYSTEM_PROMPT = (
     "硬性要求：\n"
     "1. 胸部以上的半身特写（bust portrait），以「bust portrait of ...」开头；\n"
     "2. 重点呈现面部细节：脸型轮廓、五官比例、眼睛形状与瞳色瞳光、鼻子、嘴唇、眼神与神态、发型与发色质感；\n"
-    "3. 包含上身着装与配色、特色配饰（如可见）；当 appearance_outfit 非空时，按其描述渲染；\n"
+    "3. 服饰仅作自然背景，呈现简单、不遮蔽人物轮廓特征的服饰；\n"
     "4. 视角：正面朝向观众（front-facing bust portrait），平视镜头；\n"
     "5. 光线：柔和均匀的正面打光（soft even front lighting），无强烈阴影；\n"
     "6. 画风：digital illustration, clean linework, high detail, masterwork, professional character design；\n"
@@ -40,15 +39,16 @@ _AVATAR_SYSTEM_PROMPT = (
 
 _FULLBODY_MULTIVIEW_SYSTEM_PROMPT = (
     "你是一个专业的三维建模多视图角色立绘提示词工程师。你需要为同一个角色生成三张配套的全身立绘提示词：\n"
-    "正面（front）、右侧面（right）、背面（back）。三张图描述的角色外貌、服装款式与配色必须完全一致，并作为下游 Tripo3D 多视图建模的原始输入。\n"
+    "正面（front）、右侧面（right）、背面（back）。三张图描述的角色身体轮廓、体型、五官、肤色、发型发色、标志性细节必须完全一致（聚焦用于 3D 建模的身体锚点），并作为下游 Tripo3D 多视图建模的原始输入。\n"
     "\n"
     '严格输出 JSON：{"front": "...", "right": "...", "back": "..."}，不要任何额外文字或 Markdown 代码块。\n'
     "\n"
     "## 核心原则：外貌锚点复用（最高优先级）\n"
-    "输入的 avatar_prompt 是上一阶段已确认的头像提示词，其中包含角色的完整外貌描述（脸型、五官、发型发色、肤色、上身着装与配色）。\n"
+    "输入的 avatar_prompt 是上一阶段已确认的头像提示词，其中包含角色的完整外貌描述（脸型、五官、发型发色、肤色）。\n"
     "你**必须**从 avatar_prompt 中逐字提取角色的核心外貌特征，在三张全身图中**原样复用**这些描述。\n"
     "**禁止**重新诠释、扩展、美化或添加 avatar_prompt 中未提及的外貌细节。\n"
-    "你的任务是扩展视角（从半身到全身），而不是重新设计角色。\n"
+    "**禁止**引用任何华丽/复杂服饰或配饰信息——三视图采用**简单、不遮蔽人物轮廓特征**的参照装。\n"
+    "你的任务是扩展视角（从半身到全身）。\n"
     "\n"
     "## 参考图一致性\n"
     "生成时会传入已确认的头像作为参考图（subject_reference）。角色的面部特征（脸型、五官、瞳色、发型发色）\n"
@@ -57,11 +57,11 @@ _FULLBODY_MULTIVIEW_SYSTEM_PROMPT = (
     "\n"
     "## 各视角具体要求\n"
     "1. 正面（front）：以「full body front view portrait of ...」开头，紧接 avatar_prompt 中的角色描述（逐字复用），\n"
-    "   仅补充下半身服装与鞋靴设计（保持与上半身同一套服装的配色与风格）；\n"
+    "   仅补充下半身身体轮廓、腿部线条、鞋靴形状；\n"
     "2. 右侧面（right）：以「full body right side view portrait of ...」开头，描述同一角色的侧面轮廓、\n"
-    "   侧面发型层次、服饰侧面剪裁线条、手臂与鞋靴侧面、身体厚度；\n"
+    "   侧面发型层次、身体厚度；\n"
     "3. 背面（back）：以「full body back view portrait of ...」开头，描述同一角色的后脑发型发尾、\n"
-    "   背面服装款式（后背剪裁、拉链、纹理等）、背影与鞋跟背面；\n"
+    "   脊椎线条、肩胛轮廓、背影；\n"
     "\n"
     "## 核心约束（三张图都必须严格遵守）\n"
     "1. 立绘完整性（最高优先级）：三视角均必须从头顶至脚底 100% 完整展示在画面内，\n"
@@ -70,8 +70,7 @@ _FULLBODY_MULTIVIEW_SYSTEM_PROMPT = (
     "    - 双臂向两侧自然张开与躯干呈 30-45 度夹角，五指自然分开伸直且清晰可辨；\n"
     "    - 双脚平行分开约与肩同宽、脚尖朝前平立于地面；脊椎挺直平视前方；\n"
     "    - 四肢与躯干之间有可见间隙（腋下、腰侧、大腿内侧不粘连）；\n"
-    "    - 无手持道具、无遮挡身体轮廓的大型配件或衣物层叠；\n"
-    "3. 形象一致性：三张图必须描述同一个角色——同一张脸、同一套服装、同一发型发色、同一配色与面料质感；\n"
+    "3. 形象一致性：三张图必须描述同一个角色——同一张脸、同一体型与身体轮廓、同一发型发色、同一肤色；\n"
     "4. 背景与光线：必须包含「纯白平面背景，无场景、无渐变、无阴影」；\n"
     "   采用均匀漫反射平光打光（soft even diffuse lighting，无明显方向性暗部阴影）；\n"
     "5. 画风：digital illustration, clean linework, high detail, professional character design；\n"
@@ -114,13 +113,15 @@ def _persona_payload(persona: Persona) -> dict:
 
 # LLM-facing key is ``appearance`` (mapped from the wire-side
 # ``appearance_core`` — the visual anchor); consumed by both enhancers.
+# Intentionally does NOT include ``appearance_outfit`` — the seed image focuses
+# on body silhouette; initial wardrobe is owned by the wardrobe system and
+# edited via persona-editor / persona-retune, not via the image-gen prompt.
 def _persona_visual_payload(persona: Persona, feedback: str | None) -> dict[str, str]:
     definition = _persona_payload(persona)
     return {
         "biological_type": definition.get("biological_type") or "",
         "gender": definition.get("gender") or "",
         "appearance": definition.get("appearance_core") or "",
-        "appearance_outfit": definition.get("appearance_outfit") or "",
         "background": definition.get("background") or "",
         "personality": definition.get("personality") or "",
         "feedback": (feedback or "").strip(),

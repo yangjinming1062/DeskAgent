@@ -5,8 +5,10 @@ export interface OnboardingAnswers {
   // appearance_core: locked visual anchor (face / body / markings). Drives
   // the 3D model generation prompt; preserved across edits post lock.
   appearance_core?: string
-  // appearance_outfit: initial outfit description; feeds the first wardrobe
-  // preset but never enters the image-gen prompt. Stays editable.
+  // appearance_outfit: editable Persona field; not collected during onboarding
+  // (seed image focuses on body silhouette). Editable via persona-editor /
+  // persona-retune. Renders into the LLM system prompt but not into the seed
+  // image prompt — initial wardrobe is owned by the wardrobe system instead.
   appearance_outfit?: string
   role?: string
   personality?: string

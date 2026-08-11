@@ -1179,7 +1179,6 @@ def test_onboarding_field_order_matches_question_sequence():
         "species",
         "character_gender",
         "appearance_core",
-        "appearance_outfit",
         "role",
         "personality",
         "speaking_style",
@@ -1190,6 +1189,18 @@ def test_onboarding_field_order_matches_question_sequence():
         "user_hobbies",
         "user_freeform",
     )
+
+
+def test_onboarding_field_partitions_split_at_voice():
+    """character + voice + post-character must reconstruct ONBOARDING_FIELDS —
+    catches a mis-insertion that would put a field on the wrong side of voice."""
+    from services.companion import ONBOARDING_FIELDS
+    from services.companion.persona_service import _CHARACTER_ONBOARDING_FIELDS
+    from services.companion.persona_service import _POST_CHARACTER_FIELDS
+
+    assert _CHARACTER_ONBOARDING_FIELDS + ("voice",) + _POST_CHARACTER_FIELDS == ONBOARDING_FIELDS
+    assert "voice" not in _CHARACTER_ONBOARDING_FIELDS
+    assert "voice" not in _POST_CHARACTER_FIELDS
 
 
 @pytest.mark.asyncio

@@ -227,7 +227,7 @@ onboarding 产出的结构化角色定义持久化在 Backend 用户维度，作
 伙伴的视觉表达由 portrait、3D 模型、换装三层资产构成，均归属用户、在用户维度持久化。资产体系的产品形态、用途、换装设计见 [DESIGN.md §1](DESIGN.md)；此处只锁定跨模块契约：
 
 - **资产归属用户维度**，不跨用户共享、不下发到他租户。
-- **portrait 拆为 avatar + seed 配对**：avatar 是聚焦头部细节的半身像（onboarding 身份确认、设置页展示、聊天头像），seed 是三视角全身参考图（3D 纹理生成的输入）。两张图任一失败即整体失败；avatar prompt 硬性包含「纯白平面背景，无场景、无渐变、无阴影」子句（chroma-key 渲染依赖）。
+- **portrait 拆为 avatar + seed 配对**：avatar 是聚焦头部细节的半身像（onboarding 身份确认、设置页展示、聊天头像），seed 是三视角全身参考图（3D 纹理生成的输入）。两张图任一失败即整体失败；avatar prompt 硬性包含「纯白平面背景，无场景、无渐变、无阴影」子句（chroma-key 渲染依赖）。seed prompt 聚焦**身体轮廓锚点**（体型、五官、发型发色、标志性细节），参照装限定为**简单、不遮蔽人物轮廓特征**的款式，方便 Tripo3D 准确建模与绑骨——三视图之外的服饰由后续换装系统独立表达。
 - **prompt 增强是读取型操作**——角色定义不被 LLM 改写，LLM 异常向上传播。
 - **3D 模型由 Tripo3D 生成**：以 seed 三视图为输入，经 multiview-to-3D + rig 生成带 PBR 纹理的 rigged GLB，注入 morph targets，动画由客户端 TypeScript 关键帧注入。失败时客户端渲染程序化蛋形兜底角色。
 - **portrait 重生不触发模型失效**：模型只随物种变更或用户显式请求重生。换外观 = 换装（纹理热替），不重生模型。

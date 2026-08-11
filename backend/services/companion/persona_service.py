@@ -26,12 +26,16 @@ _MAX_FIELD_LEN: int = 500
 # in ``Persona.definition_json`` while ``is_complete`` is False; user_* reach
 # Memory via ``update_persona`` server-side routing. ``voice`` rides the
 # draft for breakpoint recovery but is not a persona field.
+#
+# Note: ``appearance_outfit`` is intentionally NOT collected here — the seed
+# image focuses on body silhouette, and initial wardrobe is owned by the
+# wardrobe system. ``appearance_outfit`` remains a Persona field editable via
+# persona-editor / persona-retune (see ``_OPTIONAL_FIELDS`` above).
 ONBOARDING_FIELDS: tuple[str, ...] = (
     "name",
     "species",
     "character_gender",
     "appearance_core",
-    "appearance_outfit",
     "role",
     "personality",
     "speaking_style",
@@ -44,26 +48,13 @@ ONBOARDING_FIELDS: tuple[str, ...] = (
 )
 _ONBOARDING_MAX_LEN: int = 2000
 
-# Fields collected in voice / q-user after is_complete=True; gating complete on these prevents skip-on-crash.
-_POST_CHARACTER_FIELDS: tuple[str, ...] = (
-    "user_call_name",
-    "user_gender",
-    "user_age_bucket",
-    "user_hobbies",
-    "user_freeform",
-)
-
-# Character raw-answer fields in question order (name..speaking_style).
-_CHARACTER_ONBOARDING_FIELDS: tuple[str, ...] = (
-    "name",
-    "species",
-    "character_gender",
-    "appearance_core",
-    "appearance_outfit",
-    "role",
-    "personality",
-    "speaking_style",
-)
+# ``voice`` splits ONBOARDING_FIELDS into the character sub-stage (before it)
+# and the post-character fields (after it). Both sub-tuples derive from the
+# single source of truth above so a field add/remove can't desync them.
+_VOICE_FIELD_INDEX: int = ONBOARDING_FIELDS.index("voice")
+_CHARACTER_ONBOARDING_FIELDS: tuple[str, ...] = ONBOARDING_FIELDS[:_VOICE_FIELD_INDEX]
+# Gating is_complete on these prevents skip-on-crash resume.
+_POST_CHARACTER_FIELDS: tuple[str, ...] = ONBOARDING_FIELDS[_VOICE_FIELD_INDEX + 1:]
 
 
 class PersonaValidationError(ValueError):
