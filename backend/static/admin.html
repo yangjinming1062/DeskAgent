@@ -590,61 +590,121 @@ input[type="file"] { font-size: 0.78rem; }
         </div>
         <div class="modal-body">
             <input type="hidden" id="modelUserId">
-            <div class="svc-grid">
-                <div class="svc-card required">
-                    <h3>大语言模型 <span class="req">必填</span></h3>
-                    <div class="field"><label>Base URL</label><input type="text" id="llmBaseUrl" placeholder="https://api.openai.com/v1"></div>
-                    <div class="field">
-                        <div class="label-row"><label>API Key</label><span class="keybadge off" id="llmKeyBadge">未设置</span></div>
-                        <input type="password" id="llmApiKey" placeholder="sk-…">
-                        <div class="hint">留空表示保留现有值</div>
-                    </div>
-                    <div class="field"><label>模型名称</label><input type="text" id="llmModelName" placeholder="gpt-4o"></div>
-                </div>
-                <div class="svc-card">
-                    <h3>语音识别 STT</h3>
-                    <div class="field"><label>Base URL</label><input type="text" id="sttBaseUrl" placeholder="留空使用默认"></div>
-                    <div class="field">
-                        <div class="label-row"><label>API Key</label><span class="keybadge off" id="sttKeyBadge">未设置</span></div>
-                        <input type="password" id="sttApiKey" placeholder="留空保留现有值">
-                    </div>
-                    <div class="field"><label>模型名称</label><input type="text" id="sttModelName" placeholder="mimo-v2.5-asr"></div>
-                </div>
-                <div class="svc-card">
-                    <h3>语音合成 TTS</h3>
-                    <div class="field"><label>Base URL</label><input type="text" id="ttsBaseUrl" placeholder="留空使用默认"></div>
-                    <div class="field">
-                        <div class="label-row"><label>API Key</label><span class="keybadge off" id="ttsKeyBadge">未设置</span></div>
-                        <input type="password" id="ttsApiKey" placeholder="留空保留现有值">
-                    </div>
-                    <div class="field"><label>模型名称</label><input type="text" id="ttsModelName" placeholder="mimo-v2.5-tts"></div>
-                </div>
-                <div class="svc-card">
-                    <h3>图像生成</h3>
-                    <div class="field"><label>Base URL</label><input type="text" id="imageGenBaseUrl" placeholder="留空使用默认"></div>
-                    <div class="field">
-                        <div class="label-row"><label>API Key</label><span class="keybadge off" id="imageKeyBadge">未设置</span></div>
-                        <input type="password" id="imageGenApiKey" placeholder="留空保留现有值">
-                    </div>
-                    <div class="field"><label>模型名称</label><input type="text" id="imageGenModelName" placeholder="image-01"></div>
-                </div>
-                <div class="svc-card">
-                    <h3>视频生成</h3>
-                    <div class="field"><label>Base URL</label><input type="text" id="videoGenBaseUrl" placeholder="留空使用默认"></div>
-                    <div class="field">
-                        <div class="label-row"><label>API Key</label><span class="keybadge off" id="videoKeyBadge">未设置</span></div>
-                        <input type="password" id="videoGenApiKey" placeholder="留空保留现有值">
-                    </div>
-                    <div class="field"><label>模型名称</label><input type="text" id="videoGenModelName" placeholder="MiniMax-Hailuo-2.3"></div>
-                </div>
-            </div>
-            <div class="provider-section">
+            
+            <!-- ── 1. 供应商配置 ──────────────────────────────── -->
+            <div class="provider-section" style="margin-bottom: 24px;">
                 <div class="provider-head">
                     <h3>供应商配置</h3>
-                    <span class="hint">最高优先级调用层 · 列表顺序即 provider 回落顺序 · 留空继承全局</span>
+                    <span class="hint">配置各供应商的 API Key 与 Base URL · 列表上下顺序即优先级顺序（自上而下自动回落）</span>
                 </div>
                 <div id="providerSlots"></div>
-                <button type="button" class="btn btn--ghost btn--sm" onclick="addProviderSlot()">＋ 添加供应商</button>
+                <button type="button" class="btn btn--ghost btn--sm" style="margin-top: 8px;" onclick="addProviderSlot()">＋ 添加供应商</button>
+            </div>
+
+            <!-- ── 2. 能力供应支持 ────────────────────────────── -->
+            <div class="cap-section">
+                <div class="provider-head" style="margin-bottom: 12px;">
+                    <h3>能力供应支持</h3>
+                    <span class="hint">配置各 AI 能力的模型名称与首选供应商（留空表示继承供应商优先级顺序）</span>
+                </div>
+                <div class="svc-grid">
+                    <div class="svc-card">
+                        <h3>大语言模型 LLM</h3>
+                        <div class="field">
+                            <label>首选供应商</label>
+                            <select id="llmProvider">
+                                <option value="">自动 / 继承供应商优先级</option>
+                                <option value="minimax">minimax (MiniMax)</option>
+                                <option value="mimo">mimo (小米 MiMo)</option>
+                                <option value="gemini">gemini (Google Gemini)</option>
+                                <option value="grok">grok (xAI Grok)</option>
+                                <option value="zhipu">zhipu (智谱 BigModel)</option>
+                            </select>
+                        </div>
+                        <div class="field"><label>模型名称</label><input type="text" id="llmModelName" placeholder="gpt-4o / mimo-v2.5-chat"></div>
+                        <div class="field"><label>Base URL (可选覆盖)</label><input type="text" id="llmBaseUrl" placeholder="留空继承供应商"></div>
+                        <div class="field">
+                            <div class="label-row"><label>API Key (可选覆盖)</label><span class="keybadge off" id="llmKeyBadge">未设置</span></div>
+                            <input type="password" id="llmApiKey" placeholder="留空继承供应商">
+                        </div>
+                    </div>
+
+                    <div class="svc-card">
+                        <h3>语音识别 STT</h3>
+                        <div class="field">
+                            <label>首选供应商</label>
+                            <select id="sttProvider">
+                                <option value="">自动 / 继承供应商优先级</option>
+                                <option value="mimo">mimo (小米 MiMo)</option>
+                                <option value="minimax">minimax (MiniMax)</option>
+                                <option value="gemini">gemini (Google Gemini)</option>
+                            </select>
+                        </div>
+                        <div class="field"><label>模型名称</label><input type="text" id="sttModelName" placeholder="mimo-v2.5-asr"></div>
+                        <div class="field"><label>Base URL (可选覆盖)</label><input type="text" id="sttBaseUrl" placeholder="留空继承供应商"></div>
+                        <div class="field">
+                            <div class="label-row"><label>API Key (可选覆盖)</label><span class="keybadge off" id="sttKeyBadge">未设置</span></div>
+                            <input type="password" id="sttApiKey" placeholder="留空继承供应商">
+                        </div>
+                    </div>
+
+                    <div class="svc-card">
+                        <h3>语音合成 TTS</h3>
+                        <div class="field">
+                            <label>首选供应商</label>
+                            <select id="ttsProvider">
+                                <option value="">自动 / 继承供应商优先级</option>
+                                <option value="mimo">mimo (小米 MiMo)</option>
+                                <option value="minimax">minimax (MiniMax)</option>
+                            </select>
+                        </div>
+                        <div class="field"><label>模型名称</label><input type="text" id="ttsModelName" placeholder="mimo-v2.5-tts"></div>
+                        <div class="field"><label>Base URL (可选覆盖)</label><input type="text" id="ttsBaseUrl" placeholder="留空继承供应商"></div>
+                        <div class="field">
+                            <div class="label-row"><label>API Key (可选覆盖)</label><span class="keybadge off" id="ttsKeyBadge">未设置</span></div>
+                            <input type="password" id="ttsApiKey" placeholder="留空继承供应商">
+                        </div>
+                    </div>
+
+                    <div class="svc-card">
+                        <h3>图像生成</h3>
+                        <div class="field">
+                            <label>首选供应商</label>
+                            <select id="imageGenProvider">
+                                <option value="">自动 / 继承供应商优先级</option>
+                                <option value="grok">grok (xAI Grok)</option>
+                                <option value="gemini">gemini (Google Gemini)</option>
+                                <option value="zhipu">zhipu (智谱 BigModel)</option>
+                                <option value="mimo">mimo (小米 MiMo)</option>
+                                <option value="minimax">minimax (MiniMax)</option>
+                            </select>
+                        </div>
+                        <div class="field"><label>模型名称</label><input type="text" id="imageGenModelName" placeholder="image-01"></div>
+                        <div class="field"><label>Base URL (可选覆盖)</label><input type="text" id="imageGenBaseUrl" placeholder="留空继承供应商"></div>
+                        <div class="field">
+                            <div class="label-row"><label>API Key (可选覆盖)</label><span class="keybadge off" id="imageKeyBadge">未设置</span></div>
+                            <input type="password" id="imageGenApiKey" placeholder="留空继承供应商">
+                        </div>
+                    </div>
+
+                    <div class="svc-card">
+                        <h3>视频生成</h3>
+                        <div class="field">
+                            <label>首选供应商</label>
+                            <select id="videoGenProvider">
+                                <option value="">自动 / 继承供应商优先级</option>
+                                <option value="minimax">minimax (MiniMax)</option>
+                                <option value="mimo">mimo (小米 MiMo)</option>
+                            </select>
+                        </div>
+                        <div class="field"><label>模型名称</label><input type="text" id="videoGenModelName" placeholder="MiniMax-Hailuo-2.3"></div>
+                        <div class="field"><label>Base URL (可选覆盖)</label><input type="text" id="videoGenBaseUrl" placeholder="留空继承供应商"></div>
+                        <div class="field">
+                            <div class="label-row"><label>API Key (可选覆盖)</label><span class="keybadge off" id="videoKeyBadge">未设置</span></div>
+                            <input type="password" id="videoGenApiKey" placeholder="留空继承供应商">
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
         <div class="modal-foot">
@@ -670,11 +730,11 @@ const TABS = {
 // service → (input-id map) for the credential modal. video_gen was missing
 // from the old page; the backend UserModelConfigRequest has carried it all along.
 const SVC_FIELDS = [
-    { url: 'llmBaseUrl',      key: 'llmApiKey',      model: 'llmModelName',      urlField: 'llm_base_url',      keyField: 'llm_api_key',      modelField: 'llm_model_name' },
-    { url: 'sttBaseUrl',      key: 'sttApiKey',      model: 'sttModelName',      urlField: 'stt_base_url',      keyField: 'stt_api_key',      modelField: 'stt_model_name' },
-    { url: 'ttsBaseUrl',      key: 'ttsApiKey',      model: 'ttsModelName',      urlField: 'tts_base_url',      keyField: 'tts_api_key',      modelField: 'tts_model_name' },
-    { url: 'imageGenBaseUrl', key: 'imageGenApiKey', model: 'imageGenModelName', urlField: 'image_gen_base_url', keyField: 'image_gen_api_key', modelField: 'image_gen_model_name' },
-    { url: 'videoGenBaseUrl', key: 'videoGenApiKey', model: 'videoGenModelName', urlField: 'video_gen_base_url', keyField: 'video_gen_api_key', modelField: 'video_gen_model_name' },
+    { provider: 'llmProvider',      url: 'llmBaseUrl',      key: 'llmApiKey',      model: 'llmModelName',      providerField: 'llm_provider',      urlField: 'llm_base_url',      keyField: 'llm_api_key',      modelField: 'llm_model_name' },
+    { provider: 'sttProvider',      url: 'sttBaseUrl',      key: 'sttApiKey',      model: 'sttModelName',      providerField: 'stt_provider',      urlField: 'stt_base_url',      keyField: 'stt_api_key',      modelField: 'stt_model_name' },
+    { provider: 'ttsProvider',      url: 'ttsBaseUrl',      key: 'ttsApiKey',      model: 'ttsModelName',      providerField: 'tts_provider',      urlField: 'tts_base_url',      keyField: 'tts_api_key',      modelField: 'tts_model_name' },
+    { provider: 'imageGenProvider', url: 'imageGenBaseUrl', key: 'imageGenApiKey', model: 'imageGenModelName', providerField: 'image_gen_provider', urlField: 'image_gen_base_url', keyField: 'image_gen_api_key', modelField: 'image_gen_model_name' },
+    { provider: 'videoGenProvider', url: 'videoGenBaseUrl', key: 'videoGenApiKey', model: 'videoGenModelName', providerField: 'video_gen_provider', urlField: 'video_gen_base_url', keyField: 'video_gen_api_key', modelField: 'video_gen_model_name' },
 ];
 
 const $  = (s, r = document) => r.querySelector(s);
@@ -915,7 +975,7 @@ function setKeyBadge(id, set) {
     el.className = 'keybadge ' + (set ? 'on' : 'off');
 }
 
-const PROVIDER_OPTIONS = ['mimo', 'minimax'];
+const PROVIDER_OPTIONS = ['minimax', 'mimo', 'gemini', 'grok', 'zhipu'];
 
 function providerSlotRow(slot) {
     const name = slot?.name || '', url = slot?.base_url || '', set = !!slot?.api_key_set;
@@ -952,19 +1012,16 @@ function showModelConfigForUser(userId) {
     const cached = tabCache.models?.items?.find(c => c.user_id == userId) ?? null;
     $('#modelUserId').value = userId;
     $('#modelModalTitle').textContent = cached ? `编辑凭证 · 用户 #${userId}` : `配置凭证 · 用户 #${userId}`;
-    // base_url + model_name come from the cached list response; api_key inputs
-    // are always left empty — the list exposes *_api_key_set (a bool), not the
-    // raw key. Saving with an empty input means "keep the existing key".
     const fields = [
-        ['llmBaseUrl', 'llm_base_url'], ['llmModelName', 'llm_model_name'],
-        ['sttBaseUrl', 'stt_base_url'], ['sttModelName', 'stt_model_name'],
-        ['ttsBaseUrl', 'tts_base_url'], ['ttsModelName', 'tts_model_name'],
-        ['imageGenBaseUrl', 'image_gen_base_url'], ['imageGenModelName', 'image_gen_model_name'],
-        ['videoGenBaseUrl', 'video_gen_base_url'], ['videoGenModelName', 'video_gen_model_name'],
+        ['llmProvider', 'llm_provider'], ['llmBaseUrl', 'llm_base_url'], ['llmModelName', 'llm_model_name'],
+        ['sttProvider', 'stt_provider'], ['sttBaseUrl', 'stt_base_url'], ['sttModelName', 'stt_model_name'],
+        ['ttsProvider', 'tts_provider'], ['ttsBaseUrl', 'tts_base_url'], ['ttsModelName', 'tts_model_name'],
+        ['imageGenProvider', 'image_gen_provider'], ['imageGenBaseUrl', 'image_gen_base_url'], ['imageGenModelName', 'image_gen_model_name'],
+        ['videoGenProvider', 'video_gen_provider'], ['videoGenBaseUrl', 'video_gen_base_url'], ['videoGenModelName', 'video_gen_model_name'],
     ];
     for (const [inputId, responseKey] of fields) $('#' + inputId).value = cached ? (cached[responseKey] ?? '') : '';
     for (const s of SVC_FIELDS) $('#' + s.key).value = '';
-    setKeyBadge('llmKeyBadge', cached ? !!cached.llm_api_key : false);
+    setKeyBadge('llmKeyBadge', cached ? !!cached.llm_api_key_set : false);
     setKeyBadge('sttKeyBadge', cached ? !!cached.stt_api_key_set : false);
     setKeyBadge('ttsKeyBadge', cached ? !!cached.tts_api_key_set : false);
     setKeyBadge('imageKeyBadge', cached ? !!cached.image_gen_api_key_set : false);
@@ -977,6 +1034,7 @@ async function saveModelConfig() {
     const userId = $('#modelUserId').value;
     const payload = {};
     for (const s of SVC_FIELDS) {
+        payload[s.providerField] = $('#' + s.provider).value;
         payload[s.urlField] = $('#' + s.url).value;
         payload[s.modelField] = $('#' + s.model).value;
         const apiKey = $('#' + s.key).value;

@@ -42,7 +42,10 @@ def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)
     if user is None or not verify_password(payload.password, user.password_hash):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="用户名或密码错误。")
     if not user.can_use or (user.expires_at and user.expires_at.date() < naive_utc_now().date()):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="该用户已超过有效使用期限，需要续费后才能继续使用。")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="该用户已超过有效使用期限，需要续费后才能继续使用。",
+        )
 
     now = naive_utc_now()
     for record in db.query(LoginRecord).filter(LoginRecord.user_id == user.id, LoginRecord.is_active.is_(True)).all():
@@ -69,7 +72,9 @@ def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)
 
 
 @router.post("/ws-ticket", response_model=TokenResponse)
-def mint_ws_ticket(current: tuple[User, LoginRecord] = Depends(get_current_session)) -> TokenResponse:
+def mint_ws_ticket(
+    current: tuple[User, LoginRecord] = Depends(get_current_session),
+) -> TokenResponse:
     """Mint a short-lived WS-only JWT so the renderer never holds the long-lived bearer."""
     user, _session = current
     token, expires_in, _ = create_access_token(
@@ -82,7 +87,12 @@ def mint_ws_ticket(current: tuple[User, LoginRecord] = Depends(get_current_sessi
 
 
 @router.post("/refresh", response_model=TokenResponse)
-def refresh_session(payload: RefreshRequest, request: Request, current: tuple[User, LoginRecord] = Depends(get_current_session), db: Session = Depends(get_db)) -> TokenResponse:
+def refresh_session(
+    payload: RefreshRequest,
+    request: Request,
+    current: tuple[User, LoginRecord] = Depends(get_current_session),
+    db: Session = Depends(get_db),
+) -> TokenResponse:
     user, login_record = current
     now = naive_utc_now()
 
@@ -112,7 +122,10 @@ def refresh_session(payload: RefreshRequest, request: Request, current: tuple[Us
 
 
 @router.post("/logout", response_model=MessageResponse)
-def logout(current: tuple[User, LoginRecord] = Depends(get_current_session), db: Session = Depends(get_db)) -> MessageResponse:
+def logout(
+    current: tuple[User, LoginRecord] = Depends(get_current_session),
+    db: Session = Depends(get_db),
+) -> MessageResponse:
     _user, login_record = current
     login_record.is_active = False
     login_record.logout_at = naive_utc_now()
@@ -122,7 +135,11 @@ def logout(current: tuple[User, LoginRecord] = Depends(get_current_session), db:
 
 
 @router.post("/change-password", response_model=MessageResponse)
-def change_password(payload: ChangePasswordRequest, current: tuple[User, LoginRecord] = Depends(get_current_session), db: Session = Depends(get_db)) -> MessageResponse:
+def change_password(
+    payload: ChangePasswordRequest,
+    current: tuple[User, LoginRecord] = Depends(get_current_session),
+    db: Session = Depends(get_db),
+) -> MessageResponse:
     user, _login_record = current
     if not verify_password(payload.current_password, user.password_hash):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="当前密码错误。")
@@ -145,6 +162,7 @@ def _build_config_response(cfg: UserModelConfig | None) -> UserModelConfigRespon
     """
     data: dict = {}
     for cap in _CAPABILITIES:
+        data[f"{cap}_provider"] = getattr(cfg, f"{cap}_provider") or "" if cfg else ""
         data[f"{cap}_base_url"] = getattr(cfg, f"{cap}_base_url") or "" if cfg else ""
         data[f"{cap}_api_key_set"] = bool(cfg and getattr(cfg, f"{cap}_api_key"))
         data[f"{cap}_model_name"] = getattr(cfg, f"{cap}_model_name") or "" if cfg else ""
@@ -154,7 +172,10 @@ def _build_config_response(cfg: UserModelConfig | None) -> UserModelConfigRespon
 
 
 @router.get("/model-config", response_model=UserModelConfigResponse)
-def model_config(current: tuple[User, LoginRecord] = Depends(get_current_session), db: Session = Depends(get_db)) -> UserModelConfigResponse:
+def model_config(
+    current: tuple[User, LoginRecord] = Depends(get_current_session),
+    db: Session = Depends(get_db),
+) -> UserModelConfigResponse:
     """Return the user's own per-service model config.
 
     Only values the user has explicitly set are returned — empty strings

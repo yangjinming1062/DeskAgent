@@ -81,6 +81,12 @@ def _install_schema_extensions(conn: Connection) -> None:
     conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_memories_auto_inject_slot ON memories (user_id, context) WHERE context LIKE 'auto_inject:%'"))
     # Speeds up the recall consolidator's count-and-recent queries.
     conn.execute(text("CREATE INDEX IF NOT EXISTS ix_memories_recall_user_updated ON memories (user_id, updated_at DESC) WHERE context LIKE 'recall:%'"))
+    # Add capability provider columns if not exist (PostgreSQL schema extension)
+    for cap in ("llm", "stt", "tts", "image_gen", "video_gen"):
+        try:
+            conn.execute(text(f"ALTER TABLE user_model_configs ADD COLUMN IF NOT EXISTS {cap}_provider VARCHAR(64) DEFAULT ''"))
+        except Exception:
+            pass
 
 
 def init_database(engine: Engine | None = None) -> None:

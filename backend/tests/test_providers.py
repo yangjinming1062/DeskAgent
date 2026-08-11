@@ -59,7 +59,9 @@ class TestResolveProviderConfig:
         name comes from ``SERVICE_DEFAULT_PROVIDER['image_gen']`` (minimax),
         not from host inference. To pin a different provider with a custom
         URL, also set ``*_PROVIDER`` explicitly."""
-        monkeypatch.setattr("components.SETTINGS.image_gen_base_url", "https://api.minimaxi.com")
+        monkeypatch.setattr(
+            "components.SETTINGS.image_gen_base_url", "https://api.minimaxi.com"
+        )
         monkeypatch.setattr("components.SETTINGS.image_gen_api_key", "sk-minimax")
         monkeypatch.setattr("components.SETTINGS.image_gen_provider", "")
         cfg = resolve_provider_config(None, None, "image_gen")
@@ -67,7 +69,9 @@ class TestResolveProviderConfig:
         assert cfg.provider_name == "minimax"
 
     def test_minimax_default_provider_with_trailing_v1(self, monkeypatch):
-        monkeypatch.setattr("components.SETTINGS.image_gen_base_url", "https://api.minimaxi.com/v1")
+        monkeypatch.setattr(
+            "components.SETTINGS.image_gen_base_url", "https://api.minimaxi.com/v1"
+        )
         monkeypatch.setattr("components.SETTINGS.image_gen_api_key", "sk-minimax")
         monkeypatch.setattr("components.SETTINGS.image_gen_model_name", "image-01")
         monkeypatch.setattr("components.SETTINGS.image_gen_provider", "")
@@ -77,12 +81,16 @@ class TestResolveProviderConfig:
 
     def test_minimax_uses_minimax_key_not_llm_key(self, monkeypatch):
         """minimax provider must use MINIMAX_API_KEY, never the MiMo LLM_API_KEY."""
-        monkeypatch.setattr("components.SETTINGS.llm_base_url", "https://api.xiaomimimo.com/v1")
+        monkeypatch.setattr(
+            "components.SETTINGS.llm_base_url", "https://api.xiaomimimo.com/v1"
+        )
         monkeypatch.setattr("components.SETTINGS.llm_api_key", "sk-mimo-llm")
         monkeypatch.setattr("components.SETTINGS.image_gen_base_url", "")
         monkeypatch.setattr("components.SETTINGS.image_gen_api_key", "")
         monkeypatch.setattr("components.SETTINGS.image_gen_provider", "")
-        monkeypatch.setattr("components.SETTINGS.minimax_api_key", "sk-minimax-dedicated")
+        monkeypatch.setattr(
+            "components.SETTINGS.minimax_api_key", "sk-minimax-dedicated"
+        )
         cfg = resolve_provider_config(None, None, "image_gen")
         assert cfg.provider_name == "minimax"
         assert cfg.api_key == "sk-minimax-dedicated", "must not inherit MiMo key"
@@ -94,7 +102,9 @@ class TestResolveProviderConfig:
         # covers the (correct) inherited behavior; this old stub
         # asserted the pre-MiniMax-default code path that no longer
         # applies (see ISSUES.md 类别 8).
-        pytest.skip("outdated: image_gen default is now minimax; see test_minimax_uses_minimax_key_not_llm_key")
+        pytest.skip(
+            "outdated: image_gen default is now minimax; see test_minimax_uses_minimax_key_not_llm_key"
+        )
 
     def test_missing_all_config_raises(self, monkeypatch):
         # Skipped: ``image_gen`` now defaults to minimax with a
@@ -103,13 +113,17 @@ class TestResolveProviderConfig:
         pytest.skip("outdated: image_gen default is now minimax with default base_url")
 
     def test_explicit_provider_overrides_host_inference(self, monkeypatch):
-        monkeypatch.setattr("components.SETTINGS.image_gen_base_url", "https://api.minimaxi.com/v1")
+        monkeypatch.setattr(
+            "components.SETTINGS.image_gen_base_url", "https://api.minimaxi.com/v1"
+        )
         monkeypatch.setattr("components.SETTINGS.image_gen_api_key", "sk")
         monkeypatch.setattr("components.SETTINGS.image_gen_model_name", "image-01")
         monkeypatch.setattr("components.SETTINGS.image_gen_provider", "mimo")
         # mimo has no image-gen default URL, so llm_base_url must be set for
         # the provider to resolve a base_url.
-        monkeypatch.setattr("components.SETTINGS.llm_base_url", "https://api.openai.com/v1")
+        monkeypatch.setattr(
+            "components.SETTINGS.llm_base_url", "https://api.openai.com/v1"
+        )
         monkeypatch.setattr("components.SETTINGS.llm_api_key", "sk")
         cfg = resolve_provider_config(None, None, "image_gen")
         assert cfg.provider_name == "mimo"
@@ -137,7 +151,9 @@ class TestProviderForService:
         monkeypatch.setattr("components.SETTINGS.image_gen_api_key", "")
         monkeypatch.setattr("components.SETTINGS.image_gen_model_name", "dall-e-3")
         monkeypatch.setattr("components.SETTINGS.image_gen_provider", "mimo")
-        monkeypatch.setattr("components.SETTINGS.llm_base_url", "https://api.openai.com/v1")
+        monkeypatch.setattr(
+            "components.SETTINGS.llm_base_url", "https://api.openai.com/v1"
+        )
         monkeypatch.setattr("components.SETTINGS.llm_api_key", "sk")
         monkeypatch.setattr("components.SETTINGS.llm_model_name", "gpt-4o")
         provider = provider_for_service(None, None, "image_gen")
@@ -163,7 +179,13 @@ class TestProviderError:
         changes."""
         from services.llm import ProviderError
 
-        err = ProviderError("boom", status_code=401, body={"error": {"message": "auth"}}, provider="x", model="y")
+        err = ProviderError(
+            "boom",
+            status_code=401,
+            body={"error": {"message": "auth"}},
+            provider="x",
+            model="y",
+        )
         assert err.status_code == 401
         assert err.body == {"error": {"message": "auth"}}
         assert err.provider == "x"
@@ -184,7 +206,9 @@ class TestProviderError:
         a sensible FailoverReason (not 'unknown' falling-through)."""
         from services.llm import ProviderError, classify_api_error, FailoverReason
 
-        err = ProviderError("rate limited", status_code=429, body={"error": {"message": "rate limit"}})
+        err = ProviderError(
+            "rate limited", status_code=429, body={"error": {"message": "rate limit"}}
+        )
         classified = classify_api_error(err, provider="minimax", model="m")
         assert classified.status_code == 429
         assert classified.reason in (FailoverReason.rate_limit, FailoverReason.unknown)
@@ -448,7 +472,9 @@ class TestProviderChain:
         monkeypatch.setattr("components.SETTINGS.image_gen_provider", "minimax")
         # mimo has no image_gen default URL; provide the legacy llm_base_url
         # fallback so the mimo slot can still resolve a base_url.
-        monkeypatch.setattr("components.SETTINGS.llm_base_url", "https://api.openai.com/v1")
+        monkeypatch.setattr(
+            "components.SETTINGS.llm_base_url", "https://api.openai.com/v1"
+        )
 
         chain = resolve_provider_chain(None, None, "image_gen")
         assert [c.provider_name for c in chain] == ["minimax", "mimo"]
@@ -511,7 +537,9 @@ class TestExecuteWithFallback:
             "minimax_api_key",
             "minimax_base_url",
         ):
-            monkeypatch.setattr(f"components.SETTINGS.{field}", "" if field != "providers" else [])
+            monkeypatch.setattr(
+                f"components.SETTINGS.{field}", "" if field != "providers" else []
+            )
         monkeypatch.setattr("components.SETTINGS.providers", ["mimo", "minimax"])
         monkeypatch.setattr("components.SETTINGS.mimo_api_key", "sk-mimo")
         monkeypatch.setattr("components.SETTINGS.minimax_api_key", "sk-mm")
@@ -543,7 +571,9 @@ class TestExecuteWithFallback:
             calls.append(provider.provider_name)
             if provider.provider_name == "mimo":
                 # Auth-classified error → should_fallback=True.
-                raise ProviderError("auth", status_code=401, body={}, provider="mimo", model="m")
+                raise ProviderError(
+                    "auth", status_code=401, body={}, provider="mimo", model="m"
+                )
             return "ok-from-minimax"
 
         result = await execute_with_fallback(None, None, "llm", call_fn=call_fn)
@@ -562,7 +592,9 @@ class TestExecuteWithFallback:
 
         async def call_fn(provider):
             calls.append(provider.provider_name)
-            raise ProviderError("server error", status_code=500, body={}, provider="mimo", model="m")
+            raise ProviderError(
+                "server error", status_code=500, body={}, provider="mimo", model="m"
+            )
 
         with pytest.raises(ProviderError):
             await execute_with_fallback(None, None, "llm", call_fn=call_fn)
@@ -581,7 +613,9 @@ class TestExecuteWithFallback:
 
         async def call_fn(provider):
             calls.append(provider.provider_name)
-            raise ProviderError("auth", status_code=401, body={}, provider="mimo", model="m")
+            raise ProviderError(
+                "auth", status_code=401, body={}, provider="mimo", model="m"
+            )
 
         with pytest.raises(ProviderError):
             await execute_with_fallback(
@@ -601,7 +635,13 @@ class TestExecuteWithFallback:
         self._two_provider_llm_chain(monkeypatch)
 
         async def call_fn(provider):
-            raise ProviderError("auth", status_code=401, body={}, provider=provider.provider_name, model="m")
+            raise ProviderError(
+                "auth",
+                status_code=401,
+                body={},
+                provider=provider.provider_name,
+                model="m",
+            )
 
         with pytest.raises(ProviderError):
             await execute_with_fallback(None, None, "llm", call_fn=call_fn)
@@ -618,7 +658,9 @@ class TestExecuteWithFallback:
             "llm_base_url",
             "llm_api_key",
         ):
-            monkeypatch.setattr(f"components.SETTINGS.{field}", "" if field != "providers" else [])
+            monkeypatch.setattr(
+                f"components.SETTINGS.{field}", "" if field != "providers" else []
+            )
         with pytest.raises(MissingLlmConfigError):
             await execute_with_fallback(None, None, "llm", call_fn=lambda p: None)
 
@@ -647,7 +689,9 @@ def _async_handler(responses: list):
 
 
 def _mock_http(handler) -> httpx.AsyncClient:
-    return httpx.AsyncClient(base_url="https://api.minimaxi.com", transport=httpx.MockTransport(handler))
+    return httpx.AsyncClient(
+        base_url="https://api.minimaxi.com", transport=httpx.MockTransport(handler)
+    )
 
 
 class TestMiniMaxImageGen:
@@ -692,7 +736,10 @@ class TestMiniMaxImageGen:
             captured.append(json.loads(req.content))
             return httpx.Response(
                 200,
-                json={"base_resp": {"status_code": 0}, "data": {"image_base64": ["dGVzdA="]}},
+                json={
+                    "base_resp": {"status_code": 0},
+                    "data": {"image_base64": ["dGVzdA="]},
+                },
             )
 
         provider = self._make_provider(capture)
@@ -719,7 +766,9 @@ class TestMiniMaxImageGen:
         with pytest.raises(ProviderError) as exc_info:
             await provider.generate(ImageGenRequest(prompt="x"))
         assert exc_info.value.status_code == 401
-        classified = classify_api_error(exc_info.value, provider="minimax", model="image-01")
+        classified = classify_api_error(
+            exc_info.value, provider="minimax", model="image-01"
+        )
         assert classified.reason == FailoverReason.auth
         assert classified.retryable is False
 
@@ -727,23 +776,38 @@ class TestMiniMaxImageGen:
     async def test_base_resp_rate_limit(self):
         from services.llm import ProviderError, classify_api_error, FailoverReason
 
-        handler = _async_handler([{"base_resp": {"status_code": 1002, "status_msg": "rate limit"}}])
+        handler = _async_handler(
+            [{"base_resp": {"status_code": 1002, "status_msg": "rate limit"}}]
+        )
         provider = self._make_provider(handler)
         with pytest.raises(ProviderError) as exc_info:
             await provider.generate(ImageGenRequest(prompt="x"))
         assert exc_info.value.status_code == 429
-        classified = classify_api_error(exc_info.value, provider="minimax", model="image-01")
+        classified = classify_api_error(
+            exc_info.value, provider="minimax", model="image-01"
+        )
         assert classified.reason == FailoverReason.rate_limit
 
     @pytest.mark.asyncio
     async def test_base_resp_content_filter(self):
         from services.llm import classify_api_error, FailoverReason
 
-        handler = _async_handler([{"base_resp": {"status_code": 1027, "status_msg": "violated safety policy"}}])
+        handler = _async_handler(
+            [
+                {
+                    "base_resp": {
+                        "status_code": 1027,
+                        "status_msg": "violated safety policy",
+                    }
+                }
+            ]
+        )
         provider = self._make_provider(handler)
         with pytest.raises(Exception) as exc_info:
             await provider.generate(ImageGenRequest(prompt="x"))
-        classified = classify_api_error(exc_info.value, provider="minimax", model="image-01")
+        classified = classify_api_error(
+            exc_info.value, provider="minimax", model="image-01"
+        )
         assert classified.reason == FailoverReason.content_policy_blocked
         assert classified.retryable is False
 
@@ -767,11 +831,21 @@ class TestMiniMaxImageGen:
 
         async def capture(req: httpx.Request) -> httpx.Response:
             captured.append(json.loads(req.content))
-            return httpx.Response(200, json={"base_resp": {"status_code": 0}, "data": {"image_base64": ["aGVsbG8="]}})
+            return httpx.Response(
+                200,
+                json={
+                    "base_resp": {"status_code": 0},
+                    "data": {"image_base64": ["aGVsbG8="]},
+                },
+            )
 
         provider = self._make_provider(capture)
-        await provider.generate(ImageGenRequest(prompt="x", reference_image="https://ref/seed.png"))
-        assert captured[0]["subject_reference"] == [{"type": "character", "image_file": "https://ref/seed.png"}]
+        await provider.generate(
+            ImageGenRequest(prompt="x", reference_image="https://ref/seed.png")
+        )
+        assert captured[0]["subject_reference"] == [
+            {"type": "character", "image_file": "https://ref/seed.png"}
+        ]
         assert captured[0]["prompt"] == "x"
 
     @pytest.mark.asyncio
@@ -779,14 +853,25 @@ class TestMiniMaxImageGen:
         """Empty image_base64 must raise ProviderError that classifies as should_fallback."""
         from services.llm import classify_api_error
 
-        handler = _async_handler([{"base_resp": {"status_code": 0}, "data": {"image_base64": []}}])
+        handler = _async_handler(
+            [{"base_resp": {"status_code": 0}, "data": {"image_base64": []}}]
+        )
         provider = self._make_provider(handler)
         with pytest.raises(ProviderError, match="returned no images") as exc_info:
-            await provider.generate(ImageGenRequest(prompt="x", reference_image="data:image/png;base64,AAA="))
-        assert exc_info.value.body == {"base_resp": {"status_code": 0}, "data": {"image_base64": []}}
+            await provider.generate(
+                ImageGenRequest(
+                    prompt="x", reference_image="data:image/png;base64,AAA="
+                )
+            )
+        assert exc_info.value.body == {
+            "base_resp": {"status_code": 0},
+            "data": {"image_base64": []},
+        }
         assert exc_info.value.provider == "minimax"
         assert exc_info.value.model == "image-01"
-        classified = classify_api_error(exc_info.value, provider="minimax", model="image-01")
+        classified = classify_api_error(
+            exc_info.value, provider="minimax", model="image-01"
+        )
         assert classified.should_fallback is True
         assert classified.retryable is False
 
@@ -808,7 +893,9 @@ class TestEmptyImageResultFallback:
     def test_all_providers_trigger_fallback(self, message):
         from services.llm import classify_api_error
 
-        classified = classify_api_error(RuntimeError(message), provider="test", model="test")
+        classified = classify_api_error(
+            RuntimeError(message), provider="test", model="test"
+        )
         assert classified.should_fallback is True
         assert classified.retryable is False
 
@@ -876,7 +963,22 @@ class TestGeminiImageGen:
     def _ok_response():
         return httpx.Response(
             200,
-            json={"candidates": [{"content": {"parts": [{"inlineData": {"mimeType": "image/png", "data": "aGVsbG8="}}]}}]},
+            json={
+                "candidates": [
+                    {
+                        "content": {
+                            "parts": [
+                                {
+                                    "inlineData": {
+                                        "mimeType": "image/png",
+                                        "data": "aGVsbG8=",
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                ]
+            },
         )
 
     @pytest.mark.asyncio
@@ -901,7 +1003,11 @@ class TestGeminiImageGen:
             return self._ok_response()
 
         provider = self._make_provider(capture)
-        await provider.generate(ImageGenRequest(prompt="re-render", reference_image="data:image/jpeg;base64,AAA="))
+        await provider.generate(
+            ImageGenRequest(
+                prompt="re-render", reference_image="data:image/jpeg;base64,AAA="
+            )
+        )
         parts = captured[0]["contents"][0]["parts"]
         assert parts[0]["inlineData"] == {"mimeType": "image/jpeg", "data": "AAA="}
         assert parts[1] == {"text": "re-render"}
@@ -922,12 +1028,12 @@ class TestGeminiImageGen:
 
         monkeypatch.setattr(gemini_image, "resolve_reference_bytes", fake_resolve)
         provider = self._make_provider(capture)
-        await provider.generate(ImageGenRequest(prompt="x", reference_image="https://cdn.example/ref.png"))
+        await provider.generate(
+            ImageGenRequest(prompt="x", reference_image="https://cdn.example/ref.png")
+        )
         parts = captured[0]["contents"][0]["parts"]
         assert parts[0]["inlineData"] == {"mimeType": "image/png", "data": "iVBORw=="}
         assert parts[1] == {"text": "x"}
-
-
 
 
 class TestMiMoImageGenReference:
@@ -944,7 +1050,19 @@ class TestMiMoImageGenReference:
         class _Images:
             async def generate(self, **kwargs):
                 seen["kwargs"] = kwargs
-                return type("_Resp", (), {"data": [type("_Item", (), {"url": "http://out/1.png", "b64_json": None})()]})()
+                return type(
+                    "_Resp",
+                    (),
+                    {
+                        "data": [
+                            type(
+                                "_Item",
+                                (),
+                                {"url": "http://out/1.png", "b64_json": None},
+                            )()
+                        ]
+                    },
+                )()
 
         provider = MiMoImageGenProvider(
             ProviderConfig(
@@ -956,7 +1074,9 @@ class TestMiMoImageGenReference:
             )
         )
         provider._client = type("_Client", (), {"images": _Images()})()
-        result = await provider.generate(ImageGenRequest(prompt="a cat", reference_image="https://ref/seed.png"))
+        result = await provider.generate(
+            ImageGenRequest(prompt="a cat", reference_image="https://ref/seed.png")
+        )
         assert result.images[0].url == "http://out/1.png"
         assert seen["kwargs"]["prompt"] == "a cat"
         assert "reference" not in seen["kwargs"]
@@ -990,7 +1110,9 @@ class TestZhipuImageGenReference:
 
         async def capture(req: httpx.Request) -> httpx.Response:
             captured.append(json.loads(req.content))
-            return httpx.Response(200, json={"data": [{"url": "https://cdn.bigmodel.cn/1.png"}]})
+            return httpx.Response(
+                200, json={"data": [{"url": "https://cdn.bigmodel.cn/1.png"}]}
+            )
 
         async def cdn_handler(req: httpx.Request) -> httpx.Response:
             return httpx.Response(200, content=b"\x89PNG")
@@ -1002,11 +1124,12 @@ class TestZhipuImageGenReference:
         cdn_client = httpx.AsyncClient(transport=httpx.MockTransport(cdn_handler))
         monkeypatch.setattr(zhipu_image.httpx, "AsyncClient", lambda **kw: cdn_client)
 
-        result = await provider.generate(ImageGenRequest(prompt="a cat", reference_image="https://ref/seed.png"))
+        result = await provider.generate(
+            ImageGenRequest(prompt="a cat", reference_image="https://ref/seed.png")
+        )
         assert result.images[0].b64 == "iVBORw=="
         assert captured[0]["prompt"] == "a cat"
         assert "reference" not in captured[0]
-
 
 
 class TestMiniMaxTTS:
@@ -1064,9 +1187,13 @@ class TestMiniMaxVideoGen:
 
     @pytest.mark.asyncio
     async def test_submit_returns_task_id(self):
-        handler = _async_handler([{"base_resp": {"status_code": 0}, "task_id": "task-abc-123"}])
+        handler = _async_handler(
+            [{"base_resp": {"status_code": 0}, "task_id": "task-abc-123"}]
+        )
         provider = self._make_provider(handler)
-        job = await provider.submit(VideoGenRequest(prompt="a cat", aspect_ratio="16:9"))
+        job = await provider.submit(
+            VideoGenRequest(prompt="a cat", aspect_ratio="16:9")
+        )
         assert job.task_id == "task-abc-123"
         assert job.status == "queued"
 
@@ -1076,10 +1203,16 @@ class TestMiniMaxVideoGen:
 
         async def capture(req: httpx.Request) -> httpx.Response:
             captured.append(json.loads(req.content))
-            return httpx.Response(200, json={"base_resp": {"status_code": 0}, "task_id": "task-content"})
+            return httpx.Response(
+                200, json={"base_resp": {"status_code": 0}, "task_id": "task-content"}
+            )
 
         provider = self._make_provider(capture)
-        await provider.submit(VideoGenRequest(prompt="a cat", duration=6, resolution="768P", aspect_ratio="9:16"))
+        await provider.submit(
+            VideoGenRequest(
+                prompt="a cat", duration=6, resolution="768P", aspect_ratio="9:16"
+            )
+        )
         body = captured[0]
         assert body["model"] == "MiniMax-H3"
         assert body["content"] == [{"type": "text", "text": "a cat"}]
@@ -1094,7 +1227,9 @@ class TestMiniMaxVideoGen:
 
         async def capture(req: httpx.Request) -> httpx.Response:
             captured.append(json.loads(req.content))
-            return httpx.Response(200, json={"base_resp": {"status_code": 0}, "task_id": "task-i2v"})
+            return httpx.Response(
+                200, json={"base_resp": {"status_code": 0}, "task_id": "task-i2v"}
+            )
 
         provider = self._make_provider(capture)
         await provider.submit(
@@ -1184,7 +1319,9 @@ class TestMiniMaxVideoGen:
     async def test_poll_unexpected_body_shape_raises(self):
         # docs strictly defines {task: VideoTask}; anything else must surface
         # as poll_failed (not a half-parsed silent "processing").
-        handler = _async_handler([{"base_resp": {"status_code": 0}, "status": "succeeded"}])
+        handler = _async_handler(
+            [{"base_resp": {"status_code": 0}, "status": "succeeded"}]
+        )
         provider = self._make_provider(handler)
         with pytest.raises(RuntimeError, match="unexpected body shape"):
             await provider.poll("task-abc")
@@ -1218,7 +1355,9 @@ class TestMiniMaxVideoGen:
         provider = self._make_provider(_async_handler([]))
         big_prompt = "x" * (_MAX_PROMPT_CHARS + 1)
         with pytest.raises(ValueError, match="exceeds MiniMax limit"):
-            await provider.submit(VideoGenRequest(prompt=big_prompt, aspect_ratio="16:9"))
+            await provider.submit(
+                VideoGenRequest(prompt=big_prompt, aspect_ratio="16:9")
+            )
 
     @pytest.mark.asyncio
     async def test_fetch_is_unreachable_on_h3(self):
@@ -1232,7 +1371,11 @@ class TestMiniMaxVideoGen:
         # 10s is legal on v1 but 1080P is not a v2 resolution.
         provider = self._make_provider(_async_handler([]))
         with pytest.raises(ValueError, match="v2. requires resolution"):
-            await provider.submit(VideoGenRequest(prompt="x", duration=10, resolution="1080P", aspect_ratio="16:9"))
+            await provider.submit(
+                VideoGenRequest(
+                    prompt="x", duration=10, resolution="1080P", aspect_ratio="16:9"
+                )
+            )
 
     @pytest.mark.asyncio
     async def test_submit_t2v_requires_aspect_ratio(self):
@@ -1269,7 +1412,9 @@ class TestMiniMaxVideoGenV1:
         async def capture(req: httpx.Request) -> httpx.Response:
             captured.append(req)
             bodies.append(json.loads(req.content))
-            return httpx.Response(200, json={"base_resp": {"status_code": 0}, "task_id": "task-v1"})
+            return httpx.Response(
+                200, json={"base_resp": {"status_code": 0}, "task_id": "task-v1"}
+            )
 
         provider = self._make_provider(capture)
         job = await provider.submit(
@@ -1295,7 +1440,9 @@ class TestMiniMaxVideoGenV1:
     @pytest.mark.asyncio
     async def test_submit_allows_t2v_without_aspect_ratio(self):
         # Unlike v2, v1 lets the server pick a default aspect ratio.
-        handler = _async_handler([{"base_resp": {"status_code": 0}, "task_id": "task-v1-t2v"}])
+        handler = _async_handler(
+            [{"base_resp": {"status_code": 0}, "task_id": "task-v1-t2v"}]
+        )
         provider = self._make_provider(handler)
         job = await provider.submit(VideoGenRequest(prompt="a cat"))
         assert job.status == "queued"
@@ -1304,9 +1451,13 @@ class TestMiniMaxVideoGenV1:
     async def test_submit_rejects_v2_only_params(self):
         provider = self._make_provider(_async_handler([]))
         with pytest.raises(ValueError, match="v1. requires duration"):
-            await provider.submit(VideoGenRequest(prompt="x", duration=15, resolution="768P"))
+            await provider.submit(
+                VideoGenRequest(prompt="x", duration=15, resolution="768P")
+            )
         with pytest.raises(ValueError, match="v1. requires resolution"):
-            await provider.submit(VideoGenRequest(prompt="x", duration=6, resolution="2K"))
+            await provider.submit(
+                VideoGenRequest(prompt="x", duration=6, resolution="2K")
+            )
 
     @pytest.mark.asyncio
     async def test_poll_success_returns_file_id_and_no_inline_url(self):
@@ -1314,7 +1465,14 @@ class TestMiniMaxVideoGenV1:
 
         async def handler(req: httpx.Request) -> httpx.Response:
             captured.append(req)
-            return httpx.Response(200, json={"base_resp": {"status_code": 0}, "status": "Success", "file_id": "file-42"})
+            return httpx.Response(
+                200,
+                json={
+                    "base_resp": {"status_code": 0},
+                    "status": "Success",
+                    "file_id": "file-42",
+                },
+            )
 
         provider = self._make_provider(handler)
         job = await provider.poll("task-v1")
@@ -1327,7 +1485,11 @@ class TestMiniMaxVideoGenV1:
 
     @pytest.mark.asyncio
     async def test_poll_maps_v1_status_enum(self):
-        for raw, expected in (("Queueing", "queued"), ("Processing", "processing"), ("Fail", "failed")):
+        for raw, expected in (
+            ("Queueing", "queued"),
+            ("Processing", "processing"),
+            ("Fail", "failed"),
+        ):
             handler = _async_handler([{"base_resp": {"status_code": 0}, "status": raw}])
             provider = self._make_provider(handler)
             job = await provider.poll("task-v1")
@@ -1336,7 +1498,13 @@ class TestMiniMaxVideoGenV1:
     @pytest.mark.asyncio
     async def test_poll_fail_extracts_error_message(self):
         handler = _async_handler(
-            [{"base_resp": {"status_code": 0}, "status": "Fail", "error_message": "content rejected"}]
+            [
+                {
+                    "base_resp": {"status_code": 0},
+                    "status": "Fail",
+                    "error_message": "content rejected",
+                }
+            ]
         )
         provider = self._make_provider(handler)
         job = await provider.poll("task-v1")
@@ -1353,7 +1521,11 @@ class TestMiniMaxVideoGenV1:
                 200,
                 json={
                     "base_resp": {"status_code": 0},
-                    "file": {"download_url": "https://cdn.minimax.chat/v1.mp4", "content_type": "video/mp4", "bytes": 123},
+                    "file": {
+                        "download_url": "https://cdn.minimax.chat/v1.mp4",
+                        "content_type": "video/mp4",
+                        "bytes": 123,
+                    },
                 },
             )
 
@@ -1386,7 +1558,9 @@ class TestMiniMaxVideoGenV1:
 
         async def capture(req: httpx.Request) -> httpx.Response:
             captured.append(req)
-            return httpx.Response(200, json={"base_resp": {"status_code": 0}, "task_id": "t"})
+            return httpx.Response(
+                200, json={"base_resp": {"status_code": 0}, "task_id": "t"}
+            )
 
         provider = self._make_provider(capture, model="some-future-model")
         await provider.submit(VideoGenRequest(prompt="x"))
@@ -1400,7 +1574,9 @@ def _mock_grok_http(handler) -> httpx.AsyncClient:
     # base_url omits /v1 so mock-transport-captured request paths mirror the
     # live wire paths (the real base_url includes /v1; the provider posts
     # relative paths to avoid double-prefixing).
-    return httpx.AsyncClient(base_url="https://api.x.ai", transport=httpx.MockTransport(handler))
+    return httpx.AsyncClient(
+        base_url="https://api.x.ai", transport=httpx.MockTransport(handler)
+    )
 
 
 class TestGrokImageGen:
@@ -1429,7 +1605,12 @@ class TestGrokImageGen:
             captured.append(json.loads(req.content))
             return httpx.Response(
                 200,
-                json={"data": [{"url": "https://cdn.x.ai/1.png"}, {"url": "https://cdn.x.ai/2.png"}]},
+                json={
+                    "data": [
+                        {"url": "https://cdn.x.ai/1.png"},
+                        {"url": "https://cdn.x.ai/2.png"},
+                    ]
+                },
             )
 
         async def cdn_handler(req: httpx.Request) -> httpx.Response:
@@ -1460,7 +1641,9 @@ class TestGrokImageGen:
         async def handler(req: httpx.Request) -> httpx.Response:
             captured.append(req)
             bodies.append(json.loads(req.content))
-            return httpx.Response(200, json={"data": [{"url": "https://cdn.x.ai/out.png"}]})
+            return httpx.Response(
+                200, json={"data": [{"url": "https://cdn.x.ai/out.png"}]}
+            )
 
         async def cdn_handler(req: httpx.Request) -> httpx.Response:
             return httpx.Response(200, content=b"\x89PNG")
@@ -1477,7 +1660,10 @@ class TestGrokImageGen:
             )
         )
         assert captured[0].url.path == "/images/edits"
-        assert bodies[0]["image"] == {"url": "https://ref/seed.png", "type": "image_url"}
+        assert bodies[0]["image"] == {
+            "url": "https://ref/seed.png",
+            "type": "image_url",
+        }
         assert bodies[0]["aspect_ratio"] == "16:9"
 
     @pytest.mark.asyncio
@@ -1638,7 +1824,9 @@ class TestGrokVideoGen:
     async def test_submit_returns_request_id(self):
         handler = _async_handler([{"request_id": "grok-task-1"}])
         provider = self._make_provider(handler)
-        job = await provider.submit(VideoGenRequest(prompt="a cat", duration=10, resolution="720p"))
+        job = await provider.submit(
+            VideoGenRequest(prompt="a cat", duration=10, resolution="720p")
+        )
         assert job.task_id == "grok-task-1"
         assert job.status == "queued"
 
@@ -1666,13 +1854,18 @@ class TestGrokVideoGen:
         assert body["duration"] == 5
         assert body["resolution"] == "720p"
         assert body["aspect_ratio"] == "16:9"
-        assert body["image"] == {"url": "https://example.com/seed.png", "type": "image_url"}
+        assert body["image"] == {
+            "url": "https://example.com/seed.png",
+            "type": "image_url",
+        }
 
     @pytest.mark.asyncio
     async def test_submit_rejects_prompt_over_7000_chars(self):
         provider = self._make_provider(_async_handler([]))
         with pytest.raises(ValueError, match="exceeds xAI limit"):
-            await provider.submit(VideoGenRequest(prompt="x" * 7001, duration=5, resolution="720p"))
+            await provider.submit(
+                VideoGenRequest(prompt="x" * 7001, duration=5, resolution="720p")
+            )
 
     @pytest.mark.asyncio
     async def test_submit_accepts_full_duration_range(self):
@@ -1684,16 +1877,24 @@ class TestGrokVideoGen:
             return httpx.Response(200, json={"request_id": "ok"})
 
         provider = self._make_provider(capture)
-        await provider.submit(VideoGenRequest(prompt="x", duration=1, resolution="720p"))
-        await provider.submit(VideoGenRequest(prompt="x", duration=15, resolution="720p"))
+        await provider.submit(
+            VideoGenRequest(prompt="x", duration=1, resolution="720p")
+        )
+        await provider.submit(
+            VideoGenRequest(prompt="x", duration=15, resolution="720p")
+        )
 
     @pytest.mark.asyncio
     async def test_submit_rejects_duration_outside_range(self):
         provider = self._make_provider(_async_handler([]))
         with pytest.raises(ValueError, match="requires duration"):
-            await provider.submit(VideoGenRequest(prompt="x", duration=0, resolution="720p"))
+            await provider.submit(
+                VideoGenRequest(prompt="x", duration=0, resolution="720p")
+            )
         with pytest.raises(ValueError, match="requires duration"):
-            await provider.submit(VideoGenRequest(prompt="x", duration=16, resolution="720p"))
+            await provider.submit(
+                VideoGenRequest(prompt="x", duration=16, resolution="720p")
+            )
 
     @pytest.mark.asyncio
     async def test_submit_accepts_both_resolution_casings(self):
@@ -1701,13 +1902,17 @@ class TestGrokVideoGen:
         for res in ("480p", "720p", "1080p", "480P", "720P", "1080P"):
             handler = _async_handler([{"request_id": "ok"}])
             provider = self._make_provider(handler)
-            await provider.submit(VideoGenRequest(prompt="x", duration=5, resolution=res))
+            await provider.submit(
+                VideoGenRequest(prompt="x", duration=5, resolution=res)
+            )
 
     @pytest.mark.asyncio
     async def test_submit_rejects_unsupported_resolution(self):
         provider = self._make_provider(_async_handler([]))
         with pytest.raises(ValueError, match="requires resolution"):
-            await provider.submit(VideoGenRequest(prompt="x", duration=10, resolution="4K"))
+            await provider.submit(
+                VideoGenRequest(prompt="x", duration=10, resolution="4K")
+            )
 
     @pytest.mark.asyncio
     async def test_poll_done_returns_inline_url(self):
@@ -1785,9 +1990,7 @@ class TestGrokVideoGen:
     async def test_poll_failed_non_dict_error_does_not_pollute_message(self):
         # Defensive: if docs ever drift to a non-dict, non-string error,
         # surface a tagged repr rather than passing the raw blob through.
-        handler = _async_handler(
-            [{"status": "failed", "error": ["weird", "list"]}]
-        )
+        handler = _async_handler([{"status": "failed", "error": ["weird", "list"]}])
         provider = self._make_provider(handler)
         job = await provider.poll("task")
         assert job.status == "failed"
@@ -1833,11 +2036,20 @@ class TestPerUserProviderChain:
         from modules.auth import User, UserModelConfig, hash_password
 
         with SessionLocal() as db:
-            user = User(username="u", password_hash=hash_password("p1234567"), is_active=True, can_use=True)
+            user = User(
+                username="u",
+                password_hash=hash_password("p1234567"),
+                is_active=True,
+                can_use=True,
+            )
             db.add(user)
             db.commit()
             db.refresh(user)
-            db.add(UserModelConfig(user_id=user.id, provider_config=json.dumps(provider_config)))
+            db.add(
+                UserModelConfig(
+                    user_id=user.id, provider_config=json.dumps(provider_config)
+                )
+            )
             db.commit()
             return user.id
 
@@ -1851,7 +2063,16 @@ class TestPerUserProviderChain:
         monkeypatch.setattr("components.SETTINGS.minimax_api_key", "sk-global-mm")
 
         _, SessionLocal = _patch_db
-        user_id = self._seed(SessionLocal, [{"name": "minimax", "api_key": "sk-user-mm", "base_url": "https://user-mm.example/v1"}])
+        user_id = self._seed(
+            SessionLocal,
+            [
+                {
+                    "name": "minimax",
+                    "api_key": "sk-user-mm",
+                    "base_url": "https://user-mm.example/v1",
+                }
+            ],
+        )
         with SessionLocal() as db:
             chain = resolve_provider_chain(db, user_id, "llm")
         # User minimax (tier 1) first; global mimo next; global minimax deduped away.
@@ -1868,7 +2089,9 @@ class TestPerUserProviderChain:
 
         _, SessionLocal = _patch_db
         # mimo slot lacks an api_key → dropped; falls through to global minimax.
-        user_id = self._seed(SessionLocal, [{"name": "mimo", "api_key": "", "base_url": "https://x/v1"}])
+        user_id = self._seed(
+            SessionLocal, [{"name": "mimo", "api_key": "", "base_url": "https://x/v1"}]
+        )
         with SessionLocal() as db:
             chain = resolve_provider_chain(db, user_id, "llm")
         assert [c.provider_name for c in chain] == ["minimax"]
@@ -1882,6 +2105,49 @@ class TestPerUserProviderChain:
         monkeypatch.setattr("components.SETTINGS.mimo_api_key", "sk-mimo")
         monkeypatch.setattr("components.SETTINGS.minimax_api_key", "sk-mm")
         chain = resolve_provider_chain(None, None, "llm")
+        assert [c.provider_name for c in chain] == ["mimo", "minimax"]
+
+    def test_user_capability_provider_pin(self, _patch_db, monkeypatch):
+        from modules.auth import User, UserModelConfig, hash_password
+        from services.llm import resolve_provider_chain
+
+        self._reset(monkeypatch)
+        monkeypatch.setattr("components.SETTINGS.providers", ["minimax", "mimo"])
+
+        _, SessionLocal = _patch_db
+        with SessionLocal() as db:
+            user = User(
+                username="u_pin",
+                password_hash=hash_password("p1234567"),
+                is_active=True,
+                can_use=True,
+            )
+            db.add(user)
+            db.commit()
+            db.refresh(user)
+            db.add(
+                UserModelConfig(
+                    user_id=user.id,
+                    tts_provider="mimo",
+                    provider_config=json.dumps(
+                        [
+                            {
+                                "name": "minimax",
+                                "api_key": "sk-mm",
+                                "base_url": "https://mm/v1",
+                            },
+                            {
+                                "name": "mimo",
+                                "api_key": "sk-mimo",
+                                "base_url": "https://mimo/v1",
+                            },
+                        ]
+                    ),
+                )
+            )
+            db.commit()
+            chain = resolve_provider_chain(db, user.id, "tts")
+        # tts_provider is pinned to mimo, so mimo is moved to the front for tts
         assert [c.provider_name for c in chain] == ["mimo", "minimax"]
 
 
@@ -1907,14 +2173,27 @@ class TestResolveUserLlmConfigCredentials:
         with SessionLocal() as db:
             from modules.auth import User, UserModelConfig, hash_password
 
-            user = User(username="u", password_hash=hash_password("p1234567"), is_active=True, can_use=True)
+            user = User(
+                username="u",
+                password_hash=hash_password("p1234567"),
+                is_active=True,
+                can_use=True,
+            )
             db.add(user)
             db.commit()
             db.refresh(user)
             db.add(
                 UserModelConfig(
                     user_id=user.id,
-                    provider_config=json.dumps([{"name": "minimax", "api_key": "sk-user-mm", "base_url": "https://user-mm.example/v1"}]),
+                    provider_config=json.dumps(
+                        [
+                            {
+                                "name": "minimax",
+                                "api_key": "sk-user-mm",
+                                "base_url": "https://user-mm.example/v1",
+                            }
+                        ]
+                    ),
                 )
             )
             db.commit()
@@ -1932,7 +2211,12 @@ class TestResolveUserLlmConfigCredentials:
         self._reset(monkeypatch)
         monkeypatch.setattr("components.SETTINGS.providers", [])
         cfg = resolve_user_llm_config(None, None)
-        assert cfg == {"api_key": "", "base_url": "", "model_name": "", "provider_name": ""}
+        assert cfg == {
+            "api_key": "",
+            "base_url": "",
+            "model_name": "",
+            "provider_name": "",
+        }
 
 
 class TestMiniMaxInnerCodes:
@@ -1945,13 +2229,27 @@ class TestMiniMaxInnerCodes:
         from services.llm.providers.base import ProviderError
         from services.llm.providers.minimax._errors import raise_for_minimax_response
 
-        resp = type("R", (), {"status_code": 200, "json": lambda self: {"base_resp": {"status_code": status_code, "status_msg": status_msg}}})()
+        resp = type(
+            "R",
+            (),
+            {
+                "status_code": 200,
+                "json": lambda self: {
+                    "base_resp": {"status_code": status_code, "status_msg": status_msg}
+                },
+            },
+        )()
         with pytest.raises(ProviderError) as exc:
             raise_for_minimax_response(resp, provider="minimax", model="MiniMax-H3")
-        return exc.value, classify_api_error(exc.value, provider="minimax", model="MiniMax-H3")
+        return exc.value, classify_api_error(
+            exc.value, provider="minimax", model="MiniMax-H3"
+        )
 
     def test_plan_refusal_is_billing_not_format_error(self):
-        err, classified = self._classify("invalid params, TokenPlan 或 Credit 暂不支持 MiniMax-H3 系列模型 (2013)", 2013)
+        err, classified = self._classify(
+            "invalid params, TokenPlan 或 Credit 暂不支持 MiniMax-H3 系列模型 (2013)",
+            2013,
+        )
         assert err.status_code == 402
         assert classified.reason.value == "billing"
         # A model gated on this key may be enabled on another one.

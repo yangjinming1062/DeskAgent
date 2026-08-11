@@ -31,12 +31,20 @@ def list_users(_admin: str = Depends(get_current_admin_token), db: Session = Dep
 
 
 @router.get("/users/{user_id}", response_model=UserResponse)
-def get_user(user_id: int, _admin: str = Depends(get_current_admin_token), db: Session = Depends(get_db)) -> UserResponse:
+def get_user(
+    user_id: int,
+    _admin: str = Depends(get_current_admin_token),
+    db: Session = Depends(get_db),
+) -> UserResponse:
     return UserResponse.model_validate(get_or_404(db, User, id=user_id, detail="用户不存在。"))
 
 
 @router.post("/users", response_model=UserResponse)
-def create_user(payload: UserCreate, _admin: str = Depends(get_current_admin_token), db: Session = Depends(get_db)) -> UserResponse:
+def create_user(
+    payload: UserCreate,
+    _admin: str = Depends(get_current_admin_token),
+    db: Session = Depends(get_db),
+) -> UserResponse:
     if db.query(User).filter(User.username == payload.username).one_or_none():
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="用户名已存在。")
     user = User(
@@ -52,7 +60,12 @@ def create_user(payload: UserCreate, _admin: str = Depends(get_current_admin_tok
 
 
 @router.patch("/users/{user_id}", response_model=UserResponse)
-def update_user(user_id: int, payload: UserUpdate, _admin: str = Depends(get_current_admin_token), db: Session = Depends(get_db)) -> UserResponse:
+def update_user(
+    user_id: int,
+    payload: UserUpdate,
+    _admin: str = Depends(get_current_admin_token),
+    db: Session = Depends(get_db),
+) -> UserResponse:
     user = get_or_404(db, User, id=user_id, detail="用户不存在。")
     if payload.password is not None:
         user.password_hash = hash_password(payload.password)
@@ -65,14 +78,22 @@ def update_user(user_id: int, payload: UserUpdate, _admin: str = Depends(get_cur
 
 
 @router.delete("/users/{user_id}", response_model=dict)
-def delete_user(user_id: int, _admin: str = Depends(get_current_admin_token), db: Session = Depends(get_db)) -> dict:
+def delete_user(
+    user_id: int,
+    _admin: str = Depends(get_current_admin_token),
+    db: Session = Depends(get_db),
+) -> dict:
     db.delete(get_or_404(db, User, id=user_id, detail="用户不存在。"))
     db.commit()
     return {"message": "用户已删除。"}
 
 
 @router.patch("/users/{user_id}/toggle-active")
-def toggle_user_active(user_id: int, _admin: str = Depends(get_current_admin_token), db: Session = Depends(get_db)) -> UserResponse:
+def toggle_user_active(
+    user_id: int,
+    _admin: str = Depends(get_current_admin_token),
+    db: Session = Depends(get_db),
+) -> UserResponse:
     user = get_or_404(db, User, id=user_id, detail="用户不存在。")
     user.is_active = not user.is_active
     db.commit()
@@ -82,19 +103,24 @@ def toggle_user_active(user_id: int, _admin: str = Depends(get_current_admin_tok
 def _config_list_item(r: UserModelConfig) -> UserModelConfigListItem:
     return UserModelConfigListItem(
         user_id=r.user_id,
+        llm_provider=r.llm_provider or "",
         llm_base_url=r.llm_base_url,
         llm_api_key_fingerprint=fingerprint_api_key(r.llm_api_key),
         llm_api_key_set=bool(r.llm_api_key),
         llm_model_name=r.llm_model_name,
+        stt_provider=r.stt_provider or "",
         stt_base_url=r.stt_base_url,
         stt_api_key_set=bool(r.stt_api_key),
         stt_model_name=r.stt_model_name,
+        tts_provider=r.tts_provider or "",
         tts_base_url=r.tts_base_url,
         tts_api_key_set=bool(r.tts_api_key),
         tts_model_name=r.tts_model_name,
+        image_gen_provider=r.image_gen_provider or "",
         image_gen_base_url=r.image_gen_base_url,
         image_gen_api_key_set=bool(r.image_gen_api_key),
         image_gen_model_name=r.image_gen_model_name,
+        video_gen_provider=r.video_gen_provider or "",
         video_gen_base_url=r.video_gen_base_url,
         video_gen_api_key_set=bool(r.video_gen_api_key),
         video_gen_model_name=r.video_gen_model_name,
@@ -108,7 +134,12 @@ def list_model_configs(_admin: str = Depends(get_current_admin_token), db: Sessi
 
 
 @router.put("/{user_id}/model-config")
-def upsert_model_config(user_id: int, payload: UserModelConfigRequest, _admin: str = Depends(get_current_admin_token), db: Session = Depends(get_db)) -> dict:
+def upsert_model_config(
+    user_id: int,
+    payload: UserModelConfigRequest,
+    _admin: str = Depends(get_current_admin_token),
+    db: Session = Depends(get_db),
+) -> dict:
     get_or_404(db, User, id=user_id, detail="用户不存在。")
     config = db.query(UserModelConfig).filter(UserModelConfig.user_id == user_id).one_or_none()
     provider_json = merge_provider_json(payload.provider_config, config)
@@ -124,7 +155,11 @@ def upsert_model_config(user_id: int, payload: UserModelConfigRequest, _admin: s
 
 
 @router.delete("/{user_id}/model-config")
-def delete_model_config(user_id: int, _admin: str = Depends(get_current_admin_token), db: Session = Depends(get_db)) -> dict:
+def delete_model_config(
+    user_id: int,
+    _admin: str = Depends(get_current_admin_token),
+    db: Session = Depends(get_db),
+) -> dict:
     db.delete(get_or_404(db, UserModelConfig, user_id=user_id, detail="模型配置不存在。"))
     db.commit()
     return {"message": "模型配置已删除。"}

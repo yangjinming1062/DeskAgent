@@ -51,7 +51,13 @@ def client_for_user(db: Session, user_id: int) -> AsyncOpenAI:
     return get_async_client(api_key, base_url)
 
 
-def resolve_service_row(db: Session | None, user_id: int | None, prefix: str, *, user_cfg: UserModelConfig | None = None) -> tuple[str, str, str]:
+def resolve_service_row(
+    db: Session | None,
+    user_id: int | None,
+    prefix: str,
+    *,
+    user_cfg: UserModelConfig | None = None,
+) -> tuple[str, str, str]:
     """Return ``(base_url, api_key, model_name)`` for a service prefix.
 
     DB row wins when present (an explicit user-cleared empty field is
@@ -128,22 +134,19 @@ def _resolve_slot_config(name: str, service_type: str, row: tuple[str, str, str]
     )
 
 
-def _build_chain_order(service_type: str) -> list[str]:
+def _build_chain_order(service_type: str, user_cfg: UserModelConfig | None = None) -> list[str]:
     """Build the ordered list of provider names to try for ``service_type``.
 
     Source priority:
-      1. ``SETTINGS.<svc>_provider`` — soft-reorder: move named provider to
-         front of ``PROVIDERS`` order (chain stays multi-element, no collapse).
+      1. ``user_cfg.<svc>_provider`` or ``SETTINGS.<svc>_provider`` — soft-reorder:
+         move named provider to front of ``PROVIDERS`` order (chain stays multi-element).
       2. ``SETTINGS.providers`` — comma-separated priority order.
       3. ``SERVICE_DEFAULT_PROVIDER[svc]`` — single-element chain (legacy).
 
-    Only providers registered for this service are kept — providers with no
-    capability implementation are silently dropped so the chain can iterate
-    even when ``PROVIDERS`` lists a non-supporting name. An explicit
-    ``<svc>_provider`` pin that names an unknown provider raises
-    :class:`MissingLlmConfigError` (operator misconfiguration).
+    Only providers registered for this service are kept.
     """
-    pin = getattr(SETTINGS, f"{service_type}_provider", "") or ""
+    user_pin = getattr(user_cfg, f"{service_type}_provider", "") if user_cfg else ""
+    pin = user_pin or getattr(SETTINGS, f"{service_type}_provider", "") or ""
     if pin and pin not in KNOWN_PROVIDERS:
         raise MissingLlmConfigError(f"{service_type} provider {pin!r} unknown; known: {sorted(KNOWN_PROVIDERS)}")
 
@@ -166,6 +169,8 @@ def _user_provider_slots(user_cfg: UserModelConfig, service_type: str) -> list[P
 
     One slot per entry in stored order, filtered to providers registered for
     ``service_type``. A slot needs both an api_key and a resolvable base_url.
+    If a per-capability preferred provider is set (e.g. ``llm_provider``),
+    that provider's slot is pinned to the front of the user slots.
     """
     supporting = set(providers_supporting(service_type))
     slots: list[ProviderConfig] = []
@@ -177,11 +182,32 @@ def _user_provider_slots(user_cfg: UserModelConfig, service_type: str) -> list[P
         base_url = entry.get("base_url", "") or default_base_url(name, service_type)
         model = getattr(user_cfg, f"{service_type}_model_name", "") or default_model_for(name, service_type)
         if api_key and base_url:
-            slots.append(ProviderConfig(base_url=base_url, api_key=api_key, model=model, service_type=ServiceType(service_type), provider_name=name))
+            slots.append(
+                ProviderConfig(
+                    base_url=base_url,
+                    api_key=api_key,
+                    model=model,
+                    service_type=ServiceType(service_type),
+                    provider_name=name,
+                )
+            )
+
+    pin = getattr(user_cfg, f"{service_type}_provider", "") or ""
+    if pin:
+        pinned_slots = [s for s in slots if s.provider_name == pin]
+        other_slots = [s for s in slots if s.provider_name != pin]
+        slots = pinned_slots + other_slots
+
     return slots
 
 
-def resolve_provider_chain(db: Session | None, user_id: int | None, service_type: str, *, user_cfg: UserModelConfig | None = None) -> list[ProviderConfig]:
+def resolve_provider_chain(
+    db: Session | None,
+    user_id: int | None,
+    service_type: str,
+    *,
+    user_cfg: UserModelConfig | None = None,
+) -> list[ProviderConfig]:
     """Resolve the ordered fallback chain for ``service_type``.
 
     Resolution tiers (first provider with both a key and a base_url wins):
@@ -205,7 +231,7 @@ def resolve_provider_chain(db: Session | None, user_id: int | None, service_type
     chain: list[ProviderConfig | None] = []
     if user_cfg is not None:
         chain.extend(_user_provider_slots(user_cfg, service_type))
-    chain.extend(_resolve_slot_config(name, service_type, row) for name in _build_chain_order(service_type))
+    chain.extend(_resolve_slot_config(name, service_type, row) for name in _build_chain_order(service_type, user_cfg=user_cfg))
     seen: set[str] = set()
     result: list[ProviderConfig] = []
     for cfg in chain:
