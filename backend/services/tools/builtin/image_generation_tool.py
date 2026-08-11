@@ -25,17 +25,26 @@ def _image_gen_chain(
     db: Session | None,
     user_id: int | None,
     reference_image: str | None,
+    secondary_reference_image: str | None = None,
 ) -> tuple[list[ProviderConfig], str | None]:
     """Filter the image_gen chain to reference-capable providers when
     ``reference_image`` is given. Returns ``(chain, error)``: error is set
     only when image_gen is configured but no provider supports image-to-image;
-    an empty chain with no error means image_gen isn't configured."""
+    an empty chain with no error means image_gen isn't configured.
+
+    When ``secondary_reference_image`` is present, prefer providers that
+    consume both images (supports_multiple_reference_images); if none, degrade
+    to single-ref capable providers (the secondary image is silently dropped)."""
     full = resolve_provider_chain(db, user_id, "image_gen")
     if not reference_image:
         return full, None
     capable = [c for c in full if resolve(ServiceType.image_gen, c.provider_name).supports_reference_image]
     if full and not capable:
         return capable, "当前图片生成供应商均不支持以图生图，请启用 minimax / gemini / grok 其中之一"
+    if secondary_reference_image:
+        multi = [c for c in capable if resolve(ServiceType.image_gen, c.provider_name).supports_multiple_reference_images]
+        if multi:
+            return multi, None
     return capable, None
 
 
@@ -46,6 +55,7 @@ async def image_generation_tool(
     n: int = 1,
     user_id: int | None = None,
     reference_image: str | None = None,
+    secondary_reference_image: str | None = None,
     **kwargs,  # noqa: ARG001 — absorbs dispatcher extras
 ) -> str:
     """Image generation via the per-service provider chain. base64 payloads
@@ -55,14 +65,17 @@ async def image_generation_tool(
 
     ``reference_image`` (companion avatar-from-image flow) is only offered
     to providers that consume it natively — text-only image providers are
-    skipped rather than degraded via image→text→image."""
-    req = ImageGenRequest(prompt=prompt, size=size, n=n, reference_image=reference_image)
+    skipped rather than degraded via image→text→image.
+    ``secondary_reference_image`` (presentation/style ref alongside the
+    identity anchor) is consumed only by multi-ref providers; others silently
+    ignore it."""
+    req = ImageGenRequest(prompt=prompt, size=size, n=n, reference_image=reference_image, secondary_reference_image=secondary_reference_image)
     try:
         if user_id is not None:
             with SESSION_LOCAL() as db:
-                chain, err = _image_gen_chain(db, user_id, reference_image)
+                chain, err = _image_gen_chain(db, user_id, reference_image, secondary_reference_image)
         else:
-            chain, err = _image_gen_chain(None, None, reference_image)
+            chain, err = _image_gen_chain(None, None, reference_image, secondary_reference_image)
         if err:
             return tool_error(err)
         result = await execute_with_fallback(None, user_id, "image_gen", call_fn=lambda p: p.generate(req), _chain=chain)

@@ -1771,9 +1771,7 @@ def test_avatar_from_image_route_validation(_patch_db, monkeypatch):
     )
     assert resp.status_code == 415
 
-    async def boom(
-        db, user_id, persona, data, content_type, description=None, style="portrait"
-    ):
+    async def boom(db, user_id, persona, data, content_type, **_):
         raise AvatarGenerationError("persona is incomplete; finish onboarding first")
 
     monkeypatch.setattr(companion_api, "regenerate_avatar_from_image", boom)

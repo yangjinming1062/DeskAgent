@@ -26,6 +26,13 @@ export interface UseRegeneratePortraitOptions {
    */
   refImage?: PickedImage | null
   /**
+   * Optional presentation/style reference sent alongside the identity anchor
+   * as ``presentation_image``. Only consumed by multi-reference providers.
+   * When ``refImage`` is absent, this acts as the sole reference (primary
+   * ``image``) rather than a secondary.
+   */
+  presentationRef?: PickedImage | null
+  /**
    * Play onboarding.portrait.regenerate on success. Off by default so
    * non-onboarding surfaces don't grow audio behaviour they didn't ask for.
    */
@@ -77,6 +84,7 @@ export function useRegeneratePortrait(options: UseRegeneratePortraitOptions = {}
 
   const {
     refImage,
+    presentationRef,
     playAudioOnSuccess = false,
     successHint,
     failureHint,
@@ -111,7 +119,13 @@ export function useRegeneratePortrait(options: UseRegeneratePortraitOptions = {}
       }
 
       try {
-        if (refImage) {
+        // Q4 image is the identity anchor; presentationRef is a style/presentation
+        // hint. When no Q4 image exists, the presentation ref becomes the sole
+        // reference (primary image) instead of a secondary.
+        const primaryRef = refImage ?? presentationRef
+        const secondaryRef = refImage ? presentationRef : null
+
+        if (primaryRef) {
           const res = await window.deskagent.api<{
             asset_url?: string | null
             seed_front_url?: string | null
@@ -122,9 +136,13 @@ export function useRegeneratePortrait(options: UseRegeneratePortraitOptions = {}
             path: '/api/companion/avatar/from-image',
             method: 'POST',
             body: {
-              content_type: refImage.contentType,
-              image: refImage.base64,
-              description: feedback
+              content_type: primaryRef.contentType,
+              image: primaryRef.base64,
+              description: feedback,
+              ...(secondaryRef && {
+                presentation_image: secondaryRef.base64,
+                presentation_content_type: secondaryRef.contentType
+              })
             }
           })
 
@@ -186,7 +204,16 @@ export function useRegeneratePortrait(options: UseRegeneratePortraitOptions = {}
     // otherwise give `regenerate` a new identity every render and defeat
     // downstream React.memo. optionFeedback participates so a caller can
     // change it without remounting the hook.
-    [requestGateway, refImage, playAudioOnSuccess, successHint, failureHint, optionFeedback, onRegenerated]
+    [
+      requestGateway,
+      refImage,
+      presentationRef,
+      playAudioOnSuccess,
+      successHint,
+      failureHint,
+      optionFeedback,
+      onRegenerated
+    ]
   )
 
   const clearHint = useCallback(() => setHint(null), [])

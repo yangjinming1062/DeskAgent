@@ -122,7 +122,7 @@ export interface PortraitEntry {
   seedUrls: SeedUrls | null
 }
 
-const _MAX_HISTORY = 3
+const _MAX_HISTORY = 5
 
 export const $portraitHistory = atom<PortraitEntry[]>([])
 export const $portraitSelectedIdx = atom<number>(0)

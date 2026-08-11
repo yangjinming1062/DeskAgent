@@ -113,6 +113,9 @@ class ImageGenRequest:
     aspect_ratio: str | None = None
     quality: str | None = None
     reference_image: str | None = None
+    # Secondary reference (e.g. a presentation/style ref alongside the identity
+    # anchor). Only consumed by providers with supports_multiple_reference_images.
+    secondary_reference_image: str | None = None
     response_format: Literal["b64", "url"] = "b64"
 
 
@@ -136,6 +139,10 @@ class ImageGenProvider(BaseProvider):
     # True → provider consumes ``reference_image`` natively (image-to-image).
     # False → skipped for reference-image requests (no image→text→image).
     supports_reference_image: ClassVar[bool] = False
+    # True → provider also consumes ``secondary_reference_image`` (dual i2i).
+    # When False, the chain filters this provider out for dual-ref requests,
+    # degrading to single-ref providers rather than silently dropping the image.
+    supports_multiple_reference_images: ClassVar[bool] = False
 
     @abstractmethod
     async def generate(self, req: ImageGenRequest) -> ImageGenResult: ...

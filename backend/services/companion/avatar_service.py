@@ -88,12 +88,13 @@ async def _generate_one_portrait_with_moderation_retry(
     user_id: int,
     *,
     reference_image: str | None = None,
+    secondary_reference_image: str | None = None,
     size: str = _AVATAR_SIZE,
     persist: bool = True,
 ) -> tuple[str, str, str, str]:
     """Generate one portrait, retrying with a sanitized prompt on content-moderation failure."""
     try:
-        return await _generate_one_portrait(prompt, user_id, reference_image=reference_image, size=size, persist=persist)
+        return await _generate_one_portrait(prompt, user_id, reference_image=reference_image, secondary_reference_image=secondary_reference_image, size=size, persist=persist)
     except AvatarGenerationError as first_exc:
         if not is_content_policy_error_message(str(first_exc)):
             raise
@@ -102,7 +103,9 @@ async def _generate_one_portrait_with_moderation_retry(
         if sanitized == prompt:
             raise  # Sanitization produced no change — don't waste another API call.
         try:
-            return await _generate_one_portrait(sanitized, user_id, reference_image=reference_image, size=size, persist=persist)
+            return await _generate_one_portrait(
+                sanitized, user_id, reference_image=reference_image, secondary_reference_image=secondary_reference_image, size=size, persist=persist
+            )
         except AvatarGenerationError as second_exc:
             raise AvatarGenerationError(f"sanitized retry failed after moderation block (original: {first_exc})") from second_exc
 
@@ -237,6 +240,7 @@ async def _generate_one_portrait(
     user_id: int,
     *,
     reference_image: str | None = None,
+    secondary_reference_image: str | None = None,
     size: str = _AVATAR_SIZE,
     persist: bool = True,
 ) -> tuple[str, str, str, str]:
@@ -250,6 +254,7 @@ async def _generate_one_portrait(
         n=1,
         user_id=user_id,
         reference_image=reference_image,
+        secondary_reference_image=secondary_reference_image,
     )
 
     source_url = first_image_url(result_json)
@@ -282,6 +287,7 @@ async def _generate_avatar_step(
     persona: Persona,
     feedback: str | None = None,
     reference_image: str | None = None,
+    secondary_reference_image: str | None = None,
     persist: bool = False,
 ) -> AvatarAsset:
     """Avatar (bust) only. Inserts a fresh active ``AvatarAsset`` row with
@@ -293,7 +299,9 @@ async def _generate_avatar_step(
     returns ``{success: false}``; ``first_image_url -> None`` surfaces that
     as ``AvatarGenerationError``.
     """
-    asset_url, file_id, final_ext, avatar_source_url = await _generate_one_portrait_with_moderation_retry(avatar_prompt, user_id, reference_image=reference_image, persist=persist)
+    asset_url, file_id, final_ext, avatar_source_url = await _generate_one_portrait_with_moderation_retry(
+        avatar_prompt, user_id, reference_image=reference_image, secondary_reference_image=secondary_reference_image, persist=persist
+    )
 
     previous = db.query(AvatarAsset).filter(AvatarAsset.user_id == user_id, AvatarAsset.active.is_(True)).one_or_none()
     db.query(AvatarAsset).filter(AvatarAsset.user_id == user_id, AvatarAsset.active.is_(True)).update({"active": False})
@@ -308,6 +316,8 @@ async def _generate_avatar_step(
     if reference_image is not None:
         # Audit row keeps a marker (``data:image/png``), not the base64 blob.
         prompt_payload["reference_image"] = reference_image.split(",", 1)[0]
+    if secondary_reference_image is not None:
+        prompt_payload["secondary_reference_image"] = secondary_reference_image.split(",", 1)[0]
     asset = AvatarAsset(
         user_id=user_id,
         prompt_json=json.dumps(prompt_payload, ensure_ascii=False),
@@ -690,9 +700,14 @@ async def regenerate_avatar_from_image(
     data: bytes,
     content_type: str,
     description: str | None = None,
+    presentation_data: bytes | None = None,
+    presentation_content_type: str | None = None,
     style: str = _DEFAULT_STYLE,
 ) -> AvatarAsset:
-    """Regenerate the portrait using a user-uploaded image as the subject reference (inline data URI)."""
+    """Regenerate the portrait using a user-uploaded image as the subject
+    reference (inline data URI). An optional second image
+    (``presentation_data``) acts as a presentation/style reference alongside
+    the identity anchor — only consumed by multi-reference providers."""
     if not persona.is_complete:
         raise AvatarGenerationError("persona is incomplete; finish onboarding first")
     try:
@@ -704,6 +719,7 @@ async def regenerate_avatar_from_image(
         )
     except (ValidationError, RuntimeError) as exc:
         raise AvatarGenerationError(f"prompt enhancement failed: {exc}") from exc
+    secondary_uri = _reference_data_uri(presentation_data, presentation_content_type or "image/png") if presentation_data is not None else None
     asset = await _generate_avatar_step(
         db,
         user_id,
@@ -712,6 +728,7 @@ async def regenerate_avatar_from_image(
         persona=persona,
         feedback=description,
         reference_image=_reference_data_uri(data, content_type),
+        secondary_reference_image=secondary_uri,
         persist=persona.is_portrait_confirmed,
     )
     return asset

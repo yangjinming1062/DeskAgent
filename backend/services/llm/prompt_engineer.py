@@ -30,10 +30,10 @@ _AVATAR_SYSTEM_PROMPT = (
     "3. 服饰仅作自然背景，呈现简单、不遮蔽人物轮廓特征的服饰；\n"
     "4. 视角：正面朝向观众（front-facing bust portrait），平视镜头；\n"
     "5. 光线：柔和均匀的正面打光（soft even front lighting），无强烈阴影；\n"
-    "6. 画风：digital illustration, clean linework, high detail, masterwork, professional character design；\n"
+    "6. 画风：photorealistic, hyperrealistic, ultra-detailed, natural skin texture, professional portrait photography, 8K；\n"
     "7. 必须包含「纯白平面背景，无场景、无渐变、无阴影」（桌面端 chroma-key 渲染依赖此约束）；\n"
     "8. 全文使用中文，只保留专业术语与英文画风关键词；\n"
-    "9. 用户提供的反馈（如有）必须显式体现在描述中；若用户上传了参考图，提取角色的核心外观特征即可，不要过分在意参考图中的细节（如不需要和用户上传图像的动作、姿态一致，保持标准正面半身像）；\n"
+    "9. appearance 与 feedback 中的用户原始描述承载明确意图，其中具体的颜色、发型、五官、风格等细节必须忠实保留进最终 prompt，不得改写、泛化或遗漏（例如「深棕色头发带银色挑染」必须逐字体现「深棕色头发」与「银色挑染」，不可简化为「深色头发」）。feedback 的修改指令优先级最高，用于覆盖之前的 appearance 描述。若用户上传了参考图，提取角色的核心外观特征即可，不要过分在意参考图中的细节（如不需要和用户上传图像的动作、姿态一致，保持标准正面半身像）；\n"
     "10. 不要解释、不要寒暄，直接输出最终中文 prompt 文本。"
 )
 
@@ -54,7 +54,7 @@ _FULLBODY_SHARED_RULES = (
     "严禁裁切任何身体部位。"
     "纯白平面背景，无场景、无渐变、无阴影。"
     "采用均匀漫反射平光打光（soft even diffuse lighting，无明显方向性暗部阴影）。"
-    "画风：digital illustration, clean linework, high detail, professional character design。"
+    "画风：photorealistic, hyperrealistic, ultra-detailed, professional portrait photography。"
 )
 
 # Shared A-pose clause — identical across all biped presets and the biped

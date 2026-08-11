@@ -64,6 +64,9 @@ class AvatarFromImageRequest(BaseModel):
     image: str = Field(min_length=1, max_length=8 * 1024 * 1024)
     content_type: str | None = Field(default=None, max_length=64)
     description: str | None = Field(default=None, max_length=500)
+    # Optional presentation/style reference alongside the identity anchor.
+    presentation_image: str | None = Field(default=None, max_length=8 * 1024 * 1024)
+    presentation_content_type: str | None = Field(default=None, max_length=64)
 
 
 class AvatarHistoryResponse(BaseModel):

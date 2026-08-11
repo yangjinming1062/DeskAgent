@@ -398,6 +398,7 @@ async def post_avatar_from_image(
     """The upload is re-rendered to an avatar-compliant portrait via enhance_avatar_prompt."""
     user, _ = auth
     raw, content_type = _decode_upload_image(body.image, body.content_type)
+    pres_raw, pres_content_type = _decode_upload_image(body.presentation_image, body.presentation_content_type)
     persona = get_or_create_persona(db, user.id)
     try:
         asset = await regenerate_avatar_from_image(
@@ -407,6 +408,8 @@ async def post_avatar_from_image(
             data=raw,
             content_type=content_type,
             description=body.description,
+            presentation_data=pres_raw,
+            presentation_content_type=pres_content_type,
         )
     except AvatarGenerationError as exc:
         if "persona is incomplete" in str(exc):

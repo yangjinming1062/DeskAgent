@@ -67,6 +67,9 @@ async def test_enhance_avatar_prompt_returns_text(monkeypatch):
     assert payload["biological_type"] == "灵兽"
     assert "纯白平面背景" in captured["system"]
     assert "半身特写" in captured["system"]
+    # System prompt must instruct the beautifier to faithfully preserve the
+    # user's original wording (appearance + feedback) in the output.
+    assert "忠实保留" in captured["system"]
 
 
 @pytest.mark.asyncio
@@ -82,9 +85,10 @@ async def test_enhance_avatar_prompt_includes_feedback(monkeypatch):
     class _FakePersona:
         definition_json = json.dumps({"name": "小光"})
 
-    await prompt_engineer.enhance_avatar_prompt(None, 1, _FakePersona(), feedback="更长的头发")
+    out = await prompt_engineer.enhance_avatar_prompt(None, 1, _FakePersona(), feedback="更长的头发")
     payload = json.loads(seen["user_payload"].split("```json\n", 1)[1].split("\n```", 1)[0])
     assert payload["feedback"] == "更长的头发"
+    assert out == "头像提示词"
 
 
 # ── _strip_bust_prefix ──

@@ -234,7 +234,7 @@ class TestReferenceImageChain:
         async def _fake_execute(db, user_id, service_type, call_fn, **kwargs):
             return await call_fn(_NativeProvider())
 
-        monkeypatch.setattr(tool_mod, "_image_gen_chain", lambda db, uid, ref: ([self._cfg("minimax")], None))
+        monkeypatch.setattr(tool_mod, "_image_gen_chain", lambda *a: ([self._cfg("minimax")], None))
         monkeypatch.setattr(tool_mod, "execute_with_fallback", _fake_execute)
 
         result = await tool_mod.image_generation_tool(
@@ -268,7 +268,7 @@ class TestReferenceImageChain:
         async def _fake_execute(db, user_id, service_type, call_fn, **kwargs):
             return await call_fn(_TextOnlyProvider())
 
-        monkeypatch.setattr(tool_mod, "_image_gen_chain", lambda db, uid, ref: ([self._cfg("zhipu")], None))
+        monkeypatch.setattr(tool_mod, "_image_gen_chain", lambda *a: ([self._cfg("zhipu")], None))
         monkeypatch.setattr(tool_mod, "execute_with_fallback", _fake_execute)
 
         result = await tool_mod.image_generation_tool(prompt="portrait", llm_config={}, user_id=None)
@@ -282,7 +282,7 @@ class TestReferenceImageChain:
         import importlib
 
         tool_mod = importlib.import_module("services.tools.builtin.image_generation_tool")
-        monkeypatch.setattr(tool_mod, "_image_gen_chain", lambda db, uid, ref: ([], "当前图片生成供应商均不支持以图生图"))
+        monkeypatch.setattr(tool_mod, "_image_gen_chain", lambda *a: ([], "当前图片生成供应商均不支持以图生图"))
 
         result = await tool_mod.image_generation_tool(
             prompt="portrait",

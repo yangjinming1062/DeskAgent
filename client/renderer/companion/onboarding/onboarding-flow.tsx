@@ -23,7 +23,7 @@ import {
   USER_GENDER_PRESETS,
   VOICE_PRESETS
 } from '@/companion/persona-presets'
-import { TWO_STEP_INTRO_HINT } from '@/companion/portrait-flow-copy'
+import { PORTRAIT_INTRO_HINT } from '@/companion/portrait-flow-copy'
 import {
   $activeAvatarId,
   $portraitHistory,
@@ -511,6 +511,11 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
   // via IndexedDB draft cache so a crash before bust generation resumes with it.
   const [refImage, setRefImage] = useState<PickedImage | null>(null)
 
+  // Presentation/style reference picked during avatar regen — coexists with
+  // the Q4 identity image instead of replacing it. In-memory only; it's a
+  // transient regen aid, not a persistent identity asset.
+  const [presentationRef, setPresentationRef] = useState<PickedImage | null>(null)
+
   const updateRefImage = (img: PickedImage | null) => {
     setRefImage(img)
     void saveDraftRefImage(img)
@@ -985,6 +990,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
   // ``$activeAvatarId`` automatically (via applyPortrait inside the hook).
   const { regenerate: regenerateAvatarPortrait, busy: avatarBusy } = useRegeneratePortrait({
     refImage,
+    presentationRef,
     playAudioOnSuccess: true,
     onRegenerated: ({ avatar }) => {
       if (avatar) {
@@ -1116,6 +1122,23 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
     setHint(null)
   }
 
+  const pickPresentationImage = async () => {
+    const picked = await pickAvatarImage('选择一张风格参考图')
+
+    if (!picked) {
+      return
+    }
+
+    if ('error' in picked) {
+      setHint(picked.error)
+
+      return
+    }
+
+    setPresentationRef(picked.image)
+    setHint(null)
+  }
+
   const confirmPortrait = async () => {
     resetToLatestEntry()
 
@@ -1145,6 +1168,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
 
     clearPortraitHistory()
     updateRefImage(null)
+    setPresentationRef(null)
     // Voice belongs with the portrait: both define the companion itself, so
     // they run back-to-back before any user_* question.
     setPhase('voice')
@@ -1377,7 +1401,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
               avatarUrl={portraitUrl}
               hint={portraitPanelHint}
               history={portraitHistory}
-              introHint={phase === 'portrait-avatar' ? TWO_STEP_INTRO_HINT : null}
+              introHint={phase === 'portrait-avatar' ? PORTRAIT_INTRO_HINT : null}
               name={answers.name?.trim() || '伙伴'}
               onSelectEntry={onSelectHistoryEntry}
               seedUrls={seedUrls}
@@ -1401,6 +1425,51 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
               ) : (
                 <>
                   <RegenFeedbackInput />
+                  <div className="mt-2 space-y-2 text-xs">
+                    {refImage && (
+                      <div className="flex items-center gap-2">
+                        <img
+                          alt="形象参考图"
+                          className="h-9 w-9 rounded-md object-cover"
+                          src={refImage.previewUrl}
+                        />
+                        <span className="text-[10px] text-white/35">形象参考图（每次重生都会携带）</span>
+                        <button
+                          className="ml-auto text-white/40 transition hover:text-white"
+                          onClick={() => updateRefImage(null)}
+                          type="button"
+                        >
+                          移除
+                        </button>
+                      </div>
+                    )}
+                    <div className="flex items-center gap-2">
+                      <button
+                        className="rounded-full border border-dashed border-white/25 px-3 py-1 text-white/70 transition hover:bg-white/10"
+                        onClick={() => void pickPresentationImage()}
+                        type="button"
+                      >
+                        {presentationRef ? '换风格参考图' : '＋ 风格参考图'}
+                      </button>
+                      {presentationRef && (
+                        <>
+                          <img
+                            alt="风格参考"
+                            className="h-9 w-9 rounded-md object-cover"
+                            src={presentationRef.previewUrl}
+                          />
+                          <span className="text-[10px] text-white/35">参考风格/展现形式，不影响角色形象</span>
+                          <button
+                            className="ml-auto text-white/40 transition hover:text-white"
+                            onClick={() => setPresentationRef(null)}
+                            type="button"
+                          >
+                            移除
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </div>
                   <div className="mt-3 flex items-center justify-between text-xs">
                     <div className="flex gap-3">
                       <button

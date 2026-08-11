@@ -23,6 +23,7 @@ class GeminiImageGenProvider(ImageGenProvider):
     DEFAULT_MODELS: ClassVar[dict[str, str]] = {"image_gen": "gemini-2.5-flash-image"}
     DEFAULT_CONTEXT_TOKENS: ClassVar[dict[str, int]] = {"image_gen": 8_000}
     supports_reference_image: ClassVar[bool] = True
+    supports_multiple_reference_images: ClassVar[bool] = True
 
     def __init__(self, config: ProviderConfig) -> None:
         super().__init__(config)
@@ -34,6 +35,9 @@ class GeminiImageGenProvider(ImageGenProvider):
         parts: list[dict] = []
         if req.reference_image:
             data, mime = await resolve_reference_bytes(req.reference_image)
+            parts.append({"inlineData": {"mimeType": mime, "data": base64.b64encode(data).decode("utf-8")}})
+        if req.secondary_reference_image:
+            data, mime = await resolve_reference_bytes(req.secondary_reference_image)
             parts.append({"inlineData": {"mimeType": mime, "data": base64.b64encode(data).decode("utf-8")}})
         parts.append({"text": req.prompt})
 
