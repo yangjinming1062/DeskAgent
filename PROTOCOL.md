@@ -48,6 +48,8 @@
 | Client → Backend | `POST /api/companion/model` | 触发 3D 模型异步生成 | 全身三视图 → Tripo3D multiview-to-3D + rig;进度经事件推送 |
 | Client → Backend | `POST /api/companion/avatar` / `/from-image` | 头像半身生成（步 1） | 同步;失败返回 502 + 友好文案,不暴露 provider 原始错误 |
 | Client → Backend | `POST /api/companion/avatar/{avatar_id}/fullbody` | 链式参考生成全身种子图（步 2） | 同步;缺少正面全身 409;头像不存在 404;并发 429;`stage` 与 `view` 互斥必选其一 |
+| Client → Backend | `POST /api/companion/wardrobe/preview` `{description, image?, content_type?, feedback?}` | 换装纹理预览（写 temp-media,不入库） | 同步;返回 `{url, prompt, file_id}`,客户端实时挂到 `$wardrobePreview` 上预热 3D 模型;`file_id` 在 `temp_file_ttl_hours` 内可被 `confirm` 落库 |
+| Client → Backend | `POST /api/companion/wardrobe/confirm` `{file_id, name, prompt?}` | 把预览产物落为 `WardrobeItem` + 自动装备 + emit `wardrobe.updated` | `file_id` 已过期/不存在 409;返回 `WardrobeItemResponse` |
 
 ### 1.2 事件类型
 

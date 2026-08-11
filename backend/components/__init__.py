@@ -83,6 +83,7 @@ from .network import is_safe_outbound
 from .redact import mask_secret
 from .redact import redact_sensitive_text
 from .temp_files import cleanup_expired
+from .temp_files import delete_file as temp_file_delete
 from .temp_files import gc_session as temp_files_gc_session
 from .temp_files import get_file_path
 from .temp_files import save_file
@@ -173,6 +174,7 @@ __all__ = [
     "attachments_remove",
     "session_dir",
     "cleanup_expired",
+    "temp_file_delete",
     "temp_files_gc_session",
     "get_file_path",
     "save_file",

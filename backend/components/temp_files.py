@@ -105,6 +105,27 @@ def gc_session(session_id: str):
         logger.info("Cleaned up session temp files", extra={"session_id": session_id, "count": count})
 
 
+def delete_file(file_id: str) -> bool:
+    """Best-effort delete of a single temp-media file by id. Returns True when something was removed.
+
+    Caller is responsible for any authorisation checks; the helper is a thin
+    file-level unlink guarded against path traversal.
+    """
+    if not file_id or "/" in file_id or "\\" in file_id or ".." in file_id:
+        return False
+    mp = _meta_path(file_id)
+    if not mp.exists():
+        return False
+    try:
+        meta = json.loads(mp.read_text())
+    except (json.JSONDecodeError, OSError):
+        _safe_unlink(mp)
+        return False
+    _safe_unlink(Path(meta.get("path", "")))
+    _safe_unlink(mp)
+    return True
+
+
 def _safe_unlink(path: Path):
     with contextlib.suppress(OSError):
         path.unlink(missing_ok=True)

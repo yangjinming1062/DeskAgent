@@ -214,3 +214,20 @@ async def test_enhance_texture_propagates_llm_failure(monkeypatch):
     monkeypatch.setattr(prompt_engineer, "chat", _boom)
     with pytest.raises(RuntimeError, match="upstream boom"):
         await prompt_engineer.enhance_texture_prompt(None, 1, description="x")
+
+
+@pytest.mark.asyncio
+async def test_enhance_texture_prompt_includes_feedback(monkeypatch):
+    seen: dict = {}
+
+    async def _fake_chat(db, user_id, system_prompt, user_payload, **_kw):
+        seen["user_payload"] = user_payload
+        return "texture prompt with feedback"
+
+    monkeypatch.setattr(prompt_engineer, "chat", _fake_chat)
+
+    out = await prompt_engineer.enhance_texture_prompt(None, 1, description="旗袍", feedback="更深邃的暗红色，加金色刺绣")
+    assert out == "texture prompt with feedback"
+    payload = json.loads(seen["user_payload"].split("```json\n", 1)[1].split("\n```", 1)[0])
+    assert payload["description"] == "旗袍"
+    assert payload["feedback"] == "更深邃的暗红色，加金色刺绣"

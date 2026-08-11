@@ -26,6 +26,7 @@ from ..llm import enhance_fullbody_right_prompt
 from ..llm import is_content_policy_error_message
 from ..tools.builtin import first_image_url
 from ..tools.builtin import image_generation_tool
+from .asset_store import build_data_uri
 from .asset_store import build_signed_avatar_url
 from .persona_service import get_or_create_persona
 
@@ -656,16 +657,7 @@ async def regenerate_avatar(db: Session, user_id: int, persona: Persona, feedbac
 
 
 def _reference_data_uri(data: bytes, content_type: str) -> str:
-    """Encode upload bytes as a ``data:<mime>;base64,...`` reference.
-
-    The provider consumes the seed image inline (MiniMax ``subject_reference``,
-    Gemini ``inlineData``, or the vision-describe step) so generation does not
-    depend on the backend being publicly reachable — a signed URL breaks when
-    ``public_url_prefix`` is empty because providers reject private/localhost
-    hosts outright.
-    """
-    mime = content_type.split(";")[0].strip().lower() or "image/png"
-    return f"data:{mime};base64,{base64.b64encode(data).decode('ascii')}"
+    return build_data_uri(data, content_type)
 
 
 def _load_avatar_bytes_as_data_uri(asset_url_or_path: str | None) -> str | None:

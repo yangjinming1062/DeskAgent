@@ -20,6 +20,7 @@ import {
   $modelGenProgress,
   $modelGenState,
   $modelInfo,
+  $wardrobePreview,
   hydrateGeneratedClips,
   refreshEquippedAndApply
 } from './model-store'
@@ -49,6 +50,7 @@ export function Companion3D(): React.JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const engineRef = useRef<Engine | null>(null)
   const equipped = useStore($equippedItem)
+  const preview = useStore($wardrobePreview)
   const modelInfo = useStore($modelInfo)
 
   // Mount engine, wire subscriptions, and kick off initial model load.
@@ -213,8 +215,9 @@ export function Companion3D(): React.JSX.Element {
     }
   }, [modelInfo.asset_url, modelInfo.morph_params, modelInfo.rig_type])
 
-  // Apply equipped outfit on every change. setOutfit is a no-op when the
-  // character is the procedural fallback (no GLB materials to edit).
+  // Apply equipped or preview outfit on every change. Preview takes precedence
+  // over the persisted equipped outfit so the user sees candidates in real time.
+  // setOutfit is a no-op when the character is the procedural fallback.
   useEffect(() => {
     const engine = engineRef.current
 
@@ -222,10 +225,12 @@ export function Companion3D(): React.JSX.Element {
       return
     }
 
-    if (equipped) {
-      engine.character.setOutfit(equipped)
+    const outfit = preview ?? equipped
+
+    if (outfit) {
+      engine.character.setOutfit(outfit)
     }
-  }, [equipped])
+  }, [preview, equipped])
 
   const genState = useStore($modelGenState)
   const genProgress = useStore($modelGenProgress)

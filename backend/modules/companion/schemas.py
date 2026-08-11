@@ -112,6 +112,29 @@ class WardrobeGenerateRequest(BaseModel):
     description: str = Field(min_length=1, max_length=500)
 
 
+class WardrobePreviewRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    description: str = Field(min_length=1, max_length=500)
+    image: str | None = Field(default=None, max_length=8 * 1024 * 1024)  # base64
+    content_type: str | None = Field(default=None, max_length=64)
+    feedback: str | None = Field(default=None, max_length=500)
+
+
+class WardrobePreviewResponse(BaseModel):
+    url: str
+    prompt: str
+    file_id: str
+
+
+class WardrobeConfirmRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    file_id: str = Field(min_length=1, max_length=128)
+    name: str = Field(min_length=1, max_length=128)
+    prompt: str | None = Field(default=None, max_length=500)
+
+
 class WardrobeEquipRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

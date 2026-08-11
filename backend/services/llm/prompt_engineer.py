@@ -115,7 +115,8 @@ _TEXTURE_WARDROBE_SYSTEM_PROMPT = (
     "3. 高细节、清晰可辨、无背景、无边框、无水印；\n"
     "4. 详细描述服装款式、配色、面料质感、图案、缝线、纽扣/拉链等配件；\n"
     "5. 全文使用中文，只保留专业 PBR / 绘画术语；\n"
-    "6. 不要解释，直接输出最终中文 prompt 文本。"
+    "6. 不要解释，直接输出最终中文 prompt 文本。\n"
+    "7. 用户提供的 feedback 是对上一版的具体修改建议，体现在配色、面料、图案或配件上即可；与 description 不冲突时叠加，冲突时优先满足 feedback。"
 )
 
 
@@ -290,9 +291,12 @@ async def enhance_texture_prompt(
     user_id: int | None,
     *,
     description: str,
+    feedback: str | None = None,
 ) -> str:
     """Rewrite a wardrobe description as a detailed Chinese PBR texture prompt (top-down flat lay)."""
     system_prompt = _TEXTURE_WARDROBE_SYSTEM_PROMPT
-    payload = {"description": description}
+    payload: dict[str, str] = {"description": description}
+    if feedback and feedback.strip():
+        payload["feedback"] = feedback.strip()
     user_payload = f"请根据以下服装/外观描述生成 PBR 纹理图提示词：\n```json\n{json.dumps(payload, ensure_ascii=False)}\n```"
     return await chat(db, user_id, system_prompt, user_payload)

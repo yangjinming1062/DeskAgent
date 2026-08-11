@@ -1,6 +1,19 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { $equippedItem, $modelInfo, $wardrobe, hydrateModel, hydrateWardrobe, type WardrobeItem } from './model-store'
+import {
+  $equippedItem,
+  $modelInfo,
+  $wardrobe,
+  $wardrobeCandidates,
+  $wardrobePreview,
+  $wardrobeSelectedIdx,
+  clearWardrobeCandidates,
+  hydrateModel,
+  hydrateWardrobe,
+  pushWardrobeCandidate,
+  selectWardrobeCandidate,
+  type WardrobeItem
+} from './model-store'
 
 const baseModelResponse = {
   id: 7,
@@ -140,5 +153,85 @@ describe('hydrateWardrobe', () => {
 
     expect($wardrobe.get()).toEqual([])
     expect(console.warn).toHaveBeenCalledWith('hydrateWardrobe failed', expect.any(Error))
+  })
+})
+
+describe('wardrobe candidates & preview', () => {
+  beforeEach(() => {
+    clearWardrobeCandidates()
+  })
+
+  it('pushes candidates and selects the latest', () => {
+    pushWardrobeCandidate({
+      url: 'http://localhost/c1.png',
+      prompt: 'prompt 1',
+      fileId: 'fid1',
+      description: 'desc 1'
+    })
+
+    expect($wardrobeCandidates.get().length).toBe(1)
+    expect($wardrobeSelectedIdx.get()).toBe(0)
+    expect($wardrobePreview.get()?.texture_url).toBe('http://localhost/c1.png')
+
+    pushWardrobeCandidate({
+      url: 'http://localhost/c2.png',
+      prompt: 'prompt 2',
+      fileId: 'fid2',
+      description: 'desc 2'
+    })
+
+    expect($wardrobeCandidates.get().length).toBe(2)
+    expect($wardrobeSelectedIdx.get()).toBe(1)
+    expect($wardrobePreview.get()?.texture_url).toBe('http://localhost/c2.png')
+  })
+
+  it('caps candidate history at 3 and shifts oldest', () => {
+    for (let i = 1; i <= 4; i++) {
+      pushWardrobeCandidate({
+        url: `http://localhost/c${i}.png`,
+        prompt: `prompt ${i}`,
+        fileId: `fid${i}`,
+        description: `desc ${i}`
+      })
+    }
+
+    const current = $wardrobeCandidates.get()
+    expect(current.length).toBe(3)
+    expect(current.map(c => c.fileId)).toEqual(['fid2', 'fid3', 'fid4'])
+    expect($wardrobeSelectedIdx.get()).toBe(2)
+    expect($wardrobePreview.get()?.texture_url).toBe('http://localhost/c4.png')
+  })
+
+  it('switches preview when selecting an earlier candidate', () => {
+    pushWardrobeCandidate({
+      url: 'http://localhost/c1.png',
+      prompt: 'p1',
+      fileId: 'fid1',
+      description: 'd1'
+    })
+    pushWardrobeCandidate({
+      url: 'http://localhost/c2.png',
+      prompt: 'p2',
+      fileId: 'fid2',
+      description: 'd2'
+    })
+
+    selectWardrobeCandidate(0)
+    expect($wardrobeSelectedIdx.get()).toBe(0)
+    expect($wardrobePreview.get()?.texture_url).toBe('http://localhost/c1.png')
+  })
+
+  it('clears all candidates and resets preview to null', () => {
+    pushWardrobeCandidate({
+      url: 'http://localhost/c1.png',
+      prompt: 'p1',
+      fileId: 'fid1',
+      description: 'd1'
+    })
+
+    clearWardrobeCandidates()
+    expect($wardrobeCandidates.get()).toEqual([])
+    expect($wardrobeSelectedIdx.get()).toBe(0)
+    expect($wardrobePreview.get()).toBeNull()
   })
 })

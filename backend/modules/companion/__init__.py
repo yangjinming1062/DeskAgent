@@ -13,9 +13,12 @@ from .schemas import FullbodyGenerateRequest
 from .schemas import ModelGenerateRequest
 from .schemas import PersonaResponse
 from .schemas import PersonaUpdate
+from .schemas import WardrobeConfirmRequest
 from .schemas import WardrobeEquipRequest
 from .schemas import WardrobeGenerateRequest
 from .schemas import WardrobeItemResponse
+from .schemas import WardrobePreviewRequest
+from .schemas import WardrobePreviewResponse
 
 __all__ = [
     "AnimationClipResponse",
@@ -32,8 +35,11 @@ __all__ = [
     "Persona",
     "PersonaResponse",
     "PersonaUpdate",
+    "WardrobeConfirmRequest",
     "WardrobeEquipRequest",
     "WardrobeGenerateRequest",
     "WardrobeItem",
     "WardrobeItemResponse",
+    "WardrobePreviewRequest",
+    "WardrobePreviewResponse",
 ]

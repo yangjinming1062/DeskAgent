@@ -69,6 +69,63 @@ export const $equippedItem = atom<WardrobeItem | null>(null)
 export const $availableClipNames = atom<Set<string>>(new Set())
 export const $generatedClips = atom<ClipDef[]>([])
 
+// ── 换装候选回溯（镜像 $portraitHistory）──
+export interface WardrobeCandidate {
+  url: string
+  prompt: string
+  fileId: string
+  description: string
+}
+
+const _MAX_CANDIDATES = 3
+
+export const $wardrobeCandidates = atom<WardrobeCandidate[]>([])
+export const $wardrobeSelectedIdx = atom<number>(0)
+// 选中候选时设为临时 outfit spec；null 时回退到 $equippedItem
+export const $wardrobePreview = atom<WardrobeItem | null>(null)
+
+// Build the transient WardrobeItem consumed by CharacterController.setOutfit
+// during preview. Centralised so the id:-1 sentinel lives in one place.
+function _candidateToPreview(c: WardrobeCandidate): WardrobeItem {
+  return {
+    id: -1,
+    name: 'preview',
+    category: 'draft',
+    material_overrides_json: '{}',
+    texture_url: c.url,
+    prompt: c.prompt,
+    equipped: false
+  }
+}
+
+export function pushWardrobeCandidate(c: WardrobeCandidate): void {
+  const current = $wardrobeCandidates.get()
+  const next = [...current, c]
+
+  if (next.length > _MAX_CANDIDATES) {
+    next.shift()
+  }
+
+  $wardrobeCandidates.set(next)
+  $wardrobeSelectedIdx.set(next.length - 1)
+  $wardrobePreview.set(_candidateToPreview(c))
+}
+
+export function selectWardrobeCandidate(idx: number): void {
+  const current = $wardrobeCandidates.get()
+
+  if (idx >= 0 && idx < current.length) {
+    $wardrobeSelectedIdx.set(idx)
+    $wardrobePreview.set(_candidateToPreview(current[idx]))
+  }
+}
+
+export function clearWardrobeCandidates(): void {
+  $wardrobeCandidates.set([])
+  $wardrobeSelectedIdx.set(0)
+  $wardrobePreview.set(null)
+}
+
 // ── Generation progress tracking ──
 // model.gen.progress → $modelGenState='generating' + $modelGenProgress
 // model.ready        → $modelGenState='succeeded'

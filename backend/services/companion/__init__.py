@@ -4,6 +4,7 @@ from .animation_generator import find_unmatched_tags
 from .animation_generator import generate_animation_clips
 from .animation_generator import get_rig_bones
 from .animation_generator import RIG_DEFAULT_BONES
+from .asset_store import build_data_uri
 from .asset_store import build_signed_asset_url
 from .asset_store import build_signed_avatar_url
 from .asset_store import build_signed_model_url
@@ -59,11 +60,15 @@ from .voice_catalog import design_voice
 from .voice_catalog import list_voices as list_tts_voices
 from .voice_catalog import match_user_voice
 from .voice_catalog import normalize_voice_language
+from .wardrobe_service import confirm_wardrobe_item
 from .wardrobe_service import delete_wardrobe_item
+from .wardrobe_service import discard_wardrobe_preview
 from .wardrobe_service import equip_wardrobe_item
 from .wardrobe_service import generate_wardrobe_item
 from .wardrobe_service import get_equipped_item
 from .wardrobe_service import list_wardrobe
+from .wardrobe_service import preview_wardrobe_texture
+from .wardrobe_service import WardrobeSourceExpiredError
 
 __all__ = [
     "ALLOWED_AVATAR_UPLOAD_MIME_TYPES",
@@ -76,7 +81,9 @@ __all__ = [
     "ModelGenerationInProgressError",
     "PersonaValidationError",
     "SeedPromptMissingError",
+    "WardrobeSourceExpiredError",
     "analyze_personality_tags",
+    "build_data_uri",
     "build_signed_asset_url",
     "build_signed_avatar_url",
     "build_signed_model_url",
@@ -84,9 +91,11 @@ __all__ = [
     "build_user_profile_extras",
     "check_affect",
     "confirm_portrait",
+    "confirm_wardrobe_item",
     "delete_memory",
     "delete_wardrobe_item",
     "design_voice",
+    "discard_wardrobe_preview",
     "emit_wardrobe_updated",
     "equip_wardrobe_item",
     "extract_user_profile",
@@ -114,6 +123,7 @@ __all__ = [
     "memory_admin",
     "memory_counts",
     "normalize_voice_language",
+    "preview_wardrobe_texture",
     "record_interaction",
     "read_user_profile",
     "record_user_profile",

@@ -2156,3 +2156,152 @@ async def test_model_generation_failure_keeps_previous_model_active(_patch_db, m
         prev = db.query(CompanionModel).filter(CompanionModel.id == previous_id).one()
         assert prev.active is True
         assert prev.status == "succeeded"
+
+
+@pytest.mark.asyncio
+async def test_wardrobe_preview_and_confirm_lifecycle(_patch_db, monkeypatch):
+    """End-to-end test for wardrobe preview (temp-media) and confirm (persist + equip)."""
+    import base64
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from api.v1 import companion as companion_api
+    from components import get_db
+    from modules.auth import get_current_session, User
+    from modules.companion import WardrobeItem
+    from services.rate_limit import limiter
+
+    _, SessionLocal = _patch_db
+
+    with SessionLocal() as db:
+        user = User(username="wardrobe_user", password_hash="x", is_active=True, can_use=True)
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+        uid = user.id
+
+    app = FastAPI()
+    app.state.limiter = limiter
+
+    def _test_get_db():
+        db = SessionLocal()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    fake_user = type("U", (), {"id": uid, "is_active": True, "can_use": True})()
+
+    async def _fake_auth():
+        return fake_user, None
+
+    app.dependency_overrides[get_db] = _test_get_db
+    app.dependency_overrides[get_current_session] = _fake_auth
+    app.include_router(companion_api.router)
+    client = TestClient(app)
+
+    # 1. Mock LLM & image generation for preview
+    captured_tool_args: dict = {}
+
+    async def _fake_enhance(db, user_id, *, description, feedback=None):
+        return f"enhanced: {description} (feedback: {feedback})"
+
+    async def _fake_img_tool(prompt, reference_image=None, **kwargs):
+        captured_tool_args["prompt"] = prompt
+        captured_tool_args["reference_image"] = reference_image
+        return '{"success": true, "urls": ["/api/media/files/preview_src_123"]}'
+
+    async def _fake_fetch_bytes(url):
+        return b"preview_texture_png_bytes"
+
+    def _fake_get_file_path(fid):
+        from pathlib import Path
+        import tempfile
+        if fid == "non_existent_expired_id":
+            return None
+        td = tempfile.mkdtemp(prefix="wardrobe_preview_")
+        real_path = Path(td) / f"{fid}.png"
+        real_path.write_bytes(b"\x89PNG\r\n\x1a\n")
+        return (real_path, "image/png")
+
+    monkeypatch.setattr("services.companion.wardrobe_service.enhance_texture_prompt", _fake_enhance)
+    monkeypatch.setattr("services.companion.wardrobe_service.image_generation_tool", _fake_img_tool)
+    monkeypatch.setattr("services.companion.wardrobe_service.fetch_texture_bytes", _fake_fetch_bytes)
+    monkeypatch.setattr("services.companion.wardrobe_service.get_file_path", _fake_get_file_path)
+
+    # 2. Preview without image
+    resp = client.post(
+        "/api/companion/wardrobe/preview",
+        json={"description": "未来感机能夹克"},
+    )
+    assert resp.status_code == 200
+    preview_data = resp.json()
+    assert preview_data["url"].startswith("http") or "/api/media/files/" in preview_data["url"]
+    assert "enhanced: 未来感机能夹克" in preview_data["prompt"]
+    assert preview_data["file_id"]
+    file_id = preview_data["file_id"]
+
+    # Preview does not write any DB row
+    with SessionLocal() as db:
+        items = db.query(WardrobeItem).filter(WardrobeItem.user_id == uid, WardrobeItem.category == "generated").all()
+        assert len(items) == 0
+
+    # 3. Preview with image and feedback
+    img_b64 = base64.b64encode(b"fake_reference_image").decode("ascii")
+    resp_with_img = client.post(
+        "/api/companion/wardrobe/preview",
+        json={
+            "description": "未来感机能夹克",
+            "image": img_b64,
+            "content_type": "image/png",
+            "feedback": "添加霓虹蓝色线条",
+        },
+    )
+    assert resp_with_img.status_code == 200
+    assert captured_tool_args["reference_image"] == f"data:image/png;base64,{img_b64}"
+    assert "feedback: 添加霓虹蓝色线条" in captured_tool_args["prompt"]
+
+    # 4. Preview validation errors
+    bad_mime = client.post(
+        "/api/companion/wardrobe/preview",
+        json={"description": "test", "image": img_b64, "content_type": "application/pdf"},
+    )
+    assert bad_mime.status_code == 415
+
+    bad_b64 = client.post(
+        "/api/companion/wardrobe/preview",
+        json={"description": "test", "image": "invalid_base64_!@#$%", "content_type": "image/png"},
+    )
+    assert bad_b64.status_code == 400
+
+    # 5. Confirm valid preview
+    ws_emitted: list[int] = []
+    monkeypatch.setattr(companion_api, "emit_wardrobe_updated", lambda user_id: ws_emitted.append(user_id))
+
+    confirm_resp = client.post(
+        "/api/companion/wardrobe/confirm",
+        json={"file_id": file_id, "name": "定制机能夹克", "prompt": preview_data["prompt"]},
+    )
+    assert confirm_resp.status_code == 201
+    confirmed = confirm_resp.json()
+    assert confirmed["name"] == "定制机能夹克"
+    assert confirmed["category"] == "generated"
+    assert confirmed["equipped"] is True
+    assert confirmed["texture_url"]
+    assert ws_emitted == [uid]
+
+    # Verify DB state: new row persisted, equipped=True, other items equipped=False
+    with SessionLocal() as db:
+        items = db.query(WardrobeItem).filter(WardrobeItem.user_id == uid).all()
+        generated_items = [i for i in items if i.category == "generated"]
+        assert len(generated_items) == 1
+        assert generated_items[0].name == "定制机能夹克"
+        assert generated_items[0].equipped is True
+        other_items = [i for i in items if i.id != generated_items[0].id]
+        assert all(not i.equipped for i in other_items)
+
+    # 6. Confirm expired/non-existent file_id -> 409
+    expired_resp = client.post(
+        "/api/companion/wardrobe/confirm",
+        json={"file_id": "non_existent_expired_id", "name": "过期装扮"},
+    )
+    assert expired_resp.status_code == 409

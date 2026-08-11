@@ -1,5 +1,8 @@
-// Late-arrival buffer for the async avatar (bust) regen flow:
-//   ``avatar.regenerate`` → awaitAvatarRegeneration / resolveAvatarRegeneration
+// Late-arrival buffer for the async avatar (bust) regen flow. The companion
+// path is REST-only (POST /api/companion/avatar and POST /from-image) since
+// the WS `avatar.regenerate` RPC was retired alongside the WS-only
+// `avatar.generate_fullbody` RPC — fullbody now goes through
+// /api/companion/avatar/{id}/fullbody too.
 
 type Resolver<T> = (payload: T) => void
 
@@ -83,11 +86,12 @@ function _makeResolver<T>(store: PendingMap<T>): (payload: T & { job_id?: string
   }
 }
 
-// Avatar (bust) regen.
+// Avatar (bust) regen. The seed_* fields stay in the payload shape for
+// backwards compatibility with consumers that haven't migrated to reading the
+// fullbody seed atoms directly, but step-1 (bust) responses leave them null.
 export interface AvatarRegeneratedPayload {
   job_id?: string
   asset_url?: string | null
-  // Step-1 only — the backend pushes null.
   seed_front_url?: string | null
   seed_right_url?: string | null
   seed_back_url?: string | null

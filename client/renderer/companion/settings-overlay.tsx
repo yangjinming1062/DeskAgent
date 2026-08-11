@@ -32,6 +32,7 @@ import { notifyError } from '@/shared/store/notifications'
 
 import { pushDevLog } from './developer-overlay'
 import { PersonaSection } from './persona-editor'
+import { WardrobeDesignPanel } from './wardrobe-design'
 
 interface SettingsOverlayProps {
   onClose: () => void
@@ -62,8 +63,8 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps): React.Reac
   const [genderFilter, setGenderFilter] = useState('')
 
   const [retuneOpen, setRetuneOpen] = useState(false)
+  const [wardrobeDesignOpen, setWardrobeDesignOpen] = useState(false)
   const wardrobe = useStore($wardrobe)
-  const [wardrobeBusy, setWardrobeBusy] = useState(false)
   const [wardrobeHint, setWardrobeHint] = useState<string | null>(null)
 
   const [retuneInitial, setRetuneInitial] = useState<{
@@ -183,30 +184,6 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps): React.Reac
       .then(items => setWardrobe(items ?? []))
       .catch(() => {})
   }, [])
-
-  const generateWardrobe = async () => {
-    setWardrobeBusy(true)
-    setWardrobeHint(null)
-
-    try {
-      await window.deskagent.api<WardrobeItem>({
-        path: '/api/companion/wardrobe',
-        method: 'POST',
-        body: { name: '新造型', description: 'AI 生成的自定义纹理' }
-      })
-      // Backend will push wardrobe.updated; the events.ts handler refreshes
-      // the catalog. We optimistically re-pull here too in case the event
-      // arrives before the user closes the panel.
-      const items = await window.deskagent.api<WardrobeItem[]>({ path: '/api/companion/wardrobe' })
-      setWardrobe(items ?? [])
-      refreshEquippedAndApply()
-      setWardrobeHint('生成好了')
-    } catch (err) {
-      setWardrobeHint(err instanceof Error ? err.message : '生成失败')
-    } finally {
-      setWardrobeBusy(false)
-    }
-  }
 
   const equipWardrobe = async (itemId: number) => {
     try {
@@ -446,12 +423,11 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps): React.Reac
           <Section hint="形象已确认；换装只改纹理不动 3D 模型" title="换装">
             <div className="flex">
               <button
-                className="flex-1 rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-xs text-white/80 transition hover:bg-white/15 disabled:opacity-40"
-                disabled={wardrobeBusy}
-                onClick={generateWardrobe}
+                className="flex-1 rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-xs font-medium text-white transition hover:bg-white/20"
+                onClick={() => setWardrobeDesignOpen(true)}
                 type="button"
               >
-                {wardrobeBusy ? '生成中…' : '新造型'}
+                ✨ 打开换装设计 (Wardrobe Studio)
               </button>
             </div>
             {wardrobe.length > 0 && (
@@ -503,6 +479,8 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps): React.Reac
       {retuneOpen && persona?.name && retuneInitial && (
         <PersonaRetune initial={retuneInitial} onClose={() => setRetuneOpen(false)} />
       )}
+
+      {wardrobeDesignOpen && <WardrobeDesignPanel onClose={() => setWardrobeDesignOpen(false)} />}
     </div>
   )
 }

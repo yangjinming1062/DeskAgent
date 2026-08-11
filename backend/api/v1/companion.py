@@ -33,16 +33,20 @@ from modules.companion import ModelGenerateRequest
 from modules.companion import Persona
 from modules.companion import PersonaResponse
 from modules.companion import PersonaUpdate
+from modules.companion import WardrobeConfirmRequest
 from modules.companion import WardrobeEquipRequest
 from modules.companion import WardrobeGenerateRequest
 from modules.companion import WardrobeItem
 from modules.companion import WardrobeItemResponse
+from modules.companion import WardrobePreviewRequest
+from modules.companion import WardrobePreviewResponse
 from services.companion import ALLOWED_AVATAR_UPLOAD_MIME_TYPES
 from services.companion import analyze_personality_tags
 from services.companion import AvatarGenerationError
 from services.companion import AvatarNotFoundError
 from services.companion import AvatarSourceUnreadableError
 from services.companion import confirm_portrait
+from services.companion import confirm_wardrobe_item
 from services.companion import delete_wardrobe_item
 from services.companion import emit_wardrobe_updated
 from services.companion import equip_wardrobe_item
@@ -66,6 +70,8 @@ from services.companion import ModelGenerationError
 from services.companion import ModelGenerationInProgressError
 from services.companion import normalize_voice_language
 from services.companion import PersonaValidationError
+from services.companion import preview_wardrobe_texture
+from services.companion import discard_wardrobe_preview
 from services.companion import regenerate_avatar_from_image
 from services.companion import resolve_companion_asset_path
 from services.companion import resolve_companion_model_path
@@ -75,6 +81,7 @@ from services.companion import signed_model_url
 from services.companion import update_persona
 from services.companion import verify_signed_asset_request
 from services.companion import verify_signed_avatar_request
+from services.companion import WardrobeSourceExpiredError
 from services.llm import chat
 from services.llm import MissingLlmConfigError
 from services.rate_limit import limiter
@@ -362,6 +369,24 @@ async def post_avatar(
     return _avatar_response(asset)
 
 
+def _decode_upload_image(image_b64: str | None, content_type: str | None) -> tuple[bytes | None, str | None]:
+    """Decode and validate a base64-uploaded image.
+
+    Returns ``(raw_bytes, normalized_content_type)``, or ``(None, None)``
+    when *image_b64* is falsy.  Raises ``HTTPException(415)`` for unsupported
+    MIME types and ``HTTPException(400)`` for malformed base64.
+    """
+    if not image_b64:
+        return None, None
+    normalized = (content_type or "image/png").split(";")[0].strip().lower()
+    if normalized not in ALLOWED_AVATAR_UPLOAD_MIME_TYPES:
+        raise HTTPException(status_code=415, detail={"error": "仅支持 PNG / JPEG / WebP / GIF 图片"})
+    try:
+        return base64.b64decode(image_b64), normalized
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid base64 image data")
+
+
 @router.post("/avatar/from-image", response_model=AvatarAssetResponse, status_code=status.HTTP_201_CREATED)
 @limiter.limit(f"{SETTINGS.companion_avatar_generate_rate_limit_per_minute}/minute")
 async def post_avatar_from_image(
@@ -372,13 +397,7 @@ async def post_avatar_from_image(
 ) -> AvatarAssetResponse:
     """The upload is re-rendered to an avatar-compliant portrait via enhance_avatar_prompt."""
     user, _ = auth
-    content_type = (body.content_type or "image/png").split(";")[0].strip().lower()
-    if content_type not in ALLOWED_AVATAR_UPLOAD_MIME_TYPES:
-        raise HTTPException(status_code=415, detail={"error": "仅支持 PNG / JPEG / WebP / GIF 图片"})
-    try:
-        raw = base64.b64decode(body.image)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid base64 image data")
+    raw, content_type = _decode_upload_image(body.image, body.content_type)
     persona = get_or_create_persona(db, user.id)
     try:
         asset = await regenerate_avatar_from_image(
@@ -558,6 +577,64 @@ def delete_wardrobe(
         raise HTTPException(status_code=404, detail="Wardrobe item not found")
     emit_wardrobe_updated(user.id)
     return {"ok": True}
+
+
+@router.post("/wardrobe/preview", response_model=WardrobePreviewResponse)
+@limiter.limit(f"{SETTINGS.companion_wardrobe_generate_rate_limit_per_minute}/minute")
+async def post_wardrobe_preview(
+    request: Request,  # required by @limiter.limit
+    body: WardrobePreviewRequest,
+    auth: tuple[User, LoginRecord] = Depends(get_current_session),
+    db: Session = Depends(get_db),
+) -> WardrobePreviewResponse:
+    user, _ = auth
+    raw_bytes, content_type = _decode_upload_image(body.image, body.content_type)
+    try:
+        preview = await preview_wardrobe_texture(
+            db,
+            user_id=user.id,
+            description=body.description,
+            image_bytes=raw_bytes,
+            content_type=content_type,
+            feedback=body.feedback,
+        )
+    except (RuntimeError, MissingLlmConfigError) as exc:
+        raise HTTPException(status_code=502, detail={"error": str(exc)})
+    return preview
+
+
+@router.post("/wardrobe/confirm", response_model=WardrobeItemResponse, status_code=status.HTTP_201_CREATED)
+async def post_wardrobe_confirm(
+    body: WardrobeConfirmRequest,
+    auth: tuple[User, LoginRecord] = Depends(get_current_session),
+    db: Session = Depends(get_db),
+) -> WardrobeItemResponse:
+    user, _ = auth
+    try:
+        item = await confirm_wardrobe_item(
+            db,
+            user_id=user.id,
+            file_id=body.file_id,
+            name=body.name,
+            prompt=body.prompt,
+        )
+    except WardrobeSourceExpiredError as exc:
+        raise HTTPException(status_code=409, detail={"error": "换装草稿已过期，请重新生成", "reason": str(exc)})
+    except (RuntimeError, MissingLlmConfigError) as exc:
+        raise HTTPException(status_code=502, detail={"error": str(exc)})
+    emit_wardrobe_updated(user.id)
+    return _wardrobe_response(item)
+
+
+@router.delete("/wardrobe/preview/{file_id}")
+async def delete_wardrobe_preview(
+    file_id: str,
+    auth: tuple[User, LoginRecord] = Depends(get_current_session),
+) -> dict[str, bool]:
+    """Best-effort delete of an unconfirmed wardrobe preview. Called when the
+    Wardrobe Studio discards or closes so the temp-media file isn't held
+    until ``cleanup_expired`` sweeps it."""
+    return {"deleted": discard_wardrobe_preview(file_id)}
 
 
 public_router = get_router()
