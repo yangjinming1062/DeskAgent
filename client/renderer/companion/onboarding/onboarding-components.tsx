@@ -72,10 +72,19 @@ export function PortraitPanel({
     back: { label: '背面', url: seedUrls?.back ?? null }
   }[step]
 
+  const isPortrait = step !== 'avatar'
+
   return (
     <div className="flex flex-col items-center gap-2">
       {introHint && <p className="text-center text-[10px] leading-relaxed text-white/45">{introHint}</p>}
-      <PortraitThumb label={label} name={name} onZoom={url ? () => setZoomedUrl(url) : undefined} size="lg" url={url} />
+      <PortraitThumb
+        label={label}
+        name={name}
+        onZoom={url ? () => setZoomedUrl(url) : undefined}
+        portrait={isPortrait}
+        size="lg"
+        url={url}
+      />
       {gallery}
       {hint && <p className="text-xs text-rose-300/90">{hint}</p>}
       {zoomedUrl && <PortraitLightbox name={name} onClose={() => setZoomedUrl(null)} url={zoomedUrl} />}
@@ -94,6 +103,8 @@ function HistoryGallery({
   onSelect: (idx: number) => void
   step: PortraitStep
 }): React.JSX.Element {
+  const thumbSize = step === 'avatar' ? 'h-10 w-10' : 'w-10 aspect-[4/7]'
+
   return (
     <div className="mt-1 flex justify-center gap-1.5">
       {entries.map((entry, idx) => {
@@ -117,9 +128,9 @@ function HistoryGallery({
             type="button"
           >
             {thumb ? (
-              <img alt="" className="h-10 w-10 object-cover" src={thumb} />
+              <img alt="" className={`${thumbSize} object-cover`} src={thumb} />
             ) : (
-              <div className="grid h-10 w-10 place-items-center text-[10px] text-white/30">—</div>
+              <div className={`grid ${thumbSize} place-items-center text-[10px] text-white/30`}>—</div>
             )}
           </button>
         )
@@ -133,15 +144,26 @@ function PortraitThumb({
   name,
   onZoom,
   url,
-  size = 'sm'
+  size = 'sm',
+  portrait = false
 }: {
   label: string
   name: string
   onZoom: (() => void) | undefined
   url: string | null
   size?: 'sm' | 'md' | 'lg'
+  portrait?: boolean
 }): React.JSX.Element {
-  const sizeClass = size === 'lg' ? 'h-48 w-48' : size === 'sm' ? 'h-28 w-28' : 'h-36 w-36'
+  // Full-body seeds are generated at 1024×1792 (4:7); the portrait variant
+  // keeps the same width but lets CSS aspect-ratio derive the height so the
+  // whole body is visible instead of cropped into a square.
+  const sizeClass = portrait
+    ? `${size === 'lg' ? 'w-48' : size === 'sm' ? 'w-28' : 'w-36'} aspect-[4/7]`
+    : size === 'lg'
+      ? 'h-48 w-48'
+      : size === 'sm'
+        ? 'h-28 w-28'
+        : 'h-36 w-36'
 
   return (
     <div className="flex flex-col items-center gap-1">
