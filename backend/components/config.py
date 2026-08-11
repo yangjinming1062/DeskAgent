@@ -59,6 +59,8 @@ class Settings(BaseSettings):
     gemini_base_url: str = Field(default="", validation_alias="GEMINI_BASE_URL")
     zhipu_api_key: str = Field(default="", validation_alias=AliasChoices("ZHIPU_API_KEY", "ZHIPU_KEY"))
     zhipu_base_url: str = Field(default="", validation_alias="ZHIPU_BASE_URL")
+    grok_api_key: str = Field(default="", validation_alias=AliasChoices("GROK_API_KEY", "XAI_API_KEY"))
+    grok_base_url: str = Field(default="", validation_alias="GROK_BASE_URL")
 
     # ── LLM (chat) ──
     llm_provider: str = ""

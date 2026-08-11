@@ -252,6 +252,24 @@ class TestRegistry:
         with pytest.raises(LookupError):
             resolve(ServiceType.video_gen, "zhipu")
 
+    def test_grok_providers_registered(self):
+        """Grok (xAI) registers all five capabilities: chat + stt + tts +
+        image_gen + video_gen. Single protocol family — no v1/v2 split."""
+        from services.llm.providers.grok import (
+            GrokChatProvider,
+            GrokImageGenProvider,
+            GrokSTTProvider,
+            GrokTTSProvider,
+            GrokVideoGenProvider,
+        )
+        from services.llm.providers.registry import resolve
+
+        assert resolve(ServiceType.llm, "grok") is GrokChatProvider
+        assert resolve(ServiceType.stt, "grok") is GrokSTTProvider
+        assert resolve(ServiceType.tts, "grok") is GrokTTSProvider
+        assert resolve(ServiceType.image_gen, "grok") is GrokImageGenProvider
+        assert resolve(ServiceType.video_gen, "grok") is GrokVideoGenProvider
+
 
 class TestDefaultModels:
     def test_default_models_published(self):
@@ -272,6 +290,11 @@ class TestDefaultModels:
         assert default_model_for("zhipu", "stt") == "glm-asr-2512"
         assert default_model_for("zhipu", "tts") == "glm-tts"
         assert default_model_for("zhipu", "image_gen") == "glm-image"
+        assert default_model_for("grok", "llm") == "grok-4.5"
+        assert default_model_for("grok", "stt") == "grok-transcribe"
+        assert default_model_for("grok", "tts") == "grok-voice-think-fast-1.0"
+        assert default_model_for("grok", "image_gen") == "grok-imagine-image-quality"
+        assert default_model_for("grok", "video_gen") == "grok-imagine-video-1.5"
 
     def test_unsupported_cap_returns_empty(self):
         from services.llm import default_model_for
@@ -305,6 +328,13 @@ class TestDefaultContextTokens:
         assert default_context_tokens_for("zhipu", "stt") == 8_000
         assert default_context_tokens_for("zhipu", "tts") == 8_000
         assert default_context_tokens_for("zhipu", "image_gen") == 8_000
+        # grok: grok-4.5 docs publish a 500k window; other caps match the
+        # 8_000 convention used by every other text-to-X provider.
+        assert default_context_tokens_for("grok", "llm") == 500_000
+        assert default_context_tokens_for("grok", "stt") == 8_000
+        assert default_context_tokens_for("grok", "tts") == 8_000
+        assert default_context_tokens_for("grok", "image_gen") == 8_000
+        assert default_context_tokens_for("grok", "video_gen") == 8_000
 
     def test_unsupported_cap_returns_zero(self):
         from services.llm import default_context_tokens_for
@@ -336,11 +366,11 @@ class TestProvidersSupporting:
         image_providers = set(providers_supporting("image_gen"))
         video_providers = set(providers_supporting("video_gen"))
 
-        assert chat_providers == {"mimo", "minimax", "gemini", "zhipu"}
-        assert stt_providers == {"mimo", "zhipu"}
-        assert tts_providers == {"mimo", "minimax", "zhipu"}
-        assert image_providers == {"mimo", "minimax", "gemini", "zhipu"}
-        assert video_providers == {"minimax"}
+        assert chat_providers == {"mimo", "minimax", "gemini", "grok", "zhipu"}
+        assert stt_providers == {"mimo", "grok", "zhipu"}
+        assert tts_providers == {"mimo", "minimax", "grok", "zhipu"}
+        assert image_providers == {"mimo", "minimax", "gemini", "grok", "zhipu"}
+        assert video_providers == {"minimax", "grok"}
 
 
 class TestProviderChain:
@@ -372,6 +402,8 @@ class TestProviderChain:
         "minimax_base_url": "",
         "zhipu_api_key": "",
         "zhipu_base_url": "",
+        "grok_api_key": "",
+        "grok_base_url": "",
     }
 
     def _reset_settings(self, monkeypatch):
@@ -1320,6 +1352,428 @@ class TestMiniMaxVideoGenV1:
         provider = self._make_provider(capture, model="some-future-model")
         await provider.submit(VideoGenRequest(prompt="x"))
         assert captured[0].url.path == "/v1/video_generation"
+
+
+# ── Grok (xAI) providers ───────────────────────────────────────────
+
+
+def _mock_grok_http(handler) -> httpx.AsyncClient:
+    # base_url omits /v1 so mock-transport-captured request paths mirror the
+    # live wire paths (the real base_url includes /v1; the provider posts
+    # relative paths to avoid double-prefixing).
+    return httpx.AsyncClient(base_url="https://api.x.ai", transport=httpx.MockTransport(handler))
+
+
+class TestGrokImageGen:
+    def _make_provider(self, handler):
+        from services.llm.providers.grok import GrokImageGenProvider
+
+        provider = GrokImageGenProvider(
+            ProviderConfig(
+                base_url="https://api.x.ai/v1",
+                api_key="sk-grok",
+                model="grok-imagine-image-quality",
+                service_type=ServiceType.image_gen,
+                provider_name="grok",
+            )
+        )
+        provider._client = _mock_grok_http(handler)
+        return provider
+
+    @pytest.mark.asyncio
+    async def test_generate_text_only_downloads_and_encodes(self, monkeypatch):
+        from services.llm.providers.grok import image as grok_image
+
+        captured: list[dict] = []
+
+        async def grok_handler(req: httpx.Request) -> httpx.Response:
+            captured.append(json.loads(req.content))
+            return httpx.Response(
+                200,
+                json={"data": [{"url": "https://cdn.x.ai/1.png"}, {"url": "https://cdn.x.ai/2.png"}]},
+            )
+
+        async def cdn_handler(req: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, content=b"\x89PNG")
+
+        provider = self._make_provider(grok_handler)
+        cdn_client = httpx.AsyncClient(transport=httpx.MockTransport(cdn_handler))
+        monkeypatch.setattr(grok_image.httpx, "AsyncClient", lambda **kw: cdn_client)
+
+        result = await provider.generate(ImageGenRequest(prompt="a cat", n=2))
+        assert len(result.images) == 2
+        assert result.images[0].b64 == "iVBORw=="
+        assert result.model == "grok-imagine-image-quality"
+        # Generation payload was sent as expected.
+        body = captured[0]
+        assert body["model"] == "grok-imagine-image-quality"
+        assert body["prompt"] == "a cat"
+        assert body["n"] == 2
+        assert "image" not in body
+
+    @pytest.mark.asyncio
+    async def test_generate_with_reference_uses_edits_endpoint(self, monkeypatch):
+        from services.llm.providers.grok import image as grok_image
+
+        captured: list[httpx.Request] = []
+        bodies: list[dict] = []
+
+        async def handler(req: httpx.Request) -> httpx.Response:
+            captured.append(req)
+            bodies.append(json.loads(req.content))
+            return httpx.Response(200, json={"data": [{"url": "https://cdn.x.ai/out.png"}]})
+
+        async def cdn_handler(req: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, content=b"\x89PNG")
+
+        provider = self._make_provider(handler)
+        cdn_client = httpx.AsyncClient(transport=httpx.MockTransport(cdn_handler))
+        monkeypatch.setattr(grok_image.httpx, "AsyncClient", lambda **kw: cdn_client)
+
+        await provider.generate(
+            ImageGenRequest(
+                prompt="re-render",
+                reference_image="https://ref/seed.png",
+                aspect_ratio="16:9",
+            )
+        )
+        assert captured[0].url.path == "/images/edits"
+        assert bodies[0]["image"] == {"url": "https://ref/seed.png", "type": "image_url"}
+        assert bodies[0]["aspect_ratio"] == "16:9"
+
+    @pytest.mark.asyncio
+    async def test_generate_empty_data_raises(self):
+        handler = _async_handler([{"data": []}])
+        provider = self._make_provider(handler)
+        with pytest.raises(RuntimeError, match="no images"):
+            await provider.generate(ImageGenRequest(prompt="x"))
+
+    def test_supports_reference_image_is_true(self):
+        from services.llm.providers.grok import GrokImageGenProvider
+
+        assert GrokImageGenProvider.supports_reference_image is True
+
+    def test_raw_client_returns_none(self):
+        from services.llm.providers.grok import GrokImageGenProvider
+
+        provider = GrokImageGenProvider(
+            ProviderConfig(
+                base_url="x",
+                api_key="k",
+                model="m",
+                service_type=ServiceType.image_gen,
+                provider_name="grok",
+            )
+        )
+        assert provider.raw_client() is None
+
+
+class TestGrokTTS:
+    def _make_provider(self, handler):
+        from services.llm.providers.grok import GrokTTSProvider
+
+        provider = GrokTTSProvider(
+            ProviderConfig(
+                base_url="https://api.x.ai/v1",
+                api_key="sk-grok",
+                model="grok-voice-think-fast-1.0",
+                service_type=ServiceType.tts,
+                provider_name="grok",
+            )
+        )
+        provider._client = _mock_grok_http(handler)
+        return provider
+
+    @pytest.mark.asyncio
+    async def test_synthesize_returns_raw_audio_bytes(self):
+        captured: list[dict] = []
+
+        async def handler(req: httpx.Request) -> httpx.Response:
+            captured.append(json.loads(req.content))
+            return httpx.Response(200, content=b"FAKE_MP3_BYTES")
+
+        provider = self._make_provider(handler)
+        result = await provider.synthesize("hello", voice="eve", fmt="mp3")
+        assert result.audio == b"FAKE_MP3_BYTES"
+        assert result.mime == "audio/mpeg"
+        assert result.voice == "eve"
+        body = captured[0]
+        # xAI's /v1/tts has no ``model`` field — assert absence so a future
+        # regression that adds it is caught.
+        assert "model" not in body
+        assert body["text"] == "hello"
+        assert body["voice_id"] == "eve"
+        assert body["language"] == "en"
+        assert body["output_format"]["codec"] == "mp3"
+        assert body["output_format"]["bit_rate"] == 128000
+
+    @pytest.mark.asyncio
+    async def test_synthesize_defaults_to_first_voice(self):
+        captured: list[dict] = []
+
+        async def handler(req: httpx.Request) -> httpx.Response:
+            captured.append(json.loads(req.content))
+            return httpx.Response(200, content=b"x")
+
+        provider = self._make_provider(handler)
+        await provider.synthesize("hi")
+        assert captured[0]["voice_id"] == "eve"
+
+    @pytest.mark.asyncio
+    async def test_synthesize_wav_omits_bit_rate(self):
+        captured: list[dict] = []
+
+        async def handler(req: httpx.Request) -> httpx.Response:
+            captured.append(json.loads(req.content))
+            return httpx.Response(200, content=b"RIFF")
+
+        provider = self._make_provider(handler)
+        result = await provider.synthesize("hi", fmt="wav")
+        assert result.mime == "audio/wav"
+        assert "bit_rate" not in captured[0]["output_format"]
+
+
+class TestGrokSTT:
+    def _make_provider(self, handler):
+        from services.llm.providers.grok import GrokSTTProvider
+
+        provider = GrokSTTProvider(
+            ProviderConfig(
+                base_url="https://api.x.ai/v1",
+                api_key="sk-grok",
+                model="grok-transcribe",
+                service_type=ServiceType.stt,
+                provider_name="grok",
+            )
+        )
+        provider._client = _mock_grok_http(handler)
+        return provider
+
+    @pytest.mark.asyncio
+    async def test_transcribe_returns_text(self):
+        async def handler(req: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, json={"text": "  hello world  "})
+
+        provider = self._make_provider(handler)
+        result = await provider.transcribe(b"FAKE_WAV", mime_type="audio/wav")
+        assert result.text == "hello world"
+
+    @pytest.mark.asyncio
+    async def test_transcribe_picks_extension_from_mime(self):
+        captured_files: list[tuple[str, bytes]] = []
+
+        async def handler(req: httpx.Request) -> httpx.Response:
+            for k, v in req.headers.items():
+                if k.lower() == "content-type":
+                    # Multipart envelope — content-type is a multipart/form-data; we want the part names instead.
+                    pass
+            captured_files.append(("multipart", req.content))
+            return httpx.Response(200, json={"text": "ok"})
+
+        provider = self._make_provider(handler)
+        await provider.transcribe(b"\xff\xfb", mime_type="audio/mpeg")
+        body = captured_files[0][1]
+        assert b'filename="audio.mp3"' in body
+        await provider.transcribe(b"x", mime_type="audio/ogg")
+        body2 = captured_files[1][1]
+        assert b'filename="audio.ogg"' in body2
+
+
+class TestGrokVideoGen:
+    def _make_provider(self, handler, model: str = "grok-imagine-video-1.5"):
+        from services.llm.providers.grok import GrokVideoGenProvider
+
+        provider = GrokVideoGenProvider(
+            ProviderConfig(
+                base_url="https://api.x.ai/v1",
+                api_key="sk-grok",
+                model=model,
+                service_type=ServiceType.video_gen,
+                provider_name="grok",
+            )
+        )
+        provider._client = _mock_grok_http(handler)
+        return provider
+
+    @pytest.mark.asyncio
+    async def test_submit_returns_request_id(self):
+        handler = _async_handler([{"request_id": "grok-task-1"}])
+        provider = self._make_provider(handler)
+        job = await provider.submit(VideoGenRequest(prompt="a cat", duration=10, resolution="720p"))
+        assert job.task_id == "grok-task-1"
+        assert job.status == "queued"
+
+    @pytest.mark.asyncio
+    async def test_submit_builds_payload_with_image(self):
+        captured: list[dict] = []
+
+        async def handler(req: httpx.Request) -> httpx.Response:
+            captured.append(json.loads(req.content))
+            return httpx.Response(200, json={"request_id": "grok-i2v"})
+
+        provider = self._make_provider(handler)
+        await provider.submit(
+            VideoGenRequest(
+                prompt="x",
+                duration=5,
+                resolution="720p",
+                first_frame_image="https://example.com/seed.png",
+                aspect_ratio="16:9",
+            )
+        )
+        body = captured[0]
+        assert body["model"] == "grok-imagine-video-1.5"
+        assert body["prompt"] == "x"
+        assert body["duration"] == 5
+        assert body["resolution"] == "720p"
+        assert body["aspect_ratio"] == "16:9"
+        assert body["image"] == {"url": "https://example.com/seed.png", "type": "image_url"}
+
+    @pytest.mark.asyncio
+    async def test_submit_rejects_prompt_over_7000_chars(self):
+        provider = self._make_provider(_async_handler([]))
+        with pytest.raises(ValueError, match="exceeds xAI limit"):
+            await provider.submit(VideoGenRequest(prompt="x" * 7001, duration=5, resolution="720p"))
+
+    @pytest.mark.asyncio
+    async def test_submit_accepts_full_duration_range(self):
+        # xAI docs allow 1..15s — verify both edges pass through to the wire
+        # rather than being rejected client-side.
+
+        async def capture(req: httpx.Request) -> httpx.Response:
+            assert json.loads(req.content)["duration"] in (1, 15)
+            return httpx.Response(200, json={"request_id": "ok"})
+
+        provider = self._make_provider(capture)
+        await provider.submit(VideoGenRequest(prompt="x", duration=1, resolution="720p"))
+        await provider.submit(VideoGenRequest(prompt="x", duration=15, resolution="720p"))
+
+    @pytest.mark.asyncio
+    async def test_submit_rejects_duration_outside_range(self):
+        provider = self._make_provider(_async_handler([]))
+        with pytest.raises(ValueError, match="requires duration"):
+            await provider.submit(VideoGenRequest(prompt="x", duration=0, resolution="720p"))
+        with pytest.raises(ValueError, match="requires duration"):
+            await provider.submit(VideoGenRequest(prompt="x", duration=16, resolution="720p"))
+
+    @pytest.mark.asyncio
+    async def test_submit_accepts_both_resolution_casings(self):
+        # xAI docs use lowercase "720p" / "1080p" but accept mixed case too.
+        for res in ("480p", "720p", "1080p", "480P", "720P", "1080P"):
+            handler = _async_handler([{"request_id": "ok"}])
+            provider = self._make_provider(handler)
+            await provider.submit(VideoGenRequest(prompt="x", duration=5, resolution=res))
+
+    @pytest.mark.asyncio
+    async def test_submit_rejects_unsupported_resolution(self):
+        provider = self._make_provider(_async_handler([]))
+        with pytest.raises(ValueError, match="requires resolution"):
+            await provider.submit(VideoGenRequest(prompt="x", duration=10, resolution="4K"))
+
+    @pytest.mark.asyncio
+    async def test_poll_done_returns_inline_url(self):
+        handler = _async_handler(
+            [{"status": "done", "video": {"url": "https://cdn.x.ai/v1.mp4"}}]
+        )
+        provider = self._make_provider(handler)
+        job = await provider.poll("grok-task-1")
+        assert job.status == "succeeded"
+        assert job.download_url == "https://cdn.x.ai/v1.mp4"
+
+    @pytest.mark.asyncio
+    async def test_poll_status_enum_mapping(self):
+        for raw, expected in (
+            ("queued", "queued"),
+            ("processing", "processing"),
+            ("pending", "processing"),  # alternate in-flight label
+            ("running", "processing"),  # alt in-flight label
+            ("failed", "failed"),
+            ("expired", "failed"),  # collapse to internal "failed" terminal
+        ):
+            handler = _async_handler([{"status": raw}])
+            provider = self._make_provider(handler)
+            job = await provider.poll("task")
+            assert job.status == expected, raw
+
+    @pytest.mark.asyncio
+    async def test_poll_unknown_status_keeps_polling(self):
+        # Defensive: an unrecognized status keeps us in "processing" so the
+        # job worker doesn't mark a still-running job as terminal.
+        handler = _async_handler([{"status": "weird-new-state"}])
+        provider = self._make_provider(handler)
+        job = await provider.poll("task")
+        assert job.status == "processing"
+        assert job.error is not None
+        assert "unknown grok video status" in job.error
+
+    @pytest.mark.asyncio
+    async def test_poll_failed_extracts_dict_error_message(self):
+        # xAI docs show the failed body as ``error: {code, message}``.
+        handler = _async_handler(
+            [
+                {
+                    "status": "failed",
+                    "error": {"code": "invalid_argument", "message": "prompt too long"},
+                }
+            ]
+        )
+        provider = self._make_provider(handler)
+        job = await provider.poll("task")
+        assert job.status == "failed"
+        assert job.error == "prompt too long"
+
+    @pytest.mark.asyncio
+    async def test_poll_failed_accepts_string_error(self):
+        # Defensive: older or one-off responses may carry ``error: "<string>"``;
+        # the parser must not crash and must surface the message verbatim.
+        handler = _async_handler([{"status": "failed", "error": "content rejected"}])
+        provider = self._make_provider(handler)
+        job = await provider.poll("task")
+        assert job.status == "failed"
+        assert job.error == "content rejected"
+
+    @pytest.mark.asyncio
+    async def test_poll_failed_dict_without_message_falls_back_to_code(self):
+        handler = _async_handler(
+            [{"status": "failed", "error": {"code": "bad_request"}}]
+        )
+        provider = self._make_provider(handler)
+        job = await provider.poll("task")
+        assert job.status == "failed"
+        assert job.error == "bad_request"
+
+    @pytest.mark.asyncio
+    async def test_poll_failed_non_dict_error_does_not_pollute_message(self):
+        # Defensive: if docs ever drift to a non-dict, non-string error,
+        # surface a tagged repr rather than passing the raw blob through.
+        handler = _async_handler(
+            [{"status": "failed", "error": ["weird", "list"]}]
+        )
+        provider = self._make_provider(handler)
+        job = await provider.poll("task")
+        assert job.status == "failed"
+        assert job.error is not None
+        assert "non-standard" in job.error
+
+    @pytest.mark.asyncio
+    async def test_fetch_is_unreachable(self):
+        provider = self._make_provider(_async_handler([]))
+        with pytest.raises(RuntimeError, match="fetch"):
+            await provider.fetch("file-x")
+
+    def test_raw_client_returns_none(self):
+        from services.llm.providers.grok import GrokVideoGenProvider
+
+        provider = GrokVideoGenProvider(
+            ProviderConfig(
+                base_url="x",
+                api_key="k",
+                model="m",
+                service_type=ServiceType.video_gen,
+                provider_name="grok",
+            )
+        )
+        assert provider.raw_client() is None
 
 
 class TestPerUserProviderChain:

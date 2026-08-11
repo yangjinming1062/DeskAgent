@@ -26,7 +26,7 @@ import { ListRow, LoadingState, SectionHeading, SettingsContent, SettingsSubsect
 // Mirrors backend KNOWN_PROVIDERS — the only provider names accepted by the
 // provider-config slot resolution. Keep in sync with
 // backend/services/llm/providers/registry.py.
-const PROVIDER_OPTIONS = ['mimo', 'minimax', 'gemini', 'zhipu'] as const
+const PROVIDER_OPTIONS = ['mimo', 'minimax', 'gemini', 'grok', 'zhipu'] as const
 
 // Single source of truth for all capability rendering, form mapping, and
 // request-body construction. Adding a capability = one entry here.

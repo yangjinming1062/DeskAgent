@@ -1,6 +1,7 @@
 from components import SETTINGS
 
 from . import gemini  # noqa: F401 — side-effect: registers gemini providers
+from . import grok  # noqa: F401 — side-effect: registers grok providers
 from . import mimo  # noqa: F401 — side-effect: registers mimo providers
 from . import minimax  # noqa: F401 — side-effect: registers minimax providers
 from . import zhipu  # noqa: F401 — side-effect: registers zhipu providers
