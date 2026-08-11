@@ -217,7 +217,7 @@ DeskAgent 区别于一切既有桌面宠物 / 桌面 Agent 的核心，在于伙
 
 **标签的两种语义**：多数问题的标签就是答案本身，点击即填入输入框；但「我该怎么称呼您？」的标签（名字 / 昵称 / 称号 / 自填）是**称呼类型选择器**——点「昵称」不该把"昵称"二字当成称呼存下来，而是把输入框改问"那，您的昵称是？"再收具体值。
 
-**断点恢复**：每个回答经 `onboarding.submit {field, value}` 即时落盘单个字段（见 [PROTOCOL.md §1.1](PROTOCOL.md)），Client 启动时调 `onboarding.get_state` 从下一个未答问题恢复——崩溃/退出不丢进度。**关键差异**：`is_complete=True` 在角色子阶段答完即被设置，但 `get_onboarding_state` 只在形象确认（`is_portrait_confirmed=True`）且 voice + user_* 全部答齐后才返回 `complete=True`；未确认形象时根据是否已生成全身三视图返回 `portrait` 或 `portrait-fullbody`，确认后按 **voice 先于 user_*** 路由，中途崩溃后 client 会恢复进入对应子阶段而不是直接跳到 onboarding 结束。
+**断点恢复**：每个回答经 `onboarding.submit {field, value}` 即时落盘单个字段（见 [PROTOCOL.md §1.1](PROTOCOL.md)），Client 启动时调 `onboarding.get_state` 从下一个未答问题恢复——崩溃/退出不丢进度。**关键差异**：`is_complete=True` 在角色子阶段答完即被设置，但 `get_onboarding_state` 只在形象确认（`is_portrait_confirmed=True`）且 voice + user_* 全部答齐后才返回 `complete=True`；未确认形象时根据已生成的全身视角返回 `portrait`、`portrait-fullbody-front`、`portrait-fullbody-right` 或 `portrait-fullbody-back`，确认后按 **voice 先于 user_*** 路由，中途崩溃后 client 会恢复进入对应子阶段而不是直接跳到 onboarding 结束。
 
 ### 5.3 孵化与两步形象生成
 
@@ -231,10 +231,11 @@ DeskAgent 区别于一切既有桌面宠物 / 桌面 Agent 的核心，在于伙
 
 步 1 头像（portrait avatar）生成完成，silhouette 散开变为头像展示。操作：**确认** / **重新生成**（`avatar.regenerate`，重生头像，可带反馈）/ **自己上传**（上传一张图片作为角色基准形象，`POST /api/companion/avatar/from-image` 重绘为符合契约的 portrait）。
 
-头像确认后进入步 2 链式参考的全身三视图生成：
-1. **正面全身生成与确认**（`stage="front"`）：以确认的头像作为参考图与锚点生成正面全身立绘。用户可针对正面进行确认或单视图重生成。
-2. **侧面与背面生成**（`stage="aux"`）：正面全身确认后，基于**已确认的正面全身图**作为视觉参考图，并发生成右侧面和背面立绘。
-3. **视图维护规则**：用户可单视角重绘任一视角（`view="front"|"right"|"back"`）；重绘正面会清空并失效侧面/背面图，要求基于新正面重新生成侧背。三视图全部就绪后作为后续 3D 建模的输入。
+头像确认后进入步 2 链式参考的逐视角全身生成——每个视角单独生成、单独展示、单独确认，用户可针对任一视角反馈重绘：
+1. **正面全身**（`view="front"`）：以确认的头像作为参考图与锚点生成正面全身立绘。
+2. **右侧面**（`view="right"`）：正面确认后，基于**已确认的正面全身图**作为视觉参考图生成右侧面立绘。
+3. **背面**（`view="back"`）：右侧面确认后，同样以正面全身图为参考生成背面立绘。
+4. **视图维护规则**：每个视角均可单独重绘（`view="front"|"right"|"back"`）；重绘正面会清空并失效侧面/背面图，要求基于新正面重新生成。三视角全部就绪后作为后续 3D 建模的输入。
 
 **形象确认后锁定**：三视图确认时点击「确认」即视为锁定形象——此后 3D 模型、头像、三视图重新生成路径对当前用户关闭；`PUT /api/companion/persona` 客户端会自动剥离 `biological_type` / `gender` / `appearance_core` 三个视觉字段；名称、性格、说话风格、关系定位、`appearance_outfit`（换装偏好描述）、音色与 user_* 仍可编辑。换装（`POST /api/companion/wardrobe`）与动画生成（`POST /api/companion/animations/generate`）不受影响。**用户责任约束**：图生 3D 模型成本高（Tripo3D multiview-to-3D + rig），且形象与三视图一旦进入模型即永久冻结；onboarding 进入任一锁定字段时顶部 banner 直接提示「当前字段是形象确认后无法再次更改的重点内容」，强迫用户在初始引导阶段仔细选择。锁定在客户端剥夺提交能力实现——后端不做 schema 列、不加守卫、不加异常类型。
 

@@ -32,7 +32,7 @@
 
 | 方向 | 方法 | 用途 | 关键约束 |
 |------|------|------|----------|
-| Client → Backend | `onboarding.get_state` | 查询已采集字段 + 下一个未答问题（断点恢复） | 返回 `is_complete=True` 仅在 `Persona.is_complete` + `is_portrait_confirmed` + `voice` + `user_*` 全部齐后才置位;`next_field` 在形象未确认时根据种子图生成阶段返回 `portrait`、`portrait-fullbody-front` 或 `portrait-fullbody`,确认后按 **voice 先于 user_*** 路由 |
+| Client → Backend | `onboarding.get_state` | 查询已采集字段 + 下一个未答问题（断点恢复） | 返回 `is_complete=True` 仅在 `Persona.is_complete` + `is_portrait_confirmed` + `voice` + `user_*` 全部齐后才置位;`next_field` 在形象未确认时根据种子图生成阶段返回 `portrait`、`portrait-fullbody-front`、`portrait-fullbody-right` 或 `portrait-fullbody-back`,确认后按 **voice 先于 user_*** 路由 |
 | Client → Backend | `onboarding.submit` `{field, value}` | 逐字段增量持久化 onboarding 答案 | 答案按子阶段分流——角色子阶段（含 `speaking_style`）触发 `PUT /api/companion/persona`;finalize 后只接受 `voice`（落 draft）与 `user_*`（upsert 到 `Memory` 表） |
 | Client → Backend | `avatar.regenerate` `{feedback?}` | 重生 portrait 头像（不重跑全身） | 不触发 3D 模型失效 |
 | Client → Backend | `tts.match_voice` `{preference}` | 描述句 → voice id（标签评分） | 主流程 |

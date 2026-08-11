@@ -30,30 +30,28 @@ export function Chip({
   )
 }
 
+type PortraitStep = 'avatar' | 'front' | 'right' | 'back'
+
 export function PortraitPanel({
   avatarUrl,
   seedUrls,
   name,
   hint,
-  step = 'fullbody',
+  step = 'front',
   introHint,
   history,
   selectedIdx,
-  onSelectEntry,
-  onRegenerateView,
-  busyView
+  onSelectEntry
 }: {
   avatarUrl: string | null
   seedUrls?: SeedUrls | null
   name: string
   hint: string | null
-  step?: 'avatar' | 'fullbody'
+  step?: PortraitStep
   introHint?: string | null
   history?: PortraitEntry[]
   selectedIdx?: number
   onSelectEntry?: (idx: number) => void
-  onRegenerateView?: (view: 'front' | 'right' | 'back') => void
-  busyView?: string | null
 }): React.JSX.Element {
   const [zoomedUrl, setZoomedUrl] = useState<string | null>(null)
 
@@ -67,55 +65,17 @@ export function PortraitPanel({
       />
     ) : null
 
-  if (step === 'avatar') {
-    return (
-      <div className="flex flex-col items-center gap-2">
-        {introHint && <p className="text-center text-[10px] leading-relaxed text-white/45">{introHint}</p>}
-        <PortraitThumb
-          label="头像"
-          name={name}
-          onZoom={avatarUrl ? () => setZoomedUrl(avatarUrl) : undefined}
-          size="lg"
-          url={avatarUrl}
-        />
-        {gallery}
-        {hint && <p className="text-xs text-rose-300/90">{hint}</p>}
-        {zoomedUrl && <PortraitLightbox name={name} onClose={() => setZoomedUrl(null)} url={zoomedUrl} />}
-      </div>
-    )
-  }
+  const { label, url } = {
+    avatar: { label: '头像', url: avatarUrl },
+    front: { label: '正面', url: seedUrls?.front ?? null },
+    right: { label: '右侧', url: seedUrls?.right ?? null },
+    back: { label: '背面', url: seedUrls?.back ?? null }
+  }[step]
 
   return (
     <div className="flex flex-col items-center gap-2">
-      <div className="flex justify-center gap-2">
-        <PortraitThumb
-          label="正面"
-          name={name}
-          onRegenerate={onRegenerateView ? () => onRegenerateView('front') : undefined}
-          onZoom={seedUrls?.front ? () => setZoomedUrl(seedUrls.front) : undefined}
-          regenerating={busyView === 'front'}
-          size="sm"
-          url={seedUrls?.front ?? null}
-        />
-        <PortraitThumb
-          label="右侧"
-          name={name}
-          onRegenerate={onRegenerateView ? () => onRegenerateView('right') : undefined}
-          onZoom={seedUrls?.right ? () => setZoomedUrl(seedUrls.right) : undefined}
-          regenerating={busyView === 'right'}
-          size="sm"
-          url={seedUrls?.right ?? null}
-        />
-        <PortraitThumb
-          label="背面"
-          name={name}
-          onRegenerate={onRegenerateView ? () => onRegenerateView('back') : undefined}
-          onZoom={seedUrls?.back ? () => setZoomedUrl(seedUrls.back) : undefined}
-          regenerating={busyView === 'back'}
-          size="sm"
-          url={seedUrls?.back ?? null}
-        />
-      </div>
+      {introHint && <p className="text-center text-[10px] leading-relaxed text-white/45">{introHint}</p>}
+      <PortraitThumb label={label} name={name} onZoom={url ? () => setZoomedUrl(url) : undefined} size="lg" url={url} />
       {gallery}
       {hint && <p className="text-xs text-rose-300/90">{hint}</p>}
       {zoomedUrl && <PortraitLightbox name={name} onClose={() => setZoomedUrl(null)} url={zoomedUrl} />}
@@ -132,12 +92,20 @@ function HistoryGallery({
   entries: PortraitEntry[]
   selectedIdx: number
   onSelect: (idx: number) => void
-  step: 'avatar' | 'fullbody'
+  step: PortraitStep
 }): React.JSX.Element {
   return (
     <div className="mt-1 flex justify-center gap-1.5">
       {entries.map((entry, idx) => {
-        const thumb = step === 'avatar' ? entry.portraitUrl : entry.seedUrls?.front
+        // Fall back to front seed — older entries may only have a front view.
+        const thumb =
+          step === 'avatar'
+            ? entry.portraitUrl
+            : step === 'front'
+              ? (entry.seedUrls?.front ?? null)
+              : step === 'right'
+                ? (entry.seedUrls?.right ?? entry.seedUrls?.front ?? null)
+                : (entry.seedUrls?.back ?? entry.seedUrls?.front ?? null)
 
         return (
           <button
@@ -164,16 +132,12 @@ function PortraitThumb({
   label,
   name,
   onZoom,
-  onRegenerate,
-  regenerating,
   url,
   size = 'sm'
 }: {
   label: string
   name: string
   onZoom: (() => void) | undefined
-  onRegenerate?: () => void
-  regenerating?: boolean
   url: string | null
   size?: 'sm' | 'md' | 'lg'
 }): React.JSX.Element {
@@ -191,24 +155,6 @@ function PortraitThumb({
           >
             <img alt={name} className={`${sizeClass} object-cover shadow-lg`} src={url} />
           </button>
-          {onRegenerate && !regenerating && (
-            <button
-              aria-label="重新生成此视角"
-              className="absolute right-1 top-1 grid h-6 w-6 place-items-center rounded-full bg-black/50 text-white/60 opacity-0 transition hover:text-white group-hover:opacity-100"
-              onClick={e => {
-                e.stopPropagation()
-                onRegenerate()
-              }}
-              type="button"
-            >
-              ↻
-            </button>
-          )}
-          {regenerating && (
-            <div className={`absolute inset-0 grid ${sizeClass} place-items-center rounded-xl bg-black/50`}>
-              <div className="h-4 w-4 animate-spin rounded-full border border-white/30 border-t-white/80" />
-            </div>
-          )}
         </div>
       ) : (
         <div

@@ -166,9 +166,13 @@ def _load_draft(persona: Persona) -> dict[str, str]:
 def _portrait_next_field(db: Session, user_id: int) -> str:
     """Map the active avatar's seed state to the onboarding portrait sub-stage."""
     avatar = db.query(AvatarAsset).filter(AvatarAsset.user_id == user_id, AvatarAsset.active.is_(True)).one_or_none()
-    if avatar is not None and bool(avatar.seed_front_url):
-        return "portrait-fullbody" if bool(avatar.seed_right_url) else "portrait-fullbody-front"
-    return "portrait"
+    if avatar is None or not bool(avatar.seed_front_url):
+        return "portrait"
+    if not bool(avatar.seed_right_url):
+        return "portrait-fullbody-front"
+    if not bool(avatar.seed_back_url):
+        return "portrait-fullbody-right"
+    return "portrait-fullbody-back"
 
 
 def get_onboarding_state(db: Session, user_id: int) -> dict[str, Any]:

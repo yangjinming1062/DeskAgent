@@ -317,7 +317,7 @@ def test_portrait_confirmation_and_resume(_patch_db):
     """Test full lifecycle of is_portrait_confirmed:
     - Persona unconfirmed without avatar -> next_field="portrait"
     - Persona unconfirmed with bust only -> next_field="portrait"
-    - Persona unconfirmed with fullbody seeds -> next_field="portrait-fullbody"
+    - Persona unconfirmed with fullbody seeds -> next_field="portrait-fullbody-back"
     - POST /api/companion/portrait/confirm marks it confirmed
     - update_persona / regen resets is_portrait_confirmed to False
     """
@@ -362,13 +362,19 @@ def test_portrait_confirmation_and_resume(_patch_db):
         state = get_onboarding_state(db, 101)
         assert state["next_field"] == "portrait-fullbody-front"
 
-        # 3b. Aux seeds generated -> portrait-fullbody
+        # 3b. Right seed generated -> portrait-fullbody-right
         avatar.seed_right_url = "companion-avatars/right.jpg"
+        db.commit()
+
+        state = get_onboarding_state(db, 101)
+        assert state["next_field"] == "portrait-fullbody-right"
+
+        # 3c. Back seed generated -> portrait-fullbody-back
         avatar.seed_back_url = "companion-avatars/back.jpg"
         db.commit()
 
         state = get_onboarding_state(db, 101)
-        assert state["next_field"] == "portrait-fullbody"
+        assert state["next_field"] == "portrait-fullbody-back"
 
         # 4. Confirm portrait -> next_field moves past portrait to voice
         confirmed = confirm_portrait(db, 101)
@@ -386,7 +392,7 @@ def test_portrait_confirmation_and_resume(_patch_db):
         assert updated.portrait_confirmed_at is None
 
         state = get_onboarding_state(db, 101)
-        assert state["next_field"] == "portrait-fullbody"
+        assert state["next_field"] == "portrait-fullbody-back"
 
 
 def test_speaking_style_rejected_after_finalization(_patch_db):
