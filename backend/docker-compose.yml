@@ -27,12 +27,14 @@ services:
       postgres:
         condition: service_healthy
     env_file:
-      - .env
+      - path: .env
+        required: false
     environment:
       DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres:5432/deskagent
     ports:
       - "10620:10620"
     volumes:
+      - ./config.toml:/app/config.toml:ro
       - ./updates:/app/updates
       - ./data:/app/data
 

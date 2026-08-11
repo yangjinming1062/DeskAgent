@@ -1,0 +1,147 @@
+# ─────────────────────────────────────────────────────────────────────
+# DeskAgent Backend Configuration Template (config.toml.example)
+# Authoritative defaults for DeskAgent Backend. Tracked in Git.
+# Copy this file to `config.toml` for local modifications.
+# `config.toml` is ignored by Git.
+# Precedence: OS Env > .env > config.toml > config.toml.example
+# ─────────────────────────────────────────────────────────────────────
+
+[runtime]
+app_name = "DeskAgent Backend"
+api_prefix = "/api"
+
+[database]
+# SQLAlchemy URL. In Docker the service hostname is `postgres` (port 5432).
+database_url = "postgresql+psycopg://postgres:postgres@localhost:5432/deskagent"
+
+[auth]
+# CHANGE THIS in production! Must be ≥ 16 chars; used to sign JWTs.
+jwt_secret_key = "replace-this-with-a-strong-secret"
+jwt_algorithm = "HS256"
+# 8 hours.
+access_token_expire_minutes = 480
+# HMAC key for signing companion avatar asset URLs. Required in production.
+companion_asset_signing_key = ""
+# Bootstrap admin account (created on first boot).
+admin_username = "deskagent"
+admin_password = "deskagent@admin123"
+
+[network]
+# Public URL prefix Desktop/Runner uses to fetch self-hosted media
+public_url_prefix = ""
+# Auto-detected at startup when public_url_prefix is empty
+public_ip = ""
+# Backend HTTP port
+port = 10620
+# TTL for files served by /temp-media/{token}
+temp_file_ttl_hours = 24
+# Root for backend-side disk artifacts
+data_dir = "./data"
+
+[tripo]
+# Tripo3D v3 API key — used for 3D image-to-model and rig.
+tripo_api_key = ""
+tripo_base_url = "https://openapi.tripo3d.ai/v3"
+tripo_model_version = "v3.1-20260211"
+tripo_face_limit = 0
+tripo_texture_quality = "detailed"
+tripo_geometry_quality = "detailed"
+tripo_enable_autofix = true
+
+[providers]
+# Priority order chain (first wins). Supported: mimo, minimax, gemini, grok, zhipu
+providers = ["mimo", "minimax", "gemini", "grok", "zhipu"]
+
+# Xiaomi MiMo
+mimo_api_key = ""
+mimo_base_url = ""
+
+# MiniMax
+minimax_api_key = ""
+minimax_base_url = ""
+
+# Google Gemini
+gemini_api_key = ""
+gemini_base_url = ""
+
+# xAI Grok
+grok_api_key = ""
+grok_base_url = ""
+
+# Zhipu BigModel
+zhipu_api_key = ""
+zhipu_base_url = ""
+
+[llm]
+llm_provider = ""
+llm_base_url = ""
+llm_api_key = ""
+llm_model_name = ""
+llm_context_tokens = 0
+llm_request_timeout_seconds = 300.0
+llm_max_retry_attempts = 3
+llm_base_retry_delay = 5.0
+llm_max_retry_delay = 60.0
+
+[stt]
+stt_provider = ""
+stt_base_url = ""
+stt_api_key = ""
+stt_model_name = ""
+stt_context_tokens = 0
+
+[tts]
+tts_provider = ""
+tts_base_url = ""
+tts_api_key = ""
+tts_model_name = ""
+tts_context_tokens = 0
+
+[image_gen]
+image_gen_provider = ""
+image_gen_base_url = ""
+image_gen_api_key = ""
+image_gen_model_name = ""
+image_gen_context_tokens = 0
+
+[video_gen]
+video_gen_provider = ""
+video_gen_base_url = ""
+video_gen_api_key = ""
+video_gen_model_name = ""
+video_gen_context_tokens = 0
+video_gen_poll_interval_seconds = 5.0
+video_gen_max_poll_seconds = 900.0
+video_gen_tool_wait_seconds = 180.0
+video_gen_download_max_bytes = 209715200
+
+[chat]
+context_compression_threshold = 0.70
+context_summary_target_tokens = 2000
+context_summary_max_input_messages = 30
+enable_context_compression = true
+default_llm_context_tokens = 1000000
+ipc_future_timeout_seconds = 300.0
+chat_active_window_minutes = 30
+
+[voice]
+enable_stt = true
+max_recording_seconds = 60
+
+[rate_limit]
+rate_limit_enabled = true
+login_rate_limit_per_minute = 10
+llm_completion_rate_limit_per_minute = 60
+llm_completion_rate_limit_per_ip_per_minute = 200
+media_stt_rate_limit_per_minute = 20
+media_tts_rate_limit_per_minute = 30
+media_image_gen_rate_limit_per_minute = 10
+media_video_gen_rate_limit_per_minute = 3
+companion_avatar_generate_rate_limit_per_minute = 3
+companion_avatar_upload_rate_limit_per_minute = 5
+companion_model_generate_rate_limit_per_minute = 1
+companion_wardrobe_generate_rate_limit_per_minute = 5
+
+[logging]
+log_level = "INFO"
+log_format = "json"

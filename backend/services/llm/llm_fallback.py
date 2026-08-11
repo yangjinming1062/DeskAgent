@@ -69,38 +69,38 @@ async def execute_with_fallback(
             last_error = exc
             classified = getattr(exc, "classified", None) or classify_api_error(exc, provider=config.provider_name, model=config.model)
 
-        # Track content-policy blocks — when the entire chain is exhausted,
-        # prefer raising this over the last error so callers can run prompt
-        # sanitization and retry. Without this, a cascading failure on a
-        # later provider (e.g. vision LLM can't describe a reference image)
-        # masks the actionable root cause.
-        if classified.reason == FailoverReason.content_policy_blocked:
-            content_policy_error = exc
+            # Track content-policy blocks — when the entire chain is exhausted,
+            # prefer raising this over the last error so callers can run prompt
+            # sanitization and retry. Without this, a cascading failure on a
+            # later provider (e.g. vision LLM can't describe a reference image)
+            # masks the actionable root cause.
+            if classified.reason == FailoverReason.content_policy_blocked:
+                content_policy_error = exc
 
-        if classified.should_fallback and (stream_started is None or not stream_started()):
-            next_provider = chain[idx + 1].provider_name if idx + 1 < len(chain) else None
-            logger.warning(
-                "provider failed; falling back",
-                extra={
-                    "service": service_type,
-                    "failed_provider": config.provider_name,
-                    "model": config.model,
-                    "reason": classified.reason.value,
-                    "status_code": classified.status_code,
-                    # The reason bucket alone is unactionable when a provider
-                    # hides the cause in a 200 body (MiniMax ``base_resp``).
-                    "error": classified.message,
-                    "next_provider": next_provider,
-                },
-            )
-            continue
+            if classified.should_fallback and (stream_started is None or not stream_started()):
+                next_provider = chain[idx + 1].provider_name if idx + 1 < len(chain) else None
+                logger.warning(
+                    "provider failed; falling back",
+                    extra={
+                        "service": service_type,
+                        "failed_provider": config.provider_name,
+                        "model": config.model,
+                        "reason": classified.reason.value,
+                        "status_code": classified.status_code,
+                        # The reason bucket alone is unactionable when a provider
+                        # hides the cause in a 200 body (MiniMax ``base_resp``).
+                        "error": classified.message,
+                        "next_provider": next_provider,
+                    },
+                )
+                continue
 
-        # Either not a fallback condition, stream already emitted, or this
-        # was the last slot. Surface the original exception unchanged —
-        # call sites classify it via ``classify_api_error`` if they need a
-        # ``ClassifiedError``.  Prefer a content-policy error from an earlier
-        # provider when present so the caller's moderation-retry can fire
-        # instead of being masked by an unrelated cascading failure.
-        raise content_policy_error or last_error
+            # Either not a fallback condition, stream already emitted, or this
+            # was the last slot. Surface the original exception unchanged —
+            # call sites classify it via ``classify_api_error`` if they need a
+            # ``ClassifiedError``.  Prefer a content-policy error from an earlier
+            # provider when present so the caller's moderation-retry can fire
+            # instead of being masked by an unrelated cascading failure.
+            raise content_policy_error or last_error
 
     raise (content_policy_error or last_error) if last_error is not None else MissingLlmConfigError(f"provider chain empty for {service_type!r}")

@@ -24,6 +24,8 @@
 .env.production.local
 .env.development
 .env.test
+config.toml
+config.toml.local
 
 # ---------------------------------------------------------------------------
 # Python Runtime
