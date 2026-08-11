@@ -3,6 +3,7 @@ from typing import Literal
 from pydantic import BaseModel
 from pydantic import ConfigDict
 from pydantic import Field
+from pydantic import model_validator
 
 # Persona blob travels as one JSON string; 32 KiB caps DoS at the HTTP
 # boundary while leaving headroom for the largest persona field (2000 chars)
@@ -42,6 +43,13 @@ class AvatarAssetResponse(BaseModel):
 class FullbodyGenerateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     view: Literal["front", "right", "back"] | None = None
+    stage: Literal["front", "aux"] | None = None
+
+    @model_validator(mode="after")
+    def _check_exclusive(self):
+        if bool(self.stage) == bool(self.view):
+            raise ValueError("exactly one of 'stage' or 'view' is required")
+        return self
 
 
 class AvatarGenerateRequest(BaseModel):

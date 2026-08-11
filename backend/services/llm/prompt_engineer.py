@@ -2,8 +2,6 @@ import json
 
 from components import safe_json_loads
 from modules.companion import Persona
-from pydantic import BaseModel
-from pydantic import ConfigDict
 from sqlalchemy.orm import Session
 
 from .llm_client import MissingLlmConfigError
@@ -37,48 +35,74 @@ _AVATAR_SYSTEM_PROMPT = (
     "10. 不要解释、不要寒暄，直接输出最终中文 prompt 文本。"
 )
 
-_FULLBODY_MULTIVIEW_SYSTEM_PROMPT = (
-    "你是一个专业的三维建模多视图角色立绘提示词工程师。你需要为同一个角色生成三张配套的全身立绘提示词：\n"
-    "正面（front）、右侧面（right）、背面（back）。三张图描述的角色身体轮廓、体型、五官、肤色、发型发色、标志性细节必须完全一致（聚焦用于 3D 建模的身体锚点），并作为下游 Tripo3D 多视图建模的原始输入。\n"
-    "\n"
-    '严格输出 JSON：{"front": "...", "right": "...", "back": "..."}，不要任何额外文字或 Markdown 代码块。\n'
-    "\n"
-    "## 核心原则：外貌锚点复用（最高优先级）\n"
-    "输入的 avatar_prompt 是上一阶段已确认的头像提示词，其中包含角色的完整外貌描述（脸型、五官、发型发色、肤色）。\n"
-    "你**必须**从 avatar_prompt 中逐字提取角色的核心外貌特征，在三张全身图中**原样复用**这些描述。\n"
-    "**禁止**重新诠释、扩展、美化或添加 avatar_prompt 中未提及的外貌细节。\n"
-    "**禁止**引用任何华丽/复杂服饰或配饰信息——三视图采用**简单、不遮蔽人物轮廓特征**的参照装。\n"
-    "你的任务是扩展视角（从半身到全身）。\n"
-    "\n"
-    "## 参考图一致性\n"
-    "生成时会传入已确认的头像作为参考图（subject_reference）。角色的面部特征（脸型、五官、瞳色、发型发色）\n"
-    "**必须与参考图完全一致**，仅扩展视角到全身。参考图的优先级高于文字描述——\n"
-    "如文字描述与参考图有冲突，以参考图为准。\n"
-    "\n"
-    "## 各视角具体要求\n"
-    "1. 正面（front）：以「full body front view portrait of ...」开头，紧接 avatar_prompt 中的角色描述（逐字复用），\n"
-    "   仅补充下半身身体轮廓、腿部线条、鞋靴形状；\n"
-    "2. 右侧面（right）：以「full body right side view portrait of ...」开头，描述同一角色的侧面轮廓、\n"
-    "   侧面发型层次、身体厚度；\n"
-    "3. 背面（back）：以「full body back view portrait of ...」开头，描述同一角色的后脑发型发尾、\n"
-    "   脊椎线条、肩胛轮廓、背影；\n"
-    "\n"
-    "## 核心约束（三张图都必须严格遵守）\n"
-    "1. 立绘完整性（最高优先级）：三视角均必须从头顶至脚底 100% 完整展示在画面内，\n"
-    "   四周留有适度安全边缘留白（safe margin / full body fully visible in frame），严禁裁切头顶、四肢或脚底；\n"
-    "2. A-pose 站姿规范（Tripo3D 建模与绑骨硬性要求）：\n"
+# Shared rules 3-8 across all fullbody views — kept in one place so the
+# completeness / A-pose / background / style clauses can't drift across views
+# (the A-pose finger description had already diverged between right and back).
+_FULLBODY_COMMON_TAIL = (
+    "3. 立绘完整性（最高优先级）：必须从头顶至脚底 100% 完整展示在画面内，"
+    "四周留有适度安全边缘留白（safe margin / full body fully visible in frame），严禁裁切头顶、四肢或脚底；\n"
+    "4. A-pose 站姿规范（Tripo3D 绑骨硬性要求）：\n"
     "    - 双臂向两侧自然张开与躯干呈 30-45 度夹角，五指自然分开伸直且清晰可辨；\n"
     "    - 双脚平行分开约与肩同宽、脚尖朝前平立于地面；脊椎挺直平视前方；\n"
     "    - 四肢与躯干之间有可见间隙（腋下、腰侧、大腿内侧不粘连）；\n"
-    "3. 形象一致性：三张图必须描述同一个角色——同一张脸、同一体型与身体轮廓、同一发型发色、同一肤色；\n"
-    "4. 背景与光线：必须包含「纯白平面背景，无场景、无渐变、无阴影」；\n"
-    "   采用均匀漫反射平光打光（soft even diffuse lighting，无明显方向性暗部阴影）；\n"
-    "5. 画风：digital illustration, clean linework, high detail, professional character design；\n"
-    "6. 语言：全文使用中文，只保留专业术语与英文画风关键词；\n"
-    "7. 用户提供的反馈（如有）必须显式体现在三张图的描述中；\n"
-    "8. 输出简洁精炼（150-250 字/视角），重点放在视角构图和外貌锚点的准确复用上。\n"
+    "5. 背景与光线：必须包含「纯白平面背景，无场景、无渐变、无阴影」；"
+    "采用均匀漫反射平光打光（soft even diffuse lighting，无明显方向性暗部阴影）；\n"
+    "6. 画风：digital illustration, clean linework, high detail, professional character design；\n"
+    "7. 语言：全文使用中文，只保留专业术语与英文画风关键词；\n"
+    "8. 输出简洁精炼（150-250 字），不要解释、不要寒暄，直接输出最终中文 prompt 文本。"
+)
+
+_FULLBODY_FRONT_SYSTEM_PROMPT = (
+    "你是一个专业的三维建模正面全身角色立绘提示词工程师。你需要根据上一阶段已确认的半身头像提示词（avatar_prompt）"
+    "及角色设定，为该角色扩展生成正面全身立绘（front view）的提示词，作为下游 Tripo3D 建模的基准锚点。\n"
     "\n"
-    "不要解释、不要寒暄，直接输出 JSON。"
+    "## 核心原则：外貌锚点复用（最高优先级）\n"
+    "1. avatar_prompt 包含角色的完整头部与面部外貌描述（脸型、五官、瞳色、发型发色、肤色）。\n"
+    "   你必须从中逐字提取并原样复用这些核心外貌特征，禁止重新诠释或篡改。\n"
+    "2. 参考图一致性：生成时会传入已确认的头像作为参考图（subject_reference）。角色的头部特征必须与参考图完全一致。\n"
+    "   参考图优先级高于文字描述——如有冲突以参考图为准。\n"
+    "\n"
+    "## 正面全身立绘具体要求\n"
+    "1. 构图开头：以「full body front view portrait of ...」开头，紧接复用自 avatar_prompt 的角色头部与上半身描述；\n"
+    "2. 下半身与身材：补充身材比例、体型轮廓、腿部线条，搭配简单、贴身、不遮蔽身体轮廓特征的参照装及鞋靴；\n" + _FULLBODY_COMMON_TAIL
+)
+
+_FULLBODY_RIGHT_SYSTEM_PROMPT = (
+    "你是一个专业的三维建模右侧面（90度正侧视）角色立绘提示词工程师。你需要根据上一阶段已确认的正面全身立绘提示词（front_prompt）"
+    "及角色设定，为同一个角色生成配套的右侧面全身立绘提示词，作为下游 Tripo3D 多视图建模的输入。\n"
+    "\n"
+    "## 核心原则：正面全身锚点复用（最高优先级）\n"
+    "1. 输入的 front_prompt 是已确认的正面全身立绘描述，角色的体型身材、服装款式与配色、发型发色、鞋靴样式已完全确定。\n"
+    "   右侧面必须严格继承并复用 front_prompt 中的所有外貌与服装设定，绝对保持同一形象，禁止修改已确定的设计。\n"
+    "2. 参考图一致性：生成时会传入已确认的正面全身图作为参考图（subject_reference）。角色的身体轮廓、侧颜轮廓、服装细节、发色肤色\n"
+    "   必须与正面全身参考图完全一致。参考图优先级高于文字描述——如有冲突以参考图为准。\n"
+    "\n"
+    "## 右侧面（90度侧视）具体要求\n"
+    "1. 构图开头：以「full body right side view portrait of ...」开头，紧接同一角色的正右侧面（90 degree right profile view）描述；\n"
+    "2. 侧面特征重点：\n"
+    "    - 侧颜轮廓：清晰的额头、鼻梁高低、唇形、下巴与下颌线条（根据角色性别与年龄特征描绘）；\n"
+    "    - 侧面发型：侧面发丝垂感、刘海侧向层次、耳后发流、长发在背后的侧面厚度；\n"
+    "    - 身体侧面厚度：胸腔厚度、腰部进深、臀部侧向弧度，展现立体自然的侧面身材曲线；\n"
+    "    - 手臂与腿部：单侧手臂与腿部的侧面线条，侧面鞋靴轮廓（鞋面、鞋跟厚度）；\n" + _FULLBODY_COMMON_TAIL
+)
+
+_FULLBODY_BACK_SYSTEM_PROMPT = (
+    "你是一个专业的三维建模背面（180度正后视）角色立绘提示词工程师。你需要根据上一阶段已确认的正面全身立绘提示词（front_prompt）"
+    "及角色设定，为同一个角色生成配套的背面全身立绘提示词，作为下游 Tripo3D 多视图建模的输入。\n"
+    "\n"
+    "## 核心原则：正面全身锚点复用（最高优先级）\n"
+    "1. 输入的 front_prompt 是已确认的正面全身立绘描述，角色的体型身材、服装款式与配色、发型发色、鞋靴样式已完全确定。\n"
+    "   背面必须严格继承并复用 front_prompt 中的所有外貌与服装设定，绝对保持同一形象，禁止修改已确定的设计。\n"
+    "2. 参考图一致性：生成时会传入已确认的正面全身图作为参考图（subject_reference）。角色的背部轮廓、后脑发型、服装背面细节、发色肤色\n"
+    "   必须与正面全身参考图完全一致。参考图优先级高于文字描述——如有冲突以参考图为准。\n"
+    "\n"
+    "## 背面（180度后视）具体要求\n"
+    "1. 构图开头：以「full body back view portrait of ...」开头，紧接同一角色的正后方（180 degree back view）描述；\n"
+    "2. 背面特征重点：\n"
+    "    - 后脑发型：后脑勺发型结构、发尾层次、发丝向后延伸的走向、颈部发际线（如马尾/短发/长发披肩后方的形态）；\n"
+    "    - 颈背线条：颈部后侧、脊椎线条、双肩与肩胛骨轮廓；\n"
+    "    - 服装后背设计：衣服后背的结构、背部接缝、后背拉链/纽扣、后腰设计、背影轮廓；\n"
+    "    - 腿部与鞋靴背面：双腿后侧线条、鞋跟后部造型与鞋底背面轮廓；\n" + _FULLBODY_COMMON_TAIL
 )
 
 # Tiled across UV islands on a 3D humanoid — a directional light baked into
@@ -93,16 +117,6 @@ _TEXTURE_WARDROBE_SYSTEM_PROMPT = (
     "5. 全文使用中文，只保留专业 PBR / 绘画术语；\n"
     "6. 不要解释，直接输出最终中文 prompt 文本。"
 )
-
-
-class _FullbodyMultiviewResponse(BaseModel):
-    """Strict 3-field contract for front, right, back fullbody prompts."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    front: str
-    right: str
-    back: str
 
 
 def _persona_payload(persona: Persona) -> dict:
@@ -183,7 +197,22 @@ async def enhance_avatar_prompt(
     return _strip_markdown_fence(raw)
 
 
-async def enhance_fullbody_multiview_prompts(
+async def _enhance_fullbody(
+    db: Session | None,
+    user_id: int | None,
+    *,
+    system_prompt: str,
+    user_intro: str,
+    payload: dict,
+    provider_config: ProviderConfig | None = None,
+) -> str:
+    """Shared chat→strip scaffold for every fullbody view enhancer."""
+    user_payload = f"{user_intro}：\n```json\n{json.dumps(payload, ensure_ascii=False)}\n```"
+    raw = await chat(db, user_id, system_prompt, user_payload, provider_config=provider_config)
+    return _strip_markdown_fence(raw)
+
+
+async def enhance_fullbody_front_prompt(
     db: Session | None,
     user_id: int | None,
     persona: Persona,
@@ -191,17 +220,69 @@ async def enhance_fullbody_multiview_prompts(
     avatar_prompt: str,
     feedback: str | None = None,
     provider_config: ProviderConfig | None = None,
-) -> dict[str, str]:
-    """Generate paired front, right, and back full-body prompts using avatar_prompt as the visual anchor."""
+) -> str:
+    """Generate a full-body front view prompt using avatar_prompt as the visual anchor."""
     payload = {**_persona_visual_payload(persona, feedback), "avatar_prompt": avatar_prompt}
-    user_payload = (
-        "请根据以下已确认的头像外貌锚点（avatar_prompt），为同一个角色生成全身三视图提示词。\n"
-        "外貌描述请从 avatar_prompt 中逐字复用，仅补充视角和下半身细节（严格 JSON）：\n"
-        f"```json\n{json.dumps(payload, ensure_ascii=False)}\n```"
+    return await _enhance_fullbody(
+        db,
+        user_id,
+        system_prompt=_FULLBODY_FRONT_SYSTEM_PROMPT,
+        user_intro="请根据以下已确认的头像外貌锚点（avatar_prompt），为该角色扩展生成正面全身立绘提示词",
+        payload=payload,
+        provider_config=provider_config,
     )
-    raw = await chat(db, user_id, _FULLBODY_MULTIVIEW_SYSTEM_PROMPT, user_payload, provider_config=provider_config)
-    cleaned = _strip_markdown_fence(raw)
-    return _FullbodyMultiviewResponse.model_validate(safe_json_loads(cleaned, default={})).model_dump()
+
+
+async def enhance_fullbody_right_prompt(
+    db: Session | None,
+    user_id: int | None,
+    persona: Persona,
+    *,
+    front_prompt: str,
+    avatar_prompt: str | None = None,
+    feedback: str | None = None,
+    provider_config: ProviderConfig | None = None,
+) -> str:
+    """Generate a full-body right side view prompt using front_prompt as the visual anchor."""
+    payload = {
+        **_persona_visual_payload(persona, feedback),
+        "front_prompt": front_prompt,
+        **({"avatar_prompt": avatar_prompt} if avatar_prompt else {}),
+    }
+    return await _enhance_fullbody(
+        db,
+        user_id,
+        system_prompt=_FULLBODY_RIGHT_SYSTEM_PROMPT,
+        user_intro="请根据以下已确认的正面全身立绘锚点（front_prompt），为同一个角色生成右侧面（90度侧视）全身立绘提示词",
+        payload=payload,
+        provider_config=provider_config,
+    )
+
+
+async def enhance_fullbody_back_prompt(
+    db: Session | None,
+    user_id: int | None,
+    persona: Persona,
+    *,
+    front_prompt: str,
+    avatar_prompt: str | None = None,
+    feedback: str | None = None,
+    provider_config: ProviderConfig | None = None,
+) -> str:
+    """Generate a full-body back view prompt using front_prompt as the visual anchor."""
+    payload = {
+        **_persona_visual_payload(persona, feedback),
+        "front_prompt": front_prompt,
+        **({"avatar_prompt": avatar_prompt} if avatar_prompt else {}),
+    }
+    return await _enhance_fullbody(
+        db,
+        user_id,
+        system_prompt=_FULLBODY_BACK_SYSTEM_PROMPT,
+        user_intro="请根据以下已确认的正面全身立绘锚点（front_prompt），为同一个角色生成背面（180度后视）全身立绘提示词",
+        payload=payload,
+        provider_config=provider_config,
+    )
 
 
 async def enhance_texture_prompt(

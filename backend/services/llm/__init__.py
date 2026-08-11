@@ -17,7 +17,9 @@ from .llm_retry import call_with_retry
 from .llm_retry import LLMRuntimeError
 from .prompt_engineer import chat
 from .prompt_engineer import enhance_avatar_prompt
-from .prompt_engineer import enhance_fullbody_multiview_prompts
+from .prompt_engineer import enhance_fullbody_back_prompt
+from .prompt_engineer import enhance_fullbody_front_prompt
+from .prompt_engineer import enhance_fullbody_right_prompt
 from .prompt_engineer import enhance_texture_prompt
 from .providers import aclose_all
 from .providers import BaseProvider
@@ -104,7 +106,9 @@ __all__ = [
     "compress_history_if_needed",
     "describe_reference_image",
     "enhance_avatar_prompt",
-    "enhance_fullbody_multiview_prompts",
+    "enhance_fullbody_back_prompt",
+    "enhance_fullbody_front_prompt",
+    "enhance_fullbody_right_prompt",
     "enhance_texture_prompt",
     "resolve_user_llm_config",
     "merge_provider_json",

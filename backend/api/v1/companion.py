@@ -47,6 +47,7 @@ from services.companion import delete_wardrobe_item
 from services.companion import emit_wardrobe_updated
 from services.companion import equip_wardrobe_item
 from services.companion import finalize_avatar
+from services.companion import FrontSeedMissingError
 from services.companion import generate_animation_clips
 from services.companion import generate_avatar
 from services.companion import generate_companion_model
@@ -426,9 +427,11 @@ async def post_avatar_fullbody(
         raise HTTPException(status_code=429, detail={"error": "伙伴正在生成形象，请稍候"})
     async with lock:
         try:
-            asset = await generate_fullbody(db, user_id=user.id, avatar_id=avatar_id, view=body.view)
+            asset = await generate_fullbody(db, user_id=user.id, avatar_id=avatar_id, view=body.view, stage=body.stage)
         except AvatarNotFoundError as exc:
             raise HTTPException(status_code=404, detail={"error": "找不到对应的形象", "reason": str(exc)})
+        except FrontSeedMissingError as exc:
+            raise HTTPException(status_code=409, detail={"error": "请先生成正面全身图", "reason": str(exc)})
         except (SeedPromptMissingError, AvatarSourceUnreadableError) as exc:
             raise HTTPException(status_code=409, detail={"error": "请先重新生成头像再试", "reason": str(exc)})
         except AvatarGenerationError as exc:

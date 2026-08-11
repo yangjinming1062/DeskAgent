@@ -20,7 +20,9 @@ from sqlalchemy.orm import Session
 
 from ..llm import chat
 from ..llm import enhance_avatar_prompt
-from ..llm import enhance_fullbody_multiview_prompts
+from ..llm import enhance_fullbody_back_prompt
+from ..llm import enhance_fullbody_front_prompt
+from ..llm import enhance_fullbody_right_prompt
 from ..llm import is_content_policy_error_message
 from ..tools.builtin import first_image_url
 from ..tools.builtin import image_generation_tool
@@ -41,6 +43,13 @@ ALLOWED_AVATAR_UPLOAD_MIME_TYPES: frozenset[str] = frozenset(_UPLOAD_EXTS)
 _EXT_TO_MIME: dict[str, str] = {ext: mime for mime, ext in _UPLOAD_EXTS.items()}
 
 _SEED_ATTRS: dict[str, str] = {"front": "seed_front_url", "right": "seed_right_url", "back": "seed_back_url"}
+
+
+def _resolve_reference_for_view(asset: AvatarAsset, view: str) -> str | None:
+    """Front → head portrait; right/back → front full-body seed."""
+    source = asset.asset_url if view == "front" else asset.seed_front_url
+    return _load_avatar_bytes_as_data_uri(source)
+
 
 # Per-user lock shared between the REST fullbody route and the WS RPC handlers
 # so a concurrent regen + fullbody for the same user can't race on the row.
@@ -109,6 +118,10 @@ class AvatarNotFoundError(AvatarGenerationError):
 
 class SeedPromptMissingError(AvatarGenerationError):
     """The avatar row's prompt_json has no cached avatar_prompt visual anchor."""
+
+
+class FrontSeedMissingError(AvatarGenerationError):
+    """Aux-stage generation requested but no front full-body seed exists."""
 
 
 class AvatarSourceUnreadableError(AvatarGenerationError):
@@ -330,58 +343,102 @@ async def generate_fullbody(
     *,
     avatar_id: int,
     view: str | None = None,
+    stage: str | None = None,
 ) -> AvatarAsset:
-    """Step-2: render full-body multiview seeds (front, right, back) on top of the user-confirmed avatar.
+    """Step-2: render full-body multiview seeds (front, right, back) using chained references.
 
-    Reads the avatar's cached ``avatar_prompt`` and persisted bytes (so the
-    subject reference survives even when ``public_url_prefix`` is empty),
-    generates the full-body portraits via a fresh LLM round-trip,
-    and writes them back to the same ``AvatarAsset`` row.
-
-    ``view`` (optional): regenerate only one view (``"front"``, ``"right"``,
-    ``"back"``). Reuses cached ``multiview_prompts`` — no new LLM call needed.
-    When ``None``, generates all three views and caches the prompts.
+    Stage 'front': generates the front full-body view using the confirmed bust portrait as reference,
+    caching the 3-view prompts.
+    Stage 'aux': generates the right and back views concurrently using the front full-body seed as reference.
+    View 'front' / 'right' / 'back': regenerates a single view using cached prompts.
     """
+    if bool(stage) == bool(view):
+        raise AvatarGenerationError("exactly one of 'stage' or 'view' is required")
+
     asset = db.query(AvatarAsset).filter(AvatarAsset.id == avatar_id, AvatarAsset.user_id == user_id, AvatarAsset.active.is_(True)).one_or_none()
     if asset is None:
         raise AvatarNotFoundError(f"avatar {avatar_id} not found")
 
     prompt_payload = safe_json_loads(asset.prompt_json, default={})
-    avatar_prompt = prompt_payload.get("avatar_prompt") if isinstance(prompt_payload, dict) else None
-    if not avatar_prompt:
-        raise SeedPromptMissingError(f"avatar {avatar_id} has no cached avatar_prompt visual anchor")
-
-    reference_image = _load_avatar_bytes_as_data_uri(asset.asset_url)
-    if reference_image is None:
-        raise AvatarSourceUnreadableError(f"avatar {avatar_id} source file is unreadable")
+    if not isinstance(prompt_payload, dict):
+        prompt_payload = {}
 
     persona = get_or_create_persona(db, user_id)
     persist = persona.is_portrait_confirmed
-    feedback = prompt_payload.get("feedback") if isinstance(prompt_payload, dict) else None
+    feedback = prompt_payload.get("feedback")
+    cached_avatar_prompt = prompt_payload.get("avatar_prompt")
 
-    # Determine which views to generate and their prompts.
-    valid_views = ("front", "right", "back")
-    if view is not None:
-        if view not in valid_views:
-            raise AvatarGenerationError(f"invalid view '{view}'; must be one of {valid_views}")
-        cached_prompts = prompt_payload.get("multiview_prompts") if isinstance(prompt_payload, dict) else None
-        if not cached_prompts or view not in cached_prompts:
-            raise SeedPromptMissingError(f"no cached multiview prompt for view '{view}'; generate all views first")
-        prompts = {view: cached_prompts[view]}
+    # Normalize stage/view into the concrete list of views to generate.
+    is_front = stage == "front" or view == "front"
+    if is_front:
+        views_to_gen = ["front"]
+    elif stage == "aux":
+        views_to_gen = ["right", "back"]
+    else:  # view in ("right", "back")
         views_to_gen = [view]
+
+    # Aux views require a front seed to exist — check before reading the file
+    # so an empty seed raises FrontSeedMissingError, not AvatarSourceUnreadableError.
+    if not is_front and not bool(asset.seed_front_url):
+        raise FrontSeedMissingError(f"avatar {avatar_id} has no front seed; generate front fullbody first")
+
+    # Resolve reference image once — front uses the bust portrait, right/back
+    # both use the front full-body seed (same file, no need to re-read per view).
+    reference_image = _resolve_reference_for_view(asset, "front" if is_front else "right")
+    if reference_image is None:
+        source_label = "avatar source file" if is_front else "front seed"
+        raise AvatarSourceUnreadableError(f"avatar {avatar_id} {source_label} is unreadable")
+
+    # Generate the prompt for each requested view.
+    if is_front:
+        if not cached_avatar_prompt:
+            raise SeedPromptMissingError(f"avatar {avatar_id} has no cached avatar_prompt visual anchor")
+        prompts = {
+            "front": await enhance_fullbody_front_prompt(
+                db,
+                user_id,
+                persona,
+                avatar_prompt=cached_avatar_prompt,
+                feedback=feedback,
+            )
+        }
     else:
-        prompts = await enhance_fullbody_multiview_prompts(
-            db,
-            user_id,
-            persona,
-            avatar_prompt=avatar_prompt,
-            feedback=feedback,
+        front_anchor = prompt_payload.get("front_prompt") or prompt_payload.get("multiview_prompts", {}).get("front")
+        if not front_anchor:
+            if not cached_avatar_prompt:
+                raise SeedPromptMissingError(f"avatar {avatar_id} has no front_prompt or avatar_prompt visual anchor")
+            front_anchor = cached_avatar_prompt
+        enhance_map = {
+            "right": enhance_fullbody_right_prompt,
+            "back": enhance_fullbody_back_prompt,
+        }
+        generated_prompts = await asyncio.gather(
+            *[
+                enhance_map[v](
+                    db,
+                    user_id,
+                    persona,
+                    front_prompt=front_anchor,
+                    avatar_prompt=cached_avatar_prompt,
+                    feedback=feedback,
+                )
+                for v in views_to_gen
+            ]
         )
-        views_to_gen = list(valid_views)
+        prompts = dict(zip(views_to_gen, generated_prompts))
 
     # return_exceptions=True so a single view failure doesn't discard the others.
     results = await asyncio.gather(
-        *[_generate_one_portrait_with_moderation_retry(prompts[v], user_id, reference_image=reference_image, size=_AVATAR_FULL_SIZE, persist=persist) for v in views_to_gen],
+        *[
+            _generate_one_portrait_with_moderation_retry(
+                prompts[v],
+                user_id,
+                reference_image=reference_image,
+                size=_AVATAR_FULL_SIZE,
+                persist=persist,
+            )
+            for v in views_to_gen
+        ],
         return_exceptions=True,
     )
 
@@ -395,6 +452,16 @@ async def generate_fullbody(
     if not generated:
         raise results[0] if isinstance(results[0], BaseException) else AvatarGenerationError("all views failed")
 
+    # Front regen / stage invalidates aux views
+    if is_front:
+        if persist:
+            for attr in ("seed_right_url", "seed_back_url"):
+                old_val = getattr(asset, attr, None)
+                if old_val:
+                    _delete_portrait_file(old_val)
+        asset.seed_right_url = ""
+        asset.seed_back_url = ""
+
     if persist:
         for v in generated:
             old_url = getattr(asset, _SEED_ATTRS[v], None)
@@ -404,10 +471,21 @@ async def generate_fullbody(
     for v, result in generated.items():
         setattr(asset, _SEED_ATTRS[v], result[0])
 
-    if view is None:
-        prompt_payload["multiview_prompts"] = prompts
+    multiview = prompt_payload.get("multiview_prompts")
+    if not isinstance(multiview, dict):
+        multiview = {}
+    prompt_payload["multiview_prompts"] = multiview
+
+    if is_front:
+        prompt_payload["front_prompt"] = prompts["front"]
+        multiview["front"] = prompts["front"]
+        multiview.pop("right", None)
+        multiview.pop("back", None)
         persona.is_portrait_confirmed = False
         persona.portrait_confirmed_at = None
+    else:
+        multiview.update(prompts)
+
     asset.prompt_json = json.dumps(prompt_payload, ensure_ascii=False)
     db.commit()
     db.refresh(asset)
@@ -415,9 +493,11 @@ async def generate_fullbody(
     # Re-sign URLs in memory
     asset.asset_url = _re_sign_bare_path(asset.asset_url) or asset.asset_url
     for attr in ("seed_front_url", "seed_right_url", "seed_back_url"):
-        signed = _re_sign_bare_path(getattr(asset, attr))
-        if signed:
-            setattr(asset, attr, signed)
+        val = getattr(asset, attr, None)
+        if val:
+            signed = _re_sign_bare_path(val)
+            if signed:
+                setattr(asset, attr, signed)
     return asset
 
 
@@ -617,9 +697,10 @@ def _load_avatar_bytes_as_data_uri(asset_url_or_path: str | None) -> str | None:
     bare_idx = asset_url_or_path.find(bare_marker)
     if bare_idx >= 0:
         filename = asset_url_or_path[bare_idx + len(bare_marker) :].split("?")[0]
-    elif asset_url_or_path.startswith("/api/companion/avatar/file/"):
+    elif "/api/companion/avatar/file/" in asset_url_or_path:
         # Signed URL form: extract the <file_id>.<ext> path component.
-        path_only = asset_url_or_path.split("?")[0]
+        idx = asset_url_or_path.find("/api/companion/avatar/file/")
+        path_only = asset_url_or_path[idx + len("/api/companion/avatar/file/") :].split("?")[0]
         filename = path_only.rsplit("/", 1)[-1]
 
     if not filename:

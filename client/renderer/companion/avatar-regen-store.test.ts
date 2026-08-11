@@ -1,11 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import {
-  awaitAvatarRegeneration,
-  awaitFullbodyGeneration,
-  resolveAvatarRegeneration,
-  resolveFullbodyGeneration
-} from './avatar-regen-store'
+import { awaitAvatarRegeneration, resolveAvatarRegeneration } from './avatar-regen-store'
 
 describe('avatar-regen-store', () => {
   beforeEach(() => {
@@ -22,24 +17,6 @@ describe('avatar-regen-store', () => {
     resolveAvatarRegeneration({ job_id: 'job-1', asset_url: 'https://x/p.png' })
 
     await expect(promise).resolves.toEqual({ job_id: 'job-1', asset_url: 'https://x/p.png' })
-  })
-
-  it('resolves the fullbody multiview awaiter when the event arrives', async () => {
-    const promise = awaitFullbodyGeneration('job-fb-1')
-
-    resolveFullbodyGeneration({
-      job_id: 'job-fb-1',
-      seed_front_url: 'https://x/front.png',
-      seed_right_url: 'https://x/right.png',
-      seed_back_url: 'https://x/back.png'
-    })
-
-    await expect(promise).resolves.toEqual({
-      job_id: 'job-fb-1',
-      seed_front_url: 'https://x/front.png',
-      seed_right_url: 'https://x/right.png',
-      seed_back_url: 'https://x/back.png'
-    })
   })
 
   it('buffers late arrivals so an awaiter registered after the event still settles', async () => {

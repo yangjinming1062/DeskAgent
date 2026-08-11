@@ -1,10 +1,5 @@
-// Late-arrival buffers for the two async portrait flows:
-//
-//   - ``avatar.regenerate``        → awaitAvatarRegeneration / resolveAvatarRegeneration
-//   - ``avatar.generate_fullbody`` → awaitFullbodyGeneration / resolveFullbodyGeneration
-//
-// Both share the same timeout + tombstone machinery; payload shapes differ.
-// Kept separate so a busted fullbody job doesn't trip the avatar awaiter.
+// Late-arrival buffer for the async avatar (bust) regen flow:
+//   ``avatar.regenerate`` → awaitAvatarRegeneration / resolveAvatarRegeneration
 
 type Resolver<T> = (payload: T) => void
 
@@ -111,25 +106,3 @@ export const awaitAvatarRegeneration = _makeAwaiter<AvatarRegeneratedPayload>(
   jobId => new Error(`avatar regeneration timed out for job ${jobId}`)
 )
 export const resolveAvatarRegeneration = _makeResolver<AvatarRegeneratedPayload>(_avatarStore)
-
-// Fullbody (multiview seed) gen, kicked off after the avatar row is confirmed.
-export interface FullbodyGeneratedPayload {
-  job_id?: string
-  seed_front_url?: string | null
-  seed_right_url?: string | null
-  seed_back_url?: string | null
-  id?: number
-  error?: string
-}
-
-const _fullbodyStore: PendingMap<FullbodyGeneratedPayload> = {
-  pending: new Map(),
-  late: new Map(),
-  timedOut: new Map()
-}
-
-export const awaitFullbodyGeneration = _makeAwaiter<FullbodyGeneratedPayload>(
-  _fullbodyStore,
-  jobId => new Error(`avatar fullbody generation timed out for job ${jobId}`)
-)
-export const resolveFullbodyGeneration = _makeResolver<FullbodyGeneratedPayload>(_fullbodyStore)

@@ -21,6 +21,7 @@ export function getIn(obj: unknown, path: readonly (string | number)[]): unknown
     if (cur == null || typeof cur !== 'object') {
       return undefined
     }
+
     cur = (cur as Record<string | number, unknown>)[key]
   }
 
@@ -31,6 +32,7 @@ export function setIn(obj: Config, path: readonly (string | number)[], value: un
   if (path.length === 0) {
     return obj
   }
+
   const [key, ...rest] = path
   const clone = (Array.isArray(obj) ? [...obj] : { ...obj }) as Record<string | number, unknown>
   clone[key] = rest.length === 0 ? value : setIn((clone[key] as Config) ?? {}, rest, value)

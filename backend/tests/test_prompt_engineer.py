@@ -88,34 +88,27 @@ async def test_enhance_avatar_prompt_includes_feedback(monkeypatch):
     assert payload["feedback"] == "更长的头发"
 
 
-# ── enhance_fullbody_multiview_prompts ─────────────────────────────
+# ── enhance_fullbody_front/right/back_prompt ───────────────────────
 
 
 @pytest.mark.asyncio
-async def test_enhance_fullbody_multiview_prompts_returns_three_views(monkeypatch):
+async def test_enhance_fullbody_front_prompt_returns_text(monkeypatch):
     captured: dict = {}
 
     async def _fake_chat(db, user_id, system_prompt, user_payload, **_kw):
         captured["system"] = system_prompt
         captured["user"] = user_payload
-        return json.dumps({
-            "front": "正面全身立绘，A-pose站姿，纯白平面背景，头顶至脚底完整",
-            "right": "右侧面90度全身立绘，A-pose站姿，纯白平面背景，头顶至脚底完整",
-            "back": "背面180度全身立绘，A-pose站姿，纯白平面背景，头顶至脚底完整",
-        }, ensure_ascii=False)
+        return "full body front view portrait of 金发绿眼少女，A-pose站姿，纯白平面背景"
 
     monkeypatch.setattr(prompt_engineer, "chat", _fake_chat)
 
     class _FakePersona:
         definition_json = json.dumps({"name": "小光", "biological_type": "人类", "gender": "女"})
 
-    out = await prompt_engineer.enhance_fullbody_multiview_prompts(
+    out = await prompt_engineer.enhance_fullbody_front_prompt(
         None, 7, _FakePersona(), avatar_prompt="金发绿眼少女，半身特写"
     )
-    assert set(out.keys()) == {"front", "right", "back"}
-    assert "正面" in out["front"]
-    assert "右侧面" in out["right"]
-    assert "背面" in out["back"]
+    assert "front view" in out
     assert "头顶至脚底" in captured["system"]
     assert "A-pose" in captured["system"]
     payload = json.loads(captured["user"].split("```json\n", 1)[1].split("\n```", 1)[0])
@@ -123,14 +116,62 @@ async def test_enhance_fullbody_multiview_prompts_returns_three_views(monkeypatc
 
 
 @pytest.mark.asyncio
-async def test_enhance_fullbody_multiview_propagates_missing_llm_config(monkeypatch):
+async def test_enhance_fullbody_right_prompt_returns_text(monkeypatch):
+    captured: dict = {}
+
+    async def _fake_chat(db, user_id, system_prompt, user_payload, **_kw):
+        captured["system"] = system_prompt
+        captured["user"] = user_payload
+        return "full body right side view portrait of 金发绿眼少女，A-pose站姿，纯白平面背景"
+
+    monkeypatch.setattr(prompt_engineer, "chat", _fake_chat)
+
+    class _FakePersona:
+        definition_json = json.dumps({"name": "小光", "biological_type": "人类", "gender": "女"})
+
+    out = await prompt_engineer.enhance_fullbody_right_prompt(
+        None, 7, _FakePersona(), front_prompt="full body front view", avatar_prompt="金发绿眼少女，半身特写"
+    )
+    assert "right side view" in out
+    assert "90度侧视" in captured["system"]
+    assert "A-pose" in captured["system"]
+    payload = json.loads(captured["user"].split("```json\n", 1)[1].split("\n```", 1)[0])
+    assert payload["front_prompt"] == "full body front view"
+
+
+@pytest.mark.asyncio
+async def test_enhance_fullbody_back_prompt_returns_text(monkeypatch):
+    captured: dict = {}
+
+    async def _fake_chat(db, user_id, system_prompt, user_payload, **_kw):
+        captured["system"] = system_prompt
+        captured["user"] = user_payload
+        return "full body back view portrait of 金发绿眼少女，A-pose站姿，纯白平面背景"
+
+    monkeypatch.setattr(prompt_engineer, "chat", _fake_chat)
+
+    class _FakePersona:
+        definition_json = json.dumps({"name": "小光", "biological_type": "人类", "gender": "女"})
+
+    out = await prompt_engineer.enhance_fullbody_back_prompt(
+        None, 7, _FakePersona(), front_prompt="full body front view", avatar_prompt="金发绿眼少女，半身特写"
+    )
+    assert "back view" in out
+    assert "180度后视" in captured["system"]
+    assert "A-pose" in captured["system"]
+    payload = json.loads(captured["user"].split("```json\n", 1)[1].split("\n```", 1)[0])
+    assert payload["front_prompt"] == "full body front view"
+
+
+@pytest.mark.asyncio
+async def test_enhance_fullbody_front_propagates_missing_llm_config(monkeypatch):
     monkeypatch.setattr(prompt_engineer, "provider_for_service", _fake_provider(raises=MissingLlmConfigError("no provider")))
 
     class _FakePersona:
         definition_json = "{}"
 
     with pytest.raises(MissingLlmConfigError):
-        await prompt_engineer.enhance_fullbody_multiview_prompts(None, 1, _FakePersona(), avatar_prompt="anchor")
+        await prompt_engineer.enhance_fullbody_front_prompt(None, 1, _FakePersona(), avatar_prompt="anchor")
 
 
 # ── chat error cases ──────────────────────────────────────────────

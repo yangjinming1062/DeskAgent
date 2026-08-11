@@ -16,6 +16,7 @@ from .avatar_service import AvatarGenerationError
 from .avatar_service import AvatarNotFoundError
 from .avatar_service import AvatarSourceUnreadableError
 from .avatar_service import finalize_avatar
+from .avatar_service import FrontSeedMissingError
 from .avatar_service import generate_avatar
 from .avatar_service import generate_fullbody
 from .avatar_service import get_active_avatar
@@ -70,6 +71,7 @@ __all__ = [
     "AvatarGenerationError",
     "AvatarNotFoundError",
     "AvatarSourceUnreadableError",
+    "FrontSeedMissingError",
     "ModelGenerationError",
     "ModelGenerationInProgressError",
     "PersonaValidationError",

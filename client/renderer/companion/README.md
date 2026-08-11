@@ -127,7 +127,7 @@ GLB 加载成功后骨骼动画覆盖全部状态；加载失败时渲染程序�
   - 仅 `disturbanceTier` + `chatDockOffset` + `defaultScale` 跨重启保留；`voiceId` 在 onMount 由 `voice-validity.ts` 校验 provider 目录变化。
   - 精灵位置持久化在 `companion-position.json`（Electron userData 目录，非 localStorage）。
 - **角色编辑双路径**：`PersonaSection`（表单式直接改 6 个字段）+ `PersonaRetune`（[persona-retune.tsx](persona-retune.tsx) 5–6 步对话式 wizard 含 user_*），后者单 PUT 收尾、保留 `is_complete=True`、不重置 `is_complete`、修复前者静默 `deriveSpeakingStyle` 覆盖 `speaking_style` 的坑。两路保存后都接入两步形象再生成（先头像 → 用户确认 → 全身），跟 onboarding / 设置页保持一致。
-- **两步形象生成**：步 1 `POST /api/companion/avatar`（或 `/from-image`）只产头像；用户点「下一步」才调 `POST /api/companion/avatar/{id}/fullbody` 或 RPC `avatar.generate_fullbody` 产全身（用头像作为 `subject_reference`，确保脸与全身一致）。`useRegeneratePortrait({ step })` 把两端路由合一，`avatar-regen-store.ts` 提供两组并行的 awaiter（`avatar.regenerated` / `avatar.fullbody_generated`）。Onboarding / 设置页 / `PersonaSection` / `PersonaRetune` 共享同一两步 UI 模式。
+- **链式参考形象生成**：步 1 `POST /api/companion/avatar`（或 `/from-image`）只产半身头像；步 2 分阶段调 `POST /api/companion/avatar/{id}/fullbody`——先 `stage='front'` 以头像为参考生成正面全身，确认后再 `stage='aux'` 以正面全身为参考并发生成侧面与背面；单视角重绘用 `view='front'|'right'|'back'`，重绘正面自动失效侧面/背面。`useRegeneratePortrait` 只负责头像重生（步 1），全身生成在 onboarding 内直接走 REST；`avatar-regen-store.ts` 仅保留 `avatar.regenerated` awaiter。
 - **`/api/companion/asset/*` 文件路由**：已切到 HMAC 签名 URL（`user_id` + `filename` + 5 分钟 expiry + HMAC），后端 `verify_signed_asset_request` 强制校验，丢签名 401。Asset 落持久目录（`companion-avatars/` / `companion-assets/`），URL 一次性 5 分钟有效。
 - **CORS / 跨窗口**：精灵窗口与对话面板共享同一 Electron 渲染进程（panel 是 React child of sprite window），`setAlwaysOnTop` 不再被 chat-dock 切换。
 

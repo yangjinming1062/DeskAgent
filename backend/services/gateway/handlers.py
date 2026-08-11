@@ -29,12 +29,9 @@ from services.chat import build_session_messages
 from services.chat import load_user_settings
 from services.chat import run_chat_turn
 from services.companion import AvatarGenerationError
-from services.companion import AvatarNotFoundError
-from services.companion import AvatarSourceUnreadableError
 from services.companion import check_affect
 from services.companion import delete_memory
 from services.companion import design_voice
-from services.companion import generate_fullbody
 from services.companion import get_avatar_job_lock
 from services.companion import get_onboarding_state
 from services.companion import get_or_create_persona
@@ -46,7 +43,6 @@ from services.companion import normalize_voice_language
 from services.companion import PersonaValidationError
 from services.companion import record_interaction
 from services.companion import regenerate_avatar
-from services.companion import SeedPromptMissingError
 from services.companion import submit_onboarding_field
 from services.companion import update_memory
 from services.companion import read_user_profile
@@ -607,7 +603,6 @@ def _register_session_handlers(
                             return
                         persona = get_or_create_persona(db, user_id)
                         asset = await regenerate_avatar(db, user_id, persona, feedback=feedback)
-                        # Step-1 only: fullbody lands via avatar.generate_fullbody once the user confirms the face.
                         payload = {
                             "job_id": job_id,
                             "asset_url": asset.asset_url,
@@ -633,75 +628,6 @@ def _register_session_handlers(
         return {"queued": True, "job_id": job_id}
 
     dispatcher.register("avatar.regenerate", avatar_regenerate)
-
-    async def avatar_generate_fullbody(params: dict) -> dict:
-        # Step-2: render full-body multiview seeds (front, right, back) on top of
-        # a user-confirmed avatar row using avatar_prompt as the visual anchor.
-        raw_id = params.get("avatar_id")
-        if not isinstance(raw_id, int) or isinstance(raw_id, bool) or raw_id <= 0:
-            raise JsonRpcError(JSONRPC_INVALID_PARAMS, "avatar_id must be a positive integer")
-        view = params.get("view")
-        if view is not None and view not in ("front", "right", "back"):
-            raise JsonRpcError(JSONRPC_INVALID_PARAMS, "view must be 'front', 'right', 'back', or null")
-        with SESSION_LOCAL() as db:
-            persona = get_or_create_persona(db, user_id)
-            if not persona.is_complete:
-                raise JsonRpcError(JSONRPC_INVALID_PARAMS, "finish onboarding before generating fullbody")
-        job_id = f"avatar_fullbody_{user_id}_{secrets.token_urlsafe(6)}"
-        lock = get_avatar_job_lock(user_id)
-        if lock.locked():
-            return {"queued": False, "job_id": job_id, "reason": "already_running"}
-
-        async def _run() -> None:
-            async with lock:
-                try:
-                    with SESSION_LOCAL() as db:
-                        regen_busy = False
-                        try:
-                            got = db.execute(
-                                text("SELECT pg_try_advisory_xact_lock(:k)"),
-                                {"k": _AVATAR_REGEN_ADVISORY_NAMESPACE + int(user_id)},
-                            ).scalar()
-                            regen_busy = not bool(got)
-                        except Exception:
-                            regen_busy = False
-                        if regen_busy:
-                            payload = {"job_id": job_id, "error": "伙伴正在生成形象，请稍候"}
-                            return
-                        asset = await generate_fullbody(db, user_id=user_id, avatar_id=raw_id, view=view)
-                        payload = {
-                            "job_id": job_id,
-                            "seed_front_url": asset.seed_front_url,
-                            "seed_right_url": asset.seed_right_url,
-                            "seed_back_url": asset.seed_back_url,
-                            "id": asset.id,
-                        }
-                except AvatarNotFoundError:
-                    logger.warning("avatar fullbody: avatar not found", extra={"user_id": user_id, "avatar_id": raw_id})
-                    payload = {"job_id": job_id, "error": "找不到对应的形象"}
-                except (SeedPromptMissingError, AvatarSourceUnreadableError):
-                    logger.warning(
-                        "avatar fullbody: avatar unusable",
-                        extra={"user_id": user_id, "avatar_id": raw_id},
-                    )
-                    payload = {"job_id": job_id, "error": "请先重新生成头像再试"}
-                except AvatarGenerationError as exc:
-                    logger.warning("avatar fullbody failed", extra={"user_id": user_id, "error": str(exc)})
-                    payload = {"job_id": job_id, "error": "伙伴全身图生成失败，请稍后重试"}
-                except Exception:
-                    logger.exception("avatar fullbody unexpected failure", extra={"user_id": user_id})
-                    payload = {"job_id": job_id, "error": "伙伴全身图生成失败，请稍后重试"}
-            try:
-                await dispatcher.push_event("avatar.fullbody_generated", payload, session_id=None)
-            except Exception:
-                logger.debug("avatar.fullbody_generated event push failed", extra={"user_id": user_id}, exc_info=True)
-
-        task = asyncio.create_task(_run())
-        _avatar_regen_tasks.add(task)
-        task.add_done_callback(_avatar_regen_tasks.discard)
-        return {"queued": True, "job_id": job_id}
-
-    dispatcher.register("avatar.generate_fullbody", avatar_generate_fullbody)
 
     async def tts_list_voices(params: dict) -> dict:
         # Voice catalog (plan §3.5 / §6). Optional ``language`` filter — unknown

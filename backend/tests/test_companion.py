@@ -355,8 +355,16 @@ def test_portrait_confirmation_and_resume(_patch_db):
         state = get_onboarding_state(db, 101)
         assert state["next_field"] == "portrait"
 
-        # 3. Fullbody seeds generated -> portrait-fullbody
+        # 3. Front seed only -> portrait-fullbody-front
         avatar.seed_front_url = "companion-avatars/front.jpg"
+        db.commit()
+
+        state = get_onboarding_state(db, 101)
+        assert state["next_field"] == "portrait-fullbody-front"
+
+        # 3b. Aux seeds generated -> portrait-fullbody
+        avatar.seed_right_url = "companion-avatars/right.jpg"
+        avatar.seed_back_url = "companion-avatars/back.jpg"
         db.commit()
 
         state = get_onboarding_state(db, 101)
@@ -1571,9 +1579,10 @@ async def test_regenerate_avatar_from_image_refuses_when_persona_incomplete(_pat
 
 
 @pytest.mark.asyncio
-async def test_generate_fullbody_writes_multiview_seeds_and_replaces_on_rerun(monkeypatch, _patch_db):
-    """Step-2 renders 3 multiview seeds (front/right/back) on top of the persisted avatar and writes them
-    back to the same row; a re-run replaces the previous seeds."""
+async def test_generate_fullbody_stage_front_and_aux_chained(monkeypatch, _patch_db):
+    """Stage 'front' generates only the front seed using avatar as reference and caches front_prompt.
+    Stage 'aux' generates right and back seeds using front seed as reference and caches multiview_prompts.
+    """
     import json as _json
 
     from modules.auth import User
@@ -1590,16 +1599,20 @@ async def test_generate_fullbody_writes_multiview_seeds_and_replaces_on_rerun(mo
     async def fake_download(url):
         return b"\x89PNG\r\n\x1a\n", "image/png"
 
-    async def fake_enhance_multiview(db, user_id, persona, *, avatar_prompt, feedback=None):
-        return {
-            "front": "full body front view",
-            "right": "full body right side view",
-            "back": "full body back view",
-        }
+    async def fake_enhance_front(db, user_id, persona, *, avatar_prompt, feedback=None):
+        return "full body front view prompt"
+
+    async def fake_enhance_right(db, user_id, persona, *, front_prompt, avatar_prompt=None, feedback=None):
+        return "full body right side view prompt"
+
+    async def fake_enhance_back(db, user_id, persona, *, front_prompt, avatar_prompt=None, feedback=None):
+        return "full body back view prompt"
 
     monkeypatch.setattr(avatar_service, "image_generation_tool", fake_gen)
     monkeypatch.setattr(avatar_service, "_download_to_bytes", fake_download)
-    monkeypatch.setattr(avatar_service, "enhance_fullbody_multiview_prompts", fake_enhance_multiview)
+    monkeypatch.setattr(avatar_service, "enhance_fullbody_front_prompt", fake_enhance_front)
+    monkeypatch.setattr(avatar_service, "enhance_fullbody_right_prompt", fake_enhance_right)
+    monkeypatch.setattr(avatar_service, "enhance_fullbody_back_prompt", fake_enhance_back)
 
     with SessionLocal() as db:
         user = User(username="fbuser", password_hash="x", is_active=True, can_use=True)
@@ -1621,40 +1634,45 @@ async def test_generate_fullbody_writes_multiview_seeds_and_replaces_on_rerun(mo
         db.commit()
         db.refresh(asset)
 
-        full = await avatar_service.generate_fullbody(db, user_id=user.id, avatar_id=asset.id)
-        assert full.id == asset.id
-        # The in-memory response carries the re-signed URLs.
-        assert "/api/companion/avatar/file/" in full.seed_front_url
-        assert "/api/companion/avatar/file/" in full.seed_right_url
-        assert "/api/companion/avatar/file/" in full.seed_back_url
-        assert "/api/companion/avatar/file/" in full.asset_url
-        # 3 calls made concurrently for front, right, back
+        # 1. Stage 'front'
+        front_res = await avatar_service.generate_fullbody(db, user_id=user.id, avatar_id=asset.id, stage="front")
+        assert front_res.id == asset.id
+        assert "/api/companion/avatar/file/" in front_res.seed_front_url
+        assert front_res.seed_right_url == ""
+        assert front_res.seed_back_url == ""
+        assert len(all_calls) == 1
+        assert all_calls[0]["prompt"] == "full body front view prompt"
+        assert all_calls[0]["reference_image"].startswith("data:image/png;base64,")
+
+        # 2. Stage 'aux'
+        aux_res = await avatar_service.generate_fullbody(db, user_id=user.id, avatar_id=asset.id, stage="aux")
+        assert "/api/companion/avatar/file/" in aux_res.seed_front_url
+        assert "/api/companion/avatar/file/" in aux_res.seed_right_url
+        assert "/api/companion/avatar/file/" in aux_res.seed_back_url
         assert len(all_calls) == 3
-        for call in all_calls:
-            assert call["reference_image"].startswith("data:image/png;base64,")
-        db.refresh(full)
-        assert full.seed_front_url.startswith("companion-avatars/")
-        assert full.seed_right_url.startswith("companion-avatars/")
-        assert full.seed_back_url.startswith("companion-avatars/")
+        # Aux calls used right and back prompts
+        assert all_calls[1]["prompt"] == "full body right side view prompt"
+        assert all_calls[2]["prompt"] == "full body back view prompt"
 
-        # A re-run replaces the previous seed files
-        def _db_seeds() -> tuple[str, str, str]:
-            db.expire_all()
-            row = db.query(AvatarAsset).filter(AvatarAsset.id == asset.id).one()
-            return row.seed_front_url, row.seed_right_url, row.seed_back_url
+        # 3. View 'front' regeneration invalidates aux seeds
+        all_calls.clear()
+        front_regen = await avatar_service.generate_fullbody(db, user_id=user.id, avatar_id=asset.id, view="front")
+        assert "/api/companion/avatar/file/" in front_regen.seed_front_url
+        assert front_regen.seed_right_url == ""
+        assert front_regen.seed_back_url == ""
+        assert len(all_calls) == 1
 
-        first_seeds = _db_seeds()
-        await avatar_service.generate_fullbody(db, user_id=user.id, avatar_id=asset.id)
-        second_seeds = _db_seeds()
-        assert second_seeds[0] != first_seeds[0]
-        assert second_seeds[1] != first_seeds[1]
-        assert second_seeds[2] != first_seeds[2]
-        assert len(all_calls) == 6
+        # 4. View 'right' regeneration without front raises or regenerates
+        # Since front seed exists now, regenerating view 'right' succeeds
+        all_calls.clear()
+        right_regen = await avatar_service.generate_fullbody(db, user_id=user.id, avatar_id=asset.id, view="right")
+        assert "/api/companion/avatar/file/" in right_regen.seed_right_url
+        assert len(all_calls) == 1
 
 
 @pytest.mark.asyncio
 async def test_generate_fullbody_preconditions(monkeypatch, _patch_db):
-    """Step-2 raises typed errors for a missing row / unreadable source file / missing avatar_prompt."""
+    """Step-2 raises typed errors for missing row, missing stage/view, unreadable source, and missing front seed for aux."""
     import json as _json
 
     from modules.auth import User
@@ -1669,12 +1687,20 @@ async def test_generate_fullbody_preconditions(monkeypatch, _patch_db):
     async def fake_download(url):
         return b"\x89PNG\r\n\x1a\n", "image/png"
 
-    async def fake_enhance_multiview(db, user_id, persona, *, avatar_prompt, feedback=None):
-        return {"front": "f", "right": "r", "back": "b"}
+    async def fake_enhance_front(db, user_id, persona, *, avatar_prompt, feedback=None):
+        return "front"
+
+    async def fake_enhance_right(db, user_id, persona, *, front_prompt, avatar_prompt=None, feedback=None):
+        return "r"
+
+    async def fake_enhance_back(db, user_id, persona, *, front_prompt, avatar_prompt=None, feedback=None):
+        return "b"
 
     monkeypatch.setattr(avatar_service, "image_generation_tool", fake_gen)
     monkeypatch.setattr(avatar_service, "_download_to_bytes", fake_download)
-    monkeypatch.setattr(avatar_service, "enhance_fullbody_multiview_prompts", fake_enhance_multiview)
+    monkeypatch.setattr(avatar_service, "enhance_fullbody_front_prompt", fake_enhance_front)
+    monkeypatch.setattr(avatar_service, "enhance_fullbody_right_prompt", fake_enhance_right)
+    monkeypatch.setattr(avatar_service, "enhance_fullbody_back_prompt", fake_enhance_back)
 
     with SessionLocal() as db:
         user = User(username="fbuser2", password_hash="x", is_active=True, can_use=True)
@@ -1695,12 +1721,25 @@ async def test_generate_fullbody_preconditions(monkeypatch, _patch_db):
         db.add(asset)
         db.commit()
 
-        with pytest.raises(avatar_service.AvatarNotFoundError):
-            await avatar_service.generate_fullbody(db, user_id=user.id, avatar_id=asset.id + 1)
+        # Missing both or passing both stage and view
+        with pytest.raises(avatar_service.AvatarGenerationError, match="exactly one of 'stage' or 'view' is required"):
+            await avatar_service.generate_fullbody(db, user_id=user.id, avatar_id=asset.id)
 
+        with pytest.raises(avatar_service.AvatarGenerationError, match="exactly one of 'stage' or 'view' is required"):
+            await avatar_service.generate_fullbody(db, user_id=user.id, avatar_id=asset.id, stage="front", view="front")
+
+        # Avatar not found
+        with pytest.raises(avatar_service.AvatarNotFoundError):
+            await avatar_service.generate_fullbody(db, user_id=user.id, avatar_id=asset.id + 1, stage="front")
+
+        # Aux stage when front seed is missing
+        with pytest.raises(avatar_service.FrontSeedMissingError):
+            await avatar_service.generate_fullbody(db, user_id=user.id, avatar_id=asset.id, stage="aux")
+
+        # Unreadable source
         monkeypatch.setattr(avatar_service, "_load_avatar_bytes_as_data_uri", lambda _url: None)
         with pytest.raises(avatar_service.AvatarSourceUnreadableError):
-            await avatar_service.generate_fullbody(db, user_id=user.id, avatar_id=asset.id)
+            await avatar_service.generate_fullbody(db, user_id=user.id, avatar_id=asset.id, stage="front")
 
 
 def test_avatar_from_image_route_validation(_patch_db, monkeypatch):

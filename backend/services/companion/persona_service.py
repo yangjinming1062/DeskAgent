@@ -54,7 +54,7 @@ _ONBOARDING_MAX_LEN: int = 2000
 _VOICE_FIELD_INDEX: int = ONBOARDING_FIELDS.index("voice")
 _CHARACTER_ONBOARDING_FIELDS: tuple[str, ...] = ONBOARDING_FIELDS[:_VOICE_FIELD_INDEX]
 # Gating is_complete on these prevents skip-on-crash resume.
-_POST_CHARACTER_FIELDS: tuple[str, ...] = ONBOARDING_FIELDS[_VOICE_FIELD_INDEX + 1:]
+_POST_CHARACTER_FIELDS: tuple[str, ...] = ONBOARDING_FIELDS[_VOICE_FIELD_INDEX + 1 :]
 
 
 class PersonaValidationError(ValueError):
@@ -163,6 +163,14 @@ def _load_draft(persona: Persona) -> dict[str, str]:
     return draft if isinstance(draft, dict) else {}
 
 
+def _portrait_next_field(db: Session, user_id: int) -> str:
+    """Map the active avatar's seed state to the onboarding portrait sub-stage."""
+    avatar = db.query(AvatarAsset).filter(AvatarAsset.user_id == user_id, AvatarAsset.active.is_(True)).one_or_none()
+    if avatar is not None and bool(avatar.seed_front_url):
+        return "portrait-fullbody" if bool(avatar.seed_right_url) else "portrait-fullbody-front"
+    return "portrait"
+
+
 def get_onboarding_state(db: Session, user_id: int) -> dict[str, Any]:
     """``answers``: every field already submitted; ``next_field``: first unanswered (``None`` when all answered).
 
@@ -175,9 +183,7 @@ def get_onboarding_state(db: Session, user_id: int) -> dict[str, Any]:
         user_profile = read_user_profile(db, user_id)
         merged = {**draft, **user_profile}
         if not persona.is_portrait_confirmed:
-            avatar = db.query(AvatarAsset).filter(AvatarAsset.user_id == user_id, AvatarAsset.active.is_(True)).one_or_none()
-            next_field = "portrait-fullbody" if avatar is not None and bool(avatar.seed_front_url) else "portrait"
-            return {"answers": merged, "next_field": next_field, "complete": False}
+            return {"answers": merged, "next_field": _portrait_next_field(db, user_id), "complete": False}
         missing_users = [k for k in _POST_CHARACTER_FIELDS if not user_profile.get(k)]
         voice_missing = not draft.get("voice")
         if voice_missing or missing_users:
@@ -189,9 +195,7 @@ def get_onboarding_state(db: Session, user_id: int) -> dict[str, Any]:
     missing_character = next((f for f in _CHARACTER_ONBOARDING_FIELDS if not draft.get(f)), None)
     if missing_character is not None:
         return {"answers": draft, "next_field": missing_character, "complete": False}
-    avatar = db.query(AvatarAsset).filter(AvatarAsset.user_id == user_id, AvatarAsset.active.is_(True)).one_or_none()
-    next_field = "portrait-fullbody" if avatar is not None and bool(avatar.seed_front_url) else "portrait"
-    return {"answers": draft, "next_field": next_field, "complete": False}
+    return {"answers": draft, "next_field": _portrait_next_field(db, user_id), "complete": False}
 
 
 def submit_onboarding_field(db: Session, user_id: int, field: str, value: str | None) -> dict[str, Any]:

@@ -32,23 +32,22 @@
 
 | 方向 | 方法 | 用途 | 关键约束 |
 |------|------|------|----------|
-| Client → Backend | `onboarding.get_state` | 查询已采集字段 + 下一个未答问题（断点恢复） | 返回 `is_complete=True` 仅在 `Persona.is_complete` + `is_portrait_confirmed` + `voice` + `user_*` 全部齐后才置位;`next_field` 在形象未确认时返回 `portrait` 或 `portrait-fullbody`,确认后按 **voice 先于 user_*** 路由 |
+| Client → Backend | `onboarding.get_state` | 查询已采集字段 + 下一个未答问题（断点恢复） | 返回 `is_complete=True` 仅在 `Persona.is_complete` + `is_portrait_confirmed` + `voice` + `user_*` 全部齐后才置位;`next_field` 在形象未确认时根据种子图生成阶段返回 `portrait`、`portrait-fullbody-front` 或 `portrait-fullbody`,确认后按 **voice 先于 user_*** 路由 |
 | Client → Backend | `onboarding.submit` `{field, value}` | 逐字段增量持久化 onboarding 答案 | 答案按子阶段分流——角色子阶段（含 `speaking_style`）触发 `PUT /api/companion/persona`;finalize 后只接受 `voice`（落 draft）与 `user_*`（upsert 到 `Memory` 表） |
 | Client → Backend | `avatar.regenerate` `{feedback?}` | 重生 portrait 头像（不重跑全身） | 不触发 3D 模型失效 |
-| Client → Backend | `avatar.generate_fullbody` `{avatar_id}` | 生成正/右/背三视图种子图 | 与 `avatar.regenerate` 共用 per-user 锁;并发返回 `already_running` |
 | Client → Backend | `tts.match_voice` `{preference}` | 描述句 → voice id（标签评分） | 主流程 |
 | Client → Backend | `tts.design_voice` `{prompt, preview_text?}` | LLM 生成专属音色 | 增强路径,不走主流程 |
 | Client → Backend | `tts.list_voices` | 枚举目录 | 工具窗口不 boot WS 网关,改走 REST `GET /api/companion/voices` |
 | Client → Backend | `companion.set_disturbance_tier` `{tier}` | 上报 effective 档位（积极主动/常规/保持安静） | Client 是档位唯一权威,Backend 仅镜像;30s 轮询 + 变化即推 |
 | Client → Backend | `companion.check_affect` `{idle_seconds, local_hour}` | idle 触发的情境化 affect 推理 | Backend 加载 persona + 记忆跑一次 LLM,决定是否 emit `companion.affect` |
-| Client → Backend | `companion.interact` `{kind: 'poke'\|'drag', tone, poke_count, idle_seconds, local_hour}` | 单次戳/拖的 LLM 反应推理 | per-user inflight 取消 + 1.5s 节流 + Client 端 2s debounce;RPC 失败静默吞掉,本地池兜底 |
-| Client → Backend | `companion.record_interaction_stats` `{kind: 'poke'\|'drag'\|'chat_turn', hour}` | 互动统计上报 | 无 LLM;三类计数各自 ≥ 10（双门限）才 upsert `Memory(context="interaction_stats:<date>")` |
+| Client → Backend | `companion.interact` `{kind: 'poke'|'drag', tone, poke_count, idle_seconds, local_hour}` | 单次戳/拖的 LLM 反应推理 | per-user inflight 取消 + 1.5s 节流 + Client 端 2s debounce;RPC 失败静默吞掉,本地池兜底 |
+| Client → Backend | `companion.record_interaction_stats` `{kind: 'poke'|'drag'|'chat_turn', hour}` | 互动统计上报 | 无 LLM;三类计数各自 ≥ 10（双门限）才 upsert `Memory(context="interaction_stats:<date>")` |
 | Client → Backend | `companion.get_user_profile` | 拉取 `Memory(context="user_profile:*")` 5 条结构化字段 | persona-retune wizard 第 5 步预填用 |
 | Client → Backend | `POST /api/companion/portrait/confirm` | 确认形象（半身/全身） | 幂等;设置 `is_portrait_confirmed=True`,解开 voice/user_* 子阶段 |
 | Client → Backend | `GET /api/companion/model` | 查询当前 3D 模型状态 | `species` / `provider` / `asset_url` |
 | Client → Backend | `POST /api/companion/model` | 触发 3D 模型异步生成 | 全身三视图 → Tripo3D multiview-to-3D + rig;进度经事件推送 |
 | Client → Backend | `POST /api/companion/avatar` / `/from-image` | 头像半身生成（步 1） | 同步;失败返回 502 + 友好文案,不暴露 provider 原始错误 |
-| Client → Backend | `POST /api/companion/avatar/{avatar_id}/fullbody` | 三视图种子图生成（步 2） | 同步;头像不存在 404;并发 429 |
+| Client → Backend | `POST /api/companion/avatar/{avatar_id}/fullbody` | 链式参考生成全身种子图（步 2） | 同步;缺少正面全身 409;头像不存在 404;并发 429;`stage` 与 `view` 互斥必选其一 |
 
 ### 1.2 事件类型
 
@@ -56,7 +55,6 @@
 |------------|----------|-------------------|--------|
 | `companion.affect` | 非言语的情境化情绪反应 | `{emotion, locale?, target?}` | EMOTIONAL 状态切换;quiet 档也透传（断消息不断 affect） |
 | `avatar.regenerated` | `avatar.regenerate` 最终结果 | `{job_id, asset_url?, seed_front_url?, seed_right_url?, seed_back_url?, id?, error?}` | 替换头像或展示失败提示 |
-| `avatar.fullbody_generated` | `avatar.generate_fullbody` 完成 | 同上 seed_* 字段 | 替换三视图 |
 | `model.ready` | 3D 模型异步生成就绪 | `{model_id, asset_url, species}` | 客户端加载 GLB + 注入 TS 动画 clip + 状态机绑定 |
 | `model.gen.progress` | 模型生成中 | `{progress: 0..1, stage}` | 可选进度展示 |
 | `model.failed` | 模型生成失败 | `{error}` | 渲染程序化蛋形兜底角色（无气泡、无错误） |

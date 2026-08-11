@@ -7,7 +7,7 @@ import {
 } from '@/companion/3d/model-store'
 import { $screenLocked } from '@/companion/activity'
 import { reportInteractionStat } from '@/companion/activity'
-import { resolveAvatarRegeneration, resolveFullbodyGeneration } from '@/companion/avatar-regen-store'
+import { resolveAvatarRegeneration } from '@/companion/avatar-regen-store'
 import {
   $chatOpen,
   appendAssistantDelta,
@@ -320,26 +320,6 @@ export function handleCompanionEvent(event: RpcEvent): void {
 
       if (p?.job_id) {
         resolveAvatarRegeneration(p)
-      }
-
-      break
-    }
-
-    case 'avatar.fullbody_generated': {
-      // Step-2 result for the two-step avatar→fullbody flow.
-      const p = event.payload as
-        | {
-            job_id?: string
-            seed_front_url?: string | null
-            seed_right_url?: string | null
-            seed_back_url?: string | null
-            id?: number
-            error?: string
-          }
-        | undefined
-
-      if (p?.job_id) {
-        resolveFullbodyGeneration(p)
       }
 
       break
