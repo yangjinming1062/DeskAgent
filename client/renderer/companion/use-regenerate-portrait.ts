@@ -148,6 +148,7 @@ export function useRegeneratePortrait(options: UseRegeneratePortraitOptions = {}
 
           if (res?.asset_url) {
             const applied = await applyPortrait({
+              id: res.id,
               assetUrl: res.asset_url,
               seedFrontUrl: res.seed_front_url,
               seedRightUrl: res.seed_right_url,
@@ -181,6 +182,7 @@ export function useRegeneratePortrait(options: UseRegeneratePortraitOptions = {}
 
         if (settled?.asset_url) {
           const applied = await applyPortrait({
+            id: settled.id,
             assetUrl: settled.asset_url,
             seedFrontUrl: settled.seed_front_url,
             seedRightUrl: settled.seed_right_url,
