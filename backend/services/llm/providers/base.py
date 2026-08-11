@@ -49,6 +49,9 @@ class BaseProvider(ABC):
     DEFAULT_MODELS: ClassVar[dict[str, str]] = {}
     # Per-capability default CONTEXT_TOKENS paired with DEFAULT_MODELS rows.
     DEFAULT_CONTEXT_TOKENS: ClassVar[dict[str, int]] = {}
+    # Vision MODEL_NAME override when it differs from DEFAULT_MODELS["llm"]
+    # (e.g. mimo: ``mimo-v2.5`` for vision vs ``mimo-v2.5-pro`` for text).
+    DEFAULT_VISION_MODELS: ClassVar[dict[str, str]] = {}
 
     def __init__(self, config: ProviderConfig) -> None:
         self.config = config
@@ -89,6 +92,10 @@ class ProviderError(Exception):
 class ChatProvider(BaseProvider):
     service_type: ServiceType = ServiceType.llm
 
+    # True → image_url content parts accepted (on a vision variant if the
+    # text model is text-only — see DEFAULT_VISION_MODELS).
+    supports_vision: ClassVar[bool] = False
+
     @abstractmethod
     def raw_client(self) -> AsyncOpenAI | None:
         """Return the underlying cached ``AsyncOpenAI`` if the provider can be
@@ -126,9 +133,8 @@ class ImageGenResult:
 class ImageGenProvider(BaseProvider):
     service_type: ServiceType = ServiceType.image_gen
 
-    # False → text-only wire protocol; ``image_generation_tool`` folds a
-    # vision-model description of the reference into the prompt first.
-    # True → provider consumes ``reference_image`` natively.
+    # True → provider consumes ``reference_image`` natively (image-to-image).
+    # False → skipped for reference-image requests (no image→text→image).
     supports_reference_image: ClassVar[bool] = False
 
     @abstractmethod

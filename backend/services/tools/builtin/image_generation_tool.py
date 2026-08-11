@@ -10,32 +10,33 @@ from sqlalchemy.orm import Session
 
 from .. import ALWAYS_AVAILABLE
 from .. import REGISTRY
-from ...llm import BaseProvider
-from ...llm import describe_reference_image
 from ...llm import execute_with_fallback
 from ...llm import ImageGenRequest
-from ...llm import ImageGenResult
 from ...llm import MissingLlmConfigError
+from ...llm import ProviderConfig
+from ...llm import resolve
+from ...llm import resolve_provider_chain
+from ...llm import ServiceType
 
 logger = get_logger(__name__)
 
 
-async def _generate_with_reference(req: ImageGenRequest, provider: BaseProvider, db: Session | None, user_id: int | None) -> ImageGenResult:
-    """Run ``provider.generate``, honoring ``reference_image`` on every
-    provider: native ones (MiniMax/Gemini) get the seed image as-is; text-only
-    ones get a vision-model description of it folded into the prompt first."""
-    if req.reference_image and not provider.supports_reference_image:
-        description = await describe_reference_image(db, user_id, req.reference_image)
-        req = ImageGenRequest(
-            prompt=f"{req.prompt}. Subject reference: {description}",
-            n=req.n,
-            size=req.size,
-            aspect_ratio=req.aspect_ratio,
-            quality=req.quality,
-            reference_image=None,
-            response_format=req.response_format,
-        )
-    return await provider.generate(req)
+def _image_gen_chain(
+    db: Session | None,
+    user_id: int | None,
+    reference_image: str | None,
+) -> tuple[list[ProviderConfig], str | None]:
+    """Filter the image_gen chain to reference-capable providers when
+    ``reference_image`` is given. Returns ``(chain, error)``: error is set
+    only when image_gen is configured but no provider supports image-to-image;
+    an empty chain with no error means image_gen isn't configured."""
+    full = resolve_provider_chain(db, user_id, "image_gen")
+    if not reference_image:
+        return full, None
+    capable = [c for c in full if resolve(ServiceType.image_gen, c.provider_name).supports_reference_image]
+    if full and not capable:
+        return capable, "当前图片生成供应商均不支持以图生图，请启用 minimax / gemini / grok 其中之一"
+    return capable, None
 
 
 async def image_generation_tool(
@@ -52,18 +53,19 @@ async def image_generation_tool(
     the LLM can safely reference them in image_url parts even after the
     upstream CDN evicts.
 
-    ``reference_image`` is the URL or base64 of a seed image the output
-    should stay consistent with. Used by the companion avatar-from-image
-    flow to keep the same character across generations. Providers consume
-    it natively (MiniMax ``subject_reference``, Gemini ``inlineData``) or
-    via a folded-in vision description."""
+    ``reference_image`` (companion avatar-from-image flow) is only offered
+    to providers that consume it natively — text-only image providers are
+    skipped rather than degraded via image→text→image."""
     req = ImageGenRequest(prompt=prompt, size=size, n=n, reference_image=reference_image)
     try:
         if user_id is not None:
             with SESSION_LOCAL() as db:
-                result = await execute_with_fallback(db, user_id, "image_gen", call_fn=lambda p: _generate_with_reference(req, p, db, user_id))
+                chain, err = _image_gen_chain(db, user_id, reference_image)
         else:
-            result = await execute_with_fallback(None, None, "image_gen", call_fn=lambda p: _generate_with_reference(req, p, None, None))
+            chain, err = _image_gen_chain(None, None, reference_image)
+        if err:
+            return tool_error(err)
+        result = await execute_with_fallback(None, user_id, "image_gen", call_fn=lambda p: p.generate(req), _chain=chain)
     except MissingLlmConfigError:
         return tool_error("图片生成服务未配置")
     except Exception as e:

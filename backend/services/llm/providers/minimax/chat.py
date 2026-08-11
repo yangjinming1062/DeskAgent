@@ -17,3 +17,6 @@ class MiniMaxChatProvider(OpenAICompatChatProvider):
     service_type = ServiceType.llm
     DEFAULT_MODELS: ClassVar[dict[str, str]] = {"llm": "MiniMax-Text-01"}
     DEFAULT_CONTEXT_TOKENS: ClassVar[dict[str, int]] = {"llm": 1_000_000}
+    supports_vision: ClassVar[bool] = True
+    # Text default (MiniMax-Text-01) is text-only; vision routes to M3.
+    DEFAULT_VISION_MODELS: ClassVar[dict[str, str]] = {"llm": "MiniMax-M3"}

@@ -16,3 +16,5 @@ class GeminiChatProvider(OpenAICompatChatProvider):
     PROMPT_FAMILY: ClassVar[str] = "google"
     DEFAULT_MODELS: ClassVar[dict[str, str]] = {"llm": "gemini-3.6-flash"}
     DEFAULT_CONTEXT_TOKENS: ClassVar[dict[str, int]] = {"llm": 1_000_000}
+    # gemini-3.6-flash is multimodal native — same model + base_url for vision.
+    supports_vision: ClassVar[bool] = True

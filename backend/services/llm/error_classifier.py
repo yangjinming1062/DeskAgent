@@ -224,6 +224,17 @@ _MULTIMODAL_TOOL_CONTENT_PATTERNS = [
     "tool_call.content must be string",
 ]
 
+# Provider model exists but rejects image input — fall through to the next
+# chain provider. Reuses model_not_found's failover behavior (same recovery).
+_VISION_UNSUPPORTED_PATTERNS = [
+    "no endpoints found that support image input",  # mimo token-plan verbatim
+    "does not support image input",
+    "image input not supported",
+    "does not support vision",
+    "multimodal input not supported",
+    "does not support multimodal",
+]
+
 # Context overflow patterns
 _CONTEXT_OVERFLOW_PATTERNS = [
     "context length",
@@ -898,6 +909,13 @@ def _classify_404(error_msg: str, result_fn: _ClassifierBuilder) -> ClassifiedEr
             retryable=False,
             should_fallback=True,
         )
+    # Vision-unsupported — fall through to a vision-capable provider.
+    if any(p in error_msg for p in _VISION_UNSUPPORTED_PATTERNS):
+        return result_fn(
+            FailoverReason.model_not_found,
+            retryable=False,
+            should_fallback=True,
+        )
     # Generic 404 with no "model not found" signal — could be a wrong
     # endpoint path (common with local llama.cpp / Ollama / vLLM when
     # the URL is slightly misconfigured), a proxy routing glitch, or
@@ -961,6 +979,13 @@ def _classify_400(
         return result_fn(
             FailoverReason.multimodal_tool_content_unsupported,
             retryable=True,
+        )
+    # Vision-unsupported (checked before image_too_large — different recovery).
+    if any(p in error_msg for p in _VISION_UNSUPPORTED_PATTERNS):
+        return result_fn(
+            FailoverReason.model_not_found,
+            retryable=False,
+            should_fallback=True,
         )
 
     # Image-too-large from 400 (Anthropic's 5 MB per-image check fires this way).

@@ -20,7 +20,9 @@ from ..companion import format_auto_inject_block
 from ..gateway import RuntimeSession
 from ..llm import MissingLlmConfigError
 from ..llm import provider_for_service
+from ..llm import provider_from_config
 from ..llm import resolve_context_tokens
+from ..llm import resolve_vision_chain
 from ..llm import ServiceType
 from ..tools import NativeMemory
 from ..tools import REGISTRY
@@ -45,6 +47,7 @@ class _TurnInputs:
     context_tokens_override: int | None
     all_schemas: list[dict]
     first_user_msg_content: str | None
+    llm_chain: list[Any] | None
 
 
 def load_user_settings(db: Session, user_id: int) -> dict[str, str]:
@@ -122,7 +125,20 @@ def _build_turn_inputs(
     first_user_msg = next((m for m in history if m.role == "user"), None)
     first_user_msg_content = first_user_msg.content if first_user_msg else None
 
-    provider = provider_for_service(db, user_id, "llm")
+    # History carries image content → filter the llm chain to vision-capable
+    # providers with vision models, so both the compression client and the
+    # streaming call (which receives this chain via _chain=) use models that
+    # accept image_url parts.
+    turn_has_images = any(getattr(m, "content_type", "text") == "multimodal_v1" for m in history if m.role == "user")
+    llm_chain = None
+    provider = None
+    if turn_has_images:
+        vision_chain = resolve_vision_chain(db, user_id)
+        if vision_chain:
+            llm_chain = vision_chain
+            provider = provider_from_config(vision_chain[0])
+    if provider is None:
+        provider = provider_for_service(db, user_id, "llm")
     client = provider.raw_client()
     if client is None:
         raise MissingLlmConfigError(f"llm provider '{provider.provider_name}' is not OpenAI-compatible")
@@ -176,6 +192,7 @@ def _build_turn_inputs(
         context_tokens_override=req.context_tokens,
         all_schemas=all_schemas,
         first_user_msg_content=first_user_msg_content,
+        llm_chain=llm_chain,
     )
 
 

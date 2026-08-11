@@ -147,6 +147,7 @@ async def run_chat_turn(
                 "llm",
                 call_fn=_call,
                 stream_started=lambda: stream_emitted,
+                _chain=inputs.llm_chain,
             )
         except LLMRuntimeError as exc:
             # Chain exhausted (or non-fallback error / mid-stream after

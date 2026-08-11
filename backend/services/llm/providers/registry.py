@@ -19,6 +19,11 @@ _PROVIDER_DEFAULT_MODELS: dict[str, dict[str, str]] = {}
 # cache stays a pure lookup table.
 _PROVIDER_DEFAULT_CONTEXT_TOKENS: dict[str, dict[str, int]] = {}
 
+# Chat providers that accept image input; resolve_vision_provider skips the rest.
+_PROVIDER_SUPPORTS_VISION: set[str] = set()
+# provider_name → vision MODEL_NAME (empty = reuse text default).
+_PROVIDER_VISION_MODELS: dict[str, str] = {}
+
 # Provider families DeskAgent ships. ``*_PROVIDER`` env vars must be one
 # of these; adding a new family means registering its classes AND extending
 # the dicts below.
@@ -84,6 +89,12 @@ def register(service_type: ServiceType, provider_name: str, cls: type[BaseProvid
         _PROVIDER_DEFAULT_MODELS.setdefault(provider_name, {})[svc] = model
     for svc, ctx in getattr(cls, "DEFAULT_CONTEXT_TOKENS", {}).items():
         _PROVIDER_DEFAULT_CONTEXT_TOKENS.setdefault(provider_name, {})[svc] = ctx
+    # Mirror vision capability + overrides for resolve_vision_provider.
+    if getattr(cls, "supports_vision", False):
+        _PROVIDER_SUPPORTS_VISION.add(provider_name)
+        vm = getattr(cls, "DEFAULT_VISION_MODELS", {}).get("llm", "")
+        if vm:
+            _PROVIDER_VISION_MODELS[provider_name] = vm
 
 
 def resolve(service_type: ServiceType, provider_name: str) -> type[BaseProvider]:
@@ -114,6 +125,17 @@ def default_context_tokens_for(provider: str, service_type: str) -> int:
     # 0 signals "no default published" so the resolver can fall through
     # to its terminal fallback. Caller decides what 0 means.
     return _PROVIDER_DEFAULT_CONTEXT_TOKENS.get(provider, {}).get(service_type, 0)
+
+
+def supports_vision(provider_name: str) -> bool:
+    """True if this provider registered a vision-capable chat class."""
+    return provider_name in _PROVIDER_SUPPORTS_VISION
+
+
+def default_vision_model_for(provider_name: str) -> str:
+    """Vision MODEL_NAME for this provider's chat capability. Empty string
+    means 'use the provider's regular llm model' (vision and text share one)."""
+    return _PROVIDER_VISION_MODELS.get(provider_name, "")
 
 
 def providers_supporting(service_type: ServiceType | str) -> list[str]:

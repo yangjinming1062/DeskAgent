@@ -143,88 +143,79 @@ class TestWebSearch:
         assert "url" in result["data"]["web"][0]
         assert "title" in result["data"]["web"][0]
 
-class TestReferenceFoldIn:
-    """reference_image works on every image_gen provider: native providers
-    (MiniMax/Gemini) get the seed as-is; text-only ones fold a vision-model
-    description into the prompt."""
+class TestReferenceImageChain:
+    """A ``reference_image`` is offered only to providers that consume it
+    natively; text-only image providers are skipped for reference requests,
+    never degraded via an image→text→image round-trip."""
 
-    @pytest.mark.asyncio
-    async def test_describe_reference_image_sends_multimodal_message(self, monkeypatch):
-        import services.llm.reference_image as ref_mod
+    @staticmethod
+    def _cfg(name: str):
+        from types import SimpleNamespace
 
-        class _FakeClient:
-            def __init__(self):
-                self.chat = type("_Chat", (), {"completions": self})()
+        return SimpleNamespace(provider_name=name)
 
-            async def create(self, **kwargs):
-                self.kwargs = kwargs
-                return type("_R", (), {"choices": [type("_C", (), {"message": type("_M", (), {"content": "a silver fox with amber eyes"})()})()]})()
-
-        class _FakeProvider:
-            provider_name = "mimo"
-            config = type("_C", (), {"model": "mimo-v2.5-pro"})()
-
-            def __init__(self):
-                self.client = _FakeClient()
-
-            def raw_client(self):
-                return self.client
-
-        fake_provider = _FakeProvider()
-        monkeypatch.setattr(ref_mod, "provider_for_service", lambda db, uid, svc: fake_provider)
-        text = await ref_mod.describe_reference_image(None, 1, "https://ref/seed.png")
-        assert text == "a silver fox with amber eyes"
-        kwargs = fake_provider.raw_client().kwargs
-        assert kwargs["model"] == "mimo-v2.5-pro"
-        content = kwargs["messages"][0]["content"]
-        assert content[0]["type"] == "text"
-        assert content[1] == {"type": "image_url", "image_url": {"url": "https://ref/seed.png"}}
-
-    @pytest.mark.asyncio
-    async def test_image_gen_tool_folds_description_for_text_only_provider(self, monkeypatch):
+    def test_chain_filters_to_reference_capable(self, monkeypatch):
         import importlib
 
-        from services.llm import ImageAsset
-        from services.llm import ImageGenResult
-
         tool_mod = importlib.import_module("services.tools.builtin.image_generation_tool")
-        seen: dict = {}
-        describe_calls: list[str] = []
-
-        class _TextOnlyProvider:
-            supports_reference_image = False
-
-            async def generate(self, req):
-                seen["req"] = req
-                return ImageGenResult(images=[ImageAsset(url="http://out/1.png")], model="glm-image")
-
-        async def _fake_execute(db, user_id, service_type, call_fn, **kwargs):
-            return await call_fn(_TextOnlyProvider())
-
-        async def _fake_describe(db, user_id, ref):
-            describe_calls.append(ref)
-            return "a silver fox with amber eyes"
-
-        monkeypatch.setattr(tool_mod, "execute_with_fallback", _fake_execute)
-        monkeypatch.setattr(tool_mod, "describe_reference_image", _fake_describe)
-
-        result = await tool_mod.image_generation_tool(
-            prompt="portrait of a fox",
-            llm_config={},
-            user_id=None,
-            reference_image="https://ref/seed.png",
+        monkeypatch.setattr(
+            tool_mod,
+            "resolve_provider_chain",
+            lambda db, uid, svc: [self._cfg("minimax"), self._cfg("zhipu"), self._cfg("gemini")],
         )
-        payload = json.loads(result)
-        assert payload["success"] is True
-        assert payload["urls"] == ["http://out/1.png"]
-        assert describe_calls == ["https://ref/seed.png"]
-        req = seen["req"]
-        assert req.reference_image is None
-        assert "portrait of a fox" in req.prompt
-        assert "a silver fox with amber eyes" in req.prompt
+        capable = {"minimax": True, "zhipu": False, "gemini": True}
+        monkeypatch.setattr(
+            tool_mod,
+            "resolve",
+            lambda svc, name: type("P", (), {"supports_reference_image": capable[name]})(),
+        )
+
+        chain, err = tool_mod._image_gen_chain(None, None, "https://ref/seed.png")
+        assert err is None
+        assert [c.provider_name for c in chain] == ["minimax", "gemini"]
+
+    def test_chain_returns_error_when_none_capable(self, monkeypatch):
+        import importlib
+
+        tool_mod = importlib.import_module("services.tools.builtin.image_generation_tool")
+        monkeypatch.setattr(tool_mod, "resolve_provider_chain", lambda db, uid, svc: [self._cfg("zhipu")])
+        monkeypatch.setattr(
+            tool_mod,
+            "resolve",
+            lambda svc, name: type("P", (), {"supports_reference_image": False})(),
+        )
+
+        chain, err = tool_mod._image_gen_chain(None, None, "https://ref/seed.png")
+        assert chain == []
+        assert err is not None
+        assert "以图生图" in err
+
+    def test_chain_unfiltered_without_reference(self, monkeypatch):
+        import importlib
+
+        tool_mod = importlib.import_module("services.tools.builtin.image_generation_tool")
+        full = [self._cfg("zhipu"), self._cfg("minimax")]
+        monkeypatch.setattr(tool_mod, "resolve_provider_chain", lambda db, uid, svc: list(full))
+
+        chain, err = tool_mod._image_gen_chain(None, None, None)
+        assert err is None
+        assert [c.provider_name for c in chain] == ["zhipu", "minimax"]
+
+    def test_chain_no_error_when_image_gen_unconfigured(self, monkeypatch):
+        """An empty full chain (image_gen not configured at all) is NOT the
+        reference-specific error — it falls through to execute_with_fallback's
+        MissingLlmConfigError → '图片生成服务未配置'."""
+        import importlib
+
+        tool_mod = importlib.import_module("services.tools.builtin.image_generation_tool")
+        monkeypatch.setattr(tool_mod, "resolve_provider_chain", lambda db, uid, svc: [])
+
+        chain, err = tool_mod._image_gen_chain(None, None, "https://ref/seed.png")
+        assert chain == []
+        assert err is None
 
     @pytest.mark.asyncio
-    async def test_image_gen_tool_passes_reference_to_native_provider(self, monkeypatch):
+    async def test_tool_passes_reference_to_native_provider(self, monkeypatch):
         import importlib
 
         from services.llm import ImageAsset
@@ -232,7 +223,6 @@ class TestReferenceFoldIn:
 
         tool_mod = importlib.import_module("services.tools.builtin.image_generation_tool")
         seen: dict = {}
-        describe_calls: list[str] = []
 
         class _NativeProvider:
             supports_reference_image = True
@@ -244,12 +234,8 @@ class TestReferenceFoldIn:
         async def _fake_execute(db, user_id, service_type, call_fn, **kwargs):
             return await call_fn(_NativeProvider())
 
-        async def _fake_describe(db, user_id, ref):
-            describe_calls.append(ref)
-            return "x"
-
+        monkeypatch.setattr(tool_mod, "_image_gen_chain", lambda db, uid, ref: ([self._cfg("minimax")], None))
         monkeypatch.setattr(tool_mod, "execute_with_fallback", _fake_execute)
-        monkeypatch.setattr(tool_mod, "describe_reference_image", _fake_describe)
 
         result = await tool_mod.image_generation_tool(
             prompt="portrait",
@@ -260,34 +246,50 @@ class TestReferenceFoldIn:
         payload = json.loads(result)
         assert payload["success"] is True
         assert seen["req"].reference_image == "https://ref/seed.png"
-        assert describe_calls == []
 
     @pytest.mark.asyncio
-    async def test_image_gen_tool_skips_describe_without_reference(self, monkeypatch):
+    async def test_tool_works_without_reference(self, monkeypatch):
+        """No reference_image → chain is unfiltered, any image provider works."""
         import importlib
 
         from services.llm import ImageAsset
         from services.llm import ImageGenResult
 
         tool_mod = importlib.import_module("services.tools.builtin.image_generation_tool")
-        describe_calls: list[str] = []
+        seen: dict = {}
 
         class _TextOnlyProvider:
             supports_reference_image = False
 
             async def generate(self, req):
+                seen["req"] = req
                 return ImageGenResult(images=[ImageAsset(url="http://out/1.png")], model="glm-image")
 
         async def _fake_execute(db, user_id, service_type, call_fn, **kwargs):
             return await call_fn(_TextOnlyProvider())
 
-        async def _fake_describe(db, user_id, ref):
-            describe_calls.append(ref)
-            return "x"
-
+        monkeypatch.setattr(tool_mod, "_image_gen_chain", lambda db, uid, ref: ([self._cfg("zhipu")], None))
         monkeypatch.setattr(tool_mod, "execute_with_fallback", _fake_execute)
-        monkeypatch.setattr(tool_mod, "describe_reference_image", _fake_describe)
 
         result = await tool_mod.image_generation_tool(prompt="portrait", llm_config={}, user_id=None)
-        assert json.loads(result)["success"] is True
-        assert describe_calls == []
+        payload = json.loads(result)
+        assert payload["success"] is True
+        assert payload["urls"] == ["http://out/1.png"]
+        assert seen["req"].reference_image is None
+
+    @pytest.mark.asyncio
+    async def test_tool_returns_curated_error_when_none_capable(self, monkeypatch):
+        import importlib
+
+        tool_mod = importlib.import_module("services.tools.builtin.image_generation_tool")
+        monkeypatch.setattr(tool_mod, "_image_gen_chain", lambda db, uid, ref: ([], "当前图片生成供应商均不支持以图生图"))
+
+        result = await tool_mod.image_generation_tool(
+            prompt="portrait",
+            llm_config={},
+            user_id=None,
+            reference_image="https://ref/seed.png",
+        )
+        payload = json.loads(result)
+        assert payload["success"] is False
+        assert "以图生图" in payload["error"]

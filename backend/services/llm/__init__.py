@@ -12,6 +12,7 @@ from .llm_client import provider_from_config
 from .llm_client import resolve_provider_chain
 from .llm_client import resolve_provider_config
 from .llm_client import resolve_service_row
+from .llm_client import resolve_vision_chain
 from .llm_fallback import execute_with_fallback
 from .llm_retry import call_with_retry
 from .llm_retry import LLMRuntimeError
@@ -48,7 +49,6 @@ from .providers import VideoGenProvider
 from .providers import VideoGenRequest
 from .providers import VideoJobStatus
 from .providers import VoiceDesignResult
-from .reference_image import describe_reference_image
 from .user_config import merge_provider_json
 from .user_config import resolve_user_llm_config
 from .voice_catalog import default_voice_id
@@ -65,6 +65,7 @@ __all__ = [
     "resolve_service_row",
     "resolve_provider_chain",
     "resolve_provider_config",
+    "resolve_vision_chain",
     "provider_from_config",
     "provider_for_service",
     "execute_with_fallback",
@@ -105,7 +106,6 @@ __all__ = [
     "FailoverReason",
     "is_content_policy_error_message",
     "compress_history_if_needed",
-    "describe_reference_image",
     "enhance_avatar_prompt",
     "build_fullbody_prompt",
     "build_texture_prompt",

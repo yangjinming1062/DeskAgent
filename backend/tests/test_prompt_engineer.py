@@ -171,7 +171,7 @@ def test_build_right_uses_right_features():
         template=template,
     )
     assert prompt.startswith("full body right side view (90 degree profile) portrait of 金发少女")
-    assert "侧面特征重点" in prompt
+    assert "正侧面" in prompt
 
 
 def test_build_back_uses_back_features():
@@ -184,7 +184,7 @@ def test_build_back_uses_back_features():
         template=template,
     )
     assert prompt.startswith("full body back view (180 degree) portrait of 金发少女")
-    assert "背面特征重点" in prompt
+    assert "背面全身完整可见" in prompt
 
 
 def test_build_with_flavor():

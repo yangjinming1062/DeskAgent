@@ -27,12 +27,14 @@ from .http import aclose_all
 from .registry import default_base_url
 from .registry import default_context_tokens_for
 from .registry import default_model_for
+from .registry import default_vision_model_for
 from .registry import KNOWN_PROVIDERS
 from .registry import PROVIDER_DEFAULT_URLS
 from .registry import providers_supporting
 from .registry import register
 from .registry import resolve
 from .registry import SERVICE_DEFAULT_PROVIDER
+from .registry import supports_vision
 from .registry import try_resolve
 
 
@@ -86,6 +88,8 @@ __all__ = [
     "default_base_url",
     "default_context_tokens_for",
     "default_model_for",
+    "default_vision_model_for",
+    "supports_vision",
     "providers_supporting",
     "KNOWN_PROVIDERS",
     "PROVIDER_DEFAULT_URLS",

@@ -1,4 +1,5 @@
 import json
+from dataclasses import replace
 
 from components import SETTINGS
 from modules.auth import UserModelConfig
@@ -8,12 +9,14 @@ from sqlalchemy.orm import Session
 from .providers import BaseProvider
 from .providers import default_base_url
 from .providers import default_model_for
+from .providers import default_vision_model_for
 from .providers import KNOWN_PROVIDERS
 from .providers import ProviderConfig
 from .providers import providers_supporting
 from .providers import resolve
 from .providers import SERVICE_DEFAULT_PROVIDER
 from .providers import ServiceType
+from .providers import supports_vision
 from .providers.http import get_async_client
 from .user_config import resolve_user_llm_config
 
@@ -255,6 +258,21 @@ def resolve_provider_config(db: Session | None, user_id: int | None, service_typ
     if not chain:
         raise MissingLlmConfigError(f"no provider configured for service {service_type!r}")
     return chain[0]
+
+
+def resolve_vision_chain(
+    db: Session | None,
+    user_id: int | None,
+    *,
+    service_type: str = "llm",
+) -> list[ProviderConfig]:
+    """Vision-capable providers in the ``service_type`` chain, each with its
+    vision model substituted. Empty when none support vision."""
+    return [
+        replace(cfg, model=default_vision_model_for(cfg.provider_name) or cfg.model)
+        for cfg in resolve_provider_chain(db, user_id, service_type)
+        if supports_vision(cfg.provider_name)
+    ]
 
 
 def provider_from_config(config: ProviderConfig) -> BaseProvider:
