@@ -22,7 +22,7 @@ DeskAgent 安装器产品。本目录容纳 **Tauri 2 桌面程序**（`src/` + 
 ## 2. 设计意图
 
 - **Installer binary self-contained**：install 脚本与 payload 全部嵌入 Tauri `bundle.resources`，运行期零网络依赖。**为什么不下载**：项目不放在 GitHub，无可下载源；脚本版本 = installer build 版本。
-- **Install 协议后端是 worker（6-stage protocol）**：`install.{sh,ps1}` 是被 Tauri 进程 spawn 出来干活的 worker，不是 orchestrator——Tauri 是 orchestrator，6 个 stage（`welcome` / `install-python` / `unpack-runner` / `unpack-desktop` / `install-skills` / `write-config`）按序执行。Tauri 进程经 env var 把 `bundle.resources` 解压根传给 install 脚本。
+- **Install 协议后端是 worker（6-stage protocol）**：`install.{sh,ps1}` 是被 Tauri 进程 spawn 出来干活的 worker，不是 orchestrator——Tauri 是 orchestrator，6 个 stage（`welcome` / `install-python` / `unpack-runner` / `unpack-desktop` / `install-skills` / `finalize`）按序执行。Tauri 进程经 env var 把 `bundle.resources` 解压根传给 install 脚本。
 - **Install 脚本在 `installer/` 而非 `scripts/`**：1:1 耦合关系——`scripts/build_client.{sh,ps1}` 在 `stage_payload()` 时硬链接 / 符号链接到 `installer/payload/`，Tauri 自动嵌入。`scripts/build_client.{sh,ps1}` 才是跨 runner/client/installer 三模块的 repo 级 orchestrator。
 - **uv-managed venv + system-Python-free**：通过 [uv](https://docs.astral.sh/uv/) 安装 Python 到 uv 托管位置（无需管理员权限），venv 创建在 `$DESKAGENT_HOME/runner/.venv`。**为什么不依赖 system Python**：不同 OS 自带 Python 版本差异大，依赖系统 Python 会让 install 兼容性变成无尽测试矩阵。
 - **macOS fast path**：`/Applications/DeskAgent.app` 兼任"首次启动走安装、之后是 launcher"。三条件全满足（`$DESKAGENT_HOME/.deskagent-bootstrap-complete` + `/Applications/DeskAgent.app/.../DeskAgent` 可启动 + Runner venv 健康）时 Tauri 直接 relaunch 桌面并退出；`--reinstall` / `--repair` 跳过 fast path。
@@ -51,7 +51,6 @@ installer/
 │   ├── client/            # Client build 产物
 │   ├── voices/            # Piper offline voices
 │   └── install.{sh,ps1,cmd}
-└── .staging.json          # build metadata（version / sha256 / host）
 ```
 
 依赖方向：`src-tauri/` ← `src/`（Tauri 命令）；`install.{sh,ps1,cmd}` 是独立 worker，被 `src-tauri/` 经 `powershell.rs::run_script` spawn；`scripts/build_client.{sh,ps1}` 是跨模块 orchestrator，build 时 stage payload 到 `installer/payload/`。
@@ -59,7 +58,7 @@ installer/
 ## 4. 关键设计决策
 
 - **uv-managed venv 而非 system Python**：通过 `uv` 安装 Python 到 uv 托管位置，venv 创建在 `$DESKAGENT_HOME/runner/.venv`。**为什么不依赖 system Python**：macOS 自带 Python 3（不会破坏）、Windows 默认无 Python、Linux 发行版差异大；依赖系统 Python 会让 install 兼容性变成无尽测试矩阵。**为什么不直接用 conda/venv**：uv 单一二进制 + 跨平台 + 5× 速度 + 内置 Python 安装，是当前最佳选择。
-- **install 协议 6 stage 拆分**：`welcome` → `install-python` → `unpack-runner` → `unpack-desktop` → `install-skills` → `write-config`。`write-config` 现在只写 `.deskagent-bootstrap-complete` marker（runner 配置由 Client 经 WS 协议推送，不再经文件）。**为什么不一次性 `pip install` + `cp`**：分阶段让 Tauri 可以单独 retry / 单独回滚单 stage；崩溃可以从断点恢复；进度条粒度更细。
+- **install 协议 6 stage 拆分**：`welcome` → `install-python` → `unpack-runner` → `unpack-desktop` → `install-skills` → `finalize`。`finalize` 写 `.deskagent-bootstrap-complete` marker（runner 配置由 Client 经 WS 协议推送，不再经文件）。**为什么不一次性 `pip install` + `cp`**：分阶段让 Tauri 可以单独 retry / 单独回滚单 stage；崩溃可以从断点恢复；进度条粒度更细。
 - **uv pip install 失败后自动用镜像重试**：`DESKAGENT_PYPI_INDEX_URL` / `PIP_INDEX_URL` 环境变量优先，缺省阿里云镜像 `https://mirrors.aliyun.com/pypi/simple/`。**为什么不内置 pip mirror 配置**：用户自托管 / 企业代理场景下可能需要私有 index；env var 优先 + 兜底镜像覆盖大多数情况。
 - **macOS fast path**（前述）：让 `/Applications/DeskAgent.app` 兼任"首次启动走安装、之后是 launcher"——减少启动时的 UI 闪烁、避免每次启动都进入安装器界面。**代价**：fast path 跳过任何"组件已损坏需要 repair"的检测；用户需手动 `--repair`。
 - **`--reinstall` / `--repair` 跳过 fast path**：显式覆盖 fast path 进入完整 UI，让用户能修复已损坏的 install。**为什么不复用 fast path**：fast path 的本意是"已 install 一切正常，无需打扰用户"。

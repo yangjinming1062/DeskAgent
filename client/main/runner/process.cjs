@@ -98,6 +98,7 @@ function createRunnerProcess(options = {}) {
     const argv = [...resolved.args, ...buildArgs(args)]
     const env = {
       ...process.env,
+      ...(options.deskagentHome ? { DESKAGENT_HOME: options.deskagentHome } : {}),
       ...(options.env || {})
     }
 

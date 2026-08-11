@@ -1,13 +1,11 @@
 'use strict'
 
-const yaml = require('yaml')
-
 const store = require('../shared/lib/runner-config-store.cjs')
 
 function registerRunnerConfigIpc({ ipcMain }) {
   ipcMain.handle('deskagent:runner-config:read', async () => {
     try {
-      const content = yaml.stringify(store.read())
+      const content = JSON.stringify(store.read(), null, 2)
       return { ok: true, content }
     } catch (error) {
       return { ok: false, error: error.message }
@@ -19,16 +17,16 @@ function registerRunnerConfigIpc({ ipcMain }) {
       return { ok: false, error: 'config content must be a string' }
     }
 
-    // parseDocument (not yaml.parse) to inspect .errors and reject non-mapping roots.
-    const doc = yaml.parseDocument(newContent)
-    if (doc.errors.length > 0) {
-      return { ok: false, error: doc.errors[0].message }
+    let obj
+    try {
+      obj = JSON.parse(newContent)
+    } catch (error) {
+      return { ok: false, error: error.message }
     }
-    if (!doc.contents || typeof doc.contents !== 'object' || Array.isArray(doc.contents)) {
-      return { ok: false, error: 'config root must be a YAML mapping' }
+    if (!obj || typeof obj !== 'object' || Array.isArray(obj)) {
+      return { ok: false, error: 'config root must be a JSON object' }
     }
 
-    const obj = doc.toJS()
     return store.write(obj)
   })
 

@@ -45,7 +45,7 @@ $PythonFallbackVersions = @("3.12", "3.14", "3.11")
 
 if (-not $DeskAgentHome) {
     if ($env:DESKAGENT_HOME) { $DeskAgentHome = $env:DESKAGENT_HOME }
-    else { $DeskAgentHome = Join-Path $env:LOCALAPPDATA "deskagent" }
+    else { $DeskAgentHome = Join-Path $env:LOCALAPPDATA "DeskAgent" }
 }
 if (-not $BundledRunnerDir -and $env:DESKAGENT_BUNDLED_RUNNER_DIR) { $BundledRunnerDir = $env:DESKAGENT_BUNDLED_RUNNER_DIR }
 if (-not $BundledDesktopDir -and $env:DESKAGENT_BUNDLED_DESKTOP_DIR) { $BundledDesktopDir = $env:DESKAGENT_BUNDLED_DESKTOP_DIR }
@@ -67,7 +67,7 @@ function Emit-Manifest {
   {"name": "unpack-runner", "title": "\u5b89\u88c5 DeskAgent \u8fd0\u884c\u5668", "category": "payload", "needs_user_input": false},
   {"name": "unpack-desktop", "title": "\u5b89\u88c5 DeskAgent \u684c\u9762\u5e94\u7528", "category": "payload", "needs_user_input": false},
   {"name": "install-skills", "title": "\u5b89\u88c5\u5185\u7f6e\u6280\u80fd", "category": "payload", "needs_user_input": false},
-  {"name": "write-config", "title": "\u5199\u5165\u914d\u7f6e\u6587\u4ef6", "category": "finalize", "needs_user_input": false}
+  {"name": "finalize", "title": "\u5b8c\u6210\u5b89\u88c5", "category": "finalize", "needs_user_input": false}
 ]}
 "@
 }
@@ -424,17 +424,14 @@ function Stage-InstallSkills {
     return 0
 }
 
-# --- stage 6: write-config --------------------------------------------------
+# --- stage 6: finalize ------------------------------------------------------
 
-function Stage-WriteConfig {
-    # Config is no longer shipped as a file — the Desktop owns it and pushes
-    # to the Runner over the WS protocol. This stage now only writes the
-    # bootstrap-complete marker that the macOS launcher fast-path checks.
+function Stage-Finalize {
     $marker = Join-Path $DeskAgentHome ".deskagent-bootstrap-complete"
     Set-Content -Path $marker -Value "" -NoNewline
 
     $escMarker = Escape-JsonString $marker
-    Write-Output "{`"ok`": true, `"stage`": `"write-config`", `"data`": {`"marker`": `"$escMarker`"}}"
+    Write-Output "{`"ok`": true, `"stage`": `"finalize`", `"data`": {`"marker`": `"$escMarker`"}}"
     return 0
 }
 
@@ -466,7 +463,7 @@ switch ($Stage) {
     "unpack-runner"  { Run-Stage { Stage-UnpackRunner } }
     "unpack-desktop" { Run-Stage { Stage-UnpackDesktop } }
     "install-skills" { Run-Stage { Stage-InstallSkills } }
-    "write-config"   { Run-Stage { Stage-WriteConfig } }
+    "finalize"       { Run-Stage { Stage-Finalize } }
     default {
         Emit-StageErr $Stage "unknown stage"
         exit 1

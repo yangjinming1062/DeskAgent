@@ -218,7 +218,13 @@ THREAT_PATTERNS = [
         "persistence",
         "references agent config files (could persist malicious instructions across sessions)",
     ),
-    (r"\.deskagent/config\.yaml|\.deskagent/SOUL\.md", "deskagent_config_mod", "critical", "persistence", "references DeskAgent configuration files directly"),
+    (
+        r"\.deskagent/config\.yaml|\.deskagent/SOUL\.md|DeskAgent/desktop-settings\.json|\.deskagent/desktop-settings\.json",
+        "deskagent_config_mod",
+        "critical",
+        "persistence",
+        "references DeskAgent configuration files directly",
+    ),
     (r"\.claude/settings|\.codex/config", "other_agent_config", "high", "persistence", "references other agent configuration files"),
     # ── Hardcoded secrets (credentials embedded in the skill itself) ──
     (

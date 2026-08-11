@@ -24,8 +24,11 @@ PYTHON_VERSION="3.13"
 
 # --- defaults ---------------------------------------------------------------
 
-# Default DESKAGENT_HOME. Overridden by $DESKAGENT_HOME or --deskagent-home.
-DEFAULT_DESKAGENT_HOME_UNIX="$HOME/.deskagent"
+if [[ "$(uname -s)" == "Darwin" ]]; then
+  DEFAULT_DESKAGENT_HOME_UNIX="$HOME/Library/Application Support/DeskAgent"
+else
+  DEFAULT_DESKAGENT_HOME_UNIX="$HOME/.deskagent"
+fi
 
 # Path to the runner binary inside the bundle. POSIX uses no extension.
 RUNNER_WHEEL_GLOB="desk_agent-*.whl"
@@ -61,7 +64,7 @@ Usage:
       [--bundled-voices-dir PATH] \
       [--bundled-onboarding-audio-dir PATH]
 
-Stages: welcome, install-python, unpack-runner, unpack-desktop, install-skills, write-config.
+Stages: welcome, install-python, unpack-runner, unpack-desktop, install-skills, finalize.
 EOF
 }
 
@@ -109,7 +112,7 @@ emit_manifest() {
   {"name": "unpack-runner", "title": "安装 DeskAgent 运行器", "category": "payload", "needs_user_input": false},
   {"name": "unpack-desktop", "title": "安装 DeskAgent 桌面应用", "category": "payload", "needs_user_input": false},
   {"name": "install-skills", "title": "安装内置技能", "category": "payload", "needs_user_input": false},
-  {"name": "write-config", "title": "写入配置文件", "category": "finalize", "needs_user_input": false}
+  {"name": "finalize", "title": "完成安装", "category": "finalize", "needs_user_input": false}
 ]}
 EOF
 }
@@ -291,7 +294,7 @@ stage_unpack_runner() {
   # directory so local TTS works offline on day 1. Each voice is an onnx
   # model + a config json — both files are required; partial copies make
   # Piper raise FileNotFoundError. Voice selection in tts_tool honours the
-  # config.yaml::audio.tts.default_voice setting; this just makes sure the
+  # desktop-settings.json::audio.tts.default_voice setting; this just makes sure the
   # on-disk side of the contract is satisfied.
   local voice_count=0
   if [[ -n "$BUNDLED_VOICES_DIR" && -d "$BUNDLED_VOICES_DIR" ]]; then
@@ -448,15 +451,12 @@ stage_install_skills() {
     "$bundled_count"
 }
 
-# --- stage 6: write-config --------------------------------------------------
+# --- stage 6: finalize ------------------------------------------------------
 
-stage_write_config() {
-  # Config is no longer shipped as a file — the Desktop owns it and pushes
-  # to the Runner over the WS protocol. This stage now only writes the
-  # bootstrap-complete marker that the macOS launcher fast-path checks.
+stage_finalize() {
   : > "$DESKAGENT_HOME_RESOLVED/.deskagent-bootstrap-complete"
 
-  printf '{"ok": true, "stage": "write-config", "data": {"marker": "%s/.deskagent-bootstrap-complete"}}\n' \
+  printf '{"ok": true, "stage": "finalize", "data": {"marker": "%s/.deskagent-bootstrap-complete"}}\n' \
     "$DESKAGENT_HOME_RESOLVED"
 }
 
@@ -477,7 +477,7 @@ case "$MODE" in
       unpack-runner)   stage_unpack_runner ;;
       unpack-desktop)  stage_unpack_desktop ;;
       install-skills)  stage_install_skills ;;
-      write-config)    stage_write_config ;;
+      finalize)        stage_finalize ;;
       *)
         emit_stage_err "$STAGE" "unknown stage"
         exit 1

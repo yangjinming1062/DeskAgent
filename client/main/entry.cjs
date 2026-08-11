@@ -41,7 +41,7 @@ const { registerOnboardingAudioIpc } = require('./ipc/onboarding-audio.cjs')
 const { registerConnectionIpc } = require('./ipc/connection.cjs')
 const { registerMediaIpc, createEnginePrefsCache } = require('./ipc/media.cjs')
 const { registerAuthIpc } = require('./ipc/auth.cjs')
-const { registerRunnerIpc, autoStartBridge, autoStopBridge, restartRunnerBridge } = require('./ipc/runner.cjs')
+const { registerRunnerIpc, autoStartBridge, autoStopBridge } = require('./ipc/runner.cjs')
 const { registerRunnerConfigIpc } = require('./ipc/runner-config.cjs')
 const { registerSkillsIpc } = require('./ipc/skills.cjs')
 const { registerSpriteIpc } = require('./ipc/sprite.cjs')
@@ -62,11 +62,6 @@ const { STREAMABLE_MEDIA_EXTS, mimeTypeForPath, extensionForMimeType } = require
 const log = require('electron-log/main')
 
 const USER_DATA_OVERRIDE = process.env.DESKAGENT_DESKTOP_USER_DATA_DIR
-if (USER_DATA_OVERRIDE) {
-  const resolvedUserData = path.resolve(USER_DATA_OVERRIDE)
-  fs.mkdirSync(resolvedUserData, { recursive: true })
-  app.setPath('userData', resolvedUserData)
-}
 
 const DEV_SERVER = process.env.DESKAGENT_DESKTOP_DEV_SERVER
 const IS_PACKAGED = app.isPackaged
@@ -118,22 +113,19 @@ app.commandLine.appendSwitch('disable-renderer-backgrounding')
 app.commandLine.appendSwitch('disable-backgrounding-occluded-windows')
 app.commandLine.appendSwitch('disable-background-timer-throttling')
 
-// DESKAGENT_HOME — the user-facing root for everything DeskAgent-related. Mirrors the
-// installer module's path conventions (see installer/CLAUDE.md).
-//
-// DESKAGENT_DESKTOP_USER_DATA_DIR (used by scripts/test-desktop.mjs fresh) puts the sandbox
-// DESKAGENT_HOME beneath the throwaway userData dir so a fresh-install run never
-// touches the user's real ~/.deskagent / %LOCALAPPDATA%\deskagent. The Windows legacy
-// `~/.deskagent` migration (preserve an existing user state when no LOCALAPPDATA
-// install yet) is folded into paths.cjs::deskagentHome and activated by passing
-// `directoryExists`.
+// DESKAGENT_HOME — the single data directory for all DeskAgent state (runner,
+// skills, models, logs, caches, session, config). Platform defaults:
+//   Windows: %LOCALAPPDATA%\DeskAgent
+//   macOS:   ~/Library/Application Support/DeskAgent
+// DESKAGENT_DESKTOP_USER_DATA_DIR overrides the base for dev/test runs.
 function resolveDeskAgentHome() {
-  if (process.env.DESKAGENT_HOME) return path.resolve(process.env.DESKAGENT_HOME)
   if (USER_DATA_OVERRIDE) return path.join(path.resolve(USER_DATA_OVERRIDE), 'deskagent-home')
-  return deskagentHome({ directoryExists })
+  return deskagentHome()
 }
 
 const DESKAGENT_HOME = resolveDeskAgentHome()
+fs.mkdirSync(DESKAGENT_HOME, { recursive: true })
+app.setPath('userData', DESKAGENT_HOME)
 
 // Initialise the runner config store (desktop-settings.json) so every IPC
 // handler reads / writes the same in-memory object.
@@ -1744,7 +1736,7 @@ const bridgeDeps = {
   buildClientContext: () =>
     buildClientContext({
       desktopVersion: resolveDeskAgentVersion(),
-      deskagentHome: deskagentHome()
+      deskagentHome: DESKAGENT_HOME
     }),
   atomicWriteFile,
   createRunnerProcess,
@@ -1795,14 +1787,13 @@ const bridgeDeps = {
   isQuitting: false,
   autoStartBridge: () => autoStartBridge(bridgeDeps),
   autoStopBridge: () => autoStopBridge(bridgeDeps),
-  restartRunnerBridge: () => restartRunnerBridge(bridgeDeps),
   resetBackendCache
 }
 
 registerAuthIpc({ ipcMain, deps: bridgeDeps })
 registerRunnerIpc({ ipcMain, deps: bridgeDeps })
 registerRunnerConfigIpc({ ipcMain })
-registerSkillsIpc({ ipcMain, deps: bridgeDeps, deskagentHome: deskagentHome() })
+registerSkillsIpc({ ipcMain, deps: bridgeDeps, deskagentHome: DESKAGENT_HOME })
 registerUpdateIpc({
   ipcMain,
   electron: { app },

@@ -1280,7 +1280,7 @@ class MCPServerTask:
 
         # SSE transport (for MCP servers that implement the SSE transport protocol
         # rather than Streamable HTTP). Configure with ``transport: sse`` in the
-        # mcp_servers entry in config.yaml.
+        # mcp_servers entry in desktop-settings.json.
         if config.get("transport") == "sse":
             if sse_client is None:
                 raise ImportError(f"MCP server '{self.name}' requires SSE transport but mcp.client.sse.sse_client is not available. Upgrade the mcp package to get SSE support.")
@@ -1451,7 +1451,7 @@ class MCPServerTask:
             )
 
         # letting it blow up inside the SDK's httpx layer on every retry)
-        # means a typo in config.yaml fails fast with a clear error — and
+        # means a typo in desktop-settings.json fails fast with a clear error — and
         # critically, no reconnect-backoff burn.  (Ported from
         # anomalyco/opencode#25019.)
         if self._is_http():

@@ -195,7 +195,6 @@ export interface Translations {
       objectRequired: string
       invalidJson: string
       saveFailed: string
-      saveRestartFailed: (error: string) => string
       removeFailed: string
       gatewayUnavailableTitle: string
       gatewayUnavailableMessage: string
@@ -224,7 +223,6 @@ export interface Translations {
       save: string
       saveSuccess: string
       saveFailed: string
-      saveRestartFailed: (error: string) => string
       invalidYaml: string
       terminal: string
       terminalEnvType: string

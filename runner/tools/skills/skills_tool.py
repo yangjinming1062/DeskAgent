@@ -189,7 +189,7 @@ def _env_overrides() -> dict[str, str]:
     """Read the ``skills.env_overrides`` map from the in-memory config.
 
     The runner does not interactive-prompt for secrets. Operators declare
-    per-skill env values in config.yaml; Desktop surfaces that map to the
+    per-skill env values in the Runner config; Desktop surfaces that map to the
     user. Missing entries cause the skill to surface a ``setup_needed``
     hint instead of failing.
     """

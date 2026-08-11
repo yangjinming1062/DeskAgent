@@ -15,7 +15,7 @@ import { Settings } from '@/shared/lib/icons'
 import { notify, notifyError } from '@/shared/store/notifications'
 import { strings } from '@/shared/strings'
 
-import { useRunnerConfig } from '../runner/use-runner-config'
+import { getIn, setIn, useRunnerConfig } from '../runner/use-runner-config'
 
 import { EmptyState, ListRow, LoadingState, SectionHeading, SettingsContent, SettingsSubsection } from './primitives'
 
@@ -60,31 +60,26 @@ export function RunnerSettings(): React.JSX.Element {
   const t = strings
   const r = t.settings.runner
 
-  const { yamlDoc, setYamlDoc, isLoading, write } = useRunnerConfig(r.failedLoad)
+  const { config, setConfig, isLoading, write } = useRunnerConfig(r.failedLoad)
   const [isSaving, setIsSaving] = useState(false)
   const [isDirty, setIsDirty] = useState(false)
 
   const handleSave = async () => {
-    if (!yamlDoc) {
+    if (!config) {
       return
     }
 
     setIsSaving(true)
 
     try {
-      const result = await write(yamlDoc.toString())
+      const result = await write(JSON.stringify(config, null, 2))
 
       if (!result.ok) {
         throw new Error(result.error)
       }
 
       triggerHaptic('success')
-
-      if (!result.restarted && result.restartError) {
-        notify({ kind: 'warning', message: r.saveRestartFailed(result.restartError) })
-      } else {
-        notify({ kind: 'success', message: r.saveSuccess })
-      }
+      notify({ kind: 'success', message: r.saveSuccess })
 
       setIsDirty(false)
     } catch (err) {
@@ -95,13 +90,11 @@ export function RunnerSettings(): React.JSX.Element {
   }
 
   const updateField = (path: readonly string[], value: unknown) => {
-    if (!yamlDoc) {
+    if (!config) {
       return
     }
 
-    const newDoc = yamlDoc.clone()
-    newDoc.setIn(path as Iterable<unknown>, value)
-    setYamlDoc(newDoc)
+    setConfig(setIn(config, path, value))
     setIsDirty(true)
   }
 
@@ -173,7 +166,7 @@ export function RunnerSettings(): React.JSX.Element {
     )
   }
 
-  if (!yamlDoc) {
+  if (!config) {
     return (
       <SettingsContent>
         <EmptyState description={r.failedLoad} title={r.failedLoad} />
@@ -195,7 +188,7 @@ export function RunnerSettings(): React.JSX.Element {
                       row.kind === 'select' ? (
                         <Select
                           onValueChange={v => updateField(row.path, v)}
-                          value={(yamlDoc.getIn(row.path as Iterable<unknown>, false) as string) || row.default}
+                          value={(getIn(config, row.path) as string) || row.default}
                         >
                           <SelectTrigger className="w-36">
                             <SelectValue />
@@ -225,13 +218,10 @@ export function RunnerSettings(): React.JSX.Element {
                             }
                           }}
                           type={row.type || 'text'}
-                          value={(yamlDoc.getIn(row.path as Iterable<unknown>) as string | number) ?? row.default}
+                          value={(getIn(config, row.path) as string | number) ?? row.default}
                         />
                       ) : (
-                        <Switch
-                          checked={!!yamlDoc.getIn(row.path as Iterable<unknown>, false)}
-                          onCheckedChange={v => updateField(row.path, v)}
-                        />
+                        <Switch checked={!!getIn(config, row.path)} onCheckedChange={v => updateField(row.path, v)} />
                       )
                     }
                     key={row.title}

@@ -1,49 +1,38 @@
 //! Filesystem paths + logging setup.
 //!
-//! Mirrors `deskagent_constants.get_deskagent_home()` from the Python CLI:
-//!   Windows: %LOCALAPPDATA%\deskagent
-//!   macOS:   ~/.deskagent  (override via $DESKAGENT_HOME)
+//! Mirrors `runner/utils/constants.py::get_deskagent_home()`:
+//!   Windows: %LOCALAPPDATA%\DeskAgent
+//!   macOS:   ~/Library/Application Support/DeskAgent
 //!
-//! NOTE (macOS): Python's get_deskagent_home(), installer/install.sh, and the
-//! Electron desktop's resolveDeskAgentHome() ALL use ~/.deskagent on macOS — there
-//! is no ~/Library/Application Support branch anywhere else. An earlier
-//! version of this file used Application Support, which drifted from every
-//! other component: the installer wrote the install to one dir and the
-//! desktop looked for it in another, so first launch never found the backend.
-//!
-//! IMPORTANT: this must match exactly. Drift here means install.ps1
-//! writes to one place and the installer reads from another, breaking
-//! the bootstrap-complete check.
+//! IMPORTANT: this must match the Python/JS/bash resolvers exactly. Drift
+//! here means install.ps1 writes to one place and the installer reads from
+//! another, breaking the bootstrap-complete check.
 
 use std::path::{Path, PathBuf};
 #[cfg(target_os = "macos")]
 use std::process::Command;
 use tracing_appender::non_blocking::WorkerGuard;
 
-/// Returns the canonical DeskAgent home directory, respecting $DESKAGENT_HOME if set.
 pub fn deskagent_home() -> PathBuf {
-    if let Ok(override_path) = std::env::var("DESKAGENT_HOME") {
-        if !override_path.trim().is_empty() {
-            return PathBuf::from(override_path);
-        }
-    }
-
     #[cfg(target_os = "windows")]
     {
-        // %LOCALAPPDATA%\deskagent — matches installer/install.ps1's $DeskAgentHome.
         if let Some(local_app_data) = dirs::data_local_dir() {
-            return local_app_data.join("deskagent");
+            return local_app_data.join("DeskAgent");
         }
     }
 
-    // macOS + fallback: ~/.deskagent (matches Python get_deskagent_home(),
-    // install.sh, and the Electron desktop's resolveDeskAgentHome()).
+    #[cfg(target_os = "macos")]
+    {
+        if let Some(home) = dirs::home_dir() {
+            return home.join("Library/Application Support/DeskAgent");
+        }
+    }
+
+    // Linux / fallback
     if let Some(home) = dirs::home_dir() {
         return home.join(".deskagent");
     }
 
-    // Last resort — current dir, almost certainly wrong but at least
-    // doesn't panic.
     PathBuf::from(".deskagent")
 }
 
@@ -59,7 +48,7 @@ pub fn log_path() -> PathBuf {
 /// The start-menu / desktop shortcuts can point users back to it for repair
 /// runs. Lives directly under DESKAGENT_HOME so it survives repo checkout deletion.
 ///
-/// On Windows this is `%LOCALAPPDATA%\deskagent\deskagent-setup.exe`; on other
+/// On Windows this is `%LOCALAPPDATA%\DeskAgent\deskagent-setup.exe`; on other
 /// platforms the extension differs but the directory is the same.
 pub fn installer_dest() -> PathBuf {
     let name = if cfg!(target_os = "windows") {
@@ -129,10 +118,7 @@ fn repair_macos_installer_helper(path: &Path) {
 fn repair_macos_installer_helper(_path: &Path) {}
 
 /// Where install.ps1 writes the bootstrap-complete marker (existence-only file
-/// the Electron app also checks). Per main.cjs:
-///   const BOOTSTRAP_COMPLETE_MARKER = path.join(ACTIVE_DESKAGENT_ROOT, '.deskagent-bootstrap-complete')
-/// We don't always know ACTIVE_DESKAGENT_ROOT until install.ps1 reports it, so
-/// this is a probe helper, not a definitive path.
+/// the macOS launcher fast-path checks via `deskagent_is_installed()`).
 #[allow(dead_code)]
 pub fn likely_bootstrap_marker(install_root: &Path) -> PathBuf {
     install_root.join(".deskagent-bootstrap-complete")

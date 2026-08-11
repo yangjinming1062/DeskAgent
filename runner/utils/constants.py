@@ -18,7 +18,9 @@ def get_deskagent_home() -> Path:
     if override := os.environ.get("DESKAGENT_HOME"):
         return Path(override)
     if sys.platform == "win32" and (local_appdata := os.environ.get("LOCALAPPDATA")):
-        return Path(local_appdata) / "deskagent"
+        return Path(local_appdata) / "DeskAgent"
+    if sys.platform == "darwin":
+        return Path.home() / "Library" / "Application Support" / "DeskAgent"
     return Path.home() / ".deskagent"
 
 

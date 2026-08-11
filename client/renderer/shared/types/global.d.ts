@@ -28,14 +28,12 @@ declare global {
       setTitleBarTheme?: (payload: DeskAgentTitleBarTheme) => void
       runnerConfig: {
         read: () => Promise<{ ok: boolean; content?: string; error?: string }>
-        write: (
-          configString: string
-        ) => Promise<{ ok: boolean; restarted?: boolean; restartError?: string; error?: string }>
+        write: (configString: string) => Promise<{ ok: boolean; error?: string }>
         patch: (patch: {
           path: readonly (string | number)[]
           value?: unknown
           op?: 'set' | 'delete'
-        }) => Promise<{ ok: boolean; restarted?: boolean; restartError?: string; error?: string }>
+        }) => Promise<{ ok: boolean; error?: string }>
       }
       skills: {
         list: () => Promise<{

@@ -97,20 +97,6 @@ function autoStopBridge(deps) {
   })
 }
 
-// Awaited stop+start for callers that need a single resolved result — used by
-// the runner-config IPC after writing config so the renderer can show
-// accurate success/failure instead of fire-and-forget.
-async function restartRunnerBridge(deps) {
-  const session = deps.ensureBackendSession().getSession()
-  if (!session?.hasToken) return { ok: false, reason: 'no-session' }
-
-  const stopResult = await stopRunnerBridgeForCurrentSession(deps, { reason: 'config-rewritten' })
-  if (!stopResult?.ok && !stopResult?.noop) {
-    return { ok: false, error: stopResult?.error || 'stop-failed' }
-  }
-  return await startRunnerBridgeForCurrentSession(deps)
-}
-
 // Token bucket so a misbehaving tool loop can't loop-bomb the runner; the
 // inbound IPC side had no guard (reverse-RPC caps the outbound side).
 const _invokeBucket = { tokens: 60, lastRefill: Date.now() }
@@ -185,6 +171,5 @@ module.exports = {
   startRunnerBridgeForCurrentSession,
   stopRunnerBridgeForCurrentSession,
   autoStartBridge,
-  autoStopBridge,
-  restartRunnerBridge
+  autoStopBridge
 }

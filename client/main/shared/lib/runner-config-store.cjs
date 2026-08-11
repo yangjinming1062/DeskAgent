@@ -101,12 +101,22 @@ async function mutate(fn) {
     return { ok: false, error: 'mutate requires a function' }
   }
   let mutated
-  await _runLocked(async () => {
-    _load()
-    mutated = fn(_config)
-    await _persistAndPush()
-  })
-  return { ok: true, mutated }
+  try {
+    await _runLocked(async () => {
+      _load()
+      const snapshot = JSON.parse(JSON.stringify(_config))
+      try {
+        mutated = fn(_config)
+      } catch (err) {
+        _config = snapshot
+        throw err
+      }
+      await _persistAndPush()
+    })
+    return { ok: true, mutated }
+  } catch (err) {
+    return { ok: false, error: err.message }
+  }
 }
 
 function getDisabledSet(section = 'skills') {

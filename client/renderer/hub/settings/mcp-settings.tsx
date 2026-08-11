@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from 'react'
-import { type Document, isNode } from 'yaml'
 
 import { Button, Input, Textarea } from '@/shared/components/ui'
 import type { DeskAgentGateway } from '@/shared/deskagent'
@@ -9,7 +8,7 @@ import { cn } from '@/shared/lib/utils'
 import { notify, notifyError } from '@/shared/store/notifications'
 import { strings } from '@/shared/strings'
 
-import { useRunnerConfig } from '../runner/use-runner-config'
+import { getIn, setIn, useRunnerConfig } from '../runner/use-runner-config'
 
 import { EmptyState, LoadingState, Pill, SettingsContent } from './primitives'
 import { useDeepLinkHighlight } from './use-deep-link-highlight'
@@ -27,12 +26,8 @@ const EMPTY_SERVER = {
   env: {}
 }
 
-function getServers(doc: Document | null): McpServers {
-  let raw: unknown = doc?.getIn(['mcp_servers'])
-
-  if (isNode(raw)) {
-    raw = raw.toJSON()
-  }
+function getServers(config: Record<string, unknown> | null): McpServers {
+  const raw = config ? getIn(config, ['mcp_servers']) : undefined
 
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
     return {}
@@ -53,7 +48,7 @@ const transportLabel = (server: Record<string, unknown>) =>
 export function McpSettings({ gateway, onConfigSaved }: McpSettingsProps): React.JSX.Element {
   const t = strings
   const m = t.settings.mcp
-  const { yamlDoc, setYamlDoc, patch } = useRunnerConfig(m.failedLoad)
+  const { config, setConfig, patch } = useRunnerConfig(m.failedLoad)
   const [selected, setSelected] = useState<string | null>(null)
   const [name, setName] = useState('')
   const [body, setBody] = useState('')
@@ -61,15 +56,15 @@ export function McpSettings({ gateway, onConfigSaved }: McpSettingsProps): React
   const [reloading, setReloading] = useState(false)
 
   useEffect(() => {
-    if (!yamlDoc) {
+    if (!config) {
       return
     }
 
-    const first = Object.keys(getServers(yamlDoc)).sort()[0] ?? null
+    const first = Object.keys(getServers(config)).sort()[0] ?? null
     setSelected(first)
-  }, [yamlDoc])
+  }, [config])
 
-  const servers = useMemo(() => getServers(yamlDoc), [yamlDoc])
+  const servers = useMemo(() => getServers(config), [config])
   const serversRef = useLatestRef(servers)
   const names = useMemo(() => Object.keys(servers).sort(), [servers])
 
@@ -78,7 +73,7 @@ export function McpSettings({ gateway, onConfigSaved }: McpSettingsProps): React
     elementId: serverName => `mcp-server-${serverName}`,
     onResolve: setSelected,
     param: 'server',
-    ready: serverName => Boolean(yamlDoc) && serverName in servers
+    ready: serverName => Boolean(config) && serverName in servers
   })
 
   useEffect(() => {
@@ -88,25 +83,19 @@ export function McpSettings({ gateway, onConfigSaved }: McpSettingsProps): React
     setBody(JSON.stringify(server ?? EMPTY_SERVER, null, 2))
   }, [selected, serversRef])
 
-  if (!yamlDoc) {
+  if (!config) {
     return <LoadingState label={m.loading} />
   }
 
-  const mutateAndSave = async (nextServers: McpServers): Promise<{ restarted: boolean; restartError?: string }> => {
+  const mutateAndSave = async (nextServers: McpServers): Promise<void> => {
     const result = await patch({ path: ['mcp_servers'], value: nextServers })
 
     if (!result.ok) {
       throw new Error(result.error)
     }
 
-    // Mirror the change locally for display. The main process already
-    // applied it to disk; this clone is purely to keep `yamlDoc` in sync
-    // for the next render's getServers() lookup.
-    const mirror = yamlDoc.clone()
-    mirror.setIn(['mcp_servers'], nextServers)
-    setYamlDoc(mirror)
-
-    return { restarted: result.restarted, restartError: result.restartError }
+    const next = setIn(config, ['mcp_servers'], nextServers)
+    setConfig(next)
   }
 
   const saveServer = async () => {
@@ -145,15 +134,11 @@ export function McpSettings({ gateway, onConfigSaved }: McpSettingsProps): React
 
       nextServers[nextName] = parsed
 
-      const result = await mutateAndSave(nextServers)
+      await mutateAndSave(nextServers)
       setSelected(nextName)
       onConfigSaved?.()
 
-      if (!result.restarted && result.restartError) {
-        notify({ kind: 'warning', title: m.savedTitle, message: m.saveRestartFailed(result.restartError) })
-      } else {
-        notify({ kind: 'success', title: m.savedTitle, message: m.savedMessage(nextName) })
-      }
+      notify({ kind: 'success', title: m.savedTitle, message: m.savedMessage(nextName) })
     } catch (err) {
       notifyError(err, m.saveFailed)
     } finally {

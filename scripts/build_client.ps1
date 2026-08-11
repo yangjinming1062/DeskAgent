@@ -122,40 +122,6 @@ function Stage-Payload {
     Write-Output "    install scripts: install.sh, install.ps1"
 }
 
-function Write-StagingMetadata {
-    param([string]$fmt)
-    $builtAt = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
-
-    $runnerWheelFile = Get-ChildItem -Path (Join-Path $RepoRoot "installer\payload\runner") -Filter "deskagent-agent-*.whl" -File | Select-Object -First 1
-    $runnerSha = (Get-FileHash -Path $runnerWheelFile.FullName -Algorithm SHA256).Hash
-    $desktopDir = Join-Path $RepoRoot "installer\payload\client"
-    $desktop = Get-ChildItem -Path $desktopDir -File | Select-Object -First 1
-    $desktopSha = $null
-    $desktopName = $null
-    if ($desktop) {
-        $desktopSha = (Get-FileHash -Path $desktop.FullName -Algorithm SHA256).Hash
-        $desktopName = $desktop.Name
-    }
-
-    $meta = @{
-        version = $Version
-        built_at = $builtAt
-        host = "win-$env:PROCESSOR_ARCHITECTURE"
-        desktop_format = $fmt
-        runner_wheel = $runnerWheelFile.Name
-        runner_sha256 = $runnerSha
-    }
-    if ($desktopSha) {
-        $meta.desktop_sha256 = $desktopSha
-        $meta.desktop_path = $desktopName
-    }
-    $metaPath = Join-Path $RepoRoot "installer\payload\.staging.json"
-    $jsonStr = ($meta | ConvertTo-Json -Depth 10) + "`n"
-    $utf8NoBom = New-Object System.Text.UTF8Encoding $false
-    [System.IO.File]::WriteAllText($metaPath, $jsonStr, $utf8NoBom)
-    Get-Content $metaPath
-}
-
 function Build-UpdateZip {
     <#
     .SYNOPSIS
@@ -290,10 +256,9 @@ function Patch-TauriConfig {
     if (-not $desktopFile) { throw "no desktop artifact in $desktopDir" }
     $desktopRel = "..\payload\client\$($desktopFile.Name)"
 
-    Write-Output "==> Patching ${conf}: bundle.resources → $desktopRel"
+    Write-Output "==> Patching ${conf}: bundle.resources += $desktopRel"
     $json = Get-Content $conf -Raw -Encoding UTF8 | ConvertFrom-Json
-    $resources = @($json.bundle.resources | Where-Object { $_ -ne "../payload/client/.gitkeep" })
-    $resources = @($resources + $desktopRel)
+    $resources = @($json.bundle.resources) + $desktopRel
     $json.bundle.resources = $resources
     $jsonStr = ($json | ConvertTo-Json -Depth 100)
     $utf8NoBom = New-Object System.Text.UTF8Encoding $false
@@ -367,8 +332,6 @@ try {
     Stage-Payload
     Copy-Item -Force $desktopArtifact.FullName (Join-Path $RepoRoot "installer\payload\client\$($desktopArtifact.Name)")
 
-    # 5. Staging metadata.
-    Write-StagingMetadata -fmt $DesktopFormat
 
     # 6. Code-sign desktop (if a cert thumbprint is provided).
     if ($CertThumbprint) {

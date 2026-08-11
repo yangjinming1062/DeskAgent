@@ -9,7 +9,6 @@ const { promisify } = require('node:util')
 
 const execFileP = promisify(execFile)
 
-const { deskagentHome } = require('../security/paths.cjs')
 const { sleep } = require('../shared/utils.cjs')
 const { venvPythonFor } = require('./venv.cjs')
 
@@ -47,7 +46,7 @@ class RunnerUpdater {
   // Phase 1: prefetch in the OLD Electron.
   // ------------------------------------------------------------------
   async prefetchRunnerAssets({ version, updateBaseUrl, publicKeyPath }) {
-    const home = deskagentHome()
+    const home = this.bridgeDeps.deskagentHome
     const stagingDir = path.join(home, 'runner.staging')
 
     await fsp.rm(stagingDir, { recursive: true, force: true })
@@ -183,7 +182,7 @@ class RunnerUpdater {
   // Phase 2: install in the NEW Electron.
   // ------------------------------------------------------------------
   async installPending() {
-    const home = deskagentHome()
+    const home = this.bridgeDeps.deskagentHome
     const sentinelPath = path.join(home, '.pending-runner-update.json')
     if (!fs.existsSync(sentinelPath)) {
       return { ok: true, noop: true }

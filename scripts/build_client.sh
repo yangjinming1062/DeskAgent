@@ -205,45 +205,7 @@ stage_payload() {
   echo "    install scripts: $(ls -1 installer/payload/install.{sh,ps1} 2>/dev/null | tr '\n' ' ')"
 }
 
-write_staging_metadata() {
-  local built_at sha_tool
-  built_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  sha_tool="sha256sum"
-  command -v sha256sum >/dev/null 2>&1 || sha_tool="shasum -a 256"
-
-  echo "==> Writing installer/payload/.staging.json"
-  python3 - "$VERSION" "$built_at" "$HOST_OS" "$DESKTOP_FORMAT" <<'PY'
-import json, sys, hashlib, os, glob, pathlib
-version, built_at, host_os, fmt = sys.argv[1:5]
-def sha(p):
-    h = hashlib.sha256()
-    with open(p, 'rb') as f:
-        for chunk in iter(lambda: f.read(65536), b''):
-            h.update(chunk)
-    return h.hexdigest()
-
-meta = {
-    "version": version,
-    "built_at": built_at,
-    "host": f"{host_os}-{os.uname().machine}" if hasattr(os, 'uname') else host_os,
-    "desktop_format": fmt,
-    "runner_wheel": os.path.basename(sorted(glob.glob("installer/payload/runner/deskagent-agent-*.whl"))[0]),
-    "runner_sha256": sha(sorted(glob.glob("installer/payload/runner/deskagent-agent-*.whl"))[0]),
-}
-desktop_glob = "installer/payload/client/*"
-desktops = sorted(glob.glob(desktop_glob))
-if desktops:
-    meta["desktop_sha256"] = sha(desktops[0])
-    meta["desktop_path"] = os.path.basename(desktops[0])
-pathlib.Path("installer/payload/.staging.json").write_text(json.dumps(meta, indent=2) + "\n")
-print(json.dumps(meta, indent=2))
-PY
-}
-
 patch_tauri_config() {
-  # Replace the desktop .gitkeep placeholder in bundle.resources with the
-  # current host's actual desktop artifact path. Tauri 2 fails on missing
-  # resources, so we MUST list only what actually exists for this build.
   if ! command -v jq >/dev/null 2>&1; then
     echo "error: 'jq' is required to patch tauri.conf.json" >&2
     exit 1
@@ -254,11 +216,9 @@ patch_tauri_config() {
   cp "$conf" "$bak"
 
   local desktop_rel="payload/client/$(ls -1 installer/payload/client/ | head -1)"
-  echo "==> Patching $conf: bundle.resources → ../${desktop_rel}"
-  # Replace the .gitkeep placeholder entry with the actual desktop artifact
-  # path. Install scripts and other entries are untouched.
+  echo "==> Patching $conf: bundle.resources += ../${desktop_rel}"
   jq --arg d "../$desktop_rel" \
-     '.bundle.resources |= map(if . == "../payload/client/.gitkeep" then $d else . end)' \
+     '.bundle.resources += [$d]' \
      "$conf" > "$conf.new"
   mv "$conf.new" "$conf"
 }
@@ -318,10 +278,7 @@ echo "==> Desktop artifact: $DESKTOP_ARTIFACT"
 stage_payload
 cp "$DESKTOP_ARTIFACT" "installer/payload/client/"
 
-# 5. Staging metadata.
-write_staging_metadata
-
-# 6. macOS code-sign + notarize.
+# 5. macOS code-sign + notarize.
 if [[ -n "$SIGN_IDENTITY" ]]; then
   echo "==> Code-signing $DESKTOP_ARTIFACT"
   cp "$DESKTOP_ARTIFACT" "${DESKTOP_ARTIFACT}.unsigned"

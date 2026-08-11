@@ -158,7 +158,7 @@ _COMMAND_TIMEOUT_RESOLVED = False
 
 
 def _get_command_timeout() -> int:
-    """Return the configured browser command timeout from config.yaml.
+    """Return the configured browser command timeout from the Runner config.
 
     Reads ``config["browser"]["command_timeout"]`` and falls back to
     ``DEFAULT_COMMAND_TIMEOUT`` (30s) if unset or unreadable.  Result is

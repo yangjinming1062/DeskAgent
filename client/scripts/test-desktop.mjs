@@ -3,6 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { spawn, spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
+import { createRequire } from 'node:module'
 import { listPackage } from '@electron/asar'
 
 const DESKTOP_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
@@ -40,17 +41,11 @@ const APP = (() => {
   die(`Unsupported platform for desktop bundle validation: ${PLATFORM}`)
 })()
 
-// Default DESKAGENT_HOME for non-sandboxed runs -- matches main.cjs's
-// resolveDeskAgentHome(). On Windows it's %LOCALAPPDATA%\deskagent; elsewhere
-// it's ~/.deskagent. The fresh-install sandbox launchFresh() sets its own
-// DESKAGENT_HOME and never touches this.
-const DEFAULT_DESKAGENT_HOME = (() => {
-  if (PLATFORM === 'win32' && process.env.LOCALAPPDATA) {
-    return path.join(process.env.LOCALAPPDATA, 'deskagent')
-  }
-  return path.join(os.homedir(), '.deskagent')
-})()
-const VENV_ROOT = path.join(DEFAULT_DESKAGENT_HOME, 'deskagent-agent', 'venv')
+const _require = createRequire(import.meta.url)
+const { deskagentHome } = _require('../main/security/paths.cjs')
+
+const DEFAULT_DESKAGENT_HOME = deskagentHome()
+const VENV_ROOT = path.join(DEFAULT_DESKAGENT_HOME, 'runner', '.venv')
 const FRESH_SANDBOX_ROOT = path.join(os.tmpdir(), 'deskagent-desktop-fresh-install')
 
 function die(message) {
@@ -222,14 +217,12 @@ function launchFresh() {
 
   const sandbox = fs.mkdtempSync(`${FRESH_SANDBOX_ROOT}-`)
   const userDataDir = path.join(sandbox, 'electron-user-data')
-  const deskagentHome = path.join(sandbox, 'deskagent-home')
+  const deskagentHome = path.join(userDataDir, 'deskagent-home')
   const cwd = path.join(sandbox, 'workspace')
 
   fs.mkdirSync(userDataDir, { recursive: true })
-  fs.mkdirSync(deskagentHome, { recursive: true })
   fs.mkdirSync(cwd, { recursive: true })
 
-  // Strip every credential-shaped env var so the sandbox is actually fresh.
   const env = {}
   for (const [key, value] of Object.entries(process.env)) {
     if (isCredentialEnvVar(key)) continue
@@ -240,7 +233,6 @@ function launchFresh() {
   env.DESKAGENT_DESKTOP_IGNORE_EXISTING = '1'
   env.DESKAGENT_DESKTOP_TEST_MODE = 'fresh-install'
   env.DESKAGENT_DESKTOP_USER_DATA_DIR = userDataDir
-  env.DESKAGENT_HOME = deskagentHome
 
   const child = spawn(APP.binary, [], {
     cwd: os.homedir(),
@@ -252,11 +244,10 @@ function launchFresh() {
 
   console.log('\nFresh install sandbox:')
   console.log(`  root: ${sandbox}`)
-  console.log(`  electron userData: ${userDataDir}`)
   console.log(`  DESKAGENT_HOME: ${deskagentHome}`)
   console.log(`  cwd: ${cwd}`)
 
-  return { runtimeRoot: path.join(deskagentHome, 'deskagent-agent', 'venv') }
+  return { runtimeRoot: path.join(deskagentHome, 'runner', '.venv') }
 }
 
 // Validate the packaged bundle matches the desktop architecture:
