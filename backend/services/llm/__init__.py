@@ -15,12 +15,13 @@ from .llm_client import resolve_service_row
 from .llm_fallback import execute_with_fallback
 from .llm_retry import call_with_retry
 from .llm_retry import LLMRuntimeError
+from .prompt_engineer import build_fullbody_prompt
+from .prompt_engineer import build_texture_prompt
 from .prompt_engineer import chat
 from .prompt_engineer import enhance_avatar_prompt
-from .prompt_engineer import enhance_fullbody_back_prompt
-from .prompt_engineer import enhance_fullbody_front_prompt
-from .prompt_engineer import enhance_fullbody_right_prompt
-from .prompt_engineer import enhance_texture_prompt
+from .prompt_engineer import FullbodyTemplate
+from .prompt_engineer import is_preset_species
+from .prompt_engineer import resolve_fullbody_template
 from .providers import aclose_all
 from .providers import BaseProvider
 from .providers import ChatProvider
@@ -106,10 +107,11 @@ __all__ = [
     "compress_history_if_needed",
     "describe_reference_image",
     "enhance_avatar_prompt",
-    "enhance_fullbody_back_prompt",
-    "enhance_fullbody_front_prompt",
-    "enhance_fullbody_right_prompt",
-    "enhance_texture_prompt",
+    "build_fullbody_prompt",
+    "build_texture_prompt",
+    "FullbodyTemplate",
+    "is_preset_species",
+    "resolve_fullbody_template",
     "resolve_user_llm_config",
     "merge_provider_json",
 ]

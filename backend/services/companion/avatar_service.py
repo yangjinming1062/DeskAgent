@@ -18,17 +18,18 @@ from modules.companion import Persona
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
+from ..llm import build_fullbody_prompt
 from ..llm import chat
 from ..llm import enhance_avatar_prompt
-from ..llm import enhance_fullbody_back_prompt
-from ..llm import enhance_fullbody_front_prompt
-from ..llm import enhance_fullbody_right_prompt
 from ..llm import is_content_policy_error_message
+from ..llm import is_preset_species
+from ..llm import resolve_fullbody_template
 from ..tools.builtin import first_image_url
 from ..tools.builtin import image_generation_tool
 from .asset_store import build_data_uri
 from .asset_store import build_signed_avatar_url
 from .persona_service import get_or_create_persona
+from .rig_type_selector import select_rig_type
 
 logger = get_logger(__name__)
 
@@ -391,42 +392,27 @@ async def generate_fullbody(
         raise AvatarSourceUnreadableError(f"avatar {avatar_id} {source_label} is unreadable")
 
     # Generate the prompt for each requested view.
-    if is_front:
-        if not cached_avatar_prompt:
-            raise SeedPromptMissingError(f"avatar {avatar_id} has no cached avatar_prompt visual anchor")
-        prompts = {
-            "front": await enhance_fullbody_front_prompt(
-                db,
-                user_id,
-                persona,
-                avatar_prompt=cached_avatar_prompt,
-                feedback=feedback,
-            )
-        }
-    else:
-        front_anchor = prompt_payload.get("front_prompt") or prompt_payload.get("multiview_prompts", {}).get("front")
-        if not front_anchor:
-            if not cached_avatar_prompt:
-                raise SeedPromptMissingError(f"avatar {avatar_id} has no front_prompt or avatar_prompt visual anchor")
-            front_anchor = cached_avatar_prompt
-        enhance_map = {
-            "right": enhance_fullbody_right_prompt,
-            "back": enhance_fullbody_back_prompt,
-        }
-        generated_prompts = await asyncio.gather(
-            *[
-                enhance_map[v](
-                    db,
-                    user_id,
-                    persona,
-                    front_prompt=front_anchor,
-                    avatar_prompt=cached_avatar_prompt,
-                    feedback=feedback,
-                )
-                for v in views_to_gen
-            ]
+    if not cached_avatar_prompt:
+        raise SeedPromptMissingError(f"avatar {avatar_id} has no cached avatar_prompt visual anchor")
+
+    definition = safe_json_loads(persona.definition_json or "{}", default={})
+    species = (definition.get("biological_type") or "").strip()
+
+    rig_type = "biped"
+    if not is_preset_species(species):
+        rig_type = await select_rig_type(chat, species or "人类", db=db, user_id=user_id)
+    template = resolve_fullbody_template(species, rig_type)
+
+    prompts = {
+        v: build_fullbody_prompt(
+            v,
+            persona,
+            avatar_prompt=cached_avatar_prompt,
+            template=template,
+            feedback=feedback,
         )
-        prompts = dict(zip(views_to_gen, generated_prompts))
+        for v in views_to_gen
+    }
 
     # return_exceptions=True so a single view failure doesn't discard the others.
     results = await asyncio.gather(
@@ -472,22 +458,10 @@ async def generate_fullbody(
     for v, result in generated.items():
         setattr(asset, _SEED_ATTRS[v], result[0])
 
-    multiview = prompt_payload.get("multiview_prompts")
-    if not isinstance(multiview, dict):
-        multiview = {}
-    prompt_payload["multiview_prompts"] = multiview
-
     if is_front:
-        prompt_payload["front_prompt"] = prompts["front"]
-        multiview["front"] = prompts["front"]
-        multiview.pop("right", None)
-        multiview.pop("back", None)
         persona.is_portrait_confirmed = False
         persona.portrait_confirmed_at = None
-    else:
-        multiview.update(prompts)
 
-    asset.prompt_json = json.dumps(prompt_payload, ensure_ascii=False)
     db.commit()
     db.refresh(asset)
 

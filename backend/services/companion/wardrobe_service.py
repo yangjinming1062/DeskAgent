@@ -8,6 +8,7 @@ import httpx
 from components import get_file_path
 from components import get_logger
 from components import is_safe_outbound
+from components import safe_json_loads
 from components import save_file
 from components import temp_file_delete
 from modules.companion import WardrobeItem
@@ -15,13 +16,18 @@ from modules.companion import WardrobePreviewResponse
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from ..llm import enhance_texture_prompt
+from ..llm import build_texture_prompt
+from ..llm import chat
+from ..llm import is_preset_species
 from ..tools.builtin import first_image_url
 from ..tools.builtin import image_generation_tool
 from .asset_store import build_data_uri
 from .asset_store import build_signed_asset_url
 from .asset_store import save_companion_asset
 from .asset_store import unlink_companion_asset
+from .model_service import get_active_model
+from .persona_service import get_or_create_persona
+from .rig_type_selector import select_rig_type
 
 logger = get_logger(__name__)
 
@@ -145,11 +151,33 @@ def get_equipped_item(db: Session, user_id: int) -> WardrobeItem | None:
     return item
 
 
+async def _resolve_rig_type(db: Session, user_id: int) -> str:
+    """Resolve the companion's rig type for texture prompt selection.
+
+    Reads the cached ``rig_type`` from an existing CompanionModel row first
+    (free). Falls back to persona-based resolution: preset species skip the
+    LLM call entirely; custom species get a single ``select_rig_type`` call.
+    """
+    model = get_active_model(db, user_id)
+    if model and model.rig_type:
+        return model.rig_type
+
+    persona = get_or_create_persona(db, user_id)
+    definition = safe_json_loads(persona.definition_json or "{}", default={})
+    species = (definition.get("biological_type") or "").strip()
+
+    if is_preset_species(species):
+        return "biped"
+
+    return await select_rig_type(chat, species or "人类", db=db, user_id=user_id)
+
+
 async def generate_wardrobe_item(db: Session, *, user_id: int, name: str, description: str) -> WardrobeItem:
-    # LLM rewrites the user's short description into a detailed Chinese PBR
-    # texture prompt. Any provider / network failure bubbles up as a
-    # RuntimeError that the API route maps to 502.
-    prompt = await enhance_texture_prompt(db, user_id, description=description)
+    # Rig-type-aware PBR texture prompt is constructed directly (no LLM round-trip).
+    # Any provider / network failure bubbles up as a RuntimeError that the API
+    # route maps to 502.
+    rig_type = await _resolve_rig_type(db, user_id)
+    prompt = build_texture_prompt(description=description, rig_type=rig_type)
     result_json = await image_generation_tool(prompt=prompt, llm_config={}, size="1024x1024", n=1, user_id=user_id)
     src_url = first_image_url(result_json)
     if not src_url:
@@ -184,7 +212,8 @@ async def preview_wardrobe_texture(
     content_type: str | None = None,
     feedback: str | None = None,
 ) -> WardrobePreviewResponse:
-    prompt = await enhance_texture_prompt(db, user_id, description=description, feedback=feedback)
+    rig_type = await _resolve_rig_type(db, user_id)
+    prompt = build_texture_prompt(description=description, feedback=feedback, rig_type=rig_type)
     reference_data_uri = build_data_uri(image_bytes, content_type) if image_bytes else None
     result_json = await image_generation_tool(
         prompt=prompt,

@@ -1,3 +1,5 @@
+from dataclasses import dataclass
+from dataclasses import replace
 import json
 
 from components import safe_json_loads
@@ -35,89 +37,234 @@ _AVATAR_SYSTEM_PROMPT = (
     "10. 不要解释、不要寒暄，直接输出最终中文 prompt 文本。"
 )
 
-# Shared rules 3-8 across all fullbody views — kept in one place so the
-# completeness / A-pose / background / style clauses can't drift across views
-# (the A-pose finger description had already diverged between right and back).
-_FULLBODY_COMMON_TAIL = (
-    "3. 立绘完整性（最高优先级）：必须从头顶至脚底 100% 完整展示在画面内，"
-    "四周留有适度安全边缘留白（safe margin / full body fully visible in frame），严禁裁切头顶、四肢或脚底；\n"
-    "4. A-pose 站姿规范（Tripo3D 绑骨硬性要求）：\n"
-    "    - 双臂向两侧自然张开与躯干呈 30-45 度夹角，五指自然分开伸直且清晰可辨；\n"
-    "    - 双脚平行分开约与肩同宽、脚尖朝前平立于地面；脊椎挺直平视前方；\n"
-    "    - 四肢与躯干之间有可见间隙（腋下、腰侧、大腿内侧不粘连）；\n"
-    "5. 背景与光线：必须包含「纯白平面背景，无场景、无渐变、无阴影」；"
-    "采用均匀漫反射平光打光（soft even diffuse lighting，无明显方向性暗部阴影）；\n"
-    "6. 画风：digital illustration, clean linework, high detail, professional character design；\n"
-    "7. 语言：全文使用中文，只保留专业术语与英文画风关键词；\n"
-    "8. 输出简洁精炼（150-250 字），不要解释、不要寒暄，直接输出最终中文 prompt 文本。"
+
+@dataclass(frozen=True)
+class FullbodyTemplate:
+    front_features: str
+    right_features: str
+    back_features: str
+    pose: str
+    flavor: str = ""
+
+
+# ── 共用规则后缀（完整性 + 背景光线 + 画风，不含 pose）──
+_FULLBODY_SHARED_RULES = (
+    "全身完整性（最高优先级）：必须 100% 完整展示在画面内，"
+    "四周留有适度安全边缘留白（safe margin / full body fully visible in frame），"
+    "严禁裁切任何身体部位。"
+    "纯白平面背景，无场景、无渐变、无阴影。"
+    "采用均匀漫反射平光打光（soft even diffuse lighting，无明显方向性暗部阴影）。"
+    "画风：digital illustration, clean linework, high detail, professional character design。"
 )
 
-_FULLBODY_FRONT_SYSTEM_PROMPT = (
-    "你是一个专业的三维建模正面全身角色立绘提示词工程师。你需要根据上一阶段已确认的半身头像提示词（avatar_prompt）"
-    "及角色设定，为该角色扩展生成正面全身立绘（front view）的提示词，作为下游 Tripo3D 建模的基准锚点。\n"
-    "\n"
-    "## 核心原则：外貌锚点复用（最高优先级）\n"
-    "1. avatar_prompt 包含角色的完整头部与面部外貌描述（脸型、五官、瞳色、发型发色、肤色）。\n"
-    "   你必须从中逐字提取并原样复用这些核心外貌特征，禁止重新诠释或篡改。\n"
-    "2. 参考图一致性：生成时会传入已确认的头像作为参考图（subject_reference）。角色的头部特征必须与参考图完全一致。\n"
-    "   参考图优先级高于文字描述——如有冲突以参考图为准。\n"
-    "\n"
-    "## 正面全身立绘具体要求\n"
-    "1. 构图开头：以「full body front view portrait of ...」开头，紧接复用自 avatar_prompt 的角色头部与上半身描述；\n"
-    "2. 下半身与身材：补充身材比例、体型轮廓、腿部线条，搭配简单、贴身、不遮蔽身体轮廓特征的参照装及鞋靴；\n" + _FULLBODY_COMMON_TAIL
+# Shared A-pose clause — identical across all biped presets and the biped
+# rig-type fallback, so a rule change only touches one place.
+_BIPED_A_POSE = (
+    "A-pose 站姿规范（Tripo3D 绑骨硬性要求）："
+    "双臂向两侧自然张开与躯干呈 30-45 度夹角，五指自然分开伸直且清晰可辨；"
+    "双脚平行分开约与肩同宽、脚尖朝前平立于地面；脊椎挺直平视前方；"
+    "四肢与躯干之间有可见间隙（腋下、腰侧、大腿内侧不粘连）。"
 )
 
-_FULLBODY_RIGHT_SYSTEM_PROMPT = (
-    "你是一个专业的三维建模右侧面（90度正侧视）角色立绘提示词工程师。你需要根据上一阶段已确认的正面全身立绘提示词（front_prompt）"
-    "及角色设定，为同一个角色生成配套的右侧面全身立绘提示词，作为下游 Tripo3D 多视图建模的输入。\n"
-    "\n"
-    "## 核心原则：正面全身锚点复用（最高优先级）\n"
-    "1. 输入的 front_prompt 是已确认的正面全身立绘描述，角色的体型身材、服装款式与配色、发型发色、鞋靴样式已完全确定。\n"
-    "   右侧面必须严格继承并复用 front_prompt 中的所有外貌与服装设定，绝对保持同一形象，禁止修改已确定的设计。\n"
-    "2. 参考图一致性：生成时会传入已确认的正面全身图作为参考图（subject_reference）。角色的身体轮廓、侧颜轮廓、服装细节、发色肤色\n"
-    "   必须与正面全身参考图完全一致。参考图优先级高于文字描述——如有冲突以参考图为准。\n"
-    "\n"
-    "## 右侧面（90度侧视）具体要求\n"
-    "1. 构图开头：以「full body right side view portrait of ...」开头，紧接同一角色的正右侧面（90 degree right profile view）描述；\n"
-    "2. 侧面特征重点：\n"
-    "    - 侧颜轮廓：清晰的额头、鼻梁高低、唇形、下巴与下颌线条（根据角色性别与年龄特征描绘）；\n"
-    "    - 侧面发型：侧面发丝垂感、刘海侧向层次、耳后发流、长发在背后的侧面厚度；\n"
-    "    - 身体侧面厚度：胸腔厚度、腰部进深、臀部侧向弧度，展现立体自然的侧面身材曲线；\n"
-    "    - 手臂与腿部：单侧手臂与腿部的侧面线条，侧面鞋靴轮廓（鞋面、鞋跟厚度）；\n" + _FULLBODY_COMMON_TAIL
-)
+# ── 预设物种丰富模板 ──
+_SPECIES_TEMPLATES: dict[str, FullbodyTemplate] = {
+    "人类": FullbodyTemplate(
+        front_features=("下半身与身材：展现完整的身材比例、体型轮廓、腿部线条，搭配简单、贴身、不遮蔽身体轮廓特征的参照服装及鞋靴。"),
+        right_features=(
+            "侧面特征重点：侧颜轮廓（额头、鼻梁高低、唇形、下巴与下颌线条）；"
+            "侧面发型（侧面发丝垂感、刘海侧向层次、耳后发流、长发侧面厚度）；"
+            "身体侧面厚度（胸腔厚度、腰部进深、臀部侧向弧度）；"
+            "手臂与腿部的侧面线条，侧面鞋靴轮廓。"
+        ),
+        back_features=("背面特征重点：后脑发型（后脑勺发型结构、发尾层次、颈部发际线）；颈背线条（颈部后侧、脊椎线条、双肩与肩胛骨轮廓）；服装后背设计；腿部与鞋靴背面。"),
+        pose=_BIPED_A_POSE,
+    ),
+    "精灵": FullbodyTemplate(
+        front_features=("下半身与身材：身材纤细修长、优雅挺拔，展现完整的身材比例、体型轮廓、腿部线条；标志性的尖耳清晰可见；搭配轻盈、贴身、不遮蔽身体轮廓特征的参照服装及鞋靴。"),
+        right_features=("侧面特征重点：尖耳侧面轮廓；侧颜轮廓（额头、鼻梁、唇形、下巴线条）；侧面发型（发丝垂感、刘海层次、耳后发流）；身体侧面厚度；手臂与腿部侧面线条。"),
+        back_features=("背面特征重点：后脑发型；颈背线条；服装后背设计；腿部与鞋靴背面。"),
+        pose=_BIPED_A_POSE,
+    ),
+    "机甲": FullbodyTemplate(
+        front_features=(
+            "下半身与机身：展现完整的机体比例、装甲分段、机械关节构造、腿部液压/传动结构；胸口核心或能量核心（如有）清晰可见；表面材质质感（金属、烤漆、碳纤维等）明确。"
+        ),
+        right_features=("侧面特征重点：机体侧面轮廓；装甲层叠结构；机械关节侧面铰链；散热口/推进器侧面；腿部侧面机械结构。"),
+        back_features=("背面特征重点：后背装甲设计；推进器/散热栅格；脊椎线束/连接结构；腿部背面机械结构。"),
+        pose=_BIPED_A_POSE,
+    ),
+}
 
-_FULLBODY_BACK_SYSTEM_PROMPT = (
-    "你是一个专业的三维建模背面（180度正后视）角色立绘提示词工程师。你需要根据上一阶段已确认的正面全身立绘提示词（front_prompt）"
-    "及角色设定，为同一个角色生成配套的背面全身立绘提示词，作为下游 Tripo3D 多视图建模的输入。\n"
-    "\n"
-    "## 核心原则：正面全身锚点复用（最高优先级）\n"
-    "1. 输入的 front_prompt 是已确认的正面全身立绘描述，角色的体型身材、服装款式与配色、发型发色、鞋靴样式已完全确定。\n"
-    "   背面必须严格继承并复用 front_prompt 中的所有外貌与服装设定，绝对保持同一形象，禁止修改已确定的设计。\n"
-    "2. 参考图一致性：生成时会传入已确认的正面全身图作为参考图（subject_reference）。角色的背部轮廓、后脑发型、服装背面细节、发色肤色\n"
-    "   必须与正面全身参考图完全一致。参考图优先级高于文字描述——如有冲突以参考图为准。\n"
-    "\n"
-    "## 背面（180度后视）具体要求\n"
-    "1. 构图开头：以「full body back view portrait of ...」开头，紧接同一角色的正后方（180 degree back view）描述；\n"
-    "2. 背面特征重点：\n"
-    "    - 后脑发型：后脑勺发型结构、发尾层次、发丝向后延伸的走向、颈部发际线（如马尾/短发/长发披肩后方的形态）；\n"
-    "    - 颈背线条：颈部后侧、脊椎线条、双肩与肩胛骨轮廓；\n"
-    "    - 服装后背设计：衣服后背的结构、背部接缝、后背拉链/纽扣、后腰设计、背影轮廓；\n"
-    "    - 腿部与鞋靴背面：双腿后侧线条、鞋跟后部造型与鞋底背面轮廓；\n" + _FULLBODY_COMMON_TAIL
-)
+# ── 物种氛围修饰（用于 rig type 不确定的预设标签）──
+_SPECIES_FLAVOR: dict[str, str] = {
+    "灵兽": "角色散发灵气与神秘气场，身上可能有发光纹路、灵力标记或神秘图腾。",
+    "幻形": "角色呈现虚幻、流变的气质，身体边缘可能有半透明、发光或粒子消散效果。",
+}
 
-# Tiled across UV islands on a 3D humanoid — a directional light baked into
-# the map would clash with the GLB's runtime lighting.
-_TEXTURE_WARDROBE_SYSTEM_PROMPT = (
-    "你是一个专业的服装 PBR 纹理图提示词工程师。\n"
-    "硬性要求：\n"
-    "1. 输出顶视图的服装平铺图（top-down flat lay），适合直接贴到三维人形；\n"
-    "2. 必须包含「seamless 平铺、可平铺」与「均匀打光、无方向性阴影」；\n"
-    "3. 高细节、清晰可辨、无背景、无边框、无水印；\n"
-    "4. 详细描述服装款式、配色、面料质感、图案、缝线、纽扣/拉链等配件；\n"
-    "5. 全文使用中文，只保留专业 PBR / 绘画术语；\n"
-    "6. 不要解释，直接输出最终中文 prompt 文本。\n"
-    "7. 用户提供的 feedback 是对上一版的具体修改建议，体现在配色、面料、图案或配件上即可；与 description 不冲突时叠加，冲突时优先满足 feedback。"
-)
+# ── 7 种骨骼类型通用模板 ──
+_RIG_TYPE_TEMPLATES: dict[str, FullbodyTemplate] = {
+    "biped": _SPECIES_TEMPLATES["人类"],
+    "quadruped": FullbodyTemplate(
+        front_features=(
+            "身体与四肢：躯干呈水平流线型，胸深腹收，背线平直；"
+            "四肢关节角度自然（肘关节、膝关节、飞节清晰可辨），爪/蹄形态完整；"
+            "毛皮质感明确（长短、光泽、卷曲度），毛色花纹分布清晰；尾巴形态完整可见。"
+        ),
+        right_features=(
+            "侧面特征重点：躯干侧面轮廓与背线弧度；胸深与腹部收束线条；四肢侧面骨骼与关节角度（前肢肘关节后弯、后肢膝关节前弯）；尾巴侧面自然下垂或微翘；侧面毛色渐变。"
+        ),
+        back_features=("背面特征重点：脊椎沿线毛色变化与背线轮廓；肩胛与骨盆区域形态；尾巴根部毛发层次；后肢背面肌肉线条；臀部与尾基结构。"),
+        pose=("自然站姿规范（Tripo3D 绑骨硬性要求）：四足自然直立站立于地面，四腿分开且清晰可辨；脊椎水平，头部自然抬起；尾巴自然下垂或微微翘起，不遮挡身体轮廓。"),
+    ),
+    "avian": FullbodyTemplate(
+        front_features=(
+            "身体与翅膀：双翼展开形态完整，翅膀羽毛分层清晰（飞羽、覆羽、初级飞羽层层叠放）；躯干呈流线型、胸肌饱满；双足与爪趾形态完整（趾节排列、爪钩曲度）；尾羽结构可见。"
+        ),
+        right_features=("侧面特征重点：翅膀侧面折叠/半展轮廓与羽毛层次；躯干侧面厚度与胸部弧度；双腿与爪的侧面形态；尾羽侧面排列。"),
+        back_features=("背面特征重点：双翼背面羽毛纹理与叠放层次；肩背脊椎线条；尾羽背面形态与排列；后爪。"),
+        pose=("自然站姿规范（Tripo3D 绑骨硬性要求）：双足直立站立，双翼向两侧半展（约 30-45 度），翅膀关节清晰可辨；尾羽自然展开；身体朝前，头部平视前方。"),
+    ),
+    "serpentine": FullbodyTemplate(
+        front_features=(
+            "身体形态：蜿蜒的躯体完整可见，躯体粗细从头到尾自然渐变"
+            "（颈部渐粗至躯干最粗处，向尾尖渐细）；"
+            "鳞片排列方式明确（覆瓦状或网状），鳞片纹理与光泽清晰；"
+            "体色花纹从头到尾连贯；头部细节（眼、吻部、鼻孔、角/冠）清晰。"
+        ),
+        right_features=("侧面特征重点：身体侧面蜿蜒曲线与粗细渐变；头部侧面轮廓（吻部突出、颌线）；腹鳞与体鳞的交界线；侧面体色与花纹分布。"),
+        back_features=("背面特征重点：脊背鳞片/背棘纹理与排列方向；身体背面花纹连贯至尾尖；背部中线色彩变化。"),
+        pose=("自然姿态规范（Tripo3D 绑骨硬性要求）：身体水平自然伸展或呈 S 形蜿蜒，全身完整可见；头部抬起平视前方；身体不自我重叠遮挡。"),
+    ),
+    "aquatic": FullbodyTemplate(
+        front_features=(
+            "身体形态：纺锤形流线躯体完整可见；"
+            "各鱼鳍完全展开（背鳍、胸鳍、腹鳍、臀鳍），鳍条与鳍膜清晰；"
+            "鳞片/皮肤质感明确（圆鳞、栉鳞或光滑皮肤），体色分布与渐变流畅；尾鳍形态完整。"
+        ),
+        right_features=("侧面特征重点：身体侧面曲线与纺锤形轮廓；鳍的侧面展开形态与角度；侧线纹理走向；腹部与背部的明暗渐变；尾鳍侧面。"),
+        back_features=("背面特征重点：背鳍完整形态与鳍条排列；脊背体色与花纹；尾鳍背面与尾柄。"),
+        pose=("自然姿态规范（Tripo3D 绑骨硬性要求）：身体水平伸展，各鱼鳍完全展开；尾鳍自然伸展不卷曲；身体完整可见于画面内。"),
+    ),
+    "hexapod": FullbodyTemplate(
+        front_features=(
+            "身体与六足：头、胸、腹三段分明，体段间连接处清晰；"
+            "六足对称排列（前、中、后各一对），腿节、胫节、跗节分节清晰，爪尖形态完整；"
+            "外骨骼/甲壳纹理与色彩明确（表面光泽、棘刺或刻点分布）；触角（如有）形态清晰。"
+        ),
+        right_features=("侧面特征重点：躯干侧面分段轮廓与体段厚度；三对足的侧面排列与关节弯曲；翅鞘（如有）侧面纹理；触角侧面形态。"),
+        back_features=("背面特征重点：背甲/外骨骼纹理与色彩分节排列；体段间背板接缝线；翅鞘背面花纹（如有）。"),
+        pose=("自然站姿规范（Tripo3D 绑骨硬性要求）：六足自然直立站立于地面，六腿对称分开且清晰可辨；触角（如有）自然伸展；各体段完整可见。"),
+    ),
+    "octopod": FullbodyTemplate(
+        front_features=(
+            "身体与八足：头胸部与腹部结构完整；"
+            "四对步足对称展开于身体两侧，每条腿的关节与弯曲形态清晰；"
+            "外骨骼/皮肤纹理明确（甲壳光泽、疣突/毛刺分布、表面质感）；躯干与头部完整可见。"
+        ),
+        right_features=("侧面特征重点：躯干侧面轮廓与头胸部弧度；四对足的侧面排列与弯曲形态；步足关节与爪尖侧面。"),
+        back_features=("背面特征重点：背甲/外骨骼纹理与色彩；躯干背面花纹与标记；步足根部与躯干连接处。"),
+        pose=("自然姿态规范（Tripo3D 绑骨硬性要求）：八足对称展开于身体两侧，每条腿清晰可辨且不互相遮挡；身体居中，各体段完整可见于画面内。"),
+    ),
+}
+
+
+def is_preset_species(species: str) -> bool:
+    """True if the species has a dedicated fullbody template (no rig-type classification needed)."""
+    return species in _SPECIES_TEMPLATES
+
+
+def resolve_fullbody_template(species: str, rig_type: str = "biped") -> FullbodyTemplate:
+    """Resolve a complete fullbody template.
+
+    Preset species (人类/精灵/机甲) return their rich per-species template directly.
+    Other species use the rig-type template, with optional atmospheric flavor overlaid
+    via ``dataclasses.replace`` so the result is a single self-contained template.
+    """
+    if species in _SPECIES_TEMPLATES:
+        return _SPECIES_TEMPLATES[species]
+    flavor = _SPECIES_FLAVOR.get(species, "")
+    template = _RIG_TYPE_TEMPLATES.get(rig_type, _RIG_TYPE_TEMPLATES["biped"])
+    if flavor:
+        return replace(template, flavor=flavor)
+    return template
+
+
+_VIEW_PREFIX = {
+    "front": "full body front view portrait of",
+    "right": "full body right side view (90 degree profile) portrait of",
+    "back": "full body back view (180 degree) portrait of",
+}
+
+
+def _strip_bust_prefix(prompt: str) -> str:
+    stripped = prompt.lstrip()
+    if stripped.lower().startswith("bust portrait of "):
+        return stripped[len("bust portrait of ") :]
+    return stripped
+
+
+def build_fullbody_prompt(
+    view: str,
+    persona: Persona,
+    *,
+    avatar_prompt: str,
+    template: FullbodyTemplate,
+    feedback: str | None = None,
+) -> str:
+    """直接构造 image-gen prompt — 无 LLM 翻译。"""
+    char_desc = _strip_bust_prefix(avatar_prompt)
+    features = getattr(template, f"{view}_features")
+    prompt = f"{_VIEW_PREFIX[view]} {char_desc}。{features}"
+    if template.flavor:
+        prompt += template.flavor
+    appearance = _persona_payload(persona).get("appearance_core") or ""
+    if appearance:
+        prompt += f"{appearance}。"
+    if feedback and feedback.strip():
+        prompt += f"（用户反馈：{feedback.strip()}）"
+    return prompt + template.pose + _FULLBODY_SHARED_RULES
+
+
+# Direct-construct PBR texture prompts — no LLM round-trip.
+# Tiled across UV islands on a 3D model; a directional light baked into the
+# map would clash with the GLB's runtime lighting.  Each rig-type prefix
+# adapts the texture subject to the body plan (clothing for bipeds, fur/scale
+# patterns for quadrupeds, feather patterns for avians, etc.).
+_TEXTURE_RIG_PREFIX: dict[str, str] = {
+    "biped": (
+        "顶视图服装面料平铺图（top-down flat lay），适合直接贴到三维人形 UV。"
+        "需清晰呈现服装款式、配色、面料质感（棉、丝绸、皮革、金属等）、"
+        "图案花纹、缝线走线、纽扣、拉链、铆钉等配件。"
+    ),
+    "quadruped": (
+        "顶视图四足动物体表纹理平铺图（top-down flat lay），适合直接贴到三维四足模型 UV。"
+        "需清晰呈现毛色分布与渐变、花纹走向（条纹、斑点、块状）、毛皮质感（长短、光泽、卷曲度），"
+        "或装备覆盖物（项圈、鞍具、护甲）的材质与配件。"
+    ),
+    "avian": ("顶视图羽毛纹理平铺图（top-down flat lay），适合直接贴到三维鸟类或有翼生物 UV。需清晰呈现羽毛排列层次、色彩分布与渐变、羽轴纹路、绒毛质感、翼羽与尾羽的图案差异。"),
+    "serpentine": (
+        "顶视图鳞片纹理平铺图（top-down flat lay），适合直接贴到三维蛇形或龙形 UV。"
+        "需清晰呈现鳞片排列方式（覆瓦状、网状）、背鳞与腹鳞的色彩差异、"
+        "体色渐变与花纹、鳞片光泽与质感、背棘或角冠纹理（如有）。"
+    ),
+    "aquatic": (
+        "顶视图水生生物皮肤纹理平铺图（top-down flat lay），适合直接贴到三维鱼类或水生生物 UV。"
+        "需清晰呈现鳞片或皮肤质感（光滑、颗粒状）、色彩分布与渐变、"
+        "侧线纹理、鳍条与尾鳍的图案、腹部与背部的明暗差异。"
+    ),
+    "hexapod": (
+        "顶视图节肢动物外骨骼纹理平铺图（top-down flat lay），适合直接贴到三维六足生物 UV。"
+        "需清晰呈现甲壳分节纹理、表面质感（光滑、粗糙、棘刺）、色彩与光泽、"
+        "体段间的色彩差异、膜质连接处纹理。"
+    ),
+    "octopod": (
+        "顶视图节肢动物外骨骼纹理平铺图（top-down flat lay），适合直接贴到三维八足生物 UV。"
+        "需清晰呈现甲壳或皮肤质感、色彩与光泽、腿节与躯干的纹理差异、"
+        "表面纹饰（疣突、毛刺、斑点）。"
+    ),
+}
+
+_TEXTURE_FORMAT_SUFFIX = "seamless 平铺、可平铺（tileable）。均匀打光、无方向性阴影（even diffuse lighting, no directional shadows）。高细节、清晰可辨。无背景、无边框、无水印。"
 
 
 def _persona_payload(persona: Persona) -> dict:
@@ -198,105 +345,19 @@ async def enhance_avatar_prompt(
     return _strip_markdown_fence(raw)
 
 
-async def _enhance_fullbody(
-    db: Session | None,
-    user_id: int | None,
-    *,
-    system_prompt: str,
-    user_intro: str,
-    payload: dict,
-    provider_config: ProviderConfig | None = None,
-) -> str:
-    """Shared chat→strip scaffold for every fullbody view enhancer."""
-    user_payload = f"{user_intro}：\n```json\n{json.dumps(payload, ensure_ascii=False)}\n```"
-    raw = await chat(db, user_id, system_prompt, user_payload, provider_config=provider_config)
-    return _strip_markdown_fence(raw)
-
-
-async def enhance_fullbody_front_prompt(
-    db: Session | None,
-    user_id: int | None,
-    persona: Persona,
-    *,
-    avatar_prompt: str,
-    feedback: str | None = None,
-    provider_config: ProviderConfig | None = None,
-) -> str:
-    """Generate a full-body front view prompt using avatar_prompt as the visual anchor."""
-    payload = {**_persona_visual_payload(persona, feedback), "avatar_prompt": avatar_prompt}
-    return await _enhance_fullbody(
-        db,
-        user_id,
-        system_prompt=_FULLBODY_FRONT_SYSTEM_PROMPT,
-        user_intro="请根据以下已确认的头像外貌锚点（avatar_prompt），为该角色扩展生成正面全身立绘提示词",
-        payload=payload,
-        provider_config=provider_config,
-    )
-
-
-async def enhance_fullbody_right_prompt(
-    db: Session | None,
-    user_id: int | None,
-    persona: Persona,
-    *,
-    front_prompt: str,
-    avatar_prompt: str | None = None,
-    feedback: str | None = None,
-    provider_config: ProviderConfig | None = None,
-) -> str:
-    """Generate a full-body right side view prompt using front_prompt as the visual anchor."""
-    payload = {
-        **_persona_visual_payload(persona, feedback),
-        "front_prompt": front_prompt,
-        **({"avatar_prompt": avatar_prompt} if avatar_prompt else {}),
-    }
-    return await _enhance_fullbody(
-        db,
-        user_id,
-        system_prompt=_FULLBODY_RIGHT_SYSTEM_PROMPT,
-        user_intro="请根据以下已确认的正面全身立绘锚点（front_prompt），为同一个角色生成右侧面（90度侧视）全身立绘提示词",
-        payload=payload,
-        provider_config=provider_config,
-    )
-
-
-async def enhance_fullbody_back_prompt(
-    db: Session | None,
-    user_id: int | None,
-    persona: Persona,
-    *,
-    front_prompt: str,
-    avatar_prompt: str | None = None,
-    feedback: str | None = None,
-    provider_config: ProviderConfig | None = None,
-) -> str:
-    """Generate a full-body back view prompt using front_prompt as the visual anchor."""
-    payload = {
-        **_persona_visual_payload(persona, feedback),
-        "front_prompt": front_prompt,
-        **({"avatar_prompt": avatar_prompt} if avatar_prompt else {}),
-    }
-    return await _enhance_fullbody(
-        db,
-        user_id,
-        system_prompt=_FULLBODY_BACK_SYSTEM_PROMPT,
-        user_intro="请根据以下已确认的正面全身立绘锚点（front_prompt），为同一个角色生成背面（180度后视）全身立绘提示词",
-        payload=payload,
-        provider_config=provider_config,
-    )
-
-
-async def enhance_texture_prompt(
-    db: Session | None,
-    user_id: int | None,
+def build_texture_prompt(
     *,
     description: str,
     feedback: str | None = None,
+    rig_type: str = "biped",
 ) -> str:
-    """Rewrite a wardrobe description as a detailed Chinese PBR texture prompt (top-down flat lay)."""
-    system_prompt = _TEXTURE_WARDROBE_SYSTEM_PROMPT
-    payload: dict[str, str] = {"description": description}
+    """直接构造 PBR 纹理图 image-gen prompt — 无 LLM 翻译。
+
+    ``rig_type`` selects the texture-type prefix (clothing for bipeds, fur/scale
+    patterns for quadrupeds, feather patterns for avians, etc.).
+    """
+    prefix = _TEXTURE_RIG_PREFIX.get(rig_type, _TEXTURE_RIG_PREFIX["biped"])
+    prompt = f"{prefix} {description}。"
     if feedback and feedback.strip():
-        payload["feedback"] = feedback.strip()
-    user_payload = f"请根据以下服装/外观描述生成 PBR 纹理图提示词：\n```json\n{json.dumps(payload, ensure_ascii=False)}\n```"
-    return await chat(db, user_id, system_prompt, user_payload)
+        prompt += f"（用户反馈：{feedback.strip()}）"
+    return prompt + _TEXTURE_FORMAT_SUFFIX

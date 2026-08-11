@@ -1605,20 +1605,12 @@ async def test_generate_fullbody_stage_front_and_aux_chained(monkeypatch, _patch
     async def fake_download(url):
         return b"\x89PNG\r\n\x1a\n", "image/png"
 
-    async def fake_enhance_front(db, user_id, persona, *, avatar_prompt, feedback=None):
-        return "full body front view prompt"
-
-    async def fake_enhance_right(db, user_id, persona, *, front_prompt, avatar_prompt=None, feedback=None):
-        return "full body right side view prompt"
-
-    async def fake_enhance_back(db, user_id, persona, *, front_prompt, avatar_prompt=None, feedback=None):
-        return "full body back view prompt"
+    async def fake_select_rig(chat, species, db=None, user_id=None):
+        return "biped"
 
     monkeypatch.setattr(avatar_service, "image_generation_tool", fake_gen)
     monkeypatch.setattr(avatar_service, "_download_to_bytes", fake_download)
-    monkeypatch.setattr(avatar_service, "enhance_fullbody_front_prompt", fake_enhance_front)
-    monkeypatch.setattr(avatar_service, "enhance_fullbody_right_prompt", fake_enhance_right)
-    monkeypatch.setattr(avatar_service, "enhance_fullbody_back_prompt", fake_enhance_back)
+    monkeypatch.setattr(avatar_service, "select_rig_type", fake_select_rig)
 
     with SessionLocal() as db:
         user = User(username="fbuser", password_hash="x", is_active=True, can_use=True)
@@ -1647,7 +1639,7 @@ async def test_generate_fullbody_stage_front_and_aux_chained(monkeypatch, _patch
         assert front_res.seed_right_url == ""
         assert front_res.seed_back_url == ""
         assert len(all_calls) == 1
-        assert all_calls[0]["prompt"] == "full body front view prompt"
+        assert "full body front view portrait of" in all_calls[0]["prompt"]
         assert all_calls[0]["reference_image"].startswith("data:image/png;base64,")
 
         # 2. Stage 'aux'
@@ -1657,8 +1649,8 @@ async def test_generate_fullbody_stage_front_and_aux_chained(monkeypatch, _patch
         assert "/api/companion/avatar/file/" in aux_res.seed_back_url
         assert len(all_calls) == 3
         # Aux calls used right and back prompts
-        assert all_calls[1]["prompt"] == "full body right side view prompt"
-        assert all_calls[2]["prompt"] == "full body back view prompt"
+        assert "full body right side view" in all_calls[1]["prompt"]
+        assert "full body back view" in all_calls[2]["prompt"]
 
         # 3. View 'front' regeneration invalidates aux seeds
         all_calls.clear()
@@ -1693,20 +1685,12 @@ async def test_generate_fullbody_preconditions(monkeypatch, _patch_db):
     async def fake_download(url):
         return b"\x89PNG\r\n\x1a\n", "image/png"
 
-    async def fake_enhance_front(db, user_id, persona, *, avatar_prompt, feedback=None):
-        return "front"
-
-    async def fake_enhance_right(db, user_id, persona, *, front_prompt, avatar_prompt=None, feedback=None):
-        return "r"
-
-    async def fake_enhance_back(db, user_id, persona, *, front_prompt, avatar_prompt=None, feedback=None):
-        return "b"
+    async def fake_select_rig(chat, species, db=None, user_id=None):
+        return "biped"
 
     monkeypatch.setattr(avatar_service, "image_generation_tool", fake_gen)
     monkeypatch.setattr(avatar_service, "_download_to_bytes", fake_download)
-    monkeypatch.setattr(avatar_service, "enhance_fullbody_front_prompt", fake_enhance_front)
-    monkeypatch.setattr(avatar_service, "enhance_fullbody_right_prompt", fake_enhance_right)
-    monkeypatch.setattr(avatar_service, "enhance_fullbody_back_prompt", fake_enhance_back)
+    monkeypatch.setattr(avatar_service, "select_rig_type", fake_select_rig)
 
     with SessionLocal() as db:
         user = User(username="fbuser2", password_hash="x", is_active=True, can_use=True)
@@ -2208,8 +2192,10 @@ async def test_wardrobe_preview_and_confirm_lifecycle(_patch_db, monkeypatch):
     # 1. Mock LLM & image generation for preview
     captured_tool_args: dict = {}
 
-    async def _fake_enhance(db, user_id, *, description, feedback=None):
-        return f"enhanced: {description} (feedback: {feedback})"
+    async def _fake_resolve_rig_type(db, user_id):
+        return "biped"
+
+    monkeypatch.setattr("services.companion.wardrobe_service._resolve_rig_type", _fake_resolve_rig_type)
 
     async def _fake_img_tool(prompt, reference_image=None, **kwargs):
         captured_tool_args["prompt"] = prompt
@@ -2229,7 +2215,6 @@ async def test_wardrobe_preview_and_confirm_lifecycle(_patch_db, monkeypatch):
         real_path.write_bytes(b"\x89PNG\r\n\x1a\n")
         return (real_path, "image/png")
 
-    monkeypatch.setattr("services.companion.wardrobe_service.enhance_texture_prompt", _fake_enhance)
     monkeypatch.setattr("services.companion.wardrobe_service.image_generation_tool", _fake_img_tool)
     monkeypatch.setattr("services.companion.wardrobe_service.fetch_texture_bytes", _fake_fetch_bytes)
     monkeypatch.setattr("services.companion.wardrobe_service.get_file_path", _fake_get_file_path)
@@ -2242,7 +2227,7 @@ async def test_wardrobe_preview_and_confirm_lifecycle(_patch_db, monkeypatch):
     assert resp.status_code == 200
     preview_data = resp.json()
     assert preview_data["url"].startswith("http") or "/api/media/files/" in preview_data["url"]
-    assert "enhanced: 未来感机能夹克" in preview_data["prompt"]
+    assert "未来感机能夹克" in preview_data["prompt"]
     assert preview_data["file_id"]
     file_id = preview_data["file_id"]
 
@@ -2264,7 +2249,7 @@ async def test_wardrobe_preview_and_confirm_lifecycle(_patch_db, monkeypatch):
     )
     assert resp_with_img.status_code == 200
     assert captured_tool_args["reference_image"] == f"data:image/png;base64,{img_b64}"
-    assert "feedback: 添加霓虹蓝色线条" in captured_tool_args["prompt"]
+    assert "用户反馈：添加霓虹蓝色线条" in captured_tool_args["prompt"]
 
     # 4. Preview validation errors
     bad_mime = client.post(

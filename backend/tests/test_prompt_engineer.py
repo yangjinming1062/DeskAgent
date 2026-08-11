@@ -3,7 +3,6 @@ from types import SimpleNamespace
 
 import pytest
 
-from services.llm import MissingLlmConfigError
 from services.llm import prompt_engineer
 
 
@@ -88,90 +87,142 @@ async def test_enhance_avatar_prompt_includes_feedback(monkeypatch):
     assert payload["feedback"] == "更长的头发"
 
 
-# ── enhance_fullbody_front/right/back_prompt ───────────────────────
+# ── _strip_bust_prefix ──
 
 
-@pytest.mark.asyncio
-async def test_enhance_fullbody_front_prompt_returns_text(monkeypatch):
-    captured: dict = {}
+def test_strip_bust_prefix():
+    assert prompt_engineer._strip_bust_prefix("bust portrait of 金发少女") == "金发少女"
+    assert prompt_engineer._strip_bust_prefix("  BUST PORTRAIT OF 机甲战警") == "机甲战警"
+    assert prompt_engineer._strip_bust_prefix("金发少女，半身特写") == "金发少女，半身特写"
 
-    async def _fake_chat(db, user_id, system_prompt, user_payload, **_kw):
-        captured["system"] = system_prompt
-        captured["user"] = user_payload
-        return "full body front view portrait of 金发绿眼少女，A-pose站姿，纯白平面背景"
 
-    monkeypatch.setattr(prompt_engineer, "chat", _fake_chat)
+# ── is_preset_species ──
 
-    class _FakePersona:
-        definition_json = json.dumps({"name": "小光", "biological_type": "人类", "gender": "女"})
 
-    out = await prompt_engineer.enhance_fullbody_front_prompt(
-        None, 7, _FakePersona(), avatar_prompt="金发绿眼少女，半身特写"
+def test_is_preset_species_true():
+    assert prompt_engineer.is_preset_species("人类") is True
+
+
+def test_is_preset_species_false():
+    assert prompt_engineer.is_preset_species("龙") is False
+    assert prompt_engineer.is_preset_species("灵兽") is False
+
+
+# ── resolve_fullbody_template ──
+
+
+def test_resolve_fullbody_template_preset():
+    template = prompt_engineer.resolve_fullbody_template("人类")
+    assert template is not None
+    assert template.flavor == ""
+
+
+def test_resolve_fullbody_template_flavor_overlay():
+    template = prompt_engineer.resolve_fullbody_template("灵兽", "quadruped")
+    assert "灵气" in template.flavor
+    assert "四足" in template.pose
+
+
+def test_resolve_fullbody_template_rig_type():
+    template = prompt_engineer.resolve_fullbody_template("龙", "serpentine")
+    assert template is not None
+    assert "S 形" in template.pose
+
+
+def test_resolve_fullbody_template_fallback():
+    template = prompt_engineer.resolve_fullbody_template("龙", "unknown_rig")
+    assert template == prompt_engineer._RIG_TYPE_TEMPLATES["biped"]
+
+
+# ── build_fullbody_prompt ──
+
+
+class _FakePersona:
+    def __init__(self, biological_type="人类", appearance="碧蓝眼眸"):
+        self.definition_json = json.dumps({
+            "biological_type": biological_type,
+            "appearance_core": appearance,
+        }, ensure_ascii=False)
+
+
+def test_build_front_includes_pose_and_rules():
+    persona = _FakePersona()
+    template = prompt_engineer.resolve_fullbody_template("人类")
+    prompt = prompt_engineer.build_fullbody_prompt(
+        "front",
+        persona,
+        avatar_prompt="bust portrait of 金发少女",
+        template=template,
     )
-    assert "front view" in out
-    assert "头顶至脚底" in captured["system"]
-    assert "A-pose" in captured["system"]
-    payload = json.loads(captured["user"].split("```json\n", 1)[1].split("\n```", 1)[0])
-    assert payload["avatar_prompt"] == "金发绿眼少女，半身特写"
+    assert prompt.startswith("full body front view portrait of 金发少女")
+    assert "A-pose" in prompt
+    assert "100% 完整展示" in prompt
+    assert "纯白平面背景" in prompt
+    assert "碧蓝眼眸" in prompt
 
 
-@pytest.mark.asyncio
-async def test_enhance_fullbody_right_prompt_returns_text(monkeypatch):
-    captured: dict = {}
-
-    async def _fake_chat(db, user_id, system_prompt, user_payload, **_kw):
-        captured["system"] = system_prompt
-        captured["user"] = user_payload
-        return "full body right side view portrait of 金发绿眼少女，A-pose站姿，纯白平面背景"
-
-    monkeypatch.setattr(prompt_engineer, "chat", _fake_chat)
-
-    class _FakePersona:
-        definition_json = json.dumps({"name": "小光", "biological_type": "人类", "gender": "女"})
-
-    out = await prompt_engineer.enhance_fullbody_right_prompt(
-        None, 7, _FakePersona(), front_prompt="full body front view", avatar_prompt="金发绿眼少女，半身特写"
+def test_build_right_uses_right_features():
+    persona = _FakePersona()
+    template = prompt_engineer.resolve_fullbody_template("人类")
+    prompt = prompt_engineer.build_fullbody_prompt(
+        "right",
+        persona,
+        avatar_prompt="bust portrait of 金发少女",
+        template=template,
     )
-    assert "right side view" in out
-    assert "90度侧视" in captured["system"]
-    assert "A-pose" in captured["system"]
-    payload = json.loads(captured["user"].split("```json\n", 1)[1].split("\n```", 1)[0])
-    assert payload["front_prompt"] == "full body front view"
+    assert prompt.startswith("full body right side view (90 degree profile) portrait of 金发少女")
+    assert "侧面特征重点" in prompt
 
 
-@pytest.mark.asyncio
-async def test_enhance_fullbody_back_prompt_returns_text(monkeypatch):
-    captured: dict = {}
-
-    async def _fake_chat(db, user_id, system_prompt, user_payload, **_kw):
-        captured["system"] = system_prompt
-        captured["user"] = user_payload
-        return "full body back view portrait of 金发绿眼少女，A-pose站姿，纯白平面背景"
-
-    monkeypatch.setattr(prompt_engineer, "chat", _fake_chat)
-
-    class _FakePersona:
-        definition_json = json.dumps({"name": "小光", "biological_type": "人类", "gender": "女"})
-
-    out = await prompt_engineer.enhance_fullbody_back_prompt(
-        None, 7, _FakePersona(), front_prompt="full body front view", avatar_prompt="金发绿眼少女，半身特写"
+def test_build_back_uses_back_features():
+    persona = _FakePersona()
+    template = prompt_engineer.resolve_fullbody_template("人类")
+    prompt = prompt_engineer.build_fullbody_prompt(
+        "back",
+        persona,
+        avatar_prompt="bust portrait of 金发少女",
+        template=template,
     )
-    assert "back view" in out
-    assert "180度后视" in captured["system"]
-    assert "A-pose" in captured["system"]
-    payload = json.loads(captured["user"].split("```json\n", 1)[1].split("\n```", 1)[0])
-    assert payload["front_prompt"] == "full body front view"
+    assert prompt.startswith("full body back view (180 degree) portrait of 金发少女")
+    assert "背面特征重点" in prompt
 
 
-@pytest.mark.asyncio
-async def test_enhance_fullbody_front_propagates_missing_llm_config(monkeypatch):
-    monkeypatch.setattr(prompt_engineer, "provider_for_service", _fake_provider(raises=MissingLlmConfigError("no provider")))
+def test_build_with_flavor():
+    persona = _FakePersona("灵兽")
+    template = prompt_engineer.resolve_fullbody_template("灵兽", "quadruped")
+    prompt = prompt_engineer.build_fullbody_prompt(
+        "front",
+        persona,
+        avatar_prompt="bust portrait of 神圣九尾狐",
+        template=template,
+    )
+    assert "灵气" in prompt
 
-    class _FakePersona:
-        definition_json = "{}"
 
-    with pytest.raises(MissingLlmConfigError):
-        await prompt_engineer.enhance_fullbody_front_prompt(None, 1, _FakePersona(), avatar_prompt="anchor")
+def test_build_with_feedback():
+    persona = _FakePersona()
+    template = prompt_engineer.resolve_fullbody_template("人类")
+    prompt = prompt_engineer.build_fullbody_prompt(
+        "front",
+        persona,
+        avatar_prompt="bust portrait of 金发少女",
+        template=template,
+        feedback="想要双马尾",
+    )
+    assert "用户反馈：想要双马尾" in prompt
+
+
+def test_build_quadruped_pose():
+    persona = _FakePersona("猫")
+    template = prompt_engineer.resolve_fullbody_template("猫", "quadruped")
+    prompt = prompt_engineer.build_fullbody_prompt(
+        "front",
+        persona,
+        avatar_prompt="bust portrait of 橘猫",
+        template=template,
+    )
+    assert "四足自然直立站立于地面" in prompt
+    assert "A-pose" not in prompt
 
 
 # ── chat error cases ──────────────────────────────────────────────
@@ -187,47 +238,33 @@ async def test_chat_rejects_empty_response(monkeypatch):
         await prompt_engineer.chat(None, 1, "sys", "user")
 
 
-# ── enhance_texture_prompt ───────────────────────────────────────────
+# ── build_texture_prompt ───────────────────────────────────────────
 
 
-@pytest.mark.asyncio
-async def test_enhance_texture_wardrobe_includes_seamless_in_system(monkeypatch):
-    captured: dict = {}
-
-    async def _fake_chat(db, user_id, system_prompt, user_payload, **_kw):
-        captured["system"] = system_prompt
-        return "texture prompt"
-
-    monkeypatch.setattr(prompt_engineer, "chat", _fake_chat)
-
-    out = await prompt_engineer.enhance_texture_prompt(None, 1, description="未来风银色夹克")
-    assert out == "texture prompt"
-    assert "seamless 平铺" in captured["system"]
-    assert "顶视图" in captured["system"]
+def test_build_texture_biped_includes_clothing_and_format():
+    prompt = prompt_engineer.build_texture_prompt(description="未来风银色夹克")
+    assert "未来风银色夹克" in prompt
+    assert "服装" in prompt
+    assert "顶视图" in prompt
+    assert "seamless" in prompt
+    assert "无背景" in prompt
 
 
-@pytest.mark.asyncio
-async def test_enhance_texture_propagates_llm_failure(monkeypatch):
-    async def _boom(*_a, **_kw):
-        raise RuntimeError("upstream boom")
+def test_build_texture_uses_rig_type_prefix():
+    # Quadruped → fur/scale guidance, not clothing
+    prompt = prompt_engineer.build_texture_prompt(description="虎纹", rig_type="quadruped")
+    assert "毛皮" in prompt
+    assert "服装" not in prompt
 
-    monkeypatch.setattr(prompt_engineer, "chat", _boom)
-    with pytest.raises(RuntimeError, match="upstream boom"):
-        await prompt_engineer.enhance_texture_prompt(None, 1, description="x")
+    # Serpentine → scale guidance
+    prompt = prompt_engineer.build_texture_prompt(description="翠绿鳞片", rig_type="serpentine")
+    assert "鳞片" in prompt
 
 
-@pytest.mark.asyncio
-async def test_enhance_texture_prompt_includes_feedback(monkeypatch):
-    seen: dict = {}
-
-    async def _fake_chat(db, user_id, system_prompt, user_payload, **_kw):
-        seen["user_payload"] = user_payload
-        return "texture prompt with feedback"
-
-    monkeypatch.setattr(prompt_engineer, "chat", _fake_chat)
-
-    out = await prompt_engineer.enhance_texture_prompt(None, 1, description="旗袍", feedback="更深邃的暗红色，加金色刺绣")
-    assert out == "texture prompt with feedback"
-    payload = json.loads(seen["user_payload"].split("```json\n", 1)[1].split("\n```", 1)[0])
-    assert payload["description"] == "旗袍"
-    assert payload["feedback"] == "更深邃的暗红色，加金色刺绣"
+def test_build_texture_includes_feedback():
+    prompt = prompt_engineer.build_texture_prompt(
+        description="旗袍",
+        feedback="更深邃的暗红色，加金色刺绣",
+    )
+    assert "旗袍" in prompt
+    assert "用户反馈：更深邃的暗红色，加金色刺绣" in prompt
