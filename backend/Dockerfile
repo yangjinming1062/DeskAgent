@@ -17,6 +17,6 @@ RUN uv sync --frozen
 COPY backend/ .
 COPY runner/tools/ /runner/tools/
 
-EXPOSE 12345
+EXPOSE 10620
 
-CMD ["uv", "run", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "12345"]
+CMD ["uv", "run", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "10620"]

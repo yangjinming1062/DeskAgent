@@ -6,7 +6,7 @@ import { ArrowRight, AlertCircle, CheckCircle2, Loader2 } from 'lucide-react'
 import { Button } from '../components/button'
 import { $auth, authenticateBackend, startInstall, verifyBackendUrl } from '../store'
 
-const DEFAULT_BACKEND_URL = 'http://localhost:12345'
+const DEFAULT_BACKEND_URL = 'http://localhost:10620'
 
 export default function Auth(): React.JSX.Element {
   const auth = useStore($auth)

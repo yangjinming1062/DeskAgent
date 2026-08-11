@@ -29,7 +29,7 @@ class Settings(BaseSettings):
     # ── Public URL & Temp Files ──
     public_url_prefix: str = ""
     public_ip: str = ""
-    port: int = 12345
+    port: int = 10620
     temp_file_ttl_hours: int = 24
     data_dir: str = "./data"
 

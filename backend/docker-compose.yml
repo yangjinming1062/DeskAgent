@@ -31,7 +31,7 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres:5432/deskagent
     ports:
-      - "12345:12345"
+      - "10620:10620"
     volumes:
       - ./updates:/app/updates
       - ./data:/app/data

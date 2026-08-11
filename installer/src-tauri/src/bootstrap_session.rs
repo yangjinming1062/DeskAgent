@@ -314,8 +314,8 @@ mod tests {
     #[test]
     fn normalize_accepts_http_and_https() {
         assert_eq!(
-            normalize_base_url("http://localhost:12345").unwrap(),
-            "http://localhost:12345"
+            normalize_base_url("http://localhost:10620").unwrap(),
+            "http://localhost:10620"
         );
         assert_eq!(
             normalize_base_url("https://api.example.com").unwrap(),

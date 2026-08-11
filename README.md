@@ -57,7 +57,7 @@ DeskAgent 是一个**根据用户描述定制的、具有专属形象的陪伴�
 ### 后端 (Backend)
 
 ```bash
-cd backend && docker compose up  # 监听 :12345，PostgreSQL 数据库；默认管理员 deskagent/deskagent@admin123（生产前修改）
+cd backend && docker compose up  # 监听 :10620，PostgreSQL 数据库；默认管理员 deskagent/deskagent@admin123（生产前修改）
 ```
 
 ### 桌面客户端 (Client，开发模式)
