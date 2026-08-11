@@ -1,24 +1,18 @@
-<type>(<scope>): <subject — ≤72 chars total, imperative, lowercase>
+<type>(<scope>): <修改主题，整行 ≤30 字>
 
-# Body: one bullet per change. Aim for ≤6 bullets, ≤2 lines each.
-#   - path/area: what changed, and why if it isn't obvious
+# 正文：每条改动一行，建议 ≤6 条、每条 ≤2 行。
+#   - 模块/区域：改了什么；原因不明显时补一句为什么
 #
-# Summarize, don't transcribe. The diff is one `git show` away — the body
-# exists to explain what a reader can't get from it.
-#   - One module = one bullet. Merge sibling changes that serve the same
-#     goal instead of listing them file by file.
-#   - Say what the change accomplishes, not how the code does it. Skip
-#     symbol names, snippets, literals, line counts and per-file diffs.
-#   - Drop mechanical fallout: lint/format fixes, renames forced by a
-#     change already listed, follow-up import churn.
-#   - Single-file or otherwise self-evident commits may omit the body.
+# 写总结，不抄 diff。正文只写读者从 diff 看不出来的东西：
+#   - 一个模块一条；服务于同一目标的兄弟改动合并，不逐文件罗列
+#   - 写改动达成了什么，不写代码怎么实现；跳过符号名、片段、字面量
+#   - 省略机械连带改动：格式化、被迫改名、import 整理
+#   - 单文件或自明的提交可省略正文
 #
-# Non-obvious motivation for the commit as a whole goes in a final
-# "Why: ..." line (≤2 lines) — the trigger or constraint, not a recap of
-# the bullets. Do NOT write "moved from X to Y" history — `git log`
-# carries that.
+# 整条提交的非显然动机放最后一行 "Why: ..."（≤2 行）——写触发条件
+# 或约束，不复述正文。不写 "从 X 移到 Y" 这类历史，git log 已有。
 #
 # type:    feat | fix | refactor | perf | docs | test | chore | style | build
 # scope:   backend | desktop | runner | installer | scripts | docs |
-#          or a sub-module (companion | hub | main | gateway | tools ...);
-#          combine cross-cutting with '+' (desktop+backend).
+#          或子模块（companion | hub | main | gateway | tools ...）；
+#          跨模块用 '+' 组合（desktop+backend）。
