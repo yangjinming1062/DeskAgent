@@ -192,6 +192,12 @@ _IMAGE_TOO_LARGE_PATTERNS = [
     # the likely culprit; we still try the shrink path before giving up.
 ]
 
+# Image-gen providers that returned 200 + no error code but zero images.
+# Not retryable on the same provider (deterministic), but the next may succeed.
+_EMPTY_IMAGE_RESULT_PATTERNS = [
+    "returned no images",
+]
+
 # Providers that follow the OpenAI spec strictly require tool message
 # ``content`` to be a string.  Some (Anthropic native, Codex Responses,
 # Gemini native, first-party OpenAI) extend this to accept a content-parts
@@ -1126,6 +1132,15 @@ def _classify_by_message(
         return result_fn(
             FailoverReason.image_too_large,
             retryable=True,
+        )
+
+    # Image-gen provider returned success but zero images — try the next
+    # provider rather than surfacing an empty-result error to the user.
+    if any(p in error_msg for p in _EMPTY_IMAGE_RESULT_PATTERNS):
+        return result_fn(
+            FailoverReason.unknown,
+            retryable=False,
+            should_fallback=True,
         )
 
     # Usage-limit patterns need disambiguation: a transient signal

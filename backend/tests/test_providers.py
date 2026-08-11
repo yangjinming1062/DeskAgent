@@ -7,6 +7,7 @@ from services.llm import ImageGenRequest
 from services.llm import MissingLlmConfigError
 from services.llm import provider_for_service
 from services.llm import ProviderConfig
+from services.llm import ProviderError
 from services.llm import ServiceType
 from services.llm import VideoGenRequest
 from services.llm.llm_client import resolve_provider_config
@@ -691,7 +692,7 @@ class TestMiniMaxImageGen:
             captured.append(json.loads(req.content))
             return httpx.Response(
                 200,
-                json={"base_resp": {"status_code": 0}, "data": {"image_base64": []}},
+                json={"base_resp": {"status_code": 0}, "data": {"image_base64": ["dGVzdA="]}},
             )
 
         provider = self._make_provider(capture)
@@ -772,6 +773,44 @@ class TestMiniMaxImageGen:
         await provider.generate(ImageGenRequest(prompt="x", reference_image="https://ref/seed.png"))
         assert captured[0]["subject_reference"] == [{"type": "character", "image_file": "https://ref/seed.png"}]
         assert captured[0]["prompt"] == "x"
+
+    @pytest.mark.asyncio
+    async def test_generate_empty_images_raises_and_enables_fallback(self):
+        """Empty image_base64 must raise ProviderError that classifies as should_fallback."""
+        from services.llm import classify_api_error
+
+        handler = _async_handler([{"base_resp": {"status_code": 0}, "data": {"image_base64": []}}])
+        provider = self._make_provider(handler)
+        with pytest.raises(ProviderError, match="returned no images") as exc_info:
+            await provider.generate(ImageGenRequest(prompt="x", reference_image="data:image/png;base64,AAA="))
+        assert exc_info.value.body == {"base_resp": {"status_code": 0}, "data": {"image_base64": []}}
+        assert exc_info.value.provider == "minimax"
+        assert exc_info.value.model == "image-01"
+        classified = classify_api_error(exc_info.value, provider="minimax", model="image-01")
+        assert classified.should_fallback is True
+        assert classified.retryable is False
+
+
+class TestEmptyImageResultFallback:
+    """All image-gen providers that raise on empty results must classify as
+    should_fallback so execute_with_fallback tries the next provider."""
+
+    @pytest.mark.parametrize(
+        "message",
+        [
+            "minimax image_gen returned no images: {...}",
+            "Zhipu image_gen returned no images: {...}",
+            "Gemini image_gen returned no images: {...}",
+            "grok image_gen returned no images: {...}",
+            "grok image_edit returned no images: {...}",
+        ],
+    )
+    def test_all_providers_trigger_fallback(self, message):
+        from services.llm import classify_api_error
+
+        classified = classify_api_error(RuntimeError(message), provider="test", model="test")
+        assert classified.should_fallback is True
+        assert classified.retryable is False
 
 
 class TestReferenceImageCapability:

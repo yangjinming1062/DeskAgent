@@ -1,4 +1,7 @@
+import json
 from typing import ClassVar
+
+from components import get_logger
 
 from .._size_aspect import SIZE_TO_ASPECT
 from ..base import ImageAsset
@@ -6,8 +9,11 @@ from ..base import ImageGenProvider
 from ..base import ImageGenRequest
 from ..base import ImageGenResult
 from ..base import ProviderConfig
+from ..base import ProviderError
 from ..http import get_http
 from ._errors import raise_for_minimax_response
+
+logger = get_logger(__name__)
 
 
 class MiniMaxImageGenProvider(ImageGenProvider):
@@ -56,6 +62,30 @@ class MiniMaxImageGenProvider(ImageGenProvider):
         else:
             for url in data.get("image_url", []) or []:
                 assets.append(ImageAsset(url=url, mime="image/jpeg"))
+
+        if not assets:
+            # 200 + base_resp 0 but empty image list — silent moderation,
+            # rejected subject_reference, or API field-name change. Raise so
+            # the chain can fall back; "returned no images" is load-bearing
+            # for the classifier's _EMPTY_IMAGE_RESULT_PATTERNS.
+            raw_snippet = json.dumps(body, ensure_ascii=False)[:1000]
+            logger.warning(
+                "minimax image_gen returned no images",
+                extra={
+                    "model": self.config.model,
+                    "aspect_ratio": aspect,
+                    "response_format": payload["response_format"],
+                    "has_reference_image": bool(req.reference_image),
+                    "prompt_len": len(req.prompt),
+                },
+            )
+            raise ProviderError(
+                f"minimax image_gen returned no images: {raw_snippet}",
+                body=body,
+                provider="minimax",
+                model=self.config.model,
+            )
+
         return ImageGenResult(images=assets, model=self.config.model, raw=body)
 
     def raw_client(self) -> "object | None":
