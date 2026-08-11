@@ -6,6 +6,7 @@ from components import get_logger
 from sqlalchemy.orm import Session
 
 from .error_classifier import classify_api_error
+from .error_classifier import FailoverReason
 from .llm_client import MissingLlmConfigError
 from .llm_client import resolve_provider_chain
 from .providers import BaseProvider
@@ -58,6 +59,7 @@ async def execute_with_fallback(
         raise MissingLlmConfigError(f"no provider configured for service {service_type!r}")
 
     last_error: Exception | None = None
+    content_policy_error: Exception | None = None
     for idx, config in enumerate(chain):
         provider_cls = resolve(config.service_type, config.provider_name)
         provider = provider_cls(config)
@@ -66,6 +68,14 @@ async def execute_with_fallback(
         except Exception as exc:
             last_error = exc
             classified = getattr(exc, "classified", None) or classify_api_error(exc, provider=config.provider_name, model=config.model)
+
+        # Track content-policy blocks — when the entire chain is exhausted,
+        # prefer raising this over the last error so callers can run prompt
+        # sanitization and retry. Without this, a cascading failure on a
+        # later provider (e.g. vision LLM can't describe a reference image)
+        # masks the actionable root cause.
+        if classified.reason == FailoverReason.content_policy_blocked:
+            content_policy_error = exc
 
         if classified.should_fallback and (stream_started is None or not stream_started()):
             next_provider = chain[idx + 1].provider_name if idx + 1 < len(chain) else None
@@ -88,7 +98,9 @@ async def execute_with_fallback(
         # Either not a fallback condition, stream already emitted, or this
         # was the last slot. Surface the original exception unchanged —
         # call sites classify it via ``classify_api_error`` if they need a
-        # ``ClassifiedError``.
-        raise last_error
+        # ``ClassifiedError``.  Prefer a content-policy error from an earlier
+        # provider when present so the caller's moderation-retry can fire
+        # instead of being masked by an unrelated cascading failure.
+        raise content_policy_error or last_error
 
-    raise last_error if last_error is not None else MissingLlmConfigError(f"provider chain empty for {service_type!r}")
+    raise (content_policy_error or last_error) if last_error is not None else MissingLlmConfigError(f"provider chain empty for {service_type!r}")
