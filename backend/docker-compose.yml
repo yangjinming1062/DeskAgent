@@ -9,6 +9,8 @@ services:
       POSTGRES_DB: deskagent
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "15432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
@@ -29,7 +31,7 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres:5432/deskagent
     ports:
-      - "8000:8000"
+      - "12345:12345"
     volumes:
       - ./updates:/app/updates
       - ./data:/app/data

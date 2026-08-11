@@ -10,7 +10,7 @@ const { app } = require('electron')
 //   3. <repo>/client/config.json — dev default
 //   4. DEFAULT_BACKEND_URL — last-resort fallback
 
-const DEFAULT_BACKEND_URL = 'http://localhost:8000'
+const DEFAULT_BACKEND_URL = 'http://localhost:12345'
 
 let cached = null
 

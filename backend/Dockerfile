@@ -23,6 +23,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     blender \
     && rm -rf /var/lib/apt/lists/*
 
-EXPOSE 8000
+EXPOSE 12345
 
-CMD ["uv", "run", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uv", "run", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "12345"]
