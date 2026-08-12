@@ -36,44 +36,6 @@ def path_attach_ref(path: str) -> dict:
     return {"attached": True, "path": path, "ref_text": f"@file:{normalized_path}", "size": 0}
 
 
-def remove(data_dir: str, session_id: str, path: str) -> bool:
-    """Unlink a single attachment; refuses anything outside the session dir."""
-    _validate_session_id(session_id)
-    target = _resolve_within_root(data_dir, session_id, path)
-    try:
-        target.unlink()
-        return True
-    except FileNotFoundError:
-        return False
-
-
-def _resolve_within_root(data_dir: str, session_id: str, path: str) -> Path:
-    """Resolve ``path`` against the session dir and verify it stays under the attachment root.
-
-    Both attachment_root and session_dir must exist on disk — Path.resolve() on
-    a missing directory walks to the nearest existing ancestor, which would
-    silently weaken this boundary check on a cold start.
-    """
-    root = attachment_root(data_dir)
-    if not root.exists():
-        raise ValueError(f"attachment root does not exist: {root}")
-    root = root.resolve()
-    sdir = session_dir(data_dir, session_id)
-    if not sdir.exists():
-        raise ValueError(f"session dir does not exist: {sdir}")
-    sdir = sdir.resolve()
-    try:
-        target = Path(path)
-        if not target.is_absolute():
-            target = sdir / target
-        target = target.resolve()
-    except OSError as e:
-        raise ValueError(f"invalid path: {e}") from e
-    if not target.is_relative_to(root):
-        raise ValueError(f"path escapes attachment root: {path!r}")
-    return target
-
-
 def gc_session(data_dir: str, session_id: str) -> None:
     """``rmtree`` of the per-session subdir; validates session_id and target before deleting."""
     safe_id = _validate_session_id(session_id)

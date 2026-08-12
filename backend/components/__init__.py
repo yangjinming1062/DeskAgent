@@ -1,6 +1,5 @@
-from .attachments import attachment_root, path_attach_ref, session_dir
+from .attachments import attachment_root, path_attach_ref
 from .attachments import gc_session as attachments_gc_session
-from .attachments import remove as attachments_remove
 from .background import BackgroundTask, fetch_public_ip
 from .config import SETTINGS
 from .constants import (
@@ -45,11 +44,7 @@ from .constants import (
     NIGHTLY_SCAN_INTERVAL_SECONDS,
     NIGHTLY_WINDOW_END_HOUR,
     NIGHTLY_WINDOW_START_HOUR,
-    REDACT_PHONE_DIGIT_THRESHOLD,
     SEARCH_INPUT_MAX_LEN,
-    SECRET_MASK_HEAD_CHARS,
-    SECRET_MASK_MIN_LENGTH,
-    SECRET_MASK_TAIL_CHARS,
     SESSION_PREVIEW_MAX_CHARS,
     SESSION_TO_GLOBAL_KEY_ALIASES,
     SQL_LIKE_ESCAPE_CHAR,
@@ -82,7 +77,7 @@ from .functions import (
 from .hashing import normalize_sha512, sha256_hex, sha512_b64
 from .logger import get_logger, set_request_user_id, setup_logging
 from .network import is_safe_outbound
-from .redact import mask_secret, redact_sensitive_text
+from .redact import redact_sensitive_text
 from .temp_files import cleanup_expired, get_file_path, save_file
 from .temp_files import delete_file as temp_file_delete
 from .temp_files import gc_session as temp_files_gc_session
@@ -152,11 +147,7 @@ __all__ = [
     "NIGHTLY_SCAN_INTERVAL_SECONDS",
     "NIGHTLY_WINDOW_END_HOUR",
     "NIGHTLY_WINDOW_START_HOUR",
-    "REDACT_PHONE_DIGIT_THRESHOLD",
     "SEARCH_INPUT_MAX_LEN",
-    "SECRET_MASK_HEAD_CHARS",
-    "SECRET_MASK_MIN_LENGTH",
-    "SECRET_MASK_TAIL_CHARS",
     "SESSION_PREVIEW_MAX_CHARS",
     "SESSION_TO_GLOBAL_KEY_ALIASES",
     "SQL_LIKE_ESCAPE_CHAR",
@@ -178,13 +169,10 @@ __all__ = [
     "correlation_id_middleware",
     "new_request_id",
     "REQUEST_ID_HEADER",
-    "mask_secret",
     "redact_sensitive_text",
     "attachment_root",
     "attachments_gc_session",
     "path_attach_ref",
-    "attachments_remove",
-    "session_dir",
     "cleanup_expired",
     "temp_file_delete",
     "temp_files_gc_session",

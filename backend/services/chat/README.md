@@ -20,7 +20,7 @@ chat/
 ├── message_sanitization.py  # JSON 修复 + 截图归一化 + truncate_chat_history（40 条窗）
 ├── chat_emitter.py          # Emitter Protocol + HeadlessEmitter（子 agent）
 ├── agent_delegate.py        # agent_delegate_tool：spawn 子 agent 跑完整 chat-turn，HeadlessEmitter 捕获帧、提取最终答案作为工具结果返回
-├── types.py                 # CORE_TOOLS 白名单 + IterationBudget（threading.Lock 计数）
+├── types.py                 # IterationBudget（threading.Lock 计数）+ TrackTask 类型别名
 └── __init__.py              # barrel + __getattr__ 懒加载 orchestrator / turn_inputs / agent_delegate
 ```
 

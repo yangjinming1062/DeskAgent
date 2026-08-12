@@ -8,7 +8,6 @@ from .history import build_session_messages
 from .message_sanitization import truncate_chat_history
 from .system_prompt import build_system_prompt, build_system_prompt_parts
 from .think_scrubber import StreamingThinkScrubber
-from .types import CORE_TOOLS, IterationBudget
 
 # Lazy-load the heavy modules that pull the full service graph (gateway / llm /
 # tools). Importing them eagerly here breaks the chat↔gateway cycle (gateway's
@@ -41,8 +40,6 @@ __all__ = [
     "build_system_prompt",
     "build_system_prompt_parts",
     "StreamingThinkScrubber",
-    "CORE_TOOLS",
-    "IterationBudget",
     # Names exposed via __getattr__ on the lazy submodules — listed only so
     # ``from services.chat import *`` keeps working. New symbols added inside
     # orchestrator / turn_inputs / agent_delegate are resolved on demand by

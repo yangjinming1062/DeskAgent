@@ -15,7 +15,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from services.companion import asset_store
 from services.gateway import start_ws_event_loop, stop_ws_event_loop
-from services.media import aclose_all, resume_pending_video_jobs
+from services.llm import aclose_all
+from services.media import resume_pending_video_jobs
 from services.rate_limit import limiter, rate_limit_exception_handler, stash_user_id_middleware
 from services.scheduler import start_scheduler, stop_scheduler
 from services.tools import aclose

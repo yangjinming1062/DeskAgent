@@ -18,9 +18,6 @@ async def aclose_brave() -> None:
     await _HTTP_CLIENT.aclose()
 
 
-aclose = aclose_brave
-
-
 class BraveFreeWebSearchProvider(WebSearchProvider):
     def __init__(self, *, api_key: str | None = None) -> None:
         # Per-user key from the dispatcher (loaded out of `user_settings`)

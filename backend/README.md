@@ -73,7 +73,7 @@ backend/
 | disturbance_tier 镜像（`_disturbance` 字典） | 接 Client 推送 [PROTOCOL.md §1.1](../PROTOCOL.md) 的 `companion.set_disturbance_tier` | [ARCHITECTURE.md §5](../ARCHITECTURE.md) |
 | LLM provider chain resolver 三层入口（`provider_for_service` / `client_for_service` / `execute_with_fallback`） | 本模块独有 | 本 README §3 |
 | PROVIDER-first 配置 + Tier 1–4 回落链 | 本模块独有（Provider 自注册产物） | 本 README §2 |
-| 工具三层分类（backend / memory / runner）+ CORE_TOOLS 白白名单 | 本模块独有 | 本 README §2 + backend 代码 |
+| 工具三层分类（backend / memory / runner） | 本模块独有 | 本 README §2 + backend 代码 |
 
 ## 6. 已知限制
 

@@ -1,5 +1,3 @@
-from services.llm import ProviderConfig
-
 from . import asset_store, memory_admin, voice_catalog
 from .affect_check import AffectCheckResult, check_affect
 from .animation_generator import RIG_DEFAULT_BONES, find_unmatched_tags, generate_animation_clips, get_rig_bones
@@ -76,7 +74,6 @@ __all__ = [
     "ModelGenerationError",
     "ModelGenerationInProgressError",
     "PersonaValidationError",
-    "ProviderConfig",
     "SeedPromptMissingError",
     "WardrobeSourceExpiredError",
     "analyze_personality_tags",

@@ -21,10 +21,6 @@ def _compute_next_run_at(schedule: str, base: datetime) -> datetime | None:
     return next_dt.replace(tzinfo=None)
 
 
-def _job_to_dict(job: CronJob) -> dict[str, Any]:
-    return job.to_dict()
-
-
 def _refresh_schedule(job: CronJob) -> None:
     next_run = _compute_next_run_at(job.schedule, naive_utc_now())
     if next_run is None:
@@ -44,13 +40,13 @@ def create_job(user_id: int, prompt: str, schedule: str, name: str = "cron job",
         db.add(job)
         db.commit()
         db.refresh(job)
-        return _job_to_dict(job)
+        return job.to_dict()
 
 
 def get_job(user_id: int, job_id: int) -> dict[str, Any] | None:
     with session_scope() as db:
         job = db.query(CronJob).filter(CronJob.id == job_id, CronJob.user_id == user_id).first()
-        return _job_to_dict(job) if job else None
+        return job.to_dict() if job else None
 
 
 def list_jobs(user_id: int, include_paused: bool = False) -> list[dict[str, Any]]:
@@ -58,7 +54,7 @@ def list_jobs(user_id: int, include_paused: bool = False) -> list[dict[str, Any]
         query = db.query(CronJob).filter(CronJob.user_id == user_id)
         if not include_paused:
             query = query.filter(CronJob.is_paused.is_(False))
-        return [_job_to_dict(j) for j in query.all()]
+        return [j.to_dict() for j in query.all()]
 
 
 def update_job(user_id: int, job_id: int, updates: dict[str, Any]) -> dict[str, Any] | None:
@@ -73,7 +69,7 @@ def update_job(user_id: int, job_id: int, updates: dict[str, Any]) -> dict[str, 
         if any(k in updates for k in _SCHEDULE_KEYS):
             _refresh_schedule(job)
         db.commit()
-        return _job_to_dict(job)
+        return job.to_dict()
 
 
 def pause_job(user_id: int, job_id: int) -> dict[str, Any] | None:

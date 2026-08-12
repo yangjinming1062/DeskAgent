@@ -18,9 +18,6 @@ async def aclose_tavily() -> None:
     await _HTTP_CLIENT.aclose()
 
 
-aclose = aclose_tavily
-
-
 def _build_tavily_request(endpoint: str, payload: dict[str, Any], *, api_key: str | None = None, base_url: str | None = None) -> tuple[str, dict[str, Any]]:
     """Validate API key, build URL and body for a Tavily API call.
 

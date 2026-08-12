@@ -2,36 +2,6 @@ import asyncio
 import threading
 from collections.abc import Callable
 
-# Tools visible at chat start. ``search_tools`` unlocks more on demand; tools
-# not in this set only become visible after the LLM hits them.
-CORE_TOOLS: set[str] = {
-    "list_directory",
-    "read_file",
-    "write_file",
-    "search_files",
-    "patch",
-    "terminal",
-    "process",
-    "browser_navigate",
-    "browser_click",
-    "browser_type",
-    "browser_snapshot",
-    "search_tools",
-    "web_search",
-    "web_extract",
-    "image_generate",
-    "text_to_speech_tool",
-    "send_message_tool",
-    "agent_delegate_tool",
-    "cronjob",
-    "memory_retain",
-    "memory_recall",
-    "memory_forget",
-    "skill_manage",
-    "skill_view",
-    "skills_list",
-}
-
 TrackTask = Callable[[asyncio.Task], None]
 
 
