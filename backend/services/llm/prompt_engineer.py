@@ -230,6 +230,21 @@ _TEXTURE_RIG_PREFIX: dict[str, str] = {
 
 _TEXTURE_FORMAT_SUFFIX = "seamless 平铺、可平铺（tileable）。均匀打光、无方向性阴影（even diffuse lighting, no directional shadows）。高细节、清晰可辨。无背景、无边框、无水印。"
 
+# Non-albedo channels don't encode lighting, so the "even diffuse lighting" /
+# "no directional shadows" clauses are misleading. Use a trimmed suffix that
+# keeps the universally-relevant directives (tileable, no watermark, no border).
+_TEXTURE_FORMAT_SUFFIX_TECHNICAL = "seamless 平铺、可平铺（tileable）。高细节、清晰可辨。无背景、无边框、无水印。"
+
+# Per-channel suffix appended to the texture prompt. Albedo has no extra clause
+# (the rig-type prefix already describes the base map). The non-albedo channels
+# carry visual-convention instructions the provider needs to render the right
+# image kind (tangent-space blue-purple normal, grayscale roughness, etc.).
+_TEXTURE_CHANNEL_SUFFIX: dict[str, str] = {
+    "normal": " 法线贴图（normal map），RGB 蓝紫偏向，凸显表面的缝线、皱褶、材质凹凸纹理（tangent space normal map, blue-purple tint, surface bumps and creases）。",
+    "roughness": " 粗糙度贴图（roughness map），单色灰阶图，白高粗糙黑高光，清晰反光区域区分（grayscale roughness map, monochrome, specularity roughness mask）。",
+    "metalness": " 金属度贴图（metalness map），单色灰阶图，黑色非金属白色金属，清晰材质边界（grayscale metalness map, monochrome, black non-metallic, white metallic mask）。",
+}
+
 
 def _persona_payload(persona: Persona) -> dict:
     """Falls back to ``{}`` so a half-finished persona still yields a prompt."""
@@ -307,14 +322,23 @@ async def enhance_avatar_prompt(db: Session | None, user_id: int | None, persona
     return _strip_markdown_fence(raw)
 
 
-def build_texture_prompt(*, description: str, feedback: str | None = None, rig_type: str = "biped") -> str:
+def build_texture_prompt(*, description: str, feedback: str | None = None, rig_type: str = "biped", channel: str = "albedo") -> str:
     """直接构造 PBR 纹理图 image-gen prompt — 无 LLM 翻译。
 
     ``rig_type`` selects the texture-type prefix (clothing for bipeds, fur/scale
     patterns for quadrupeds, feather patterns for avians, etc.).
+    ``channel`` supports 'albedo', 'normal', 'roughness', and 'metalness'.
     """
     prefix = _TEXTURE_RIG_PREFIX.get(rig_type, _TEXTURE_RIG_PREFIX["biped"])
     prompt = f"{prefix} {description}。"
     if feedback and feedback.strip():
         prompt += f"（用户反馈：{feedback.strip()}）"
-    return prompt + _TEXTURE_FORMAT_SUFFIX
+
+    if channel_suffix := _TEXTURE_CHANNEL_SUFFIX.get(channel):
+        prompt += channel_suffix
+
+    # Albedo (color) maps need even-lighting instructions; technical maps
+    # (normal/roughness/metalness) use the trimmed suffix to avoid misleading
+    # lighting directives that dilute the channel-specific instructions.
+    format_suffix = _TEXTURE_FORMAT_SUFFIX if channel == "albedo" else _TEXTURE_FORMAT_SUFFIX_TECHNICAL
+    return prompt + format_suffix

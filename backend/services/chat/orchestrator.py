@@ -104,6 +104,7 @@ async def run_chat_turn(
                 on_first_chunk=set_stream_emitted,
                 reasoning_effort=reasoning_effort,
                 service_tier=service_tier,
+                allowed_emotions=inputs.allowed_emotions,
             )
 
         def set_stream_emitted() -> None:

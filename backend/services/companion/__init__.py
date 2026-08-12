@@ -33,7 +33,15 @@ from .interaction_stats import record_interaction
 from .memory_admin import delete_memory, list_memories, memory_counts, update_memory, upsert_slotted_memory
 from .memory_bootstrap import build_user_profile_extras, extract_user_profile, read_user_profile, record_user_profile
 from .memory_format import format_auto_inject_block, format_inferred_profile_block, format_memories_block
-from .model_service import ModelGenerationError, ModelGenerationInProgressError, emit_wardrobe_updated, generate_companion_model, get_active_model, signed_model_url
+from .model_service import (
+    ModelGenerationError,
+    ModelGenerationInProgressError,
+    emit_wardrobe_gift,
+    emit_wardrobe_updated,
+    generate_companion_model,
+    get_active_model,
+    signed_model_url,
+)
 from .outfit_normalizer import normalize_outfit
 from .persona_service import (
     ONBOARDING_FIELDS,
@@ -54,6 +62,7 @@ from .voice_catalog import design_voice, list_tts_voices, match_user_voice, norm
 from .wardrobe_service import (
     WardrobeSourceExpiredError,
     confirm_wardrobe_item,
+    decline_wardrobe_item,
     delete_wardrobe_item,
     discard_wardrobe_preview,
     equip_wardrobe_item,
@@ -90,9 +99,11 @@ __all__ = [
     "confirm_wardrobe_item",
     "delete_memory",
     "delete_wardrobe_item",
+    "decline_wardrobe_item",
     "design_voice",
     "discard_wardrobe_preview",
     "emit_wardrobe_updated",
+    "emit_wardrobe_gift",
     "equip_wardrobe_item",
     "extract_user_profile",
     "find_unmatched_tags",

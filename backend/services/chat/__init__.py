@@ -2,7 +2,7 @@ import importlib
 import sys
 from typing import Any
 
-from .affect import ALLOWED_EMOTIONS
+from .affect import BUILTIN_EMOTIONS
 from .chat_emitter import Emitter, HeadlessEmitter
 from .history import build_session_messages
 from .message_sanitization import truncate_chat_history
@@ -32,7 +32,7 @@ def __getattr__(name: str) -> Any:
 # Mark the lazy submodules so ``from services.chat import orchestrator``
 # (rare but legitimate) still works via __getattr__.
 __all__ = [
-    "ALLOWED_EMOTIONS",
+    "BUILTIN_EMOTIONS",
     "Emitter",
     "HeadlessEmitter",
     "build_session_messages",

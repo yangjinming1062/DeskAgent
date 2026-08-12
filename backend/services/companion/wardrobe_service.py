@@ -154,27 +154,55 @@ async def preview_wardrobe_texture(
     db: Session, *, user_id: int, description: str, image_bytes: bytes | None = None, content_type: str | None = None, feedback: str | None = None
 ) -> WardrobePreviewResponse:
     rig_type = await _resolve_rig_type(db, user_id)
-    prompt = build_texture_prompt(description=description, feedback=feedback, rig_type=rig_type)
     reference_data_uri = build_data_uri(image_bytes, content_type) if image_bytes else None
-    result_json = await image_generation_tool(prompt=prompt, reference_image=reference_data_uri, llm_config={}, size="1024x1024", n=1, user_id=user_id)
-    src_url = first_image_url(result_json)
-    if not src_url:
-        raise RuntimeError("Texture generation failed: no URL in provider response")
 
-    # If the tool already persisted the result to temp-media (the base64
-    # provider path), reuse that file directly instead of downloading and
-    # re-saving — which would orphan the first copy on disk.
-    if "/api/media/files/" in src_url:
-        file_id = src_url.rsplit("/", 1)[-1].split("?")[0]
-        return WardrobePreviewResponse(url=src_url, prompt=prompt, file_id=file_id)
+    channels = ["albedo", "normal", "roughness", "metalness"]
+    prompts = {ch: build_texture_prompt(description=description, feedback=feedback, rig_type=rig_type, channel=ch) for ch in channels}
 
-    fetched = await _download_texture_with_mime(src_url)
-    if fetched is None:
-        raise RuntimeError("Texture download failed")
+    async def _gen_one(ch: str) -> tuple[str, str] | None:
+        try:
+            result_json = await image_generation_tool(prompt=prompts[ch], reference_image=reference_data_uri, llm_config={}, size="1024x1024", n=1, user_id=user_id)
+            src_url = first_image_url(result_json)
+            if not src_url:
+                return None
+            if "/api/media/files/" in src_url:
+                fid = src_url.rsplit("/", 1)[-1].split("?")[0]
+                return src_url, fid
+            fetched = await _download_texture_with_mime(src_url)
+            if fetched is None:
+                return None
+            data, ct, ext = fetched
+            fid, pub_url = save_file(data, session_id="", content_type=ct, ext=ext)
+            return pub_url, fid
+        except Exception as exc:
+            logger.warning("PBR texture channel generation failed", extra={"channel": ch, "error": str(exc)})
+            return None
 
-    data, content_type, ext = fetched
-    file_id, public_url = save_file(data, session_id="", content_type=content_type, ext=ext)
-    return WardrobePreviewResponse(url=public_url, prompt=prompt, file_id=file_id)
+    results = await asyncio.gather(*[_gen_one(ch) for ch in channels], return_exceptions=True)
+    res_dict: dict[str, tuple[str, str]] = {}
+    for ch, res in zip(channels, results):
+        if isinstance(res, tuple) and res is not None:
+            res_dict[ch] = res
+
+    if "albedo" not in res_dict:
+        raise RuntimeError("Texture generation failed: no URL in provider response for albedo channel")
+
+    albedo_url, albedo_fid = res_dict["albedo"]
+    norm_url, norm_fid = res_dict["normal"] if "normal" in res_dict else (None, None)
+    rough_url, rough_fid = res_dict["roughness"] if "roughness" in res_dict else (None, None)
+    metal_url, metal_fid = res_dict["metalness"] if "metalness" in res_dict else (None, None)
+
+    return WardrobePreviewResponse(
+        url=albedo_url,
+        prompt=prompts["albedo"],
+        file_id=albedo_fid,
+        normal_url=norm_url,
+        normal_file_id=norm_fid,
+        roughness_url=rough_url,
+        roughness_file_id=rough_fid,
+        metalness_url=metal_url,
+        metalness_file_id=metal_fid,
+    )
 
 
 async def _download_texture_with_mime(url: str) -> tuple[bytes, str, str] | None:
@@ -212,7 +240,22 @@ async def _download_texture_with_mime(url: str) -> tuple[bytes, str, str] | None
         return None
 
 
-async def confirm_wardrobe_item(db: Session, *, user_id: int, file_id: str, name: str, prompt: str | None = None) -> WardrobeItem:
+async def confirm_wardrobe_item(
+    db: Session,
+    *,
+    user_id: int,
+    file_id: str,
+    name: str,
+    prompt: str | None = None,
+    normal_file_id: str | None = None,
+    roughness_file_id: str | None = None,
+    metalness_file_id: str | None = None,
+    equip: bool = True,
+    origin: str = "user",
+    gift_state: str | None = None,
+    gift_reason: str | None = None,
+    gift_message: str | None = None,
+) -> WardrobeItem:
     res = get_file_path(file_id)
     if res is None:
         raise WardrobeSourceExpiredError(f"temp-media file expired for file_id {file_id}")
@@ -223,17 +266,51 @@ async def confirm_wardrobe_item(db: Session, *, user_id: int, file_id: str, name
         raise WardrobeSourceExpiredError(f"temp-media file unreadable: {exc}") from exc
 
     texture_url = save_companion_asset(data, user_id=user_id, label="wardrobe_texture", ext="png")
+
+    async def _resolve_channel(fid: str | None, label: str) -> str | None:
+        if not fid:
+            return None
+        cp = get_file_path(fid)
+        if cp is None:
+            return None
+        try:
+            cdata = await asyncio.to_thread(Path(cp[0]).read_bytes)
+            return save_companion_asset(cdata, user_id=user_id, label=label, ext="png")
+        except OSError:
+            return None
+
+    normal_url = await _resolve_channel(normal_file_id, "wardrobe_normal")
+    roughness_url = await _resolve_channel(roughness_file_id, "wardrobe_roughness")
+    metalness_url = await _resolve_channel(metalness_file_id, "wardrobe_metalness")
+
     outfit_desc = await normalize_outfit(chat, raw_input=prompt or name, persona_definition=_persona_definition(db, user_id), user_id=user_id, db=db)
-    _unequip_all(db, user_id)
+    if equip:
+        _unequip_all(db, user_id)
+
     item = WardrobeItem(
-        user_id=user_id, name=name, category="generated", material_overrides_json="{}", texture_url=texture_url, prompt=prompt, outfit_description=outfit_desc, equipped=True
+        user_id=user_id,
+        name=name,
+        category="generated",
+        material_overrides_json="{}",
+        texture_url=texture_url,
+        normal_url=normal_url,
+        roughness_url=roughness_url,
+        metalness_url=metalness_url,
+        prompt=prompt,
+        outfit_description=outfit_desc,
+        equipped=equip,
+        origin=origin,
+        gift_state=gift_state,
+        gift_reason=gift_reason,
+        gift_message=gift_message,
     )
     db.add(item)
     db.commit()
     db.refresh(item)
     _re_sign_texture(item)
-    # confirm auto-equips, so sync the outfit description into the persona.
-    update_outfit_field(db, user_id, outfit_desc)
+    if equip:
+        # confirm auto-equips, so sync the outfit description into the persona.
+        update_outfit_field(db, user_id, outfit_desc)
     return item
 
 
@@ -259,11 +336,29 @@ def equip_wardrobe_item(db: Session, user_id: int, item_id: int) -> WardrobeItem
         raise ValueError("Wardrobe item not found")
     _unequip_all(db, user_id)
     item.equipped = True
+    if item.gift_state in ("pending", "declined"):
+        item.gift_state = "accepted"
     db.commit()
     db.refresh(item)
     _re_sign_texture(item)
     if item.outfit_description:
         update_outfit_field(db, user_id, item.outfit_description)
+    return item
+
+
+def decline_wardrobe_item(db: Session, user_id: int, item_id: int) -> WardrobeItem:
+    item = db.query(WardrobeItem).filter(WardrobeItem.user_id == user_id, WardrobeItem.id == item_id).one_or_none()
+    if item is None:
+        raise ValueError("Wardrobe item not found")
+    # Only pending companion-origin gifts can be declined — guarding here
+    # prevents accidentally stamping "declined" on a user-created or already
+    # resolved item.
+    if item.origin != "companion" or item.gift_state != "pending":
+        raise ValueError("Wardrobe item is not a pending gift")
+    item.gift_state = "declined"
+    db.commit()
+    db.refresh(item)
+    _re_sign_texture(item)
     return item
 
 

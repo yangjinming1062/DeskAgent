@@ -112,7 +112,7 @@ SEND_MESSAGE_SCHEMA = {
             "target_webhook": {"type": "string", "description": "Optional webhook URL to POST to (external bot). Omit to deliver to the user's desktop companion."},
             "affect": {
                 "type": "string",
-                "description": "Optional emotion token to attach to the proactive message so the desktop can drive the EMOTIONAL state (one of: happy, sad, surprised, excited, confused, concerned, shy, proud, grateful, playful, bored, lonely, sleepy, curious, embarrassed, apologetic, neutral). The desktop still applies the disturbance tier gate — quiet suppresses text but keeps the affect cue.",
+                "description": "Optional emotion token to attach to the proactive message so the desktop can drive the EMOTIONAL state (see system prompt Affect guidance for available emotions). The desktop still applies the disturbance tier gate — quiet suppresses text but keeps the affect cue.",
             },
         },
         "required": ["message"],

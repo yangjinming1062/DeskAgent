@@ -1,8 +1,9 @@
 import re
+from typing import Any
 
-# LLM emotion vocabulary (ARCHITECTURE §7.5). Unknown values fall back to
-# ``neutral`` so a malformed emit doesn't poison the renderer state.
-ALLOWED_EMOTIONS: frozenset[str] = frozenset(
+# Built-in 17 baseline emotions (ARCHITECTURE §7.5). Unknown LLM tokens fall
+# back to ``neutral`` so a malformed emit doesn't poison renderer state.
+BUILTIN_EMOTIONS: frozenset[str] = frozenset(
     {
         "happy",
         "sad",
@@ -43,23 +44,72 @@ _PARTIAL_SPATIAL_RE = re.compile(r"^\s*\[spatial:([a-z_]+)?(?:,target:([^\]\n]*)
 # the scrubber drains so downstream code surfaces it as text.
 _MAX_TAG_LEN: int = 256
 
-COMPANION_AFFECT_GUIDANCE = (
-    "# Companion Affect & Embodied Movement\n"
-    "You are a companion with a visible on-screen 3D avatar. "
-    "To convey your emotion and autonomously control your physical position/movement, "
-    "begin your text response with an affect tag and an optional spatial tag on their own lines:\n"
-    "    [affect:EMOTION]\n"
-    "    [spatial:LOCALE,target:KEYWORD]  (optional)\n"
-    "followed by your actual reply. EMOTION must be one of: " + ", ".join(sorted(ALLOWED_EMOTIONS)) + ".\n"
-    "LOCALE must be one of: " + ", ".join(sorted(ALLOWED_LOCALES)) + ". KEYWORD is an active window or app name.\n"
-    "Examples:\n"
-    "    [affect:happy]\n"
-    "    I'm glad to see you! What are we working on today?\n"
-    "    [affect:curious]\n"
-    "    [spatial:perch,target:bilibili]\n"
-    "    That video looks interesting! I'll watch it together with you.\n"
-    "The tags are stripped before the user sees your message, so never explain them."
-)
+
+def resolve_allowed_emotions(db: Any, user_id: int | None = None) -> frozenset[str]:
+    """Return BUILTIN_EMOTIONS merged with user's custom CompanionExpression names."""
+    if user_id is None or db is None:
+        return BUILTIN_EMOTIONS
+    try:
+        from modules.companion import CompanionExpression
+
+        rows = db.query(CompanionExpression.name).filter(CompanionExpression.user_id == user_id).all()
+        if not rows:
+            return BUILTIN_EMOTIONS
+        return BUILTIN_EMOTIONS | frozenset(r[0] for r in rows if r[0])
+    except Exception:
+        return BUILTIN_EMOTIONS
+
+
+def resolve_custom_expressions(db: Any, user_id: int | None = None) -> list[Any]:
+    """Shared CompanionExpression fetch for resolve_allowed_emotions + prompt builder."""
+    if user_id is None or db is None:
+        return []
+    try:
+        from modules.companion import CompanionExpression
+
+        return db.query(CompanionExpression).filter(CompanionExpression.user_id == user_id).all()
+    except Exception:
+        return []
+
+
+def build_affect_guidance(custom_expressions: list[Any] | None = None) -> str:
+    """Build affect guidance prompt including builtin emotions and user-custom expressions with their labels and descriptions."""
+    emotions_set = set(BUILTIN_EMOTIONS)
+    custom_desc_lines: list[str] = []
+    if custom_expressions:
+        for expr in custom_expressions:
+            name = getattr(expr, "name", "")
+            label = getattr(expr, "label", "")
+            desc = getattr(expr, "description", "")
+            if name:
+                emotions_set.add(name)
+                if desc or label:
+                    desc_str = f" ({label}: {desc})" if desc else f" ({label})"
+                    custom_desc_lines.append(f"- {name}{desc_str}")
+
+    guidance = (
+        "# Companion Affect & Embodied Movement\n"
+        "You are a companion with a visible on-screen 3D avatar. "
+        "To convey your emotion and autonomously control your physical position/movement, "
+        "begin your text response with an affect tag and an optional spatial tag on their own lines:\n"
+        "    [affect:EMOTION]\n"
+        "    [spatial:LOCALE,target:KEYWORD]  (optional)\n"
+        "followed by your actual reply. EMOTION must be one of: " + ", ".join(sorted(emotions_set)) + ".\n"
+    )
+    if custom_desc_lines:
+        guidance += "Custom emotion details:\n" + "\n".join(custom_desc_lines) + "\n"
+    guidance += (
+        "LOCALE must be one of: " + ", ".join(sorted(ALLOWED_LOCALES)) + ". KEYWORD is an active window or app name.\n"
+        "Examples:\n"
+        "    [affect:happy]\n"
+        "    I'm glad to see you! What are we working on today?\n"
+        "    [affect:curious]\n"
+        "    [spatial:perch,target:bilibili]\n"
+        "    That video looks interesting! I'll watch it together with you.\n"
+        "The tags are stripped before the user sees your message, so never explain them."
+    )
+    return guidance
+
 
 COMPANION_OUTFIT_GUIDANCE = (
     "# Outfit-Behaviour Alignment\n"
@@ -86,11 +136,12 @@ class AffectScrubber:
     """Strip leading ``[affect:emotion]`` and ``[spatial:locale,target:app]``
     markers from an LLM stream and surface the captured values."""
 
-    def __init__(self) -> None:
+    def __init__(self, allowed_emotions: frozenset[str] | None = None) -> None:
         self._buf: str = ""
         self._emotion: str | None = None
         self._spatial_locale: str | None = None
         self._spatial_target: str | None = None
+        self._allowed: frozenset[str] = allowed_emotions if allowed_emotions is not None else BUILTIN_EMOTIONS
 
     @property
     def emotion(self) -> str | None:
@@ -152,7 +203,7 @@ class AffectScrubber:
         if token is None:
             return
         normalized = token.lower()
-        self._emotion = normalized if normalized in ALLOWED_EMOTIONS else "neutral"
+        self._emotion = normalized if normalized in self._allowed else "neutral"
 
     def _set_spatial(self, loc: str | None, target: str | None) -> None:
         if loc is None:

@@ -2,6 +2,27 @@ import type { SpriteEmotion } from '@/companion/companion-store'
 import type { ReactionBucket } from '@/shared/types/reactions'
 
 import type { ClipDef } from './clips-biped'
+import type { CompanionExpression } from './model-store'
+
+/** Build a lowercase-keyed index of custom expressions once per call — avoid
+ * the K-iteration `.find()` plus K `.toLowerCase()` allocations per dispatch. */
+function indexCustomExpressions(
+  customExpressions: CompanionExpression[] | undefined
+): Map<string, CompanionExpression> {
+  const map = new Map<string, CompanionExpression>()
+
+  if (!customExpressions) {
+    return map
+  }
+
+  for (const e of customExpressions) {
+    if (e?.name) {
+      map.set(e.name.toLowerCase(), e)
+    }
+  }
+
+  return map
+}
 
 /** 按 tags 交集匹配从候选 clip 中选择动作名。
  *  交集匹配 > 0 优先；通用/无专属标签 clip 始终作为候选池的一部分。
@@ -74,56 +95,73 @@ export function resolveInteractionClip(
   return selectClipByTags(candidates, companionTags, available)
 }
 
-const POSITIVE_EMOTIONS: ReadonlySet<SpriteEmotion> = new Set([
-  'happy',
-  'excited',
-  'proud',
-  'grateful',
-  'playful',
-  'curious'
-])
-
-const NEGATIVE_EMOTIONS: ReadonlySet<SpriteEmotion> = new Set([
-  'sad',
-  'concerned',
-  'shy',
-  'bored',
-  'lonely',
-  'embarrassed',
-  'apologetic'
-])
+export const BUILTIN_VALENCE: Record<string, 'positive' | 'negative' | 'neutral'> = {
+  happy: 'positive',
+  excited: 'positive',
+  proud: 'positive',
+  grateful: 'positive',
+  playful: 'positive',
+  curious: 'positive',
+  surprised: 'positive',
+  sad: 'negative',
+  concerned: 'negative',
+  shy: 'negative',
+  bored: 'negative',
+  lonely: 'negative',
+  embarrassed: 'negative',
+  apologetic: 'negative',
+  confused: 'negative',
+  sleepy: 'neutral',
+  neutral: 'neutral'
+}
 
 /** 解析情绪动作 clip。 */
 export function resolveEmotionClip(
   emotion: SpriteEmotion,
   companionTags: string[],
   library: Record<string, ClipDef>,
-  available: Set<string>
+  available: Set<string>,
+  customExpressions?: CompanionExpression[]
 ): string | null {
   const allClips = Object.values(library)
-  let candidates: ClipDef[] = []
+  const normEmotion = emotion.toLowerCase()
+  const customIndex = indexCustomExpressions(customExpressions)
+  const customExpr = customIndex.get(normEmotion)
+  const valence = customExpr?.valence ?? BUILTIN_VALENCE[normEmotion] ?? 'neutral'
+  const exprTags = customExpr?.tags ?? []
+  const combinedTags = Array.from(new Set([...companionTags, ...exprTags]))
 
-  if (POSITIVE_EMOTIONS.has(emotion)) {
-    candidates = allClips.filter(c => c.category === 'emotion-positive' || c.name.includes('happy'))
-  } else if (NEGATIVE_EMOTIONS.has(emotion)) {
-    candidates = allClips.filter(c => c.category === 'emotion-negative' || c.category === 'neg-ext')
-  } else if (emotion === 'surprised') {
-    candidates = allClips.filter(
-      c => c.category === 'surprise' || c.name.includes('surprise') || c.name.includes('shock')
+  // 1. 按 valence 筛选候选分类桶
+  let categoryCandidates: ClipDef[] = []
+
+  if (valence === 'positive') {
+    categoryCandidates = allClips.filter(
+      c => c.category === 'emotion-positive' || c.category === 'surprise' || c.name.includes('happy')
     )
-  } else if (emotion === 'confused') {
-    candidates = allClips.filter(
-      c => c.category === 'surprise' || c.name.includes('curious') || c.name.includes('shrug') || c.name === 'thinking'
+  } else if (valence === 'negative') {
+    categoryCandidates = allClips.filter(
+      c =>
+        c.category === 'emotion-negative' ||
+        c.category === 'neg-ext' ||
+        c.category === 'surprise' ||
+        c.name.includes('sad')
     )
-  } else if (emotion === 'sleepy') {
-    candidates = allClips.filter(
-      c => c.name.includes('yawn') || c.name.includes('sleep') || c.name.includes('stretch') || c.category === 'daily'
+  } else {
+    categoryCandidates = allClips.filter(
+      c => c.category === 'daily' || c.category === 'micro' || c.category === 'surprise' || c.name.includes('idle')
     )
   }
+
+  // 2. 查找与表情专属标签交集的 clip
+  const tagMatchedClips =
+    exprTags.length > 0 ? allClips.filter(c => (c.tags ?? []).some(t => exprTags.includes(t))) : []
+
+  // 3. 合并候选池
+  let candidates = Array.from(new Set([...categoryCandidates, ...tagMatchedClips]))
 
   if (candidates.length === 0) {
     candidates = allClips.filter(c => c.name === 'emotional_idle' || c.category === 'state')
   }
 
-  return selectClipByTags(candidates, companionTags, available)
+  return selectClipByTags(candidates, combinedTags, available)
 }

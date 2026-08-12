@@ -10,7 +10,7 @@ import { resolveClip } from './AnimationMap'
 import { resolveEmotionClip, resolveInteractionClip } from './clip-dispatch'
 import { buildClip, type ClipDef } from './clips-biped'
 import { buildClipsForRig, getClipDefs } from './clips-registry'
-import { $availableClipNames } from './model-store'
+import { $availableClipNames, type CompanionExpression } from './model-store'
 import { MorphController } from './MorphController'
 import type { LoadedModelInfo } from './types'
 
@@ -167,6 +167,10 @@ export class CharacterController {
     return { hasMorphTargets: false, hasAnimations: false, clipNames: [], morphNames: [] }
   }
 
+  setCustomExpressions(exprs: readonly { name: string; weights: Record<string, number> }[]): void {
+    this.morph.setCustomExpressions(exprs)
+  }
+
   private disposeRoot(scene: THREE.Scene | null): void {
     // Bump epoch first so in-flight textureLoader callbacks dispose their freshly-decoded texture and bail.
     this.textureEpoch++
@@ -270,7 +274,6 @@ export class CharacterController {
     return true
   }
 
-  /** Drive animation + morphs from the companion state machine. */
   applyState(
     state: SpriteStateName,
     emotion: SpriteEmotion | null,
@@ -278,6 +281,7 @@ export class CharacterController {
       companionTags?: string[]
       interactionBucket?: ReactionBucket
       clipOverride?: string | null
+      customExpressions?: CompanionExpression[]
     }
   ): void {
     this.currentState = state
@@ -296,7 +300,7 @@ export class CharacterController {
         clipName = resolveInteractionClip(ctx.interactionBucket, tags, library, available)
       } else if (state === 'emotional' && emotion) {
         // Tag-driven emotion clip selection
-        clipName = resolveEmotionClip(emotion, tags, library, available)
+        clipName = resolveEmotionClip(emotion, tags, library, available, ctx?.customExpressions)
       }
 
       // Spec state→clip map (MODEL_SPEC §3); last resort when no override / interaction / emotion clip resolves.

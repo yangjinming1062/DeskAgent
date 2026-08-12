@@ -95,6 +95,7 @@ async def _stream_llm_response(
     on_first_chunk: Callable[[], None] | None = None,
     reasoning_effort: str | None = None,
     service_tier: str | None = None,
+    allowed_emotions: frozenset[str] | None = None,
 ) -> _LLMTurnResult:
     """One LLM call: stream text + accumulate tool calls + capture usage.
 
@@ -137,7 +138,7 @@ async def _stream_llm_response(
     await emitter.send_json({"type": "message.start"})
 
     scrubber = StreamingThinkScrubber()
-    affect = AffectScrubber()
+    affect = AffectScrubber(allowed_emotions)
     clean_tail = ""  # assigned in try; read in finally to flush on stream errors
 
     try:

@@ -4,7 +4,7 @@ from components import SESSION_LOCAL, coerce_hour_0_23, coerce_non_negative_int,
 from modules.companion import Persona
 from pydantic import BaseModel, Field
 
-from ..chat import ALLOWED_EMOTIONS
+from ..chat.affect import resolve_allowed_emotions
 from ..llm import LLMRuntimeError, UserLlmConfig, call_with_retry, client_for_config
 from .affect_emit import emit_companion_affect
 from .memory_format import format_memories_block
@@ -34,7 +34,7 @@ class AffectCheckResult(BaseModel):
 
 _MAX_RESPONSE_TOKENS = 200
 
-_AFFECT_CHECK_PROMPT = (
+_AFFECT_CHECK_PROMPT_TEMPLATE = (
     "你是桌面伙伴的情绪推理引擎。基于以下信息判断此刻是否应该向用户表达一个情绪。\n"
     "注意：这里说的「表达情绪」只是视觉上的情绪状态切换（精灵的表情/动作变化），"
     "不是发消息、不是说话——用户不会看到任何文字。\n\n"
@@ -53,7 +53,7 @@ _AFFECT_CHECK_PROMPT = (
     "只返回 JSON，不要有任何其他文字：\n"
     '{{"should_express": true/false, "emotion": "EMOTION", "reason": "简短说明"}}\n\n'
     "emotion 必须是以下之一（如果 should_express=false，填 neutral）："
-    f" {', '.join(sorted(ALLOWED_EMOTIONS))}"
+    " {allowed_emotions}"
 )
 
 
@@ -65,6 +65,7 @@ async def check_affect(user_id: int, idle_seconds: float, local_hour: int, llm_c
             return AffectCheckResult(expressed=False, reason="persona not ready")
         persona_extras = persona.system_prompt_extras
         memories_block = format_memories_block(db, user_id)
+        allowed_emotions = resolve_allowed_emotions(db, user_id)
 
     model_name = llm_config.model_name if isinstance(llm_config, UserLlmConfig) else (llm_config.get("model_name") if isinstance(llm_config, dict) else "")
     if not model_name:
@@ -73,7 +74,10 @@ async def check_affect(user_id: int, idle_seconds: float, local_hour: int, llm_c
     idle_seconds = float(coerce_non_negative_int(idle_seconds))
     local_hour = coerce_hour_0_23(local_hour)
     idle_minutes = round(idle_seconds / 60, 2)
-    prompt = _AFFECT_CHECK_PROMPT.format(persona=persona_extras, memories=memories_block, idle_minutes=idle_minutes, local_hour=local_hour if local_hour >= 0 else "未知")
+    emotions_str = ", ".join(sorted(allowed_emotions))
+    prompt = _AFFECT_CHECK_PROMPT_TEMPLATE.format(
+        persona=persona_extras, memories=memories_block, idle_minutes=idle_minutes, local_hour=local_hour if local_hour >= 0 else "未知", allowed_emotions=emotions_str
+    )
 
     try:
         client = client_for_config(llm_config)
@@ -92,7 +96,7 @@ async def check_affect(user_id: int, idle_seconds: float, local_hour: int, llm_c
     emotion = str(parsed.get("emotion") or "neutral").lower().strip()
     reason = str(parsed.get("reason") or "")[:200]
 
-    if not should_express or emotion not in ALLOWED_EMOTIONS or emotion == "neutral":
+    if not should_express or emotion not in allowed_emotions or emotion == "neutral":
         logger.info("affect_check: no expression", extra={"user_id": user_id, "emotion": emotion, "reason": reason})
         return AffectCheckResult(expressed=False, emotion=emotion, reason=reason)
 

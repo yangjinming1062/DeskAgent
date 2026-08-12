@@ -17,6 +17,7 @@ from modules.companion import (
     AvatarFromImageRequest,
     AvatarGenerateRequest,
     AvatarHistoryResponse,
+    CompanionExpression,
     CompanionModelResponse,
     FullbodyGenerateRequest,
     ModelGenerateRequest,
@@ -45,6 +46,7 @@ from services.companion import (
     avatar_response,
     confirm_portrait,
     confirm_wardrobe_item,
+    decline_wardrobe_item,
     delete_wardrobe_item,
     discard_wardrobe_preview,
     emit_wardrobe_updated,
@@ -255,6 +257,27 @@ def get_animations(auth: tuple[User, LoginRecord] = Depends(get_current_session)
         return AnimationClipResponse(clips=[])
     clips = safe_json_loads(model.animation_clips_json or "[]", default=[])
     return AnimationClipResponse(clips=clips if isinstance(clips, list) else [])
+
+
+@router.get("/expressions")
+def get_expressions(auth: tuple[User, LoginRecord] = Depends(get_current_session), db: Session = Depends(get_db)) -> dict[str, list[dict]]:
+    user, _ = auth
+    rows = db.query(CompanionExpression).filter(CompanionExpression.user_id == user.id).all()
+    exprs = []
+    for r in rows:
+        exprs.append(
+            {
+                "id": r.id,
+                "name": r.name,
+                "label": r.label,
+                "valence": r.valence,
+                "description": r.description,
+                "weights": safe_json_loads(r.weights_json or "{}", default={}),
+                "tags": safe_json_loads(r.tags_json or "[]", default=[]),
+                "scale_boost": r.scale_boost,
+            }
+        )
+    return {"expressions": exprs}
 
 
 @router.post("/animations/generate", response_model=AnimationClipResponse)
@@ -499,6 +522,17 @@ def put_wardrobe_equip(body: WardrobeEquipRequest, auth: tuple[User, LoginRecord
     return wardrobe_response(item)
 
 
+@router.put("/wardrobe/{item_id}/decline", response_model=WardrobeItemResponse)
+def put_wardrobe_decline(item_id: int, auth: tuple[User, LoginRecord] = Depends(get_current_session), db: Session = Depends(get_db)) -> WardrobeItemResponse:
+    user, _ = auth
+    try:
+        item = decline_wardrobe_item(db, user.id, item_id)
+        emit_wardrobe_updated(user.id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Wardrobe item not found")
+    return wardrobe_response(item)
+
+
 @router.delete("/wardrobe/{item_id}")
 def delete_wardrobe(item_id: int, auth: tuple[User, LoginRecord] = Depends(get_current_session), db: Session = Depends(get_db)) -> dict:
     user, _ = auth
@@ -529,7 +563,16 @@ async def post_wardrobe_preview(
 async def post_wardrobe_confirm(body: WardrobeConfirmRequest, auth: tuple[User, LoginRecord] = Depends(get_current_session), db: Session = Depends(get_db)) -> WardrobeItemResponse:
     user, _ = auth
     try:
-        item = await confirm_wardrobe_item(db, user_id=user.id, file_id=body.file_id, name=body.name, prompt=body.prompt)
+        item = await confirm_wardrobe_item(
+            db,
+            user_id=user.id,
+            file_id=body.file_id,
+            name=body.name,
+            prompt=body.prompt,
+            normal_file_id=body.normal_file_id,
+            roughness_file_id=body.roughness_file_id,
+            metalness_file_id=body.metalness_file_id,
+        )
     except WardrobeSourceExpiredError as exc:
         raise HTTPException(status_code=409, detail={"error": "换装草稿已过期，请重新生成", "reason": str(exc)})
     except (RuntimeError, MissingLlmConfigError) as exc:

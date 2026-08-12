@@ -24,7 +24,7 @@ const ALIASES: Record<string, string[]> = {
 
 /** Emotion → weighted semantic morph influences. Missing morphs are
  * silently skipped — only morphs present in the model contribute. */
-const EMOTION_PRESETS: Record<SpriteEmotion, Record<string, number>> = {
+const EMOTION_PRESETS: Record<string, Record<string, number>> = {
   happy: { smile: 0.8, cheekRaise: 0.4, eyeSquint: 0.3 },
   sad: { frown: 0.6, browDown: 0.5, eyelidDroop: 0.3 },
   surprised: { jawOpen: 0.3, eyeWide: 0.7, browUp: 0.6 },
@@ -48,6 +48,7 @@ export class MorphController {
   private resolved: Record<string, [number, number][]> = {}
   /** Cached at discovery time to avoid per-frame allocations. */
   private resolvedEntries: [string, [number, number][]][] = []
+  private customPresets: Record<string, Record<string, number>> = {}
   private blinkHits: [number, number][] = []
   private targets: Record<string, number> = {}
   private blinkTimer = 0
@@ -55,6 +56,16 @@ export class MorphController {
   private blinkPhase: 'idle' | 'closing' | 'opening' = 'idle'
   private blinkElapsed = 0
   private lipSyncAmplitude = 0
+
+  setCustomExpressions(exprs: readonly { name: string; weights: Record<string, number> }[]): void {
+    this.customPresets = {}
+
+    for (const expr of exprs) {
+      if (expr.name && expr.weights) {
+        this.customPresets[expr.name.toLowerCase()] = expr.weights
+      }
+    }
+  }
 
   setLipSyncAmplitude(amp: number): void {
     this.lipSyncAmplitude = amp
@@ -117,16 +128,21 @@ export class MorphController {
   }
 
   setExpression(emotion: SpriteEmotion | null): void {
-    this.targets = {}
+    if (!emotion) {
+      this.targets = {}
 
-    if (emotion) {
-      const preset = EMOTION_PRESETS[emotion]
+      return
+    }
 
-      if (preset) {
-        for (const [semantic, weight] of Object.entries(preset)) {
-          if (semantic in this.resolved) {
-            this.targets[semantic] = weight
-          }
+    const key = emotion.toLowerCase()
+    const preset = this.customPresets[key] ?? EMOTION_PRESETS[key]
+
+    if (preset) {
+      this.targets = {}
+
+      for (const [semantic, weight] of Object.entries(preset)) {
+        if (semantic in this.resolved) {
+          this.targets[semantic] = weight
         }
       }
     }

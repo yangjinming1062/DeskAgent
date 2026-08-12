@@ -21,6 +21,9 @@ interface WardrobePreviewResponse {
   url: string
   prompt: string
   file_id: string
+  normal_file_id?: string
+  roughness_file_id?: string
+  metalness_file_id?: string
 }
 
 interface WardrobeDesignPanelProps {
@@ -138,7 +141,10 @@ export function WardrobeDesignPanel({ onClose }: WardrobeDesignPanelProps): Reac
           url: res.url,
           prompt: res.prompt,
           fileId: res.file_id,
-          description: desc
+          description: desc,
+          normalFileId: res.normal_file_id,
+          roughnessFileId: res.roughness_file_id,
+          metalnessFileId: res.metalness_file_id
         })
         setFeedback('')
         setNameInput(desc.slice(0, 16))
@@ -188,15 +194,19 @@ export function WardrobeDesignPanel({ onClose }: WardrobeDesignPanelProps): Reac
         body: {
           file_id: currentCandidate.fileId,
           name: finalName,
-          prompt: currentCandidate.prompt
+          prompt: currentCandidate.prompt,
+          normal_file_id: currentCandidate.normalFileId,
+          roughness_file_id: currentCandidate.roughnessFileId,
+          metalness_file_id: currentCandidate.metalnessFileId
         }
       })
 
       if (res) {
+        // Discard all temp files from non-selected candidates (all PBR channels).
         const otherIds = candidates
-          .filter(c => c.fileId !== currentCandidate.fileId)
-          .map(c => c.fileId)
-          .filter(Boolean)
+          .filter(c => c !== currentCandidate)
+          .flatMap(c => [c.fileId, c.normalFileId, c.roughnessFileId, c.metalnessFileId])
+          .filter((id): id is string => Boolean(id))
 
         clearWardrobeCandidates()
 
@@ -227,6 +237,23 @@ export function WardrobeDesignPanel({ onClose }: WardrobeDesignPanelProps): Reac
   }
 
   // Equip existing wardrobe item
+  const handleDeclineGift = async (itemId: number, e: React.MouseEvent) => {
+    e.stopPropagation()
+
+    try {
+      await window.deskagent.api<WardrobeItem>({
+        path: `/api/companion/wardrobe/${itemId}/decline`,
+        method: 'PUT'
+      })
+      setStatusMessage({ type: 'success', text: '已谢绝该装扮礼物' })
+    } catch (err) {
+      setStatusMessage({
+        type: 'error',
+        text: err instanceof Error ? err.message : '操作失败'
+      })
+    }
+  }
+
   const handleEquipExisting = async (itemId: number) => {
     try {
       void discardAllPreviewFiles()
@@ -256,8 +283,8 @@ export function WardrobeDesignPanel({ onClose }: WardrobeDesignPanelProps): Reac
   async function discardAllPreviewFiles(): Promise<void> {
     const ids = $wardrobeCandidates
       .get()
-      .map(c => c.fileId)
-      .filter(Boolean)
+      .flatMap(c => [c.fileId, c.normalFileId, c.roughnessFileId, c.metalnessFileId])
+      .filter((id): id is string => Boolean(id))
 
     clearWardrobeCandidates()
 
@@ -501,18 +528,32 @@ export function WardrobeDesignPanel({ onClose }: WardrobeDesignPanelProps): Reac
               <div className="grid grid-cols-4 gap-2">
                 {wardrobe.map(item => {
                   const isCurrent = !preview && item.equipped
+                  const isPendingGift = item.origin === 'companion' && item.gift_state === 'pending'
 
                   return (
                     <button
-                      className={`flex flex-col items-center gap-1 rounded-lg border p-1.5 text-center text-[10px] transition ${
-                        isCurrent
-                          ? 'border-white/80 bg-white/20 text-white ring-1 ring-white/60'
-                          : 'border-white/15 bg-white/5 text-white/70 hover:border-white/30 hover:bg-white/10'
+                      className={`relative flex flex-col items-center gap-1 rounded-lg border p-1.5 text-center text-[10px] transition ${
+                        isPendingGift
+                          ? 'border-amber-400/50 bg-amber-500/10 text-amber-100 hover:border-amber-400'
+                          : isCurrent
+                            ? 'border-white/80 bg-white/20 text-white ring-1 ring-white/60'
+                            : 'border-white/15 bg-white/5 text-white/70 hover:border-white/30 hover:bg-white/10'
                       }`}
                       key={item.id}
                       onClick={() => void handleEquipExisting(item.id)}
+                      title={item.gift_reason ? `赠礼初衷: ${item.gift_reason}` : undefined}
                       type="button"
                     >
+                      {isPendingGift && (
+                        <button
+                          className="absolute -right-1 -top-1 grid h-4 w-4 place-items-center rounded-full bg-red-500/80 text-[8px] text-white hover:bg-red-600"
+                          onClick={e => void handleDeclineGift(item.id, e)}
+                          title="谢绝礼物"
+                          type="button"
+                        >
+                          ✕
+                        </button>
+                      )}
                       {item.texture_url ? (
                         <img
                           alt={item.name}
@@ -525,8 +566,12 @@ export function WardrobeDesignPanel({ onClose }: WardrobeDesignPanelProps): Reac
                         </div>
                       )}
                       <span className="w-full truncate font-medium">{item.name}</span>
-                      {isCurrent ? (
+                      {isPendingGift ? (
+                        <span className="text-[8px] font-semibold text-amber-300">🎁 待拆礼物</span>
+                      ) : isCurrent ? (
                         <span className="text-[8px] font-semibold text-emerald-300">已装备</span>
+                      ) : item.origin === 'companion' ? (
+                        <span className="text-[8px] text-purple-300">精灵手作</span>
                       ) : (
                         <span className="text-[8px] text-white/30">定制</span>
                       )}

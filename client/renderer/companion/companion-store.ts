@@ -18,25 +18,26 @@ export type SpriteStateName =
   | 'interacting'
   | 'disconnected'
 
-export type SpriteEmotion =
-  | 'happy'
-  | 'sad'
-  | 'surprised'
-  | 'excited'
-  | 'confused'
-  | 'concerned'
-  | 'shy'
-  | 'proud'
-  | 'grateful'
-  | 'playful'
-  | 'bored'
-  | 'lonely'
-  // Mirrors affect.py's ALLOWED_EMOTIONS; ``neutral`` is deliberately absent
-  // — events.ts filters it and maps to a plain idle return.
-  | 'sleepy'
-  | 'curious'
-  | 'embarrassed'
-  | 'apologetic'
+export type SpriteEmotion = string
+
+export const BUILTIN_EMOTIONS: ReadonlySet<string> = new Set([
+  'happy',
+  'sad',
+  'surprised',
+  'excited',
+  'confused',
+  'concerned',
+  'shy',
+  'proud',
+  'grateful',
+  'playful',
+  'bored',
+  'lonely',
+  'sleepy',
+  'curious',
+  'embarrassed',
+  'apologetic'
+])
 
 export const $companionLifecycle = atom<CompanionLifecycle>('unauthed')
 export const $spriteState = atom<SpriteStateName>('idle')

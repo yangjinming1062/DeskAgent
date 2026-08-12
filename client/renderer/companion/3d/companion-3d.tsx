@@ -16,12 +16,14 @@ import { log } from '@/shared/lib/log'
 import { Engine } from './Engine'
 import {
   $equippedItem,
+  $expressions,
   $generatedClips,
   $modelGenError,
   $modelGenProgress,
   $modelGenState,
   $modelInfo,
   $wardrobePreview,
+  hydrateExpressions,
   hydrateGeneratedClips,
   refreshEquippedAndApply
 } from './model-store'
@@ -97,7 +99,8 @@ export function Companion3D(): React.JSX.Element {
 
     const unsubEmotion = $spriteEmotion.listen(emotion => {
       engine.character.applyState($spriteState.get(), emotion, {
-        companionTags: $personalityTags.get()
+        companionTags: $personalityTags.get(),
+        customExpressions: $expressions.get()
       })
     })
 
@@ -107,7 +110,14 @@ export function Companion3D(): React.JSX.Element {
       }
     })
 
+    const unsubExpressions = $expressions.listen(exprs => {
+      if (exprs.length > 0) {
+        engine.character.setCustomExpressions(exprs)
+      }
+    })
+
     void hydrateGeneratedClips()
+    void hydrateExpressions()
 
     // TTS lip-sync — the audio-track AnalyserNode pushes amplitude every frame
     // while audio is playing; we just forward it.

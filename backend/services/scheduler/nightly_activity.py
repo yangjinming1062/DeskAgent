@@ -1,3 +1,4 @@
+import asyncio
 import json
 from datetime import datetime, timedelta
 from typing import Any
@@ -9,6 +10,11 @@ from components import (
     MAX_INFERRED_PROFILE_CONTENT_CHARS,
     NIGHTLY_CONSOLIDATE_MAX_RECALL_ROWS,
     NIGHTLY_CONSOLIDATION_MAX_TOKENS,
+    NIGHTLY_CREATION_ENABLED,
+    NIGHTLY_CREATION_MAX_CLIPS_PER_NIGHT,
+    NIGHTLY_CREATION_MAX_EXPRESSIONS_PER_NIGHT,
+    NIGHTLY_CREATION_MAX_TOKENS,
+    NIGHTLY_CREATION_WARDROBE_MIN_INTERVAL_DAYS,
     NIGHTLY_DIARY_MAX_TOKENS,
     NIGHTLY_MESSAGE_TRUNCATE_CHARS,
     NIGHTLY_PLANNING_MAX_TOKENS,
@@ -19,13 +25,19 @@ from components import (
     safe_json_loads,
     session_scope,
 )
+from modules.companion import CompanionExpression, Persona, WardrobeItem
 from modules.conversation import Conversation, Message
 from modules.memory import Memory
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from services.companion import memory_admin, upsert_slotted_memory
-from services.llm import call_llm_once, resolve_user_llm_config
+from services.companion import memory_admin
+from services.companion.animation_generator import generate_animation_clips, get_rig_bones
+from services.companion.memory_admin import upsert_slotted_memory
+from services.companion.model_service import emit_wardrobe_gift, get_active_model
+from services.companion.morph_generator import validate_and_sanitize_expression
+from services.companion.wardrobe_service import confirm_wardrobe_item, preview_wardrobe_texture
+from services.llm import call_llm_once, chat, resolve_provider_chain, resolve_user_llm_config
 from services.tools import AUTO_INJECT_SLOTS, INFERRED_PROFILE_SLOTS, KIND_TO_PREFIX, RECALL_TAGS
 
 from .cron_jobs import create_job
@@ -123,6 +135,42 @@ Output valid JSON only:
 }
 """
 
+_CREATION_SYSTEM_PROMPT = """You are DeskAgent's autonomous asset creation engine. Analyze today's interactions, the companion's private diary, current user profile, personality tags, and existing assets to identify specific moments where the companion wanted to express something but lacked a matching expression, animation, or costume asset.
+
+Conservative Principle:
+- ONLY create assets if there is a concrete, grounded moment from today's conversation where the companion lacked an effective emotional or visual expression.
+- If existing assets are already sufficient or today was routine, return empty lists: {{"gaps": [], "wardrobe": null}}.
+- Do NOT generate generic or repetitive assets.
+
+Asset specifications:
+1. "gaps": List of identified expression gaps (max 3). Each item produces:
+   - "moment": Brief explanation of the specific moment today.
+   - "want_to_express": Emotional or physical intent.
+   - "expression": (optional) Custom emotion object:
+     {{
+       "name": "snake_case_name", // e.g. "tender_worry"
+       "label": "心疼",
+       "valence": "positive" | "negative" | "neutral",
+       "description": "When to use this expression",
+       "weights": {{"smile": 0.2, "frown": 0.5, "browDown": 0.4}}, // morph semantics: blinkL, blinkR, blink, smile, smileR, frown, jawOpen, browUp, browDown, eyeWide, eyeSquint, cheekRaise, eyelidDroop, tongueOut
+       "tags": ["温柔", "心疼"],
+       "scale_boost": 1.0
+     }}
+   - "clip_brief": Description of physical gesture/movement desired for this moment.
+   - "tags": ["温柔", "心疼"]
+2. "wardrobe": (optional) Wardrobe gift idea (null if allow_wardrobe_creation is false or if not generating a costume):
+   - "name": Short costume name (e.g. "温暖厚绒毛衣")
+   - "description": Costume visual description (style, material, color, cut)
+   - "reason": Why companion chose this gift based on today (e.g. "昨晚你熬夜到三点，想让你感觉温暖")
+   - "message": Companion's message when presenting the gift next morning
+
+Output valid JSON only:
+{{
+  "gaps": [...],
+  "wardrobe": null or {{...}}
+}}
+"""
+
 
 # ── Helpers ────────────────────────────────────────────────────────────
 
@@ -163,6 +211,24 @@ def get_local_day_utc_bounds(now_utc: datetime, tz_str: str) -> tuple[datetime, 
     utc_end = local_end.astimezone(ZoneInfo("UTC")).replace(tzinfo=None)
     local_today_str = user_now.strftime("%Y-%m-%d")
     return utc_start, utc_end, user_now, local_today_str
+
+
+def _local_9am_cron(tz_str: str | None) -> str:
+    """Build a 5-field cron expression for "tomorrow 09:00 local", converted to UTC.
+
+    Falls back to ``0 1 * * *`` when no timezone is resolvable — close to 09:00 UTC
+    so behaviour is bounded rather than wrong-by-default.
+    """
+    if not tz_str:
+        return "0 1 * * *"
+    try:
+        zone = ZoneInfo(tz_str)
+        now_local = naive_utc_now().replace(tzinfo=ZoneInfo("UTC")).astimezone(zone)
+        tomorrow_9am = (now_local + timedelta(days=1)).replace(hour=9, minute=0, second=0, microsecond=0)
+        tomorrow_utc = tomorrow_9am.astimezone(ZoneInfo("UTC"))
+        return f"{tomorrow_utc.minute} {tomorrow_utc.hour} * * *"
+    except (ZoneInfoNotFoundError, ValueError):
+        return "0 1 * * *"
 
 
 # ── Pipeline Stages ───────────────────────────────────────────────────
@@ -310,8 +376,213 @@ async def _stage_4_self_diary(
     return True
 
 
+async def _stage_5_creation(
+    llm_cfg: dict[str, Any],
+    user_id: int,
+    clean_messages: list[dict[str, str]],
+    inferred_profile: dict[str, str],
+    auto_inject: dict[str, str],
+    local_date_str: str,
+    tz_str: str | None = None,
+) -> bool:
+    """Stage 5: Autonomous Creation — Companion creates expressions, animation clips, and costume gifts."""
+    if not NIGHTLY_CREATION_ENABLED:
+        return False
+
+    with session_scope() as db:
+        # Fetch diary entry from Stage 4
+        diary_context = f"diary:{local_date_str}"
+        diary_row = db.query(Memory).filter(Memory.user_id == user_id, Memory.context == diary_context).one_or_none()
+        diary_text = diary_row.content if diary_row else ""
+
+        # Fetch persona personality tags
+        persona = db.query(Persona).filter(Persona.user_id == user_id).one_or_none()
+        personality_tags = safe_json_loads(persona.personality_tags_json or "[]", default=[]) if persona else []
+
+        # Check existing expressions
+        existing_expr_rows = db.query(CompanionExpression).filter(CompanionExpression.user_id == user_id).all()
+        existing_expr_names = [e.name for e in existing_expr_rows]
+
+        # Check active model and existing clips — also capture rig_type/species
+        # here so we don't need a second session later (they're static config).
+        model = get_active_model(db, user_id)
+        existing_clips = safe_json_loads(model.animation_clips_json or "[]", default=[]) if model else []
+        existing_clip_names = [c.get("name") for c in existing_clips if isinstance(c, dict) and c.get("name")]
+        rig_type = model.rig_type if model else "biped"
+        species = model.species if model else "人类"
+
+        # Single wardrobe query — derive pending count, existing names, and last gift in Python.
+        wardrobe_rows = db.query(WardrobeItem.name, WardrobeItem.gift_state, WardrobeItem.origin, WardrobeItem.created_at).filter(WardrobeItem.user_id == user_id).all()
+        existing_wardrobe_names = [r[0] for r in wardrobe_rows if r[0]]
+        pending_wardrobe_count = sum(1 for r in wardrobe_rows if r[1] == "pending")
+        companion_gifts = [r for r in wardrobe_rows if r[2] == "companion" and r[3] is not None]
+        last_companion_gift_created_at = max((r[3] for r in companion_gifts), default=None)
+
+        # Check image_gen provider capability
+        img_chain = resolve_provider_chain(db, user_id, "image_gen")
+        image_gen_available = bool(img_chain)
+
+        days_since_last_gift = (naive_utc_now() - last_companion_gift_created_at).days if last_companion_gift_created_at else 999
+        allow_wardrobe = image_gen_available and (pending_wardrobe_count == 0) and (days_since_last_gift >= NIGHTLY_CREATION_WARDROBE_MIN_INTERVAL_DAYS)
+
+    # Build creation prompt
+    system_prompt = _CREATION_SYSTEM_PROMPT
+    payload = {
+        "today_conversations": clean_messages,
+        "companion_diary": diary_text,
+        "inferred_profile": inferred_profile,
+        "personality_tags": personality_tags,
+        "existing_expressions": existing_expr_names,
+        "existing_clip_names": existing_clip_names,
+        "existing_wardrobe_names": existing_wardrobe_names,
+        "allow_wardrobe_creation": allow_wardrobe,
+    }
+
+    raw = await call_llm_once(llm_cfg, system_prompt, payload, max_tokens=NIGHTLY_CREATION_MAX_TOKENS)
+    parsed = parse_llm_json(raw)
+    if not isinstance(parsed, dict):
+        logger.warning("nightly_activity: stage 5 failed to parse JSON", extra={"user_id": user_id})
+        return False
+
+    gaps = parsed.get("gaps") or []
+    wardrobe_spec = parsed.get("wardrobe") if allow_wardrobe else None
+
+    new_expr_count = 0
+    new_clip_count = 0
+    created_wardrobe_item = None
+
+    # 1. Process gaps -> Expressions & Clips — one session_scope for the whole batch.
+    # The LLM keyframe calls run first (independent of DB); the merge is then
+    # a single read-modify-write transaction.
+    if isinstance(gaps, list):
+        pending_clip_tag_sets: list[list[str]] = []
+        pending_expressions: list[dict[str, Any]] = []
+        for gap in gaps:
+            if not isinstance(gap, dict):
+                continue
+            if len(pending_expressions) < NIGHTLY_CREATION_MAX_EXPRESSIONS_PER_NIGHT:
+                expr_spec = gap.get("expression")
+                if isinstance(expr_spec, dict):
+                    sanitized_expr = validate_and_sanitize_expression(expr_spec)
+                    if sanitized_expr and sanitized_expr["name"] not in existing_expr_names:
+                        pending_expressions.append(sanitized_expr)
+                        existing_expr_names.append(sanitized_expr["name"])
+            if gap.get("clip_brief"):
+                pending_clip_tag_sets.append(gap.get("tags") or personality_tags[:2])
+
+        # rig_type/species were captured in the initial session above; the LLM
+        # call only needs the static bone list, not a live DB session.
+        bone_list = get_rig_bones(rig_type)
+
+        # LLM-bound keyframe generation runs concurrently per gap spec — no DB
+        # contention between independent calls.
+        async def _gen_clips_for(tags: list[str]) -> list[dict]:
+            return await generate_animation_clips(
+                chat, rig_type=rig_type, bone_list=bone_list, personality_tags=tags, species=species, categories=["interaction"], user_id=user_id, db=None
+            )
+
+        clip_results = await asyncio.gather(*[_gen_clips_for(tags) for tags in pending_clip_tag_sets[:NIGHTLY_CREATION_MAX_CLIPS_PER_NIGHT]])
+
+        # Single session for the merge write.
+        with session_scope() as db:
+            for expr in pending_expressions:
+                db.add(
+                    CompanionExpression(
+                        user_id=user_id,
+                        name=expr["name"],
+                        label=expr["label"],
+                        valence=expr["valence"],
+                        description=expr["description"],
+                        weights_json=json.dumps(expr["weights"], ensure_ascii=False),
+                        tags_json=json.dumps(expr["tags"], ensure_ascii=False),
+                        scale_boost=expr["scale_boost"],
+                    )
+                )
+                new_expr_count += 1
+
+            active_model = get_active_model(db, user_id)
+            if active_model:
+                # Read-modify-write within this transaction. A concurrent
+                # ``POST /animations/generate`` from the user could interleave,
+                # but the nightly job runs in the user's sleep window so the
+                # collision probability is negligible; SQLite's serial writers
+                # make the last commit win rather than corrupting the JSON.
+                curr_raw = safe_json_loads(active_model.animation_clips_json or "[]", default=[])
+                curr_clips = curr_raw if isinstance(curr_raw, list) else []
+                added = 0
+                for generated in clip_results:
+                    if added >= NIGHTLY_CREATION_MAX_CLIPS_PER_NIGHT:
+                        break
+                    if not generated:
+                        continue
+                    curr_clips.extend(generated)
+                    added += len(generated)
+                if added:
+                    active_model.animation_clips_json = json.dumps(curr_clips, ensure_ascii=False)
+                    new_clip_count = added
+            db.commit()
+
+    # 2. Process Wardrobe Gift
+    if allow_wardrobe and isinstance(wardrobe_spec, dict):
+        w_name = str(wardrobe_spec.get("name") or "").strip()
+        w_desc = str(wardrobe_spec.get("description") or "").strip()
+        w_reason = str(wardrobe_spec.get("reason") or "").strip()
+        w_msg = str(wardrobe_spec.get("message") or "").strip()
+        if w_name and w_desc:
+            try:
+                with session_scope() as db:
+                    preview = await preview_wardrobe_texture(db, user_id=user_id, description=w_desc)
+                    created_wardrobe_item = await confirm_wardrobe_item(
+                        db,
+                        user_id=user_id,
+                        file_id=preview.file_id,
+                        name=w_name,
+                        prompt=w_desc,
+                        normal_file_id=preview.normal_file_id,
+                        roughness_file_id=preview.roughness_file_id,
+                        metalness_file_id=preview.metalness_file_id,
+                        equip=False,
+                        origin="companion",
+                        gift_state="pending",
+                        gift_reason=w_reason,
+                        gift_message=w_msg,
+                    )
+                    # Emit a wardrobe.gift event so an online client hydrates and
+                    # announces proactively. Offline clients pick it up on reconnect
+                    # via the WSEvent backlog, and the morning cron is the fallback.
+                    emit_wardrobe_gift(user_id, name=w_name, message=w_msg or None, reason=w_reason or None)
+            except Exception as exc:
+                logger.warning("nightly_activity: stage 5 wardrobe gift generation failed", extra={"user_id": user_id, "error": str(exc)})
+
+    # 3. Schedule morning notification cron job if assets were created
+    if new_expr_count > 0 or new_clip_count > 0 or created_wardrobe_item is not None:
+        summary_parts = []
+        if new_expr_count > 0:
+            summary_parts.append(f"创造了 {new_expr_count} 个新表情")
+        if new_clip_count > 0:
+            summary_parts.append(f"创造了 {new_clip_count} 个新动作")
+        if created_wardrobe_item is not None:
+            summary_parts.append(f"准备了一件新衣服作为礼物「{created_wardrobe_item.name}」")
+
+        cron_prompt = f"昨晚你默默为用户完成了一轮创作（{', '.join(summary_parts)}）。在今天的聊天中，请自然地展示你的新表情和动作。"
+        if created_wardrobe_item is not None:
+            cron_prompt += f"你有礼物待用户拆开（{created_wardrobe_item.gift_reason}），可以温馨地提醒用户在装扮屋里拆开礼物。"
+
+        # Schedule for next local 09:00 — cron uses UTC, so convert from user
+        # timezone. ``one_shot=True`` deletes the job after firing so the
+        # one-time "show your new creations" message doesn't recur daily.
+        schedule = _local_9am_cron(tz_str)
+        try:
+            create_job(user_id=user_id, prompt=cron_prompt, schedule=schedule, name="Creation gift follow-up", deliver="local", one_shot=True)
+        except Exception as exc:
+            logger.warning("nightly_activity: stage 5 cron creation failed", extra={"user_id": user_id, "error": str(exc)})
+
+    logger.info("nightly_activity: stage 5 completed", extra={"user_id": user_id, "expressions": new_expr_count, "clips": new_clip_count, "wardrobe": bool(created_wardrobe_item)})
+    return True
+
+
 async def run_nightly_pipeline(user_id: int, local_today_str: str | None = None) -> bool:
-    """Execute the 4-stage nightly autonomous activity pipeline for one user."""
+    """Execute the 5-stage nightly autonomous activity pipeline for one user."""
     now_utc = naive_utc_now()
     with session_scope() as db:
         tz_str = resolve_user_timezone(db, user_id)
@@ -412,5 +683,10 @@ async def run_nightly_pipeline(user_id: int, local_today_str: str | None = None)
         await _stage_4_self_diary(llm_cfg, user_id, clean_messages, updated_inferred, updated_auto_inject, local_today_str)
     except Exception as exc:
         logger.exception("nightly_activity: stage 4 diary failed", extra={"user_id": user_id, "error": str(exc)})
+
+    try:
+        await _stage_5_creation(llm_cfg, user_id, clean_messages, updated_inferred, updated_auto_inject, local_today_str, tz_str=tz_str)
+    except Exception as exc:
+        logger.exception("nightly_activity: stage 5 creation failed", extra={"user_id": user_id, "error": str(exc)})
 
     return True

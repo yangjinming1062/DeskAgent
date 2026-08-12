@@ -2600,3 +2600,104 @@ def test_outfit_guidance_injected_only_when_outfit_present():
     )
     prompt_without_outfit = build_system_prompt(config_without_outfit)
     assert "Outfit-Behaviour Alignment" not in prompt_without_outfit
+
+
+def _make_authenticated_client(_patch_db, uid: int = 3001):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from components import get_db
+    from modules.auth import get_current_session
+    from api.v1 import companion as companion_api
+    from modules.auth import User, UserModelConfig
+
+    _, SessionLocal = _patch_db
+    with SessionLocal() as db:
+        if not db.query(User).filter(User.id == uid).first():
+            user = User(id=uid, username=f"u_{uid}", password_hash="x", is_active=True, can_use=True)
+            db.add(user)
+            db.add(UserModelConfig(user_id=uid, llm_provider="zhipu", llm_api_key="k", llm_base_url="http://x", llm_model_name="m"))
+            db.commit()
+
+    app = FastAPI()
+    app.include_router(companion_api.router)
+    def _test_get_db():
+        db = SessionLocal()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    fake_user = type("U", (), {"id": uid, "is_active": True, "can_use": True})()
+    app.dependency_overrides[get_db] = _test_get_db
+    app.dependency_overrides[get_current_session] = lambda: (fake_user, None)
+    return TestClient(app), SessionLocal, uid
+
+
+def test_get_expressions_endpoint(_patch_db):
+    client, SessionLocal, uid = _make_authenticated_client(_patch_db, uid=3001)
+    with SessionLocal() as db:
+        from modules.companion import CompanionExpression
+        db.add(CompanionExpression(
+            user_id=uid,
+            name="tender_worry",
+            label="心疼",
+            valence="negative",
+            description="Tender worry",
+            weights_json='{"frown": 0.5}',
+            tags_json='["心疼"]',
+            scale_boost=1.1,
+        ))
+        db.commit()
+
+    resp = client.get("/api/companion/expressions")
+    assert resp.status_code == 200
+    exprs = resp.json().get("expressions", [])
+    assert len(exprs) == 1
+    assert exprs[0]["name"] == "tender_worry"
+    assert exprs[0]["label"] == "心疼"
+
+
+@pytest.mark.asyncio
+async def test_companion_gift_creation_and_decline_flow(monkeypatch, _patch_db):
+    client, SessionLocal, uid = _make_authenticated_client(_patch_db, uid=3002)
+    from services.companion import confirm_wardrobe_item
+    from pathlib import Path
+    import tempfile
+
+    td = tempfile.mkdtemp()
+    dummy_file = Path(td) / "dummy.png"
+    dummy_file.write_bytes(b"dummy")
+
+    monkeypatch.setattr("services.companion.wardrobe_service.get_file_path", lambda fid: (dummy_file, "image/png"))
+    monkeypatch.setattr("services.companion.wardrobe_service.save_companion_asset", lambda data, user_id, **kw: f"companion-assets/{user_id}/dummy.png")
+
+    # Create gift costume item with equip=False, origin='companion', gift_state='pending'
+    with SessionLocal() as db:
+        gift_item = await confirm_wardrobe_item(
+            db,
+            user_id=uid,
+            file_id="dummy_file_id",
+            name="温暖羊毛衫",
+            prompt="Soft wool sweater",
+            equip=False,
+            origin="companion",
+            gift_state="pending",
+            gift_reason="昨晚你熬夜，想让你感觉温暖",
+            gift_message="为您准备了一份特别的小礼物！",
+        )
+        gift_id = gift_item.id
+        assert gift_item.equipped is False
+        assert gift_item.gift_state == "pending"
+        assert gift_item.origin == "companion"
+
+    # Decline gift endpoint test
+    decline_resp = client.put(f"/api/companion/wardrobe/{gift_id}/decline")
+    assert decline_resp.status_code == 200
+    assert decline_resp.json()["gift_state"] == "declined"
+    assert decline_resp.json()["equipped"] is False
+
+    # Equip gift item test -> gift_state becomes 'accepted', equipped=True
+    equip_resp = client.put("/api/companion/wardrobe/equip", json={"item_id": gift_id})
+    assert equip_resp.status_code == 200
+    assert equip_resp.json()["gift_state"] == "accepted"
+    assert equip_resp.json()["equipped"] is True

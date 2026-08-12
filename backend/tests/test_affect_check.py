@@ -122,7 +122,7 @@ async def test_check_affect_should_express_false_returns_no_emit(
 
 @pytest.mark.asyncio
 async def test_check_affect_unknown_emotion_skips_emit(monkeypatch, _patch_db):
-    """LLM-invented emotion (outside ALLOWED_EMOTIONS) must NOT reach the
+    """LLM-invented emotion (outside BUILTIN_EMOTIONS) must NOT reach the
     WSEvent emit — backend treats it as no-op and returns expressed=False
     for the renderer."""
     _, SessionLocal = _patch_db
@@ -220,6 +220,49 @@ async def test_check_affect_invalid_config_returns_no_throw(monkeypatch, _patch_
     assert called["n"] == 0
 
 
+@pytest.mark.asyncio
+async def test_check_affect_custom_expression_accepted(monkeypatch, _patch_db):
+    _, SessionLocal = _patch_db
+    aff = importlib.import_module("services.companion.affect_check")
+    _seed_persona(SessionLocal, 2007)
+
+    with SessionLocal() as db:
+        from modules.companion import CompanionExpression
+        db.add(CompanionExpression(
+            user_id=2007,
+            name="tender_worry",
+            label="心疼",
+            valence="negative",
+            description="Used when companion feels concerned for the user",
+            weights_json='{"frown": 0.5}',
+            tags_json='["心疼"]',
+            scale_boost=1.1,
+        ))
+        db.commit()
+
+    async def _ok(*a, **kw):
+        return _MockResponse(
+            '{"should_express": true, "emotion": "tender_worry", "reason": "心疼用户熬夜"}'
+        )
+
+    monkeypatch.setattr(aff, "call_with_retry", _ok)
+    monkeypatch.setattr(aff, "client_for_config", lambda cfg: None)
+
+    emitted: list = []
+    monkeypatch.setattr(aff, "emit_companion_affect", lambda *a: emitted.append(a))
+
+    result = await aff.check_affect(
+        user_id=2007,
+        idle_seconds=1800,
+        local_hour=14,
+        llm_config={"model_name": "test"}
+    )
+
+    assert result["expressed"] is True
+    assert result["emotion"] == "tender_worry"
+    assert emitted == [(2007, "tender_worry")]
+
+
 def test_affect_scrubber_spatial_tag_parsing():
     from services.chat.affect import AffectScrubber
 
@@ -232,6 +275,17 @@ def test_affect_scrubber_spatial_tag_parsing():
     assert scrubber.emotion == "curious"
     assert scrubber.spatial_locale == "perch"
     assert scrubber.spatial_target == "bilibili"
+
+
+def test_affect_scrubber_custom_allowed_emotions():
+    from services.chat.affect import AffectScrubber
+
+    allowed = frozenset(["happy", "sad", "tender_worry"])
+    scrubber = AffectScrubber(allowed_emotions=allowed)
+    clean = scrubber.feed("[affect:tender_worry]\nHello user!") + scrubber.flush()
+
+    assert clean == "Hello user!"
+    assert scrubber.emotion == "tender_worry"
 
 
 def test_affect_scrubber_split_stream_parsing():

@@ -13,6 +13,7 @@ from ..companion import build_system_prompt_extras, build_user_profile_extras, f
 from ..gateway import RuntimeSession
 from ..llm import MissingLlmConfigError, ProviderConfig, ServiceType, provider_for_service, provider_from_config, resolve_context_tokens, resolve_vision_chain
 from ..tools import REGISTRY, NativeMemory, schema_name
+from .affect import BUILTIN_EMOTIONS, resolve_allowed_emotions, resolve_custom_expressions
 from .system_prompt import build_system_prompt
 
 logger = get_logger(__name__)
@@ -34,6 +35,7 @@ class _TurnInputs:
     all_schemas: list[dict]
     first_user_msg_content: str | None
     llm_chain: list[ProviderConfig] | None
+    allowed_emotions: frozenset[str] = BUILTIN_EMOTIONS
 
 
 def load_user_settings(db: Session, user_id: int) -> dict[str, str]:
@@ -143,6 +145,7 @@ def _build_turn_inputs(
     # unstated persona can carry LLM-maintained background context.
     auto_inject_extras = format_auto_inject_block(db, user_id)
     inferred_profile_extras = format_inferred_profile_block(db, user_id)
+    custom_expressions = resolve_custom_expressions(db, user_id) if persona is not None else []
     agent_config = AgentPromptConfig(
         valid_tool_names=[schema_name(s) for s in all_schemas],
         model=model_name,
@@ -154,6 +157,7 @@ def _build_turn_inputs(
         user_profile_extras=user_profile_extras,
         auto_inject_extras=auto_inject_extras,
         inferred_profile_extras=inferred_profile_extras,
+        custom_expressions=custom_expressions,
         language=user_settings.get("language", DEFAULT_LANGUAGE),
     )
     messages = _history_to_messages(history, build_system_prompt(agent_config))
@@ -162,6 +166,7 @@ def _build_turn_inputs(
     if addition := native_memory.format_for_system_prompt():
         messages[0]["content"] += "\n\n" + addition
 
+    allowed_emotions = resolve_allowed_emotions(db, user_id) if persona is not None else BUILTIN_EMOTIONS
     return _TurnInputs(
         messages=messages,
         client=client,
@@ -173,6 +178,7 @@ def _build_turn_inputs(
         all_schemas=all_schemas,
         first_user_msg_content=first_user_msg_content,
         llm_chain=llm_chain,
+        allowed_emotions=allowed_emotions,
     )
 
 

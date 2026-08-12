@@ -3,7 +3,7 @@ import logging
 from components import DEFAULT_LANGUAGE, SUPPORTED_LANGUAGES, TOOL_ENFORCE_OFF_VALUES, naive_utc_now
 from modules.system import AgentPromptConfig
 
-from .affect import COMPANION_AFFECT_GUIDANCE, COMPANION_OUTFIT_GUIDANCE
+from .affect import COMPANION_OUTFIT_GUIDANCE, build_affect_guidance
 
 logger = logging.getLogger(__name__)
 
@@ -468,7 +468,7 @@ def build_system_prompt_parts(config: AgentPromptConfig, system_message: str | N
         # Companion persona drives a visible avatar — instruct the LLM to
         # emit an inline affect tag so the desktop's animation state machine
         # gets an emotion cue with every response.
-        stable_parts.append(COMPANION_AFFECT_GUIDANCE)
+        stable_parts.append(build_affect_guidance(config.custom_expressions))
         if "**Appearance outfit**" in config.persona_extras:
             stable_parts.append(COMPANION_OUTFIT_GUIDANCE)
     if config.user_profile_extras:

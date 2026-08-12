@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 from common import ModelBase, TimestampMixin
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, func, text
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text, func, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 if TYPE_CHECKING:
@@ -31,6 +31,21 @@ class CompanionModel(ModelBase, TimestampMixin):
     active: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("FALSE"), index=True)
 
 
+class CompanionExpression(ModelBase, TimestampMixin):
+    """Dynamic companion emotion expressions created autonomously or via custom presets."""
+
+    __tablename__ = "companion_expressions"
+
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(32))
+    label: Mapped[str] = mapped_column(String(32))
+    valence: Mapped[str] = mapped_column(String(16), default="neutral")
+    description: Mapped[str] = mapped_column(Text, default="")
+    weights_json: Mapped[str] = mapped_column(Text, default="{}")
+    tags_json: Mapped[str] = mapped_column(Text, default="[]")
+    scale_boost: Mapped[float] = mapped_column(Float, default=1.0, server_default=text("1.0"))
+
+
 class WardrobeItem(ModelBase, TimestampMixin):
     """material_overrides_json keys are mesh names; "*" applies to all meshes.
 
@@ -55,6 +70,10 @@ class WardrobeItem(ModelBase, TimestampMixin):
     # Generated at creation time; swapped into Persona.appearance_outfit on equip.
     outfit_description: Mapped[str | None] = mapped_column(Text, nullable=True)
     equipped: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("FALSE"), index=True)
+    origin: Mapped[str] = mapped_column(String(16), default="user", server_default=text("'user'"))
+    gift_state: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    gift_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    gift_message: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class Persona(ModelBase, TimestampMixin):

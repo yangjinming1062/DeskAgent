@@ -104,6 +104,10 @@ class WardrobeItemResponse(BaseModel):
     prompt: str | None = None
     outfit_description: str | None = None
     equipped: bool
+    origin: str = "user"
+    gift_state: str | None = None
+    gift_reason: str | None = None
+    gift_message: str | None = None
 
 
 class WardrobeGenerateRequest(BaseModel):
@@ -126,6 +130,12 @@ class WardrobePreviewResponse(BaseModel):
     url: str
     prompt: str
     file_id: str
+    normal_file_id: str | None = None
+    normal_url: str | None = None
+    roughness_file_id: str | None = None
+    roughness_url: str | None = None
+    metalness_file_id: str | None = None
+    metalness_url: str | None = None
 
 
 class WardrobeConfirmRequest(BaseModel):
@@ -134,6 +144,9 @@ class WardrobeConfirmRequest(BaseModel):
     file_id: str = Field(min_length=1, max_length=128)
     name: str = Field(min_length=1, max_length=128)
     prompt: str | None = Field(default=None, max_length=500)
+    normal_file_id: str | None = Field(default=None, max_length=128)
+    roughness_file_id: str | None = Field(default=None, max_length=128)
+    metalness_file_id: str | None = Field(default=None, max_length=128)
 
 
 class WardrobeEquipRequest(BaseModel):

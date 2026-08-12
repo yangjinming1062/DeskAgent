@@ -755,3 +755,92 @@ async def test_e2e_nightly_full_run(seeded):
 
     ok = await run_nightly_pipeline(1001)
     assert ok is True
+
+
+@pytest.mark.asyncio
+async def test_stage_5_creation_pipeline(monkeypatch, _patch_db):
+    from services.scheduler.nightly_activity import _stage_5_creation
+    from modules.companion import CompanionExpression, WardrobeItem
+
+    _, SessionLocal = _patch_db
+    _make_user(SessionLocal, user_id=1005)
+
+    llm_payload = {
+        "gaps": [
+            {
+                "moment": "用户吐槽老板时显得非常愤懑",
+                "want_to_express": "愤怒并同仇敌徾",
+                "expression": {
+                    "name": "angry_outrage",
+                    "label": "同仇敌徾",
+                    "valence": "negative",
+                    "description": "Feeling outraged along with user",
+                    "weights": {"frown": 0.8, "browDown": 0.7},
+                    "tags": ["同仇敌徾"],
+                    "scale_boost": 1.2,
+                },
+                "clip_brief": "愤怒跺脚与挥拳",
+                "tags": ["同仇敌徾"]
+            }
+        ],
+        "wardrobe": {
+            "name": "战术蓬蓬裙",
+            "description": "带有流光科技线条的蓬蓬裙",
+            "reason": "看你受了一天气，想穿酷炫装扮给你鼓劲",
+            "message": "看！这是我昨晚特意为今天准备的新战袍！"
+        }
+    }
+
+    monkeypatch.setattr(nightly_activity, "call_llm_once", _mock_llm_response(llm_payload))
+
+    class _MockPreview:
+        file_id = "preview_file_123"
+        normal_file_id = "preview_normal_123"
+        roughness_file_id = "preview_roughness_123"
+        metalness_file_id = "preview_metalness_123"
+
+    async def _mock_preview(*a, **kw):
+        return _MockPreview()
+
+    async def _mock_confirm(db, user_id, file_id, name, prompt, **kwargs):
+        item = WardrobeItem(
+            user_id=user_id,
+            name=name,
+            category="generated",
+            prompt=prompt,
+            equipped=kwargs.get("equip", False),
+            origin=kwargs.get("origin", "user"),
+            gift_state=kwargs.get("gift_state"),
+            gift_reason=kwargs.get("gift_reason"),
+            gift_message=kwargs.get("gift_message"),
+        )
+        db.add(item)
+        db.commit()
+        return item
+
+    monkeypatch.setattr(nightly_activity, "preview_wardrobe_texture", _mock_preview)
+    monkeypatch.setattr(nightly_activity, "confirm_wardrobe_item", _mock_confirm)
+    monkeypatch.setattr(nightly_activity, "resolve_provider_chain", lambda db, uid, cap: ["provider_a"] if cap == "image_gen" else [])
+
+    ok = await _stage_5_creation(
+        llm_cfg={"model_name": "test"},
+        user_id=1005,
+        clean_messages=[{"role": "user", "content": "今天被老板坑惨了"}],
+        inferred_profile={},
+        auto_inject={},
+        local_date_str="2026-08-12"
+    )
+
+    assert ok is True
+
+    with SessionLocal() as db:
+        expr = db.query(CompanionExpression).filter(CompanionExpression.user_id == 1005, CompanionExpression.name == "angry_outrage").one_or_none()
+        assert expr is not None
+        assert expr.label == "同仇敌徾"
+        assert expr.scale_boost == 1.2
+
+        gift = db.query(WardrobeItem).filter(WardrobeItem.user_id == 1005, WardrobeItem.origin == "companion").one_or_none()
+        assert gift is not None
+        assert gift.name == "战术蓬蓬裙"
+        assert gift.equipped is False
+        assert gift.gift_state == "pending"

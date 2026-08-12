@@ -4,31 +4,10 @@ from typing import Any
 from components import get_logger, safe_json_loads
 from sqlalchemy.orm import Session
 
+from ._validators import clamp_value, parse_tags
 from .personality_tagger import ChatFn
 
 logger = get_logger(__name__)
-
-# 标准动作分类
-ALLOWED_CATEGORIES = {
-    "state",
-    "micro",
-    "context",
-    "locomotion",
-    "interaction",
-    "ritual",
-    "emotion-positive",
-    "emotion-negative",
-    "social",
-    "intimate",
-    "private",
-    "daily",
-    "surprise",
-    "comfort",
-    "weather",
-    "neg-ext",
-    "intim-ext",
-    "music",
-}
 
 # 7 大 Rig 类型的默认可用骨骼列表
 RIG_DEFAULT_BONES: dict[str, list[str]] = {
@@ -207,10 +186,6 @@ _SYSTEM_PROMPT = (
 )
 
 
-def _clamp(v: float, min_v: float = -math.pi, max_v: float = math.pi) -> float:
-    return max(min_v, min(max_v, float(v)))
-
-
 def validate_and_sanitize_clip(clip_data: dict[str, Any], allowed_bones: set[str] | None = None) -> dict[str, Any] | None:
     """验证并清理 LLM 生成的单个 ClipDef 结构。"""
     if not isinstance(clip_data, dict):
@@ -228,12 +203,9 @@ def validate_and_sanitize_clip(clip_data: dict[str, Any], allowed_bones: set[str
         duration = 2.0
 
     loop = bool(clip_data.get("loop", False))
-    category = str(clip_data.get("category", "interaction")).strip()
-    if category not in ALLOWED_CATEGORIES:
-        category = "interaction"
+    category = str(clip_data.get("category", "interaction")).strip() or "interaction"
 
-    raw_tags = clip_data.get("tags")
-    tags = [str(t).strip() for t in raw_tags if str(t).strip()] if isinstance(raw_tags, list) else []
+    tags = parse_tags(clip_data.get("tags"))
 
     raw_tracks = clip_data.get("tracks")
     if not isinstance(raw_tracks, dict) or not raw_tracks:
@@ -255,7 +227,7 @@ def validate_and_sanitize_clip(clip_data: dict[str, Any], allowed_bones: set[str
                 t = float(item.get("t", 0))
                 r = item.get("r")
                 if isinstance(r, (list, tuple)) and len(r) == 3:
-                    rx, ry, rz = _clamp(r[0]), _clamp(r[1]), _clamp(r[2])
+                    rx, ry, rz = clamp_value(r[0], -math.pi, math.pi), clamp_value(r[1], -math.pi, math.pi), clamp_value(r[2], -math.pi, math.pi)
                     clean_kfs.append({"t": round(t, 3), "r": [rx, ry, rz]})
             except (TypeError, ValueError):
                 continue

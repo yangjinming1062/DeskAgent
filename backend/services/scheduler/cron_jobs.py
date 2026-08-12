@@ -30,12 +30,12 @@ def _refresh_schedule(job: CronJob) -> None:
         job.next_run_at = next_run
 
 
-def create_job(user_id: int, prompt: str, schedule: str, name: str = "cron job", deliver: str = "local") -> dict[str, Any]:
+def create_job(user_id: int, prompt: str, schedule: str, name: str = "cron job", deliver: str = "local", one_shot: bool = False) -> dict[str, Any]:
     with session_scope() as db:
         active_count = db.query(CronJob).filter(CronJob.user_id == user_id, CronJob.is_paused.is_(False)).count()
         if active_count >= MAX_ACTIVE_CRON_JOBS:
             raise ValueError(f"Maximum active cron jobs limit ({MAX_ACTIVE_CRON_JOBS}) reached.")
-        job = CronJob(user_id=user_id, name=name, schedule=schedule, prompt=prompt, deliver=deliver)
+        job = CronJob(user_id=user_id, name=name, schedule=schedule, prompt=prompt, deliver=deliver, one_shot=one_shot)
         _refresh_schedule(job)
         db.add(job)
         db.commit()

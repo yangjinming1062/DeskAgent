@@ -304,6 +304,19 @@ export function handleCompanionEvent(event: RpcEvent): void {
       break
     }
 
+    case 'wardrobe.gift': {
+      // Companion generated a costume gift during Stage 5 autonomous creation.
+      void hydrateWardrobe()
+      const p = event.payload as { name?: string; message?: string; reason?: string } | undefined
+
+      const msg =
+        p?.message || (p?.name ? `为你准备了一份装扮礼物「${p.name}」，快去装扮屋拆开看看吧！` : '为你准备了一份礼物！')
+
+      void speakProactive(msg, { affect: 'excited' })
+
+      break
+    }
+
     case 'avatar.regenerated': {
       // Background regeneration result — resolve the pending awaiter by job_id
       // so the portrait can swap without blocking the handler.

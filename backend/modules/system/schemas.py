@@ -1,4 +1,4 @@
-from typing import Literal
+from typing import Any, Literal
 
 from components import DEFAULT_LANGUAGE
 from pydantic import BaseModel, Field
@@ -65,4 +65,5 @@ class AgentPromptConfig(BaseModel):
     user_profile_extras: str | None = None
     auto_inject_extras: str = ""
     inferred_profile_extras: str = ""
+    custom_expressions: list[Any] | None = None
     language: str = DEFAULT_LANGUAGE

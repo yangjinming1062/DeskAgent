@@ -76,7 +76,7 @@ def _select_due_jobs() -> list[CronJob]:
     with session_scope() as db:
         return (
             db.query(CronJob)
-            .with_entities(CronJob.id, CronJob.user_id, CronJob.name, CronJob.schedule, CronJob.next_run_at, CronJob.prompt)
+            .with_entities(CronJob.id, CronJob.user_id, CronJob.name, CronJob.schedule, CronJob.next_run_at, CronJob.prompt, CronJob.one_shot)
             .filter(CronJob.is_paused.is_(False), CronJob.next_run_at.is_not(None), CronJob.next_run_at <= now)
             .order_by(CronJob.next_run_at, CronJob.id)
             .all()
@@ -107,17 +107,27 @@ def _bulk_cas_advance(due_jobs: list[CronJob], now: datetime) -> dict[int, dict[
     new_runs: dict[int, datetime | None] = {}
 
     for job in due_jobs:
-        next_run = _compute_next_run_at(job.schedule, now)
-        new_runs[job.id] = next_run
-        winners[job.id] = {"user_id": job.user_id, "is_paused": next_run is None, "payload": {"prompt": job.prompt}}
+        if job.one_shot:
+            # One-shot jobs fire once then are deleted — no next_run to compute.
+            new_runs[job.id] = None
+            winners[job.id] = {"user_id": job.user_id, "is_paused": False, "payload": {"prompt": job.prompt}}
+        else:
+            next_run = _compute_next_run_at(job.schedule, now)
+            new_runs[job.id] = next_run
+            winners[job.id] = {"user_id": job.user_id, "is_paused": next_run is None, "payload": {"prompt": job.prompt}}
 
     with session_scope() as db:
         won_ids: list[int] = []
         for job in due_jobs:
-            result = db.execute(
-                text("UPDATE cron_jobs SET next_run_at = :new_run, is_paused = :is_paused WHERE id = :id AND next_run_at = :old_run AND schedule = :sched"),
-                {"id": job.id, "old_run": job.next_run_at, "sched": job.schedule, "new_run": new_runs[job.id], "is_paused": winners[job.id]["is_paused"]},
-            )
+            if job.one_shot:
+                # Delete one-shot jobs after firing so they don't accumulate.
+                # The CAS predicate on next_run_at prevents double-fire.
+                result = db.execute(text("DELETE FROM cron_jobs WHERE id = :id AND next_run_at = :old_run"), {"id": job.id, "old_run": job.next_run_at})
+            else:
+                result = db.execute(
+                    text("UPDATE cron_jobs SET next_run_at = :new_run, is_paused = :is_paused WHERE id = :id AND next_run_at = :old_run AND schedule = :sched"),
+                    {"id": job.id, "old_run": job.next_run_at, "sched": job.schedule, "new_run": new_runs[job.id], "is_paused": winners[job.id]["is_paused"]},
+                )
             if result.rowcount:
                 won_ids.append(job.id)
         db.commit()

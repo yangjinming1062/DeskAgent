@@ -45,4 +45,8 @@ def wardrobe_response(item: WardrobeItem) -> WardrobeItemResponse:
         prompt=item.prompt,
         outfit_description=item.outfit_description,
         equipped=item.equipped,
+        origin=getattr(item, "origin", "user"),
+        gift_state=getattr(item, "gift_state", None),
+        gift_reason=getattr(item, "gift_reason", None),
+        gift_message=getattr(item, "gift_message", None),
     )

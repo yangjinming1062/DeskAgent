@@ -2,7 +2,7 @@ import { atom } from 'nanostores'
 
 import { $focusContext } from '@/companion/activity'
 import { $chatOpen } from '@/companion/chat-store'
-import { $effectiveTier, $spriteEmotion, $spriteState, type SpriteEmotion } from '@/companion/companion-store'
+import { $effectiveTier, $spriteEmotion, $spriteState } from '@/companion/companion-store'
 import { persistString, storedString } from '@/shared/lib/storage'
 
 export const SPRITE_W = 160
@@ -302,11 +302,29 @@ export function setScaleTarget(scale: number, instant = false): void {
   }
 }
 
-const EMOTION_SCALE_BOOST: Partial<Record<SpriteEmotion, number>> = {
+import { $expressions, type CompanionExpression } from './3d/model-store'
+
+const EMOTION_SCALE_BOOST: Record<string, number> = {
   excited: 1.5,
   playful: 1.3,
   surprised: 1.6
 }
+
+// Lowercase-keyed index of $expressions — built once per atom change so the
+// per-frame `computeTargetScale` reads scale_boost in O(1) instead of scanning
+// the full list and lowercasing each name every tick.
+let _scaleBoostIndex: Map<string, CompanionExpression> = new Map()
+$expressions.subscribe(exprs => {
+  const next = new Map<string, CompanionExpression>()
+
+  for (const e of exprs) {
+    if (e?.name) {
+      next.set(e.name.toLowerCase(), e)
+    }
+  }
+
+  _scaleBoostIndex = next
+})
 
 function readDefaultScale(): number {
   const stored = storedString(SCALE_KEY)
@@ -332,7 +350,8 @@ function computeTargetScale(): number {
   const emotion = $spriteEmotion.get()
 
   if ($spriteState.get() === 'emotional' && emotion) {
-    const factor = EMOTION_SCALE_BOOST[emotion]
+    const customExpr = _scaleBoostIndex.get(emotion.toLowerCase())
+    const factor = customExpr?.scale_boost ?? EMOTION_SCALE_BOOST[emotion]
 
     return factor ? Math.min(base * factor, MAX_SCALE) : base
   }

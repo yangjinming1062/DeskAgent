@@ -37,6 +37,21 @@ export interface WardrobeItem {
   prompt?: string | null
   outfit_description?: string | null
   equipped: boolean
+  origin?: string
+  gift_state?: string | null
+  gift_reason?: string | null
+  gift_message?: string | null
+}
+
+export interface CompanionExpression {
+  id: number
+  name: string
+  label: string
+  valence: string
+  description: string
+  weights: Record<string, number>
+  tags: string[]
+  scale_boost: number
 }
 
 interface CompanionModelResponse {
@@ -76,6 +91,9 @@ export interface WardrobeCandidate {
   prompt: string
   fileId: string
   description: string
+  normalFileId?: string
+  roughnessFileId?: string
+  metalnessFileId?: string
 }
 
 const _MAX_CANDIDATES = 3
@@ -200,16 +218,40 @@ export async function hydrateWardrobe(): Promise<void> {
   }
 }
 
-export async function hydrateGeneratedClips(): Promise<void> {
-  try {
-    const res = await window.deskagent.api<{ clips: ClipDef[] }>({ path: '/api/companion/animations' })
+export const $expressions = atom<CompanionExpression[]>([])
 
-    if (res?.clips && Array.isArray(res.clips)) {
-      $generatedClips.set(res.clips)
+/** GET → atom hydrator. Swallows 4xx (precondition) silently so the atom stays
+ * at its default; 5xx / network errors warn so a missing asset doesn't go
+ * unnoticed in production. */
+async function hydrateArray<T>(
+  path: string,
+  atom: { set(value: T[]): void },
+  arrayKey: string,
+  label: string
+): Promise<void> {
+  try {
+    const res = await window.deskagent.api<Record<string, unknown>>({ path })
+    const arr = res?.[arrayKey]
+
+    if (Array.isArray(arr)) {
+      atom.set(arr as T[])
     }
   } catch (error) {
     if (!isClientErrorIpc(error)) {
-      log.warn('model-store', 'hydrateGeneratedClips failed', error)
+      log.warn('model-store', `${label} failed`, error)
     }
   }
+}
+
+export async function hydrateGeneratedClips(): Promise<void> {
+  await hydrateArray<ClipDef>('/api/companion/animations', $generatedClips, 'clips', 'hydrateGeneratedClips')
+}
+
+export async function hydrateExpressions(): Promise<void> {
+  await hydrateArray<CompanionExpression>(
+    '/api/companion/expressions',
+    $expressions,
+    'expressions',
+    'hydrateExpressions'
+  )
 }

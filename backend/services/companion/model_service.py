@@ -358,3 +358,15 @@ def emit_wardrobe_updated(user_id: int) -> None:
             db.commit()
     except Exception:
         logger.warning("Failed to emit wardrobe.updated event", exc_info=True)
+
+
+def emit_wardrobe_gift(user_id: int, *, name: str, message: str | None = None, reason: str | None = None) -> None:
+    """Emit a ``wardrobe.gift`` event so an online client can hydrate wardrobe
+    and announce the companion-generated gift proactively."""
+    try:
+        payload = json.dumps({"name": name, "message": message, "reason": reason})
+        with SESSION_LOCAL() as db:
+            db.add(WSEvent(user_id=user_id, event_type="wardrobe.gift", payload=payload))
+            db.commit()
+    except Exception:
+        logger.warning("Failed to emit wardrobe.gift event", exc_info=True)
