@@ -20,7 +20,7 @@ import { $defaultScale, setDefaultScale } from '@/companion/spatial'
 import { speakScripted } from '@/companion/tts'
 import {
   designVoice,
-  fetchVoiceCatalog,
+  fetchVoiceCatalogRaw,
   GENDER_OPTIONS,
   LANGUAGE_LABELS,
   playDataUrl,
@@ -144,7 +144,11 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps): React.Reac
 
   useEffect(() => {
     void window.deskagent.sprite.setAlwaysOnTop({ on: false })
-    void fetchVoiceCatalog(requestGateway).then(setCatalog)
+    void fetchVoiceCatalogRaw(requestGateway).then(r => {
+      if (r.ok) {
+        setCatalog(r.catalog)
+      }
+    })
 
     return () => {
       void window.deskagent.sprite.setAlwaysOnTop({ on: true })

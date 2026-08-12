@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { log } from '@/shared/lib/log'
+
 import {
   $equippedItem,
   $modelInfo,
@@ -50,7 +52,7 @@ describe('hydrateModel', () => {
       rig_type: 'biped',
       rig_naming: 'mixamo'
     })
-    vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    vi.spyOn(log, 'warn').mockImplementation(() => undefined)
   })
 
   afterEach(() => {
@@ -77,7 +79,7 @@ describe('hydrateModel', () => {
       rig_type: 'biped',
       rig_naming: 'mixamo'
     })
-    expect(console.warn).not.toHaveBeenCalled()
+    expect(log.warn).not.toHaveBeenCalled()
   })
 
   it('treats a 404 as expected (no active row) and leaves the atom alone', async () => {
@@ -89,7 +91,7 @@ describe('hydrateModel', () => {
     await hydrateModel()
 
     expect($modelInfo.get()).toEqual(before)
-    expect(console.warn).not.toHaveBeenCalled()
+    expect(log.warn).not.toHaveBeenCalled()
   })
 
   it('warns on a 5xx so a missing model is diagnosable', async () => {
@@ -99,7 +101,7 @@ describe('hydrateModel', () => {
     await hydrateModel()
 
     expect($modelInfo.get().status).toBe('pending')
-    expect(console.warn).toHaveBeenCalledWith('hydrateModel failed', expect.any(Error))
+    expect(log.warn).toHaveBeenCalledWith('model-store', 'hydrateModel failed', expect.any(Error))
   })
 })
 
@@ -128,7 +130,7 @@ describe('hydrateWardrobe', () => {
   beforeEach(() => {
     $wardrobe.set([])
     $equippedItem.set(null)
-    vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    vi.spyOn(log, 'warn').mockImplementation(() => undefined)
   })
 
   afterEach(() => {
@@ -144,7 +146,7 @@ describe('hydrateWardrobe', () => {
 
     expect($wardrobe.get()).toEqual(sample)
     expect($equippedItem.get()?.id).toBe(2)
-    expect(console.warn).not.toHaveBeenCalled()
+    expect(log.warn).not.toHaveBeenCalled()
   })
 
   it('warns on a 5xx', async () => {
@@ -154,7 +156,7 @@ describe('hydrateWardrobe', () => {
     await hydrateWardrobe()
 
     expect($wardrobe.get()).toEqual([])
-    expect(console.warn).toHaveBeenCalledWith('hydrateWardrobe failed', expect.any(Error))
+    expect(log.warn).toHaveBeenCalledWith('model-store', 'hydrateWardrobe failed', expect.any(Error))
   })
 })
 

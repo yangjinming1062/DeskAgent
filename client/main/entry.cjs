@@ -34,6 +34,7 @@ const {
 const { registerSystemIpc } = require('./ipc/system.cjs')
 const { registerTitlebarIpc } = require('./ipc/titlebar.cjs')
 const { registerClipboardIpc } = require('./ipc/clipboard.cjs')
+const { registerLogIpc } = require('./ipc/log.cjs')
 const { registerExternalIpc } = require('./ipc/external.cjs')
 const { registerSettingsIpc } = require('./ipc/settings.cjs')
 const { registerFilesIpc } = require('./ipc/files.cjs')
@@ -1655,6 +1656,7 @@ registerClipboardIpc({
   electron: { clipboard },
   writeComposerImage
 })
+registerLogIpc({ ipcMain, log: chunk => rememberLog(chunk) })
 registerExternalIpc()
 registerSettingsIpc()
 registerFilesIpc({
@@ -1838,7 +1840,7 @@ setTimeout(() => {
   }
 }, 200).unref?.()
 
-// One-shot: legacy connection.json deprecated, rename to .bak silently
+// connection.json is no longer read; the timestamped suffix keeps this backup from being clobbered if one reappears.
 try {
   const legacyPath = path.join(app.getPath('userData'), 'connection.json')
   if (fs.existsSync(legacyPath)) {

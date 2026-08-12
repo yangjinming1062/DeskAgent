@@ -1,6 +1,7 @@
 import { atom } from 'nanostores'
 
 import { isClientErrorIpc } from '@/shared/lib/ipc-error'
+import { log } from '@/shared/lib/log'
 
 import type { ClipDef } from './clips-biped'
 
@@ -180,7 +181,7 @@ export async function hydrateModel(): Promise<void> {
     })
   } catch (error) {
     if (!isClientErrorIpc(error)) {
-      console.warn('hydrateModel failed', error)
+      log.warn('model-store', 'hydrateModel failed', error)
     }
   }
 }
@@ -194,7 +195,7 @@ export async function hydrateWardrobe(): Promise<void> {
     setWardrobe(res ?? [])
   } catch (error) {
     if (!isClientErrorIpc(error)) {
-      console.warn('hydrateWardrobe failed', error)
+      log.warn('model-store', 'hydrateWardrobe failed', error)
     }
   }
 }
@@ -208,7 +209,7 @@ export async function hydrateGeneratedClips(): Promise<void> {
     }
   } catch (error) {
     if (!isClientErrorIpc(error)) {
-      console.warn('hydrateGeneratedClips failed', error)
+      log.warn('model-store', 'hydrateGeneratedClips failed', error)
     }
   }
 }

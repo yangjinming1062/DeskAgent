@@ -35,13 +35,6 @@ export const DEFAULT_VOICE: VoiceOption = {
   description: '使用引擎默认音色。'
 }
 
-export const EMPTY_CATALOG: VoiceCatalog = {
-  provider: '',
-  voices: [DEFAULT_VOICE],
-  supportsVoiceDesign: false,
-  voiceDesignGuide: ''
-}
-
 export function playDataUrl(dataUrl: string): void {
   void new Audio(dataUrl).play().catch(() => {})
 }
@@ -91,17 +84,6 @@ export async function fetchVoiceCatalogRaw(
   } catch {
     return { ok: false, reason: 'fetch_failed' }
   }
-}
-
-export async function fetchVoiceCatalog(
-  requestGateway: RequestGateway,
-  language?: string | null
-): Promise<VoiceCatalog> {
-  // Back-compat wrapper — returns EMPTY_CATALOG for any non-ok case; use
-  // fetchVoiceCatalogRaw when 'fetch failed' vs 'not in catalog' matters.
-  const result = await fetchVoiceCatalogRaw(requestGateway, language)
-
-  return result.ok ? result.catalog : EMPTY_CATALOG
 }
 
 export async function matchVoicePreference(requestGateway: RequestGateway, preference: string): Promise<VoiceMatch> {

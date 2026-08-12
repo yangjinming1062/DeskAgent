@@ -11,6 +11,7 @@ import {
   type SpriteStateName
 } from '@/companion/companion-store'
 import { $personalityTags } from '@/companion/persona-store'
+import { log } from '@/shared/lib/log'
 
 import { Engine } from './Engine'
 import {
@@ -181,7 +182,7 @@ export function Companion3D(): React.JSX.Element {
             return
           }
 
-          console.warn('[companion-3d] GLB fetch failed, using procedural fallback:', err)
+          log.warn('companion-3d', 'GLB fetch failed, using procedural fallback:', err)
         }
       }
 
@@ -192,7 +193,7 @@ export function Companion3D(): React.JSX.Element {
           return
         }
 
-        console.error('[companion-3d] loadCharacter failed:', err)
+        log.error('companion-3d', 'loadCharacter failed:', err)
 
         return
       }

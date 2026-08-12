@@ -20,6 +20,7 @@ import { $effectiveTier, $voiceCallOpen, setSpriteState, type SpriteEmotion } fr
 import { $responseMode } from '@/companion/prefs'
 import { computePerchPosition, setLocale, startRoam } from '@/companion/spatial'
 import { speak } from '@/companion/tts'
+import { log } from '@/shared/lib/log'
 import { sleep } from '@/shared/lib/utils'
 import { $gateway } from '@/shared/store/gateway'
 import type { RpcEvent } from '@/shared/types/deskagent'
@@ -82,7 +83,7 @@ function applySpatialCue(locale?: string, target?: string): void {
       startRoam()
     }
   })().catch(err => {
-    console.error('applySpatialCue error:', err)
+    log.error('events', 'applySpatialCue error:', err)
   })
 }
 
@@ -256,7 +257,7 @@ export function handleCompanionEvent(event: RpcEvent): void {
         | undefined
 
       if (p?.error) {
-        console.warn('[events] model.ready error:', p.error)
+        log.warn('events', 'model.ready error:', p.error)
         $modelGenState.set('failed')
         $modelGenError.set(p.error)
         $modelGenProgress.set(null)

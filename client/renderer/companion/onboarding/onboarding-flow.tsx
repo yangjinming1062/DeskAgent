@@ -55,7 +55,7 @@ import {
 } from '../persona'
 import { setCompanionVoiceId } from '../prefs'
 import { speakScripted, stopSpeaking } from '../tts'
-import { fetchVoiceCatalog, matchVoicePreference, nextVoice, sampleLine, type VoiceOption } from '../voice'
+import { fetchVoiceCatalogRaw, matchVoicePreference, nextVoice, sampleLine, type VoiceOption } from '../voice'
 import { $voicePreparing } from '../voice-state'
 
 import { type OnboardingAudioTag, playOnboardingAudio } from './onboarding-audio'
@@ -738,12 +738,9 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
       setVoiceAlternatives(matched.alternatives)
       setCompanionVoiceId(matched.voice.id)
       setVoiceLangFilter('zh')
-      const catalog = await fetchVoiceCatalog(requestGateway, 'zh')
-      setVoiceCatalog([
-        matched.voice,
-        ...matched.alternatives,
-        ...catalog.voices.filter(v => v.id !== matched.voice.id)
-      ])
+      const r = await fetchVoiceCatalogRaw(requestGateway, 'zh')
+      const extra = r.ok ? r.catalog.voices.filter(v => v.id !== matched.voice.id) : []
+      setVoiceCatalog([matched.voice, ...matched.alternatives, ...extra])
       void speakScripted(sampleLine(answers.name || ''), matched.voice.id || undefined, 'onboarding.voice.preview')
     })()
   }, [phase, voiceStage, requestGateway, answers.voice, answers.name])
@@ -982,7 +979,11 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
         /* no draft yet — start fresh */
       }
 
-      setVoiceCatalog((await fetchVoiceCatalog(requestGateway)).voices)
+      const r = await fetchVoiceCatalogRaw(requestGateway)
+
+      if (r.ok) {
+        setVoiceCatalog(r.catalog.voices)
+      }
     })()
   }, [gatewayState, requestGateway, onCompleted, enterHatchingRef])
 
@@ -1191,15 +1192,16 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
 
   const onVoiceLangTabClick = async (lang: VoiceLanguageFilter) => {
     setVoiceLangFilter(lang)
-    const catalog = await fetchVoiceCatalog(requestGateway, lang)
-    setVoiceCatalog(catalog.voices)
+    const r = await fetchVoiceCatalogRaw(requestGateway, lang)
+    const voices = r.ok ? r.catalog.voices : []
+    setVoiceCatalog(voices)
     // Candidates were scored against the previous tab's language.
     setVoiceAlternatives([])
     // Reset the current voice to the first of the filtered list so the
     // Try/Next cycle starts from a language-appropriate default. The
     // persisted voice id follows the displayed voice so a later
     // confirmVoice picks the filtered-list voice, not the previous tab's.
-    const next = catalog.voices[0] ?? voice
+    const next = voices[0] ?? voice
     setVoice(next)
 
     if (next) {

@@ -10,12 +10,14 @@ import { $chatSessionId, setChatSession } from '@/companion/chat-store'
 import { $effectiveTier, $spriteState, $voiceCallOpen, setSpriteState } from '@/companion/companion-store'
 import { DeskAgentGateway } from '@/shared/deskagent'
 import { resolveGatewayWsUrl } from '@/shared/lib/gateway-ws-url'
+import { log } from '@/shared/lib/log'
 import { reconnectBackoffMs } from '@/shared/lib/reconnect'
 import { logout } from '@/shared/store/auth'
 import { reportPrimaryGatewayState, setPrimaryGateway, tearDownPrimaryGateway } from '@/shared/store/gateway'
 import { notifyError } from '@/shared/store/notifications'
 import { strings } from '@/shared/strings'
 import type { RpcEvent } from '@/shared/types/deskagent'
+import type { DeskAgentConnection } from '@/shared/types/global'
 
 // Backend uses WS close 1008 for auth failures (token expired/revoked) —
 // trigger logout instead of looping reconnect with a dead token.
@@ -53,7 +55,7 @@ async function syncRunnerTools(gateway: DeskAgentGateway): Promise<void> {
     const hasFileTools = names.includes('read_file') || names.includes('list_directory')
 
     if (!hasFileTools) {
-      console.warn('[tools.sync] LLM will lack file tools in this session')
+      log.warn('gateway-boot', 'tools.sync: LLM will lack file tools in this session')
     }
 
     if (tools.length > 0) {
@@ -61,15 +63,13 @@ async function syncRunnerTools(gateway: DeskAgentGateway): Promise<void> {
     }
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error)
-    console.error(`[tools.sync] failed: ${msg}`)
+    log.error('gateway-boot', `tools.sync failed: ${msg}`)
   }
 }
 
 interface GatewayBootOptions {
   handleGatewayEvent: (event: RpcEvent) => void
-  onConnectionReady: (
-    connection: Awaited<ReturnType<NonNullable<typeof window.deskagent>['getConnection']>> | null
-  ) => void
+  onConnectionReady: (connection: DeskAgentConnection | null) => void
   onGatewayReady: (gateway: DeskAgentGateway | null) => void
 }
 
@@ -82,7 +82,7 @@ export function useGatewayBoot({ handleGatewayEvent, onConnectionReady, onGatewa
     let cancelled = false
     const desktop = window.deskagent
 
-    const publish = (next: Awaited<ReturnType<NonNullable<typeof window.deskagent>['getConnection']>> | null) => {
+    const publish = (next: DeskAgentConnection | null) => {
       callbacksRef.current.onConnectionReady(next)
     }
 

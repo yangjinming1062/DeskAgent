@@ -1,6 +1,7 @@
 import { atom } from 'nanostores'
 
 import { isClientErrorIpc } from '@/shared/lib/ipc-error'
+import { log } from '@/shared/lib/log'
 
 import { resolvePortraitUrl } from './avatar-image'
 
@@ -96,7 +97,7 @@ export async function hydratePortrait(): Promise<void> {
     })
   } catch (error) {
     if (!isClientErrorIpc(error)) {
-      console.warn('hydratePortrait failed', error)
+      log.warn('portrait', 'hydratePortrait failed', error)
     }
   }
 }

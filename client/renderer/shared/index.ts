@@ -15,6 +15,7 @@ export { JsonRpcGatewayClient } from './lib/gateway-protocol'
 export type { ConnectionState, GatewayClientOptions, GatewayEvent } from './lib/gateway-protocol'
 export { resolveGatewayWsUrl } from './lib/gateway-ws-url'
 export { triggerHaptic } from './lib/haptics'
+export { log } from './lib/log'
 
 export { queryClient } from './lib/query-client'
 

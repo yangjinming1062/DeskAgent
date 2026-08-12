@@ -11,18 +11,11 @@ const HOST_PLATFORM = (() => {
     case 'win32':
       return 'windows'
     default:
-      // Linux + unknowns — desktop only ships for darwin / win32, so any
-      // skill frontmatter matching `linux` will be flagged as compatible
-      // (the frontmatter alias is kept for back-compat with manifest
-      // authors; the desktop never actually runs on Linux).
       return process.platform
   }
 })()
 
-// Aliases accept either human name (macos/windows/linux) or Node's literal
-// (darwin/win32). The historical `linux` alias is kept for back-compat with
-// skill manifests authored before Linux support was dropped.
-const PLATFORM_ALIASES = { macos: 'macos', darwin: 'macos', windows: 'windows', win32: 'windows', linux: 'linux' }
+const PLATFORM_ALIASES = { macos: 'macos', darwin: 'macos', windows: 'windows', win32: 'windows' }
 
 function platformMatches(declared) {
   if (declared == null) return true

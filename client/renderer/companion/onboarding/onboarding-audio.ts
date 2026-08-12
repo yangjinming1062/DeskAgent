@@ -1,3 +1,5 @@
+import { log } from '@/shared/lib/log'
+
 import { isLatestGen, nextGen, playDataUrl } from '../audio-track'
 import { $voicePreparing } from '../voice-state'
 
@@ -30,7 +32,7 @@ export async function playOnboardingAudio(tag: OnboardingAudioTag): Promise<bool
     // Pre-rendered clip is the source of truth for onboarding voice — never
     // silently fall back to runtime TTS. Surface the missing file loudly so
     // dev/QA catches a broken installer payload on the spot.
-    console.error('[onboarding-audio] missing pre-rendered clip', tag, error)
+    log.error('onboarding-audio', 'missing pre-rendered clip', tag, error)
 
     return false
   } finally {

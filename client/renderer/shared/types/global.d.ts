@@ -21,6 +21,7 @@ declare global {
       selectPaths: (options?: DeskAgentSelectPathsOptions) => Promise<string[]>
       writeClipboard: (text: string) => Promise<boolean>
       saveClipboardImage: () => Promise<string>
+      log: (payload: { level: 'error' | 'info' | 'warn'; scope: string; args: unknown[] }) => Promise<void>
       runnerInvoke?: (name: string, args: Record<string, unknown>) => Promise<unknown>
       runnerGetState?: () => Promise<DesktopRunnerState>
       runnerGetTools?: () => Promise<Array<Record<string, unknown>>>

@@ -1,5 +1,6 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react'
 
+import { log } from '@/shared/lib/log'
 import { strings } from '@/shared/strings'
 
 import { Button, ErrorState } from './ui'
@@ -28,8 +29,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
-    const tag = this.props.label ? `[error-boundary:${this.props.label}]` : '[error-boundary]'
-    console.error(tag, error, info.componentStack)
+    log.error(this.props.label ? `error-boundary:${this.props.label}` : 'error-boundary', error, info.componentStack)
     this.props.onError?.(error, info)
   }
 

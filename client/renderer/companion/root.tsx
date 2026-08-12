@@ -18,6 +18,7 @@ import {
 import { hydratePersona } from '@/companion/persona-store'
 import { hydratePortrait } from '@/companion/portrait-store'
 import { initSpatial } from '@/companion/spatial'
+import { log } from '@/shared/lib/log'
 import { $auth, applyAuthBroadcast, hydrateAuth, logout } from '@/shared/store/auth'
 import { $gatewayState } from '@/shared/store/gateway'
 import { notify } from '@/shared/store/notifications'
@@ -279,7 +280,7 @@ export function CompanionRoot(): React.JSX.Element {
     setCompanionLifecycle('ready')
     void window.deskagent
       .api<{ id?: number; status?: string }>({ path: '/api/companion/model', method: 'POST', body: {} })
-      .catch(err => console.warn('[companion] initial model generation failed:', err))
+      .catch(err => log.warn('companion', 'initial model generation failed:', err))
   }
 
   return (

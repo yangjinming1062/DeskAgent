@@ -2,6 +2,7 @@ import * as THREE from 'three'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 
 import type { SpriteEmotion, SpriteStateName } from '@/companion/companion-store'
+import { log } from '@/shared/lib/log'
 import { safeJsonParse } from '@/shared/lib/safe-json'
 import type { ReactionBucket } from '@/shared/types/reactions'
 
@@ -157,7 +158,7 @@ export class CharacterController {
           morphNames: this.morph.targetNames()
         }
       } catch (err) {
-        console.warn('[CharacterController] GLB load failed, using procedural fallback:', err)
+        log.warn('character', 'GLB load failed, using procedural fallback:', err)
       }
     }
 
@@ -298,7 +299,7 @@ export class CharacterController {
         clipName = resolveEmotionClip(emotion, tags, library, available)
       }
 
-      // Fallback to legacy AnimationMap static mapping
+      // Spec state→clip map (MODEL_SPEC §3); last resort when no override / interaction / emotion clip resolves.
       if (!clipName) {
         clipName = resolveClip(state, this.actionNames)
       }
@@ -425,7 +426,7 @@ export class CharacterController {
       try {
         dataUrl = await desktop.apiAsset({ url })
       } catch (err) {
-        console.warn(`[CharacterController] PBR channel '${channel}' fetch failed:`, err)
+        log.warn('character', `PBR channel '${channel}' fetch failed:`, err)
 
         return
       }

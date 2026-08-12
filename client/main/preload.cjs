@@ -19,6 +19,7 @@ contextBridge.exposeInMainWorld('deskagent', {
   selectPaths: options => ipcRenderer.invoke('deskagent:selectPaths', options),
   writeClipboard: text => ipcRenderer.invoke('deskagent:writeClipboard', text),
   saveClipboardImage: () => ipcRenderer.invoke('deskagent:saveClipboardImage'),
+  log: payload => ipcRenderer.invoke('deskagent:log:emit', payload),
   runnerInvoke: (name, args) => ipcRenderer.invoke('deskagent:runner:invoke', name, args),
   runnerGetTools: () => ipcRenderer.invoke('deskagent:runner:get-tools'),
   // Synchronous snapshot of bridge phase. Pairs with onRunnerStatus so a
