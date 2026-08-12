@@ -1243,7 +1243,12 @@ function setupAutoUpdater() {
   autoUpdater.autoInstallOnAppQuit = false
   autoUpdater.logger = log
 
-  const updateBaseUrl = resolveNormalizedBackendUrl(DESKAGENT_HOME) + '/api/update'
+  const baseUrl = resolveNormalizedBackendUrl(DESKAGENT_HOME)
+  if (!baseUrl) {
+    log.info('no backend URL configured; auto-updater disabled until activation')
+    return
+  }
+  const updateBaseUrl = baseUrl + '/api/update'
   const publicKeyPath = getBundledPublicKeyPath()
 
   if (!publicKeyPath) {

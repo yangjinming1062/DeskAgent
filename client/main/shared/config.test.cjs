@@ -4,7 +4,14 @@ const os = require('node:os')
 const path = require('node:path')
 const test = require('node:test')
 
-const { FILENAME, configPath, readStoredBackendUrl, writeStoredBackendUrl } = require('./config.cjs')
+const {
+  FILENAME,
+  configPath,
+  readStoredBackendUrl,
+  writeStoredBackendUrl,
+  resolveBackendUrl,
+  resolveNormalizedBackendUrl
+} = require('./config.cjs')
 
 function tmpHome(tag) {
   return fs.mkdtempSync(path.join(os.tmpdir(), `deskagent-config-test-${tag}-`))
@@ -70,4 +77,14 @@ test('writeStoredBackendUrl rejects empty input', () => {
 
 test('writeStoredBackendUrl returns false without home', () => {
   assert.equal(writeStoredBackendUrl(null, 'https://api.example.com'), false)
+})
+
+test('resolveBackendUrl and resolveNormalizedBackendUrl return stored URL or null', () => {
+  const home = tmpHome('resolve')
+  assert.equal(resolveBackendUrl(home), null)
+  assert.equal(resolveNormalizedBackendUrl(home), null)
+
+  writeStoredBackendUrl(home, 'https://api.example.com/')
+  assert.equal(resolveBackendUrl(home), 'https://api.example.com/')
+  assert.equal(resolveNormalizedBackendUrl(home), 'https://api.example.com')
 })

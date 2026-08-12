@@ -106,10 +106,6 @@
     "beforePack": "scripts/before-pack.cjs",
     "extraResources": [
       {
-        "from": "config.json",
-        "to": "config.json"
-      },
-      {
         "from": "build/install-stamp.json",
         "to": "install-stamp.json"
       },
