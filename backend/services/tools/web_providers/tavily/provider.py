@@ -14,8 +14,11 @@ TAVILY_TIMEOUT = 60
 _HTTP_CLIENT = httpx.AsyncClient(timeout=TAVILY_TIMEOUT)
 
 
-async def aclose() -> None:
+async def aclose_tavily() -> None:
     await _HTTP_CLIENT.aclose()
+
+
+aclose = aclose_tavily
 
 
 def _build_tavily_request(
@@ -170,7 +173,15 @@ class TavilyWebSearchProvider(WebSearchProvider):
             return [{"url": u, "title": "", "content": "", "error": str(exc)} for u in urls]
         except Exception as exc:
             logger.warning("Tavily extract error", extra={"error": str(exc)})
-            return [{"url": u, "title": "", "content": "", "error": f"Tavily extract failed: {exc}"} for u in urls]
+            return [
+                {
+                    "url": u,
+                    "title": "",
+                    "content": "",
+                    "error": f"Tavily extract failed: {exc}",
+                }
+                for u in urls
+            ]
 
     def get_setup_schema(self) -> dict[str, Any]:
         return {

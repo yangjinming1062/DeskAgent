@@ -164,10 +164,7 @@ async def compress_history_if_needed(
         return messages
 
     if was_truncated:
-        logger.warning(
-            "context_compressor: LLM hit max_tokens cap while summarizing, leaving history unchanged",
-            extra={"message_count": len(block)},
-        )
+        logger.warning("context_compressor: LLM hit max_tokens cap while summarizing, leaving history unchanged", extra={"message_count": len(block)})
         return messages
 
     if not summary:

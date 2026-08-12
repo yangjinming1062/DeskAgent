@@ -44,10 +44,19 @@ def should_parallelize_tool_batch(tool_calls: Iterable[tuple[str, str]]) -> bool
         try:
             function_args = json.loads(args_str)
         except Exception:
-            logger.debug("Could not parse args, defaulting to sequential", extra={"tool_name": tool_name, "raw_args": (args_str or "")[:200]})
+            logger.debug(
+                "Could not parse args, defaulting to sequential",
+                extra={"tool_name": tool_name, "raw_args": (args_str or "")[:200]},
+            )
             return False
         if not isinstance(function_args, dict):
-            logger.debug("Non-dict args, defaulting to sequential", extra={"tool_name": tool_name, "args_type": type(function_args).__name__})
+            logger.debug(
+                "Non-dict args, defaulting to sequential",
+                extra={
+                    "tool_name": tool_name,
+                    "args_type": type(function_args).__name__,
+                },
+            )
             return False
 
         if tool_name in _PATH_SCOPED_TOOLS:
@@ -171,4 +180,10 @@ def make_tool_result_message(name: str, content: Any, tool_call_id: str) -> dict
     Multimodal list results pass through unwrapped — vision adapters need the
     list structure intact.
     """
-    return {"role": "tool", "name": name, "tool_name": name, "content": _maybe_wrap_untrusted(name, content), "tool_call_id": tool_call_id}
+    return {
+        "role": "tool",
+        "name": name,
+        "tool_name": name,
+        "content": _maybe_wrap_untrusted(name, content),
+        "tool_call_id": tool_call_id,
+    }

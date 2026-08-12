@@ -71,13 +71,17 @@ class TestVideoGenRestEndpoints:
 
         _walk(test_app.routes)
         assert "/api/media/video_gen" in paths, "POST /video_gen not registered"
-        assert "/api/media/video_gen/{task_id}" in paths, "GET /video_gen/{task_id} not registered"
+        assert "/api/media/video_gen/{task_id}" in paths, (
+            "GET /video_gen/{task_id} not registered"
+        )
 
 
 class TestVideoGenJobRoundtrip:
     """End-to-end submit → poll → success path using a mock provider."""
 
-    async def _run_roundtrip(self, monkeypatch, *, model, handler, duration, resolution, aspect_ratio):
+    async def _run_roundtrip(
+        self, monkeypatch, *, model, handler, duration, resolution, aspect_ratio
+    ):
         """Seed the user config, install the mock transport, enqueue a job and
         wait for it to reach a terminal state. Returns the final job row."""
         from components import SESSION_LOCAL
@@ -88,7 +92,11 @@ class TestVideoGenJobRoundtrip:
         with SESSION_LOCAL() as db:
             user = db.query(User).filter(User.username == "testuser").first()
             user_id = user.id
-            cfg = db.query(UserModelConfig).filter(UserModelConfig.user_id == user_id).first()
+            cfg = (
+                db.query(UserModelConfig)
+                .filter(UserModelConfig.user_id == user_id)
+                .first()
+            )
             cfg.video_gen_base_url = "https://api.minimaxi.com"
             cfg.video_gen_api_key = "sk-test"
             cfg.video_gen_model_name = model
@@ -150,7 +158,9 @@ class TestVideoGenJobRoundtrip:
         return row
 
     @pytest.mark.asyncio
-    async def test_v1_submit_poll_retrieve_download(self, monkeypatch, _patch_db, test_token):
+    async def test_v1_submit_poll_retrieve_download(
+        self, monkeypatch, _patch_db, test_token
+    ):
         """Default path: MiniMax-Hailuo v1, three-stage (submit → poll →
         files/retrieve → download)."""
         calls: list[str] = []
@@ -159,16 +169,30 @@ class TestVideoGenJobRoundtrip:
             path = request.url.path
             # The CDN download URL is absolute, not relative — match by full URL.
             if str(request.url) == "https://example.com/video.mp4":
-                return httpx.Response(200, content=b"\x00\x00\x00\x18ftypmoov", headers={"content-type": "video/mp4"})
+                return httpx.Response(
+                    200,
+                    content=b"\x00\x00\x00\x18ftypmoov",
+                    headers={"content-type": "video/mp4"},
+                )
             if path == "/v1/video_generation":
                 calls.append("submit")
                 body = json.loads(request.content)
                 assert body["prompt"] == "a cat playing piano"
                 assert "content" not in body
-                return httpx.Response(200, json={"base_resp": {"status_code": 0}, "task_id": "task-test-1"})
+                return httpx.Response(
+                    200,
+                    json={"base_resp": {"status_code": 0}, "task_id": "task-test-1"},
+                )
             if path == "/v1/query/video_generation":
                 calls.append("poll")
-                return httpx.Response(200, json={"base_resp": {"status_code": 0}, "status": "Success", "file_id": "file-1"})
+                return httpx.Response(
+                    200,
+                    json={
+                        "base_resp": {"status_code": 0},
+                        "status": "Success",
+                        "file_id": "file-1",
+                    },
+                )
             if path == "/v1/files/retrieve":
                 calls.append("retrieve")
                 assert request.url.params["file_id"] == "file-1"
@@ -176,7 +200,10 @@ class TestVideoGenJobRoundtrip:
                     200,
                     json={
                         "base_resp": {"status_code": 0},
-                        "file": {"download_url": "https://example.com/video.mp4", "content_type": "video/mp4"},
+                        "file": {
+                            "download_url": "https://example.com/video.mp4",
+                            "content_type": "video/mp4",
+                        },
                     },
                 )
             return httpx.Response(404, json={"error": "not found", "path": path})
@@ -189,32 +216,48 @@ class TestVideoGenJobRoundtrip:
             resolution="768P",
             aspect_ratio=None,
         )
-        assert row.status == "succeeded", f"job ended in {row.status}: {row.error_message}"
-        assert row.video_url.startswith("http"), f"video_url should be our public URL, got {row.video_url!r}"
+        assert row.status == "succeeded", (
+            f"job ended in {row.status}: {row.error_message}"
+        )
+        assert row.video_url.startswith("http"), (
+            f"video_url should be our public URL, got {row.video_url!r}"
+        )
         assert row.file_id is not None
         assert calls == ["submit", "poll", "retrieve"], calls
 
     @pytest.mark.asyncio
-    async def test_v2_h3_inline_download_url_skips_retrieve(self, monkeypatch, _patch_db, test_token):
+    async def test_v2_h3_inline_download_url_skips_retrieve(
+        self, monkeypatch, _patch_db, test_token
+    ):
         """H3 v2 path: poll carries the URL inline, so files/retrieve is never hit."""
         calls: list[str] = []
 
         async def handler(request: httpx.Request) -> httpx.Response:
             path = request.url.path
             if str(request.url) == "https://example.com/video.mp4":
-                return httpx.Response(200, content=b"\x00\x00\x00\x18ftypmoov", headers={"content-type": "video/mp4"})
+                return httpx.Response(
+                    200,
+                    content=b"\x00\x00\x00\x18ftypmoov",
+                    headers={"content-type": "video/mp4"},
+                )
             if path == "/v2/video_generation":
                 calls.append("submit")
                 body = json.loads(request.content)
                 assert body["content"][0]["text"] == "a cat playing piano"
-                return httpx.Response(200, json={"base_resp": {"status_code": 0}, "task_id": "task-test-1"})
+                return httpx.Response(
+                    200,
+                    json={"base_resp": {"status_code": 0}, "task_id": "task-test-1"},
+                )
             if path.startswith("/v2/query/video_generation/"):
                 calls.append("poll")
                 return httpx.Response(
                     200,
                     json={
                         "base_resp": {"status_code": 0},
-                        "task": {"status": "succeeded", "content": {"url": "https://example.com/video.mp4"}},
+                        "task": {
+                            "status": "succeeded",
+                            "content": {"url": "https://example.com/video.mp4"},
+                        },
                     },
                 )
             return httpx.Response(404, json={"error": "not found", "path": path})
@@ -227,12 +270,16 @@ class TestVideoGenJobRoundtrip:
             resolution="768P",
             aspect_ratio="16:9",
         )
-        assert row.status == "succeeded", f"job ended in {row.status}: {row.error_message}"
+        assert row.status == "succeeded", (
+            f"job ended in {row.status}: {row.error_message}"
+        )
         assert row.video_url.startswith("http")
         assert calls == ["submit", "poll"], calls
 
     @pytest.mark.asyncio
-    async def test_provider_failure_marks_job_failed(self, monkeypatch, _patch_db, test_token):
+    async def test_provider_failure_marks_job_failed(
+        self, monkeypatch, _patch_db, test_token
+    ):
         # Bypass the multi-session visibility question: drive everything
         # through the same SESSION_LOCAL session so the commit happens in
         # the same transaction the test reads.
@@ -243,7 +290,12 @@ class TestVideoGenJobRoundtrip:
 
         async def handler(request: httpx.Request) -> httpx.Response:
             if request.url.path == "/v1/video_generation":
-                return httpx.Response(200, json={"base_resp": {"status_code": 1004, "status_msg": "auth fail"}})
+                return httpx.Response(
+                    200,
+                    json={
+                        "base_resp": {"status_code": 1004, "status_msg": "auth fail"}
+                    },
+                )
             return httpx.Response(404)
 
         mock_client = httpx.AsyncClient(
@@ -257,7 +309,11 @@ class TestVideoGenJobRoundtrip:
         with SESSION_LOCAL() as db:
             user = db.query(User).filter(User.username == "testuser").first()
             user_id = user.id
-            cfg = db.query(UserModelConfig).filter(UserModelConfig.user_id == user_id).first()
+            cfg = (
+                db.query(UserModelConfig)
+                .filter(UserModelConfig.user_id == user_id)
+                .first()
+            )
             cfg.video_gen_base_url = "https://api.minimaxi.com"
             cfg.video_gen_api_key = "sk-test"
             cfg.video_gen_model_name = "MiniMax-Hailuo-2.3"
@@ -283,7 +339,11 @@ class TestVideoGenJobRoundtrip:
             from sqlalchemy import select
 
             db.expire_all()
-            rows = db.execute(select(VideoGenJob).where(VideoGenJob.user_id == user_id)).scalars().all()
+            rows = (
+                db.execute(select(VideoGenJob).where(VideoGenJob.user_id == user_id))
+                .scalars()
+                .all()
+            )
             assert rows, "expected a failed job row"
             assert rows[0].status == "failed", f"row status: {rows[0].status}"
             assert rows[0].error_reason == "submit_failed"

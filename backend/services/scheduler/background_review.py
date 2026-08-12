@@ -45,11 +45,7 @@ def _trim_tool_output(msg: dict) -> dict:
     return msg
 
 
-async def run_background_memory_review(
-    user_id: int,
-    llm_config: dict,
-    messages_snapshot: list[dict],
-) -> None:
+async def run_background_memory_review(user_id: int, llm_config: dict, messages_snapshot: list[dict]) -> None:
     """Fire-and-forget: review the conversation and save any durable memories."""
     messages = [{"role": "system", "content": _BACKGROUND_REVIEW_PROMPT}]
     for msg in messages_snapshot:

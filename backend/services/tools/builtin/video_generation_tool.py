@@ -77,12 +77,7 @@ async def video_generation_tool(
     # Timed out — job continues in background; model can poll later.
     logger.info("video_generation_tool timed out, job continues", extra={"job_id": job.id})
     return json.dumps(
-        {
-            "success": True,
-            "pending": True,
-            "task_id": str(job.id),
-            "hint": "视频仍在生成中，请稍后用 video_generate_status 查询结果",
-        },
+        {"success": True, "pending": True, "task_id": str(job.id), "hint": "视频仍在生成中，请稍后用 video_generate_status 查询结果"},
         ensure_ascii=False,
     )
 

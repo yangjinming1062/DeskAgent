@@ -174,14 +174,7 @@ def _strip_bust_prefix(prompt: str) -> str:
     return stripped
 
 
-def build_fullbody_prompt(
-    view: str,
-    persona: Persona,
-    *,
-    avatar_prompt: str,
-    template: FullbodyTemplate,
-    feedback: str | None = None,
-) -> str:
+def build_fullbody_prompt(view: str, persona: Persona, *, avatar_prompt: str, template: FullbodyTemplate, feedback: str | None = None) -> str:
     """直接构造 image-gen prompt — 无 LLM 翻译。"""
     char_desc = _strip_bust_prefix(avatar_prompt)
     features = getattr(template, f"{view}_features")
@@ -276,14 +269,7 @@ def _strip_markdown_fence(raw: str) -> str:
     return cleaned
 
 
-async def chat(
-    db: Session | None,
-    user_id: int | None,
-    system_prompt: str,
-    user_payload: str,
-    *,
-    provider_config: ProviderConfig | None = None,
-) -> str:
+async def chat(db: Session | None, user_id: int | None, system_prompt: str, user_payload: str, *, provider_config: ProviderConfig | None = None) -> str:
     """Single non-streaming chat round-trip. Empty content is an error so a blank prompt never reaches the image-gen provider."""
     provider = provider_from_config(provider_config) if provider_config is not None else provider_for_service(db, user_id, "llm")
     client = provider.raw_client()
@@ -302,13 +288,7 @@ async def chat(
     return text
 
 
-async def call_llm_once(
-    llm_cfg: dict[str, Any],
-    system_prompt: str,
-    user_payload: Any,
-    *,
-    max_tokens: int,
-) -> str | None:
+async def call_llm_once(llm_cfg: dict[str, Any], system_prompt: str, user_payload: Any, *, max_tokens: int) -> str | None:
     """``user_payload`` is JSON-serialized when it is a dict/list, otherwise ``str()``-ed."""
     client = client_for_config(llm_cfg)
     provider_name = llm_cfg.get("provider_name", "")
@@ -328,14 +308,7 @@ async def call_llm_once(
     return resp.choices[0].message.content if resp and resp.choices else None
 
 
-async def enhance_avatar_prompt(
-    db: Session | None,
-    user_id: int | None,
-    persona: Persona,
-    *,
-    feedback: str | None = None,
-    provider_config: ProviderConfig | None = None,
-) -> str:
+async def enhance_avatar_prompt(db: Session | None, user_id: int | None, persona: Persona, *, feedback: str | None = None, provider_config: ProviderConfig | None = None) -> str:
     """Rewrite persona definition into a single focused Chinese avatar (bust) prompt."""
     payload = _persona_visual_payload(persona, feedback)
     user_payload = f"请根据以下角色定义生成半身头像图的提示词：\n```json\n{json.dumps(payload, ensure_ascii=False)}\n```"
@@ -343,12 +316,7 @@ async def enhance_avatar_prompt(
     return _strip_markdown_fence(raw)
 
 
-def build_texture_prompt(
-    *,
-    description: str,
-    feedback: str | None = None,
-    rig_type: str = "biped",
-) -> str:
+def build_texture_prompt(*, description: str, feedback: str | None = None, rig_type: str = "biped") -> str:
     """直接构造 PBR 纹理图 image-gen prompt — 无 LLM 翻译。
 
     ``rig_type`` selects the texture-type prefix (clothing for bipeds, fur/scale

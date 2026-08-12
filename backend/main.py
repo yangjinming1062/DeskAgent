@@ -4,9 +4,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 import asyncpg
-import modules.auth.models
-import modules.media.models  # noqa: F401
-import services.chat.agent_delegate
+import services.chat.agent_delegate  # noqa: F401 — module side-effect: triggers agent_delegate_tool self-registration into services.tools.REGISTRY
 import services.scheduler.cronjob_tool  # noqa: F401 — cronjob tool owned by scheduler, not tools.builtin
 import services.tools.builtin  # noqa: F401
 from api import ROUTERS

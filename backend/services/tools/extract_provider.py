@@ -10,26 +10,16 @@ logger = get_logger(__name__)
 # Default backend per dispatcher kind. Source of truth for the
 # "no provider configured" fallback in both tool paths and the
 # except-branch recovery in ``_get_provider``.
-_DEFAULT_BY_KIND: dict[str, str] = {
-    "search": "ddgs",
-    "extract": "tavily",
-}
+_DEFAULT_BY_KIND: dict[str, str] = {"search": "ddgs", "extract": "tavily"}
 
-_PROVIDERS: dict[str, type[WebSearchProvider]] = {
-    "ddgs": DDGSWebSearchProvider,
-    "brave-free": BraveFreeWebSearchProvider,
-    "tavily": TavilyWebSearchProvider,
-}
+_PROVIDERS: dict[str, type[WebSearchProvider]] = {"ddgs": DDGSWebSearchProvider, "brave-free": BraveFreeWebSearchProvider, "tavily": TavilyWebSearchProvider}
 
 # ``provider.__init__`` kwargs → ``user_settings`` keys. Empty dict means
 # the provider takes no per-user credentials (and ``cls(**{})`` collapses
 # to ``cls()``).
 _PROVIDER_SETTING_KWARGS: dict[str, dict[str, str]] = {
     "brave-free": {"api_key": "web.brave_api_key"},
-    "tavily": {
-        "api_key": "web.tavily_api_key",
-        "base_url": "web.tavily_base_url",
-    },
+    "tavily": {"api_key": "web.tavily_api_key", "base_url": "web.tavily_base_url"},
 }
 
 
@@ -47,12 +37,7 @@ def _resolve_provider_name(name: str | None, *, kind: str) -> str:
     return fallback
 
 
-def _get_provider(
-    provider_name: str | None,
-    user_settings: dict | None = None,
-    *,
-    kind: str = "search",
-) -> WebSearchProvider:
+def _get_provider(provider_name: str | None, user_settings: dict | None = None, *, kind: str = "search") -> WebSearchProvider:
     user_settings = user_settings or {}
     name = _resolve_provider_name(unquote_user_setting(provider_name), kind=kind)
     try:
@@ -73,7 +58,11 @@ def resolve_search_provider(user_settings: dict | None) -> WebSearchProvider:
     selected = unquote_user_setting(user_settings.get("web.backend")) or _DEFAULT_BY_KIND["search"]
     provider = _get_provider(selected, user_settings, kind="search")
     if not provider.is_available() and provider.name != _DEFAULT_BY_KIND["search"]:
-        logger.info("Web search provider '%s' not configured; falling back to %s", provider.name, _DEFAULT_BY_KIND["search"])
+        logger.info(
+            "Web search provider '%s' not configured; falling back to %s",
+            provider.name,
+            _DEFAULT_BY_KIND["search"],
+        )
         provider = _get_provider(_DEFAULT_BY_KIND["search"], user_settings, kind="search")
     return provider
 

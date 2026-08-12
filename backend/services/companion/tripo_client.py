@@ -14,20 +14,9 @@ MODEL_VERSION_DEFAULT: str = "v3.1-20260211"
 MODEL_VERSION_MIXAMO: str = "v1.0-20240301"
 MODEL_VERSION_TRIPO: str = "v2.5-20260210"
 
-_RIG_MODEL_VERSIONS: dict[str, str] = {
-    "mixamo": MODEL_VERSION_MIXAMO,
-    "tripo": MODEL_VERSION_TRIPO,
-}
+_RIG_MODEL_VERSIONS: dict[str, str] = {"mixamo": MODEL_VERSION_MIXAMO, "tripo": MODEL_VERSION_TRIPO}
 
-_RIG_SPECS: dict[str, str] = {
-    "biped": "mixamo",
-    "quadruped": "tripo",
-    "avian": "tripo",
-    "serpentine": "tripo",
-    "aquatic": "tripo",
-    "hexapod": "tripo",
-    "octopod": "tripo",
-}
+_RIG_SPECS: dict[str, str] = {"biped": "mixamo", "quadruped": "tripo", "avian": "tripo", "serpentine": "tripo", "aquatic": "tripo", "hexapod": "tripo", "octopod": "tripo"}
 
 _TASK_POLL_INTERVAL_SECONDS: float = 5.0
 _TASK_POLL_MAX_SECONDS: float = 1800.0
@@ -66,11 +55,7 @@ def _envelope(payload: dict[str, Any]) -> dict[str, Any]:
 async def create_text_to_model(prompt: str, *, model_version: str = MODEL_VERSION_DEFAULT) -> str:
     """Returns a task_id; poll with :func:`poll_task` until ``status=success``."""
     async with httpx.AsyncClient(timeout=60.0) as client:
-        resp = await client.post(
-            f"{BASE_URL}/generation/text-to-model",
-            headers=_auth_headers(),
-            json={"prompt": prompt, "model": model_version},
-        )
+        resp = await client.post(f"{BASE_URL}/generation/text-to-model", headers=_auth_headers(), json={"prompt": prompt, "model": model_version})
     return _envelope(resp.json())["task_id"]
 
 
@@ -106,22 +91,14 @@ async def create_multiview_to_model(
     payload["texture_alignment"] = texture_alignment
     payload["orientation"] = orientation
     async with httpx.AsyncClient(timeout=60.0) as client:
-        resp = await client.post(
-            f"{BASE_URL}/generation/multiview-to-model",
-            headers=_auth_headers(),
-            json=payload,
-        )
+        resp = await client.post(f"{BASE_URL}/generation/multiview-to-model", headers=_auth_headers(), json=payload)
     return _envelope(resp.json())["task_id"]
 
 
 async def rig_check(task_id: str) -> str:
     """Starts an ``animate_prerigcheck`` task. Returns the task_id; poll it to read ``output.rig_type`` and ``output.riggable``."""
     async with httpx.AsyncClient(timeout=60.0) as client:
-        resp = await client.post(
-            f"{BASE_URL}/animations/rig-check",
-            headers=_auth_headers(),
-            json={"input": task_id},
-        )
+        resp = await client.post(f"{BASE_URL}/animations/rig-check", headers=_auth_headers(), json={"input": task_id})
     return _envelope(resp.json())["task_id"]
 
 
@@ -147,22 +124,13 @@ async def rig(task_id: str, rig_type: str, *, spec: str | None = None, model_ver
         resp = await client.post(
             f"{BASE_URL}/animations/rig",
             headers=_auth_headers(),
-            json={
-                "input": task_id,
-                "rig_type": rig_type,
-                "spec": chosen_spec,
-                "model": chosen_version,
-            },
+            json={"input": task_id, "rig_type": rig_type, "spec": chosen_spec, "model": chosen_version},
         )
     return _envelope(resp.json())["task_id"]
 
 
 async def poll_task(
-    task_id: str,
-    *,
-    interval: float = _TASK_POLL_INTERVAL_SECONDS,
-    timeout: float = _TASK_POLL_MAX_SECONDS,
-    on_progress: Callable[[dict[str, Any]], None] | None = None,
+    task_id: str, *, interval: float = _TASK_POLL_INTERVAL_SECONDS, timeout: float = _TASK_POLL_MAX_SECONDS, on_progress: Callable[[dict[str, Any]], None] | None = None
 ) -> dict[str, Any]:
     """Polls until terminal status; returns the final ``data`` payload (with ``output.model_url`` on success).
 
@@ -203,9 +171,5 @@ async def account_balance() -> dict[str, float]:
 async def upload_file(file_bytes: bytes, filename: str, content_type: str = "image/jpeg") -> str:
     """POST /v3/files — multipart upload, returns a ``file_token`` for use as ``input`` in image-to-model."""
     async with httpx.AsyncClient(timeout=60.0) as client:
-        resp = await client.post(
-            f"{BASE_URL}/files",
-            headers={"Authorization": f"Bearer {_api_key()}"},
-            files={"file": (filename, file_bytes, content_type)},
-        )
+        resp = await client.post(f"{BASE_URL}/files", headers={"Authorization": f"Bearer {_api_key()}"}, files={"file": (filename, file_bytes, content_type)})
     return _envelope(resp.json())["file_token"]

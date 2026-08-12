@@ -122,10 +122,7 @@ async def _stream_llm_response(
     # capture.
     image_parts = [m for m in current_messages if isinstance(m.get("content"), list) and any(isinstance(p, dict) and p.get("type") == "image_url" for p in m["content"])]
     if image_parts:
-        logger.info(
-            "multimodal request shape",
-            extra={"model_name": model_name, "image_messages": len(image_parts), "sample_content": image_parts[0]["content"]},
-        )
+        logger.info("multimodal request shape", extra={"model_name": model_name, "image_messages": len(image_parts), "sample_content": image_parts[0]["content"]})
 
     turn_start_time = time.monotonic()
     try:

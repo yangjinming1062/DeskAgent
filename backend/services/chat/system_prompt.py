@@ -26,6 +26,26 @@ DESK_AGENT_HELP_GUIDANCE = (
     "the docs and your training diverge, treat the docs as the source of truth."
 )
 
+LANGUAGE_DIRECTIVES: dict[str, str] = {
+    "zh": ("回复用户时默认使用简体中文，除非用户明确使用其他语言或要求你切换语言。代码、命令、文件路径、API 参数等技术内容保持原文。"),
+    "en": (
+        "Respond to the user in English by default, unless the user explicitly uses another language or asks you to switch. Keep code, commands, file paths, and API parameters in their original form."
+    ),
+}
+
+_VOLATILE_LABELS: dict[str, dict[str, str]] = {
+    "zh": {
+        "started": "对话开始时间：",
+        "session_id": "\n会话 ID：",
+        "model": "\n模型：",
+    },
+    "en": {
+        "started": "Conversation started: ",
+        "session_id": "\nSession ID: ",
+        "model": "\nModel: ",
+    },
+}
+
 MEMORY_GUIDANCE = (
     "You have persistent memory across sessions via the memory tool. There are TWO kinds — "
     "pick the right one at write time. The kind cannot be changed later; rewriting a fact "
@@ -433,18 +453,6 @@ def _join_nonempty(parts: list[str]) -> str:
     return "\n\n".join(s for p in parts if p and (s := p.strip()))
 
 
-# Short per-language directive injected right after the identity prompt.
-# The system prompt itself stays in English (engineering instructions for
-# the model); this directive controls the language of the model's
-# user-facing output.
-LANGUAGE_DIRECTIVES: dict[str, str] = {
-    "zh": ("回复用户时默认使用简体中文，除非用户明确使用其他语言或要求你切换语言。代码、命令、文件路径、API 参数等技术内容保持原文。"),
-    "en": (
-        "Respond to the user in English by default, unless the user explicitly uses another language or asks you to switch. Keep code, commands, file paths, and API parameters in their original form."
-    ),
-}
-
-
 def _resolve_language(language: str) -> str:
     """Normalise to a supported language code; fall back to default."""
     lang = (language or "").strip().lower()
@@ -538,18 +546,6 @@ def build_system_prompt_parts(config: AgentPromptConfig, system_message: str | N
 def _should_inject_tool_use_enforcement(setting: str) -> bool:
     """``tool_use_enforcement`` resolves to on unless explicitly disabled."""
     return setting.lower() not in TOOL_ENFORCE_OFF_VALUES
-
-
-# Localised labels for the volatile header. The header is internal model
-# context, but a locale-appropriate date avoids leaking English weekday
-# names into a zh conversation. If a third language is added to
-# ``SUPPORTED_LANGUAGES``, add its label set here — until then the loader
-# silently falls back to the default (en) and emits a one-shot warning so the
-# gap surfaces in startup logs instead of the user's first session.
-_VOLATILE_LABELS: dict[str, dict[str, str]] = {
-    "zh": {"started": "对话开始时间：", "session_id": "\n会话 ID：", "model": "\n模型："},
-    "en": {"started": "Conversation started: ", "session_id": "\nSession ID: ", "model": "\nModel: "},
-}
 
 
 def _format_volatile_header(config: AgentPromptConfig) -> str:

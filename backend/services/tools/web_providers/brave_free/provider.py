@@ -14,8 +14,11 @@ _BRAVE_ENDPOINT = "https://api.search.brave.com/res/v1/web/search"
 _HTTP_CLIENT = httpx.AsyncClient(timeout=15)
 
 
-async def aclose() -> None:
+async def aclose_brave() -> None:
     await _HTTP_CLIENT.aclose()
+
+
+aclose = aclose_brave
 
 
 class BraveFreeWebSearchProvider(WebSearchProvider):
@@ -81,13 +84,7 @@ class BraveFreeWebSearchProvider(WebSearchProvider):
         truncated = raw_results[:limit]
 
         web_results = [
-            {
-                "title": str(r.get("title", "")),
-                "url": str(r.get("url", "")),
-                "description": str(r.get("description", "")),
-                "position": i + 1,
-            }
-            for i, r in enumerate(truncated)
+            {"title": str(r.get("title", "")), "url": str(r.get("url", "")), "description": str(r.get("description", "")), "position": i + 1} for i, r in enumerate(truncated)
         ]
 
         logger.info(

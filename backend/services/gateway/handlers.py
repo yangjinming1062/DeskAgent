@@ -179,10 +179,7 @@ async def handle_chat_websocket(websocket: WebSocket, token: str):
                         f"truncate_before_user_ordinal {truncate_ordinal} no longer in session history",
                     )
                 drop_from_id = user_rows[truncate_ordinal].id
-                db.query(Message).filter(
-                    Message.conversation_id == runtime.conversation_id,
-                    Message.id >= drop_from_id,
-                ).delete(synchronize_session=False)
+                db.query(Message).filter(Message.conversation_id == runtime.conversation_id, Message.id >= drop_from_id).delete(synchronize_session=False)
                 db.expire_all()
                 db.commit()
 
@@ -196,26 +193,12 @@ async def handle_chat_websocket(websocket: WebSocket, token: str):
         # JsonRpcEmitter translates raw chat_service frames (chunk,
         # tool_start/end, error, message.start/complete, tool_call,
         # references) into JSON-RPC event envelopes.
-        emitter = JsonRpcEmitter(
-            raw=ws_emitter,
-            dispatcher=dispatcher,
-            session_id=runtime.session_id,
-        )
+        emitter = JsonRpcEmitter(raw=ws_emitter, dispatcher=dispatcher, session_id=runtime.session_id)
 
         async def _run_turn() -> None:
             with SESSION_LOCAL() as db:
                 try:
-                    await run_chat_turn(
-                        db,
-                        req,
-                        llm_config,
-                        user_settings,
-                        user_id,
-                        emitter,
-                        session_client_context=session_client_context,
-                        track_task=_track,
-                        runtime=runtime,
-                    )
+                    await run_chat_turn(db, req, llm_config, user_settings, user_id, emitter, session_client_context=session_client_context, track_task=_track, runtime=runtime)
                 except (WebSocketDisconnect, asyncio.CancelledError):
                     raise
                 except Exception as e:
@@ -337,12 +320,7 @@ def _get_runtime(runtime_sessions: dict[str, RuntimeSession], params: dict[str, 
     return runtime
 
 
-def _register_session_handlers(
-    dispatcher: JsonRpcDispatcher,
-    runtime_sessions: dict[str, RuntimeSession],
-    llm_config: dict,
-    user_id: int,
-) -> None:
+def _register_session_handlers(dispatcher: JsonRpcDispatcher, runtime_sessions: dict[str, RuntimeSession], llm_config: dict, user_id: int) -> None:
     def _mount_runtime(conv: Conversation, cwd: str | None) -> RuntimeSession:
         """Cancel any in-memory runtime for the same conversation, then mount a fresh one."""
         for existing in list(runtime_sessions.values()):
@@ -377,12 +355,7 @@ def _register_session_handlers(
             messages = build_session_messages(conv.id, db)
         runtime = _mount_runtime(conv, conv.cwd)
         logger.info("session.resume", extra={"user_id": user_id, "session_id": runtime.session_id})
-        return SessionResumeResult(
-            session_id=runtime.session_id,
-            message_count=len(messages),
-            messages=messages,
-            info=runtime_info_snapshot(llm_config, runtime),
-        ).model_dump()
+        return SessionResumeResult(session_id=runtime.session_id, message_count=len(messages), messages=messages, info=runtime_info_snapshot(llm_config, runtime)).model_dump()
 
     async def session_interrupt(params: dict) -> dict:
         runtime = _get_runtime(runtime_sessions, params)
@@ -403,13 +376,7 @@ def _register_session_handlers(
         # host. The runner reloads lazily on the next mcp_* tool call, so we
         # only need to forward the reload signal — no server list to ship.
         try:
-            return await dispatch_user_event(
-                user_id,
-                "mcp.reload",
-                {},
-                dispatcher=dispatcher,
-                timeout=60.0,
-            )
+            return await dispatch_user_event(user_id, "mcp.reload", {}, dispatcher=dispatcher, timeout=60.0)
         except Exception as e:
             logger.warning("reload.mcp dispatch failed", extra={"error": str(e)})
             return {"status": "runner_offline", "error": str(e)}
@@ -569,7 +536,10 @@ def _register_session_handlers(
         with SESSION_LOCAL() as db:
             persona = get_or_create_persona(db, user_id)
             if not persona.is_complete:
-                raise JsonRpcError(JSONRPC_INVALID_PARAMS, "finish onboarding before regenerating avatar")
+                raise JsonRpcError(
+                    JSONRPC_INVALID_PARAMS,
+                    "finish onboarding before regenerating avatar",
+                )
         job_id = f"avatar_regen_{user_id}_{secrets.token_urlsafe(6)}"
         lock = get_avatar_job_lock(user_id)
         if lock.locked():

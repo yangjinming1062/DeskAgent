@@ -163,10 +163,7 @@ async def _process_events(wakeup: asyncio.Event):
             try:
                 await MANAGER.send_personal_event(event_type, payload, user_id)
             except Exception as e:
-                logger.error(
-                    "Failed to dispatch event to user",
-                    extra={"event_id": event_id, "event_type": event_type, "user_id": user_id, "error": str(e)},
-                )
+                logger.error("Failed to dispatch event to user", extra={"event_id": event_id, "event_type": event_type, "user_id": user_id, "error": str(e)})
     except Exception as e:
         logger.error("Error processing events", extra={"error": str(e)})
 

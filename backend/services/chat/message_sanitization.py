@@ -1,9 +1,17 @@
 import json
 import re
+from typing import TypedDict
 
 from components import get_logger
 
 logger = get_logger(__name__)
+
+
+class MessageDict(TypedDict, total=False):
+    role: str
+    content: str | list[dict]
+    name: str | None
+
 
 # OpenAI / Anthropic / Gemini image part types. Single source — the trajectory
 # normaliser below is the only consumer; tool dispatch doesn't need to

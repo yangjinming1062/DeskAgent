@@ -1,8 +1,10 @@
+from typing import Any
+
 from .auth import authenticate_ws_token
 from .connection import MANAGER, ConnectionManager, start_ws_event_loop, stop_ws_event_loop
 from .emitter import JsonRpcEmitter
 from .ipc import await_future, discard_user, dispatch_user_event, resolve_future
-from .jsonrpc import Handler, JsonRpcDispatcher, JsonRpcError
+from .jsonrpc import Handler, JsonRpcDispatcher, JsonRpcError, _redact_message
 from .runtime import RuntimeSession, SessionCreateResult, SessionResumeResult, SessionRuntimeInfo, ToolsSyncResult, new_runtime_session, runtime_info_snapshot
 
 # ``handlers`` pulls the entire service graph (chat orchestrator + llm + tools),
@@ -33,10 +35,12 @@ __all__ = [
     "resolve_future",
     "authenticate_ws_token",
     "handle_chat_websocket",
+    # Test helper: -32603 redaction pipeline verification
+    "_redact_message",
 ]
 
 
-def __getattr__(name: str):
+def __getattr__(name: str) -> Any:
     if name in _HANDLER_NAMES:
         from . import handlers
 

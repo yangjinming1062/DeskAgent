@@ -27,9 +27,7 @@ from services.disturbance import is_quiet
 from services.gateway import MANAGER, JsonRpcEmitter
 from services.llm import resolve_user_llm_config
 
-from .cron_jobs import (
-    _compute_next_run_at,
-)
+from .cron_jobs import _compute_next_run_at
 from .memory_consolidator import maybe_consolidate_one_user
 from .nightly_activity import get_local_day_utc_bounds, run_nightly_pipeline
 
@@ -38,6 +36,23 @@ logger = get_logger(__name__)
 _BG_TASKS: set[asyncio.Task] = set()
 
 SCHEDULER_INTERVAL_SECONDS = 60
+
+# Per-user timestamp of last consolidator run. Process-local — matches the
+# ARCH §5 single-instance semantic (multi-replica would split state).
+_LAST_MEMORY_CONSOLIDATE: dict[int, float] = {}
+
+# Per-user local date string of last successful nightly pipeline run.
+_LAST_NIGHTLY_RUN: dict[int, str] = {}
+
+# Outer throttle on the recall-pool scan itself. The scan is cheap (partial
+# index) but pointless every minute when no user qualifies. 10 min keeps
+# the discovery lag low while the per-user 6 h throttle keeps the heavy
+# LLM call rate bounded.
+_LAST_CONSOLIDATE_SCAN: float = 0.0
+_CONSOLIDATE_SCAN_INTERVAL_SECONDS: int = 600
+
+# Outer throttle on the nightly activity scan.
+_LAST_NIGHTLY_SCAN: float = 0.0
 
 # Hard cap on due jobs processed per tick — bounds event-loop blocking on
 # backlog catch-up after a long pause (e.g. 60 minutes of
@@ -62,11 +77,7 @@ def _select_due_jobs() -> list[CronJob]:
         return (
             db.query(CronJob)
             .with_entities(CronJob.id, CronJob.user_id, CronJob.name, CronJob.schedule, CronJob.next_run_at, CronJob.prompt)
-            .filter(
-                CronJob.is_paused.is_(False),
-                CronJob.next_run_at.is_not(None),
-                CronJob.next_run_at <= now,
-            )
+            .filter(CronJob.is_paused.is_(False), CronJob.next_run_at.is_not(None), CronJob.next_run_at <= now)
             .order_by(CronJob.next_run_at, CronJob.id)
             .all()
         )
@@ -98,24 +109,14 @@ def _bulk_cas_advance(due_jobs: list[CronJob], now: datetime) -> dict[int, dict[
     for job in due_jobs:
         next_run = _compute_next_run_at(job.schedule, now)
         new_runs[job.id] = next_run
-        winners[job.id] = {
-            "user_id": job.user_id,
-            "is_paused": next_run is None,
-            "payload": {"prompt": job.prompt},
-        }
+        winners[job.id] = {"user_id": job.user_id, "is_paused": next_run is None, "payload": {"prompt": job.prompt}}
 
     with session_scope() as db:
         won_ids: list[int] = []
         for job in due_jobs:
             result = db.execute(
                 text("UPDATE cron_jobs SET next_run_at = :new_run, is_paused = :is_paused WHERE id = :id AND next_run_at = :old_run AND schedule = :sched"),
-                {
-                    "id": job.id,
-                    "old_run": job.next_run_at,
-                    "sched": job.schedule,
-                    "new_run": new_runs[job.id],
-                    "is_paused": winners[job.id]["is_paused"],
-                },
+                {"id": job.id, "old_run": job.next_run_at, "sched": job.schedule, "new_run": new_runs[job.id], "is_paused": winners[job.id]["is_paused"]},
             )
             if result.rowcount:
                 won_ids.append(job.id)
@@ -183,44 +184,16 @@ async def _kick_autonomous_turn(job_id: int, meta: dict[str, Any]) -> None:
         session_id = str(conv.id)
         llm_config = resolve_user_llm_config(db, user_id)
         user_settings = load_user_settings(db, user_id)
-        req = ChatRequest(
-            session_id=session_id,
-            message=ChatMessageRequest(role="user", content=prompt),
-        )
+        req = ChatRequest(session_id=session_id, message=ChatMessageRequest(role="user", content=prompt))
 
     emitter = JsonRpcEmitter(raw=None, dispatcher=dispatcher, session_id=session_id)
     try:
         with session_scope() as db:
-            await run_chat_turn(
-                db,
-                req,
-                llm_config,
-                user_settings,
-                user_id,
-                emitter,
-            )
+            await run_chat_turn(db, req, llm_config, user_settings, user_id, emitter)
     except Exception as e:
         logger.exception("cron: autonomous turn failed", extra={"user_id": user_id, "job_id": job_id})
         with contextlib.suppress(Exception):
             await dispatcher.push_event("error", {"message": str(e)}, session_id=session_id)
-
-
-# Per-user timestamp of last consolidator run. Process-local — matches the
-# ARCH §5 single-instance semantic (multi-replica would split state).
-_LAST_MEMORY_CONSOLIDATE: dict[int, float] = {}
-
-# Per-user local date string of last successful nightly pipeline run.
-_LAST_NIGHTLY_RUN: dict[int, str] = {}
-
-# Outer throttle on the recall-pool scan itself. The scan is cheap (partial
-# index) but pointless every minute when no user qualifies. 10 min keeps
-# the discovery lag low while the per-user 6 h throttle keeps the heavy
-# LLM call rate bounded.
-_LAST_CONSOLIDATE_SCAN: float = 0.0
-_CONSOLIDATE_SCAN_INTERVAL_SECONDS: int = 600
-
-# Outer throttle on the nightly activity scan.
-_LAST_NIGHTLY_SCAN: float = 0.0
 
 
 async def _tick() -> None:
@@ -239,10 +212,7 @@ async def _tick() -> None:
     await _maybe_run_autonomous_activity(now)
     due_jobs = _select_due_jobs()
     if len(due_jobs) > _MAX_DUE_PER_TICK:
-        logger.warning(
-            "cron: tick over cap, deferred to next tick",
-            extra={"due_count": len(due_jobs), "cap": _MAX_DUE_PER_TICK},
-        )
+        logger.warning("cron: tick over cap, deferred to next tick", extra={"due_count": len(due_jobs), "cap": _MAX_DUE_PER_TICK})
     due_jobs = due_jobs[:_MAX_DUE_PER_TICK]
     if not due_jobs:
         return
@@ -263,10 +233,7 @@ async def _maybe_run_memory_consolidator(now: datetime) -> None:
     _LAST_CONSOLIDATE_SCAN = now.timestamp()
 
     with session_scope() as db:
-        rows = db.execute(
-            text("SELECT user_id FROM memories WHERE context LIKE 'recall:%' GROUP BY user_id HAVING COUNT(*) > :t"),
-            {"t": MEMORY_CONSOLIDATE_TRIGGER_ROWS},
-        ).all()
+        rows = db.execute(text("SELECT user_id FROM memories WHERE context LIKE 'recall:%' GROUP BY user_id HAVING COUNT(*) > :t"), {"t": MEMORY_CONSOLIDATE_TRIGGER_ROWS}).all()
     eligible: list[int] = []
     for (user_id,) in rows:
         uid = int(user_id)
@@ -279,10 +246,7 @@ async def _maybe_run_memory_consolidator(now: datetime) -> None:
     # Apply the per-user throttle only after the consolidator actually
     # ran for that user — a failed LLM call must not lock the user out
     # of future attempts.
-    results = await asyncio.gather(
-        *(maybe_consolidate_one_user(uid) for uid in eligible),
-        return_exceptions=True,
-    )
+    results = await asyncio.gather(*(maybe_consolidate_one_user(uid) for uid in eligible), return_exceptions=True)
     for uid, result in zip(eligible, results, strict=True):
         if isinstance(result, Exception):
             logger.exception("memory_consolidator: tick failed", extra={"user_id": uid})
@@ -323,12 +287,7 @@ async def _maybe_run_autonomous_activity(now: datetime) -> None:
             msg_count = (
                 db.query(Message)
                 .join(Conversation, Message.conversation_id == Conversation.id)
-                .filter(
-                    Conversation.user_id == uid,
-                    Message.role == "user",
-                    Message.created_at >= utc_start,
-                    Message.created_at < utc_end,
-                )
+                .filter(Conversation.user_id == uid, Message.role == "user", Message.created_at >= utc_start, Message.created_at < utc_end)
                 .count()
             )
             if msg_count < NIGHTLY_MIN_MESSAGES_TODAY:
@@ -339,10 +298,7 @@ async def _maybe_run_autonomous_activity(now: datetime) -> None:
     if not eligible:
         return
 
-    results = await asyncio.gather(
-        *(run_nightly_pipeline(uid, today_str) for uid, today_str in eligible),
-        return_exceptions=True,
-    )
+    results = await asyncio.gather(*(run_nightly_pipeline(uid, today_str) for uid, today_str in eligible), return_exceptions=True)
     for (uid, today_str), result in zip(eligible, results, strict=True):
         if isinstance(result, Exception):
             logger.exception("nightly_activity: tick failed", extra={"user_id": uid})

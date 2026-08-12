@@ -1,11 +1,3 @@
-"""JSON-RPC handler body pin tests (类别 9 — handler body not yet pinned).
-
-These tests verify the exact parameter validation contract for the
-companion WS handlers. They run WITHOUT a live backend (no DB
-fixtures) by importing the internal handler functions and feeding
-raw params dicts.
-"""
-
 import pytest
 
 
@@ -15,6 +7,7 @@ def pin_handlers():
     (which needs a real WS). Then patch the dispatcher to capture
     registrations."""
     from services.gateway import handlers
+
     return handlers
 
 
@@ -22,6 +15,7 @@ def test_companion_set_disturbance_tier_normalizes_unknown(pin_handlers):
     """``companion.set_disturbance_tier`` must reject unknown tiers
     by falling back to the default — never raise JSONRPC_INVALID_PARAMS."""
     from services.disturbance import set_disturbance_tier
+
     assert set_disturbance_tier(1, "quiet") == "quiet"
     assert set_disturbance_tier(1, "bogus") == "normal"
     assert set_disturbance_tier(1, "") == "normal"
@@ -60,8 +54,14 @@ def test_tts_match_voice_preference_string_required(pin_handlers):
     from services.companion.voice_catalog import _score
     from services.llm.voice_catalog import VoiceEntry
 
-    fake = VoiceEntry(id="x", label="少女", gender="female", language="zh",
-                      tags=["少女", "温柔", "女"], description="")
+    fake = VoiceEntry(
+        id="x",
+        label="少女",
+        gender="female",
+        language="zh",
+        tags=["少女", "温柔", "女"],
+        description="",
+    )
     assert _score("温柔少女音", fake) >= 2
 
 
@@ -80,6 +80,7 @@ def test_avatar_regenerate_feedback_string_required(pin_handlers):
     # Verify the source contains the type assertion.
     import inspect
     from services.gateway import handlers
+
     src = inspect.getsource(handlers)
     assert "feedback must be a string" in src
     assert "feedback is not None and not isinstance(feedback, str)" in src
@@ -91,8 +92,12 @@ def test_session_info_handler_returns_session_id():
     from services.gateway.runtime import SessionRuntimeInfo
 
     info = SessionRuntimeInfo(
-        cwd="/tmp", branch="main", model="mimo-v2.5", provider="openai",
-        running=True, settings={"reasoning": "high", "fast": False},
+        cwd="/tmp",
+        branch="main",
+        model="mimo-v2.5",
+        provider="openai",
+        running=True,
+        settings={"reasoning": "high", "fast": False},
     )
     dumped = info.model_dump()
     assert dumped["cwd"] == "/tmp"

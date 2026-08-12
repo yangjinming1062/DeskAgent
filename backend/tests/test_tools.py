@@ -116,15 +116,28 @@ class TestImageGenTool:
             result = json.loads(result_str)
             if not result.get("success"):
                 error_msg = result.get("error", "")
-                if "404" in error_msg or "Not Found" in error_msg or "未配置" in error_msg:
-                    pytest.skip("Image generation endpoint not supported or not configured")
+                if (
+                    "404" in error_msg
+                    or "Not Found" in error_msg
+                    or "未配置" in error_msg
+                ):
+                    pytest.skip(
+                        "Image generation endpoint not supported or not configured"
+                    )
                 else:
                     assert False, f"Image generation failed: {error_msg}"
             assert len(result["urls"]) > 0
             assert result["urls"][0].startswith("http")
         except Exception as e:
-            if getattr(e, "status_code", None) == 404 or "NotFoundError" in type(e).__name__ or "404" in str(e) or "Not Found" in str(e):
-                pytest.skip("Image generation endpoint not supported by the current LLM provider")
+            if (
+                getattr(e, "status_code", None) == 404
+                or "NotFoundError" in type(e).__name__
+                or "404" in str(e)
+                or "Not Found" in str(e)
+            ):
+                pytest.skip(
+                    "Image generation endpoint not supported by the current LLM provider"
+                )
             raise
 
 
@@ -143,6 +156,7 @@ class TestWebSearch:
         assert "url" in result["data"]["web"][0]
         assert "title" in result["data"]["web"][0]
 
+
 class TestReferenceImageChain:
     """A ``reference_image`` is offered only to providers that consume it
     natively; text-only image providers are skipped for reference requests,
@@ -157,17 +171,25 @@ class TestReferenceImageChain:
     def test_chain_filters_to_reference_capable(self, monkeypatch):
         import importlib
 
-        tool_mod = importlib.import_module("services.tools.builtin.image_generation_tool")
+        tool_mod = importlib.import_module(
+            "services.tools.builtin.image_generation_tool"
+        )
         monkeypatch.setattr(
             tool_mod,
             "resolve_provider_chain",
-            lambda db, uid, svc: [self._cfg("minimax"), self._cfg("zhipu"), self._cfg("gemini")],
+            lambda db, uid, svc: [
+                self._cfg("minimax"),
+                self._cfg("zhipu"),
+                self._cfg("gemini"),
+            ],
         )
         capable = {"minimax": True, "zhipu": False, "gemini": True}
         monkeypatch.setattr(
             tool_mod,
             "resolve",
-            lambda svc, name: type("P", (), {"supports_reference_image": capable[name]})(),
+            lambda svc, name: type(
+                "P", (), {"supports_reference_image": capable[name]}
+            )(),
         )
 
         chain, err = tool_mod._image_gen_chain(None, None, "https://ref/seed.png")
@@ -177,8 +199,14 @@ class TestReferenceImageChain:
     def test_chain_returns_error_when_none_capable(self, monkeypatch):
         import importlib
 
-        tool_mod = importlib.import_module("services.tools.builtin.image_generation_tool")
-        monkeypatch.setattr(tool_mod, "resolve_provider_chain", lambda db, uid, svc: [self._cfg("zhipu")])
+        tool_mod = importlib.import_module(
+            "services.tools.builtin.image_generation_tool"
+        )
+        monkeypatch.setattr(
+            tool_mod,
+            "resolve_provider_chain",
+            lambda db, uid, svc: [self._cfg("zhipu")],
+        )
         monkeypatch.setattr(
             tool_mod,
             "resolve",
@@ -193,9 +221,13 @@ class TestReferenceImageChain:
     def test_chain_unfiltered_without_reference(self, monkeypatch):
         import importlib
 
-        tool_mod = importlib.import_module("services.tools.builtin.image_generation_tool")
+        tool_mod = importlib.import_module(
+            "services.tools.builtin.image_generation_tool"
+        )
         full = [self._cfg("zhipu"), self._cfg("minimax")]
-        monkeypatch.setattr(tool_mod, "resolve_provider_chain", lambda db, uid, svc: list(full))
+        monkeypatch.setattr(
+            tool_mod, "resolve_provider_chain", lambda db, uid, svc: list(full)
+        )
 
         chain, err = tool_mod._image_gen_chain(None, None, None)
         assert err is None
@@ -207,7 +239,9 @@ class TestReferenceImageChain:
         MissingLlmConfigError → '图片生成服务未配置'."""
         import importlib
 
-        tool_mod = importlib.import_module("services.tools.builtin.image_generation_tool")
+        tool_mod = importlib.import_module(
+            "services.tools.builtin.image_generation_tool"
+        )
         monkeypatch.setattr(tool_mod, "resolve_provider_chain", lambda db, uid, svc: [])
 
         chain, err = tool_mod._image_gen_chain(None, None, "https://ref/seed.png")
@@ -221,7 +255,9 @@ class TestReferenceImageChain:
         from services.llm import ImageAsset
         from services.llm import ImageGenResult
 
-        tool_mod = importlib.import_module("services.tools.builtin.image_generation_tool")
+        tool_mod = importlib.import_module(
+            "services.tools.builtin.image_generation_tool"
+        )
         seen: dict = {}
 
         class _NativeProvider:
@@ -229,12 +265,16 @@ class TestReferenceImageChain:
 
             async def generate(self, req):
                 seen["req"] = req
-                return ImageGenResult(images=[ImageAsset(url="http://out/1.png")], model="image-01")
+                return ImageGenResult(
+                    images=[ImageAsset(url="http://out/1.png")], model="image-01"
+                )
 
         async def _fake_execute(db, user_id, service_type, call_fn, **kwargs):
             return await call_fn(_NativeProvider())
 
-        monkeypatch.setattr(tool_mod, "_image_gen_chain", lambda *a: ([self._cfg("minimax")], None))
+        monkeypatch.setattr(
+            tool_mod, "_image_gen_chain", lambda *a: ([self._cfg("minimax")], None)
+        )
         monkeypatch.setattr(tool_mod, "execute_with_fallback", _fake_execute)
 
         result = await tool_mod.image_generation_tool(
@@ -255,7 +295,9 @@ class TestReferenceImageChain:
         from services.llm import ImageAsset
         from services.llm import ImageGenResult
 
-        tool_mod = importlib.import_module("services.tools.builtin.image_generation_tool")
+        tool_mod = importlib.import_module(
+            "services.tools.builtin.image_generation_tool"
+        )
         seen: dict = {}
 
         class _TextOnlyProvider:
@@ -263,15 +305,21 @@ class TestReferenceImageChain:
 
             async def generate(self, req):
                 seen["req"] = req
-                return ImageGenResult(images=[ImageAsset(url="http://out/1.png")], model="glm-image")
+                return ImageGenResult(
+                    images=[ImageAsset(url="http://out/1.png")], model="glm-image"
+                )
 
         async def _fake_execute(db, user_id, service_type, call_fn, **kwargs):
             return await call_fn(_TextOnlyProvider())
 
-        monkeypatch.setattr(tool_mod, "_image_gen_chain", lambda *a: ([self._cfg("zhipu")], None))
+        monkeypatch.setattr(
+            tool_mod, "_image_gen_chain", lambda *a: ([self._cfg("zhipu")], None)
+        )
         monkeypatch.setattr(tool_mod, "execute_with_fallback", _fake_execute)
 
-        result = await tool_mod.image_generation_tool(prompt="portrait", llm_config={}, user_id=None)
+        result = await tool_mod.image_generation_tool(
+            prompt="portrait", llm_config={}, user_id=None
+        )
         payload = json.loads(result)
         assert payload["success"] is True
         assert payload["urls"] == ["http://out/1.png"]
@@ -281,8 +329,14 @@ class TestReferenceImageChain:
     async def test_tool_returns_curated_error_when_none_capable(self, monkeypatch):
         import importlib
 
-        tool_mod = importlib.import_module("services.tools.builtin.image_generation_tool")
-        monkeypatch.setattr(tool_mod, "_image_gen_chain", lambda *a: ([], "当前图片生成供应商均不支持以图生图"))
+        tool_mod = importlib.import_module(
+            "services.tools.builtin.image_generation_tool"
+        )
+        monkeypatch.setattr(
+            tool_mod,
+            "_image_gen_chain",
+            lambda *a: ([], "当前图片生成供应商均不支持以图生图"),
+        )
 
         result = await tool_mod.image_generation_tool(
             prompt="portrait",

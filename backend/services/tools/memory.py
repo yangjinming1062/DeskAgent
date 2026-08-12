@@ -4,7 +4,7 @@ from typing import ClassVar
 
 from components import MAX_AUTO_INJECT_CONTENT_CHARS, MAX_RECALL_CONTENT_CHARS, MEMORY_RECALL_MAX_RESULTS, get_logger, tool_error
 from modules.memory import Memory
-from sqlalchemy import or_
+from sqlalchemy import ColumnElement, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -127,7 +127,7 @@ _RECALL_LABEL_MAX = 200
 _RECALL_TAG_FALLBACK = "other"
 
 
-def context_not_in(prefix: str):
+def context_not_in(prefix: str) -> ColumnElement[bool]:
     """SQL predicate: ``context IS NULL OR context NOT LIKE '<prefix>%'``.
 
     Three-valued logic would otherwise drop NULL-context rows under
@@ -166,10 +166,7 @@ _RETAIN_DESC = (
     "Requires a closed-set tag.\n"
     "Do not write project decisions or tool-chain facts as auto_inject — those "
     "should use recall with the appropriate tag."
-).format(
-    slots=", ".join(s.split(":", 1)[1] for s in AUTO_INJECT_SLOTS),
-    auto_cap=MAX_AUTO_INJECT_CONTENT_CHARS,
-)
+).format(slots=", ".join(s.split(":", 1)[1] for s in AUTO_INJECT_SLOTS), auto_cap=MAX_AUTO_INJECT_CONTENT_CHARS)
 
 
 RETAIN_SCHEMA = {
@@ -187,7 +184,10 @@ RETAIN_SCHEMA = {
                     "writing — the kind cannot be changed later."
                 ),
             },
-            "content": {"type": "string", "description": "The fact to remember. Keep it tight."},
+            "content": {
+                "type": "string",
+                "description": "The fact to remember. Keep it tight.",
+            },
             "tags": {
                 "type": "array",
                 "items": {"type": "string"},
@@ -209,13 +209,30 @@ RETAIN_SCHEMA = {
 RECALL_SCHEMA = {
     "name": "memory_recall",
     "description": "Search recall-pool memories. Returns rows from kind='recall' only.",
-    "parameters": {"type": "object", "properties": {"query": {"type": "string", "description": "Keywords to search for in memory."}}, "required": ["query"]},
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "query": {
+                "type": "string",
+                "description": "Keywords to search for in memory.",
+            }
+        },
+        "required": ["query"],
+    },
 }
 
 FORGET_SCHEMA = {
     "name": "memory_forget",
     "description": "Delete a specific memory by its ID. Use this to remove outdated or incorrect facts.",
-    "parameters": {"properties": {"memory_id": {"type": "integer", "description": "The ID of the memory to delete."}}, "required": ["memory_id"]},
+    "parameters": {
+        "properties": {
+            "memory_id": {
+                "type": "integer",
+                "description": "The ID of the memory to delete.",
+            }
+        },
+        "required": ["memory_id"],
+    },
 }
 
 
@@ -261,14 +278,7 @@ class NativeMemory:
             existing.content = content
             existing.tags = json.dumps(["auto_inject"])
         else:
-            self.db.add(
-                Memory(
-                    user_id=self.user_id,
-                    content=content,
-                    context=context,
-                    tags=json.dumps(["auto_inject"]),
-                )
-            )
+            self.db.add(Memory(user_id=self.user_id, content=content, context=context, tags=json.dumps(["auto_inject"])))
         try:
             self.db.commit()
         except IntegrityError:
@@ -287,12 +297,7 @@ class NativeMemory:
         if any(ctx_raw.startswith(prefix) for prefix in _FORBIDDEN_FROM_LLM):
             return tool_error("recall context cannot use reserved prefixes; those are backend-owned namespaces")
         ctx = normalize_recall_context(ctx_raw)
-        mem = Memory(
-            user_id=self.user_id,
-            content=content[:MAX_RECALL_CONTENT_CHARS],
-            context=ctx,
-            tags=json.dumps(tags),
-        )
+        mem = Memory(user_id=self.user_id, content=content[:MAX_RECALL_CONTENT_CHARS], context=ctx, tags=json.dumps(tags))
         self.db.add(mem)
         self.db.commit()
         return json.dumps({"result": "Recall memory stored.", "memory_id": mem.id, "context": ctx})
@@ -311,11 +316,7 @@ class NativeMemory:
             # NULL-context rows survive the three-valued-logic trap.
             rows = (
                 self.db.query(Memory)
-                .filter(
-                    Memory.user_id == self.user_id,
-                    or_(*conditions),
-                    *[context_not_in(p) for p in RESERVED_FROM_RECALL],
-                )
+                .filter(Memory.user_id == self.user_id, or_(*conditions), *[context_not_in(p) for p in RESERVED_FROM_RECALL])
                 .order_by(Memory.updated_at.desc())
                 .limit(MEMORY_RECALL_MAX_RESULTS)
                 .all()

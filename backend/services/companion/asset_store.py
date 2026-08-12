@@ -104,13 +104,7 @@ def verify_signed_avatar_request(filename: str, expires: int | None, sig: str | 
     return hmac.compare_digest(expected, sig)
 
 
-def save_companion_asset(
-    data: bytes,
-    *,
-    user_id: int,
-    label: str,
-    ext: str,
-) -> str:
+def save_companion_asset(data: bytes, *, user_id: int, label: str, ext: str) -> str:
     """Returns the bare storage path; read paths re-sign on demand. ``label`` is a filename prefix only, never a lookup key."""
     safe_label = "".join(c if c.isalnum() or c in "-_" else "_" for c in label)[:48] or "asset"
     user_dir = _assets_root() / str(user_id)
@@ -132,12 +126,7 @@ def resolve_companion_asset_path(user_id: int, filename: str) -> tuple[Path, str
     if not filepath.exists():
         return None
     ext = filepath.suffix.lstrip(".").lower()
-    content_type = {
-        "png": "image/png",
-        "jpg": "image/jpeg",
-        "jpeg": "image/jpeg",
-        "webp": "image/webp",
-    }.get(ext, "application/octet-stream")
+    content_type = {"png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg", "webp": "image/webp"}.get(ext, "application/octet-stream")
     return filepath, content_type
 
 
@@ -158,9 +147,6 @@ def unlink_companion_asset(storage_path: str | None) -> Path | None:
         return resolved[0]
     except OSError:
         return None
-
-
-# ── 3D model storage ─────────────────────────────────────────
 
 
 def _models_root() -> Path:

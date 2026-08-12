@@ -2,17 +2,9 @@ from typing import Protocol
 
 from sqlalchemy.orm import Session
 
-from services.llm.providers.base import ProviderConfig
+from services.llm import ProviderConfig
 
-_RIG_TYPES: tuple[str, ...] = (
-    "biped",
-    "quadruped",
-    "avian",
-    "serpentine",
-    "aquatic",
-    "hexapod",
-    "octopod",
-)
+_RIG_TYPES: tuple[str, ...] = ("biped", "quadruped", "avian", "serpentine", "aquatic", "hexapod", "octopod")
 
 _SYSTEM_PROMPT = (
     "你是一个 3D 骨骼类型分类助手。根据用户给出的物种，从下列 7 种骨骼类型中选最匹配的一种，只输出类型名本身，不要其他文字、不要标点、不要解释：\n"
@@ -29,24 +21,10 @@ _USER_TEMPLATE = "物种：{species}\n骨骼类型："
 
 
 class _ChatFn(Protocol):
-    async def __call__(
-        self,
-        db: Session | None,
-        user_id: int | None,
-        system_prompt: str,
-        user_payload: str,
-        *,
-        provider_config: ProviderConfig | None = None,
-    ) -> str: ...
+    async def __call__(self, db: Session | None, user_id: int | None, system_prompt: str, user_payload: str, *, provider_config: ProviderConfig | None = None) -> str: ...
 
 
-async def select_rig_type(
-    chat: _ChatFn,
-    species: str,
-    *,
-    db: Session | None = None,
-    user_id: int | None = None,
-) -> str:
+async def select_rig_type(chat: _ChatFn, species: str, *, db: Session | None = None, user_id: int | None = None) -> str:
     """LLM chooses one of the 7 Tripo3D rig types based on species.
 
     Falls back to ``"biped"`` on any error or empty/invalid response — never raises,

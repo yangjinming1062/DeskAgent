@@ -1,5 +1,6 @@
 import importlib
 import sys
+from typing import Any
 
 from .affect import ALLOWED_EMOTIONS
 from .chat_emitter import Emitter, HeadlessEmitter
@@ -18,7 +19,7 @@ from .types import CORE_TOOLS, IterationBudget
 _LAZY_SUBMODULES = ("orchestrator", "turn_inputs", "agent_delegate")
 
 
-def __getattr__(name: str):
+def __getattr__(name: str) -> Any:
     for module_name in _LAZY_SUBMODULES:
         full_name = f"{__name__}.{module_name}"
         module = sys.modules.get(full_name)

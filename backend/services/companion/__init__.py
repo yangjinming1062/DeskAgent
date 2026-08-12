@@ -1,5 +1,7 @@
-from . import memory_admin
-from .affect_check import check_affect
+from services.llm import ProviderConfig
+
+from . import asset_store, memory_admin, voice_catalog
+from .affect_check import AffectCheckResult, check_affect
 from .animation_generator import RIG_DEFAULT_BONES, find_unmatched_tags, generate_animation_clips, get_rig_bones
 from .asset_store import (
     build_data_uri,
@@ -24,6 +26,7 @@ from .avatar_service import (
     get_active_avatar,
     get_avatar_job_lock,
     list_avatar_history,
+    load_avatar_bytes_as_data_uri,
     regenerate_avatar,
     regenerate_avatar_from_image,
     resolve_uploaded_avatar_path,
@@ -48,8 +51,7 @@ from .persona_service import (
 from .personality_tagger import analyze_personality_tags
 from .rig_type_selector import select_rig_type
 from .tripo_client import create_multiview_to_model
-from .voice_catalog import design_voice, match_user_voice, normalize_voice_language
-from .voice_catalog import list_voices as list_tts_voices
+from .voice_catalog import design_voice, list_tts_voices, match_user_voice, normalize_voice_language
 from .wardrobe_service import (
     WardrobeSourceExpiredError,
     confirm_wardrobe_item,
@@ -63,6 +65,7 @@ from .wardrobe_service import (
 )
 
 __all__ = [
+    "AffectCheckResult",
     "ALLOWED_AVATAR_UPLOAD_MIME_TYPES",
     "ONBOARDING_FIELDS",
     "AvatarGenerationError",
@@ -72,9 +75,11 @@ __all__ = [
     "ModelGenerationError",
     "ModelGenerationInProgressError",
     "PersonaValidationError",
+    "ProviderConfig",
     "SeedPromptMissingError",
     "WardrobeSourceExpiredError",
     "analyze_personality_tags",
+    "asset_store",
     "build_data_uri",
     "build_signed_asset_url",
     "build_signed_avatar_url",
@@ -112,6 +117,7 @@ __all__ = [
     "list_memories",
     "list_tts_voices",
     "list_wardrobe",
+    "load_avatar_bytes_as_data_uri",
     "match_user_voice",
     "memory_admin",
     "memory_counts",
@@ -138,4 +144,5 @@ __all__ = [
     "update_persona",
     "verify_signed_asset_request",
     "verify_signed_avatar_request",
+    "voice_catalog",
 ]

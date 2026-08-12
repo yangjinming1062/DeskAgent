@@ -30,12 +30,15 @@ backend/
 ├── common/ · components/    # 框架基座（基类 + 有状态基础设施单例 + 横切层 correlation/redact/attachments/temp_files）
 ├── modules/                  # 按 domain 分包的 ORM 模型 + Pydantic 契约
 ├── services/                 # 业务/编排层，无 facade，按子包直接 import
+│   ├── auth/                 # 身份凭据能力集与配置响应构建
 │   ├── chat/                 # 对话编排（含 chat_emitter 收敛 ↔gateway import 环）
-│   ├── scheduler/            # Cron + 主动消息调度 + 夜间自主活动批处理
-│   ├── companion/            # 角色定义、形象资产、affect、voice catalog
+│   ├── companion/            # 角色定义、形象资产、affect、voice catalog、wardrobe
 │   ├── gateway/              # JSON-RPC + WS 入口 + IPC future
 │   ├── llm/providers/        # Chat/ImageGen/VideoGen/TTS/STT 五类 provider ABC
-│   └── tools/                # 工具层（backend / memory / runner 三类）
+│   ├── scheduler/            # Cron + 主动消息调度 + 夜间自主活动批处理
+│   ├── tools/                # 工具层（backend / memory / runner 三类）
+│   ├── update/               # 桌面客户端版本更新清单构建
+│   └── desktop_config.py     # 桌面配置默认值与铺平转换
 └── api/v1/ + main.py         # 薄 HTTP/WS 端点（pkgutil 自动发现）+ lifespan + 路由装配
 ```
 

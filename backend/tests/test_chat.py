@@ -106,14 +106,19 @@ class TestResolveContextTokens:
         from components.config import Settings
 
         for raw in ("0", "-1", "", "abc"):
-            assert Settings.model_validate({"llm_context_tokens": raw}).llm_context_tokens is None, raw
+            assert (
+                Settings.model_validate({"llm_context_tokens": raw}).llm_context_tokens
+                is None
+            ), raw
 
     def test_openai_family_injects_openai_guidance(self):
         from modules.system import AgentPromptConfig
         from services.chat.system_prompt import OPENAI_MODEL_EXECUTION_GUIDANCE
         from services.chat.system_prompt import build_system_prompt_parts
 
-        parts = build_system_prompt_parts(AgentPromptConfig(prompt_family="openai", valid_tool_names=["terminal"]))
+        parts = build_system_prompt_parts(
+            AgentPromptConfig(prompt_family="openai", valid_tool_names=["terminal"])
+        )
         assert OPENAI_MODEL_EXECUTION_GUIDANCE in parts["stable"]
 
     def test_google_family_injects_google_guidance(self):
@@ -121,16 +126,19 @@ class TestResolveContextTokens:
         from services.chat.system_prompt import GOOGLE_MODEL_OPERATIONAL_GUIDANCE
         from services.chat.system_prompt import build_system_prompt_parts
 
-        parts = build_system_prompt_parts(AgentPromptConfig(prompt_family="google", valid_tool_names=["terminal"]))
+        parts = build_system_prompt_parts(
+            AgentPromptConfig(prompt_family="google", valid_tool_names=["terminal"])
+        )
         assert GOOGLE_MODEL_OPERATIONAL_GUIDANCE in parts["stable"]
-
 
     def test_zh_language_directive_injected_by_default(self):
         from modules.system import AgentPromptConfig
         from services.chat.system_prompt import LANGUAGE_DIRECTIVES
         from services.chat.system_prompt import build_system_prompt_parts
 
-        parts = build_system_prompt_parts(AgentPromptConfig(valid_tool_names=["terminal"]))
+        parts = build_system_prompt_parts(
+            AgentPromptConfig(valid_tool_names=["terminal"])
+        )
         assert LANGUAGE_DIRECTIVES["zh"] in parts["stable"]
 
     def test_en_language_directive_injected_when_en(self):
@@ -138,7 +146,9 @@ class TestResolveContextTokens:
         from services.chat.system_prompt import LANGUAGE_DIRECTIVES
         from services.chat.system_prompt import build_system_prompt_parts
 
-        parts = build_system_prompt_parts(AgentPromptConfig(valid_tool_names=["terminal"], language="en"))
+        parts = build_system_prompt_parts(
+            AgentPromptConfig(valid_tool_names=["terminal"], language="en")
+        )
         assert LANGUAGE_DIRECTIVES["en"] in parts["stable"]
         assert LANGUAGE_DIRECTIVES["zh"] not in parts["stable"]
 
@@ -195,7 +205,6 @@ class TestResolveContextTokens:
         assert "Conversation started" in hdr
         assert "Model" in hdr
 
-
     def test_image_attachment_uses_image_url_part(self):
         from services.chat.persistence import _build_persisted_content
         from modules.system import ChatMessageRequest
@@ -204,7 +213,9 @@ class TestResolveContextTokens:
             message=ChatMessageRequest(
                 role="user",
                 content="Describe this image",
-                attachments=[{"type": "image", "file_url": "http://example.com/image.png"}],
+                attachments=[
+                    {"type": "image", "file_url": "http://example.com/image.png"}
+                ],
             )
         )
         content, content_type = _build_persisted_content(req)
@@ -219,7 +230,9 @@ class TestResolveContextTokens:
         from services.chat.persistence import _build_persisted_content
         from modules.system import ChatMessageRequest
 
-        req = SimpleNamespace(message=ChatMessageRequest(role="user", content="Just text"))
+        req = SimpleNamespace(
+            message=ChatMessageRequest(role="user", content="Just text")
+        )
         content, content_type = _build_persisted_content(req)
         assert content_type == "text"
         assert content == "Just text"
@@ -256,11 +269,21 @@ def _make_tiny_png() -> bytes:
     sig = b"\x89PNG\r\n\x1a\n"
     ihdr_data = struct.pack(">IIBBBBB", 1, 1, 8, 2, 0, 0, 0)
     ihdr_crc = zlib.crc32(b"IHDR" + ihdr_data)
-    ihdr = struct.pack(">I", 13) + b"IHDR" + ihdr_data + struct.pack(">I", ihdr_crc & 0xFFFFFFFF)
-    raw_data = b"\x00\xFF\x00\x00"
+    ihdr = (
+        struct.pack(">I", 13)
+        + b"IHDR"
+        + ihdr_data
+        + struct.pack(">I", ihdr_crc & 0xFFFFFFFF)
+    )
+    raw_data = b"\x00\xff\x00\x00"
     compressed = zlib.compress(raw_data)
     idat_crc = zlib.crc32(b"IDAT" + compressed)
-    idat = struct.pack(">I", len(compressed)) + b"IDAT" + compressed + struct.pack(">I", idat_crc & 0xFFFFFFFF)
+    idat = (
+        struct.pack(">I", len(compressed))
+        + b"IDAT"
+        + compressed
+        + struct.pack(">I", idat_crc & 0xFFFFFFFF)
+    )
     iend_crc = zlib.crc32(b"IEND")
     iend = struct.pack(">I", 0) + b"IEND" + struct.pack(">I", iend_crc & 0xFFFFFFFF)
     return sig + ihdr + idat + iend
@@ -287,14 +310,26 @@ class TestChatE2E:
         """Test the actual WebSocket chat flow from session creation to prompt completion without mocks."""
         with test_client.websocket_connect(f"/api/chat/ws?ticket={ws_ticket}") as ws:
             # 1. Create a new session
-            ws.send_json({"jsonrpc": "2.0", "id": 1, "method": "session.create", "params": {}})
+            ws.send_json(
+                {"jsonrpc": "2.0", "id": 1, "method": "session.create", "params": {}}
+            )
             resp = ws.receive_json()
             assert "result" in resp, f"Unexpected response: {resp}"
             session_id = resp["result"]["session_id"]
             assert session_id
 
             # 2. Submit a prompt
-            ws.send_json({"jsonrpc": "2.0", "id": 2, "method": "prompt.submit", "params": {"session_id": session_id, "text": "Say 'ok' in one word."}})
+            ws.send_json(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 2,
+                    "method": "prompt.submit",
+                    "params": {
+                        "session_id": session_id,
+                        "text": "Say 'ok' in one word.",
+                    },
+                }
+            )
             resp = ws.receive_json()
             assert resp["result"] == {"queued": True}
 
@@ -306,7 +341,9 @@ class TestChatE2E:
                     params = msg.get("params", {})
                     event_type = params.get("type")
                     if event_type == "error":
-                        raise RuntimeError(f"Chat turn failed with error: {params.get('payload') or params.get('message')}")
+                        raise RuntimeError(
+                            f"Chat turn failed with error: {params.get('payload') or params.get('message')}"
+                        )
                     events.append(params)
                     if event_type == "message.complete":
                         break
@@ -324,19 +361,30 @@ class TestChatE2E:
         from starlette.testclient import WebSocketDisconnect
 
         with pytest.raises((WebSocketDisconnect, Exception)):
-            with test_client.websocket_connect("/api/chat/ws?ticket=invalid-ticket-abc"):
+            with test_client.websocket_connect(
+                "/api/chat/ws?ticket=invalid-ticket-abc"
+            ):
                 pass
 
     def test_websocket_session_lifecycle(self, test_client, ws_ticket):
         """Test creating a session and verifying prompt submission after interrupt."""
         with test_client.websocket_connect(f"/api/chat/ws?ticket={ws_ticket}") as ws:
             # Create session
-            ws.send_json({"jsonrpc": "2.0", "id": 1, "method": "session.create", "params": {}})
+            ws.send_json(
+                {"jsonrpc": "2.0", "id": 1, "method": "session.create", "params": {}}
+            )
             resp = ws.receive_json()
             session_id = resp["result"]["session_id"]
 
             # Interrupt (no-op when no turn is running) — confirms the handler
             # is reachable on a freshly mounted session.
-            ws.send_json({"jsonrpc": "2.0", "id": 2, "method": "session.interrupt", "params": {"session_id": session_id}})
+            ws.send_json(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 2,
+                    "method": "session.interrupt",
+                    "params": {"session_id": session_id},
+                }
+            )
             resp = ws.receive_json()
             assert resp["result"] == {}

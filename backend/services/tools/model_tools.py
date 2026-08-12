@@ -44,7 +44,7 @@ def coerce_tool_args(tool_name: str, args: dict[str, Any], schema: dict | None) 
     return args
 
 
-def _coerce_value(value: str, expected_type, schema: dict | None = None):
+def _coerce_value(value: str, expected_type, schema: dict | None = None) -> Any:
     if _schema_allows_null(schema) and value.strip().lower() == "null":
         return None
 
@@ -87,12 +87,12 @@ def _schema_allows_null(schema: dict | None) -> bool:
     return False
 
 
-def _coerce_json(value: str, expected_python_type: type):
+def _coerce_json(value: str, expected_python_type: type) -> Any:
     parsed = safe_json_loads(value)
     return parsed if isinstance(parsed, expected_python_type) else value
 
 
-def _coerce_number(value: str, integer_only: bool = False):
+def _coerce_number(value: str, integer_only: bool = False) -> Any:
     try:
         f = float(value)
     except (ValueError, OverflowError):
@@ -104,7 +104,7 @@ def _coerce_number(value: str, integer_only: bool = False):
     return value if integer_only else f
 
 
-def _coerce_boolean(value: str):
+def _coerce_boolean(value: str) -> Any:
     low = value.strip().lower()
     if low == "true":
         return True

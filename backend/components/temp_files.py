@@ -2,6 +2,7 @@ import contextlib
 import json
 import secrets
 import time
+from collections.abc import Iterator
 from pathlib import Path
 
 from .config import SETTINGS
@@ -70,8 +71,7 @@ def get_file_path(file_id: str) -> tuple[Path, str] | None:
     return path, meta["content_type"]
 
 
-def _iter_meta_files():
-    """Yield (meta_path, parsed_meta) for every valid sidecar .json file."""
+def _iter_meta_files() -> Iterator[tuple[Path, dict]]:
     for mp in _storage_dir().glob("*.json"):
         try:
             yield mp, json.loads(mp.read_text())
@@ -79,8 +79,7 @@ def _iter_meta_files():
             _safe_unlink(mp)
 
 
-def cleanup_expired():
-    """Remove files older than TTL by scanning sidecar .json files."""
+def cleanup_expired() -> None:
     ttl = SETTINGS.temp_file_ttl_hours * 3600
     now = time.time()
     count = 0
@@ -93,8 +92,7 @@ def cleanup_expired():
         logger.info("Cleaned up expired temp files", extra={"count": count})
 
 
-def gc_session(session_id: str):
-    """Remove all files for a session (called on session delete)."""
+def gc_session(session_id: str) -> None:
     count = 0
     for mp, meta in _iter_meta_files():
         if meta.get("session_id") == session_id:
@@ -126,6 +124,6 @@ def delete_file(file_id: str) -> bool:
     return True
 
 
-def _safe_unlink(path: Path):
+def _safe_unlink(path: Path) -> None:
     with contextlib.suppress(OSError):
         path.unlink(missing_ok=True)

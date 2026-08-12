@@ -101,11 +101,7 @@ def get_or_create_persona(db: Session, user_id: int) -> Persona:
     return persona
 
 
-def update_persona(
-    db: Session,
-    user_id: int,
-    definition: dict[str, Any],
-) -> Persona:
+def update_persona(db: Session, user_id: int, definition: dict[str, Any]) -> Persona:
     if not isinstance(definition, dict):
         raise PersonaValidationError("persona definition must be an object")
     user_profile = extract_user_profile(definition)
@@ -226,19 +222,11 @@ def submit_onboarding_field(db: Session, user_id: int, field: str, value: str | 
         # Post-character fields accepted here; see single-PUT dual-write contract.
         if field.startswith("user_"):
             if value and value.strip():
-                record_user_profile(
-                    db,
-                    user_id,
-                    {field: value.strip()[:_ONBOARDING_MAX_LEN]},
-                )
+                record_user_profile(db, user_id, {field: value.strip()[:_ONBOARDING_MAX_LEN]})
                 db.commit()
             # Empty value: leave the Memory row alone so revocation stays the
             # only path that wipes a user_* entry (memory_forget).
-            return {
-                "answers": _load_draft(persona),
-                "next_field": None,
-                "complete": True,
-            }
+            return {"answers": _load_draft(persona), "next_field": None, "complete": True}
         # voice is not a persona field, so the draft is the only thing that
         # moves here — system_prompt_extras stays as update_persona left it.
         if field == "voice":
@@ -250,10 +238,7 @@ def submit_onboarding_field(db: Session, user_id: int, field: str, value: str | 
             persona.definition_json = json.dumps(draft, ensure_ascii=False)
             db.commit()
             return {"answers": draft, "next_field": None, "complete": True}
-        raise PersonaValidationError(
-            f"onboarding field {field!r} cannot be edited after persona is finalized; use PUT /api/companion/persona",
-            field,
-        )
+        raise PersonaValidationError(f"onboarding field {field!r} cannot be edited after persona is finalized; use PUT /api/companion/persona", field)
     draft = _load_draft(persona)
     if value and value.strip():
         draft[field] = value.strip()[:_ONBOARDING_MAX_LEN]

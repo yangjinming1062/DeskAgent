@@ -440,12 +440,30 @@ def _resolve_guardrail_thresholds(
 ) -> tuple[_GuardrailThresholdSet, _GuardrailThresholdSet]:
     """Split a config dict into warn-tier and hard-stop-tier threshold triples."""
     nested_keys = ("exact_failure", "same_tool_failure", "idempotent_no_progress")
-    warn_keys = ("exact_failure_warn_after", "same_tool_failure_warn_after", "no_progress_warn_after")
-    block_keys = ("exact_failure_block_after", "same_tool_failure_halt_after", "no_progress_block_after")
+    warn_keys = (
+        "exact_failure_warn_after",
+        "same_tool_failure_warn_after",
+        "no_progress_warn_after",
+    )
+    block_keys = (
+        "exact_failure_block_after",
+        "same_tool_failure_halt_after",
+        "no_progress_block_after",
+    )
 
-    def _tier(tier_after: Mapping[str, Any], flat_keys: tuple[str, str, str], def_keys: tuple[str, str, str]) -> _GuardrailThresholdSet:
+    def _tier(
+        tier_after: Mapping[str, Any],
+        flat_keys: tuple[str, str, str],
+        def_keys: tuple[str, str, str],
+    ) -> _GuardrailThresholdSet:
         return _GuardrailThresholdSet(
-            *(positive_int(tier_after.get(nested, data.get(flat)), getattr(defaults, default_attr)) for nested, flat, default_attr in zip(nested_keys, flat_keys, def_keys))
+            *(
+                positive_int(
+                    tier_after.get(nested, data.get(flat)),
+                    getattr(defaults, default_attr),
+                )
+                for nested, flat, default_attr in zip(nested_keys, flat_keys, def_keys)
+            )
         )
 
     return _tier(warn_after, warn_keys, warn_keys), _tier(hard_stop_after, block_keys, block_keys)

@@ -1,6 +1,7 @@
 import json
 
 from modules.auth import ProviderSlot, UserModelConfig
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session
 
 
@@ -24,7 +25,30 @@ def merge_provider_json(
     return json.dumps(out)
 
 
-def resolve_user_llm_config(db: Session, user_id: int) -> dict:
+class UserLlmConfig(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    api_key: str = ""
+    base_url: str = ""
+    model_name: str = ""
+    provider_name: str = ""
+
+    def get(self, key: str, default: str | None = None) -> str | None:
+        return getattr(self, key, default)
+
+    def __getitem__(self, item: str) -> str:
+        if hasattr(self, item):
+            return getattr(self, item)
+        raise KeyError(item)
+
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, dict):
+            d = self.model_dump()
+            return all(d.get(k) == v for k, v in other.items())
+        return super().__eq__(other)
+
+
+def resolve_user_llm_config(db: Session, user_id: int) -> UserLlmConfig:
     # Every credential comes from the same chain head the chat path uses,
     # so downstream callers (schedulers, title generation) see one
     # consistent provider. ``db=None`` is allowed for callers that
@@ -34,9 +58,9 @@ def resolve_user_llm_config(db: Session, user_id: int) -> dict:
     config = db.query(UserModelConfig).filter(UserModelConfig.user_id == user_id).first() if db is not None else None
     chain = resolve_provider_chain(db, user_id, "llm", user_cfg=config)
     head = chain[0] if chain else None
-    return {
-        "api_key": head.api_key if head else "",
-        "base_url": head.base_url if head else "",
-        "model_name": head.model if head else "",
-        "provider_name": head.provider_name if head else "",
-    }
+    return UserLlmConfig(
+        api_key=head.api_key if head else "",
+        base_url=head.base_url if head else "",
+        model_name=head.model if head else "",
+        provider_name=head.provider_name if head else "",
+    )

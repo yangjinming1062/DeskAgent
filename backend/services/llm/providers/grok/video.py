@@ -10,15 +10,7 @@ from ._errors import raise_for_grok_response
 # "expired" is a terminal failure (worker can stop polling); "failed" is the
 # generic rejection path. Both map to our internal "failed" so the worker
 # records a single terminal status without branching.
-_STATUS_MAP = {
-    "queued": "queued",
-    "processing": "processing",
-    "pending": "processing",
-    "running": "processing",
-    "done": "succeeded",
-    "failed": "failed",
-    "expired": "failed",
-}
+_STATUS_MAP = {"queued": "queued", "processing": "processing", "pending": "processing", "running": "processing", "done": "succeeded", "failed": "failed", "expired": "failed"}
 
 # Docs cap prompt at 7000 characters for video generation; reject early so
 # the worker doesn't round-trip a guaranteed rejection.
@@ -66,12 +58,7 @@ class GrokVideoGenProvider(VideoGenProvider):
         if req.resolution not in _SUPPORTED_RESOLUTIONS:
             raise ValueError(f"{model} requires resolution in {_SUPPORTED_RESOLUTIONS}, got {req.resolution!r}")
 
-        payload: dict = {
-            "model": model,
-            "prompt": req.prompt,
-            "duration": req.duration,
-            "resolution": req.resolution,
-        }
+        payload: dict = {"model": model, "prompt": req.prompt, "duration": req.duration, "resolution": req.resolution}
         if req.aspect_ratio:
             payload["aspect_ratio"] = req.aspect_ratio
         if req.first_frame_image:
@@ -94,12 +81,7 @@ class GrokVideoGenProvider(VideoGenProvider):
         if norm is None:
             # Unknown status — keep polling but surface the raw value so an
             # operator can diagnose it from logs.
-            return VideoJobStatus(
-                task_id=task_id,
-                status="processing",
-                error=f"unknown grok video status: {raw_status!r}",
-                raw=body,
-            )
+            return VideoJobStatus(task_id=task_id, status="processing", error=f"unknown grok video status: {raw_status!r}", raw=body)
 
         video = body.get("video") or {}
         download_url = video.get("url") if norm == "succeeded" else None
@@ -115,13 +97,7 @@ class GrokVideoGenProvider(VideoGenProvider):
         else:
             error = f"provider returned non-standard error: {error_raw!r}"
 
-        return VideoJobStatus(
-            task_id=task_id,
-            status=norm,
-            download_url=download_url,
-            error=error,
-            raw=body,
-        )
+        return VideoJobStatus(task_id=task_id, status=norm, download_url=download_url, error=error, raw=body)
 
     async def fetch(self, file_id: str) -> VideoAsset:
         # xAI returns the download URL inline from ``poll``; ``fetch`` is

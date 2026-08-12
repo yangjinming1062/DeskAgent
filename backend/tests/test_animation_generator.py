@@ -20,7 +20,10 @@ def test_validate_and_sanitize_clip():
             "Head": [
                 {"t": 0, "r": [0, 0, 0]},
                 {"t": 1.0, "r": [0.2, -0.1, 0.05]},
-                {"t": 1.5, "r": [0.5, 0.5, 0.5]},  # loop will fix final keyframe to t=2.0 and r=[0, 0, 0]
+                {
+                    "t": 1.5,
+                    "r": [0.5, 0.5, 0.5],
+                },  # loop will fix final keyframe to t=2.0 and r=[0, 0, 0]
             ]
         },
     }
@@ -53,13 +56,17 @@ async def test_find_unmatched_tags():
         {"name": "c2", "tags": ["温柔"]},
     ]
 
-    unmatched = await find_unmatched_tags(["活泼", "妖娆", "妩媚"], rig_type="biped", existing_clips=existing_clips)
+    unmatched = await find_unmatched_tags(
+        ["活泼", "妖娆", "妩媚"], rig_type="biped", existing_clips=existing_clips
+    )
     assert unmatched == ["妖娆", "妩媚"]
 
 
 @pytest.mark.asyncio
 async def test_generate_animation_clips():
-    async def mock_chat(db, user_id, system_prompt, user_payload, *, provider_config=None):
+    async def mock_chat(
+        db, user_id, system_prompt, user_payload, *, provider_config=None
+    ):
         return json.dumps(
             [
                 {

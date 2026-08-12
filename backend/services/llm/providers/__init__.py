@@ -28,6 +28,7 @@ from .base import (
     VoiceDesignResult,
 )
 from .http import aclose_all
+from .mimo import MiMoChatProvider, MiMoImageGenProvider, MiMoSTTProvider, MiMoTTSProvider
 from .registry import (
     KNOWN_PROVIDERS,
     PROVIDER_DEFAULT_URLS,
@@ -75,6 +76,10 @@ __all__ = [
     "ImageGenProvider",
     "ImageGenRequest",
     "ImageGenResult",
+    "MiMoChatProvider",
+    "MiMoImageGenProvider",
+    "MiMoSTTProvider",
+    "MiMoTTSProvider",
     "STTProvider",
     "STTResult",
     "TTSProvider",

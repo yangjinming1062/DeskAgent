@@ -1,7 +1,6 @@
 import pytest
 
-from services.gateway.jsonrpc import JsonRpcDispatcher
-from services.gateway.jsonrpc import _redact_message
+from services.gateway import JsonRpcDispatcher, _redact_message
 
 
 def test_redact_message_strips_paths_and_credentials():
@@ -11,7 +10,7 @@ def test_redact_message_strips_paths_and_credentials():
     leak = (
         "OperationalError: (psycopg2.OperationalError) connection to server at "
         "10.0.0.5 (10.0.0.5), port 5432 failed: FATAL: password authentication "
-        "failed for user \"postgres\" /home/agent/DeskAgent/backend/services/chat/x.py:42"
+        'failed for user "postgres" /home/agent/DeskAgent/backend/services/chat/x.py:42'
     )
     redacted = _redact_message(leak)
     assert "OperationalError" not in redacted or "[redacted]" in redacted
@@ -24,7 +23,7 @@ def test_redact_message_strips_paths_and_credentials():
 def test_redact_message_strips_traceback():
     msg = (
         "Something: Traceback (most recent call last):\n"
-        "  File \"/srv/app/backend/x.py\", line 99, in foo\n"
+        '  File "/srv/app/backend/x.py", line 99, in foo\n'
         "    raise RuntimeError('boom')"
     )
     redacted = _redact_message(msg)
@@ -73,14 +72,18 @@ async def test_jsonrpc_internal_error_redacts_handler_exception():
     dispatcher = JsonRpcDispatcher(_send)
 
     async def _boom(params: dict):
-        raise RuntimeError("connection to postgresql://app:s3cret@db:5432/x failed at /srv/app/main.py:10")
+        raise RuntimeError(
+            "connection to postgresql://app:s3cret@db:5432/x failed at /srv/app/main.py:10"
+        )
 
     dispatcher.register("boom", _boom)
 
     previous_level = logging.root.manager.disable
     logging.disable(logging.CRITICAL)
     try:
-        await dispatcher.handle({"jsonrpc": "2.0", "id": 1, "method": "boom", "params": {}})
+        await dispatcher.handle(
+            {"jsonrpc": "2.0", "id": 1, "method": "boom", "params": {}}
+        )
     finally:
         logging.disable(previous_level)
 

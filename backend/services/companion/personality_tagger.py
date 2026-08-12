@@ -3,34 +3,13 @@ from typing import Protocol
 from components import get_logger, safe_json_loads
 from sqlalchemy.orm import Session
 
-from services.llm.providers.base import ProviderConfig
+from services.llm import ProviderConfig
 
 logger = get_logger(__name__)
 
 # 按骨骼类型分类的初始种子词汇表（与客户端 PERSONALITY_TAG_SEED_BY_RIG 一致）。
 _TAG_SEEDS_BY_RIG: dict[str, list[str]] = {
-    "common": [
-        "温顺",
-        "警惕",
-        "敏锐",
-        "暴躁",
-        "好奇",
-        "沉稳",
-        "灵动",
-        "威严",
-        "幼态",
-        "迟钝",
-        "好斗",
-        "懒散",
-        "忠诚",
-        "狡黠",
-        "胆小",
-        "敏捷",
-        "神秘",
-        "亲人",
-        "独立",
-        "贪吃",
-    ],
+    "common": ["温顺", "警惕", "敏锐", "暴躁", "好奇", "沉稳", "灵动", "威严", "幼态", "迟钝", "好斗", "懒散", "忠诚", "狡黠", "胆小", "敏捷", "神秘", "亲人", "独立", "贪吃"],
     "biped": [
         "活泼",
         "好动",
@@ -89,115 +68,12 @@ _TAG_SEEDS_BY_RIG: dict[str, list[str]] = {
         "体面",
         "随和",
     ],
-    "quadruped": [
-        "护主",
-        "撒娇",
-        "狂野",
-        "贪玩",
-        "拆家",
-        "顺从",
-        "凶猛",
-        "护食",
-        "捕猎",
-        "摇尾",
-        "欢腾",
-        "憨厚",
-        "警戒",
-        "领地意识",
-        "爱抚",
-        "温顺可爱",
-        "精力充沛",
-        "机警敏捷",
-    ],
-    "avian": [
-        "高傲",
-        "翱翔",
-        "啼鸣",
-        "聒噪",
-        "俯冲",
-        "求偶",
-        "高贵",
-        "灵巧",
-        "孤傲",
-        "机敏",
-        "轻盈",
-        "展翅",
-        "鸣啭",
-        "华丽",
-        "警觉锐利",
-        "从容不迫",
-        "羽翼丰满",
-    ],
-    "serpentine": [
-        "冷酷",
-        "潜伏",
-        "致命",
-        "蜕变",
-        "缠绕",
-        "森冷",
-        "剧毒",
-        "幽暗",
-        "诡谲",
-        "隐忍",
-        "冰冷",
-        "吐信",
-        "盘踞",
-        "阴翳",
-        "迅捷突袭",
-        "神秘莫测",
-    ],
-    "aquatic": [
-        "悠游",
-        "静谧",
-        "深邃",
-        "跃动",
-        "浮游",
-        "群居",
-        "洄游",
-        "幻彩",
-        "纯净",
-        "游弋",
-        "吐泡",
-        "摆尾",
-        "空灵",
-        "波澜不惊",
-        "如鱼得水",
-        "灵波荡漾",
-    ],
-    "hexapod": [
-        "勤劳",
-        "秩序",
-        "机械",
-        "群集",
-        "工蜂",
-        "蛰伏",
-        "探索",
-        "坚韧",
-        "服从",
-        "狂躁",
-        "筑巢",
-        "拟态",
-        "触角敏锐",
-        "冷酷高效",
-        "甲壳坚硬",
-    ],
-    "octopod": [
-        "多智",
-        "伪装",
-        "莫测",
-        "怪诞",
-        "克苏鲁",
-        "多面",
-        "诡异",
-        "探知",
-        "喷墨",
-        "触手灵动",
-        "不可名状",
-        "洞察",
-        "狡诈多端",
-        "深海潜行",
-        "柔韧变幻",
-    ],
+    "quadruped": ["护主", "撒娇", "狂野", "贪玩", "拆家", "顺从", "凶猛", "护食", "捕猎", "摇尾", "欢腾", "憨厚", "警戒", "领地意识", "爱抚", "温顺可爱", "精力充沛", "机警敏捷"],
+    "avian": ["高傲", "翱翔", "啼鸣", "聒噪", "俯冲", "求偶", "高贵", "灵巧", "孤傲", "机敏", "轻盈", "展翅", "鸣啭", "华丽", "警觉锐利", "从容不迫", "羽翼丰满"],
+    "serpentine": ["冷酷", "潜伏", "致命", "蜕变", "缠绕", "森冷", "剧毒", "幽暗", "诡谲", "隐忍", "冰冷", "吐信", "盘踞", "阴翳", "迅捷突袭", "神秘莫测"],
+    "aquatic": ["悠游", "静谧", "深邃", "跃动", "浮游", "群居", "洄游", "幻彩", "纯净", "游弋", "吐泡", "摆尾", "空灵", "波澜不惊", "如鱼得水", "灵波荡漾"],
+    "hexapod": ["勤劳", "秩序", "机械", "群集", "工蜂", "蛰伏", "探索", "坚韧", "服从", "狂躁", "筑巢", "拟态", "触角敏锐", "冷酷高效", "甲壳坚硬"],
+    "octopod": ["多智", "伪装", "莫测", "怪诞", "克苏鲁", "多面", "诡异", "探知", "喷墨", "触手灵动", "不可名状", "洞察", "狡诈多端", "深海潜行", "柔韧变幻"],
 }
 
 # 扁平合并的所有种子标签
@@ -214,25 +90,11 @@ _SYSTEM_PROMPT = (
 
 
 class ChatFn(Protocol):
-    async def __call__(
-        self,
-        db: Session | None,
-        user_id: int | None,
-        system_prompt: str,
-        user_payload: str,
-        *,
-        provider_config: ProviderConfig | None = None,
-    ) -> str: ...
+    async def __call__(self, db: Session | None, user_id: int | None, system_prompt: str, user_payload: str, *, provider_config: ProviderConfig | None = None) -> str: ...
 
 
 async def analyze_personality_tags(
-    chat: ChatFn,
-    definition_json: str,
-    user_id: int | None = None,
-    *,
-    species: str | None = None,
-    rig_type: str | None = None,
-    db: Session | None = None,
+    chat: ChatFn, definition_json: str, user_id: int | None = None, *, species: str | None = None, rig_type: str | None = None, db: Session | None = None
 ) -> list[str]:
     """LLM 分析 persona 设定并提取性格标签列表。
 
@@ -276,8 +138,7 @@ async def analyze_personality_tags(
             tags = [t.strip(" \"'[]\n\r\t") for t in cleaned_raw.replace("，", ",").replace("\n", ",").split(",") if t.strip(" \"'[]\n\r\t")]
 
         # 去重且保持顺序
-        deduped = list(dict.fromkeys(tags))
-        if deduped:
+        if deduped := list(dict.fromkeys(tags)):
             return deduped[:10]
 
         # LLM 解析为空时的默认 fallback

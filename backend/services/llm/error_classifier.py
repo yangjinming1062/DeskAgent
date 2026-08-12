@@ -8,6 +8,8 @@ from components import get_logger, redact_sensitive_text, safe_json_loads
 
 logger = get_logger(__name__)
 
+_CAUSE_CHAIN_MAX_DEPTH = 5
+
 
 # ── Error taxonomy ──────────────────────────────────────────────────────
 
@@ -1244,9 +1246,6 @@ def _classify_by_message(
 
 
 # ── Helpers ─────────────────────────────────────────────────────────────
-
-
-_CAUSE_CHAIN_MAX_DEPTH = 5
 
 
 def _build_error_message(error: Exception, body: dict) -> str:

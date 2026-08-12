@@ -13,15 +13,22 @@ def _fake_response(content: str | None):
     tests)."""
 
     if content is None:
+
         async def _boom(*_a, **_kw):
             raise RuntimeError("network down")
 
-        return SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=_boom)))
+        return SimpleNamespace(
+            chat=SimpleNamespace(completions=SimpleNamespace(create=_boom))
+        )
 
     async def _create(*_a, **_kw):
-        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=content))])
+        return SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content=content))]
+        )
 
-    return SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=_create)))
+    return SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=_create))
+    )
 
 
 def _fake_provider(content: str | None = "ok", *, raises: Exception | None = None):
@@ -30,12 +37,18 @@ def _fake_provider(content: str | None = "ok", *, raises: Exception | None = Non
     through that client's ``chat.completions.create`` coroutine."""
 
     if raises is not None:
+
         def _raise_provider(_db, _uid, _svc):
             raise raises
+
         return _raise_provider
 
     def _provider(_db, _uid, _svc):
-        return SimpleNamespace(provider_name="test", config=SimpleNamespace(model="m"), raw_client=lambda: _fake_response(content))
+        return SimpleNamespace(
+            provider_name="test",
+            config=SimpleNamespace(model="m"),
+            raw_client=lambda: _fake_response(content),
+        )
 
     return _provider
 
@@ -57,7 +70,14 @@ async def test_enhance_avatar_prompt_returns_text(monkeypatch):
     monkeypatch.setattr(prompt_engineer, "chat", _fake_chat)
 
     class _FakePersona:
-        definition_json = json.dumps({"name": "小光", "biological_type": "灵兽", "gender": "女", "appearance_core": "金发绿眼"})
+        definition_json = json.dumps(
+            {
+                "name": "小光",
+                "biological_type": "灵兽",
+                "gender": "女",
+                "appearance_core": "金发绿眼",
+            }
+        )
 
     out = await prompt_engineer.enhance_avatar_prompt(None, 7, _FakePersona())
     assert "正面上半身半身像" in out
@@ -85,8 +105,12 @@ async def test_enhance_avatar_prompt_includes_feedback(monkeypatch):
     class _FakePersona:
         definition_json = json.dumps({"name": "小光"})
 
-    out = await prompt_engineer.enhance_avatar_prompt(None, 1, _FakePersona(), feedback="更长的头发")
-    payload = json.loads(seen["user_payload"].split("```json\n", 1)[1].split("\n```", 1)[0])
+    out = await prompt_engineer.enhance_avatar_prompt(
+        None, 1, _FakePersona(), feedback="更长的头发"
+    )
+    payload = json.loads(
+        seen["user_payload"].split("```json\n", 1)[1].split("\n```", 1)[0]
+    )
     assert payload["feedback"] == "更长的头发"
     assert out == "头像提示词"
 
@@ -96,8 +120,12 @@ async def test_enhance_avatar_prompt_includes_feedback(monkeypatch):
 
 def test_strip_bust_prefix():
     assert prompt_engineer._strip_bust_prefix("bust portrait of 金发少女") == "金发少女"
-    assert prompt_engineer._strip_bust_prefix("  BUST PORTRAIT OF 机甲战警") == "机甲战警"
-    assert prompt_engineer._strip_bust_prefix("金发少女，半身特写") == "金发少女，半身特写"
+    assert (
+        prompt_engineer._strip_bust_prefix("  BUST PORTRAIT OF 机甲战警") == "机甲战警"
+    )
+    assert (
+        prompt_engineer._strip_bust_prefix("金发少女，半身特写") == "金发少女，半身特写"
+    )
 
 
 # ── is_preset_species ──
@@ -143,10 +171,13 @@ def test_resolve_fullbody_template_fallback():
 
 class _FakePersona:
     def __init__(self, biological_type="人类", appearance="碧蓝眼眸"):
-        self.definition_json = json.dumps({
-            "biological_type": biological_type,
-            "appearance_core": appearance,
-        }, ensure_ascii=False)
+        self.definition_json = json.dumps(
+            {
+                "biological_type": biological_type,
+                "appearance_core": appearance,
+            },
+            ensure_ascii=False,
+        )
 
 
 def test_build_front_includes_pose_and_rules():
@@ -174,7 +205,9 @@ def test_build_right_uses_right_features():
         avatar_prompt="bust portrait of 金发少女",
         template=template,
     )
-    assert prompt.startswith("full body right side view (90 degree profile) portrait of 金发少女")
+    assert prompt.startswith(
+        "full body right side view (90 degree profile) portrait of 金发少女"
+    )
     assert "正侧面" in prompt
 
 
@@ -235,7 +268,11 @@ def test_build_quadruped_pose():
 @pytest.mark.asyncio
 async def test_chat_rejects_empty_response(monkeypatch):
     def _provider(_db, _uid, _svc):
-        return SimpleNamespace(provider_name="test", config=SimpleNamespace(model="m"), raw_client=lambda: _fake_response(""))
+        return SimpleNamespace(
+            provider_name="test",
+            config=SimpleNamespace(model="m"),
+            raw_client=lambda: _fake_response(""),
+        )
 
     monkeypatch.setattr(prompt_engineer, "provider_for_service", _provider)
     with pytest.raises(RuntimeError, match="empty response"):
@@ -256,12 +293,16 @@ def test_build_texture_biped_includes_clothing_and_format():
 
 def test_build_texture_uses_rig_type_prefix():
     # Quadruped → fur/scale guidance, not clothing
-    prompt = prompt_engineer.build_texture_prompt(description="虎纹", rig_type="quadruped")
+    prompt = prompt_engineer.build_texture_prompt(
+        description="虎纹", rig_type="quadruped"
+    )
     assert "毛皮" in prompt
     assert "服装" not in prompt
 
     # Serpentine → scale guidance
-    prompt = prompt_engineer.build_texture_prompt(description="翠绿鳞片", rig_type="serpentine")
+    prompt = prompt_engineer.build_texture_prompt(
+        description="翠绿鳞片", rig_type="serpentine"
+    )
     assert "鳞片" in prompt
 
 

@@ -40,7 +40,7 @@ def is_safe_outbound(host: str) -> tuple[bool, str]:
         except ValueError:
             return False, f"unparseable address {ip_str!r}"
         if ip.is_loopback or ip.is_link_local or ip.is_private or ip.is_multicast or ip.is_reserved or ip.is_unspecified:
-            return False, f"refusing to connect to {ip_str} (loopback/link-local/private/multicast)"
+            return (False, f"refusing to connect to {ip_str} (loopback/link-local/private/multicast)")
         if _ip_in_blocked(ip):
             return False, f"refusing to connect to {ip_str} (cloud-metadata / CGNAT)"
 

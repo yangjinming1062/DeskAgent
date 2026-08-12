@@ -33,13 +33,6 @@ _EXT_TO_MIME: dict[str, str] = {ext: mime for mime, ext in _UPLOAD_EXTS.items()}
 
 _SEED_ATTRS: dict[str, str] = {"front": "seed_front_url", "right": "seed_right_url", "back": "seed_back_url"}
 
-
-def _resolve_reference_for_view(asset: AvatarAsset, view: str) -> str | None:
-    """Front → head portrait; right/back → front full-body seed."""
-    source = asset.asset_url if view == "front" else asset.seed_front_url
-    return _load_avatar_bytes_as_data_uri(source)
-
-
 # Per-user lock shared between the REST fullbody route and the WS RPC handlers
 # so a concurrent regen + fullbody for the same user can't race on the row.
 _avatar_job_locks: dict[int, asyncio.Lock] = {}
@@ -52,17 +45,18 @@ _MODERATION_SANITIZATION_PROMPT = (
 )
 
 
+def _resolve_reference_for_view(asset: AvatarAsset, view: str) -> str | None:
+    """Front → head portrait; right/back → front full-body seed."""
+    source = asset.asset_url if view == "front" else asset.seed_front_url
+    return load_avatar_bytes_as_data_uri(source)
+
+
 async def _sanitize_prompt_for_moderation(user_id: int, prompt: str) -> str:
     """Mildly sanitize *prompt* for content moderation. Returns the original on failure.
     Uses its own DB session — may run inside ``asyncio.gather`` where the caller's session is shared."""
     try:
         with SESSION_LOCAL() as db:
-            sanitized = await chat(
-                db,
-                user_id,
-                _MODERATION_SANITIZATION_PROMPT,
-                prompt,
-            )
+            sanitized = await chat(db, user_id, _MODERATION_SANITIZATION_PROMPT, prompt)
         sanitized = sanitized.strip()
         return sanitized if sanitized else prompt
     except Exception:
@@ -71,13 +65,7 @@ async def _sanitize_prompt_for_moderation(user_id: int, prompt: str) -> str:
 
 
 async def _generate_one_portrait_with_moderation_retry(
-    prompt: str,
-    user_id: int,
-    *,
-    reference_image: str | None = None,
-    secondary_reference_image: str | None = None,
-    size: str = _AVATAR_SIZE,
-    persist: bool = True,
+    prompt: str, user_id: int, *, reference_image: str | None = None, secondary_reference_image: str | None = None, size: str = _AVATAR_SIZE, persist: bool = True
 ) -> tuple[str, str, str, str]:
     """Generate one portrait, retrying with a sanitized prompt on content-moderation failure."""
     try:
@@ -223,13 +211,7 @@ def _extract_temp_file_id(source_url: str) -> str | None:
 
 
 async def _generate_one_portrait(
-    prompt: str,
-    user_id: int,
-    *,
-    reference_image: str | None = None,
-    secondary_reference_image: str | None = None,
-    size: str = _AVATAR_SIZE,
-    persist: bool = True,
+    prompt: str, user_id: int, *, reference_image: str | None = None, secondary_reference_image: str | None = None, size: str = _AVATAR_SIZE, persist: bool = True
 ) -> tuple[str, str, str, str]:
     """``persist=False`` keeps the image in temp-media/ (onboarding); ``persist=True``
     downloads and writes to companion-avatars/. Returns ``(bare_path, file_id, ext, source_url)``."""
@@ -286,18 +268,13 @@ async def _generate_avatar_step(
     returns ``{success: false}``; ``first_image_url -> None`` surfaces that
     as ``AvatarGenerationError``.
     """
-    asset_url, file_id, final_ext, avatar_source_url = await _generate_one_portrait_with_moderation_retry(
+    (asset_url, file_id, final_ext, avatar_source_url) = await _generate_one_portrait_with_moderation_retry(
         avatar_prompt, user_id, reference_image=reference_image, secondary_reference_image=secondary_reference_image, persist=persist
     )
 
     previous = db.query(AvatarAsset).filter(AvatarAsset.user_id == user_id, AvatarAsset.active.is_(True)).one_or_none()
     db.query(AvatarAsset).filter(AvatarAsset.user_id == user_id, AvatarAsset.active.is_(True)).update({"active": False})
-    prompt_payload: dict = {
-        "prompt": avatar_prompt,
-        "avatar_prompt": avatar_prompt,
-        "style": style,
-        "source_url": avatar_source_url,
-    }
+    prompt_payload: dict = {"prompt": avatar_prompt, "avatar_prompt": avatar_prompt, "style": style, "source_url": avatar_source_url}
     if feedback is not None:
         prompt_payload["feedback"] = feedback
     if reference_image is not None:
@@ -336,14 +313,7 @@ async def _generate_avatar_step(
     return asset
 
 
-async def generate_fullbody(
-    db: Session,
-    user_id: int,
-    *,
-    avatar_id: int,
-    view: str | None = None,
-    stage: str | None = None,
-) -> AvatarAsset:
+async def generate_fullbody(db: Session, user_id: int, *, avatar_id: int, view: str | None = None, stage: str | None = None) -> AvatarAsset:
     """Step-2: render full-body multiview seeds (front, right, back) using chained references.
 
     Stage 'front': generates the front full-body view using the confirmed bust portrait as reference,
@@ -400,29 +370,11 @@ async def generate_fullbody(
         rig_type = await select_rig_type(chat, species or "人类", db=db, user_id=user_id)
     template = resolve_fullbody_template(species, rig_type)
 
-    prompts = {
-        v: build_fullbody_prompt(
-            v,
-            persona,
-            avatar_prompt=cached_avatar_prompt,
-            template=template,
-            feedback=feedback,
-        )
-        for v in views_to_gen
-    }
+    prompts = {v: build_fullbody_prompt(v, persona, avatar_prompt=cached_avatar_prompt, template=template, feedback=feedback) for v in views_to_gen}
 
     # return_exceptions=True so a single view failure doesn't discard the others.
     results = await asyncio.gather(
-        *[
-            _generate_one_portrait_with_moderation_retry(
-                prompts[v],
-                user_id,
-                reference_image=reference_image,
-                size=_AVATAR_FULL_SIZE,
-                persist=persist,
-            )
-            for v in views_to_gen
-        ],
+        *[_generate_one_portrait_with_moderation_retry(prompts[v], user_id, reference_image=reference_image, size=_AVATAR_FULL_SIZE, persist=persist) for v in views_to_gen],
         return_exceptions=True,
     )
 
@@ -434,7 +386,7 @@ async def generate_fullbody(
             generated[v] = result
 
     if not generated:
-        raise results[0] if isinstance(results[0], BaseException) else AvatarGenerationError("all views failed")
+        raise (results[0] if isinstance(results[0], BaseException) else AvatarGenerationError("all views failed"))
 
     # Front regen / stage invalidates aux views
     if is_front:
@@ -519,21 +471,10 @@ async def generate_avatar(db: Session, user_id: int, persona: Persona) -> Avatar
     if not persona.is_complete:
         raise AvatarGenerationError("persona is incomplete; finish onboarding first")
     try:
-        avatar_prompt = await enhance_avatar_prompt(
-            db,
-            user_id,
-            persona,
-        )
+        avatar_prompt = await enhance_avatar_prompt(db, user_id, persona)
     except (ValidationError, RuntimeError) as exc:
         raise AvatarGenerationError(f"prompt enhancement failed: {exc}") from exc
-    asset = await _generate_avatar_step(
-        db,
-        user_id,
-        avatar_prompt=avatar_prompt,
-        style=_DEFAULT_STYLE,
-        persona=persona,
-        persist=persona.is_portrait_confirmed,
-    )
+    asset = await _generate_avatar_step(db, user_id, avatar_prompt=avatar_prompt, style=_DEFAULT_STYLE, persona=persona, persist=persona.is_portrait_confirmed)
     return asset
 
 
@@ -607,23 +548,10 @@ async def regenerate_avatar(db: Session, user_id: int, persona: Persona, feedbac
     if not persona.is_complete:
         raise AvatarGenerationError("persona is incomplete; finish onboarding first")
     try:
-        avatar_prompt = await enhance_avatar_prompt(
-            db,
-            user_id,
-            persona,
-            feedback=feedback,
-        )
+        avatar_prompt = await enhance_avatar_prompt(db, user_id, persona, feedback=feedback)
     except (ValidationError, RuntimeError) as exc:
         raise AvatarGenerationError(f"prompt enhancement failed: {exc}") from exc
-    asset = await _generate_avatar_step(
-        db,
-        user_id,
-        avatar_prompt=avatar_prompt,
-        style=style,
-        persona=persona,
-        feedback=feedback,
-        persist=persona.is_portrait_confirmed,
-    )
+    asset = await _generate_avatar_step(db, user_id, avatar_prompt=avatar_prompt, style=style, persona=persona, feedback=feedback, persist=persona.is_portrait_confirmed)
     return asset
 
 
@@ -631,10 +559,7 @@ def _reference_data_uri(data: bytes, content_type: str) -> str:
     return build_data_uri(data, content_type)
 
 
-def _load_avatar_bytes_as_data_uri(asset_url_or_path: str | None) -> str | None:
-    """Resolve a stored avatar to a ``data:<mime>;base64,...`` URI for use as
-    an image-gen subject reference. Accepts companion-avatars/ paths, signed
-    URLs, and temp-media/ draft paths."""
+def load_avatar_bytes_as_data_uri(asset_url_or_path: str | None) -> str | None:
     if not asset_url_or_path:
         return None
 
@@ -698,12 +623,7 @@ async def regenerate_avatar_from_image(
     if not persona.is_complete:
         raise AvatarGenerationError("persona is incomplete; finish onboarding first")
     try:
-        avatar_prompt = await enhance_avatar_prompt(
-            db,
-            user_id,
-            persona,
-            feedback=description,
-        )
+        avatar_prompt = await enhance_avatar_prompt(db, user_id, persona, feedback=description)
     except (ValidationError, RuntimeError) as exc:
         raise AvatarGenerationError(f"prompt enhancement failed: {exc}") from exc
     secondary_uri = _reference_data_uri(presentation_data, presentation_content_type or "image/png") if presentation_data is not None else None

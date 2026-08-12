@@ -58,15 +58,7 @@ def signed_model_url(model: CompanionModel | None) -> str | None:
     return build_signed_model_url(int(parts[1]), parts[2])
 
 
-# ── Public entry point ──────────────────────────────────────────
-
-
-async def generate_companion_model(
-    db: Session,
-    *,
-    user_id: int,
-    species_override: str | None = None,
-) -> CompanionModel:
+async def generate_companion_model(db: Session, *, user_id: int, species_override: str | None = None) -> CompanionModel:
     """Kick off the async Tripo3D generation pipeline.
 
     Creates a ``status="generating"`` CompanionModel immediately and returns it.
@@ -84,14 +76,7 @@ async def generate_companion_model(
     # per-user lock closes the check-then-create TOCTOU window; the row's
     # ``status="generating"`` is the durable in-flight marker.
     async with get_model_job_lock(user_id):
-        in_flight = (
-            db.query(CompanionModel)
-            .filter(
-                CompanionModel.user_id == user_id,
-                CompanionModel.status == "generating",
-            )
-            .first()
-        )
+        in_flight = db.query(CompanionModel).filter(CompanionModel.user_id == user_id, CompanionModel.status == "generating").first()
         if in_flight is not None:
             raise ModelGenerationInProgressError("已有 3D 模型生成任务进行中，请稍候再试")
 
@@ -112,12 +97,7 @@ async def generate_companion_model(
         # only a success claims the active slot. A failed regeneration therefore
         # never discards the user's working model, and concurrent (TOCTOU)
         # generations resolve by "newest wins" instead of racing.
-        model = CompanionModel(
-            user_id=user_id,
-            status="generating",
-            species=species,
-            active=False,
-        )
+        model = CompanionModel(user_id=user_id, status="generating", species=species, active=False)
         db.add(model)
         db.commit()
         db.refresh(model)
@@ -204,16 +184,7 @@ async def _run_tripo_pipeline(user_id: int, view_filenames: dict[str, str], spec
                 raise ModelGenerationError("companion model row vanished mid-generation")
             # A newer generation superseded this one (TOCTOU double-trigger):
             # persist the asset but never steal the active slot from it.
-            superseded = (
-                db.query(CompanionModel)
-                .filter(
-                    CompanionModel.user_id == user_id,
-                    CompanionModel.id > model_id,
-                    CompanionModel.status == "generating",
-                )
-                .first()
-                is not None
-            )
+            superseded = db.query(CompanionModel).filter(CompanionModel.user_id == user_id, CompanionModel.id > model_id, CompanionModel.status == "generating").first() is not None
             model.asset_url = asset_url
             model.rig_original_url = rig_original_url
             model.provider = "tripo_multiview_to_3d"
@@ -225,11 +196,7 @@ async def _run_tripo_pipeline(user_id: int, view_filenames: dict[str, str], spec
             model.has_rig = True
             model.has_morph_targets = len(morph_names) > 0
             if not superseded:
-                db.query(CompanionModel).filter(
-                    CompanionModel.user_id == user_id,
-                    CompanionModel.active.is_(True),
-                    CompanionModel.id != model_id,
-                ).update({"active": False})
+                db.query(CompanionModel).filter(CompanionModel.user_id == user_id, CompanionModel.active.is_(True), CompanionModel.id != model_id).update({"active": False})
                 model.active = True
             db.commit()
             db.refresh(model)
@@ -271,16 +238,7 @@ async def _run_tripo_pipeline(user_id: int, view_filenames: dict[str, str], spec
             db.commit()
 
 
-# ── Helpers ─────────────────────────────────────────────────────
-
-
-async def _poll_with_progress(
-    user_id: int,
-    task_id: str,
-    stage: str,
-    start_pct: int,
-    end_pct: int,
-) -> dict:
+async def _poll_with_progress(user_id: int, task_id: str, stage: str, start_pct: int, end_pct: int) -> dict:
     """Poll a Tripo3D task, emitting progress events mapped to [start_pct, end_pct]."""
 
     def _on_progress(data: dict) -> None:
@@ -366,19 +324,10 @@ def _extract_morph_names_from_glb(glb_data: bytes) -> list[str]:
     return sorted(names)
 
 
-# ── WS event helpers ────────────────────────────────────────────
-
-
 def _emit_progress(user_id: int, stage: str, progress_pct: int) -> None:
     try:
         with SESSION_LOCAL() as db:
-            db.add(
-                WSEvent(
-                    user_id=user_id,
-                    event_type="model.gen.progress",
-                    payload=json.dumps({"stage": stage, "progress": progress_pct}),
-                )
-            )
+            db.add(WSEvent(user_id=user_id, event_type="model.gen.progress", payload=json.dumps({"stage": stage, "progress": progress_pct})))
             db.commit()
     except Exception:
         logger.warning("Failed to emit model.gen.progress", exc_info=True)
@@ -395,13 +344,7 @@ def _emit_model_ready(user_id: int, model_id: int, asset_url: str, *, species: s
         payload["asset_url"] = build_signed_model_url(int(parts[1]), parts[2])
     try:
         with SESSION_LOCAL() as db:
-            db.add(
-                WSEvent(
-                    user_id=user_id,
-                    event_type="model.ready",
-                    payload=json.dumps(payload, ensure_ascii=False),
-                )
-            )
+            db.add(WSEvent(user_id=user_id, event_type="model.ready", payload=json.dumps(payload, ensure_ascii=False)))
             db.commit()
     except Exception:
         logger.warning("Failed to emit model.ready", exc_info=True)
@@ -410,13 +353,7 @@ def _emit_model_ready(user_id: int, model_id: int, asset_url: str, *, species: s
 def _emit_model_failed(user_id: int, reason: str) -> None:
     try:
         with SESSION_LOCAL() as db:
-            db.add(
-                WSEvent(
-                    user_id=user_id,
-                    event_type="model.failed",
-                    payload=json.dumps({"reason": reason}, ensure_ascii=False),
-                )
-            )
+            db.add(WSEvent(user_id=user_id, event_type="model.failed", payload=json.dumps({"reason": reason}, ensure_ascii=False)))
             db.commit()
     except Exception:
         logger.warning("Failed to emit model.failed", exc_info=True)

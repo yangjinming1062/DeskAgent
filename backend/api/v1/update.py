@@ -6,53 +6,15 @@ import zipfile
 from pathlib import Path
 
 from common import get_or_404, get_router, list_response
-from components import apply_partial, get_db, normalize_sha512, sha512_b64
+from components import apply_partial, get_db, sha512_b64
 from fastapi import Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from modules.auth import get_current_admin_token
 from modules.update import UpdateVersion, UpdateVersionItem, UpdateVersionListResponse, UpdateVersionUpdate
+from services.update import _ALLOWED_ARCHIVE_SUFFIXES, _DOWNLOAD_SUFFIXES, CHUNK_SIZE, VERSIONS_DIR, build_manifest
 from sqlalchemy.orm import Session
 
 router = get_router()
-
-VERSIONS_DIR = Path("updates/versions")
-CHUNK_SIZE = 8192
-
-# File suffixes electron-builder emits across the two platforms we ship.
-# Squirrel.Windows is the legacy `-Setup.exe`/`-full.nupkg` set; Squirrel.Mac
-# uses a `*.zip`. `.dmg` is also kept for the macOS direct-download (not
-# consumed by electron-updater, but the admin zip can carry it).
-#
-# The runner-half suffixes (`server.py`, `.whl`, `latest-runner.yml`,
-# `manifest.json`, `app-update.yml`) come from `scripts/build_client.ps1`'s
-# `Build-UpdateZip` step. They live in the same admin-upload zip alongside
-# the desktop artifacts; the upload handler extracts both halves and
-# populates the per-platform DB columns + the four new runner_* columns.
-_ALLOWED_ARCHIVE_SUFFIXES = (
-    ".exe",
-    "RELEASES",
-    "-full.nupkg",
-    ".blockmap",
-    ".zip",
-    ".dmg",
-    ".whl",
-    "server.py",
-    "manifest.json",
-    "latest-runner.yml",
-    "app-update.yml",
-)
-_DOWNLOAD_SUFFIXES = (
-    ".exe",
-    "-full.nupkg",
-    "-full.nupkg.blockmap",
-    ".blockmap",
-    ".zip",
-    ".dmg",
-    ".dmg.blockmap",
-    ".whl",
-    "server.py",
-    "latest-runner.yml",
-)
 
 
 def _get_latest(db: Session) -> UpdateVersion:
@@ -77,42 +39,16 @@ def _pick_asset(versions_dir: Path, *patterns: str) -> Path | None:
     return sorted(matches)[-1] if matches else None
 
 
-def _build_manifest(latest: UpdateVersion, filename: str | None, sha512: str | None, size: int | None) -> dict:
-    """Shape one Squirrel/electron-updater manifest for a single platform asset.
-
-    The filename and hash are the per-platform DB columns; size falls back to a
-    live stat when the column is NULL (older rows from before the macOS column
-    existed).
-    """
-    if not filename or not sha512:
-        raise HTTPException(status_code=404, detail="No active release for this platform")
-    file_path = VERSIONS_DIR / latest.version / filename
-    actual_size = size if size is not None else 0
-    if actual_size == 0:
-        try:
-            actual_size = file_path.stat().st_size
-        except OSError:
-            actual_size = 0
-    return {
-        "version": latest.version,
-        "releaseDate": latest.created_at.isoformat(),
-        "releaseNotes": latest.release_notes,
-        "path": filename,
-        "sha512": normalize_sha512(sha512),
-        "files": [{"url": filename, "sha512": normalize_sha512(sha512), "size": actual_size}],
-    }
-
-
 @router.get("/latest.yml")
 def get_latest_yml(db: Session = Depends(get_db)) -> dict:
     latest = _get_latest(db)
-    return _build_manifest(latest, latest.exe_filename, latest.exe_sha512, latest.exe_size)
+    return build_manifest(latest, latest.exe_filename, latest.exe_sha512, latest.exe_size)
 
 
 @router.get("/latest-mac.yml")
 def get_latest_mac_yml(db: Session = Depends(get_db)) -> dict:
     latest = _get_latest(db)
-    return _build_manifest(latest, latest.mac_filename, latest.mac_sha512, latest.mac_size)
+    return build_manifest(latest, latest.mac_filename, latest.mac_sha512, latest.mac_size)
 
 
 @router.get("/latest-runner.yml", response_class=FileResponse)

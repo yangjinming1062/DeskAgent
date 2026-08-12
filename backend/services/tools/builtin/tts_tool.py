@@ -39,7 +39,10 @@ TTS_SCHEMA = {
         "type": "object",
         "properties": {
             "text": {"type": "string", "description": "The text to convert to speech."},
-            "voice": {"type": "string", "description": "Optional voice id. Omit to use the provider default."},
+            "voice": {
+                "type": "string",
+                "description": "Optional voice id. Omit to use the provider default.",
+            },
         },
         "required": ["text"],
     },

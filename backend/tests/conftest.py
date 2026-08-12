@@ -27,40 +27,51 @@ def sqlite_engine():
     # persist both rows across write boundaries. We mirror the production
     # partial index here so the fixture exercises the same upsert contract.
     with engine.begin() as conn:
-        conn.execute(text(
-            "CREATE UNIQUE INDEX IF NOT EXISTS uq_memories_user_context "
-            "ON memories (user_id, context) "
-            "WHERE context LIKE 'user_profile:%'"
-        ))
+        conn.execute(
+            text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS uq_memories_user_context "
+                "ON memories (user_id, context) "
+                "WHERE context LIKE 'user_profile:%'"
+            )
+        )
         # Mirror the production partial-unique index on ``auto_inject:%``
         # (see backend/main.py). One row per (user, slot) so the
         # ``memory_retain(kind='auto_inject')`` upsert is atomic.
-        conn.execute(text(
-            "CREATE UNIQUE INDEX IF NOT EXISTS uq_memories_auto_inject_slot "
-            "ON memories (user_id, context) "
-            "WHERE context LIKE 'auto_inject:%'"
-        ))
-        conn.execute(text(
-            "CREATE UNIQUE INDEX IF NOT EXISTS uq_memories_inferred_profile_slot "
-            "ON memories (user_id, context) "
-            "WHERE context LIKE 'inferred_profile:%'"
-        ))
-        conn.execute(text(
-            "CREATE UNIQUE INDEX IF NOT EXISTS uq_memories_diary_day "
-            "ON memories (user_id, context) "
-            "WHERE context LIKE 'diary:%'"
-        ))
+        conn.execute(
+            text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS uq_memories_auto_inject_slot "
+                "ON memories (user_id, context) "
+                "WHERE context LIKE 'auto_inject:%'"
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS uq_memories_inferred_profile_slot "
+                "ON memories (user_id, context) "
+                "WHERE context LIKE 'inferred_profile:%'"
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS uq_memories_diary_day "
+                "ON memories (user_id, context) "
+                "WHERE context LIKE 'diary:%'"
+            )
+        )
         # SQLite ignores ``DESC`` in older builds; the index is still
         # useful for the partial scan even without the explicit order.
-        conn.execute(text(
-            "CREATE INDEX IF NOT EXISTS ix_memories_recall_user_updated "
-            "ON memories (user_id, updated_at) "
-            "WHERE context LIKE 'recall:%'"
-        ))
+        conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_memories_recall_user_updated "
+                "ON memories (user_id, updated_at) "
+                "WHERE context LIKE 'recall:%'"
+            )
+        )
     # ``_signing_key()`` raises when the key is empty and test mode is off;
     # flip the flag so tests that exercise companion asset URLs don't need
     # to call ``_enable_test_signer_key`` themselves.
     from services.companion import asset_store
+
     asset_store._enable_test_signer_key()
     return engine
 
@@ -81,7 +92,9 @@ def _patch_db(monkeypatch, sqlite_engine, tmp_path):
     transaction = connection.begin()
     savepoint = connection.begin_nested()
 
-    SessionLocal = sessionmaker(bind=connection, autoflush=False, autocommit=False, expire_on_commit=False)
+    SessionLocal = sessionmaker(
+        bind=connection, autoflush=False, autocommit=False, expire_on_commit=False
+    )
 
     @sqlalchemy.event.listens_for(SessionLocal, "after_transaction_end")
     def _restart_savepoint(session, trans):
@@ -175,7 +188,9 @@ def _seed_user(SessionLocal, username="testuser"):
         )
         db.commit()
 
-        token, _expires, jti = create_access_token(user_id=user.id, username=user.username)
+        token, _expires, jti = create_access_token(
+            user_id=user.id, username=user.username
+        )
         db.add(LoginRecord(user_id=user.id, token_jti=jti, is_active=True))
         db.commit()
     return {
@@ -256,7 +271,9 @@ def ws_ticket(_patch_db):
 
     with SessionLocal() as db:
         user = db.query(User).filter(User.is_active.is_(True)).first()
-        token, _, _ = create_access_token(user_id=user.id, username=user.username, expires_in_seconds=60, purpose="ws")
+        token, _, _ = create_access_token(
+            user_id=user.id, username=user.username, expires_in_seconds=60, purpose="ws"
+        )
     return token
 
 

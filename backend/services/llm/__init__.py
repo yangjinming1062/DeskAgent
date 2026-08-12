@@ -22,6 +22,10 @@ from .providers import (
     ImageGenProvider,
     ImageGenRequest,
     ImageGenResult,
+    MiMoChatProvider,
+    MiMoImageGenProvider,
+    MiMoSTTProvider,
+    MiMoTTSProvider,
     ProviderConfig,
     ProviderError,
     ServiceType,
@@ -43,7 +47,7 @@ from .providers import (
     resolve_context_tokens,
     try_resolve,
 )
-from .user_config import merge_provider_json, resolve_user_llm_config
+from .user_config import UserLlmConfig, merge_provider_json, resolve_user_llm_config
 from .voice_catalog import VoiceEntry, default_voice_id, pick_voice_id, voices_for_provider
 
 __all__ = [
@@ -65,6 +69,10 @@ __all__ = [
     "ImageGenProvider",
     "ImageGenRequest",
     "ImageGenResult",
+    "MiMoChatProvider",
+    "MiMoImageGenProvider",
+    "MiMoSTTProvider",
+    "MiMoTTSProvider",
     "STTProvider",
     "STTResult",
     "TTSProvider",
@@ -103,6 +111,7 @@ __all__ = [
     "FullbodyTemplate",
     "is_preset_species",
     "resolve_fullbody_template",
+    "UserLlmConfig",
     "resolve_user_llm_config",
     "merge_provider_json",
 ]

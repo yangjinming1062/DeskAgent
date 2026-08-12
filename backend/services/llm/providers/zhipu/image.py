@@ -26,10 +26,7 @@ class ZhipuImageGenProvider(ImageGenProvider):
         self._client = get_http(config.base_url, config.api_key)
 
     async def generate(self, req: ImageGenRequest) -> ImageGenResult:
-        payload: dict = {
-            "model": self.config.model,
-            "prompt": req.prompt,
-        }
+        payload: dict = {"model": self.config.model, "prompt": req.prompt}
         if req.size:
             payload["size"] = req.size
         if req.quality:

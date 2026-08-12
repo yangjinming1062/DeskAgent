@@ -39,10 +39,7 @@ class GeminiImageGenProvider(ImageGenProvider):
 
         payload = {
             "contents": [{"parts": parts}],
-            "generationConfig": {
-                "responseModalities": ["TEXT", "IMAGE"],
-                "imageConfig": {"aspectRatio": aspect},
-            },
+            "generationConfig": {"responseModalities": ["TEXT", "IMAGE"], "imageConfig": {"aspectRatio": aspect}},
         }
 
         resp = await self._client.post(f"/v1beta/models/{self.config.model}:generateContent", json=payload)

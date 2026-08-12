@@ -1,5 +1,5 @@
 import asyncio
-from importlib import util as importlib_util
+from importlib import util
 from typing import Any
 
 from components import get_logger
@@ -11,7 +11,7 @@ logger = get_logger(__name__)
 
 
 def _ddgs_importable() -> bool:
-    return importlib_util.find_spec("ddgs") is not None
+    return util.find_spec("ddgs") is not None
 
 
 class DDGSWebSearchProvider(WebSearchProvider):

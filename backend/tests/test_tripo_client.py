@@ -11,7 +11,9 @@ from services.companion import tripo_client
 
 class _MockTransport(httpx.AsyncBaseTransport):
     def __init__(self) -> None:
-        self.responder: Callable[[httpx.Request], httpx.Response] = lambda r: httpx.Response(200, json={})
+        self.responder: Callable[[httpx.Request], httpx.Response] = lambda r: (
+            httpx.Response(200, json={})
+        )
         self.calls: list[tuple[str, str, dict[str, Any] | None]] = []
 
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
@@ -57,7 +59,9 @@ def _err(code: int, message: str) -> dict:
 
 @pytest.mark.asyncio
 async def test_create_text_to_model_returns_task_id(mock_http):
-    mock_http.responder = lambda _r: httpx.Response(200, json=_ok({"task_id": "task_abc"}))
+    mock_http.responder = lambda _r: httpx.Response(
+        200, json=_ok({"task_id": "task_abc"})
+    )
     tid = await tripo_client.create_text_to_model("a cute cat")
     assert tid == "task_abc"
     assert mock_http.calls[0][0] == "POST"
@@ -69,7 +73,9 @@ async def test_create_text_to_model_returns_task_id(mock_http):
 
 @pytest.mark.asyncio
 async def test_create_multiview_to_model_formats_inputs_correctly(mock_http):
-    mock_http.responder = lambda _r: httpx.Response(200, json=_ok({"task_id": "task_multi"}))
+    mock_http.responder = lambda _r: httpx.Response(
+        200, json=_ok({"task_id": "task_multi"})
+    )
     views = {
         "front": "token_f",
         "right": "token_r",
@@ -90,14 +96,18 @@ async def test_create_multiview_to_model_formats_inputs_correctly(mock_http):
 @pytest.mark.asyncio
 async def test_create_multiview_to_model_validates_front_and_min_views():
     with pytest.raises(ValueError, match="front"):
-        await tripo_client.create_multiview_to_model({"right": "tok_r", "back": "tok_b"})
+        await tripo_client.create_multiview_to_model(
+            {"right": "tok_r", "back": "tok_b"}
+        )
     with pytest.raises(ValueError, match="at least 2 views"):
         await tripo_client.create_multiview_to_model({"front": "tok_f"})
 
 
 @pytest.mark.asyncio
 async def test_rig_check_returns_rig_type(mock_http):
-    mock_http.responder = lambda _r: httpx.Response(200, json=_ok({"task_id": "task_xyz"}))
+    mock_http.responder = lambda _r: httpx.Response(
+        200, json=_ok({"task_id": "task_xyz"})
+    )
     prerigcheck_task = await tripo_client.rig_check("task_x")
     assert prerigcheck_task == "task_xyz"
 
@@ -125,7 +135,9 @@ async def test_rig_uses_tripo_spec_for_non_biped(mock_http):
 
 @pytest.mark.asyncio
 async def test_envelope_raises_on_nonzero_code(mock_http):
-    mock_http.responder = lambda _r: httpx.Response(200, json=_err(2010, "insufficient credit"))
+    mock_http.responder = lambda _r: httpx.Response(
+        200, json=_err(2010, "insufficient credit")
+    )
     with pytest.raises(tripo_client.TripoApiError, match="2010"):
         await tripo_client.account_balance()
 
@@ -139,7 +151,9 @@ async def test_api_key_required(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_account_balance_parses_payload(mock_http):
-    mock_http.responder = lambda _r: httpx.Response(200, json=_ok({"balance": 12.34, "frozen": 1.0}))
+    mock_http.responder = lambda _r: httpx.Response(
+        200, json=_ok({"balance": 12.34, "frozen": 1.0})
+    )
     assert await tripo_client.account_balance() == {"balance": 12.34, "frozen": 1.0}
 
 
@@ -147,7 +161,10 @@ async def test_account_balance_parses_payload(mock_http):
 async def test_poll_task_returns_on_success(mock_http):
     queue = [
         lambda _r: httpx.Response(200, json=_ok({"status": "running"})),
-        lambda _r: httpx.Response(200, json=_ok({"status": "success", "output": {"model_url": "https://x/y.glb"}})),
+        lambda _r: httpx.Response(
+            200,
+            json=_ok({"status": "success", "output": {"model_url": "https://x/y.glb"}}),
+        ),
     ]
     seq = iter(queue)
 
@@ -162,7 +179,9 @@ async def test_poll_task_returns_on_success(mock_http):
 
 @pytest.mark.asyncio
 async def test_poll_task_raises_on_failed(mock_http):
-    mock_http.responder = lambda _r: httpx.Response(200, json=_ok({"status": "failed", "message": "bad"}))
+    mock_http.responder = lambda _r: httpx.Response(
+        200, json=_ok({"status": "failed", "message": "bad"})
+    )
     with pytest.raises(tripo_client.TripoTaskFailed, match="failed"):
         await tripo_client.poll_task("task_x", interval=0.001)
 
@@ -171,7 +190,9 @@ async def test_poll_task_raises_on_failed(mock_http):
 async def test_poll_task_invokes_on_progress_with_each_response(mock_http):
     queue = [
         lambda _r: httpx.Response(200, json=_ok({"status": "running", "progress": 30})),
-        lambda _r: httpx.Response(200, json=_ok({"status": "success", "progress": 100})),
+        lambda _r: httpx.Response(
+            200, json=_ok({"status": "success", "progress": 100})
+        ),
     ]
     seq = iter(queue)
 
@@ -180,7 +201,9 @@ async def test_poll_task_invokes_on_progress_with_each_response(mock_http):
 
     mock_http.responder = _responder
     seen: list[int] = []
-    data = await tripo_client.poll_task("task_x", interval=0.001, on_progress=lambda d: seen.append(d["progress"]))
+    data = await tripo_client.poll_task(
+        "task_x", interval=0.001, on_progress=lambda d: seen.append(d["progress"])
+    )
     assert seen == [30, 100]
     assert data["status"] == "success"
 
@@ -188,7 +211,9 @@ async def test_poll_task_invokes_on_progress_with_each_response(mock_http):
 @pytest.mark.asyncio
 async def test_poll_task_raises_on_error_envelope(mock_http):
     """A non-zero code mid-poll must fail fast instead of polling to the deadline."""
-    mock_http.responder = lambda _r: httpx.Response(200, json=_err(2010, "insufficient credit"))
+    mock_http.responder = lambda _r: httpx.Response(
+        200, json=_err(2010, "insufficient credit")
+    )
     with pytest.raises(tripo_client.TripoApiError, match="2010"):
         await tripo_client.poll_task("task_x", interval=0.001)
 
@@ -201,4 +226,7 @@ def test_rig_spec_helper_known_types():
 
 def test_rig_model_version_helper_known_specs():
     assert tripo_client.rig_model_version("biped") == tripo_client.MODEL_VERSION_MIXAMO
-    assert tripo_client.rig_model_version("unknown_type") == tripo_client.MODEL_VERSION_TRIPO
+    assert (
+        tripo_client.rig_model_version("unknown_type")
+        == tripo_client.MODEL_VERSION_TRIPO
+    )

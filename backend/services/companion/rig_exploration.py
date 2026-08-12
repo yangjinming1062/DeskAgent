@@ -21,10 +21,7 @@ async def run() -> int:
         return 2
 
     print("step 1: text-to-model (bipedal seed)...")
-    text_task = await create_text_to_model(
-        "a simple cartoon bipedal character, A-pose, neutral T-pose, white background",
-        model_version=MODEL_VERSION_DEFAULT,
-    )
+    text_task = await create_text_to_model("a simple cartoon bipedal character, A-pose, neutral T-pose, white background", model_version=MODEL_VERSION_DEFAULT)
     print(f"  text_to_model task_id: {text_task}")
     print("  waiting for text_to_model to finish...")
     await poll_task(text_task, interval=2.0, timeout=300.0)

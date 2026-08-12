@@ -57,7 +57,9 @@ def test_all_three_kinds_at_threshold_writes_summary(_patch_db):
     with SessionLocal() as db:
         rows = (
             db.query(Memory)
-            .filter(Memory.user_id == user_id, Memory.context.like("interaction_stats:%"))
+            .filter(
+                Memory.user_id == user_id, Memory.context.like("interaction_stats:%")
+            )
             .all()
         )
         assert len(rows) == 1
@@ -86,7 +88,9 @@ def test_second_threshold_cross_updates_existing_row(_patch_db):
     with SessionLocal() as db:
         rows = (
             db.query(Memory)
-            .filter(Memory.user_id == user_id, Memory.context.like("interaction_stats:%"))
+            .filter(
+                Memory.user_id == user_id, Memory.context.like("interaction_stats:%")
+            )
             .all()
         )
         assert len(rows) == 1
@@ -102,7 +106,9 @@ def test_peak_picks_earliest_hour_on_tie(_patch_db):
     interaction_stats.record_interaction(1, "poke", 10)
     interaction_stats.record_interaction(1, "poke", 14)
 
-    peak = interaction_stats._compute_peak_hour(interaction_stats._counters[1].hour_buckets)
+    peak = interaction_stats._compute_peak_hour(
+        interaction_stats._counters[1].hour_buckets
+    )
     assert peak == 10
 
 

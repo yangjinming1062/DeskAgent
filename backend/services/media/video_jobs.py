@@ -57,16 +57,7 @@ def get_job(db: Session, job_id: int, user_id: int) -> VideoGenJob | None:
 
 
 async def enqueue_video_job(
-    db: Session,
-    *,
-    user_id: int,
-    session_id: str | None,
-    prompt: str,
-    duration: int,
-    resolution: str,
-    first_frame_image: str | None,
-    model: str | None,
-    aspect_ratio: str | None,
+    db: Session, *, user_id: int, session_id: str | None, prompt: str, duration: int, resolution: str, first_frame_image: str | None, model: str | None, aspect_ratio: str | None
 ) -> "VideoGenJob":
     """Insert a queued job, submit to the provider, and schedule the
     background polling task. Returns the persisted row.
@@ -78,21 +69,9 @@ async def enqueue_video_job(
     polling stays pinned to the provider that owns the resulting
     ``task_id`` (task_ids are per-provider and can't migrate mid-flight).
     """
-    req = VideoGenRequest(
-        prompt=prompt,
-        duration=duration,
-        resolution=resolution,
-        first_frame_image=first_frame_image,
-        aspect_ratio=aspect_ratio,
-        model=model,
-    )
+    req = VideoGenRequest(prompt=prompt, duration=duration, resolution=resolution, first_frame_image=first_frame_image, aspect_ratio=aspect_ratio, model=model)
 
-    params = {
-        "duration": duration,
-        "resolution": resolution,
-        "first_frame_image": first_frame_image,
-        "aspect_ratio": aspect_ratio,
-    }
+    params = {"duration": duration, "resolution": resolution, "first_frame_image": first_frame_image, "aspect_ratio": aspect_ratio}
 
     # Capture the actual provider that wins the submit — polling/fetch
     # run against it (task_id is per-provider).
@@ -111,13 +90,7 @@ async def enqueue_video_job(
         raise MissingLlmConfigError("no provider configured for service 'video_gen'")
     head_cfg = chain[0]
     job = VideoGenJob(
-        user_id=user_id,
-        session_id=session_id,
-        provider=head_cfg.provider_name,
-        model=req.model or head_cfg.model,
-        prompt=prompt,
-        params_json=json.dumps(params),
-        status="queued",
+        user_id=user_id, session_id=session_id, provider=head_cfg.provider_name, model=req.model or head_cfg.model, prompt=prompt, params_json=json.dumps(params), status="queued"
     )
     db.add(job)
     db.commit()
@@ -193,12 +166,7 @@ async def _poll_and_finalize_locked(job_id: int) -> None:
             # The submit ran but no task_id was persisted (extremely unlikely,
             # but stay defensive) — fail fast with a clear reason so the row
             # doesn't sit in limbo forever.
-            _update_job(
-                job_id,
-                status="failed",
-                error_reason="missing_task_id",
-                error_message="provider.submit returned no task_id",
-            )
+            _update_job(job_id, status="failed", error_reason="missing_task_id", error_message="provider.submit returned no task_id")
             _evt("video_gen.failed", {"task_id": str(job_id), "error": "missing task id"})
             return
 
@@ -219,12 +187,7 @@ async def _poll_and_finalize_locked(job_id: int) -> None:
         if provider_cfg is not None and job_model and job_model != provider_cfg.model:
             provider_cfg = replace(provider_cfg, model=job_model)
         if provider_cfg is None:
-            _update_job(
-                job_id,
-                status="failed",
-                error_reason="provider_unavailable",
-                error_message=f"video provider {provider_name!r} no longer in the chain; cannot poll task_id",
-            )
+            _update_job(job_id, status="failed", error_reason="provider_unavailable", error_message=f"video provider {provider_name!r} no longer in the chain; cannot poll task_id")
             _evt("video_gen.failed", {"task_id": str(job_id), "error": "provider unavailable"})
             return
         provider = resolve(ServiceType.video_gen, provider_cfg.provider_name)(provider_cfg)
@@ -256,10 +219,7 @@ async def _poll_and_finalize_locked(job_id: int) -> None:
                 with SESSION_LOCAL() as db:
                     claimed = (
                         db.query(VideoGenJob)
-                        .filter(
-                            VideoGenJob.id == job_id,
-                            VideoGenJob.status.notin_(("succeeded", "failed", "downloading")),
-                        )
+                        .filter(VideoGenJob.id == job_id, VideoGenJob.status.notin_(("succeeded", "failed", "downloading")))
                         .update({"status": "downloading", "provider_file_id": status.file_id})
                     )
                     db.commit()

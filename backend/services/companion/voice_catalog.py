@@ -18,7 +18,7 @@ _GENDER_KEYWORDS: dict[str, list[str]] = {
 DEFAULT_VOICE = VoiceEntry(id="", label="默认音色", gender="neutral", tags=["默认"], description="使用引擎默认音色。")
 
 # Stable sort: zh → multi → ∅ → en. Original order preserved within each bucket.
-# Module-level so we don't re-allocate the dict on every ``list_voices`` call.
+# Module-level so we don't re-allocate the dict on every ``list_tts_voices`` call.
 _LANGUAGE_BUCKET: dict[str, int] = {"zh": 0, "multi": 1, "": 2, "en": 3}
 
 # Derived from _LANGUAGE_BUCKET so the supported set can never drift from
@@ -40,7 +40,7 @@ def _sort_voices_by_language(voices: list[VoiceEntry]) -> list[VoiceEntry]:
     return sorted(voices, key=lambda v: _LANGUAGE_BUCKET.get(v.language or "", 4))
 
 
-def list_voices(db: Session, user_id: int, language: str | None = None) -> dict:
+def list_tts_voices(db: Session, user_id: int, language: str | None = None) -> dict:
     """Return voice catalog, optionally filtered by ``language`` (zh/en/multi/'').
 
     Filtering applies AFTER the language-aware sort so a zh-only view still
@@ -111,11 +111,7 @@ def match_user_voice(db: Session, user_id: int, preference: str) -> dict:
     provider = active_tts_provider(db, user_id)
     voices = voices_for_provider(provider)
     best, alternatives = match_voice(preference or "", voices)
-    return {
-        "provider": provider,
-        "voice": best.model_dump(),
-        "alternatives": [v.model_dump() for v in alternatives],
-    }
+    return {"provider": provider, "voice": best.model_dump(), "alternatives": [v.model_dump() for v in alternatives]}
 
 
 async def design_voice(db: Session, user_id: int, prompt: str, *, preview_text: str = "") -> VoiceDesignResult:

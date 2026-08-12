@@ -26,12 +26,7 @@ from sqlalchemy.orm import Session
 
 from services.companion import memory_admin, upsert_slotted_memory
 from services.llm import call_llm_once, resolve_user_llm_config
-from services.tools import (
-    AUTO_INJECT_SLOTS,
-    INFERRED_PROFILE_SLOTS,
-    KIND_TO_PREFIX,
-    RECALL_TAGS,
-)
+from services.tools import AUTO_INJECT_SLOTS, INFERRED_PROFILE_SLOTS, KIND_TO_PREFIX, RECALL_TAGS
 
 from .cron_jobs import create_job
 from .memory_consolidator import replace_recall_pool
@@ -140,7 +135,12 @@ def _preprocess_conversation_for_nightly(messages: list[Message]) -> list[dict[s
             continue
         if msg.role == "assistant":
             if text_content := (msg.content or "").strip():
-                clean.append({"role": "assistant", "content": text_content[:NIGHTLY_MESSAGE_TRUNCATE_CHARS]})
+                clean.append(
+                    {
+                        "role": "assistant",
+                        "content": text_content[:NIGHTLY_MESSAGE_TRUNCATE_CHARS],
+                    }
+                )
         elif msg.role == "user":
             text_content = (msg.content or "").strip()
             if getattr(msg, "content_type", "text") == "multimodal_v1":
@@ -148,7 +148,12 @@ def _preprocess_conversation_for_nightly(messages: list[Message]) -> list[dict[s
                 if isinstance(parsed, list):
                     text_content = "\n".join(t for p in parsed if isinstance(p, dict) and p.get("type") == "text" and (t := (p.get("text") or "").strip()))
             if text_content:
-                clean.append({"role": "user", "content": text_content[:NIGHTLY_MESSAGE_TRUNCATE_CHARS]})
+                clean.append(
+                    {
+                        "role": "user",
+                        "content": text_content[:NIGHTLY_MESSAGE_TRUNCATE_CHARS],
+                    }
+                )
     return clean
 
 
@@ -231,23 +236,13 @@ async def _stage_1_daily_reflection(
     return updated_inferred, updated_auto_inject
 
 
-async def _stage_2_memory_consolidation(
-    llm_cfg: dict[str, Any],
-    user_id: int,
-    recall_rows: list[dict[str, Any]],
-    inferred_profile: dict[str, str],
-    local_date_str: str,
-) -> bool:
+async def _stage_2_memory_consolidation(llm_cfg: dict[str, Any], user_id: int, recall_rows: list[dict[str, Any]], inferred_profile: dict[str, str], local_date_str: str) -> bool:
     """Stage 2: Memory Consolidation and Decay."""
     if not recall_rows:
         logger.info("nightly_activity: stage 2 skipped, recall pool empty", extra={"user_id": user_id})
         return True
 
-    payload = {
-        "recall_pool": recall_rows,
-        "inferred_profile": inferred_profile,
-        "local_date": local_date_str,
-    }
+    payload = {"recall_pool": recall_rows, "inferred_profile": inferred_profile, "local_date": local_date_str}
     raw = await call_llm_once(llm_cfg, _CONSOLIDATION_SYSTEM_PROMPT, payload, max_tokens=NIGHTLY_CONSOLIDATION_MAX_TOKENS)
     parsed = parse_llm_json(raw)
     if not isinstance(parsed, dict) or not isinstance(parsed.get("summaries"), list):
@@ -274,13 +269,7 @@ async def _stage_3_planning(
     anomaly_stats: dict[str, Any],
 ) -> int:
     """Stage 3: Planning — Creates proactive CronJob entries when appropriate."""
-    payload = {
-        "inferred_profile": inferred_profile,
-        "auto_inject_state": auto_inject,
-        "recall_highlights": recall_highlights,
-        **date_context,
-        **anomaly_stats,
-    }
+    payload = {"inferred_profile": inferred_profile, "auto_inject_state": auto_inject, "recall_highlights": recall_highlights, **date_context, **anomaly_stats}
     raw = await call_llm_once(llm_cfg, _PLANNING_SYSTEM_PROMPT, payload, max_tokens=NIGHTLY_PLANNING_MAX_TOKENS)
     parsed = parse_llm_json(raw)
     if not isinstance(parsed, dict) or not isinstance(parsed.get("actions"), list):
@@ -308,20 +297,10 @@ async def _stage_3_planning(
 
 
 async def _stage_4_self_diary(
-    llm_cfg: dict[str, Any],
-    user_id: int,
-    clean_messages: list[dict[str, str]],
-    inferred_profile: dict[str, str],
-    auto_inject: dict[str, str],
-    local_date_str: str,
+    llm_cfg: dict[str, Any], user_id: int, clean_messages: list[dict[str, str]], inferred_profile: dict[str, str], auto_inject: dict[str, str], local_date_str: str
 ) -> bool:
     """Stage 4: Self Diary — Companion writes a personal reflection for today."""
-    payload = {
-        "today_conversations": clean_messages,
-        "inferred_profile": inferred_profile,
-        "auto_inject": auto_inject,
-        "local_date": local_date_str,
-    }
+    payload = {"today_conversations": clean_messages, "inferred_profile": inferred_profile, "auto_inject": auto_inject, "local_date": local_date_str}
     raw = await call_llm_once(llm_cfg, _DIARY_SYSTEM_PROMPT, payload, max_tokens=NIGHTLY_DIARY_MAX_TOKENS)
     parsed = parse_llm_json(raw)
     if not isinstance(parsed, dict):
@@ -339,9 +318,6 @@ async def _stage_4_self_diary(
 
     logger.info("nightly_activity: stage 4 completed", extra={"user_id": user_id, "diary": diary_context})
     return True
-
-
-# ── Pipeline Runner ────────────────────────────────────────────────────
 
 
 async def run_nightly_pipeline(user_id: int, local_today_str: str | None = None) -> bool:
@@ -364,12 +340,7 @@ async def run_nightly_pipeline(user_id: int, local_today_str: str | None = None)
         today_messages = (
             db.query(Message)
             .join(Conversation, Message.conversation_id == Conversation.id)
-            .filter(
-                Conversation.user_id == user_id,
-                Message.created_at >= utc_start,
-                Message.created_at < utc_end,
-                Message.role.in_(("user", "assistant")),
-            )
+            .filter(Conversation.user_id == user_id, Message.created_at >= utc_start, Message.created_at < utc_end, Message.role.in_(("user", "assistant")))
             .order_by(Message.id.asc())
             .all()
         )
@@ -407,12 +378,7 @@ async def run_nightly_pipeline(user_id: int, local_today_str: str | None = None)
         past_7_count = (
             db.query(Message)
             .join(Conversation, Message.conversation_id == Conversation.id)
-            .filter(
-                Conversation.user_id == user_id,
-                Message.role == "user",
-                Message.created_at >= seven_days_ago_utc,
-                Message.created_at < utc_start,
-            )
+            .filter(Conversation.user_id == user_id, Message.role == "user", Message.created_at >= seven_days_ago_utc, Message.created_at < utc_start)
             .count()
         )
         today_msg_count = sum(1 for m in clean_messages if m["role"] == "user")
@@ -426,10 +392,7 @@ async def run_nightly_pipeline(user_id: int, local_today_str: str | None = None)
             "next_7_days": [(user_local_dt + timedelta(days=i)).strftime("%Y-%m-%d (%A)") for i in range(1, 8)],
             "user_timezone": tz_str,
         }
-        anomaly_stats = {
-            "today_msg_count": today_msg_count,
-            "seven_day_avg": seven_day_avg,
-        }
+        anomaly_stats = {"today_msg_count": today_msg_count, "seven_day_avg": seven_day_avg}
 
         llm_cfg = resolve_user_llm_config(db, user_id)
         if not (llm_cfg.get("api_key") and llm_cfg.get("base_url") and llm_cfg.get("model_name")):

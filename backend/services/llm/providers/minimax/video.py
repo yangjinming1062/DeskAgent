@@ -25,25 +25,14 @@ _V2_DURATION_MIN, _V2_DURATION_MAX = 4, 15
 _V2_RESOLUTIONS = ("768P", "2K")
 
 # v1 task status enum — capitalized, flat response body.
-_V1_STATUS_MAP = {
-    "Queueing": "queued",
-    "Processing": "processing",
-    "Success": "succeeded",
-    "Fail": "failed",
-}
+_V1_STATUS_MAP = {"Queueing": "queued", "Processing": "processing", "Success": "succeeded", "Fail": "failed"}
 
 # MiniMax-H3 v2 task.status enum (docs: VideoTask.status). All values are
 # lowercase; we collapse "running" into the internal "processing" state but
 # keep "queued" distinct so callers can tell "not yet started" from
 # "running". "cancelled" is routed to "failed" — Backend's lifecycle has no
 # dedicated cancelled state and the user-visible behavior is the same.
-_STATUS_MAP = {
-    "queued": "queued",
-    "running": "processing",
-    "succeeded": "succeeded",
-    "failed": "failed",
-    "cancelled": "failed",
-}
+_STATUS_MAP = {"queued": "queued", "running": "processing", "succeeded": "succeeded", "failed": "failed", "cancelled": "failed"}
 
 # Docs limit on ContentItem.text; the API rejects longer prompts with
 # bad_request_error, so fail fast client-side instead of round-tripping.
@@ -62,13 +51,7 @@ def _build_content(req: VideoGenRequest) -> list[dict]:
         raise ValueError(f"prompt exceeds MiniMax limit ({_MAX_PROMPT_CHARS} chars per ContentItem.text)")
     content: list[dict] = [{"type": "text", "text": req.prompt}]
     if req.first_frame_image:
-        content.append(
-            {
-                "type": "image_url",
-                "image_url": {"url": req.first_frame_image},
-                "role": "first_frame",
-            }
-        )
+        content.append({"type": "image_url", "image_url": {"url": req.first_frame_image}, "role": "first_frame"})
     return content
 
 
@@ -140,12 +123,7 @@ class MiniMaxVideoGenProvider(VideoGenProvider):
             raise ValueError(f"{model} (v1) requires duration in {_V1_DURATIONS}, got {req.duration!r}")
         if req.resolution not in _V1_RESOLUTIONS:
             raise ValueError(f"{model} (v1) requires resolution in {_V1_RESOLUTIONS}, got {req.resolution!r}")
-        payload: dict = {
-            "model": model,
-            "prompt": req.prompt,
-            "duration": req.duration,
-            "resolution": req.resolution,
-        }
+        payload: dict = {"model": model, "prompt": req.prompt, "duration": req.duration, "resolution": req.resolution}
         if req.aspect_ratio:
             payload["aspect_ratio"] = req.aspect_ratio
         if req.first_frame_image:
@@ -158,12 +136,7 @@ class MiniMaxVideoGenProvider(VideoGenProvider):
             raise ValueError(f"{model} (v2) requires an integer duration in [{_V2_DURATION_MIN}, {_V2_DURATION_MAX}], got {req.duration!r}")
         if req.resolution not in _V2_RESOLUTIONS:
             raise ValueError(f"{model} (v2) requires resolution in {_V2_RESOLUTIONS}, got {req.resolution!r}")
-        payload: dict = {
-            "model": model,
-            "content": _build_content(req),
-            "duration": req.duration,
-            "resolution": req.resolution,
-        }
+        payload: dict = {"model": model, "content": _build_content(req), "duration": req.duration, "resolution": req.resolution}
         # t2v → ratio is required and must not be adaptive; i2v → H3 picks
         # the ratio from the first-frame image so we must not pass one.
         if req.first_frame_image:
@@ -225,14 +198,7 @@ class MiniMaxVideoGenProvider(VideoGenProvider):
             error_message = None
         else:
             error_message = f"provider returned non-standard error: {err!r}"
-        return VideoJobStatus(
-            task_id=task_id,
-            status=norm,
-            file_id=None,
-            download_url=download_url,
-            error=error_message,
-            raw=body,
-        )
+        return VideoJobStatus(task_id=task_id, status=norm, file_id=None, download_url=download_url, error=error_message, raw=body)
 
     # ── fetch ─────────────────────────────────────────────────────────
 
@@ -247,11 +213,7 @@ class MiniMaxVideoGenProvider(VideoGenProvider):
         download_url = file_obj.get("download_url") or ""
         if not download_url:
             raise RuntimeError(f"MiniMax file retrieve returned no download_url: {body}")
-        return VideoAsset(
-            download_url=download_url,
-            content_type=file_obj.get("content_type") or "video/mp4",
-            size=file_obj.get("bytes"),
-        )
+        return VideoAsset(download_url=download_url, content_type=file_obj.get("content_type") or "video/mp4", size=file_obj.get("bytes"))
 
     def raw_client(self) -> "object | None":
         return None

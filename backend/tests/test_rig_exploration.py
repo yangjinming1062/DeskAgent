@@ -26,7 +26,10 @@ def transport(monkeypatch, fake_key):
 
 @pytest.mark.asyncio
 async def test_run_aborts_with_exit_code_2_when_balance_is_zero(transport, capsys):
-    transport.responder = lambda _r: httpx.Response(200, json={"code": 0, "status": "success", "data": {"balance": 0.0, "frozen": 0.0}})
+    transport.responder = lambda _r: httpx.Response(
+        200,
+        json={"code": 0, "status": "success", "data": {"balance": 0.0, "frozen": 0.0}},
+    )
     rc = await rig_exploration.run()
     assert rc == 2
     out = capsys.readouterr()
@@ -39,7 +42,9 @@ async def test_run_completes_full_flow(transport, monkeypatch, tmp_path):
 
     monkeypatch.setattr(rig_exploration, "EXPLORATION_DIR", tmp_path)
     monkeypatch.setattr(rig_exploration, "GLB_PATH", tmp_path / "rig_exploration.glb")
-    monkeypatch.setattr(rig_exploration, "METADATA_PATH", tmp_path / "rig_exploration.json")
+    monkeypatch.setattr(
+        rig_exploration, "METADATA_PATH", tmp_path / "rig_exploration.json"
+    )
 
     def _ok(data: dict) -> dict:
         return {"code": 0, "status": "success", "data": data}
@@ -49,9 +54,22 @@ async def test_run_completes_full_flow(transport, monkeypatch, tmp_path):
         lambda _r: httpx.Response(200, json=_ok({"task_id": "text_1"})),
         lambda _r: httpx.Response(200, json=_ok({"status": "success"})),
         lambda _r: httpx.Response(200, json=_ok({"task_id": "check_1"})),
-        lambda _r: httpx.Response(200, json=_ok({"status": "success", "output": {"riggable": True, "rig_type": "biped"}})),
+        lambda _r: httpx.Response(
+            200,
+            json=_ok(
+                {"status": "success", "output": {"riggable": True, "rig_type": "biped"}}
+            ),
+        ),
         lambda _r: httpx.Response(200, json=_ok({"task_id": "rig_1"})),
-        lambda _r: httpx.Response(200, json=_ok({"status": "success", "output": {"model_url": "https://cdn.example/rig.glb"}})),
+        lambda _r: httpx.Response(
+            200,
+            json=_ok(
+                {
+                    "status": "success",
+                    "output": {"model_url": "https://cdn.example/rig.glb"},
+                }
+            ),
+        ),
         lambda _r: httpx.Response(200, content=b"GLB"),
     ]
     seq = iter(responses)
@@ -67,7 +85,10 @@ async def test_run_completes_full_flow(transport, monkeypatch, tmp_path):
 def test_exploration_paths_under_data_dir():
     """GLB + metadata must land under the gitignored data/ tree so re-running never commits."""
     import os
+
     s = str(rig_exploration.EXPLORATION_DIR)
-    assert s.replace("/", os.sep).endswith(os.sep.join(["backend", "data", "tripo-exploration"]))
+    assert s.replace("/", os.sep).endswith(
+        os.sep.join(["backend", "data", "tripo-exploration"])
+    )
     assert str(rig_exploration.GLB_PATH).endswith("rig_exploration.glb")
     assert str(rig_exploration.METADATA_PATH).endswith("rig_exploration.json")

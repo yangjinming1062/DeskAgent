@@ -36,12 +36,7 @@ def _emit_companion_affect(user_id: int, emotion: str) -> None:
         db.commit()
 
 
-async def send_message_tool(
-    message: str,
-    target_webhook: str | None = None,
-    affect: str | None = None,
-    **kwargs,
-) -> str:
+async def send_message_tool(message: str, target_webhook: str | None = None, affect: str | None = None, **kwargs) -> str:
     # Companion-native proactive path: no webhook ⇒ deliver straight to the
     # user's desktop as a companion.message (ARCHITECTURE.md §7.4 repurposes this
     # tool as the companion's proactive-reach-out channel).
@@ -69,7 +64,14 @@ async def send_message_tool(
                     _emit_companion_affect(user_id, "neutral")
             else:
                 _emit_companion_message(user_id, message, affect=affect)
-        return json.dumps({"success": True, "channel": "companion", "quiet_suppressed": isinstance(user_id, int) and is_quiet(user_id)}, ensure_ascii=False)
+        return json.dumps(
+            {
+                "success": True,
+                "channel": "companion",
+                "quiet_suppressed": isinstance(user_id, int) and is_quiet(user_id),
+            },
+            ensure_ascii=False,
+        )
 
     parsed = urlparse(target_webhook)
     if parsed.scheme not in ("http", "https"):
@@ -116,8 +118,14 @@ SEND_MESSAGE_SCHEMA = {
     "parameters": {
         "type": "object",
         "properties": {
-            "message": {"type": "string", "description": "The full text message content to send."},
-            "target_webhook": {"type": "string", "description": "Optional webhook URL to POST to (external bot). Omit to deliver to the user's desktop companion."},
+            "message": {
+                "type": "string",
+                "description": "The full text message content to send.",
+            },
+            "target_webhook": {
+                "type": "string",
+                "description": "Optional webhook URL to POST to (external bot). Omit to deliver to the user's desktop companion.",
+            },
             "affect": {
                 "type": "string",
                 "description": "Optional emotion token to attach to the proactive message so the desktop can drive the EMOTIONAL state (one of: happy, sad, surprised, excited, confused, concerned, shy, proud, grateful, playful, bored, lonely, sleepy, curious, embarrassed, apologetic, neutral). The desktop still applies the disturbance tier gate — quiet suppresses text but keeps the affect cue.",

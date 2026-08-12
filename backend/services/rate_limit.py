@@ -1,3 +1,5 @@
+from collections.abc import Awaitable, Callable
+
 import jwt
 from components import SETTINGS, get_logger, set_request_user_id
 from fastapi import Request
@@ -6,6 +8,7 @@ from modules.auth import decode_access_token
 from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
+from starlette.responses import Response
 
 logger = get_logger(__name__)
 
@@ -41,7 +44,7 @@ def _user_key(request: Request) -> str:
 limiter = Limiter(key_func=_user_key, enabled=SETTINGS.rate_limit_enabled, config_filename="")
 
 
-async def stash_user_id_middleware(request: Request, call_next):  # type: ignore[no-untyped-def]
+async def stash_user_id_middleware(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
     """Best-effort: decode the ``Authorization: Bearer`` JWT and stash
     ``user_id`` on ``request.state`` for the rate-limit key function.
 

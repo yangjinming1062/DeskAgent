@@ -8,8 +8,17 @@ class _FakeChat:
         self.content = content
         self.calls: list[dict] = []
 
-    async def __call__(self, db, user_id, system_prompt, user_payload, *, provider_config=None):
-        self.calls.append({"db": db, "user_id": user_id, "system": system_prompt, "user": user_payload})
+    async def __call__(
+        self, db, user_id, system_prompt, user_payload, *, provider_config=None
+    ):
+        self.calls.append(
+            {
+                "db": db,
+                "user_id": user_id,
+                "system": system_prompt,
+                "user": user_payload,
+            }
+        )
         if isinstance(self.content, Exception):
             raise self.content
         return self.content

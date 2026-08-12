@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from ..companion import build_system_prompt_extras, build_user_profile_extras, format_auto_inject_block, format_inferred_profile_block
 from ..gateway import RuntimeSession
-from ..llm import MissingLlmConfigError, ServiceType, provider_for_service, provider_from_config, resolve_context_tokens, resolve_vision_chain
+from ..llm import MissingLlmConfigError, ProviderConfig, ServiceType, provider_for_service, provider_from_config, resolve_context_tokens, resolve_vision_chain
 from ..tools import REGISTRY, NativeMemory, schema_name
 from .system_prompt import build_system_prompt
 
@@ -33,7 +33,7 @@ class _TurnInputs:
     context_tokens_override: int | None
     all_schemas: list[dict]
     first_user_msg_content: str | None
-    llm_chain: list[Any] | None
+    llm_chain: list[ProviderConfig] | None
 
 
 def load_user_settings(db: Session, user_id: int) -> dict[str, str]:

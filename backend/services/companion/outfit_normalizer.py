@@ -24,36 +24,17 @@ _OUTFIT_NORMALIZER_SYSTEM_PROMPT = (
 
 
 class ChatFn(Protocol):
-    async def __call__(
-        self,
-        db: Session | None,
-        user_id: int | None,
-        system_prompt: str,
-        user_payload: str,
-        *,
-        provider_config: ProviderConfig | None = None,
-    ) -> str: ...
+    async def __call__(self, db: Session | None, user_id: int | None, system_prompt: str, user_payload: str, *, provider_config: ProviderConfig | None = None) -> str: ...
 
 
 def _build_user_payload(raw_input: str, persona_definition: dict[str, str] | None) -> str:
     definition = persona_definition or {}
     species = definition.get("biological_type") or "人类"
     gender = definition.get("gender") or ""
-    parts = [
-        "角色物理属性：",
-        f"- 物种: {species}",
-    ]
+    parts = ["角色物理属性：", f"- 物种: {species}"]
     if gender:
         parts.append(f"- 性别: {gender}")
-    parts.extend(
-        [
-            "",
-            "原始服装信息：",
-            raw_input[:1000],
-            "",
-            "请输出规范化服装描述：",
-        ]
-    )
+    parts.extend(["", "原始服装信息：", raw_input[:1000], "", "请输出规范化服装描述："])
     return "\n".join(parts)
 
 
@@ -65,13 +46,7 @@ def _clean(raw: str) -> str:
 
 
 async def normalize_outfit(
-    chat: ChatFn,
-    *,
-    raw_input: str,
-    persona_definition: dict[str, str] | None = None,
-    image_data_uri: str | None = None,
-    user_id: int | None = None,
-    db: Session | None = None,
+    chat: ChatFn, *, raw_input: str, persona_definition: dict[str, str] | None = None, image_data_uri: str | None = None, user_id: int | None = None, db: Session | None = None
 ) -> str:
     """Vision-first (if *image_data_uri* given) text-fallback outfit normalization.
     Always returns a non-empty string — falls back to truncated raw_input on error."""
@@ -94,10 +69,7 @@ async def normalize_outfit(
                             ],
                         },
                     ]
-                    response = await client.chat.completions.create(
-                        model=provider.config.model,
-                        messages=messages,
-                    )
+                    response = await client.chat.completions.create(model=provider.config.model, messages=messages)
                     result = _clean(response.choices[0].message.content or "")
                     if result:
                         return result[:_MAX_OUTFIT_LEN]
@@ -106,8 +78,7 @@ async def normalize_outfit(
 
     try:
         raw = await chat(db, user_id, _OUTFIT_NORMALIZER_SYSTEM_PROMPT, user_payload)
-        cleaned = _clean(raw)
-        if cleaned:
+        if cleaned := _clean(raw):
             return cleaned[:_MAX_OUTFIT_LEN]
     except Exception:
         logger.warning("Text outfit normalization failed, using raw input", exc_info=True)

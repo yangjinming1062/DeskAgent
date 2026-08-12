@@ -22,15 +22,7 @@ def _build_updates(prompt: str | None, name: str | None, schedule: str | None) -
     return updates
 
 
-def _handle_cron_action(
-    action: str,
-    user_id: int,
-    job_id_raw: int | str | None,
-    prompt: str | None,
-    schedule: str | None,
-    name: str | None,
-    deliver: str,
-) -> str:
+def _handle_cron_action(action: str, user_id: int, job_id_raw: int | str | None, prompt: str | None, schedule: str | None, name: str | None, deliver: str) -> str:
     match action:
         case "create":
             if not schedule or not prompt:
@@ -89,14 +81,7 @@ def _handle_cron_action(
 
 
 def cronjob(
-    action: str,
-    user_id: int,
-    job_id: int | None = None,
-    prompt: str | None = None,
-    schedule: str | None = None,
-    name: str | None = None,
-    deliver: str = "local",
-    **_,
+    action: str, user_id: int, job_id: int | None = None, prompt: str | None = None, schedule: str | None = None, name: str | None = None, deliver: str = "local", **_
 ) -> str:
     normalized = (action or "").strip().lower()
     try:
@@ -112,10 +97,22 @@ CRONJOB_SCHEMA = {
     "parameters": {
         "type": "object",
         "properties": {
-            "action": {"type": "string", "description": "One of: create, list, update, pause, resume, remove."},
-            "job_id": {"type": "integer", "description": "Required for update/pause/resume/remove."},
-            "prompt": {"type": "string", "description": "For create: the full prompt/instructions for the job."},
-            "schedule": {"type": "string", "description": "For create/update: cron expression (e.g., '0 9 * * *' for daily at 9am)."},
+            "action": {
+                "type": "string",
+                "description": "One of: create, list, update, pause, resume, remove.",
+            },
+            "job_id": {
+                "type": "integer",
+                "description": "Required for update/pause/resume/remove.",
+            },
+            "prompt": {
+                "type": "string",
+                "description": "For create: the full prompt/instructions for the job.",
+            },
+            "schedule": {
+                "type": "string",
+                "description": "For create/update: cron expression (e.g., '0 9 * * *' for daily at 9am).",
+            },
             "name": {"type": "string", "description": "Optional human-friendly name."},
             "deliver": {
                 "type": "string",

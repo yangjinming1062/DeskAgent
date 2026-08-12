@@ -10,12 +10,7 @@ from .. import ALWAYS_AVAILABLE, REGISTRY
 logger = get_logger(__name__)
 
 
-def _image_gen_chain(
-    db: Session | None,
-    user_id: int | None,
-    reference_image: str | None,
-    secondary_reference_image: str | None = None,
-) -> tuple[list[ProviderConfig], str | None]:
+def _image_gen_chain(db: Session | None, user_id: int | None, reference_image: str | None, secondary_reference_image: str | None = None) -> tuple[list[ProviderConfig], str | None]:
     """Filter the image_gen chain to reference-capable providers when
     ``reference_image`` is given. Returns ``(chain, error)``: error is set
     only when image_gen is configured but no provider supports image-to-image;
@@ -29,7 +24,10 @@ def _image_gen_chain(
         return full, None
     capable = [c for c in full if resolve(ServiceType.image_gen, c.provider_name).supports_reference_image]
     if full and not capable:
-        return capable, "当前图片生成供应商均不支持以图生图，请启用 minimax / gemini / grok 其中之一"
+        return (
+            capable,
+            "当前图片生成供应商均不支持以图生图，请启用 minimax / gemini / grok 其中之一",
+        )
     if secondary_reference_image:
         multi = [c for c in capable if resolve(ServiceType.image_gen, c.provider_name).supports_multiple_reference_images]
         if multi:
@@ -128,7 +126,10 @@ IMAGE_GENERATION_SCHEMA = {
     "parameters": {
         "type": "object",
         "properties": {
-            "prompt": {"type": "string", "description": "A detailed, descriptive prompt for the image to generate."},
+            "prompt": {
+                "type": "string",
+                "description": "A detailed, descriptive prompt for the image to generate.",
+            },
             "size": {
                 "type": "string",
                 "enum": IMAGE_GENERATION_SIZES,

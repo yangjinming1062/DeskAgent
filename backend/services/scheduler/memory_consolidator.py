@@ -35,11 +35,7 @@ Output JSON only, in this shape:
 
 If a fact is genuinely stale (contradicted by other rows, or so trivial it adds nothing),
 omit it — but only when omitting is clearly safe. When uncertain, keep the fact.
-""".format(
-    window=MEMORY_CONSOLIDATE_WINDOW_ROWS,
-    target=MEMORY_CONSOLIDATE_TARGET_ROWS,
-    tags=", ".join(sorted(RECALL_TAGS)),
-)
+""".format(window=MEMORY_CONSOLIDATE_WINDOW_ROWS, target=MEMORY_CONSOLIDATE_TARGET_ROWS, tags=", ".join(sorted(RECALL_TAGS)))
 
 
 def replace_recall_pool(user_id: int, source_rows: list[dict], summaries: list[dict]) -> int:
@@ -87,12 +83,7 @@ async def maybe_consolidate_one_user(user_id: int) -> bool:
     the caller's responsibility (cron tick tracks ``_LAST_MEMORY_CONSOLIDATE``).
     """
     with session_scope() as db:
-        recent_rows = memory_admin.list_memories(
-            db,
-            user_id,
-            kind="recall",
-            limit=MEMORY_CONSOLIDATE_WINDOW_ROWS,
-        )
+        recent_rows = memory_admin.list_memories(db, user_id, kind="recall", limit=MEMORY_CONSOLIDATE_WINDOW_ROWS)
         if len(recent_rows) < MEMORY_CONSOLIDATE_TRIGGER_ROWS:
             return False
         llm_cfg = resolve_user_llm_config(db, user_id)
@@ -115,14 +106,8 @@ async def maybe_consolidate_one_user(user_id: int) -> bool:
 
     written = replace_recall_pool(user_id, rows_payload, summaries)
     if written < 0:
-        logger.warning(
-            "memory_consolidator: all summaries empty, source rows kept",
-            extra={"user_id": user_id, "summary_count": len(summaries)},
-        )
+        logger.warning("memory_consolidator: all summaries empty, source rows kept", extra={"user_id": user_id, "summary_count": len(summaries)})
         return False
 
-    logger.info(
-        "memory_consolidator: consolidated",
-        extra={"user_id": user_id, "replaced": len(rows_payload), "summaries": written},
-    )
+    logger.info("memory_consolidator: consolidated", extra={"user_id": user_id, "replaced": len(rows_payload), "summaries": written})
     return True

@@ -3,18 +3,20 @@ from typing import ClassVar
 
 import httpx
 import pytest
-from services.llm import ImageGenRequest
-from services.llm import MissingLlmConfigError
-from services.llm import provider_for_service
-from services.llm import ProviderConfig
-from services.llm import ProviderError
-from services.llm import ServiceType
-from services.llm import VideoGenRequest
-from services.llm.llm_client import resolve_provider_config
-from services.llm.providers.mimo import MiMoChatProvider
-from services.llm.providers.mimo import MiMoImageGenProvider
-from services.llm.providers.mimo import MiMoSTTProvider
-from services.llm.providers.mimo import MiMoTTSProvider
+from services.llm import (
+    ImageGenRequest,
+    MiMoChatProvider,
+    MiMoImageGenProvider,
+    MiMoSTTProvider,
+    MiMoTTSProvider,
+    MissingLlmConfigError,
+    ProviderConfig,
+    ProviderError,
+    ServiceType,
+    VideoGenRequest,
+    provider_for_service,
+    resolve_provider_config
+)
 
 
 class TestServiceType:
@@ -1597,7 +1599,7 @@ class TestGrokImageGen:
 
     @pytest.mark.asyncio
     async def test_generate_text_only_downloads_and_encodes(self, monkeypatch):
-        from services.llm.providers.grok import image as grok_image
+        from services.llm.providers.grok import image
 
         captured: list[dict] = []
 
@@ -1618,7 +1620,7 @@ class TestGrokImageGen:
 
         provider = self._make_provider(grok_handler)
         cdn_client = httpx.AsyncClient(transport=httpx.MockTransport(cdn_handler))
-        monkeypatch.setattr(grok_image.httpx, "AsyncClient", lambda **kw: cdn_client)
+        monkeypatch.setattr(image.httpx, "AsyncClient", lambda **kw: cdn_client)
 
         result = await provider.generate(ImageGenRequest(prompt="a cat", n=2))
         assert len(result.images) == 2
@@ -1633,7 +1635,7 @@ class TestGrokImageGen:
 
     @pytest.mark.asyncio
     async def test_generate_with_reference_uses_edits_endpoint(self, monkeypatch):
-        from services.llm.providers.grok import image as grok_image
+        from services.llm.providers.grok import image
 
         captured: list[httpx.Request] = []
         bodies: list[dict] = []
@@ -1650,7 +1652,7 @@ class TestGrokImageGen:
 
         provider = self._make_provider(handler)
         cdn_client = httpx.AsyncClient(transport=httpx.MockTransport(cdn_handler))
-        monkeypatch.setattr(grok_image.httpx, "AsyncClient", lambda **kw: cdn_client)
+        monkeypatch.setattr(image.httpx, "AsyncClient", lambda **kw: cdn_client)
 
         await provider.generate(
             ImageGenRequest(
@@ -2033,13 +2035,20 @@ class TestPerUserProviderChain:
             monkeypatch.setattr(f"components.SETTINGS.{field}", default)
 
     def _seed(self, SessionLocal, provider_config):
-        from modules.auth import User, UserModelConfig, generate_activation_token, hash_activation_token
+        from modules.auth import (
+            User,
+            UserModelConfig,
+            generate_activation_token,
+            hash_activation_token,
+        )
 
         with SessionLocal() as db:
             user = User(
                 username="u",
                 password_hash=None,
-                activation_token_hash=hash_activation_token(generate_activation_token()),
+                activation_token_hash=hash_activation_token(
+                    generate_activation_token()
+                ),
                 is_active=True,
                 can_use=True,
             )
@@ -2109,7 +2118,12 @@ class TestPerUserProviderChain:
         assert [c.provider_name for c in chain] == ["mimo", "minimax"]
 
     def test_user_capability_provider_pin(self, _patch_db, monkeypatch):
-        from modules.auth import User, UserModelConfig, generate_activation_token, hash_activation_token
+        from modules.auth import (
+            User,
+            UserModelConfig,
+            generate_activation_token,
+            hash_activation_token,
+        )
         from services.llm import resolve_provider_chain
 
         self._reset(monkeypatch)
@@ -2120,7 +2134,9 @@ class TestPerUserProviderChain:
             user = User(
                 username="u_pin",
                 password_hash=None,
-                activation_token_hash=hash_activation_token(generate_activation_token()),
+                activation_token_hash=hash_activation_token(
+                    generate_activation_token()
+                ),
                 is_active=True,
                 can_use=True,
             )
@@ -2173,12 +2189,19 @@ class TestResolveUserLlmConfigCredentials:
         # default model (``default_model_for("minimax", "llm")``) wins.
         _, SessionLocal = _patch_db
         with SessionLocal() as db:
-            from modules.auth import User, UserModelConfig, generate_activation_token, hash_activation_token
+            from modules.auth import (
+                User,
+                UserModelConfig,
+                generate_activation_token,
+                hash_activation_token,
+            )
 
             user = User(
                 username="u",
                 password_hash=None,
-                activation_token_hash=hash_activation_token(generate_activation_token()),
+                activation_token_hash=hash_activation_token(
+                    generate_activation_token()
+                ),
                 is_active=True,
                 can_use=True,
             )

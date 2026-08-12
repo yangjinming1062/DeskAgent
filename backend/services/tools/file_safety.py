@@ -4,13 +4,7 @@ import os
 # DeskAgent control-plane files: provider credentials, OAuth tokens, HMAC secrets,
 # gateway config. Listed by basename — both ~/.deskagent/<name> and profile-scoped
 # ~/.deskagent/profiles/<profile>/<name> are blocked.
-DESKAGENT_CONTROL_FILE_BASENAMES: tuple[str, ...] = (
-    "auth.json",
-    "auth.lock",
-    "desktop-settings.json",
-    "webhook_subscriptions.json",
-    ".env",
-)
+DESKAGENT_CONTROL_FILE_BASENAMES: tuple[str, ...] = ("auth.json", "auth.lock", "desktop-settings.json", "webhook_subscriptions.json", ".env")
 
 # .env.example is deliberately NOT here — it's a documented-shape substitute.
 BLOCKED_PROJECT_ENV_BASENAMES: frozenset[str] = frozenset({".env", ".env.local", ".env.development", ".env.production", ".env.test", ".env.staging", ".envrc"})
@@ -34,16 +28,7 @@ _WRITE_DENIED_RELATIVE_PATHS: tuple[tuple[str, ...], ...] = (
 
 _WRITE_DENIED_ABSOLUTE_PATHS: tuple[str, ...] = ("/etc/sudoers", "/etc/passwd", "/etc/shadow")
 
-_WRITE_DENIED_PREFIXES_RELATIVE: tuple[tuple[str, ...], ...] = (
-    (".ssh",),
-    (".aws",),
-    (".gnupg",),
-    (".kube",),
-    (".docker",),
-    (".azure",),
-    (".config", "gh"),
-    (".config", "gcloud"),
-)
+_WRITE_DENIED_PREFIXES_RELATIVE: tuple[tuple[str, ...], ...] = ((".ssh",), (".aws",), (".gnupg",), (".kube",), (".docker",), (".azure",), (".config", "gh"), (".config", "gcloud"))
 
 _WRITE_DENIED_PREFIXES_ABSOLUTE: tuple[str, ...] = ("/etc/sudoers.d", "/etc/systemd")
 _WRITE_DENIED_DESKAGENT_PREFIXES: tuple[str, ...] = ("mcp-tokens", "pairing", "skills/.hub")
@@ -109,8 +94,14 @@ def _read_block_messages() -> tuple[tuple[str, str], ...]:
 def _read_block_prefixes() -> tuple[tuple[str, str], ...]:
     deskagent_home = _deskagent_home()
     return (
-        (_join_real(deskagent_home, "mcp-tokens") + os.sep, "Blocked: cannot read DeskAgent credential directory (~/.deskagent/mcp-tokens/)."),
-        (_join_real(deskagent_home, "pairing") + os.sep, "Blocked: cannot read DeskAgent credential directory (~/.deskagent/pairing/)."),
+        (
+            _join_real(deskagent_home, "mcp-tokens") + os.sep,
+            "Blocked: cannot read DeskAgent credential directory (~/.deskagent/mcp-tokens/).",
+        ),
+        (
+            _join_real(deskagent_home, "pairing") + os.sep,
+            "Blocked: cannot read DeskAgent credential directory (~/.deskagent/pairing/).",
+        ),
     )
 
 

@@ -32,13 +32,17 @@ def test_completed_event_uses_task_id(monkeypatch):
     monkeypatch.setattr(video_jobs, "SESSION_LOCAL", lambda: stub_session)
     monkeypatch.setattr(video_jobs, "WSEvent", _StubEvent)
 
-    video_jobs._emit_ws_event(42, "video_gen.completed", {"task_id": "42", "url": "http://x/v.mp4"})
+    video_jobs._emit_ws_event(
+        42, "video_gen.completed", {"task_id": "42", "url": "http://x/v.mp4"}
+    )
 
     assert captured["event_type"] == "video_gen.completed"
     payload = json.loads(captured["payload"])
     assert payload["task_id"] == "42"
     assert payload["url"] == "http://x/v.mp4"
-    assert "job_id" not in payload, f"WS payload must use task_id, not job_id: {payload}"
+    assert "job_id" not in payload, (
+        f"WS payload must use task_id, not job_id: {payload}"
+    )
 
 
 def test_failed_event_uses_task_id(monkeypatch):
@@ -67,7 +71,9 @@ def test_failed_event_uses_task_id(monkeypatch):
     monkeypatch.setattr(video_jobs, "SESSION_LOCAL", _StubSession)
     monkeypatch.setattr(video_jobs, "WSEvent", _StubEvent)
 
-    video_jobs._emit_ws_event(7, "video_gen.failed", {"task_id": "7", "error": "timeout"})
+    video_jobs._emit_ws_event(
+        7, "video_gen.failed", {"task_id": "7", "error": "timeout"}
+    )
 
     assert captured["event_type"] == "video_gen.failed"
     payload = json.loads(captured["payload"])

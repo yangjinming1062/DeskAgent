@@ -116,8 +116,7 @@ async def speech_to_text(
             sink.extend(chunk)
             if len(sink) > STT_MAX_AUDIO_BYTES:
                 raise HTTPException(
-                    status_code=413,
-                    detail={"error": f"Audio file too large (max {STT_MAX_AUDIO_BYTES // (1024 * 1024)} MB)", "reason": "payload_too_large", "status": 413},
+                    status_code=413, detail={"error": f"Audio file too large (max {STT_MAX_AUDIO_BYTES // (1024 * 1024)} MB)", "reason": "payload_too_large", "status": 413}
                 )
         file_bytes = bytes(sink)
 
@@ -160,10 +159,7 @@ async def text_to_speech(
     if not text:
         raise HTTPException(status_code=400, detail={"error": "text is required", "reason": "missing_params", "status": 400})
     if len(text) > TTS_MAX_TEXT_CHARS:
-        raise HTTPException(
-            status_code=413,
-            detail={"error": f"text exceeds {TTS_MAX_TEXT_CHARS} chars", "reason": "payload_too_large", "status": 413},
-        )
+        raise HTTPException(status_code=413, detail={"error": f"text exceeds {TTS_MAX_TEXT_CHARS} chars", "reason": "payload_too_large", "status": 413})
 
     try:
         with SESSION_LOCAL() as db:

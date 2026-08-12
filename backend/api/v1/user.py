@@ -13,12 +13,11 @@ from modules.auth import (
     UserModelConfigSelfRequest,
     create_access_token,
     decode_activation_code,
-    fingerprint_api_key,
     get_current_session,
     hash_activation_token,
-    public_provider_slots,
 )
 from modules.system import MessageResponse
+from services.auth import CAPABILITIES, build_config_response
 from services.llm import merge_provider_json
 from services.rate_limit import limiter
 from slowapi.util import get_remote_address
@@ -143,26 +142,6 @@ def logout(
     return MessageResponse(message="已退出登录。")
 
 
-_CAPABILITIES = ("llm", "stt", "tts", "image_gen", "video_gen")
-
-
-def _build_config_response(cfg: UserModelConfig | None) -> UserModelConfigResponse:
-    """Assemble the public view of a user's model config from the raw DB row.
-
-    Only the user's explicitly-set values are returned — empty strings when
-    nothing is stored, so the desktop UI never sees server-wide defaults.
-    """
-    data: dict = {}
-    for cap in _CAPABILITIES:
-        data[f"{cap}_provider"] = getattr(cfg, f"{cap}_provider") or "" if cfg else ""
-        data[f"{cap}_base_url"] = getattr(cfg, f"{cap}_base_url") or "" if cfg else ""
-        data[f"{cap}_api_key_set"] = bool(cfg and getattr(cfg, f"{cap}_api_key"))
-        data[f"{cap}_model_name"] = getattr(cfg, f"{cap}_model_name") or "" if cfg else ""
-    data["llm_api_key_fingerprint"] = fingerprint_api_key(cfg.llm_api_key) if cfg else ""
-    data["provider_config"] = public_provider_slots(cfg.provider_config if cfg else None)
-    return UserModelConfigResponse(**data)
-
-
 @router.get("/model-config", response_model=UserModelConfigResponse)
 def model_config(
     current: tuple[User, LoginRecord] = Depends(get_current_session),
@@ -177,7 +156,7 @@ def model_config(
     """
     user, _session = current
     cfg = db.query(UserModelConfig).filter(UserModelConfig.user_id == user.id).first()
-    return _build_config_response(cfg)
+    return build_config_response(cfg)
 
 
 @router.put("/model-config", response_model=UserModelConfigResponse)
@@ -199,7 +178,7 @@ def update_model_config(
 
     # Preserve existing api_keys when the user submits an empty one (the GET
     # endpoint never returns raw keys); ``None`` (JSON null) means "clear".
-    for cap in _CAPABILITIES:
+    for cap in CAPABILITIES:
         attr = f"{cap}_api_key"
         val = getattr(payload, attr)
         if val is None:
@@ -218,4 +197,4 @@ def update_model_config(
         config = UserModelConfig(user_id=user.id, **data)
         db.add(config)
     db.commit()
-    return _build_config_response(config)
+    return build_config_response(config)

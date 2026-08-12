@@ -141,22 +141,8 @@ async def generate_wardrobe_item(db: Session, *, user_id: int, name: str, descri
         raise RuntimeError("Texture download failed")
 
     texture_url = save_companion_asset(data, user_id=user_id, label="wardrobe_texture", ext="png")
-    outfit_desc = await normalize_outfit(
-        chat,
-        raw_input=description,
-        persona_definition=_persona_definition(db, user_id),
-        user_id=user_id,
-        db=db,
-    )
-    item = WardrobeItem(
-        user_id=user_id,
-        name=name,
-        category="generated",
-        material_overrides_json="{}",
-        texture_url=texture_url,
-        prompt=description,
-        outfit_description=outfit_desc,
-    )
+    outfit_desc = await normalize_outfit(chat, raw_input=description, persona_definition=_persona_definition(db, user_id), user_id=user_id, db=db)
+    item = WardrobeItem(user_id=user_id, name=name, category="generated", material_overrides_json="{}", texture_url=texture_url, prompt=description, outfit_description=outfit_desc)
     db.add(item)
     db.commit()
     db.refresh(item)
@@ -165,25 +151,12 @@ async def generate_wardrobe_item(db: Session, *, user_id: int, name: str, descri
 
 
 async def preview_wardrobe_texture(
-    db: Session,
-    *,
-    user_id: int,
-    description: str,
-    image_bytes: bytes | None = None,
-    content_type: str | None = None,
-    feedback: str | None = None,
+    db: Session, *, user_id: int, description: str, image_bytes: bytes | None = None, content_type: str | None = None, feedback: str | None = None
 ) -> WardrobePreviewResponse:
     rig_type = await _resolve_rig_type(db, user_id)
     prompt = build_texture_prompt(description=description, feedback=feedback, rig_type=rig_type)
     reference_data_uri = build_data_uri(image_bytes, content_type) if image_bytes else None
-    result_json = await image_generation_tool(
-        prompt=prompt,
-        reference_image=reference_data_uri,
-        llm_config={},
-        size="1024x1024",
-        n=1,
-        user_id=user_id,
-    )
+    result_json = await image_generation_tool(prompt=prompt, reference_image=reference_data_uri, llm_config={}, size="1024x1024", n=1, user_id=user_id)
     src_url = first_image_url(result_json)
     if not src_url:
         raise RuntimeError("Texture generation failed: no URL in provider response")
@@ -239,14 +212,7 @@ async def _download_texture_with_mime(url: str) -> tuple[bytes, str, str] | None
         return None
 
 
-async def confirm_wardrobe_item(
-    db: Session,
-    *,
-    user_id: int,
-    file_id: str,
-    name: str,
-    prompt: str | None = None,
-) -> WardrobeItem:
+async def confirm_wardrobe_item(db: Session, *, user_id: int, file_id: str, name: str, prompt: str | None = None) -> WardrobeItem:
     res = get_file_path(file_id)
     if res is None:
         raise WardrobeSourceExpiredError(f"temp-media file expired for file_id {file_id}")
@@ -257,23 +223,10 @@ async def confirm_wardrobe_item(
         raise WardrobeSourceExpiredError(f"temp-media file unreadable: {exc}") from exc
 
     texture_url = save_companion_asset(data, user_id=user_id, label="wardrobe_texture", ext="png")
-    outfit_desc = await normalize_outfit(
-        chat,
-        raw_input=prompt or name,
-        persona_definition=_persona_definition(db, user_id),
-        user_id=user_id,
-        db=db,
-    )
+    outfit_desc = await normalize_outfit(chat, raw_input=prompt or name, persona_definition=_persona_definition(db, user_id), user_id=user_id, db=db)
     _unequip_all(db, user_id)
     item = WardrobeItem(
-        user_id=user_id,
-        name=name,
-        category="generated",
-        material_overrides_json="{}",
-        texture_url=texture_url,
-        prompt=prompt,
-        outfit_description=outfit_desc,
-        equipped=True,
+        user_id=user_id, name=name, category="generated", material_overrides_json="{}", texture_url=texture_url, prompt=prompt, outfit_description=outfit_desc, equipped=True
     )
     db.add(item)
     db.commit()

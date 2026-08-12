@@ -17,7 +17,6 @@ from modules.companion import (
     AvatarFromImageRequest,
     AvatarGenerateRequest,
     AvatarHistoryResponse,
-    CompanionModel,
     CompanionModelResponse,
     FullbodyGenerateRequest,
     ModelGenerateRequest,
@@ -27,7 +26,6 @@ from modules.companion import (
     WardrobeConfirmRequest,
     WardrobeEquipRequest,
     WardrobeGenerateRequest,
-    WardrobeItem,
     WardrobeItemResponse,
     WardrobePreviewRequest,
     WardrobePreviewResponse,
@@ -65,6 +63,7 @@ from services.companion import (
     list_avatar_history,
     list_tts_voices,
     list_wardrobe,
+    load_avatar_bytes_as_data_uri,
     normalize_outfit,
     normalize_voice_language,
     preview_wardrobe_texture,
@@ -72,12 +71,12 @@ from services.companion import (
     resolve_companion_asset_path,
     resolve_companion_model_path,
     resolve_uploaded_avatar_path,
-    signed_model_url,
     update_outfit_field,
     update_persona,
     verify_signed_asset_request,
     verify_signed_avatar_request,
 )
+from services.companion.response_builders import avatar_response, model_response, wardrobe_response
 from services.llm import MissingLlmConfigError, chat
 from services.rate_limit import limiter
 from sqlalchemy.orm import Session
@@ -86,7 +85,7 @@ router = get_router()
 
 logger = get_logger(__name__)
 
-# Strong-ref sets so create_task'd refreshes aren't GC'd; tests and shutdown
+# Strong-ref sets (module-level task refs) so create_task'd refreshes aren't GC'd; tests and shutdown
 # drains can introspect the in-flight work.
 _PERSONA_TAGS_TASKS: set[asyncio.Task] = set()
 _OUTFIT_TASKS: set[asyncio.Task] = set()
@@ -99,36 +98,6 @@ _BG_TASK_PER_ATTEMPT_TIMEOUT = 30.0
 _BG_TASK_MAX_ATTEMPTS = 3
 _BG_TASK_BASE_DELAY = 5.0
 _BG_TASK_MAX_DELAY = 30.0
-
-
-def _avatar_response(asset: AvatarAsset) -> AvatarAssetResponse:
-    # Generation is synchronous, so every persisted asset is succeeded —
-    # no async pending state exists on the avatar pipeline.
-    prompt_payload = safe_json_loads(asset.prompt_json, default={})
-    return AvatarAssetResponse(
-        id=asset.id,
-        asset_url=asset.asset_url,
-        seed_front_url=asset.seed_front_url or None,
-        seed_right_url=asset.seed_right_url or None,
-        seed_back_url=asset.seed_back_url or None,
-        prompt=prompt_payload.get("prompt", "") if isinstance(prompt_payload, dict) else "",
-        status="succeeded",
-    )
-
-
-def _model_response(model: CompanionModel) -> CompanionModelResponse:
-    return CompanionModelResponse(
-        id=model.id,
-        species=model.species,
-        provider=model.provider,
-        asset_url=signed_model_url(model) or model.asset_url,
-        morph_params=safe_json_loads(model.morph_params_json or "{}", default={}),
-        status=model.status,
-        has_rig=model.has_rig,
-        has_morph_targets=model.has_morph_targets,
-        rig_type=model.rig_type,
-        rig_naming=model.rig_naming,
-    )
 
 
 @router.get("/persona", response_model=PersonaResponse)
@@ -273,8 +242,6 @@ def _schedule_onboarding_outfit_extraction(persona_id: int, user_id: int) -> Non
 
 
 async def _refresh_outfit_onboarding(persona_id: int, user_id: int) -> None:
-    from services.companion.avatar_service import _load_avatar_bytes_as_data_uri
-
     last_exc: BaseException | None = None
     for attempt in range(1, _BG_TASK_MAX_ATTEMPTS + 1):
         try:
@@ -295,7 +262,7 @@ async def _refresh_outfit_onboarding(persona_id: int, user_id: int) -> None:
                 raw_input = f"头像生成提示词：{avatar_prompt}\n形象核心描述：{appearance_core}"
                 image_data_uri = None
                 if avatar and avatar.seed_front_url:
-                    image_data_uri = await asyncio.to_thread(_load_avatar_bytes_as_data_uri, avatar.seed_front_url)
+                    image_data_uri = await asyncio.to_thread(load_avatar_bytes_as_data_uri, avatar.seed_front_url)
                 outfit = await asyncio.wait_for(
                     normalize_outfit(
                         chat,
@@ -414,7 +381,7 @@ def get_avatar(
     if asset is None:
         raise HTTPException(status_code=404, detail="No avatar found")
     # get_active_avatar already re-signs asset_url on read; never re-sign here.
-    return _avatar_response(asset)
+    return avatar_response(asset)
 
 
 @router.post("/avatar", response_model=AvatarAssetResponse, status_code=status.HTTP_201_CREATED)
@@ -434,7 +401,7 @@ async def post_avatar(
         raise HTTPException(status_code=502, detail={"error": "伙伴形象生成失败，请稍后重试", "reason": str(exc)})
     except MissingLlmConfigError as exc:
         raise HTTPException(status_code=502, detail={"error": "LLM provider 未配置，请先在设置中配置 chat provider", "reason": str(exc)})
-    return _avatar_response(asset)
+    return avatar_response(asset)
 
 
 def _decode_upload_image(image_b64: str | None, content_type: str | None) -> tuple[bytes | None, str | None]:
@@ -486,7 +453,7 @@ async def post_avatar_from_image(
     except MissingLlmConfigError as exc:
         raise HTTPException(status_code=502, detail={"error": "LLM provider 未配置，请先在设置中配置 chat provider", "reason": str(exc)})
 
-    return _avatar_response(asset)
+    return avatar_response(asset)
 
 
 @router.post("/avatar/{avatar_id}/fullbody", response_model=AvatarAssetResponse, status_code=status.HTTP_201_CREATED)
@@ -527,7 +494,7 @@ async def post_avatar_fullbody(
         except AvatarGenerationError as exc:
             raise HTTPException(status_code=502, detail={"error": "伙伴全身图生成失败，请稍后重试", "reason": str(exc)})
 
-    return _avatar_response(asset)
+    return avatar_response(asset)
 
 
 @router.get("/avatar/history", response_model=AvatarHistoryResponse)
@@ -537,7 +504,7 @@ def get_avatar_history(
 ) -> AvatarHistoryResponse:
     user, _ = auth
     history = list_avatar_history(db, user.id)
-    return AvatarHistoryResponse(history=[_avatar_response(a) for a in history])
+    return AvatarHistoryResponse(history=[avatar_response(a) for a in history])
 
 
 @router.get("/model", response_model=CompanionModelResponse)
@@ -549,7 +516,7 @@ def get_model(
     model = get_active_model(db, user.id)
     if model is None:
         raise HTTPException(status_code=404, detail="No companion model found")
-    return _model_response(model)
+    return model_response(model)
 
 
 @router.post("/model", response_model=CompanionModelResponse, status_code=status.HTTP_201_CREATED)
@@ -567,23 +534,7 @@ async def post_model(
         raise HTTPException(status_code=409, detail={"error": str(exc)})
     except ModelGenerationError as exc:
         raise HTTPException(status_code=502, detail={"error": str(exc)})
-    return _model_response(model)
-
-
-def _wardrobe_response(item: WardrobeItem) -> WardrobeItemResponse:
-    return WardrobeItemResponse(
-        id=item.id,
-        name=item.name,
-        category=item.category,
-        material_overrides_json=item.material_overrides_json,
-        texture_url=item.texture_url,
-        normal_url=item.normal_url,
-        roughness_url=item.roughness_url,
-        metalness_url=item.metalness_url,
-        prompt=item.prompt,
-        outfit_description=item.outfit_description,
-        equipped=item.equipped,
-    )
+    return model_response(model)
 
 
 @router.get("/wardrobe", response_model=list[WardrobeItemResponse])
@@ -592,7 +543,7 @@ def get_wardrobe(
     db: Session = Depends(get_db),
 ) -> list[WardrobeItemResponse]:
     user, _ = auth
-    return [_wardrobe_response(i) for i in list_wardrobe(db, user.id)]
+    return [wardrobe_response(i) for i in list_wardrobe(db, user.id)]
 
 
 @router.get("/wardrobe/equipped", response_model=WardrobeItemResponse)
@@ -604,7 +555,7 @@ def get_wardrobe_equipped(
     item = get_equipped_item(db, user.id)
     if item is None:
         raise HTTPException(status_code=404, detail="No equipped wardrobe item")
-    return _wardrobe_response(item)
+    return wardrobe_response(item)
 
 
 @router.post("/wardrobe", response_model=WardrobeItemResponse, status_code=status.HTTP_201_CREATED)
@@ -620,7 +571,7 @@ async def post_wardrobe(
         item = await generate_wardrobe_item(db, user_id=user.id, name=body.name, description=body.description)
     except (RuntimeError, MissingLlmConfigError) as exc:
         raise HTTPException(status_code=502, detail={"error": str(exc)})
-    return _wardrobe_response(item)
+    return wardrobe_response(item)
 
 
 @router.put("/wardrobe/equip", response_model=WardrobeItemResponse)
@@ -635,7 +586,7 @@ def put_wardrobe_equip(
         emit_wardrobe_updated(user.id)
     except ValueError:
         raise HTTPException(status_code=404, detail="Wardrobe item not found")
-    return _wardrobe_response(item)
+    return wardrobe_response(item)
 
 
 @router.delete("/wardrobe/{item_id}")
@@ -695,7 +646,7 @@ async def post_wardrobe_confirm(
     except (RuntimeError, MissingLlmConfigError) as exc:
         raise HTTPException(status_code=502, detail={"error": str(exc)})
     emit_wardrobe_updated(user.id)
-    return _wardrobe_response(item)
+    return wardrobe_response(item)
 
 
 @router.delete("/wardrobe/preview/{file_id}")

@@ -2,13 +2,35 @@ from typing import Any
 
 from components import SESSION_LOCAL, coerce_hour_0_23, coerce_non_negative_int, get_logger, safe_json_loads
 from modules.companion import Persona
+from pydantic import BaseModel, Field
 
 from ..chat import ALLOWED_EMOTIONS
-from ..llm import LLMRuntimeError, call_with_retry, client_for_config
+from ..llm import LLMRuntimeError, UserLlmConfig, call_with_retry, client_for_config
 from .affect_emit import emit_companion_affect
 from .memory_format import format_memories_block
 
 logger = get_logger(__name__)
+
+
+class AffectCheckResult(BaseModel):
+    expressed: bool
+    emotion: str = "neutral"
+    reason: str = Field(default="", max_length=200)
+
+    def get(self, key: str, default: Any = None) -> Any:
+        return getattr(self, key, default)
+
+    def __getitem__(self, item: str) -> Any:
+        if hasattr(self, item):
+            return getattr(self, item)
+        raise KeyError(item)
+
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, dict):
+            d = self.model_dump()
+            return all(d.get(k) == v for k, v in other.items())
+        return super().__eq__(other)
+
 
 _MAX_RESPONSE_TOKENS = 200
 
@@ -35,17 +57,18 @@ _AFFECT_CHECK_PROMPT = (
 )
 
 
-async def check_affect(user_id: int, idle_seconds: float, local_hour: int, llm_config: dict[str, Any]) -> dict[str, Any]:
+async def check_affect(user_id: int, idle_seconds: float, local_hour: int, llm_config: UserLlmConfig | dict[str, Any]) -> AffectCheckResult:
     """Idle-triggered LLM reasoning for companion contextual emotion expression."""
     with SESSION_LOCAL() as db:
         persona = db.query(Persona).filter(Persona.user_id == user_id).one_or_none()
         if persona is None or not persona.is_complete or not persona.system_prompt_extras:
-            return {"expressed": False, "reason": "persona not ready"}
+            return AffectCheckResult(expressed=False, reason="persona not ready")
         persona_extras = persona.system_prompt_extras
         memories_block = format_memories_block(db, user_id)
 
-    if not isinstance(llm_config, dict) or "model_name" not in llm_config:
-        return {"expressed": False, "reason": "llm_error"}
+    model_name = llm_config.model_name if isinstance(llm_config, UserLlmConfig) else (llm_config.get("model_name") if isinstance(llm_config, dict) else "")
+    if not model_name:
+        return AffectCheckResult(expressed=False, reason="llm_error")
 
     idle_seconds = float(coerce_non_negative_int(idle_seconds))
     local_hour = coerce_hour_0_23(local_hour)
@@ -59,23 +82,16 @@ async def check_affect(user_id: int, idle_seconds: float, local_hour: int, llm_c
 
     try:
         client = client_for_config(llm_config)
-        response = await call_with_retry(
-            client,
-            model=llm_config["model_name"],
-            messages=[{"role": "user", "content": prompt}],
-            stream=False,
-            temperature=0.7,
-            max_tokens=_MAX_RESPONSE_TOKENS,
-        )
+        response = await call_with_retry(client, model=model_name, messages=[{"role": "user", "content": prompt}], stream=False, temperature=0.7, max_tokens=_MAX_RESPONSE_TOKENS)
     except (TimeoutError, LLMRuntimeError) as exc:
         logger.warning("affect_check: LLM call failed", extra={"user_id": user_id, "error": str(exc)})
-        return {"expressed": False, "reason": "llm_error"}
+        return AffectCheckResult(expressed=False, reason="llm_error")
 
     raw_content = (response.choices[0].message.content or "") if response.choices else ""
     parsed = safe_json_loads(raw_content)
     if not isinstance(parsed, dict):
         logger.warning("affect_check: unparseable LLM response", extra={"user_id": user_id, "raw": raw_content[:200]})
-        return {"expressed": False, "reason": "unparseable"}
+        return AffectCheckResult(expressed=False, reason="unparseable")
 
     should_express = bool(parsed.get("should_express"))
     emotion = str(parsed.get("emotion") or "neutral").lower().strip()
@@ -83,8 +99,8 @@ async def check_affect(user_id: int, idle_seconds: float, local_hour: int, llm_c
 
     if not should_express or emotion not in ALLOWED_EMOTIONS or emotion == "neutral":
         logger.info("affect_check: no expression", extra={"user_id": user_id, "emotion": emotion, "reason": reason})
-        return {"expressed": False, "emotion": emotion, "reason": reason}
+        return AffectCheckResult(expressed=False, emotion=emotion, reason=reason)
 
     emit_companion_affect(user_id, emotion)
     logger.info("affect_check: emitted affect", extra={"user_id": user_id, "emotion": emotion, "reason": reason})
-    return {"expressed": True, "emotion": emotion, "reason": reason}
+    return AffectCheckResult(expressed=True, emotion=emotion, reason=reason)

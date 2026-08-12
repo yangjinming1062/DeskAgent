@@ -2,12 +2,13 @@ import time
 
 import pytest
 
-from services.companion import asset_store
-from services.companion.asset_store import _signing_key
-from services.companion.asset_store import build_signed_asset_url
-from services.companion.asset_store import build_signed_avatar_url
-from services.companion.asset_store import verify_signed_asset_request
-from services.companion.asset_store import verify_signed_avatar_request
+from services.companion import (
+    asset_store,
+    build_signed_asset_url,
+    build_signed_avatar_url,
+    verify_signed_asset_request,
+    verify_signed_avatar_request
+)
 
 
 def test_signed_asset_url_round_trip():
@@ -118,4 +119,4 @@ def test_signer_key_raises_outside_test_mode(monkeypatch):
     monkeypatch.setattr(asset_store, "_TEST_MODE", False)
 
     with pytest.raises(RuntimeError, match="empty outside test mode"):
-        _signing_key()
+        asset_store._signing_key()

@@ -54,11 +54,7 @@ class GrokImageGenProvider(ImageGenProvider):
     # ── text-only ──────────────────────────────────────────────────────
 
     async def _generate_text_only(self, req: ImageGenRequest) -> ImageGenResult:
-        payload: dict = {
-            "model": self.config.model,
-            "prompt": req.prompt,
-            "n": req.n,
-        }
+        payload: dict = {"model": self.config.model, "prompt": req.prompt, "n": req.n}
         if req.aspect_ratio:
             payload["aspect_ratio"] = req.aspect_ratio
 
@@ -80,12 +76,7 @@ class GrokImageGenProvider(ImageGenProvider):
     # ── text + reference image ─────────────────────────────────────────
 
     async def _generate_with_reference(self, req: ImageGenRequest) -> ImageGenResult:
-        payload: dict = {
-            "model": self.config.model,
-            "prompt": req.prompt,
-            "n": req.n,
-            "image": {"url": req.reference_image, "type": "image_url"},
-        }
+        payload: dict = {"model": self.config.model, "prompt": req.prompt, "n": req.n, "image": {"url": req.reference_image, "type": "image_url"}}
         if req.aspect_ratio:
             payload["aspect_ratio"] = req.aspect_ratio
 

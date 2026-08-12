@@ -45,18 +45,16 @@ async def auto_generate_title(conversation_id: int, user_message: str, assistant
     """Generate a session title using the LLM and persist it (only if still the default)."""
     messages = [
         {"role": "system", "content": _title_prompt(language)},
-        {"role": "user", "content": f"User: {(user_message or '')[:TITLE_SNIPPET_MAX_CHARS]}\n\nAssistant: {(assistant_response or '')[:TITLE_SNIPPET_MAX_CHARS]}"},
+        {
+            "role": "user",
+            "content": f"User: {(user_message or '')[:TITLE_SNIPPET_MAX_CHARS]}\n\nAssistant: {(assistant_response or '')[:TITLE_SNIPPET_MAX_CHARS]}",
+        },
     ]
 
     try:
         client = client_for_config(llm_config)
         response = await call_with_retry(
-            client,
-            model=llm_config["model_name"],
-            messages=messages,
-            stream=False,
-            temperature=TITLE_GENERATION_TEMPERATURE,
-            max_tokens=TITLE_GENERATION_MAX_TOKENS,
+            client, model=llm_config["model_name"], messages=messages, stream=False, temperature=TITLE_GENERATION_TEMPERATURE, max_tokens=TITLE_GENERATION_MAX_TOKENS
         )
         if not (title := _clean_title((response.choices[0].message.content or "") if response.choices else "")):
             return

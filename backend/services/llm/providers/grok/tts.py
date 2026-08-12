@@ -43,14 +43,7 @@ class GrokTTSProvider(TTSProvider):
     DEFAULT_MODELS: ClassVar[dict[str, str]] = {"tts": "grok-voice-think-fast-1.0"}
     DEFAULT_CONTEXT_TOKENS: ClassVar[dict[str, int]] = {"tts": 8_000}
     VOICE_CATALOG: ClassVar[list[dict]] = [
-        {
-            "id": voice_id,
-            "label": label,
-            "gender": gender,
-            "language": "en",
-            "tags": [label, "英文"],
-            "description": f"xAI built-in voice: {label}",
-        }
+        {"id": voice_id, "label": label, "gender": gender, "language": "en", "tags": [label, "英文"], "description": f"xAI built-in voice: {label}"}
         for voice_id, label, gender in _GROK_VOICES
     ]
 
