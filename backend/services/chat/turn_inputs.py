@@ -1,32 +1,18 @@
 from dataclasses import dataclass
 from typing import Any
 
-from components import DEFAULT_LANGUAGE
-from components import get_logger
-from components import safe_json_loads
-from components import SESSION_TO_GLOBAL_KEY_ALIASES
+from components import DEFAULT_LANGUAGE, SESSION_TO_GLOBAL_KEY_ALIASES, get_logger, safe_json_loads
 from modules.auth import ChatRequestClientContext
 from modules.companion import Persona
-from modules.conversation import Conversation
-from modules.conversation import Message
+from modules.conversation import Conversation, Message
 from modules.settings import UserSetting
-from modules.system import AgentPromptConfig
-from modules.system import ChatRequest
+from modules.system import AgentPromptConfig, ChatRequest
 from sqlalchemy.orm import Session
 
-from ..companion import build_system_prompt_extras
-from ..companion import build_user_profile_extras
-from ..companion import format_auto_inject_block
+from ..companion import build_system_prompt_extras, build_user_profile_extras, format_auto_inject_block
 from ..gateway import RuntimeSession
-from ..llm import MissingLlmConfigError
-from ..llm import provider_for_service
-from ..llm import provider_from_config
-from ..llm import resolve_context_tokens
-from ..llm import resolve_vision_chain
-from ..llm import ServiceType
-from ..tools import NativeMemory
-from ..tools import REGISTRY
-from ..tools import schema_name
+from ..llm import MissingLlmConfigError, ServiceType, provider_for_service, provider_from_config, resolve_context_tokens, resolve_vision_chain
+from ..tools import REGISTRY, NativeMemory, schema_name
 from .system_prompt import build_system_prompt
 
 logger = get_logger(__name__)

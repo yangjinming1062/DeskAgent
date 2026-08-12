@@ -3,9 +3,7 @@ from collections.abc import Iterable
 from typing import Any
 
 from components import SETTINGS
-from fastapi import APIRouter
-from fastapi import HTTPException
-from fastapi import status
+from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 

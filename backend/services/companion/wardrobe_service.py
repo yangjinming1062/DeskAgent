@@ -5,26 +5,14 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 import httpx
-from components import get_file_path
-from components import get_logger
-from components import is_safe_outbound
-from components import safe_json_loads
-from components import save_file
-from components import temp_file_delete
-from modules.companion import WardrobeItem
-from modules.companion import WardrobePreviewResponse
+from components import get_file_path, get_logger, is_safe_outbound, safe_json_loads, save_file, temp_file_delete
+from modules.companion import WardrobeItem, WardrobePreviewResponse
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from ..llm import build_texture_prompt
-from ..llm import chat
-from ..llm import is_preset_species
-from ..tools.builtin import first_image_url
-from ..tools.builtin import image_generation_tool
-from .asset_store import build_data_uri
-from .asset_store import build_signed_asset_url
-from .asset_store import save_companion_asset
-from .asset_store import unlink_companion_asset
+from ..llm import build_texture_prompt, chat, is_preset_species
+from ..tools.builtin import first_image_url, image_generation_tool
+from .asset_store import build_data_uri, build_signed_asset_url, save_companion_asset, unlink_companion_asset
 from .model_service import get_active_model
 from .persona_service import get_or_create_persona
 from .rig_type_selector import select_rig_type

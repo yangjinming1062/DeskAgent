@@ -1,7 +1,6 @@
 import json
 
-from modules.auth import ProviderSlot
-from modules.auth import UserModelConfig
+from modules.auth import ProviderSlot, UserModelConfig
 from sqlalchemy.orm import Session
 
 

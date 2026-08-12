@@ -22,21 +22,21 @@ if sys.platform == "win32":
 else:
     pythoncom = None  # type: ignore[assignment]
 
-from ...registry import registry
-from ...registry import tool_error
-from ...registry import tool_result
-from .piper_runtime import _is_voice_installed
-from .piper_runtime import bundled_voices
-from .piper_runtime import default_voice_id
-from .piper_runtime import ensure_voice_installed
-from .piper_runtime import list_installed_voices
-from .piper_runtime import pick_voice_for_text
-from .piper_runtime import piper_available
-from .piper_runtime import piper_voice_dir
-from .piper_runtime import PIPER_VOICE_RE
-from .piper_runtime import PiperRuntime
-from .piper_runtime import pyttsx3_available
-from .piper_runtime import text_language
+from ...registry import registry, tool_error, tool_result
+from .piper_runtime import (
+    PIPER_VOICE_RE,
+    PiperRuntime,
+    _is_voice_installed,
+    bundled_voices,
+    default_voice_id,
+    ensure_voice_installed,
+    list_installed_voices,
+    pick_voice_for_text,
+    piper_available,
+    piper_voice_dir,
+    pyttsx3_available,
+    text_language,
+)
 
 logger = logging.getLogger(__name__)
 

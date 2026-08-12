@@ -5,10 +5,7 @@ from typing import ClassVar
 from components import MAX_VOICE_DESIGN_PROMPT_CHARS
 from openai import AsyncOpenAI
 
-from ..base import ProviderConfig
-from ..base import TTSProvider
-from ..base import TTSResult
-from ..base import VoiceDesignResult
+from ..base import ProviderConfig, TTSProvider, TTSResult, VoiceDesignResult
 from ..http import get_async_client
 
 logger = logging.getLogger(__name__)

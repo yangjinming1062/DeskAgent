@@ -20,41 +20,34 @@ import threading
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any
-from typing import ClassVar
+from typing import Any, ClassVar
 from urllib.parse import urlparse
 
 import httpx
 import psutil
-from mcp import ClientSession
-from mcp import StdioServerParameters
+from mcp import ClientSession, StdioServerParameters
 from mcp.client.sse import sse_client
 from mcp.client.stdio import stdio_client
 from mcp.client.streamable_http import streamable_http_client
-from mcp.types import CreateMessageResult
-from mcp.types import CreateMessageResultWithTools
-from mcp.types import ErrorData
-from mcp.types import LATEST_PROTOCOL_VERSION
-from mcp.types import PromptListChangedNotification
-from mcp.types import ResourceListChangedNotification
-from mcp.types import SamplingCapability
-from mcp.types import SamplingToolsCapability
-from mcp.types import ServerNotification
-from mcp.types import TextContent
-from mcp.types import ToolListChangedNotification
-from mcp.types import ToolUseContent
-from utils import call_llm
-from utils import get_deskagent_home
-from utils import IS_WINDOWS
-from utils import kill_tree
-from utils import load_config
-from utils import pid_exists
-from utils import safe_schedule_threadsafe
+from mcp.types import (
+    LATEST_PROTOCOL_VERSION,
+    CreateMessageResult,
+    CreateMessageResultWithTools,
+    ErrorData,
+    PromptListChangedNotification,
+    ResourceListChangedNotification,
+    SamplingCapability,
+    SamplingToolsCapability,
+    ServerNotification,
+    TextContent,
+    ToolListChangedNotification,
+    ToolUseContent,
+)
 
-from ..interrupt import is_interrupted
-from ..interrupt import set_interrupt
-from ..registry import registry
-from ..registry import tool_error
+from utils import IS_WINDOWS, call_llm, get_deskagent_home, kill_tree, load_config, pid_exists, safe_schedule_threadsafe
+
+from ..interrupt import is_interrupted, set_interrupt
+from ..registry import registry, tool_error
 from .helpers import get_manager
 from .osv_check import check_package_for_malware
 
@@ -826,23 +819,23 @@ class MCPServerTask:
     """
 
     __slots__ = (
+        "_auth_type",
+        "_config",
+        "_error",
+        "_pending_refresh_tasks",
+        "_ready",
+        "_reconnect_event",
+        "_refresh_lock",
+        "_registered_tool_names",
+        "_rpc_lock",
+        "_sampling",
+        "_shutdown_event",
+        "_task",
+        "_tools",
+        "initialize_result",
         "name",
         "session",
         "tool_timeout",
-        "_task",
-        "_ready",
-        "_shutdown_event",
-        "_reconnect_event",
-        "_tools",
-        "_error",
-        "_config",
-        "_sampling",
-        "_registered_tool_names",
-        "_auth_type",
-        "_refresh_lock",
-        "_rpc_lock",
-        "_pending_refresh_tasks",
-        "initialize_result",
     )
 
     def __init__(self, name: str) -> None:
@@ -1330,18 +1323,17 @@ class MCPServerTask:
                     return httpx.AsyncClient(**kwargs)
 
                 _sse_kwargs["httpx_client_factory"] = _mcp_http_client_factory
-            async with sse_client(**_sse_kwargs) as (read_stream, write_stream):
-                async with ClientSession(read_stream, write_stream, **sampling_kwargs) as session:
-                    self.initialize_result = await session.initialize()
-                    self.session = session
-                    await self._discover_tools()
-                    self._ready.set()
-                    reason = await self._wait_for_lifecycle_event()
-                    if reason == "reconnect":
-                        logger.info(
-                            "MCP server '%s': reconnect requested — tearing down SSE session",
-                            self.name,
-                        )
+            async with sse_client(**_sse_kwargs) as (read_stream, write_stream), ClientSession(read_stream, write_stream, **sampling_kwargs) as session:
+                self.initialize_result = await session.initialize()
+                self.session = session
+                await self._discover_tools()
+                self._ready.set()
+                reason = await self._wait_for_lifecycle_event()
+                if reason == "reconnect":
+                    logger.info(
+                        "MCP server '%s': reconnect requested — tearing down SSE session",
+                        self.name,
+                    )
             return
 
         if _MCP_NEW_HTTP:
@@ -1377,23 +1369,25 @@ class MCPServerTask:
 
             # Caller owns the client lifecycle — the SDK skips cleanup when
             # http_client is provided, so we wrap in async-with.
-            async with httpx.AsyncClient(**client_kwargs) as http_client:
-                async with streamable_http_client(url, http_client=http_client) as (
+            async with (
+                httpx.AsyncClient(**client_kwargs) as http_client,
+                streamable_http_client(url, http_client=http_client) as (
                     read_stream,
                     write_stream,
                     _get_session_id,
-                ):
-                    async with ClientSession(read_stream, write_stream, **sampling_kwargs) as session:
-                        self.initialize_result = await session.initialize()
-                        self.session = session
-                        await self._discover_tools()
-                        self._ready.set()
-                        reason = await self._wait_for_lifecycle_event()
-                        if reason == "reconnect":
-                            logger.info(
-                                "MCP server '%s': reconnect requested — tearing down HTTP session",
-                                self.name,
-                            )
+                ),
+                ClientSession(read_stream, write_stream, **sampling_kwargs) as session,
+            ):
+                self.initialize_result = await session.initialize()
+                self.session = session
+                await self._discover_tools()
+                self._ready.set()
+                reason = await self._wait_for_lifecycle_event()
+                if reason == "reconnect":
+                    logger.info(
+                        "MCP server '%s': reconnect requested — tearing down HTTP session",
+                        self.name,
+                    )
         else:
             # Deprecated API (mcp < 1.24.0): manages httpx client internally.
             _http_kwargs: dict = {
@@ -1403,22 +1397,24 @@ class MCPServerTask:
             }
             if _oauth_auth is not None:
                 _http_kwargs["auth"] = _oauth_auth
-            async with streamable_http_client(url, **_http_kwargs) as (
-                read_stream,
-                write_stream,
-                _get_session_id,
+            async with (
+                streamable_http_client(url, **_http_kwargs) as (
+                    read_stream,
+                    write_stream,
+                    _get_session_id,
+                ),
+                ClientSession(read_stream, write_stream, **sampling_kwargs) as session,
             ):
-                async with ClientSession(read_stream, write_stream, **sampling_kwargs) as session:
-                    self.initialize_result = await session.initialize()
-                    self.session = session
-                    await self._discover_tools()
-                    self._ready.set()
-                    reason = await self._wait_for_lifecycle_event()
-                    if reason == "reconnect":
-                        logger.info(
-                            "MCP server '%s': reconnect requested — tearing down legacy HTTP session",
-                            self.name,
-                        )
+                self.initialize_result = await session.initialize()
+                self.session = session
+                await self._discover_tools()
+                self._ready.set()
+                reason = await self._wait_for_lifecycle_event()
+                if reason == "reconnect":
+                    logger.info(
+                        "MCP server '%s': reconnect requested — tearing down legacy HTTP session",
+                        self.name,
+                    )
 
     async def _discover_tools(self) -> None:
         """Discover tools from the connected session."""

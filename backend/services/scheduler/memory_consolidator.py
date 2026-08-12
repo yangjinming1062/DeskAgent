@@ -1,23 +1,13 @@
 import json
 
-from components import get_logger
-from components import MAX_RECALL_CONTENT_CHARS
-from components import MEMORY_CONSOLIDATE_TARGET_ROWS
-from components import MEMORY_CONSOLIDATE_TRIGGER_ROWS
-from components import MEMORY_CONSOLIDATE_WINDOW_ROWS
-from components import session_scope
+from components import MAX_RECALL_CONTENT_CHARS, MEMORY_CONSOLIDATE_TARGET_ROWS, MEMORY_CONSOLIDATE_TRIGGER_ROWS, MEMORY_CONSOLIDATE_WINDOW_ROWS, get_logger, session_scope
 from modules.memory import Memory
-from services.tools import normalize_recall_context
-from services.tools import normalize_recall_tags
-from services.tools import RECALL_TAGS
 from sqlalchemy import delete
 
+from services.tools import RECALL_TAGS, normalize_recall_context, normalize_recall_tags
+
 from ..companion import memory_admin
-from ..llm import call_with_retry
-from ..llm import client_for_config
-from ..llm import resolve_context_tokens
-from ..llm import resolve_user_llm_config
-from ..llm import ServiceType
+from ..llm import ServiceType, call_with_retry, client_for_config, resolve_context_tokens, resolve_user_llm_config
 
 logger = get_logger(__name__)
 

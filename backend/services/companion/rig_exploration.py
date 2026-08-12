@@ -4,15 +4,7 @@ import sys
 import time
 from pathlib import Path
 
-from .tripo_client import account_balance
-from .tripo_client import create_text_to_model
-from .tripo_client import download_model
-from .tripo_client import MODEL_VERSION_DEFAULT
-from .tripo_client import MODEL_VERSION_TRIPO
-from .tripo_client import poll_rig_check
-from .tripo_client import poll_task
-from .tripo_client import rig
-from .tripo_client import rig_check
+from .tripo_client import MODEL_VERSION_DEFAULT, MODEL_VERSION_TRIPO, account_balance, create_text_to_model, download_model, poll_rig_check, poll_task, rig, rig_check
 
 EXPLORATION_DIR = Path(__file__).resolve().parents[2] / "data" / "tripo-exploration"
 EXPLORATION_DIR.mkdir(parents=True, exist_ok=True)

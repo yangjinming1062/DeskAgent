@@ -9,40 +9,35 @@ import time
 from contextlib import ExitStack
 from pathlib import Path
 
-from utils import get_container_mirror_warning
-from utils import get_cross_profile_warning
-from utils import get_deskagent_home
-from utils import get_read_block_error
-from utils import get_sandbox_mirror_warning
-from utils import get_windows_sensitive_prefixes
-from utils import has_traversal_component
-from utils import IS_WINDOWS
-from utils import load_config
-from utils import msys_to_windows_path
-from utils import redact_sensitive_text
+from utils import (
+    IS_WINDOWS,
+    get_container_mirror_warning,
+    get_cross_profile_warning,
+    get_deskagent_home,
+    get_read_block_error,
+    get_sandbox_mirror_warning,
+    get_windows_sensitive_prefixes,
+    has_traversal_component,
+    load_config,
+    msys_to_windows_path,
+    redact_sensitive_text,
+)
 
-from ..registry import registry
-from ..registry import tool_error
-from ..terminal.environment import _active_environments
-from ..terminal.environment import _creation_locks
-from ..terminal.environment import _creation_locks_lock
-from ..terminal.environment import _env_lock
-from ..terminal.environment import _last_activity
-from ..terminal.environment import _task_env_overrides
-from ..terminal.environment import create_environment
-from ..terminal.environment import get_env_config
-from ..terminal.environment import resolve_container_task_id
-from ..terminal.environment import start_cleanup_thread
+from ..registry import registry, tool_error
+from ..terminal.environment import (
+    _active_environments,
+    _creation_locks,
+    _creation_locks_lock,
+    _env_lock,
+    _last_activity,
+    _task_env_overrides,
+    create_environment,
+    get_env_config,
+    resolve_container_task_id,
+    start_cleanup_thread,
+)
 from .binary_extensions import has_binary_extension
-from .helpers import check_stale
-from .helpers import DEFAULT_READ_LIMIT
-from .helpers import lock_path
-from .helpers import MAX_LINES
-from .helpers import normalize_read_pagination
-from .helpers import normalize_search_pagination
-from .helpers import note_write
-from .helpers import record_read
-from .helpers import ShellFileOperations
+from .helpers import DEFAULT_READ_LIMIT, MAX_LINES, ShellFileOperations, check_stale, lock_path, normalize_read_pagination, normalize_search_pagination, note_write, record_read
 from .native_ops import NativeFileOperations
 
 logger = logging.getLogger(__name__)

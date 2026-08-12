@@ -1,7 +1,5 @@
 import jwt
-from components import get_logger
-from components import set_request_user_id
-from components import SETTINGS
+from components import SETTINGS, get_logger, set_request_user_id
 from fastapi import Request
 from fastapi.responses import JSONResponse
 from modules.auth import decode_access_token

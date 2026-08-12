@@ -2,8 +2,7 @@ import json
 import logging
 import sys
 from contextvars import ContextVar
-from datetime import datetime
-from datetime import timezone
+from datetime import UTC, datetime
 
 from .config import SETTINGS
 
@@ -59,7 +58,7 @@ class _JsonFormatter(logging.Formatter):
         msg = super().format(record)
         return json.dumps(
             {
-                "ts": datetime.fromtimestamp(record.created, tz=timezone.utc).isoformat(timespec="milliseconds"),
+                "ts": datetime.fromtimestamp(record.created, tz=UTC).isoformat(timespec="milliseconds"),
                 "level": record.levelname,
                 "logger": record.name,
                 "msg": msg,

@@ -10,16 +10,12 @@ import tempfile
 import threading
 import time
 import uuid
-from abc import ABC
-from abc import abstractmethod
+from abc import ABC, abstractmethod
 from collections.abc import Callable
 from pathlib import Path
-from typing import IO
-from typing import Protocol
+from typing import IO, Protocol
 
-from utils import cfg_get
-from utils import get_deskagent_home
-from utils import load_config
+from utils import cfg_get, get_deskagent_home, load_config
 
 from ..interrupt import is_interrupted
 

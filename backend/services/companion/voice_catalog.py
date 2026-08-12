@@ -1,11 +1,6 @@
-from services.llm import resolve
-from services.llm import resolve_provider_chain
-from services.llm import ServiceType
-from services.llm import try_resolve
-from services.llm import VoiceDesignResult
-from services.llm import VoiceEntry
-from services.llm import voices_for_provider
 from sqlalchemy.orm import Session
+
+from services.llm import ServiceType, VoiceDesignResult, VoiceEntry, resolve, resolve_provider_chain, try_resolve, voices_for_provider
 
 _LANG_KEYWORDS: dict[str, list[str]] = {
     "zh": ["中文", "普通话", "国语", "chinese", "mandarin"],

@@ -1,14 +1,11 @@
-from dataclasses import dataclass
-from dataclasses import replace
 import json
+from dataclasses import dataclass, replace
 
 from components import safe_json_loads
 from modules.companion import Persona
 from sqlalchemy.orm import Session
 
-from .llm_client import MissingLlmConfigError
-from .llm_client import provider_for_service
-from .llm_client import provider_from_config
+from .llm_client import MissingLlmConfigError, provider_for_service, provider_from_config
 from .providers.base import ProviderConfig
 
 # Chinese-first (persona is Chinese, minimax handles it natively); the

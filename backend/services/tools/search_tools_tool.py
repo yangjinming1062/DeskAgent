@@ -1,7 +1,6 @@
 import json
 
-from .registry import REGISTRY
-from .registry import schema_name
+from .registry import REGISTRY, schema_name
 
 SEARCH_TOOLS_SCHEMA = {
     "type": "function",

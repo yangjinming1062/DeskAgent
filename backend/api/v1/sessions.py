@@ -1,33 +1,21 @@
 from typing import Literal
 
 from common import get_router
-from components import attachments_gc_session
-from components import get_db
-from components import get_logger
-from components import SEARCH_INPUT_MAX_LEN
-from components import SESSION_PREVIEW_MAX_CHARS
-from components import SETTINGS
-from components import SQL_LIKE_ESCAPE_CHAR
-from components import temp_files_gc_session
-from fastapi import Depends
-from fastapi import HTTPException
-from fastapi import Query
-from modules.auth import get_current_session
-from modules.auth import User
-from modules.conversation import Conversation
-from modules.conversation import DesktopSessionInfo
-from modules.conversation import DesktopSessionListResponse
-from modules.conversation import DesktopSessionMessagesResponse
-from modules.conversation import DesktopSessionPatchRequest
-from modules.conversation import DesktopSessionSearchResponse
-from modules.conversation import Message
+from components import SEARCH_INPUT_MAX_LEN, SESSION_PREVIEW_MAX_CHARS, SETTINGS, SQL_LIKE_ESCAPE_CHAR, attachments_gc_session, get_db, get_logger, temp_files_gc_session
+from fastapi import Depends, HTTPException, Query
+from modules.auth import User, get_current_session
+from modules.conversation import (
+    Conversation,
+    DesktopSessionInfo,
+    DesktopSessionListResponse,
+    DesktopSessionMessagesResponse,
+    DesktopSessionPatchRequest,
+    DesktopSessionSearchResponse,
+    Message,
+)
 from services.chat import build_session_messages
-from sqlalchemy import asc
-from sqlalchemy import desc
-from sqlalchemy import func
-from sqlalchemy import or_
-from sqlalchemy.orm import selectinload
-from sqlalchemy.orm import Session
+from sqlalchemy import asc, desc, func, or_
+from sqlalchemy.orm import Session, selectinload
 
 router = get_router(dependencies=[Depends(get_current_session)])
 

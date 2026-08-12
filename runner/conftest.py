@@ -6,6 +6,7 @@
 # touches the registry / schema surface sees a populated singleton. Idempotent
 # — registry._tool_handlers is keyed on name, so re-discovery is a no-op.
 import pytest
+
 from tools import discover_builtin_tools
 
 

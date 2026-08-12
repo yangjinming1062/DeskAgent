@@ -1,8 +1,6 @@
 import jwt
-from components import get_logger
-from components import SESSION_LOCAL
-from modules.auth import decode_access_token
-from modules.auth import User
+from components import SESSION_LOCAL, get_logger
+from modules.auth import User, decode_access_token
 
 logger = get_logger(__name__)
 

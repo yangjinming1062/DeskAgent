@@ -8,36 +8,23 @@ import shutil
 import subprocess
 import time
 import zipfile
-from abc import ABC
-from abc import abstractmethod
-from concurrent.futures import as_completed
-from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
-from dataclasses import field
-from datetime import datetime
-from datetime import timezone
-from pathlib import Path
-from pathlib import PurePosixPath
-from typing import Any
-from typing import ClassVar
-from urllib.parse import urljoin
-from urllib.parse import urlparse
-from urllib.parse import urlunparse
+from abc import ABC, abstractmethod
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
+from pathlib import Path, PurePosixPath
+from typing import Any, ClassVar
+from urllib.parse import urljoin, urlparse, urlunparse
 
 import httpx
 import jwt  # PyJWT
 import yaml
-from utils import cfg_get
-from utils import check_website_access
-from utils import get_skills_dir
-from utils import is_safe_url
-from utils import load_config
+
+from utils import cfg_get, check_website_access, get_skills_dir, is_safe_url, load_config
 
 from .helpers import get_deskagent_metadata
 from .skill_usage import _load_protected_builtins
-from .skills_guard import content_hash
-from .skills_guard import ScanResult
-from .skills_guard import TRUSTED_REPOS
+from .skills_guard import TRUSTED_REPOS, ScanResult, content_hash
 
 logger = logging.getLogger(__name__)
 
@@ -335,9 +322,7 @@ class GitHubSource(SkillSource):
         _trust_rank = {"builtin": 2, "trusted": 1, "community": 0}
         seen = {}
         for r in results:
-            if r.identifier not in seen:
-                seen[r.identifier] = r
-            elif _trust_rank.get(r.trust_level, 0) > _trust_rank.get(seen[r.identifier].trust_level, 0):
+            if r.identifier not in seen or _trust_rank.get(r.trust_level, 0) > _trust_rank.get(seen[r.identifier].trust_level, 0):
                 seen[r.identifier] = r
         results = list(seen.values())
 
@@ -538,7 +523,7 @@ class GitHubSource(SkillSource):
         """
         hdrs = headers if headers is not None else self.auth.get_headers()
         backoff = 1.0
-        last_resp: "httpx.Response | None" = None
+        last_resp: httpx.Response | None = None
         for attempt in range(max_retries):
             try:
                 resp = httpx.get(
@@ -2813,8 +2798,8 @@ class HubLockFile:
             "install_path": safe_install_path,
             "files": files,
             "metadata": metadata or {},
-            "installed_at": datetime.now(timezone.utc).isoformat(),
-            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "installed_at": datetime.now(UTC).isoformat(),
+            "updated_at": datetime.now(UTC).isoformat(),
         }
         self.save(data)
 
@@ -2868,7 +2853,7 @@ class TapsManager:
 
 def append_audit_log(action: str, skill_name: str, source: str, trust_level: str, verdict: str, extra: str = "") -> None:
     AUDIT_LOG.parent.mkdir(parents=True, exist_ok=True)
-    parts = [datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), action, skill_name, f"{source}:{trust_level}", verdict]
+    parts = [datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"), action, skill_name, f"{source}:{trust_level}", verdict]
     if extra:
         parts.append(extra)
     try:
@@ -3400,9 +3385,7 @@ def unified_search(query: str, sources: list[SkillSource], source_filter: str = 
     _TRUST_RANK = {"builtin": 2, "trusted": 1, "community": 0}
     seen: dict[str, SkillMeta] = {}
     for r in all_results:
-        if r.identifier not in seen:
-            seen[r.identifier] = r
-        elif _TRUST_RANK.get(r.trust_level, 0) > _TRUST_RANK.get(seen[r.identifier].trust_level, 0):
+        if r.identifier not in seen or _TRUST_RANK.get(r.trust_level, 0) > _TRUST_RANK.get(seen[r.identifier].trust_level, 0):
             seen[r.identifier] = r
     deduped = list(seen.values())
 

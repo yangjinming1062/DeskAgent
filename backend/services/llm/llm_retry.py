@@ -5,15 +5,9 @@ import time
 from collections.abc import AsyncIterator
 from typing import Any
 
-from components import approx_message_tokens
-from components import get_logger
-from components import LLM_RETRY_MAX_SUGGESTED_DELAY
-from components import LLM_RETRY_MIN_DELAY
-from components import LLM_RETRY_MIN_TIMEOUT
-from components import SETTINGS
+from components import LLM_RETRY_MAX_SUGGESTED_DELAY, LLM_RETRY_MIN_DELAY, LLM_RETRY_MIN_TIMEOUT, SETTINGS, approx_message_tokens, get_logger
 
-from .error_classifier import ClassifiedError
-from .error_classifier import classify_api_error
+from .error_classifier import ClassifiedError, classify_api_error
 
 logger = get_logger(__name__)
 
@@ -54,7 +48,7 @@ async def _stream_with_timeout(stream: Any, timeout: float, *, model: str) -> As
         while True:
             remaining = deadline - loop.time()
             if remaining <= 0:
-                raise asyncio.TimeoutError(f"LLM stream stalled (no chunk for {timeout}s)")
+                raise TimeoutError(f"LLM stream stalled (no chunk for {timeout}s)")
             try:
                 chunk = await asyncio.wait_for(stream.__anext__(), timeout=remaining)
             except StopAsyncIteration:
@@ -133,7 +127,7 @@ async def call_with_retry(
                 remaining = max(deadline - loop.time(), 0.1)
                 return _stream_with_timeout(stream, remaining, model=model)
             return await asyncio.wait_for(coro, timeout=timeout)
-        except asyncio.TimeoutError as exc:
+        except TimeoutError as exc:
             last_classified = classify_api_error(exc, **classifier_kwargs)
             last_exc = exc
             logger.info("LLM call timed out", extra={"attempt": attempt, "max_attempts": max_attempts, "model": model})

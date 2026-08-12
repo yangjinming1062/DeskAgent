@@ -6,8 +6,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from utils import CREATE_NO_WINDOW
-from utils import get_deskagent_dir
+from utils import CREATE_NO_WINDOW, get_deskagent_dir
 
 try:
     import sounddevice  # type: ignore[import-not-found]

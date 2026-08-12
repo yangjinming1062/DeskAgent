@@ -2,15 +2,12 @@ import json
 from typing import Any
 
 from components import safe_json_loads
-from modules.companion import AvatarAsset
-from modules.companion import Persona
+from modules.companion import AvatarAsset, Persona
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from .memory_bootstrap import extract_user_profile
-from .memory_bootstrap import read_user_profile
-from .memory_bootstrap import record_user_profile
+from .memory_bootstrap import extract_user_profile, read_user_profile, record_user_profile
 
 # Persona field order — part of the contract downstream prompt consumers
 # reason about, since it dictates the rendered system-prompt snippet shape.

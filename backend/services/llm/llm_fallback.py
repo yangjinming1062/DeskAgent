@@ -1,17 +1,12 @@
-from collections.abc import Awaitable
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from typing import TypeVar
 
 from components import get_logger
 from sqlalchemy.orm import Session
 
-from .error_classifier import classify_api_error
-from .error_classifier import FailoverReason
-from .llm_client import MissingLlmConfigError
-from .llm_client import resolve_provider_chain
-from .providers import BaseProvider
-from .providers import ProviderConfig
-from .providers import resolve
+from .error_classifier import FailoverReason, classify_api_error
+from .llm_client import MissingLlmConfigError, resolve_provider_chain
+from .providers import BaseProvider, ProviderConfig, resolve
 
 logger = get_logger(__name__)
 

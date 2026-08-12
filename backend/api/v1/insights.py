@@ -1,28 +1,15 @@
 from collections import Counter
-from datetime import datetime
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any
 
 from common import get_router
-from components import ACTIVITY_DAY_BUCKETS
-from components import DEFAULT_INSIGHTS_DAYS
-from components import get_db
-from components import MS_PER_HOUR
-from components import naive_utc_now
-from components import safe_json_loads
-from components import SETTINGS
+from components import ACTIVITY_DAY_BUCKETS, DEFAULT_INSIGHTS_DAYS, MS_PER_HOUR, SETTINGS, get_db, naive_utc_now, safe_json_loads
 from fastapi import Depends
-from modules.auth import get_current_session
-from modules.auth import LoginRecord
-from modules.auth import User
-from modules.auth import UserModelConfig
-from modules.conversation import Conversation
-from modules.conversation import Message
+from modules.auth import LoginRecord, User, UserModelConfig, get_current_session
+from modules.conversation import Conversation, Message
 from modules.memory import Memory
-from sqlalchemy import func
-from sqlalchemy import text
-from sqlalchemy.orm import Query
-from sqlalchemy.orm import Session
+from sqlalchemy import func, text
+from sqlalchemy.orm import Query, Session
 
 router = get_router(dependencies=[Depends(get_current_session)])
 

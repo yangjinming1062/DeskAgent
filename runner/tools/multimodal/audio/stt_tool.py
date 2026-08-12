@@ -12,11 +12,8 @@ try:
 except (ImportError, OSError):
     WhisperModel = None  # type: ignore[assignment,misc]
 
-from ...registry import registry
-from ...registry import tool_error
-from ...registry import tool_result
-from .audio_io import DEFAULT_MAX_INPUT_BYTES
-from .audio_io import wav_to_wav_pcm16
+from ...registry import registry, tool_error, tool_result
+from .audio_io import DEFAULT_MAX_INPUT_BYTES, wav_to_wav_pcm16
 from .whisper_runtime import get_whisper
 
 logger = logging.getLogger(__name__)
@@ -138,7 +135,14 @@ def _decode_and_transcribe(
 
 
 def _check_faster_whisper() -> bool:
-    return WhisperModel is not None
+    if WhisperModel is None:
+        return False
+    try:
+        __import__("faster_whisper")
+        return True
+    except (ImportError, OSError):
+        return False
+
 
 
 _CLOUD_FALLBACK_HINT = "Set stt.engine=cloud in Desktop settings to fall back to a stronger multilingual model, or pass language='zh'/'en' explicitly to bias the local result."

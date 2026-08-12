@@ -1,13 +1,10 @@
 import enum
 import re
 from collections.abc import Callable
-from dataclasses import dataclass
-from dataclasses import field
+from dataclasses import dataclass, field
 from typing import Any
 
-from components import get_logger
-from components import redact_sensitive_text
-from components import safe_json_loads
+from components import get_logger, redact_sensitive_text, safe_json_loads
 
 logger = get_logger(__name__)
 

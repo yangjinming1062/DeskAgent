@@ -2,10 +2,7 @@ import os
 import re
 from collections.abc import Callable
 
-from .constants import REDACT_PHONE_DIGIT_THRESHOLD
-from .constants import SECRET_MASK_HEAD_CHARS
-from .constants import SECRET_MASK_MIN_LENGTH
-from .constants import SECRET_MASK_TAIL_CHARS
+from .constants import REDACT_PHONE_DIGIT_THRESHOLD, SECRET_MASK_HEAD_CHARS, SECRET_MASK_MIN_LENGTH, SECRET_MASK_TAIL_CHARS
 from .logger import get_logger
 
 logger = get_logger(__name__)

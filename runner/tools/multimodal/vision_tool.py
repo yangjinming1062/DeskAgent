@@ -7,23 +7,22 @@ from collections.abc import Awaitable
 from pathlib import Path
 from typing import Any
 
-from utils import call_llm
-from utils import clean_output
-from utils import get_deskagent_dir
+from utils import call_llm, clean_output, get_deskagent_dir
 
 from ..debug_helpers import DebugSession
 from ..interrupt import is_interrupted
-from ..registry import registry
-from ..registry import tool_error
-from .helpers import _classify_api_error
-from .helpers import _detect_image_mime_type
-from .helpers import _download_image
-from .helpers import _image_to_base64_data_url
-from .helpers import _is_image_size_error
-from .helpers import _MAX_BASE64_BYTES
-from .helpers import _resize_image_for_vision
-from .helpers import _resolve_vision_params
-from .helpers import _validate_image_url_async
+from ..registry import registry, tool_error
+from .helpers import (
+    _MAX_BASE64_BYTES,
+    _classify_api_error,
+    _detect_image_mime_type,
+    _download_image,
+    _image_to_base64_data_url,
+    _is_image_size_error,
+    _resize_image_for_vision,
+    _resolve_vision_params,
+    _validate_image_url_async,
+)
 
 logger = logging.getLogger(__name__)
 _debug = DebugSession("vision_tools", env_var="VISION_TOOLS_DEBUG")

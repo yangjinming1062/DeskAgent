@@ -1,13 +1,9 @@
 import logging
 from typing import ClassVar
 
-from ..base import ProviderConfig
-from ..base import TTSProvider
-from ..base import TTSResult
-from ..base import VoiceDesignResult
+from ..base import ProviderConfig, TTSProvider, TTSResult, VoiceDesignResult
 from ..http import get_http
-from ._errors import extract_minimax_audio
-from ._errors import raise_for_minimax_response
+from ._errors import extract_minimax_audio, raise_for_minimax_response
 
 logger = logging.getLogger(__name__)
 

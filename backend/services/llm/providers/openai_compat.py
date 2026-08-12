@@ -1,7 +1,6 @@
 from openai import AsyncOpenAI
 
-from .base import ChatProvider
-from .base import ProviderConfig
+from .base import ChatProvider, ProviderConfig
 from .http import get_async_client
 
 

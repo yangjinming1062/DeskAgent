@@ -7,29 +7,15 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from utils import atomic_replace
-from utils import cfg_get
-from utils import get_external_skills_dirs
-from utils import get_skills_dir
-from utils import has_traversal_component
-from utils import is_truthy_value
-from utils import load_config
-from utils import validate_within_dir
 
-from ..files import format_no_match_hint
-from ..files import fuzzy_find_and_replace
+from utils import atomic_replace, cfg_get, get_external_skills_dirs, get_skills_dir, has_traversal_component, is_truthy_value, load_config, validate_within_dir
+
+from ..files import format_no_match_hint, fuzzy_find_and_replace
 from ..interrupt import is_interrupted
-from ..registry import registry
-from ..registry import tool_error
+from ..registry import registry, tool_error
 from .skill_provenance import is_background_review
-from .skill_usage import bump_patch
-from .skill_usage import forget
-from .skill_usage import get_record
-from .skill_usage import is_excluded_skill_path
-from .skill_usage import mark_agent_created
-from .skills_guard import format_scan_report
-from .skills_guard import scan_skill
-from .skills_guard import should_allow_install
+from .skill_usage import bump_patch, forget, get_record, is_excluded_skill_path, mark_agent_created
+from .skills_guard import format_scan_report, scan_skill, should_allow_install
 
 logger = logging.getLogger(__name__)
 _GUARD_AVAILABLE = True

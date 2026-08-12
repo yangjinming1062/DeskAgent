@@ -1,8 +1,7 @@
 import logging
 import threading
 
-from utils import cfg_get
-from utils import load_config
+from utils import cfg_get, load_config
 
 logger = logging.getLogger(__name__)
 _DEBUG_INTERRUPT = bool(cfg_get(load_config(), "debug", "interrupt", default=False))

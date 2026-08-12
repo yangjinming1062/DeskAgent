@@ -6,10 +6,8 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-from .config import cfg_get
-from .config import load_config
-from .constants import get_deskagent_home
-from .constants import IS_WINDOWS
+from .config import cfg_get, load_config
+from .constants import IS_WINDOWS, get_deskagent_home
 
 SANE_PATH = ":".join((
     "/opt/homebrew/bin",

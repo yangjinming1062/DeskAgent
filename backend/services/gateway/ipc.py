@@ -1,11 +1,7 @@
 import asyncio
 import json
 
-from components import get_logger
-from components import JSONRPC_INTERNAL_ERROR
-from components import new_request_id
-from components import safe_json_loads
-from components import SETTINGS
+from components import JSONRPC_INTERNAL_ERROR, SETTINGS, get_logger, new_request_id, safe_json_loads
 
 from .jsonrpc import JsonRpcDispatcher
 
@@ -58,7 +54,7 @@ async def await_future(user_id: int, call_id: str, *, timeout: float | None = No
     fut = create_future(user_id, call_id)
     try:
         return await asyncio.wait_for(fut, timeout=effective_timeout)
-    except asyncio.TimeoutError:
+    except TimeoutError:
         discard_call(user_id, call_id)
         return json.dumps(
             {

@@ -5,8 +5,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from .constants import IS_MACOS
-from .constants import IS_WINDOWS
+from .constants import IS_MACOS, IS_WINDOWS
 
 logger = logging.getLogger(__name__)
 

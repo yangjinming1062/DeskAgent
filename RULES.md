@@ -102,15 +102,12 @@
 - **一行胜两行。** 多行表达式能合并成一行且读起来同样清晰，就合并。trivial 的 `if/else` 写成三元 / 条件表达式。
 - **文档注释别复述函数名。** docstring / JSDoc 解释的是 *不显然的东西* —— 隐藏的约束、非平凡的返回语义、副作用。删掉后读者不会困惑，就别写。最多一行短句。不消歧义或不属于公共 API 的类型注解直接去掉。
 - **trivial 的包装函数要内联。** 一个函数只是对另一个函数的一行透传且只有一处调用，就内联掉。不要增加没有收益的间接层。`def f(x): return g(x)` 就是噪音 —— 直接调用 `g(x)`。
-- **不要保留未使用的参数。** 函数不用的形参就别收。如果分发器强制给所有回调塞额外参数，用剩余参数（Python `**_` / JS `...rest`）吸收 —— 但不要把参数穿过不需要它的层。
 - **不要为了向后兼容写别名导入。** 重构代码时不要为了减少重命名而写别名（Python `from x import y as z` / JS `import { y as z }`）。直接使用原名，全量重命名。
 - **资源获取即初始化。** 文件、锁、连接等必须用语言原生的资源管理惯用法获取和释放。Python 用 `with`；JS/TS 用 `try/finally` 或 `using` 声明。不要手动获取后靠 finally 勉强关闭。
 
 ### 死代码
 
-- **立刻删除死代码。** 未使用的 import、未使用的常量、未使用的函数、未使用的参数 —— 全删掉。不要在生产代码里留 "以防万一" 或 "只在测试里用" 的包装，只在测试使用的代码也认为是死代码可以考虑连带无用的测试一起删除。
-- **未使用的 import 别名也是死代码。** `import X as _Y` 但从不引用 `_Y`，删掉别名。`from Y import Z` 但 Z 在 import 行后面从不出现也一样。
-- **没人调用的向后兼容垫片不要留。** 零活跃调用者的别名、为不存在的循环引用风险写的防御性重复 import、永远返回同一值的分支 —— 都是代码重量。确认不可达后删掉。
+- **立刻删除死代码。** 没人调用的向后兼容垫片不要留。零活跃调用者的别名、为不存在的循环引用风险写的防御性重复 import、永远返回同一值的分支 —— 都是代码重量。确认不可达后删掉。（注：未使用的 import、未使用的变量及未引用的参数已被 pre-commit/ruff 自动清理）
 
 ### 结构
 
@@ -120,12 +117,10 @@
 
 ### 组织
 
-- **import 之前不要写注释或文档。** import 块之前绝不要放字符串描述、横幅注释、`# === ...` / `// === ...` 分隔线。import 必须在最前；它之后第一行非 import 是顶层常量或函数声明。模块级的设计说明写在模块的 `README.md`，而不是文件顶部。写了会导致 pre-commit / eslint 出现 Failed。
-- **import 必须放在模块顶部。** 不要写在函数内部。如果放在顶部会引发循环引用，那就重构代码（把共享部分抽到独立模块、调整依赖方向）来消除循环，而不是用 lazy import 临时绕开。
 - **全局变量统一定义在文件头部。** 单文件内所有模块级常量、全局变量必须在 import 块下方集中定义，不得散落在文件中部或函数之间。
 - **禁止越级深层导入。** 跨模块调用时，必须通过目标模块的公共入口（barrel file / `__init__`），绝不能直接深入到内部文件。正确：`from app.models import MessageType` / `import { MessageType } from '@/models'`；错误：`from app.models.message import MessageType` / `import { MessageType } from '@/models/message'`。
 - **保持目录入口干净。** 入口目录只放入口、配置和数据模型；业务逻辑下沉到领域模块（`core/`、`tools/`、`routers/` 等，或 `renderer/companion/`、`renderer/hub/` 等）。
-- **提交前先格式化。** Python 运行 `uvx pre-commit run -a`；Desktop 运行 `pnpm fix`（依次执行 `pnpm lint:fix` + `pnpm fmt` + `pnpm type-check`）。
+- **提交前先格式化。** 提交前执行 `uvx pre-commit run -a`（自动触发 Python ruff 与 Desktop eslint/prettier 检查与修复）。
 
 ### 注释
 
@@ -134,8 +129,7 @@
 - **未来读者会不会卡住？** 如果只是省了 "读一行" 的事 → 删掉。
 - **是 *为什么* 还是 *做什么*？** 如果只是复述代码 *做什么* → 删掉。永远不要复述 routing decorator、HTTP method、字段约束、类型签名或函数名。
 - **最多一行。** 超过 ~3 行通常意味着代码应该被拆成更小的函数 / 更清楚的命名。
-- **禁变化叙事与追踪编号。** 不写 "以前 X，现在 Y"（git log 负责）。不引用 issue 编号（`P0-16`、`M-5` 等）—— 这类编号在 PR 描述里有意义，在源码注释里是噪音。直接陈述当前状态。
-- **注释不能替代文档。** 设计决策和已知限制写在模块的 README.md；如果新手看不懂，先修命名/结构 —— 注释是最后手段。
+- **注释不能替代文档。** 设计决策和已知限制写在模块的 README.md；如果新手看不懂，先修命名/结构 —— 注释是最后手段。（注：变化叙事与 Issue 追踪编号会被 pre-commit 钩子拦截）
 
 ### 测试
 
@@ -146,12 +140,9 @@
 - **walrus 绑定一次性变量。** 条件分支里只用到一次的临时变量，用 `:=` 绑定，避免重复计算或额外占行。
 - **生成器优先。** 处理大序列（视频帧、音频块、批量检测结果）时用生成器表达式和 `yield`，不要一次性收集到 `list` 里。`(process(f) for f in frames)` 比 `[process(f) for f in frames]` 省内存，功能等价时永远选生成器。
 - **内建函数 & 向量化优先。** `sum`/`min`/`max`/`any`/`all`/`map`/`filter` 比手写循环更清晰也更快。数值密集操作用 NumPy/Pandas 批量完成，不要 Python 层逐元素遍历。
-- **禁 `from __future__ import annotations`。** 目标是 Python 3.13 —— 这行没用。看到就删。
 - **`__init__.py` 显式导出。** 每个子模块（如 `ai`, `models`, `services`, `schemas`）都应在 `__init__.py` 用 `__all__` 显式导出其对外的公共类、函数和常量，不要在单独的 py 文件中设置 `__all__`，那样没意义。
-- **包内用相对 import。** 同一模块内部的文件互相引用时，用相对 import（`from .foo import bar`）让包自包含；只有跨包才用绝对 import（如 `from apps.auth import ...`）。**例外**：`engines/` 包内跨子包（`SLJ`↔`common`↔`MEDBALL`↔`pose`）统一使用绝对 import（`from engines.common import X`），不适用相对 import 规则——绝对路径在 IDE 导航/grep 中更友好，且 `engines` 作为一个整体安装包，子包间不存在独立发布场景。
 
 ### JS / TS 专属（Desktop）
 
 - **显式标注函数返回类型。** 所有导出函数签名标注返回类型；禁止 `any`（对接外部不可控响应的边界处短暂使用 `unknown` + 类型守卫）。
-- **import 排序与 JSX 属性排序由 ESLint perfectionist 规则强制。** 提交前确保 `pnpm lint` 无 error；可自动修复的用 `pnpm lint -- --fix`。
 - **资源清理用 `useEffect` 返回值或 `try/finally`。** 定时器、事件监听、MediaStream 等在组件卸载或函数退出时必须释放。

@@ -1,9 +1,7 @@
 from typing import ClassVar
 
 from .._provider_errors import raise_for_provider_response
-from ..base import ProviderConfig
-from ..base import STTProvider
-from ..base import STTResult
+from ..base import ProviderConfig, STTProvider, STTResult
 from ..http import get_http
 
 

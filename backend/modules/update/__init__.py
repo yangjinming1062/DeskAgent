@@ -1,7 +1,5 @@
 from .models import UpdateVersion
-from .schemas import UpdateVersionItem
-from .schemas import UpdateVersionListResponse
-from .schemas import UpdateVersionUpdate
+from .schemas import UpdateVersionItem, UpdateVersionListResponse, UpdateVersionUpdate
 
 __all__ = [
     "UpdateVersion",

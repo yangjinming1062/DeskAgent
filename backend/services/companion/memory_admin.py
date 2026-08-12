@@ -1,14 +1,12 @@
 from datetime import datetime
 from typing import Any
 
-from components import MAX_AUTO_INJECT_CONTENT_CHARS
-from components import MAX_RECALL_CONTENT_CHARS
+from components import MAX_AUTO_INJECT_CONTENT_CHARS, MAX_RECALL_CONTENT_CHARS
 from modules.memory import Memory
-from services.tools import AUTO_INJECT_SLOTS
-from services.tools import KIND_TO_PREFIX
-from services.tools import RECALL_TAGS
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
+
+from services.tools import AUTO_INJECT_SLOTS, KIND_TO_PREFIX, RECALL_TAGS
 
 # Bounds: UI list pagination + length cap on edit.
 _LIST_DEFAULT_LIMIT = 100
@@ -115,7 +113,7 @@ def memory_counts(db: Session, user_id: int) -> dict[str, int]:
     CASE-WHEN aggregate. Rows with NULL or unknown context bucket under
     ``"other"``.
     """
-    counts: dict[str, int] = {label: 0 for label in KIND_TO_PREFIX}
+    counts: dict[str, int] = dict.fromkeys(KIND_TO_PREFIX, 0)
     counts[_OTHER_BUCKET] = 0
     for (ctx,) in db.query(Memory.context).filter(Memory.user_id == user_id).all():
         if ctx is None:

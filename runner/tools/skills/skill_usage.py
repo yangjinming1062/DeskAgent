@@ -3,20 +3,14 @@ import json
 import logging
 import shutil
 import sys
-from contextlib import contextmanager
-from contextlib import suppress
-from datetime import datetime
-from datetime import timezone
+from contextlib import contextmanager, suppress
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from utils import atomic_replace
-from utils import get_skills_dir
-from utils import load_config
+from utils import atomic_replace, get_skills_dir, load_config
 
-from .helpers import get_deskagent_metadata
-from .helpers import iter_skill_index_files
-from .helpers import parse_frontmatter
+from .helpers import get_deskagent_metadata, iter_skill_index_files, parse_frontmatter
 
 # ``fcntl`` (POSIX) and ``msvcrt`` (Windows) are stdlib — they are not and
 # must not be listed in pyproject.toml (that file is for third-party deps).
@@ -95,7 +89,7 @@ def _archive_dir() -> Path:
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _parse_iso_timestamp(value: Any) -> datetime | None:
@@ -103,7 +97,7 @@ def _parse_iso_timestamp(value: Any) -> datetime | None:
         return None
     try:
         parsed = datetime.fromisoformat(str(value))
-        return parsed.replace(tzinfo=timezone.utc) if parsed.tzinfo is None else parsed
+        return parsed.replace(tzinfo=UTC) if parsed.tzinfo is None else parsed
     except (TypeError, ValueError):
         return None
 
@@ -368,7 +362,7 @@ def archive_skill(skill_name: str) -> tuple[bool, str]:
         archive_root.mkdir(parents=True, exist_ok=True)
         dest = archive_root / skill_dir.name
         if dest.exists():
-            dest = archive_root / f"{skill_dir.name}-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}"
+            dest = archive_root / f"{skill_dir.name}-{datetime.now(UTC).strftime('%Y%m%d%H%M%S')}"
         try:
             skill_dir.rename(dest)
         except OSError:

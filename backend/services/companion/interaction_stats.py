@@ -1,9 +1,6 @@
-from dataclasses import dataclass
-from dataclasses import field
+from dataclasses import dataclass, field
 
-from components import get_logger
-from components import naive_utc_now
-from components import SESSION_LOCAL
+from components import SESSION_LOCAL, get_logger, naive_utc_now
 from modules.memory import Memory
 
 logger = get_logger(__name__)

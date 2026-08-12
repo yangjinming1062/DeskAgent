@@ -1,11 +1,7 @@
 import enum
-from abc import ABC
-from abc import abstractmethod
-from dataclasses import dataclass
-from dataclasses import field
-from typing import Any
-from typing import ClassVar
-from typing import Literal
+from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
+from typing import Any, ClassVar, Literal
 
 from openai import AsyncOpenAI
 

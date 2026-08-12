@@ -2,11 +2,7 @@ from typing import ClassVar
 
 from openai import AsyncOpenAI
 
-from ..base import ImageAsset
-from ..base import ImageGenProvider
-from ..base import ImageGenRequest
-from ..base import ImageGenResult
-from ..base import ProviderConfig
+from ..base import ImageAsset, ImageGenProvider, ImageGenRequest, ImageGenResult, ProviderConfig
 from ..http import get_async_client
 
 

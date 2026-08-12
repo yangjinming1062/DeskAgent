@@ -13,19 +13,12 @@ import threading
 from contextlib import AsyncExitStack
 from typing import Any
 
-from mcp import ClientSession
-from mcp import StdioServerParameters
+from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
-from utils import cfg_get
-from utils import is_env_passthrough
-from utils import load_config
-from utils import safe_schedule_threadsafe
 
-from .cu_backend import ActionResult
-from .cu_backend import CaptureResult
-from .cu_backend import ComputerUseBackend
-from .cu_backend import DESKTOP_SENTINELS
-from .cu_backend import UIElement
+from utils import cfg_get, is_env_passthrough, load_config, safe_schedule_threadsafe
+
+from .cu_backend import DESKTOP_SENTINELS, ActionResult, CaptureResult, ComputerUseBackend, UIElement
 
 logger = logging.getLogger(__name__)
 

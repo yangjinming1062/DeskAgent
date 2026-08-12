@@ -1,8 +1,6 @@
 from pydantic import BaseModel
 
-from .providers import ServiceType
-from .providers import try_resolve
-from .providers import TTSProvider
+from .providers import ServiceType, TTSProvider, try_resolve
 
 
 class VoiceEntry(BaseModel):

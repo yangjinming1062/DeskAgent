@@ -7,27 +7,14 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 import httpx
-from components import get_file_path
-from components import get_logger
-from components import is_safe_outbound
-from components import safe_json_loads
-from components import SESSION_LOCAL
-from components import SETTINGS
-from modules.companion import AvatarAsset
-from modules.companion import Persona
+from components import SESSION_LOCAL, SETTINGS, get_file_path, get_logger, is_safe_outbound, safe_json_loads
+from modules.companion import AvatarAsset, Persona
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
-from ..llm import build_fullbody_prompt
-from ..llm import chat
-from ..llm import enhance_avatar_prompt
-from ..llm import is_content_policy_error_message
-from ..llm import is_preset_species
-from ..llm import resolve_fullbody_template
-from ..tools.builtin import first_image_url
-from ..tools.builtin import image_generation_tool
-from .asset_store import build_data_uri
-from .asset_store import build_signed_avatar_url
+from ..llm import build_fullbody_prompt, chat, enhance_avatar_prompt, is_content_policy_error_message, is_preset_species, resolve_fullbody_template
+from ..tools.builtin import first_image_url, image_generation_tool
+from .asset_store import build_data_uri, build_signed_avatar_url
 from .persona_service import get_or_create_persona
 from .rig_type_selector import select_rig_type
 

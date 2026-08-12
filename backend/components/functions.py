@@ -1,6 +1,5 @@
 import json
-from datetime import datetime
-from datetime import UTC
+from datetime import UTC, datetime
 from typing import Any
 
 from pydantic import BaseModel

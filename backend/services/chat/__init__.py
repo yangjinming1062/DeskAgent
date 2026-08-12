@@ -2,15 +2,12 @@ import importlib
 import sys
 
 from .affect import ALLOWED_EMOTIONS
-from .chat_emitter import Emitter
-from .chat_emitter import HeadlessEmitter
+from .chat_emitter import Emitter, HeadlessEmitter
 from .history import build_session_messages
 from .message_sanitization import truncate_chat_history
-from .system_prompt import build_system_prompt
-from .system_prompt import build_system_prompt_parts
+from .system_prompt import build_system_prompt, build_system_prompt_parts
 from .think_scrubber import StreamingThinkScrubber
-from .types import CORE_TOOLS
-from .types import IterationBudget
+from .types import CORE_TOOLS, IterationBudget
 
 # Lazy-load the heavy modules that pull the full service graph (gateway / llm /
 # tools). Importing them eagerly here breaks the chat↔gateway cycle (gateway's

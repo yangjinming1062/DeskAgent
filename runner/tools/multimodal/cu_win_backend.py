@@ -28,19 +28,13 @@ try:
 except ImportError:
     pywinauto = None  # type: ignore[assignment]
 try:
-    from PIL import Image
-    from PIL import ImageDraw
-    from PIL import ImageFont
+    from PIL import Image, ImageDraw, ImageFont
 except ImportError:
     Image = None  # type: ignore[assignment]
     ImageDraw = None  # type: ignore[assignment]
     ImageFont = None  # type: ignore[assignment]
 
-from .cu_backend import ActionResult
-from .cu_backend import CaptureResult
-from .cu_backend import ComputerUseBackend
-from .cu_backend import DESKTOP_SENTINELS
-from .cu_backend import UIElement
+from .cu_backend import DESKTOP_SENTINELS, ActionResult, CaptureResult, ComputerUseBackend, UIElement
 
 logger = logging.getLogger(__name__)
 

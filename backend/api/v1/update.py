@@ -5,24 +5,12 @@ import shutil
 import zipfile
 from pathlib import Path
 
-from common import get_or_404
-from common import get_router
-from common import list_response
-from components import apply_partial
-from components import get_db
-from components import normalize_sha512
-from components import sha512_b64
-from fastapi import Depends
-from fastapi import File
-from fastapi import Form
-from fastapi import HTTPException
-from fastapi import UploadFile
+from common import get_or_404, get_router, list_response
+from components import apply_partial, get_db, normalize_sha512, sha512_b64
+from fastapi import Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from modules.auth import get_current_admin_token
-from modules.update import UpdateVersion
-from modules.update import UpdateVersionItem
-from modules.update import UpdateVersionListResponse
-from modules.update import UpdateVersionUpdate
+from modules.update import UpdateVersion, UpdateVersionItem, UpdateVersionListResponse, UpdateVersionUpdate
 from sqlalchemy.orm import Session
 
 router = get_router()

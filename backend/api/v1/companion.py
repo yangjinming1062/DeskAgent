@@ -5,85 +5,78 @@ import random
 import time
 
 from common import get_router
-from components import get_db
-from components import get_logger
-from components import safe_json_loads
-from components import SESSION_LOCAL
-from components import SETTINGS
-from fastapi import Body
-from fastapi import Depends
-from fastapi import HTTPException
-from fastapi import Request
-from fastapi import status
+from components import SESSION_LOCAL, SETTINGS, get_db, get_logger, safe_json_loads
+from fastapi import Body, Depends, HTTPException, Request, status
 from fastapi.responses import FileResponse
-from modules.auth import get_current_session
-from modules.auth import LoginRecord
-from modules.auth import User
-from modules.companion import AnimationClipResponse
-from modules.companion import AnimationGenerateRequest
-from modules.companion import AvatarAsset
-from modules.companion import AvatarAssetResponse
-from modules.companion import AvatarFromImageRequest
-from modules.companion import AvatarGenerateRequest
-from modules.companion import AvatarHistoryResponse
-from modules.companion import CompanionModel
-from modules.companion import CompanionModelResponse
-from modules.companion import FullbodyGenerateRequest
-from modules.companion import ModelGenerateRequest
-from modules.companion import Persona
-from modules.companion import PersonaResponse
-from modules.companion import PersonaUpdate
-from modules.companion import WardrobeConfirmRequest
-from modules.companion import WardrobeEquipRequest
-from modules.companion import WardrobeGenerateRequest
-from modules.companion import WardrobeItem
-from modules.companion import WardrobeItemResponse
-from modules.companion import WardrobePreviewRequest
-from modules.companion import WardrobePreviewResponse
-from services.companion import ALLOWED_AVATAR_UPLOAD_MIME_TYPES
-from services.companion import analyze_personality_tags
-from services.companion import AvatarGenerationError
-from services.companion import AvatarNotFoundError
-from services.companion import AvatarSourceUnreadableError
-from services.companion import confirm_portrait
-from services.companion import confirm_wardrobe_item
-from services.companion import delete_wardrobe_item
-from services.companion import emit_wardrobe_updated
-from services.companion import equip_wardrobe_item
-from services.companion import finalize_avatar
-from services.companion import FrontSeedMissingError
-from services.companion import generate_animation_clips
-from services.companion import generate_avatar
-from services.companion import generate_companion_model
-from services.companion import generate_fullbody
-from services.companion import generate_wardrobe_item
-from services.companion import get_active_avatar
-from services.companion import get_active_model
-from services.companion import get_avatar_job_lock
-from services.companion import get_equipped_item
-from services.companion import get_or_create_persona
-from services.companion import get_rig_bones
-from services.companion import list_avatar_history
-from services.companion import list_tts_voices
-from services.companion import list_wardrobe
-from services.companion import ModelGenerationError
-from services.companion import ModelGenerationInProgressError
-from services.companion import normalize_voice_language
-from services.companion import PersonaValidationError
-from services.companion import preview_wardrobe_texture
-from services.companion import discard_wardrobe_preview
-from services.companion import regenerate_avatar_from_image
-from services.companion import resolve_companion_asset_path
-from services.companion import resolve_companion_model_path
-from services.companion import resolve_uploaded_avatar_path
-from services.companion import SeedPromptMissingError
-from services.companion import signed_model_url
-from services.companion import update_persona
-from services.companion import verify_signed_asset_request
-from services.companion import verify_signed_avatar_request
-from services.companion import WardrobeSourceExpiredError
-from services.llm import chat
-from services.llm import MissingLlmConfigError
+from modules.auth import LoginRecord, User, get_current_session
+from modules.companion import (
+    AnimationClipResponse,
+    AnimationGenerateRequest,
+    AvatarAsset,
+    AvatarAssetResponse,
+    AvatarFromImageRequest,
+    AvatarGenerateRequest,
+    AvatarHistoryResponse,
+    CompanionModel,
+    CompanionModelResponse,
+    FullbodyGenerateRequest,
+    ModelGenerateRequest,
+    Persona,
+    PersonaResponse,
+    PersonaUpdate,
+    WardrobeConfirmRequest,
+    WardrobeEquipRequest,
+    WardrobeGenerateRequest,
+    WardrobeItem,
+    WardrobeItemResponse,
+    WardrobePreviewRequest,
+    WardrobePreviewResponse,
+)
+from services.companion import (
+    ALLOWED_AVATAR_UPLOAD_MIME_TYPES,
+    AvatarGenerationError,
+    AvatarNotFoundError,
+    AvatarSourceUnreadableError,
+    FrontSeedMissingError,
+    ModelGenerationError,
+    ModelGenerationInProgressError,
+    PersonaValidationError,
+    SeedPromptMissingError,
+    WardrobeSourceExpiredError,
+    analyze_personality_tags,
+    confirm_portrait,
+    confirm_wardrobe_item,
+    delete_wardrobe_item,
+    discard_wardrobe_preview,
+    emit_wardrobe_updated,
+    equip_wardrobe_item,
+    finalize_avatar,
+    generate_animation_clips,
+    generate_avatar,
+    generate_companion_model,
+    generate_fullbody,
+    generate_wardrobe_item,
+    get_active_avatar,
+    get_active_model,
+    get_avatar_job_lock,
+    get_equipped_item,
+    get_or_create_persona,
+    get_rig_bones,
+    list_avatar_history,
+    list_tts_voices,
+    list_wardrobe,
+    normalize_voice_language,
+    preview_wardrobe_texture,
+    regenerate_avatar_from_image,
+    resolve_companion_asset_path,
+    resolve_companion_model_path,
+    resolve_uploaded_avatar_path,
+    signed_model_url,
+    update_persona,
+    verify_signed_asset_request,
+    verify_signed_avatar_request,
+)
+from services.llm import MissingLlmConfigError, chat
 from services.rate_limit import limiter
 from sqlalchemy.orm import Session
 
@@ -239,7 +232,7 @@ async def _refresh_personality_tags(persona_id: int, user_id: int) -> None:
                 len(tags) if isinstance(tags, list) else -1,
             )
             return
-        except asyncio.TimeoutError as exc:
+        except TimeoutError as exc:
             last_exc = exc
         except asyncio.CancelledError:
             raise

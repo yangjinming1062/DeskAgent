@@ -54,4 +54,25 @@ redundant-cast = "ignore"
 preview = true
 
 [tool.ruff.lint]
-select = ["PLW1514"]
+select = [
+  "F",        # Pyflakes: unused imports, unused variables
+  "E", "W",   # pycodestyle: syntax/formatting
+  "I",        # isort: import sorting
+  "UP",       # pyupgrade: modern Python 3.13 syntax & types
+  "C4",       # flake8-comprehensions: generator & list comprehension optimizations
+  "SIM",      # flake8-simplify: code & with-statement simplification
+  "TID",      # flake8-tidy-imports: relative imports in package
+  "ARG",      # flake8-unused-arguments
+  "RUF",      # Ruff-specific rules (e.g. unused noqa)
+  "PLW1514",  # unspecified encoding
+]
+ignore = [
+  "E501",     # line too long (handled by ruff format)
+  "E741",     # ambiguous variable name (e.g. l)
+  "ARG",      # unused function/method/lambda arguments (common in agent tool contracts)
+  "RUF",      # ruff-specific style rules
+  "TID252",   # relative import from parent modules
+  "UP042",    # StrEnum inheritance preference
+  "F823",     # local variable referenced before assignment in legacy try-imports
+  "SIM",      # simplify rules (preserve explicit control flow style)
+]

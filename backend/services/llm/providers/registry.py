@@ -1,5 +1,4 @@
-from .base import BaseProvider
-from .base import ServiceType
+from .base import BaseProvider, ServiceType
 
 # (service_type, provider_name) → concrete class.
 # Provider families register themselves by importing this module and calling

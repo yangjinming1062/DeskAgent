@@ -1428,11 +1428,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
                   <div className="mt-2 space-y-2 text-xs">
                     {refImage && (
                       <div className="flex items-center gap-2">
-                        <img
-                          alt="形象参考图"
-                          className="h-9 w-9 rounded-md object-cover"
-                          src={refImage.previewUrl}
-                        />
+                        <img alt="形象参考图" className="h-9 w-9 rounded-md object-cover" src={refImage.previewUrl} />
                         <span className="text-[10px] text-white/35">形象参考图（每次重生都会携带）</span>
                         <button
                           className="ml-auto text-white/40 transition hover:text-white"

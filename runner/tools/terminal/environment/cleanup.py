@@ -8,12 +8,7 @@ import threading
 import time
 
 from .._env_singularity import _get_scratch_dir
-from .state import _active_environments
-from .state import _creation_locks
-from .state import _creation_locks_lock
-from .state import _env_lock
-from .state import _last_activity
-from .state import get_env_config
+from .state import _active_environments, _creation_locks, _creation_locks_lock, _env_lock, _last_activity, get_env_config
 
 logger = logging.getLogger(__name__)
 

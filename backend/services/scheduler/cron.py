@@ -3,23 +3,16 @@ import contextlib
 from datetime import datetime
 from typing import Any
 
-from components import BackgroundTask
-from components import begin_local_scope
-from components import get_logger
-from components import MEMORY_CONSOLIDATE_INTERVAL_SECONDS
-from components import MEMORY_CONSOLIDATE_TRIGGER_ROWS
-from components import naive_utc_now
-from components import session_scope
+from components import MEMORY_CONSOLIDATE_INTERVAL_SECONDS, MEMORY_CONSOLIDATE_TRIGGER_ROWS, BackgroundTask, begin_local_scope, get_logger, naive_utc_now, session_scope
 from croniter import croniter
 from modules.conversation import Conversation
 from modules.scheduler import CronJob
-from modules.system import ChatMessageRequest
-from modules.system import ChatRequest
-from services.disturbance import is_quiet
-from services.gateway import JsonRpcEmitter
-from services.gateway import MANAGER
-from services.llm import resolve_user_llm_config
+from modules.system import ChatMessageRequest, ChatRequest
 from sqlalchemy import text
+
+from services.disturbance import is_quiet
+from services.gateway import MANAGER, JsonRpcEmitter
+from services.llm import resolve_user_llm_config
 
 from .memory_consolidator import maybe_consolidate_one_user
 

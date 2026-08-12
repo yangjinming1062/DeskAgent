@@ -7,11 +7,7 @@ import sys
 import threading
 import time
 
-from utils import cfg_get
-from utils import get_env_type
-from utils import IS_WINDOWS
-from utils import is_truthy_value
-from utils import load_config
+from utils import IS_WINDOWS, cfg_get, get_env_type, is_truthy_value, load_config
 
 if platform.system() != "Windows":
     import termios

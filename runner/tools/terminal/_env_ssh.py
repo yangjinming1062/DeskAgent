@@ -8,13 +8,8 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-from ._env_base import _popen_bash
-from ._env_base import BaseEnvironment
-from ._env_file_sync import FileSyncManager
-from ._env_file_sync import iter_sync_files
-from ._env_file_sync import quoted_mkdir_command
-from ._env_file_sync import quoted_rm_command
-from ._env_file_sync import unique_parent_dirs
+from ._env_base import BaseEnvironment, _popen_bash
+from ._env_file_sync import FileSyncManager, iter_sync_files, quoted_mkdir_command, quoted_rm_command, unique_parent_dirs
 
 logger = logging.getLogger(__name__)
 
@@ -175,7 +170,7 @@ class SSHEnvironment(BaseEnvironment):
         cmd = self._build_ssh_command()
         cmd.append(quoted_rm_command(remote_paths))
         if subprocess.run(cmd, capture_output=True, text=True, timeout=10, stdin=subprocess.DEVNULL).returncode != 0:
-            raise RuntimeError(f"remote rm failed")
+            raise RuntimeError("remote rm failed")
 
     def _before_execute(self) -> None:
         self._sync_manager.sync()

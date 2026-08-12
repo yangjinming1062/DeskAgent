@@ -7,13 +7,9 @@ import threading
 import time
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote
-from urllib.parse import urlparse
-from urllib.parse import urlsplit
-from urllib.parse import urlunsplit
+from urllib.parse import quote, urlparse, urlsplit, urlunsplit
 
-from .config import is_truthy_value
-from .config import load_config
+from .config import is_truthy_value, load_config
 from .constants import get_deskagent_home
 
 logger = logging.getLogger(__name__)

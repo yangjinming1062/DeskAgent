@@ -1,27 +1,23 @@
 from common import get_router
-from components import apply_partial
-from components import get_db
-from components import naive_utc_now
-from components import SETTINGS
-from fastapi import Depends
-from fastapi import HTTPException
-from fastapi import Request
-from fastapi import status
-from modules.auth import ActivateRequest
-from modules.auth import create_access_token
-from modules.auth import decode_activation_code
-from modules.auth import fingerprint_api_key
-from modules.auth import get_current_session
-from modules.auth import hash_activation_token
-from modules.auth import LoginRecord
-from modules.auth import public_provider_slots
-from modules.auth import RefreshRequest
-from modules.auth import TokenResponse
-from modules.auth import User
-from modules.auth import UserInfo
-from modules.auth import UserModelConfig
-from modules.auth import UserModelConfigResponse
-from modules.auth import UserModelConfigSelfRequest
+from components import SETTINGS, apply_partial, get_db, naive_utc_now
+from fastapi import Depends, HTTPException, Request, status
+from modules.auth import (
+    ActivateRequest,
+    LoginRecord,
+    RefreshRequest,
+    TokenResponse,
+    User,
+    UserInfo,
+    UserModelConfig,
+    UserModelConfigResponse,
+    UserModelConfigSelfRequest,
+    create_access_token,
+    decode_activation_code,
+    fingerprint_api_key,
+    get_current_session,
+    hash_activation_token,
+    public_provider_slots,
+)
 from modules.system import MessageResponse
 from services.llm import merge_provider_json
 from services.rate_limit import limiter

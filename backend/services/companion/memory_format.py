@@ -1,8 +1,7 @@
 from modules.memory import Memory
-from services.tools import AUTO_INJECT_SLOTS
-from services.tools import context_not_in
-from services.tools import KIND_TO_PREFIX
 from sqlalchemy.orm import Session
+
+from services.tools import AUTO_INJECT_SLOTS, KIND_TO_PREFIX, context_not_in
 
 MAX_MEMORIES = 10
 MAX_MEMORY_SNIPPET_LEN = 200

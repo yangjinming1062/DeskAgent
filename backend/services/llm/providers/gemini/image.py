@@ -4,11 +4,7 @@ from typing import ClassVar
 from .._provider_errors import raise_for_provider_response
 from .._reference import resolve_reference_bytes
 from .._size_aspect import SIZE_TO_ASPECT
-from ..base import ImageAsset
-from ..base import ImageGenProvider
-from ..base import ImageGenRequest
-from ..base import ImageGenResult
-from ..base import ProviderConfig
+from ..base import ImageAsset, ImageGenProvider, ImageGenRequest, ImageGenResult, ProviderConfig
 from ..http import get_http
 from ._parts import iter_parts
 

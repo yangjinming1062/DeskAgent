@@ -1,7 +1,8 @@
 from typing import Protocol
 
-from services.llm.providers.base import ProviderConfig
 from sqlalchemy.orm import Session
+
+from services.llm.providers.base import ProviderConfig
 
 _RIG_TYPES: tuple[str, ...] = (
     "biped",

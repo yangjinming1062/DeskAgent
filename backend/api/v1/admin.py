@@ -1,26 +1,23 @@
-from common import get_or_404
-from common import get_router
-from common import list_response
-from components import apply_partial
-from components import get_db
-from fastapi import Depends
-from fastapi import HTTPException
-from fastapi import status
-from modules.auth import encode_activation_code
-from modules.auth import fingerprint_api_key
-from modules.auth import generate_activation_token
-from modules.auth import get_current_admin_token
-from modules.auth import hash_activation_token
-from modules.auth import public_provider_slots
-from modules.auth import User
-from modules.auth import UserCreate
-from modules.auth import UserListResponse
-from modules.auth import UserModelConfig
-from modules.auth import UserModelConfigListItem
-from modules.auth import UserModelConfigListResponse
-from modules.auth import UserModelConfigRequest
-from modules.auth import UserResponse
-from modules.auth import UserUpdate
+from common import get_or_404, get_router, list_response
+from components import apply_partial, get_db
+from fastapi import Depends, HTTPException, status
+from modules.auth import (
+    User,
+    UserCreate,
+    UserListResponse,
+    UserModelConfig,
+    UserModelConfigListItem,
+    UserModelConfigListResponse,
+    UserModelConfigRequest,
+    UserResponse,
+    UserUpdate,
+    encode_activation_code,
+    fingerprint_api_key,
+    generate_activation_token,
+    get_current_admin_token,
+    hash_activation_token,
+    public_provider_slots,
+)
 from services.llm import merge_provider_json
 from sqlalchemy.orm import Session
 

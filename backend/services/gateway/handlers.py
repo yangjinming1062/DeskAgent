@@ -6,67 +6,68 @@ import secrets
 import time
 from typing import Any
 
-from components import adopt_inbound
-from components import ATTACHMENT_TYPE_IMAGE
-from components import coerce_hour_0_23
-from components import coerce_non_negative_int
-from components import get_logger
-from components import JSONRPC_INVALID_PARAMS
-from components import JSONRPC_METHOD_NOT_FOUND
-from components import MAX_ATTACHMENTS_PER_TURN
-from components import MAX_VOICE_DESIGN_PROMPT_CHARS
-from components import path_attach_ref
-from components import REQUEST_ID_HEADER
-from components import SESSION_LOCAL
-from fastapi import WebSocket
-from fastapi import WebSocketDisconnect
+from components import (
+    ATTACHMENT_TYPE_IMAGE,
+    JSONRPC_INVALID_PARAMS,
+    JSONRPC_METHOD_NOT_FOUND,
+    MAX_ATTACHMENTS_PER_TURN,
+    MAX_VOICE_DESIGN_PROMPT_CHARS,
+    REQUEST_ID_HEADER,
+    SESSION_LOCAL,
+    adopt_inbound,
+    coerce_hour_0_23,
+    coerce_non_negative_int,
+    get_logger,
+    path_attach_ref,
+)
+from fastapi import WebSocket, WebSocketDisconnect
 from modules.auth import ChatRequestClientContext
-from modules.conversation import Conversation
-from modules.conversation import Message
-from modules.system import ChatMessageRequest
-from modules.system import ChatRequest
-from services.chat import build_session_messages
-from services.chat import load_user_settings
-from services.chat import run_chat_turn
-from services.companion import AvatarGenerationError
-from services.companion import check_affect
-from services.companion import delete_memory
-from services.companion import design_voice
-from services.companion import get_avatar_job_lock
-from services.companion import get_onboarding_state
-from services.companion import get_or_create_persona
-from services.companion import list_memories
-from services.companion import list_tts_voices
-from services.companion import match_user_voice
-from services.companion import memory_counts
-from services.companion import normalize_voice_language
-from services.companion import PersonaValidationError
-from services.companion import record_interaction
-from services.companion import regenerate_avatar
-from services.companion import submit_onboarding_field
-from services.companion import update_memory
-from services.companion import read_user_profile
-from services.disturbance import set_disturbance_tier
-from services.llm import MissingLlmConfigError
-from services.llm import resolve_user_llm_config
-from services.tools import REGISTRY
+from modules.conversation import Conversation, Message
+from modules.system import ChatMessageRequest, ChatRequest
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from . import authenticate_ws_token
-from . import discard_user
-from . import dispatch_user_event
-from . import JsonRpcDispatcher
-from . import JsonRpcEmitter
-from . import JsonRpcError
-from . import MANAGER
-from . import new_runtime_session
-from . import resolve_future
-from . import runtime_info_snapshot
-from . import RuntimeSession
-from . import SessionCreateResult
-from . import SessionResumeResult
-from . import ToolsSyncResult
+from services.chat import build_session_messages, load_user_settings, run_chat_turn
+from services.companion import (
+    AvatarGenerationError,
+    PersonaValidationError,
+    check_affect,
+    delete_memory,
+    design_voice,
+    get_avatar_job_lock,
+    get_onboarding_state,
+    get_or_create_persona,
+    list_memories,
+    list_tts_voices,
+    match_user_voice,
+    memory_counts,
+    normalize_voice_language,
+    read_user_profile,
+    record_interaction,
+    regenerate_avatar,
+    submit_onboarding_field,
+    update_memory,
+)
+from services.disturbance import set_disturbance_tier
+from services.llm import MissingLlmConfigError, resolve_user_llm_config
+from services.tools import REGISTRY
+
+from . import (
+    MANAGER,
+    JsonRpcDispatcher,
+    JsonRpcEmitter,
+    JsonRpcError,
+    RuntimeSession,
+    SessionCreateResult,
+    SessionResumeResult,
+    ToolsSyncResult,
+    authenticate_ws_token,
+    discard_user,
+    dispatch_user_event,
+    new_runtime_session,
+    resolve_future,
+    runtime_info_snapshot,
+)
 
 logger = get_logger(__name__)
 

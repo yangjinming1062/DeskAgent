@@ -1,12 +1,4 @@
-from . import auth
-from . import companion
-from . import conversation
-from . import memory
-from . import scheduler
-from . import settings
-from . import system
-from . import update
-from . import ws
+from . import auth, companion, conversation, memory, scheduler, settings, system, update, ws
 
 # Importing each package registers its ORM models on ``ModelBase.metadata`` so
 # ``create_all`` sees every table. ``modules.media`` is intentionally omitted

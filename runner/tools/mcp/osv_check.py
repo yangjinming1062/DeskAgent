@@ -4,8 +4,7 @@ import os
 import re
 import urllib.request
 
-from utils import cfg_get
-from utils import load_config
+from utils import cfg_get, load_config
 
 logger = logging.getLogger(__name__)
 _OSV_ENDPOINT = cfg_get(load_config(), "osv", "endpoint", default="https://api.osv.dev/v1/query")

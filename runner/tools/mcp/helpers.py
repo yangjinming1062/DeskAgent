@@ -12,29 +12,25 @@ import sys
 import threading
 import time
 import webbrowser
-from dataclasses import dataclass
-from dataclasses import field
-from http.server import BaseHTTPRequestHandler
-from http.server import HTTPServer
+from dataclasses import dataclass, field
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from typing import Any
-from urllib.parse import parse_qs
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 import httpx
 from mcp.client.auth.oauth2 import OAuthClientProvider
-from mcp.client.auth.utils import build_oauth_authorization_server_metadata_discovery_urls
-from mcp.client.auth.utils import build_protected_resource_metadata_discovery_urls
-from mcp.client.auth.utils import create_oauth_metadata_request
-from mcp.client.auth.utils import handle_auth_metadata_response
-from mcp.client.auth.utils import handle_protected_resource_response
-from mcp.shared.auth import OAuthClientInformationFull
-from mcp.shared.auth import OAuthClientMetadata
-from mcp.shared.auth import OAuthMetadata
-from mcp.shared.auth import OAuthToken
+from mcp.client.auth.utils import (
+    build_oauth_authorization_server_metadata_discovery_urls,
+    build_protected_resource_metadata_discovery_urls,
+    create_oauth_metadata_request,
+    handle_auth_metadata_response,
+    handle_protected_resource_response,
+)
+from mcp.shared.auth import OAuthClientInformationFull, OAuthClientMetadata, OAuthMetadata, OAuthToken
 from pydantic import AnyUrl
-from utils import get_deskagent_home
-from utils import secure_parent_dir
+
+from utils import get_deskagent_home, secure_parent_dir
 
 logger = logging.getLogger(__name__)
 

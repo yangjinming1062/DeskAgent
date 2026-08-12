@@ -2,9 +2,7 @@ import logging
 from typing import ClassVar
 
 from .._provider_errors import raise_for_provider_response
-from ..base import ProviderConfig
-from ..base import TTSProvider
-from ..base import TTSResult
+from ..base import ProviderConfig, TTSProvider, TTSResult
 from ..http import get_http
 
 logger = logging.getLogger(__name__)

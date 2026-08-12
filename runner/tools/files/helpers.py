@@ -6,31 +6,22 @@ import re
 import threading
 import time
 import tomllib as _toml
-from abc import ABC
-from abc import abstractmethod
+from abc import ABC, abstractmethod
 from collections.abc import Iterable
-from contextlib import contextmanager
-from contextlib import suppress
-from dataclasses import dataclass
-from dataclasses import field
+from contextlib import contextmanager, suppress
+from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any
-from typing import TypeAlias
+from typing import Any, TypeAlias
 
 import yaml as _yaml
-from utils import build_write_denied_paths
-from utils import build_write_denied_prefixes
-from utils import cfg_get
-from utils import is_write_denied as _shared_is_write_denied
-from utils import load_config
-from utils import strip_ansi
 
-from ..tool_output_limits import get_max_line_length
-from ..tool_output_limits import get_max_lines
+from utils import build_write_denied_paths, build_write_denied_prefixes, cfg_get, load_config, strip_ansi
+from utils import is_write_denied as _shared_is_write_denied
+
+from ..tool_output_limits import get_max_line_length, get_max_lines
 from .binary_extensions import BINARY_EXTENSIONS
-from .fuzzy_match import format_no_match_hint
-from .fuzzy_match import fuzzy_find_and_replace
+from .fuzzy_match import format_no_match_hint, fuzzy_find_and_replace
 
 # ── File State ─────────────────────────────────────────────────────────────
 

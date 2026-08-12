@@ -2,15 +2,12 @@ import json
 from urllib.parse import urlparse
 
 import httpx
-from components import get_logger
-from components import is_safe_outbound
-from components import SESSION_LOCAL
-from components import tool_error
+from components import SESSION_LOCAL, get_logger, is_safe_outbound, tool_error
 from modules.ws import WSEvent
+
 from services.disturbance import is_quiet
 
-from .. import ALWAYS_AVAILABLE
-from .. import REGISTRY
+from .. import ALWAYS_AVAILABLE, REGISTRY
 
 logger = get_logger(__name__)
 

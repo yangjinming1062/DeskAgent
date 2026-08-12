@@ -29,5 +29,3 @@ def test_click_at_handler():
     res_str = registry.dispatch("system.click_at", {"x": 100, "y": 100, "button": "left", "clicks": 1})
     res = json.loads(res_str)
     assert "clicked" in res
-
-

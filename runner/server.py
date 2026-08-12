@@ -9,25 +9,16 @@ import time
 import uuid
 
 import websockets
-from runner_version import __version__
-from tools import discover_builtin_tools
-from tools import registry
-from tools import ToolError
-from tools.files import reset_max_read_chars_cache
-from tools.interrupt import set_global_interrupt
-from tools.interrupt import set_interrupt
-from tools.mcp import discover_mcp_tools
-from tools.mcp import reload_mcp_servers
+
 import tools.mcp.mcp_tool as mcp_tool
+from runner_version import __version__
+from tools import ToolError, discover_builtin_tools, registry
+from tools.files import reset_max_read_chars_cache
+from tools.interrupt import set_global_interrupt, set_interrupt
+from tools.mcp import discover_mcp_tools, reload_mcp_servers
 from tools.tool_output_limits import reset_cache as reset_output_limits_cache
 from tools.toolsets import get_disabled_toolset_ids
-from utils import disk_free_bytes
-from utils import get_deskagent_home
-from utils import network_reachable
-from utils import pid_exists
-from utils import set_handler
-from utils import set_inmemory_config
-from utils import snapshot
+from utils import disk_free_bytes, get_deskagent_home, network_reachable, pid_exists, set_handler, set_inmemory_config, snapshot
 
 logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger("deskagent_runner")

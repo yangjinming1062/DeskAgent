@@ -1,12 +1,10 @@
 import asyncio
 import time
 from collections.abc import Callable
-from typing import Any
-from typing import Literal
+from typing import Any, Literal
 
 import httpx
-from components import get_logger
-from components import SETTINGS
+from components import SETTINGS, get_logger
 
 logger = get_logger(__name__)
 

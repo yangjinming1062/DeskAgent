@@ -1,13 +1,9 @@
 from datetime import timedelta
 
 from common import get_router
-from components import get_db
-from components import naive_utc_now
-from components import SETTINGS
+from components import SETTINGS, get_db, naive_utc_now
 from fastapi import Depends
-from modules.auth import get_current_session
-from modules.auth import LoginRecord
-from modules.auth import User
+from modules.auth import LoginRecord, User, get_current_session
 from modules.conversation import Conversation
 from modules.system import StatusResponse
 from services.gateway import MANAGER

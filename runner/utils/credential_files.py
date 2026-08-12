@@ -6,10 +6,8 @@ import tempfile
 from contextvars import ContextVar
 from pathlib import Path
 
-from .config import cfg_get
-from .config import load_config
-from .constants import get_deskagent_dir
-from .constants import get_deskagent_home
+from .config import cfg_get, load_config
+from .constants import get_deskagent_dir, get_deskagent_home
 from .file_safety import validate_within_dir
 
 logger = logging.getLogger(__name__)

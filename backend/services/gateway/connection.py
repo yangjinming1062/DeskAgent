@@ -3,16 +3,10 @@ import contextlib
 from datetime import timedelta
 
 import asyncpg
-from components import BackgroundTask
-from components import begin_local_scope
-from components import get_logger
-from components import naive_utc_now
-from components import safe_json_loads
-from components import session_scope
+from components import BackgroundTask, begin_local_scope, get_logger, naive_utc_now, safe_json_loads, session_scope
 from fastapi import WebSocket
 from modules.ws import WSEvent
-from sqlalchemy import delete
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.exc import OperationalError
 
 from .jsonrpc import JsonRpcDispatcher
@@ -125,7 +119,7 @@ async def _process_events(wakeup: asyncio.Event):
         try:
             await asyncio.wait_for(wakeup.wait(), timeout=60.0)
             wakeup.clear()
-        except asyncio.TimeoutError:
+        except TimeoutError:
             pass
 
         # GC stale rows past the delivery window first.

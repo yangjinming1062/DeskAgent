@@ -284,9 +284,7 @@ export function CompanionRoot(): React.JSX.Element {
 
   return (
     <>
-      {activationOpen && !authed && (
-        <ActivationOverlay onClose={() => setActivationOpen(false)} />
-      )}
+      {activationOpen && !authed && <ActivationOverlay onClose={() => setActivationOpen(false)} />}
       {showOnboarding && <OnboardingFlow onCompleted={onOnboardingComplete} />}
       <SpriteStage
         onContextMenu={e => {

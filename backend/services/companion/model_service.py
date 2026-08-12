@@ -3,30 +3,18 @@ import json
 import tempfile
 from pathlib import Path
 
-from components import get_logger
-from components import safe_json_loads
-from components import SESSION_LOCAL
-from components import SETTINGS
-from modules.companion import AvatarAsset
-from modules.companion import CompanionModel
+from components import SESSION_LOCAL, SETTINGS, get_logger, safe_json_loads
+from modules.companion import AvatarAsset, CompanionModel
 from modules.ws import WSEvent
-from services.llm import chat
 from sqlalchemy.orm import Session
 
-from .asset_store import build_signed_model_url
-from .asset_store import save_companion_model
+from services.llm import chat
+
+from .asset_store import build_signed_model_url, save_companion_model
 from .avatar_service import resolve_uploaded_avatar_path
 from .persona_service import get_or_create_persona
 from .rig_type_selector import select_rig_type
-from .tripo_client import create_multiview_to_model
-from .tripo_client import download_model
-from .tripo_client import poll_rig_check
-from .tripo_client import poll_task
-from .tripo_client import rig
-from .tripo_client import rig_check
-from .tripo_client import TripoApiError
-from .tripo_client import TripoTaskFailed
-from .tripo_client import upload_file
+from .tripo_client import TripoApiError, TripoTaskFailed, create_multiview_to_model, download_model, poll_rig_check, poll_task, rig, rig_check, upload_file
 
 logger = get_logger(__name__)
 
@@ -338,7 +326,7 @@ async def _inject_morph_targets(glb_bytes: bytes) -> bytes:
             return glb_bytes
         try:
             await asyncio.wait_for(proc.wait(), timeout=120)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             proc.kill()
             logger.warning("Blender morph injection timed out")
             return glb_bytes

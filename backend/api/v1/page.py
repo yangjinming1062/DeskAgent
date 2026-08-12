@@ -2,12 +2,9 @@ from pathlib import Path
 
 from common import get_router
 from components import SETTINGS
-from fastapi import HTTPException
-from fastapi import status
+from fastapi import HTTPException, status
 from fastapi.responses import FileResponse
-from modules.auth import AdminLoginRequest
-from modules.auth import AdminTokenResponse
-from modules.auth import create_admin_token
+from modules.auth import AdminLoginRequest, AdminTokenResponse, create_admin_token
 
 router = get_router(prefix="", tag="admin")
 

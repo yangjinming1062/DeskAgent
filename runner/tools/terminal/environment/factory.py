@@ -1,5 +1,4 @@
-from .._env_docker import DockerEnvironment
-from .._env_docker import maybe_reap_docker_orphans
+from .._env_docker import DockerEnvironment, maybe_reap_docker_orphans
 from .._env_local import LocalEnvironment
 from .._env_singularity import SingularityEnvironment
 from .._env_ssh import SSHEnvironment

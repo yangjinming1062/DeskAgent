@@ -3,8 +3,7 @@ import subprocess
 import time
 from typing import Any
 
-from utils import IS_MACOS
-from utils import IS_WINDOWS
+from utils import IS_MACOS, IS_WINDOWS
 
 logger = logging.getLogger(__name__)
 
@@ -40,8 +39,10 @@ try:
 except ImportError:
     Quartz = None  # type: ignore[assignment]
 try:
-    from AppKit import NSScreen  # type: ignore[import-not-found]
-    from AppKit import NSWorkspace  # type: ignore[import-not-found]
+    from AppKit import (
+        NSScreen,  # type: ignore[import-not-found]
+        NSWorkspace,  # type: ignore[import-not-found]
+    )
 except ImportError:
     NSScreen = None  # type: ignore[assignment,misc]
     NSWorkspace = None  # type: ignore[assignment]
@@ -280,7 +281,7 @@ def _idle_windows() -> float:
     try:
 
         class LASTINPUTINFO(ctypes.Structure):
-            _fields_ = [("cbSize", wintypes.UINT), ("dwTime", wintypes.DWORD)]  # noqa: RUF012
+            _fields_ = [("cbSize", wintypes.UINT), ("dwTime", wintypes.DWORD)]
 
         info = LASTINPUTINFO()
         info.cbSize = ctypes.sizeof(info)
@@ -395,7 +396,7 @@ def _focus_windows() -> dict[str, Any]:
         # foreground thread (the actual window the user is
         # typing in, not just the topmost shell container).
         class _GuiThreadInfo(ctypes.Structure):
-            _fields_ = [  # noqa: RUF012
+            _fields_ = [
                 ("cbSize", wintypes.DWORD),
                 ("flags", wintypes.DWORD),
                 ("hwndActive", wintypes.HWND),
@@ -482,7 +483,7 @@ def _fullscreen_windows() -> bool:
             return False
 
         class _Rect(ctypes.Structure):
-            _fields_ = [  # noqa: RUF012
+            _fields_ = [
                 ("left", wintypes.LONG),
                 ("top", wintypes.LONG),
                 ("right", wintypes.LONG),

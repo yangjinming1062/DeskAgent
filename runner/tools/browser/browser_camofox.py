@@ -6,24 +6,16 @@ import re
 import threading
 import uuid
 from typing import Any
-from urllib.parse import SplitResult
-from urllib.parse import urlparse
-from urllib.parse import urlsplit
-from urllib.parse import urlunsplit
+from urllib.parse import SplitResult, urlparse, urlsplit, urlunsplit
 
 import requests
-from utils import call_llm
-from utils import cfg_get
-from utils import get_deskagent_home
-from utils import load_config
-from utils import redact_sensitive_text
+
+from utils import call_llm, cfg_get, get_deskagent_home, load_config, redact_sensitive_text
 
 from ..multimodal.helpers import _resolve_vision_params
 from ..registry import tool_error
 from .browser_camofox_state import get_camofox_identity
-from .helpers import _extract_relevant_content
-from .helpers import _truncate_snapshot
-from .helpers import SNAPSHOT_SUMMARIZE_THRESHOLD
+from .helpers import SNAPSHOT_SUMMARIZE_THRESHOLD, _extract_relevant_content, _truncate_snapshot
 
 logger = logging.getLogger(__name__)
 

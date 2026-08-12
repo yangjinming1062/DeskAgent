@@ -6,17 +6,11 @@ import sys
 import threading
 from typing import Any
 
-from utils import cfg_get
-from utils import clean_output
-from utils import load_config
+from utils import cfg_get, clean_output, load_config
 
 from ..interrupt import is_interrupted
-from .cu_backend import ActionResult
-from .cu_backend import CaptureResult
-from .cu_backend import ComputerUseBackend
-from .cu_backend import UIElement
-from .cu_cua_backend import cua_driver_binary_available
-from .cu_cua_backend import CuaDriverBackend
+from .cu_backend import ActionResult, CaptureResult, ComputerUseBackend, UIElement
+from .cu_cua_backend import CuaDriverBackend, cua_driver_binary_available
 from .cu_permissions import get_permission_status
 from .cu_win_backend import WinBackend
 from .helpers import _MAX_BASE64_BYTES

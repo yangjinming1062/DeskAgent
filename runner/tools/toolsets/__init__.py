@@ -1,5 +1,4 @@
-from .catalog import excluded_tool_names
-from .catalog import TOOLSET_CATALOG
+from .catalog import TOOLSET_CATALOG, excluded_tool_names
 from .helpers import get_disabled_toolset_ids
 
 __all__ = [

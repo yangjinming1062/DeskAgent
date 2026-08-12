@@ -17,29 +17,24 @@ from collections import deque
 from typing import Any
 
 import psutil
-from utils import cfg_get
-from utils import clean_output
-from utils import CREATE_NO_WINDOW
-from utils import find_python
-from utils import get_subprocess_home
-from utils import IS_WINDOWS
+
+from utils import CREATE_NO_WINDOW, IS_WINDOWS, cfg_get, clean_output, find_python, get_subprocess_home, kill_tree, load_config
 from utils import is_env_passthrough as _ep
-from utils import kill_tree
-from utils import load_config
 
 from ..interrupt import is_interrupted
-from ..registry import registry
-from ..registry import tool_error
-from ..terminal.environment import _active_environments
-from ..terminal.environment import _creation_locks
-from ..terminal.environment import _creation_locks_lock
-from ..terminal.environment import _env_lock
-from ..terminal.environment import _last_activity
-from ..terminal.environment import _task_env_overrides
-from ..terminal.environment import create_environment
-from ..terminal.environment import get_env_config
-from ..terminal.environment import resolve_container_task_id
-from ..terminal.environment import start_cleanup_thread
+from ..registry import registry, tool_error
+from ..terminal.environment import (
+    _active_environments,
+    _creation_locks,
+    _creation_locks_lock,
+    _env_lock,
+    _last_activity,
+    _task_env_overrides,
+    create_environment,
+    get_env_config,
+    resolve_container_task_id,
+    start_cleanup_thread,
+)
 from ..thread_context import propagate_context_to_thread
 
 logger = logging.getLogger(__name__)

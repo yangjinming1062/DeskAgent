@@ -3,8 +3,7 @@ import json
 from collections.abc import Callable
 from typing import Any
 
-from components import get_logger
-from components import tool_error
+from components import get_logger, tool_error
 
 from .extract_provider import resolve_extract_provider
 

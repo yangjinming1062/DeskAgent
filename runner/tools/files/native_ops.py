@@ -10,29 +10,30 @@ from typing import Any
 
 from utils import strip_ansi
 
-from .fuzzy_match import format_no_match_hint
-from .fuzzy_match import fuzzy_find_and_replace
-from .helpers import _detect_line_ending
-from .helpers import _has_bom
-from .helpers import _is_write_denied
-from .helpers import _looks_like_linter_unusable
-from .helpers import _normalize_line_endings
-from .helpers import _strip_bom
-from .helpers import _UTF8_BOM
-from .helpers import ExecuteResult
-from .helpers import FileOperations
-from .helpers import get_max_line_length
-from .helpers import IMAGE_EXTENSIONS
-from .helpers import LINTERS
-from .helpers import LINTERS_INPROC
-from .helpers import LintResult
-from .helpers import MAX_FILE_SIZE
-from .helpers import normalize_read_pagination
-from .helpers import PatchResult
-from .helpers import ReadResult
-from .helpers import SearchMatch
-from .helpers import SearchResult
-from .helpers import WriteResult
+from .fuzzy_match import format_no_match_hint, fuzzy_find_and_replace
+from .helpers import (
+    _UTF8_BOM,
+    IMAGE_EXTENSIONS,
+    LINTERS,
+    LINTERS_INPROC,
+    MAX_FILE_SIZE,
+    ExecuteResult,
+    FileOperations,
+    LintResult,
+    PatchResult,
+    ReadResult,
+    SearchMatch,
+    SearchResult,
+    WriteResult,
+    _detect_line_ending,
+    _has_bom,
+    _is_write_denied,
+    _looks_like_linter_unusable,
+    _normalize_line_endings,
+    _strip_bom,
+    get_max_line_length,
+    normalize_read_pagination,
+)
 
 
 class NativeFileOperations(FileOperations):

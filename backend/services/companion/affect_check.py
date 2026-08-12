@@ -1,17 +1,10 @@
-import asyncio
 from typing import Any
 
-from components import coerce_hour_0_23
-from components import coerce_non_negative_int
-from components import get_logger
-from components import safe_json_loads
-from components import SESSION_LOCAL
+from components import SESSION_LOCAL, coerce_hour_0_23, coerce_non_negative_int, get_logger, safe_json_loads
 from modules.companion import Persona
 
 from ..chat import ALLOWED_EMOTIONS
-from ..llm import call_with_retry
-from ..llm import client_for_config
-from ..llm import LLMRuntimeError
+from ..llm import LLMRuntimeError, call_with_retry, client_for_config
 from .affect_emit import emit_companion_affect
 from .memory_format import format_memories_block
 
@@ -74,7 +67,7 @@ async def check_affect(user_id: int, idle_seconds: float, local_hour: int, llm_c
             temperature=0.7,
             max_tokens=_MAX_RESPONSE_TOKENS,
         )
-    except (LLMRuntimeError, asyncio.TimeoutError) as exc:
+    except (TimeoutError, LLMRuntimeError) as exc:
         logger.warning("affect_check: LLM call failed", extra={"user_id": user_id, "error": str(exc)})
         return {"expressed": False, "reason": "llm_error"}
 

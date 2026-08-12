@@ -1,17 +1,10 @@
-from components import get_db
-from components import LOGIN_HEARTBEAT_INTERVAL_SECONDS
-from components import naive_utc_now
-from fastapi import Depends
-from fastapi import HTTPException
-from fastapi import status
+from components import LOGIN_HEARTBEAT_INTERVAL_SECONDS, get_db, naive_utc_now
+from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 
-from .models import AdminSession
-from .models import LoginRecord
-from .models import User
-from .security import BEARER_SCHEME
-from .security import decode_bearer_token
+from .models import AdminSession, LoginRecord, User
+from .security import BEARER_SCHEME, decode_bearer_token
 
 
 def get_current_admin_token(

@@ -4,12 +4,7 @@ from typing import ClassVar
 from components import get_logger
 
 from .._size_aspect import SIZE_TO_ASPECT
-from ..base import ImageAsset
-from ..base import ImageGenProvider
-from ..base import ImageGenRequest
-from ..base import ImageGenResult
-from ..base import ProviderConfig
-from ..base import ProviderError
+from ..base import ImageAsset, ImageGenProvider, ImageGenRequest, ImageGenResult, ProviderConfig, ProviderError
 from ..http import get_http
 from ._errors import raise_for_minimax_response
 

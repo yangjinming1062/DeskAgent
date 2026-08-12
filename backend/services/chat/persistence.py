@@ -2,21 +2,15 @@ import asyncio
 import json
 from typing import Any
 
-from components import BACKGROUND_REVIEW_DEFAULT
-from components import DEFAULT_LANGUAGE
-from components import get_logger
-from components import safe_json_loads
-from modules.conversation import Conversation
-from modules.conversation import Message
+from components import BACKGROUND_REVIEW_DEFAULT, DEFAULT_LANGUAGE, get_logger, safe_json_loads
+from modules.conversation import Conversation, Message
 from modules.system import ChatRequest
 from sqlalchemy.orm import Session
 
-from ..scheduler import auto_generate_title
-from ..scheduler import run_background_memory_review
+from ..scheduler import auto_generate_title, run_background_memory_review
 from ..tools import REGISTRY
 from .chat_emitter import Emitter
-from .tool_dispatch import _run_tool_batch
-from .tool_dispatch import _ToolDispatchContext
+from .tool_dispatch import _run_tool_batch, _ToolDispatchContext
 from .types import TrackTask
 
 logger = get_logger(__name__)

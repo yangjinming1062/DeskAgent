@@ -1,17 +1,12 @@
 import json
 from typing import Any
 
-from components import get_logger
-from components import SESSION_LOCAL
-from components import session_scope
-from components import tool_error
+from components import SESSION_LOCAL, get_logger, session_scope, tool_error
 from modules.conversation import Conversation
-from modules.system import ChatMessageRequest
-from modules.system import ChatRequest
+from modules.system import ChatMessageRequest, ChatRequest
 
 from ..tools import REGISTRY
-from .chat_emitter import Emitter
-from .chat_emitter import HeadlessEmitter
+from .chat_emitter import Emitter, HeadlessEmitter
 from .orchestrator import run_chat_turn
 
 logger = get_logger(__name__)

@@ -29,7 +29,7 @@ function encodeActivationCode(baseUrl, token) {
 /** Build a fake fetchImpl that responds to POST /api/user/activate. */
 function fakeActivateFetch(response) {
   const body = JSON.stringify(response)
-  return async (url, options = {}) => {
+  return async url => {
     if (typeof url !== 'string' || !url.includes('/api/user/activate')) {
       throw new Error(`unexpected fetch: ${url}`)
     }

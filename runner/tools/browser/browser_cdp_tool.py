@@ -6,11 +6,11 @@ import logging
 from typing import Any
 
 import websockets
-from utils import safe_schedule_threadsafe
 from websockets.exceptions import WebSocketException
 
-from ..registry import registry
-from ..registry import tool_error
+from utils import safe_schedule_threadsafe
+
+from ..registry import registry, tool_error
 from .browser_supervisor import SUPERVISOR_REGISTRY
 from .browser_tool import _get_cdp_override
 

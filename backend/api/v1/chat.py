@@ -1,6 +1,5 @@
 from common import get_router
-from fastapi import WebSocket
-from fastapi import WebSocketDisconnect
+from fastapi import WebSocket, WebSocketDisconnect
 from services.gateway import handle_chat_websocket
 
 router = get_router()

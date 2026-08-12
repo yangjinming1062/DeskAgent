@@ -4,31 +4,25 @@ import logging
 import re
 import sys
 from enum import Enum
-from pathlib import Path
-from pathlib import PurePosixPath
-from pathlib import PureWindowsPath
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
 
-from utils import cfg_get
-from utils import get_env_type
-from utils import get_external_skills_dirs
-from utils import get_skills_dir
-from utils import has_traversal_component
-from utils import load_config
-from utils import register_credential_files
-from utils import register_env_passthrough
-from utils import validate_within_dir
+from utils import (
+    cfg_get,
+    get_env_type,
+    get_external_skills_dirs,
+    get_skills_dir,
+    has_traversal_component,
+    load_config,
+    register_credential_files,
+    register_env_passthrough,
+    validate_within_dir,
+)
 
 from ..interrupt import is_interrupted
-from ..registry import registry
-from ..registry import tool_error
-from .helpers import get_deskagent_metadata
-from .helpers import get_disabled_skill_names
-from .helpers import iter_skill_index_files
-from .helpers import parse_frontmatter
-from .skill_usage import bump_use
-from .skill_usage import bump_view
-from .skill_usage import is_excluded_skill_path
+from ..registry import registry, tool_error
+from .helpers import get_deskagent_metadata, get_disabled_skill_names, iter_skill_index_files, parse_frontmatter
+from .skill_usage import bump_use, bump_view, is_excluded_skill_path
 
 logger = logging.getLogger(__name__)
 

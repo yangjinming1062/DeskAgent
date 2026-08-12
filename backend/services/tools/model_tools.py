@@ -1,8 +1,7 @@
 import math
 from typing import Any
 
-from components import get_logger
-from components import safe_json_loads
+from components import get_logger, safe_json_loads
 
 logger = get_logger(__name__)
 

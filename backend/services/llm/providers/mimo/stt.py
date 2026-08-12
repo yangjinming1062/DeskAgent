@@ -3,9 +3,7 @@ from typing import ClassVar
 
 from openai import AsyncOpenAI
 
-from ..base import ProviderConfig
-from ..base import STTProvider
-from ..base import STTResult
+from ..base import ProviderConfig, STTProvider, STTResult
 from ..http import get_async_client
 
 

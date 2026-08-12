@@ -1,9 +1,9 @@
 from typing import Protocol
 
-from components import get_logger
-from components import safe_json_loads
-from services.llm.providers.base import ProviderConfig
+from components import get_logger, safe_json_loads
 from sqlalchemy.orm import Session
+
+from services.llm.providers.base import ProviderConfig
 
 logger = get_logger(__name__)
 

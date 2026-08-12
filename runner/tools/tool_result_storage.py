@@ -3,9 +3,7 @@ import os
 import shlex
 import tempfile
 
-from .system.budget_config import BudgetConfig
-from .system.budget_config import DEFAULT_BUDGET
-from .system.budget_config import DEFAULT_PREVIEW_SIZE_CHARS
+from .system.budget_config import DEFAULT_BUDGET, DEFAULT_PREVIEW_SIZE_CHARS, BudgetConfig
 
 logger = logging.getLogger(__name__)
 PERSISTED_OUTPUT_TAG = "<persisted-output>"

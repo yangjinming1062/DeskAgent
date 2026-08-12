@@ -4,8 +4,6 @@ import logging
 import os
 import platform
 import re
-import subprocess
-import sys
 import threading
 import time
 import traceback
@@ -17,35 +15,27 @@ if platform.system() != "Windows":
 
     msvcrt = None
 else:
-    import msvcrt  # type: ignore[import-not-found]
-
     termios = None  # type: ignore[assignment]
 
-from utils import clean_output
+from utils import cfg_get, clean_output, load_config
 
-from ..registry import registry
-from ..tool_output_limits import get_max_bytes
 from ..process import process_registry
+from ..registry import registry
 from ..security import check_command_security
-from ._cmd_rewrite import _get_sudo_password_callback
-from ._cmd_rewrite import _read_shell_token
-from ._cmd_rewrite import _rewrite_compound_background
-from ._cmd_rewrite import _transform_sudo_command
-from ._cmd_rewrite import set_sudo_password_callback
+from ..tool_output_limits import get_max_bytes
 from ._env_singularity import _get_scratch_dir
-from .environment import _active_environments
-from .environment import _creation_locks
-from .environment import _creation_locks_lock
-from .environment import _env_lock
-from .environment import _last_activity
-from .environment import _task_env_overrides
-from .environment import create_environment
-from .environment import get_env_config
-from .environment import resolve_container_task_id
-from .environment import start_cleanup_thread
-from utils import cfg_get
-from utils import IS_WINDOWS
-from utils import load_config
+from .environment import (
+    _active_environments,
+    _creation_locks,
+    _creation_locks_lock,
+    _env_lock,
+    _last_activity,
+    _task_env_overrides,
+    create_environment,
+    get_env_config,
+    resolve_container_task_id,
+    start_cleanup_thread,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -93,7 +83,7 @@ def _validate_workdir(workdir: str) -> str | None:
         return None
     for ch in workdir:
         if not _WORKDIR_SAFE_RE.match(ch):
-            return f"Blocked: workdir contains disallowed character {repr(ch)}. Use a simple filesystem path without shell metacharacters."
+            return f"Blocked: workdir contains disallowed character {ch!r}. Use a simple filesystem path without shell metacharacters."
     return "Blocked: workdir contains disallowed characters."
 
 
@@ -537,7 +527,7 @@ def terminal_tool(
                     result_data["watch_patterns"] = proc_session.watch_patterns
                 return json.dumps(result_data, ensure_ascii=False)
             except Exception as e:
-                return json.dumps({"output": "", "exit_code": -1, "error": f"Failed to start background process: {str(e)}"}, ensure_ascii=False)
+                return json.dumps({"output": "", "exit_code": -1, "error": f"Failed to start background process: {e!s}"}, ensure_ascii=False)
         else:
             max_retries = 3
             retry_count = 0
@@ -582,7 +572,7 @@ def terminal_tool(
                         effective_task_id,
                         env_type,
                     )
-                    return json.dumps({"output": "", "exit_code": -1, "error": f"Command execution failed: {type(e).__name__}: {str(e)}"}, ensure_ascii=False)
+                    return json.dumps({"output": "", "exit_code": -1, "error": f"Command execution failed: {type(e).__name__}: {e!s}"}, ensure_ascii=False)
                 break
             output = result.get("output", "")
             returncode = result.get("returncode", 0)
@@ -609,7 +599,7 @@ def terminal_tool(
     except Exception as e:
         tb_str = traceback.format_exc()
         logger.error("terminal_tool exception:\n%s", tb_str)
-        return json.dumps({"output": "", "exit_code": -1, "error": f"Failed to execute command: {str(e)}", "traceback": tb_str, "status": "error"}, ensure_ascii=False)
+        return json.dumps({"output": "", "exit_code": -1, "error": f"Failed to execute command: {e!s}", "traceback": tb_str, "status": "error"}, ensure_ascii=False)
 
 
 TERMINAL_SCHEMA = {

@@ -8,9 +8,7 @@ from collections import OrderedDict
 from pathlib import Path
 from typing import Any
 
-from utils import cfg_get
-from utils import get_deskagent_home
-from utils import load_config
+from utils import cfg_get, get_deskagent_home, load_config
 
 try:
     from piper import PiperVoice, SynthesisConfig  # type: ignore[import-not-found]

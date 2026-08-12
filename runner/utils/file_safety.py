@@ -4,10 +4,8 @@ import os
 from ctypes import wintypes
 from pathlib import Path
 
-from .config import cfg_get
-from .config import load_config
-from .constants import get_deskagent_home
-from .constants import IS_WINDOWS
+from .config import cfg_get, load_config
+from .constants import IS_WINDOWS, get_deskagent_home
 
 _BLOCKED_PROJECT_ENV_BASENAMES: set[str] = {".env", ".env.local", ".env.development", ".env.production", ".env.test", ".env.staging", ".envrc"}
 PROFILE_SCOPED_AREAS = ("skills", "plugins", "cron", "memories")
@@ -182,9 +180,7 @@ def _resolve_long_path(path: str) -> str:
     s = expanded
     if s.startswith("\\\\?\\UNC\\"):
         s = "\\\\" + s[8:]
-    elif s.startswith("\\\\?\\"):
-        s = s[4:]
-    elif s.startswith("\\\\.\\"):
+    elif s.startswith("\\\\?\\") or s.startswith("\\\\.\\"):
         s = s[4:]
     try:
         buf = ctypes.create_unicode_buffer(wintypes.MAX_PATH)

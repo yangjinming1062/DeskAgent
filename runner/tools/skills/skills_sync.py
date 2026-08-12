@@ -5,16 +5,11 @@ import logging
 import os
 import shutil
 import stat
-from pathlib import Path
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 
-from utils import atomic_replace
-from utils import get_deskagent_home
-from utils import get_skills_dir
+from utils import atomic_replace, get_deskagent_home, get_skills_dir
 
-from .skill_usage import _load_protected_builtins
-from .skill_usage import is_excluded_skill_path
-from .skill_usage import read_suppressed_names
+from .skill_usage import _load_protected_builtins, is_excluded_skill_path, read_suppressed_names
 from .skills_guard import content_hash
 
 logger = logging.getLogger(__name__)

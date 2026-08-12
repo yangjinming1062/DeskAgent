@@ -3,9 +3,7 @@ import shutil
 import time
 from pathlib import Path
 
-from utils import cfg_get
-from utils import get_deskagent_home
-from utils import load_config
+from utils import cfg_get, get_deskagent_home, load_config
 
 logger = logging.getLogger(__name__)
 

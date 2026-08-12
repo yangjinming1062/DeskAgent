@@ -9,27 +9,28 @@ import subprocess
 import threading
 import time
 import uuid
-from dataclasses import dataclass
-from dataclasses import field
+from dataclasses import dataclass, field
 from typing import Any
 
 import psutil
-from utils import atomic_replace
-from utils import cfg_get
-from utils import clean_output
-from utils import CREATE_NO_WINDOW
+
+from utils import (
+    CREATE_NO_WINDOW,
+    IS_WINDOWS,
+    atomic_replace,
+    cfg_get,
+    clean_output,
+    get_deskagent_home,
+    kill_tree,
+    load_config,
+    pid_exists,
+    resolve_safe_cwd,
+    sanitize_subprocess_env,
+)
 from utils import find_bash as _find_shell
-from utils import get_deskagent_home
-from utils import IS_WINDOWS
-from utils import kill_tree
-from utils import load_config
-from utils import pid_exists
-from utils import resolve_safe_cwd
-from utils import sanitize_subprocess_env
 
 from ..interrupt import is_interrupted
-from ..registry import registry
-from ..registry import tool_error
+from ..registry import registry, tool_error
 
 # winpty is Windows-only; importing at module load would crash the runner on
 # POSIX during tool discovery. Guard with a platform check.

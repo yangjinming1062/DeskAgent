@@ -21,8 +21,13 @@ export function ActivationOverlay({ onClose }: { onClose: () => void }): React.J
 
   const onSubmit = async (event: FormEvent) => {
     event.preventDefault()
-    if (!trimmed || busy) return
+
+    if (!trimmed || busy) {
+      return
+    }
+
     setBusy(true)
+
     try {
       await activate({ code: trimmed })
       onClose()
@@ -36,8 +41,8 @@ export function ActivationOverlay({ onClose }: { onClose: () => void }): React.J
   return (
     <div className="fixed inset-0 z-[1200] flex items-center justify-center bg-black/40 backdrop-blur-sm">
       <form
-        onSubmit={onSubmit}
         className="deskagent-fade-in w-full max-w-lg rounded-2xl border border-border bg-card p-7 shadow-2xl"
+        onSubmit={onSubmit}
       >
         <div className="mb-5 flex items-center gap-3">
           <div className="flex size-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
@@ -57,16 +62,16 @@ export function ActivationOverlay({ onClose }: { onClose: () => void }): React.J
 
         <textarea
           autoFocus
+          className="h-24 w-full resize-none rounded-lg border border-input bg-background px-3 py-2 font-mono text-xs leading-relaxed shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:opacity-60"
           disabled={busy}
-          value={code}
           onChange={e => setCode(e.target.value)}
           placeholder="在此粘贴激活码…"
           spellCheck={false}
-          className="h-24 w-full resize-none rounded-lg border border-input bg-background px-3 py-2 font-mono text-xs leading-relaxed shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:opacity-60"
+          value={code}
         />
 
         <div className="mt-5 flex justify-end gap-2">
-          <Button type="submit" disabled={!trimmed || busy} className="inline-flex items-center gap-2">
+          <Button className="inline-flex items-center gap-2" disabled={!trimmed || busy} type="submit">
             {busy ? <Loader2 className="size-4 animate-spin" /> : null}
             {busy ? '激活中…' : '激活'}
           </Button>

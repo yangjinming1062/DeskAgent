@@ -3,16 +3,7 @@ import logging
 from typing import Any
 
 from ..registry import registry
-from .activity import click_at
-from .activity import get_cursor_pos
-from .activity import get_focused_app
-from .activity import get_idle_seconds
-from .activity import get_power_state
-from .activity import get_windows
-from .activity import get_work_area
-from .activity import is_fullscreen
-from .activity import is_screen_locked
-from .activity import open_application
+from .activity import click_at, get_cursor_pos, get_focused_app, get_idle_seconds, get_power_state, get_windows, get_work_area, is_fullscreen, is_screen_locked, open_application
 
 logger = logging.getLogger(__name__)
 

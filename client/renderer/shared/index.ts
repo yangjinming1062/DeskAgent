@@ -20,7 +20,7 @@ export { queryClient } from './lib/query-client'
 
 export { TOOLSET_CATALOG } from './lib/toolset-catalog'
 export { cn } from './lib/utils'
-export { $auth, applyAuthBroadcast, hydrateAuth, activate, logout, refreshSession } from './store/auth'
+export { $auth, activate, applyAuthBroadcast, hydrateAuth, logout, refreshSession } from './store/auth'
 
 export {
   $gateway,

@@ -1,9 +1,7 @@
 import logging
 import re
 
-from .config import cfg_get
-from .config import is_truthy_value
-from .config import load_config
+from .config import cfg_get, is_truthy_value, load_config
 
 logger = logging.getLogger(__name__)
 

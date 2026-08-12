@@ -2,8 +2,7 @@ import subprocess
 
 import psutil
 
-from .constants import CREATE_NO_WINDOW
-from .constants import IS_WINDOWS
+from .constants import CREATE_NO_WINDOW, IS_WINDOWS
 
 
 def pid_exists(pid: int | None) -> bool:

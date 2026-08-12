@@ -7,7 +7,12 @@ repos:
       # matters: format-then-fix leaves import blocks split across
       # more lines than necessary.
       - id: ruff-check
-        args: [ --fix, --line-length=180 ]
+        args:
+          - --fix
+          - --line-length=180
+          - --target-version=py313
+          - --select=E,F,I,SIM,C4,UP,FA,ARG,PLC,ERA
+          - --ignore=PLC0415,ARG,E501,UP038,UP042,UP046,UP047,SIM,E741,F823,RUF012,RUF029,RUF036,TID252,ERA001,UP040,PLC
         # Match against the repo-root-relative path; ``runner/tests/`` and
         # ``backend/tests/`` and ``installer/`` should NOT be linted
         # (the test files have their own conventions; the installer
@@ -19,12 +24,20 @@ repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
     hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: mixed-line-ending
+      - id: check-added-large-files
+        args: ['--maxkb=1000']
       - id: check-json
         types: [ file ]
         files: \.(json|myext)$
       - id: check-ast
       - id: check-case-conflict
       - id: check-merge-conflict
+      - id: debug-statements
+      - id: check-yaml
+      - id: check-toml
   - repo: local
     hooks:
       - id: check-imports
@@ -36,6 +49,24 @@ repos:
         language: system
         types: [python]
         files: ^(backend|runner)/
+      - id: check-forbidden-comments
+        name: check forbidden issue tags in code comments
+        entry: '(?i)#\s*.*(P[0-9]+-[0-9]+|M-[0-9]+)'
+        language: pygrep
+        types: [python, ts, tsx, javascript]
+        exclude: ^(RULES\.md|AGENTS\.md|CHANGELOG.*|\.git.*)
+      - id: client-eslint-fix
+        name: client eslint fix
+        entry: pnpm --prefix client lint:fix
+        language: system
+        files: ^client/(renderer|main)/.*\.(ts|tsx|js|cjs|mjs)$
+        pass_filenames: false
+      - id: client-fmt
+        name: client prettier format
+        entry: pnpm --prefix client fmt
+        language: system
+        files: ^client/.*\.(ts|tsx|js|cjs|mjs|json|css)$
+        pass_filenames: false
       - id: runner-startup-imports
         name: runner startup imports (pre-commit fast subset of the build_client gate)
         # Strict subset of the build_client.{ps1,sh} gate, which runs

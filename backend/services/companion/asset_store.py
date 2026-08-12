@@ -6,8 +6,7 @@ import time
 from pathlib import Path
 from urllib.parse import urlencode
 
-from components import get_logger
-from components import SETTINGS
+from components import SETTINGS, get_logger
 
 logger = get_logger(__name__)
 
@@ -61,7 +60,7 @@ _TEST_SIGNER_KEY = b"test-only-companion-asset-signer-key-do-not-use-in-prod"
 
 
 def _sign(user_id: int, filename: str, expires_at: int) -> str:
-    msg = f"{user_id}:{filename}:{expires_at}".encode("utf-8")
+    msg = f"{user_id}:{filename}:{expires_at}".encode()
     return hmac.new(_signing_key(), msg, hashlib.sha256).hexdigest()
 
 
@@ -84,7 +83,7 @@ def verify_signed_asset_request(user_id: int, filename: str, expires: int | None
 
 
 def _sign_avatar(filename: str, expires_at: int) -> str:
-    msg = f"avatar:{filename}:{expires_at}".encode("utf-8")
+    msg = f"avatar:{filename}:{expires_at}".encode()
     return hmac.new(_signing_key(), msg, hashlib.sha256).hexdigest()
 
 

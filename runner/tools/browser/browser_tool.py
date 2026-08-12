@@ -22,63 +22,56 @@ import time
 import uuid
 from pathlib import Path
 from typing import Any
-from urllib.parse import unquote
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 import requests
-from utils import _PREFIX_RE
-from utils import call_llm
-from utils import cfg_get
-from utils import check_redirect_url_safety
-from utils import check_website_access
-from utils import CREATE_NO_WINDOW
-from utils import get_deskagent_dir
-from utils import get_deskagent_home
-from utils import in_async_loop
-from utils import is_always_blocked_url
-from utils import is_safe_url
-from utils import is_termux
-from utils import is_truthy_value
-from utils import kill_tree
-from utils import load_config
-from utils import normalize_url_for_request
-from utils import pid_exists
-from utils import redact_sensitive_text
+
+from utils import (
+    _PREFIX_RE,
+    CREATE_NO_WINDOW,
+    call_llm,
+    cfg_get,
+    check_redirect_url_safety,
+    check_website_access,
+    get_deskagent_dir,
+    get_deskagent_home,
+    in_async_loop,
+    is_always_blocked_url,
+    is_safe_url,
+    is_termux,
+    is_truthy_value,
+    kill_tree,
+    load_config,
+    normalize_url_for_request,
+    pid_exists,
+    redact_sensitive_text,
+)
 
 from ..interrupt import is_interrupted
-from ..multimodal import _is_image_size_error
-from ..multimodal import _resize_image_for_vision
-from ..multimodal import _RESIZE_TARGET_BYTES
+from ..multimodal import _RESIZE_TARGET_BYTES, _is_image_size_error, _resize_image_for_vision
 from ..multimodal.helpers import _resolve_vision_params
 from ..process import ProcessRegistry
-from ..registry import registry
-from ..registry import tool_error
-from .browser_camofox import _ensure_tab
-from .browser_camofox import _post
-from .browser_camofox import camofox_back
-from .browser_camofox import camofox_click
-from .browser_camofox import camofox_close
-from .browser_camofox import camofox_console
-from .browser_camofox import camofox_get_images
-from .browser_camofox import camofox_navigate
-from .browser_camofox import camofox_press
-from .browser_camofox import camofox_scroll
-from .browser_camofox import camofox_snapshot
-from .browser_camofox import camofox_soft_cleanup
-from .browser_camofox import camofox_type
-from .browser_camofox import camofox_vision
-from .browser_camofox import is_camofox_mode
-from .browser_supervisor import _VALID_POLICIES
-from .browser_supervisor import DEFAULT_DIALOG_POLICY
-from .browser_supervisor import DEFAULT_DIALOG_TIMEOUT_S
-from .browser_supervisor import SUPERVISOR_REGISTRY
-from .helpers import _extract_relevant_content
-from .helpers import _truncate_snapshot
-from .helpers import SNAPSHOT_SUMMARIZE_THRESHOLD
-from .profile_manager import cleanup_old_profiles
-from .profile_manager import DEFAULT_RETENTION_HOURS
-from .profile_manager import is_profile_locked
-from .profile_manager import resolve_profile_dir
+from ..registry import registry, tool_error
+from .browser_camofox import (
+    _ensure_tab,
+    _post,
+    camofox_back,
+    camofox_click,
+    camofox_close,
+    camofox_console,
+    camofox_get_images,
+    camofox_navigate,
+    camofox_press,
+    camofox_scroll,
+    camofox_snapshot,
+    camofox_soft_cleanup,
+    camofox_type,
+    camofox_vision,
+    is_camofox_mode,
+)
+from .browser_supervisor import _VALID_POLICIES, DEFAULT_DIALOG_POLICY, DEFAULT_DIALOG_TIMEOUT_S, SUPERVISOR_REGISTRY
+from .helpers import SNAPSHOT_SUMMARIZE_THRESHOLD, _extract_relevant_content, _truncate_snapshot
+from .profile_manager import DEFAULT_RETENTION_HOURS, cleanup_old_profiles, is_profile_locked, resolve_profile_dir
 
 logger = logging.getLogger(__name__)
 
@@ -860,8 +853,7 @@ def _cleanup_inactive_browser_sessions() -> None:
             logger.info("Cleaning up inactive session for task: %s (inactive for %ss)", task_id, elapsed)
             cleanup_browser(task_id)
             with _cleanup_lock:
-                if task_id in _session_last_activity:
-                    del _session_last_activity[task_id]
+                _session_last_activity.pop(task_id, None)
         except Exception as e:
             logger.warning("Error cleaning up inactive session %s: %s", task_id, e)
 
@@ -1598,7 +1590,7 @@ def _run_browser_command(
         session_info = _get_session_info(task_id)
     except Exception as e:
         logger.warning("Failed to create browser session for task=%s: %s", task_id, e)
-        return {"success": False, "error": f"Failed to create browser session: {str(e)}"}
+        return {"success": False, "error": f"Failed to create browser session: {e!s}"}
 
     # CDP override mode: --cdp <websocket_url> connects to the user-supplied
     # browser endpoint.  Local mode: --session <name> launches a local headless
@@ -3911,7 +3903,7 @@ def browser_vision(question: str, annotate: bool = False, task_id: str | None = 
         # screenshot loses evidence the user might need.  The 24-hour cleanup
         # in _cleanup_old_screenshots prevents unbounded disk growth.
         logger.warning("browser_vision failed: %s", e, exc_info=True)
-        error_info = {"success": False, "error": f"Error during vision analysis: {str(e)}"}
+        error_info = {"success": False, "error": f"Error during vision analysis: {e!s}"}
         if screenshot_path.exists():
             error_info["screenshot_path"] = str(screenshot_path)
             error_info["note"] = "Screenshot was captured but vision analysis failed. You can still share it via MEDIA:<path>."

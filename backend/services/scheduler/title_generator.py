@@ -1,20 +1,18 @@
-import asyncio
-
 import httpx
 import sqlalchemy.exc
-from components import DEFAULT_LANGUAGE
-from components import DEFAULT_SESSION_TITLE
-from components import get_logger
-from components import SESSION_LOCAL
-from components import TITLE_GENERATION_MAX_TOKENS
-from components import TITLE_GENERATION_TEMPERATURE
-from components import TITLE_MAX_CHARS
-from components import TITLE_SNIPPET_MAX_CHARS
+from components import (
+    DEFAULT_LANGUAGE,
+    DEFAULT_SESSION_TITLE,
+    SESSION_LOCAL,
+    TITLE_GENERATION_MAX_TOKENS,
+    TITLE_GENERATION_TEMPERATURE,
+    TITLE_MAX_CHARS,
+    TITLE_SNIPPET_MAX_CHARS,
+    get_logger,
+)
 from modules.conversation import Conversation
 
-from ..llm import call_with_retry
-from ..llm import client_for_config
-from ..llm import LLMRuntimeError
+from ..llm import LLMRuntimeError, call_with_retry, client_for_config
 
 logger = get_logger(__name__)
 
@@ -70,5 +68,5 @@ async def auto_generate_title(conversation_id: int, user_message: str, assistant
                 db.commit()
                 logger.info("Auto-generated session title", extra={"conversation_id": conversation_id, "title": title})
 
-    except (httpx.HTTPError, sqlalchemy.exc.SQLAlchemyError, asyncio.TimeoutError, LLMRuntimeError) as e:
+    except (TimeoutError, httpx.HTTPError, sqlalchemy.exc.SQLAlchemyError, LLMRuntimeError) as e:
         logger.warning("Title generation failed", extra={"conversation_id": conversation_id, "error": str(e)})

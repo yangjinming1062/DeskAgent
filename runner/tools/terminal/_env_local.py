@@ -7,20 +7,21 @@ import tempfile
 import time
 from pathlib import Path
 
+from utils import (
+    CREATE_NO_WINDOW,
+    IS_WINDOWS,
+    find_bash,
+    get_deskagent_home,
+    get_subprocess_home,
+    inject_context_deskagent_home,
+    kill_tree,
+    load_config,
+    msys_to_windows_path,
+    resolve_safe_cwd,
+)
 from utils import append_sane_path_entries as _append_missing_sane_path_entries
-from utils import CREATE_NO_WINDOW
-from utils import find_bash
-from utils import get_deskagent_home
-from utils import get_subprocess_home
-from utils import inject_context_deskagent_home
-from utils import IS_WINDOWS
-from utils import kill_tree
-from utils import load_config
-from utils import msys_to_windows_path
-from utils import resolve_safe_cwd
 
-from ._env_base import _pipe_stdin
-from ._env_base import BaseEnvironment
+from ._env_base import BaseEnvironment, _pipe_stdin
 
 logger = logging.getLogger(__name__)
 

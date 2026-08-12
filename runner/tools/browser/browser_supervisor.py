@@ -9,12 +9,12 @@ import time
 from collections import deque
 from dataclasses import dataclass
 from typing import Any
-from urllib.parse import parse_qs
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 import websockets
-from utils import safe_schedule_threadsafe
 from websockets.asyncio.client import ClientConnection
+
+from utils import safe_schedule_threadsafe
 
 logger = logging.getLogger(__name__)
 

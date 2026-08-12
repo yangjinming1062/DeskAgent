@@ -1,8 +1,7 @@
 from typing import Literal
 
 from components import DEFAULT_LANGUAGE
-from pydantic import BaseModel
-from pydantic import Field
+from pydantic import BaseModel, Field
 
 from ..auth import ChatRequestClientContext
 

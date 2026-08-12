@@ -250,14 +250,14 @@ function Stage-UnpackRunner {
     # Install wheel into venv (installs wheel + deps in one shot)
     $pythonExe = Join-Path $venvDir "Scripts\python.exe"
     $pipOutput = & $script:UvCmd pip install --python $pythonExe $wheel.FullName 2>&1
-    if ($LASTEXITCODE) { 
+    if ($LASTEXITCODE) {
         # Retry with a custom or default domestic mirror to mitigate common network issues
         $pypiIndex = $env:DESKAGENT_PYPI_INDEX_URL
         if (-not $pypiIndex) { $pypiIndex = $env:PIP_INDEX_URL }
         if (-not $pypiIndex) { $pypiIndex = "https://mirrors.aliyun.com/pypi/simple/" }
         $pipOutputRetry = & $script:UvCmd pip install --python $pythonExe $wheel.FullName --index-url $pypiIndex 2>&1
         if ($LASTEXITCODE) {
-            $ErrorActionPreference = $prevEAP; Emit-StageErr "unpack-runner" "uv pip install failed: $($pipOutputRetry -join ' | ')"; return 1 
+            $ErrorActionPreference = $prevEAP; Emit-StageErr "unpack-runner" "uv pip install failed: $($pipOutputRetry -join ' | ')"; return 1
         }
     }
 

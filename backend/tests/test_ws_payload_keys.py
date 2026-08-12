@@ -74,4 +74,3 @@ def test_failed_event_uses_task_id(monkeypatch):
     assert payload["task_id"] == "7"
     assert payload["error"] == "timeout"
     assert "job_id" not in payload
-
