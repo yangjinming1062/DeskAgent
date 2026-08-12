@@ -1,13 +1,13 @@
 let trayInstance = null
 let trayDeps = null
 
-// Settings + Login/Logout live in the tray context menu rather than in-app
-// chrome: the companion window is intentionally minimal (sprite + on-demand
-// panel), so primary entry points for configuration and account actions are
-// the tray. The menu reflects the live auth state — `backendSession` is null
-// until the first IPC call hydrates it, and getSession().hasToken flips on
-// login/logout. rebuildTrayMenu() re-runs after auth changes so the label set
-// (Show/Sign in, Settings, Log out) stays correct.
+// Settings + Activation/Logout live in the tray context menu rather than
+// in-app chrome: the companion window is intentionally minimal (sprite +
+// on-demand panel), so primary entry points for configuration and account
+// actions are the tray. The menu reflects the live auth state —
+// `backendSession` is null until the first IPC call hydrates it, and
+// getSession().hasToken flips on activate/logout. rebuildTrayMenu() re-runs
+// after auth changes so the label set stays correct.
 function isAuthenticated() {
   const session = trayDeps?.bridgeDeps?.backendSession || trayDeps?.bridgeDeps?.ensureBackendSession?.()
   return session?.getSession?.()?.hasToken === true
@@ -24,8 +24,10 @@ function buildTrayMenu() {
   const authed = isAuthenticated()
   const template = [
     {
-      label: authed ? '显示 DeskAgent' : '登录...',
-      click: () => (authed ? showMainWindow() : trayDeps.bridgeDeps.showToolWindow())
+      // When unauthenticated, focus the sprite window (where activation
+      // happens) instead of the tool window (which only renders Settings).
+      label: authed ? '显示 DeskAgent' : '激活...',
+      click: () => showMainWindow()
     }
   ]
   if (authed) {

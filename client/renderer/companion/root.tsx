@@ -25,6 +25,7 @@ import { hydrateRunnerStatus } from '@/shared/store/runner-status'
 import { strings } from '@/shared/strings'
 
 import { Companion3D } from './3d/companion-3d'
+import { ActivationOverlay } from './activation/activation-overlay'
 import { ChatDock } from './chat-dock'
 import { DeveloperOverlay } from './developer-overlay'
 import { handleCompanionEvent } from './events'
@@ -59,6 +60,7 @@ export function CompanionRoot(): React.JSX.Element {
   const lifecycle = useStore($companionLifecycle)
   const chatOpen = useStore($chatOpen)
   const [onboardingOpen, setOnboardingOpen] = useState(false)
+  const [activationOpen, setActivationOpen] = useState(false)
   const [voiceCallOpen, setVoiceCallOpen] = useState(false)
   useEffect(() => {
     $voiceCallOpen.set(voiceCallOpen)
@@ -247,10 +249,10 @@ export function CompanionRoot(): React.JSX.Element {
       return
     }
 
-    // Pre-auth: click directly summons login.
+    // Pre-auth: click opens the activation overlay in the companion window.
     if (!authed) {
       pendingOnboardingAutoOpenRef.current = true
-      void window.deskagent.showToolWindow()
+      setActivationOpen(true)
 
       return
     }
@@ -282,6 +284,9 @@ export function CompanionRoot(): React.JSX.Element {
 
   return (
     <>
+      {activationOpen && !authed && (
+        <ActivationOverlay onClose={() => setActivationOpen(false)} />
+      )}
       {showOnboarding && <OnboardingFlow onCompleted={onOnboardingComplete} />}
       <SpriteStage
         onContextMenu={e => {

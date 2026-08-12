@@ -4,7 +4,7 @@ const os = require('node:os')
 const path = require('node:path')
 const test = require('node:test')
 
-const { createBackendSession, SessionError } = require('./session.cjs')
+const { createBackendSession, SessionError, decodeActivationCode } = require('./session.cjs')
 
 function tmpUserData(tag) {
   return fs.mkdtempSync(path.join(os.tmpdir(), `deskagent-session-test-${tag}-`))
@@ -20,80 +20,115 @@ function identitySafeStorage() {
   }
 }
 
-test('adoptSession sets the cached session and returns a snapshot', () => {
-  const userDataDir = tmpUserData('adopt')
+/** Encode ``{b, t}`` into a base64url activation code (mirrors backend). */
+function encodeActivationCode(baseUrl, token) {
+  const payload = JSON.stringify({ b: baseUrl, t: token })
+  return Buffer.from(payload, 'utf8').toString('base64url')
+}
+
+/** Build a fake fetchImpl that responds to POST /api/user/activate. */
+function fakeActivateFetch(response) {
+  const body = JSON.stringify(response)
+  return async (url, options = {}) => {
+    if (typeof url !== 'string' || !url.includes('/api/user/activate')) {
+      throw new Error(`unexpected fetch: ${url}`)
+    }
+    return {
+      ok: true,
+      status: 200,
+      headers: { get: () => 'application/json' },
+      text: async () => body
+    }
+  }
+}
+
+const TOKEN_RESPONSE = {
+  access_token: 'jwt-session-token',
+  expires_in: 3600,
+  user: { id: 9, username: 'carol' }
+}
+
+test('activate stores the session and returns a snapshot', async () => {
+  const userDataDir = tmpUserData('activate')
+  const code = encodeActivationCode('https://api.example.com', 'raw-activation-token')
   const session = createBackendSession({
     userDataDir,
     safeStorage: identitySafeStorage(),
     appVersion: 'test',
-    fetchImpl: async () => {
-      throw new Error('not called')
-    },
-    defaultBaseUrl: null,
+    fetchImpl: fakeActivateFetch(TOKEN_RESPONSE),
     now: () => 1_000_000
   })
 
-  const result = session.adoptSession({
-    baseUrl: 'https://api.example.com',
-    token: 'jwt-adopted',
-    tokenExpiresAt: 2_000_000,
-    user: { id: 9, username: 'carol' }
-  })
+  const result = await session.activate({ code })
 
   assert.equal(result.baseUrl, 'https://api.example.com')
   assert.equal(result.hasToken, true)
   assert.equal(result.user.username, 'carol')
-  assert.equal(session.getToken(), 'jwt-adopted')
+  assert.equal(session.getToken(), 'jwt-session-token')
 })
 
-test('adoptSession persists the encrypted token so the next restoreSession loads it', () => {
+test('activate persists the activation code so restoreSession can re-activate', async () => {
   const userDataDir = tmpUserData('persist')
+  const code = encodeActivationCode('https://api.example.com', 'raw-activation-token')
   const session = createBackendSession({
     userDataDir,
     safeStorage: identitySafeStorage(),
     appVersion: 'test',
-    fetchImpl: async () => {
-      throw new Error('not called')
-    }
+    fetchImpl: fakeActivateFetch(TOKEN_RESPONSE)
   })
 
-  session.adoptSession({
-    baseUrl: 'https://api.example.com',
-    token: 'jwt-adopted',
-    tokenExpiresAt: 5_000_000,
-    user: { id: 9, username: 'carol' }
-  })
+  await session.activate({ code })
 
   // Build a fresh session against the same userDataDir to simulate
-  // an app restart.
+  // an app restart.  restoreSession() is now async — it calls
+  // /api/user/activate with the stored code to obtain a fresh JWT.
   const restored = createBackendSession({
     userDataDir,
     safeStorage: identitySafeStorage(),
     appVersion: 'test',
-    fetchImpl: async () => {
-      throw new Error('not called')
-    }
+    fetchImpl: fakeActivateFetch(TOKEN_RESPONSE)
   })
 
-  const snapshot = restored.restoreSession()
+  const snapshot = await restored.restoreSession()
   assert.ok(snapshot)
   assert.equal(snapshot.baseUrl, 'https://api.example.com')
   assert.equal(snapshot.hasToken, true)
   assert.equal(snapshot.user.username, 'carol')
 })
 
-test('adoptSession rejects missing token', () => {
-  const userDataDir = tmpUserData('bad-token')
+test('activate rejects missing code', () => {
+  const userDataDir = tmpUserData('bad-code')
   const session = createBackendSession({
     userDataDir,
     safeStorage: identitySafeStorage(),
     appVersion: 'test',
     fetchImpl: async () => ({})
   })
-  // Token validation lives in applySession (no-token); adoptSession is a
-  // pure funnel, so it surfaces the underlying error rather than its own.
+
   assert.throws(
-    () => session.adoptSession({ baseUrl: 'https://api.example.com', token: '' }),
-    err => err instanceof SessionError && err.code === 'no-token'
+    () => session.activate({}),
+    err => err instanceof SessionError && err.code === 'missing-code'
   )
+})
+
+test('activate rejects malformed code', () => {
+  const userDataDir = tmpUserData('malformed')
+  const session = createBackendSession({
+    userDataDir,
+    safeStorage: identitySafeStorage(),
+    appVersion: 'test',
+    fetchImpl: async () => ({})
+  })
+
+  assert.throws(
+    () => session.activate({ code: '!!!not-valid-base64!!!' }),
+    err => err instanceof SessionError && err.code === 'invalid-code'
+  )
+})
+
+test('decodeActivationCode round-trips baseUrl and token', () => {
+  const code = encodeActivationCode('http://localhost:10620', 'abc-123')
+  const decoded = decodeActivationCode(code)
+  assert.equal(decoded.baseUrl, 'http://localhost:10620')
+  assert.equal(decoded.token, 'abc-123')
 })

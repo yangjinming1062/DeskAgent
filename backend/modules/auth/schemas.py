@@ -19,11 +19,10 @@ class ChatRequestClientContext(BaseModel):
     skills: list[str] | None = None
 
 
-class LoginRequest(BaseModel):
+class ActivateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    username: str = Field(min_length=1, max_length=64)
-    password: str = Field(min_length=1, max_length=128)
+    code: str = Field(min_length=1, max_length=2048)
     client_version: str = Field(default="desktop-app", max_length=64)
     client_context: ChatRequestClientContext | None = None
 
@@ -33,11 +32,6 @@ class RefreshRequest(BaseModel):
 
     client_version: str = Field(default="desktop-app", max_length=64)
     client_context: ChatRequestClientContext | None = None
-
-
-class ChangePasswordRequest(BaseModel):
-    current_password: str = Field(min_length=1, max_length=128)
-    new_password: str = Field(min_length=8, max_length=128)
 
 
 class TokenResponse(BaseModel):
@@ -200,15 +194,16 @@ class AdminTokenResponse(BaseModel):
 
 class UserCreate(BaseModel):
     username: str = Field(min_length=1, max_length=64)
-    password: str = Field(min_length=8, max_length=128)
+    base_url: str = Field(min_length=1, max_length=255)
     can_use: bool = True
     expires_at: datetime | None = None
 
 
 class UserUpdate(BaseModel):
-    password: str | None = Field(default=None, min_length=8, max_length=128)
     can_use: bool | None = None
     expires_at: datetime | None = None
+    regenerate_token: bool = False
+    base_url: str | None = Field(default=None, min_length=1, max_length=255)
 
 
 class UserResponse(BaseModel):
@@ -220,6 +215,7 @@ class UserResponse(BaseModel):
     expires_at: datetime | None
     is_active: bool
     created_at: datetime
+    activation_code: str | None = None
 
 
 class UserListResponse(BaseModel):

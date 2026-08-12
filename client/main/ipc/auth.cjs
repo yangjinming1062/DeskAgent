@@ -12,20 +12,27 @@ function ensureBackendSession(deps) {
     defaultBaseUrl: resolveBackendUrl(deps.deskagentHome),
     log: chunk => deps.rememberLog(chunk)
   })
-  // Best-effort restore; failure routes user to login screen.
-  try {
-    deps.backendSession.restoreSession()
-  } catch (error) {
-    deps.rememberLog(`[session] restore failed: ${error.message}`)
-  }
-  // A restored session flips auth state before any login IPC fires — rebuild
-  // the tray menu so it shows the authenticated items right after startup.
-  deps.rebuildTrayMenu?.()
+  // restoreSession() is now async — it calls /api/user/activate to obtain a
+  // fresh session JWT from the stored activation code.  Kick it off in the
+  // background; the session object is returned immediately (without a JWT
+  // until activation completes).  When restore resolves, broadcast the auth
+  // change so both renderer windows flip to authenticated.
+  deps.backendSession
+    .restoreSession()
+    .then(snapshot => {
+      if (snapshot) {
+        deps.rebuildTrayMenu?.()
+        deps.broadcastAuthChanged?.(snapshot)
+      }
+    })
+    .catch(error => {
+      deps.rememberLog(`[session] restore failed: ${error.message}`)
+    })
   return deps.backendSession
 }
 
 function registerAuthIpc({ ipcMain, deps }) {
-  ipcMain.handle('deskagent:auth:login', async (_event, payload) => {
+  ipcMain.handle('deskagent:auth:activate', async (_event, payload) => {
     const session = ensureBackendSession(deps)
     // Inject clientContext here (not in the renderer): only main process has
     // access to process.platform / arch / release and to $DESKAGENT_HOME/skills.
@@ -36,21 +43,18 @@ function registerAuthIpc({ ipcMain, deps }) {
       ...(payload || {}),
       clientContext: (payload && payload.clientContext) || built.client_context || null
     }
-    const result = await session.login(enriched)
+    const result = await session.activate(enriched)
     // JWT changed — invalidate the cached backend connection so the next
     // ensureBackend() re-resolves with the fresh token.
     deps.resetBackendCache?.()
     deps.rebuildTrayMenu?.()
     // Sync the sprite window's per-renderer $auth so it boots its gateway.
     deps.broadcastAuthChanged?.(session.getSession())
-    // Persist the URL the user just logged in with as the next-launch
-    // default. Logout intentionally does NOT clear this file so the login
-    // form pre-fills with the last-known backend URL.
+    // Persist the URL the user just activated with as the next-launch
+    // default. Logout intentionally does NOT clear this file.
     if (result && result.baseUrl) {
       writeStoredBackendUrl(deps.deskagentHome, result.baseUrl)
     }
-    // The sprite takes over; dismiss the login form.
-    deps.hideToolWindow?.()
     return result
   })
 
@@ -74,8 +78,6 @@ function registerAuthIpc({ ipcMain, deps }) {
     deps.rebuildTrayMenu?.()
     // Tell the sprite window to tear down its gateway and return to the egg.
     deps.broadcastAuthChanged?.(session.getSession())
-    // Surface the login form again so the user can re-authenticate.
-    deps.showToolWindow?.()
     return result
   })
 
@@ -86,11 +88,6 @@ function registerAuthIpc({ ipcMain, deps }) {
 
   ipcMain.handle('deskagent:auth:get-default-backend-url', async () => {
     return resolveBackendUrl(deps.deskagentHome)
-  })
-
-  ipcMain.handle('deskagent:auth:change-password', async (_event, payload) => {
-    const session = ensureBackendSession(deps)
-    return session.changePassword(payload || {})
   })
 }
 

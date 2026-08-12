@@ -28,7 +28,8 @@ class User(ModelBase, TimestampMixin):
     __tablename__ = "users"
 
     username: Mapped[str] = mapped_column(String(64), unique=True, index=True)
-    password_hash: Mapped[str] = mapped_column(String(255))
+    password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    activation_token_hash: Mapped[str | None] = mapped_column(String(128), unique=True, index=True, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default=text("TRUE"))
     can_use: Mapped[bool] = mapped_column(Boolean, default=True, server_default=text("TRUE"))
     expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

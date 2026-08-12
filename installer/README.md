@@ -6,7 +6,7 @@ DeskAgent 安装器产品。本目录容纳 **Tauri 2 桌面程序**（`src/` + 
 
 **职责**：
 - 首装引导 Python 运行时（uv-managed）+ 释放 Runner wheel / Client 二进制 / Skills 到平台标准路径
-- 用户登录 → 写 auth bootstrap one-shot → 退出，Client 启动接管
+- 安装完成即退出，Client 启动后由用户在 companion 窗口内输入激活码完成认证
 - macOS fast path：`/Applications/DeskAgent.app` 兼任"首次启动走安装、之后是 launcher"
 - 自包含、无网络：install 脚本与 payload 全部嵌入 Tauri `bundle.resources`
 
@@ -17,7 +17,7 @@ DeskAgent 安装器产品。本目录容纳 **Tauri 2 桌面程序**（`src/` + 
 - **不依赖 `client/`、`backend/`、`runner/` 的资源**——任何"借用"对方样式 / 组件 / 构建产物的做法都会让 Stage 2.x 的边界退化；`src/styles.css` 的设计 token、`src/components/button.tsx` 的 button variants 等**均为本地副本**
 - **不分发蛋形象资产**——蛋形象由 Client 内置默认渲染，安装期由 `progress.tsx` 矢量蛋组件 (`<Egg>`) + 6 段同心光环 (`<Halo>`) 提供破壳进度叙事，形象资产完全由 Backend 生成并下发（[ARCHITECTURE.md §6](../ARCHITECTURE.md)）
 
-架构层定位见 [ARCHITECTURE.md §1 / §2](../ARCHITECTURE.md)；Client 接力见 [client/README.md §5](../client/README.md)（auth bootstrap one-shot）。
+架构层定位见 [ARCHITECTURE.md §1 / §2](../ARCHITECTURE.md)；Client 认证流程见 [client/README.md §5](../client/README.md)（激活码制）。
 
 ## 2. 设计意图
 
@@ -34,7 +34,7 @@ DeskAgent 安装器产品。本目录容纳 **Tauri 2 桌面程序**（`src/` + 
 
 ```
 installer/
-├── src/                   # React 19 前端（登录 / 进度 UI）
+├── src/                   # React 19 前端（欢迎 / 进度 UI）
 ├── src-tauri/             # Rust 后端 + Tauri 配置
 │   ├── src/
 │   │   ├── bootstrap.rs   # 6-stage protocol orchestrator
@@ -63,7 +63,6 @@ installer/
 - **macOS fast path**（前述）：让 `/Applications/DeskAgent.app` 兼任"首次启动走安装、之后是 launcher"——减少启动时的 UI 闪烁、避免每次启动都进入安装器界面。**代价**：fast path 跳过任何"组件已损坏需要 repair"的检测；用户需手动 `--repair`。
 - **`--reinstall` / `--repair` 跳过 fast path**：显式覆盖 fast path 进入完整 UI，让用户能修复已损坏的 install。**为什么不复用 fast path**：fast path 的本意是"已 install 一切正常，无需打扰用户"。
 - **Piper voice `content-based copy`**：只有当目标目录同时缺 `<id>.onnx` 和 `<id>.onnx.json` 时才拷贝，避免每次启动 install 都重写大文件。**为什么不每次都覆盖**：60MB × 3 个 voice × 每次 reinstall 都是几百 MB IO；content-based copy 让 reinstall 几乎零 IO。
-- **`auth bootstrap` schema_version=1 + 原子重命名为 `.consumed`**：原子重命名避免 Client 在读取过程中文件被改动；`.consumed` 后缀既能让人工排查"已消费"状态，也保证不被二次消费。**为什么不让 Client 写回 `agent-session.json`**：Client 启动时要 refresh token 验真，installer 写入的 token 可能已过期 / baseUrl 已变化（用户换 Backend）。
 - **`DeskAgent-Setup --uninstall` 而非 Client 触发 uninstall**：所有平台变更职责集中在 Installer；Client 启动时只连云端 Backend，不调 `install.ps1` / `DeskAgent-Setup --uninstall`。**为什么不让 Client 自卸载**：卸载是 OS 级变更（移除 `$DESKAGENT_HOME` / `/Applications/DeskAgent.app` / 注册表 / 计划任务），Client 无足够权限（macOS 需要 sudo）。
 
 ## 5. 与外部的契约
@@ -77,7 +76,6 @@ installer/
 | **Tauri `bundle.resources` 嵌入清单**（runner / client / voices / skills / install scripts） | Tauri build 期 ↔ install 脚本运行期 | 本模块独有 + `src-tauri/tauri.conf.json` |
 | **`DESKAGENT_BUNDLE_DIR` / `DESKAGLED_RUNNER_DIR` / `DESKAGENT_BUNDLED_DESKTOP_DIR` / `DESKAGENT_BUNDLED_SKILLS_DIR` / `DESKAGENT_BUNDLED_VOICES_DIR` / `DESKAGENT_INSTALLER_FORMAT` env var 契约** | Tauri → install 脚本 | 本模块独有 |
 | **`$DESKAGENT_HOME` 路径**（含 platform canonical） | Tauri → install 脚本 → Client / Runner | 本模块独有 + [runner/README.md §1](../runner/README.md) + [client/README.md §2](../client/README.md) |
-| **`agent-session-bootstrap.json` schema_version=1 one-shot** | Installer → Client 消费 | [client/README.md §4](../client/README.md)（install bootstrap）+ [PROTOCOL.md §5.3](../PROTOCOL.md)（safeStorage） |
 | **`desktop_install_root()` platform canonical 路径** | Tauri | 本模块独有（macOS `/Applications/DeskAgent.app` / Windows `%LOCALAPPDATA%\Programs\DeskAgent\`） |
 | **Runner 安装布局** `$DESKAGENT_HOME/runner/.venv/` + spawn 命令 | Installer → Client | [runner/README.md §1](../runner/README.md) + 本 README §3 |
 | **Piper voice 三份打包 + `_BUNDLED_VOICES` 元组** + **`ZH_DEFAULT_VOICE` / `ZH_MALE_DEFAULT_VOICE` / `EN_DEFAULT_VOICE`** 常量 | Installer → Runner | [runner/tools/multimodal/audio/piper_runtime.py](../runner/tools/multimodal/audio/piper_runtime.py) |

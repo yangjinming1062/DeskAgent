@@ -121,19 +121,32 @@ def _patch_db(monkeypatch, sqlite_engine, tmp_path):
     connection.close()
 
 
-def _seed_user(SessionLocal, username="testuser", password="testpass123"):
-    """Insert a user + active LoginRecord + model config, return jwt_token."""
-    from modules.auth import hash_password, create_access_token
+def _seed_user(SessionLocal, username="testuser"):
+    """Insert a user + active LoginRecord + model config.
+
+    Returns a dict with:
+      - ``token``: a valid JWT (created in-process, no HTTP round-trip).
+      - ``activation_code``: base64url code for tests that exercise
+        ``POST /api/user/activate`` directly.
+    """
+    from modules.auth import (
+        create_access_token,
+        encode_activation_code,
+        generate_activation_token,
+        hash_activation_token,
+    )
     from modules.auth import User, UserModelConfig, LoginRecord
 
     # Retrieve real credentials from the environment for unmocked testing
     mimo_key = os.getenv("MIMO_API_KEY", "sk-fake-for-unit-tests")
     mimo_url = os.getenv("MIMO_BASE_URL", "https://token-plan-cn.xiaomimimo.com/v1")
 
+    raw_token = generate_activation_token()
     with SessionLocal() as db:
         user = User(
             username=username,
-            password_hash=hash_password(password),
+            password_hash=None,
+            activation_token_hash=hash_activation_token(raw_token),
             is_active=True,
             can_use=True,
         )
@@ -154,7 +167,10 @@ def _seed_user(SessionLocal, username="testuser", password="testpass123"):
         token, _expires, jti = create_access_token(user_id=user.id, username=user.username)
         db.add(LoginRecord(user_id=user.id, token_jti=jti, is_active=True))
         db.commit()
-    return token
+    return {
+        "token": token,
+        "activation_code": encode_activation_code("http://localhost:10620", raw_token),
+    }
 
 
 @pytest.fixture()
@@ -199,6 +215,17 @@ def test_client(test_app):
 @pytest.fixture()
 def test_token(_patch_db):
     """Create a valid JWT with an active LoginRecord in the test DB."""
+    _, SessionLocal = _patch_db
+    return _seed_user(SessionLocal)["token"]
+
+
+@pytest.fixture()
+def test_user_credentials(_patch_db):
+    """Seed a user and return ``{"token", "activation_code"}``.
+
+    Tests that exercise ``POST /api/user/activate`` directly should use this
+    fixture; tests that only need a bearer token should use ``test_token``.
+    """
     _, SessionLocal = _patch_db
     return _seed_user(SessionLocal)
 

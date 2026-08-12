@@ -6,9 +6,11 @@ from components import get_db
 from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import status
+from modules.auth import encode_activation_code
 from modules.auth import fingerprint_api_key
+from modules.auth import generate_activation_token
 from modules.auth import get_current_admin_token
-from modules.auth import hash_password
+from modules.auth import hash_activation_token
 from modules.auth import public_provider_slots
 from modules.auth import User
 from modules.auth import UserCreate
@@ -47,16 +49,20 @@ def create_user(
 ) -> UserResponse:
     if db.query(User).filter(User.username == payload.username).one_or_none():
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="用户名已存在。")
+    raw_token = generate_activation_token()
     user = User(
         username=payload.username,
-        password_hash=hash_password(payload.password),
+        password_hash=None,
+        activation_token_hash=hash_activation_token(raw_token),
         can_use=payload.can_use,
         expires_at=payload.expires_at,
     )
     db.add(user)
     db.commit()
     db.refresh(user)
-    return UserResponse.model_validate(user)
+    resp = UserResponse.model_validate(user)
+    resp.activation_code = encode_activation_code(payload.base_url, raw_token)
+    return resp
 
 
 @router.patch("/users/{user_id}", response_model=UserResponse)
@@ -67,14 +73,20 @@ def update_user(
     db: Session = Depends(get_db),
 ) -> UserResponse:
     user = get_or_404(db, User, id=user_id, detail="用户不存在。")
-    if payload.password is not None:
-        user.password_hash = hash_password(payload.password)
+    raw_token: str | None = None
+    if payload.regenerate_token:
+        raw_token = generate_activation_token()
+        user.activation_token_hash = hash_activation_token(raw_token)
     # 显式 null 清空:不放入 apply_partial.exclude,否则正常的"设置未来过期时间"也会被跳过
     if "expires_at" in payload.model_fields_set and payload.expires_at is None:
         user.expires_at = None
-    apply_partial(user, payload, exclude={"password"})
+    apply_partial(user, payload, exclude={"regenerate_token", "base_url"})
     db.commit()
-    return UserResponse.model_validate(user)
+    resp = UserResponse.model_validate(user)
+    if raw_token is not None:
+        base_url = payload.base_url or "http://localhost:10620"
+        resp.activation_code = encode_activation_code(base_url, raw_token)
+    return resp
 
 
 @router.delete("/users/{user_id}", response_model=dict)

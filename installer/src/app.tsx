@@ -3,7 +3,6 @@ import type React from 'react'
 import { useEffect } from 'react'
 import { $route, $bootstrap, initialize } from './store'
 import Welcome from './routes/welcome'
-import Auth from './routes/auth'
 import Progress from './routes/progress'
 import Success from './routes/success'
 import Failure from './routes/failure'
@@ -20,7 +19,6 @@ export default function App(): React.JSX.Element {
     <div className="relative flex h-full flex-col overflow-hidden bg-background text-foreground">
       <main className="relative z-10 flex flex-1 flex-col overflow-hidden">
         {route === 'welcome' && <Welcome />}
-        {route === 'auth' && <Auth />}
         {route === 'progress' && <Progress bootstrap={bootstrap} />}
         {route === 'success' && <Success />}
         {route === 'failure' && <Failure bootstrap={bootstrap} />}

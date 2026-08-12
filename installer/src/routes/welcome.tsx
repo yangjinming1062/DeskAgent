@@ -1,7 +1,7 @@
 import type React from 'react'
 import { type CSSProperties } from 'react'
 import { Button } from '../components/button'
-import { $route } from '../store'
+import { startInstall } from '../store'
 import { ArrowRight } from 'lucide-react'
 
 export default function Welcome(): React.JSX.Element {
@@ -31,7 +31,7 @@ export default function Welcome(): React.JSX.Element {
       </div>
 
       <Button
-        onClick={() => $route.set('auth')}
+        onClick={() => void startInstall()}
         size="lg"
         className="group inline-flex items-center gap-2 px-6"
       >

@@ -473,7 +473,7 @@ input[type="file"] { font-size: 0.78rem; }
                             <div class="table-scroll">
                                 <table>
                                     <thead><tr>
-                                        <th>ID</th><th>用户名</th><th>登录权限</th><th>有效期</th><th>状态</th><th style="text-align:right">操作</th>
+                                        <th>ID</th><th>用户名</th><th>使用权限</th><th>有效期</th><th>状态</th><th style="text-align:right">操作</th>
                                     </tr></thead>
                                     <tbody id="userList"><tr class="state-row"><td colspan="6"><div class="state-msg">加载中…</div></td></tr></tbody>
                                 </table>
@@ -561,20 +561,45 @@ input[type="file"] { font-size: 0.78rem; }
                 <input type="text" id="username" placeholder="登录用户名" autocomplete="off">
             </div>
             <div class="field">
-                <label for="password">密码</label>
-                <input type="password" id="password" placeholder="至少 8 位" autocomplete="new-password">
-                <div class="hint" id="passwordHint"></div>
+                <label for="baseUrl">后端地址</label>
+                <input type="text" id="baseUrl" placeholder="http://localhost:10620" value="http://localhost:10620" autocomplete="off" required>
+                <div class="hint">嵌入激活码的后端地址，用户激活时客户端将连接此地址。</div>
             </div>
-            <label class="checkbox-row"><input type="checkbox" id="canUse" checked> 允许登录客户端</label>
+            <label class="checkbox-row"><input type="checkbox" id="canUse" checked> 允许使用客户端</label>
             <div class="field" style="margin-top:0.95rem">
                 <label for="expiresAt">到期日期</label>
                 <input type="date" id="expiresAt">
                 <div class="hint">留空表示永久有效</div>
             </div>
+            <div class="field" id="regenField" style="display:none; margin-top:0.95rem; padding-top:0.95rem; border-top:1px solid var(--border);">
+                <label>激活码</label>
+                <button type="button" class="btn btn--ghost btn--sm" onclick="regenerateToken()">重新生成激活码</button>
+                <div class="hint">重新生成后，旧激活码将立即失效。生成后将展示新的激活码供发送给用户。</div>
+            </div>
         </div>
         <div class="modal-foot">
             <button class="btn btn--ghost" onclick="closeModal('userModal')">取消</button>
             <button class="btn btn--primary" onclick="saveUser()">保存</button>
+        </div>
+    </div>
+</div>
+
+<!-- ── Activation code modal ─────────────────────────────── -->
+<div id="activationModal" class="modal" onclick="if(event.target===this)closeModal('activationModal')">
+    <div class="modal-card">
+        <div class="modal-head">
+            <h2>激活码已生成</h2>
+            <button class="modal-close" onclick="closeModal('activationModal')" aria-label="关闭">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+            </button>
+        </div>
+        <div class="modal-body">
+            <p style="margin:0 0 0.6rem; color:var(--text-2); font-size:0.82rem;">请将此激活码发送给用户，用于客户端激活。</p>
+            <textarea id="activationCodeText" class="mono" readonly rows="5" style="width:100%; resize:vertical; word-break:break-all;"></textarea>
+        </div>
+        <div class="modal-foot">
+            <button class="btn btn--ghost" onclick="closeModal('activationModal')">关闭</button>
+            <button class="btn btn--primary" onclick="copyActivationCode()">复制</button>
         </div>
     </div>
 </div>
@@ -722,7 +747,7 @@ const TOKEN_KEY = 'deskagent_admin_token';
 const tabCache = { users: null, models: null, versions: null };
 
 const TABS = {
-    users:    { title: '用户管理', desc: '管理可登录客户端的账户、登录权限与有效期' },
+    users:    { title: '用户管理', desc: '管理可登录客户端的账户、使用权限与激活码' },
     models:   { title: '模型配置', desc: '为每个用户配置 LLM、语音、图像与视频的接入凭证' },
     versions: { title: '版本管理', desc: '上传并分发桌面端与 Runner 的更新包' },
 };
@@ -871,10 +896,11 @@ function showCreateUser() {
     $('#userModalTitle').textContent = '创建用户';
     $('#editUserId').value = '';
     $('#username').value = ''; $('#username').disabled = false;
-    $('#password').value = '';
+    $('#baseUrl').value = 'http://localhost:10620';
+    $('#baseUrl').disabled = false;
     $('#canUse').checked = true;
     $('#expiresAt').value = '';
-    $('#passwordHint').textContent = '至少 8 位';
+    $('#regenField').style.display = 'none';
     openModal('userModal');
     $('#username').focus();
 }
@@ -885,34 +911,68 @@ async function editUser(id) {
         $('#userModalTitle').textContent = '编辑用户';
         $('#editUserId').value = u.id;
         $('#username').value = u.username; $('#username').disabled = true;
-        $('#password').value = '';
+        $('#baseUrl').value = 'http://localhost:10620';
+        $('#baseUrl').disabled = false;
         $('#canUse').checked = u.can_use;
         $('#expiresAt').value = fmtDateOnly(u.expires_at);
-        $('#passwordHint').textContent = '留空表示不修改密码';
+        $('#regenField').style.display = '';
         openModal('userModal');
     } catch (e) { toast(e.message, 'err'); }
 }
 
 async function saveUser() {
     const id = $('#editUserId').value;
-    const payload = {};
+    const baseUrl = $('#baseUrl').value.trim();
+    if (!baseUrl) { toast('请填写后端地址', 'err'); $('#baseUrl').focus(); return; }
+    const payload = { can_use: $('#canUse').checked };
+    const ea = $('#expiresAt').value; payload.expires_at = ea || null;
     if (!id) {
         payload.username = $('#username').value.trim();
-        payload.password = $('#password').value;
-    } else {
-        const pwd = $('#password').value;
-        if (pwd) payload.password = pwd;
     }
-    payload.can_use = $('#canUse').checked;
-    const ea = $('#expiresAt').value; payload.expires_at = ea || null;
+    payload.base_url = baseUrl;
     try {
         const method = id ? 'PATCH' : 'POST';
         const url = id ? `/api/admin/users/${id}` : '/api/admin/users';
-        await apiFetch(url, { method, body: JSON.stringify(payload) });
+        const resp = await apiFetch(url, { method, body: JSON.stringify(payload) });
+        const data = await resp.json();
         closeModal('userModal');
         toast(id ? '用户已更新' : '用户已创建');
         loadUsers();
+        if (data.activation_code) showActivationCode(data.activation_code);
     } catch (e) { toast(e.message, 'err'); }
+}
+
+async function regenerateToken() {
+    const id = $('#editUserId').value;
+    if (!id) return;
+    const baseUrl = $('#baseUrl').value.trim() || 'http://localhost:10620';
+    try {
+        const resp = await apiFetch(`/api/admin/users/${id}`, {
+            method: 'PATCH',
+            body: JSON.stringify({ regenerate_token: true, base_url: baseUrl }),
+        });
+        const data = await resp.json();
+        toast('激活码已重新生成');
+        if (data.activation_code) showActivationCode(data.activation_code);
+    } catch (e) { toast(e.message, 'err'); }
+}
+
+function showActivationCode(code) {
+    $('#activationCodeText').value = code;
+    openModal('activationModal');
+}
+
+async function copyActivationCode() {
+    const code = $('#activationCodeText').value;
+    if (!code) return;
+    try {
+        await navigator.clipboard.writeText(code);
+        toast('已复制到剪贴板');
+    } catch (e) {
+        const ta = $('#activationCodeText');
+        ta.select(); document.execCommand('copy');
+        toast('已复制到剪贴板');
+    }
 }
 
 async function toggleUser(id) {

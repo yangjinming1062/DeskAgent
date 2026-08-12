@@ -2033,12 +2033,13 @@ class TestPerUserProviderChain:
             monkeypatch.setattr(f"components.SETTINGS.{field}", default)
 
     def _seed(self, SessionLocal, provider_config):
-        from modules.auth import User, UserModelConfig, hash_password
+        from modules.auth import User, UserModelConfig, generate_activation_token, hash_activation_token
 
         with SessionLocal() as db:
             user = User(
                 username="u",
-                password_hash=hash_password("p1234567"),
+                password_hash=None,
+                activation_token_hash=hash_activation_token(generate_activation_token()),
                 is_active=True,
                 can_use=True,
             )
@@ -2108,7 +2109,7 @@ class TestPerUserProviderChain:
         assert [c.provider_name for c in chain] == ["mimo", "minimax"]
 
     def test_user_capability_provider_pin(self, _patch_db, monkeypatch):
-        from modules.auth import User, UserModelConfig, hash_password
+        from modules.auth import User, UserModelConfig, generate_activation_token, hash_activation_token
         from services.llm import resolve_provider_chain
 
         self._reset(monkeypatch)
@@ -2118,7 +2119,8 @@ class TestPerUserProviderChain:
         with SessionLocal() as db:
             user = User(
                 username="u_pin",
-                password_hash=hash_password("p1234567"),
+                password_hash=None,
+                activation_token_hash=hash_activation_token(generate_activation_token()),
                 is_active=True,
                 can_use=True,
             )
@@ -2171,11 +2173,12 @@ class TestResolveUserLlmConfigCredentials:
         # default model (``default_model_for("minimax", "llm")``) wins.
         _, SessionLocal = _patch_db
         with SessionLocal() as db:
-            from modules.auth import User, UserModelConfig, hash_password
+            from modules.auth import User, UserModelConfig, generate_activation_token, hash_activation_token
 
             user = User(
                 username="u",
-                password_hash=hash_password("p1234567"),
+                password_hash=None,
+                activation_token_hash=hash_activation_token(generate_activation_token()),
                 is_active=True,
                 can_use=True,
             )

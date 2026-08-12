@@ -6,7 +6,7 @@ declare global {
       getConnection: () => Promise<DeskAgentConnection>
       getGatewayWsUrl: () => Promise<string>
       getBootProgress: () => Promise<DesktopBootProgress>
-      login: (payload: DesktopLoginPayload) => Promise<DesktopAuthSnapshot>
+      activate: (payload: DesktopActivatePayload) => Promise<DesktopAuthSnapshot>
       refreshSession: (payload?: Record<string, unknown>) => Promise<DesktopAuthSnapshot>
       logout: () => Promise<DesktopLogoutResult>
       getSession: () => Promise<DesktopAuthSnapshot | null>
@@ -73,10 +73,6 @@ declare global {
           error?: string
         }>
       }
-      changePassword: (payload: {
-        current_password: string
-        new_password: string
-      }) => Promise<{ ok: boolean; message?: string }>
       media: {
         stt: (payload: {
           context?: string | null
@@ -258,10 +254,8 @@ export interface DesktopAuthSnapshot {
   user: DesktopAuthUser | null
 }
 
-export interface DesktopLoginPayload {
-  password: string
-  username: string
-  baseUrl?: string
+export interface DesktopActivatePayload {
+  code: string
 }
 
 export interface DesktopLogoutResult {

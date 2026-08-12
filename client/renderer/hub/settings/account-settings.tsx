@@ -12,7 +12,6 @@ import { strings } from '@/shared/strings'
 import type { DeskAgentConfigResponse } from '@/shared/types/deskagent'
 
 import { AgentDefaultsSection, type AgentFormState } from './account/agent-defaults-section'
-import { ChangePasswordForm } from './account/change-password-form'
 import { type ChatFormState, ContextCompressionSection } from './account/context-compression-section'
 import { type WebFormState, WebSearchSection } from './account/web-search-section'
 import { ListRow, LoadingState, SectionHeading, SettingsContent } from './primitives'
@@ -261,10 +260,6 @@ export function AccountSettings({ onConfigSaved }: { onConfigSaved?: () => void 
   return (
     <SettingsContent>
       <SectionHeading icon={KeyRound} title={a.heading} />
-
-      <ChangePasswordForm />
-
-      <div className="my-4 h-px bg-border/30" />
 
       <WebSearchSection
         disabled={isSaving}

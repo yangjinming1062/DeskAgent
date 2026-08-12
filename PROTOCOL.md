@@ -291,10 +291,12 @@ user_id / llm_config / user_settings
 
 ### 5.3 凭据落盘
 
-JWT 经 Electron `safeStorage` 加密落盘（`agent-session.json`）:
+激活码（base64 编码的 `{baseUrl, token}` JSON）经 Electron `safeStorage` 加密落盘（`agent-session.json`，schema v2）:
 - Windows: DPAPI
 - macOS: Keychain
 - Linux: libsecret（但 Runner/Desktop 不支持 Linux,仅作原理说明）
+
+session JWT **仅在内存中**持有——每次启动时用存储的激活码调 `/api/user/activate` 获取新的 session JWT。激活码是持久凭证；session JWT 用于日常 API 调用与 ws-ticket 签发。
 
 Renderer 与 Preload 进程**不可访问** safeStorage 接口,阻断 XSS 窃取凭证。
 

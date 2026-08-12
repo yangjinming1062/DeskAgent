@@ -84,5 +84,5 @@ backend/
 | **流式 chat 一旦首 chunk 已发不再 fallback** | 用户已看到部分输出，切换 provider 会造成 transcript 截断；失败统一 raise，由 HTTP envelope 走 `{error, reason, status}` |
 | **Cron kick 守卫** | `_kick_autonomous_turn` 仅在 dispatcher 表里查"用户在线"；`kick` 内部 `is_quiet` 守卫 + per-user `asyncio.Lock` 兜底 |
 | **附件 fetch 失败独立报错** | LLM 下载临时媒体失败（链接过期、网络隔离）拦截 Proxy 端原始 SDK 报错，返回 provider-agnostic 短消息，避免误导性触发 LLM 回退 |
-| **WS 鉴权失效（1008）立即退出重连** | 不在过期 token 状态下重试；用户重新登录后才恢复 |
+| **WS 鉴权失效（1008）立即退出重连** | 不在过期 token 状态下重试；用户重新激活后才恢复 |
 | **Obs 缺口** | 无 `/metrics` 端点、无 OpenTelemetry 集成；日志 stdout only，dev text / prod json |

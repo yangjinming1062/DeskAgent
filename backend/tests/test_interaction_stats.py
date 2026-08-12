@@ -16,7 +16,7 @@ def _seed_user(SessionLocal):
     with SessionLocal() as db:
         user = User(
             username="statsuser",
-            password_hash="x",
+            password_hash=None,
             is_active=True,
             can_use=True,
         )

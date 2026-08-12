@@ -5,11 +5,16 @@ const { createBackendClient, BackendRequestError } = require('./client.cjs')
 
 /**
  * Owns the desktop's session with the cloud Backend.
- * Persists to disk with JWT encrypted via safeStorage.
+ *
+ * Activation-token model: the activation code (base64-encoded
+ * ``{b, t}`` JSON) is the persistent credential, encrypted via
+ * safeStorage and written to ``agent-session.json``.  The session
+ * JWT returned by ``/api/user/activate`` lives in memory only and
+ * is proactively refreshed before expiry — same lifecycle as before.
  */
 
 const SESSION_FILENAME = 'agent-session.json'
-const SESSION_SCHEMA_VERSION = 1
+const SESSION_SCHEMA_VERSION = 2
 // Same lifetime the backend configures for access_token_expire_minutes.
 const KNOWN_TOKEN_TTL_MS = 8 * 60 * 60 * 1000
 // Proactive refresh fires this many ms before tokenExpiresAt.
@@ -28,7 +33,7 @@ class SessionError extends Error {
 // Sync wrapper over utils.cjs::atomicWriteFile. Single source of truth for
 // the write-tmp-then-rename pattern lives in utils.cjs; the JSON.stringify
 // lives here. Caller is persistCurrent() in this same file, called
-// synchronously on every login/refresh/restore — keep the sync signature.
+// synchronously on every activate/refresh/restore — keep the sync signature.
 function atomicWriteJson(targetPath, payload) {
   // atomicWriteFile is async; for the synchronous persist path we replicate
   // its semantics inline (unique tmp + explicit unlink on failure).
@@ -98,6 +103,20 @@ function normalizeUser(raw) {
   }
 }
 
+/**
+ * Decode a base64url activation code into ``{ baseUrl, token }``.
+ * The code encodes ``{"b":"<baseUrl>","t":"<token>"}`` as compact JSON.
+ */
+function decodeActivationCode(code) {
+  const padding = '='.repeat((4 - (code.length % 4)) % 4)
+  const raw = Buffer.from(code + padding, 'base64url').toString('utf8')
+  const data = JSON.parse(raw)
+  const baseUrl = data.b
+  const token = data.t
+  if (!baseUrl || !token) throw new Error('activation code missing required fields')
+  return { baseUrl, token }
+}
+
 function createBackendSession(options = {}) {
   const {
     userDataDir,
@@ -115,15 +134,16 @@ function createBackendSession(options = {}) {
     throw new SessionError({ code: 'missing-fetch', message: 'fetch implementation is required' })
   }
 
-  // Backend has no per-device binding; identity is enforced by JWT jti revocation alone.
-
   const sessionPath = path.join(userDataDir, SESSION_FILENAME)
   const log = typeof options.log === 'function' ? options.log : () => {}
 
-  let cached = null // { baseUrl, token, tokenExpiresAt, user, encryptedToken }
+  // cached shape:
+  //   { baseUrl, activationCode,
+  //     token (session JWT, in-memory), tokenExpiresAt, user }
+  let cached = null
   let backendClient = null
   let backendClientBaseUrl = null
-  let loginPromise = null
+  let activatePromise = null
   let refreshTimer = null // proactive token refresh timer
 
   function persistCurrent() {
@@ -131,8 +151,7 @@ function createBackendSession(options = {}) {
     atomicWriteJson(sessionPath, {
       schemaVersion: SESSION_SCHEMA_VERSION,
       baseUrl: cached.baseUrl,
-      token: cached.encryptedToken,
-      tokenExpiresAt: cached.tokenExpiresAt,
+      activationCode: encryptToken(cached.activationCode, safeStorage),
       user: cached.user,
       savedAt: now()
     })
@@ -178,18 +197,16 @@ function createBackendSession(options = {}) {
     if (!raw || typeof raw !== 'object') return null
     if (raw.schemaVersion !== SESSION_SCHEMA_VERSION) return null
 
-    const token = decryptToken(raw.token, safeStorage)
-    if (!token) {
+    const activationCode = decryptToken(raw.activationCode, safeStorage)
+    if (!activationCode) {
       // Disk blob present but decryption failed (keychain rotated, profile
-      // switched). Drop silently — the next login will mint a fresh one.
+      // switched). Drop silently — the next activation will mint a fresh one.
       return null
     }
 
     return {
       baseUrl: typeof raw.baseUrl === 'string' ? raw.baseUrl : null,
-      token,
-      encryptedToken: raw.token,
-      tokenExpiresAt: Number.isFinite(raw.tokenExpiresAt) && raw.tokenExpiresAt > 0 ? raw.tokenExpiresAt : null,
+      activationCode,
       user: normalizeUser(raw.user),
       savedAt: Number.isFinite(raw.savedAt) ? raw.savedAt : null
     }
@@ -212,7 +229,7 @@ function createBackendSession(options = {}) {
     if (!baseUrl) {
       throw new SessionError({
         code: 'no-base-url',
-        message: 'Backend base URL is not configured. Check $DESKAGENT_HOME/desktop-config.json or sign in.'
+        message: 'Backend base URL is not configured. Activate with a valid activation code.'
       })
     }
     if (backendClient && backendClientBaseUrl === baseUrl) return backendClient
@@ -228,7 +245,7 @@ function createBackendSession(options = {}) {
       throw new SessionError({
         code: 'bad-credentials',
         status: 401,
-        message: '用户名或密码错误。',
+        message: '激活码无效。',
         cause: error
       })
     }
@@ -240,28 +257,40 @@ function createBackendSession(options = {}) {
     })
   }
 
-  // Single mutation site for "we now have a session". `login`, `refresh`,
-  // and `adoptSession` all funnel through here so the invalidate-/
-  // persist-/-schedule-refresh invariants stay in lockstep — future
-  // session-wide side effects (revocation, telemetry, model-config reset)
-  // belong in this function, not in each caller.
-  function applySession({ baseUrl, token, tokenExpiresAt, user, source }) {
+  // Single mutation site for "we now have a session". `activate` and
+  // `refresh` both funnel through here so the invalidate-/persist-/
+  // schedule-refresh invariants stay in lockstep.
+  //
+  // `activationCode` is the persistent credential (encrypted, written to
+  // disk).  `token` is the ephemeral session JWT (in-memory only).
+  // When `activationCode` is omitted (e.g. from refresh()), the previously
+  // stored one is reused.
+  function applySession({ baseUrl, activationCode, token, tokenExpiresAt, user, source }) {
     if (!token) {
       throw new SessionError({
         code: 'no-token',
-        message: 'Cannot apply a session without a token.'
+        message: 'Cannot apply a session without a session token.'
       })
     }
     const resolvedBaseUrl = baseUrl || cached?.baseUrl || null
     const resolvedUser = normalizeUser(user) || cached?.user || { id: null, username: null }
-    const encryptedToken = encryptToken(token, safeStorage)
+
+    // Activation code: persistent credential. When not provided (e.g. refresh
+    // path), reuse the one already in cached.
+    const resolvedCode = activationCode || cached?.activationCode || null
+    if (!resolvedCode) {
+      throw new SessionError({
+        code: 'no-activation-code',
+        message: 'Cannot apply a session without an activation code.'
+      })
+    }
 
     cached = {
       baseUrl: resolvedBaseUrl,
+      activationCode: resolvedCode,
       token,
       tokenExpiresAt,
-      user: resolvedUser,
-      encryptedToken
+      user: resolvedUser
     }
 
     // Invalidate the cached BackendClient so the next request hits the
@@ -276,31 +305,43 @@ function createBackendSession(options = {}) {
     return snapshot()
   }
 
-  function login(payload = {}) {
-    const { username, password, baseUrl: overrideBaseUrl, clientContext } = payload
-    if (!username || !password) {
+  function activate(payload = {}) {
+    const { code, clientContext } = payload
+    if (!code) {
       throw new SessionError({
-        code: 'missing-credentials',
-        message: 'Username and password are required.'
+        code: 'missing-code',
+        message: 'Activation code is required.'
       })
     }
 
-    const baseUrl = overrideBaseUrl || effectiveBaseUrl()
+    // Decode the activation code to learn the backend address (needed to
+    // know which backend to call).  The code itself is sent to the backend
+    // verbatim — the backend decodes it again to extract the token.
+    let baseUrl
+    try {
+      const decoded = decodeActivationCode(code)
+      baseUrl = decoded.baseUrl
+    } catch {
+      throw new SessionError({
+        code: 'invalid-code',
+        message: '激活码格式无效。'
+      })
+    }
+
     if (!baseUrl) {
       throw new SessionError({
         code: 'no-base-url',
-        message: 'Backend base URL is not configured.'
+        message: 'Activation code does not contain a backend address.'
       })
     }
 
-    if (loginPromise) return loginPromise
+    if (activatePromise) return activatePromise
 
     const backend = createBackendClient({ baseUrl, fetch: fetchImpl })
-    loginPromise = backend
-      .post('/api/user/login', {
+    activatePromise = backend
+      .post('/api/user/activate', {
         body: {
-          username,
-          password,
+          code,
           client_version: appVersion,
           client_context: clientContext || undefined
         }
@@ -308,7 +349,7 @@ function createBackendSession(options = {}) {
       .then(response => {
         if (!response || typeof response.access_token !== 'string' || !response.access_token) {
           throw new SessionError({
-            code: 'invalid-login-response',
+            code: 'invalid-activate-response',
             message: 'Backend did not return an access token.'
           })
         }
@@ -319,18 +360,19 @@ function createBackendSession(options = {}) {
             : KNOWN_TOKEN_TTL_MS
         return applySession({
           baseUrl,
+          activationCode: code,
           token: response.access_token,
           tokenExpiresAt: now() + expiresIn,
           user: response.user,
-          source: 'login'
+          source: 'activate'
         })
       })
       .catch(translateBackendError)
       .finally(() => {
-        loginPromise = null
+        activatePromise = null
       })
 
-    return loginPromise
+    return activatePromise
   }
 
   function refresh(payload = {}) {
@@ -412,66 +454,35 @@ function createBackendSession(options = {}) {
     }
   }
 
-  function changePassword(payload = {}) {
-    const { current_password, new_password } = payload
-    if (!current_password || !new_password) {
-      throw new SessionError({
-        code: 'missing-passwords',
-        message: 'Both current_password and new_password are required.'
-      })
-    }
-    if (!cached?.token) {
-      throw new SessionError({
-        code: 'no-session',
-        message: 'Not signed in.'
-      })
-    }
-
-    return client()
-      .post('/api/user/change-password', {
-        body: { current_password, new_password },
-        headers: authHeaders()
-      })
-      .then(response => {
-        const message =
-          response && typeof response === 'object' && typeof response.message === 'string'
-            ? response.message
-            : 'Password updated.'
-        log('[session] change-password ok')
-        return { ok: true, message }
-      })
-      .catch(translateBackendError)
-  }
-
-  function restoreSession() {
+  async function restoreSession() {
     const loaded = loadFromDisk()
     if (!loaded) return null
+
+    // Seed cached with the activation code so applySession() can reuse it
+    // without re-receiving it from activate().
     cached = {
       baseUrl: loaded.baseUrl,
-      token: loaded.token,
-      tokenExpiresAt: loaded.tokenExpiresAt,
+      activationCode: loaded.activationCode,
+      token: null, // no session JWT yet — activate() will obtain one
+      tokenExpiresAt: null,
       user: loaded.user
     }
-    scheduleRefresh()
-    log(`[session] restored from disk base=${loaded.baseUrl} user=${loaded.user?.username ?? '?'}`)
-    return snapshot()
-  }
 
-  // Adopt an externally-validated session (currently the installer
-  // bootstrap file). Funnels through applySession so it stays in lockstep
-  // with login()/refresh() — future session-wide side effects only need
-  // to be added in one place.
-  function adoptSession({ baseUrl, token, tokenExpiresAt, user }) {
-    const expiresAt =
-      Number.isFinite(tokenExpiresAt) && tokenExpiresAt > 0 ? tokenExpiresAt : now() + KNOWN_TOKEN_TTL_MS
-
-    return applySession({
-      baseUrl,
-      token,
-      tokenExpiresAt: expiresAt,
-      user,
-      source: 'adopted'
-    })
+    try {
+      // Delegate to activate() — it decodes the code (redundant but trivial),
+      // posts to /api/user/activate, validates the response, and funnels
+      // through applySession(). This avoids duplicating the HTTP pipeline.
+      return await activate({ code: loaded.activationCode })
+    } catch (err) {
+      // Transient failure (network down, backend 500): preserve the
+      // activation code on disk so the next launch can retry. Only a
+      // definitive "code invalid" (401) should warrant clearing it.
+      if (err instanceof SessionError && err.code === 'bad-credentials') {
+        clearSession()
+      }
+      log(`[session] restore activation failed: ${err?.message || err}`)
+      return null
+    }
   }
 
   function getSession() {
@@ -488,12 +499,10 @@ function createBackendSession(options = {}) {
   }
 
   return {
-    login,
+    activate,
     refresh,
     logout,
-    changePassword,
     restoreSession,
-    adoptSession,
     clearSession,
     getSession,
     getToken,
@@ -507,6 +516,7 @@ module.exports = {
   SessionError,
   encryptToken,
   decryptToken,
+  decodeActivationCode,
   SESSION_FILENAME,
   SESSION_SCHEMA_VERSION,
   KNOWN_TOKEN_TTL_MS

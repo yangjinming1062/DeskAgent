@@ -4,16 +4,14 @@ contextBridge.exposeInMainWorld('deskagent', {
   getConnection: () => ipcRenderer.invoke('deskagent:connection'),
   getGatewayWsUrl: () => ipcRenderer.invoke('deskagent:gateway:ws-url'),
   getBootProgress: () => ipcRenderer.invoke('deskagent:boot-progress:get'),
-  login: payload => ipcRenderer.invoke('deskagent:auth:login', payload),
+  activate: payload => ipcRenderer.invoke('deskagent:auth:activate', payload),
   refreshSession: payload => ipcRenderer.invoke('deskagent:auth:refresh', payload),
   logout: () => ipcRenderer.invoke('deskagent:auth:logout'),
   getSession: () => ipcRenderer.invoke('deskagent:auth:get-session'),
   getDefaultBackendUrl: () => ipcRenderer.invoke('deskagent:auth:get-default-backend-url'),
-  // Sprite window → main: bring up the framed tool window (Login when
-  // unauthenticated, Settings when authenticated). The sprite's egg-crack
-  // gesture calls this to hand the user off to the login form.
+  // Sprite window → main: bring up the framed tool window (Settings only,
+  // post-authentication). The sprite's egg-crack gesture calls this.
   showToolWindow: () => ipcRenderer.invoke('deskagent:window:show-tool'),
-  changePassword: payload => ipcRenderer.invoke('deskagent:auth:change-password', payload),
   api: request => ipcRenderer.invoke('deskagent:api', request),
   apiAsset: request => ipcRenderer.invoke('deskagent:api:asset', request),
   apiAssetBuffer: request => ipcRenderer.invoke('deskagent:api:asset-buffer', request),

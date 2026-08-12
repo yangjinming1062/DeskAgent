@@ -9,7 +9,6 @@
 //! flags of the executable that consumes it.
 
 mod bootstrap;
-mod bootstrap_session;
 mod embedded_resources;
 mod events;
 mod install_script;
@@ -129,9 +128,6 @@ pub fn run() {
             bootstrap::get_bootstrap_status,
             // Hand-off
             bootstrap::launch_deskagent_desktop,
-            // Auth (one-shot handoff to Desktop)
-            bootstrap_session::verify_backend,
-            bootstrap_session::authenticate_backend,
             // Diagnostics
             paths::get_log_path,
             paths::get_deskagent_home,

@@ -7,13 +7,13 @@ from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Request
 from fastapi import status
-from modules.auth import ChangePasswordRequest
+from modules.auth import ActivateRequest
 from modules.auth import create_access_token
+from modules.auth import decode_activation_code
 from modules.auth import fingerprint_api_key
 from modules.auth import get_current_session
-from modules.auth import hash_password
+from modules.auth import hash_activation_token
 from modules.auth import LoginRecord
-from modules.auth import LoginRequest
 from modules.auth import public_provider_slots
 from modules.auth import RefreshRequest
 from modules.auth import TokenResponse
@@ -22,7 +22,6 @@ from modules.auth import UserInfo
 from modules.auth import UserModelConfig
 from modules.auth import UserModelConfigResponse
 from modules.auth import UserModelConfigSelfRequest
-from modules.auth import verify_password
 from modules.system import MessageResponse
 from services.llm import merge_provider_json
 from services.rate_limit import limiter
@@ -35,12 +34,26 @@ router = get_router()
 WS_TICKET_TTL_SECONDS = 60
 
 
-@router.post("/login", response_model=TokenResponse)
+@router.post("/activate", response_model=TokenResponse)
 @limiter.limit(f"{SETTINGS.login_rate_limit_per_minute}/minute", key_func=get_remote_address)
-def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)) -> TokenResponse:
-    user = db.query(User).filter(User.username == payload.username, User.is_active.is_(True)).one_or_none()
-    if user is None or not verify_password(payload.password, user.password_hash):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="用户名或密码错误。")
+def activate(payload: ActivateRequest, request: Request, db: Session = Depends(get_db)) -> TokenResponse:
+    """Exchange an activation code for a session JWT.
+
+    The activation code is a base64url-encoded JSON ``{b, t}`` blob.  The
+    ``t`` field is the opaque activation token; we hash it and look up the
+    user by ``activation_token_hash``.  On success the flow is identical to
+    the old login: deactivate prior sessions, mint a session JWT, write a
+    LoginRecord.
+    """
+    try:
+        _base_url, raw_token = decode_activation_code(payload.code)
+    except Exception:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="激活码格式无效。")
+
+    token_hash = hash_activation_token(raw_token)
+    user = db.query(User).filter(User.activation_token_hash == token_hash, User.is_active.is_(True)).one_or_none()
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="激活码无效。")
     if not user.can_use or (user.expires_at and user.expires_at.date() < naive_utc_now().date()):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -132,23 +145,6 @@ def logout(
     db.add(login_record)
     db.commit()
     return MessageResponse(message="已退出登录。")
-
-
-@router.post("/change-password", response_model=MessageResponse)
-def change_password(
-    payload: ChangePasswordRequest,
-    current: tuple[User, LoginRecord] = Depends(get_current_session),
-    db: Session = Depends(get_db),
-) -> MessageResponse:
-    user, _login_record = current
-    if not verify_password(payload.current_password, user.password_hash):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="当前密码错误。")
-    if payload.current_password == payload.new_password:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="新密码必须与当前密码不同。")
-    user.password_hash = hash_password(payload.new_password)
-    db.add(user)
-    db.commit()
-    return MessageResponse(message="密码已更新。")
 
 
 _CAPABILITIES = ("llm", "stt", "tts", "image_gen", "video_gen")

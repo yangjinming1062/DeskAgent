@@ -17,7 +17,7 @@ def _json_args(**kwargs):
 
 def _make_user(SessionLocal, user_id: int = 1001):
     """Seed a User row so the FK on Memory.user_id is satisfied."""
-    from modules.auth import hash_password
+    from modules.auth import generate_activation_token, hash_activation_token
     from modules.auth import User
 
     with SessionLocal() as db:
@@ -26,7 +26,8 @@ def _make_user(SessionLocal, user_id: int = 1001):
                 User(
                     id=user_id,
                     username=f"u{user_id}",
-                    password_hash=hash_password("test-password"),
+                    password_hash=None,
+                    activation_token_hash=hash_activation_token(generate_activation_token()),
                     is_active=True,
                     can_use=True,
                 )

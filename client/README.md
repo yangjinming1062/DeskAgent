@@ -71,8 +71,7 @@ ESLint `no-restricted-imports` 在 `renderer/companion/**` 与 `renderer/hub/**`
 - **`safeStorage` 跨平台统一封装**：Windows DPAPI / macOS Keychain / Linux libsecret；所有平台走同一组 API（`safeStorage.encryptString` / `decryptString`）。Renderer 与 Preload 进程**不可**访问 safeStorage 接口——阻断 XSS 窃取凭证。**为什么不自己写加密**：OS 原生机制与用户登录态绑定，重启/换用户自动失效；自实现加密无法保证密钥生命周期。
 - **精灵窗口透明需要双重保证**：`BrowserWindow.transparent: true` **加** 渲染层 `body` 透明（`html[data-role='sprite'] body { background: transparent }`，`data-role` 由 `index.html` 内嵌脚本在 `<head>` 解析时同步设置）。两者缺一，body 背景色会在桌面剩余区域盖满屏幕——违背"伙伴应不干扰用户正常工作"的契约。
 - **交互范围仅限可见矩形**（透明窗口交互陷阱）：Electron `setIgnoreMouseEvents` 是窗口级二元开关——要么全捕获要么全穿透。要在屏幕尺寸的透明窗口里只让"看得见"的区域捕获，其余继续穿透给桌面其他应用，所有 overlay 把自己的面板 bbox 注册到 `companion/interactive-regions.ts`，由 `SpriteStage` 的全局 `mousemove` 唯一做命中测试再切换 `setIgnoreMouseEvents`。任何 overlay 都不能再用 `setIgnoreMouseEvents({ignore:false})` 一刀切捕获整个窗口——那会立刻把桌面的其他应用"锁死"。
-- **install → desktop auth bootstrap one-shot**：`$DESKAGENT_HOME/agent-session-bootstrap.json`（schema_version=1）由 installer 登录成功后写入；Desktop 主进程在 `restoreSession()` 后通过 `consumeBootstrapSession` 消费：原子重命名为 `.consumed` → POST `${baseUrl}/api/user/refresh` 校验 token → `BackendSession::adoptSession` 走 safeStorage 落盘到 `agent-session.json`。任何失败静默删文件回退到未登录态。**为什么不直接 adoptSession**：refresh 校验失败 / 网络断的情况下不能让用户处于"看起来登录但实际失效"的状态。
-- **`auth.bootstrap` 持久 baseUrl 而非 token**：`desktop-config.json` 只持久 `baseUrl`，不持久 token；登出只清 `agent-session.json`。登录页每次预填上次的 baseUrl，token 永远不被还原（即便 installer 写入过）。**为什么不持久 token**：token 一旦持久就要承担泄露 + 过期管理成本；refresh-then-adopt 模式更安全。
+- **激活码持久 + session JWT 内存 only**：`agent-session.json` 持久化激活码（加密）+ baseUrl + user。`restoreSession()` 读取激活码后调 `/api/user/activate` 获取 session JWT。session JWT 的 proactive refresh 机制（`/api/user/refresh`）保持不变。**为什么不持久 session JWT**：JWT 一旦持久就要承担泄露 + 过期管理成本；激活码 + 每次启动重新激活的模式更安全。
 - **自更新两阶段而非单阶段**：单阶段"下载后直接覆盖"在网络断 / 进程被杀时变砖；两阶段拆分让 Stage 1（旧 Electron 跑）只需下载+校验，Stage 2（新 Electron 跑）才做 file ops，失败回滚到旧版。**为什么不直接 atomic-rename**：atomic-rename 之前需要先完整下载到 staging，与两阶段本质等价，但语义上分阶段更易追踪 Sentinel 与降级。
 - **`runner venv 永不被改名或移动`**：升级只改 wheel（`pip install --upgrade`），venv 路径稳定；任意升级阶段崩溃时旧版 Runner 依赖树仍完全可用。
 - **STT 默认本地优先 / TTS 默认云端优先**（见 [DESIGN.md §7](../DESIGN.md)）：本地零成本，云端音色音质优；Engine 路由由 `main/ipc/media.cjs` 在 IPC 边界读 short-TTL 缓存决策（`auto` / `local` / `cloud` 三档），不暴露在 Desktop 设置面板——运维/部署侧决策。
@@ -99,7 +98,7 @@ ESLint `no-restricted-imports` 在 `renderer/companion/**` 与 `renderer/hub/**`
 | 动画状态机（`IDLE` / `LISTENING` / `THINKING` / `SPEAKING` / `WORKING` / `EMOTIONAL` / `SLEEPING` / `INTERACTING` / `DISCONNECTED`） | 本模块独有（消费 Backend `affect` + 用户操作） | 本 README §2 + DESIGN §2 |
 | 空间行为 locales（`home` / `chat` / `perch` / `target` / `roam` / `sleep`）+ 缩放范围 0.5×–2× | 本模块独有（消费 Backend `affect.locale/target`） | 本 README §2 + DESIGN §3 + PROTOCOL §1.3 |
 | Companion personality tag 驱动的动画调度（`selectClipByTags`） | 本模块独有 | 本 README §2 + [docs/MODEL_SPEC.md §2](../docs/MODEL_SPEC.md) |
-| auth bootstrap one-shot schema（`schema_version: 1`） | 接 installer | [installer/README.md §5](../installer/README.md) |
+| 激活码格式（base64 编码 `{b, t}` JSON） | 对 Backend | [PROTOCOL.md §5.3](../PROTOCOL.md) |
 | Skills frontmatter 平台过滤（仅 `macos` / `windows`，历史 `linux` 值兼容翻译表） | 本模块独有 | 本 README §3 + [installer/README.md §2](../installer/README.md) |
 
 ## 6. 已知限制

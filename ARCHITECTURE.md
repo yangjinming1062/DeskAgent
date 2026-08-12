@@ -264,7 +264,7 @@ onboarding 产出的结构化角色定义持久化在 Backend 用户维度，作
 ### 7.1 物理与凭证隔离
 - **大脑**（云端）不接触用户本地操作系统；即便 prompt 注入攻陷伙伴人格，也在受限用户账户下执行本地工具。
 - **手脚**（Runner）零 Token 运行，无法越权请求 Backend 管理级 API。
-- **枢纽**（Client）通过 Electron 主进程 `safeStorage` 将 JWT 加密落地在 `agent-session.json`。Renderer 与 Preload 无法接触 safeStorage 接口，阻断 XSS 窃取凭证（跨平台：Windows DPAPI / macOS Keychain / Linux libsecret）。
+- **枢纽**（Client）通过 Electron 主进程 `safeStorage` 将激活码加密落地在 `agent-session.json`。Renderer 与 Preload 无法接触 safeStorage 接口，阻断 XSS 窃取凭证（跨平台：Windows DPAPI / macOS Keychain / Linux libsecret）。
 - **用户隐私数据**：角色定义与形象资产归属于该用户，按用户维度隔离，不跨用户共享、不下发给他租户。
 
 ### 7.2 安全防护网（Defense Layers）

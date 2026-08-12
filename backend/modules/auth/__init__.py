@@ -3,11 +3,10 @@ from .deps import get_current_session
 from .models import LoginRecord
 from .models import User
 from .models import UserModelConfig
+from .schemas import ActivateRequest
 from .schemas import AdminLoginRequest
 from .schemas import AdminTokenResponse
-from .schemas import ChangePasswordRequest
 from .schemas import ChatRequestClientContext
-from .schemas import LoginRequest
 from .schemas import ProviderSlot
 from .schemas import ProviderSlotPublic
 from .schemas import public_provider_slots
@@ -26,19 +25,20 @@ from .schemas import UserUpdate
 from .security import create_access_token
 from .security import create_admin_token
 from .security import decode_access_token
+from .security import decode_activation_code
+from .security import encode_activation_code
 from .security import fingerprint_api_key
-from .security import hash_password
-from .security import verify_password
+from .security import generate_activation_token
+from .security import hash_activation_token
 
 __all__ = [
     "LoginRecord",
     "User",
     "UserModelConfig",
+    "ActivateRequest",
     "AdminLoginRequest",
     "AdminTokenResponse",
-    "ChangePasswordRequest",
     "ChatRequestClientContext",
-    "LoginRequest",
     "ProviderSlot",
     "ProviderSlotPublic",
     "public_provider_slots",
@@ -57,9 +57,11 @@ __all__ = [
     "create_access_token",
     "create_admin_token",
     "decode_access_token",
+    "decode_activation_code",
+    "encode_activation_code",
     "fingerprint_api_key",
-    "hash_password",
-    "verify_password",
+    "generate_activation_token",
+    "hash_activation_token",
     "get_current_admin_token",
     "get_current_session",
 ]

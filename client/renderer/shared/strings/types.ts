@@ -126,20 +126,6 @@ export interface Translations {
     }
   }
 
-  login: {
-    backendUnreachable: string
-    backendUrl: string
-    backendUrlPlaceholder: string
-    error: string
-    password: string
-    signIn: string
-    signingIn: string
-    signOut: string
-    subtitle: string
-    title: string
-    username: string
-  }
-
   settings: {
     closeSettings: string
     exportConfig: string
@@ -294,17 +280,6 @@ export interface Translations {
       loading: string
       saveFailed: string
       saved: string
-      changePassword: {
-        title: string
-        currentPassword: string
-        newPassword: string
-        confirmPassword: string
-        submit: string
-        success: string
-        mismatch: string
-        tooShort: string
-        sameAsOld: string
-      }
       webSearch: {
         heading: string
         intro: string

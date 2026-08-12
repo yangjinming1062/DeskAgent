@@ -1833,37 +1833,6 @@ setTimeout(() => {
   }
 }, 200).unref?.()
 
-// One-shot installer → desktop handoff. Runs INSIDE app.whenReady() after
-// windows exist (otherwise broadcastAuthChanged() has no listeners and
-// the renderer still shows Login on first paint). On success the bridge
-// is kicked explicitly — the 200ms timer above has long since fired by
-// the time Electron is ready, so it can't see an adopted session.
-const { consumeBootstrapSession } = require('./backend/bootstrap-session.cjs')
-async function tryConsumeBootstrapSession() {
-  try {
-    const result = await consumeBootstrapSession({
-      deskagentHome: DESKAGENT_HOME,
-      fetchImpl: (url, options) => electronNet.fetch(url, options),
-      log: chunk => rememberLog(chunk)
-    })
-    if (result.status !== 'ok' || !result.snapshot) return
-    const session = bridgeDeps.ensureBackendSession()
-    session.adoptSession(result.snapshot)
-    // Mirror the existing login flow: invalidate the cached backend
-    // connection so the next ensureBackend() re-resolves with the
-    // fresh token, rebuild the tray menu, and broadcast to both windows
-    // so the sprite can boot its gateway without showing Login.
-    bridgeDeps.resetBackendCache?.()
-    bridgeDeps.rebuildTrayMenu?.()
-    bridgeDeps.broadcastAuthChanged?.(session.getSession())
-    // Bootstrap adoption happens after the 200ms timer — start the bridge
-    // ourselves. autoStartBridge is idempotent.
-    autoStartBridge(bridgeDeps)
-  } catch (error) {
-    rememberLog(`[bootstrap-session] consume failed: ${error?.message || error}`)
-  }
-}
-
 // One-shot: legacy connection.json deprecated, rename to .bak silently
 try {
   const legacyPath = path.join(app.getPath('userData'), 'connection.json')
@@ -1919,13 +1888,6 @@ app.whenReady().then(async () => {
     bridgeDeps,
     createWindow: createSpriteWindow
   })
-
-  // Installer → desktop session handoff. Runs after createSpriteWindow so
-  // broadcastAuthChanged() lands on a live window — otherwise the renderer
-  // still sees a no-session state on first paint and shows Login.
-  // Fire-and-forget: a cold install with an unreachable backend shouldn't
-  // hold up first paint for the full 15s refresh timeout.
-  tryConsumeBootstrapSession()
 
   // macOS dock click → recreate or focus the sprite. Mostly dead on macOS
   // because `installTray` hides the dock, but kept so the app still behaves

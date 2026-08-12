@@ -281,17 +281,6 @@ export const strings: Translations = {
       loading: '加载中…',
       saveFailed: '无法保存账户设置。',
       saved: '账户设置已保存。',
-      changePassword: {
-        title: '修改密码',
-        currentPassword: '当前密码',
-        newPassword: '新密码',
-        confirmPassword: '确认新密码',
-        submit: '修改密码',
-        success: '密码已更新。',
-        mismatch: '两次输入的新密码不一致。',
-        tooShort: '新密码至少 8 个字符。',
-        sameAsOld: '新密码不能与当前密码相同。'
-      },
       webSearch: {
         heading: '网页搜索',
         intro: '配置 web 工具所使用的搜索与抓取服务。后端选择按用户保存,密钥仅保存在服务端。',
@@ -488,19 +477,5 @@ export const strings: Translations = {
       description: '显示移动端侧边栏。',
       toggle: '切换侧边栏'
     }
-  },
-
-  login: {
-    backendUnreachable: '无法连接后端。请检查网络后重试。',
-    backendUrl: '后端地址',
-    backendUrlPlaceholder: 'https://api.example.com',
-    error: '用户名或密码错误。',
-    password: '密码',
-    signIn: '登录',
-    signingIn: '登录中…',
-    signOut: '退出登录',
-    subtitle: '使用你的 DeskAgent 账户登录以继续。',
-    title: '登录 DeskAgent',
-    username: '用户名'
   }
 }

@@ -1,6 +1,6 @@
 import base64
 import hashlib
-import hmac
+import json
 import secrets
 from datetime import datetime
 from datetime import timedelta
@@ -20,12 +20,9 @@ from .models import AdminSession
 
 logger = get_logger(__name__)
 
-# PBKDF2 password hashing parameters — must match the format produced by
-# hash_password() for verify_password() to accept.
-PBKDF2_ALGORITHM = "sha256"
-PBKDF2_ITERATIONS = 600_000
-PBKDF2_SALT_BYTES = 16
-PASSWORD_HASH_PREFIX = "pbkdf2_sha256"
+# Activation token parameters — opaque random tokens (not user-chosen
+# passwords), so SHA-256 is sufficient (no PBKDF2 slow-hash needed).
+ACTIVATION_TOKEN_BYTES = 32
 
 BEARER_SCHEME = HTTPBearer(auto_error=False)
 
@@ -34,35 +31,43 @@ def _to_urlsafe_b64(data: bytes) -> str:
     return base64.urlsafe_b64encode(data).decode("ascii").rstrip("=")
 
 
-def _b64encode(data: bytes) -> str:
-    return _to_urlsafe_b64(data)
-
-
 def _b64decode(value: str) -> bytes:
     padding = "=" * (-len(value) % 4)
     return base64.urlsafe_b64decode(value + padding)
 
 
-def hash_password(password: str) -> str:
-    salt = secrets.token_bytes(PBKDF2_SALT_BYTES)
-    digest = hashlib.pbkdf2_hmac(PBKDF2_ALGORITHM, password.encode("utf-8"), salt, PBKDF2_ITERATIONS)
-    return f"{PASSWORD_HASH_PREFIX}${PBKDF2_ITERATIONS}${_b64encode(salt)}${_b64encode(digest)}"
+def generate_activation_token() -> str:
+    """Generate a random URL-safe activation token (~43 chars)."""
+    return secrets.token_urlsafe(ACTIVATION_TOKEN_BYTES)
 
 
-def verify_password(password: str, password_hash: str) -> bool:
-    try:
-        scheme, iteration_value, salt_value, digest_value = password_hash.split("$", 3)
-        if scheme != PASSWORD_HASH_PREFIX:
-            return False
+def hash_activation_token(token: str) -> str:
+    """SHA-256 hash of an activation token for DB storage + lookup."""
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
-        iterations = int(iteration_value)
-        salt = _b64decode(salt_value)
-        expected_digest = _b64decode(digest_value)
-    except (TypeError, ValueError):
-        return False
 
-    actual_digest = hashlib.pbkdf2_hmac(PBKDF2_ALGORITHM, password.encode("utf-8"), salt, iterations)
-    return hmac.compare_digest(actual_digest, expected_digest)
+def encode_activation_code(base_url: str, token: str) -> str:
+    """Pack ``{baseUrl, token}`` into a single opaque base64url string.
+
+    The result looks like gibberish to the end user; the client decodes it
+    to recover the backend address and activation token.
+    """
+    payload = json.dumps({"b": base_url, "t": token}, separators=(",", ":"))
+    return _to_urlsafe_b64(payload.encode("utf-8"))
+
+
+def decode_activation_code(code: str) -> tuple[str, str]:
+    """Reverse of :func:`encode_activation_code`.
+
+    Returns ``(base_url, token)``. Raises ``ValueError`` on malformed input.
+    """
+    raw = _b64decode(code)
+    data = json.loads(raw)
+    base_url = data.get("b")
+    token = data.get("t")
+    if not base_url or not token:
+        raise ValueError("activation code missing required fields")
+    return base_url, token
 
 
 def create_access_token(

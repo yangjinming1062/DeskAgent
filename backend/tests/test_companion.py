@@ -1504,7 +1504,7 @@ async def test_regenerate_avatar_from_image_uses_reference(monkeypatch, _patch_d
     monkeypatch.setattr(avatar_service, "enhance_avatar_prompt", fake_enhance_avatar)
 
     with SessionLocal() as db:
-        user = User(username="imguser", password_hash="x", is_active=True, can_use=True)
+        user = User(username="imguser", password_hash=None, is_active=True, can_use=True)
         db.add(user)
         db.commit()
         db.refresh(user)
@@ -1565,7 +1565,7 @@ async def test_regenerate_avatar_from_image_refuses_when_persona_incomplete(_pat
     _, SessionLocal = _patch_db
     with SessionLocal() as db:
         user = User(
-            username="incomplete", password_hash="x", is_active=True, can_use=True
+            username="incomplete", password_hash=None, is_active=True, can_use=True
         )
         db.add(user)
         db.commit()
@@ -1613,7 +1613,7 @@ async def test_generate_fullbody_stage_front_and_aux_chained(monkeypatch, _patch
     monkeypatch.setattr(avatar_service, "select_rig_type", fake_select_rig)
 
     with SessionLocal() as db:
-        user = User(username="fbuser", password_hash="x", is_active=True, can_use=True)
+        user = User(username="fbuser", password_hash=None, is_active=True, can_use=True)
         db.add(user)
         db.commit()
         db.refresh(user)
@@ -1693,7 +1693,7 @@ async def test_generate_fullbody_preconditions(monkeypatch, _patch_db):
     monkeypatch.setattr(avatar_service, "select_rig_type", fake_select_rig)
 
     with SessionLocal() as db:
-        user = User(username="fbuser2", password_hash="x", is_active=True, can_use=True)
+        user = User(username="fbuser2", password_hash=None, is_active=True, can_use=True)
         db.add(user)
         db.commit()
         db.refresh(user)
@@ -2054,7 +2054,7 @@ async def test_model_generation_rejects_concurrent_run(_patch_db, monkeypatch):
     monkeypatch.setattr("services.companion.model_service._run_tripo_pipeline", _noop_pipeline)
 
     with SessionLocal() as db:
-        user = User(username="mgen", password_hash="x", is_active=True, can_use=True)
+        user = User(username="mgen", password_hash=None, is_active=True, can_use=True)
         db.add(user)
         db.commit()
         db.refresh(user)
@@ -2107,7 +2107,7 @@ async def test_model_generation_failure_keeps_previous_model_active(_patch_db, m
     monkeypatch.setattr("services.companion.model_service.resolve_uploaded_avatar_path", _resolve_fails)
 
     with SessionLocal() as db:
-        user = User(username="mgenfail", password_hash="x", is_active=True, can_use=True)
+        user = User(username="mgenfail", password_hash=None, is_active=True, can_use=True)
         db.add(user)
         db.commit()
         db.refresh(user)
@@ -2161,7 +2161,7 @@ async def test_wardrobe_preview_and_confirm_lifecycle(_patch_db, monkeypatch):
     _, SessionLocal = _patch_db
 
     with SessionLocal() as db:
-        user = User(username="wardrobe_user", password_hash="x", is_active=True, can_use=True)
+        user = User(username="wardrobe_user", password_hash=None, is_active=True, can_use=True)
         db.add(user)
         db.commit()
         db.refresh(user)
