@@ -1,7 +1,7 @@
 import json
 import pytest
 
-from services.companion.personality_tagger import analyze_personality_tags
+from services.companion import analyze_personality_tags
 
 
 @pytest.mark.asyncio

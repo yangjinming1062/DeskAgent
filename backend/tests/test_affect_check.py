@@ -27,7 +27,7 @@ def _seed_persona(SessionLocal, user_id: int, *, complete: bool = True):
                 system_prompt_extras="你是小光，一个温柔的桌面伙伴。"
                 if complete
                 else "",
-                is_complete=complete,
+                is_complete=complete
             )
         )
         db.commit()
@@ -80,7 +80,7 @@ async def test_check_affect_should_express_true_emits(monkeypatch, _patch_db):
         user_id=2001,
         idle_seconds=45 * 60,
         local_hour=23,
-        llm_config={"model_name": "test"},
+        llm_config={"model_name": "test"}
     )
 
     assert result["expressed"] is True
@@ -145,7 +145,7 @@ async def test_check_affect_unknown_emotion_skips_emit(monkeypatch, _patch_db):
         user_id=2003,
         idle_seconds=1800,
         local_hour=14,
-        llm_config={"model_name": "test"},
+        llm_config={"model_name": "test"}
     )
 
     assert result["expressed"] is False
@@ -178,9 +178,7 @@ async def test_check_affect_llm_error_returns_no_throw(monkeypatch, _patch_db):
     aff = importlib.import_module("services.companion.affect_check")
     _seed_persona(SessionLocal, 2005)
 
-    from services.llm import LLMRuntimeError
-    from services.llm import FailoverReason
-    from services.llm.error_classifier import ClassifiedError
+    from services.llm import ClassifiedError, FailoverReason, LLMRuntimeError
 
     async def _fail(*a, **kw):
         raise LLMRuntimeError(

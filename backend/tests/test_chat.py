@@ -38,8 +38,7 @@ class TestLLMClient:
             client_for_config({"api_key": "sk-only"})
 
     def test_chat_providers_declare_prompt_family(self):
-        from services.llm.providers.base import ServiceType
-        from services.llm.providers.registry import resolve
+        from services.llm import ServiceType, resolve
 
         assert resolve(ServiceType.llm, "mimo").PROMPT_FAMILY == "openai"
         assert resolve(ServiceType.llm, "minimax").PROMPT_FAMILY == "openai"
@@ -166,7 +165,7 @@ class TestResolveContextTokens:
             session_id="1",
             message=ChatMessageRequest(role="user", content="hi"),
             model="custom-32k",
-            context_tokens=32_000,
+            context_tokens=32_000
         )
         assert req.context_tokens == 32_000
         assert req.model == "custom-32k"
@@ -215,7 +214,7 @@ class TestResolveContextTokens:
                 content="Describe this image",
                 attachments=[
                     {"type": "image", "file_url": "http://example.com/image.png"}
-                ],
+                ]
             )
         )
         content, content_type = _build_persisted_content(req)
@@ -298,7 +297,7 @@ class TestChatE2E:
             "messages": [{"role": "user", "content": "Say 'hello' in one word."}],
             "model": "mimo-v2.5-pro",
             "temperature": 0.5,
-            "max_tokens": 50,
+            "max_tokens": 50
         }
         resp = test_client.post("/api/llm/completion", headers=headers, json=payload)
         assert resp.status_code == 200
@@ -309,7 +308,6 @@ class TestChatE2E:
     def test_websocket_chat_flow(self, test_client, ws_ticket):
         """Test the actual WebSocket chat flow from session creation to prompt completion without mocks."""
         with test_client.websocket_connect(f"/api/chat/ws?ticket={ws_ticket}") as ws:
-            # 1. Create a new session
             ws.send_json(
                 {"jsonrpc": "2.0", "id": 1, "method": "session.create", "params": {}}
             )
@@ -318,7 +316,6 @@ class TestChatE2E:
             session_id = resp["result"]["session_id"]
             assert session_id
 
-            # 2. Submit a prompt
             ws.send_json(
                 {
                     "jsonrpc": "2.0",
@@ -326,14 +323,13 @@ class TestChatE2E:
                     "method": "prompt.submit",
                     "params": {
                         "session_id": session_id,
-                        "text": "Say 'ok' in one word.",
-                    },
+                        "text": "Say 'ok' in one word."
+                    }
                 }
             )
             resp = ws.receive_json()
             assert resp["result"] == {"queued": True}
 
-            # 3. Collect streaming events until message is complete
             events = []
             while True:
                 msg = ws.receive_json()
@@ -383,7 +379,7 @@ class TestChatE2E:
                     "jsonrpc": "2.0",
                     "id": 2,
                     "method": "session.interrupt",
-                    "params": {"session_id": session_id},
+                    "params": {"session_id": session_id}
                 }
             )
             resp = ws.receive_json()

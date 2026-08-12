@@ -5,8 +5,7 @@ import modules.media.models  # noqa: F401 — register models on ModelBase.metad
 import pytest
 import sqlalchemy
 from common import ModelBase
-from sqlalchemy import create_engine
-from sqlalchemy import text
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -16,7 +15,7 @@ def sqlite_engine():
     engine = create_engine(
         "sqlite://",
         connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
+        poolclass=StaticPool
     )
     ModelBase.metadata.create_all(bind=engine)
     # Production Postgres has a PARTIAL unique index on
@@ -128,7 +127,7 @@ def _patch_db(monkeypatch, sqlite_engine, tmp_path):
         "api.v1.chat",
         "api.v1.companion",
         "api.v1.llm",
-        "api.v1.media",
+        "api.v1.media"
     ):
         mod = __import__(mod_name, fromlist=["SESSION_LOCAL"])
         if hasattr(mod, "SESSION_LOCAL"):
@@ -154,12 +153,14 @@ def _seed_user(SessionLocal, username="testuser"):
         ``POST /api/user/activate`` directly.
     """
     from modules.auth import (
+        LoginRecord,
+        User,
+        UserModelConfig,
         create_access_token,
         encode_activation_code,
         generate_activation_token,
-        hash_activation_token,
+        hash_activation_token
     )
-    from modules.auth import User, UserModelConfig, LoginRecord
 
     # Retrieve real credentials from the environment for unmocked testing
     mimo_key = os.getenv("MIMO_API_KEY", "sk-fake-for-unit-tests")
@@ -172,7 +173,7 @@ def _seed_user(SessionLocal, username="testuser"):
             password_hash=None,
             activation_token_hash=hash_activation_token(raw_token),
             is_active=True,
-            can_use=True,
+            can_use=True
         )
         db.add(user)
         db.commit()
@@ -183,7 +184,7 @@ def _seed_user(SessionLocal, username="testuser"):
                 user_id=user.id,
                 llm_base_url=mimo_url,
                 llm_api_key=mimo_key,
-                llm_model_name="mimo-v2.5-pro",
+                llm_model_name="mimo-v2.5-pro"
             )
         )
         db.commit()
@@ -195,7 +196,7 @@ def _seed_user(SessionLocal, username="testuser"):
         db.commit()
     return {
         "token": token,
-        "activation_code": encode_activation_code("http://localhost:10620", raw_token),
+        "activation_code": encode_activation_code("http://localhost:10620", raw_token)
     }
 
 
@@ -216,11 +217,7 @@ def test_app(_patch_db):
 
     app.dependency_overrides[get_db] = _test_get_db
 
-    from api.v1 import chat
-    from api.v1 import llm
-    from api.v1 import media
-    from api.v1 import sessions
-    from api.v1 import user
+    from api.v1 import chat, llm, media, sessions, user
 
     # ``/health`` is mounted at app root in ``main.py`` since commit 3963571
     # (moved off the /api prefix so Docker HEALTHCHECK / k8s livenessProbe
@@ -266,8 +263,7 @@ def ws_ticket(_patch_db):
     ``?token=...``.
     """
     _, SessionLocal = _patch_db
-    from modules.auth import create_access_token
-    from modules.auth import User
+    from modules.auth import User, create_access_token
 
     with SessionLocal() as db:
         user = db.query(User).filter(User.is_active.is_(True)).first()

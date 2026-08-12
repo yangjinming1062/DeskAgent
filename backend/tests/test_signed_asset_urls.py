@@ -27,7 +27,7 @@ def test_signed_asset_url_round_trip():
         42,
         "idle_video_abc.mp4",
         int(qs["expires"][0]),
-        qs["sig"][0],
+        qs["sig"][0]
     )
 
 
@@ -41,7 +41,7 @@ def test_signed_asset_url_rejects_wrong_user():
         99,  # different user — must not be valid for the same URL
         "idle_video_abc.mp4",
         int(qs["expires"][0]),
-        qs["sig"][0],
+        qs["sig"][0]
     )
 
 
@@ -55,7 +55,7 @@ def test_signed_asset_url_rejects_wrong_filename():
         42,
         "idle_video_xxx.mp4",  # different filename
         int(qs["expires"][0]),
-        qs["sig"][0],
+        qs["sig"][0]
     )
 
 
@@ -69,7 +69,7 @@ def test_signed_asset_url_rejects_tampered_sig():
         42,
         "idle_video_abc.mp4",
         int(qs["expires"][0]),
-        "deadbeef" + qs["sig"][0][8:],
+        "deadbeef" + qs["sig"][0][8:]
     )
 
 
@@ -94,7 +94,7 @@ def test_signed_avatar_url_round_trip():
     assert verify_signed_avatar_request(
         "fileid123.png",
         int(qs["expires"][0]),
-        qs["sig"][0],
+        qs["sig"][0]
     )
 
 
@@ -107,7 +107,7 @@ def test_signed_avatar_url_rejects_wrong_filename():
     assert not verify_signed_avatar_request(
         "other.png",  # wrong filename
         int(qs["expires"][0]),
-        qs["sig"][0],
+        qs["sig"][0]
     )
 
 

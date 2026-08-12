@@ -1,12 +1,8 @@
 import json
 import pytest
 
-from services.companion.animation_generator import (
-    find_unmatched_tags,
-    generate_animation_clips,
-    get_rig_bones,
-    validate_and_sanitize_clip,
-)
+from services.companion import find_unmatched_tags, generate_animation_clips, get_rig_bones
+from services.companion.animation_generator import validate_and_sanitize_clip
 
 
 def test_validate_and_sanitize_clip():
@@ -22,10 +18,10 @@ def test_validate_and_sanitize_clip():
                 {"t": 1.0, "r": [0.2, -0.1, 0.05]},
                 {
                     "t": 1.5,
-                    "r": [0.5, 0.5, 0.5],
-                },  # loop will fix final keyframe to t=2.0 and r=[0, 0, 0]
+                    "r": [0.5, 0.5, 0.5]
+                }  # loop will fix final keyframe to t=2.0 and r=[0, 0, 0]
             ]
-        },
+        }
     }
 
     sanitized = validate_and_sanitize_clip(raw_clip, allowed_bones={"Head", "Spine"})
@@ -44,7 +40,6 @@ def test_get_rig_bones():
     quad_bones = get_rig_bones("quadruped")
     assert "LeftFrontLeg" in quad_bones
 
-    # fallback
     fallback_bones = get_rig_bones("unknown_species")
     assert fallback_bones == biped_bones
 
@@ -53,7 +48,7 @@ def test_get_rig_bones():
 async def test_find_unmatched_tags():
     existing_clips = [
         {"name": "c1", "tags": ["活泼", "元气"]},
-        {"name": "c2", "tags": ["温柔"]},
+        {"name": "c2", "tags": ["温柔"]}
     ]
 
     unmatched = await find_unmatched_tags(
@@ -78,9 +73,9 @@ async def test_generate_animation_clips():
                     "tracks": {
                         "Head": [
                             {"t": 0, "r": [0, 0, 0]},
-                            {"t": 2.0, "r": [0.1, 0.1, 0]},
+                            {"t": 2.0, "r": [0.1, 0.1, 0]}
                         ]
-                    },
+                    }
                 }
             ]
         )
@@ -90,7 +85,7 @@ async def test_generate_animation_clips():
         rig_type="biped",
         bone_list=["Head", "Spine"],
         personality_tags=["妖娆", "妩媚"],
-        species="人类",
+        species="人类"
     )
 
     assert len(clips) == 1

@@ -47,7 +47,7 @@ def _fake_provider(content: str | None = "ok", *, raises: Exception | None = Non
         return SimpleNamespace(
             provider_name="test",
             config=SimpleNamespace(model="m"),
-            raw_client=lambda: _fake_response(content),
+            raw_client=lambda: _fake_response(content)
         )
 
     return _provider
@@ -75,7 +75,7 @@ async def test_enhance_avatar_prompt_returns_text(monkeypatch):
                 "name": "小光",
                 "biological_type": "灵兽",
                 "gender": "女",
-                "appearance_core": "金发绿眼",
+                "appearance_core": "金发绿眼"
             }
         )
 
@@ -174,9 +174,9 @@ class _FakePersona:
         self.definition_json = json.dumps(
             {
                 "biological_type": biological_type,
-                "appearance_core": appearance,
+                "appearance_core": appearance
             },
-            ensure_ascii=False,
+            ensure_ascii=False
         )
 
 
@@ -187,7 +187,7 @@ def test_build_front_includes_pose_and_rules():
         "front",
         persona,
         avatar_prompt="bust portrait of 金发少女",
-        template=template,
+        template=template
     )
     assert prompt.startswith("full body front view portrait of 金发少女")
     assert "A-pose" in prompt
@@ -203,7 +203,7 @@ def test_build_right_uses_right_features():
         "right",
         persona,
         avatar_prompt="bust portrait of 金发少女",
-        template=template,
+        template=template
     )
     assert prompt.startswith(
         "full body right side view (90 degree profile) portrait of 金发少女"
@@ -218,7 +218,7 @@ def test_build_back_uses_back_features():
         "back",
         persona,
         avatar_prompt="bust portrait of 金发少女",
-        template=template,
+        template=template
     )
     assert prompt.startswith("full body back view (180 degree) portrait of 金发少女")
     assert "背面全身完整可见" in prompt
@@ -231,7 +231,7 @@ def test_build_with_flavor():
         "front",
         persona,
         avatar_prompt="bust portrait of 神圣九尾狐",
-        template=template,
+        template=template
     )
     assert "灵气" in prompt
 
@@ -244,7 +244,7 @@ def test_build_with_feedback():
         persona,
         avatar_prompt="bust portrait of 金发少女",
         template=template,
-        feedback="想要双马尾",
+        feedback="想要双马尾"
     )
     assert "用户反馈：想要双马尾" in prompt
 
@@ -256,7 +256,7 @@ def test_build_quadruped_pose():
         "front",
         persona,
         avatar_prompt="bust portrait of 橘猫",
-        template=template,
+        template=template
     )
     assert "四足自然直立站立于地面" in prompt
     assert "A-pose" not in prompt
@@ -271,7 +271,7 @@ async def test_chat_rejects_empty_response(monkeypatch):
         return SimpleNamespace(
             provider_name="test",
             config=SimpleNamespace(model="m"),
-            raw_client=lambda: _fake_response(""),
+            raw_client=lambda: _fake_response("")
         )
 
     monkeypatch.setattr(prompt_engineer, "provider_for_service", _provider)
@@ -309,7 +309,7 @@ def test_build_texture_uses_rig_type_prefix():
 def test_build_texture_includes_feedback():
     prompt = prompt_engineer.build_texture_prompt(
         description="旗袍",
-        feedback="更深邃的暗红色，加金色刺绣",
+        feedback="更深邃的暗红色，加金色刺绣"
     )
     assert "旗袍" in prompt
     assert "用户反馈：更深邃的暗红色，加金色刺绣" in prompt

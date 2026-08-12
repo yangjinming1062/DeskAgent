@@ -24,8 +24,7 @@ def test_companion_set_disturbance_tier_normalizes_unknown(pin_handlers):
 def test_companion_check_affect_validates_inputs(pin_handlers):
     """``companion.check_affect`` accepts only ``idle_seconds >= 0`` (float)
     and ``local_hour`` in ``0..23``."""
-    from services.disturbance import is_quiet
-    from services.disturbance import set_disturbance_tier
+    from services.disturbance import is_quiet, set_disturbance_tier
 
     # Service-level: handler normalizes bad inputs to 0 / -1.
     set_disturbance_tier(1, "normal")
@@ -35,8 +34,7 @@ def test_companion_check_affect_validates_inputs(pin_handlers):
 def test_companion_set_disturbance_tier_persists(pin_handlers):
     """Persistence contract: ``quiet`` survives across reads until
     overwritten (mirrors the P0-4 desktop re-report on reconnect)."""
-    from services.disturbance import set_disturbance_tier
-    from services.disturbance import get_disturbance_tier
+    from services.disturbance import get_disturbance_tier, set_disturbance_tier
 
     set_disturbance_tier(42, "quiet")
     assert get_disturbance_tier(42) == "quiet"
@@ -52,7 +50,7 @@ def test_tts_match_voice_preference_string_required(pin_handlers):
     # The helper expects a real db session; smoke-test the
     # preference normalization without db.
     from services.companion.voice_catalog import _score
-    from services.llm.voice_catalog import VoiceEntry
+    from services.llm import VoiceEntry
 
     fake = VoiceEntry(
         id="x",
@@ -60,7 +58,7 @@ def test_tts_match_voice_preference_string_required(pin_handlers):
         gender="female",
         language="zh",
         tags=["少女", "温柔", "女"],
-        description="",
+        description=""
     )
     assert _score("温柔少女音", fake) >= 2
 
@@ -89,7 +87,7 @@ def test_avatar_regenerate_feedback_string_required(pin_handlers):
 def test_session_info_handler_returns_session_id():
     """Pydantic SessionRuntimeInfo round-trip preserves the model /
     cwd / running keys (renderer depends on this)."""
-    from services.gateway.runtime import SessionRuntimeInfo
+    from services.gateway import SessionRuntimeInfo
 
     info = SessionRuntimeInfo(
         cwd="/tmp",
@@ -97,7 +95,7 @@ def test_session_info_handler_returns_session_id():
         model="mimo-v2.5",
         provider="openai",
         running=True,
-        settings={"reasoning": "high", "fast": False},
+        settings={"reasoning": "high", "fast": False}
     )
     dumped = info.model_dump()
     assert dumped["cwd"] == "/tmp"

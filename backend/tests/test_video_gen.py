@@ -25,12 +25,12 @@ def _async_handler(responses):
 
 class TestVideoGenJobModel:
     def test_video_gen_job_tablename(self):
-        from modules.media.models import VideoGenJob
+        from modules.media import VideoGenJob
 
         assert VideoGenJob.__tablename__ == "video_gen_jobs"
 
     def test_required_columns_present(self):
-        from modules.media.models import VideoGenJob
+        from modules.media import VideoGenJob
 
         names = {c.name for c in VideoGenJob.__table__.columns}
         for col in (
@@ -49,7 +49,7 @@ class TestVideoGenJobModel:
             "error_message",
             "created_at",
             "updated_at",
-            "expires_at",
+            "expires_at"
         ):
             assert col in names, f"missing column {col}"
 
@@ -116,19 +116,19 @@ class TestVideoGenJobRoundtrip:
             return httpx.AsyncClient(
                 transport=httpx.MockTransport(handler),
                 headers=kwargs.get("headers"),
-                timeout=timeout,
+                timeout=timeout
             )
 
         fake_httpx = SimpleNamespace(
             Timeout=httpx.Timeout,
-            AsyncClient=_mock_async_client,
+            AsyncClient=_mock_async_client
         )
         monkeypatch.setattr(video_jobs_mod, "httpx", fake_httpx)
 
         mock_client = httpx.AsyncClient(
             transport=httpx.MockTransport(handler),
             base_url="https://api.minimaxi.com",
-            headers={"Authorization": "Bearer sk-test"},
+            headers={"Authorization": "Bearer sk-test"}
         )
         http_mod._clients[("https://api.minimaxi.com", "sk-test")] = mock_client
 
@@ -142,7 +142,7 @@ class TestVideoGenJobRoundtrip:
                 resolution=resolution,
                 first_frame_image=None,
                 model=None,
-                aspect_ratio=aspect_ratio,
+                aspect_ratio=aspect_ratio
             )
             job_id = job.id
             assert job.status == "queued"
@@ -172,7 +172,7 @@ class TestVideoGenJobRoundtrip:
                 return httpx.Response(
                     200,
                     content=b"\x00\x00\x00\x18ftypmoov",
-                    headers={"content-type": "video/mp4"},
+                    headers={"content-type": "video/mp4"}
                 )
             if path == "/v1/video_generation":
                 calls.append("submit")
@@ -181,7 +181,7 @@ class TestVideoGenJobRoundtrip:
                 assert "content" not in body
                 return httpx.Response(
                     200,
-                    json={"base_resp": {"status_code": 0}, "task_id": "task-test-1"},
+                    json={"base_resp": {"status_code": 0}, "task_id": "task-test-1"}
                 )
             if path == "/v1/query/video_generation":
                 calls.append("poll")
@@ -190,8 +190,8 @@ class TestVideoGenJobRoundtrip:
                     json={
                         "base_resp": {"status_code": 0},
                         "status": "Success",
-                        "file_id": "file-1",
-                    },
+                        "file_id": "file-1"
+                    }
                 )
             if path == "/v1/files/retrieve":
                 calls.append("retrieve")
@@ -202,9 +202,9 @@ class TestVideoGenJobRoundtrip:
                         "base_resp": {"status_code": 0},
                         "file": {
                             "download_url": "https://example.com/video.mp4",
-                            "content_type": "video/mp4",
-                        },
-                    },
+                            "content_type": "video/mp4"
+                        }
+                    }
                 )
             return httpx.Response(404, json={"error": "not found", "path": path})
 
@@ -214,7 +214,7 @@ class TestVideoGenJobRoundtrip:
             handler=handler,
             duration=6,
             resolution="768P",
-            aspect_ratio=None,
+            aspect_ratio=None
         )
         assert row.status == "succeeded", (
             f"job ended in {row.status}: {row.error_message}"
@@ -238,7 +238,7 @@ class TestVideoGenJobRoundtrip:
                 return httpx.Response(
                     200,
                     content=b"\x00\x00\x00\x18ftypmoov",
-                    headers={"content-type": "video/mp4"},
+                    headers={"content-type": "video/mp4"}
                 )
             if path == "/v2/video_generation":
                 calls.append("submit")
@@ -246,7 +246,7 @@ class TestVideoGenJobRoundtrip:
                 assert body["content"][0]["text"] == "a cat playing piano"
                 return httpx.Response(
                     200,
-                    json={"base_resp": {"status_code": 0}, "task_id": "task-test-1"},
+                    json={"base_resp": {"status_code": 0}, "task_id": "task-test-1"}
                 )
             if path.startswith("/v2/query/video_generation/"):
                 calls.append("poll")
@@ -256,9 +256,9 @@ class TestVideoGenJobRoundtrip:
                         "base_resp": {"status_code": 0},
                         "task": {
                             "status": "succeeded",
-                            "content": {"url": "https://example.com/video.mp4"},
-                        },
-                    },
+                            "content": {"url": "https://example.com/video.mp4"}
+                        }
+                    }
                 )
             return httpx.Response(404, json={"error": "not found", "path": path})
 
@@ -268,7 +268,7 @@ class TestVideoGenJobRoundtrip:
             handler=handler,
             duration=6,
             resolution="768P",
-            aspect_ratio="16:9",
+            aspect_ratio="16:9"
         )
         assert row.status == "succeeded", (
             f"job ended in {row.status}: {row.error_message}"
@@ -294,14 +294,14 @@ class TestVideoGenJobRoundtrip:
                     200,
                     json={
                         "base_resp": {"status_code": 1004, "status_msg": "auth fail"}
-                    },
+                    }
                 )
             return httpx.Response(404)
 
         mock_client = httpx.AsyncClient(
             transport=httpx.MockTransport(handler),
             base_url="https://api.minimaxi.com",
-            headers={"Authorization": "Bearer sk-test"},
+            headers={"Authorization": "Bearer sk-test"}
         )
         http_mod._clients.clear()
         http_mod._clients[("https://api.minimaxi.com", "sk-test")] = mock_client
@@ -329,13 +329,13 @@ class TestVideoGenJobRoundtrip:
                     resolution="768P",
                     first_frame_image=None,
                     model=None,
-                    aspect_ratio=None,
+                    aspect_ratio=None
                 )
 
             # Read via the SAME session the test session — _update_job
             # opens its own session which on SQLite under SAVEPOINT may
             # have visibility issues, so trust the test session.
-            from modules.media.models import VideoGenJob
+            from modules.media import VideoGenJob
             from sqlalchemy import select
 
             db.expire_all()

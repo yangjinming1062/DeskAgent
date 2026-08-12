@@ -18,7 +18,7 @@ def _seed_user(SessionLocal):
             username="statsuser",
             password_hash=None,
             is_active=True,
-            can_use=True,
+            can_use=True
         )
         db.add(user)
         db.commit()

@@ -35,7 +35,7 @@ class TestProviderConfig:
             api_key="k",
             model="m",
             service_type=ServiceType.llm,
-            provider_name="mimo",
+            provider_name="mimo"
         )
         with pytest.raises((ValueError, AttributeError)):
             cfg.base_url = "https://y/v1"  # type: ignore[misc]
@@ -186,7 +186,7 @@ class TestProviderError:
             status_code=401,
             body={"error": {"message": "auth"}},
             provider="x",
-            model="y",
+            model="y"
         )
         assert err.status_code == 401
         assert err.body == {"error": {"message": "auth"}}
@@ -219,7 +219,7 @@ class TestProviderError:
 
 class TestRegistry:
     def test_mimo_providers_registered(self):
-        from services.llm.providers.registry import resolve
+        from services.llm import resolve
 
         assert resolve(ServiceType.llm, "mimo") is MiMoChatProvider
         assert resolve(ServiceType.stt, "mimo") is MiMoSTTProvider
@@ -233,9 +233,9 @@ class TestRegistry:
             MiniMaxChatProvider,
             MiniMaxImageGenProvider,
             MiniMaxTTSProvider,
-            MiniMaxVideoGenProvider,
+            MiniMaxVideoGenProvider
         )
-        from services.llm.providers.registry import resolve
+        from services.llm import resolve
 
         assert resolve(ServiceType.llm, "minimax") is MiniMaxChatProvider
         assert resolve(ServiceType.image_gen, "minimax") is MiniMaxImageGenProvider
@@ -250,9 +250,9 @@ class TestRegistry:
         tag matching ambiguous — mimo / minimax / zhipu cover those caps."""
         from services.llm.providers.gemini import (
             GeminiChatProvider,
-            GeminiImageGenProvider,
+            GeminiImageGenProvider
         )
-        from services.llm.providers.registry import resolve
+        from services.llm import resolve
 
         assert resolve(ServiceType.llm, "gemini") is GeminiChatProvider
         assert resolve(ServiceType.image_gen, "gemini") is GeminiImageGenProvider
@@ -268,9 +268,9 @@ class TestRegistry:
             ZhipuChatProvider,
             ZhipuImageGenProvider,
             ZhipuSTTProvider,
-            ZhipuTTSProvider,
+            ZhipuTTSProvider
         )
-        from services.llm.providers.registry import resolve
+        from services.llm import resolve
 
         assert resolve(ServiceType.llm, "zhipu") is ZhipuChatProvider
         assert resolve(ServiceType.stt, "zhipu") is ZhipuSTTProvider
@@ -287,9 +287,9 @@ class TestRegistry:
             GrokImageGenProvider,
             GrokSTTProvider,
             GrokTTSProvider,
-            GrokVideoGenProvider,
+            GrokVideoGenProvider
         )
-        from services.llm.providers.registry import resolve
+        from services.llm import resolve
 
         assert resolve(ServiceType.llm, "grok") is GrokChatProvider
         assert resolve(ServiceType.stt, "grok") is GrokSTTProvider
@@ -430,7 +430,7 @@ class TestProviderChain:
         "zhipu_api_key": "",
         "zhipu_base_url": "",
         "grok_api_key": "",
-        "grok_base_url": "",
+        "grok_base_url": ""
     }
 
     def _reset_settings(self, monkeypatch):
@@ -537,7 +537,7 @@ class TestExecuteWithFallback:
             "mimo_api_key",
             "mimo_base_url",
             "minimax_api_key",
-            "minimax_base_url",
+            "minimax_base_url"
         ):
             monkeypatch.setattr(
                 f"components.SETTINGS.{field}", "" if field != "providers" else []
@@ -625,7 +625,7 @@ class TestExecuteWithFallback:
                 None,
                 "llm",
                 call_fn=call_fn,
-                stream_started=lambda: True,  # simulate first chunk already emitted
+                stream_started=lambda: True  # simulate first chunk already emitted
             )
         assert calls == ["mimo"]  # stream_started=True blocks the fallback
 
@@ -642,7 +642,7 @@ class TestExecuteWithFallback:
                 status_code=401,
                 body={},
                 provider=provider.provider_name,
-                model="m",
+                model="m"
             )
 
         with pytest.raises(ProviderError):
@@ -658,7 +658,7 @@ class TestExecuteWithFallback:
             "mimo_api_key",
             "minimax_api_key",
             "llm_base_url",
-            "llm_api_key",
+            "llm_api_key"
         ):
             monkeypatch.setattr(
                 f"components.SETTINGS.{field}", "" if field != "providers" else []
@@ -707,7 +707,7 @@ class TestMiniMaxImageGen:
                 api_key="sk-minimax",
                 model="image-01",
                 service_type=ServiceType.image_gen,
-                provider_name="minimax",
+                provider_name="minimax"
             )
         )
         provider._client = client
@@ -719,7 +719,7 @@ class TestMiniMaxImageGen:
             [
                 {
                     "base_resp": {"status_code": 0, "status_msg": "success"},
-                    "data": {"image_base64": ["aGVsbG8=", "d29ybGQ="]},
+                    "data": {"image_base64": ["aGVsbG8=", "d29ybGQ="]}
                 }
             ]
         )
@@ -740,8 +740,8 @@ class TestMiniMaxImageGen:
                 200,
                 json={
                     "base_resp": {"status_code": 0},
-                    "data": {"image_base64": ["dGVzdA="]},
-                },
+                    "data": {"image_base64": ["dGVzdA="]}
+                }
             )
 
         provider = self._make_provider(capture)
@@ -759,7 +759,7 @@ class TestMiniMaxImageGen:
                 {
                     "base_resp": {
                         "status_code": 1004,
-                        "status_msg": "login fail: invalid api key",
+                        "status_msg": "login fail: invalid api key"
                     }
                 }
             ]
@@ -799,7 +799,7 @@ class TestMiniMaxImageGen:
                 {
                     "base_resp": {
                         "status_code": 1027,
-                        "status_msg": "violated safety policy",
+                        "status_msg": "violated safety policy"
                     }
                 }
             ]
@@ -822,7 +822,7 @@ class TestMiniMaxImageGen:
                 api_key="k",
                 model="m",
                 service_type=ServiceType.image_gen,
-                provider_name="minimax",
+                provider_name="minimax"
             )
         )
         assert provider.raw_client() is None
@@ -837,8 +837,8 @@ class TestMiniMaxImageGen:
                 200,
                 json={
                     "base_resp": {"status_code": 0},
-                    "data": {"image_base64": ["aGVsbG8="]},
-                },
+                    "data": {"image_base64": ["aGVsbG8="]}
+                }
             )
 
         provider = self._make_provider(capture)
@@ -867,7 +867,7 @@ class TestMiniMaxImageGen:
             )
         assert exc_info.value.body == {
             "base_resp": {"status_code": 0},
-            "data": {"image_base64": []},
+            "data": {"image_base64": []}
         }
         assert exc_info.value.provider == "minimax"
         assert exc_info.value.model == "image-01"
@@ -889,8 +889,8 @@ class TestEmptyImageResultFallback:
             "Zhipu image_gen returned no images: {...}",
             "Gemini image_gen returned no images: {...}",
             "grok image_gen returned no images: {...}",
-            "grok image_edit returned no images: {...}",
-        ],
+            "grok image_edit returned no images: {...}"
+        ]
     )
     def test_all_providers_trigger_fallback(self, message):
         from services.llm import classify_api_error
@@ -947,7 +947,7 @@ class TestGeminiImageGen:
 
         client = httpx.AsyncClient(
             base_url="https://generativelanguage.googleapis.com",
-            transport=httpx.MockTransport(handler),
+            transport=httpx.MockTransport(handler)
         )
         provider = GeminiImageGenProvider(
             ProviderConfig(
@@ -955,7 +955,7 @@ class TestGeminiImageGen:
                 api_key="sk-gemini",
                 model="gemini-2.5-flash-image",
                 service_type=ServiceType.image_gen,
-                provider_name="gemini",
+                provider_name="gemini"
             )
         )
         provider._client = client
@@ -973,14 +973,14 @@ class TestGeminiImageGen:
                                 {
                                     "inlineData": {
                                         "mimeType": "image/png",
-                                        "data": "aGVsbG8=",
+                                        "data": "aGVsbG8="
                                     }
                                 }
                             ]
                         }
                     }
                 ]
-            },
+            }
         )
 
     @pytest.mark.asyncio
@@ -1060,10 +1060,10 @@ class TestMiMoImageGenReference:
                             type(
                                 "_Item",
                                 (),
-                                {"url": "http://out/1.png", "b64_json": None},
+                                {"url": "http://out/1.png", "b64_json": None}
                             )()
                         ]
-                    },
+                    }
                 )()
 
         provider = MiMoImageGenProvider(
@@ -1072,7 +1072,7 @@ class TestMiMoImageGenReference:
                 api_key="sk-mimo",
                 model="dall-e-3",
                 service_type=ServiceType.image_gen,
-                provider_name="mimo",
+                provider_name="mimo"
             )
         )
         provider._client = type("_Client", (), {"images": _Images()})()
@@ -1098,7 +1098,7 @@ class TestZhipuImageGenReference:
                 api_key="sk-zhipu",
                 model="glm-image",
                 service_type=ServiceType.image_gen,
-                provider_name="zhipu",
+                provider_name="zhipu"
             )
         )
         provider._client = client
@@ -1145,7 +1145,7 @@ class TestMiniMaxTTS:
                 api_key="sk-minimax",
                 model="speech-2.8-hd",
                 service_type=ServiceType.tts,
-                provider_name="minimax",
+                provider_name="minimax"
             )
         )
         provider._client = client
@@ -1158,7 +1158,7 @@ class TestMiniMaxTTS:
             [
                 {
                     "base_resp": {"status_code": 0},
-                    "data": {"audio": "68656c6c6f"},
+                    "data": {"audio": "68656c6c6f"}
                 }
             ]
         )
@@ -1181,7 +1181,7 @@ class TestMiniMaxVideoGen:
                 api_key="sk-minimax",
                 model="MiniMax-H3",
                 service_type=ServiceType.video_gen,
-                provider_name="minimax",
+                provider_name="minimax"
             )
         )
         provider._client = client
@@ -1238,14 +1238,14 @@ class TestMiniMaxVideoGen:
             VideoGenRequest(
                 prompt="x",
                 first_frame_image="https://example.com/seed.png",
-                aspect_ratio="9:16",
+                aspect_ratio="9:16"
             )
         )
         body = captured[0]
         assert body["content"][1] == {
             "type": "image_url",
             "image_url": {"url": "https://example.com/seed.png"},
-            "role": "first_frame",
+            "role": "first_frame"
         }
         assert body["ratio"] == "adaptive"
 
@@ -1257,8 +1257,8 @@ class TestMiniMaxVideoGen:
                     "base_resp": {"status_code": 0},
                     "task": {
                         "status": "succeeded",
-                        "content": {"url": "https://filecdn.minimax.chat/abc.mp4"},
-                    },
+                        "content": {"url": "https://filecdn.minimax.chat/abc.mp4"}
+                    }
                 }
             ]
         )
@@ -1307,8 +1307,8 @@ class TestMiniMaxVideoGen:
                     "base_resp": {"status_code": 0},
                     "task": {
                         "status": "failed",
-                        "error": {"code": "bad_prompt", "message": "prompt too long"},
-                    },
+                        "error": {"code": "bad_prompt", "message": "prompt too long"}
+                    }
                 }
             ]
         )
@@ -1338,8 +1338,8 @@ class TestMiniMaxVideoGen:
                     "base_resp": {"status_code": 0},
                     "task": {
                         "status": "failed",
-                        "error": "some string error",
-                    },
+                        "error": "some string error"
+                    }
                 }
             ]
         )
@@ -1400,7 +1400,7 @@ class TestMiniMaxVideoGenV1:
                 api_key="sk-minimax",
                 model=model,
                 service_type=ServiceType.video_gen,
-                provider_name="minimax",
+                provider_name="minimax"
             )
         )
         provider._client = client
@@ -1425,7 +1425,7 @@ class TestMiniMaxVideoGenV1:
                 duration=10,
                 resolution="1080P",
                 aspect_ratio="16:9",
-                first_frame_image="https://example.com/seed.png",
+                first_frame_image="https://example.com/seed.png"
             )
         )
         assert job.task_id == "task-v1"
@@ -1472,8 +1472,8 @@ class TestMiniMaxVideoGenV1:
                 json={
                     "base_resp": {"status_code": 0},
                     "status": "Success",
-                    "file_id": "file-42",
-                },
+                    "file_id": "file-42"
+                }
             )
 
         provider = self._make_provider(handler)
@@ -1490,7 +1490,7 @@ class TestMiniMaxVideoGenV1:
         for raw, expected in (
             ("Queueing", "queued"),
             ("Processing", "processing"),
-            ("Fail", "failed"),
+            ("Fail", "failed")
         ):
             handler = _async_handler([{"base_resp": {"status_code": 0}, "status": raw}])
             provider = self._make_provider(handler)
@@ -1504,7 +1504,7 @@ class TestMiniMaxVideoGenV1:
                 {
                     "base_resp": {"status_code": 0},
                     "status": "Fail",
-                    "error_message": "content rejected",
+                    "error_message": "content rejected"
                 }
             ]
         )
@@ -1526,9 +1526,9 @@ class TestMiniMaxVideoGenV1:
                     "file": {
                         "download_url": "https://cdn.minimax.chat/v1.mp4",
                         "content_type": "video/mp4",
-                        "bytes": 123,
-                    },
-                },
+                        "bytes": 123
+                    }
+                }
             )
 
         provider = self._make_provider(handler)
@@ -1591,7 +1591,7 @@ class TestGrokImageGen:
                 api_key="sk-grok",
                 model="grok-imagine-image-quality",
                 service_type=ServiceType.image_gen,
-                provider_name="grok",
+                provider_name="grok"
             )
         )
         provider._client = _mock_grok_http(handler)
@@ -1610,9 +1610,9 @@ class TestGrokImageGen:
                 json={
                     "data": [
                         {"url": "https://cdn.x.ai/1.png"},
-                        {"url": "https://cdn.x.ai/2.png"},
+                        {"url": "https://cdn.x.ai/2.png"}
                     ]
-                },
+                }
             )
 
         async def cdn_handler(req: httpx.Request) -> httpx.Response:
@@ -1658,13 +1658,13 @@ class TestGrokImageGen:
             ImageGenRequest(
                 prompt="re-render",
                 reference_image="https://ref/seed.png",
-                aspect_ratio="16:9",
+                aspect_ratio="16:9"
             )
         )
         assert captured[0].url.path == "/images/edits"
         assert bodies[0]["image"] == {
             "url": "https://ref/seed.png",
-            "type": "image_url",
+            "type": "image_url"
         }
         assert bodies[0]["aspect_ratio"] == "16:9"
 
@@ -1689,7 +1689,7 @@ class TestGrokImageGen:
                 api_key="k",
                 model="m",
                 service_type=ServiceType.image_gen,
-                provider_name="grok",
+                provider_name="grok"
             )
         )
         assert provider.raw_client() is None
@@ -1705,7 +1705,7 @@ class TestGrokTTS:
                 api_key="sk-grok",
                 model="grok-voice-think-fast-1.0",
                 service_type=ServiceType.tts,
-                provider_name="grok",
+                provider_name="grok"
             )
         )
         provider._client = _mock_grok_http(handler)
@@ -1770,7 +1770,7 @@ class TestGrokSTT:
                 api_key="sk-grok",
                 model="grok-transcribe",
                 service_type=ServiceType.stt,
-                provider_name="grok",
+                provider_name="grok"
             )
         )
         provider._client = _mock_grok_http(handler)
@@ -1816,7 +1816,7 @@ class TestGrokVideoGen:
                 api_key="sk-grok",
                 model=model,
                 service_type=ServiceType.video_gen,
-                provider_name="grok",
+                provider_name="grok"
             )
         )
         provider._client = _mock_grok_http(handler)
@@ -1847,7 +1847,7 @@ class TestGrokVideoGen:
                 duration=5,
                 resolution="720p",
                 first_frame_image="https://example.com/seed.png",
-                aspect_ratio="16:9",
+                aspect_ratio="16:9"
             )
         )
         body = captured[0]
@@ -1858,7 +1858,7 @@ class TestGrokVideoGen:
         assert body["aspect_ratio"] == "16:9"
         assert body["image"] == {
             "url": "https://example.com/seed.png",
-            "type": "image_url",
+            "type": "image_url"
         }
 
     @pytest.mark.asyncio
@@ -1934,7 +1934,7 @@ class TestGrokVideoGen:
             ("pending", "processing"),  # alternate in-flight label
             ("running", "processing"),  # alt in-flight label
             ("failed", "failed"),
-            ("expired", "failed"),  # collapse to internal "failed" terminal
+            ("expired", "failed")  # collapse to internal "failed" terminal
         ):
             handler = _async_handler([{"status": raw}])
             provider = self._make_provider(handler)
@@ -1959,7 +1959,7 @@ class TestGrokVideoGen:
             [
                 {
                     "status": "failed",
-                    "error": {"code": "invalid_argument", "message": "prompt too long"},
+                    "error": {"code": "invalid_argument", "message": "prompt too long"}
                 }
             ]
         )
@@ -2014,7 +2014,7 @@ class TestGrokVideoGen:
                 api_key="k",
                 model="m",
                 service_type=ServiceType.video_gen,
-                provider_name="grok",
+                provider_name="grok"
             )
         )
         assert provider.raw_client() is None
@@ -2039,7 +2039,7 @@ class TestPerUserProviderChain:
             User,
             UserModelConfig,
             generate_activation_token,
-            hash_activation_token,
+            hash_activation_token
         )
 
         with SessionLocal() as db:
@@ -2050,7 +2050,7 @@ class TestPerUserProviderChain:
                     generate_activation_token()
                 ),
                 is_active=True,
-                can_use=True,
+                can_use=True
             )
             db.add(user)
             db.commit()
@@ -2079,9 +2079,9 @@ class TestPerUserProviderChain:
                 {
                     "name": "minimax",
                     "api_key": "sk-user-mm",
-                    "base_url": "https://user-mm.example/v1",
+                    "base_url": "https://user-mm.example/v1"
                 }
-            ],
+            ]
         )
         with SessionLocal() as db:
             chain = resolve_provider_chain(db, user_id, "llm")
@@ -2122,7 +2122,7 @@ class TestPerUserProviderChain:
             User,
             UserModelConfig,
             generate_activation_token,
-            hash_activation_token,
+            hash_activation_token
         )
         from services.llm import resolve_provider_chain
 
@@ -2138,7 +2138,7 @@ class TestPerUserProviderChain:
                     generate_activation_token()
                 ),
                 is_active=True,
-                can_use=True,
+                can_use=True
             )
             db.add(user)
             db.commit()
@@ -2152,15 +2152,15 @@ class TestPerUserProviderChain:
                             {
                                 "name": "minimax",
                                 "api_key": "sk-mm",
-                                "base_url": "https://mm/v1",
+                                "base_url": "https://mm/v1"
                             },
                             {
                                 "name": "mimo",
                                 "api_key": "sk-mimo",
-                                "base_url": "https://mimo/v1",
-                            },
+                                "base_url": "https://mimo/v1"
+                            }
                         ]
-                    ),
+                    )
                 )
             )
             db.commit()
@@ -2193,7 +2193,7 @@ class TestResolveUserLlmConfigCredentials:
                 User,
                 UserModelConfig,
                 generate_activation_token,
-                hash_activation_token,
+                hash_activation_token
             )
 
             user = User(
@@ -2203,7 +2203,7 @@ class TestResolveUserLlmConfigCredentials:
                     generate_activation_token()
                 ),
                 is_active=True,
-                can_use=True,
+                can_use=True
             )
             db.add(user)
             db.commit()
@@ -2216,10 +2216,10 @@ class TestResolveUserLlmConfigCredentials:
                             {
                                 "name": "minimax",
                                 "api_key": "sk-user-mm",
-                                "base_url": "https://user-mm.example/v1",
+                                "base_url": "https://user-mm.example/v1"
                             }
                         ]
-                    ),
+                    )
                 )
             )
             db.commit()
@@ -2241,7 +2241,7 @@ class TestResolveUserLlmConfigCredentials:
             "api_key": "",
             "base_url": "",
             "model_name": "",
-            "provider_name": "",
+            "provider_name": ""
         }
 
 
@@ -2262,8 +2262,8 @@ class TestMiniMaxInnerCodes:
                 "status_code": 200,
                 "json": lambda self: {
                     "base_resp": {"status_code": status_code, "status_msg": status_msg}
-                },
-            },
+                }
+            }
         )()
         with pytest.raises(ProviderError) as exc:
             raise_for_minimax_response(resp, provider="minimax", model="MiniMax-H3")
@@ -2274,7 +2274,7 @@ class TestMiniMaxInnerCodes:
     def test_plan_refusal_is_billing_not_format_error(self):
         err, classified = self._classify(
             "invalid params, TokenPlan 或 Credit 暂不支持 MiniMax-H3 系列模型 (2013)",
-            2013,
+            2013
         )
         assert err.status_code == 402
         assert classified.reason.value == "billing"

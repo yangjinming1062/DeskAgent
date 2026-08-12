@@ -1,15 +1,13 @@
 from datetime import datetime
 import json
 
-from components import (
-    MAX_INFERRED_PROFILE_CONTENT_CHARS,
-    NIGHTLY_MIN_MESSAGES_TODAY
-)
+import pytest
+from sqlalchemy import delete, text
+
+from components import MAX_INFERRED_PROFILE_CONTENT_CHARS, NIGHTLY_MIN_MESSAGES_TODAY
 from modules.conversation import Conversation, Message
 from modules.memory import Memory
 from modules.scheduler import CronJob
-import pytest
-from sqlalchemy import delete, text
 
 from services.companion import format_inferred_profile_block, format_memories_block
 from services.scheduler import cron, nightly_activity
@@ -44,7 +42,7 @@ def _make_user(SessionLocal, user_id: int = 1001, timezone_str: str = "Asia/Shan
         UserModelConfig,
         create_access_token,
         generate_activation_token,
-        hash_activation_token,
+        hash_activation_token
     )
 
     with SessionLocal() as db:
@@ -57,7 +55,7 @@ def _make_user(SessionLocal, user_id: int = 1001, timezone_str: str = "Asia/Shan
                     generate_activation_token()
                 ),
                 is_active=True,
-                can_use=True,
+                can_use=True
             )
             db.add(user)
             db.commit()
@@ -66,7 +64,7 @@ def _make_user(SessionLocal, user_id: int = 1001, timezone_str: str = "Asia/Shan
                     user_id=user_id,
                     llm_base_url="https://fake-llm.example.com",
                     llm_api_key="sk-fake-key",
-                    llm_model_name="test-model",
+                    llm_model_name="test-model"
                 )
             )
             token, _, jti = create_access_token(user_id=user_id, username=user.username)
@@ -77,7 +75,7 @@ def _make_user(SessionLocal, user_id: int = 1001, timezone_str: str = "Asia/Shan
                         user_id=user_id,
                         content=timezone_str,
                         context="user_profile:timezone",
-                        tags='["onboarding", "user_profile"]',
+                        tags='["onboarding", "user_profile"]'
                     )
                 )
             db.commit()
@@ -103,8 +101,8 @@ def test_retain_recall_rejects_inferred_profile_context(seeded):
             {
                 "kind": "recall",
                 "content": "trying to forge",
-                "context": "inferred_profile:basic_info",
-            },
+                "context": "inferred_profile:basic_info"
+            }
         )
         assert "error" in json.loads(out)
         rows = db.execute(
@@ -124,8 +122,8 @@ def test_retain_recall_rejects_diary_context(seeded):
             {
                 "kind": "recall",
                 "content": "trying to forge diary",
-                "context": "diary:2026-08-12",
-            },
+                "context": "diary:2026-08-12"
+            }
         )
         assert "error" in json.loads(out)
         rows = db.execute(
@@ -146,20 +144,20 @@ def test_recall_excludes_inferred_profile_but_includes_diary(seeded):
                     user_id=1001,
                     content="Inferred: software engineer",
                     context="inferred_profile:basic_info",
-                    tags='["inferred_profile"]',
+                    tags='["inferred_profile"]'
                 ),
                 Memory(
                     user_id=1001,
                     content="Diary note about python project",
                     context="diary:2026-08-12",
-                    tags='["diary", "self_reflection"]',
+                    tags='["diary", "self_reflection"]'
                 ),
                 Memory(
                     user_id=1001,
                     content="Regular recall python preference",
                     context="recall:preferences",
-                    tags='["likes"]',
-                ),
+                    tags='["likes"]'
+                )
             ]
         )
         db.commit()
@@ -191,20 +189,20 @@ def test_format_inferred_profile_block_renders_in_order(seeded):
                     user_id=1001,
                     content="Night owl 2am-10am",
                     context="inferred_profile:work_schedule",
-                    tags='["inferred_profile"]',
+                    tags='["inferred_profile"]'
                 ),
                 Memory(
                     user_id=1001,
                     content="Born 1995, Tokyo",
                     context="inferred_profile:basic_info",
-                    tags='["inferred_profile"]',
+                    tags='["inferred_profile"]'
                 ),
                 Memory(
                     user_id=1001,
                     content="Loves photography and hiking",
                     context="inferred_profile:interests",
-                    tags='["inferred_profile"]',
-                ),
+                    tags='["inferred_profile"]'
+                )
             ]
         )
         db.commit()
@@ -228,20 +226,20 @@ def test_format_memories_block_excludes_inferred_profile_and_diary(seeded):
                     user_id=1001,
                     content="inferred secret",
                     context="inferred_profile:basic_info",
-                    tags='["inferred_profile"]',
+                    tags='["inferred_profile"]'
                 ),
                 Memory(
                     user_id=1001,
                     content="private companion diary",
                     context="diary:2026-08-12",
-                    tags='["diary"]',
+                    tags='["diary"]'
                 ),
                 Memory(
                     user_id=1001,
                     content="actual durable memory",
                     context="recall:hobby",
-                    tags='["likes"]',
-                ),
+                    tags='["likes"]'
+                )
             ]
         )
         db.commit()
@@ -264,13 +262,13 @@ def test_preprocess_conversation_strips_noise():
         id=3,
         role="assistant",
         content=None,
-        tool_calls='[{"id": "call_1", "type": "function"}]',
+        tool_calls='[{"id": "call_1", "type": "function"}]'
     )
     msg_assistant_mixed = Message(
         id=4,
         role="assistant",
         content="I have read your file.",
-        tool_calls='[{"id": "call_1", "type": "function"}]',
+        tool_calls='[{"id": "call_1", "type": "function"}]'
     )
     msg_user_text = Message(id=5, role="user", content="Hello companion!")
     msg_user_multimodal = Message(
@@ -279,10 +277,10 @@ def test_preprocess_conversation_strips_noise():
         content=json.dumps(
             [
                 {"type": "text", "text": "Look at this:"},
-                {"type": "image_url", "image_url": "http://..."},
+                {"type": "image_url", "image_url": "http://..."}
             ]
         ),
-        content_type="multimodal_v1",
+        content_type="multimodal_v1"
     )
 
     clean = _preprocess_conversation_for_nightly(
@@ -292,7 +290,7 @@ def test_preprocess_conversation_strips_noise():
             msg_pure_tool_call,
             msg_assistant_mixed,
             msg_user_text,
-            msg_user_multimodal,
+            msg_user_multimodal
         ]
     )
 
@@ -307,7 +305,7 @@ def test_preprocess_conversation_unknown_content_type_fallback():
         id=1,
         role="user",
         content="Custom payload content",
-        content_type="custom_future_type",
+        content_type="custom_future_type"
     )
     clean = _preprocess_conversation_for_nightly([msg_unknown_type])
     assert len(clean) == 1
@@ -358,27 +356,27 @@ async def test_stage_1_daily_reflection_upserts_and_caps(seeded, monkeypatch):
                     {
                         "slot": "inferred_profile:basic_info",
                         "content": "Age 28, Engineer",
-                        "reason": "mentioned work",
+                        "reason": "mentioned work"
                     },
                     {
                         "slot": "inferred_profile:freeform",
                         "content": too_long,
-                        "reason": "long note",
+                        "reason": "long note"
                     },
                     {
                         "slot": "inferred_profile:invalid_slot",
-                        "content": "should be skipped",
-                    },
+                        "content": "should be skipped"
+                    }
                 ],
                 "auto_inject_updates": [
                     {
                         "slot": "auto_inject:rapport_state",
-                        "content": "Close friendship formed",
+                        "content": "Close friendship formed"
                     },
-                    {"slot": "auto_inject:invalid_slot", "content": "skip me"},
-                ],
+                    {"slot": "auto_inject:invalid_slot", "content": "skip me"}
+                ]
             }
-        ),
+        )
     )
 
     cfg = {"api_key": "k", "base_url": "u", "model_name": "m", "provider_name": "mimo"}
@@ -423,7 +421,7 @@ async def test_stage_1_daily_reflection_upserts_and_caps(seeded, monkeypatch):
             db.query(Memory)
             .filter(
                 Memory.user_id == 1001,
-                Memory.context == "inferred_profile:invalid_slot",
+                Memory.context == "inferred_profile:invalid_slot"
             )
             .first()
         )
@@ -440,14 +438,14 @@ async def test_stage_2_consolidation_and_rollback(seeded, monkeypatch):
                     user_id=1001,
                     content="old fact 1",
                     context="recall:topic1",
-                    tags='["likes"]',
+                    tags='["likes"]'
                 ),
                 Memory(
                     user_id=1001,
                     content="old fact 2",
                     context="recall:topic2",
-                    tags='["likes"]',
-                ),
+                    tags='["likes"]'
+                )
             ]
         )
         db.commit()
@@ -466,7 +464,7 @@ async def test_stage_2_consolidation_and_rollback(seeded, monkeypatch):
         "call_llm_once",
         _mock_llm_response(
             {"summaries": [{"content": "", "tags": ["likes"], "context": "x"}]}
-        ),
+        )
     )
 
     ok = await _stage_2_memory_consolidation(cfg, 1001, rows, {}, "2026-08-12")
@@ -490,11 +488,11 @@ async def test_stage_2_consolidation_and_rollback(seeded, monkeypatch):
                     {
                         "content": "consolidated fact",
                         "tags": ["likes"],
-                        "context": "consolidated",
+                        "context": "consolidated"
                     }
                 ]
             }
-        ),
+        )
     )
     ok_succ = await _stage_2_memory_consolidation(cfg, 1001, rows, {}, "2026-08-12")
     assert ok_succ is True
@@ -522,11 +520,11 @@ async def test_stage_3_planning_creates_cron_and_respects_cap(seeded, monkeypatc
                     {
                         "name": "Birthday Greeting",
                         "schedule": "0 1 15 8 *",
-                        "prompt": "Wish the user a happy birthday!",
+                        "prompt": "Wish the user a happy birthday!"
                     }
                 ]
             }
-        ),
+        )
     )
 
     created = await _stage_3_planning(cfg, 1001, {}, {}, [], {}, {})
@@ -551,7 +549,7 @@ async def test_stage_3_planning_creates_cron_and_respects_cap(seeded, monkeypatc
                     name=f"fill_{i}",
                     schedule="0 0 * * *",
                     prompt="x",
-                    is_paused=False,
+                    is_paused=False
                 )
             )
         db.commit()
@@ -569,7 +567,7 @@ async def test_stage_4_self_diary_upsert(seeded, monkeypatch):
     monkeypatch.setattr(
         nightly_activity,
         "call_llm_once",
-        _mock_llm_response({"content": "今天和用户聊得很开心，ta提到了未来的目标。"}),
+        _mock_llm_response({"content": "今天和用户聊得很开心，ta提到了未来的目标。"})
     )
 
     ok = await _stage_4_self_diary(cfg, 1001, [], {}, {}, "2026-08-12")
@@ -589,7 +587,7 @@ async def test_stage_4_self_diary_upsert(seeded, monkeypatch):
     monkeypatch.setattr(
         nightly_activity,
         "call_llm_once",
-        _mock_llm_response({"content": "更新后的日记反思。"}),
+        _mock_llm_response({"content": "更新后的日记反思。"})
     )
     await _stage_4_self_diary(cfg, 1001, [], {}, {}, "2026-08-12")
 
@@ -630,7 +628,7 @@ async def test_eligibility_and_tick_trigger(seeded, monkeypatch):
                     conversation_id=conv.id,
                     role="user",
                     content=f"Message {i}",
-                    created_at=datetime(2026, 8, 12, 17, 30, 0),
+                    created_at=datetime(2026, 8, 12, 17, 30, 0)
                 )
             )
         db.commit()
@@ -673,7 +671,7 @@ async def test_eligibility_and_tick_trigger(seeded, monkeypatch):
                     conversation_id=conv.id,
                     role="user",
                     content=f"Few msg {i}",
-                    created_at=datetime(2026, 8, 12, 17, 30, 0),
+                    created_at=datetime(2026, 8, 12, 17, 30, 0)
                 )
             )
         db.commit()
@@ -687,6 +685,7 @@ async def test_eligibility_and_tick_trigger(seeded, monkeypatch):
 # ── E2E Full Run (Skipped if no MIMO_API_KEY) ──────────────────────────
 
 
+@pytest.mark.e2e
 @pytest.mark.asyncio
 async def test_e2e_nightly_full_run(seeded):
     """End-to-end full run against real LLM provider."""
@@ -703,53 +702,53 @@ async def test_e2e_nightly_full_run(seeded):
                 Message(
                     conversation_id=conv.id,
                     role="user",
-                    content="你好！我叫张伟，在北京做前端开发。",
+                    content="你好！我叫张伟，在北京做前端开发。"
                 ),
                 Message(
                     conversation_id=conv.id,
                     role="assistant",
-                    content="你好张伟！很高兴认识你，北京的前端开发者。",
+                    content="你好张伟！很高兴认识你，北京的前端开发者。"
                 ),
                 Message(
                     conversation_id=conv.id,
                     role="user",
-                    content="我明天要去参加一个大模型架构师面试，有点紧张。",
+                    content="我明天要去参加一个大模型架构师面试，有点紧张。"
                 ),
                 Message(
                     conversation_id=conv.id,
                     role="assistant",
-                    content="加油！你准备得很充分，今晚好好休息。",
+                    content="加油！你准备得很充分，今晚好好休息。"
                 ),
                 Message(
                     conversation_id=conv.id,
                     role="user",
-                    content="谢谢你！我还挺喜欢摄影的，平时周末经常去奥森公园拍照。",
+                    content="谢谢你！我还挺喜欢摄影的，平时周末经常去奥森公园拍照。"
                 ),
                 Message(
                     conversation_id=conv.id,
                     role="assistant",
-                    content="摄影是个很棒的解压方式！",
+                    content="摄影是个很棒的解压方式！"
                 ),
                 Message(
                     conversation_id=conv.id,
                     role="user",
-                    content="顺便记一下：我讨厌别人回复太啰嗦，以后请保持简洁。",
+                    content="顺便记一下：我讨厌别人回复太啰嗦，以后请保持简洁。"
                 ),
                 Message(
                     conversation_id=conv.id,
                     role="assistant",
-                    content="明白了，以后一定保持简洁。",
+                    content="明白了，以后一定保持简洁。"
                 ),
                 Message(
                     conversation_id=conv.id,
                     role="user",
-                    content="晚安啦！明天面试完再聊。",
+                    content="晚安啦！明天面试完再聊。"
                 ),
                 Message(
                     conversation_id=conv.id,
                     role="assistant",
-                    content="晚安张伟，祝你明天面试顺利！",
-                ),
+                    content="晚安张伟，祝你明天面试顺利！"
+                )
             ]
         )
         db.commit()

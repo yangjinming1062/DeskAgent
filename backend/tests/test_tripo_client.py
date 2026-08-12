@@ -79,7 +79,7 @@ async def test_create_multiview_to_model_formats_inputs_correctly(mock_http):
     views = {
         "front": "token_f",
         "right": "token_r",
-        "back": "token_b",
+        "back": "token_b"
     }
     tid = await tripo_client.create_multiview_to_model(views)
     assert tid == "task_multi"
@@ -89,7 +89,7 @@ async def test_create_multiview_to_model_formats_inputs_correctly(mock_http):
     assert body["inputs"] == [
         {"front": "token_f"},
         {"right": "token_r"},
-        {"back": "token_b"},
+        {"back": "token_b"}
     ]
 
 
@@ -163,8 +163,8 @@ async def test_poll_task_returns_on_success(mock_http):
         lambda _r: httpx.Response(200, json=_ok({"status": "running"})),
         lambda _r: httpx.Response(
             200,
-            json=_ok({"status": "success", "output": {"model_url": "https://x/y.glb"}}),
-        ),
+            json=_ok({"status": "success", "output": {"model_url": "https://x/y.glb"}})
+        )
     ]
     seq = iter(queue)
 
@@ -192,7 +192,7 @@ async def test_poll_task_invokes_on_progress_with_each_response(mock_http):
         lambda _r: httpx.Response(200, json=_ok({"status": "running", "progress": 30})),
         lambda _r: httpx.Response(
             200, json=_ok({"status": "success", "progress": 100})
-        ),
+        )
     ]
     seq = iter(queue)
 
