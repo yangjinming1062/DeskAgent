@@ -3,10 +3,8 @@ import type React from 'react'
 import { useEffect, useRef, useState } from 'react'
 
 import { PERSONA_INPUT_CLASS, PERSONA_PRESET_CLASS } from '@/companion/input-class'
-import { assemblePersona, MAX_APPEARANCE } from '@/companion/persona'
+import { assemblePersona } from '@/companion/persona'
 import {
-  APPEARANCE_PRESETS,
-  type AppearancePreset,
   PERSONALITY_PRESETS,
   type PersonalityPreset,
   ROLE_PRESETS,
@@ -21,7 +19,6 @@ interface PersonaRetuneProps {
     name: string
     personality: string
     speaking_style: string
-    appearance_outfit: string
     background: string
     user_call_name: string
     user_gender: string
@@ -40,10 +37,9 @@ const presetClass = PERSONA_PRESET_CLASS
 // used by speakingStyle). This means a typo like '喜爱' in a STEPS entry
 // fails to compile instead of silently rendering an empty chip.
 //
-// Species / character_gender / appearance_core are locked post-seed;
-// the editable fields are name + personality/speaking_style +
-// appearance_outfit + relationship + user_*.
-type PresetValue = AppearancePreset | PersonalityPreset | RolePreset | SpeakingStylePreset | ''
+// Species / character_gender / appearance_core / appearance_outfit are not
+// editable here — outfit is maintained by the wardrobe system.
+type PresetValue = PersonalityPreset | RolePreset | SpeakingStylePreset | ''
 
 type FieldSchema = {
   key: keyof typeof EMPTY
@@ -59,7 +55,6 @@ const EMPTY = {
   background: '',
   personality: '',
   speakingStyle: '',
-  appearanceOutfit: '',
   userCallName: '',
   userGender: '',
   userAgeBucket: '',
@@ -86,18 +81,6 @@ const STEPS: { title: string; fields: FieldSchema[] }[] = [
     ]
   },
   {
-    title: '初始服装',
-    fields: [
-      {
-        key: 'appearanceOutfit',
-        label: '初始服装',
-        max: MAX_APPEARANCE,
-        presets: APPEARANCE_PRESETS,
-        multiline: true
-      }
-    ]
-  },
-  {
     title: '让伙伴更了解你',
     fields: [
       { key: 'userCallName', label: '希望被怎么称呼' },
@@ -117,7 +100,6 @@ const REVIEW_ROWS: { key: keyof typeof EMPTY; label: string; fallback?: string }
   { key: 'background', label: '关系' },
   { key: 'personality', label: '性格' },
   { key: 'speakingStyle', label: '说话风格', fallback: '自动派生' },
-  { key: 'appearanceOutfit', label: '初始服装' },
   { key: 'userCallName', label: '称呼' },
   { key: 'userGender', label: '我的性别' },
   { key: 'userAgeBucket', label: '年龄段' },
@@ -145,7 +127,6 @@ export function PersonaRetune({ initial, onClose }: PersonaRetuneProps): React.R
   const [background, setBackground] = useState(initial.background)
   const [personality, setPersonality] = useState(initial.personality)
   const [speakingStyle, setSpeakingStyle] = useState(initial.speaking_style)
-  const [appearanceOutfit, setAppearanceOutfit] = useState(initial.appearance_outfit)
   const [userCallName, setUserCallName] = useState(initial.user_call_name)
   const [userGender, setUserGender] = useState(initial.user_gender)
   const [userAgeBucket, setUserAgeBucket] = useState(initial.user_age_bucket)
@@ -158,7 +139,6 @@ export function PersonaRetune({ initial, onClose }: PersonaRetuneProps): React.R
     background: setBackground,
     personality: setPersonality,
     speakingStyle: setSpeakingStyle,
-    appearanceOutfit: setAppearanceOutfit,
     userCallName: setUserCallName,
     userGender: setUserGender,
     userAgeBucket: setUserAgeBucket,
@@ -171,7 +151,6 @@ export function PersonaRetune({ initial, onClose }: PersonaRetuneProps): React.R
     background,
     personality,
     speakingStyle,
-    appearanceOutfit,
     userCallName,
     userGender,
     userAgeBucket,
@@ -216,7 +195,6 @@ export function PersonaRetune({ initial, onClose }: PersonaRetuneProps): React.R
                 personality,
                 speaking_style: speakingStyle,
                 role: background,
-                appearance_outfit: appearanceOutfit,
                 user_call_name: userCallName,
                 user_gender: userGender,
                 user_age_bucket: userAgeBucket,
@@ -365,7 +343,7 @@ function Field({ field, value, onChange }: FieldProps): React.ReactElement {
           className={`${inputClass} resize-none`}
           onChange={e => handleChange(e.target.value)}
           placeholder={field.placeholder}
-          rows={field.key === 'appearanceOutfit' ? 3 : 2}
+          rows={2}
           value={value}
         />
       ) : (
@@ -395,11 +373,6 @@ function Field({ field, value, onChange }: FieldProps): React.ReactElement {
             )
           })}
         </div>
-      )}
-      {field.key === 'appearanceOutfit' && (
-        <span className="mt-1 block text-[10px] text-white/40">
-          {value.length} / {MAX_APPEARANCE}
-        </span>
       )}
     </label>
   )

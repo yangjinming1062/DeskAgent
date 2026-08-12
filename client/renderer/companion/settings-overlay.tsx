@@ -71,7 +71,6 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps): React.Reac
     name: string
     personality: string
     speaking_style: string
-    appearance_outfit: string
     background: string
     user_call_name: string
     user_gender: string
@@ -101,7 +100,6 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps): React.Reac
         name: persona?.name ?? '',
         personality: persona?.personality ?? '',
         speaking_style: persona?.speakingStyle ?? '',
-        appearance_outfit: persona?.appearance_outfit ?? '',
         background: persona?.background ?? '',
         user_call_name: profile.user_call_name ?? '',
         user_gender: profile.user_gender ?? '',

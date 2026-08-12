@@ -29,12 +29,12 @@ export interface WardrobeItem {
   // Raw JSON blob from the backend — parse before applying material overrides.
   material_overrides_json: string
   texture_url: string | null
-  // PBR channels paired with `texture_url` (albedo). All nullable: legacy
-  // rows + colour-preset rows only carry `texture_url`.
+  // PBR channels paired with `texture_url` (albedo). All nullable.
   normal_url?: string | null
   roughness_url?: string | null
   metalness_url?: string | null
   prompt?: string | null
+  outfit_description?: string | null
   equipped: boolean
 }
 

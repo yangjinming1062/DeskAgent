@@ -33,6 +33,7 @@ from .memory_admin import delete_memory, get_memory, list_memories, memory_count
 from .memory_bootstrap import build_user_profile_extras, extract_user_profile, read_user_profile, record_user_profile
 from .memory_format import format_auto_inject_block, format_memories_block
 from .model_service import ModelGenerationError, ModelGenerationInProgressError, emit_wardrobe_updated, generate_companion_model, get_active_model, signed_model_url
+from .outfit_normalizer import normalize_outfit
 from .persona_service import (
     ONBOARDING_FIELDS,
     PersonaValidationError,
@@ -41,6 +42,7 @@ from .persona_service import (
     get_onboarding_state,
     get_or_create_persona,
     submit_onboarding_field,
+    update_outfit_field,
     update_persona,
 )
 from .personality_tagger import analyze_personality_tags
@@ -112,6 +114,7 @@ __all__ = [
     "match_user_voice",
     "memory_admin",
     "memory_counts",
+    "normalize_outfit",
     "normalize_voice_language",
     "preview_wardrobe_texture",
     "record_interaction",
@@ -129,6 +132,7 @@ __all__ = [
     "signed_model_url",
     "submit_onboarding_field",
     "update_memory",
+    "update_outfit_field",
     "update_persona",
     "verify_signed_asset_request",
     "verify_signed_avatar_request",

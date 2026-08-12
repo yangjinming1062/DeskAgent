@@ -528,7 +528,7 @@ export function WardrobeDesignPanel({ onClose }: WardrobeDesignPanelProps): Reac
                       {isCurrent ? (
                         <span className="text-[8px] font-semibold text-emerald-300">已装备</span>
                       ) : (
-                        <span className="text-[8px] text-white/30">{item.category === 'preset' ? '预设' : '定制'}</span>
+                        <span className="text-[8px] text-white/30">定制</span>
                       )}
                     </button>
                   )

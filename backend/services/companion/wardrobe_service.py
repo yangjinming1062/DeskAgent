@@ -1,20 +1,19 @@
 import asyncio
-import json
 from collections.abc import Iterator
 from pathlib import Path
 from urllib.parse import urlparse
 
 import httpx
 from components import get_file_path, get_logger, is_safe_outbound, safe_json_loads, save_file, temp_file_delete
-from modules.companion import WardrobeItem, WardrobePreviewResponse
-from sqlalchemy.exc import IntegrityError
+from modules.companion import Persona, WardrobeItem, WardrobePreviewResponse
 from sqlalchemy.orm import Session
 
 from ..llm import build_texture_prompt, chat, is_preset_species
 from ..tools.builtin import first_image_url, image_generation_tool
 from .asset_store import build_data_uri, build_signed_asset_url, save_companion_asset, unlink_companion_asset
 from .model_service import get_active_model
-from .persona_service import get_or_create_persona
+from .outfit_normalizer import normalize_outfit
+from .persona_service import _load_draft, get_or_create_persona, update_outfit_field
 from .rig_type_selector import select_rig_type
 
 logger = get_logger(__name__)
@@ -58,17 +57,6 @@ async def fetch_texture_bytes(url: str) -> bytes | None:
         return None
 
 
-# Instant presets — no generation cost, just material color overrides.
-# "*" = apply to all meshes; specific mesh names override the wildcard.
-_DEFAULT_PRESETS: list[dict] = [
-    {"name": "原色", "category": "preset", "material_overrides": {}},
-    {"name": "炽红", "category": "preset", "material_overrides": {"*": {"color": "#c0392b"}}},
-    {"name": "碧蓝", "category": "preset", "material_overrides": {"*": {"color": "#2980b9"}}},
-    {"name": "翠绿", "category": "preset", "material_overrides": {"*": {"color": "#27ae60"}}},
-    {"name": "暗夜", "category": "preset", "material_overrides": {"*": {"color": "#2c3e50", "roughness": 0.3, "metalness": 0.5}}},
-    {"name": "黄金", "category": "preset", "material_overrides": {"*": {"color": "#f39c12", "metalness": 0.8, "roughness": 0.2}}},
-]
-
 # All four PBR channel URL fields on WardrobeItem — single source of truth
 # for both re-signing (read path) and unlink-on-delete (write path).
 _PBR_URL_ATTRS: tuple[str, ...] = ("texture_url", "normal_url", "roughness_url", "metalness_url")
@@ -88,35 +76,6 @@ def _iter_companion_asset_paths(item: WardrobeItem) -> Iterator[tuple[str, str, 
         yield attr, parts[1], parts[2]
 
 
-def _ensure_presets(db: Session, user_id: int) -> None:
-    """Steady-state fast path: a single category-``preset`` existence check
-    avoids six savepoints per wardrobe read. First-run keeps the per-row
-    savepoint so a concurrent insert conflict rolls back one row, not the
-    whole session (and the test fixture's ``after_transaction_end`` listener
-    doesn't re-enter ``begin_nested`` while a context manager is still open).
-    Caller's session commits the inserts on context exit; the savepoint
-    commits inside the loop already flush each row to the outer transaction.
-    """
-    has_any = db.query(WardrobeItem.id).filter(WardrobeItem.user_id == user_id, WardrobeItem.category == "preset").first()
-    if has_any is not None:
-        return
-
-    for preset in _DEFAULT_PRESETS:
-        savepoint = db.begin_nested()
-        item = WardrobeItem(
-            user_id=user_id,
-            name=preset["name"],
-            category=preset["category"],
-            material_overrides_json=json.dumps(preset["material_overrides"]),
-        )
-        try:
-            db.add(item)
-            savepoint.commit()
-        except IntegrityError:
-            savepoint.rollback()
-            db.expunge(item)
-
-
 def _re_sign_texture(item: WardrobeItem) -> None:
     """Re-sign every companion-assets/ URL on the item so signed URLs are
     always fresh on read (5-min TTL). Covers the albedo + 3 PBR channels."""
@@ -124,8 +83,14 @@ def _re_sign_texture(item: WardrobeItem) -> None:
         setattr(item, attr, build_signed_asset_url(int(uid), filename))
 
 
+def _persona_definition(db: Session, user_id: int) -> dict[str, str]:
+    persona = db.query(Persona).filter(Persona.user_id == user_id).one_or_none()
+    if persona is None:
+        return {}
+    return _load_draft(persona)
+
+
 def list_wardrobe(db: Session, user_id: int) -> list[WardrobeItem]:
-    _ensure_presets(db, user_id)
     items = db.query(WardrobeItem).filter(WardrobeItem.user_id == user_id).order_by(WardrobeItem.created_at).all()
     for item in items:
         _re_sign_texture(item)
@@ -176,6 +141,13 @@ async def generate_wardrobe_item(db: Session, *, user_id: int, name: str, descri
         raise RuntimeError("Texture download failed")
 
     texture_url = save_companion_asset(data, user_id=user_id, label="wardrobe_texture", ext="png")
+    outfit_desc = await normalize_outfit(
+        chat,
+        raw_input=description,
+        persona_definition=_persona_definition(db, user_id),
+        user_id=user_id,
+        db=db,
+    )
     item = WardrobeItem(
         user_id=user_id,
         name=name,
@@ -183,6 +155,7 @@ async def generate_wardrobe_item(db: Session, *, user_id: int, name: str, descri
         material_overrides_json="{}",
         texture_url=texture_url,
         prompt=description,
+        outfit_description=outfit_desc,
     )
     db.add(item)
     db.commit()
@@ -284,6 +257,13 @@ async def confirm_wardrobe_item(
         raise WardrobeSourceExpiredError(f"temp-media file unreadable: {exc}") from exc
 
     texture_url = save_companion_asset(data, user_id=user_id, label="wardrobe_texture", ext="png")
+    outfit_desc = await normalize_outfit(
+        chat,
+        raw_input=prompt or name,
+        persona_definition=_persona_definition(db, user_id),
+        user_id=user_id,
+        db=db,
+    )
     _unequip_all(db, user_id)
     item = WardrobeItem(
         user_id=user_id,
@@ -292,12 +272,15 @@ async def confirm_wardrobe_item(
         material_overrides_json="{}",
         texture_url=texture_url,
         prompt=prompt,
+        outfit_description=outfit_desc,
         equipped=True,
     )
     db.add(item)
     db.commit()
     db.refresh(item)
     _re_sign_texture(item)
+    # confirm auto-equips, so sync the outfit description into the persona.
+    update_outfit_field(db, user_id, outfit_desc)
     return item
 
 
@@ -326,6 +309,8 @@ def equip_wardrobe_item(db: Session, user_id: int, item_id: int) -> WardrobeItem
     db.commit()
     db.refresh(item)
     _re_sign_texture(item)
+    if item.outfit_description:
+        update_outfit_field(db, user_id, item.outfit_description)
     return item
 
 
@@ -335,8 +320,12 @@ def delete_wardrobe_item(db: Session, user_id: int, item_id: int) -> bool:
     if item is None:
         return False
     paths = [(attr, uid, filename) for attr, uid, filename in _iter_companion_asset_paths(item)]
+    was_equipped = item.equipped
     db.delete(item)
     db.commit()
+    # Clear the stale outfit description so the LLM doesn't reference deleted clothing.
+    if was_equipped:
+        update_outfit_field(db, user_id, "")
     for _attr, uid, filename in paths:
         if unlink_companion_asset(f"companion-assets/{uid}/{filename}") is None:
             logger.warning("Failed to unlink wardrobe asset", extra={"user_id": user_id, "path": f"companion-assets/{uid}/{filename}"})

@@ -65,6 +65,7 @@ from services.companion import (
     list_avatar_history,
     list_tts_voices,
     list_wardrobe,
+    normalize_outfit,
     normalize_voice_language,
     preview_wardrobe_texture,
     regenerate_avatar_from_image,
@@ -72,6 +73,7 @@ from services.companion import (
     resolve_companion_model_path,
     resolve_uploaded_avatar_path,
     signed_model_url,
+    update_outfit_field,
     update_persona,
     verify_signed_asset_request,
     verify_signed_avatar_request,
@@ -84,17 +86,19 @@ router = get_router()
 
 logger = get_logger(__name__)
 
-# Strong-ref set so create_task'd refreshes aren't GC'd; tests and shutdown
+# Strong-ref sets so create_task'd refreshes aren't GC'd; tests and shutdown
 # drains can introspect the in-flight work.
 _PERSONA_TAGS_TASKS: set[asyncio.Task] = set()
+_OUTFIT_TASKS: set[asyncio.Task] = set()
 
-# Per-attempt timeout deliberately much shorter than ``call_with_retry``'s
-# 300s default — these tasks run forever in the background and a hung tag
-# refresh must not pin a worker indefinitely.
-_TAG_REFRESH_PER_ATTEMPT_TIMEOUT = 30.0
-_TAG_REFRESH_MAX_ATTEMPTS = 3
-_TAG_REFRESH_BASE_DELAY = 5.0
-_TAG_REFRESH_MAX_DELAY = 30.0
+# Shared retry config for background LLM tasks (personality-tag refresh +
+# onboarding outfit extraction). Per-attempt timeout deliberately much
+# shorter than ``call_with_retry``'s 300s default — these tasks run in the
+# background and a hung call must not pin a worker indefinitely.
+_BG_TASK_PER_ATTEMPT_TIMEOUT = 30.0
+_BG_TASK_MAX_ATTEMPTS = 3
+_BG_TASK_BASE_DELAY = 5.0
+_BG_TASK_MAX_DELAY = 30.0
 
 
 def _avatar_response(asset: AvatarAsset) -> AvatarAssetResponse:
@@ -178,7 +182,10 @@ async def post_portrait_confirm(
         raise HTTPException(status_code=409, detail={"error": "形象草稿已过期，请重新生成头像", "reason": str(exc)})
     # Only confirm the portrait after finalize succeeds — avoids a poisoned
     # state where is_portrait_confirmed=True but avatar files are gone.
-    confirm_portrait(db, user.id)
+    persona = confirm_portrait(db, user.id)
+    # Derive the initial outfit description async from the avatar prompt +
+    # appearance_core (vision-first, text fallback).
+    _schedule_onboarding_outfit_extraction(persona.id, user.id)
     return {"ok": True}
 
 
@@ -195,7 +202,7 @@ async def _refresh_personality_tags(persona_id: int, user_id: int) -> None:
     # Re-queries the Persona row at the start of every attempt so a concurrent
     # PUT wins the last-write-wins race with the freshest definition_json.
     last_exc: BaseException | None = None
-    for attempt in range(1, _TAG_REFRESH_MAX_ATTEMPTS + 1):
+    for attempt in range(1, _BG_TASK_MAX_ATTEMPTS + 1):
         try:
             t_open = time.monotonic()
             with SESSION_LOCAL() as db:
@@ -214,7 +221,7 @@ async def _refresh_personality_tags(persona_id: int, user_id: int) -> None:
                         species=species,
                         db=db,
                     ),
-                    timeout=_TAG_REFRESH_PER_ATTEMPT_TIMEOUT,
+                    timeout=_BG_TASK_PER_ATTEMPT_TIMEOUT,
                 )
                 t_llm_end = time.monotonic()
                 persona.personality_tags_json = json.dumps(tags, ensure_ascii=False)
@@ -240,16 +247,84 @@ async def _refresh_personality_tags(persona_id: int, user_id: int) -> None:
             last_exc = exc
             if isinstance(exc, MissingLlmConfigError):
                 break  # retrying a missing provider never helps
-        if attempt < _TAG_REFRESH_MAX_ATTEMPTS:
+        if attempt < _BG_TASK_MAX_ATTEMPTS:
             delay = min(
-                _TAG_REFRESH_MAX_DELAY,
-                _TAG_REFRESH_BASE_DELAY * (2 ** (attempt - 1)),
+                _BG_TASK_MAX_DELAY,
+                _BG_TASK_BASE_DELAY * (2 ** (attempt - 1)),
             )
             delay *= 0.5 + 0.5 * random.random()  # full jitter
             await asyncio.sleep(delay)
     logger.warning(
         "personality tag refresh failed after %d attempts for persona_id=%s user_id=%s: %s",
-        _TAG_REFRESH_MAX_ATTEMPTS,
+        _BG_TASK_MAX_ATTEMPTS,
+        persona_id,
+        user_id,
+        last_exc,
+    )
+
+
+def _schedule_onboarding_outfit_extraction(persona_id: int, user_id: int) -> None:
+    task = asyncio.create_task(
+        _refresh_outfit_onboarding(persona_id, user_id),
+        name=f"outfit-onboarding-{persona_id}",
+    )
+    _OUTFIT_TASKS.add(task)
+    task.add_done_callback(_OUTFIT_TASKS.discard)
+
+
+async def _refresh_outfit_onboarding(persona_id: int, user_id: int) -> None:
+    from services.companion.avatar_service import _load_avatar_bytes_as_data_uri
+
+    last_exc: BaseException | None = None
+    for attempt in range(1, _BG_TASK_MAX_ATTEMPTS + 1):
+        try:
+            with SESSION_LOCAL() as db:
+                persona = db.query(Persona).filter(Persona.id == persona_id).one_or_none()
+                if persona is None:
+                    return
+                definition = safe_json_loads(persona.definition_json or "{}", default={})
+                persona_def = definition if isinstance(definition, dict) else {}
+                appearance_core = persona_def.get("appearance_core", "")
+                avatar = db.query(AvatarAsset).filter(AvatarAsset.user_id == user_id, AvatarAsset.active.is_(True)).one_or_none()
+                avatar_prompt = ""
+                if avatar:
+                    prompt_payload = safe_json_loads(avatar.prompt_json or "{}", default={})
+                    avatar_prompt = prompt_payload.get("avatar_prompt", "") if isinstance(prompt_payload, dict) else ""
+                if not avatar_prompt and not appearance_core:
+                    return
+                raw_input = f"头像生成提示词：{avatar_prompt}\n形象核心描述：{appearance_core}"
+                image_data_uri = None
+                if avatar and avatar.seed_front_url:
+                    image_data_uri = await asyncio.to_thread(_load_avatar_bytes_as_data_uri, avatar.seed_front_url)
+                outfit = await asyncio.wait_for(
+                    normalize_outfit(
+                        chat,
+                        raw_input=raw_input,
+                        persona_definition=persona_def,
+                        image_data_uri=image_data_uri,
+                        user_id=user_id,
+                        db=db,
+                    ),
+                    timeout=_BG_TASK_PER_ATTEMPT_TIMEOUT,
+                )
+                update_outfit_field(db, user_id, outfit)
+            logger.info("outfit-onboarding persona_id=%s attempt=%d", persona_id, attempt)
+            return
+        except TimeoutError as exc:
+            last_exc = exc
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            last_exc = exc
+            if isinstance(exc, MissingLlmConfigError):
+                break
+        if attempt < _BG_TASK_MAX_ATTEMPTS:
+            delay = min(_BG_TASK_MAX_DELAY, _BG_TASK_BASE_DELAY * (2 ** (attempt - 1)))
+            delay *= 0.5 + 0.5 * random.random()
+            await asyncio.sleep(delay)
+    logger.warning(
+        "outfit onboarding extraction failed after %d attempts for persona_id=%s user_id=%s: %s",
+        _BG_TASK_MAX_ATTEMPTS,
         persona_id,
         user_id,
         last_exc,
@@ -506,6 +581,7 @@ def _wardrobe_response(item: WardrobeItem) -> WardrobeItemResponse:
         roughness_url=item.roughness_url,
         metalness_url=item.metalness_url,
         prompt=item.prompt,
+        outfit_description=item.outfit_description,
         equipped=item.equipped,
     )
 

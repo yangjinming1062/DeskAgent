@@ -25,9 +25,12 @@ _MAX_FIELD_LEN: int = 500
 # draft for breakpoint recovery but is not a persona field.
 #
 # Note: ``appearance_outfit`` is intentionally NOT collected here — the seed
-# image focuses on body silhouette, and initial wardrobe is owned by the
-# wardrobe system. ``appearance_outfit`` remains a Persona field editable via
-# persona-editor / persona-retune (see ``_OPTIONAL_FIELDS`` above).
+# image focuses on body silhouette. The initial outfit is derived async from
+# the avatar prompt + appearance_core after portrait confirmation (see
+# ``_schedule_onboarding_outfit_extraction`` in companion.py). Subsequent
+# updates happen at wardrobe-equip time via ``update_outfit_field`` below,
+# which swaps in the equipped item's ``outfit_description``. The field is
+# LLM-normalized (see ``outfit_normalizer.py``), never raw user input.
 ONBOARDING_FIELDS: tuple[str, ...] = (
     "name",
     "species",
@@ -153,6 +156,21 @@ def render_extras(definition: dict[str, str]) -> str:
             label = key.replace("_", " ").capitalize()
             lines.append(f"- **{label}**: {definition[key]}")
     return "\n".join(lines)
+
+
+def update_outfit_field(db: Session, user_id: int, outfit: str) -> None:
+    """Swap ``appearance_outfit`` + re-render ``system_prompt_extras`` without full re-validation. Empty string clears the field."""
+    persona = db.query(Persona).filter(Persona.user_id == user_id).one_or_none()
+    if persona is None:
+        return
+    definition = _load_draft(persona)
+    if outfit:
+        definition["appearance_outfit"] = outfit[:_MAX_FIELD_LEN]
+    else:
+        definition.pop("appearance_outfit", None)
+    persona.definition_json = json.dumps(definition, ensure_ascii=False)
+    persona.system_prompt_extras = render_extras(definition)
+    db.commit()
 
 
 def _load_draft(persona: Persona) -> dict[str, str]:

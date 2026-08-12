@@ -2,14 +2,15 @@ import { useStore } from '@nanostores/react'
 import { useState } from 'react'
 
 import { PERSONA_INPUT_CLASS, PERSONA_PRESET_CLASS } from '@/companion/input-class'
-import { assemblePersona, MAX_APPEARANCE } from '@/companion/persona'
-import { APPEARANCE_PRESETS, PERSONALITY_PRESETS, ROLE_PRESETS } from '@/companion/persona-presets'
+import { assemblePersona } from '@/companion/persona'
+import { PERSONALITY_PRESETS, ROLE_PRESETS } from '@/companion/persona-presets'
 import { $persona, hydratePersona } from '@/companion/persona-store'
 
 const inputClass = PERSONA_INPUT_CLASS
 const presetClass = PERSONA_PRESET_CLASS
 
-// Editable persona fields: name / role / personality / appearance_outfit.
+// Editable persona fields: name / role / personality.
+// appearance_outfit is read-only (maintained by the wardrobe system).
 // Locked visual-anchor fields (species / gender / appearance_core) are
 // intentionally not editable — see DESIGN.md §5.4.
 export function PersonaSection(): React.JSX.Element {
@@ -18,7 +19,6 @@ export function PersonaSection(): React.JSX.Element {
   const [name, setName] = useState(persona?.name ?? '')
   const [role, setRole] = useState(persona?.background ?? '')
   const [personality, setPersonality] = useState(persona?.personality ?? '')
-  const [appearanceOutfit, setAppearanceOutfit] = useState(persona?.appearance_outfit ?? '')
   const [saving, setSaving] = useState(false)
   const [hint, setHint] = useState<string | null>(null)
 
@@ -26,7 +26,6 @@ export function PersonaSection(): React.JSX.Element {
     setName(persona?.name ?? '')
     setRole(persona?.background ?? '')
     setPersonality(persona?.personality ?? '')
-    setAppearanceOutfit(persona?.appearance_outfit ?? '')
     setHint(null)
     setEditing(true)
   }
@@ -60,8 +59,7 @@ export function PersonaSection(): React.JSX.Element {
               {
                 name: trimmed,
                 personality,
-                role,
-                appearance_outfit: appearanceOutfit
+                role
               },
               persona ?? undefined
             )
@@ -111,7 +109,7 @@ export function PersonaSection(): React.JSX.Element {
         >
           编辑角色
         </button>
-        <p className="mt-1.5 text-[10px] text-white/30">修改我的名字、定位、性格与初始服装</p>
+        <p className="mt-1.5 text-[10px] text-white/30">修改我的名字、定位与性格</p>
       </div>
     )
   }
@@ -161,26 +159,15 @@ export function PersonaSection(): React.JSX.Element {
             ))}
           </div>
         </label>
-        <label className="block">
-          <span className="mb-1 block text-[11px] text-white/50">初始服装</span>
-          <textarea
-            className={`${inputClass} resize-none`}
-            onChange={e => setAppearanceOutfit(e.target.value.slice(0, MAX_APPEARANCE))}
-            placeholder="比如：黑色礼帽配军装风衣…（可随时调整）"
-            rows={3}
-            value={appearanceOutfit}
-          />
-          <div className="mt-1.5 flex flex-wrap gap-1.5">
-            {APPEARANCE_PRESETS.map(p => (
-              <button className={presetClass} key={p} onClick={() => setAppearanceOutfit(p)} type="button">
-                {p}
-              </button>
-            ))}
+        {persona?.appearance_outfit && (
+          <div>
+            <span className="mb-1 block text-[11px] text-white/50">当前着装</span>
+            <p className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-white/60">
+              {persona.appearance_outfit}
+            </p>
+            <span className="mt-1 block text-[10px] text-white/30">着装由换装系统维护，请在换装设计面板中更换</span>
           </div>
-          <span className="mt-1 block text-[10px] text-white/40">
-            {appearanceOutfit.length} / {MAX_APPEARANCE}
-          </span>
-        </label>
+        )}
         {hint && <p className="text-[11px] text-amber-300/80">{hint}</p>}
         <div className="flex gap-2 pt-1">
           <button

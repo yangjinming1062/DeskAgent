@@ -107,10 +107,11 @@ describe('hydrateWardrobe', () => {
   const sample: WardrobeItem[] = [
     {
       id: 1,
-      name: '默认',
-      category: 'preset',
+      name: '休闲装',
+      category: 'generated',
       material_overrides_json: '{}',
-      texture_url: null,
+      texture_url: 'http://localhost:8000/api/companion/asset/1/a.png?sig=1',
+      outfit_description: '简约的白色T恤搭配牛仔裤',
       equipped: false
     },
     {
@@ -119,6 +120,7 @@ describe('hydrateWardrobe', () => {
       category: 'generated',
       material_overrides_json: '{}',
       texture_url: 'http://localhost:8000/api/companion/asset/1/x.png?sig=1',
+      outfit_description: '黑色皮夹克配银色饰品',
       equipped: true
     }
   ]

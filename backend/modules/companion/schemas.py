@@ -102,6 +102,7 @@ class WardrobeItemResponse(BaseModel):
     roughness_url: str | None = None
     metalness_url: str | None = None
     prompt: str | None = None
+    outfit_description: str | None = None
     equipped: bool
 
 

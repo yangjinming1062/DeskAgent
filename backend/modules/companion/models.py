@@ -44,13 +44,16 @@ class WardrobeItem(ModelBase, TimestampMixin):
 
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     name: Mapped[str] = mapped_column(String(128))
-    category: Mapped[str] = mapped_column(String(64), default="preset")
+    category: Mapped[str] = mapped_column(String(64), default="generated")
     material_overrides_json: Mapped[str] = mapped_column(Text, default="{}")
     texture_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     normal_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     roughness_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     metalness_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     prompt: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # LLM-normalized outfit description (visual: style, color, material, cut).
+    # Generated at creation time; swapped into Persona.appearance_outfit on equip.
+    outfit_description: Mapped[str | None] = mapped_column(Text, nullable=True)
     equipped: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("FALSE"), index=True)
 
 

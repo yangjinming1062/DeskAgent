@@ -243,9 +243,10 @@ def _persona_payload(persona: Persona) -> dict:
 
 # LLM-facing key is ``appearance`` (mapped from the wire-side
 # ``appearance_core`` — the visual anchor); consumed by both enhancers.
-# Intentionally does NOT include ``appearance_outfit`` — the seed image focuses
-# on body silhouette; initial wardrobe is owned by the wardrobe system and
-# edited via persona-editor / persona-retune, not via the image-gen prompt.
+# Intentionally does NOT include ``appearance_outfit`` — that field is an
+# LLM-maintained outfit description (see ``outfit_normalizer.py``), not a
+# visual specification. The 3D body silhouette is governed by appearance_core
+# + wardrobe textures, not by the outfit text.
 def _persona_visual_payload(persona: Persona, feedback: str | None) -> dict[str, str]:
     definition = _persona_payload(persona)
     return {

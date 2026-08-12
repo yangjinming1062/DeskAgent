@@ -1864,8 +1864,8 @@ def test_companion_rest_contract(_patch_db, monkeypatch):
 
     items = client.get("/api/companion/wardrobe")
     assert items.status_code == 200
-    # No generated "专属外观" item — model generation no longer triggers PBR textures.
-    assert items.json() and all(i["category"] == "preset" for i in items.json())
+    # Presets removed — wardrobe starts empty until the user generates an item.
+    assert items.json() == []
 
 
 @pytest.mark.asyncio
@@ -1966,9 +1966,9 @@ async def test_persona_tag_refresh_retries_transient_failures(_patch_db, monkeyp
 
     monkeypatch.setattr(companion_api, "chat", _noop_chat)
     # Shrink the backoff so the test runs in well under a second total.
-    monkeypatch.setattr(companion_api, "_TAG_REFRESH_BASE_DELAY", 0.01)
-    monkeypatch.setattr(companion_api, "_TAG_REFRESH_MAX_DELAY", 0.05)
-    monkeypatch.setattr(companion_api, "_TAG_REFRESH_PER_ATTEMPT_TIMEOUT", 5.0)
+    monkeypatch.setattr(companion_api, "_BG_TASK_BASE_DELAY", 0.01)
+    monkeypatch.setattr(companion_api, "_BG_TASK_MAX_DELAY", 0.05)
+    monkeypatch.setattr(companion_api, "_BG_TASK_PER_ATTEMPT_TIMEOUT", 5.0)
 
     with SessionLocal() as db:
         persona = Persona(
@@ -2011,8 +2011,8 @@ async def test_persona_tag_refresh_gives_up_after_max_attempts(_patch_db, monkey
         return ""
 
     monkeypatch.setattr(companion_api, "chat", _noop_chat)
-    monkeypatch.setattr(companion_api, "_TAG_REFRESH_BASE_DELAY", 0.01)
-    monkeypatch.setattr(companion_api, "_TAG_REFRESH_MAX_DELAY", 0.05)
+    monkeypatch.setattr(companion_api, "_BG_TASK_BASE_DELAY", 0.01)
+    monkeypatch.setattr(companion_api, "_BG_TASK_MAX_DELAY", 0.05)
 
     with SessionLocal() as db:
         persona = Persona(
@@ -2217,6 +2217,11 @@ async def test_wardrobe_preview_and_confirm_lifecycle(_patch_db, monkeypatch):
     monkeypatch.setattr("services.companion.wardrobe_service.fetch_texture_bytes", _fake_fetch_bytes)
     monkeypatch.setattr("services.companion.wardrobe_service.get_file_path", _fake_get_file_path)
 
+    async def _fake_normalize_outfit(chat, *, raw_input, **kwargs):
+        return f"规范化着装：{raw_input[:80]}"
+
+    monkeypatch.setattr("services.companion.wardrobe_service.normalize_outfit", _fake_normalize_outfit)
+
     # 2. Preview without image
     resp = client.post(
         "/api/companion/wardrobe/preview",
@@ -2276,6 +2281,7 @@ async def test_wardrobe_preview_and_confirm_lifecycle(_patch_db, monkeypatch):
     assert confirmed["category"] == "generated"
     assert confirmed["equipped"] is True
     assert confirmed["texture_url"]
+    assert confirmed["outfit_description"] is not None
     assert ws_emitted == [uid]
 
     # Verify DB state: new row persisted, equipped=True, other items equipped=False
@@ -2285,6 +2291,7 @@ async def test_wardrobe_preview_and_confirm_lifecycle(_patch_db, monkeypatch):
         assert len(generated_items) == 1
         assert generated_items[0].name == "定制机能夹克"
         assert generated_items[0].equipped is True
+        assert generated_items[0].outfit_description is not None
         other_items = [i for i in items if i.id != generated_items[0].id]
         assert all(not i.equipped for i in other_items)
 
@@ -2294,3 +2301,151 @@ async def test_wardrobe_preview_and_confirm_lifecycle(_patch_db, monkeypatch):
         json={"file_id": "non_existent_expired_id", "name": "过期装扮"},
     )
     assert expired_resp.status_code == 409
+
+
+# ---------------------------------------------------------------------------
+# Outfit normalization
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_normalize_outfit_text_path():
+    """Text-only normalize_outfit returns cleaned LLM output."""
+    from services.companion.outfit_normalizer import normalize_outfit
+
+    async def _fake_chat(db, user_id, system_prompt, user_payload, **kwargs):
+        return "一件黑色哥特风格的长裙，蕾丝装饰，搭配银色十字架项链"
+
+    result = await normalize_outfit(
+        _fake_chat,
+        raw_input="黑色哥特裙",
+        persona_definition={"biological_type": "精灵", "gender": "女"},
+    )
+    assert "哥特" in result
+    assert len(result) <= 300
+
+
+@pytest.mark.asyncio
+async def test_normalize_outfit_fallback_on_error():
+    """When the LLM raises, normalize_outfit returns the truncated raw_input."""
+    from services.companion.outfit_normalizer import normalize_outfit
+
+    async def _explode(*a, **kw):
+        raise RuntimeError("LLM unavailable")
+
+    result = await normalize_outfit(
+        _explode,
+        raw_input="比基尼" * 100,
+        persona_definition=None,
+    )
+    assert result == ("比基尼" * 100)[:300]
+
+
+@pytest.mark.asyncio
+async def test_normalize_outfit_strips_markdown_fences():
+    """Markdown code fences are stripped from the LLM response."""
+    from services.companion.outfit_normalizer import normalize_outfit
+
+    async def _fake_chat(db, user_id, system_prompt, user_payload, **kwargs):
+        return "```\n白色晚礼服，丝绸面料\n```"
+
+    result = await normalize_outfit(
+        _fake_chat,
+        raw_input="晚礼服",
+        persona_definition=None,
+    )
+    assert result == "白色晚礼服，丝绸面料"
+
+
+@pytest.mark.asyncio
+async def test_normalize_outfit_empty_response_falls_back():
+    """Empty LLM response triggers fallback to raw_input."""
+    from services.companion.outfit_normalizer import normalize_outfit
+
+    async def _empty_chat(*a, **kw):
+        return ""
+
+    result = await normalize_outfit(
+        _empty_chat,
+        raw_input="运动装",
+        persona_definition=None,
+    )
+    assert result == "运动装"
+
+
+def test_update_outfit_field_surgical(_patch_db):
+    """update_outfit_field modifies only appearance_outfit + re-renders extras,
+    leaving other persona fields untouched."""
+    _, SessionLocal = _patch_db
+    from services.companion.persona_service import update_outfit_field, update_persona
+
+    with SessionLocal() as db:
+        update_persona(db, 9900, {"name": "小光", "personality": "温柔", "speaking_style": "轻柔"})
+        update_outfit_field(db, 9900, "粉色碎花洋裙")
+
+        from modules.companion import Persona
+
+        persona = db.query(Persona).filter(Persona.user_id == 9900).one()
+        definition = json.loads(persona.definition_json)
+        assert definition["appearance_outfit"] == "粉色碎花洋裙"
+        # Other fields untouched
+        assert definition["name"] == "小光"
+        assert definition["personality"] == "温柔"
+        # System prompt extras re-rendered with the outfit line
+        assert "Appearance outfit" in persona.system_prompt_extras
+        assert "粉色碎花洋裙" in persona.system_prompt_extras
+
+
+def test_render_extras_outfit_label():
+    """render_extras produces the 'Appearance outfit' label that the system
+    prompt injection checks for."""
+    from services.companion.persona_service import render_extras
+
+    with_outfit = render_extras({"name": "x", "personality": "y", "speaking_style": "z", "appearance_outfit": "比基尼"})
+    assert "**Appearance outfit**" in with_outfit
+
+    without_outfit = render_extras({"name": "x", "personality": "y", "speaking_style": "z"})
+    assert "**Appearance outfit**" not in without_outfit
+
+
+def test_outfit_guidance_injected_only_when_outfit_present():
+    """system_prompt.py conditionally appends COMPANION_OUTFIT_GUIDANCE."""
+    from services.chat.affect import COMPANION_OUTFIT_GUIDANCE
+    from services.chat.system_prompt import build_system_prompt
+    from modules.system import AgentPromptConfig
+
+    base_config = AgentPromptConfig(
+        valid_tool_names=[],
+        model=None,
+        tools=None,
+        client_context=None,
+        identity_prompt=None,
+        platform="webui",
+        pass_session_id=False,
+        session_id=None,
+        task_completion_guidance=False,
+        tool_use_enforcement="off",
+        prompt_family="openai",
+        persona_extras=None,
+        user_profile_extras=None,
+        auto_inject_extras="",
+        language="zh",
+    )
+
+    # No persona_extras -> no outfit guidance
+    prompt_without = build_system_prompt(base_config)
+    assert "Outfit-Behaviour Alignment" not in prompt_without
+
+    # persona_extras with outfit line -> outfit guidance present
+    config_with_outfit = base_config.model_copy(
+        update={"persona_extras": "# Companion persona\n- **Name**: 小光\n- **Appearance outfit**: 比基尼"}
+    )
+    prompt_with = build_system_prompt(config_with_outfit)
+    assert "Outfit-Behaviour Alignment" in prompt_with
+
+    # persona_extras without outfit line -> no outfit guidance
+    config_without_outfit = base_config.model_copy(
+        update={"persona_extras": "# Companion persona\n- **Name**: 小光"}
+    )
+    prompt_without_outfit = build_system_prompt(config_without_outfit)
+    assert "Outfit-Behaviour Alignment" not in prompt_without_outfit
