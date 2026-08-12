@@ -144,7 +144,6 @@ def _check_faster_whisper() -> bool:
         return False
 
 
-
 _CLOUD_FALLBACK_HINT = "Set stt.engine=cloud in Desktop settings to fall back to a stronger multilingual model, or pass language='zh'/'en' explicitly to bias the local result."
 
 

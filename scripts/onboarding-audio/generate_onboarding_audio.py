@@ -11,10 +11,10 @@ from openai import AsyncOpenAI
 
 # Wire shape mirrors backend/services/llm/providers/mimo/tts.py::synthesize()
 # so the audio is byte-identical to what /api/media/tts would return at
-# runtime with the same voice. See assets/onboarding-audio/README.md for usage.
+# runtime with the same voice. See scripts/onboarding-audio/README.md for usage.
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-MANIFEST_PATH = REPO_ROOT / "assets" / "onboarding-audio" / "manifest.json"
+MANIFEST_PATH = REPO_ROOT / "scripts" / "onboarding-audio" / "manifest.json"
 OUTPUT_DIR = REPO_ROOT / "installer" / "payload" / "onboarding-audio" / "zh"
 
 MIMO_BASE_URL = "https://token-plan-cn.xiaomimimo.com/v1"

@@ -28,3 +28,7 @@ backend + runner 的 static import-shape 检查器（被 `.pre-commit-config.yam
 - `TYPE_CHECKING` 名字泄漏：仅在 `if TYPE_CHECKING:` 内 import、却被类体注解等运行时求值路径引用的名字
 - `runner/tools/<subpkg>` 之间的 sibling cross-subpackage eager import（terminal_tool ↔ file_tools、code_execution_tool → thread_context 这类循环）
 - Facade 一致性：`from <local_pkg> import X` 走的 `<local_pkg>` 必须在其 `__init__.py` 里 re-export `X`，防止 facade 被过度精简
+
+## 3. Onboarding 引导词音频生成与校验 — `onboarding-audio/`
+
+包含预渲染引导词音频元信息 `manifest.json` 与合成/校验脚本 `generate_onboarding_audio.py`。详见 [scripts/onboarding-audio/README.md](onboarding-audio/README.md)。
