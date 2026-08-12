@@ -26,6 +26,36 @@ def safe_json_loads(text: str, default: Any = None) -> Any:
         return default
 
 
+def parse_llm_json(text: str | None) -> Any:
+    """Extract and parse JSON from an LLM text response."""
+    if not text:
+        return None
+    s = text.strip()
+    if s.startswith("```"):
+        if (lines := s.splitlines()) and lines[0].startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].startswith("```"):
+            lines = lines[:-1]
+        s = "\n".join(lines).strip()
+    try:
+        return json.loads(s)
+    except json.JSONDecodeError:
+        pass
+    start_obj, end_obj = s.find("{"), s.rfind("}")
+    if start_obj != -1 and end_obj > start_obj:
+        try:
+            return json.loads(s[start_obj : end_obj + 1])
+        except json.JSONDecodeError:
+            pass
+    start_arr, end_arr = s.find("["), s.rfind("]")
+    if start_arr != -1 and end_arr > start_arr:
+        try:
+            return json.loads(s[start_arr : end_arr + 1])
+        except json.JSONDecodeError:
+            pass
+    return None
+
+
 def tool_error(msg: str) -> str:
     """Serialize a tool-side failure as a JSON string the LLM can read back."""
     return json.dumps({"success": False, "error": msg}, ensure_ascii=False)

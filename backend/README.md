@@ -31,7 +31,7 @@ backend/
 ├── modules/                  # 按 domain 分包的 ORM 模型 + Pydantic 契约
 ├── services/                 # 业务/编排层，无 facade，按子包直接 import
 │   ├── chat/                 # 对话编排（含 chat_emitter 收敛 ↔gateway import 环）
-│   ├── scheduler/            # Cron + 主动消息调度
+│   ├── scheduler/            # Cron + 主动消息调度 + 夜间自主活动批处理
 │   ├── companion/            # 角色定义、形象资产、affect、voice catalog
 │   ├── gateway/              # JSON-RPC + WS 入口 + IPC future
 │   ├── llm/providers/        # Chat/ImageGen/VideoGen/TTS/STT 五类 provider ABC
@@ -45,6 +45,7 @@ backend/
 
 ## 4. 关键设计决策
 
+- **夜间自主活动批处理（Stage 0–4 独立事务）**：在用户本地休息窗口（0:00–5:00）调用 LLM 运行批处理流水线（画像推断、记忆整理与衰退、主动规划、自我日记）。每个阶段独立事务并具备全空回滚安全网。**为什么不作为在线 agentic 循环**：批处理在离线状态也可完成用户认知深化与记忆优化，不强依赖客户端长连接；次日生成的 CronJob 在触发派发时才执行在线与 disturbance 检查。
 - **TOML 模版与 Git 隔离配置管理**：Git 统一托管默认配置模版 `config.toml.example`，`components/config.py` 中不保留重复默认值与冗余注释。开发者本地配置写在 `config.toml`（已被 `.gitignore` 忽略）。系统按 `OS Env > .env > config.toml > config.toml.example` 优先级加载。
 - **provider 自注册而非手动 `main.py` 引入**：`services/llm/providers/<name>/__init__.py` import 时注册到 `_REGISTRY`；新增 provider 子包即可扩展能力，无须修改 `main.py`。**代价**：注册顺序敏感——`main.py` 显式 import 触发；遗漏某 provider 则该能力静默缺失（fail-open）。
 - **IPC future 按 `(user_id, call_id)` 二元键寻址**：并发用户不共享 future；`discard_user` 在 WS 断开时取消该用户所有未决 future。**为什么不只 `call_id`**：跨用户 key 复用会泄露上下文。

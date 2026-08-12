@@ -145,3 +145,6 @@ companion_wardrobe_generate_rate_limit_per_minute = 5
 [logging]
 log_level = "INFO"
 log_format = "json"
+
+[nightly]
+nightly_activity_enabled = true

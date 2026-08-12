@@ -3,9 +3,22 @@ import contextlib
 from datetime import datetime
 from typing import Any
 
-from components import MEMORY_CONSOLIDATE_INTERVAL_SECONDS, MEMORY_CONSOLIDATE_TRIGGER_ROWS, BackgroundTask, begin_local_scope, get_logger, naive_utc_now, session_scope
-from croniter import croniter
-from modules.conversation import Conversation
+from components import (
+    MEMORY_CONSOLIDATE_INTERVAL_SECONDS,
+    MEMORY_CONSOLIDATE_TRIGGER_ROWS,
+    NIGHTLY_MIN_MESSAGES_TODAY,
+    NIGHTLY_SCAN_INTERVAL_SECONDS,
+    NIGHTLY_WINDOW_END_HOUR,
+    NIGHTLY_WINDOW_START_HOUR,
+    SETTINGS,
+    BackgroundTask,
+    begin_local_scope,
+    get_logger,
+    naive_utc_now,
+    session_scope,
+)
+from modules.conversation import Conversation, Message
+from modules.memory import Memory
 from modules.scheduler import CronJob
 from modules.system import ChatMessageRequest, ChatRequest
 from sqlalchemy import text
@@ -14,7 +27,11 @@ from services.disturbance import is_quiet
 from services.gateway import MANAGER, JsonRpcEmitter
 from services.llm import resolve_user_llm_config
 
+from .cron_jobs import (
+    _compute_next_run_at,
+)
 from .memory_consolidator import maybe_consolidate_one_user
+from .nightly_activity import get_local_day_utc_bounds, run_nightly_pipeline
 
 logger = get_logger(__name__)
 
@@ -22,112 +39,11 @@ _BG_TASKS: set[asyncio.Task] = set()
 
 SCHEDULER_INTERVAL_SECONDS = 60
 
-_JOB_IMMUTABLE_FIELDS = frozenset({"id", "user_id"})
-_SCHEDULE_KEYS = ("schedule", "is_paused")
-
 # Hard cap on due jobs processed per tick — bounds event-loop blocking on
 # backlog catch-up after a long pause (e.g. 60 minutes of
 # ``* * * * *`` schedules = 3,600 due jobs on the first tick). Jobs past
 # the cap keep their old ``next_run_at`` and re-fire on the next tick.
 _MAX_DUE_PER_TICK = 200
-
-
-def _compute_next_run_at(schedule: str, base: datetime) -> datetime | None:
-    """Return the next fire time after ``base``; None for unparseable expressions."""
-    try:
-        next_dt = croniter(schedule, base).get_next(datetime)
-    except Exception as exc:
-        logger.error("Invalid cron expression", extra={"schedule": schedule, "error": str(exc)})
-        return None
-    return next_dt.replace(tzinfo=None)
-
-
-def _job_to_dict(job: CronJob) -> dict[str, Any]:
-    return job.to_dict()
-
-
-def _refresh_schedule(job: CronJob) -> None:
-    next_run = _compute_next_run_at(job.schedule, naive_utc_now())
-    if next_run is None:
-        job.is_paused = True
-        job.next_run_at = None
-    else:
-        job.next_run_at = next_run
-
-
-MAX_ACTIVE_CRON_JOBS = 10
-
-
-def create_job(user_id: int, prompt: str, schedule: str, name: str = "cron job", deliver: str = "local") -> dict[str, Any]:
-    with session_scope() as db:
-        active_count = db.query(CronJob).filter(CronJob.user_id == user_id, CronJob.is_paused.is_(False)).count()
-        if active_count >= MAX_ACTIVE_CRON_JOBS:
-            raise ValueError(f"Maximum active cron jobs limit ({MAX_ACTIVE_CRON_JOBS}) reached.")
-        job = CronJob(
-            user_id=user_id,
-            name=name,
-            schedule=schedule,
-            prompt=prompt,
-            deliver=deliver,
-        )
-        # Same invalid-schedule handling as update_job — a bad expression
-        # must land as is_paused=True with next_run_at=NULL, not the
-        # is_paused=False / next_run_at=NULL the tick filter would skip
-        # forever.
-        _refresh_schedule(job)
-        db.add(job)
-        db.commit()
-        db.refresh(job)
-        return _job_to_dict(job)
-
-
-def get_job(user_id: int, job_id: int) -> dict[str, Any] | None:
-    with session_scope() as db:
-        job = db.query(CronJob).filter(CronJob.id == job_id, CronJob.user_id == user_id).first()
-        return _job_to_dict(job) if job else None
-
-
-def list_jobs(user_id: int, include_paused: bool = False) -> list[dict[str, Any]]:
-    with session_scope() as db:
-        query = db.query(CronJob).filter(CronJob.user_id == user_id)
-        if not include_paused:
-            query = query.filter(CronJob.is_paused.is_(False))
-        return [_job_to_dict(j) for j in query.all()]
-
-
-def update_job(user_id: int, job_id: int, updates: dict[str, Any]) -> dict[str, Any] | None:
-    with session_scope() as db:
-        job = db.query(CronJob).filter(CronJob.id == job_id, CronJob.user_id == user_id).first()
-        if not job:
-            return None
-        for key, value in updates.items():
-            if key in _JOB_IMMUTABLE_FIELDS or not hasattr(job, key):
-                continue
-            setattr(job, key, value)
-        # Re-anchor next_run_at whenever the schedule changes or a paused job is
-        # resumed — otherwise a stale next_run_at in the past would fire instantly.
-        if any(k in updates for k in _SCHEDULE_KEYS):
-            _refresh_schedule(job)
-        db.commit()
-        return _job_to_dict(job)
-
-
-def pause_job(user_id: int, job_id: int) -> dict[str, Any] | None:
-    return update_job(user_id, job_id, {"is_paused": True})
-
-
-def resume_job(user_id: int, job_id: int) -> dict[str, Any] | None:
-    return update_job(user_id, job_id, {"is_paused": False})
-
-
-def remove_job(user_id: int, job_id: int) -> bool:
-    with session_scope() as db:
-        job = db.query(CronJob).filter(CronJob.id == job_id, CronJob.user_id == user_id).first()
-        if not job:
-            return False
-        db.delete(job)
-        db.commit()
-        return True
 
 
 def _select_due_jobs() -> list[CronJob]:
@@ -293,12 +209,18 @@ async def _kick_autonomous_turn(job_id: int, meta: dict[str, Any]) -> None:
 # ARCH §5 single-instance semantic (multi-replica would split state).
 _LAST_MEMORY_CONSOLIDATE: dict[int, float] = {}
 
+# Per-user local date string of last successful nightly pipeline run.
+_LAST_NIGHTLY_RUN: dict[int, str] = {}
+
 # Outer throttle on the recall-pool scan itself. The scan is cheap (partial
 # index) but pointless every minute when no user qualifies. 10 min keeps
 # the discovery lag low while the per-user 6 h throttle keeps the heavy
 # LLM call rate bounded.
 _LAST_CONSOLIDATE_SCAN: float = 0.0
 _CONSOLIDATE_SCAN_INTERVAL_SECONDS: int = 600
+
+# Outer throttle on the nightly activity scan.
+_LAST_NIGHTLY_SCAN: float = 0.0
 
 
 async def _tick() -> None:
@@ -314,6 +236,7 @@ async def _tick() -> None:
     # not be gated by ``if not due_jobs`` because installs with no cron jobs
     # would otherwise never trigger consolidation.
     await _maybe_run_memory_consolidator(now)
+    await _maybe_run_autonomous_activity(now)
     due_jobs = _select_due_jobs()
     if len(due_jobs) > _MAX_DUE_PER_TICK:
         logger.warning(
@@ -366,6 +289,66 @@ async def _maybe_run_memory_consolidator(now: datetime) -> None:
             continue
         if result is True:
             _LAST_MEMORY_CONSOLIDATE[uid] = now.timestamp()
+
+
+async def _maybe_run_autonomous_activity(now: datetime) -> None:
+    if not SETTINGS.nightly_activity_enabled:
+        return
+
+    global _LAST_NIGHTLY_SCAN
+    if now.timestamp() - _LAST_NIGHTLY_SCAN < NIGHTLY_SCAN_INTERVAL_SECONDS:
+        return
+    _LAST_NIGHTLY_SCAN = now.timestamp()
+
+    with session_scope() as db:
+        rows = db.query(Memory.user_id, Memory.content).filter(Memory.context == "user_profile:timezone").all()
+
+        eligible: list[tuple[int, str]] = []
+        for uid_raw, tz_content in rows:
+            uid = int(uid_raw)
+            tz_str = (tz_content or "").strip()
+            if not tz_str:
+                continue
+            try:
+                utc_start, utc_end, user_local_dt, local_today_str = get_local_day_utc_bounds(now, tz_str)
+            except Exception:
+                continue
+
+            if not (NIGHTLY_WINDOW_START_HOUR <= user_local_dt.hour < NIGHTLY_WINDOW_END_HOUR):
+                continue
+
+            if _LAST_NIGHTLY_RUN.get(uid) == local_today_str:
+                continue
+
+            msg_count = (
+                db.query(Message)
+                .join(Conversation, Message.conversation_id == Conversation.id)
+                .filter(
+                    Conversation.user_id == uid,
+                    Message.role == "user",
+                    Message.created_at >= utc_start,
+                    Message.created_at < utc_end,
+                )
+                .count()
+            )
+            if msg_count < NIGHTLY_MIN_MESSAGES_TODAY:
+                continue
+
+            eligible.append((uid, local_today_str))
+
+    if not eligible:
+        return
+
+    results = await asyncio.gather(
+        *(run_nightly_pipeline(uid, today_str) for uid, today_str in eligible),
+        return_exceptions=True,
+    )
+    for (uid, today_str), result in zip(eligible, results, strict=True):
+        if isinstance(result, Exception):
+            logger.exception("nightly_activity: tick failed", extra={"user_id": uid})
+            continue
+        if result is True:
+            _LAST_NIGHTLY_RUN[uid] = today_str
 
 
 async def scheduler_loop() -> None:

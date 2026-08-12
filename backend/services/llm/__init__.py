@@ -14,7 +14,7 @@ from .llm_client import (
 )
 from .llm_fallback import execute_with_fallback
 from .llm_retry import LLMRuntimeError, call_with_retry
-from .prompt_engineer import FullbodyTemplate, build_fullbody_prompt, build_texture_prompt, chat, enhance_avatar_prompt, is_preset_species, resolve_fullbody_template
+from .prompt_engineer import FullbodyTemplate, build_fullbody_prompt, build_texture_prompt, call_llm_once, chat, enhance_avatar_prompt, is_preset_species, resolve_fullbody_template
 from .providers import (
     BaseProvider,
     ChatProvider,
@@ -89,6 +89,7 @@ __all__ = [
     "default_context_tokens_for",
     "default_model_for",
     "call_with_retry",
+    "call_llm_once",
     "chat",
     "LLMRuntimeError",
     "classify_api_error",

@@ -1,11 +1,14 @@
 import json
 from dataclasses import dataclass, replace
+from typing import Any
 
 from components import safe_json_loads
 from modules.companion import Persona
 from sqlalchemy.orm import Session
 
-from .llm_client import MissingLlmConfigError, provider_for_service, provider_from_config
+from .llm_client import MissingLlmConfigError, client_for_config, provider_for_service, provider_from_config
+from .llm_retry import call_with_retry
+from .providers import ServiceType, resolve_context_tokens
 from .providers.base import ProviderConfig
 
 # Chinese-first (persona is Chinese, minimax handles it natively); the
@@ -297,6 +300,32 @@ async def chat(
     if not text:
         raise RuntimeError("prompt enhancer returned an empty response")
     return text
+
+
+async def call_llm_once(
+    llm_cfg: dict[str, Any],
+    system_prompt: str,
+    user_payload: Any,
+    *,
+    max_tokens: int,
+) -> str | None:
+    """``user_payload`` is JSON-serialized when it is a dict/list, otherwise ``str()``-ed."""
+    client = client_for_config(llm_cfg)
+    provider_name = llm_cfg.get("provider_name", "")
+    context_length = resolve_context_tokens(provider_name, ServiceType.llm)
+    user_content = json.dumps(user_payload, ensure_ascii=False) if isinstance(user_payload, dict | list) else str(user_payload)
+    resp = await call_with_retry(
+        client,
+        context_length=context_length,
+        model=llm_cfg["model_name"],
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_content},
+        ],
+        stream=False,
+        max_tokens=max_tokens,
+    )
+    return resp.choices[0].message.content if resp and resp.choices else None
 
 
 async def enhance_avatar_prompt(

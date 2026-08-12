@@ -10,8 +10,8 @@ def test_background_review_uses_resolver():
 
 
 def test_memory_consolidator_uses_resolver():
-    from services.scheduler.memory_consolidator import maybe_consolidate_one_user
+    from services.llm.prompt_engineer import call_llm_once
 
-    src = inspect.getsource(maybe_consolidate_one_user)
+    src = inspect.getsource(call_llm_once)
     assert "context_length=128000" not in src
     assert "resolve_context_tokens" in src

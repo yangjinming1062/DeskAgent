@@ -40,6 +40,16 @@ def sqlite_engine():
             "ON memories (user_id, context) "
             "WHERE context LIKE 'auto_inject:%'"
         ))
+        conn.execute(text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_memories_inferred_profile_slot "
+            "ON memories (user_id, context) "
+            "WHERE context LIKE 'inferred_profile:%'"
+        ))
+        conn.execute(text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_memories_diary_day "
+            "ON memories (user_id, context) "
+            "WHERE context LIKE 'diary:%'"
+        ))
         # SQLite ignores ``DESC`` in older builds; the index is still
         # useful for the partial scan even without the explicit order.
         conn.execute(text(
@@ -90,6 +100,7 @@ def _patch_db(monkeypatch, sqlite_engine, tmp_path):
         "services.gateway.runtime",
         "services.scheduler.title_generator",
         "services.scheduler.memory_consolidator",
+        "services.scheduler.nightly_activity",
         "services.tools.registry",
         "services.chat.agent_delegate",
         "services.tools.builtin.image_generation_tool",

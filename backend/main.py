@@ -64,6 +64,8 @@ def _install_schema_extensions(conn: Connection) -> None:
     # Partial unique for auto_inject slots — enforces one row per (user, slot)
     # so ``memory_retain(kind='auto_inject', context=<slot>)`` upserts atomically.
     conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_memories_auto_inject_slot ON memories (user_id, context) WHERE context LIKE 'auto_inject:%'"))
+    conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_memories_inferred_profile_slot ON memories (user_id, context) WHERE context LIKE 'inferred_profile:%'"))
+    conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_memories_diary_day ON memories (user_id, context) WHERE context LIKE 'diary:%'"))
     # Speeds up the recall consolidator's count-and-recent queries.
     conn.execute(text("CREATE INDEX IF NOT EXISTS ix_memories_recall_user_updated ON memories (user_id, updated_at DESC) WHERE context LIKE 'recall:%'"))
     # Add capability provider columns if not exist (PostgreSQL schema extension)

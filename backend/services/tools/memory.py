@@ -1,4 +1,5 @@
 import json
+from dataclasses import dataclass
 from typing import ClassVar
 
 from components import MAX_AUTO_INJECT_CONTENT_CHARS, MAX_RECALL_CONTENT_CHARS, MEMORY_RECALL_MAX_RESULTS, get_logger, tool_error
@@ -40,29 +41,87 @@ AUTO_INJECT_SLOTS: tuple[str, ...] = (
     "auto_inject:relationship_signal",  # trust / tease-frequency / formality
 )
 
-# Single source of truth for the four namespace prefixes. Drives the
-# SQL partial indexes, the LLM-side forgery filter, and the read/write
-# service filters — adding a fifth kind = one entry, not four edits.
-KIND_TO_PREFIX: dict[str, str] = {
-    "recall": "recall:",
-    "auto_inject": "auto_inject:",
-    "user_profile": "user_profile:",
-    "interaction_stats": "interaction_stats:",
+INFERRED_PROFILE_SLOTS: tuple[str, ...] = (
+    "inferred_profile:basic_info",  # birthday, age bucket, location, job
+    "inferred_profile:work_schedule",  # working hours, daily routine
+    "inferred_profile:interests",  # deeper interests & hobbies
+    "inferred_profile:preferences",  # communication, clothing, food preferences
+    "inferred_profile:important_dates",  # birthday, anniversary, exams, deadlines
+    "inferred_profile:relationships",  # key people, social circle
+    "inferred_profile:goals_stressors",  # current goals, stressors, aspirations
+    "inferred_profile:freeform",  # rich unclassified inferences
+)
+
+# ── Namespace registry ────────────────────────────────────────────────
+#
+# Single source of truth for all memory-namespace policy.  Each entry
+# declares the prefix plus three independent policy flags, so adding a
+# new namespace is ONE entry here — the prefix map, forgery filter,
+# recall-exclusion set, and static-block-exclusion set are all derived.
+#
+# Policy flags:
+#   forbidden_from_llm       — chat-time LLM cannot write via memory_retain
+#   reserved_from_recall     — excluded from memory_recall results
+#   excluded_from_static_block — excluded from format_memories_block
+#
+# diary is NOT reserved_from_recall: the companion can search past diary
+# entries via memory_recall for conversational continuity.
+
+
+@dataclass(frozen=True)
+class NamespaceSpec:
+    name: str
+    prefix: str
+    forbidden_from_llm: bool = False
+    reserved_from_recall: bool = False
+    excluded_from_static_block: bool = False
+    slots: tuple[str, ...] | None = None
+
+
+NAMESPACE_SPECS: dict[str, NamespaceSpec] = {
+    "recall": NamespaceSpec("recall", "recall:"),
+    "auto_inject": NamespaceSpec(
+        "auto_inject",
+        "auto_inject:",
+        reserved_from_recall=True,
+        excluded_from_static_block=True,
+        slots=AUTO_INJECT_SLOTS,
+    ),
+    "user_profile": NamespaceSpec(
+        "user_profile",
+        "user_profile:",
+        forbidden_from_llm=True,
+        reserved_from_recall=True,
+        excluded_from_static_block=True,
+    ),
+    "interaction_stats": NamespaceSpec(
+        "interaction_stats",
+        "interaction_stats:",
+        forbidden_from_llm=True,
+        reserved_from_recall=True,
+        excluded_from_static_block=True,
+    ),
+    "inferred_profile": NamespaceSpec(
+        "inferred_profile",
+        "inferred_profile:",
+        forbidden_from_llm=True,
+        reserved_from_recall=True,
+        excluded_from_static_block=True,
+        slots=INFERRED_PROFILE_SLOTS,
+    ),
+    "diary": NamespaceSpec(
+        "diary",
+        "diary:",
+        forbidden_from_llm=True,
+        excluded_from_static_block=True,
+    ),
 }
 
-# Context prefixes the LLM is forbidden to write into. These are
-# backend-owned namespaces — user_profile is user-only and a forged
-# write here would corrupt user-declared identity; interaction_stats is
-# system-written and a forged write would pollute daily aggregates.
-# auto_inject is technically writable by the LLM but via the closed
-# AUTO_INJECT_SLOTS whitelist, not via arbitrary context strings.
-_FORBIDDEN_FROM_LLM: frozenset[str] = frozenset({KIND_TO_PREFIX["user_profile"], KIND_TO_PREFIX["interaction_stats"]})
-
-# Prefixes recall should never return (user_profile has its own
-# injection path, auto_inject is already in the prompt, interaction_stats
-# is system-written). Used to filter ``_recall`` and
-# ``format_memories_block``.
-RESERVED_FROM_RECALL: frozenset[str] = frozenset({KIND_TO_PREFIX["user_profile"], KIND_TO_PREFIX["auto_inject"], KIND_TO_PREFIX["interaction_stats"]})
+# Derived views — stable value-equal replacements for the former hand-maintained sets.
+KIND_TO_PREFIX: dict[str, str] = {s.name: s.prefix for s in NAMESPACE_SPECS.values()}
+_FORBIDDEN_FROM_LLM: frozenset[str] = frozenset(s.prefix for s in NAMESPACE_SPECS.values() if s.forbidden_from_llm)
+RESERVED_FROM_RECALL: frozenset[str] = frozenset(s.prefix for s in NAMESPACE_SPECS.values() if s.reserved_from_recall)
+STATIC_BLOCK_EXCLUDED: frozenset[str] = frozenset(s.prefix for s in NAMESPACE_SPECS.values() if s.excluded_from_static_block)
 
 _RECALL_LABEL_MAX = 200
 _RECALL_TAG_FALLBACK = "other"
@@ -226,7 +285,7 @@ class NativeMemory:
             return tool_error(f"unknown recall tags {bad}; allowed: {sorted(RECALL_TAGS)}")
         ctx_raw = (context or "").strip()
         if any(ctx_raw.startswith(prefix) for prefix in _FORBIDDEN_FROM_LLM):
-            return tool_error("recall context cannot use reserved prefixes (user_profile: / interaction_stats:); those are backend-owned namespaces")
+            return tool_error("recall context cannot use reserved prefixes; those are backend-owned namespaces")
         ctx = normalize_recall_context(ctx_raw)
         mem = Memory(
             user_id=self.user_id,

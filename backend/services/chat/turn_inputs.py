@@ -9,7 +9,7 @@ from modules.settings import UserSetting
 from modules.system import AgentPromptConfig, ChatRequest
 from sqlalchemy.orm import Session
 
-from ..companion import build_system_prompt_extras, build_user_profile_extras, format_auto_inject_block
+from ..companion import build_system_prompt_extras, build_user_profile_extras, format_auto_inject_block, format_inferred_profile_block
 from ..gateway import RuntimeSession
 from ..llm import MissingLlmConfigError, ServiceType, provider_for_service, provider_from_config, resolve_context_tokens, resolve_vision_chain
 from ..tools import REGISTRY, NativeMemory, schema_name
@@ -150,6 +150,7 @@ def _build_turn_inputs(
     # auto_inject memories are independent of persona completion: even an
     # unstated persona can carry LLM-maintained background context.
     auto_inject_extras = format_auto_inject_block(db, user_id)
+    inferred_profile_extras = format_inferred_profile_block(db, user_id)
     agent_config = AgentPromptConfig(
         valid_tool_names=[schema_name(s) for s in all_schemas],
         model=model_name,
@@ -160,6 +161,7 @@ def _build_turn_inputs(
         persona_extras=build_system_prompt_extras(persona),
         user_profile_extras=user_profile_extras,
         auto_inject_extras=auto_inject_extras,
+        inferred_profile_extras=inferred_profile_extras,
         language=user_settings.get("language", DEFAULT_LANGUAGE),
     )
     messages = _history_to_messages(history, build_system_prompt(agent_config))

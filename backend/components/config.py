@@ -165,9 +165,10 @@ class Settings(BaseSettings):
     companion_avatar_upload_rate_limit_per_minute: int
     companion_model_generate_rate_limit_per_minute: int
     companion_wardrobe_generate_rate_limit_per_minute: int
-
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
     log_format: Literal["json", "text"]
+
+    nightly_activity_enabled: bool = True
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", case_sensitive=False, extra="ignore")
 

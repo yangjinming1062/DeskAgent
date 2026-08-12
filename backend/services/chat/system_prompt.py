@@ -480,6 +480,8 @@ def build_system_prompt_parts(config: AgentPromptConfig, system_message: str | N
         # interaction rhythm, communication style, mood pattern, relationship
         # signal). Slot length is bounded at write time, no render-time cap.
         stable_parts.append(config.auto_inject_extras)
+    if config.inferred_profile_extras:
+        stable_parts.append(config.inferred_profile_extras)
     if config.task_completion_guidance and valid_tools:
         stable_parts.append(TASK_COMPLETION_GUIDANCE)
 

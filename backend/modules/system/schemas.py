@@ -64,4 +64,5 @@ class AgentPromptConfig(BaseModel):
     persona_extras: str | None = None
     user_profile_extras: str | None = None
     auto_inject_extras: str = ""
+    inferred_profile_extras: str = ""
     language: str = DEFAULT_LANGUAGE

@@ -19,6 +19,16 @@ def _owned(db: Session, user_id: int, memory_id: int) -> Memory | None:
     return db.query(Memory).filter(Memory.id == memory_id, Memory.user_id == user_id).first()
 
 
+def upsert_slotted_memory(db: Session, user_id: int, context: str, content: str, tags: str) -> None:
+    """Caller is responsible for content caps and tag formatting."""
+    existing = db.query(Memory).filter(Memory.user_id == user_id, Memory.context == context).first()
+    if existing is not None:
+        existing.content = content
+        existing.tags = tags
+    else:
+        db.add(Memory(user_id=user_id, content=content, context=context, tags=tags))
+
+
 def _row_to_dict(row: Memory) -> dict[str, Any]:
     return {
         "id": row.id,

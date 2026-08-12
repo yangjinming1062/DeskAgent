@@ -29,9 +29,9 @@ from .avatar_service import (
     resolve_uploaded_avatar_path,
 )
 from .interaction_stats import record_interaction
-from .memory_admin import delete_memory, get_memory, list_memories, memory_counts, update_memory
+from .memory_admin import delete_memory, get_memory, list_memories, memory_counts, update_memory, upsert_slotted_memory
 from .memory_bootstrap import build_user_profile_extras, extract_user_profile, read_user_profile, record_user_profile
-from .memory_format import format_auto_inject_block, format_memories_block
+from .memory_format import format_auto_inject_block, format_inferred_profile_block, format_memories_block
 from .model_service import ModelGenerationError, ModelGenerationInProgressError, emit_wardrobe_updated, generate_companion_model, get_active_model, signed_model_url
 from .outfit_normalizer import normalize_outfit
 from .persona_service import (
@@ -93,6 +93,7 @@ __all__ = [
     "extract_user_profile",
     "find_unmatched_tags",
     "format_auto_inject_block",
+    "format_inferred_profile_block",
     "format_memories_block",
     "generate_animation_clips",
     "generate_avatar",
@@ -132,6 +133,7 @@ __all__ = [
     "signed_model_url",
     "submit_onboarding_field",
     "update_memory",
+    "upsert_slotted_memory",
     "update_outfit_field",
     "update_persona",
     "verify_signed_asset_request",

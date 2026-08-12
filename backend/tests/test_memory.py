@@ -309,18 +309,13 @@ async def test_consolidator_replaces_old_rows(seeded, monkeypatch):
             db.add(Memory(user_id=1001, content=f"fact {i}", context=f"recall:topic_{i}", tags=json.dumps([next(iter(RECALL_TAGS))])))
         db.commit()
 
-    async def fake_call_with_retry(*args, **kwargs):
-        class _Resp:
-            class _Choice:
-                message = type("M", (), {"content": json.dumps({"summaries": [
-                    {"content": "merged a", "tags": ["likes"], "context": "merged_a"},
-                    {"content": "merged b", "tags": ["likes"], "context": "merged_b"},
-                ]})})
-            choices = [_Choice()]
-        return _Resp()
+    async def fake_call_llm_once(*args, **kwargs):
+        return json.dumps({"summaries": [
+            {"content": "merged a", "tags": ["likes"], "context": "merged_a"},
+            {"content": "merged b", "tags": ["likes"], "context": "merged_b"},
+        ]})
 
-    monkeypatch.setattr(memory_consolidator, "client_for_config", lambda cfg: object())
-    monkeypatch.setattr(memory_consolidator, "call_with_retry", fake_call_with_retry)
+    monkeypatch.setattr(memory_consolidator, "call_llm_once", fake_call_llm_once)
     monkeypatch.setattr(memory_consolidator, "resolve_user_llm_config", lambda db, uid: {"api_key": "x", "base_url": "y", "model_name": "z", "provider_name": "mimo"})
 
     ran = await memory_consolidator.maybe_consolidate_one_user(1001)
@@ -351,14 +346,9 @@ async def test_consolidator_keeps_source_rows_when_all_summaries_empty(seeded, m
         db.commit()
 
     async def fake_call(*a, **kw):
-        class _Resp:
-            class _Choice:
-                message = type("M", (), {"content": json.dumps({"summaries": [{"content": "", "tags": ["likes"], "context": "empty"}]})})
-            choices = [_Choice()]
-        return _Resp()
+        return json.dumps({"summaries": [{"content": "", "tags": ["likes"], "context": "empty"}]})
 
-    monkeypatch.setattr(memory_consolidator, "client_for_config", lambda cfg: object())
-    monkeypatch.setattr(memory_consolidator, "call_with_retry", fake_call_with_retry := fake_call)
+    monkeypatch.setattr(memory_consolidator, "call_llm_once", fake_call)
     monkeypatch.setattr(memory_consolidator, "resolve_user_llm_config", lambda db, uid: {"api_key": "x", "base_url": "y", "model_name": "z", "provider_name": "mimo"})
 
     ran = await memory_consolidator.maybe_consolidate_one_user(1001)
