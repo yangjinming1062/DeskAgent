@@ -7,10 +7,7 @@ from .models import AdminSession, LoginRecord, User
 from .security import BEARER_SCHEME, decode_bearer_token
 
 
-def get_current_admin_token(
-    credentials: HTTPAuthorizationCredentials | None = Depends(BEARER_SCHEME),
-    db: Session = Depends(get_db),
-) -> str:
+def get_current_admin_token(credentials: HTTPAuthorizationCredentials | None = Depends(BEARER_SCHEME), db: Session = Depends(get_db)) -> str:
     """Verify the admin token's ``jti`` is recorded in ``admin_sessions``
     with ``is_active=True`` so a force-revoked token fails immediately
     instead of waiting for natural JWT expiry."""
@@ -24,10 +21,7 @@ def get_current_admin_token(
     if jti:
         session = db.query(AdminSession).filter(AdminSession.token_jti == jti, AdminSession.is_active.is_(True)).one_or_none()
         if session is None:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="管理员令牌已吊销或未登记，请重新登录。",
-            )
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="管理员令牌已吊销或未登记，请重新登录。")
     return username
 
 

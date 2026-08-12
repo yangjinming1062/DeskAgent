@@ -40,10 +40,7 @@ BROWSER_DIALOG_SCHEMA: dict[str, Any] = {
                     "navigation, 'dismiss' keeps the page."
                 ),
             },
-            "prompt_text": {
-                "type": "string",
-                "description": ("Response string for a ``prompt()`` dialog. Ignored for other dialog types. Defaults to empty string."),
-            },
+            "prompt_text": {"type": "string", "description": ("Response string for a ``prompt()`` dialog. Ignored for other dialog types. Defaults to empty string.")},
             "dialog_id": {
                 "type": "string",
                 "description": ("Specific dialog to respond to, from ``browser_snapshot.pending_dialogs[].id``. Required only when multiple dialogs are queued."),
@@ -54,12 +51,7 @@ BROWSER_DIALOG_SCHEMA: dict[str, Any] = {
 }
 
 
-def browser_dialog(
-    action: str,
-    prompt_text: str | None = None,
-    dialog_id: str | None = None,
-    task_id: str | None = None,
-) -> str:
+def browser_dialog(action: str, prompt_text: str | None = None, dialog_id: str | None = None, task_id: str | None = None) -> str:
     if (supervisor := SUPERVISOR_REGISTRY.get(task_id or "default")) is None:
         return json.dumps({"success": False, "error": "No CDP supervisor is attached to this task. Call browser_navigate or /browser connect first."})
 
@@ -68,10 +60,5 @@ def browser_dialog(
 
 
 registry.register_tool("browser_dialog", schema=BROWSER_DIALOG_SCHEMA)(
-    lambda args, **kw: browser_dialog(
-        action=args.get("action", ""),
-        prompt_text=args.get("prompt_text"),
-        dialog_id=args.get("dialog_id"),
-        task_id=kw.get("task_id"),
-    )
+    lambda args, **kw: browser_dialog(action=args.get("action", ""), prompt_text=args.get("prompt_text"), dialog_id=args.get("dialog_id"), task_id=kw.get("task_id"))
 )

@@ -174,10 +174,7 @@ async def handle_chat_websocket(websocket: WebSocket, token: str):
             with SESSION_LOCAL() as db:
                 user_rows = db.query(Message).filter(Message.conversation_id == runtime.conversation_id, Message.role == "user").order_by(Message.created_at).all()
                 if truncate_ordinal < 0 or truncate_ordinal >= len(user_rows):
-                    raise JsonRpcError(
-                        JSONRPC_INVALID_PARAMS,
-                        f"truncate_before_user_ordinal {truncate_ordinal} no longer in session history",
-                    )
+                    raise JsonRpcError(JSONRPC_INVALID_PARAMS, f"truncate_before_user_ordinal {truncate_ordinal} no longer in session history")
                 drop_from_id = user_rows[truncate_ordinal].id
                 db.query(Message).filter(Message.conversation_id == runtime.conversation_id, Message.id >= drop_from_id).delete(synchronize_session=False)
                 db.expire_all()
@@ -185,10 +182,7 @@ async def handle_chat_websocket(websocket: WebSocket, token: str):
 
         attachments = _validate_attachments(params)
 
-        req = ChatRequest(
-            session_id=runtime.session_id,
-            message=ChatMessageRequest(role="user", content=text, attachments=attachments),
-        )
+        req = ChatRequest(session_id=runtime.session_id, message=ChatMessageRequest(role="user", content=text, attachments=attachments))
 
         # JsonRpcEmitter translates raw chat_service frames (chunk,
         # tool_start/end, error, message.start/complete, tool_call,
@@ -341,10 +335,7 @@ def _register_session_handlers(dispatcher: JsonRpcDispatcher, runtime_sessions: 
             db.refresh(conv)
         runtime = _mount_runtime(conv, cwd)
         logger.info("session.create", extra={"user_id": user_id, "session_id": runtime.session_id, "cwd": cwd})
-        return SessionCreateResult(
-            session_id=runtime.session_id,
-            info=runtime_info_snapshot(llm_config, runtime),
-        ).model_dump()
+        return SessionCreateResult(session_id=runtime.session_id, info=runtime_info_snapshot(llm_config, runtime)).model_dump()
 
     async def session_resume(params: dict) -> dict:
         stored_id = _require_str(params, "session_id")
@@ -431,10 +422,7 @@ def _register_session_handlers(dispatcher: JsonRpcDispatcher, runtime_sessions: 
         if not isinstance(hour, int) or not 0 <= hour <= 23:
             raise JsonRpcError(JSONRPC_INVALID_PARAMS, "hour must be int in [0, 23]")
         if kind not in ("poke", "drag", "chat_turn"):
-            raise JsonRpcError(
-                JSONRPC_INVALID_PARAMS,
-                f"kind must be one of poke/drag/chat_turn, got {kind!r}",
-            )
+            raise JsonRpcError(JSONRPC_INVALID_PARAMS, f"kind must be one of poke/drag/chat_turn, got {kind!r}")
         return record_interaction(user_id, kind, hour)
 
     dispatcher.register("companion.record_interaction_stats", companion_record_interaction_stats)
@@ -536,10 +524,7 @@ def _register_session_handlers(dispatcher: JsonRpcDispatcher, runtime_sessions: 
         with SESSION_LOCAL() as db:
             persona = get_or_create_persona(db, user_id)
             if not persona.is_complete:
-                raise JsonRpcError(
-                    JSONRPC_INVALID_PARAMS,
-                    "finish onboarding before regenerating avatar",
-                )
+                raise JsonRpcError(JSONRPC_INVALID_PARAMS, "finish onboarding before regenerating avatar")
         job_id = f"avatar_regen_{user_id}_{secrets.token_urlsafe(6)}"
         lock = get_avatar_job_lock(user_id)
         if lock.locked():
@@ -562,10 +547,7 @@ def _register_session_handlers(dispatcher: JsonRpcDispatcher, runtime_sessions: 
                         # the event loop.
                         regen_busy = False
                         try:
-                            got = db.execute(
-                                text("SELECT pg_try_advisory_xact_lock(:k)"),
-                                {"k": _AVATAR_REGEN_ADVISORY_NAMESPACE + int(user_id)},
-                            ).scalar()
+                            got = db.execute(text("SELECT pg_try_advisory_xact_lock(:k)"), {"k": _AVATAR_REGEN_ADVISORY_NAMESPACE + int(user_id)}).scalar()
                             regen_busy = not bool(got)
                         except Exception:
                             regen_busy = False
@@ -574,14 +556,7 @@ def _register_session_handlers(dispatcher: JsonRpcDispatcher, runtime_sessions: 
                             return
                         persona = get_or_create_persona(db, user_id)
                         asset = await regenerate_avatar(db, user_id, persona, feedback=feedback)
-                        payload = {
-                            "job_id": job_id,
-                            "asset_url": asset.asset_url,
-                            "seed_front_url": None,
-                            "seed_right_url": None,
-                            "seed_back_url": None,
-                            "id": asset.id,
-                        }
+                        payload = {"job_id": job_id, "asset_url": asset.asset_url, "seed_front_url": None, "seed_right_url": None, "seed_back_url": None, "id": asset.id}
                 except AvatarGenerationError as exc:
                     logger.warning("avatar regenerate failed", extra={"user_id": user_id, "error": str(exc)})
                     payload = {"job_id": job_id, "error": f"伙伴形象生成失败：{exc}"}
@@ -636,11 +611,7 @@ def _register_session_handlers(dispatcher: JsonRpcDispatcher, runtime_sessions: 
                 result = await design_voice(db, user_id, prompt, preview_text=preview_text)
             except (ValueError, MissingLlmConfigError) as exc:
                 raise JsonRpcError(JSONRPC_INVALID_PARAMS, str(exc)) from exc
-        return {
-            "voice_id": result.voice_id,
-            "trial_audio_base64": base64.b64encode(result.trial_audio).decode("ascii"),
-            "trial_audio_mime": result.trial_audio_mime,
-        }
+        return {"voice_id": result.voice_id, "trial_audio_base64": base64.b64encode(result.trial_audio).decode("ascii"), "trial_audio_mime": result.trial_audio_mime}
 
     dispatcher.register("tts.list_voices", tts_list_voices)
     dispatcher.register("tts.match_voice", tts_match_voice)

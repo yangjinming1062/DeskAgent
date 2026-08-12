@@ -38,12 +38,7 @@ def _aggregate_user_messages(db: Session, user_id: int, since: datetime) -> dict
             """),
         {"uid": user_id, "since": since},
     ).one()
-    return {
-        "total_messages": int(row.total_messages),
-        "total_input_tokens": int(row.in_tok),
-        "total_output_tokens": int(row.out_tok),
-        "total_duration_ms": int(row.duration_ms),
-    }
+    return {"total_messages": int(row.total_messages), "total_input_tokens": int(row.in_tok), "total_output_tokens": int(row.out_tok), "total_duration_ms": int(row.duration_ms)}
 
 
 def _daily_activity(db: Session, user_id: int, since: datetime) -> list[dict[str, Any]]:
@@ -56,10 +51,7 @@ def _daily_activity(db: Session, user_id: int, since: datetime) -> list[dict[str
     rolled up.
     """
     rows = (
-        db.query(
-            func.date(Message.created_at).label("day"),
-            func.count(Message.id).label("cnt"),
-        )
+        db.query(func.date(Message.created_at).label("day"), func.count(Message.id).label("cnt"))
         .join(Conversation, Conversation.id == Message.conversation_id)
         .filter(Conversation.user_id == user_id, Message.created_at >= since, Message.role == "user")
         .group_by(text("day"))
@@ -111,12 +103,11 @@ def _skill_summary(db: Session, user_id: int, since: datetime) -> dict[str, Any]
     """Aggregate counts from the memory table — closest thing we have to
     'skills' the user has built up (memories are extracted from past sessions)."""
     counts = db.execute(
-        text("SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE created_at >= :since) AS recent FROM memories WHERE user_id = :uid"),
-        {"uid": user_id, "since": since},
+        text("SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE created_at >= :since) AS recent FROM memories WHERE user_id = :uid"), {"uid": user_id, "since": since}
     ).one()
     rows = db.query(Memory.tags).filter(Memory.user_id == user_id, Memory.tags.isnot(None)).all()
     tag_counter: Counter[str] = Counter()
-    for (tags_raw,) in rows:
+    for tags_raw in rows:
         # ``Memory.tags`` is a Text column (JSON-encoded string), not a
         # SQLAlchemy ``JSON`` column, so we always get a string back. If
         # the column type ever changes, ``safe_json_loads`` of a list
@@ -127,11 +118,7 @@ def _skill_summary(db: Session, user_id: int, since: datetime) -> dict[str, Any]
             for t in parsed:
                 if isinstance(t, str) and t:
                     tag_counter[t] += 1
-    return {
-        "total_memories": int(counts.total),
-        "new_in_window": int(counts.recent),
-        "top_tags": [{"tag": t, "count": c} for t, c in tag_counter.most_common(10)],
-    }
+    return {"total_memories": int(counts.total), "new_in_window": int(counts.recent), "top_tags": [{"tag": t, "count": c} for t, c in tag_counter.most_common(10)]}
 
 
 @router.get("/overview")

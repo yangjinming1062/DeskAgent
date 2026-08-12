@@ -59,12 +59,7 @@ def _extract_relevant_content(snapshot_text: str, user_task: str | None = None) 
     extraction_prompt = redact_sensitive_text(extraction_prompt)
 
     try:
-        call_kwargs = {
-            "task": "web_extract",
-            "messages": [{"role": "user", "content": extraction_prompt}],
-            "max_tokens": 4000,
-            "temperature": 0.1,
-        }
+        call_kwargs = {"task": "web_extract", "messages": [{"role": "user", "content": extraction_prompt}], "max_tokens": 4000, "temperature": 0.1}
         if in_async_loop():
             return _truncate_snapshot(snapshot_text)
         response = asyncio.run(call_llm(**call_kwargs))

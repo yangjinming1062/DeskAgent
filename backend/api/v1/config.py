@@ -11,33 +11,19 @@ router = get_router()
 
 
 @router.get("", response_model=DesktopConfigResponse)
-def get_config(
-    current: tuple[User, object] = Depends(get_current_session),
-    db: Session = Depends(get_db),
-) -> DesktopConfigResponse:
+def get_config(current: tuple[User, object] = Depends(get_current_session), db: Session = Depends(get_db)) -> DesktopConfigResponse:
     user, _ = current
     settings = db.query(UserSetting).filter(UserSetting.user_id == user.id).all()
     return DesktopConfigResponse(config=settings_to_config(settings))
 
 
 @router.put("", response_model=DesktopConfigResponse)
-def put_config(
-    body: DesktopConfigPutRequest,
-    current: tuple[User, object] = Depends(get_current_session),
-    db: Session = Depends(get_db),
-) -> DesktopConfigResponse:
+def put_config(body: DesktopConfigPutRequest, current: tuple[User, object] = Depends(get_current_session), db: Session = Depends(get_db)) -> DesktopConfigResponse:
     user, _ = current
 
     pairs = flatten_config(body.config)
     for key, value in pairs:
-        setting = (
-            db.query(UserSetting)
-            .filter(
-                UserSetting.user_id == user.id,
-                UserSetting.setting_key == key,
-            )
-            .first()
-        )
+        setting = db.query(UserSetting).filter(UserSetting.user_id == user.id, UserSetting.setting_key == key).first()
         if setting:
             setting.setting_value = value
         else:

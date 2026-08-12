@@ -250,24 +250,14 @@ class WinBackend(ComputerUseBackend):
         if app and app.lower() in DESKTOP_SENTINELS:
             hwnd, app_name = self._find_shell_window()
             if hwnd is None:
-                return CaptureResult(
-                    mode=mode,
-                    width=0,
-                    height=0,
-                    window_title=f"<no shell window found; sentinel app={app!r} requires Progman or Shell_TrayWnd to be enumerable>",
-                )
+                return CaptureResult(mode=mode, width=0, height=0, window_title=f"<no shell window found; sentinel app={app!r} requires Progman or Shell_TrayWnd to be enumerable>")
             self._active_hwnd = hwnd
             self._active_app = app_name
             self._last_app = app_name
         elif app:
             hwnd, app_name = self._find_window_by_app(app)
             if hwnd is None:
-                return CaptureResult(
-                    mode=mode,
-                    width=0,
-                    height=0,
-                    window_title=f"<no window matched app={app!r}; call list_apps to see available apps>",
-                )
+                return CaptureResult(mode=mode, width=0, height=0, window_title=f"<no window matched app={app!r}; call list_apps to see available apps>")
             self._active_hwnd = hwnd
             self._active_app = app_name
             self._last_app = app_name
@@ -301,25 +291,11 @@ class WinBackend(ComputerUseBackend):
         window_title = self._get_hwnd_title(self._active_hwnd) if self._active_hwnd else ""
 
         return CaptureResult(
-            mode=mode,
-            width=width,
-            height=height,
-            png_b64=png_b64,
-            elements=elements,
-            app=self._active_app,
-            window_title=window_title,
-            png_bytes_len=png_bytes_len,
+            mode=mode, width=width, height=height, png_b64=png_b64, elements=elements, app=self._active_app, window_title=window_title, png_bytes_len=png_bytes_len
         )
 
     def click(
-        self,
-        *,
-        element: int | None = None,
-        x: int | None = None,
-        y: int | None = None,
-        button: str = "left",
-        click_count: int = 1,
-        modifiers: list[str] | None = None,
+        self, *, element: int | None = None, x: int | None = None, y: int | None = None, button: str = "left", click_count: int = 1, modifiers: list[str] | None = None
     ) -> ActionResult:
         if element is not None:
             if element < 0 or element >= len(self._element_cache):
@@ -371,14 +347,7 @@ class WinBackend(ComputerUseBackend):
             return ActionResult(ok=False, action="drag", message=str(e))
 
     def scroll(
-        self,
-        *,
-        direction: str,
-        amount: int = 3,
-        element: int | None = None,
-        x: int | None = None,
-        y: int | None = None,
-        modifiers: list[str] | None = None,
+        self, *, direction: str, amount: int = 3, element: int | None = None, x: int | None = None, y: int | None = None, modifiers: list[str] | None = None
     ) -> ActionResult:
         if element is not None:
             if element < 0 or element >= len(self._element_cache):

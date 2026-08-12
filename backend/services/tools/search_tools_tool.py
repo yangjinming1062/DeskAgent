@@ -7,16 +7,7 @@ SEARCH_TOOLS_SCHEMA = {
     "function": {
         "name": "search_tools",
         "description": "Search for available tools and plugins in the system by keyword or intent. Call this when you need a capability you don't currently have (e.g., 'browser', 'database', 'github'). Returns a list of matching tool names and descriptions. The system will automatically enable any tools returned by this search for your immediate use.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "query": {
-                    "type": "string",
-                    "description": "Keyword or intent to search for.",
-                }
-            },
-            "required": ["query"],
-        },
+        "parameters": {"type": "object", "properties": {"query": {"type": "string", "description": "Keyword or intent to search for."}}, "required": ["query"]},
     },
 }
 

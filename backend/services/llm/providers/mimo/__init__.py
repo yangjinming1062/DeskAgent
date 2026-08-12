@@ -10,9 +10,4 @@ register(ServiceType.stt, "mimo", MiMoSTTProvider)
 register(ServiceType.tts, "mimo", MiMoTTSProvider)
 register(ServiceType.image_gen, "mimo", MiMoImageGenProvider)
 
-__all__ = [
-    "MiMoChatProvider",
-    "MiMoSTTProvider",
-    "MiMoTTSProvider",
-    "MiMoImageGenProvider",
-]
+__all__ = ["MiMoChatProvider", "MiMoSTTProvider", "MiMoTTSProvider", "MiMoImageGenProvider"]

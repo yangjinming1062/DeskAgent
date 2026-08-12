@@ -5,8 +5,6 @@ from modules.memory import Memory
 
 logger = get_logger(__name__)
 
-InteractionKind = str  # Literal["poke", "drag", "chat_turn"] — see VALID_KINDS
-
 STATS_THRESHOLD = 10
 
 VALID_KINDS: frozenset[str] = frozenset({"poke", "drag", "chat_turn"})
@@ -86,24 +84,10 @@ def _upsert_memory(user_id: int, counters: _DailyCounters) -> None:
             existing.content = content
             existing.tags = tags_json
         else:
-            db.add(
-                Memory(
-                    user_id=user_id,
-                    content=content,
-                    context=ctx,
-                    tags=tags_json,
-                )
-            )
+            db.add(Memory(user_id=user_id, content=content, context=ctx, tags=tags_json))
         db.commit()
     logger.info(
-        "interaction_stats: daily summary written",
-        extra={
-            "user_id": user_id,
-            "date": counters.date,
-            "poke": counters.poke,
-            "drag": counters.drag,
-            "chat_turn": counters.chat_turn,
-        },
+        "interaction_stats: daily summary written", extra={"user_id": user_id, "date": counters.date, "poke": counters.poke, "drag": counters.drag, "chat_turn": counters.chat_turn}
     )
 
 
@@ -134,8 +118,4 @@ def record_interaction(user_id: int, kind: str, hour: int) -> dict:
     if threshold_met:
         _upsert_memory(user_id, counters)
 
-    return {
-        "recorded": kind,
-        "threshold_met": threshold_met,
-        "peak_hour": _compute_peak_hour(counters.hour_buckets),
-    }
+    return {"recorded": kind, "threshold_met": threshold_met, "peak_hour": _compute_peak_hour(counters.hour_buckets)}

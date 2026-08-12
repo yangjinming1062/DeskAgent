@@ -96,12 +96,7 @@ def _history_to_messages(db_msgs: list[Message], system_prompt: str) -> list[dic
 
 
 def _build_turn_inputs(
-    db: Session,
-    conv: Conversation,
-    user_id: int,
-    req: ChatRequest,
-    session_client_context: ChatRequestClientContext | None,
-    user_settings: dict,
+    db: Session, conv: Conversation, user_id: int, req: ChatRequest, session_client_context: ChatRequestClientContext | None, user_settings: dict
 ) -> _TurnInputs:
     """Resolve identity prompt, schemas, agent_config, history, and the
     LLM client. The native_memory's addition is injected into the system
@@ -135,10 +130,7 @@ def _build_turn_inputs(
         if req.model and req.model != provider.config.model:
             # Renderer overrode the model but didn't pin the window — warn
             # so a budget mismatch surfaces in logs.
-            logger.warning(
-                "request model override without context_tokens",
-                extra={"provider": provider.provider_name, "request_model": req.model},
-            )
+            logger.warning("request model override without context_tokens", extra={"provider": provider.provider_name, "request_model": req.model})
         ctx_length = resolve_context_tokens(provider.provider_name, ServiceType.llm)
 
     identity_prompt = db.query(UserSetting.setting_value).filter(UserSetting.user_id == user_id, UserSetting.setting_key == "identity_prompt").scalar()

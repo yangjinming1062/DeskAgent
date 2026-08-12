@@ -80,41 +80,13 @@ class NamespaceSpec:
 
 NAMESPACE_SPECS: dict[str, NamespaceSpec] = {
     "recall": NamespaceSpec("recall", "recall:"),
-    "auto_inject": NamespaceSpec(
-        "auto_inject",
-        "auto_inject:",
-        reserved_from_recall=True,
-        excluded_from_static_block=True,
-        slots=AUTO_INJECT_SLOTS,
-    ),
-    "user_profile": NamespaceSpec(
-        "user_profile",
-        "user_profile:",
-        forbidden_from_llm=True,
-        reserved_from_recall=True,
-        excluded_from_static_block=True,
-    ),
-    "interaction_stats": NamespaceSpec(
-        "interaction_stats",
-        "interaction_stats:",
-        forbidden_from_llm=True,
-        reserved_from_recall=True,
-        excluded_from_static_block=True,
-    ),
+    "auto_inject": NamespaceSpec("auto_inject", "auto_inject:", reserved_from_recall=True, excluded_from_static_block=True, slots=AUTO_INJECT_SLOTS),
+    "user_profile": NamespaceSpec("user_profile", "user_profile:", forbidden_from_llm=True, reserved_from_recall=True, excluded_from_static_block=True),
+    "interaction_stats": NamespaceSpec("interaction_stats", "interaction_stats:", forbidden_from_llm=True, reserved_from_recall=True, excluded_from_static_block=True),
     "inferred_profile": NamespaceSpec(
-        "inferred_profile",
-        "inferred_profile:",
-        forbidden_from_llm=True,
-        reserved_from_recall=True,
-        excluded_from_static_block=True,
-        slots=INFERRED_PROFILE_SLOTS,
+        "inferred_profile", "inferred_profile:", forbidden_from_llm=True, reserved_from_recall=True, excluded_from_static_block=True, slots=INFERRED_PROFILE_SLOTS
     ),
-    "diary": NamespaceSpec(
-        "diary",
-        "diary:",
-        forbidden_from_llm=True,
-        excluded_from_static_block=True,
-    ),
+    "diary": NamespaceSpec("diary", "diary:", forbidden_from_llm=True, excluded_from_static_block=True),
 }
 
 # Derived views — stable value-equal replacements for the former hand-maintained sets.
@@ -184,10 +156,7 @@ RETAIN_SCHEMA = {
                     "writing — the kind cannot be changed later."
                 ),
             },
-            "content": {
-                "type": "string",
-                "description": "The fact to remember. Keep it tight.",
-            },
+            "content": {"type": "string", "description": "The fact to remember. Keep it tight."},
             "tags": {
                 "type": "array",
                 "items": {"type": "string"},
@@ -209,30 +178,13 @@ RETAIN_SCHEMA = {
 RECALL_SCHEMA = {
     "name": "memory_recall",
     "description": "Search recall-pool memories. Returns rows from kind='recall' only.",
-    "parameters": {
-        "type": "object",
-        "properties": {
-            "query": {
-                "type": "string",
-                "description": "Keywords to search for in memory.",
-            }
-        },
-        "required": ["query"],
-    },
+    "parameters": {"type": "object", "properties": {"query": {"type": "string", "description": "Keywords to search for in memory."}}, "required": ["query"]},
 }
 
 FORGET_SCHEMA = {
     "name": "memory_forget",
     "description": "Delete a specific memory by its ID. Use this to remove outdated or incorrect facts.",
-    "parameters": {
-        "properties": {
-            "memory_id": {
-                "type": "integer",
-                "description": "The ID of the memory to delete.",
-            }
-        },
-        "required": ["memory_id"],
-    },
+    "parameters": {"properties": {"memory_id": {"type": "integer", "description": "The ID of the memory to delete."}}, "required": ["memory_id"]},
 }
 
 

@@ -69,11 +69,7 @@ def _ensure_tool_call_ids(tool_calls_list: list[dict]) -> None:
 
 
 def _usage_payload(usage: Any) -> dict:
-    payload = {
-        "prompt_tokens": getattr(usage, "prompt_tokens", 0),
-        "completion_tokens": getattr(usage, "completion_tokens", 0),
-        "total_tokens": getattr(usage, "total_tokens", 0),
-    }
+    payload = {"prompt_tokens": getattr(usage, "prompt_tokens", 0), "completion_tokens": getattr(usage, "completion_tokens", 0), "total_tokens": getattr(usage, "total_tokens", 0)}
     if details := getattr(usage, "completion_tokens_details", None):
         payload["reasoning_tokens"] = getattr(details, "reasoning_tokens", 0)
     return payload

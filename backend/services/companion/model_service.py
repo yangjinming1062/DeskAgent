@@ -127,9 +127,7 @@ async def _run_tripo_pipeline(user_id: int, view_filenames: dict[str, str], spec
             return view_key, file_token
 
         uploaded_items = await asyncio.gather(
-            _read_and_upload("front", view_filenames["front"]),
-            _read_and_upload("right", view_filenames["right"]),
-            _read_and_upload("back", view_filenames["back"]),
+            _read_and_upload("front", view_filenames["front"]), _read_and_upload("right", view_filenames["right"]), _read_and_upload("back", view_filenames["back"])
         )
         view_tokens = dict(uploaded_items)
 
@@ -202,18 +200,12 @@ async def _run_tripo_pipeline(user_id: int, view_filenames: dict[str, str], spec
             db.refresh(model)
 
         if superseded:
-            logger.info(
-                "Tripo3D generation superseded by a newer run; asset saved without activating",
-                extra={"user_id": user_id, "model_id": model_id},
-            )
+            logger.info("Tripo3D generation superseded by a newer run; asset saved without activating", extra={"user_id": user_id, "model_id": model_id})
             return
 
         _emit_model_ready(user_id, model.id, asset_url, species=species, rig_type=rig_type)
         _emit_progress(user_id, "done", 100)
-        logger.info(
-            "Tripo3D generation succeeded",
-            extra={"user_id": user_id, "species": species, "rig_type": rig_type, "morph_count": len(morph_names)},
-        )
+        logger.info("Tripo3D generation succeeded", extra={"user_id": user_id, "species": species, "rig_type": rig_type, "morph_count": len(morph_names)})
 
     except Exception as exc:
         logger.warning("Tripo3D generation failed", extra={"user_id": user_id}, exc_info=True)

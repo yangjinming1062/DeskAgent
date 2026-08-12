@@ -57,14 +57,7 @@ class ToolRegistry:
         self._check_fn_suppression_seconds: float = 60.0
         self._lock = threading.RLock()
 
-    def register_tool(
-        self,
-        name: str,
-        toolset: str | None = None,
-        schema: dict | None = None,
-        check_fn: Callable[[], bool] | None = None,
-        **kwargs: Any,
-    ) -> Callable:
+    def register_tool(self, name: str, toolset: str | None = None, schema: dict | None = None, check_fn: Callable[[], bool] | None = None, **kwargs: Any) -> Callable:
         if kwargs:
             unknown = ", ".join(sorted(kwargs))
             raise TypeError(f"registry.register_tool got unexpected keyword arguments: {unknown}")
@@ -84,14 +77,7 @@ class ToolRegistry:
         return decorator
 
     def register(
-        self,
-        name: str,
-        handler: Callable | None = None,
-        *,
-        toolset: str | None = None,
-        schema: dict | None = None,
-        check_fn: Callable[[], bool] | None = None,
-        **kwargs: Any,
+        self, name: str, handler: Callable | None = None, *, toolset: str | None = None, schema: dict | None = None, check_fn: Callable[[], bool] | None = None, **kwargs: Any
     ) -> Callable:
         handler = handler or kwargs.pop("handler", None)
         if not handler:

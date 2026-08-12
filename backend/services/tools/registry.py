@@ -41,11 +41,7 @@ def _web_extract_available(user_settings: dict[str, str]) -> bool:
 
 
 def _build_backend_entry(func: Callable, availability_check: AvailabilityCheck) -> dict[str, Any]:
-    return {
-        "func": func,
-        "is_coro": inspect.iscoroutinefunction(func),
-        "availability_check": availability_check,
-    }
+    return {"func": func, "is_coro": inspect.iscoroutinefunction(func), "availability_check": availability_check}
 
 
 # Well-known availability predicates — callable from tool modules when they

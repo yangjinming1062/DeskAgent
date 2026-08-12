@@ -6,25 +6,11 @@ from modules.auth import fingerprint_api_key
 from modules.settings import UserSetting
 
 DEFAULT_CONFIG = {
-    "agent": {
-        "reasoning_effort": "medium",
-        "service_tier": "auto",
-    },
-    "chat": {
-        "enable_context_compression": True,
-        "context_compression_threshold": 0.70,
-    },
-    "stt": {
-        "enabled": True,
-        "engine": "auto",
-        "silent_fallback": True,
-    },
-    "tts": {
-        "engine": "auto",
-    },
-    "voice": {
-        "max_recording_seconds": 60,
-    },
+    "agent": {"reasoning_effort": "medium", "service_tier": "auto"},
+    "chat": {"enable_context_compression": True, "context_compression_threshold": 0.70},
+    "stt": {"enabled": True, "engine": "auto", "silent_fallback": True},
+    "tts": {"engine": "auto"},
+    "voice": {"max_recording_seconds": 60},
 }
 
 _WEB_API_KEY_SETTINGS = ("brave_api_key", "tavily_api_key")

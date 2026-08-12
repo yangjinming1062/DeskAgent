@@ -34,16 +34,8 @@ LANGUAGE_DIRECTIVES: dict[str, str] = {
 }
 
 _VOLATILE_LABELS: dict[str, dict[str, str]] = {
-    "zh": {
-        "started": "对话开始时间：",
-        "session_id": "\n会话 ID：",
-        "model": "\n模型：",
-    },
-    "en": {
-        "started": "Conversation started: ",
-        "session_id": "\nSession ID: ",
-        "model": "\nModel: ",
-    },
+    "zh": {"started": "对话开始时间：", "session_id": "\n会话 ID：", "model": "\n模型："},
+    "en": {"started": "Conversation started: ", "session_id": "\nSession ID: ", "model": "\nModel: "},
 }
 
 MEMORY_GUIDANCE = (
@@ -494,15 +486,7 @@ def build_system_prompt_parts(config: AgentPromptConfig, system_message: str | N
         stable_parts.append(TASK_COMPLETION_GUIDANCE)
 
     if valid_tools:
-        tool_guidance = [
-            g
-            for name, g in (
-                ("memory", MEMORY_GUIDANCE),
-                ("session_search", SESSION_SEARCH_GUIDANCE),
-                ("skill_manage", SKILLS_GUIDANCE),
-            )
-            if name in valid_tools
-        ]
+        tool_guidance = [g for name, g in (("memory", MEMORY_GUIDANCE), ("session_search", SESSION_SEARCH_GUIDANCE), ("skill_manage", SKILLS_GUIDANCE)) if name in valid_tools]
         # Always attach the inline-attachment hint when the session has any
         # tools. The hint's "no tools" fallback clause tells the LLM to
         # surface a Runner-registration problem instead of guessing at file
@@ -536,11 +520,7 @@ def build_system_prompt_parts(config: AgentPromptConfig, system_message: str | N
     context_parts: list[str] = [system_message] if system_message is not None else []
     volatile_parts: list[str] = [_format_volatile_header(config)]
 
-    return {
-        "stable": _join_nonempty(stable_parts),
-        "context": _join_nonempty(context_parts),
-        "volatile": _join_nonempty(volatile_parts),
-    }
+    return {"stable": _join_nonempty(stable_parts), "context": _join_nonempty(context_parts), "volatile": _join_nonempty(volatile_parts)}
 
 
 def _should_inject_tool_use_enforcement(setting: str) -> bool:

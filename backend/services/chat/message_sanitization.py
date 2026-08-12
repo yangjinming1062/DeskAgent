@@ -1,16 +1,9 @@
 import json
 import re
-from typing import TypedDict
 
 from components import get_logger
 
 logger = get_logger(__name__)
-
-
-class MessageDict(TypedDict, total=False):
-    role: str
-    content: str | list[dict]
-    name: str | None
 
 
 # OpenAI / Anthropic / Gemini image part types. Single source — the trajectory
@@ -125,12 +118,7 @@ def _repair_tool_call_arguments(raw_args: str, tool_name: str = "?") -> str:
     return "{}"
 
 
-def truncate_chat_history(
-    messages: list[dict],
-    max_recent_messages: int = 40,
-    normalize_older_than: int = 10,
-    max_chars_per_message: int = 15000,
-) -> list[dict]:
+def truncate_chat_history(messages: list[dict], max_recent_messages: int = 40, normalize_older_than: int = 10, max_chars_per_message: int = 15000) -> list[dict]:
     if not messages:
         return []
 

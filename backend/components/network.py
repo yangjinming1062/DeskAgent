@@ -1,26 +1,14 @@
 import ipaddress
 import socket
 
-BLOCKED_HOSTNAMES = frozenset(
-    {
-        "metadata.google.internal",
-        "metadata.goog",
-        "metadata",
-        "instance-data.ec2.internal",
-        "instance-data",
-        "kubernetes.default.svc",
-    }
-)
+BLOCKED_HOSTNAMES = frozenset({"metadata.google.internal", "metadata.goog", "metadata", "instance-data.ec2.internal", "instance-data", "kubernetes.default.svc"})
+_BLOCKED_CGNAT = ipaddress.ip_network("100.64.0.0/10")
+_BLOCKED_ALIBABA_META = ipaddress.ip_address("100.100.100.200")
+_BLOCKED_AWS_META_IPV6 = ipaddress.ip_address("fd00:ec2::254")
 
 
 def _ip_in_blocked(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
-    if ip in ipaddress.ip_network("100.64.0.0/10"):
-        return True
-    if ip == ipaddress.ip_address("100.100.100.200"):
-        return True
-    if ip == ipaddress.ip_address("fd00:ec2::254"):
-        return True
-    return False
+    return ip in _BLOCKED_CGNAT or ip == _BLOCKED_ALIBABA_META or ip == _BLOCKED_AWS_META_IPV6
 
 
 def is_safe_outbound(host: str) -> tuple[bool, str]:

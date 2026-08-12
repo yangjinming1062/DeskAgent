@@ -25,11 +25,7 @@ _MACOS_PERMISSION_PROBES: tuple[tuple[str, str, str], ...] = (
     # that cua-driver uses for clicks and key injection. We probe it by
     # asking System Events for a process count — TCC denies this when
     # Accessibility is missing.
-    (
-        "accessibility",
-        "Accessibility",
-        'tell application "System Events" to count processes',
-    ),
+    ("accessibility", "Accessibility", 'tell application "System Events" to count processes'),
 )
 
 
@@ -58,13 +54,7 @@ def get_permission_status() -> dict[str, Any]:
             details[key] = f"pending ({err or 'probe timed out'})"
             pending.append(label)
 
-    return {
-        "ok": not missing,
-        "missing": missing,
-        "pending": pending,
-        "platform": "darwin",
-        "details": details,
-    }
+    return {"ok": not missing, "missing": missing, "pending": pending, "platform": "darwin", "details": details}
 
 
 def _probe_macos_permission(osascript: str) -> tuple[str, str | None]:

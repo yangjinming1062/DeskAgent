@@ -51,14 +51,7 @@ class GrokTTSProvider(TTSProvider):
         super().__init__(config)
         self._client = get_http(config.base_url, config.api_key)
 
-    async def synthesize(
-        self,
-        text: str,
-        *,
-        voice: str = "",
-        fmt: str = "mp3",
-        speed: float | None = None,
-    ) -> TTSResult:
+    async def synthesize(self, text: str, *, voice: str = "", fmt: str = "mp3", speed: float | None = None) -> TTSResult:
         chosen_voice = voice or self.VOICE_CATALOG[0]["id"]
         if voice != chosen_voice:
             logger.info("grok tts: substituted voice", extra={"requested": voice, "used": chosen_voice})
@@ -68,12 +61,7 @@ class GrokTTSProvider(TTSProvider):
         if codec == "mp3":
             output_format["bit_rate"] = 128000
 
-        payload: dict = {
-            "text": text,
-            "voice_id": chosen_voice,
-            "language": "en",
-            "output_format": output_format,
-        }
+        payload: dict = {"text": text, "voice_id": chosen_voice, "language": "en", "output_format": output_format}
         if speed is not None:
             payload["speed"] = speed
 

@@ -19,24 +19,14 @@ class ZhipuSTTProvider(STTProvider):
         super().__init__(config)
         self._client = get_http(config.base_url, config.api_key)
 
-    async def transcribe(
-        self,
-        audio: bytes,
-        *,
-        mime_type: str = "audio/wav",
-        language: str = "auto",
-    ) -> STTResult:
+    async def transcribe(self, audio: bytes, *, mime_type: str = "audio/wav", language: str = "auto") -> STTResult:
         ext = "wav" if "wav" in mime_type else "mp3"
         files = {"file": (f"audio.{ext}", audio, mime_type)}
         data: dict = {"model": self.config.model}
         if language and language != "auto":
             data["prompt"] = f"Respond in {language}."
 
-        resp = await self._client.post(
-            "/audio/transcriptions",
-            files=files,
-            data=data,
-        )
+        resp = await self._client.post("/audio/transcriptions", files=files, data=data)
         body = raise_for_provider_response(resp, family=self.provider_name, model=self.config.model)
         text = body.get("text", "")
         return STTResult(text=text.strip(), raw=body)

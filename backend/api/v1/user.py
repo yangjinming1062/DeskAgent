@@ -50,10 +50,7 @@ def activate(payload: ActivateRequest, request: Request, db: Session = Depends(g
     if user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="激活码无效。")
     if not user.can_use or (user.expires_at and user.expires_at.date() < naive_utc_now().date()):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="该用户已超过有效使用期限，需要续费后才能继续使用。",
-        )
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="该用户已超过有效使用期限，需要续费后才能继续使用。")
 
     now = naive_utc_now()
     for record in db.query(LoginRecord).filter(LoginRecord.user_id == user.id, LoginRecord.is_active.is_(True)).all():
@@ -80,27 +77,15 @@ def activate(payload: ActivateRequest, request: Request, db: Session = Depends(g
 
 
 @router.post("/ws-ticket", response_model=TokenResponse)
-def mint_ws_ticket(
-    current: tuple[User, LoginRecord] = Depends(get_current_session),
-) -> TokenResponse:
+def mint_ws_ticket(current: tuple[User, LoginRecord] = Depends(get_current_session)) -> TokenResponse:
     """Mint a short-lived WS-only JWT so the renderer never holds the long-lived bearer."""
     user, _session = current
-    token, expires_in, _ = create_access_token(
-        user_id=user.id,
-        username=user.username,
-        expires_in_seconds=WS_TICKET_TTL_SECONDS,
-        purpose="ws",
-    )
+    token, expires_in, _ = create_access_token(user_id=user.id, username=user.username, expires_in_seconds=WS_TICKET_TTL_SECONDS, purpose="ws")
     return TokenResponse(access_token=token, expires_in=expires_in, user=UserInfo.model_validate(user))
 
 
 @router.post("/refresh", response_model=TokenResponse)
-def refresh_session(
-    payload: RefreshRequest,
-    request: Request,
-    current: tuple[User, LoginRecord] = Depends(get_current_session),
-    db: Session = Depends(get_db),
-) -> TokenResponse:
+def refresh_session(payload: RefreshRequest, request: Request, current: tuple[User, LoginRecord] = Depends(get_current_session), db: Session = Depends(get_db)) -> TokenResponse:
     user, login_record = current
     now = naive_utc_now()
 
@@ -130,10 +115,7 @@ def refresh_session(
 
 
 @router.post("/logout", response_model=MessageResponse)
-def logout(
-    current: tuple[User, LoginRecord] = Depends(get_current_session),
-    db: Session = Depends(get_db),
-) -> MessageResponse:
+def logout(current: tuple[User, LoginRecord] = Depends(get_current_session), db: Session = Depends(get_db)) -> MessageResponse:
     _user, login_record = current
     login_record.is_active = False
     login_record.logout_at = naive_utc_now()
@@ -143,10 +125,7 @@ def logout(
 
 
 @router.get("/model-config", response_model=UserModelConfigResponse)
-def model_config(
-    current: tuple[User, LoginRecord] = Depends(get_current_session),
-    db: Session = Depends(get_db),
-) -> UserModelConfigResponse:
+def model_config(current: tuple[User, LoginRecord] = Depends(get_current_session), db: Session = Depends(get_db)) -> UserModelConfigResponse:
     """Return the user's own per-service model config.
 
     Only values the user has explicitly set are returned — empty strings
@@ -161,9 +140,7 @@ def model_config(
 
 @router.put("/model-config", response_model=UserModelConfigResponse)
 def update_model_config(
-    payload: UserModelConfigSelfRequest,
-    current: tuple[User, LoginRecord] = Depends(get_current_session),
-    db: Session = Depends(get_db),
+    payload: UserModelConfigSelfRequest, current: tuple[User, LoginRecord] = Depends(get_current_session), db: Session = Depends(get_db)
 ) -> UserModelConfigResponse:
     """User self-service model config update.
 

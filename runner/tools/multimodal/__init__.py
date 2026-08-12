@@ -8,5 +8,5 @@ __all__ = [
     "_RESIZE_TARGET_BYTES",
     "_is_image_size_error",
     "_resize_image_for_vision",
-    "audio",
+    "audio"
 ]  # fmt: skip

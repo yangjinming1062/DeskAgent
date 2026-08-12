@@ -1,7 +1,7 @@
 import asyncio
 import time
 from collections.abc import Callable
-from typing import Any, Literal
+from typing import Any
 
 import httpx
 from components import SETTINGS, get_logger
@@ -21,8 +21,6 @@ _RIG_SPECS: dict[str, str] = {"biped": "mixamo", "quadruped": "tripo", "avian": 
 _TASK_POLL_INTERVAL_SECONDS: float = 5.0
 _TASK_POLL_MAX_SECONDS: float = 1800.0
 _DOWNLOAD_TIMEOUT_SECONDS: float = 120.0
-
-TaskStatus = Literal["queued", "running", "success", "failed", "cancelled", "banned"]
 
 
 class TripoApiError(RuntimeError):
@@ -121,11 +119,7 @@ async def rig(task_id: str, rig_type: str, *, spec: str | None = None, model_ver
     chosen_spec = spec or rig_spec(rig_type)
     chosen_version = model_version or rig_model_version(rig_type)
     async with httpx.AsyncClient(timeout=60.0) as client:
-        resp = await client.post(
-            f"{BASE_URL}/animations/rig",
-            headers=_auth_headers(),
-            json={"input": task_id, "rig_type": rig_type, "spec": chosen_spec, "model": chosen_version},
-        )
+        resp = await client.post(f"{BASE_URL}/animations/rig", headers=_auth_headers(), json={"input": task_id, "rig_type": rig_type, "spec": chosen_spec, "model": chosen_version})
     return _envelope(resp.json())["task_id"]
 
 

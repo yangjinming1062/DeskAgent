@@ -169,11 +169,7 @@ class NativeFileOperations(FileOperations):
 
             lint_result = self._check_lint_delta(str(p), pre_content=pre_content, post_content=content)
 
-            return WriteResult(
-                bytes_written=bytes_written,
-                dirs_created=dirs_created,
-                lint=lint_result.to_dict() if lint_result else None,
-            )
+            return WriteResult(bytes_written=bytes_written, dirs_created=dirs_created, lint=lint_result.to_dict() if lint_result else None)
         except Exception as e:
             return WriteResult(error=f"Failed to write file: {e}", dirs_created=dirs_created)
 
@@ -283,15 +279,7 @@ class NativeFileOperations(FileOperations):
             return WriteResult(error=f"Failed to move file: {e}")
 
     def search(
-        self,
-        pattern: str,
-        path: str = ".",
-        target: str = "content",
-        file_glob: str | None = None,
-        limit: int = 50,
-        offset: int = 0,
-        output_mode: str = "content",
-        context: int = 0,
+        self, pattern: str, path: str = ".", target: str = "content", file_glob: str | None = None, limit: int = 50, offset: int = 0, output_mode: str = "content", context: int = 0
     ) -> SearchResult:
         try:
             regex = re.compile(pattern, re.IGNORECASE)
@@ -404,14 +392,8 @@ class NativeFileOperations(FileOperations):
         result = self._exec(cmd, timeout=30)
         if result.exit_code != 0 and _looks_like_linter_unusable(base_cmd, result.stdout):
             cleaned = strip_ansi(result.stdout).strip()
-            first_line = next(
-                (ln.strip() for ln in cleaned.splitlines() if ln.strip()),
-                cleaned[:120],
-            )
-            return LintResult(
-                skipped=True,
-                message=f"{base_cmd} not usable: {first_line[:200]}",
-            )
+            first_line = next((ln.strip() for ln in cleaned.splitlines() if ln.strip()), cleaned[:120])
+            return LintResult(skipped=True, message=f"{base_cmd} not usable: {first_line[:200]}")
         return LintResult(success=result.exit_code == 0, output=result.stdout.strip() if result.stdout.strip() else "")
 
     def _check_lint_delta(self, path: str, pre_content: str | None, post_content: str | None = None) -> Any:
@@ -426,9 +408,5 @@ class NativeFileOperations(FileOperations):
         pre_lines = {ln.strip() for ln in pre.output.splitlines() if ln.strip()}
         post_lines = [ln for ln in post.output.splitlines() if ln.strip() and ln.strip() not in pre_lines]
         if not post_lines:
-            return LintResult(
-                success=False,
-                output=post.output,
-                message="Pre-existing lint errors — this edit didn't introduce new ones but the file is still broken.",
-            )
+            return LintResult(success=False, output=post.output, message="Pre-existing lint errors — this edit didn't introduce new ones but the file is still broken.")
         return LintResult(success=False, output=("New lint errors introduced by this edit (pre-existing errors filtered out):\n" + "\n".join(post_lines)))

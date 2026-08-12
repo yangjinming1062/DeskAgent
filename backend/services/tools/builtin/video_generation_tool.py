@@ -4,10 +4,9 @@ from datetime import timedelta
 
 from components import SESSION_LOCAL, SETTINGS, get_logger, naive_utc_now, tool_error
 
+from services.llm import MissingLlmConfigError
 from services.media import enqueue_video_job, get_job
-
-from ...llm import MissingLlmConfigError
-from .. import ALWAYS_AVAILABLE, REGISTRY
+from services.tools import ALWAYS_AVAILABLE, REGISTRY
 
 logger = get_logger(__name__)
 
@@ -76,10 +75,7 @@ async def video_generation_tool(
 
     # Timed out — job continues in background; model can poll later.
     logger.info("video_generation_tool timed out, job continues", extra={"job_id": job.id})
-    return json.dumps(
-        {"success": True, "pending": True, "task_id": str(job.id), "hint": "视频仍在生成中，请稍后用 video_generate_status 查询结果"},
-        ensure_ascii=False,
-    )
+    return json.dumps({"success": True, "pending": True, "task_id": str(job.id), "hint": "视频仍在生成中，请稍后用 video_generate_status 查询结果"}, ensure_ascii=False)
 
 
 async def video_generate_status_tool(task_id: int, user_id: int | None = None, **_) -> str:
@@ -94,10 +90,7 @@ async def video_generate_status_tool(task_id: int, user_id: int | None = None, *
         row = get_job(db, job_id, user_id)
     if row is None:
         return tool_error("video job not found")
-    payload = {
-        "task_id": str(row.id),
-        "status": row.status,
-    }
+    payload = {"task_id": str(row.id), "status": row.status}
     if row.status == "succeeded":
         payload["url"] = row.video_url
     elif row.status == "failed":
@@ -140,13 +133,7 @@ VIDEO_GENERATION_SCHEMA = {
 VIDEO_STATUS_SCHEMA = {
     "name": "video_generate_status",
     "description": "Check the status of a previously-submitted video_generate task. Returns status plus url (on success) or error (on failure).",
-    "parameters": {
-        "type": "object",
-        "properties": {
-            "task_id": {"type": "integer", "description": "The task_id returned by video_generate."},
-        },
-        "required": ["task_id"],
-    },
+    "parameters": {"type": "object", "properties": {"task_id": {"type": "integer", "description": "The task_id returned by video_generate."}}, "required": ["task_id"]},
 }
 
 REGISTRY.register("video_generate", VIDEO_GENERATION_SCHEMA, video_generation_tool, ALWAYS_AVAILABLE)

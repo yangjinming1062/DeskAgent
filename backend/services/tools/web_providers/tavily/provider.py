@@ -21,13 +21,7 @@ async def aclose_tavily() -> None:
 aclose = aclose_tavily
 
 
-def _build_tavily_request(
-    endpoint: str,
-    payload: dict[str, Any],
-    *,
-    api_key: str | None = None,
-    base_url: str | None = None,
-) -> tuple[str, dict[str, Any]]:
+def _build_tavily_request(endpoint: str, payload: dict[str, Any], *, api_key: str | None = None, base_url: str | None = None) -> tuple[str, dict[str, Any]]:
     """Validate API key, build URL and body for a Tavily API call.
 
     Injected ``api_key`` / ``base_url`` (from the dispatcher's per-user
@@ -57,26 +51,14 @@ async def _tavily_request(endpoint: str, payload: dict[str, Any], *, api_key: st
 def _normalize_tavily_search_results(response: dict[str, Any]) -> dict[str, Any]:
     """Map Tavily ``/search`` response to ``{success, data: {web: [...]}}``."""
     web_results = [
-        {
-            "title": result.get("title", ""),
-            "url": result.get("url", ""),
-            "description": result.get("content", ""),
-            "position": i + 1,
-        }
+        {"title": result.get("title", ""), "url": result.get("url", ""), "description": result.get("content", ""), "position": i + 1}
         for i, result in enumerate(response.get("results", []))
     ]
     return {"success": True, "data": {"web": web_results}}
 
 
 def _failed_document(url: str, error: str) -> dict[str, Any]:
-    return {
-        "url": url,
-        "title": "",
-        "content": "",
-        "raw_content": "",
-        "error": error,
-        "metadata": {"sourceURL": url},
-    }
+    return {"url": url, "title": "", "content": "", "raw_content": "", "error": error, "metadata": {"sourceURL": url}}
 
 
 def _normalize_tavily_documents(response: dict[str, Any], fallback_url: str = "") -> list[dict[str, Any]]:
@@ -89,15 +71,7 @@ def _normalize_tavily_documents(response: dict[str, Any], fallback_url: str = ""
     for result in response.get("results", []):
         url = result.get("url", fallback_url)
         raw = result.get("raw_content", "") or result.get("content", "")
-        documents.append(
-            {
-                "url": url,
-                "title": result.get("title", ""),
-                "content": raw,
-                "raw_content": raw,
-                "metadata": {"sourceURL": url, "title": result.get("title", "")},
-            }
-        )
+        documents.append({"url": url, "title": result.get("title", ""), "content": raw, "raw_content": raw, "metadata": {"sourceURL": url, "title": result.get("title", "")}})
     for fail in response.get("failed_results", []):
         documents.append(_failed_document(fail.get("url", fallback_url), fail.get("error", "extraction failed")))
     for fail_url in response.get("failed_urls", []):
@@ -142,15 +116,7 @@ class TavilyWebSearchProvider(WebSearchProvider):
         try:
             logger.info("Tavily search: '%s' (limit=%d)", query, limit)
             raw = await _tavily_request(
-                "search",
-                {
-                    "query": query,
-                    "max_results": min(limit, 20),
-                    "include_raw_content": False,
-                    "include_images": False,
-                },
-                api_key=self._api_key,
-                base_url=self._base_url,
+                "search", {"query": query, "max_results": min(limit, 20), "include_raw_content": False, "include_images": False}, api_key=self._api_key, base_url=self._base_url
             )
             return _normalize_tavily_search_results(raw)
         except ValueError as exc:
@@ -162,37 +128,18 @@ class TavilyWebSearchProvider(WebSearchProvider):
     async def extract(self, urls: list[str], **kwargs: Any) -> list[dict[str, Any]]:  # noqa: ARG002 — provider-interface shape
         try:
             logger.info("Tavily extract", extra={"url_count": len(urls)})
-            raw = await _tavily_request(
-                "extract",
-                {"urls": urls, "include_images": False},
-                api_key=self._api_key,
-                base_url=self._base_url,
-            )
+            raw = await _tavily_request("extract", {"urls": urls, "include_images": False}, api_key=self._api_key, base_url=self._base_url)
             return _normalize_tavily_documents(raw, fallback_url=urls[0] if urls else "")
         except ValueError as exc:
             return [{"url": u, "title": "", "content": "", "error": str(exc)} for u in urls]
         except Exception as exc:
             logger.warning("Tavily extract error", extra={"error": str(exc)})
-            return [
-                {
-                    "url": u,
-                    "title": "",
-                    "content": "",
-                    "error": f"Tavily extract failed: {exc}",
-                }
-                for u in urls
-            ]
+            return [{"url": u, "title": "", "content": "", "error": f"Tavily extract failed: {exc}"} for u in urls]
 
     def get_setup_schema(self) -> dict[str, Any]:
         return {
             "name": "Tavily",
             "badge": "paid",
             "tag": "Search + extract in one provider.",
-            "env_vars": [
-                {
-                    "key": "TAVILY_API_KEY",
-                    "prompt": "Tavily API key",
-                    "url": "https://app.tavily.com/home",
-                },
-            ],
+            "env_vars": [{"key": "TAVILY_API_KEY", "prompt": "Tavily API key", "url": "https://app.tavily.com/home"}],
         }

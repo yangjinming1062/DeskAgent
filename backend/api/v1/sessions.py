@@ -111,15 +111,7 @@ def list_sessions(
         .subquery()
     )
 
-    tool_stats = (
-        db.query(
-            Message.conversation_id,
-            func.count(Message.id).label("tool_count"),
-        )
-        .filter(Message.tool_calls.isnot(None))
-        .group_by(Message.conversation_id)
-        .subquery()
-    )
+    tool_stats = db.query(Message.conversation_id, func.count(Message.id).label("tool_count")).filter(Message.tool_calls.isnot(None)).group_by(Message.conversation_id).subquery()
 
     q = q.outerjoin(msg_stats, Conversation.id == msg_stats.c.conversation_id)
     q = q.outerjoin(tool_stats, Conversation.id == tool_stats.c.conversation_id)
@@ -142,22 +134,9 @@ def list_sessions(
         it = getattr(conv, "input_tok", None)
         ot = getattr(conv, "output_tok", None)
         tc = getattr(conv, "tool_count", None)
-        sessions.append(
-            _conversation_to_session_info(
-                conv,
-                int(mc) if mc else 0,
-                int(it) if it else 0,
-                int(ot) if ot else 0,
-                int(tc) if tc else 0,
-            )
-        )
+        sessions.append(_conversation_to_session_info(conv, int(mc) if mc else 0, int(it) if it else 0, int(ot) if ot else 0, int(tc) if tc else 0))
 
-    return DesktopSessionListResponse(
-        limit=limit,
-        offset=offset,
-        total=total_q,
-        sessions=sessions,
-    )
+    return DesktopSessionListResponse(limit=limit, offset=offset, total=total_q, sessions=sessions)
 
 
 @router.get("/search", response_model=DesktopSessionSearchResponse)
@@ -188,13 +167,7 @@ def search_sessions(
     title_match_ids = [
         row[0]
         for row in db.query(Conversation.id)
-        .filter(
-            Conversation.user_id == user.id,
-            or_(
-                Conversation.title.ilike(pattern, escape=SQL_LIKE_ESCAPE_CHAR),
-                Conversation.id.like(pattern, escape=SQL_LIKE_ESCAPE_CHAR),
-            ),
-        )
+        .filter(Conversation.user_id == user.id, or_(Conversation.title.ilike(pattern, escape=SQL_LIKE_ESCAPE_CHAR), Conversation.id.like(pattern, escape=SQL_LIKE_ESCAPE_CHAR)))
         .all()
     ]
     # The content scan is the most expensive path (full-table LIKE on
@@ -233,11 +206,7 @@ def search_sessions(
 
 
 @router.get("/{session_id}/messages", response_model=DesktopSessionMessagesResponse)
-def get_session_messages(
-    session_id: str,
-    current: tuple[User, object] = Depends(get_current_session),
-    db: Session = Depends(get_db),
-) -> DesktopSessionMessagesResponse:
+def get_session_messages(session_id: str, current: tuple[User, object] = Depends(get_current_session), db: Session = Depends(get_db)) -> DesktopSessionMessagesResponse:
     user, _ = current
     conv = _get_conversation_or_404(db, user, session_id)
     result = build_session_messages(conv.id, db)
@@ -245,12 +214,7 @@ def get_session_messages(
 
 
 @router.patch("/{session_id}")
-def patch_session(
-    session_id: str,
-    body: DesktopSessionPatchRequest,
-    current: tuple[User, object] = Depends(get_current_session),
-    db: Session = Depends(get_db),
-) -> dict:
+def patch_session(session_id: str, body: DesktopSessionPatchRequest, current: tuple[User, object] = Depends(get_current_session), db: Session = Depends(get_db)) -> dict:
     user, _ = current
     conv = _get_conversation_or_404(db, user, session_id)
     if body.title is not None:
@@ -262,11 +226,7 @@ def patch_session(
 
 
 @router.delete("/{session_id}")
-def delete_session(
-    session_id: str,
-    current: tuple[User, object] = Depends(get_current_session),
-    db: Session = Depends(get_db),
-) -> dict:
+def delete_session(session_id: str, current: tuple[User, object] = Depends(get_current_session), db: Session = Depends(get_db)) -> dict:
     user, _ = current
     conv = _get_conversation_or_404(db, user, session_id)
     deleted_id = conv.id
@@ -280,11 +240,7 @@ def delete_session(
     try:
         attachments_gc_session(SETTINGS.data_dir, str(deleted_id))
     except Exception:
-        logger.warning(
-            "attachments_gc_session failed for session %s",
-            deleted_id,
-            exc_info=True,
-        )
+        logger.warning("attachments_gc_session failed for session %s", deleted_id, exc_info=True)
     # Also clean up temp media files for this session
     try:
         temp_files_gc_session(str(deleted_id))

@@ -5,14 +5,4 @@ from . import auth, companion, conversation, memory, scheduler, settings, system
 # because its mapper triggers an import-time crash on stale DB connections —
 # callers that need ``VideoGenJob`` on ``create_all`` must import it explicitly.
 
-__all__ = [
-    "auth",
-    "companion",
-    "conversation",
-    "memory",
-    "scheduler",
-    "settings",
-    "system",
-    "update",
-    "ws",
-]
+__all__ = ["auth", "companion", "conversation", "memory", "scheduler", "settings", "system", "update", "ws"]

@@ -299,20 +299,7 @@ SCANNABLE_EXTENSIONS = {
     ".php",
 }
 
-SUSPICIOUS_BINARY_EXTENSIONS = {
-    ".exe",
-    ".dll",
-    ".so",
-    ".dylib",
-    ".bin",
-    ".dat",
-    ".com",
-    ".msi",
-    ".dmg",
-    ".app",
-    ".deb",
-    ".rpm",
-}
+SUSPICIOUS_BINARY_EXTENSIONS = {".exe", ".dll", ".so", ".dylib", ".bin", ".dat", ".com", ".msi", ".dmg", ".app", ".deb", ".rpm"}
 
 # Zero-width and invisible unicode characters used for injection
 INVISIBLE_CHARS = {
@@ -371,17 +358,7 @@ def scan_file(file_path: Path, rel_path: str = "") -> list[Finding]:
                 matched_text = line.strip()
                 if len(matched_text) > 120:
                     matched_text = matched_text[:117] + "..."
-                findings.append(
-                    Finding(
-                        pattern_id=pid,
-                        severity=severity,
-                        category=category,
-                        file=rel_path,
-                        line=i,
-                        match=matched_text,
-                        description=description,
-                    )
-                )
+                findings.append(Finding(pattern_id=pid, severity=severity, category=category, file=rel_path, line=i, match=matched_text, description=description))
 
     for i, line in enumerate(lines, start=1):
         for char in INVISIBLE_CHARS:
@@ -452,13 +429,7 @@ def scan_skill(skill_path: Path, source: str = "community") -> ScanResult:
     summary = _build_summary(skill_name, source, trust_level, verdict, all_findings)
 
     return ScanResult(
-        skill_name=skill_name,
-        source=source,
-        trust_level=trust_level,
-        verdict=verdict,
-        findings=all_findings,
-        scanned_at=datetime.now(UTC).isoformat(),
-        summary=summary,
+        skill_name=skill_name, source=source, trust_level=trust_level, verdict=verdict, findings=all_findings, scanned_at=datetime.now(UTC).isoformat(), summary=summary
     )
 
 

@@ -133,12 +133,7 @@ def cua_driver_binary_available() -> bool:
     if not path:
         return False
     try:
-        result = subprocess.run(
-            [_CUA_DRIVER_CMD, "--version"],
-            capture_output=True,
-            timeout=3,
-            check=False,
-        )
+        result = subprocess.run([_CUA_DRIVER_CMD, "--version"], capture_output=True, timeout=3, check=False)
     except (FileNotFoundError, PermissionError, OSError, subprocess.TimeoutExpired):
         return False
     return result.returncode == 0
@@ -209,15 +204,7 @@ def _build_cua_driver_env() -> dict[str, str]:
 
 
 def _parse_windows_from_text(text: str) -> list[dict[str, Any]]:
-    return [
-        {
-            "app_name": m[1].strip(),
-            "pid": int(m[2]),
-            "window_id": int(m[3]),
-            "off_screen": "[off-screen]" in m[0],
-        }
-        for m in _WINDOW_LINE_RE.finditer(text)
-    ]
+    return [{"app_name": m[1].strip(), "pid": int(m[2]), "window_id": int(m[3]), "off_screen": "[off-screen]" in m[0]} for m in _WINDOW_LINE_RE.finditer(text)]
 
 
 def _parse_elements_from_structured(raw_elements: list[dict[str, Any]]) -> list[UIElement]:
@@ -237,15 +224,7 @@ def _parse_elements_from_structured(raw_elements: list[dict[str, Any]]) -> list[
                 bounds = (int(frame.get("x", 0)), int(frame.get("y", 0)), int(frame.get("w", 0)), int(frame.get("h", 0)))
         raw_token = raw.get("element_token")
         token = raw_token if isinstance(raw_token, str) and raw_token else None
-        elements.append(
-            UIElement(
-                index=idx,
-                role=role,
-                label=label,
-                bounds=bounds,
-                element_token=token,
-            )
-        )
+        elements.append(UIElement(index=idx, role=role, label=label, bounds=bounds, element_token=token))
     return elements
 
 
@@ -514,10 +493,7 @@ class CuaDriverBackend(ComputerUseBackend):
             shell = [w for w in windows if w["app_name"].lower() in _MACOS_SHELL_APP_NAMES]
             if not shell:
                 return CaptureResult(
-                    mode=mode,
-                    width=0,
-                    height=0,
-                    window_title=f"<no shell window found; sentinel app={app!r} requires Finder/Dock to be visible on the active Space>",
+                    mode=mode, width=0, height=0, window_title=f"<no shell window found; sentinel app={app!r} requires Finder/Dock to be visible on the active Space>"
                 )
             # Sentinel matched — use the shell window list and skip the
             # substring filter below. Without this, the next `if app:` would
@@ -583,14 +559,7 @@ class CuaDriverBackend(ComputerUseBackend):
         )
 
     def click(
-        self,
-        *,
-        element: int | None = None,
-        x: int | None = None,
-        y: int | None = None,
-        button: str = "left",
-        click_count: int = 1,
-        modifiers: list[str] | None = None,
+        self, *, element: int | None = None, x: int | None = None, y: int | None = None, button: str = "left", click_count: int = 1, modifiers: list[str] | None = None
     ) -> ActionResult:
         if (pid := self._active_pid) is None:
             return ActionResult(ok=False, action="click", message="No active window — call capture() first.")
@@ -632,14 +601,7 @@ class CuaDriverBackend(ComputerUseBackend):
         return self._action("drag", args)
 
     def scroll(
-        self,
-        *,
-        direction: str,
-        amount: int = 3,
-        element: int | None = None,
-        x: int | None = None,
-        y: int | None = None,
-        modifiers: list[str] | None = None,
+        self, *, direction: str, amount: int = 3, element: int | None = None, x: int | None = None, y: int | None = None, modifiers: list[str] | None = None
     ) -> ActionResult:
         if (pid := self._active_pid) is None:
             return ActionResult(ok=False, action="scroll", message="No active window — call capture() first.")
@@ -680,26 +642,9 @@ class CuaDriverBackend(ComputerUseBackend):
         Returns ``{image_b64, mime_type, width, height}``. ``width/height``
         reflect the post-upscaled pixel size.
         """
-        out = self._session.call_tool(
-            "zoom",
-            {
-                "window_id": window_id,
-                "x": x,
-                "y": y,
-                "w": w,
-                "h": h,
-                "factor": factor,
-                "format": fmt,
-                "quality": quality,
-            },
-        )
+        out = self._session.call_tool("zoom", {"window_id": window_id, "x": x, "y": y, "w": w, "h": h, "factor": factor, "format": fmt, "quality": quality})
         image_b64, mime_type = _extract_first_image(out)
-        return {
-            "image_b64": image_b64,
-            "mime_type": mime_type,
-            "width": int((w or 0) * (factor or 0)),
-            "height": int((h or 0) * (factor or 0)),
-        }
+        return {"image_b64": image_b64, "mime_type": mime_type, "width": int((w or 0) * (factor or 0)), "height": int((h or 0) * (factor or 0))}
 
     def list_apps(self) -> list[dict[str, Any]]:
         data = self._session.call_tool("list_apps", {}).get("data")
@@ -726,9 +671,7 @@ class CuaDriverBackend(ComputerUseBackend):
             target = matched[0]
             self._active_pid, self._active_window_id, self._last_app = target["pid"], target["window_id"], target["app_name"]
             return ActionResult(
-                ok=True,
-                action="focus_app",
-                message=f"Targeted {target['app_name']} (pid {self._active_pid}, window {self._active_window_id}) without raising window.",
+                ok=True, action="focus_app", message=f"Targeted {target['app_name']} (pid {self._active_pid}, window {self._active_window_id}) without raising window."
             )
         return ActionResult(ok=False, action="focus_app", message=f"No on-screen window found for app '{app}'.")
 

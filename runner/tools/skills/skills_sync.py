@@ -156,11 +156,7 @@ def sync_skills(quiet: bool = False) -> dict:
                     if _dir_hash(dest) == bundled_hash:
                         manifest[skill_name] = bundled_hash
                     elif not quiet:
-                        logger.warning(
-                            "bundled version of %s skipped: user has local skill (run `deskagent skills reset %s`)",
-                            skill_name,
-                            skill_name,
-                        )
+                        logger.warning("bundled version of %s skipped: user has local skill (run `deskagent skills reset %s`)", skill_name, skill_name)
                 else:
                     dest.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copytree(skill_src, dest)

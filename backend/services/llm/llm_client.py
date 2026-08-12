@@ -20,7 +20,6 @@ from .providers import (
     supports_vision,
 )
 from .providers.http import get_async_client
-from .user_config import resolve_user_llm_config
 
 
 def client_for_config(llm_config: dict) -> AsyncOpenAI:
@@ -42,27 +41,7 @@ class MissingLlmConfigError(Exception):
     """
 
 
-def client_for_user(db: Session, user_id: int) -> AsyncOpenAI:
-    """Resolve user → LLM config → ``AsyncOpenAI`` in one call.
-
-    Raises :class:`MissingLlmConfigError` when the user has no usable
-    config in DB. Per-site HTTP envelopes live in the routers; this
-    helper only signals the missing-config fact.
-    """
-    cfg = resolve_user_llm_config(db, user_id)
-    api_key, base_url = cfg.get("api_key", ""), cfg.get("base_url", "")
-    if not api_key or not base_url:
-        raise MissingLlmConfigError(f"LLM config missing for user {user_id}")
-    return get_async_client(api_key, base_url)
-
-
-def resolve_service_row(
-    db: Session | None,
-    user_id: int | None,
-    prefix: str,
-    *,
-    user_cfg: UserModelConfig | None = None,
-) -> tuple[str, str, str]:
+def resolve_service_row(db: Session | None, user_id: int | None, prefix: str, *, user_cfg: UserModelConfig | None = None) -> tuple[str, str, str]:
     """Return ``(base_url, api_key, model_name)`` for a service prefix.
 
     DB row wins when present (an explicit user-cleared empty field is
@@ -130,13 +109,7 @@ def _resolve_slot_config(name: str, service_type: str, row: tuple[str, str, str]
     if not api_key or not base_url:
         return None
 
-    return ProviderConfig(
-        base_url=base_url,
-        api_key=api_key,
-        model=model,
-        service_type=ServiceType(service_type),
-        provider_name=name,
-    )
+    return ProviderConfig(base_url=base_url, api_key=api_key, model=model, service_type=ServiceType(service_type), provider_name=name)
 
 
 def _build_chain_order(service_type: str, user_cfg: UserModelConfig | None = None) -> list[str]:
@@ -187,15 +160,7 @@ def _user_provider_slots(user_cfg: UserModelConfig, service_type: str) -> list[P
         base_url = entry.get("base_url", "") or default_base_url(name, service_type)
         model = getattr(user_cfg, f"{service_type}_model_name", "") or default_model_for(name, service_type)
         if api_key and base_url:
-            slots.append(
-                ProviderConfig(
-                    base_url=base_url,
-                    api_key=api_key,
-                    model=model,
-                    service_type=ServiceType(service_type),
-                    provider_name=name,
-                )
-            )
+            slots.append(ProviderConfig(base_url=base_url, api_key=api_key, model=model, service_type=ServiceType(service_type), provider_name=name))
 
     pin = getattr(user_cfg, f"{service_type}_provider", "") or ""
     if pin:
@@ -206,13 +171,7 @@ def _user_provider_slots(user_cfg: UserModelConfig, service_type: str) -> list[P
     return slots
 
 
-def resolve_provider_chain(
-    db: Session | None,
-    user_id: int | None,
-    service_type: str,
-    *,
-    user_cfg: UserModelConfig | None = None,
-) -> list[ProviderConfig]:
+def resolve_provider_chain(db: Session | None, user_id: int | None, service_type: str, *, user_cfg: UserModelConfig | None = None) -> list[ProviderConfig]:
     """Resolve the ordered fallback chain for ``service_type``.
 
     Resolution tiers (first provider with both a key and a base_url wins):
@@ -262,12 +221,7 @@ def resolve_provider_config(db: Session | None, user_id: int | None, service_typ
     return chain[0]
 
 
-def resolve_vision_chain(
-    db: Session | None,
-    user_id: int | None,
-    *,
-    service_type: str = "llm",
-) -> list[ProviderConfig]:
+def resolve_vision_chain(db: Session | None, user_id: int | None, *, service_type: str = "llm") -> list[ProviderConfig]:
     """Vision-capable providers in the ``service_type`` chain, each with its
     vision model substituted. Empty when none support vision."""
     return [

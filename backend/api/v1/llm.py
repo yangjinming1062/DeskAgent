@@ -72,42 +72,20 @@ async def create_completion(
             chain = resolve_provider_chain(db, user.id, "llm")
         if not chain:
             raise missing_config_http("LLM")
-        response = await execute_with_fallback(
-            db=None,
-            user_id=user.id,
-            service_type="llm",
-            call_fn=_call,
-            _chain=chain,
-        )
+        response = await execute_with_fallback(db=None, user_id=user.id, service_type="llm", call_fn=_call, _chain=chain)
     except MissingLlmConfigError:
         raise missing_config_http("LLM")
     except HTTPException:
         raise
     except Exception as e:
         classified = classify_api_error(e, model=model_override or "")
-        logger.warning(
-            "LLM completion failed user=%s reason=%s status=%s",
-            user.id,
-            classified.reason.value,
-            classified.status_code,
-        )
+        logger.warning("LLM completion failed user=%s reason=%s status=%s", user.id, classified.reason.value, classified.status_code)
         raise classified_http_exception(classified) from e
 
     if not response.choices:
-        logger.warning(
-            "LLM returned 2xx with empty choices user=%s",
-            user.id,
-        )
-        raise classified_http_exception(
-            classify_api_error(
-                RuntimeError("LLM returned no choices"),
-                model=model_override or "",
-            )
-        )
+        logger.warning("LLM returned 2xx with empty choices user=%s", user.id)
+        raise classified_http_exception(classify_api_error(RuntimeError("LLM returned no choices"), model=model_override or ""))
     content = response.choices[0].message.content
     usage = response.usage.model_dump() if response.usage else None
 
-    return {
-        "content": content,
-        "usage": usage,
-    }
+    return {"content": content, "usage": usage}

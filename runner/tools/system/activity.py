@@ -157,22 +157,12 @@ def _work_area_windows() -> dict[str, int]:
         user32 = ctypes.windll.user32
 
         class _RECT(ctypes.Structure):
-            _fields_ = [
-                ("left", wintypes.LONG),
-                ("top", wintypes.LONG),
-                ("right", wintypes.LONG),
-                ("bottom", wintypes.LONG),
-            ]
+            _fields_ = [("left", wintypes.LONG), ("top", wintypes.LONG), ("right", wintypes.LONG), ("bottom", wintypes.LONG)]
 
         rect = _RECT()
         # SPI_GETWORKAREA = 0x0030
         if user32.SystemParametersInfoW(0x0030, 0, ctypes.byref(rect), 0):
-            return {
-                "x": int(rect.left),
-                "y": int(rect.top),
-                "w": int(max(0, rect.right - rect.left)),
-                "h": int(max(0, rect.bottom - rect.top)),
-            }
+            return {"x": int(rect.left), "y": int(rect.top), "w": int(max(0, rect.right - rect.left)), "h": int(max(0, rect.bottom - rect.top))}
     except Exception as e:
         logger.debug("win work_area probe failed: %s", e)
     return {"x": 0, "y": 0, "w": 1920, "h": 1080}
@@ -185,12 +175,7 @@ def _work_area_macos() -> dict[str, int]:
         screen = NSScreen.mainScreen()
         if screen:
             frame = screen.visibleFrame()
-            return {
-                "x": int(frame.origin.x),
-                "y": int(frame.origin.y),
-                "w": int(frame.size.width),
-                "h": int(frame.size.height),
-            }
+            return {"x": int(frame.origin.x), "y": int(frame.origin.y), "w": int(frame.size.width), "h": int(frame.size.height)}
     except Exception as e:
         logger.debug("macos work_area probe failed: %s", e)
     return {"x": 0, "y": 0, "w": 1920, "h": 1080}
@@ -445,12 +430,7 @@ def _focus_macos() -> dict[str, Any]:
         app = NSWorkspace.sharedWorkspace().frontmostApplication()
         if not app:
             return {}
-        result: dict[str, Any] = {
-            "name": app.localizedName() or "",
-            "pid": app.processIdentifier(),
-            "bundle": app.bundleIdentifier() or "",
-            "kind": "user",
-        }
+        result: dict[str, Any] = {"name": app.localizedName() or "", "pid": app.processIdentifier(), "bundle": app.bundleIdentifier() or "", "kind": "user"}
         if CGWindowListCopyWindowInfo is not None:
             for win in CGWindowListCopyWindowInfo(kCGWindowListOptionOnScreenOnly, kCGNullWindowId):
                 if win.get("kCGWindowOwnerPID", -1) != app.processIdentifier():
@@ -483,12 +463,7 @@ def _fullscreen_windows() -> bool:
             return False
 
         class _Rect(ctypes.Structure):
-            _fields_ = [
-                ("left", wintypes.LONG),
-                ("top", wintypes.LONG),
-                ("right", wintypes.LONG),
-                ("bottom", wintypes.LONG),
-            ]
+            _fields_ = [("left", wintypes.LONG), ("top", wintypes.LONG), ("right", wintypes.LONG), ("bottom", wintypes.LONG)]
 
         win = _Rect()
         if not user32.GetWindowRect(hwnd, ctypes.byref(win)):
@@ -501,18 +476,7 @@ def _fullscreen_windows() -> bool:
         monitor = user32.MonitorFromWindow(hwnd, 0x00000002)  # MONITOR_DEFAULTTONEAREST
         if not monitor:
             return False
-        monitor_info = type(
-            "MI",
-            (ctypes.Structure,),
-            {
-                "_fields_": [
-                    ("cbSize", wintypes.DWORD),
-                    ("rcMonitor", _Rect),
-                    ("rcWork", _Rect),
-                    ("dwFlags", wintypes.DWORD),
-                ]
-            },
-        )()
+        monitor_info = type("MI", (ctypes.Structure,), {"_fields_": [("cbSize", wintypes.DWORD), ("rcMonitor", _Rect), ("rcWork", _Rect), ("dwFlags", wintypes.DWORD)]})()
         monitor_info.cbSize = ctypes.sizeof(monitor_info)
         if not user32.GetMonitorInfoW(monitor, ctypes.byref(monitor_info)):
             return False
@@ -627,15 +591,7 @@ def _windows_windows() -> dict[str, Any]:
             user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
             pid_val = pid.value
             exe = exe_cache.get(pid_val) or exe_cache.setdefault(pid_val, _process_exe(pid_val))
-            results.append({
-                "title": tb.value,
-                "name": exe or tb.value,
-                "x": rect.left,
-                "y": rect.top,
-                "w": w,
-                "h": h,
-                "focused": hwnd == foreground,
-            })
+            results.append({"title": tb.value, "name": exe or tb.value, "x": rect.left, "y": rect.top, "w": w, "h": h, "focused": hwnd == foreground})
             return True
 
         user32.EnumWindows(cb, 0)

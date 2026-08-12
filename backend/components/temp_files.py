@@ -33,13 +33,7 @@ def save_file(data: bytes, session_id: str, content_type: str, ext: str) -> tupl
     with open(filepath, "wb") as f:
         f.write(data)
 
-    meta = {
-        "path": str(filepath),
-        "session_id": session_id,
-        "created_at": time.time(),
-        "content_type": content_type,
-        "size": len(data),
-    }
+    meta = {"path": str(filepath), "session_id": session_id, "created_at": time.time(), "content_type": content_type, "size": len(data)}
     with open(_meta_path(file_id), "w") as f:
         json.dump(meta, f)
 

@@ -135,12 +135,7 @@ def _preprocess_conversation_for_nightly(messages: list[Message]) -> list[dict[s
             continue
         if msg.role == "assistant":
             if text_content := (msg.content or "").strip():
-                clean.append(
-                    {
-                        "role": "assistant",
-                        "content": text_content[:NIGHTLY_MESSAGE_TRUNCATE_CHARS],
-                    }
-                )
+                clean.append({"role": "assistant", "content": text_content[:NIGHTLY_MESSAGE_TRUNCATE_CHARS]})
         elif msg.role == "user":
             text_content = (msg.content or "").strip()
             if getattr(msg, "content_type", "text") == "multimodal_v1":
@@ -148,12 +143,7 @@ def _preprocess_conversation_for_nightly(messages: list[Message]) -> list[dict[s
                 if isinstance(parsed, list):
                     text_content = "\n".join(t for p in parsed if isinstance(p, dict) and p.get("type") == "text" and (t := (p.get("text") or "").strip()))
             if text_content:
-                clean.append(
-                    {
-                        "role": "user",
-                        "content": text_content[:NIGHTLY_MESSAGE_TRUNCATE_CHARS],
-                    }
-                )
+                clean.append({"role": "user", "content": text_content[:NIGHTLY_MESSAGE_TRUNCATE_CHARS]})
     return clean
 
 

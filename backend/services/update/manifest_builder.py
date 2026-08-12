@@ -2,7 +2,7 @@ from components import normalize_sha512
 from fastapi import HTTPException
 from modules.update import UpdateVersion
 
-from services.update.constants import VERSIONS_DIR
+from .constants import VERSIONS_DIR
 
 
 def build_manifest(latest: UpdateVersion, filename: str | None, sha512: str | None, size: int | None) -> dict:

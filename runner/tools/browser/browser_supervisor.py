@@ -124,14 +124,7 @@ class PendingDialog:
     bridge_request_id: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "id": self.id,
-            "type": self.type,
-            "message": self.message,
-            "default_prompt": self.default_prompt,
-            "opened_at": self.opened_at,
-            "frame_id": self.frame_id,
-        }
+        return {"id": self.id, "type": self.type, "message": self.message, "default_prompt": self.default_prompt, "opened_at": self.opened_at, "frame_id": self.frame_id}
 
 
 @dataclass
@@ -188,12 +181,7 @@ class FrameInfo:
         # iframes. The session stays accessible to the supervisor internally
         # but is never echoed back through the tool surface.
         return (
-            {
-                "frame_id": self.frame_id,
-                "url": self.url,
-                "origin": self.origin,
-                "is_oopif": self.is_oopif,
-            }
+            {"frame_id": self.frame_id, "url": self.url, "origin": self.origin, "is_oopif": self.is_oopif}
             | ({"parent_frame_id": self.parent_frame_id} if self.parent_frame_id else {})
             | ({"name": self.name} if self.name else {})
         )
@@ -227,10 +215,7 @@ class SupervisorSnapshot:
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize for inclusion in ``browser_snapshot`` output."""
-        out: dict[str, Any] = {
-            "pending_dialogs": [d.to_dict() for d in self.pending_dialogs],
-            "frame_tree": self.frame_tree,
-        }
+        out: dict[str, Any] = {"pending_dialogs": [d.to_dict() for d in self.pending_dialogs], "frame_tree": self.frame_tree}
         if self.recent_dialogs:
             out["recent_dialogs"] = [d.to_dict() for d in self.recent_dialogs]
         return out
@@ -256,14 +241,7 @@ class CDPSupervisor:
     touch the loop directly; they go through the sync API above.
     """
 
-    def __init__(
-        self,
-        task_id: str,
-        cdp_url: str,
-        *,
-        dialog_policy: str = DEFAULT_DIALOG_POLICY,
-        dialog_timeout_s: float = DEFAULT_DIALOG_TIMEOUT_S,
-    ) -> None:
+    def __init__(self, task_id: str, cdp_url: str, *, dialog_policy: str = DEFAULT_DIALOG_POLICY, dialog_timeout_s: float = DEFAULT_DIALOG_TIMEOUT_S) -> None:
         if dialog_policy not in _VALID_POLICIES:
             raise ValueError(f"Invalid dialog_policy {dialog_policy!r}; must be one of {sorted(_VALID_POLICIES)}")
         self.task_id = task_id
@@ -326,11 +304,7 @@ class CDPSupervisor:
         self._ready_event.clear()
         self._start_error = None
         self._stop_requested = False
-        self._thread = threading.Thread(
-            target=self._thread_main,
-            name=f"cdp-supervisor-{self.task_id}",
-            daemon=True,
-        )
+        self._thread = threading.Thread(target=self._thread_main, name=f"cdp-supervisor-{self.task_id}", daemon=True)
         self._thread.start()
         if not self._ready_event.wait(timeout=timeout):
             self.stop()
@@ -375,23 +349,10 @@ class CDPSupervisor:
             console = tuple(self._console_events[-CONSOLE_HISTORY_MAX:])
             active = self._active
         return SupervisorSnapshot(
-            pending_dialogs=dialogs,
-            recent_dialogs=recent,
-            frame_tree=frames_tree,
-            console_errors=console,
-            active=active,
-            cdp_url=self.cdp_url,
-            task_id=self.task_id,
+            pending_dialogs=dialogs, recent_dialogs=recent, frame_tree=frames_tree, console_errors=console, active=active, cdp_url=self.cdp_url, task_id=self.task_id
         )
 
-    def respond_to_dialog(
-        self,
-        action: str,
-        *,
-        prompt_text: str | None = None,
-        dialog_id: str | None = None,
-        timeout: float = 10.0,
-    ) -> dict[str, Any]:
+    def respond_to_dialog(self, action: str, *, prompt_text: str | None = None, dialog_id: str | None = None, timeout: float = 10.0) -> dict[str, Any]:
         """Accept/dismiss a pending dialog. Sync bridge onto the supervisor loop.
 
         Returns ``{"ok": True, "dialog": {...}}`` on success,
@@ -410,15 +371,9 @@ class CDPSupervisor:
             if dialog_id:
                 dialog = self._pending_dialogs.get(dialog_id)
                 if dialog is None:
-                    return {
-                        "ok": False,
-                        "error": f"dialog_id {dialog_id!r} not found (known: {sorted(self._pending_dialogs)})",
-                    }
+                    return {"ok": False, "error": f"dialog_id {dialog_id!r} not found (known: {sorted(self._pending_dialogs)})"}
             elif len(pending) > 1:
-                return {
-                    "ok": False,
-                    "error": (f"{len(pending)} pending dialogs; specify dialog_id. Candidates: {[d.id for d in pending]}"),
-                }
+                return {"ok": False, "error": (f"{len(pending)} pending dialogs; specify dialog_id. Candidates: {[d.id for d in pending]}")}
             else:
                 dialog = pending[0]
             snapshot_copy = dialog
@@ -439,14 +394,7 @@ class CDPSupervisor:
             return {"ok": False, "error": f"{type(e).__name__}: {e}"}
         return {"ok": True, "dialog": snapshot_copy.to_dict()}
 
-    def evaluate_runtime(
-        self,
-        expression: str,
-        *,
-        return_by_value: bool = True,
-        await_promise: bool = True,
-        timeout: float = 10.0,
-    ) -> dict[str, Any]:
+    def evaluate_runtime(self, expression: str, *, return_by_value: bool = True, await_promise: bool = True, timeout: float = 10.0) -> dict[str, Any]:
         """Evaluate ``expression`` in the page's Runtime context over the live WS.
 
         Reuses the supervisor's already-connected WebSocket — zero subprocess
@@ -543,13 +491,7 @@ class CDPSupervisor:
 
         return {"ok": True, "result": value, "result_type": result_type}
 
-    def send_cdp(
-        self,
-        method: str,
-        params: dict[str, Any] | None = None,
-        *,
-        timeout: float = 10.0,
-    ) -> dict[str, Any]:
+    def send_cdp(self, method: str, params: dict[str, Any] | None = None, *, timeout: float = 10.0) -> dict[str, Any]:
         """Send an arbitrary CDP command and return the raw response.
 
         Synchronous bridge onto the supervisor's event loop — same pattern as
@@ -594,12 +536,7 @@ class CDPSupervisor:
         if not guid:
             return
         with self._state_lock:
-            self._pending_downloads[guid] = {
-                "state": "in_progress",
-                "filename": params.get("suggestedFilename", ""),
-                "url": params.get("url", ""),
-                "event": threading.Event(),
-            }
+            self._pending_downloads[guid] = {"state": "in_progress", "filename": params.get("suggestedFilename", ""), "url": params.get("url", ""), "event": threading.Event()}
 
     def _on_download_progress(self, params: dict[str, Any]) -> None:
         """Handle ``Browser.downloadProgress`` CDP event."""
@@ -615,10 +552,7 @@ class CDPSupervisor:
             if state in ("completed", "canceled"):
                 entry["event"].set()
 
-    def wait_for_download(
-        self,
-        timeout: float = 30.0,
-    ) -> dict[str, Any]:
+    def wait_for_download(self, timeout: float = 30.0) -> dict[str, Any]:
         """Block until the next download completes or times out.
 
         Must be called *after* triggering the download (e.g. clicking a link).
@@ -670,19 +604,13 @@ class CDPSupervisor:
 
     def _attach_target(self, target_id: str) -> dict[str, Any]:
         """Attach to ``target_id`` and track the new session."""
-        result = self.send_cdp(
-            "Target.attachToTarget",
-            {"targetId": target_id, "flatten": True},
-        )
+        result = self.send_cdp("Target.attachToTarget", {"targetId": target_id, "flatten": True})
         if not result.get("ok"):
             return result
         session_id = result.get("result", {}).get("sessionId")
         if session_id:
             with self._state_lock:
-                self._attached_targets[target_id] = {
-                    "session_id": session_id,
-                    "title": "",
-                }
+                self._attached_targets[target_id] = {"session_id": session_id, "title": ""}
             # Dialogs on the new tab need the same bridge/JS we install
             # for the initial page — without this, ``browser_dialog`` would
             # silently no-op for tabs created via ``browser_tab_new``.
@@ -705,10 +633,7 @@ class CDPSupervisor:
 
     def new_tab(self, url: str | None = None) -> dict[str, Any]:
         """Open a new browser tab. The tab becomes the active target."""
-        result = self.send_cdp(
-            "Target.createTarget",
-            {"url": url} if url else {},
-        )
+        result = self.send_cdp("Target.createTarget", {"url": url} if url else {})
         if not result.get("ok"):
             return result
         target_id = result.get("result", {}).get("targetId")
@@ -802,10 +727,7 @@ class CDPSupervisor:
         backoff = 0.5
         while not self._stop_requested:
             try:
-                self._ws = await asyncio.wait_for(
-                    websockets.connect(self.cdp_url, max_size=50 * 1024 * 1024),
-                    timeout=10.0,
-                )
+                self._ws = await asyncio.wait_for(websockets.connect(self.cdp_url, max_size=50 * 1024 * 1024), timeout=10.0)
             except Exception as e:
                 attempt += 1
                 if not self._ready_event.is_set():
@@ -813,12 +735,7 @@ class CDPSupervisor:
                     self._start_error = e
                     self._ready_event.set()
                     return
-                logger.warning(
-                    "CDP supervisor %s: connect failed (attempt %s): %s",
-                    self.task_id,
-                    attempt,
-                    e,
-                )
+                logger.warning("CDP supervisor %s: connect failed (attempt %s): %s", self.task_id, attempt, e)
                 await asyncio.sleep(min(backoff, 10.0))
                 backoff = min(backoff * 2, 10.0)
                 continue
@@ -852,12 +769,7 @@ class CDPSupervisor:
                     self._start_error = e
                     self._ready_event.set()
                     raise
-                logger.warning(
-                    "CDP supervisor %s: session dropped after %.1fs: %s",
-                    self.task_id,
-                    time.time() - last_success_at,
-                    e,
-                )
+                logger.warning("CDP supervisor %s: session dropped after %.1fs: %s", self.task_id, time.time() - last_success_at, e)
             finally:
                 with self._state_lock:
                     self._active = False
@@ -878,11 +790,7 @@ class CDPSupervisor:
                 return
 
             # Reconnect: brief backoff, then reattach.
-            logger.debug(
-                "CDP supervisor %s: reconnecting in %.1fs...",
-                self.task_id,
-                backoff,
-            )
+            logger.debug("CDP supervisor %s: reconnecting in %.1fs...", self.task_id, backoff)
             await asyncio.sleep(backoff)
             backoff = min(backoff * 2, 10.0)
 
@@ -897,10 +805,7 @@ class CDPSupervisor:
         else:
             target_id = page_target["targetId"]
 
-        attach = await self._cdp(
-            "Target.attachToTarget",
-            {"targetId": target_id, "flatten": True},
-        )
+        attach = await self._cdp("Target.attachToTarget", {"targetId": target_id, "flatten": True})
         self._page_session_id = attach["result"]["sessionId"]
         # Route CDP messages to the initial page by default; browser_tab_*
         # calls set_active_session_id() to point elsewhere. We also seed
@@ -909,23 +814,12 @@ class CDPSupervisor:
         # it without a fresh Target.getTargets round-trip.
         with self._state_lock:
             self._active_session_id = self._page_session_id
-            self._attached_targets[target_id] = {
-                "session_id": self._page_session_id,
-                "title": "",
-            }
+            self._attached_targets[target_id] = {"session_id": self._page_session_id, "title": ""}
         await self._cdp("Page.enable", session_id=self._page_session_id)
         await self._cdp("Runtime.enable", session_id=self._page_session_id)
         # Enable download events so browser_download can track progress.
-        await self._cdp(
-            "Browser.setDownloadBehavior",
-            {"behavior": "allow", "eventsEnabled": True, "downloadPath": tempfile.gettempdir()},
-            session_id=self._page_session_id,
-        )
-        await self._cdp(
-            "Target.setAutoAttach",
-            {"autoAttach": True, "waitForDebuggerOnStart": False, "flatten": True},
-            session_id=self._page_session_id,
-        )
+        await self._cdp("Browser.setDownloadBehavior", {"behavior": "allow", "eventsEnabled": True, "downloadPath": tempfile.gettempdir()}, session_id=self._page_session_id)
+        await self._cdp("Target.setAutoAttach", {"autoAttach": True, "waitForDebuggerOnStart": False, "flatten": True}, session_id=self._page_session_id)
         # Install the dialog bridge — overrides native alert/confirm/prompt with
         # a synchronous XHR we intercept via Fetch domain. This is how we make
         # dialog response work when the CDP proxy auto-dismisses real native
@@ -947,57 +841,24 @@ class CDPSupervisor:
         add-script calls by source, and Fetch.enable replaces prior patterns.
         """
         try:
-            await self._cdp(
-                "Page.addScriptToEvaluateOnNewDocument",
-                {"source": _DIALOG_BRIDGE_SCRIPT, "runImmediately": True},
-                session_id=session_id,
-                timeout=5.0,
-            )
+            await self._cdp("Page.addScriptToEvaluateOnNewDocument", {"source": _DIALOG_BRIDGE_SCRIPT, "runImmediately": True}, session_id=session_id, timeout=5.0)
         except Exception as e:
-            logger.debug(
-                "dialog bridge: addScriptToEvaluateOnNewDocument failed on sid=%s: %s",
-                (session_id or "")[:16],
-                e,
-            )
+            logger.debug("dialog bridge: addScriptToEvaluateOnNewDocument failed on sid=%s: %s", (session_id or "")[:16], e)
         try:
             await self._cdp(
                 "Fetch.enable",
-                {
-                    "patterns": [
-                        {
-                            "urlPattern": DIALOG_BRIDGE_URL_PATTERN,
-                            "requestStage": "Request",
-                        }
-                    ],
-                    "handleAuthRequests": False,
-                },
+                {"patterns": [{"urlPattern": DIALOG_BRIDGE_URL_PATTERN, "requestStage": "Request"}], "handleAuthRequests": False},
                 session_id=session_id,
                 timeout=5.0,
             )
         except Exception as e:
-            logger.debug(
-                "dialog bridge: Fetch.enable failed on sid=%s: %s",
-                (session_id or "")[:16],
-                e,
-            )
+            logger.debug("dialog bridge: Fetch.enable failed on sid=%s: %s", (session_id or "")[:16], e)
         # Also try to inject into the already-loaded document so existing
         # pages pick up the override on reconnect. Best-effort.
         with contextlib.suppress(Exception):
-            await self._cdp(
-                "Runtime.evaluate",
-                {"expression": _DIALOG_BRIDGE_SCRIPT, "returnByValue": True},
-                session_id=session_id,
-                timeout=3.0,
-            )
+            await self._cdp("Runtime.evaluate", {"expression": _DIALOG_BRIDGE_SCRIPT, "returnByValue": True}, session_id=session_id, timeout=3.0)
 
-    async def _cdp(
-        self,
-        method: str,
-        params: dict[str, Any] | None = None,
-        *,
-        session_id: str | None = None,
-        timeout: float = 10.0,
-    ) -> dict[str, Any]:
+    async def _cdp(self, method: str, params: dict[str, Any] | None = None, *, session_id: str | None = None, timeout: float = 10.0) -> dict[str, Any]:
         """Send a CDP command and await its response."""
         if self._ws is None:
             raise RuntimeError("supervisor WebSocket is not connected")
@@ -1119,12 +980,7 @@ class CDPSupervisor:
         if dialog.type == "prompt":
             params["promptText"] = prompt_text
         try:
-            await self._cdp(
-                "Page.handleJavaScriptDialog",
-                params,
-                session_id=dialog.cdp_session_id or None,
-                timeout=5.0,
-            )
+            await self._cdp("Page.handleJavaScriptDialog", params, session_id=dialog.cdp_session_id or None, timeout=5.0)
         except Exception as e:
             logger.debug("auto-handle CDP call failed for %s: %s", dialog.id, e)
 
@@ -1133,13 +989,7 @@ class CDPSupervisor:
             dialog = self._pending_dialogs.get(dialog_id)
         if dialog is None:
             return
-        logger.warning(
-            "CDP supervisor %s: dialog %s (%s) auto-dismissed after %ss timeout",
-            self.task_id,
-            dialog_id,
-            dialog.type,
-            self.dialog_timeout_s,
-        )
+        logger.warning("CDP supervisor %s: dialog %s (%s) auto-dismissed after %ss timeout", self.task_id, dialog_id, dialog.type, self.dialog_timeout_s)
         try:
             # Archive with watchdog tag BEFORE fulfilling / dismissing.
             with self._state_lock:
@@ -1151,25 +1001,14 @@ class CDPSupervisor:
             if dialog.bridge_request_id:
                 await self._fulfill_bridge_request(dialog, accept=False, prompt_text="")
             else:
-                await self._cdp(
-                    "Page.handleJavaScriptDialog",
-                    {"accept": False},
-                    session_id=dialog.cdp_session_id or None,
-                    timeout=5.0,
-                )
+                await self._cdp("Page.handleJavaScriptDialog", {"accept": False}, session_id=dialog.cdp_session_id or None, timeout=5.0)
         except Exception as e:
             logger.debug("auto-dismiss failed for %s: %s", dialog_id, e)
 
     def _archive_dialog_locked(self, dialog: PendingDialog, closed_by: str) -> None:
         """Move a pending dialog to the recent_dialogs ring buffer. Must hold state_lock."""
         record = DialogRecord(
-            id=dialog.id,
-            type=dialog.type,
-            message=dialog.message,
-            opened_at=dialog.opened_at,
-            closed_at=time.time(),
-            closed_by=closed_by,
-            frame_id=dialog.frame_id,
+            id=dialog.id, type=dialog.type, message=dialog.message, opened_at=dialog.opened_at, closed_at=time.time(), closed_by=closed_by, frame_id=dialog.frame_id
         )
         self._recent_dialogs.append(record)
         if len(self._recent_dialogs) > RECENT_DIALOGS_MAX * 2:
@@ -1198,12 +1037,7 @@ class CDPSupervisor:
         if dialog.type == "prompt":
             params["promptText"] = prompt_text
         try:
-            await self._cdp(
-                "Page.handleJavaScriptDialog",
-                params,
-                session_id=dialog.cdp_session_id or None,
-                timeout=5.0,
-            )
+            await self._cdp("Page.handleJavaScriptDialog", params, session_id=dialog.cdp_session_id or None, timeout=5.0)
         finally:
             # Clear regardless — the CDP error path usually means the dialog
             # already closed (browser auto-dismissed after navigation, etc.).
@@ -1261,12 +1095,7 @@ class CDPSupervisor:
         if DIALOG_BRIDGE_HOST not in url:
             # Not ours — forward unchanged so the page sees its own request.
             with contextlib.suppress(Exception):
-                await self._cdp(
-                    "Fetch.continueRequest",
-                    {"requestId": request_id},
-                    session_id=session_id,
-                    timeout=3.0,
-                )
+                await self._cdp("Fetch.continueRequest", {"requestId": request_id}, session_id=session_id, timeout=3.0)
             return
 
         q = parse_qs(urlparse(url).query)
@@ -1322,11 +1151,7 @@ class CDPSupervisor:
         """Resolve a bridge XHR via Fetch.fulfillRequest so the page unblocks."""
         if not dialog.bridge_request_id:
             return
-        payload = {
-            "accept": bool(accept),
-            "prompt_text": prompt_text if dialog.type == "prompt" else "",
-            "dialog_id": dialog.id,
-        }
+        payload = {"accept": bool(accept), "prompt_text": prompt_text if dialog.type == "prompt" else "", "dialog_id": dialog.id}
         body = json.dumps(payload).encode()
         try:
             await self._cdp(
@@ -1334,10 +1159,7 @@ class CDPSupervisor:
                 {
                     "requestId": dialog.bridge_request_id,
                     "responseCode": 200,
-                    "responseHeaders": [
-                        {"name": "Content-Type", "value": "application/json"},
-                        {"name": "Access-Control-Allow-Origin", "value": "*"},
-                    ],
+                    "responseHeaders": [{"name": "Content-Type", "value": "application/json"}, {"name": "Access-Control-Allow-Origin", "value": "*"}],
                     "body": base64.b64encode(body).decode(),
                 },
                 session_id=dialog.cdp_session_id or None,
@@ -1353,14 +1175,7 @@ class CDPSupervisor:
         if not frame_id:
             return
         with self._state_lock:
-            self._frames[frame_id] = FrameInfo(
-                frame_id=frame_id,
-                url="",
-                origin="",
-                parent_frame_id=params.get("parentFrameId"),
-                is_oopif=False,
-                cdp_session_id=session_id,
-            )
+            self._frames[frame_id] = FrameInfo(frame_id=frame_id, url="", origin="", parent_frame_id=params.get("parentFrameId"), is_oopif=False, cdp_session_id=session_id)
 
     def _on_frame_navigated(self, params: dict[str, Any], session_id: str | None) -> None:
         frame = params.get("frame") or {}
@@ -1451,12 +1266,7 @@ class CDPSupervisor:
         try:
             await self._cdp("Page.enable", session_id=sid, timeout=3.0)
             await self._cdp("Runtime.enable", session_id=sid, timeout=3.0)
-            await self._cdp(
-                "Target.setAutoAttach",
-                {"autoAttach": True, "waitForDebuggerOnStart": False, "flatten": True},
-                session_id=sid,
-                timeout=3.0,
-            )
+            await self._cdp("Target.setAutoAttach", {"autoAttach": True, "waitForDebuggerOnStart": False, "flatten": True}, session_id=sid, timeout=3.0)
         except Exception as e:
             logger.debug("child session %s setup failed: %s", sid[:16], e)
         # Install the dialog bridge on the child so iframe dialogs are captured.
@@ -1558,11 +1368,7 @@ class CDPSupervisor:
         if queue:
             truncated = True
 
-        return {
-            "top": top.to_dict(),
-            "children": children,
-            "truncated": truncated,
-        }
+        return {"top": top.to_dict(), "children": children, "truncated": truncated}
 
 
 # ── Registry ─────────────────────────────────────────────────────────────────
@@ -1585,13 +1391,7 @@ class _SupervisorRegistry:
             return self._by_task.get(task_id)
 
     def get_or_start(
-        self,
-        task_id: str,
-        cdp_url: str,
-        *,
-        dialog_policy: str = DEFAULT_DIALOG_POLICY,
-        dialog_timeout_s: float = DEFAULT_DIALOG_TIMEOUT_S,
-        start_timeout: float = 15.0,
+        self, task_id: str, cdp_url: str, *, dialog_policy: str = DEFAULT_DIALOG_POLICY, dialog_timeout_s: float = DEFAULT_DIALOG_TIMEOUT_S, start_timeout: float = 15.0
     ) -> CDPSupervisor:
         with self._lock:
             if (existing := self._by_task.get(task_id)) is not None:
@@ -1601,12 +1401,7 @@ class _SupervisorRegistry:
         if existing is not None:
             existing.stop()
 
-        supervisor = CDPSupervisor(
-            task_id=task_id,
-            cdp_url=cdp_url,
-            dialog_policy=dialog_policy,
-            dialog_timeout_s=dialog_timeout_s,
-        )
+        supervisor = CDPSupervisor(task_id=task_id, cdp_url=cdp_url, dialog_policy=dialog_policy, dialog_timeout_s=dialog_timeout_s)
         supervisor.start(timeout=start_timeout)
         with self._lock:
             if (already := self._by_task.get(task_id)) is not None and already.cdp_url == cdp_url:

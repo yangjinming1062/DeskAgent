@@ -70,11 +70,7 @@ async def correlated_exception_response(_request: Request, exc: Exception) -> JS
     """
     rid = current_request_id()
     headers = {"X-Request-ID": rid} if rid else {}
-    return JSONResponse(
-        status_code=500,
-        content={"error": "Internal Server Error", "reason": "internal_error", "status": 500},
-        headers=headers,
-    )
+    return JSONResponse(status_code=500, content={"error": "Internal Server Error", "reason": "internal_error", "status": 500}, headers=headers)
 
 
 async def correlation_id_middleware(request: Request, call_next: Callable[..., Any]) -> Response:

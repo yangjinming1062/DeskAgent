@@ -50,10 +50,7 @@ def _build_persisted_content(req: "ChatRequest") -> tuple[str, str]:
         media_uris.append(url)
 
     if media_uris:
-        logger.info(
-            "multimodal parts sent to LLM",
-            extra={"media_count": len(media_uris), "media_uris": media_uris},
-        )
+        logger.info("multimodal parts sent to LLM", extra={"media_count": len(media_uris), "media_uris": media_uris})
 
     return _coerce_tool_result_content(parts), "multimodal_v1"
 
@@ -61,15 +58,7 @@ def _build_persisted_content(req: "ChatRequest") -> tuple[str, str]:
 def _persist_user_message(db: Session, conv: Conversation, req: ChatRequest) -> None:
     """Insert the user-role Message row and commit."""
     db_content, db_content_type = _build_persisted_content(req)
-    db.add(
-        Message(
-            conversation_id=conv.id,
-            role=req.message.role,
-            content=db_content,
-            content_type=db_content_type,
-            tool_call_id=req.message.tool_call_id,
-        )
-    )
+    db.add(Message(conversation_id=conv.id, role=req.message.role, content=db_content, content_type=db_content_type, tool_call_id=req.message.tool_call_id))
     db.commit()
 
 
@@ -145,14 +134,7 @@ async def _persist_assistant_no_tool_turn(
     if spatial_target:
         affect_payload["target"] = spatial_target
 
-    await emitter.send_json(
-        {
-            "type": "message.complete",
-            "text": turn_content,
-            "affect": affect_payload,
-            **({"usage": final_usage_payload} if final_usage_payload else {}),
-        }
-    )
+    await emitter.send_json({"type": "message.complete", "text": turn_content, "affect": affect_payload, **({"usage": final_usage_payload} if final_usage_payload else {})})
 
 
 async def _persist_assistant_with_tool_calls_and_results(
@@ -215,14 +197,7 @@ async def _persist_assistant_with_tool_calls_and_results(
                         schema = REGISTRY.get_schema(dispatch_ctx.user_id, name)
                         if schema is not None:
                             schemas_by_name[name] = schema
-        db.add(
-            Message(
-                conversation_id=conv.id,
-                role="tool",
-                tool_call_id=res["tool_call_id"],
-                content=_coerce_tool_result_content(res.get("content", "")),
-            )
-        )
+        db.add(Message(conversation_id=conv.id, role="tool", tool_call_id=res["tool_call_id"], content=_coerce_tool_result_content(res.get("content", ""))))
     db.commit()
 
     return tool_results

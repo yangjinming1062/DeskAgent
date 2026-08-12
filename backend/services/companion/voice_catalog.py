@@ -2,17 +2,11 @@ from sqlalchemy.orm import Session
 
 from services.llm import ServiceType, VoiceDesignResult, VoiceEntry, resolve, resolve_provider_chain, try_resolve, voices_for_provider
 
-_LANG_KEYWORDS: dict[str, list[str]] = {
-    "zh": ["中文", "普通话", "国语", "chinese", "mandarin"],
-    "en": ["英文", "英语", "english"],
-}
+_LANG_KEYWORDS: dict[str, list[str]] = {"zh": ["中文", "普通话", "国语", "chinese", "mandarin"], "en": ["英文", "英语", "english"]}
 
 # Tokens (whole-word, case-insensitive) that bias the matcher toward a gender.
 # Avoid the old substring bug where "male" in "female voice" matched female.
-_GENDER_KEYWORDS: dict[str, list[str]] = {
-    "female": ["female", "女", "女声", "少女", "御姐", "女神"],
-    "male": ["male", "男", "男声", "少年", "正太"],
-}
+_GENDER_KEYWORDS: dict[str, list[str]] = {"female": ["female", "女", "女声", "少女", "御姐", "女神"], "male": ["male", "男", "男声", "少年", "正太"]}
 
 
 DEFAULT_VOICE = VoiceEntry(id="", label="默认音色", gender="neutral", tags=["默认"], description="使用引擎默认音色。")

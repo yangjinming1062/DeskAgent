@@ -30,13 +30,7 @@ KNOWN_PROVIDERS: frozenset[str] = frozenset({"mimo", "minimax", "gemini", "grok"
 
 # Default provider when ``SETTINGS.<svc>_provider`` is empty. Chat/STT/TTS
 # default to MiMo (OpenAI-compatible); image/video gen default to MiniMax.
-SERVICE_DEFAULT_PROVIDER: dict[str, str] = {
-    "llm": "mimo",
-    "stt": "mimo",
-    "tts": "mimo",
-    "image_gen": "minimax",
-    "video_gen": "minimax",
-}
+SERVICE_DEFAULT_PROVIDER: dict[str, str] = {"llm": "mimo", "stt": "mimo", "tts": "mimo", "image_gen": "minimax", "video_gen": "minimax"}
 
 # Default base_url per (provider, service). An empty string means the
 # provider doesn't offer that service (e.g. MiniMax has no public STT API).
@@ -59,17 +53,8 @@ PROVIDER_DEFAULT_URLS: dict[str, dict[str, str]] = {
         "image_gen": "https://api.minimaxi.com",
         "video_gen": "https://api.minimaxi.com",
     },
-    "gemini": {
-        "llm": "https://generativelanguage.googleapis.com/v1beta/openai/",
-        "image_gen": "https://generativelanguage.googleapis.com",
-    },
-    "grok": {
-        "llm": "https://api.x.ai/v1",
-        "stt": "https://api.x.ai/v1",
-        "tts": "https://api.x.ai/v1",
-        "image_gen": "https://api.x.ai/v1",
-        "video_gen": "https://api.x.ai/v1",
-    },
+    "gemini": {"llm": "https://generativelanguage.googleapis.com/v1beta/openai/", "image_gen": "https://generativelanguage.googleapis.com"},
+    "grok": {"llm": "https://api.x.ai/v1", "stt": "https://api.x.ai/v1", "tts": "https://api.x.ai/v1", "image_gen": "https://api.x.ai/v1", "video_gen": "https://api.x.ai/v1"},
     "zhipu": {
         "llm": "https://open.bigmodel.cn/api/paas/v4",
         "stt": "https://open.bigmodel.cn/api/paas/v4",

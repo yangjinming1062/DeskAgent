@@ -94,14 +94,8 @@ def _read_block_messages() -> tuple[tuple[str, str], ...]:
 def _read_block_prefixes() -> tuple[tuple[str, str], ...]:
     deskagent_home = _deskagent_home()
     return (
-        (
-            _join_real(deskagent_home, "mcp-tokens") + os.sep,
-            "Blocked: cannot read DeskAgent credential directory (~/.deskagent/mcp-tokens/).",
-        ),
-        (
-            _join_real(deskagent_home, "pairing") + os.sep,
-            "Blocked: cannot read DeskAgent credential directory (~/.deskagent/pairing/).",
-        ),
+        (_join_real(deskagent_home, "mcp-tokens") + os.sep, "Blocked: cannot read DeskAgent credential directory (~/.deskagent/mcp-tokens/)."),
+        (_join_real(deskagent_home, "pairing") + os.sep, "Blocked: cannot read DeskAgent credential directory (~/.deskagent/pairing/)."),
     )
 
 

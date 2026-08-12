@@ -41,14 +41,7 @@ class DDGSWebSearchProvider(WebSearchProvider):
             with DDGS() as client:
                 for i, hit in enumerate(client.text(query, max_results=safe_limit)):
                     url = str(hit.get("href") or hit.get("url") or "")
-                    web_results.append(
-                        {
-                            "title": str(hit.get("title", "")),
-                            "url": url,
-                            "description": str(hit.get("body", "")),
-                            "position": i + 1,
-                        }
-                    )
+                    web_results.append({"title": str(hit.get("title", "")), "url": url, "description": str(hit.get("body", "")), "position": i + 1})
         except Exception as exc:
             logger.warning("DDGS search error", extra={"error": str(exc)})
             return {"success": False, "error": f"DuckDuckGo search failed: {exc}"}

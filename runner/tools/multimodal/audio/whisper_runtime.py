@@ -23,12 +23,7 @@ class WhisperRuntime:
         self._models: dict[tuple[str, str, str], Any] = {}
         self._lock = threading.Lock()
 
-    def get_model(
-        self,
-        size: str = _DEFAULT_SIZE,
-        compute_type: str = _DEFAULT_COMPUTE_TYPE,
-        device: str = "cpu",
-    ) -> Any:
+    def get_model(self, size: str = _DEFAULT_SIZE, compute_type: str = _DEFAULT_COMPUTE_TYPE, device: str = "cpu") -> Any:
         if WhisperModel is None:
             raise RuntimeError("faster-whisper not installed in this venv")
         if size not in _ALLOWED_SIZES:
@@ -59,11 +54,7 @@ class WhisperRuntime:
 _runtime = WhisperRuntime()
 
 
-def get_whisper(
-    size: str = _DEFAULT_SIZE,
-    compute_type: str = _DEFAULT_COMPUTE_TYPE,
-    device: str = "cpu",
-):
+def get_whisper(size: str = _DEFAULT_SIZE, compute_type: str = _DEFAULT_COMPUTE_TYPE, device: str = "cpu"):
     return _runtime.get_model(size=size, compute_type=compute_type, device=device)
 
 

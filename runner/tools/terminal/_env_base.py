@@ -71,14 +71,7 @@ def _pipe_stdin(proc: subprocess.Popen, data: str) -> None:
 
 
 def _popen_bash(cmd: list[str], stdin_data: str | None = None, **kwargs) -> subprocess.Popen:
-    proc = subprocess.Popen(
-        cmd,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        stdin=subprocess.PIPE if stdin_data is not None else subprocess.DEVNULL,
-        text=True,
-        **kwargs,
-    )
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, stdin=subprocess.PIPE if stdin_data is not None else subprocess.DEVNULL, text=True, **kwargs)
     if stdin_data is not None:
         _pipe_stdin(proc, stdin_data)
     return proc
@@ -163,14 +156,7 @@ class BaseEnvironment(ABC):
         self._cwd_marker = _cwd_marker(self._session_id)
         self._snapshot_ready = False
 
-    def _run_bash(
-        self,
-        cmd_string: str,
-        *,
-        login: bool = False,
-        timeout: int = 120,
-        stdin_data: str | None = None,
-    ) -> ProcessHandle:
+    def _run_bash(self, cmd_string: str, *, login: bool = False, timeout: int = 120, stdin_data: str | None = None) -> ProcessHandle:
         raise NotImplementedError(f"{type(self).__name__} must implement _run_bash()")
 
     @abstractmethod
@@ -316,15 +302,7 @@ class BaseEnvironment(ABC):
     def _before_execute(self) -> None:
         pass
 
-    def execute(
-        self,
-        command: str,
-        cwd: str = "",
-        *,
-        timeout: int | None = None,
-        stdin_data: str | None = None,
-        rewrite_compound_background: bool = True,
-    ) -> dict:
+    def execute(self, command: str, cwd: str = "", *, timeout: int | None = None, stdin_data: str | None = None, rewrite_compound_background: bool = True) -> dict:
         self._before_execute()
         exec_command, sudo_stdin = self._prepare_command(command)
         if rewrite_compound_background:

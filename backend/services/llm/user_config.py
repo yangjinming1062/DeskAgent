@@ -5,10 +5,7 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session
 
 
-def merge_provider_json(
-    slots: list[ProviderSlot],
-    existing: UserModelConfig | None,
-) -> str:
+def merge_provider_json(slots: list[ProviderSlot], existing: UserModelConfig | None) -> str:
     """Serialize provider slots to JSON, preserving existing keys on empty submit.
 
     An empty ``api_key`` keeps the existing key for that provider — the caller
@@ -59,8 +56,5 @@ def resolve_user_llm_config(db: Session, user_id: int) -> UserLlmConfig:
     chain = resolve_provider_chain(db, user_id, "llm", user_cfg=config)
     head = chain[0] if chain else None
     return UserLlmConfig(
-        api_key=head.api_key if head else "",
-        base_url=head.base_url if head else "",
-        model_name=head.model if head else "",
-        provider_name=head.provider_name if head else "",
+        api_key=head.api_key if head else "", base_url=head.base_url if head else "", model_name=head.model if head else "", provider_name=head.provider_name if head else ""
     )

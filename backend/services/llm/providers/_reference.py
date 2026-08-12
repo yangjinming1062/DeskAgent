@@ -47,11 +47,7 @@ async def resolve_reference_bytes(reference_image: str) -> tuple[bytes, str]:
         if not verify:
             raise httpx.ConnectError(f"refusing to connect to {request.url.host} (TOCTOU: DNS rebinding)")
 
-    async with httpx.AsyncClient(
-        timeout=httpx.Timeout(120.0, connect=10.0),
-        follow_redirects=False,
-        event_hooks={"connect": [_verify_connect_ip]},
-    ) as client:
+    async with httpx.AsyncClient(timeout=httpx.Timeout(120.0, connect=10.0), follow_redirects=False, event_hooks={"connect": [_verify_connect_ip]}) as client:
         resp = await client.get(reference_image)
         resp.raise_for_status()
         content_type = (resp.headers.get("content-type") or "image/jpeg").split(";")[0].strip().lower()

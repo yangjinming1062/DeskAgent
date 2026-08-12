@@ -33,10 +33,7 @@ BROWSER_CDP_SCHEMA: dict[str, Any] = {
     "parameters": {
         "type": "object",
         "properties": {
-            "method": {
-                "type": "string",
-                "description": ("CDP method name, e.g. 'Target.getTargets', 'Runtime.evaluate', 'Page.handleJavaScriptDialog'."),
-            },
+            "method": {"type": "string", "description": ("CDP method name, e.g. 'Target.getTargets', 'Runtime.evaluate', 'Page.handleJavaScriptDialog'.")},
             "params": {
                 "type": "object",
                 "description": ("Method-specific parameters as a JSON object. Omit or pass {} for methods that take no parameters."),
@@ -61,11 +58,7 @@ BROWSER_CDP_SCHEMA: dict[str, Any] = {
                     "CDP supervisor's live session for that iframe."
                 ),
             },
-            "timeout": {
-                "type": "number",
-                "description": ("Timeout in seconds (default 30, max 300)."),
-                "default": 30,
-            },
+            "timeout": {"type": "number", "description": ("Timeout in seconds (default 30, max 300)."), "default": 30},
         },
         "required": ["method"],
     },
@@ -90,33 +83,15 @@ def _resolve_cdp_endpoint() -> str:
         return ""
 
 
-async def _cdp_call(
-    ws_url: str,
-    method: str,
-    params: dict[str, Any],
-    target_id: str | None,
-    timeout: float,
-) -> dict[str, Any]:
-    async with websockets.connect(
-        ws_url,
-        max_size=None,
-        open_timeout=timeout,
-        close_timeout=5,
-        ping_interval=None,
-    ) as ws:
+async def _cdp_call(ws_url: str, method: str, params: dict[str, Any], target_id: str | None, timeout: float) -> dict[str, Any]:
+    async with websockets.connect(ws_url, max_size=None, open_timeout=timeout, close_timeout=5, ping_interval=None) as ws:
         next_id = 1
         session_id = None
 
         if target_id:
             attach_id = next_id
             next_id += 1
-            await ws.send(
-                json.dumps({
-                    "id": attach_id,
-                    "method": "Target.attachToTarget",
-                    "params": {"targetId": target_id, "flatten": True},
-                })
-            )
+            await ws.send(json.dumps({"id": attach_id, "method": "Target.attachToTarget", "params": {"targetId": target_id, "flatten": True}}))
             deadline = asyncio.get_running_loop().time() + timeout
             while True:
                 if (remaining := deadline - asyncio.get_running_loop().time()) <= 0:
@@ -143,13 +118,7 @@ async def _cdp_call(
                 return msg.get("result", {})
 
 
-def _browser_cdp_via_supervisor(
-    task_id: str,
-    frame_id: str,
-    method: str,
-    params: dict[str, Any] | None,
-    timeout: float,
-) -> str:
+def _browser_cdp_via_supervisor(task_id: str, frame_id: str, method: str, params: dict[str, Any] | None, timeout: float) -> str:
     if (supervisor := SUPERVISOR_REGISTRY.get(task_id)) is None:
         return tool_error(f"No CDP supervisor attached for task={task_id!r}.")
 
@@ -176,25 +145,11 @@ def _browser_cdp_via_supervisor(
     except Exception as exc:
         return tool_error(f"CDP call failed: {exc}", cdp_docs=CDP_DOCS_URL)
 
-    return json.dumps(
-        {
-            "success": True,
-            "method": method,
-            "frame_id": frame_id,
-            "session_id": child_sid,
-            "result": result_msg.get("result", {}),
-        },
-        ensure_ascii=False,
-    )
+    return json.dumps({"success": True, "method": method, "frame_id": frame_id, "session_id": child_sid, "result": result_msg.get("result", {})}, ensure_ascii=False)
 
 
 def browser_cdp(
-    method: str,
-    params: dict[str, Any] | None = None,
-    target_id: str | None = None,
-    frame_id: str | None = None,
-    timeout: float = 30.0,
-    task_id: str | None = None,
+    method: str, params: dict[str, Any] | None = None, target_id: str | None = None, frame_id: str | None = None, timeout: float = 30.0, task_id: str | None = None
 ) -> str:
     if frame_id:
         return _browser_cdp_via_supervisor(task_id or "default", frame_id, method, params, timeout)

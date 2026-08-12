@@ -85,10 +85,7 @@ class _TextFormatter(logging.Formatter):
         return msg
 
 
-_FORMATTERS: dict[str, type[logging.Formatter]] = {
-    "json": _JsonFormatter,
-    "text": _TextFormatter,
-}
+_FORMATTERS: dict[str, type[logging.Formatter]] = {"json": _JsonFormatter, "text": _TextFormatter}
 
 
 def setup_logging() -> None:

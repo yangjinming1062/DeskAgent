@@ -176,15 +176,7 @@ def _ensure_tab(task_id: str | None, url: str = "about:blank") -> dict[str, Any]
     if session["tab_id"]:
         return session
     base = get_camofox_url()
-    resp = requests.post(
-        f"{base}/tabs",
-        json={
-            "userId": session["user_id"],
-            "sessionKey": session["session_key"],
-            "url": url,
-        },
-        timeout=_DEFAULT_TIMEOUT,
-    )
+    resp = requests.post(f"{base}/tabs", json={"userId": session["user_id"], "sessionKey": session["session_key"], "url": url}, timeout=_DEFAULT_TIMEOUT)
     resp.raise_for_status()
     session["tab_id"] = resp.json().get("tabId")
     return session
@@ -237,16 +229,8 @@ def camofox_navigate(url: str, task_id: str | None = None) -> str:
             session = _ensure_tab(task_id, browser_url)
             data = {"ok": True, "url": browser_url}
         else:
-            data = _post(
-                f"/tabs/{session['tab_id']}/navigate",
-                {"userId": session["user_id"], "url": browser_url},
-                timeout=60,
-            )
-        result = {
-            "success": True,
-            "url": data.get("url", browser_url),
-            "title": data.get("title", ""),
-        }
+            data = _post(f"/tabs/{session['tab_id']}/navigate", {"userId": session["user_id"], "url": browser_url}, timeout=60)
+        result = {"success": True, "url": data.get("url", browser_url), "title": data.get("title", "")}
         if rewrite_info:
             result.update({
                 "requested_url": url,

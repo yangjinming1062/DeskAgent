@@ -1,4 +1,4 @@
-from .. import SEARCH_TOOLS_SCHEMA, search_tools_tool
+from ..search_tools_tool import SEARCH_TOOLS_SCHEMA, search_tools_tool
 from .image_generation_tool import IMAGE_GENERATION_SCHEMA, first_image_url, image_generation_tool
 from .send_message_tool import SEND_MESSAGE_SCHEMA, send_message_tool
 from .tts_tool import TTS_SCHEMA, text_to_speech_tool

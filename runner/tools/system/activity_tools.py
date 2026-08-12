@@ -71,11 +71,7 @@ SYSTEM_GET_WINDOWS_SCHEMA = {
 SYSTEM_OPEN_APP_SCHEMA = {
     "name": "system.open_application",
     "description": ("Open an application by name (e.g. 'chrome', 'notepad', 'Calculator'). Returns {opened: bool, name: str}."),
-    "parameters": {
-        "type": "object",
-        "properties": {"name": {"type": "string", "description": "Application name or executable path"}},
-        "required": ["name"],
-    },
+    "parameters": {"type": "object", "properties": {"name": {"type": "string", "description": "Application name or executable path"}}, "required": ["name"]},
 }
 
 
@@ -131,12 +127,7 @@ def _snapshot_handler(args: dict[str, Any], **kw: Any) -> str:
     # here rather than threading — the savings are in IPC + WS framing, not
     # in syscall overlap. Failures are isolated per-probe (each returns its
     # own safe default), so one broken probe can't blackhole the snapshot.
-    return json.dumps({
-        "idle_seconds": get_idle_seconds(),
-        "locked": is_screen_locked(),
-        "focused_app": get_focused_app(),
-        "fullscreen": is_fullscreen(),
-    })
+    return json.dumps({"idle_seconds": get_idle_seconds(), "locked": is_screen_locked(), "focused_app": get_focused_app(), "fullscreen": is_fullscreen()})
 
 
 def _power_handler(args: dict[str, Any], **kw: Any) -> str:

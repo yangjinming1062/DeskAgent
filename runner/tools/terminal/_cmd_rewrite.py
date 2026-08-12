@@ -263,14 +263,7 @@ def _sudo_nopasswd_works() -> bool:
     if terminal_env != "local":
         return False
     try:
-        probe = subprocess.run(
-            ["sudo", "-n", "true"],
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            timeout=3,
-            check=False,
-        )
+        probe = subprocess.run(["sudo", "-n", "true"], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=3, check=False)
         return probe.returncode == 0
     except Exception:
         return False

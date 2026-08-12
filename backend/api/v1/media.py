@@ -31,11 +31,7 @@ def _llm_http_error(e: Exception, op: str) -> HTTPException:
     # reach the renderer), but the next time a TTS/STT/image call goes
     # sideways, operators have the actual exception chain instead of just
     # the one-line reason string the renderer echoes back.
-    logger.warning(
-        "media operation failed",
-        extra={"operation": op, "reason": classified.reason.value, "status_code": classified.status_code, "error": str(e)},
-        exc_info=True,
-    )
+    logger.warning("media operation failed", extra={"operation": op, "reason": classified.reason.value, "status_code": classified.status_code, "error": str(e)}, exc_info=True)
     return classified_http_exception(classified)
 
 
@@ -104,8 +100,7 @@ async def speech_to_text(
     declared_size = _upload_size_or_none(audio_file)
     if declared_size is not None and declared_size > STT_MAX_AUDIO_BYTES:
         raise HTTPException(
-            status_code=413,
-            detail={"error": f"Audio file too large (max {STT_MAX_AUDIO_BYTES // (1024 * 1024)} MB)", "reason": "payload_too_large", "status": 413},
+            status_code=413, detail={"error": f"Audio file too large (max {STT_MAX_AUDIO_BYTES // (1024 * 1024)} MB)", "reason": "payload_too_large", "status": 413}
         )
 
     if declared_size is not None:
@@ -128,11 +123,7 @@ async def speech_to_text(
         if not chain:
             raise missing_config_http("STT")
         result = await execute_with_fallback(
-            db=None,
-            user_id=user.id,
-            service_type="stt",
-            call_fn=lambda p: p.transcribe(file_bytes, mime_type=mime_type, language="auto"),
-            _chain=chain,
+            db=None, user_id=user.id, service_type="stt", call_fn=lambda p: p.transcribe(file_bytes, mime_type=mime_type, language="auto"), _chain=chain
         )
         return {"success": True, "text": result.text}
     except HTTPException:
@@ -167,11 +158,7 @@ async def text_to_speech(
         if not chain:
             raise missing_config_http("TTS")
         result = await execute_with_fallback(
-            db=None,
-            user_id=user.id,
-            service_type="tts",
-            call_fn=lambda p: p.synthesize(text, voice=pick_voice_id(voice, p.provider_name)),
-            _chain=chain,
+            db=None, user_id=user.id, service_type="tts", call_fn=lambda p: p.synthesize(text, voice=pick_voice_id(voice, p.provider_name)), _chain=chain
         )
     except HTTPException:
         raise
@@ -204,13 +191,7 @@ async def image_gen(
             chain = resolve_provider_chain(db, user.id, "image_gen")
         if not chain:
             raise missing_config_http("image_gen", status_code=501)
-        result = await execute_with_fallback(
-            db=None,
-            user_id=user.id,
-            service_type="image_gen",
-            call_fn=lambda p: p.generate(ImageGenRequest(prompt=prompt)),
-            _chain=chain,
-        )
+        result = await execute_with_fallback(db=None, user_id=user.id, service_type="image_gen", call_fn=lambda p: p.generate(ImageGenRequest(prompt=prompt)), _chain=chain)
     except HTTPException:
         raise
     except MissingLlmConfigError:
@@ -300,19 +281,11 @@ async def video_gen(
                 if row.status == "failed":
                     return {"success": False, "task_id": str(job.id), "status": "failed", "error": row.error_message}
 
-    return {
-        "success": True,
-        "task_id": str(job.id),
-        "status": job.status,
-        "poll_url": f"/api/media/video_gen/{job.id}",
-    }
+    return {"success": True, "task_id": str(job.id), "status": job.status, "poll_url": f"/api/media/video_gen/{job.id}"}
 
 
 @router.get("/video_gen/{task_id}")
-async def video_gen_status(
-    task_id: int,
-    auth_data: tuple[User, LoginRecord] = Depends(get_current_session),
-) -> dict[str, Any]:
+async def video_gen_status(task_id: int, auth_data: tuple[User, LoginRecord] = Depends(get_current_session)) -> dict[str, Any]:
     user, _ = auth_data
     with SESSION_LOCAL() as db:
         row = get_job(db, task_id, user.id)

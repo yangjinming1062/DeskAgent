@@ -58,11 +58,7 @@ def resolve_search_provider(user_settings: dict | None) -> WebSearchProvider:
     selected = unquote_user_setting(user_settings.get("web.backend")) or _DEFAULT_BY_KIND["search"]
     provider = _get_provider(selected, user_settings, kind="search")
     if not provider.is_available() and provider.name != _DEFAULT_BY_KIND["search"]:
-        logger.info(
-            "Web search provider '%s' not configured; falling back to %s",
-            provider.name,
-            _DEFAULT_BY_KIND["search"],
-        )
+        logger.info("Web search provider '%s' not configured; falling back to %s", provider.name, _DEFAULT_BY_KIND["search"])
         provider = _get_provider(_DEFAULT_BY_KIND["search"], user_settings, kind="search")
     return provider
 

@@ -52,14 +52,7 @@ class ProviderSlotPublic(BaseModel):
 
 
 def public_provider_slots(raw: str | None) -> list[ProviderSlotPublic]:
-    return [
-        ProviderSlotPublic(
-            name=s.get("name", ""),
-            base_url=s.get("base_url", ""),
-            api_key_set=bool(s.get("api_key")),
-        )
-        for s in json.loads(raw or "[]")
-    ]
+    return [ProviderSlotPublic(name=s.get("name", ""), base_url=s.get("base_url", ""), api_key_set=bool(s.get("api_key"))) for s in json.loads(raw or "[]")]
 
 
 class UserModelConfigResponse(BaseModel):

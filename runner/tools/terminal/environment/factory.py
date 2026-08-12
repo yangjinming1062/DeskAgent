@@ -49,26 +49,10 @@ def create_environment(
             persist_across_processes=cc.get("docker_persist_across_processes", True),
         )
     elif env_type == "singularity":
-        return SingularityEnvironment(
-            image=image,
-            cwd=cwd,
-            timeout=timeout,
-            cpu=cpu,
-            memory=memory,
-            disk=disk,
-            persistent_filesystem=persistent,
-            task_id=task_id,
-        )
+        return SingularityEnvironment(image=image, cwd=cwd, timeout=timeout, cpu=cpu, memory=memory, disk=disk, persistent_filesystem=persistent, task_id=task_id)
     elif env_type == "ssh":
         if not ssh_config or not ssh_config.get("host") or not ssh_config.get("user"):
             raise ValueError("SSH environment requires ssh_host and ssh_user to be configured")
-        return SSHEnvironment(
-            host=ssh_config["host"],
-            user=ssh_config["user"],
-            port=ssh_config.get("port", 22),
-            key_path=ssh_config.get("key", ""),
-            cwd=cwd,
-            timeout=timeout,
-        )
+        return SSHEnvironment(host=ssh_config["host"], user=ssh_config["user"], port=ssh_config.get("port", 22), key_path=ssh_config.get("key", ""), cwd=cwd, timeout=timeout)
     else:
         raise ValueError(f"Unknown environment type: {env_type}. Use 'local', 'docker', 'singularity', or 'ssh'")

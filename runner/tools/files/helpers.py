@@ -253,15 +253,7 @@ class FileOperations(ABC):
 
     @abstractmethod
     def search(
-        self,
-        pattern: str,
-        path: str = ".",
-        target: str = "content",
-        file_glob: str | None = None,
-        limit: int = 50,
-        offset: int = 0,
-        output_mode: str = "content",
-        context: int = 0,
+        self, pattern: str, path: str = ".", target: str = "content", file_glob: str | None = None, limit: int = 50, offset: int = 0, output_mode: str = "content", context: int = 0
     ) -> SearchResult: ...
 
 
@@ -276,19 +268,9 @@ LINTERS = {
 }
 
 _LINTER_UNUSABLE_PATTERNS = {
-    "npx": (
-        "this is not the tsc command you are looking for",
-        "could not determine executable to run",
-        "not found in npm registry",
-    ),
-    "rustfmt": (
-        "no input filename given",
-        "error: not a workspace",
-    ),
-    "go": (
-        "cannot find package",
-        "go: cannot find main module",
-    ),
+    "npx": ("this is not the tsc command you are looking for", "could not determine executable to run", "not found in npm registry"),
+    "rustfmt": ("no input filename given", "error: not a workspace"),
+    "go": ("cannot find package", "go: cannot find main module"),
 }
 
 
@@ -344,13 +326,7 @@ def _lint_python_inproc(content: str) -> tuple[bool, str]:
         return False, f"{type(e).__name__}: {e}"
 
 
-LINTERS_INPROC = {
-    ".py": _lint_python_inproc,
-    ".json": _lint_json_inproc,
-    ".yaml": _lint_yaml_inproc,
-    ".yml": _lint_yaml_inproc,
-    ".toml": _lint_toml_inproc,
-}
+LINTERS_INPROC = {".py": _lint_python_inproc, ".json": _lint_json_inproc, ".yaml": _lint_yaml_inproc, ".yml": _lint_yaml_inproc, ".toml": _lint_toml_inproc}
 
 MAX_LINES = 2000
 MAX_LINE_LENGTH = 2000
@@ -713,11 +689,7 @@ class ShellFileOperations(FileOperations):
         except ValueError:
             bytes_written = len(content.encode("utf-8"))
         lint_result = self._check_lint_delta(path, pre_content=pre_content, post_content=content)
-        return WriteResult(
-            bytes_written=bytes_written,
-            dirs_created=dirs_created,
-            lint=lint_result.to_dict() if lint_result else None,
-        )
+        return WriteResult(bytes_written=bytes_written, dirs_created=dirs_created, lint=lint_result.to_dict() if lint_result else None)
 
     def patch_replace(self, path: str, old_string: str, new_string: str, replace_all: bool = False) -> PatchResult:
         """Replace text in a file using fuzzy matching."""
@@ -761,12 +733,7 @@ class ShellFileOperations(FileOperations):
             )
         diff = self._unified_diff(content, new_content, path)
         lint_result = self._check_lint_delta(path, pre_content=content, post_content=new_content)
-        return PatchResult(
-            success=True,
-            diff=diff,
-            files_modified=[path],
-            lint=lint_result.to_dict() if lint_result else None,
-        )
+        return PatchResult(success=True, diff=diff, files_modified=[path], lint=lint_result.to_dict() if lint_result else None)
 
     def patch_v4a(self, patch_content: str) -> PatchResult:
         """Apply a V4A format patch."""
@@ -801,14 +768,8 @@ class ShellFileOperations(FileOperations):
         result = self._exec(cmd, timeout=30)
         if result.exit_code != 0 and _looks_like_linter_unusable(base_cmd, result.stdout):
             cleaned = strip_ansi(result.stdout).strip()
-            first_line = next(
-                (ln.strip() for ln in cleaned.splitlines() if ln.strip()),
-                cleaned[:120],
-            )
-            return LintResult(
-                skipped=True,
-                message=f"{base_cmd} not usable: {first_line[:200]}",
-            )
+            first_line = next((ln.strip() for ln in cleaned.splitlines() if ln.strip()), cleaned[:120])
+            return LintResult(skipped=True, message=f"{base_cmd} not usable: {first_line[:200]}")
         return LintResult(success=result.exit_code == 0, output=result.stdout.strip() if result.stdout.strip() else "")
 
     def _check_lint_delta(self, path: str, pre_content: str | None, post_content: str | None = None) -> LintResult:
@@ -824,23 +785,11 @@ class ShellFileOperations(FileOperations):
         pre_lines = {ln.strip() for ln in pre.output.splitlines() if ln.strip()}
         post_lines = [ln for ln in post.output.splitlines() if ln.strip() and ln.strip() not in pre_lines]
         if not post_lines:
-            return LintResult(
-                success=False,
-                output=post.output,
-                message="Pre-existing lint errors — this edit didn't introduce new ones but the file is still broken.",
-            )
+            return LintResult(success=False, output=post.output, message="Pre-existing lint errors — this edit didn't introduce new ones but the file is still broken.")
         return LintResult(success=False, output=("New lint errors introduced by this edit (pre-existing errors filtered out):\n" + "\n".join(post_lines)))
 
     def search(
-        self,
-        pattern: str,
-        path: str = ".",
-        target: str = "content",
-        file_glob: str | None = None,
-        limit: int = 50,
-        offset: int = 0,
-        output_mode: str = "content",
-        context: int = 0,
+        self, pattern: str, path: str = ".", target: str = "content", file_glob: str | None = None, limit: int = 50, offset: int = 0, output_mode: str = "content", context: int = 0
     ) -> SearchResult:
         """Search for content or files."""
         offset, limit = normalize_search_pagination(offset, limit)
@@ -933,11 +882,7 @@ class ShellFileOperations(FileOperations):
             result = self._exec(cmd_plain, timeout=60)
             all_files = [f for f in result.stdout.strip().split("\n") if f]
         page = all_files[offset : offset + limit]
-        return SearchResult(
-            files=page,
-            total_count=len(all_files),
-            truncated=len(all_files) >= fetch_limit,
-        )
+        return SearchResult(files=page, total_count=len(all_files), truncated=len(all_files) >= fetch_limit)
 
     def _search_content(self, pattern: str, path: str, file_glob: str | None, limit: int, offset: int, output_mode: str, context: int) -> SearchResult:
         """Search for content inside files (grep-like)."""
@@ -1177,12 +1122,7 @@ class FileStateRegistry:
             return f"{resolved_s} was not read by this agent. Read the file first so you can write an informed edit."
         return None
 
-    def writes_since(
-        self,
-        exclude_task_id: str,
-        since_ts: float,
-        paths: Iterable[str | Path],
-    ) -> dict[str, list[str]]:
+    def writes_since(self, exclude_task_id: str, since_ts: float, paths: Iterable[str | Path]) -> dict[str, list[str]]:
         """Return ``{writer_task_id: [paths]}`` for writes by other agents."""
         if _disabled():
             return {}
@@ -1232,11 +1172,7 @@ def lock_path(resolved_or_path: str | Path):
     return _REGISTRY.lock_path(resolved_or_path)
 
 
-def writes_since(
-    exclude_task_id: str,
-    since_ts: float,
-    paths: Iterable[str | Path],
-) -> dict[str, list[str]]:
+def writes_since(exclude_task_id: str, since_ts: float, paths: Iterable[str | Path]) -> dict[str, list[str]]:
     return _REGISTRY.writes_since(exclude_task_id, since_ts, paths)
 
 
@@ -1472,14 +1408,7 @@ def _apply_delete(op: PatchOperation, file_ops: Any) -> tuple[bool, str]:
         return False, f"Cannot delete {op.file_path}: file not found"
     if (result := file_ops.delete_file(op.file_path)).error:
         return False, result.error
-    diff = "".join(
-        difflib.unified_diff(
-            read_result.content.splitlines(keepends=True),
-            [],
-            fromfile=f"a/{op.file_path}",
-            tofile="/dev/null",
-        )
-    )
+    diff = "".join(difflib.unified_diff(read_result.content.splitlines(keepends=True), [], fromfile=f"a/{op.file_path}", tofile="/dev/null"))
     return True, diff or f"# Deleted: {op.file_path}"
 
 
@@ -1512,33 +1441,18 @@ def _apply_update(op: PatchOperation, file_ops: Any) -> tuple[bool, str]:
                 return False, err
     if (write_result := file_ops.write_file(op.file_path, new_content)).error:
         return False, write_result.error
-    diff = "".join(
-        difflib.unified_diff(
-            current_content.splitlines(keepends=True),
-            new_content.splitlines(keepends=True),
-            fromfile=f"a/{op.file_path}",
-            tofile=f"b/{op.file_path}",
-        )
-    )
+    diff = "".join(difflib.unified_diff(current_content.splitlines(keepends=True), new_content.splitlines(keepends=True), fromfile=f"a/{op.file_path}", tofile=f"b/{op.file_path}"))
     return True, diff
 
 
-_APPLY: dict[OperationType, Any] = {
-    OperationType.ADD: _apply_add,
-    OperationType.UPDATE: _apply_update,
-    OperationType.DELETE: _apply_delete,
-    OperationType.MOVE: _apply_move,
-}
+_APPLY: dict[OperationType, Any] = {OperationType.ADD: _apply_add, OperationType.UPDATE: _apply_update, OperationType.DELETE: _apply_delete, OperationType.MOVE: _apply_move}
 
 
 def apply_v4a_operations(operations: list[PatchOperation], file_ops: Any) -> PatchResult:
     """Two-phase validate-then-apply."""
     errors = _validate_operations(operations, file_ops)
     if errors:
-        return PatchResult(
-            success=False,
-            error="Patch validation failed (no files were modified):\n" + "\n".join(f"  • {e}" for e in errors),
-        )
+        return PatchResult(success=False, error="Patch validation failed (no files were modified):\n" + "\n".join(f"  • {e}" for e in errors))
     files_modified: list[str] = []
     files_created: list[str] = []
     files_deleted: list[str] = []
@@ -1564,17 +1478,9 @@ def apply_v4a_operations(operations: list[PatchOperation], file_ops: Any) -> Pat
                 files_modified.append(op.file_path)
         all_diffs.append(diff)
     lint_results = {f: file_ops._check_lint(f).to_dict() for f in files_modified + files_created if hasattr(file_ops, "_check_lint")}
-    base = {
-        "diff": "\n".join(all_diffs),
-        "files_modified": files_modified,
-        "files_created": files_created,
-        "files_deleted": files_deleted,
-        "lint": lint_results or None,
-    }
+    base = {"diff": "\n".join(all_diffs), "files_modified": files_modified, "files_created": files_created, "files_deleted": files_deleted, "lint": lint_results or None}
     if apply_errors:
         return PatchResult(
-            success=False,
-            error="Apply phase failed (state may be inconsistent — run `git diff` to assess):\n" + "\n".join(f"  • {e}" for e in apply_errors),
-            **base,
+            success=False, error="Apply phase failed (state may be inconsistent — run `git diff` to assess):\n" + "\n".join(f"  • {e}" for e in apply_errors), **base
         )
     return PatchResult(success=True, **base)

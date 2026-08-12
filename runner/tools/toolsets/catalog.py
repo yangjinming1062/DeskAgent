@@ -14,22 +14,13 @@ class ToolsetDef:
 # list an MCP tool.
 TOOLSET_CATALOG: tuple[ToolsetDef, ...] = (
     ToolsetDef(id="browser_automation", prefixes=("browser_",)),
-    ToolsetDef(
-        id="file_operations",
-        extra_tools=("read_file", "write_file", "patch", "list_directory", "search_files"),
-    ),
+    ToolsetDef(id="file_operations", extra_tools=("read_file", "write_file", "patch", "list_directory", "search_files")),
     ToolsetDef(id="terminal", extra_tools=("terminal",)),
     ToolsetDef(id="code_execution", extra_tools=("execute_code",)),
     ToolsetDef(id="process_management", extra_tools=("process",)),
     ToolsetDef(id="skills_system", extra_tools=("skills_list", "skill_view", "skill_manage")),
-    ToolsetDef(
-        id="memory",
-        extra_tools=("memory_retain", "memory_recall", "memory_forget"),
-    ),
-    ToolsetDef(
-        id="web_tools",
-        extra_tools=("web_search", "web_extract", "search_tools"),
-    ),
+    ToolsetDef(id="memory", extra_tools=("memory_retain", "memory_recall", "memory_forget")),
+    ToolsetDef(id="web_tools", extra_tools=("web_search", "web_extract", "search_tools")),
     ToolsetDef(id="image_generation", extra_tools=("image_generate",)),
     ToolsetDef(id="text_to_speech", extra_tools=("text_to_speech_tool",)),
     ToolsetDef(id="messaging", extra_tools=("send_message_tool",)),

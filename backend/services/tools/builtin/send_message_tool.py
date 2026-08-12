@@ -6,8 +6,7 @@ from components import SESSION_LOCAL, get_logger, is_safe_outbound, tool_error
 from modules.ws import WSEvent
 
 from services.disturbance import is_quiet
-
-from .. import ALWAYS_AVAILABLE, REGISTRY
+from services.tools import ALWAYS_AVAILABLE, REGISTRY
 
 logger = get_logger(__name__)
 
@@ -64,14 +63,7 @@ async def send_message_tool(message: str, target_webhook: str | None = None, aff
                     _emit_companion_affect(user_id, "neutral")
             else:
                 _emit_companion_message(user_id, message, affect=affect)
-        return json.dumps(
-            {
-                "success": True,
-                "channel": "companion",
-                "quiet_suppressed": isinstance(user_id, int) and is_quiet(user_id),
-            },
-            ensure_ascii=False,
-        )
+        return json.dumps({"success": True, "channel": "companion", "quiet_suppressed": isinstance(user_id, int) and is_quiet(user_id)}, ensure_ascii=False)
 
     parsed = urlparse(target_webhook)
     if parsed.scheme not in ("http", "https"):
@@ -90,9 +82,7 @@ async def send_message_tool(message: str, target_webhook: str | None = None, aff
     def _verify_connect_ip(request: httpx.Request) -> None:
         verify, _ = is_safe_outbound(request.url.host or "")
         if not verify:
-            raise httpx.ConnectError(
-                f"refusing to connect to {request.url.host} (TOCTOU: DNS rebinding)",
-            )
+            raise httpx.ConnectError(f"refusing to connect to {request.url.host} (TOCTOU: DNS rebinding)")
 
     try:
         async with httpx.AsyncClient(follow_redirects=False, event_hooks={"connect": [_verify_connect_ip]}) as client:
@@ -118,14 +108,8 @@ SEND_MESSAGE_SCHEMA = {
     "parameters": {
         "type": "object",
         "properties": {
-            "message": {
-                "type": "string",
-                "description": "The full text message content to send.",
-            },
-            "target_webhook": {
-                "type": "string",
-                "description": "Optional webhook URL to POST to (external bot). Omit to deliver to the user's desktop companion.",
-            },
+            "message": {"type": "string", "description": "The full text message content to send."},
+            "target_webhook": {"type": "string", "description": "Optional webhook URL to POST to (external bot). Omit to deliver to the user's desktop companion."},
             "affect": {
                 "type": "string",
                 "description": "Optional emotion token to attach to the proactive message so the desktop can drive the EMOTIONAL state (one of: happy, sad, surprised, excited, confused, concerned, shy, proud, grateful, playful, bored, lonely, sleepy, curious, embarrassed, apologetic, neutral). The desktop still applies the disturbance tier gate — quiet suppresses text but keeps the affect cue.",

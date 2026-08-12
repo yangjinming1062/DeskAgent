@@ -32,7 +32,7 @@ from .avatar_service import (
     resolve_uploaded_avatar_path,
 )
 from .interaction_stats import record_interaction
-from .memory_admin import delete_memory, get_memory, list_memories, memory_counts, update_memory, upsert_slotted_memory
+from .memory_admin import delete_memory, list_memories, memory_counts, update_memory, upsert_slotted_memory
 from .memory_bootstrap import build_user_profile_extras, extract_user_profile, read_user_profile, record_user_profile
 from .memory_format import format_auto_inject_block, format_inferred_profile_block, format_memories_block
 from .model_service import ModelGenerationError, ModelGenerationInProgressError, emit_wardrobe_updated, generate_companion_model, get_active_model, signed_model_url
@@ -49,6 +49,7 @@ from .persona_service import (
     update_persona,
 )
 from .personality_tagger import analyze_personality_tags
+from .response_builders import avatar_response, model_response, wardrobe_response
 from .rig_type_selector import select_rig_type
 from .tripo_client import create_multiview_to_model
 from .voice_catalog import design_voice, list_tts_voices, match_user_voice, normalize_voice_language
@@ -80,6 +81,7 @@ __all__ = [
     "WardrobeSourceExpiredError",
     "analyze_personality_tags",
     "asset_store",
+    "avatar_response",
     "build_data_uri",
     "build_signed_asset_url",
     "build_signed_avatar_url",
@@ -109,7 +111,6 @@ __all__ = [
     "get_active_model",
     "get_avatar_job_lock",
     "get_equipped_item",
-    "get_memory",
     "get_onboarding_state",
     "get_or_create_persona",
     "get_rig_bones",
@@ -121,6 +122,7 @@ __all__ = [
     "match_user_voice",
     "memory_admin",
     "memory_counts",
+    "model_response",
     "normalize_outfit",
     "normalize_voice_language",
     "preview_wardrobe_texture",
@@ -145,4 +147,5 @@ __all__ = [
     "verify_signed_asset_request",
     "verify_signed_avatar_request",
     "voice_catalog",
+    "wardrobe_response",
 ]

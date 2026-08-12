@@ -123,23 +123,7 @@ RIG_DEFAULT_BONES: dict[str, list[str]] = {
         "Tail4",
         "Tail5",
     ],
-    "aquatic": [
-        "Hips",
-        "Spine",
-        "Spine1",
-        "Spine2",
-        "Neck",
-        "Head",
-        "Jaw",
-        "TopFin",
-        "BottomFin",
-        "LeftFin",
-        "RightFin",
-        "Tail1",
-        "Tail2",
-        "Tail3",
-        "Tail4",
-    ],
+    "aquatic": ["Hips", "Spine", "Spine1", "Spine2", "Neck", "Head", "Jaw", "TopFin", "BottomFin", "LeftFin", "RightFin", "Tail1", "Tail2", "Tail3", "Tail4"],
     "hexapod": [
         "Hips",
         "Spine",
@@ -292,21 +276,10 @@ def validate_and_sanitize_clip(clip_data: dict[str, Any], allowed_bones: set[str
     if not sanitized_tracks:
         return None
 
-    return {
-        "name": name,
-        "duration": round(duration, 3),
-        "loop": loop,
-        "category": category,
-        "tags": tags,
-        "tracks": sanitized_tracks,
-    }
+    return {"name": name, "duration": round(duration, 3), "loop": loop, "category": category, "tags": tags, "tracks": sanitized_tracks}
 
 
-async def find_unmatched_tags(
-    tags: list[str],
-    rig_type: str,
-    existing_clips: list[dict] | None = None,
-) -> list[str]:
+async def find_unmatched_tags(tags: list[str], rig_type: str, existing_clips: list[dict] | None = None) -> list[str]:
     """检测哪些性格标签在当前已有的 clip 库中没有动作覆盖。"""
     if not tags:
         return []

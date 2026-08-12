@@ -31,11 +31,7 @@ SKILLS_DIR = get_skills_dir()
 MAX_NAME_LENGTH = 64
 MAX_DESCRIPTION_LENGTH = 1024
 
-_PLATFORM_MAP = {
-    "macos": "darwin",
-    "linux": "linux",
-    "windows": "win32",
-}
+_PLATFORM_MAP = {"macos": "darwin", "linux": "linux", "windows": "win32"}
 _ENV_VAR_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _REMOTE_ENV_BACKENDS = frozenset({"docker", "singularity", "modal", "ssh", "daytona"})
 
@@ -116,25 +112,15 @@ def _normalize_setup_metadata(frontmatter: dict[str, Any]) -> dict[str, Any]:
     collect_secrets = []
     for item in raw_secrets:
         if isinstance(item, dict) and (env_var := str(item.get("env_var") or "").strip()):
-            entry = {
-                "env_var": env_var,
-                "prompt": str(item.get("prompt") or f"Enter value for {env_var}").strip(),
-                "secret": bool(item.get("secret", True)),
-            }
+            entry = {"env_var": env_var, "prompt": str(item.get("prompt") or f"Enter value for {env_var}").strip(), "secret": bool(item.get("secret", True))}
             if provider_url := str(item.get("provider_url") or item.get("url") or "").strip():
                 entry["provider_url"] = provider_url
             collect_secrets.append(entry)
 
-    return {
-        "help": str(help_text).strip() if isinstance(help_text, str) and help_text.strip() else None,
-        "collect_secrets": collect_secrets,
-    }
+    return {"help": str(help_text).strip() if isinstance(help_text, str) and help_text.strip() else None, "collect_secrets": collect_secrets}
 
 
-def _get_required_environment_variables(
-    frontmatter: dict[str, Any],
-    legacy_env_vars: list[str] | None = None,
-) -> list[dict[str, Any]]:
+def _get_required_environment_variables(frontmatter: dict[str, Any], legacy_env_vars: list[str] | None = None) -> list[dict[str, Any]]:
     setup = _normalize_setup_metadata(frontmatter)
     required_raw = frontmatter.get("required_environment_variables")
     items = [required_raw] if isinstance(required_raw, dict) else (required_raw if isinstance(required_raw, list) else [])
@@ -146,10 +132,7 @@ def _get_required_environment_variables(
         env_name = str(entry.get("name") or entry.get("env_var") or "").strip()
         if not env_name or env_name in seen or not _ENV_VAR_NAME_RE.match(env_name):
             return
-        normalized = {
-            "name": env_name,
-            "prompt": str(entry.get("prompt") or f"Enter value for {env_name}").strip(),
-        }
+        normalized = {"name": env_name, "prompt": str(entry.get("prompt") or f"Enter value for {env_name}").strip()}
         if (h := entry.get("help") or entry.get("provider_url") or entry.get("url") or setup.get("help")) and isinstance(h, str) and h.strip():
             normalized["help"] = h.strip()
         if (rf := entry.get("required_for")) and isinstance(rf, str) and rf.strip():
@@ -166,11 +149,7 @@ def _get_required_environment_variables(
             _append_required(item)
 
     for item in setup["collect_secrets"]:
-        _append_required({
-            "name": item.get("env_var"),
-            "prompt": item.get("prompt"),
-            "help": item.get("provider_url") or setup.get("help"),
-        })
+        _append_required({"name": item.get("env_var"), "prompt": item.get("prompt"), "help": item.get("provider_url") or setup.get("help")})
 
     legacy = legacy_env_vars if legacy_env_vars is not None else _collect_prerequisite_values(frontmatter)[0]
     for env_var in legacy:
@@ -196,11 +175,7 @@ def _missing_env_names(required_env_vars: list[dict[str, Any]]) -> list[str]:
     return [e["name"] for e in required_env_vars if not e.get("optional") and not overrides.get(e["name"])]
 
 
-def _build_setup_note(
-    readiness_status: SkillReadinessStatus,
-    missing: list[str],
-    setup_help: str | None = None,
-) -> str | None:
+def _build_setup_note(readiness_status: SkillReadinessStatus, missing: list[str], setup_help: str | None = None) -> str | None:
     if readiness_status == SkillReadinessStatus.SETUP_NEEDED:
         note = f"Setup needed before using this skill: missing {', '.join(missing) if missing else 'required prerequisites'}."
         return f"{note} {setup_help}" if setup_help else note
@@ -330,12 +305,7 @@ def skills_list(category: str | None = None, task_id: str | None = None) -> str:
         return tool_error(str(e), success=False)
 
 
-def skill_view(
-    name: str,
-    file_path: str | None = None,
-    task_id: str | None = None,
-    preprocess: bool = True,
-) -> str:
+def skill_view(name: str, file_path: str | None = None, task_id: str | None = None, preprocess: bool = True) -> str:
     try:
         if lookup_error := _skill_lookup_path_error(name):
             return json.dumps({"success": False, "error": lookup_error, "hint": "Use a skill name or relative path within the skills directory."}, ensure_ascii=False)
@@ -597,16 +567,7 @@ def skill_view(
 SKILLS_LIST_SCHEMA = {
     "name": "skills_list",
     "description": "List available skills (name + description). Use skill_view(name) to load full content.",
-    "parameters": {
-        "type": "object",
-        "properties": {
-            "category": {
-                "type": "string",
-                "description": "Optional category filter to narrow results",
-            }
-        },
-        "required": [],
-    },
+    "parameters": {"type": "object", "properties": {"category": {"type": "string", "description": "Optional category filter to narrow results"}}, "required": []},
 }
 
 SKILL_VIEW_SCHEMA = {

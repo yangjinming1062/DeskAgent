@@ -45,10 +45,7 @@ async def auto_generate_title(conversation_id: int, user_message: str, assistant
     """Generate a session title using the LLM and persist it (only if still the default)."""
     messages = [
         {"role": "system", "content": _title_prompt(language)},
-        {
-            "role": "user",
-            "content": f"User: {(user_message or '')[:TITLE_SNIPPET_MAX_CHARS]}\n\nAssistant: {(assistant_response or '')[:TITLE_SNIPPET_MAX_CHARS]}",
-        },
+        {"role": "user", "content": f"User: {(user_message or '')[:TITLE_SNIPPET_MAX_CHARS]}\n\nAssistant: {(assistant_response or '')[:TITLE_SNIPPET_MAX_CHARS]}"},
     ]
 
     try:

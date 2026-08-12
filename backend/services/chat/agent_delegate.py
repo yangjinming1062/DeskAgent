@@ -13,13 +13,7 @@ logger = get_logger(__name__)
 
 
 async def agent_delegate_tool(
-    task_description: str,
-    user_id: int,
-    llm_config: dict,
-    user_settings: dict,
-    parent_session_id: str | None = None,
-    emitter: Emitter | None = None,
-    **_,
+    task_description: str, user_id: int, llm_config: dict, user_settings: dict, parent_session_id: str | None = None, emitter: Emitter | None = None, **_
 ) -> str:
     sid: str | None = None
 
@@ -71,10 +65,7 @@ async def agent_delegate_tool(
         if last_affect:
             result_dict["affect"] = last_affect
 
-        return json.dumps(
-            result_dict,
-            ensure_ascii=False,
-        )
+        return json.dumps(result_dict, ensure_ascii=False)
     except Exception as e:
         logger.exception("Agent delegation failed")
         return tool_error(str(e))
@@ -85,12 +76,7 @@ AGENT_DELEGATE_SCHEMA = {
     "description": "Delegate a complex task to an autonomous subagent. The subagent will run independently with its own thought loop and return its final summarized answer. Use this for complex multi-step reasoning or large tasks.",
     "parameters": {
         "type": "object",
-        "properties": {
-            "task_description": {
-                "type": "string",
-                "description": "Detailed description of the task, the goal, and any context the subagent needs to know.",
-            }
-        },
+        "properties": {"task_description": {"type": "string", "description": "Detailed description of the task, the goal, and any context the subagent needs to know."}},
         "required": ["task_description"],
     },
 }

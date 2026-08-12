@@ -5,11 +5,7 @@ from typing import Any
 
 
 def safe_schedule_threadsafe(
-    coro: Any,
-    loop: asyncio.AbstractEventLoop | None,
-    *,
-    logger: logging.Logger | None = None,
-    log_message: str = "safe_schedule_threadsafe: scheduling failed",
+    coro: Any, loop: asyncio.AbstractEventLoop | None, *, logger: logging.Logger | None = None, log_message: str = "safe_schedule_threadsafe: scheduling failed"
 ) -> concurrent.futures.Future | None:
     """Schedule ``coro`` on ``loop`` from any thread. Returns the future.
 

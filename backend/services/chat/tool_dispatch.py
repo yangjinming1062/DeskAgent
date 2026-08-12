@@ -4,8 +4,8 @@ from dataclasses import dataclass
 from components import get_logger, redact_sensitive_text, safe_json_loads, tool_error
 from fastapi import WebSocketDisconnect
 
-from ..gateway import MANAGER, await_future
-from ..tools import (
+from services.gateway import MANAGER, await_future
+from services.tools import (
     REGISTRY,
     RESERVED_KEYS,
     NativeMemory,
@@ -19,6 +19,7 @@ from ..tools import (
     should_parallelize_tool_batch,
     toolguard_synthetic_result,
 )
+
 from .chat_emitter import Emitter
 from .message_sanitization import _repair_tool_call_arguments
 
@@ -107,13 +108,7 @@ async def _execute_single_tool(tc: dict, ctx: _ToolDispatchContext) -> dict:
         match tool_location:
             case "backend":
                 result_str = await REGISTRY.execute_backend_tool(
-                    name,
-                    args,
-                    user_id=ctx.user_id,
-                    llm_config=ctx.llm_config,
-                    user_settings=ctx.user_settings,
-                    parent_session_id=ctx.session_id,
-                    emitter=ctx.emitter,
+                    name, args, user_id=ctx.user_id, llm_config=ctx.llm_config, user_settings=ctx.user_settings, parent_session_id=ctx.session_id, emitter=ctx.emitter
                 )
             case "memory":
                 result_str = ctx.native_memory.execute_tool(name, args)

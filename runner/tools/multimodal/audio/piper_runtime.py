@@ -83,14 +83,7 @@ class PiperRuntime:
                 self._voices.popitem(last=False)
             return voice
 
-    def synthesize(
-        self,
-        text: str,
-        *,
-        voice_id: str = _DEFAULT_VOICE,
-        output_wav: Path | str,
-        speed: float = 1.0,
-    ) -> Path:
+    def synthesize(self, text: str, *, voice_id: str = _DEFAULT_VOICE, output_wav: Path | str, speed: float = 1.0) -> Path:
         # Caller passes any path under ``$DESKAGENT_HOME/cache/audio/tts/`` —
         # outside the cache we'd be writing to an attacker-influenced location.
         voice = self.get_voice(voice_id=voice_id)

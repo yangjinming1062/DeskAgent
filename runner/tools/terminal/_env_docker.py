@@ -17,11 +17,7 @@ from ._env_base import BaseEnvironment, _popen_bash, get_sandbox_dir
 
 logger = logging.getLogger(__name__)
 
-_DOCKER_SEARCH_PATHS = [
-    "/usr/local/bin/docker",
-    "/opt/homebrew/bin/docker",
-    "/Applications/Docker.app/Contents/Resources/bin/docker",
-]
+_DOCKER_SEARCH_PATHS = ["/usr/local/bin/docker", "/opt/homebrew/bin/docker", "/Applications/Docker.app/Contents/Resources/bin/docker"]
 
 _docker_executable: str | None = None
 _ENV_VAR_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
@@ -61,12 +57,7 @@ def _sanitize_label_value(value: str) -> str:
     return _LABEL_VALUE_OK_RE.sub("_", value)[:63] or "unknown" if isinstance(value, str) and value else "unknown"
 
 
-def reap_orphan_containers(
-    *,
-    max_age_seconds: int = 600,
-    profile_filter: str | None = None,
-    docker_exe: str | None = None,
-) -> int:
+def reap_orphan_containers(*, max_age_seconds: int = 600, profile_filter: str | None = None, docker_exe: str | None = None) -> int:
     docker = docker_exe or find_docker() or "docker"
     filters = ["--filter", "label=deskagent-agent=1", "--filter", "status=exited"]
     if profile_filter:
@@ -166,12 +157,7 @@ _BASE_SECURITY_ARGS = [
 _RUN_TMPFS_NOEXEC = "--tmpfs", "/run:rw,noexec,nosuid,size=64m"
 _RUN_TMPFS_EXEC = "--tmpfs", "/run:rw,exec,nosuid,size=64m"
 
-_PRIVDROP_CAP_ARGS = [
-    "--cap-add",
-    "SETUID",
-    "--cap-add",
-    "SETGID",
-]
+_PRIVDROP_CAP_ARGS = ["--cap-add", "SETUID", "--cap-add", "SETGID"]
 
 
 def _build_security_args(run_as_host_user: bool, run_exec: bool = False) -> list[str]:

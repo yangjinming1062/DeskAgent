@@ -3,8 +3,8 @@ import json
 
 from components import SESSION_LOCAL, get_logger, tool_error
 
-from ...llm import MissingLlmConfigError, TTSResult, execute_with_fallback, pick_voice_id
-from .. import ALWAYS_AVAILABLE, REGISTRY
+from services.llm import MissingLlmConfigError, TTSResult, execute_with_fallback, pick_voice_id
+from services.tools import ALWAYS_AVAILABLE, REGISTRY
 
 logger = get_logger(__name__)
 
@@ -39,10 +39,7 @@ TTS_SCHEMA = {
         "type": "object",
         "properties": {
             "text": {"type": "string", "description": "The text to convert to speech."},
-            "voice": {
-                "type": "string",
-                "description": "Optional voice id. Omit to use the provider default.",
-            },
+            "voice": {"type": "string", "description": "Optional voice id. Omit to use the provider default."},
         },
         "required": ["text"],
     },

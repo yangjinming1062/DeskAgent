@@ -216,14 +216,7 @@ async def _generate_one_portrait(
     """``persist=False`` keeps the image in temp-media/ (onboarding); ``persist=True``
     downloads and writes to companion-avatars/. Returns ``(bare_path, file_id, ext, source_url)``."""
     result_json = await image_generation_tool(
-        prompt=prompt,
-        llm_config={},
-        size=size,
-        quality=_AVATAR_QUALITY,
-        n=1,
-        user_id=user_id,
-        reference_image=reference_image,
-        secondary_reference_image=secondary_reference_image,
+        prompt=prompt, llm_config={}, size=size, quality=_AVATAR_QUALITY, n=1, user_id=user_id, reference_image=reference_image, secondary_reference_image=secondary_reference_image
     )
 
     source_url = first_image_url(result_json)
@@ -555,10 +548,6 @@ async def regenerate_avatar(db: Session, user_id: int, persona: Persona, feedbac
     return asset
 
 
-def _reference_data_uri(data: bytes, content_type: str) -> str:
-    return build_data_uri(data, content_type)
-
-
 def load_avatar_bytes_as_data_uri(asset_url_or_path: str | None) -> str | None:
     if not asset_url_or_path:
         return None
@@ -576,7 +565,7 @@ def load_avatar_bytes_as_data_uri(asset_url_or_path: str | None) -> str | None:
             data = path.read_bytes()
         except OSError:
             return None
-        return _reference_data_uri(data, mime)
+        return build_data_uri(data, mime)
 
     filename: str | None = None
 
@@ -626,7 +615,7 @@ async def regenerate_avatar_from_image(
         avatar_prompt = await enhance_avatar_prompt(db, user_id, persona, feedback=description)
     except (ValidationError, RuntimeError) as exc:
         raise AvatarGenerationError(f"prompt enhancement failed: {exc}") from exc
-    secondary_uri = _reference_data_uri(presentation_data, presentation_content_type or "image/png") if presentation_data is not None else None
+    secondary_uri = build_data_uri(presentation_data, presentation_content_type or "image/png") if presentation_data is not None else None
     asset = await _generate_avatar_step(
         db,
         user_id,
@@ -634,7 +623,7 @@ async def regenerate_avatar_from_image(
         style=style,
         persona=persona,
         feedback=description,
-        reference_image=_reference_data_uri(data, content_type),
+        reference_image=build_data_uri(data, content_type),
         secondary_reference_image=secondary_uri,
         persist=persona.is_portrait_confirmed,
     )

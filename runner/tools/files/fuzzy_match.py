@@ -99,17 +99,8 @@ def fuzzy_find_and_replace(content: str, old_string: str, new_string: str, repla
             # ``\n`` is intentionally excluded: newlines serialize correctly
             # through JSON, and rewriting backslash-n would mangle escape
             # sequences in source code constants far more often than help.
-            effective_new = _maybe_unescape_new_string(
-                new_string,
-                content,
-                matches,
-            )
-            new_content = _apply_replacements(
-                content,
-                matches,
-                effective_new,
-                old_string=old_string if strategy_name != "exact" else None,
-            )
+            effective_new = _maybe_unescape_new_string(new_string, content, matches)
+            new_content = _apply_replacements(content, matches, effective_new, old_string=old_string if strategy_name != "exact" else None)
             return new_content, len(matches), strategy_name, None
 
     return content, 0, None, "Could not find a match for old_string in the file"
@@ -441,10 +432,7 @@ def _build_orig_to_norm_map(original: str) -> list[int]:
     return result
 
 
-def _map_positions_norm_to_orig(
-    orig_to_norm: list[int],
-    norm_matches: list[tuple[int, int]],
-) -> list[tuple[int, int]]:
+def _map_positions_norm_to_orig(orig_to_norm: list[int], norm_matches: list[tuple[int, int]]) -> list[tuple[int, int]]:
     """Convert (start, end) positions in the normalised string to original positions."""
     # Invert the map: norm_pos -> first original position with that norm_pos
     norm_to_orig_start: dict[int, int] = {}

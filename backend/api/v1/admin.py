@@ -30,30 +30,16 @@ def list_users(_admin: str = Depends(get_current_admin_token), db: Session = Dep
 
 
 @router.get("/users/{user_id}", response_model=UserResponse)
-def get_user(
-    user_id: int,
-    _admin: str = Depends(get_current_admin_token),
-    db: Session = Depends(get_db),
-) -> UserResponse:
+def get_user(user_id: int, _admin: str = Depends(get_current_admin_token), db: Session = Depends(get_db)) -> UserResponse:
     return UserResponse.model_validate(get_or_404(db, User, id=user_id, detail="用户不存在。"))
 
 
 @router.post("/users", response_model=UserResponse)
-def create_user(
-    payload: UserCreate,
-    _admin: str = Depends(get_current_admin_token),
-    db: Session = Depends(get_db),
-) -> UserResponse:
+def create_user(payload: UserCreate, _admin: str = Depends(get_current_admin_token), db: Session = Depends(get_db)) -> UserResponse:
     if db.query(User).filter(User.username == payload.username).one_or_none():
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="用户名已存在。")
     raw_token = generate_activation_token()
-    user = User(
-        username=payload.username,
-        password_hash=None,
-        activation_token_hash=hash_activation_token(raw_token),
-        can_use=payload.can_use,
-        expires_at=payload.expires_at,
-    )
+    user = User(username=payload.username, password_hash=None, activation_token_hash=hash_activation_token(raw_token), can_use=payload.can_use, expires_at=payload.expires_at)
     db.add(user)
     db.commit()
     db.refresh(user)
@@ -63,12 +49,7 @@ def create_user(
 
 
 @router.patch("/users/{user_id}", response_model=UserResponse)
-def update_user(
-    user_id: int,
-    payload: UserUpdate,
-    _admin: str = Depends(get_current_admin_token),
-    db: Session = Depends(get_db),
-) -> UserResponse:
+def update_user(user_id: int, payload: UserUpdate, _admin: str = Depends(get_current_admin_token), db: Session = Depends(get_db)) -> UserResponse:
     user = get_or_404(db, User, id=user_id, detail="用户不存在。")
     raw_token: str | None = None
     if payload.regenerate_token:
@@ -87,22 +68,14 @@ def update_user(
 
 
 @router.delete("/users/{user_id}", response_model=dict)
-def delete_user(
-    user_id: int,
-    _admin: str = Depends(get_current_admin_token),
-    db: Session = Depends(get_db),
-) -> dict:
+def delete_user(user_id: int, _admin: str = Depends(get_current_admin_token), db: Session = Depends(get_db)) -> dict:
     db.delete(get_or_404(db, User, id=user_id, detail="用户不存在。"))
     db.commit()
     return {"message": "用户已删除。"}
 
 
 @router.patch("/users/{user_id}/toggle-active")
-def toggle_user_active(
-    user_id: int,
-    _admin: str = Depends(get_current_admin_token),
-    db: Session = Depends(get_db),
-) -> UserResponse:
+def toggle_user_active(user_id: int, _admin: str = Depends(get_current_admin_token), db: Session = Depends(get_db)) -> UserResponse:
     user = get_or_404(db, User, id=user_id, detail="用户不存在。")
     user.is_active = not user.is_active
     db.commit()
@@ -143,12 +116,7 @@ def list_model_configs(_admin: str = Depends(get_current_admin_token), db: Sessi
 
 
 @router.put("/{user_id}/model-config")
-def upsert_model_config(
-    user_id: int,
-    payload: UserModelConfigRequest,
-    _admin: str = Depends(get_current_admin_token),
-    db: Session = Depends(get_db),
-) -> dict:
+def upsert_model_config(user_id: int, payload: UserModelConfigRequest, _admin: str = Depends(get_current_admin_token), db: Session = Depends(get_db)) -> dict:
     get_or_404(db, User, id=user_id, detail="用户不存在。")
     config = db.query(UserModelConfig).filter(UserModelConfig.user_id == user_id).one_or_none()
     provider_json = merge_provider_json(payload.provider_config, config)
@@ -164,11 +132,7 @@ def upsert_model_config(
 
 
 @router.delete("/{user_id}/model-config")
-def delete_model_config(
-    user_id: int,
-    _admin: str = Depends(get_current_admin_token),
-    db: Session = Depends(get_db),
-) -> dict:
+def delete_model_config(user_id: int, _admin: str = Depends(get_current_admin_token), db: Session = Depends(get_db)) -> dict:
     db.delete(get_or_404(db, UserModelConfig, user_id=user_id, detail="模型配置不存在。"))
     db.commit()
     return {"message": "模型配置已删除。"}

@@ -296,18 +296,9 @@ def _ensure_cdp_supervisor(task_id: str) -> None:
         return
     try:
         policy, timeout_s = _get_dialog_policy_config()
-        SUPERVISOR_REGISTRY.get_or_start(
-            task_id=task_id,
-            cdp_url=cdp_url,
-            dialog_policy=policy,
-            dialog_timeout_s=timeout_s,
-        )
+        SUPERVISOR_REGISTRY.get_or_start(task_id=task_id, cdp_url=cdp_url, dialog_policy=policy, dialog_timeout_s=timeout_s)
     except Exception as exc:
-        logger.debug(
-            "CDP supervisor attach for task=%s failed (non-fatal): %s",
-            task_id,
-            exc,
-        )
+        logger.debug("CDP supervisor attach for task=%s failed (non-fatal): %s", task_id, exc)
 
 
 def _stop_cdp_supervisor(task_id: str) -> None:
@@ -362,11 +353,7 @@ def _get_browser_engine() -> str:
         if candidate in _VALID_BROWSER_ENGINES:
             _cached_browser_engine = candidate
         else:
-            logger.warning(
-                "Unknown browser engine %r (valid: %s), falling back to 'auto'",
-                candidate,
-                ", ".join(_VALID_BROWSER_ENGINES),
-            )
+            logger.warning("Unknown browser engine %r (valid: %s), falling back to 'auto'", candidate, ", ".join(_VALID_BROWSER_ENGINES))
 
     return _cached_browser_engine
 
@@ -440,20 +427,13 @@ def _annotate_lightpanda_fallback(result: dict[str, Any], reason: str) -> dict[s
     annotated = dict(result)
     annotated["fallback_warning"] = warning
     annotated["browser_engine"] = "chrome"
-    annotated["browser_engine_fallback"] = {
-        "from": "lightpanda",
-        "to": "chrome",
-        "reason": reason,
-    }
+    annotated["browser_engine_fallback"] = {"from": "lightpanda", "to": "chrome", "reason": reason}
     data = annotated.get("data")
     if isinstance(data, dict):
         data = dict(data)
         data.setdefault("fallback_warning", warning)
         data.setdefault("browser_engine", "chrome")
-        data.setdefault(
-            "browser_engine_fallback",
-            {"from": "lightpanda", "to": "chrome", "reason": reason},
-        )
+        data.setdefault("browser_engine_fallback", {"from": "lightpanda", "to": "chrome", "reason": reason})
         annotated["data"] = data
     return annotated
 
@@ -467,12 +447,7 @@ def _copy_fallback_warning(target: dict[str, Any], result: dict[str, Any]) -> di
     return target
 
 
-def _run_chrome_fallback_command(
-    task_id: str,
-    command: str,
-    args: list[str],
-    timeout: int,
-) -> dict[str, Any]:
+def _run_chrome_fallback_command(task_id: str, command: str, args: list[str], timeout: int) -> dict[str, Any]:
     """Run a browser command in a temporary Chrome session at the current URL.
 
     agent-browser locks the engine when a named daemon starts. Passing
@@ -570,14 +545,7 @@ def _run_chrome_fallback_command(
                 _si = subprocess.STARTUPINFO()
                 _si.dwFlags |= subprocess.STARTF_USESTDHANDLES
                 _popen_extra["startupinfo"] = _si
-            proc = subprocess.Popen(
-                full,
-                stdout=stdout_fd,
-                stderr=stderr_fd,
-                stdin=subprocess.DEVNULL,
-                env=browser_env,
-                **_popen_extra,
-            )
+            proc = subprocess.Popen(full, stdout=stdout_fd, stderr=stderr_fd, stdin=subprocess.DEVNULL, env=browser_env, **_popen_extra)
         finally:
             os.close(stdout_fd)
             os.close(stderr_fd)
@@ -619,11 +587,7 @@ def _run_chrome_fallback_command(
         shutil.rmtree(task_socket_dir, ignore_errors=True)
 
 
-def _chrome_fallback_screenshot(
-    task_id: str,
-    args: list[str],
-    timeout: int,
-) -> dict[str, Any]:
+def _chrome_fallback_screenshot(task_id: str, args: list[str], timeout: int) -> dict[str, Any]:
     """Take a screenshot using a temporary Chrome session."""
     return _run_chrome_fallback_command(task_id, "screenshot", args, timeout)
 
@@ -663,9 +627,7 @@ def _url_is_private(url: str) -> bool:
         # Hostname — must resolve to confirm it's private (bare "localhost"
         # resolves to 127.0.0.1 via /etc/hosts).  Short-circuit on obvious
         # names to avoid a DNS hop.
-        if hostname in {
-            "localhost",
-        } or hostname.endswith(".localhost"):
+        if hostname in {"localhost"} or hostname.endswith(".localhost"):
             return True
         if hostname.endswith(".local") or hostname.endswith(".lan") or hostname.endswith(".internal"):
             return True
@@ -1104,11 +1066,7 @@ BROWSER_TOOL_SCHEMAS = [
     {
         "name": "browser_hover",
         "description": "Hover an element (move mouse over it) — triggers CSS :hover rules, dropdown menus, and tooltip previews without clicking. Ref IDs come from browser_snapshot output (e.g. '@e5'). Requires browser_navigate and browser_snapshot first.",
-        "parameters": {
-            "type": "object",
-            "properties": {"ref": {"type": "string", "description": "Element reference from the snapshot (e.g. '@e5', '@e12')"}},
-            "required": ["ref"],
-        },
+        "parameters": {"type": "object", "properties": {"ref": {"type": "string", "description": "Element reference from the snapshot (e.g. '@e5', '@e12')"}}, "required": ["ref"]},
     },
     {
         "name": "browser_wait_for",
@@ -1220,33 +1178,19 @@ BROWSER_TOOL_SCHEMAS = [
         "description": "Open a new browser tab and switch to it. The new tab becomes the active target — subsequent browser_* calls operate on it. Requires a CDP-capable backend (not Camofox).",
         "parameters": {
             "type": "object",
-            "properties": {
-                "url": {"type": "string", "description": "Optional URL to navigate the new tab to. If omitted, opens an empty tab."},
-            },
+            "properties": {"url": {"type": "string", "description": "Optional URL to navigate the new tab to. If omitted, opens an empty tab."}},
             "required": [],
         },
     },
     {
         "name": "browser_tab_switch",
         "description": "Switch the active tab to tab_id. Subsequent CDP operations route there. tab_id values come from browser_tab_list or browser_tab_new.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "tab_id": {"type": "string", "description": "The target tab ID (e.g. 'ABC123...')."},
-            },
-            "required": ["tab_id"],
-        },
+        "parameters": {"type": "object", "properties": {"tab_id": {"type": "string", "description": "The target tab ID (e.g. 'ABC123...')."}}, "required": ["tab_id"]},
     },
     {
         "name": "browser_tab_close",
         "description": "Close a tab. Defaults to closing the currently active tab. After close, CDP routing falls back to the initial page if the closed tab was active.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "tab_id": {"type": "string", "description": "Tab ID to close. If omitted, closes the active tab."},
-            },
-            "required": [],
-        },
+        "parameters": {"type": "object", "properties": {"tab_id": {"type": "string", "description": "Tab ID to close. If omitted, closes the active tab."}}, "required": []},
     },
     {
         "name": "browser_tab_list",
@@ -1290,7 +1234,7 @@ BROWSER_TOOL_SCHEMAS = [
                     "type": "object",
                     "description": 'Header name → value map, e.g. {"Referer": "https://example.com", "X-API-Key": "secret"}.',
                     "additionalProperties": {"type": "string"},
-                },
+                }
             },
             "required": ["headers"],
         },
@@ -1352,13 +1296,7 @@ def _create_local_session(task_id: str) -> dict[str, str]:
     logger.info("Created local browser session %s for task %s", session_name, task_id)
     profile_dir = resolve_profile_dir()
     profile_in_use = is_profile_locked(profile_dir)
-    return {
-        "session_name": session_name,
-        "cdp_url": None,
-        "profile_dir": str(profile_dir),
-        "profile_in_use": profile_in_use,
-        "features": {"local": True},
-    }
+    return {"session_name": session_name, "cdp_url": None, "profile_dir": str(profile_dir), "profile_in_use": profile_in_use, "features": {"local": True}}
 
 
 def _create_cdp_session(task_id: str, cdp_url: str) -> dict[str, str]:
@@ -1366,11 +1304,7 @@ def _create_cdp_session(task_id: str, cdp_url: str) -> dict[str, str]:
 
     session_name = f"cdp_{uuid.uuid4().hex[:10]}"
     logger.info("Created CDP browser session %s → %s for task %s", session_name, cdp_url, task_id)
-    return {
-        "session_name": session_name,
-        "cdp_url": cdp_url,
-        "features": {"cdp_override": True},
-    }
+    return {"session_name": session_name, "cdp_url": cdp_url, "features": {"cdp_override": True}}
 
 
 def _get_session_info(task_id: str | None = None) -> dict[str, str]:
@@ -1516,11 +1450,7 @@ def _extract_screenshot_path_from_text(text: str) -> str | None:
     if not text:
         return None
 
-    patterns = [
-        r"Screenshot saved to ['\"](?P<path>/[^'\"]+?\.png)['\"]",
-        r"Screenshot saved to (?P<path>/\S+?\.png)(?:\s|$)",
-        r"(?P<path>/\S+?\.png)(?:\s|$)",
-    ]
+    patterns = [r"Screenshot saved to ['\"](?P<path>/[^'\"]+?\.png)['\"]", r"Screenshot saved to (?P<path>/\S+?\.png)(?:\s|$)", r"(?P<path>/\S+?\.png)(?:\s|$)"]
 
     for pattern in patterns:
         match = re.search(pattern, text)
@@ -1532,13 +1462,7 @@ def _extract_screenshot_path_from_text(text: str) -> str | None:
     return None
 
 
-def _run_browser_command(
-    task_id: str,
-    command: str,
-    args: list[str] | None = None,
-    timeout: int | None = None,
-    _engine_override: str | None = None,
-) -> dict[str, Any]:
+def _run_browser_command(task_id: str, command: str, args: list[str] | None = None, timeout: int | None = None, _engine_override: str | None = None) -> dict[str, Any]:
     """
     Run an agent-browser CLI command against our active session.
 
@@ -1709,14 +1633,7 @@ def _run_browser_command(
                 _si = subprocess.STARTUPINFO()
                 _si.dwFlags |= subprocess.STARTF_USESTDHANDLES
                 _popen_extra["startupinfo"] = _si
-            proc = subprocess.Popen(
-                cmd_parts,
-                stdout=stdout_fd,
-                stderr=stderr_fd,
-                stdin=subprocess.DEVNULL,
-                env=browser_env,
-                **_popen_extra,
-            )
+            proc = subprocess.Popen(cmd_parts, stdout=stdout_fd, stderr=stderr_fd, stdin=subprocess.DEVNULL, env=browser_env, **_popen_extra)
         finally:
             os.close(stdout_fd)
             os.close(stderr_fd)
@@ -1773,17 +1690,8 @@ def _run_browser_command(
                         recovered_path = _extract_screenshot_path_from_text(combined_text)
 
                         if recovered_path and Path(recovered_path).exists():
-                            logger.info(
-                                "browser 'screenshot' recovered file from non-JSON output: %s",
-                                recovered_path,
-                            )
-                            result = {
-                                "success": True,
-                                "data": {
-                                    "path": recovered_path,
-                                    "raw": raw,
-                                },
-                            }
+                            logger.info("browser 'screenshot' recovered file from non-JSON output: %s", recovered_path)
+                            result = {"success": True, "data": {"path": recovered_path, "raw": raw}}
                         else:
                             result = {"success": False, "error": f"Non-JSON output from agent-browser for '{command}': {raw}"}
                     else:
@@ -1804,12 +1712,7 @@ def _run_browser_command(
     # This runs for ALL exit paths (timeout, empty, non-JSON, nonzero rc, parsed).
     fallback_reason = _lightpanda_fallback_reason(engine, command, result)
     if fallback_reason:
-        logger.info(
-            "Lightpanda fallback: retrying '%s' with Chrome (task=%s): %s",
-            command,
-            task_id,
-            fallback_reason,
-        )
+        logger.info("Lightpanda fallback: retrying '%s' with Chrome (task=%s): %s", command, task_id, fallback_reason)
         # For screenshots, use the dedicated Chrome fallback helper
         # (spins up a separate Chrome session to the same URL).
         if command == "screenshot":
@@ -1839,17 +1742,11 @@ def browser_navigate(url: str, task_id: str | None = None) -> str:
 
     url_decoded = unquote(url)
     if _PREFIX_RE.search(url) or _PREFIX_RE.search(url_decoded):
-        return json.dumps({
-            "success": False,
-            "error": "Blocked: URL contains what appears to be an API key or token. Secrets must not be sent in URLs.",
-        })
+        return json.dumps({"success": False, "error": "Blocked: URL contains what appears to be an API key or token. Secrets must not be sent in URLs."})
     url = normalize_url_for_request(url)
     normalized_decoded = unquote(url)
     if _PREFIX_RE.search(url) or _PREFIX_RE.search(normalized_decoded):
-        return json.dumps({
-            "success": False,
-            "error": "Blocked: URL contains what appears to be an API key or token. Secrets must not be sent in URLs.",
-        })
+        return json.dumps({"success": False, "error": "Blocked: URL contains what appears to be an API key or token. Secrets must not be sent in URLs."})
 
     # SSRF protection — block private/internal addresses before navigating.
     # Skipped when the navigation is being routed to a per-task local
@@ -1866,35 +1763,22 @@ def browser_navigate(url: str, task_id: str | None = None) -> str:
     # via a browser, and routing those to a local Chromium sidecar
     # on an EC2/GCP/Azure host exfiltrates IAM credentials (#16234).
     if is_always_blocked_url(url):
-        return json.dumps({
-            "success": False,
-            "error": "Blocked: URL targets a cloud metadata endpoint",
-        })
+        return json.dumps({"success": False, "error": "Blocked: URL targets a cloud metadata endpoint"})
 
     if not auto_local_this_nav and not _allow_private_urls() and not is_safe_url(url):
-        return json.dumps({
-            "success": False,
-            "error": "Blocked: URL targets a private or internal address",
-        })
+        return json.dumps({"success": False, "error": "Blocked: URL targets a private or internal address"})
 
     # Website policy check — block before navigating
     blocked = check_website_access(url)
     if blocked:
-        return json.dumps({
-            "success": False,
-            "error": blocked["message"],
-            "blocked_by_policy": {"host": blocked["host"], "rule": blocked["rule"], "source": blocked["source"]},
-        })
+        return json.dumps({"success": False, "error": blocked["message"], "blocked_by_policy": {"host": blocked["host"], "rule": blocked["rule"], "source": blocked["source"]}})
 
     # Camofox backend — delegate after safety checks pass
     if is_camofox_mode():
         return camofox_navigate(url, task_id)
 
     if auto_local_this_nav:
-        logger.info(
-            "browser_navigate: routing %s to local Chromium sidecar (private URL)",
-            url,
-        )
+        logger.info("browser_navigate: routing %s to local Chromium sidecar (private URL)", url)
 
     # (will create one with features logged if not exists)
     session_info = _get_session_info(nav_session_key)
@@ -1928,17 +1812,11 @@ def browser_navigate(url: str, task_id: str | None = None) -> str:
         # rationale (#16234).
         if final_url and final_url != url and is_always_blocked_url(final_url):
             _run_browser_command(nav_session_key, "open", ["about:blank"], timeout=10)
-            return json.dumps({
-                "success": False,
-                "error": "Blocked: redirect landed on a cloud metadata endpoint",
-            })
+            return json.dumps({"success": False, "error": "Blocked: redirect landed on a cloud metadata endpoint"})
 
         if not auto_local_this_nav and not _allow_private_urls() and final_url and final_url != url and not is_safe_url(final_url):
             _run_browser_command(nav_session_key, "open", ["about:blank"], timeout=10)
-            return json.dumps({
-                "success": False,
-                "error": "Blocked: redirect landed on a private/internal address",
-            })
+            return json.dumps({"success": False, "error": "Blocked: redirect landed on a private/internal address"})
 
         response = {"success": True, "url": final_url, "title": title}
         _copy_fallback_warning(response, result)
@@ -2213,10 +2091,7 @@ def browser_press(key: str, task_id: str | None = None) -> str:
 
 def _camofox_unsupported(tool_name: str) -> str:
     """Return a graceful-error JSON for tools that Camofox does not support yet."""
-    return json.dumps(
-        {"success": False, "error": f"{tool_name} is not supported on the Camofox backend in this release."},
-        ensure_ascii=False,
-    )
+    return json.dumps({"success": False, "error": f"{tool_name} is not supported on the Camofox backend in this release."}, ensure_ascii=False)
 
 
 def browser_hover(ref: str, task_id: str | None = None) -> str:
@@ -2281,13 +2156,7 @@ def browser_hover(ref: str, task_id: str | None = None) -> str:
     return json.dumps(_copy_fallback_warning(response, result), ensure_ascii=False)
 
 
-def browser_wait_for(
-    selector: str | None = None,
-    text: str | None = None,
-    timeout_s: float = 10.0,
-    return_snapshot: bool = True,
-    task_id: str | None = None,
-) -> str:
+def browser_wait_for(selector: str | None = None, text: str | None = None, timeout_s: float = 10.0, return_snapshot: bool = True, task_id: str | None = None) -> str:
     """
     Wait for a DOM condition (selector or text) to appear or become visible.
 
@@ -2315,10 +2184,7 @@ def browser_wait_for(
         return _camofox_unsupported("browser_wait_for")
 
     if not selector and not text:
-        return json.dumps(
-            {"success": False, "error": "At least one of `selector` or `text` must be provided."},
-            ensure_ascii=False,
-        )
+        return json.dumps({"success": False, "error": "At least one of `selector` or `text` must be provided."}, ensure_ascii=False)
 
     effective_task_id = _last_session_key(task_id or "default")
     deadline = time.monotonic() + max(0.1, timeout_s)
@@ -2364,14 +2230,7 @@ def browser_wait_for(
         # JS exception / supervisor down — the user needs to know rather than
         # silently retrying until timeout.
         if parsed.get("success") is False and parsed.get("error"):
-            return json.dumps(
-                {
-                    "success": False,
-                    "error": f"wait_for probe failed: {parsed['error']}",
-                    "elapsed_ms": int((time.monotonic() - start) * 1000),
-                },
-                ensure_ascii=False,
-            )
+            return json.dumps({"success": False, "error": f"wait_for probe failed: {parsed['error']}", "elapsed_ms": int((time.monotonic() - start) * 1000)}, ensure_ascii=False)
         time.sleep(poll_interval)
 
     elapsed_ms = int((time.monotonic() - start) * 1000)
@@ -2387,12 +2246,7 @@ def browser_wait_for(
             ensure_ascii=False,
         )
 
-    response = {
-        "success": True,
-        "matched": True,
-        "match": last_match,
-        "elapsed_ms": elapsed_ms,
-    }
+    response = {"success": True, "matched": True, "match": last_match, "elapsed_ms": elapsed_ms}
     if return_snapshot:
         snap_json = browser_snapshot(full=False, task_id=task_id)
         try:
@@ -2405,11 +2259,7 @@ def browser_wait_for(
     return json.dumps(response, ensure_ascii=False)
 
 
-def browser_find(
-    query: str,
-    ref_only: bool = True,
-    task_id: str | None = None,
-) -> str:
+def browser_find(query: str, ref_only: bool = True, task_id: str | None = None) -> str:
     """
     Search the live DOM for elements matching a free-text query.
 
@@ -2437,10 +2287,7 @@ def browser_find(
         return _camofox_unsupported("browser_find")
 
     if not query or not query.strip():
-        return json.dumps(
-            {"success": False, "error": "`query` must be a non-empty string."},
-            ensure_ascii=False,
-        )
+        return json.dumps({"success": False, "error": "`query` must be a non-empty string."}, ensure_ascii=False)
 
     # DOM walk over interactive/focusable elements. Returns at most _FIND_CAP
     # matches with visible bounding rects and matching text. Refs come from
@@ -2467,20 +2314,14 @@ def browser_find(
     try:
         parsed = json.loads(eval_result)
     except (json.JSONDecodeError, ValueError):
-        return json.dumps(
-            {"success": False, "error": "browser_find: failed to parse JS probe result"},
-            ensure_ascii=False,
-        )
+        return json.dumps({"success": False, "error": "browser_find: failed to parse JS probe result"}, ensure_ascii=False)
 
     if not parsed.get("success"):
         return json.dumps(parsed, ensure_ascii=False)
 
     raw_matches = parsed.get("result") or []
     if not isinstance(raw_matches, list):
-        return json.dumps(
-            {"success": False, "error": f"browser_find: unexpected probe result type {type(raw_matches).__name__}"},
-            ensure_ascii=False,
-        )
+        return json.dumps({"success": False, "error": f"browser_find: unexpected probe result type {type(raw_matches).__name__}"}, ensure_ascii=False)
 
     matches = []
     for entry in raw_matches:
@@ -2492,24 +2333,14 @@ def browser_find(
             if ref:
                 matches.append(ref)
         else:
-            matches.append({
-                "tag": entry.get("tag"),
-                "text": entry.get("textOriginal"),
-                "ref": ref,
-            })
+            matches.append({"tag": entry.get("tag"), "text": entry.get("textOriginal"), "ref": ref})
 
-    return json.dumps(
-        {"success": True, "count": len(matches), "matches": matches},
-        ensure_ascii=False,
-    )
+    return json.dumps({"success": True, "count": len(matches), "matches": matches}, ensure_ascii=False)
 
 
 def _cdp_mouse(supervisor, event_type: str, x: float, y: float, button: str = "left", click_count: int = 0) -> dict:
     """Dispatch a CDP Input.dispatchMouseEvent via the supervisor."""
-    return supervisor.send_cdp(
-        "Input.dispatchMouseEvent",
-        {"type": event_type, "x": x, "y": y, "button": button, "clickCount": click_count},
-    )
+    return supervisor.send_cdp("Input.dispatchMouseEvent", {"type": event_type, "x": x, "y": y, "button": button, "clickCount": click_count})
 
 
 def _cdp_key(supervisor, event_type: str, key: str) -> dict:
@@ -2517,12 +2348,7 @@ def _cdp_key(supervisor, event_type: str, key: str) -> dict:
     return supervisor.send_cdp("Input.dispatchKeyEvent", {"type": event_type, "key": key})
 
 
-def browser_drag(
-    from_ref: str,
-    to_ref: str,
-    hold_key: str | None = None,
-    task_id: str | None = None,
-) -> str:
+def browser_drag(from_ref: str, to_ref: str, hold_key: str | None = None, task_id: str | None = None) -> str:
     """
     Drag an element from one position to another.
 
@@ -2551,10 +2377,7 @@ def browser_drag(
 
     valid_keys = {None, "shift", "ctrl", "alt"}
     if hold_key not in valid_keys:
-        return json.dumps(
-            {"success": False, "error": f"hold_key must be one of {sorted(k for k in valid_keys if k)}, got {hold_key!r}"},
-            ensure_ascii=False,
-        )
+        return json.dumps({"success": False, "error": f"hold_key must be one of {sorted(k for k in valid_keys if k)}, got {hold_key!r}"}, ensure_ascii=False)
 
     effective_task_id = _last_session_key(task_id or "default")
     from_norm = from_ref if from_ref.startswith("@") else f"@{from_ref}"
@@ -2614,22 +2437,10 @@ def browser_drag(
     except Exception as exc:
         return json.dumps({"success": False, "error": f"CDP input dispatch failed: {exc}"}, ensure_ascii=False)
 
-    return json.dumps(
-        {"success": True, "from": from_norm, "to": to_norm, "steps": steps, "method": "cdp"},
-        ensure_ascii=False,
-    )
+    return json.dumps({"success": True, "from": from_norm, "to": to_norm, "steps": steps, "method": "cdp"}, ensure_ascii=False)
 
 
-def _browser_drag_js(
-    from_ref: str,
-    to_ref: str,
-    fx: float,
-    fy: float,
-    tx: float,
-    ty: float,
-    hold_key: str | None,
-    task_id: str | None,
-) -> str:
+def _browser_drag_js(from_ref: str, to_ref: str, fx: float, fy: float, tx: float, ty: float, hold_key: str | None, task_id: str | None) -> str:
     """Fallback: synthesize mouse events via JS when no CDP supervisor is available."""
     modifier_js = ""
     if hold_key:
@@ -2666,26 +2477,13 @@ def _browser_drag_js(
     try:
         parsed = json.loads(eval_result)
         if parsed.get("success") and parsed.get("result"):
-            return json.dumps(
-                {"success": True, "from": from_ref, "to": to_ref, "steps": 5, "method": "js"},
-                ensure_ascii=False,
-            )
+            return json.dumps({"success": True, "from": from_ref, "to": to_ref, "steps": 5, "method": "js"}, ensure_ascii=False)
     except (json.JSONDecodeError, ValueError):
         pass
-    return json.dumps(
-        {"success": False, "error": f"browser_drag: JS fallback failed for {from_ref} → {to_ref}"},
-        ensure_ascii=False,
-    )
+    return json.dumps({"success": False, "error": f"browser_drag: JS fallback failed for {from_ref} → {to_ref}"}, ensure_ascii=False)
 
 
-def browser_select(
-    ref: str,
-    value: str | None = None,
-    label: str | None = None,
-    index: int | None = None,
-    open_delay_s: float = 0.5,
-    task_id: str | None = None,
-) -> str:
+def browser_select(ref: str, value: str | None = None, label: str | None = None, index: int | None = None, open_delay_s: float = 0.5, task_id: str | None = None) -> str:
     """
     Select an option in a ``<select>`` element or a common custom dropdown.
 
@@ -2717,10 +2515,7 @@ def browser_select(
         return _camofox_unsupported("browser_select")
 
     if value is None and label is None and index is None:
-        return json.dumps(
-            {"success": False, "error": "At least one of `value`, `label`, or `index` must be provided."},
-            ensure_ascii=False,
-        )
+        return json.dumps({"success": False, "error": "At least one of `value`, `label`, or `index` must be provided."}, ensure_ascii=False)
 
     effective_task_id = _last_session_key(task_id or "default")
     normalized_ref = ref if ref.startswith("@") else f"@{ref}"
@@ -2765,15 +2560,9 @@ def browser_select(
 
     result = parsed.get("result", {})
     if isinstance(result, dict) and result.get("_") == "native":
-        return json.dumps(
-            {"success": True, "selected": result.get("value"), "text": result.get("text"), "method": "native"},
-            ensure_ascii=False,
-        )
+        return json.dumps({"success": True, "selected": result.get("value"), "text": result.get("text"), "method": "native"}, ensure_ascii=False)
     if isinstance(result, dict) and result.get("_") == "not_found":
-        return json.dumps(
-            {"success": False, "error": f"browser_select: element {normalized_ref} not found. Run browser_snapshot first."},
-            ensure_ascii=False,
-        )
+        return json.dumps({"success": False, "error": f"browser_select: element {normalized_ref} not found. Run browser_snapshot first."}, ensure_ascii=False)
 
     # Custom dropdown was clicked — wait for its animation to settle, then
     # search for the matching option by visible text.
@@ -2851,23 +2640,10 @@ def _cleanup_old_downloads(max_age_hours: int = 24) -> None:
 
 def _download_ok(file_path: Path, filename: str | None = None) -> str:
     """Return a success JSON for a completed download."""
-    return json.dumps(
-        {
-            "success": True,
-            "path": str(file_path),
-            "filename": filename or file_path.name,
-            "size_bytes": file_path.stat().st_size,
-        },
-        ensure_ascii=False,
-    )
+    return json.dumps({"success": True, "path": str(file_path), "filename": filename or file_path.name, "size_bytes": file_path.stat().st_size}, ensure_ascii=False)
 
 
-def browser_download(
-    ref_or_url: str,
-    save_as: str | None = None,
-    timeout_s: float = 30.0,
-    task_id: str | None = None,
-) -> str:
+def browser_download(ref_or_url: str, save_as: str | None = None, timeout_s: float = 30.0, task_id: str | None = None) -> str:
     """
     Download a file by clicking a link or navigating to a URL.
 
@@ -2905,10 +2681,7 @@ def browser_download(
     supervisor = SUPERVISOR_REGISTRY.get(effective_task_id)
     if supervisor is not None:
         dest = str(downloads_dir)
-        supervisor.send_cdp(
-            "Browser.setDownloadBehavior",
-            {"behavior": "allow", "eventsEnabled": True, "downloadPath": dest},
-        )
+        supervisor.send_cdp("Browser.setDownloadBehavior", {"behavior": "allow", "eventsEnabled": True, "downloadPath": dest})
 
     # Trigger the download: click a ref or navigate to a URL.
     is_ref = ref_or_url.startswith("@") or (ref_or_url.startswith("e") and ref_or_url[1:].isdigit())
@@ -2920,10 +2693,7 @@ def browser_download(
         trigger_result = _run_browser_command(effective_task_id, "open", [ref_or_url])
         action = "navigate"
     if not trigger_result.get("success"):
-        return json.dumps(
-            {"success": False, "error": f"browser_download: {action} failed: {trigger_result.get('error', 'unknown')}"},
-            ensure_ascii=False,
-        )
+        return json.dumps({"success": False, "error": f"browser_download: {action} failed: {trigger_result.get('error', 'unknown')}"}, ensure_ascii=False)
     if action == "navigate" and trigger_result.get("data", {}).get("url"):
         final_url = trigger_result["data"]["url"]
         if final_url != ref_or_url and not check_redirect_url_safety(ref_or_url, final_url):
@@ -2941,14 +2711,8 @@ def browser_download(
             candidates = sorted(downloads_dir.iterdir(), key=lambda f: f.stat().st_mtime, reverse=True)
             if candidates:
                 return _download_ok(candidates[0])
-            return json.dumps(
-                {"success": False, "error": "browser_download: download reported complete but file not found in downloads dir"},
-                ensure_ascii=False,
-            )
-        return json.dumps(
-            {"success": False, "error": f"browser_download: {dl_result.get('error', 'download failed')}"},
-            ensure_ascii=False,
-        )
+            return json.dumps({"success": False, "error": "browser_download: download reported complete but file not found in downloads dir"}, ensure_ascii=False)
+        return json.dumps({"success": False, "error": f"browser_download: {dl_result.get('error', 'download failed')}"}, ensure_ascii=False)
 
     # No supervisor — fall back to polling the downloads directory.
     deadline = time.monotonic() + max(1.0, timeout_s)
@@ -2958,19 +2722,11 @@ def browser_download(
         new_files = [f for f in downloads_dir.iterdir() if f.name not in before and not f.name.endswith(".crdownload")]
         if new_files:
             return _download_ok(max(new_files, key=lambda f: f.stat().st_mtime))
-    return json.dumps(
-        {"success": False, "error": f"browser_download: no download detected after {timeout_s}s"},
-        ensure_ascii=False,
-    )
+    return json.dumps({"success": False, "error": f"browser_download: no download detected after {timeout_s}s"}, ensure_ascii=False)
 
 
 def browser_pdf(
-    save_as: str | None = None,
-    landscape: bool = False,
-    print_background: bool = True,
-    paper_width: float = 8.5,
-    paper_height: float = 11.0,
-    task_id: str | None = None,
+    save_as: str | None = None, landscape: bool = False, print_background: bool = True, paper_width: float = 8.5, paper_height: float = 11.0, task_id: str | None = None
 ) -> str:
     """
     Save the current page as a PDF.
@@ -3000,35 +2756,19 @@ def browser_pdf(
 
     supervisor = SUPERVISOR_REGISTRY.get(effective_task_id)
     if supervisor is None:
-        return json.dumps(
-            {"success": False, "error": "browser_pdf requires a CDP-capable backend (local Chrome or CDP override)"},
-            ensure_ascii=False,
-        )
+        return json.dumps({"success": False, "error": "browser_pdf requires a CDP-capable backend (local Chrome or CDP override)"}, ensure_ascii=False)
 
     # CDP Page.printToPDF — dimensions in inches × 96 DPI.
     cdp_result = supervisor.send_cdp(
-        "Page.printToPDF",
-        {
-            "landscape": landscape,
-            "printBackground": print_background,
-            "paperWidth": paper_width,
-            "paperHeight": paper_height,
-            "transferMode": "ReturnAsBase64",
-        },
+        "Page.printToPDF", {"landscape": landscape, "printBackground": print_background, "paperWidth": paper_width, "paperHeight": paper_height, "transferMode": "ReturnAsBase64"}
     )
     if not cdp_result.get("ok"):
-        return json.dumps(
-            {"success": False, "error": f"browser_pdf: CDP error: {cdp_result.get('error', 'unknown')}"},
-            ensure_ascii=False,
-        )
+        return json.dumps({"success": False, "error": f"browser_pdf: CDP error: {cdp_result.get('error', 'unknown')}"}, ensure_ascii=False)
 
     result_data = cdp_result.get("result", {})
     pdf_b64 = result_data.get("data")
     if not pdf_b64:
-        return json.dumps(
-            {"success": False, "error": "browser_pdf: CDP returned empty PDF data"},
-            ensure_ascii=False,
-        )
+        return json.dumps({"success": False, "error": "browser_pdf: CDP returned empty PDF data"}, ensure_ascii=False)
 
     pdf_bytes = base64.b64decode(pdf_b64)
     filename = save_as or f"page_{uuid.uuid4().hex[:8]}.pdf"
@@ -3043,23 +2783,12 @@ def browser_pdf(
     pages = len(re.findall(rb"/Type\s*/Page(?!s)", pdf_bytes))
 
     return json.dumps(
-        {
-            "success": True,
-            "path": str(file_path),
-            "filename": filename,
-            "pages": pages,
-            "size_bytes": len(pdf_bytes),
-            "sha256": hashlib.sha256(pdf_bytes).hexdigest(),
-        },
+        {"success": True, "path": str(file_path), "filename": filename, "pages": pages, "size_bytes": len(pdf_bytes), "sha256": hashlib.sha256(pdf_bytes).hexdigest()},
         ensure_ascii=False,
     )
 
 
-def browser_screenshot_element(
-    ref: str,
-    save_as: str | None = None,
-    task_id: str | None = None,
-) -> str:
+def browser_screenshot_element(ref: str, save_as: str | None = None, task_id: str | None = None) -> str:
     """
     Capture a screenshot of a single element identified by its snapshot ref.
 
@@ -3108,46 +2837,25 @@ def browser_screenshot_element(
         return json.dumps({"success": False, "error": "browser_screenshot_element: failed to resolve element position"}, ensure_ascii=False)
 
     if not rect_parsed.get("success") or rect_parsed.get("result") is None:
-        return json.dumps(
-            {"success": False, "error": f"browser_screenshot_element: element {normalized_ref} not found. Run browser_snapshot first."},
-            ensure_ascii=False,
-        )
+        return json.dumps({"success": False, "error": f"browser_screenshot_element: element {normalized_ref} not found. Run browser_snapshot first."}, ensure_ascii=False)
 
     r = rect_parsed["result"]
     pad = 4  # px padding to avoid clipping borders
 
     supervisor = SUPERVISOR_REGISTRY.get(effective_task_id)
     if supervisor is None:
-        return json.dumps(
-            {"success": False, "error": "browser_screenshot_element requires a CDP-capable backend"},
-            ensure_ascii=False,
-        )
+        return json.dumps({"success": False, "error": "browser_screenshot_element requires a CDP-capable backend"}, ensure_ascii=False)
 
     cdp_result = supervisor.send_cdp(
         "Page.captureScreenshot",
-        {
-            "format": "png",
-            "clip": {
-                "x": max(0, r["left"] - pad),
-                "y": max(0, r["top"] - pad),
-                "width": r["width"] + pad * 2,
-                "height": r["height"] + pad * 2,
-                "scale": 1,
-            },
-        },
+        {"format": "png", "clip": {"x": max(0, r["left"] - pad), "y": max(0, r["top"] - pad), "width": r["width"] + pad * 2, "height": r["height"] + pad * 2, "scale": 1}},
     )
     if not cdp_result.get("ok"):
-        return json.dumps(
-            {"success": False, "error": f"browser_screenshot_element: CDP error: {cdp_result.get('error', 'unknown')}"},
-            ensure_ascii=False,
-        )
+        return json.dumps({"success": False, "error": f"browser_screenshot_element: CDP error: {cdp_result.get('error', 'unknown')}"}, ensure_ascii=False)
 
     img_b64 = cdp_result.get("result", {}).get("data")
     if not img_b64:
-        return json.dumps(
-            {"success": False, "error": "browser_screenshot_element: CDP returned empty image data"},
-            ensure_ascii=False,
-        )
+        return json.dumps({"success": False, "error": "browser_screenshot_element: CDP returned empty image data"}, ensure_ascii=False)
 
     img_bytes = base64.b64decode(img_b64)
     screenshots_dir = get_deskagent_dir("cache/screenshots", "browser_screenshots")
@@ -3157,14 +2865,7 @@ def browser_screenshot_element(
     file_path.write_bytes(img_bytes)
 
     return json.dumps(
-        {
-            "success": True,
-            "path": str(file_path),
-            "width": int(r["width"] + pad * 2),
-            "height": int(r["height"] + pad * 2),
-            "size_bytes": len(img_bytes),
-        },
-        ensure_ascii=False,
+        {"success": True, "path": str(file_path), "width": int(r["width"] + pad * 2), "height": int(r["height"] + pad * 2), "size_bytes": len(img_bytes)}, ensure_ascii=False
     )
 
 
@@ -3172,10 +2873,7 @@ def browser_screenshot_element(
 
 
 def _no_active_tab() -> str:
-    return json.dumps(
-        {"success": False, "error": "browser_tab_* require a CDP-capable backend (local Chrome or CDP override). Call browser_navigate first."},
-        ensure_ascii=False,
-    )
+    return json.dumps({"success": False, "error": "browser_tab_* require a CDP-capable backend (local Chrome or CDP override). Call browser_navigate first."}, ensure_ascii=False)
 
 
 def browser_tab_new(url: str | None = None, task_id: str | None = None) -> str:
@@ -3205,10 +2903,7 @@ def browser_tab_new(url: str | None = None, task_id: str | None = None) -> str:
             if target_url and target_url != url and not check_redirect_url_safety(url, target_url):
                 supervisor.close_tab(tab_id)
                 return json.dumps({"success": False, "error": f"browser_tab_new: redirect to unsafe URL blocked: {target_url}"}, ensure_ascii=False)
-    return json.dumps(
-        {"success": True, "tab_id": result.get("tab_id"), "session_id": result.get("session_id")},
-        ensure_ascii=False,
-    )
+    return json.dumps({"success": True, "tab_id": result.get("tab_id"), "session_id": result.get("session_id")}, ensure_ascii=False)
 
 
 def browser_tab_switch(tab_id: str, task_id: str | None = None) -> str:
@@ -3226,10 +2921,7 @@ def browser_tab_switch(tab_id: str, task_id: str | None = None) -> str:
     result = supervisor.switch_tab(tab_id)
     if not result.get("ok"):
         return json.dumps({"success": False, "error": result.get("error", "unknown error")}, ensure_ascii=False)
-    return json.dumps(
-        {"success": True, "tab_id": result.get("tab_id"), "session_id": result.get("session_id")},
-        ensure_ascii=False,
-    )
+    return json.dumps({"success": True, "tab_id": result.get("tab_id"), "session_id": result.get("session_id")}, ensure_ascii=False)
 
 
 def browser_tab_close(tab_id: str | None = None, task_id: str | None = None) -> str:
@@ -3265,30 +2957,15 @@ def browser_tab_list(task_id: str | None = None) -> str:
     pages = [t for t in targets if t.get("type") == "page"]
     tabs = [{"tab_id": t.get("targetId"), "url": t.get("url", ""), "title": t.get("title", "")} for t in pages]
     active_session, attached = supervisor.get_attached_targets()
-    active_tab_id = next(
-        (tid for tid, info in attached.items() if info["session_id"] == active_session),
-        None,
-    )
-    return json.dumps(
-        {
-            "success": True,
-            "count": len(tabs),
-            "tabs": tabs,
-            "active_tab_id": active_tab_id,
-            "attached_count": len(attached),
-        },
-        ensure_ascii=False,
-    )
+    active_tab_id = next((tid for tid, info in attached.items() if info["session_id"] == active_session), None)
+    return json.dumps({"success": True, "count": len(tabs), "tabs": tabs, "active_tab_id": active_tab_id, "attached_count": len(attached)}, ensure_ascii=False)
 
 
 # ── Configuration overrides (CDP Emulation / Network domains) ───────────────
 
 
 def _no_supervisor_for_overrides() -> str:
-    return json.dumps(
-        {"success": False, "error": "browser_set_* require a CDP-capable backend."},
-        ensure_ascii=False,
-    )
+    return json.dumps({"success": False, "error": "browser_set_* require a CDP-capable backend."}, ensure_ascii=False)
 
 
 def _run_cdp_override(tool_name: str, method: str, params: dict, success_payload: dict, task_id: str | None) -> str:
@@ -3304,13 +2981,7 @@ def _run_cdp_override(tool_name: str, method: str, params: dict, success_payload
     return json.dumps({"success": True, **success_payload}, ensure_ascii=False)
 
 
-def browser_set_viewport(
-    width: int,
-    height: int,
-    device_scale_factor: float = 1.0,
-    mobile: bool = False,
-    task_id: str | None = None,
-) -> str:
+def browser_set_viewport(width: int, height: int, device_scale_factor: float = 1.0, mobile: bool = False, task_id: str | None = None) -> str:
     """
     Override the browser viewport size via CDP ``Emulation.setDeviceMetricsOverride``.
 
@@ -3320,28 +2991,13 @@ def browser_set_viewport(
     return _run_cdp_override(
         "browser_set_viewport",
         "Emulation.setDeviceMetricsOverride",
-        {
-            "width": width,
-            "height": height,
-            "deviceScaleFactor": device_scale_factor,
-            "mobile": mobile,
-        },
-        {
-            "width": width,
-            "height": height,
-            "device_scale_factor": device_scale_factor,
-            "mobile": mobile,
-        },
+        {"width": width, "height": height, "deviceScaleFactor": device_scale_factor, "mobile": mobile},
+        {"width": width, "height": height, "device_scale_factor": device_scale_factor, "mobile": mobile},
         task_id,
     )
 
 
-def browser_set_user_agent(
-    user_agent: str | None = None,
-    platform: str | None = None,
-    accept_language: str | None = None,
-    task_id: str | None = None,
-) -> str:
+def browser_set_user_agent(user_agent: str | None = None, platform: str | None = None, accept_language: str | None = None, task_id: str | None = None) -> str:
     """
     Override the user-agent string sent on subsequent navigations via CDP ``Network.setUserAgentOverride``.
 
@@ -3357,18 +3013,11 @@ def browser_set_user_agent(
     if accept_language is not None:
         params["acceptLanguage"] = accept_language
     return _run_cdp_override(
-        "browser_set_user_agent",
-        "Network.setUserAgentOverride",
-        params,
-        {"user_agent": user_agent, "platform": platform, "accept_language": accept_language},
-        task_id,
+        "browser_set_user_agent", "Network.setUserAgentOverride", params, {"user_agent": user_agent, "platform": platform, "accept_language": accept_language}, task_id
     )
 
 
-def browser_set_extra_headers(
-    headers: dict[str, str],
-    task_id: str | None = None,
-) -> str:
+def browser_set_extra_headers(headers: dict[str, str], task_id: str | None = None) -> str:
     """
     Replace all extra HTTP headers for subsequent navigations via CDP ``Network.setExtraHTTPHeaders``.
 
@@ -3377,20 +3026,11 @@ def browser_set_extra_headers(
     job. Empty dict clears all overrides.
     """
     return _run_cdp_override(
-        "browser_set_extra_headers",
-        "Network.setExtraHTTPHeaders",
-        {"headers": headers},
-        {"count": len(headers), "header_names": list(headers.keys())},
-        task_id,
+        "browser_set_extra_headers", "Network.setExtraHTTPHeaders", {"headers": headers}, {"count": len(headers), "header_names": list(headers.keys())}, task_id
     )
 
 
-def browser_set_geolocation(
-    lat: float,
-    lon: float,
-    accuracy: float = 100.0,
-    task_id: str | None = None,
-) -> str:
+def browser_set_geolocation(lat: float, lon: float, accuracy: float = 100.0, task_id: str | None = None) -> str:
     """
     Override the browser-reported geolocation via CDP ``Emulation.setGeolocationOverride``.
 
@@ -3441,27 +3081,14 @@ def browser_console(clear: bool = False, expression: str | None = None, task_id:
     messages = []
     if console_result.get("success"):
         for msg in console_result.get("data", {}).get("messages", []):
-            messages.append({
-                "type": msg.get("type", "log"),
-                "text": msg.get("text", ""),
-                "source": "console",
-            })
+            messages.append({"type": msg.get("type", "log"), "text": msg.get("text", ""), "source": "console"})
 
     errors = []
     if errors_result.get("success"):
         for err in errors_result.get("data", {}).get("errors", []):
-            errors.append({
-                "message": err.get("message", ""),
-                "source": "exception",
-            })
+            errors.append({"message": err.get("message", ""), "source": "exception"})
 
-    response = {
-        "success": True,
-        "console_messages": messages,
-        "js_errors": errors,
-        "total_messages": len(messages),
-        "total_errors": len(errors),
-    }
+    response = {"success": True, "console_messages": messages, "js_errors": errors, "total_messages": len(messages), "total_errors": len(errors)}
     _copy_fallback_warning(response, console_result)
     if errors_result.get("fallback_warning") and not response.get("fallback_warning"):
         _copy_fallback_warning(response, errors_result)
@@ -3493,12 +3120,7 @@ def _browser_eval(expression: str, task_id: str | None = None) -> str:
                 if isinstance(raw_result, str):
                     with contextlib.suppress(json.JSONDecodeError, ValueError):
                         parsed = json.loads(raw_result)
-                response = {
-                    "success": True,
-                    "result": parsed,
-                    "result_type": type(parsed).__name__,
-                    "method": "cdp_supervisor",
-                }
+                response = {"success": True, "result": parsed, "result_type": type(parsed).__name__, "method": "cdp_supervisor"}
                 return json.dumps(response, ensure_ascii=False, default=str)
             # JS exception is a real failure — surface it instead of falling
             # through to the subprocess path (which would just re-run and
@@ -3508,10 +3130,7 @@ def _browser_eval(expression: str, task_id: str | None = None) -> str:
                 # Real JS-side error — return it.
                 return json.dumps({"success": False, "error": err}, ensure_ascii=False)
             # Supervisor-side failure (loop down, no session) — fall through.
-            logger.debug(
-                "browser_eval: supervisor path unavailable (%s), falling back to subprocess",
-                err,
-            )
+            logger.debug("browser_eval: supervisor path unavailable (%s), falling back to subprocess", err)
     except ImportError:
         pass
     except Exception as exc:  # pragma: no cover — defensive
@@ -3524,10 +3143,7 @@ def _browser_eval(expression: str, task_id: str | None = None) -> str:
         err = result.get("error", "eval failed")
 
         if any(hint in err.lower() for hint in ("unknown command", "not supported", "not found", "no such command")):
-            response = {
-                "success": False,
-                "error": f"JavaScript evaluation is not supported by this browser backend. {err}",
-            }
+            response = {"success": False, "error": f"JavaScript evaluation is not supported by this browser backend. {err}"}
             return json.dumps(_copy_fallback_warning(response, result))
         # A live DOM node / NodeList / Window can't be JSON-serialized by CDP
         # and fails the eval with "Object reference chain is too long".  The
@@ -3545,10 +3161,7 @@ def _browser_eval(expression: str, task_id: str | None = None) -> str:
                 ),
             }
             return json.dumps(_copy_fallback_warning(response, result))
-        response = {
-            "success": False,
-            "error": err,
-        }
+        response = {"success": False, "error": err}
         return json.dumps(_copy_fallback_warning(response, result))
 
     data = result.get("data", {})
@@ -3561,11 +3174,7 @@ def _browser_eval(expression: str, task_id: str | None = None) -> str:
         with contextlib.suppress(json.JSONDecodeError, ValueError):
             parsed = json.loads(raw_result)
 
-    response = {
-        "success": True,
-        "result": parsed,
-        "result_type": type(parsed).__name__,
-    }
+    response = {"success": True, "result": parsed, "result_type": type(parsed).__name__}
     return json.dumps(_copy_fallback_warning(response, result), ensure_ascii=False, default=str)
 
 
@@ -3583,15 +3192,7 @@ def _camofox_eval(expression: str, task_id: str | None = None) -> str:
             with contextlib.suppress(json.JSONDecodeError, ValueError):
                 parsed = json.loads(raw_result)
 
-        return json.dumps(
-            {
-                "success": True,
-                "result": parsed,
-                "result_type": type(parsed).__name__,
-            },
-            ensure_ascii=False,
-            default=str,
-        )
+        return json.dumps({"success": True, "result": parsed, "result_type": type(parsed).__name__}, ensure_ascii=False, default=str)
     except Exception as e:
         error_msg = str(e)
         # Graceful degradation — server may not support eval
@@ -3739,11 +3340,7 @@ def browser_vision(question: str, annotate: bool = False, task_id: str | None = 
         screenshot_args = []
         if annotate:
             screenshot_args.append("--annotate")
-        fb_result = _chrome_fallback_screenshot(
-            effective_task_id,
-            screenshot_args,
-            _get_command_timeout(),
-        )
+        fb_result = _chrome_fallback_screenshot(effective_task_id, screenshot_args, _get_command_timeout())
         fb_reason = "Lightpanda has no graphical renderer for screenshots; used Chrome for vision capture."
         fb_result = _annotate_lightpanda_fallback(fb_result, fb_reason)
         if fb_result.get("success"):
@@ -3849,15 +3446,7 @@ def browser_vision(question: str, annotate: bool = False, task_id: str | None = 
 
         call_kwargs = {
             "task": "vision",
-            "messages": [
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": vision_prompt},
-                        {"type": "image_url", "image_url": {"url": data_url}},
-                    ],
-                }
-            ],
+            "messages": [{"role": "user", "content": [{"type": "text", "text": vision_prompt}, {"type": "image_url", "image_url": {"url": data_url}}]}],
             "max_tokens": 2000,
             "temperature": vision_temperature,
             "timeout": vision_timeout,
@@ -3870,9 +3459,7 @@ def browser_vision(question: str, annotate: bool = False, task_id: str | None = 
         except Exception as _api_err:
             if _is_image_size_error(_api_err) and len(data_url) > _RESIZE_TARGET_BYTES:
                 logger.info(
-                    "Vision API rejected screenshot (%.1f MB); auto-resizing to ~%.0f MB and retrying...",
-                    len(data_url) / (1024 * 1024),
-                    _RESIZE_TARGET_BYTES / (1024 * 1024),
+                    "Vision API rejected screenshot (%.1f MB); auto-resizing to ~%.0f MB and retrying...", len(data_url) / (1024 * 1024), _RESIZE_TARGET_BYTES / (1024 * 1024)
                 )
                 data_url = _resize_image_for_vision(screenshot_path, mime_type="image/png")
                 call_kwargs["messages"][0]["content"][1]["image_url"]["url"] = data_url
@@ -3886,11 +3473,7 @@ def browser_vision(question: str, annotate: bool = False, task_id: str | None = 
         analysis = (response or "").strip()
         # Redact secrets the vision LLM may have read from the screenshot.
         analysis = redact_sensitive_text(analysis)
-        response_data = {
-            "success": True,
-            "analysis": analysis or "Vision analysis returned no content.",
-            "screenshot_path": str(screenshot_path),
-        }
+        response_data = {"success": True, "analysis": analysis or "Vision analysis returned no content.", "screenshot_path": str(screenshot_path)}
         _copy_fallback_warning(response_data, result)
 
         if annotate and result.get("data", {}).get("annotations"):
@@ -4300,45 +3883,22 @@ registry.register_tool("browser_hover", check_fn=check_browser_requirements, sch
 )
 registry.register_tool("browser_wait_for", check_fn=check_browser_requirements, schema=_BROWSER_SCHEMA_MAP.get("browser_wait_for"))(
     lambda args, **kw: browser_wait_for(
-        selector=args.get("selector"),
-        text=args.get("text"),
-        timeout_s=args.get("timeout_s", 10.0),
-        return_snapshot=args.get("return_snapshot", True),
-        task_id=kw.get("task_id"),
+        selector=args.get("selector"), text=args.get("text"), timeout_s=args.get("timeout_s", 10.0), return_snapshot=args.get("return_snapshot", True), task_id=kw.get("task_id")
     )
 )
 registry.register_tool("browser_find", check_fn=check_browser_requirements, schema=_BROWSER_SCHEMA_MAP.get("browser_find"))(
-    lambda args, **kw: browser_find(
-        query=args.get("query", ""),
-        ref_only=args.get("ref_only", True),
-        task_id=kw.get("task_id"),
-    )
+    lambda args, **kw: browser_find(query=args.get("query", ""), ref_only=args.get("ref_only", True), task_id=kw.get("task_id"))
 )
 registry.register_tool("browser_drag", check_fn=check_browser_requirements, schema=_BROWSER_SCHEMA_MAP.get("browser_drag"))(
-    lambda args, **kw: browser_drag(
-        from_ref=args.get("from_ref", ""),
-        to_ref=args.get("to_ref", ""),
-        hold_key=args.get("hold_key"),
-        task_id=kw.get("task_id"),
-    )
+    lambda args, **kw: browser_drag(from_ref=args.get("from_ref", ""), to_ref=args.get("to_ref", ""), hold_key=args.get("hold_key"), task_id=kw.get("task_id"))
 )
 registry.register_tool("browser_select", check_fn=check_browser_requirements, schema=_BROWSER_SCHEMA_MAP.get("browser_select"))(
     lambda args, **kw: browser_select(
-        ref=args.get("ref", ""),
-        value=args.get("value"),
-        label=args.get("label"),
-        index=args.get("index"),
-        open_delay_s=args.get("open_delay_s", 0.5),
-        task_id=kw.get("task_id"),
+        ref=args.get("ref", ""), value=args.get("value"), label=args.get("label"), index=args.get("index"), open_delay_s=args.get("open_delay_s", 0.5), task_id=kw.get("task_id")
     )
 )
 registry.register_tool("browser_download", check_fn=check_browser_requirements, schema=_BROWSER_SCHEMA_MAP.get("browser_download"))(
-    lambda args, **kw: browser_download(
-        ref_or_url=args.get("ref_or_url", ""),
-        save_as=args.get("save_as"),
-        timeout_s=args.get("timeout_s", 30.0),
-        task_id=kw.get("task_id"),
-    )
+    lambda args, **kw: browser_download(ref_or_url=args.get("ref_or_url", ""), save_as=args.get("save_as"), timeout_s=args.get("timeout_s", 30.0), task_id=kw.get("task_id"))
 )
 registry.register_tool("browser_pdf", check_fn=check_browser_requirements, schema=_BROWSER_SCHEMA_MAP.get("browser_pdf"))(
     lambda args, **kw: browser_pdf(
@@ -4351,29 +3911,16 @@ registry.register_tool("browser_pdf", check_fn=check_browser_requirements, schem
     )
 )
 registry.register_tool("browser_screenshot_element", check_fn=check_browser_requirements, schema=_BROWSER_SCHEMA_MAP.get("browser_screenshot_element"))(
-    lambda args, **kw: browser_screenshot_element(
-        ref=args.get("ref", ""),
-        save_as=args.get("save_as"),
-        task_id=kw.get("task_id"),
-    )
+    lambda args, **kw: browser_screenshot_element(ref=args.get("ref", ""), save_as=args.get("save_as"), task_id=kw.get("task_id"))
 )
 registry.register_tool("browser_tab_new", check_fn=check_browser_requirements, schema=_BROWSER_SCHEMA_MAP.get("browser_tab_new"))(
-    lambda args, **kw: browser_tab_new(
-        url=args.get("url"),
-        task_id=kw.get("task_id"),
-    )
+    lambda args, **kw: browser_tab_new(url=args.get("url"), task_id=kw.get("task_id"))
 )
 registry.register_tool("browser_tab_switch", check_fn=check_browser_requirements, schema=_BROWSER_SCHEMA_MAP.get("browser_tab_switch"))(
-    lambda args, **kw: browser_tab_switch(
-        tab_id=args.get("tab_id", ""),
-        task_id=kw.get("task_id"),
-    )
+    lambda args, **kw: browser_tab_switch(tab_id=args.get("tab_id", ""), task_id=kw.get("task_id"))
 )
 registry.register_tool("browser_tab_close", check_fn=check_browser_requirements, schema=_BROWSER_SCHEMA_MAP.get("browser_tab_close"))(
-    lambda args, **kw: browser_tab_close(
-        tab_id=args.get("tab_id"),
-        task_id=kw.get("task_id"),
-    )
+    lambda args, **kw: browser_tab_close(tab_id=args.get("tab_id"), task_id=kw.get("task_id"))
 )
 registry.register_tool("browser_tab_list", check_fn=check_browser_requirements, schema=_BROWSER_SCHEMA_MAP.get("browser_tab_list"))(
     lambda args, **kw: browser_tab_list(task_id=kw.get("task_id"))
@@ -4389,23 +3936,12 @@ registry.register_tool("browser_set_viewport", check_fn=check_browser_requiremen
 )
 registry.register_tool("browser_set_user_agent", check_fn=check_browser_requirements, schema=_BROWSER_SCHEMA_MAP.get("browser_set_user_agent"))(
     lambda args, **kw: browser_set_user_agent(
-        user_agent=args.get("user_agent"),
-        platform=args.get("platform"),
-        accept_language=args.get("accept_language"),
-        task_id=kw.get("task_id"),
+        user_agent=args.get("user_agent"), platform=args.get("platform"), accept_language=args.get("accept_language"), task_id=kw.get("task_id")
     )
 )
 registry.register_tool("browser_set_extra_headers", check_fn=check_browser_requirements, schema=_BROWSER_SCHEMA_MAP.get("browser_set_extra_headers"))(
-    lambda args, **kw: browser_set_extra_headers(
-        headers=args.get("headers", {}),
-        task_id=kw.get("task_id"),
-    )
+    lambda args, **kw: browser_set_extra_headers(headers=args.get("headers", {}), task_id=kw.get("task_id"))
 )
 registry.register_tool("browser_set_geolocation", check_fn=check_browser_requirements, schema=_BROWSER_SCHEMA_MAP.get("browser_set_geolocation"))(
-    lambda args, **kw: browser_set_geolocation(
-        lat=args.get("lat", 0.0),
-        lon=args.get("lon", 0.0),
-        accuracy=args.get("accuracy", 100.0),
-        task_id=kw.get("task_id"),
-    )
+    lambda args, **kw: browser_set_geolocation(lat=args.get("lat", 0.0), lon=args.get("lon", 0.0), accuracy=args.get("accuracy", 100.0), task_id=kw.get("task_id"))
 )

@@ -259,12 +259,7 @@ class ProcessRegistry:
         if not self._global_watch_admit(now):
             return
         msg = self._watcher_event_base(session)
-        msg.update({
-            "type": "watch_match",
-            "pattern": matched_pattern,
-            "output": output,
-            "suppressed": suppressed,
-        })
+        msg.update({"type": "watch_match", "pattern": matched_pattern, "output": output, "suppressed": suppressed})
         self.completion_queue.put(msg)
 
     def _watcher_event_base(self, session: ProcessSession) -> dict[str, str]:
@@ -424,15 +419,7 @@ class ProcessRegistry:
                 logger.debug("Could not resolve environment temp dir: %s", exc)
         return "/tmp"
 
-    def spawn_local(
-        self,
-        command: str,
-        cwd: str | None = None,
-        task_id: str = "",
-        session_key: str = "",
-        env_vars: dict | None = None,
-        use_pty: bool = False,
-    ) -> ProcessSession:
+    def spawn_local(self, command: str, cwd: str | None = None, task_id: str = "", session_key: str = "", env_vars: dict | None = None, use_pty: bool = False) -> ProcessSession:
         """
         Spawn a background process locally.
         Only for TERMINAL_ENV=local. Other backends use spawn_via_env().
@@ -442,12 +429,7 @@ class ProcessRegistry:
                      subprocess.Popen if ptyprocess is not installed.
         """
         session = ProcessSession(
-            id=f"proc_{uuid.uuid4().hex[:12]}",
-            command=command,
-            task_id=task_id,
-            session_key=session_key,
-            cwd=resolve_safe_cwd(cwd or os.getcwd()),
-            started_at=time.time(),
+            id=f"proc_{uuid.uuid4().hex[:12]}", command=command, task_id=task_id, session_key=session_key, cwd=resolve_safe_cwd(cwd or os.getcwd()), started_at=time.time()
         )
         if use_pty:
             # Try PTY mode for interactive CLI tools
@@ -455,22 +437,12 @@ class ProcessRegistry:
                 user_shell = _find_shell()
                 pty_env = sanitize_subprocess_env(os.environ, env_vars)
                 pty_env["PYTHONUNBUFFERED"] = "1"
-                pty_proc = _PtyProcessCls.spawn(
-                    [user_shell, "-lic", f"set +m; {command}"],
-                    cwd=session.cwd,
-                    env=pty_env,
-                    dimensions=(30, 120),
-                )
+                pty_proc = _PtyProcessCls.spawn([user_shell, "-lic", f"set +m; {command}"], cwd=session.cwd, env=pty_env, dimensions=(30, 120))
                 session.pid = pty_proc.pid
                 # Store the pty handle on the session for read/write
                 session._pty = pty_proc
                 # PTY reader thread
-                reader = threading.Thread(
-                    target=self._pty_reader_loop,
-                    args=(session,),
-                    daemon=True,
-                    name=f"proc-pty-reader-{session.id}",
-                )
+                reader = threading.Thread(target=self._pty_reader_loop, args=(session,), daemon=True, name=f"proc-pty-reader-{session.id}")
                 session._reader_thread = reader
                 reader.start()
                 with self._lock:
@@ -507,12 +479,7 @@ class ProcessRegistry:
         session.process = proc
         session.pid = proc.pid
         try:
-            reader = threading.Thread(
-                target=self._reader_loop,
-                args=(session,),
-                daemon=True,
-                name=f"proc-reader-{session.id}",
-            )
+            reader = threading.Thread(target=self._reader_loop, args=(session,), daemon=True, name=f"proc-reader-{session.id}")
             session._reader_thread = reader
             reader.start()
             with self._lock:
@@ -540,15 +507,7 @@ class ProcessRegistry:
             raise
         return session
 
-    def spawn_via_env(
-        self,
-        env: Any,
-        command: str,
-        cwd: str | None = None,
-        task_id: str = "",
-        session_key: str = "",
-        timeout: int = 10,
-    ) -> ProcessSession:
+    def spawn_via_env(self, env: Any, command: str, cwd: str | None = None, task_id: str = "", session_key: str = "", timeout: int = 10) -> ProcessSession:
         """
         Spawn a background process through a non-local environment backend.
         For Docker/Singularity/Modal/Daytona/SSH: runs the command inside the sandbox
@@ -559,14 +518,7 @@ class ProcessRegistry:
         but it ensures the command runs in the correct sandbox context.
         """
         session = ProcessSession(
-            id=f"proc_{uuid.uuid4().hex[:12]}",
-            command=command,
-            task_id=task_id,
-            session_key=session_key,
-            cwd=cwd,
-            started_at=time.time(),
-            env_ref=env,
-            pid_scope="sandbox",
+            id=f"proc_{uuid.uuid4().hex[:12]}", command=command, task_id=task_id, session_key=session_key, cwd=cwd, started_at=time.time(), env_ref=env, pid_scope="sandbox"
         )
         temp_dir = self._env_temp_dir(env)
         log_path = f"{temp_dir}/deskagent_bg_{session.id}.log"
@@ -584,11 +536,7 @@ class ProcessRegistry:
             f"echo $! > {quoted_pid_path} && cat {quoted_pid_path}"
         )
         try:
-            result = env.execute(
-                bg_command,
-                timeout=timeout,
-                rewrite_compound_background=False,
-            )
+            result = env.execute(bg_command, timeout=timeout, rewrite_compound_background=False)
             output = result.get("output", "").strip()
             for line in output.splitlines():
                 line = line.strip()
@@ -609,12 +557,7 @@ class ProcessRegistry:
             session.exit_code = -1
             session.output_buffer = f"Failed to start: {e}"
         if not session.exited:
-            reader = threading.Thread(
-                target=self._env_poller_loop,
-                args=(session, env, log_path, pid_path, exit_path),
-                daemon=True,
-                name=f"proc-poller-{session.id}",
-            )
+            reader = threading.Thread(target=self._env_poller_loop, args=(session, env, log_path, pid_path, exit_path), daemon=True, name=f"proc-poller-{session.id}")
             session._reader_thread = reader
             reader.start()
         with self._lock:
@@ -674,16 +617,10 @@ class ProcessRegistry:
                             session.output_buffer = session.output_buffer[-session.max_output_chars :]
                     if delta:
                         self._check_watch_patterns(session, delta)
-                check = env.execute(
-                    f'kill -0 "$(cat {quoted_pid_path} 2>/dev/null)" 2>/dev/null; echo $?',
-                    timeout=5,
-                )
+                check = env.execute(f'kill -0 "$(cat {quoted_pid_path} 2>/dev/null)" 2>/dev/null; echo $?', timeout=5)
                 check_output = check.get("output", "").strip()
                 if check_output and check_output.splitlines()[-1].strip() != "0":
-                    exit_result = env.execute(
-                        f"cat {quoted_exit_path} 2>/dev/null",
-                        timeout=5,
-                    )
+                    exit_result = env.execute(f"cat {quoted_exit_path} 2>/dev/null", timeout=5)
                     exit_str = exit_result.get("output", "").strip()
                     try:
                         session.exit_code = int(exit_str.splitlines()[-1].strip())
@@ -838,11 +775,7 @@ class ProcessRegistry:
                     session.output_buffer = session.output_buffer[-session.max_output_chars :]
             session.exited = True
             session.exit_code = rc
-        logger.info(
-            "Reconciled session %s: direct child exited with code %s but reader was still blocked (orphaned pipe). Flipped to exited.",
-            session.id,
-            rc,
-        )
+        logger.info("Reconciled session %s: direct child exited with code %s but reader was still blocked (orphaned pipe). Flipped to exited.", session.id, rc)
         self._move_to_finished(session)
 
     def poll(self, session_id: str) -> dict:
@@ -929,28 +862,17 @@ class ProcessRegistry:
             self._reconcile_local_exit(session)
             if session.exited:
                 self._completion_consumed.add(session_id)
-                result = {
-                    "status": "exited",
-                    "exit_code": session.exit_code,
-                    "output": clean_output(session.output_buffer[-2000:]),
-                }
+                result = {"status": "exited", "exit_code": session.exit_code, "output": clean_output(session.output_buffer[-2000:])}
                 if timeout_note:
                     result["timeout_note"] = timeout_note
                 return result
             if is_interrupted():
-                result = {
-                    "status": "interrupted",
-                    "output": clean_output(session.output_buffer[-1000:]),
-                    "note": "User sent a new message -- wait interrupted",
-                }
+                result = {"status": "interrupted", "output": clean_output(session.output_buffer[-1000:]), "note": "User sent a new message -- wait interrupted"}
                 if timeout_note:
                     result["timeout_note"] = timeout_note
                 return result
             time.sleep(1)
-        result = {
-            "status": "timeout",
-            "output": clean_output(session.output_buffer[-1000:]),
-        }
+        result = {"status": "timeout", "output": clean_output(session.output_buffer[-1000:])}
         if timeout_note:
             result["timeout_note"] = timeout_note
         else:
@@ -963,10 +885,7 @@ class ProcessRegistry:
         if session is None:
             return {"status": "not_found", "error": f"No process with ID {session_id}"}
         if session.exited:
-            return {
-                "status": "already_exited",
-                "exit_code": session.exit_code,
-            }
+            return {"status": "already_exited", "exit_code": session.exit_code}
         # Kill via PTY, Popen (local), or env execute (non-local)
         try:
             if session._pty:
@@ -1005,16 +924,10 @@ class ProcessRegistry:
                         session.exited = True
                         session.exit_code = None
                     self._move_to_finished(session)
-                    return {
-                        "status": "already_exited",
-                        "exit_code": session.exit_code,
-                    }
+                    return {"status": "already_exited", "exit_code": session.exit_code}
                 self._terminate_host_pid(session.pid)
             else:
-                return {
-                    "status": "error",
-                    "error": ("Recovered process cannot be killed after restart because its original runtime handle is no longer available"),
-                }
+                return {"status": "error", "error": ("Recovered process cannot be killed after restart because its original runtime handle is no longer available")}
             with session._lock:
                 session.exited = True
                 session.exit_code = -15  # SIGTERM
@@ -1220,12 +1133,7 @@ class ProcessRegistry:
                 # Sandbox-backed processes keep only in-sandbox PIDs in the
                 # checkpoint, which are not meaningful to the restarted host
                 # process once the original environment handle is gone.
-                logger.info(
-                    "Skipping recovery for non-host process: %s (pid=%s, scope=%s)",
-                    entry.get("command", "unknown")[:60],
-                    pid,
-                    pid_scope,
-                )
+                logger.info("Skipping recovery for non-host process: %s (pid=%s, scope=%s)", entry.get("command", "unknown")[:60], pid, pid_scope)
                 continue
             alive = self._is_host_pid_alive(pid)
             if alive:

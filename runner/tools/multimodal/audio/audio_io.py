@@ -50,12 +50,7 @@ def sniff_container(data: bytes) -> str:
     return ""
 
 
-def wav_to_wav_pcm16(
-    src_path: str | Path,
-    dst_path: str | Path,
-    max_bytes: int = DEFAULT_MAX_INPUT_BYTES,
-    ffmpeg_bin: str = "ffmpeg",
-) -> Path:
+def wav_to_wav_pcm16(src_path: str | Path, dst_path: str | Path, max_bytes: int = DEFAULT_MAX_INPUT_BYTES, ffmpeg_bin: str = "ffmpeg") -> Path:
     # Output is always a valid path on disk — ffmpeg stdout args change
     # across versions, stdio redirects are not portable enough to rely on.
     src = Path(src_path)

@@ -34,5 +34,5 @@ __all__ = [
     "register_environment",
     "resolve_container_task_id",
     "start_cleanup_thread",
-    "stop_cleanup_thread",
+    "stop_cleanup_thread"
 ]  # fmt: skip

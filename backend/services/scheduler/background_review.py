@@ -1,7 +1,7 @@
 from components import get_logger, safe_json_loads, session_scope
 
-from ..llm import ServiceType, call_with_retry, client_for_config, resolve_context_tokens
-from ..tools import RETAIN_SCHEMA, NativeMemory
+from services.llm import ServiceType, call_with_retry, client_for_config, resolve_context_tokens
+from services.tools import RETAIN_SCHEMA, NativeMemory
 
 logger = get_logger(__name__)
 

@@ -40,15 +40,7 @@ def _row_to_dict(row: Memory) -> dict[str, Any]:
     }
 
 
-def list_memories(
-    db: Session,
-    user_id: int,
-    *,
-    kind: str | None = None,
-    tag: str | None = None,
-    q: str | None = None,
-    limit: int = _LIST_DEFAULT_LIMIT,
-) -> list[dict[str, Any]]:
+def list_memories(db: Session, user_id: int, *, kind: str | None = None, tag: str | None = None, q: str | None = None, limit: int = _LIST_DEFAULT_LIMIT) -> list[dict[str, Any]]:
     """Return the user's memories, optionally filtered.
 
     ``kind`` ∈ {recall, auto_inject, user_profile, interaction_stats};

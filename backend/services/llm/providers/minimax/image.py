@@ -77,12 +77,7 @@ class MiniMaxImageGenProvider(ImageGenProvider):
                     "prompt_len": len(req.prompt),
                 },
             )
-            raise ProviderError(
-                f"minimax image_gen returned no images: {raw_snippet}",
-                body=body,
-                provider="minimax",
-                model=self.config.model,
-            )
+            raise ProviderError(f"minimax image_gen returned no images: {raw_snippet}", body=body, provider="minimax", model=self.config.model)
 
         return ImageGenResult(images=assets, model=self.config.model, raw=body)
 

@@ -96,9 +96,6 @@ async def rate_limit_exception_handler(request: Request, exc: RateLimitExceeded)
     limits use ``/hour`` or ``/day`` instead of ``/minute``.
     """
     retry_after = int(exc.limit.limit.get_expiry())
-    response = JSONResponse(
-        status_code=429,
-        content={"error": "Rate limit exceeded", "reason": "rate_limit", "status": 429},
-    )
+    response = JSONResponse(status_code=429, content={"error": "Rate limit exceeded", "reason": "rate_limit", "status": 429})
     response.headers["Retry-After"] = str(retry_after)
     return response

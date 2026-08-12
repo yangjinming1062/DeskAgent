@@ -334,14 +334,7 @@ def _is_blocked_device(filepath: str) -> bool:
 # does NOT match the prefix meant for ``C:/Windows/System32``. The Windows
 # entries are sourced from ``utils.file_safety.get_windows_sensitive_prefixes``
 # so the file-tool gate and the terminal denylist stay in sync.
-_SENSITIVE_PATH_PREFIXES = (
-    "/etc/",
-    "/boot/",
-    "/usr/lib/systemd/",
-    "/private/etc/",
-    "/private/var/",
-    *get_windows_sensitive_prefixes(),
-)
+_SENSITIVE_PATH_PREFIXES = ("/etc/", "/boot/", "/usr/lib/systemd/", "/private/etc/", "/private/var/", *get_windows_sensitive_prefixes())
 # Per-user AppData / NTUSER.DAT — anchored to the logged-in user's home
 # directory so a workspace folder that happens to contain
 # ``appdata/roaming/microsoft/`` is NOT falsely blocked.  Without the
@@ -518,10 +511,7 @@ def _check_cross_profile_path(filepath: str, task_id: str = "default") -> str | 
     if warning is not None:
         return warning
 
-    return get_container_mirror_warning(
-        resolved,
-        mirror_prefix=_get_container_mirror_prefix_for_task(task_id),
-    )
+    return get_container_mirror_warning(resolved, mirror_prefix=_get_container_mirror_prefix_for_task(task_id))
 
 
 def _is_expected_write_exception(exc: Exception) -> bool:
@@ -775,9 +765,7 @@ def _get_file_ops(task_id: str = "default") -> ShellFileOperations:
 
             local_config = None
             if env_type == "local":
-                local_config = {
-                    "persistent": config.get("local_persistent", False),
-                }
+                local_config = {"persistent": config.get("local_persistent", False)}
 
             terminal_env = create_environment(
                 env_type=env_type,
@@ -841,12 +829,7 @@ def list_directory_tool(path: str, task_id: str = "default") -> str:
         entries = []
         for p in _resolved.iterdir():
             stat = p.stat()
-            entries.append({
-                "name": p.name + ("/" if p.is_dir() else ""),
-                "is_dir": p.is_dir(),
-                "size": stat.st_size,
-                "mtime": stat.st_mtime,
-            })
+            entries.append({"name": p.name + ("/" if p.is_dir() else ""), "is_dir": p.is_dir(), "size": stat.st_size, "mtime": stat.st_mtime})
         entries.sort(key=lambda x: (not x["is_dir"], x["name"]))
         return json.dumps({"path": str(_resolved), "entries": entries})
     except Exception as e:
@@ -862,9 +845,7 @@ def read_file_tool(path: str, offset: int = 1, limit: int = 500, task_id: str = 
 
         # blocking on input).  Pure path check — no I/O.
         if _is_blocked_device(path):
-            return json.dumps({
-                "error": (f"Cannot read '{path}': this is a device file that would block or produce infinite output."),
-            })
+            return json.dumps({"error": (f"Cannot read '{path}': this is a device file that would block or produce infinite output.")})
 
         _resolved = _resolve_path_for_task(path, task_id)
 
@@ -872,9 +853,7 @@ def read_file_tool(path: str, offset: int = 1, limit: int = 500, task_id: str = 
 
         if has_binary_extension(str(_resolved)):
             _ext = _resolved.suffix.lower()
-            return json.dumps({
-                "error": (f"Cannot read binary file '{path}' ({_ext}). Use vision_analyze for images, or terminal to inspect binary files."),
-            })
+            return json.dumps({"error": (f"Cannot read binary file '{path}' ({_ext}). Use vision_analyze for images, or terminal to inspect binary files.")})
 
         # ── DeskAgent internal path guard ────────────────────────────────
         # Prevent prompt injection via catalog or hub metadata files,
@@ -894,17 +873,7 @@ def read_file_tool(path: str, offset: int = 1, limit: int = 500, task_id: str = 
         resolved_str = str(_resolved)
         dedup_key = (resolved_str, offset, limit)
         with _read_tracker_lock:
-            task_data = _read_tracker.setdefault(
-                task_id,
-                {
-                    "last_key": None,
-                    "consecutive": 0,
-                    "read_history": set(),
-                    "dedup": {},
-                    "dedup_hits": {},
-                    "read_timestamps": {},
-                },
-            )
+            task_data = _read_tracker.setdefault(task_id, {"last_key": None, "consecutive": 0, "read_history": set(), "dedup": {}, "dedup_hits": {}, "read_timestamps": {}})
             # Backward-compat for pre-existing tracker entries that predate
             # dedup_hits/read_timestamps (long-lived task or crossed an
             # upgrade boundary).
@@ -946,16 +915,7 @@ def read_file_tool(path: str, offset: int = 1, limit: int = 500, task_id: str = 
                             ensure_ascii=False,
                         )
 
-                    return json.dumps(
-                        {
-                            "status": "unchanged",
-                            "message": _READ_DEDUP_STATUS_MESSAGE,
-                            "path": path,
-                            "dedup": True,
-                            "content_returned": False,
-                        },
-                        ensure_ascii=False,
-                    )
+                    return json.dumps({"status": "unchanged", "message": _READ_DEDUP_STATUS_MESSAGE, "path": path, "dedup": True, "content_returned": False}, ensure_ascii=False)
             except OSError:
                 pass  # stat failed — fall through to full read
 
@@ -1421,24 +1381,9 @@ def search_tool(
         # Track searches to detect *consecutive* repeated search loops.
 
         # results without tripping the repeated-search guard.
-        search_key = (
-            "search",
-            pattern,
-            target,
-            str(path),
-            file_glob or "",
-            limit,
-            offset,
-        )
+        search_key = ("search", pattern, target, str(path), file_glob or "", limit, offset)
         with _read_tracker_lock:
-            task_data = _read_tracker.setdefault(
-                task_id,
-                {
-                    "last_key": None,
-                    "consecutive": 0,
-                    "read_history": set(),
-                },
-            )
+            task_data = _read_tracker.setdefault(task_id, {"last_key": None, "consecutive": 0, "read_history": set()})
             if task_data["last_key"] == search_key:
                 task_data["consecutive"] += 1
             else:
@@ -1489,9 +1434,7 @@ LIST_DIRECTORY_SCHEMA = {
     "description": "List the contents of a directory. Returns file and folder names, sizes, and modification times.",
     "parameters": {
         "type": "object",
-        "properties": {
-            "path": {"type": "string", "description": "Path to the directory to list (absolute, relative, or ~/path)"},
-        },
+        "properties": {"path": {"type": "string", "description": "Path to the directory to list (absolute, relative, or ~/path)"}},
         "required": ["path"],
     },
 }
@@ -1553,23 +1496,13 @@ PATCH_SCHEMA = {
                 "description": "Edit mode. 'replace' (default): requires path + old_string + new_string. 'patch': requires patch content only.",
                 "default": "replace",
             },
-            "path": {
-                "type": "string",
-                "description": "REQUIRED when mode='replace'. File path to edit.",
-            },
+            "path": {"type": "string", "description": "REQUIRED when mode='replace'. File path to edit."},
             "old_string": {
                 "type": "string",
                 "description": "REQUIRED when mode='replace'. Exact text to find and replace. Must be unique in the file unless replace_all=true. Include surrounding context lines to ensure uniqueness.",
             },
-            "new_string": {
-                "type": "string",
-                "description": "REQUIRED when mode='replace'. Replacement text. Pass empty string '' to delete the matched text.",
-            },
-            "replace_all": {
-                "type": "boolean",
-                "description": "Replace all occurrences instead of requiring a unique match (default: false)",
-                "default": False,
-            },
+            "new_string": {"type": "string", "description": "REQUIRED when mode='replace'. Replacement text. Pass empty string '' to delete the matched text."},
+            "replace_all": {"type": "boolean", "description": "Replace all occurrences instead of requiring a unique match (default: false)", "default": False},
             "patch": {
                 "type": "string",
                 "description": "REQUIRED when mode='patch'. V4A format patch content. Format:\n*** Begin Patch\n*** Update File: path/to/file\n@@ context hint @@\n context line\n-removed line\n+added line\n*** End Patch",

@@ -44,14 +44,8 @@ async def run_chat_turn(
     effective_settings = _merge_session_settings(user_settings, runtime)
     inputs = _build_turn_inputs(db, conv, user_id, req, session_client_context, effective_settings)
 
-    compression_enabled = safe_json_loads(
-        effective_settings.get("chat.enable_context_compression", ""),
-        default=SETTINGS.enable_context_compression,
-    )
-    compression_threshold = safe_json_loads(
-        effective_settings.get("chat.context_compression_threshold", ""),
-        default=SETTINGS.context_compression_threshold,
-    )
+    compression_enabled = safe_json_loads(effective_settings.get("chat.enable_context_compression", ""), default=SETTINGS.enable_context_compression)
+    compression_threshold = safe_json_loads(effective_settings.get("chat.context_compression_threshold", ""), default=SETTINGS.context_compression_threshold)
     reasoning_effort = _parse_reasoning_effort(effective_settings.get("agent.reasoning_effort") or effective_settings.get("reasoning_effort"))
     service_tier = _parse_service_tier(effective_settings.get("agent.service_tier") or effective_settings.get("service_tier"))
     compressed_messages = await compress_history_if_needed(
@@ -73,13 +67,7 @@ async def run_chat_turn(
     schemas_by_name: dict[str, dict] = {schema_name(s): s for s in inputs.all_schemas}
 
     dispatch_ctx = _ToolDispatchContext(
-        user_id=user_id,
-        llm_config=llm_config,
-        user_settings=effective_settings,
-        session_id=sid,
-        native_memory=inputs.native_memory,
-        guardrails=guardrails,
-        emitter=emitter,
+        user_id=user_id, llm_config=llm_config, user_settings=effective_settings, session_id=sid, native_memory=inputs.native_memory, guardrails=guardrails, emitter=emitter
     )
 
     while True:
@@ -123,14 +111,7 @@ async def run_chat_turn(
             stream_emitted = True
 
         try:
-            llm_result = await execute_with_fallback(
-                db,
-                user_id,
-                "llm",
-                call_fn=_call,
-                stream_started=lambda: stream_emitted,
-                _chain=inputs.llm_chain,
-            )
+            llm_result = await execute_with_fallback(db, user_id, "llm", call_fn=_call, stream_started=lambda: stream_emitted, _chain=inputs.llm_chain)
         except LLMRuntimeError as exc:
             # Chain exhausted (or non-fallback error / mid-stream after
             # chunks already shipped). Emit the closing error frame so

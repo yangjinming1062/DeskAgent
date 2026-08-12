@@ -73,12 +73,7 @@ async def check_affect(user_id: int, idle_seconds: float, local_hour: int, llm_c
     idle_seconds = float(coerce_non_negative_int(idle_seconds))
     local_hour = coerce_hour_0_23(local_hour)
     idle_minutes = round(idle_seconds / 60, 2)
-    prompt = _AFFECT_CHECK_PROMPT.format(
-        persona=persona_extras,
-        memories=memories_block,
-        idle_minutes=idle_minutes,
-        local_hour=local_hour if local_hour >= 0 else "未知",
-    )
+    prompt = _AFFECT_CHECK_PROMPT.format(persona=persona_extras, memories=memories_block, idle_minutes=idle_minutes, local_hour=local_hour if local_hour >= 0 else "未知")
 
     try:
         client = client_for_config(llm_config)

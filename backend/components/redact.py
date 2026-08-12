@@ -28,10 +28,6 @@ _SENSITIVE_QUERY_PARAMS = frozenset(
     }
 )
 
-_SENSITIVE_BODY_KEYS = frozenset(
-    {"access_token", "refresh_token", "id_token", "token", "api_key", "apikey", "client_secret", "password", "auth", "jwt", "secret", "private_key", "authorization", "key"}
-)
-
 # Snapshot at import time so runtime env mutations (e.g. LLM-generated
 # `export DESKAGENT_REDACT_SECRETS=false`) cannot disable redaction mid-session.
 _REDACT_ENABLED = os.getenv("DESKAGENT_REDACT_SECRETS", "true").lower() in {"1", "true", "yes", "on"}

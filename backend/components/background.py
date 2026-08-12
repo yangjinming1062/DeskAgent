@@ -39,12 +39,7 @@ class BackgroundTask:
 
 def fetch_public_ip(timeout: int = 3) -> str:
     """获取公网IP。失败时返回空字符串，不阻塞启动。"""
-    ip_services = [
-        "https://api.ipify.org",
-        "https://ifconfig.me/ip",
-        "https://icanhazip.com",
-        "https://ip.sb",
-    ]
+    ip_services = ["https://api.ipify.org", "https://ifconfig.me/ip", "https://icanhazip.com", "https://ip.sb"]
     with httpx.Client(timeout=timeout) as client:
         for service_url in ip_services:
             try:

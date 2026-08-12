@@ -82,14 +82,7 @@ class ComputerUseBackend(ABC):
 
     @abstractmethod
     def click(
-        self,
-        *,
-        element: int | None = None,
-        x: int | None = None,
-        y: int | None = None,
-        button: str = "left",
-        click_count: int = 1,
-        modifiers: list[str] | None = None,
+        self, *, element: int | None = None, x: int | None = None, y: int | None = None, button: str = "left", click_count: int = 1, modifiers: list[str] | None = None
     ) -> ActionResult: ...
 
     @abstractmethod
@@ -106,14 +99,7 @@ class ComputerUseBackend(ABC):
 
     @abstractmethod
     def scroll(
-        self,
-        *,
-        direction: str,
-        amount: int = 3,
-        element: int | None = None,
-        x: int | None = None,
-        y: int | None = None,
-        modifiers: list[str] | None = None,
+        self, *, direction: str, amount: int = 3, element: int | None = None, x: int | None = None, y: int | None = None, modifiers: list[str] | None = None
     ) -> ActionResult: ...
 
     @abstractmethod

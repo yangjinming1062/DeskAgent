@@ -97,28 +97,12 @@ CRONJOB_SCHEMA = {
     "parameters": {
         "type": "object",
         "properties": {
-            "action": {
-                "type": "string",
-                "description": "One of: create, list, update, pause, resume, remove.",
-            },
-            "job_id": {
-                "type": "integer",
-                "description": "Required for update/pause/resume/remove.",
-            },
-            "prompt": {
-                "type": "string",
-                "description": "For create: the full prompt/instructions for the job.",
-            },
-            "schedule": {
-                "type": "string",
-                "description": "For create/update: cron expression (e.g., '0 9 * * *' for daily at 9am).",
-            },
+            "action": {"type": "string", "description": "One of: create, list, update, pause, resume, remove."},
+            "job_id": {"type": "integer", "description": "Required for update/pause/resume/remove."},
+            "prompt": {"type": "string", "description": "For create: the full prompt/instructions for the job."},
+            "schedule": {"type": "string", "description": "For create/update: cron expression (e.g., '0 9 * * *' for daily at 9am)."},
             "name": {"type": "string", "description": "Optional human-friendly name."},
-            "deliver": {
-                "type": "string",
-                "description": "Delivery channel for job output (e.g., 'local', 'webhook'). Defaults to 'local' when omitted.",
-                "default": "local",
-            },
+            "deliver": {"type": "string", "description": "Delivery channel for job output (e.g., 'local', 'webhook'). Defaults to 'local' when omitted.", "default": "local"},
         },
         "required": ["action"],
     },

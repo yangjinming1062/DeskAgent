@@ -37,13 +37,7 @@ class GrokSTTProvider(STTProvider):
         super().__init__(config)
         self._client = get_http(config.base_url, config.api_key)
 
-    async def transcribe(
-        self,
-        audio: bytes,
-        *,
-        mime_type: str = "audio/wav",
-        language: str = "auto",
-    ) -> STTResult:
+    async def transcribe(self, audio: bytes, *, mime_type: str = "audio/wav", language: str = "auto") -> STTResult:
         # xAI auto-detects container formats from the file header — the
         # multipart filename just needs to be plausible.
         if "wav" in mime_type:
@@ -61,10 +55,7 @@ class GrokSTTProvider(STTProvider):
 
         files = {"file": (f"audio.{ext}", audio, mime_type)}
 
-        resp = await self._client.post(
-            "/stt",
-            files=files,
-        )
+        resp = await self._client.post("/stt", files=files)
         body = raise_for_provider_response(resp, family=self.provider_name, model=self.config.model)
         text = body.get("text", "")
         return STTResult(text=text.strip(), raw=body)

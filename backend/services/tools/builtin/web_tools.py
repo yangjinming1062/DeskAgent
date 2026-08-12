@@ -4,8 +4,8 @@ import json
 from components import coerce_int, get_logger, tool_error
 from openai import AsyncOpenAI
 
-from ...llm import call_with_retry, client_for_config
-from .. import ALWAYS_AVAILABLE, REGISTRY, WEB_EXTRACT_AVAILABILITY, resolve_extract_provider, resolve_search_provider
+from services.llm import call_with_retry, client_for_config
+from services.tools import ALWAYS_AVAILABLE, REGISTRY, WEB_EXTRACT_AVAILABILITY, resolve_extract_provider, resolve_search_provider
 
 logger = get_logger(__name__)
 
@@ -19,14 +19,8 @@ async def _summarize_doc(client: AsyncOpenAI, model_name: str, doc: dict) -> Non
             client,
             model=model_name,
             messages=[
-                {
-                    "role": "system",
-                    "content": "Summarize the web content and extract key information in markdown format. Be concise.",
-                },
-                {
-                    "role": "user",
-                    "content": f"URL: {doc.get('url')}\nContent: {content[:50000]}",
-                },
+                {"role": "system", "content": "Summarize the web content and extract key information in markdown format. Be concise."},
+                {"role": "user", "content": f"URL: {doc.get('url')}\nContent: {content[:50000]}"},
             ],
             temperature=0.1,
         )
@@ -63,10 +57,7 @@ async def web_search_tool(query: str, limit: int = 5, user_settings: dict | None
         return tool_error(f"{provider.display_name} does not support search.")
 
     safe_limit = max(1, coerce_int(limit, 5))
-    logger.info(
-        "Web search",
-        extra={"provider_name": provider.name, "query": query, "limit": safe_limit},
-    )
+    logger.info("Web search", extra={"provider_name": provider.name, "query": query, "limit": safe_limit})
     try:
         result = await provider.search(query, safe_limit)
     except Exception as e:
@@ -112,13 +103,7 @@ WEB_SEARCH_SCHEMA = {
                 "type": "string",
                 "description": 'The search query to look up on the web. You may include backend-supported operators such as site:example.com, filetype:pdf, intitle:word, -term, or "exact phrase".',
             },
-            "limit": {
-                "type": "integer",
-                "description": "Maximum number of results to return. Defaults to 5.",
-                "minimum": 1,
-                "maximum": 100,
-                "default": 5,
-            },
+            "limit": {"type": "integer", "description": "Maximum number of results to return. Defaults to 5.", "minimum": 1, "maximum": 100, "default": 5},
         },
         "required": ["query"],
     },
@@ -130,19 +115,9 @@ WEB_EXTRACT_SCHEMA = {
     "parameters": {
         "type": "object",
         "properties": {
-            "urls": {
-                "type": "array",
-                "items": {"type": "string"},
-                "description": "List of URLs to extract content from (max 5 URLs per call)",
-            },
-            "format": {
-                "type": "string",
-                "description": "Desired format (e.g. markdown)",
-            },
-            "use_llm_processing": {
-                "type": "boolean",
-                "description": "Summarize content with LLM (default: true)",
-            },
+            "urls": {"type": "array", "items": {"type": "string"}, "description": "List of URLs to extract content from (max 5 URLs per call)"},
+            "format": {"type": "string", "description": "Desired format (e.g. markdown)"},
+            "use_llm_processing": {"type": "boolean", "description": "Summarize content with LLM (default: true)"},
         },
         "required": ["urls"],
     },

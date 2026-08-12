@@ -3,8 +3,7 @@ from typing import Protocol
 from components import get_logger
 from sqlalchemy.orm import Session
 
-from ..llm import provider_from_config, resolve_vision_chain
-from ..llm.providers.base import ProviderConfig
+from ..llm import ProviderConfig, provider_from_config, resolve_vision_chain
 
 logger = get_logger(__name__)
 
@@ -61,13 +60,7 @@ async def normalize_outfit(
                 if client is not None:
                     messages: list = [
                         {"role": "system", "content": _OUTFIT_NORMALIZER_SYSTEM_PROMPT},
-                        {
-                            "role": "user",
-                            "content": [
-                                {"type": "text", "text": user_payload},
-                                {"type": "image_url", "image_url": {"url": image_data_uri}},
-                            ],
-                        },
+                        {"role": "user", "content": [{"type": "text", "text": user_payload}, {"type": "image_url", "image_url": {"url": image_data_uri}}]},
                     ]
                     response = await client.chat.completions.create(model=provider.config.model, messages=messages)
                     result = _clean(response.choices[0].message.content or "")

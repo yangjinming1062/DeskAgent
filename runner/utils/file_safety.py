@@ -138,17 +138,8 @@ def get_windows_sensitive_prefixes() -> tuple[str, ...]:
     ``replace("\\\\", "/").lower()`` normalization the file-tool guard
     performs.
     """
-    rel_entries = (
-        "windows/system32/",
-        "windows/syswow64/",
-        "windows/winsxs/",
-        "windows/boot/",
-        "windows/recovery/",
-        "programdata/",
-        "program files/",
-        "program files (x86)/",
-    )
-    drives = _enumerate_windows_drives() or ("c",)
+    rel_entries = ("windows/system32/", "windows/syswow64/", "windows/winsxs/", "windows/boot/", "windows/recovery/", "programdata/", "program files/", "program files (x86)/")
+    drives = _enumerate_windows_drives() or ("c")
     return tuple(f"{drv}:/{rel}" for drv in drives for rel in rel_entries)
 
 
@@ -159,9 +150,9 @@ def _enumerate_windows_drives() -> tuple[str, ...]:
     try:
         bitmask = ctypes.windll.kernel32.GetLogicalDrives()
         drives = tuple(chr(ord("a") + i) for i in range(26) if bitmask & (1 << i))
-        return drives or ("c",)
+        return drives or ("c")
     except Exception:
-        return ("c",)
+        return "c"
 
 
 def _get_safe_write_root() -> str | None:
@@ -186,9 +177,7 @@ def _resolve_long_path(path: str) -> str:
         buf = ctypes.create_unicode_buffer(wintypes.MAX_PATH)
         # GetLongPathNameW returns the long path length; 0 means error.
         length = ctypes.windll.kernel32.GetLongPathNameW(  # type: ignore[attr-defined]
-            wintypes.LPCWSTR(s),
-            buf,
-            wintypes.MAX_PATH,
+            wintypes.LPCWSTR(s), buf, wintypes.MAX_PATH
         )
         if length > 0 and length <= wintypes.MAX_PATH:
             return buf.value

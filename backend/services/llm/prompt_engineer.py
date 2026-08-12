@@ -275,13 +275,7 @@ async def chat(db: Session | None, user_id: int | None, system_prompt: str, user
     client = provider.raw_client()
     if client is None:
         raise MissingLlmConfigError(f"llm provider '{provider.provider_name}' is not OpenAI-compatible")
-    response = await client.chat.completions.create(
-        model=provider.config.model,
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_payload},
-        ],
-    )
+    response = await client.chat.completions.create(model=provider.config.model, messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": user_payload}])
     text = (response.choices[0].message.content or "").strip()
     if not text:
         raise RuntimeError("prompt enhancer returned an empty response")
@@ -298,10 +292,7 @@ async def call_llm_once(llm_cfg: dict[str, Any], system_prompt: str, user_payloa
         client,
         context_length=context_length,
         model=llm_cfg["model_name"],
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_content},
-        ],
+        messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": user_content}],
         stream=False,
         max_tokens=max_tokens,
     )

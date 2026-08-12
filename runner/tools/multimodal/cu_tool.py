@@ -243,12 +243,7 @@ def _dispatch(backend: ComputerUseBackend, action: str, args: dict[str, Any]) ->
             button = "right" if action == "right_click" else "middle" if action == "middle_click" else args.get("button") or "left"
             coord = args.get("coordinate") or (None, None)
             res = backend.click(
-                element=args.get("element"),
-                x=coord[0],
-                y=coord[1],
-                button=button,
-                click_count=2 if action == "double_click" else 1,
-                modifiers=args.get("modifiers"),
+                element=args.get("element"), x=coord[0], y=coord[1], button=button, click_count=2 if action == "double_click" else 1, modifiers=args.get("modifiers")
             )
             return _maybe_follow_capture(backend, _tag(res), capture_after)
         case "drag":
@@ -266,12 +261,7 @@ def _dispatch(backend: ComputerUseBackend, action: str, args: dict[str, Any]) ->
         case "scroll":
             coord = args.get("coordinate") or (None, None)
             res = backend.scroll(
-                direction=args.get("direction", "down"),
-                amount=int(args.get("amount", 3)),
-                element=args.get("element"),
-                x=coord[0],
-                y=coord[1],
-                modifiers=args.get("modifiers"),
+                direction=args.get("direction", "down"), amount=int(args.get("amount", 3)), element=args.get("element"), x=coord[0], y=coord[1], modifiers=args.get("modifiers")
             )
             return _maybe_follow_capture(backend, _tag(res), capture_after)
         case "type":
@@ -335,14 +325,7 @@ def _capture_response(cap: CaptureResult, max_elements: int = 100) -> Any:
     # narrower ``app=`` or a text-only ``mode='ax'`` instead.
     if cap.png_b64 and cap.mode != "ax" and (cap.png_bytes_len or 0) > _MAX_CAPTURE_BYTES:
         cap = CaptureResult(
-            mode=cap.mode,
-            width=cap.width,
-            height=cap.height,
-            png_b64=None,
-            elements=cap.elements,
-            app=cap.app,
-            window_title=cap.window_title,
-            png_bytes_len=cap.png_bytes_len,
+            mode=cap.mode, width=cap.width, height=cap.height, png_b64=None, elements=cap.elements, app=cap.app, window_title=cap.window_title, png_bytes_len=cap.png_bytes_len
         )
         summary_lines.append(f"  (PNG dropped — {cap.png_bytes_len:,} bytes exceeds {_MAX_CAPTURE_BYTES:,}-byte cap; pass app= or mode='ax' to narrow the capture)")
 
@@ -355,10 +338,7 @@ def _capture_response(cap: CaptureResult, max_elements: int = 100) -> Any:
         mime = cap.image_mime_type or _sniff_image_mime(cap.png_b64)
         return {
             "_multimodal": True,
-            "content": [
-                {"type": "text", "text": summary},
-                {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{cap.png_b64}"}},
-            ],
+            "content": [{"type": "text", "text": summary}, {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{cap.png_b64}"}}],
             "text_summary": summary,
             "meta": {"mode": cap.mode, "width": cap.width, "height": cap.height, "elements": total, "png_bytes": cap.png_bytes_len},
         }
@@ -387,12 +367,7 @@ def _action_result_payload(res: ActionResult) -> dict[str, Any]:
     downstream consumers can rely on the same field set regardless of
     whether the action was followed by a capture.
     """
-    payload: dict[str, Any] = {
-        "ok": res.ok,
-        "action": res.action,
-        "delivery_mode": res.delivery_mode,
-        "escalation": res.escalation,
-    }
+    payload: dict[str, Any] = {"ok": res.ok, "action": res.action, "delivery_mode": res.delivery_mode, "escalation": res.escalation}
     if res.message:
         payload["message"] = clean_output(res.message)
     if res.meta:

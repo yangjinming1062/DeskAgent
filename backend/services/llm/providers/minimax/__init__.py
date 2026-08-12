@@ -10,9 +10,4 @@ register(ServiceType.image_gen, "minimax", MiniMaxImageGenProvider)
 register(ServiceType.video_gen, "minimax", MiniMaxVideoGenProvider)
 register(ServiceType.tts, "minimax", MiniMaxTTSProvider)
 
-__all__ = [
-    "MiniMaxChatProvider",
-    "MiniMaxImageGenProvider",
-    "MiniMaxVideoGenProvider",
-    "MiniMaxTTSProvider",
-]
+__all__ = ["MiniMaxChatProvider", "MiniMaxImageGenProvider", "MiniMaxVideoGenProvider", "MiniMaxTTSProvider"]

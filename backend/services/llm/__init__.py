@@ -3,7 +3,6 @@ from .error_classifier import ClassifiedError, FailoverReason, classify_api_erro
 from .llm_client import (
     MissingLlmConfigError,
     client_for_config,
-    client_for_user,
     get_async_client,
     provider_for_service,
     provider_from_config,
@@ -53,7 +52,6 @@ from .voice_catalog import VoiceEntry, default_voice_id, pick_voice_id, voices_f
 __all__ = [
     "aclose_all",
     "client_for_config",
-    "client_for_user",
     "get_async_client",
     "MissingLlmConfigError",
     "resolve_service_row",

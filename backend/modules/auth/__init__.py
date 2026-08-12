@@ -31,10 +31,8 @@ from .security import (
     generate_activation_token,
     hash_activation_token,
 )
-from .token import TokenPayload
 
 __all__ = [
-    "TokenPayload",
     "LoginRecord",
     "User",
     "UserModelConfig",

@@ -181,12 +181,7 @@ class Settings(BaseSettings):
         dotenv_settings: PydanticBaseSettingsSource,
         file_secret_settings: PydanticBaseSettingsSource,
     ) -> tuple[PydanticBaseSettingsSource, ...]:
-        return (
-            init_settings,
-            env_settings,
-            dotenv_settings,
-            TomlConfigSource(settings_cls),
-        )
+        return (init_settings, env_settings, dotenv_settings, TomlConfigSource(settings_cls))
 
     @field_validator("providers", mode="before")
     @classmethod
@@ -197,14 +192,7 @@ class Settings(BaseSettings):
             return [p.strip() for p in v.split(",") if p.strip()]
         return v
 
-    @field_validator(
-        "llm_context_tokens",
-        "stt_context_tokens",
-        "tts_context_tokens",
-        "image_gen_context_tokens",
-        "video_gen_context_tokens",
-        mode="before",
-    )
+    @field_validator("llm_context_tokens", "stt_context_tokens", "tts_context_tokens", "image_gen_context_tokens", "video_gen_context_tokens", mode="before")
     @classmethod
     def _coerce_optional_positive_int(cls, v):
         coerced = coerce_int(v, None)

@@ -9,15 +9,7 @@ from pathlib import Path
 from .config import cfg_get, load_config
 from .constants import IS_WINDOWS, get_deskagent_home
 
-SANE_PATH = ":".join((
-    "/opt/homebrew/bin",
-    "/usr/local/sbin",
-    "/usr/local/bin",
-    "/usr/sbin",
-    "/usr/bin",
-    "/sbin",
-    "/bin",
-))
+SANE_PATH = ":".join(("/opt/homebrew/bin", "/usr/local/sbin", "/usr/local/bin", "/usr/sbin", "/usr/bin", "/sbin", "/bin"))
 
 _MSYS_PATH_RE = re.compile(r"^/([a-zA-Z])(/.*)?$")
 

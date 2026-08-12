@@ -51,10 +51,7 @@ TEXT_TO_SPEECH_SCHEMA = {
     "parameters": {
         "type": "object",
         "properties": {
-            "text": {
-                "type": "string",
-                "description": "Text to speak. Markdown, emoji, and unit-glyph normalization are applied.",
-            },
+            "text": {"type": "string", "description": "Text to speak. Markdown, emoji, and unit-glyph normalization are applied."},
             "voice": {
                 "type": "string",
                 "description": (
@@ -64,15 +61,8 @@ TEXT_TO_SPEECH_SCHEMA = {
                     "/api/media/tts instead."
                 ),
             },
-            "engine": {
-                "type": "string",
-                "description": "Force a specific engine: 'piper' or 'pyttsx3'. Default: auto-pick installed.",
-                "enum": ["piper", "pyttsx3", "auto"],
-            },
-            "speed": {
-                "type": "number",
-                "description": "Speech rate multiplier in [0.5, 2.0]. Default 1.0.",
-            },
+            "engine": {"type": "string", "description": "Force a specific engine: 'piper' or 'pyttsx3'. Default: auto-pick installed.", "enum": ["piper", "pyttsx3", "auto"]},
+            "speed": {"type": "number", "description": "Speech rate multiplier in [0.5, 2.0]. Default 1.0."},
         },
         "required": ["text"],
     },
@@ -117,11 +107,7 @@ def _output_path(name_hint: str = "tts") -> Path:
 
 
 def _synth_piper(text: str, voice: str, speed: float, dst: Path) -> dict[str, Any]:
-    return {
-        "engine": "piper",
-        "voice": voice,
-        "path": str(PiperRuntime().synthesize(text, voice_id=voice, output_wav=dst, speed=speed)),
-    }
+    return {"engine": "piper", "voice": voice, "path": str(PiperRuntime().synthesize(text, voice_id=voice, output_wav=dst, speed=speed))}
 
 
 def _enumerate_pyttsx3_voices(engine: Any) -> list[dict[str, str]]:
@@ -273,17 +259,11 @@ def text_to_speech_tool(args: dict[str, Any], **kw: Any) -> str:
 
     if engine == "piper":
         if not (piper_available() and _is_voice_installed(voice)):
-            return tool_error(
-                f"piper voice {voice!r} not installed under {piper_voice_dir()}",
-                hint="Use `list_tts_voices` to see installed voices, or pass engine='pyttsx3'.",
-            )
+            return tool_error(f"piper voice {voice!r} not installed under {piper_voice_dir()}", hint="Use `list_tts_voices` to see installed voices, or pass engine='pyttsx3'.")
         engine_chain.append(("piper", voice))
     elif engine == "pyttsx3":
         if not pyttsx3_available():
-            return tool_error(
-                "pyttsx3 engine not installed",
-                hint="`pyttsx3` should be in the runner wheel — re-install if missing.",
-            )
+            return tool_error("pyttsx3 engine not installed", hint="`pyttsx3` should be in the runner wheel — re-install if missing.")
         engine_chain.append(("pyttsx3", ""))
     else:
         # Auto mode: try the requested Piper voice first; auto-download on miss so a first install
@@ -333,25 +313,12 @@ def text_to_speech_tool(args: dict[str, Any], **kw: Any) -> str:
         return _all_engines_failed(last_error)
 
     sz = Path(info["path"]).stat().st_size if Path(info["path"]).exists() else 0
-    return tool_result(
-        success=True,
-        path=info["path"],
-        engine=info["engine"],
-        voice=info["voice"],
-        size_bytes=sz,
-        speed=speed,
-    )
+    return tool_result(success=True, path=info["path"], engine=info["engine"], voice=info["voice"], size_bytes=sz, speed=speed)
 
 
 def list_tts_voices_tool(args: dict[str, Any], **kw: Any) -> str:
     voices = list_installed_voices()
-    return tool_result(
-        success=True,
-        voices=voices,
-        count=len(voices),
-        voices_dir=str(piper_voice_dir()),
-        bundled=list(bundled_voices()),
-    )
+    return tool_result(success=True, voices=voices, count=len(voices), voices_dir=str(piper_voice_dir()), bundled=list(bundled_voices()))
 
 
 registry.register_tool("text_to_speech", schema=TEXT_TO_SPEECH_SCHEMA, check_fn=_check_tts)(lambda args, **kw: text_to_speech_tool(args, **kw))

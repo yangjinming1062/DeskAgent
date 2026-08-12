@@ -55,21 +55,11 @@ class BraveFreeWebSearchProvider(WebSearchProvider):
         count = max(1, min(int(limit), 20))
 
         try:
-            resp = await _HTTP_CLIENT.get(
-                _BRAVE_ENDPOINT,
-                params={"q": query, "count": count},
-                headers={
-                    "X-Subscription-Token": api_key,
-                    "Accept": "application/json",
-                },
-            )
+            resp = await _HTTP_CLIENT.get(_BRAVE_ENDPOINT, params={"q": query, "count": count}, headers={"X-Subscription-Token": api_key, "Accept": "application/json"})
             resp.raise_for_status()
         except httpx.HTTPStatusError as exc:
             logger.warning("Brave Search HTTP error", extra={"error": str(exc)})
-            return {
-                "success": False,
-                "error": f"Brave Search returned HTTP {exc.response.status_code}",
-            }
+            return {"success": False, "error": f"Brave Search returned HTTP {exc.response.status_code}"}
         except httpx.RequestError as exc:
             logger.warning("Brave Search request error", extra={"error": str(exc)})
             return {"success": False, "error": f"Could not reach Brave Search: {exc}"}
@@ -87,13 +77,7 @@ class BraveFreeWebSearchProvider(WebSearchProvider):
             {"title": str(r.get("title", "")), "url": str(r.get("url", "")), "description": str(r.get("description", "")), "position": i + 1} for i, r in enumerate(truncated)
         ]
 
-        logger.info(
-            "Brave Search '%s': %d results (from %d raw, limit %d)",
-            query,
-            len(web_results),
-            len(raw_results),
-            limit,
-        )
+        logger.info("Brave Search '%s': %d results (from %d raw, limit %d)", query, len(web_results), len(raw_results), limit)
 
         return {"success": True, "data": {"web": web_results}}
 
@@ -102,11 +86,5 @@ class BraveFreeWebSearchProvider(WebSearchProvider):
             "name": "Brave Search (Free)",
             "badge": "free",
             "tag": "Free-tier API key — 2k queries/mo, search only.",
-            "env_vars": [
-                {
-                    "key": "BRAVE_SEARCH_API_KEY",
-                    "prompt": "Brave Search API key (free tier)",
-                    "url": "https://brave.com/search/api/",
-                },
-            ],
+            "env_vars": [{"key": "BRAVE_SEARCH_API_KEY", "prompt": "Brave Search API key (free tier)", "url": "https://brave.com/search/api/"}],
         }

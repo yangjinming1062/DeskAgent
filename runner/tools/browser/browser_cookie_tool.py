@@ -9,10 +9,7 @@ logger = logging.getLogger(__name__)
 
 
 def _no_supervisor() -> str:
-    return json.dumps(
-        {"success": False, "error": "No CDP supervisor is attached to this task. Call browser_navigate first."},
-        ensure_ascii=False,
-    )
+    return json.dumps({"success": False, "error": "No CDP supervisor is attached to this task. Call browser_navigate first."}, ensure_ascii=False)
 
 
 BROWSER_COOKIES_GET_SCHEMA: dict[str, Any] = {
@@ -28,7 +25,7 @@ BROWSER_COOKIES_GET_SCHEMA: dict[str, Any] = {
             "url": {
                 "type": "string",
                 "description": ("Optional URL whose cookies to retrieve (e.g. 'https://example.com'). If omitted, returns all cookies for the current browser context."),
-            },
+            }
         },
         "required": [],
     },
@@ -66,11 +63,7 @@ BROWSER_COOKIES_SET_SCHEMA: dict[str, Any] = {
             "expires": {"type": "number", "description": "Expiration as UNIX timestamp. Omit for a session cookie."},
             "httpOnly": {"type": "boolean", "default": False, "description": "If true, the cookie is not accessible via JavaScript."},
             "secure": {"type": "boolean", "default": False, "description": "If true, the cookie is only sent over HTTPS."},
-            "sameSite": {
-                "type": "string",
-                "enum": ["Strict", "Lax", "None"],
-                "description": "SameSite policy. Defaults to None (browser default).",
-            },
+            "sameSite": {"type": "string", "enum": ["Strict", "Lax", "None"], "description": "SameSite policy. Defaults to None (browser default)."},
         },
         "required": ["name", "value", "domain"],
     },
@@ -90,14 +83,7 @@ def browser_cookies_set(
 ) -> str:
     if (supervisor := SUPERVISOR_REGISTRY.get(task_id or "default")) is None:
         return _no_supervisor()
-    params: dict[str, Any] = {
-        "name": name,
-        "value": value,
-        "domain": domain,
-        "path": path,
-        "httpOnly": http_only,
-        "secure": secure,
-    }
+    params: dict[str, Any] = {"name": name, "value": value, "domain": domain, "path": path, "httpOnly": http_only, "secure": secure}
     if expires is not None:
         params["expires"] = expires
     if same_site is not None:
@@ -133,27 +119,15 @@ BROWSER_COOKIES_CLEAR_SCHEMA: dict[str, Any] = {
     "parameters": {
         "type": "object",
         "properties": {
-            "session": {
-                "type": "boolean",
-                "default": True,
-                "description": "If true (default), clear all session cookies.",
-            },
-            "storage": {
-                "type": "boolean",
-                "default": True,
-                "description": "If true (default), clear localStorage / sessionStorage / indexedDB.",
-            },
+            "session": {"type": "boolean", "default": True, "description": "If true (default), clear all session cookies."},
+            "storage": {"type": "boolean", "default": True, "description": "If true (default), clear localStorage / sessionStorage / indexedDB."},
         },
         "required": [],
     },
 }
 
 
-def browser_cookies_clear(
-    session: bool = True,
-    storage: bool = True,
-    task_id: str | None = None,
-) -> str:
+def browser_cookies_clear(session: bool = True, storage: bool = True, task_id: str | None = None) -> str:
     if (supervisor := SUPERVISOR_REGISTRY.get(task_id or "default")) is None:
         return _no_supervisor()
     actions: list[str] = []
@@ -166,21 +140,14 @@ def browser_cookies_clear(
         # — ``storageTypes`` defaults to all (cookies+localStorage+indexedDB+...).
         # Reading ``location.origin`` keeps the call idempotent across
         # navigations and matches Chrome's documentation.
-        if not supervisor.send_cdp(
-            "Storage.clearDataForOrigin",
-            {"origin": "*", "storageTypes": "all"},
-        ).get("ok"):
+        if not supervisor.send_cdp("Storage.clearDataForOrigin", {"origin": "*", "storageTypes": "all"}).get("ok"):
             return json.dumps({"success": False, "error": "Storage.clearDataForOrigin failed"}, ensure_ascii=False)
         actions.append("storage")
     return json.dumps({"success": True, "cleared": actions}, ensure_ascii=False)
 
 
 registry.register_tool("browser_cookies_clear", schema=BROWSER_COOKIES_CLEAR_SCHEMA)(
-    lambda args, **kw: browser_cookies_clear(
-        session=args.get("session", True),
-        storage=args.get("storage", True),
-        task_id=kw.get("task_id"),
-    )
+    lambda args, **kw: browser_cookies_clear(session=args.get("session", True), storage=args.get("storage", True), task_id=kw.get("task_id"))
 )
 
 
@@ -196,30 +163,17 @@ BROWSER_STORAGE_GET_SCHEMA: dict[str, Any] = {
         "properties": {
             "key": {"type": "string", "description": "Storage entry name."},
             "origin": {"type": "string", "description": "Origin whose storage to read (e.g. 'https://example.com')."},
-            "kind": {
-                "type": "string",
-                "enum": ["localStorage", "sessionStorage"],
-                "default": "localStorage",
-                "description": "Which storage tier to read (default localStorage).",
-            },
+            "kind": {"type": "string", "enum": ["localStorage", "sessionStorage"], "default": "localStorage", "description": "Which storage tier to read (default localStorage)."},
         },
         "required": ["key", "origin"],
     },
 }
 
 
-def browser_storage_get(
-    key: str,
-    origin: str,
-    kind: str = "localStorage",
-    task_id: str | None = None,
-) -> str:
+def browser_storage_get(key: str, origin: str, kind: str = "localStorage", task_id: str | None = None) -> str:
     if (supervisor := SUPERVISOR_REGISTRY.get(task_id or "default")) is None:
         return _no_supervisor()
-    res = supervisor.send_cdp(
-        "DOMStorage.getDOMStorageItems",
-        {"storageId": {"securityOrigin": origin, "isLocalStorage": kind == "localStorage"}},
-    )
+    res = supervisor.send_cdp("DOMStorage.getDOMStorageItems", {"storageId": {"securityOrigin": origin, "isLocalStorage": kind == "localStorage"}})
     if not res.get("ok"):
         return json.dumps({"success": False, "error": res.get("error", "unknown error")}, ensure_ascii=False)
     items = res.get("result", {}).get("entries", [])
@@ -230,12 +184,7 @@ def browser_storage_get(
 
 
 registry.register_tool("browser_storage_get", schema=BROWSER_STORAGE_GET_SCHEMA)(
-    lambda args, **kw: browser_storage_get(
-        key=args.get("key", ""),
-        origin=args.get("origin", ""),
-        kind=args.get("kind", "localStorage"),
-        task_id=kw.get("task_id"),
-    )
+    lambda args, **kw: browser_storage_get(key=args.get("key", ""), origin=args.get("origin", ""), kind=args.get("kind", "localStorage"), task_id=kw.get("task_id"))
 )
 
 
@@ -252,35 +201,17 @@ BROWSER_STORAGE_SET_SCHEMA: dict[str, Any] = {
             "key": {"type": "string", "description": "Storage entry name."},
             "value": {"type": "string", "description": "Value to store."},
             "origin": {"type": "string", "description": "Target origin (e.g. 'https://example.com')."},
-            "kind": {
-                "type": "string",
-                "enum": ["localStorage", "sessionStorage"],
-                "default": "localStorage",
-                "description": "Which storage tier to write (default localStorage).",
-            },
+            "kind": {"type": "string", "enum": ["localStorage", "sessionStorage"], "default": "localStorage", "description": "Which storage tier to write (default localStorage)."},
         },
         "required": ["key", "value", "origin"],
     },
 }
 
 
-def browser_storage_set(
-    key: str,
-    value: str,
-    origin: str,
-    kind: str = "localStorage",
-    task_id: str | None = None,
-) -> str:
+def browser_storage_set(key: str, value: str, origin: str, kind: str = "localStorage", task_id: str | None = None) -> str:
     if (supervisor := SUPERVISOR_REGISTRY.get(task_id or "default")) is None:
         return _no_supervisor()
-    res = supervisor.send_cdp(
-        "DOMStorage.setDOMStorageItem",
-        {
-            "storageId": {"securityOrigin": origin, "isLocalStorage": kind == "localStorage"},
-            "key": key,
-            "value": value,
-        },
-    )
+    res = supervisor.send_cdp("DOMStorage.setDOMStorageItem", {"storageId": {"securityOrigin": origin, "isLocalStorage": kind == "localStorage"}, "key": key, "value": value})
     if not res.get("ok"):
         return json.dumps({"success": False, "error": res.get("error", "unknown error")}, ensure_ascii=False)
     return json.dumps({"success": True, "key": key, "kind": kind, "origin": origin}, ensure_ascii=False)
@@ -288,10 +219,6 @@ def browser_storage_set(
 
 registry.register_tool("browser_storage_set", schema=BROWSER_STORAGE_SET_SCHEMA)(
     lambda args, **kw: browser_storage_set(
-        key=args.get("key", ""),
-        value=args.get("value", ""),
-        origin=args.get("origin", ""),
-        kind=args.get("kind", "localStorage"),
-        task_id=kw.get("task_id"),
+        key=args.get("key", ""), value=args.get("value", ""), origin=args.get("origin", ""), kind=args.get("kind", "localStorage"), task_id=kw.get("task_id")
     )
 )

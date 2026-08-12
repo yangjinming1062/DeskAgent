@@ -147,12 +147,7 @@ def _interpret_exit_code(command: str, exit_code: int) -> str | None:
         "find": {1: "Some directories were inaccessible (partial results may still be valid)"},
         "test": {1: "Condition evaluated to false (expected, not an error)"},
         "[": {1: "Condition evaluated to false (expected, not an error)"},
-        "curl": {
-            6: "Could not resolve host",
-            7: "Failed to connect to host",
-            22: "HTTP response code indicated error (e.g. 404, 500)",
-            28: "Operation timed out",
-        },
+        "curl": {6: "Could not resolve host", 7: "Failed to connect to host", 22: "HTTP response code indicated error (e.g. 404, 500)", 28: "Operation timed out"},
         "git": {1: "Non-zero exit (often normal — e.g. 'git diff' returns 1 when files differ)"},
     }
     cmd_semantics = semantics.get(base_cmd)
@@ -219,24 +214,14 @@ def _foreground_background_guidance(command: str) -> str | None:
     return None
 
 
-def _resolve_notification_flag_conflict(
-    *,
-    notify_on_complete: bool,
-    watch_patterns,
-    background: bool,
-) -> tuple:
+def _resolve_notification_flag_conflict(*, notify_on_complete: bool, watch_patterns, background: bool) -> tuple:
     if background and notify_on_complete and watch_patterns:
         note = "watch_patterns ignored because notify_on_complete=True; these two flags produce duplicate notifications when combined"
         return None, note
     return watch_patterns, ""
 
 
-def _resolve_command_cwd(
-    *,
-    workdir: str | None,
-    env: Any,
-    default_cwd: str,
-) -> str:
+def _resolve_command_cwd(*, workdir: str | None, env: Any, default_cwd: str) -> str:
     if workdir:
         return workdir
     live_cwd = getattr(env, "cwd", None)
@@ -258,19 +243,8 @@ def terminal_tool(
 ) -> str:
     try:
         if not isinstance(command, str):
-            logger.warning(
-                "Rejected invalid terminal command value: %s",
-                type(command).__name__,
-            )
-            return json.dumps(
-                {
-                    "output": "",
-                    "exit_code": -1,
-                    "error": f"Invalid command: expected string, got {type(command).__name__}",
-                    "status": "error",
-                },
-                ensure_ascii=False,
-            )
+            logger.warning("Rejected invalid terminal command value: %s", type(command).__name__)
+            return json.dumps({"output": "", "exit_code": -1, "error": f"Invalid command: expected string, got {type(command).__name__}", "status": "error"}, ensure_ascii=False)
         config = get_env_config()
         env_type = config["env_type"]
         effective_task_id = resolve_container_task_id(task_id)
@@ -291,22 +265,14 @@ def terminal_tool(
                         f"Foreground timeout {timeout}s exceeds the maximum of "
                         f"{FOREGROUND_MAX_TIMEOUT}s. Use background=true with "
                         f"notify_on_complete=true for long-running commands."
-                    ),
+                    )
                 },
                 ensure_ascii=False,
             )
         if not background:
             guidance = _foreground_background_guidance(command)
             if guidance:
-                return json.dumps(
-                    {
-                        "output": "",
-                        "exit_code": -1,
-                        "error": guidance,
-                        "status": "error",
-                    },
-                    ensure_ascii=False,
-                )
+                return json.dumps({"output": "", "exit_code": -1, "error": guidance, "status": "error"}, ensure_ascii=False)
         start_cleanup_thread()
         with _env_lock:
             _existing_key = effective_task_id if effective_task_id in _active_environments else (task_id if task_id and task_id in _active_environments else None)
@@ -360,9 +326,7 @@ def terminal_tool(
                             }
                         local_config = None
                         if env_type == "local":
-                            local_config = {
-                                "persistent": config.get("local_persistent", False),
-                            }
+                            local_config = {"persistent": config.get("local_persistent", False)}
                         new_env = create_environment(
                             env_type=env_type,
                             image=image,
@@ -404,11 +368,7 @@ def terminal_tool(
             )
         if background:
             session_key = ""
-            effective_cwd = _resolve_command_cwd(
-                workdir=workdir,
-                env=env,
-                default_cwd=cwd,
-            )
+            effective_cwd = _resolve_command_cwd(workdir=workdir, env=env, default_cwd=cwd)
             try:
                 if env_type == "local":
                     proc_session = process_registry.spawn_local(
@@ -420,20 +380,8 @@ def terminal_tool(
                         use_pty=effective_pty,
                     )
                 else:
-                    proc_session = process_registry.spawn_via_env(
-                        env=env,
-                        command=command,
-                        cwd=effective_cwd,
-                        task_id=effective_task_id,
-                        session_key=session_key,
-                    )
-                result_data = {
-                    "output": "Background process started",
-                    "session_id": proc_session.id,
-                    "pid": proc_session.pid,
-                    "exit_code": 0,
-                    "error": None,
-                }
+                    proc_session = process_registry.spawn_via_env(env=env, command=command, cwd=effective_cwd, task_id=effective_task_id, session_key=session_key)
+                result_data = {"output": "Background process started", "session_id": proc_session.id, "pid": proc_session.pid, "exit_code": 0, "error": None}
                 if pty_disabled_reason:
                     result_data["pty_note"] = pty_disabled_reason
                 if background and not notify_on_complete and not watch_patterns:
@@ -498,9 +446,7 @@ def terminal_tool(
                         proc_session.watcher_thread_id = _gw_thread_id
                         proc_session.watcher_message_id = _gw_message_id
                 watch_patterns, conflict_note = _resolve_notification_flag_conflict(
-                    notify_on_complete=bool(notify_on_complete),
-                    watch_patterns=watch_patterns,
-                    background=bool(background),
+                    notify_on_complete=bool(notify_on_complete), watch_patterns=watch_patterns, background=bool(background)
                 )
                 if conflict_note:
                     logger.warning("background proc %s: %s", proc_session.id, conflict_note)
@@ -534,14 +480,7 @@ def terminal_tool(
             result = None
             while retry_count <= max_retries:
                 try:
-                    execute_kwargs = {
-                        "timeout": effective_timeout,
-                        "cwd": _resolve_command_cwd(
-                            workdir=workdir,
-                            env=env,
-                            default_cwd=cwd,
-                        ),
-                    }
+                    execute_kwargs = {"timeout": effective_timeout, "cwd": _resolve_command_cwd(workdir=workdir, env=env, default_cwd=cwd)}
                     result = env.execute(command, **execute_kwargs)
                 except Exception as e:
                     error_str = str(e).lower()
@@ -588,11 +527,7 @@ def terminal_tool(
             error_msg = result.get("error")
             if not error_msg and returncode != 0:
                 error_msg = f"Process exited with non-zero code {returncode}"
-            result_dict = {
-                "output": output,
-                "exit_code": returncode,
-                "error": error_msg,
-            }
+            result_dict = {"output": output, "exit_code": returncode, "error": error_msg}
             if exit_note:
                 result_dict["exit_code_meaning"] = exit_note
             return json.dumps(result_dict, ensure_ascii=False)

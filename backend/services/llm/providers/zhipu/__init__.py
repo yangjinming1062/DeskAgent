@@ -10,9 +10,4 @@ register(ServiceType.stt, "zhipu", ZhipuSTTProvider)
 register(ServiceType.tts, "zhipu", ZhipuTTSProvider)
 register(ServiceType.image_gen, "zhipu", ZhipuImageGenProvider)
 
-__all__ = [
-    "ZhipuChatProvider",
-    "ZhipuSTTProvider",
-    "ZhipuTTSProvider",
-    "ZhipuImageGenProvider",
-]
+__all__ = ["ZhipuChatProvider", "ZhipuSTTProvider", "ZhipuTTSProvider", "ZhipuImageGenProvider"]

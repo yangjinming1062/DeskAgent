@@ -11,7 +11,7 @@ from fastapi import Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from modules.auth import get_current_admin_token
 from modules.update import UpdateVersion, UpdateVersionItem, UpdateVersionListResponse, UpdateVersionUpdate
-from services.update import _ALLOWED_ARCHIVE_SUFFIXES, _DOWNLOAD_SUFFIXES, CHUNK_SIZE, VERSIONS_DIR, build_manifest
+from services.update import ALLOWED_ARCHIVE_SUFFIXES, CHUNK_SIZE, DOWNLOAD_SUFFIXES, VERSIONS_DIR, build_manifest
 from sqlalchemy.orm import Session
 
 router = get_router()
@@ -80,7 +80,7 @@ def _extract_archive_entries(zip_path: Path, versions_dir: Path) -> None:
     versions_dir_resolved = versions_dir.resolve()
     with zipfile.ZipFile(zip_path, "r") as zf:
         for name in zf.namelist():
-            if not name.endswith(_ALLOWED_ARCHIVE_SUFFIXES):
+            if not name.endswith(ALLOWED_ARCHIVE_SUFFIXES):
                 continue
             rel_path = name
             if not rel_path:
@@ -95,10 +95,7 @@ def _extract_archive_entries(zip_path: Path, versions_dir: Path) -> None:
 
 @router.post("/versions", response_model=UpdateVersionItem, status_code=201)
 async def create_version(
-    file: UploadFile = File(...),
-    release_notes: str = Form(""),
-    _admin: str = Depends(get_current_admin_token),
-    db: Session = Depends(get_db),
+    file: UploadFile = File(...), release_notes: str = Form(""), _admin: str = Depends(get_current_admin_token), db: Session = Depends(get_db)
 ) -> UpdateVersionItem:
     # Squirrel build-output zip; must contain a *.exe.
     if not file.filename or not file.filename.endswith(".zip"):
@@ -147,10 +144,7 @@ async def create_version(
         raise HTTPException(status_code=400, detail="manifest.json missing required 'version' field")
     if manifest_version != version:
         shutil.rmtree(versions_dir, ignore_errors=True)
-        raise HTTPException(
-            status_code=400,
-            detail=f"manifest.json version {manifest_version} does not match upload filename version {version}",
-        )
+        raise HTTPException(status_code=400, detail=f"manifest.json version {manifest_version} does not match upload filename version {version}")
 
     exe_file = _pick_asset(versions_dir, "*.exe")
     if not exe_file:
@@ -207,7 +201,7 @@ def delete_version(id: int, _admin: str = Depends(get_current_admin_token), db: 
 @router.get("/{filename:path}", response_class=FileResponse)
 def get_latest_file(filename: str, db: Session = Depends(get_db)) -> FileResponse:
     latest = _get_latest(db)
-    if not any(filename.endswith(s) for s in _DOWNLOAD_SUFFIXES):
+    if not any(filename.endswith(s) for s in DOWNLOAD_SUFFIXES):
         raise HTTPException(status_code=400, detail="Invalid filename")
     base_dir = (VERSIONS_DIR / latest.version).resolve()
     file_path = (base_dir / filename).resolve()

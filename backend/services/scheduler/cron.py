@@ -235,7 +235,7 @@ async def _maybe_run_memory_consolidator(now: datetime) -> None:
     with session_scope() as db:
         rows = db.execute(text("SELECT user_id FROM memories WHERE context LIKE 'recall:%' GROUP BY user_id HAVING COUNT(*) > :t"), {"t": MEMORY_CONSOLIDATE_TRIGGER_ROWS}).all()
     eligible: list[int] = []
-    for (user_id,) in rows:
+    for user_id in rows:
         uid = int(user_id)
         if now.timestamp() - _LAST_MEMORY_CONSOLIDATE.get(uid, 0.0) < MEMORY_CONSOLIDATE_INTERVAL_SECONDS:
             continue
@@ -318,9 +318,9 @@ async def scheduler_loop() -> None:
     60 seconds but crash visibly so it gets fixed. ``_tick()`` already
     try/excepts per job, so a single bad job cannot terminate the loop.
     """
+    logger.info("Starting background cron scheduler loop.")
     while True:
         begin_local_scope()
-        logger.info("Starting background cron scheduler loop.")
         await _tick()
         await asyncio.sleep(SCHEDULER_INTERVAL_SECONDS)
 

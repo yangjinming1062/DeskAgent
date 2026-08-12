@@ -27,27 +27,11 @@ class MiMoSTTProvider(STTProvider):
         """Return the underlying AsyncOpenAI client."""
         return self._client
 
-    async def transcribe(
-        self,
-        audio: bytes,
-        *,
-        mime_type: str = "audio/wav",
-        language: str = "auto",
-    ) -> STTResult:
+    async def transcribe(self, audio: bytes, *, mime_type: str = "audio/wav", language: str = "auto") -> STTResult:
         b64_audio = base64.b64encode(audio).decode("utf-8")
         response = await self._client.chat.completions.create(
             model=self.config.model,
-            messages=[
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "input_audio",
-                            "input_audio": {"data": f"data:{mime_type};base64,{b64_audio}"},
-                        }
-                    ],
-                }
-            ],
+            messages=[{"role": "user", "content": [{"type": "input_audio", "input_audio": {"data": f"data:{mime_type};base64,{b64_audio}"}}]}],
             extra_body={"asr_options": {"language": language}},
         )
         choice = response.choices[0] if response.choices else None

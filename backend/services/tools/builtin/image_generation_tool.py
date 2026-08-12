@@ -4,8 +4,8 @@ import json
 from components import SESSION_LOCAL, get_logger, safe_json_loads, save_file, tool_error
 from sqlalchemy.orm import Session
 
-from ...llm import ImageGenRequest, MissingLlmConfigError, ProviderConfig, ServiceType, execute_with_fallback, resolve, resolve_provider_chain
-from .. import ALWAYS_AVAILABLE, REGISTRY
+from services.llm import ImageGenRequest, MissingLlmConfigError, ProviderConfig, ServiceType, execute_with_fallback, resolve, resolve_provider_chain
+from services.tools import ALWAYS_AVAILABLE, REGISTRY
 
 logger = get_logger(__name__)
 
@@ -24,10 +24,7 @@ def _image_gen_chain(db: Session | None, user_id: int | None, reference_image: s
         return full, None
     capable = [c for c in full if resolve(ServiceType.image_gen, c.provider_name).supports_reference_image]
     if full and not capable:
-        return (
-            capable,
-            "当前图片生成供应商均不支持以图生图，请启用 minimax / gemini / grok 其中之一",
-        )
+        return (capable, "当前图片生成供应商均不支持以图生图，请启用 minimax / gemini / grok 其中之一")
     if secondary_reference_image:
         multi = [c for c in capable if resolve(ServiceType.image_gen, c.provider_name).supports_multiple_reference_images]
         if multi:
@@ -106,19 +103,7 @@ def first_image_url(result_json: str) -> str | None:
 
 # MiniMax aspect ratios + the legacy DALL·E pixel sizes that map to them via
 # the provider's size→aspect_ratio table.
-IMAGE_GENERATION_SIZES = [
-    "1024x1024",
-    "1024x1792",
-    "1792x1024",
-    "1:1",
-    "16:9",
-    "4:3",
-    "3:2",
-    "2:3",
-    "3:4",
-    "9:16",
-    "21:9",
-]
+IMAGE_GENERATION_SIZES = ["1024x1024", "1024x1792", "1792x1024", "1:1", "16:9", "4:3", "3:2", "2:3", "3:4", "9:16", "21:9"]
 
 IMAGE_GENERATION_SCHEMA = {
     "name": "image_generate",
@@ -126,10 +111,7 @@ IMAGE_GENERATION_SCHEMA = {
     "parameters": {
         "type": "object",
         "properties": {
-            "prompt": {
-                "type": "string",
-                "description": "A detailed, descriptive prompt for the image to generate.",
-            },
+            "prompt": {"type": "string", "description": "A detailed, descriptive prompt for the image to generate."},
             "size": {
                 "type": "string",
                 "enum": IMAGE_GENERATION_SIZES,

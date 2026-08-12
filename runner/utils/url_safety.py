@@ -58,10 +58,7 @@ _ALWAYS_BLOCKED_IPS = frozenset(
     )
 )
 
-_ALWAYS_BLOCKED_NETWORKS = (
-    ipaddress.ip_network("169.254.0.0/16"),
-    ipaddress.ip_network("::ffff:169.254.0.0/112"),
-)
+_ALWAYS_BLOCKED_NETWORKS = (ipaddress.ip_network("169.254.0.0/16"), ipaddress.ip_network("::ffff:169.254.0.0/112"))
 
 _TRUSTED_PRIVATE_IP_HOSTS = frozenset({"multimedia.nt.qq.com.cn"})
 _CGNAT_NETWORK = ipaddress.ip_network("100.64.0.0/10")
@@ -185,11 +182,7 @@ def check_redirect_url_safety(original_url: str, redirect_url: str) -> bool:
     return True
 
 
-_DEFAULT_WEBSITE_BLOCKLIST = {
-    "enabled": False,
-    "domains": [],
-    "shared_files": [],
-}
+_DEFAULT_WEBSITE_BLOCKLIST = {"enabled": False, "domains": [], "shared_files": []}
 
 _CACHE_TTL_SECONDS = 30.0
 _cache_lock = threading.Lock()
@@ -317,11 +310,5 @@ def check_website_access(url: str) -> dict[str, str] | None:
             if _match_host_against_rule(host, pattern := rule.get("pattern", "")):
                 source = rule.get("source", "config")
                 logger.info("Blocked URL %s — matched rule '%s' from %s", url, pattern, source)
-                return {
-                    "url": url,
-                    "host": host,
-                    "rule": pattern,
-                    "source": source,
-                    "message": f"Blocked by website policy: '{host}' matched rule '{pattern}' from {source}",
-                }
+                return {"url": url, "host": host, "rule": pattern, "source": source, "message": f"Blocked by website policy: '{host}' matched rule '{pattern}' from {source}"}
     return None

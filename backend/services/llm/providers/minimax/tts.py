@@ -29,68 +29,19 @@ class MiniMaxTTSProvider(TTSProvider):
 preview_text 为试听文本——设计完成后会用它合成一段示例音频供你试听。\
 """
     VOICE_CATALOG: ClassVar[list[dict]] = [
-        {
-            "id": "female-shaonv",
-            "label": "少女音",
-            "gender": "female",
-            "language": "zh",
-            "tags": ["少女", "温柔", "甜", "活泼", "女"],
-            "description": "清甜的少女音，活泼温柔。",
-        },
-        {
-            "id": "female-yujie",
-            "label": "御姐音",
-            "gender": "female",
-            "language": "zh",
-            "tags": ["御姐", "清冷", "成熟", "沉稳", "女"],
-            "description": "清冷成熟的御姐音。",
-        },
-        {
-            "id": "female-chengshu",
-            "label": "知性女声",
-            "gender": "female",
-            "language": "zh",
-            "tags": ["知性", "温柔", "成熟", "女", "稳重"],
-            "description": "温柔知性的成熟女声。",
-        },
-        {
-            "id": "female-mengyao",
-            "label": "萌丫音",
-            "gender": "female",
-            "language": "zh",
-            "tags": ["萌", "可爱", "甜", "少女", "女"],
-            "description": "软萌可爱的少女音。",
-        },
-        {
-            "id": "male-qn-qingse",
-            "label": "青涩少年",
-            "gender": "male",
-            "language": "zh",
-            "tags": ["少年", "青涩", "清新", "男", "正太"],
-            "description": "清新青涩的少年音。",
-        },
-        {
-            "id": "male-qn-jingying",
-            "label": "精英男声",
-            "gender": "male",
-            "language": "zh",
-            "tags": ["精英", "沉稳", "成熟", "磁性", "男"],
-            "description": "沉稳干练的精英男声。",
-        },
+        {"id": "female-shaonv", "label": "少女音", "gender": "female", "language": "zh", "tags": ["少女", "温柔", "甜", "活泼", "女"], "description": "清甜的少女音，活泼温柔。"},
+        {"id": "female-yujie", "label": "御姐音", "gender": "female", "language": "zh", "tags": ["御姐", "清冷", "成熟", "沉稳", "女"], "description": "清冷成熟的御姐音。"},
+        {"id": "female-chengshu", "label": "知性女声", "gender": "female", "language": "zh", "tags": ["知性", "温柔", "成熟", "女", "稳重"], "description": "温柔知性的成熟女声。"},
+        {"id": "female-mengyao", "label": "萌丫音", "gender": "female", "language": "zh", "tags": ["萌", "可爱", "甜", "少女", "女"], "description": "软萌可爱的少女音。"},
+        {"id": "male-qn-qingse", "label": "青涩少年", "gender": "male", "language": "zh", "tags": ["少年", "青涩", "清新", "男", "正太"], "description": "清新青涩的少年音。"},
+        {"id": "male-qn-jingying", "label": "精英男声", "gender": "male", "language": "zh", "tags": ["精英", "沉稳", "成熟", "磁性", "男"], "description": "沉稳干练的精英男声。"},
     ]
 
     def __init__(self, config: ProviderConfig) -> None:
         super().__init__(config)
         self._client = get_http(config.base_url, config.api_key)
 
-    async def synthesize(
-        self,
-        text: str,
-        *,
-        voice: str = "",
-        fmt: str = "mp3",
-        speed: float | None = None,
-    ) -> TTSResult:
+    async def synthesize(self, text: str, *, voice: str = "", fmt: str = "mp3", speed: float | None = None) -> TTSResult:
         chosen_voice = voice or self.VOICE_CATALOG[0]["id"]
         if voice != chosen_voice:
             logger.info("minimax tts: substituted voice", extra={"requested": voice, "used": chosen_voice})
@@ -107,10 +58,7 @@ preview_text 为试听文本——设计完成后会用它合成一段示例音�
         return TTSResult(audio=audio, mime=mime, voice=chosen_voice)
 
     async def design_voice(self, prompt: str, *, preview_text: str = "") -> VoiceDesignResult:
-        payload: dict = {
-            "prompt": prompt,
-            "preview_text": preview_text or "你好，我是你的桌面伙伴。",
-        }
+        payload: dict = {"prompt": prompt, "preview_text": preview_text or "你好，我是你的桌面伙伴。"}
         resp = await self._client.post("/v1/voice_design", json=payload)
         body = raise_for_minimax_response(resp, provider="minimax", model=self.config.model)
         voice_id = body.get("voice_id", "")

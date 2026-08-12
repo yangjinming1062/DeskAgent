@@ -44,14 +44,7 @@ def kill_tree(pid: int | None, *, force: bool = True, timeout: float = 10.0) -> 
 
     def _run(cmd: list[str]) -> subprocess.CompletedProcess | None:
         try:
-            return subprocess.run(
-                ["taskkill", *cmd],
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-                creationflags=CREATE_NO_WINDOW,
-                stdin=subprocess.DEVNULL,
-            )
+            return subprocess.run(["taskkill", *cmd], capture_output=True, text=True, timeout=timeout, creationflags=CREATE_NO_WINDOW, stdin=subprocess.DEVNULL)
         except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
             return None
 

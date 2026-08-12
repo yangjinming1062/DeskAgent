@@ -133,11 +133,7 @@ def _guarded_http_get(url: str, *, timeout: int = 20) -> httpx.Response | None:
 
         blocked = check_website_access(current_url)
         if blocked:
-            logger.info(
-                "Blocked Skills Hub fetch for %s by rule %s",
-                blocked["host"],
-                blocked["rule"],
-            )
+            logger.info("Blocked Skills Hub fetch for %s by rule %s", blocked["host"], blocked["rule"])
             return None
 
         try:
@@ -197,13 +193,7 @@ class GitHubAuth:
 
     def _try_gh_cli(self) -> str | None:
         try:
-            result = subprocess.run(
-                ["gh", "auth", "token"],
-                capture_output=True,
-                text=True,
-                timeout=5,
-                stdin=subprocess.DEVNULL,
-            )
+            result = subprocess.run(["gh", "auth", "token"], capture_output=True, text=True, timeout=5, stdin=subprocess.DEVNULL)
             if result.returncode == 0 and result.stdout.strip():
                 return result.stdout.strip()
         except (FileNotFoundError, subprocess.TimeoutExpired) as e:
@@ -347,13 +337,7 @@ class GitHubSource(SkillSource):
         skill_name = skill_path.rstrip("/").split("/")[-1]
         trust = self.trust_level_for(identifier)
 
-        return SkillBundle(
-            name=skill_name,
-            files=files,
-            source="github",
-            identifier=identifier,
-            trust_level=trust,
-        )
+        return SkillBundle(name=skill_name, files=files, source="github", identifier=identifier, trust_level=trust)
 
     def inspect(self, identifier: str) -> SkillMeta | None:
         """Fetch just the SKILL.md metadata for preview."""
@@ -452,12 +436,7 @@ class GitHubSource(SkillSource):
         headers = self.auth.get_headers()
 
         try:
-            resp = httpx.get(
-                f"https://api.github.com/repos/{repo}",
-                headers=headers,
-                timeout=15,
-                follow_redirects=True,
-            )
+            resp = httpx.get(f"https://api.github.com/repos/{repo}", headers=headers, timeout=15, follow_redirects=True)
             if resp.status_code != 200:
                 self._check_rate_limit_response(resp)
                 return None
@@ -466,13 +445,7 @@ class GitHubSource(SkillSource):
             return None
 
         try:
-            resp = httpx.get(
-                f"https://api.github.com/repos/{repo}/git/trees/{default_branch}",
-                params={"recursive": "1"},
-                headers=headers,
-                timeout=30,
-                follow_redirects=True,
-            )
+            resp = httpx.get(f"https://api.github.com/repos/{repo}/git/trees/{default_branch}", params={"recursive": "1"}, headers=headers, timeout=30, follow_redirects=True)
             if resp.status_code != 200:
                 self._check_rate_limit_response(resp)
                 return None
@@ -495,15 +468,7 @@ class GitHubSource(SkillSource):
                 self._rate_limited = True
                 logger.warning("GitHub API rate limit exhausted (unauthenticated: 60 req/hr). Set GITHUB_TOKEN or install the gh CLI to raise the limit to 5,000/hr.")
 
-    def _github_get(
-        self,
-        url: str,
-        *,
-        params: dict | None = None,
-        headers: dict | None = None,
-        timeout: float = 15.0,
-        max_retries: int = 3,
-    ) -> "httpx.Response | None":
+    def _github_get(self, url: str, *, params: dict | None = None, headers: dict | None = None, timeout: float = 15.0, max_retries: int = 3) -> "httpx.Response | None":
         """GET against the GitHub API with retry/backoff on transient failures.
 
         Returns the final ``httpx.Response`` (caller inspects status) or
@@ -526,13 +491,7 @@ class GitHubSource(SkillSource):
         last_resp: httpx.Response | None = None
         for attempt in range(max_retries):
             try:
-                resp = httpx.get(
-                    url,
-                    params=params,
-                    headers=hdrs,
-                    timeout=timeout,
-                    follow_redirects=True,
-                )
+                resp = httpx.get(url, params=params, headers=hdrs, timeout=timeout, follow_redirects=True)
             except httpx.HTTPError as e:
                 logger.debug("GitHub GET %s failed (attempt %d/%d): %s", url, attempt + 1, max_retries, e)
                 if attempt < max_retries - 1:
@@ -559,13 +518,7 @@ class GitHubSource(SkillSource):
                         delta = float(reset) - time.time()
                         if 0 < delta <= 60.0:
                             wait = delta
-                    logger.debug(
-                        "GitHub rate limited on %s, waiting %.1fs (attempt %d/%d)",
-                        url,
-                        wait,
-                        attempt + 1,
-                        max_retries,
-                    )
+                    logger.debug("GitHub rate limited on %s, waiting %.1fs (attempt %d/%d)", url, wait, attempt + 1, max_retries)
                     time.sleep(wait)
                     backoff = min(backoff * 2, 30.0)
                     continue
@@ -698,10 +651,7 @@ class GitHubSource(SkillSource):
     def _fetch_file_content(self, repo: str, path: str) -> str | None:
         """Fetch a single file's content from GitHub."""
         url = f"https://api.github.com/repos/{repo}/contents/{path}"
-        resp = self._github_get(
-            url,
-            headers={**self.auth.get_headers(), "Accept": "application/vnd.github.v3.raw"},
-        )
+        resp = self._github_get(url, headers={**self.auth.get_headers(), "Accept": "application/vnd.github.v3.raw"})
         if resp is not None and resp.status_code == 200:
             return resp.text
         return None
@@ -851,11 +801,7 @@ class WellKnownSkillSource(SkillSource):
                     identifier=self._wrap_identifier(parsed["base_url"], name),
                     trust_level="community",
                     path=name,
-                    extra={
-                        "index_url": parsed["index_url"],
-                        "base_url": parsed["base_url"],
-                        "files": files if isinstance(files, list) else ["SKILL.md"],
-                    },
+                    extra={"index_url": parsed["index_url"], "base_url": parsed["base_url"], "files": files if isinstance(files, list) else ["SKILL.md"]},
                 )
             )
         return results
@@ -883,12 +829,7 @@ class WellKnownSkillSource(SkillSource):
             identifier=self._wrap_identifier(parsed["base_url"], parsed["skill_name"]),
             trust_level="community",
             path=parsed["skill_name"],
-            extra={
-                "index_url": parsed["index_url"],
-                "base_url": parsed["base_url"],
-                "files": entry.get("files", ["SKILL.md"]),
-                "endpoint": parsed["skill_url"],
-            },
+            extra={"index_url": parsed["index_url"], "base_url": parsed["base_url"], "files": entry.get("files", ["SKILL.md"]), "endpoint": parsed["skill_url"]},
         )
 
     def fetch(self, identifier: str) -> SkillBundle | None:
@@ -917,11 +858,7 @@ class WellKnownSkillSource(SkillSource):
             try:
                 safe_rel_path = _validate_bundle_rel_path(rel_path)
             except ValueError:
-                logger.warning(
-                    "Well-known skill %s advertised unsafe file path: %r",
-                    identifier,
-                    rel_path,
-                )
+                logger.warning("Well-known skill %s advertised unsafe file path: %r", identifier, rel_path)
                 return None
             text = self._fetch_text(f"{parsed['skill_url']}/{safe_rel_path}")
             if text is None:
@@ -937,12 +874,7 @@ class WellKnownSkillSource(SkillSource):
             source="well-known",
             identifier=self._wrap_identifier(parsed["base_url"], skill_name),
             trust_level="community",
-            metadata={
-                "index_url": parsed["index_url"],
-                "base_url": parsed["base_url"],
-                "endpoint": parsed["skill_url"],
-                "files": files,
-            },
+            metadata={"index_url": parsed["index_url"], "base_url": parsed["base_url"], "endpoint": parsed["skill_url"], "files": files},
         )
 
     def _query_to_index_url(self, query: str) -> str | None:
@@ -971,12 +903,7 @@ class WellKnownSkillSource(SkillSource):
             base_url = clean_url[: -len("/index.json")]
             skill_name = fragment
             skill_url = f"{base_url}/{skill_name}"
-            return {
-                "index_url": clean_url,
-                "base_url": base_url,
-                "skill_name": skill_name,
-                "skill_url": skill_url,
-            }
+            return {"index_url": clean_url, "base_url": base_url, "skill_name": skill_name, "skill_url": skill_url}
 
         if clean_url.endswith("/SKILL.md"):
             skill_url = clean_url[: -len("/SKILL.md")]
@@ -987,12 +914,7 @@ class WellKnownSkillSource(SkillSource):
             return None
 
         base_url, skill_name = skill_url.rsplit("/", 1)
-        return {
-            "index_url": f"{base_url}/index.json",
-            "base_url": base_url,
-            "skill_name": skill_name,
-            "skill_url": skill_url,
-        }
+        return {"index_url": f"{base_url}/index.json", "base_url": base_url, "skill_name": skill_name, "skill_url": skill_url}
 
     def _parse_index(self, index_url: str) -> dict | None:
         cache_key = f"well_known_index_{hashlib.md5(index_url.encode()).hexdigest()}"
@@ -1012,11 +934,7 @@ class WellKnownSkillSource(SkillSource):
         if not isinstance(skills, list):
             return None
 
-        parsed = {
-            "index_url": index_url,
-            "base_url": index_url[: -len("/index.json")],
-            "skills": skills,
-        }
+        parsed = {"index_url": index_url, "base_url": index_url[: -len("/index.json")], "skills": skills}
         _write_index_cache(cache_key, parsed)
         return parsed
 
@@ -1140,14 +1058,7 @@ class UrlSource(SkillSource):
                 logger.warning("URL skill %s produced unsafe skill name: %r", url, name)
                 return None
 
-        return SkillBundle(
-            name=skill_name,
-            files={"SKILL.md": text},
-            source="url",
-            identifier=url,
-            trust_level="community",
-            metadata={"url": url, "awaiting_name": not skill_name},
-        )
+        return SkillBundle(name=skill_name, files={"SKILL.md": text}, source="url", identifier=url, trust_level="community", metadata={"url": url, "awaiting_name": not skill_name})
 
     @staticmethod
     def _fetch_text(url: str) -> str | None:
@@ -1217,24 +1128,12 @@ class SkillsShSource(SkillSource):
     # sitemap-skills-1.xml + sitemap-skills-2.xml, each up to 10k URLs.
     SITEMAP_INDEX_URL = "https://www.skills.sh/sitemap.xml"
     _SITEMAP_LOC_RE = re.compile(r"<loc>([^<]+)</loc>", re.IGNORECASE)
-    _SITEMAP_SKILL_RE = re.compile(
-        r"^https?://(?:www\.)?skills\.sh/(?P<owner>[^/]+)/(?P<repo>[^/]+)/(?P<skill>[^/]+)/?$",
-        re.IGNORECASE,
-    )
+    _SITEMAP_SKILL_RE = re.compile(r"^https?://(?:www\.)?skills\.sh/(?P<owner>[^/]+)/(?P<repo>[^/]+)/(?P<skill>[^/]+)/?$", re.IGNORECASE)
     _SKILL_LINK_RE = re.compile(r'href=["\']/(?P<id>(?!agents/|_next/|api/)[^"\'/]+/[^"\'/]+/[^"\'/]+)["\']')
-    _INSTALL_CMD_RE = re.compile(
-        r"npx\s+skills\s+add\s+(?P<repo>https?://github\.com/[^\s<]+|[^\s<]+)" r"(?:\s+--skill\s+(?P<skill>[^\s<]+))?",
-        re.IGNORECASE,
-    )
+    _INSTALL_CMD_RE = re.compile(r"npx\s+skills\s+add\s+(?P<repo>https?://github\.com/[^\s<]+|[^\s<]+)" r"(?:\s+--skill\s+(?P<skill>[^\s<]+))?", re.IGNORECASE)
     _PAGE_H1_RE = re.compile(r"<h1[^>]*>(?P<title>.*?)</h1>", re.IGNORECASE | re.DOTALL)
-    _PROSE_H1_RE = re.compile(
-        r'<div[^>]*class=["\'][^"\']*prose[^"\']*["\'][^>]*>.*?<h1[^>]*>(?P<title>.*?)</h1>',
-        re.IGNORECASE | re.DOTALL,
-    )
-    _PROSE_P_RE = re.compile(
-        r'<div[^>]*class=["\'][^"\']*prose[^"\']*["\'][^>]*>.*?<p[^>]*>(?P<body>.*?)</p>',
-        re.IGNORECASE | re.DOTALL,
-    )
+    _PROSE_H1_RE = re.compile(r'<div[^>]*class=["\'][^"\']*prose[^"\']*["\'][^>]*>.*?<h1[^>]*>(?P<title>.*?)</h1>', re.IGNORECASE | re.DOTALL)
+    _PROSE_P_RE = re.compile(r'<div[^>]*class=["\'][^"\']*prose[^"\']*["\'][^>]*>.*?<p[^>]*>(?P<body>.*?)</p>', re.IGNORECASE | re.DOTALL)
     _WEEKLY_INSTALLS_RE = re.compile(r'Weekly Installs.*?children\\":\\"(?P<count>[0-9.,Kk]+)\\"', re.DOTALL)
 
     def __init__(self, auth: GitHubAuth) -> None:
@@ -1260,11 +1159,7 @@ class SkillsShSource(SkillSource):
             return [SkillMeta(**item) for item in cached][:limit]
 
         try:
-            resp = httpx.get(
-                self.SEARCH_URL,
-                params={"q": query, "limit": limit},
-                timeout=20,
-            )
+            resp = httpx.get(self.SEARCH_URL, params={"q": query, "limit": limit}, timeout=20)
             if resp.status_code != 200:
                 return []
             data = resp.json()
@@ -1335,12 +1230,7 @@ class SkillsShSource(SkillSource):
         # Step 1: fetch the sitemap index → list of skill-sitemap URLs.
         skill_sitemap_urls: list[str] = []
         try:
-            resp = httpx.get(
-                self.SITEMAP_INDEX_URL,
-                timeout=20,
-                follow_redirects=True,
-                headers=sitemap_headers,
-            )
+            resp = httpx.get(self.SITEMAP_INDEX_URL, timeout=20, follow_redirects=True, headers=sitemap_headers)
             if resp.status_code != 200:
                 return self._featured_skills(limit)
             for match in self._SITEMAP_LOC_RE.finditer(resp.text):
@@ -1359,12 +1249,7 @@ class SkillsShSource(SkillSource):
         results: list[SkillMeta] = []
         for sitemap_url in skill_sitemap_urls:
             try:
-                resp = httpx.get(
-                    sitemap_url,
-                    timeout=30,
-                    follow_redirects=True,
-                    headers=sitemap_headers,
-                )
+                resp = httpx.get(sitemap_url, timeout=30, follow_redirects=True, headers=sitemap_headers)
                 if resp.status_code != 200:
                     continue
             except httpx.HTTPError:
@@ -1391,10 +1276,7 @@ class SkillsShSource(SkillSource):
                         trust_level=self.github.trust_level_for(canonical),
                         repo=repo,
                         path=skill_name,
-                        extra={
-                            "detail_url": f"{self.BASE_URL}/{canonical}",
-                            "repo_url": f"https://github.com/{repo}",
-                        },
+                        extra={"detail_url": f"{self.BASE_URL}/{canonical}", "repo_url": f"https://github.com/{repo}"},
                     )
                 )
 
@@ -1475,11 +1357,7 @@ class SkillsShSource(SkillSource):
             trust_level=self.github.trust_level_for(canonical),
             repo=repo,
             path=skill_path,
-            extra={
-                "installs": installs,
-                "detail_url": f"{self.BASE_URL}/{canonical}",
-                "repo_url": f"https://github.com/{repo}",
-            },
+            extra={"installs": installs, "detail_url": f"{self.BASE_URL}/{canonical}", "repo_url": f"https://github.com/{repo}"},
         )
 
     def _fetch_detail_page(self, identifier: str) -> dict | None:
@@ -1547,11 +1425,7 @@ class SkillsShSource(SkillSource):
         skill_token = parts[2].split("/")[-1]
         tokens = [skill_token]
         if isinstance(detail, dict):
-            tokens.extend([
-                detail.get("install_skill", ""),
-                detail.get("page_title", ""),
-                detail.get("body_title", ""),
-            ])
+            tokens.extend([detail.get("install_skill", ""), detail.get("page_title", ""), detail.get("body_title", "")])
 
         base_paths = ["skills/", ".agents/skills/", ".claude/skills/"]
 
@@ -1700,9 +1574,7 @@ class SkillsShSource(SkillSource):
     def _detail_to_metadata(self, canonical: str, detail: dict | None) -> dict[str, Any]:
         parts = canonical.split("/", 2)
         repo = f"{parts[0]}/{parts[1]}" if len(parts) >= 2 else ""
-        metadata = {
-            "detail_url": f"{self.BASE_URL}/{canonical}",
-        }
+        metadata = {"detail_url": f"{self.BASE_URL}/{canonical}"}
         if repo:
             metadata["repo_url"] = f"https://github.com/{repo}"
         if isinstance(detail, dict):
@@ -1738,12 +1610,7 @@ class SkillsShSource(SkillSource):
 
     @staticmethod
     def _normalize_identifier(identifier: str) -> str:
-        prefix_aliases = (
-            "skills-sh/",
-            "skills.sh/",
-            "skils-sh/",
-            "skils.sh/",
-        )
+        prefix_aliases = ("skills-sh/", "skills.sh/", "skils-sh/", "skils.sh/")
         for prefix in prefix_aliases:
             if identifier.startswith(prefix):
                 return identifier[len(prefix) :]
@@ -1757,12 +1624,7 @@ class SkillsShSource(SkillSource):
 
         repo = f"{parts[0]}/{parts[1]}"
         skill_path = parts[2].lstrip("/")
-        candidates = [
-            f"{repo}/{skill_path}",
-            f"{repo}/skills/{skill_path}",
-            f"{repo}/.agents/skills/{skill_path}",
-            f"{repo}/.claude/skills/{skill_path}",
-        ]
+        candidates = [f"{repo}/{skill_path}", f"{repo}/skills/{skill_path}", f"{repo}/.agents/skills/{skill_path}", f"{repo}/.claude/skills/{skill_path}"]
 
         seen = set()
         deduped: list[str] = []
@@ -1889,14 +1751,7 @@ class ClawHubSource(SkillSource):
         if query_terms:
             base_slug = "-".join(query_terms)
             if len(query_terms) >= 2:
-                candidates.extend([
-                    f"{base_slug}-agent",
-                    f"{base_slug}-skill",
-                    f"{base_slug}-tool",
-                    f"{base_slug}-assistant",
-                    f"{base_slug}-playbook",
-                    base_slug,
-                ])
+                candidates.extend([f"{base_slug}-agent", f"{base_slug}-skill", f"{base_slug}-tool", f"{base_slug}-assistant", f"{base_slug}-playbook", base_slug])
             else:
                 candidates.append(base_slug)
 
@@ -1917,13 +1772,7 @@ class ClawHubSource(SkillSource):
             return self._dedupe_results(results)[:limit]
 
         filtered = [meta for meta in results if self._search_score(query_norm, meta) > 0]
-        filtered.sort(
-            key=lambda meta: (
-                -self._search_score(query_norm, meta),
-                meta.name.lower(),
-                meta.identifier.lower(),
-            )
-        )
+        filtered.sort(key=lambda meta: (-self._search_score(query_norm, meta), meta.name.lower(), meta.identifier.lower()))
         filtered = self._dedupe_results(filtered)
 
         exact = self._exact_slug_meta(query_norm)
@@ -1967,18 +1816,10 @@ class ClawHubSource(SkillSource):
         cache_key = f"clawhub_search_listing_v1_{hashlib.md5(query.encode()).hexdigest()}_{limit}"
         cached = _read_index_cache(cache_key)
         if cached is not None:
-            return self._finalize_search_results(
-                query,
-                [SkillMeta(**s) for s in cached],
-                limit,
-            )
+            return self._finalize_search_results(query, [SkillMeta(**s) for s in cached], limit)
 
         try:
-            resp = httpx.get(
-                f"{self.BASE_URL}/skills",
-                params={"search": query, "limit": limit},
-                timeout=15,
-            )
+            resp = httpx.get(f"{self.BASE_URL}/skills", params={"search": query, "limit": limit}, timeout=15)
             if resp.status_code != 200:
                 return []
             data = resp.json()
@@ -1997,16 +1838,7 @@ class ClawHubSource(SkillSource):
             display_name = item.get("displayName") or item.get("name") or slug
             summary = item.get("summary") or item.get("description") or ""
             tags = self._normalize_tags(item.get("tags", []))
-            results.append(
-                SkillMeta(
-                    name=display_name,
-                    description=summary,
-                    source="clawhub",
-                    identifier=slug,
-                    trust_level="community",
-                    tags=tags,
-                )
-            )
+            results.append(SkillMeta(name=display_name, description=summary, source="clawhub", identifier=slug, trust_level="community", tags=tags))
 
         final_results = self._finalize_search_results(query, results, limit)
         _write_index_cache(cache_key, [_skill_meta_to_dict(s) for s in final_results])
@@ -2039,20 +1871,10 @@ class ClawHubSource(SkillSource):
                         files = self._extract_files(nested) or files
 
         if "SKILL.md" not in files:
-            logger.warning(
-                "ClawHub fetch for %s resolved version %s but could not retrieve file content",
-                slug,
-                latest_version,
-            )
+            logger.warning("ClawHub fetch for %s resolved version %s but could not retrieve file content", slug, latest_version)
             return None
 
-        return SkillBundle(
-            name=slug,
-            files=files,
-            source="clawhub",
-            identifier=slug,
-            trust_level="community",
-        )
+        return SkillBundle(name=slug, files=files, source="clawhub", identifier=slug, trust_level="community")
 
     def inspect(self, identifier: str) -> SkillMeta | None:
         slug = identifier.split("/")[-1]
@@ -2126,16 +1948,7 @@ class ClawHubSource(SkillSource):
                 display_name = item.get("displayName") or item.get("name") or slug
                 summary = item.get("summary") or item.get("description") or ""
                 tags = self._normalize_tags(item.get("tags", []))
-                results.append(
-                    SkillMeta(
-                        name=display_name,
-                        description=summary,
-                        source="clawhub",
-                        identifier=slug,
-                        trust_level="community",
-                        tags=tags,
-                    )
-                )
+                results.append(SkillMeta(name=display_name, description=summary, source="clawhub", identifier=slug, trust_level="community", tags=tags))
 
             cursor = data.get("nextCursor") if isinstance(data, dict) else None
             if not isinstance(cursor, str) or not cursor:
@@ -2213,25 +2026,14 @@ class ClawHubSource(SkillSource):
         max_retries = 3
         for attempt in range(max_retries):
             try:
-                resp = httpx.get(
-                    f"{self.BASE_URL}/download",
-                    params={"slug": slug, "version": version},
-                    timeout=30,
-                    follow_redirects=True,
-                )
+                resp = httpx.get(f"{self.BASE_URL}/download", params={"slug": slug, "version": version}, timeout=30, follow_redirects=True)
                 if resp.status_code == 429:
                     try:
                         retry_after = int(resp.headers.get("retry-after", "5"))
                     except (ValueError, TypeError):
                         retry_after = 5
                     retry_after = min(retry_after, 15)  # Cap wait time
-                    logger.debug(
-                        "ClawHub download rate-limited for %s, retrying in %ds (attempt %d/%d)",
-                        slug,
-                        retry_after,
-                        attempt + 1,
-                        max_retries,
-                    )
+                    logger.debug("ClawHub download rate-limited for %s, retrying in %ds (attempt %d/%d)", slug, retry_after, attempt + 1, max_retries)
                     time.sleep(retry_after)
                     continue
                 if resp.status_code != 200:
@@ -2283,10 +2085,7 @@ class ClaudeMarketplaceSource(SkillSource):
     Marketplace repos contain .claude-plugin/marketplace.json with plugin listings.
     """
 
-    KNOWN_MARKETPLACES: ClassVar[list[str]] = [
-        "anthropics/skills",
-        "aiskillstore/marketplace",
-    ]
+    KNOWN_MARKETPLACES: ClassVar[list[str]] = ["anthropics/skills", "aiskillstore/marketplace"]
 
     def __init__(self, auth: GitHubAuth) -> None:
         self.auth = auth
@@ -2363,10 +2162,7 @@ class ClaudeMarketplaceSource(SkillSource):
             return cached
 
         url = f"https://api.github.com/repos/{repo}/contents/.claude-plugin/marketplace.json"
-        resp = self.github._github_get(
-            url,
-            headers={**self.auth.get_headers(), "Accept": "application/vnd.github.v3.raw"},
-        )
+        resp = self.github._github_get(url, headers={**self.auth.get_headers(), "Accept": "application/vnd.github.v3.raw"})
         if resp is None or resp.status_code != 200:
             return []
         try:
@@ -2440,13 +2236,7 @@ class LobeHubSource(SkillSource):
             return None
 
         skill_md = self._convert_to_skill_md(agent_data)
-        return SkillBundle(
-            name=agent_id,
-            files={"SKILL.md": skill_md},
-            source="lobehub",
-            identifier=f"lobehub/{agent_id}",
-            trust_level="community",
-        )
+        return SkillBundle(name=agent_id, files={"SKILL.md": skill_md}, source="lobehub", identifier=f"lobehub/{agent_id}", trust_level="community")
 
     def inspect(self, identifier: str) -> SkillMeta | None:
         agent_id = identifier.split("/", 1)[-1] if identifier.startswith("lobehub/") else identifier
@@ -2523,15 +2313,7 @@ class LobeHubSource(SkillSource):
             "---",
         ]
 
-        body_lines = [
-            f"# {title}",
-            "",
-            description,
-            "",
-            "## Instructions",
-            "",
-            system_role if system_role else "(No system role defined)",
-        ]
+        body_lines = [f"# {title}", "", description, "", "## Instructions", "", system_role if system_role else "(No system role defined)"]
 
         return "\n".join(fm_lines) + "\n\n" + "\n".join(body_lines) + "\n"
 
@@ -2667,12 +2449,7 @@ class BrowseShSource(SkillSource):
             source="browse-sh",
             identifier=identifier,
             trust_level="community",
-            metadata={
-                "slug": slug,
-                "hostname": item.get("hostname", ""),
-                "source_url": item.get("sourceUrl", ""),
-                "skill_md_url": md_url,
-            },
+            metadata={"slug": slug, "hostname": item.get("hostname", ""), "source_url": item.get("sourceUrl", ""), "skill_md_url": md_url},
         )
 
     def _resolve_skill_md_url(self, slug: str, item: dict) -> str | None:
@@ -2683,11 +2460,7 @@ class BrowseShSource(SkillSource):
         ``sourceUrl`` (some entries may), use it directly.
         """
         try:
-            detail = httpx.get(
-                self.SKILL_DETAIL_URL.format(slug=slug),
-                timeout=20,
-                follow_redirects=True,
-            )
+            detail = httpx.get(self.SKILL_DETAIL_URL.format(slug=slug), timeout=20, follow_redirects=True)
             if detail.status_code == 200:
                 data = detail.json()
                 if isinstance(data, dict):
@@ -2892,13 +2665,7 @@ def quarantine_bundle(bundle: SkillBundle) -> Path:
     return dest
 
 
-def install_from_quarantine(
-    quarantine_path: Path,
-    skill_name: str,
-    category: str,
-    bundle: SkillBundle,
-    scan_result: ScanResult,
-) -> Path:
+def install_from_quarantine(quarantine_path: Path, skill_name: str, category: str, bundle: SkillBundle, scan_result: ScanResult) -> Path:
     safe_name = _validate_skill_name(skill_name)
     safe_category = _validate_install_parent_path(category) if category else ""
     if not quarantine_path.resolve().is_relative_to(QUARANTINE_DIR.resolve()):
@@ -2990,20 +2757,12 @@ def bundle_content_hash(bundle: SkillBundle) -> str:
 
 
 def _source_matches(source: SkillSource, source_name: str) -> bool:
-    aliases = {
-        "skills.sh": "skills-sh",
-    }
+    aliases = {"skills.sh": "skills-sh"}
     normalized = aliases.get(source_name, source_name)
     return source.source_id() == normalized
 
 
-def check_for_skill_updates(
-    name: str | None = None,
-    *,
-    lock: HubLockFile | None = None,
-    sources: list[SkillSource] | None = None,
-    auth: GitHubAuth | None = None,
-) -> list[dict]:
+def check_for_skill_updates(name: str | None = None, *, lock: HubLockFile | None = None, sources: list[SkillSource] | None = None, auth: GitHubAuth | None = None) -> list[dict]:
     """Check installed hub skills for upstream changes."""
     lock = lock or HubLockFile()
     installed = lock.list_installed()
@@ -3029,12 +2788,7 @@ def check_for_skill_updates(
                 break
 
         if not bundle:
-            results.append({
-                "name": entry.get("name", ""),
-                "identifier": identifier,
-                "source": source_name,
-                "status": "unavailable",
-            })
+            results.append({"name": entry.get("name", ""), "identifier": identifier, "source": source_name, "status": "unavailable"})
             continue
 
         current_hash = entry.get("content_hash", "")
@@ -3361,22 +3115,14 @@ def parallel_search_sources(
         except TimeoutError:
             timed_out_ids = [futures[f] for f in futures if not f.done()]
             if timed_out_ids:
-                logger.debug(
-                    "Skills browse timed out waiting for: %s",
-                    ", ".join(timed_out_ids),
-                )
+                logger.debug("Skills browse timed out waiting for: %s", ", ".join(timed_out_ids))
 
     return all_results, source_counts, timed_out_ids
 
 
 def unified_search(query: str, sources: list[SkillSource], source_filter: str = "all", limit: int = 10) -> list[SkillMeta]:
     """Search all sources (in parallel) and merge results."""
-    all_results, _, _ = parallel_search_sources(
-        sources,
-        query=query,
-        source_filter=source_filter,
-        overall_timeout=30,
-    )
+    all_results, _, _ = parallel_search_sources(sources, query=query, source_filter=source_filter, overall_timeout=30)
 
     # Deduplicate by identifier, preferring higher trust levels.
     # identifier is always unique per skill (e.g. "browse-sh/airbnb.com/search-listings-ddgioa").

@@ -68,12 +68,7 @@ class WebSearchProvider(abc.ABC):
 
         Override to expose API key prompts, badges, and instance URL fields.
         """
-        return {
-            "name": self.display_name,
-            "badge": "",
-            "tag": "",
-            "env_vars": [],
-        }
+        return {"name": self.display_name, "badge": "", "tag": "", "env_vars": []}
 
     def missing_credential_message(self) -> str | None:
         """Actionable user-facing message for ``is_available() == False``.

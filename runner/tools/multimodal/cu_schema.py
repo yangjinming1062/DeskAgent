@@ -17,21 +17,7 @@ COMPUTER_USE_SCHEMA: dict[str, Any] = {
         "properties": {
             "action": {
                 "type": "string",
-                "enum": [
-                    "capture",
-                    "click",
-                    "double_click",
-                    "right_click",
-                    "middle_click",
-                    "drag",
-                    "scroll",
-                    "type",
-                    "key",
-                    "set_value",
-                    "wait",
-                    "list_apps",
-                    "focus_app",
-                ],
+                "enum": ["capture", "click", "double_click", "right_click", "middle_click", "drag", "scroll", "type", "key", "set_value", "wait", "list_apps", "focus_app"],
                 "description": (
                     "Which action to perform. `capture` is free (no side "
                     "effects). All other actions require approval unless "
@@ -87,10 +73,7 @@ COMPUTER_USE_SCHEMA: dict[str, Any] = {
                 "minimum": 1,
                 "maximum": 1000,
             },
-            "element": {
-                "type": "integer",
-                "description": ("The 1-based SOM index returned by the last `capture(mode='som')` call. Strongly preferred over raw coordinates."),
-            },
+            "element": {"type": "integer", "description": ("The 1-based SOM index returned by the last `capture(mode='som')` call. Strongly preferred over raw coordinates.")},
             "coordinate": {
                 "type": "array",
                 "items": {"type": "integer"},
@@ -98,44 +81,18 @@ COMPUTER_USE_SCHEMA: dict[str, Any] = {
                 "maxItems": 2,
                 "description": ("Pixel coordinates [x, y] in logical screen space (as returned by capture width/height). Only use this if no element index is available."),
             },
-            "button": {
-                "type": "string",
-                "enum": ["left", "right", "middle"],
-                "description": "Mouse button. Defaults to left.",
-            },
+            "button": {"type": "string", "enum": ["left", "right", "middle"], "description": "Mouse button. Defaults to left."},
             "modifiers": {
                 "type": "array",
-                "items": {
-                    "type": "string",
-                    "enum": ["cmd", "command", "shift", "option", "alt", "ctrl", "fn", "win", "super", "meta", "windows", "⌘", "⌥"],
-                },
+                "items": {"type": "string", "enum": ["cmd", "command", "shift", "option", "alt", "ctrl", "fn", "win", "super", "meta", "windows", "⌘", "⌥"]},
                 "description": "Modifier keys held during the action.",
             },
             "from_element": {"type": "integer", "description": "Source element index (drag)."},
             "to_element": {"type": "integer", "description": "Target element index (drag)."},
-            "from_coordinate": {
-                "type": "array",
-                "items": {"type": "integer"},
-                "minItems": 2,
-                "maxItems": 2,
-                "description": "Source [x,y] (drag; use when no element available).",
-            },
-            "to_coordinate": {
-                "type": "array",
-                "items": {"type": "integer"},
-                "minItems": 2,
-                "maxItems": 2,
-                "description": "Target [x,y] (drag; use when no element available).",
-            },
-            "direction": {
-                "type": "string",
-                "enum": ["up", "down", "left", "right"],
-                "description": "Scroll direction.",
-            },
-            "amount": {
-                "type": "integer",
-                "description": "Scroll wheel ticks. Default 3.",
-            },
+            "from_coordinate": {"type": "array", "items": {"type": "integer"}, "minItems": 2, "maxItems": 2, "description": "Source [x,y] (drag; use when no element available)."},
+            "to_coordinate": {"type": "array", "items": {"type": "integer"}, "minItems": 2, "maxItems": 2, "description": "Target [x,y] (drag; use when no element available)."},
+            "direction": {"type": "string", "enum": ["up", "down", "left", "right"], "description": "Scroll direction."},
+            "amount": {"type": "integer", "description": "Scroll wheel ticks. Default 3."},
             "value": {
                 "type": "string",
                 "description": (
@@ -145,18 +102,9 @@ COMPUTER_USE_SCHEMA: dict[str, Any] = {
                     "AXValue-settable elements, pass the numeric or string value."
                 ),
             },
-            "text": {
-                "type": "string",
-                "description": "Text to type (respects the current layout).",
-            },
-            "keys": {
-                "type": "string",
-                "description": ("Key combo, e.g. 'cmd+s', 'ctrl+alt+t', 'return', 'escape', 'tab'. Use '+' to combine."),
-            },
-            "seconds": {
-                "type": "number",
-                "description": "Seconds to wait. Max 30.",
-            },
+            "text": {"type": "string", "description": "Text to type (respects the current layout)."},
+            "keys": {"type": "string", "description": ("Key combo, e.g. 'cmd+s', 'ctrl+alt+t', 'return', 'escape', 'tab'. Use '+' to combine.")},
+            "seconds": {"type": "number", "description": "Seconds to wait. Max 30."},
             "raise_window": {
                 "type": "boolean",
                 "description": (

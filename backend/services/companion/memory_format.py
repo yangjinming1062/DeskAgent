@@ -17,16 +17,7 @@ def format_memories_block(db: Session, user_id: int) -> str:
     NULL-context rows are surfaced via ``context_not_in`` (which uses
     ``OR context IS NULL`` to escape the SQL three-valued-logic trap).
     """
-    rows = (
-        db.query(Memory)
-        .filter(
-            Memory.user_id == user_id,
-            *[context_not_in(p) for p in STATIC_BLOCK_EXCLUDED],
-        )
-        .order_by(Memory.updated_at.desc())
-        .limit(MAX_MEMORIES)
-        .all()
-    )
+    rows = db.query(Memory).filter(Memory.user_id == user_id, *[context_not_in(p) for p in STATIC_BLOCK_EXCLUDED]).order_by(Memory.updated_at.desc()).limit(MAX_MEMORIES).all()
     if not rows:
         return "（暂无长期记忆）"
     lines = []

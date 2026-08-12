@@ -92,12 +92,7 @@ def create_admin_token(client_version: str = "", ip_address: str = "", user_agen
         with SESSION_LOCAL() as db:
             db.add(
                 AdminSession(
-                    token_jti=jti,
-                    username=SETTINGS.admin_username,
-                    client_version=client_version[:64],
-                    ip_address=ip_address[:64],
-                    user_agent=user_agent[:1024],
-                    is_active=True,
+                    token_jti=jti, username=SETTINGS.admin_username, client_version=client_version[:64], ip_address=ip_address[:64], user_agent=user_agent[:1024], is_active=True
                 )
             )
             db.commit()

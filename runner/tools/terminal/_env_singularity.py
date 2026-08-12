@@ -91,15 +91,7 @@ def _get_or_build_sif(image: str, executable: str = "apptainer") -> str:
 
 class SingularityEnvironment(BaseEnvironment):
     def __init__(
-        self,
-        image: str,
-        cwd: str = "~",
-        timeout: int = 60,
-        cpu: float = 0,
-        memory: int = 0,
-        disk: int = 0,
-        persistent_filesystem: bool = False,
-        task_id: str = "default",
+        self, image: str, cwd: str = "~", timeout: int = 60, cpu: float = 0, memory: int = 0, disk: int = 0, persistent_filesystem: bool = False, task_id: str = "default"
     ):
         super().__init__(cwd=cwd, timeout=timeout)
         self.executable = _ensure_singularity_available()

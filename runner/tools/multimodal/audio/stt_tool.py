@@ -31,31 +31,16 @@ SPEECH_TO_TEXT_SCHEMA = {
     "parameters": {
         "type": "object",
         "properties": {
-            "audio_path": {
-                "type": "string",
-                "description": "Absolute path to an audio file on disk.",
-            },
-            "audio_base64": {
-                "type": "string",
-                "description": "Base64-encoded raw audio bytes (mp3/wav/m4a/ogg/flac/webm/aac). Mutually exclusive with audio_path.",
-            },
-            "mime_type": {
-                "type": "string",
-                "description": "MIME type of audio_base64; helps pick the right container suffix. e.g. 'audio/mp3', 'audio/m4a', 'audio/ogg'.",
-            },
-            "language": {
-                "type": "string",
-                "description": "ISO-639-1 code ('en', 'zh', 'ja', ...). Omit for auto-detect.",
-            },
+            "audio_path": {"type": "string", "description": "Absolute path to an audio file on disk."},
+            "audio_base64": {"type": "string", "description": "Base64-encoded raw audio bytes (mp3/wav/m4a/ogg/flac/webm/aac). Mutually exclusive with audio_path."},
+            "mime_type": {"type": "string", "description": "MIME type of audio_base64; helps pick the right container suffix. e.g. 'audio/mp3', 'audio/m4a', 'audio/ogg'."},
+            "language": {"type": "string", "description": "ISO-639-1 code ('en', 'zh', 'ja', ...). Omit for auto-detect."},
             "model": {
                 "type": "string",
                 "description": "Whisper model size: tiny|base|small|medium|large-v2|large-v3. Default 'base'.",
                 "enum": ["tiny", "base", "small", "medium", "large-v2", "large-v3"],
             },
-            "initial_prompt": {
-                "type": "string",
-                "description": "Optional context priming for the model (e.g. names, jargon).",
-            },
+            "initial_prompt": {"type": "string", "description": "Optional context priming for the model (e.g. names, jargon)."},
         },
         "required": [],
     },
@@ -79,24 +64,12 @@ def _suffix_for_mime(mime: str) -> str:
     return table.get(mime.lower(), ".audio")
 
 
-def _decode_and_transcribe(
-    audio_path: str | Path,
-    *,
-    language: str | None,
-    model_size: str,
-    initial_prompt: str | None,
-    beam_size: int = 1,
-) -> dict[str, Any]:
+def _decode_and_transcribe(audio_path: str | Path, *, language: str | None, model_size: str, initial_prompt: str | None, beam_size: int = 1) -> dict[str, Any]:
     model = WhisperModel if WhisperModel is None else get_whisper(size=model_size)  # type: ignore[truthy-function]
     # Normalize ``"auto"`` / ``None`` → None so the third-party API only sees the explicit-or-auto contract.
     whisper_language = None if language in (None, "auto") else language
     segments, info = model.transcribe(
-        str(audio_path),
-        language=whisper_language,
-        beam_size=beam_size,
-        initial_prompt=initial_prompt,
-        vad_filter=True,
-        condition_on_previous_text=False,
+        str(audio_path), language=whisper_language, beam_size=beam_size, initial_prompt=initial_prompt, vad_filter=True, condition_on_previous_text=False
     )
 
     detected_language: str | None = None
@@ -119,11 +92,7 @@ def _decode_and_transcribe(
             ns, avg_logprob = 0.0, 0.0
         if ns > 0.6 or avg_logprob < -1.0:
             continue
-        out_segments.append({
-            "start": getattr(seg, "start", None),
-            "end": getattr(seg, "end", None),
-            "text": getattr(seg, "text", "").strip(),
-        })
+        out_segments.append({"start": getattr(seg, "start", None), "end": getattr(seg, "end", None), "text": getattr(seg, "text", "").strip()})
         text_parts.append(getattr(seg, "text", "").strip())
 
     return {
@@ -196,12 +165,7 @@ async def speech_to_text_tool(args: dict[str, Any], **kw: Any) -> str:
         return tool_error("transcoded audio is empty", success=False)
 
     try:
-        result = _decode_and_transcribe(
-            pcm_path,
-            language=language,
-            model_size=model_size,
-            initial_prompt=initial_prompt,
-        )
+        result = _decode_and_transcribe(pcm_path, language=language, model_size=model_size, initial_prompt=initial_prompt)
     except FileNotFoundError as e:
         return tool_error(
             f"failed to load faster-whisper model {model_size!r}: {e}",
@@ -215,19 +179,11 @@ async def speech_to_text_tool(args: dict[str, Any], **kw: Any) -> str:
     # Empty text or low confidence → tool_error so the desktop silent_fallback path promotes to cloud.
     text = result.get("text") or ""
     if not text:
-        return tool_error(
-            "local STT produced no segments (audio may be silent or all segments filtered by confidence gate)",
-            hint=_CLOUD_FALLBACK_HINT,
-            success=False,
-        )
+        return tool_error("local STT produced no segments (audio may be silent or all segments filtered by confidence gate)", hint=_CLOUD_FALLBACK_HINT, success=False)
     if is_auto_detect:
         prob = result.get("language_probability")
         if prob is not None and prob < 0.5:
-            return tool_error(
-                f"local STT language detection confidence too low: {prob:.2f}",
-                hint=_CLOUD_FALLBACK_HINT,
-                success=False,
-            )
+            return tool_error(f"local STT language detection confidence too low: {prob:.2f}", hint=_CLOUD_FALLBACK_HINT, success=False)
 
     return tool_result(success=True, **result)
 
@@ -236,8 +192,4 @@ def _handle_speech_to_text(args: dict[str, Any], **kw: Any) -> Any:
     return asyncio.run(speech_to_text_tool(args, **kw))
 
 
-registry.register_tool(
-    "speech_to_text",
-    schema=SPEECH_TO_TEXT_SCHEMA,
-    check_fn=_check_faster_whisper,
-)(_handle_speech_to_text)
+registry.register_tool("speech_to_text", schema=SPEECH_TO_TEXT_SCHEMA, check_fn=_check_faster_whisper)(_handle_speech_to_text)

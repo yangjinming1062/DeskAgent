@@ -66,15 +66,7 @@ class ProviderError(Exception):
     - ``body`` is read by ``_extract_error_body`` (dict, may be empty)
     """
 
-    def __init__(
-        self,
-        message: str,
-        *,
-        status_code: int | None = None,
-        body: dict | None = None,
-        provider: str = "",
-        model: str = "",
-    ) -> None:
+    def __init__(self, message: str, *, status_code: int | None = None, body: dict | None = None, provider: str = "", model: str = "") -> None:
         super().__init__(message)
         self.status_code = status_code
         self.body = body or {}
@@ -219,21 +211,9 @@ class TTSProvider(BaseProvider):
     VOICE_DESIGN_GUIDE: ClassVar[str | None] = None
 
     @abstractmethod
-    async def synthesize(
-        self,
-        text: str,
-        *,
-        voice: str = "",
-        fmt: str = "mp3",
-        speed: float | None = None,
-    ) -> TTSResult: ...
+    async def synthesize(self, text: str, *, voice: str = "", fmt: str = "mp3", speed: float | None = None) -> TTSResult: ...
 
-    async def design_voice(
-        self,
-        prompt: str,
-        *,
-        preview_text: str = "",
-    ) -> VoiceDesignResult:
+    async def design_voice(self, prompt: str, *, preview_text: str = "") -> VoiceDesignResult:
         raise NotImplementedError(f"{self.provider_name} does not support voice design")
 
 
@@ -247,10 +227,4 @@ class STTProvider(BaseProvider):
     service_type: ServiceType = ServiceType.stt
 
     @abstractmethod
-    async def transcribe(
-        self,
-        audio: bytes,
-        *,
-        mime_type: str = "audio/wav",
-        language: str = "auto",
-    ) -> STTResult: ...
+    async def transcribe(self, audio: bytes, *, mime_type: str = "audio/wav", language: str = "auto") -> STTResult: ...

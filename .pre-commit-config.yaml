@@ -1,4 +1,13 @@
 repos:
+  - repo: local
+    hooks:
+      - id: clean-trailing-commas
+        name: remove unnecessary trailing commas (allows single-line collapse)
+        entry: python scripts/clean_trailing_commas.py
+        language: system
+        types: [python]
+        files: ^(backend|runner)/
+        exclude: ^(runner/tests|backend/tests|installer)/
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.12.0
     hooks:

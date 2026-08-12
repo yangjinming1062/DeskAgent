@@ -58,21 +58,12 @@ def raise_for_minimax_response(resp, *, provider: str, model: str) -> dict:
                 # Don't fall back to resp.status_code (likely 200); surface
                 # as a generic 502 so error_classifier marks it retryable.
                 http = 502
-            extra_body = {
-                "error": {"code": str(inner_code), "message": inner_msg},
-                "base_resp": base,
-            }
+            extra_body = {"error": {"code": str(inner_code), "message": inner_msg}, "base_resp": base}
             # Don't pollute the message with internal marker words — the
             # classifier uses the message TEXT to detect content-filter;
             # using ``content_filter`` as a sentinel here makes sense only
             # when the upstream actually mentioned it.
-            raise ProviderError(
-                f"minimax {provider} error {inner_code}: {inner_msg}",
-                status_code=http,
-                body=extra_body,
-                provider=provider,
-                model=model,
-            )
+            raise ProviderError(f"minimax {provider} error {inner_code}: {inner_msg}", status_code=http, body=extra_body, provider=provider, model=model)
         return body
 
     if resp.status_code >= 400:

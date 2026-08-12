@@ -44,15 +44,7 @@ DEFAULT_EXECUTION_MODE = "project"
 
 SANDBOX_AVAILABLE = True
 
-SANDBOX_ALLOWED_TOOLS = frozenset([
-    "web_search",
-    "web_extract",
-    "read_file",
-    "write_file",
-    "search_files",
-    "patch",
-    "terminal",
-])
+SANDBOX_ALLOWED_TOOLS = frozenset(["web_search", "web_extract", "read_file", "write_file", "search_files", "patch", "terminal"])
 
 DEFAULT_TIMEOUT = 300
 
@@ -66,12 +58,7 @@ _SAFE_ENV_PREFIXES = ("PATH", "HOME", "USER", "LANG", "LC_", "TERM", "TMPDIR", "
 
 _SECRET_SUBSTRINGS = ("KEY", "TOKEN", "SECRET", "PASSWORD", "CREDENTIAL", "PASSWD", "AUTH", "DSN", "WEBHOOK")
 
-DESKAGENT_CHILD_ALLOWED = frozenset({
-    "DESKAGENT_HOME",
-    "DESKAGENT_PROFILE",
-    "DESKAGENT_CONFIG",
-    "DESKAGENT_ENV",
-})
+DESKAGENT_CHILD_ALLOWED = frozenset({"DESKAGENT_HOME", "DESKAGENT_PROFILE", "DESKAGENT_CONFIG", "DESKAGENT_ENV"})
 
 _WINDOWS_ESSENTIAL_ENV_VARS = frozenset({
     "SYSTEMROOT",
@@ -142,12 +129,7 @@ _TOOL_STUBS = {
         '"""Search the web. Returns dict with data.web list of {url, title, description}."""',
         '{"query": query, "limit": limit}',
     ),
-    "web_extract": (
-        "web_extract",
-        "urls: list",
-        '"""Extract content from URLs. Returns dict with results list of {url, title, content, error}."""',
-        '{"urls": urls}',
-    ),
+    "web_extract": ("web_extract", "urls: list", '"""Extract content from URLs. Returns dict with results list of {url, title, content, error}."""', '{"urls": urls}'),
     "read_file": (
         "read_file",
         "path: str, offset: int = 1, limit: int = 500",
@@ -336,14 +318,7 @@ def _call(tool_name, args):
 _TERMINAL_BLOCKED_PARAMS = {"background", "pty", "notify_on_complete", "watch_patterns"}
 
 
-def _rpc_server_loop(
-    server_sock: socket.socket,
-    task_id: str,
-    tool_call_log: list,
-    tool_call_counter: list,
-    max_tool_calls: int,
-    allowed_tools: frozenset,
-):
+def _rpc_server_loop(server_sock: socket.socket, task_id: str, tool_call_log: list, tool_call_counter: list, max_tool_calls: int, allowed_tools: frozenset):
     conn = None
     try:
         server_sock.settimeout(5)
@@ -399,11 +374,7 @@ def _rpc_server_loop(
                 tool_call_counter[0] += 1
                 call_duration = time.monotonic() - call_start
                 args_preview = str(tool_args)[:80]
-                tool_call_log.append({
-                    "tool": tool_name,
-                    "args_preview": args_preview,
-                    "duration": round(call_duration, 2),
-                })
+                tool_call_log.append({"tool": tool_name, "args_preview": args_preview, "duration": round(call_duration, 2)})
                 conn.sendall((result + "\n").encode())
     except TimeoutError:
         logger.debug("RPC listener socket timeout")
@@ -467,9 +438,7 @@ def _get_or_create_env(task_id: str):
             }
         local_config = None
         if env_type == "local":
-            local_config = {
-                "persistent": config.get("local_persistent", False),
-            }
+            local_config = {"persistent": config.get("local_persistent", False)}
         logger.info("Creating new %s environment for execute_code task %s...", env_type, effective_task_id[:8])
         env = create_environment(
             env_type=env_type,
@@ -493,11 +462,7 @@ def _get_or_create_env(task_id: str):
 def _ship_file_to_remote(env, remote_path: str, content: str) -> None:
     encoded = base64.b64encode(content.encode("utf-8")).decode("ascii")
     quoted_remote_path = shlex.quote(remote_path)
-    env.execute(
-        f"echo '{encoded}' | base64 -d > {quoted_remote_path}",
-        cwd="/",
-        timeout=30,
-    )
+    env.execute(f"echo '{encoded}' | base64 -d > {quoted_remote_path}", cwd="/", timeout=30)
 
 
 def _env_temp_dir(env: Any) -> str:
@@ -515,25 +480,12 @@ def _env_temp_dir(env: Any) -> str:
     return "/tmp"
 
 
-def _rpc_poll_loop(
-    env,
-    rpc_dir: str,
-    task_id: str,
-    tool_call_log: list,
-    tool_call_counter: list,
-    max_tool_calls: int,
-    allowed_tools: frozenset,
-    stop_event: threading.Event,
-):
+def _rpc_poll_loop(env, rpc_dir: str, task_id: str, tool_call_log: list, tool_call_counter: list, max_tool_calls: int, allowed_tools: frozenset, stop_event: threading.Event):
     poll_interval = 0.1
     quoted_rpc_dir = shlex.quote(rpc_dir)
     while not stop_event.is_set():
         try:
-            ls_result = env.execute(
-                f"ls -1 {quoted_rpc_dir}/req_* 2>/dev/null || true",
-                cwd="/",
-                timeout=10,
-            )
+            ls_result = env.execute(f"ls -1 {quoted_rpc_dir}/req_* 2>/dev/null || true", cwd="/", timeout=10)
             output = ls_result.get("output", "").strip()
             if not output:
                 stop_event.wait(poll_interval)
@@ -544,11 +496,7 @@ def _rpc_poll_loop(
                     break
                 call_start = time.monotonic()
                 quoted_req_file = shlex.quote(req_file)
-                read_result = env.execute(
-                    f"cat {quoted_req_file}",
-                    cwd="/",
-                    timeout=10,
-                )
+                read_result = env.execute(f"cat {quoted_req_file}", cwd="/", timeout=10)
                 try:
                     request = json.loads(read_result.get("output", ""))
                 except (json.JSONDecodeError, ValueError):
@@ -584,17 +532,9 @@ def _rpc_poll_loop(
                         tool_result = tool_error(str(exc))
                     tool_call_counter[0] += 1
                     call_duration = time.monotonic() - call_start
-                    tool_call_log.append({
-                        "tool": tool_name,
-                        "args_preview": str(tool_args)[:80],
-                        "duration": round(call_duration, 2),
-                    })
+                    tool_call_log.append({"tool": tool_name, "args_preview": str(tool_args)[:80], "duration": round(call_duration, 2)})
                 encoded_result = base64.b64encode(tool_result.encode("utf-8")).decode("ascii")
-                env.execute(
-                    f"echo '{encoded_result}' | base64 -d > {quoted_res_file}.tmp && mv {quoted_res_file}.tmp {quoted_res_file}",
-                    cwd="/",
-                    timeout=60,
-                )
+                env.execute(f"echo '{encoded_result}' | base64 -d > {quoted_res_file}.tmp && mv {quoted_res_file}.tmp {quoted_res_file}", cwd="/", timeout=60)
                 env.execute(f"rm -f {quoted_req_file}", cwd="/", timeout=5)
         except Exception as e:
             if not stop_event.is_set():
@@ -603,11 +543,7 @@ def _rpc_poll_loop(
             stop_event.wait(poll_interval)
 
 
-def _execute_remote(
-    code: str,
-    task_id: str | None,
-    enabled_tools: list[str] | None,
-) -> str:
+def _execute_remote(code: str, task_id: str | None, enabled_tools: list[str] | None) -> str:
     _cfg = _load_config()
     timeout = _cfg.get("timeout", DEFAULT_TIMEOUT)
     max_tool_calls = _cfg.get("max_tool_calls", DEFAULT_MAX_TOOL_CALLS)
@@ -628,11 +564,7 @@ def _execute_remote(
     stop_event = threading.Event()
     rpc_thread = None
     try:
-        py_check = env.execute(
-            "command -v python3 >/dev/null 2>&1 && echo OK",
-            cwd="/",
-            timeout=15,
-        )
+        py_check = env.execute("command -v python3 >/dev/null 2>&1 && echo OK", cwd="/", timeout=15)
         if "OK" not in py_check.get("output", ""):
             return json.dumps({
                 "status": "error",
@@ -640,29 +572,13 @@ def _execute_remote(
                 "tool_calls_made": 0,
                 "duration_seconds": 0,
             })
-        env.execute(
-            f"mkdir -p {quoted_rpc_dir}",
-            cwd="/",
-            timeout=10,
-        )
-        tools_src = generate_deskagent_tools_module(
-            list(sandbox_tools),
-            transport="file",
-        )
+        env.execute(f"mkdir -p {quoted_rpc_dir}", cwd="/", timeout=10)
+        tools_src = generate_deskagent_tools_module(list(sandbox_tools), transport="file")
         _ship_file_to_remote(env, f"{sandbox_dir}/deskagent_tools.py", tools_src)
         _ship_file_to_remote(env, f"{sandbox_dir}/script.py", code)
         rpc_thread = threading.Thread(
             target=propagate_context_to_thread(_rpc_poll_loop),
-            args=(
-                env,
-                f"{sandbox_dir}/rpc",
-                effective_task_id,
-                tool_call_log,
-                tool_call_counter,
-                max_tool_calls,
-                sandbox_tools,
-                stop_event,
-            ),
+            args=(env, f"{sandbox_dir}/rpc", effective_task_id, tool_call_log, tool_call_counter, max_tool_calls, sandbox_tools, stop_event),
             daemon=True,
         )
         rpc_thread.start()
@@ -671,10 +587,7 @@ def _execute_remote(
         if tz:
             env_prefix += f" TZ={tz}"
         logger.info("Executing code on %s backend (task %s)...", env_type, effective_task_id[:8])
-        script_result = env.execute(
-            f"cd {quoted_sandbox_dir} && {env_prefix} python3 script.py",
-            timeout=timeout,
-        )
+        script_result = env.execute(f"cd {quoted_sandbox_dir} && {env_prefix} python3 script.py", timeout=timeout)
         stdout_text = script_result.get("output", "")
         exit_code = script_result.get("returncode", -1)
         status = "success"
@@ -684,33 +597,14 @@ def _execute_remote(
             status = "interrupted"
     except Exception as exc:
         duration = round(time.monotonic() - exec_start, 2)
-        logger.error(
-            "execute_code remote failed after %ss with %d tool calls: %s: %s",
-            duration,
-            tool_call_counter[0],
-            type(exc).__name__,
-            exc,
-            exc_info=True,
-        )
-        return json.dumps(
-            {
-                "status": "error",
-                "error": str(exc),
-                "tool_calls_made": tool_call_counter[0],
-                "duration_seconds": duration,
-            },
-            ensure_ascii=False,
-        )
+        logger.error("execute_code remote failed after %ss with %d tool calls: %s: %s", duration, tool_call_counter[0], type(exc).__name__, exc, exc_info=True)
+        return json.dumps({"status": "error", "error": str(exc), "tool_calls_made": tool_call_counter[0], "duration_seconds": duration}, ensure_ascii=False)
     finally:
         stop_event.set()
         if rpc_thread is not None:
             rpc_thread.join(timeout=5)
         try:
-            env.execute(
-                f"rm -rf {quoted_sandbox_dir}",
-                cwd="/",
-                timeout=15,
-            )
+            env.execute(f"rm -rf {quoted_sandbox_dir}", cwd="/", timeout=15)
         except Exception:
             logger.debug("Failed to clean up remote sandbox %s", sandbox_dir)
     duration = round(time.monotonic() - exec_start, 2)
@@ -722,12 +616,7 @@ def _execute_remote(
         omitted = len(stdout_text) - len(head) - len(tail)
         stdout_text = head + f"\n\n... [OUTPUT TRUNCATED - {omitted:,} chars omitted out of {len(stdout_text):,} total] ...\n\n" + tail
     stdout_text = clean_output(stdout_text)
-    result: dict[str, Any] = {
-        "status": status,
-        "output": stdout_text,
-        "tool_calls_made": tool_call_counter[0],
-        "duration_seconds": duration,
-    }
+    result: dict[str, Any] = {"status": status, "output": stdout_text, "tool_calls_made": tool_call_counter[0], "duration_seconds": duration}
     if status == "timeout":
         timeout_msg = f"Script timed out after {timeout}s and was killed."
         result["error"] = timeout_msg
@@ -735,12 +624,7 @@ def _execute_remote(
             result["output"] = stdout_text + f"\n\n⏰ {timeout_msg}"
         else:
             result["output"] = f"⏰ {timeout_msg}"
-        logger.warning(
-            "execute_code (remote) timed out after %ss (limit %ss) with %d tool calls",
-            duration,
-            timeout,
-            tool_call_counter[0],
-        )
+        logger.warning("execute_code (remote) timed out after %ss (limit %ss) with %d tool calls", duration, timeout, tool_call_counter[0])
     elif status == "interrupted":
         result["output"] = stdout_text + "\n[execution interrupted — user sent a new message]"
     elif exit_code != 0:
@@ -749,11 +633,7 @@ def _execute_remote(
     return json.dumps(result, ensure_ascii=False)
 
 
-def execute_code(
-    code: str,
-    task_id: str | None = None,
-    enabled_tools: list[str] | None = None,
-) -> str:
+def execute_code(code: str, task_id: str | None = None, enabled_tools: list[str] | None = None) -> str:
     if not SANDBOX_AVAILABLE:
         return json.dumps({"error": "execute_code sandbox is unavailable in this environment. Use normal tool calls (terminal, read_file, write_file, ...) instead."})
     if not code or not code.strip():
@@ -798,16 +678,7 @@ def execute_code(
             os.chmod(sock_path, 0o600)
         server_sock.listen(1)
         rpc_thread = threading.Thread(
-            target=propagate_context_to_thread(_rpc_server_loop),
-            args=(
-                server_sock,
-                task_id,
-                tool_call_log,
-                tool_call_counter,
-                max_tool_calls,
-                sandbox_tools,
-            ),
-            daemon=True,
+            target=propagate_context_to_thread(_rpc_server_loop), args=(server_sock, task_id, tool_call_log, tool_call_counter, max_tool_calls, sandbox_tools), daemon=True
         )
         rpc_thread.start()
         child_env = _scrub_child_env(os.environ)
@@ -927,12 +798,7 @@ def execute_code(
         rpc_thread.join(timeout=3)
         stdout_text = clean_output(stdout_text)
         stderr_text = clean_output(stderr_text)
-        result: dict[str, Any] = {
-            "status": status,
-            "output": stdout_text,
-            "tool_calls_made": tool_call_counter[0],
-            "duration_seconds": duration,
-        }
+        result: dict[str, Any] = {"status": status, "output": stdout_text, "tool_calls_made": tool_call_counter[0], "duration_seconds": duration}
         if status == "timeout":
             timeout_msg = f"Script timed out after {timeout}s and was killed."
             result["error"] = timeout_msg
@@ -940,12 +806,7 @@ def execute_code(
                 result["output"] = stdout_text + f"\n\n⏰ {timeout_msg}"
             else:
                 result["output"] = f"⏰ {timeout_msg}"
-            logger.warning(
-                "execute_code timed out after %ss (limit %ss) with %d tool calls",
-                duration,
-                timeout,
-                tool_call_counter[0],
-            )
+            logger.warning("execute_code timed out after %ss (limit %ss) with %d tool calls", duration, timeout, tool_call_counter[0])
         elif status == "interrupted":
             result["output"] = stdout_text + "\n[execution interrupted — user sent a new message]"
         elif exit_code != 0:
@@ -956,23 +817,8 @@ def execute_code(
         return json.dumps(result, ensure_ascii=False)
     except Exception as exc:
         duration = round(time.monotonic() - exec_start, 2)
-        logger.error(
-            "execute_code failed after %ss with %d tool calls: %s: %s",
-            duration,
-            tool_call_counter[0],
-            type(exc).__name__,
-            exc,
-            exc_info=True,
-        )
-        return json.dumps(
-            {
-                "status": "error",
-                "error": str(exc),
-                "tool_calls_made": tool_call_counter[0],
-                "duration_seconds": duration,
-            },
-            ensure_ascii=False,
-        )
+        logger.error("execute_code failed after %ss with %d tool calls: %s: %s", duration, tool_call_counter[0], type(exc).__name__, exc, exc_info=True)
+        return json.dumps({"status": "error", "error": str(exc), "tool_calls_made": tool_call_counter[0], "duration_seconds": duration}, ensure_ascii=False)
     finally:
         if server_sock is not None:
             try:
@@ -1050,12 +896,7 @@ def _get_execution_mode() -> str:
     cfg_value = str(_load_config().get("mode", DEFAULT_EXECUTION_MODE)).strip().lower()
     if cfg_value in EXECUTION_MODES:
         return cfg_value
-    logger.warning(
-        "Ignoring code_execution.mode=%r (expected one of %s), falling back to %r",
-        cfg_value,
-        EXECUTION_MODES,
-        DEFAULT_EXECUTION_MODE,
-    )
+    logger.warning("Ignoring code_execution.mode=%r (expected one of %s), falling back to %r", cfg_value, EXECUTION_MODES, DEFAULT_EXECUTION_MODE)
     return DEFAULT_EXECUTION_MODE
 
 
@@ -1116,11 +957,7 @@ def _resolve_child_python(mode: str) -> str:
                     continue
                 if _is_usable_python(candidate, os.environ.get("VIRTUAL_ENV", ""), os.environ.get("CONDA_PREFIX", "")):
                     return candidate
-                logger.info(
-                    "execute_code: skipping %s=%s (Python version < 3.8 or broken). Using sys.executable instead.",
-                    var,
-                    candidate,
-                )
+                logger.info("execute_code: skipping %s=%s (Python version < 3.8 or broken). Using sys.executable instead.", var, candidate)
                 return sys.executable
     return sys.executable
 

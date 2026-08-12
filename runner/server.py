@@ -167,11 +167,7 @@ async def process_request(ws, req) -> None:
             return
 
         if method == "get_tools":
-            await _send(
-                ws,
-                req_id,
-                result={"tools": registry.get_schemas_for_llm(get_disabled_toolset_ids())},
-            )
+            await _send(ws, req_id, result={"tools": registry.get_schemas_for_llm(get_disabled_toolset_ids())})
             return
 
         if method == "deskagent.info":
@@ -371,11 +367,7 @@ def _runner_ready_payload() -> dict:
     feature whose value is missing from the dict as "do not enable"
     regardless of the failure flag.
     """
-    payload: dict[str, object] = {
-        "version": __version__,
-        "capabilities": {},
-        "probe_failed": False,
-    }
+    payload: dict[str, object] = {"version": __version__, "capabilities": {}, "probe_failed": False}
     try:
         caps = snapshot()
         if isinstance(caps, dict):
@@ -414,12 +406,7 @@ def _build_info() -> dict:
         "uptime_seconds": round(time.time() - _STARTED_AT, 2),
         "reconnect_count": _RECONNECT_COUNT,
         "capabilities": caps,
-        "system": {
-            "platform": sys.platform,
-            "python": sys.version.split()[0],
-            "release": platform.release(),
-            "machine": platform.machine(),
-        },
+        "system": {"platform": sys.platform, "python": sys.version.split()[0], "release": platform.release(), "machine": platform.machine()},
         "tool_count": len(tool_names),
         "mcp_servers": mcp_servers,
         "network_reachable": network_reachable(),
@@ -486,10 +473,7 @@ def _notify_tools_changed() -> None:
     if ws is None or loop is None or loop.is_closed():
         return
     try:
-        asyncio.run_coroutine_threadsafe(
-            _send_notification(ws, "tools_changed", {}),
-            loop,
-        )
+        asyncio.run_coroutine_threadsafe(_send_notification(ws, "tools_changed", {}), loop)
     except Exception as e:
         logger.warning(f"Failed to dispatch tools_changed notification: {e}")
 

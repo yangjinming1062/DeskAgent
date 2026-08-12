@@ -13,10 +13,7 @@ TOOL_CALL_ID_HEX_PREFIX_LEN: int = 24
 
 # Per-session setting key → global UserSetting key mapping.
 # Translates renderer-friendly aliases to the keys downstream reads.
-SESSION_TO_GLOBAL_KEY_ALIASES: dict[str, str] = {
-    "reasoning": "agent.reasoning_effort",
-    "language": "language",
-}
+SESSION_TO_GLOBAL_KEY_ALIASES: dict[str, str] = {"reasoning": "agent.reasoning_effort", "language": "language"}
 
 # Default for enable_background_review setting (string, not bool —
 # matches user_settings.get() comparison pattern).

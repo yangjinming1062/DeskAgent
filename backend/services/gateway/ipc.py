@@ -57,21 +57,11 @@ async def await_future(user_id: int, call_id: str, *, timeout: float | None = No
     except TimeoutError:
         discard_call(user_id, call_id)
         return json.dumps(
-            {
-                "code": JSONRPC_INTERNAL_ERROR,
-                "message": f"Tool execution timeout for call {call_id} (no response within {effective_timeout}s). The desktop runner may be offline.",
-            }
+            {"code": JSONRPC_INTERNAL_ERROR, "message": f"Tool execution timeout for call {call_id} (no response within {effective_timeout}s). The desktop runner may be offline."}
         )
 
 
-async def dispatch_user_event(
-    user_id: int,
-    event_type: str,
-    payload: dict,
-    *,
-    dispatcher: JsonRpcDispatcher,
-    timeout: float | None = None,
-) -> dict:
+async def dispatch_user_event(user_id: int, event_type: str, payload: dict, *, dispatcher: JsonRpcDispatcher, timeout: float | None = None) -> dict:
     """Emit a JSON-RPC event to the desktop and await a matching ``tool.result``.
 
     Used by handlers like ``reload.mcp`` that need to invoke a Runner-side
