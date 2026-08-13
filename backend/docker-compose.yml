@@ -34,6 +34,8 @@ services:
     ports:
       - "10620:10620"
     volumes:
+      # Mount the entire backend directory to /app in the container for development purposes
+      - ./:/app
       - ./config.toml:/app/config.toml:ro
       - ./updates:/app/updates
       - ./data:/app/data

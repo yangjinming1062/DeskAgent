@@ -5,7 +5,11 @@ ENV PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# APT: replace Debian sources with Tsinghua mirror
+RUN sed -i 's|deb.debian.org|mirrors.tuna.tsinghua.edu.cn|g; \
+            s|security.debian.org/debian-security|mirrors.tuna.tsinghua.edu.cn/debian-security|g' \
+        /etc/apt/sources.list.d/debian.sources && \
+    apt-get update && apt-get install -y --no-install-recommends \
     blender \
     && rm -rf /var/lib/apt/lists/* \
     && pip install uv
