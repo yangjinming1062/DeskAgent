@@ -16,7 +16,7 @@ class GeminiImageGenProvider(ImageGenProvider):
     image-editing mode (keep the subject, re-render to the prompt)."""
 
     provider_name = "gemini"
-    DEFAULT_MODELS: ClassVar[dict[str, str]] = {"image_gen": "gemini-2.5-flash-image"}
+    DEFAULT_MODELS: ClassVar[dict[str, str]] = {"image_gen": "gemini-3.1-flash-lite-image"}
     DEFAULT_CONTEXT_TOKENS: ClassVar[dict[str, int]] = {"image_gen": 8_000}
     supports_reference_image: ClassVar[bool] = True
     supports_multiple_reference_images: ClassVar[bool] = True
