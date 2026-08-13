@@ -57,6 +57,7 @@ from .persona_service import (
     update_persona,
 )
 from .personality_tagger import analyze_personality_tags
+from .prompt_runtime import run_prompt_json
 from .response_builders import avatar_response, model_response, wardrobe_response
 from .rig_type_selector import select_rig_type
 from .should_act import ALLOWED_ACTIONS, ShouldActResult, should_act
@@ -146,6 +147,7 @@ __all__ = [
     "record_interaction",
     "read_user_profile",
     "record_user_profile",
+    "run_prompt_json",
     "regenerate_avatar",
     "regenerate_avatar_from_image",
     "run_blender_llm_pipeline",

@@ -14,6 +14,7 @@ class Conversation(ModelBase, TimestampMixin):
 
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     parent_id: Mapped[int | None] = mapped_column(ForeignKey("conversations.id", ondelete="CASCADE"), nullable=True, index=True)
+    kind: Mapped[str] = mapped_column(String(32), default="standard", server_default=text("'standard'"))
     title: Mapped[str] = mapped_column(Text, default="New Conversation")
     cwd: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     # Per-session key-value overrides (reasoning/language). Populated at
@@ -56,6 +57,7 @@ class Message(ModelBase):
 
     conversation_id: Mapped[int] = mapped_column(ForeignKey("conversations.id", ondelete="CASCADE"), index=True)
     role: Mapped[str] = mapped_column(String(64))  # user, assistant, system, tool
+    subtype: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     content: Mapped[str | None] = mapped_column(Text, nullable=True)
     tool_calls: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON string of tool calls
     tool_call_id: Mapped[str | None] = mapped_column(Text, nullable=True)  # If role is tool
@@ -66,6 +68,10 @@ class Message(ModelBase):
     # multimodal parts array ("multimodal_v1"). Replaces the previous
     # startswith("[") + substring sniff which mis-parsed legitimate user input.
     content_type: Mapped[str] = mapped_column(String(32), default="text", server_default=text("'text'"))
+    # Set on system messages with subtype="daily_summary" so the daily checkpoint
+    # can read the cutoff date without parsing the content text. Content is
+    # still the human-readable version; this column is the structured source.
+    summary_date: Mapped[str | None] = mapped_column(String(10), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     conversation: Mapped[Conversation] = relationship(back_populates="messages")

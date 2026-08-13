@@ -7,6 +7,7 @@ from modules.conversation import Conversation, Message
 from modules.system import ChatRequest
 from sqlalchemy.orm import Session
 
+from ..conversation import MAIN_KIND
 from ..scheduler import auto_generate_title, run_background_memory_review
 from ..tools import REGISTRY
 from .chat_emitter import Emitter
@@ -14,6 +15,16 @@ from .tool_dispatch import _run_tool_batch, _ToolDispatchContext
 from .types import TrackTask
 
 logger = get_logger(__name__)
+
+
+def persist_tool_summary(db: Session, conv: Conversation, tool_names: set[str]) -> None:
+    """Main-conversation turns drop their raw tool frames from the LLM context
+    (``_history_to_messages``); this row is what stands in for them, so it must
+    be written whichever way the turn ended."""
+    if conv.kind != MAIN_KIND or not tool_names:
+        return
+    db.add(Message(conversation_id=conv.id, role="system", content=f"[执行了工具调用：{', '.join(sorted(tool_names))}]", subtype="tool_summary"))
+    db.commit()
 
 
 def _coerce_tool_result_content(content: Any) -> str:

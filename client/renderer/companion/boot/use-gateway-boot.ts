@@ -9,6 +9,7 @@ import {
 } from '@/companion/boot-store'
 import { $chatSessionId, setChatSession } from '@/companion/chat-store'
 import { $effectiveTier, $spriteState, $voiceCallOpen, setSpriteState } from '@/companion/companion-store'
+import { openMainSession } from '@/companion/session-list-store'
 import { DeskAgentGateway } from '@/shared/deskagent'
 import { resolveGatewayWsUrl } from '@/shared/lib/gateway-ws-url'
 import { log } from '@/shared/lib/log'
@@ -264,7 +265,12 @@ export function useGatewayBoot({ handleGatewayEvent, onConnectionReady, onGatewa
           const sid = $chatSessionId.get()
 
           if (sid) {
-            void gateway.request('session.resume', { session_id: sid }).catch(() => setChatSession(null))
+            void gateway.request('session.resume', { session_id: sid }).catch(() => {
+              setChatSession(null)
+              void openMainSession()
+            })
+          } else {
+            void openMainSession()
           }
         }
       } else if (bootCompleted && (st === 'closed' || st === 'error')) {

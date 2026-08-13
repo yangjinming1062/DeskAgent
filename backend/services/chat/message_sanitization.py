@@ -122,8 +122,15 @@ def truncate_chat_history(messages: list[dict], max_recent_messages: int = 40, n
     if not messages:
         return []
 
-    sys_msgs = [m for m in messages if m.get("role") == "system"]
-    non_sys = [m for m in messages if m.get("role") != "system"]
+    # Only the LEADING system block is the pinned prompt. Later system rows are
+    # in-conversation markers (tool_summary) whose meaning depends on where they
+    # sit — hoisting them to the front would detach them from the turn they
+    # stand in for.
+    pinned = 0
+    while pinned < len(messages) and messages[pinned].get("role") == "system":
+        pinned += 1
+    sys_msgs = messages[:pinned]
+    non_sys = messages[pinned:]
 
     # Walk back past leading tool results so the assistant tool_call that owns
     # them stays first in the window. Bounded — tool runs produce at most a

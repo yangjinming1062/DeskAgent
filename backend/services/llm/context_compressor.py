@@ -128,21 +128,22 @@ async def compress_history_if_needed(
     target_tokens: int | None = None,
     max_input_messages: int | None = None,
     language: str = DEFAULT_LANGUAGE,
-) -> list[dict[str, Any]]:
-    """Return a history list with the oldest non-system block replaced by an LLM summary.
+) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
+    """Return ``(compressed_messages, compress_info)``.
 
-    ``enabled`` is resolved per-user by the caller (orchestrator reads
-    ``chat.enable_context_compression`` from user_settings). When None it
-    falls back to the global ``SETTINGS.enable_context_compression``.
+    On success ``compress_info`` is ``{"summary": str, "replaced_count": int}``;
+    on any no-op path (disabled / below threshold / call failed / empty) it is
+    ``None``. The caller persists ``compress_info`` as a ``compress_summary``
+    checkpoint row so subsequent turns and the nightly ``daily_summary`` start
+    reading from it instead of re-loading the compressed-away messages.
 
-    Best-effort: any failure (compression disabled, below threshold, summary
-    call failed/truncated/empty) returns the original list unchanged so
+    Best-effort: any failure returns ``(messages, None)`` so
     ``truncate_chat_history`` is always a deterministic fallback.
     """
     if enabled is None:
         enabled = SETTINGS.enable_context_compression
     if not enabled:
-        return messages
+        return messages, None
 
     threshold = threshold_ratio if threshold_ratio is not None else SETTINGS.context_compression_threshold
     target = target_tokens if target_tokens is not None else SETTINGS.context_summary_target_tokens
@@ -150,26 +151,26 @@ async def compress_history_if_needed(
 
     current_tokens = _approx_tokens(messages)
     if context_length <= 0 or current_tokens < context_length * threshold:
-        return messages
+        return messages, None
 
     system_msgs, rest = _split_system_and_rest(messages)
     block, keep = _pick_compressible_block(rest, max_input_messages=cap)
     if not block:
-        return messages
+        return messages, None
 
     try:
         summary, was_truncated = await _summarize_block(block, client=client, model=model, target_tokens=target, language=language)
     except Exception as exc:
         logger.warning("context_compressor: summary call failed, leaving history unchanged", extra={"error": str(exc)})
-        return messages
+        return messages, None
 
     if was_truncated:
         logger.warning("context_compressor: LLM hit max_tokens cap while summarizing, leaving history unchanged", extra={"message_count": len(block)})
-        return messages
+        return messages, None
 
     if not summary:
         logger.info("context_compressor: LLM returned empty summary; leaving history unchanged")
-        return messages
+        return messages, None
 
     replaced_count = len(block)
     placeholder = {"role": "user", "content": f"[Conversation summary — {replaced_count} earlier turns compressed]\n\n{summary}"}
@@ -184,4 +185,4 @@ async def compress_history_if_needed(
             "new_count": len(new_messages),
         },
     )
-    return new_messages
+    return new_messages, {"summary": summary, "replaced_count": replaced_count}

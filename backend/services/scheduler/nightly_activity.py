@@ -38,21 +38,30 @@ from services.companion.memory_admin import upsert_slotted_memory
 from services.companion.model_service import emit_wardrobe_gift, get_active_model
 from services.companion.morph_generator import validate_and_sanitize_expression
 from services.companion.wardrobe_service import confirm_wardrobe_item, preview_wardrobe_texture
+from services.conversation import CRON_KIND, MAIN_KIND, UI_ONLY_SUBTYPES
 from services.llm import call_llm_once, chat, resolve_provider_chain, resolve_user_llm_config
 from services.tools import AUTO_INJECT_SLOTS, INFERRED_PROFILE_SLOTS, KIND_TO_PREFIX, RECALL_TAGS
 
 from .cron_jobs import create_job
+from .daily_checkpoint import run_daily_checkpoint
 from .memory_consolidator import replace_recall_pool
 
 logger = get_logger(__name__)
 
 # Number of recall rows passed to the planning stage as highlights.
 _PLANNING_RECALL_HIGHLIGHTS: int = 10
+# Work-conversation turns forwarded to the reflection stage; the companion
+# conversation is the primary signal, work traffic is only mined for interests.
+_REFLECTION_MAX_WORK_MESSAGES: int = 50
 
 
 # ── Prompts ────────────────────────────────────────────────────────────
 
 _REFLECTION_SYSTEM_PROMPT = """You are DeskAgent's nightly reflection engine. Analyze today's conversations between the user and their AI companion to extract durable user profile updates and assess relationship/emotional dynamics.
+
+Today's conversations are split into two keys:
+- "today_companion_conversations": Everyday companion conversation with the user — your main source for understanding user emotions, relationships, and preferences.
+- "today_work_conversations": Work/task conversations — extract user technical interests, work habits, and schedule, but do NOT infer relationship/emotional state from work tasks.
 
 Instructions:
 1. ONLY extract facts that are grounded in today's conversations or today's interaction statistics. Do NOT invent or assume facts.
@@ -248,11 +257,14 @@ async def _stage_1_daily_reflection(
     auto_inject: dict[str, str],
     user_profile: dict[str, str],
     local_date_str: str,
+    clean_work_messages: list[dict[str, str]] | None = None,
     interaction_stats_today: dict[str, Any] | None = None,
 ) -> tuple[dict[str, str], dict[str, str]]:
     """Stage 1: Daily Reflection — Updates inferred_profile and auto_inject."""
     payload = {
-        "today_conversations": clean_messages,
+        "today_companion_conversations": clean_messages,
+        # Newest work turns matter more than the morning's; the list is ascending.
+        "today_work_conversations": (clean_work_messages or [])[-_REFLECTION_MAX_WORK_MESSAGES:],
         "current_inferred_profile": inferred_profile,
         "current_auto_inject": auto_inject,
         "user_profile": user_profile,
@@ -590,31 +602,49 @@ async def _stage_5_creation(
     return True
 
 
-async def run_nightly_pipeline(user_id: int, local_today_str: str | None = None) -> bool:
-    """Execute the 5-stage nightly autonomous activity pipeline for one user."""
-    now_utc = naive_utc_now()
+async def run_nightly_pipeline(user_id: int, reference_utc: datetime | None = None) -> bool:
+    """Execute the 5-stage nightly autonomous activity pipeline for one user.
+
+    ``reference_utc`` picks which local day to process — the cron gate passes the
+    day that just ended, so bounds and date label are derived from one instant
+    instead of being computed twice and drifting apart.
+    """
+    now_utc = reference_utc or naive_utc_now()
     with session_scope() as db:
         tz_str = resolve_user_timezone(db, user_id)
         if not tz_str:
             logger.info("nightly_activity: skipped, missing timezone", extra={"user_id": user_id})
             return False
         try:
-            utc_start, utc_end, user_local_dt, computed_today_str = get_local_day_utc_bounds(now_utc, tz_str)
+            utc_start, utc_end, user_local_dt, local_today_str = get_local_day_utc_bounds(now_utc, tz_str)
         except (ZoneInfoNotFoundError, ValueError, SQLAlchemyError) as exc:
             logger.warning("nightly_activity: timezone resolution error", extra={"user_id": user_id, "error": str(exc)})
             return False
-        if not local_today_str:
-            local_today_str = computed_today_str
 
         # Stage 0: Gather Context
-        today_messages = (
-            db.query(Message)
+        all_today_tuples = (
+            db.query(Message, Conversation.kind)
             .join(Conversation, Message.conversation_id == Conversation.id)
-            .filter(Conversation.user_id == user_id, Message.created_at >= utc_start, Message.created_at < utc_end, Message.role.in_(("user", "assistant")))
+            .filter(
+                Conversation.user_id == user_id,
+                Conversation.kind != CRON_KIND,
+                Message.created_at >= utc_start,
+                Message.created_at < utc_end,
+                Message.role.in_(("user", "assistant")),
+                Message.subtype.is_(None) | Message.subtype.notin_(tuple(UI_ONLY_SUBTYPES)),
+            )
             .order_by(Message.id.asc())
             .all()
         )
-        clean_messages = _preprocess_conversation_for_nightly(today_messages)
+        main_msgs = [m for m, k in all_today_tuples if k == MAIN_KIND]
+        work_msgs = [m for m, k in all_today_tuples if k != MAIN_KIND]
+
+        clean_main_messages = _preprocess_conversation_for_nightly(main_msgs)
+        clean_work_messages = _preprocess_conversation_for_nightly(work_msgs)
+        # Chronological across both kinds — the diary and creation prompts read
+        # this as one day's dialogue, so concatenating the two buckets would
+        # invent an ordering that never happened.
+        clean_messages = _preprocess_conversation_for_nightly([m for m, _ in all_today_tuples])
         if not any(m["role"] == "user" for m in clean_messages):
             logger.info("nightly_activity: no clean user messages today", extra={"user_id": user_id})
             return False
@@ -643,15 +673,23 @@ async def run_nightly_pipeline(user_id: int, local_today_str: str | None = None)
 
         recall_rows = memory_admin.list_memories(db, user_id, kind="recall", limit=NIGHTLY_CONSOLIDATE_MAX_RECALL_ROWS)
 
-        # Baseline 7-day activity stats
+        # Baseline 7-day activity stats (main conversation, real turns only —
+        # poke/drag status rows are role="user" and would read as engagement).
         seven_days_ago_utc = utc_start - timedelta(days=7)
         past_7_count = (
             db.query(Message)
             .join(Conversation, Message.conversation_id == Conversation.id)
-            .filter(Conversation.user_id == user_id, Message.role == "user", Message.created_at >= seven_days_ago_utc, Message.created_at < utc_start)
+            .filter(
+                Conversation.user_id == user_id,
+                Conversation.kind == MAIN_KIND,
+                Message.role == "user",
+                Message.subtype.is_(None) | Message.subtype.notin_(tuple(UI_ONLY_SUBTYPES)),
+                Message.created_at >= seven_days_ago_utc,
+                Message.created_at < utc_start,
+            )
             .count()
         )
-        today_msg_count = sum(1 for m in clean_messages if m["role"] == "user")
+        today_msg_count = sum(1 for m in clean_main_messages if m["role"] == "user")
         seven_day_avg = round(past_7_count / 7.0, 2)
 
         # Date projections
@@ -675,7 +713,15 @@ async def run_nightly_pipeline(user_id: int, local_today_str: str | None = None)
     today_stats = read_today_summary(user_id, local_today_str)
     try:
         updated_inferred, updated_auto_inject = await _stage_1_daily_reflection(
-            llm_cfg, user_id, clean_messages, inferred_profile, auto_inject, user_profile, local_today_str, interaction_stats_today=today_stats
+            llm_cfg,
+            user_id,
+            clean_main_messages,
+            inferred_profile,
+            auto_inject,
+            user_profile,
+            local_today_str,
+            clean_work_messages=clean_work_messages,
+            interaction_stats_today=today_stats,
         )
     except Exception as exc:
         logger.exception("nightly_activity: stage 1 reflection failed", extra={"user_id": user_id, "error": str(exc)})
@@ -696,9 +742,18 @@ async def run_nightly_pipeline(user_id: int, local_today_str: str | None = None)
     except Exception as exc:
         logger.exception("nightly_activity: stage 4 diary failed", extra={"user_id": user_id, "error": str(exc)})
 
-    try:
-        await _stage_5_creation(llm_cfg, user_id, clean_messages, updated_inferred, updated_auto_inject, local_today_str, tz_str=tz_str)
-    except Exception as exc:
-        logger.exception("nightly_activity: stage 5 creation failed", extra={"user_id": user_id, "error": str(exc)})
+    # Daily checkpoint and stage-5 creation are independent (separate session_scope,
+    # separate LLM calls, no shared state) — run them concurrently to save a wall-
+    # clock LLM roundtrip per user per night.
+    async def _checkpoint() -> None:
+        with session_scope() as db:
+            await run_daily_checkpoint(llm_cfg, user_id, db, utc_start, utc_end, local_today_str)
+
+    results = await asyncio.gather(
+        _checkpoint(), _stage_5_creation(llm_cfg, user_id, clean_messages, updated_inferred, updated_auto_inject, local_today_str, tz_str=tz_str), return_exceptions=True
+    )
+    for label, result in zip(("daily checkpoint", "stage 5 creation"), results, strict=True):
+        if isinstance(result, Exception):
+            logger.exception(f"nightly_activity: {label} failed", extra={"user_id": user_id, "error": str(result)})
 
     return True

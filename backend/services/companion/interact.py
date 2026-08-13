@@ -1,8 +1,9 @@
 from typing import Any
 
-from components import coerce_hour_0_23, coerce_non_negative_float, get_logger
+from components import SESSION_LOCAL, coerce_hour_0_23, coerce_non_negative_float, get_logger
 from pydantic import BaseModel, Field
 
+from ..conversation import load_recent_context_window
 from ..llm import UserLlmConfig
 from .interaction_stats import read_today_summary
 from .prompt_runtime import load_companion_prompt_context, run_prompt_json
@@ -22,6 +23,7 @@ _INTERACT_PROMPT_TEMPLATE = (
     "你是 {persona_name}。\n"
     "你的角色定义：\n{persona_extras}\n\n"
     "你对用户的长期记忆：\n{memories_block}\n\n"
+    "最近的对话：\n{recent_context}\n\n"
     "今日互动数据：\n{today_stats}\n\n"
     "当前情境：\n"
     "- 用户刚才对你做了一个动作：{kind_desc}（强度 bucket: {poke_count}）\n"
@@ -48,6 +50,9 @@ async def interact(user_id: int, kind: str, poke_count: int, idle_seconds: float
     today = read_today_summary(user_id)
     today_stats = today["content"] if today else "今天尚无汇总记录"
 
+    with SESSION_LOCAL() as db:
+        recent_context = load_recent_context_window(db, user_id) or "暂无最近对话"
+
     idle_minutes = round(coerce_non_negative_float(idle_seconds) / 60, 2)
     local_hour = coerce_hour_0_23(local_hour)
     parsed, fail_reason = await run_prompt_json(
@@ -58,6 +63,7 @@ async def interact(user_id: int, kind: str, poke_count: int, idle_seconds: float
             "persona_name": ctx.persona_name,
             "persona_extras": ctx.persona_extras,
             "memories_block": ctx.memories_block,
+            "recent_context": recent_context,
             "today_stats": today_stats,
             "kind_desc": "戳了戳你" if kind == "poke" else "拖拽了你",
             "poke_count": poke_count,

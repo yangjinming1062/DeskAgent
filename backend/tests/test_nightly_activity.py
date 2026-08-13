@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 import json
 
 import pytest
@@ -615,9 +615,9 @@ async def test_eligibility_and_tick_trigger(seeded, monkeypatch):
     cron._LAST_NIGHTLY_SCAN = 0.0
     cron._LAST_NIGHTLY_RUN.clear()
 
-    # Seed conversation with 5 user messages within the local day
+    # Seed conversation with 5 user messages within yesterday's local day
     with SessionLocal() as db:
-        conv = Conversation(user_id=1001)
+        conv = Conversation(user_id=1001, kind="main")
         db.add(conv)
         db.commit()
         db.refresh(conv)
@@ -628,15 +628,15 @@ async def test_eligibility_and_tick_trigger(seeded, monkeypatch):
                     conversation_id=conv.id,
                     role="user",
                     content=f"Message {i}",
-                    created_at=datetime(2026, 8, 12, 17, 30, 0)
+                    created_at=datetime(2026, 8, 11, 17, 30, 0),
                 )
             )
         db.commit()
 
     pipeline_runs = []
 
-    async def fake_pipeline(user_id, today_str):
-        pipeline_runs.append((user_id, today_str))
+    async def fake_pipeline(user_id, reference_utc):
+        pipeline_runs.append((user_id, reference_utc))
         return True
 
     monkeypatch.setattr(cron, "run_nightly_pipeline", fake_pipeline)
@@ -644,8 +644,9 @@ async def test_eligibility_and_tick_trigger(seeded, monkeypatch):
     # 1. Trigger within window with >= 5 messages -> executes
     await cron._maybe_run_autonomous_activity(simulated_now_utc)
     assert len(pipeline_runs) == 1
-    assert pipeline_runs[0] == (1001, "2026-08-13")
-    assert cron._LAST_NIGHTLY_RUN[1001] == "2026-08-13"
+    # The pipeline digests the local day that just ended, derived from one instant.
+    assert pipeline_runs[0] == (1001, simulated_now_utc - timedelta(days=1))
+    assert cron._LAST_NIGHTLY_RUN[1001] == "2026-08-12"
 
     # 2. Same day second tick -> skipped by _LAST_NIGHTLY_RUN
     pipeline_runs.clear()
@@ -671,7 +672,7 @@ async def test_eligibility_and_tick_trigger(seeded, monkeypatch):
                     conversation_id=conv.id,
                     role="user",
                     content=f"Few msg {i}",
-                    created_at=datetime(2026, 8, 12, 17, 30, 0)
+                    created_at=datetime(2026, 8, 11, 17, 30, 0),
                 )
             )
         db.commit()
@@ -680,6 +681,51 @@ async def test_eligibility_and_tick_trigger(seeded, monkeypatch):
     cron._LAST_NIGHTLY_SCAN = 0.0
     await cron._maybe_run_autonomous_activity(simulated_now_utc)
     assert len(pipeline_runs) == 0
+
+
+@pytest.mark.asyncio
+async def test_eligibility_gate_and_pipeline_read_the_same_day(seeded, monkeypatch):
+    """The gate counts the local day that just ended; the pipeline must digest
+    that same day. Deriving bounds twice from different instants made the
+    pipeline read the (empty) hours since midnight and bail out."""
+    from services.scheduler import nightly_activity
+
+    SessionLocal = seeded
+    cron._LAST_NIGHTLY_SCAN = 0.0
+    cron._LAST_NIGHTLY_RUN.clear()
+
+    with SessionLocal() as db:
+        conv = Conversation(user_id=1001, kind="main")
+        db.add(conv)
+        db.commit()
+        db.refresh(conv)
+        for i in range(NIGHTLY_MIN_MESSAGES_TODAY):
+            # 2026-08-12 01:30 UTC == 09:30 Beijing on 2026-08-12.
+            db.add(Message(conversation_id=conv.id, role="user", content=f"Message {i}", created_at=datetime(2026, 8, 12, 1, 30, 0)))
+        db.commit()
+
+    seen_windows: list[tuple] = []
+    real_bounds = nightly_activity.get_local_day_utc_bounds
+
+    def spy_bounds(now_utc, tz_str):
+        result = real_bounds(now_utc, tz_str)
+        seen_windows.append(result[3])
+        return result
+
+    monkeypatch.setattr(nightly_activity, "get_local_day_utc_bounds", spy_bounds)
+    # Unwind right after the window is resolved — this test is about which day
+    # the pipeline reads, not about the stages.
+    monkeypatch.setattr(nightly_activity, "resolve_user_llm_config", lambda db, uid: {})
+
+    # 2026-08-12 18:00 UTC == 2026-08-13 02:00 Beijing (inside the 0–5 window),
+    # so the day that just ended is 2026-08-12.
+    await cron._maybe_run_autonomous_activity(datetime(2026, 8, 12, 18, 0, 0))
+
+    # The pipeline got far enough to resolve its own window, and it resolved to
+    # the same local day the gate counted.
+    assert "2026-08-12" in seen_windows
+    assert "2026-08-13" not in seen_windows
+
 
 
 # ── E2E Full Run (Skipped if no MIMO_API_KEY) ──────────────────────────

@@ -5,6 +5,7 @@ class DesktopSessionInfo(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     id: str
+    kind: str = "standard"
     title: str | None = None
     started_at: int
     last_active: int

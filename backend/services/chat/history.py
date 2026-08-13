@@ -11,11 +11,13 @@ def build_session_messages(conv_id: int, db: Session) -> list[dict]:
     to populate the ``call_id → name`` map before any tool-result rows
     look it up.
     """
-    messages = db.query(Message).filter(Message.conversation_id == conv_id).order_by(Message.created_at).all()
+    messages = db.query(Message).filter(Message.conversation_id == conv_id).order_by(Message.id).all()
     tool_name_by_call_id: dict[str, str] = {}
     result: list[dict] = []
     for msg in messages:
         item: dict = {"role": msg.role, "content": msg.content}
+        if msg.subtype:
+            item["subtype"] = msg.subtype
 
         if msg.tool_calls:
             calls = safe_json_loads(msg.tool_calls, default=None)

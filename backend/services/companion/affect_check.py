@@ -1,8 +1,9 @@
 from typing import Any
 
-from components import coerce_hour_0_23, coerce_non_negative_float, get_logger
+from components import SESSION_LOCAL, coerce_hour_0_23, coerce_non_negative_float, get_logger
 from pydantic import BaseModel, Field
 
+from ..conversation import load_recent_context_window
 from ..llm import UserLlmConfig
 from .affect_emit import emit_companion_affect
 from .prompt_runtime import load_companion_prompt_context, run_prompt_json
@@ -24,6 +25,7 @@ _AFFECT_CHECK_PROMPT_TEMPLATE = (
     "不是发消息、不是说话——用户不会看到任何文字。\n\n"
     "你的角色定义：\n{persona_extras}\n\n"
     "你对用户的长期记忆：\n{memories_block}\n\n"
+    "最近的对话：\n{recent_context}\n\n"
     "当前情境：\n"
     "- 用户已离开（无键鼠活动）{idle_minutes} 分钟\n"
     "- 用户本地时间：{local_hour} 点\n\n"
@@ -47,6 +49,9 @@ async def check_affect(user_id: int, idle_seconds: float, local_hour: int, llm_c
     if ctx is None:
         return AffectCheckResult(expressed=False, reason="persona not ready")
 
+    with SESSION_LOCAL() as db:
+        recent_context = load_recent_context_window(db, user_id) or "暂无最近对话"
+
     parsed, fail_reason = await run_prompt_json(
         user_id,
         llm_config,
@@ -54,6 +59,7 @@ async def check_affect(user_id: int, idle_seconds: float, local_hour: int, llm_c
         {
             "persona_extras": ctx.persona_extras,
             "memories_block": ctx.memories_block,
+            "recent_context": recent_context,
             "idle_minutes": round(coerce_non_negative_float(idle_seconds) / 60, 2),
             "local_hour": coerce_hour_0_23(local_hour) if local_hour >= 0 else "未知",
             "allowed_emotions": ", ".join(sorted(ctx.allowed_emotions)),

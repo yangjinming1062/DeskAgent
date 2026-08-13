@@ -59,6 +59,11 @@ def _install_schema_extensions(conn: Connection) -> None:
     conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_companion_models_one_active ON companion_models (user_id) WHERE active"))
     # _ensure_presets relies on this index for dedup instead of a SELECT.
     conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_wardrobe_items_user_name ON wardrobe_items (user_id, name)"))
+    # One main conversation per user; the (user_id, kind) full-unique would
+    # forbid multiple "standard" conversations. Enforces the get_or_create
+    # invariant so concurrent boot / cron kick / prompt.submit cannot race
+    # in a second row.
+    conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_conversations_user_main ON conversations (user_id) WHERE kind = 'main'"))
     conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_companion_expressions_user_name ON companion_expressions (user_id, name)"))
     conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_memories_user_context ON memories (user_id, context) WHERE context LIKE 'user_profile:%'"))
     # Partial unique for auto_inject slots — enforces one row per (user, slot)

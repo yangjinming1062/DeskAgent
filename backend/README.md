@@ -33,6 +33,7 @@ backend/
 │   ├── auth/                 # 身份凭据能力集与配置响应构建
 │   ├── chat/                 # 对话编排（含 chat_emitter 收敛 ↔gateway import 环）
 │   ├── companion/            # 角色定义、形象资产、affect、voice catalog、wardrobe
+│   ├── conversation/         # 主对话与 subtype 语义的唯一定义处（叶子包，只依赖 modules）
 │   ├── gateway/              # JSON-RPC + WS 入口 + IPC future
 │   ├── llm/providers/        # Chat/ImageGen/VideoGen/TTS/STT 五类 provider ABC
 │   ├── scheduler/            # Cron + 主动消息调度 + 夜间自主活动批处理
@@ -49,6 +50,11 @@ backend/
 ## 4. 关键设计决策
 
 - **夜间自主活动批处理（Stage 0–4 独立事务）**：在用户本地休息窗口（0:00–5:00）调用 LLM 运行批处理流水线（画像推断、记忆整理与衰退、主动规划、自我日记）。每个阶段独立事务并具备全空回滚安全网。**为什么不作为在线 agentic 循环**：批处理在离线状态也可完成用户认知深化与记忆优化，不强依赖客户端长连接；次日生成的 CronJob 在触发派发时才执行在线与 disturbance 检查。
+- **夜间批处理消化「刚结束的那个本地日」，参考时刻由 cron 单点传入**：窗口在本地 0–5 点，此刻「今天」几乎没有数据，可反思的是昨天。`_maybe_run_autonomous_activity` 用 `now` 判断本地小时窗口（避免 DST 日偏移一小时），用 `now - 1d` 算数据日，并把这个 `reference_utc` 传给 `run_nightly_pipeline`。**为什么不让流水线自己算**：两处各自推导会漂移——准入门限数昨天的消息、流水线读今天的空窗口，结果是每晚扫描都判定"无消息"提前返回，`_LAST_NIGHTLY_RUN` 永不落位，整个窗口每 5 分钟重试一次且永远不成功。
+- **双压缩检查点，所有对话类型统一读路径**：LLM 上下文从最近的压缩检查点起算，检查点之前的历史不进入上下文（DB 始终保留完整历史，裁剪只在 `_history_to_messages` 读路径）。两类检查点地位对等，区别只在触发时机：
+  - `compress_summary`（运行时，所有对话）：`compress_history_if_needed` 在每 turn 检测 token 超过 `context_length × 0.7` 时触发，把最旧的一块消息 LLM 压成一条摘要，持久化为 `Message(role='system', subtype='compress_summary')`。下一次 turn 从该行开始读（inclusive）——被压缩的消息不再进入 LLM 上下文。
+  - `daily_summary`（夜间，仅主对话）：`run_daily_checkpoint` 在夜间自主活动阶段触发，从最近的任意类型检查点（inclusive）读到当前，调一次 LLM 压成 `Message(role='system', subtype='daily_summary', summary_date=...)`。compress_summary 行的文本被纳入摘要输入，由 LLM 融入新的 daily_summary——内容不丢失。新 daily_summary 写入后 id 更大，自动取代旧 compress_summary 成为后续读起点。
+  - **跳过工具帧仅限主对话**：只有主对话每个用过工具的 turn 会落一条 `tool_summary` 顶替被跳过的帧；普通对话没有替身，一并跳过等于抹掉工作上下文。
 - **TOML 模版与 Git 隔离配置管理**：Git 统一托管默认配置模版 `config.toml.example`，`components/config.py` 中不保留重复默认值与冗余注释。开发者本地配置写在 `config.toml`（已被 `.gitignore` 忽略）。系统按 `OS Env > .env > config.toml > config.toml.example` 优先级加载。
 - **provider 自注册而非手动 `main.py` 引入**：`services/llm/providers/<name>/__init__.py` import 时注册到 `_REGISTRY`；新增 provider 子包即可扩展能力，无须修改 `main.py`。**代价**：注册顺序敏感——`main.py` 显式 import 触发；遗漏某 provider 则该能力静默缺失（fail-open）。
 - **IPC future 按 `(user_id, call_id)` 二元键寻址**：并发用户不共享 future；`discard_user` 在 WS 断开时取消该用户所有未决 future。**为什么不只 `call_id`**：跨用户 key 复用会泄露上下文。

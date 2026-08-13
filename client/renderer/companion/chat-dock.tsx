@@ -9,8 +9,7 @@ import {
   finalizeAssistantMessage,
   pushUserMessage,
   setAssistantCancelled,
-  setAssistantError,
-  setChatSession
+  setAssistantError
 } from '@/companion/chat-store'
 import {
   $effectiveTier,
@@ -26,6 +25,8 @@ import { $gatewayState } from '@/shared/store/gateway'
 import { MessageBubble } from './chat-dock-message-bubble'
 import { DISTURBANCE_TIERS } from './disturbance-tiers'
 import { useVoiceRecorder } from './hooks/use-voice-recorder'
+import { SessionListPanel } from './session-list'
+import { $sessionListOpen, openMainSession, setSessionListOpen } from './session-list-store'
 
 // matches the panel's max-w-lg (32rem) so we can position it before mount
 const DOCK_MAX_W = 512
@@ -44,6 +45,7 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
   const gatewayState = useStore($gatewayState)
   const tier = useStore($userPreferredTier)
   const portraitUrl = useStore($portraitUrl)
+  const sessionListOpen = useStore($sessionListOpen)
   const { requestGateway } = useGatewayRequest()
   const [text, setText] = useState('')
   const [pendingImage, setPendingImage] = useState<string | null>(null)
@@ -80,10 +82,13 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
       return existing
     }
 
-    const res = await requestGateway<{ session_id: string }>('session.create', {})
-    setChatSession(res.session_id)
+    const sessionId = await openMainSession()
 
-    return res.session_id
+    if (!sessionId) {
+      throw new Error('无法打开日常对话')
+    }
+
+    return sessionId
   }
 
   const changeTier = (next: DisturbanceTier) => {
@@ -364,6 +369,14 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
                 </button>
               ))}
             </div>
+            <button
+              className="rounded-full border border-white/20 bg-white/10 px-2.5 py-1 text-[11px] text-white/80 transition hover:bg-white/20"
+              onClick={() => setSessionListOpen(true)}
+              title="切换对话"
+              type="button"
+            >
+              💬 对话
+            </button>
             {onOpenVoiceCall && (
               <button
                 className="rounded-full border border-white/20 bg-white/10 px-2.5 py-1 text-[11px] text-white/80 transition hover:bg-white/20"
@@ -460,6 +473,7 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
           </div>
         </div>
       </div>
+      {sessionListOpen && <SessionListPanel onClose={() => setSessionListOpen(false)} />}
     </div>
   )
 }

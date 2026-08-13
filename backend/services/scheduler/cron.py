@@ -1,6 +1,6 @@
 import asyncio
 import contextlib
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 from components import (
@@ -23,6 +23,7 @@ from modules.scheduler import CronJob
 from modules.system import ChatMessageRequest, ChatRequest
 from sqlalchemy import text
 
+from services.conversation import CRON_KIND, UI_ONLY_SUBTYPES, get_or_create_cron_conversation
 from services.disturbance import is_quiet
 from services.gateway import MANAGER, JsonRpcEmitter
 from services.llm import resolve_user_llm_config
@@ -182,15 +183,19 @@ async def _kick_autonomous_turn(job_id: int, meta: dict[str, Any]) -> None:
         logger.debug("cron: user offline, skipping autonomous turn", extra={"user_id": user_id, "job_id": job_id})
         return
 
+    # Function-local to avoid a circular import: services.chat.__init__ loads
+    # modules that pull in services.scheduler, so importing services.chat
+    # symbols at module scope would deadlock the package init.
     from services.chat import load_user_settings, run_chat_turn
 
     with session_scope() as db:
-        conv = db.query(Conversation).filter(Conversation.user_id == user_id).order_by(Conversation.created_at.desc()).first()
-        if conv is None:
-            conv = Conversation(user_id=user_id)
-            db.add(conv)
-            db.commit()
-            db.refresh(conv)
+        # Run on a dedicated cron conversation, NOT the user's main one — see
+        # the comment on CRON_KIND. Keeping the conversations separate stops
+        # ``session.get_main`` (called on every WS reconnect) from cancelling
+        # an in-flight cron's chat_task via _mount_runtime, and stops cron's
+        # user-role rows from interleaving with the renderer's prompt.submit
+        # writes on the same conversation.
+        conv = get_or_create_cron_conversation(db, user_id)
         session_id = str(conv.id)
         llm_config = resolve_user_llm_config(db, user_id)
         user_settings = load_user_settings(db, user_id)
@@ -277,44 +282,58 @@ async def _maybe_run_autonomous_activity(now: datetime) -> None:
     with session_scope() as db:
         rows = db.query(Memory.user_id, Memory.content).filter(Memory.context == "user_profile:timezone").all()
 
-        eligible: list[tuple[int, str]] = []
+        eligible: list[tuple[int, datetime, str]] = []
         for uid_raw, tz_content in rows:
             uid = int(uid_raw)
             tz_str = (tz_content or "").strip()
             if not tz_str:
                 continue
+            # The window gate reads the *current* local hour; the pipeline
+            # digests the local day that just ended. Deriving the hour from the
+            # shifted instant would be off by one across a DST boundary.
             try:
-                utc_start, utc_end, user_local_dt, local_today_str = get_local_day_utc_bounds(now, tz_str)
+                _, _, user_local_dt, _ = get_local_day_utc_bounds(now, tz_str)
+                reference_utc = now - timedelta(days=1)
+                utc_start, utc_end, _, target_date_str = get_local_day_utc_bounds(reference_utc, tz_str)
             except Exception:
                 continue
 
             if not (NIGHTLY_WINDOW_START_HOUR <= user_local_dt.hour < NIGHTLY_WINDOW_END_HOUR):
                 continue
 
-            if _LAST_NIGHTLY_RUN.get(uid) == local_today_str:
+            if _LAST_NIGHTLY_RUN.get(uid) == target_date_str:
                 continue
 
             msg_count = (
                 db.query(Message)
                 .join(Conversation, Message.conversation_id == Conversation.id)
-                .filter(Conversation.user_id == uid, Message.role == "user", Message.created_at >= utc_start, Message.created_at < utc_end)
+                .filter(
+                    Conversation.user_id == uid,
+                    Conversation.kind != CRON_KIND,
+                    Message.role == "user",
+                    # status_interaction rows are role="user"; a poke storm is
+                    # not five real messages worth of material to reflect on.
+                    Message.subtype.is_(None) | Message.subtype.notin_(tuple(UI_ONLY_SUBTYPES)),
+                    Message.created_at >= utc_start,
+                    Message.created_at < utc_end,
+                )
                 .count()
             )
             if msg_count < NIGHTLY_MIN_MESSAGES_TODAY:
                 continue
 
-            eligible.append((uid, local_today_str))
+            eligible.append((uid, reference_utc, target_date_str))
 
     if not eligible:
         return
 
-    results = await asyncio.gather(*(run_nightly_pipeline(uid, today_str) for uid, today_str in eligible), return_exceptions=True)
-    for (uid, today_str), result in zip(eligible, results, strict=True):
+    results = await asyncio.gather(*(run_nightly_pipeline(uid, reference_utc) for uid, reference_utc, _ in eligible), return_exceptions=True)
+    for (uid, _, target_date_str), result in zip(eligible, results, strict=True):
         if isinstance(result, Exception):
             logger.exception("nightly_activity: tick failed", extra={"user_id": uid})
             continue
         if result is True:
-            _LAST_NIGHTLY_RUN[uid] = today_str
+            _LAST_NIGHTLY_RUN[uid] = target_date_str
 
 
 async def scheduler_loop() -> None:

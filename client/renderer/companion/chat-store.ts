@@ -1,9 +1,12 @@
 import { atom } from 'nanostores'
 
+import type { SessionMessage } from '@/shared/types/deskagent'
+
 export interface ChatMessage {
   id: string
   role: 'user' | 'assistant'
   text: string
+  subtype?: string
   streaming?: boolean
   attachments?: string[]
   toolName?: string | null
@@ -30,8 +33,54 @@ export function setChatSession(id: string | null): void {
   $chatSessionId.set(id)
 }
 
+/** Replace the dock's transcript with a conversation loaded from the backend.
+ * `system` / `tool` rows keep their subtype so the bubble renderer can pick the
+ * right presentation; they are folded onto the assistant side for layout only. */
+export function hydrateChatMessages(messages: SessionMessage[]): void {
+  $chatMessages.set(
+    messages.map(m => ({
+      id: nextId(),
+      role: m.role === 'user' ? 'user' : 'assistant',
+      text: extractText(m),
+      subtype: m.subtype,
+      toolName: m.tool_name ?? null
+    }))
+  )
+}
+
+function extractText(m: SessionMessage): string {
+  // ``SessionMessage.content`` is unknown — a multimodal_v1 user message
+  // arrives as a JSON parts array; render only the user-visible text so the
+  // bubble doesn't leak ``[{"type": "image_url", ...}]``.
+  if (typeof m.content !== 'string') {
+    return ''
+  }
+
+  let parsed: unknown
+
+  try {
+    parsed = JSON.parse(m.content)
+  } catch {
+    return m.content
+  }
+
+  if (!Array.isArray(parsed)) {
+    return m.content
+  }
+
+  return parsed
+    .filter((p): p is { type?: string; text?: string } => typeof p === 'object' && p !== null)
+    .filter(p => p.type === 'text' && typeof p.text === 'string')
+    .map(p => p.text as string)
+    .join('\n')
+}
+
 export function setProactiveBubble(text: string | null): void {
   $proactiveBubble.set(text)
+}
+
+export function pushProactiveMessage(text: string): void {
+  $chatMessages.set([...$chatMessages.get(), { id: nextId(), role: 'assistant', text, subtype: 'status_proactive' }])
 }
 
 export function pushUserMessage(text: string, attachments?: string[]): string {

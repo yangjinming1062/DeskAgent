@@ -1,6 +1,6 @@
 from components import AGENT_MAX_LOOP_TURNS, DEFAULT_LANGUAGE, SETTINGS, get_logger, safe_json_loads
 from modules.auth import ChatRequestClientContext
-from modules.conversation import Conversation
+from modules.conversation import Conversation, Message
 from modules.system import ChatRequest
 from sqlalchemy.orm import Session
 
@@ -9,7 +9,7 @@ from ..llm import LLMRuntimeError, MissingLlmConfigError, ServiceType, compress_
 from ..tools import ToolCallGuardrailController, schema_name
 from .chat_emitter import Emitter
 from .message_sanitization import truncate_chat_history
-from .persistence import _persist_assistant_no_tool_turn, _persist_assistant_with_tool_calls_and_results, _persist_user_message
+from .persistence import _persist_assistant_no_tool_turn, _persist_assistant_with_tool_calls_and_results, _persist_user_message, persist_tool_summary
 from .streaming import _emit_llm_error, _ensure_tool_call_ids, _stream_llm_response
 from .tool_dispatch import _ToolDispatchContext
 from .turn_inputs import _build_turn_inputs, _merge_session_settings, _parse_reasoning_effort, _parse_service_tier
@@ -48,7 +48,7 @@ async def run_chat_turn(
     compression_threshold = safe_json_loads(effective_settings.get("chat.context_compression_threshold", ""), default=SETTINGS.context_compression_threshold)
     reasoning_effort = _parse_reasoning_effort(effective_settings.get("agent.reasoning_effort") or effective_settings.get("reasoning_effort"))
     service_tier = _parse_service_tier(effective_settings.get("agent.service_tier") or effective_settings.get("service_tier"))
-    compressed_messages = await compress_history_if_needed(
+    compressed_messages, compress_info = await compress_history_if_needed(
         inputs.messages,
         client=inputs.client,
         model=inputs.model_name,
@@ -57,6 +57,21 @@ async def run_chat_turn(
         threshold_ratio=compression_threshold,
         language=effective_settings.get("language", DEFAULT_LANGUAGE),
     )
+    # Persist the compress checkpoint so the next turn's _history_to_messages
+    # starts from here — the compressed-away messages stay in the DB but drop
+    # out of the LLM read path. Applies to ALL conversation kinds, not just main:
+    # a standard work conversation that crosses the token threshold needs the
+    # same read-start anchor.
+    if compress_info is not None:
+        db.add(
+            Message(
+                conversation_id=conv.id,
+                role="system",
+                content=f"[🗜️ 对话压缩 — {compress_info['replaced_count']} 条早期消息已压缩]\n{compress_info['summary']}",
+                subtype="compress_summary",
+            )
+        )
+        db.commit()
     current_messages = truncate_chat_history(compressed_messages)
 
     guardrails = ToolCallGuardrailController()
@@ -65,6 +80,9 @@ async def run_chat_turn(
     # names and schemas at runtime so active_schemas stays in lockstep.
     active_tool_names: set[str] = {schema_name(s) for s in inputs.all_schemas}
     schemas_by_name: dict[str, dict] = {schema_name(s): s for s in inputs.all_schemas}
+    # Names actually invoked this turn — the tool_summary row is built from
+    # these rather than re-queried, so it can't anchor onto a neighbouring turn.
+    invoked_tool_names: set[str] = set()
 
     dispatch_ctx = _ToolDispatchContext(
         user_id=user_id, llm_config=llm_config, user_settings=effective_settings, session_id=sid, native_memory=inputs.native_memory, guardrails=guardrails, emitter=emitter
@@ -148,13 +166,14 @@ async def run_chat_turn(
                 spatial_locale=llm_result.spatial_locale,
                 spatial_target=llm_result.spatial_target,
             )
-            return
+            break
 
         for tc in llm_result.tool_calls_list:
             if isinstance((fn := tc.get("function")), dict):
                 name = fn.get("name")
                 if isinstance(name, str) and name:
                     active_tool_names.add(name)
+                    invoked_tool_names.add(name)
         _ensure_tool_call_ids(llm_result.tool_calls_list)
 
         await _persist_assistant_with_tool_calls_and_results(
@@ -174,3 +193,5 @@ async def run_chat_turn(
         if guardrails.halt_decision:
             await emitter.send_json({"type": "error", "message": f"Tool execution loop halted by guardrails: {guardrails.halt_decision.message}"})
             break
+
+    persist_tool_summary(db, conv, invoked_tool_names)

@@ -3,8 +3,10 @@ from urllib.parse import urlparse
 
 import httpx
 from components import SESSION_LOCAL, get_logger, is_safe_outbound, tool_error
+from modules.conversation import Message
 from modules.ws import WSEvent
 
+from services.conversation import get_or_create_main_conversation
 from services.disturbance import is_quiet
 from services.tools import ALWAYS_AVAILABLE, REGISTRY
 
@@ -26,6 +28,11 @@ def _emit_companion_message(user_id: int, text: str, affect: str | None = None) 
         payload["affect"] = {"emotion": affect}
     with SESSION_LOCAL() as db:
         db.add(WSEvent(user_id=user_id, event_type="companion.message", payload=json.dumps(payload, ensure_ascii=False)))
+        # status_proactive stays in the LLM context (the user can reply to it),
+        # so an empty message must not accrue a blank turn there.
+        if text.strip():
+            main_conv = get_or_create_main_conversation(db, user_id)
+            db.add(Message(conversation_id=main_conv.id, role="assistant", content=text, subtype="status_proactive"))
         db.commit()
 
 

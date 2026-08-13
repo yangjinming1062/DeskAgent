@@ -14,6 +14,7 @@ from modules.conversation import (
     Message,
 )
 from services.chat import build_session_messages
+from services.conversation import CRON_KIND, MAIN_KIND
 from sqlalchemy import asc, desc, func, or_
 from sqlalchemy.orm import Session, selectinload
 
@@ -36,6 +37,7 @@ def _conversation_to_session_info(conv: Conversation, msg_count: int, input_tok:
 
     return DesktopSessionInfo(
         id=str(conv.id),
+        kind=conv.kind,
         title=conv.title,
         started_at=int(conv.created_at.timestamp() * 1000),
         last_active=int(conv.updated_at.timestamp() * 1000),
@@ -72,7 +74,8 @@ def list_sessions(
     user, _ = current
     # selectinload(Conversation.messages) so _conversation_to_session_info can
     # walk conv.messages to compute ``preview`` without an N+1 SELECT per row.
-    q = db.query(Conversation).options(selectinload(Conversation.messages)).filter(Conversation.user_id == user.id)
+    # Exclude internal cron scratchpad conversations from user-facing lists.
+    q = db.query(Conversation).options(selectinload(Conversation.messages)).filter(Conversation.user_id == user.id, Conversation.kind != CRON_KIND)
 
     if archived == "only":
         # Self-referencing parent_id marks archived; real lineage (parent_id
@@ -167,7 +170,11 @@ def search_sessions(
     title_match_ids = [
         row[0]
         for row in db.query(Conversation.id)
-        .filter(Conversation.user_id == user.id, or_(Conversation.title.ilike(pattern, escape=SQL_LIKE_ESCAPE_CHAR), Conversation.id.like(pattern, escape=SQL_LIKE_ESCAPE_CHAR)))
+        .filter(
+            Conversation.user_id == user.id,
+            Conversation.kind != CRON_KIND,
+            or_(Conversation.title.ilike(pattern, escape=SQL_LIKE_ESCAPE_CHAR), Conversation.id.like(pattern, escape=SQL_LIKE_ESCAPE_CHAR)),
+        )
         .all()
     ]
     # The content scan is the most expensive path (full-table LIKE on
@@ -177,7 +184,7 @@ def search_sessions(
         for row in db.query(Message.conversation_id)
         .filter(Message.content.ilike(pattern, escape=SQL_LIKE_ESCAPE_CHAR))
         .join(Conversation, Conversation.id == Message.conversation_id)
-        .filter(Conversation.user_id == user.id)
+        .filter(Conversation.user_id == user.id, Conversation.kind != CRON_KIND)
         .distinct()
         .limit(200)
         .all()
@@ -217,6 +224,8 @@ def get_session_messages(session_id: str, current: tuple[User, object] = Depends
 def patch_session(session_id: str, body: DesktopSessionPatchRequest, current: tuple[User, object] = Depends(get_current_session), db: Session = Depends(get_db)) -> dict:
     user, _ = current
     conv = _get_conversation_or_404(db, user, session_id)
+    if conv.kind == MAIN_KIND:
+        raise HTTPException(status_code=403, detail="Main conversation cannot be modified or deleted")
     if body.title is not None:
         conv.title = body.title
     if body.archived is not None:
@@ -229,6 +238,8 @@ def patch_session(session_id: str, body: DesktopSessionPatchRequest, current: tu
 def delete_session(session_id: str, current: tuple[User, object] = Depends(get_current_session), db: Session = Depends(get_db)) -> dict:
     user, _ = current
     conv = _get_conversation_or_404(db, user, session_id)
+    if conv.kind == MAIN_KIND:
+        raise HTTPException(status_code=403, detail="Main conversation cannot be modified or deleted")
     deleted_id = conv.id
     db.delete(conv)
     db.commit()

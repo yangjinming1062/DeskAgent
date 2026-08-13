@@ -10,9 +10,11 @@ import { reportInteractionStat } from '@/companion/activity'
 import { resolveAvatarRegeneration } from '@/companion/avatar-regen-store'
 import {
   $chatOpen,
+  $chatSessionId,
   appendAssistantDelta,
   beginAssistantMessage,
   finalizeAssistantMessage,
+  pushProactiveMessage,
   setAssistantError,
   setAssistantTool
 } from '@/companion/chat-store'
@@ -90,6 +92,22 @@ function applySpatialCue(locale?: string, target?: string): void {
 export function handleCompanionEvent(event: RpcEvent): void {
   if ($devMode.get()) {
     pushDevLog(event.type, JSON.stringify(event.payload ?? {}))
+  }
+
+  // Chat-turn events (message.start/delta/complete, tool.*, error) carry the
+  // emitting conversation's session_id. Those from a conversation the renderer
+  // isn't currently viewing must not be applied to the visible chat — e.g.
+  // cron's autonomous turn streams text via the cron conversation; without
+  // this gate the user would see cron's reply as if it answered their last
+  // main-session message. WSEvent-driven events (companion.message/affect,
+  // wardrobe.*, model.*, avatar.regenerated, reload.mcp) have no session_id
+  // and pass through.
+  if (event.session_id !== undefined) {
+    const current = $chatSessionId.get()
+
+    if (current === null || event.session_id !== current) {
+      return
+    }
   }
 
   switch (event.type) {
@@ -365,6 +383,10 @@ export function handleCompanionEvent(event: RpcEvent): void {
 
       if (text && !textSuppressed) {
         void speakProactive(text, { affect: affectEmotion })
+
+        if ($chatOpen.get()) {
+          pushProactiveMessage(text)
+        }
       }
 
       break

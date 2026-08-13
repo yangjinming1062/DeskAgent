@@ -83,6 +83,17 @@ Backend ↔ Client 同时暴露 JSON-RPC over WebSocket（`/api/chat/ws`）与 H
 | `video_gen.failed` | 视频生成失败 | `{task_id, error}` | 用户可见错误 |
 | `reload.mcp` | MCP 配置变更后服务器主动通知 | `{}` | Client 转发给 Runner,Runner 重新加载,再 `tools.sync` 回 backend |
 
+**事件投递范围（`session_id` 语义）**：
+
+WS 事件分两类，按投递边界不同携带或不携带 `session_id`：
+
+| 事件类别 | `session_id` | 说明 |
+|----------|--------------|------|
+| **聊天会话事件**（`message.start` / `message.delta` / `message.complete` / `tool.start` / `tool.call` / `tool.complete` / `error`） | **必带** | 由 `JsonRpcEmitter` 在某个具体会话上发出——值为该会话的 `Conversation.id` 字符串。这些事件**只属于该会话**，不应对其他会话可见。 |
+| **outbox 事件**（`companion.affect` / `companion.message` / `model.ready` / `model.failed` / `model.gen.progress` / `wardrobe.updated` / `wardrobe.gift` / `avatar.regenerated` / `video_gen.*` / `reload.mcp`） | **不带** | 由 WSEvent outbox 投递到用户的 desktop，是"伙伴对自己的全用户行为"，与当前打开哪个会话无关。 |
+
+**渲染端约定**：聊天会话事件必须按 `session_id === $chatSessionId.get()` 过滤。例如 cron 自主轮次（`Conversation.kind='cron'`，renderer 不挂载）的 `message.complete` 携带 `session_id=cron_id`，渲染端必须丢弃——否则 cron 助手文本会以"回复"形式出现在用户当前所看的会话里。Outbox 事件无 `session_id`，照常处理（即 TTS / 气泡 / wardrobe 热替 / 模型重载等）。
+
 ### 1.3 Affect 契约
 
 **语义/渲染解耦**——Backend 只产出 emotion + 可选 locale 语义,绝不指定渲染方式或像素坐标。

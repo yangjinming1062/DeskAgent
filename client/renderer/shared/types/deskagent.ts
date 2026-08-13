@@ -35,6 +35,8 @@ export interface SessionCreateResponse {
 
 export interface SessionInfo {
   archived?: boolean
+  /** Free string server-side; only 'main' and 'standard' are first-class today. */
+  kind?: string
   cwd?: null | string
   ended_at: null | number
   id: string
@@ -64,6 +66,7 @@ export interface SessionMessage {
   reasoning_content?: null | string
   reasoning_details?: unknown
   role: 'assistant' | 'system' | 'tool' | 'user'
+  subtype?: string
   text?: unknown
   timestamp?: number
   tool_call_id?: null | string

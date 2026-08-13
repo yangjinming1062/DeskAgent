@@ -7,9 +7,11 @@ from modules.companion import Persona
 from modules.conversation import Conversation, Message
 from modules.settings import UserSetting
 from modules.system import AgentPromptConfig, ChatRequest
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from ..companion import build_system_prompt_extras, build_user_profile_extras, format_auto_inject_block, format_inferred_profile_block
+from ..conversation import MAIN_KIND, UI_ONLY_SUBTYPES
 from ..gateway import RuntimeSession
 from ..llm import MissingLlmConfigError, ProviderConfig, ServiceType, provider_for_service, provider_from_config, resolve_context_tokens, resolve_vision_chain
 from ..tools import REGISTRY, NativeMemory, schema_name
@@ -75,16 +77,25 @@ def _merge_client_context(session_ctx: ChatRequestClientContext | None, request_
     return ChatRequestClientContext.model_validate(merged) if merged else None
 
 
-def _history_to_messages(db_msgs: list[Message], system_prompt: str) -> list[dict]:
+def _history_to_messages(db_msgs: list[Message], system_prompt: str, *, drop_tool_intermediates: bool) -> list[dict]:
+    """``drop_tool_intermediates`` is only set for the main conversation, where
+    every tool-using turn leaves a ``tool_summary`` row standing in for the
+    dropped frames. Standard conversations keep the raw call/result pairs —
+    dropping them there would erase the working context with nothing to replace it.
+    """
     messages: list[dict] = [{"role": "system", "content": system_prompt}]
+
     for msg in db_msgs:
+        if msg.subtype in UI_ONLY_SUBTYPES:
+            continue
+        if drop_tool_intermediates and (msg.role == "tool" or (msg.role == "assistant" and msg.tool_calls)):
+            continue
+
         content_val: str | list = msg.content or ""
-        # Multimodal content is round-tripped via Message.content_type instead
-        # of sniffing substrings of msg.content (which mis-parsed legitimate
-        # user input like `[{"type":"config", ...}]` on a fresh load).
         if getattr(msg, "content_type", "text") == "multimodal_v1":
             parsed = safe_json_loads(content_val if isinstance(content_val, str) else "")
             content_val = parsed if isinstance(parsed, list) else content_val
+
         m: dict = {"role": msg.role, "content": content_val}
         if getattr(msg, "prompt_tokens", None):
             m["prompt_tokens"] = msg.prompt_tokens
@@ -94,6 +105,7 @@ def _history_to_messages(db_msgs: list[Message], system_prompt: str) -> list[dic
         if msg.tool_calls and (parsed := safe_json_loads(msg.tool_calls)) is not None:
             m["tool_calls"] = parsed
         messages.append(m)
+
     return messages
 
 
@@ -104,7 +116,15 @@ def _build_turn_inputs(
     LLM client. The native_memory's addition is injected into the system
     message here so the orchestrator stays linear.
     """
-    history = db.query(Message).filter(Message.conversation_id == conv.id).order_by(Message.id.asc()).all()
+    # LLM context starts at the newest checkpoint — either a nightly daily_summary
+    # or an in-flight compress_summary. Everything before it is covered by the
+    # summary; the rows stay in the DB, this only narrows the read.
+    checkpoint_id = db.query(func.max(Message.id)).filter(Message.conversation_id == conv.id, Message.subtype.in_(("daily_summary", "compress_summary"))).scalar()
+
+    query = db.query(Message).filter(Message.conversation_id == conv.id)
+    if checkpoint_id:
+        query = query.filter(Message.id >= checkpoint_id)
+    history = query.order_by(Message.id.asc()).all()
     first_user_msg = next((m for m in history if m.role == "user"), None)
     first_user_msg_content = first_user_msg.content if first_user_msg else None
 
@@ -160,7 +180,7 @@ def _build_turn_inputs(
         custom_expressions=custom_expressions,
         language=user_settings.get("language", DEFAULT_LANGUAGE),
     )
-    messages = _history_to_messages(history, build_system_prompt(agent_config))
+    messages = _history_to_messages(history, build_system_prompt(agent_config), drop_tool_intermediates=conv.kind == MAIN_KIND)
 
     native_memory = NativeMemory(db, user_id)
     if addition := native_memory.format_for_system_prompt():

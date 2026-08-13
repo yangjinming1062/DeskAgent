@@ -51,6 +51,7 @@ from services.companion import (
     submit_onboarding_field,
     update_memory,
 )
+from services.conversation import get_main_conversation, get_or_create_main_conversation
 from services.disturbance import set_disturbance_tier
 from services.llm import MissingLlmConfigError, resolve_user_llm_config
 from services.tools import REGISTRY
@@ -85,6 +86,13 @@ _last_llm_respond_ts: dict[int, dict[str, float]] = {}
 # Per-(user, kind) in-flight guard so a slow LLM reaction doesn't trigger a
 # second concurrent reaction request while the first is still pending.
 _inflight_interact: set[tuple[int, str]] = set()
+
+# Per-user in-flight guard for ``prompt.submit`` (renderer-issued chat turns).
+# ``companion.interact`` consults this so a poke/drag reaction never lands
+# while the user is mid-message — the two paths would otherwise write
+# interleaved rows into the same main conversation, producing a crossed
+# timeline in the next LLM context.
+_inflight_prompt: set[int] = set()
 
 SHOULD_ACT_ANTIDUP_SECONDS = 2.0
 _last_should_act_ts: dict[int, float] = {}
@@ -147,6 +155,7 @@ async def handle_chat_websocket(websocket: WebSocket, token: str):
     with SESSION_LOCAL() as boot_db:
         llm_config = resolve_user_llm_config(boot_db, user_id)
         user_settings = load_user_settings(boot_db, user_id)
+        get_or_create_main_conversation(boot_db, user_id)
 
     session_client_context: ChatRequestClientContext | None = None
     if payload and "ctx" in payload:
@@ -182,6 +191,14 @@ async def handle_chat_websocket(websocket: WebSocket, token: str):
         if runtime.chat_task and not runtime.chat_task.done():
             raise JsonRpcError(JSONRPC_INVALID_PARAMS, f"session {runtime.session_id!r} already has an in-flight turn")
 
+        # Cross-gate: a companion reaction (poke/drag) is mid-flight on this
+        # user's main conversation. Reject so we don't interleave user rows and
+        # reaction rows on the same conversation — see the comment near
+        # ``_inflight_prompt``. The renderer treats JSONRPC_INVALID_PARAMS the
+        # same as the stale-target case (in-flight turn) and re-issues later.
+        if any(uid == user_id for uid, _ in _inflight_interact):
+            raise JsonRpcError(JSONRPC_INVALID_PARAMS, "companion reaction in-flight; please retry after it lands")
+
         # Truncate is per-user-message ordinal: drop the Nth user message and
         # every row after it (assistant / tool results that came after).
         # Renderer (use-prompt-actions.ts:1071-1086) catches the
@@ -192,7 +209,7 @@ async def handle_chat_websocket(websocket: WebSocket, token: str):
             raise JsonRpcError(JSONRPC_INVALID_PARAMS, "truncate_before_user_ordinal must be an int")
         if truncate_ordinal is not None:
             with SESSION_LOCAL() as db:
-                user_rows = db.query(Message).filter(Message.conversation_id == runtime.conversation_id, Message.role == "user").order_by(Message.created_at).all()
+                user_rows = db.query(Message).filter(Message.conversation_id == runtime.conversation_id, Message.role == "user").order_by(Message.id).all()
                 if truncate_ordinal < 0 or truncate_ordinal >= len(user_rows):
                     raise JsonRpcError(JSONRPC_INVALID_PARAMS, f"truncate_before_user_ordinal {truncate_ordinal} no longer in session history")
                 drop_from_id = user_rows[truncate_ordinal].id
@@ -210,15 +227,20 @@ async def handle_chat_websocket(websocket: WebSocket, token: str):
         emitter = JsonRpcEmitter(raw=ws_emitter, dispatcher=dispatcher, session_id=runtime.session_id)
 
         async def _run_turn() -> None:
-            with SESSION_LOCAL() as db:
-                try:
-                    await run_chat_turn(db, req, llm_config, user_settings, user_id, emitter, session_client_context=session_client_context, track_task=_track, runtime=runtime)
-                except (WebSocketDisconnect, asyncio.CancelledError):
-                    raise
-                except Exception as e:
-                    logger.exception("prompt.submit chat_turn failed")
-                    with contextlib.suppress(Exception):
-                        await dispatcher.push_event("error", {"message": str(e)}, session_id=runtime.session_id)
+            _inflight_prompt.add(user_id)
+
+            try:
+                with SESSION_LOCAL() as db:
+                    try:
+                        await run_chat_turn(db, req, llm_config, user_settings, user_id, emitter, session_client_context=session_client_context, track_task=_track, runtime=runtime)
+                    except (WebSocketDisconnect, asyncio.CancelledError):
+                        raise
+                    except Exception as e:
+                        logger.exception("prompt.submit chat_turn failed")
+                        with contextlib.suppress(Exception):
+                            await dispatcher.push_event("error", {"message": str(e)}, session_id=runtime.session_id)
+            finally:
+                _inflight_prompt.discard(user_id)
 
         runtime.chat_task = asyncio.create_task(_run_turn())
         _track(runtime.chat_task)
@@ -334,6 +356,18 @@ def _get_runtime(runtime_sessions: dict[str, RuntimeSession], params: dict[str, 
     return runtime
 
 
+def _record_main_conversation(user_id: int, role: str, content: str, subtype: str) -> None:
+    """Append a status row to the main conversation. Best-effort: losing the
+    history row must not fail the RPC the user is waiting on."""
+    try:
+        with SESSION_LOCAL() as db:
+            if main_conv := get_main_conversation(db, user_id):
+                db.add(Message(conversation_id=main_conv.id, role=role, content=content, subtype=subtype))
+                db.commit()
+    except Exception:
+        logger.exception("failed to persist main-conversation status row", extra={"user_id": user_id, "subtype": subtype})
+
+
 def _register_session_handlers(dispatcher: JsonRpcDispatcher, runtime_sessions: dict[str, RuntimeSession], llm_config: dict, user_id: int) -> None:
     def _mount_runtime(conv: Conversation, cwd: str | None) -> RuntimeSession:
         """Cancel any in-memory runtime for the same conversation, then mount a fresh one."""
@@ -345,6 +379,15 @@ def _register_session_handlers(dispatcher: JsonRpcDispatcher, runtime_sessions: 
         runtime = new_runtime_session(conversation_id=conv.id, cwd=cwd, settings_json=conv.settings_json)
         runtime_sessions[runtime.session_id] = runtime
         return runtime
+
+    async def session_get_main(_params: dict) -> dict:
+        with SESSION_LOCAL() as db:
+            conv = get_or_create_main_conversation(db, user_id)
+            messages = build_session_messages(conv.id, db)
+        runtime = _mount_runtime(conv, conv.cwd)
+        return SessionResumeResult(session_id=runtime.session_id, message_count=len(messages), messages=messages, info=runtime_info_snapshot(llm_config, runtime)).model_dump()
+
+    dispatcher.register("session.get_main", session_get_main)
 
     async def session_create(params: dict) -> dict:
         cwd = params.get("cwd") or None
@@ -455,6 +498,16 @@ def _register_session_handlers(dispatcher: JsonRpcDispatcher, runtime_sessions: 
         if _user_throttled(_last_interact_ts, user_id, INTERACT_MIN_INTERVAL_SECONDS, now):
             return {"text": None, "emotion": None, "reason": "throttled"}
 
+        # Cross-gate: a renderer-issued chat turn is mid-flight on this user's
+        # main conversation. Without this check, our poke could write a
+        # ``status_interaction`` row before the in-flight user message has been
+        # persisted, or our ``status_reaction`` could land before the assistant
+        # reply that turn is still generating. Drop silently (matches the
+        # ``throttled`` contract) — the user will simply not see a reaction this
+        # time, which is the right call when the conversation is already busy.
+        if user_id in _inflight_prompt:
+            return {"text": None, "emotion": None, "reason": "user_busy"}
+
         user_cooldowns = _last_llm_respond_ts.setdefault(user_id, {})
         last_llm = user_cooldowns.get(kind, 0.0)
         if now - last_llm < USER_TRIGGERED_LLM_COOLDOWN_SECONDS:
@@ -479,8 +532,17 @@ def _register_session_handlers(dispatcher: JsonRpcDispatcher, runtime_sessions: 
         finally:
             _inflight_interact.discard(inflight_key)
 
-        if res.text is not None:
-            user_cooldowns[kind] = now
+        if res.text is None:
+            return res.model_dump()
+
+        # Only a reaction the user actually saw is worth a history row — an
+        # unanswered poke would otherwise litter the main conversation.
+        _record_main_conversation(user_id, "user", f"（{'戳了戳' if kind == 'poke' else '拖拽了'}精灵）", "status_interaction")
+        _record_main_conversation(user_id, "assistant", res.text, "status_reaction")
+        # Cooldown is consumed regardless of the DB outcome: the LLM call has
+        # already been paid for, so a persistence failure must not open the door
+        # to a second one.
+        user_cooldowns[kind] = now
         return res.model_dump()
 
     dispatcher.register("companion.interact", companion_interact)
