@@ -47,7 +47,10 @@ export function ActivationOverlay({ onClose }: { onClose: () => void }): React.J
   }
 
   return (
-    <div className="fixed inset-0 z-[1200] flex items-center justify-center bg-black/40 backdrop-blur-sm" ref={overlayRef}>
+    <div
+      className="fixed inset-0 z-[1200] flex items-center justify-center bg-black/40 backdrop-blur-sm"
+      ref={overlayRef}
+    >
       <form
         className="deskagent-fade-in w-full max-w-lg rounded-2xl border border-border bg-card p-7 shadow-2xl"
         onSubmit={onSubmit}

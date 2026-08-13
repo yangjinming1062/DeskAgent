@@ -17,14 +17,12 @@ class TestTTSTool:
         llm_config = {
             "api_key": api_key,
             "base_url": base_url,
-            "model_name": "mimo-v2.5-tts"
+            "model_name": "mimo-v2.5-tts",
         }
 
         # Call the actual codebase tool function directly without mock
         result_str = await text_to_speech_tool(
-            text="Hello, this is a test.",
-            llm_config=llm_config,
-            voice="mimo_default"
+            text="Hello, this is a test.", llm_config=llm_config, voice="mimo_default"
         )
         result = json.loads(result_str)
         assert result["success"] is True
@@ -41,14 +39,12 @@ class TestTTSTool:
         llm_config = {
             "api_key": api_key,
             "base_url": base_url,
-            "model_name": "mimo-v2.5-tts"
+            "model_name": "mimo-v2.5-tts",
         }
 
         # Call the actual codebase tool function directly without mock
         result_str = await text_to_speech_tool(
-            text="你好，这是一个测试。",
-            llm_config=llm_config,
-            voice="冰糖"
+            text="你好，这是一个测试。", llm_config=llm_config, voice="冰糖"
         )
         result = json.loads(result_str)
         assert result["success"] is True
@@ -103,7 +99,7 @@ class TestImageGenTool:
         llm_config = {
             "api_key": api_key,
             "base_url": base_url,
-            "model_name": "mimo-v2.5"
+            "model_name": "mimo-v2.5",
         }
 
         # Call the actual codebase tool function directly without mock
@@ -111,7 +107,7 @@ class TestImageGenTool:
             result_str = await image_generation_tool(
                 prompt="A tiny red square on white background",
                 llm_config=llm_config,
-                size="256x256"
+                size="256x256",
             )
             result = json.loads(result_str)
             if not result.get("success"):
@@ -180,8 +176,8 @@ class TestReferenceImageChain:
             lambda db, uid, svc: [
                 self._cfg("minimax"),
                 self._cfg("zhipu"),
-                self._cfg("gemini")
-            ]
+                self._cfg("gemini"),
+            ],
         )
         capable = {"minimax": True, "zhipu": False, "gemini": True}
         monkeypatch.setattr(
@@ -189,7 +185,7 @@ class TestReferenceImageChain:
             "resolve",
             lambda svc, name: type(
                 "P", (), {"supports_reference_image": capable[name]}
-            )()
+            )(),
         )
 
         chain, err = tool_mod._image_gen_chain(None, None, "https://ref/seed.png")
@@ -205,12 +201,12 @@ class TestReferenceImageChain:
         monkeypatch.setattr(
             tool_mod,
             "resolve_provider_chain",
-            lambda db, uid, svc: [self._cfg("zhipu")]
+            lambda db, uid, svc: [self._cfg("zhipu")],
         )
         monkeypatch.setattr(
             tool_mod,
             "resolve",
-            lambda svc, name: type("P", (), {"supports_reference_image": False})()
+            lambda svc, name: type("P", (), {"supports_reference_image": False})(),
         )
 
         chain, err = tool_mod._image_gen_chain(None, None, "https://ref/seed.png")
@@ -273,7 +269,9 @@ class TestReferenceImageChain:
             return await call_fn(_NativeProvider())
 
         monkeypatch.setattr(
-            tool_mod, "_image_gen_chain", lambda *a: ([self._cfg("minimax")], None)
+            tool_mod,
+            "_image_gen_chain",
+            lambda *a, **kw: ([self._cfg("minimax")], None),
         )
         monkeypatch.setattr(tool_mod, "execute_with_fallback", _fake_execute)
 
@@ -281,7 +279,7 @@ class TestReferenceImageChain:
             prompt="portrait",
             llm_config={},
             user_id=None,
-            reference_image="https://ref/seed.png"
+            reference_image="https://ref/seed.png",
         )
         payload = json.loads(result)
         assert payload["success"] is True
@@ -313,7 +311,7 @@ class TestReferenceImageChain:
             return await call_fn(_TextOnlyProvider())
 
         monkeypatch.setattr(
-            tool_mod, "_image_gen_chain", lambda *a: ([self._cfg("zhipu")], None)
+            tool_mod, "_image_gen_chain", lambda *a, **kw: ([self._cfg("zhipu")], None)
         )
         monkeypatch.setattr(tool_mod, "execute_with_fallback", _fake_execute)
 
@@ -335,14 +333,14 @@ class TestReferenceImageChain:
         monkeypatch.setattr(
             tool_mod,
             "_image_gen_chain",
-            lambda *a: ([], "当前图片生成供应商均不支持以图生图")
+            lambda *a, **kw: ([], "当前图片生成供应商均不支持以图生图"),
         )
 
         result = await tool_mod.image_generation_tool(
             prompt="portrait",
             llm_config={},
             user_id=None,
-            reference_image="https://ref/seed.png"
+            reference_image="https://ref/seed.png",
         )
         payload = json.loads(result)
         assert payload["success"] is False

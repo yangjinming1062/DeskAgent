@@ -39,7 +39,7 @@ async def test_send_message_companion_path_emits_ws_event(monkeypatch):
     monkeypatch.setattr(
         smt,
         "_emit_companion_message",
-        lambda uid, text, affect=None: captured.append((uid, text, affect))
+        lambda uid, text, affect=None: captured.append((uid, text, affect)),
     )
     monkeypatch.setattr(smt, "is_quiet", lambda uid: False)
 
@@ -61,7 +61,7 @@ async def test_send_message_companion_path_emits_with_affect(monkeypatch):
     monkeypatch.setattr(
         smt,
         "_emit_companion_message",
-        lambda uid, text, affect=None: captured.append((uid, text, affect))
+        lambda uid, text, affect=None: captured.append((uid, text, affect)),
     )
     monkeypatch.setattr(smt, "is_quiet", lambda uid: False)
 
@@ -84,12 +84,12 @@ async def test_send_message_quiet_tier_diverts_affect_only(monkeypatch):
     monkeypatch.setattr(
         smt,
         "_emit_companion_message",
-        lambda uid, text, affect=None: messages.append((uid, text, affect))
+        lambda uid, text, affect=None: messages.append((uid, text, affect)),
     )
     monkeypatch.setattr(
         smt,
         "_emit_companion_affect",
-        lambda uid, emotion: affects.append((uid, emotion))
+        lambda uid, emotion: affects.append((uid, emotion)),
     )
     monkeypatch.setattr(smt, "is_quiet", lambda uid: True)
 
@@ -116,12 +116,12 @@ async def test_send_message_quiet_tier_no_affect_emits_neutral(monkeypatch):
     monkeypatch.setattr(
         smt,
         "_emit_companion_message",
-        lambda uid, text, affect=None: messages.append((uid, text, affect))
+        lambda uid, text, affect=None: messages.append((uid, text, affect)),
     )
     monkeypatch.setattr(
         smt,
         "_emit_companion_affect",
-        lambda uid, emotion: affects.append((uid, emotion))
+        lambda uid, emotion: affects.append((uid, emotion)),
     )
     monkeypatch.setattr(smt, "is_quiet", lambda uid: True)
 
@@ -143,7 +143,7 @@ async def test_send_message_normal_tier_emits(monkeypatch):
     monkeypatch.setattr(
         smt,
         "_emit_companion_message",
-        lambda uid, text, affect=None: captured.append((uid, text, affect))
+        lambda uid, text, affect=None: captured.append((uid, text, affect)),
     )
     monkeypatch.setattr(smt, "is_quiet", lambda uid: False)
 
@@ -163,7 +163,7 @@ def test_onboarding_incremental_persistence_and_recovery(_patch_db):
     from services.companion import (
         get_onboarding_state,
         submit_onboarding_field,
-        update_persona
+        update_persona,
     )
 
     with SessionLocal() as db:
@@ -221,7 +221,7 @@ def test_post_character_onboarding_accepts_user_and_voice(_patch_db):
         confirm_portrait,
         get_onboarding_state,
         submit_onboarding_field,
-        update_persona
+        update_persona,
     )
     from services.companion import read_user_profile
 
@@ -264,7 +264,7 @@ def test_onboarding_complete_only_when_post_character_fields_filled(_patch_db):
         confirm_portrait,
         get_onboarding_state,
         submit_onboarding_field,
-        update_persona
+        update_persona,
     )
 
     with SessionLocal() as db:
@@ -324,7 +324,7 @@ def test_portrait_confirmation_and_resume(_patch_db):
     from services.companion import (
         confirm_portrait,
         get_onboarding_state,
-        update_persona
+        update_persona,
     )
 
     with SessionLocal() as db:
@@ -345,7 +345,7 @@ def test_portrait_confirmation_and_resume(_patch_db):
             prompt_json="{}",
             asset_url="companion-avatars/test.jpg",
             seed_front_url="",
-            active=True
+            active=True,
         )
         db.add(avatar)
         db.commit()
@@ -401,7 +401,7 @@ def test_speaking_style_rejected_after_finalization(_patch_db):
     from services.companion import (
         PersonaValidationError,
         submit_onboarding_field,
-        update_persona
+        update_persona,
     )
 
     with SessionLocal() as db:
@@ -411,8 +411,8 @@ def test_speaking_style_rejected_after_finalization(_patch_db):
             {
                 "name": "小光",
                 "personality": "毒舌傲娇",
-                "speaking_style": "俏皮带点小傲娇"
-            }
+                "speaking_style": "俏皮带点小傲娇",
+            },
         )
 
         with pytest.raises(PersonaValidationError):
@@ -481,7 +481,7 @@ def _seed_persona(SessionLocal, user_id: int, *, complete: bool = True):
                 system_prompt_extras="你是小光，一个温柔的桌面伙伴。"
                 if complete
                 else "",
-                is_complete=complete
+                is_complete=complete,
             )
         )
         db.commit()
@@ -510,7 +510,9 @@ async def test_affect_check_llm_decides_express(monkeypatch, _patch_db):
     ac = importlib.import_module("services.companion.affect_check")
     _seed_persona(SessionLocal, 777)
 
-    monkeypatch.setattr("services.companion.prompt_runtime.client_for_config", lambda cfg: None)
+    monkeypatch.setattr(
+        "services.companion.prompt_runtime.client_for_config", lambda cfg: None
+    )
 
     async def _mock_call(*a, **kw):
         return _MockResponse(
@@ -539,7 +541,9 @@ async def test_affect_check_llm_decides_no_express(monkeypatch, _patch_db):
     ac = importlib.import_module("services.companion.affect_check")
     _seed_persona(SessionLocal, 666)
 
-    monkeypatch.setattr("services.companion.prompt_runtime.client_for_config", lambda cfg: None)
+    monkeypatch.setattr(
+        "services.companion.prompt_runtime.client_for_config", lambda cfg: None
+    )
 
     async def _mock_call(*a, **kw):
         return _MockResponse(
@@ -569,7 +573,9 @@ async def test_affect_check_neutral_emotion_not_emitted(monkeypatch, _patch_db):
     ac = importlib.import_module("services.companion.affect_check")
     _seed_persona(SessionLocal, 555)
 
-    monkeypatch.setattr("services.companion.prompt_runtime.client_for_config", lambda cfg: None)
+    monkeypatch.setattr(
+        "services.companion.prompt_runtime.client_for_config", lambda cfg: None
+    )
 
     async def _mock_call(*a, **kw):
         return _MockResponse(
@@ -600,7 +606,9 @@ async def test_affect_check_llm_failure_is_silent(monkeypatch, _patch_db):
     from services.llm import LLMRuntimeError
     from services.llm import ClassifiedError, FailoverReason
 
-    monkeypatch.setattr("services.companion.prompt_runtime.client_for_config", lambda cfg: None)
+    monkeypatch.setattr(
+        "services.companion.prompt_runtime.client_for_config", lambda cfg: None
+    )
 
     async def _raise(*a, **kw):
         raise LLMRuntimeError(
@@ -637,7 +645,7 @@ def test_message_complete_emits_nested_affect_object():
     emitted: dict = {
         "type": "message.complete",
         "text": "hello",
-        **({"affect": {"emotion": "happy"}} if "happy" else {})
+        **({"affect": {"emotion": "happy"}} if "happy" else {}),
     }
     assert isinstance(emitted["affect"], dict)
     assert emitted["affect"]["emotion"] == "happy"
@@ -691,7 +699,7 @@ def test_voice_catalog_no_match_falls_back_neutral():
             gender="male",
             language="zh",
             tags=["男"],
-            description=""
+            description="",
         ),
         VoiceEntry(
             id="n1",
@@ -699,7 +707,7 @@ def test_voice_catalog_no_match_falls_back_neutral():
             gender="neutral",
             language="zh",
             tags=[],
-            description=""
+            description="",
         ),
         VoiceEntry(
             id="f1",
@@ -707,8 +715,8 @@ def test_voice_catalog_no_match_falls_back_neutral():
             gender="female",
             language="zh",
             tags=["女"],
-            description=""
-        )
+            description="",
+        ),
     ]
     best, _ = voice_catalog.match_voice("xyzqwerty", catalog)
     assert best.gender == "neutral"
@@ -845,7 +853,7 @@ async def test_design_voice_calls_provider(monkeypatch):
             return VoiceDesignResult(
                 voice_id="custom-voice-123",
                 trial_audio=b"\x00\x01",
-                trial_audio_mime="audio/mpeg"
+                trial_audio_mime="audio/mpeg",
             )
 
     monkeypatch.setattr(voice_catalog, "resolve", lambda st, name: FakeDesign)
@@ -934,7 +942,7 @@ def test_dual_write_routes_user_profile_to_memory(_patch_db):
         "user_gender": "男",
         "user_age_bucket": "26-35",
         "user_hobbies": "音乐",
-        "user_freeform": "早起型"
+        "user_freeform": "早起型",
     }
     with SessionLocal() as db:
         persona = update_persona(db, 777, payload)
@@ -951,7 +959,7 @@ def test_dual_write_routes_user_profile_to_memory(_patch_db):
             "user_gender",
             "user_age_bucket",
             "user_hobbies",
-            "user_freeform"
+            "user_freeform",
         ):
             assert key not in definition
 
@@ -966,7 +974,7 @@ def test_dual_write_routes_user_profile_to_memory(_patch_db):
             "user_profile:gender",
             "user_profile:age_bucket",
             "user_profile:hobbies",
-            "user_profile:freeform"
+            "user_profile:freeform",
         }
         # tags JSON matches the rest of the Memory table (NativeMemory._retain
         # emits the same shape, so any consumer doing json.loads stays happy).
@@ -987,7 +995,7 @@ def test_dual_write_is_idempotent(_patch_db):
         "name": "梦鳞",
         "personality": "温柔",
         "speaking_style": "轻柔",
-        "user_call_name": "老板"
+        "user_call_name": "老板",
     }
     with SessionLocal() as db:
         update_persona(db, 555, payload)
@@ -1023,8 +1031,8 @@ def test_dual_write_editor_path_leaves_memory_alone(_patch_db):
                 "personality": "温柔",
                 "speaking_style": "轻柔",
                 "user_call_name": "老板",
-                "user_hobbies": "音乐"
-            }
+                "user_hobbies": "音乐",
+            },
         )
         # Editor re-saves persona only
         update_persona(
@@ -1053,8 +1061,8 @@ def test_dual_write_empty_user_fields_skip(_patch_db):
                 "speaking_style": "轻柔",
                 "user_call_name": "老板",
                 "user_gender": "",
-                "user_age_bucket": "   "
-            }
+                "user_age_bucket": "   ",
+            },
         )
         rows = (
             db.query(Memory)
@@ -1085,8 +1093,8 @@ def test_build_user_profile_extras_renders_known_rows(_patch_db):
                 "user_gender": "男",
                 "user_age_bucket": "26-35",
                 "user_hobbies": "音乐, 摄影",
-                "user_freeform": "早起型"
-            }
+                "user_freeform": "早起型",
+            },
         )
         out = build_user_profile_extras(db, 333)
 
@@ -1128,9 +1136,9 @@ def test_build_user_profile_extras_partial_rows_keep_order(_patch_db):
                 "personality": "温柔",
                 "speaking_style": "轻柔",
                 "user_call_name": "老板",
-                "user_hobbies": "音乐"
+                "user_hobbies": "音乐",
                 # user_gender / user_age_bucket / user_freeform intentionally not set
-            }
+            },
         )
         out = build_user_profile_extras(db, 444)
 
@@ -1148,7 +1156,7 @@ def test_render_extras_includes_new_character_fields():
             "speaking_style": "轻声细语",
             "biological_type": "灵兽",
             "gender": "女",
-            "appearance_core": "金发"
+            "appearance_core": "金发",
         }
     )
     assert "Biological type" in out and "灵兽" in out
@@ -1172,7 +1180,7 @@ def test_persona_update_schema_accepts_definition_json():
                 "user_gender": "男",
                 "user_age_bucket": "26-35",
                 "user_hobbies": "音乐",
-                "user_freeform": "早起型"
+                "user_freeform": "早起型",
             }
         )
     )
@@ -1208,7 +1216,7 @@ def test_onboarding_field_order_matches_question_sequence():
         "user_gender",
         "user_age_bucket",
         "user_hobbies",
-        "user_freeform"
+        "user_freeform",
     )
 
 
@@ -1236,7 +1244,7 @@ async def test_from_image_refuses_when_persona_incomplete(_patch_db):
     from modules.companion import Persona
     from services.companion.avatar_service import (
         AvatarGenerationError,
-        regenerate_avatar_from_image
+        regenerate_avatar_from_image,
     )
 
     with SessionLocal() as db:
@@ -1267,8 +1275,8 @@ def test_dynamic_user_profile_key_lands_in_memory(_patch_db):
                 "personality": "温柔",
                 "speaking_style": "轻柔",
                 "user_call_name": "老板",
-                "user_timezone": "Asia/Shanghai"  # not in _CONTEXT_LABELS
-            }
+                "user_timezone": "Asia/Shanghai",  # not in _CONTEXT_LABELS
+            },
         )
         rows = (
             db.query(Memory)
@@ -1293,7 +1301,7 @@ def test_session_runtime_info_pydantic_model():
         model="mimo-v2.5",
         provider="openai",
         running=True,
-        settings={"fast": False}
+        settings={"fast": False},
     )
     dumped = info.model_dump()
     assert dumped["cwd"] == "/tmp"
@@ -1316,7 +1324,7 @@ def test_voice_catalog_score_cjk_substring():
             gender="female",
             language="zh",
             tags=["少女", "温柔", "女"],
-            description=""
+            description="",
         ),
         VoiceEntry(
             id="男",
@@ -1324,8 +1332,8 @@ def test_voice_catalog_score_cjk_substring():
             gender="male",
             language="zh",
             tags=["男"],
-            description=""
-        )
+            description="",
+        ),
     ]
     src = "from services.companion.voice_catalog import _score, match_voice"
     exec(src, {})
@@ -1373,15 +1381,10 @@ def test_ws_ticket_mints_short_lived_jwt():
     from services.gateway import authenticate_ws_token
 
     short_jwt, _, _ = create_access_token(
-        user_id=42,
-        username="alice",
-        expires_in_seconds=60,
-        purpose="ws"
+        user_id=42, username="alice", expires_in_seconds=60, purpose="ws"
     )
     full_jwt, _, _ = create_access_token(
-        user_id=42,
-        username="alice",
-        expires_in_seconds=600
+        user_id=42, username="alice", expires_in_seconds=600
     )
 
     # Both tokens fail because there's no DB user in the test env,
@@ -1401,9 +1404,7 @@ def test_ws_ticket_mints_short_lived_jwt():
     # Forge a token without purpose: the function returns (None, None)
     # at the purpose gate before even looking up the user.
     fake, _, _ = create_access_token(
-        user_id=42,
-        username="alice",
-        expires_in_seconds=60
+        user_id=42, username="alice", expires_in_seconds=60
     )
     user, payload = authenticate_ws_token(fake)
     assert user is None and payload is None  # missing purpose gate kicks in
@@ -1422,7 +1423,7 @@ def test_voice_catalog_cjk_score_prefers_specific_match():
         gender="female",
         language="zh",
         tags=["少女", "温柔", "女"],
-        description=""
+        description="",
     )
     yujie = VoiceEntry(
         id="御姐",
@@ -1430,7 +1431,7 @@ def test_voice_catalog_cjk_score_prefers_specific_match():
         gender="female",
         language="zh",
         tags=["御姐", "成熟", "女"],
-        description=""
+        description="",
     )
     # '少女' prefers 少女音 over 御姐音.
     assert _score("少女", shaonv) > _score("少女", yujie)
@@ -1461,7 +1462,7 @@ def test_voice_catalog_tag_scoring_picks_matching_voice():
         gender="neutral",
         language="multi",
         tags=["温暖", "温柔"],
-        description=""
+        description="",
     )
     bright = VoiceEntry(
         id="bright",
@@ -1469,7 +1470,7 @@ def test_voice_catalog_tag_scoring_picks_matching_voice():
         gender="neutral",
         language="multi",
         tags=["明亮", "清亮"],
-        description=""
+        description="",
     )
     assert _score("明亮", bright) > _score("明亮", warm)
 
@@ -1480,12 +1481,7 @@ def test_pydantic_session_runtime_info_optional_cwd():
     from services.gateway import SessionRuntimeInfo
 
     info = SessionRuntimeInfo(
-        cwd=None,
-        branch=None,
-        model=None,
-        provider="openai",
-        running=False,
-        settings={}
+        cwd=None, branch=None, model=None, provider="openai", running=False, settings={}
     )
     assert info.cwd is None
     assert info.running is False
@@ -1539,11 +1535,11 @@ async def test_regenerate_avatar_from_image_uses_reference(monkeypatch, _patch_d
                 {
                     "name": "小光",
                     "biological_type": "人类",
-                    "appearance_core": "金发绿眼"
+                    "appearance_core": "金发绿眼",
                 }
             ),
             system_prompt_extras="",
-            is_complete=True
+            is_complete=True,
         )
         db.add(persona)
         db.commit()
@@ -1555,7 +1551,7 @@ async def test_regenerate_avatar_from_image_uses_reference(monkeypatch, _patch_d
             persona,
             b"ref-image-bytes",
             "image/png",
-            description="把背景改成纯白"
+            description="把背景改成纯白",
         )
         db.refresh(asset)
 
@@ -1588,7 +1584,7 @@ async def test_regenerate_avatar_from_image_refuses_when_persona_incomplete(_pat
     from modules.companion import Persona
     from services.companion.avatar_service import (
         AvatarGenerationError,
-        regenerate_avatar_from_image
+        regenerate_avatar_from_image,
     )
 
     _, SessionLocal = _patch_db
@@ -1603,7 +1599,7 @@ async def test_regenerate_avatar_from_image_refuses_when_persona_incomplete(_pat
             user_id=user.id,
             definition_json=_json.dumps({"name": "小光"}),
             system_prompt_extras="",
-            is_complete=False
+            is_complete=False,
         )
         db.add(persona)
         db.commit()
@@ -1659,7 +1655,7 @@ async def test_generate_fullbody_stage_front_and_aux_chained(monkeypatch, _patch
             seed_front_url="",
             seed_right_url="",
             seed_back_url="",
-            active=True
+            active=True,
         )
         db.add(asset)
         db.commit()
@@ -1674,7 +1670,7 @@ async def test_generate_fullbody_stage_front_and_aux_chained(monkeypatch, _patch
         assert front_res.seed_right_url == ""
         assert front_res.seed_back_url == ""
         assert len(all_calls) == 1
-        assert "full body front view portrait of" in all_calls[0]["prompt"]
+        assert "正面全身照片" in all_calls[0]["prompt"]
         assert all_calls[0]["reference_image"].startswith("data:image/png;base64,")
 
         # 2. Stage 'aux'
@@ -1686,8 +1682,8 @@ async def test_generate_fullbody_stage_front_and_aux_chained(monkeypatch, _patch
         assert "/api/companion/avatar/file/" in aux_res.seed_back_url
         assert len(all_calls) == 3
         # Aux calls used right and back prompts
-        assert "full body right side view" in all_calls[1]["prompt"]
-        assert "full body back view" in all_calls[2]["prompt"]
+        assert "右侧面全身照片" in all_calls[1]["prompt"]
+        assert "背面全身照片" in all_calls[2]["prompt"]
 
         # 3. View 'front' regeneration invalidates aux seeds
         all_calls.clear()
@@ -1751,7 +1747,7 @@ async def test_generate_fullbody_preconditions(monkeypatch, _patch_db):
             seed_front_url="",
             seed_right_url="",
             seed_back_url="",
-            active=True
+            active=True,
         )
         db.add(asset)
         db.commit()
@@ -1759,7 +1755,7 @@ async def test_generate_fullbody_preconditions(monkeypatch, _patch_db):
         # Missing both or passing both stage and view
         with pytest.raises(
             avatar_service.AvatarGenerationError,
-            match="exactly one of 'stage' or 'view' is required"
+            match="exactly one of 'stage' or 'view' is required",
         ):
             await avatar_service.generate_fullbody(
                 db, user_id=user.id, avatar_id=asset.id
@@ -1767,7 +1763,7 @@ async def test_generate_fullbody_preconditions(monkeypatch, _patch_db):
 
         with pytest.raises(
             avatar_service.AvatarGenerationError,
-            match="exactly one of 'stage' or 'view' is required"
+            match="exactly one of 'stage' or 'view' is required",
         ):
             await avatar_service.generate_fullbody(
                 db, user_id=user.id, avatar_id=asset.id, stage="front", view="front"
@@ -1830,7 +1826,7 @@ def test_avatar_from_image_route_validation(_patch_db, monkeypatch):
 
     resp = client.post(
         "/api/companion/avatar/from-image",
-        json={"image": "aGVsbG8=", "content_type": "image/bmp"}
+        json={"image": "aGVsbG8=", "content_type": "image/bmp"},
     )
     assert resp.status_code == 415
 
@@ -1840,7 +1836,7 @@ def test_avatar_from_image_route_validation(_patch_db, monkeypatch):
     monkeypatch.setattr(companion_api, "regenerate_avatar_from_image", boom)
     resp = client.post(
         "/api/companion/avatar/from-image",
-        json={"image": "aGVsbG8=", "content_type": "image/png"}
+        json={"image": "aGVsbG8=", "content_type": "image/png"},
     )
     assert resp.status_code == 409
     assert resp.json()["detail"]["error"]
@@ -1910,7 +1906,7 @@ def test_companion_rest_contract(_patch_db, monkeypatch):
             "definition_json": json.dumps(
                 {"name": "小光", "personality": "温柔", "speaking_style": "轻柔"}
             )
-        }
+        },
     )
     assert ok.status_code == 200
     assert ok.json()["is_complete"] is True
@@ -1949,7 +1945,7 @@ async def test_persona_put_schedules_background_tag_refresh(_patch_db, monkeypat
             definition_json=json.dumps(
                 {"name": "小光", "personality": "温柔体贴", "speaking_style": "轻柔"}
             ),
-            is_complete=True
+            is_complete=True,
         )
         db.add(persona)
         db.commit()
@@ -2002,7 +1998,7 @@ async def test_persona_put_schedules_background_tag_refresh(_patch_db, monkeypat
             "definition_json": json.dumps(
                 {"name": "小光", "personality": "温柔体贴", "speaking_style": "轻柔"}
             )
-        }
+        },
     )
     assert resp.status_code == 200, resp.text
     assert scheduled == [(seeded_persona_id, fake_user_id)], (
@@ -2043,7 +2039,7 @@ async def test_persona_tag_refresh_retries_transient_failures(_patch_db, monkeyp
             definition_json=json.dumps(
                 {"name": "梦鳞", "personality": "俏皮", "speaking_style": "利落"}
             ),
-            is_complete=True
+            is_complete=True,
         )
         db.add(persona)
         db.commit()
@@ -2088,7 +2084,7 @@ async def test_persona_tag_refresh_gives_up_after_max_attempts(_patch_db, monkey
                 {"name": "x", "personality": "p", "speaking_style": "s"}
             ),
             is_complete=True,
-            personality_tags_json=json.dumps(["pre-existing"])
+            personality_tags_json=json.dumps(["pre-existing"]),
         )
         db.add(persona)
         db.commit()
@@ -2137,7 +2133,7 @@ async def test_model_generation_rejects_concurrent_run(_patch_db, monkeypatch):
                 seed_front_url="companion-avatars/seed_front.png",
                 seed_right_url="companion-avatars/seed_right.png",
                 seed_back_url="companion-avatars/seed_back.png",
-                active=True
+                active=True,
             )
         )
         db.commit()
@@ -2200,7 +2196,7 @@ async def test_model_generation_failure_keeps_previous_model_active(
                 user_id=user.id,
                 definition_json=_json.dumps({"name": "小光"}),
                 system_prompt_extras="",
-                is_complete=True
+                is_complete=True,
             )
         )
         db.add(
@@ -2211,7 +2207,7 @@ async def test_model_generation_failure_keeps_previous_model_active(
                 seed_front_url="companion-avatars/seed_front.png",
                 seed_right_url="companion-avatars/seed_right.png",
                 seed_back_url="companion-avatars/seed_back.png",
-                active=True
+                active=True,
             )
         )
         previous = CompanionModel(
@@ -2221,7 +2217,7 @@ async def test_model_generation_failure_keeps_previous_model_active(
             asset_url="companion-models/1/old.glb",
             active=True,
             has_rig=True,
-            has_morph_targets=True
+            has_morph_targets=True,
         )
         db.add(previous)
         db.commit()
@@ -2236,6 +2232,7 @@ async def test_model_generation_failure_keeps_previous_model_active(
         await generate_companion_model(db, user_id=uid)
 
     from services.companion.model_service import _running_model_tasks
+
     await asyncio.gather(*list(_running_model_tasks), return_exceptions=True)
 
     with SessionLocal() as db:
@@ -2342,8 +2339,7 @@ async def test_wardrobe_preview_and_confirm_lifecycle(_patch_db, monkeypatch):
 
     # 2. Preview without image
     resp = client.post(
-        "/api/companion/wardrobe/preview",
-        json={"description": "未来感机能夹克"}
+        "/api/companion/wardrobe/preview", json={"description": "未来感机能夹克"}
     )
     assert resp.status_code == 200
     preview_data = resp.json()
@@ -2372,8 +2368,8 @@ async def test_wardrobe_preview_and_confirm_lifecycle(_patch_db, monkeypatch):
             "description": "未来感机能夹克",
             "image": img_b64,
             "content_type": "image/png",
-            "feedback": "添加霓虹蓝色线条"
-        }
+            "feedback": "添加霓虹蓝色线条",
+        },
     )
     assert resp_with_img.status_code == 200
     assert captured_tool_args["reference_image"] == f"data:image/png;base64,{img_b64}"
@@ -2385,8 +2381,8 @@ async def test_wardrobe_preview_and_confirm_lifecycle(_patch_db, monkeypatch):
         json={
             "description": "test",
             "image": img_b64,
-            "content_type": "application/pdf"
-        }
+            "content_type": "application/pdf",
+        },
     )
     assert bad_mime.status_code == 415
 
@@ -2395,8 +2391,8 @@ async def test_wardrobe_preview_and_confirm_lifecycle(_patch_db, monkeypatch):
         json={
             "description": "test",
             "image": "invalid_base64_!@#$%",
-            "content_type": "image/png"
-        }
+            "content_type": "image/png",
+        },
     )
     assert bad_b64.status_code == 400
 
@@ -2405,7 +2401,7 @@ async def test_wardrobe_preview_and_confirm_lifecycle(_patch_db, monkeypatch):
     monkeypatch.setattr(
         companion_api,
         "emit_wardrobe_updated",
-        lambda user_id: ws_emitted.append(user_id)
+        lambda user_id: ws_emitted.append(user_id),
     )
 
     confirm_resp = client.post(
@@ -2413,8 +2409,8 @@ async def test_wardrobe_preview_and_confirm_lifecycle(_patch_db, monkeypatch):
         json={
             "file_id": file_id,
             "name": "定制机能夹克",
-            "prompt": preview_data["prompt"]
-        }
+            "prompt": preview_data["prompt"],
+        },
     )
     assert confirm_resp.status_code == 201
     confirmed = confirm_resp.json()
@@ -2439,7 +2435,7 @@ async def test_wardrobe_preview_and_confirm_lifecycle(_patch_db, monkeypatch):
     # 6. Confirm expired/non-existent file_id -> 409
     expired_resp = client.post(
         "/api/companion/wardrobe/confirm",
-        json={"file_id": "non_existent_expired_id", "name": "过期装扮"}
+        json={"file_id": "non_existent_expired_id", "name": "过期装扮"},
     )
     assert expired_resp.status_code == 409
 
@@ -2460,7 +2456,7 @@ async def test_normalize_outfit_text_path():
     result = await normalize_outfit(
         _fake_chat,
         raw_input="黑色哥特裙",
-        persona_definition={"biological_type": "精灵", "gender": "女"}
+        persona_definition={"biological_type": "精灵", "gender": "女"},
     )
     assert "哥特" in result
     assert len(result) <= 300
@@ -2475,9 +2471,7 @@ async def test_normalize_outfit_fallback_on_error():
         raise RuntimeError("LLM unavailable")
 
     result = await normalize_outfit(
-        _explode,
-        raw_input="比基尼" * 100,
-        persona_definition=None
+        _explode, raw_input="比基尼" * 100, persona_definition=None
     )
     assert result == ("比基尼" * 100)[:300]
 
@@ -2491,9 +2485,7 @@ async def test_normalize_outfit_strips_markdown_fences():
         return "```\n白色晚礼服，丝绸面料\n```"
 
     result = await normalize_outfit(
-        _fake_chat,
-        raw_input="晚礼服",
-        persona_definition=None
+        _fake_chat, raw_input="晚礼服", persona_definition=None
     )
     assert result == "白色晚礼服，丝绸面料"
 
@@ -2507,9 +2499,7 @@ async def test_normalize_outfit_empty_response_falls_back():
         return ""
 
     result = await normalize_outfit(
-        _empty_chat,
-        raw_input="运动装",
-        persona_definition=None
+        _empty_chat, raw_input="运动装", persona_definition=None
     )
     assert result == "运动装"
 
@@ -2549,7 +2539,7 @@ def test_render_extras_outfit_label():
             "name": "x",
             "personality": "y",
             "speaking_style": "z",
-            "appearance_outfit": "比基尼"
+            "appearance_outfit": "比基尼",
         }
     )
     assert "**Appearance outfit**" in with_outfit
@@ -2580,7 +2570,7 @@ def test_outfit_guidance_injected_only_when_outfit_present():
         persona_extras=None,
         user_profile_extras=None,
         auto_inject_extras="",
-        language="zh"
+        language="zh",
     )
 
     # No persona_extras -> no outfit guidance
@@ -2615,13 +2605,28 @@ def _make_authenticated_client(_patch_db, uid: int = 3001):
     _, SessionLocal = _patch_db
     with SessionLocal() as db:
         if not db.query(User).filter(User.id == uid).first():
-            user = User(id=uid, username=f"u_{uid}", password_hash="x", is_active=True, can_use=True)
+            user = User(
+                id=uid,
+                username=f"u_{uid}",
+                password_hash="x",
+                is_active=True,
+                can_use=True,
+            )
             db.add(user)
-            db.add(UserModelConfig(user_id=uid, llm_provider="zhipu", llm_api_key="k", llm_base_url="http://x", llm_model_name="m"))
+            db.add(
+                UserModelConfig(
+                    user_id=uid,
+                    llm_provider="zhipu",
+                    llm_api_key="k",
+                    llm_base_url="http://x",
+                    llm_model_name="m",
+                )
+            )
             db.commit()
 
     app = FastAPI()
     app.include_router(companion_api.router)
+
     def _test_get_db():
         db = SessionLocal()
         try:
@@ -2639,16 +2644,19 @@ def test_get_expressions_endpoint(_patch_db):
     client, SessionLocal, uid = _make_authenticated_client(_patch_db, uid=3001)
     with SessionLocal() as db:
         from modules.companion import CompanionExpression
-        db.add(CompanionExpression(
-            user_id=uid,
-            name="tender_worry",
-            label="心疼",
-            valence="negative",
-            description="Tender worry",
-            weights_json='{"frown": 0.5}',
-            tags_json='["心疼"]',
-            scale_boost=1.1,
-        ))
+
+        db.add(
+            CompanionExpression(
+                user_id=uid,
+                name="tender_worry",
+                label="心疼",
+                valence="negative",
+                description="Tender worry",
+                weights_json='{"frown": 0.5}',
+                tags_json='["心疼"]',
+                scale_boost=1.1,
+            )
+        )
         db.commit()
 
     resp = client.get("/api/companion/expressions")
@@ -2670,8 +2678,14 @@ async def test_companion_gift_creation_and_decline_flow(monkeypatch, _patch_db):
     dummy_file = Path(td) / "dummy.png"
     dummy_file.write_bytes(b"dummy")
 
-    monkeypatch.setattr("services.companion.wardrobe_service.get_file_path", lambda fid: (dummy_file, "image/png"))
-    monkeypatch.setattr("services.companion.wardrobe_service.save_companion_asset", lambda data, user_id, **kw: f"companion-assets/{user_id}/dummy.png")
+    monkeypatch.setattr(
+        "services.companion.wardrobe_service.get_file_path",
+        lambda fid: (dummy_file, "image/png"),
+    )
+    monkeypatch.setattr(
+        "services.companion.wardrobe_service.save_companion_asset",
+        lambda data, user_id, **kw: f"companion-assets/{user_id}/dummy.png",
+    )
 
     # Create gift costume item with equip=False, origin='companion', gift_state='pending'
     with SessionLocal() as db:

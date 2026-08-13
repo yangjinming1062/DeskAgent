@@ -1436,7 +1436,9 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
           {phase === 'portrait-avatar' && (
             <div className="mt-4">
               {avatarBusy || fullbodyLoading ? (
-                <SpinnerWithText text={fullbodyLoading && generatingView ? FULLBODY_LOADING_TEXT[generatingView] : '正在重新生成头像…'} />
+                <SpinnerWithText
+                  text={fullbodyLoading && generatingView ? FULLBODY_LOADING_TEXT[generatingView] : '正在重新生成头像…'}
+                />
               ) : (
                 <>
                   <RegenFeedbackInput />
@@ -1519,7 +1521,9 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
           {phase === 'portrait-fullbody-front' && (
             <div className="mt-4">
               {fullbodyLoading ? (
-                <SpinnerWithText text={generatingView ? FULLBODY_LOADING_TEXT[generatingView] : '正在生成正面全身图…'} />
+                <SpinnerWithText
+                  text={generatingView ? FULLBODY_LOADING_TEXT[generatingView] : '正在生成正面全身图…'}
+                />
               ) : (
                 <>
                   <RegenFeedbackInput />
@@ -1558,7 +1562,9 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
           {phase === 'portrait-fullbody-right' && (
             <div className="mt-4">
               {fullbodyLoading ? (
-                <SpinnerWithText text={generatingView ? FULLBODY_LOADING_TEXT[generatingView] : '正在生成侧面全身图…'} />
+                <SpinnerWithText
+                  text={generatingView ? FULLBODY_LOADING_TEXT[generatingView] : '正在生成侧面全身图…'}
+                />
               ) : (
                 <>
                   <RegenFeedbackInput />
@@ -1597,7 +1603,9 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
           {phase === 'portrait-fullbody-back' && (
             <div className="mt-4">
               {fullbodyLoading ? (
-                <SpinnerWithText text={generatingView ? FULLBODY_LOADING_TEXT[generatingView] : '正在生成背面全身图…'} />
+                <SpinnerWithText
+                  text={generatingView ? FULLBODY_LOADING_TEXT[generatingView] : '正在生成背面全身图…'}
+                />
               ) : (
                 <>
                   <RegenFeedbackInput />

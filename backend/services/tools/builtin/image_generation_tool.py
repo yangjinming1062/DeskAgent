@@ -10,7 +10,9 @@ from services.tools import ALWAYS_AVAILABLE, REGISTRY
 logger = get_logger(__name__)
 
 
-def _image_gen_chain(db: Session | None, user_id: int | None, reference_image: str | None, secondary_reference_image: str | None = None) -> tuple[list[ProviderConfig], str | None]:
+def _image_gen_chain(
+    db: Session | None, user_id: int | None, reference_image: str | None, secondary_reference_image: str | None = None, *, preferred_provider: str | list[str] | None = None
+) -> tuple[list[ProviderConfig], str | None]:
     """Filter the image_gen chain to reference-capable providers when
     ``reference_image`` is given. Returns ``(chain, error)``: error is set
     only when image_gen is configured but no provider supports image-to-image;
@@ -18,8 +20,19 @@ def _image_gen_chain(db: Session | None, user_id: int | None, reference_image: s
 
     When ``secondary_reference_image`` is present, prefer providers that
     consume both images (supports_multiple_reference_images); if none, degrade
-    to single-ref capable providers (the secondary image is silently dropped)."""
+    to single-ref capable providers (the secondary image is silently dropped).
+
+    ``preferred_provider`` reorders the chain: accepts a single provider name
+    or a priority list (e.g. ``["gemini", "grok", "minimax"]``). Providers in
+    the list come first in the given order; unlisted providers follow in their
+    original chain order. Used by full-body generation to prefer Gemini → Grok
+    → MiniMax while other image-gen calls use the normal provider chain.
+    """
     full = resolve_provider_chain(db, user_id, "image_gen")
+    if preferred_provider:
+        priority = [preferred_provider] if isinstance(preferred_provider, str) else list(preferred_provider)
+        rank = {name: i for i, name in enumerate(priority)}
+        full = sorted(full, key=lambda c: rank.get(c.provider_name, len(priority)))
     if not reference_image:
         return full, None
     capable = [c for c in full if resolve(ServiceType.image_gen, c.provider_name).supports_reference_image]
@@ -41,6 +54,7 @@ async def image_generation_tool(
     user_id: int | None = None,
     reference_image: str | None = None,
     secondary_reference_image: str | None = None,
+    preferred_provider: str | list[str] | None = None,
     **kwargs,  # noqa: ARG001 — absorbs dispatcher extras
 ) -> str:
     """Image generation via the per-service provider chain. base64 payloads
@@ -58,9 +72,9 @@ async def image_generation_tool(
     try:
         if user_id is not None:
             with SESSION_LOCAL() as db:
-                chain, err = _image_gen_chain(db, user_id, reference_image, secondary_reference_image)
+                chain, err = _image_gen_chain(db, user_id, reference_image, secondary_reference_image, preferred_provider=preferred_provider)
         else:
-            chain, err = _image_gen_chain(None, None, reference_image, secondary_reference_image)
+            chain, err = _image_gen_chain(None, None, reference_image, secondary_reference_image, preferred_provider=preferred_provider)
         if err:
             return tool_error(err)
         result = await execute_with_fallback(None, user_id, "image_gen", call_fn=lambda p: p.generate(req), _chain=chain)

@@ -47,7 +47,7 @@ def _fake_provider(content: str | None = "ok", *, raises: Exception | None = Non
         return SimpleNamespace(
             provider_name="test",
             config=SimpleNamespace(model="m"),
-            raw_client=lambda: _fake_response(content)
+            raw_client=lambda: _fake_response(content),
         )
 
     return _provider
@@ -75,7 +75,7 @@ async def test_enhance_avatar_prompt_returns_text(monkeypatch):
                 "name": "小光",
                 "biological_type": "灵兽",
                 "gender": "女",
-                "appearance_core": "金发绿眼"
+                "appearance_core": "金发绿眼",
             }
         )
 
@@ -115,19 +115,6 @@ async def test_enhance_avatar_prompt_includes_feedback(monkeypatch):
     assert out == "头像提示词"
 
 
-# ── _strip_bust_prefix ──
-
-
-def test_strip_bust_prefix():
-    assert prompt_engineer._strip_bust_prefix("bust portrait of 金发少女") == "金发少女"
-    assert (
-        prompt_engineer._strip_bust_prefix("  BUST PORTRAIT OF 机甲战警") == "机甲战警"
-    )
-    assert (
-        prompt_engineer._strip_bust_prefix("金发少女，半身特写") == "金发少女，半身特写"
-    )
-
-
 # ── is_preset_species ──
 
 
@@ -158,7 +145,7 @@ def test_resolve_fullbody_template_flavor_overlay():
 def test_resolve_fullbody_template_rig_type():
     template = prompt_engineer.resolve_fullbody_template("龙", "serpentine")
     assert template is not None
-    assert "S 形" in template.pose
+    assert "S形" in template.pose
 
 
 def test_resolve_fullbody_template_fallback():
@@ -169,97 +156,51 @@ def test_resolve_fullbody_template_fallback():
 # ── build_fullbody_prompt ──
 
 
-class _FakePersona:
-    def __init__(self, biological_type="人类", appearance="碧蓝眼眸"):
-        self.definition_json = json.dumps(
-            {
-                "biological_type": biological_type,
-                "appearance_core": appearance
-            },
-            ensure_ascii=False
-        )
-
-
 def test_build_front_includes_pose_and_rules():
-    persona = _FakePersona()
     template = prompt_engineer.resolve_fullbody_template("人类")
-    prompt = prompt_engineer.build_fullbody_prompt(
-        "front",
-        persona,
-        avatar_prompt="bust portrait of 金发少女",
-        template=template
-    )
-    assert prompt.startswith("full body front view portrait of 金发少女")
+    prompt = prompt_engineer.build_fullbody_prompt("front", template=template)
+    # View framing goes FIRST — prevents MiniMax from defaulting to bust portrait
+    assert prompt.startswith("正面全身照片，")
     assert "A-pose" in prompt
-    assert "100% 完整展示" in prompt
-    assert "纯白平面背景" in prompt
-    assert "碧蓝眼眸" in prompt
+    assert "平视角度" in prompt
+    assert "纯白背景" in prompt
+    assert "8K" in prompt
 
 
 def test_build_right_uses_right_features():
-    persona = _FakePersona()
     template = prompt_engineer.resolve_fullbody_template("人类")
-    prompt = prompt_engineer.build_fullbody_prompt(
-        "right",
-        persona,
-        avatar_prompt="bust portrait of 金发少女",
-        template=template
-    )
-    assert prompt.startswith(
-        "full body right side view (90 degree profile) portrait of 金发少女"
-    )
-    assert "正侧面" in prompt
+    prompt = prompt_engineer.build_fullbody_prompt("right", template=template)
+    assert prompt.startswith("右侧面全身照片，")
+    assert "右侧面（90°转体）" in prompt
 
 
 def test_build_back_uses_back_features():
-    persona = _FakePersona()
     template = prompt_engineer.resolve_fullbody_template("人类")
-    prompt = prompt_engineer.build_fullbody_prompt(
-        "back",
-        persona,
-        avatar_prompt="bust portrait of 金发少女",
-        template=template
-    )
-    assert prompt.startswith("full body back view (180 degree) portrait of 金发少女")
-    assert "背面全身完整可见" in prompt
+    prompt = prompt_engineer.build_fullbody_prompt("back", template=template)
+    assert prompt.startswith("背面全身照片，")
+    assert "看不到面部" in prompt
 
 
 def test_build_with_flavor():
-    persona = _FakePersona("灵兽")
     template = prompt_engineer.resolve_fullbody_template("灵兽", "quadruped")
-    prompt = prompt_engineer.build_fullbody_prompt(
-        "front",
-        persona,
-        avatar_prompt="bust portrait of 神圣九尾狐",
-        template=template
-    )
+    prompt = prompt_engineer.build_fullbody_prompt("front", template=template)
     assert "灵气" in prompt
 
 
 def test_build_with_feedback():
-    persona = _FakePersona()
     template = prompt_engineer.resolve_fullbody_template("人类")
     prompt = prompt_engineer.build_fullbody_prompt(
-        "front",
-        persona,
-        avatar_prompt="bust portrait of 金发少女",
-        template=template,
-        feedback="想要双马尾"
+        "front", template=template, feedback="想要双马尾"
     )
     assert "用户反馈：想要双马尾" in prompt
 
 
 def test_build_quadruped_pose():
-    persona = _FakePersona("猫")
     template = prompt_engineer.resolve_fullbody_template("猫", "quadruped")
-    prompt = prompt_engineer.build_fullbody_prompt(
-        "front",
-        persona,
-        avatar_prompt="bust portrait of 橘猫",
-        template=template
-    )
-    assert "四足自然直立站立于地面" in prompt
+    prompt = prompt_engineer.build_fullbody_prompt("front", template=template)
+    assert "四足自然直立站立" in prompt
     assert "A-pose" not in prompt
+    assert prompt.startswith("正面全身照片，")
 
 
 # ── chat error cases ──────────────────────────────────────────────
@@ -271,7 +212,7 @@ async def test_chat_rejects_empty_response(monkeypatch):
         return SimpleNamespace(
             provider_name="test",
             config=SimpleNamespace(model="m"),
-            raw_client=lambda: _fake_response("")
+            raw_client=lambda: _fake_response(""),
         )
 
     monkeypatch.setattr(prompt_engineer, "provider_for_service", _provider)
@@ -308,8 +249,7 @@ def test_build_texture_uses_rig_type_prefix():
 
 def test_build_texture_includes_feedback():
     prompt = prompt_engineer.build_texture_prompt(
-        description="旗袍",
-        feedback="更深邃的暗红色，加金色刺绣"
+        description="旗袍", feedback="更深邃的暗红色，加金色刺绣"
     )
     assert "旗袍" in prompt
     assert "用户反馈：更深邃的暗红色，加金色刺绣" in prompt

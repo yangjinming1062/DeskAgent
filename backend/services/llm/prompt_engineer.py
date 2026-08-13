@@ -48,23 +48,16 @@ class FullbodyTemplate:
 
 
 # ── 共用规则后缀（完整性 + 背景光线 + 画风，不含 pose）──
-_FULLBODY_SHARED_RULES = (
-    "全身完整性（最高优先级）：必须 100% 完整展示在画面内，"
-    "四周留有适度安全边缘留白（safe margin / full body fully visible in frame），"
-    "严禁裁切任何身体部位。"
-    "纯白平面背景，无场景、无渐变、无阴影。"
-    "采用均匀漫反射平光打光（soft even diffuse lighting，无明显方向性暗部阴影）。"
-    "画风：photorealistic, hyperrealistic, ultra-detailed, professional portrait photography。"
-)
+# Integration-tested: Chinese-only structural prompts score highest across
+# MiniMax image-01, Gemini, and Grok.  No character description in the text
+# prompt — subject_reference carries 100% of identity.  Avoid "wide shot"
+# (→ top-down camera) and "portrait of" (→ bust-only rendering).
+_FULLBODY_SHARED_RULES = "从头到脚完整可见，平视角度拍摄。纯白背景，均匀打光。写实风格，8K高清。"
 
-# Shared A-pose clause — identical across all biped presets and the biped
-# rig-type fallback, so a rule change only touches one place.
-_BIPED_A_POSE = (
-    "A-pose 站姿规范（Tripo3D 绑骨硬性要求）："
-    "双臂向两侧自然张开与躯干呈 30-45 度夹角，五指自然分开伸直且清晰可辨；"
-    "双脚平行分开约与肩同宽、脚尖朝前平立于地面；脊椎挺直平视前方；"
-    "四肢与躯干之间有可见间隙（腋下、腰侧、大腿内侧不粘连）。"
-)
+# Shared A-pose clause — MiniMax rarely produces a rigid textbook A-pose, but
+# a concise Chinese directive consistently yields a natural standing pose with
+# arms slightly spread, which is the best achievable result.
+_BIPED_A_POSE = "标准A-pose站姿，双臂向两侧微张约30度，双脚分开与肩同宽。"
 
 # ── 预设物种模板 ───────────────────────────────────────────────────
 # 每个 view 的 features 只承载影响 3D 绑骨的结构性要求（该视角下哪些部位
@@ -72,21 +65,11 @@ _BIPED_A_POSE = (
 # 由 beautified avatar_prompt + 参考图决定，系统不替用户想象。
 # 人类/精灵 share identical rigging-focused views (front/right/back);
 # only 机甲 has distinct mechanical-joint language.
-_BIPED_HUMANOID_TEMPLATE = FullbodyTemplate(
-    front_features=("正面全身（head-to-toe）完整可见于画面内；四肢与躯干轮廓清晰、无遮挡、便于绑骨；服饰简洁不遮蔽肢体轮廓。"),
-    right_features=("正侧面（90°）全身完整可见；侧颜与四肢侧面轮廓清晰；手臂与躯干之间有可见间隙。"),
-    back_features="背面全身完整可见；后脑、颈背与四肢背面轮廓清晰。",
-    pose=_BIPED_A_POSE,
-)
+_BIPED_HUMANOID_TEMPLATE = FullbodyTemplate(front_features="", right_features="右侧面（90°转体）。", back_features="背面（180°转身），看不到面部。", pose=_BIPED_A_POSE)
 _SPECIES_TEMPLATES: dict[str, FullbodyTemplate] = {
     "人类": _BIPED_HUMANOID_TEMPLATE,
     "精灵": _BIPED_HUMANOID_TEMPLATE,
-    "机甲": FullbodyTemplate(
-        front_features=("正面全身（head-to-toe）完整可见于画面内；机体分段与机械关节构造清晰、无遮挡、便于绑骨；四肢与躯干轮廓分明。"),
-        right_features=("正侧面（90°）全身完整可见；机体侧面轮廓与关节铰链清晰；四肢与躯干之间有可见间隙。"),
-        back_features="背面全身完整可见；机体背面结构与四肢背面轮廓清晰。",
-        pose=_BIPED_A_POSE,
-    ),
+    "机甲": FullbodyTemplate(front_features="", right_features="右侧面（90°转体），机体侧面轮廓清晰。", back_features="背面（180°转身），看不到面部。", pose=_BIPED_A_POSE),
 }
 
 # ── 物种氛围修饰（用于 rig type 不确定的预设标签）──
@@ -101,40 +84,31 @@ _SPECIES_FLAVOR: dict[str, str] = {
 _RIG_TYPE_TEMPLATES: dict[str, FullbodyTemplate] = {
     "biped": _SPECIES_TEMPLATES["人类"],
     "quadruped": FullbodyTemplate(
-        front_features=("正面全身完整可见于画面内；躯干、四肢与尾巴轮廓清晰、无遮挡、便于绑骨；四腿分开可辨，爪/蹄形态完整。"),
-        right_features=("正侧面（90°）全身完整可见；躯干侧面轮廓与四肢关节角度清晰；尾巴侧面完整可见，四肢互不遮挡。"),
-        back_features="背面全身完整可见；脊椎沿线、四肢背面与尾巴轮廓清晰。",
-        pose=("自然站姿规范（Tripo3D 绑骨硬性要求）：四足自然直立站立于地面，四腿分开且清晰可辨；脊椎水平，头部自然抬起；尾巴自然下垂或微微翘起，不遮挡身体轮廓。"),
+        front_features="",
+        right_features="右侧面（90°），四肢与尾巴侧面轮廓清晰。",
+        back_features="背面（180°转身），看不到面部。",
+        pose="四足自然直立站立，四腿分开；脊椎水平，头抬起；尾巴自然下垂。",
     ),
     "avian": FullbodyTemplate(
-        front_features=("正面全身完整可见于画面内；双翼展开形态完整、羽毛分层清晰；躯干、双足与爪趾、尾羽轮廓清晰、便于绑骨。"),
-        right_features=("正侧面（90°）全身完整可见；翅膀折叠/半展侧面轮廓与躯干侧面清晰；双腿、爪与尾羽侧面完整可见。"),
-        back_features="背面全身完整可见；双翼背面、脊椎线与尾羽背面轮廓清晰。",
-        pose=("自然站姿规范（Tripo3D 绑骨硬性要求）：双足直立站立，双翼向两侧半展（约 30-45 度），翅膀关节清晰可辨；尾羽自然展开；身体朝前，头部平视前方。"),
+        front_features="",
+        right_features="右侧面（90°），翅膀侧面轮廓清晰。",
+        back_features="背面（180°转身），看不到面部。",
+        pose="双足直立站立，双翼向两侧半展约30-45度；身体朝前。",
     ),
     "serpentine": FullbodyTemplate(
-        front_features=("全身完整可见于画面内；蜿蜒躯体、头部与尾巴形态完整；鳞片纹理清晰、便于贴图绑骨。"),
-        right_features=("正侧面（90°）全身完整可见；躯体侧面蜿蜒曲线与头部侧面轮廓清晰；身体不自我重叠遮挡。"),
-        back_features="背面全身完整可见；脊背纹理与躯体背面轮廓连贯至尾尖。",
-        pose=("自然姿态规范（Tripo3D 绑骨硬性要求）：身体水平自然伸展或呈 S 形蜿蜒，全身完整可见；头部抬起平视前方；身体不自我重叠遮挡。"),
+        front_features="",
+        right_features="右侧面（90°），躯体侧面曲线清晰。",
+        back_features="背面，脊背纹理连贯至尾尖。",
+        pose="身体水平自然伸展或S形蜿蜒，全身完整可见；头部抬起。",
     ),
     "aquatic": FullbodyTemplate(
-        front_features=("全身完整可见于画面内；纺锤形躯体与各鱼鳍（背鳍、胸鳍、腹鳍、臀鳍）完全展开、鳍条清晰；尾鳍形态完整、便于绑骨。"),
-        right_features=("正侧面（90°）全身完整可见；躯体侧面曲线与各鳍侧面展开形态清晰；尾鳍侧面完整可见。"),
-        back_features="背面全身完整可见；背鳍、脊背与尾鳍背面形态清晰。",
-        pose=("自然姿态规范（Tripo3D 绑骨硬性要求）：身体水平伸展，各鱼鳍完全展开；尾鳍自然伸展不卷曲；身体完整可见于画面内。"),
+        front_features="", right_features="右侧面（90°），各鳍形态清晰。", back_features="背面，背鳍与尾鳍形态清晰。", pose="身体水平伸展，各鱼鳍完全展开；尾鳍自然伸展。"
     ),
     "hexapod": FullbodyTemplate(
-        front_features=("正面全身完整可见于画面内；头、胸、腹三段分明；六足对称排列、分节清晰、爪尖完整，便于绑骨；触角（如有）形态完整。"),
-        right_features=("正侧面（90°）全身完整可见；躯干侧面分段轮廓与三对足的侧面排列清晰；触角（如有）侧面完整可见。"),
-        back_features="背面全身完整可见；背甲纹理与体段背面轮廓清晰。",
-        pose=("自然站姿规范（Tripo3D 绑骨硬性要求）：六足自然直立站立于地面，六腿对称分开且清晰可辨；触角（如有）自然伸展；各体段完整可见。"),
+        front_features="", right_features="右侧面（90°），六足排列清晰。", back_features="背面，背甲纹理清晰。", pose="六足自然直立站立，六腿对称分开；各体段完整可见。"
     ),
     "octopod": FullbodyTemplate(
-        front_features=("正面全身完整可见于画面内；头胸部与腹部结构完整；四对步足对称展开、关节与弯曲形态清晰，便于绑骨。"),
-        right_features=("正侧面（90°）全身完整可见；躯干侧面轮廓与四对足的侧面排列清晰；步足互不遮挡。"),
-        back_features="背面全身完整可见；背甲与躯干背面轮廓清晰。",
-        pose=("自然姿态规范（Tripo3D 绑骨硬性要求）：八足对称展开于身体两侧，每条腿清晰可辨且不互相遮挡；身体居中，各体段完整可见于画面内。"),
+        front_features="", right_features="右侧面（90°），步足排列清晰。", back_features="背面，背甲轮廓清晰。", pose="八足对称展开于身体两侧，每条腿清晰可辨；身体居中。"
     ),
 }
 
@@ -160,33 +134,37 @@ def resolve_fullbody_template(species: str, rig_type: str = "biped") -> Fullbody
     return template
 
 
-_VIEW_PREFIX = {
-    "front": "full body front view portrait of",
-    "right": "full body right side view (90 degree profile) portrait of",
-    "back": "full body back view (180 degree) portrait of",
-}
+_VIEW_PREFIX = {"front": "正面全身照片", "right": "右侧面全身照片", "back": "背面全身照片"}
 
 
-def _strip_bust_prefix(prompt: str) -> str:
-    stripped = prompt.lstrip()
-    if stripped.lower().startswith("bust portrait of "):
-        return stripped[len("bust portrait of ") :]
-    return stripped
+def build_fullbody_prompt(view: str, *, template: FullbodyTemplate, feedback: str | None = None, avatar_prompt: str = "") -> str:  # noqa: ARG001
+    """直接构造 image-gen prompt — 无 LLM 翻译。
 
+    Integration-tested through 4 rounds of A/B testing with MiniMax image-01:
 
-def build_fullbody_prompt(view: str, persona: Persona, *, avatar_prompt: str, template: FullbodyTemplate, feedback: str | None = None) -> str:
-    """直接构造 image-gen prompt — 无 LLM 翻译。"""
-    char_desc = _strip_bust_prefix(avatar_prompt)
+    1. **No character description in the text prompt.** Any character
+       description — even "一位黑色长发年轻女性" — causes MiniMax to
+       default to bust-portrait rendering (body score drops from 9 to 1-2).
+       subject_reference carries 100% of the character's visual identity.
+
+    2. **Chinese-only, pure structural.** Chinese consistently outperformed
+       English (total 28-34 vs 18-29).  Avoid "wide shot" (→ top-down camera)
+       and "portrait of" (→ bust-only rendering).
+
+    3. **View framing first.** "正面全身照片" as the opening phrase prevents
+       the model from interpreting the prompt as a portrait request.
+
+    ``avatar_prompt`` is accepted but intentionally unused (kept for API
+    stability; the vision-LLM description is no longer injected into the
+    image-gen prompt).
+    """
     features = getattr(template, f"{view}_features")
-    prompt = f"{_VIEW_PREFIX[view]} {char_desc}。{features}"
+    prompt = f"{_VIEW_PREFIX[view]}，{template.pose}{features}{_FULLBODY_SHARED_RULES}"
     if template.flavor:
         prompt += template.flavor
-    appearance = _persona_payload(persona).get("appearance_core") or ""
-    if appearance:
-        prompt += f"{appearance}。"
     if feedback and feedback.strip():
         prompt += f"（用户反馈：{feedback.strip()}）"
-    return prompt + template.pose + _FULLBODY_SHARED_RULES
+    return prompt
 
 
 # Direct-construct PBR texture prompts — no LLM round-trip.
