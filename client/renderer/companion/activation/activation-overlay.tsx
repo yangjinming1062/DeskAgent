@@ -1,6 +1,7 @@
 import { useStore } from '@nanostores/react'
-import { type FormEvent, useState } from 'react'
+import { type FormEvent, useRef, useState } from 'react'
 
+import { useInteractiveRegion } from '@/companion/interactive-regions'
 import { Button } from '@/shared/components/ui'
 import { Loader2, Sparkles } from '@/shared/lib/icons'
 import { $auth, activate } from '@/shared/store/auth'
@@ -15,6 +16,13 @@ export function ActivationOverlay({ onClose }: { onClose: () => void }): React.J
   const auth = useStore($auth)
   const [code, setCode] = useState('')
   const [busy, setBusy] = useState(false)
+  const overlayRef = useRef<HTMLDivElement>(null)
+
+  // Register the full-bleed overlay as an interactive region so the textarea
+  // and submit button stay clickable through the otherwise click-through sprite
+  // window — without this, the window's setIgnoreMouseEvents(true, ...) swallows
+  // every click. Mirrors BootFailureOverlay's pattern.
+  useInteractiveRegion('activation', overlayRef, () => new DOMRect(0, 0, window.innerWidth, window.innerHeight))
 
   const error = auth.kind === 'unauthenticated' ? auth.error : null
   const trimmed = code.trim()
@@ -39,7 +47,7 @@ export function ActivationOverlay({ onClose }: { onClose: () => void }): React.J
   }
 
   return (
-    <div className="fixed inset-0 z-[1200] flex items-center justify-center bg-black/40 backdrop-blur-sm">
+    <div className="fixed inset-0 z-[1200] flex items-center justify-center bg-black/40 backdrop-blur-sm" ref={overlayRef}>
       <form
         className="deskagent-fade-in w-full max-w-lg rounded-2xl border border-border bg-card p-7 shadow-2xl"
         onSubmit={onSubmit}
