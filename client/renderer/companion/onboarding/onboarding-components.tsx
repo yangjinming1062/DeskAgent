@@ -108,15 +108,18 @@ function HistoryGallery({
   return (
     <div className="mt-1 flex justify-center gap-1.5">
       {entries.map((entry, idx) => {
-        // Fall back to front seed — older entries may only have a front view.
+        // Each entry's thumbnail is the view for the current step. Don't fall
+        // back to front for right/back — a front image masquerading as a right
+        // view is misleading, and selecting that entry restores seedUrls that
+        // lack the right URL, blanking the main display to "—".
         const thumb =
           step === 'avatar'
             ? entry.portraitUrl
             : step === 'front'
               ? (entry.seedUrls?.front ?? null)
               : step === 'right'
-                ? (entry.seedUrls?.right ?? entry.seedUrls?.front ?? null)
-                : (entry.seedUrls?.back ?? entry.seedUrls?.front ?? null)
+                ? (entry.seedUrls?.right ?? null)
+                : (entry.seedUrls?.back ?? null)
 
         return (
           <button

@@ -445,6 +445,12 @@ function SpinnerWithText({ text, size = 'h-5 w-5' }: { text: string; size?: stri
   )
 }
 
+const FULLBODY_LOADING_TEXT: Record<'front' | 'right' | 'back', string> = {
+  front: '正在生成正面全身图…',
+  right: '正在生成侧面全身图…',
+  back: '正在生成背面全身图…'
+}
+
 export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.Element | null {
   const gatewayState = useStore($gatewayState)
   const voicePreparing = useStore($voicePreparing)
@@ -506,6 +512,11 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
   // Step-2 transition has no avatar regen hook attached (the user already
   // confirmed the face), so track its loading here for button-disabled state.
   const [fullbodyLoading, setFullbodyLoading] = useState(false)
+  // Which view the in-flight fullbody request is generating — drives the
+  // spinner copy. Without this, clicking「下一步」from the front phase still
+  // shows "正在生成正面全身图…" because the phase doesn't advance until the
+  // API call resolves.
+  const [generatingView, setGeneratingView] = useState<'front' | 'right' | 'back' | null>(null)
 
   // Reference image handed over at the 形象描述 question. Persisted locally
   // via IndexedDB draft cache so a crash before bust generation resumes with it.
@@ -1035,6 +1046,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
 
     setPortraitPanelHint(null)
     setFullbodyLoading(true)
+    setGeneratingView(view)
     const idAtCall = activeAvatarId
     let res: { id?: number; seed_front_url?: string; seed_right_url?: string; seed_back_url?: string } | null = null
 
@@ -1044,6 +1056,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
       res = null
     } finally {
       setFullbodyLoading(false)
+      setGeneratingView(null)
     }
 
     const urlKey = `seed_${view}_url` as const
@@ -1423,7 +1436,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
           {phase === 'portrait-avatar' && (
             <div className="mt-4">
               {avatarBusy || fullbodyLoading ? (
-                <SpinnerWithText text={fullbodyLoading ? '正在生成正面全身图…' : '正在重新生成头像…'} />
+                <SpinnerWithText text={fullbodyLoading && generatingView ? FULLBODY_LOADING_TEXT[generatingView] : '正在重新生成头像…'} />
               ) : (
                 <>
                   <RegenFeedbackInput />
@@ -1506,7 +1519,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
           {phase === 'portrait-fullbody-front' && (
             <div className="mt-4">
               {fullbodyLoading ? (
-                <SpinnerWithText text="正在生成正面全身图…" />
+                <SpinnerWithText text={generatingView ? FULLBODY_LOADING_TEXT[generatingView] : '正在生成正面全身图…'} />
               ) : (
                 <>
                   <RegenFeedbackInput />
@@ -1545,7 +1558,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
           {phase === 'portrait-fullbody-right' && (
             <div className="mt-4">
               {fullbodyLoading ? (
-                <SpinnerWithText text="正在生成侧面全身图…" />
+                <SpinnerWithText text={generatingView ? FULLBODY_LOADING_TEXT[generatingView] : '正在生成侧面全身图…'} />
               ) : (
                 <>
                   <RegenFeedbackInput />
@@ -1584,7 +1597,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
           {phase === 'portrait-fullbody-back' && (
             <div className="mt-4">
               {fullbodyLoading ? (
-                <SpinnerWithText text="正在生成背面全身图…" />
+                <SpinnerWithText text={generatingView ? FULLBODY_LOADING_TEXT[generatingView] : '正在生成背面全身图…'} />
               ) : (
                 <>
                   <RegenFeedbackInput />
