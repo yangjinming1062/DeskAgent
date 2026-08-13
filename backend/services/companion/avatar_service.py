@@ -45,16 +45,21 @@ _MODERATION_SANITIZATION_PROMPT = (
 )
 
 
-def _resolve_reference_for_view(asset: AvatarAsset, view: str) -> str | None:  # noqa: ARG001
+def _resolve_reference_for_view(asset: AvatarAsset, view: str) -> str | None:
     """Resolve the ``subject_reference`` image for a given view.
 
-    All views use the bust portrait — it has the highest face-to-image ratio
-    for identity preservation, and unlike the front full-body seed, it has no
-    body orientation that could confuse the provider's view-angle rendering.
-    The text prompt contains no character description (integration-tested:
-    any description causes bust-portrait rendering), so the reference image
-    is the sole carrier of the character's visual identity."""
-    return load_avatar_bytes_as_data_uri(asset.asset_url)
+    Front view: bust portrait (``asset_url``) — highest face-to-image ratio
+    for identity preservation.
+
+    Right / back views: front full-body seed (``seed_front_url``) — the
+    complete outfit is visible, ensuring clothing consistency across all
+    three views (critical for 3D model reconstruction).  Gemini's native
+    image-editing mode follows viewpoint instructions reliably even when
+    the reference shows a front-facing body.
+    """
+    if view == "front":
+        return load_avatar_bytes_as_data_uri(asset.asset_url)
+    return load_avatar_bytes_as_data_uri(asset.seed_front_url)
 
 
 async def _sanitize_prompt_for_moderation(user_id: int, prompt: str) -> str:
@@ -352,8 +357,9 @@ async def generate_fullbody(db: Session, user_id: int, *, avatar_id: int, view: 
     bust-portrait rendering instead of full body.
 
     Stage 'front': bust portrait as subject_reference (clearest face).
-    Stage 'aux': right view uses bust portrait; back view uses front full-body
-    seed (no face needed — body/hair/clothing consistency).
+    Stage 'aux': right and back views use the front full-body seed as
+    reference — the complete outfit ensures clothing consistency across
+    all three views (critical for 3D model reconstruction).
     View 'front' / 'right' / 'back': regenerates a single view.
     """
     if bool(stage) == bool(view):
@@ -389,14 +395,14 @@ async def generate_fullbody(db: Session, user_id: int, *, avatar_id: int, view: 
     if not is_front and not bool(asset.seed_front_url):
         raise FrontSeedMissingError(f"avatar {avatar_id} has no front seed; generate front fullbody first")
 
-    # Resolve the subject_reference per-view: front/right use the bust
-    # portrait (clearest face for identity), back uses the front full-body
-    # seed (body/hair/clothing — the back view doesn't show the face).
+    # Resolve the subject_reference per-view: front uses the bust portrait
+    # (clearest face), right/back use the front full-body seed (full outfit
+    # for clothing consistency across views — critical for 3D reconstruction).
     references: dict[str, str] = {}
     for v in views_to_gen:
         ref = _resolve_reference_for_view(asset, v)
         if ref is None:
-            source_label = "front seed" if v == "back" else "avatar source file"
+            source_label = "front seed" if v != "front" else "avatar source file"
             raise AvatarSourceUnreadableError(f"avatar {avatar_id} {source_label} is unreadable")
         references[v] = ref
 
