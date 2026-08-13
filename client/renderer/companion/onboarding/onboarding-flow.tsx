@@ -33,9 +33,12 @@ import {
   $seedUrls,
   applyPortrait,
   clearPortraitHistory,
+  clearRegenFeedback,
+  commitPortraitEntry,
   type PortraitEntry,
   pushPortraitEntry,
   selectPortraitEntry,
+  setActiveAvatarId,
   setRegenFeedback,
   setSeedUrls
 } from '@/companion/portrait-store'
@@ -373,7 +376,8 @@ async function generatePortrait(reference: PickedImage | null): Promise<{
 // Step-2: full-body single-view seed on top of the just-confirmed avatar row.
 async function generateFullbody(
   avatarId: number,
-  view: 'front' | 'right' | 'back'
+  view: 'front' | 'right' | 'back',
+  feedback?: string
 ): Promise<{ id?: number; seed_front_url?: string; seed_right_url?: string; seed_back_url?: string } | null> {
   try {
     const res = await window.deskagent.api<{
@@ -384,7 +388,7 @@ async function generateFullbody(
     }>({
       path: `/api/companion/avatar/${avatarId}/fullbody`,
       method: 'POST',
-      body: { view }
+      body: { view, feedback }
     })
 
     return res
@@ -576,6 +580,21 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
       stopSpeaking()
     }
   }, [])
+
+  // The feedback textarea is shared across every portrait phase. Clearing on
+  // phase change keeps "头发再短一点" typed for the front view from leaking
+  // into the right view's regenerator (different anatomy, different prompt).
+  useEffect(() => {
+    const isPortraitPhase =
+      phase === 'portrait-avatar' ||
+      phase === 'portrait-fullbody-front' ||
+      phase === 'portrait-fullbody-right' ||
+      phase === 'portrait-fullbody-back'
+
+    if (isPortraitPhase) {
+      clearRegenFeedback()
+    }
+  }, [phase])
 
   // Drag uses document-level listeners (not React onPointerMove on the
   // container) so the drag survives the cursor leaving the dialog rect and
@@ -1011,35 +1030,23 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
     }
   })
 
-  // Reset the history gallery to the latest entry, restoring the latest
-  // portrait/seeds to the display atoms. Called before forward actions
-  // (advance/confirm) so the displayed image always matches the server's
-  // active row.
-  const resetToLatestEntry = useCallback(() => {
-    const entries = $portraitHistory.get()
-    const latest = entries[entries.length - 1]
+  const runFullbodyView = async (
+    view: 'front' | 'right' | 'back',
+    failureHint: string,
+    nextPhase: Phase,
+    forceRegen: boolean
+  ) => {
+    if (activeAvatarId == null) {
+      setPortraitPanelHint('找不到对应的形象，请稍后重试')
 
-    if (!latest || entries.length <= 1) {
       return
     }
 
-    selectPortraitEntry(entries.length - 1)
-
-    if (latest.portraitUrl) {
-      setPortraitUrl(latest.portraitUrl)
-      $portraitUrl.set(latest.portraitUrl)
-    }
-
-    if (latest.seedUrls) {
-      setSeedUrls(latest.seedUrls)
-    }
-  }, [])
-
-  const runFullbodyView = async (view: 'front' | 'right' | 'back', failureHint: string, nextPhase: Phase) => {
-    resetToLatestEntry()
-
-    if (activeAvatarId == null) {
-      setPortraitPanelHint('找不到对应的形象，请稍后重试')
+    // 「下一步」should ride on the existing seed when the user already has
+    // one for this view — only「重新生成」overrides via forceRegen. Skipping
+    // also prevents the history from growing on every back/forward hop.
+    if (!forceRegen && $seedUrls.get()?.[view]) {
+      setPhase(nextPhase)
 
       return
     }
@@ -1048,10 +1055,13 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
     setFullbodyLoading(true)
     setGeneratingView(view)
     const idAtCall = activeAvatarId
+    // Snapshot the textarea so a user typing into it mid-request doesn't
+    // mutate the value we send to the backend.
+    const feedback = $regenFeedback.get().trim() || undefined
     let res: { id?: number; seed_front_url?: string; seed_right_url?: string; seed_back_url?: string } | null = null
 
     try {
-      res = await retryTransient(() => generateFullbody(idAtCall, view), 1500, 2)
+      res = await retryTransient(() => generateFullbody(idAtCall, view, feedback), 1500, 2)
     } catch {
       res = null
     } finally {
@@ -1075,22 +1085,38 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
       seed_back_url: res!.seed_back_url,
       id: idAtCall
     })
-    pushPortraitEntry({
+    // Same avatar row → update in place. The previous pushPortraitEntry would
+    // duplicate the avatar in the gallery every time the user hopped backwards
+    // and forwards, ballooning the history to 5 entries all pointing at the
+    // same avatar.
+    commitPortraitEntry({
       portraitUrl: $portraitUrl.get(),
       avatarId: $activeAvatarId.get(),
       seedUrls: $seedUrls.get()
     })
+    // Successful regen consumed the feedback — keep the textarea empty so the
+    // next view's feedback doesn't get prepended with the previous one.
+    clearRegenFeedback()
     setPhase(nextPhase)
   }
 
   const advanceToFront = () =>
-    runFullbodyView('front', '正面全身图暂时没生成出来，可以再点一次试试', 'portrait-fullbody-front')
+    runFullbodyView('front', '正面全身图暂时没生成出来，可以再点一次试试', 'portrait-fullbody-front', false)
 
   const advanceToRightView = () =>
-    runFullbodyView('right', '侧面全身图暂时没生成出来，可以再点一次试试', 'portrait-fullbody-right')
+    runFullbodyView('right', '侧面全身图暂时没生成出来，可以再点一次试试', 'portrait-fullbody-right', false)
 
   const advanceToBackView = () =>
-    runFullbodyView('back', '背面全身图暂时没生成出来，可以再点一次试试', 'portrait-fullbody-back')
+    runFullbodyView('back', '背面全身图暂时没生成出来，可以再点一次试试', 'portrait-fullbody-back', false)
+
+  const regenerateFront = () =>
+    runFullbodyView('front', '正面全身图暂时没生成出来，可以再点一次试试', 'portrait-fullbody-front', true)
+
+  const regenerateRightView = () =>
+    runFullbodyView('right', '侧面全身图暂时没生成出来，可以再点一次试试', 'portrait-fullbody-right', true)
+
+  const regenerateBackView = () =>
+    runFullbodyView('back', '背面全身图暂时没生成出来，可以再点一次试试', 'portrait-fullbody-back', true)
 
   const backToAvatar = () => {
     setPhase('portrait-avatar')
@@ -1110,13 +1136,17 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
       $portraitUrl.set(entry.portraitUrl)
     }
 
-    // A bust-regen entry pushed before fullbody has seedUrls: null — don't wipe current seeds.
-    if (entry.seedUrls) {
-      setSeedUrls(entry.seedUrls)
+    // Bust-regen rows have null seeds; still flush current seeds so the main
+    // view doesn't keep showing the previously-active avatar's body.
+    setSeedUrls(entry.seedUrls)
+
+    // Following the user's gallery pick: the next fullbody gen has to operate
+    // on this avatar row, otherwise selecting an older entry would silently
+    // fall back to the latest row and the displayed image would jump back
+    // to a face the user already rejected.
+    if (entry.avatarId != null) {
+      setActiveAvatarId(entry.avatarId)
     }
-    // Intentionally NOT restoring $activeAvatarId — history entries may point to
-    // inactive rows. The active row (always the newest) is what finalize_avatar
-    // and confirm_portrait operate on, so it must stay as-is.
   }, [])
 
   const pickReferenceImage = async () => {
@@ -1154,8 +1184,6 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
   }
 
   const confirmPortrait = async () => {
-    resetToLatestEntry()
-
     try {
       await window.deskagent.api({
         path: '/api/companion/portrait/confirm',
@@ -1538,7 +1566,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
                       </button>
                       <button
                         className="text-white/70 transition hover:text-white"
-                        onClick={() => void advanceToFront()}
+                        onClick={() => void regenerateFront()}
                         type="button"
                       >
                         重新生成正面
@@ -1579,7 +1607,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
                       </button>
                       <button
                         className="text-white/70 transition hover:text-white"
-                        onClick={() => void advanceToRightView()}
+                        onClick={() => void regenerateRightView()}
                         type="button"
                       >
                         重新生成右侧
@@ -1620,7 +1648,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
                       </button>
                       <button
                         className="text-white/70 transition hover:text-white"
-                        onClick={() => void advanceToBackView()}
+                        onClick={() => void regenerateBackView()}
                         type="button"
                       >
                         重新生成背面

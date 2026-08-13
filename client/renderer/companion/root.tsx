@@ -16,7 +16,7 @@ import {
   wakeUpFromSleep
 } from '@/companion/companion-store'
 import { hydratePersona } from '@/companion/persona-store'
-import { hydratePortrait } from '@/companion/portrait-store'
+import { hydratePortrait, hydratePortraitHistory } from '@/companion/portrait-store'
 import { initSpatial } from '@/companion/spatial'
 import { log } from '@/shared/lib/log'
 import { $auth, applyAuthBroadcast, hydrateAuth, logout } from '@/shared/store/auth'
@@ -164,6 +164,10 @@ export function CompanionRoot(): React.JSX.Element {
         // main process still logs to stderr.
         if (onboardingDone) {
           void hydratePortrait()
+          // Re-fetch the avatar history alongside the active portrait so the
+          // gallery thumbnails persist across restarts instead of resetting
+          // to whatever the user just generated this session.
+          void hydratePortraitHistory()
         }
       })
       .catch(() => {

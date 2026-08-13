@@ -102,6 +102,54 @@ export async function hydratePortrait(): Promise<void> {
   }
 }
 
+// Pulls the avatar history from the backend on app start. Without this, the
+// gallery thumbnails are empty after every restart — the user only sees the
+// active avatar and has to regenerate to get visual alternatives.
+//
+// History is append-order on the client (oldest first), but the backend
+// returns desc order; reverse so pushPortraitEntry lays them out chronologically.
+export async function hydratePortraitHistory(): Promise<void> {
+  try {
+    const res = await window.deskagent.api<{
+      history: Array<{
+        id: number
+        asset_url: string
+        seed_front_url?: string | null
+        seed_right_url?: string | null
+        seed_back_url?: string | null
+      }>
+    }>({
+      path: '/api/companion/avatar/history'
+    })
+
+    const items = [...(res?.history ?? [])].reverse()
+
+    // Clear any stale local history before re-populating — a partial hydrate
+    // would otherwise leave the user seeing fewer entries than the server has.
+    $portraitHistory.set([])
+    $portraitSelectedIdx.set(0)
+
+    for (const item of items) {
+      const [portraitUrl, front, right, back] = await Promise.all([
+        resolvePortraitUrl(item.asset_url),
+        resolvePortraitUrl(item.seed_front_url),
+        resolvePortraitUrl(item.seed_right_url),
+        resolvePortraitUrl(item.seed_back_url)
+      ])
+
+      pushPortraitEntry({
+        portraitUrl,
+        avatarId: item.id,
+        seedUrls: front || right || back ? { front, right, back } : null
+      })
+    }
+  } catch (error) {
+    if (!isClientErrorIpc(error)) {
+      log.warn('portrait', 'hydratePortraitHistory failed', error)
+    }
+  }
+}
+
 // Free-text feedback the user typed before pressing "重新生成". Shared across
 // every surface that exposes the regenerate flow (onboarding / 伙伴设置 /
 // 重新对话微调性格 / 角色 inline 编辑) so a half-typed draft survives the
@@ -138,6 +186,30 @@ export function pushPortraitEntry(entry: PortraitEntry): void {
 
   $portraitHistory.set(next)
   $portraitSelectedIdx.set(next.length - 1)
+}
+
+// Fullbody regen lives on the same avatar row as the original bust — pushing a
+// fresh entry per view would duplicate the same avatar in the gallery. Merge
+// into the existing entry by avatarId when one matches; fall back to push on
+// a new avatar (e.g. bust regen creates a fresh row id).
+export function commitPortraitEntry(entry: PortraitEntry): void {
+  const current = $portraitHistory.get()
+  const idx = current.findIndex(e => e.avatarId != null && entry.avatarId != null && e.avatarId === entry.avatarId)
+
+  if (idx < 0) {
+    pushPortraitEntry(entry)
+
+    return
+  }
+
+  const updated = [...current]
+  updated[idx] = {
+    portraitUrl: entry.portraitUrl ?? current[idx].portraitUrl,
+    avatarId: current[idx].avatarId,
+    seedUrls: entry.seedUrls
+  }
+  $portraitHistory.set(updated)
+  $portraitSelectedIdx.set(idx)
 }
 
 export function selectPortraitEntry(idx: number): void {

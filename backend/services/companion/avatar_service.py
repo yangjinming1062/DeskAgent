@@ -342,7 +342,7 @@ async def _generate_avatar_step(
     return asset
 
 
-async def generate_fullbody(db: Session, user_id: int, *, avatar_id: int, view: str | None = None, stage: str | None = None) -> AvatarAsset:
+async def generate_fullbody(db: Session, user_id: int, *, avatar_id: int, view: str | None = None, stage: str | None = None, feedback: str | None = None) -> AvatarAsset:
     """Step-2: render full-body multiview seeds (front, right, back) using chained references.
 
     The text prompt contains ONLY structural directives (A-pose, framing,
@@ -369,7 +369,10 @@ async def generate_fullbody(db: Session, user_id: int, *, avatar_id: int, view: 
 
     persona = get_or_create_persona(db, user_id)
     persist = persona.is_portrait_confirmed
-    feedback = prompt_payload.get("feedback")
+    # Call-time feedback (from the portrait-phase textarea) overrides the
+    # cached value from the bust regen — otherwise the user's "头发再短一点"
+    # never reaches the fullbody prompt.
+    effective_feedback = feedback if feedback is not None else prompt_payload.get("feedback")
     cached_avatar_prompt = prompt_payload.get("avatar_prompt")
 
     # Normalize stage/view into the concrete list of views to generate.
@@ -413,7 +416,7 @@ async def generate_fullbody(db: Session, user_id: int, *, avatar_id: int, view: 
     # Build prompts — no character description (integration-tested: any text
     # description causes MiniMax to render bust portraits instead of full body).
     # subject_reference carries 100% of the character's visual identity.
-    prompts = {v: build_fullbody_prompt(v, template=template, feedback=feedback) for v in views_to_gen}
+    prompts = {v: build_fullbody_prompt(v, template=template, feedback=effective_feedback) for v in views_to_gen}
 
     # Full-body generation uses a dedicated provider priority: Gemini → Grok
     # → MiniMax. Integration-tested across all three providers: Gemini and Grok

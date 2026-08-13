@@ -108,11 +108,12 @@ function HistoryGallery({
   return (
     <div className="mt-1 flex justify-center gap-1.5">
       {entries.map((entry, idx) => {
-        // Each entry's thumbnail is the view for the current step. Don't fall
-        // back to front for right/back — a front image masquerading as a right
-        // view is misleading, and selecting that entry restores seedUrls that
-        // lack the right URL, blanking the main display to "—".
-        const thumb =
+        // The view-specific seed is what the user sees in the main slot.
+        // For entries that predate fullbody (bust-regen rows from step 1)
+        // the seed is null — fall back to the bust so the user still
+        // recognises which avatar the slot belongs to instead of staring
+        // at a row of blank "—" tiles.
+        const viewUrl =
           step === 'avatar'
             ? entry.portraitUrl
             : step === 'front'
@@ -130,8 +131,10 @@ function HistoryGallery({
             onClick={() => onSelect(idx)}
             type="button"
           >
-            {thumb ? (
-              <img alt="" className={`${thumbSize} object-cover`} src={thumb} />
+            {viewUrl ? (
+              <img alt="" className={`${thumbSize} object-cover`} src={viewUrl} />
+            ) : entry.portraitUrl ? (
+              <img alt="" className={`${thumbSize} object-cover opacity-50`} src={entry.portraitUrl} />
             ) : (
               <div className={`grid ${thumbSize} place-items-center text-[10px] text-white/30`}>—</div>
             )}

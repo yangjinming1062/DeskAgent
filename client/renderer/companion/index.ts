@@ -19,6 +19,7 @@ export {
   applyPortrait,
   clearRegenFeedback,
   hydratePortrait,
+  hydratePortraitHistory,
   setPortraitUrl,
   setRegenFeedback
 } from './portrait-store'

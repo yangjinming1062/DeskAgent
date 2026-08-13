@@ -41,6 +41,9 @@ class FullbodyGenerateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     view: Literal["front", "right", "back"] | None = None
     stage: Literal["front", "aux"] | None = None
+    # Free-text nudge from the portrait-phase textarea ("头发再短一点"). Empty
+    # / whitespace is treated as no nudge by build_fullbody_prompt.
+    feedback: str | None = Field(default=None, max_length=2000)
 
     @model_validator(mode="after")
     def _check_exclusive(self):

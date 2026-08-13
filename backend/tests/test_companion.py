@@ -1791,6 +1791,90 @@ async def test_generate_fullbody_preconditions(monkeypatch, _patch_db):
             )
 
 
+def test_fullbody_generate_request_accepts_feedback():
+    """The fullbody request schema accepts an optional feedback string and
+    rejects unknown extras — the front-end sends the portrait-stage textarea
+    text here and the backend injects it into the image prompt."""
+    from modules.companion.schemas import FullbodyGenerateRequest
+
+    parsed = FullbodyGenerateRequest.model_validate({"view": "front", "feedback": "头发再短一点"})
+    assert parsed.feedback == "头发再短一点"
+
+    empty = FullbodyGenerateRequest.model_validate({"view": "front"})
+    assert empty.feedback is None
+
+    with pytest.raises(Exception):
+        FullbodyGenerateRequest.model_validate({"view": "front", "unknown_field": "x"})
+
+
+@pytest.mark.asyncio
+async def test_generate_fullbody_uses_call_time_feedback(monkeypatch, _patch_db):
+    """Call-time feedback from the request body overrides the cached one
+    stored on the avatar row — otherwise the textarea input never reaches
+    the fullbody prompt."""
+    import json as _json
+
+    from modules.auth import User
+    from modules.companion import AvatarAsset
+    from services.companion import avatar_service
+
+    _, SessionLocal = _patch_db
+    captured: dict[str, str] = {}
+
+    async def fake_gen(**_kwargs):  # noqa: ARG001
+        return _json.dumps({"success": True, "urls": ["http://provider/fullbody.png"]})
+
+    async def fake_download(_url):  # noqa: ARG001
+        return b"\x89PNG\r\n\x1a\n", "image/png"
+
+    async def fake_select_rig(_chat, _species, db=None, user_id=None):  # noqa: ARG001
+        return "biped"
+
+    def fake_build(view, *, template, feedback=None, avatar_prompt=""):  # noqa: ARG001
+        captured["feedback"] = feedback or ""
+        return f"prompt-{view}"
+
+    monkeypatch.setattr(avatar_service, "image_generation_tool", fake_gen)
+    monkeypatch.setattr(avatar_service, "_download_to_bytes", fake_download)
+    monkeypatch.setattr(avatar_service, "select_rig_type", fake_select_rig)
+    # `build_fullbody_prompt` is imported into the avatar_service module's namespace
+    # via `from ..llm import build_fullbody_prompt`, so monkeypatch the local binding
+    # (not the llm module's) to capture the call-time feedback.
+    monkeypatch.setattr(avatar_service, "build_fullbody_prompt", fake_build)
+
+    with SessionLocal() as db:
+        user = User(
+            username="fbfeedback", password_hash=None, is_active=True, can_use=True
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+
+        bare_path, _, _ = await avatar_service._persist_portrait_bytes(
+            b"\x89PNG\r\n\x1a\n", "image/png"
+        )
+        asset = AvatarAsset(
+            user_id=user.id,
+            prompt_json=_json.dumps({"prompt": "bust", "avatar_prompt": "bust"}),
+            asset_url=bare_path,
+            seed_front_url="",
+            seed_right_url="",
+            seed_back_url="",
+            style="portrait",
+            seed=1,
+            active=True,
+        )
+        db.add(asset)
+        db.commit()
+        db.refresh(asset)
+
+        await avatar_service.generate_fullbody(
+            db, user_id=user.id, avatar_id=asset.id, view="front", feedback="calltime"
+        )
+
+        assert captured["feedback"] == "calltime"
+
+
 def test_avatar_from_image_route_validation(_patch_db, monkeypatch):
     """POST /avatar/from-image rejects unsupported MIME with 415 and maps an
     incomplete persona to 409 (provider failures stay 502)."""

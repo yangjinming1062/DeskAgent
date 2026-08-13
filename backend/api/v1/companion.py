@@ -420,7 +420,7 @@ async def post_avatar_fullbody(
         raise HTTPException(status_code=429, detail={"error": "伙伴正在生成形象，请稍候"})
     async with lock:
         try:
-            asset = await generate_fullbody(db, user_id=user.id, avatar_id=avatar_id, view=body.view, stage=body.stage)
+            asset = await generate_fullbody(db, user_id=user.id, avatar_id=avatar_id, view=body.view, stage=body.stage, feedback=body.feedback)
         except AvatarNotFoundError as exc:
             raise HTTPException(status_code=404, detail={"error": "找不到对应的形象", "reason": str(exc)})
         except FrontSeedMissingError as exc:
