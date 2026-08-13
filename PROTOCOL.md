@@ -45,7 +45,7 @@
 | Client → Backend | `companion.get_user_profile` | 拉取 `Memory(context="user_profile:*")` 5 条结构化字段 | persona-retune wizard 第 5 步预填用 |
 | Client → Backend | `POST /api/companion/portrait/confirm` | 确认形象（半身/全身） | 幂等;设置 `is_portrait_confirmed=True`,解开 voice/user_* 子阶段 |
 | Client → Backend | `GET /api/companion/model` | 查询当前 3D 模型状态 | `species` / `provider` / `asset_url` |
-| Client → Backend | `POST /api/companion/model` | 触发 3D 模型异步生成 | 全身三视图 → Tripo3D multiview-to-3D + rig;进度经事件推送 |
+| Client → Backend | `POST /api/companion/model` `{species_override?, provider?}` | 触发 3D 模型异步生成 | 全身三视图 → Tripo3D multiview-to-3D + rig，**或** Blender+LLM 回退管线（见 §1.5）;进度经事件推送;`provider` 默认 `None` (auto-detect),可选 `"tripo"` 显式锁 Tripo 或 `"blender_llm"` 显式锁 Blender 管线 |
 | Client → Backend | `POST /api/companion/avatar` / `/from-image` | 头像半身生成（步 1） | 同步;失败返回 502 + 友好文案,不暴露 provider 原始错误 |
 | Client → Backend | `POST /api/companion/avatar/{avatar_id}/fullbody` | 链式参考生成全身种子图（步 2） | 同步;缺少正面全身 409;头像不存在 404;并发 429;`stage` 与 `view` 互斥必选其一 |
 | Client → Backend | `POST /api/companion/wardrobe/preview` `{description, image?, content_type?, feedback?}` | 换装纹理预览（写 temp-media,不入库） | 同步;返回 `{url, prompt, file_id}`,客户端实时挂到 `$wardrobePreview` 上预热 3D 模型;`file_id` 在 `temp_file_ttl_hours` 内可被 `confirm` 落库 |
@@ -57,8 +57,8 @@
 |------------|----------|-------------------|--------|
 | `companion.affect` | 非言语的情境化情绪反应 | `{emotion, locale?, target?}` | EMOTIONAL 状态切换;quiet 档也透传（断消息不断 affect） |
 | `avatar.regenerated` | `avatar.regenerate` 最终结果 | `{job_id, asset_url?, seed_front_url?, seed_right_url?, seed_back_url?, id?, error?}` | 替换头像或展示失败提示 |
-| `model.ready` | 3D 模型异步生成就绪 | `{model_id, asset_url, species}` | 客户端加载 GLB + 注入 TS 动画 clip + 状态机绑定 |
-| `model.gen.progress` | 模型生成中 | `{progress: 0..1, stage}` | 可选进度展示 |
+| `model.ready` | 3D 模型异步生成就绪 | `{model_id, asset_url, species?, rig_type?, provider?}` (`provider` ∈ `"tripo_multiview_to_3d"` / `"blender_llm"`) | 客户端加载 GLB + 注入 TS 动画 clip + 状态机绑定;`provider` 字段供 UI 标识生成来源（Tripo vs LLM 自建模） |
+| `model.gen.progress` | 模型生成中 | `{progress: 0..100, stage, provider?}` (`provider` ∈ `"tripo"` / `"blender_llm"`) | 可选进度展示;`provider` 字段让客户端识别当前是 Tripo 多步流水线还是 Blender+LLM 迭代循环（最坏 ~100 分钟） |
 | `model.failed` | 模型生成失败 | `{error}` | 渲染程序化蛋形兜底角色（无气泡、无错误） |
 | `wardrobe.updated` | 换装产物就绪 | `{texture_url, palette}` | 热替材质/纹理（不动骨骼动画与 morph） |
 | `video_gen.completed` | 视频生成成功 | `{task_id, url}` | 媒体展示 |
@@ -68,6 +68,15 @@
 ### 1.3 Affect 契约
 
 **语义/渲染解耦**——Backend 只产出 emotion + 可选 locale 语义,绝不指定渲染方式或像素坐标。
+
+**provider 字段**（3D 模型生成，`model.ready` / `model.gen.progress` 事件 payload）：
+
+| 取值 | 触发条件 | 模型质量预期 | 典型时长 |
+|------|---------|-------------|---------|
+| `"tripo_multiview_to_3d"`（`model.ready`）/ `"tripo"`（progress） | 默认走 Tripo3D，且 key + credits 充足 | 高（PBR 纹理、精细几何） | 数分钟 |
+| `"blender_llm"` | `provider="blender_llm"` 显式选择 / `tripo_api_key` 缺失 / 余额耗尽（含 `_is_credits_exhausted_error` 模式匹配）/ 余额预检返回 0 | 中低（LLM 自建模，无 PBR，几何自由形式） | 最坏 ~100 分钟（10 轮 × 10 分钟 Blender timeout） |
+
+`ModelGenerateRequest.provider` 可选值：`"tripo"` / `"blender_llm"` / `None`（auto-detect，遵循上表优先级）。Client 应据 `model.gen.progress` 携带的 `provider` 字段提示用户预期时长。
 
 **emotion 枚举**（17 项,`services/chat/affect.py::ALLOWED_EMOTIONS` 权威源）:
 

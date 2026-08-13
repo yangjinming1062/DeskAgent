@@ -354,12 +354,7 @@ async def post_avatar(
 
 
 def _decode_upload_image(image_b64: str | None, content_type: str | None) -> tuple[bytes | None, str | None]:
-    """Decode and validate a base64-uploaded image.
-
-    Returns ``(raw_bytes, normalized_content_type)``, or ``(None, None)``
-    when *image_b64* is falsy.  Raises ``HTTPException(415)`` for unsupported
-    MIME types and ``HTTPException(400)`` for malformed base64.
-    """
+    """Raises ``HTTPException(415)`` for unsupported MIME, ``HTTPException(400)`` for bad base64."""
     if not image_b64:
         return None, None
     normalized = (content_type or "image/png").split(";")[0].strip().lower()
@@ -379,7 +374,6 @@ async def post_avatar_from_image(
     auth: tuple[User, LoginRecord] = Depends(get_current_session),
     db: Session = Depends(get_db),
 ) -> AvatarAssetResponse:
-    """The upload is re-rendered to an avatar-compliant portrait via enhance_avatar_prompt."""
     user, _ = auth
     raw, content_type = _decode_upload_image(body.image, body.content_type)
     pres_raw, pres_content_type = _decode_upload_image(body.presentation_image, body.presentation_content_type)
@@ -414,13 +408,6 @@ async def post_avatar_fullbody(
     auth: tuple[User, LoginRecord] = Depends(get_current_session),
     db: Session = Depends(get_db),
 ) -> AvatarAssetResponse:
-    """Step-2: render full-body multiview seeds (front, right, back) on top of the user-confirmed avatar.
-
-    Returns the same ``AvatarAssetResponse`` shape as the avatar endpoints —
-    the response is the updated row, with front/right/back seed URLs now populated.
-    Generation failures (provider / network) map to 502; typed preconditions
-    (404 / 409) come from the service layer's subclasses.
-    """
     user, _ = auth
     persona = get_or_create_persona(db, user.id)
     if not persona.is_complete:
@@ -472,7 +459,7 @@ async def post_model(
 ) -> CompanionModelResponse:
     user, _ = auth
     try:
-        model = await generate_companion_model(db, user_id=user.id, species_override=body.species_override)
+        model = await generate_companion_model(db, user_id=user.id, species_override=body.species_override, provider_override=body.provider)
     except ModelGenerationInProgressError as exc:
         raise HTTPException(status_code=409, detail={"error": str(exc)})
     except ModelGenerationError as exc:

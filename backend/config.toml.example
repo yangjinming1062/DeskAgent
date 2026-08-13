@@ -48,6 +48,14 @@ tripo_texture_quality = "detailed"
 tripo_geometry_quality = "detailed"
 tripo_enable_autofix = true
 
+[blender_llm]
+# Enable Blender+LLM fallback when Tripo3D is unavailable (no key or no credits).
+blender_llm_enabled = true
+# LLM ↔ Blender agentic loop maximum iterations (code-fix + visual-refine).
+blender_llm_max_iterations = 10
+# Per Blender invocation timeout in seconds (mesh build + optional render).
+blender_llm_timeout = 1800
+
 [providers]
 # Priority order chain (first wins). Supported: mimo, minimax, gemini, grok, zhipu
 providers = ["mimo", "minimax", "gemini", "grok", "zhipu"]

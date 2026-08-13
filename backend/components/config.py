@@ -89,6 +89,11 @@ class Settings(BaseSettings):
     tripo_geometry_quality: str = Field(validation_alias="TRIPO_GEOMETRY_QUALITY")
     tripo_enable_autofix: bool = Field(validation_alias="TRIPO_ENABLE_AUTOFIX")
 
+    # Blender+LLM fallback for 3D model generation when Tripo3D is unavailable.
+    blender_llm_enabled: bool = Field(default=True, validation_alias="BLENDER_LLM_ENABLED")
+    blender_llm_max_iterations: int = Field(default=10, validation_alias="BLENDER_LLM_MAX_ITERATIONS")
+    blender_llm_timeout: int = Field(default=600, validation_alias="BLENDER_LLM_TIMEOUT")
+
     companion_asset_signing_key: str
 
     providers: Annotated[list[str], NoDecode] = Field(validation_alias="PROVIDERS")

@@ -9,7 +9,6 @@ from .personality_tagger import ChatFn
 
 logger = get_logger(__name__)
 
-# 7 大 Rig 类型的默认可用骨骼列表
 RIG_DEFAULT_BONES: dict[str, list[str]] = {
     "biped": [
         "Hips",
@@ -19,6 +18,8 @@ RIG_DEFAULT_BONES: dict[str, list[str]] = {
         "Neck",
         "Head",
         "Jaw",
+        "LeftEye",
+        "RightEye",
         "LeftArm",
         "LeftForeArm",
         "RightArm",
@@ -156,7 +157,6 @@ RIG_DEFAULT_BONES: dict[str, list[str]] = {
 
 
 def get_rig_bones(rig_type: str | None) -> list[str]:
-    """返回指定 rig_type 的可用骨骼列表，未知类型回退至 biped。"""
     normalized = (rig_type or "").strip().lower()
     return list(RIG_DEFAULT_BONES.get(normalized, RIG_DEFAULT_BONES["biped"]))
 
@@ -187,7 +187,6 @@ _SYSTEM_PROMPT = (
 
 
 def validate_and_sanitize_clip(clip_data: dict[str, Any], allowed_bones: set[str] | None = None) -> dict[str, Any] | None:
-    """验证并清理 LLM 生成的单个 ClipDef 结构。"""
     if not isinstance(clip_data, dict):
         return None
 
@@ -252,22 +251,15 @@ def validate_and_sanitize_clip(clip_data: dict[str, Any], allowed_bones: set[str
 
 
 async def find_unmatched_tags(tags: list[str], rig_type: str, existing_clips: list[dict] | None = None) -> list[str]:
-    """检测哪些性格标签在当前已有的 clip 库中没有动作覆盖。"""
     if not tags:
         return []
 
     covered_tags: set[str] = set()
-
-    # 1. 检查已生成的动态 clips
     if existing_clips:
         for clip in existing_clips:
-            for t in clip.get("tags", []):
-                covered_tags.add(t)
+            covered_tags.update(clip.get("tags", []))
 
-    # 2. 检查默认种子对应（如 static 库已有覆盖）
-    # 未覆盖的标签即差集
-    unmatched = [t for t in tags if t not in covered_tags]
-    return unmatched
+    return [t for t in tags if t not in covered_tags]
 
 
 async def generate_animation_clips(
@@ -281,7 +273,6 @@ async def generate_animation_clips(
     user_id: int | None = None,
     db: Session | None = None,
 ) -> list[dict]:
-    """LLM 根据性格标签生成专属 3D 动画 ClipDef 列表。"""
     if not personality_tags:
         return []
 

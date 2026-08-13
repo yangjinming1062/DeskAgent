@@ -88,6 +88,8 @@ class ModelGenerateRequest(BaseModel):
 
     # Optional species override; omitted → species derived from the persona.
     species_override: str | None = Field(default=None, max_length=64)
+    # Optional provider override: "tripo" | "blender_llm" | None (auto-detect).
+    provider: Literal["tripo", "blender_llm"] | None = None
 
 
 class WardrobeItemResponse(BaseModel):

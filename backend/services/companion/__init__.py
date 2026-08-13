@@ -29,6 +29,7 @@ from .avatar_service import (
     regenerate_avatar_from_image,
     resolve_uploaded_avatar_path,
 )
+from .blender_llm_pipeline import run_blender_llm_pipeline
 from .interaction_stats import record_interaction
 from .memory_admin import delete_memory, list_memories, memory_counts, update_memory, upsert_slotted_memory
 from .memory_bootstrap import build_user_profile_extras, extract_user_profile, read_user_profile, record_user_profile
@@ -97,6 +98,7 @@ __all__ = [
     "check_affect",
     "confirm_portrait",
     "confirm_wardrobe_item",
+    "create_multiview_to_model",
     "delete_memory",
     "delete_wardrobe_item",
     "decline_wardrobe_item",
@@ -106,6 +108,7 @@ __all__ = [
     "emit_wardrobe_gift",
     "equip_wardrobe_item",
     "extract_user_profile",
+    "finalize_avatar",
     "find_unmatched_tags",
     "format_auto_inject_block",
     "format_inferred_profile_block",
@@ -139,8 +142,7 @@ __all__ = [
     "record_user_profile",
     "regenerate_avatar",
     "regenerate_avatar_from_image",
-    "finalize_avatar",
-    "create_multiview_to_model",
+    "run_blender_llm_pipeline",
     "resolve_companion_asset_path",
     "resolve_companion_model_path",
     "resolve_uploaded_avatar_path",
@@ -149,9 +151,9 @@ __all__ = [
     "signed_model_url",
     "submit_onboarding_field",
     "update_memory",
-    "upsert_slotted_memory",
     "update_outfit_field",
     "update_persona",
+    "upsert_slotted_memory",
     "verify_signed_asset_request",
     "verify_signed_avatar_request",
     "voice_catalog",

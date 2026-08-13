@@ -175,6 +175,19 @@ Backend POST /api/companion/model（种子图 → Tripo3D image-to-model → rig
     │  (客户端调 GET /api/companion/model 查状态)  └─ 生成失败 / GLB 加载失败 → 程序化蛋形兜底角色
 ```
 
+**Blender+LLM 回退流（provider="blender_llm" 或 Tripo3D 不可用时）**：
+
+```
+Backend POST /api/companion/model {provider: "blender_llm"}
+  →  LLM vision 分析三视图 → 生成 bpy 代码（_build_body 函数体）
+  →  Blender --background 执行合并脚本 → GLB + Cycles CPU 预览
+  →  LLM 对比预览 vs 种子图 → 精修 / 修复
+  →  GLB 骨骼名验证通过 → 复用 inject_morph_targets.py 注入 44 ARKit blendshapes
+  →  保存 + 激活 + emit model.ready (provider="blender_llm")
+```
+
+迭代上限 `BLENDER_LLM_MAX_ITERATIONS`（默认 10）× 单次 Blender 调用超时 `BLENDER_LLM_TIMEOUT` 秒（默认 600）—— 最坏情况 ~100 分钟一次生成；适合夜间离线场景，不阻塞交互 UI。model.gen.progress 事件携带 `provider` 字段供客户端做 UX 提示。
+
 **关键解耦原则**:
 - **inline affect**：情绪 cue 随其所属话语在同一响应帧（`message.complete`）下发，Client 无需二次猜测"这句话该配什么情绪"。独立的 `companion.affect` 事件用于非言语的情境化情绪反应。
 - **语义/渲染解耦**：Backend 只产出 emotion + 可选 locale 语义，绝不指定渲染方式或像素坐标。客户端据 3D 模型可用动画与 morph target 决定渲染。这条解耦使模型加载不影响语义层（详见 §6.3）。
@@ -230,6 +243,7 @@ onboarding 产出的结构化角色定义持久化在 Backend 用户维度，作
 - **portrait 拆为 avatar + seed 配对**：avatar 是聚焦头部细节的半身像（onboarding 身份确认、设置页展示、聊天头像），seed 是三视角全身参考图（3D 纹理生成的输入）。两张图任一失败即整体失败；avatar prompt 硬性包含「纯白平面背景，无场景、无渐变、无阴影」子句（chroma-key 渲染依赖）。seed prompt 聚焦**身体轮廓锚点**（体型、五官、发型发色、标志性细节），参照装限定为**简单、不遮蔽人物轮廓特征**的款式，方便 Tripo3D 准确建模与绑骨——三视图之外的服饰由后续换装系统独立表达。
 - **prompt 增强是读取型操作**——角色定义不被 LLM 改写，LLM 异常向上传播。
 - **3D 模型由 Tripo3D 生成**：以 seed 三视图为输入，经 multiview-to-3D + rig 生成带 PBR 纹理的 rigged GLB，注入 morph targets，动画由客户端 TypeScript 关键帧注入。失败时客户端渲染程序化蛋形兜底角色。
+- **Blender+LLM 回退管线**（当 Tripo3D 不可用时）：LLM 分析三视图→自由形式 bpy 代码→Blender headless 执行→预览渲染对比→迭代精修（默认 10 轮）。Client `provider="blender_llm"` 显式选择启用，或 Tripo key 缺失 / 积分为 0 / 显式余额耗尽时自动启用。模型质量显著低于 Tripo3D（无 PBR 纹理、自由形式几何），仅作 last-resort 兜底；触发条件在 `model.gen.progress` 事件的 `provider` 字段中暴露给客户端。
 - **portrait 重生不触发模型失效**：模型只随物种变更或用户显式请求重生。换外观 = 换装（纹理热替），不重生模型。
 - **资产 URL 5 分钟 HMAC 签名**（TTL 与签名细节见 [PROTOCOL.md §1.4](PROTOCOL.md)）：换设备登录需重新生成签名，不能直接分享原 URL；客户端收到后应本地缓存避免重复拉取。
 - **受控再生成**：形象在多次会话间保持稳定。变更只在用户主动要求时发生（重生 portrait / 重生模型 / 换装）。
@@ -355,6 +369,10 @@ Client 的更新通过 `/api/update` 获取 Electron 二进制与 Runner wheel �
 8. **形象资产归属用户**：生成的专属形象归属该用户，按用户维度隔离，不跨用户共享；形象在多次会话间保持一致，除非用户触发受控再生成。
 9. **陪伴优先于工具**：产品决策发生冲突时，陪伴体验优先于工具效率。工具调用以"伙伴在帮忙"的叙事呈现，原始协议帧不直接暴露给最终用户（开发者视图除外）。
 10. **伙伴表达永不空白**：任何动画状态或情绪 cue 无对应就绪资产时，客户端必须回退 idle 动画或程序化兜底角色，用户永远不可见"该动画尚未加载"的空白或加载态。这是陪伴体验连续性的底线，也是 §6.3 语义/渲染解耦能成立的代价兜底。
+
+**安全层（Blender+LLM 信任边界）**：
+
+11. **LLM 生成的代码在 Backend 信任边界内执行**：Blender+LLM 回退管线把 LLM 输出的自由形式 bpy 代码注入到 `llm_bpy_scaffold.py` 的 `_build_body(ctx)` 函数体中，并通过 `blender --background` 子进程执行。Blender 子进程与 Backend 同用户运行，可触达 Backend 信任域内的 OS 操作（文件系统、环境变量、子进程派生）。这不是新引入的攻击面——Backend 早已持有 LLM API key 与 DB 凭证，LLM 调用本身已是同等威胁向量——但显式记录在此供安全审计参考。LLM 视角图（人像种子图）原本就经 `<untrusted_tool_result>` 包裹送入 LLM 上下文，这条管线不扩大数据泄露面。
 
 ---
 
