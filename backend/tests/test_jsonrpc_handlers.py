@@ -114,3 +114,11 @@ def test_companion_affect_emitter_roundtrip():
     # Smoke-test the function signature without a real DB (handled
     # by the test_companion.py existing suite).
     assert callable(emit_companion_affect)
+
+
+def test_companion_interact_and_should_act_registered(pin_handlers):
+    """Verify companion.interact and companion.should_act are registered in handlers.py source."""
+    import inspect
+    src = inspect.getsource(pin_handlers)
+    assert 'dispatcher.register("companion.interact", companion_interact)' in src
+    assert 'dispatcher.register("companion.should_act", companion_should_act)' in src

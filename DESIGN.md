@@ -306,14 +306,17 @@ Backend 的 Cron / `send_message` 经 WS 推送主动消息（[ARCHITECTURE.md �
 
 反应由**角色性格**驱动分层：粘人型被戳后撒娇、毒舌型吐槽、管家型礼貌——同一操作不同人格不同反应（Client 据角色定义的性格关键词选 reaction tone，轻/中/重三层按戳的频率递进）。反应文案与动画从 affect 对应的可用变体中挑选（具体文案池与动画 clip 见 [client/renderer/companion/README.md](client/renderer/companion/README.md)）。
 
-**LLM + 记忆驱动的反应增强**：在零延迟本地文案池之上叠加可选 LLM 通道——Client 戳后 debounce 200ms 调 `companion.interact` RPC（[PROTOCOL.md §1.1](PROTOCOL.md)），Backend 据 persona + 长期记忆推一条 ≤ 40 字符的反应文案 + 可选 emotion。响应到达时**不打断**正在播的本地 TTS，仅作文本气泡叠加。后端 throttle 1.5s，Client 端 debounce 2s，per-user inflight 取消。RPC 失败/超时/解析失败/无 persona 时静默吞掉，本地池兜底。
+**LLM + 记忆驱动的反应与三大开关控制**：客户端提供三个独立控制开关（`llmReactions`、`llmAffect`、`llmAutonomy`，默认全 ON）：
+- **`llmReactions`（戳/拖 LLM 思考）**：ON 时优先走 `companion.interact` RPC 拿到 LLM 反应，**完全替换**本地池反馈（动画照常，文案与音频替换）；OFF 时回退本地池。用户主动触发在客户端与服务端双侧执行 **5 分钟 per-kind 成本封顶**（同窗口内超出的戳/拖自动回退本地池），**但互动统计永远上报**（夜间 LLM 可见完整频度分布）。RPC 失败/超时/rate_limited 时静默自动回退本地池。
+- **`llmAffect`（空闲情境情绪）**：控制 `companion.check_affect` 触发；OFF 时直接跳过空闲情境情绪推理。
+- **`llmAutonomy`（自主空间行为 LLM 反驱动）**：ON 时由 LLM 同时决定“何时动 + 动什么”（`companion.should_act`），本地规则（23 点自动睡、专注窗口栖身等）作为建议性上下文进入 prompt；OFF 时由本地规则决策。
 
 ### 6.4 自主行为（让形象"活着"）
 
-IDLE 时形象不是静止贴图。两类自主行为，**都不触发 TTS、不弹气泡，纯视觉**（空间层面的自主行为——漫游、栖息、换位——见 §3，本节聚焦动画层面）：
+IDLE 时形象不是静止贴图。两类自主行为，**都不触发 TTS、不弹气泡，纯视觉**：
 
-- **微动作**（随机间隔）：眨眼、换重心、看四周、伸懒腰等 idle 变体随机切换。3D 引擎经 morph target（眨眼）+ 骨骼动画变体（换重心、看四周、伸懒腰）直接驱动，不需要逐变体生成资产。"永不空白"
-- **情境动作**（检测本机状态）：Runner `system.get_idle_seconds` / `system.is_fullscreen` / `system.get_focused_app` 等环境感知工具的轮询结果直接进情境判定，**不经 LLM**。对应注入的 idle 动画变体（思考/打字/弹跳/摇摆/安静/投入），引擎按可用 clip 名称回退到 `idle`，符合 §1.2 "永不空白" 不变量。
+- **微动作**（随机间隔）：眨眼、换重心、看四周、伸懒腰等 idle 变体随机切换。3D 引擎经 morph target（眨眼）+ 骨骼动画变体直接驱动，不走 LLM。
+- **空间自主行为（LLM 反驱动 vs 本地规则）**：在 `llmAutonomy` 开关开启时，客户端起周期/事件驱动 provision 循环（60s 最小间隔 + 状态变化 + 60s 动作后静止），向 `companion.should_act` 提交环境上下文（空闲时长、本地时间、焦点应用、锁屏状态、上次动作间隔）由 LLM 决定是否触发睡觉 (go_sleep)、漫游 (roam)、栖息 (perch) 或静止 (stay)；LLM 返回 `should_act: false` 或异常时均保持静止、不做擅自决策。关时则回退到本地规则（23 点自动睡、专注窗口自动栖身）。
 
 ### 6.5 故障态与降级行为（伙伴永不"死"）
 

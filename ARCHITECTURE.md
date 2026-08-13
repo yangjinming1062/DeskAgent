@@ -269,7 +269,7 @@ onboarding 产出的结构化角色定义持久化在 Backend 用户维度，作
 
 **核心不变量**：记忆驱动的个性化通过**运行时行为**（affect / 言语 / 主动频率）实现，**不通过模型重生实现**。模型只随物种变更或用户显式请求重生。这避免了"每学到一条新偏好就重生成全部模型"的不可行开销，同时让伙伴随关系深入而"表现得不一样"。
 
-**互动统计信号**：高频戳/拖/对话活动通过 `companion.record_interaction_stats`（无 LLM）按 UTC 自然日聚合到 `Memory(context="interaction_stats:<date>")`，为后续 LLM 提供「用户当日活跃度 + 高峰时段」信号。门限为 poke、drag、chat_turn 三者各自 ≥ 10（双门限），避免日常轻度使用产生噪音。
+**互动统计信号**：高频戳/拖/对话活动通过 `companion.record_interaction_stats`（无 LLM）按 UTC 自然日聚合到 `Memory(context="interaction_stats:<date>")`，为后续 LLM 提供「用户当日活跃度 + 高峰时段」信号。门限为 poke、drag、chat_turn 任一 ≥ 10（OR 门限）即写入汇总，单类高频互动也进入夜间 LLM 视野。
 
 ---
 

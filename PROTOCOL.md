@@ -57,8 +57,9 @@ Backend ↔ Client 同时暴露 JSON-RPC over WebSocket（`/api/chat/ws`）与 H
 | Client → Backend | `tts.list_voices` | 枚举目录 | 工具窗口不 boot WS 网关,改走 REST `GET /api/companion/voices` |
 | Client → Backend | `companion.set_disturbance_tier` `{tier}` | 上报 effective 档位（积极主动/常规/保持安静） | Client 是档位唯一权威,Backend 仅镜像;30s 轮询 + 变化即推 |
 | Client → Backend | `companion.check_affect` `{idle_seconds, local_hour}` | idle 触发的情境化 affect 推理 | Backend 加载 persona + 记忆跑一次 LLM,决定是否 emit `companion.affect` |
-| Client → Backend | `companion.interact` `{kind: 'poke'|'drag', tone, poke_count, idle_seconds, local_hour}` | 单次戳/拖的 LLM 反应推理 | per-user inflight 取消 + 1.5s 节流 + Client 端 2s debounce;RPC 失败静默吞掉,本地池兜底 |
-| Client → Backend | `companion.record_interaction_stats` `{kind: 'poke'|'drag'|'chat_turn', hour}` | 互动统计上报 | 无 LLM;三类计数各自 ≥ 10（双门限）才 upsert `Memory(context="interaction_stats:<date>")` |
+| Client → Backend | `companion.interact` `{kind: 'poke'|'drag', poke_count, idle_seconds, local_hour}` | 单次戳/拖的 LLM 反应推理 | 1.5s 节流 + per-(user,kind) inflight 去重 + 5min 成本封顶（用户主动触发专属，客户端/服务端双侧校验，不压制统计上报）；封顶窗口仅在成功产出反应时消耗，失败/超时/inflight/rate_limited 不消耗；RPC 失败静默回退本地池 |
+| Client → Backend | `companion.should_act` `{kind, idle_seconds, local_hour, focused_category, fullscreen, screen_locked, seconds_since_last_action}` | LLM 反驱动的自主空间行为决策 | 2.0s 节流；客户端事件驱动 + 30min 兜底；should_act: false 为合法响应且必须尊重；失败时不擅自补决策 |
+| Client → Backend | `companion.record_interaction_stats` `{kind: 'poke'|'drag'|'chat_turn', hour}` | 互动统计上报 | 无 LLM；任一 kind ≥ 10（OR 门限）即 upsert `Memory(context="interaction_stats:<date>")` 带 hour_counts 快照 |
 | Client → Backend | `companion.get_user_profile` | 拉取 `Memory(context="user_profile:*")` 5 条结构化字段 | persona-retune wizard 第 5 步预填用 |
 | Client → Backend | `POST /api/companion/portrait/confirm` | 确认形象（半身/全身） | 幂等;设置 `is_portrait_confirmed=True`,解开 voice/user_* 子阶段 |
 | Client → Backend | `GET /api/companion/model` | 查询当前 3D 模型状态 | `species` / `provider` / `asset_url` |

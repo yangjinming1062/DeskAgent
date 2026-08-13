@@ -93,5 +93,7 @@ backend/
 | **附件 fetch 失败独立报错** | LLM 下载临时媒体失败（链接过期、网络隔离）拦截 Proxy 端原始 SDK 报错，返回 provider-agnostic 短消息，避免误导性触发 LLM 回退 |
 | **WS 鉴权失效（1008）立即退出重连** | 不在过期 token 状态下重试；用户重新激活后才恢复 |
 | **Obs 缺口** | 无 `/metrics` 端点、无 OpenTelemetry 集成；日志 stdout only，dev text / prod json |
+| **`companion.interact` 5 分钟封顶** | 5 分钟封顶是用户主动触发（poke/drag）反应的成本控制闸门，不作用于 `companion.should_act` 自主行为，也不压制 `companion.record_interaction_stats` 统计上报 |
+| **`interaction_stats` 汇总写门限** | `record_interaction` 用 OR 门限（poke/drag/chat_turn 任一 kind 达到 10 即写汇总），并在 content 序列化 `hour_counts` 供夜间 LLM 反射 |
 | **Blender+LLM 回退管线最坏时长** | 默认 10 轮迭代 × 单次 600s Blender timeout = ~100 分钟一次生成；适合夜间离线场景，不阻塞交互 UI。`blender_llm_max_iterations` / `blender_llm_timeout` 可调 |
 | **Blender+LLM 模型质量** | 无 PBR 纹理（仅纯色 Principled BSDF 材质）、几何为 LLM 自由形式生成——视觉保真度显著低于 Tripo3D。LLM 在迭代内可比 preview vs 种子图 → 持续精修 |

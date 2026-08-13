@@ -44,13 +44,14 @@ async def test_check_affect_persona_not_ready_short_circuits(monkeypatch, _patch
         called["n"] += 1
         raise AssertionError("LLM must not run without a persona")
 
-    monkeypatch.setattr(aff, "call_with_retry", _fail)
+    monkeypatch.setattr("services.companion.prompt_runtime.call_with_retry", _fail)
 
     result = await aff.check_affect(
         user_id=999, idle_seconds=600, local_hour=14, llm_config={"model_name": "x"}
     )
 
-    assert result == {"expressed": False, "reason": "persona not ready"}
+    assert result.expressed is False
+    assert result.reason == "persona not ready"
     assert called["n"] == 0
 
 
@@ -60,14 +61,14 @@ async def test_check_affect_should_express_true_emits(monkeypatch, _patch_db):
     aff = importlib.import_module("services.companion.affect_check")
     _seed_persona(SessionLocal, 2001)
 
-    monkeypatch.setattr(aff, "client_for_config", lambda cfg: None)
+    monkeypatch.setattr("services.companion.prompt_runtime.client_for_config", lambda cfg: None)
 
     async def _ok(*a, **kw):
         return _MockResponse(
             '{"should_express": true, "emotion": "lonely", "reason": "用户离开很久了"}'
         )
 
-    monkeypatch.setattr(aff, "call_with_retry", _ok)
+    monkeypatch.setattr("services.companion.prompt_runtime.call_with_retry", _ok)
 
     emitted: list[tuple[int, str]] = []
 
@@ -83,8 +84,8 @@ async def test_check_affect_should_express_true_emits(monkeypatch, _patch_db):
         llm_config={"model_name": "test"}
     )
 
-    assert result["expressed"] is True
-    assert result["emotion"] == "lonely"
+    assert result.expressed is True
+    assert result.emotion == "lonely"
     assert emitted == [(2001, "lonely")]
 
 
@@ -101,8 +102,8 @@ async def test_check_affect_should_express_false_returns_no_emit(
             '{"should_express": false, "emotion": "neutral", "reason": "用户刚离开"}'
         )
 
-    monkeypatch.setattr(aff, "call_with_retry", _ok)
-    monkeypatch.setattr(aff, "client_for_config", lambda cfg: None)
+    monkeypatch.setattr("services.companion.prompt_runtime.call_with_retry", _ok)
+    monkeypatch.setattr("services.companion.prompt_runtime.client_for_config", lambda cfg: None)
 
     emitted: list[tuple[int, str]] = []
 
@@ -116,7 +117,7 @@ async def test_check_affect_should_express_false_returns_no_emit(
         user_id=2002, idle_seconds=300, local_hour=10, llm_config={"model_name": "test"}
     )
 
-    assert result["expressed"] is False
+    assert result.expressed is False
     assert emitted == []
 
 
@@ -134,8 +135,8 @@ async def test_check_affect_unknown_emotion_skips_emit(monkeypatch, _patch_db):
             '{"should_express": true, "emotion": "joyful", "reason": ""}'
         )
 
-    monkeypatch.setattr(aff, "call_with_retry", _ok)
-    monkeypatch.setattr(aff, "client_for_config", lambda cfg: None)
+    monkeypatch.setattr("services.companion.prompt_runtime.call_with_retry", _ok)
+    monkeypatch.setattr("services.companion.prompt_runtime.client_for_config", lambda cfg: None)
 
     emitted: list = []
 
@@ -148,7 +149,7 @@ async def test_check_affect_unknown_emotion_skips_emit(monkeypatch, _patch_db):
         llm_config={"model_name": "test"}
     )
 
-    assert result["expressed"] is False
+    assert result.expressed is False
     assert emitted == []
 
 
@@ -161,15 +162,16 @@ async def test_check_affect_unparseable_response(monkeypatch, _patch_db):
     async def _ok(*a, **kw):
         return _MockResponse("not json at all, just prose")
 
-    monkeypatch.setattr(aff, "call_with_retry", _ok)
-    monkeypatch.setattr(aff, "client_for_config", lambda cfg: None)
+    monkeypatch.setattr("services.companion.prompt_runtime.call_with_retry", _ok)
+    monkeypatch.setattr("services.companion.prompt_runtime.client_for_config", lambda cfg: None)
     monkeypatch.setattr(aff, "emit_companion_affect", lambda *a: None)
 
     result = await aff.check_affect(
         user_id=2004, idle_seconds=600, local_hour=14, llm_config={"model_name": "test"}
     )
 
-    assert result == {"expressed": False, "reason": "unparseable"}
+    assert result.expressed is False
+    assert result.reason == "unparseable"
 
 
 @pytest.mark.asyncio
@@ -187,15 +189,16 @@ async def test_check_affect_llm_error_returns_no_throw(monkeypatch, _patch_db):
             )
         )
 
-    monkeypatch.setattr(aff, "call_with_retry", _fail)
-    monkeypatch.setattr(aff, "client_for_config", lambda cfg: None)
+    monkeypatch.setattr("services.companion.prompt_runtime.call_with_retry", _fail)
+    monkeypatch.setattr("services.companion.prompt_runtime.client_for_config", lambda cfg: None)
     monkeypatch.setattr(aff, "emit_companion_affect", lambda *a: None)
 
     result = await aff.check_affect(
         user_id=2005, idle_seconds=600, local_hour=14, llm_config={"model_name": "test"}
     )
 
-    assert result == {"expressed": False, "reason": "llm_error"}
+    assert result.expressed is False
+    assert result.reason == "llm_error"
 
 
 @pytest.mark.asyncio
@@ -210,13 +213,14 @@ async def test_check_affect_invalid_config_returns_no_throw(monkeypatch, _patch_
     async def _fail(*a, **kw):
         called["n"] += 1
 
-    monkeypatch.setattr(aff, "call_with_retry", _fail)
+    monkeypatch.setattr("services.companion.prompt_runtime.call_with_retry", _fail)
 
     result = await aff.check_affect(
         user_id=2006, idle_seconds=600, local_hour=14, llm_config={}
     )
 
-    assert result == {"expressed": False, "reason": "llm_error"}
+    assert result.expressed is False
+    assert result.reason == "llm_error"
     assert called["n"] == 0
 
 
@@ -245,8 +249,8 @@ async def test_check_affect_custom_expression_accepted(monkeypatch, _patch_db):
             '{"should_express": true, "emotion": "tender_worry", "reason": "心疼用户熬夜"}'
         )
 
-    monkeypatch.setattr(aff, "call_with_retry", _ok)
-    monkeypatch.setattr(aff, "client_for_config", lambda cfg: None)
+    monkeypatch.setattr("services.companion.prompt_runtime.call_with_retry", _ok)
+    monkeypatch.setattr("services.companion.prompt_runtime.client_for_config", lambda cfg: None)
 
     emitted: list = []
     monkeypatch.setattr(aff, "emit_companion_affect", lambda *a: emitted.append(a))
@@ -258,8 +262,8 @@ async def test_check_affect_custom_expression_accepted(monkeypatch, _patch_db):
         llm_config={"model_name": "test"}
     )
 
-    assert result["expressed"] is True
-    assert result["emotion"] == "tender_worry"
+    assert result.expressed is True
+    assert result.emotion == "tender_worry"
     assert emitted == [(2007, "tender_worry")]
 
 

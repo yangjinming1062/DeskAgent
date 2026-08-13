@@ -494,14 +494,14 @@ async def test_affect_check_no_persona_skips_llm(monkeypatch, _patch_db):
     async def _fail_call(*a, **kw):
         raise AssertionError("LLM should not be called without a persona")
 
-    monkeypatch.setattr(ac, "call_with_retry", _fail_call)
+    monkeypatch.setattr("services.companion.prompt_runtime.call_with_retry", _fail_call)
 
     result = await ac.check_affect(
         user_id=888, idle_seconds=3600, local_hour=14, llm_config={"model_name": "test"}
     )
 
-    assert result["expressed"] is False
-    assert result["reason"] == "persona not ready"
+    assert result.expressed is False
+    assert result.reason == "persona not ready"
 
 
 @pytest.mark.asyncio
@@ -510,14 +510,14 @@ async def test_affect_check_llm_decides_express(monkeypatch, _patch_db):
     ac = importlib.import_module("services.companion.affect_check")
     _seed_persona(SessionLocal, 777)
 
-    monkeypatch.setattr(ac, "client_for_config", lambda cfg: None)
+    monkeypatch.setattr("services.companion.prompt_runtime.client_for_config", lambda cfg: None)
 
     async def _mock_call(*a, **kw):
         return _MockResponse(
             '{"should_express": true, "emotion": "lonely", "reason": "用户离开很久了"}'
         )
 
-    monkeypatch.setattr(ac, "call_with_retry", _mock_call)
+    monkeypatch.setattr("services.companion.prompt_runtime.call_with_retry", _mock_call)
 
     emitted: list[tuple[int, str]] = []
     monkeypatch.setattr(
@@ -528,8 +528,8 @@ async def test_affect_check_llm_decides_express(monkeypatch, _patch_db):
         user_id=777, idle_seconds=3600, local_hour=14, llm_config={"model_name": "test"}
     )
 
-    assert result["expressed"] is True
-    assert result["emotion"] == "lonely"
+    assert result.expressed is True
+    assert result.emotion == "lonely"
     assert emitted == [(777, "lonely")]
 
 
@@ -539,14 +539,14 @@ async def test_affect_check_llm_decides_no_express(monkeypatch, _patch_db):
     ac = importlib.import_module("services.companion.affect_check")
     _seed_persona(SessionLocal, 666)
 
-    monkeypatch.setattr(ac, "client_for_config", lambda cfg: None)
+    monkeypatch.setattr("services.companion.prompt_runtime.client_for_config", lambda cfg: None)
 
     async def _mock_call(*a, **kw):
         return _MockResponse(
             '{"should_express": false, "emotion": "neutral", "reason": "刚离开不久"}'
         )
 
-    monkeypatch.setattr(ac, "call_with_retry", _mock_call)
+    monkeypatch.setattr("services.companion.prompt_runtime.call_with_retry", _mock_call)
 
     emitted: list[tuple[int, str]] = []
     monkeypatch.setattr(
@@ -557,7 +557,7 @@ async def test_affect_check_llm_decides_no_express(monkeypatch, _patch_db):
         user_id=666, idle_seconds=120, local_hour=14, llm_config={"model_name": "test"}
     )
 
-    assert result["expressed"] is False
+    assert result.expressed is False
     assert emitted == []
 
 
@@ -569,14 +569,14 @@ async def test_affect_check_neutral_emotion_not_emitted(monkeypatch, _patch_db):
     ac = importlib.import_module("services.companion.affect_check")
     _seed_persona(SessionLocal, 555)
 
-    monkeypatch.setattr(ac, "client_for_config", lambda cfg: None)
+    monkeypatch.setattr("services.companion.prompt_runtime.client_for_config", lambda cfg: None)
 
     async def _mock_call(*a, **kw):
         return _MockResponse(
             '{"should_express": true, "emotion": "neutral", "reason": "..."}'
         )
 
-    monkeypatch.setattr(ac, "call_with_retry", _mock_call)
+    monkeypatch.setattr("services.companion.prompt_runtime.call_with_retry", _mock_call)
 
     emitted: list[tuple[int, str]] = []
     monkeypatch.setattr(
@@ -587,7 +587,7 @@ async def test_affect_check_neutral_emotion_not_emitted(monkeypatch, _patch_db):
         user_id=555, idle_seconds=3600, local_hour=14, llm_config={"model_name": "test"}
     )
 
-    assert result["expressed"] is False
+    assert result.expressed is False
     assert emitted == []
 
 
@@ -600,14 +600,14 @@ async def test_affect_check_llm_failure_is_silent(monkeypatch, _patch_db):
     from services.llm import LLMRuntimeError
     from services.llm import ClassifiedError, FailoverReason
 
-    monkeypatch.setattr(ac, "client_for_config", lambda cfg: None)
+    monkeypatch.setattr("services.companion.prompt_runtime.client_for_config", lambda cfg: None)
 
     async def _raise(*a, **kw):
         raise LLMRuntimeError(
             ClassifiedError(reason=FailoverReason.unknown, message="boom")
         )
 
-    monkeypatch.setattr(ac, "call_with_retry", _raise)
+    monkeypatch.setattr("services.companion.prompt_runtime.call_with_retry", _raise)
 
     emitted: list[tuple[int, str]] = []
     monkeypatch.setattr(
@@ -618,8 +618,8 @@ async def test_affect_check_llm_failure_is_silent(monkeypatch, _patch_db):
         user_id=444, idle_seconds=3600, local_hour=14, llm_config={"model_name": "test"}
     )
 
-    assert result["expressed"] is False
-    assert result["reason"] == "llm_error"
+    assert result.expressed is False
+    assert result.reason == "llm_error"
     assert emitted == []
 
 
@@ -2234,7 +2234,9 @@ async def test_model_generation_failure_keeps_previous_model_active(
 
     with SessionLocal() as db:
         await generate_companion_model(db, user_id=uid)
-    await asyncio.sleep(0.05)
+
+    from services.companion.model_service import _running_model_tasks
+    await asyncio.gather(*list(_running_model_tasks), return_exceptions=True)
 
     with SessionLocal() as db:
         failed = (

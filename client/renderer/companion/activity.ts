@@ -4,6 +4,8 @@ import { $effectiveTierOverride, $userPreferredTier, type DisturbanceTier } from
 import { $gateway } from '@/shared/store/gateway'
 import { $runnerPhase } from '@/shared/store/runner-status'
 
+import { $llmAffect } from './prefs'
+
 // Local environment signals polled from the Runner's system.* tools (plan §8),
 // bypassing the LLM — the companion reasons about them directly. Polls no-op
 // while the Runner is offline and the atoms keep their defaults.
@@ -51,7 +53,7 @@ let runnerReady = false
 let offPhaseSub: (() => void) | null = null
 
 function maybeTriggerAffectCheck(idleSeconds: number, locked: boolean): void {
-  if (locked || idleSeconds < IDLE_THRESHOLD_SECONDS) {
+  if (!$llmAffect.get() || locked || idleSeconds < IDLE_THRESHOLD_SECONDS) {
     return
   }
 

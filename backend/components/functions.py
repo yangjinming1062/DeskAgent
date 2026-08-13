@@ -114,6 +114,18 @@ def coerce_non_negative_int(value: Any, default: int = 0) -> int:
         return default
 
 
+def coerce_non_negative_float(value: Any, default: float = 0.0) -> float:
+    """``max(0.0, float(value))`` with fallback. For activity-context fields like
+    ``idle_seconds`` / ``seconds_since_last_action`` that carry sub-second
+    precision; ``coerce_non_negative_int`` would truncate it."""
+    if value is None:
+        return default
+    try:
+        return max(0.0, float(value))
+    except (TypeError, ValueError):
+        return default
+
+
 def coerce_hour_0_23(value: Any) -> int:
     """``int(value)`` in [0, 23], or -1 for "unknown / out of range". For
     ``local_hour`` and similar time-of-day fields where -1 has a documented

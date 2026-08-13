@@ -16,6 +16,7 @@ from components import (
     SESSION_LOCAL,
     adopt_inbound,
     coerce_hour_0_23,
+    coerce_non_negative_float,
     coerce_non_negative_int,
     get_logger,
     path_attach_ref,
@@ -37,6 +38,7 @@ from services.companion import (
     get_avatar_job_lock,
     get_onboarding_state,
     get_or_create_persona,
+    interact,
     list_memories,
     list_tts_voices,
     match_user_voice,
@@ -45,6 +47,7 @@ from services.companion import (
     read_user_profile,
     record_interaction,
     regenerate_avatar,
+    should_act,
     submit_onboarding_field,
     update_memory,
 )
@@ -74,6 +77,23 @@ logger = get_logger(__name__)
 # Process-local throttle: a buggy renderer can spam check_affect and burn LLM quota.
 CHECK_AFFECT_MIN_INTERVAL_SECONDS = 2.0
 _last_check_affect_ts: dict[int, float] = {}
+
+INTERACT_MIN_INTERVAL_SECONDS = 1.5
+USER_TRIGGERED_LLM_COOLDOWN_SECONDS = 5 * 60
+_last_interact_ts: dict[int, float] = {}
+_last_llm_respond_ts: dict[int, dict[str, float]] = {}
+# Per-(user, kind) in-flight guard so a slow LLM reaction doesn't trigger a
+# second concurrent reaction request while the first is still pending.
+_inflight_interact: set[tuple[int, str]] = set()
+
+SHOULD_ACT_ANTIDUP_SECONDS = 2.0
+_last_should_act_ts: dict[int, float] = {}
+
+
+def _user_throttled(state: dict[int, float], user_id: int, min_interval: float, now: float) -> bool:
+    """If the user is still inside the window, return True without recording a new timestamp."""
+    return now - state.get(user_id, 0.0) < min_interval
+
 
 # Tasks created by avatar.* RPCs so we can drain them on shutdown.
 _avatar_regen_tasks: set[asyncio.Task] = set()
@@ -398,15 +418,14 @@ def _register_session_handlers(dispatcher: JsonRpcDispatcher, runtime_sessions: 
         # the existing event handler switches the sprite to EMOTIONAL
         # (no bubble, no TTS).
         now = time.monotonic()
-        last = _last_check_affect_ts.get(user_id, 0.0)
-        if now - last < CHECK_AFFECT_MIN_INTERVAL_SECONDS:
-            logger.debug("check_affect: throttled", extra={"user_id": user_id, "since_sec": round(now - last, 3)})
+        if _user_throttled(_last_check_affect_ts, user_id, CHECK_AFFECT_MIN_INTERVAL_SECONDS, now):
+            logger.debug("check_affect: throttled", extra={"user_id": user_id, "since_sec": round(now - _last_check_affect_ts.get(user_id, 0.0), 3)})
             return {"emotion": None, "reason": "throttled"}
         _last_check_affect_ts[user_id] = now
 
-        idle_seconds = coerce_non_negative_int(params.get("idle_seconds"))
+        idle_seconds = coerce_non_negative_float(params.get("idle_seconds"))
         local_hour = coerce_hour_0_23(params.get("local_hour"))
-        return await check_affect(user_id, float(idle_seconds), local_hour, llm_config)
+        return await check_affect(user_id, idle_seconds, local_hour, llm_config)
 
     dispatcher.register("companion.check_affect", companion_check_affect)
 
@@ -426,6 +445,79 @@ def _register_session_handlers(dispatcher: JsonRpcDispatcher, runtime_sessions: 
         return record_interaction(user_id, kind, hour)
 
     dispatcher.register("companion.record_interaction_stats", companion_record_interaction_stats)
+
+    async def companion_interact(params: dict) -> dict:
+        kind = params.get("kind")
+        if kind not in ("poke", "drag"):
+            raise JsonRpcError(JSONRPC_INVALID_PARAMS, f"kind must be poke or drag, got {kind!r}")
+
+        now = time.monotonic()
+        if _user_throttled(_last_interact_ts, user_id, INTERACT_MIN_INTERVAL_SECONDS, now):
+            return {"text": None, "emotion": None, "reason": "throttled"}
+
+        user_cooldowns = _last_llm_respond_ts.setdefault(user_id, {})
+        last_llm = user_cooldowns.get(kind, 0.0)
+        if now - last_llm < USER_TRIGGERED_LLM_COOLDOWN_SECONDS:
+            return {"text": None, "emotion": None, "reason": "rate_limited"}
+
+        # Dedup concurrent in-flight calls per (user, kind): a slow LLM
+        # response should not let a second reaction request slip through.
+        inflight_key = (user_id, kind)
+        if inflight_key in _inflight_interact:
+            return {"text": None, "emotion": None, "reason": "inflight"}
+        _inflight_interact.add(inflight_key)
+        # Anti-dup throttle is always consumed; the 5-min cost window below is
+        # consumed only on success so a transient failure doesn't lock the user out.
+        _last_interact_ts[user_id] = now
+
+        poke_count = coerce_non_negative_int(params.get("poke_count"))
+        idle_seconds = float(coerce_non_negative_float(params.get("idle_seconds")))
+        local_hour = coerce_hour_0_23(params.get("local_hour"))
+
+        try:
+            res = await interact(user_id, kind, poke_count, idle_seconds, local_hour, llm_config)
+        finally:
+            _inflight_interact.discard(inflight_key)
+
+        if res.text is not None:
+            user_cooldowns[kind] = now
+        return res.model_dump()
+
+    dispatcher.register("companion.interact", companion_interact)
+
+    async def companion_should_act(params: dict) -> dict:
+        kind = params.get("kind", "periodic_provision")
+        if kind not in ("periodic_provision",):
+            raise JsonRpcError(JSONRPC_INVALID_PARAMS, f"invalid kind {kind!r}")
+
+        now = time.monotonic()
+        if _user_throttled(_last_should_act_ts, user_id, SHOULD_ACT_ANTIDUP_SECONDS, now):
+            return {"should_act": False, "action": "stay", "reason": "throttled"}
+        _last_should_act_ts[user_id] = now
+
+        idle_seconds = coerce_non_negative_float(params.get("idle_seconds"))
+        local_hour = coerce_hour_0_23(params.get("local_hour"))
+        focused_category = params.get("focused_category")
+        if focused_category is not None and not isinstance(focused_category, str):
+            focused_category = None
+        fullscreen = bool(params.get("fullscreen"))
+        screen_locked = bool(params.get("screen_locked"))
+        seconds_since_last_action = coerce_non_negative_float(params.get("seconds_since_last_action"))
+
+        res = await should_act(
+            user_id=user_id,
+            kind=kind,
+            idle_seconds=idle_seconds,
+            local_hour=local_hour,
+            focused_category=focused_category,
+            fullscreen=fullscreen,
+            screen_locked=screen_locked,
+            seconds_since_last_action=seconds_since_last_action,
+            llm_config=llm_config,
+        )
+        return res.model_dump()
+
+    dispatcher.register("companion.should_act", companion_should_act)
 
     async def companion_get_user_profile(_params: dict) -> dict:
         # Reverse of ``record_user_profile`` — the retune wizard calls this

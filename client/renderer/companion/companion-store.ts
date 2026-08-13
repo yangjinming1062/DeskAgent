@@ -1,5 +1,7 @@
 import { atom, computed } from 'nanostores'
 
+import { $llmAutonomy } from './prefs'
+
 // Companion lifecycle drives what the sprite window renders. The renderer
 // transitions unauthed → onboarding (during the wizard) → ready (after
 // onboarding completes).
@@ -185,6 +187,10 @@ export function setSpriteState(
 }
 
 export function checkBedtimeAndAutoSleep(): boolean {
+  if ($llmAutonomy.get()) {
+    return false
+  }
+
   const hour = new Date().getHours()
   const isNight = hour >= 23 || hour < 7
 

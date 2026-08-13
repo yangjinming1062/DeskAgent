@@ -1,13 +1,11 @@
 from typing import Any
 
-from components import SESSION_LOCAL, coerce_hour_0_23, coerce_non_negative_int, get_logger, safe_json_loads
-from modules.companion import Persona
+from components import coerce_hour_0_23, coerce_non_negative_float, get_logger
 from pydantic import BaseModel, Field
 
-from ..chat.affect import resolve_allowed_emotions
-from ..llm import LLMRuntimeError, UserLlmConfig, call_with_retry, client_for_config
+from ..llm import UserLlmConfig
 from .affect_emit import emit_companion_affect
-from .memory_format import format_memories_block
+from .prompt_runtime import load_companion_prompt_context, run_prompt_json
 
 logger = get_logger(__name__)
 
@@ -17,20 +15,6 @@ class AffectCheckResult(BaseModel):
     emotion: str = "neutral"
     reason: str = Field(default="", max_length=200)
 
-    def get(self, key: str, default: Any = None) -> Any:
-        return getattr(self, key, default)
-
-    def __getitem__(self, item: str) -> Any:
-        if hasattr(self, item):
-            return getattr(self, item)
-        raise KeyError(item)
-
-    def __eq__(self, other: object) -> bool:
-        if isinstance(other, dict):
-            d = self.model_dump()
-            return all(d.get(k) == v for k, v in other.items())
-        return super().__eq__(other)
-
 
 _MAX_RESPONSE_TOKENS = 200
 
@@ -38,8 +22,8 @@ _AFFECT_CHECK_PROMPT_TEMPLATE = (
     "你是桌面伙伴的情绪推理引擎。基于以下信息判断此刻是否应该向用户表达一个情绪。\n"
     "注意：这里说的「表达情绪」只是视觉上的情绪状态切换（精灵的表情/动作变化），"
     "不是发消息、不是说话——用户不会看到任何文字。\n\n"
-    "你的角色定义：\n{persona}\n\n"
-    "你对用户的长期记忆：\n{memories}\n\n"
+    "你的角色定义：\n{persona_extras}\n\n"
+    "你对用户的长期记忆：\n{memories_block}\n\n"
     "当前情境：\n"
     "- 用户已离开（无键鼠活动）{idle_minutes} 分钟\n"
     "- 用户本地时间：{local_hour} 点\n\n"
@@ -59,44 +43,32 @@ _AFFECT_CHECK_PROMPT_TEMPLATE = (
 
 async def check_affect(user_id: int, idle_seconds: float, local_hour: int, llm_config: UserLlmConfig | dict[str, Any]) -> AffectCheckResult:
     """Idle-triggered LLM reasoning for companion contextual emotion expression."""
-    with SESSION_LOCAL() as db:
-        persona = db.query(Persona).filter(Persona.user_id == user_id).one_or_none()
-        if persona is None or not persona.is_complete or not persona.system_prompt_extras:
-            return AffectCheckResult(expressed=False, reason="persona not ready")
-        persona_extras = persona.system_prompt_extras
-        memories_block = format_memories_block(db, user_id)
-        allowed_emotions = resolve_allowed_emotions(db, user_id)
+    ctx = load_companion_prompt_context(user_id)
+    if ctx is None:
+        return AffectCheckResult(expressed=False, reason="persona not ready")
 
-    model_name = llm_config.model_name if isinstance(llm_config, UserLlmConfig) else (llm_config.get("model_name") if isinstance(llm_config, dict) else "")
-    if not model_name:
-        return AffectCheckResult(expressed=False, reason="llm_error")
-
-    idle_seconds = float(coerce_non_negative_int(idle_seconds))
-    local_hour = coerce_hour_0_23(local_hour)
-    idle_minutes = round(idle_seconds / 60, 2)
-    emotions_str = ", ".join(sorted(allowed_emotions))
-    prompt = _AFFECT_CHECK_PROMPT_TEMPLATE.format(
-        persona=persona_extras, memories=memories_block, idle_minutes=idle_minutes, local_hour=local_hour if local_hour >= 0 else "未知", allowed_emotions=emotions_str
+    parsed, fail_reason = await run_prompt_json(
+        user_id,
+        llm_config,
+        _AFFECT_CHECK_PROMPT_TEMPLATE,
+        {
+            "persona_extras": ctx.persona_extras,
+            "memories_block": ctx.memories_block,
+            "idle_minutes": round(coerce_non_negative_float(idle_seconds) / 60, 2),
+            "local_hour": coerce_hour_0_23(local_hour) if local_hour >= 0 else "未知",
+            "allowed_emotions": ", ".join(sorted(ctx.allowed_emotions)),
+        },
+        max_tokens=_MAX_RESPONSE_TOKENS,
+        log_prefix="affect_check",
     )
-
-    try:
-        client = client_for_config(llm_config)
-        response = await call_with_retry(client, model=model_name, messages=[{"role": "user", "content": prompt}], stream=False, temperature=0.7, max_tokens=_MAX_RESPONSE_TOKENS)
-    except (TimeoutError, LLMRuntimeError) as exc:
-        logger.warning("affect_check: LLM call failed", extra={"user_id": user_id, "error": str(exc)})
-        return AffectCheckResult(expressed=False, reason="llm_error")
-
-    raw_content = (response.choices[0].message.content or "") if response.choices else ""
-    parsed = safe_json_loads(raw_content)
-    if not isinstance(parsed, dict):
-        logger.warning("affect_check: unparseable LLM response", extra={"user_id": user_id, "raw": raw_content[:200]})
-        return AffectCheckResult(expressed=False, reason="unparseable")
+    if parsed is None:
+        return AffectCheckResult(expressed=False, reason=fail_reason or "unparseable")
 
     should_express = bool(parsed.get("should_express"))
     emotion = str(parsed.get("emotion") or "neutral").lower().strip()
     reason = str(parsed.get("reason") or "")[:200]
 
-    if not should_express or emotion not in allowed_emotions or emotion == "neutral":
+    if not should_express or emotion not in ctx.allowed_emotions or emotion == "neutral":
         logger.info("affect_check: no expression", extra={"user_id": user_id, "emotion": emotion, "reason": reason})
         return AffectCheckResult(expressed=False, emotion=emotion, reason=reason)
 

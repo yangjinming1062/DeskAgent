@@ -103,7 +103,7 @@ GLB 加载成功后骨骼动画覆盖全部状态；加载失败时渲染程序�
 - **悬停**：10s 节流，`interacting` 1.5s（不放音）。
 - **右键**：托盘菜单入口（声音切换、伙伴设置、登出）。
 
-**每日互动统计**：poke / drag / chat_turn 三类事件经 `companion.record_interaction_stats`（无 LLM）上报，Backend 按 UTC 自然日聚合 + 双门限（每类 ≥ 10）upsert `Memory(context="interaction_stats:<date>")`，喂给后续 LLM "用户当日活跃度 + 高峰时段" 信号。
+**每日互动统计**：poke / drag / chat_turn 三类事件经 `companion.record_interaction_stats`（无 LLM）上报，Backend 按 UTC 自然日聚合 + OR 门限（任一类 ≥ 10）upsert `Memory(context="interaction_stats:<date>")`（含 hour_counts 快照），喂给后续 LLM "用户当日活跃度 + 高峰时段" 信号。
 
 ## 8. cron 主动陪伴链路
 

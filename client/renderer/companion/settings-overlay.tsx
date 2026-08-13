@@ -11,9 +11,15 @@ import { PersonaRetune } from '@/companion/persona-retune'
 import { $persona } from '@/companion/persona-store'
 import {
   $companionVoiceId,
+  $llmAffect,
+  $llmAutonomy,
+  $llmReactions,
   $responseMode,
   type ResponseMode,
   setCompanionVoiceId,
+  setLlmAffect,
+  setLlmAutonomy,
+  setLlmReactions,
   setResponseMode
 } from '@/companion/prefs'
 import { $defaultScale, setDefaultScale } from '@/companion/spatial'
@@ -47,6 +53,9 @@ const TIERS = DISTURBANCE_TIERS
 export function CompanionSettings({ onClose }: SettingsOverlayProps): React.ReactElement {
   const tier = useStore($userPreferredTier)
   const responseMode = useStore($responseMode)
+  const llmReactions = useStore($llmReactions)
+  const llmAffect = useStore($llmAffect)
+  const llmAutonomy = useStore($llmAutonomy)
   const currentVoice = useStore($companionVoiceId)
   const persona = useStore($persona)
   const defaultScale = useStore($defaultScale)
@@ -259,6 +268,50 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps): React.Reac
                   {m === 'text' ? '默认文字' : '始终语音'}
                 </button>
               ))}
+            </div>
+          </Section>
+
+          {/* Advanced Reaction Switches */}
+          <Section hint="让伙伴具备更智能的思考与决策能力；关闭可降低 LLM 调用消耗" title="智能反应与自主行为">
+            <div className="space-y-2 text-xs">
+              <label className="flex cursor-pointer items-center justify-between rounded-lg border border-white/10 bg-white/5 px-3 py-2 transition hover:bg-white/10">
+                <div>
+                  <p className="font-medium text-white/90">戳/拖思考回应</p>
+                  <p className="text-[10px] text-white/40">互动时由 LLM 生成反应文案与表情（关闭使用预制反馈）</p>
+                </div>
+                <input
+                  checked={llmReactions}
+                  className="h-4 w-4 rounded border-white/30 bg-white/10 text-emerald-500 focus:ring-0"
+                  onChange={e => setLlmReactions(e.target.checked)}
+                  type="checkbox"
+                />
+              </label>
+
+              <label className="flex cursor-pointer items-center justify-between rounded-lg border border-white/10 bg-white/5 px-3 py-2 transition hover:bg-white/10">
+                <div>
+                  <p className="font-medium text-white/90">空闲情境情绪</p>
+                  <p className="text-[10px] text-white/40">空闲 30 分钟以上时由 LLM 决定是否触发情境化表情</p>
+                </div>
+                <input
+                  checked={llmAffect}
+                  className="h-4 w-4 rounded border-white/30 bg-white/10 text-emerald-500 focus:ring-0"
+                  onChange={e => setLlmAffect(e.target.checked)}
+                  type="checkbox"
+                />
+              </label>
+
+              <label className="flex cursor-pointer items-center justify-between rounded-lg border border-white/10 bg-white/5 px-3 py-2 transition hover:bg-white/10">
+                <div>
+                  <p className="font-medium text-white/90">自主空间决策</p>
+                  <p className="text-[10px] text-white/40">由 LLM 决定什么时候睡觉/漫游/栖身（关闭按本地规则）</p>
+                </div>
+                <input
+                  checked={llmAutonomy}
+                  className="h-4 w-4 rounded border-white/30 bg-white/10 text-emerald-500 focus:ring-0"
+                  onChange={e => setLlmAutonomy(e.target.checked)}
+                  type="checkbox"
+                />
+              </label>
             </div>
           </Section>
 

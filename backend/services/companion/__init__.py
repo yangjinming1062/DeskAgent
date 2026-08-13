@@ -30,6 +30,7 @@ from .avatar_service import (
     resolve_uploaded_avatar_path,
 )
 from .blender_llm_pipeline import run_blender_llm_pipeline
+from .interact import InteractResult, interact
 from .interaction_stats import record_interaction
 from .memory_admin import delete_memory, list_memories, memory_counts, update_memory, upsert_slotted_memory
 from .memory_bootstrap import build_user_profile_extras, extract_user_profile, read_user_profile, record_user_profile
@@ -58,6 +59,7 @@ from .persona_service import (
 from .personality_tagger import analyze_personality_tags
 from .response_builders import avatar_response, model_response, wardrobe_response
 from .rig_type_selector import select_rig_type
+from .should_act import ALLOWED_ACTIONS, ShouldActResult, should_act
 from .tripo_client import create_multiview_to_model
 from .voice_catalog import design_voice, list_tts_voices, match_user_voice, normalize_voice_language
 from .wardrobe_service import (
@@ -75,8 +77,11 @@ from .wardrobe_service import (
 
 __all__ = [
     "AffectCheckResult",
+    "ALLOWED_ACTIONS",
     "ALLOWED_AVATAR_UPLOAD_MIME_TYPES",
     "ONBOARDING_FIELDS",
+    "InteractResult",
+    "ShouldActResult",
     "AvatarGenerationError",
     "AvatarNotFoundError",
     "AvatarSourceUnreadableError",
@@ -125,6 +130,7 @@ __all__ = [
     "get_onboarding_state",
     "get_or_create_persona",
     "get_rig_bones",
+    "interact",
     "list_avatar_history",
     "list_memories",
     "list_tts_voices",
@@ -148,6 +154,7 @@ __all__ = [
     "resolve_uploaded_avatar_path",
     "RIG_DEFAULT_BONES",
     "select_rig_type",
+    "should_act",
     "signed_model_url",
     "submit_onboarding_field",
     "update_memory",

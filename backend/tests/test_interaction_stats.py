@@ -30,7 +30,7 @@ def test_single_kind_below_threshold_does_not_write(_patch_db):
     _, SessionLocal = _patch_db
     user_id = _seed_user(SessionLocal)
 
-    for _ in range(10):
+    for _ in range(9):
         result = interaction_stats.record_interaction(user_id, "poke", 14)
         assert result["threshold_met"] is False
         assert result["recorded"] == "poke"
@@ -42,7 +42,7 @@ def test_single_kind_below_threshold_does_not_write(_patch_db):
         assert rows == []
 
 
-def test_all_three_kinds_at_threshold_writes_summary(_patch_db):
+def test_single_kind_at_threshold_writes_summary(_patch_db):
     _, SessionLocal = _patch_db
     user_id = _seed_user(SessionLocal)
 
@@ -69,6 +69,11 @@ def test_all_three_kinds_at_threshold_writes_summary(_patch_db):
         assert "drag=30" in row.content
         assert "chat_turns=30" in row.content
         assert "peak=10-11h" in row.content
+        assert "hour_counts=" in row.content
+
+    summary = interaction_stats.read_today_summary(user_id, interaction_stats._today_key())
+    assert summary is not None
+    assert summary["date"] == interaction_stats._today_key()
 
 
 def test_second_threshold_cross_updates_existing_row(_patch_db):

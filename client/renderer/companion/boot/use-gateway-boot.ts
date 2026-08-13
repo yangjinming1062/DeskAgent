@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 
+import { startAutonomyProvision, stopAutonomyProvision } from '@/companion/autonomy'
 import {
   applyDesktopBootProgress,
   completeDesktopBoot,
@@ -240,6 +241,7 @@ export function useGatewayBoot({ handleGatewayEvent, onConnectionReady, onGatewa
         // dict picks up the user's persisted choice on first boot AND
         // after each reconnect (covers backend restart, OAuth reauth).
         syncDisturbanceTier(gateway)
+        startAutonomyProvision()
 
         // On a normal post-wake reconnect, nothing calls completeDesktopBoot()
         // afterwards, so dismiss the boot-progress overlay here once we're open
@@ -373,6 +375,7 @@ export function useGatewayBoot({ handleGatewayEvent, onConnectionReady, onGatewa
       offEvent()
       offRunnerStatus?.()
       offBootProgress()
+      stopAutonomyProvision()
       publish(null)
       callbacksRef.current.onGatewayReady(null)
       tearDownPrimaryGateway()

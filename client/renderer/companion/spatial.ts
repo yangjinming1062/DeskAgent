@@ -3,6 +3,7 @@ import { atom } from 'nanostores'
 import { $focusContext } from '@/companion/activity'
 import { $chatOpen } from '@/companion/chat-store'
 import { $effectiveTier, $spriteEmotion, $spriteState } from '@/companion/companion-store'
+import { $llmAutonomy } from '@/companion/prefs'
 import { persistString, storedString } from '@/shared/lib/storage'
 
 export const SPRITE_W = 160
@@ -431,6 +432,39 @@ function updateSpatialDecision(): void {
   }
 
   const state = $spriteState.get()
+
+  // LLM autonomy owns perch/roam/home decisions; this tree keeps only the
+  // sleep-state↔locale render (the LLM's go_sleep/wake relies on it) and the
+  // "quiet" tier hard-constraint (a user setting the LLM has no context for).
+  if ($llmAutonomy.get()) {
+    if (state === 'sleeping') {
+      stopRoam()
+
+      if ($spatialLocale.get() !== 'sleep') {
+        setLocale('sleep')
+      }
+
+      return
+    }
+
+    if ($spatialLocale.get() === 'sleep') {
+      setLocale('home')
+
+      return
+    }
+
+    if ($effectiveTier.get() === 'quiet') {
+      stopRoam()
+
+      if ($spatialLocale.get() !== 'home') {
+        setLocale('home')
+      }
+
+      return
+    }
+
+    return
+  }
 
   if (state === 'sleeping') {
     stopRoam()

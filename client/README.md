@@ -91,6 +91,7 @@ ESLint `no-restricted-imports` 在 `renderer/companion/**` 与 `renderer/hub/**`
 | 反向 RPC 速率守卫（200 帧 / 1MB 上限） | 对 Runner（Client 转发前限流） | [PROTOCOL.md §3](../PROTOCOL.md) |
 | disturbance_tier 权威边界 | 对 Backend（Client 推、Backend 镜像） | [ARCHITECTURE.md §5](../ARCHITECTURE.md) + [DESIGN.md §6.2](../DESIGN.md) |
 | disturbance_tier 双层模型（`$userPreferredTier` + `$effectiveTierOverride` + `$effectiveTier`） | 本模块独有（持久层 + 活动感知器） | 本 README §2 + DESIGN §6.2 |
+| LLM 反应与自主开关 (`llmReactions` / `llmAffect` / `llmAutonomy`) | 本模块独有（`localStorage` 持久化，不上报后端） | [DESIGN.md §6.3](../DESIGN.md) |
 | safeStorage 跨平台一致（DPAPI/Keychain/libsecret） | 平台 | [PROTOCOL.md §5.3](../PROTOCOL.md) |
 | Electron 二进制自更新（`electron-updater` RSA + Runner wheel RSA + SHA-512） | 对 Backend | [PROTOCOL.md §5.6](../PROTOCOL.md) |
 | 自更新两阶段契约（Stage 1 prefetch / Stage 2 install + Sentinel + 降级） | 对 Backend | [PROTOCOL.md §5.6](../PROTOCOL.md) + [ARCHITECTURE.md §9](../ARCHITECTURE.md) |

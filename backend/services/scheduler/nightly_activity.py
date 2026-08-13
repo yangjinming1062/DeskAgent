@@ -33,6 +33,7 @@ from sqlalchemy.orm import Session
 
 from services.companion import memory_admin
 from services.companion.animation_generator import generate_animation_clips, get_rig_bones
+from services.companion.interaction_stats import read_today_summary
 from services.companion.memory_admin import upsert_slotted_memory
 from services.companion.model_service import emit_wardrobe_gift, get_active_model
 from services.companion.morph_generator import validate_and_sanitize_expression
@@ -54,7 +55,7 @@ _PLANNING_RECALL_HIGHLIGHTS: int = 10
 _REFLECTION_SYSTEM_PROMPT = """You are DeskAgent's nightly reflection engine. Analyze today's conversations between the user and their AI companion to extract durable user profile updates and assess relationship/emotional dynamics.
 
 Instructions:
-1. ONLY extract facts that are grounded in today's conversations. Do NOT invent or assume facts.
+1. ONLY extract facts that are grounded in today's conversations or today's interaction statistics. Do NOT invent or assume facts.
 2. Inferred Profile: Update the user's inferred profile in structured slots.
    Allowed inferred profile slots:
    - inferred_profile:basic_info (birthday, age group, location, occupation)
@@ -73,6 +74,11 @@ Instructions:
    - auto_inject:mood_pattern (user's emotional tendency or state pattern)
    - auto_inject:relationship_signal (trust level, tease frequency, formality)
 4. Only output slots where there is genuine new information or an update. Do not return empty updates.
+5. Interaction Statistics: The user message may include an "interaction_stats_today" field containing today's raw poke / drag / chat counts and an hour_counts breakdown of when the user was active. This is grounded observational data (not conversation), so use it to inform:
+   - auto_inject:interaction_pattern (e.g. heavy poking in a burst, late-night activity, frequent drags)
+   - auto_inject:mood_pattern (e.g. restless poking may signal stress/boredom)
+   - inferred_profile:work_schedule (active-hour distribution from hour_counts)
+   Do NOT fabricate counts; only reflect what the field actually contains.
 
 Output valid JSON only, in this exact schema:
 {
@@ -242,6 +248,7 @@ async def _stage_1_daily_reflection(
     auto_inject: dict[str, str],
     user_profile: dict[str, str],
     local_date_str: str,
+    interaction_stats_today: dict[str, Any] | None = None,
 ) -> tuple[dict[str, str], dict[str, str]]:
     """Stage 1: Daily Reflection — Updates inferred_profile and auto_inject."""
     payload = {
@@ -251,6 +258,8 @@ async def _stage_1_daily_reflection(
         "user_profile": user_profile,
         "local_date": local_date_str,
     }
+    if interaction_stats_today is not None:
+        payload["interaction_stats_today"] = interaction_stats_today
     raw = await call_llm_once(llm_cfg, _REFLECTION_SYSTEM_PROMPT, payload, max_tokens=NIGHTLY_REFLECTION_MAX_TOKENS)
     parsed = parse_llm_json(raw)
     if not isinstance(parsed, dict):
@@ -663,8 +672,11 @@ async def run_nightly_pipeline(user_id: int, local_today_str: str | None = None)
     # Execute stages sequentially with isolated failure domains
     updated_inferred = inferred_profile
     updated_auto_inject = auto_inject
+    today_stats = read_today_summary(user_id, local_today_str)
     try:
-        updated_inferred, updated_auto_inject = await _stage_1_daily_reflection(llm_cfg, user_id, clean_messages, inferred_profile, auto_inject, user_profile, local_today_str)
+        updated_inferred, updated_auto_inject = await _stage_1_daily_reflection(
+            llm_cfg, user_id, clean_messages, inferred_profile, auto_inject, user_profile, local_today_str, interaction_stats_today=today_stats
+        )
     except Exception as exc:
         logger.exception("nightly_activity: stage 1 reflection failed", extra={"user_id": user_id, "error": str(exc)})
 
