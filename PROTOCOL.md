@@ -26,6 +26,23 @@
 
 ## 1. Backend ↔ Client 协议
 
+### 1.0 WS vs REST 命令路由原则
+
+Backend ↔ Client 同时暴露 JSON-RPC over WebSocket（`/api/chat/ws`）与 HTTP REST（`/api/...`）。两套通道的**设计意图不同**——选错通道等于把一类语义错配到不属于它的链路。
+
+| | WS（JSON-RPC） | REST |
+|---|---|---|
+| **设计意图** | 「绑定 process-local 上下文的 push-only 持续通道」——事件、进度与小包数据流以 WS 为单一推送路径,关 WS 即随之丢弃运行时状态。 | 「URL 寻址、无状态 CRUD」——任何持有 JWT 的入口（Hub、CLI、脚本、第三方集成）可独立调用,与 chat 是否在线无关。 |
+| **承载语义** | 长会话、跨多次往返、需要 process-local 锚点的小包 | 幂等 CRUD、可独立寻址的对象、多 KB-MB 载荷上传 / 下载 |
+
+**判别启发（顺序问）**：
+
+1. **依赖 process-local 状态吗**？（运行时会话、IPC future、per-user 锁、`disturbance_tier` 镜像） → 是 → **WS**。
+2. **需要在 chat 未连接时执行吗**？（被另一窗口 / CLI / 脚本调用） → 是 → **REST**。
+3. **是生产者 / 进度 / 状态推送**？通知侧**永远经 WS outbox + 事件帧下发**（与命令端走哪条无关）。
+
+**REST 镜像特例**:某条 WS 方法的读被一个**不持有 WS 连接**的 UI 表面（典型为 Hub）需要时,可保留 REST 镜像。镜像必须包装**同一个服务函数**,不允许分裂第二条代码路径;两端契约必须等价,任何漂移都要双端同步。
+
 ### 1.1 JSON-RPC 方法（伙伴层扩展）
 
 普通 chat / tool 类方法见 [backend/README.md](backend/README.md)。以下是**伙伴生命周期**专用的方法,Client 必须实现消费状态机（详见 [DESIGN.md §5–§6](DESIGN.md)）。
