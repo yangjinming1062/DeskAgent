@@ -261,6 +261,14 @@ tbody tr:hover { background: var(--row-hover); }
 .field:last-child { margin-bottom: 0; }
 .field > label { display: block; font-size: 0.78rem; font-weight: 600; margin-bottom: 0.3rem; }
 .field .hint { font-size: 0.73rem; color: var(--text-3); margin-top: 0.3rem; }
+.callout {
+    padding: 0.65rem 0.8rem; margin-bottom: 1rem;
+    border-radius: var(--radius-sm);
+    background: var(--amber-soft);
+    border: 1px solid color-mix(in srgb, var(--amber) 25%, transparent);
+    font-size: 0.8rem; line-height: 1.5; color: var(--text-2);
+}
+.callout strong { font-weight: 700; color: var(--fg); }
 .field .label-row { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; margin-bottom: 0.3rem; }
 .field .label-row > label { margin: 0; }
 input[type="text"], input[type="password"], input[type="date"], input[type="search"], select, textarea {
@@ -574,7 +582,7 @@ input[type="file"] { font-size: 0.78rem; }
             <div class="field" id="regenField" style="display:none; margin-top:0.95rem; padding-top:0.95rem; border-top:1px solid var(--border);">
                 <label>激活码</label>
                 <button type="button" class="btn btn--ghost btn--sm" onclick="regenerateToken()">重新生成激活码</button>
-                <div class="hint">重新生成后，旧激活码将立即失效。生成后将展示新的激活码供发送给用户。</div>
+                <div class="hint">激活令牌仅以哈希存储，无法再次查看原码。重新生成将创建新激活码（旧码立即失效）并在此展示。</div>
             </div>
         </div>
         <div class="modal-foot">
@@ -600,6 +608,39 @@ input[type="file"] { font-size: 0.78rem; }
         <div class="modal-foot">
             <button class="btn btn--ghost" onclick="closeModal('activationModal')">关闭</button>
             <button class="btn btn--primary" onclick="copyActivationCode()">复制</button>
+        </div>
+    </div>
+</div>
+
+<!-- ── Activation code management modal ──────────────────── -->
+<div id="activationManageModal" class="modal" onclick="if(event.target===this)closeModal('activationManageModal')">
+    <div class="modal-card">
+        <div class="modal-head">
+            <h2 id="activationManageTitle">激活码管理</h2>
+            <button class="modal-close" onclick="closeModal('activationManageModal')" aria-label="关闭">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+            </button>
+        </div>
+        <div class="modal-body">
+            <input type="hidden" id="activationManageUserId">
+            <div class="callout">
+                出于安全考虑，激活令牌仅以哈希存储在服务器，<strong>无法再次查看已生成的激活码</strong>。
+                如需向用户重新发放，请生成新激活码（旧码将立即失效）。后端迁移时填入新地址重新生成即可，用户仍登录同一账号。
+            </div>
+            <div class="field">
+                <label for="activationManageBaseUrl">后端地址</label>
+                <input type="text" id="activationManageBaseUrl" value="http://localhost:10620" autocomplete="off">
+                <div class="hint">嵌入激活码的后端地址。激活码同时携带地址与令牌，客户端激活时连接此地址。</div>
+            </div>
+            <div id="activationManageResult" style="display:none; margin-top:1rem; padding-top:1rem; border-top:1px solid var(--border);">
+                <label style="display:block; font-size:0.78rem; font-weight:600; margin-bottom:0.3rem;">新激活码</label>
+                <textarea id="activationManageCode" class="mono" readonly rows="5" style="width:100%; resize:vertical; word-break:break-all;"></textarea>
+            </div>
+        </div>
+        <div class="modal-foot">
+            <button class="btn btn--ghost" onclick="closeModal('activationManageModal')">关闭</button>
+            <button class="btn btn--ghost" id="activationManageCopyBtn" style="display:none" onclick="copyActivationManageCode()">复制</button>
+            <button class="btn btn--primary" id="activationManageGenBtn" onclick="regenerateFromManage()">生成新激活码</button>
         </div>
     </div>
 </div>
@@ -884,6 +925,7 @@ function renderUsers(data) {
             <td>${expir}</td>
             <td>${u.is_active ? pill('启用', 'green') : pill('停用', 'red')}</td>
             <td class="td-actions">
+                <button class="btn btn--ghost btn--sm" onclick="manageActivation(${u.id})">激活码</button>
                 <button class="btn btn--ghost btn--sm" onclick="editUser(${u.id})">编辑</button>
                 <button class="btn btn--ghost btn--sm" onclick="toggleUser(${u.id})">${u.is_active ? '停用' : '启用'}</button>
                 <button class="btn btn--danger btn--sm" onclick="deleteUser(${u.id})">删除</button>
@@ -970,6 +1012,54 @@ async function copyActivationCode() {
         toast('已复制到剪贴板');
     } catch (e) {
         const ta = $('#activationCodeText');
+        ta.select(); document.execCommand('copy');
+        toast('已复制到剪贴板');
+    }
+}
+
+function manageActivation(id) {
+    const user = (tabCache.users?.items ?? []).find(u => u.id === id);
+    $('#activationManageUserId').value = id;
+    $('#activationManageTitle').textContent = '激活码管理' + (user ? ' · ' + user.username : '');
+    $('#activationManageBaseUrl').value = 'http://localhost:10620';
+    $('#activationManageResult').style.display = 'none';
+    $('#activationManageCode').value = '';
+    $('#activationManageCopyBtn').style.display = 'none';
+    $('#activationManageGenBtn').textContent = '生成新激活码';
+    openModal('activationManageModal');
+}
+
+async function regenerateFromManage() {
+    const id = $('#activationManageUserId').value;
+    if (!id) return;
+    const baseUrl = $('#activationManageBaseUrl').value.trim() || 'http://localhost:10620';
+    const btn = $('#activationManageGenBtn');
+    btn.disabled = true; btn.textContent = '生成中…';
+    try {
+        const resp = await apiFetch(`/api/admin/users/${id}`, {
+            method: 'PATCH',
+            body: JSON.stringify({ regenerate_token: true, base_url: baseUrl }),
+        });
+        const data = await resp.json();
+        if (data.activation_code) {
+            $('#activationManageCode').value = data.activation_code;
+            $('#activationManageResult').style.display = '';
+            $('#activationManageCopyBtn').style.display = '';
+            btn.textContent = '重新生成';
+        }
+        toast('激活码已生成');
+    } catch (e) { toast(e.message, 'err'); }
+    finally { btn.disabled = false; }
+}
+
+async function copyActivationManageCode() {
+    const code = $('#activationManageCode').value;
+    if (!code) return;
+    try {
+        await navigator.clipboard.writeText(code);
+        toast('已复制到剪贴板');
+    } catch (e) {
+        const ta = $('#activationManageCode');
         ta.select(); document.execCommand('copy');
         toast('已复制到剪贴板');
     }
