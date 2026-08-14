@@ -821,7 +821,12 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
       setCompanionVoiceId(matched.voice.id)
       setVoiceLangFilter('zh')
       const r = await fetchVoiceCatalogRaw(requestGateway, 'zh')
-      const extra = r.ok ? r.catalog.voices.filter(v => v.id !== matched.voice.id) : []
+      // Exclude both the matched voice AND its alternatives — they're already
+      // prepended. Without this, every alternative that's also in the catalog
+      // (e.g. 茉莉) appears twice, and the list visibly duplicates on every
+      // voice switch.
+      const priorityIds = new Set([matched.voice.id, ...matched.alternatives.map(v => v.id)])
+      const extra = r.ok ? r.catalog.voices.filter(v => !priorityIds.has(v.id)) : []
       setVoiceCatalog([matched.voice, ...matched.alternatives, ...extra])
       void speakScripted(sampleLine(answers.name || ''), matched.voice.id || undefined, 'onboarding.voice.preview')
     })()
