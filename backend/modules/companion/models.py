@@ -27,6 +27,7 @@ class CompanionModel(ModelBase, TimestampMixin):
     has_rig: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("FALSE"))
     has_morph_targets: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("FALSE"))
     animation_clips_json: Mapped[str] = mapped_column(Text, default="[]", server_default=text("'[]'"))
+    content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, default="", server_default=text("''"))
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     active: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("FALSE"), index=True)
 

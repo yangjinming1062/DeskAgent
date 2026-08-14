@@ -174,6 +174,25 @@ def resolve_companion_model_path(user_id: int, filename: str) -> tuple[Path, str
     return filepath, "model/gltf-binary"
 
 
+def compute_file_sha256(path: Path | str) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        while chunk := f.read(256 * 1024):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def compute_bytes_sha256(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def get_companion_model_sha256(user_id: int, filename: str) -> str | None:
+    resolved = resolve_companion_model_path(user_id, filename)
+    if resolved is None:
+        return None
+    return compute_file_sha256(resolved[0])
+
+
 def build_signed_model_url(user_id: int, filename: str, *, ttl_seconds: int = _ASSET_URL_TTL_SECONDS) -> str:
     prefix = SETTINGS.public_url_prefix or f"http://{SETTINGS.public_ip}:{SETTINGS.port}"
     expires_at = int(time.time()) + ttl_seconds

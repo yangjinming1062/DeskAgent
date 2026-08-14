@@ -121,7 +121,9 @@ def _rig_naming_for(rig_type: str) -> str:
     return "mixamo" if rig_type == "biped" else "tripo"
 
 
-def _finalize_generation(model_id: int, user_id: int, *, asset_url: str, rig_original_url: str, provider: str, species: str, rig_type: str, morph_names: list[str]) -> bool:
+def _finalize_generation(
+    model_id: int, user_id: int, *, asset_url: str, rig_original_url: str, provider: str, species: str, rig_type: str, morph_names: list[str], content_hash: str | None = None
+) -> bool:
     """Persist a succeeded generation. Returns True if not superseded by a newer run."""
     with SESSION_LOCAL() as db:
         model = db.query(CompanionModel).filter(CompanionModel.id == model_id).one_or_none()
@@ -138,6 +140,16 @@ def _finalize_generation(model_id: int, user_id: int, *, asset_url: str, rig_ori
         model.status = "succeeded"
         model.has_rig = True
         model.has_morph_targets = len(morph_names) > 0
+
+        computed_hash = content_hash
+        if not computed_hash and asset_url:
+            parts = asset_url.split("/", 2)
+            if len(parts) == 3:
+                from .asset_store import get_companion_model_sha256
+
+                computed_hash = get_companion_model_sha256(int(parts[1]), parts[2])
+        model.content_hash = computed_hash or ""
+
         if not superseded:
             db.query(CompanionModel).filter(CompanionModel.user_id == user_id, CompanionModel.active.is_(True), CompanionModel.id != model_id).update({"active": False})
             model.active = True
@@ -430,7 +442,7 @@ def _emit_progress(user_id: int, stage: str, progress_pct: int, *, provider: str
         logger.warning("Failed to emit model.gen.progress", exc_info=True)
 
 
-def _emit_model_ready(user_id: int, model_id: int, asset_url: str, *, species: str | None = None, rig_type: str | None = None) -> None:
+def _emit_model_ready(user_id: int, model_id: int, asset_url: str, *, species: str | None = None, rig_type: str | None = None, content_hash: str | None = None) -> None:
     payload: dict = {"model_id": model_id}
     if species:
         payload["species"] = species
@@ -439,6 +451,12 @@ def _emit_model_ready(user_id: int, model_id: int, asset_url: str, *, species: s
     parts = asset_url.split("/", 2)
     if len(parts) == 3:
         payload["asset_url"] = build_signed_model_url(int(parts[1]), parts[2])
+        if not content_hash:
+            from .asset_store import get_companion_model_sha256
+
+            content_hash = get_companion_model_sha256(int(parts[1]), parts[2])
+    if content_hash:
+        payload["content_hash"] = content_hash
     try:
         with SESSION_LOCAL() as db:
             db.add(WSEvent(user_id=user_id, event_type="model.ready", payload=json.dumps(payload, ensure_ascii=False)))

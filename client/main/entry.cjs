@@ -39,6 +39,7 @@ const { registerExternalIpc } = require('./ipc/external.cjs')
 const { registerSettingsIpc } = require('./ipc/settings.cjs')
 const { registerFilesIpc } = require('./ipc/files.cjs')
 const { registerOnboardingAudioIpc } = require('./ipc/onboarding-audio.cjs')
+const { createModelDiskCache } = require('./ipc/model-disk-cache.cjs')
 const { registerConnectionIpc } = require('./ipc/connection.cjs')
 const { registerMediaIpc, createEnginePrefsCache } = require('./ipc/media.cjs')
 const { registerAuthIpc } = require('./ipc/auth.cjs')
@@ -1672,6 +1673,7 @@ registerOnboardingAudioIpc({
   mimeTypeForPath,
   hardening: { resolveReadableFileForIpc }
 })
+const modelDiskCache = createModelDiskCache({ deskagentHome: DESKAGENT_HOME })
 registerConnectionIpc({
   ipcMain,
   ensureBackend,
@@ -1680,7 +1682,8 @@ registerConnectionIpc({
   fetchJson,
   resolvePathTimeoutMs,
   resolveTimeoutMs,
-  defaultFetchTimeoutMs: DEFAULT_FETCH_TIMEOUT_MS
+  defaultFetchTimeoutMs: DEFAULT_FETCH_TIMEOUT_MS,
+  modelDiskCache
 })
 registerMediaIpc({
   ipcMain,

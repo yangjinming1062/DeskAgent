@@ -29,7 +29,8 @@ const baseModelResponse = {
   rig_type: 'biped',
   rig_naming: 'mixamo',
   has_rig: true,
-  has_morph_targets: true
+  has_morph_targets: true,
+  content_hash: 'sha256_mock_hash_123'
 }
 
 function setWindowDeskagent(api: ReturnType<typeof vi.fn>): void {
@@ -52,7 +53,8 @@ describe('hydrateModel', () => {
       has_morph_targets: false,
       status: 'pending',
       rig_type: 'biped',
-      rig_naming: 'mixamo'
+      rig_naming: 'mixamo',
+      content_hash: null
     })
     vi.spyOn(log, 'warn').mockImplementation(() => undefined)
   })
@@ -79,7 +81,8 @@ describe('hydrateModel', () => {
       has_morph_targets: true,
       status: 'succeeded',
       rig_type: 'biped',
-      rig_naming: 'mixamo'
+      rig_naming: 'mixamo',
+      content_hash: 'sha256_mock_hash_123'
     })
     expect(log.warn).not.toHaveBeenCalled()
   })

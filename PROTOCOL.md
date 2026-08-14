@@ -62,7 +62,7 @@ Backend ↔ Client 同时暴露 JSON-RPC over WebSocket（`/api/chat/ws`）与 H
 | Client → Backend | `companion.record_interaction_stats` `{kind: 'poke'|'drag'|'chat_turn', hour}` | 互动统计上报 | 无 LLM；任一 kind ≥ 10（OR 门限）即 upsert `Memory(context="interaction_stats:<date>")` 带 hour_counts 快照 |
 | Client → Backend | `companion.get_user_profile` | 拉取 `Memory(context="user_profile:*")` 5 条结构化字段 | persona-retune wizard 第 5 步预填用 |
 | Client → Backend | `POST /api/companion/portrait/confirm` | 确认形象（半身/全身） | 幂等;设置 `is_portrait_confirmed=True`,解开 voice/user_* 子阶段 |
-| Client → Backend | `GET /api/companion/model` | 查询当前 3D 模型状态 | `species` / `provider` / `asset_url` |
+| Client → Backend | `GET /api/companion/model` | 查询当前 3D 模型状态 | `species` / `provider` / `asset_url` / `content_hash`（SHA-256 哈希，供客户端本地磁盘缓存寻址） |
 | Client → Backend | `POST /api/companion/model` `{species_override?, provider?}` | 触发 3D 模型异步生成 | `fullbody_mode="single"`: 正面单图 → Tripo3D image-to-model + rig;`fullbody_mode="multi"`: 全身三视图 → Tripo3D multiview-to-3D + rig;**或** Blender+LLM 回退管线（见 §1.5）;进度经事件推送;`provider` 默认 `None` (auto-detect),可选 `"tripo"` 显式锁 Tripo 或 `"blender_llm"` 显式锁 Blender 管线 |
 | Client → Backend | `POST /api/companion/avatar` / `/from-image` | 头像半身生成（步 1） | 同步;失败返回 502 + 友好文案,不暴露 provider 原始错误 |
 | Client → Backend | `POST /api/companion/avatar/{avatar_id}/fullbody` | 链式参考生成全身种子图（步 2） | 同步;缺少正面全身 409;头像不存在 404;并发 429;`stage` 与 `view` 互斥必选其一;单视图模式（`fullbody_mode="single"`）下 `stage="aux"` 和 `view="right"/"back"` 被拒绝;可选 `reference_source`（`"avatar"` / `"reference_image"`，默认 `"avatar"`）+ `reference_image`（base64）+ `reference_content_type`：`"reference_image"` 时正面全身图以用户原始参考图为主参考（保留身材/体态），头像自动作为 secondary reference 供 Gemini 双参考融合美化风格;`reference_source="reference_image"` 时 `reference_image` 必填 |
@@ -75,7 +75,7 @@ Backend ↔ Client 同时暴露 JSON-RPC over WebSocket（`/api/chat/ws`）与 H
 |------------|----------|-------------------|--------|
 | `companion.affect` | 非言语的情境化情绪反应 | `{emotion, locale?, target?}` | EMOTIONAL 状态切换;quiet 档也透传（断消息不断 affect） |
 | `avatar.regenerated` | `avatar.regenerate` 最终结果 | `{job_id, asset_url?, seed_front_url?, seed_right_url?, seed_back_url?, id?, error?}` | 替换头像或展示失败提示 |
-| `model.ready` | 3D 模型异步生成就绪 | `{model_id, asset_url, species?, rig_type?, provider?}` (`provider` ∈ `"tripo_image_to_3d"` / `"tripo_multiview_to_3d"` / `"blender_llm"`) | 客户端加载 GLB + 注入 TS 动画 clip + 状态机绑定;`provider` 字段供 UI 标识生成来源（Tripo 单图/多视图 vs LLM 自建模） |
+| `model.ready` | 3D 模型异步生成就绪 | `{model_id, asset_url, species?, rig_type?, provider?, content_hash?}` (`provider` ∈ `"tripo_image_to_3d"` / `"tripo_multiview_to_3d"` / `"blender_llm"`) | 客户端加载 GLB + 注入 TS 动画 clip + 状态机绑定;`provider` 字段供 UI 标识生成来源（Tripo 单图/多视图 vs LLM 自建模）;`content_hash` 供客户端校验与磁盘缓存索引 |
 | `model.gen.progress` | 模型生成中 | `{progress: 0..100, stage, provider?}` (`provider` ∈ `"tripo"` / `"blender_llm"`) | 可选进度展示;`provider` 字段让客户端识别当前是 Tripo 多步流水线还是 Blender+LLM 迭代循环（最坏 ~100 分钟） |
 | `model.failed` | 模型生成失败 | `{error}` | 渲染程序化蛋形兜底角色（无气泡、无错误） |
 | `wardrobe.updated` | 换装产物就绪 | `{}` | 客户端重新拉取 wardrobe 列表；渲染层按 item `kind` 自动分派贴图热替或几何装配（rebind 到身体骨骼）——两者均不动身体骨骼动画与 morph |
@@ -127,7 +127,7 @@ home / chat / perch / roam / sleep
 
 **扩展协议**:每次扩展 emotion / locale 须同步更新 Backend allowlist + 客户端 morph target 目录,未覆盖项一律按 `neutral` / `home` 处理。
 
-### 1.4 资产 URL 签名
+### 1.4 资产 URL 签名与传输缓存
 
 | 资产 | 路径前缀 | TTL |
 |------|----------|-----|
@@ -135,7 +135,10 @@ home / chat / perch / roam / sleep
 | 3D 模型 GLB | `companion-models/` | 5 分钟 |
 | 换装产物（纹理 + 服装 GLB） | `companion-assets/` | 5 分钟 |
 
-**约束**:URL HMAC 签名（具体算法见实现）;换设备登录需重新生成签名,不能直接分享原 URL;Client 收到后应本地缓存避免重复拉取。
+**传输与缓存契约**:
+- **URL HMAC 签名**: 每次签名 TTL 为 5 分钟；换设备登录需重新生成签名。
+- **服务端 HTTP Range & 不可变缓存支持**: 服务端模型/资产文件端点支持 HTTP Range（`Accept-Ranges: bytes`、`206 Partial Content`、`416 Range Not Satisfiable`）、`ETag: "<sha256>"`、`Cache-Control: public, max-age=31536000, immutable` 以及 `X-Content-Sha256` 校验头。
+- **客户端本地磁盘缓存**: Client 按 `content_hash`（SHA-256）在 `$DESKAGENT_HOME/cache/models/<content_hash>.glb` 建立持久磁盘缓存。模型未发生变更时，客户端直接命中本地磁盘缓存，跳过网络请求；未命中或下载中断时，通过 `<content_hash>.partial` 临时文件发起 `Range: bytes=N-` 实现断点续传。
 
 ### 1.5 错误信封
 

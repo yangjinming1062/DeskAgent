@@ -96,8 +96,7 @@ backend/
 |------|------|
 | **单实例部署** | `disturbance_tier` 与 IPC future 锁在 process-local 内存；in-memory rate limit（slowapi）；架构不支持多实例水平扩展 |
 | **数据库无 Alembic** | 基于 SQLAlchemy `ModelBase.metadata.create_all` 初始化库表与索引，未正式部署前不维护迁移脚本 |
-| **`image_generate` / `text_to_speech_tool` / `video_generate` 不参与 config-aware 过滤** | 可用性取决于 provider；调用时按 `llm_config` 拉 `provider_for_service`；缺 key 会走 fallback chain |
-| **形象资产 URL 有 TTL** | 持久路径 `companion-avatars/<id>.<ext>` + 读时 5 分钟 HMAC 签名；`verify_signed_asset_request` 强制校验，缺签名 401。Client 必须走 `deskagent:api:asset` 代理而非直连 |
+| **形象资产 URL 有 TTL 与 HTTP Range 支持** | 持久路径 `companion-avatars/<id>.<ext>`、`companion-models/<uid>/<file>` + 读时 5 分钟 HMAC 签名；端点支持 HTTP Range（206 断点续传）、ETag 与不可变缓存。Client 主进程按 `content_hash` 本地磁盘缓存避免重复拉取 |
 | **MiniMax 视频 URL 短时效** | video_gen v2（H3）`poll` 直接返回 `download_url`，v1（Hailuo）还有 `files/retrieve` 第二跳；两者 URL 都是短时效的，必须**立即下载落 `data_dir/temp-media`**，不能直接返给前端 |
 | **MiniMax 内容风控 1027 不重试** | `base_resp.status_code=1027` 映射到 `content_policy_blocked` 且 `retryable=False`，避免重试三次白烧配额 |
 | **流式 chat 一旦首 chunk 已发不再 fallback** | 用户已看到部分输出，切换 provider 会造成 transcript 截断；失败统一 raise，由 HTTP envelope 走 `{error, reason, status}` |

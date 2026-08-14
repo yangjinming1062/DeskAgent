@@ -6,6 +6,9 @@ from .asset_store import (
     build_signed_asset_url,
     build_signed_avatar_url,
     build_signed_model_url,
+    compute_bytes_sha256,
+    compute_file_sha256,
+    get_companion_model_sha256,
     resolve_companion_asset_path,
     resolve_companion_model_path,
     verify_signed_asset_request,
@@ -31,6 +34,7 @@ from .avatar_service import (
 )
 from .blender_llm_pipeline import run_blender_llm_pipeline
 from .garment_service import run_garment_pipeline
+from .http_range import serve_ranged_file
 from .interact import InteractResult, interact
 from .interaction_stats import record_interaction
 from .memory_admin import delete_memory, list_memories, memory_counts, update_memory, upsert_slotted_memory
@@ -111,6 +115,8 @@ __all__ = [
     "build_system_prompt_extras",
     "build_user_profile_extras",
     "check_affect",
+    "compute_bytes_sha256",
+    "compute_file_sha256",
     "confirm_portrait",
     "confirm_wardrobe_item",
     "create_multiview_to_model",
@@ -136,6 +142,7 @@ __all__ = [
     "get_active_avatar",
     "get_active_model",
     "get_avatar_job_lock",
+    "get_companion_model_sha256",
     "get_equipped_item",
     "get_equipped_items",
     "get_onboarding_state",
@@ -171,6 +178,7 @@ __all__ = [
     "resolve_uploaded_avatar_path",
     "RIG_DEFAULT_BONES",
     "select_rig_type",
+    "serve_ranged_file",
     "should_act",
     "signed_model_url",
     "slot_of",

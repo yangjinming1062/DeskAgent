@@ -93,6 +93,7 @@ class CompanionModelResponse(BaseModel):
     status: str = "succeeded"
     has_rig: bool
     has_morph_targets: bool
+    content_hash: str | None = None
 
 
 class ModelGenerateRequest(BaseModel):

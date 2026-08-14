@@ -1,14 +1,9 @@
 'use strict'
 
+const fsp = require('node:fs').promises
 const { dataUrlFromBuffer } = require('../shared/mime.cjs')
-const { MODEL_FILE_PATH_PATTERN, MODEL_FILE_TIMEOUT_MS } = require('../security/hardening.cjs')
 
-// Match the signed-URL host strip below so a large GLB gets a 60s budget.
-function isModelFilePath(pathname) {
-  return typeof pathname === 'string' && MODEL_FILE_PATH_PATTERN.test(pathname)
-}
-
-// Backend connection resolver + REST proxy + boot-progress snapshot.
+// Backend connection resolver + REST proxy + model disk cache.
 function registerConnectionIpc({
   ipcMain,
   ensureBackend,
@@ -17,7 +12,8 @@ function registerConnectionIpc({
   fetchJson,
   resolvePathTimeoutMs,
   resolveTimeoutMs,
-  defaultFetchTimeoutMs
+  defaultFetchTimeoutMs,
+  modelDiskCache
 }) {
   ipcMain.handle('deskagent:connection', async () => ensureBackend())
   ipcMain.handle('deskagent:gateway:ws-url', async () => {
@@ -62,7 +58,7 @@ function registerConnectionIpc({
     const { pathname, search } = new URL(raw, connection.baseUrl)
     const pathAndQuery = `${pathname}${search}`
 
-    const timeoutMs = isModelFilePath(pathname) ? MODEL_FILE_TIMEOUT_MS : defaultFetchTimeoutMs
+    const timeoutMs = defaultFetchTimeoutMs
     const res = await fetch(`${connection.baseUrl}${pathAndQuery}`, {
       headers: { ...(connection.token ? { Authorization: `Bearer ${connection.token}` } : {}) },
       signal: AbortSignal.timeout(timeoutMs)
@@ -83,19 +79,45 @@ function registerConnectionIpc({
     return dataUrlFromBuffer(Buffer.from(await res.arrayBuffer()), mime)
   })
 
-  // Like ``api:asset`` but returns the raw bytes via Electron IPC structured
-  // clone (no base64). For large binary payloads (GLB, wardrobe PBR textures)
-  // where base64 inflation in ``api:asset`` would round-trip a 30 MB GLB into
-  // a 40 MB string. Same host-strip + rebase behaviour.
+  // Cache-aware asset downloader: returns the local disk cache path for large assets.
+  ipcMain.handle('deskagent:api:asset-cached-path', async (_event, request) => {
+    const connection = await ensureBackend()
+    const raw = String(request?.url || '')
+    if (!raw) throw new Error('asset url is required')
+    if (!modelDiskCache) throw new Error('model disk cache is unavailable')
+
+    return await modelDiskCache.ensureCached({
+      url: raw,
+      contentHash: request?.contentHash,
+      token: connection.token,
+      baseUrl: connection.baseUrl
+    })
+  })
+
+  // Like ``api:asset`` but returns raw bytes via structured clone.
+  // For 3D models and large assets, transparently leverages modelDiskCache
+  // to support HTTP Range resumption and avoid repeated downloads.
   ipcMain.handle('deskagent:api:asset-buffer', async (_event, request) => {
     const connection = await ensureBackend()
     const raw = String(request?.url || '')
     if (!raw) throw new Error('asset url is required')
 
     const { pathname, search } = new URL(raw, connection.baseUrl)
-    const pathAndQuery = `${pathname}${search}`
+    const isModel =
+      pathname.includes('/model/file/') || pathname.includes('/companion-models/') || Boolean(request?.contentHash)
 
-    const timeoutMs = isModelFilePath(pathname) ? MODEL_FILE_TIMEOUT_MS : defaultFetchTimeoutMs
+    if (modelDiskCache && isModel) {
+      const cached = await modelDiskCache.ensureCached({
+        url: raw,
+        contentHash: request?.contentHash,
+        token: connection.token,
+        baseUrl: connection.baseUrl
+      })
+      return await fsp.readFile(cached.filePath)
+    }
+
+    const pathAndQuery = `${pathname}${search}`
+    const timeoutMs = defaultFetchTimeoutMs
     const res = await fetch(`${connection.baseUrl}${pathAndQuery}`, {
       headers: { ...(connection.token ? { Authorization: `Bearer ${connection.token}` } : {}) },
       signal: AbortSignal.timeout(timeoutMs)

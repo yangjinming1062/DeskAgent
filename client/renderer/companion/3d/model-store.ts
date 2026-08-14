@@ -22,6 +22,7 @@ export interface ModelInfo {
   status: string
   rig_type: string
   rig_naming: string
+  content_hash: string | null
 }
 
 export interface WardrobeItem {
@@ -73,6 +74,7 @@ interface CompanionModelResponse {
   rig_naming: string
   has_rig: boolean
   has_morph_targets: boolean
+  content_hash?: string | null
 }
 
 export const $modelInfo = atom<ModelInfo>({
@@ -85,7 +87,8 @@ export const $modelInfo = atom<ModelInfo>({
   has_morph_targets: false,
   status: 'pending',
   rig_type: 'biped',
-  rig_naming: 'mixamo'
+  rig_naming: 'mixamo',
+  content_hash: null
 })
 
 export const $wardrobe = atom<WardrobeItem[]>([])
@@ -244,7 +247,8 @@ export async function hydrateModel(): Promise<void> {
       has_morph_targets: res.has_morph_targets,
       status: res.status,
       rig_type: res.rig_type ?? 'biped',
-      rig_naming: res.rig_naming ?? 'mixamo'
+      rig_naming: res.rig_naming ?? 'mixamo',
+      content_hash: res.content_hash ?? null
     })
   } catch (error) {
     if (!isClientErrorIpc(error)) {

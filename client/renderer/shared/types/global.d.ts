@@ -15,8 +15,8 @@ declare global {
       api: <T>(request: DeskAgentApiRequest) => Promise<T>
       /** Fetch a backend-served binary asset as a data URL (see connection.cjs). */
       apiAsset: (request: { url: string }) => Promise<string>
-      /** Fetch a backend-served binary asset as raw bytes — for large payloads (GLB) where base64 inflation is unacceptable. */
-      apiAssetBuffer: (request: { url: string }) => Promise<Uint8Array>
+      /** Fetch a backend-served binary asset as raw bytes — for large payloads (GLB) where base64 inflation is unacceptable. Supports disk cache via contentHash. */
+      apiAssetBuffer: (request: { url: string; contentHash?: string }) => Promise<Uint8Array>
       readFileDataUrl: (filePath: string) => Promise<string>
       selectPaths: (options?: DeskAgentSelectPathsOptions) => Promise<string[]>
       writeClipboard: (text: string) => Promise<boolean>

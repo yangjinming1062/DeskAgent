@@ -1,5 +1,4 @@
 import * as THREE from 'three'
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 
 import type { SpriteEmotion, SpriteStateName } from '@/companion/companion-store'
 import { log } from '@/shared/lib/log'
@@ -12,6 +11,7 @@ import { resolveEmotionClip, resolveInteractionClip } from './clip-dispatch'
 import { buildClip, type ClipDef } from './clips-biped'
 import { buildClipsForRig, getClipDefs } from './clips-registry'
 import { ClothSolver } from './ClothSolver'
+import { createGLTFLoader } from './gltf-loader-factory'
 import { $availableClipNames, type CompanionExpression } from './model-store'
 import { MorphController } from './MorphController'
 import { type LoadedModelInfo } from './types'
@@ -201,7 +201,7 @@ export class CharacterController {
     if (bytes) {
       try {
         this.disposeRoot(scene)
-        const loader = new GLTFLoader()
+        const loader = createGLTFLoader()
         const gltf = await loader.parseAsync(bytes, '')
         this.root = gltf.scene
         this.root.traverse(child => {
@@ -556,7 +556,7 @@ export class CharacterController {
     let gltf: { scene: THREE.Group }
 
     try {
-      const loader = new GLTFLoader()
+      const loader = createGLTFLoader()
       gltf = await loader.parseAsync(bytes, '')
     } catch (err) {
       log.warn('character', 'unit GLB parse failed:', err)

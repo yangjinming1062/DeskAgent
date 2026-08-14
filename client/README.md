@@ -107,7 +107,7 @@ ESLint `no-restricted-imports` 在 `renderer/companion/**` 与 `renderer/hub/**`
 | 限制 | 说明 |
 |------|------|
 | **透明窗口平台差异** | 远程显示（X11/VNC/RDP）无法合成透明层，精灵窗口降级为非透明（`SPRITE_TRANSPARENT`）；macOS / Windows 本地会话支持良好 |
-| **身体 GLB 不走 `deskagent:api:asset`** | `3d/CharacterController.ts` 的身体 GLB 经 `apiAssetBuffer` IPC 加载（数十 MB，不走 data URL）；PBR 纹理与几何服装 GLB（几 MB 级）经 `apiAsset` data URL 加载。`public_url_prefix` 不可达时身体退化为程序化兜底角色，贴图/服装静默失败 |
+| **3D 模型传输与缓存机制** | 身体与服装 GLB 均采用 Draco 压缩（体积降低 5–10×），渲染端通过 `createGLTFLoader()`（集成 `DRACOLoader`，解码器由 Vite `assets/draco/` 本地托管）流式解压渲染；主进程按 `content_hash` 在 `$DESKAGENT_HOME/cache/models/` 磁盘缓存，支持 HTTP Range 断点续传与 LRU 淘汰 |
 | **几何服装与布料碰撞精度** | 服装与身体的碰撞由 CPU 代理网格（`BodyCollider`，~4096 顶点）结合骨骼球计算，在极端曲率处存在数毫米内的近似误差；换装 PBR 支持 5 通道（含 displacement 视差置换）。 |
 | **托盘 Settings 中"重载 MCP"不可用** | gateway 仅在精灵窗口 boot；从托盘打开的 framed 工具窗口无 gateway，`hub/settings/mcp-settings.tsx` 的 reload 按钮优雅报"gateway 不可用"。其余 settings（runnerConfig 等 REST）不受影响 |
 | **`voice-call-dock.tsx` useEffect 依赖故意省略 `[gatewayState]`** | 麦克风挂载/take-down 由 `[requestGateway]` 触发；reconnect 重入若再加 `gatewayState` 会再次重新挂麦克风导致当前通话被打断 |

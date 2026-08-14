@@ -242,10 +242,10 @@ onboarding 产出的结构化角色定义持久化在 Backend 用户维度，作
 - **资产归属用户维度**，不跨用户共享、不下发到他租户。
 - **portrait 拆为 avatar + seed 配对**：avatar 是聚焦头部细节的半身像（onboarding 身份确认、设置页展示、聊天头像），seed 是三视角全身参考图（3D 纹理生成的输入）。两张图任一失败即整体失败；avatar prompt 硬性包含「纯白平面背景，无场景、无渐变、无阴影」子句（chroma-key 渲染依赖）。seed prompt 聚焦**身体轮廓锚点**（体型、五官、发型发色、标志性细节），参照装限定为**简单、不遮蔽人物轮廓特征**的款式，方便 Tripo3D 准确建模与绑骨——三视图之外的服饰由后续换装系统独立表达。
 - **prompt 增强是读取型操作**——角色定义不被 LLM 改写，LLM 异常向上传播。
-- **3D 模型由 Tripo3D 生成**：以 seed 三视图为输入，经 multiview-to-3D + rig 生成带 PBR 纹理的 rigged GLB，注入 morph targets，动画由客户端 TypeScript 关键帧注入。失败时客户端渲染程序化蛋形兜底角色。
+- **3D 模型由 Tripo3D / Blender 生成并启用 Draco 压缩**：以 seed 种子图为输入生成 rigged GLB，注入 44 ARKit morph targets，导出阶段完整启用 Draco 几何压缩（体积缩减 5–10×）；动画由客户端 TypeScript 关键帧注入。失败时客户端渲染程序化蛋形兜底角色。
 - **Blender+LLM 回退管线**（当 Tripo3D 不可用时）：LLM 分析三视图→自由形式 bpy 代码→Blender headless 执行→预览渲染对比→迭代精修（默认 10 轮）。Client `provider="blender_llm"` 显式选择启用，或 Tripo key 缺失 / 积分为 0 / 显式余额耗尽时自动启用。模型质量显著低于 Tripo3D（无 PBR 纹理、自由形式几何），仅作 last-resort 兜底；触发条件在 `model.gen.progress` 事件的 `provider` 字段中暴露给客户端。
 - **portrait 重生不触发模型失效**：模型只随物种变更或用户显式请求重生。换外观 = 换装（`POST /api/companion/wardrobe/preview` 单入口，由一次 LLM 路由决定走贴图热替 `kind=texture`、几何服装 `kind=garment` 或挂件 `kind=accessory`，装配契约见 [PROTOCOL.md §1.6](PROTOCOL.md)），不重生模型。
-- **资产 URL 5 分钟 HMAC 签名**（TTL 与签名细节见 [PROTOCOL.md §1.4](PROTOCOL.md)）：换设备登录需重新生成签名，不能直接分享原 URL；客户端收到后应本地缓存避免重复拉取。
+- **资产传输与内容寻址本地缓存**（契约见 [PROTOCOL.md §1.4](PROTOCOL.md)）：服务端模型/资产接口支持 HTTP Range（206 断点续传与 416 校验）与 ETag（SHA-256）；Client 主进程按 `content_hash` 持久化到 `$DESKAGENT_HOME/cache/models/`，无网络开销秒级命中；渲染端经 `DRACOLoader` 流式边下边解。
 - **受控再生成**：形象在多次会话间保持稳定。变更只在用户主动要求时发生（重生 portrait / 重生模型 / 换装）。
 
 ### 6.3 表达层契约

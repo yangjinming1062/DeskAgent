@@ -6,8 +6,7 @@ import time
 
 from common import get_router
 from components import SESSION_LOCAL, SETTINGS, get_db, get_logger, safe_json_loads
-from fastapi import Body, Depends, HTTPException, Request, status
-from fastapi.responses import FileResponse
+from fastapi import Body, Depends, HTTPException, Request, Response, status
 from modules.auth import LoginRecord, User, get_current_session
 from modules.companion import (
     AnimationClipResponse,
@@ -75,6 +74,7 @@ from services.companion import (
     resolve_companion_asset_path,
     resolve_companion_model_path,
     resolve_uploaded_avatar_path,
+    serve_ranged_file,
     update_outfit_field,
     update_persona,
     verify_signed_asset_request,
@@ -593,33 +593,33 @@ public_router = get_router()
 
 
 @public_router.get("/avatar/file/{filename}")
-async def serve_avatar_file(filename: str, expires: int | None = None, sig: str | None = None) -> FileResponse:
+async def serve_avatar_file(request: Request, filename: str, expires: int | None = None, sig: str | None = None) -> Response:
     if not verify_signed_avatar_request(filename, expires, sig):
         raise HTTPException(status_code=403, detail="Invalid or expired signature")
     result = resolve_uploaded_avatar_path(filename)
     if result is None:
         raise HTTPException(status_code=404, detail="Avatar not found")
     path, content_type = result
-    return FileResponse(path, media_type=content_type)
+    return await serve_ranged_file(request, path, content_type)
 
 
 @public_router.get("/asset/{user_id}/{filename:path}")
-async def serve_companion_asset(user_id: int, filename: str, expires: int | None = None, sig: str | None = None) -> FileResponse:
+async def serve_companion_asset(request: Request, user_id: int, filename: str, expires: int | None = None, sig: str | None = None) -> Response:
     if not verify_signed_asset_request(user_id, filename, expires, sig):
         raise HTTPException(status_code=403, detail="Invalid or expired signature")
     result = resolve_companion_asset_path(user_id, filename)
     if result is None:
         raise HTTPException(status_code=404, detail="Asset not found")
     path, content_type = result
-    return FileResponse(path, media_type=content_type)
+    return await serve_ranged_file(request, path, content_type)
 
 
 @public_router.get("/model/file/{user_id}/{filename:path}")
-async def serve_model_file(user_id: int, filename: str, expires: int | None = None, sig: str | None = None) -> FileResponse:
+async def serve_model_file(request: Request, user_id: int, filename: str, expires: int | None = None, sig: str | None = None) -> Response:
     if not verify_signed_asset_request(user_id, filename, expires, sig):
         raise HTTPException(status_code=403, detail="Invalid or expired signature")
     result = resolve_companion_model_path(user_id, filename)
     if result is None:
         raise HTTPException(status_code=404, detail="Model not found")
     path, content_type = result
-    return FileResponse(path, media_type=content_type)
+    return await serve_ranged_file(request, path, content_type)

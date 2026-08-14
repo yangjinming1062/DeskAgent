@@ -172,13 +172,17 @@ export function Companion3D(): React.JSX.Element {
     const url = modelInfo.asset_url
 
     // Fetch signed bytes via IPC — main re-bases the host, so no CORS preflight.
+    // Leverages disk cache & Range resumption when content_hash is present.
     // Null on fetch failure lets CharacterController fall through to procedural.
     void (async () => {
       let bytes: ArrayBuffer | null = null
 
       if (url) {
         try {
-          const u8 = await window.deskagent.apiAssetBuffer({ url })
+          const u8 = await window.deskagent.apiAssetBuffer({
+            url,
+            contentHash: modelInfo.content_hash || undefined
+          })
 
           if (cancelled) {
             return
@@ -222,7 +226,7 @@ export function Companion3D(): React.JSX.Element {
     return () => {
       cancelled = true
     }
-  }, [modelInfo.asset_url, modelInfo.morph_params, modelInfo.rig_type])
+  }, [modelInfo.asset_url, modelInfo.content_hash, modelInfo.morph_params, modelInfo.rig_type])
 
   // Apply the equipped set (or a live preview candidate) on every change. A
   // preview replaces only the equipped item in its own slot — other slots keep

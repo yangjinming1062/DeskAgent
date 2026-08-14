@@ -19,6 +19,17 @@ def avatar_response(asset: AvatarAsset) -> AvatarAssetResponse:
 
 
 def model_response(model: CompanionModel) -> CompanionModelResponse:
+    content_hash = model.content_hash or None
+    if not content_hash and model.asset_url:
+        parts = model.asset_url.split("/", 2)
+        if len(parts) == 3:
+            try:
+                from services.companion.asset_store import get_companion_model_sha256
+
+                content_hash = get_companion_model_sha256(int(parts[1]), parts[2])
+            except Exception:
+                pass
+
     return CompanionModelResponse(
         id=model.id,
         species=model.species,
@@ -30,6 +41,7 @@ def model_response(model: CompanionModel) -> CompanionModelResponse:
         has_morph_targets=model.has_morph_targets,
         rig_type=model.rig_type,
         rig_naming=model.rig_naming,
+        content_hash=content_hash,
     )
 
 
