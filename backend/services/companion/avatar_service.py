@@ -510,14 +510,13 @@ async def generate_fullbody(
     for v, result in generated.items():
         setattr(asset, _SEED_ATTRS[v], result[0])
 
-    if is_front:
-        persona.is_portrait_confirmed = False
-        persona.portrait_confirmed_at = None
-
     db.commit()
     db.refresh(asset)
 
-    # Re-sign URLs in memory
+    # Re-sign URLs in memory — expunge first so the mutations can never be
+    # flushed back to the DB by a subsequent db.commit() in the caller's
+    # session (the root cause of seed URLs being persisted as signed URLs).
+    db.expunge(asset)
     asset.asset_url = _re_sign_bare_path(asset.asset_url) or asset.asset_url
     for attr in ("seed_front_url", "seed_right_url", "seed_back_url"):
         val = getattr(asset, attr, None)
@@ -786,6 +785,7 @@ async def finalize_avatar(db: Session, user_id: int) -> AvatarAsset | None:
             pending.append((attr, result[0], result[1]))
 
     if not pending:
+        db.expunge(asset)
         _re_sign_avatar_url(asset)
         return asset
 
@@ -795,5 +795,6 @@ async def finalize_avatar(db: Session, user_id: int) -> AvatarAsset | None:
 
     db.commit()
     db.refresh(asset)
+    db.expunge(asset)
     _re_sign_avatar_url(asset)
     return asset

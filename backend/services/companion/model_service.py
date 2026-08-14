@@ -155,7 +155,7 @@ async def generate_companion_model(db: Session, *, user_id: int, species_overrid
         if avatar is None:
             raise ModelGenerationError("没有找到种子图，请先完成引导流程中的形象生成")
 
-        front = (avatar.seed_front_url or "").split("/")[-1]
+        front = (avatar.seed_front_url or "").split("/")[-1].split("?")[0]
         if not front:
             raise ModelGenerationError("请先完成正面全身图生成再生成模型")
 
@@ -163,8 +163,8 @@ async def generate_companion_model(db: Session, *, user_id: int, species_overrid
         if fullbody_mode == "single":
             view_filenames = {"front": front}
         else:
-            right = (avatar.seed_right_url or "").split("/")[-1]
-            back = (avatar.seed_back_url or "").split("/")[-1]
+            right = (avatar.seed_right_url or "").split("/")[-1].split("?")[0]
+            back = (avatar.seed_back_url or "").split("/")[-1].split("?")[0]
             if not (right and back):
                 raise ModelGenerationError("请先完成全身三视图生成再生成模型")
             view_filenames = {"front": front, "right": right, "back": back}
