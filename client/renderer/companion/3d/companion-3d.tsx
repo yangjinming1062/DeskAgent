@@ -15,14 +15,13 @@ import { log } from '@/shared/lib/log'
 
 import { Engine } from './Engine'
 import {
-  $equippedItem,
   $expressions,
   $generatedClips,
   $modelGenError,
   $modelGenProgress,
   $modelGenState,
   $modelInfo,
-  $wardrobePreview,
+  $outfitView,
   hydrateExpressions,
   hydrateGeneratedClips,
   refreshEquippedAndApply
@@ -52,8 +51,7 @@ function captureSpriteSnapshot(): CharacterSnapshot {
 export function Companion3D(): React.JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const engineRef = useRef<Engine | null>(null)
-  const equipped = useStore($equippedItem)
-  const preview = useStore($wardrobePreview)
+  const outfitView = useStore($outfitView)
   const modelInfo = useStore($modelInfo)
 
   // Mount engine, wire subscriptions, and kick off initial model load.
@@ -226,8 +224,9 @@ export function Companion3D(): React.JSX.Element {
     }
   }, [modelInfo.asset_url, modelInfo.morph_params, modelInfo.rig_type])
 
-  // Apply equipped or preview outfit on every change. Preview takes precedence
-  // over the persisted equipped outfit so the user sees candidates in real time.
+  // Apply the equipped set (or a live preview candidate) on every change. A
+  // preview replaces only the equipped item in its own slot — other slots keep
+  // rendering so a shirt preview doesn't visually strip the equipped shoes.
   // setOutfit is a no-op when the character is the procedural fallback.
   useEffect(() => {
     const engine = engineRef.current
@@ -236,12 +235,8 @@ export function Companion3D(): React.JSX.Element {
       return
     }
 
-    const outfit = preview ?? equipped
-
-    if (outfit) {
-      engine.character.setOutfit(outfit)
-    }
-  }, [preview, equipped])
+    engine.character.setOutfit(outfitView)
+  }, [outfitView])
 
   const genState = useStore($modelGenState)
   const genProgress = useStore($modelGenProgress)

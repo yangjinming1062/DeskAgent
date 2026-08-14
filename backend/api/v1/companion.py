@@ -70,7 +70,7 @@ from services.companion import (
     model_response,
     normalize_outfit,
     normalize_voice_language,
-    preview_wardrobe_texture,
+    preview_wardrobe_outfit,
     regenerate_avatar_from_image,
     resolve_companion_asset_path,
     resolve_companion_model_path,
@@ -469,7 +469,7 @@ async def post_model(
 ) -> CompanionModelResponse:
     user, _ = auth
     try:
-        model = await generate_companion_model(db, user_id=user.id, species_override=body.species_override, provider_override=body.provider)
+        model = await generate_companion_model(db, user_id=user.id, species_override=body.species_override, provider_override=body.provider, force=body.force)
     except ModelGenerationInProgressError as exc:
         raise HTTPException(status_code=409, detail={"error": str(exc)})
     except ModelGenerationError as exc:
@@ -550,7 +550,7 @@ async def post_wardrobe_preview(
     user, _ = auth
     raw_bytes, content_type = _decode_upload_image(body.image, body.content_type)
     try:
-        preview = await preview_wardrobe_texture(db, user_id=user.id, description=body.description, image_bytes=raw_bytes, content_type=content_type, feedback=body.feedback)
+        preview = await preview_wardrobe_outfit(db, user_id=user.id, description=body.description, image_bytes=raw_bytes, content_type=content_type, feedback=body.feedback)
     except (RuntimeError, MissingLlmConfigError) as exc:
         raise HTTPException(status_code=502, detail={"error": str(exc)})
     return preview
@@ -569,6 +569,8 @@ async def post_wardrobe_confirm(body: WardrobeConfirmRequest, auth: tuple[User, 
             normal_file_id=body.normal_file_id,
             roughness_file_id=body.roughness_file_id,
             metalness_file_id=body.metalness_file_id,
+            mesh_file_id=body.mesh_file_id,
+            assembly_json=body.assembly_json,
         )
     except WardrobeSourceExpiredError as exc:
         raise HTTPException(status_code=409, detail={"error": "换装草稿已过期，请重新生成", "reason": str(exc)})

@@ -11,6 +11,7 @@ import {
   hydrateWardrobe,
   pushWardrobeCandidate,
   selectWardrobeCandidate,
+  type WardrobeCandidate,
   type WardrobeItem
 } from '@/companion/3d/model-store'
 import { PERSONA_INPUT_CLASS } from '@/companion/input-class'
@@ -21,9 +22,16 @@ interface WardrobePreviewResponse {
   url: string
   prompt: string
   file_id: string
+  normal_url?: string
   normal_file_id?: string
+  roughness_url?: string
   roughness_file_id?: string
+  metalness_url?: string
   metalness_file_id?: string
+  mesh_url?: string
+  mesh_file_id?: string
+  kind?: string
+  assembly_json?: string
 }
 
 interface WardrobeDesignPanelProps {
@@ -41,6 +49,12 @@ async function discardPreviewFiles(fileIds: string[]): Promise<void> {
         .catch(() => undefined)
     )
   )
+}
+
+function candidateFileIds(candidates: WardrobeCandidate[]): string[] {
+  return candidates
+    .flatMap(c => [c.fileId, c.normalFileId, c.roughnessFileId, c.metalnessFileId, c.meshFileId])
+    .filter((id): id is string => Boolean(id))
 }
 
 export function WardrobeDesignPanel({ onClose }: WardrobeDesignPanelProps): React.JSX.Element {
@@ -69,7 +83,7 @@ export function WardrobeDesignPanel({ onClose }: WardrobeDesignPanelProps): Reac
   }, [])
 
   // Handle image file selection
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>): void => {
     const file = e.target.files?.[0]
 
     if (!file) {
@@ -103,7 +117,7 @@ export function WardrobeDesignPanel({ onClose }: WardrobeDesignPanelProps): Reac
     reader.readAsDataURL(file)
   }
 
-  const removeReferenceImage = () => {
+  const removeReferenceImage = (): void => {
     setImagePreview(null)
 
     if (fileInputRef.current) {
@@ -112,7 +126,7 @@ export function WardrobeDesignPanel({ onClose }: WardrobeDesignPanelProps): Reac
   }
 
   // Handle generation of new texture candidate
-  const handleGenerate = async () => {
+  const handleGenerate = async (): Promise<void> => {
     const desc = description.trim()
 
     if (!desc) {
@@ -142,20 +156,28 @@ export function WardrobeDesignPanel({ onClose }: WardrobeDesignPanelProps): Reac
           prompt: res.prompt,
           fileId: res.file_id,
           description: desc,
+          normalUrl: res.normal_url,
           normalFileId: res.normal_file_id,
+          roughnessUrl: res.roughness_url,
           roughnessFileId: res.roughness_file_id,
-          metalnessFileId: res.metalness_file_id
+          metalnessUrl: res.metalness_url,
+          metalnessFileId: res.metalness_file_id,
+          meshUrl: res.mesh_url,
+          meshFileId: res.mesh_file_id,
+          kind: res.kind,
+          assemblyJson: res.assembly_json
         })
         setFeedback('')
         setNameInput(desc.slice(0, 16))
-        setStatusMessage({ type: 'success', text: '贴图已生成，3D 模型已切换至预览！' })
+        const kindLabel = res.kind === 'texture' ? '贴图' : res.kind === 'accessory' ? '挂件' : '几何服装'
+        setStatusMessage({ type: 'success', text: `${kindLabel}已生成，3D 模型已切换至预览！` })
       } else {
         setStatusMessage({ type: 'error', text: '生成返回数据不完整' })
       }
     } catch (err) {
       setStatusMessage({
         type: 'error',
-        text: err instanceof Error ? err.message : '生成贴图失败，请稍后重试'
+        text: err instanceof Error ? err.message : '生成装扮失败，请稍后重试'
       })
       notifyError(err, '换装生成失败')
     } finally {
@@ -164,7 +186,7 @@ export function WardrobeDesignPanel({ onClose }: WardrobeDesignPanelProps): Reac
   }
 
   // Handle candidate selection
-  const handleSelectCandidate = (idx: number) => {
+  const handleSelectCandidate = (idx: number): void => {
     selectWardrobeCandidate(idx)
     const selected = candidates[idx]
 
@@ -174,7 +196,7 @@ export function WardrobeDesignPanel({ onClose }: WardrobeDesignPanelProps): Reac
   }
 
   // Handle candidate confirmation
-  const handleConfirm = async () => {
+  const handleConfirm = async (): Promise<void> => {
     const currentCandidate = candidates[selectedIdx]
 
     if (!currentCandidate) {
@@ -197,20 +219,21 @@ export function WardrobeDesignPanel({ onClose }: WardrobeDesignPanelProps): Reac
           prompt: currentCandidate.prompt,
           normal_file_id: currentCandidate.normalFileId,
           roughness_file_id: currentCandidate.roughnessFileId,
-          metalness_file_id: currentCandidate.metalnessFileId
+          metalness_file_id: currentCandidate.metalnessFileId,
+          mesh_file_id: currentCandidate.meshFileId,
+          assembly_json: currentCandidate.assemblyJson
         }
       })
 
       if (res) {
-        // Discard all temp files from non-selected candidates (all PBR channels).
-        const otherIds = candidates
-          .filter(c => c !== currentCandidate)
-          .flatMap(c => [c.fileId, c.normalFileId, c.roughnessFileId, c.metalnessFileId])
-          .filter((id): id is string => Boolean(id))
+        // Discard all temp files from non-selected candidates (all PBR channels + garment GLB).
+        const otherIds = candidateFileIds(candidates.filter(c => c !== currentCandidate))
 
         clearWardrobeCandidates()
 
         void discardPreviewFiles(otherIds)
+
+        void hydrateWardrobe()
 
         setStatusMessage({ type: 'success', text: `「${finalName}」已成功保存并穿戴！` })
         notify({
@@ -231,13 +254,13 @@ export function WardrobeDesignPanel({ onClose }: WardrobeDesignPanelProps): Reac
   }
 
   // Handle candidate discard
-  const handleDiscard = () => {
+  const handleDiscard = (): void => {
     void discardAllPreviewFiles()
     setStatusMessage({ type: 'info', text: '已丢弃候选，恢复当前装扮' })
   }
 
   // Equip existing wardrobe item
-  const handleDeclineGift = async (itemId: number, e: React.MouseEvent) => {
+  const handleDeclineGift = async (itemId: number, e: React.MouseEvent): Promise<void> => {
     e.stopPropagation()
 
     try {
@@ -245,6 +268,7 @@ export function WardrobeDesignPanel({ onClose }: WardrobeDesignPanelProps): Reac
         path: `/api/companion/wardrobe/${itemId}/decline`,
         method: 'PUT'
       })
+      void hydrateWardrobe()
       setStatusMessage({ type: 'success', text: '已谢绝该装扮礼物' })
     } catch (err) {
       setStatusMessage({
@@ -254,7 +278,7 @@ export function WardrobeDesignPanel({ onClose }: WardrobeDesignPanelProps): Reac
     }
   }
 
-  const handleEquipExisting = async (itemId: number) => {
+  const handleEquipExisting = async (itemId: number): Promise<void> => {
     try {
       void discardAllPreviewFiles()
       await window.deskagent.api<WardrobeItem>({
@@ -262,7 +286,8 @@ export function WardrobeDesignPanel({ onClose }: WardrobeDesignPanelProps): Reac
         method: 'PUT',
         body: { item_id: itemId }
       })
-      // wardrobe.updated WS event refreshes $wardrobe + $equippedItem
+      void hydrateWardrobe()
+      // wardrobe.updated WS event refreshes $wardrobe + $equippedItems
       setStatusMessage({ type: 'success', text: '已装备选中的外观' })
     } catch (err) {
       setStatusMessage({
@@ -272,7 +297,7 @@ export function WardrobeDesignPanel({ onClose }: WardrobeDesignPanelProps): Reac
     }
   }
 
-  const handleClose = () => {
+  const handleClose = (): void => {
     if (preview) {
       void discardAllPreviewFiles()
     }
@@ -281,10 +306,7 @@ export function WardrobeDesignPanel({ onClose }: WardrobeDesignPanelProps): Reac
   }
 
   async function discardAllPreviewFiles(): Promise<void> {
-    const ids = $wardrobeCandidates
-      .get()
-      .flatMap(c => [c.fileId, c.normalFileId, c.roughnessFileId, c.metalnessFileId])
-      .filter((id): id is string => Boolean(id))
+    const ids = candidateFileIds($wardrobeCandidates.get())
 
     clearWardrobeCandidates()
 
@@ -337,7 +359,7 @@ export function WardrobeDesignPanel({ onClose }: WardrobeDesignPanelProps): Reac
               <label className="font-medium text-white/90" htmlFor="wardrobe-desc-input">
                 服装描述
               </label>
-              <span className="text-[10px] text-white/40">AI 生成 4 通道 PBR 贴图</span>
+              <span className="text-[10px] text-white/40">AI 自动路由：贴图 / 几何服装 / 挂件</span>
             </div>
             <textarea
               className={`${PERSONA_INPUT_CLASS} resize-none`}
@@ -427,12 +449,12 @@ export function WardrobeDesignPanel({ onClose }: WardrobeDesignPanelProps): Reac
               {generating ? (
                 <>
                   <span className="inline-block animate-spin">⏳</span>
-                  <span>正在设计生成贴图（约 5~15 秒）…</span>
+                  <span>正在生成装扮（贴图数秒，几何服装数分钟）…</span>
                 </>
               ) : (
                 <>
                   <span>✨</span>
-                  <span>{candidates.length > 0 ? '重新生成候选贴图' : '生成贴图'}</span>
+                  <span>{candidates.length > 0 ? '重新生成候选装扮' : '生成装扮'}</span>
                 </>
               )}
             </button>
@@ -531,8 +553,8 @@ export function WardrobeDesignPanel({ onClose }: WardrobeDesignPanelProps): Reac
                   const isPendingGift = item.origin === 'companion' && item.gift_state === 'pending'
 
                   return (
-                    <button
-                      className={`relative flex flex-col items-center gap-1 rounded-lg border p-1.5 text-center text-[10px] transition ${
+                    <div
+                      className={`relative flex cursor-pointer flex-col items-center gap-1 rounded-lg border p-1.5 text-center text-[10px] transition ${
                         isPendingGift
                           ? 'border-amber-400/50 bg-amber-500/10 text-amber-100 hover:border-amber-400'
                           : isCurrent
@@ -541,8 +563,15 @@ export function WardrobeDesignPanel({ onClose }: WardrobeDesignPanelProps): Reac
                       }`}
                       key={item.id}
                       onClick={() => void handleEquipExisting(item.id)}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault()
+                          void handleEquipExisting(item.id)
+                        }
+                      }}
+                      role="button"
+                      tabIndex={0}
                       title={item.gift_reason ? `赠礼初衷: ${item.gift_reason}` : undefined}
-                      type="button"
                     >
                       {isPendingGift && (
                         <button
@@ -575,7 +604,7 @@ export function WardrobeDesignPanel({ onClose }: WardrobeDesignPanelProps): Reac
                       ) : (
                         <span className="text-[8px] text-white/30">定制</span>
                       )}
-                    </button>
+                    </div>
                   )
                 })}
               </div>

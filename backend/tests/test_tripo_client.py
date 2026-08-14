@@ -115,6 +115,27 @@ async def test_create_image_to_model_propagates_optional_kwargs(mock_http):
 
 
 @pytest.mark.asyncio
+async def test_common_kwargs_from_settings_are_valid_call_kwargs(mock_http):
+    """tripo_common_kwargs_from_settings yields call kwargs for endpoint functions."""
+    mock_http.responder = lambda _r: httpx.Response(
+        200, json=_ok({"task_id": "task_kwargs"})
+    )
+    kwargs = tripo_client.tripo_common_kwargs_from_settings()
+    assert "enable_image_autofix" not in kwargs
+    await tripo_client.create_image_to_model("file_x", **kwargs)
+
+    mv_kwargs = tripo_client.tripo_common_kwargs_from_settings(
+        texture_alignment="original_image", orientation="align_image"
+    )
+    await tripo_client.create_multiview_to_model(
+        {"front": "file_f", "right": "file_r"}, **mv_kwargs
+    )
+    mv_body = mock_http.calls[-1][2]
+    assert mv_body["texture_alignment"] == "original_image"
+    assert mv_body["orientation"] == "align_image"
+
+
+@pytest.mark.asyncio
 async def test_create_image_to_model_rejects_empty_token(mock_http):
     """An empty ``image_token`` should raise before any HTTP call."""
     import pytest as _pytest

@@ -728,6 +728,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
   // not on every keystroke (the rule's exhaustive-deps lint can't see the
   // intent).
   const answersRef = useLatestRef(answers)
+  const defaultFullbodyRefSourceRef = useLatestRef(defaultFullbodyRefSource)
 
   // Question text rendered under the input.
   const spokenText = question?.text ?? ''
@@ -999,7 +1000,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
           setDefaultFullbodyRefSource(refDefault)
           // Only set the current selection if the user hasn't manually toggled yet
           // (both start as 'avatar', so if they differ the user already chose).
-          setFullbodyRefSource(prev => (prev === defaultFullbodyRefSource ? refDefault : prev))
+          setFullbodyRefSource(prev => (prev === defaultFullbodyRefSourceRef.current ? refDefault : prev))
         }
 
         if (state?.complete) {
@@ -1092,7 +1093,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
         setVoiceCatalog(r.catalog.voices)
       }
     })()
-  }, [gatewayState, requestGateway, onCompleted, enterHatchingRef])
+  }, [gatewayState, requestGateway, onCompleted, enterHatchingRef, defaultFullbodyRefSourceRef])
 
   // Step 1 — avatar regen: creates a new avatar row, the new id publishes to
   // ``$activeAvatarId`` automatically (via applyPortrait inside the hook).

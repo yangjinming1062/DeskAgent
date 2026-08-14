@@ -82,11 +82,13 @@ backend/
 | LLM provider chain resolver 三层入口（`provider_for_service` / `client_for_service` / `execute_with_fallback`） | 本模块独有 | 本 README §3 |
 | PROVIDER-first 配置 + Tier 1–4 回落链 | 本模块独有（Provider 自注册产物） | 本 README §2 |
 | 工具三层分类（backend / memory / runner） | 本模块独有 | 本 README §2 + backend 代码 |
-| `ModelGenerateRequest.provider` 取值 + 触发条件 | 对 Client | [PROTOCOL.md §1.3](../PROTOCOL.md) |
-| `model.ready` / `model.gen.progress` payload `provider` 字段 | 对 Client | [PROTOCOL.md §1.3](../PROTOCOL.md) |
-| **`model.ready` `provider` 新增 `tripo_image_to_3d`** | 对 Client | [PROTOCOL.md §1.3](../PROTOCOL.md) |
-| **`onboarding.get_state` payload 新增 `fullbody_mode` 字段** | 对 Client | [PROTOCOL.md §1.1](../PROTOCOL.md) |
-| **`[companion] fullbody_mode` 配置 + 单/多视图流水线分支** | 本模块独有 | 本 README §2 + [PROTOCOL.md §1.3](../PROTOCOL.md) |
+| `ModelGenerateRequest.provider` 取值与触发条件 | 对 Client | [PROTOCOL.md §1.1](../PROTOCOL.md) |
+| `model.ready` / `model.gen.progress` payload `provider` 字段 | 对 Client | [PROTOCOL.md §1.2](../PROTOCOL.md) |
+| `model.ready` `provider` 来源标识（`tripo_image_to_3d` / `tripo_multiview_to_3d` / `blender_llm`） | 对 Client | [PROTOCOL.md §1.2](../PROTOCOL.md) |
+| `onboarding.get_state` payload `fullbody_mode` 与 `default_fullbody_reference_source` | 对 Client | [PROTOCOL.md §1.1](../PROTOCOL.md) |
+| `[companion] fullbody_mode` 配置与单/多视图流水线 | 本模块独有 | 本 README §2 + [PROTOCOL.md §1.1](../PROTOCOL.md) |
+| `WardrobeItem` 换装装配契约（`kind` / `slot` / `assembly_json` / `mesh_url`） | 对 Client | [PROTOCOL.md §1.6](../PROTOCOL.md) |
+| `POST /api/companion/wardrobe/preview` / `confirm` 换装路由与入库 | 对 Client | [PROTOCOL.md §1.1](../PROTOCOL.md) |
 
 ## 6. 已知限制
 
@@ -107,4 +109,11 @@ backend/
 | **`interaction_stats` 汇总写门限** | `record_interaction` 用 OR 门限（poke/drag/chat_turn 任一 kind 达到 10 即写汇总），并在 content 序列化 `hour_counts` 供夜间 LLM 反射 |
 | **Blender+LLM 回退管线最坏时长** | 默认 10 轮迭代 × 单次 600s Blender timeout = ~100 分钟一次生成；适合夜间离线场景，不阻塞交互 UI。`blender_llm_max_iterations` / `blender_llm_timeout` 可调 |
 | **Blender+LLM 模型质量** | 无 PBR 纹理（仅纯色 Principled BSDF 材质）、几何为 LLM 自由形式生成——视觉保真度显著低于 Tripo3D。LLM 在迭代内可比 preview vs 种子图 → 持续精修 |
-| **衣柜换装受种子图皮肤可见度约束** | Tripo image-to-3D 仅重建种子图实际可见的皮肤区域；PBR 换装只能迁移已暴露的 albedo/PBR 通道，紧身覆盖款换到露出款会有色差/反光异常，长裙款直接穿模。要解锁任意覆盖度的换装需分离 body/clothing layer（Tripo 不支持，须切 Blender 管线）。 |
+| **贴图换装受种子图皮肤可见度约束** | `kind=texture` 的 PBR 贴图换装受限于 Tripo 重建的皮肤区域——紧身覆盖款换到露出款会有色差/反光异常。`kind=garment` 的几何换装不受此约束（服装是独立 mesh，不走身体纹理迁移）。 |
+| **几何服装管线需 Blender + 较长生成时间** | `kind=garment` / `accessory` 经 LLM→Blender→evaluate 迭代生成几何，单次预览耗时数分钟（受 `blender_llm_max_iterations` × `blender_llm_timeout` 支配）。garment GLB 导出复用身体 armature 保证关节一致，客户端零映射 rebind。 |
+| **换装路由由 LLM 决策而非用户选择** | `POST /api/companion/wardrobe/preview` 接收的描述由一次 LLM 调用分类为 `texture` / `garment` / `accessory` 并同时产出装配元数据（slot / socket / physics），分类失败默认走 `garment`（能力最全的路径）。客户端不暴露 `kind` 字段——用户只输入描述，由后端决定走哪条流水线。路由系统提示词与示例见 [wardrobe_service.py](services/companion/wardrobe_service.py)`_WARDROBE_KIND_CLASSIFIER_SYSTEM`。 |
+| **几何生成"LLM 毛坯 + 确定性后处理"分工** | LLM 只写毛坯几何 + `VG_ANCHOR` 锚点标注（轮廓/风格/锚点位置需要语义理解），贴合/加厚/蒙皮/防穿模全部由确定性 bpy 代码接管（数值几何问题必须可复现可校验）——两者边界 = `_build_garment` 函数。参数表见 [MODEL_SPEC.md §4.2](../docs/MODEL_SPEC.md)。 |
+| **挂件生成跳过后处理四阶段** | accessory 是硬质附件挂到 socket 骨骼，无需贴合/蒙皮/防穿模——scaffold `--kind accessory` 分支直接导出（并在导出前移除导入的身体对象），生成管线只校验 GLB 可解析。 |
+| **socket 从身体 GLB 实际关节名解析** | LLM 看到的骨骼名与 mixamo 导出的 `mixamorig:` 前缀可能不一致——`_resolve_socket` 做精确→去前缀两级匹配，失败按槽位回退默认挂点（Head/RightHand/Spine2），再失败降级为 garment。 |
+| **同槽互斥、异槽并存的多装备** | `equip` 只顶掉同 `assembly_json.slot` 的已装备件；persona outfit 字段镜像全部已装备件描述的拼接（不是单行）。texture 行恒占 `outfit` 槽。 |
+| **几何拟真度天花板** | 几何是程序化/LLM 生成，偏"干净"，达不到扫描级写实；靠图像生成 LLM 的拟真 PBR 贴图抬质感。极端款式（多层蕾丝、镂空）可能生成失败（LLM 毛坯质量方差，靠锚点契约 + 确定性后处理 + 视觉迭代收敛缓解）。 |

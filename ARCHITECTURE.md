@@ -244,7 +244,7 @@ onboarding 产出的结构化角色定义持久化在 Backend 用户维度，作
 - **prompt 增强是读取型操作**——角色定义不被 LLM 改写，LLM 异常向上传播。
 - **3D 模型由 Tripo3D 生成**：以 seed 三视图为输入，经 multiview-to-3D + rig 生成带 PBR 纹理的 rigged GLB，注入 morph targets，动画由客户端 TypeScript 关键帧注入。失败时客户端渲染程序化蛋形兜底角色。
 - **Blender+LLM 回退管线**（当 Tripo3D 不可用时）：LLM 分析三视图→自由形式 bpy 代码→Blender headless 执行→预览渲染对比→迭代精修（默认 10 轮）。Client `provider="blender_llm"` 显式选择启用，或 Tripo key 缺失 / 积分为 0 / 显式余额耗尽时自动启用。模型质量显著低于 Tripo3D（无 PBR 纹理、自由形式几何），仅作 last-resort 兜底；触发条件在 `model.gen.progress` 事件的 `provider` 字段中暴露给客户端。
-- **portrait 重生不触发模型失效**：模型只随物种变更或用户显式请求重生。换外观 = 换装（纹理热替），不重生模型。
+- **portrait 重生不触发模型失效**：模型只随物种变更或用户显式请求重生。换外观 = 换装（`POST /api/companion/wardrobe/preview` 单入口，由一次 LLM 路由决定走贴图热替 `kind=texture`、几何服装 `kind=garment` 或挂件 `kind=accessory`，装配契约见 [PROTOCOL.md §1.6](PROTOCOL.md)），不重生模型。
 - **资产 URL 5 分钟 HMAC 签名**（TTL 与签名细节见 [PROTOCOL.md §1.4](PROTOCOL.md)）：换设备登录需重新生成签名，不能直接分享原 URL；客户端收到后应本地缓存避免重复拉取。
 - **受控再生成**：形象在多次会话间保持稳定。变更只在用户主动要求时发生（重生 portrait / 重生模型 / 换装）。
 

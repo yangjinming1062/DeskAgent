@@ -278,10 +278,13 @@ export function CompanionRoot(): React.JSX.Element {
 
   // Onboarding completion fires the 3D model generation (base_texture
   // provider is instant — model.ready arrives in the same tick and the
-  // engine reloads). Failure is silent: the user can retry from settings.
+  // engine reloads). POST /model is server-side idempotent when the body
+  // model already exists, so a resume-fire here is safe — no client guard
+  // needed. Failure is silent: the user can retry from settings.
   const onOnboardingComplete = () => {
     setOnboardingOpen(false)
     setCompanionLifecycle('ready')
+
     void window.deskagent
       .api<{ id?: number; status?: string }>({ path: '/api/companion/model', method: 'POST', body: {} })
       .catch(err => log.warn('companion', 'initial model generation failed:', err))

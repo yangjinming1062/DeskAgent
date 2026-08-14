@@ -126,7 +126,7 @@ def resolve_companion_asset_path(user_id: int, filename: str) -> tuple[Path, str
     if not filepath.exists():
         return None
     ext = filepath.suffix.lstrip(".").lower()
-    content_type = {"png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg", "webp": "image/webp"}.get(ext, "application/octet-stream")
+    content_type = {"png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg", "webp": "image/webp", "glb": "model/gltf-binary"}.get(ext, "application/octet-stream")
     return filepath, content_type
 
 

@@ -1,7 +1,8 @@
-import { atom } from 'nanostores'
+import { atom, computed } from 'nanostores'
 
 import { isClientErrorIpc } from '@/shared/lib/ipc-error'
 import { log } from '@/shared/lib/log'
+import { safeJsonParse } from '@/shared/lib/safe-json'
 
 import type { ClipDef } from './clips-biped'
 
@@ -41,6 +42,12 @@ export interface WardrobeItem {
   gift_state?: string | null
   gift_reason?: string | null
   gift_message?: string | null
+  // Geometric wardrobe (PROTOCOL.md §1.6). ``slot`` is the backend-resolved
+  // mutual-exclusion slot; absent on client-built preview candidates.
+  kind?: string
+  mesh_url?: string | null
+  assembly_json?: string
+  slot?: string
 }
 
 export interface CompanionExpression {
@@ -81,9 +88,28 @@ export const $modelInfo = atom<ModelInfo>({
 })
 
 export const $wardrobe = atom<WardrobeItem[]>([])
-export const $equippedItem = atom<WardrobeItem | null>(null)
+// Multi-equip: up to one item per slot (outfit / torso / legs / feet / head / …)
+// can be equipped at once; the array holds the full equipped set.
+export const $equippedItems = atom<WardrobeItem[]>([])
 export const $availableClipNames = atom<Set<string>>(new Set())
 export const $generatedClips = atom<ClipDef[]>([])
+
+/** Resolve mutual-exclusion slot from item or assembly_json. */
+export function slotOf(item: WardrobeItem): string {
+  if (item.slot) {
+    return item.slot
+  }
+
+  if ((item.kind ?? 'texture') === 'texture' || !item.mesh_url) {
+    return 'outfit'
+  }
+
+  const asm = safeJsonParse<unknown>(item.assembly_json ?? '{}', {})
+
+  const slot = asm && typeof asm === 'object' && !Array.isArray(asm) ? (asm as { slot?: unknown }).slot : null
+
+  return typeof slot === 'string' && slot ? slot : 'torso'
+}
 
 // ── 换装候选回溯（镜像 $portraitHistory）──
 export interface WardrobeCandidate {
@@ -91,16 +117,24 @@ export interface WardrobeCandidate {
   prompt: string
   fileId: string
   description: string
+  normalUrl?: string
   normalFileId?: string
+  roughnessUrl?: string
   roughnessFileId?: string
+  metalnessUrl?: string
   metalnessFileId?: string
+  // Geometric wardrobe (PROTOCOL.md §1.6).
+  meshUrl?: string
+  meshFileId?: string
+  kind?: string
+  assemblyJson?: string
 }
 
 const _MAX_CANDIDATES = 3
 
 export const $wardrobeCandidates = atom<WardrobeCandidate[]>([])
 export const $wardrobeSelectedIdx = atom<number>(0)
-// 选中候选时设为临时 outfit spec；null 时回退到 $equippedItem
+// 选中候选时设为临时 outfit spec；null 时回退到 $equippedItems
 export const $wardrobePreview = atom<WardrobeItem | null>(null)
 
 // Build the transient WardrobeItem consumed by CharacterController.setOutfit
@@ -112,8 +146,14 @@ function _candidateToPreview(c: WardrobeCandidate): WardrobeItem {
     category: 'draft',
     material_overrides_json: '{}',
     texture_url: c.url,
+    normal_url: c.normalUrl ?? null,
+    roughness_url: c.roughnessUrl ?? null,
+    metalness_url: c.metalnessUrl ?? null,
     prompt: c.prompt,
-    equipped: false
+    equipped: false,
+    kind: c.kind ?? 'texture',
+    mesh_url: c.meshUrl ?? null,
+    assembly_json: c.assemblyJson ?? '{}'
   }
 }
 
@@ -158,14 +198,19 @@ export function setModelInfo(next: Partial<ModelInfo>): void {
   $modelInfo.set({ ...$modelInfo.get(), ...next })
 }
 
+/** Render set: equipped items overlaid with active preview candidate by slot. */
+export const $outfitView = computed([$equippedItems, $wardrobePreview], (equipped, preview) =>
+  preview ? equipped.filter(i => slotOf(i) !== slotOf(preview)).concat(preview) : equipped
+)
+
 export function setWardrobe(items: WardrobeItem[]): void {
   $wardrobe.set(items)
-  $equippedItem.set(items.find(i => i.equipped) ?? null)
+  $equippedItems.set(items.filter(i => i.equipped))
 }
 
-export function refreshEquippedAndApply(): WardrobeItem | null {
-  const equipped = $wardrobe.get().find(i => i.equipped) ?? null
-  $equippedItem.set(equipped)
+export function refreshEquippedAndApply(): WardrobeItem[] {
+  const equipped = $wardrobe.get().filter(i => i.equipped)
+  $equippedItems.set(equipped)
 
   return equipped
 }
@@ -205,7 +250,7 @@ export async function hydrateModel(): Promise<void> {
 }
 
 // Same shape as ``hydrateModel`` — GET /api/companion/wardrobe, publish to
-// ``$wardrobe`` (which also derives ``$equippedItem``). Shared between the
+// ``$wardrobe`` (which also derives ``$equippedItems``). Shared between the
 // lifecycle=ready hydration and the ``wardrobe.updated`` WS event handler.
 export async function hydrateWardrobe(): Promise<void> {
   try {

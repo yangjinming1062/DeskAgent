@@ -1,16 +1,21 @@
 import asyncio
+import json
 from collections.abc import Iterator
+from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlparse
 
 import httpx
-from components import get_file_path, get_logger, is_safe_outbound, safe_json_loads, save_file, temp_file_delete
+from components import get_file_path, get_logger, is_safe_outbound, parse_llm_json, safe_json_loads, save_file, temp_file_delete
 from modules.companion import Persona, WardrobeItem, WardrobePreviewResponse
 from sqlalchemy.orm import Session
 
 from ..llm import build_texture_prompt, chat, is_preset_species
 from ..tools.builtin import first_image_url, image_generation_tool
-from .asset_store import build_data_uri, build_signed_asset_url, save_companion_asset, unlink_companion_asset
+from .asset_store import build_data_uri, build_signed_asset_url, resolve_companion_model_path, save_companion_asset, unlink_companion_asset
+from .avatar_service import get_active_avatar, load_avatar_bytes_as_data_uri
+from .blender_llm_pipeline import _vision_llm_call
+from .garment_service import joint_names_from_gltf, run_garment_pipeline
 from .model_service import get_active_model
 from .outfit_normalizer import normalize_outfit
 from .persona_service import _load_draft, get_or_create_persona, update_outfit_field
@@ -18,17 +23,45 @@ from .rig_type_selector import select_rig_type
 
 logger = get_logger(__name__)
 
+# Companion-assets URL fields on WardrobeItem for re-signing and unlinking.
+_COMPANION_ASSET_URL_ATTRS: tuple[str, ...] = ("texture_url", "normal_url", "roughness_url", "metalness_url", "mesh_url")
+
+# Cache body model joint names to avoid re-reading multi-MB GLBs on each preview.
+_BODY_JOINT_NAMES_CACHE: dict[str, list[str]] = {}
+
+_VALID_SLOTS = {"outfit", "torso", "legs", "feet", "full_body", "head", "hands", "back"}
+_SLOT_TEXTURE = "outfit"
+_DEFAULT_SOCKET_BY_SLOT = {"head": "Head", "hands": "RightHand", "back": "Spine2"}
+_PBR_CHANNELS = ["albedo", "normal", "roughness", "metalness"]
+
+_WARDROBE_KIND_CLASSIFIER_SYSTEM = """\
+You classify user wardrobe-change intent into one of three pipelines and fill its assembly metadata.
+
+- "texture": only color, material, fabric, pattern, or finish changes on the existing silhouette. No new shape. Examples: "换成红色", "换成丝绸质感", "变成豹纹".
+- "garment": changes silhouette or replaces/adds a clothing piece. Examples: "穿一条洛丽塔蓬裙", "换成西装", "披一件斗篷", "换双马丁靴".
+- "accessory": a rigid attachment that hangs on a bone socket — bags, hats, glasses, scarves, wings. Examples: "戴一顶贝雷帽", "背一个棕色皮质背包", "戴圆框眼镜".
+
+Metadata:
+- "slot" — mutual-exclusion slot (same slot replaces, different slots coexist):
+  "outfit" for texture; garment: "torso"|"legs"|"feet"|"full_body"; accessory: "head"|"hands"|"back".
+  A dress covering torso+legs is "full_body". Shoes/socks are "feet". Pants/skirt are "legs".
+- "socket" — accessory only: the bone the item hangs on, chosen from the available bone list
+  (e.g. a handbag → the hand bone; a hat → the head bone; a backpack → the upper-spine bone). null otherwise.
+- "physics" — garment only: "cloth" when it has a flowing hem/loose drape (long skirts, capes, coats, dresses);
+  "skin" when fitted (jackets, shirts, tight clothes, shoes). Accessories are always "skin".
+
+Respond with a single JSON object:
+{"kind": "texture"|"garment"|"accessory", "slot": <str>, "socket": <str|null>, "physics": "skin"|"cloth"}
+No commentary.
+"""
+
 
 class WardrobeSourceExpiredError(Exception):
     """Raised when confirming a wardrobe preview whose temp-media source has expired or is missing."""
 
 
 async def fetch_texture_bytes(url: str) -> bytes | None:
-    """Resolve a generated-asset URL to bytes (local temp-media or remote).
-
-    The local-file branch delegates the disk read to ``asyncio.to_thread``
-    so a multi-MB PNG doesn't stall the event loop while other requests
-    are blocked on it. The remote branch already uses an async client."""
+    """Resolve a generated-asset URL to bytes (local temp-media or remote)."""
     if "/api/media/files/" in url:
         fid = url.rsplit("/", 1)[-1].split("?")[0]
         res = get_file_path(fid)
@@ -57,28 +90,26 @@ async def fetch_texture_bytes(url: str) -> bytes | None:
         return None
 
 
-# All four PBR channel URL fields on WardrobeItem — single source of truth
-# for both re-signing (read path) and unlink-on-delete (write path).
-_PBR_URL_ATTRS: tuple[str, ...] = ("texture_url", "normal_url", "roughness_url", "metalness_url")
-
-
 def _iter_companion_asset_paths(item: WardrobeItem) -> Iterator[tuple[str, str, str]]:
-    """Yield ``(attr_name, uid, filename)`` for every PBR URL on ``item`` that lives under ``companion-assets/``."""
-    for attr in _PBR_URL_ATTRS:
+    """Yield ``(attr_name, uid, filename)`` for every companion-assets URL on ``item`` (PBR channels + garment mesh)."""
+    for attr in _COMPANION_ASSET_URL_ATTRS:
         url = getattr(item, attr, None)
-        if not url or not url.startswith("companion-assets/"):
+        if not url:
             continue
-        # Schema is companion-assets/<uid>/<filename> with no subdirs;
-        # extra slashes silently mis-pair uid / filename and 404 the signed URL.
-        parts = url.split("/", 2)
-        if len(parts) != 3 or "/" in parts[2] or "\\" in parts[2]:
-            continue
-        yield attr, parts[1], parts[2]
+        if url.startswith("companion-assets/"):
+            parts = url.split("/", 2)
+            if len(parts) != 3 or "/" in parts[2] or "\\" in parts[2]:
+                continue
+            yield attr, parts[1], parts[2]
+        elif "/api/companion/asset/" in url:
+            path_part = url.split("/api/companion/asset/", 1)[1].split("?")[0]
+            parts = path_part.split("/", 1)
+            if len(parts) == 2 and "/" not in parts[1] and "\\" not in parts[1]:
+                yield attr, parts[0], parts[1]
 
 
 def _re_sign_texture(item: WardrobeItem) -> None:
-    """Re-sign every companion-assets/ URL on the item so signed URLs are
-    always fresh on read (5-min TTL). Covers the albedo + 3 PBR channels."""
+    """Re-sign all companion-assets URLs on the item (5-min TTL)."""
     for attr, uid, filename in _iter_companion_asset_paths(item):
         setattr(item, attr, build_signed_asset_url(int(uid), filename))
 
@@ -98,19 +129,24 @@ def list_wardrobe(db: Session, user_id: int) -> list[WardrobeItem]:
 
 
 def get_equipped_item(db: Session, user_id: int) -> WardrobeItem | None:
-    item = db.query(WardrobeItem).filter(WardrobeItem.user_id == user_id, WardrobeItem.equipped.is_(True)).one_or_none()
+    """Return the most recently updated equipped item."""
+    equipped = _query_equipped(db, user_id)
+    item = equipped[-1] if equipped else None
     if item:
         _re_sign_texture(item)
     return item
 
 
-async def _resolve_rig_type(db: Session, user_id: int) -> str:
-    """Resolve the companion's rig type for texture prompt selection.
+def get_equipped_items(db: Session, user_id: int) -> list[WardrobeItem]:
+    """All equipped items (multi-equip: up to one per slot), oldest first."""
+    items = _query_equipped(db, user_id)
+    for item in items:
+        _re_sign_texture(item)
+    return items
 
-    Reads the cached ``rig_type`` from an existing CompanionModel row first
-    (free). Falls back to persona-based resolution: preset species skip the
-    LLM call entirely; custom species get a single ``select_rig_type`` call.
-    """
+
+async def _resolve_rig_type(db: Session, user_id: int) -> str:
+    """Resolve the companion's rig type from active model or persona species."""
     model = get_active_model(db, user_id)
     if model and model.rig_type:
         return model.rig_type
@@ -126,38 +162,142 @@ async def _resolve_rig_type(db: Session, user_id: int) -> str:
 
 
 async def generate_wardrobe_item(db: Session, *, user_id: int, name: str, description: str) -> WardrobeItem:
-    # Rig-type-aware PBR texture prompt is constructed directly (no LLM round-trip).
-    # Any provider / network failure bubbles up as a RuntimeError that the API
-    # route maps to 502.
-    rig_type = await _resolve_rig_type(db, user_id)
-    prompt = build_texture_prompt(description=description, rig_type=rig_type)
-    result_json = await image_generation_tool(prompt=prompt, llm_config={}, size="1024x1024", n=1, user_id=user_id)
-    src_url = first_image_url(result_json)
-    if not src_url:
-        raise RuntimeError("Texture generation failed: no URL in provider response")
-
-    data = await fetch_texture_bytes(src_url)
-    if data is None:
-        raise RuntimeError("Texture download failed")
-
-    texture_url = save_companion_asset(data, user_id=user_id, label="wardrobe_texture", ext="png")
-    outfit_desc = await normalize_outfit(chat, raw_input=description, persona_definition=_persona_definition(db, user_id), user_id=user_id, db=db)
-    item = WardrobeItem(user_id=user_id, name=name, category="generated", material_overrides_json="{}", texture_url=texture_url, prompt=description, outfit_description=outfit_desc)
-    db.add(item)
-    db.commit()
-    db.refresh(item)
-    _re_sign_texture(item)
-    return item
+    """Generate a new wardrobe item end-to-end. Routes between geometry and texture
+    pipelines via LLM classifier — see DESIGN.md §1.3."""
+    preview = await preview_wardrobe_outfit(db, user_id=user_id, description=description)
+    return await confirm_wardrobe_item(
+        db,
+        user_id=user_id,
+        file_id=preview.file_id,
+        name=name,
+        prompt=description,
+        normal_file_id=preview.normal_file_id,
+        roughness_file_id=preview.roughness_file_id,
+        metalness_file_id=preview.metalness_file_id,
+        mesh_file_id=preview.mesh_file_id,
+        assembly_json=preview.assembly_json,
+    )
 
 
-async def preview_wardrobe_texture(
+@dataclass
+class WardrobeRouting:
+    kind: str  # texture | garment | accessory
+    slot: str
+    socket: str | None
+    physics: str
+
+    @classmethod
+    def default(cls) -> "WardrobeRouting":
+        """Classifier-failure fallback — the always-capable garment path."""
+        return cls(kind="garment", slot="torso", socket=None, physics="skin")
+
+    def assembly_json(self) -> str:
+        return json.dumps(
+            {
+                "kind": self.kind,
+                "slot": self.slot,
+                "layer": 1,
+                "socket": self.socket,
+                "physics": self.physics,
+                "materials": {"*": {"albedo": True, "normal": True, "roughness": True, "metalness": True}},
+            },
+            ensure_ascii=False,
+        )
+
+
+def _resolve_socket(requested: str | None, slot: str, body_joint_names: list[str]) -> str | None:
+    """Match socket bone name against body skeleton (exact or suffix match)."""
+    if not body_joint_names:
+        return None
+    stripped = [j.split(":")[-1] for j in body_joint_names]
+    for candidate in (requested, _DEFAULT_SOCKET_BY_SLOT.get(slot)):
+        if not candidate:
+            continue
+        if candidate in body_joint_names:
+            return candidate
+        if candidate in stripped:
+            return body_joint_names[stripped.index(candidate)]
+    return None
+
+
+async def _classify_wardrobe_kind(description: str, user_id: int, db: Session | None, body_joint_names: list[str]) -> WardrobeRouting:
+    """Classify description into texture, garment, or accessory routing."""
+    joint_hint = ("Available bones for socket: " + ", ".join(body_joint_names)) if body_joint_names else ""
+    fallback = WardrobeRouting.default()
+    try:
+        raw = await _vision_llm_call(db, user_id, _WARDROBE_KIND_CLASSIFIER_SYSTEM, f"{description}\n\n{joint_hint}", [], response_format={"type": "json_object"})
+        parsed = parse_llm_json(raw) or {}
+        if not isinstance(parsed, dict) or parsed.get("kind") not in ("texture", "garment", "accessory"):
+            return fallback
+
+        kind = parsed["kind"]
+        slot = parsed.get("slot")
+        slot = slot if slot in _VALID_SLOTS else ("outfit" if kind == "texture" else "torso")
+        physics = "cloth" if parsed.get("physics") == "cloth" and kind == "garment" else "skin"
+        socket = _resolve_socket(parsed.get("socket"), slot, body_joint_names) if kind == "accessory" else None
+        if kind == "accessory" and socket is None:
+            # No resolvable socket → degrade to a garment in the nearest slot.
+            kind, slot, physics = "garment", slot if slot != "outfit" else "torso", "skin"
+        return WardrobeRouting(kind=kind, slot=slot, socket=socket, physics=physics)
+    except Exception as exc:
+        logger.info("wardrobe kind classifier failed, defaulting to garment", extra={"error": str(exc)})
+
+    return fallback
+
+
+async def preview_wardrobe_outfit(
     db: Session, *, user_id: int, description: str, image_bytes: bytes | None = None, content_type: str | None = None, feedback: str | None = None
 ) -> WardrobePreviewResponse:
-    rig_type = await _resolve_rig_type(db, user_id)
-    reference_data_uri = build_data_uri(image_bytes, content_type) if image_bytes else None
+    """Route description and generate a wardrobe preview (texture or geometric)."""
+    joints = await _body_joint_names(db, user_id)
+    routing = await _classify_wardrobe_kind(description, user_id, db, joints)
+    logger.info("wardrobe pipeline routed", extra={"user_id": user_id, "kind": routing.kind, "slot": routing.slot})
 
-    channels = ["albedo", "normal", "roughness", "metalness"]
-    prompts = {ch: build_texture_prompt(description=description, feedback=feedback, rig_type=rig_type, channel=ch) for ch in channels}
+    if routing.kind == "texture":
+        return await preview_wardrobe_texture(db, user_id=user_id, description=description, image_bytes=image_bytes, content_type=content_type, feedback=feedback)
+
+    return await preview_garment(
+        db, user_id=user_id, description=description, image_bytes=image_bytes, content_type=content_type, feedback=feedback, routing=routing, body_joint_names=joints
+    )
+
+
+def _read_model_json_chunk(asset_url: str) -> bytes:
+    """Read glTF JSON chunk from a GLB without loading binary buffer payloads."""
+    parts = asset_url.split("/", 2)
+    if len(parts) != 3:
+        raise RuntimeError(f"malformed model asset_url: {asset_url}")
+    resolved = resolve_companion_model_path(int(parts[1]), parts[2])
+    if resolved is None:
+        raise RuntimeError(f"body model file not found: {asset_url}")
+    with open(resolved[0], "rb") as f:
+        f.read(12)  # magic + version + total length
+        chunk_len = int.from_bytes(f.read(4), "little")
+        f.read(4)  # chunk type ('JSON')
+        return f.read(chunk_len)
+
+
+async def _body_joint_names(db: Session, user_id: int) -> list[str]:
+    """Extract active body model skin joint names."""
+    model = get_active_model(db, user_id)
+    if model is None or not model.asset_url:
+        return []
+    cached = _BODY_JOINT_NAMES_CACHE.get(model.asset_url)
+    if cached is not None:
+        return cached
+    try:
+        chunk = await asyncio.to_thread(_read_model_json_chunk, model.asset_url)
+        names = joint_names_from_gltf(json.loads(chunk))
+    except Exception:
+        return []
+    _BODY_JOINT_NAMES_CACHE[model.asset_url] = names
+    return names
+
+
+async def _generate_pbr_channels(
+    *, description: str, feedback: str | None, rig_type: str, reference_data_uri: str | None, user_id: int
+) -> tuple[dict[str, tuple[str, str]], dict[str, str]]:
+    """Generate 4-channel PBR textures concurrently; raises if albedo fails."""
+    prompts = {ch: build_texture_prompt(description=description, feedback=feedback, rig_type=rig_type, channel=ch) for ch in _PBR_CHANNELS}
 
     async def _gen_one(ch: str) -> tuple[str, str] | None:
         try:
@@ -178,42 +318,43 @@ async def preview_wardrobe_texture(
             logger.warning("PBR texture channel generation failed", extra={"channel": ch, "error": str(exc)})
             return None
 
-    results = await asyncio.gather(*[_gen_one(ch) for ch in channels], return_exceptions=True)
-    res_dict: dict[str, tuple[str, str]] = {}
-    for ch, res in zip(channels, results):
-        if isinstance(res, tuple) and res is not None:
-            res_dict[ch] = res
-
+    results = await asyncio.gather(*[_gen_one(ch) for ch in _PBR_CHANNELS], return_exceptions=True)
+    res_dict = {ch: res for ch, res in zip(_PBR_CHANNELS, results) if isinstance(res, tuple)}
     if "albedo" not in res_dict:
         raise RuntimeError("Texture generation failed: no URL in provider response for albedo channel")
+    return res_dict, prompts
 
-    albedo_url, albedo_fid = res_dict["albedo"]
-    norm_url, norm_fid = res_dict["normal"] if "normal" in res_dict else (None, None)
-    rough_url, rough_fid = res_dict["roughness"] if "roughness" in res_dict else (None, None)
-    metal_url, metal_fid = res_dict["metalness"] if "metalness" in res_dict else (None, None)
 
+def _preview_response(res_dict: dict[str, tuple[str, str]], prompts: dict[str, str], **geometric: str | None) -> WardrobePreviewResponse:
+    """Assemble WardrobePreviewResponse from PBR textures and optional geometric fields."""
+    n_url, n_fid = res_dict.get("normal", (None, None))
+    r_url, r_fid = res_dict.get("roughness", (None, None))
+    m_url, m_fid = res_dict.get("metalness", (None, None))
     return WardrobePreviewResponse(
-        url=albedo_url,
+        url=res_dict["albedo"][0],
         prompt=prompts["albedo"],
-        file_id=albedo_fid,
-        normal_url=norm_url,
-        normal_file_id=norm_fid,
-        roughness_url=rough_url,
-        roughness_file_id=rough_fid,
-        metalness_url=metal_url,
-        metalness_file_id=metal_fid,
+        file_id=res_dict["albedo"][1],
+        normal_url=n_url,
+        normal_file_id=n_fid,
+        roughness_url=r_url,
+        roughness_file_id=r_fid,
+        metalness_url=m_url,
+        metalness_file_id=m_fid,
+        **geometric,
     )
 
 
-async def _download_texture_with_mime(url: str) -> tuple[bytes, str, str] | None:
-    """Download a remote texture and return (bytes, content_type, ext).
+async def preview_wardrobe_texture(
+    db: Session, *, user_id: int, description: str, image_bytes: bytes | None = None, content_type: str | None = None, feedback: str | None = None
+) -> WardrobePreviewResponse:
+    rig_type = await _resolve_rig_type(db, user_id)
+    reference_data_uri = build_data_uri(image_bytes, content_type) if image_bytes else None
+    res_dict, prompts = await _generate_pbr_channels(description=description, feedback=feedback, rig_type=rig_type, reference_data_uri=reference_data_uri, user_id=user_id)
+    return _preview_response(res_dict, prompts)
 
-    Local temp-media URLs and remote provider URLs both reuse the SSRF-safe
-    fetcher; the response ``Content-Type`` is forwarded to ``save_file`` so
-    a JPEG returned as PNG-extension on disk isn't served as ``image/png``.
-    Returns ``None`` when the URL is unreachable, returns ``None`` for
-    synthesised file_id paths the local fetcher can resolve.
-    """
+
+async def _download_texture_with_mime(url: str) -> tuple[bytes, str, str] | None:
+    """Download remote texture via SSRF-safe client and detect content type."""
     if "/api/media/files/" in url:
         # Already-resolved temp-media URLs don't go through here — handled above.
         return None
@@ -240,6 +381,64 @@ async def _download_texture_with_mime(url: str) -> tuple[bytes, str, str] | None
         return None
 
 
+def _read_model_bytes(asset_url: str) -> bytes:
+    """Read companion-models/<uid>/<file> GLB bytes from disk."""
+    parts = asset_url.split("/", 2)
+    if len(parts) != 3:
+        raise RuntimeError(f"malformed model asset_url: {asset_url}")
+    resolved = resolve_companion_model_path(int(parts[1]), parts[2])
+    if resolved is None:
+        raise RuntimeError(f"body model file not found: {asset_url}")
+    return resolved[0].read_bytes()
+
+
+async def preview_garment(
+    db: Session,
+    *,
+    user_id: int,
+    description: str,
+    image_bytes: bytes | None = None,
+    content_type: str | None = None,
+    feedback: str | None = None,
+    routing: WardrobeRouting,
+    body_joint_names: list[str] | None = None,
+) -> WardrobePreviewResponse:
+    """Generate geometric unit (garment or accessory) via LLM-Blender pipeline."""
+    model = get_active_model(db, user_id)
+    if model is None or not model.asset_url:
+        raise RuntimeError("没有找到 3D 身体模型，请先生成身体模型")
+    avatar = get_active_avatar(db, user_id)
+    if avatar is None or not avatar.seed_front_url:
+        raise RuntimeError("没有找到种子图，无法为 LLM 提供身体参考")
+    body_glb_bytes, body_preview_uri = await asyncio.gather(
+        asyncio.to_thread(_read_model_bytes, model.asset_url), asyncio.to_thread(load_avatar_bytes_as_data_uri, avatar.seed_front_url)
+    )
+
+    reference_data_uri = build_data_uri(image_bytes, content_type) if image_bytes else None
+    rig_type = model.rig_type or "biped"
+    assembly = routing.assembly_json()
+    # The geometry pipeline (minutes) and PBR fan-out (seconds) are independent.
+    glb_bytes, (res_dict, prompts) = await asyncio.gather(
+        run_garment_pipeline(
+            description=description,
+            body_glb_bytes=body_glb_bytes,
+            body_preview_uri=body_preview_uri,
+            reference_uris=[reference_data_uri] if reference_data_uri else [],
+            rig_type=rig_type,
+            kind=routing.kind,
+            socket=routing.socket,
+            assembly_json=assembly,
+            body_joint_names=body_joint_names,
+            user_id=user_id,
+            db=db,
+        ),
+        _generate_pbr_channels(description=description, feedback=feedback, rig_type=rig_type, reference_data_uri=reference_data_uri, user_id=user_id),
+    )
+
+    mesh_fid, mesh_url = save_file(glb_bytes, session_id="", content_type="model/gltf-binary", ext="glb")
+    return _preview_response(res_dict, prompts, mesh_url=mesh_url, mesh_file_id=mesh_fid, kind=routing.kind, assembly_json=assembly)
+
+
 async def confirm_wardrobe_item(
     db: Session,
     *,
@@ -250,6 +449,8 @@ async def confirm_wardrobe_item(
     normal_file_id: str | None = None,
     roughness_file_id: str | None = None,
     metalness_file_id: str | None = None,
+    mesh_file_id: str | None = None,
+    assembly_json: str | None = None,
     equip: bool = True,
     origin: str = "user",
     gift_state: str | None = None,
@@ -267,7 +468,7 @@ async def confirm_wardrobe_item(
 
     texture_url = save_companion_asset(data, user_id=user_id, label="wardrobe_texture", ext="png")
 
-    async def _resolve_channel(fid: str | None, label: str) -> str | None:
+    async def _resolve_channel(fid: str | None, label: str, ext: str = "png") -> str | None:
         if not fid:
             return None
         cp = get_file_path(fid)
@@ -275,17 +476,28 @@ async def confirm_wardrobe_item(
             return None
         try:
             cdata = await asyncio.to_thread(Path(cp[0]).read_bytes)
-            return save_companion_asset(cdata, user_id=user_id, label=label, ext="png")
+            return save_companion_asset(cdata, user_id=user_id, label=label, ext=ext)
         except OSError:
             return None
 
-    normal_url = await _resolve_channel(normal_file_id, "wardrobe_normal")
-    roughness_url = await _resolve_channel(roughness_file_id, "wardrobe_roughness")
-    metalness_url = await _resolve_channel(metalness_file_id, "wardrobe_metalness")
+    normal_url, roughness_url, metalness_url, mesh_url = await asyncio.gather(
+        _resolve_channel(normal_file_id, "wardrobe_normal"),
+        _resolve_channel(roughness_file_id, "wardrobe_roughness"),
+        _resolve_channel(metalness_file_id, "wardrobe_metalness"),
+        _resolve_channel(mesh_file_id, "wardrobe_mesh", ext="glb"),
+    )
+    # The garment GLB is required when requested — expiry/unreadability must 409,
+    # not silently degrade to a texture row.
+    if mesh_file_id and mesh_url is None:
+        raise WardrobeSourceExpiredError(f"temp-media garment GLB expired or unreadable for file_id {mesh_file_id}")
+    # Geometric units carry their kind in assembly_json (texture|garment|accessory);
+    # mesh-less rows with a stray assembly payload degrade to texture.
+    asm = safe_json_loads(assembly_json, default={}) if assembly_json else {}
+    asm_kind = asm.get("kind") if isinstance(asm, dict) else None
+    kind = asm_kind if mesh_url and asm_kind in ("garment", "accessory") else ("garment" if mesh_url else "texture")
+    final_assembly = assembly_json or "{}"
 
     outfit_desc = await normalize_outfit(chat, raw_input=prompt or name, persona_definition=_persona_definition(db, user_id), user_id=user_id, db=db)
-    if equip:
-        _unequip_all(db, user_id)
 
     item = WardrobeItem(
         user_id=user_id,
@@ -299,24 +511,61 @@ async def confirm_wardrobe_item(
         prompt=prompt,
         outfit_description=outfit_desc,
         equipped=equip,
+        kind=kind,
+        mesh_url=mesh_url,
+        assembly_json=final_assembly,
         origin=origin,
         gift_state=gift_state,
         gift_reason=gift_reason,
         gift_message=gift_message,
     )
+    if equip:
+        _equip(db, item)
     db.add(item)
     db.commit()
     db.refresh(item)
     _re_sign_texture(item)
     if equip:
-        # confirm auto-equips, so sync the outfit description into the persona.
-        update_outfit_field(db, user_id, outfit_desc)
+        _sync_persona_outfit(db, user_id)
     return item
 
 
-def _unequip_all(db: Session, user_id: int) -> None:
-    """Set equipped=False on every wardrobe item belonging to the user."""
-    db.query(WardrobeItem).filter(WardrobeItem.user_id == user_id, WardrobeItem.equipped.is_(True)).update({"equipped": False})
+def slot_of(item: WardrobeItem) -> str:
+    """Resolve mutual-exclusion slot from item kind and assembly metadata."""
+    kind = getattr(item, "kind", None) or "texture"
+    if kind == "texture" or not item.mesh_url:
+        return _SLOT_TEXTURE
+    asm = safe_json_loads(item.assembly_json or "{}", default={})
+    slot = asm.get("slot") if isinstance(asm, dict) else None
+    return slot if isinstance(slot, str) and slot in _VALID_SLOTS else "torso"
+
+
+def _query_equipped(db: Session, user_id: int) -> list[WardrobeItem]:
+    """Equipped rows oldest-first, without read-path side effects (no re-signing)."""
+    return db.query(WardrobeItem).filter(WardrobeItem.user_id == user_id, WardrobeItem.equipped.is_(True)).order_by(WardrobeItem.updated_at).all()
+
+
+def _unequip_slot(db: Session, user_id: int, slot: str, *, exclude_id: int | None = None) -> None:
+    """Unequip existing items occupying the same slot."""
+    equipped = _query_equipped(db, user_id)
+    ids = [i.id for i in equipped if i.id != exclude_id and slot_of(i) == slot]
+    if ids:
+        db.query(WardrobeItem).filter(WardrobeItem.id.in_(ids)).update({"equipped": False}, synchronize_session="fetch")
+
+
+def _equip(db: Session, item: WardrobeItem) -> None:
+    """Equip item with same-slot mutual exclusion and gift state resolution."""
+    _unequip_slot(db, item.user_id, slot_of(item), exclude_id=item.id)
+    item.equipped = True
+    if item.gift_state in ("pending", "declined"):
+        item.gift_state = "accepted"
+
+
+def _sync_persona_outfit(db: Session, user_id: int) -> None:
+    """Sync concatenated descriptions of all equipped items to Persona appearance."""
+    equipped = _query_equipped(db, user_id)
+    desc = "；".join(i.outfit_description for i in equipped if i.outfit_description)
+    update_outfit_field(db, user_id, desc)
 
 
 def discard_wardrobe_preview(file_id: str) -> bool:
@@ -334,15 +583,11 @@ def equip_wardrobe_item(db: Session, user_id: int, item_id: int) -> WardrobeItem
     item = db.query(WardrobeItem).filter(WardrobeItem.user_id == user_id, WardrobeItem.id == item_id).one_or_none()
     if item is None:
         raise ValueError("Wardrobe item not found")
-    _unequip_all(db, user_id)
-    item.equipped = True
-    if item.gift_state in ("pending", "declined"):
-        item.gift_state = "accepted"
+    _equip(db, item)
     db.commit()
     db.refresh(item)
     _re_sign_texture(item)
-    if item.outfit_description:
-        update_outfit_field(db, user_id, item.outfit_description)
+    _sync_persona_outfit(db, user_id)
     return item
 
 
@@ -367,13 +612,13 @@ def delete_wardrobe_item(db: Session, user_id: int, item_id: int) -> bool:
     item = db.query(WardrobeItem).filter(WardrobeItem.user_id == user_id, WardrobeItem.id == item_id).one_or_none()
     if item is None:
         return False
-    paths = [(attr, uid, filename) for attr, uid, filename in _iter_companion_asset_paths(item)]
+    paths = list(_iter_companion_asset_paths(item))
     was_equipped = item.equipped
     db.delete(item)
     db.commit()
-    # Clear the stale outfit description so the LLM doesn't reference deleted clothing.
+    # Refresh the persona outfit field from the surviving equipped set.
     if was_equipped:
-        update_outfit_field(db, user_id, "")
+        _sync_persona_outfit(db, user_id)
     for _attr, uid, filename in paths:
         if unlink_companion_asset(f"companion-assets/{uid}/{filename}") is None:
             logger.warning("Failed to unlink wardrobe asset", extra={"user_id": user_id, "path": f"companion-assets/{uid}/{filename}"})

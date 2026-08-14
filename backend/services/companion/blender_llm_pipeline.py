@@ -3,9 +3,11 @@ import re
 import tempfile
 import textwrap
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
+from typing import Any
 
-from components import SESSION_LOCAL, SETTINGS, get_logger, safe_json_loads
+from components import SESSION_LOCAL, SETTINGS, get_logger, parse_llm_json
 from sqlalchemy.orm import Session
 
 from ..llm import chat, provider_from_config, resolve_vision_chain
@@ -21,8 +23,8 @@ from .model_service import (
     _finalize_generation,
     _inject_morph_targets,
     _mark_generation_failed,
-    _parse_glb_json,
     _rig_naming_for,
+    parse_glb_json,
 )
 from .rig_bone_specs import bone_names, format_bone_tree
 from .rig_type_selector import select_rig_type
@@ -31,8 +33,6 @@ logger = get_logger(__name__)
 
 _SCAFFOLD_PATH = Path(__file__).parent.parent.parent / "assets" / "animations" / "llm_bpy_scaffold.py"
 _BUILD_MARKER = "    __BUILD_BODY__"
-# Read once at import — the scaffold never changes during a process lifetime.
-_SCAFFOLD_TEXT: str | None = None  # lazily loaded on first use (file may not exist in dev)
 
 
 @dataclass
@@ -210,13 +210,8 @@ def _resolve_seeds(view_filenames: dict[str, str]) -> tuple[dict[str, str], dict
     return uris, paths
 
 
-async def _vision_llm_call(db: Session | None, user_id: int, system_prompt: str, text_instruction: str, image_data_uris: list[str]) -> str:
-    """Multimodal LLM call following the ``outfit_normalizer`` pattern.
-
-    Uses the first provider in the vision chain directly (not ``chat()``)
-    because vision requests need raw OpenAI-compatible client access for
-    the ``image_url`` content type.
-    """
+async def _vision_llm_call(db: Session | None, user_id: int, system_prompt: str, text_instruction: str, image_data_uris: list[str], **create_kwargs: object) -> str:
+    """Direct multimodal LLM call using the first resolved vision provider."""
     chain = resolve_vision_chain(db, user_id)
     if not chain:
         raise ModelGenerationError("没有可用的 vision LLM provider，无法分析种子图")
@@ -226,12 +221,12 @@ async def _vision_llm_call(db: Session | None, user_id: int, system_prompt: str,
     if client is None:
         raise MissingLlmConfigError(f"vision provider '{provider.provider_name}' is not OpenAI-compatible")
 
-    content: list = [{"type": "text", "text": text_instruction}]
+    content: list[dict[str, Any]] = [{"type": "text", "text": text_instruction}]
     for uri in image_data_uris:
         content.append({"type": "image_url", "image_url": {"url": uri}})
 
     messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": content}]
-    response = await client.chat.completions.create(model=provider.config.model, messages=messages)
+    response = await client.chat.completions.create(model=provider.config.model, messages=messages, **create_kwargs)
     return (response.choices[0].message.content or "").strip()
 
 
@@ -239,11 +234,7 @@ _FENCE_PATTERN = re.compile(r"^```\w*\n", re.MULTILINE)
 
 
 def _strip_code_fences(text: str) -> str:
-    r"""Remove ```language ... ``` wrappers if the LLM added them.
-
-    Handles ``python``, ``py``, ``Python``, ``PY``, bare fences, and
-    mismatched (opening only) fences — LLM responses vary.
-    """
+    r"""Remove ```language ... ``` wrappers if present."""
     cleaned = text.strip()
     cleaned = _FENCE_PATTERN.sub("", cleaned, count=1)
     if cleaned.endswith("```"):
@@ -279,7 +270,7 @@ async def _llm_evaluate(preview_uri: str, seed_uris: dict[str, str], user_id: in
     instruction = "参考图（前 3 张）与渲染预览图（最后 1 张）对比，输出评估 JSON。"
     images = [seed_uris["front"], seed_uris["right"], seed_uris["back"], preview_uri]
     raw = await _vision_llm_call(db, user_id, _EVAL_SYSTEM_PROMPT, instruction, images)
-    parsed = safe_json_loads(raw, default={})
+    parsed = parse_llm_json(raw) or {}
     return EvaluationResult(
         score=int(parsed.get("score", 0)) if isinstance(parsed, dict) else 0,
         converged=bool(parsed.get("converged", False)) if isinstance(parsed, dict) else False,
@@ -287,43 +278,35 @@ async def _llm_evaluate(preview_uri: str, seed_uris: dict[str, str], user_id: in
     )
 
 
-def _merge_scaffold(llm_code: str) -> str:
-    global _SCAFFOLD_TEXT
-    if _SCAFFOLD_TEXT is None:
-        _SCAFFOLD_TEXT = _SCAFFOLD_PATH.read_text(encoding="utf-8")
-    indented = textwrap.indent(llm_code.strip(), "    ")
-    return _SCAFFOLD_TEXT.replace(_BUILD_MARKER, indented, 1)
+@lru_cache(maxsize=8)
+def _read_scaffold(path: Path) -> str:
+    return path.read_text(encoding="utf-8")
 
 
-async def _execute_blender_script(llm_code: str, seed_paths: dict[str, str], *, render_preview: bool = True) -> BlenderResult:
-    if not _SCAFFOLD_PATH.exists():
-        return BlenderResult(success=False, stderr=f"scaffold not found: {_SCAFFOLD_PATH}")
+def _merge_scaffold(llm_code: str, scaffold_path: Path | None = None, build_marker: str | None = None) -> str:
+    """Substitute LLM function body into scaffold."""
+    path = scaffold_path or _SCAFFOLD_PATH
+    return _read_scaffold(path).replace(build_marker or _BUILD_MARKER, textwrap.indent(llm_code.strip(), "    "), 1)
 
-    merged_script = _merge_scaffold(llm_code)
+
+async def run_blender_scaffold(
+    scaffold_path: Path, llm_code: str, build_marker: str, payload_args: list[str], *, render_preview: bool = True, script_name: str = "build_script.py"
+) -> BlenderResult:
+    """Merge LLM code into scaffold and execute headless Blender."""
+    if not scaffold_path.exists():
+        return BlenderResult(success=False, stderr=f"scaffold not found: {scaffold_path}")
+
+    merged_script = _merge_scaffold(llm_code, scaffold_path, build_marker)
 
     with tempfile.TemporaryDirectory() as tmp:
         tmp_dir = Path(tmp)
-        script_path = tmp_dir / "build_character.py"
+        script_path = tmp_dir / script_name
         glb_path = tmp_dir / "output.glb"
         render_path = tmp_dir / "preview.png"
 
         script_path.write_text(merged_script, encoding="utf-8")
 
-        cmd: list[str] = [
-            "blender",
-            "--background",
-            "--python",
-            str(script_path),
-            "--",
-            "--output",
-            str(glb_path),
-            "--seed-front",
-            seed_paths.get("front", ""),
-            "--seed-right",
-            seed_paths.get("right", ""),
-            "--seed-back",
-            seed_paths.get("back", ""),
-        ]
+        cmd: list[str] = ["blender", "--background", "--python", str(script_path), "--", "--output", str(glb_path), *payload_args]
         if render_preview:
             cmd.extend(["--render-output", str(render_path)])
 
@@ -349,14 +332,21 @@ async def _execute_blender_script(llm_code: str, seed_paths: dict[str, str], *, 
         if not glb_path.exists() or glb_path.stat().st_size < 64:
             return BlenderResult(success=False, stderr="Blender produced no valid GLB output")
 
-        glb_bytes = await asyncio.to_thread(glb_path.read_bytes)
-        preview_bytes = await asyncio.to_thread(render_path.read_bytes) if render_preview and render_path.exists() else None
+        if render_preview and render_path.exists():
+            glb_bytes, preview_bytes = await asyncio.gather(asyncio.to_thread(glb_path.read_bytes), asyncio.to_thread(render_path.read_bytes))
+        else:
+            glb_bytes, preview_bytes = await asyncio.to_thread(glb_path.read_bytes), None
         return BlenderResult(success=True, glb_bytes=glb_bytes, preview_png=preview_bytes)
+
+
+async def _execute_blender_script(llm_code: str, seed_paths: dict[str, str], *, render_preview: bool = True) -> BlenderResult:
+    payload = ["--seed-front", seed_paths.get("front", ""), "--seed-right", seed_paths.get("right", ""), "--seed-back", seed_paths.get("back", "")]
+    return await run_blender_scaffold(_SCAFFOLD_PATH, llm_code, _BUILD_MARKER, payload, render_preview=render_preview, script_name="build_character.py")
 
 
 def _validate_glb(glb_bytes: bytes, required_bones: set[str]) -> list[str]:
     """Return missing-required-bone names (empty = all present)."""
-    gltf = _parse_glb_json(glb_bytes)
+    gltf = parse_glb_json(glb_bytes)
     if gltf is None:
         return ["GLB JSON chunk unparseable"]
 

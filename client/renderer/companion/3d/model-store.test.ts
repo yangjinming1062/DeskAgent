@@ -3,8 +3,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { log } from '@/shared/lib/log'
 
 import {
-  $equippedItem,
+  $equippedItems,
   $modelInfo,
+  $outfitView,
   $wardrobe,
   $wardrobeCandidates,
   $wardrobePreview,
@@ -14,6 +15,7 @@ import {
   hydrateWardrobe,
   pushWardrobeCandidate,
   selectWardrobeCandidate,
+  slotOf,
   type WardrobeItem
 } from './model-store'
 
@@ -129,7 +131,7 @@ describe('hydrateWardrobe', () => {
 
   beforeEach(() => {
     $wardrobe.set([])
-    $equippedItem.set(null)
+    $equippedItems.set([])
     vi.spyOn(log, 'warn').mockImplementation(() => undefined)
   })
 
@@ -145,7 +147,7 @@ describe('hydrateWardrobe', () => {
     await hydrateWardrobe()
 
     expect($wardrobe.get()).toEqual(sample)
-    expect($equippedItem.get()?.id).toBe(2)
+    expect($equippedItems.get().map(i => i.id)).toEqual([2])
     expect(log.warn).not.toHaveBeenCalled()
   })
 
@@ -237,5 +239,96 @@ describe('wardrobe candidates & preview', () => {
     expect($wardrobeCandidates.get()).toEqual([])
     expect($wardrobeSelectedIdx.get()).toBe(0)
     expect($wardrobePreview.get()).toBeNull()
+  })
+})
+
+describe('slotOf and $outfitView', () => {
+  it('identifies item slot correctly', () => {
+    const textureItem: WardrobeItem = {
+      id: 1,
+      name: '材质',
+      category: 'generated',
+      material_overrides_json: '{}',
+      texture_url: 'http://localhost/t.png',
+      equipped: true,
+      kind: 'texture'
+    }
+
+    expect(slotOf(textureItem)).toBe('outfit')
+
+    const garmentItem: WardrobeItem = {
+      id: 2,
+      name: '上衣',
+      category: 'generated',
+      material_overrides_json: '{}',
+      texture_url: null,
+      mesh_url: 'http://localhost/m.glb',
+      equipped: true,
+      kind: 'garment',
+      assembly_json: JSON.stringify({ kind: 'garment', slot: 'torso' })
+    }
+
+    expect(slotOf(garmentItem)).toBe('torso')
+
+    const explicitSlotItem: WardrobeItem = {
+      id: 3,
+      name: '头饰',
+      category: 'generated',
+      material_overrides_json: '{}',
+      texture_url: null,
+      equipped: true,
+      slot: 'head'
+    }
+
+    expect(slotOf(explicitSlotItem)).toBe('head')
+  })
+
+  it('replaces only the matching slot during candidate preview in $outfitView', () => {
+    const torsoItem: WardrobeItem = {
+      id: 1,
+      name: '外套',
+      category: 'generated',
+      material_overrides_json: '{}',
+      texture_url: null,
+      mesh_url: 'http://localhost/torso.glb',
+      equipped: true,
+      kind: 'garment',
+      assembly_json: JSON.stringify({ kind: 'garment', slot: 'torso' })
+    }
+
+    const legsItem: WardrobeItem = {
+      id: 2,
+      name: '裤子',
+      category: 'generated',
+      material_overrides_json: '{}',
+      texture_url: null,
+      mesh_url: 'http://localhost/legs.glb',
+      equipped: true,
+      kind: 'garment',
+      assembly_json: JSON.stringify({ kind: 'garment', slot: 'legs' })
+    }
+
+    $equippedItems.set([torsoItem, legsItem])
+    clearWardrobeCandidates()
+
+    // Without preview, $outfitView equals $equippedItems
+    expect($outfitView.get().map(i => i.name)).toEqual(['外套', '裤子'])
+
+    // Push a candidate for 'torso'
+    pushWardrobeCandidate({
+      url: 'http://localhost/preview_torso.png',
+      fileId: 'fid_torso',
+      description: 'preview torso desc',
+      meshUrl: 'http://localhost/preview_torso.glb',
+      prompt: 'preview torso',
+      assemblyJson: JSON.stringify({ kind: 'garment', slot: 'torso' }),
+      kind: 'garment'
+    })
+
+    // $outfitView should keep legs and replace torso with the preview item
+    const currentView = $outfitView.get()
+    expect(currentView.length).toBe(2)
+    expect(currentView.map(i => slotOf(i))).toEqual(['legs', 'torso'])
+    expect(currentView.find(i => slotOf(i) === 'torso')?.id).toBe(-1)
   })
 })

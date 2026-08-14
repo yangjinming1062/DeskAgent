@@ -30,6 +30,7 @@ from .avatar_service import (
     resolve_uploaded_avatar_path,
 )
 from .blender_llm_pipeline import run_blender_llm_pipeline
+from .garment_service import run_garment_pipeline
 from .interact import InteractResult, interact
 from .interaction_stats import record_interaction
 from .memory_admin import delete_memory, list_memories, memory_counts, update_memory, upsert_slotted_memory
@@ -42,6 +43,7 @@ from .model_service import (
     emit_wardrobe_updated,
     generate_companion_model,
     get_active_model,
+    parse_glb_json,
     recover_stuck_model_generations,
     signed_model_url,
 )
@@ -65,6 +67,7 @@ from .should_act import ALLOWED_ACTIONS, ShouldActResult, should_act
 from .tripo_client import create_multiview_to_model
 from .voice_catalog import design_voice, list_tts_voices, match_user_voice, normalize_voice_language
 from .wardrobe_service import (
+    WardrobeRouting,
     WardrobeSourceExpiredError,
     confirm_wardrobe_item,
     decline_wardrobe_item,
@@ -73,8 +76,12 @@ from .wardrobe_service import (
     equip_wardrobe_item,
     generate_wardrobe_item,
     get_equipped_item,
+    get_equipped_items,
     list_wardrobe,
+    preview_garment,
+    preview_wardrobe_outfit,
     preview_wardrobe_texture,
+    slot_of,
 )
 
 __all__ = [
@@ -92,6 +99,7 @@ __all__ = [
     "ModelGenerationInProgressError",
     "PersonaValidationError",
     "SeedPromptMissingError",
+    "WardrobeRouting",
     "WardrobeSourceExpiredError",
     "analyze_personality_tags",
     "asset_store",
@@ -129,6 +137,7 @@ __all__ = [
     "get_active_model",
     "get_avatar_job_lock",
     "get_equipped_item",
+    "get_equipped_items",
     "get_onboarding_state",
     "get_or_create_persona",
     "get_rig_bones",
@@ -144,7 +153,10 @@ __all__ = [
     "model_response",
     "normalize_outfit",
     "normalize_voice_language",
+    "parse_glb_json",
     "preview_wardrobe_texture",
+    "preview_wardrobe_outfit",
+    "preview_garment",
     "record_interaction",
     "read_user_profile",
     "record_user_profile",
@@ -153,6 +165,7 @@ __all__ = [
     "regenerate_avatar_from_image",
     "recover_stuck_model_generations",
     "run_blender_llm_pipeline",
+    "run_garment_pipeline",
     "resolve_companion_asset_path",
     "resolve_companion_model_path",
     "resolve_uploaded_avatar_path",
@@ -160,6 +173,7 @@ __all__ = [
     "select_rig_type",
     "should_act",
     "signed_model_url",
+    "slot_of",
     "submit_onboarding_field",
     "update_memory",
     "update_outfit_field",

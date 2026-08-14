@@ -95,16 +95,21 @@ def _common_model_kwargs(
 
 
 def tripo_common_kwargs_from_settings(*, model_version: str | None = None, texture_alignment: str | None = None, orientation: str | None = None) -> dict[str, Any]:
-    """Build ``_common_model_kwargs`` from ``SETTINGS`` so the field set can't drift between sites."""
-    return _common_model_kwargs(
-        model_version=model_version if model_version is not None else SETTINGS.tripo_model_version,
-        pbr=True,
-        texture_quality=SETTINGS.tripo_texture_quality,
-        face_limit=SETTINGS.tripo_face_limit or None,
-        enable_autofix=SETTINGS.tripo_enable_autofix,
-        texture_alignment=texture_alignment,
-        orientation=orientation,
-    )
+    """Build common call kwargs for Tripo endpoints from SETTINGS."""
+    kwargs: dict[str, Any] = {
+        "model_version": model_version if model_version is not None else SETTINGS.tripo_model_version,
+        "pbr": True,
+        "texture_quality": SETTINGS.tripo_texture_quality,
+        "face_limit": SETTINGS.tripo_face_limit or None,
+        "enable_autofix": SETTINGS.tripo_enable_autofix,
+    }
+    # Multiview-only framing hints — omitted for the single-image endpoint,
+    # whose signature does not declare them.
+    if texture_alignment is not None:
+        kwargs["texture_alignment"] = texture_alignment
+    if orientation is not None:
+        kwargs["orientation"] = orientation
+    return kwargs
 
 
 async def create_multiview_to_model(

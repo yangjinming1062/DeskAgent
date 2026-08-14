@@ -14,8 +14,8 @@ from services.companion.blender_llm_pipeline import (
 )
 from services.companion.model_service import (
     _is_credits_exhausted_error,
-    _parse_glb_json,
     _should_use_blender_fallback,
+    parse_glb_json,
 )
 from services.companion.rig_bone_specs import RIG_BONE_HIERARCHIES, bone_names, format_bone_tree, get_bone_hierarchy
 
@@ -171,16 +171,16 @@ class TestStripCodeFences:
 class TestGlbValidation:
     def test_parse_valid_glb_json(self):
         glb = _make_glb({"nodes": [{"name": "Hips"}]})
-        parsed = _parse_glb_json(glb)
+        parsed = parse_glb_json(glb)
         assert parsed is not None
         assert parsed["nodes"][0]["name"] == "Hips"
 
     def test_parse_invalid_magic(self):
         bad = b"XXXX" + b"\x00" * 20
-        assert _parse_glb_json(bad) is None
+        assert parse_glb_json(bad) is None
 
     def test_parse_too_short(self):
-        assert _parse_glb_json(b"\x00" * 5) is None
+        assert parse_glb_json(b"\x00" * 5) is None
 
     def test_validate_glb_all_bones_present(self):
         glb = _make_valid_biped_glb()

@@ -2422,7 +2422,9 @@ async def test_model_generation_failure_keeps_previous_model_active(
     import asyncio
 
     with SessionLocal() as db:
-        await generate_companion_model(db, user_id=uid)
+        # force=True: an active succeeded model exists, so this is an explicit
+        # regeneration rather than the idempotent first-time path.
+        await generate_companion_model(db, user_id=uid, force=True)
 
     from services.companion.model_service import _running_model_tasks
 
@@ -2439,6 +2441,79 @@ async def test_model_generation_failure_keeps_previous_model_active(
         prev = db.query(CompanionModel).filter(CompanionModel.id == previous_id).one()
         assert prev.active is True
         assert prev.status == "succeeded"
+
+
+@pytest.mark.asyncio
+async def test_generate_companion_model_is_idempotent_when_model_exists(
+    _patch_db, monkeypatch
+):
+    """Without ``force``, an existing succeeded active model is returned as-is —
+    no new row, no pipeline, no paid provider call. Onboarding-complete can
+    re-fire on resume/re-login and must not burn Tripo credits again."""
+    import json as _json
+
+    from modules.auth import User
+    from modules.companion import AvatarAsset
+    from modules.companion import CompanionModel
+    from modules.companion import Persona
+    from services.companion import generate_companion_model
+
+    _, SessionLocal = _patch_db
+
+    def _must_not_run(*_a, **_kw):
+        raise AssertionError("pipeline must not start when a model already exists")
+
+    monkeypatch.setattr(
+        "services.companion.model_service.resolve_uploaded_avatar_path", _must_not_run
+    )
+
+    with SessionLocal() as db:
+        user = User(
+            username="mgenidem", password_hash=None, is_active=True, can_use=True
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+        db.add(
+            Persona(
+                user_id=user.id,
+                definition_json=_json.dumps({"name": "小光"}),
+                system_prompt_extras="",
+                is_complete=True,
+            )
+        )
+        db.add(
+            AvatarAsset(
+                user_id=user.id,
+                prompt_json='{"source": "test"}',
+                asset_url="companion-avatars/seed.png",
+                seed_front_url="companion-avatars/seed_front.png",
+                seed_right_url="companion-avatars/seed_right.png",
+                seed_back_url="companion-avatars/seed_back.png",
+                active=True,
+            )
+        )
+        existing = CompanionModel(
+            user_id=user.id,
+            status="succeeded",
+            species="人类",
+            asset_url="companion-models/1/old.glb",
+            active=True,
+            has_rig=True,
+            has_morph_targets=True,
+        )
+        db.add(existing)
+        db.commit()
+        db.refresh(existing)
+        uid, existing_id = user.id, existing.id
+
+    with SessionLocal() as db:
+        returned = await generate_companion_model(db, user_id=uid)
+        assert returned.id == existing_id
+
+    with SessionLocal() as db:
+        rows = db.query(CompanionModel).filter(CompanionModel.user_id == uid).all()
+        assert len(rows) == 1, "no additional generation row may be created"
 
 
 @pytest.mark.asyncio
@@ -2696,8 +2771,16 @@ async def test_wardrobe_preview_and_confirm_lifecycle(_patch_db, monkeypatch):
     async def _fake_resolve_rig_type(db, user_id):
         return "biped"
 
+    async def _fake_classify_kind(description, user_id, db, body_joint_names=None):
+        from services.companion.wardrobe_service import WardrobeRouting
+
+        return WardrobeRouting(kind="texture", slot="outfit", socket=None, physics="skin")
+
     monkeypatch.setattr(
         "services.companion.wardrobe_service._resolve_rig_type", _fake_resolve_rig_type
+    )
+    monkeypatch.setattr(
+        "services.companion.wardrobe_service._classify_wardrobe_kind", _fake_classify_kind
     )
 
     async def _fake_img_tool(prompt, reference_image=None, **kwargs):
@@ -3116,6 +3199,78 @@ async def test_companion_gift_creation_and_decline_flow(monkeypatch, _patch_db):
     assert equip_resp.status_code == 200
     assert equip_resp.json()["gift_state"] == "accepted"
     assert equip_resp.json()["equipped"] is True
+
+
+@pytest.mark.asyncio
+async def test_slot_based_multi_equip(_patch_db):
+    """Same-slot items replace each other; different slots coexist; texture
+    items occupy the outfit slot without stripping geometric units."""
+    from modules.auth import User
+    from modules.companion import WardrobeItem
+    from services.companion import equip_wardrobe_item, get_equipped_items
+
+    _, SessionLocal = _patch_db
+    with SessionLocal() as db:
+        user = User(username="slot_equip_user", password_hash=None, is_active=True, can_use=True)
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+        uid = user.id
+
+    def _asm(slot, kind="garment", socket=None, physics="skin"):
+        return json.dumps({"kind": kind, "slot": slot, "layer": 1, "socket": socket, "physics": physics})
+
+    with SessionLocal() as db:
+        def _mk(name, kind, assembly):
+            item = WardrobeItem(
+                user_id=uid, name=name, category="generated", equipped=False, kind=kind,
+                mesh_url="companion-assets/1/m.glb" if kind != "texture" else None,
+                texture_url="companion-assets/1/t.png" if kind == "texture" else None,
+                assembly_json=assembly,
+            )
+            db.add(item)
+            db.commit()
+            db.refresh(item)
+            return item
+
+        torso_a = _mk("夹克", "garment", _asm("torso"))
+        legs = _mk("长裤", "garment", _asm("legs"))
+        hat = _mk("帽子", "accessory", _asm("head", kind="accessory", socket="mixamorig:Head"))
+        texture = _mk("红裙配色", "texture", "{}")
+
+        # Equip legs + hat + torso_a: all different slots → all stay equipped.
+        for item in (legs, hat, torso_a):
+            equip_wardrobe_item(db, uid, item.id)
+        equipped_names = {i.name for i in get_equipped_items(db, uid)}
+        assert equipped_names == {"夹克", "长裤", "帽子"}
+
+        # A new torso garment replaces only the same-slot item.
+        torso_b = _mk("西装", "garment", _asm("torso"))
+        equip_wardrobe_item(db, uid, torso_b.id)
+        equipped_names = {i.name for i in get_equipped_items(db, uid)}
+        assert equipped_names == {"西装", "长裤", "帽子"}
+
+        # A texture item occupies the outfit slot; geometric units coexist.
+        equip_wardrobe_item(db, uid, texture.id)
+        equipped_names = {i.name for i in get_equipped_items(db, uid)}
+        assert equipped_names == {"西装", "长裤", "帽子", "红裙配色"}
+
+
+def test_resolve_socket_exact_suffix_fallback():
+    from services.companion.wardrobe_service import _resolve_socket
+
+    joints = ["mixamorig:Hips", "mixamorig:Spine", "mixamorig:Head", "mixamorig:RightHand"]
+    # Exact match
+    assert _resolve_socket("mixamorig:Head", "head", joints) == "mixamorig:Head"
+    # Suffix match (LLM spec name -> mixamorig bone)
+    assert _resolve_socket("Head", "head", joints) == "mixamorig:Head"
+    assert _resolve_socket("RightHand", "hands", joints) == "mixamorig:RightHand"
+    # Default fallback when requested is None or unknown
+    assert _resolve_socket("UnknownBone", "head", joints) == "mixamorig:Head"
+    assert _resolve_socket(None, "head", joints) == "mixamorig:Head"
+    # Graceful degradation on empty / unmatched joint list (no recursion error)
+    assert _resolve_socket("Head", "head", []) is None
+    assert _resolve_socket(None, "unknown_slot", []) is None
 
 
 # ---------------------------------------------------------------------------

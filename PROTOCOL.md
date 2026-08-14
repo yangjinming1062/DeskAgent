@@ -66,8 +66,8 @@ Backend ↔ Client 同时暴露 JSON-RPC over WebSocket（`/api/chat/ws`）与 H
 | Client → Backend | `POST /api/companion/model` `{species_override?, provider?}` | 触发 3D 模型异步生成 | `fullbody_mode="single"`: 正面单图 → Tripo3D image-to-model + rig;`fullbody_mode="multi"`: 全身三视图 → Tripo3D multiview-to-3D + rig;**或** Blender+LLM 回退管线（见 §1.5）;进度经事件推送;`provider` 默认 `None` (auto-detect),可选 `"tripo"` 显式锁 Tripo 或 `"blender_llm"` 显式锁 Blender 管线 |
 | Client → Backend | `POST /api/companion/avatar` / `/from-image` | 头像半身生成（步 1） | 同步;失败返回 502 + 友好文案,不暴露 provider 原始错误 |
 | Client → Backend | `POST /api/companion/avatar/{avatar_id}/fullbody` | 链式参考生成全身种子图（步 2） | 同步;缺少正面全身 409;头像不存在 404;并发 429;`stage` 与 `view` 互斥必选其一;单视图模式（`fullbody_mode="single"`）下 `stage="aux"` 和 `view="right"/"back"` 被拒绝;可选 `reference_source`（`"avatar"` / `"reference_image"`，默认 `"avatar"`）+ `reference_image`（base64）+ `reference_content_type`：`"reference_image"` 时正面全身图以用户原始参考图为主参考（保留身材/体态），头像自动作为 secondary reference 供 Gemini 双参考融合美化风格;`reference_source="reference_image"` 时 `reference_image` 必填 |
-| Client → Backend | `POST /api/companion/wardrobe/preview` `{description, image?, content_type?, feedback?}` | 换装纹理预览（写 temp-media,不入库） | 同步;返回 `{url, prompt, file_id}`,客户端实时挂到 `$wardrobePreview` 上预热 3D 模型;`file_id` 在 `temp_file_ttl_hours` 内可被 `confirm` 落库 |
-| Client → Backend | `POST /api/companion/wardrobe/confirm` `{file_id, name, prompt?}` | 把预览产物落为 `WardrobeItem` + 自动装备 + emit `wardrobe.updated` | `file_id` 已过期/不存在 409;返回 `WardrobeItemResponse` |
+| Client → Backend | `POST /api/companion/wardrobe/preview` `{description, image?, content_type?, feedback?}` | 换装预览（写 temp-media，不入库）；后端用一次 LLM 路由调用把描述分类为 `texture`（仅改色/材质/图案）、`garment`（改轮廓/新增件）或 `accessory`（包/帽/眼镜等硬质挂件），再下发到对应流水线 | 同步；返回 `WardrobePreviewResponse`，其中 `kind` / `mesh_url` / `mesh_file_id` / `assembly_json` 在走几何流水线时填充（装配语义见 §1.6）；客户端不感知路由决策；`file_id` / `mesh_file_id` 在 `temp_file_ttl_hours` 内可被 `confirm` 落库 |
+| Client → Backend | `POST /api/companion/wardrobe/confirm` `{file_id, name, prompt?, normal_file_id?, roughness_file_id?, metalness_file_id?, mesh_file_id?, assembly_json?}` | 把预览产物落为 `WardrobeItem` + 自动装备（同槽互斥，§1.6）+ emit `wardrobe.updated` | `file_id`/`mesh_file_id` 已过期/不存在 409；返回 `WardrobeItemResponse`(含 `kind` / `mesh_url` / `assembly_json`) |
 
 ### 1.2 事件类型
 
@@ -78,7 +78,7 @@ Backend ↔ Client 同时暴露 JSON-RPC over WebSocket（`/api/chat/ws`）与 H
 | `model.ready` | 3D 模型异步生成就绪 | `{model_id, asset_url, species?, rig_type?, provider?}` (`provider` ∈ `"tripo_image_to_3d"` / `"tripo_multiview_to_3d"` / `"blender_llm"`) | 客户端加载 GLB + 注入 TS 动画 clip + 状态机绑定;`provider` 字段供 UI 标识生成来源（Tripo 单图/多视图 vs LLM 自建模） |
 | `model.gen.progress` | 模型生成中 | `{progress: 0..100, stage, provider?}` (`provider` ∈ `"tripo"` / `"blender_llm"`) | 可选进度展示;`provider` 字段让客户端识别当前是 Tripo 多步流水线还是 Blender+LLM 迭代循环（最坏 ~100 分钟） |
 | `model.failed` | 模型生成失败 | `{error}` | 渲染程序化蛋形兜底角色（无气泡、无错误） |
-| `wardrobe.updated` | 换装产物就绪 | `{texture_url, palette}` | 热替材质/纹理（不动骨骼动画与 morph） |
+| `wardrobe.updated` | 换装产物就绪 | `{}` | 客户端重新拉取 wardrobe 列表；渲染层按 item `kind` 自动分派贴图热替或几何装配（rebind 到身体骨骼）——两者均不动身体骨骼动画与 morph |
 | `video_gen.completed` | 视频生成成功 | `{task_id, url}` | 媒体展示 |
 | `video_gen.failed` | 视频生成失败 | `{task_id, error}` | 用户可见错误 |
 | `reload.mcp` | MCP 配置变更后服务器主动通知 | `{}` | Client 转发给 Runner,Runner 重新加载,再 `tools.sync` 回 backend |
@@ -133,7 +133,7 @@ home / chat / perch / roam / sleep
 |------|----------|-----|
 | portrait 头像/种子图 | `companion-avatars/` | `signed_url_expiry_seconds=300`（5 分钟） |
 | 3D 模型 GLB | `companion-models/` | 5 分钟 |
-| 换装产物（纹理） | `companion-assets/` | 5 分钟 |
+| 换装产物（纹理 + 服装 GLB） | `companion-assets/` | 5 分钟 |
 
 **约束**:URL HMAC 签名（具体算法见实现）;换设备登录需重新生成签名,不能直接分享原 URL;Client 收到后应本地缓存避免重复拉取。
 
@@ -149,6 +149,34 @@ WS JSON-RPC 错误使用标准 JSON-RPC 2.0 错误码（`-32700` 到 `-32603`）
 - `-32603`（内部错误）抛至前端前必须脱敏,严禁包含数据库账号、服务器本地路径等栈帧细节。
 - 21 种 `FailoverReason` 见 [backend/README.md §错误分类管道](backend/README.md),决定恢复策略（退避重试 / 凭证轮换 / 压缩上下文 / 不重试）。
 - 流式 chat 一旦首个 chunk 已发出,任何 provider 失败**不再 fallback**——用户已看到部分输出,切换 provider 只会造成 transcript 截断。
+
+### 1.6 换装单元装配契约
+
+`WardrobeItem.kind ∈ {"texture", "garment", "accessory"}` 由后端路由决定（客户端不发送、不感知路由参数）。几何单元（garment/accessory）的装配语义由 `assembly_json`（DB 列）与服装 GLB `scene.extras["dsh:assembly"]` **双处声明且必须一致**——DB 供列表/装备决策（免解析 GLB），extras 保证 GLB 自描述；冲突时以 DB 为准。
+
+```jsonc
+{
+  "kind": "garment",              // texture | garment | accessory
+  "slot": "torso",                // 互斥槽位：outfit | full_body | torso | legs | feet | head | hands | back
+  "layer": 1,                     // 叠放顺序，越小越贴身；同槽互斥时恒为 1，预留跨槽排序
+  "socket": null,                 // accessory 挂点骨骼名（身体 skeleton 中的实际骨骼名）；garment 恒为 null
+  "physics": "skin",              // skin（蒙皮跟随）| cloth（客户端 verlet 布料摆动）
+  "materials": { "*": { "albedo": true, "normal": true, "roughness": true, "metalness": true } }
+}
+```
+
+**装备语义（多件混搭）**：`equipped` 布尔保留在每行上，但互斥范围是**槽位**——装备一件只顶掉同槽已装备件，异槽并存。`slot` 判定规则：`kind=texture` 恒为 `outfit`；几何单元读 `assembly_json.slot`（缺省 `torso`）。persona 的 outfit 描述字段镜像**全部已装备件**的拼接。
+
+**socket 匹配**：客户端按骨骼名在身体 skeleton 精确匹配，失败时忽略 `mixamorig:` 前缀做后缀匹配；均失败时挂件退化为静态摆放并打告警日志（导出端应视为回归信号）。
+
+**GLB 导出不变量**（违反即客户端装配错位，生成管线负责保证）：
+
+| 单元 | 不变量 |
+|------|--------|
+| garment | `skins[].joints` 骨骼名与顺序与身体 GLB **完全一致**（客户端 rebind 零映射的前提）；无动画、无 morph |
+| accessory | 不含 skins（纯静态 mesh，佩戴点已在导出时对准挂点骨骼位置）；无动画、无 morph |
+
+**降级**：服装/挂件 GLB 载入失败时退化为贴图换装或程序化兜底，不崩溃（沿用 §1.2 `model.ready` 的兜底原则）。
 
 ---
 

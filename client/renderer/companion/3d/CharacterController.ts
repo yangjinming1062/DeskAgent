@@ -7,12 +7,14 @@ import { safeJsonParse } from '@/shared/lib/safe-json'
 import type { ReactionBucket } from '@/shared/types/reactions'
 
 import { resolveClip } from './AnimationMap'
+import { BodyCollider } from './BodyCollider'
 import { resolveEmotionClip, resolveInteractionClip } from './clip-dispatch'
 import { buildClip, type ClipDef } from './clips-biped'
 import { buildClipsForRig, getClipDefs } from './clips-registry'
+import { ClothSolver } from './ClothSolver'
 import { $availableClipNames, type CompanionExpression } from './model-store'
 import { MorphController } from './MorphController'
-import type { LoadedModelInfo } from './types'
+import { type LoadedModelInfo } from './types'
 
 interface ProcParts {
   body: THREE.Mesh
@@ -30,6 +32,44 @@ interface OutfitItem {
   normal_url?: string | null
   roughness_url?: string | null
   metalness_url?: string | null
+  // Geometric wardrobe (PROTOCOL.md §1.6 + companion README §9).
+  kind?: string
+  mesh_url?: string | null
+  assembly_json?: string
+}
+
+interface AssemblySpec {
+  kind: string
+  layer: number
+  socket: string | null
+  physics: string
+}
+
+interface AssembledUnit {
+  group: THREE.Group
+  cloths: ClothSolver[]
+  key: string
+  anchors?: THREE.Group[]
+}
+
+function isTextureItem(item: OutfitItem): boolean {
+  return !item.mesh_url || (item.kind ?? 'texture') === 'texture'
+}
+
+function parseAssembly(item: OutfitItem): AssemblySpec {
+  const parsed = safeJsonParse<unknown>(item.assembly_json ?? '{}', {})
+
+  const asm =
+    parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? (parsed as Partial<Record<keyof AssemblySpec, unknown>>)
+      : {}
+
+  return {
+    kind: typeof asm.kind === 'string' ? asm.kind : (item.kind ?? 'texture'),
+    layer: typeof asm.layer === 'number' ? asm.layer : 1,
+    socket: typeof asm.socket === 'string' ? asm.socket : null,
+    physics: asm.physics === 'cloth' ? 'cloth' : 'skin'
+  }
 }
 
 // Channels the wardrobe pipeline can populate on a WardrobeItem. The keys
@@ -83,6 +123,37 @@ const PBR_TEXTURE_KEYS = [
   'displacementMap'
 ] as const
 
+// Dispose geometry, materials, and textures under an Object3D hierarchy.
+const disposeObjectTree = (root: THREE.Object3D): void => {
+  root.traverse(child => {
+    if (child instanceof THREE.Mesh || child instanceof THREE.Line || child instanceof THREE.LineSegments) {
+      child.geometry?.dispose()
+      const mats = Array.isArray(child.material) ? child.material : [child.material]
+
+      for (const mat of mats) {
+        if (!mat) {
+          continue
+        }
+
+        // Dispose PBR textures before the material — material.dispose() doesn't release GPU texture refs.
+        // currentPbrTex tracks the setOutfit-loaded ones (disposed by the caller); this sweep also covers
+        // GLB-baked textures that live only on materials. dispose() is idempotent.
+        if (mat instanceof THREE.MeshStandardMaterial) {
+          for (const key of PBR_TEXTURE_KEYS) {
+            const tex = getPbrSlot(mat, key)
+
+            if (tex) {
+              tex.dispose()
+            }
+          }
+        }
+
+        mat.dispose()
+      }
+    }
+  })
+}
+
 export class CharacterController {
   private readonly morph = new MorphController()
 
@@ -110,6 +181,12 @@ export class CharacterController {
   // Monotonic epoch so stale textureLoader callbacks (e.g. reverse load-completion order on rapid setOutfit) dispose their texture and bail.
   private textureEpoch = 0
   private readonly textureLoader = new THREE.TextureLoader()
+
+  // Assembled wardrobe units (PROTOCOL.md §1.6): one entry per equipped
+  // geometric item (garment or accessory); texture items apply to the body
+  // root instead and keep no entry here.
+  private units: AssembledUnit[] = []
+  private bodyCollider: BodyCollider | null = null
 
   /** GLB: parse pre-fetched bytes + animations; falls back to procedural on error.
    * Bytes arrive from the renderer's `apiAssetBuffer` IPC (host-stripped + re-based
@@ -199,32 +276,14 @@ export class CharacterController {
 
     this.isProcedural = false
     this.proc = null
-    this.root.traverse(child => {
-      if (child instanceof THREE.Mesh || child instanceof THREE.Line || child instanceof THREE.LineSegments) {
-        child.geometry?.dispose()
-        const mats = Array.isArray(child.material) ? child.material : [child.material]
 
-        for (const mat of mats) {
-          if (!mat) {
-            continue
-          }
+    for (const unit of this.units) {
+      this.disposeUnit(unit)
+    }
 
-          // Dispose PBR textures before the material — material.dispose() doesn't release GPU texture refs.
-          // currentPbrTex tracks the setOutfit-loaded ones (disposed above); this sweep also covers GLB-baked textures that live only on materials. dispose() is idempotent.
-          if (mat instanceof THREE.MeshStandardMaterial) {
-            for (const key of PBR_TEXTURE_KEYS) {
-              const tex = getPbrSlot(mat, key)
-
-              if (tex) {
-                tex.dispose()
-              }
-            }
-          }
-
-          mat.dispose()
-        }
-      }
-    })
+    this.units = []
+    this.bodyCollider = null
+    disposeObjectTree(this.root)
     this.root = new THREE.Group()
   }
 
@@ -325,8 +384,7 @@ export class CharacterController {
     }
   }
 
-  /** Apply body-shape morph parameters (e.g. height, weight, face shape).
-   * Keys are morph target names from the loaded GLB; values are 0.0–1.0. */
+  /** Apply body-shape morph target weights (0.0–1.0). */
   setMorphs(params: Record<string, number>): void {
     this.root.traverse(child => {
       if (!(child instanceof THREE.Mesh)) {
@@ -350,14 +408,69 @@ export class CharacterController {
     })
   }
 
-  /** Hot-swap outfit. A missing PBR channel clears the prior binding so preset items don't show stale textures. */
-  setOutfit(item: OutfitItem): void {
+  /** Apply equipped wardrobe set (texture hot-swap and geometric assembly). */
+  setOutfit(items: readonly OutfitItem[]): void {
     if (this.isProcedural) {
       return
     }
 
-    // Invalidate in-flight loadPbrChannel callbacks from a previous setOutfit.
     this.textureEpoch++
+
+    const textureItem = items.find(isTextureItem) ?? null
+    this.applyTextureOutfit(textureItem)
+
+    const geometric = items
+      .filter(i => !isTextureItem(i))
+      .map(i => ({ item: i, spec: parseAssembly(i) }))
+      .sort((a, b) => a.spec.layer - b.spec.layer)
+
+    const prevByKey = new Map(this.units.map(u => [u.key, u]))
+    const keptKeys = new Set<string>()
+    const seenKeys = new Set<string>()
+
+    for (const { item, spec } of geometric) {
+      const key = item.mesh_url ?? ''
+
+      if (!key || seenKeys.has(key)) {
+        continue
+      }
+
+      seenKeys.add(key)
+
+      if (prevByKey.has(key)) {
+        keptKeys.add(key)
+
+        continue
+      }
+
+      void this.assembleUnit(item, spec)
+    }
+
+    const keptUnits: AssembledUnit[] = []
+
+    for (const [key, unit] of prevByKey) {
+      if (keptKeys.has(key)) {
+        keptUnits.push(unit)
+      } else {
+        this.disposeUnit(unit)
+      }
+    }
+
+    this.units = keptUnits
+  }
+
+  private applyTextureOutfit(item: OutfitItem | null): void {
+    if (item === null) {
+      // No texture item equipped — clear stale body PBR bindings left by the
+      // previous outfit (the stub-object path accidentally also cleared, but
+      // here it's an explicit operation).
+      for (const channel of Object.keys(PBR_CHANNEL_DEFS) as PbrChannel[]) {
+        const def = PBR_CHANNEL_DEFS[channel]
+        this.clearPbrChannel(channel, def.slot)
+      }
+
+      return
+    }
 
     const parsed = safeJsonParse<unknown>(item.material_overrides_json, {})
 
@@ -369,55 +482,322 @@ export class CharacterController {
     const wildcard = overrides['*']
 
     this.root.traverse(child => {
-      if (!(child instanceof THREE.Mesh)) {
+      if (!(child instanceof THREE.Mesh) || this.isUnitDescendant(child)) {
         return
       }
 
-      const mat = child.material as THREE.MeshStandardMaterial
+      const mats = Array.isArray(child.material) ? child.material : [child.material]
 
-      if (!mat?.color) {
-        return
-      }
+      for (const mat of mats) {
+        if (!(mat instanceof THREE.MeshStandardMaterial) || !mat.color) {
+          continue
+        }
 
-      const ov = overrides[child.name] ?? wildcard
+        const ov = overrides[child.name] ?? wildcard
 
-      if (!ov) {
-        return
-      }
+        if (!ov) {
+          continue
+        }
 
-      if (ov.color) {
-        mat.color.set(ov.color)
-      }
+        if (ov.color) {
+          mat.color.set(ov.color)
+        }
 
-      if (ov.roughness !== undefined) {
-        mat.roughness = ov.roughness
-      }
+        if (ov.roughness !== undefined) {
+          mat.roughness = ov.roughness
+        }
 
-      if (ov.metalness !== undefined) {
-        mat.metalness = ov.metalness
+        if (ov.metalness !== undefined) {
+          mat.metalness = ov.metalness
+        }
       }
     })
 
-    for (const channel of Object.keys(PBR_CHANNEL_DEFS) as PbrChannel[]) {
-      const def = PBR_CHANNEL_DEFS[channel]
-      const url = item[def.urlField]
-
-      if (!url) {
-        this.clearPbrChannel(channel, def.slot)
-
-        continue
-      }
-
-      this.loadPbrChannel(url, channel, def.colorSpace, def.slot)
-    }
+    this.bindPbrChannels(item)
   }
 
-  /** Load one PBR channel texture and bind it. Captures ``textureEpoch``; stale callbacks dispose and bail. */
+  private isUnitDescendant(obj: THREE.Object3D): boolean {
+    let cur: THREE.Object3D | null = obj
+
+    while (cur && cur !== this.root) {
+      if (cur.name.startsWith('wardrobe-unit-')) {
+        return true
+      }
+
+      cur = cur.parent
+    }
+
+    return false
+  }
+
+  /** Assemble a geometric unit (garment or accessory). */
+  private async assembleUnit(item: OutfitItem, spec: AssemblySpec): Promise<void> {
+    const epoch = this.textureEpoch
+    const desktop = window.deskagent
+
+    let bytes: ArrayBuffer | null = null
+
+    try {
+      const u8 = await desktop.apiAssetBuffer({ url: item.mesh_url! })
+      bytes = u8.slice().buffer
+    } catch (err) {
+      log.warn('character', 'unit GLB fetch failed:', err)
+
+      return
+    }
+
+    if (epoch < this.textureEpoch || !bytes) {
+      return
+    }
+
+    let gltf: { scene: THREE.Group }
+
+    try {
+      const loader = new GLTFLoader()
+      gltf = await loader.parseAsync(bytes, '')
+    } catch (err) {
+      log.warn('character', 'unit GLB parse failed:', err)
+      this.applyTextureOutfit(item)
+
+      return
+    }
+
+    if (epoch < this.textureEpoch) {
+      disposeObjectTree(gltf.scene)
+
+      return
+    }
+
+    const group = new THREE.Group()
+    group.name = `wardrobe-unit-${spec.kind}`
+    let meshes: THREE.Mesh[] = []
+    const cloths: ClothSolver[] = []
+    const anchors: THREE.Group[] = []
+
+    if (spec.kind === 'accessory') {
+      meshes = this.collectUnitMeshes(gltf.scene, false)
+      const socketBone = spec.socket ? this.findBodyBone(spec.socket) : null
+
+      if (socketBone) {
+        // Parent an anchor to the socket bone, compensated so meshes keep
+        // their authored world placement in rest pose while inheriting bone motion.
+        const anchor = new THREE.Group()
+        anchor.name = `wardrobe-unit-anchor-${spec.kind}`
+
+        socketBone.add(anchor)
+        const bodySkeleton = this.bodySkinnedMesh()?.skeleton
+        const boneIdx = bodySkeleton ? bodySkeleton.bones.indexOf(socketBone) : -1
+
+        if (boneIdx >= 0 && bodySkeleton?.boneInverses[boneIdx]) {
+          anchor.matrix.copy(bodySkeleton.boneInverses[boneIdx])
+        } else {
+          socketBone.updateWorldMatrix(true, false)
+          anchor.matrix.copy(socketBone.matrixWorld).invert()
+        }
+
+        anchor.matrix.decompose(anchor.position, anchor.quaternion, anchor.scale)
+
+        for (const mesh of meshes) {
+          anchor.add(mesh)
+        }
+
+        anchors.push(anchor)
+      } else {
+        log.warn('character', `accessory socket '${spec.socket ?? ''}' not found — attaching statically`)
+
+        for (const mesh of meshes) {
+          group.add(mesh)
+        }
+      }
+    } else {
+      // Garment path: find body SkinnedMesh for skeleton + bindMatrix.
+      const bodyMesh = this.bodySkinnedMesh()
+
+      if (!bodyMesh?.skeleton) {
+        log.warn('character', 'no body SkinnedMesh found for garment rebind')
+        this.applyTextureOutfit(item)
+
+        return
+      }
+
+      const skinned = this.collectUnitMeshes(gltf.scene, true) as THREE.SkinnedMesh[]
+      const bodyBoneNames: string[] = bodyMesh.skeleton.bones.map(b => b.name)
+
+      for (const mesh of skinned) {
+        this.rebindGarmentMesh(mesh, bodyMesh.skeleton, bodyMesh.bindMatrix, bodyBoneNames)
+      }
+
+      if (skinned.length > 0) {
+        // Both cloth and skin units render as plain Meshes (no GPU skinning)
+        // so the CPU-written positions are authoritative. Cloth hands free
+        // vertices to the verlet solver; skin pins every vertex and only
+        // pushes them out of the body surface to stop animation-time clipping.
+        const bodyCollider = spec.physics === 'skin' ? this.ensureBodyCollider(bodyMesh) : null
+        const plain: THREE.Mesh[] = []
+
+        for (const sk of skinned) {
+          const plainMesh = new THREE.Mesh(sk.geometry, sk.material)
+
+          plainMesh.castShadow = true
+          plainMesh.receiveShadow = true
+          plain.push(plainMesh)
+          group.add(plainMesh)
+          cloths.push(
+            new ClothSolver(
+              plainMesh,
+              bodyMesh.skeleton,
+              sk.bindMatrix,
+              spec.physics === 'cloth' ? undefined : { pinAll: true, bodyCollider }
+            )
+          )
+        }
+
+        meshes = plain
+      } else {
+        for (const mesh of skinned) {
+          group.add(mesh)
+        }
+
+        meshes = skinned
+      }
+    }
+
+    this.root.add(group)
+    this.units.push({ group, cloths, key: item.mesh_url ?? '', anchors })
+
+    // Bind PBR textures scoped to the unit's meshes only.
+    this.bindPbrChannels(item, meshes)
+  }
+
+  /** Find first body SkinnedMesh as skeleton and bindMatrix source. */
+  private bodySkinnedMesh(): THREE.SkinnedMesh | null {
+    const skinned: THREE.SkinnedMesh[] = []
+
+    this.root.traverse(child => {
+      if (child instanceof THREE.SkinnedMesh) {
+        skinned.push(child)
+      }
+    })
+
+    return skinned[0] ?? null
+  }
+
+  /** Lazily build the shared body collision proxy, or return the cached one. */
+  private ensureBodyCollider(bodyMesh: THREE.SkinnedMesh): BodyCollider | null {
+    if (this.bodyCollider) {
+      return this.bodyCollider
+    }
+
+    try {
+      this.bodyCollider = new BodyCollider(bodyMesh)
+    } catch (err) {
+      log.warn('character', 'body collision proxy build failed:', err)
+      this.bodyCollider = null
+    }
+
+    return this.bodyCollider
+  }
+
+  /** Collect Mesh / SkinnedMesh leaves from a loaded unit scene; flags shadows. */
+  private collectUnitMeshes(scene: THREE.Object3D, skinnedOnly: boolean): THREE.Mesh[] {
+    const found: THREE.Mesh[] = []
+
+    scene.traverse(child => {
+      if (child instanceof THREE.Mesh && (!skinnedOnly || child instanceof THREE.SkinnedMesh)) {
+        child.castShadow = true
+        child.receiveShadow = true
+        found.push(child)
+      }
+    })
+
+    return found
+  }
+
+  /** Find a bone in the body skeleton by exact or suffix name (mixamorig: tolerant). */
+  private findBodyBone(name: string): THREE.Bone | null {
+    const skeleton = this.bodySkinnedMesh()?.skeleton
+
+    if (!skeleton) {
+      return null
+    }
+
+    const exact = skeleton.bones.find(b => b.name === name)
+
+    if (exact) {
+      return exact
+    }
+
+    const suffix = name.split(':').pop() ?? name
+
+    return skeleton.bones.find(b => (b.name.split(':').pop() ?? b.name) === suffix) ?? null
+  }
+
+  /** Rebind garment SkinnedMesh to body skeleton (zero-mapping or bone name remap). */
+  private rebindGarmentMesh(
+    mesh: THREE.SkinnedMesh,
+    bodySkeleton: THREE.Skeleton,
+    bodyBindMatrix: THREE.Matrix4 | null,
+    bodyBoneNames: string[]
+  ): void {
+    // Defensive: check if joint names match. If not, remap skinIndices.
+    if (!mesh.skeleton) {
+      log.warn('character', 'garment mesh has no skeleton — skipping rebind')
+
+      return
+    }
+
+    const garmentBoneNames: string[] = mesh.skeleton.bones.map(b => b.name)
+
+    const jointsMatch =
+      garmentBoneNames.length === bodyBoneNames.length && garmentBoneNames.every((name, i) => name === bodyBoneNames[i])
+
+    if (!jointsMatch) {
+      log.warn('character', 'garment joint order mismatch — remapping by bone name')
+      const boneIndexMap = new Map<string, number>()
+      bodyBoneNames.forEach((name, i) => boneIndexMap.set(name, i))
+
+      const skinAttr = mesh.geometry.getAttribute('skinIndex')
+
+      if (skinAttr) {
+        const indices = skinAttr.array as unknown as number[]
+
+        for (let i = 0; i < indices.length; i++) {
+          const garmentBoneIdx = indices[i]
+          const boneName = garmentBoneNames[garmentBoneIdx]
+
+          if (boneName !== undefined) {
+            indices[i] = boneIndexMap.get(boneName) ?? 0
+          }
+        }
+
+        skinAttr.needsUpdate = true
+      }
+    }
+
+    mesh.bind(bodySkeleton, bodyBindMatrix ?? undefined)
+    mesh.bindMode = THREE.DetachedBindMode
+  }
+
+  /** Dispose an assembled unit and remove from scene. */
+  private disposeUnit(unit: AssembledUnit): void {
+    if (unit.anchors) {
+      for (const anchor of unit.anchors) {
+        disposeObjectTree(anchor)
+        anchor.parent?.remove(anchor)
+      }
+    }
+
+    disposeObjectTree(unit.group)
+    this.root.remove(unit.group)
+  }
+
+  /** Load and bind a PBR channel texture, optionally scoped to target meshes. */
   private loadPbrChannel(
     url: string,
     channel: PbrChannel,
     colorSpace: THREE.ColorSpace,
-    slot: 'map' | 'normalMap' | 'roughnessMap' | 'metalnessMap'
+    slot: 'map' | 'normalMap' | 'roughnessMap' | 'metalnessMap',
+    targetMeshes?: THREE.Mesh[]
   ): void {
     const epoch = this.textureEpoch
     const desktop = window.deskagent
@@ -449,21 +829,57 @@ export class CharacterController {
         }
 
         tex.colorSpace = colorSpace
+
+        if (targetMeshes) {
+          for (const mesh of targetMeshes) {
+            const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
+
+            for (const m of mats) {
+              if (m instanceof THREE.MeshStandardMaterial) {
+                setPbrSlot(m, slot, tex)
+              }
+            }
+          }
+
+          return
+        }
+
         this.currentPbrTex[channel]?.dispose()
         this.currentPbrTex[channel] = tex
+
         this.root.traverse(child => {
-          if (!(child instanceof THREE.Mesh)) {
+          if (!(child instanceof THREE.Mesh) || this.isUnitDescendant(child)) {
             return
           }
 
-          const m = child.material as THREE.MeshStandardMaterial
+          const mats = Array.isArray(child.material) ? child.material : [child.material]
 
-          if (m) {
-            setPbrSlot(m, slot, tex)
+          for (const m of mats) {
+            if (m instanceof THREE.MeshStandardMaterial) {
+              setPbrSlot(m, slot, tex)
+            }
           }
         })
       })
     })()
+  }
+
+  /** Dispatch and load PBR channel textures for an outfit item. */
+  private bindPbrChannels(item: OutfitItem, targetMeshes?: THREE.Mesh[]): void {
+    for (const channel of Object.keys(PBR_CHANNEL_DEFS) as PbrChannel[]) {
+      const def = PBR_CHANNEL_DEFS[channel]
+      const url = item[def.urlField]
+
+      if (!url) {
+        if (!targetMeshes) {
+          this.clearPbrChannel(channel, def.slot)
+        }
+
+        continue
+      }
+
+      this.loadPbrChannel(url, channel, def.colorSpace, def.slot, targetMeshes)
+    }
   }
 
   private clearPbrChannel(channel: PbrChannel, slot: 'map' | 'normalMap' | 'roughnessMap' | 'metalnessMap'): void {
@@ -475,14 +891,16 @@ export class CharacterController {
     }
 
     this.root.traverse(child => {
-      if (!(child instanceof THREE.Mesh)) {
+      if (!(child instanceof THREE.Mesh) || this.isUnitDescendant(child)) {
         return
       }
 
-      const m = child.material as THREE.MeshStandardMaterial
+      const mats = Array.isArray(child.material) ? child.material : [child.material]
 
-      if (m) {
-        setPbrSlot(m, slot, null)
+      for (const m of mats) {
+        if (m instanceof THREE.MeshStandardMaterial) {
+          setPbrSlot(m, slot, null)
+        }
       }
     })
   }
@@ -503,6 +921,16 @@ export class CharacterController {
     } else {
       // Subtle idle float for GLB characters whose clip may not include it
       this.root.position.y = Math.sin(this.breathPhase * 0.8) * 0.01
+    }
+
+    // Cloth units read the skeleton's bone matrices (updated by the renderer
+    // for the body SkinnedMesh) — one frame of lag, invisible at 60fps.
+    this.bodyCollider?.update()
+
+    for (const unit of this.units) {
+      for (const cloth of unit.cloths) {
+        cloth.update(delta)
+      }
     }
 
     this.applyLookAt()

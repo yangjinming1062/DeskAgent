@@ -155,7 +155,7 @@ def _mark_generation_failed(model_id: int, reason: str) -> None:
         db.commit()
 
 
-async def generate_companion_model(db: Session, *, user_id: int, species_override: str | None = None, provider_override: str | None = None) -> CompanionModel:
+async def generate_companion_model(db: Session, *, user_id: int, species_override: str | None = None, provider_override: str | None = None, force: bool = False) -> CompanionModel:
     """Creates a ``status="generating"`` row immediately and returns it;
     the actual pipeline runs in a background task and emits progress events."""
     persona = get_or_create_persona(db, user_id)
@@ -171,6 +171,13 @@ async def generate_companion_model(db: Session, *, user_id: int, species_overrid
         in_flight = db.query(CompanionModel).filter(CompanionModel.user_id == user_id, CompanionModel.status == "generating").first()
         if in_flight is not None:
             raise ModelGenerationInProgressError("已有 3D 模型生成任务进行中，请稍候再试")
+
+        # Return existing active model idempotently unless force=True.
+        if not force:
+            existing = get_active_model(db, user_id)
+            if existing is not None and existing.status == "succeeded" and existing.asset_url:
+                logger.info("Companion model already exists; skipping generation", extra={"user_id": user_id, "model_id": existing.id})
+                return existing
 
         # Resolve seed image paths.
         avatar = db.query(AvatarAsset).filter(AvatarAsset.user_id == user_id, AvatarAsset.active.is_(True)).one_or_none()
@@ -380,7 +387,7 @@ async def _inject_morph_targets(glb_bytes: bytes) -> bytes:
         return await asyncio.to_thread(out.read_bytes)
 
 
-def _parse_glb_json(glb_data: bytes) -> dict | None:
+def parse_glb_json(glb_data: bytes) -> dict | None:
     """Returns ``None`` on any malformed input (length, magic, chunk header)."""
     if len(glb_data) < 20:
         return None
@@ -399,7 +406,7 @@ def _parse_glb_json(glb_data: bytes) -> dict | None:
 
 
 def _extract_morph_names_from_glb(glb_data: bytes) -> list[str]:
-    gltf = _parse_glb_json(glb_data)
+    gltf = parse_glb_json(glb_data)
     if gltf is None:
         return []
 

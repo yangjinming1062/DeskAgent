@@ -23,9 +23,9 @@
 |----|------|------|
 | **portrait（形象与全身图）** | avatar（半身头像）+ seed（正面全身立绘；多视图模式下另含右/背视角） | avatar：onboarding 身份确认、设置页展示、聊天头像；seed：3D 模型生成的输入 |
 | **3D 模型（rigged GLB）** | glTF 二进制（image-to-model / multiview-to-3D + rig，骨骼动画由客户端注入） | 桌面常驻渲染的唯一形象载体（idle / sleeping / working / speaking / … 全部经实时 3D 驱动） |
-| **换装（wardrobe）** | 材质覆盖（颜色/粗糙度/金属度）+ 可选 PBR 纹理贴图 | 外观定制——颜色预设即时生效、AI 纹理后台生成热替，**零模型重生** |
+| **换装（wardrobe）** | `WardrobeItem(kind ∈ {texture, garment, accessory})`：材质覆盖 + PBR 纹理贴图（`texture`）、独立服装几何 mesh（`garment`）或挂件 mesh（`accessory`）。客户端只发描述，后端用一次 LLM 路由决定走哪条流水线 | 外观定制——贴图热替快路径（仅改色/材质/图案，几秒就绪）或几何装配慢路径（改轮廓/新增件/挂件，数分钟就绪），两者均 **零模型重生** |
 
-伙伴的"身体"由 3D 模型提供，"穿什么"由换装层提供。切换状态 = 切换播放的骨骼动画（§2）；切换情绪 = 切换 morph target 表情；换装 = 热替材质/纹理——三者正交组合，互不阻塞。
+伙伴的"身体"由 3D 模型提供，"穿什么"由换装层提供。切换状态 = 切换播放的骨骼动画（§2）；切换情绪 = 切换 morph target 表情；换装 = 热替材质/纹理或装配几何服装——三者正交组合，互不阻塞。
 
 **模型生成由 Backend 单一路径支撑**（[ARCHITECTURE.md §6.2](ARCHITECTURE.md)）：以全身种子图为输入，经 image-to-model（单视图模式，默认）或 multiview-to-3D（多视图模式）+ rig 生成 rigged GLB，注入 morph targets 后下发。模式由 `[companion] fullbody_mode` 配置决定（`"single"` / `"multi"`，默认 `"single"`）。动画不内嵌 GLB——全部动画 clip 由客户端 TypeScript 骨骼旋转关键帧注入（**动画与模型的事实规范**见 [docs/MODEL_SPEC.md](docs/MODEL_SPEC.md)：骨骼层级、clip 目录、morph target 命名、材质通道、checklist）。生成失败时客户端渲染程序化蛋形兜底角色。
 
@@ -35,14 +35,30 @@
 
 ### 1.3 换装系统
 
-换装是实时 3D 渲染的核心优势——不重生模型即可改变伙伴外观。两层换装通道：
+换装是实时 3D 渲染的核心优势——不重生模型即可改变伙伴外观。形象由三层几何装配而成：
+
+| 层 | 定义 | 动画跟随方式 |
+|----|------|--------------|
+| **身体层** | 现有 rigged GLB（身体 mesh + armature + morph targets），一次性生成、永不因换装重生 | 动画与表情的唯一载体 |
+| **服装层（garment）** | 独立 skinned mesh，叠在身体外、共享身体骨骼——蓬裙、外套等改变轮廓的服装 | 蒙皮跟随骨骼变形 |
+| **挂件层（accessory）** | 独立 mesh，parent 到某根挂点骨骼（socket）——包、帽、眼镜等硬质附件 | 骨骼跟随、不蒙皮 |
+
+切换状态 = 播 clip；切换情绪 = 调 morph；换装 = 装配/卸载 mesh——三者正交组合，互不阻塞。四条换装通道：
 
 | 通道 | 形态 | 成本 | 就绪时机 |
 |------|------|------|----------|
 | **材质预设** | 颜色/粗糙度/金属度覆盖（6 种预设配色） | 零生成 | 立即生效 |
-| **AI 纹理** | image-gen 全身 PBR 纹理贴图 | 一次生图 | 后台异步生成，就绪热替 |
+| **AI 纹理（route=`texture`）** | image-gen 全身 PBR 纹理贴图（仅色/材质/图案变化） | 一次生图 × 4 通道 | 后台异步生成（数秒），就绪热替 |
+| **几何服装（route=`garment`）** | 独立 skinned mesh（LLM 生成几何 + 确定性贴合/蒙皮 + AI 纹理） | LLM+Blender 迭代 | 后台异步生成（数分钟），就绪几何装配 |
+| **挂件（route=`accessory`）** | 独立 mesh 挂到骨骼 socket（LLM 生成几何 + AI 纹理，无蒙皮后处理） | LLM+Blender 迭代 | 后台异步生成（数分钟），就绪挂载 |
 
-换装在客户端是**非破坏性操作**——覆盖材质属性或加载新纹理贴图，不动骨骼动画和 morph targets。换一件衣服不会打断正在播放的任何状态动画。
+**单一入口**：`POST /api/companion/wardrobe/preview` 只接受描述文本。后端用一次 LLM 调用分类描述——"仅改颜色/材质/图案"走 `texture` 流水线（数秒），"改轮廓/新增件"走 `garment` 流水线，"包/帽/眼镜等硬质附件"走 `accessory` 流水线（数分钟）；分类失败时默认走 `garment`（能力最全的路径）。`WardrobeItem.kind` 由实际走的流水线决定。
+
+**多件混搭**：每个换装单元声明一个互斥槽位（`assembly_json.slot`，语义见 [PROTOCOL.md §1.6](PROTOCOL.md)）——同槽互斥（新衣顶掉旧衣），异槽并存（上装 + 下装 + 鞋 + 帽 + 包可同时穿戴）。装配顺序按叠放层级 `layer` 升序，贴身衣物先挂。
+
+**布料物理**：蓬裙 / 斗篷 / 大衣下摆等"流动"服装由路由标记 `physics=cloth`，客户端用轻量 verlet 布料求解裙摆摆动（腰口锚定随骨骼、下摆自由摆动 + 骨骼球碰撞）；合身衣物 `physics=skin` 由 CPU 蒙皮逐帧钉住、并对**身体表面**碰撞推挤（`BodyCollider` 顶点聚类代理）。静止态防穿模由生成管线确定性保证，动画期防穿模由客户端运行时身体碰撞保证。
+
+贴图换装覆盖材质属性或加载新纹理；几何换装加载独立 mesh、rebind 到身体骨骼——两者都是**非破坏性操作**，不动身体 GLB、骨骼动画和 morph targets。换一件衣服不会打断正在播放的任何状态动画。生成链路与装配契约的实现设计见 [backend/README.md](backend/README.md) 与 [client/renderer/companion/README.md](client/renderer/companion/README.md)。
 
 ---
 

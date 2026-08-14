@@ -98,20 +98,18 @@ class CompanionModelResponse(BaseModel):
 class ModelGenerateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    # Optional species override; omitted → species derived from the persona.
     species_override: str | None = Field(default=None, max_length=64)
-    # Optional provider override: "tripo" | "blender_llm" | None (auto-detect).
     provider: Literal["tripo", "blender_llm"] | None = None
+    # False returns existing active model idempotently; True forces paid regeneration.
+    force: bool = False
 
 
 class WardrobeItemResponse(BaseModel):
     id: int
     name: str
     category: str
-    material_overrides_json: str = "{}"
+    material_overrides_json: str
     texture_url: str | None = None
-    # PBR channels paired with ``texture_url`` (albedo). Legacy rows and
-    # colour-preset rows carry ``None`` for all three.
     normal_url: str | None = None
     roughness_url: str | None = None
     metalness_url: str | None = None
@@ -122,12 +120,16 @@ class WardrobeItemResponse(BaseModel):
     gift_state: str | None = None
     gift_reason: str | None = None
     gift_message: str | None = None
+    kind: str = "texture"
+    mesh_url: str | None = None
+    assembly_json: str = "{}"
+    slot: str = "outfit"
 
 
 class WardrobeGenerateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    name: str = Field(min_length=1, max_length=128)
+    name: str = Field(min_length=1, max_length=64)
     description: str = Field(min_length=1, max_length=500)
 
 
@@ -135,7 +137,7 @@ class WardrobePreviewRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     description: str = Field(min_length=1, max_length=500)
-    image: str | None = Field(default=None, max_length=8 * 1024 * 1024)  # base64
+    image: str | None = Field(default=None, max_length=8 * 1024 * 1024)
     content_type: str | None = Field(default=None, max_length=64)
     feedback: str | None = Field(default=None, max_length=500)
 
@@ -150,17 +152,23 @@ class WardrobePreviewResponse(BaseModel):
     roughness_url: str | None = None
     metalness_file_id: str | None = None
     metalness_url: str | None = None
+    mesh_url: str | None = None
+    mesh_file_id: str | None = None
+    kind: str = "texture"
+    assembly_json: str = "{}"
 
 
 class WardrobeConfirmRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     file_id: str = Field(min_length=1, max_length=128)
-    name: str = Field(min_length=1, max_length=128)
+    name: str = Field(min_length=1, max_length=64)
     prompt: str | None = Field(default=None, max_length=500)
     normal_file_id: str | None = Field(default=None, max_length=128)
     roughness_file_id: str | None = Field(default=None, max_length=128)
     metalness_file_id: str | None = Field(default=None, max_length=128)
+    mesh_file_id: str | None = Field(default=None, max_length=128)
+    assembly_json: str | None = Field(default=None, max_length=4096)
 
 
 class WardrobeEquipRequest(BaseModel):

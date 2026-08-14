@@ -2,6 +2,7 @@ from components import safe_json_loads
 from modules.companion import AvatarAsset, AvatarAssetResponse, CompanionModel, CompanionModelResponse, WardrobeItem, WardrobeItemResponse
 
 from services.companion.model_service import signed_model_url
+from services.companion.wardrobe_service import slot_of
 
 
 def avatar_response(asset: AvatarAsset) -> AvatarAssetResponse:
@@ -45,8 +46,12 @@ def wardrobe_response(item: WardrobeItem) -> WardrobeItemResponse:
         prompt=item.prompt,
         outfit_description=item.outfit_description,
         equipped=item.equipped,
-        origin=getattr(item, "origin", "user"),
-        gift_state=getattr(item, "gift_state", None),
-        gift_reason=getattr(item, "gift_reason", None),
-        gift_message=getattr(item, "gift_message", None),
+        origin=item.origin or "user",
+        gift_state=item.gift_state,
+        gift_reason=item.gift_reason,
+        gift_message=item.gift_message,
+        kind=item.kind or "texture",
+        mesh_url=item.mesh_url,
+        assembly_json=item.assembly_json or "{}",
+        slot=slot_of(item),
     )

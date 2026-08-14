@@ -70,6 +70,10 @@ class WardrobeItem(ModelBase, TimestampMixin):
     # Generated at creation time; swapped into Persona.appearance_outfit on equip.
     outfit_description: Mapped[str | None] = mapped_column(Text, nullable=True)
     equipped: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("FALSE"), index=True)
+    # Geometric wardrobe (PROTOCOL.md §1.6): kind ∈ {texture, garment, accessory}.
+    kind: Mapped[str] = mapped_column(String(16), default="texture", server_default=text("'texture'"))
+    mesh_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    assembly_json: Mapped[str] = mapped_column(Text, default="{}", server_default=text("'{}'"))
     origin: Mapped[str] = mapped_column(String(16), default="user", server_default=text("'user'"))
     gift_state: Mapped[str | None] = mapped_column(String(16), nullable=True)
     gift_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
