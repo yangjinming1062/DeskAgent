@@ -49,7 +49,7 @@ Backend ↔ Client 同时暴露 JSON-RPC over WebSocket（`/api/chat/ws`）与 H
 
 | 方向 | 方法 | 用途 | 关键约束 |
 |------|------|------|----------|
-| Client → Backend | `onboarding.get_state` | 查询已采集字段 + 下一个未答问题（断点恢复） | 返回 `is_complete=True` 仅在 `Persona.is_complete` + `is_portrait_confirmed` + `voice` + `user_*` 全部齐后才置位;`next_field` 在形象未确认时根据种子图生成阶段返回 `portrait`、`portrait-fullbody-front`、`portrait-fullbody-right` 或 `portrait-fullbody-back`（单视图模式下正面全身完成后即返回 `portrait-fullbody-front`,不路由 right/back）,确认后按 **voice 先于 user_*** 路由;响应含 `fullbody_mode`（`"single"` / `"multi"`）供客户端决定是否展示侧面/背面阶段 |
+| Client → Backend | `onboarding.get_state` | 查询已采集字段 + 下一个未答问题（断点恢复） | 返回 `is_complete=True` 仅在 `Persona.is_complete` + `is_portrait_confirmed` + `voice` + `user_*` 全部齐后才置位;`next_field` 在形象未确认时根据种子图生成阶段返回 `portrait`、`portrait-fullbody-front`、`portrait-fullbody-right` 或 `portrait-fullbody-back`（单视图模式下正面全身完成后即返回 `portrait-fullbody-front`,不路由 right/back）,确认后按 **voice 先于 user_*** 路由;响应含 `fullbody_mode`（`"single"` / `"multi"`）供客户端决定是否展示侧面/背面阶段;响应含 `default_fullbody_reference_source`（`"avatar"` / `"reference_image"`，preset species 默认 `"avatar"`，非 preset 默认 `"reference_image"`）供客户端设置全身图参考来源的默认值 |
 | Client → Backend | `onboarding.submit` `{field, value}` | 逐字段增量持久化 onboarding 答案 | 答案按子阶段分流——角色子阶段（含 `speaking_style`）触发 `PUT /api/companion/persona`;finalize 后只接受 `voice`（落 draft）与 `user_*`（upsert 到 `Memory` 表） |
 | Client → Backend | `avatar.regenerate` `{feedback?}` | 重生 portrait 头像（不重跑全身） | 不触发 3D 模型失效 |
 | Client → Backend | `tts.match_voice` `{preference}` | 描述句 → voice id（标签评分） | 主流程 |
@@ -65,7 +65,7 @@ Backend ↔ Client 同时暴露 JSON-RPC over WebSocket（`/api/chat/ws`）与 H
 | Client → Backend | `GET /api/companion/model` | 查询当前 3D 模型状态 | `species` / `provider` / `asset_url` |
 | Client → Backend | `POST /api/companion/model` `{species_override?, provider?}` | 触发 3D 模型异步生成 | `fullbody_mode="single"`: 正面单图 → Tripo3D image-to-model + rig;`fullbody_mode="multi"`: 全身三视图 → Tripo3D multiview-to-3D + rig;**或** Blender+LLM 回退管线（见 §1.5）;进度经事件推送;`provider` 默认 `None` (auto-detect),可选 `"tripo"` 显式锁 Tripo 或 `"blender_llm"` 显式锁 Blender 管线 |
 | Client → Backend | `POST /api/companion/avatar` / `/from-image` | 头像半身生成（步 1） | 同步;失败返回 502 + 友好文案,不暴露 provider 原始错误 |
-| Client → Backend | `POST /api/companion/avatar/{avatar_id}/fullbody` | 链式参考生成全身种子图（步 2） | 同步;缺少正面全身 409;头像不存在 404;并发 429;`stage` 与 `view` 互斥必选其一;单视图模式（`fullbody_mode="single"`）下 `stage="aux"` 和 `view="right"/"back"` 被拒绝 |
+| Client → Backend | `POST /api/companion/avatar/{avatar_id}/fullbody` | 链式参考生成全身种子图（步 2） | 同步;缺少正面全身 409;头像不存在 404;并发 429;`stage` 与 `view` 互斥必选其一;单视图模式（`fullbody_mode="single"`）下 `stage="aux"` 和 `view="right"/"back"` 被拒绝;可选 `reference_source`（`"avatar"` / `"reference_image"`，默认 `"avatar"`）+ `reference_image`（base64）+ `reference_content_type`：`"reference_image"` 时正面全身图以用户原始参考图为主参考（保留身材/体态），头像自动作为 secondary reference 供 Gemini 双参考融合美化风格;`reference_source="reference_image"` 时 `reference_image` 必填 |
 | Client → Backend | `POST /api/companion/wardrobe/preview` `{description, image?, content_type?, feedback?}` | 换装纹理预览（写 temp-media,不入库） | 同步;返回 `{url, prompt, file_id}`,客户端实时挂到 `$wardrobePreview` 上预热 3D 模型;`file_id` 在 `temp_file_ttl_hours` 内可被 `confirm` 落库 |
 | Client → Backend | `POST /api/companion/wardrobe/confirm` `{file_id, name, prompt?}` | 把预览产物落为 `WardrobeItem` + 自动装备 + emit `wardrobe.updated` | `file_id` 已过期/不存在 409;返回 `WardrobeItemResponse` |
 

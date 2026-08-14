@@ -377,9 +377,19 @@ async function generatePortrait(reference: PickedImage | null): Promise<{
 async function generateFullbody(
   avatarId: number,
   view: 'front' | 'right' | 'back',
-  feedback?: string
+  feedback?: string,
+  referenceSource?: 'avatar' | 'reference_image',
+  referenceImage?: PickedImage | null
 ): Promise<{ id?: number; seed_front_url?: string; seed_right_url?: string; seed_back_url?: string } | null> {
   try {
+    const body: Record<string, unknown> = { view, feedback }
+
+    if (referenceSource === 'reference_image' && referenceImage) {
+      body.reference_source = 'reference_image'
+      body.reference_image = referenceImage.base64
+      body.reference_content_type = referenceImage.contentType
+    }
+
     const res = await window.deskagent.api<{
       id?: number
       seed_front_url?: string
@@ -388,7 +398,7 @@ async function generateFullbody(
     }>({
       path: `/api/companion/avatar/${avatarId}/fullbody`,
       method: 'POST',
-      body: { view, feedback }
+      body
     })
 
     return res
@@ -437,6 +447,35 @@ function RegenFeedbackInput(): React.JSX.Element {
       rows={2}
       value={value}
     />
+  )
+}
+
+/** Toggle for choosing the fullbody front-view reference source.
+ * Only rendered when the user has uploaded a reference image. */
+function FullbodyRefSourceToggle({
+  value,
+  onChange
+}: {
+  value: 'avatar' | 'reference_image'
+  onChange: (v: 'avatar' | 'reference_image') => void
+}): React.JSX.Element {
+  const btnClass = (active: boolean) =>
+    `rounded-full border px-3 py-0.5 transition ${active ? 'border-white/60 bg-white/20 text-white' : 'border-white/20 text-white/50 hover:bg-white/10'}`
+
+  return (
+    <div className="flex items-center gap-2 text-xs">
+      <span className="text-[10px] text-white/35">全身图参考</span>
+      <button className={btnClass(value === 'avatar')} onClick={() => onChange('avatar')} type="button">
+        基于头像
+      </button>
+      <button
+        className={btnClass(value === 'reference_image')}
+        onClick={() => onChange('reference_image')}
+        type="button"
+      >
+        基于参考图
+      </button>
+    </div>
   )
 }
 
@@ -535,8 +574,17 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
   // transient regen aid, not a persistent identity asset.
   const [presentationRef, setPresentationRef] = useState<PickedImage | null>(null)
 
+  // Fullbody reference source: 'avatar' (bust portrait) or 'reference_image'
+  // (user's original upload).  Only meaningful when refImage exists — without
+  // a reference image the backend always uses the avatar.
+  const [defaultFullbodyRefSource, setDefaultFullbodyRefSource] = useState<'avatar' | 'reference_image'>('avatar')
+  const [fullbodyRefSource, setFullbodyRefSource] = useState<'avatar' | 'reference_image'>('avatar')
+
   const updateRefImage = (img: PickedImage | null) => {
     setRefImage(img)
+    // Reset to backend default when the reference image changes — the user's
+    // previous manual toggle was for a different (or absent) reference image.
+    setFullbodyRefSource(defaultFullbodyRefSource)
     void saveDraftRefImage(img)
   }
 
@@ -928,6 +976,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
           next_field?: string | null
           complete?: boolean
           fullbody_mode?: 'single' | 'multi'
+          default_fullbody_reference_source?: 'avatar' | 'reference_image'
         }>('onboarding.get_state', {})
 
         if (state?.fullbody_mode) {
@@ -937,6 +986,15 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
           const next: 'single' | 'multi' = state.fullbody_mode
 
           setFullbodyMode(next)
+        }
+
+        if (state?.default_fullbody_reference_source) {
+          const refDefault = state.default_fullbody_reference_source
+
+          setDefaultFullbodyRefSource(refDefault)
+          // Only set the current selection if the user hasn't manually toggled yet
+          // (both start as 'avatar', so if they differ the user already chose).
+          setFullbodyRefSource(prev => (prev === defaultFullbodyRefSource ? refDefault : prev))
         }
 
         if (state?.complete) {
@@ -1075,7 +1133,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
     let res: { id?: number; seed_front_url?: string; seed_right_url?: string; seed_back_url?: string } | null = null
 
     try {
-      res = await retryTransient(() => generateFullbody(idAtCall, view, feedback), 1500, 2)
+      res = await retryTransient(() => generateFullbody(idAtCall, view, feedback, fullbodyRefSource, refImage), 1500, 2)
     } catch {
       res = null
     } finally {
@@ -1540,6 +1598,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
                         </>
                       )}
                     </div>
+                    {refImage && <FullbodyRefSourceToggle onChange={setFullbodyRefSource} value={fullbodyRefSource} />}
                   </div>
                   <div className="mt-3 flex items-center justify-between text-xs">
                     <div className="flex gap-3">
@@ -1585,6 +1644,11 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
               ) : (
                 <>
                   <RegenFeedbackInput />
+                  {refImage && (
+                    <div className="mt-2">
+                      <FullbodyRefSourceToggle onChange={setFullbodyRefSource} value={fullbodyRefSource} />
+                    </div>
+                  )}
                   <div className="mt-3 flex items-center justify-between text-xs">
                     <div className="flex gap-3">
                       <button

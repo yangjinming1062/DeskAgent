@@ -169,7 +169,7 @@ def test_onboarding_incremental_persistence_and_recovery(_patch_db):
     with SessionLocal() as db:
         # Fresh user: no answers, next field is the first question.
         state = get_onboarding_state(db, 100)
-        assert state == {"answers": {}, "next_field": "name", "complete": False, "fullbody_mode": "single"}
+        assert state == {"answers": {}, "next_field": "name", "complete": False, "fullbody_mode": "single", "default_fullbody_reference_source": "reference_image"}
 
         # Submit one field — it persists immediately.
         state = submit_onboarding_field(db, 100, "name", "小光")
@@ -3116,3 +3116,272 @@ async def test_companion_gift_creation_and_decline_flow(monkeypatch, _patch_db):
     assert equip_resp.status_code == 200
     assert equip_resp.json()["gift_state"] == "accepted"
     assert equip_resp.json()["equipped"] is True
+
+
+# ---------------------------------------------------------------------------
+# Fullbody reference source: avatar vs. user's original reference image
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_generate_fullbody_reference_image_source(monkeypatch, _patch_db, set_fullbody_mode):
+    """reference_source='reference_image' uses the uploaded image as primary
+    and the bust avatar as secondary (for Gemini dual-ref beautification)."""
+    set_fullbody_mode("multi")
+
+    import json as _json
+
+    from modules.auth import User
+    from modules.companion import AvatarAsset
+    from services.companion import avatar_service
+
+    _, SessionLocal = _patch_db
+    all_calls: list[dict] = []
+
+    async def fake_gen(**kwargs):
+        all_calls.append(kwargs)
+        return _json.dumps({"success": True, "urls": ["http://provider/fullbody.png"]})
+
+    async def fake_download(url):
+        return b"\x89PNG\r\n\x1a\n", "image/png"
+
+    async def fake_select_rig(chat, species, db=None, user_id=None):
+        return "biped"
+
+    monkeypatch.setattr(avatar_service, "image_generation_tool", fake_gen)
+    monkeypatch.setattr(avatar_service, "_download_to_bytes", fake_download)
+    monkeypatch.setattr(avatar_service, "select_rig_type", fake_select_rig)
+
+    with SessionLocal() as db:
+        user = User(username="refsrc", password_hash=None, is_active=True, can_use=True)
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+
+        bare_path, _, _ = await avatar_service._persist_portrait_bytes(
+            b"\x89PNG\r\n\x1a\n", "image/png"
+        )
+        asset = AvatarAsset(
+            user_id=user.id,
+            prompt_json=_json.dumps({"prompt": "bust", "avatar_prompt": "bust"}),
+            asset_url=bare_path,
+            seed_front_url="",
+            seed_right_url="",
+            seed_back_url="",
+            active=True,
+        )
+        db.add(asset)
+        db.commit()
+        db.refresh(asset)
+
+        fake_b64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB"
+        await avatar_service.generate_fullbody(
+            db,
+            user_id=user.id,
+            avatar_id=asset.id,
+            stage="front",
+            reference_source="reference_image",
+            reference_image=fake_b64,
+            reference_content_type="image/png",
+        )
+
+        assert len(all_calls) == 1
+        call = all_calls[0]
+        # Primary reference is the uploaded image
+        assert call["reference_image"] == f"data:image/png;base64,{fake_b64}"
+        # Secondary reference is the bust avatar (for beautification)
+        assert call["secondary_reference_image"] is not None
+        assert call["secondary_reference_image"].startswith("data:image/png;base64,")
+
+
+@pytest.mark.asyncio
+async def test_generate_fullbody_avatar_source_no_secondary(monkeypatch, _patch_db, set_fullbody_mode):
+    """reference_source='avatar' (default) uses the bust avatar as primary
+    and does NOT set a secondary reference."""
+    set_fullbody_mode("multi")
+
+    import json as _json
+
+    from modules.auth import User
+    from modules.companion import AvatarAsset
+    from services.companion import avatar_service
+
+    _, SessionLocal = _patch_db
+    all_calls: list[dict] = []
+
+    async def fake_gen(**kwargs):
+        all_calls.append(kwargs)
+        return _json.dumps({"success": True, "urls": ["http://provider/fullbody.png"]})
+
+    async def fake_download(url):
+        return b"\x89PNG\r\n\x1a\n", "image/png"
+
+    async def fake_select_rig(chat, species, db=None, user_id=None):
+        return "biped"
+
+    monkeypatch.setattr(avatar_service, "image_generation_tool", fake_gen)
+    monkeypatch.setattr(avatar_service, "_download_to_bytes", fake_download)
+    monkeypatch.setattr(avatar_service, "select_rig_type", fake_select_rig)
+
+    with SessionLocal() as db:
+        user = User(username="avatarref", password_hash=None, is_active=True, can_use=True)
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+
+        bare_path, _, _ = await avatar_service._persist_portrait_bytes(
+            b"\x89PNG\r\n\x1a\n", "image/png"
+        )
+        asset = AvatarAsset(
+            user_id=user.id,
+            prompt_json=_json.dumps({"prompt": "bust", "avatar_prompt": "bust"}),
+            asset_url=bare_path,
+            seed_front_url="",
+            seed_right_url="",
+            seed_back_url="",
+            active=True,
+        )
+        db.add(asset)
+        db.commit()
+        db.refresh(asset)
+
+        await avatar_service.generate_fullbody(
+            db, user_id=user.id, avatar_id=asset.id, stage="front"
+        )
+
+        assert len(all_calls) == 1
+        call = all_calls[0]
+        # Primary reference is the bust avatar
+        assert call["reference_image"].startswith("data:image/png;base64,")
+        # No secondary reference in avatar mode
+        assert call["secondary_reference_image"] is None
+
+
+@pytest.mark.asyncio
+async def test_generate_fullbody_reference_image_ignored_for_aux(monkeypatch, _patch_db, set_fullbody_mode):
+    """reference_source='reference_image' has no effect on right/back views —
+    they always use the front seed as reference, with no secondary."""
+    set_fullbody_mode("multi")
+
+    import json as _json
+
+    from modules.auth import User
+    from modules.companion import AvatarAsset
+    from services.companion import avatar_service
+
+    _, SessionLocal = _patch_db
+    all_calls: list[dict] = []
+
+    async def fake_gen(**kwargs):
+        all_calls.append(kwargs)
+        return _json.dumps({"success": True, "urls": ["http://provider/fullbody.png"]})
+
+    async def fake_download(url):
+        return b"\x89PNG\r\n\x1a\n", "image/png"
+
+    async def fake_select_rig(chat, species, db=None, user_id=None):
+        return "biped"
+
+    monkeypatch.setattr(avatar_service, "image_generation_tool", fake_gen)
+    monkeypatch.setattr(avatar_service, "_download_to_bytes", fake_download)
+    monkeypatch.setattr(avatar_service, "select_rig_type", fake_select_rig)
+
+    with SessionLocal() as db:
+        user = User(username="auxref", password_hash=None, is_active=True, can_use=True)
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+
+        bare_path, _, _ = await avatar_service._persist_portrait_bytes(
+            b"\x89PNG\r\n\x1a\n", "image/png"
+        )
+        asset = AvatarAsset(
+            user_id=user.id,
+            prompt_json=_json.dumps({"prompt": "bust", "avatar_prompt": "bust"}),
+            asset_url=bare_path,
+            seed_front_url="",
+            seed_right_url="",
+            seed_back_url="",
+            active=True,
+        )
+        db.add(asset)
+        db.commit()
+        db.refresh(asset)
+
+        # First generate front (so aux has a seed to reference)
+        await avatar_service.generate_fullbody(
+            db, user_id=user.id, avatar_id=asset.id, stage="front",
+            reference_source="reference_image",
+            reference_image="iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB",
+            reference_content_type="image/png",
+        )
+        all_calls.clear()
+
+        # Aux views — reference_source should be ignored
+        await avatar_service.generate_fullbody(
+            db, user_id=user.id, avatar_id=asset.id, stage="aux",
+            reference_source="reference_image",
+            reference_image="iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB",
+            reference_content_type="image/png",
+        )
+
+        assert len(all_calls) == 2
+        for call in all_calls:
+            # Right/back use the front seed, not the uploaded image
+            assert call["reference_image"].startswith("data:image/png;base64,")
+            assert call["reference_image"] != "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB"
+            # No secondary for aux views
+            assert call["secondary_reference_image"] is None
+
+
+def test_fullbody_request_schema_reference_source_validation():
+    """FullbodyGenerateRequest rejects reference_source='reference_image' without a reference_image."""
+    from pydantic import ValidationError
+
+    from modules.companion.schemas import FullbodyGenerateRequest
+
+    # Default reference_source is 'avatar' — no reference_image needed
+    req = FullbodyGenerateRequest(stage="front")
+    assert req.reference_source == "avatar"
+
+    # reference_source='reference_image' with image — OK
+    req = FullbodyGenerateRequest(
+        stage="front", reference_source="reference_image",
+        reference_image="iVBORw0KGgo=", reference_content_type="image/png",
+    )
+    assert req.reference_source == "reference_image"
+
+    # reference_source='reference_image' without image — rejected
+    with pytest.raises(ValidationError):
+        FullbodyGenerateRequest(stage="front", reference_source="reference_image")
+
+
+def test_onboarding_state_default_fullbody_reference_source(_patch_db):
+    """onboarding.get_state returns 'avatar' for preset species, 'reference_image' otherwise."""
+    _, SessionLocal = _patch_db
+    from services.companion import get_onboarding_state, update_persona
+
+    with SessionLocal() as db:
+        # Preset species (人类) → 'avatar'
+        update_persona(db, 201, {
+            "name": "光", "personality": "温柔", "speaking_style": "轻柔",
+            "biological_type": "人类",
+        })
+        state = get_onboarding_state(db, 201)
+        assert state["default_fullbody_reference_source"] == "avatar"
+
+        # Non-preset species (猫) → 'reference_image'
+        update_persona(db, 202, {
+            "name": "喵", "personality": "活泼", "speaking_style": "俏皮",
+            "biological_type": "猫",
+        })
+        state = get_onboarding_state(db, 202)
+        assert state["default_fullbody_reference_source"] == "reference_image"
+
+        # Preset species (精灵) → 'avatar'
+        update_persona(db, 203, {
+            "name": "艾尔", "personality": "优雅", "speaking_style": "沉稳",
+            "biological_type": "精灵",
+        })
+        state = get_onboarding_state(db, 203)
+        assert state["default_fullbody_reference_source"] == "avatar"

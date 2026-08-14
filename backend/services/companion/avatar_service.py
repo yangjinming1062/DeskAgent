@@ -347,7 +347,18 @@ async def _generate_avatar_step(
     return asset
 
 
-async def generate_fullbody(db: Session, user_id: int, *, avatar_id: int, view: str | None = None, stage: str | None = None, feedback: str | None = None) -> AvatarAsset:
+async def generate_fullbody(
+    db: Session,
+    user_id: int,
+    *,
+    avatar_id: int,
+    view: str | None = None,
+    stage: str | None = None,
+    feedback: str | None = None,
+    reference_source: str = "avatar",
+    reference_image: str | None = None,
+    reference_content_type: str | None = None,
+) -> AvatarAsset:
     """Step-2: render full-body multiview seeds (front, right, back) using chained references.
 
     The text prompt contains ONLY structural directives (A-pose, framing,
@@ -361,6 +372,13 @@ async def generate_fullbody(db: Session, user_id: int, *, avatar_id: int, view: 
     reference — the complete outfit ensures clothing consistency across
     all three views (critical for 3D model reconstruction).
     View 'front' / 'right' / 'back': regenerates a single view.
+
+    ``reference_source='reference_image'``: front view uses the user's
+    original uploaded image (preserving body/figure info) instead of the
+    bust avatar.  The bust avatar is passed as a secondary reference so
+    Gemini's dual-ref mode can blend body from the upload + beautification
+    from the avatar.  Non-multi-ref providers (Grok/MiniMax) silently drop
+    the secondary.
     """
     if bool(stage) == bool(view):
         raise AvatarGenerationError("exactly one of 'stage' or 'view' is required")
@@ -402,13 +420,25 @@ async def generate_fullbody(db: Session, user_id: int, *, avatar_id: int, view: 
     # Resolve the subject_reference per-view: front uses the bust portrait
     # (clearest face), right/back use the front full-body seed (full outfit
     # for clothing consistency across views — critical for 3D reconstruction).
+    #
+    # When reference_source='reference_image', the front view instead uses the
+    # user's original uploaded image (preserving body/figure), with the bust
+    # avatar as secondary so Gemini dual-ref can carry the beautification.
     references: dict[str, str] = {}
+    secondary_refs: dict[str, str] = {}
     for v in views_to_gen:
-        ref = _resolve_reference_for_view(asset, v)
-        if ref is None:
-            source_label = "front seed" if v != "front" else "avatar source file"
-            raise AvatarSourceUnreadableError(f"avatar {avatar_id} {source_label} is unreadable")
-        references[v] = ref
+        if v == "front" and reference_source == "reference_image" and reference_image:
+            mime = (reference_content_type or "image/png").split(";")[0].strip().lower() or "image/png"
+            references[v] = f"data:{mime};base64,{reference_image}"
+            avatar_ref = load_avatar_bytes_as_data_uri(asset.asset_url)
+            if avatar_ref:
+                secondary_refs[v] = avatar_ref
+        else:
+            ref = _resolve_reference_for_view(asset, v)
+            if ref is None:
+                source_label = "front seed" if v != "front" else "avatar source file"
+                raise AvatarSourceUnreadableError(f"avatar {avatar_id} {source_label} is unreadable")
+            references[v] = ref
 
     # Guard: the avatar_prompt visual anchor must exist (cached in prompt_json
     # at avatar creation time) so the prompt builder has a valid seed reference.
@@ -438,7 +468,13 @@ async def generate_fullbody(db: Session, user_id: int, *, avatar_id: int, view: 
     results = await asyncio.gather(
         *[
             _generate_one_portrait_with_moderation_retry(
-                prompts[v], user_id, reference_image=references[v], size=_AVATAR_FULL_SIZE, persist=persist, preferred_provider=_FULLBODY_PROVIDER_PRIORITY
+                prompts[v],
+                user_id,
+                reference_image=references[v],
+                secondary_reference_image=secondary_refs.get(v),
+                size=_AVATAR_FULL_SIZE,
+                persist=persist,
+                preferred_provider=_FULLBODY_PROVIDER_PRIORITY,
             )
             for v in views_to_gen
         ],
