@@ -12,7 +12,9 @@ RUN sed -i 's|deb.debian.org|mirrors.tuna.tsinghua.edu.cn|g; \
     apt-get update && apt-get install -y --no-install-recommends \
     blender \
     && rm -rf /var/lib/apt/lists/* \
-    && pip install uv
+    # numpy: Blender's glTF importer (used by inject_morph_targets.py) requires it;
+    # without it the morph injection silently fails and models ship without morph targets.
+    && pip install uv numpy
 
 COPY backend/pyproject.toml backend/uv.lock ./
 
