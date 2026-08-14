@@ -383,6 +383,6 @@ Client 的更新通过 `/api/update` 获取 Electron 二进制与 Runner wheel �
 
 - **Backend（云端大脑）**：角色定义与形象资产的数据模型、生图 prompt 装配、记忆管理、LLM 编排——[backend/README.md](backend/README.md)
 - **Runner（本地手脚）**：执行器与工具库、6 个终端环境后端、浏览器多后端——[runner/README.md](runner/README.md)
-- **Client（伙伴载体 + 本地枢纽）**：3D 实时渲染引擎（Three.js WebGL）、骨骼动画 + morph target 驱动、换装热替、onboarding/孵化流程、IPC 命名空间、自更新——[client/README.md](client/README.md)
+- **Client（伙伴载体 + 本地枢纽）**：3D 实时渲染引擎（Three.js WebGPU，WebGL 逐级回退）、骨骼动画 + morph target 驱动、换装热替、onboarding/孵化流程、IPC 命名空间、自更新——[client/README.md](client/README.md)
 - **Installer（安装器）**：引导协议、Python 运行时分发、首装进入"蛋"阶段——[installer/README.md](installer/README.md)
 - **Scripts（发布与集成）**：构建链与导入规范检查——[scripts/README.md](scripts/README.md)

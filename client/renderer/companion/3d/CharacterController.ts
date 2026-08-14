@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { MeshStandardNodeMaterial } from 'three/webgpu'
 
 import type { SpriteEmotion, SpriteStateName } from '@/companion/companion-store'
 import { log } from '@/shared/lib/log'
@@ -10,10 +11,10 @@ import { BodyCollider } from './BodyCollider'
 import { resolveEmotionClip, resolveInteractionClip } from './clip-dispatch'
 import { buildClip, type ClipDef } from './clips-biped'
 import { buildClipsForRig, getClipDefs } from './clips-registry'
-import { ClothSolver } from './ClothSolver'
 import { createGLTFLoader } from './gltf-loader-factory'
 import { $availableClipNames, type CompanionExpression } from './model-store'
 import { MorphController } from './MorphController'
+import type { PhysicsBackend, PhysicsUnit } from './physics/PhysicsBackend'
 import { type LoadedModelInfo } from './types'
 
 interface ProcParts {
@@ -48,7 +49,7 @@ interface AssemblySpec {
 
 interface AssembledUnit {
   group: THREE.Group
-  cloths: ClothSolver[]
+  physics: PhysicsUnit[]
   key: string
   anchors?: THREE.Group[]
 }
@@ -89,9 +90,16 @@ type PbrSlot =
   | 'bumpMap'
   | 'displacementMap'
 
-const getPbrSlot = (mat: THREE.MeshStandardMaterial, slot: PbrSlot): THREE.Texture | null => mat[slot]
+// Cloth-unit materials become MeshStandardNodeMaterial under the TSL physics
+// backend — both expose the same PBR slots, so binds and disposal accept both.
+type PbrMaterial = THREE.MeshStandardMaterial | MeshStandardNodeMaterial
 
-const setPbrSlot = (mat: THREE.MeshStandardMaterial, slot: PbrSlot, tex: THREE.Texture | null): void => {
+const isPbrMaterial = (m: THREE.Material): m is PbrMaterial =>
+  m instanceof THREE.MeshStandardMaterial || m instanceof MeshStandardNodeMaterial
+
+const getPbrSlot = (mat: PbrMaterial, slot: PbrSlot): THREE.Texture | null => mat[slot]
+
+const setPbrSlot = (mat: PbrMaterial, slot: PbrSlot, tex: THREE.Texture | null): void => {
   mat[slot] = tex
 
   if (tex) {
@@ -140,7 +148,7 @@ const disposeObjectTree = (root: THREE.Object3D): void => {
         // Dispose PBR textures before the material — material.dispose() doesn't release GPU texture refs.
         // currentPbrTex tracks the setOutfit-loaded ones (disposed by the caller); this sweep also covers
         // GLB-baked textures that live only on materials. dispose() is idempotent.
-        if (mat instanceof THREE.MeshStandardMaterial) {
+        if (isPbrMaterial(mat)) {
           for (const key of PBR_TEXTURE_KEYS) {
             const tex = getPbrSlot(mat, key)
 
@@ -158,6 +166,7 @@ const disposeObjectTree = (root: THREE.Object3D): void => {
 
 export class CharacterController {
   private readonly morph = new MorphController()
+  private readonly physics: PhysicsBackend
 
   root = new THREE.Group()
   private mixer: THREE.AnimationMixer | null = null
@@ -190,6 +199,10 @@ export class CharacterController {
   // root instead and keep no entry here.
   private units: AssembledUnit[] = []
   private bodyCollider: BodyCollider | null = null
+
+  constructor(physics: PhysicsBackend) {
+    this.physics = physics
+  }
 
   /** GLB: parse pre-fetched bytes + animations; falls back to procedural on error.
    * Bytes arrive from the renderer's `apiAssetBuffer` IPC (host-stripped + re-based
@@ -575,7 +588,7 @@ export class CharacterController {
     const group = new THREE.Group()
     group.name = `wardrobe-unit-${spec.kind}`
     let meshes: THREE.Mesh[] = []
-    const cloths: ClothSolver[] = []
+    const physics: PhysicsUnit[] = []
     const anchors: THREE.Group[] = []
 
     if (spec.kind === 'accessory') {
@@ -633,10 +646,11 @@ export class CharacterController {
 
       if (skinned.length > 0) {
         // Both cloth and skin units render as plain Meshes (no GPU skinning)
-        // so the CPU-written positions are authoritative. Cloth hands free
-        // vertices to the verlet solver; skin pins every vertex and only
-        // pushes them out of the body surface to stop animation-time clipping.
-        const bodyCollider = this.ensureBodyCollider(bodyMesh)
+        // so the solver-written positions are authoritative — the TSL backend
+        // achieves this via node-material positionNode instead of attribute
+        // writes. Cloth hands free vertices to the verlet solver; skin pins
+        // every vertex against the body to stop animation-time clipping.
+        const bodyCollider = this.physics.kind === 'cpu' ? this.ensureBodyCollider(bodyMesh) : null
         const plain: THREE.Mesh[] = []
 
         for (const sk of skinned) {
@@ -646,14 +660,18 @@ export class CharacterController {
           plainMesh.receiveShadow = true
           plain.push(plainMesh)
           group.add(plainMesh)
-          cloths.push(
-            new ClothSolver(
-              plainMesh,
-              bodyMesh.skeleton,
-              sk.bindMatrix,
-              spec.physics === 'cloth' ? { bodyCollider } : { pinAll: true, bodyCollider }
-            )
-          )
+
+          const unit = this.physics.createUnit({
+            mesh: plainMesh,
+            skeleton: bodyMesh.skeleton,
+            bindMatrix: sk.bindMatrix,
+            mode: spec.physics === 'cloth' ? 'cloth' : 'skin',
+            bodyCollider
+          })
+
+          if (unit) {
+            physics.push(unit)
+          }
         }
 
         meshes = plain
@@ -667,7 +685,7 @@ export class CharacterController {
     }
 
     this.root.add(group)
-    this.units.push({ group, cloths, key: item.mesh_url ?? '', anchors })
+    this.units.push({ group, physics, key: item.mesh_url ?? '', anchors })
 
     // Bind PBR textures scoped to the unit's meshes only.
     this.bindPbrChannels(item, meshes)
@@ -784,6 +802,10 @@ export class CharacterController {
 
   /** Dispose an assembled unit and remove from scene. */
   private disposeUnit(unit: AssembledUnit): void {
+    for (const p of unit.physics) {
+      this.physics.destroyUnit(p)
+    }
+
     if (unit.anchors) {
       for (const anchor of unit.anchors) {
         disposeObjectTree(anchor)
@@ -839,7 +861,7 @@ export class CharacterController {
             const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
 
             for (const m of mats) {
-              if (m instanceof THREE.MeshStandardMaterial) {
+              if (isPbrMaterial(m)) {
                 setPbrSlot(m, slot, tex)
 
                 if (slot === 'displacementMap') {
@@ -864,7 +886,7 @@ export class CharacterController {
           const mats = Array.isArray(child.material) ? child.material : [child.material]
 
           for (const m of mats) {
-            if (m instanceof THREE.MeshStandardMaterial) {
+            if (isPbrMaterial(m)) {
               setPbrSlot(m, slot, tex)
 
               if (slot === 'displacementMap') {
@@ -912,7 +934,7 @@ export class CharacterController {
       const mats = Array.isArray(child.material) ? child.material : [child.material]
 
       for (const m of mats) {
-        if (m instanceof THREE.MeshStandardMaterial) {
+        if (isPbrMaterial(m)) {
           setPbrSlot(m, slot, null)
 
           if (slot === 'displacementMap') {
@@ -947,8 +969,8 @@ export class CharacterController {
     this.bodyCollider?.update()
 
     for (const unit of this.units) {
-      for (const cloth of unit.cloths) {
-        cloth.update(delta)
+      for (const p of unit.physics) {
+        p.step(delta)
       }
     }
 

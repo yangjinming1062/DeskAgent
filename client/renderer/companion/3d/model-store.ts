@@ -92,6 +92,10 @@ export const $modelInfo = atom<ModelInfo>({
 })
 
 export const $wardrobe = atom<WardrobeItem[]>([])
+// True once the first loadCharacter() settles (GLB parsed or procedural
+// fallback active). Gates the render-power scheduler: before it, hatching
+// runs at full frame rate regardless of idle/sleep signals.
+export const $modelLoadSettled = atom<boolean>(false)
 // Multi-equip: up to one item per slot (outfit / torso / legs / feet / head / …)
 // can be equipped at once; the array holds the full equipped set.
 export const $equippedItems = atom<WardrobeItem[]>([])

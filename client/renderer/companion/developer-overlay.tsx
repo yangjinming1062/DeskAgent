@@ -2,6 +2,7 @@ import { useStore } from '@nanostores/react'
 import { atom } from 'nanostores'
 import { useEffect, useState } from 'react'
 
+import { $engineFps, $powerProfile, $rendererBackend } from './3d/engine-diagnostics'
 import { $spriteEmotion, $spriteState } from './companion-store'
 
 export const $devMode = atom<boolean>(false)
@@ -18,6 +19,9 @@ export function DeveloperOverlay(): React.JSX.Element | null {
   const spriteState = useStore($spriteState)
   const emotion = useStore($spriteEmotion)
   const logs = useStore($devLogs)
+  const backend = useStore($rendererBackend)
+  const powerProfile = useStore($powerProfile)
+  const fps = useStore($engineFps)
   const [minimized, setMinimized] = useState(false)
 
   useEffect(() => {
@@ -59,6 +63,13 @@ export function DeveloperOverlay(): React.JSX.Element | null {
             </div>
             <div>
               Emotion: <span className="text-white">{emotion || 'none'}</span>
+            </div>
+            <div>
+              Render: <span className="text-white font-bold">{backend ?? '…'}</span>
+            </div>
+            <div>
+              Power: <span className="text-white font-bold">{powerProfile}</span>{' '}
+              <span className="text-emerald-600">({fps.toFixed(0)} fps)</span>
             </div>
           </div>
 

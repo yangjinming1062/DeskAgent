@@ -3,6 +3,16 @@ import * as THREE from 'three'
 import { log } from '@/shared/lib/log'
 
 import type { BodyCollider } from './BodyCollider'
+import {
+  ANCHOR_RATIO,
+  buildAnchors,
+  buildConstraints,
+  COLLIDER_RADII,
+  DAMPING,
+  GRAVITY,
+  ITERATIONS,
+  SKIN_CLEARANCE
+} from './physics/cloth-topology'
 import { cpuSkinPoint } from './skinning'
 import { boneSuffix } from './types'
 
@@ -10,29 +20,6 @@ import { boneSuffix } from './types'
 
 const _v = new THREE.Vector3()
 const _inv = new THREE.Matrix4()
-
-const ANCHOR_RATIO = 0.3 // top band of the unit's height pinned to the skeleton
-const GRAVITY = -4.0 // world-space m/s²
-const DAMPING = 0.97 // verlet velocity retention per frame (1 = no damping)
-const ITERATIONS = 3 // distance-constraint relaxation passes per frame
-const MAX_VERTICES = 16384 // perf guard — solver declines above this
-const SKIN_CLEARANCE = 0.002 // skin-unit push-out clearance (m) from the body surface
-
-// Bones (matched by suffix so mixamorig: prefixes don't matter) whose world
-// positions become collision spheres. Torso + legs cover skirt/drape collision
-// for bipeds; other rigs simply collide with whichever bones match.
-const _COLLIDER_RADII: Record<string, number> = {
-  Hips: 0.15,
-  Spine: 0.14,
-  Spine1: 0.14,
-  Spine2: 0.14,
-  Neck: 0.06,
-  Head: 0.11,
-  LeftUpLeg: 0.09,
-  RightUpLeg: 0.09,
-  LeftLeg: 0.08,
-  RightLeg: 0.08
-}
 
 export class ClothSolver {
   private readonly mesh: THREE.Mesh
@@ -94,34 +81,7 @@ export class ClothSolver {
     this.base = new Float32Array(posAttr.array as ArrayLike<number>)
     this.pos = new Float32Array(this.base)
     this.prev = new Float32Array(this.base)
-
-    if (this.pinAll) {
-      // Skin mode: every vertex is pinned to its CPU-skinned target each frame.
-      this.anchor = new Uint8Array(count).fill(1)
-    } else {
-      // Anchor ring: vertices in the top `ANCHOR_RATIO` band of the unit height.
-      let minY = Infinity
-      let maxY = -Infinity
-
-      for (let i = 1; i < this.base.length; i += 3) {
-        if (this.base[i] < minY) {
-          minY = this.base[i]
-        }
-
-        if (this.base[i] > maxY) {
-          maxY = this.base[i]
-        }
-      }
-
-      const threshold = minY + (maxY - minY) * ANCHOR_RATIO
-      this.anchor = new Uint8Array(count)
-
-      for (let i = 0; i < count; i++) {
-        if (this.base[i * 3 + 1] >= threshold) {
-          this.anchor[i] = 1
-        }
-      }
-    }
+    this.anchor = buildAnchors(this.base, count, this.pinAll, ANCHOR_RATIO)
 
     const si = geo.getAttribute('skinIndex')
     const sw = geo.getAttribute('skinWeight')
@@ -131,46 +91,13 @@ export class ClothSolver {
 
     // Structural constraints from the index buffer (unique edges). Skin mode
     // has no free vertices, so it skips edge constraints entirely.
-    if (!this.pinAll && geo.index && count <= MAX_VERTICES) {
-      const idx = geo.index.array
-      const seen = new Set<number>()
-      const pairs: number[] = []
+    const constraints = !this.pinAll && geo.index ? buildConstraints(geo.index.array, count, this.base) : null
 
-      for (let t = 0; t < idx.length; t += 3) {
-        for (const [a, b] of [
-          [idx[t], idx[t + 1]],
-          [idx[t + 1], idx[t + 2]],
-          [idx[t + 2], idx[t]]
-        ]) {
-          const key = a < b ? a * count + b : b * count + a
+    this.edges = constraints?.edges ?? null
+    this.rest = constraints?.rest ?? null
 
-          if (!seen.has(key)) {
-            seen.add(key)
-            pairs.push(a, b)
-          }
-        }
-      }
-
-      this.edges = new Uint32Array(pairs)
-      this.rest = new Float32Array(pairs.length / 2)
-
-      for (let e = 0; e < pairs.length; e += 2) {
-        const a = pairs[e] * 3
-        const b = pairs[e + 1] * 3
-
-        this.rest[e / 2] = Math.hypot(
-          this.base[a] - this.base[b],
-          this.base[a + 1] - this.base[b + 1],
-          this.base[a + 2] - this.base[b + 2]
-        )
-      }
-    } else {
-      this.edges = null
-      this.rest = null
-
-      if (!this.pinAll) {
-        log.warn('cloth', 'cloth mesh has no index buffer or exceeds vertex budget — constraints disabled')
-      }
+    if (!this.pinAll && !constraints) {
+      log.warn('cloth', 'cloth mesh has no index buffer or exceeds vertex budget — constraints disabled')
     }
 
     // Bone sphere colliders are only built when bodyCollider is absent.
@@ -178,7 +105,7 @@ export class ClothSolver {
     // and coarse bone spheres are disabled so they do not push beyond the surface.
     if (!this.pinAll && !this.bodyCollider) {
       for (const bone of skeleton.bones) {
-        const radius = _COLLIDER_RADII[boneSuffix(bone.name)]
+        const radius = COLLIDER_RADII[boneSuffix(bone.name)]
 
         if (radius !== undefined) {
           this.colliders.push({ bone, radius })

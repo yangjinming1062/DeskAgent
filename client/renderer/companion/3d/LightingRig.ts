@@ -1,23 +1,42 @@
 import * as THREE from 'three'
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
+import { PMREMGenerator as WebGPUPMREMGenerator, WebGPURenderer } from 'three/webgpu'
 
 /** Three-point lighting + PMREM environment for PBR material reflections.
  * Tuned for a realistic character bust/half-body framing. */
+
+type RendererHost = THREE.WebGLRenderer | WebGPURenderer
+
 export class LightingRig {
   private readonly ambient: THREE.AmbientLight
   private readonly key: THREE.DirectionalLight
   private readonly fill: THREE.DirectionalLight
   private readonly rim: THREE.DirectionalLight
-  private readonly envTarget: THREE.WebGLRenderTarget
 
-  constructor(scene: THREE.Scene, renderer: THREE.WebGLRenderer) {
+  // The env texture is the only part that survives construction; the classic
+  // PMREMGenerator is bound to WebGLRenderer internals and the webgpu one to
+  // the WebGPU backend, so the target handle differs per renderer kind.
+  private readonly envTexture: THREE.Texture
+  private readonly disposeEnvTarget: () => void
+
+  constructor(scene: THREE.Scene, renderer: RendererHost) {
     // PMREM environment gives PBR materials realistic ambient reflections
-    // without needing an HDRI file. Hold the render target so we can dispose
-    // it — PMREMGenerator.dispose() only releases scratch resources.
-    const pmrem = new THREE.PMREMGenerator(renderer)
-    this.envTarget = pmrem.fromScene(new RoomEnvironment(), 0.04)
-    scene.environment = this.envTarget.texture
-    pmrem.dispose()
+    // without needing an HDRI file.
+    if (renderer instanceof WebGPURenderer) {
+      const pmrem = new WebGPUPMREMGenerator(renderer)
+      const target = pmrem.fromScene(new RoomEnvironment(), 0.04)
+      this.envTexture = target.texture
+      this.disposeEnvTarget = () => target.dispose()
+      pmrem.dispose()
+    } else {
+      const pmrem = new THREE.PMREMGenerator(renderer)
+      const target = pmrem.fromScene(new RoomEnvironment(), 0.04)
+      this.envTexture = target.texture
+      this.disposeEnvTarget = () => target.dispose()
+      pmrem.dispose()
+    }
+
+    scene.environment = this.envTexture
 
     this.ambient = new THREE.AmbientLight(0xffffff, 0.15)
     scene.add(this.ambient)
@@ -50,7 +69,7 @@ export class LightingRig {
 
   dispose(scene: THREE.Scene): void {
     scene.environment = null
-    this.envTarget.dispose()
+    this.disposeEnvTarget()
     scene.remove(this.ambient, this.key, this.fill, this.rim)
   }
 }

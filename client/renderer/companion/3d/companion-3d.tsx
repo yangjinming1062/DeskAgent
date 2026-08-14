@@ -22,19 +22,25 @@ import {
   $modelGenProgress,
   $modelGenState,
   $modelInfo,
+  $modelLoadSettled,
   $outfitView,
   hydrateExpressions,
   hydrateGeneratedClips,
   refreshEquippedAndApply
 } from './model-store'
+import { subscribePowerProfile } from './power-signals'
 
 // Mounts the Three.js engine into the sprite-stage canvas. The sprite-stage
 // owns drag / click-through / region tracking; this component only renders.
 //
+// - Engine.create is async (WebGPU init) — the ready promise is shared with
+//   the load/outfit effects below so they never race the boot; a null
+//   resolution means the component unmounted mid-init.
 // - Subscribes to $spriteState / $spriteEmotion and forwards them to the
-//   character controller for animation + morph playback.
-// - Reacts to $modelInfo.asset_url changes by reloading the GLB; first load
-//   fires via a mount effect so the GLB fetch is cancelled on unmount.
+//   character controller for animation + morph playback. Snapshots are taken
+//   at engine-ready time (post-await), so state flips during the async boot
+//   window are not lost.
+// - Reacts to $modelInfo.asset_url changes by reloading the GLB.
 // - TTS lip-sync: hooks the audio-track AnalyserNode via tts-bridge.
 // - Look-at: tracks the cursor over the canvas when the chat dock is closed.
 // - Outfit: applies the currently equipped wardrobe item whenever the
@@ -50,125 +56,151 @@ function captureSpriteSnapshot(): CharacterSnapshot {
 }
 
 export function Companion3D(): React.JSX.Element {
-  const canvasRef = useRef<HTMLCanvasElement>(null)
-  const engineRef = useRef<Engine | null>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
+  const engineReadyRef = useRef<Promise<Engine | null> | null>(null)
   const outfitView = useStore($outfitView)
   const modelInfo = useStore($modelInfo)
 
-  // Mount engine, wire subscriptions, and kick off initial model load.
+  // Boot engine, wire subscriptions, and kick off initial model load.
   useEffect(() => {
-    const canvas = canvasRef.current
+    const container = containerRef.current
 
-    if (!canvas) {
+    if (!container) {
       return
     }
 
-    const engine = new Engine({
-      canvas,
-      width: canvas.clientWidth || 320,
-      height: canvas.clientHeight || 320
-    })
+    let cancelled = false
+    let engine: Engine | null = null
+    let detachWiring: (() => void) | null = null
 
-    engineRef.current = engine
+    const ready = Engine.create({ container }).then(created => {
+      if (cancelled) {
+        created.dispose()
 
-    const initial = captureSpriteSnapshot()
-    const initialTags = $personalityTags.get()
-    engine.character.applyState(initial.state, initial.emotion, {
-      companionTags: initialTags
-    })
+        return null
+      }
 
-    const initialGenerated = $generatedClips.get()
+      const eng = created
+      engine = created
 
-    if (initialGenerated.length > 0) {
-      engine.character.appendClipDefs(initialGenerated)
-    }
-
-    const unsubState = $spriteState.listen(state => {
-      const tags = $personalityTags.get()
-      const override = state === 'interacting' ? $clipOverride.get() : undefined
-      engine.character.applyState(state, $spriteEmotion.get(), {
-        companionTags: tags,
-        clipOverride: override
+      const initial = captureSpriteSnapshot()
+      eng.character.applyState(initial.state, initial.emotion, {
+        companionTags: $personalityTags.get()
       })
 
-      if (state !== 'interacting') {
-        $clipOverride.set(null)
-      }
-    })
+      const initialGenerated = $generatedClips.get()
 
-    const unsubEmotion = $spriteEmotion.listen(emotion => {
-      engine.character.applyState($spriteState.get(), emotion, {
-        companionTags: $personalityTags.get(),
-        customExpressions: $expressions.get()
+      if (initialGenerated.length > 0) {
+        eng.character.appendClipDefs(initialGenerated)
+      }
+
+      const unsubState = $spriteState.listen(state => {
+        const tags = $personalityTags.get()
+        const override = state === 'interacting' ? $clipOverride.get() : undefined
+        eng.character.applyState(state, $spriteEmotion.get(), {
+          companionTags: tags,
+          clipOverride: override
+        })
+
+        if (state !== 'interacting') {
+          $clipOverride.set(null)
+        }
       })
+
+      const unsubEmotion = $spriteEmotion.listen(emotion => {
+        eng.character.applyState($spriteState.get(), emotion, {
+          companionTags: $personalityTags.get(),
+          customExpressions: $expressions.get()
+        })
+      })
+
+      const unsubGenerated = $generatedClips.listen(clips => {
+        if (clips.length > 0) {
+          eng.character.appendClipDefs(clips)
+        }
+      })
+
+      const unsubExpressions = $expressions.listen(exprs => {
+        if (exprs.length > 0) {
+          eng.character.setCustomExpressions(exprs)
+        }
+      })
+
+      // TTS lip-sync — the audio-track AnalyserNode pushes amplitude every frame
+      // while audio is playing; we just forward it.
+      const detachLipSync = registerAmplitudeSink(amp => eng.character.setLipSyncAmplitude(amp))
+
+      const onResize = () => {
+        const w = eng.canvas.clientWidth || window.innerWidth
+        const h = eng.canvas.clientHeight || window.innerHeight
+        eng.resize(w, h)
+      }
+
+      const ro = new ResizeObserver(onResize)
+      ro.observe(eng.canvas)
+      window.addEventListener('resize', onResize)
+
+      // Look-at — only when chat is closed (avoid head twitching while typing).
+      const onPointerMove = (e: PointerEvent) => {
+        if ($chatOpen.get()) {
+          return
+        }
+
+        const rect = eng.canvas.getBoundingClientRect()
+        const nx = ((e.clientX - rect.left) / rect.width) * 2 - 1
+        const ny = ((e.clientY - rect.top) / rect.height) * 2 - 1
+        eng.character.setLookTarget(nx, ny)
+      }
+
+      eng.canvas.addEventListener('pointermove', onPointerMove)
+
+      // Render-power tiers — resolves once immediately (boot locks to active
+      // until the first model settles), then on every signal change.
+      const unsubPower = subscribePowerProfile(profile => eng.setPowerProfile(profile))
+
+      eng.start()
+
+      detachWiring = () => {
+        unsubState()
+        unsubEmotion()
+        unsubGenerated()
+        unsubExpressions()
+        detachLipSync()
+        unsubPower()
+        window.removeEventListener('resize', onResize)
+        ro.disconnect()
+        eng.canvas.removeEventListener('pointermove', onPointerMove)
+      }
+
+      return created
     })
 
-    const unsubGenerated = $generatedClips.listen(clips => {
-      if (clips.length > 0) {
-        engine.character.appendClipDefs(clips)
-      }
-    })
-
-    const unsubExpressions = $expressions.listen(exprs => {
-      if (exprs.length > 0) {
-        engine.character.setCustomExpressions(exprs)
-      }
-    })
+    engineReadyRef.current = ready
 
     void hydrateGeneratedClips()
     void hydrateExpressions()
 
-    // TTS lip-sync — the audio-track AnalyserNode pushes amplitude every frame
-    // while audio is playing; we just forward it.
-    const detachLipSync = registerAmplitudeSink(amp => engine.character.setLipSyncAmplitude(amp))
-
-    const onResize = () => {
-      const w = canvas.clientWidth || window.innerWidth
-      const h = canvas.clientHeight || window.innerHeight
-      engine.resize(w, h)
-    }
-
-    const ro = new ResizeObserver(onResize)
-    ro.observe(canvas)
-    window.addEventListener('resize', onResize)
-
-    // Look-at — only when chat is closed (avoid head twitching while typing).
-    const onPointerMove = (e: PointerEvent) => {
-      if ($chatOpen.get()) {
-        return
+    void ready.catch(err => {
+      // Whole fallback chain failed — no GPU context at all. Static-sprite
+      // mode is the never-blank floor; settled so the scheduler can stand down.
+      if (!cancelled) {
+        log.error('companion-3d', 'engine init failed:', err)
+        $glbLoadFailed.set(true)
+        $modelLoadSettled.set(true)
       }
-
-      const rect = canvas.getBoundingClientRect()
-      const nx = ((e.clientX - rect.left) / rect.width) * 2 - 1
-      const ny = ((e.clientY - rect.top) / rect.height) * 2 - 1
-      engine.character.setLookTarget(nx, ny)
-    }
-
-    canvas.addEventListener('pointermove', onPointerMove)
-
-    engine.start()
+    })
 
     return () => {
-      unsubState()
-      unsubEmotion()
-      unsubGenerated()
-      detachLipSync()
-      window.removeEventListener('resize', onResize)
-      ro.disconnect()
-      canvas.removeEventListener('pointermove', onPointerMove)
-      engine.dispose()
-      engineRef.current = null
+      cancelled = true
+      detachWiring?.()
+      engine?.dispose()
     }
   }, [])
 
-  // Load (or reload) the GLB whenever the model's asset URL changes.
+  // Load (or reload) the GLB whenever the model's asset URL changes. Awaits
+  // engine boot — an early return on a null engine would silently skip the
+  // first model forever.
   useEffect(() => {
-    const engine = engineRef.current
-
-    if (!engine) {
-      return
-    }
-
     let cancelled = false
     const url = modelInfo.asset_url
 
@@ -176,6 +208,12 @@ export function Companion3D(): React.JSX.Element {
     // Leverages disk cache & Range resumption when content_hash is present.
     // Null on fetch failure lets CharacterController fall through to procedural.
     void (async () => {
+      const engine = await engineReadyRef.current
+
+      if (!engine || cancelled) {
+        return
+      }
+
       let bytes: ArrayBuffer | null = null
 
       if (url) {
@@ -210,6 +248,7 @@ export function Companion3D(): React.JSX.Element {
         // static-mode waits on this, not on model.ready, so the swap to 3D
         // happens only once the GLB has actually parsed (no egg flash).
         $glbLoadFailed.set(info.procedural)
+        $modelLoadSettled.set(true)
       } catch (err) {
         if (cancelled) {
           return
@@ -217,6 +256,7 @@ export function Companion3D(): React.JSX.Element {
 
         log.error('companion-3d', 'loadCharacter failed:', err)
         $glbLoadFailed.set(true)
+        $modelLoadSettled.set(true)
 
         return
       }
@@ -244,13 +284,22 @@ export function Companion3D(): React.JSX.Element {
   // rendering so a shirt preview doesn't visually strip the equipped shoes.
   // setOutfit is a no-op when the character is the procedural fallback.
   useEffect(() => {
-    const engine = engineRef.current
+    let cancelled = false
+    const view = outfitView
 
-    if (!engine) {
-      return
+    void (async () => {
+      const engine = await engineReadyRef.current
+
+      if (!engine || cancelled) {
+        return
+      }
+
+      engine.character.setOutfit(view)
+    })()
+
+    return () => {
+      cancelled = true
     }
-
-    engine.character.setOutfit(outfitView)
   }, [outfitView])
 
   const genState = useStore($modelGenState)
@@ -265,7 +314,6 @@ export function Companion3D(): React.JSX.Element {
       data-static-covered={staticMode && activeSprite ? 'true' : undefined}
       style={{ position: 'relative', width: '100%', height: '100%' }}
     >
-      <canvas className="companion-3d-canvas" ref={canvasRef} />
       {genState === 'generating' && (
         <div
           style={{

@@ -1,8 +1,8 @@
 export interface EngineOptions {
-  canvas: HTMLCanvasElement
-  width: number
-  height: number
+  container: HTMLElement
 }
+
+export type EngineBackendKind = 'webgpu' | 'webgl2' | 'classic-webgl'
 
 export interface LoadedModelInfo {
   hasMorphTargets: boolean
