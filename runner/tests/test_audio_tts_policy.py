@@ -107,6 +107,28 @@ def test_tts_tool_rejects_mimo_voicedesign_token():
     assert payload["success"] is False
 
 
+def test_tts_tool_mimo_voicedesign_with_fallback_to_local(tmp_path: Path, monkeypatch):
+    from tools.multimodal.audio import tts_tool
+
+    _make_on_disk_voice(tmp_path, "zh_CN-huayan-medium")
+    _patch_voice_dir(tmp_path, monkeypatch, tts_tool)
+
+    def fake_piper(text, voice, speed, dst):
+        dst.write_bytes(b"fake-wav")
+        return {"engine": "piper", "voice": voice, "path": str(dst)}
+
+    monkeypatch.setattr(tts_tool, "_synth_piper", fake_piper)
+
+    result = tts_tool.text_to_speech_tool(
+        {"text": "hi", "voice": "mimo_voicedesign:cool girl", "fallback_to_local": True}
+    )
+    payload = json.loads(result)
+    assert payload["success"] is True
+    assert payload["engine"] == "piper"
+    assert payload["voice"] == "zh_CN-huayan-medium"
+
+
+
 # ── voice id → repo path ──────────────────────────────────────────────────
 
 
@@ -159,6 +181,19 @@ def test_bundled_voices_voice_ids_match_piper_pattern():
 
     for vid in pr.bundled_voices():
         assert pr.PIPER_VOICE_RE.match(vid), f"bundled voice id {vid!r} does not match Piper pattern"
+
+
+def test_discover_installed_voices(tmp_path: Path):
+    from tools.multimodal.audio import piper_runtime as pr
+
+    # Paired onnx + onnx.json
+    (tmp_path / "zh_CN-custom-medium.onnx").write_text("model")
+    (tmp_path / "zh_CN-custom-medium.onnx.json").write_text("{}")
+    # Unpaired onnx (should not be discovered)
+    (tmp_path / "zh_CN-incomplete-medium.onnx").write_text("model")
+
+    discovered = pr.discover_installed_voices(tmp_path)
+    assert discovered == ["zh_CN-custom-medium"]
 
 
 # ── ensure_voice_installed ────────────────────────────────────────────────
@@ -352,3 +387,30 @@ def test_tts_explicit_piper_does_not_fall_back(tmp_path: Path, monkeypatch):
     assert payload["success"] is False
     assert "piper fail" in payload["error"]
     assert not pyttsx3_called
+
+
+def test_native_wav_to_pcm16_resampling(tmp_path: Path):
+    import wave
+    from tools.multimodal.audio import audio_io
+
+    # Create a 44100Hz stereo WAV file using standard library
+    src_wav = tmp_path / "stereo_44k.wav"
+    dst_wav = tmp_path / "mono_16k.wav"
+
+    with wave.open(str(src_wav), "wb") as wf:
+        wf.setnchannels(2)
+        wf.setsampwidth(2)
+        wf.setframerate(44100)
+        # 44100 samples of stereo silence / simple pattern
+        wf.writeframes(b"\x00\x00\x00\x00" * 44100)
+
+    # Convert using audio_io
+    out = audio_io.wav_to_wav_pcm16(src_wav, dst_wav)
+    assert out.is_file()
+
+    # Validate output format
+    with wave.open(str(dst_wav), "rb") as wf:
+        assert wf.getnchannels() == 1
+        assert wf.getsampwidth() == 2
+        assert wf.getframerate() == 16000
+        assert wf.getnframes() == 16000

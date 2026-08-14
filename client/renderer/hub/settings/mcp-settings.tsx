@@ -164,18 +164,21 @@ export function McpSettings({ gateway, onConfigSaved }: McpSettingsProps): React
   }
 
   const reloadMcp = async () => {
-    if (!gateway) {
-      notify({ kind: 'warning', title: m.gatewayUnavailableTitle, message: m.gatewayUnavailableMessage })
-
-      return
-    }
-
     setReloading(true)
 
     try {
-      await gateway.request('reload.mcp', {
-        confirm: true
-      })
+      if (gateway) {
+        await gateway.request('reload.mcp', {
+          confirm: true
+        })
+      } else if (typeof window.deskagent?.reloadMcp === 'function') {
+        await window.deskagent.reloadMcp()
+      } else {
+        notify({ kind: 'warning', title: m.gatewayUnavailableTitle, message: m.gatewayUnavailableMessage })
+
+        return
+      }
+
       notify({ kind: 'success', title: m.reloadedTitle, message: m.reloadedMessage })
     } catch (err) {
       notifyError(err, m.reloadFailed)
@@ -190,7 +193,7 @@ export function McpSettings({ gateway, onConfigSaved }: McpSettingsProps): React
         <Button onClick={() => setSelected(null)} size="xs" variant="text">
           {m.newServer}
         </Button>
-        <Button disabled={!gateway || reloading} onClick={() => void reloadMcp()} size="xs" variant="text">
+        <Button disabled={reloading} onClick={() => void reloadMcp()} size="xs" variant="text">
           {reloading ? m.reloading : m.reload}
         </Button>
       </div>

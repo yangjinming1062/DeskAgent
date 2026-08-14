@@ -1,5 +1,6 @@
 import logging
 import os
+import shutil
 import struct
 import subprocess
 import uuid
@@ -50,6 +51,76 @@ def sniff_container(data: bytes) -> str:
     return ""
 
 
+def _resolve_ffmpeg_bin(preferred: str = "ffmpeg") -> str:
+    if preferred != "ffmpeg" and (Path(preferred).is_file() or shutil.which(preferred)):
+        return preferred
+    env_path = os.environ.get("DESKAGENT_FFMPEG_PATH")
+    if env_path and Path(env_path).is_file():
+        return env_path
+    from utils import get_deskagent_home
+
+    home_bin = Path(get_deskagent_home()) / "bin" / ("ffmpeg.exe" if os.name == "nt" else "ffmpeg")
+    if home_bin.is_file():
+        return str(home_bin)
+    try:
+        import imageio_ffmpeg  # type: ignore[import-untyped]
+
+        exe = imageio_ffmpeg.get_ffmpeg_exe()
+        if exe and Path(exe).is_file():
+            return exe
+    except Exception:
+        pass
+    which_bin = shutil.which("ffmpeg")
+    if which_bin:
+        return which_bin
+    return preferred
+
+
+def _native_wav_to_pcm16(src: Path, dst: Path) -> bool:
+    try:
+        import wave
+
+        import numpy as np
+
+        with wave.open(str(src), "rb") as wf:
+            n_channels = wf.getnchannels()
+            sampwidth = wf.getsampwidth()
+            framerate = wf.getframerate()
+            n_frames = wf.getnframes()
+            comptype = wf.getcomptype()
+
+            if comptype != "NONE" or sampwidth not in (1, 2, 4):
+                return False
+
+            raw = wf.readframes(n_frames)
+
+        if sampwidth == 1:
+            samples = (np.frombuffer(raw, dtype=np.uint8).astype(np.float32) - 128.0) / 128.0
+        elif sampwidth == 2:
+            samples = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
+        elif sampwidth == 4:
+            samples = np.frombuffer(raw, dtype=np.int32).astype(np.float32) / 2147483648.0
+        else:
+            return False
+
+        if n_channels > 1:
+            samples = samples.reshape(-1, n_channels).mean(axis=1)
+
+        if framerate != _TARGET_RATE:
+            num_target_samples = int(len(samples) * _TARGET_RATE / framerate)
+            if num_target_samples == 0:
+                return False
+            indices = np.linspace(0, len(samples) - 1, num_target_samples)
+            samples = np.interp(indices, np.arange(len(samples)), samples)
+
+        pcm16_samples = np.clip(samples * 32767.0, -32768.0, 32767.0).astype(np.int16).tobytes()
+        write_wav_pcm16(dst, pcm16_samples, sample_rate=_TARGET_RATE)
+        return True
+    except Exception as e:
+        logger.debug(f"native wav decoding skipped/failed: {e}")
+        return False
+
+
 def wav_to_wav_pcm16(src_path: str | Path, dst_path: str | Path, max_bytes: int = DEFAULT_MAX_INPUT_BYTES, ffmpeg_bin: str = "ffmpeg") -> Path:
     # Output is always a valid path on disk — ffmpeg stdout args change
     # across versions, stdio redirects are not portable enough to rely on.
@@ -61,8 +132,15 @@ def wav_to_wav_pcm16(src_path: str | Path, dst_path: str | Path, max_bytes: int 
         raise RuntimeError(f"audio file too large ({size} > {max_bytes} bytes)")
     dst = Path(dst_path)
     dst.parent.mkdir(parents=True, exist_ok=True)
+
+    # Fast-path: if source is already a standard WAV container, decode/resample natively via Python + numpy
+    if sniff_container(src.read_bytes()[:16]) == "wav":
+        if _native_wav_to_pcm16(src, dst):
+            return dst
+
+    resolved_bin = _resolve_ffmpeg_bin(ffmpeg_bin)
     cmd = [
-        ffmpeg_bin,
+        resolved_bin,
         "-y",
         "-hide_banner",
         "-loglevel",
@@ -83,7 +161,7 @@ def wav_to_wav_pcm16(src_path: str | Path, dst_path: str | Path, max_bytes: int 
     try:
         subprocess.run(cmd, capture_output=True, check=True, timeout=60)
     except FileNotFoundError as e:
-        raise RuntimeError(f"ffmpeg binary not found at {ffmpeg_bin!r}; install ffmpeg") from e
+        raise RuntimeError(f"ffmpeg binary not found at {resolved_bin!r}; install ffmpeg or set DESKAGENT_FFMPEG_PATH") from e
     except subprocess.CalledProcessError as e:
         raise RuntimeError(f"ffmpeg failed: {e.stderr.decode(errors='replace')[:500]}") from e
     except subprocess.TimeoutExpired as e:

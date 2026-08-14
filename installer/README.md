@@ -88,10 +88,8 @@ installer/
 | 限制 | 说明 |
 |------|------|
 | **蛋形象不随 installer 分发** | 角色定义完成前的"蛋"占位形象由 Client 内置默认渲染（`BrandMark` 组件），不经 installer seed payload；避免 payload 与形象资产版本耦合 |
-| **Skills frontmatter 翻译表需双端同步** | `client/electron/lib/skill-index.cjs` 与 `runner/tools/skills/skills_tool.py::skill_matches_platform` 各自实现平台过滤（macos / windows），新增平台时需同步更新两套翻译表 |
 | **`install.cmd` 仅 dev 路径** | Windows cmd.exe 不可用时兜底；`bundle.resources` 不嵌入，仅 dev fallback |
 | **macOS fast path 不会自我检测损坏** | 三条件全满足时跳过 UI；用户需手动 `--repair` 走完整 reinstall |
 | **uv pip install 失败回退到阿里云镜像** | 网络隔离的企业用户需设 `DESKAGENT_PYPI_INDEX_URL` / `PIP_INDEX_URL` |
-| **新 Piper voice 需手动注册** | 把 `<id>.onnx` 与 `<id>.onnx.json` 放入 `installer/payload/voices/`，并在 `runner/tools/multimodal/audio/piper_runtime.py` 的 `_BUNDLED_VOICES` 元组中注册 id |
 | **ZIP 安装格式 desktop 路径回退** | `DESKAGENT_INSTALLER_FORMAT=zip` 解压到 `$DESKAGENT_HOME` 时 desktop 不在 canonical 路径；`resolve_deskagent_desktop_exe` 额外回退 `$DESKAGENT_HOME/apps/DeskAgent/DeskAgent.exe` |
 | **Self-contained install 脚本不下载更新** | DeskAgent-Setup 二进制**不**下载 install 脚本（项目不放在 GitHub，无可下载源）；脚本版本 = installer build 版本 |

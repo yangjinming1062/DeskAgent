@@ -237,19 +237,22 @@ def text_to_speech_tool(args: dict[str, Any], **kw: Any) -> str:
     if not normalized:
         return tool_error("text is empty after normalization")
 
-    # Cloud voice id (e.g. ``冰糖``) — Piper/pyttsx3 can't speak it; route to cloud via /api/media/tts.
-    if raw_voice and _is_cloud_voice(raw_voice):
+    # Cloud voice id (e.g. ``冰糖`` / ``mimo_voicedesign:...``) — Piper/pyttsx3 can't speak it directly.
+    # If fallback_to_local is True, automatically fall back to the default local Chinese voice instead of failing hard.
+    is_cloud = bool(raw_voice and _is_cloud_voice(raw_voice))
+    fallback_requested = bool(args.get("fallback_to_local") or args.get("fallback"))
+    if is_cloud and not fallback_requested:
         return tool_error(
             f"voice {raw_voice!r} is a cloud-provider id, not a local Piper voice",
             hint=(
-                "Set tts.engine=cloud in Desktop settings, or omit the voice argument so the runner auto-picks a Chinese Piper voice for CJK text. See runner/README.md §音频工具."
+                "Set tts.engine=cloud in Desktop settings, pass fallback_to_local=True to auto-fallback, or omit the voice argument so the runner auto-picks a Chinese Piper voice for CJK text. See runner/README.md §音频工具."
             ),
             success=False,
         )
 
     # Per-user voice id is the single source of truth for routing (see runner/README §本地 TTS voice 选型):
     # explicit caller pref wins, otherwise default to bundled ZH voice per the "default Chinese" direction.
-    voice = pick_voice_for_text(preferred=raw_voice)
+    voice = pick_voice_for_text(preferred="" if is_cloud else raw_voice)
 
     dst = _output_path(name_hint="piper" if engine == "piper" else "tts")
 

@@ -58,13 +58,7 @@ def _parse_range_header(range_header: str, file_size: int) -> tuple[int, int] | 
     return None
 
 
-async def serve_ranged_file(
-    request: Request,
-    file_path: Path,
-    media_type: str,
-    *,
-    content_sha256: str | None = None,
-) -> Response:
+async def serve_ranged_file(request: Request, file_path: Path, media_type: str, *, content_sha256: str | None = None) -> Response:
     """Serves a file with full HTTP Range (206/416), ETag, and immutable cache headers.
 
     Streaming generators are used so even large models (hundreds of MBs) never
@@ -77,12 +71,7 @@ async def serve_ranged_file(
     sha256 = content_sha256 or compute_file_sha256(file_path)
     etag = f'"{sha256}"'
 
-    base_headers = {
-        "Accept-Ranges": "bytes",
-        "ETag": etag,
-        "Cache-Control": "public, max-age=31536000, immutable",
-        "X-Content-Sha256": sha256,
-    }
+    base_headers = {"Accept-Ranges": "bytes", "ETag": etag, "Cache-Control": "public, max-age=31536000, immutable", "X-Content-Sha256": sha256}
 
     # Conditional 304 Not Modified check
     if_none_match = request.headers.get("if-none-match")
@@ -93,30 +82,20 @@ async def serve_ranged_file(
 
     # If no Range header, stream the entire file with 200 OK
     if not range_header:
+
         async def full_file_iterator() -> AsyncIterator[bytes]:
             with open(file_path, "rb") as f:
                 while chunk := f.read(_CHUNK_SIZE):
                     yield chunk
 
         headers = {**base_headers, "Content-Length": str(file_size)}
-        return StreamingResponse(
-            full_file_iterator(),
-            status_code=200,
-            media_type=media_type,
-            headers=headers,
-        )
+        return StreamingResponse(full_file_iterator(), status_code=200, media_type=media_type, headers=headers)
 
     # Process Range request
     range_bounds = _parse_range_header(range_header, file_size)
     if range_bounds is None:
         # 416 Range Not Satisfiable
-        return Response(
-            status_code=416,
-            headers={
-                **base_headers,
-                "Content-Range": f"bytes */{file_size}",
-            },
-        )
+        return Response(status_code=416, headers={**base_headers, "Content-Range": f"bytes */{file_size}"})
 
     start, end = range_bounds
     chunk_length = end - start + 1
@@ -133,15 +112,6 @@ async def serve_ranged_file(
                 remaining -= len(chunk)
                 yield chunk
 
-    ranged_headers = {
-        **base_headers,
-        "Content-Range": f"bytes {start}-{end}/{file_size}",
-        "Content-Length": str(chunk_length),
-    }
+    ranged_headers = {**base_headers, "Content-Range": f"bytes {start}-{end}/{file_size}", "Content-Length": str(chunk_length)}
 
-    return StreamingResponse(
-        ranged_iterator(),
-        status_code=206,
-        media_type=media_type,
-        headers=ranged_headers,
-    )
+    return StreamingResponse(ranged_iterator(), status_code=206, media_type=media_type, headers=ranged_headers)

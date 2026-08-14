@@ -23,6 +23,7 @@ declare global {
       saveClipboardImage: () => Promise<string>
       log: (payload: { level: 'error' | 'info' | 'warn'; scope: string; args: unknown[] }) => Promise<void>
       runnerInvoke?: (name: string, args: Record<string, unknown>) => Promise<unknown>
+      reloadMcp: () => Promise<unknown>
       runnerGetState?: () => Promise<DesktopRunnerState>
       runnerGetTools?: () => Promise<Array<Record<string, unknown>>>
       getPathForFile: (file: File) => string

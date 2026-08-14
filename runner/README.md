@@ -68,7 +68,7 @@ runner/
 | `deskagent.info` 完整运行快照 | 对 Client | [PROTOCOL.md §2.2](../PROTOCOL.md) |
 | RPC 方法清单（`runner_ready` / `get_tools` / `execute_tool` / `deskagent.info` / `mcp.reload` / `request_llm`） | 对 Client | [PROTOCOL.md §2.2](../PROTOCOL.md) |
 | 反向 RPC 桥接（`request_llm` → Client → `/api/llm/completion`） | 对 Client | [PROTOCOL.md §3](../PROTOCOL.md) |
-| 反向 RPC 速率守卫（200 帧 / 1MB 上限） | 对 Client（Client 转发前限流） | [PROTOCOL.md §3](../PROTOCOL.md) |
+| 反向 RPC 速率守卫（200 帧；文本 1MB / 视觉 10MB 上限） | 对 Client（Client 转发前限流） | [PROTOCOL.md §3](../PROTOCOL.md) |
 | Reserved Keys 不适用 | — | Reserved Key 是 LLM 工具入参约束，不在 Runner 层 |
 | IPC future 键语义（仅 Backend 侧约束） | — | Runner 只被动响应 `execute_tool` 请求，不持有 future |
 | 工具 schema 经 `get_tools` 上报 + `tools.sync` 推 Backend | 对 Client（透传） | [PROTOCOL.md §2.2](../PROTOCOL.md) |
@@ -82,10 +82,6 @@ runner/
 | 限制 | 说明 |
 |------|------|
 | **Windows PTY 兼容性是已知风险面** | 进程链悬挂需用 `utils/pid.py` 的 `psutil`/`taskkill` 原生封装；conpty 在多进程链下清理路径复杂 |
-| **并行 terminal 不可用** | Runner 端共享 LocalEnvironment 实例，快照文件不可并发写；架构决定 |
-| **音频引擎需 ffmpeg** | 运行时仍要求系统 PATH 有 `ffmpeg`（`audio_io.wav_to_wav_pcm16` 用）；非零配置门槛 |
-| **MIMO 设计音色不支持本地回退** | voice_id 编码为 `mimo_voicedesign:<prompt>` 自描述 token，Piper 解析不动——路由到 cloud 失败时即 TTS 整体失败 |
-| **`request_llm` 反向 RPC 速率硬上限** | 200 帧 / 1MB 每会话，超限由 Client 拒绝；防 Runner 工具逻辑失控刷爆 LLM 额度，但**也可能误伤**正常高频工具（如高频率视觉理解） |
 | **TTY/stdin 不可用** | 所有 RPC 经 WS；任何 stdin 重定向或直接 console 输入都会与 C 库底层日志污染 WS 帧 |
 | **单进程架构** | Runner 不支持水平扩展；多用户场景下每个 Client 单独 spawn 独立 Runner 进程 |
 | **`probe_failed` 时 UI 降级需手动** | 部分能力可能仍可用，但 Client UI 收到 `probe_failed=true` 时整体降级；当前没有更细粒度的子能力独立上报 |

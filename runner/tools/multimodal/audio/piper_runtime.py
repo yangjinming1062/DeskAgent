@@ -133,9 +133,26 @@ def default_voice_id() -> str:
     return str(val).strip() or _DEFAULT_VOICE
 
 
+def discover_installed_voices(voice_dir: Path | None = None) -> list[str]:
+    """Scan voice_dir for valid .onnx + .onnx.json pairs."""
+    base = voice_dir if voice_dir is not None else piper_voice_dir()
+    if not base.is_dir():
+        return []
+    installed: list[str] = []
+    for onnx_file in base.glob("*.onnx"):
+        voice_id = onnx_file.stem
+        json_file = base / f"{voice_id}.onnx.json"
+        if json_file.is_file():
+            installed.append(voice_id)
+    return sorted(installed)
+
+
 def bundled_voices() -> tuple[str, ...]:
-    """Voice ids bundled in installer/payload/voices/."""
-    return _BUNDLED_VOICES
+    """Voice ids bundled in installer/payload/voices/ or discovered locally."""
+    discovered = discover_installed_voices()
+    seen = set(_BUNDLED_VOICES)
+    extras = [v for v in discovered if v not in seen]
+    return tuple(list(_BUNDLED_VOICES) + extras)
 
 
 def pick_voice_for_text(*, preferred: str = "") -> str:

@@ -163,6 +163,11 @@ function registerRunnerIpc({ ipcMain, deps }) {
       probeFailed: status.probeFailed ?? null
     }
   })
+
+  ipcMain.handle('deskagent:runner:reload-mcp', async () => {
+    const bridge = ensureRunnerBridge(deps)
+    return bridge.dispatch('mcp.reload', {})
+  })
 }
 
 module.exports = {

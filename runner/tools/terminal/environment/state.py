@@ -41,12 +41,9 @@ def _safe_getcwd() -> str:
 
 
 def resolve_container_task_id(task_id: str | None) -> str:
-    _ISOLATION_KEYS = frozenset({"docker_image", "singularity_image", "env_type"})
-    with _task_env_overrides_lock:
-        overrides = _task_env_overrides.get(task_id) if task_id else None
-    if overrides and set(overrides.keys()) & _ISOLATION_KEYS:
-        return task_id
-    return "default"
+    if not task_id:
+        return "default"
+    return str(task_id)
 
 
 def get_env_config() -> dict[str, Any]:

@@ -31,8 +31,6 @@ chat/
 - **provider fallback 边界**：`execute_with_fallback` 的 `on_first_chunk` 哨兵防止 mid-stream 切换 provider——一旦已开始向 renderer 流式输出，下一 call 就锁死在当前 provider，避免同一回合混合两个模型的输出。
 - **影响 scrubber 在流式阶段就解析**：`AffectScrubber.feed` 在 chunk 层面拆 tag，orchestrator 拿到完整 emotion 在 turn 结束；这与 ARCH §6.3 "情绪基调先于语音"一致——desktop 收到 `message.complete` 时 affect 字段已就位，TTS/EMOTIONAL 切换一次到位。
 - **image part 单一来源**：`message_sanitization._IMAGE_PART_TYPES` 是 OpenAI/Anthropic/Gemini 图片 part 类型集合；tool dispatch 不重复定义，旧对话读回时由 `_trajectory_normalize_msg` 一处统一处理。
-
 ## 已知限制
 
 - `_LAZY_SUBMODULES = ("orchestrator", "turn_inputs", "agent_delegate")` 列表是结构性的而非策划性；新符号加在 lazy 子模块里无需更新 `__init__`，`__getattr__` 按需解析。
-- `truncate_chat_history` 当前只在 `non_sys[0].role == "user"` 时插入 `[... N early turns removed ...]` 占位 + 归一化 user 段；多 agent 接力（首个非 sys 消息为 assistant）暂不在此护栏下——实践中无触发路径，但护栏收窄可作下个迭代。
