@@ -203,6 +203,32 @@ def test_build_quadruped_pose():
     assert prompt.startswith("正面全身照片，")
 
 
+def test_build_biped_fullbody_includes_body_reveal_clause():
+    # Tripo's image-to-3D pass only reconstructs visible silhouette; wardrobe
+    # PBR-texture swaps later (long dress → bikini) need the seed to expose the
+    # full body, otherwise hidden geometry surfaces as artifacts. Even
+    # tight-but-covering outfits (bodysuit, leggings) leave albedo/PBR mismatches
+    # in the covered skin areas, so the directive must enforce minimum coverage.
+    template = prompt_engineer.resolve_fullbody_template("人类")
+    prompt = prompt_engineer.build_fullbody_prompt("front", template=template)
+    assert "最小覆盖" in prompt
+    assert "运动内衣" in prompt
+    assert "运动短裤" in prompt
+    assert "长裙" in prompt
+    assert "长袖" in prompt
+    assert "连体紧身衣" in prompt
+    assert "全部皮肤完整可见" in prompt
+
+
+def test_build_non_biped_fullbody_skips_clothing_clause():
+    # Clothing directive is biped-only — quadrupeds wear fur/scales, not outfits.
+    template = prompt_engineer.resolve_fullbody_template("猫", "quadruped")
+    prompt = prompt_engineer.build_fullbody_prompt("front", template=template)
+    assert "最小覆盖" not in prompt
+    assert "运动内衣" not in prompt
+    assert "运动短裤" not in prompt
+
+
 # ── chat error cases ──────────────────────────────────────────────
 
 

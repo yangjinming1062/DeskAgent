@@ -64,6 +64,7 @@ backend/
 - **API Key 永不离开后端（fingerprinting）**：`GET /api/user/model-config` 只返回 `sk-…XX` 形式的指纹 + `_set` 布尔。**为什么不分两条**：用户自助配置时不需要原始 key 重新输入；admin 端点单独走 `PUT /api/admin/{user_id}/model-config` 强制三字段非空。
 - **错误分类管道收敛为 21 种 `FailoverReason`**：8 步优先级过滤决定恢复策略（退避重试 / 凭证轮换 / 压缩上下文 / 不重试）。**为什么不暴露原始异常**：provider 错误常含 URL / 部分 auth header / 私有 SDK 调用栈，必须脱敏。
 - **3D 模型生成管线双轨制（Tripo3D 主路 + Blender+LLM 回退）**：默认 Tripo3D 高保真度生成；当 `tripo_api_key` 缺失 / 余额为 0 / Tripo API 返回 credits 耗尽错误模式时自动回退到 Blender+LLM 管线，或由 `ModelGenerateRequest.provider` 显式锁向。**为什么不只用一条**：Tripo 商业 API 有成本与可用性限制（积分、断供、地区封锁）；自由形式 LLM 写 bpy 代码是 last-resort 兜底，质量显著低（无 PBR 纹理）但成本仅为 LLM tokens + 本地 CPU Blender render。Blender 子进程与 Backend 同用户运行——LLM 写代码本身就把 LLM 当作可执行代码生成器，威胁向量与现有 LLM 调用同等级，详见 [ARCHITECTURE.md §10](../ARCHITECTURE.md) 安全层不变量。
+- **全身图 prompt 强制最小覆盖基础内衣（仅 biped）**：`_BIPED_A_POSE` 要求种子图穿运动内衣+运动短裤、显式禁掉长袖/连体紧身衣/长裤/长裙/长袍/外套/靴袜。**为什么**：Tripo image-to-3D 只重建实际可见的皮肤——覆盖款（哪怕紧身款）会让 PBR 换装后暴露色差/反光异常/细节缺失，长裙款直接几何穿模。**替代方案被否定的理由**：(a) 切 parametric body（SMPL 类）丢写实人物外观；(b) Tripo 不支持 body/clothing layer 分离，切到 Blender 管线与上条双轨制主路冲突。
 
 ## 5. 与外部的契约
 
@@ -106,3 +107,4 @@ backend/
 | **`interaction_stats` 汇总写门限** | `record_interaction` 用 OR 门限（poke/drag/chat_turn 任一 kind 达到 10 即写汇总），并在 content 序列化 `hour_counts` 供夜间 LLM 反射 |
 | **Blender+LLM 回退管线最坏时长** | 默认 10 轮迭代 × 单次 600s Blender timeout = ~100 分钟一次生成；适合夜间离线场景，不阻塞交互 UI。`blender_llm_max_iterations` / `blender_llm_timeout` 可调 |
 | **Blender+LLM 模型质量** | 无 PBR 纹理（仅纯色 Principled BSDF 材质）、几何为 LLM 自由形式生成——视觉保真度显著低于 Tripo3D。LLM 在迭代内可比 preview vs 种子图 → 持续精修 |
+| **衣柜换装受种子图皮肤可见度约束** | Tripo image-to-3D 仅重建种子图实际可见的皮肤区域；PBR 换装只能迁移已暴露的 albedo/PBR 通道，紧身覆盖款换到露出款会有色差/反光异常，长裙款直接穿模。要解锁任意覆盖度的换装需分离 body/clothing layer（Tripo 不支持，须切 Blender 管线）。 |

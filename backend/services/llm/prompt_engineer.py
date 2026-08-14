@@ -57,7 +57,17 @@ _FULLBODY_SHARED_RULES = "从头到脚完整可见，平视角度拍摄。纯白
 # Shared A-pose clause — MiniMax rarely produces a rigid textbook A-pose, but
 # a concise Chinese directive consistently yields a natural standing pose with
 # arms slightly spread, which is the best achievable result.
-_BIPED_A_POSE = "标准A-pose站姿，双臂向两侧微张约30度，双脚分开与肩同宽。"
+# Skin visibility is a wardrobe-swap precondition: PBR-texture swaps only carry
+# over albedo / detail / roughness / metalness for skin Tripo actually saw in
+# the seed. Tight-but-covering (bodysuit, leggings) leaves skin-color and PBR
+# channel mismatches later; full coverage (long dress) leaves geometry holes.
+_BIPED_A_POSE = (
+    "标准A-pose站姿，双臂向两侧微张约30度，双脚分开与肩同宽。"
+    "穿着最小覆盖的运动内衣+运动短裤，颈部至脚踝的全部皮肤完整可见——"
+    "颈、锁骨、胸腹腰、臀、大腿、小腿、脚踝均无布料遮挡；"
+    "禁止任何覆盖躯干或四肢皮肤的服装（长袖、连体紧身衣、长裤、长裙、"
+    "长袍、外套、长靴、高筒袜等一律不允许）。"
+)
 
 # ── 预设物种模板 ───────────────────────────────────────────────────
 # 每个 view 的 features 只承载影响 3D 绑骨的结构性要求（该视角下哪些部位
