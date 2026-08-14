@@ -42,6 +42,7 @@ from .model_service import (
     emit_wardrobe_updated,
     generate_companion_model,
     get_active_model,
+    recover_stuck_model_generations,
     signed_model_url,
 )
 from .outfit_normalizer import normalize_outfit
@@ -150,6 +151,7 @@ __all__ = [
     "run_prompt_json",
     "regenerate_avatar",
     "regenerate_avatar_from_image",
+    "recover_stuck_model_generations",
     "run_blender_llm_pipeline",
     "resolve_companion_asset_path",
     "resolve_companion_model_path",

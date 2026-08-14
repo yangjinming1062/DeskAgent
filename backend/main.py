@@ -13,7 +13,7 @@ from components import ENGINE, SETTINGS, attachment_root, cleanup_expired, corre
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from services.companion import asset_store
+from services.companion import asset_store, recover_stuck_model_generations
 from services.gateway import start_ws_event_loop, stop_ws_event_loop
 from services.llm import aclose_all
 from services.media import resume_pending_video_jobs
@@ -124,6 +124,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     start_scheduler()
     start_ws_event_loop(global_pool)
     resume_pending_video_jobs()
+    recover_stuck_model_generations()
 
     async def _cleanup_loop():
         while True:

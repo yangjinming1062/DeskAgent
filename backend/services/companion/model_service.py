@@ -57,6 +57,28 @@ def get_model_job_lock(user_id: int) -> asyncio.Lock:
     return _model_job_locks.setdefault(user_id, asyncio.Lock())
 
 
+def recover_stuck_model_generations() -> None:
+    """Mark every ``status="generating"`` row as failed on startup.
+
+    The Tripo3D / Blender pipeline runs as a fire-and-forget ``asyncio.Task``.
+    A process restart (deploy, OOM, crash) kills the task mid-flight, but the
+    DB row's ``status="generating"`` survives — it's the durable lock designed
+    to outlive the task. Without this sweep those orphaned rows permanently
+    block new generation attempts (``ModelGenerationInProgressError``).
+
+    Mirrors ``resume_pending_video_jobs`` in the media service, except Tripo
+    task IDs are lost on restart so we can't resume — only fail and let the
+    user retry.
+    """
+    with SESSION_LOCAL() as db:
+        result = db.execute(
+            CompanionModel.__table__.update().where(CompanionModel.status == "generating").values(status="failed", error="interrupted by server restart", active=False)
+        )
+        db.commit()
+    if result.rowcount:
+        logger.warning("Recovered stuck model generations on startup", extra={"count": result.rowcount})
+
+
 def get_active_model(db: Session, user_id: int) -> CompanionModel | None:
     return db.query(CompanionModel).filter(CompanionModel.user_id == user_id, CompanionModel.active.is_(True)).one_or_none()
 
