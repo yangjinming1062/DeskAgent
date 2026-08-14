@@ -6,7 +6,8 @@ from pathlib import Path
 from components import SESSION_LOCAL, SETTINGS, get_logger, safe_json_loads
 from modules.companion import AvatarAsset, CompanionModel
 from modules.ws import WSEvent
-from sqlalchemy.orm import Session
+from sqlalchemy import select, update
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from services.llm import chat
 
@@ -57,7 +58,7 @@ def get_model_job_lock(user_id: int) -> asyncio.Lock:
     return _model_job_locks.setdefault(user_id, asyncio.Lock())
 
 
-def recover_stuck_model_generations() -> None:
+async def recover_stuck_model_generations() -> None:
     """Mark every ``status="generating"`` row as failed on startup.
 
     The Tripo3D / Blender pipeline runs as a fire-and-forget ``asyncio.Task``.
@@ -70,17 +71,17 @@ def recover_stuck_model_generations() -> None:
     task IDs are lost on restart so we can't resume — only fail and let the
     user retry.
     """
-    with SESSION_LOCAL() as db:
-        result = db.execute(
+    async with SESSION_LOCAL() as db:
+        result = await db.execute(
             CompanionModel.__table__.update().where(CompanionModel.status == "generating").values(status="failed", error="interrupted by server restart", active=False)
         )
-        db.commit()
+        await db.commit()
     if result.rowcount:
         logger.warning("Recovered stuck model generations on startup", extra={"count": result.rowcount})
 
 
-def get_active_model(db: Session, user_id: int) -> CompanionModel | None:
-    return db.query(CompanionModel).filter(CompanionModel.user_id == user_id, CompanionModel.active.is_(True)).one_or_none()
+async def get_active_model(db: AsyncSession, user_id: int) -> CompanionModel | None:
+    return (await db.execute(select(CompanionModel).where(CompanionModel.user_id == user_id, CompanionModel.active.is_(True)))).scalar_one_or_none()
 
 
 def signed_model_url(model: CompanionModel | None) -> str | None:
@@ -121,15 +122,17 @@ def _rig_naming_for(rig_type: str) -> str:
     return "mixamo" if rig_type == "biped" else "tripo"
 
 
-def _finalize_generation(
+async def _finalize_generation(
     model_id: int, user_id: int, *, asset_url: str, rig_original_url: str, provider: str, species: str, rig_type: str, morph_names: list[str], content_hash: str | None = None
 ) -> bool:
     """Persist a succeeded generation. Returns True if not superseded by a newer run."""
-    with SESSION_LOCAL() as db:
-        model = db.query(CompanionModel).filter(CompanionModel.id == model_id).one_or_none()
+    async with SESSION_LOCAL() as db:
+        model = (await db.execute(select(CompanionModel).where(CompanionModel.id == model_id))).scalar_one_or_none()
         if model is None:
             raise ModelGenerationError("companion model row vanished mid-generation")
-        superseded = db.query(CompanionModel).filter(CompanionModel.user_id == user_id, CompanionModel.id > model_id, CompanionModel.status == "generating").first() is not None
+        superseded = (
+            await db.execute(select(CompanionModel).where(CompanionModel.user_id == user_id, CompanionModel.id > model_id, CompanionModel.status == "generating").limit(1))
+        ).scalar_one_or_none() is not None
         model.asset_url = asset_url
         model.rig_original_url = rig_original_url
         model.provider = provider
@@ -151,26 +154,28 @@ def _finalize_generation(
         model.content_hash = computed_hash or ""
 
         if not superseded:
-            db.query(CompanionModel).filter(CompanionModel.user_id == user_id, CompanionModel.active.is_(True), CompanionModel.id != model_id).update({"active": False})
+            await db.execute(update(CompanionModel).where(CompanionModel.user_id == user_id, CompanionModel.active.is_(True), CompanionModel.id != model_id).values(active=False))
             model.active = True
-        db.commit()
+        await db.commit()
     return not superseded
 
 
-def _mark_generation_failed(model_id: int, reason: str) -> None:
-    with SESSION_LOCAL() as db:
-        model = db.query(CompanionModel).filter(CompanionModel.id == model_id).one_or_none()
+async def _mark_generation_failed(model_id: int, reason: str) -> None:
+    async with SESSION_LOCAL() as db:
+        model = (await db.execute(select(CompanionModel).where(CompanionModel.id == model_id))).scalar_one_or_none()
         if model is not None:
             model.status = "failed"
             model.error = reason[:500]
             model.active = False
-        db.commit()
+        await db.commit()
 
 
-async def generate_companion_model(db: Session, *, user_id: int, species_override: str | None = None, provider_override: str | None = None, force: bool = False) -> CompanionModel:
+async def generate_companion_model(
+    db: AsyncSession, *, user_id: int, species_override: str | None = None, provider_override: str | None = None, force: bool = False
+) -> CompanionModel:
     """Creates a ``status="generating"`` row immediately and returns it;
     the actual pipeline runs in a background task and emits progress events."""
-    persona = get_or_create_persona(db, user_id)
+    persona = await get_or_create_persona(db, user_id)
     definition = safe_json_loads(persona.definition_json or "{}", default={})
     species = species_override or (definition.get("biological_type", "人类") if isinstance(definition, dict) else "人类")
 
@@ -180,19 +185,19 @@ async def generate_companion_model(db: Session, *, user_id: int, species_overrid
     # per-user lock closes the check-then-create TOCTOU window; the row's
     # ``status="generating"`` is the durable in-flight marker.
     async with get_model_job_lock(user_id):
-        in_flight = db.query(CompanionModel).filter(CompanionModel.user_id == user_id, CompanionModel.status == "generating").first()
+        in_flight = (await db.execute(select(CompanionModel).where(CompanionModel.user_id == user_id, CompanionModel.status == "generating").limit(1))).scalar_one_or_none()
         if in_flight is not None:
             raise ModelGenerationInProgressError("已有 3D 模型生成任务进行中，请稍候再试")
 
         # Return existing active model idempotently unless force=True.
         if not force:
-            existing = get_active_model(db, user_id)
+            existing = await get_active_model(db, user_id)
             if existing is not None and existing.status == "succeeded" and existing.asset_url:
                 logger.info("Companion model already exists; skipping generation", extra={"user_id": user_id, "model_id": existing.id})
                 return existing
 
         # Resolve seed image paths.
-        avatar = db.query(AvatarAsset).filter(AvatarAsset.user_id == user_id, AvatarAsset.active.is_(True)).one_or_none()
+        avatar = (await db.execute(select(AvatarAsset).where(AvatarAsset.user_id == user_id, AvatarAsset.active.is_(True)))).scalar_one_or_none()
         if avatar is None:
             raise ModelGenerationError("没有找到种子图，请先完成引导流程中的形象生成")
 
@@ -216,8 +221,8 @@ async def generate_companion_model(db: Session, *, user_id: int, species_overrid
         # generations resolve by "newest wins" instead of racing.
         model = CompanionModel(user_id=user_id, status="generating", species=species, active=False)
         db.add(model)
-        db.commit()
-        db.refresh(model)
+        await db.commit()
+        await db.refresh(model)
 
     # Blender+LLM consumes front/right/back seeds, so single-view mode always
     # takes the Tripo branch (which works with a single front seed).
@@ -259,7 +264,7 @@ async def _run_tripo_pipeline(user_id: int, view_filenames: dict[str, str], spec
             except Exception:
                 pass  # Best-effort: key might be invalid, network down, etc. — let the pipeline try normally.
 
-        _emit_progress(user_id, "uploading", 5, provider="tripo")
+        await _emit_progress(user_id, "uploading", 5, provider="tripo")
 
         async def _read_and_upload(view_key: str, filename: str) -> tuple[str, str]:
             resolved = resolve_uploaded_avatar_path(filename)
@@ -273,7 +278,7 @@ async def _run_tripo_pipeline(user_id: int, view_filenames: dict[str, str], spec
         if is_single:
             # Single seed → one sequential upload.
             _, front_token = await _read_and_upload("front", view_filenames["front"])
-            _emit_progress(user_id, "generating", 10, provider="tripo")
+            await _emit_progress(user_id, "generating", 10, provider="tripo")
             gen_task_id = await create_image_to_model(front_token, **tripo_common_kwargs_from_settings())
             provider_label = "tripo_image_to_3d"
         else:
@@ -282,13 +287,13 @@ async def _run_tripo_pipeline(user_id: int, view_filenames: dict[str, str], spec
             uploaded_items = await asyncio.gather(
                 _read_and_upload("front", view_filenames["front"]), _read_and_upload("right", view_filenames["right"]), _read_and_upload("back", view_filenames["back"])
             )
-            _emit_progress(user_id, "generating", 10, provider="tripo")
+            await _emit_progress(user_id, "generating", 10, provider="tripo")
             gen_task_id = await create_multiview_to_model(dict(uploaded_items), **mv_kwargs)
             provider_label = "tripo_multiview_to_3d"
 
         await _poll_with_progress(user_id, gen_task_id, "generating", 10, 50)
 
-        _emit_progress(user_id, "checking_rig", 55, provider="tripo")
+        await _emit_progress(user_id, "checking_rig", 55, provider="tripo")
         check_task_id = await rig_check(gen_task_id)
         check_output = await poll_rig_check(check_task_id)
         if not check_output.get("riggable"):
@@ -296,25 +301,25 @@ async def _run_tripo_pipeline(user_id: int, view_filenames: dict[str, str], spec
 
         rig_type = await select_rig_type(chat, species, user_id=user_id)
 
-        _emit_progress(user_id, "rigging", 60, provider="tripo")
+        await _emit_progress(user_id, "rigging", 60, provider="tripo")
         rig_task_id = await rig(gen_task_id, rig_type)
         rig_result = await _poll_with_progress(user_id, rig_task_id, "rigging", 60, 85)
 
-        _emit_progress(user_id, "downloading", 88, provider="tripo")
+        await _emit_progress(user_id, "downloading", 88, provider="tripo")
         model_url = rig_result["output"]["model_url"]
         glb_bytes = await download_model(model_url)
 
         rig_original_url = save_companion_model(glb_bytes, user_id=user_id)
 
-        _emit_progress(user_id, "injecting_morphs", 90, provider="tripo")
+        await _emit_progress(user_id, "injecting_morphs", 90, provider="tripo")
         final_glb = await _inject_morph_targets(glb_bytes)
 
-        _emit_progress(user_id, "finalizing", 95, provider="tripo")
+        await _emit_progress(user_id, "finalizing", 95, provider="tripo")
         asset_url = save_companion_model(final_glb, user_id=user_id)
         morph_names = _extract_morph_names_from_glb(final_glb)
 
         # provider_label was set in the dispatch branch above (single vs multiview).
-        activated = _finalize_generation(
+        activated = await _finalize_generation(
             model_id, user_id, asset_url=asset_url, rig_original_url=rig_original_url, provider=provider_label, species=species, rig_type=rig_type, morph_names=morph_names
         )
 
@@ -322,8 +327,8 @@ async def _run_tripo_pipeline(user_id: int, view_filenames: dict[str, str], spec
             logger.info("Tripo3D generation superseded by a newer run; asset saved without activating", extra={"user_id": user_id, "model_id": model_id})
             return
 
-        _emit_model_ready(user_id, model_id, asset_url, species=species, rig_type=rig_type)
-        _emit_progress(user_id, "done", 100, provider="tripo")
+        await _emit_model_ready(user_id, model_id, asset_url, species=species, rig_type=rig_type)
+        await _emit_progress(user_id, "done", 100, provider="tripo")
         logger.info("Tripo3D generation succeeded", extra={"user_id": user_id, "species": species, "rig_type": rig_type, "morph_count": len(morph_names)})
 
     except Exception as exc:
@@ -340,17 +345,28 @@ async def _run_tripo_pipeline(user_id: int, view_filenames: dict[str, str], spec
             reason = f"Tripo3D API 错误: {exc}"
         elif isinstance(exc, TripoTaskFailed):
             reason = f"Tripo3D 任务失败: {exc}"
-        _emit_model_failed(user_id, reason)
-        _mark_generation_failed(model_id, reason)
+        await _emit_model_failed(user_id, reason)
+        await _mark_generation_failed(model_id, reason)
 
 
 async def _poll_with_progress(user_id: int, task_id: str, stage: str, start_pct: int, end_pct: int) -> dict:
+    # poll_task invokes ``on_progress`` synchronously, but the emit is an async
+    # session write — schedule each emit as a task and drain them before
+    # returning so no progress event is dropped or GC'd mid-poll.
+    emit_tasks: set[asyncio.Task] = set()
+
     def _on_progress(data: dict) -> None:
         tripo_progress = data.get("progress") or 0
         our_pct = start_pct + int((end_pct - start_pct) * int(tripo_progress) / 100)
-        _emit_progress(user_id, stage, our_pct, provider="tripo")
+        t = asyncio.create_task(_emit_progress(user_id, stage, our_pct, provider="tripo"))
+        emit_tasks.add(t)
+        t.add_done_callback(emit_tasks.discard)
 
-    return await poll_task(task_id, on_progress=_on_progress)
+    try:
+        return await poll_task(task_id, on_progress=_on_progress)
+    finally:
+        if emit_tasks:
+            await asyncio.gather(*emit_tasks)
 
 
 async def _inject_morph_targets(glb_bytes: bytes) -> bytes:
@@ -430,19 +446,19 @@ def _extract_morph_names_from_glb(glb_data: bytes) -> list[str]:
     return sorted(names)
 
 
-def _emit_progress(user_id: int, stage: str, progress_pct: int, *, provider: str | None = None) -> None:
+async def _emit_progress(user_id: int, stage: str, progress_pct: int, *, provider: str | None = None) -> None:
     payload: dict = {"stage": stage, "progress": progress_pct}
     if provider:
         payload["provider"] = provider
     try:
-        with SESSION_LOCAL() as db:
+        async with SESSION_LOCAL() as db:
             db.add(WSEvent(user_id=user_id, event_type="model.gen.progress", payload=json.dumps(payload)))
-            db.commit()
+            await db.commit()
     except Exception:
         logger.warning("Failed to emit model.gen.progress", exc_info=True)
 
 
-def _emit_model_ready(user_id: int, model_id: int, asset_url: str, *, species: str | None = None, rig_type: str | None = None, content_hash: str | None = None) -> None:
+async def _emit_model_ready(user_id: int, model_id: int, asset_url: str, *, species: str | None = None, rig_type: str | None = None, content_hash: str | None = None) -> None:
     payload: dict = {"model_id": model_id}
     if species:
         payload["species"] = species
@@ -458,38 +474,38 @@ def _emit_model_ready(user_id: int, model_id: int, asset_url: str, *, species: s
     if content_hash:
         payload["content_hash"] = content_hash
     try:
-        with SESSION_LOCAL() as db:
+        async with SESSION_LOCAL() as db:
             db.add(WSEvent(user_id=user_id, event_type="model.ready", payload=json.dumps(payload, ensure_ascii=False)))
-            db.commit()
+            await db.commit()
     except Exception:
         logger.warning("Failed to emit model.ready", exc_info=True)
 
 
-def _emit_model_failed(user_id: int, reason: str) -> None:
+async def _emit_model_failed(user_id: int, reason: str) -> None:
     try:
-        with SESSION_LOCAL() as db:
+        async with SESSION_LOCAL() as db:
             db.add(WSEvent(user_id=user_id, event_type="model.failed", payload=json.dumps({"reason": reason}, ensure_ascii=False)))
-            db.commit()
+            await db.commit()
     except Exception:
         logger.warning("Failed to emit model.failed", exc_info=True)
 
 
-def emit_wardrobe_updated(user_id: int) -> None:
+async def emit_wardrobe_updated(user_id: int) -> None:
     try:
-        with SESSION_LOCAL() as db:
+        async with SESSION_LOCAL() as db:
             db.add(WSEvent(user_id=user_id, event_type="wardrobe.updated", payload="{}"))
-            db.commit()
+            await db.commit()
     except Exception:
         logger.warning("Failed to emit wardrobe.updated event", exc_info=True)
 
 
-def emit_wardrobe_gift(user_id: int, *, name: str, message: str | None = None, reason: str | None = None) -> None:
+async def emit_wardrobe_gift(user_id: int, *, name: str, message: str | None = None, reason: str | None = None) -> None:
     """Emit a ``wardrobe.gift`` event so an online client can hydrate wardrobe
     and announce the companion-generated gift proactively."""
     try:
         payload = json.dumps({"name": name, "message": message, "reason": reason})
-        with SESSION_LOCAL() as db:
+        async with SESSION_LOCAL() as db:
             db.add(WSEvent(user_id=user_id, event_type="wardrobe.gift", payload=payload))
-            db.commit()
+            await db.commit()
     except Exception:
         logger.warning("Failed to emit wardrobe.gift event", exc_info=True)

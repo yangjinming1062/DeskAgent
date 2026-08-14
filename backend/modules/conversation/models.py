@@ -2,8 +2,9 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 from common import ModelBase, TimestampMixin
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, func, text
-from sqlalchemy.orm import Mapped, Session, mapped_column, relationship
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, func, select, text
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 if TYPE_CHECKING:
     from modules.auth import User
@@ -37,7 +38,7 @@ class Conversation(ModelBase, TimestampMixin):
     messages: Mapped[list["Message"]] = relationship(back_populates="conversation", passive_deletes=True)
 
     @classmethod
-    def by_session_id(cls, db: Session, session_id: str, user_id: int | None = None) -> "Conversation | None":
+    async def by_session_id(cls, db: AsyncSession, session_id: str, user_id: int | None = None) -> "Conversation | None":
         """Resolve a renderer-supplied session_id (the str form of ``Conversation.id``)
         to a Conversation. Returns ``None`` when ``session_id`` is not a numeric string,
         the row is missing, or — if ``user_id`` is supplied — the row isn't owned by
@@ -46,10 +47,10 @@ class Conversation(ModelBase, TimestampMixin):
             conv_id = int(session_id)
         except (ValueError, TypeError):
             return None
-        q = db.query(cls).filter(cls.id == conv_id)
+        stmt = select(cls).where(cls.id == conv_id)
         if user_id is not None:
-            q = q.filter(cls.user_id == user_id)
-        return q.first()
+            stmt = stmt.where(cls.user_id == user_id)
+        return (await db.execute(stmt)).scalar_one_or_none()
 
 
 class Message(ModelBase):

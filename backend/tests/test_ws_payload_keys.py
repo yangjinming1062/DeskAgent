@@ -1,7 +1,7 @@
 import json
 
 
-def test_completed_event_uses_task_id(monkeypatch):
+async def test_completed_event_uses_task_id(monkeypatch):
     from services.media import video_jobs
 
     captured = {}
@@ -16,23 +16,23 @@ def test_completed_event_uses_task_id(monkeypatch):
         def __init__(self):
             self.added = []
 
-        def __enter__(self):
+        async def __aenter__(self):
             return self
 
-        def __exit__(self, *args):
+        async def __aexit__(self, *args):
             return False
 
         def add(self, obj):
             self.added.append(obj)
 
-        def commit(self):
+        async def commit(self):
             pass
 
     stub_session = _StubSession()
     monkeypatch.setattr(video_jobs, "SESSION_LOCAL", lambda: stub_session)
     monkeypatch.setattr(video_jobs, "WSEvent", _StubEvent)
 
-    video_jobs._emit_ws_event(
+    await video_jobs._emit_ws_event(
         42, "video_gen.completed", {"task_id": "42", "url": "http://x/v.mp4"}
     )
 
@@ -45,7 +45,7 @@ def test_completed_event_uses_task_id(monkeypatch):
     )
 
 
-def test_failed_event_uses_task_id(monkeypatch):
+async def test_failed_event_uses_task_id(monkeypatch):
     from services.media import video_jobs
 
     captured = {}
@@ -56,22 +56,22 @@ def test_failed_event_uses_task_id(monkeypatch):
             captured["payload"] = payload
 
     class _StubSession:
-        def __enter__(self):
+        async def __aenter__(self):
             return self
 
-        def __exit__(self, *args):
+        async def __aexit__(self, *args):
             return False
 
         def add(self, obj):
             pass
 
-        def commit(self):
+        async def commit(self):
             pass
 
     monkeypatch.setattr(video_jobs, "SESSION_LOCAL", _StubSession)
     monkeypatch.setattr(video_jobs, "WSEvent", _StubEvent)
 
-    video_jobs._emit_ws_event(
+    await video_jobs._emit_ws_event(
         7, "video_gen.failed", {"task_id": "7", "error": "timeout"}
     )
 

@@ -5,7 +5,7 @@ from typing import Any
 from components import BACKGROUND_REVIEW_DEFAULT, DEFAULT_LANGUAGE, get_logger, safe_json_loads
 from modules.conversation import Conversation, Message
 from modules.system import ChatRequest
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..conversation import MAIN_KIND
 from ..scheduler import auto_generate_title, run_background_memory_review
@@ -17,14 +17,14 @@ from .types import TrackTask
 logger = get_logger(__name__)
 
 
-def persist_tool_summary(db: Session, conv: Conversation, tool_names: set[str]) -> None:
+async def persist_tool_summary(db: AsyncSession, conv: Conversation, tool_names: set[str]) -> None:
     """Main-conversation turns drop their raw tool frames from the LLM context
     (``_history_to_messages``); this row is what stands in for them, so it must
     be written whichever way the turn ended."""
     if conv.kind != MAIN_KIND or not tool_names:
         return
     db.add(Message(conversation_id=conv.id, role="system", content=f"[执行了工具调用：{', '.join(sorted(tool_names))}]", subtype="tool_summary"))
-    db.commit()
+    await db.commit()
 
 
 def _coerce_tool_result_content(content: Any) -> str:
@@ -66,15 +66,15 @@ def _build_persisted_content(req: "ChatRequest") -> tuple[str, str]:
     return _coerce_tool_result_content(parts), "multimodal_v1"
 
 
-def _persist_user_message(db: Session, conv: Conversation, req: ChatRequest) -> None:
+async def _persist_user_message(db: AsyncSession, conv: Conversation, req: ChatRequest) -> None:
     """Insert the user-role Message row and commit."""
     db_content, db_content_type = _build_persisted_content(req)
     db.add(Message(conversation_id=conv.id, role=req.message.role, content=db_content, content_type=db_content_type, tool_call_id=req.message.tool_call_id))
-    db.commit()
+    await db.commit()
 
 
 async def _persist_assistant_no_tool_turn(
-    db: Session,
+    db: AsyncSession,
     conv: Conversation,
     user_id: int,
     effective_settings: dict,
@@ -122,7 +122,7 @@ async def _persist_assistant_no_tool_turn(
                 turn_duration_ms=turn_duration_ms,
             )
         )
-        db.commit()
+        await db.commit()
 
     if conv.title == "New Conversation" and first_user_msg_content and turn_content:
         title_task = asyncio.create_task(
@@ -149,7 +149,7 @@ async def _persist_assistant_no_tool_turn(
 
 
 async def _persist_assistant_with_tool_calls_and_results(
-    db: Session,
+    db: AsyncSession,
     conv: Conversation,
     tool_calls_list: list[dict],
     turn_content: str,
@@ -190,7 +190,7 @@ async def _persist_assistant_with_tool_calls_and_results(
             turn_duration_ms=turn_duration_ms,
         )
     )
-    db.commit()
+    await db.commit()
 
     tool_results = await _run_tool_batch(tool_calls_list, dispatch_ctx)
 
@@ -209,6 +209,6 @@ async def _persist_assistant_with_tool_calls_and_results(
                         if schema is not None:
                             schemas_by_name[name] = schema
         db.add(Message(conversation_id=conv.id, role="tool", tool_call_id=res["tool_call_id"], content=_coerce_tool_result_content(res.get("content", ""))))
-    db.commit()
+    await db.commit()
 
     return tool_results

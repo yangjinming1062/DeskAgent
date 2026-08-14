@@ -38,7 +38,7 @@ async def video_generation_tool(
 
     try:
         if user_id is not None:
-            with SESSION_LOCAL() as db:
+            async with SESSION_LOCAL() as db:
                 job = await enqueue_video_job(
                     db,
                     user_id=user_id,
@@ -63,8 +63,8 @@ async def video_generation_tool(
     interval = min(SETTINGS.video_gen_poll_interval_seconds, 5.0)
     while naive_utc_now() < deadline:
         await asyncio.sleep(interval)
-        with SESSION_LOCAL() as db:
-            row = get_job(db, job.id, user_id)
+        async with SESSION_LOCAL() as db:
+            row = await get_job(db, job.id, user_id)
         if row is None:
             return tool_error("video job disappeared")
         if row.status == "succeeded":
@@ -86,8 +86,8 @@ async def video_generate_status_tool(task_id: int, user_id: int | None = None, *
         job_id = int(task_id)
     except (TypeError, ValueError):
         return tool_error("task_id must be an integer")
-    with SESSION_LOCAL() as db:
-        row = get_job(db, job_id, user_id)
+    async with SESSION_LOCAL() as db:
+        row = await get_job(db, job_id, user_id)
     if row is None:
         return tool_error("video job not found")
     payload = {"task_id": str(row.id), "status": row.status}

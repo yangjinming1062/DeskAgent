@@ -5,70 +5,56 @@ import modules.media.models  # noqa: F401 — register models on ModelBase.metad
 import pytest
 import sqlalchemy
 from common import ModelBase
-from sqlalchemy import create_engine, text
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy import event, text
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
+
+# All async tests and fixtures share one session-scoped event loop: the
+# session-scoped sqlite_engine (StaticPool = one aiosqlite connection) cannot
+# hop between function-scoped loops.
+pytest_plugins = []
 
 
 @pytest.fixture(scope="session")
-def sqlite_engine():
-    engine = create_engine(
-        "sqlite://",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool
+async def sqlite_engine():
+    engine = create_async_engine("sqlite+aiosqlite://", poolclass=StaticPool)
+
+    # aiosqlite inherits the pysqlite quirks (SQLAlchemy docs "Serializable
+    # isolation / Savepoints / Transactional DDL"): with the driver's default
+    # implicit BEGIN/COMMIT, ``RELEASE SAVEPOINT`` on the outermost savepoint
+    # commits the data, so the outer-transaction rollback in ``_patch_db``
+    # becomes a no-op and committed rows leak between tests. Disabling the
+    # driver-level transaction handling and emitting our own ``BEGIN`` makes
+    # savepoints real again.
+    @event.listens_for(engine.sync_engine, "connect")
+    def _sqlite_serializable(dbapi_connection, _record):
+        dbapi_connection.isolation_level = None
+
+    @event.listens_for(engine.sync_engine, "begin")
+    def _sqlite_begin(connection):
+        connection.exec_driver_sql("BEGIN")
+
+    # Production Postgres has partial unique indexes on memories (see
+    # backend/alembic/versions/0001_baseline.py) — only the ``<kind>:*``
+    # contexts are uniquely keyed, so the read-then-write paths can persist
+    # both rows across write boundaries. Mirrored here so fixtures exercise
+    # the same upsert contract.
+    ddls = (
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_memories_user_context ON memories (user_id, context) WHERE context LIKE 'user_profile:%'",
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_memories_auto_inject_slot ON memories (user_id, context) WHERE context LIKE 'auto_inject:%'",
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_memories_inferred_profile_slot ON memories (user_id, context) WHERE context LIKE 'inferred_profile:%'",
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_memories_diary_day ON memories (user_id, context) WHERE context LIKE 'diary:%'",
+        # SQLite ignores ``DESC`` in older builds; the index is still useful
+        # for the partial scan even without the explicit order.
+        "CREATE INDEX IF NOT EXISTS ix_memories_recall_user_updated ON memories (user_id, updated_at) WHERE context LIKE 'recall:%'",
     )
-    ModelBase.metadata.create_all(bind=engine)
-    # Production Postgres has a PARTIAL unique index on
-    # ``(user_id, context) WHERE context LIKE 'user_profile:%'``
-    # (see backend/main.py:99) — only ``user_profile:*`` rows are
-    # uniquely keyed. Other contexts (e.g. ``interaction_stats:<date>``)
-    # have no uniqueness constraint, so the read-then-write path can
-    # persist both rows across write boundaries. We mirror the production
-    # partial index here so the fixture exercises the same upsert contract.
-    with engine.begin() as conn:
-        conn.execute(
-            text(
-                "CREATE UNIQUE INDEX IF NOT EXISTS uq_memories_user_context "
-                "ON memories (user_id, context) "
-                "WHERE context LIKE 'user_profile:%'"
-            )
-        )
-        # Mirror the production partial-unique index on ``auto_inject:%``
-        # (see backend/main.py). One row per (user, slot) so the
-        # ``memory_retain(kind='auto_inject')`` upsert is atomic.
-        conn.execute(
-            text(
-                "CREATE UNIQUE INDEX IF NOT EXISTS uq_memories_auto_inject_slot "
-                "ON memories (user_id, context) "
-                "WHERE context LIKE 'auto_inject:%'"
-            )
-        )
-        conn.execute(
-            text(
-                "CREATE UNIQUE INDEX IF NOT EXISTS uq_memories_inferred_profile_slot "
-                "ON memories (user_id, context) "
-                "WHERE context LIKE 'inferred_profile:%'"
-            )
-        )
-        conn.execute(
-            text(
-                "CREATE UNIQUE INDEX IF NOT EXISTS uq_memories_diary_day "
-                "ON memories (user_id, context) "
-                "WHERE context LIKE 'diary:%'"
-            )
-        )
-        # SQLite ignores ``DESC`` in older builds; the index is still
-        # useful for the partial scan even without the explicit order.
-        conn.execute(
-            text(
-                "CREATE INDEX IF NOT EXISTS ix_memories_recall_user_updated "
-                "ON memories (user_id, updated_at) "
-                "WHERE context LIKE 'recall:%'"
-            )
-        )
+    async with engine.begin() as conn:
+        await conn.run_sync(ModelBase.metadata.create_all)
+        for ddl in ddls:
+            await conn.execute(text(ddl))
     # ``_signing_key()`` raises when the key is empty and test mode is off;
-    # flip the flag so tests that exercise companion asset URLs don't need
-    # to call ``_enable_test_signer_key`` themselves.
+    # flip the flag so tests that exercise companion asset URLs don't need to
+    # call ``_enable_test_signer_key`` themselves.
     from services.companion import asset_store
 
     asset_store._enable_test_signer_key()
@@ -76,36 +62,34 @@ def sqlite_engine():
 
 
 @pytest.fixture(autouse=True)
-def _patch_db(monkeypatch, sqlite_engine, tmp_path):
+async def _patch_db(monkeypatch, sqlite_engine, tmp_path):
     """All DB access goes to a SAVEPOINT in in-memory SQLite.
 
     Each test gets its own connection with a SAVEPOINT.  The outer
-    transaction is never committed — after the test the SAVEPOINT is
-    rolled back, guaranteeing zero side-effects on other tests.
+    transaction is never committed — after the test it is rolled back,
+    guaranteeing zero side-effects on other tests.
+    join_transaction_mode="create_savepoint" makes session commit/rollback
+    operate on nested savepoints, so no event listener is needed to restart
+    them.
     """
     import components
 
     monkeypatch.setattr(components.SETTINGS, "data_dir", str(tmp_path))
 
-    connection = sqlite_engine.connect()
-    transaction = connection.begin()
-    savepoint = connection.begin_nested()
+    connection = await sqlite_engine.connect()
+    transaction = await connection.begin()
 
-    SessionLocal = sessionmaker(
-        bind=connection, autoflush=False, autocommit=False, expire_on_commit=False
+    SessionLocal = async_sessionmaker(
+        bind=connection, autoflush=False, expire_on_commit=False, join_transaction_mode="create_savepoint"
     )
 
-    @sqlalchemy.event.listens_for(SessionLocal, "after_transaction_end")
-    def _restart_savepoint(session, trans):
-        if trans.nested and not trans._parent.nested:
-            session.begin_nested()
-
-    monkeypatch.setattr(_db_mod, "ENGINE", connection)
+    monkeypatch.setattr(_db_mod, "ENGINE", sqlite_engine)
     monkeypatch.setattr(_db_mod, "SESSION_LOCAL", SessionLocal)
 
     for mod_name in (
         "services.gateway.auth",
         "services.gateway.connection",
+        "services.gateway.handlers",
         "services.scheduler.cron",
         "services.gateway.ipc",
         "services.tools.memory",
@@ -136,18 +120,15 @@ def _patch_db(monkeypatch, sqlite_engine, tmp_path):
         if hasattr(mod, "SESSION_LOCAL"):
             monkeypatch.setattr(mod, "SESSION_LOCAL", SessionLocal)
 
-    import components
-
     monkeypatch.setattr(components, "SESSION_LOCAL", SessionLocal)
 
     yield connection, SessionLocal
 
-    savepoint.rollback()
-    transaction.rollback()
-    connection.close()
+    await transaction.rollback()
+    await connection.close()
 
 
-def _seed_user(SessionLocal, username="testuser"):
+async def _seed_user(SessionLocal, username="testuser"):
     """Insert a user + active LoginRecord + model config.
 
     Returns a dict with:
@@ -170,7 +151,7 @@ def _seed_user(SessionLocal, username="testuser"):
     mimo_url = os.getenv("MIMO_BASE_URL", "https://token-plan-cn.xiaomimimo.com/v1")
 
     raw_token = generate_activation_token()
-    with SessionLocal() as db:
+    async with SessionLocal() as db:
         user = User(
             username=username,
             password_hash=None,
@@ -179,8 +160,8 @@ def _seed_user(SessionLocal, username="testuser"):
             can_use=True
         )
         db.add(user)
-        db.commit()
-        db.refresh(user)
+        await db.commit()
+        await db.refresh(user)
 
         db.add(
             UserModelConfig(
@@ -190,13 +171,13 @@ def _seed_user(SessionLocal, username="testuser"):
                 llm_model_name="mimo-v2.5-pro"
             )
         )
-        db.commit()
+        await db.commit()
 
         token, _expires, jti = create_access_token(
             user_id=user.id, username=user.username
         )
         db.add(LoginRecord(user_id=user.id, token_jti=jti, is_active=True))
-        db.commit()
+        await db.commit()
     return {
         "token": token,
         "activation_code": encode_activation_code("http://localhost:10620", raw_token)
@@ -204,19 +185,15 @@ def _seed_user(SessionLocal, username="testuser"):
 
 
 @pytest.fixture()
-def test_app(_patch_db):
+async def test_app(_patch_db):
     from fastapi import FastAPI
     from components import get_db
 
-    engine, SessionLocal = _patch_db
     app = FastAPI(title="deskagent-test")
 
-    def _test_get_db():
-        db = SessionLocal()
-        try:
+    async def _test_get_db():
+        async with _patch_db[1]() as db:
             yield db
-        finally:
-            db.close()
 
     app.dependency_overrides[get_db] = _test_get_db
 
@@ -232,32 +209,37 @@ def test_app(_patch_db):
 
 
 @pytest.fixture()
-def test_client(test_app):
-    from fastapi.testclient import TestClient
+async def test_client(test_app):
+    import httpx
 
-    return TestClient(test_app, raise_server_exceptions=True)
+    # ASGITransport does not run the app lifespan — tests never relied on it
+    # (test_app assembles its own bare FastAPI), so this matches the sync
+    # TestClient behavior it replaces.
+    transport = httpx.ASGITransport(app=test_app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        yield client
 
 
 @pytest.fixture()
-def test_token(_patch_db):
+async def test_token(_patch_db):
     """Create a valid JWT with an active LoginRecord in the test DB."""
     _, SessionLocal = _patch_db
-    return _seed_user(SessionLocal)["token"]
+    return (await _seed_user(SessionLocal))["token"]
 
 
 @pytest.fixture()
-def test_user_credentials(_patch_db):
+async def test_user_credentials(_patch_db):
     """Seed a user and return ``{"token", "activation_code"}``.
 
     Tests that exercise ``POST /api/user/activate`` directly should use this
     fixture; tests that only need a bearer token should use ``test_token``.
     """
     _, SessionLocal = _patch_db
-    return _seed_user(SessionLocal)
+    return await _seed_user(SessionLocal)
 
 
 @pytest.fixture()
-def ws_ticket(_patch_db):
+async def ws_ticket(_patch_db):
     """Create a 60-second ``purpose: "ws"`` JWT for the WS handshake.
 
     ARCHITECTURE.md §7.1: the long-lived bearer never reaches the WS
@@ -265,11 +247,12 @@ def ws_ticket(_patch_db):
     and pass ``?ticket=...`` rather than minting a bearer and passing
     ``?token=...``.
     """
-    _, SessionLocal = _patch_db
     from modules.auth import User, create_access_token
+    from sqlalchemy import select
 
-    with SessionLocal() as db:
-        user = db.query(User).filter(User.is_active.is_(True)).first()
+    _, SessionLocal = _patch_db
+    async with SessionLocal() as db:
+        user = (await db.execute(select(User).where(User.is_active.is_(True)))).scalar_one()
         token, _, _ = create_access_token(
             user_id=user.id, username=user.username, expires_in_seconds=60, purpose="ws"
         )

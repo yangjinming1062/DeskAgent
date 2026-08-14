@@ -21,7 +21,8 @@ from services.auth import CAPABILITIES, build_config_response
 from services.llm import merge_provider_json
 from services.rate_limit import limiter
 from slowapi.util import get_remote_address
-from sqlalchemy.orm import Session
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 router = get_router()
 
@@ -31,7 +32,7 @@ WS_TICKET_TTL_SECONDS = 60
 
 @router.post("/activate", response_model=TokenResponse)
 @limiter.limit(f"{SETTINGS.login_rate_limit_per_minute}/minute", key_func=get_remote_address)
-def activate(payload: ActivateRequest, request: Request, db: Session = Depends(get_db)) -> TokenResponse:
+async def activate(payload: ActivateRequest, request: Request, db: AsyncSession = Depends(get_db)) -> TokenResponse:
     """Exchange an activation code for a session JWT.
 
     The activation code is a base64url-encoded JSON ``{b, t}`` blob.  The
@@ -46,14 +47,14 @@ def activate(payload: ActivateRequest, request: Request, db: Session = Depends(g
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="激活码格式无效。")
 
     token_hash = hash_activation_token(raw_token)
-    user = db.query(User).filter(User.activation_token_hash == token_hash, User.is_active.is_(True)).one_or_none()
+    user = (await db.execute(select(User).where(User.activation_token_hash == token_hash, User.is_active.is_(True)))).scalar_one_or_none()
     if user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="激活码无效。")
     if not user.can_use or (user.expires_at and user.expires_at.date() < naive_utc_now().date()):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="该用户已超过有效使用期限，需要续费后才能继续使用。")
 
     now = naive_utc_now()
-    for record in db.query(LoginRecord).filter(LoginRecord.user_id == user.id, LoginRecord.is_active.is_(True)).all():
+    for record in (await db.execute(select(LoginRecord).where(LoginRecord.user_id == user.id, LoginRecord.is_active.is_(True)))).scalars().all():
         record.is_active = False
         record.logout_at = now
         db.add(record)
@@ -72,7 +73,7 @@ def activate(payload: ActivateRequest, request: Request, db: Session = Depends(g
             last_seen_at=now,
         )
     )
-    db.commit()
+    await db.commit()
     return TokenResponse(access_token=token, expires_in=expires_in, user=UserInfo.model_validate(user))
 
 
@@ -85,7 +86,9 @@ def mint_ws_ticket(current: tuple[User, LoginRecord] = Depends(get_current_sessi
 
 
 @router.post("/refresh", response_model=TokenResponse)
-def refresh_session(payload: RefreshRequest, request: Request, current: tuple[User, LoginRecord] = Depends(get_current_session), db: Session = Depends(get_db)) -> TokenResponse:
+async def refresh_session(
+    payload: RefreshRequest, request: Request, current: tuple[User, LoginRecord] = Depends(get_current_session), db: AsyncSession = Depends(get_db)
+) -> TokenResponse:
     user, login_record = current
     now = naive_utc_now()
 
@@ -110,22 +113,22 @@ def refresh_session(payload: RefreshRequest, request: Request, current: tuple[Us
             last_seen_at=now,
         )
     )
-    db.commit()
+    await db.commit()
     return TokenResponse(access_token=token, expires_in=expires_in, user=UserInfo.model_validate(user))
 
 
 @router.post("/logout", response_model=MessageResponse)
-def logout(current: tuple[User, LoginRecord] = Depends(get_current_session), db: Session = Depends(get_db)) -> MessageResponse:
+async def logout(current: tuple[User, LoginRecord] = Depends(get_current_session), db: AsyncSession = Depends(get_db)) -> MessageResponse:
     _user, login_record = current
     login_record.is_active = False
     login_record.logout_at = naive_utc_now()
     db.add(login_record)
-    db.commit()
+    await db.commit()
     return MessageResponse(message="已退出登录。")
 
 
 @router.get("/model-config", response_model=UserModelConfigResponse)
-def model_config(current: tuple[User, LoginRecord] = Depends(get_current_session), db: Session = Depends(get_db)) -> UserModelConfigResponse:
+async def model_config(current: tuple[User, LoginRecord] = Depends(get_current_session), db: AsyncSession = Depends(get_db)) -> UserModelConfigResponse:
     """Return the user's own per-service model config.
 
     Only values the user has explicitly set are returned — empty strings
@@ -134,13 +137,13 @@ def model_config(current: tuple[User, LoginRecord] = Depends(get_current_session
     renderer only sees ``*_api_key_set`` + ``llm_api_key_fingerprint``.
     """
     user, _session = current
-    cfg = db.query(UserModelConfig).filter(UserModelConfig.user_id == user.id).first()
+    cfg = (await db.execute(select(UserModelConfig).where(UserModelConfig.user_id == user.id))).scalar_one_or_none()
     return build_config_response(cfg)
 
 
 @router.put("/model-config", response_model=UserModelConfigResponse)
-def update_model_config(
-    payload: UserModelConfigSelfRequest, current: tuple[User, LoginRecord] = Depends(get_current_session), db: Session = Depends(get_db)
+async def update_model_config(
+    payload: UserModelConfigSelfRequest, current: tuple[User, LoginRecord] = Depends(get_current_session), db: AsyncSession = Depends(get_db)
 ) -> UserModelConfigResponse:
     """User self-service model config update.
 
@@ -151,7 +154,7 @@ def update_model_config(
     refresh badges without a second round-trip.
     """
     user, _session = current
-    config = db.query(UserModelConfig).filter(UserModelConfig.user_id == user.id).first()
+    config = (await db.execute(select(UserModelConfig).where(UserModelConfig.user_id == user.id))).scalar_one_or_none()
 
     # Preserve existing api_keys when the user submits an empty one (the GET
     # endpoint never returns raw keys); ``None`` (JSON null) means "clear".
@@ -173,5 +176,5 @@ def update_model_config(
         data["provider_config"] = provider_json
         config = UserModelConfig(user_id=user.id, **data)
         db.add(config)
-    db.commit()
+    await db.commit()
     return build_config_response(config)

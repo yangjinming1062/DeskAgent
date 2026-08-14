@@ -7,18 +7,18 @@ Revises:
 Create Date: 2026-08-15 00:26:08.406491
 
 """
-from typing import Sequence, Union
 
-from alembic import op
+from collections.abc import Sequence
+
 import sqlalchemy as sa
+from alembic import op
 from pgvector.sqlalchemy import Vector
 
-
 # revision identifiers, used by Alembic.
-revision: str = '0001'
-down_revision: Union[str, None] = None
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+revision: str = "0001"
+down_revision: str | None = None
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
@@ -27,371 +27,389 @@ def upgrade() -> None:
     op.execute("CREATE EXTENSION IF NOT EXISTS vector")
     op.execute("CREATE EXTENSION IF NOT EXISTS pg_trgm")
 
-    op.create_table('admin_sessions',
-    sa.Column('token_jti', sa.String(length=64), nullable=False),
-    sa.Column('username', sa.String(length=64), nullable=False),
-    sa.Column('client_version', sa.String(length=64), nullable=False),
-    sa.Column('ip_address', sa.String(length=64), nullable=False),
-    sa.Column('user_agent', sa.Text(), nullable=False),
-    sa.Column('is_active', sa.Boolean(), server_default=sa.text('TRUE'), nullable=False),
-    sa.Column('created_at', sa.DateTime(), server_default=sa.text('now()'), nullable=False),
-    sa.Column('revoked_at', sa.DateTime(), nullable=True),
-    sa.Column('id', sa.Integer(), autoincrement=True, nullable=False),
-    sa.PrimaryKeyConstraint('id'),
-    sa.UniqueConstraint('token_jti', name='uq_admin_sessions_token_jti')
+    op.create_table(
+        "admin_sessions",
+        sa.Column("token_jti", sa.String(length=64), nullable=False),
+        sa.Column("username", sa.String(length=64), nullable=False),
+        sa.Column("client_version", sa.String(length=64), nullable=False),
+        sa.Column("ip_address", sa.String(length=64), nullable=False),
+        sa.Column("user_agent", sa.Text(), nullable=False),
+        sa.Column("is_active", sa.Boolean(), server_default=sa.text("TRUE"), nullable=False),
+        sa.Column("created_at", sa.DateTime(), server_default=sa.text("now()"), nullable=False),
+        sa.Column("revoked_at", sa.DateTime(), nullable=True),
+        sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
+        sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint("token_jti", name="uq_admin_sessions_token_jti"),
     )
-    op.create_index(op.f('ix_admin_sessions_created_at'), 'admin_sessions', ['created_at'], unique=False)
-    op.create_index(op.f('ix_admin_sessions_is_active'), 'admin_sessions', ['is_active'], unique=False)
-    op.create_index(op.f('ix_admin_sessions_token_jti'), 'admin_sessions', ['token_jti'], unique=False)
-    op.create_index(op.f('ix_admin_sessions_username'), 'admin_sessions', ['username'], unique=False)
-    op.create_table('update_versions',
-    sa.Column('version', sa.String(length=64), nullable=False),
-    sa.Column('release_notes', sa.Text(), nullable=False),
-    sa.Column('exe_filename', sa.String(length=256), nullable=False),
-    sa.Column('exe_sha512', sa.String(length=128), nullable=False),
-    sa.Column('exe_size', sa.Integer(), nullable=False),
-    sa.Column('mac_filename', sa.String(length=256), nullable=True),
-    sa.Column('mac_sha512', sa.String(length=128), nullable=True),
-    sa.Column('mac_size', sa.Integer(), nullable=True),
-    sa.Column('runner_filename', sa.String(length=256), nullable=True),
-    sa.Column('runner_sha512', sa.String(length=128), nullable=True),
-    sa.Column('runner_size', sa.Integer(), nullable=True),
-    sa.Column('runner_version', sa.String(length=64), nullable=True),
-    sa.Column('is_active', sa.Boolean(), server_default=sa.text('TRUE'), nullable=False),
-    sa.Column('created_at', sa.DateTime(), server_default=sa.text('now()'), nullable=False),
-    sa.Column('created_by', sa.String(length=128), nullable=True),
-    sa.Column('id', sa.Integer(), autoincrement=True, nullable=False),
-    sa.PrimaryKeyConstraint('id')
+    op.create_index(op.f("ix_admin_sessions_created_at"), "admin_sessions", ["created_at"], unique=False)
+    op.create_index(op.f("ix_admin_sessions_is_active"), "admin_sessions", ["is_active"], unique=False)
+    op.create_index(op.f("ix_admin_sessions_token_jti"), "admin_sessions", ["token_jti"], unique=False)
+    op.create_index(op.f("ix_admin_sessions_username"), "admin_sessions", ["username"], unique=False)
+    op.create_table(
+        "update_versions",
+        sa.Column("version", sa.String(length=64), nullable=False),
+        sa.Column("release_notes", sa.Text(), nullable=False),
+        sa.Column("exe_filename", sa.String(length=256), nullable=False),
+        sa.Column("exe_sha512", sa.String(length=128), nullable=False),
+        sa.Column("exe_size", sa.Integer(), nullable=False),
+        sa.Column("mac_filename", sa.String(length=256), nullable=True),
+        sa.Column("mac_sha512", sa.String(length=128), nullable=True),
+        sa.Column("mac_size", sa.Integer(), nullable=True),
+        sa.Column("runner_filename", sa.String(length=256), nullable=True),
+        sa.Column("runner_sha512", sa.String(length=128), nullable=True),
+        sa.Column("runner_size", sa.Integer(), nullable=True),
+        sa.Column("runner_version", sa.String(length=64), nullable=True),
+        sa.Column("is_active", sa.Boolean(), server_default=sa.text("TRUE"), nullable=False),
+        sa.Column("created_at", sa.DateTime(), server_default=sa.text("now()"), nullable=False),
+        sa.Column("created_by", sa.String(length=128), nullable=True),
+        sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
+        sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index(op.f('ix_update_versions_is_active'), 'update_versions', ['is_active'], unique=False)
-    op.create_index(op.f('ix_update_versions_version'), 'update_versions', ['version'], unique=True)
-    op.create_table('users',
-    sa.Column('username', sa.String(length=64), nullable=False),
-    sa.Column('password_hash', sa.String(length=255), nullable=True),
-    sa.Column('activation_token_hash', sa.String(length=128), nullable=True),
-    sa.Column('is_active', sa.Boolean(), server_default=sa.text('TRUE'), nullable=False),
-    sa.Column('can_use', sa.Boolean(), server_default=sa.text('TRUE'), nullable=False),
-    sa.Column('expires_at', sa.DateTime(), nullable=True),
-    sa.Column('id', sa.Integer(), autoincrement=True, nullable=False),
-    sa.Column('created_at', sa.DateTime(), server_default=sa.text('now()'), nullable=False),
-    sa.Column('updated_at', sa.DateTime(), server_default=sa.text('now()'), nullable=False),
-    sa.PrimaryKeyConstraint('id')
+    op.create_index(op.f("ix_update_versions_is_active"), "update_versions", ["is_active"], unique=False)
+    op.create_index(op.f("ix_update_versions_version"), "update_versions", ["version"], unique=True)
+    op.create_table(
+        "users",
+        sa.Column("username", sa.String(length=64), nullable=False),
+        sa.Column("password_hash", sa.String(length=255), nullable=True),
+        sa.Column("activation_token_hash", sa.String(length=128), nullable=True),
+        sa.Column("is_active", sa.Boolean(), server_default=sa.text("TRUE"), nullable=False),
+        sa.Column("can_use", sa.Boolean(), server_default=sa.text("TRUE"), nullable=False),
+        sa.Column("expires_at", sa.DateTime(), nullable=True),
+        sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
+        sa.Column("created_at", sa.DateTime(), server_default=sa.text("now()"), nullable=False),
+        sa.Column("updated_at", sa.DateTime(), server_default=sa.text("now()"), nullable=False),
+        sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index(op.f('ix_users_activation_token_hash'), 'users', ['activation_token_hash'], unique=True)
-    op.create_index(op.f('ix_users_username'), 'users', ['username'], unique=True)
-    op.create_table('avatar_assets',
-    sa.Column('user_id', sa.Integer(), nullable=False),
-    sa.Column('prompt_json', sa.Text(), nullable=False),
-    sa.Column('asset_url', sa.String(length=2048), nullable=False),
-    sa.Column('style', sa.String(length=64), nullable=False),
-    sa.Column('seed_front_url', sa.String(length=2048), server_default=sa.text("''"), nullable=False),
-    sa.Column('seed_right_url', sa.String(length=2048), server_default=sa.text("''"), nullable=False),
-    sa.Column('seed_back_url', sa.String(length=2048), server_default=sa.text("''"), nullable=False),
-    sa.Column('seed', sa.Integer(), nullable=True),
-    sa.Column('active', sa.Boolean(), server_default=sa.text('FALSE'), nullable=False),
-    sa.Column('created_at', sa.DateTime(), server_default=sa.text('now()'), nullable=False),
-    sa.Column('id', sa.Integer(), autoincrement=True, nullable=False),
-    sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),
-    sa.PrimaryKeyConstraint('id')
+    op.create_index(op.f("ix_users_activation_token_hash"), "users", ["activation_token_hash"], unique=True)
+    op.create_index(op.f("ix_users_username"), "users", ["username"], unique=True)
+    op.create_table(
+        "avatar_assets",
+        sa.Column("user_id", sa.Integer(), nullable=False),
+        sa.Column("prompt_json", sa.Text(), nullable=False),
+        sa.Column("asset_url", sa.String(length=2048), nullable=False),
+        sa.Column("style", sa.String(length=64), nullable=False),
+        sa.Column("seed_front_url", sa.String(length=2048), server_default=sa.text("''"), nullable=False),
+        sa.Column("seed_right_url", sa.String(length=2048), server_default=sa.text("''"), nullable=False),
+        sa.Column("seed_back_url", sa.String(length=2048), server_default=sa.text("''"), nullable=False),
+        sa.Column("seed", sa.Integer(), nullable=True),
+        sa.Column("active", sa.Boolean(), server_default=sa.text("FALSE"), nullable=False),
+        sa.Column("created_at", sa.DateTime(), server_default=sa.text("now()"), nullable=False),
+        sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
+        sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index(op.f('ix_avatar_assets_active'), 'avatar_assets', ['active'], unique=False)
-    op.create_index(op.f('ix_avatar_assets_user_id'), 'avatar_assets', ['user_id'], unique=False)
-    op.create_table('companion_expressions',
-    sa.Column('user_id', sa.Integer(), nullable=False),
-    sa.Column('name', sa.String(length=32), nullable=False),
-    sa.Column('label', sa.String(length=32), nullable=False),
-    sa.Column('valence', sa.String(length=16), nullable=False),
-    sa.Column('description', sa.Text(), nullable=False),
-    sa.Column('weights_json', sa.Text(), nullable=False),
-    sa.Column('tags_json', sa.Text(), nullable=False),
-    sa.Column('scale_boost', sa.Float(), server_default=sa.text('1.0'), nullable=False),
-    sa.Column('id', sa.Integer(), autoincrement=True, nullable=False),
-    sa.Column('created_at', sa.DateTime(), server_default=sa.text('now()'), nullable=False),
-    sa.Column('updated_at', sa.DateTime(), server_default=sa.text('now()'), nullable=False),
-    sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),
-    sa.PrimaryKeyConstraint('id')
+    op.create_index(op.f("ix_avatar_assets_active"), "avatar_assets", ["active"], unique=False)
+    op.create_index(op.f("ix_avatar_assets_user_id"), "avatar_assets", ["user_id"], unique=False)
+    op.create_table(
+        "companion_expressions",
+        sa.Column("user_id", sa.Integer(), nullable=False),
+        sa.Column("name", sa.String(length=32), nullable=False),
+        sa.Column("label", sa.String(length=32), nullable=False),
+        sa.Column("valence", sa.String(length=16), nullable=False),
+        sa.Column("description", sa.Text(), nullable=False),
+        sa.Column("weights_json", sa.Text(), nullable=False),
+        sa.Column("tags_json", sa.Text(), nullable=False),
+        sa.Column("scale_boost", sa.Float(), server_default=sa.text("1.0"), nullable=False),
+        sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
+        sa.Column("created_at", sa.DateTime(), server_default=sa.text("now()"), nullable=False),
+        sa.Column("updated_at", sa.DateTime(), server_default=sa.text("now()"), nullable=False),
+        sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index(op.f('ix_companion_expressions_user_id'), 'companion_expressions', ['user_id'], unique=False)
-    op.create_table('companion_models',
-    sa.Column('user_id', sa.Integer(), nullable=False),
-    sa.Column('asset_url', sa.Text(), nullable=False),
-    sa.Column('source_portrait_id', sa.Integer(), nullable=True),
-    sa.Column('provider', sa.String(length=64), nullable=False),
-    sa.Column('species', sa.String(length=64), server_default=sa.text("'人类'"), nullable=False),
-    sa.Column('rig_type', sa.String(length=32), server_default=sa.text("'biped'"), nullable=False),
-    sa.Column('rig_naming', sa.String(length=16), server_default=sa.text("'mixamo'"), nullable=False),
-    sa.Column('rig_original_url', sa.Text(), server_default=sa.text("''"), nullable=False),
-    sa.Column('morph_params_json', sa.Text(), server_default=sa.text("'{}'"), nullable=False),
-    sa.Column('status', sa.String(length=32), nullable=False),
-    sa.Column('has_rig', sa.Boolean(), server_default=sa.text('FALSE'), nullable=False),
-    sa.Column('has_morph_targets', sa.Boolean(), server_default=sa.text('FALSE'), nullable=False),
-    sa.Column('animation_clips_json', sa.Text(), server_default=sa.text("'[]'"), nullable=False),
-    sa.Column('content_hash', sa.String(length=64), server_default=sa.text("''"), nullable=True),
-    sa.Column('error', sa.Text(), nullable=True),
-    sa.Column('active', sa.Boolean(), server_default=sa.text('FALSE'), nullable=False),
-    sa.Column('id', sa.Integer(), autoincrement=True, nullable=False),
-    sa.Column('created_at', sa.DateTime(), server_default=sa.text('now()'), nullable=False),
-    sa.Column('updated_at', sa.DateTime(), server_default=sa.text('now()'), nullable=False),
-    sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),
-    sa.PrimaryKeyConstraint('id')
+    op.create_index(op.f("ix_companion_expressions_user_id"), "companion_expressions", ["user_id"], unique=False)
+    op.create_table(
+        "companion_models",
+        sa.Column("user_id", sa.Integer(), nullable=False),
+        sa.Column("asset_url", sa.Text(), nullable=False),
+        sa.Column("source_portrait_id", sa.Integer(), nullable=True),
+        sa.Column("provider", sa.String(length=64), nullable=False),
+        sa.Column("species", sa.String(length=64), server_default=sa.text("'人类'"), nullable=False),
+        sa.Column("rig_type", sa.String(length=32), server_default=sa.text("'biped'"), nullable=False),
+        sa.Column("rig_naming", sa.String(length=16), server_default=sa.text("'mixamo'"), nullable=False),
+        sa.Column("rig_original_url", sa.Text(), server_default=sa.text("''"), nullable=False),
+        sa.Column("morph_params_json", sa.Text(), server_default=sa.text("'{}'"), nullable=False),
+        sa.Column("status", sa.String(length=32), nullable=False),
+        sa.Column("has_rig", sa.Boolean(), server_default=sa.text("FALSE"), nullable=False),
+        sa.Column("has_morph_targets", sa.Boolean(), server_default=sa.text("FALSE"), nullable=False),
+        sa.Column("animation_clips_json", sa.Text(), server_default=sa.text("'[]'"), nullable=False),
+        sa.Column("content_hash", sa.String(length=64), server_default=sa.text("''"), nullable=True),
+        sa.Column("error", sa.Text(), nullable=True),
+        sa.Column("active", sa.Boolean(), server_default=sa.text("FALSE"), nullable=False),
+        sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
+        sa.Column("created_at", sa.DateTime(), server_default=sa.text("now()"), nullable=False),
+        sa.Column("updated_at", sa.DateTime(), server_default=sa.text("now()"), nullable=False),
+        sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index(op.f('ix_companion_models_active'), 'companion_models', ['active'], unique=False)
-    op.create_index(op.f('ix_companion_models_rig_type'), 'companion_models', ['rig_type'], unique=False)
-    op.create_index(op.f('ix_companion_models_user_id'), 'companion_models', ['user_id'], unique=False)
-    op.create_table('companion_sprite_images',
-    sa.Column('user_id', sa.Integer(), nullable=False),
-    sa.Column('avatar_id', sa.Integer(), nullable=True),
-    sa.Column('role', sa.String(length=32), server_default=sa.text('NULL'), nullable=True),
-    sa.Column('tag', sa.Text(), server_default=sa.text("''"), nullable=False),
-    sa.Column('prompt', sa.Text(), server_default=sa.text("''"), nullable=False),
-    sa.Column('request_text', sa.Text(), server_default=sa.text("''"), nullable=False),
-    sa.Column('asset_url', sa.String(length=2048), nullable=False),
-    sa.Column('content_hash', sa.String(length=64), server_default=sa.text("''"), nullable=True),
-    sa.Column('id', sa.Integer(), autoincrement=True, nullable=False),
-    sa.Column('created_at', sa.DateTime(), server_default=sa.text('now()'), nullable=False),
-    sa.Column('updated_at', sa.DateTime(), server_default=sa.text('now()'), nullable=False),
-    sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),
-    sa.PrimaryKeyConstraint('id')
+    op.create_index(op.f("ix_companion_models_active"), "companion_models", ["active"], unique=False)
+    op.create_index(op.f("ix_companion_models_rig_type"), "companion_models", ["rig_type"], unique=False)
+    op.create_index(op.f("ix_companion_models_user_id"), "companion_models", ["user_id"], unique=False)
+    op.create_table(
+        "companion_sprite_images",
+        sa.Column("user_id", sa.Integer(), nullable=False),
+        sa.Column("avatar_id", sa.Integer(), nullable=True),
+        sa.Column("role", sa.String(length=32), server_default=sa.text("NULL"), nullable=True),
+        sa.Column("tag", sa.Text(), server_default=sa.text("''"), nullable=False),
+        sa.Column("prompt", sa.Text(), server_default=sa.text("''"), nullable=False),
+        sa.Column("request_text", sa.Text(), server_default=sa.text("''"), nullable=False),
+        sa.Column("asset_url", sa.String(length=2048), nullable=False),
+        sa.Column("content_hash", sa.String(length=64), server_default=sa.text("''"), nullable=True),
+        sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
+        sa.Column("created_at", sa.DateTime(), server_default=sa.text("now()"), nullable=False),
+        sa.Column("updated_at", sa.DateTime(), server_default=sa.text("now()"), nullable=False),
+        sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index(op.f('ix_companion_sprite_images_user_id'), 'companion_sprite_images', ['user_id'], unique=False)
-    op.create_table('conversations',
-    sa.Column('user_id', sa.Integer(), nullable=False),
-    sa.Column('parent_id', sa.Integer(), nullable=True),
-    sa.Column('kind', sa.String(length=32), server_default=sa.text("'standard'"), nullable=False),
-    sa.Column('title', sa.Text(), nullable=False),
-    sa.Column('cwd', sa.String(length=1024), nullable=True),
-    sa.Column('settings_json', sa.Text(), nullable=True),
-    sa.Column('id', sa.Integer(), autoincrement=True, nullable=False),
-    sa.Column('created_at', sa.DateTime(), server_default=sa.text('now()'), nullable=False),
-    sa.Column('updated_at', sa.DateTime(), server_default=sa.text('now()'), nullable=False),
-    sa.ForeignKeyConstraint(['parent_id'], ['conversations.id'], ondelete='CASCADE'),
-    sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),
-    sa.PrimaryKeyConstraint('id')
+    op.create_index(op.f("ix_companion_sprite_images_user_id"), "companion_sprite_images", ["user_id"], unique=False)
+    op.create_table(
+        "conversations",
+        sa.Column("user_id", sa.Integer(), nullable=False),
+        sa.Column("parent_id", sa.Integer(), nullable=True),
+        sa.Column("kind", sa.String(length=32), server_default=sa.text("'standard'"), nullable=False),
+        sa.Column("title", sa.Text(), nullable=False),
+        sa.Column("cwd", sa.String(length=1024), nullable=True),
+        sa.Column("settings_json", sa.Text(), nullable=True),
+        sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
+        sa.Column("created_at", sa.DateTime(), server_default=sa.text("now()"), nullable=False),
+        sa.Column("updated_at", sa.DateTime(), server_default=sa.text("now()"), nullable=False),
+        sa.ForeignKeyConstraint(["parent_id"], ["conversations.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index(op.f('ix_conversations_parent_id'), 'conversations', ['parent_id'], unique=False)
-    op.create_index(op.f('ix_conversations_user_id'), 'conversations', ['user_id'], unique=False)
-    op.create_table('cron_jobs',
-    sa.Column('user_id', sa.Integer(), nullable=False),
-    sa.Column('name', sa.String(length=128), nullable=False),
-    sa.Column('schedule', sa.String(length=128), nullable=False),
-    sa.Column('prompt', sa.Text(), nullable=False),
-    sa.Column('deliver', sa.String(length=64), nullable=False),
-    sa.Column('is_paused', sa.Boolean(), server_default=sa.text('FALSE'), nullable=False),
-    sa.Column('one_shot', sa.Boolean(), server_default=sa.text('FALSE'), nullable=False),
-    sa.Column('next_run_at', sa.DateTime(), nullable=True),
-    sa.Column('created_at', sa.DateTime(), server_default=sa.text('now()'), nullable=False),
-    sa.Column('id', sa.Integer(), autoincrement=True, nullable=False),
-    sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),
-    sa.PrimaryKeyConstraint('id')
+    op.create_index(op.f("ix_conversations_parent_id"), "conversations", ["parent_id"], unique=False)
+    op.create_index(op.f("ix_conversations_user_id"), "conversations", ["user_id"], unique=False)
+    op.create_table(
+        "cron_jobs",
+        sa.Column("user_id", sa.Integer(), nullable=False),
+        sa.Column("name", sa.String(length=128), nullable=False),
+        sa.Column("schedule", sa.String(length=128), nullable=False),
+        sa.Column("prompt", sa.Text(), nullable=False),
+        sa.Column("deliver", sa.String(length=64), nullable=False),
+        sa.Column("is_paused", sa.Boolean(), server_default=sa.text("FALSE"), nullable=False),
+        sa.Column("one_shot", sa.Boolean(), server_default=sa.text("FALSE"), nullable=False),
+        sa.Column("next_run_at", sa.DateTime(), nullable=True),
+        sa.Column("created_at", sa.DateTime(), server_default=sa.text("now()"), nullable=False),
+        sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
+        sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index(op.f('ix_cron_jobs_name'), 'cron_jobs', ['name'], unique=False)
-    op.create_index(op.f('ix_cron_jobs_next_run_at'), 'cron_jobs', ['next_run_at'], unique=False)
-    op.create_index(op.f('ix_cron_jobs_user_id'), 'cron_jobs', ['user_id'], unique=False)
-    op.create_table('login_records',
-    sa.Column('user_id', sa.Integer(), nullable=False),
-    sa.Column('token_jti', sa.String(length=64), nullable=False),
-    sa.Column('client_version', sa.String(length=64), nullable=False),
-    sa.Column('ip_address', sa.String(length=64), nullable=False),
-    sa.Column('user_agent', sa.Text(), nullable=False),
-    sa.Column('is_active', sa.Boolean(), server_default=sa.text('TRUE'), nullable=False),
-    sa.Column('login_at', sa.DateTime(), server_default=sa.text('now()'), nullable=False),
-    sa.Column('logout_at', sa.DateTime(), nullable=True),
-    sa.Column('last_seen_at', sa.DateTime(), nullable=True),
-    sa.Column('id', sa.Integer(), autoincrement=True, nullable=False),
-    sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),
-    sa.PrimaryKeyConstraint('id'),
-    sa.UniqueConstraint('token_jti', name='uq_login_records_token_jti')
+    op.create_index(op.f("ix_cron_jobs_name"), "cron_jobs", ["name"], unique=False)
+    op.create_index(op.f("ix_cron_jobs_next_run_at"), "cron_jobs", ["next_run_at"], unique=False)
+    op.create_index(op.f("ix_cron_jobs_user_id"), "cron_jobs", ["user_id"], unique=False)
+    op.create_table(
+        "login_records",
+        sa.Column("user_id", sa.Integer(), nullable=False),
+        sa.Column("token_jti", sa.String(length=64), nullable=False),
+        sa.Column("client_version", sa.String(length=64), nullable=False),
+        sa.Column("ip_address", sa.String(length=64), nullable=False),
+        sa.Column("user_agent", sa.Text(), nullable=False),
+        sa.Column("is_active", sa.Boolean(), server_default=sa.text("TRUE"), nullable=False),
+        sa.Column("login_at", sa.DateTime(), server_default=sa.text("now()"), nullable=False),
+        sa.Column("logout_at", sa.DateTime(), nullable=True),
+        sa.Column("last_seen_at", sa.DateTime(), nullable=True),
+        sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
+        sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint("token_jti", name="uq_login_records_token_jti"),
     )
-    op.create_index(op.f('ix_login_records_is_active'), 'login_records', ['is_active'], unique=False)
-    op.create_index(op.f('ix_login_records_login_at'), 'login_records', ['login_at'], unique=False)
-    op.create_index(op.f('ix_login_records_token_jti'), 'login_records', ['token_jti'], unique=False)
-    op.create_index(op.f('ix_login_records_user_id'), 'login_records', ['user_id'], unique=False)
-    op.create_table('memories',
-    sa.Column('user_id', sa.Integer(), nullable=False),
-    sa.Column('content', sa.Text(), nullable=False),
-    sa.Column('context', sa.Text(), nullable=True),
-    sa.Column('tags', sa.Text(), nullable=True),
-    sa.Column('importance', sa.Float(), server_default='1.0', nullable=False),
-    sa.Column('embedding', Vector(dim=1536), nullable=True),
-    sa.Column('id', sa.Integer(), autoincrement=True, nullable=False),
-    sa.Column('created_at', sa.DateTime(), server_default=sa.text('now()'), nullable=False),
-    sa.Column('updated_at', sa.DateTime(), server_default=sa.text('now()'), nullable=False),
-    sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),
-    sa.PrimaryKeyConstraint('id')
+    op.create_index(op.f("ix_login_records_is_active"), "login_records", ["is_active"], unique=False)
+    op.create_index(op.f("ix_login_records_login_at"), "login_records", ["login_at"], unique=False)
+    op.create_index(op.f("ix_login_records_token_jti"), "login_records", ["token_jti"], unique=False)
+    op.create_index(op.f("ix_login_records_user_id"), "login_records", ["user_id"], unique=False)
+    op.create_table(
+        "memories",
+        sa.Column("user_id", sa.Integer(), nullable=False),
+        sa.Column("content", sa.Text(), nullable=False),
+        sa.Column("context", sa.Text(), nullable=True),
+        sa.Column("tags", sa.Text(), nullable=True),
+        sa.Column("importance", sa.Float(), server_default="1.0", nullable=False),
+        sa.Column("embedding", Vector(dim=1536), nullable=True),
+        sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
+        sa.Column("created_at", sa.DateTime(), server_default=sa.text("now()"), nullable=False),
+        sa.Column("updated_at", sa.DateTime(), server_default=sa.text("now()"), nullable=False),
+        sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index(op.f('ix_memories_user_id'), 'memories', ['user_id'], unique=False)
-    op.create_table('personas',
-    sa.Column('user_id', sa.Integer(), nullable=False),
-    sa.Column('definition_json', sa.Text(), nullable=False),
-    sa.Column('personality_tags_json', sa.Text(), server_default=sa.text("'[]'"), nullable=False),
-    sa.Column('system_prompt_extras', sa.Text(), nullable=False),
-    sa.Column('is_complete', sa.Boolean(), server_default=sa.text('FALSE'), nullable=False),
-    sa.Column('is_portrait_confirmed', sa.Boolean(), server_default=sa.text('FALSE'), nullable=False),
-    sa.Column('portrait_confirmed_at', sa.DateTime(timezone=True), nullable=True),
-    sa.Column('id', sa.Integer(), autoincrement=True, nullable=False),
-    sa.Column('created_at', sa.DateTime(), server_default=sa.text('now()'), nullable=False),
-    sa.Column('updated_at', sa.DateTime(), server_default=sa.text('now()'), nullable=False),
-    sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),
-    sa.PrimaryKeyConstraint('id')
+    op.create_index(op.f("ix_memories_user_id"), "memories", ["user_id"], unique=False)
+    op.create_table(
+        "personas",
+        sa.Column("user_id", sa.Integer(), nullable=False),
+        sa.Column("definition_json", sa.Text(), nullable=False),
+        sa.Column("personality_tags_json", sa.Text(), server_default=sa.text("'[]'"), nullable=False),
+        sa.Column("system_prompt_extras", sa.Text(), nullable=False),
+        sa.Column("is_complete", sa.Boolean(), server_default=sa.text("FALSE"), nullable=False),
+        sa.Column("is_portrait_confirmed", sa.Boolean(), server_default=sa.text("FALSE"), nullable=False),
+        sa.Column("portrait_confirmed_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
+        sa.Column("created_at", sa.DateTime(), server_default=sa.text("now()"), nullable=False),
+        sa.Column("updated_at", sa.DateTime(), server_default=sa.text("now()"), nullable=False),
+        sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index(op.f('ix_personas_is_complete'), 'personas', ['is_complete'], unique=False)
-    op.create_index(op.f('ix_personas_is_portrait_confirmed'), 'personas', ['is_portrait_confirmed'], unique=False)
-    op.create_index(op.f('ix_personas_user_id'), 'personas', ['user_id'], unique=True)
-    op.create_table('user_model_configs',
-    sa.Column('user_id', sa.Integer(), nullable=False),
-    sa.Column('llm_provider', sa.String(length=64), nullable=False),
-    sa.Column('llm_base_url', sa.String(length=255), nullable=False),
-    sa.Column('llm_api_key', sa.Text(), nullable=False),
-    sa.Column('llm_model_name', sa.String(length=128), nullable=False),
-    sa.Column('stt_provider', sa.String(length=64), nullable=False),
-    sa.Column('stt_base_url', sa.String(length=255), nullable=False),
-    sa.Column('stt_api_key', sa.Text(), nullable=False),
-    sa.Column('stt_model_name', sa.String(length=128), nullable=False),
-    sa.Column('tts_provider', sa.String(length=64), nullable=False),
-    sa.Column('tts_base_url', sa.String(length=255), nullable=False),
-    sa.Column('tts_api_key', sa.Text(), nullable=False),
-    sa.Column('tts_model_name', sa.String(length=128), nullable=False),
-    sa.Column('image_gen_provider', sa.String(length=64), nullable=False),
-    sa.Column('image_gen_base_url', sa.String(length=255), nullable=False),
-    sa.Column('image_gen_api_key', sa.Text(), nullable=False),
-    sa.Column('image_gen_model_name', sa.String(length=128), nullable=False),
-    sa.Column('video_gen_provider', sa.String(length=64), nullable=False),
-    sa.Column('video_gen_base_url', sa.String(length=255), nullable=False),
-    sa.Column('video_gen_api_key', sa.Text(), nullable=False),
-    sa.Column('video_gen_model_name', sa.String(length=128), nullable=False),
-    sa.Column('provider_config', sa.Text(), nullable=False),
-    sa.Column('id', sa.Integer(), autoincrement=True, nullable=False),
-    sa.Column('created_at', sa.DateTime(), server_default=sa.text('now()'), nullable=False),
-    sa.Column('updated_at', sa.DateTime(), server_default=sa.text('now()'), nullable=False),
-    sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),
-    sa.PrimaryKeyConstraint('id')
+    op.create_index(op.f("ix_personas_is_complete"), "personas", ["is_complete"], unique=False)
+    op.create_index(op.f("ix_personas_is_portrait_confirmed"), "personas", ["is_portrait_confirmed"], unique=False)
+    op.create_index(op.f("ix_personas_user_id"), "personas", ["user_id"], unique=True)
+    op.create_table(
+        "user_model_configs",
+        sa.Column("user_id", sa.Integer(), nullable=False),
+        sa.Column("llm_provider", sa.String(length=64), nullable=False),
+        sa.Column("llm_base_url", sa.String(length=255), nullable=False),
+        sa.Column("llm_api_key", sa.Text(), nullable=False),
+        sa.Column("llm_model_name", sa.String(length=128), nullable=False),
+        sa.Column("stt_provider", sa.String(length=64), nullable=False),
+        sa.Column("stt_base_url", sa.String(length=255), nullable=False),
+        sa.Column("stt_api_key", sa.Text(), nullable=False),
+        sa.Column("stt_model_name", sa.String(length=128), nullable=False),
+        sa.Column("tts_provider", sa.String(length=64), nullable=False),
+        sa.Column("tts_base_url", sa.String(length=255), nullable=False),
+        sa.Column("tts_api_key", sa.Text(), nullable=False),
+        sa.Column("tts_model_name", sa.String(length=128), nullable=False),
+        sa.Column("image_gen_provider", sa.String(length=64), nullable=False),
+        sa.Column("image_gen_base_url", sa.String(length=255), nullable=False),
+        sa.Column("image_gen_api_key", sa.Text(), nullable=False),
+        sa.Column("image_gen_model_name", sa.String(length=128), nullable=False),
+        sa.Column("video_gen_provider", sa.String(length=64), nullable=False),
+        sa.Column("video_gen_base_url", sa.String(length=255), nullable=False),
+        sa.Column("video_gen_api_key", sa.Text(), nullable=False),
+        sa.Column("video_gen_model_name", sa.String(length=128), nullable=False),
+        sa.Column("provider_config", sa.Text(), nullable=False),
+        sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
+        sa.Column("created_at", sa.DateTime(), server_default=sa.text("now()"), nullable=False),
+        sa.Column("updated_at", sa.DateTime(), server_default=sa.text("now()"), nullable=False),
+        sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index(op.f('ix_user_model_configs_user_id'), 'user_model_configs', ['user_id'], unique=True)
-    op.create_table('user_settings',
-    sa.Column('user_id', sa.Integer(), nullable=False),
-    sa.Column('setting_key', sa.String(length=128), nullable=False),
-    sa.Column('setting_value', sa.Text(), nullable=False),
-    sa.Column('id', sa.Integer(), autoincrement=True, nullable=False),
-    sa.Column('created_at', sa.DateTime(), server_default=sa.text('now()'), nullable=False),
-    sa.Column('updated_at', sa.DateTime(), server_default=sa.text('now()'), nullable=False),
-    sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),
-    sa.PrimaryKeyConstraint('id'),
-    sa.UniqueConstraint('user_id', 'setting_key', name='uq_user_settings_user_key')
+    op.create_index(op.f("ix_user_model_configs_user_id"), "user_model_configs", ["user_id"], unique=True)
+    op.create_table(
+        "user_settings",
+        sa.Column("user_id", sa.Integer(), nullable=False),
+        sa.Column("setting_key", sa.String(length=128), nullable=False),
+        sa.Column("setting_value", sa.Text(), nullable=False),
+        sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
+        sa.Column("created_at", sa.DateTime(), server_default=sa.text("now()"), nullable=False),
+        sa.Column("updated_at", sa.DateTime(), server_default=sa.text("now()"), nullable=False),
+        sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint("user_id", "setting_key", name="uq_user_settings_user_key"),
     )
-    op.create_index(op.f('ix_user_settings_setting_key'), 'user_settings', ['setting_key'], unique=False)
-    op.create_index(op.f('ix_user_settings_user_id'), 'user_settings', ['user_id'], unique=False)
-    op.create_table('video_gen_jobs',
-    sa.Column('user_id', sa.Integer(), nullable=False),
-    sa.Column('session_id', sa.String(length=64), nullable=True),
-    sa.Column('provider', sa.String(length=64), nullable=False),
-    sa.Column('model', sa.String(length=128), nullable=False),
-    sa.Column('prompt', sa.Text(), nullable=False),
-    sa.Column('params_json', sa.Text(), nullable=False),
-    sa.Column('status', sa.String(length=16), nullable=False),
-    sa.Column('provider_task_id', sa.String(length=128), nullable=True),
-    sa.Column('provider_file_id', sa.String(length=128), nullable=True),
-    sa.Column('file_id', sa.String(length=64), nullable=True),
-    sa.Column('video_url', sa.Text(), nullable=True),
-    sa.Column('error_reason', sa.String(length=64), nullable=True),
-    sa.Column('error_message', sa.Text(), nullable=True),
-    sa.Column('created_at', sa.DateTime(), server_default=sa.text('now()'), nullable=False),
-    sa.Column('updated_at', sa.DateTime(), server_default=sa.text('now()'), nullable=False),
-    sa.Column('expires_at', sa.DateTime(), nullable=True),
-    sa.Column('id', sa.Integer(), autoincrement=True, nullable=False),
-    sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),
-    sa.PrimaryKeyConstraint('id')
+    op.create_index(op.f("ix_user_settings_setting_key"), "user_settings", ["setting_key"], unique=False)
+    op.create_index(op.f("ix_user_settings_user_id"), "user_settings", ["user_id"], unique=False)
+    op.create_table(
+        "video_gen_jobs",
+        sa.Column("user_id", sa.Integer(), nullable=False),
+        sa.Column("session_id", sa.String(length=64), nullable=True),
+        sa.Column("provider", sa.String(length=64), nullable=False),
+        sa.Column("model", sa.String(length=128), nullable=False),
+        sa.Column("prompt", sa.Text(), nullable=False),
+        sa.Column("params_json", sa.Text(), nullable=False),
+        sa.Column("status", sa.String(length=16), nullable=False),
+        sa.Column("provider_task_id", sa.String(length=128), nullable=True),
+        sa.Column("provider_file_id", sa.String(length=128), nullable=True),
+        sa.Column("file_id", sa.String(length=64), nullable=True),
+        sa.Column("video_url", sa.Text(), nullable=True),
+        sa.Column("error_reason", sa.String(length=64), nullable=True),
+        sa.Column("error_message", sa.Text(), nullable=True),
+        sa.Column("created_at", sa.DateTime(), server_default=sa.text("now()"), nullable=False),
+        sa.Column("updated_at", sa.DateTime(), server_default=sa.text("now()"), nullable=False),
+        sa.Column("expires_at", sa.DateTime(), nullable=True),
+        sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
+        sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index(op.f('ix_video_gen_jobs_created_at'), 'video_gen_jobs', ['created_at'], unique=False)
-    op.create_index(op.f('ix_video_gen_jobs_provider_task_id'), 'video_gen_jobs', ['provider_task_id'], unique=False)
-    op.create_index(op.f('ix_video_gen_jobs_status'), 'video_gen_jobs', ['status'], unique=False)
-    op.create_index(op.f('ix_video_gen_jobs_user_id'), 'video_gen_jobs', ['user_id'], unique=False)
-    op.create_index('ix_video_gen_jobs_user_status', 'video_gen_jobs', ['user_id', 'status'], unique=False)
-    op.create_table('wardrobe_items',
-    sa.Column('user_id', sa.Integer(), nullable=False),
-    sa.Column('name', sa.String(length=128), nullable=False),
-    sa.Column('category', sa.String(length=64), nullable=False),
-    sa.Column('material_overrides_json', sa.Text(), nullable=False),
-    sa.Column('texture_url', sa.Text(), nullable=True),
-    sa.Column('normal_url', sa.Text(), nullable=True),
-    sa.Column('roughness_url', sa.Text(), nullable=True),
-    sa.Column('metalness_url', sa.Text(), nullable=True),
-    sa.Column('displacement_url', sa.Text(), nullable=True),
-    sa.Column('prompt', sa.Text(), nullable=True),
-    sa.Column('outfit_description', sa.Text(), nullable=True),
-    sa.Column('equipped', sa.Boolean(), server_default=sa.text('FALSE'), nullable=False),
-    sa.Column('kind', sa.String(length=16), server_default=sa.text("'texture'"), nullable=False),
-    sa.Column('mesh_url', sa.Text(), nullable=True),
-    sa.Column('assembly_json', sa.Text(), server_default=sa.text("'{}'"), nullable=False),
-    sa.Column('origin', sa.String(length=16), server_default=sa.text("'user'"), nullable=False),
-    sa.Column('gift_state', sa.String(length=16), nullable=True),
-    sa.Column('gift_reason', sa.Text(), nullable=True),
-    sa.Column('gift_message', sa.Text(), nullable=True),
-    sa.Column('id', sa.Integer(), autoincrement=True, nullable=False),
-    sa.Column('created_at', sa.DateTime(), server_default=sa.text('now()'), nullable=False),
-    sa.Column('updated_at', sa.DateTime(), server_default=sa.text('now()'), nullable=False),
-    sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),
-    sa.PrimaryKeyConstraint('id')
+    op.create_index(op.f("ix_video_gen_jobs_created_at"), "video_gen_jobs", ["created_at"], unique=False)
+    op.create_index(op.f("ix_video_gen_jobs_provider_task_id"), "video_gen_jobs", ["provider_task_id"], unique=False)
+    op.create_index(op.f("ix_video_gen_jobs_status"), "video_gen_jobs", ["status"], unique=False)
+    op.create_index(op.f("ix_video_gen_jobs_user_id"), "video_gen_jobs", ["user_id"], unique=False)
+    op.create_index("ix_video_gen_jobs_user_status", "video_gen_jobs", ["user_id", "status"], unique=False)
+    op.create_table(
+        "wardrobe_items",
+        sa.Column("user_id", sa.Integer(), nullable=False),
+        sa.Column("name", sa.String(length=128), nullable=False),
+        sa.Column("category", sa.String(length=64), nullable=False),
+        sa.Column("material_overrides_json", sa.Text(), nullable=False),
+        sa.Column("texture_url", sa.Text(), nullable=True),
+        sa.Column("normal_url", sa.Text(), nullable=True),
+        sa.Column("roughness_url", sa.Text(), nullable=True),
+        sa.Column("metalness_url", sa.Text(), nullable=True),
+        sa.Column("displacement_url", sa.Text(), nullable=True),
+        sa.Column("prompt", sa.Text(), nullable=True),
+        sa.Column("outfit_description", sa.Text(), nullable=True),
+        sa.Column("equipped", sa.Boolean(), server_default=sa.text("FALSE"), nullable=False),
+        sa.Column("kind", sa.String(length=16), server_default=sa.text("'texture'"), nullable=False),
+        sa.Column("mesh_url", sa.Text(), nullable=True),
+        sa.Column("assembly_json", sa.Text(), server_default=sa.text("'{}'"), nullable=False),
+        sa.Column("origin", sa.String(length=16), server_default=sa.text("'user'"), nullable=False),
+        sa.Column("gift_state", sa.String(length=16), nullable=True),
+        sa.Column("gift_reason", sa.Text(), nullable=True),
+        sa.Column("gift_message", sa.Text(), nullable=True),
+        sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
+        sa.Column("created_at", sa.DateTime(), server_default=sa.text("now()"), nullable=False),
+        sa.Column("updated_at", sa.DateTime(), server_default=sa.text("now()"), nullable=False),
+        sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index(op.f('ix_wardrobe_items_equipped'), 'wardrobe_items', ['equipped'], unique=False)
-    op.create_index(op.f('ix_wardrobe_items_user_id'), 'wardrobe_items', ['user_id'], unique=False)
-    op.create_table('ws_events',
-    sa.Column('user_id', sa.Integer(), nullable=False),
-    sa.Column('event_type', sa.String(length=128), nullable=False),
-    sa.Column('payload', sa.Text(), nullable=False),
-    sa.Column('created_at', sa.DateTime(), server_default=sa.text('now()'), nullable=False),
-    sa.Column('id', sa.Integer(), autoincrement=True, nullable=False),
-    sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),
-    sa.PrimaryKeyConstraint('id')
+    op.create_index(op.f("ix_wardrobe_items_equipped"), "wardrobe_items", ["equipped"], unique=False)
+    op.create_index(op.f("ix_wardrobe_items_user_id"), "wardrobe_items", ["user_id"], unique=False)
+    op.create_table(
+        "ws_events",
+        sa.Column("user_id", sa.Integer(), nullable=False),
+        sa.Column("event_type", sa.String(length=128), nullable=False),
+        sa.Column("payload", sa.Text(), nullable=False),
+        sa.Column("created_at", sa.DateTime(), server_default=sa.text("now()"), nullable=False),
+        sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
+        sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index(op.f('ix_ws_events_created_at'), 'ws_events', ['created_at'], unique=False)
-    op.create_index(op.f('ix_ws_events_user_id'), 'ws_events', ['user_id'], unique=False)
-    op.create_table('messages',
-    sa.Column('conversation_id', sa.Integer(), nullable=False),
-    sa.Column('role', sa.String(length=64), nullable=False),
-    sa.Column('subtype', sa.String(length=64), nullable=True),
-    sa.Column('content', sa.Text(), nullable=True),
-    sa.Column('tool_calls', sa.Text(), nullable=True),
-    sa.Column('tool_call_id', sa.Text(), nullable=True),
-    sa.Column('prompt_tokens', sa.Integer(), server_default=sa.text('0'), nullable=False),
-    sa.Column('completion_tokens', sa.Integer(), server_default=sa.text('0'), nullable=False),
-    sa.Column('turn_duration_ms', sa.Integer(), server_default=sa.text('0'), nullable=False),
-    sa.Column('content_type', sa.String(length=32), server_default=sa.text("'text'"), nullable=False),
-    sa.Column('summary_date', sa.String(length=10), nullable=True),
-    sa.Column('created_at', sa.DateTime(), server_default=sa.text('now()'), nullable=False),
-    sa.Column('id', sa.Integer(), autoincrement=True, nullable=False),
-    sa.ForeignKeyConstraint(['conversation_id'], ['conversations.id'], ondelete='CASCADE'),
-    sa.PrimaryKeyConstraint('id')
+    op.create_index(op.f("ix_ws_events_created_at"), "ws_events", ["created_at"], unique=False)
+    op.create_index(op.f("ix_ws_events_user_id"), "ws_events", ["user_id"], unique=False)
+    op.create_table(
+        "messages",
+        sa.Column("conversation_id", sa.Integer(), nullable=False),
+        sa.Column("role", sa.String(length=64), nullable=False),
+        sa.Column("subtype", sa.String(length=64), nullable=True),
+        sa.Column("content", sa.Text(), nullable=True),
+        sa.Column("tool_calls", sa.Text(), nullable=True),
+        sa.Column("tool_call_id", sa.Text(), nullable=True),
+        sa.Column("prompt_tokens", sa.Integer(), server_default=sa.text("0"), nullable=False),
+        sa.Column("completion_tokens", sa.Integer(), server_default=sa.text("0"), nullable=False),
+        sa.Column("turn_duration_ms", sa.Integer(), server_default=sa.text("0"), nullable=False),
+        sa.Column("content_type", sa.String(length=32), server_default=sa.text("'text'"), nullable=False),
+        sa.Column("summary_date", sa.String(length=10), nullable=True),
+        sa.Column("created_at", sa.DateTime(), server_default=sa.text("now()"), nullable=False),
+        sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
+        sa.ForeignKeyConstraint(["conversation_id"], ["conversations.id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index(op.f('ix_messages_conversation_id'), 'messages', ['conversation_id'], unique=False)
-    op.create_index(op.f('ix_messages_subtype'), 'messages', ['subtype'], unique=False)
-    op.create_index(op.f('ix_messages_summary_date'), 'messages', ['summary_date'], unique=False)
+    op.create_index(op.f("ix_messages_conversation_id"), "messages", ["conversation_id"], unique=False)
+    op.create_index(op.f("ix_messages_subtype"), "messages", ["subtype"], unique=False)
+    op.create_index(op.f("ix_messages_summary_date"), "messages", ["summary_date"], unique=False)
 
     # ── Partial unique indexes (cannot be expressed in declarative models) ──
     # Concurrent POST /model would otherwise leave two active rows.
-    op.create_index('uq_avatar_assets_one_active', 'avatar_assets', ['user_id'], unique=True, postgresql_where=sa.text('active'))
-    op.create_index('uq_companion_models_one_active', 'companion_models', ['user_id'], unique=True, postgresql_where=sa.text('active'))
+    op.create_index("uq_avatar_assets_one_active", "avatar_assets", ["user_id"], unique=True, postgresql_where=sa.text("active"))
+    op.create_index("uq_companion_models_one_active", "companion_models", ["user_id"], unique=True, postgresql_where=sa.text("active"))
     # _ensure_presets relies on this index for dedup instead of a SELECT.
-    op.create_index('uq_wardrobe_items_user_name', 'wardrobe_items', ['user_id', 'name'], unique=True)
+    op.create_index("uq_wardrobe_items_user_name", "wardrobe_items", ["user_id", "name"], unique=True)
     # One main conversation per user; a full (user_id, kind) unique would forbid
     # multiple "standard" conversations. Guards the get_or_create race between
     # concurrent boot / cron kick / prompt.submit.
-    op.create_index('uq_conversations_user_main', 'conversations', ['user_id'], unique=True, postgresql_where=sa.text("kind = 'main'"))
+    op.create_index("uq_conversations_user_main", "conversations", ["user_id"], unique=True, postgresql_where=sa.text("kind = 'main'"))
     # One waiting/switch sprite per user; resolve_sprite deletes the prior row
     # before inserting so this holds concurrent requests too.
-    op.create_index('uq_companion_sprites_one_waiting', 'companion_sprite_images', ['user_id'], unique=True, postgresql_where=sa.text("role = 'waiting'"))
-    op.create_index('uq_companion_expressions_user_name', 'companion_expressions', ['user_id', 'name'], unique=True)
-    op.create_index('uq_memories_user_context', 'memories', ['user_id', 'context'], unique=True, postgresql_where=sa.text("context LIKE 'user_profile:%'"))
+    op.create_index("uq_companion_sprites_one_waiting", "companion_sprite_images", ["user_id"], unique=True, postgresql_where=sa.text("role = 'waiting'"))
+    op.create_index("uq_companion_expressions_user_name", "companion_expressions", ["user_id", "name"], unique=True)
+    op.create_index("uq_memories_user_context", "memories", ["user_id", "context"], unique=True, postgresql_where=sa.text("context LIKE 'user_profile:%'"))
     # One row per (user, slot) so memory_retain(kind='auto_inject') upserts atomically.
-    op.create_index('uq_memories_auto_inject_slot', 'memories', ['user_id', 'context'], unique=True, postgresql_where=sa.text("context LIKE 'auto_inject:%'"))
-    op.create_index('uq_memories_inferred_profile_slot', 'memories', ['user_id', 'context'], unique=True, postgresql_where=sa.text("context LIKE 'inferred_profile:%'"))
-    op.create_index('uq_memories_diary_day', 'memories', ['user_id', 'context'], unique=True, postgresql_where=sa.text("context LIKE 'diary:%'"))
+    op.create_index("uq_memories_auto_inject_slot", "memories", ["user_id", "context"], unique=True, postgresql_where=sa.text("context LIKE 'auto_inject:%'"))
+    op.create_index("uq_memories_inferred_profile_slot", "memories", ["user_id", "context"], unique=True, postgresql_where=sa.text("context LIKE 'inferred_profile:%'"))
+    op.create_index("uq_memories_diary_day", "memories", ["user_id", "context"], unique=True, postgresql_where=sa.text("context LIKE 'diary:%'"))
     # Speeds up the recall consolidator's count-and-recent queries.
-    op.create_index('ix_memories_recall_user_updated', 'memories', ['user_id', sa.text('updated_at DESC')], unique=False, postgresql_where=sa.text("context LIKE 'recall:%'"))
+    op.create_index("ix_memories_recall_user_updated", "memories", ["user_id", sa.text("updated_at DESC")], unique=False, postgresql_where=sa.text("context LIKE 'recall:%'"))
 
     # ── Vector / trigram retrieval indexes ──
-    op.create_index('ix_memories_embedding', 'memories', ['embedding'], unique=False, postgresql_using='hnsw', postgresql_ops={'embedding': 'vector_cosine_ops'})
-    op.create_index('ix_memories_content_trgm', 'memories', ['content'], unique=False, postgresql_using='gin', postgresql_ops={'content': 'gin_trgm_ops'})
-    op.create_index('ix_memories_context_trgm', 'memories', ['context'], unique=False, postgresql_using='gin', postgresql_ops={'context': 'gin_trgm_ops'})
+    op.create_index("ix_memories_embedding", "memories", ["embedding"], unique=False, postgresql_using="hnsw", postgresql_ops={"embedding": "vector_cosine_ops"})
+    op.create_index("ix_memories_content_trgm", "memories", ["content"], unique=False, postgresql_using="gin", postgresql_ops={"content": "gin_trgm_ops"})
+    op.create_index("ix_memories_context_trgm", "memories", ["context"], unique=False, postgresql_using="gin", postgresql_ops={"context": "gin_trgm_ops"})
 
     # ── ws_events LISTEN/NOTIFY wakeup trigger (ARCHITECTURE.md §5) ──
     op.execute("""
@@ -412,78 +430,78 @@ FOR EACH STATEMENT EXECUTE FUNCTION notify_ws_event();
 def downgrade() -> None:
     op.execute("DROP TRIGGER IF EXISTS ws_event_notify_trigger ON ws_events")
     op.execute("DROP FUNCTION IF EXISTS notify_ws_event()")
-    op.drop_index('ix_memories_context_trgm', table_name='memories')
-    op.drop_index('ix_memories_content_trgm', table_name='memories')
-    op.drop_index('ix_memories_embedding', table_name='memories')
-    op.drop_index('ix_memories_recall_user_updated', table_name='memories')
-    op.drop_index('uq_memories_diary_day', table_name='memories')
-    op.drop_index('uq_memories_inferred_profile_slot', table_name='memories')
-    op.drop_index('uq_memories_auto_inject_slot', table_name='memories')
-    op.drop_index('uq_memories_user_context', table_name='memories')
-    op.drop_index('uq_companion_expressions_user_name', table_name='companion_expressions')
-    op.drop_index('uq_companion_sprites_one_waiting', table_name='companion_sprite_images')
-    op.drop_index('uq_conversations_user_main', table_name='conversations')
-    op.drop_index('uq_wardrobe_items_user_name', table_name='wardrobe_items')
-    op.drop_index('uq_companion_models_one_active', table_name='companion_models')
-    op.drop_index('uq_avatar_assets_one_active', table_name='avatar_assets')
-    op.drop_index(op.f('ix_messages_summary_date'), table_name='messages')
-    op.drop_index(op.f('ix_messages_subtype'), table_name='messages')
-    op.drop_index(op.f('ix_messages_conversation_id'), table_name='messages')
-    op.drop_table('messages')
-    op.drop_index(op.f('ix_ws_events_user_id'), table_name='ws_events')
-    op.drop_index(op.f('ix_ws_events_created_at'), table_name='ws_events')
-    op.drop_table('ws_events')
-    op.drop_index(op.f('ix_wardrobe_items_user_id'), table_name='wardrobe_items')
-    op.drop_index(op.f('ix_wardrobe_items_equipped'), table_name='wardrobe_items')
-    op.drop_table('wardrobe_items')
-    op.drop_index('ix_video_gen_jobs_user_status', table_name='video_gen_jobs')
-    op.drop_index(op.f('ix_video_gen_jobs_user_id'), table_name='video_gen_jobs')
-    op.drop_index(op.f('ix_video_gen_jobs_status'), table_name='video_gen_jobs')
-    op.drop_index(op.f('ix_video_gen_jobs_provider_task_id'), table_name='video_gen_jobs')
-    op.drop_index(op.f('ix_video_gen_jobs_created_at'), table_name='video_gen_jobs')
-    op.drop_table('video_gen_jobs')
-    op.drop_index(op.f('ix_user_settings_user_id'), table_name='user_settings')
-    op.drop_index(op.f('ix_user_settings_setting_key'), table_name='user_settings')
-    op.drop_table('user_settings')
-    op.drop_index(op.f('ix_user_model_configs_user_id'), table_name='user_model_configs')
-    op.drop_table('user_model_configs')
-    op.drop_index(op.f('ix_personas_user_id'), table_name='personas')
-    op.drop_index(op.f('ix_personas_is_portrait_confirmed'), table_name='personas')
-    op.drop_index(op.f('ix_personas_is_complete'), table_name='personas')
-    op.drop_table('personas')
-    op.drop_index(op.f('ix_memories_user_id'), table_name='memories')
-    op.drop_table('memories')
-    op.drop_index(op.f('ix_login_records_user_id'), table_name='login_records')
-    op.drop_index(op.f('ix_login_records_token_jti'), table_name='login_records')
-    op.drop_index(op.f('ix_login_records_login_at'), table_name='login_records')
-    op.drop_index(op.f('ix_login_records_is_active'), table_name='login_records')
-    op.drop_table('login_records')
-    op.drop_index(op.f('ix_cron_jobs_user_id'), table_name='cron_jobs')
-    op.drop_index(op.f('ix_cron_jobs_next_run_at'), table_name='cron_jobs')
-    op.drop_index(op.f('ix_cron_jobs_name'), table_name='cron_jobs')
-    op.drop_table('cron_jobs')
-    op.drop_index(op.f('ix_conversations_user_id'), table_name='conversations')
-    op.drop_index(op.f('ix_conversations_parent_id'), table_name='conversations')
-    op.drop_table('conversations')
-    op.drop_index(op.f('ix_companion_sprite_images_user_id'), table_name='companion_sprite_images')
-    op.drop_table('companion_sprite_images')
-    op.drop_index(op.f('ix_companion_models_user_id'), table_name='companion_models')
-    op.drop_index(op.f('ix_companion_models_rig_type'), table_name='companion_models')
-    op.drop_index(op.f('ix_companion_models_active'), table_name='companion_models')
-    op.drop_table('companion_models')
-    op.drop_index(op.f('ix_companion_expressions_user_id'), table_name='companion_expressions')
-    op.drop_table('companion_expressions')
-    op.drop_index(op.f('ix_avatar_assets_user_id'), table_name='avatar_assets')
-    op.drop_index(op.f('ix_avatar_assets_active'), table_name='avatar_assets')
-    op.drop_table('avatar_assets')
-    op.drop_index(op.f('ix_users_username'), table_name='users')
-    op.drop_index(op.f('ix_users_activation_token_hash'), table_name='users')
-    op.drop_table('users')
-    op.drop_index(op.f('ix_update_versions_version'), table_name='update_versions')
-    op.drop_index(op.f('ix_update_versions_is_active'), table_name='update_versions')
-    op.drop_table('update_versions')
-    op.drop_index(op.f('ix_admin_sessions_username'), table_name='admin_sessions')
-    op.drop_index(op.f('ix_admin_sessions_token_jti'), table_name='admin_sessions')
-    op.drop_index(op.f('ix_admin_sessions_is_active'), table_name='admin_sessions')
-    op.drop_index(op.f('ix_admin_sessions_created_at'), table_name='admin_sessions')
-    op.drop_table('admin_sessions')
+    op.drop_index("ix_memories_context_trgm", table_name="memories")
+    op.drop_index("ix_memories_content_trgm", table_name="memories")
+    op.drop_index("ix_memories_embedding", table_name="memories")
+    op.drop_index("ix_memories_recall_user_updated", table_name="memories")
+    op.drop_index("uq_memories_diary_day", table_name="memories")
+    op.drop_index("uq_memories_inferred_profile_slot", table_name="memories")
+    op.drop_index("uq_memories_auto_inject_slot", table_name="memories")
+    op.drop_index("uq_memories_user_context", table_name="memories")
+    op.drop_index("uq_companion_expressions_user_name", table_name="companion_expressions")
+    op.drop_index("uq_companion_sprites_one_waiting", table_name="companion_sprite_images")
+    op.drop_index("uq_conversations_user_main", table_name="conversations")
+    op.drop_index("uq_wardrobe_items_user_name", table_name="wardrobe_items")
+    op.drop_index("uq_companion_models_one_active", table_name="companion_models")
+    op.drop_index("uq_avatar_assets_one_active", table_name="avatar_assets")
+    op.drop_index(op.f("ix_messages_summary_date"), table_name="messages")
+    op.drop_index(op.f("ix_messages_subtype"), table_name="messages")
+    op.drop_index(op.f("ix_messages_conversation_id"), table_name="messages")
+    op.drop_table("messages")
+    op.drop_index(op.f("ix_ws_events_user_id"), table_name="ws_events")
+    op.drop_index(op.f("ix_ws_events_created_at"), table_name="ws_events")
+    op.drop_table("ws_events")
+    op.drop_index(op.f("ix_wardrobe_items_user_id"), table_name="wardrobe_items")
+    op.drop_index(op.f("ix_wardrobe_items_equipped"), table_name="wardrobe_items")
+    op.drop_table("wardrobe_items")
+    op.drop_index("ix_video_gen_jobs_user_status", table_name="video_gen_jobs")
+    op.drop_index(op.f("ix_video_gen_jobs_user_id"), table_name="video_gen_jobs")
+    op.drop_index(op.f("ix_video_gen_jobs_status"), table_name="video_gen_jobs")
+    op.drop_index(op.f("ix_video_gen_jobs_provider_task_id"), table_name="video_gen_jobs")
+    op.drop_index(op.f("ix_video_gen_jobs_created_at"), table_name="video_gen_jobs")
+    op.drop_table("video_gen_jobs")
+    op.drop_index(op.f("ix_user_settings_user_id"), table_name="user_settings")
+    op.drop_index(op.f("ix_user_settings_setting_key"), table_name="user_settings")
+    op.drop_table("user_settings")
+    op.drop_index(op.f("ix_user_model_configs_user_id"), table_name="user_model_configs")
+    op.drop_table("user_model_configs")
+    op.drop_index(op.f("ix_personas_user_id"), table_name="personas")
+    op.drop_index(op.f("ix_personas_is_portrait_confirmed"), table_name="personas")
+    op.drop_index(op.f("ix_personas_is_complete"), table_name="personas")
+    op.drop_table("personas")
+    op.drop_index(op.f("ix_memories_user_id"), table_name="memories")
+    op.drop_table("memories")
+    op.drop_index(op.f("ix_login_records_user_id"), table_name="login_records")
+    op.drop_index(op.f("ix_login_records_token_jti"), table_name="login_records")
+    op.drop_index(op.f("ix_login_records_login_at"), table_name="login_records")
+    op.drop_index(op.f("ix_login_records_is_active"), table_name="login_records")
+    op.drop_table("login_records")
+    op.drop_index(op.f("ix_cron_jobs_user_id"), table_name="cron_jobs")
+    op.drop_index(op.f("ix_cron_jobs_next_run_at"), table_name="cron_jobs")
+    op.drop_index(op.f("ix_cron_jobs_name"), table_name="cron_jobs")
+    op.drop_table("cron_jobs")
+    op.drop_index(op.f("ix_conversations_user_id"), table_name="conversations")
+    op.drop_index(op.f("ix_conversations_parent_id"), table_name="conversations")
+    op.drop_table("conversations")
+    op.drop_index(op.f("ix_companion_sprite_images_user_id"), table_name="companion_sprite_images")
+    op.drop_table("companion_sprite_images")
+    op.drop_index(op.f("ix_companion_models_user_id"), table_name="companion_models")
+    op.drop_index(op.f("ix_companion_models_rig_type"), table_name="companion_models")
+    op.drop_index(op.f("ix_companion_models_active"), table_name="companion_models")
+    op.drop_table("companion_models")
+    op.drop_index(op.f("ix_companion_expressions_user_id"), table_name="companion_expressions")
+    op.drop_table("companion_expressions")
+    op.drop_index(op.f("ix_avatar_assets_user_id"), table_name="avatar_assets")
+    op.drop_index(op.f("ix_avatar_assets_active"), table_name="avatar_assets")
+    op.drop_table("avatar_assets")
+    op.drop_index(op.f("ix_users_username"), table_name="users")
+    op.drop_index(op.f("ix_users_activation_token_hash"), table_name="users")
+    op.drop_table("users")
+    op.drop_index(op.f("ix_update_versions_version"), table_name="update_versions")
+    op.drop_index(op.f("ix_update_versions_is_active"), table_name="update_versions")
+    op.drop_table("update_versions")
+    op.drop_index(op.f("ix_admin_sessions_username"), table_name="admin_sessions")
+    op.drop_index(op.f("ix_admin_sessions_token_jti"), table_name="admin_sessions")
+    op.drop_index(op.f("ix_admin_sessions_is_active"), table_name="admin_sessions")
+    op.drop_index(op.f("ix_admin_sessions_created_at"), table_name="admin_sessions")
+    op.drop_table("admin_sessions")

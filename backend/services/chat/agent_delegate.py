@@ -22,11 +22,11 @@ async def agent_delegate_tool(
         # ``session_scope`` matches the codebase convention used by
         # background_review / cron — auto-close, no implicit commit, explicit
         # ``db.commit()`` below to land the new row before ``run_chat_turn``.
-        with session_scope() as db:
+        async with session_scope() as db:
             conv = Conversation(user_id=user_id, parent_id=int(parent_session_id) if parent_session_id else None, title="Subagent Task")
             db.add(conv)
-            db.commit()
-            db.refresh(conv)
+            await db.commit()
+            await db.refresh(conv)
             sid = str(conv.id)
 
         # HeadlessEmitter captures all frames so the final answer can be
@@ -34,7 +34,7 @@ async def agent_delegate_tool(
         # forwarding was removed — the companion never consumed the frames.
         headless = HeadlessEmitter()
 
-        with SESSION_LOCAL() as db:
+        async with SESSION_LOCAL() as db:
             req = ChatRequest(
                 session_id=sid,
                 message=ChatMessageRequest(

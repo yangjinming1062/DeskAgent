@@ -25,8 +25,8 @@ from fastapi import WebSocket, WebSocketDisconnect
 from modules.auth import ChatRequestClientContext
 from modules.conversation import Conversation, Message
 from modules.system import ChatMessageRequest, ChatRequest
-from sqlalchemy import text
-from sqlalchemy.orm import Session
+from sqlalchemy import delete, select, text
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from services.chat import build_session_messages, load_user_settings, run_chat_turn
 from services.companion import (
@@ -141,7 +141,7 @@ async def handle_chat_websocket(websocket: WebSocket, token: str):
 
     # Authenticate BEFORE accept() so unauthenticated peers get a clean 1008 close
     # and never occupy a ConnectionManager slot.
-    user, payload = authenticate_ws_token(token)
+    user, payload = await authenticate_ws_token(token)
     if user is None:
         await websocket.close(code=1008)
         return
@@ -152,10 +152,10 @@ async def handle_chat_websocket(websocket: WebSocket, token: str):
     # Config and settings are read once at connect time. Per-tool execution
     # opens a fresh SESSION_LOCAL() so concurrent tool calls don't share
     # SQLAlchemy state.
-    with SESSION_LOCAL() as boot_db:
-        llm_config = resolve_user_llm_config(boot_db, user_id)
-        user_settings = load_user_settings(boot_db, user_id)
-        get_or_create_main_conversation(boot_db, user_id)
+    async with SESSION_LOCAL() as boot_db:
+        llm_config = await resolve_user_llm_config(boot_db, user_id)
+        user_settings = await load_user_settings(boot_db, user_id)
+        await get_or_create_main_conversation(boot_db, user_id)
 
     session_client_context: ChatRequestClientContext | None = None
     if payload and "ctx" in payload:
@@ -208,14 +208,16 @@ async def handle_chat_websocket(websocket: WebSocket, token: str):
         if truncate_ordinal is not None and not isinstance(truncate_ordinal, int):
             raise JsonRpcError(JSONRPC_INVALID_PARAMS, "truncate_before_user_ordinal must be an int")
         if truncate_ordinal is not None:
-            with SESSION_LOCAL() as db:
-                user_rows = db.query(Message).filter(Message.conversation_id == runtime.conversation_id, Message.role == "user").order_by(Message.id).all()
+            async with SESSION_LOCAL() as db:
+                user_rows = (
+                    (await db.execute(select(Message).where(Message.conversation_id == runtime.conversation_id, Message.role == "user").order_by(Message.id))).scalars().all()
+                )
                 if truncate_ordinal < 0 or truncate_ordinal >= len(user_rows):
                     raise JsonRpcError(JSONRPC_INVALID_PARAMS, f"truncate_before_user_ordinal {truncate_ordinal} no longer in session history")
                 drop_from_id = user_rows[truncate_ordinal].id
-                db.query(Message).filter(Message.conversation_id == runtime.conversation_id, Message.id >= drop_from_id).delete(synchronize_session=False)
+                await db.execute(delete(Message).where(Message.conversation_id == runtime.conversation_id, Message.id >= drop_from_id))
                 db.expire_all()
-                db.commit()
+                await db.commit()
 
         attachments = _validate_attachments(params)
 
@@ -230,7 +232,7 @@ async def handle_chat_websocket(websocket: WebSocket, token: str):
             _inflight_prompt.add(user_id)
 
             try:
-                with SESSION_LOCAL() as db:
+                async with SESSION_LOCAL() as db:
                     try:
                         await run_chat_turn(db, req, llm_config, user_settings, user_id, emitter, session_client_context=session_client_context, track_task=_track, runtime=runtime)
                     except (WebSocketDisconnect, asyncio.CancelledError):
@@ -298,13 +300,13 @@ async def handle_chat_websocket(websocket: WebSocket, token: str):
             REGISTRY.clear_runner_tools(user_id)
 
 
-def _find_owned_conv(db: Session, user_id: int, session_id: str) -> Conversation | None:
+async def _find_owned_conv(db: AsyncSession, user_id: int, session_id: str) -> Conversation | None:
     """Resolve a renderer-supplied session_id (the stored DB id) to a Conversation.
 
     Returns None when the id is not an int, doesn't exist, or isn't owned by
     ``user_id``; callers raise.
     """
-    return Conversation.by_session_id(db, session_id, user_id=user_id)
+    return await Conversation.by_session_id(db, session_id, user_id=user_id)
 
 
 def _require_str(params: dict[str, Any], key: str) -> str:
@@ -356,14 +358,14 @@ def _get_runtime(runtime_sessions: dict[str, RuntimeSession], params: dict[str, 
     return runtime
 
 
-def _record_main_conversation(user_id: int, role: str, content: str, subtype: str) -> None:
+async def _record_main_conversation(user_id: int, role: str, content: str, subtype: str) -> None:
     """Append a status row to the main conversation. Best-effort: losing the
     history row must not fail the RPC the user is waiting on."""
     try:
-        with SESSION_LOCAL() as db:
-            if main_conv := get_main_conversation(db, user_id):
+        async with SESSION_LOCAL() as db:
+            if main_conv := await get_main_conversation(db, user_id):
                 db.add(Message(conversation_id=main_conv.id, role=role, content=content, subtype=subtype))
-                db.commit()
+                await db.commit()
     except Exception:
         logger.exception("failed to persist main-conversation status row", extra={"user_id": user_id, "subtype": subtype})
 
@@ -381,9 +383,9 @@ def _register_session_handlers(dispatcher: JsonRpcDispatcher, runtime_sessions: 
         return runtime
 
     async def session_get_main(_params: dict) -> dict:
-        with SESSION_LOCAL() as db:
-            conv = get_or_create_main_conversation(db, user_id)
-            messages = build_session_messages(conv.id, db)
+        async with SESSION_LOCAL() as db:
+            conv = await get_or_create_main_conversation(db, user_id)
+            messages = await build_session_messages(conv.id, db)
         runtime = _mount_runtime(conv, conv.cwd)
         return SessionResumeResult(session_id=runtime.session_id, message_count=len(messages), messages=messages, info=runtime_info_snapshot(llm_config, runtime)).model_dump()
 
@@ -391,22 +393,22 @@ def _register_session_handlers(dispatcher: JsonRpcDispatcher, runtime_sessions: 
 
     async def session_create(params: dict) -> dict:
         cwd = params.get("cwd") or None
-        with SESSION_LOCAL() as db:
+        async with SESSION_LOCAL() as db:
             conv = Conversation(user_id=user_id, cwd=cwd)
             db.add(conv)
-            db.commit()
-            db.refresh(conv)
+            await db.commit()
+            await db.refresh(conv)
         runtime = _mount_runtime(conv, cwd)
         logger.info("session.create", extra={"user_id": user_id, "session_id": runtime.session_id, "cwd": cwd})
         return SessionCreateResult(session_id=runtime.session_id, info=runtime_info_snapshot(llm_config, runtime)).model_dump()
 
     async def session_resume(params: dict) -> dict:
         stored_id = _require_str(params, "session_id")
-        with SESSION_LOCAL() as db:
-            conv = _find_owned_conv(db, user_id, stored_id)
+        async with SESSION_LOCAL() as db:
+            conv = await _find_owned_conv(db, user_id, stored_id)
             if conv is None:
                 raise JsonRpcError(JSONRPC_METHOD_NOT_FOUND, f"stored session not found: {stored_id!r}")
-            messages = build_session_messages(conv.id, db)
+            messages = await build_session_messages(conv.id, db)
         runtime = _mount_runtime(conv, conv.cwd)
         logger.info("session.resume", extra={"user_id": user_id, "session_id": runtime.session_id})
         return SessionResumeResult(session_id=runtime.session_id, message_count=len(messages), messages=messages, info=runtime_info_snapshot(llm_config, runtime)).model_dump()
@@ -485,7 +487,7 @@ def _register_session_handlers(dispatcher: JsonRpcDispatcher, runtime_sessions: 
             raise JsonRpcError(JSONRPC_INVALID_PARAMS, "hour must be int in [0, 23]")
         if kind not in ("poke", "drag", "chat_turn"):
             raise JsonRpcError(JSONRPC_INVALID_PARAMS, f"kind must be one of poke/drag/chat_turn, got {kind!r}")
-        return record_interaction(user_id, kind, hour)
+        return await record_interaction(user_id, kind, hour)
 
     dispatcher.register("companion.record_interaction_stats", companion_record_interaction_stats)
 
@@ -537,8 +539,8 @@ def _register_session_handlers(dispatcher: JsonRpcDispatcher, runtime_sessions: 
 
         # Only a reaction the user actually saw is worth a history row — an
         # unanswered poke would otherwise litter the main conversation.
-        _record_main_conversation(user_id, "user", f"（{'戳了戳' if kind == 'poke' else '拖拽了'}精灵）", "status_interaction")
-        _record_main_conversation(user_id, "assistant", res.text, "status_reaction")
+        await _record_main_conversation(user_id, "user", f"（{'戳了戳' if kind == 'poke' else '拖拽了'}精灵）", "status_interaction")
+        await _record_main_conversation(user_id, "assistant", res.text, "status_reaction")
         # Cooldown is consumed regardless of the DB outcome: the LLM call has
         # already been paid for, so a persistence failure must not open the door
         # to a second one.
@@ -584,8 +586,8 @@ def _register_session_handlers(dispatcher: JsonRpcDispatcher, runtime_sessions: 
     async def companion_get_user_profile(_params: dict) -> dict:
         # Reverse of ``record_user_profile`` — the retune wizard calls this
         # before opening to pre-populate its user_* step.
-        with SESSION_LOCAL() as db:
-            return read_user_profile(db, user_id)
+        async with SESSION_LOCAL() as db:
+            return await read_user_profile(db, user_id)
 
     dispatcher.register("companion.get_user_profile", companion_get_user_profile)
 
@@ -595,8 +597,8 @@ def _register_session_handlers(dispatcher: JsonRpcDispatcher, runtime_sessions: 
         q = params.get("q")
         limit = params.get("limit")
         try:
-            with SESSION_LOCAL() as db:
-                rows = list_memories(
+            async with SESSION_LOCAL() as db:
+                rows = await list_memories(
                     db,
                     user_id,
                     kind=kind if isinstance(kind, str) else None,
@@ -604,7 +606,7 @@ def _register_session_handlers(dispatcher: JsonRpcDispatcher, runtime_sessions: 
                     q=q if isinstance(q, str) else None,
                     limit=int(limit) if isinstance(limit, int) else 100,
                 )
-                counts = memory_counts(db, user_id)
+                counts = await memory_counts(db, user_id)
         except ValueError as exc:
             raise JsonRpcError(JSONRPC_INVALID_PARAMS, str(exc))
         return {"memories": rows, "counts": counts}
@@ -615,8 +617,8 @@ def _register_session_handlers(dispatcher: JsonRpcDispatcher, runtime_sessions: 
         if not isinstance(memory_id, int) or not isinstance(content, str):
             raise JsonRpcError(JSONRPC_INVALID_PARAMS, "memory_id (int) and content (str) required")
         try:
-            with SESSION_LOCAL() as db:
-                row = update_memory(db, user_id, memory_id, content=content)
+            async with SESSION_LOCAL() as db:
+                row = await update_memory(db, user_id, memory_id, content=content)
         except ValueError as exc:
             raise JsonRpcError(JSONRPC_INVALID_PARAMS, str(exc))
         if row is None:
@@ -627,8 +629,8 @@ def _register_session_handlers(dispatcher: JsonRpcDispatcher, runtime_sessions: 
         memory_id = params.get("memory_id")
         if not isinstance(memory_id, int):
             raise JsonRpcError(JSONRPC_INVALID_PARAMS, "memory_id (int) required")
-        with SESSION_LOCAL() as db:
-            ok = delete_memory(db, user_id, memory_id)
+        async with SESSION_LOCAL() as db:
+            ok = await delete_memory(db, user_id, memory_id)
         return {"deleted": ok}
 
     dispatcher.register("memory.list", memory_list)
@@ -640,8 +642,8 @@ def _register_session_handlers(dispatcher: JsonRpcDispatcher, runtime_sessions: 
         # onboarding fields are already collected and which question to
         # resume from. Returns ``complete: true`` once the persona is
         # finalized, so the desktop skips onboarding entirely.
-        with SESSION_LOCAL() as db:
-            return get_onboarding_state(db, user_id)
+        async with SESSION_LOCAL() as db:
+            return await get_onboarding_state(db, user_id)
 
     async def onboarding_submit(params: dict) -> dict:
         # Per-field incremental persistence. Each ``onboarding.submit
@@ -653,9 +655,9 @@ def _register_session_handlers(dispatcher: JsonRpcDispatcher, runtime_sessions: 
         value = params.get("value")
         if value is not None and not isinstance(value, str):
             raise JsonRpcError(JSONRPC_INVALID_PARAMS, "value must be a string or null")
-        with SESSION_LOCAL() as db:
+        async with SESSION_LOCAL() as db:
             try:
-                return submit_onboarding_field(db, user_id, field, value)
+                return await submit_onboarding_field(db, user_id, field, value)
             except PersonaValidationError as exc:
                 raise JsonRpcError(JSONRPC_INVALID_PARAMS, str(exc))
 
@@ -675,8 +677,8 @@ def _register_session_handlers(dispatcher: JsonRpcDispatcher, runtime_sessions: 
         feedback = params.get("feedback")
         if feedback is not None and not isinstance(feedback, str):
             raise JsonRpcError(JSONRPC_INVALID_PARAMS, "feedback must be a string")
-        with SESSION_LOCAL() as db:
-            persona = get_or_create_persona(db, user_id)
+        async with SESSION_LOCAL() as db:
+            persona = await get_or_create_persona(db, user_id)
             if not persona.is_complete:
                 raise JsonRpcError(JSONRPC_INVALID_PARAMS, "finish onboarding before regenerating avatar")
         job_id = f"avatar_regen_{user_id}_{secrets.token_urlsafe(6)}"
@@ -691,7 +693,7 @@ def _register_session_handlers(dispatcher: JsonRpcDispatcher, runtime_sessions: 
         async def _run() -> None:
             async with lock:
                 try:
-                    with SESSION_LOCAL() as db:
+                    async with SESSION_LOCAL() as db:
                         # Advisory lock serializes avatar regen per user
                         # within this process. The ``xact`` variant
                         # auto-releases on commit/rollback, so no explicit
@@ -701,14 +703,14 @@ def _register_session_handlers(dispatcher: JsonRpcDispatcher, runtime_sessions: 
                         # the event loop.
                         regen_busy = False
                         try:
-                            got = db.execute(text("SELECT pg_try_advisory_xact_lock(:k)"), {"k": _AVATAR_REGEN_ADVISORY_NAMESPACE + int(user_id)}).scalar()
+                            got = (await db.execute(text("SELECT pg_try_advisory_xact_lock(:k)"), {"k": _AVATAR_REGEN_ADVISORY_NAMESPACE + int(user_id)})).scalar()
                             regen_busy = not bool(got)
                         except Exception:
                             regen_busy = False
                         if regen_busy:
                             payload = {"job_id": job_id, "error": "伙伴正在生成形象，请稍候"}
                             return
-                        persona = get_or_create_persona(db, user_id)
+                        persona = await get_or_create_persona(db, user_id)
                         asset = await regenerate_avatar(db, user_id, persona, feedback=feedback)
                         payload = {"job_id": job_id, "asset_url": asset.asset_url, "seed_front_url": None, "seed_right_url": None, "seed_back_url": None, "id": asset.id}
                 except AvatarGenerationError as exc:
@@ -736,8 +738,8 @@ def _register_session_handlers(dispatcher: JsonRpcDispatcher, runtime_sessions: 
         if language is not None and not isinstance(language, str):
             raise JsonRpcError(JSONRPC_INVALID_PARAMS, "language must be a string")
         language = normalize_voice_language(language)
-        with SESSION_LOCAL() as db:
-            return list_tts_voices(db, user_id, language=language)
+        async with SESSION_LOCAL() as db:
+            return await list_tts_voices(db, user_id, language=language)
 
     async def tts_match_voice(params: dict) -> dict:
         # Map a free-text voice preference to a concrete voice id from the
@@ -747,8 +749,8 @@ def _register_session_handlers(dispatcher: JsonRpcDispatcher, runtime_sessions: 
         preference = params.get("preference")
         if not isinstance(preference, str):
             raise JsonRpcError(JSONRPC_INVALID_PARAMS, "preference must be a string")
-        with SESSION_LOCAL() as db:
-            return match_user_voice(db, user_id, preference)
+        async with SESSION_LOCAL() as db:
+            return await match_user_voice(db, user_id, preference)
 
     async def tts_design_voice(params: dict) -> dict:
         prompt = params.get("prompt")
@@ -760,7 +762,7 @@ def _register_session_handlers(dispatcher: JsonRpcDispatcher, runtime_sessions: 
         preview_text = params.get("preview_text")
         if not isinstance(preview_text, str):
             preview_text = ""
-        with SESSION_LOCAL() as db:
+        async with SESSION_LOCAL() as db:
             try:
                 result = await design_voice(db, user_id, prompt, preview_text=preview_text)
             except (ValueError, MissingLlmConfigError) as exc:

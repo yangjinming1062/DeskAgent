@@ -15,8 +15,9 @@ from modules.conversation import (
 )
 from services.chat import build_session_messages
 from services.conversation import CRON_KIND, MAIN_KIND
-from sqlalchemy import asc, desc, func, or_
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy import asc, desc, func, or_, select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 router = get_router(dependencies=[Depends(get_current_session)])
 
@@ -52,16 +53,16 @@ def _conversation_to_session_info(conv: Conversation, msg_count: int, input_tok:
     )
 
 
-def _get_conversation_or_404(db: Session, user: User, session_id: str) -> Conversation:
+async def _get_conversation_or_404(db: AsyncSession, user: User, session_id: str) -> Conversation:
     """Fetch a Conversation by id, enforcing ownership; raises 404 on miss."""
-    conv = Conversation.by_session_id(db, session_id, user_id=user.id)
+    conv = await Conversation.by_session_id(db, session_id, user_id=user.id)
     if conv is None:
         raise HTTPException(status_code=404, detail="Session not found")
     return conv
 
 
 @router.get("", response_model=DesktopSessionListResponse)
-def list_sessions(
+async def list_sessions(
     limit: int = 40,
     offset: int = 0,
     min_messages: int = 0,
@@ -69,18 +70,18 @@ def list_sessions(
     order: Literal["recent", "oldest"] = "recent",
     include_subagents: bool = False,
     current: tuple[User, object] = Depends(get_current_session),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ) -> DesktopSessionListResponse:
     user, _ = current
     # selectinload(Conversation.messages) so _conversation_to_session_info can
     # walk conv.messages to compute ``preview`` without an N+1 SELECT per row.
     # Exclude internal cron scratchpad conversations from user-facing lists.
-    q = db.query(Conversation).options(selectinload(Conversation.messages)).filter(Conversation.user_id == user.id, Conversation.kind != CRON_KIND)
+    q = select(Conversation).options(selectinload(Conversation.messages)).where(Conversation.user_id == user.id, Conversation.kind != CRON_KIND)
 
     if archived == "only":
         # Self-referencing parent_id marks archived; real lineage (parent_id
         # pointing at a different conversation) is a subagent and stays visible.
-        q = q.filter(Conversation.parent_id == Conversation.id)
+        q = q.where(Conversation.parent_id == Conversation.id)
     elif archived == "exclude":
         # Default (include_subagents=False): only top-level conversations —
         # rows where parent_id IS NULL. Subagents (parent_id pointing at a
@@ -90,9 +91,9 @@ def list_sessions(
         # Opt-in (include_subagents=True): show main + subagents, still
         # hiding self-archived rows.
         if include_subagents:
-            q = q.filter((Conversation.parent_id.is_(None)) | (Conversation.parent_id != Conversation.id))
+            q = q.where((Conversation.parent_id.is_(None)) | (Conversation.parent_id != Conversation.id))
         else:
-            q = q.filter(Conversation.parent_id.is_(None))
+            q = q.where(Conversation.parent_id.is_(None))
     # Any other value: the Literal validator rejects unknown ``archived``
     # at the HTTP boundary with 422, so this fallthrough is unreachable in
     # practice — left as a no-op for future string inputs.
@@ -104,7 +105,7 @@ def list_sessions(
 
     # Subquery for message counts
     msg_stats = (
-        db.query(
+        select(
             Message.conversation_id,
             func.count(Message.id).label("msg_count"),
             func.coalesce(func.sum(Message.prompt_tokens), 0).label("input_tok"),
@@ -114,22 +115,22 @@ def list_sessions(
         .subquery()
     )
 
-    tool_stats = db.query(Message.conversation_id, func.count(Message.id).label("tool_count")).filter(Message.tool_calls.isnot(None)).group_by(Message.conversation_id).subquery()
+    tool_stats = select(Message.conversation_id, func.count(Message.id).label("tool_count")).where(Message.tool_calls.isnot(None)).group_by(Message.conversation_id).subquery()
 
     q = q.outerjoin(msg_stats, Conversation.id == msg_stats.c.conversation_id)
     q = q.outerjoin(tool_stats, Conversation.id == tool_stats.c.conversation_id)
 
     if min_messages > 0:
-        q = q.filter(func.coalesce(msg_stats.c.msg_count, 0) >= min_messages)
+        q = q.where(func.coalesce(msg_stats.c.msg_count, 0) >= min_messages)
 
-    total_q = q.count()
+    total_q = (await db.execute(select(func.count()).select_from(q.subquery()))).scalar_one()
 
     if order == "recent":
         q = q.order_by(desc(Conversation.updated_at))
     else:
         q = q.order_by(asc(Conversation.created_at))
 
-    convs = q.offset(offset).limit(limit).all()
+    convs = (await db.execute(q.offset(offset).limit(limit))).scalars().all()
 
     sessions = []
     for conv in convs:
@@ -143,10 +144,10 @@ def list_sessions(
 
 
 @router.get("/search", response_model=DesktopSessionSearchResponse)
-def search_sessions(
+async def search_sessions(
     q: str = Query(..., min_length=1, description="Substring to match against title, message content, and id"),
     current: tuple[User, object] = Depends(get_current_session),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ) -> DesktopSessionSearchResponse:
     """Search sessions by title, conversation id, or any message in the conversation.
 
@@ -169,25 +170,30 @@ def search_sessions(
     # poorly with nested subqueries.
     title_match_ids = [
         row[0]
-        for row in db.query(Conversation.id)
-        .filter(
-            Conversation.user_id == user.id,
-            Conversation.kind != CRON_KIND,
-            or_(Conversation.title.ilike(pattern, escape=SQL_LIKE_ESCAPE_CHAR), Conversation.id.like(pattern, escape=SQL_LIKE_ESCAPE_CHAR)),
-        )
-        .all()
+        for row in (
+            await db.execute(
+                select(Conversation.id).where(
+                    Conversation.user_id == user.id,
+                    Conversation.kind != CRON_KIND,
+                    or_(Conversation.title.ilike(pattern, escape=SQL_LIKE_ESCAPE_CHAR), Conversation.id.like(pattern, escape=SQL_LIKE_ESCAPE_CHAR)),
+                )
+            )
+        ).all()
     ]
     # The content scan is the most expensive path (full-table LIKE on
     # ``messages.content``). Cap at 200 distinct conversation ids.
     content_match_ids = [
         row[0]
-        for row in db.query(Message.conversation_id)
-        .filter(Message.content.ilike(pattern, escape=SQL_LIKE_ESCAPE_CHAR))
-        .join(Conversation, Conversation.id == Message.conversation_id)
-        .filter(Conversation.user_id == user.id, Conversation.kind != CRON_KIND)
-        .distinct()
-        .limit(200)
-        .all()
+        for row in (
+            await db.execute(
+                select(Message.conversation_id)
+                .where(Message.content.ilike(pattern, escape=SQL_LIKE_ESCAPE_CHAR))
+                .join(Conversation, Conversation.id == Message.conversation_id)
+                .where(Conversation.user_id == user.id, Conversation.kind != CRON_KIND)
+                .distinct()
+                .limit(200)
+            )
+        ).all()
     ]
 
     merged_ids = set(title_match_ids) | set(content_match_ids)
@@ -195,15 +201,16 @@ def search_sessions(
         return DesktopSessionSearchResponse(sessions=[])
 
     rows = (
-        db.query(Conversation, func.count(Message.id).label("msg_count"))
-        .options(selectinload(Conversation.messages))
-        .outerjoin(Message, Message.conversation_id == Conversation.id)
-        .filter(Conversation.id.in_(merged_ids))
-        .group_by(Conversation.id)
-        .order_by(desc(Conversation.updated_at))
-        .limit(20)
-        .all()
-    )
+        await db.execute(
+            select(Conversation, func.count(Message.id).label("msg_count"))
+            .options(selectinload(Conversation.messages))
+            .outerjoin(Message, Message.conversation_id == Conversation.id)
+            .where(Conversation.id.in_(merged_ids))
+            .group_by(Conversation.id)
+            .order_by(desc(Conversation.updated_at))
+            .limit(20)
+        )
+    ).all()
 
     sessions = []
     for conv, msg_count in rows:
@@ -213,36 +220,36 @@ def search_sessions(
 
 
 @router.get("/{session_id}/messages", response_model=DesktopSessionMessagesResponse)
-def get_session_messages(session_id: str, current: tuple[User, object] = Depends(get_current_session), db: Session = Depends(get_db)) -> DesktopSessionMessagesResponse:
+async def get_session_messages(session_id: str, current: tuple[User, object] = Depends(get_current_session), db: AsyncSession = Depends(get_db)) -> DesktopSessionMessagesResponse:
     user, _ = current
-    conv = _get_conversation_or_404(db, user, session_id)
-    result = build_session_messages(conv.id, db)
+    conv = await _get_conversation_or_404(db, user, session_id)
+    result = await build_session_messages(conv.id, db)
     return DesktopSessionMessagesResponse(session_id=str(conv.id), messages=result)
 
 
 @router.patch("/{session_id}")
-def patch_session(session_id: str, body: DesktopSessionPatchRequest, current: tuple[User, object] = Depends(get_current_session), db: Session = Depends(get_db)) -> dict:
+async def patch_session(session_id: str, body: DesktopSessionPatchRequest, current: tuple[User, object] = Depends(get_current_session), db: AsyncSession = Depends(get_db)) -> dict:
     user, _ = current
-    conv = _get_conversation_or_404(db, user, session_id)
+    conv = await _get_conversation_or_404(db, user, session_id)
     if conv.kind == MAIN_KIND:
         raise HTTPException(status_code=403, detail="Main conversation cannot be modified or deleted")
     if body.title is not None:
         conv.title = body.title
     if body.archived is not None:
         conv.parent_id = conv.id if body.archived else None
-    db.commit()
+    await db.commit()
     return {"ok": True}
 
 
 @router.delete("/{session_id}")
-def delete_session(session_id: str, current: tuple[User, object] = Depends(get_current_session), db: Session = Depends(get_db)) -> dict:
+async def delete_session(session_id: str, current: tuple[User, object] = Depends(get_current_session), db: AsyncSession = Depends(get_db)) -> dict:
     user, _ = current
-    conv = _get_conversation_or_404(db, user, session_id)
+    conv = await _get_conversation_or_404(db, user, session_id)
     if conv.kind == MAIN_KIND:
         raise HTTPException(status_code=403, detail="Main conversation cannot be modified or deleted")
     deleted_id = conv.id
-    db.delete(conv)
-    db.commit()
+    await db.delete(conv)
+    await db.commit()
     # Cascade-cleanup of remote-mode attachments. Best-effort — a
     # filesystem failure (permissions, disk full) must not strand a deleted
     # session row, so we log and swallow. gc_session validates ``session_id``

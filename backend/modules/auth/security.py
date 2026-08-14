@@ -82,20 +82,20 @@ def create_access_token(
     return token, int(expires_delta.total_seconds()), token_jti
 
 
-def create_admin_token(client_version: str = "", ip_address: str = "", user_agent: str = "") -> tuple[str, int]:
+async def create_admin_token(client_version: str = "", ip_address: str = "", user_agent: str = "") -> tuple[str, int]:
     jti = uuid4().hex
     expires_delta = timedelta(minutes=SETTINGS.access_token_expire_minutes)
     expires_at = datetime.now(UTC) + expires_delta
     payload = {"sub": "admin", "username": SETTINGS.admin_username, "is_admin": True, "jti": jti, "exp": expires_at}
     token = jwt.encode(payload, SETTINGS.jwt_secret_key, algorithm=SETTINGS.jwt_algorithm)
     try:
-        with SESSION_LOCAL() as db:
+        async with SESSION_LOCAL() as db:
             db.add(
                 AdminSession(
                     token_jti=jti, username=SETTINGS.admin_username, client_version=client_version[:64], ip_address=ip_address[:64], user_agent=user_agent[:1024], is_active=True
                 )
             )
-            db.commit()
+            await db.commit()
     except Exception as exc:
         logger.warning("admin session record failed (token still valid): %s", exc)
     return token, int(expires_delta.total_seconds())

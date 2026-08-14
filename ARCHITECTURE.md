@@ -200,7 +200,7 @@ Backend POST /api/companion/model {provider: "blender_llm"}
 
 1. **写出事件**：业务或 Cron 协程将待发送的 WS 帧写入 `ws_events` 表。
 2. **数据库触发器**：PostgreSQL STATEMENT 级触发器在 INSERT 时自动发出 `NOTIFY ws_events_channel`。
-3. **副本认领（Atomic Claim）**：每个 Backend 副本独立 `LISTEN`，收到唤醒后执行 `DELETE ... RETURNING`；行锁保证仅一台副本原子获取并消费该行。调度器 tick 只写入事件不 await WS 发射，避免慢客户端拖垮事务。
+3. **副本认领（Atomic Claim）**：每个 Backend 副本独立 `LISTEN`（一条进程生命周期专用的 asyncpg 直连，断线 5s 自动重连；非 PG 后端退化为 60s 轮询），收到唤醒后执行 `DELETE ... RETURNING`；行锁保证仅一台副本原子获取并消费该行。调度器 tick 只写入事件不 await WS 发射，避免慢客户端拖垮事务。
 
 `send_message`（主动消息）、Cron（定时任务）、形象/角色变更通知等所有"伙伴主动行为"都经此通道下发至 Client。实现细节见 [backend/README.md §Cron 与事件下发](backend/README.md)。
 

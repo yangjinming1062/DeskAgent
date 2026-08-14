@@ -1,6 +1,7 @@
 from modules.conversation import Conversation, Message
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 MAIN_KIND = "main"
 # Autonomous cron-driven turns run on a dedicated conversation so the renderer's
@@ -19,11 +20,11 @@ UI_ONLY_SUBTYPES: frozenset[str] = frozenset({"hint", "status_interaction", "sta
 HINT_TEXT = "在这里和精灵聊日常吧～需要干活时可以新开一个独立对话，避免上下文互相干扰。"
 
 
-def get_main_conversation(db: Session, user_id: int) -> Conversation | None:
-    return db.query(Conversation).filter(Conversation.user_id == user_id, Conversation.kind == MAIN_KIND).first()
+async def get_main_conversation(db: AsyncSession, user_id: int) -> Conversation | None:
+    return (await db.execute(select(Conversation).where(Conversation.user_id == user_id, Conversation.kind == MAIN_KIND))).scalar_one_or_none()
 
 
-def get_or_create_main_conversation(db: Session, user_id: int) -> Conversation:
+async def get_or_create_main_conversation(db: AsyncSession, user_id: int) -> Conversation:
     """Get the user's main conversation, creating it on first access.
 
     Concurrent callers (WS boot, cron kick, prompt.submit) each open their
@@ -32,45 +33,45 @@ def get_or_create_main_conversation(db: Session, user_id: int) -> Conversation:
     migration) makes a duplicate insert fail; we roll
     back and re-read so the loser converges on the winner's row.
     """
-    conv = get_main_conversation(db, user_id)
+    conv = await get_main_conversation(db, user_id)
     if conv is not None:
         return conv
     conv = Conversation(user_id=user_id, kind=MAIN_KIND, title="日常对话")
     db.add(conv)
     try:
-        db.flush()
+        await db.flush()
     except IntegrityError:
-        db.rollback()
-        existing = get_main_conversation(db, user_id)
+        await db.rollback()
+        existing = await get_main_conversation(db, user_id)
         if existing is not None:
             return existing
         raise
     db.add(Message(conversation_id=conv.id, role="system", content=HINT_TEXT, subtype="hint"))
-    db.commit()
-    db.refresh(conv)
+    await db.commit()
+    await db.refresh(conv)
     return conv
 
 
-def get_or_create_cron_conversation(db: Session, user_id: int) -> Conversation:
+async def get_or_create_cron_conversation(db: AsyncSession, user_id: int) -> Conversation:
     """Per-user scratchpad for autonomous cron turns. One row per user, so
     successive cron ticks accumulate context onto the same conversation; the
     renderer never mounts it so a WS reconnect cannot touch an in-flight cron.
     Race protection mirrors :func:`get_or_create_main_conversation`: the
     unique partial index on ``(user_id, kind)`` makes a duplicate insert fail
     and the loser converges on the winner's row."""
-    existing = db.query(Conversation).filter(Conversation.user_id == user_id, Conversation.kind == CRON_KIND).first()
+    existing = (await db.execute(select(Conversation).where(Conversation.user_id == user_id, Conversation.kind == CRON_KIND))).scalar_one_or_none()
     if existing is not None:
         return existing
     conv = Conversation(user_id=user_id, kind=CRON_KIND, title="自主回合")
     db.add(conv)
     try:
-        db.flush()
+        await db.flush()
     except IntegrityError:
-        db.rollback()
-        existing = db.query(Conversation).filter(Conversation.user_id == user_id, Conversation.kind == CRON_KIND).first()
+        await db.rollback()
+        existing = (await db.execute(select(Conversation).where(Conversation.user_id == user_id, Conversation.kind == CRON_KIND))).scalar_one_or_none()
         if existing is not None:
             return existing
         raise
-    db.commit()
-    db.refresh(conv)
+    await db.commit()
+    await db.refresh(conv)
     return conv

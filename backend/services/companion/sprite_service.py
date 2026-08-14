@@ -6,7 +6,8 @@ from collections import deque
 from components import get_logger, parse_llm_json, safe_json_loads
 from modules.companion import CompanionSpriteImage
 from PIL import Image, ImageOps
-from sqlalchemy.orm import Session
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..llm import ServiceType, resolve, resolve_provider_chain
 from ..tools.builtin import first_image_url, image_generation_tool
@@ -124,7 +125,7 @@ def solid_bg_to_alpha(data: bytes) -> bytes:
     return buf.getvalue()
 
 
-async def _match_album(db: Session, user_id: int, entries: list[CompanionSpriteImage], request_text: str) -> CompanionSpriteImage | None:
+async def _match_album(db: AsyncSession, user_id: int, entries: list[CompanionSpriteImage], request_text: str) -> CompanionSpriteImage | None:
     listing = json.dumps([{"id": e.id, "tag": e.tag} for e in entries], ensure_ascii=False)
     try:
         raw = await _vision_llm_call(db, user_id, _SPRITE_MATCH_SYSTEM, f"{listing}\n\n请求：{request_text}", [], response_format={"type": "json_object"})
@@ -137,8 +138,8 @@ async def _match_album(db: Session, user_id: int, entries: list[CompanionSpriteI
     return next((e for e in entries if e.id == match_id), None)
 
 
-async def _author_prompt(db: Session, user_id: int, request_text: str) -> tuple[str, str]:
-    persona = get_or_create_persona(db, user_id)
+async def _author_prompt(db: AsyncSession, user_id: int, request_text: str) -> tuple[str, str]:
+    persona = await get_or_create_persona(db, user_id)
     definition = safe_json_loads(persona.definition_json or "{}", default={})
     anchor = {k: definition.get(k) for k in ("biological_type", "gender", "appearance_core", "appearance_outfit") if definition.get(k)}
     raw = await _vision_llm_call(
@@ -151,8 +152,8 @@ async def _author_prompt(db: Session, user_id: int, request_text: str) -> tuple[
     return prompt.strip(), tag.strip()[:64]
 
 
-async def _generate_sprite_png(db: Session, user_id: int, prompt: str, subject_ref: str) -> bytes:
-    chain = [c for c in resolve_provider_chain(db, user_id, "image_gen") if resolve(ServiceType.image_gen, c.provider_name).supports_reference_image]
+async def _generate_sprite_png(db: AsyncSession, user_id: int, prompt: str, subject_ref: str) -> bytes:
+    chain = [c for c in await resolve_provider_chain(db, user_id, "image_gen") if resolve(ServiceType.image_gen, c.provider_name).supports_reference_image]
     if not chain:
         raise SpriteGenerationError("当前图片生成供应商均不支持以图生图，请启用 minimax / gemini / grok 其中之一")
     for cfg in chain:
@@ -172,21 +173,21 @@ async def _generate_sprite_png(db: Session, user_id: int, prompt: str, subject_r
     raise SpriteGenerationError("精灵形象生成失败，请稍后再试")
 
 
-def get_waiting_sprite(db: Session, user_id: int) -> CompanionSpriteImage | None:
-    return db.query(CompanionSpriteImage).filter(CompanionSpriteImage.user_id == user_id, CompanionSpriteImage.role == "waiting").first()
+async def get_waiting_sprite(db: AsyncSession, user_id: int) -> CompanionSpriteImage | None:
+    return (await db.execute(select(CompanionSpriteImage).where(CompanionSpriteImage.user_id == user_id, CompanionSpriteImage.role == "waiting"))).scalars().first()
 
 
-def list_sprites(db: Session, user_id: int) -> list[CompanionSpriteImage]:
-    return db.query(CompanionSpriteImage).filter(CompanionSpriteImage.user_id == user_id).order_by(CompanionSpriteImage.created_at.desc()).all()
+async def list_sprites(db: AsyncSession, user_id: int) -> list[CompanionSpriteImage]:
+    return (await db.execute(select(CompanionSpriteImage).where(CompanionSpriteImage.user_id == user_id).order_by(CompanionSpriteImage.created_at.desc()))).scalars().all()
 
 
-def _prune_album(db: Session, user_id: int) -> None:
-    rows = list_sprites(db, user_id)
+async def _prune_album(db: AsyncSession, user_id: int) -> None:
+    rows = await list_sprites(db, user_id)
     for row in rows[_SPRITE_ALBUM_CAP:]:
         if row.role == "waiting":
             continue
         unlink_companion_asset(row.asset_url)
-        db.delete(row)
+        await db.delete(row)
 
 
 def signed_sprite_url(row: CompanionSpriteImage) -> str | None:
@@ -198,17 +199,17 @@ def signed_sprite_url(row: CompanionSpriteImage) -> str | None:
     return build_signed_asset_url(int(parts[1]), parts[2])
 
 
-async def resolve_sprite(db: Session, *, user_id: int, request_text: str, role: str | None = None, force_new: bool = False) -> tuple[CompanionSpriteImage, bool]:
+async def resolve_sprite(db: AsyncSession, *, user_id: int, request_text: str, role: str | None = None, force_new: bool = False) -> tuple[CompanionSpriteImage, bool]:
     """Album lookup-or-generate. Returns ``(row, generated)``. The waiting-role
     short-circuit skips both LLM calls — it is the first-priority image the
     client hits on every static-mode entry, so its steady state must be free."""
-    asset = get_active_avatar(db, user_id)
+    asset = await get_active_avatar(db, user_id)
     if asset is None:
         raise SpriteSeedMissingError("形象种子图尚未生成，请先完成形象确认")
-    if role == "waiting" and not force_new and (row := get_waiting_sprite(db, user_id)):
+    if role == "waiting" and not force_new and (row := await get_waiting_sprite(db, user_id)):
         return row, False
     if not force_new:
-        entries = db.query(CompanionSpriteImage).filter(CompanionSpriteImage.user_id == user_id, CompanionSpriteImage.avatar_id == asset.id).all()
+        entries = (await db.execute(select(CompanionSpriteImage).where(CompanionSpriteImage.user_id == user_id, CompanionSpriteImage.avatar_id == asset.id))).scalars().all()
         if entries and (hit := await _match_album(db, user_id, entries, request_text)):
             return hit, False
 
@@ -221,14 +222,14 @@ async def resolve_sprite(db: Session, *, user_id: int, request_text: str, role: 
     path = save_companion_asset(png, user_id=user_id, label="sprite", ext="png")
 
     if role == "waiting":
-        for old in db.query(CompanionSpriteImage).filter(CompanionSpriteImage.user_id == user_id, CompanionSpriteImage.role == "waiting").all():
+        for old in (await db.execute(select(CompanionSpriteImage).where(CompanionSpriteImage.user_id == user_id, CompanionSpriteImage.role == "waiting"))).scalars().all():
             unlink_companion_asset(old.asset_url)
-            db.delete(old)
+            await db.delete(old)
     row = CompanionSpriteImage(
         user_id=user_id, avatar_id=asset.id, role=role, tag=tag, prompt=prompt, request_text=request_text[:500], asset_url=path, content_hash=compute_bytes_sha256(png)
     )
     db.add(row)
-    _prune_album(db, user_id)
-    db.commit()
-    db.refresh(row)
+    await _prune_album(db, user_id)
+    await db.commit()
+    await db.refresh(row)
     return row, True

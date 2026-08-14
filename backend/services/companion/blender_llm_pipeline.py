@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from components import SESSION_LOCAL, SETTINGS, get_logger, parse_llm_json
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..llm import chat, provider_from_config, resolve_vision_chain
 from ..llm.llm_client import MissingLlmConfigError
@@ -210,9 +210,9 @@ def _resolve_seeds(view_filenames: dict[str, str]) -> tuple[dict[str, str], dict
     return uris, paths
 
 
-async def _vision_llm_call(db: Session | None, user_id: int, system_prompt: str, text_instruction: str, image_data_uris: list[str], **create_kwargs: object) -> str:
+async def _vision_llm_call(db: AsyncSession | None, user_id: int, system_prompt: str, text_instruction: str, image_data_uris: list[str], **create_kwargs: object) -> str:
     """Direct multimodal LLM call using the first resolved vision provider."""
-    chain = resolve_vision_chain(db, user_id)
+    chain = await resolve_vision_chain(db, user_id)
     if not chain:
         raise ModelGenerationError("没有可用的 vision LLM provider，无法分析种子图")
 
@@ -242,7 +242,7 @@ def _strip_code_fences(text: str) -> str:
     return cleaned.strip()
 
 
-async def _llm_generate_script(seed_uris: dict[str, str], rig_type: str, bone_tree: str, rig_naming: str, species: str, user_id: int, db: Session | None = None) -> str:
+async def _llm_generate_script(seed_uris: dict[str, str], rig_type: str, bone_tree: str, rig_naming: str, species: str, user_id: int, db: AsyncSession | None = None) -> str:
     system = _CODE_GEN_SYSTEM_PROMPT.format(rig_type=rig_type, rig_naming=rig_naming, bone_tree=bone_tree)
     instruction = f"物种：{species}\n骨骼类型：{rig_type}\n\n请分析以上三视图角色图，输出 bpy 建模代码。"
     images = [seed_uris["front"], seed_uris["right"], seed_uris["back"]]
@@ -250,7 +250,7 @@ async def _llm_generate_script(seed_uris: dict[str, str], rig_type: str, bone_tr
     return _strip_code_fences(raw)
 
 
-async def _llm_fix_script(prev_script: str, stderr: str, seed_uris: dict[str, str], user_id: int, db: Session | None = None) -> str:
+async def _llm_fix_script(prev_script: str, stderr: str, seed_uris: dict[str, str], user_id: int, db: AsyncSession | None = None) -> str:
     system = _FIX_SYSTEM_PROMPT.format(stderr=stderr[:2000], prev_script=prev_script)
     instruction = "请修复脚本并输出完整代码。"
     images = [seed_uris["front"], seed_uris["right"], seed_uris["back"]]
@@ -258,7 +258,7 @@ async def _llm_fix_script(prev_script: str, stderr: str, seed_uris: dict[str, st
     return _strip_code_fences(raw)
 
 
-async def _llm_refine_script(prev_script: str, preview_uri: str, critique: str, seed_uris: dict[str, str], user_id: int, db: Session | None = None) -> str:
+async def _llm_refine_script(prev_script: str, preview_uri: str, critique: str, seed_uris: dict[str, str], user_id: int, db: AsyncSession | None = None) -> str:
     system = _REFINE_SYSTEM_PROMPT.format(critique=critique, prev_script=prev_script)
     instruction = "请根据评估意见改进脚本，输出完整代码。"
     images = [seed_uris["front"], seed_uris["right"], seed_uris["back"], preview_uri]
@@ -266,7 +266,7 @@ async def _llm_refine_script(prev_script: str, preview_uri: str, critique: str, 
     return _strip_code_fences(raw)
 
 
-async def _llm_evaluate(preview_uri: str, seed_uris: dict[str, str], user_id: int, db: Session | None = None) -> EvaluationResult:
+async def _llm_evaluate(preview_uri: str, seed_uris: dict[str, str], user_id: int, db: AsyncSession | None = None) -> EvaluationResult:
     instruction = "参考图（前 3 张）与渲染预览图（最后 1 张）对比，输出评估 JSON。"
     images = [seed_uris["front"], seed_uris["right"], seed_uris["back"], preview_uri]
     raw = await _vision_llm_call(db, user_id, _EVAL_SYSTEM_PROMPT, instruction, images)
@@ -367,7 +367,7 @@ def _validate_glb(glb_bytes: bytes, required_bones: set[str]) -> list[str]:
 
 async def run_blender_llm_pipeline(user_id: int, view_filenames: dict[str, str], species: str, model_id: int) -> None:
     try:
-        _emit_progress(user_id, "analyzing", 5, provider="blender_llm")
+        await _emit_progress(user_id, "analyzing", 5, provider="blender_llm")
         rig_type = await select_rig_type(chat, species, user_id=user_id)
         rig_naming = _rig_naming_for(rig_type)
         bone_tree = format_bone_tree(rig_type)
@@ -383,10 +383,10 @@ async def run_blender_llm_pipeline(user_id: int, view_filenames: dict[str, str],
         max_iters = SETTINGS.blender_llm_max_iterations
 
         for i in range(max_iters):
-            _emit_progress(user_id, "generating", 5 + int(75 * i / max(1, max_iters)), provider="blender_llm")
+            await _emit_progress(user_id, "generating", 5 + int(75 * i / max(1, max_iters)), provider="blender_llm")
             logger.info("Blender+LLM iteration %d/%d", i + 1, max_iters, extra={"user_id": user_id})
 
-            with SESSION_LOCAL() as db:
+            async with SESSION_LOCAL() as db:
                 if i == 0:
                     script = await _llm_generate_script(seed_uris, rig_type, bone_tree, rig_naming, species, user_id, db)
                 elif last_error:
@@ -421,7 +421,7 @@ async def run_blender_llm_pipeline(user_id: int, view_filenames: dict[str, str],
 
             last_preview_uri = build_data_uri(result.preview_png, "image/png")
 
-            with SESSION_LOCAL() as db:
+            async with SESSION_LOCAL() as db:
                 evaluation = await _llm_evaluate(last_preview_uri, seed_uris, user_id, db)
 
             logger.info("LLM evaluation (iter %d): score=%d converged=%s", i + 1, evaluation.score, evaluation.converged, extra={"user_id": user_id})
@@ -435,15 +435,15 @@ async def run_blender_llm_pipeline(user_id: int, view_filenames: dict[str, str],
         if best_glb is None:
             raise ModelGenerationError("Blender+LLM 管线在所有迭代中均未能生成有效模型")
 
-        _emit_progress(user_id, "injecting_morphs", 85, provider="blender_llm")
+        await _emit_progress(user_id, "injecting_morphs", 85, provider="blender_llm")
         rig_original_url = save_companion_model(best_glb, user_id=user_id)
         final_glb = await _inject_morph_targets(best_glb)
 
-        _emit_progress(user_id, "finalizing", 95, provider="blender_llm")
+        await _emit_progress(user_id, "finalizing", 95, provider="blender_llm")
         asset_url = save_companion_model(final_glb, user_id=user_id)
         morph_names = _extract_morph_names_from_glb(final_glb)
 
-        activated = _finalize_generation(
+        activated = await _finalize_generation(
             model_id, user_id, asset_url=asset_url, rig_original_url=rig_original_url, provider="blender_llm", species=species, rig_type=rig_type, morph_names=morph_names
         )
 
@@ -451,12 +451,12 @@ async def run_blender_llm_pipeline(user_id: int, view_filenames: dict[str, str],
             logger.info("Blender+LLM generation superseded by a newer run; asset saved without activating", extra={"user_id": user_id, "model_id": model_id})
             return
 
-        _emit_model_ready(user_id, model_id, asset_url, species=species, rig_type=rig_type)
-        _emit_progress(user_id, "done", 100, provider="blender_llm")
+        await _emit_model_ready(user_id, model_id, asset_url, species=species, rig_type=rig_type)
+        await _emit_progress(user_id, "done", 100, provider="blender_llm")
         logger.info("Blender+LLM generation succeeded", extra={"user_id": user_id, "species": species, "rig_type": rig_type, "morph_count": len(morph_names)})
 
     except Exception as exc:
         logger.warning("Blender+LLM generation failed", extra={"user_id": user_id}, exc_info=True)
         reason = str(exc) if isinstance(exc, ModelGenerationError) else f"Blender+LLM 管线错误: {exc}"
-        _emit_model_failed(user_id, reason)
-        _mark_generation_failed(model_id, reason)
+        await _emit_model_failed(user_id, reason)
+        await _mark_generation_failed(model_id, reason)

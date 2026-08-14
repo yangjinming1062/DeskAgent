@@ -66,8 +66,14 @@ class ConnectionManager:
 MANAGER = ConnectionManager()
 
 
-async def ws_event_loop(pool: asyncpg.Pool | None = None):
-    """Event-driven WS outbox dispatch using PostgreSQL LISTEN/NOTIFY."""
+async def ws_event_loop(dsn: str | None = None):
+    """Event-driven WS outbox dispatch using PostgreSQL LISTEN/NOTIFY.
+
+    Owns a dedicated asyncpg connection for the process lifetime (LISTEN pins
+    it); the outer loop reconnects after 5s on error so a PG restart or network
+    blip cannot permanently deafen the dispatcher. ``dsn=None`` (non-PG
+    backends) skips LISTEN and falls back to the 60s polling tick.
+    """
     logger.info("Starting background WS event loop with PG LISTEN/NOTIFY.")
     wakeup = asyncio.Event()
     wakeup.set()  # initial pass to drain anything committed before startup
@@ -80,8 +86,11 @@ async def ws_event_loop(pool: asyncpg.Pool | None = None):
 
     while True:
         try:
-            if pool:
-                async with pool.acquire() as conn:
+            if dsn:
+                # asyncpg.connect is a plain coroutine — no async-with support;
+                # explicit close so a LISTEN drop always tears the socket down.
+                conn = await asyncpg.connect(dsn)
+                try:
                     await conn.add_listener("ws_events_channel", _listener)
                     try:
                         while True:
@@ -95,6 +104,8 @@ async def ws_event_loop(pool: asyncpg.Pool | None = None):
                             raise
                         except Exception as e:
                             logger.warning("remove_listener best-effort failed", extra={"error": str(e)})
+                finally:
+                    await conn.close()
             else:
                 while True:
                     await _process_events(wakeup)
@@ -123,9 +134,9 @@ async def _process_events(wakeup: asyncio.Event):
             pass
 
         # GC stale rows past the delivery window first.
-        with session_scope() as db:
+        async with session_scope() as db:
             cutoff = naive_utc_now() - timedelta(seconds=WS_EVENT_MAX_AGE_SECONDS)
-            stale_result = db.execute(delete(WSEvent).where(WSEvent.created_at < cutoff))
+            stale_result = await db.execute(delete(WSEvent).where(WSEvent.created_at < cutoff))
             if stale_result.rowcount:
                 logger.info("WS event GC reaped", extra={"reaped": stale_result.rowcount})
 
@@ -133,10 +144,12 @@ async def _process_events(wakeup: asyncio.Event):
         local_user_ids = MANAGER.local_user_ids()
         if not local_user_ids:
             return
-        with session_scope() as db:
+        async with session_scope() as db:
             try:
-                deleted_rows = db.execute(
-                    delete(WSEvent).where(WSEvent.user_id.in_(local_user_ids)).returning(WSEvent.id, WSEvent.event_type, WSEvent.payload, WSEvent.user_id, WSEvent.created_at)
+                deleted_rows = (
+                    await db.execute(
+                        delete(WSEvent).where(WSEvent.user_id.in_(local_user_ids)).returning(WSEvent.id, WSEvent.event_type, WSEvent.payload, WSEvent.user_id, WSEvent.created_at)
+                    )
                 ).all()
                 # DELETE ... RETURNING has no ordering guarantee; restore the
                 # creation-order FIFO the old SELECT ... ORDER BY claimed with.
@@ -149,15 +162,15 @@ async def _process_events(wakeup: asyncio.Event):
                         logger.warning("Skipping unparseable WSEvent", extra={"event_id": event_id})
             except (NotImplementedError, OperationalError):
                 # Fallback for older SQLite engines (<3.35) without RETURNING support
-                rows = db.execute(select(WSEvent).where(WSEvent.user_id.in_(local_user_ids)).order_by(WSEvent.created_at).with_for_update(skip_locked=True)).scalars().all()
+                rows = (await db.execute(select(WSEvent).where(WSEvent.user_id.in_(local_user_ids)).order_by(WSEvent.created_at).with_for_update(skip_locked=True))).scalars().all()
                 for r in rows:
                     payload = safe_json_loads(r.payload)
                     if payload is not None:
                         claimed.append((r.id, r.event_type, payload, r.user_id))
                     else:
                         logger.warning("Skipping unparseable WSEvent", extra={"event_id": r.id})
-                    db.delete(r)
-            db.commit()
+                    await db.delete(r)
+            await db.commit()
 
         for event_id, event_type, payload, user_id in claimed:
             try:
@@ -171,8 +184,8 @@ async def _process_events(wakeup: asyncio.Event):
 _WS_EVENT_LOOP = BackgroundTask("gateway.ws_event_loop")
 
 
-def start_ws_event_loop(pool: asyncpg.Pool | None = None) -> None:
-    _WS_EVENT_LOOP.start(ws_event_loop(pool))
+def start_ws_event_loop(dsn: str | None = None) -> None:
+    _WS_EVENT_LOOP.start(ws_event_loop(dsn))
 
 
 async def stop_ws_event_loop() -> None:

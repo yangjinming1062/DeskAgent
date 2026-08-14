@@ -45,14 +45,15 @@ _PARTIAL_SPATIAL_RE = re.compile(r"^\s*\[spatial:([a-z_]+)?(?:,target:([^\]\n]*)
 _MAX_TAG_LEN: int = 256
 
 
-def resolve_allowed_emotions(db: Any, user_id: int | None = None) -> frozenset[str]:
+async def resolve_allowed_emotions(db: Any, user_id: int | None = None) -> frozenset[str]:
     """Return BUILTIN_EMOTIONS merged with user's custom CompanionExpression names."""
     if user_id is None or db is None:
         return BUILTIN_EMOTIONS
     try:
         from modules.companion import CompanionExpression
+        from sqlalchemy import select
 
-        rows = db.query(CompanionExpression.name).filter(CompanionExpression.user_id == user_id).all()
+        rows = (await db.execute(select(CompanionExpression.name).where(CompanionExpression.user_id == user_id))).all()
         if not rows:
             return BUILTIN_EMOTIONS
         return BUILTIN_EMOTIONS | frozenset(r[0] for r in rows if r[0])
@@ -60,14 +61,15 @@ def resolve_allowed_emotions(db: Any, user_id: int | None = None) -> frozenset[s
         return BUILTIN_EMOTIONS
 
 
-def resolve_custom_expressions(db: Any, user_id: int | None = None) -> list[Any]:
+async def resolve_custom_expressions(db: Any, user_id: int | None = None) -> list[Any]:
     """Shared CompanionExpression fetch for resolve_allowed_emotions + prompt builder."""
     if user_id is None or db is None:
         return []
     try:
         from modules.companion import CompanionExpression
+        from sqlalchemy import select
 
-        return db.query(CompanionExpression).filter(CompanionExpression.user_id == user_id).all()
+        return (await db.execute(select(CompanionExpression).where(CompanionExpression.user_id == user_id))).scalars().all()
     except Exception:
         return []
 

@@ -2,6 +2,7 @@ import json
 from datetime import datetime, timedelta, timezone
 
 import pytest
+from sqlalchemy import select
 
 from modules.conversation import Conversation
 from modules.memory import Memory
@@ -19,11 +20,13 @@ from services.companion.memory_retrieval import (
 from services.tools import NativeMemory
 
 
-def _make_user(SessionLocal, user_id: int = 1001):
+async def _make_user(SessionLocal, user_id: int = 1001):
     from modules.auth import User, generate_activation_token, hash_activation_token
 
-    with SessionLocal() as db:
-        if not db.query(User).filter(User.id == user_id).first():
+    async with SessionLocal() as db:
+        if (
+            await db.execute(select(User).where(User.id == user_id))
+        ).scalar_one_or_none() is None:
             db.add(
                 User(
                     id=user_id,
@@ -34,14 +37,14 @@ def _make_user(SessionLocal, user_id: int = 1001):
                     can_use=True,
                 )
             )
-            db.commit()
+            await db.commit()
 
 
 @pytest.fixture()
-def seeded(_patch_db):
+async def seeded(_patch_db):
     _, SessionLocal = _patch_db
-    _make_user(SessionLocal, 1001)
-    _make_user(SessionLocal, 1002)
+    await _make_user(SessionLocal, 1001)
+    await _make_user(SessionLocal, 1002)
     return SessionLocal
 
 
@@ -79,9 +82,9 @@ def test_time_decay_ebbinghaus():
     assert pytest.approx(decay_1000, abs=0.01) == TIME_DECAY_FLOOR
 
 
-def test_hybrid_search_sparse_and_dense(seeded):
+async def test_hybrid_search_sparse_and_dense(seeded):
     SessionLocal = seeded
-    with SessionLocal() as db:
+    async with SessionLocal() as db:
         # Create test memories: one with embedding, one with text matching
         dim = 1536
         vec_tech = [1.0 if i == 0 else 0.0 for i in range(dim)]
@@ -104,23 +107,23 @@ def test_hybrid_search_sparse_and_dense(seeded):
             embedding=vec_food,
         )
         db.add_all([m1, m2])
-        db.commit()
+        await db.commit()
 
         # Query with tech vector
-        results = retrieve_hybrid_memories(db, 1001, "Python", query_embedding=vec_tech, limit=5)
+        results = await retrieve_hybrid_memories(db, 1001, "Python", query_embedding=vec_tech, limit=5)
         assert len(results) >= 1
         assert results[0]["id"] == m1.id
         assert "Python" in results[0]["content"]
 
         # Query with food keywords without vector
-        results_food = retrieve_hybrid_memories(db, 1001, "火锅", limit=5)
+        results_food = await retrieve_hybrid_memories(db, 1001, "火锅", limit=5)
         assert len(results_food) >= 1
         assert results_food[0]["id"] == m2.id
 
 
-def test_importance_weighting_ranks_higher(seeded):
+async def test_importance_weighting_ranks_higher(seeded):
     SessionLocal = seeded
-    with SessionLocal() as db:
+    async with SessionLocal() as db:
         m_normal = Memory(
             user_id=1001,
             content="普通日常琐事：今天喝了一杯冰美式",
@@ -136,17 +139,17 @@ def test_importance_weighting_ranks_higher(seeded):
             importance=2.5,
         )
         db.add_all([m_normal, m_critical])
-        db.commit()
+        await db.commit()
 
-        results = retrieve_hybrid_memories(db, 1001, "冰美式", limit=5)
+        results = await retrieve_hybrid_memories(db, 1001, "冰美式", limit=5)
         assert len(results) == 2
         # m_critical with higher importance should rank first
         assert results[0]["id"] == m_critical.id
 
 
-def test_reserved_namespaces_excluded_from_recall(seeded):
+async def test_reserved_namespaces_excluded_from_recall(seeded):
     SessionLocal = seeded
-    with SessionLocal() as db:
+    async with SessionLocal() as db:
         m_recall = Memory(
             user_id=1001,
             content="用户偏好简洁表达",
@@ -166,18 +169,18 @@ def test_reserved_namespaces_excluded_from_recall(seeded):
             tags='["onboarding"]',
         )
         db.add_all([m_recall, m_auto, m_profile])
-        db.commit()
+        await db.commit()
 
-        results = retrieve_hybrid_memories(db, 1001, "简洁表达", limit=5)
+        results = await retrieve_hybrid_memories(db, 1001, "简洁表达", limit=5)
         contexts = [r["context"] for r in results]
         assert "recall:communication" in contexts
         assert "auto_inject:communication_style" not in contexts
         assert "user_profile:preferred_name" not in contexts
 
 
-def test_proactive_memory_retrieval_and_formatting(seeded):
+async def test_proactive_memory_retrieval_and_formatting(seeded):
     SessionLocal = seeded
-    with SessionLocal() as db:
+    async with SessionLocal() as db:
         m = Memory(
             user_id=1001,
             content="用户在准备大模型架构师面试",
@@ -186,9 +189,9 @@ def test_proactive_memory_retrieval_and_formatting(seeded):
             importance=1.2,
         )
         db.add(m)
-        db.commit()
+        await db.commit()
 
-        proactive = retrieve_proactive_memories(db, 1001, "我明天要参加大模型架构师面试", limit=3)
+        proactive = await retrieve_proactive_memories(db, 1001, "我明天要参加大模型架构师面试", limit=3)
         assert len(proactive) == 1
         assert proactive[0]["id"] == m.id
 
@@ -197,11 +200,11 @@ def test_proactive_memory_retrieval_and_formatting(seeded):
         assert "用户在准备大模型架构师面试 [recall:career]" in block
 
 
-def test_native_memory_retain_and_recall_with_importance(seeded):
+async def test_native_memory_retain_and_recall_with_importance(seeded):
     SessionLocal = seeded
-    with SessionLocal() as db:
+    async with SessionLocal() as db:
         mem = NativeMemory(db, 1001)
-        retain_res = mem.execute_tool(
+        retain_res = await mem.execute_tool(
             "memory_retain",
             {
                 "kind": "recall",
@@ -215,12 +218,14 @@ def test_native_memory_retain_and_recall_with_importance(seeded):
         assert "memory_id" in parsed_retain
 
         # Verify importance is persisted
-        row = db.query(Memory).filter(Memory.id == parsed_retain["memory_id"]).first()
+        row = (
+            await db.execute(select(Memory).where(Memory.id == parsed_retain["memory_id"]))
+        ).scalar_one_or_none()
         assert row is not None
         assert row.importance == 2.0
 
         # Verify recall finds it
-        recall_res = mem.execute_tool("memory_recall", {"query": "Rust"})
+        recall_res = await mem.execute_tool("memory_recall", {"query": "Rust"})
         parsed_recall = json.loads(recall_res)
         assert "用户精通 Rust" in parsed_recall["result"]
 
@@ -234,10 +239,10 @@ def test_system_prompt_includes_proactive_memory():
     assert "- 用户喜欢摄影" in prompt
 
 
-def test_semantic_retrieval_bridges_lexical_gap(seeded):
+async def test_semantic_retrieval_bridges_lexical_gap(seeded):
     """Verify that vector similarity retrieves memories with zero keyword overlap."""
     SessionLocal = seeded
-    with SessionLocal() as db:
+    async with SessionLocal() as db:
         # "我最近工作压力很大" vs "主人今天项目上线遇到了严重挫折"
         dim = 1536
         # Let vector index 0 represent high work stress semantics
@@ -252,10 +257,10 @@ def test_semantic_retrieval_bridges_lexical_gap(seeded):
             embedding=stress_vec,
         )
         db.add(m_stress)
-        db.commit()
+        await db.commit()
 
         # Query has completely different wording: "我最近工作压力很大", but carries the stress vector
-        results = retrieve_hybrid_memories(
+        results = await retrieve_hybrid_memories(
             db,
             1001,
             "我最近工作压力很大",
@@ -267,14 +272,14 @@ def test_semantic_retrieval_bridges_lexical_gap(seeded):
         assert "严重挫折" in results[0]["content"]
 
 
-def test_turn_inputs_proactive_injection(seeded):
+async def test_turn_inputs_proactive_injection(seeded):
     """Verify _build_turn_inputs automatically injects relevant memory into system message."""
     SessionLocal = seeded
-    with SessionLocal() as db:
+    async with SessionLocal() as db:
         conv = Conversation(user_id=1001, kind="main")
         db.add(conv)
-        db.commit()
-        db.refresh(conv)
+        await db.commit()
+        await db.refresh(conv)
 
         # Seed a relevant recall memory
         db.add(
@@ -286,13 +291,13 @@ def test_turn_inputs_proactive_injection(seeded):
                 importance=2.0,
             )
         )
-        db.commit()
+        await db.commit()
 
         req = ChatRequest(
             session_id=str(conv.id),
             message=ChatMessageRequest(role="user", content="请帮我写一个排序算法，注意回答要精炼"),
         )
-        turn = _build_turn_inputs(
+        turn = await _build_turn_inputs(
             db=db,
             conv=conv,
             user_id=1001,

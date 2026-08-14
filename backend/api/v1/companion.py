@@ -89,7 +89,8 @@ from services.companion import (
 )
 from services.llm import MissingLlmConfigError, chat
 from services.rate_limit import limiter
-from sqlalchemy.orm import Session
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 router = get_router()
 
@@ -111,19 +112,19 @@ _BG_TASK_MAX_DELAY = 30.0
 
 
 @router.get("/persona", response_model=PersonaResponse)
-def get_persona(auth: tuple[User, LoginRecord] = Depends(get_current_session), db: Session = Depends(get_db)) -> PersonaResponse:
+async def get_persona(auth: tuple[User, LoginRecord] = Depends(get_current_session), db: AsyncSession = Depends(get_db)) -> PersonaResponse:
     user, _ = auth
-    persona = get_or_create_persona(db, user.id)
+    persona = await get_or_create_persona(db, user.id)
     tags = safe_json_loads(persona.personality_tags_json or "[]", default=[])
     return PersonaResponse(is_complete=persona.is_complete, definition_json=persona.definition_json, personality_tags=tags if isinstance(tags, list) else [])
 
 
 @router.put("/persona", response_model=PersonaResponse)
-async def put_persona(body: PersonaUpdate, auth: tuple[User, LoginRecord] = Depends(get_current_session), db: Session = Depends(get_db)) -> PersonaResponse:
+async def put_persona(body: PersonaUpdate, auth: tuple[User, LoginRecord] = Depends(get_current_session), db: AsyncSession = Depends(get_db)) -> PersonaResponse:
     user, _ = auth
     data = safe_json_loads(body.definition_json, default={})
     try:
-        persona = update_persona(db, user.id, data)
+        persona = await update_persona(db, user.id, data)
     except PersonaValidationError as exc:
         raise HTTPException(status_code=422, detail={"error": "Persona validation error", "reason": str(exc)})
     # Tag LLM extraction is deferred — keeping it inline would block the PUT
@@ -135,7 +136,7 @@ async def put_persona(body: PersonaUpdate, auth: tuple[User, LoginRecord] = Depe
 
 
 @router.post("/portrait/confirm")
-async def post_portrait_confirm(auth: tuple[User, LoginRecord] = Depends(get_current_session), db: Session = Depends(get_db)) -> dict:
+async def post_portrait_confirm(auth: tuple[User, LoginRecord] = Depends(get_current_session), db: AsyncSession = Depends(get_db)) -> dict:
     user, _ = auth
     try:
         await finalize_avatar(db, user.id)
@@ -143,7 +144,7 @@ async def post_portrait_confirm(auth: tuple[User, LoginRecord] = Depends(get_cur
         raise HTTPException(status_code=409, detail={"error": "形象草稿已过期，请重新生成头像", "reason": str(exc)})
     # Only confirm the portrait after finalize succeeds — avoids a poisoned
     # state where is_portrait_confirmed=True but avatar files are gone.
-    persona = confirm_portrait(db, user.id)
+    persona = await confirm_portrait(db, user.id)
     # Derive the initial outfit description async from the avatar prompt +
     # appearance_core (vision-first, text fallback).
     _schedule_onboarding_outfit_extraction(persona.id, user.id)
@@ -163,9 +164,9 @@ async def _refresh_personality_tags(persona_id: int, user_id: int) -> None:
     for attempt in range(1, _BG_TASK_MAX_ATTEMPTS + 1):
         try:
             t_open = time.monotonic()
-            with SESSION_LOCAL() as db:
+            async with SESSION_LOCAL() as db:
                 t_query = time.monotonic()
-                persona = db.query(Persona).filter(Persona.id == persona_id).one_or_none()
+                persona = (await db.execute(select(Persona).where(Persona.id == persona_id))).scalar_one_or_none()
                 if persona is None:
                     return  # row vanished (user deleted?) — nothing to do
                 definition = safe_json_loads(persona.definition_json, default={})
@@ -176,7 +177,7 @@ async def _refresh_personality_tags(persona_id: int, user_id: int) -> None:
                 )
                 t_llm_end = time.monotonic()
                 persona.personality_tags_json = json.dumps(tags, ensure_ascii=False)
-                db.commit()
+                await db.commit()
                 t_commit = time.monotonic()
             logger.info(
                 "persona-tags-timing persona_id=%s attempt=%d open=%.3fs query=%.3fs llm=%.3fs commit=%.3fs total=%.3fs n_tags=%d",
@@ -215,14 +216,14 @@ async def _refresh_outfit_onboarding(persona_id: int, user_id: int) -> None:
     last_exc: BaseException | None = None
     for attempt in range(1, _BG_TASK_MAX_ATTEMPTS + 1):
         try:
-            with SESSION_LOCAL() as db:
-                persona = db.query(Persona).filter(Persona.id == persona_id).one_or_none()
+            async with SESSION_LOCAL() as db:
+                persona = (await db.execute(select(Persona).where(Persona.id == persona_id))).scalar_one_or_none()
                 if persona is None:
                     return
                 definition = safe_json_loads(persona.definition_json or "{}", default={})
                 persona_def = definition if isinstance(definition, dict) else {}
                 appearance_core = persona_def.get("appearance_core", "")
-                avatar = db.query(AvatarAsset).filter(AvatarAsset.user_id == user_id, AvatarAsset.active.is_(True)).one_or_none()
+                avatar = (await db.execute(select(AvatarAsset).where(AvatarAsset.user_id == user_id, AvatarAsset.active.is_(True)))).scalar_one_or_none()
                 avatar_prompt = ""
                 if avatar:
                     prompt_payload = safe_json_loads(avatar.prompt_json or "{}", default={})
@@ -237,7 +238,7 @@ async def _refresh_outfit_onboarding(persona_id: int, user_id: int) -> None:
                     normalize_outfit(chat, raw_input=raw_input, persona_definition=persona_def, image_data_uri=image_data_uri, user_id=user_id, db=db),
                     timeout=_BG_TASK_PER_ATTEMPT_TIMEOUT,
                 )
-                update_outfit_field(db, user_id, outfit)
+                await update_outfit_field(db, user_id, outfit)
             logger.info("outfit-onboarding persona_id=%s attempt=%d", persona_id, attempt)
             return
         except TimeoutError as exc:
@@ -256,9 +257,9 @@ async def _refresh_outfit_onboarding(persona_id: int, user_id: int) -> None:
 
 
 @router.get("/animations", response_model=AnimationClipResponse)
-def get_animations(auth: tuple[User, LoginRecord] = Depends(get_current_session), db: Session = Depends(get_db)) -> AnimationClipResponse:
+async def get_animations(auth: tuple[User, LoginRecord] = Depends(get_current_session), db: AsyncSession = Depends(get_db)) -> AnimationClipResponse:
     user, _ = auth
-    model = get_active_model(db, user.id)
+    model = await get_active_model(db, user.id)
     if model is None:
         return AnimationClipResponse(clips=[])
     clips = safe_json_loads(model.animation_clips_json or "[]", default=[])
@@ -266,9 +267,9 @@ def get_animations(auth: tuple[User, LoginRecord] = Depends(get_current_session)
 
 
 @router.get("/expressions")
-def get_expressions(auth: tuple[User, LoginRecord] = Depends(get_current_session), db: Session = Depends(get_db)) -> dict[str, list[dict]]:
+async def get_expressions(auth: tuple[User, LoginRecord] = Depends(get_current_session), db: AsyncSession = Depends(get_db)) -> dict[str, list[dict]]:
     user, _ = auth
-    rows = db.query(CompanionExpression).filter(CompanionExpression.user_id == user.id).all()
+    rows = (await db.execute(select(CompanionExpression).where(CompanionExpression.user_id == user.id))).scalars().all()
     exprs = []
     for r in rows:
         exprs.append(
@@ -288,13 +289,15 @@ def get_expressions(auth: tuple[User, LoginRecord] = Depends(get_current_session
 
 @router.post("/animations/generate", response_model=AnimationClipResponse)
 async def post_animations_generate(
-    body: AnimationGenerateRequest = Body(default_factory=AnimationGenerateRequest), auth: tuple[User, LoginRecord] = Depends(get_current_session), db: Session = Depends(get_db)
+    body: AnimationGenerateRequest = Body(default_factory=AnimationGenerateRequest),
+    auth: tuple[User, LoginRecord] = Depends(get_current_session),
+    db: AsyncSession = Depends(get_db),
 ) -> AnimationClipResponse:
     user, _ = auth
-    model = get_active_model(db, user.id)
+    model = await get_active_model(db, user.id)
     if model is None:
         raise HTTPException(status_code=404, detail="No active companion model found")
-    persona = get_or_create_persona(db, user.id)
+    persona = await get_or_create_persona(db, user.id)
     tags = body.tags or safe_json_loads(persona.personality_tags_json or "[]", default=[])
     if not tags:
         tags = ["活泼", "温柔"]
@@ -305,34 +308,34 @@ async def post_animations_generate(
     )
     combined = (existing if isinstance(existing, list) else []) + new_clips
     model.animation_clips_json = json.dumps(combined, ensure_ascii=False)
-    db.commit()
+    await db.commit()
     return AnimationClipResponse(clips=combined)
 
 
 @router.delete("/animations/{name}", response_model=AnimationClipResponse)
-def delete_animation(name: str, auth: tuple[User, LoginRecord] = Depends(get_current_session), db: Session = Depends(get_db)) -> AnimationClipResponse:
+async def delete_animation(name: str, auth: tuple[User, LoginRecord] = Depends(get_current_session), db: AsyncSession = Depends(get_db)) -> AnimationClipResponse:
     user, _ = auth
-    model = get_active_model(db, user.id)
+    model = await get_active_model(db, user.id)
     if model is None:
         raise HTTPException(status_code=404, detail="No active companion model found")
     existing = safe_json_loads(model.animation_clips_json or "[]", default=[])
     filtered = [c for c in existing if isinstance(c, dict) and c.get("name") != name] if isinstance(existing, list) else []
     model.animation_clips_json = json.dumps(filtered, ensure_ascii=False)
-    db.commit()
+    await db.commit()
     return AnimationClipResponse(clips=filtered)
 
 
 # Hub has no gateway — REST mirror of the gateway tts.list_voices method.
 @router.get("/voices")
-def list_voices(language: str | None = None, auth: tuple[User, LoginRecord] = Depends(get_current_session), db: Session = Depends(get_db)) -> dict:
+async def list_voices(language: str | None = None, auth: tuple[User, LoginRecord] = Depends(get_current_session), db: AsyncSession = Depends(get_db)) -> dict:
     user, _ = auth
-    return list_tts_voices(db, user.id, language=normalize_voice_language(language))
+    return await list_tts_voices(db, user.id, language=normalize_voice_language(language))
 
 
 @router.get("/avatar", response_model=AvatarAssetResponse)
-def get_avatar(auth: tuple[User, LoginRecord] = Depends(get_current_session), db: Session = Depends(get_db)) -> AvatarAssetResponse:
+async def get_avatar(auth: tuple[User, LoginRecord] = Depends(get_current_session), db: AsyncSession = Depends(get_db)) -> AvatarAssetResponse:
     user, _ = auth
-    asset = get_active_avatar(db, user.id)
+    asset = await get_active_avatar(db, user.id)
     if asset is None:
         raise HTTPException(status_code=404, detail="No avatar found")
     # get_active_avatar already re-signs asset_url on read; never re-sign here.
@@ -345,7 +348,7 @@ async def post_avatar(
     request: Request,  # required by @limiter.limit
     body: AvatarGenerateRequest = Body(default_factory=AvatarGenerateRequest),
     auth: tuple[User, LoginRecord] = Depends(get_current_session),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ) -> AvatarAssetResponse:
     user, _ = auth
     try:
@@ -378,12 +381,12 @@ async def post_avatar_from_image(
     request: Request,  # required by @limiter.limit
     body: AvatarFromImageRequest,
     auth: tuple[User, LoginRecord] = Depends(get_current_session),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ) -> AvatarAssetResponse:
     user, _ = auth
     raw, content_type = _decode_upload_image(body.image, body.content_type)
     pres_raw, pres_content_type = _decode_upload_image(body.presentation_image, body.presentation_content_type)
-    persona = get_or_create_persona(db, user.id)
+    persona = await get_or_create_persona(db, user.id)
     try:
         asset = await regenerate_avatar_from_image(
             db,
@@ -412,10 +415,10 @@ async def post_avatar_fullbody(
     avatar_id: int,
     body: FullbodyGenerateRequest = Body(default_factory=FullbodyGenerateRequest),
     auth: tuple[User, LoginRecord] = Depends(get_current_session),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ) -> AvatarAssetResponse:
     user, _ = auth
-    persona = get_or_create_persona(db, user.id)
+    persona = await get_or_create_persona(db, user.id)
     if not persona.is_complete:
         raise HTTPException(status_code=409, detail={"error": "请先完成 onboarding 再生成全身图"})
     # Serialise against the WS avatar.regenerate RPC for the same user — both
@@ -450,16 +453,16 @@ async def post_avatar_fullbody(
 
 
 @router.get("/avatar/history", response_model=AvatarHistoryResponse)
-def get_avatar_history(auth: tuple[User, LoginRecord] = Depends(get_current_session), db: Session = Depends(get_db)) -> AvatarHistoryResponse:
+async def get_avatar_history(auth: tuple[User, LoginRecord] = Depends(get_current_session), db: AsyncSession = Depends(get_db)) -> AvatarHistoryResponse:
     user, _ = auth
-    history = list_avatar_history(db, user.id)
+    history = await list_avatar_history(db, user.id)
     return AvatarHistoryResponse(history=[avatar_response(a) for a in history])
 
 
 @router.get("/model", response_model=CompanionModelResponse)
-def get_model(auth: tuple[User, LoginRecord] = Depends(get_current_session), db: Session = Depends(get_db)) -> CompanionModelResponse:
+async def get_model(auth: tuple[User, LoginRecord] = Depends(get_current_session), db: AsyncSession = Depends(get_db)) -> CompanionModelResponse:
     user, _ = auth
-    model = get_active_model(db, user.id)
+    model = await get_active_model(db, user.id)
     if model is None:
         raise HTTPException(status_code=404, detail="No companion model found")
     return model_response(model)
@@ -471,7 +474,7 @@ async def post_model(
     request: Request,  # required by @limiter.limit
     body: ModelGenerateRequest = Body(default_factory=ModelGenerateRequest),
     auth: tuple[User, LoginRecord] = Depends(get_current_session),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ) -> CompanionModelResponse:
     user, _ = auth
     try:
@@ -489,7 +492,7 @@ async def post_sprite(
     request: Request,  # required by @limiter.limit
     body: SpriteResolveRequest,
     auth: tuple[User, LoginRecord] = Depends(get_current_session),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ) -> SpriteImageResponse:
     user, _ = auth
     try:
@@ -505,15 +508,15 @@ async def post_sprite(
 
 
 @router.get("/wardrobe", response_model=list[WardrobeItemResponse])
-def get_wardrobe(auth: tuple[User, LoginRecord] = Depends(get_current_session), db: Session = Depends(get_db)) -> list[WardrobeItemResponse]:
+async def get_wardrobe(auth: tuple[User, LoginRecord] = Depends(get_current_session), db: AsyncSession = Depends(get_db)) -> list[WardrobeItemResponse]:
     user, _ = auth
-    return [wardrobe_response(i) for i in list_wardrobe(db, user.id)]
+    return [wardrobe_response(i) for i in await list_wardrobe(db, user.id)]
 
 
 @router.get("/wardrobe/equipped", response_model=WardrobeItemResponse)
-def get_wardrobe_equipped(auth: tuple[User, LoginRecord] = Depends(get_current_session), db: Session = Depends(get_db)) -> WardrobeItemResponse:
+async def get_wardrobe_equipped(auth: tuple[User, LoginRecord] = Depends(get_current_session), db: AsyncSession = Depends(get_db)) -> WardrobeItemResponse:
     user, _ = auth
-    item = get_equipped_item(db, user.id)
+    item = await get_equipped_item(db, user.id)
     if item is None:
         raise HTTPException(status_code=404, detail="No equipped wardrobe item")
     return wardrobe_response(item)
@@ -525,7 +528,7 @@ async def post_wardrobe(
     request: Request,  # required by @limiter.limit
     body: WardrobeGenerateRequest,
     auth: tuple[User, LoginRecord] = Depends(get_current_session),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ) -> WardrobeItemResponse:
     user, _ = auth
     try:
@@ -536,33 +539,33 @@ async def post_wardrobe(
 
 
 @router.put("/wardrobe/equip", response_model=WardrobeItemResponse)
-def put_wardrobe_equip(body: WardrobeEquipRequest, auth: tuple[User, LoginRecord] = Depends(get_current_session), db: Session = Depends(get_db)) -> WardrobeItemResponse:
+async def put_wardrobe_equip(body: WardrobeEquipRequest, auth: tuple[User, LoginRecord] = Depends(get_current_session), db: AsyncSession = Depends(get_db)) -> WardrobeItemResponse:
     user, _ = auth
     try:
-        item = equip_wardrobe_item(db, user.id, body.item_id)
-        emit_wardrobe_updated(user.id)
+        item = await equip_wardrobe_item(db, user.id, body.item_id)
+        await emit_wardrobe_updated(user.id)
     except ValueError:
         raise HTTPException(status_code=404, detail="Wardrobe item not found")
     return wardrobe_response(item)
 
 
 @router.put("/wardrobe/{item_id}/decline", response_model=WardrobeItemResponse)
-def put_wardrobe_decline(item_id: int, auth: tuple[User, LoginRecord] = Depends(get_current_session), db: Session = Depends(get_db)) -> WardrobeItemResponse:
+async def put_wardrobe_decline(item_id: int, auth: tuple[User, LoginRecord] = Depends(get_current_session), db: AsyncSession = Depends(get_db)) -> WardrobeItemResponse:
     user, _ = auth
     try:
-        item = decline_wardrobe_item(db, user.id, item_id)
-        emit_wardrobe_updated(user.id)
+        item = await decline_wardrobe_item(db, user.id, item_id)
+        await emit_wardrobe_updated(user.id)
     except ValueError:
         raise HTTPException(status_code=404, detail="Wardrobe item not found")
     return wardrobe_response(item)
 
 
 @router.delete("/wardrobe/{item_id}")
-def delete_wardrobe(item_id: int, auth: tuple[User, LoginRecord] = Depends(get_current_session), db: Session = Depends(get_db)) -> dict:
+async def delete_wardrobe(item_id: int, auth: tuple[User, LoginRecord] = Depends(get_current_session), db: AsyncSession = Depends(get_db)) -> dict:
     user, _ = auth
-    if not delete_wardrobe_item(db, user.id, item_id):
+    if not await delete_wardrobe_item(db, user.id, item_id):
         raise HTTPException(status_code=404, detail="Wardrobe item not found")
-    emit_wardrobe_updated(user.id)
+    await emit_wardrobe_updated(user.id)
     return {"ok": True}
 
 
@@ -572,7 +575,7 @@ async def post_wardrobe_preview(
     request: Request,  # required by @limiter.limit
     body: WardrobePreviewRequest,
     auth: tuple[User, LoginRecord] = Depends(get_current_session),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ) -> WardrobePreviewResponse:
     user, _ = auth
     raw_bytes, content_type = _decode_upload_image(body.image, body.content_type)
@@ -584,7 +587,9 @@ async def post_wardrobe_preview(
 
 
 @router.post("/wardrobe/confirm", response_model=WardrobeItemResponse, status_code=status.HTTP_201_CREATED)
-async def post_wardrobe_confirm(body: WardrobeConfirmRequest, auth: tuple[User, LoginRecord] = Depends(get_current_session), db: Session = Depends(get_db)) -> WardrobeItemResponse:
+async def post_wardrobe_confirm(
+    body: WardrobeConfirmRequest, auth: tuple[User, LoginRecord] = Depends(get_current_session), db: AsyncSession = Depends(get_db)
+) -> WardrobeItemResponse:
     user, _ = auth
     try:
         item = await confirm_wardrobe_item(
@@ -604,7 +609,7 @@ async def post_wardrobe_confirm(body: WardrobeConfirmRequest, auth: tuple[User, 
         raise HTTPException(status_code=409, detail={"error": "换装草稿已过期，请重新生成", "reason": str(exc)})
     except (RuntimeError, MissingLlmConfigError) as exc:
         raise HTTPException(status_code=502, detail={"error": str(exc)})
-    emit_wardrobe_updated(user.id)
+    await emit_wardrobe_updated(user.id)
     return wardrobe_response(item)
 
 

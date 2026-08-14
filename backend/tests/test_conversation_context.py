@@ -18,6 +18,7 @@ import json
 from datetime import datetime, timedelta
 
 import pytest
+from sqlalchemy import func, select
 
 from modules.conversation import Conversation, Message
 from services.chat.persistence import persist_tool_summary
@@ -25,7 +26,7 @@ from services.chat.turn_inputs import _history_to_messages
 from services.conversation import context_window
 
 
-def _seed_user(SessionLocal, user_id: int = 3001):
+async def _seed_user(SessionLocal, user_id: int = 3001):
     from modules.auth import (
         LoginRecord,
         User,
@@ -35,8 +36,10 @@ def _seed_user(SessionLocal, user_id: int = 3001):
         hash_activation_token
     )
 
-    with SessionLocal() as db:
-        if not db.query(User).filter(User.id == user_id).first():
+    async with SessionLocal() as db:
+        if (
+            await db.execute(select(User).where(User.id == user_id))
+        ).scalar_one_or_none() is None:
             user = User(
                 id=user_id,
                 username=f"u{user_id}",
@@ -46,7 +49,7 @@ def _seed_user(SessionLocal, user_id: int = 3001):
                 can_use=True
             )
             db.add(user)
-            db.commit()
+            await db.commit()
             db.add(
                 UserModelConfig(
                     user_id=user_id,
@@ -57,36 +60,36 @@ def _seed_user(SessionLocal, user_id: int = 3001):
             )
             token, _, jti = create_access_token(user_id=user_id, username=user.username)
             db.add(LoginRecord(user_id=user_id, token_jti=jti, is_active=True))
-            db.commit()
+            await db.commit()
 
 
 @pytest.fixture()
-def seeded(_patch_db):
+async def seeded(_patch_db):
     _, SessionLocal = _patch_db
-    _seed_user(SessionLocal, 3001)
+    await _seed_user(SessionLocal, 3001)
     return SessionLocal
 
 
-def _make_main_conv(SessionLocal, user_id: int) -> int:
-    with SessionLocal() as db:
+async def _make_main_conv(SessionLocal, user_id: int) -> int:
+    async with SessionLocal() as db:
         conv = Conversation(user_id=user_id, kind="main", title="日常对话")
         db.add(conv)
-        db.commit()
-        db.refresh(conv)
+        await db.commit()
+        await db.refresh(conv)
         return conv.id
 
 
-def _make_standard_conv(SessionLocal, user_id: int) -> int:
-    with SessionLocal() as db:
+async def _make_standard_conv(SessionLocal, user_id: int) -> int:
+    async with SessionLocal() as db:
         conv = Conversation(user_id=user_id, kind="standard")
         db.add(conv)
-        db.commit()
-        db.refresh(conv)
+        await db.commit()
+        await db.refresh(conv)
         return conv.id
 
 
-def _add_msg(SessionLocal, conv_id: int, role: str, content: str = "", *, subtype: str | None = None, tool_calls: str | None = None, tool_call_id: str | None = None, content_type: str | None = None, at: datetime | None = None):
-    with SessionLocal() as db:
+async def _add_msg(SessionLocal, conv_id: int, role: str, content: str = "", *, subtype: str | None = None, tool_calls: str | None = None, tool_call_id: str | None = None, content_type: str | None = None, at: datetime | None = None):
+    async with SessionLocal() as db:
         m = Message(
             conversation_id=conv_id,
             role=role,
@@ -98,8 +101,8 @@ def _add_msg(SessionLocal, conv_id: int, role: str, content: str = "", *, subtyp
             created_at=at or datetime.utcnow(),
         )
         db.add(m)
-        db.commit()
-        db.refresh(m)
+        await db.commit()
+        await db.refresh(m)
         return m.id
 
 
@@ -112,39 +115,50 @@ class _Conv:
         self.kind = kind
 
 
-def _summaries(SessionLocal, conv_id: int) -> list[Message]:
-    with SessionLocal() as db:
-        return db.query(Message).filter(Message.conversation_id == conv_id, Message.subtype == "tool_summary").all()
+async def _summaries(SessionLocal, conv_id: int) -> list[Message]:
+    async with SessionLocal() as db:
+        return (
+            (
+                await db.execute(
+                    select(Message).where(
+                        Message.conversation_id == conv_id,
+                        Message.subtype == "tool_summary",
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
 
 
-def test_persist_tool_summary_skips_non_main(seeded):
+async def test_persist_tool_summary_skips_non_main(seeded):
     SessionLocal = seeded
-    conv_id = _make_standard_conv(SessionLocal, 3001)
+    conv_id = await _make_standard_conv(SessionLocal, 3001)
 
-    with SessionLocal() as db:
-        persist_tool_summary(db, _Conv(conv_id, "standard"), {"search_web"})
+    async with SessionLocal() as db:
+        await persist_tool_summary(db, _Conv(conv_id, "standard"), {"search_web"})
 
-    assert _summaries(SessionLocal, conv_id) == []
+    assert await _summaries(SessionLocal, conv_id) == []
 
 
-def test_persist_tool_summary_skips_when_no_tools_invoked(seeded):
+async def test_persist_tool_summary_skips_when_no_tools_invoked(seeded):
     SessionLocal = seeded
-    conv_id = _make_main_conv(SessionLocal, 3001)
+    conv_id = await _make_main_conv(SessionLocal, 3001)
 
-    with SessionLocal() as db:
-        persist_tool_summary(db, _Conv(conv_id, "main"), set())
+    async with SessionLocal() as db:
+        await persist_tool_summary(db, _Conv(conv_id, "main"), set())
 
-    assert _summaries(SessionLocal, conv_id) == []
+    assert await _summaries(SessionLocal, conv_id) == []
 
 
-def test_persist_tool_summary_lists_invoked_tool_names(seeded):
+async def test_persist_tool_summary_lists_invoked_tool_names(seeded):
     SessionLocal = seeded
-    conv_id = _make_main_conv(SessionLocal, 3001)
+    conv_id = await _make_main_conv(SessionLocal, 3001)
 
-    with SessionLocal() as db:
-        persist_tool_summary(db, _Conv(conv_id, "main"), {"search_web", "browser_navigate"})
+    async with SessionLocal() as db:
+        await persist_tool_summary(db, _Conv(conv_id, "main"), {"search_web", "browser_navigate"})
 
-    summary = _summaries(SessionLocal, conv_id)[0]
+    summary = (await _summaries(SessionLocal, conv_id))[0]
     assert summary.role == "system"
     assert "search_web" in summary.content
     assert "browser_navigate" in summary.content
@@ -190,24 +204,24 @@ def test_history_always_drops_ui_only_subtypes():
 # ── context_window.load_recent_context_window ────────────────────────
 
 
-def test_context_window_returns_empty_for_no_main(seeded):
+async def test_context_window_returns_empty_for_no_main(seeded):
     SessionLocal = seeded
-    with SessionLocal() as db:
-        result = context_window.load_recent_context_window(db, 3001, max_messages=10)
+    async with SessionLocal() as db:
+        result = await context_window.load_recent_context_window(db, 3001, max_messages=10)
     assert result == ""
 
 
-def test_context_window_returns_chronological_recent(seeded):
+async def test_context_window_returns_chronological_recent(seeded):
     """Returns the most recent N messages in chronological order."""
     SessionLocal = seeded
-    conv_id = _make_main_conv(SessionLocal, 3001)
+    conv_id = await _make_main_conv(SessionLocal, 3001)
     base = datetime(2026, 8, 13, 10, 0, 0)
     # Seed 12 messages; only the last 10 should be returned
     for i in range(12):
-        _add_msg(SessionLocal, conv_id, "user" if i % 2 == 0 else "assistant", f"msg_{i:02d}", at=base + timedelta(minutes=i))
+        await _add_msg(SessionLocal, conv_id, "user" if i % 2 == 0 else "assistant", f"msg_{i:02d}", at=base + timedelta(minutes=i))
 
-    with SessionLocal() as db:
-        result = context_window.load_recent_context_window(db, 3001, max_messages=10)
+    async with SessionLocal() as db:
+        result = await context_window.load_recent_context_window(db, 3001, max_messages=10)
 
     # Chronological order (msg_02 first, msg_11 last)
     lines = result.split("\n")
@@ -219,23 +233,23 @@ def test_context_window_returns_chronological_recent(seeded):
     assert "msg_01" not in result
 
 
-def test_context_window_filters_ui_only_subtypes(seeded):
+async def test_context_window_filters_ui_only_subtypes(seeded):
     """status_interaction, status_reaction, hint should be excluded."""
     SessionLocal = seeded
-    conv_id = _make_main_conv(SessionLocal, 3001)
+    conv_id = await _make_main_conv(SessionLocal, 3001)
     base = datetime(2026, 8, 13, 10, 0, 0)
     # A normal pair
-    _add_msg(SessionLocal, conv_id, "user", "你好", at=base)
-    _add_msg(SessionLocal, conv_id, "assistant", "你好！", at=base + timedelta(minutes=1))
+    await _add_msg(SessionLocal, conv_id, "user", "你好", at=base)
+    await _add_msg(SessionLocal, conv_id, "assistant", "你好！", at=base + timedelta(minutes=1))
     # UI-only subtypes
-    _add_msg(SessionLocal, conv_id, "user", "（戳了戳精灵）", subtype="status_interaction", at=base + timedelta(minutes=2))
-    _add_msg(SessionLocal, conv_id, "assistant", "反应", subtype="status_reaction", at=base + timedelta(minutes=3))
-    _add_msg(SessionLocal, conv_id, "system", "提示", subtype="hint", at=base + timedelta(minutes=4))
+    await _add_msg(SessionLocal, conv_id, "user", "（戳了戳精灵）", subtype="status_interaction", at=base + timedelta(minutes=2))
+    await _add_msg(SessionLocal, conv_id, "assistant", "反应", subtype="status_reaction", at=base + timedelta(minutes=3))
+    await _add_msg(SessionLocal, conv_id, "system", "提示", subtype="hint", at=base + timedelta(minutes=4))
     # proactive assistant — should NOT be filtered (it's a real turn)
-    _add_msg(SessionLocal, conv_id, "assistant", "早晚问候", subtype="status_proactive", at=base + timedelta(minutes=5))
+    await _add_msg(SessionLocal, conv_id, "assistant", "早晚问候", subtype="status_proactive", at=base + timedelta(minutes=5))
 
-    with SessionLocal() as db:
-        result = context_window.load_recent_context_window(db, 3001, max_messages=10)
+    async with SessionLocal() as db:
+        result = await context_window.load_recent_context_window(db, 3001, max_messages=10)
 
     assert "你好" in result
     assert "你好！" in result
@@ -246,21 +260,21 @@ def test_context_window_filters_ui_only_subtypes(seeded):
     assert "早晚问候" in result
 
 
-def test_context_window_filters_tool_calls_messages(seeded):
+async def test_context_window_filters_tool_calls_messages(seeded):
     """Assistant messages with tool_calls (intermediate steps) are excluded."""
     SessionLocal = seeded
-    conv_id = _make_main_conv(SessionLocal, 3001)
+    conv_id = await _make_main_conv(SessionLocal, 3001)
     base = datetime(2026, 8, 13, 10, 0, 0)
-    _add_msg(SessionLocal, conv_id, "user", "查天气", at=base)
-    _add_msg(
+    await _add_msg(SessionLocal, conv_id, "user", "查天气", at=base)
+    await _add_msg(
         SessionLocal, conv_id, "assistant", "",
         tool_calls=json.dumps([{"id": "c1", "function": {"name": "search_web"}}]),
         at=base + timedelta(minutes=1),
     )
-    _add_msg(SessionLocal, conv_id, "assistant", "北京 22 度", at=base + timedelta(minutes=2))
+    await _add_msg(SessionLocal, conv_id, "assistant", "北京 22 度", at=base + timedelta(minutes=2))
 
-    with SessionLocal() as db:
-        result = context_window.load_recent_context_window(db, 3001, max_messages=10)
+    async with SessionLocal() as db:
+        result = await context_window.load_recent_context_window(db, 3001, max_messages=10)
 
     assert "查天气" in result
     assert "北京 22 度" in result
@@ -268,15 +282,15 @@ def test_context_window_filters_tool_calls_messages(seeded):
     assert "search_web" not in result
 
 
-def test_context_window_respects_character_cap(seeded):
+async def test_context_window_respects_character_cap(seeded):
     SessionLocal = seeded
-    conv_id = _make_main_conv(SessionLocal, 3001)
+    conv_id = await _make_main_conv(SessionLocal, 3001)
     base = datetime(2026, 8, 13, 10, 0, 0)
-    _add_msg(SessionLocal, conv_id, "user", "x" * 1000, at=base)
-    _add_msg(SessionLocal, conv_id, "assistant", "y" * 1000, at=base + timedelta(minutes=1))
+    await _add_msg(SessionLocal, conv_id, "user", "x" * 1000, at=base)
+    await _add_msg(SessionLocal, conv_id, "assistant", "y" * 1000, at=base + timedelta(minutes=1))
 
-    with SessionLocal() as db:
-        result = context_window.load_recent_context_window(db, 3001, max_messages=10)
+    async with SessionLocal() as db:
+        result = await context_window.load_recent_context_window(db, 3001, max_messages=10)
 
     # Each line is capped at 200 chars (format_messages_compact default)
     for line in result.split("\n"):
@@ -285,7 +299,7 @@ def test_context_window_respects_character_cap(seeded):
         assert len(body) <= 200
 
 
-def test_context_window_extracts_text_from_multimodal_v1(seeded):
+async def test_context_window_extracts_text_from_multimodal_v1(seeded):
     """Image-bearing user messages store a JSON parts array under
     ``content_type == 'multimodal_v1'``. The recent context window must
     surface the user-visible text only — leaking the raw JSON would dump
@@ -293,7 +307,7 @@ def test_context_window_extracts_text_from_multimodal_v1(seeded):
     from services.conversation.formatting import format_messages_compact
 
     SessionLocal = seeded
-    conv_id = _make_main_conv(SessionLocal, 3001)
+    conv_id = await _make_main_conv(SessionLocal, 3001)
     base = datetime(2026, 8, 13, 10, 0, 0)
     parts = json.dumps(
         [
@@ -301,11 +315,11 @@ def test_context_window_extracts_text_from_multimodal_v1(seeded):
             {"type": "image_url", "image_url": {"url": "https://example.com/x.png"}},
         ]
     )
-    _add_msg(SessionLocal, conv_id, "user", parts, at=base, content_type="multimodal_v1")
-    _add_msg(SessionLocal, conv_id, "assistant", "好的看到了", at=base + timedelta(minutes=1))
+    await _add_msg(SessionLocal, conv_id, "user", parts, at=base, content_type="multimodal_v1")
+    await _add_msg(SessionLocal, conv_id, "assistant", "好的看到了", at=base + timedelta(minutes=1))
 
-    with SessionLocal() as db:
-        result = context_window.load_recent_context_window(db, 3001, max_messages=10)
+    async with SessionLocal() as db:
+        result = await context_window.load_recent_context_window(db, 3001, max_messages=10)
 
     assert "看这张图" in result
     assert "image_url" not in result
@@ -313,8 +327,18 @@ def test_context_window_extracts_text_from_multimodal_v1(seeded):
 
     # Direct call covers the daily_checkpoint / interact / affect_check path
     # that also feeds format_messages_compact.
-    with SessionLocal() as db:
-        msgs = db.query(Message).filter(Message.conversation_id == conv_id).order_by(Message.id).all()
+    async with SessionLocal() as db:
+        msgs = (
+            (
+                await db.execute(
+                    select(Message)
+                    .where(Message.conversation_id == conv_id)
+                    .order_by(Message.id)
+                )
+            )
+            .scalars()
+            .all()
+        )
         compact = format_messages_compact(msgs)
     assert "看这张图" in compact
     assert "image_url" not in compact
@@ -323,7 +347,7 @@ def test_context_window_extracts_text_from_multimodal_v1(seeded):
 # ── get_or_create_main_conversation idempotency ───────────────────────
 
 
-def test_get_or_create_main_conversation_is_idempotent(seeded):
+async def test_get_or_create_main_conversation_is_idempotent(seeded):
     """Two sequential calls must yield the same Conversation row.
 
     The function is hit from the WS boot path, the cron autonomous-turn
@@ -334,22 +358,28 @@ def test_get_or_create_main_conversation_is_idempotent(seeded):
     from services.conversation import get_or_create_main_conversation
 
     SessionLocal = seeded
-    with SessionLocal() as db:
-        first = get_or_create_main_conversation(db, 3001)
+    async with SessionLocal() as db:
+        first = await get_or_create_main_conversation(db, 3001)
         first_id = first.id
-    with SessionLocal() as db:
-        second = get_or_create_main_conversation(db, 3001)
+    async with SessionLocal() as db:
+        second = await get_or_create_main_conversation(db, 3001)
     assert second.id == first_id
 
     # The hint message was written once, not twice.
-    with SessionLocal() as db:
+    async with SessionLocal() as db:
         from modules.conversation import Message as _M
 
-        hint_count = db.query(_M).filter(_M.conversation_id == first_id, _M.subtype == "hint").count()
+        hint_count = (
+            await db.execute(
+                select(func.count())
+                .select_from(_M)
+                .where(_M.conversation_id == first_id, _M.subtype == "hint")
+            )
+        ).scalar_one()
     assert hint_count == 1
 
 
-def test_get_or_create_cron_conversation_is_idempotent_and_distinct_from_main(seeded):
+async def test_get_or_create_cron_conversation_is_idempotent_and_distinct_from_main(seeded):
     """The cron conversation must be a singleton per user and must not collide
     with the main one — autonomous cron turns need their own scratchpad so a
     renderer's ``session.get_main`` cannot cancel an in-flight cron via
@@ -357,15 +387,15 @@ def test_get_or_create_cron_conversation_is_idempotent_and_distinct_from_main(se
     from services.conversation import CRON_KIND, get_or_create_cron_conversation, get_or_create_main_conversation
 
     SessionLocal = seeded
-    with SessionLocal() as db:
-        cron_first = get_or_create_cron_conversation(db, 3001)
-        main = get_or_create_main_conversation(db, 3001)
+    async with SessionLocal() as db:
+        cron_first = await get_or_create_cron_conversation(db, 3001)
+        main = await get_or_create_main_conversation(db, 3001)
     assert cron_first.kind == CRON_KIND
     assert main.kind == "main"
     assert cron_first.id != main.id
 
-    with SessionLocal() as db:
-        cron_second = get_or_create_cron_conversation(db, 3001)
+    async with SessionLocal() as db:
+        cron_second = await get_or_create_cron_conversation(db, 3001)
     assert cron_second.id == cron_first.id
 
 

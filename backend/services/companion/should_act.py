@@ -59,7 +59,7 @@ async def should_act(
     if kind not in ("periodic_provision",):
         return ShouldActResult(should_act=False, reason="invalid_kind")
 
-    ctx = load_companion_prompt_context(user_id)
+    ctx = await load_companion_prompt_context(user_id)
     if ctx is None:
         return ShouldActResult(should_act=False, reason="persona not ready")
 

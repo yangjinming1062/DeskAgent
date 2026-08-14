@@ -43,15 +43,15 @@ async def interact(user_id: int, kind: str, poke_count: int, idle_seconds: float
     if kind not in ("poke", "drag"):
         return InteractResult(text=None, reason="invalid_kind")
 
-    ctx = load_companion_prompt_context(user_id)
+    ctx = await load_companion_prompt_context(user_id)
     if ctx is None:
         return InteractResult(text=None, reason="persona not ready")
 
-    today = read_today_summary(user_id)
+    today = await read_today_summary(user_id)
     today_stats = today["content"] if today else "今天尚无汇总记录"
 
-    with SESSION_LOCAL() as db:
-        recent_context = load_recent_context_window(db, user_id) or "暂无最近对话"
+    async with SESSION_LOCAL() as db:
+        recent_context = await load_recent_context_window(db, user_id) or "暂无最近对话"
 
     idle_minutes = round(coerce_non_negative_float(idle_seconds) / 60, 2)
     local_hour = coerce_hour_0_23(local_hour)

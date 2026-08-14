@@ -68,8 +68,8 @@ async def create_completion(
         # for the entire LLM call. ``resolve_provider_chain`` reads SETTINGS
         # + a single UserModelConfig row — no further DB access during the
         # call itself.
-        with SESSION_LOCAL() as db:
-            chain = resolve_provider_chain(db, user.id, "llm")
+        async with SESSION_LOCAL() as db:
+            chain = await resolve_provider_chain(db, user.id, "llm")
         if not chain:
             raise missing_config_http("LLM")
         response = await execute_with_fallback(db=None, user_id=user.id, service_type="llm", call_fn=_call, _chain=chain)

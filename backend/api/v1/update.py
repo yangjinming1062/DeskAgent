@@ -12,13 +12,14 @@ from fastapi.responses import FileResponse
 from modules.auth import get_current_admin_token
 from modules.update import UpdateVersion, UpdateVersionItem, UpdateVersionListResponse, UpdateVersionUpdate
 from services.update import ALLOWED_ARCHIVE_SUFFIXES, CHUNK_SIZE, DOWNLOAD_SUFFIXES, VERSIONS_DIR, build_manifest
-from sqlalchemy.orm import Session
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 router = get_router()
 
 
-def _get_latest(db: Session) -> UpdateVersion:
-    latest = db.query(UpdateVersion).filter(UpdateVersion.is_active.is_(True)).order_by(UpdateVersion.created_at.desc()).first()
+async def _get_latest(db: AsyncSession) -> UpdateVersion:
+    latest = (await db.execute(select(UpdateVersion).where(UpdateVersion.is_active.is_(True)).order_by(UpdateVersion.created_at.desc()))).scalars().first()
     if latest is None:
         raise HTTPException(status_code=404, detail="No active version")
     return latest
@@ -40,19 +41,19 @@ def _pick_asset(versions_dir: Path, *patterns: str) -> Path | None:
 
 
 @router.get("/latest.yml")
-def get_latest_yml(db: Session = Depends(get_db)) -> dict:
-    latest = _get_latest(db)
+async def get_latest_yml(db: AsyncSession = Depends(get_db)) -> dict:
+    latest = await _get_latest(db)
     return build_manifest(latest, latest.exe_filename, latest.exe_sha512, latest.exe_size)
 
 
 @router.get("/latest-mac.yml")
-def get_latest_mac_yml(db: Session = Depends(get_db)) -> dict:
-    latest = _get_latest(db)
+async def get_latest_mac_yml(db: AsyncSession = Depends(get_db)) -> dict:
+    latest = await _get_latest(db)
     return build_manifest(latest, latest.mac_filename, latest.mac_sha512, latest.mac_size)
 
 
 @router.get("/latest-runner.yml", response_class=FileResponse)
-def get_latest_runner_yml(db: Session = Depends(get_db)) -> FileResponse:
+async def get_latest_runner_yml(db: AsyncSession = Depends(get_db)) -> FileResponse:
     """Serve the signed runner manifest written by `scripts/build_client.ps1`'s
     `Build-UpdateZip` step. The desktop main process reads this BEFORE the
     restart, downloads the wheel + server.py locally, and only AFTER both
@@ -60,7 +61,7 @@ def get_latest_runner_yml(db: Session = Depends(get_db)) -> FileResponse:
     launch the new Electron runs `installPending`, which `pip install
     --upgrade` the wheel in place and overwrites `server.py`.
     """
-    latest = _get_latest(db)
+    latest = await _get_latest(db)
     if not latest.runner_filename:
         raise HTTPException(status_code=404, detail="No active release with a runner asset")
     manifest_path = VERSIONS_DIR / latest.version / "latest-runner.yml"
@@ -70,8 +71,8 @@ def get_latest_runner_yml(db: Session = Depends(get_db)) -> FileResponse:
 
 
 @router.get("/versions", response_model=UpdateVersionListResponse)
-def list_versions(_admin: str = Depends(get_current_admin_token), db: Session = Depends(get_db)) -> UpdateVersionListResponse:
-    records = db.query(UpdateVersion).order_by(UpdateVersion.created_at.desc()).all()
+async def list_versions(_admin: str = Depends(get_current_admin_token), db: AsyncSession = Depends(get_db)) -> UpdateVersionListResponse:
+    records = (await db.execute(select(UpdateVersion).order_by(UpdateVersion.created_at.desc()))).scalars().all()
     return list_response(records, UpdateVersionItem, UpdateVersionListResponse)
 
 
@@ -95,7 +96,7 @@ def _extract_archive_entries(zip_path: Path, versions_dir: Path) -> None:
 
 @router.post("/versions", response_model=UpdateVersionItem, status_code=201)
 async def create_version(
-    file: UploadFile = File(...), release_notes: str = Form(""), _admin: str = Depends(get_current_admin_token), db: Session = Depends(get_db)
+    file: UploadFile = File(...), release_notes: str = Form(""), _admin: str = Depends(get_current_admin_token), db: AsyncSession = Depends(get_db)
 ) -> UpdateVersionItem:
     # Squirrel build-output zip; must contain a *.exe.
     if not file.filename or not file.filename.endswith(".zip"):
@@ -107,7 +108,7 @@ async def create_version(
         raise HTTPException(status_code=400, detail="Filename must contain a version like 1.2.3")
     version = match.group(0)
 
-    if db.query(UpdateVersion).filter(UpdateVersion.version == version).one_or_none():
+    if (await db.execute(select(UpdateVersion).where(UpdateVersion.version == version))).scalar_one_or_none():
         raise HTTPException(status_code=400, detail=f"Version {version} already exists")
 
     versions_dir = VERSIONS_DIR / version
@@ -174,33 +175,33 @@ async def create_version(
         created_by=_admin,
     )
     db.add(record)
-    db.commit()
-    db.refresh(record)
+    await db.commit()
+    await db.refresh(record)
     return UpdateVersionItem.model_validate(record)
 
 
 @router.patch("/versions/{id}", response_model=UpdateVersionItem)
-def update_version(id: int, payload: UpdateVersionUpdate, _admin: str = Depends(get_current_admin_token), db: Session = Depends(get_db)) -> UpdateVersionItem:
-    record = get_or_404(db, UpdateVersion, id=id, detail="Version not found")
+async def update_version(id: int, payload: UpdateVersionUpdate, _admin: str = Depends(get_current_admin_token), db: AsyncSession = Depends(get_db)) -> UpdateVersionItem:
+    record = await get_or_404(db, UpdateVersion, id=id, detail="Version not found")
     apply_partial(record, payload)
-    db.commit()
+    await db.commit()
     return UpdateVersionItem.model_validate(record)
 
 
 @router.delete("/versions/{id}")
-def delete_version(id: int, _admin: str = Depends(get_current_admin_token), db: Session = Depends(get_db)) -> dict:
-    record = get_or_404(db, UpdateVersion, id=id, detail="Version not found")
+async def delete_version(id: int, _admin: str = Depends(get_current_admin_token), db: AsyncSession = Depends(get_db)) -> dict:
+    record = await get_or_404(db, UpdateVersion, id=id, detail="Version not found")
     versions_dir = VERSIONS_DIR / record.version
     if versions_dir.exists():
         shutil.rmtree(versions_dir)
-    db.delete(record)
-    db.commit()
+    await db.delete(record)
+    await db.commit()
     return {"message": "Version deleted"}
 
 
 @router.get("/{filename:path}", response_class=FileResponse)
-def get_latest_file(filename: str, db: Session = Depends(get_db)) -> FileResponse:
-    latest = _get_latest(db)
+async def get_latest_file(filename: str, db: AsyncSession = Depends(get_db)) -> FileResponse:
+    latest = await _get_latest(db)
     if not any(filename.endswith(s) for s in DOWNLOAD_SUFFIXES):
         raise HTTPException(status_code=400, detail="Invalid filename")
     base_dir = (VERSIONS_DIR / latest.version).resolve()

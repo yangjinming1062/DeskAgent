@@ -8,25 +8,26 @@ from fastapi import Depends
 from modules.auth import LoginRecord, User, UserModelConfig, get_current_session
 from modules.conversation import Conversation, Message
 from modules.memory import Memory
-from sqlalchemy import func, text
-from sqlalchemy.orm import Query, Session
+from sqlalchemy import Select, func, select, text
+from sqlalchemy.ext.asyncio import AsyncSession
 
 router = get_router(dependencies=[Depends(get_current_session)])
 
 
-def _user_messages_q(db: Session, user_id: int, since: datetime) -> Query:
-    return db.query(Message).join(Conversation).filter(Conversation.user_id == user_id, Message.created_at >= since)
+def _user_messages_q(user_id: int, since: datetime) -> Select[tuple[Message]]:
+    return select(Message).join(Conversation).where(Conversation.user_id == user_id, Message.created_at >= since)
 
 
-def _aggregate_user_messages(db: Session, user_id: int, since: datetime) -> dict[str, int]:
+async def _aggregate_user_messages(db: AsyncSession, user_id: int, since: datetime) -> dict[str, int]:
     """One round-trip for total / assistant-token / assistant-duration aggregates.
 
     ``tool_calls`` per-row fetch stays separate (Python needs the raw JSON to
     parse tool names) — that one is a row fetch, not an aggregate, so it
     cannot be merged into the FILTER aggregate.
     """
-    row = db.execute(
-        text("""
+    row = (
+        await db.execute(
+            text("""
             SELECT
               COUNT(*) AS total_messages,
               COALESCE(SUM(prompt_tokens)     FILTER (WHERE role = 'assistant'), 0) AS in_tok,
@@ -36,12 +37,13 @@ def _aggregate_user_messages(db: Session, user_id: int, since: datetime) -> dict
             JOIN conversations ON conversations.id = messages.conversation_id
             WHERE conversations.user_id = :uid AND messages.created_at >= :since
             """),
-        {"uid": user_id, "since": since},
+            {"uid": user_id, "since": since},
+        )
     ).one()
     return {"total_messages": int(row.total_messages), "total_input_tokens": int(row.in_tok), "total_output_tokens": int(row.out_tok), "total_duration_ms": int(row.duration_ms)}
 
 
-def _daily_activity(db: Session, user_id: int, since: datetime) -> list[dict[str, Any]]:
+async def _daily_activity(db: AsyncSession, user_id: int, since: datetime) -> list[dict[str, Any]]:
     """Per-day message counts, oldest→newest, capped at ``ACTIVITY_DAY_BUCKETS`` days.
 
     Returns ``[{date: 'YYYY-MM-DD', messages: int}, ...]``. Days with no
@@ -51,18 +53,19 @@ def _daily_activity(db: Session, user_id: int, since: datetime) -> list[dict[str
     rolled up.
     """
     rows = (
-        db.query(func.date(Message.created_at).label("day"), func.count(Message.id).label("cnt"))
-        .join(Conversation, Conversation.id == Message.conversation_id)
-        .filter(Conversation.user_id == user_id, Message.created_at >= since, Message.role == "user")
-        .group_by(text("day"))
-        .order_by(text("day DESC"))
-        .limit(ACTIVITY_DAY_BUCKETS)
-        .all()
-    )
+        await db.execute(
+            select(func.date(Message.created_at).label("day"), func.count(Message.id).label("cnt"))
+            .join(Conversation, Conversation.id == Message.conversation_id)
+            .where(Conversation.user_id == user_id, Message.created_at >= since, Message.role == "user")
+            .group_by(text("day"))
+            .order_by(text("day DESC"))
+            .limit(ACTIVITY_DAY_BUCKETS)
+        )
+    ).all()
     return [{"date": str(row.day), "messages": int(row.cnt)} for row in reversed(rows)]
 
 
-def _platform_breakdown(db: Session, user_id: int, since: datetime) -> list[dict[str, Any]]:
+async def _platform_breakdown(db: AsyncSession, user_id: int, since: datetime) -> list[dict[str, Any]]:
     """Count distinct ``client_version`` strings from active login records in the window.
 
     Coarse platform hint — the renderer already filters on
@@ -72,16 +75,17 @@ def _platform_breakdown(db: Session, user_id: int, since: datetime) -> list[dict
     don't inflate the breakdown.
     """
     rows = (
-        db.query(LoginRecord.client_version, func.count(LoginRecord.id))
-        .filter(LoginRecord.user_id == user_id, LoginRecord.is_active.is_(True), LoginRecord.login_at >= since)
-        .group_by(LoginRecord.client_version)
-        .all()
-    )
+        await db.execute(
+            select(LoginRecord.client_version, func.count(LoginRecord.id))
+            .where(LoginRecord.user_id == user_id, LoginRecord.is_active.is_(True), LoginRecord.login_at >= since)
+            .group_by(LoginRecord.client_version)
+        )
+    ).all()
     total = sum(c for _, c in rows) or 1
     return [{"platform": (v or "unknown"), "count": int(c), "pct": round(int(c) / total, 4)} for v, c in sorted(rows, key=lambda r: -r[1]) if c > 0]
 
 
-def _model_breakdown(db: Session, user_id: int) -> list[dict[str, Any]]:
+async def _model_breakdown(db: AsyncSession, user_id: int) -> list[dict[str, Any]]:
     """LLM models the user has configured (DB row, falling back to env).
 
     We don't track model per-message, so this reflects "what models is this
@@ -89,7 +93,7 @@ def _model_breakdown(db: Session, user_id: int) -> list[dict[str, Any]]:
     for the overview card; detailed per-message accounting lives in
     ``sessions.py /api/sessions/{id}/messages``.
     """
-    config = db.query(UserModelConfig).filter(UserModelConfig.user_id == user_id).one_or_none()
+    config = (await db.execute(select(UserModelConfig).where(UserModelConfig.user_id == user_id))).scalar_one_or_none()
     # DB row wins for the field when set; otherwise fall back to env so
     # env-only deployments (no per-user row) still see the configured model.
     model_name = (config.llm_model_name if config and config.llm_model_name else "") or SETTINGS.llm_model_name
@@ -99,13 +103,15 @@ def _model_breakdown(db: Session, user_id: int) -> list[dict[str, Any]]:
     return [{"model": model_name, "base_url": base_url or "", "is_active": True}]
 
 
-def _skill_summary(db: Session, user_id: int, since: datetime) -> dict[str, Any]:
+async def _skill_summary(db: AsyncSession, user_id: int, since: datetime) -> dict[str, Any]:
     """Aggregate counts from the memory table — closest thing we have to
     'skills' the user has built up (memories are extracted from past sessions)."""
-    counts = db.execute(
-        text("SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE created_at >= :since) AS recent FROM memories WHERE user_id = :uid"), {"uid": user_id, "since": since}
+    counts = (
+        await db.execute(
+            text("SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE created_at >= :since) AS recent FROM memories WHERE user_id = :uid"), {"uid": user_id, "since": since}
+        )
     ).one()
-    rows = db.query(Memory.tags).filter(Memory.user_id == user_id, Memory.tags.isnot(None)).all()
+    rows = (await db.execute(select(Memory.tags).where(Memory.user_id == user_id, Memory.tags.isnot(None)))).all()
     tag_counter: Counter[str] = Counter()
     for tags_raw in rows:
         # ``Memory.tags`` is a Text column (JSON-encoded string), not a
@@ -123,14 +129,16 @@ def _skill_summary(db: Session, user_id: int, since: datetime) -> dict[str, Any]
 
 @router.get("/overview")
 async def get_insights_overview(
-    days: int = DEFAULT_INSIGHTS_DAYS, session_data: tuple[User, LoginRecord] = Depends(get_current_session), db: Session = Depends(get_db)
+    days: int = DEFAULT_INSIGHTS_DAYS, session_data: tuple[User, LoginRecord] = Depends(get_current_session), db: AsyncSession = Depends(get_db)
 ) -> dict[str, Any]:
     current_user, _ = session_data
     since = naive_utc_now() - timedelta(days=days)
 
-    total_sessions = db.query(Conversation).filter(Conversation.user_id == current_user.id, Conversation.updated_at >= since).count()
+    total_sessions = (
+        await db.execute(select(func.count()).select_from(Conversation).where(Conversation.user_id == current_user.id, Conversation.updated_at >= since))
+    ).scalar_one()
 
-    agg = _aggregate_user_messages(db, current_user.id, since)
+    agg = await _aggregate_user_messages(db, current_user.id, since)
     total_messages = agg["total_messages"]
     total_input_tokens = agg["total_input_tokens"]
     total_output_tokens = agg["total_output_tokens"]
@@ -142,11 +150,12 @@ async def get_insights_overview(
     # column NULL, but a future regression that writes ``"[]"`` would
     # otherwise inflate ``total_tool_calls``.
     tool_rows = (
-        _user_messages_q(db, current_user.id, since)
-        .with_entities(Message.tool_calls)
-        .filter(Message.tool_calls.isnot(None), Message.tool_calls != "", Message.tool_calls != "[]")
-        .all()
-    )
+        await db.execute(
+            _user_messages_q(current_user.id, since)
+            .with_only_columns(Message.tool_calls)
+            .where(Message.tool_calls.isnot(None), Message.tool_calls != "", Message.tool_calls != "[]")
+        )
+    ).all()
     tool_counts: Counter[str] = Counter(
         fn["name"]
         for row in tool_rows
@@ -171,8 +180,8 @@ async def get_insights_overview(
             "avg_session_duration": round(avg_session_duration, 2),
         },
         "top_tools": [{"tool": k, "count": v} for k, v in tool_counts.most_common(10)],
-        "models": _model_breakdown(db, current_user.id),
-        "platforms": _platform_breakdown(db, current_user.id, since),
-        "skills": _skill_summary(db, current_user.id, since),
-        "activity": _daily_activity(db, current_user.id, since),
+        "models": await _model_breakdown(db, current_user.id),
+        "platforms": await _platform_breakdown(db, current_user.id, since),
+        "skills": await _skill_summary(db, current_user.id, since),
+        "activity": await _daily_activity(db, current_user.id, since),
     }

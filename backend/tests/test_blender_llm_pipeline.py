@@ -42,13 +42,14 @@ def _make_valid_biped_glb() -> bytes:
 
 
 class _FakeSession:
-    """No-op context manager that returns a MagicMock — replaces ``SESSION_LOCAL``
-    so pipeline integration tests don't need a real DB connection."""
+    """No-op async context manager that returns a MagicMock — replaces
+    ``SESSION_LOCAL`` so pipeline integration tests don't need a real DB
+    connection."""
 
-    def __enter__(self):
+    async def __aenter__(self):
         return MagicMock()
 
-    def __exit__(self, *a):
+    async def __aexit__(self, *a):
         return False
 
 
@@ -285,12 +286,18 @@ class TestPipelineIntegration:
         # Mock the DB session for _emit_progress / _emit_model_failed.
         emit_calls: list[tuple[str, str, int]] = []
 
-        def _fake_emit_progress(user_id, stage, pct, *, provider=None):
+        async def _fake_emit_progress(user_id, stage, pct, *, provider=None):
             emit_calls.append((stage, str(pct), str(user_id)))
 
+        async def _fake_emit_model_failed(uid, reason):
+            emit_calls.append(("failed", reason, str(uid)))
+
+        async def _fake_emit_model_ready(*a, **kw):
+            emit_calls.append(("ready", "", ""))
+
         monkeypatch.setattr(blender_llm_pipeline, "_emit_progress", _fake_emit_progress)
-        monkeypatch.setattr(blender_llm_pipeline, "_emit_model_failed", lambda uid, reason: emit_calls.append(("failed", reason, str(uid))))
-        monkeypatch.setattr(blender_llm_pipeline, "_emit_model_ready", lambda *a, **kw: emit_calls.append(("ready", "", "")))
+        monkeypatch.setattr(blender_llm_pipeline, "_emit_model_failed", _fake_emit_model_failed)
+        monkeypatch.setattr(blender_llm_pipeline, "_emit_model_ready", _fake_emit_model_ready)
 
         # Mock select_rig_type to avoid LLM calls.
         monkeypatch.setattr(blender_llm_pipeline, "select_rig_type", AsyncMock(return_value="biped"))
@@ -311,7 +318,11 @@ class TestPipelineIntegration:
 
         # Mock the shared helpers to avoid real DB.
         fail_calls: list[tuple[int, str]] = []
-        monkeypatch.setattr(blender_llm_pipeline, "_mark_generation_failed", lambda mid, reason: fail_calls.append((mid, reason)))
+
+        async def _fake_mark_generation_failed(mid, reason):
+            fail_calls.append((mid, reason))
+
+        monkeypatch.setattr(blender_llm_pipeline, "_mark_generation_failed", _fake_mark_generation_failed)
 
         monkeypatch.setattr(blender_llm_pipeline, "SESSION_LOCAL", _FakeSession)
 
@@ -327,12 +338,18 @@ class TestPipelineIntegration:
         """Script executes successfully, validation passes, LLM says converged."""
         emit_calls: list[tuple[str, str, str]] = []
 
-        def _fake_emit_progress(user_id, stage, pct, *, provider=None):
+        async def _fake_emit_progress(user_id, stage, pct, *, provider=None):
             emit_calls.append((stage, str(pct), ""))
 
+        async def _fake_emit_model_ready(*a, **kw):
+            emit_calls.append(("ready", "", ""))
+
+        async def _fake_emit_model_failed(uid, reason):
+            emit_calls.append(("failed", reason, ""))
+
         monkeypatch.setattr(blender_llm_pipeline, "_emit_progress", _fake_emit_progress)
-        monkeypatch.setattr(blender_llm_pipeline, "_emit_model_ready", lambda *a, **kw: emit_calls.append(("ready", "", "")))
-        monkeypatch.setattr(blender_llm_pipeline, "_emit_model_failed", lambda uid, reason: emit_calls.append(("failed", reason, "")))
+        monkeypatch.setattr(blender_llm_pipeline, "_emit_model_ready", _fake_emit_model_ready)
+        monkeypatch.setattr(blender_llm_pipeline, "_emit_model_failed", _fake_emit_model_failed)
 
         monkeypatch.setattr(blender_llm_pipeline, "select_rig_type", AsyncMock(return_value="biped"))
         monkeypatch.setattr(blender_llm_pipeline, "_resolve_seeds", _fake_resolve_seeds)
@@ -359,11 +376,13 @@ class TestPipelineIntegration:
 
         # Mock the shared finalize helper — returns True (activated, not superseded).
         finalize_calls: list[dict] = []
-        monkeypatch.setattr(
-            blender_llm_pipeline, "_finalize_generation",
-            lambda model_id, user_id, **kw: (finalize_calls.append(kw), True)[1],
-        )
-        monkeypatch.setattr(blender_llm_pipeline, "_mark_generation_failed", lambda mid, reason: None)
+
+        async def _fake_finalize_generation(model_id, user_id, **kw):
+            finalize_calls.append(kw)
+            return True
+
+        monkeypatch.setattr(blender_llm_pipeline, "_finalize_generation", _fake_finalize_generation)
+        monkeypatch.setattr(blender_llm_pipeline, "_mark_generation_failed", AsyncMock(return_value=None))
 
         monkeypatch.setattr(blender_llm_pipeline, "SESSION_LOCAL", _FakeSession)
         monkeypatch.setattr(SETTINGS, "blender_llm_max_iterations", 5)

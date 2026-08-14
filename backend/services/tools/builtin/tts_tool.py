@@ -17,7 +17,7 @@ async def text_to_speech_tool(text: str, voice: str = "", user_id: int | None = 
 
     try:
         if user_id is not None:
-            with SESSION_LOCAL() as db:
+            async with SESSION_LOCAL() as db:
                 result: TTSResult = await execute_with_fallback(db, user_id, "tts", call_fn=_call)
         else:
             result = await execute_with_fallback(None, None, "tts", call_fn=_call)

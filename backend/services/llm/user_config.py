@@ -2,7 +2,8 @@ import json
 
 from modules.auth import ProviderSlot, UserModelConfig
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy.orm import Session
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 
 def merge_provider_json(slots: list[ProviderSlot], existing: UserModelConfig | None) -> str:
@@ -45,15 +46,15 @@ class UserLlmConfig(BaseModel):
         return super().__eq__(other)
 
 
-def resolve_user_llm_config(db: Session, user_id: int) -> UserLlmConfig:
+async def resolve_user_llm_config(db: AsyncSession | None, user_id: int) -> UserLlmConfig:
     # Every credential comes from the same chain head the chat path uses,
     # so downstream callers (schedulers, title generation) see one
     # consistent provider. ``db=None`` is allowed for callers that
     # bootstrap without a session.
     from .llm_client import resolve_provider_chain
 
-    config = db.query(UserModelConfig).filter(UserModelConfig.user_id == user_id).first() if db is not None else None
-    chain = resolve_provider_chain(db, user_id, "llm", user_cfg=config)
+    config = (await db.execute(select(UserModelConfig).where(UserModelConfig.user_id == user_id))).scalar_one_or_none() if db is not None else None
+    chain = await resolve_provider_chain(db, user_id, "llm", user_cfg=config)
     head = chain[0] if chain else None
     return UserLlmConfig(
         api_key=head.api_key if head else "", base_url=head.base_url if head else "", model_name=head.model if head else "", provider_name=head.provider_name if head else ""

@@ -1,7 +1,7 @@
 from typing import Protocol
 
 from components import get_logger, safe_json_loads
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from services.llm import ProviderConfig
 
@@ -90,11 +90,11 @@ _SYSTEM_PROMPT = (
 
 
 class ChatFn(Protocol):
-    async def __call__(self, db: Session | None, user_id: int | None, system_prompt: str, user_payload: str, *, provider_config: ProviderConfig | None = None) -> str: ...
+    async def __call__(self, db: AsyncSession | None, user_id: int | None, system_prompt: str, user_payload: str, *, provider_config: ProviderConfig | None = None) -> str: ...
 
 
 async def analyze_personality_tags(
-    chat: ChatFn, definition_json: str, user_id: int | None = None, *, species: str | None = None, rig_type: str | None = None, db: Session | None = None
+    chat: ChatFn, definition_json: str, user_id: int | None = None, *, species: str | None = None, rig_type: str | None = None, db: AsyncSession | None = None
 ) -> list[str]:
     """LLM 分析 persona 设定并提取性格标签列表。
 

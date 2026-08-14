@@ -4,7 +4,7 @@ from typing import Any
 
 from components import safe_json_loads
 from modules.companion import Persona
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from .llm_client import MissingLlmConfigError, client_for_config, provider_for_service, provider_from_config
 from .llm_retry import call_with_retry
@@ -273,9 +273,9 @@ def _strip_markdown_fence(raw: str) -> str:
     return cleaned
 
 
-async def chat(db: Session | None, user_id: int | None, system_prompt: str, user_payload: str, *, provider_config: ProviderConfig | None = None) -> str:
+async def chat(db: AsyncSession | None, user_id: int | None, system_prompt: str, user_payload: str, *, provider_config: ProviderConfig | None = None) -> str:
     """Single non-streaming chat round-trip. Empty content is an error so a blank prompt never reaches the image-gen provider."""
-    provider = provider_from_config(provider_config) if provider_config is not None else provider_for_service(db, user_id, "llm")
+    provider = provider_from_config(provider_config) if provider_config is not None else await provider_for_service(db, user_id, "llm")
     client = provider.raw_client()
     if client is None:
         raise MissingLlmConfigError(f"llm provider '{provider.provider_name}' is not OpenAI-compatible")
@@ -303,7 +303,9 @@ async def call_llm_once(llm_cfg: dict[str, Any], system_prompt: str, user_payloa
     return resp.choices[0].message.content if resp and resp.choices else None
 
 
-async def enhance_avatar_prompt(db: Session | None, user_id: int | None, persona: Persona, *, feedback: str | None = None, provider_config: ProviderConfig | None = None) -> str:
+async def enhance_avatar_prompt(
+    db: AsyncSession | None, user_id: int | None, persona: Persona, *, feedback: str | None = None, provider_config: ProviderConfig | None = None
+) -> str:
     """Rewrite persona definition into a single focused Chinese avatar (bust) prompt."""
     payload = _persona_visual_payload(persona, feedback)
     user_payload = f"请根据以下角色定义生成半身头像图的提示词：\n```json\n{json.dumps(payload, ensure_ascii=False)}\n```"

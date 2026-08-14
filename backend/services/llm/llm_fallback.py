@@ -2,7 +2,7 @@ from collections.abc import Awaitable, Callable
 from typing import TypeVar
 
 from components import get_logger
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from .error_classifier import FailoverReason, classify_api_error
 from .llm_client import MissingLlmConfigError, resolve_provider_chain
@@ -14,7 +14,7 @@ T = TypeVar("T")
 
 
 async def execute_with_fallback(
-    db: Session | None,
+    db: AsyncSession | None,
     user_id: int | None,
     service_type: str,
     call_fn: Callable[[BaseProvider], Awaitable[T]],
@@ -49,7 +49,7 @@ async def execute_with_fallback(
     Raises :class:`MissingLlmConfigError` when the chain is empty
     (no provider configured at all for this service).
     """
-    chain = _chain if _chain is not None else resolve_provider_chain(db, user_id, service_type)
+    chain = _chain if _chain is not None else await resolve_provider_chain(db, user_id, service_type)
     if not chain:
         raise MissingLlmConfigError(f"no provider configured for service {service_type!r}")
 

@@ -32,6 +32,9 @@ test = [
 ]
 
 [tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"
 markers = [
     "e2e: tests that call real LLM API (requires MIMO_API_KEY env var)",
 ]

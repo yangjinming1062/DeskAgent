@@ -2,7 +2,7 @@ from datetime import datetime, timedelta
 import json
 
 import pytest
-from sqlalchemy import delete, text
+from sqlalchemy import delete, func, select, text
 
 from components import MAX_INFERRED_PROFILE_CONTENT_CHARS, NIGHTLY_MIN_MESSAGES_TODAY
 from modules.conversation import Conversation, Message
@@ -34,7 +34,7 @@ def _mock_llm_response(payload):
     return _fake
 
 
-def _make_user(SessionLocal, user_id: int = 1001, timezone_str: str = "Asia/Shanghai"):
+async def _make_user(SessionLocal, user_id: int = 1001, timezone_str: str = "Asia/Shanghai"):
     """Seed a User row and model config so LLM and FK constraints are met."""
     from modules.auth import (
         LoginRecord,
@@ -45,8 +45,10 @@ def _make_user(SessionLocal, user_id: int = 1001, timezone_str: str = "Asia/Shan
         hash_activation_token
     )
 
-    with SessionLocal() as db:
-        if not db.query(User).filter(User.id == user_id).first():
+    async with SessionLocal() as db:
+        if (
+            await db.execute(select(User).where(User.id == user_id))
+        ).scalar_one_or_none() is None:
             user = User(
                 id=user_id,
                 username=f"u{user_id}",
@@ -58,7 +60,7 @@ def _make_user(SessionLocal, user_id: int = 1001, timezone_str: str = "Asia/Shan
                 can_use=True
             )
             db.add(user)
-            db.commit()
+            await db.commit()
             db.add(
                 UserModelConfig(
                     user_id=user_id,
@@ -78,25 +80,25 @@ def _make_user(SessionLocal, user_id: int = 1001, timezone_str: str = "Asia/Shan
                         tags='["onboarding", "user_profile"]'
                     )
                 )
-            db.commit()
+            await db.commit()
 
 
 @pytest.fixture()
-def seeded(_patch_db):
+async def seeded(_patch_db):
     _, SessionLocal = _patch_db
-    _make_user(SessionLocal, 1001, "Asia/Shanghai")
-    _make_user(SessionLocal, 1002, "America/New_York")
+    await _make_user(SessionLocal, 1001, "Asia/Shanghai")
+    await _make_user(SessionLocal, 1002, "America/New_York")
     return SessionLocal
 
 
 # ── Namespace & Forgery Defense ─────────────────────────────────────────
 
 
-def test_retain_recall_rejects_inferred_profile_context(seeded):
+async def test_retain_recall_rejects_inferred_profile_context(seeded):
     SessionLocal = seeded
-    with SessionLocal() as db:
+    async with SessionLocal() as db:
         mem = NativeMemory(db, 1001)
-        out = mem.execute_tool(
+        out = await mem.execute_tool(
             "memory_retain",
             {
                 "kind": "recall",
@@ -105,19 +107,21 @@ def test_retain_recall_rejects_inferred_profile_context(seeded):
             }
         )
         assert "error" in json.loads(out)
-        rows = db.execute(
-            text(
-                "SELECT count(*) FROM memories WHERE user_id = 1001 AND context LIKE 'inferred_profile:%'"
+        rows = (
+            await db.execute(
+                text(
+                    "SELECT count(*) FROM memories WHERE user_id = 1001 AND context LIKE 'inferred_profile:%'"
+                )
             )
         ).scalar()
         assert rows == 0
 
 
-def test_retain_recall_rejects_diary_context(seeded):
+async def test_retain_recall_rejects_diary_context(seeded):
     SessionLocal = seeded
-    with SessionLocal() as db:
+    async with SessionLocal() as db:
         mem = NativeMemory(db, 1001)
-        out = mem.execute_tool(
+        out = await mem.execute_tool(
             "memory_retain",
             {
                 "kind": "recall",
@@ -126,17 +130,19 @@ def test_retain_recall_rejects_diary_context(seeded):
             }
         )
         assert "error" in json.loads(out)
-        rows = db.execute(
-            text(
-                "SELECT count(*) FROM memories WHERE user_id = 1001 AND context LIKE 'diary:%'"
+        rows = (
+            await db.execute(
+                text(
+                    "SELECT count(*) FROM memories WHERE user_id = 1001 AND context LIKE 'diary:%'"
+                )
             )
         ).scalar()
         assert rows == 0
 
 
-def test_recall_excludes_inferred_profile_but_includes_diary(seeded):
+async def test_recall_excludes_inferred_profile_but_includes_diary(seeded):
     SessionLocal = seeded
-    with SessionLocal() as db:
+    async with SessionLocal() as db:
         mem = NativeMemory(db, 1001)
         db.add_all(
             [
@@ -160,9 +166,9 @@ def test_recall_excludes_inferred_profile_but_includes_diary(seeded):
                 )
             ]
         )
-        db.commit()
+        await db.commit()
 
-        out = mem.execute_tool("memory_recall", {"query": "python"})
+        out = await mem.execute_tool("memory_recall", {"query": "python"})
         parsed = json.loads(out)
         result_text = parsed.get("result", "")
         # Regular recall is returned
@@ -171,17 +177,17 @@ def test_recall_excludes_inferred_profile_but_includes_diary(seeded):
         assert "Diary note about python project" in result_text
 
         # Inferred profile is NOT returned
-        out_profile = mem.execute_tool("memory_recall", {"query": "engineer"})
+        out_profile = await mem.execute_tool("memory_recall", {"query": "engineer"})
         assert "Inferred: software engineer" not in json.loads(out_profile).get(
             "result", ""
         )
 
 
-def test_format_inferred_profile_block_renders_in_order(seeded):
+async def test_format_inferred_profile_block_renders_in_order(seeded):
     SessionLocal = seeded
-    with SessionLocal() as db:
+    async with SessionLocal() as db:
         # Empty when no rows
-        assert format_inferred_profile_block(db, 1001) == ""
+        assert await format_inferred_profile_block(db, 1001) == ""
 
         db.add_all(
             [
@@ -205,9 +211,9 @@ def test_format_inferred_profile_block_renders_in_order(seeded):
                 )
             ]
         )
-        db.commit()
+        await db.commit()
 
-        block = format_inferred_profile_block(db, 1001)
+        block = await format_inferred_profile_block(db, 1001)
         assert "# Inferred user profile" in block
         # Order must match INFERRED_PROFILE_SLOTS (basic_info before work_schedule before interests)
         assert (
@@ -217,9 +223,9 @@ def test_format_inferred_profile_block_renders_in_order(seeded):
         )
 
 
-def test_format_memories_block_excludes_inferred_profile_and_diary(seeded):
+async def test_format_memories_block_excludes_inferred_profile_and_diary(seeded):
     SessionLocal = seeded
-    with SessionLocal() as db:
+    async with SessionLocal() as db:
         db.add_all(
             [
                 Memory(
@@ -242,9 +248,9 @@ def test_format_memories_block_excludes_inferred_profile_and_diary(seeded):
                 )
             ]
         )
-        db.commit()
+        await db.commit()
 
-        block = format_memories_block(db, 1001)
+        block = await format_memories_block(db, 1001)
         assert "actual durable memory" in block
         assert "inferred secret" not in block
         assert "private companion diary" not in block
@@ -386,52 +392,52 @@ async def test_stage_1_daily_reflection_upserts_and_caps(seeded, monkeypatch):
 
     assert "inferred_profile:basic_info" in updated_inferred
     assert "auto_inject:rapport_state" in updated_auto_inject
-    with SessionLocal() as db:
+    async with SessionLocal() as db:
         basic = (
-            db.query(Memory)
-            .filter(
-                Memory.user_id == 1001, Memory.context == "inferred_profile:basic_info"
+            await db.execute(
+                select(Memory).where(
+                    Memory.user_id == 1001, Memory.context == "inferred_profile:basic_info"
+                )
             )
-            .first()
-        )
+        ).scalar_one_or_none()
         assert basic is not None
         assert basic.content == "Age 28, Engineer"
 
         freeform = (
-            db.query(Memory)
-            .filter(
-                Memory.user_id == 1001, Memory.context == "inferred_profile:freeform"
+            await db.execute(
+                select(Memory).where(
+                    Memory.user_id == 1001, Memory.context == "inferred_profile:freeform"
+                )
             )
-            .first()
-        )
+        ).scalar_one_or_none()
         assert freeform is not None
         assert len(freeform.content) == MAX_INFERRED_PROFILE_CONTENT_CHARS
 
         rapport = (
-            db.query(Memory)
-            .filter(
-                Memory.user_id == 1001, Memory.context == "auto_inject:rapport_state"
+            await db.execute(
+                select(Memory).where(
+                    Memory.user_id == 1001, Memory.context == "auto_inject:rapport_state"
+                )
             )
-            .first()
-        )
+        ).scalar_one_or_none()
         assert rapport is not None
         assert rapport.content == "Close friendship formed"
 
         invalid_slot = (
-            db.query(Memory)
-            .filter(
-                Memory.user_id == 1001,
-                Memory.context == "inferred_profile:invalid_slot"
+            await db.execute(
+                select(Memory).where(
+                    Memory.user_id == 1001,
+                    Memory.context == "inferred_profile:invalid_slot"
+                )
             )
-            .first()
-        )
+        ).scalar_one_or_none()
         assert invalid_slot is None
 
 
 @pytest.mark.asyncio
 async def test_stage_2_consolidation_and_rollback(seeded, monkeypatch):
     SessionLocal = seeded
-    with SessionLocal() as db:
+    async with SessionLocal() as db:
         db.add_all(
             [
                 Memory(
@@ -448,12 +454,20 @@ async def test_stage_2_consolidation_and_rollback(seeded, monkeypatch):
                 )
             ]
         )
-        db.commit()
+        await db.commit()
         rows = [
             {"id": r.id, "context": r.context, "content": r.content, "tags": r.tags}
-            for r in db.query(Memory)
-            .filter(Memory.user_id == 1001, Memory.context.like("recall:%"))
-            .all()
+            for r in (
+                (
+                    await db.execute(
+                        select(Memory).where(
+                            Memory.user_id == 1001, Memory.context.like("recall:%")
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
         ]
 
     cfg = {"api_key": "k", "base_url": "u", "model_name": "m", "provider_name": "mimo"}
@@ -469,14 +483,15 @@ async def test_stage_2_consolidation_and_rollback(seeded, monkeypatch):
 
     ok = await _stage_2_memory_consolidation(cfg, 1001, rows, {}, "2026-08-12")
     assert ok is False
-    with SessionLocal() as db:
+    async with SessionLocal() as db:
         # Original rows kept
         assert (
-            db.query(Memory)
-            .filter(Memory.user_id == 1001, Memory.context.like("recall:%"))
-            .count()
-            == 2
-        )
+            await db.execute(
+                select(func.count())
+                .select_from(Memory)
+                .where(Memory.user_id == 1001, Memory.context.like("recall:%"))
+            )
+        ).scalar_one() == 2
 
     # Test successful consolidation
     monkeypatch.setattr(
@@ -496,10 +511,16 @@ async def test_stage_2_consolidation_and_rollback(seeded, monkeypatch):
     )
     ok_succ = await _stage_2_memory_consolidation(cfg, 1001, rows, {}, "2026-08-12")
     assert ok_succ is True
-    with SessionLocal() as db:
+    async with SessionLocal() as db:
         recall_rows = (
-            db.query(Memory)
-            .filter(Memory.user_id == 1001, Memory.context.like("recall:%"))
+            (
+                await db.execute(
+                    select(Memory).where(
+                        Memory.user_id == 1001, Memory.context.like("recall:%")
+                    )
+                )
+            )
+            .scalars()
             .all()
         )
         assert len(recall_rows) == 1
@@ -530,18 +551,20 @@ async def test_stage_3_planning_creates_cron_and_respects_cap(seeded, monkeypatc
     created = await _stage_3_planning(cfg, 1001, {}, {}, [], {}, {})
     assert created == 1
 
-    with SessionLocal() as db:
+    async with SessionLocal() as db:
         job = (
-            db.query(CronJob)
-            .filter(CronJob.user_id == 1001, CronJob.name == "Birthday Greeting")
-            .first()
-        )
+            await db.execute(
+                select(CronJob).where(
+                    CronJob.user_id == 1001, CronJob.name == "Birthday Greeting"
+                )
+            )
+        ).scalar_one_or_none()
         assert job is not None
         assert job.schedule == "0 1 15 8 *"
         assert job.prompt == "Wish the user a happy birthday!"
 
     # Now fill up to max 10 active cron jobs
-    with SessionLocal() as db:
+    async with SessionLocal() as db:
         for i in range(9):
             db.add(
                 CronJob(
@@ -552,7 +575,7 @@ async def test_stage_3_planning_creates_cron_and_respects_cap(seeded, monkeypatc
                     is_paused=False
                 )
             )
-        db.commit()
+        await db.commit()
 
     # Now with 10 jobs active, next creation attempt should fail gracefully
     created_over_cap = await _stage_3_planning(cfg, 1001, {}, {}, [], {}, {})
@@ -573,12 +596,14 @@ async def test_stage_4_self_diary_upsert(seeded, monkeypatch):
     ok = await _stage_4_self_diary(cfg, 1001, [], {}, {}, "2026-08-12")
     assert ok is True
 
-    with SessionLocal() as db:
+    async with SessionLocal() as db:
         diary = (
-            db.query(Memory)
-            .filter(Memory.user_id == 1001, Memory.context == "diary:2026-08-12")
-            .first()
-        )
+            await db.execute(
+                select(Memory).where(
+                    Memory.user_id == 1001, Memory.context == "diary:2026-08-12"
+                )
+            )
+        ).scalar_one_or_none()
         assert diary is not None
         assert "聊得很开心" in diary.content
         assert json.loads(diary.tags) == ["diary", "self_reflection"]
@@ -591,10 +616,16 @@ async def test_stage_4_self_diary_upsert(seeded, monkeypatch):
     )
     await _stage_4_self_diary(cfg, 1001, [], {}, {}, "2026-08-12")
 
-    with SessionLocal() as db:
+    async with SessionLocal() as db:
         diaries = (
-            db.query(Memory)
-            .filter(Memory.user_id == 1001, Memory.context == "diary:2026-08-12")
+            (
+                await db.execute(
+                    select(Memory).where(
+                        Memory.user_id == 1001, Memory.context == "diary:2026-08-12"
+                    )
+                )
+            )
+            .scalars()
             .all()
         )
         assert len(diaries) == 1
@@ -616,11 +647,11 @@ async def test_eligibility_and_tick_trigger(seeded, monkeypatch):
     cron._LAST_NIGHTLY_RUN.clear()
 
     # Seed conversation with 5 user messages within yesterday's local day
-    with SessionLocal() as db:
+    async with SessionLocal() as db:
         conv = Conversation(user_id=1001, kind="main")
         db.add(conv)
-        db.commit()
-        db.refresh(conv)
+        await db.commit()
+        await db.refresh(conv)
 
         for i in range(NIGHTLY_MIN_MESSAGES_TODAY):
             db.add(
@@ -631,7 +662,7 @@ async def test_eligibility_and_tick_trigger(seeded, monkeypatch):
                     created_at=datetime(2026, 8, 11, 17, 30, 0),
                 )
             )
-        db.commit()
+        await db.commit()
 
     pipeline_runs = []
 
@@ -662,10 +693,10 @@ async def test_eligibility_and_tick_trigger(seeded, monkeypatch):
     assert len(pipeline_runs) == 0
 
     # 4. Without enough messages (< 5) -> skipped
-    with SessionLocal() as db:
+    async with SessionLocal() as db:
         # Delete messages
-        db.execute(delete(Message))
-        db.commit()
+        await db.execute(delete(Message))
+        await db.commit()
         for i in range(3):
             db.add(
                 Message(
@@ -675,7 +706,7 @@ async def test_eligibility_and_tick_trigger(seeded, monkeypatch):
                     created_at=datetime(2026, 8, 11, 17, 30, 0),
                 )
             )
-        db.commit()
+        await db.commit()
 
     cron._LAST_NIGHTLY_RUN.clear()
     cron._LAST_NIGHTLY_SCAN = 0.0
@@ -694,15 +725,15 @@ async def test_eligibility_gate_and_pipeline_read_the_same_day(seeded, monkeypat
     cron._LAST_NIGHTLY_SCAN = 0.0
     cron._LAST_NIGHTLY_RUN.clear()
 
-    with SessionLocal() as db:
+    async with SessionLocal() as db:
         conv = Conversation(user_id=1001, kind="main")
         db.add(conv)
-        db.commit()
-        db.refresh(conv)
+        await db.commit()
+        await db.refresh(conv)
         for i in range(NIGHTLY_MIN_MESSAGES_TODAY):
             # 2026-08-12 01:30 UTC == 09:30 Beijing on 2026-08-12.
             db.add(Message(conversation_id=conv.id, role="user", content=f"Message {i}", created_at=datetime(2026, 8, 12, 1, 30, 0)))
-        db.commit()
+        await db.commit()
 
     seen_windows: list[tuple] = []
     real_bounds = nightly_activity.get_local_day_utc_bounds
@@ -715,7 +746,11 @@ async def test_eligibility_gate_and_pipeline_read_the_same_day(seeded, monkeypat
     monkeypatch.setattr(nightly_activity, "get_local_day_utc_bounds", spy_bounds)
     # Unwind right after the window is resolved — this test is about which day
     # the pipeline reads, not about the stages.
-    monkeypatch.setattr(nightly_activity, "resolve_user_llm_config", lambda db, uid: {})
+
+    async def _empty_cfg(db, uid):
+        return {}
+
+    monkeypatch.setattr(nightly_activity, "resolve_user_llm_config", _empty_cfg)
 
     # 2026-08-12 18:00 UTC == 2026-08-13 02:00 Beijing (inside the 0–5 window),
     # so the day that just ended is 2026-08-12.
@@ -736,11 +771,11 @@ async def test_eligibility_gate_and_pipeline_read_the_same_day(seeded, monkeypat
 async def test_e2e_nightly_full_run(seeded):
     """End-to-end full run against real LLM provider."""
     SessionLocal = seeded
-    with SessionLocal() as db:
+    async with SessionLocal() as db:
         conv = Conversation(user_id=1001)
         db.add(conv)
-        db.commit()
-        db.refresh(conv)
+        await db.commit()
+        await db.refresh(conv)
 
         # Seed realistic day conversation
         db.add_all(
@@ -797,7 +832,7 @@ async def test_e2e_nightly_full_run(seeded):
                 )
             ]
         )
-        db.commit()
+        await db.commit()
 
     ok = await run_nightly_pipeline(1001)
     assert ok is True
@@ -809,7 +844,7 @@ async def test_stage_5_creation_pipeline(monkeypatch, _patch_db):
     from modules.companion import CompanionExpression, WardrobeItem
 
     _, SessionLocal = _patch_db
-    _make_user(SessionLocal, user_id=1005)
+    await _make_user(SessionLocal, user_id=1005)
 
     llm_payload = {
         "gaps": [
@@ -862,12 +897,15 @@ async def test_stage_5_creation_pipeline(monkeypatch, _patch_db):
             gift_message=kwargs.get("gift_message"),
         )
         db.add(item)
-        db.commit()
+        await db.commit()
         return item
+
+    async def _mock_chain(db, uid, cap):
+        return ["provider_a"] if cap == "image_gen" else []
 
     monkeypatch.setattr(nightly_activity, "preview_wardrobe_texture", _mock_preview)
     monkeypatch.setattr(nightly_activity, "confirm_wardrobe_item", _mock_confirm)
-    monkeypatch.setattr(nightly_activity, "resolve_provider_chain", lambda db, uid, cap: ["provider_a"] if cap == "image_gen" else [])
+    monkeypatch.setattr(nightly_activity, "resolve_provider_chain", _mock_chain)
 
     ok = await _stage_5_creation(
         llm_cfg={"model_name": "test"},
@@ -880,13 +918,27 @@ async def test_stage_5_creation_pipeline(monkeypatch, _patch_db):
 
     assert ok is True
 
-    with SessionLocal() as db:
-        expr = db.query(CompanionExpression).filter(CompanionExpression.user_id == 1005, CompanionExpression.name == "angry_outrage").one_or_none()
+    async with SessionLocal() as db:
+        expr = (
+            await db.execute(
+                select(CompanionExpression).where(
+                    CompanionExpression.user_id == 1005,
+                    CompanionExpression.name == "angry_outrage",
+                )
+            )
+        ).scalar_one_or_none()
         assert expr is not None
         assert expr.label == "同仇敌徾"
         assert expr.scale_boost == 1.2
 
-        gift = db.query(WardrobeItem).filter(WardrobeItem.user_id == 1005, WardrobeItem.origin == "companion").one_or_none()
+        gift = (
+            await db.execute(
+                select(WardrobeItem).where(
+                    WardrobeItem.user_id == 1005,
+                    WardrobeItem.origin == "companion",
+                )
+            )
+        ).scalar_one_or_none()
         assert gift is not None
         assert gift.name == "战术蓬蓬裙"
         assert gift.equipped is False

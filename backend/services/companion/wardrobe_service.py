@@ -8,7 +8,8 @@ from urllib.parse import urlparse
 import httpx
 from components import get_file_path, get_logger, is_safe_outbound, parse_llm_json, safe_json_loads, save_file, temp_file_delete
 from modules.companion import Persona, WardrobeItem, WardrobePreviewResponse
-from sqlalchemy.orm import Session
+from sqlalchemy import select, update
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..llm import build_texture_prompt, chat, is_preset_species
 from ..tools.builtin import first_image_url, image_generation_tool
@@ -114,44 +115,44 @@ def _re_sign_texture(item: WardrobeItem) -> None:
         setattr(item, attr, build_signed_asset_url(int(uid), filename))
 
 
-def _persona_definition(db: Session, user_id: int) -> dict[str, str]:
-    persona = db.query(Persona).filter(Persona.user_id == user_id).one_or_none()
+async def _persona_definition(db: AsyncSession, user_id: int) -> dict[str, str]:
+    persona = (await db.execute(select(Persona).where(Persona.user_id == user_id))).scalar_one_or_none()
     if persona is None:
         return {}
     return _load_draft(persona)
 
 
-def list_wardrobe(db: Session, user_id: int) -> list[WardrobeItem]:
-    items = db.query(WardrobeItem).filter(WardrobeItem.user_id == user_id).order_by(WardrobeItem.created_at).all()
+async def list_wardrobe(db: AsyncSession, user_id: int) -> list[WardrobeItem]:
+    items = (await db.execute(select(WardrobeItem).where(WardrobeItem.user_id == user_id).order_by(WardrobeItem.created_at))).scalars().all()
     for item in items:
         _re_sign_texture(item)
     return items
 
 
-def get_equipped_item(db: Session, user_id: int) -> WardrobeItem | None:
+async def get_equipped_item(db: AsyncSession, user_id: int) -> WardrobeItem | None:
     """Return the most recently updated equipped item."""
-    equipped = _query_equipped(db, user_id)
+    equipped = await _query_equipped(db, user_id)
     item = equipped[-1] if equipped else None
     if item:
         _re_sign_texture(item)
     return item
 
 
-def get_equipped_items(db: Session, user_id: int) -> list[WardrobeItem]:
+async def get_equipped_items(db: AsyncSession, user_id: int) -> list[WardrobeItem]:
     """All equipped items (multi-equip: up to one per slot), oldest first."""
-    items = _query_equipped(db, user_id)
+    items = await _query_equipped(db, user_id)
     for item in items:
         _re_sign_texture(item)
     return items
 
 
-async def _resolve_rig_type(db: Session, user_id: int) -> str:
+async def _resolve_rig_type(db: AsyncSession, user_id: int) -> str:
     """Resolve the companion's rig type from active model or persona species."""
-    model = get_active_model(db, user_id)
+    model = await get_active_model(db, user_id)
     if model and model.rig_type:
         return model.rig_type
 
-    persona = get_or_create_persona(db, user_id)
+    persona = await get_or_create_persona(db, user_id)
     definition = safe_json_loads(persona.definition_json or "{}", default={})
     species = (definition.get("biological_type") or "").strip()
 
@@ -161,7 +162,7 @@ async def _resolve_rig_type(db: Session, user_id: int) -> str:
     return await select_rig_type(chat, species or "人类", db=db, user_id=user_id)
 
 
-async def generate_wardrobe_item(db: Session, *, user_id: int, name: str, description: str) -> WardrobeItem:
+async def generate_wardrobe_item(db: AsyncSession, *, user_id: int, name: str, description: str) -> WardrobeItem:
     """Generate a new wardrobe item end-to-end. Routes between geometry and texture
     pipelines via LLM classifier — see DESIGN.md §1.3."""
     preview = await preview_wardrobe_outfit(db, user_id=user_id, description=description)
@@ -221,7 +222,7 @@ def _resolve_socket(requested: str | None, slot: str, body_joint_names: list[str
     return None
 
 
-async def _classify_wardrobe_kind(description: str, user_id: int, db: Session | None, body_joint_names: list[str]) -> WardrobeRouting:
+async def _classify_wardrobe_kind(description: str, user_id: int, db: AsyncSession | None, body_joint_names: list[str]) -> WardrobeRouting:
     """Classify description into texture, garment, or accessory routing."""
     joint_hint = ("Available bones for socket: " + ", ".join(body_joint_names)) if body_joint_names else ""
     fallback = WardrobeRouting.default()
@@ -247,7 +248,7 @@ async def _classify_wardrobe_kind(description: str, user_id: int, db: Session | 
 
 
 async def preview_wardrobe_outfit(
-    db: Session, *, user_id: int, description: str, image_bytes: bytes | None = None, content_type: str | None = None, feedback: str | None = None
+    db: AsyncSession, *, user_id: int, description: str, image_bytes: bytes | None = None, content_type: str | None = None, feedback: str | None = None
 ) -> WardrobePreviewResponse:
     """Route description and generate a wardrobe preview (texture or geometric)."""
     joints = await _body_joint_names(db, user_id)
@@ -277,9 +278,9 @@ def _read_model_json_chunk(asset_url: str) -> bytes:
         return f.read(chunk_len)
 
 
-async def _body_joint_names(db: Session, user_id: int) -> list[str]:
+async def _body_joint_names(db: AsyncSession, user_id: int) -> list[str]:
     """Extract active body model skin joint names."""
-    model = get_active_model(db, user_id)
+    model = await get_active_model(db, user_id)
     if model is None or not model.asset_url:
         return []
     cached = _BODY_JOINT_NAMES_CACHE.get(model.asset_url)
@@ -349,7 +350,7 @@ def _preview_response(res_dict: dict[str, tuple[str, str]], prompts: dict[str, s
 
 
 async def preview_wardrobe_texture(
-    db: Session, *, user_id: int, description: str, image_bytes: bytes | None = None, content_type: str | None = None, feedback: str | None = None
+    db: AsyncSession, *, user_id: int, description: str, image_bytes: bytes | None = None, content_type: str | None = None, feedback: str | None = None
 ) -> WardrobePreviewResponse:
     rig_type = await _resolve_rig_type(db, user_id)
     reference_data_uri = build_data_uri(image_bytes, content_type) if image_bytes else None
@@ -397,7 +398,7 @@ def _read_model_bytes(asset_url: str) -> bytes:
 
 
 async def preview_garment(
-    db: Session,
+    db: AsyncSession,
     *,
     user_id: int,
     description: str,
@@ -408,10 +409,10 @@ async def preview_garment(
     body_joint_names: list[str] | None = None,
 ) -> WardrobePreviewResponse:
     """Generate geometric unit (garment or accessory) via LLM-Blender pipeline."""
-    model = get_active_model(db, user_id)
+    model = await get_active_model(db, user_id)
     if model is None or not model.asset_url:
         raise RuntimeError("没有找到 3D 身体模型，请先生成身体模型")
-    avatar = get_active_avatar(db, user_id)
+    avatar = await get_active_avatar(db, user_id)
     if avatar is None or not avatar.seed_front_url:
         raise RuntimeError("没有找到种子图，无法为 LLM 提供身体参考")
     body_glb_bytes, body_preview_uri = await asyncio.gather(
@@ -444,7 +445,7 @@ async def preview_garment(
 
 
 async def confirm_wardrobe_item(
-    db: Session,
+    db: AsyncSession,
     *,
     user_id: int,
     file_id: str,
@@ -503,7 +504,7 @@ async def confirm_wardrobe_item(
     kind = asm_kind if mesh_url and asm_kind in ("garment", "accessory") else ("garment" if mesh_url else "texture")
     final_assembly = assembly_json or "{}"
 
-    outfit_desc = await normalize_outfit(chat, raw_input=prompt or name, persona_definition=_persona_definition(db, user_id), user_id=user_id, db=db)
+    outfit_desc = await normalize_outfit(chat, raw_input=prompt or name, persona_definition=await _persona_definition(db, user_id), user_id=user_id, db=db)
 
     item = WardrobeItem(
         user_id=user_id,
@@ -527,13 +528,13 @@ async def confirm_wardrobe_item(
         gift_message=gift_message,
     )
     if equip:
-        _equip(db, item)
+        await _equip(db, item)
     db.add(item)
-    db.commit()
-    db.refresh(item)
+    await db.commit()
+    await db.refresh(item)
     _re_sign_texture(item)
     if equip:
-        _sync_persona_outfit(db, user_id)
+        await _sync_persona_outfit(db, user_id)
     return item
 
 
@@ -547,32 +548,32 @@ def slot_of(item: WardrobeItem) -> str:
     return slot if isinstance(slot, str) and slot in _VALID_SLOTS else "torso"
 
 
-def _query_equipped(db: Session, user_id: int) -> list[WardrobeItem]:
+async def _query_equipped(db: AsyncSession, user_id: int) -> list[WardrobeItem]:
     """Equipped rows oldest-first, without read-path side effects (no re-signing)."""
-    return db.query(WardrobeItem).filter(WardrobeItem.user_id == user_id, WardrobeItem.equipped.is_(True)).order_by(WardrobeItem.updated_at).all()
+    return (await db.execute(select(WardrobeItem).where(WardrobeItem.user_id == user_id, WardrobeItem.equipped.is_(True)).order_by(WardrobeItem.updated_at))).scalars().all()
 
 
-def _unequip_slot(db: Session, user_id: int, slot: str, *, exclude_id: int | None = None) -> None:
+async def _unequip_slot(db: AsyncSession, user_id: int, slot: str, *, exclude_id: int | None = None) -> None:
     """Unequip existing items occupying the same slot."""
-    equipped = _query_equipped(db, user_id)
+    equipped = await _query_equipped(db, user_id)
     ids = [i.id for i in equipped if i.id != exclude_id and slot_of(i) == slot]
     if ids:
-        db.query(WardrobeItem).filter(WardrobeItem.id.in_(ids)).update({"equipped": False}, synchronize_session="fetch")
+        await db.execute(update(WardrobeItem).where(WardrobeItem.id.in_(ids)).values(equipped=False))
 
 
-def _equip(db: Session, item: WardrobeItem) -> None:
+async def _equip(db: AsyncSession, item: WardrobeItem) -> None:
     """Equip item with same-slot mutual exclusion and gift state resolution."""
-    _unequip_slot(db, item.user_id, slot_of(item), exclude_id=item.id)
+    await _unequip_slot(db, item.user_id, slot_of(item), exclude_id=item.id)
     item.equipped = True
     if item.gift_state in ("pending", "declined"):
         item.gift_state = "accepted"
 
 
-def _sync_persona_outfit(db: Session, user_id: int) -> None:
+async def _sync_persona_outfit(db: AsyncSession, user_id: int) -> None:
     """Sync concatenated descriptions of all equipped items to Persona appearance."""
-    equipped = _query_equipped(db, user_id)
+    equipped = await _query_equipped(db, user_id)
     desc = "；".join(i.outfit_description for i in equipped if i.outfit_description)
-    update_outfit_field(db, user_id, desc)
+    await update_outfit_field(db, user_id, desc)
 
 
 def discard_wardrobe_preview(file_id: str) -> bool:
@@ -585,21 +586,21 @@ def discard_wardrobe_preview(file_id: str) -> bool:
     return temp_file_delete(file_id)
 
 
-def equip_wardrobe_item(db: Session, user_id: int, item_id: int) -> WardrobeItem:
+async def equip_wardrobe_item(db: AsyncSession, user_id: int, item_id: int) -> WardrobeItem:
     # Check ownership before un-equipping — a bad item_id would otherwise strip the current outfit and 404.
-    item = db.query(WardrobeItem).filter(WardrobeItem.user_id == user_id, WardrobeItem.id == item_id).one_or_none()
+    item = (await db.execute(select(WardrobeItem).where(WardrobeItem.user_id == user_id, WardrobeItem.id == item_id))).scalar_one_or_none()
     if item is None:
         raise ValueError("Wardrobe item not found")
-    _equip(db, item)
-    db.commit()
-    db.refresh(item)
+    await _equip(db, item)
+    await db.commit()
+    await db.refresh(item)
     _re_sign_texture(item)
-    _sync_persona_outfit(db, user_id)
+    await _sync_persona_outfit(db, user_id)
     return item
 
 
-def decline_wardrobe_item(db: Session, user_id: int, item_id: int) -> WardrobeItem:
-    item = db.query(WardrobeItem).filter(WardrobeItem.user_id == user_id, WardrobeItem.id == item_id).one_or_none()
+async def decline_wardrobe_item(db: AsyncSession, user_id: int, item_id: int) -> WardrobeItem:
+    item = (await db.execute(select(WardrobeItem).where(WardrobeItem.user_id == user_id, WardrobeItem.id == item_id))).scalar_one_or_none()
     if item is None:
         raise ValueError("Wardrobe item not found")
     # Only pending companion-origin gifts can be declined — guarding here
@@ -608,24 +609,24 @@ def decline_wardrobe_item(db: Session, user_id: int, item_id: int) -> WardrobeIt
     if item.origin != "companion" or item.gift_state != "pending":
         raise ValueError("Wardrobe item is not a pending gift")
     item.gift_state = "declined"
-    db.commit()
-    db.refresh(item)
+    await db.commit()
+    await db.refresh(item)
     _re_sign_texture(item)
     return item
 
 
-def delete_wardrobe_item(db: Session, user_id: int, item_id: int) -> bool:
+async def delete_wardrobe_item(db: AsyncSession, user_id: int, item_id: int) -> bool:
     # Capture paths before delete — nothing sweeps orphaned companion-assets.
-    item = db.query(WardrobeItem).filter(WardrobeItem.user_id == user_id, WardrobeItem.id == item_id).one_or_none()
+    item = (await db.execute(select(WardrobeItem).where(WardrobeItem.user_id == user_id, WardrobeItem.id == item_id))).scalar_one_or_none()
     if item is None:
         return False
     paths = list(_iter_companion_asset_paths(item))
     was_equipped = item.equipped
-    db.delete(item)
-    db.commit()
+    await db.delete(item)
+    await db.commit()
     # Refresh the persona outfit field from the surviving equipped set.
     if was_equipped:
-        _sync_persona_outfit(db, user_id)
+        await _sync_persona_outfit(db, user_id)
     for _attr, uid, filename in paths:
         if unlink_companion_asset(f"companion-assets/{uid}/{filename}") is None:
             logger.warning("Failed to unlink wardrobe asset", extra={"user_id": user_id, "path": f"companion-assets/{uid}/{filename}"})

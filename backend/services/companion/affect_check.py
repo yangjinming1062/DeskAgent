@@ -45,12 +45,12 @@ _AFFECT_CHECK_PROMPT_TEMPLATE = (
 
 async def check_affect(user_id: int, idle_seconds: float, local_hour: int, llm_config: UserLlmConfig | dict[str, Any]) -> AffectCheckResult:
     """Idle-triggered LLM reasoning for companion contextual emotion expression."""
-    ctx = load_companion_prompt_context(user_id)
+    ctx = await load_companion_prompt_context(user_id)
     if ctx is None:
         return AffectCheckResult(expressed=False, reason="persona not ready")
 
-    with SESSION_LOCAL() as db:
-        recent_context = load_recent_context_window(db, user_id) or "暂无最近对话"
+    async with SESSION_LOCAL() as db:
+        recent_context = await load_recent_context_window(db, user_id) or "暂无最近对话"
 
     parsed, fail_reason = await run_prompt_json(
         user_id,
@@ -78,6 +78,6 @@ async def check_affect(user_id: int, idle_seconds: float, local_hour: int, llm_c
         logger.info("affect_check: no expression", extra={"user_id": user_id, "emotion": emotion, "reason": reason})
         return AffectCheckResult(expressed=False, emotion=emotion, reason=reason)
 
-    emit_companion_affect(user_id, emotion)
+    await emit_companion_affect(user_id, emotion)
     logger.info("affect_check: emitted affect", extra={"user_id": user_id, "emotion": emotion, "reason": reason})
     return AffectCheckResult(expressed=True, emotion=emotion, reason=reason)

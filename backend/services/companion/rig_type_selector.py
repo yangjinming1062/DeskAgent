@@ -1,6 +1,6 @@
 from typing import Protocol
 
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from services.llm import ProviderConfig
 
@@ -21,10 +21,10 @@ _USER_TEMPLATE = "物种：{species}\n骨骼类型："
 
 
 class _ChatFn(Protocol):
-    async def __call__(self, db: Session | None, user_id: int | None, system_prompt: str, user_payload: str, *, provider_config: ProviderConfig | None = None) -> str: ...
+    async def __call__(self, db: AsyncSession | None, user_id: int | None, system_prompt: str, user_payload: str, *, provider_config: ProviderConfig | None = None) -> str: ...
 
 
-async def select_rig_type(chat: _ChatFn, species: str, *, db: Session | None = None, user_id: int | None = None) -> str:
+async def select_rig_type(chat: _ChatFn, species: str, *, db: AsyncSession | None = None, user_id: int | None = None) -> str:
     """LLM chooses one of the 7 Tripo3D rig types based on species.
 
     Falls back to ``"biped"`` on any error or empty/invalid response — never raises,

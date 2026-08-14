@@ -11,6 +11,7 @@ from components import (
     get_logger,
 )
 from modules.conversation import Conversation
+from sqlalchemy import select
 
 from ..llm import LLMRuntimeError, call_with_retry, client_for_config
 
@@ -56,11 +57,11 @@ async def auto_generate_title(conversation_id: int, user_message: str, assistant
         if not (title := _clean_title((response.choices[0].message.content or "") if response.choices else "")):
             return
 
-        with SESSION_LOCAL() as db:
-            conv = db.query(Conversation).filter(Conversation.id == conversation_id).first()
+        async with SESSION_LOCAL() as db:
+            conv = (await db.execute(select(Conversation).where(Conversation.id == conversation_id))).scalar_one_or_none()
             if conv and conv.title == DEFAULT_SESSION_TITLE:
                 conv.title = title
-                db.commit()
+                await db.commit()
                 logger.info("Auto-generated session title", extra={"conversation_id": conversation_id, "title": title})
 
     except (TimeoutError, httpx.HTTPError, sqlalchemy.exc.SQLAlchemyError, LLMRuntimeError) as e:

@@ -3,14 +3,13 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-import asyncpg
 import services.chat.agent_delegate  # noqa: F401 — module side-effect: triggers agent_delegate_tool self-registration into services.tools.REGISTRY
 import services.scheduler.cronjob_tool  # noqa: F401 — cronjob tool owned by scheduler, not tools.builtin
 import services.tools.builtin  # noqa: F401
 from alembic import command
 from alembic.config import Config
 from api import ROUTERS
-from components import SETTINGS, attachment_root, cleanup_expired, correlated_exception_response, correlation_id_middleware, fetch_public_ip, get_logger, setup_logging
+from components import ENGINE, SETTINGS, attachment_root, cleanup_expired, correlated_exception_response, correlation_id_middleware, fetch_public_ip, get_logger, setup_logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -30,6 +29,11 @@ logger = get_logger(__name__)
 
 def _sync_pg_url() -> str:
     return make_url(SETTINGS.database_url).set(drivername="postgresql+psycopg").render_as_string(hide_password=False)
+
+
+def _raw_pg_dsn() -> str:
+    # asyncpg requires a plain postgresql:// URL without SQLAlchemy driver suffixes
+    return make_url(SETTINGS.database_url).set(drivername="postgresql").render_as_string(hide_password=False)
 
 
 def _run_migrations() -> None:
@@ -53,16 +57,13 @@ def _run_migrations() -> None:
     command.upgrade(cfg, "head")
 
 
-global_pool: asyncpg.Pool | None = None
-
-
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     setup_logging()
-    global global_pool
     if not SETTINGS.companion_asset_signing_key:
         raise RuntimeError("COMPANION_ASSET_SIGNING_KEY must be set.")
-    if make_url(SETTINGS.database_url).get_backend_name() == "postgresql":
+    is_pg = make_url(SETTINGS.database_url).get_backend_name() == "postgresql"
+    if is_pg:
         await asyncio.to_thread(_run_migrations)
 
     attachment_root(SETTINGS.data_dir).mkdir(parents=True, exist_ok=True)
@@ -79,15 +80,12 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
             logger.warning("Public IP detection failed, falling back to 127.0.0.1")
             SETTINGS.public_ip = "127.0.0.1"
 
-    # asyncpg requires a plain postgresql:// URL without SQLAlchemy driver suffixes
-    sa_url = make_url(SETTINGS.database_url)
-    pool_url = sa_url.set(drivername="postgresql").render_as_string(hide_password=False)
-    global_pool = await asyncpg.create_pool(pool_url)
-
     start_scheduler()
-    start_ws_event_loop(global_pool)
-    resume_pending_video_jobs()
-    recover_stuck_model_generations()
+    # LISTEN 专线：ws_event_loop 内部直连 + 断线 5s 重连；非 PG 后端传 None
+    # 走纯轮询回退分支。
+    start_ws_event_loop(_raw_pg_dsn() if is_pg else None)
+    await resume_pending_video_jobs()
+    await recover_stuck_model_generations()
 
     async def _cleanup_loop():
         while True:
@@ -107,9 +105,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
         await stop_scheduler()
         await stop_ws_event_loop()
 
-        if global_pool:
-            await global_pool.close()
-
+        await ENGINE.dispose()
         await aclose()
         await aclose_all()
 

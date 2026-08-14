@@ -4,6 +4,7 @@ from typing import Any
 from components import get_logger, naive_utc_now, session_scope
 from croniter import croniter
 from modules.scheduler import CronJob
+from sqlalchemy import func, select
 
 logger = get_logger(__name__)
 
@@ -30,36 +31,37 @@ def _refresh_schedule(job: CronJob) -> None:
         job.next_run_at = next_run
 
 
-def create_job(user_id: int, prompt: str, schedule: str, name: str = "cron job", deliver: str = "local", one_shot: bool = False) -> dict[str, Any]:
-    with session_scope() as db:
-        active_count = db.query(CronJob).filter(CronJob.user_id == user_id, CronJob.is_paused.is_(False)).count()
+async def create_job(user_id: int, prompt: str, schedule: str, name: str = "cron job", deliver: str = "local", one_shot: bool = False) -> dict[str, Any]:
+    async with session_scope() as db:
+        active_count = (await db.execute(select(func.count()).select_from(CronJob).where(CronJob.user_id == user_id, CronJob.is_paused.is_(False)))).scalar_one()
         if active_count >= MAX_ACTIVE_CRON_JOBS:
             raise ValueError(f"Maximum active cron jobs limit ({MAX_ACTIVE_CRON_JOBS}) reached.")
         job = CronJob(user_id=user_id, name=name, schedule=schedule, prompt=prompt, deliver=deliver, one_shot=one_shot)
         _refresh_schedule(job)
         db.add(job)
-        db.commit()
-        db.refresh(job)
+        await db.commit()
+        await db.refresh(job)
         return job.to_dict()
 
 
-def get_job(user_id: int, job_id: int) -> dict[str, Any] | None:
-    with session_scope() as db:
-        job = db.query(CronJob).filter(CronJob.id == job_id, CronJob.user_id == user_id).first()
+async def get_job(user_id: int, job_id: int) -> dict[str, Any] | None:
+    async with session_scope() as db:
+        job = (await db.execute(select(CronJob).where(CronJob.id == job_id, CronJob.user_id == user_id))).scalar_one_or_none()
         return job.to_dict() if job else None
 
 
-def list_jobs(user_id: int, include_paused: bool = False) -> list[dict[str, Any]]:
-    with session_scope() as db:
-        query = db.query(CronJob).filter(CronJob.user_id == user_id)
+async def list_jobs(user_id: int, include_paused: bool = False) -> list[dict[str, Any]]:
+    async with session_scope() as db:
+        stmt = select(CronJob).where(CronJob.user_id == user_id)
         if not include_paused:
-            query = query.filter(CronJob.is_paused.is_(False))
-        return [j.to_dict() for j in query.all()]
+            stmt = stmt.where(CronJob.is_paused.is_(False))
+        jobs = (await db.execute(stmt)).scalars().all()
+        return [j.to_dict() for j in jobs]
 
 
-def update_job(user_id: int, job_id: int, updates: dict[str, Any]) -> dict[str, Any] | None:
-    with session_scope() as db:
-        job = db.query(CronJob).filter(CronJob.id == job_id, CronJob.user_id == user_id).first()
+async def update_job(user_id: int, job_id: int, updates: dict[str, Any]) -> dict[str, Any] | None:
+    async with session_scope() as db:
+        job = (await db.execute(select(CronJob).where(CronJob.id == job_id, CronJob.user_id == user_id))).scalar_one_or_none()
         if not job:
             return None
         for key, value in updates.items():
@@ -68,23 +70,23 @@ def update_job(user_id: int, job_id: int, updates: dict[str, Any]) -> dict[str, 
             setattr(job, key, value)
         if any(k in updates for k in _SCHEDULE_KEYS):
             _refresh_schedule(job)
-        db.commit()
+        await db.commit()
         return job.to_dict()
 
 
-def pause_job(user_id: int, job_id: int) -> dict[str, Any] | None:
-    return update_job(user_id, job_id, {"is_paused": True})
+async def pause_job(user_id: int, job_id: int) -> dict[str, Any] | None:
+    return await update_job(user_id, job_id, {"is_paused": True})
 
 
-def resume_job(user_id: int, job_id: int) -> dict[str, Any] | None:
-    return update_job(user_id, job_id, {"is_paused": False})
+async def resume_job(user_id: int, job_id: int) -> dict[str, Any] | None:
+    return await update_job(user_id, job_id, {"is_paused": False})
 
 
-def remove_job(user_id: int, job_id: int) -> bool:
-    with session_scope() as db:
-        job = db.query(CronJob).filter(CronJob.id == job_id, CronJob.user_id == user_id).first()
+async def remove_job(user_id: int, job_id: int) -> bool:
+    async with session_scope() as db:
+        job = (await db.execute(select(CronJob).where(CronJob.id == job_id, CronJob.user_id == user_id))).scalar_one_or_none()
         if not job:
             return False
-        db.delete(job)
-        db.commit()
+        await db.delete(job)
+        await db.commit()
         return True

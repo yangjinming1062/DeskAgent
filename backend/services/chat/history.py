@@ -1,9 +1,10 @@
 from components import safe_json_loads
 from modules.conversation import Message
-from sqlalchemy.orm import Session
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 
-def build_session_messages(conv_id: int, db: Session) -> list[dict]:
+async def build_session_messages(conv_id: int, db: AsyncSession) -> list[dict]:
     """Forward-pass message reconstruction for a conversation.
 
     Tool calls are emitted in ``created_at`` order so an earlier assistant
@@ -11,7 +12,7 @@ def build_session_messages(conv_id: int, db: Session) -> list[dict]:
     to populate the ``call_id → name`` map before any tool-result rows
     look it up.
     """
-    messages = db.query(Message).filter(Message.conversation_id == conv_id).order_by(Message.id).all()
+    messages = (await db.execute(select(Message).where(Message.conversation_id == conv_id).order_by(Message.id))).scalars().all()
     tool_name_by_call_id: dict[str, str] = {}
     result: list[dict] = []
     for msg in messages:

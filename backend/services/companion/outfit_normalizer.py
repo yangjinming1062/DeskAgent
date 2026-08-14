@@ -1,7 +1,7 @@
 from typing import Protocol
 
 from components import get_logger
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..llm import ProviderConfig, provider_from_config, resolve_vision_chain
 
@@ -23,7 +23,7 @@ _OUTFIT_NORMALIZER_SYSTEM_PROMPT = (
 
 
 class ChatFn(Protocol):
-    async def __call__(self, db: Session | None, user_id: int | None, system_prompt: str, user_payload: str, *, provider_config: ProviderConfig | None = None) -> str: ...
+    async def __call__(self, db: AsyncSession | None, user_id: int | None, system_prompt: str, user_payload: str, *, provider_config: ProviderConfig | None = None) -> str: ...
 
 
 def _build_user_payload(raw_input: str, persona_definition: dict[str, str] | None) -> str:
@@ -45,7 +45,7 @@ def _clean(raw: str) -> str:
 
 
 async def normalize_outfit(
-    chat: ChatFn, *, raw_input: str, persona_definition: dict[str, str] | None = None, image_data_uri: str | None = None, user_id: int | None = None, db: Session | None = None
+    chat: ChatFn, *, raw_input: str, persona_definition: dict[str, str] | None = None, image_data_uri: str | None = None, user_id: int | None = None, db: AsyncSession | None = None
 ) -> str:
     """Vision-first (if *image_data_uri* given) text-fallback outfit normalization.
     Always returns a non-empty string — falls back to truncated raw_input on error."""
@@ -53,7 +53,7 @@ async def normalize_outfit(
 
     if image_data_uri and db is not None and user_id is not None:
         try:
-            chain = resolve_vision_chain(db, user_id)
+            chain = await resolve_vision_chain(db, user_id)
             if chain:
                 provider = provider_from_config(chain[0])
                 client = provider.raw_client()

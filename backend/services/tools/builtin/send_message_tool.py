@@ -15,7 +15,7 @@ logger = get_logger(__name__)
 WEBHOOK_TIMEOUT = 10.0
 
 
-def _emit_companion_message(user_id: int, text: str, affect: str | None = None) -> None:
+async def _emit_companion_message(user_id: int, text: str, affect: str | None = None) -> None:
     """Push a proactive companion message to the user's desktop via the WS
     outbox (ARCHITECTURE.md §5.1.A / §6). The desktop receives `companion.message`
     and decides text-vs-affect-vs-bubble based on the user's disturbance tier.
@@ -26,20 +26,20 @@ def _emit_companion_message(user_id: int, text: str, affect: str | None = None) 
     payload: dict = {"text": text}
     if affect:
         payload["affect"] = {"emotion": affect}
-    with SESSION_LOCAL() as db:
+    async with SESSION_LOCAL() as db:
         db.add(WSEvent(user_id=user_id, event_type="companion.message", payload=json.dumps(payload, ensure_ascii=False)))
         # status_proactive stays in the LLM context (the user can reply to it),
         # so an empty message must not accrue a blank turn there.
         if text.strip():
-            main_conv = get_or_create_main_conversation(db, user_id)
+            main_conv = await get_or_create_main_conversation(db, user_id)
             db.add(Message(conversation_id=main_conv.id, role="assistant", content=text, subtype="status_proactive"))
-        db.commit()
+        await db.commit()
 
 
-def _emit_companion_affect(user_id: int, emotion: str) -> None:
-    with SESSION_LOCAL() as db:
+async def _emit_companion_affect(user_id: int, emotion: str) -> None:
+    async with SESSION_LOCAL() as db:
         db.add(WSEvent(user_id=user_id, event_type="companion.affect", payload=json.dumps({"emotion": emotion}, ensure_ascii=False)))
-        db.commit()
+        await db.commit()
 
 
 async def send_message_tool(message: str, target_webhook: str | None = None, affect: str | None = None, **kwargs) -> str:
@@ -64,12 +64,12 @@ async def send_message_tool(message: str, target_webhook: str | None = None, aff
             # persona-+memory-driven LLM that called this tool (§7.6).
             if is_quiet(user_id):
                 if affect:
-                    _emit_companion_affect(user_id, affect)
+                    await _emit_companion_affect(user_id, affect)
                 # Quiet + no affect: emit neutral so the sprite returns to idle.
                 else:
-                    _emit_companion_affect(user_id, "neutral")
+                    await _emit_companion_affect(user_id, "neutral")
             else:
-                _emit_companion_message(user_id, message, affect=affect)
+                await _emit_companion_message(user_id, message, affect=affect)
         return json.dumps({"success": True, "channel": "companion", "quiet_suppressed": isinstance(user_id, int) and is_quiet(user_id)}, ensure_ascii=False)
 
     parsed = urlparse(target_webhook)

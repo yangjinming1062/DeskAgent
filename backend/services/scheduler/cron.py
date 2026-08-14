@@ -21,7 +21,8 @@ from modules.conversation import Conversation, Message
 from modules.memory import Memory
 from modules.scheduler import CronJob
 from modules.system import ChatMessageRequest, ChatRequest
-from sqlalchemy import text
+from sqlalchemy import func, select, text
+from sqlalchemy.engine import Row
 
 from services.conversation import CRON_KIND, UI_ONLY_SUBTYPES, get_or_create_cron_conversation
 from services.disturbance import is_quiet
@@ -62,7 +63,7 @@ _LAST_NIGHTLY_SCAN: float = 0.0
 _MAX_DUE_PER_TICK = 200
 
 
-def _select_due_jobs() -> list[CronJob]:
+async def _select_due_jobs() -> list[Row]:
     """Read due jobs.
 
     Selects only the columns the CAS + autonomous-turn kickoff need
@@ -74,17 +75,17 @@ def _select_due_jobs() -> list[CronJob]:
     cap slices a backlog.
     """
     now = naive_utc_now()
-    with session_scope() as db:
+    async with session_scope() as db:
         return (
-            db.query(CronJob)
-            .with_entities(CronJob.id, CronJob.user_id, CronJob.name, CronJob.schedule, CronJob.next_run_at, CronJob.prompt, CronJob.one_shot)
-            .filter(CronJob.is_paused.is_(False), CronJob.next_run_at.is_not(None), CronJob.next_run_at <= now)
-            .order_by(CronJob.next_run_at, CronJob.id)
-            .all()
-        )
+            await db.execute(
+                select(CronJob.id, CronJob.user_id, CronJob.name, CronJob.schedule, CronJob.next_run_at, CronJob.prompt, CronJob.one_shot)
+                .where(CronJob.is_paused.is_(False), CronJob.next_run_at.is_not(None), CronJob.next_run_at <= now)
+                .order_by(CronJob.next_run_at, CronJob.id)
+            )
+        ).all()
 
 
-def _bulk_cas_advance(due_jobs: list[CronJob], now: datetime) -> dict[int, dict[str, Any]]:
+async def _bulk_cas_advance(due_jobs: list[Row], now: datetime) -> dict[int, dict[str, Any]]:
     """Per-row CAS UPDATE advancing ``next_run_at`` for every due job.
 
     The CAS predicate ``(id, next_run_at, schedule)`` guards against a
@@ -117,26 +118,26 @@ def _bulk_cas_advance(due_jobs: list[CronJob], now: datetime) -> dict[int, dict[
             new_runs[job.id] = next_run
             winners[job.id] = {"user_id": job.user_id, "is_paused": next_run is None, "payload": {"prompt": job.prompt}}
 
-    with session_scope() as db:
+    async with session_scope() as db:
         won_ids: list[int] = []
         for job in due_jobs:
             if job.one_shot:
                 # Delete one-shot jobs after firing so they don't accumulate.
                 # The CAS predicate on next_run_at prevents double-fire.
-                result = db.execute(text("DELETE FROM cron_jobs WHERE id = :id AND next_run_at = :old_run"), {"id": job.id, "old_run": job.next_run_at})
+                result = await db.execute(text("DELETE FROM cron_jobs WHERE id = :id AND next_run_at = :old_run"), {"id": job.id, "old_run": job.next_run_at})
             else:
-                result = db.execute(
+                result = await db.execute(
                     text("UPDATE cron_jobs SET next_run_at = :new_run, is_paused = :is_paused WHERE id = :id AND next_run_at = :old_run AND schedule = :sched"),
                     {"id": job.id, "old_run": job.next_run_at, "sched": job.schedule, "new_run": new_runs[job.id], "is_paused": winners[job.id]["is_paused"]},
                 )
             if result.rowcount:
                 won_ids.append(job.id)
-        db.commit()
+        await db.commit()
 
     return {jid: winners[jid] for jid in won_ids}
 
 
-def _advance_due_jobs(due_jobs: list[CronJob], now: datetime) -> None:
+async def _advance_due_jobs(due_jobs: list[Row], now: datetime) -> None:
     """Tx1 (bulk CAS) + autonomous chat turn kickoff.
 
     The autonomous turn is the actual product path — cron is the
@@ -146,7 +147,7 @@ def _advance_due_jobs(due_jobs: list[CronJob], now: datetime) -> None:
     ``send_message_tool`` and the desktop's disturbance-tier gate applies
     (plan §4.2).
     """
-    winners = _bulk_cas_advance(due_jobs, now)
+    winners = await _bulk_cas_advance(due_jobs, now)
     for job_id, meta in winners.items():
         if meta.get("is_paused"):
             continue
@@ -188,22 +189,22 @@ async def _kick_autonomous_turn(job_id: int, meta: dict[str, Any]) -> None:
     # symbols at module scope would deadlock the package init.
     from services.chat import load_user_settings, run_chat_turn
 
-    with session_scope() as db:
+    async with session_scope() as db:
         # Run on a dedicated cron conversation, NOT the user's main one — see
         # the comment on CRON_KIND. Keeping the conversations separate stops
         # ``session.get_main`` (called on every WS reconnect) from cancelling
         # an in-flight cron's chat_task via _mount_runtime, and stops cron's
         # user-role rows from interleaving with the renderer's prompt.submit
         # writes on the same conversation.
-        conv = get_or_create_cron_conversation(db, user_id)
+        conv = await get_or_create_cron_conversation(db, user_id)
         session_id = str(conv.id)
-        llm_config = resolve_user_llm_config(db, user_id)
-        user_settings = load_user_settings(db, user_id)
+        llm_config = await resolve_user_llm_config(db, user_id)
+        user_settings = await load_user_settings(db, user_id)
         req = ChatRequest(session_id=session_id, message=ChatMessageRequest(role="user", content=prompt))
 
     emitter = JsonRpcEmitter(raw=None, dispatcher=dispatcher, session_id=session_id)
     try:
-        with session_scope() as db:
+        async with session_scope() as db:
             await run_chat_turn(db, req, llm_config, user_settings, user_id, emitter)
     except Exception as e:
         logger.exception("cron: autonomous turn failed", extra={"user_id": user_id, "job_id": job_id})
@@ -225,13 +226,13 @@ async def _tick() -> None:
     # would otherwise never trigger consolidation.
     await _maybe_run_memory_consolidator(now)
     await _maybe_run_autonomous_activity(now)
-    due_jobs = _select_due_jobs()
+    due_jobs = await _select_due_jobs()
     if len(due_jobs) > _MAX_DUE_PER_TICK:
         logger.warning("cron: tick over cap, deferred to next tick", extra={"due_count": len(due_jobs), "cap": _MAX_DUE_PER_TICK})
     due_jobs = due_jobs[:_MAX_DUE_PER_TICK]
     if not due_jobs:
         return
-    _advance_due_jobs(due_jobs, now)
+    await _advance_due_jobs(due_jobs, now)
 
 
 async def _maybe_run_memory_consolidator(now: datetime) -> None:
@@ -247,8 +248,10 @@ async def _maybe_run_memory_consolidator(now: datetime) -> None:
         return
     _LAST_CONSOLIDATE_SCAN = now.timestamp()
 
-    with session_scope() as db:
-        rows = db.execute(text("SELECT user_id FROM memories WHERE context LIKE 'recall:%' GROUP BY user_id HAVING COUNT(*) > :t"), {"t": MEMORY_CONSOLIDATE_TRIGGER_ROWS}).all()
+    async with session_scope() as db:
+        rows = (
+            await db.execute(text("SELECT user_id FROM memories WHERE context LIKE 'recall:%' GROUP BY user_id HAVING COUNT(*) > :t"), {"t": MEMORY_CONSOLIDATE_TRIGGER_ROWS})
+        ).all()
     eligible: list[int] = []
     for user_id in rows:
         uid = int(user_id)
@@ -279,8 +282,8 @@ async def _maybe_run_autonomous_activity(now: datetime) -> None:
         return
     _LAST_NIGHTLY_SCAN = now.timestamp()
 
-    with session_scope() as db:
-        rows = db.query(Memory.user_id, Memory.content).filter(Memory.context == "user_profile:timezone").all()
+    async with session_scope() as db:
+        rows = (await db.execute(select(Memory.user_id, Memory.content).where(Memory.context == "user_profile:timezone"))).all()
 
         eligible: list[tuple[int, datetime, str]] = []
         for uid_raw, tz_content in rows:
@@ -305,20 +308,22 @@ async def _maybe_run_autonomous_activity(now: datetime) -> None:
                 continue
 
             msg_count = (
-                db.query(Message)
-                .join(Conversation, Message.conversation_id == Conversation.id)
-                .filter(
-                    Conversation.user_id == uid,
-                    Conversation.kind != CRON_KIND,
-                    Message.role == "user",
-                    # status_interaction rows are role="user"; a poke storm is
-                    # not five real messages worth of material to reflect on.
-                    Message.subtype.is_(None) | Message.subtype.notin_(tuple(UI_ONLY_SUBTYPES)),
-                    Message.created_at >= utc_start,
-                    Message.created_at < utc_end,
+                await db.execute(
+                    select(func.count())
+                    .select_from(Message)
+                    .join(Conversation, Message.conversation_id == Conversation.id)
+                    .where(
+                        Conversation.user_id == uid,
+                        Conversation.kind != CRON_KIND,
+                        Message.role == "user",
+                        # status_interaction rows are role="user"; a poke storm is
+                        # not five real messages worth of material to reflect on.
+                        Message.subtype.is_(None) | Message.subtype.notin_(tuple(UI_ONLY_SUBTYPES)),
+                        Message.created_at >= utc_start,
+                        Message.created_at < utc_end,
+                    )
                 )
-                .count()
-            )
+            ).scalar_one()
             if msg_count < NIGHTLY_MIN_MESSAGES_TODAY:
                 continue
 

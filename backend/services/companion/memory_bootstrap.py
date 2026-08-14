@@ -1,7 +1,8 @@
 from typing import Any
 
 from modules.memory import Memory
-from sqlalchemy.orm import Session
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 _USER_PROFILE_TAGS_JSON = '["onboarding", "user_profile"]'
 
@@ -22,12 +23,12 @@ def extract_user_profile(payload: dict[str, Any]) -> dict[str, str]:
     return {k: (payload.get(k) or "").strip() for k in payload if k.startswith("user_")}
 
 
-def read_user_profile(db: Session, user_id: int) -> dict[str, str]:
+async def read_user_profile(db: AsyncSession, user_id: int) -> dict[str, str]:
     """Reverse of ``record_user_profile``: return the user's current
     ``user_*`` answers as ``{raw_key: content}``, e.g.
     ``{"user_call_name": "小明", "user_hobbies": "摄影"}``. Used by the
     retune wizard to pre-populate its user_* step."""
-    rows = db.query(Memory).filter(Memory.user_id == user_id, Memory.context.like("user_profile:%")).all()
+    rows = (await db.execute(select(Memory).where(Memory.user_id == user_id, Memory.context.like("user_profile:%")))).scalars().all()
     out: dict[str, str] = {}
     for row in rows:
         suffix = row.context.split(":", 1)[1]  # preferred_name, gender, ...
@@ -36,8 +37,8 @@ def read_user_profile(db: Session, user_id: int) -> dict[str, str]:
     return out
 
 
-def build_user_profile_extras(db: Session, user_id: int) -> str:
-    rows = db.query(Memory).filter(Memory.user_id == user_id, Memory.context.like("user_profile:%")).all()
+async def build_user_profile_extras(db: AsyncSession, user_id: int) -> str:
+    rows = (await db.execute(select(Memory).where(Memory.user_id == user_id, Memory.context.like("user_profile:%")))).scalars().all()
     if not rows:
         return ""
     # Render the 5 known fields in declaration order, then any extras
@@ -53,7 +54,7 @@ def build_user_profile_extras(db: Session, user_id: int) -> str:
     return "\n".join(lines)
 
 
-def record_user_profile(db: Session, user_id: int, profile: dict[str, str]) -> None:
+async def record_user_profile(db: AsyncSession, user_id: int, profile: dict[str, str]) -> None:
     """Upsert user_* → Memory rows. Empty values are skipped (no insert,
     no delete) so the persona editor can re-save without wiping the rows;
     user-revocation goes through ``memory_forget``. Caller commits once.
@@ -62,10 +63,10 @@ def record_user_profile(db: Session, user_id: int, profile: dict[str, str]) -> N
         if not val:
             continue
         ctx = _CONTEXT_LABELS.get(user_key, f"user_profile:{user_key.removeprefix('user_')}")
-        existing = db.query(Memory).filter(Memory.user_id == user_id, Memory.context == ctx).first()
+        existing = (await db.execute(select(Memory).where(Memory.user_id == user_id, Memory.context == ctx))).scalar_one_or_none()
         if existing is not None:
             existing.content = val
             existing.tags = _USER_PROFILE_TAGS_JSON
             continue
         db.add(Memory(user_id=user_id, content=val, context=ctx, tags=_USER_PROFILE_TAGS_JSON))
-        db.flush()
+        await db.flush()

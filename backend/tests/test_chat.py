@@ -290,7 +290,7 @@ def _make_tiny_png() -> bytes:
 
 @pytest.mark.e2e
 class TestChatE2E:
-    def test_stateless_completion(self, test_client, test_token):
+    async def test_stateless_completion(self, test_client, test_token):
         """Test the actual /api/llm/completion endpoint without mocks."""
         headers = {"Authorization": f"Bearer {test_token}"}
         payload = {
@@ -299,14 +299,25 @@ class TestChatE2E:
             "temperature": 0.5,
             "max_tokens": 50
         }
-        resp = test_client.post("/api/llm/completion", headers=headers, json=payload)
+        resp = await test_client.post("/api/llm/completion", headers=headers, json=payload)
         assert resp.status_code == 200
         body = resp.json()
         assert body["content"] is not None
         assert len(body["content"]) > 0
 
-    def test_websocket_chat_flow(self, test_client, ws_ticket):
+    async def test_websocket_chat_flow(self, test_app, test_token, ws_ticket, monkeypatch, _patch_db):
         """Test the actual WebSocket chat flow from session creation to prompt completion without mocks."""
+        # httpx has no websocket support — the sync TestClient drives the
+        # async app on its portal loop (fine with the shared aiosqlite conn).
+        from fastapi.testclient import TestClient
+        from services.gateway import handlers
+
+        # ``services.gateway.handlers`` is not in conftest's SESSION_LOCAL
+        # patch list (direct import binding) — point the WS boot session at
+        # the test DB like every other patched module.
+        monkeypatch.setattr(handlers, "SESSION_LOCAL", _patch_db[1])
+
+        test_client = TestClient(test_app)
         with test_client.websocket_connect(f"/api/chat/ws?ticket={ws_ticket}") as ws:
             ws.send_json(
                 {"jsonrpc": "2.0", "id": 1, "method": "session.create", "params": {}}
@@ -352,18 +363,27 @@ class TestChatE2E:
             full_text = "".join(e.get("payload", {}).get("text", "") for e in deltas)
             assert len(full_text) > 0
 
-    def test_websocket_auth_rejection(self, test_client):
+    async def test_websocket_auth_rejection(self, test_app):
         """Test that the WebSocket connection is rejected with an invalid token."""
+        from fastapi.testclient import TestClient
         from starlette.testclient import WebSocketDisconnect
 
+        test_client = TestClient(test_app)
         with pytest.raises((WebSocketDisconnect, Exception)):
             with test_client.websocket_connect(
                 "/api/chat/ws?ticket=invalid-ticket-abc"
             ):
                 pass
 
-    def test_websocket_session_lifecycle(self, test_client, ws_ticket):
+    async def test_websocket_session_lifecycle(self, test_app, test_token, ws_ticket, monkeypatch, _patch_db):
         """Test creating a session and verifying prompt submission after interrupt."""
+        from fastapi.testclient import TestClient
+        from services.gateway import handlers
+
+        # Same conftest patch-list gap as the chat-flow test above.
+        monkeypatch.setattr(handlers, "SESSION_LOCAL", _patch_db[1])
+
+        test_client = TestClient(test_app)
         with test_client.websocket_connect(f"/api/chat/ws?ticket={ws_ticket}") as ws:
             # Create session
             ws.send_json(

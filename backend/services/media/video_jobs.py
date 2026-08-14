@@ -7,8 +7,8 @@ import httpx
 from components import SESSION_LOCAL, SETTINGS, get_logger, naive_utc_now, save_file
 from modules.media import VideoGenJob
 from modules.ws import WSEvent
-from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy import select, update
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from services.llm import MissingLlmConfigError, ServiceType, VideoGenProvider, VideoGenRequest, execute_with_fallback, resolve, resolve_provider_chain
 
@@ -17,7 +17,7 @@ logger = get_logger(__name__)
 _BG_TASKS: set[asyncio.Task] = set()
 
 
-def _update_job(job_id: int, **fields) -> None:
+async def _update_job(job_id: int, **fields) -> None:
     """Update a job row using a fresh short-lived session.
 
     Background tasks outlive the request session — never reuse the
@@ -26,16 +26,16 @@ def _update_job(job_id: int, **fields) -> None:
     write (admin DELETE, etc.).
     """
 
-    with SESSION_LOCAL() as db:
-        job = db.get(VideoGenJob, job_id)
+    async with SESSION_LOCAL() as db:
+        job = await db.get(VideoGenJob, job_id)
         if job is None:
             return
         for k, v in fields.items():
             setattr(job, k, v)
-        db.commit()
+        await db.commit()
 
 
-def _emit_ws_event(user_id: int, event_type: str, payload: dict) -> None:
+async def _emit_ws_event(user_id: int, event_type: str, payload: dict) -> None:
     """Write a WSEvent row to PostgreSQL outbox.
 
     PostgreSQL NOTIFY automatically triggers and ws_events worker delivers it to
@@ -44,20 +44,29 @@ def _emit_ws_event(user_id: int, event_type: str, payload: dict) -> None:
     Payload keys ``task_id`` and ``video_url`` match Desktop JSON-RPC format for
     ``video_generate`` tool's return value."""
     payload_json = json.dumps(payload, ensure_ascii=False, default=str)
-    with SESSION_LOCAL() as db:
+    async with SESSION_LOCAL() as db:
         db.add(WSEvent(user_id=user_id, event_type=event_type, payload=payload_json))
-        db.commit()
+        await db.commit()
 
 
-def get_job(db: Session, job_id: int, user_id: int) -> VideoGenJob | None:
+async def get_job(db: AsyncSession, job_id: int, user_id: int) -> VideoGenJob | None:
     """Filter by user_id so the GET endpoint doesn't leak other users' jobs."""
 
     stmt = select(VideoGenJob).where(VideoGenJob.id == job_id, VideoGenJob.user_id == user_id)
-    return db.execute(stmt).scalar_one_or_none()
+    return (await db.execute(stmt)).scalar_one_or_none()
 
 
 async def enqueue_video_job(
-    db: Session, *, user_id: int, session_id: str | None, prompt: str, duration: int, resolution: str, first_frame_image: str | None, model: str | None, aspect_ratio: str | None
+    db: AsyncSession,
+    *,
+    user_id: int,
+    session_id: str | None,
+    prompt: str,
+    duration: int,
+    resolution: str,
+    first_frame_image: str | None,
+    model: str | None,
+    aspect_ratio: str | None,
 ) -> "VideoGenJob":
     """Insert a queued job, submit to the provider, and schedule the
     background polling task. Returns the persisted row.
@@ -85,7 +94,7 @@ async def enqueue_video_job(
     # Resolve the chain once: chain[0] populates the job row's provider
     # metadata, and execute_with_fallback re-runs the same resolution
     # against the same env (so chain[0] is the same head).
-    chain = resolve_provider_chain(db, user_id, "video_gen")
+    chain = await resolve_provider_chain(db, user_id, "video_gen")
     if not chain:
         raise MissingLlmConfigError("no provider configured for service 'video_gen'")
     head_cfg = chain[0]
@@ -93,15 +102,15 @@ async def enqueue_video_job(
         user_id=user_id, session_id=session_id, provider=head_cfg.provider_name, model=req.model or head_cfg.model, prompt=prompt, params_json=json.dumps(params), status="queued"
     )
     db.add(job)
-    db.commit()
-    db.refresh(job)
+    await db.commit()
+    await db.refresh(job)
 
     try:
         submitted = await execute_with_fallback(db, user_id, "video_gen", call_fn=_submit)
     except Exception as e:
         logger.exception("video submit failed", extra={"job_id": job.id})
         try:
-            _update_job(job.id, status="failed", error_reason="submit_failed", error_message=str(e))
+            await _update_job(job.id, status="failed", error_reason="submit_failed", error_message=str(e))
         except Exception as update_err:
             logger.exception("failed to mark job as failed", extra={"job_id": job.id, "error": str(update_err)})
         raise
@@ -110,7 +119,7 @@ async def enqueue_video_job(
         job.provider = submitted_provider.provider_name
         job.model = req.model or submitted_provider.config.model
     job.provider_task_id = submitted.task_id
-    db.commit()
+    await db.commit()
 
     t = asyncio.create_task(_poll_and_finalize(job.id))
     _BG_TASKS.add(t)
@@ -145,8 +154,8 @@ async def _poll_and_finalize(job_id: int) -> None:
 
 
 async def _poll_and_finalize_locked(job_id: int) -> None:
-    with SESSION_LOCAL() as db:
-        job = db.get(VideoGenJob, job_id)
+    async with SESSION_LOCAL() as db:
+        job = await db.get(VideoGenJob, job_id)
         if job is None:
             return
         # Idempotent guard: if a previous run already finalized the row,
@@ -158,27 +167,27 @@ async def _poll_and_finalize_locked(job_id: int) -> None:
         user_id = job.user_id
         provider_task_id = job.provider_task_id or ""
 
-    def _evt(event_type: str, payload: dict) -> None:
-        _emit_ws_event(user_id, event_type, payload)
+    async def _evt(event_type: str, payload: dict) -> None:
+        await _emit_ws_event(user_id, event_type, payload)
 
     try:
         if not provider_task_id:
             # The submit ran but no task_id was persisted (extremely unlikely,
             # but stay defensive) — fail fast with a clear reason so the row
             # doesn't sit in limbo forever.
-            _update_job(job_id, status="failed", error_reason="missing_task_id", error_message="provider.submit returned no task_id")
-            _evt("video_gen.failed", {"task_id": str(job_id), "error": "missing task id"})
+            await _update_job(job_id, status="failed", error_reason="missing_task_id", error_message="provider.submit returned no task_id")
+            await _evt("video_gen.failed", {"task_id": str(job_id), "error": "missing task id"})
             return
 
-        with SESSION_LOCAL() as db:
+        async with SESSION_LOCAL() as db:
             # Re-resolve the chain and pick the slot that owns this job's
             # ``provider`` column (set by ``enqueue_video_job`` when the submit
             # succeeded). Polling must hit the same provider that owns the
             # ``task_id`` — task_ids are per-provider and not portable.
-            job_row = db.get(VideoGenJob, job_id)
+            job_row = await db.get(VideoGenJob, job_id)
             provider_name = job_row.provider if job_row else ""
             job_model = (job_row.model if job_row else "") or ""
-            chain = resolve_provider_chain(db, user_id, "video_gen")
+            chain = await resolve_provider_chain(db, user_id, "video_gen")
             provider_cfg = next((cfg for cfg in chain if cfg.provider_name == provider_name), None)
         # Pin the config to the model the job was submitted with. A provider
         # may switch API protocol by model name (MiniMax v1 vs H3 v2), so if
@@ -187,8 +196,10 @@ async def _poll_and_finalize_locked(job_id: int) -> None:
         if provider_cfg is not None and job_model and job_model != provider_cfg.model:
             provider_cfg = replace(provider_cfg, model=job_model)
         if provider_cfg is None:
-            _update_job(job_id, status="failed", error_reason="provider_unavailable", error_message=f"video provider {provider_name!r} no longer in the chain; cannot poll task_id")
-            _evt("video_gen.failed", {"task_id": str(job_id), "error": "provider unavailable"})
+            await _update_job(
+                job_id, status="failed", error_reason="provider_unavailable", error_message=f"video provider {provider_name!r} no longer in the chain; cannot poll task_id"
+            )
+            await _evt("video_gen.failed", {"task_id": str(job_id), "error": "provider unavailable"})
             return
         provider = resolve(ServiceType.video_gen, provider_cfg.provider_name)(provider_cfg)
 
@@ -198,8 +209,8 @@ async def _poll_and_finalize_locked(job_id: int) -> None:
             # Reload the row to honor a concurrent terminal update (e.g. user
             # DELETE on the row, or another worker finalised us first). An
             # empty provider_task_id means the row was wiped mid-flight.
-            with SESSION_LOCAL() as db:
-                job = db.get(VideoGenJob, job_id)
+            async with SESSION_LOCAL() as db:
+                job = await db.get(VideoGenJob, job_id)
                 if job is None or job.status in ("succeeded", "failed"):
                     return
                 current_task_id = job.provider_task_id or provider_task_id
@@ -208,49 +219,51 @@ async def _poll_and_finalize_locked(job_id: int) -> None:
                 status = await provider.poll(current_task_id)
             except Exception as e:
                 logger.exception("video poll failed", extra={"job_id": job_id})
-                _update_job(job_id, status="failed", error_reason="poll_failed", error_message=str(e))
-                _evt("video_gen.failed", {"task_id": str(job_id), "error": str(e)})
+                await _update_job(job_id, status="failed", error_reason="poll_failed", error_message=str(e))
+                await _evt("video_gen.failed", {"task_id": str(job_id), "error": str(e)})
                 return
 
             if status.status == "succeeded":
                 # Claim the row in ``downloading`` state — resume_pending_video_jobs
                 # skips jobs in any non-queued/processing state, so a mid-download
                 # crash can never trigger a second download.
-                with SESSION_LOCAL() as db:
+                async with SESSION_LOCAL() as db:
                     claimed = (
-                        db.query(VideoGenJob)
-                        .filter(VideoGenJob.id == job_id, VideoGenJob.status.notin_(("succeeded", "failed", "downloading")))
-                        .update({"status": "downloading", "provider_file_id": status.file_id})
-                    )
-                    db.commit()
+                        await db.execute(
+                            update(VideoGenJob)
+                            .where(VideoGenJob.id == job_id, VideoGenJob.status.notin_(("succeeded", "failed", "downloading")))
+                            .values(status="downloading", provider_file_id=status.file_id)
+                        )
+                    ).rowcount
+                    await db.commit()
                     if not claimed:
                         return
                 try:
                     file_id, public_url = await _download_and_store(provider, status.file_id, download_url=status.download_url)
                 except Exception as e:
                     logger.exception("video download failed", extra={"job_id": job_id})
-                    _update_job(job_id, status="failed", error_reason="download_failed", error_message=str(e))
-                    _evt("video_gen.failed", {"task_id": str(job_id), "error": str(e)})
+                    await _update_job(job_id, status="failed", error_reason="download_failed", error_message=str(e))
+                    await _evt("video_gen.failed", {"task_id": str(job_id), "error": str(e)})
                     return
-                _update_job(job_id, status="succeeded", file_id=file_id, video_url=public_url)
-                _evt("video_gen.completed", {"task_id": str(job_id), "url": public_url})
+                await _update_job(job_id, status="succeeded", file_id=file_id, video_url=public_url)
+                await _evt("video_gen.completed", {"task_id": str(job_id), "url": public_url})
                 logger.info("video job succeeded", extra={"job_id": job_id, "file_id": file_id})
                 return
             if status.status == "failed":
-                _update_job(job_id, status="failed", error_reason="provider_failed", error_message=status.error)
-                _evt("video_gen.failed", {"task_id": str(job_id), "error": status.error})
+                await _update_job(job_id, status="failed", error_reason="provider_failed", error_message=status.error)
+                await _evt("video_gen.failed", {"task_id": str(job_id), "error": status.error})
                 return
 
-            _update_job(job_id, status="processing")
+            await _update_job(job_id, status="processing")
             if naive_utc_now() >= deadline:
-                _update_job(job_id, status="failed", error_reason="timeout", error_message="polling deadline reached")
-                _evt("video_gen.failed", {"task_id": str(job_id), "error": "timeout"})
+                await _update_job(job_id, status="failed", error_reason="timeout", error_message="polling deadline reached")
+                await _evt("video_gen.failed", {"task_id": str(job_id), "error": "timeout"})
                 return
             await asyncio.sleep(interval)
     except Exception as exc:
         logger.exception("unhandled exception in video poll worker", extra={"job_id": job_id})
-        _update_job(job_id, status="failed", error_reason="worker_failed", error_message=str(exc))
-        _evt("video_gen.failed", {"task_id": str(job_id), "error": str(exc)})
+        await _update_job(job_id, status="failed", error_reason="worker_failed", error_message=str(exc))
+        await _evt("video_gen.failed", {"task_id": str(job_id), "error": str(exc)})
 
 
 async def _download_and_store(provider, file_id: str | None, *, download_url: str | None = None) -> tuple[str, str]:
@@ -295,7 +308,7 @@ async def _stream_download(url: str) -> bytes:
     return bytes(sink)
 
 
-def resume_pending_video_jobs() -> None:
+async def resume_pending_video_jobs() -> None:
     """Scan for queued/processing jobs and re-attach polling tasks. Called
     from FastAPI lifespan on startup.
 
@@ -305,15 +318,15 @@ def resume_pending_video_jobs() -> None:
     (the 9h provider URL window expires), so we mark it failed up front
     rather than spinning forever."""
 
-    with SESSION_LOCAL() as db:
-        stuck = db.execute(
+    async with SESSION_LOCAL() as db:
+        stuck = await db.execute(
             VideoGenJob.__table__.update()
             .where(VideoGenJob.status == "downloading")
             .values(status="failed", error_reason="download_interrupted", error_message="restarted during download; provider URL window expired")
         )
-        rows = db.execute(select(VideoGenJob).where(VideoGenJob.status.in_(("queued", "processing")))).scalars().all()
+        rows = (await db.execute(select(VideoGenJob).where(VideoGenJob.status.in_(("queued", "processing"))))).scalars().all()
         job_ids = [r.id for r in rows]
-        db.commit()
+        await db.commit()
     if stuck.rowcount:
         logger.warning("marked downloading jobs failed during resume", extra={"count": stuck.rowcount})
     for job_id in job_ids:

@@ -87,20 +87,31 @@ class TestVideoGenJobRoundtrip:
         from components import SESSION_LOCAL
         from modules.auth import User, UserModelConfig
         from services.media import enqueue_video_job, get_job
+        from sqlalchemy import select
         import asyncio
 
-        with SESSION_LOCAL() as db:
-            user = db.query(User).filter(User.username == "testuser").first()
+        async with SESSION_LOCAL() as db:
+            user = (
+                (await db.execute(select(User).where(User.username == "testuser")))
+                .scalars()
+                .first()
+            )
             user_id = user.id
             cfg = (
-                db.query(UserModelConfig)
-                .filter(UserModelConfig.user_id == user_id)
+                (
+                    await db.execute(
+                        select(UserModelConfig).where(
+                            UserModelConfig.user_id == user_id
+                        )
+                    )
+                )
+                .scalars()
                 .first()
             )
             cfg.video_gen_base_url = "https://api.minimaxi.com"
             cfg.video_gen_api_key = "sk-test"
             cfg.video_gen_model_name = model
-            db.commit()
+            await db.commit()
 
         # Eagerly register a mock-transport-backed client so the cached
         # ``get_http`` lookup returns our mock instead of building a real
@@ -132,7 +143,7 @@ class TestVideoGenJobRoundtrip:
         )
         http_mod._clients[("https://api.minimaxi.com", "sk-test")] = mock_client
 
-        with SESSION_LOCAL() as db:
+        async with SESSION_LOCAL() as db:
             job = await enqueue_video_job(
                 db,
                 user_id=user_id,
@@ -151,8 +162,8 @@ class TestVideoGenJobRoundtrip:
         # Let the polling task complete (it polls every 5s in settings)
         for _ in range(20):
             await asyncio.sleep(0.2)
-            with SESSION_LOCAL() as db:
-                row = get_job(db, job_id, user_id)
+            async with SESSION_LOCAL() as db:
+                row = await get_job(db, job_id, user_id)
             if row.status in ("succeeded", "failed"):
                 break
         return row
@@ -286,6 +297,7 @@ class TestVideoGenJobRoundtrip:
         from components import SESSION_LOCAL
         from modules.auth import User, UserModelConfig
         from services.media import enqueue_video_job
+        from sqlalchemy import select
         import services.llm.providers.http as http_mod
 
         async def handler(request: httpx.Request) -> httpx.Response:
@@ -306,18 +318,28 @@ class TestVideoGenJobRoundtrip:
         http_mod._clients.clear()
         http_mod._clients[("https://api.minimaxi.com", "sk-test")] = mock_client
 
-        with SESSION_LOCAL() as db:
-            user = db.query(User).filter(User.username == "testuser").first()
+        async with SESSION_LOCAL() as db:
+            user = (
+                (await db.execute(select(User).where(User.username == "testuser")))
+                .scalars()
+                .first()
+            )
             user_id = user.id
             cfg = (
-                db.query(UserModelConfig)
-                .filter(UserModelConfig.user_id == user_id)
+                (
+                    await db.execute(
+                        select(UserModelConfig).where(
+                            UserModelConfig.user_id == user_id
+                        )
+                    )
+                )
+                .scalars()
                 .first()
             )
             cfg.video_gen_base_url = "https://api.minimaxi.com"
             cfg.video_gen_api_key = "sk-test"
             cfg.video_gen_model_name = "MiniMax-Hailuo-2.3"
-            db.commit()
+            await db.commit()
 
             with pytest.raises((MissingLlmConfigError, ProviderError, ValueError)):
                 await enqueue_video_job(
@@ -340,7 +362,9 @@ class TestVideoGenJobRoundtrip:
 
             db.expire_all()
             rows = (
-                db.execute(select(VideoGenJob).where(VideoGenJob.user_id == user_id))
+                (await db.execute(
+                    select(VideoGenJob).where(VideoGenJob.user_id == user_id)
+                ))
                 .scalars()
                 .all()
             )

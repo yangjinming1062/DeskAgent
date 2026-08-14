@@ -1,5 +1,6 @@
 from modules.memory import Memory
-from sqlalchemy.orm import Session
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from services.tools import AUTO_INJECT_SLOTS, INFERRED_PROFILE_SLOTS, KIND_TO_PREFIX, STATIC_BLOCK_EXCLUDED, context_not_in
 
@@ -7,7 +8,7 @@ MAX_MEMORIES = 10
 MAX_MEMORY_SNIPPET_LEN = 200
 
 
-def format_memories_block(db: Session, user_id: int) -> str:
+async def format_memories_block(db: AsyncSession, user_id: int) -> str:
     """Bullet-list the user's most recent non-user_profile memories.
 
     Returns ``"（暂无长期记忆）"`` when no memories exist so the prompt
@@ -17,7 +18,15 @@ def format_memories_block(db: Session, user_id: int) -> str:
     NULL-context rows are surfaced via ``context_not_in`` (which uses
     ``OR context IS NULL`` to escape the SQL three-valued-logic trap).
     """
-    rows = db.query(Memory).filter(Memory.user_id == user_id, *[context_not_in(p) for p in STATIC_BLOCK_EXCLUDED]).order_by(Memory.updated_at.desc()).limit(MAX_MEMORIES).all()
+    rows = (
+        (
+            await db.execute(
+                select(Memory).where(Memory.user_id == user_id, *[context_not_in(p) for p in STATIC_BLOCK_EXCLUDED]).order_by(Memory.updated_at.desc()).limit(MAX_MEMORIES)
+            )
+        )
+        .scalars()
+        .all()
+    )
     if not rows:
         return "（暂无长期记忆）"
     lines = []
@@ -28,7 +37,7 @@ def format_memories_block(db: Session, user_id: int) -> str:
     return "\n".join(lines)
 
 
-def format_auto_inject_block(db: Session, user_id: int) -> str:
+async def format_auto_inject_block(db: AsyncSession, user_id: int) -> str:
     """Render the user's auto_inject slots as a stable prompt block.
 
     Slot order is fixed by ``AUTO_INJECT_SLOTS`` so the prompt shape is
@@ -40,7 +49,7 @@ def format_auto_inject_block(db: Session, user_id: int) -> str:
     # No order_by on the SQL: Python re-sorts into canonical slot order
     # in the next two lines. The partial unique index caps the row set
     # at 5, so the in-Python sort is cheap.
-    rows = db.query(Memory).filter(Memory.user_id == user_id, Memory.context.like(KIND_TO_PREFIX["auto_inject"] + "%")).all()
+    rows = (await db.execute(select(Memory).where(Memory.user_id == user_id, Memory.context.like(KIND_TO_PREFIX["auto_inject"] + "%")))).scalars().all()
     if not rows:
         return ""
     by_slot = {r.context: r for r in rows}
@@ -52,13 +61,13 @@ def format_auto_inject_block(db: Session, user_id: int) -> str:
     return "\n".join(lines)
 
 
-def format_inferred_profile_block(db: Session, user_id: int) -> str:
+async def format_inferred_profile_block(db: AsyncSession, user_id: int) -> str:
     """Render the user's inferred_profile slots as a stable prompt block.
 
     Slot order is fixed by ``INFERRED_PROFILE_SLOTS`` so the prompt shape is
     deterministic across turns. Returns ``""`` when no rows exist.
     """
-    rows = db.query(Memory).filter(Memory.user_id == user_id, Memory.context.like(KIND_TO_PREFIX["inferred_profile"] + "%")).all()
+    rows = (await db.execute(select(Memory).where(Memory.user_id == user_id, Memory.context.like(KIND_TO_PREFIX["inferred_profile"] + "%")))).scalars().all()
     if not rows:
         return ""
     by_slot = {r.context: r for r in rows}

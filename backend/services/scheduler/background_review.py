@@ -63,7 +63,7 @@ async def run_background_memory_review(user_id: int, llm_config: dict, messages_
     client = client_for_config(llm_config)
 
     try:
-        with session_scope() as db:
+        async with session_scope() as db:
             native_memory = NativeMemory(db, user_id)
             schemas = [RETAIN_SCHEMA]
 
@@ -82,7 +82,7 @@ async def run_background_memory_review(user_id: int, llm_config: dict, messages_
                     args = safe_json_loads(fn.arguments or "{}")
                     if args and isinstance(args, dict):
                         logger.info("Background review extracting memory", extra={"func_args": args})
-                        native_memory.execute_tool(fn.name, args)
+                        await native_memory.execute_tool(fn.name, args)
             # If no tool calls, review simply found nothing to remember.
     except Exception as exc:
         logger.warning("Background memory review failed", extra={"error": str(exc)})

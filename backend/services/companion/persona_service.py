@@ -3,9 +3,9 @@ from typing import Any
 
 from components import SETTINGS, safe_json_loads
 from modules.companion import AvatarAsset, Persona
-from sqlalchemy import func
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..llm import is_preset_species
 from .memory_bootstrap import extract_user_profile, read_user_profile, record_user_profile
@@ -86,7 +86,7 @@ def _validate_definition(definition: dict[str, Any]) -> dict[str, str]:
     return cleaned
 
 
-def get_or_create_persona(db: Session, user_id: int) -> Persona:
+async def get_or_create_persona(db: AsyncSession, user_id: int) -> Persona:
     """Look up the user's persona, or stage an insert for one if none
     exists. Does NOT ``db.commit()`` so the caller can keep the whole
     ``user_profile + persona`` write in a single transaction (ARCH §7.5
@@ -94,22 +94,22 @@ def get_or_create_persona(db: Session, user_id: int) -> Persona:
     uncommitted Memory rows from ``record_user_profile`` and create a
     half-write state if the follow-up commit failed.
     """
-    persona = db.query(Persona).filter(Persona.user_id == user_id).one_or_none()
+    persona = (await db.execute(select(Persona).where(Persona.user_id == user_id))).scalar_one_or_none()
     if persona is None:
         persona = Persona(user_id=user_id, definition_json="{}", system_prompt_extras="")
         db.add(persona)
-        db.flush()
+        await db.flush()
     return persona
 
 
-def update_persona(db: Session, user_id: int, definition: dict[str, Any]) -> Persona:
+async def update_persona(db: AsyncSession, user_id: int, definition: dict[str, Any]) -> Persona:
     if not isinstance(definition, dict):
         raise PersonaValidationError("persona definition must be an object")
     user_profile = extract_user_profile(definition)
     persona_def = {k: v for k, v in definition.items() if not k.startswith("user_")}
     cleaned = _validate_definition(persona_def)
-    record_user_profile(db, user_id, user_profile)
-    persona = get_or_create_persona(db, user_id)
+    await record_user_profile(db, user_id, user_profile)
+    persona = await get_or_create_persona(db, user_id)
     persona.definition_json = json.dumps(cleaned, ensure_ascii=False)
     persona.system_prompt_extras = render_extras(cleaned)
     persona.is_complete = True
@@ -117,21 +117,21 @@ def update_persona(db: Session, user_id: int, definition: dict[str, Any]) -> Per
     persona.portrait_confirmed_at = None
     # Retry on the partial-unique race; record_user_profile is idempotent.
     try:
-        db.commit()
+        await db.commit()
     except IntegrityError:
-        db.rollback()
-        record_user_profile(db, user_id, user_profile)
-        db.commit()
-    db.refresh(persona)
+        await db.rollback()
+        await record_user_profile(db, user_id, user_profile)
+        await db.commit()
+    await db.refresh(persona)
     return persona
 
 
-def confirm_portrait(db: Session, user_id: int) -> Persona:
-    persona = get_or_create_persona(db, user_id)
+async def confirm_portrait(db: AsyncSession, user_id: int) -> Persona:
+    persona = await get_or_create_persona(db, user_id)
     persona.is_portrait_confirmed = True
     persona.portrait_confirmed_at = func.now()
-    db.commit()
-    db.refresh(persona)
+    await db.commit()
+    await db.refresh(persona)
     return persona
 
 
@@ -155,9 +155,9 @@ def render_extras(definition: dict[str, str]) -> str:
     return "\n".join(lines)
 
 
-def update_outfit_field(db: Session, user_id: int, outfit: str) -> None:
+async def update_outfit_field(db: AsyncSession, user_id: int, outfit: str) -> None:
     """Swap ``appearance_outfit`` + re-render ``system_prompt_extras`` without full re-validation. Empty string clears the field."""
-    persona = db.query(Persona).filter(Persona.user_id == user_id).one_or_none()
+    persona = (await db.execute(select(Persona).where(Persona.user_id == user_id))).scalar_one_or_none()
     if persona is None:
         return
     definition = _load_draft(persona)
@@ -167,7 +167,7 @@ def update_outfit_field(db: Session, user_id: int, outfit: str) -> None:
         definition.pop("appearance_outfit", None)
     persona.definition_json = json.dumps(definition, ensure_ascii=False)
     persona.system_prompt_extras = render_extras(definition)
-    db.commit()
+    await db.commit()
 
 
 def _load_draft(persona: Persona) -> dict[str, str]:
@@ -175,9 +175,9 @@ def _load_draft(persona: Persona) -> dict[str, str]:
     return draft if isinstance(draft, dict) else {}
 
 
-def _portrait_next_field(db: Session, user_id: int) -> str:
+async def _portrait_next_field(db: AsyncSession, user_id: int) -> str:
     """Map avatar seed state to the portrait sub-stage; single mode skips right/back."""
-    avatar = db.query(AvatarAsset).filter(AvatarAsset.user_id == user_id, AvatarAsset.active.is_(True)).one_or_none()
+    avatar = (await db.execute(select(AvatarAsset).where(AvatarAsset.user_id == user_id, AvatarAsset.active.is_(True)))).scalar_one_or_none()
     if avatar is None or not bool(avatar.seed_front_url):
         return "portrait"
     # Single mode: stay on front even if stale right/back seeds exist (image-to-model only consumes `front`).
@@ -198,24 +198,24 @@ def _state(answers: dict, next_field: str | None, complete: bool, *, default_ful
     }
 
 
-def get_onboarding_state(db: Session, user_id: int) -> dict[str, Any]:
+async def get_onboarding_state(db: AsyncSession, user_id: int) -> dict[str, Any]:
     """``answers``: every field already submitted; ``next_field``: first unanswered (``None`` when all answered).
 
     ``complete`` is gated on portrait confirmation, voice + user_* being answered, not just is_complete, so a crash mid-flow resumes rather than skips.
     ``voice`` outranks ``user_*`` because the voice sub-stage runs right after 形象确认, before the user sub-stage.
     ``fullbody_mode`` is included so the desktop knows whether to show the side/back phases.
     """
-    persona = get_or_create_persona(db, user_id)
+    persona = await get_or_create_persona(db, user_id)
     # Preset species (人类/精灵/机甲) are biped → default to avatar for fullbody;
     # everything else defaults to reference_image to preserve body features.
     species = _load_draft(persona).get("biological_type", "")
     default_ref = "avatar" if is_preset_species(species) else "reference_image"
     if persona.is_complete:
         draft = _load_draft(persona)
-        user_profile = read_user_profile(db, user_id)
+        user_profile = await read_user_profile(db, user_id)
         merged = {**draft, **user_profile}
         if not persona.is_portrait_confirmed:
-            return _state(merged, _portrait_next_field(db, user_id), False, default_fullbody_reference_source=default_ref)
+            return _state(merged, await _portrait_next_field(db, user_id), False, default_fullbody_reference_source=default_ref)
         missing_users = [k for k in _POST_CHARACTER_FIELDS if not user_profile.get(k)]
         voice_missing = not draft.get("voice")
         if voice_missing or missing_users:
@@ -227,20 +227,20 @@ def get_onboarding_state(db: Session, user_id: int) -> dict[str, Any]:
     missing_character = next((f for f in _CHARACTER_ONBOARDING_FIELDS if not draft.get(f)), None)
     if missing_character is not None:
         return _state(draft, missing_character, False, default_fullbody_reference_source=default_ref)
-    return _state(draft, _portrait_next_field(db, user_id), False, default_fullbody_reference_source=default_ref)
+    return _state(draft, await _portrait_next_field(db, user_id), False, default_fullbody_reference_source=default_ref)
 
 
-def submit_onboarding_field(db: Session, user_id: int, field: str, value: str | None) -> dict[str, Any]:
+async def submit_onboarding_field(db: AsyncSession, user_id: int, field: str, value: str | None) -> dict[str, Any]:
     """Persist one onboarding answer. After is_complete=True, only user_*/voice remain editable; character fields (incl. speaking_style) require PUT /persona."""
     if field not in ONBOARDING_FIELDS:
         raise PersonaValidationError(f"unknown onboarding field: {field!r}", field)
-    persona = get_or_create_persona(db, user_id)
+    persona = await get_or_create_persona(db, user_id)
     if persona.is_complete:
         # Post-character fields accepted here; see single-PUT dual-write contract.
         if field.startswith("user_"):
             if value and value.strip():
-                record_user_profile(db, user_id, {field: value.strip()[:_ONBOARDING_MAX_LEN]})
-                db.commit()
+                await record_user_profile(db, user_id, {field: value.strip()[:_ONBOARDING_MAX_LEN]})
+                await db.commit()
             # Empty value: leave the Memory row alone so revocation stays the
             # only path that wipes a user_* entry (memory_forget).
             return _state(_load_draft(persona), None, True)
@@ -253,7 +253,7 @@ def submit_onboarding_field(db: Session, user_id: int, field: str, value: str | 
             else:
                 draft.pop(field, None)
             persona.definition_json = json.dumps(draft, ensure_ascii=False)
-            db.commit()
+            await db.commit()
             return _state(draft, None, True)
         raise PersonaValidationError(f"onboarding field {field!r} cannot be edited after persona is finalized; use PUT /api/companion/persona", field)
     draft = _load_draft(persona)
@@ -262,7 +262,7 @@ def submit_onboarding_field(db: Session, user_id: int, field: str, value: str | 
     else:
         draft.pop(field, None)
     persona.definition_json = json.dumps(draft, ensure_ascii=False)
-    db.commit()
+    await db.commit()
     missing_character = next((f for f in _CHARACTER_ONBOARDING_FIELDS if not draft.get(f)), None)
     next_field = missing_character if missing_character is not None else "portrait"
     return _state(draft, next_field, False)

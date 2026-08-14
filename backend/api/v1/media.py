@@ -118,8 +118,8 @@ async def speech_to_text(
     mime_type = _resolve_mime_type(audio_file.content_type)
 
     try:
-        with SESSION_LOCAL() as db:
-            chain = resolve_provider_chain(db, user.id, "stt")
+        async with SESSION_LOCAL() as db:
+            chain = await resolve_provider_chain(db, user.id, "stt")
         if not chain:
             raise missing_config_http("STT")
         result = await execute_with_fallback(
@@ -153,8 +153,8 @@ async def text_to_speech(
         raise HTTPException(status_code=413, detail={"error": f"text exceeds {TTS_MAX_TEXT_CHARS} chars", "reason": "payload_too_large", "status": 413})
 
     try:
-        with SESSION_LOCAL() as db:
-            chain = resolve_provider_chain(db, user.id, "tts")
+        async with SESSION_LOCAL() as db:
+            chain = await resolve_provider_chain(db, user.id, "tts")
         if not chain:
             raise missing_config_http("TTS")
         result = await execute_with_fallback(
@@ -187,8 +187,8 @@ async def image_gen(
         raise HTTPException(status_code=400, detail={"error": "prompt is required", "reason": "missing_params", "status": 400})
 
     try:
-        with SESSION_LOCAL() as db:
-            chain = resolve_provider_chain(db, user.id, "image_gen")
+        async with SESSION_LOCAL() as db:
+            chain = await resolve_provider_chain(db, user.id, "image_gen")
         if not chain:
             raise missing_config_http("image_gen", status_code=501)
         result = await execute_with_fallback(db=None, user_id=user.id, service_type="image_gen", call_fn=lambda p: p.generate(ImageGenRequest(prompt=prompt)), _chain=chain)
@@ -248,7 +248,7 @@ async def video_gen(
         wait_seconds = min(max(wait_seconds, 0), 60)
 
     try:
-        with SESSION_LOCAL() as db:
+        async with SESSION_LOCAL() as db:
             job = await enqueue_video_job(
                 db,
                 user_id=user.id,
@@ -272,8 +272,8 @@ async def video_gen(
         deadline = naive_utc_now() + timedelta(seconds=wait_seconds)
         while naive_utc_now() < deadline:
             await asyncio.sleep(2)
-            with SESSION_LOCAL() as db:
-                row = get_job(db, job.id, user.id)
+            async with SESSION_LOCAL() as db:
+                row = await get_job(db, job.id, user.id)
                 if row is None:
                     break
                 if row.status == "succeeded":
@@ -287,8 +287,8 @@ async def video_gen(
 @router.get("/video_gen/{task_id}")
 async def video_gen_status(task_id: int, auth_data: tuple[User, LoginRecord] = Depends(get_current_session)) -> dict[str, Any]:
     user, _ = auth_data
-    with SESSION_LOCAL() as db:
-        row = get_job(db, task_id, user.id)
+    async with SESSION_LOCAL() as db:
+        row = await get_job(db, task_id, user.id)
     if row is None:
         raise HTTPException(status_code=404, detail={"error": "video job not found", "reason": "not_found", "status": 404})
     return {

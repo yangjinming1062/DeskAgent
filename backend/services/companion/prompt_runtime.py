@@ -3,6 +3,7 @@ from typing import Any, NamedTuple
 from components import SESSION_LOCAL, get_logger, safe_json_loads
 from modules.companion import Persona
 from pydantic import BaseModel
+from sqlalchemy import select
 
 from ..chat.affect import resolve_allowed_emotions
 from ..llm import LLMRuntimeError, UserLlmConfig, call_with_retry, client_for_config
@@ -29,10 +30,10 @@ class PromptOutcome(NamedTuple):
     reason: str | None  # None on success; "llm_error" | "unparseable" on failure
 
 
-def load_companion_prompt_context(user_id: int) -> CompanionPromptContext | None:
+async def load_companion_prompt_context(user_id: int) -> CompanionPromptContext | None:
     """Returns a persona+memory snapshot for prompting; ``None`` if persona is not ready."""
-    with SESSION_LOCAL() as db:
-        persona = db.query(Persona).filter(Persona.user_id == user_id).one_or_none()
+    async with SESSION_LOCAL() as db:
+        persona = (await db.execute(select(Persona).where(Persona.user_id == user_id))).scalar_one_or_none()
         if persona is None or not persona.is_complete or not persona.system_prompt_extras:
             return None
         definition = safe_json_loads(persona.definition_json or "{}", default={})
@@ -40,8 +41,8 @@ def load_companion_prompt_context(user_id: int) -> CompanionPromptContext | None
         return CompanionPromptContext(
             persona_name=persona_name,
             persona_extras=persona.system_prompt_extras,
-            memories_block=format_memories_block(db, user_id),
-            allowed_emotions=resolve_allowed_emotions(db, user_id),
+            memories_block=await format_memories_block(db, user_id),
+            allowed_emotions=await resolve_allowed_emotions(db, user_id),
         )
 
 

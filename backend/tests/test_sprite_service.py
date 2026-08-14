@@ -5,6 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 from PIL import Image
+from sqlalchemy import select, update
 
 from modules.companion import AvatarAsset, CompanionSpriteImage
 from services.companion import sprite_service
@@ -18,13 +19,10 @@ from services.companion.sprite_service import (
 
 
 @pytest.fixture()
-def db_session(_patch_db):
+async def db_session(_patch_db):
     _, SessionLocal = _patch_db
-    db = SessionLocal()
-    try:
+    async with SessionLocal() as db:
         yield db
-    finally:
-        db.close()
 
 
 def _png(draw) -> bytes:
@@ -68,17 +66,17 @@ def test_has_real_transparency():
     assert not has_real_transparency(SPRITE_BG_PNG)
 
 
-def _avatar(db, user_id: int = 1) -> AvatarAsset:
+async def _avatar(db, user_id: int = 1) -> AvatarAsset:
     asset = AvatarAsset(user_id=user_id, prompt_json="{}", asset_url="companion-avatars/missing.jpg", active=True)
     db.add(asset)
-    db.commit()
+    await db.commit()
     return asset
 
 
-def _row(db, user_id: int, avatar_id: int, tag: str, role: str | None = None) -> CompanionSpriteImage:
+async def _row(db, user_id: int, avatar_id: int, tag: str, role: str | None = None) -> CompanionSpriteImage:
     row = CompanionSpriteImage(user_id=user_id, avatar_id=avatar_id, role=role, tag=tag, asset_url=f"companion-assets/{user_id}/sprite_{tag}.png")
     db.add(row)
-    db.commit()
+    await db.commit()
     return row
 
 
@@ -86,7 +84,11 @@ def _row(db, user_id: int, avatar_id: int, tag: str, role: str | None = None) ->
 def gen_mocks(monkeypatch, tmp_path):
     """Wire generation to succeed without touching LLMs/providers/disk."""
     calls = {"llm": [], "providers": [], "unlinked": []}
-    monkeypatch.setattr(sprite_service, "resolve_provider_chain", lambda db, uid, svc: [SimpleNamespace(provider_name="minimax")])
+
+    async def _fake_chain(db, uid, svc):
+        return [SimpleNamespace(provider_name="minimax")]
+
+    monkeypatch.setattr(sprite_service, "resolve_provider_chain", _fake_chain)
     monkeypatch.setattr(sprite_service, "resolve", lambda svc, name: SimpleNamespace(supports_reference_image=True))
     monkeypatch.setattr(sprite_service, "load_avatar_bytes_as_data_uri", lambda url: "data:image/png;base64,eHg=")
 
@@ -105,8 +107,8 @@ def gen_mocks(monkeypatch, tmp_path):
 
 @pytest.mark.asyncio
 async def test_resolve_waiting_short_circuits_without_llm(db_session, gen_mocks, monkeypatch):
-    asset = _avatar(db_session)
-    waiting = _row(db_session, 1, asset.id, "等待", role="waiting")
+    asset = await _avatar(db_session)
+    waiting = await _row(db_session, 1, asset.id, "等待", role="waiting")
 
     async def boom(*a, **k):
         raise AssertionError("waiting short-circuit must not call the LLM")
@@ -118,8 +120,8 @@ async def test_resolve_waiting_short_circuits_without_llm(db_session, gen_mocks,
 
 @pytest.mark.asyncio
 async def test_resolve_match_hit_skips_generation(db_session, gen_mocks, monkeypatch):
-    asset = _avatar(db_session)
-    hit = _row(db_session, 1, asset.id, "开心挥手")
+    asset = await _avatar(db_session)
+    hit = await _row(db_session, 1, asset.id, "开心挥手")
 
     async def fake_vision(db, uid, system, text, images, **k):
         gen_mocks["llm"].append(system.splitlines()[0])
@@ -133,7 +135,7 @@ async def test_resolve_match_hit_skips_generation(db_session, gen_mocks, monkeyp
 
 @pytest.mark.asyncio
 async def test_resolve_miss_generates_and_persists(db_session, gen_mocks, monkeypatch, tmp_path):
-    asset = _avatar(db_session)
+    asset = await _avatar(db_session)
 
     async def fake_vision(db, uid, system, text, images, **k):
         if "match_id" in system:
@@ -155,8 +157,8 @@ async def test_resolve_miss_generates_and_persists(db_session, gen_mocks, monkey
 
 @pytest.mark.asyncio
 async def test_resolve_waiting_force_new_replaces_old_row(db_session, gen_mocks, monkeypatch):
-    asset = _avatar(db_session)
-    old = _row(db_session, 1, asset.id, "旧等待", role="waiting")
+    asset = await _avatar(db_session)
+    old = await _row(db_session, 1, asset.id, "旧等待", role="waiting")
 
     async def fake_vision(db, uid, system, text, images, **k):
         return json.dumps({"match_id": None}) if "match_id" in system else json.dumps({"prompt": "p", "tag": "新等待"})
@@ -164,15 +166,19 @@ async def test_resolve_waiting_force_new_replaces_old_row(db_session, gen_mocks,
     monkeypatch.setattr(sprite_service, "_vision_llm_call", fake_vision)
     row, generated = await resolve_sprite(db_session, user_id=1, request_text="等待", role="waiting", force_new=True)
     assert generated and row.id != old.id and row.role == "waiting"
-    remaining = db_session.query(CompanionSpriteImage).filter(CompanionSpriteImage.role == "waiting").all()
+    remaining = (
+        (await db_session.execute(select(CompanionSpriteImage).where(CompanionSpriteImage.role == "waiting")))
+        .scalars()
+        .all()
+    )
     assert [r.id for r in remaining] == [row.id]
     assert old.asset_url in gen_mocks["unlinked"]
 
 
 @pytest.mark.asyncio
 async def test_resolve_filters_stale_avatar_rows(db_session, gen_mocks, monkeypatch):
-    asset = _avatar(db_session)
-    _row(db_session, 1, avatar_id=999, tag="旧身份的图")  # stale: avatar regen invalidates
+    asset = await _avatar(db_session)
+    await _row(db_session, 1, avatar_id=999, tag="旧身份的图")  # stale: avatar regen invalidates
 
     seen: list[object] = []
 
@@ -194,8 +200,12 @@ async def test_resolve_without_avatar_raises(db_session):
 
 @pytest.mark.asyncio
 async def test_generate_rejects_all_opaque_outputs(db_session, monkeypatch):
-    asset = _avatar(db_session)
-    monkeypatch.setattr(sprite_service, "resolve_provider_chain", lambda db, uid, svc: [SimpleNamespace(provider_name="minimax"), SimpleNamespace(provider_name="gemini")])
+    asset = await _avatar(db_session)
+
+    async def _fake_chain(db, uid, svc):
+        return [SimpleNamespace(provider_name="minimax"), SimpleNamespace(provider_name="gemini")]
+
+    monkeypatch.setattr(sprite_service, "resolve_provider_chain", _fake_chain)
     monkeypatch.setattr(sprite_service, "resolve", lambda svc, name: SimpleNamespace(supports_reference_image=True))
     monkeypatch.setattr(sprite_service, "_author_prompt", lambda *a, **k: ("p", "t"))
 
@@ -212,22 +222,34 @@ async def test_generate_rejects_all_opaque_outputs(db_session, monkeypatch):
         await sprite_service._generate_sprite_png(db_session, 1, "p", "ref")
 
 
-def test_prune_album_caps_and_keeps_waiting(db_session, monkeypatch):
+@pytest.mark.asyncio
+async def test_prune_album_caps_and_keeps_waiting(db_session, monkeypatch):
     unlinked: list[str] = []
     monkeypatch.setattr(sprite_service, "unlink_companion_asset", lambda path: unlinked.append(path))
     monkeypatch.setattr(sprite_service, "_SPRITE_ALBUM_CAP", 3)
-    asset = _avatar(db_session)
+    asset = await _avatar(db_session)
     base = datetime(2026, 8, 14, 12, 0, 0)
-    oldest = _row(db_session, 1, asset.id, "最旧")
-    db_session.query(CompanionSpriteImage).filter(CompanionSpriteImage.id == oldest.id).update({"created_at": base})
+    oldest = await _row(db_session, 1, asset.id, "最旧")
+    await db_session.execute(
+        update(CompanionSpriteImage).where(CompanionSpriteImage.id == oldest.id).values(created_at=base)
+    )
     for i, tag in enumerate(("中", "新", "等待"), start=1):
-        row = _row(db_session, 1, asset.id, tag, role="waiting" if tag == "等待" else None)
-        db_session.query(CompanionSpriteImage).filter(CompanionSpriteImage.id == row.id).update({"created_at": base + timedelta(minutes=i)})
-    db_session.commit()
+        row = await _row(db_session, 1, asset.id, tag, role="waiting" if tag == "等待" else None)
+        await db_session.execute(
+            update(CompanionSpriteImage).where(CompanionSpriteImage.id == row.id).values(created_at=base + timedelta(minutes=i))
+        )
+    await db_session.commit()
 
-    sprite_service._prune_album(db_session, 1)
-    db_session.commit()
-    remaining = {r.tag for r in db_session.query(CompanionSpriteImage).filter(CompanionSpriteImage.user_id == 1).all()}
+    await sprite_service._prune_album(db_session, 1)
+    await db_session.commit()
+    remaining = {
+        r.tag
+        for r in (
+            (await db_session.execute(select(CompanionSpriteImage).where(CompanionSpriteImage.user_id == 1)))
+            .scalars()
+            .all()
+        )
+    }
     assert remaining == {"中", "新", "等待"}
     assert unlinked == [oldest.asset_url]
 
@@ -245,12 +267,9 @@ def test_sprite_endpoint_contract(_patch_db, monkeypatch):
     app = FastAPI()
     app.state.limiter = limiter
 
-    def _test_get_db():
-        db = SessionLocal()
-        try:
+    async def _test_get_db():
+        async with SessionLocal() as db:
             yield db
-        finally:
-            db.close()
 
     fake_user = type("U", (), {"id": 1})()
 

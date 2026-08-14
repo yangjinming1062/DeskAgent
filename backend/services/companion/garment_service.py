@@ -1,11 +1,11 @@
 import asyncio
 import tempfile
-from contextlib import nullcontext
+from contextlib import AsyncExitStack
 from pathlib import Path
 from typing import Any
 
-from components import SESSION_LOCAL, SETTINGS, get_logger, parse_llm_json
-from sqlalchemy.orm import Session
+from components import SETTINGS, get_logger, parse_llm_json, session_scope
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from .asset_store import build_data_uri
 from .blender_llm_pipeline import EvaluationResult, _strip_code_fences, _vision_llm_call, run_blender_scaffold
@@ -225,7 +225,7 @@ _ANCHOR_HINTS = {"garment": "确保 VG_ANCHOR 顶点组存在且非空。", "acc
 # ─── LLM call wrappers ───────────────────────────────────────────
 
 
-async def _code_call(system: str, instruction: str, images: list[str], user_id: int, db: Session | None) -> str:
+async def _code_call(system: str, instruction: str, images: list[str], user_id: int, db: AsyncSession | None) -> str:
     raw = await _vision_llm_call(db, user_id, system, instruction, images)
     return _strip_code_fences(raw)
 
@@ -237,7 +237,7 @@ async def _llm_generate_garment_script(
     ctx_info: str,
     description: str,
     user_id: int,
-    db: Session | None = None,
+    db: AsyncSession | None = None,
     *,
     kind: str = "garment",
     socket: str | None = None,
@@ -253,20 +253,22 @@ async def _llm_generate_garment_script(
 
 
 async def _llm_fix_garment_script(
-    prev_script: str, stderr: str, body_preview_uri: str, reference_uris: list[str], user_id: int, db: Session | None = None, *, kind: str = "garment"
+    prev_script: str, stderr: str, body_preview_uri: str, reference_uris: list[str], user_id: int, db: AsyncSession | None = None, *, kind: str = "garment"
 ) -> str:
     system = _FIX_SYSTEM_PROMPT.format(stderr=stderr[:2000], prev_script=prev_script, anchor_hint=_ANCHOR_HINTS.get(kind, ""))
     return await _code_call(system, "请修复脚本并输出完整代码。", [body_preview_uri] + reference_uris, user_id, db)
 
 
 async def _llm_refine_garment_script(
-    prev_script: str, preview_uri: str, critique: str, body_preview_uri: str, reference_uris: list[str], user_id: int, db: Session | None = None, *, kind: str = "garment"
+    prev_script: str, preview_uri: str, critique: str, body_preview_uri: str, reference_uris: list[str], user_id: int, db: AsyncSession | None = None, *, kind: str = "garment"
 ) -> str:
     system = _REFINE_SYSTEM_PROMPT.format(critique=critique, prev_script=prev_script, anchor_hint=_ANCHOR_HINTS.get(kind, ""))
     return await _code_call(system, "请根据评估意见改进脚本，输出完整代码。", [body_preview_uri] + reference_uris + [preview_uri], user_id, db)
 
 
-async def _llm_evaluate_garment(preview_uri: str, body_preview_uri: str, reference_uris: list[str], description: str, user_id: int, db: Session | None = None) -> EvaluationResult:
+async def _llm_evaluate_garment(
+    preview_uri: str, body_preview_uri: str, reference_uris: list[str], description: str, user_id: int, db: AsyncSession | None = None
+) -> EvaluationResult:
     instruction = f"服装描述：{description}\n\n参考图/身体参考图与渲染预览图对比，输出评估 JSON。"
     images = [body_preview_uri] + reference_uris + [preview_uri]
     raw = await _vision_llm_call(db, user_id, _EVAL_SYSTEM_PROMPT, instruction, images)
@@ -325,7 +327,7 @@ async def run_garment_pipeline(
     assembly_json: str,
     body_joint_names: list[str] | None = None,
     user_id: int,
-    db: Session | None = None,
+    db: AsyncSession | None = None,
 ) -> bytes:
     """Iterate LLM-Blender-evaluation loop until convergence; returns best garment GLB bytes."""
     reference_uris = reference_uris or []
@@ -347,7 +349,8 @@ async def run_garment_pipeline(
         for i in range(max_iters):
             logger.info("Geometric pipeline iteration %d/%d (%s)", i + 1, max_iters, kind, extra={"user_id": user_id})
 
-            with nullcontext(db) if db is not None else SESSION_LOCAL() as iter_db:
+            async with AsyncExitStack() as stack:
+                iter_db = db if db is not None else await stack.enter_async_context(session_scope())
                 if i == 0:
                     script = await _llm_generate_garment_script(body_preview_uri, reference_uris, rig_type, ctx_bones_info, description, user_id, iter_db, kind=kind, socket=socket)
                 elif last_error:
@@ -387,7 +390,8 @@ async def run_garment_pipeline(
 
             last_preview_uri = build_data_uri(result.preview_png, "image/png")
 
-            with nullcontext(db) if db is not None else SESSION_LOCAL() as iter_db:
+            async with AsyncExitStack() as stack:
+                iter_db = db if db is not None else await stack.enter_async_context(session_scope())
                 evaluation = await _llm_evaluate_garment(last_preview_uri, body_preview_uri, reference_uris, description, user_id, iter_db)
 
             logger.info("Garment evaluation (iter %d): score=%d converged=%s", i + 1, evaluation.score, evaluation.converged, extra={"user_id": user_id})

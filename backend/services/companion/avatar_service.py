@@ -10,7 +10,8 @@ import httpx
 from components import SESSION_LOCAL, SETTINGS, get_file_path, get_logger, is_safe_outbound, safe_json_loads
 from modules.companion import AvatarAsset, Persona
 from pydantic import ValidationError
-from sqlalchemy.orm import Session
+from sqlalchemy import select, update
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..llm import build_fullbody_prompt, chat, enhance_avatar_prompt, is_content_policy_error_message, is_preset_species, resolve_fullbody_template
 from ..tools.builtin import first_image_url, image_generation_tool
@@ -66,7 +67,7 @@ async def _sanitize_prompt_for_moderation(user_id: int, prompt: str) -> str:
     """Mildly sanitize *prompt* for content moderation. Returns the original on failure.
     Uses its own DB session — may run inside ``asyncio.gather`` where the caller's session is shared."""
     try:
-        with SESSION_LOCAL() as db:
+        async with SESSION_LOCAL() as db:
             sanitized = await chat(db, user_id, _MODERATION_SANITIZATION_PROMPT, prompt)
         sanitized = sanitized.strip()
         return sanitized if sanitized else prompt
@@ -282,7 +283,7 @@ async def _generate_one_portrait(
 
 
 async def _generate_avatar_step(
-    db: Session,
+    db: AsyncSession,
     user_id: int,
     *,
     avatar_prompt: str,
@@ -306,8 +307,8 @@ async def _generate_avatar_step(
         avatar_prompt, user_id, reference_image=reference_image, secondary_reference_image=secondary_reference_image, persist=persist
     )
 
-    previous = db.query(AvatarAsset).filter(AvatarAsset.user_id == user_id, AvatarAsset.active.is_(True)).one_or_none()
-    db.query(AvatarAsset).filter(AvatarAsset.user_id == user_id, AvatarAsset.active.is_(True)).update({"active": False})
+    previous = (await db.execute(select(AvatarAsset).where(AvatarAsset.user_id == user_id, AvatarAsset.active.is_(True)))).scalar_one_or_none()
+    await db.execute(update(AvatarAsset).where(AvatarAsset.user_id == user_id, AvatarAsset.active.is_(True)).values(active=False))
     prompt_payload: dict = {"prompt": avatar_prompt, "avatar_prompt": avatar_prompt, "style": style, "source_url": avatar_source_url}
     if feedback is not None:
         prompt_payload["feedback"] = feedback
@@ -330,8 +331,8 @@ async def _generate_avatar_step(
     persona.is_portrait_confirmed = False
     persona.portrait_confirmed_at = None
     db.add(asset)
-    db.commit()
-    db.refresh(asset)
+    await db.commit()
+    await db.refresh(asset)
 
     if persist:
         asset.asset_url = build_signed_avatar_url(file_id, final_ext)
@@ -348,7 +349,7 @@ async def _generate_avatar_step(
 
 
 async def generate_fullbody(
-    db: Session,
+    db: AsyncSession,
     user_id: int,
     *,
     avatar_id: int,
@@ -387,7 +388,7 @@ async def generate_fullbody(
     if SETTINGS.fullbody_mode == "single" and (stage == "aux" or view in ("right", "back")):
         raise AvatarGenerationError("当前为单视图模式，不支持生成侧面/背面全身图")
 
-    asset = db.query(AvatarAsset).filter(AvatarAsset.id == avatar_id, AvatarAsset.user_id == user_id, AvatarAsset.active.is_(True)).one_or_none()
+    asset = (await db.execute(select(AvatarAsset).where(AvatarAsset.id == avatar_id, AvatarAsset.user_id == user_id, AvatarAsset.active.is_(True)))).scalar_one_or_none()
     if asset is None:
         raise AvatarNotFoundError(f"avatar {avatar_id} not found")
 
@@ -395,7 +396,7 @@ async def generate_fullbody(
     if not isinstance(prompt_payload, dict):
         prompt_payload = {}
 
-    persona = get_or_create_persona(db, user_id)
+    persona = await get_or_create_persona(db, user_id)
     persist = persona.is_portrait_confirmed
     # Call-time feedback (from the portrait-phase textarea) overrides the
     # cached value from the bust regen — otherwise the user's "头发再短一点"
@@ -510,8 +511,8 @@ async def generate_fullbody(
     for v, result in generated.items():
         setattr(asset, _SEED_ATTRS[v], result[0])
 
-    db.commit()
-    db.refresh(asset)
+    await db.commit()
+    await db.refresh(asset)
 
     # Re-sign URLs in memory — expunge first so the mutations can never be
     # flushed back to the DB by a subsequent db.commit() in the caller's
@@ -568,7 +569,7 @@ def _delete_portrait_file(asset_url: str | None) -> None:
         (Path(SETTINGS.data_dir) / "companion-avatars" / name).unlink(missing_ok=True)
 
 
-async def generate_avatar(db: Session, user_id: int, persona: Persona) -> AvatarAsset:
+async def generate_avatar(db: AsyncSession, user_id: int, persona: Persona) -> AvatarAsset:
     """Generate the initial portrait after onboarding completes."""
     if not persona.is_complete:
         raise AvatarGenerationError("persona is incomplete; finish onboarding first")
@@ -580,15 +581,15 @@ async def generate_avatar(db: Session, user_id: int, persona: Persona) -> Avatar
     return asset
 
 
-def get_active_avatar(db: Session, user_id: int) -> AvatarAsset | None:
-    asset = db.query(AvatarAsset).filter(AvatarAsset.user_id == user_id, AvatarAsset.active.is_(True)).one_or_none()
+async def get_active_avatar(db: AsyncSession, user_id: int) -> AvatarAsset | None:
+    asset = (await db.execute(select(AvatarAsset).where(AvatarAsset.user_id == user_id, AvatarAsset.active.is_(True)))).scalar_one_or_none()
     if asset is not None:
         _re_sign_avatar_url(asset)
     return asset
 
 
-def list_avatar_history(db: Session, user_id: int, limit: int = 20) -> list[AvatarAsset]:
-    assets = db.query(AvatarAsset).filter(AvatarAsset.user_id == user_id).order_by(AvatarAsset.created_at.desc()).limit(limit).all()
+async def list_avatar_history(db: AsyncSession, user_id: int, limit: int = 20) -> list[AvatarAsset]:
+    assets = (await db.execute(select(AvatarAsset).where(AvatarAsset.user_id == user_id).order_by(AvatarAsset.created_at.desc()).limit(limit))).scalars().all()
     for asset in assets:
         _re_sign_avatar_url(asset)
     return assets
@@ -645,7 +646,7 @@ def _re_sign_bare_path(bare_path: str | None) -> str | None:
     return build_signed_avatar_url(file_id, ext)
 
 
-async def regenerate_avatar(db: Session, user_id: int, persona: Persona, feedback: str | None = None, style: str = _DEFAULT_STYLE) -> AvatarAsset:
+async def regenerate_avatar(db: AsyncSession, user_id: int, persona: Persona, feedback: str | None = None, style: str = _DEFAULT_STYLE) -> AvatarAsset:
     """Regenerate the portrait. Optional ``feedback`` (e.g. "longer hair") is folded into the prompt."""
     if not persona.is_complete:
         raise AvatarGenerationError("persona is incomplete; finish onboarding first")
@@ -704,7 +705,7 @@ def load_avatar_bytes_as_data_uri(asset_url_or_path: str | None) -> str | None:
 
 
 async def regenerate_avatar_from_image(
-    db: Session,
+    db: AsyncSession,
     user_id: int,
     persona: Persona,
     data: bytes,
@@ -766,12 +767,12 @@ def _read_temp_media_bytes(bare_path: str) -> tuple[bytes, str] | None:
     return data, content_type
 
 
-async def finalize_avatar(db: Session, user_id: int) -> AvatarAsset | None:
+async def finalize_avatar(db: AsyncSession, user_id: int) -> AvatarAsset | None:
     """Copy the active avatar's images from temp-media to companion-avatars.
     Two-phase: reads all bytes first (abort on any TTL expiry), then persists —
     avoids orphaned companion-avatars files on partial failure. Idempotent.
     Raises ``AvatarSourceUnreadableError`` if any temp-media file has expired."""
-    asset = db.query(AvatarAsset).filter(AvatarAsset.user_id == user_id, AvatarAsset.active.is_(True)).one_or_none()
+    asset = (await db.execute(select(AvatarAsset).where(AvatarAsset.user_id == user_id, AvatarAsset.active.is_(True)))).scalar_one_or_none()
     if asset is None:
         return None
 
@@ -793,8 +794,8 @@ async def finalize_avatar(db: Session, user_id: int) -> AvatarAsset | None:
         new_path, _, _ = await _persist_portrait_bytes(data, content_type)
         setattr(asset, attr, new_path)
 
-    db.commit()
-    db.refresh(asset)
+    await db.commit()
+    await db.refresh(asset)
     db.expunge(asset)
     _re_sign_avatar_url(asset)
     return asset

@@ -19,38 +19,39 @@ from modules.auth import (
     public_provider_slots,
 )
 from services.llm import merge_provider_json
-from sqlalchemy.orm import Session
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 router = get_router()
 
 
 @router.get("/users", response_model=UserListResponse)
-def list_users(_admin: str = Depends(get_current_admin_token), db: Session = Depends(get_db)) -> UserListResponse:
-    return list_response(db.query(User).order_by(User.id).all(), UserResponse, UserListResponse)
+async def list_users(_admin: str = Depends(get_current_admin_token), db: AsyncSession = Depends(get_db)) -> UserListResponse:
+    return list_response((await db.execute(select(User).order_by(User.id))).scalars().all(), UserResponse, UserListResponse)
 
 
 @router.get("/users/{user_id}", response_model=UserResponse)
-def get_user(user_id: int, _admin: str = Depends(get_current_admin_token), db: Session = Depends(get_db)) -> UserResponse:
-    return UserResponse.model_validate(get_or_404(db, User, id=user_id, detail="用户不存在。"))
+async def get_user(user_id: int, _admin: str = Depends(get_current_admin_token), db: AsyncSession = Depends(get_db)) -> UserResponse:
+    return UserResponse.model_validate(await get_or_404(db, User, id=user_id, detail="用户不存在。"))
 
 
 @router.post("/users", response_model=UserResponse)
-def create_user(payload: UserCreate, _admin: str = Depends(get_current_admin_token), db: Session = Depends(get_db)) -> UserResponse:
-    if db.query(User).filter(User.username == payload.username).one_or_none():
+async def create_user(payload: UserCreate, _admin: str = Depends(get_current_admin_token), db: AsyncSession = Depends(get_db)) -> UserResponse:
+    if (await db.execute(select(User).where(User.username == payload.username))).scalar_one_or_none():
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="用户名已存在。")
     raw_token = generate_activation_token()
     user = User(username=payload.username, password_hash=None, activation_token_hash=hash_activation_token(raw_token), can_use=payload.can_use, expires_at=payload.expires_at)
     db.add(user)
-    db.commit()
-    db.refresh(user)
+    await db.commit()
+    await db.refresh(user)
     resp = UserResponse.model_validate(user)
     resp.activation_code = encode_activation_code(payload.base_url, raw_token)
     return resp
 
 
 @router.patch("/users/{user_id}", response_model=UserResponse)
-def update_user(user_id: int, payload: UserUpdate, _admin: str = Depends(get_current_admin_token), db: Session = Depends(get_db)) -> UserResponse:
-    user = get_or_404(db, User, id=user_id, detail="用户不存在。")
+async def update_user(user_id: int, payload: UserUpdate, _admin: str = Depends(get_current_admin_token), db: AsyncSession = Depends(get_db)) -> UserResponse:
+    user = await get_or_404(db, User, id=user_id, detail="用户不存在。")
     raw_token: str | None = None
     if payload.regenerate_token:
         raw_token = generate_activation_token()
@@ -59,7 +60,7 @@ def update_user(user_id: int, payload: UserUpdate, _admin: str = Depends(get_cur
     if "expires_at" in payload.model_fields_set and payload.expires_at is None:
         user.expires_at = None
     apply_partial(user, payload, exclude={"regenerate_token", "base_url"})
-    db.commit()
+    await db.commit()
     resp = UserResponse.model_validate(user)
     if raw_token is not None:
         base_url = payload.base_url or "http://localhost:10620"
@@ -68,17 +69,17 @@ def update_user(user_id: int, payload: UserUpdate, _admin: str = Depends(get_cur
 
 
 @router.delete("/users/{user_id}", response_model=dict)
-def delete_user(user_id: int, _admin: str = Depends(get_current_admin_token), db: Session = Depends(get_db)) -> dict:
-    db.delete(get_or_404(db, User, id=user_id, detail="用户不存在。"))
-    db.commit()
+async def delete_user(user_id: int, _admin: str = Depends(get_current_admin_token), db: AsyncSession = Depends(get_db)) -> dict:
+    db.delete(await get_or_404(db, User, id=user_id, detail="用户不存在。"))
+    await db.commit()
     return {"message": "用户已删除。"}
 
 
 @router.patch("/users/{user_id}/toggle-active")
-def toggle_user_active(user_id: int, _admin: str = Depends(get_current_admin_token), db: Session = Depends(get_db)) -> UserResponse:
-    user = get_or_404(db, User, id=user_id, detail="用户不存在。")
+async def toggle_user_active(user_id: int, _admin: str = Depends(get_current_admin_token), db: AsyncSession = Depends(get_db)) -> UserResponse:
+    user = await get_or_404(db, User, id=user_id, detail="用户不存在。")
     user.is_active = not user.is_active
-    db.commit()
+    await db.commit()
     return UserResponse.model_validate(user)
 
 
@@ -111,14 +112,14 @@ def _config_list_item(r: UserModelConfig) -> UserModelConfigListItem:
 
 
 @router.get("/model-configs", response_model=UserModelConfigListResponse)
-def list_model_configs(_admin: str = Depends(get_current_admin_token), db: Session = Depends(get_db)) -> UserModelConfigListResponse:
-    return UserModelConfigListResponse(items=[_config_list_item(r) for r in db.query(UserModelConfig).all()])
+async def list_model_configs(_admin: str = Depends(get_current_admin_token), db: AsyncSession = Depends(get_db)) -> UserModelConfigListResponse:
+    return UserModelConfigListResponse(items=[_config_list_item(r) for r in (await db.execute(select(UserModelConfig))).scalars().all()])
 
 
 @router.put("/{user_id}/model-config")
-def upsert_model_config(user_id: int, payload: UserModelConfigRequest, _admin: str = Depends(get_current_admin_token), db: Session = Depends(get_db)) -> dict:
-    get_or_404(db, User, id=user_id, detail="用户不存在。")
-    config = db.query(UserModelConfig).filter(UserModelConfig.user_id == user_id).one_or_none()
+async def upsert_model_config(user_id: int, payload: UserModelConfigRequest, _admin: str = Depends(get_current_admin_token), db: AsyncSession = Depends(get_db)) -> dict:
+    await get_or_404(db, User, id=user_id, detail="用户不存在。")
+    config = (await db.execute(select(UserModelConfig).where(UserModelConfig.user_id == user_id))).scalar_one_or_none()
     provider_json = merge_provider_json(payload.provider_config, config)
     if config:
         apply_partial(config, payload, exclude=frozenset({"provider_config"}))
@@ -127,12 +128,12 @@ def upsert_model_config(user_id: int, payload: UserModelConfigRequest, _admin: s
         data = payload.model_dump()
         data["provider_config"] = provider_json
         db.add(UserModelConfig(user_id=user_id, **data))
-    db.commit()
+    await db.commit()
     return {"message": "模型配置已更新。"}
 
 
 @router.delete("/{user_id}/model-config")
-def delete_model_config(user_id: int, _admin: str = Depends(get_current_admin_token), db: Session = Depends(get_db)) -> dict:
-    db.delete(get_or_404(db, UserModelConfig, user_id=user_id, detail="模型配置不存在。"))
-    db.commit()
+async def delete_model_config(user_id: int, _admin: str = Depends(get_current_admin_token), db: AsyncSession = Depends(get_db)) -> dict:
+    db.delete(await get_or_404(db, UserModelConfig, user_id=user_id, detail="模型配置不存在。"))
+    await db.commit()
     return {"message": "模型配置已删除。"}

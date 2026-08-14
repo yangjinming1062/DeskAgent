@@ -2,7 +2,7 @@ from components import AGENT_MAX_LOOP_TURNS, DEFAULT_LANGUAGE, SETTINGS, get_log
 from modules.auth import ChatRequestClientContext
 from modules.conversation import Conversation, Message
 from modules.system import ChatRequest
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..gateway import RuntimeSession
 from ..llm import LLMRuntimeError, MissingLlmConfigError, ServiceType, compress_history_if_needed, execute_with_fallback, resolve_context_tokens
@@ -19,7 +19,7 @@ logger = get_logger(__name__)
 
 
 async def run_chat_turn(
-    db: Session,
+    db: AsyncSession,
     req: ChatRequest,
     llm_config: dict,
     user_settings: dict,
@@ -30,19 +30,19 @@ async def run_chat_turn(
     *,
     runtime: RuntimeSession | None = None,
 ) -> None:
-    conv = Conversation.by_session_id(db, req.session_id, user_id=user_id)
+    conv = await Conversation.by_session_id(db, req.session_id, user_id=user_id)
     if not conv:
         await emitter.send_json({"type": "error", "message": "Conversation not found"})
         return
     sid = str(conv.id)
 
-    _persist_user_message(db, conv, req)
+    await _persist_user_message(db, conv, req)
 
     # Per-session overrides merge over global UserSettings for this turn.
     # Built once and shared by both the registry gate and tool dispatch
     # so schema visibility matches runtime behavior.
     effective_settings = _merge_session_settings(user_settings, runtime)
-    inputs = _build_turn_inputs(db, conv, user_id, req, session_client_context, effective_settings)
+    inputs = await _build_turn_inputs(db, conv, user_id, req, session_client_context, effective_settings)
 
     compression_enabled = safe_json_loads(effective_settings.get("chat.enable_context_compression", ""), default=SETTINGS.enable_context_compression)
     compression_threshold = safe_json_loads(effective_settings.get("chat.context_compression_threshold", ""), default=SETTINGS.context_compression_threshold)
@@ -71,7 +71,7 @@ async def run_chat_turn(
                 subtype="compress_summary",
             )
         )
-        db.commit()
+        await db.commit()
     current_messages = truncate_chat_history(compressed_messages)
 
     guardrails = ToolCallGuardrailController()
@@ -194,4 +194,4 @@ async def run_chat_turn(
             await emitter.send_json({"type": "error", "message": f"Tool execution loop halted by guardrails: {guardrails.halt_decision.message}"})
             break
 
-    persist_tool_summary(db, conv, invoked_tool_names)
+    await persist_tool_summary(db, conv, invoked_tool_names)

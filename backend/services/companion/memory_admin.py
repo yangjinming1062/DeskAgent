@@ -3,8 +3,8 @@ from typing import Any
 
 from components import MAX_AUTO_INJECT_CONTENT_CHARS, MAX_RECALL_CONTENT_CHARS
 from modules.memory import Memory
-from sqlalchemy import or_
-from sqlalchemy.orm import Session
+from sqlalchemy import or_, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from services.tools import AUTO_INJECT_SLOTS, KIND_TO_PREFIX, RECALL_TAGS
 
@@ -15,13 +15,13 @@ _LIST_MAX_LIMIT = 500
 _OTHER_BUCKET = "other"
 
 
-def _owned(db: Session, user_id: int, memory_id: int) -> Memory | None:
-    return db.query(Memory).filter(Memory.id == memory_id, Memory.user_id == user_id).first()
+async def _owned(db: AsyncSession, user_id: int, memory_id: int) -> Memory | None:
+    return (await db.execute(select(Memory).where(Memory.id == memory_id, Memory.user_id == user_id))).scalar_one_or_none()
 
 
-def upsert_slotted_memory(db: Session, user_id: int, context: str, content: str, tags: str) -> None:
+async def upsert_slotted_memory(db: AsyncSession, user_id: int, context: str, content: str, tags: str) -> None:
     """Caller is responsible for content caps and tag formatting."""
-    existing = db.query(Memory).filter(Memory.user_id == user_id, Memory.context == context).first()
+    existing = (await db.execute(select(Memory).where(Memory.user_id == user_id, Memory.context == context))).scalar_one_or_none()
     if existing is not None:
         existing.content = content
         existing.tags = tags
@@ -41,7 +41,9 @@ def _row_to_dict(row: Memory) -> dict[str, Any]:
     }
 
 
-def list_memories(db: Session, user_id: int, *, kind: str | None = None, tag: str | None = None, q: str | None = None, limit: int = _LIST_DEFAULT_LIMIT) -> list[dict[str, Any]]:
+async def list_memories(
+    db: AsyncSession, user_id: int, *, kind: str | None = None, tag: str | None = None, q: str | None = None, limit: int = _LIST_DEFAULT_LIMIT
+) -> list[dict[str, Any]]:
     """Return the user's memories, optionally filtered.
 
     ``kind`` ∈ {recall, auto_inject, user_profile, interaction_stats};
@@ -55,27 +57,27 @@ def list_memories(db: Session, user_id: int, *, kind: str | None = None, tag: st
     if limit <= 0 or limit > _LIST_MAX_LIMIT:
         limit = _LIST_DEFAULT_LIMIT
 
-    query = db.query(Memory).filter(Memory.user_id == user_id)
+    stmt = select(Memory).where(Memory.user_id == user_id)
     if kind is not None:
-        query = query.filter(Memory.context.like(KIND_TO_PREFIX[kind] + "%"))
+        stmt = stmt.where(Memory.context.like(KIND_TO_PREFIX[kind] + "%"))
     if tag:
         # tags is JSON; substring match is good enough for the UI (each row
         # carries ≤ a handful of short tokens).
-        query = query.filter(Memory.tags.ilike(f'%"{tag}"%'))
+        stmt = stmt.where(Memory.tags.ilike(f'%"{tag}"%'))
     if q:
         like = f"%{q}%"
-        query = query.filter(or_(Memory.content.ilike(like), Memory.context.ilike(like)))
+        stmt = stmt.where(or_(Memory.content.ilike(like), Memory.context.ilike(like)))
 
-    rows = query.order_by(Memory.updated_at.desc(), Memory.id.desc()).limit(limit).all()
+    rows = (await db.execute(stmt.order_by(Memory.updated_at.desc(), Memory.id.desc()).limit(limit))).scalars().all()
     return [_row_to_dict(r) for r in rows]
 
 
-def get_memory(db: Session, user_id: int, memory_id: int) -> dict[str, Any] | None:
-    row = _owned(db, user_id, memory_id)
+async def get_memory(db: AsyncSession, user_id: int, memory_id: int) -> dict[str, Any] | None:
+    row = await _owned(db, user_id, memory_id)
     return _row_to_dict(row) if row else None
 
 
-def update_memory(db: Session, user_id: int, memory_id: int, *, content: str) -> dict[str, Any] | None:
+async def update_memory(db: AsyncSession, user_id: int, memory_id: int, *, content: str) -> dict[str, Any] | None:
     """Update ``content`` only. ``context``/tags cannot change here — that
     requires writing a new row (auto_inject slots auto-upsert by design).
 
@@ -88,28 +90,28 @@ def update_memory(db: Session, user_id: int, memory_id: int, *, content: str) ->
     content = (content or "").strip()
     if not content:
         raise ValueError("content must be non-empty")
-    row = _owned(db, user_id, memory_id)
+    row = await _owned(db, user_id, memory_id)
     if row is None:
         return None
     cap = MAX_AUTO_INJECT_CONTENT_CHARS if row.context in AUTO_INJECT_SLOTS else MAX_RECALL_CONTENT_CHARS
     if len(content) > cap:
         raise ValueError(f"content exceeds {cap} chars for {row.context or 'recall'}")
     row.content = content
-    db.commit()
-    db.refresh(row)
+    await db.commit()
+    await db.refresh(row)
     return _row_to_dict(row)
 
 
-def delete_memory(db: Session, user_id: int, memory_id: int) -> bool:
-    row = _owned(db, user_id, memory_id)
+async def delete_memory(db: AsyncSession, user_id: int, memory_id: int) -> bool:
+    row = await _owned(db, user_id, memory_id)
     if row is None:
         return False
-    db.delete(row)
-    db.commit()
+    await db.delete(row)
+    await db.commit()
     return True
 
 
-def memory_counts(db: Session, user_id: int) -> dict[str, int]:
+async def memory_counts(db: AsyncSession, user_id: int) -> dict[str, int]:
     """Bucket the user's rows by namespace prefix. Row set is bounded
     (≈5 auto_inject + ≤50 recall + ≤5 user_profile + ~1 interaction_stats
     per active day) so a Python pass is cheaper than a hand-rolled SQL
@@ -118,7 +120,7 @@ def memory_counts(db: Session, user_id: int) -> dict[str, int]:
     """
     counts: dict[str, int] = dict.fromkeys(KIND_TO_PREFIX, 0)
     counts[_OTHER_BUCKET] = 0
-    for (ctx,) in db.query(Memory.context).filter(Memory.user_id == user_id).all():
+    for (ctx,) in (await db.execute(select(Memory.context).where(Memory.user_id == user_id))).all():
         if ctx is None:
             counts[_OTHER_BUCKET] += 1
             continue

@@ -4,8 +4,8 @@ from typing import Any
 
 from components import get_logger, naive_utc_now
 from modules.memory import Memory
-from sqlalchemy import or_
-from sqlalchemy.orm import Session
+from sqlalchemy import or_, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from services.tools.memory import RESERVED_FROM_RECALL, context_not_in
 
@@ -38,23 +38,18 @@ def _compute_time_decay(updated_at: Any, now: Any) -> float:
     return TIME_DECAY_FLOOR + (1.0 - TIME_DECAY_FLOOR) * math.exp(-TIME_DECAY_LAMBDA * delta_days)
 
 
-def _dense_search(db: Session, user_id: int, query_embedding: list[float], limit: int = 30, excluded_namespaces: frozenset[str] = RESERVED_FROM_RECALL) -> list[Memory]:
+async def _dense_search(db: AsyncSession, user_id: int, query_embedding: list[float], limit: int = 30, excluded_namespaces: frozenset[str] = RESERVED_FROM_RECALL) -> list[Memory]:
     """Dense semantic retrieval via pgvector <=> operator or in-memory fallback."""
     is_postgres = db.bind is not None and db.bind.dialect.name == "postgresql"
+    stmt = select(Memory).where(Memory.user_id == user_id, Memory.embedding.isnot(None), *[context_not_in(p) for p in excluded_namespaces])
     if is_postgres:
         try:
-            return (
-                db.query(Memory)
-                .filter(Memory.user_id == user_id, Memory.embedding.isnot(None), *[context_not_in(p) for p in excluded_namespaces])
-                .order_by(Memory.embedding.cosine_distance(query_embedding))
-                .limit(limit)
-                .all()
-            )
+            return (await db.execute(stmt.order_by(Memory.embedding.cosine_distance(query_embedding)).limit(limit))).scalars().all()
         except Exception as exc:
             logger.debug("PostgreSQL pgvector distance query failed, falling back to in-memory cosine", extra={"error": str(exc)})
 
     # In-memory cosine similarity fallback (SQLite / missing extension)
-    rows = db.query(Memory).filter(Memory.user_id == user_id, Memory.embedding.isnot(None), *[context_not_in(p) for p in excluded_namespaces]).all()
+    rows = (await db.execute(stmt)).scalars().all()
     scored = []
     for r in rows:
         sim = cosine_similarity(query_embedding, r.embedding)
@@ -83,16 +78,21 @@ def _extract_search_terms(query: str) -> list[str]:
     return [t for t in terms if len(t) >= 2 or (len(t) == 1 and not t.isascii())]
 
 
-def _sparse_search(db: Session, user_id: int, keywords: list[str], limit: int = 30, excluded_namespaces: frozenset[str] = RESERVED_FROM_RECALL) -> list[Memory]:
+async def _sparse_search(db: AsyncSession, user_id: int, keywords: list[str], limit: int = 30, excluded_namespaces: frozenset[str] = RESERVED_FROM_RECALL) -> list[Memory]:
     """Sparse keyword retrieval using substring matching."""
     if not keywords:
         return []
     conditions = [c for kw in keywords for c in (Memory.content.ilike(f"%{kw}%"), Memory.context.ilike(f"%{kw}%"))]
     rows = (
-        db.query(Memory)
-        .filter(Memory.user_id == user_id, or_(*conditions), *[context_not_in(p) for p in excluded_namespaces])
-        .order_by(Memory.updated_at.desc())
-        .limit(limit * 2)
+        (
+            await db.execute(
+                select(Memory)
+                .where(Memory.user_id == user_id, or_(*conditions), *[context_not_in(p) for p in excluded_namespaces])
+                .order_by(Memory.updated_at.desc())
+                .limit(limit * 2)
+            )
+        )
+        .scalars()
         .all()
     )
     # Score by keyword coverage in content and context
@@ -107,8 +107,8 @@ def _sparse_search(db: Session, user_id: int, keywords: list[str], limit: int = 
     return [r for _, r in scored[:limit]]
 
 
-def retrieve_hybrid_memories(
-    db: Session, user_id: int, query: str, *, query_embedding: list[float] | None = None, limit: int = 10, excluded_namespaces: frozenset[str] = RESERVED_FROM_RECALL
+async def retrieve_hybrid_memories(
+    db: AsyncSession, user_id: int, query: str, *, query_embedding: list[float] | None = None, limit: int = 10, excluded_namespaces: frozenset[str] = RESERVED_FROM_RECALL
 ) -> list[dict[str, Any]]:
     """Hybrid search combining Dense (pgvector) and Sparse (keyword) with RRF and Ebbinghaus time decay."""
     q_str = (query or "").strip()
@@ -119,11 +119,11 @@ def retrieve_hybrid_memories(
 
     dense_candidates: list[Memory] = []
     if query_embedding:
-        dense_candidates = _dense_search(db, user_id, query_embedding, limit=limit * 2, excluded_namespaces=excluded_namespaces)
+        dense_candidates = await _dense_search(db, user_id, query_embedding, limit=limit * 2, excluded_namespaces=excluded_namespaces)
 
     sparse_candidates: list[Memory] = []
     if keywords:
-        sparse_candidates = _sparse_search(db, user_id, keywords, limit=limit * 2, excluded_namespaces=excluded_namespaces)
+        sparse_candidates = await _sparse_search(db, user_id, keywords, limit=limit * 2, excluded_namespaces=excluded_namespaces)
 
     if not dense_candidates and not sparse_candidates:
         return []
@@ -156,12 +156,12 @@ def retrieve_hybrid_memories(
     return results[:limit]
 
 
-def retrieve_proactive_memories(
-    db: Session, user_id: int, query: str, *, query_embedding: list[float] | None = None, limit: int = 3, min_score: float = 0.002
+async def retrieve_proactive_memories(
+    db: AsyncSession, user_id: int, query: str, *, query_embedding: list[float] | None = None, limit: int = 3, min_score: float = 0.002
 ) -> list[dict[str, Any]]:
     """Retrieve top-N relevant recall memories to proactively inject into conversation."""
     q_str = (query or "").strip()
     if not q_str or len(q_str) <= 1:
         return []
-    candidates = retrieve_hybrid_memories(db, user_id, q_str, query_embedding=query_embedding, limit=limit)
+    candidates = await retrieve_hybrid_memories(db, user_id, q_str, query_embedding=query_embedding, limit=limit)
     return [c for c in candidates if c["score"] >= min_score]

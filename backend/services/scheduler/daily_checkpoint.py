@@ -3,7 +3,8 @@ from typing import Any
 
 from components import get_logger
 from modules.conversation import Message
-from sqlalchemy.orm import Session
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from services.companion import run_prompt_json
 from services.conversation import UI_ONLY_SUBTYPES, format_messages_compact, get_main_conversation
@@ -54,7 +55,7 @@ def _gap_days(prev_date_str: str | None, today_str: str) -> int | None:
         return None
 
 
-async def run_daily_checkpoint(llm_cfg: UserLlmConfig | dict[str, Any], user_id: int, db: Session, utc_start: datetime, utc_end: datetime, local_date_str: str) -> None:
+async def run_daily_checkpoint(llm_cfg: UserLlmConfig | dict[str, Any], user_id: int, db: AsyncSession, utc_start: datetime, utc_end: datetime, local_date_str: str) -> None:
     """生成每日上下文检查点：从最近的压缩节点（``daily_summary`` 或 ``compress_summary``）
     到现在的全部内容，调一次 LLM 压成一条新的 ``daily_summary``。
 
@@ -68,30 +69,40 @@ async def run_daily_checkpoint(llm_cfg: UserLlmConfig | dict[str, Any], user_id:
 
     只追加，不删除任何已有消息。
     """
-    main_conv = get_main_conversation(db, user_id)
+    main_conv = await get_main_conversation(db, user_id)
     if main_conv is None:
         return
 
     # Today must have had at least one real interaction.
     real_turns = _summarisable_filter()
     today_msg_count = (
-        db.query(Message)
-        .filter(Message.conversation_id == main_conv.id, Message.created_at >= utc_start, Message.created_at < utc_end, Message.role.in_(("user", "assistant")), real_turns)
-        .count()
-    )
+        await db.execute(
+            select(func.count())
+            .select_from(Message)
+            .where(Message.conversation_id == main_conv.id, Message.created_at >= utc_start, Message.created_at < utc_end, Message.role.in_(("user", "assistant")), real_turns)
+        )
+    ).scalar_one()
     if today_msg_count == 0:
         return
 
     # Most recent checkpoint of ANY type (daily_summary or compress_summary) —
     # defines the read boundary. Everything before it is already summarised.
-    prev_checkpoint = db.query(Message).filter(Message.conversation_id == main_conv.id, Message.subtype.in_(tuple(_CHECKPOINT_SUBTYPES))).order_by(Message.id.desc()).first()
+    prev_checkpoint = (
+        await db.execute(select(Message).where(Message.conversation_id == main_conv.id, Message.subtype.in_(tuple(_CHECKPOINT_SUBTYPES))).order_by(Message.id.desc()).limit(1))
+    ).scalar_one_or_none()
     checkpoint_id = prev_checkpoint.id if prev_checkpoint else 0
 
     # There must be at least one real user/assistant turn AFTER the checkpoint.
     # If the checkpoint is the last thing in the conversation (no follow-up
     # interaction), there's nothing new to summarise — the checkpoint itself
     # already covers everything up to that point.
-    has_new_turns = db.query(Message).filter(Message.conversation_id == main_conv.id, Message.id > checkpoint_id, Message.role.in_(("user", "assistant")), real_turns).count()
+    has_new_turns = (
+        await db.execute(
+            select(func.count())
+            .select_from(Message)
+            .where(Message.conversation_id == main_conv.id, Message.id > checkpoint_id, Message.role.in_(("user", "assistant")), real_turns)
+        )
+    ).scalar_one()
     if not has_new_turns:
         return
 
@@ -100,7 +111,7 @@ async def run_daily_checkpoint(llm_cfg: UserLlmConfig | dict[str, Any], user_id:
     # daily_summary (fed separately via prev_summary_block below). Messages
     # before the checkpoint — already represented by the checkpoint's summary —
     # are excluded by the id >= bound.
-    rows = db.query(Message).filter(Message.conversation_id == main_conv.id, Message.id >= checkpoint_id, real_turns).order_by(Message.id.asc()).all()
+    rows = (await db.execute(select(Message).where(Message.conversation_id == main_conv.id, Message.id >= checkpoint_id, real_turns).order_by(Message.id.asc()))).scalars().all()
     if not rows:
         return
 
@@ -110,7 +121,9 @@ async def run_daily_checkpoint(llm_cfg: UserLlmConfig | dict[str, Any], user_id:
     prev_daily = (
         prev_checkpoint
         if prev_checkpoint is not None and prev_checkpoint.subtype == "daily_summary"
-        else (db.query(Message).filter(Message.conversation_id == main_conv.id, Message.subtype == "daily_summary").order_by(Message.id.desc()).first())
+        else (
+            await db.execute(select(Message).where(Message.conversation_id == main_conv.id, Message.subtype == "daily_summary").order_by(Message.id.desc()).limit(1))
+        ).scalar_one_or_none()
     )
     prev_summary_text = prev_daily.content if prev_daily else ""
     prev_date = prev_daily.summary_date if prev_daily else None
@@ -138,5 +151,5 @@ async def run_daily_checkpoint(llm_cfg: UserLlmConfig | dict[str, Any], user_id:
     db.add(
         Message(conversation_id=main_conv.id, role="system", content=f"[📝 截至 {local_date_str} 的对话摘要]\n{summary_text}", subtype="daily_summary", summary_date=local_date_str)
     )
-    db.commit()
+    await db.commit()
     logger.info("daily_checkpoint: created summary", extra={"user_id": user_id, "date": local_date_str, "rows": len(rows)})

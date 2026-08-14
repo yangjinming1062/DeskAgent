@@ -42,7 +42,7 @@ class TestProviderConfig:
 
 
 class TestResolveProviderConfig:
-    def test_image_gen_default_provider_is_minimax(self, monkeypatch):
+    async def test_image_gen_default_provider_is_minimax(self, monkeypatch):
         """Empty image_gen settings → default provider minimax, provider default URL."""
         from services.llm.providers import PROVIDER_DEFAULT_URLS
 
@@ -50,13 +50,13 @@ class TestResolveProviderConfig:
         monkeypatch.setattr("components.SETTINGS.image_gen_api_key", "")
         monkeypatch.setattr("components.SETTINGS.image_gen_provider", "")
         monkeypatch.setattr("components.SETTINGS.minimax_api_key", "sk-minimax-test")
-        cfg = resolve_provider_config(None, None, "image_gen")
+        cfg = await resolve_provider_config(None, None, "image_gen")
         assert cfg.provider_name == "minimax"
         assert cfg.base_url == PROVIDER_DEFAULT_URLS["minimax"]["image_gen"]
         assert cfg.api_key == "sk-minimax-test"
         assert cfg.service_type == ServiceType.image_gen
 
-    def test_image_gen_default_provider_used_with_custom_base_url(self, monkeypatch):
+    async def test_image_gen_default_provider_used_with_custom_base_url(self, monkeypatch):
         """Custom ``image_gen_base_url`` is honored verbatim; the provider
         name comes from ``SERVICE_DEFAULT_PROVIDER['image_gen']`` (minimax),
         not from host inference. To pin a different provider with a custom
@@ -66,22 +66,22 @@ class TestResolveProviderConfig:
         )
         monkeypatch.setattr("components.SETTINGS.image_gen_api_key", "sk-minimax")
         monkeypatch.setattr("components.SETTINGS.image_gen_provider", "")
-        cfg = resolve_provider_config(None, None, "image_gen")
+        cfg = await resolve_provider_config(None, None, "image_gen")
         assert cfg.base_url == "https://api.minimaxi.com"
         assert cfg.provider_name == "minimax"
 
-    def test_minimax_default_provider_with_trailing_v1(self, monkeypatch):
+    async def test_minimax_default_provider_with_trailing_v1(self, monkeypatch):
         monkeypatch.setattr(
             "components.SETTINGS.image_gen_base_url", "https://api.minimaxi.com/v1"
         )
         monkeypatch.setattr("components.SETTINGS.image_gen_api_key", "sk-minimax")
         monkeypatch.setattr("components.SETTINGS.image_gen_model_name", "image-01")
         monkeypatch.setattr("components.SETTINGS.image_gen_provider", "")
-        cfg = resolve_provider_config(None, None, "image_gen")
+        cfg = await resolve_provider_config(None, None, "image_gen")
         assert cfg.provider_name == "minimax"
         assert cfg.base_url == "https://api.minimaxi.com/v1"
 
-    def test_minimax_uses_minimax_key_not_llm_key(self, monkeypatch):
+    async def test_minimax_uses_minimax_key_not_llm_key(self, monkeypatch):
         """minimax provider must use MINIMAX_API_KEY, never the MiMo LLM_API_KEY."""
         monkeypatch.setattr(
             "components.SETTINGS.llm_base_url", "https://api.xiaomimimo.com/v1"
@@ -93,7 +93,7 @@ class TestResolveProviderConfig:
         monkeypatch.setattr(
             "components.SETTINGS.minimax_api_key", "sk-minimax-dedicated"
         )
-        cfg = resolve_provider_config(None, None, "image_gen")
+        cfg = await resolve_provider_config(None, None, "image_gen")
         assert cfg.provider_name == "minimax"
         assert cfg.api_key == "sk-minimax-dedicated", "must not inherit MiMo key"
 
@@ -114,7 +114,7 @@ class TestResolveProviderConfig:
         # unreachable through this entry point. See ISSUES.md 类别 8.
         pytest.skip("outdated: image_gen default is now minimax with default base_url")
 
-    def test_explicit_provider_overrides_host_inference(self, monkeypatch):
+    async def test_explicit_provider_overrides_host_inference(self, monkeypatch):
         monkeypatch.setattr(
             "components.SETTINGS.image_gen_base_url", "https://api.minimaxi.com/v1"
         )
@@ -127,14 +127,14 @@ class TestResolveProviderConfig:
             "components.SETTINGS.llm_base_url", "https://api.openai.com/v1"
         )
         monkeypatch.setattr("components.SETTINGS.llm_api_key", "sk")
-        cfg = resolve_provider_config(None, None, "image_gen")
+        cfg = await resolve_provider_config(None, None, "image_gen")
         assert cfg.provider_name == "mimo"
 
-    def test_unknown_provider_raises(self, monkeypatch):
+    async def test_unknown_provider_raises(self, monkeypatch):
         monkeypatch.setattr("components.SETTINGS.image_gen_provider", "bogus")
         monkeypatch.setattr("components.SETTINGS.image_gen_api_key", "sk")
         with pytest.raises(MissingLlmConfigError):
-            resolve_provider_config(None, None, "image_gen")
+            await resolve_provider_config(None, None, "image_gen")
 
 
 class TestProviderForService:
@@ -146,7 +146,7 @@ class TestProviderForService:
         # contract in a deterministic way — see ISSUES.md 类别 8.
         pytest.skip("outdated: covered by TestRegistry deterministic tests")
 
-    def test_image_gen_returns_mimo_image_provider(self, monkeypatch):
+    async def test_image_gen_returns_mimo_image_provider(self, monkeypatch):
         # Commit 3 sets image_gen defaults to MiniMax. Override them here so
         # we exercise the "user opts into legacy DALL·E" path.
         monkeypatch.setattr("components.SETTINGS.image_gen_base_url", "")
@@ -158,7 +158,7 @@ class TestProviderForService:
         )
         monkeypatch.setattr("components.SETTINGS.llm_api_key", "sk")
         monkeypatch.setattr("components.SETTINGS.llm_model_name", "gpt-4o")
-        provider = provider_for_service(None, None, "image_gen")
+        provider = await provider_for_service(None, None, "image_gen")
         assert isinstance(provider, MiMoImageGenProvider)
         assert provider.service_type == ServiceType.image_gen
 
@@ -439,7 +439,7 @@ class TestProviderChain:
         for field, default in self._EMPTY_DEFAULTS.items():
             monkeypatch.setattr(f"components.SETTINGS.{field}", default)
 
-    def test_chain_orders_by_providers_env(self, monkeypatch):
+    async def test_chain_orders_by_providers_env(self, monkeypatch):
         from services.llm import resolve_provider_chain
 
         self._reset_settings(monkeypatch)
@@ -447,10 +447,10 @@ class TestProviderChain:
         monkeypatch.setattr("components.SETTINGS.minimax_api_key", "sk-mm")
         monkeypatch.setattr("components.SETTINGS.mimo_api_key", "sk-mimo")
 
-        chain = resolve_provider_chain(None, None, "llm")
+        chain = await resolve_provider_chain(None, None, "llm")
         assert [c.provider_name for c in chain] == ["minimax", "mimo"]
 
-    def test_chain_skips_unsupported_providers(self, monkeypatch):
+    async def test_chain_skips_unsupported_providers(self, monkeypatch):
         """video_gen only registers minimax; mimo is dropped even when listed."""
         from services.llm import resolve_provider_chain
 
@@ -458,10 +458,10 @@ class TestProviderChain:
         monkeypatch.setattr("components.SETTINGS.providers", ["mimo", "minimax"])
         monkeypatch.setattr("components.SETTINGS.minimax_api_key", "sk-mm")
 
-        chain = resolve_provider_chain(None, None, "video_gen")
+        chain = await resolve_provider_chain(None, None, "video_gen")
         assert [c.provider_name for c in chain] == ["minimax"]
 
-    def test_soft_reorder_moves_pinned_provider_first(self, monkeypatch):
+    async def test_soft_reorder_moves_pinned_provider_first(self, monkeypatch):
         """`*_PROVIDER` pin moves the named provider to the front of the chain
         but other PROVIDERS entries stay as fallback candidates."""
         from services.llm import resolve_provider_chain
@@ -478,10 +478,10 @@ class TestProviderChain:
             "components.SETTINGS.llm_base_url", "https://api.openai.com/v1"
         )
 
-        chain = resolve_provider_chain(None, None, "image_gen")
+        chain = await resolve_provider_chain(None, None, "image_gen")
         assert [c.provider_name for c in chain] == ["minimax", "mimo"]
 
-    def test_chain_skips_slot_without_api_key(self, monkeypatch):
+    async def test_chain_skips_slot_without_api_key(self, monkeypatch):
         from services.llm import resolve_provider_chain
 
         self._reset_settings(monkeypatch)
@@ -489,10 +489,10 @@ class TestProviderChain:
         monkeypatch.setattr("components.SETTINGS.mimo_api_key", "sk-mimo")
         # No minimax_api_key → minimax slot has no key, gets dropped.
 
-        chain = resolve_provider_chain(None, None, "llm")
+        chain = await resolve_provider_chain(None, None, "llm")
         assert [c.provider_name for c in chain] == ["mimo"]
 
-    def test_empty_chain_raises(self, monkeypatch):
+    async def test_empty_chain_raises(self, monkeypatch):
         """`resolve_provider_chain` returns an empty list when no provider in
         the chain has both a key and a base_url. `resolve_provider_config`
         (the single-config back-compat wrapper) raises MissingLlmConfigError."""
@@ -501,12 +501,12 @@ class TestProviderChain:
         self._reset_settings(monkeypatch)
         monkeypatch.setattr("components.SETTINGS.providers", [])
         # No api keys anywhere → chain empty.
-        chain = resolve_provider_chain(None, None, "image_gen")
+        chain = await resolve_provider_chain(None, None, "image_gen")
         assert chain == []
         with pytest.raises(MissingLlmConfigError):
-            resolve_provider_config(None, None, "image_gen")
+            await resolve_provider_config(None, None, "image_gen")
 
-    def test_chain_falls_back_to_service_default(self, monkeypatch):
+    async def test_chain_falls_back_to_service_default(self, monkeypatch):
         """When PROVIDERS is unset and no per-cap pin, the chain collapses to
         `SERVICE_DEFAULT_PROVIDER[service]`."""
         from services.llm import resolve_provider_chain
@@ -514,7 +514,7 @@ class TestProviderChain:
         self._reset_settings(monkeypatch)
         monkeypatch.setattr("components.SETTINGS.minimax_api_key", "sk-mm")
 
-        chain = resolve_provider_chain(None, None, "image_gen")
+        chain = await resolve_provider_chain(None, None, "image_gen")
         assert [c.provider_name for c in chain] == ["minimax"]
 
 
@@ -2034,7 +2034,7 @@ class TestPerUserProviderChain:
         for field, default in self._EMPTY.items():
             monkeypatch.setattr(f"components.SETTINGS.{field}", default)
 
-    def _seed(self, SessionLocal, provider_config):
+    async def _seed(self, SessionLocal, provider_config):
         from modules.auth import (
             User,
             UserModelConfig,
@@ -2042,7 +2042,7 @@ class TestPerUserProviderChain:
             hash_activation_token
         )
 
-        with SessionLocal() as db:
+        async with SessionLocal() as db:
             user = User(
                 username="u",
                 password_hash=None,
@@ -2053,17 +2053,17 @@ class TestPerUserProviderChain:
                 can_use=True
             )
             db.add(user)
-            db.commit()
-            db.refresh(user)
+            await db.commit()
+            await db.refresh(user)
             db.add(
                 UserModelConfig(
                     user_id=user.id, provider_config=json.dumps(provider_config)
                 )
             )
-            db.commit()
+            await db.commit()
             return user.id
 
-    def test_user_provider_prepended_and_deduped(self, _patch_db, monkeypatch):
+    async def test_user_provider_prepended_and_deduped(self, _patch_db, monkeypatch):
         from services.llm import resolve_provider_chain
 
         self._reset(monkeypatch)
@@ -2073,7 +2073,7 @@ class TestPerUserProviderChain:
         monkeypatch.setattr("components.SETTINGS.minimax_api_key", "sk-global-mm")
 
         _, SessionLocal = _patch_db
-        user_id = self._seed(
+        user_id = await self._seed(
             SessionLocal,
             [
                 {
@@ -2083,14 +2083,14 @@ class TestPerUserProviderChain:
                 }
             ]
         )
-        with SessionLocal() as db:
-            chain = resolve_provider_chain(db, user_id, "llm")
+        async with SessionLocal() as db:
+            chain = await resolve_provider_chain(db, user_id, "llm")
         # User minimax (tier 1) first; global mimo next; global minimax deduped away.
         assert [c.provider_name for c in chain] == ["minimax", "mimo"]
         assert chain[0].api_key == "sk-user-mm"
         assert chain[0].base_url == "https://user-mm.example/v1"
 
-    def test_user_provider_slot_skipped_without_key(self, _patch_db, monkeypatch):
+    async def test_user_provider_slot_skipped_without_key(self, _patch_db, monkeypatch):
         from services.llm import resolve_provider_chain
 
         self._reset(monkeypatch)
@@ -2099,14 +2099,14 @@ class TestPerUserProviderChain:
 
         _, SessionLocal = _patch_db
         # mimo slot lacks an api_key → dropped; falls through to global minimax.
-        user_id = self._seed(
+        user_id = await self._seed(
             SessionLocal, [{"name": "mimo", "api_key": "", "base_url": "https://x/v1"}]
         )
-        with SessionLocal() as db:
-            chain = resolve_provider_chain(db, user_id, "llm")
+        async with SessionLocal() as db:
+            chain = await resolve_provider_chain(db, user_id, "llm")
         assert [c.provider_name for c in chain] == ["minimax"]
 
-    def test_no_user_context_unchanged(self, monkeypatch):
+    async def test_no_user_context_unchanged(self, monkeypatch):
         """db=None/user_id=None must behave exactly as before (no tier 1)."""
         from services.llm import resolve_provider_chain
 
@@ -2114,10 +2114,10 @@ class TestPerUserProviderChain:
         monkeypatch.setattr("components.SETTINGS.providers", ["mimo", "minimax"])
         monkeypatch.setattr("components.SETTINGS.mimo_api_key", "sk-mimo")
         monkeypatch.setattr("components.SETTINGS.minimax_api_key", "sk-mm")
-        chain = resolve_provider_chain(None, None, "llm")
+        chain = await resolve_provider_chain(None, None, "llm")
         assert [c.provider_name for c in chain] == ["mimo", "minimax"]
 
-    def test_user_capability_provider_pin(self, _patch_db, monkeypatch):
+    async def test_user_capability_provider_pin(self, _patch_db, monkeypatch):
         from modules.auth import (
             User,
             UserModelConfig,
@@ -2130,7 +2130,7 @@ class TestPerUserProviderChain:
         monkeypatch.setattr("components.SETTINGS.providers", ["minimax", "mimo"])
 
         _, SessionLocal = _patch_db
-        with SessionLocal() as db:
+        async with SessionLocal() as db:
             user = User(
                 username="u_pin",
                 password_hash=None,
@@ -2141,8 +2141,8 @@ class TestPerUserProviderChain:
                 can_use=True
             )
             db.add(user)
-            db.commit()
-            db.refresh(user)
+            await db.commit()
+            await db.refresh(user)
             db.add(
                 UserModelConfig(
                     user_id=user.id,
@@ -2163,8 +2163,8 @@ class TestPerUserProviderChain:
                     )
                 )
             )
-            db.commit()
-            chain = resolve_provider_chain(db, user.id, "tts")
+            await db.commit()
+            chain = await resolve_provider_chain(db, user.id, "tts")
         # tts_provider is pinned to mimo, so mimo is moved to the front for tts
         assert [c.provider_name for c in chain] == ["mimo", "minimax"]
 
@@ -2178,7 +2178,7 @@ class TestResolveUserLlmConfigCredentials:
         for field, default in self._EMPTY.items():
             monkeypatch.setattr(f"components.SETTINGS.{field}", default)
 
-    def test_tier1_provider_config_drives_credentials(self, _patch_db, monkeypatch):
+    async def test_tier1_provider_config_drives_credentials(self, _patch_db, monkeypatch):
         from services.llm import resolve_user_llm_config
 
         self._reset(monkeypatch)
@@ -2188,7 +2188,7 @@ class TestResolveUserLlmConfigCredentials:
         # User has tier 1 only — no per-cap llm_* row, so the chain slot's
         # default model (``default_model_for("minimax", "llm")``) wins.
         _, SessionLocal = _patch_db
-        with SessionLocal() as db:
+        async with SessionLocal() as db:
             from modules.auth import (
                 User,
                 UserModelConfig,
@@ -2206,8 +2206,8 @@ class TestResolveUserLlmConfigCredentials:
                 can_use=True
             )
             db.add(user)
-            db.commit()
-            db.refresh(user)
+            await db.commit()
+            await db.refresh(user)
             db.add(
                 UserModelConfig(
                     user_id=user.id,
@@ -2222,21 +2222,21 @@ class TestResolveUserLlmConfigCredentials:
                     )
                 )
             )
-            db.commit()
-            cfg = resolve_user_llm_config(db, user.id)
+            await db.commit()
+            cfg = await resolve_user_llm_config(db, user.id)
 
         assert cfg["provider_name"] == "minimax"
         assert cfg["api_key"] == "sk-user-mm"
         assert cfg["base_url"] == "https://user-mm.example/v1"
         assert cfg["model_name"] == "MiniMax-Text-01"
 
-    def test_empty_chain_returns_empty_credentials(self, monkeypatch):
+    async def test_empty_chain_returns_empty_credentials(self, monkeypatch):
         # Empty chain → all-empty dict so schedulers' falsy skip fires.
         from services.llm import resolve_user_llm_config
 
         self._reset(monkeypatch)
         monkeypatch.setattr("components.SETTINGS.providers", [])
-        cfg = resolve_user_llm_config(None, None)
+        cfg = await resolve_user_llm_config(None, None)
         assert cfg == {
             "api_key": "",
             "base_url": "",

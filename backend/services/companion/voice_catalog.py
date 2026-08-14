@@ -1,4 +1,4 @@
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from services.llm import ServiceType, VoiceDesignResult, VoiceEntry, resolve, resolve_provider_chain, try_resolve, voices_for_provider
 
@@ -25,8 +25,8 @@ def normalize_voice_language(value: object) -> str | None:
     return value if isinstance(value, str) and value in SUPPORTED_VOICE_LANGUAGES else None
 
 
-def active_tts_provider(db: Session, user_id: int) -> str:
-    chain = resolve_provider_chain(db, user_id, "tts")
+async def active_tts_provider(db: AsyncSession, user_id: int) -> str:
+    chain = await resolve_provider_chain(db, user_id, "tts")
     return chain[0].provider_name if chain else ""
 
 
@@ -34,14 +34,14 @@ def _sort_voices_by_language(voices: list[VoiceEntry]) -> list[VoiceEntry]:
     return sorted(voices, key=lambda v: _LANGUAGE_BUCKET.get(v.language or "", 4))
 
 
-def list_tts_voices(db: Session, user_id: int, language: str | None = None) -> dict:
+async def list_tts_voices(db: AsyncSession, user_id: int, language: str | None = None) -> dict:
     """Return voice catalog, optionally filtered by ``language`` (zh/en/multi/'').
 
     Filtering applies AFTER the language-aware sort so a zh-only view still
     leads with the curated zh ordering. ``default_voice`` falls back to the
     unfiltered DEFAULT_VOICE stub when the filter empties the catalog.
     """
-    provider = active_tts_provider(db, user_id)
+    provider = await active_tts_provider(db, user_id)
     cls = try_resolve(ServiceType.tts, provider) if provider else None
     guide = cls.VOICE_DESIGN_GUIDE if cls else None
     voices = _sort_voices_by_language(voices_for_provider(provider))
@@ -101,15 +101,15 @@ def match_voice(preference: str, voices: list[VoiceEntry]) -> tuple[VoiceEntry, 
     return best, alternatives
 
 
-def match_user_voice(db: Session, user_id: int, preference: str) -> dict:
-    provider = active_tts_provider(db, user_id)
+async def match_user_voice(db: AsyncSession, user_id: int, preference: str) -> dict:
+    provider = await active_tts_provider(db, user_id)
     voices = voices_for_provider(provider)
     best, alternatives = match_voice(preference or "", voices)
     return {"provider": provider, "voice": best.model_dump(), "alternatives": [v.model_dump() for v in alternatives]}
 
 
-async def design_voice(db: Session, user_id: int, prompt: str, *, preview_text: str = "") -> VoiceDesignResult:
-    chain = resolve_provider_chain(db, user_id, "tts")
+async def design_voice(db: AsyncSession, user_id: int, prompt: str, *, preview_text: str = "") -> VoiceDesignResult:
+    chain = await resolve_provider_chain(db, user_id, "tts")
     if not chain:
         raise ValueError("no TTS provider configured")
     config = chain[0]

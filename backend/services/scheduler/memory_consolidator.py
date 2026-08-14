@@ -38,7 +38,7 @@ omit it — but only when omitting is clearly safe. When uncertain, keep the fac
 """.format(window=MEMORY_CONSOLIDATE_WINDOW_ROWS, target=MEMORY_CONSOLIDATE_TARGET_ROWS, tags=", ".join(sorted(RECALL_TAGS)))
 
 
-def replace_recall_pool(user_id: int, source_rows: list[dict], summaries: list[dict]) -> int:
+async def replace_recall_pool(user_id: int, source_rows: list[dict], summaries: list[dict]) -> int:
     """Delete the source recall rows and write the consolidated summaries.
 
     Returns the number of rows written, or **-1** if the operation was
@@ -47,9 +47,9 @@ def replace_recall_pool(user_id: int, source_rows: list[dict], summaries: list[d
     by an all-empty LLM payload.  Shared by the daytime threshold
     consolidator and the nightly pipeline's Stage 2.
     """
-    with session_scope() as db:
+    async with session_scope() as db:
         source_ids = [r["id"] for r in source_rows]
-        db.execute(delete(Memory).where(Memory.id.in_(source_ids), Memory.user_id == user_id))
+        await db.execute(delete(Memory).where(Memory.id.in_(source_ids), Memory.user_id == user_id))
         written = 0
         for s in summaries:
             if not isinstance(s, dict):
@@ -72,9 +72,9 @@ def replace_recall_pool(user_id: int, source_rows: list[dict], summaries: list[d
         # back — an LLM that returned an all-empty (or whitespace-only)
         # payload would otherwise delete the user's recall pool.
         if written == 0:
-            db.rollback()
+            await db.rollback()
             return -1
-        db.commit()
+        await db.commit()
     return written
 
 
@@ -84,11 +84,11 @@ async def maybe_consolidate_one_user(user_id: int) -> bool:
     Returns True if consolidation ran, False otherwise. Per-user throttle is
     the caller's responsibility (cron tick tracks ``_LAST_MEMORY_CONSOLIDATE``).
     """
-    with session_scope() as db:
-        recent_rows = memory_admin.list_memories(db, user_id, kind="recall", limit=MEMORY_CONSOLIDATE_WINDOW_ROWS)
+    async with session_scope() as db:
+        recent_rows = await memory_admin.list_memories(db, user_id, kind="recall", limit=MEMORY_CONSOLIDATE_WINDOW_ROWS)
         if len(recent_rows) < MEMORY_CONSOLIDATE_TRIGGER_ROWS:
             return False
-        llm_cfg = resolve_user_llm_config(db, user_id)
+        llm_cfg = await resolve_user_llm_config(db, user_id)
         if not (llm_cfg.get("api_key") and llm_cfg.get("base_url") and llm_cfg.get("model_name")):
             logger.info("memory_consolidator: skipped, missing llm config", extra={"user_id": user_id})
             return False
@@ -106,7 +106,7 @@ async def maybe_consolidate_one_user(user_id: int) -> bool:
         return False
     summaries = parsed["summaries"][:MEMORY_CONSOLIDATE_TARGET_ROWS]
 
-    written = replace_recall_pool(user_id, rows_payload, summaries)
+    written = await replace_recall_pool(user_id, rows_payload, summaries)
     if written < 0:
         logger.warning("memory_consolidator: all summaries empty, source rows kept", extra={"user_id": user_id, "summary_count": len(summaries)})
         return False

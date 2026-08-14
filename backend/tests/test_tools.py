@@ -54,7 +54,7 @@ class TestTTSTool:
 
 @pytest.mark.e2e
 class TestSTTTool:
-    def test_stt_basic(self, test_client, test_token):
+    async def test_stt_basic(self, test_client, test_token):
         # Generate 2 seconds of silence WAV
         sample_rate = 8000
         num_samples = sample_rate * 2
@@ -164,21 +164,21 @@ class TestReferenceImageChain:
 
         return SimpleNamespace(provider_name=name)
 
-    def test_chain_filters_to_reference_capable(self, monkeypatch):
+    async def test_chain_filters_to_reference_capable(self, monkeypatch):
         import importlib
 
         tool_mod = importlib.import_module(
             "services.tools.builtin.image_generation_tool"
         )
-        monkeypatch.setattr(
-            tool_mod,
-            "resolve_provider_chain",
-            lambda db, uid, svc: [
+
+        async def _chain(db, uid, svc):
+            return [
                 self._cfg("minimax"),
                 self._cfg("zhipu"),
                 self._cfg("gemini"),
-            ],
-        )
+            ]
+
+        monkeypatch.setattr(tool_mod, "resolve_provider_chain", _chain)
         capable = {"minimax": True, "zhipu": False, "gemini": True}
         monkeypatch.setattr(
             tool_mod,
@@ -188,48 +188,50 @@ class TestReferenceImageChain:
             )(),
         )
 
-        chain, err = tool_mod._image_gen_chain(None, None, "https://ref/seed.png")
+        chain, err = await tool_mod._image_gen_chain(None, None, "https://ref/seed.png")
         assert err is None
         assert [c.provider_name for c in chain] == ["minimax", "gemini"]
 
-    def test_chain_returns_error_when_none_capable(self, monkeypatch):
+    async def test_chain_returns_error_when_none_capable(self, monkeypatch):
         import importlib
 
         tool_mod = importlib.import_module(
             "services.tools.builtin.image_generation_tool"
         )
-        monkeypatch.setattr(
-            tool_mod,
-            "resolve_provider_chain",
-            lambda db, uid, svc: [self._cfg("zhipu")],
-        )
+
+        async def _chain(db, uid, svc):
+            return [self._cfg("zhipu")]
+
+        monkeypatch.setattr(tool_mod, "resolve_provider_chain", _chain)
         monkeypatch.setattr(
             tool_mod,
             "resolve",
             lambda svc, name: type("P", (), {"supports_reference_image": False})(),
         )
 
-        chain, err = tool_mod._image_gen_chain(None, None, "https://ref/seed.png")
+        chain, err = await tool_mod._image_gen_chain(None, None, "https://ref/seed.png")
         assert chain == []
         assert err is not None
         assert "以图生图" in err
 
-    def test_chain_unfiltered_without_reference(self, monkeypatch):
+    async def test_chain_unfiltered_without_reference(self, monkeypatch):
         import importlib
 
         tool_mod = importlib.import_module(
             "services.tools.builtin.image_generation_tool"
         )
         full = [self._cfg("zhipu"), self._cfg("minimax")]
-        monkeypatch.setattr(
-            tool_mod, "resolve_provider_chain", lambda db, uid, svc: list(full)
-        )
 
-        chain, err = tool_mod._image_gen_chain(None, None, None)
+        async def _chain(db, uid, svc):
+            return list(full)
+
+        monkeypatch.setattr(tool_mod, "resolve_provider_chain", _chain)
+
+        chain, err = await tool_mod._image_gen_chain(None, None, None)
         assert err is None
         assert [c.provider_name for c in chain] == ["zhipu", "minimax"]
 
-    def test_chain_no_error_when_image_gen_unconfigured(self, monkeypatch):
+    async def test_chain_no_error_when_image_gen_unconfigured(self, monkeypatch):
         """An empty full chain (image_gen not configured at all) is NOT the
         reference-specific error — it falls through to execute_with_fallback's
         MissingLlmConfigError → '图片生成服务未配置'."""
@@ -238,9 +240,13 @@ class TestReferenceImageChain:
         tool_mod = importlib.import_module(
             "services.tools.builtin.image_generation_tool"
         )
-        monkeypatch.setattr(tool_mod, "resolve_provider_chain", lambda db, uid, svc: [])
 
-        chain, err = tool_mod._image_gen_chain(None, None, "https://ref/seed.png")
+        async def _chain(db, uid, svc):
+            return []
+
+        monkeypatch.setattr(tool_mod, "resolve_provider_chain", _chain)
+
+        chain, err = await tool_mod._image_gen_chain(None, None, "https://ref/seed.png")
         assert chain == []
         assert err is None
 
@@ -268,11 +274,10 @@ class TestReferenceImageChain:
         async def _fake_execute(db, user_id, service_type, call_fn, **kwargs):
             return await call_fn(_NativeProvider())
 
-        monkeypatch.setattr(
-            tool_mod,
-            "_image_gen_chain",
-            lambda *a, **kw: ([self._cfg("minimax")], None),
-        )
+        async def _fake_chain(*a, **kw):
+            return ([self._cfg("minimax")], None)
+
+        monkeypatch.setattr(tool_mod, "_image_gen_chain", _fake_chain)
         monkeypatch.setattr(tool_mod, "execute_with_fallback", _fake_execute)
 
         result = await tool_mod.image_generation_tool(
@@ -310,9 +315,10 @@ class TestReferenceImageChain:
         async def _fake_execute(db, user_id, service_type, call_fn, **kwargs):
             return await call_fn(_TextOnlyProvider())
 
-        monkeypatch.setattr(
-            tool_mod, "_image_gen_chain", lambda *a, **kw: ([self._cfg("zhipu")], None)
-        )
+        async def _fake_chain(*a, **kw):
+            return ([self._cfg("zhipu")], None)
+
+        monkeypatch.setattr(tool_mod, "_image_gen_chain", _fake_chain)
         monkeypatch.setattr(tool_mod, "execute_with_fallback", _fake_execute)
 
         result = await tool_mod.image_generation_tool(
@@ -330,11 +336,10 @@ class TestReferenceImageChain:
         tool_mod = importlib.import_module(
             "services.tools.builtin.image_generation_tool"
         )
-        monkeypatch.setattr(
-            tool_mod,
-            "_image_gen_chain",
-            lambda *a, **kw: ([], "当前图片生成供应商均不支持以图生图"),
-        )
+        async def _fake_chain(*a, **kw):
+            return ([], "当前图片生成供应商均不支持以图生图")
+
+        monkeypatch.setattr(tool_mod, "_image_gen_chain", _fake_chain)
 
         result = await tool_mod.image_generation_tool(
             prompt="portrait",

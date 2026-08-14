@@ -2,6 +2,8 @@ from dataclasses import dataclass, field
 
 from components import SESSION_LOCAL, get_logger, naive_utc_now
 from modules.memory import Memory
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = get_logger(__name__)
 
@@ -68,43 +70,43 @@ def _format_content(counters: _DailyCounters) -> str:
     return f"{counters.date}: poke={counters.poke}, drag={counters.drag}, chat_turns={counters.chat_turn}; peak={peak_str}; hour_counts={sorted_buckets}"
 
 
-def _stats_memory_for(db, user_id: int, date_str: str) -> Memory | None:
+async def _stats_memory_for(db: AsyncSession, user_id: int, date_str: str) -> Memory | None:
     # ``first()`` not ``one_or_none()``: production Postgres has a PARTIAL
     # unique index only on ``user_profile:*`` contexts (see main.py:99).
     # ``interaction_stats:*`` rows have no uniqueness constraint, so a
     # read-then-write race would otherwise raise MultipleResultsFound.
-    return db.query(Memory).filter(Memory.user_id == user_id, Memory.context == f"interaction_stats:{date_str}").first()
+    return (await db.execute(select(Memory).where(Memory.user_id == user_id, Memory.context == f"interaction_stats:{date_str}"))).scalars().first()
 
 
-def _upsert_memory(user_id: int, counters: _DailyCounters) -> None:
+async def _upsert_memory(user_id: int, counters: _DailyCounters) -> None:
     content = _format_content(counters)
     tags_json = '["interaction","stats","daily_summary"]'
 
-    with SESSION_LOCAL() as db:
-        existing = _stats_memory_for(db, user_id, counters.date)
+    async with SESSION_LOCAL() as db:
+        existing = await _stats_memory_for(db, user_id, counters.date)
         if existing is not None:
             existing.content = content
             existing.tags = tags_json
         else:
             db.add(Memory(user_id=user_id, content=content, context=f"interaction_stats:{counters.date}", tags=tags_json))
-        db.commit()
+        await db.commit()
     logger.info(
         "interaction_stats: daily summary written", extra={"user_id": user_id, "date": counters.date, "poke": counters.poke, "drag": counters.drag, "chat_turn": counters.chat_turn}
     )
 
 
-def read_today_summary(user_id: int, date_str: str | None = None) -> dict | None:
+async def read_today_summary(user_id: int, date_str: str | None = None) -> dict | None:
     """Read the interaction_stats memory row for ``date_str`` (UTC today if omitted)."""
     if date_str is None:
         date_str = _today_key()
-    with SESSION_LOCAL() as db:
-        mem = _stats_memory_for(db, user_id, date_str)
+    async with SESSION_LOCAL() as db:
+        mem = await _stats_memory_for(db, user_id, date_str)
         if mem is None:
             return None
         return {"context": mem.context, "content": mem.content, "date": date_str}
 
 
-def record_interaction(user_id: int, kind: str, hour: int) -> dict:
+async def record_interaction(user_id: int, kind: str, hour: int) -> dict:
     """Increment the day's counter for ``kind`` and possibly upsert Memory.
 
     Returns ``{recorded, threshold_met, peak_hour}``. ``threshold_met``
@@ -129,6 +131,6 @@ def record_interaction(user_id: int, kind: str, hour: int) -> dict:
     threshold_met = counters.poke >= STATS_THRESHOLD or counters.drag >= STATS_THRESHOLD or counters.chat_turn >= STATS_THRESHOLD
 
     if threshold_met:
-        _upsert_memory(user_id, counters)
+        await _upsert_memory(user_id, counters)
 
     return {"recorded": kind, "threshold_met": threshold_met, "peak_hour": _compute_peak_hour(counters.hour_buckets)}

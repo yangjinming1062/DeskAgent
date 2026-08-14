@@ -7,8 +7,8 @@ from modules.companion import Persona
 from modules.conversation import Conversation, Message
 from modules.settings import UserSetting
 from modules.system import AgentPromptConfig, ChatRequest
-from sqlalchemy import func
-from sqlalchemy.orm import Session
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..companion import (
     build_system_prompt_extras,
@@ -47,8 +47,8 @@ class _TurnInputs:
     allowed_emotions: frozenset[str] = BUILTIN_EMOTIONS
 
 
-def load_user_settings(db: Session, user_id: int) -> dict[str, str]:
-    rows = db.query(UserSetting).filter(UserSetting.user_id == user_id).all()
+async def load_user_settings(db: AsyncSession, user_id: int) -> dict[str, str]:
+    rows = (await db.execute(select(UserSetting).where(UserSetting.user_id == user_id))).scalars().all()
     return {s.setting_key: s.setting_value for s in rows}
 
 
@@ -116,8 +116,8 @@ def _history_to_messages(db_msgs: list[Message], system_prompt: str, *, drop_too
     return messages
 
 
-def _build_turn_inputs(
-    db: Session, conv: Conversation, user_id: int, req: ChatRequest, session_client_context: ChatRequestClientContext | None, user_settings: dict
+async def _build_turn_inputs(
+    db: AsyncSession, conv: Conversation, user_id: int, req: ChatRequest, session_client_context: ChatRequestClientContext | None, user_settings: dict
 ) -> _TurnInputs:
     """Resolve identity prompt, schemas, agent_config, history, and the
     LLM client. The native_memory's addition is injected into the system
@@ -126,12 +126,12 @@ def _build_turn_inputs(
     # LLM context starts at the newest checkpoint — either a nightly daily_summary
     # or an in-flight compress_summary. Everything before it is covered by the
     # summary; the rows stay in the DB, this only narrows the read.
-    checkpoint_id = db.query(func.max(Message.id)).filter(Message.conversation_id == conv.id, Message.subtype.in_(("daily_summary", "compress_summary"))).scalar()
+    checkpoint_id = (await db.execute(select(func.max(Message.id)).where(Message.conversation_id == conv.id, Message.subtype.in_(("daily_summary", "compress_summary"))))).scalar()
 
-    query = db.query(Message).filter(Message.conversation_id == conv.id)
+    stmt = select(Message).where(Message.conversation_id == conv.id)
     if checkpoint_id:
-        query = query.filter(Message.id >= checkpoint_id)
-    history = query.order_by(Message.id.asc()).all()
+        stmt = stmt.where(Message.id >= checkpoint_id)
+    history = (await db.execute(stmt.order_by(Message.id.asc()))).scalars().all()
     first_user_msg = next((m for m in history if m.role == "user"), None)
     first_user_msg_content = first_user_msg.content if first_user_msg else None
 
@@ -143,12 +143,12 @@ def _build_turn_inputs(
     llm_chain = None
     provider = None
     if turn_has_images:
-        vision_chain = resolve_vision_chain(db, user_id)
+        vision_chain = await resolve_vision_chain(db, user_id)
         if vision_chain:
             llm_chain = vision_chain
             provider = provider_from_config(vision_chain[0])
     if provider is None:
-        provider = provider_for_service(db, user_id, "llm")
+        provider = await provider_for_service(db, user_id, "llm")
     client = provider.raw_client()
     if client is None:
         raise MissingLlmConfigError(f"llm provider '{provider.provider_name}' is not OpenAI-compatible")
@@ -162,20 +162,20 @@ def _build_turn_inputs(
             logger.warning("request model override without context_tokens", extra={"provider": provider.provider_name, "request_model": req.model})
         ctx_length = resolve_context_tokens(provider.provider_name, ServiceType.llm)
 
-    identity_prompt = db.query(UserSetting.setting_value).filter(UserSetting.user_id == user_id, UserSetting.setting_key == "identity_prompt").scalar()
+    identity_prompt = (await db.execute(select(UserSetting.setting_value).where(UserSetting.user_id == user_id, UserSetting.setting_key == "identity_prompt"))).scalar()
 
     all_schemas = REGISTRY.get_all_schemas(user_id, user_settings=user_settings)
-    persona = db.query(Persona).filter(Persona.user_id == user_id).one_or_none()
+    persona = (await db.execute(select(Persona).where(Persona.user_id == user_id))).scalar_one_or_none()
     # Pre-onboarding users have no user_profile rows — skip the SELECT.
-    user_profile_extras = build_user_profile_extras(db, user_id) if persona is not None and persona.is_complete else ""
+    user_profile_extras = await build_user_profile_extras(db, user_id) if persona is not None and persona.is_complete else ""
     # auto_inject memories are independent of persona completion: even an
     # unstated persona can carry LLM-maintained background context.
-    auto_inject_extras = format_auto_inject_block(db, user_id)
-    inferred_profile_extras = format_inferred_profile_block(db, user_id)
+    auto_inject_extras = await format_auto_inject_block(db, user_id)
+    inferred_profile_extras = await format_inferred_profile_block(db, user_id)
     query_text = (req.message.content if req.message.role == "user" else (first_user_msg_content or "")) or ""
-    proactive_rows = retrieve_proactive_memories(db, user_id, query_text, limit=3) if query_text else []
+    proactive_rows = await retrieve_proactive_memories(db, user_id, query_text, limit=3) if query_text else []
     proactive_memory_extras = format_proactive_memory_block(proactive_rows)
-    custom_expressions = resolve_custom_expressions(db, user_id) if persona is not None else []
+    custom_expressions = await resolve_custom_expressions(db, user_id) if persona is not None else []
     agent_config = AgentPromptConfig(
         valid_tool_names=[schema_name(s) for s in all_schemas],
         model=model_name,
@@ -197,7 +197,7 @@ def _build_turn_inputs(
     if addition := native_memory.format_for_system_prompt():
         messages[0]["content"] += "\n\n" + addition
 
-    allowed_emotions = resolve_allowed_emotions(db, user_id) if persona is not None else BUILTIN_EMOTIONS
+    allowed_emotions = await resolve_allowed_emotions(db, user_id) if persona is not None else BUILTIN_EMOTIONS
     return _TurnInputs(
         messages=messages,
         client=client,

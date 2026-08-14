@@ -1,11 +1,12 @@
 import jwt
 from components import SESSION_LOCAL, get_logger
 from modules.auth import User, decode_access_token
+from sqlalchemy import select
 
 logger = get_logger(__name__)
 
 
-def authenticate_ws_token(token: str | None) -> tuple[User | None, dict | None]:
+async def authenticate_ws_token(token: str | None) -> tuple[User | None, dict | None]:
     """Return (user, payload) on success or (None, None) on any failure mode."""
     if not isinstance(token, str) or not token:
         return None, None
@@ -24,7 +25,7 @@ def authenticate_ws_token(token: str | None) -> tuple[User | None, dict | None]:
         return None, None
 
     # WS tickets aren't tracked in LoginRecord; revocation flows through session deactivation.
-    with SESSION_LOCAL() as db:
-        user = db.query(User).filter(User.id == int(user_id), User.is_active.is_(True)).one_or_none()
+    async with SESSION_LOCAL() as db:
+        user = (await db.execute(select(User).where(User.id == int(user_id), User.is_active.is_(True)))).scalar_one_or_none()
 
     return (user, payload) if user else (None, None)

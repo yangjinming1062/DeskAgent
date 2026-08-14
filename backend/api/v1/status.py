@@ -7,19 +7,20 @@ from modules.auth import LoginRecord, User, get_current_session
 from modules.conversation import Conversation
 from modules.system import StatusResponse
 from services.gateway import MANAGER
-from sqlalchemy.orm import Session
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 router = get_router()
 
 
 @router.get("", response_model=StatusResponse)
-def status(current: tuple[User, LoginRecord] = Depends(get_current_session), db: Session = Depends(get_db)) -> StatusResponse:
+async def status(current: tuple[User, LoginRecord] = Depends(get_current_session), db: AsyncSession = Depends(get_db)) -> StatusResponse:
     user, _login_record = current
 
-    login_count = db.query(LoginRecord).filter(LoginRecord.user_id == user.id, LoginRecord.is_active.is_(True)).count()
+    login_count = (await db.execute(select(func.count()).select_from(LoginRecord).where(LoginRecord.user_id == user.id, LoginRecord.is_active.is_(True)))).scalar_one()
 
     window_start = naive_utc_now() - timedelta(minutes=SETTINGS.chat_active_window_minutes)
-    chat_count = db.query(Conversation).filter(Conversation.user_id == user.id, Conversation.updated_at >= window_start).count()
+    chat_count = (await db.execute(select(func.count()).select_from(Conversation).where(Conversation.user_id == user.id, Conversation.updated_at >= window_start))).scalar_one()
 
     connection_state = "connected" if MANAGER.active_connections.get(user.id) is not None else "disconnected"
 

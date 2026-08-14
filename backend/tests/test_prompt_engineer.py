@@ -234,7 +234,7 @@ def test_build_non_biped_fullbody_skips_clothing_clause():
 
 @pytest.mark.asyncio
 async def test_chat_rejects_empty_response(monkeypatch):
-    def _provider(_db, _uid, _svc):
+    async def _provider(_db, _uid, _svc):
         return SimpleNamespace(
             provider_name="test",
             config=SimpleNamespace(model="m"),

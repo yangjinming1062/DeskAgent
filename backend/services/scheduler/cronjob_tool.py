@@ -22,25 +22,25 @@ def _build_updates(prompt: str | None, name: str | None, schedule: str | None) -
     return updates
 
 
-def _handle_cron_action(action: str, user_id: int, job_id_raw: int | str | None, prompt: str | None, schedule: str | None, name: str | None, deliver: str) -> str:
+async def _handle_cron_action(action: str, user_id: int, job_id_raw: int | str | None, prompt: str | None, schedule: str | None, name: str | None, deliver: str) -> str:
     match action:
         case "create":
             if not schedule or not prompt:
                 return tool_error("schedule and prompt are required for create")
             try:
-                job = create_job(user_id=user_id, prompt=prompt, schedule=schedule, name=name or "cron job", deliver=deliver)
+                job = await create_job(user_id=user_id, prompt=prompt, schedule=schedule, name=name or "cron job", deliver=deliver)
             except ValueError as e:
                 return tool_error(str(e))
             return json.dumps({"success": True, "message": f"Cron job '{job.get('name')}' created.", "job": job}, ensure_ascii=False)
         case "list":
-            jobs = list_jobs(user_id=user_id)
+            jobs = await list_jobs(user_id=user_id)
             return json.dumps({"success": True, "jobs": jobs}, ensure_ascii=False)
         case "update":
             job_id = coerce_int(job_id_raw, None)
             if job_id is None:
                 return tool_error("job_id is required for update")
             updates = _build_updates(prompt, name, schedule)
-            job = update_job(user_id=user_id, job_id=job_id, updates=updates)
+            job = await update_job(user_id=user_id, job_id=job_id, updates=updates)
             if not job:
                 return tool_error(f"Cron job #{job_id_raw} not found.")
             return json.dumps({"success": True, "message": f"Cron job #{job['id']} updated.", "job": job}, ensure_ascii=False)
@@ -48,7 +48,7 @@ def _handle_cron_action(action: str, user_id: int, job_id_raw: int | str | None,
             job_id = coerce_int(job_id_raw, None)
             if job_id is None:
                 return tool_error("job_id is required for remove")
-            ok = remove_job(user_id=user_id, job_id=job_id)
+            ok = await remove_job(user_id=user_id, job_id=job_id)
             if not ok:
                 return tool_error(f"Cron job #{job_id_raw} not found.")
             return json.dumps({"success": True, "message": f"Cron job #{job_id_raw} removed."}, ensure_ascii=False)
@@ -56,7 +56,7 @@ def _handle_cron_action(action: str, user_id: int, job_id_raw: int | str | None,
             job_id = coerce_int(job_id_raw, None)
             if job_id is None:
                 return tool_error("job_id is required for pause")
-            job = pause_job(user_id=user_id, job_id=job_id)
+            job = await pause_job(user_id=user_id, job_id=job_id)
             if not job:
                 return tool_error(f"Cron job #{job_id_raw} not found.")
             return json.dumps({"success": True, "message": f"Cron job #{job['id']} paused.", "job": job}, ensure_ascii=False)
@@ -64,7 +64,7 @@ def _handle_cron_action(action: str, user_id: int, job_id_raw: int | str | None,
             job_id = coerce_int(job_id_raw, None)
             if job_id is None:
                 return tool_error("job_id is required for resume")
-            job = resume_job(user_id=user_id, job_id=job_id)
+            job = await resume_job(user_id=user_id, job_id=job_id)
             if not job:
                 return tool_error(f"Cron job #{job_id_raw} not found.")
             return json.dumps({"success": True, "message": f"Cron job #{job['id']} resumed.", "job": job}, ensure_ascii=False)
@@ -72,7 +72,7 @@ def _handle_cron_action(action: str, user_id: int, job_id_raw: int | str | None,
             job_id = coerce_int(job_id_raw, None)
             if job_id is None:
                 return tool_error("job_id is required for get")
-            job = get_job(user_id=user_id, job_id=job_id)
+            job = await get_job(user_id=user_id, job_id=job_id)
             if not job:
                 return tool_error(f"Cron job #{job_id_raw} not found")
             return json.dumps({"success": True, "job": job}, ensure_ascii=False)
@@ -80,12 +80,12 @@ def _handle_cron_action(action: str, user_id: int, job_id_raw: int | str | None,
             return tool_error(f"Unknown cronjob action: {action!r}. Allowed: create, list, update, remove, pause, resume, get.")
 
 
-def cronjob(
+async def cronjob(
     action: str, user_id: int, job_id: int | None = None, prompt: str | None = None, schedule: str | None = None, name: str | None = None, deliver: str = "local", **_
 ) -> str:
     normalized = (action or "").strip().lower()
     try:
-        return _handle_cron_action(normalized, user_id, job_id, prompt, schedule, name, deliver)
+        return await _handle_cron_action(normalized, user_id, job_id, prompt, schedule, name, deliver)
     except Exception as e:
         logger.exception("cronjob tool error")
         return tool_error(str(e))

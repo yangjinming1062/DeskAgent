@@ -71,6 +71,7 @@ backend/
   - **艾宾浩斯时间衰减与重要性加权**：基于记忆距今时间 $\Delta t$ 实施指数衰减 $0.3 + 0.7 \times e^{-0.05 \Delta t}$（保底 0.3 防关键记忆归零），并与记忆重要度系数 $Importance \in [0.1, 5.0]$ 乘积得到最终排序得分。
   - **前置主动召回注入**：在主对话 turn 开始前自动根据当前输入匹配 Top-3 高相关 recall 记忆注入 System Prompt，免去 LLM 轮轮主动调用 `memory_recall` 的认知开销。
 - **Alembic 版本化迁移 + 启动自动 upgrade**：schema 由 `alembic/versions/` 版本化；lifespan 内 `asyncio.to_thread(_run_migrations)` 自动 `upgrade head`，无独立部署步骤。**为什么启动时跑**：单实例部署且无 CI/CD，应用启动是最不易漏的迁移时机。**存量库零接触**：检测到业务表但无 `alembic_version` 时先 stamp 到 baseline（0001）再 upgrade——规范化迁移（0002）全部幂等，对已匹配的库是 no-op。**autogenerate 两个坑**：(a) `modules.media.models`（video_gen_jobs）不被 `modules/__init__` 导入，`alembic/env.py` 的显式 import 勿删；(b) partial unique / hnsw / gin trgm 索引只存在于迁移文件（声明进模型会让 SQLite `create_all` 丢失 `WHERE` 语义变成全量唯一索引），env.py 的 `include_object` 因此跳过"仅存在于数据库"的索引——代价是从模型删除 Index 时 autogenerate 不会生成对应 `drop_index`，需手写。
+- **全异步数据访问层（SQLAlchemy 2.0 async + asyncpg 单一连接池）**：所有 session 经 `components/database.py` 的 `create_async_engine`（asyncpg 驱动，20+10 连接）与 `AsyncSession`；路由、WS handler、调度协程内的 DB 读写不再阻塞事件循环。**为什么单池**：此前同步 psycopg 池与 asyncpg LISTEN 池并存（峰值 40 连接且职责重叠），合并后 30+1。**LISTEN 专线**：`ws_event_loop` 持一条进程生命周期专用的 asyncpg 直连（LISTEN 独占连接，连接池语义无用），断线 5s 自动重连，非 PG 后端传 None 走 60s 轮询回退。**AsyncSession 纪律**：关系属性访问必须显式 `selectinload`/`joinedload`（懒加载在 async 下直接抛 `MissingGreenlet`）；`db.add`/`db.delete`/`db.expire_all` 是同步方法不可 await。
 
 ## 5. 与外部的契约
 
@@ -101,6 +102,8 @@ backend/
 | 限制 | 说明 |
 |------|------|
 | **单实例部署** | `disturbance_tier` 与 IPC future 锁在 process-local 内存；in-memory rate limit（slowapi）；lifespan 自动迁移无并发锁，多实例需改为部署步骤 + 迁移锁；架构不支持多实例水平扩展 |
+| **session 跨 LLM await 占用连接** | 核心对话回合（`run_chat_turn` 调用链：gateway handler / cron kick / agent delegate）与 companion 后台任务在整条 LLM 流式回合期间持有同一 `AsyncSession`（合法、不阻塞事件循环，但占用池内连接数秒至数十秒）；高并发长回合可能逼近 20+10 池上限。短事务化改造为后续优化项。 |
+| **AsyncSession 关系懒加载不可用** | 关系属性在查询后访问必须显式 `selectinload`/`joinedload` 预加载，否则运行时抛 `MissingGreenlet`；新增跨表访问时需同步补加载选项。 |
 | **MiniMax 视频 URL 短时效** | video_gen v2（H3）`poll` 直接返回 `download_url`，v1（Hailuo）还有 `files/retrieve` 第二跳；两者 URL 都是短时效的，必须**立即下载落 `data_dir/temp-media`**，不能直接返给前端 |
 | **MiniMax 内容风控 1027 不重试** | `base_resp.status_code=1027` 映射到 `content_policy_blocked` 且 `retryable=False`，避免重试三次白烧配额 |
 | **流式 chat 一旦首 chunk 已发不再 fallback** | 用户已看到部分输出，切换 provider 会造成 transcript 截断；失败统一 raise，由 HTTP envelope 走 `{error, reason, status}` |

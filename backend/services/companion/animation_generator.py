@@ -2,7 +2,7 @@ import math
 from typing import Any
 
 from components import get_logger, safe_json_loads
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from ._validators import clamp_value, parse_tags
 from .personality_tagger import ChatFn
@@ -271,7 +271,7 @@ async def generate_animation_clips(
     categories: list[str] | None = None,
     *,
     user_id: int | None = None,
-    db: Session | None = None,
+    db: AsyncSession | None = None,
 ) -> list[dict]:
     if not personality_tags:
         return []

@@ -5,7 +5,8 @@ from dataclasses import replace
 from components import SETTINGS, get_logger
 from modules.auth import UserModelConfig
 from openai import AsyncOpenAI
-from sqlalchemy.orm import Session
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from .providers import (
     KNOWN_PROVIDERS,
@@ -45,7 +46,7 @@ class MissingLlmConfigError(Exception):
     """
 
 
-def resolve_service_row(db: Session | None, user_id: int | None, prefix: str, *, user_cfg: UserModelConfig | None = None) -> tuple[str, str, str]:
+async def resolve_service_row(db: AsyncSession | None, user_id: int | None, prefix: str, *, user_cfg: UserModelConfig | None = None) -> tuple[str, str, str]:
     """Return ``(base_url, api_key, model_name)`` for a service prefix.
 
     DB row wins when present (an explicit user-cleared empty field is
@@ -57,7 +58,7 @@ def resolve_service_row(db: Session | None, user_id: int | None, prefix: str, *,
     """
     config = user_cfg
     if config is None and db is not None and user_id is not None:
-        config = db.query(UserModelConfig).filter(UserModelConfig.user_id == user_id).first()
+        config = (await db.execute(select(UserModelConfig).where(UserModelConfig.user_id == user_id))).scalar_one_or_none()
     return tuple(getattr(config or SETTINGS, f"{prefix}_{suffix}", "") or "" for suffix in ("base_url", "api_key", "model_name"))
 
 
@@ -140,10 +141,10 @@ def _build_chain_order(service_type: str, user_cfg: UserModelConfig | None = Non
     return [name for name in base_order if name in supporting]
 
 
-def _load_user_config(db: Session | None, user_id: int | None) -> UserModelConfig | None:
+async def _load_user_config(db: AsyncSession | None, user_id: int | None) -> UserModelConfig | None:
     if db is None or user_id is None:
         return None
-    return db.query(UserModelConfig).filter(UserModelConfig.user_id == user_id).first()
+    return (await db.execute(select(UserModelConfig).where(UserModelConfig.user_id == user_id))).scalar_one_or_none()
 
 
 def _user_provider_slots(user_cfg: UserModelConfig, service_type: str) -> list[ProviderConfig]:
@@ -175,7 +176,7 @@ def _user_provider_slots(user_cfg: UserModelConfig, service_type: str) -> list[P
     return slots
 
 
-def resolve_provider_chain(db: Session | None, user_id: int | None, service_type: str, *, user_cfg: UserModelConfig | None = None) -> list[ProviderConfig]:
+async def resolve_provider_chain(db: AsyncSession | None, user_id: int | None, service_type: str, *, user_cfg: UserModelConfig | None = None) -> list[ProviderConfig]:
     """Resolve the ordered fallback chain for ``service_type``.
 
     Resolution tiers (first provider with both a key and a base_url wins):
@@ -192,10 +193,10 @@ def resolve_provider_chain(db: Session | None, user_id: int | None, service_type
     through to avoid a duplicate ``UserModelConfig`` query.
     """
     if user_cfg is None:
-        user_cfg = _load_user_config(db, user_id)
+        user_cfg = await _load_user_config(db, user_id)
     # ``resolve_service_row`` hits the DB; the row is per-user-per-service
     # and identical across chain slots, so hoist once.
-    row = resolve_service_row(db, user_id, service_type, user_cfg=user_cfg)
+    row = await resolve_service_row(db, user_id, service_type, user_cfg=user_cfg)
     chain: list[ProviderConfig | None] = []
     if user_cfg is not None:
         chain.extend(_user_provider_slots(user_cfg, service_type))
@@ -210,7 +211,7 @@ def resolve_provider_chain(db: Session | None, user_id: int | None, service_type
     return result
 
 
-def resolve_provider_config(db: Session | None, user_id: int | None, service_type: str) -> ProviderConfig:
+async def resolve_provider_config(db: AsyncSession | None, user_id: int | None, service_type: str) -> ProviderConfig:
     """Resolve the active provider config for a service (single, back-compat).
 
     Thin wrapper over :func:`resolve_provider_chain` that returns the first
@@ -219,18 +220,18 @@ def resolve_provider_config(db: Session | None, user_id: int | None, service_typ
     :class:`MissingLlmConfigError` when no provider in the chain has both a
     key and a base_url.
     """
-    chain = resolve_provider_chain(db, user_id, service_type)
+    chain = await resolve_provider_chain(db, user_id, service_type)
     if not chain:
         raise MissingLlmConfigError(f"no provider configured for service {service_type!r}")
     return chain[0]
 
 
-def resolve_vision_chain(db: Session | None, user_id: int | None, *, service_type: str = "llm") -> list[ProviderConfig]:
+async def resolve_vision_chain(db: AsyncSession | None, user_id: int | None, *, service_type: str = "llm") -> list[ProviderConfig]:
     """Vision-capable providers in the ``service_type`` chain, each with its
     vision model substituted. Empty when none support vision."""
     return [
         replace(cfg, model=default_vision_model_for(cfg.provider_name) or cfg.model)
-        for cfg in resolve_provider_chain(db, user_id, service_type)
+        for cfg in await resolve_provider_chain(db, user_id, service_type)
         if supports_vision(cfg.provider_name)
     ]
 
@@ -241,23 +242,23 @@ def provider_from_config(config: ProviderConfig) -> BaseProvider:
     return cls(config)
 
 
-def provider_for_service(db: Session | None, user_id: int | None, service_type: str) -> BaseProvider:
+async def provider_for_service(db: AsyncSession | None, user_id: int | None, service_type: str) -> BaseProvider:
     """Resolve config → instantiate provider. Returns chain[0]; for multi-provider fallback see ``execute_with_fallback``."""
-    return provider_from_config(resolve_provider_config(db, user_id, service_type))
+    return provider_from_config(await resolve_provider_config(db, user_id, service_type))
 
 
-async def generate_embedding(text: str, user_id: int | None = None, db: Session | None = None, timeout_seconds: float = 2.0) -> list[float] | None:
+async def generate_embedding(text: str, user_id: int | None = None, db: AsyncSession | None = None, timeout_seconds: float = 2.0) -> list[float] | None:
     """Generate embedding vector for a single text. Returns None if unconfigured or failed."""
     if not text or not text.strip():
         return None
     try:
         try:
-            chain = resolve_provider_chain(db, user_id, "embedding")
+            chain = await resolve_provider_chain(db, user_id, "embedding")
         except Exception:
             chain = []
         if not chain:
             try:
-                llm_cfg = resolve_provider_config(db, user_id, "llm")
+                llm_cfg = await resolve_provider_config(db, user_id, "llm")
                 chain = [
                     ProviderConfig(
                         base_url=llm_cfg.base_url, api_key=llm_cfg.api_key, model="text-embedding-3-small", service_type=ServiceType.embedding, provider_name=llm_cfg.provider_name
@@ -274,18 +275,18 @@ async def generate_embedding(text: str, user_id: int | None = None, db: Session 
         return None
 
 
-async def generate_embeddings(texts: list[str], user_id: int | None = None, db: Session | None = None, timeout_seconds: float = 5.0) -> list[list[float]] | None:
+async def generate_embeddings(texts: list[str], user_id: int | None = None, db: AsyncSession | None = None, timeout_seconds: float = 5.0) -> list[list[float]] | None:
     """Generate embedding vectors for multiple texts."""
     if not texts:
         return []
     try:
         try:
-            chain = resolve_provider_chain(db, user_id, "embedding")
+            chain = await resolve_provider_chain(db, user_id, "embedding")
         except Exception:
             chain = []
         if not chain:
             try:
-                llm_cfg = resolve_provider_config(db, user_id, "llm")
+                llm_cfg = await resolve_provider_config(db, user_id, "llm")
                 chain = [
                     ProviderConfig(
                         base_url=llm_cfg.base_url, api_key=llm_cfg.api_key, model="text-embedding-3-small", service_type=ServiceType.embedding, provider_name=llm_cfg.provider_name

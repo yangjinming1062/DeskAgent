@@ -16,8 +16,8 @@ class _MockResponse:
         self.choices = [_MockChoice(content)]
 
 
-def _seed_persona(SessionLocal, user_id: int, *, complete: bool = True):
-    with SessionLocal() as db:
+async def _seed_persona(SessionLocal, user_id: int, *, complete: bool = True):
+    async with SessionLocal() as db:
         db.add(
             Persona(
                 user_id=user_id,
@@ -30,7 +30,7 @@ def _seed_persona(SessionLocal, user_id: int, *, complete: bool = True):
                 is_complete=complete
             )
         )
-        db.commit()
+        await db.commit()
 
 
 @pytest.mark.asyncio
@@ -59,7 +59,7 @@ async def test_check_affect_persona_not_ready_short_circuits(monkeypatch, _patch
 async def test_check_affect_should_express_true_emits(monkeypatch, _patch_db):
     _, SessionLocal = _patch_db
     aff = importlib.import_module("services.companion.affect_check")
-    _seed_persona(SessionLocal, 2001)
+    await _seed_persona(SessionLocal, 2001)
 
     monkeypatch.setattr("services.companion.prompt_runtime.client_for_config", lambda cfg: None)
 
@@ -72,7 +72,7 @@ async def test_check_affect_should_express_true_emits(monkeypatch, _patch_db):
 
     emitted: list[tuple[int, str]] = []
 
-    def _capture_emit(user_id: int, emotion: str) -> None:
+    async def _capture_emit(user_id: int, emotion: str) -> None:
         emitted.append((user_id, emotion))
 
     monkeypatch.setattr(aff, "emit_companion_affect", _capture_emit)
@@ -95,7 +95,7 @@ async def test_check_affect_should_express_false_returns_no_emit(
 ):
     _, SessionLocal = _patch_db
     aff = importlib.import_module("services.companion.affect_check")
-    _seed_persona(SessionLocal, 2002)
+    await _seed_persona(SessionLocal, 2002)
 
     async def _ok(*a, **kw):
         return _MockResponse(
@@ -107,7 +107,7 @@ async def test_check_affect_should_express_false_returns_no_emit(
 
     emitted: list[tuple[int, str]] = []
 
-    def _fail_emit(*a, **kw):
+    async def _fail_emit(*a, **kw):
         emitted.append((a[0], a[1]))
         raise AssertionError("should not emit when should_express=false")
 
@@ -128,7 +128,7 @@ async def test_check_affect_unknown_emotion_skips_emit(monkeypatch, _patch_db):
     for the renderer."""
     _, SessionLocal = _patch_db
     aff = importlib.import_module("services.companion.affect_check")
-    _seed_persona(SessionLocal, 2003)
+    await _seed_persona(SessionLocal, 2003)
 
     async def _ok(*a, **kw):
         return _MockResponse(
@@ -140,7 +140,10 @@ async def test_check_affect_unknown_emotion_skips_emit(monkeypatch, _patch_db):
 
     emitted: list = []
 
-    monkeypatch.setattr(aff, "emit_companion_affect", lambda *a: emitted.append(a))
+    async def _capture_emit(*a):
+        emitted.append(a)
+
+    monkeypatch.setattr(aff, "emit_companion_affect", _capture_emit)
 
     result = await aff.check_affect(
         user_id=2003,
@@ -157,14 +160,18 @@ async def test_check_affect_unknown_emotion_skips_emit(monkeypatch, _patch_db):
 async def test_check_affect_unparseable_response(monkeypatch, _patch_db):
     _, SessionLocal = _patch_db
     aff = importlib.import_module("services.companion.affect_check")
-    _seed_persona(SessionLocal, 2004)
+    await _seed_persona(SessionLocal, 2004)
 
     async def _ok(*a, **kw):
         return _MockResponse("not json at all, just prose")
 
     monkeypatch.setattr("services.companion.prompt_runtime.call_with_retry", _ok)
     monkeypatch.setattr("services.companion.prompt_runtime.client_for_config", lambda cfg: None)
-    monkeypatch.setattr(aff, "emit_companion_affect", lambda *a: None)
+
+    async def _no_emit(*a):
+        return None
+
+    monkeypatch.setattr(aff, "emit_companion_affect", _no_emit)
 
     result = await aff.check_affect(
         user_id=2004, idle_seconds=600, local_hour=14, llm_config={"model_name": "test"}
@@ -178,7 +185,7 @@ async def test_check_affect_unparseable_response(monkeypatch, _patch_db):
 async def test_check_affect_llm_error_returns_no_throw(monkeypatch, _patch_db):
     _, SessionLocal = _patch_db
     aff = importlib.import_module("services.companion.affect_check")
-    _seed_persona(SessionLocal, 2005)
+    await _seed_persona(SessionLocal, 2005)
 
     from services.llm import ClassifiedError, FailoverReason, LLMRuntimeError
 
@@ -189,9 +196,12 @@ async def test_check_affect_llm_error_returns_no_throw(monkeypatch, _patch_db):
             )
         )
 
+    async def _no_emit(*a):
+        return None
+
     monkeypatch.setattr("services.companion.prompt_runtime.call_with_retry", _fail)
     monkeypatch.setattr("services.companion.prompt_runtime.client_for_config", lambda cfg: None)
-    monkeypatch.setattr(aff, "emit_companion_affect", lambda *a: None)
+    monkeypatch.setattr(aff, "emit_companion_affect", _no_emit)
 
     result = await aff.check_affect(
         user_id=2005, idle_seconds=600, local_hour=14, llm_config={"model_name": "test"}
@@ -206,7 +216,7 @@ async def test_check_affect_invalid_config_returns_no_throw(monkeypatch, _patch_
     """No ``model_name`` → silently return; never raise across the WS boundary."""
     _, SessionLocal = _patch_db
     aff = importlib.import_module("services.companion.affect_check")
-    _seed_persona(SessionLocal, 2006)
+    await _seed_persona(SessionLocal, 2006)
 
     called = {"n": 0}
 
@@ -228,9 +238,9 @@ async def test_check_affect_invalid_config_returns_no_throw(monkeypatch, _patch_
 async def test_check_affect_custom_expression_accepted(monkeypatch, _patch_db):
     _, SessionLocal = _patch_db
     aff = importlib.import_module("services.companion.affect_check")
-    _seed_persona(SessionLocal, 2007)
+    await _seed_persona(SessionLocal, 2007)
 
-    with SessionLocal() as db:
+    async with SessionLocal() as db:
         from modules.companion import CompanionExpression
         db.add(CompanionExpression(
             user_id=2007,
@@ -242,7 +252,7 @@ async def test_check_affect_custom_expression_accepted(monkeypatch, _patch_db):
             tags_json='["心疼"]',
             scale_boost=1.1,
         ))
-        db.commit()
+        await db.commit()
 
     async def _ok(*a, **kw):
         return _MockResponse(
@@ -253,7 +263,11 @@ async def test_check_affect_custom_expression_accepted(monkeypatch, _patch_db):
     monkeypatch.setattr("services.companion.prompt_runtime.client_for_config", lambda cfg: None)
 
     emitted: list = []
-    monkeypatch.setattr(aff, "emit_companion_affect", lambda *a: emitted.append(a))
+
+    async def _capture_emit(*a):
+        emitted.append(a)
+
+    monkeypatch.setattr(aff, "emit_companion_affect", _capture_emit)
 
     result = await aff.check_affect(
         user_id=2007,

@@ -2,7 +2,7 @@ import base64
 import json
 
 from components import SESSION_LOCAL, get_logger, safe_json_loads, save_file, tool_error
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from services.llm import ImageGenRequest, MissingLlmConfigError, ProviderConfig, ServiceType, execute_with_fallback, resolve, resolve_provider_chain
 from services.tools import ALWAYS_AVAILABLE, REGISTRY
@@ -10,8 +10,8 @@ from services.tools import ALWAYS_AVAILABLE, REGISTRY
 logger = get_logger(__name__)
 
 
-def _image_gen_chain(
-    db: Session | None, user_id: int | None, reference_image: str | None, secondary_reference_image: str | None = None, *, preferred_provider: str | list[str] | None = None
+async def _image_gen_chain(
+    db: AsyncSession | None, user_id: int | None, reference_image: str | None, secondary_reference_image: str | None = None, *, preferred_provider: str | list[str] | None = None
 ) -> tuple[list[ProviderConfig], str | None]:
     """Filter the image_gen chain to reference-capable providers when
     ``reference_image`` is given. Returns ``(chain, error)``: error is set
@@ -28,7 +28,7 @@ def _image_gen_chain(
     original chain order. Used by full-body generation to prefer Gemini → Grok
     → MiniMax while other image-gen calls use the normal provider chain.
     """
-    full = resolve_provider_chain(db, user_id, "image_gen")
+    full = await resolve_provider_chain(db, user_id, "image_gen")
     if preferred_provider:
         priority = [preferred_provider] if isinstance(preferred_provider, str) else list(preferred_provider)
         rank = {name: i for i, name in enumerate(priority)}
@@ -75,10 +75,10 @@ async def image_generation_tool(
     req = ImageGenRequest(prompt=prompt, size=size, n=n, reference_image=reference_image, secondary_reference_image=secondary_reference_image)
     try:
         if user_id is not None:
-            with SESSION_LOCAL() as db:
-                chain, err = _image_gen_chain(db, user_id, reference_image, secondary_reference_image, preferred_provider=preferred_provider)
+            async with SESSION_LOCAL() as db:
+                chain, err = await _image_gen_chain(db, user_id, reference_image, secondary_reference_image, preferred_provider=preferred_provider)
         else:
-            chain, err = _image_gen_chain(None, None, reference_image, secondary_reference_image, preferred_provider=preferred_provider)
+            chain, err = await _image_gen_chain(None, None, reference_image, secondary_reference_image, preferred_provider=preferred_provider)
         if err:
             return tool_error(err)
         result = await execute_with_fallback(None, user_id, "image_gen", call_fn=lambda p: p.generate(req), _chain=chain)

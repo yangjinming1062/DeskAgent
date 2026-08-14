@@ -4,7 +4,7 @@ from components import SESSION_LOCAL
 from modules.ws import WSEvent
 
 
-def emit_companion_affect(user_id: int, emotion: str) -> None:
+async def emit_companion_affect(user_id: int, emotion: str) -> None:
     """Push an affect-only cue (no message text, no TTS) to the user's desktop.
 
     Called by ``affect_check.check_affect`` when an idle-triggered LLM
@@ -14,6 +14,6 @@ def emit_companion_affect(user_id: int, emotion: str) -> None:
     ``companion.affect`` event type distinguishes "pure emotion" from
     ``companion.message``.
     """
-    with SESSION_LOCAL() as db:
+    async with SESSION_LOCAL() as db:
         db.add(WSEvent(user_id=user_id, event_type="companion.affect", payload=json.dumps({"emotion": emotion}, ensure_ascii=False)))
-        db.commit()
+        await db.commit()

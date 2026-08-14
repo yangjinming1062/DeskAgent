@@ -28,8 +28,9 @@ from components import (
 from modules.companion import CompanionExpression, Persona, WardrobeItem
 from modules.conversation import Conversation, Message
 from modules.memory import Memory
+from sqlalchemy import func, select
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from services.companion import memory_admin
 from services.companion.animation_generator import generate_animation_clips, get_rig_bones
@@ -210,9 +211,9 @@ def _preprocess_conversation_for_nightly(messages: list[Message]) -> list[dict[s
     return clean
 
 
-def resolve_user_timezone(db: Session, user_id: int) -> str | None:
+async def resolve_user_timezone(db: AsyncSession, user_id: int) -> str | None:
     """Read-only lookup for the user's onboarding timezone string."""
-    val = db.query(Memory.content).filter(Memory.user_id == user_id, Memory.context == "user_profile:timezone").scalar()
+    val = (await db.execute(select(Memory.content).where(Memory.user_id == user_id, Memory.context == "user_profile:timezone"))).scalar()
     return (val or "").strip() or None
 
 
@@ -283,7 +284,7 @@ async def _stage_1_daily_reflection(
 
     updated_inferred = dict(inferred_profile)
     updated_auto_inject = dict(auto_inject)
-    with session_scope() as db:
+    async with session_scope() as db:
         if isinstance(inferred_updates, list):
             for item in inferred_updates:
                 if not isinstance(item, dict):
@@ -293,7 +294,7 @@ async def _stage_1_daily_reflection(
                 if slot not in INFERRED_PROFILE_SLOTS or not content:
                     continue
                 content_truncated = content[:MAX_INFERRED_PROFILE_CONTENT_CHARS]
-                upsert_slotted_memory(db, user_id, slot, content_truncated, json.dumps(["inferred_profile"]))
+                await upsert_slotted_memory(db, user_id, slot, content_truncated, json.dumps(["inferred_profile"]))
                 updated_inferred[slot] = content_truncated
 
         if isinstance(auto_inject_updates, list):
@@ -305,9 +306,9 @@ async def _stage_1_daily_reflection(
                 if slot not in AUTO_INJECT_SLOTS or not content:
                     continue
                 content_truncated = content[:MAX_AUTO_INJECT_CONTENT_CHARS]
-                upsert_slotted_memory(db, user_id, slot, content_truncated, json.dumps(["auto_inject"]))
+                await upsert_slotted_memory(db, user_id, slot, content_truncated, json.dumps(["auto_inject"]))
                 updated_auto_inject[slot] = content_truncated
-        db.commit()
+        await db.commit()
 
     logger.info("nightly_activity: stage 1 completed", extra={"user_id": user_id})
     return updated_inferred, updated_auto_inject
@@ -327,7 +328,7 @@ async def _stage_2_memory_consolidation(llm_cfg: dict[str, Any], user_id: int, r
         return False
 
     summaries = parsed["summaries"]
-    written = replace_recall_pool(user_id, recall_rows, summaries)
+    written = await replace_recall_pool(user_id, recall_rows, summaries)
     if written <= 0:
         logger.warning("nightly_activity: stage 2 all summaries empty, source rows preserved", extra={"user_id": user_id})
         return False
@@ -364,7 +365,7 @@ async def _stage_3_planning(
         if not prompt or not schedule:
             continue
         try:
-            create_job(user_id=user_id, prompt=prompt, schedule=schedule, name=name, deliver="local")
+            await create_job(user_id=user_id, prompt=prompt, schedule=schedule, name=name, deliver="local")
             created_count += 1
         except (ValueError, SQLAlchemyError) as exc:
             logger.warning("nightly_activity: stage 3 create_job skipped", extra={"user_id": user_id, "error": str(exc)})
@@ -389,9 +390,9 @@ async def _stage_4_self_diary(
         return False
 
     diary_context = f"diary:{local_date_str}"
-    with session_scope() as db:
-        upsert_slotted_memory(db, user_id, diary_context, content, json.dumps(["diary", "self_reflection"]))
-        db.commit()
+    async with session_scope() as db:
+        await upsert_slotted_memory(db, user_id, diary_context, content, json.dumps(["diary", "self_reflection"]))
+        await db.commit()
 
     logger.info("nightly_activity: stage 4 completed", extra={"user_id": user_id, "diary": diary_context})
     return True
@@ -410,37 +411,39 @@ async def _stage_5_creation(
     if not NIGHTLY_CREATION_ENABLED:
         return False
 
-    with session_scope() as db:
+    async with session_scope() as db:
         # Fetch diary entry from Stage 4
         diary_context = f"diary:{local_date_str}"
-        diary_row = db.query(Memory).filter(Memory.user_id == user_id, Memory.context == diary_context).one_or_none()
+        diary_row = (await db.execute(select(Memory).where(Memory.user_id == user_id, Memory.context == diary_context))).scalar_one_or_none()
         diary_text = diary_row.content if diary_row else ""
 
         # Fetch persona personality tags
-        persona = db.query(Persona).filter(Persona.user_id == user_id).one_or_none()
+        persona = (await db.execute(select(Persona).where(Persona.user_id == user_id))).scalar_one_or_none()
         personality_tags = safe_json_loads(persona.personality_tags_json or "[]", default=[]) if persona else []
 
         # Check existing expressions
-        existing_expr_rows = db.query(CompanionExpression).filter(CompanionExpression.user_id == user_id).all()
+        existing_expr_rows = (await db.execute(select(CompanionExpression).where(CompanionExpression.user_id == user_id))).scalars().all()
         existing_expr_names = [e.name for e in existing_expr_rows]
 
         # Check active model and existing clips — also capture rig_type/species
         # here so we don't need a second session later (they're static config).
-        model = get_active_model(db, user_id)
+        model = await get_active_model(db, user_id)
         existing_clips = safe_json_loads(model.animation_clips_json or "[]", default=[]) if model else []
         existing_clip_names = [c.get("name") for c in existing_clips if isinstance(c, dict) and c.get("name")]
         rig_type = model.rig_type if model else "biped"
         species = model.species if model else "人类"
 
         # Single wardrobe query — derive pending count, existing names, and last gift in Python.
-        wardrobe_rows = db.query(WardrobeItem.name, WardrobeItem.gift_state, WardrobeItem.origin, WardrobeItem.created_at).filter(WardrobeItem.user_id == user_id).all()
+        wardrobe_rows = (
+            await db.execute(select(WardrobeItem.name, WardrobeItem.gift_state, WardrobeItem.origin, WardrobeItem.created_at).where(WardrobeItem.user_id == user_id))
+        ).all()
         existing_wardrobe_names = [r[0] for r in wardrobe_rows if r[0]]
         pending_wardrobe_count = sum(1 for r in wardrobe_rows if r[1] == "pending")
         companion_gifts = [r for r in wardrobe_rows if r[2] == "companion" and r[3] is not None]
         last_companion_gift_created_at = max((r[3] for r in companion_gifts), default=None)
 
         # Check image_gen provider capability
-        img_chain = resolve_provider_chain(db, user_id, "image_gen")
+        img_chain = await resolve_provider_chain(db, user_id, "image_gen")
         image_gen_available = bool(img_chain)
 
         days_since_last_gift = (naive_utc_now() - last_companion_gift_created_at).days if last_companion_gift_created_at else 999
@@ -505,7 +508,7 @@ async def _stage_5_creation(
         clip_results = await asyncio.gather(*[_gen_clips_for(tags) for tags in pending_clip_tag_sets[:NIGHTLY_CREATION_MAX_CLIPS_PER_NIGHT]])
 
         # Single session for the merge write.
-        with session_scope() as db:
+        async with session_scope() as db:
             for expr in pending_expressions:
                 db.add(
                     CompanionExpression(
@@ -521,7 +524,7 @@ async def _stage_5_creation(
                 )
                 new_expr_count += 1
 
-            active_model = get_active_model(db, user_id)
+            active_model = await get_active_model(db, user_id)
             if active_model:
                 # Read-modify-write within this transaction. A concurrent
                 # ``POST /animations/generate`` from the user could interleave,
@@ -541,7 +544,7 @@ async def _stage_5_creation(
                 if added:
                     active_model.animation_clips_json = json.dumps(curr_clips, ensure_ascii=False)
                     new_clip_count = added
-            db.commit()
+            await db.commit()
 
     # 2. Process Wardrobe Gift
     if allow_wardrobe and isinstance(wardrobe_spec, dict):
@@ -551,7 +554,7 @@ async def _stage_5_creation(
         w_msg = str(wardrobe_spec.get("message") or "").strip()
         if w_name and w_desc:
             try:
-                with session_scope() as db:
+                async with session_scope() as db:
                     preview = await preview_wardrobe_texture(db, user_id=user_id, description=w_desc)
                     created_wardrobe_item = await confirm_wardrobe_item(
                         db,
@@ -572,7 +575,7 @@ async def _stage_5_creation(
                     # Emit a wardrobe.gift event so an online client hydrates and
                     # announces proactively. Offline clients pick it up on reconnect
                     # via the WSEvent backlog, and the morning cron is the fallback.
-                    emit_wardrobe_gift(user_id, name=w_name, message=w_msg or None, reason=w_reason or None)
+                    await emit_wardrobe_gift(user_id, name=w_name, message=w_msg or None, reason=w_reason or None)
             except Exception as exc:
                 logger.warning("nightly_activity: stage 5 wardrobe gift generation failed", extra={"user_id": user_id, "error": str(exc)})
 
@@ -595,7 +598,7 @@ async def _stage_5_creation(
         # one-time "show your new creations" message doesn't recur daily.
         schedule = _local_9am_cron(tz_str)
         try:
-            create_job(user_id=user_id, prompt=cron_prompt, schedule=schedule, name="Creation gift follow-up", deliver="local", one_shot=True)
+            await create_job(user_id=user_id, prompt=cron_prompt, schedule=schedule, name="Creation gift follow-up", deliver="local", one_shot=True)
         except Exception as exc:
             logger.warning("nightly_activity: stage 5 cron creation failed", extra={"user_id": user_id, "error": str(exc)})
 
@@ -611,8 +614,8 @@ async def run_nightly_pipeline(user_id: int, reference_utc: datetime | None = No
     instead of being computed twice and drifting apart.
     """
     now_utc = reference_utc or naive_utc_now()
-    with session_scope() as db:
-        tz_str = resolve_user_timezone(db, user_id)
+    async with session_scope() as db:
+        tz_str = await resolve_user_timezone(db, user_id)
         if not tz_str:
             logger.info("nightly_activity: skipped, missing timezone", extra={"user_id": user_id})
             return False
@@ -624,19 +627,20 @@ async def run_nightly_pipeline(user_id: int, reference_utc: datetime | None = No
 
         # Stage 0: Gather Context
         all_today_tuples = (
-            db.query(Message, Conversation.kind)
-            .join(Conversation, Message.conversation_id == Conversation.id)
-            .filter(
-                Conversation.user_id == user_id,
-                Conversation.kind != CRON_KIND,
-                Message.created_at >= utc_start,
-                Message.created_at < utc_end,
-                Message.role.in_(("user", "assistant")),
-                Message.subtype.is_(None) | Message.subtype.notin_(tuple(UI_ONLY_SUBTYPES)),
+            await db.execute(
+                select(Message, Conversation.kind)
+                .join(Conversation, Message.conversation_id == Conversation.id)
+                .where(
+                    Conversation.user_id == user_id,
+                    Conversation.kind != CRON_KIND,
+                    Message.created_at >= utc_start,
+                    Message.created_at < utc_end,
+                    Message.role.in_(("user", "assistant")),
+                    Message.subtype.is_(None) | Message.subtype.notin_(tuple(UI_ONLY_SUBTYPES)),
+                )
+                .order_by(Message.id.asc())
             )
-            .order_by(Message.id.asc())
-            .all()
-        )
+        ).all()
         main_msgs = [m for m, k in all_today_tuples if k == MAIN_KIND]
         work_msgs = [m for m, k in all_today_tuples if k != MAIN_KIND]
 
@@ -652,13 +656,17 @@ async def run_nightly_pipeline(user_id: int, reference_utc: datetime | None = No
 
         # Load existing memory namespaces — one query for all three prefixes.
         ns_rows = (
-            db.query(Memory)
-            .filter(
-                Memory.user_id == user_id,
-                Memory.context.like(KIND_TO_PREFIX["inferred_profile"] + "%")
-                | Memory.context.like(KIND_TO_PREFIX["auto_inject"] + "%")
-                | Memory.context.like(KIND_TO_PREFIX["user_profile"] + "%"),
+            (
+                await db.execute(
+                    select(Memory).where(
+                        Memory.user_id == user_id,
+                        Memory.context.like(KIND_TO_PREFIX["inferred_profile"] + "%")
+                        | Memory.context.like(KIND_TO_PREFIX["auto_inject"] + "%")
+                        | Memory.context.like(KIND_TO_PREFIX["user_profile"] + "%"),
+                    )
+                )
             )
+            .scalars()
             .all()
         )
         inferred_profile: dict[str, str] = {}
@@ -672,24 +680,26 @@ async def run_nightly_pipeline(user_id: int, reference_utc: datetime | None = No
             elif r.context.startswith(KIND_TO_PREFIX["user_profile"]):
                 user_profile[r.context] = r.content
 
-        recall_rows = memory_admin.list_memories(db, user_id, kind="recall", limit=NIGHTLY_CONSOLIDATE_MAX_RECALL_ROWS)
+        recall_rows = await memory_admin.list_memories(db, user_id, kind="recall", limit=NIGHTLY_CONSOLIDATE_MAX_RECALL_ROWS)
 
         # Baseline 7-day activity stats (main conversation, real turns only —
         # poke/drag status rows are role="user" and would read as engagement).
         seven_days_ago_utc = utc_start - timedelta(days=7)
         past_7_count = (
-            db.query(Message)
-            .join(Conversation, Message.conversation_id == Conversation.id)
-            .filter(
-                Conversation.user_id == user_id,
-                Conversation.kind == MAIN_KIND,
-                Message.role == "user",
-                Message.subtype.is_(None) | Message.subtype.notin_(tuple(UI_ONLY_SUBTYPES)),
-                Message.created_at >= seven_days_ago_utc,
-                Message.created_at < utc_start,
+            await db.execute(
+                select(func.count())
+                .select_from(Message)
+                .join(Conversation, Message.conversation_id == Conversation.id)
+                .where(
+                    Conversation.user_id == user_id,
+                    Conversation.kind == MAIN_KIND,
+                    Message.role == "user",
+                    Message.subtype.is_(None) | Message.subtype.notin_(tuple(UI_ONLY_SUBTYPES)),
+                    Message.created_at >= seven_days_ago_utc,
+                    Message.created_at < utc_start,
+                )
             )
-            .count()
-        )
+        ).scalar_one()
         today_msg_count = sum(1 for m in clean_main_messages if m["role"] == "user")
         seven_day_avg = round(past_7_count / 7.0, 2)
 
@@ -703,7 +713,7 @@ async def run_nightly_pipeline(user_id: int, reference_utc: datetime | None = No
         }
         anomaly_stats = {"today_msg_count": today_msg_count, "seven_day_avg": seven_day_avg}
 
-        llm_cfg = resolve_user_llm_config(db, user_id)
+        llm_cfg = await resolve_user_llm_config(db, user_id)
         if not (llm_cfg.get("api_key") and llm_cfg.get("base_url") and llm_cfg.get("model_name")):
             logger.info("nightly_activity: skipped, missing llm config", extra={"user_id": user_id})
             return False
@@ -711,7 +721,7 @@ async def run_nightly_pipeline(user_id: int, reference_utc: datetime | None = No
     # Execute stages sequentially with isolated failure domains
     updated_inferred = inferred_profile
     updated_auto_inject = auto_inject
-    today_stats = read_today_summary(user_id, local_today_str)
+    today_stats = await read_today_summary(user_id, local_today_str)
     try:
         updated_inferred, updated_auto_inject = await _stage_1_daily_reflection(
             llm_cfg,
@@ -747,7 +757,7 @@ async def run_nightly_pipeline(user_id: int, reference_utc: datetime | None = No
     # separate LLM calls, no shared state) — run them concurrently to save a wall-
     # clock LLM roundtrip per user per night.
     async def _checkpoint() -> None:
-        with session_scope() as db:
+        async with session_scope() as db:
             await run_daily_checkpoint(llm_cfg, user_id, db, utc_start, utc_end, local_today_str)
 
     results = await asyncio.gather(
