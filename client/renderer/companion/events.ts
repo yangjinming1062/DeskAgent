@@ -21,6 +21,7 @@ import {
 import { $effectiveTier, $voiceCallOpen, setSpriteState, type SpriteEmotion } from '@/companion/companion-store'
 import { $responseMode } from '@/companion/prefs'
 import { computePerchPosition, setLocale, startRoam } from '@/companion/spatial'
+import { resetSpriteAlbum } from '@/companion/static-sprite/sprite-store'
 import { speak } from '@/companion/tts'
 import { log } from '@/shared/lib/log'
 import { sleep } from '@/shared/lib/utils'
@@ -353,6 +354,10 @@ export function handleCompanionEvent(event: RpcEvent): void {
       if (p?.job_id) {
         resolveAvatarRegeneration(p)
       }
+
+      // Avatar identity changed — the sprite album's anchor is stale
+      // (server filters rows by avatar_id), so drop local caches too.
+      resetSpriteAlbum()
 
       break
     }

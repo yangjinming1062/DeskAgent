@@ -38,6 +38,7 @@ import { ProactiveBubble } from './proactive/proactive-bubble'
 import { CompanionSettings } from './settings-overlay'
 import { SpriteContextMenu } from './sprite/context-menu'
 import { SpriteStage } from './sprite/sprite-stage'
+import { StaticSprite } from './static-sprite/StaticSprite'
 import { VoiceCallDock } from './voice-call-dock'
 import { checkCompanionVoiceValidity } from './voice-validity'
 
@@ -303,7 +304,12 @@ export function CompanionRoot(): React.JSX.Element {
         onDoubleTap={onDoubleTap}
         onTap={onTap}
       >
-        {showOnboarding ? null : <Companion3D />}
+        {showOnboarding ? null : (
+          <>
+            <Companion3D />
+            <StaticSprite />
+          </>
+        )}
       </SpriteStage>
       {showReady && contextMenuPos && (
         <SpriteContextMenu

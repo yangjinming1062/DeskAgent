@@ -9,6 +9,8 @@ export interface LoadedModelInfo {
   hasAnimations: boolean
   clipNames: string[]
   morphNames: string[]
+  /** True when load() fell through to the procedural egg (no bytes / parse failed). */
+  procedural: boolean
 }
 
 /** Strip leading namespace prefix from bone name. */

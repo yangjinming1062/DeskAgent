@@ -76,7 +76,8 @@ function registerAuthIpc({ ipcMain, deps }) {
     const result = await session.logout()
     deps.resetBackendCache?.()
     deps.rebuildTrayMenu?.()
-    // Tell the sprite window to tear down its gateway and return to the egg.
+    // Tell the sprite window to tear down its gateway and return to the
+    // pre-portrait placeholder (procedural egg).
     deps.broadcastAuthChanged?.(session.getSession())
     return result
   })

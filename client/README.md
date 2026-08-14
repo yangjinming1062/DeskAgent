@@ -23,7 +23,7 @@
 ## 2. 设计意图
 
 - **伙伴层与枢纽层共享主进程，职责严格分离**：底层处理协议与安全（凭证、中转、Runner 编排、自更新——这部分是 backend/runner 复用所依赖的不变契约），上层处理形象渲染与用户体验。两层共享同一个 Electron 主进程，但伙伴层不直接接触凭证或 Runner 句柄——一切经枢纽层 IPC。
-- **3D 实时渲染 + 程序化兜底**：3D 引擎始终在渲染——GLB 加载成功时骨骼动画 + morph 表情覆盖全部状态；GLB 加载失败时渲染程序化兜底角色（暖琥珀蛋壳 `0xfff4d6` + emissive 3.4s 呼吸光 + 裂痕装饰 + 呼吸/眨眼/说话浮动），保证形象从启动第一帧起就"活着"。
+- **3D 实时渲染 + 三级降级**：GLB 加载成功时骨骼动画 + morph 表情覆盖全部状态；GLB 不可用（生成中/失败/无 key/换模空挡）时静态精灵相册接管——`StaticSprite` 层按状态/情绪向后端相册请求身份一致的透明背景立绘（250ms 淡切 + 3.4s 呼吸），GLB 真正解析完成后淡出交还；相册不可用才渲染程序化兜底蛋（暖琥珀蛋壳 `0xfff4d6` + emissive 3.4s 呼吸光 + 裂痕装饰 + 呼吸/眨眼/说话浮动），保证形象从启动第一帧起就"活着"且永远是用户选定的角色。
 - **多骨骼动画库 + 性格标签驱动**：biped 109 clip，其余 6 大 rig（quadruped / avian / serpentine / aquatic / hexapod / octopod）各 20–45+ clip；客户端按 `rig_type` 注入对应动画库，按伴侣性格标签交集匹配驱动动作调度。详见 [docs/MODEL_SPEC.md §2](../docs/MODEL_SPEC.md)。
 - **disturbance_tier 唯一权威**：Client 持有用户偏好（`localStorage` 持久化）+ 活动上下文（活动感知器），独立计算 effective 值（应用「手动 quiet 永远不被覆盖」+ immersive/fullscreen → quiet 规则），通过 `companion.set_disturbance_tier` 单向推 Backend；Backend `_disturbance` 字典是镜像，不是独立推导。
 - **safeStorage 跨平台统一**：Windows DPAPI / macOS Keychain / Linux libsecret；Renderer 与 Preload **不可**访问 safeStorage 接口，阻断 XSS 窃取凭证。

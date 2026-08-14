@@ -10,7 +10,7 @@ contextBridge.exposeInMainWorld('deskagent', {
   getSession: () => ipcRenderer.invoke('deskagent:auth:get-session'),
   getDefaultBackendUrl: () => ipcRenderer.invoke('deskagent:auth:get-default-backend-url'),
   // Sprite window → main: bring up the framed tool window (Settings only,
-  // post-authentication). The sprite's egg-crack gesture calls this.
+  // post-authentication). The sprite's activation gesture calls this.
   showToolWindow: () => ipcRenderer.invoke('deskagent:window:show-tool'),
   api: request => ipcRenderer.invoke('deskagent:api', request),
   apiAsset: request => ipcRenderer.invoke('deskagent:api:asset', request),

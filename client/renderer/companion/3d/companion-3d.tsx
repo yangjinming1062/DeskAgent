@@ -11,6 +11,7 @@ import {
   type SpriteStateName
 } from '@/companion/companion-store'
 import { $personalityTags } from '@/companion/persona-store'
+import { $activeSprite, $glbLoadFailed, $staticMode } from '@/companion/static-sprite/sprite-store'
 import { log } from '@/shared/lib/log'
 
 import { Engine } from './Engine'
@@ -199,13 +200,23 @@ export function Companion3D(): React.JSX.Element {
       }
 
       try {
-        await engine.loadCharacter(bytes, modelInfo.rig_type || 'biped')
+        const info = await engine.loadCharacter(bytes, modelInfo.rig_type || 'biped')
+
+        if (cancelled) {
+          return
+        }
+
+        // Publish whether the engine fell through to the procedural egg —
+        // static-mode waits on this, not on model.ready, so the swap to 3D
+        // happens only once the GLB has actually parsed (no egg flash).
+        $glbLoadFailed.set(info.procedural)
       } catch (err) {
         if (cancelled) {
           return
         }
 
         log.error('companion-3d', 'loadCharacter failed:', err)
+        $glbLoadFailed.set(true)
 
         return
       }
@@ -245,9 +256,15 @@ export function Companion3D(): React.JSX.Element {
   const genState = useStore($modelGenState)
   const genProgress = useStore($modelGenProgress)
   const genError = useStore($modelGenError)
+  const staticMode = useStore($staticMode)
+  const activeSprite = useStore($activeSprite)
 
   return (
-    <div className="companion-3d-wrapper" style={{ position: 'relative', width: '100%', height: '100%' }}>
+    <div
+      className="companion-3d-wrapper"
+      data-static-covered={staticMode && activeSprite ? 'true' : undefined}
+      style={{ position: 'relative', width: '100%', height: '100%' }}
+    >
       <canvas className="companion-3d-canvas" ref={canvasRef} />
       {genState === 'generating' && (
         <div

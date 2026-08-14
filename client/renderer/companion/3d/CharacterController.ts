@@ -235,7 +235,8 @@ export class CharacterController {
           hasMorphTargets: this.morph.hasTargets(),
           hasAnimations: this.actions.size > 0,
           clipNames: [...this.actions.keys()],
-          morphNames: this.morph.targetNames()
+          morphNames: this.morph.targetNames(),
+          procedural: false
         }
       } catch (err) {
         log.warn('character', 'GLB load failed, using procedural fallback:', err)
@@ -244,7 +245,7 @@ export class CharacterController {
 
     this.createProcedural(scene)
 
-    return { hasMorphTargets: false, hasAnimations: false, clipNames: [], morphNames: [] }
+    return { hasMorphTargets: false, hasAnimations: false, clipNames: [], morphNames: [], procedural: true }
   }
 
   setCustomExpressions(exprs: readonly { name: string; weights: Record<string, number> }[]): void {
@@ -979,6 +980,10 @@ export class CharacterController {
   }
 
   // ── Procedural fallback character ───────────────────────────
+  // Scope: the pre-portrait onboarding window (no identity images exist yet)
+  // and the absolute last resort when the static-sprite album has no usable
+  // image (backend down / all generations rejected). Post-portrait, the
+  // degraded renderer is the static sprite layer — never blank (invariant #10).
 
   private createProcedural(scene: THREE.Scene): void {
     this.isProcedural = true

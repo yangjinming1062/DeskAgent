@@ -172,7 +172,7 @@ Client 状态机：EMOTIONAL(affect) → SPEAKING(TTS) → IDLE
 ```
 Backend POST /api/companion/model（种子图 → Tripo3D image-to-model → rig → 注入 morph）──event: model.ready──> 客户端加载 GLB + 注入 TS 动画 clip + 状态机绑定
     │                                          │
-    │  (客户端调 GET /api/companion/model 查状态)  └─ 生成失败 / GLB 加载失败 → 程序化蛋形兜底角色
+    │  (客户端调 GET /api/companion/model 查状态)  └─ 生成中 / 生成失败 / GLB 加载失败 → 静态精灵相册（POST /api/companion/sprite：LLM 语义匹配已有相册，未命中则以种子图为 subject_reference 生成、服务端纯白→alpha）→ 相册不可用时程序化蛋形兜底（仅引导前期 / 绝对兜底）
 ```
 
 **Blender+LLM 回退流（provider="blender_llm" 或 Tripo3D 不可用时）**：
@@ -247,6 +247,7 @@ onboarding 产出的结构化角色定义持久化在 Backend 用户维度，作
 - **portrait 重生不触发模型失效**：模型只随物种变更或用户显式请求重生。换外观 = 换装（`POST /api/companion/wardrobe/preview` 单入口，由一次 LLM 路由决定走贴图热替 `kind=texture`、几何服装 `kind=garment` 或挂件 `kind=accessory`，装配契约见 [PROTOCOL.md §1.6](PROTOCOL.md)），不重生模型。
 - **资产传输与内容寻址本地缓存**（契约见 [PROTOCOL.md §1.4](PROTOCOL.md)）：服务端模型/资产接口支持 HTTP Range（206 断点续传与 416 校验）与 ETag（SHA-256）；Client 主进程按 `content_hash` 持久化到 `$DESKAGENT_HOME/cache/models/`，无网络开销秒级命中；渲染端经 `DRACOLoader` 流式边下边解。
 - **受控再生成**：形象在多次会话间保持稳定。变更只在用户主动要求时发生（重生 portrait / 重生模型 / 换装）。
+- **静态精灵相册是 3D 的同级后备而非装饰**：覆盖无 `tripo_api_key` / 余额耗尽 / 生成失败（单视图模式无 Blender 回退，静态精灵是唯一后备）与模型重生成、换模空挡期。相册按用户维度存储、按 `avatar_id` 失效（头像重生即整体作废重生成）；生成走常规 image-gen provider 链（不做特殊排序）；身份一致性由种子图 `subject_reference` + persona 外貌锚点保证，透明背景由服务端纯白→alpha 后处理产出（MiniMax 仅出 JPEG，无法直出透明）。
 
 ### 6.3 表达层契约
 
@@ -368,7 +369,7 @@ Client 的更新通过 `/api/update` 获取 Electron 二进制与 Runner wheel �
 7. **角色定义是伙伴行为的唯一真相源**：伙伴的所有输出风格、主动行为受持久化的角色定义约束；角色定义只能由用户显式发起变更，禁止 LLM 自行改写。
 8. **形象资产归属用户**：生成的专属形象归属该用户，按用户维度隔离，不跨用户共享；形象在多次会话间保持一致，除非用户触发受控再生成。
 9. **陪伴优先于工具**：产品决策发生冲突时，陪伴体验优先于工具效率。工具调用以"伙伴在帮忙"的叙事呈现，原始协议帧不直接暴露给最终用户（开发者视图除外）。
-10. **伙伴表达永不空白**：任何动画状态或情绪 cue 无对应就绪资产时，客户端必须回退 idle 动画或程序化兜底角色，用户永远不可见"该动画尚未加载"的空白或加载态。这是陪伴体验连续性的底线，也是 §6.3 语义/渲染解耦能成立的代价兜底。
+10. **伙伴表达永不空白**：任何动画状态或情绪 cue 无对应就绪资产时，客户端必须回退 idle 动画或降级渲染，用户永远不可见"该动画尚未加载"的空白或加载态。渲染兜底按「GLB → 静态精灵相册 → 程序化蛋形」层级降级——无 3D 模型期间用户看到的仍是自己的角色（静态立绘按状态/情绪切换），蛋形仅在形象种子图产生之前或相册完全不可用时出现。这是陪伴体验连续性的底线，也是 §6.3 语义/渲染解耦能成立的代价兜底。
 
 **安全层（Blender+LLM 信任边界）**：
 

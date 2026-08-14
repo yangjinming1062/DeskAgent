@@ -74,7 +74,7 @@ LLM 任何 `joyful` / `happy_excited` 等未注册 token 走 `affect.py::_try_re
 
 ## 4. 3D 渲染资源降级
 
-GLB 加载成功后骨骼动画覆盖全部状态；加载失败时渲染程序化兜底角色（Three.js 基本体组合 + 正弦驱动呼吸/眨眼/说话浮动）。MorphController 经语义别名映射到 GLB 内置的 ARKit morph targets——缺失的情绪 morph 静默回退为 idle 面部。模型经 \model.ready\ 事件下发，换装经 \wardrobe.updated\ 下发。
+GLB 加载成功后骨骼动画覆盖全部状态；GLB 不可用（生成中/失败/无 key/换模空挡）时**静态精灵模式**接管——[static-sprite/](static-sprite/) 的 `StaticSprite` 层叠在 canvas 之上，有图显示后隐藏 canvas（蛋不透出），GLB 真正解析完成（`LoadedModelInfo.procedural === false`，而非 `model.ready`——该事件早于字节落地，靠此修掉换模闪蛋）才淡出交还。相册不可用/图未到达时蛋继续显示（永不空白）。语义映射表在 [sprite-semantics.ts](static-sprite/sprite-semantics.ts)（9 状态 + 17 情绪 + 未覆盖情绪的通用回退子句）；请求去重/1.5s 间隔/`content_hash` 内存缓存在 [sprite-store.ts](static-sprite/sprite-store.ts)——失败保持当前图。图间 250ms 淡切，`prefers-reduced-motion` 下禁用淡切与呼吸。加载失败时渲染程序化兜底角色（Three.js 基本体组合 + 正弦驱动呼吸/眨眼/说话浮动）。MorphController 经语义别名映射到 GLB 内置的 ARKit morph targets——缺失的情绪 morph 静默回退为 idle 面部。模型经 \model.ready\ 事件下发，换装经 \wardrobe.updated\ 下发。
 
 ## 5. 屏锁与端忙
 

@@ -1477,7 +1477,7 @@ function installStandardWindowHandlers(win) {
 
 // On-demand framed window hosting Login (unauthenticated) and Settings
 // (authenticated) — REST-only, it never boots the gateway. Created lazily by
-// showToolWindow (egg-crack gesture, tray Settings / Sign-in).
+// showToolWindow (activation gesture, tray Settings / Sign-in).
 function createToolWindow() {
   const icon = getAppIconPath()
   toolWindow = new BrowserWindow({
@@ -1816,8 +1816,9 @@ registerSpriteIpc({
   deps: { getSpriteWindow: () => mainWindow, getUserDataDir: () => app.getPath('userData') }
 })
 
-// Sprite → main: bring up the framed tool window (the egg-crack gesture hands
-// the user off to Login; tray Settings reuses the same path for Settings).
+// Sprite → main: bring up the framed tool window (the unauthenticated egg's
+// activation gesture hands the user off to Login; tray Settings reuses the
+// same path for Settings).
 ipcMain.handle('deskagent:window:show-tool', async () => {
   showToolWindow()
 })

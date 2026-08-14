@@ -16,8 +16,8 @@ interface SpriteStageProps {
 // 12px keeps trackpad micro-jitter from misclassifying a double-tap as a drag.
 const DRAG_THRESHOLD = 12
 const DOUBLE_TAP_MS = 320
-// Covers the sprite's CSS glow halos that overflow the inner box: egg-glow
-// 150% (≈40px/side), companion-glow 170% (≈56px), sil-glow 170% of 180 (≈63px).
+// Covers the sprite's CSS glow halos that overflow the inner box: companion-glow
+// 170% (≈56px), sil-glow 170% of 180 (≈63px).
 const HALO_PAD = 70
 
 const SPRITE_REGION_ID = 'sprite-stage'
