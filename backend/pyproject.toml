@@ -21,10 +21,12 @@ dependencies = [
     "slowapi==0.1.10",
     "Pillow>=10.4",
     "pgvector>=0.5.0",
+    "alembic>=1.19.1",
 ]
 
 [project.optional-dependencies]
 test = [
+    "aiosqlite>=0.22.1",
     "pytest>=8.0",
     "pytest-asyncio>=0.24",
 ]
