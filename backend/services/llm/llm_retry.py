@@ -93,7 +93,7 @@ async def call_with_retry(
     messages = create_kwargs.get("messages")
     is_stream = bool(create_kwargs.get("stream"))
 
-    if "tools" in create_kwargs and create_kwargs["tools"]:
+    if create_kwargs.get("tools"):
         raw_tools = create_kwargs["tools"]
         wrapped_tools = []
         for t in raw_tools:

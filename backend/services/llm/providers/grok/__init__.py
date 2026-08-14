@@ -12,4 +12,4 @@ register(ServiceType.tts, "grok", GrokTTSProvider)
 register(ServiceType.image_gen, "grok", GrokImageGenProvider)
 register(ServiceType.video_gen, "grok", GrokVideoGenProvider)
 
-__all__ = ["GrokChatProvider", "GrokSTTProvider", "GrokTTSProvider", "GrokImageGenProvider", "GrokVideoGenProvider"]
+__all__ = ["GrokChatProvider", "GrokImageGenProvider", "GrokSTTProvider", "GrokTTSProvider", "GrokVideoGenProvider"]

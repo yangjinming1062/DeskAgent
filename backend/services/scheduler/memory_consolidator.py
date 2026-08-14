@@ -57,12 +57,14 @@ def replace_recall_pool(user_id: int, source_rows: list[dict], summaries: list[d
             content_str = (s.get("content") or "").strip()[:MAX_RECALL_CONTENT_CHARS]
             if not content_str:
                 continue
+            imp = max(0.1, min(5.0, float(s.get("importance", 1.0) or 1.0)))
             db.add(
                 Memory(
                     user_id=user_id,
                     content=content_str,
                     context=normalize_recall_context(s.get("context"), default="consolidated"),
                     tags=json.dumps(normalize_recall_tags(s.get("tags"))),
+                    importance=imp,
                 )
             )
             written += 1

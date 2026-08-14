@@ -1,6 +1,8 @@
+from typing import ClassVar
+
 from openai import AsyncOpenAI
 
-from .base import ChatProvider, ProviderConfig
+from .base import ChatProvider, EmbeddingProvider, ProviderConfig
 from .http import get_async_client
 
 
@@ -16,3 +18,21 @@ class OpenAICompatChatProvider(ChatProvider):
 
     def raw_client(self) -> AsyncOpenAI | None:
         return self._client
+
+
+class OpenAIEmbeddingProvider(EmbeddingProvider):
+    """Shared embedding provider for any provider with an OpenAI-compatible
+    embeddings endpoint."""
+
+    DEFAULT_MODELS: ClassVar[dict[str, str]] = {"embedding": "text-embedding-3-small"}
+
+    def __init__(self, config: ProviderConfig) -> None:
+        super().__init__(config)
+        self._client: AsyncOpenAI = get_async_client(config.api_key, config.base_url)
+
+    async def embed(self, texts: list[str]) -> list[list[float]]:
+        if not texts:
+            return []
+        model = self.config.model or "text-embedding-3-small"
+        res = await self._client.embeddings.create(input=texts, model=model)
+        return [item.embedding for item in sorted(res.data, key=lambda x: x.index)]

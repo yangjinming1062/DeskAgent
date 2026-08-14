@@ -1,0 +1,167 @@
+import math
+import re
+from typing import Any
+
+from components import get_logger, naive_utc_now
+from modules.memory import Memory
+from sqlalchemy import or_
+from sqlalchemy.orm import Session
+
+from services.tools.memory import RESERVED_FROM_RECALL, context_not_in
+
+logger = get_logger(__name__)
+
+# RRF smoothing constant (standard TREC / IR setting)
+RRF_K: int = 60
+# Ebbinghaus decay parameter lambda (half-life ~ 14 days)
+TIME_DECAY_LAMBDA: float = 0.05
+# Minimum retention floor for decay (prevents durable memories from zeroing out)
+TIME_DECAY_FLOOR: float = 0.30
+
+
+def cosine_similarity(vec_a: list[float] | None, vec_b: list[float] | None) -> float:
+    """Compute cosine similarity between two float vectors in [-1.0, 1.0]."""
+    if not vec_a or not vec_b or len(vec_a) != len(vec_b):
+        return 0.0
+    dot = sum(a * b for a, b in zip(vec_a, vec_b, strict=False))
+    norm_a = math.sqrt(sum(a * a for a in vec_a))
+    norm_b = math.sqrt(sum(b * b for b in vec_b))
+    if norm_a == 0.0 or norm_b == 0.0:
+        return 0.0
+    return dot / (norm_a * norm_b)
+
+
+def _compute_time_decay(updated_at: Any, now: Any) -> float:
+    if not updated_at or not now:
+        return 1.0
+    delta_days = max(0.0, (now - updated_at).total_seconds() / 86400.0)
+    return TIME_DECAY_FLOOR + (1.0 - TIME_DECAY_FLOOR) * math.exp(-TIME_DECAY_LAMBDA * delta_days)
+
+
+def _dense_search(db: Session, user_id: int, query_embedding: list[float], limit: int = 30, excluded_namespaces: frozenset[str] = RESERVED_FROM_RECALL) -> list[Memory]:
+    """Dense semantic retrieval via pgvector <=> operator or in-memory fallback."""
+    is_postgres = db.bind is not None and db.bind.dialect.name == "postgresql"
+    if is_postgres:
+        try:
+            return (
+                db.query(Memory)
+                .filter(Memory.user_id == user_id, Memory.embedding.isnot(None), *[context_not_in(p) for p in excluded_namespaces])
+                .order_by(Memory.embedding.cosine_distance(query_embedding))
+                .limit(limit)
+                .all()
+            )
+        except Exception as exc:
+            logger.debug("PostgreSQL pgvector distance query failed, falling back to in-memory cosine", extra={"error": str(exc)})
+
+    # In-memory cosine similarity fallback (SQLite / missing extension)
+    rows = db.query(Memory).filter(Memory.user_id == user_id, Memory.embedding.isnot(None), *[context_not_in(p) for p in excluded_namespaces]).all()
+    scored = []
+    for r in rows:
+        sim = cosine_similarity(query_embedding, r.embedding)
+        if sim > 0.0:
+            scored.append((sim, r))
+    scored.sort(key=lambda x: x[0], reverse=True)
+    return [r for _, r in scored[:limit]]
+
+
+def _extract_search_terms(query: str) -> list[str]:
+    """Extract search terms: whitespace tokens for latin words, plus 2-4 char n-grams for CJK text."""
+    q = (query or "").strip()
+    if not q:
+        return []
+    terms: set[str] = set()
+    raw_tokens = [t.lower().strip() for t in re.split(r"[\s,，。！？!?；;、]+", q) if t.strip()]
+    for t in raw_tokens:
+        terms.add(t)
+        cjk_chars = "".join(re.findall(r"[\u4e00-\u9fff\u3400-\u4dbf]", t))
+        if len(cjk_chars) >= 2:
+            for n in (2, 3, 4):
+                for i in range(len(cjk_chars) - n + 1):
+                    ngram = cjk_chars[i : i + n]
+                    if ngram:
+                        terms.add(ngram)
+    return [t for t in terms if len(t) >= 2 or (len(t) == 1 and not t.isascii())]
+
+
+def _sparse_search(db: Session, user_id: int, keywords: list[str], limit: int = 30, excluded_namespaces: frozenset[str] = RESERVED_FROM_RECALL) -> list[Memory]:
+    """Sparse keyword retrieval using substring matching."""
+    if not keywords:
+        return []
+    conditions = [c for kw in keywords for c in (Memory.content.ilike(f"%{kw}%"), Memory.context.ilike(f"%{kw}%"))]
+    rows = (
+        db.query(Memory)
+        .filter(Memory.user_id == user_id, or_(*conditions), *[context_not_in(p) for p in excluded_namespaces])
+        .order_by(Memory.updated_at.desc())
+        .limit(limit * 2)
+        .all()
+    )
+    # Score by keyword coverage in content and context
+    scored = []
+    for r in rows:
+        c_low = (r.content or "").lower()
+        ctx_low = (r.context or "").lower()
+        hits = sum(1.0 if kw in c_low else (0.5 if kw in ctx_low else 0.0) for kw in keywords)
+        score = hits / max(len(keywords), 1)
+        scored.append((score, r))
+    scored.sort(key=lambda x: (x[0], x[1].updated_at), reverse=True)
+    return [r for _, r in scored[:limit]]
+
+
+def retrieve_hybrid_memories(
+    db: Session, user_id: int, query: str, *, query_embedding: list[float] | None = None, limit: int = 10, excluded_namespaces: frozenset[str] = RESERVED_FROM_RECALL
+) -> list[dict[str, Any]]:
+    """Hybrid search combining Dense (pgvector) and Sparse (keyword) with RRF and Ebbinghaus time decay."""
+    q_str = (query or "").strip()
+    if not q_str and not query_embedding:
+        return []
+
+    keywords = _extract_search_terms(q_str)
+
+    dense_candidates: list[Memory] = []
+    if query_embedding:
+        dense_candidates = _dense_search(db, user_id, query_embedding, limit=limit * 2, excluded_namespaces=excluded_namespaces)
+
+    sparse_candidates: list[Memory] = []
+    if keywords:
+        sparse_candidates = _sparse_search(db, user_id, keywords, limit=limit * 2, excluded_namespaces=excluded_namespaces)
+
+    if not dense_candidates and not sparse_candidates:
+        return []
+
+    # Map candidate memories by id
+    all_memories: dict[int, Memory] = {r.id: r for r in dense_candidates + sparse_candidates}
+
+    dense_ranks = {r.id: rank + 1 for rank, r in enumerate(dense_candidates)}
+    sparse_ranks = {r.id: rank + 1 for rank, r in enumerate(sparse_candidates)}
+
+    now = naive_utc_now()
+    results = []
+
+    for mem_id, mem in all_memories.items():
+        rrf_score = 0.0
+        if mem_id in dense_ranks:
+            rrf_score += 1.0 / (RRF_K + dense_ranks[mem_id])
+        if mem_id in sparse_ranks:
+            rrf_score += 1.0 / (RRF_K + sparse_ranks[mem_id])
+
+        decay = _compute_time_decay(mem.updated_at, now)
+        importance = max(0.1, float(getattr(mem, "importance", 1.0) or 1.0))
+        final_score = rrf_score * decay * importance
+
+        results.append(
+            {"id": mem.id, "content": mem.content, "context": mem.context, "tags": mem.tags, "importance": importance, "score": final_score, "updated_at": mem.updated_at}
+        )
+
+    results.sort(key=lambda x: x["score"], reverse=True)
+    return results[:limit]
+
+
+def retrieve_proactive_memories(
+    db: Session, user_id: int, query: str, *, query_embedding: list[float] | None = None, limit: int = 3, min_score: float = 0.002
+) -> list[dict[str, Any]]:
+    """Retrieve top-N relevant recall memories to proactively inject into conversation."""
+    q_str = (query or "").strip()
+    if not q_str or len(q_str) <= 1:
+        return []
+    candidates = retrieve_hybrid_memories(db, user_id, q_str, query_embedding=query_embedding, limit=limit)
+    return [c for c in candidates if c["score"] >= min_score]

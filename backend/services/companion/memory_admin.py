@@ -35,6 +35,7 @@ def _row_to_dict(row: Memory) -> dict[str, Any]:
         "context": row.context,
         "tags": row.tags,
         "content": row.content,
+        "importance": float(getattr(row, "importance", 1.0) or 1.0),
         "created_at": row.created_at.isoformat() if isinstance(row.created_at, datetime) else None,
         "updated_at": row.updated_at.isoformat() if isinstance(row.updated_at, datetime) else None,
     }

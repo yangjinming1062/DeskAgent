@@ -1,7 +1,8 @@
+import asyncio
 import json
 from dataclasses import replace
 
-from components import SETTINGS
+from components import SETTINGS, get_logger
 from modules.auth import UserModelConfig
 from openai import AsyncOpenAI
 from sqlalchemy.orm import Session
@@ -10,6 +11,7 @@ from .providers import (
     KNOWN_PROVIDERS,
     SERVICE_DEFAULT_PROVIDER,
     BaseProvider,
+    EmbeddingProvider,
     ProviderConfig,
     ServiceType,
     default_base_url,
@@ -20,6 +22,8 @@ from .providers import (
     supports_vision,
 )
 from .providers.http import get_async_client
+
+logger = get_logger(__name__)
 
 
 def client_for_config(llm_config: dict) -> AsyncOpenAI:
@@ -240,3 +244,59 @@ def provider_from_config(config: ProviderConfig) -> BaseProvider:
 def provider_for_service(db: Session | None, user_id: int | None, service_type: str) -> BaseProvider:
     """Resolve config → instantiate provider. Returns chain[0]; for multi-provider fallback see ``execute_with_fallback``."""
     return provider_from_config(resolve_provider_config(db, user_id, service_type))
+
+
+async def generate_embedding(text: str, user_id: int | None = None, db: Session | None = None, timeout_seconds: float = 2.0) -> list[float] | None:
+    """Generate embedding vector for a single text. Returns None if unconfigured or failed."""
+    if not text or not text.strip():
+        return None
+    try:
+        try:
+            chain = resolve_provider_chain(db, user_id, "embedding")
+        except Exception:
+            chain = []
+        if not chain:
+            try:
+                llm_cfg = resolve_provider_config(db, user_id, "llm")
+                chain = [
+                    ProviderConfig(
+                        base_url=llm_cfg.base_url, api_key=llm_cfg.api_key, model="text-embedding-3-small", service_type=ServiceType.embedding, provider_name=llm_cfg.provider_name
+                    )
+                ]
+            except Exception:
+                return None
+        provider = provider_from_config(chain[0])
+        if not isinstance(provider, EmbeddingProvider):
+            return None
+        return await asyncio.wait_for(provider.embed_one(text), timeout=timeout_seconds)
+    except Exception as exc:
+        logger.debug("generate_embedding failed", extra={"error": str(exc)})
+        return None
+
+
+async def generate_embeddings(texts: list[str], user_id: int | None = None, db: Session | None = None, timeout_seconds: float = 5.0) -> list[list[float]] | None:
+    """Generate embedding vectors for multiple texts."""
+    if not texts:
+        return []
+    try:
+        try:
+            chain = resolve_provider_chain(db, user_id, "embedding")
+        except Exception:
+            chain = []
+        if not chain:
+            try:
+                llm_cfg = resolve_provider_config(db, user_id, "llm")
+                chain = [
+                    ProviderConfig(
+                        base_url=llm_cfg.base_url, api_key=llm_cfg.api_key, model="text-embedding-3-small", service_type=ServiceType.embedding, provider_name=llm_cfg.provider_name
+                    )
+                ]
+            except Exception:
+                return None
+        provider = provider_from_config(chain[0])
+        if not isinstance(provider, EmbeddingProvider):
+            return None
+        return await asyncio.wait_for(provider.embed(texts), timeout=timeout_seconds)
+    except Exception as exc:
+        logger.debug("generate_embeddings failed", extra={"error": str(exc)})
+        return None

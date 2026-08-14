@@ -66,7 +66,10 @@ backend/
 - **3D 模型生成管线双轨制（Tripo3D 主路 + Blender+LLM 回退）**：默认 Tripo3D 高保真度生成；当 `tripo_api_key` 缺失 / 余额为 0 / Tripo API 返回 credits 耗尽错误模式时自动回退到 Blender+LLM 管线，或由 `ModelGenerateRequest.provider` 显式锁向。**为什么不只用一条**：Tripo 商业 API 有成本与可用性限制（积分、断供、地区封锁）；自由形式 LLM 写 bpy 代码是 last-resort 兜底，质量显著低（无 PBR 纹理）但成本仅为 LLM tokens + 本地 CPU Blender render。Blender 子进程与 Backend 同用户运行——LLM 写代码本身就把 LLM 当作可执行代码生成器，威胁向量与现有 LLM 调用同等级，详见 [ARCHITECTURE.md §10](../ARCHITECTURE.md) 安全层不变量。
 - **全身图 prompt 强制最小覆盖基础内衣（仅 biped）**：`_BIPED_A_POSE` 要求种子图穿运动内衣+运动短裤、显式禁掉长袖/连体紧身衣/长裤/长裙/长袍/外套/靴袜。**为什么**：Tripo image-to-3D 只重建实际可见的皮肤——覆盖款（哪怕紧身款）会让 PBR 换装后暴露色差/反光异常/细节缺失，长裙款直接几何穿模。**替代方案被否定的理由**：(a) 切 parametric body（SMPL 类）丢写实人物外观；(b) Tripo 不支持 body/clothing layer 分离，切到 Blender 管线与上条双轨制主路冲突。
 - **静态精灵相册按需懒生成（[sprite_service.py](services/companion/sprite_service.py)）**：`POST /api/companion/sprite` 是无 3D 模型期的降级渲染源——LLM 按自由语义在相册 tag 中匹配（命中零生成成本），未命中才由 LLM 撰写 prompt 经常规 image-gen 链生成（`role="waiting"` 等待图每用户唯一且命中即返、不查 LLM）。**为什么不预生成全集**：语义空间开放（状态×情绪×反应），预生成既浪费也永远不齐；懒生成让每张图都被真实需求验证。相册按 `avatar_id` 失效、上限 300 张；频控 `companion_sprite_generate_rate_limit_per_minute` 防 LLM 循环刷请求。
-- **精灵透明背景 = 生成纯白底 + 服务端纯白→alpha 后处理**：2026-08-14 实验结论——MiniMax `image-01` 恒返回 JPEG（RGB，5/5 无 alpha，结构上不可能直出透明），故 prompt 强制纯白平面背景 + 禁纯白衣饰，服务端用 Pillow 做边界连通泛洪抠白（人物内部白色/眼睛/高光因不与背景连通而保留，软带 225–240 线性羽化；阈值由实验校准：纯白底角部实测 243–254）。逐 provider 验收 `has_real_transparency`，不通过换下一家。**为什么不直接展示白底图**：桌面精灵窗口透明置顶，白底块在用户桌面上不可接受。
+- **长期记忆混合检索与前置主动召回（[memory_retrieval.py](services/companion/memory_retrieval.py)）**：针对传统 SQL 子串匹配的语义鸿沟与纯被动调用的健忘问题，构建多维检索管线：
+  - **Dense + Sparse 混合检索与 RRF 融合**：Dense 向量语义检索（pgvector 余弦距离，SQLite/测试环境内存回退）+ Sparse 关键词/CJK N-gram 检索，经 RRF（Reciprocal Rank Fusion，$k=60$）合并打分。
+  - **艾宾浩斯时间衰减与重要性加权**：基于记忆距今时间 $\Delta t$ 实施指数衰减 $0.3 + 0.7 \times e^{-0.05 \Delta t}$（保底 0.3 防关键记忆归零），并与记忆重要度系数 $Importance \in [0.1, 5.0]$ 乘积得到最终排序得分。
+  - **前置主动召回注入**：在主对话 turn 开始前自动根据当前输入匹配 Top-3 高相关 recall 记忆注入 System Prompt，免去 LLM 轮轮主动调用 `memory_recall` 的认知开销。
 
 ## 5. 与外部的契约
 

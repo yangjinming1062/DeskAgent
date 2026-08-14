@@ -66,14 +66,7 @@ class MiMoTTSProvider(TTSProvider):
     def raw_client(self) -> AsyncOpenAI | None:
         return self._client
 
-    async def synthesize(
-        self,
-        text: str,
-        *,
-        voice: str = "",
-        fmt: str = "mp3",
-        speed: float | None = None,  # noqa: ARG002 — abstract TTS contract; mimo ignores
-    ) -> TTSResult:
+    async def synthesize(self, text: str, *, voice: str = "", fmt: str = "mp3", speed: float | None = None) -> TTSResult:
         if voice and voice.startswith(_VOICEDESIGN_PREFIX):
             design_prompt = voice[len(_VOICEDESIGN_PREFIX) :]
             if not design_prompt.strip():

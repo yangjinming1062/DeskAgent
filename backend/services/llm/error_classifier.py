@@ -779,16 +779,7 @@ def _classify_402(error_msg: str, result_fn: _ClassifierBuilder) -> ClassifiedEr
 
 
 def _classify_400(
-    error_msg: str,
-    error_code: str,
-    body: dict,
-    *,
-    provider: str,  # noqa: ARG001 — kept for signature parity with _classify_by_status
-    model: str,  # noqa: ARG001 — kept for signature parity with _classify_by_status
-    approx_tokens: int,
-    context_length: int,
-    num_messages: int = 0,
-    result_fn: _ClassifierBuilder,
+    error_msg: str, error_code: str, body: dict, *, provider: str, model: str, approx_tokens: int, context_length: int, num_messages: int = 0, result_fn: _ClassifierBuilder
 ) -> ClassifiedError:
     """Classify 400 Bad Request — context overflow, format error, or generic."""
     # Multimodal tool content rejected from 400.  Must be checked BEFORE
@@ -862,11 +853,7 @@ def _classify_400(
 # ── Error code classification ───────────────────────────────────────────
 
 
-def _classify_by_error_code(
-    error_code: str,
-    error_msg: str,  # noqa: ARG001 — shared helper signature; message patterns handled by callers
-    result_fn: _ClassifierBuilder,
-) -> ClassifiedError | None:
+def _classify_by_error_code(error_code: str, error_msg: str, result_fn: _ClassifierBuilder) -> ClassifiedError | None:
     """Classify by structured error codes from the response body."""
     code_lower = error_code.lower()
     if code_lower in _RATE_LIMIT_ERROR_CODES:
@@ -885,14 +872,7 @@ def _classify_by_error_code(
 # ── Message pattern classification ──────────────────────────────────────
 
 
-def _classify_by_message(
-    error_msg: str,
-    error_type: str,  # noqa: ARG001 — shared helper signature; patterns keyed on message text
-    *,
-    approx_tokens: int,  # noqa: ARG001 — kept for signature parity with _classify_400
-    context_length: int,  # noqa: ARG001 — kept for signature parity with _classify_400
-    result_fn: _ClassifierBuilder,
-) -> ClassifiedError | None:
+def _classify_by_message(error_msg: str, error_type: str, *, approx_tokens: int, context_length: int, result_fn: _ClassifierBuilder) -> ClassifiedError | None:
     """Classify based on error message patterns when no status code is available."""
     if any(p in error_msg for p in _PAYLOAD_TOO_LARGE_PATTERNS):
         return result_fn(FailoverReason.payload_too_large, retryable=True, should_compress=True)

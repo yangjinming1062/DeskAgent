@@ -170,6 +170,7 @@ RETAIN_SCHEMA = {
                     "For kind='auto_inject': MUST be one of " + ", ".join(AUTO_INJECT_SLOTS) + "."
                 ),
             },
+            "importance": {"type": "number", "description": "Optional importance factor (1.0 default, range 0.5 - 3.0). Higher values retain higher recall rank across time."},
         },
         "required": ["kind", "content"],
     },
@@ -195,7 +196,7 @@ class NativeMemory:
         self.db = db
         self.user_id = user_id
 
-    def format_for_system_prompt(self, target: str = "") -> str | None:  # noqa: ARG002 — API shape; single fixed prompt
+    def format_for_system_prompt(self, target: str = "") -> str | None:
         return (
             "# Native Memory System\n"
             "Active. All memories are stored securely in the database.\n"
@@ -218,7 +219,8 @@ class NativeMemory:
             return tool_error("content is required")
         if kind == "auto_inject":
             return self._retain_auto_inject(content, args.get("context"))
-        return self._retain_recall(content, args.get("tags") or [], args.get("context"))
+        importance = float(args.get("importance", 1.0) or 1.0)
+        return self._retain_recall(content, args.get("tags") or [], args.get("context"), importance=importance)
 
     def _retain_auto_inject(self, content: str, context: str | None) -> str:
         if context not in AUTO_INJECT_SLOTS:
@@ -239,7 +241,7 @@ class NativeMemory:
             return tool_error("concurrent auto_inject write; retry")
         return json.dumps({"result": "Auto-inject memory updated.", "context": context})
 
-    def _retain_recall(self, content: str, tags: list, context: str | None) -> str:
+    def _retain_recall(self, content: str, tags: list, context: str | None, importance: float = 1.0) -> str:
         if not tags:
             return tool_error("recall requires at least one tag")
         bad = [t for t in tags if t not in RECALL_TAGS]
@@ -249,7 +251,8 @@ class NativeMemory:
         if any(ctx_raw.startswith(prefix) for prefix in _FORBIDDEN_FROM_LLM):
             return tool_error("recall context cannot use reserved prefixes; those are backend-owned namespaces")
         ctx = normalize_recall_context(ctx_raw)
-        mem = Memory(user_id=self.user_id, content=content[:MAX_RECALL_CONTENT_CHARS], context=ctx, tags=json.dumps(tags))
+        imp = max(0.1, min(5.0, float(importance)))
+        mem = Memory(user_id=self.user_id, content=content[:MAX_RECALL_CONTENT_CHARS], context=ctx, tags=json.dumps(tags), importance=imp)
         self.db.add(mem)
         self.db.commit()
         return json.dumps({"result": "Recall memory stored.", "memory_id": mem.id, "context": ctx})
@@ -259,23 +262,12 @@ class NativeMemory:
         if not query:
             return tool_error("Missing required parameter: query")
         try:
-            keywords = [k.strip() for k in query.split() if k.strip()]
-            if not keywords:
-                return json.dumps({"result": "No valid keywords provided."})
-            conditions = [c for kw in keywords for c in (Memory.content.ilike(f"%{kw}%"), Memory.context.ilike(f"%{kw}%"))]
-            # Same NULL-context exemption pattern as ``context_not_in`` —
-            # every reserved-prefix predicate uses ``context_not_in`` so the
-            # NULL-context rows survive the three-valued-logic trap.
-            rows = (
-                self.db.query(Memory)
-                .filter(Memory.user_id == self.user_id, or_(*conditions), *[context_not_in(p) for p in RESERVED_FROM_RECALL])
-                .order_by(Memory.updated_at.desc())
-                .limit(MEMORY_RECALL_MAX_RESULTS)
-                .all()
-            )
-            if not rows:
+            from services.companion.memory_retrieval import retrieve_hybrid_memories
+
+            results = retrieve_hybrid_memories(self.db, self.user_id, query, limit=MEMORY_RECALL_MAX_RESULTS)
+            if not results:
                 return json.dumps({"result": "No relevant memories found."})
-            lines = [f"ID: {r.id}{(' [' + r.context + ']') if r.context else ''} - {r.content}" for r in rows]
+            lines = [f"ID: {r['id']}{(' [' + r['context'] + ']') if r.get('context') else ''} - {r['content']}" for r in results]
             return json.dumps({"result": "\n".join(lines)})
         except Exception as e:
             logger.error("memory_recall failed", extra={"error": str(e)})

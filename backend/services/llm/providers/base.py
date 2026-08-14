@@ -12,6 +12,7 @@ class ServiceType(str, enum.Enum):
     tts = "tts"
     image_gen = "image_gen"
     video_gen = "video_gen"
+    embedding = "embedding"
 
 
 @dataclass(frozen=True)
@@ -228,3 +229,18 @@ class STTProvider(BaseProvider):
 
     @abstractmethod
     async def transcribe(self, audio: bytes, *, mime_type: str = "audio/wav", language: str = "auto") -> STTResult: ...
+
+
+# ── Embedding ──────────────────────────────────────────────────────────
+
+
+class EmbeddingProvider(BaseProvider):
+    service_type: ServiceType = ServiceType.embedding
+    dimension: ClassVar[int] = 1536
+
+    @abstractmethod
+    async def embed(self, texts: list[str]) -> list[list[float]]: ...
+
+    async def embed_one(self, text: str) -> list[float] | None:
+        results = await self.embed([text])
+        return results[0] if results else None

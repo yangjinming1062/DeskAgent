@@ -482,6 +482,8 @@ def build_system_prompt_parts(config: AgentPromptConfig, system_message: str | N
         stable_parts.append(config.auto_inject_extras)
     if config.inferred_profile_extras:
         stable_parts.append(config.inferred_profile_extras)
+    if config.proactive_memory_extras:
+        stable_parts.append(config.proactive_memory_extras)
     if config.task_completion_guidance and valid_tools:
         stable_parts.append(TASK_COMPLETION_GUIDANCE)
 

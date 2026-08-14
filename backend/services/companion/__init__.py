@@ -39,7 +39,8 @@ from .interact import InteractResult, interact
 from .interaction_stats import record_interaction
 from .memory_admin import delete_memory, list_memories, memory_counts, update_memory, upsert_slotted_memory
 from .memory_bootstrap import build_user_profile_extras, extract_user_profile, read_user_profile, record_user_profile
-from .memory_format import format_auto_inject_block, format_inferred_profile_block, format_memories_block
+from .memory_format import format_auto_inject_block, format_inferred_profile_block, format_memories_block, format_proactive_memory_block
+from .memory_retrieval import retrieve_hybrid_memories, retrieve_proactive_memories
 from .model_service import (
     ModelGenerationError,
     ModelGenerationInProgressError,
@@ -146,6 +147,7 @@ __all__ = [
     "format_auto_inject_block",
     "format_inferred_profile_block",
     "format_memories_block",
+    "format_proactive_memory_block",
     "generate_animation_clips",
     "generate_avatar",
     "generate_companion_model",
@@ -186,6 +188,8 @@ __all__ = [
     "regenerate_avatar",
     "regenerate_avatar_from_image",
     "recover_stuck_model_generations",
+    "retrieve_hybrid_memories",
+    "retrieve_proactive_memories",
     "run_blender_llm_pipeline",
     "run_garment_pipeline",
     "resolve_companion_asset_path",

@@ -1,7 +1,8 @@
 from typing import TYPE_CHECKING
 
 from common import ModelBase, TimestampMixin
-from sqlalchemy import ForeignKey, Text
+from pgvector.sqlalchemy import Vector
+from sqlalchemy import Float, ForeignKey, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 if TYPE_CHECKING:
@@ -15,5 +16,7 @@ class Memory(ModelBase, TimestampMixin):
     content: Mapped[str] = mapped_column(Text)
     context: Mapped[str | None] = mapped_column(Text, nullable=True)
     tags: Mapped[str | None] = mapped_column(Text, nullable=True)
+    importance: Mapped[float] = mapped_column(Float, default=1.0, server_default="1.0")
+    embedding: Mapped[list[float] | None] = mapped_column(Vector(1536), nullable=True)
 
     user: Mapped["User"] = relationship(back_populates="memories")

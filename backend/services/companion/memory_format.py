@@ -70,3 +70,15 @@ def format_inferred_profile_block(db: Session, user_id: int) -> str:
         slot_name = r.context.split(":", 1)[1].replace("_", " ")
         lines.append(f"- **{slot_name}**: {r.content}")
     return "\n".join(lines)
+
+
+def format_proactive_memory_block(memories: list[dict]) -> str:
+    """Render proactively retrieved long-term memories into a prompt block."""
+    if not memories:
+        return ""
+    lines = ["# Relevant long-term memories (proactively retrieved for current context)"]
+    for m in memories:
+        ctx = f" [{m['context']}]" if m.get("context") else ""
+        content = (m.get("content") or "").strip()
+        lines.append(f"- {content}{ctx}")
+    return "\n".join(lines)

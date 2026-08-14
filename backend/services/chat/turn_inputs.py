@@ -10,7 +10,14 @@ from modules.system import AgentPromptConfig, ChatRequest
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from ..companion import build_system_prompt_extras, build_user_profile_extras, format_auto_inject_block, format_inferred_profile_block
+from ..companion import (
+    build_system_prompt_extras,
+    build_user_profile_extras,
+    format_auto_inject_block,
+    format_inferred_profile_block,
+    format_proactive_memory_block,
+    retrieve_proactive_memories,
+)
 from ..conversation import MAIN_KIND, UI_ONLY_SUBTYPES
 from ..gateway import RuntimeSession
 from ..llm import MissingLlmConfigError, ProviderConfig, ServiceType, provider_for_service, provider_from_config, resolve_context_tokens, resolve_vision_chain
@@ -165,6 +172,9 @@ def _build_turn_inputs(
     # unstated persona can carry LLM-maintained background context.
     auto_inject_extras = format_auto_inject_block(db, user_id)
     inferred_profile_extras = format_inferred_profile_block(db, user_id)
+    query_text = (req.message.content if req.message.role == "user" else (first_user_msg_content or "")) or ""
+    proactive_rows = retrieve_proactive_memories(db, user_id, query_text, limit=3) if query_text else []
+    proactive_memory_extras = format_proactive_memory_block(proactive_rows)
     custom_expressions = resolve_custom_expressions(db, user_id) if persona is not None else []
     agent_config = AgentPromptConfig(
         valid_tool_names=[schema_name(s) for s in all_schemas],
@@ -177,6 +187,7 @@ def _build_turn_inputs(
         user_profile_extras=user_profile_extras,
         auto_inject_extras=auto_inject_extras,
         inferred_profile_extras=inferred_profile_extras,
+        proactive_memory_extras=proactive_memory_extras,
         custom_expressions=custom_expressions,
         language=user_settings.get("language", DEFAULT_LANGUAGE),
     )

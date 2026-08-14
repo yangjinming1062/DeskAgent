@@ -147,7 +147,7 @@ def resolve_fullbody_template(species: str, rig_type: str = "biped") -> Fullbody
 _VIEW_PREFIX = {"front": "正面全身照片", "right": "右侧面全身照片", "back": "背面全身照片"}
 
 
-def build_fullbody_prompt(view: str, *, template: FullbodyTemplate, feedback: str | None = None, avatar_prompt: str = "") -> str:  # noqa: ARG001
+def build_fullbody_prompt(view: str, *, template: FullbodyTemplate, feedback: str | None = None, avatar_prompt: str = "") -> str:
     """直接构造 image-gen prompt — 无 LLM 翻译。
 
     Integration-tested through 4 rounds of A/B testing with MiniMax image-01:

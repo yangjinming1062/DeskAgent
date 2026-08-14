@@ -76,8 +76,16 @@ def _install_schema_extensions(conn: Connection) -> None:
     conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_memories_diary_day ON memories (user_id, context) WHERE context LIKE 'diary:%'"))
     # Speeds up the recall consolidator's count-and-recent queries.
     conn.execute(text("CREATE INDEX IF NOT EXISTS ix_memories_recall_user_updated ON memories (user_id, updated_at DESC) WHERE context LIKE 'recall:%'"))
+    with suppress(Exception):
+        conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+        conn.execute(text("CREATE EXTENSION IF NOT EXISTS pg_trgm"))
+        conn.execute(text("ALTER TABLE memories ADD COLUMN IF NOT EXISTS embedding vector(1536)"))
+        conn.execute(text("ALTER TABLE memories ADD COLUMN IF NOT EXISTS importance REAL DEFAULT 1.0"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_memories_embedding ON memories USING hnsw (embedding vector_cosine_ops)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_memories_content_trgm ON memories USING gin (content gin_trgm_ops)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_memories_context_trgm ON memories USING gin (context gin_trgm_ops)"))
     # Add capability provider columns if not exist (PostgreSQL schema extension)
-    for cap in ("llm", "stt", "tts", "image_gen", "video_gen"):
+    for cap in ("llm", "stt", "tts", "image_gen", "video_gen", "embedding"):
         with suppress(Exception):
             conn.execute(text(f"ALTER TABLE user_model_configs ADD COLUMN IF NOT EXISTS {cap}_provider VARCHAR(64) DEFAULT ''"))
 
