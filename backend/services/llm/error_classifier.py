@@ -335,6 +335,10 @@ _CONTENT_POLICY_BLOCKED_PATTERNS = [
     # echo back; the underscore form is provider-specific enough.
     "content_filter",
     "responsibleaipolicyviolation",
+    # Gemini image generation — finishReason IMAGE_SAFETY with
+    # "Generative AI Prohibited Use policy" in the finishMessage.
+    "image_safety",
+    "generative ai prohibited use policy",
 ]
 
 

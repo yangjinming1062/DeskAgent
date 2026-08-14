@@ -41,8 +41,12 @@ def _image_gen_chain(
     if secondary_reference_image:
         multi = [c for c in capable if resolve(ServiceType.image_gen, c.provider_name).supports_multiple_reference_images]
         if multi:
-            return multi, None
-        logger.info("no multi-reference image provider; dropping secondary reference", extra={"user_id": user_id})
+            # Prefer multi-ref providers but keep single-ref as fallback —
+            # single-ref providers silently ignore the secondary image.
+            multi_names = {c.provider_name for c in multi}
+            capable = sorted(capable, key=lambda c: 0 if c.provider_name in multi_names else 1)
+        else:
+            logger.info("no multi-reference image provider; dropping secondary reference", extra={"user_id": user_id})
     return capable, None
 
 
