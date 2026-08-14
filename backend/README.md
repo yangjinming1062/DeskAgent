@@ -18,7 +18,7 @@
 
 - **持久化伙伴身份与资产**：角色定义、形象资产、长期记忆都是**跨设备、跨会话**的核心资产，必须云端托管且按用户维度隔离。
 - **LLM 流式编排作为唯一对话入口**：所有用户消息经 backend chat service 走完整 turn（角色定义装配 → 上下文管理 → LLM 调度 → 工具路由 → 响应流式下发）；不绕过、不分支。
-- **数据库 schema 无 Alembic**：以 `ModelBase.metadata.create_all` + PG `ADD COLUMN IF NOT EXISTS` 幂等迁移；新增列安全，已部署实例不破坏（[已知限制](#6-已知限制)）。
+- **数据库 schema 由 Alembic 版本化迁移管理**：lifespan 启动时自动 `upgrade head`（决策细节见 §4）；schema 演进可审查、可回滚，消除 create_all + 手写幂等 DDL 时代"只能加列、不可收紧不可回滚"的盲区。
 - **Provider 自注册 + 三层入口**：每个 provider 模块在 module bottom 调 `REGISTRY.register`，`main.py` 显式 import 触发；chain resolver 不从 `base_url` host 反推（避免脆弱推断）。三层入口（`provider_for_service` / `client_for_service` / `execute_with_fallback`）按场景路由。
 - **Outbox + LISTEN/NOTIFY 取代轮询**：伙伴主动消息、Cron 任务、形象/角色变更通知全经 PostgreSQL 触发器 + `ws_events` 表，毫秒级、可水平扩展。
 - **形象资产生成受 rate-limit + per-user 锁守护**：生成是同步、阻塞 UI 的高成本路径，不并发、不公开 provider 原始错误。
@@ -70,6 +70,7 @@ backend/
   - **Dense + Sparse 混合检索与 RRF 融合**：Dense 向量语义检索（pgvector 余弦距离，SQLite/测试环境内存回退）+ Sparse 关键词/CJK N-gram 检索，经 RRF（Reciprocal Rank Fusion，$k=60$）合并打分。
   - **艾宾浩斯时间衰减与重要性加权**：基于记忆距今时间 $\Delta t$ 实施指数衰减 $0.3 + 0.7 \times e^{-0.05 \Delta t}$（保底 0.3 防关键记忆归零），并与记忆重要度系数 $Importance \in [0.1, 5.0]$ 乘积得到最终排序得分。
   - **前置主动召回注入**：在主对话 turn 开始前自动根据当前输入匹配 Top-3 高相关 recall 记忆注入 System Prompt，免去 LLM 轮轮主动调用 `memory_recall` 的认知开销。
+- **Alembic 版本化迁移 + 启动自动 upgrade**：schema 由 `alembic/versions/` 版本化；lifespan 内 `asyncio.to_thread(_run_migrations)` 自动 `upgrade head`，无独立部署步骤。**为什么启动时跑**：单实例部署且无 CI/CD，应用启动是最不易漏的迁移时机。**存量库零接触**：检测到业务表但无 `alembic_version` 时先 stamp 到 baseline（0001）再 upgrade——规范化迁移（0002）全部幂等，对已匹配的库是 no-op。**autogenerate 两个坑**：(a) `modules.media.models`（video_gen_jobs）不被 `modules/__init__` 导入，`alembic/env.py` 的显式 import 勿删；(b) partial unique / hnsw / gin trgm 索引只存在于迁移文件（声明进模型会让 SQLite `create_all` 丢失 `WHERE` 语义变成全量唯一索引），env.py 的 `include_object` 因此跳过"仅存在于数据库"的索引——代价是从模型删除 Index 时 autogenerate 不会生成对应 `drop_index`，需手写。
 
 ## 5. 与外部的契约
 
@@ -99,7 +100,7 @@ backend/
 
 | 限制 | 说明 |
 |------|------|
-| **单实例部署** | `disturbance_tier` 与 IPC future 锁在 process-local 内存；in-memory rate limit（slowapi）；架构不支持多实例水平扩展 |
+| **单实例部署** | `disturbance_tier` 与 IPC future 锁在 process-local 内存；in-memory rate limit（slowapi）；lifespan 自动迁移无并发锁，多实例需改为部署步骤 + 迁移锁；架构不支持多实例水平扩展 |
 | **MiniMax 视频 URL 短时效** | video_gen v2（H3）`poll` 直接返回 `download_url`，v1（Hailuo）还有 `files/retrieve` 第二跳；两者 URL 都是短时效的，必须**立即下载落 `data_dir/temp-media`**，不能直接返给前端 |
 | **MiniMax 内容风控 1027 不重试** | `base_resp.status_code=1027` 映射到 `content_policy_blocked` 且 `retryable=False`，避免重试三次白烧配额 |
 | **流式 chat 一旦首 chunk 已发不再 fallback** | 用户已看到部分输出，切换 provider 会造成 transcript 截断；失败统一 raise，由 HTTP envelope 走 `{error, reason, status}` |

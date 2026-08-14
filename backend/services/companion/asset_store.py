@@ -39,15 +39,14 @@ def _signing_key() -> bytes:
     if not _TEST_MODE:
         raise RuntimeError(
             "companion_asset_signing_key is empty outside test mode — "
-            "init_database() should have failed before this point. "
+            "lifespan startup should have failed before this point. "
             "Refusing to sign URLs with the public test key in production."
         )
     return _TEST_SIGNER_KEY
 
 
-# Set by init_database(engine=...) and the pytest sqlite_engine fixture; in
-# production paths, _signing_key() is reached only after init_database has
-# already validated the key.
+# Set by the pytest sqlite_engine fixture; in production paths,
+# _signing_key() is reached only after lifespan has already validated the key.
 _TEST_MODE = False
 
 

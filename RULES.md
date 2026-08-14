@@ -57,7 +57,7 @@
 
 本模块为什么这样设计——模块级的设计哲学/原则，**只**写"读代码推不出的"取舍。列举 3–N 条设计原则（每条 1–3 行，说"原则 + 为什么这样 + 不这样会怎样"）。
 
-典型例子："Runner 零凭证"、"Backend 数据库无 Alembic（手动 DDL）的设计选择"、"Installer binary self-contained"。
+典型例子："Runner 零凭证"、"Backend 启动时自动执行 Alembic 迁移的设计选择"、"Installer binary self-contained"。
 
 **不**放：具体类名/方法名（实现细节）、版本号/数字阈值（可调参数）。
 

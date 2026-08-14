@@ -102,7 +102,7 @@ class AvatarAsset(ModelBase):
     """asset_url lives in companion-avatars/ (durable) so re-login survives the 24h temp-media TTL."""
 
     __tablename__ = "avatar_assets"
-    # Partial unique index (one active per user) lives in _install_schema_extensions — needs WHERE.
+    # Partial unique index (one active per user) lives in the alembic baseline — needs WHERE.
 
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     prompt_json: Mapped[str] = mapped_column(Text)
@@ -123,7 +123,7 @@ class CompanionSpriteImage(ModelBase, TimestampMixin):
 
     `tag` is the LLM-authored free-form label used as the album matching key;
     `role='waiting'` is the one-per-user waiting/switch sprite (partial unique
-    index in _install_schema_extensions). Rows whose avatar_id no longer
+    index in the alembic baseline). Rows whose avatar_id no longer
     matches the active avatar are a stale identity — excluded from matching.
     asset_url is a bare companion-assets/<uid>/ path; re-signed on read.
     """

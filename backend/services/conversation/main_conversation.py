@@ -28,8 +28,8 @@ def get_or_create_main_conversation(db: Session, user_id: int) -> Conversation:
 
     Concurrent callers (WS boot, cron kick, prompt.submit) each open their
     own SESSION_LOCAL, so the read-then-insert is not atomic across them.
-    The unique partial index ``uq_conversations_user_main`` (installed in
-    ``_install_schema_extensions``) makes a duplicate insert fail; we roll
+    The unique partial index ``uq_conversations_user_main`` (alembic baseline
+    migration) makes a duplicate insert fail; we roll
     back and re-read so the loser converges on the winner's row.
     """
     conv = get_main_conversation(db, user_id)
