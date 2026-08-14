@@ -148,6 +148,7 @@ media_video_gen_rate_limit_per_minute = 3
 companion_avatar_generate_rate_limit_per_minute = 3
 companion_avatar_upload_rate_limit_per_minute = 5
 companion_model_generate_rate_limit_per_minute = 1
+companion_sprite_generate_rate_limit_per_minute = 10
 companion_wardrobe_generate_rate_limit_per_minute = 5
 
 [logging]

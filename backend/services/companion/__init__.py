@@ -68,6 +68,16 @@ from .prompt_runtime import run_prompt_json
 from .response_builders import avatar_response, model_response, wardrobe_response
 from .rig_type_selector import select_rig_type
 from .should_act import ALLOWED_ACTIONS, ShouldActResult, should_act
+from .sprite_service import (
+    SpriteGenerationError,
+    SpriteSeedMissingError,
+    get_waiting_sprite,
+    has_real_transparency,
+    list_sprites,
+    resolve_sprite,
+    signed_sprite_url,
+    solid_bg_to_alpha,
+)
 from .tripo_client import create_multiview_to_model
 from .voice_catalog import design_voice, list_tts_voices, match_user_voice, normalize_voice_language
 from .wardrobe_service import (
@@ -103,6 +113,8 @@ __all__ = [
     "ModelGenerationInProgressError",
     "PersonaValidationError",
     "SeedPromptMissingError",
+    "SpriteGenerationError",
+    "SpriteSeedMissingError",
     "WardrobeRouting",
     "WardrobeSourceExpiredError",
     "analyze_personality_tags",
@@ -148,11 +160,14 @@ __all__ = [
     "get_onboarding_state",
     "get_or_create_persona",
     "get_rig_bones",
+    "get_waiting_sprite",
+    "has_real_transparency",
     "interact",
     "list_avatar_history",
     "list_memories",
     "list_tts_voices",
     "list_wardrobe",
+    "list_sprites",
     "load_avatar_bytes_as_data_uri",
     "match_user_voice",
     "memory_admin",
@@ -175,13 +190,16 @@ __all__ = [
     "run_garment_pipeline",
     "resolve_companion_asset_path",
     "resolve_companion_model_path",
+    "resolve_sprite",
     "resolve_uploaded_avatar_path",
     "RIG_DEFAULT_BONES",
     "select_rig_type",
     "serve_ranged_file",
     "should_act",
     "signed_model_url",
+    "signed_sprite_url",
     "slot_of",
+    "solid_bg_to_alpha",
     "submit_onboarding_field",
     "update_memory",
     "update_outfit_field",

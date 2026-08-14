@@ -169,6 +169,7 @@ class Settings(BaseSettings):
     companion_avatar_generate_rate_limit_per_minute: int
     companion_avatar_upload_rate_limit_per_minute: int
     companion_model_generate_rate_limit_per_minute: int
+    companion_sprite_generate_rate_limit_per_minute: int
     companion_wardrobe_generate_rate_limit_per_minute: int
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
     log_format: Literal["json", "text"]

@@ -64,6 +64,9 @@ def _install_schema_extensions(conn: Connection) -> None:
     # invariant so concurrent boot / cron kick / prompt.submit cannot race
     # in a second row.
     conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_conversations_user_main ON conversations (user_id) WHERE kind = 'main'"))
+    # One waiting/switch sprite per user; resolve_sprite deletes the prior row
+    # before inserting so this holds concurrent requests too.
+    conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_companion_sprites_one_waiting ON companion_sprite_images (user_id) WHERE role = 'waiting'"))
     conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_companion_expressions_user_name ON companion_expressions (user_id, name)"))
     conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_memories_user_context ON memories (user_id, context) WHERE context LIKE 'user_profile:%'"))
     # Partial unique for auto_inject slots — enforces one row per (user, slot)

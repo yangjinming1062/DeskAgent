@@ -23,6 +23,8 @@ from modules.companion import (
     Persona,
     PersonaResponse,
     PersonaUpdate,
+    SpriteImageResponse,
+    SpriteResolveRequest,
     WardrobeConfirmRequest,
     WardrobeEquipRequest,
     WardrobeGenerateRequest,
@@ -40,6 +42,8 @@ from services.companion import (
     ModelGenerationInProgressError,
     PersonaValidationError,
     SeedPromptMissingError,
+    SpriteGenerationError,
+    SpriteSeedMissingError,
     WardrobeSourceExpiredError,
     analyze_personality_tags,
     avatar_response,
@@ -73,8 +77,10 @@ from services.companion import (
     regenerate_avatar_from_image,
     resolve_companion_asset_path,
     resolve_companion_model_path,
+    resolve_sprite,
     resolve_uploaded_avatar_path,
     serve_ranged_file,
+    signed_sprite_url,
     update_outfit_field,
     update_persona,
     verify_signed_asset_request,
@@ -475,6 +481,27 @@ async def post_model(
     except ModelGenerationError as exc:
         raise HTTPException(status_code=502, detail={"error": str(exc)})
     return model_response(model)
+
+
+@router.post("/sprite", response_model=SpriteImageResponse)
+@limiter.limit(f"{SETTINGS.companion_sprite_generate_rate_limit_per_minute}/minute")
+async def post_sprite(
+    request: Request,  # required by @limiter.limit
+    body: SpriteResolveRequest,
+    auth: tuple[User, LoginRecord] = Depends(get_current_session),
+    db: Session = Depends(get_db),
+) -> SpriteImageResponse:
+    user, _ = auth
+    try:
+        row, generated = await resolve_sprite(db, user_id=user.id, request_text=body.request, role=body.role, force_new=body.force_new)
+    except SpriteSeedMissingError as exc:
+        raise HTTPException(status_code=404, detail={"error": str(exc)})
+    except SpriteGenerationError as exc:
+        raise HTTPException(status_code=502, detail={"error": str(exc)})
+    url = signed_sprite_url(row)
+    if url is None:
+        raise HTTPException(status_code=502, detail={"error": "精灵形象生成失败，请稍后重试"})
+    return SpriteImageResponse(id=row.id, url=url, tag=row.tag, content_hash=row.content_hash, generated=generated)
 
 
 @router.get("/wardrobe", response_model=list[WardrobeItemResponse])

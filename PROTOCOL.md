@@ -64,6 +64,7 @@ Backend ↔ Client 同时暴露 JSON-RPC over WebSocket（`/api/chat/ws`）与 H
 | Client → Backend | `POST /api/companion/portrait/confirm` | 确认形象（半身/全身） | 幂等;设置 `is_portrait_confirmed=True`,解开 voice/user_* 子阶段 |
 | Client → Backend | `GET /api/companion/model` | 查询当前 3D 模型状态 | `species` / `provider` / `asset_url` / `content_hash`（SHA-256 哈希，供客户端本地磁盘缓存寻址） |
 | Client → Backend | `POST /api/companion/model` `{species_override?, provider?}` | 触发 3D 模型异步生成 | `fullbody_mode="single"`: 正面单图 → Tripo3D image-to-model + rig;`fullbody_mode="multi"`: 全身三视图 → Tripo3D multiview-to-3D + rig;**或** Blender+LLM 回退管线（见 §1.5）;进度经事件推送;`provider` 默认 `None` (auto-detect),可选 `"tripo"` 显式锁 Tripo 或 `"blender_llm"` 显式锁 Blender 管线 |
+| Client → Backend | `POST /api/companion/sprite` `{request, role?, force_new?}` | 静态精灵相册解析（无 3D 模型期的降级渲染源）:LLM 按自由语义在已有相册 tag 中匹配,命中即返;未命中由 LLM 撰写提示词（persona 外貌锚点 + 种子图 `subject_reference` + 纯白背景条款）经常规 image-gen 链生成,服务端把纯白背景确定性转 alpha 后入库返回 | 同步 REST,响应即消费——无共享状态需广播,故**无 WS 事件**（§1.0 路由原则）;`role="waiting"` 为每用户唯一的等待/切换图,命中即返**不查 LLM**;透明度来源为服务端纯白→alpha 后处理（MiniMax 仅出 JPEG,2026-08 实验结论,见 backend/README.md）;404 无种子图 / 502 生成失败（友好文案）/ 429 `companion_sprite_generate_rate_limit_per_minute`;相册上限 300 张、按 `avatar_id` 失效（头像重生即旧身份图不可复用） |
 | Client → Backend | `POST /api/companion/avatar` / `/from-image` | 头像半身生成（步 1） | 同步;失败返回 502 + 友好文案,不暴露 provider 原始错误 |
 | Client → Backend | `POST /api/companion/avatar/{avatar_id}/fullbody` | 链式参考生成全身种子图（步 2） | 同步;缺少正面全身 409;头像不存在 404;并发 429;`stage` 与 `view` 互斥必选其一;单视图模式（`fullbody_mode="single"`）下 `stage="aux"` 和 `view="right"/"back"` 被拒绝;可选 `reference_source`（`"avatar"` / `"reference_image"`，默认 `"avatar"`）+ `reference_image`（base64）+ `reference_content_type`：`"reference_image"` 时正面全身图以用户原始参考图为主参考（保留身材/体态），头像自动作为 secondary reference 供 Gemini 双参考融合美化风格;`reference_source="reference_image"` 时 `reference_image` 必填 |
 | Client → Backend | `POST /api/companion/wardrobe/preview` `{description, image?, content_type?, feedback?}` | 换装预览（写 temp-media，不入库）；后端用一次 LLM 路由调用把描述分类为 `texture`（仅改色/材质/图案）、`garment`（改轮廓/新增件）或 `accessory`（包/帽/眼镜等硬质挂件），再下发到对应流水线 | 同步；返回 `WardrobePreviewResponse`，其中 `kind` / `mesh_url` / `mesh_file_id` / `assembly_json` 在走几何流水线时填充（装配语义见 §1.6）；客户端不感知路由决策；`file_id` / `mesh_file_id` 在 `temp_file_ttl_hours` 内可被 `confirm` 落库 |
@@ -77,7 +78,7 @@ Backend ↔ Client 同时暴露 JSON-RPC over WebSocket（`/api/chat/ws`）与 H
 | `avatar.regenerated` | `avatar.regenerate` 最终结果 | `{job_id, asset_url?, seed_front_url?, seed_right_url?, seed_back_url?, id?, error?}` | 替换头像或展示失败提示 |
 | `model.ready` | 3D 模型异步生成就绪 | `{model_id, asset_url, species?, rig_type?, provider?, content_hash?}` (`provider` ∈ `"tripo_image_to_3d"` / `"tripo_multiview_to_3d"` / `"blender_llm"`) | 客户端加载 GLB + 注入 TS 动画 clip + 状态机绑定;`provider` 字段供 UI 标识生成来源（Tripo 单图/多视图 vs LLM 自建模）;`content_hash` 供客户端校验与磁盘缓存索引 |
 | `model.gen.progress` | 模型生成中 | `{progress: 0..100, stage, provider?}` (`provider` ∈ `"tripo"` / `"blender_llm"`) | 可选进度展示;`provider` 字段让客户端识别当前是 Tripo 多步流水线还是 Blender+LLM 迭代循环（最坏 ~100 分钟） |
-| `model.failed` | 模型生成失败 | `{error}` | 渲染程序化蛋形兜底角色（无气泡、无错误） |
+| `model.failed` | 模型生成失败 | `{reason}` | 客户端进入静态精灵降级模式（等待图/相册,见 §1.1 `POST /api/companion/sprite`）;程序化蛋形仅在尚无形象资产或相册不可用时兜底（无气泡、无错误） |
 | `wardrobe.updated` | 换装产物就绪 | `{}` | 客户端重新拉取 wardrobe 列表；渲染层按 item `kind` 自动分派贴图热替或几何装配（rebind 到身体骨骼）——两者均不动身体骨骼动画与 morph |
 | `video_gen.completed` | 视频生成成功 | `{task_id, url}` | 媒体展示 |
 | `video_gen.failed` | 视频生成失败 | `{task_id, error}` | 用户可见错误 |
@@ -134,11 +135,12 @@ home / chat / perch / roam / sleep
 | portrait 头像/种子图 | `companion-avatars/` | `signed_url_expiry_seconds=300`（5 分钟） |
 | 3D 模型 GLB | `companion-models/` | 5 分钟 |
 | 换装产物（纹理 + 服装 GLB） | `companion-assets/` | 5 分钟 |
+| 静态精灵相册 PNG | `companion-assets/`（label 前缀 `sprite_`） | 5 分钟 |
 
 **传输与缓存契约**:
 - **URL HMAC 签名**: 每次签名 TTL 为 5 分钟；换设备登录需重新生成签名。
 - **服务端 HTTP Range & 不可变缓存支持**: 服务端模型/资产文件端点支持 HTTP Range（`Accept-Ranges: bytes`、`206 Partial Content`、`416 Range Not Satisfiable`）、`ETag: "<sha256>"`、`Cache-Control: public, max-age=31536000, immutable` 以及 `X-Content-Sha256` 校验头。
-- **客户端本地磁盘缓存**: Client 按 `content_hash`（SHA-256）在 `$DESKAGENT_HOME/cache/models/<content_hash>.glb` 建立持久磁盘缓存。模型未发生变更时，客户端直接命中本地磁盘缓存，跳过网络请求；未命中或下载中断时，通过 `<content_hash>.partial` 临时文件发起 `Range: bytes=N-` 实现断点续传。
+- **客户端本地磁盘缓存**: Client 按 `content_hash`（SHA-256）在 `$DESKAGENT_HOME/cache/models/<content_hash>.glb` 建立持久磁盘缓存。模型未发生变更时，客户端直接命中本地磁盘缓存，跳过网络请求；未命中或下载中断时，通过 `<content_hash>.partial` 临时文件发起 `Range: bytes=N-` 实现断点续传。静态精灵 PNG 走 `apiAsset` data-URL 通道 + 渲染进程内存缓存（按 `content_hash`），不入磁盘缓存目录。
 
 ### 1.5 错误信封
 
@@ -179,7 +181,7 @@ WS JSON-RPC 错误使用标准 JSON-RPC 2.0 错误码（`-32700` 到 `-32603`）
 | garment | `skins[].joints` 骨骼名与顺序与身体 GLB **完全一致**（客户端 rebind 零映射的前提）；无动画、无 morph |
 | accessory | 不含 skins（纯静态 mesh，佩戴点已在导出时对准挂点骨骼位置）；无动画、无 morph |
 
-**降级**：服装/挂件 GLB 载入失败时退化为贴图换装或程序化兜底，不崩溃（沿用 §1.2 `model.ready` 的兜底原则）。
+**降级**：服装/挂件 GLB 载入失败时退化为贴图换装或程序化兜底，不崩溃。身体资产整体缺失/加载失败时按「GLB → 静态精灵相册（§1.1 `POST /api/companion/sprite`）→ 程序化蛋形」层级兜底——用户无 3D 模型期间看到的仍是自己的角色（静态立绘），蛋形仅在引导前期或相册不可用时出现。
 
 ---
 

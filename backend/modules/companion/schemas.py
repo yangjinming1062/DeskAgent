@@ -105,6 +105,23 @@ class ModelGenerateRequest(BaseModel):
     force: bool = False
 
 
+class SpriteResolveRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    request: str = Field(min_length=1, max_length=500)
+    # "waiting" = the first-priority waiting/switch sprite (one per user, album-match bypassed).
+    role: Literal["waiting"] | None = None
+    force_new: bool = False
+
+
+class SpriteImageResponse(BaseModel):
+    id: int
+    url: str
+    tag: str
+    content_hash: str | None = None
+    generated: bool
+
+
 class WardrobeItemResponse(BaseModel):
     id: int
     name: str

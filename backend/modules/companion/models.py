@@ -116,3 +116,25 @@ class AvatarAsset(ModelBase):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     user: Mapped["User"] = relationship(back_populates="avatar_assets")
+
+
+class CompanionSpriteImage(ModelBase, TimestampMixin):
+    """Static 2D sprite album entry, lazily generated while no 3D model renders.
+
+    `tag` is the LLM-authored free-form label used as the album matching key;
+    `role='waiting'` is the one-per-user waiting/switch sprite (partial unique
+    index in _install_schema_extensions). Rows whose avatar_id no longer
+    matches the active avatar are a stale identity — excluded from matching.
+    asset_url is a bare companion-assets/<uid>/ path; re-signed on read.
+    """
+
+    __tablename__ = "companion_sprite_images"
+
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    avatar_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    role: Mapped[str | None] = mapped_column(String(32), nullable=True, default=None, server_default=text("NULL"))
+    tag: Mapped[str] = mapped_column(Text, default="", server_default=text("''"))
+    prompt: Mapped[str] = mapped_column(Text, default="", server_default=text("''"))
+    request_text: Mapped[str] = mapped_column(Text, default="", server_default=text("''"))
+    asset_url: Mapped[str] = mapped_column(String(2048))
+    content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, default="", server_default=text("''"))
