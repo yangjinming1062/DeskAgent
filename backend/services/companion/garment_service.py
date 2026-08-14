@@ -27,7 +27,7 @@ _CODE_GEN_SYSTEM_PROMPT = """\
 在已有的角色身体上创建服装几何体。
 
 ## 你的代码运行环境
-- Blender 以 headless 模式运行（`blender --background`），版本约 3.3
+- Blender 以 headless 模式运行（`blender --background`），版本 5.2
 - 场景已重置，身体 GLB 已导入（armature + body mesh）
 - 你的代码将被注入到 scaffold 的 `_build_garment(ctx)` 函数中
 - scaffold 负责确定性后处理（贴合/加厚/蒙皮/防穿模）和 GLB 导出
@@ -105,7 +105,7 @@ _ACCESSORY_CODE_GEN_SYSTEM_PROMPT = """\
 在角色身体上创建一个挂件 mesh（包、帽、眼镜、围巾、翅膀等硬质附件）。
 
 ## 你的代码运行环境
-- Blender 以 headless 模式运行（`blender --background`），版本约 3.3
+- Blender 以 headless 模式运行（`blender --background`），版本 5.2
 - 场景已重置，身体 GLB 已导入（armature + body mesh，供你读取位置参考）
 - 你的代码将被注入到 scaffold 的 `_build_garment(ctx)` 函数中
 - scaffold 负责导出；挂件**不需要**蒙皮/贴合/加厚等后处理
@@ -174,7 +174,7 @@ _FIX_SYSTEM_PROMPT = """\
 {prev_script}
 
 请修复导致错误的部分。可能的原因：
-- bpy API 版本差异（Blender ~3.3）
+- bpy API 版本差异（Blender 5.2）
 - 属性名错误
 - bmesh 操作前需要正确的模式/选择状态
 - VG_ANCHOR 顶点组的 add 调用参数错误

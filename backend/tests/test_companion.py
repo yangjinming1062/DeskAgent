@@ -3540,3 +3540,42 @@ def test_onboarding_state_default_fullbody_reference_source(_patch_db):
         })
         state = get_onboarding_state(db, 203)
         assert state["default_fullbody_reference_source"] == "avatar"
+
+
+@pytest.mark.asyncio
+async def test_confirm_wardrobe_with_displacement_channel(monkeypatch, _patch_db):
+    client, SessionLocal, uid = _make_authenticated_client(_patch_db, uid=3003)
+    from services.companion import confirm_wardrobe_item
+    from pathlib import Path
+    import tempfile
+
+    td = tempfile.mkdtemp()
+    dummy_file = Path(td) / "dummy.png"
+    dummy_file.write_bytes(b"dummy")
+
+    monkeypatch.setattr(
+        "services.companion.wardrobe_service.get_file_path",
+        lambda fid: (dummy_file, "image/png"),
+    )
+    monkeypatch.setattr(
+        "services.companion.wardrobe_service.save_companion_asset",
+        lambda data, user_id, label, ext="png": f"companion-assets/{user_id}/{label}.{ext}",
+    )
+
+    with SessionLocal() as db:
+        item = await confirm_wardrobe_item(
+            db,
+            user_id=uid,
+            file_id="dummy_albedo",
+            normal_file_id="dummy_normal",
+            roughness_file_id="dummy_roughness",
+            metalness_file_id="dummy_metalness",
+            displacement_file_id="dummy_displacement",
+            name="刺绣长袍",
+            prompt="Embroidered robe",
+        )
+        assert "wardrobe_texture.png" in item.texture_url
+        assert "wardrobe_normal.png" in item.normal_url
+        assert "wardrobe_roughness.png" in item.roughness_url
+        assert "wardrobe_metalness.png" in item.metalness_url
+        assert "wardrobe_displacement.png" in item.displacement_url

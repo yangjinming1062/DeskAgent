@@ -50,8 +50,8 @@ class WardrobeItem(ModelBase, TimestampMixin):
     """material_overrides_json keys are mesh names; "*" applies to all meshes.
 
     `texture_url` is the albedo channel; `normal_url` / `roughness_url` /
-    `metalness_url` are the matching PBR channels for the GLB texture pass.
-    All four are nullable so legacy rows (albedo-only) and colour-preset
+    `metalness_url` / `displacement_url` are the matching PBR channels for the GLB texture pass.
+    All five are nullable so legacy rows (albedo-only) and colour-preset
     rows (no textures at all) coexist with full PBR sets.
     """
 
@@ -65,6 +65,7 @@ class WardrobeItem(ModelBase, TimestampMixin):
     normal_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     roughness_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     metalness_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    displacement_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     prompt: Mapped[str | None] = mapped_column(Text, nullable=True)
     # LLM-normalized outfit description (visual: style, color, material, cut).
     # Generated at creation time; swapped into Persona.appearance_outfit on equip.

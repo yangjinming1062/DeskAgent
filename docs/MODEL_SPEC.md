@@ -223,7 +223,7 @@ morph target 用 ARKit BlendShape 标准命名。所有 morph 由资源管线注
 ## 4. 材质与装配
 
 每个模型至少两个材质 slot：`Skin`（身体，roughness 0.55）· `Eyes`（眼珠，roughness 0.12）。
-PBR 纹理由资源管线生成并嵌入 GLB。换装由后端单入口 `POST /api/companion/wardrobe/preview` 接收描述文本，由一次 LLM 路由调用决定走 `texture`（贴图热替换，仅改色/材质/图案）、`garment`（几何装配，加载独立服装 GLB 并 rebind 到身体骨骼）或 `accessory`（挂件挂到 socket 骨骼）流水线——客户端不暴露 `kind` 字段。三者均不改动身体骨骼或 morph。装配语义（kind / slot / layer / socket / physics / materials 映射）的协议契约见 [PROTOCOL.md §1.6](../PROTOCOL.md)。
+PBR 纹理由资源管线生成并嵌入 GLB，支持 5 通道（`albedo` / `normal` / `roughness` / `metalness` / `displacement`，客户端绑定到 `MeshStandardMaterial.displacementMap` 呈现微表面起伏与织纹/刺绣深度）。换装由后端单入口 `POST /api/companion/wardrobe/preview` 接收描述文本，由一次 LLM 路由调用决定走 `texture`（贴图热替换，仅改色/材质/图案）、`garment`（几何装配，加载独立服装 GLB 并 rebind 到身体骨骼）或 `accessory`（挂件挂到 socket 骨骼）流水线——客户端不暴露 `kind` 字段。三者均不改动身体骨骼或 morph。装配语义（kind / slot / layer / socket / physics / materials 映射）的协议契约见 [PROTOCOL.md §1.6](../PROTOCOL.md)。
 
 ### 4.1 换装单元 GLB 事实规范
 
@@ -233,16 +233,22 @@ PBR 纹理由资源管线生成并嵌入 GLB。换装由后端单入口 `POST /a
 
 ### 4.2 garment 生成管线确定性后处理参数
 
-LLM 只产"毛坯几何 + `VG_ANCHOR` 锚点标注"，其后一切由确定性 bpy 代码接管（贴合/蒙皮/防穿模是数值几何问题，必须可复现可校验）：
+LLM 只产"毛坯几何 + `VG_ANCHOR` 锚点标注"，其后一切由确定性 bpy 代码接管（贴合/厚度/悬垂/蒙皮/防穿模是数值几何问题，必须可复现可校验）：
 
 | 阶段 | 操作 | 参数 |
 |------|------|------|
 | fit | Shrinkwrap 仅作用于 `VG_ANCHOR` 顶点（保住裙摆/褶皱轮廓） | offset 1.5 mm |
+| drape | Blender 布料重力悬垂仿真（`VG_ANCHOR` 钉住，身体碰撞，步进 20 帧将悬垂褶皱烘焙进单层静态几何） | frames 20，distance 3 mm |
 | 厚度 | Solidify 向外 + 低密度补 Subsurf | 2 mm；顶点 < 4000 时 level=1 |
 | 蒙皮 | Data Transfer 从身体 mesh 迁移顶点权重（最近面插值）+ ARMATURE 修改器——薄壳/悬空几何上自动权重必失败 | REPLACE ×1.0 |
 | 碰撞 | 静止态顶点推出身体表面（BVH 最近点） | clearance 3 mm |
 
 蒙皮用 Data Transfer 而非 `parent_set(ARMATURE_AUTO)`：自动权重基于骨骼热扩散，在薄壳（裙摆、褶皱）上必产生错误权重；Data Transfer 直接继承身体表面最近面的权重，对任意形态、任意物种成立。
+
+### 4.3 拟真度上限与诚实边界
+
+- **零边际成本的拟真上限**：多模态 LLM 程序化毛坯 + 确定性后处理（厚度/悬垂烘焙/权重传递）+ 5 通道 PBR（含 displacement）+ 运行时 CPU 表面碰撞（`BodyCollider`），可达成"可信、自然、有悬垂与立体微细节"的次世代卡通/二次元桌面伴侣效果。
+- **与商业扫描级的边界**：几何精度无法达到商业 image-to-3D（Tripo/Rodin）按件计费或真实扫描/资产库的照片级精度。此为成本策略决定的保真度边界，而非工程缺陷；桌面精灵场景在此上限内即可达成设计目标。
 
 ---
 

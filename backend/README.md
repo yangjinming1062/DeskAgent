@@ -116,4 +116,4 @@ backend/
 | **挂件生成跳过后处理四阶段** | accessory 是硬质附件挂到 socket 骨骼，无需贴合/蒙皮/防穿模——scaffold `--kind accessory` 分支直接导出（并在导出前移除导入的身体对象），生成管线只校验 GLB 可解析。 |
 | **socket 从身体 GLB 实际关节名解析** | LLM 看到的骨骼名与 mixamo 导出的 `mixamorig:` 前缀可能不一致——`_resolve_socket` 做精确→去前缀两级匹配，失败按槽位回退默认挂点（Head/RightHand/Spine2），再失败降级为 garment。 |
 | **同槽互斥、异槽并存的多装备** | `equip` 只顶掉同 `assembly_json.slot` 的已装备件；persona outfit 字段镜像全部已装备件描述的拼接（不是单行）。texture 行恒占 `outfit` 槽。 |
-| **几何拟真度天花板** | 几何是程序化/LLM 生成，偏"干净"，达不到扫描级写实；靠图像生成 LLM 的拟真 PBR 贴图抬质感。极端款式（多层蕾丝、镂空）可能生成失败（LLM 毛坯质量方差，靠锚点契约 + 确定性后处理 + 视觉迭代收敛缓解）。 |
+| **几何拟真度天花板** | 几何是程序化/LLM 生成，偏"干净"，达不到扫描级写实；通过生成期 Blender 布料重力悬垂烘焙（20 帧静态形变固化）、5 通道 PBR 贴图（含 displacement 微表面深度）与客户端 BodyCollider 表面防穿模推移提升拟真度。扫描级写实属于商业高成本管线边界，非工程缺陷。 |

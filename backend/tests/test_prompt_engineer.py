@@ -279,3 +279,15 @@ def test_build_texture_includes_feedback():
     )
     assert "旗袍" in prompt
     assert "用户反馈：更深邃的暗红色，加金色刺绣" in prompt
+
+
+def test_build_texture_channels():
+    for ch, token in (
+        ("normal", "法线贴图"),
+        ("roughness", "粗糙度贴图"),
+        ("metalness", "金属度贴图"),
+        ("displacement", "高度置换贴图"),
+    ):
+        prompt = prompt_engineer.build_texture_prompt(description="旗袍", channel=ch)
+        assert token in prompt
+        assert "seamless" in prompt

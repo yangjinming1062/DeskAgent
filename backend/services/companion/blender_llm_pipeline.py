@@ -55,7 +55,7 @@ _CODE_GEN_SYSTEM_PROMPT = """\
 编写 bpy 代码来创建一个完整的、可绑骨的 3D 角色模型。
 
 ## 你的代码运行环境
-- Blender 以 headless 模式运行（`blender --background`），版本约 3.3
+- Blender 以 headless 模式运行（`blender --background`），版本 5.2
 - 场景已通过 `bpy.ops.wm.read_factory_settings(use_empty=True)` 重置
 - 你的代码将被注入到 scaffold 的 _build_body(ctx) 函数中
 - scaffold 负责 GLB 导出和可选渲染，你只需创建网格、骨骼、材质
@@ -145,10 +145,10 @@ _FIX_SYSTEM_PROMPT = """\
 {prev_script}
 
 请修复导致错误的部分。可能的原因：
-- bpy API 版本差异（Blender ~3.3）
+- bpy API 版本差异（Blender 5.2）
 - 属性名错误
 - 操作前需要正确的 selection / active / mode 状态
-- Principled BSDF 某些 input 名称在 3.3 中不同
+- Principled BSDF 某些 input 名称在 5.2 中不同
 
 保留整体结构，只修改导致错误的部分。
 输出修复后的完整 Python 代码（_build_body 函数体内容），不要 markdown 围栏。\

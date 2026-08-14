@@ -28,6 +28,8 @@ interface WardrobePreviewResponse {
   roughness_file_id?: string
   metalness_url?: string
   metalness_file_id?: string
+  displacement_url?: string
+  displacement_file_id?: string
   mesh_url?: string
   mesh_file_id?: string
   kind?: string
@@ -53,7 +55,7 @@ async function discardPreviewFiles(fileIds: string[]): Promise<void> {
 
 function candidateFileIds(candidates: WardrobeCandidate[]): string[] {
   return candidates
-    .flatMap(c => [c.fileId, c.normalFileId, c.roughnessFileId, c.metalnessFileId, c.meshFileId])
+    .flatMap(c => [c.fileId, c.normalFileId, c.roughnessFileId, c.metalnessFileId, c.displacementFileId, c.meshFileId])
     .filter((id): id is string => Boolean(id))
 }
 
@@ -162,6 +164,8 @@ export function WardrobeDesignPanel({ onClose }: WardrobeDesignPanelProps): Reac
           roughnessFileId: res.roughness_file_id,
           metalnessUrl: res.metalness_url,
           metalnessFileId: res.metalness_file_id,
+          displacementUrl: res.displacement_url,
+          displacementFileId: res.displacement_file_id,
           meshUrl: res.mesh_url,
           meshFileId: res.mesh_file_id,
           kind: res.kind,
@@ -220,6 +224,7 @@ export function WardrobeDesignPanel({ onClose }: WardrobeDesignPanelProps): Reac
           normal_file_id: currentCandidate.normalFileId,
           roughness_file_id: currentCandidate.roughnessFileId,
           metalness_file_id: currentCandidate.metalnessFileId,
+          displacement_file_id: currentCandidate.displacementFileId,
           mesh_file_id: currentCandidate.meshFileId,
           assembly_json: currentCandidate.assemblyJson
         }

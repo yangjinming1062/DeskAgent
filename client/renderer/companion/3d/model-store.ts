@@ -35,6 +35,7 @@ export interface WardrobeItem {
   normal_url?: string | null
   roughness_url?: string | null
   metalness_url?: string | null
+  displacement_url?: string | null
   prompt?: string | null
   outfit_description?: string | null
   equipped: boolean
@@ -123,6 +124,8 @@ export interface WardrobeCandidate {
   roughnessFileId?: string
   metalnessUrl?: string
   metalnessFileId?: string
+  displacementUrl?: string
+  displacementFileId?: string
   // Geometric wardrobe (PROTOCOL.md §1.6).
   meshUrl?: string
   meshFileId?: string
@@ -149,6 +152,7 @@ function _candidateToPreview(c: WardrobeCandidate): WardrobeItem {
     normal_url: c.normalUrl ?? null,
     roughness_url: c.roughnessUrl ?? null,
     metalness_url: c.metalnessUrl ?? null,
+    displacement_url: c.displacementUrl ?? null,
     prompt: c.prompt,
     equipped: false,
     kind: c.kind ?? 'texture',

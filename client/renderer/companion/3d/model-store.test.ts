@@ -208,9 +208,13 @@ describe('wardrobe candidates & preview', () => {
     expect($wardrobePreview.get()?.texture_url).toBe('http://localhost/c4.png')
   })
 
-  it('switches preview when selecting an earlier candidate', () => {
+  it('switches preview when selecting an earlier candidate and preserves displacement channel', () => {
     pushWardrobeCandidate({
       url: 'http://localhost/c1.png',
+      normalUrl: 'http://localhost/n1.png',
+      roughnessUrl: 'http://localhost/r1.png',
+      metalnessUrl: 'http://localhost/m1.png',
+      displacementUrl: 'http://localhost/d1.png',
       prompt: 'p1',
       fileId: 'fid1',
       description: 'd1'
@@ -224,7 +228,12 @@ describe('wardrobe candidates & preview', () => {
 
     selectWardrobeCandidate(0)
     expect($wardrobeSelectedIdx.get()).toBe(0)
-    expect($wardrobePreview.get()?.texture_url).toBe('http://localhost/c1.png')
+    const prev = $wardrobePreview.get()
+    expect(prev?.texture_url).toBe('http://localhost/c1.png')
+    expect(prev?.normal_url).toBe('http://localhost/n1.png')
+    expect(prev?.roughness_url).toBe('http://localhost/r1.png')
+    expect(prev?.metalness_url).toBe('http://localhost/m1.png')
+    expect(prev?.displacement_url).toBe('http://localhost/d1.png')
   })
 
   it('clears all candidates and resets preview to null', () => {

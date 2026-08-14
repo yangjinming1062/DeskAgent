@@ -32,6 +32,7 @@ interface OutfitItem {
   normal_url?: string | null
   roughness_url?: string | null
   metalness_url?: string | null
+  displacement_url?: string | null
   // Geometric wardrobe (PROTOCOL.md §1.6 + companion README §9).
   kind?: string
   mesh_url?: string | null
@@ -76,7 +77,7 @@ function parseAssembly(item: OutfitItem): AssemblySpec {
 // are the URL field names on the JSON response; the values name the
 // MeshStandardMaterial slot each texture binds to. Adding a new channel
 // means a new field on the ORM + schema + this table.
-type PbrChannel = 'albedo' | 'normal' | 'roughness' | 'metalness'
+type PbrChannel = 'albedo' | 'normal' | 'roughness' | 'metalness' | 'displacement'
 
 type PbrSlot =
   | 'map'
@@ -102,14 +103,15 @@ const PBR_CHANNEL_DEFS: Record<
   PbrChannel,
   {
     urlField: keyof OutfitItem
-    slot: Exclude<PbrSlot, 'aoMap' | 'emissiveMap' | 'bumpMap' | 'displacementMap'>
+    slot: Exclude<PbrSlot, 'aoMap' | 'emissiveMap' | 'bumpMap'>
     colorSpace: THREE.ColorSpace
   }
 > = {
   albedo: { urlField: 'texture_url', slot: 'map', colorSpace: THREE.SRGBColorSpace },
   normal: { urlField: 'normal_url', slot: 'normalMap', colorSpace: THREE.NoColorSpace },
   roughness: { urlField: 'roughness_url', slot: 'roughnessMap', colorSpace: THREE.NoColorSpace },
-  metalness: { urlField: 'metalness_url', slot: 'metalnessMap', colorSpace: THREE.NoColorSpace }
+  metalness: { urlField: 'metalness_url', slot: 'metalnessMap', colorSpace: THREE.NoColorSpace },
+  displacement: { urlField: 'displacement_url', slot: 'displacementMap', colorSpace: THREE.NoColorSpace }
 }
 
 const PBR_TEXTURE_KEYS = [
@@ -176,7 +178,8 @@ export class CharacterController {
     albedo: null,
     normal: null,
     roughness: null,
-    metalness: null
+    metalness: null,
+    displacement: null
   }
   // Monotonic epoch so stale textureLoader callbacks (e.g. reverse load-completion order on rapid setOutfit) dispose their texture and bail.
   private textureEpoch = 0
@@ -632,7 +635,7 @@ export class CharacterController {
         // so the CPU-written positions are authoritative. Cloth hands free
         // vertices to the verlet solver; skin pins every vertex and only
         // pushes them out of the body surface to stop animation-time clipping.
-        const bodyCollider = spec.physics === 'skin' ? this.ensureBodyCollider(bodyMesh) : null
+        const bodyCollider = this.ensureBodyCollider(bodyMesh)
         const plain: THREE.Mesh[] = []
 
         for (const sk of skinned) {
@@ -647,7 +650,7 @@ export class CharacterController {
               plainMesh,
               bodyMesh.skeleton,
               sk.bindMatrix,
-              spec.physics === 'cloth' ? undefined : { pinAll: true, bodyCollider }
+              spec.physics === 'cloth' ? { bodyCollider } : { pinAll: true, bodyCollider }
             )
           )
         }
@@ -796,7 +799,7 @@ export class CharacterController {
     url: string,
     channel: PbrChannel,
     colorSpace: THREE.ColorSpace,
-    slot: 'map' | 'normalMap' | 'roughnessMap' | 'metalnessMap',
+    slot: PbrSlot,
     targetMeshes?: THREE.Mesh[]
   ): void {
     const epoch = this.textureEpoch
@@ -837,6 +840,11 @@ export class CharacterController {
             for (const m of mats) {
               if (m instanceof THREE.MeshStandardMaterial) {
                 setPbrSlot(m, slot, tex)
+
+                if (slot === 'displacementMap') {
+                  m.displacementScale = 0.003
+                  m.displacementBias = -0.0015
+                }
               }
             }
           }
@@ -857,6 +865,11 @@ export class CharacterController {
           for (const m of mats) {
             if (m instanceof THREE.MeshStandardMaterial) {
               setPbrSlot(m, slot, tex)
+
+              if (slot === 'displacementMap') {
+                m.displacementScale = 0.003
+                m.displacementBias = -0.0015
+              }
             }
           }
         })
@@ -882,7 +895,7 @@ export class CharacterController {
     }
   }
 
-  private clearPbrChannel(channel: PbrChannel, slot: 'map' | 'normalMap' | 'roughnessMap' | 'metalnessMap'): void {
+  private clearPbrChannel(channel: PbrChannel, slot: PbrSlot): void {
     const previous = this.currentPbrTex[channel]
 
     if (previous) {
@@ -900,6 +913,11 @@ export class CharacterController {
       for (const m of mats) {
         if (m instanceof THREE.MeshStandardMaterial) {
           setPbrSlot(m, slot, null)
+
+          if (slot === 'displacementMap') {
+            m.displacementScale = 0
+            m.displacementBias = 0
+          }
         }
       }
     })

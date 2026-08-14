@@ -67,7 +67,7 @@ Backend ↔ Client 同时暴露 JSON-RPC over WebSocket（`/api/chat/ws`）与 H
 | Client → Backend | `POST /api/companion/avatar` / `/from-image` | 头像半身生成（步 1） | 同步;失败返回 502 + 友好文案,不暴露 provider 原始错误 |
 | Client → Backend | `POST /api/companion/avatar/{avatar_id}/fullbody` | 链式参考生成全身种子图（步 2） | 同步;缺少正面全身 409;头像不存在 404;并发 429;`stage` 与 `view` 互斥必选其一;单视图模式（`fullbody_mode="single"`）下 `stage="aux"` 和 `view="right"/"back"` 被拒绝;可选 `reference_source`（`"avatar"` / `"reference_image"`，默认 `"avatar"`）+ `reference_image`（base64）+ `reference_content_type`：`"reference_image"` 时正面全身图以用户原始参考图为主参考（保留身材/体态），头像自动作为 secondary reference 供 Gemini 双参考融合美化风格;`reference_source="reference_image"` 时 `reference_image` 必填 |
 | Client → Backend | `POST /api/companion/wardrobe/preview` `{description, image?, content_type?, feedback?}` | 换装预览（写 temp-media，不入库）；后端用一次 LLM 路由调用把描述分类为 `texture`（仅改色/材质/图案）、`garment`（改轮廓/新增件）或 `accessory`（包/帽/眼镜等硬质挂件），再下发到对应流水线 | 同步；返回 `WardrobePreviewResponse`，其中 `kind` / `mesh_url` / `mesh_file_id` / `assembly_json` 在走几何流水线时填充（装配语义见 §1.6）；客户端不感知路由决策；`file_id` / `mesh_file_id` 在 `temp_file_ttl_hours` 内可被 `confirm` 落库 |
-| Client → Backend | `POST /api/companion/wardrobe/confirm` `{file_id, name, prompt?, normal_file_id?, roughness_file_id?, metalness_file_id?, mesh_file_id?, assembly_json?}` | 把预览产物落为 `WardrobeItem` + 自动装备（同槽互斥，§1.6）+ emit `wardrobe.updated` | `file_id`/`mesh_file_id` 已过期/不存在 409；返回 `WardrobeItemResponse`(含 `kind` / `mesh_url` / `assembly_json`) |
+| Client → Backend | `POST /api/companion/wardrobe/confirm` `{file_id, name, prompt?, normal_file_id?, roughness_file_id?, metalness_file_id?, displacement_file_id?, mesh_file_id?, assembly_json?}` | 把预览产物落为 `WardrobeItem` + 自动装备（同槽互斥，§1.6）+ emit `wardrobe.updated` | `file_id`/`mesh_file_id` 已过期/不存在 409；返回 `WardrobeItemResponse`(含 `kind` / `mesh_url` / `assembly_json`) |
 
 ### 1.2 事件类型
 
@@ -161,7 +161,7 @@ WS JSON-RPC 错误使用标准 JSON-RPC 2.0 错误码（`-32700` 到 `-32603`）
   "layer": 1,                     // 叠放顺序，越小越贴身；同槽互斥时恒为 1，预留跨槽排序
   "socket": null,                 // accessory 挂点骨骼名（身体 skeleton 中的实际骨骼名）；garment 恒为 null
   "physics": "skin",              // skin（蒙皮跟随）| cloth（客户端 verlet 布料摆动）
-  "materials": { "*": { "albedo": true, "normal": true, "roughness": true, "metalness": true } }
+  "materials": { "*": { "albedo": true, "normal": true, "roughness": true, "metalness": true, "displacement": true } }
 }
 ```
 

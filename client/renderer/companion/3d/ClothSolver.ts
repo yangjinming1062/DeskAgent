@@ -173,7 +173,10 @@ export class ClothSolver {
       }
     }
 
-    if (!this.pinAll) {
+    // Bone sphere colliders are only built when bodyCollider is absent.
+    // When bodyCollider is available, accurate body surface mesh collision is used
+    // and coarse bone spheres are disabled so they do not push beyond the surface.
+    if (!this.pinAll && !this.bodyCollider) {
       for (const bone of skeleton.bones) {
         const radius = _COLLIDER_RADII[boneSuffix(bone.name)]
 
@@ -363,6 +366,10 @@ export class ClothSolver {
     const world = this.mesh.matrixWorld
 
     for (let i = 0; i < this.anchor.length; i++) {
+      if (!this.anchor[i]) {
+        continue
+      }
+
       const o = i * 3
 
       _v.set(pos[o], pos[o + 1], pos[o + 2]).applyMatrix4(world)
@@ -378,6 +385,7 @@ export class ClothSolver {
 
   private resolveCollisions(): void {
     const pos = this.pos
+    const world = this.mesh.matrixWorld
 
     for (let i = 0; i < this.anchor.length; i++) {
       if (this.anchor[i]) {
@@ -386,24 +394,35 @@ export class ClothSolver {
 
       const o = i * 3
 
-      for (let c = 0; c < this.colliderPos.length; c++) {
-        const p = this.colliderPos[c]
-        const r = this.colliders[c].radius
-        const dx = pos[o] - p.x
-        const dy = pos[o + 1] - p.y
-        const dz = pos[o + 2] - p.z
-        const d2 = dx * dx + dy * dy + dz * dz
+      if (this.bodyCollider) {
+        _v.set(pos[o], pos[o + 1], pos[o + 2]).applyMatrix4(world)
 
-        if (d2 >= r * r || d2 < 1e-9) {
-          continue
+        if (this.bodyCollider.resolve(_v, this.clearance)) {
+          _v.applyMatrix4(_inv)
+          pos[o] = _v.x
+          pos[o + 1] = _v.y
+          pos[o + 2] = _v.z
         }
+      } else {
+        for (let c = 0; c < this.colliderPos.length; c++) {
+          const p = this.colliderPos[c]
+          const r = this.colliders[c].radius
+          const dx = pos[o] - p.x
+          const dy = pos[o + 1] - p.y
+          const dz = pos[o + 2] - p.z
+          const d2 = dx * dx + dy * dy + dz * dz
 
-        const d = Math.sqrt(d2)
-        const push = (r - d) / d
+          if (d2 >= r * r || d2 < 1e-9) {
+            continue
+          }
 
-        pos[o] += dx * push
-        pos[o + 1] += dy * push
-        pos[o + 2] += dz * push
+          const d = Math.sqrt(d2)
+          const push = (r - d) / d
+
+          pos[o] += dx * push
+          pos[o + 1] += dy * push
+          pos[o + 2] += dz * push
+        }
       }
     }
   }

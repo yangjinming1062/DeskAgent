@@ -24,7 +24,7 @@ from .rig_type_selector import select_rig_type
 logger = get_logger(__name__)
 
 # Companion-assets URL fields on WardrobeItem for re-signing and unlinking.
-_COMPANION_ASSET_URL_ATTRS: tuple[str, ...] = ("texture_url", "normal_url", "roughness_url", "metalness_url", "mesh_url")
+_COMPANION_ASSET_URL_ATTRS: tuple[str, ...] = ("texture_url", "normal_url", "roughness_url", "metalness_url", "displacement_url", "mesh_url")
 
 # Cache body model joint names to avoid re-reading multi-MB GLBs on each preview.
 _BODY_JOINT_NAMES_CACHE: dict[str, list[str]] = {}
@@ -32,7 +32,7 @@ _BODY_JOINT_NAMES_CACHE: dict[str, list[str]] = {}
 _VALID_SLOTS = {"outfit", "torso", "legs", "feet", "full_body", "head", "hands", "back"}
 _SLOT_TEXTURE = "outfit"
 _DEFAULT_SOCKET_BY_SLOT = {"head": "Head", "hands": "RightHand", "back": "Spine2"}
-_PBR_CHANNELS = ["albedo", "normal", "roughness", "metalness"]
+_PBR_CHANNELS = ["albedo", "normal", "roughness", "metalness", "displacement"]
 
 _WARDROBE_KIND_CLASSIFIER_SYSTEM = """\
 You classify user wardrobe-change intent into one of three pipelines and fill its assembly metadata.
@@ -174,6 +174,7 @@ async def generate_wardrobe_item(db: Session, *, user_id: int, name: str, descri
         normal_file_id=preview.normal_file_id,
         roughness_file_id=preview.roughness_file_id,
         metalness_file_id=preview.metalness_file_id,
+        displacement_file_id=preview.displacement_file_id,
         mesh_file_id=preview.mesh_file_id,
         assembly_json=preview.assembly_json,
     )
@@ -199,7 +200,7 @@ class WardrobeRouting:
                 "layer": 1,
                 "socket": self.socket,
                 "physics": self.physics,
-                "materials": {"*": {"albedo": True, "normal": True, "roughness": True, "metalness": True}},
+                "materials": {"*": {"albedo": True, "normal": True, "roughness": True, "metalness": True, "displacement": True}},
             },
             ensure_ascii=False,
         )
@@ -296,7 +297,7 @@ async def _body_joint_names(db: Session, user_id: int) -> list[str]:
 async def _generate_pbr_channels(
     *, description: str, feedback: str | None, rig_type: str, reference_data_uri: str | None, user_id: int
 ) -> tuple[dict[str, tuple[str, str]], dict[str, str]]:
-    """Generate 4-channel PBR textures concurrently; raises if albedo fails."""
+    """Generate 5-channel PBR textures concurrently; raises if albedo fails."""
     prompts = {ch: build_texture_prompt(description=description, feedback=feedback, rig_type=rig_type, channel=ch) for ch in _PBR_CHANNELS}
 
     async def _gen_one(ch: str) -> tuple[str, str] | None:
@@ -330,6 +331,7 @@ def _preview_response(res_dict: dict[str, tuple[str, str]], prompts: dict[str, s
     n_url, n_fid = res_dict.get("normal", (None, None))
     r_url, r_fid = res_dict.get("roughness", (None, None))
     m_url, m_fid = res_dict.get("metalness", (None, None))
+    d_url, d_fid = res_dict.get("displacement", (None, None))
     return WardrobePreviewResponse(
         url=res_dict["albedo"][0],
         prompt=prompts["albedo"],
@@ -340,6 +342,8 @@ def _preview_response(res_dict: dict[str, tuple[str, str]], prompts: dict[str, s
         roughness_file_id=r_fid,
         metalness_url=m_url,
         metalness_file_id=m_fid,
+        displacement_url=d_url,
+        displacement_file_id=d_fid,
         **geometric,
     )
 
@@ -449,6 +453,7 @@ async def confirm_wardrobe_item(
     normal_file_id: str | None = None,
     roughness_file_id: str | None = None,
     metalness_file_id: str | None = None,
+    displacement_file_id: str | None = None,
     mesh_file_id: str | None = None,
     assembly_json: str | None = None,
     equip: bool = True,
@@ -480,10 +485,11 @@ async def confirm_wardrobe_item(
         except OSError:
             return None
 
-    normal_url, roughness_url, metalness_url, mesh_url = await asyncio.gather(
+    normal_url, roughness_url, metalness_url, displacement_url, mesh_url = await asyncio.gather(
         _resolve_channel(normal_file_id, "wardrobe_normal"),
         _resolve_channel(roughness_file_id, "wardrobe_roughness"),
         _resolve_channel(metalness_file_id, "wardrobe_metalness"),
+        _resolve_channel(displacement_file_id, "wardrobe_displacement"),
         _resolve_channel(mesh_file_id, "wardrobe_mesh", ext="glb"),
     )
     # The garment GLB is required when requested — expiry/unreadability must 409,
@@ -508,6 +514,7 @@ async def confirm_wardrobe_item(
         normal_url=normal_url,
         roughness_url=roughness_url,
         metalness_url=metalness_url,
+        displacement_url=displacement_url,
         prompt=prompt,
         outfit_description=outfit_desc,
         equipped=equip,

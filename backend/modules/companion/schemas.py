@@ -113,6 +113,7 @@ class WardrobeItemResponse(BaseModel):
     normal_url: str | None = None
     roughness_url: str | None = None
     metalness_url: str | None = None
+    displacement_url: str | None = None
     prompt: str | None = None
     outfit_description: str | None = None
     equipped: bool
@@ -152,6 +153,8 @@ class WardrobePreviewResponse(BaseModel):
     roughness_url: str | None = None
     metalness_file_id: str | None = None
     metalness_url: str | None = None
+    displacement_file_id: str | None = None
+    displacement_url: str | None = None
     mesh_url: str | None = None
     mesh_file_id: str | None = None
     kind: str = "texture"
@@ -167,6 +170,7 @@ class WardrobeConfirmRequest(BaseModel):
     normal_file_id: str | None = Field(default=None, max_length=128)
     roughness_file_id: str | None = Field(default=None, max_length=128)
     metalness_file_id: str | None = Field(default=None, max_length=128)
+    displacement_file_id: str | None = Field(default=None, max_length=128)
     mesh_file_id: str | None = Field(default=None, max_length=128)
     assembly_json: str | None = Field(default=None, max_length=4096)
 

@@ -569,6 +569,7 @@ async def post_wardrobe_confirm(body: WardrobeConfirmRequest, auth: tuple[User, 
             normal_file_id=body.normal_file_id,
             roughness_file_id=body.roughness_file_id,
             metalness_file_id=body.metalness_file_id,
+            displacement_file_id=body.displacement_file_id,
             mesh_file_id=body.mesh_file_id,
             assembly_json=body.assembly_json,
         )

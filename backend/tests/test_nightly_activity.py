@@ -844,6 +844,7 @@ async def test_stage_5_creation_pipeline(monkeypatch, _patch_db):
         normal_file_id = "preview_normal_123"
         roughness_file_id = "preview_roughness_123"
         metalness_file_id = "preview_metalness_123"
+        displacement_file_id = "preview_displacement_123"
 
     async def _mock_preview(*a, **kw):
         return _MockPreview()

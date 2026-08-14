@@ -43,6 +43,7 @@ def wardrobe_response(item: WardrobeItem) -> WardrobeItemResponse:
         normal_url=item.normal_url,
         roughness_url=item.roughness_url,
         metalness_url=item.metalness_url,
+        displacement_url=item.displacement_url,
         prompt=item.prompt,
         outfit_description=item.outfit_description,
         equipped=item.equipped,

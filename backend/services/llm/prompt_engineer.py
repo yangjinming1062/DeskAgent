@@ -231,6 +231,7 @@ _TEXTURE_CHANNEL_SUFFIX: dict[str, str] = {
     "normal": " 法线贴图（normal map），RGB 蓝紫偏向，凸显表面的缝线、皱褶、材质凹凸纹理（tangent space normal map, blue-purple tint, surface bumps and creases）。",
     "roughness": " 粗糙度贴图（roughness map），单色灰阶图，白高粗糙黑高光，清晰反光区域区分（grayscale roughness map, monochrome, specularity roughness mask）。",
     "metalness": " 金属度贴图（metalness map），单色灰阶图，黑色非金属白色金属，清晰材质边界（grayscale metalness map, monochrome, black non-metallic, white metallic mask）。",
+    "displacement": " 高度置换贴图（displacement/height map），单色灰阶图，白色凸起黑色凹陷，精确表达织物纹理深度、刺绣起伏与微表面结构（grayscale height displacement map, monochrome, white high black low, surface depth and relief）。",
 }
 
 
@@ -315,7 +316,7 @@ def build_texture_prompt(*, description: str, feedback: str | None = None, rig_t
 
     ``rig_type`` selects the texture-type prefix (clothing for bipeds, fur/scale
     patterns for quadrupeds, feather patterns for avians, etc.).
-    ``channel`` supports 'albedo', 'normal', 'roughness', and 'metalness'.
+    ``channel`` supports 'albedo', 'normal', 'roughness', 'metalness', and 'displacement'.
     """
     prefix = _TEXTURE_RIG_PREFIX.get(rig_type, _TEXTURE_RIG_PREFIX["biped"])
     prompt = f"{prefix} {description}。"
@@ -326,7 +327,7 @@ def build_texture_prompt(*, description: str, feedback: str | None = None, rig_t
         prompt += channel_suffix
 
     # Albedo (color) maps need even-lighting instructions; technical maps
-    # (normal/roughness/metalness) use the trimmed suffix to avoid misleading
-    # lighting directives that dilute the channel-specific instructions.
+    # (normal/roughness/metalness/displacement) use the trimmed suffix to avoid
+    # misleading lighting directives that dilute the channel-specific instructions.
     format_suffix = _TEXTURE_FORMAT_SUFFIX if channel == "albedo" else _TEXTURE_FORMAT_SUFFIX_TECHNICAL
     return prompt + format_suffix

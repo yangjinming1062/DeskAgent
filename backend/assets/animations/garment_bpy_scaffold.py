@@ -78,7 +78,40 @@ def _fit_garment(garment: bpy.types.Object, body_mesh: bpy.types.Object) -> None
     bpy.ops.object.modifier_apply(modifier=mod.name)
 
 
-# ─── Stage 2: Thickness & density ────────────────────────────────
+# ─── Stage 2: Drape — static cloth gravity simulation ────────────
+
+
+def _drape_garment(garment: bpy.types.Object, body_mesh: bpy.types.Object, frames: int = 20) -> None:
+    """Bake static gravity drape into single-layer rest geometry before solidify/skinning.
+
+    Anchors VG_ANCHOR so waist/collar stays fixed while the skirt/hems drape
+    naturally over the body collision mesh. In Blender 5.2, a vertex with weight
+    1.0 in the cloth mass vertex group is held in place (effectively pinned);
+    no separate pin group / pin_stiffness is used.
+    """
+    bpy.context.view_layer.objects.active = body_mesh
+    body_mesh.select_set(True)
+    body_col = body_mesh.modifiers.new(name="BodyCollision", type="COLLISION")
+
+    bpy.context.view_layer.objects.active = garment
+    garment.select_set(True)
+    cloth = garment.modifiers.new(name="GarmentDrape", type="CLOTH")
+    if "VG_ANCHOR" in garment.vertex_groups:
+        cloth.settings.vertex_group_mass = "VG_ANCHOR"
+    cloth.collision_settings.use_collision = True
+    cloth.collision_settings.distance_min = _COLLISION_CLEARANCE
+
+    for f in range(1, frames + 1):
+        bpy.context.scene.frame_set(f)
+
+    bpy.ops.object.modifier_apply(modifier=cloth.name)
+    bpy.context.scene.frame_set(1)
+
+    if body_col.name in body_mesh.modifiers:
+        body_mesh.modifiers.remove(body_col)
+
+
+# ─── Stage 3: Thickness & density ────────────────────────────────
 
 
 def _solidify_garment(garment: bpy.types.Object) -> None:
@@ -95,7 +128,7 @@ def _solidify_garment(garment: bpy.types.Object) -> None:
         bpy.ops.object.modifier_apply(modifier=subsurf.name)
 
 
-# ─── Stage 3: Skin — Data Transfer + ARMATURE modifier ────────────
+# ─── Stage 4: Skin — Data Transfer + ARMATURE modifier ────────────
 
 
 def _skin_garment(garment: bpy.types.Object, body_mesh: bpy.types.Object, armature: bpy.types.Object) -> None:
@@ -119,7 +152,7 @@ def _skin_garment(garment: bpy.types.Object, body_mesh: bpy.types.Object, armatu
     arm_mod.use_vertex_groups = True
 
 
-# ─── Stage 4: Collision — rest-pose anti-penetration ──────────────
+# ─── Stage 5: Collision — rest-pose anti-penetration ──────────────
 
 
 def _build_body_bvh(body_mesh: bpy.types.Object) -> BVHTree:
@@ -152,7 +185,7 @@ def _collision_fix(garment: bpy.types.Object, body_bvh: BVHTree) -> None:
     bm_garment.free()
 
 
-# ─── Stage 5: Validate ───────────────────────────────────────────
+# ─── Stage 6: Validate ───────────────────────────────────────────
 
 
 def _validate(garment_meshes: list[bpy.types.Object], armature: bpy.types.Object) -> None:
@@ -170,7 +203,7 @@ def _validate(garment_meshes: list[bpy.types.Object], armature: bpy.types.Object
             raise RuntimeError(f"garment '{gm.name}' has vertex groups with no matching bone: {orphan_groups}")
 
 
-# ─── Stage 6: Export with assembly extras ────────────────────────
+# ─── Stage 7: Export with assembly extras ────────────────────────
 
 
 def _export_glb(output_path: str, assembly: dict) -> None:
@@ -268,6 +301,7 @@ def main(argv: list[str]) -> int:
         body_bvh = _build_body_bvh(body_mesh)
         for gm in garment_meshes:
             _fit_garment(gm, body_mesh)
+            _drape_garment(gm, body_mesh)
             _solidify_garment(gm)
             _skin_garment(gm, body_mesh, armature)
             _collision_fix(gm, body_bvh)
