@@ -83,6 +83,9 @@ backend/
 | 工具三层分类（backend / memory / runner） | 本模块独有 | 本 README §2 + backend 代码 |
 | `ModelGenerateRequest.provider` 取值 + 触发条件 | 对 Client | [PROTOCOL.md §1.3](../PROTOCOL.md) |
 | `model.ready` / `model.gen.progress` payload `provider` 字段 | 对 Client | [PROTOCOL.md §1.3](../PROTOCOL.md) |
+| **`model.ready` `provider` 新增 `tripo_image_to_3d`** | 对 Client | [PROTOCOL.md §1.3](../PROTOCOL.md) |
+| **`onboarding.get_state` payload 新增 `fullbody_mode` 字段** | 对 Client | [PROTOCOL.md §1.1](../PROTOCOL.md) |
+| **`[companion] fullbody_mode` 配置 + 单/多视图流水线分支** | 本模块独有 | 本 README §2 + [PROTOCOL.md §1.3](../PROTOCOL.md) |
 
 ## 6. 已知限制
 

@@ -365,6 +365,10 @@ async def generate_fullbody(db: Session, user_id: int, *, avatar_id: int, view: 
     if bool(stage) == bool(view):
         raise AvatarGenerationError("exactly one of 'stage' or 'view' is required")
 
+    # Single-view mode: reject aux/side/back generation — only front is supported.
+    if SETTINGS.fullbody_mode == "single" and (stage == "aux" or view in ("right", "back")):
+        raise AvatarGenerationError("当前为单视图模式，不支持生成侧面/背面全身图")
+
     asset = db.query(AvatarAsset).filter(AvatarAsset.id == avatar_id, AvatarAsset.user_id == user_id, AvatarAsset.active.is_(True)).one_or_none()
     if asset is None:
         raise AvatarNotFoundError(f"avatar {avatar_id} not found")

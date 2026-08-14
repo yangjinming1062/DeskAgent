@@ -13,6 +13,7 @@
 .codex/
 .cursor/
 .gemini/
+.firecrawl
 
 # ---------------------------------------------------------------------------
 # Environment & Secrets

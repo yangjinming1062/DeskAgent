@@ -1,7 +1,7 @@
 import json
 from typing import Any
 
-from components import safe_json_loads
+from components import SETTINGS, safe_json_loads
 from modules.companion import AvatarAsset, Persona
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
@@ -175,15 +175,20 @@ def _load_draft(persona: Persona) -> dict[str, str]:
 
 
 def _portrait_next_field(db: Session, user_id: int) -> str:
-    """Map the active avatar's seed state to the onboarding portrait sub-stage."""
+    """Map avatar seed state to the portrait sub-stage; single mode skips right/back."""
     avatar = db.query(AvatarAsset).filter(AvatarAsset.user_id == user_id, AvatarAsset.active.is_(True)).one_or_none()
     if avatar is None or not bool(avatar.seed_front_url):
         return "portrait"
-    if not bool(avatar.seed_right_url):
+    # Single mode: stay on front even if stale right/back seeds exist (image-to-model only consumes `front`).
+    if SETTINGS.fullbody_mode == "single" or not bool(avatar.seed_right_url):
         return "portrait-fullbody-front"
     if not bool(avatar.seed_back_url):
         return "portrait-fullbody-right"
     return "portrait-fullbody-back"
+
+
+def _state(answers: dict, next_field: str | None, complete: bool) -> dict[str, Any]:
+    return {"answers": answers, "next_field": next_field, "complete": complete, "fullbody_mode": SETTINGS.fullbody_mode}
 
 
 def get_onboarding_state(db: Session, user_id: int) -> dict[str, Any]:
@@ -191,6 +196,7 @@ def get_onboarding_state(db: Session, user_id: int) -> dict[str, Any]:
 
     ``complete`` is gated on portrait confirmation, voice + user_* being answered, not just is_complete, so a crash mid-flow resumes rather than skips.
     ``voice`` outranks ``user_*`` because the voice sub-stage runs right after 形象确认, before the user sub-stage.
+    ``fullbody_mode`` is included so the desktop knows whether to show the side/back phases.
     """
     persona = get_or_create_persona(db, user_id)
     if persona.is_complete:
@@ -198,19 +204,19 @@ def get_onboarding_state(db: Session, user_id: int) -> dict[str, Any]:
         user_profile = read_user_profile(db, user_id)
         merged = {**draft, **user_profile}
         if not persona.is_portrait_confirmed:
-            return {"answers": merged, "next_field": _portrait_next_field(db, user_id), "complete": False}
+            return _state(merged, _portrait_next_field(db, user_id), False)
         missing_users = [k for k in _POST_CHARACTER_FIELDS if not user_profile.get(k)]
         voice_missing = not draft.get("voice")
         if voice_missing or missing_users:
-            next_field = "voice" if voice_missing else missing_users[0]
             # Merge draft + Memory so the desktop rehydrates every answered field in one shot.
-            return {"answers": merged, "next_field": next_field, "complete": False}
-        return {"answers": {}, "next_field": None, "complete": True}
+            next_field = "voice" if voice_missing else missing_users[0]
+            return _state(merged, next_field, False)
+        return _state({}, None, True)
     draft = _load_draft(persona)
     missing_character = next((f for f in _CHARACTER_ONBOARDING_FIELDS if not draft.get(f)), None)
     if missing_character is not None:
-        return {"answers": draft, "next_field": missing_character, "complete": False}
-    return {"answers": draft, "next_field": _portrait_next_field(db, user_id), "complete": False}
+        return _state(draft, missing_character, False)
+    return _state(draft, _portrait_next_field(db, user_id), False)
 
 
 def submit_onboarding_field(db: Session, user_id: int, field: str, value: str | None) -> dict[str, Any]:
@@ -226,7 +232,7 @@ def submit_onboarding_field(db: Session, user_id: int, field: str, value: str | 
                 db.commit()
             # Empty value: leave the Memory row alone so revocation stays the
             # only path that wipes a user_* entry (memory_forget).
-            return {"answers": _load_draft(persona), "next_field": None, "complete": True}
+            return _state(_load_draft(persona), None, True)
         # voice is not a persona field, so the draft is the only thing that
         # moves here — system_prompt_extras stays as update_persona left it.
         if field == "voice":
@@ -237,7 +243,7 @@ def submit_onboarding_field(db: Session, user_id: int, field: str, value: str | 
                 draft.pop(field, None)
             persona.definition_json = json.dumps(draft, ensure_ascii=False)
             db.commit()
-            return {"answers": draft, "next_field": None, "complete": True}
+            return _state(draft, None, True)
         raise PersonaValidationError(f"onboarding field {field!r} cannot be edited after persona is finalized; use PUT /api/companion/persona", field)
     draft = _load_draft(persona)
     if value and value.strip():
@@ -248,4 +254,4 @@ def submit_onboarding_field(db: Session, user_id: int, field: str, value: str | 
     db.commit()
     missing_character = next((f for f in _CHARACTER_ONBOARDING_FIELDS if not draft.get(f)), None)
     next_field = missing_character if missing_character is not None else "portrait"
-    return {"answers": draft, "next_field": next_field, "complete": False}
+    return _state(draft, next_field, False)

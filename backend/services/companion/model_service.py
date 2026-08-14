@@ -14,7 +14,20 @@ from .asset_store import build_signed_model_url, save_companion_model
 from .avatar_service import resolve_uploaded_avatar_path
 from .persona_service import get_or_create_persona
 from .rig_type_selector import select_rig_type
-from .tripo_client import TripoApiError, TripoTaskFailed, account_balance, create_multiview_to_model, download_model, poll_rig_check, poll_task, rig, rig_check, upload_file
+from .tripo_client import (
+    TripoApiError,
+    TripoTaskFailed,
+    account_balance,
+    create_image_to_model,
+    create_multiview_to_model,
+    download_model,
+    poll_rig_check,
+    poll_task,
+    rig,
+    rig_check,
+    tripo_common_kwargs_from_settings,
+    upload_file,
+)
 
 logger = get_logger(__name__)
 
@@ -137,18 +150,24 @@ async def generate_companion_model(db: Session, *, user_id: int, species_overrid
         if in_flight is not None:
             raise ModelGenerationInProgressError("已有 3D 模型生成任务进行中，请稍候再试")
 
-        # Resolve multiview seed image paths
+        # Resolve seed image paths.
         avatar = db.query(AvatarAsset).filter(AvatarAsset.user_id == user_id, AvatarAsset.active.is_(True)).one_or_none()
         if avatar is None:
             raise ModelGenerationError("没有找到种子图，请先完成引导流程中的形象生成")
 
         front = (avatar.seed_front_url or "").split("/")[-1]
-        right = (avatar.seed_right_url or "").split("/")[-1]
-        back = (avatar.seed_back_url or "").split("/")[-1]
-        if not (front and right and back):
-            raise ModelGenerationError("请先完成全身三视图生成再生成模型")
+        if not front:
+            raise ModelGenerationError("请先完成正面全身图生成再生成模型")
 
-        view_filenames = {"front": front, "right": right, "back": back}
+        fullbody_mode = SETTINGS.fullbody_mode
+        if fullbody_mode == "single":
+            view_filenames = {"front": front}
+        else:
+            right = (avatar.seed_right_url or "").split("/")[-1]
+            back = (avatar.seed_back_url or "").split("/")[-1]
+            if not (right and back):
+                raise ModelGenerationError("请先完成全身三视图生成再生成模型")
+            view_filenames = {"front": front, "right": right, "back": back}
 
         # The previous active model stays active while this generation runs —
         # only a success claims the active slot. A failed regeneration therefore
@@ -159,8 +178,9 @@ async def generate_companion_model(db: Session, *, user_id: int, species_overrid
         db.commit()
         db.refresh(model)
 
-    # Fire-and-forget the background pipeline
-    use_blender = _should_use_blender_fallback(provider_override)
+    # Blender+LLM consumes front/right/back seeds, so single-view mode always
+    # takes the Tripo branch (which works with a single front seed).
+    use_blender = _should_use_blender_fallback(provider_override) and fullbody_mode != "single"
     if use_blender:
         # Lazy import: blender_llm_pipeline imports model_service helpers, so an
         # eager top-level import here would form a cycle (model_service →
@@ -172,16 +192,21 @@ async def generate_companion_model(db: Session, *, user_id: int, species_overrid
         task = asyncio.create_task(run_blender_llm_pipeline(user_id, view_filenames, species, model.id))
         logger.info("Blender+LLM generation started (fallback)", extra={"user_id": user_id, "species": species})
     else:
-        task = asyncio.create_task(_run_tripo_pipeline(user_id, view_filenames, species, model.id))
+        task = asyncio.create_task(_run_tripo_pipeline(user_id, view_filenames, species, model.id, fullbody_mode))
         logger.info("Tripo3D generation started", extra={"user_id": user_id, "species": species})
     _running_model_tasks.add(task)
     task.add_done_callback(_running_model_tasks.discard)
     return model
 
 
-async def _run_tripo_pipeline(user_id: int, view_filenames: dict[str, str], species: str, model_id: int) -> None:
+async def _run_tripo_pipeline(user_id: int, view_filenames: dict[str, str], species: str, model_id: int, fullbody_mode: str) -> None:
+    is_single = fullbody_mode == "single"
     try:
-        if SETTINGS.blender_llm_enabled:
+        # Single-mode has no multi-view fallback path: blender_llm_pipeline
+        # unconditionally consumes front/right/back seeds, so diverting into
+        # it with a single seed would KeyError. Surface the Tripo failure
+        # instead of silently crashing inside the fallback.
+        if SETTINGS.blender_llm_enabled and not is_single:
             try:
                 balance_info = await account_balance()
                 if float(balance_info.get("balance", 1)) <= 0:
@@ -204,21 +229,22 @@ async def _run_tripo_pipeline(user_id: int, view_filenames: dict[str, str], spec
             file_token = await upload_file(image_bytes, filename, content_type)
             return view_key, file_token
 
-        uploaded_items = await asyncio.gather(
-            _read_and_upload("front", view_filenames["front"]), _read_and_upload("right", view_filenames["right"]), _read_and_upload("back", view_filenames["back"])
-        )
-        view_tokens = dict(uploaded_items)
+        if is_single:
+            # Single seed → one sequential upload.
+            _, front_token = await _read_and_upload("front", view_filenames["front"])
+            _emit_progress(user_id, "generating", 10, provider="tripo")
+            gen_task_id = await create_image_to_model(front_token, **tripo_common_kwargs_from_settings())
+            provider_label = "tripo_image_to_3d"
+        else:
+            # Multiview endpoint accepts the MV-only framing hints; image-to-model above does not.
+            mv_kwargs = tripo_common_kwargs_from_settings(texture_alignment="original_image", orientation="align_image")
+            uploaded_items = await asyncio.gather(
+                _read_and_upload("front", view_filenames["front"]), _read_and_upload("right", view_filenames["right"]), _read_and_upload("back", view_filenames["back"])
+            )
+            _emit_progress(user_id, "generating", 10, provider="tripo")
+            gen_task_id = await create_multiview_to_model(dict(uploaded_items), **mv_kwargs)
+            provider_label = "tripo_multiview_to_3d"
 
-        _emit_progress(user_id, "generating", 10, provider="tripo")
-        model_version = SETTINGS.tripo_model_version
-        gen_task_id = await create_multiview_to_model(
-            view_tokens,
-            model_version=model_version,
-            pbr=True,
-            texture_quality=SETTINGS.tripo_texture_quality,
-            face_limit=SETTINGS.tripo_face_limit or None,
-            enable_autofix=SETTINGS.tripo_enable_autofix,
-        )
         await _poll_with_progress(user_id, gen_task_id, "generating", 10, 50)
 
         _emit_progress(user_id, "checking_rig", 55, provider="tripo")
@@ -246,8 +272,9 @@ async def _run_tripo_pipeline(user_id: int, view_filenames: dict[str, str], spec
         asset_url = save_companion_model(final_glb, user_id=user_id)
         morph_names = _extract_morph_names_from_glb(final_glb)
 
+        # provider_label was set in the dispatch branch above (single vs multiview).
         activated = _finalize_generation(
-            model_id, user_id, asset_url=asset_url, rig_original_url=rig_original_url, provider="tripo_multiview_to_3d", species=species, rig_type=rig_type, morph_names=morph_names
+            model_id, user_id, asset_url=asset_url, rig_original_url=rig_original_url, provider=provider_label, species=species, rig_type=rig_type, morph_names=morph_names
         )
 
         if not activated:
@@ -259,7 +286,7 @@ async def _run_tripo_pipeline(user_id: int, view_filenames: dict[str, str], spec
         logger.info("Tripo3D generation succeeded", extra={"user_id": user_id, "species": species, "rig_type": rig_type, "morph_count": len(morph_names)})
 
     except Exception as exc:
-        if SETTINGS.blender_llm_enabled and isinstance(exc, TripoApiError) and _is_credits_exhausted_error(exc):
+        if SETTINGS.blender_llm_enabled and isinstance(exc, TripoApiError) and _is_credits_exhausted_error(exc) and not is_single:
             logger.info("Tripo credits exhausted, falling back to Blender+LLM", extra={"user_id": user_id})
             from .blender_llm_pipeline import run_blender_llm_pipeline
 

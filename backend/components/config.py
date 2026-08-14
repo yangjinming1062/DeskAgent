@@ -175,6 +175,9 @@ class Settings(BaseSettings):
 
     nightly_activity_enabled: bool = True
 
+    # "single" = front-only fullbody + image-to-model; "multi" = three-view + multiview-to-model
+    fullbody_mode: Literal["single", "multi"] = Field(default="single", validation_alias="FULLBODY_MODE")
+
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", case_sensitive=False, extra="ignore")
 
     @classmethod

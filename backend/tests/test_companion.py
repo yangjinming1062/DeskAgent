@@ -169,7 +169,7 @@ def test_onboarding_incremental_persistence_and_recovery(_patch_db):
     with SessionLocal() as db:
         # Fresh user: no answers, next field is the first question.
         state = get_onboarding_state(db, 100)
-        assert state == {"answers": {}, "next_field": "name", "complete": False}
+        assert state == {"answers": {}, "next_field": "name", "complete": False, "fullbody_mode": "single"}
 
         # Submit one field — it persists immediately.
         state = submit_onboarding_field(db, 100, "name", "小光")
@@ -311,7 +311,7 @@ def test_onboarding_complete_only_when_post_character_fields_filled(_patch_db):
         assert state["next_field"] == "voice"
 
 
-def test_portrait_confirmation_and_resume(_patch_db):
+def test_portrait_confirmation_and_resume(_patch_db, set_fullbody_mode):
     """Test full lifecycle of is_portrait_confirmed:
     - Persona unconfirmed without avatar -> next_field="portrait"
     - Persona unconfirmed with bust only -> next_field="portrait"
@@ -319,6 +319,8 @@ def test_portrait_confirmation_and_resume(_patch_db):
     - POST /api/companion/portrait/confirm marks it confirmed
     - update_persona / regen resets is_portrait_confirmed to False
     """
+    set_fullbody_mode("multi")
+
     _, SessionLocal = _patch_db
     from modules.companion import AvatarAsset
     from services.companion import (
@@ -338,6 +340,7 @@ def test_portrait_confirmation_and_resume(_patch_db):
         state = get_onboarding_state(db, 101)
         assert state["next_field"] == "portrait"
         assert state["complete"] is False
+        assert state["fullbody_mode"] == "multi"
 
         # 2. Bust-only avatar row (no seed_front_url) -> portrait
         avatar = AvatarAsset(
@@ -391,6 +394,48 @@ def test_portrait_confirmation_and_resume(_patch_db):
 
         state = get_onboarding_state(db, 101)
         assert state["next_field"] == "portrait-fullbody-back"
+
+
+def test_portrait_resume_single_mode(_patch_db, set_fullbody_mode):
+    """In single-view mode, front seed alone completes the fullbody phase —
+    no right/back routing, and ``fullbody_mode`` is exposed in the state."""
+    set_fullbody_mode("single")
+
+    _, SessionLocal = _patch_db
+    from modules.companion import AvatarAsset
+    from services.companion import get_onboarding_state, update_persona
+
+    with SessionLocal() as db:
+        update_persona(
+            db, 102, {"name": "小光", "personality": "温柔", "speaking_style": "轻柔"}
+        )
+        avatar = AvatarAsset(
+            user_id=102,
+            prompt_json="{}",
+            asset_url="companion-avatars/test.jpg",
+            seed_front_url="",
+            active=True,
+        )
+        db.add(avatar)
+        db.commit()
+
+        # No front seed -> portrait
+        state = get_onboarding_state(db, 102)
+        assert state["next_field"] == "portrait"
+        assert state["fullbody_mode"] == "single"
+
+        # Front seed only -> portrait-fullbody-front (no right/back routing)
+        avatar.seed_front_url = "companion-avatars/front.jpg"
+        db.commit()
+        state = get_onboarding_state(db, 102)
+        assert state["next_field"] == "portrait-fullbody-front"
+
+        # Even with all 3 seeds present, single mode still routes to front
+        avatar.seed_right_url = "companion-avatars/right.jpg"
+        avatar.seed_back_url = "companion-avatars/back.jpg"
+        db.commit()
+        state = get_onboarding_state(db, 102)
+        assert state["next_field"] == "portrait-fullbody-front"
 
 
 def test_speaking_style_rejected_after_finalization(_patch_db):
@@ -1610,10 +1655,12 @@ async def test_regenerate_avatar_from_image_refuses_when_persona_incomplete(_pat
 
 
 @pytest.mark.asyncio
-async def test_generate_fullbody_stage_front_and_aux_chained(monkeypatch, _patch_db):
+async def test_generate_fullbody_stage_front_and_aux_chained(monkeypatch, _patch_db, set_fullbody_mode):
     """Stage 'front' generates only the front seed using avatar as reference and caches front_prompt.
     Stage 'aux' generates right and back seeds using front seed as reference and caches multiview_prompts.
     """
+    set_fullbody_mode("multi")
+
     import json as _json
 
     from modules.auth import User
@@ -1706,8 +1753,10 @@ async def test_generate_fullbody_stage_front_and_aux_chained(monkeypatch, _patch
 
 
 @pytest.mark.asyncio
-async def test_generate_fullbody_preconditions(monkeypatch, _patch_db):
+async def test_generate_fullbody_preconditions(monkeypatch, _patch_db, set_fullbody_mode):
     """Step-2 raises typed errors for missing row, missing stage/view, unreadable source, and missing front seed for aux."""
+    set_fullbody_mode("multi")
+
     import json as _json
 
     from modules.auth import User
@@ -1788,6 +1837,66 @@ async def test_generate_fullbody_preconditions(monkeypatch, _patch_db):
         with pytest.raises(avatar_service.AvatarSourceUnreadableError):
             await avatar_service.generate_fullbody(
                 db, user_id=user.id, avatar_id=asset.id, stage="front"
+            )
+
+
+@pytest.mark.asyncio
+async def test_generate_fullbody_single_mode_rejects_aux(monkeypatch, _patch_db, set_fullbody_mode):
+    """In single-view mode, stage='aux' and view='right'/'back' are rejected."""
+    set_fullbody_mode("single")
+
+    import json as _json
+
+    from modules.auth import User
+    from modules.companion import AvatarAsset
+    from services.companion import avatar_service
+
+    _, SessionLocal = _patch_db
+
+    async def fake_gen(**_kwargs):
+        return _json.dumps({"success": True, "urls": ["http://provider/fullbody.png"]})
+
+    async def fake_download(_url):
+        return b"\x89PNG\r\n\x1a\n", "image/png"
+
+    monkeypatch.setattr(avatar_service, "image_generation_tool", fake_gen)
+    monkeypatch.setattr(avatar_service, "_download_to_bytes", fake_download)
+
+    with SessionLocal() as db:
+        user = User(username="sngl", password_hash=None, is_active=True, can_use=True)
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+
+        bare_path, _, _ = await avatar_service._persist_portrait_bytes(
+            b"\x89PNG\r\n\x1a\n", "image/png"
+        )
+        asset = AvatarAsset(
+            user_id=user.id,
+            prompt_json=_json.dumps({"prompt": "bust", "avatar_prompt": "bust"}),
+            asset_url=bare_path,
+            seed_front_url="companion-avatars/front.jpg",
+            active=True,
+        )
+        db.add(asset)
+        db.commit()
+
+        # stage='aux' rejected in single mode
+        with pytest.raises(avatar_service.AvatarGenerationError, match="单视图模式"):
+            await avatar_service.generate_fullbody(
+                db, user_id=user.id, avatar_id=asset.id, stage="aux"
+            )
+
+        # view='right' rejected in single mode
+        with pytest.raises(avatar_service.AvatarGenerationError, match="单视图模式"):
+            await avatar_service.generate_fullbody(
+                db, user_id=user.id, avatar_id=asset.id, view="right"
+            )
+
+        # view='back' rejected in single mode
+        with pytest.raises(avatar_service.AvatarGenerationError, match="单视图模式"):
+            await avatar_service.generate_fullbody(
+                db, user_id=user.id, avatar_id=asset.id, view="back"
             )
 
 
@@ -2330,6 +2439,212 @@ async def test_model_generation_failure_keeps_previous_model_active(
         prev = db.query(CompanionModel).filter(CompanionModel.id == previous_id).one()
         assert prev.active is True
         assert prev.status == "succeeded"
+
+
+@pytest.mark.asyncio
+async def test_run_tripo_pipeline_single_mode_uses_image_to_model(
+    _patch_db, monkeypatch, set_fullbody_mode
+):
+    """Single mode must call ``create_image_to_model`` (not multiview) and finalize with ``provider='tripo_image_to_3d'``."""
+    set_fullbody_mode("single")
+
+    import json as _json
+
+    from modules.auth import User
+    from modules.companion import AvatarAsset, CompanionModel, Persona
+    from services.companion import model_service
+
+    _, SessionLocal = _patch_db
+
+    captured: dict = {}
+
+    async def fake_upload(_bytes, filename, _content_type):
+        return f"tok_{filename}"
+
+    async def fake_create_image(image_token, **kwargs):
+        captured["create_image"] = (image_token, kwargs)
+        return "task_img"
+
+    async def fake_create_multi(views, **_kwargs):
+        captured["create_multi_called"] = True  # sentinel: single-mode should never reach here
+        return "task_multi"
+
+    async def fake_rig_check(_task_id):
+        return "rig_check_task"
+
+    async def fake_poll_rig_check(_task_id):
+        return {"riggable": True}
+
+    async def fake_rig(_task_id, _rig_type):
+        return "rig_task"
+
+    async def fake_poll_task(task_id, **_kwargs):
+        return {"status": "success", "output": {"model_url": "https://x/y.glb"}}
+
+    async def fake_download_model(_url):
+        return b"\x00" * 20  # tiny but valid GLB per the parser's 20-byte floor
+
+    async def fake_select_rig_type(*_args, **_kwargs):
+        return "biped"
+
+    monkeypatch.setattr(model_service, "upload_file", fake_upload)
+    monkeypatch.setattr(model_service, "create_image_to_model", fake_create_image)
+    monkeypatch.setattr(model_service, "create_multiview_to_model", fake_create_multi)
+    monkeypatch.setattr(model_service, "rig_check", fake_rig_check)
+    monkeypatch.setattr(model_service, "poll_rig_check", fake_poll_rig_check)
+    monkeypatch.setattr(model_service, "rig", fake_rig)
+    monkeypatch.setattr(model_service, "poll_task", fake_poll_task)
+    monkeypatch.setattr(model_service, "download_model", fake_download_model)
+    monkeypatch.setattr(model_service, "select_rig_type", fake_select_rig_type)
+    monkeypatch.setattr(model_service.SETTINGS, "blender_llm_enabled", False)
+
+    with SessionLocal() as db:
+        user = User(
+            username="run_single", password_hash=None, is_active=True, can_use=True
+        )
+        db.add(user)
+        db.flush()  # populate user.id for the FKs below
+        db.add(
+            Persona(
+                user_id=user.id,
+                definition_json=_json.dumps({"name": "x", "personality": "p", "speaking_style": "s"}),
+                is_complete=True,
+            )
+        )
+        db.add(
+            AvatarAsset(
+                user_id=user.id,
+                prompt_json="{}",
+                asset_url="companion-avatars/avatar.png",
+                seed_front_url="companion-avatars/front.png",
+                active=True,
+            )
+        )
+        model = CompanionModel(user_id=user.id, status="generating", active=False)
+        db.add(model)
+        db.commit()
+        db.refresh(model)
+        uid = user.id
+        model_id = model.id
+
+    # Stash the front seed on disk so ``resolve_uploaded_avatar_path`` finds it.
+    from pathlib import Path
+
+    from components import SETTINGS
+    asset_dir = Path(SETTINGS.data_dir) / "companion-avatars"
+    asset_dir.mkdir(parents=True, exist_ok=True)
+    (asset_dir / "front.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+
+    try:
+        await model_service._run_tripo_pipeline(
+            uid, {"front": "front.png"}, "人类", model_id, "single"
+        )
+    finally:
+        (asset_dir / "front.png").unlink(missing_ok=True)
+
+    assert "create_image" in captured, "create_image_to_model was not called"
+    assert "create_multi_called" not in captured, "multiview branch ran in single mode"
+    assert captured["create_image"][0] == "tok_front.png"
+
+    with SessionLocal() as db:
+        row = db.query(CompanionModel).filter_by(id=model_id).one()
+        assert row.status == "succeeded"
+        assert row.provider == "tripo_image_to_3d"
+        assert row.active is True
+
+
+@pytest.mark.asyncio
+async def test_run_tripo_pipeline_single_mode_skips_blender_fallback(
+    _patch_db, monkeypatch, set_fullbody_mode
+):
+    """Single mode must surface Tripo failures as ``model.failed`` instead of diverting into Blender+LLM (which would KeyError on missing right/back seeds)."""
+    set_fullbody_mode("single")
+
+    import json as _json
+
+    from modules.auth import User
+    from modules.companion import AvatarAsset, CompanionModel, Persona
+    from services.companion import model_service
+
+    _, SessionLocal = _patch_db
+
+    fallback_called = {"value": False}
+
+    async def fake_blender_fallback(*_args, **_kwargs):
+        fallback_called["value"] = True
+
+    async def fake_create_image(*_args, **_kwargs):
+        raise model_service.TripoApiError("insufficient credit")
+
+    async def fake_account_balance():
+        return {"balance": 100.0}  # non-zero so the precheck doesn't divert
+
+    async def fake_upload(_bytes, filename, _content_type):
+        return f"tok_{filename}"
+
+    monkeypatch.setattr(model_service.SETTINGS, "blender_llm_enabled", True)
+    monkeypatch.setattr(model_service, "create_image_to_model", fake_create_image)
+    monkeypatch.setattr(model_service, "account_balance", fake_account_balance)
+    monkeypatch.setattr(model_service, "upload_file", fake_upload)
+    # Must be lazy-imported inside the pipeline, so patch the module it lives in.
+    monkeypatch.setattr(
+        "services.companion.blender_llm_pipeline.run_blender_llm_pipeline",
+        fake_blender_fallback,
+    )
+
+    with SessionLocal() as db:
+        user = User(
+            username="run_single_no_fallback",
+            password_hash=None,
+            is_active=True,
+            can_use=True,
+        )
+        db.add(user)
+        db.flush()  # populate user.id for the FKs below
+        db.add(
+            Persona(
+                user_id=user.id,
+                definition_json=_json.dumps({"name": "x", "personality": "p", "speaking_style": "s"}),
+                is_complete=True,
+            )
+        )
+        db.add(
+            AvatarAsset(
+                user_id=user.id,
+                prompt_json="{}",
+                asset_url="companion-avatars/avatar.png",
+                seed_front_url="companion-avatars/front.png",
+                active=True,
+            )
+        )
+        model = CompanionModel(user_id=user.id, status="generating", active=False)
+        db.add(model)
+        db.commit()
+        db.refresh(model)
+        uid = user.id
+        model_id = model.id
+
+    from pathlib import Path
+
+    from components import SETTINGS
+    asset_dir = Path(SETTINGS.data_dir) / "companion-avatars"
+    asset_dir.mkdir(parents=True, exist_ok=True)
+    (asset_dir / "front.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+
+    try:
+        await model_service._run_tripo_pipeline(
+            uid, {"front": "front.png"}, "人类", model_id, "single"
+        )
+    finally:
+        (asset_dir / "front.png").unlink(missing_ok=True)
+
+    assert fallback_called["value"] is False, "Blender fallback ran in single mode"
+
+    with SessionLocal() as db:
+        row = db.query(CompanionModel).filter_by(id=model_id).one()
+        assert row.status == "failed"
+        assert row.active is False
+        assert "credit" in row.error.lower()
 
 
 @pytest.mark.asyncio

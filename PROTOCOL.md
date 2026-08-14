@@ -49,7 +49,7 @@ Backend ↔ Client 同时暴露 JSON-RPC over WebSocket（`/api/chat/ws`）与 H
 
 | 方向 | 方法 | 用途 | 关键约束 |
 |------|------|------|----------|
-| Client → Backend | `onboarding.get_state` | 查询已采集字段 + 下一个未答问题（断点恢复） | 返回 `is_complete=True` 仅在 `Persona.is_complete` + `is_portrait_confirmed` + `voice` + `user_*` 全部齐后才置位;`next_field` 在形象未确认时根据种子图生成阶段返回 `portrait`、`portrait-fullbody-front`、`portrait-fullbody-right` 或 `portrait-fullbody-back`,确认后按 **voice 先于 user_*** 路由 |
+| Client → Backend | `onboarding.get_state` | 查询已采集字段 + 下一个未答问题（断点恢复） | 返回 `is_complete=True` 仅在 `Persona.is_complete` + `is_portrait_confirmed` + `voice` + `user_*` 全部齐后才置位;`next_field` 在形象未确认时根据种子图生成阶段返回 `portrait`、`portrait-fullbody-front`、`portrait-fullbody-right` 或 `portrait-fullbody-back`（单视图模式下正面全身完成后即返回 `portrait-fullbody-front`,不路由 right/back）,确认后按 **voice 先于 user_*** 路由;响应含 `fullbody_mode`（`"single"` / `"multi"`）供客户端决定是否展示侧面/背面阶段 |
 | Client → Backend | `onboarding.submit` `{field, value}` | 逐字段增量持久化 onboarding 答案 | 答案按子阶段分流——角色子阶段（含 `speaking_style`）触发 `PUT /api/companion/persona`;finalize 后只接受 `voice`（落 draft）与 `user_*`（upsert 到 `Memory` 表） |
 | Client → Backend | `avatar.regenerate` `{feedback?}` | 重生 portrait 头像（不重跑全身） | 不触发 3D 模型失效 |
 | Client → Backend | `tts.match_voice` `{preference}` | 描述句 → voice id（标签评分） | 主流程 |
@@ -63,9 +63,9 @@ Backend ↔ Client 同时暴露 JSON-RPC over WebSocket（`/api/chat/ws`）与 H
 | Client → Backend | `companion.get_user_profile` | 拉取 `Memory(context="user_profile:*")` 5 条结构化字段 | persona-retune wizard 第 5 步预填用 |
 | Client → Backend | `POST /api/companion/portrait/confirm` | 确认形象（半身/全身） | 幂等;设置 `is_portrait_confirmed=True`,解开 voice/user_* 子阶段 |
 | Client → Backend | `GET /api/companion/model` | 查询当前 3D 模型状态 | `species` / `provider` / `asset_url` |
-| Client → Backend | `POST /api/companion/model` `{species_override?, provider?}` | 触发 3D 模型异步生成 | 全身三视图 → Tripo3D multiview-to-3D + rig，**或** Blender+LLM 回退管线（见 §1.5）;进度经事件推送;`provider` 默认 `None` (auto-detect),可选 `"tripo"` 显式锁 Tripo 或 `"blender_llm"` 显式锁 Blender 管线 |
+| Client → Backend | `POST /api/companion/model` `{species_override?, provider?}` | 触发 3D 模型异步生成 | `fullbody_mode="single"`: 正面单图 → Tripo3D image-to-model + rig;`fullbody_mode="multi"`: 全身三视图 → Tripo3D multiview-to-3D + rig;**或** Blender+LLM 回退管线（见 §1.5）;进度经事件推送;`provider` 默认 `None` (auto-detect),可选 `"tripo"` 显式锁 Tripo 或 `"blender_llm"` 显式锁 Blender 管线 |
 | Client → Backend | `POST /api/companion/avatar` / `/from-image` | 头像半身生成（步 1） | 同步;失败返回 502 + 友好文案,不暴露 provider 原始错误 |
-| Client → Backend | `POST /api/companion/avatar/{avatar_id}/fullbody` | 链式参考生成全身种子图（步 2） | 同步;缺少正面全身 409;头像不存在 404;并发 429;`stage` 与 `view` 互斥必选其一 |
+| Client → Backend | `POST /api/companion/avatar/{avatar_id}/fullbody` | 链式参考生成全身种子图（步 2） | 同步;缺少正面全身 409;头像不存在 404;并发 429;`stage` 与 `view` 互斥必选其一;单视图模式（`fullbody_mode="single"`）下 `stage="aux"` 和 `view="right"/"back"` 被拒绝 |
 | Client → Backend | `POST /api/companion/wardrobe/preview` `{description, image?, content_type?, feedback?}` | 换装纹理预览（写 temp-media,不入库） | 同步;返回 `{url, prompt, file_id}`,客户端实时挂到 `$wardrobePreview` 上预热 3D 模型;`file_id` 在 `temp_file_ttl_hours` 内可被 `confirm` 落库 |
 | Client → Backend | `POST /api/companion/wardrobe/confirm` `{file_id, name, prompt?}` | 把预览产物落为 `WardrobeItem` + 自动装备 + emit `wardrobe.updated` | `file_id` 已过期/不存在 409;返回 `WardrobeItemResponse` |
 
@@ -75,7 +75,7 @@ Backend ↔ Client 同时暴露 JSON-RPC over WebSocket（`/api/chat/ws`）与 H
 |------------|----------|-------------------|--------|
 | `companion.affect` | 非言语的情境化情绪反应 | `{emotion, locale?, target?}` | EMOTIONAL 状态切换;quiet 档也透传（断消息不断 affect） |
 | `avatar.regenerated` | `avatar.regenerate` 最终结果 | `{job_id, asset_url?, seed_front_url?, seed_right_url?, seed_back_url?, id?, error?}` | 替换头像或展示失败提示 |
-| `model.ready` | 3D 模型异步生成就绪 | `{model_id, asset_url, species?, rig_type?, provider?}` (`provider` ∈ `"tripo_multiview_to_3d"` / `"blender_llm"`) | 客户端加载 GLB + 注入 TS 动画 clip + 状态机绑定;`provider` 字段供 UI 标识生成来源（Tripo vs LLM 自建模） |
+| `model.ready` | 3D 模型异步生成就绪 | `{model_id, asset_url, species?, rig_type?, provider?}` (`provider` ∈ `"tripo_image_to_3d"` / `"tripo_multiview_to_3d"` / `"blender_llm"`) | 客户端加载 GLB + 注入 TS 动画 clip + 状态机绑定;`provider` 字段供 UI 标识生成来源（Tripo 单图/多视图 vs LLM 自建模） |
 | `model.gen.progress` | 模型生成中 | `{progress: 0..100, stage, provider?}` (`provider` ∈ `"tripo"` / `"blender_llm"`) | 可选进度展示;`provider` 字段让客户端识别当前是 Tripo 多步流水线还是 Blender+LLM 迭代循环（最坏 ~100 分钟） |
 | `model.failed` | 模型生成失败 | `{error}` | 渲染程序化蛋形兜底角色（无气泡、无错误） |
 | `wardrobe.updated` | 换装产物就绪 | `{texture_url, palette}` | 热替材质/纹理（不动骨骼动画与 morph） |
@@ -102,7 +102,7 @@ WS 事件分两类，按投递边界不同携带或不携带 `session_id`：
 
 | 取值 | 触发条件 | 模型质量预期 | 典型时长 |
 |------|---------|-------------|---------|
-| `"tripo_multiview_to_3d"`（`model.ready`）/ `"tripo"`（progress） | 默认走 Tripo3D，且 key + credits 充足 | 高（PBR 纹理、精细几何） | 数分钟 |
+| `"tripo_image_to_3d"` / `"tripo_multiview_to_3d"`（`model.ready`）/ `"tripo"`（progress） | 默认走 Tripo3D，且 key + credits 充足。`image_to_3d` 用于单视图模式，`multiview_to_3d` 用于多视图模式 | 高（PBR 纹理、精细几何） | 数分钟 |
 | `"blender_llm"` | `provider="blender_llm"` 显式选择 / `tripo_api_key` 缺失 / 余额耗尽（含 `_is_credits_exhausted_error` 模式匹配）/ 余额预检返回 0 | 中低（LLM 自建模，无 PBR，几何自由形式） | 最坏 ~100 分钟（10 轮 × 10 分钟 Blender timeout） |
 
 `ModelGenerateRequest.provider` 可选值：`"tripo"` / `"blender_llm"` / `None`（auto-detect，遵循上表优先级）。Client 应据 `model.gen.progress` 携带的 `provider` 字段提示用户预期时长。

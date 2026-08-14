@@ -43,7 +43,7 @@ data_dir = "./data"
 tripo_api_key = ""
 tripo_base_url = "https://openapi.tripo3d.ai/v3"
 tripo_model_version = "v3.1-20260211"
-tripo_face_limit = 0
+tripo_face_limit = 1500000
 tripo_texture_quality = "detailed"
 tripo_geometry_quality = "detailed"
 tripo_enable_autofix = true
@@ -153,6 +153,11 @@ companion_wardrobe_generate_rate_limit_per_minute = 5
 [logging]
 log_level = "INFO"
 log_format = "json"
+
+[companion]
+# "single" = front-only fullbody (2 images: avatar + front), uses image-to-model API
+# "multi"  = three-view fullbody (4 images: avatar + front + right + back), uses multiview-to-model API
+fullbody_mode = "single"
 
 [nightly]
 nightly_activity_enabled = true

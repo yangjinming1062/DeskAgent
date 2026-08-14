@@ -23,7 +23,7 @@ import {
   USER_GENDER_PRESETS,
   VOICE_PRESETS
 } from '@/companion/persona-presets'
-import { PORTRAIT_INTRO_HINT } from '@/companion/portrait-flow-copy'
+import { portraitIntroHint } from '@/companion/portrait-flow-copy'
 import {
   $activeAvatarId,
   $portraitHistory,
@@ -464,6 +464,10 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
   const [answers, setAnswers] = useState<OnboardingAnswers>({})
   const [input, setInput] = useState('')
   const [portraitUrl, setPortraitUrl] = useState<string | null>(null)
+  // null = mode not yet fetched; the early-return below shows a placeholder so a multi-mode
+  // user doesn't briefly see single-mode copy/button during the bootstrap fetch.
+  const [fullbodyMode, setFullbodyMode] = useState<'single' | 'multi' | null>(null)
+  const singleMode = fullbodyMode === 'single'
   const seedUrls = useStore($seedUrls)
   // Active avatar row id is published to the global $activeAvatarId atom by
   // applyPortrait — subscribe to it so any step-1 regen propagates without
@@ -923,7 +927,17 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
           answers?: Record<string, string>
           next_field?: string | null
           complete?: boolean
+          fullbody_mode?: 'single' | 'multi'
         }>('onboarding.get_state', {})
+
+        if (state?.fullbody_mode) {
+          // Type narrowed by the inline union above; the runtime guard is
+          // belt-and-suspenders for a misconfigured backend that returns
+          // a value outside the union.
+          const next: 'single' | 'multi' = state.fullbody_mode
+
+          setFullbodyMode(next)
+        }
 
         if (state?.complete) {
           void clearDraftRefImage()
@@ -1206,6 +1220,13 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
           return
         }
       }
+      // Non-IPC failure (network, JSON parse, IPC envelope): the `void` in onClick
+      // would swallow the rejection — surface a hint and refuse to advance.
+
+      console.warn('confirmPortrait failed unexpectedly', error)
+      setPortraitPanelHint('确认失败，请检查网络后重试')
+
+      return
     }
 
     clearPortraitHistory()
@@ -1290,6 +1311,15 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
   const otherVoices = voice ? voiceCatalog.filter(v => v.id !== voice.id) : []
   // 「换一个」 stays inside the matcher's candidates while we have them.
   const voiceCandidates = voice ? [voice, ...(voiceAlternatives.length ? voiceAlternatives : otherVoices)] : []
+
+  // Hide the dialog body until the bootstrap IPC returns the mode (see useState above).
+  if (fullbodyMode === null) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+        <div className="text-white/80">加载中…</div>
+      </div>
+    )
+  }
 
   return (
     <div className="fixed inset-0 z-50 pointer-events-none" style={{ pointerEvents: 'none' }}>
@@ -1444,7 +1474,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
               avatarUrl={portraitUrl}
               hint={portraitPanelHint}
               history={portraitHistory}
-              introHint={phase === 'portrait-avatar' ? PORTRAIT_INTRO_HINT : null}
+              introHint={phase === 'portrait-avatar' ? portraitIntroHint(fullbodyMode) : null}
               name={answers.name?.trim() || '伙伴'}
               onSelectEntry={onSelectHistoryEntry}
               seedUrls={seedUrls}
@@ -1575,10 +1605,10 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
                     <button
                       className="rounded-full bg-white/90 px-4 py-1 font-medium text-black transition hover:bg-white"
                       disabled={!seedUrls?.front}
-                      onClick={() => void advanceToRightView()}
+                      onClick={() => void (singleMode ? confirmPortrait() : advanceToRightView())}
                       type="button"
                     >
-                      下一步
+                      {singleMode ? '确认' : '下一步'}
                     </button>
                   </div>
                 </>
