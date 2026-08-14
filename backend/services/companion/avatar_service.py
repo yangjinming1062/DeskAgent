@@ -458,13 +458,13 @@ async def generate_fullbody(
     # subject_reference carries 100% of the character's visual identity.
     prompts = {v: build_fullbody_prompt(v, template=template, feedback=effective_feedback) for v in views_to_gen}
 
-    # Full-body generation uses a dedicated provider priority: Gemini → Grok
-    # → MiniMax. Integration-tested across all three providers: Gemini and Grok
-    # produce better pose compliance (avg 7-8/10 vs MiniMax's 5/10) while
-    # maintaining equal face identity (7/10 across all three). Gemini's native
-    # image-editing mode follows Chinese structural prompts most reliably.
-    # Other image-gen calls (bust portraits, textures) use the normal chain.
-    _FULLBODY_PROVIDER_PRIORITY = ["gemini", "grok", "minimax"]
+    # Full-body generation uses a dedicated provider priority: Grok → Gemini
+    # → MiniMax. Grok is first because Gemini's IMAGE_SAFETY filter blocks the
+    # A-pose minimal-underwear fullbody prompt at a high rate; Grok's safety
+    # threshold is more permissive for the same structural prompt. Integration
+    # testing: Grok and Gemini produce comparable pose compliance (7-8/10),
+    # both above MiniMax (5/10); face identity is 7/10 across all three.
+    _FULLBODY_PROVIDER_PRIORITY = ["grok", "gemini", "minimax"]
     results = await asyncio.gather(
         *[
             _generate_one_portrait_with_moderation_retry(
