@@ -306,7 +306,9 @@ class NativeFileOperations(FileOperations):
                 yield from search_root.rglob("*")
 
         def should_skip(p: Path) -> bool:
-            return any(part.startswith(".") and len(part) > 1 for part in p.parent.parts)
+            # Relative to the search root: a root that itself sits inside a
+            # dot-directory must not disqualify every file under it.
+            return any(part.startswith(".") and len(part) > 1 for part in p.relative_to(search_root).parts[:-1])
 
         scanned_count = 0
         for p in get_files():
@@ -316,7 +318,7 @@ class NativeFileOperations(FileOperations):
             rel_path = str(p.relative_to(search_root)) if search_root.is_dir() else p.name
 
             try:
-                content = p.read_text(encoding="utf-8")
+                content = p.read_text(encoding="utf-8", errors="replace")
                 lines = content.splitlines()
                 mtime = p.stat().st_mtime
 
@@ -332,7 +334,7 @@ class NativeFileOperations(FileOperations):
                             file_match_count += 1
 
                         total_count += 1
-                        if total_count >= offset + limit:
+                        if total_count > offset + limit:
                             truncated = True
                             break
 
@@ -359,7 +361,8 @@ class NativeFileOperations(FileOperations):
             result = subprocess.run(command, cwd=cwd or self.cwd, **kwargs)
             return ExecuteResult(stdout=result.stdout, exit_code=result.returncode)
         except subprocess.TimeoutExpired as e:
-            return ExecuteResult(stdout=e.stdout.decode("utf-8", "replace") if e.stdout else "", exit_code=124)
+            # text=True mode delivers str|None on TimeoutExpired; decoding again raises.
+            return ExecuteResult(stdout=e.stdout or "", exit_code=124)
         except Exception as e:
             return ExecuteResult(stdout=str(e), exit_code=1)
 

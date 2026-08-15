@@ -171,3 +171,48 @@ def test_bom_preservation(tmp_cwd):
     res = ops.write_file("test.txt", "foo")
     assert res.error is None
     assert test_file.read_bytes() == b"\xef\xbb\xbffoo"
+
+
+def test_search_inside_dotdir_root(tmp_cwd):
+    """A search root that itself sits under a dot-dir is not wholesale skipped."""
+    ops, cwd = tmp_cwd
+    hidden_root = cwd / ".deskagent"
+    hidden_root.mkdir()
+    (hidden_root / "file1.txt").write_text("target", encoding="utf-8")
+    (hidden_root / ".hidden").mkdir()
+    (hidden_root / ".hidden" / "file2.txt").write_text("target", encoding="utf-8")
+
+    result = ops.search("target", path=".deskagent")
+    assert result.error is None
+    assert result.total_count == 1
+    assert {m.path.replace("\\", "/") for m in result.matches} == {"file1.txt"}
+
+
+def test_search_reads_legacy_encoding_files(tmp_cwd):
+    ops, cwd = tmp_cwd
+    (cwd / "gbk.txt").write_bytes("hello 世界".encode("gbk"))
+
+    result = ops.search("hello", path=".")
+    assert result.total_count == 1
+
+
+def test_search_exact_limit_not_truncated(tmp_cwd):
+    ops, cwd = tmp_cwd
+    (cwd / "f.txt").write_text("hit\nhit\nhit", encoding="utf-8")
+
+    assert ops.search("hit", path=".", limit=3).truncated is False
+    assert ops.search("hit", path=".", limit=2).truncated is True
+
+
+def test_exec_timeout_returns_partial_stdout(tmp_cwd, monkeypatch):
+    """text=True makes TimeoutExpired.stdout a str; decoding it again used to raise."""
+    import subprocess
+
+    def fake_run(cmd, **kwargs):
+        raise subprocess.TimeoutExpired(cmd=cmd, timeout=kwargs.get("timeout"), output="partial output")
+
+    monkeypatch.setattr("tools.files.native_ops.subprocess.run", fake_run)
+    ops, _ = tmp_cwd
+    result = ops._exec("whatever", timeout=1)
+    assert result.exit_code == 124
+    assert "partial output" in result.stdout
