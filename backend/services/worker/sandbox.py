@@ -55,9 +55,10 @@ async def _kill_container(container: str) -> None:
     # Killing the docker CLI client leaves the container running — the daemon
     # must be told explicitly, else a timed-out Blender keeps burning CPU.
     try:
-        await asyncio.create_subprocess_exec(SETTINGS.blender_sandbox_docker_binary, "kill", container, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)
+        proc = await asyncio.create_subprocess_exec(SETTINGS.blender_sandbox_docker_binary, "kill", container, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)
     except FileNotFoundError:
-        pass
+        return
+    await proc.wait()
 
 
 async def run_blender(io_dir: Path, script_name: str, args: Sequence[str], *, timeout: float, name_hint: str = "adhoc") -> tuple[int | None, str]:
@@ -73,7 +74,9 @@ async def run_blender(io_dir: Path, script_name: str, args: Sequence[str], *, ti
         cmd = _bare_cmd(io_dir, script_name, args)
     proc = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
     try:
-        await asyncio.wait_for(proc.wait(), timeout=timeout)
+        # communicate() drains both pipes while waiting — a bare wait() would
+        # deadlock once Blender's log output fills the OS pipe buffer.
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
     except TimeoutError:
         if container:
             await _kill_container(container)
@@ -85,8 +88,6 @@ async def run_blender(io_dir: Path, script_name: str, args: Sequence[str], *, ti
             await _kill_container(container)
         proc.kill()
         raise
-    stdout = await proc.stdout.read() if proc.stdout else b""
-    stderr = await proc.stderr.read() if proc.stderr else b""
     return proc.returncode, (stdout + stderr).decode(errors="replace")
 
 
@@ -108,8 +109,9 @@ async def sweep_orphan_containers() -> int:
     ids = [ln.strip() for ln in out.splitlines() if ln.strip()]
     for cid in ids:
         try:
-            await asyncio.create_subprocess_exec(binary, "rm", "-f", cid, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)
-            logger.info("removed orphan sandbox container", extra={"container": cid[:12]})
+            proc = await asyncio.create_subprocess_exec(binary, "rm", "-f", cid, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)
         except FileNotFoundError:
             break
+        await proc.wait()
+        logger.info("removed orphan sandbox container", extra={"container": cid[:12]})
     return len(ids)

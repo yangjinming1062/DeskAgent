@@ -261,10 +261,7 @@ class TestExecuteBlenderScript:
 
         fake_proc = AsyncMock()
         fake_proc.returncode = 0
-        fake_proc.stdout = MagicMock()
-        fake_proc.stdout.read = AsyncMock(return_value=b"[scaffold] done")
-        fake_proc.stderr = MagicMock()
-        fake_proc.stderr.read = AsyncMock(return_value=b"")
+        fake_proc.communicate = AsyncMock(return_value=(b"[scaffold] done", b""))
 
         async def _fake_wait_for(coro, timeout=None):
             return await coro
