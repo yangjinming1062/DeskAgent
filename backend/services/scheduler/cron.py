@@ -249,8 +249,8 @@ async def _maybe_run_memory_consolidator(now: datetime) -> None:
             await db.execute(text("SELECT user_id FROM memories WHERE context LIKE 'recall:%' GROUP BY user_id HAVING COUNT(*) > :t"), {"t": MEMORY_CONSOLIDATE_TRIGGER_ROWS})
         ).all()
     eligible: list[int] = []
-    for user_id in rows:
-        uid = int(user_id)
+    for (uid_raw,) in rows:
+        uid = int(uid_raw)
         if now.timestamp() - _LAST_MEMORY_CONSOLIDATE.get(uid, 0.0) < MEMORY_CONSOLIDATE_INTERVAL_SECONDS:
             continue
         eligible.append(uid)
@@ -263,7 +263,9 @@ async def _maybe_run_memory_consolidator(now: datetime) -> None:
     results = await asyncio.gather(*(maybe_consolidate_one_user(uid) for uid in eligible), return_exceptions=True)
     for uid, result in zip(eligible, results, strict=True):
         if isinstance(result, Exception):
-            logger.exception("memory_consolidator: tick failed", extra={"user_id": uid})
+            # Not inside an except block — pass the exception explicitly or
+            # exc_info would be empty and the traceback lost.
+            logger.error("memory_consolidator: tick failed", exc_info=result, extra={"user_id": uid})
             continue
         if result is True:
             _LAST_MEMORY_CONSOLIDATE[uid] = now.timestamp()
@@ -331,7 +333,7 @@ async def _maybe_run_autonomous_activity(now: datetime) -> None:
     results = await asyncio.gather(*(run_nightly_pipeline(uid, reference_utc) for uid, reference_utc, _ in eligible), return_exceptions=True)
     for (uid, _, target_date_str), result in zip(eligible, results, strict=True):
         if isinstance(result, Exception):
-            logger.exception("nightly_activity: tick failed", extra={"user_id": uid})
+            logger.error("nightly_activity: tick failed", exc_info=result, extra={"user_id": uid})
             continue
         if result is True:
             _LAST_NIGHTLY_RUN[uid] = target_date_str

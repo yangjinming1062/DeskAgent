@@ -765,6 +765,8 @@ async def run_nightly_pipeline(user_id: int, reference_utc: datetime | None = No
     )
     for label, result in zip(("daily checkpoint", "stage 5 creation"), results, strict=True):
         if isinstance(result, Exception):
-            logger.exception(f"nightly_activity: {label} failed", extra={"user_id": user_id, "error": str(result)})
+            # Not inside an except block — pass the exception explicitly or
+            # exc_info would be empty and the traceback lost.
+            logger.error(f"nightly_activity: {label} failed", exc_info=result, extra={"user_id": user_id})
 
     return True
