@@ -33,6 +33,7 @@ from .credential_files import (
     register_credential_file,
     register_credential_files,
 )
+from .desktop_transport import HANDSHAKE_AUTH_HEADER, PIPE_TRANSPORT, UNIX_TRANSPORT, DesktopConnection, DesktopEndpoint, connect_desktop, read_endpoint
 from .env_helpers import inject_context_deskagent_home, sanitize_subprocess_env
 from .env_passthrough import get_all_passthrough, is_env_passthrough, register_env_passthrough
 from .file_io import atomic_replace
@@ -67,8 +68,13 @@ from .url_safety import (
 
 __all__ = [
     "CREATE_NO_WINDOW",
+    "DesktopConnection",
+    "DesktopEndpoint",
+    "HANDSHAKE_AUTH_HEADER",
     "IS_MACOS",
     "IS_WINDOWS",
+    "PIPE_TRANSPORT",
+    "UNIX_TRANSPORT",
     "_PREFIX_RE",
     "WebsitePolicyError",
     "append_sane_path_entries",
@@ -87,6 +93,7 @@ __all__ = [
     "check_redirect_url_safety",
     "check_website_access",
     "clean_output",
+    "connect_desktop",
     "disk_free_bytes",
     "find_bash",
     "find_python",
@@ -131,6 +138,7 @@ __all__ = [
     "network_reachable",
     "normalize_url_for_request",
     "pid_exists",
+    "read_endpoint",
     "redact_sensitive_text",
     "register_credential_file",
     "register_credential_files",
