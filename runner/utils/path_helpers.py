@@ -72,8 +72,7 @@ def append_sane_path_entries(existing_path: str) -> str:
         return existing_path
     existing = dict.fromkeys(p for p in existing_path.split(":") if p)
     sane = dict.fromkeys(p for p in SANE_PATH.split(":") if p)
-    seen = {*existing, *sane}
-    return ":".join(p for p in (existing | seen) if p)
+    return ":".join(existing | sane)
 
 
 @functools.lru_cache(maxsize=1)

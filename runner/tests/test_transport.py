@@ -44,7 +44,7 @@ from utils import (
     connect_desktop,
     read_endpoint,
 )
-from utils.desktop_transport import _connect_pipe_handle, _PipeStream
+from utils.desktop_transport import DesktopConnection, _connect_pipe_handle, _PipeStream
 
 EXPECTED_TRANSPORT = PIPE_TRANSPORT if IS_WINDOWS else UNIX_TRANSPORT
 
@@ -684,3 +684,66 @@ async def test_connect_pipe_handle_waits_for_instance():
     finally:
         _k32.CancelIoEx(handle, None)
         _k32.CloseHandle(handle)
+
+
+class _MemStream:
+    """In-memory _Stream double: writes land in the peer's read queue.
+
+    Lets a test hand the client one deterministic byte blob per read —
+    the only way to reliably pin the "server pipelined frames behind the
+    101 in a single chunk" race (real transports only hit it by luck of
+    scheduling).
+    """
+
+    def __init__(self) -> None:
+        self._inbox: asyncio.Queue[bytes | None] = asyncio.Queue()
+        self.peer: "_MemStream | None" = None
+
+    @classmethod
+    def pair(cls) -> tuple["_MemStream", "_MemStream"]:
+        a, b = cls(), cls()
+        a.peer, b.peer = b, a
+        return a, b
+
+    async def read(self, n: int = 65536) -> bytes:
+        item = await self._inbox.get()
+        return item if item is not None else b""
+
+    async def write(self, data: bytes) -> None:
+        assert self.peer is not None
+        self.peer._inbox.put_nowait(data)
+
+    async def close(self) -> None:
+        if self.peer is not None:
+            self.peer._inbox.put_nowait(None)
+
+
+async def test_handshake_frame_pipelined_with_response_is_delivered():
+    """A frame batched into the same read as the 101 must not be dropped.
+
+    The sans-I/O client parses the handshake response and any pipelined WS
+    frames from one receive batch; stopping at the Response used to pop those
+    frames from the protocol queue without ever queueing them as messages.
+    """
+    client_stream, server_stream = _MemStream.pair()
+    message = json.dumps({"hello": "immediately-after-101"})
+
+    async def server_side() -> None:
+        server = ServerProtocol(max_size=16 * 1024 * 1024)
+        server.receive_data(await server_stream.read())
+        for event in server.events_received():
+            if not hasattr(event, "headers"):
+                continue
+            server.send_response(server.accept(event))
+            server.send_text(message.encode("utf-8"))
+            # Single concatenated write: response + first frame arrive at the
+            # client in one stream read.
+            await server_stream.write(b"".join(d for d in server.data_to_send() if d))
+            await server_stream.close()
+
+    server_task = asyncio.create_task(server_side())
+    connection = DesktopConnection(client_stream, token="unused-in-this-test")
+    await connection._handshake()
+    received = [msg async for msg in connection]
+    assert received == [message]
+    await server_task

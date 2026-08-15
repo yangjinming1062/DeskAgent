@@ -164,7 +164,7 @@ if IS_WINDOWS:
                 time.sleep(0.05)
             else:
                 raise OSError(last_error, f"CreateFileW({path!r}) failed")
-        assert last_error is not None
+        last_error = last_error if last_error is not None else _WIN_ERROR_FILE_NOT_FOUND
         raise TimeoutError(f"named pipe {path!r} not connectable within {timeout_s}s (winerror {last_error})")
 
     class _PipeStream:
@@ -328,6 +328,8 @@ class DesktopConnection:
         self._token = token
         self._messages: asyncio.Queue[str | None] = asyncio.Queue()
         self._recv_task: asyncio.Task[None] | None = None
+        self._fragments: list[bytes] = []
+        self._message_opcode: int | None = None
 
     async def _drain(self) -> None:
         """Write out everything the protocol has queued (frames, pongs, close acks)."""
@@ -351,22 +353,35 @@ class DesktopConnection:
                 # the body-less response — hand EOF to the protocol and
                 # look for the Response event before giving up.
                 self._protocol.receive_eof()
-                response = next((e for e in self._protocol.events_received() if isinstance(e, Response)), None)
-                if response is None:
+                self._consume_handshake_events(self._protocol.events_received())
+                if self._recv_task is None:
                     raise ConnectionError("Desktop closed the IPC stream during handshake")
-                self._process_handshake_response(response)
-                self._recv_task = asyncio.create_task(self._pump(), name="desktop-ipc-recv")
                 return
             self._protocol.receive_data(chunk)
             await self._drain()
-            for event in self._protocol.events_received():
+            self._consume_handshake_events(self._protocol.events_received())
+            if self._recv_task is not None:
+                return
+
+    def _consume_handshake_events(self, events) -> None:
+        """Process one events batch: the Response first, then any frames the
+        peer pipelined behind it. The sans-I/O parser keeps parsing after the
+        101 in the same batch, and ``events_received()`` drains the queue —
+        stopping at the Response would silently drop those frames. Frames may
+        not legally *precede* the handshake response; those stay a protocol
+        violation."""
+        response_seen = False
+        for event in events:
+            if not response_seen:
                 if not isinstance(event, Response):
-                    # Data frames may not legally precede the handshake
-                    # response; anything else is a protocol violation.
                     raise ConnectionError(f"unexpected event during handshake: {event!r}")
                 self._process_handshake_response(event)
-                self._recv_task = asyncio.create_task(self._pump(), name="desktop-ipc-recv")
-                return
+                response_seen = True
+                continue
+            if isinstance(event, Frame):
+                self._handle_frame(event)
+        if response_seen:
+            self._recv_task = asyncio.create_task(self._pump(), name="desktop-ipc-recv")
 
     def _process_handshake_response(self, response: Response) -> None:
         # Raises InvalidStatus on non-101 — e.g. the Desktop's HTTP 401 auth
@@ -376,8 +391,6 @@ class DesktopConnection:
 
     async def _pump(self) -> None:
         """Feed the stream into the protocol; surface assembled messages."""
-        fragments: list[bytes] = []
-        message_opcode = None
         try:
             while True:
                 chunk = await self._stream.read()
@@ -388,23 +401,8 @@ class DesktopConnection:
                 self._protocol.receive_data(chunk)
                 await self._drain()
                 for event in self._protocol.events_received():
-                    if not isinstance(event, Frame):
-                        continue
-                    opcode = event.opcode
-                    if opcode is OP_TEXT or opcode is OP_BINARY:
-                        if event.fin:
-                            self._emit(opcode, event.data)
-                        else:
-                            fragments = [event.data]
-                            message_opcode = opcode
-                    elif opcode is OP_CONT and message_opcode is not None:
-                        fragments.append(event.data)
-                        if event.fin:
-                            self._emit(message_opcode, b"".join(fragments))
-                            fragments = []
-                            message_opcode = None
-                    # Control frames never surface as messages: the protocol
-                    # already queued the Pong/Close replies in _drain().
+                    if isinstance(event, Frame):
+                        self._handle_frame(event)
         except (ConnectionError, OSError):
             pass
         except Exception as exc:
@@ -414,6 +412,23 @@ class DesktopConnection:
             logger.warning("desktop IPC pump terminated: %s", exc)
         finally:
             self._messages.put_nowait(None)
+
+    def _handle_frame(self, event: Frame) -> None:
+        opcode = event.opcode
+        if opcode is OP_TEXT or opcode is OP_BINARY:
+            if event.fin:
+                self._emit(opcode, event.data)
+            else:
+                self._fragments = [event.data]
+                self._message_opcode = opcode
+        elif opcode is OP_CONT and self._message_opcode is not None:
+            self._fragments.append(event.data)
+            if event.fin:
+                self._emit(self._message_opcode, b"".join(self._fragments))
+                self._fragments = []
+                self._message_opcode = None
+        # Control frames never surface as messages: the protocol
+        # already queued the Pong/Close replies in _drain().
 
     def _emit(self, opcode: int, data: bytes) -> None:
         if opcode is OP_TEXT:
