@@ -18,7 +18,7 @@ from tools.interrupt import set_global_interrupt, set_interrupt
 from tools.mcp import discover_mcp_tools, reload_mcp_servers
 from tools.tool_output_limits import reset_cache as reset_output_limits_cache
 from tools.toolsets import get_disabled_toolset_ids
-from utils import disk_free_bytes, get_deskagent_home, network_reachable, pid_exists, set_handler, set_inmemory_config, snapshot
+from utils import disk_free_bytes, get_deskagent_home, init_runner_job_object, network_reachable, pid_exists, set_handler, set_inmemory_config, snapshot
 
 logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger("deskagent_runner")
@@ -38,6 +38,7 @@ def _require_supported_host() -> None:
 
 
 _require_supported_host()
+init_runner_job_object()
 
 _ACTIVE_WS = None
 _RUNNER_LOOP: asyncio.AbstractEventLoop | None = None

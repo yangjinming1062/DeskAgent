@@ -2,7 +2,6 @@ import json
 import sys
 
 
-
 def test_runner_version_resolves():
     from runner_version import __version__
 
@@ -170,8 +169,7 @@ def test_system_snapshot_handler_aggregates_all_four_signals(monkeypatch):
     """``system.snapshot`` must return all four activity probes in one
     payload — same shapes the individual tools would, so the desktop can
     replace its 4-invoke poll with one round-trip."""
-    from tools.system import activity
-    from tools.system import activity_tools
+    from tools.system import activity, activity_tools
 
     monkeypatch.setattr(activity, "IS_WINDOWS", False)
     monkeypatch.setattr(activity, "IS_MACOS", False)
@@ -207,8 +205,9 @@ def test_audio_tool_schemas_registered():
 def test_audio_check_fn_hidden_when_dep_missing(monkeypatch):
     """If ``faster-whisper`` isn't importable in the venv, ``speech_to_text``
     must NOT appear in the LLM-facing schemas."""
-    from tools import registry
     import builtins
+
+    from tools import registry
 
     real_import = builtins.__import__
 

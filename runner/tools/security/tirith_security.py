@@ -13,7 +13,7 @@ import threading
 import time
 import urllib.request
 
-from utils import cfg_get, get_deskagent_home, load_config
+from utils import IS_WINDOWS, cfg_get, get_deskagent_home, load_config
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +31,7 @@ def _load_security_config() -> dict:
         "tirith_enabled": bool(cfg.get("tirith_enabled", True)),
         "tirith_path": cfg.get("tirith_path", "tirith"),
         "tirith_timeout": int(cfg.get("tirith_timeout", 5)),
-        "tirith_fail_open": bool(cfg.get("tirith_fail_open", True)),
+        "tirith_fail_open": bool(cfg.get("tirith_fail_open", False)),
     }
 
 
@@ -180,16 +180,33 @@ def _verify_checksum(archive_path: str, checksums_path: str, archive_name: str) 
     return True
 
 
+def _tirith_bin_names() -> tuple[str, ...]:
+    return ("tirith.exe", "tirith") if IS_WINDOWS else ("tirith",)
+
+
+def _tirith_search_paths() -> list[str]:
+    names = _tirith_bin_names()
+    paths: list[str] = []
+    bin_dir = _deskagent_bin_dir()
+    for name in names:
+        paths.append(name)
+        paths.append(os.path.join(bin_dir, name))
+    return paths
+
+
 def _extract_tirith_binary(tar: tarfile.TarFile, dest_dir: str, log) -> tuple[str | None, str]:
+    bin_names = _tirith_bin_names()
     for m in tar.getmembers():
-        if (m.name == "tirith" or m.name.endswith("/tirith")) and ".." not in m.name:
+        base_name = os.path.basename(m.name)
+        if base_name in bin_names and ".." not in m.name:
             if not m.isfile():
                 log("tirith archive member is not a regular file: %s", m.name)
                 return None, "binary_not_regular_file"
             if (src_file := tar.extractfile(m)) is None:
                 log("tirith binary could not be read from archive")
                 return None, "binary_extract_failed"
-            dest_path = os.path.join(dest_dir, "tirith")
+            dest_name = "tirith.exe" if IS_WINDOWS else "tirith"
+            dest_path = os.path.join(dest_dir, dest_name)
             with src_file, open(dest_path, "wb") as out:
                 shutil.copyfileobj(src_file, out)
             return dest_path, ""
@@ -206,8 +223,8 @@ def _install_tirith(*, log_failures: bool = True) -> tuple[str | None, str]:
     base_url = f"https://github.com/{_REPO}/releases/latest/download"
     tmpdir = tempfile.mkdtemp(prefix="tirith-install-")
     try:
-        archive_path, checksums_path = os.path.join(tmpdir, archive_name), os.path.join(tmpdir, "checksums.txt")
-        sig_path, cert_path = os.path.join(tmpdir, "checksums.txt.sig"), os.path.join(tmpdir, "checksums.txt.pem")
+        archive_path, checksums_path = (os.path.join(tmpdir, archive_name), os.path.join(tmpdir, "checksums.txt"))
+        sig_path, cert_path = (os.path.join(tmpdir, "checksums.txt.sig"), os.path.join(tmpdir, "checksums.txt.pem"))
         logger.info("tirith not found — downloading latest release for %s...", target)
         try:
             _download_file(f"{base_url}/{archive_name}", archive_path)
@@ -237,7 +254,8 @@ def _install_tirith(*, log_failures: bool = True) -> tuple[str | None, str]:
             src, reason = _extract_tirith_binary(tar, tmpdir, log)
             if src is None:
                 return None, reason
-        dest = os.path.join(_deskagent_bin_dir(), "tirith")
+        dest_name = "tirith.exe" if IS_WINDOWS else "tirith"
+        dest = os.path.join(_deskagent_bin_dir(), dest_name)
         try:
             shutil.move(src, dest)
         except OSError:
@@ -265,20 +283,21 @@ def _resolve_tirith_path(configured_path: str) -> str:
     expanded = os.path.expanduser(configured_path)
     explicit = _is_explicit_path(configured_path)
     if not explicit and not is_platform_supported():
-        _resolved_path, _install_failure_reason = _INSTALL_FAILED, "unsupported_platform"
+        _resolved_path, _install_failure_reason = (_INSTALL_FAILED, "unsupported_platform")
         return expanded
     if explicit:
         if (os.path.isfile(expanded) and os.access(expanded, os.X_OK)) or (expanded := shutil.which(expanded)):
             _resolved_path = expanded
             return expanded
         logger.warning("Configured tirith path %r not found; scanning disabled", configured_path)
-        _resolved_path, _install_failure_reason = _INSTALL_FAILED, "explicit_path_missing"
+        _resolved_path, _install_failure_reason = (_INSTALL_FAILED, "explicit_path_missing")
         return os.path.expanduser(configured_path)
-    for p in ("tirith", os.path.join(_deskagent_bin_dir(), "tirith")):
-        if found := shutil.which(p) if p == "tirith" else p if (os.path.isfile(p) and os.access(p, os.X_OK)) else None:
-            _resolved_path, _install_failure_reason = found, ""
+    for p in _tirith_search_paths():
+        if (os.path.isfile(p) and os.access(p, os.X_OK)) or (found := shutil.which(p)):
+            resolved = found if found else p
+            _resolved_path, _install_failure_reason = resolved, ""
             _clear_install_failed()
-            return found
+            return resolved
     if _resolved_path is _INSTALL_FAILED:
         if _install_failure_reason == "cosign_missing" and shutil.which("cosign"):
             _resolved_path, _install_failure_reason = None, ""
@@ -305,9 +324,9 @@ def _background_install(*, log_failures: bool = True) -> None:
     with _install_lock:
         if _resolved_path is not None:
             return
-        for p in ("tirith", os.path.join(_deskagent_bin_dir(), "tirith")):
-            if found := shutil.which(p) if p == "tirith" else p if (os.path.isfile(p) and os.access(p, os.X_OK)) else None:
-                _resolved_path, _install_failure_reason = found, ""
+        for p in _tirith_search_paths():
+            if (os.path.isfile(p) and os.access(p, os.X_OK)) or (found := shutil.which(p)):
+                _resolved_path, _install_failure_reason = found if found else p, ""
                 return
         installed, reason = _install_tirith(log_failures=log_failures)
         if installed:
@@ -326,7 +345,7 @@ def ensure_installed(*, log_failures: bool = True) -> str | None:
     if _resolved_path is not None and _resolved_path is not _INSTALL_FAILED:
         return _resolved_path if (os.path.isfile(_resolved_path) and os.access(_resolved_path, os.X_OK)) else None
     if not is_platform_supported():
-        _resolved_path, _install_failure_reason = _INSTALL_FAILED, "unsupported_platform"
+        _resolved_path, _install_failure_reason = (_INSTALL_FAILED, "unsupported_platform")
         return None
     configured_path = cfg["tirith_path"]
     explicit = _is_explicit_path(configured_path)
@@ -335,13 +354,13 @@ def ensure_installed(*, log_failures: bool = True) -> str | None:
         if (os.path.isfile(expanded) and os.access(expanded, os.X_OK)) or (expanded := shutil.which(expanded)):
             _resolved_path = expanded
             return expanded
-        _resolved_path, _install_failure_reason = _INSTALL_FAILED, "explicit_path_missing"
+        _resolved_path, _install_failure_reason = (_INSTALL_FAILED, "explicit_path_missing")
         return None
-    for p in ("tirith", os.path.join(_deskagent_bin_dir(), "tirith")):
-        if found := shutil.which(p) if p == "tirith" else p if (os.path.isfile(p) and os.access(p, os.X_OK)) else None:
-            _resolved_path, _install_failure_reason = found, ""
+    for p in _tirith_search_paths():
+        if (os.path.isfile(p) and os.access(p, os.X_OK)) or (found := shutil.which(p)):
+            _resolved_path, _install_failure_reason = found if found else p, ""
             _clear_install_failed()
-            return found
+            return found if found else p
     if _resolved_path is _INSTALL_FAILED:
         if _install_failure_reason == "cosign_missing" and shutil.which("cosign"):
             _resolved_path, _install_failure_reason = None, ""
@@ -363,9 +382,19 @@ def check_command_security(command: str) -> dict:
         return {"action": "allow", "findings": [], "summary": ""}
     tirith_path = _resolve_tirith_path(cfg["tirith_path"])
     timeout, fail_open = cfg["tirith_timeout"], cfg["tirith_fail_open"]
-    if tirith_path is None:
-        _warn_once("tirith_path_none", "tirith path resolved to None; scanning disabled")
-        return {"action": "allow" if fail_open else "block", "findings": [], "summary": "tirith path unavailable" + ("" if fail_open else " (fail-closed)")}
+
+    # Check if binary is physically present and runnable on the host.
+    # If uninstalled / offline / first run, fall back with warning without paralyzing normal execution.
+    is_binary_ready = bool(
+        tirith_path
+        and tirith_path is not _INSTALL_FAILED
+        and ((os.path.isfile(tirith_path) and os.access(tirith_path, os.X_OK)) or (not _is_explicit_path(tirith_path) and shutil.which(tirith_path)))
+    )
+
+    if not is_binary_ready:
+        _warn_once("tirith_binary_missing", "tirith security scanner binary is not available on host; dynamic scan skipped (falling back to built-in rules)")
+        return {"action": "allow", "findings": [], "summary": "tirith binary not available (fallback to built-in rules)"}
+
     try:
         result = subprocess.run(
             [tirith_path, "check", "--json", "--non-interactive", "--shell", "posix", "--", command], capture_output=True, text=True, timeout=timeout, stdin=subprocess.DEVNULL
@@ -375,7 +404,11 @@ def check_command_security(command: str) -> dict:
         return {"action": "allow" if fail_open else "block", "findings": [], "summary": f"tirith unavailable: {exc}" if fail_open else f"tirith spawn failed (fail-closed): {exc}"}
     except subprocess.TimeoutExpired:
         _warn_once(f"tirith_timeout:{timeout}", "tirith timed out after %ds", timeout)
-        return {"action": "allow" if fail_open else "block", "findings": [], "summary": f"tirith timed out ({timeout}s)" if fail_open else "tirith timed out (fail-closed)"}
+        return {
+            "action": "allow" if fail_open else "block",
+            "findings": [],
+            "summary": f"tirith timed out ({timeout}s)" if fail_open else f"tirith timed out ({timeout}s, fail-closed)",
+        }
     exit_code = result.returncode
     action = {0: "allow", 1: "block", 2: "warn"}.get(exit_code)
     if action is None:

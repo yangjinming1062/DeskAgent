@@ -18,22 +18,21 @@ default suite, not the build-gate slow path.
 """
 
 from tools.execute_code import code_execution_tool as ec
-from tools.interrupt import INTERRUPT_EVENT
-from tools.interrupt import is_interrupted
-from tools.interrupt import set_global_interrupt
-from utils import clean_output
-from utils import strip_ansi
-from utils import strip_fence
+from tools.interrupt import INTERRUPT_EVENT, is_interrupted, set_global_interrupt
 from tools.thread_context import propagate_context_to_thread
-from tools.tool_output_limits import _coerce_positive_int
-from tools.tool_output_limits import get_max_bytes
-from tools.tool_output_limits import get_tool_output_limits
-from tools.tool_output_limits import reset_cache
-from tools.tool_result_storage import DEFAULT_BUDGET
-from tools.tool_result_storage import generate_preview
-from tools.tool_result_storage import maybe_persist_tool_result
-from tools.tool_result_storage import PERSISTED_OUTPUT_TAG
-
+from tools.tool_output_limits import (
+    _coerce_positive_int,
+    get_max_bytes,
+    get_tool_output_limits,
+    reset_cache,
+)
+from tools.tool_result_storage import (
+    DEFAULT_BUDGET,
+    PERSISTED_OUTPUT_TAG,
+    generate_preview,
+    maybe_persist_tool_result,
+)
+from utils import clean_output, strip_ansi, strip_fence
 
 # ---------------------------------------------------------------------------
 # interrupt
@@ -526,11 +525,9 @@ class TestToolsets:
 
     def test_excluded_tool_names_filters_by_prefix(self):
         """A disabled toolset hides any tool whose name matches one of its declared prefixes."""
-        from tools.toolsets.catalog import excluded_tool_names
-
         # Pick a real prefix from the catalog so this test stays valid
         # even if the catalog is curated later.
-        from tools.toolsets.catalog import TOOLSET_CATALOG
+        from tools.toolsets.catalog import TOOLSET_CATALOG, excluded_tool_names
 
         # Find a toolset with at least one prefix that matches a known
         # registered tool name; ``browser_*`` is a stable prefix.

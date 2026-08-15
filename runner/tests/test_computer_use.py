@@ -1,20 +1,21 @@
 import json
 
 import pytest
-from tools.multimodal.cu_backend import ActionResult
-from tools.multimodal.cu_backend import CaptureResult
-from tools.multimodal.cu_backend import UIElement
-from tools.multimodal.cu_tool import _BLOCKED_KEY_COMBOS
-from tools.multimodal.cu_tool import _canon_key_combo
-from tools.multimodal.cu_tool import _capture_response
-from tools.multimodal.cu_tool import _coerce_max_elements
-from tools.multimodal.cu_tool import _dispatch
-from tools.multimodal.cu_tool import _element_to_dict
-from tools.multimodal.cu_tool import _format_elements
-from tools.multimodal.cu_tool import _is_blocked_type
-from tools.multimodal.cu_tool import _NoopBackend
-from tools.multimodal.cu_tool import handle_computer_use
-from tools.multimodal.cu_tool import reset_backend_for_tests
+
+from tools.multimodal.cu_backend import ActionResult, CaptureResult, UIElement
+from tools.multimodal.cu_tool import (
+    _BLOCKED_KEY_COMBOS,
+    _canon_key_combo,
+    _capture_response,
+    _coerce_max_elements,
+    _dispatch,
+    _element_to_dict,
+    _format_elements,
+    _is_blocked_type,
+    _NoopBackend,
+    handle_computer_use,
+    reset_backend_for_tests,
+)
 
 
 @pytest.fixture(autouse=True)

@@ -39,6 +39,7 @@ from .file_io import atomic_replace
 from .file_safety import (
     build_write_denied_paths,
     build_write_denied_prefixes,
+    canonicalize_path,
     get_container_mirror_warning,
     get_cross_profile_warning,
     get_read_block_error,
@@ -48,6 +49,7 @@ from .file_safety import (
     is_write_denied,
     validate_within_dir,
 )
+from .job_object import get_runner_job_handle, init_runner_job_object, is_job_object_active
 from .path_helpers import append_sane_path_entries, find_bash, find_python, msys_to_windows_path, resolve_safe_cwd
 from .pid import kill_tree, pid_exists
 from .redact import _PREFIX_RE, redact_sensitive_text
@@ -75,6 +77,7 @@ __all__ = [
     "build_write_denied_paths",
     "build_write_denied_prefixes",
     "call_llm",
+    "canonicalize_path",
     "cfg_bool",
     "cfg_float",
     "cfg_get",
@@ -99,6 +102,7 @@ __all__ = [
     "get_env_type",
     "get_external_skills_dirs",
     "get_read_block_error",
+    "get_runner_job_handle",
     "get_sandbox_mirror_warning",
     "get_skills_dir",
     "get_skills_directory_mount",
@@ -106,9 +110,11 @@ __all__ = [
     "get_windows_sensitive_prefixes",
     "has_traversal_component",
     "in_async_loop",
+    "init_runner_job_object",
     "inject_context_deskagent_home",
     "is_always_blocked_url",
     "is_env_passthrough",
+    "is_job_object_active",
     "is_safe_url",
     "is_termux",
     "is_truthy_value",

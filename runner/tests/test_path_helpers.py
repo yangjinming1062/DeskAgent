@@ -3,6 +3,7 @@ import platform
 from unittest import mock
 
 import pytest
+
 from utils.path_helpers import find_python
 
 

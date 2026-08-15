@@ -1,6 +1,7 @@
 import sys
 
 import pytest
+
 from tools.skills.skills_tool import skill_matches_platform
 
 

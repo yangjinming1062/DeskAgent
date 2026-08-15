@@ -16,11 +16,14 @@ The 2026-07 review added several contracts worth pinning:
 import json
 
 import pytest
+
 from tools.process import process_tool
-from tools.process.process_tool import _handle_process
-from tools.process.process_tool import format_process_notification
-from tools.process.process_tool import ProcessRegistry
-from tools.process.process_tool import ProcessSession
+from tools.process.process_tool import (
+    ProcessRegistry,
+    ProcessSession,
+    _handle_process,
+    format_process_notification,
+)
 
 
 @pytest.fixture

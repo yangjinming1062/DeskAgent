@@ -13,8 +13,8 @@ import sys
 
 import psutil
 import pytest
-from utils.pid import kill_tree
-from utils.pid import pid_exists
+
+from utils.pid import kill_tree, pid_exists
 
 
 def test_pid_exists_returns_false_for_none():

@@ -128,7 +128,6 @@ def test_tts_tool_mimo_voicedesign_with_fallback_to_local(tmp_path: Path, monkey
     assert payload["voice"] == "zh_CN-huayan-medium"
 
 
-
 # ── voice id → repo path ──────────────────────────────────────────────────
 
 
@@ -391,6 +390,7 @@ def test_tts_explicit_piper_does_not_fall_back(tmp_path: Path, monkeypatch):
 
 def test_native_wav_to_pcm16_resampling(tmp_path: Path):
     import wave
+
     from tools.multimodal.audio import audio_io
 
     # Create a 44100Hz stereo WAV file using standard library

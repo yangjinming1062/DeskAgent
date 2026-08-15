@@ -1,6 +1,7 @@
 import json
-from tools.registry import registry
+
 import tools.system.activity_tools  # noqa: F401
+from tools.registry import registry
 
 
 def test_spatial_tools_registered():

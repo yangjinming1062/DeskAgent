@@ -163,105 +163,279 @@ def _get_safe_write_root() -> str | None:
         return None
 
 
-def _resolve_long_path(path: str) -> str:
-    """Resolve 8.3 short names (PROGRA~1) to long form and strip device prefixes (\\\\?\\, \\\\.\\); realpath skips them, which would bypass the write-deny prefix check."""
-    expanded = os.path.expanduser(path)
+if IS_WINDOWS:
+    _FILE_READ_ATTRIBUTES = 0x80
+    _FILE_SHARE_READ = 1
+    _FILE_SHARE_WRITE = 2
+    _FILE_SHARE_DELETE = 4
+    _OPEN_EXISTING = 3
+    _FILE_FLAG_BACKUP_SEMANTICS = 0x02000000
+    _VOLUME_NAME_DOS = 0x0
+    _FILE_NAME_NORMALIZED = 0x0
+
+    kernel32 = ctypes.windll.kernel32
+
+    kernel32.CreateFileW.restype = wintypes.HANDLE
+    kernel32.CreateFileW.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD, wintypes.LPVOID, wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE]
+
+    kernel32.GetFinalPathNameByHandleW.restype = wintypes.DWORD
+    kernel32.GetFinalPathNameByHandleW.argtypes = [wintypes.HANDLE, wintypes.LPWSTR, wintypes.DWORD, wintypes.DWORD]
+
+    kernel32.CloseHandle.restype = wintypes.BOOL
+    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+
+
+def _strip_device_prefix(path_str: str) -> str:
+    """Normalize Windows device/NT prefixes (\\\\?\\UNC\\, \\\\?\\, \\\\.\\)."""
+    if not path_str:
+        return path_str
+    norm = path_str.replace("/", "\\")
+    norm_upper = norm.upper()
+    if norm_upper.startswith("\\\\?\\UNC\\"):
+        return "\\\\" + path_str[8:]
+    elif norm_upper.startswith("\\\\?\\") or norm_upper.startswith("\\\\.\\"):
+        return path_str[4:]
+    return path_str
+
+
+def _split_ads_stream(path_str: str) -> tuple[str, str]:
+    """Split Windows path into base file/dir path and NTFS stream suffix.
+
+    Preserves drive letter colon (e.g. 'C:') and only extracts colons
+    in subsequent components.
+    """
+    if not IS_WINDOWS or not path_str:
+        return path_str, ""
+
+    norm = path_str.replace("/", "\\")
+    drive = ""
+    rest = norm
+    if len(norm) >= 2 and norm[0].isalpha() and norm[1] == ":":
+        drive = norm[:2]
+        rest = norm[2:]
+
+    parts = rest.split("\\")
+    if not parts:
+        return path_str, ""
+
+    last = parts[-1]
+    if ":" in last:
+        colon_idx = last.index(":")
+        base_last = last[:colon_idx]
+        stream_suffix = last[colon_idx:]
+        parts[-1] = base_last
+        base_path = drive + "\\".join(parts)
+        return base_path, stream_suffix
+
+    return path_str, ""
+
+
+def _get_final_path_by_handle(path_str: str) -> str | None:
+    """Resolve authoritative canonical path via Win32 GetFinalPathNameByHandleW with dynamic buffer allocation."""
+    if not IS_WINDOWS:
+        return None
+    try:
+        h = kernel32.CreateFileW(
+            path_str, _FILE_READ_ATTRIBUTES, _FILE_SHARE_READ | _FILE_SHARE_WRITE | _FILE_SHARE_DELETE, None, _OPEN_EXISTING, _FILE_FLAG_BACKUP_SEMANTICS, None
+        )
+        if h == wintypes.HANDLE(-1).value or h == -1:
+            return None
+        try:
+            # Query required buffer size dynamically
+            req_len = kernel32.GetFinalPathNameByHandleW(h, None, 0, _VOLUME_NAME_DOS | _FILE_NAME_NORMALIZED)
+            if req_len == 0:
+                return None
+            buf = ctypes.create_unicode_buffer(req_len + 1)
+            ret = kernel32.GetFinalPathNameByHandleW(h, buf, req_len + 1, _VOLUME_NAME_DOS | _FILE_NAME_NORMALIZED)
+            if ret > 0:
+                return _strip_device_prefix(buf.value)
+            return None
+        finally:
+            kernel32.CloseHandle(h)
+    except Exception:
+        return None
+
+
+def canonicalize_path(path: str) -> str:
+    """Authoritative cross-platform path canonicalization.
+
+    On Windows:
+    - Strips NT device prefixes (\\\\?\\, \\\\?\\UNC\\).
+    - Preserves and isolates NTFS Alternate Data Streams (ADS).
+    - Pre-normalizes with normpath to resolve '..' and '.' traversal upfront.
+    - Resolves 8.3 short names (PROGRA~1), symlinks, and junctions using
+      Win32 GetFinalPathNameByHandleW with dynamic buffer sizing.
+    - Backtracks to existing parent directories for uncreated targets.
+    - Re-attaches stream suffixes.
+    """
+    if not path:
+        return ""
+    expanded = os.path.expanduser(str(path))
     if not IS_WINDOWS:
         return os.path.realpath(expanded)
-    s = expanded
-    if s.startswith("\\\\?\\UNC\\"):
-        s = "\\\\" + s[8:]
-    elif s.startswith("\\\\?\\") or s.startswith("\\\\.\\"):
-        s = s[4:]
-    try:
-        buf = ctypes.create_unicode_buffer(wintypes.MAX_PATH)
-        # GetLongPathNameW returns the long path length; 0 means error.
-        length = ctypes.windll.kernel32.GetLongPathNameW(  # type: ignore[attr-defined]
-            wintypes.LPCWSTR(s), buf, wintypes.MAX_PATH
-        )
-        if length > 0 and length <= wintypes.MAX_PATH:
-            return buf.value
-    except Exception:
-        pass
-    return os.path.realpath(s)
+
+    cleaned = _strip_device_prefix(expanded)
+    base_path, stream_suffix = _split_ads_stream(cleaned)
+
+    # Pre-normalize to resolve '..' and '.' upfront
+    norm = os.path.normpath(base_path)
+
+    # Try direct handle resolution on existing file/dir
+    resolved = _get_final_path_by_handle(norm)
+    if resolved:
+        return resolved + stream_suffix
+
+    # For non-existent files/directories: walk up to existing parent directory
+    cur = norm
+    tail_parts: list[str] = []
+    while cur:
+        parent = os.path.dirname(cur)
+        if not parent or parent == cur:
+            break
+        tail_parts.insert(0, os.path.basename(cur))
+        resolved_parent = _get_final_path_by_handle(parent)
+        if resolved_parent:
+            joined = os.path.join(resolved_parent, *tail_parts)
+            return _strip_device_prefix(joined) + stream_suffix
+        cur = parent
+
+    # Fallback to os.path.realpath if no parent handle could be queried
+    return os.path.realpath(norm) + stream_suffix
+
+
+def _resolve_long_path(path: str) -> str:
+    return canonicalize_path(path)
 
 
 def is_write_denied(path: str) -> bool:
     try:
-        home = _resolve_long_path("~")
-        resolved = _resolve_long_path(str(path))
+        home = canonicalize_path("~")
+        resolved = canonicalize_path(str(path))
     except Exception:
         return True
 
-    # On Windows the prefix check is slash- and case-sensitive on the raw
-    # string. Normalise both sides so a write to ``C:\Windows\System32``,
-    # ``c:/windows/system32`` or any trailing-separator variant still hits
-    # the denylist — otherwise the agent can bypass it with a different
-    # slash style. POSIX is left untouched (no case folding).
-    resolved_norm = resolved.replace("\\", "/").lower() if IS_WINDOWS else resolved
+    base_resolved, stream_suffix = _split_ads_stream(resolved)
 
-    if resolved in build_write_denied_paths(home):
-        return True
+    # On Windows the prefix check is slash- and case-sensitive on the raw
+    # On Windows the prefix and path checks are slash- and case-insensitive.
+    # Normalise both sides so a write to ``C:\Windows\System32``,
+    # ``c:/windows/system32``, ``~/.BASHRC`` or any variant hits the denylist.
+    resolved_norm = resolved.replace("\\", "/").lower() if IS_WINDOWS else resolved
+    base_resolved_norm = base_resolved.replace("\\", "/").lower() if IS_WINDOWS else base_resolved
+
+    denied_paths = build_write_denied_paths(home)
     if IS_WINDOWS:
-        # Pre-normalized prefixes — one pass, no per-prefix replace/lower.
-        if any(resolved_norm.startswith(p) for p in _build_normalized_prefixes(home)):
+        denied_paths_lower = {p.replace("\\", "/").lower() for p in denied_paths}
+        if resolved_norm in denied_paths_lower or base_resolved_norm in denied_paths_lower:
             return True
-    elif any(resolved.startswith(p) for p in build_write_denied_prefixes(home)):
+    else:
+        if resolved in denied_paths or base_resolved in denied_paths:
+            return True
+
+    if IS_WINDOWS:
+        # Pre-normalized prefixes — check both the full path (with any ADS) and base path
+        normalized_prefixes = _build_normalized_prefixes(home)
+        if any(resolved_norm.startswith(p) or base_resolved_norm.startswith(p) for p in normalized_prefixes):
+            return True
+        # Also block directory stream tampering like ::$INDEX_ALLOCATION
+        if stream_suffix and any(base_resolved_norm == p.rstrip("/") for p in normalized_prefixes):
+            return True
+    elif any(resolved.startswith(p) or base_resolved.startswith(p) for p in build_write_denied_prefixes(home)):
         return True
 
     deskagent_dirs = []
     with contextlib.suppress(Exception):
-        deskagent_dirs.append(os.path.realpath(_deskagent_home_path()))
+        deskagent_dirs.append(canonicalize_path(str(_deskagent_home_path())))
 
     for base_real in deskagent_dirs:
+        base_norm = base_real.replace("\\", "/").lower() if IS_WINDOWS else base_real
         try:
-            if any(resolved == os.path.realpath(os.path.join(base_real, n)) for n in ("auth.json", "desktop-settings.json", "webhook_subscriptions.json")):
-                return True
+            for n in ("auth.json", "desktop-settings.json", "webhook_subscriptions.json"):
+                target_norm = (base_norm + "/" + n).lower() if IS_WINDOWS else os.path.join(base_real, n)
+                if resolved_norm == target_norm or base_resolved_norm == target_norm or resolved == os.path.join(base_real, n) or base_resolved == os.path.join(base_real, n):
+                    return True
             for sub in ("mcp-tokens", "pairing"):
-                sub_real = os.path.realpath(os.path.join(base_real, sub))
-                if resolved == sub_real or resolved.startswith(sub_real + os.sep):
+                sub_norm = (base_norm + "/" + sub).lower() if IS_WINDOWS else os.path.join(base_real, sub)
+                sub_real = os.path.join(base_real, sub)
+                if (
+                    resolved_norm == sub_norm
+                    or resolved_norm.startswith(sub_norm + "/")
+                    or base_resolved_norm == sub_norm
+                    or base_resolved_norm.startswith(sub_norm + "/")
+                    or resolved == sub_real
+                    or resolved.startswith(sub_real + os.sep)
+                    or base_resolved == sub_real
+                    or base_resolved.startswith(sub_real + os.sep)
+                ):
                     return True
         except Exception:
             pass
 
-    return bool((safe_root := _get_safe_write_root()) and not (resolved == safe_root or resolved.startswith(safe_root + os.sep)))
+    return bool(
+        (safe_root := _get_safe_write_root())
+        and not (
+            resolved == safe_root
+            or resolved.startswith(safe_root + os.sep)
+            or base_resolved == safe_root
+            or base_resolved.startswith(safe_root + os.sep)
+            or (
+                IS_WINDOWS
+                and (
+                    resolved_norm == safe_root.replace("\\", "/").lower()
+                    or resolved_norm.startswith(safe_root.replace("\\", "/").lower() + "/")
+                    or base_resolved_norm == safe_root.replace("\\", "/").lower()
+                    or base_resolved_norm.startswith(safe_root.replace("\\", "/").lower() + "/")
+                )
+            )
+        )
+    )
 
 
 def get_read_block_error(path: str) -> str | None:
     try:
-        resolved = Path(_resolve_long_path(str(path)))
+        resolved_str = canonicalize_path(str(path))
+        resolved = Path(resolved_str)
+        base_resolved_str, _ = _split_ads_stream(resolved_str)
+        base_resolved = Path(base_resolved_str)
     except Exception:
         return None
 
+    resolved_norm = resolved_str.replace("\\", "/").lower() if IS_WINDOWS else resolved_str
+    base_resolved_norm = base_resolved_str.replace("\\", "/").lower() if IS_WINDOWS else base_resolved_str
+
     deskagent_dirs = []
     with contextlib.suppress(Exception):
-        deskagent_dirs.append(Path(_resolve_long_path(str(_deskagent_home_path()))))
+        deskagent_dirs.append(Path(canonicalize_path(str(_deskagent_home_path()))))
 
     for zd in deskagent_dirs:
-        for blocked in (zd / "skills/.hub/index-cache", zd / "skills/.hub"):
-            try:
-                resolved.relative_to(blocked)
+        zd_norm = str(zd).replace("\\", "/").lower() if IS_WINDOWS else str(zd)
+        for blocked_sub in ("skills/.hub/index-cache", "skills/.hub"):
+            blocked_target = zd_norm + "/" + blocked_sub if IS_WINDOWS else str(zd / blocked_sub)
+            if (
+                resolved_norm == blocked_target
+                or resolved_norm.startswith(blocked_target + "/")
+                or base_resolved_norm == blocked_target
+                or base_resolved_norm.startswith(blocked_target + "/")
+            ):
                 return f"Access denied: {path} is an internal DeskAgent cache file. Use skill_view / skills_list instead."
-            except ValueError:
-                continue
 
     credential_file_names = ("auth.json", "auth.lock", "anthropic_oauth.json", ".env", "webhook_subscriptions.json", "auth/google_oauth.json", "cache/bws_cache.json")
     for zd in deskagent_dirs:
+        zd_norm = str(zd).replace("\\", "/").lower() if IS_WINDOWS else str(zd)
         for name in credential_file_names:
-            try:
-                if resolved == (zd / name).resolve():
-                    return f"Access denied: {path} is a DeskAgent credential store and cannot be read directly."
-            except Exception:
-                pass
+            target_norm = zd_norm + "/" + name if IS_WINDOWS else str((zd / name).resolve())
+            if resolved_norm == target_norm or base_resolved_norm == target_norm or resolved == (zd / name).resolve() or base_resolved == (zd / name).resolve():
+                return f"Access denied: {path} is a DeskAgent credential store and cannot be read directly."
 
     for zd in deskagent_dirs:
-        try:
-            resolved.relative_to((zd / "mcp-tokens").resolve())
+        zd_norm = str(zd).replace("\\", "/").lower() if IS_WINDOWS else str(zd)
+        mcp_target = zd_norm + "/mcp-tokens"
+        if resolved_norm == mcp_target or resolved_norm.startswith(mcp_target + "/") or base_resolved_norm == mcp_target or base_resolved_norm.startswith(mcp_target + "/"):
             return f"Access denied: {path} is a DeskAgent MCP token file and cannot be read directly."
-        except (ValueError, Exception):
-            continue
 
-    if resolved.name in _BLOCKED_PROJECT_ENV_BASENAMES:
+    name_check = resolved.name.lower() if IS_WINDOWS else resolved.name
+    base_name_check = base_resolved.name.lower() if IS_WINDOWS else base_resolved.name
+    if name_check in _BLOCKED_PROJECT_ENV_BASENAMES or base_name_check in _BLOCKED_PROJECT_ENV_BASENAMES:
         return f"Access denied: {path} is a secret-bearing environment file. Read .env.example instead if checking structure."
 
     return None
@@ -342,7 +516,7 @@ def classify_container_mirror_target(path: str, mirror_prefix: str | None = None
     if not mirror_prefix:
         return None
     try:
-        target, prefix_real = Path(os.path.expanduser(str(path))).resolve(), Path(os.path.expanduser(mirror_prefix)).resolve()
+        target, prefix_real = (Path(os.path.expanduser(str(path))).resolve(), Path(os.path.expanduser(mirror_prefix)).resolve())
         rel = target.relative_to(prefix_real)
         return {"target_path": str(target), "mirror_root": str(prefix_real), "inner_path": str(Path(*rel.parts)) if rel.parts else ""}
     except (OSError, RuntimeError, ValueError):

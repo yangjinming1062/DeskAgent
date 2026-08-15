@@ -21,13 +21,13 @@ import asyncio
 import contextlib
 import json
 import os
+from collections.abc import Awaitable, Callable
 from typing import Any
-from collections.abc import Awaitable
-from collections.abc import Callable
 
 import pytest
-import server
 import websockets
+
+import server
 
 
 class _Peer:
@@ -231,7 +231,7 @@ async def desktop_peer():
     # Wait for the runner to connect + send ``runner_ready``.
     try:
         ready = await asyncio.wait_for(peer_obj.request_queue.get(), timeout=5)
-    except asyncio.TimeoutError as e:
+    except TimeoutError as e:
         runner_task.cancel()
         serve_task.cancel()
         await serve_cm.__aexit__(None, None, None)
@@ -416,7 +416,7 @@ async def test_execute_tool_missing_name_raises_value_error():
 @pytest.mark.asyncio
 async def test_execute_tool_wraps_tool_error_as_jsonrpc_error():
     """``ToolError`` MUST surface as ``-32000`` with the message intact."""
-    from tools import registry, ToolError
+    from tools import ToolError, registry
 
     sent: list[dict[str, Any]] = []
 

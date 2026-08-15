@@ -3,10 +3,8 @@ import os
 import tempfile
 
 import pytest
-from tools import discover_builtin_tools
-from tools import registry
-from tools import tool_error
-from tools import tool_result
+
+from tools import discover_builtin_tools, registry, tool_error, tool_result
 
 
 @pytest.fixture(scope="session", autouse=True)

@@ -38,7 +38,6 @@ from tools import registry
 from tools.skills import skills_sync
 from tools.terminal.environment import factory as env_factory
 
-
 # ---------------------------------------------------------------------------
 # Helpers — start a peer, run ``runner_loop`` against it, get a clean teardown
 # ---------------------------------------------------------------------------
@@ -522,7 +521,6 @@ async def test_mcp_reload_rpc_invokes_reload_and_resets_caches(monkeypatch):
     reset_max_read_chars_cache()
 
 
-
 def test_real_reload_mcp_servers_shuts_down_live_servers():
     """``reload_mcp_servers`` MUST walk its real shutdown path end-to-end.
 
@@ -581,6 +579,8 @@ def test_real_reload_mcp_servers_shuts_down_live_servers():
             real_mcp_tool._stop_mcp_loop()
         real_mcp_tool._servers.pop("alpha", None)
         real_mcp_tool._servers.pop("beta", None)
+
+
 @pytest.mark.timeout(10)
 def test_create_environment_routes_local(monkeypatch):
     """``local`` MUST produce a ``LocalEnvironment`` with the persistent flag wired from config.
@@ -1076,7 +1076,7 @@ async def test_runner_loop_cancel_drains_pending_rpc_futures():
         if not server._PENDING_RPC:
             raise AssertionError(
                 f"request_llm did not park a future in _PENDING_RPC; "
-                f"peer.received request_llm frames={[m for m in peer.received if m.get('method')=='request_llm']}, "
+                f"peer.received request_llm frames={[m for m in peer.received if m.get('method') == 'request_llm']}, "
                 f"server._PENDING_RPC={server._PENDING_RPC}, _ACTIVE_WS={server._ACTIVE_WS!r}"
             )
         pending_ids = list(server._PENDING_RPC.keys())
@@ -1093,7 +1093,7 @@ async def test_runner_loop_cancel_drains_pending_rpc_futures():
         # own 10s deadline.
         try:
             await asyncio.wait_for(request_task, timeout=5)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             raise AssertionError(f"request_llm future not drained on cancel; _PENDING_RPC={server._PENDING_RPC}")
         except ConnectionError:
             # Expected: the drain set ConnectionError.
