@@ -171,10 +171,10 @@ class ToolRegistry:
                 continue
             missing.append(name)
         if missing:
-            # runner/CLAUDE.md mandates explicit schemas. Failing here turns
-            # an undocumented tool into a hard error instead of a silent
-            # half-schema reaching the LLM — same blast radius as a typo in
-            # the schema would have, just at startup rather than first call.
+            # Failing here turns an undocumented tool into a hard error
+            # instead of a silent half-schema reaching the LLM — same blast
+            # radius as a typo in the schema would have, just at startup
+            # rather than first call.
             raise RuntimeError("Tool(s) registered without an explicit schema: " + ", ".join(sorted(missing)) + ". Add `schema=...` to their register_tool() / register() call.")
         return schemas
 

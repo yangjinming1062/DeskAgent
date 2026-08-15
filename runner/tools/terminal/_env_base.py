@@ -227,8 +227,8 @@ class BaseEnvironment(ABC):
                 for piece in stream:
                     if piece is not None:
                         output_chunks.append(decoder.decode(piece) if isinstance(piece, bytes) else str(piece))
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("process output drain stopped early: %s", e)
 
         def _drain() -> None:
             if (stream := proc.stdout) is None:

@@ -67,7 +67,7 @@ def test_registry_check_fn_filters_unavailable_tools():
 
 def test_registry_check_fn_transient_suppression():
     """After a successful probe, a brief probe failure must NOT immediately
-    flip availability to False (hermes-agent pattern)."""
+    flip availability to False."""
     from tools.registry import ToolRegistry
 
     reg = ToolRegistry()

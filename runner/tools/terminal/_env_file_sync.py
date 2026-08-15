@@ -176,8 +176,8 @@ class FileSyncManager:
                         msvcrt.locking(f.fileno(), msvcrt.LK_UNLCK, 1)
                     else:
                         fcntl.flock(f, fcntl.LOCK_UN)
-                except OSError:
-                    pass
+                except OSError as e:
+                    logger.debug("file_sync: unlock failed for %s: %s", lock_path, e)
 
     def _sync_back_impl(self) -> None:
         if not self._bulk_download_fn:

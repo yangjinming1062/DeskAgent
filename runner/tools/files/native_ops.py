@@ -340,7 +340,8 @@ class NativeFileOperations(FileOperations):
                 if file_match_count > 0:
                     counts[rel_path] = file_match_count
 
-            except (UnicodeDecodeError, OSError):
+            except (UnicodeDecodeError, OSError) as e:
+                logger.debug("search skipped unreadable file %s: %s", rel_path, e)
                 continue
 
             scanned_count += 1

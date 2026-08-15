@@ -17,10 +17,8 @@ from .helpers import _MAX_BASE64_BYTES
 logger = logging.getLogger(__name__)
 
 # Stable prefix the LLM and downstream surfacing can pattern-match on as
-# a cancellation marker. Matches the hermes-agent
-# ``INTERRUPT_WAITING_FOR_MODEL_PREFIX``-style convention used to tell
-# ACP / TUI clients that a turn exited cleanly via cancel rather than
-# producing assistant prose.
+# a cancellation marker, telling clients that a turn exited cleanly via
+# cancel rather than producing assistant prose.
 INTERRUPTED_PREFIX = "[INTERRUPTED]"
 
 _BLOCKED_KEY_COMBOS = {

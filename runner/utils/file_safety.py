@@ -322,7 +322,6 @@ def is_write_denied(path: str) -> bool:
 
     base_resolved, stream_suffix = _split_ads_stream(resolved)
 
-    # On Windows the prefix check is slash- and case-sensitive on the raw
     # On Windows the prefix and path checks are slash- and case-insensitive.
     # Normalise both sides so a write to ``C:\Windows\System32``,
     # ``c:/windows/system32``, ``~/.BASHRC`` or any variant hits the denylist.

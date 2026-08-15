@@ -41,7 +41,7 @@ class ActionResult:
     message: str = ""
     capture: CaptureResult | None = None
     meta: dict[str, Any] = field(default_factory=dict)
-    # Verdict surface (matches hermes-agent ``_classify_action_result``):
+    # Verdict surface:
     #   ``verified``   — capture re-checked the action took effect.
     #   ``effect``     — short human label, e.g. "opened file", "no-op".
     #   ``escalation`` — ``"done"`` | ``"verify_fresh_state"`` | ``"escalate"``.
@@ -55,7 +55,7 @@ class ActionResult:
     # Background vs foreground escalation: backend implementations tag
     # which delivery channel the action went through so the runner
     # caller can apply per-channel approval scope. Defaults to
-    # ``"background"`` to match the hermes-agent default.
+    # ``"background"`` default.
     delivery_mode: str = "background"
 
 

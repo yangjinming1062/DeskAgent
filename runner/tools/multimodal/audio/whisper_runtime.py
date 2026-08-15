@@ -41,7 +41,7 @@ class WhisperRuntime:
             try:
                 model = WhisperModel(size, device=device, compute_type=compute_type, download_root=download_root)
             except Exception:
-                # CUDA/Rosetta failure: hermes-agent pattern falls back to CPU+int8.
+                # CUDA/Rosetta failure falls back to CPU+int8.
                 if device != "cpu":
                     logger.warning("device=%s unavailable, falling back to cpu+int8", device)
                     model = WhisperModel(size, device="cpu", compute_type="int8", download_root=download_root)

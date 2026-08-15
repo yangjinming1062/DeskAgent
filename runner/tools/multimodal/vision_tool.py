@@ -100,18 +100,19 @@ async def vision_analyze_tool(image_url: str, user_prompt: str) -> str:
 
         result = {"success": True, "analysis": analysis}
         debug_call_data |= {"success": True, "analysis_length": len(analysis)}
-        _debug.log_call("vision_analyze_tool", debug_call_data)
-        _debug.save()
         return json.dumps(result, indent=2, ensure_ascii=False)
     except Exception as e:
         err_msg = f"Error analyzing image: {e}"
         logger.error("%s", err_msg, exc_info=True)
         analysis = _classify_api_error(e, "image")
+        debug_call_data["error"] = err_msg
 
-        _debug.log_call("vision_analyze_tool", debug_call_data | {"error": err_msg})
-        _debug.save()
+        # Tool-exit boundary: the LLM-facing envelope plus the classified
+        # fallback analysis are the error contract callers parse.
         return json.dumps({"success": False, "error": err_msg, "analysis": analysis}, indent=2, ensure_ascii=False)
     finally:
+        _debug.log_call("vision_analyze_tool", debug_call_data)
+        _debug.save()
         if should_cleanup and temp_path:
             with contextlib.suppress(Exception):
                 temp_path.unlink()
