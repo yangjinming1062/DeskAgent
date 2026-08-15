@@ -55,7 +55,7 @@ Backend ↔ Client 同时暴露 JSON-RPC over WebSocket（`/api/chat/ws`）与 H
 | Client → Backend | `tts.match_voice` `{preference}` | 描述句 → voice id（标签评分） | 主流程 |
 | Client → Backend | `tts.design_voice` `{prompt, preview_text?}` | LLM 生成专属音色 | 增强路径,不走主流程 |
 | Client → Backend | `tts.list_voices` | 枚举目录 | 工具窗口不 boot WS 网关,改走 REST `GET /api/companion/voices` |
-| Client → Backend | `companion.set_disturbance_tier` `{tier}` | 上报 effective 档位（积极主动/常规/保持安静） | Client 是档位唯一权威,Backend 仅镜像;30s 轮询 + 变化即推 |
+| Client → Backend | `companion.set_disturbance_tier` `{tier}` | 上报 effective 档位（积极主动/常规/保持安静） | Client 是档位唯一权威;Backend 持久化到 `companion_preferences`（重启不丢,server-side gate 直读）;30s 轮询 + 变化即推 |
 | Client → Backend | `companion.check_affect` `{idle_seconds, local_hour}` | idle 触发的情境化 affect 推理 | Backend 加载 persona + 记忆跑一次 LLM,决定是否 emit `companion.affect` |
 | Client → Backend | `companion.interact` `{kind: 'poke'|'drag', poke_count, idle_seconds, local_hour}` | 单次戳/拖的 LLM 反应推理 | 1.5s 节流 + per-(user,kind) inflight 去重 + 5min 成本封顶（用户主动触发专属，客户端/服务端双侧校验，不压制统计上报）；封顶窗口仅在成功产出反应时消耗，失败/超时/inflight/rate_limited 不消耗；RPC 失败静默回退本地池 |
 | Client → Backend | `companion.should_act` `{kind, idle_seconds, local_hour, focused_category, fullscreen, screen_locked, seconds_since_last_action}` | LLM 反驱动的自主空间行为决策 | 2.0s 节流；客户端事件驱动 + 30min 兜底；should_act: false 为合法响应且必须尊重；失败时不擅自补决策 |
@@ -67,7 +67,8 @@ Backend ↔ Client 同时暴露 JSON-RPC over WebSocket（`/api/chat/ws`）与 H
 | Client → Backend | `POST /api/companion/sprite` `{request, role?, force_new?}` | 静态精灵相册解析（无 3D 模型期的降级渲染源）:LLM 按自由语义在已有相册 tag 中匹配,命中即返;未命中由 LLM 撰写提示词（persona 外貌锚点 + 种子图 `subject_reference` + 纯白背景条款）经常规 image-gen 链生成,服务端把纯白背景确定性转 alpha 后入库返回 | 同步 REST,响应即消费——无共享状态需广播,故**无 WS 事件**（§1.0 路由原则）;`role="waiting"` 为每用户唯一的等待/切换图,命中即返**不查 LLM**;透明度来源为服务端纯白→alpha 后处理（MiniMax 仅出 JPEG,2026-08 实验结论,见 backend/README.md）;404 无种子图 / 502 生成失败（友好文案）/ 429 `companion_sprite_generate_rate_limit_per_minute`;相册上限 300 张、按 `avatar_id` 失效（头像重生即旧身份图不可复用） |
 | Client → Backend | `POST /api/companion/avatar` / `/from-image` | 头像半身生成（步 1） | 同步;失败返回 502 + 友好文案,不暴露 provider 原始错误 |
 | Client → Backend | `POST /api/companion/avatar/{avatar_id}/fullbody` | 链式参考生成全身种子图（步 2） | 同步;缺少正面全身 409;头像不存在 404;并发 429;`stage` 与 `view` 互斥必选其一;单视图模式（`fullbody_mode="single"`）下 `stage="aux"` 和 `view="right"/"back"` 被拒绝;可选 `reference_source`（`"avatar"` / `"reference_image"`，默认 `"avatar"`）+ `reference_image`（base64）+ `reference_content_type`：`"reference_image"` 时正面全身图以用户原始参考图为主参考（保留身材/体态），头像自动作为 secondary reference 供 Gemini 双参考融合美化风格;`reference_source="reference_image"` 时 `reference_image` 必填 |
-| Client → Backend | `POST /api/companion/wardrobe/preview` `{description, image?, content_type?, feedback?}` | 换装预览（写 temp-media，不入库）；后端用一次 LLM 路由调用把描述分类为 `texture`（仅改色/材质/图案）、`garment`（改轮廓/新增件）或 `accessory`（包/帽/眼镜等硬质挂件），再下发到对应流水线 | 同步；返回 `WardrobePreviewResponse`，其中 `kind` / `mesh_url` / `mesh_file_id` / `assembly_json` 在走几何流水线时填充（装配语义见 §1.6）；客户端不感知路由决策；`file_id` / `mesh_file_id` 在 `temp_file_ttl_hours` 内可被 `confirm` 落库 |
+| Client → Backend | `POST /api/companion/wardrobe/preview` `{description, image?, content_type?, feedback?}` | 换装预览（写 temp-media，不入库）；后端用一次 LLM 路由调用把描述分类为 `texture`（仅改色/材质/图案）、`garment`（改轮廓/新增件）或 `accessory`（包/帽/眼镜等硬质挂件），再下发到对应流水线 | **202 异步**：校验图片（400/415 仍同步）后入队 render job（kind `garment_preview`），返回 `{job_id, status:"queued"}`；生成在 Render Worker 执行（贴图数秒、几何服装数分钟）；结果经 `GET /wardrobe/preview/{job_id}` 轮询或 `wardrobe.preview.*` 事件获取（等价，见 §1.7）；客户端不感知路由决策；`file_id` / `mesh_file_id` 在 `temp_file_ttl_hours` 内可被 `confirm` 落库 |
+| Client → Backend | `GET /api/companion/wardrobe/preview/{job_id}` | 轮询换装预览 job 状态与结果 | 返回 `{job_id, status, error?, ...WardrobePreviewResponse 可选字段}`：`queued`/`processing` 只带状态；`succeeded` 时补齐完整预览字段（`kind` / `mesh_url` / `mesh_file_id` / `assembly_json` 在走几何流水线时填充，装配语义见 §1.6）；`failed` 带 `error`；非本人 job 或非 preview kind 404；状态机见 §1.7 |
 | Client → Backend | `POST /api/companion/wardrobe/confirm` `{file_id, name, prompt?, normal_file_id?, roughness_file_id?, metalness_file_id?, displacement_file_id?, mesh_file_id?, assembly_json?}` | 把预览产物落为 `WardrobeItem` + 自动装备（同槽互斥，§1.6）+ emit `wardrobe.updated` | `file_id`/`mesh_file_id` 已过期/不存在 409；返回 `WardrobeItemResponse`(含 `kind` / `mesh_url` / `assembly_json`) |
 
 ### 1.2 事件类型
@@ -80,6 +81,9 @@ Backend ↔ Client 同时暴露 JSON-RPC over WebSocket（`/api/chat/ws`）与 H
 | `model.gen.progress` | 模型生成中 | `{progress: 0..100, stage, provider?}` (`provider` ∈ `"tripo"` / `"blender_llm"`) | 可选进度展示;`provider` 字段让客户端识别当前是 Tripo 多步流水线还是 Blender+LLM 迭代循环（最坏 ~100 分钟） |
 | `model.failed` | 模型生成失败 | `{reason}` | 客户端进入静态精灵降级模式（等待图/相册,见 §1.1 `POST /api/companion/sprite`）;程序化蛋形仅在尚无形象资产或相册不可用时兜底（无气泡、无错误） |
 | `wardrobe.updated` | 换装产物就绪 | `{}` | 客户端重新拉取 wardrobe 列表；渲染层按 item `kind` 自动分派贴图热替或几何装配（rebind 到身体骨骼）——两者均不动身体骨骼动画与 morph |
+| `wardrobe.preview.progress` | 换装预览 job 被 worker 认领开始执行 | `{job_id, stage}` | 可选 UI 反馈；与 GET 轮询等价 |
+| `wardrobe.preview.ready` | 换装预览生成成功 | `{job_id, ...WardrobePreviewResponse 字段}` | payload 即 `GET /wardrobe/preview/{job_id}` 成功态的完整字段 |
+| `wardrobe.preview.failed` | 换装预览生成失败 | `{job_id, reason}` | 展示失败提示；job 行同态（`failed` + `error`） |
 | `video_gen.completed` | 视频生成成功 | `{task_id, url}` | 媒体展示 |
 | `video_gen.failed` | 视频生成失败 | `{task_id, error}` | 用户可见错误 |
 | `reload.mcp` | MCP 配置变更后服务器主动通知 | `{}` | Client 转发给 Runner,Runner 重新加载,再 `tools.sync` 回 backend |
@@ -91,7 +95,7 @@ WS 事件分两类，按投递边界不同携带或不携带 `session_id`：
 | 事件类别 | `session_id` | 说明 |
 |----------|--------------|------|
 | **聊天会话事件**（`message.start` / `message.delta` / `message.complete` / `tool.start` / `tool.call` / `tool.complete` / `error`） | **必带** | 由 `JsonRpcEmitter` 在某个具体会话上发出——值为该会话的 `Conversation.id` 字符串。这些事件**只属于该会话**，不应对其他会话可见。 |
-| **outbox 事件**（`companion.affect` / `companion.message` / `model.ready` / `model.failed` / `model.gen.progress` / `wardrobe.updated` / `wardrobe.gift` / `avatar.regenerated` / `video_gen.*` / `reload.mcp`） | **不带** | 由 WSEvent outbox 投递到用户的 desktop，是"伙伴对自己的全用户行为"，与当前打开哪个会话无关。 |
+| **outbox 事件**（`companion.affect` / `companion.message` / `model.ready` / `model.failed` / `model.gen.progress` / `wardrobe.updated` / `wardrobe.gift` / `wardrobe.preview.*` / `avatar.regenerated` / `video_gen.*` / `reload.mcp`） | **不带** | 由 WSEvent outbox 投递到用户的 desktop，是"伙伴对自己的全用户行为"，与当前打开哪个会话无关。 |
 
 **渲染端约定**：聊天会话事件必须按 `session_id === $chatSessionId.get()` 过滤。例如 cron 自主轮次（`Conversation.kind='cron'`，renderer 不挂载）的 `message.complete` 携带 `session_id=cron_id`，渲染端必须丢弃——否则 cron 助手文本会以"回复"形式出现在用户当前所看的会话里。Outbox 事件无 `session_id`，照常处理（即 TTS / 气泡 / wardrobe 热替 / 模型重载等）。
 
@@ -182,6 +186,19 @@ WS JSON-RPC 错误使用标准 JSON-RPC 2.0 错误码（`-32700` 到 `-32603`）
 | accessory | 不含 skins（纯静态 mesh，佩戴点已在导出时对准挂点骨骼位置）；无动画、无 morph |
 
 **降级**：服装/挂件 GLB 载入失败时退化为贴图换装或程序化兜底，不崩溃。身体资产整体缺失/加载失败时按「GLB → 静态精灵相册（§1.1 `POST /api/companion/sprite`）→ 程序化蛋形」层级兜底——用户无 3D 模型期间看到的仍是自己的角色（静态立绘），蛋形仅在引导前期或相册不可用时出现。
+
+### 1.7 Render job 状态机（换装预览）
+
+Blender 系生成分两段：web 进程入队（同步、毫秒级），Render Worker 认领执行（分钟级）。对外契约只涉及换装预览 job：
+
+| 状态 | 含义 | 后续 |
+|------|------|------|
+| `queued` | 已入队待认领（POST 202 的初始态） | → `processing` |
+| `processing` | 某 worker 已认领（`attempts` +1，`claimed_by/at` 写入） | → `succeeded` / `failed` / 崩溃回收 |
+| `succeeded` | handler 完成，`result` 携带完整 `WardrobePreviewResponse` 字段 | 终态 |
+| `failed` | handler 异常（`error`）或重试预算耗尽 | 终态 |
+
+崩溃恢复：worker 认领后失联的 `processing` 行按 `worker_stale_reclaim_seconds` 阈值回收——未超 attempts 封顶（3 次认领）重排队，超了转 `failed`。客户端只消费状态，不感知恢复。3D 建模（`model_generate` kind）共用同一队列语义，但对外契约仍是既有的 `model.gen.progress` → `model.ready` / `model.failed` 事件，无轮询端点。
 
 ---
 
@@ -389,7 +406,7 @@ Renderer 与 Preload 进程**不可访问** safeStorage 接口,阻断 XSS 窃取
 3. 副本认领（Atomic Claim）:每个 Backend 副本独立 `LISTEN`,收到唤醒后执行 `DELETE ... RETURNING`;行锁保证仅一台副本原子获取并消费该行。
 4. 调度器 tick 只写入事件不 await WS 发射,避免慢客户端拖垮事务。
 
-**单实例语义**: `disturbance_tier` 与 IPC future 由 process-local 状态承载,架构**不支持**多实例水平扩展。
+**副本语义**: chat 会话与 IPC future 仍是 process-local——web 按 chat 亲和单副本部署;`disturbance_tier` 已持久化, cron 自主回合经内部事件路由到持连副本; Render Worker 无用户态, 可加副本（详见 [ARCHITECTURE.md §5.3](ARCHITECTURE.md)）。
 
 ### 5.6 自更新签名（Client ↔ Backend / Installer ↔ Backend）
 

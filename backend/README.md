@@ -4,13 +4,14 @@
 
 ## 1. 职责与边界
 
-**职责**：伙伴角色定义与形象资产生成与下发、LLM 流式对话编排、系统提示词装配、云端工具执行、Cron 调度、跨模块事件下发（WS outbox）、REST + WebSocket 端点暴露。
+**职责**：伙伴角色定义与形象资产生成与下发、LLM 流式对话编排、系统提示词装配、云端工具执行、Cron 调度、跨模块事件下发（WS outbox）、REST + WebSocket 端点暴露。分钟级 Blender 系生成（3D 建模回退 / garment 换装 / morph 注入）入队 `render_jobs`，由**同镜像的 Render Worker 副本**（compose `worker` 服务）认领执行，每轮 Blender 跑在一次性沙箱容器里。
 
 **不**做：
 - **不接触用户本机操作系统**——所有本机操作经 IPC 委托给 Runner；图像/视频/语音等资产仅在云端生成、Client 拉取后渲染。
 - **不持有终端 / 浏览器会话**——这些都在 Runner 进程内。
 - **不渲染桌面伙伴**——形象与动画完全是 Client 责任（[DESIGN.md §1](../DESIGN.md)）。
 - **不做 LLM provider 特定的 schema 适配**——nullable union 原样传给 OpenAI-compatible provider，由 provider 决定是否接受。
+- **web 进程不执行 Blender 子进程**——重管线全部经 render_jobs 转交 worker；web 内只保留 avatar 2D 与 video 生成的既有 job 模式。
 
 架构层定位见 [ARCHITECTURE.md §1 / §2](../ARCHITECTURE.md)；跨模块契约见 [PROTOCOL.md](../PROTOCOL.md)；错误分层见 [ARCHITECTURE.md §8](../ARCHITECTURE.md)。
 
@@ -21,6 +22,7 @@
 - **数据库 schema 由 Alembic 版本化迁移管理**：lifespan 启动时自动 `upgrade head`（决策细节见 §4）；schema 演进可审查、可回滚，消除 create_all + 手写幂等 DDL 时代"只能加列、不可收紧不可回滚"的盲区。
 - **Provider 自注册 + 三层入口**：每个 provider 模块在 module bottom 调 `REGISTRY.register`，`main.py` 显式 import 触发；chain resolver 不从 `base_url` host 反推（避免脆弱推断）。三层入口（`provider_for_service` / `client_for_service` / `execute_with_fallback`）按场景路由。
 - **Outbox + LISTEN/NOTIFY 取代轮询**：伙伴主动消息、Cron 任务、形象/角色变更通知全经 PostgreSQL 触发器 + `ws_events` 表，毫秒级、可水平扩展。
+- **重生成任务与 web 进程隔离（PG 队列，零 Redis）**：Blender 系分钟级生成入队 `render_jobs`（INSERT 触发 NOTIFY 唤醒 worker 的 LISTEN 专线；认领 = `FOR UPDATE SKIP LOCKED` + CAS UPDATE），web 请求路径毫秒级返回；attempts 封顶 + stale 回收 + 启动清扫覆盖崩溃恢复，语义按 VideoGenJob 先例自管。跨模块拓扑与安全边界见 [ARCHITECTURE.md §2 云端渲染拓扑](../ARCHITECTURE.md) 与 §10 不变量 11。
 - **形象资产生成受 rate-limit + per-user 锁守护**：生成是同步、阻塞 UI 的高成本路径，不并发、不公开 provider 原始错误。
 
 ## 3. 架构地图
@@ -39,6 +41,7 @@ backend/
 │   ├── scheduler/            # Cron + 主动消息调度 + 夜间自主活动批处理
 │   ├── tools/                # 工具层（backend / memory / runner 三类）
 │   ├── update/               # 桌面客户端版本更新清单构建
+│   ├── worker/               # render_jobs 认领循环 + Blender 沙箱执行器（独立进程入口）
 │   └── desktop_config.py     # 桌面配置默认值与铺平转换
 └── api/v1/ + main.py         # 薄 HTTP/WS 端点（pkgutil 自动发现）+ lifespan + 路由装配
 ```
@@ -58,6 +61,7 @@ backend/
 - **TOML 模版与 Git 隔离配置管理**：Git 统一托管默认配置模版 `config.toml.example`，`components/config.py` 中不保留重复默认值与冗余注释。开发者本地配置写在 `config.toml`（已被 `.gitignore` 忽略）。系统按 `OS Env > .env > config.toml > config.toml.example` 优先级加载。
 - **provider 自注册而非手动 `main.py` 引入**：`services/llm/providers/<name>/__init__.py` import 时注册到 `_REGISTRY`；新增 provider 子包即可扩展能力，无须修改 `main.py`。**代价**：注册顺序敏感——`main.py` 显式 import 触发；遗漏某 provider 则该能力静默缺失（fail-open）。
 - **IPC future 按 `(user_id, call_id)` 二元键寻址**：并发用户不共享 future；`discard_user` 在 WS 断开时取消该用户所有未决 future。**为什么不只 `call_id`**：跨用户 key 复用会泄露上下文。
+- **LLM bpy 代码经沙箱容器执行（worker 派生）**：worker 把种子图/body-GLB 拷进每 job 私有的 `job-io` 目录后 `docker run --rm`（`--network none` + CPU/内存限额 + 只读根 + tmpfs + 仅挂该目录），超时/取消走 `docker kill`（杀 docker CLI 不杀容器）。容器名前缀 `deskagent-job-`、label `deskagent-worker=1`，worker 启动按 label 清扫孤儿。**为什么不用宿主子进程直跑**：LLM 生成的代码零消毒，直跑即 RCE 面（原不变量 11 记录的问题）。**代价**：worker 需挂 docker.sock（等效宿主 root），仅授予 worker 服务、镜像内只装 docker-cli；`[blender_sandbox] enabled=false`（默认）退回裸子进程路径，保测试与裸机开发。compose 部署形态：`backend` + `worker`（docker.sock / data / config.toml ro）+ `blender-sandbox`（`--profile build` 构建镜像，worker 按镜像名引用）三服务。
 - **Outbox + LISTEN/NOTIFY 而非直推 WS**：调度器 tick 只写入事件不 await WS 发射，慢客户端不拖垮事务；副本原子认领保证单发。**为什么不直接推 WS**：WS 不可水平扩展，且无法处理后端 OOM/重启时的未发事件。
 - **WS 关闭码 1008（鉴权失效）立即退出重连流程**：避免在 token 失效状态下重试 N 次把请求堆到过期账号上。**为什么不让 retry**：用户凭据问题靠重试无法恢复。
 - **形象生成失败对用户返回 502 + 固定文案**：作为陪伴场景的关键路径，需向用户返回可理解的友好提示并支持重试，不暴露生图服务原始错误。**为什么不透传 provider 错误**：provider 错误体常含 URL / 部分 auth header，且用户对生图服务错误无处理能力。
@@ -85,7 +89,7 @@ backend/
 | Reserved Keys 防注入（`user_id` / `llm_config` / `user_settings`） | 对 LLM 工具入参 | [PROTOCOL.md §5.1](../PROTOCOL.md) |
 | Outbox `ws_events` LISTEN/NOTIFY 调度 | 内部（业务 / Cron → Client） | [ARCHITECTURE.md §5](../ARCHITECTURE.md) |
 | IPC future `(user_id, call_id)` 键语义 + 超时 + JWT 过期兜底 | 内部（Backend ↔ Client IPC） | [PROTOCOL.md §4](../PROTOCOL.md) |
-| disturbance_tier 镜像（`_disturbance` 字典） | 接 Client 推送 [PROTOCOL.md §1.1](../PROTOCOL.md) 的 `companion.set_disturbance_tier` | [ARCHITECTURE.md §5](../ARCHITECTURE.md) |
+| disturbance_tier 持久化（`companion_preferences` 表，重启不丢） | 接 Client 推送 [PROTOCOL.md §1.1](../PROTOCOL.md) 的 `companion.set_disturbance_tier` | [ARCHITECTURE.md §5](../ARCHITECTURE.md) |
 | LLM provider chain resolver 三层入口（`provider_for_service` / `client_for_service` / `execute_with_fallback`） | 本模块独有 | 本 README §3 |
 | PROVIDER-first 配置 + Tier 1–4 回落链 | 本模块独有（Provider 自注册产物） | 本 README §2 |
 | 工具三层分类（backend / memory / runner） | 本模块独有 | 本 README §2 + backend 代码 |
@@ -95,28 +99,32 @@ backend/
 | `onboarding.get_state` payload `fullbody_mode` 与 `default_fullbody_reference_source` | 对 Client | [PROTOCOL.md §1.1](../PROTOCOL.md) |
 | `[companion] fullbody_mode` 配置与单/多视图流水线 | 本模块独有 | 本 README §2 + [PROTOCOL.md §1.1](../PROTOCOL.md) |
 | `WardrobeItem` 换装装配契约（`kind` / `slot` / `assembly_json` / `mesh_url`） | 对 Client | [PROTOCOL.md §1.6](../PROTOCOL.md) |
-| `POST /api/companion/wardrobe/preview` / `confirm` 换装路由与入库 | 对 Client | [PROTOCOL.md §1.1](../PROTOCOL.md) |
+| `POST /api/companion/wardrobe/preview`（202 入队）/ `GET .../preview/{job_id}`（轮询）/ `confirm` | 对 Client | [PROTOCOL.md §1.1](../PROTOCOL.md) |
+| `wardrobe.preview.progress/.ready/.failed` 事件 | 对 Client | [PROTOCOL.md §1.2](../PROTOCOL.md) |
+| render job 状态机（queued/processing/succeeded/failed + 崩溃回收） | 对 Client + 内部 | [PROTOCOL.md §1.7](../PROTOCOL.md) |
+| cron 自主回合内部事件 `cron.turn.request`（outbox 路由到持连副本） | 内部 | [ARCHITECTURE.md §5](../ARCHITECTURE.md) |
 
 ## 6. 已知限制
 
 | 限制 | 说明 |
 |------|------|
-| **单实例部署** | `disturbance_tier` 与 IPC future 锁在 process-local 内存；in-memory rate limit（slowapi）；lifespan 自动迁移无并发锁，多实例需改为部署步骤 + 迁移锁；架构不支持多实例水平扩展 |
+| **web 单副本语义（chat 亲和）** | 运行时 chat 会话（流式 / `chat_task`）与 IPC future 在 process-local 内存，多 web 副本需粘性 WS 且不解决迁移互斥（lifespan 自动迁移无并发锁）；in-memory rate limit（slowapi）。`disturbance_tier` 与 cron 回合派发已跨副本安全。Render Worker 无进程内用户状态，可加副本 |
 | **AsyncSession 关系懒加载不可用** | 关系属性在查询后访问必须显式 `selectinload`/`joinedload` 预加载，否则运行时抛 `MissingGreenlet`；新增跨表访问时需同步补加载选项。 |
 | **MiniMax 视频 URL 短时效** | video_gen v2（H3）`poll` 直接返回 `download_url`，v1（Hailuo）还有 `files/retrieve` 第二跳；两者 URL 都是短时效的，必须**立即下载落 `data_dir/temp-media`**，不能直接返给前端 |
 | **MiniMax 内容风控 1027 不重试** | `base_resp.status_code=1027` 映射到 `content_policy_blocked` 且 `retryable=False`，避免重试三次白烧配额 |
 | **流式 chat 一旦首 chunk 已发不再 fallback** | 用户已看到部分输出，切换 provider 会造成 transcript 截断；失败统一 raise，由 HTTP envelope 走 `{error, reason, status}` |
-| **Cron kick 守卫** | `_kick_autonomous_turn` 仅在 dispatcher 表里查"用户在线"；`kick` 内部 `is_quiet` 守卫 + per-user `asyncio.Lock` 兜底 |
+| **Cron kick 守卫** | 写行前的 `is_quiet` 守卫（tier 落库）；`cron.turn.request` 行只被持有该用户 WS 的副本认领执行，全副本离线时 10min GC 兜底清行——该次触发丢弃（`next_run_at` 已 CAS 前移，等下次调度） |
 | **附件 fetch 失败独立报错** | LLM 下载临时媒体失败（链接过期、网络隔离）拦截 Proxy 端原始 SDK 报错，返回 provider-agnostic 短消息，避免误导性触发 LLM 回退 |
 | **WS 鉴权失效（1008）立即退出重连** | 不在过期 token 状态下重试；用户重新激活后才恢复 |
 | **Obs 缺口** | 无 `/metrics` 端点、无 OpenTelemetry 集成；日志 stdout only，dev text / prod json |
 | **`companion.interact` 5 分钟封顶** | 5 分钟封顶是用户主动触发（poke/drag）反应的成本控制闸门，不作用于 `companion.should_act` 自主行为，也不压制 `companion.record_interaction_stats` 统计上报 |
 | **`interaction_stats` 汇总写门限** | `record_interaction` 用 OR 门限（poke/drag/chat_turn 任一 kind 达到 10 即写汇总），并在 content 序列化 `hour_counts` 供夜间 LLM 反射 |
-| **Blender+LLM 回退管线最坏时长** | 默认 10 轮迭代 × 单次 600s Blender timeout = ~100 分钟一次生成；适合夜间离线场景，不阻塞交互 UI。`blender_llm_max_iterations` / `blender_llm_timeout` 可调 |
+| **Blender+LLM 回退管线最坏时长** | 默认 10 轮迭代 × 单次 600s Blender timeout = ~100 分钟一次生成；全程在 worker 沙箱内执行，不占 web 进程。`worker_stale_reclaim_seconds` 必须大于该最坏值，否则在跑任务会被误回收重排队。`blender_llm_max_iterations` / `blender_llm_timeout` 可调 |
 | **Blender+LLM 模型质量** | 无 PBR 纹理（仅纯色 Principled BSDF 材质）、几何为 LLM 自由形式生成——视觉保真度显著低于 Tripo3D。LLM 在迭代内可比 preview vs 种子图 → 持续精修 |
 | **贴图换装受种子图皮肤可见度约束** | `kind=texture` 的 PBR 贴图换装受限于 Tripo 重建的皮肤区域——紧身覆盖款换到露出款会有色差/反光异常。`kind=garment` 的几何换装不受此约束（服装是独立 mesh，不走身体纹理迁移）。 |
-| **几何服装管线需 Blender + 较长生成时间** | `kind=garment` / `accessory` 经 LLM→Blender→evaluate 迭代生成几何，单次预览耗时数分钟（受 `blender_llm_max_iterations` × `blender_llm_timeout` 支配）。garment GLB 导出复用身体 armature 保证关节一致，客户端零映射 rebind。 |
+| **几何服装管线需 Blender + 较长生成时间** | `kind=garment` / `accessory` 经 LLM→Blender→evaluate 迭代生成几何，单次预览耗时数分钟（受 `blender_llm_max_iterations` × `blender_llm_timeout` 支配）；预览已异步化（202 + 轮询/事件，见 [PROTOCOL.md §1.7](../PROTOCOL.md)），HTTP 不再阻塞。garment GLB 导出复用身体 armature 保证关节一致，客户端零映射 rebind。 |
 | **换装路由由 LLM 决策而非用户选择** | `POST /api/companion/wardrobe/preview` 接收的描述由一次 LLM 调用分类为 `texture` / `garment` / `accessory` 并同时产出装配元数据（slot / socket / physics），分类失败默认走 `garment`（能力最全的路径）。客户端不暴露 `kind` 字段——用户只输入描述，由后端决定走哪条流水线。路由系统提示词与示例见 [wardrobe_service.py](services/companion/wardrobe_service.py)`_WARDROBE_KIND_CLASSIFIER_SYSTEM`。 |
+| **worker 挂 docker.sock = 宿主 root 面** | 沙箱执行器经 docker.sock 派生容器，持有该 socket 等效宿主 root；仅 compose `worker` 服务挂载、镜像内只装 docker-cli，多租户部署不得开启沙箱（`blender_sandbox_enabled=false` 时退回 worker 容器内裸 blender 子进程）。 |
 | **几何生成"LLM 毛坯 + 确定性后处理"分工** | LLM 只写毛坯几何 + `VG_ANCHOR` 锚点标注（轮廓/风格/锚点位置需要语义理解），贴合/加厚/蒙皮/防穿模全部由确定性 bpy 代码接管（数值几何问题必须可复现可校验）——两者边界 = `_build_garment` 函数。参数表见 [MODEL_SPEC.md §4.2](../docs/MODEL_SPEC.md)。 |
 | **挂件生成跳过后处理四阶段** | accessory 是硬质附件挂到 socket 骨骼，无需贴合/蒙皮/防穿模——scaffold `--kind accessory` 分支直接导出（并在导出前移除导入的身体对象），生成管线只校验 GLB 可解析。 |
 | **socket 从身体 GLB 实际关节名解析** | LLM 看到的骨骼名与 mixamo 导出的 `mixamorig:` 前缀可能不一致——`_resolve_socket` 做精确→去前缀两级匹配，失败按槽位回退默认挂点（Head/RightHand/Spine2），再失败降级为 garment。 |

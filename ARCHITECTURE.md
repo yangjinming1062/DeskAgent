@@ -34,10 +34,10 @@ DeskAgent 是一个**根据用户描述定制的、具有专属形象的陪伴�
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                        Backend                              │
+│                        Backend (web)                        │
 │                   (云端大脑 / FastAPI)                        │
 │  - 伙伴人格：角色定义持久化、长期/短期记忆管理                │
-│  - 专属形象资产生成（portrait + 3D 模型 + 纹理 + 换装）       │
+│  - 专属形象资产生成编排（portrait + 3D 模型 + 纹理 + 换装）  │
 │  - LLM 编排与系统提示词装配（角色定义注入每次对话）           │
 │  - 云端工具执行（Web 搜索、TTS、主动消息 send_message…）      │
 │  - 事件发布 / Cron 调度中转（Outbox，主动陪伴的基石）        │
@@ -65,6 +65,25 @@ DeskAgent 是一个**根据用户描述定制的、具有专属形象的陪伴�
 │  - 自动化安全审查拦截器（Tirith 扫描 / 写白名单防护）         │
 └─────────────────────────────────────────────────────────────┘
 ```
+
+**云端渲染拓扑**——分钟级的 Blender 系生成（3D 建模回退、garment/accessory 换装、morph 注入）不在 web 进程执行，而是入队 `render_jobs` 由独立的 Render Worker 副本认领，每轮 Blender 在一次性沙箱容器里跑：
+
+```
+┌─ backend (web) ─┐  enqueue   ┌────────────────┐  claim (SKIP LOCKED)  ┌─ worker ─────────────────┐
+│ FastAPI :10620  │ ─────────▶ │ PG: render_jobs│ ◀──────────────────── │ LISTEN 唤醒 + 按派发     │
+│ 生成请求→入队    │  pg_notify │ + NOTIFY 触发器 │   pg_notify 唤醒      │ 进度写 ws_events outbox │
+└─────────────────┘            └────────────────┘                       └───────────┬────────────┘
+                                                                        docker.sock │ docker run --rm
+                                                              ┌───────────────────────▼────────┐
+                                                              │ 沙箱容器：--network none        │
+                                                              │ --cpus/--memory 限额、只读根   │
+                                                              │ +tmpfs、仅挂当轮 job-io 目录   │
+                                                              └────────────────────────────────┘
+```
+
+- Web 与 worker 同镜像（compose 多 stage target）、共享 `./data` bind mount；迁移仍由 web lifespan 独占执行，worker 不跑 Alembic。
+- 进度/结果事件仍走 `ws_events` outbox——worker 写行，持有该用户 WS 的 web 副本认领下发，零新增事件通道。
+- worker 崩溃恢复：stale `processing` 行按 `worker_stale_reclaim_seconds` 阈值重排队（attempts 封顶转 failed），启动时按 label 清扫孤儿沙箱容器。
 
 并行的 **Installer（安装器 / Tauri 2）** 在首次安装时于本地引导 uv Python 3.13 运行时，解压释放 Runner wheel、默认配置与基础 Skills 到本地平台标准路径下；首装完成即进入"蛋"阶段（[DESIGN.md §5](DESIGN.md)）。
 
@@ -203,7 +222,7 @@ Backend POST /api/companion/model {provider: "blender_llm"}
 2. **数据库触发器**：PostgreSQL STATEMENT 级触发器在 INSERT 时自动发出 `NOTIFY ws_events_channel`。
 3. **副本认领（Atomic Claim）**：每个 Backend 副本独立 `LISTEN`（一条进程生命周期专用的 asyncpg 直连，断线 5s 自动重连；非 PG 后端退化为 60s 轮询），收到唤醒后执行 `DELETE ... RETURNING`；行锁保证仅一台副本原子获取并消费该行。调度器 tick 只写入事件不 await WS 发射，避免慢客户端拖垮事务。
 
-`send_message`（主动消息）、Cron（定时任务）、形象/角色变更通知等所有"伙伴主动行为"都经此通道下发至 Client。实现细节见 [backend/README.md §Cron 与事件下发](backend/README.md)。
+`send_message`（主动消息）、Cron（定时任务）、形象/角色变更通知等所有"伙伴主动行为"都经此通道下发至 Client。通道还承载一种**内部事件**：`cron.turn.request`——调度器 tick 副本不执行自主回合（回合的流式输出、工具 future、runtime session 都是进程内状态），只写一行 `ws_events`，由 outbox 认领循环按 `local_user_ids()` 天然路由到**持有该用户 WS 的副本**执行；该事件的 GC 窗口收紧到 10 分钟，全副本离线时行被及时清掉。实现细节见 [backend/README.md §Cron 与事件下发](backend/README.md)。
 
 ### 5.1 打扰档位约束
 
@@ -214,7 +233,7 @@ Backend POST /api/companion/model {provider: "blender_llm"}
 - `$effectiveTierOverride`：活动感知器写入的临时覆盖，null 表示无覆盖。
 - `$effectiveTier = $effectiveTierOverride ?? $userPreferredTier`：其余模块读取这一原子做静默判定。
 
-**Client 是档位的唯一权威**：它持有用户偏好 + 活动上下文，独立计算 effective 值（应用「手动 quiet 永远不被覆盖」+ immersive/fullscreen → quiet 规则），并通过 `companion.set_disturbance_tier` 把最终结果单向推给 Backend。Backend 只镜像这个值供 server-side gate（`send_message_tool`、`cron._kick_autonomous_turn`）使用——既不独立推导，也不存储 user_preferred 或 focus_context。
+**Client 是档位的唯一权威**：它持有用户偏好 + 活动上下文，独立计算 effective 值（应用「手动 quiet 永远不被覆盖」+ immersive/fullscreen → quiet 规则），并通过 `companion.set_disturbance_tier` 把最终结果单向推给 Backend。Backend 把 effective 值持久化在 `companion_preferences` 供 server-side gate（`send_message_tool`、cron 自主回合）使用——既不独立推导，也不存储 user_preferred 或 focus_context；重启不丢档位。
 
 **消息与情绪是两个独立通道**：保持安静 / 屏幕锁定时 Backend 静默切断主动消息推送（`send_message_tool` 在 `quiet` 档把消息文本吞掉），但 LLM 推理出的 affect 经独立的 `companion.affect` 事件流出——即**断消息不断 affect**，Client 收到后切 EMOTIONAL 状态但不弹气泡、不做 TTS。
 
@@ -222,9 +241,14 @@ Backend POST /api/companion/model {provider: "blender_llm"}
 
 用户长时间无活动时，Client 的 idle 轮询跨过阈值时调 `companion.check_affect {idle_seconds, local_hour}`，Backend 加载 persona + 最近记忆跑一次 LLM 推理，决定是否 emit `companion.affect`。**触发时机由 Client 控制（知道真实 idle 状态），情绪推理由 Backend LLM 承担（有 persona + 记忆）**——各取所长，Client 不退化成规则驱动的文案池。
 
-### 5.3 单实例语义
+### 5.3 副本语义
 
-`disturbance_tier` 与 IPC future 由 process-local 状态承载，**架构不支持多实例水平扩展**。任何"水平扩容"需求必须先把这两处迁出进程并相应修改多个 IPC 路径——本项目不准备这条路径，按单实例设计并部署即可。
+进程内状态决定了两类进程的可扩展性不同：
+
+- **web（chat 亲和，单副本语义）**：WS 连接、运行时 chat 会话（流式 delta、`chat_task`）、IPC future 表都在进程内存，一个用户的对话回合必须落在持有其连接的副本上——按单副本设计部署。跨副本的部分已外置：`disturbance_tier` 落 `companion_preferences`，cron 自主回合经 `cron.turn.request` outbox 行路由到持连副本（§5）。
+- **Render Worker（可加副本）**：无任何进程内用户状态，认领语义（SKIP LOCKED + NOTIFY 唤醒）保证多副本安全；加副本即扩生成吞吐。
+
+仍留在 web 进程内存、未外置的状态：运行时 chat 会话与 IPC future、in-memory rate limit（slowapi）、lifespan 自动迁移（无并发锁）、Tripo 后台任务集合、memory consolidator / nightly 的进程内节流时间戳。
 
 ---
 
@@ -363,7 +387,7 @@ Client 的更新通过 `/api/update` 获取 Electron 二进制与 Runner wheel �
 3. **两阶段更新强校验**：禁止绕过 Stage 1 的 prefetch 逻辑直接覆盖本地 Runner 文件；公钥签名不匹配的升级包在 Staging 阶段直接拦截。
 4. **ID 职责分立**：通信协议边界必须完成整型 `conversation_id` 与字符串 `session_id` 的显式转换；`call_id` 作为唯一 Future Key 标识生命周期（详见 [PROTOCOL.md §6](PROTOCOL.md)）。
 5. **平台兼容性防御**：Windows 下进程控制或路径读取必须采用 Windows 原生封装，防止 Windows PTY 进程链悬挂（具体封装见 [runner/README.md §已知限制](runner/README.md)）。
-6. **单实例部署**：`disturbance_tier` 与 IPC future 由 process-local 状态承载，架构不支持多实例水平扩展。
+6. **副本边界**：web 进程因运行时 chat 会话与 IPC future 的进程内状态保持单副本语义（跨副本状态经 `companion_preferences` 与 `cron.turn.request` outbox 路由外置）；Render Worker 无进程内用户状态、可加副本。
 
 **产品层（伙伴体验的底线）：**
 
@@ -374,7 +398,7 @@ Client 的更新通过 `/api/update` 获取 Electron 二进制与 Runner wheel �
 
 **安全层（Blender+LLM 信任边界）**：
 
-11. **LLM 生成的代码在 Backend 信任边界内执行**：Blender+LLM 回退管线把 LLM 输出的自由形式 bpy 代码注入到 `llm_bpy_scaffold.py` 的 `_build_body(ctx)` 函数体中，并通过 `blender --background` 子进程执行。Blender 子进程与 Backend 同用户运行，可触达 Backend 信任域内的 OS 操作（文件系统、环境变量、子进程派生）。这不是新引入的攻击面——Backend 早已持有 LLM API key 与 DB 凭证，LLM 调用本身已是同等威胁向量——但显式记录在此供安全审计参考。LLM 视角图（人像种子图）原本就经 `<untrusted_tool_result>` 包裹送入 LLM 上下文，这条管线不扩大数据泄露面。
+11. **LLM 生成的 bpy 代码运行于一次性沙箱容器**：Blender 系管线把 LLM 输出的自由形式 bpy 代码注入 scaffold 后，由 Render Worker 经 docker.sock 派生的临时容器执行——`--network none`（断网）、`--cpus`/`--memory` 硬限额、只读根文件系统 + tmpfs、仅挂载当轮 `job-io` 目录（种子图等输入由 worker 拷贝进去，data_dir 布局不进容器）。容器名/label 固定前缀（`deskagent-job-*` / `deskagent-worker=1`）便于审计清扫；超时/取消走 `docker kill`。`[blender_sandbox] enabled=false`（默认）时退化为 worker 容器内的裸 blender 子进程——与旧信任边界相同，仅建议在受控部署中使用。docker.sock 挂载等效宿主 root 权限，仅授予 worker 服务，多租户部署不得开启。
 
 ---
 
