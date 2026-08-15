@@ -144,6 +144,10 @@ class ToolRegistry:
             self._tools.pop(name, None)
             self._toolset.pop(name, None)
             self._schemas.pop(name, None)
+            # Without this a re-registration (mcp.reload) silently reuses the
+            # previous availability check_fn — including its cached verdicts.
+            self._check_fns.pop(name, None)
+            self._check_fn_cache.pop(name, None)
 
     def register_toolset_alias(self, alias: str, target: str) -> None:
         with self._lock:

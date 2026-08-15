@@ -39,11 +39,6 @@ class OAuthNonInteractiveError(RuntimeError):
     pass
 
 
-_oauth_port: int | None = None
-_SKIP_TOKENS = frozenset({"skip", "cancel", "s", "n", "no", "q", "quit"})
-_USER_SKIPPED_SENTINEL = "__deskagent_user_skipped__"
-
-
 def _get_token_dir() -> Path:
     try:
         return Path(get_deskagent_home()) / "mcp-tokens"
@@ -204,66 +199,72 @@ def _make_callback_handler() -> tuple[type, dict]:
     return _Handler, result
 
 
-async def _redirect_handler(authorization_url: str) -> None:
-    print(f"\n  MCP OAuth: authorization required.\n  Open this URL in your browser:\n\n    {authorization_url}\n", file=sys.stderr)
-    if _oauth_port and (os.getenv("SSH_CLIENT") or os.getenv("SSH_TTY")):
-        print(
-            f"  Remote session detected. After you authorize, the provider redirects to\n"
-            f"    http://127.0.0.1:{_oauth_port}/callback\n"
-            f"  which only the listener on THIS machine can receive. Two options:\n\n"
-            f"    1. Easiest — copy the full redirect URL and paste it below.\n"
-            f"    2. Forward the port first:\n"
-            f"         ssh -N -L {_oauth_port}:127.0.0.1:{_oauth_port} <user>@<this-host>\n",
-            file=sys.stderr,
-        )
-    if _can_open_browser():
+def _make_redirect_handler(port: int):
+    async def _redirect_handler(authorization_url: str) -> None:
+        print(f"\n  MCP OAuth: authorization required.\n  Open this URL in your browser:\n\n    {authorization_url}\n", file=sys.stderr)
+        if os.getenv("SSH_CLIENT") or os.getenv("SSH_TTY"):
+            print(
+                f"  Remote session detected. After you authorize, the provider redirects to\n"
+                f"    http://127.0.0.1:{port}/callback\n"
+                f"  which only the listener on THIS machine can receive. Forward the port first:\n"
+                f"         ssh -N -L {port}:127.0.0.1:{port} <user>@<this-host>\n",
+                file=sys.stderr,
+            )
+        if _can_open_browser():
+            try:
+                if webbrowser.open(authorization_url):
+                    print("  (Browser opened automatically.)\n", file=sys.stderr)
+                    return
+            except Exception:
+                pass
+        print("  (Please open the URL manually.)\n", file=sys.stderr)
+
+    return _redirect_handler
+
+
+def _make_wait_for_callback(port: int):
+    async def _wait_for_callback() -> tuple[str, str | None]:
+        handler_cls, result = _make_callback_handler()
         try:
-            if webbrowser.open(authorization_url):
-                print("  (Browser opened automatically.)\n", file=sys.stderr)
-                return
-        except Exception:
-            pass
-    print("  (Please open the URL manually.)\n", file=sys.stderr)
+            server = HTTPServer(("127.0.0.1", port), handler_cls)
+        except OSError as exc:
+            raise OAuthNonInteractiveError("OAuth callback timed out — could not bind callback port.") from exc
+        # Polling handle_request (via server.timeout) instead of one blocking
+        # call: the serve thread reliably exits once `stop` is set, rather
+        # than lingering in accept() holding the port forever.
+        server.timeout = 0.5
+        stop = threading.Event()
 
+        def _serve() -> None:
+            while not stop.is_set() and result["auth_code"] is None and result["error"] is None:
+                server.handle_request()
 
-async def _wait_for_callback() -> tuple[str, str | None]:
-    if _oauth_port is None:
-        raise RuntimeError("OAuth callback port not set")
-    handler_cls, result = _make_callback_handler()
-    try:
-        server = HTTPServer(("127.0.0.1", _oauth_port), handler_cls)
-    except OSError as exc:
-        raise OAuthNonInteractiveError("OAuth callback timed out — could not bind callback port.") from exc
+        threading.Thread(target=_serve, daemon=True).start()
+        try:
+            deadline = time.monotonic() + 300.0
+            while time.monotonic() < deadline:
+                if result["auth_code"] is not None or result["error"] is not None:
+                    break
+                await asyncio.sleep(0.5)
+        finally:
+            stop.set()
+            server.server_close()
 
-    threading.Thread(target=server.handle_request, daemon=True).start()
+        if result["error"]:
+            raise RuntimeError(f"OAuth authorization failed: {result['error']}")
+        if result["auth_code"] is None:
+            raise OAuthNonInteractiveError("OAuth callback timed out.")
+        return result["auth_code"], result["state"]
 
-    timeout, poll = 300.0, 0.5
-    for _ in range(int(timeout / poll)):
-        if result["auth_code"] is not None or result["error"] is not None:
-            break
-        await asyncio.sleep(poll)
-    server.server_close()
-
-    if result["error"] == _USER_SKIPPED_SENTINEL:
-        raise OAuthNonInteractiveError("user_skipped")
-    if result["error"]:
-        raise RuntimeError(f"OAuth authorization failed: {result['error']}")
-    if result["auth_code"] is None:
-        raise OAuthNonInteractiveError("OAuth callback timed out.")
-    return result["auth_code"], result["state"]
+    return _wait_for_callback
 
 
 def _configure_callback_port(cfg: dict) -> int:
-    global _oauth_port
     requested = int(cfg.get("redirect_port", 0))
-    _oauth_port = _find_free_port() if requested == 0 else requested
-    cfg["_resolved_port"] = _oauth_port
-    return _oauth_port
+    return _find_free_port() if requested == 0 else requested
 
 
-def _build_client_metadata(cfg: dict) -> OAuthClientMetadata:
-    if (port := cfg.get("_resolved_port")) is None:
-        raise ValueError("Callback port not configured")
+def _build_client_metadata(cfg: dict, port: int) -> OAuthClientMetadata:
     metadata_kwargs = {
         "client_name": cfg.get("client_name", "DeskAgent Agent"),
         "redirect_uris": [AnyUrl(f"http://127.0.0.1:{port}/callback")],
@@ -276,12 +277,12 @@ def _build_client_metadata(cfg: dict) -> OAuthClientMetadata:
     return OAuthClientMetadata.model_validate(metadata_kwargs)
 
 
-def _maybe_preregister_client(storage: DeskAgentTokenStorage, cfg: dict, client_metadata: OAuthClientMetadata) -> None:
+def _maybe_preregister_client(storage: DeskAgentTokenStorage, cfg: dict, client_metadata: OAuthClientMetadata, port: int) -> None:
     if not (client_id := cfg.get("client_id")):
         return
     info_dict = {
         "client_id": client_id,
-        "redirect_uris": [f"http://127.0.0.1:{cfg['_resolved_port']}/callback"],
+        "redirect_uris": [f"http://127.0.0.1:{port}/callback"],
         "grant_types": client_metadata.grant_types,
         "response_types": client_metadata.response_types,
         "token_endpoint_auth_method": client_metadata.token_endpoint_auth_method,
@@ -290,24 +291,6 @@ def _maybe_preregister_client(storage: DeskAgentTokenStorage, cfg: dict, client_
         if val := cfg.get(key):
             info_dict[key] = val
     _write_json(storage._client_info_path(), OAuthClientInformationFull.model_validate(info_dict).model_dump(mode="json", exclude_none=True))
-
-
-def build_oauth_auth(server_name: str, server_url: str, oauth_config: dict | None = None) -> OAuthClientProvider | None:
-    cfg = dict(oauth_config or {})
-    storage = DeskAgentTokenStorage(server_name)
-    if not _is_interactive() and not storage.has_cached_tokens():
-        logger.warning("MCP OAuth for '%s': non-interactive environment and no cached tokens found.", server_name)
-    _configure_callback_port(cfg)
-    client_metadata = _build_client_metadata(cfg)
-    _maybe_preregister_client(storage, cfg, client_metadata)
-    return OAuthClientProvider(
-        server_url=server_url,
-        client_metadata=client_metadata,
-        storage=storage,
-        redirect_handler=_redirect_handler,
-        callback_handler=_wait_for_callback,
-        timeout=float(cfg.get("timeout", 300)),
-    )
 
 
 def _make_deskagent_provider_class() -> type:
@@ -413,31 +396,39 @@ class MCPOAuthManager:
 
     def get_or_build_provider(self, server_name: str, server_url: str, oauth_config: dict | None) -> Any | None:
         with self._entries_lock:
-            if (entry := self._entries.get(server_name)) and entry.server_url != server_url:
+            entry = self._entries.get(server_name)
+            if entry is not None and entry.server_url != server_url:
                 logger.info("MCP OAuth '%s': URL changed, discarding cache", server_name)
                 entry = None
-            if not entry:
+            if entry is None:
                 entry = _ProviderEntry(server_url=server_url, oauth_config=oauth_config)
                 self._entries[server_name] = entry
-            if not entry.provider:
-                entry.provider = self._build_provider(server_name, entry)
-            return entry.provider
+            provider = entry.provider
+        if provider is None:
+            # Built outside the entries lock — _maybe_preregister_client
+            # writes the client-info JSON to disk here.
+            provider = self._build_provider(server_name, entry)
+            with self._entries_lock:
+                if entry.provider is None:
+                    entry.provider = provider
+                provider = entry.provider
+        return provider
 
     def _build_provider(self, server_name: str, entry: _ProviderEntry) -> Any | None:
         cfg = dict(entry.oauth_config or {})
         storage = DeskAgentTokenStorage(server_name)
         if not _is_interactive() and not storage.has_cached_tokens():
             logger.warning("MCP OAuth '%s': non-interactive and no cached tokens found.", server_name)
-        _configure_callback_port(cfg)
-        client_metadata = _build_client_metadata(cfg)
-        _maybe_preregister_client(storage, cfg, client_metadata)
+        port = _configure_callback_port(cfg)
+        client_metadata = _build_client_metadata(cfg, port)
+        _maybe_preregister_client(storage, cfg, client_metadata, port)
         return DESKAGENT_PROVIDER_CLS(
             server_name=server_name,
             server_url=entry.server_url,
             client_metadata=client_metadata,
             storage=storage,
-            redirect_handler=_redirect_handler,
-            callback_handler=_wait_for_callback,
+            redirect_handler=_make_redirect_handler(port),
+            callback_handler=_make_wait_for_callback(port),
             timeout=float(cfg.get("timeout", 300)),
         )
 

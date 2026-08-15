@@ -89,6 +89,7 @@ def test_registry_check_fn_transient_suppression():
     from tools.registry import ToolRegistry
 
     reg = ToolRegistry()
+    reg._check_fn_ttl_seconds = 0.0  # bypass the TTL cache so the 2nd probe actually runs
     toggles = iter([True, False])  # success → transient failure
 
     @reg.register_tool(
@@ -377,3 +378,55 @@ def test_capabilities_microphone_uses_sounddevice(monkeypatch):
 
     monkeypatch.setitem(__import__("sys").modules, "sounddevice", _Empty())
     assert caps.microphone_available() is False
+
+
+def test_registry_deregister_drops_check_fn():
+    """A re-registration after deregister (the mcp.reload path) must not
+    silently reuse the previous availability check."""
+    from tools.registry import ToolRegistry
+
+    reg = ToolRegistry()
+
+    @reg.register_tool(
+        "fake_reloaded",
+        schema={"name": "fake_reloaded", "parameters": {"type": "object"}},
+        check_fn=lambda: True,
+    )
+    def _h():  # pragma: no cover
+        return "{}"
+
+    assert reg.is_tool_available("fake_reloaded") is True
+    reg.deregister("fake_reloaded")
+    assert reg._check_fns.get("fake_reloaded") is None
+    assert reg._check_fn_cache.get("fake_reloaded") is None
+
+
+async def test_discover_timeout_shuts_down_spawned_task(monkeypatch):
+    """A connect_timeout must tear down the MCPServerTask that wait_for's
+    cancellation cannot reach — otherwise it reconnects forever with a live
+    stdio child, invisible to every shutdown path."""
+    import asyncio
+
+    import pytest
+
+    from tools.mcp import mcp_tool
+
+    shutdown_calls: list[str] = []
+
+    class _FakeTask:
+        name = "victim"
+
+        async def shutdown(self) -> None:
+            shutdown_calls.append(self.name)
+
+    async def fake_connect(name, config):  # noqa: ARG001
+        mcp_tool._connecting[name] = _FakeTask()  # type: ignore[assignment]
+        await asyncio.sleep(60)
+
+    monkeypatch.setattr(mcp_tool, "_connect_server", fake_connect)
+    try:
+        with pytest.raises(TimeoutError):
+            await mcp_tool._discover_and_register_server("victim", {"connect_timeout": 0.2})
+    finally:
+        mcp_tool._connecting.pop("victim", None)
+    assert shutdown_calls == ["victim"]
