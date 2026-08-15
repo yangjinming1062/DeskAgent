@@ -1,6 +1,7 @@
 from typing import Any
 
 from .auth import authenticate_ws_token
+from .buffer import ReplayBuffer
 from .connection import MANAGER, ConnectionManager, start_ws_event_loop, stop_ws_event_loop
 from .emitter import JsonRpcEmitter
 from .ipc import await_future, discard_user, dispatch_user_event, resolve_future
@@ -14,29 +15,29 @@ from .runtime import RuntimeSession, SessionCreateResult, SessionResumeResult, S
 _HANDLER_NAMES = frozenset({"handle_chat_websocket"})
 
 __all__ = [
-    "MANAGER",
     "ConnectionManager",
-    "start_ws_event_loop",
-    "stop_ws_event_loop",
-    "JsonRpcDispatcher",
-    "JsonRpcError",
-    "JsonRpcEmitter",
     "Handler",
+    "JsonRpcDispatcher",
+    "JsonRpcEmitter",
+    "JsonRpcError",
+    "MANAGER",
+    "ReplayBuffer",
     "RuntimeSession",
-    "SessionRuntimeInfo",
     "SessionCreateResult",
     "SessionResumeResult",
+    "SessionRuntimeInfo",
     "ToolsSyncResult",
-    "new_runtime_session",
-    "runtime_info_snapshot",
+    "authenticate_ws_token",
     "await_future",
     "discard_user",
     "dispatch_user_event",
-    "resolve_future",
-    "authenticate_ws_token",
     "handle_chat_websocket",
-    # Test helper: -32603 redaction pipeline verification
+    "new_runtime_session",
     "redact_message",
+    "resolve_future",
+    "runtime_info_snapshot",
+    "start_ws_event_loop",
+    "stop_ws_event_loop",
 ]
 
 

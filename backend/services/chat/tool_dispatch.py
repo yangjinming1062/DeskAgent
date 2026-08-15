@@ -53,23 +53,24 @@ def _redact_tool_payload(result_str: str) -> str | list:
 
 async def _dispatch_runner_tool(user_id: int, name: str, args: dict, call_id: str, emitter: Emitter) -> str:
     """Send a runner tool call over the user's WS and await its ipc future."""
-    # Fast-fail when Desktop is offline or Runner hasn't synced its tools yet.
+    # Fast-fail when Desktop is offline (not connected and no grace session) or Runner hasn't synced its tools yet.
     # Without this check the IPC future hangs for ipc_future_timeout_seconds
     # (default 300s) before returning a synthetic timeout error.
-    if user_id not in MANAGER.active_connections:
+    if not MANAGER.is_available(user_id):
         return tool_error("Desktop is offline. Tool calls require an active desktop connection.")
     if not REGISTRY.has_runner_tools(user_id):
         return tool_error("Runner is not available. No runner tools registered for this session.")
 
     # Sleep/wake race: WS may close between the in-MANAGER check and the
     # actual send. WSEmitter.send_json swallows WebSocketDisconnect and the
-    # post-close starlette RuntimeError, so catching them here is the only
-    # way to surface a fast-fail before await_future parks for 300s.
+    # post-close starlette RuntimeError, so catching them here allows checking
+    # if the user still has an active/grace session in the gateway.
     try:
         await emitter.send_json({"type": "tool_call", "name": name, "args": args, "call_id": call_id})
     except (WebSocketDisconnect, RuntimeError) as e:
         logger.warning("WS dropped during tool_call dispatch", extra={"error": str(e)})
-        return tool_error("Desktop is offline. Tool calls require an active desktop connection.")
+        if not MANAGER.is_available(user_id):
+            return tool_error("Desktop is offline. Tool calls require an active desktop connection.")
     return await await_future(user_id, call_id)
 
 

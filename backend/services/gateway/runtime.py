@@ -22,8 +22,11 @@ class SessionCreateResult(BaseModel):
 class SessionResumeResult(BaseModel):
     session_id: str
     message_count: int
-    messages: list
+    messages: list = Field(default_factory=list)
     info: SessionRuntimeInfo
+    resumed: bool = False
+    replayed_count: int = 0
+    current_seq: int = 0
 
 
 class ToolsSyncResult(BaseModel):

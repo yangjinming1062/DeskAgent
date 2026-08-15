@@ -82,9 +82,17 @@ def _redact_data(data: Any) -> Any:
 
 
 class JsonRpcDispatcher:
-    def __init__(self, send_json: Callable[[dict], Awaitable[None]]):
+    def __init__(self, send_json: Callable[[dict], Awaitable[None]], replay_buffer: Any | None = None):
         self._send = send_json
+        self._replay_buffer = replay_buffer
         self._handlers: dict[str, Handler] = {}
+
+    def set_sender(self, send_json: Callable[[dict], Awaitable[None]]) -> None:
+        """Update the underlying frame sender callback (used during session takeover / reconnect)."""
+        self._send = send_json
+
+    def set_replay_buffer(self, replay_buffer: Any | None) -> None:
+        self._replay_buffer = replay_buffer
 
     def register(self, method: str, handler: Handler) -> None:
         self._handlers[method] = handler
@@ -146,7 +154,10 @@ class JsonRpcDispatcher:
             params["session_id"] = session_id
         if payload is not None:
             params["payload"] = payload
-        await self._send({"jsonrpc": JSON_RPC_VERSION, "method": "event", "params": params})
+        frame: dict[str, Any] = {"jsonrpc": JSON_RPC_VERSION, "method": "event", "params": params}
+        if self._replay_buffer is not None:
+            _, frame = self._replay_buffer.append(frame)
+        await self._send(frame)
 
     async def push_error_event(self, message: str, session_id: str | None = None) -> None:
         # push_event bypasses _reply_error, so raw exception text must be

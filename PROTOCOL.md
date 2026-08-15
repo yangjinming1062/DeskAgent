@@ -13,11 +13,14 @@
 | Client ↔ Runner | 双向 | 本地 OS IPC（Windows 命名管道 / macOS UDS）承载 WebSocket 帧 | 每次启动握手 token（失败 401） | §2 |
 | Runner → Client → Backend（反向 RPC） | Runner → Client → Backend | 嵌套在 §2 上，经 Client 转发到 /api/llm/completion | Client JWT | §3 |
 
-**信封三种形态**（JSON-RPC 2.0）：请求（带 id + method + params）、事件（无 id、method=event、带 type + payload，不可被响应）、响应（带 id + result 或 error）。
+**信封四种形态**（JSON-RPC 2.0）：请求（带 id + method + params）、事件（无 id、method=event、带 type + payload + seq，不可被响应）、响应（带 id + result 或 error）、ACK（带 method=session.ack、params={seq: int}）。
 
 **核心约定**：
 - call_id 是整张表的**唯一 Future Key**——Backend 按 (user_id, call_id) 寻址，跨用户不共享。
 - 事件无 id，不可被响应；请求与响应必须按 id 配对。
+- 所有下发事件均附加递增序列号 `seq`（从 1 开始）；客户端维护 `lastReceivedSeq` 保证去重与有序消费。
+- 客户端定期向服务端发送 `session.ack(seq)` 确认消费进度，服务端自 Replay Buffer 中修剪已确认帧。
+- **断线补偿与 30s 缓冲期（Grace Period）**：WS 断开后 Backend 保留调度器、生成任务与未决 IPC future 30 秒；客户端在 30 秒内重连并发送 `session.resume(session_id, last_seq)`。若在缓冲期内且缓存未溢出，服务端无缝重放断线期间缺失帧（`resumed: true`），保持流式对话不中断；若超时或溢出则返回 `resumed: false` 与完整 DB 历史进行全量重水化。
 - WS 关闭码 1008（鉴权失效）= 立即退出重连流程，不再尝试。
 
 ---

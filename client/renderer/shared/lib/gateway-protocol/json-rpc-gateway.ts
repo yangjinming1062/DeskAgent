@@ -12,6 +12,7 @@ export interface GatewayEvent<P = unknown> {
   payload?: P
   session_id?: string
   type: GatewayEventName
+  seq?: number
 }
 
 export type ConnectionState = 'idle' | 'connecting' | 'open' | 'closed' | 'error'
@@ -40,6 +41,7 @@ type JsonRpcFrame = {
   method?: string
   params?: GatewayEvent
   result?: unknown
+  seq?: number
 }
 type WebSocketLike = WebSocket
 
@@ -80,6 +82,8 @@ export class JsonRpcGatewayClient {
   private socket: WebSocketLike | null = null
   private state: ConnectionState = 'idle'
   private _lastCloseCode: number | null = null
+  private _lastReceivedSeq = 0
+  private _ackTimer: ReturnType<typeof setTimeout> | null = null
   private readonly eventHandlers = new Map<string, Set<(event: GatewayEvent) => void>>()
   private readonly stateHandlers = new Set<(state: ConnectionState) => void>()
   private readonly options: Required<Omit<GatewayClientOptions, 'socketFactory'>> &
@@ -105,6 +109,32 @@ export class JsonRpcGatewayClient {
   /** Close code from the last WebSocket close event, or null if never closed. */
   get lastCloseCode(): number | null {
     return this._lastCloseCode
+  }
+
+  /** Monotonic sequence ID of the last received event frame from backend. */
+  get lastReceivedSeq(): number {
+    return this._lastReceivedSeq
+  }
+
+  resetSeq(seq = 0): void {
+    this._lastReceivedSeq = seq
+  }
+
+  ackSeq(seq = this._lastReceivedSeq): void {
+    if (seq > 0 && this.socket?.readyState === WebSocket.OPEN) {
+      void this.request('session.ack', { seq }).catch(() => {})
+    }
+  }
+
+  private scheduleAck(): void {
+    if (this._ackTimer !== null) {
+      return
+    }
+
+    this._ackTimer = setTimeout(() => {
+      this._ackTimer = null
+      this.ackSeq()
+    }, 1000)
   }
 
   async connect(wsUrl: string): Promise<void> {
@@ -203,6 +233,11 @@ export class JsonRpcGatewayClient {
   }
 
   close(): void {
+    if (this._ackTimer !== null) {
+      clearTimeout(this._ackTimer)
+      this._ackTimer = null
+    }
+
     if (this.socket) {
       this.socket.close()
       this.socket = null
@@ -298,6 +333,18 @@ export class JsonRpcGatewayClient {
       frame = JSON.parse(raw) as JsonRpcFrame
     } catch {
       return
+    }
+
+    const seq = frame.params?.seq ?? frame.seq
+
+    if (typeof seq === 'number') {
+      if (seq <= this._lastReceivedSeq) {
+        // Duplicate frame already processed — drop idempotently
+        return
+      }
+
+      this._lastReceivedSeq = seq
+      this.scheduleAck()
     }
 
     if (frame.id !== undefined && frame.id !== null) {

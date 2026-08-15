@@ -53,11 +53,23 @@ class ConnectionManager:
     def disconnect(self, websocket: WebSocket, user_id: int) -> None:
         if self.active_connections.get(user_id) is websocket:
             del self.active_connections[user_id]
-            self._dispatchers.pop(user_id, None)
-            logger.info("User disconnected", extra={"user_id": user_id})
+            logger.info("User socket disconnected", extra={"user_id": user_id})
 
     def register_dispatcher(self, user_id: int, dispatcher: JsonRpcDispatcher) -> None:
         self._dispatchers[user_id] = dispatcher
+
+    def unregister_dispatcher(self, user_id: int) -> None:
+        self._dispatchers.pop(user_id, None)
+        logger.info("User dispatcher unregistered", extra={"user_id": user_id})
+
+    def get_dispatcher(self, user_id: int) -> JsonRpcDispatcher | None:
+        return self._dispatchers.get(user_id)
+
+    def is_connected(self, user_id: int) -> bool:
+        return user_id in self.active_connections
+
+    def is_available(self, user_id: int) -> bool:
+        return user_id in self.active_connections or user_id in self._dispatchers
 
     def local_user_ids(self) -> list[int]:
         """Snapshot of user IDs with a registered dispatcher — used by the

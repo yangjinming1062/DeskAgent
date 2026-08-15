@@ -7,7 +7,7 @@ import {
   failDesktopBoot,
   setDesktopBootStep
 } from '@/companion/boot-store'
-import { $chatSessionId, setChatSession } from '@/companion/chat-store'
+import { $chatSessionId, hydrateChatMessages, setChatSession } from '@/companion/chat-store'
 import { $effectiveTier, $spriteState, $voiceCallOpen, setSpriteState } from '@/companion/companion-store'
 import { openMainSession } from '@/companion/session-list-store'
 import { DeskAgentGateway } from '@/shared/deskagent'
@@ -18,7 +18,7 @@ import { logout } from '@/shared/store/auth'
 import { reportPrimaryGatewayState, setPrimaryGateway, tearDownPrimaryGateway } from '@/shared/store/gateway'
 import { notifyError } from '@/shared/store/notifications'
 import { strings } from '@/shared/strings'
-import type { RpcEvent } from '@/shared/types/deskagent'
+import type { RpcEvent, SessionMessage } from '@/shared/types/deskagent'
 import type { DeskAgentConnection } from '@/shared/types/global'
 
 // Backend uses WS close 1008 for auth failures (token expired/revoked) —
@@ -265,10 +265,20 @@ export function useGatewayBoot({ handleGatewayEvent, onConnectionReady, onGatewa
           const sid = $chatSessionId.get()
 
           if (sid) {
-            void gateway.request('session.resume', { session_id: sid }).catch(() => {
-              setChatSession(null)
-              void openMainSession()
-            })
+            void gateway
+              .request<{ resumed?: boolean; messages?: SessionMessage[] }>('session.resume', {
+                session_id: sid,
+                last_seq: gateway.lastReceivedSeq
+              })
+              .then(res => {
+                if (!res.resumed && Array.isArray(res.messages)) {
+                  hydrateChatMessages(res.messages)
+                }
+              })
+              .catch(() => {
+                setChatSession(null)
+                void openMainSession()
+              })
           } else {
             void openMainSession()
           }

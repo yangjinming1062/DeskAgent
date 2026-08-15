@@ -4,6 +4,7 @@ import contextlib
 import json
 import secrets
 import time
+from dataclasses import dataclass, field
 from typing import Any
 
 from components import (
@@ -61,6 +62,7 @@ from . import (
     JsonRpcDispatcher,
     JsonRpcEmitter,
     JsonRpcError,
+    ReplayBuffer,
     RuntimeSession,
     SessionCreateResult,
     SessionResumeResult,
@@ -72,8 +74,33 @@ from . import (
     resolve_future,
     runtime_info_snapshot,
 )
+from .buffer import DEFAULT_REPLAY_BUFFER_CAPACITY, DEFAULT_REPLAY_BUFFER_TTL_SECONDS
 
 logger = get_logger(__name__)
+
+DISCONNECT_GRACE_SECONDS = 30.0
+
+
+@dataclass
+class UserGatewaySession:
+    user_id: int
+    dispatcher: JsonRpcDispatcher
+    replay_buffer: ReplayBuffer
+    runtime_sessions: dict[str, RuntimeSession] = field(default_factory=dict)
+    background_tasks: set[asyncio.Task] = field(default_factory=set)
+    llm_config: dict = field(default_factory=dict)
+    user_settings: dict = field(default_factory=dict)
+    session_client_context: ChatRequestClientContext | None = None
+    grace_timer_task: asyncio.Task | None = None
+    websocket: WebSocket | None = None
+
+
+_USER_SESSIONS: dict[int, UserGatewaySession] = {}
+
+
+async def _noop_send(data: dict[str, Any]) -> None:
+    pass
+
 
 # Process-local throttle: a buggy renderer can spam check_affect and burn LLM quota.
 CHECK_AFFECT_MIN_INTERVAL_SECONDS = 2.0
@@ -162,141 +189,169 @@ async def handle_chat_websocket(websocket: WebSocket, token: str):
         with contextlib.suppress(Exception):
             session_client_context = ChatRequestClientContext(**payload["ctx"])
 
-    # JSON-RPC 2.0 dispatcher — see services/gateway/jsonrpc.py. All inbound
-    # frames are JSON-RPC 2.0 requests.
-    # ``ws_emitter`` is shared: the dispatcher uses its ``send_json`` so a
-    # transient WS send failure (e.g. mid-disconnect) is swallowed.
     ws_emitter = WSEmitter(websocket)
-    dispatcher = JsonRpcDispatcher(ws_emitter.send_json)
-    MANAGER.register_dispatcher(user_id, dispatcher)
 
-    # Runtime sessions — see services/gateway/runtime.py. Per-WS map keyed
-    # by the renderer-facing session_id (= conversation_id string from
-    # `Conversation.id`). Cleared on disconnect below; recovery uses
-    # ``session.resume`` which re-derives the same key.
-    runtime_sessions: dict[str, RuntimeSession] = {}
-    _register_session_handlers(dispatcher, runtime_sessions, llm_config, user_id)
+    existing_session = _USER_SESSIONS.get(user_id)
+    if existing_session is not None:
+        if existing_session.grace_timer_task and not existing_session.grace_timer_task.done():
+            existing_session.grace_timer_task.cancel()
+            existing_session.grace_timer_task = None
+        existing_session.websocket = websocket
+        existing_session.llm_config = llm_config
+        existing_session.user_settings = user_settings
+        existing_session.session_client_context = session_client_context
+        existing_session.dispatcher.set_sender(ws_emitter.send_json)
+        user_session = existing_session
+        dispatcher = user_session.dispatcher
+        runtime_sessions = user_session.runtime_sessions
+        background_tasks = user_session.background_tasks
+        logger.info("Resumed active user gateway session across reconnect", extra={"user_id": user_id})
+    else:
+        replay_buffer = ReplayBuffer(capacity=DEFAULT_REPLAY_BUFFER_CAPACITY, ttl_seconds=DEFAULT_REPLAY_BUFFER_TTL_SECONDS)
+        dispatcher = JsonRpcDispatcher(ws_emitter.send_json, replay_buffer=replay_buffer)
+        runtime_sessions: dict[str, RuntimeSession] = {}
+        background_tasks: set[asyncio.Task] = set()
+        user_session = UserGatewaySession(
+            user_id=user_id,
+            dispatcher=dispatcher,
+            replay_buffer=replay_buffer,
+            runtime_sessions=runtime_sessions,
+            background_tasks=background_tasks,
+            llm_config=llm_config,
+            user_settings=user_settings,
+            session_client_context=session_client_context,
+            websocket=websocket,
+        )
+        _USER_SESSIONS[user_id] = user_session
+        MANAGER.register_dispatcher(user_id, dispatcher)
 
-    background_tasks: set[asyncio.Task] = set()
+        _register_session_handlers(dispatcher, runtime_sessions, llm_config, user_id, replay_buffer=replay_buffer, user_session=user_session)
 
-    def _track(task: asyncio.Task) -> None:
-        background_tasks.add(task)
-        task.add_done_callback(background_tasks.discard)
+        def _track(task: asyncio.Task) -> None:
+            user_session.background_tasks.add(task)
+            task.add_done_callback(user_session.background_tasks.discard)
 
-    # prompt.submit lives here as a nested function because it captures
-    # _track and other WS-local state.
-    async def prompt_submit(params: dict) -> dict:
-        runtime = _get_runtime(runtime_sessions, params)
-        text = _require_str(params, "text")
-        if runtime.chat_task and not runtime.chat_task.done():
-            raise JsonRpcError(JSONRPC_INVALID_PARAMS, f"session {runtime.session_id!r} already has an in-flight turn")
+        async def prompt_submit(params: dict) -> dict:
+            runtime = _get_runtime(user_session.runtime_sessions, params)
+            text = _require_str(params, "text")
+            if runtime.chat_task and not runtime.chat_task.done():
+                raise JsonRpcError(JSONRPC_INVALID_PARAMS, f"session {runtime.session_id!r} already has an in-flight turn")
 
-        # Cross-gate: a companion reaction (poke/drag) is mid-flight on this
-        # user's main conversation. Reject so we don't interleave user rows and
-        # reaction rows on the same conversation — see the comment near
-        # ``_inflight_prompt``. The renderer treats JSONRPC_INVALID_PARAMS the
-        # same as the stale-target case (in-flight turn) and re-issues later.
-        if any(uid == user_id for uid, _ in _inflight_interact):
-            raise JsonRpcError(JSONRPC_INVALID_PARAMS, "companion reaction in-flight; please retry after it lands")
+            # Cross-gate: a companion reaction (poke/drag) is mid-flight on this
+            # user's main conversation.
+            if any(uid == user_id for uid, _ in _inflight_interact):
+                raise JsonRpcError(JSONRPC_INVALID_PARAMS, "companion reaction in-flight; please retry after it lands")
 
-        # Truncate is per-user-message ordinal: drop the Nth user message and
-        # every row after it (assistant / tool results that came after).
-        # Renderer (use-prompt-actions.ts:1071-1086) catches the
-        # JSONRPC_INVALID_PARAMS response as a stale-target signal and re-issues
-        # via session.resume.
-        truncate_ordinal = params.get("truncate_before_user_ordinal")
-        if truncate_ordinal is not None and not isinstance(truncate_ordinal, int):
-            raise JsonRpcError(JSONRPC_INVALID_PARAMS, "truncate_before_user_ordinal must be an int")
-        if truncate_ordinal is not None:
-            async with SESSION_LOCAL() as db:
-                user_rows = (
-                    (await db.execute(select(Message).where(Message.conversation_id == runtime.conversation_id, Message.role == "user").order_by(Message.id))).scalars().all()
-                )
-                if truncate_ordinal < 0 or truncate_ordinal >= len(user_rows):
-                    raise JsonRpcError(JSONRPC_INVALID_PARAMS, f"truncate_before_user_ordinal {truncate_ordinal} no longer in session history")
-                drop_from_id = user_rows[truncate_ordinal].id
-                await db.execute(delete(Message).where(Message.conversation_id == runtime.conversation_id, Message.id >= drop_from_id))
-                db.expire_all()
-                await db.commit()
+            truncate_ordinal = params.get("truncate_before_user_ordinal")
+            if truncate_ordinal is not None and not isinstance(truncate_ordinal, int):
+                raise JsonRpcError(JSONRPC_INVALID_PARAMS, "truncate_before_user_ordinal must be an int")
+            if truncate_ordinal is not None:
+                async with SESSION_LOCAL() as db:
+                    user_rows = (
+                        (await db.execute(select(Message).where(Message.conversation_id == runtime.conversation_id, Message.role == "user").order_by(Message.id))).scalars().all()
+                    )
+                    if truncate_ordinal < 0 or truncate_ordinal >= len(user_rows):
+                        raise JsonRpcError(JSONRPC_INVALID_PARAMS, f"truncate_before_user_ordinal {truncate_ordinal} no longer in session history")
+                    drop_from_id = user_rows[truncate_ordinal].id
+                    await db.execute(delete(Message).where(Message.conversation_id == runtime.conversation_id, Message.id >= drop_from_id))
+                    db.expire_all()
+                    await db.commit()
 
-        attachments = _validate_attachments(params)
+            attachments = _validate_attachments(params)
 
-        req = ChatRequest(session_id=runtime.session_id, message=ChatMessageRequest(role="user", content=text, attachments=attachments))
+            req = ChatRequest(session_id=runtime.session_id, message=ChatMessageRequest(role="user", content=text, attachments=attachments))
 
-        # JsonRpcEmitter translates raw chat_service frames (chunk,
-        # tool_start/end, error, message.start/complete, tool_call,
-        # references) into JSON-RPC event envelopes.
-        emitter = JsonRpcEmitter(raw=ws_emitter, dispatcher=dispatcher, session_id=runtime.session_id)
+            # JsonRpcEmitter translates raw chat_service frames into JSON-RPC event envelopes.
+            emitter = JsonRpcEmitter(raw=None, dispatcher=user_session.dispatcher, session_id=runtime.session_id)
 
-        async def _run_turn() -> None:
-            _inflight_prompt.add(user_id)
+            async def _run_turn() -> None:
+                _inflight_prompt.add(user_id)
 
-            try:
                 try:
-                    await run_chat_turn(req, llm_config, user_settings, user_id, emitter, session_client_context=session_client_context, track_task=_track, runtime=runtime)
-                except (WebSocketDisconnect, asyncio.CancelledError):
-                    raise
-                except Exception as e:
-                    logger.exception("prompt.submit chat_turn failed")
-                    with contextlib.suppress(Exception):
-                        await dispatcher.push_error_event(str(e), session_id=runtime.session_id)
-            finally:
-                _inflight_prompt.discard(user_id)
+                    try:
+                        await run_chat_turn(
+                            req,
+                            user_session.llm_config,
+                            user_session.user_settings,
+                            user_id,
+                            emitter,
+                            session_client_context=user_session.session_client_context,
+                            track_task=_track,
+                            runtime=runtime,
+                        )
+                    except (WebSocketDisconnect, asyncio.CancelledError):
+                        raise
+                    except Exception as e:
+                        logger.exception("prompt.submit chat_turn failed")
+                        with contextlib.suppress(Exception):
+                            await user_session.dispatcher.push_error_event(str(e), session_id=runtime.session_id)
+                finally:
+                    _inflight_prompt.discard(user_id)
 
-        runtime.chat_task = asyncio.create_task(_run_turn())
-        _track(runtime.chat_task)
-        return {"queued": True}
+            runtime.chat_task = asyncio.create_task(_run_turn())
+            _track(runtime.chat_task)
+            return {"queued": True}
 
-    dispatcher.register("prompt.submit", prompt_submit)
+        dispatcher.register("prompt.submit", prompt_submit)
 
-    async def tool_result_handler(params: dict) -> dict:
-        call_id = params.get("call_id")
-        result = params.get("result")
-        if not isinstance(call_id, str):
-            raise JsonRpcError(JSONRPC_INVALID_PARAMS, "call_id must be a string")
-        if not isinstance(result, str):
-            result = json.dumps(result, ensure_ascii=False)
-        if not resolve_future(user_id, call_id, result):
-            logger.warning("Future not found or already done", extra={"user_id": user_id, "call_id": call_id})
-        return {}
+        async def tool_result_handler(params: dict) -> dict:
+            call_id = params.get("call_id")
+            result = params.get("result")
+            if not isinstance(call_id, str):
+                raise JsonRpcError(JSONRPC_INVALID_PARAMS, "call_id must be a string")
+            if not isinstance(result, str):
+                result = json.dumps(result, ensure_ascii=False)
+            if not resolve_future(user_id, call_id, result):
+                logger.warning("Future not found or already done", extra={"user_id": user_id, "call_id": call_id})
+            return {}
 
-    dispatcher.register("tool.result", tool_result_handler)
+        dispatcher.register("tool.result", tool_result_handler)
 
-    async def tools_sync(params: dict) -> dict:
-        tools = params.get("tools", [])
-        if not isinstance(tools, list):
-            raise JsonRpcError(JSONRPC_INVALID_PARAMS, "tools must be a list")
-        REGISTRY.update_runner_tools(user_id, tools)
-        return ToolsSyncResult(count=len(tools)).model_dump()
+        async def tools_sync(params: dict) -> dict:
+            tools = params.get("tools", [])
+            if not isinstance(tools, list):
+                raise JsonRpcError(JSONRPC_INVALID_PARAMS, "tools must be a list")
+            REGISTRY.update_runner_tools(user_id, tools)
+            return ToolsSyncResult(count=len(tools)).model_dump()
 
-    dispatcher.register("tools.sync", tools_sync)
+        dispatcher.register("tools.sync", tools_sync)
 
     try:
         while True:
             data = await websocket.receive_text()
             try:
-                await dispatcher.handle_raw(data)
+                await user_session.dispatcher.handle_raw(data)
             except Exception:
                 logger.exception("jsonrpc dispatch failed", extra={"user_id": user_id})
     except WebSocketDisconnect:
         pass
     finally:
-        # Check if this WS is still the active one BEFORE disconnect.
-        # Identity-blind cleanup (ipc, registry) must only run for the
-        # current connection — otherwise a reconnecting user's new WS
-        # loses its IPC futures and runner tools.
         is_active = MANAGER.active_connections.get(user_id) is websocket
         MANAGER.disconnect(websocket, user_id)
-        for task in list(background_tasks):
-            task.cancel()
-        # ``runtime_sessions`` is keyed by the same ``session_id`` value
-        # the renderer holds. On a reconnect, the new WS re-mounts via
-        # ``session.resume``, which populates the map from scratch; clearing
-        # unconditionally would wipe the new connection's runtimes too.
         if is_active:
-            runtime_sessions.clear()
-            discard_user(user_id)
-            REGISTRY.clear_runner_tools(user_id)
+            sess = _USER_SESSIONS.get(user_id)
+            if sess is not None and sess.websocket is websocket:
+                sess.websocket = None
+                sess.dispatcher.set_sender(_noop_send)
+
+                async def _grace_cleanup(uid: int):
+                    try:
+                        await asyncio.sleep(DISCONNECT_GRACE_SECONDS)
+                        if not MANAGER.is_connected(uid):
+                            logger.info("Grace period expired for disconnected user, performing full cleanup", extra={"user_id": uid})
+                            target_sess = _USER_SESSIONS.pop(uid, None)
+                            if target_sess is not None:
+                                for t in list(target_sess.background_tasks):
+                                    if not t.done():
+                                        t.cancel()
+                                target_sess.runtime_sessions.clear()
+                            MANAGER.unregister_dispatcher(uid)
+                            discard_user(uid)
+                            REGISTRY.clear_runner_tools(uid)
+                    except asyncio.CancelledError:
+                        pass
+
+                sess.grace_timer_task = asyncio.create_task(_grace_cleanup(user_id))
 
 
 async def _find_owned_conv(db: AsyncSession, user_id: int, session_id: str) -> Conversation | None:
@@ -369,24 +424,47 @@ async def _record_main_conversation(user_id: int, role: str, content: str, subty
         logger.exception("failed to persist main-conversation status row", extra={"user_id": user_id, "subtype": subtype})
 
 
-def _register_session_handlers(dispatcher: JsonRpcDispatcher, runtime_sessions: dict[str, RuntimeSession], llm_config: dict, user_id: int) -> None:
-    def _mount_runtime(conv: Conversation, cwd: str | None) -> RuntimeSession:
+def _register_session_handlers(
+    dispatcher: JsonRpcDispatcher,
+    runtime_sessions: dict[str, RuntimeSession],
+    llm_config: dict,
+    user_id: int,
+    replay_buffer: ReplayBuffer | None = None,
+    user_session: UserGatewaySession | None = None,
+) -> None:
+    effective_buffer = replay_buffer or (user_session.replay_buffer if user_session else ReplayBuffer())
+
+    def _mount_runtime(conv: Conversation, cwd: str | None, *, cancel_existing: bool = True) -> RuntimeSession:
         """Cancel any in-memory runtime for the same conversation, then mount a fresh one."""
         for existing in list(runtime_sessions.values()):
             if existing.conversation_id == conv.id:
-                if existing.chat_task and not existing.chat_task.done():
+                if cancel_existing and existing.chat_task and not existing.chat_task.done():
                     existing.chat_task.cancel()
+                if not cancel_existing:
+                    return existing
                 runtime_sessions.pop(existing.session_id, None)
         runtime = new_runtime_session(conversation_id=conv.id, cwd=cwd, settings_json=conv.settings_json)
         runtime_sessions[runtime.session_id] = runtime
         return runtime
+
+    async def session_ack(params: dict) -> dict:
+        seq = params.get("seq")
+        if not isinstance(seq, int) or seq < 0:
+            raise JsonRpcError(JSONRPC_INVALID_PARAMS, "seq must be a non-negative int")
+        pruned = effective_buffer.ack(seq)
+        return {"acked": seq, "pruned": pruned}
+
+    dispatcher.register("session.ack", session_ack)
 
     async def session_get_main(_params: dict) -> dict:
         async with SESSION_LOCAL() as db:
             conv = await get_or_create_main_conversation(db, user_id)
             messages = await build_session_messages(conv.id, db)
         runtime = _mount_runtime(conv, conv.cwd)
-        return SessionResumeResult(session_id=runtime.session_id, message_count=len(messages), messages=messages, info=runtime_info_snapshot(llm_config, runtime)).model_dump()
+        cfg = user_session.llm_config if user_session else llm_config
+        return SessionResumeResult(
+            session_id=runtime.session_id, message_count=len(messages), messages=messages, info=runtime_info_snapshot(cfg, runtime), current_seq=effective_buffer.max_seq
+        ).model_dump()
 
     dispatcher.register("session.get_main", session_get_main)
 
@@ -399,18 +477,50 @@ def _register_session_handlers(dispatcher: JsonRpcDispatcher, runtime_sessions: 
             await db.refresh(conv)
         runtime = _mount_runtime(conv, cwd)
         logger.info("session.create", extra={"user_id": user_id, "session_id": runtime.session_id, "cwd": cwd})
-        return SessionCreateResult(session_id=runtime.session_id, info=runtime_info_snapshot(llm_config, runtime)).model_dump()
+        cfg = user_session.llm_config if user_session else llm_config
+        return SessionCreateResult(session_id=runtime.session_id, info=runtime_info_snapshot(cfg, runtime)).model_dump()
 
     async def session_resume(params: dict) -> dict:
         stored_id = _require_str(params, "session_id")
+        last_seq = params.get("last_seq")
         async with SESSION_LOCAL() as db:
             conv = await _find_owned_conv(db, user_id, stored_id)
             if conv is None:
                 raise JsonRpcError(JSONRPC_METHOD_NOT_FOUND, f"stored session not found: {stored_id!r}")
+
+        cfg = user_session.llm_config if user_session else llm_config
+
+        # Continuous replay if client provided last_seq and ReplayBuffer holds all deltas
+        if isinstance(last_seq, int) and effective_buffer.can_replay(last_seq):
+            runtime = _mount_runtime(conv, conv.cwd, cancel_existing=False)
+            replayed_frames = effective_buffer.replay_since(last_seq) or []
+            for frame in replayed_frames:
+                await dispatcher._send(frame)
+            logger.info("session.resume replayed frames", extra={"user_id": user_id, "session_id": runtime.session_id, "replayed": len(replayed_frames), "last_seq": last_seq})
+            return SessionResumeResult(
+                session_id=runtime.session_id,
+                message_count=0,
+                messages=[],
+                info=runtime_info_snapshot(cfg, runtime),
+                resumed=True,
+                replayed_count=len(replayed_frames),
+                current_seq=effective_buffer.max_seq,
+            ).model_dump()
+
+        # Fallback to full DB history reload
+        async with SESSION_LOCAL() as db:
             messages = await build_session_messages(conv.id, db)
-        runtime = _mount_runtime(conv, conv.cwd)
-        logger.info("session.resume", extra={"user_id": user_id, "session_id": runtime.session_id})
-        return SessionResumeResult(session_id=runtime.session_id, message_count=len(messages), messages=messages, info=runtime_info_snapshot(llm_config, runtime)).model_dump()
+        runtime = _mount_runtime(conv, conv.cwd, cancel_existing=True)
+        logger.info("session.resume full reload", extra={"user_id": user_id, "session_id": runtime.session_id})
+        return SessionResumeResult(
+            session_id=runtime.session_id,
+            message_count=len(messages),
+            messages=messages,
+            info=runtime_info_snapshot(cfg, runtime),
+            resumed=False,
+            replayed_count=0,
+            current_seq=effective_buffer.max_seq,
+        ).model_dump()
 
     async def session_interrupt(params: dict) -> dict:
         runtime = _get_runtime(runtime_sessions, params)
@@ -469,7 +579,8 @@ def _register_session_handlers(dispatcher: JsonRpcDispatcher, runtime_sessions: 
 
         idle_seconds = coerce_non_negative_float(params.get("idle_seconds"))
         local_hour = coerce_hour_0_23(params.get("local_hour"))
-        return await check_affect(user_id, idle_seconds, local_hour, llm_config)
+        cfg = user_session.llm_config if user_session else llm_config
+        return await check_affect(user_id, idle_seconds, local_hour, cfg)
 
     dispatcher.register("companion.check_affect", companion_check_affect)
 
@@ -527,9 +638,10 @@ def _register_session_handlers(dispatcher: JsonRpcDispatcher, runtime_sessions: 
         poke_count = coerce_non_negative_int(params.get("poke_count"))
         idle_seconds = float(coerce_non_negative_float(params.get("idle_seconds")))
         local_hour = coerce_hour_0_23(params.get("local_hour"))
+        cfg = user_session.llm_config if user_session else llm_config
 
         try:
-            res = await interact(user_id, kind, poke_count, idle_seconds, local_hour, llm_config)
+            res = await interact(user_id, kind, poke_count, idle_seconds, local_hour, cfg)
         finally:
             _inflight_interact.discard(inflight_key)
 
@@ -566,6 +678,7 @@ def _register_session_handlers(dispatcher: JsonRpcDispatcher, runtime_sessions: 
         fullscreen = bool(params.get("fullscreen"))
         screen_locked = bool(params.get("screen_locked"))
         seconds_since_last_action = coerce_non_negative_float(params.get("seconds_since_last_action"))
+        cfg = user_session.llm_config if user_session else llm_config
 
         res = await should_act(
             user_id=user_id,
@@ -576,7 +689,7 @@ def _register_session_handlers(dispatcher: JsonRpcDispatcher, runtime_sessions: 
             fullscreen=fullscreen,
             screen_locked=screen_locked,
             seconds_since_last_action=seconds_since_last_action,
-            llm_config=llm_config,
+            llm_config=cfg,
         )
         return res.model_dump()
 
