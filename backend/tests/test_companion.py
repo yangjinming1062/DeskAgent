@@ -18,19 +18,19 @@ from services.llm import VoiceDesignResult, pick_voice_id, voices_for_provider
 from services.rate_limit import limiter
 
 
-def test_disturbance_tier_store_defaults_and_normalizes():
+@pytest.mark.asyncio
+async def test_disturbance_tier_store_defaults_and_normalizes(SessionLocal):
     from services import disturbance
 
-    disturbance._disturbance.clear()
-    assert disturbance.get_disturbance_tier(1) == "normal"
-    assert disturbance.is_quiet(1) is False
+    assert await disturbance.get_disturbance_tier(1) == "normal"
+    assert await disturbance.is_quiet(1) is False
 
-    assert disturbance.set_disturbance_tier(1, "quiet") == "quiet"
-    assert disturbance.is_quiet(1) is True
+    assert await disturbance.set_disturbance_tier(1, "quiet") == "quiet"
+    assert await disturbance.is_quiet(1) is True
 
     # Unknown tiers fall back to the default, never raise.
-    assert disturbance.set_disturbance_tier(1, "bogus") == "normal"
-    assert disturbance.is_quiet(1) is False
+    assert await disturbance.set_disturbance_tier(1, "bogus") == "normal"
+    assert await disturbance.is_quiet(1) is False
 
 
 @pytest.mark.asyncio
@@ -43,7 +43,10 @@ async def test_send_message_companion_path_emits_ws_event(monkeypatch):
         captured.append((uid, text, affect))
 
     monkeypatch.setattr(smt, "_emit_companion_message", _emit)
-    monkeypatch.setattr(smt, "is_quiet", lambda uid: False)
+    async def _is_quiet(_uid):
+        return False
+
+    monkeypatch.setattr(smt, "is_quiet", _is_quiet)
 
     result = json.loads(
         await smt.send_message_tool(message="你好呀，想我了吗？", user_id=7)
@@ -65,7 +68,10 @@ async def test_send_message_companion_path_emits_with_affect(monkeypatch):
         captured.append((uid, text, affect))
 
     monkeypatch.setattr(smt, "_emit_companion_message", _emit)
-    monkeypatch.setattr(smt, "is_quiet", lambda uid: False)
+    async def _is_quiet(_uid):
+        return False
+
+    monkeypatch.setattr(smt, "is_quiet", _is_quiet)
 
     result = json.loads(
         await smt.send_message_tool(message="晚上好呀！", affect="happy", user_id=3)
@@ -92,7 +98,10 @@ async def test_send_message_quiet_tier_diverts_affect_only(monkeypatch):
 
     monkeypatch.setattr(smt, "_emit_companion_message", _emit_msg)
     monkeypatch.setattr(smt, "_emit_companion_affect", _emit_affect)
-    monkeypatch.setattr(smt, "is_quiet", lambda uid: True)
+    async def _is_quiet(_uid):
+        return True
+
+    monkeypatch.setattr(smt, "is_quiet", _is_quiet)
 
     result = json.loads(
         await smt.send_message_tool(message="psst", affect="concerned", user_id=1)
@@ -123,7 +132,10 @@ async def test_send_message_quiet_tier_no_affect_emits_neutral(monkeypatch):
 
     monkeypatch.setattr(smt, "_emit_companion_message", _emit_msg)
     monkeypatch.setattr(smt, "_emit_companion_affect", _emit_affect)
-    monkeypatch.setattr(smt, "is_quiet", lambda uid: True)
+    async def _is_quiet(_uid):
+        return True
+
+    monkeypatch.setattr(smt, "is_quiet", _is_quiet)
 
     result = json.loads(await smt.send_message_tool(message="psst", user_id=1))
 
@@ -145,7 +157,10 @@ async def test_send_message_normal_tier_emits(monkeypatch):
         captured.append((uid, text, affect))
 
     monkeypatch.setattr(smt, "_emit_companion_message", _emit)
-    monkeypatch.setattr(smt, "is_quiet", lambda uid: False)
+    async def _is_quiet(_uid):
+        return False
+
+    monkeypatch.setattr(smt, "is_quiet", _is_quiet)
 
     result = json.loads(
         await smt.send_message_tool(message="hi", affect="happy", user_id=7)
@@ -1444,20 +1459,26 @@ def test_pick_voice_id_design_prefix_only():
     assert pick_voice_id("foo:bar", "mimo") == pick_voice_id("", "mimo")
 
 
-def test_disturbance_tier_persists_across_reload():
-    """P0-4 companion fix: a backend restart wipes the process-local
-    tier dict. The desktop must re-report on reconnect — unit-test
-    the round-trip so the API surface is stable."""
+@pytest.mark.asyncio
+async def test_disturbance_tier_persists_across_reload(SessionLocal):
+    """The tier lives in companion_preferences: a backend restart (fresh
+    process, no in-memory state) keeps quiet-hours gating active until the
+    desktop reports otherwise."""
+    from modules.companion import CompanionPreference
     from services import disturbance
 
-    disturbance._disturbance.clear()
-    disturbance.set_disturbance_tier(7, "quiet")
-    # Simulate a process restart by clearing the dict.
-    disturbance._disturbance.clear()
-    assert disturbance.get_disturbance_tier(7) == "normal"
-    # The desktop's GC re-report sets it back.
-    disturbance.set_disturbance_tier(7, "quiet")
-    assert disturbance.is_quiet(7) is True
+    await disturbance.set_disturbance_tier(7, "quiet")
+    # A restart would start with an empty ORM identity map; simulate by
+    # expiring all cached instances before re-reading.
+    async with SessionLocal() as db:
+        db.expire_all()
+        row = (await db.execute(select(CompanionPreference).where(CompanionPreference.user_id == 7))).scalar_one()
+        assert row.disturbance_tier == "quiet"
+    assert await disturbance.get_disturbance_tier(7) == "quiet"
+    assert await disturbance.is_quiet(7) is True
+
+    await disturbance.set_disturbance_tier(7, "normal")
+    assert await disturbance.is_quiet(7) is False
 
 
 async def test_ws_ticket_mints_short_lived_jwt():

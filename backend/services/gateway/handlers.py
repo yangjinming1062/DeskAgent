@@ -448,7 +448,7 @@ def _register_session_handlers(dispatcher: JsonRpcDispatcher, runtime_sessions: 
         # it. Desktop also gates playback client-side, so this is
         # defense-in-depth.
         tier_param = params.get("tier")
-        normalized = set_disturbance_tier(user_id, tier_param if isinstance(tier_param, str) else "normal")
+        normalized = await set_disturbance_tier(user_id, tier_param if isinstance(tier_param, str) else "normal")
         return {"tier": normalized}
 
     dispatcher.register("companion.set_disturbance_tier", companion_set_disturbance_tier)

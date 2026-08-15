@@ -9,6 +9,18 @@ if TYPE_CHECKING:
     from modules.auth import User
 
 
+class CompanionPreference(ModelBase, TimestampMixin):
+    """Per-user server-side companion gates. The desktop remains the source
+    of truth for the disturbance tier and re-reports it on every change and
+    WS reconnect; the persisted row keeps server-side gates (proactive
+    send_message_tool, cron kicks) effective across backend restarts."""
+
+    __tablename__ = "companion_preferences"
+
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), unique=True)
+    disturbance_tier: Mapped[str] = mapped_column(String(16), default="normal")
+
+
 class CompanionModel(ModelBase, TimestampMixin):
     """Tripo3D-generated 3D model. status transitions: pending → generating → succeeded | failed."""
 

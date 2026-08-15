@@ -194,7 +194,7 @@ async def _kick_autonomous_turn(job_id: int, meta: dict[str, Any]) -> None:
     if not prompt:
         return
 
-    if is_quiet(user_id):
+    if await is_quiet(user_id):
         # Quiet suppresses autonomous outreach; gate before DB/turn.
         logger.debug("cron: user is quiet, skipping autonomous turn", extra={"user_id": user_id, "job_id": job_id})
         return

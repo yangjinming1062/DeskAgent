@@ -1,4 +1,4 @@
-from .models import AvatarAsset, CompanionExpression, CompanionModel, CompanionSpriteImage, Persona, WardrobeItem
+from .models import AvatarAsset, CompanionExpression, CompanionModel, CompanionPreference, CompanionSpriteImage, Persona, WardrobeItem
 from .schemas import (
     AnimationClipResponse,
     AnimationGenerateRequest,
@@ -34,6 +34,7 @@ __all__ = [
     "CompanionExpression",
     "CompanionModel",
     "CompanionModelResponse",
+    "CompanionPreference",
     "CompanionSpriteImage",
     "FullbodyGenerateRequest",
     "ModelGenerateRequest",

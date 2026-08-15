@@ -62,7 +62,8 @@ async def send_message_tool(message: str, target_webhook: str | None = None, aff
             # visible (ARCHITECTURE.md §6: 断消息不断 affect). This is not a
             # Desktop rule-engine fallback — the emotion is produced by the
             # persona-+memory-driven LLM that called this tool (§7.6).
-            if is_quiet(user_id):
+            quiet = await is_quiet(user_id) if isinstance(user_id, int) else False
+            if quiet:
                 if affect:
                     await _emit_companion_affect(user_id, affect)
                 # Quiet + no affect: emit neutral so the sprite returns to idle.
@@ -70,7 +71,7 @@ async def send_message_tool(message: str, target_webhook: str | None = None, aff
                     await _emit_companion_affect(user_id, "neutral")
             else:
                 await _emit_companion_message(user_id, message, affect=affect)
-        return json.dumps({"success": True, "channel": "companion", "quiet_suppressed": isinstance(user_id, int) and is_quiet(user_id)}, ensure_ascii=False)
+        return json.dumps({"success": True, "channel": "companion", "quiet_suppressed": quiet}, ensure_ascii=False)
 
     parsed = urlparse(target_webhook)
     if parsed.scheme not in ("http", "https"):

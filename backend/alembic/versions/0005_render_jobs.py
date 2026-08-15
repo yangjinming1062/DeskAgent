@@ -39,6 +39,17 @@ def upgrade() -> None:
     )
     op.create_index(op.f("ix_render_jobs_status"), "render_jobs", ["status"], unique=False)
     op.create_index(op.f("ix_render_jobs_user_id"), "render_jobs", ["user_id"], unique=False)
+    op.create_table(
+        "companion_preferences",
+        sa.Column("user_id", sa.Integer(), nullable=False),
+        sa.Column("disturbance_tier", sa.String(length=16), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
+        sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint("user_id", name="uq_companion_preferences_user_id"),
+    )
     # Mirrors the ws_events wakeup trigger from 0001: enqueue = row insert →
     # NOTIFY wakes the worker's LISTEN loop instead of it polling.
     op.execute("""
@@ -59,6 +70,7 @@ FOR EACH ROW WHEN (NEW.status = 'queued') EXECUTE FUNCTION notify_render_job();
 def downgrade() -> None:
     op.execute("DROP TRIGGER IF EXISTS render_jobs_notify_trigger ON render_jobs")
     op.execute("DROP FUNCTION IF EXISTS notify_render_job()")
+    op.drop_table("companion_preferences")
     op.drop_index(op.f("ix_render_jobs_user_id"), table_name="render_jobs")
     op.drop_index(op.f("ix_render_jobs_status"), table_name="render_jobs")
     op.drop_table("render_jobs")
