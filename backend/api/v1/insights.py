@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from common import get_router
-from components import ACTIVITY_DAY_BUCKETS, DEFAULT_INSIGHTS_DAYS, MS_PER_HOUR, SETTINGS, get_db, naive_utc_now, safe_json_loads
+from components import ACTIVITY_DAY_BUCKETS, DEFAULT_INSIGHTS_DAYS, MS_PER_HOUR, SETTINGS, get_db, safe_json_loads, utc_now
 from fastapi import Depends
 from modules.auth import LoginRecord, User, UserModelConfig, get_current_session
 from modules.conversation import Conversation, Message
@@ -132,7 +132,7 @@ async def get_insights_overview(
     days: int = DEFAULT_INSIGHTS_DAYS, session_data: tuple[User, LoginRecord] = Depends(get_current_session), db: AsyncSession = Depends(get_db)
 ) -> dict[str, Any]:
     current_user, _ = session_data
-    since = naive_utc_now() - timedelta(days=days)
+    since = utc_now() - timedelta(days=days)
 
     total_sessions = (
         await db.execute(select(func.count()).select_from(Conversation).where(Conversation.user_id == current_user.id, Conversation.updated_at >= since))

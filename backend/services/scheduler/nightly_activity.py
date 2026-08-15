@@ -20,10 +20,10 @@ from components import (
     NIGHTLY_PLANNING_MAX_TOKENS,
     NIGHTLY_REFLECTION_MAX_TOKENS,
     get_logger,
-    naive_utc_now,
     parse_llm_json,
     safe_json_loads,
     session_scope,
+    utc_now,
 )
 from modules.companion import CompanionExpression, Persona, WardrobeItem
 from modules.conversation import Conversation, Message
@@ -218,13 +218,13 @@ async def resolve_user_timezone(db: AsyncSession, user_id: int) -> str | None:
 
 
 def get_local_day_utc_bounds(now_utc: datetime, tz_str: str) -> tuple[datetime, datetime, datetime, str]:
-    """Calculates user local midnight boundaries represented as naive UTC datetimes."""
+    """Calculates user local midnight boundaries as aware UTC datetimes."""
     zone = ZoneInfo(tz_str)
-    user_now = now_utc.replace(tzinfo=ZoneInfo("UTC")).astimezone(zone)
+    user_now = now_utc.astimezone(zone)
     local_start = datetime(user_now.year, user_now.month, user_now.day, 0, 0, 0, tzinfo=zone)
     local_end = local_start + timedelta(days=1)
-    utc_start = local_start.astimezone(ZoneInfo("UTC")).replace(tzinfo=None)
-    utc_end = local_end.astimezone(ZoneInfo("UTC")).replace(tzinfo=None)
+    utc_start = local_start.astimezone(ZoneInfo("UTC"))
+    utc_end = local_end.astimezone(ZoneInfo("UTC"))
     local_today_str = user_now.strftime("%Y-%m-%d")
     return utc_start, utc_end, user_now, local_today_str
 
@@ -239,7 +239,7 @@ def _local_9am_cron(tz_str: str | None) -> str:
         return "0 1 * * *"
     try:
         zone = ZoneInfo(tz_str)
-        now_local = naive_utc_now().replace(tzinfo=ZoneInfo("UTC")).astimezone(zone)
+        now_local = utc_now().astimezone(zone)
         tomorrow_9am = (now_local + timedelta(days=1)).replace(hour=9, minute=0, second=0, microsecond=0)
         tomorrow_utc = tomorrow_9am.astimezone(ZoneInfo("UTC"))
         return f"{tomorrow_utc.minute} {tomorrow_utc.hour} * * *"
@@ -446,7 +446,7 @@ async def _stage_5_creation(
         img_chain = await resolve_provider_chain(db, user_id, "image_gen")
         image_gen_available = bool(img_chain)
 
-        days_since_last_gift = (naive_utc_now() - last_companion_gift_created_at).days if last_companion_gift_created_at else 999
+        days_since_last_gift = (utc_now() - last_companion_gift_created_at).days if last_companion_gift_created_at else 999
         allow_wardrobe = image_gen_available and (pending_wardrobe_count == 0) and (days_since_last_gift >= NIGHTLY_CREATION_WARDROBE_MIN_INTERVAL_DAYS)
 
     # Build creation prompt
@@ -613,7 +613,7 @@ async def run_nightly_pipeline(user_id: int, reference_utc: datetime | None = No
     day that just ended, so bounds and date label are derived from one instant
     instead of being computed twice and drifting apart.
     """
-    now_utc = reference_utc or naive_utc_now()
+    now_utc = reference_utc or utc_now()
     async with session_scope() as db:
         tz_str = await resolve_user_timezone(db, user_id)
         if not tz_str:

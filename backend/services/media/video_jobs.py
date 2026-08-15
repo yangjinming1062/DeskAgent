@@ -4,7 +4,7 @@ from dataclasses import replace
 from datetime import timedelta
 
 import httpx
-from components import SESSION_LOCAL, SETTINGS, get_logger, naive_utc_now, save_file
+from components import SESSION_LOCAL, SETTINGS, get_logger, save_file, utc_now
 from modules.media import VideoGenJob
 from modules.ws import WSEvent
 from sqlalchemy import select, update
@@ -204,7 +204,7 @@ async def _poll_and_finalize_locked(job_id: int) -> None:
         provider = resolve(ServiceType.video_gen, provider_cfg.provider_name)(provider_cfg)
 
         interval = SETTINGS.video_gen_poll_interval_seconds
-        deadline = naive_utc_now() + timedelta(seconds=SETTINGS.video_gen_max_poll_seconds)
+        deadline = utc_now() + timedelta(seconds=SETTINGS.video_gen_max_poll_seconds)
         while True:
             # Reload the row to honor a concurrent terminal update (e.g. user
             # DELETE on the row, or another worker finalised us first). An
@@ -255,7 +255,7 @@ async def _poll_and_finalize_locked(job_id: int) -> None:
                 return
 
             await _update_job(job_id, status="processing")
-            if naive_utc_now() >= deadline:
+            if utc_now() >= deadline:
                 await _update_job(job_id, status="failed", error_reason="timeout", error_message="polling deadline reached")
                 await _evt("video_gen.failed", {"task_id": str(job_id), "error": "timeout"})
                 return

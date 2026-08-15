@@ -73,12 +73,12 @@ from .functions import (
     coerce_int,
     coerce_non_negative_float,
     coerce_non_negative_int,
-    naive_utc_now,
     parse_llm_json,
     positive_int,
     safe_json_loads,
     tool_error,
     unquote_user_setting,
+    utc_now,
 )
 from .hashing import normalize_sha512, sha256_hex, sha512_b64
 from .logger import get_logger, set_request_user_id, setup_logging
@@ -104,7 +104,7 @@ __all__ = [
     "coerce_int",
     "coerce_non_negative_float",
     "coerce_non_negative_int",
-    "naive_utc_now",
+    "utc_now",
     "parse_llm_json",
     "positive_int",
     "safe_json_loads",

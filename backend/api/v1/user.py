@@ -1,5 +1,5 @@
 from common import get_router
-from components import SETTINGS, apply_partial, get_db, naive_utc_now
+from components import SETTINGS, apply_partial, get_db, utc_now
 from fastapi import Depends, HTTPException, Request, status
 from modules.auth import (
     ActivateRequest,
@@ -50,10 +50,10 @@ async def activate(payload: ActivateRequest, request: Request, db: AsyncSession 
     user = (await db.execute(select(User).where(User.activation_token_hash == token_hash, User.is_active.is_(True)))).scalar_one_or_none()
     if user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="激活码无效。")
-    if not user.can_use or (user.expires_at and user.expires_at.date() < naive_utc_now().date()):
+    if not user.can_use or (user.expires_at and user.expires_at.date() < utc_now().date()):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="该用户已超过有效使用期限，需要续费后才能继续使用。")
 
-    now = naive_utc_now()
+    now = utc_now()
     for record in (await db.execute(select(LoginRecord).where(LoginRecord.user_id == user.id, LoginRecord.is_active.is_(True)))).scalars().all():
         record.is_active = False
         record.logout_at = now
@@ -90,7 +90,7 @@ async def refresh_session(
     payload: RefreshRequest, request: Request, current: tuple[User, LoginRecord] = Depends(get_current_session), db: AsyncSession = Depends(get_db)
 ) -> TokenResponse:
     user, login_record = current
-    now = naive_utc_now()
+    now = utc_now()
 
     # Invalidate old session
     login_record.is_active = False
@@ -121,7 +121,7 @@ async def refresh_session(
 async def logout(current: tuple[User, LoginRecord] = Depends(get_current_session), db: AsyncSession = Depends(get_db)) -> MessageResponse:
     _user, login_record = current
     login_record.is_active = False
-    login_record.logout_at = naive_utc_now()
+    login_record.logout_at = utc_now()
     db.add(login_record)
     await db.commit()
     return MessageResponse(message="已退出登录。")

@@ -5,7 +5,7 @@ from typing import Any
 from urllib.parse import quote
 
 from common import get_router
-from components import SESSION_LOCAL, SETTINGS, STT_MAX_AUDIO_BYTES, TTS_MAX_TEXT_CHARS, get_file_path, get_logger, naive_utc_now, save_file
+from components import SESSION_LOCAL, SETTINGS, STT_MAX_AUDIO_BYTES, TTS_MAX_TEXT_CHARS, get_file_path, get_logger, save_file, utc_now
 from fastapi import Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 from modules.auth import LoginRecord, User, get_current_session
@@ -269,8 +269,8 @@ async def video_gen(
         # Bounded pseudo-sync: poll the DB for status until deadline. Most
         # MiniMax generations complete well within 60s for short clips; for
         # longer ones the caller polls ``GET /video_gen/{id}`` instead.
-        deadline = naive_utc_now() + timedelta(seconds=wait_seconds)
-        while naive_utc_now() < deadline:
+        deadline = utc_now() + timedelta(seconds=wait_seconds)
+        while utc_now() < deadline:
             await asyncio.sleep(2)
             async with SESSION_LOCAL() as db:
                 row = await get_job(db, job.id, user.id)

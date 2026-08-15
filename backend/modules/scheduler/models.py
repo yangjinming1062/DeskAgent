@@ -19,8 +19,8 @@ class CronJob(ModelBase):
     deliver: Mapped[str] = mapped_column(String(64), default="local")
     is_paused: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("FALSE"))
     one_shot: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("FALSE"))
-    next_run_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    next_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     user: Mapped["User"] = relationship(back_populates="cron_jobs")
 

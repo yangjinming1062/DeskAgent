@@ -1,6 +1,6 @@
 import logging
 
-from components import DEFAULT_LANGUAGE, SUPPORTED_LANGUAGES, TOOL_ENFORCE_OFF_VALUES, naive_utc_now
+from components import DEFAULT_LANGUAGE, SUPPORTED_LANGUAGES, TOOL_ENFORCE_OFF_VALUES, utc_now
 from modules.system import AgentPromptConfig
 
 from .affect import COMPANION_OUTFIT_GUIDANCE, build_affect_guidance
@@ -531,7 +531,7 @@ def _should_inject_tool_use_enforcement(setting: str) -> bool:
 
 
 def _format_volatile_header(config: AgentPromptConfig) -> str:
-    now = naive_utc_now()
+    now = utc_now()
     lang = _resolve_language(config.language)
     if lang not in _VOLATILE_LABELS:
         # Unsupported language for the volatile header (the rest of the system

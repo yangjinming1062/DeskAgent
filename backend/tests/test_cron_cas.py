@@ -1,6 +1,6 @@
 from datetime import timedelta
 
-from components import naive_utc_now
+from components import utc_now
 from modules.auth import User
 from modules.scheduler import CronJob
 from sqlalchemy import select
@@ -34,7 +34,7 @@ async def _rows(SessionLocal) -> dict[int, CronJob | None]:
 
 
 async def test_recurring_winner_advances(SessionLocal):
-    now = naive_utc_now()
+    now = utc_now()
     rows = await _seed(SessionLocal, [{"name": "r1", "schedule": "* * * * *", "next_run_at": now - timedelta(minutes=5)}])
 
     winners = await _bulk_cas_advance(rows, now)
@@ -48,7 +48,7 @@ async def test_recurring_winner_advances(SessionLocal):
 
 
 async def test_cas_loser_is_skipped(SessionLocal):
-    now = naive_utc_now()
+    now = utc_now()
     rows = await _seed(SessionLocal, [{"name": "r1", "schedule": "* * * * *", "next_run_at": now - timedelta(minutes=5)}])
 
     # Simulate update_job advancing next_run_at mid-tick: the stale Row no
@@ -63,11 +63,12 @@ async def test_cas_loser_is_skipped(SessionLocal):
     jobs = await _rows(SessionLocal)
 
     assert winners == {}
-    assert jobs[rows[0].id].next_run_at == moved
+    # SQLite reads timestamptz back without tzinfo; PG preserves it.
+    assert jobs[rows[0].id].next_run_at.replace(tzinfo=None) == moved.replace(tzinfo=None)
 
 
 async def test_one_shot_winner_is_deleted(SessionLocal):
-    now = naive_utc_now()
+    now = utc_now()
     rows = await _seed(SessionLocal, [
         {"name": "one", "schedule": "* * * * *", "next_run_at": now - timedelta(minutes=5), "one_shot": True},
         {"name": "rec", "schedule": "* * * * *", "next_run_at": now - timedelta(minutes=5)},
@@ -82,7 +83,7 @@ async def test_one_shot_winner_is_deleted(SessionLocal):
 
 
 async def test_exhausted_schedule_pauses(SessionLocal, monkeypatch):
-    now = naive_utc_now()
+    now = utc_now()
     rows = await _seed(SessionLocal, [{"name": "dead", "schedule": "* * * * *", "next_run_at": now - timedelta(minutes=5)}])
 
     import services.scheduler.cron as cron_mod

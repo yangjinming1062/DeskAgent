@@ -14,8 +14,8 @@ from components import (
     BackgroundTask,
     begin_local_scope,
     get_logger,
-    naive_utc_now,
     session_scope,
+    utc_now,
 )
 from modules.conversation import Conversation, Message
 from modules.memory import Memory
@@ -74,7 +74,7 @@ async def _select_due_jobs() -> list[Row]:
     clause gives a deterministic subset when the ``_MAX_DUE_PER_TICK``
     cap slices a backlog.
     """
-    now = naive_utc_now()
+    now = utc_now()
     async with session_scope() as db:
         return (
             await db.execute(
@@ -128,10 +128,11 @@ async def _bulk_cas_advance(due_jobs: list[Row], now: datetime) -> dict[int, dic
     async with session_scope() as db:
         if recurring:
             # PG: CAST gives asyncpg the parameter type in the CASE branch (it
-            # can't infer from the assignment target). SQLite: no cast — its
-            # CAST applies NUMERIC affinity and truncates the ISO string.
+            # can't infer from the assignment target); the column is
+            # timestamptz so the cast must match. SQLite: no cast — its CAST
+            # applies NUMERIC affinity and truncates the ISO string.
             is_pg = db.bind is not None and db.bind.dialect.name == "postgresql"
-            then = "CAST(:next_{i} AS timestamp)" if is_pg else ":next_{i}"
+            then = "CAST(:next_{i} AS timestamptz)" if is_pg else ":next_{i}"
             next_case = " ".join(f"WHEN :id_{i} THEN {then.format(i=i)}" for i in range(len(recurring)))
             match = ", ".join(f"(:id_{i}, :old_{i}, :sched_{i})" for i in range(len(recurring)))
             params: dict[str, Any] = {}
@@ -241,7 +242,7 @@ async def _tick() -> None:
     open WS dispatcher. Crons stay independent of WS round-trip latency and
     there is no double-fire hazard because the CAS UPDATE serialises winners.
     """
-    now = naive_utc_now()
+    now = utc_now()
     # Memory consolidator runs independently of cron-job dispatch — it must
     # not be gated by ``if not due_jobs`` because installs with no cron jobs
     # would otherwise never trigger consolidation.

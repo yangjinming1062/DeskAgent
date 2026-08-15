@@ -73,6 +73,6 @@ class Message(ModelBase):
     # can read the cutoff date without parsing the content text. Content is
     # still the human-readable version; this column is the structured source.
     summary_date: Mapped[str | None] = mapped_column(String(10), nullable=True, index=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     conversation: Mapped[Conversation] = relationship(back_populates="messages")

@@ -1,4 +1,4 @@
-from components import LOGIN_HEARTBEAT_INTERVAL_SECONDS, get_db, naive_utc_now
+from components import LOGIN_HEARTBEAT_INTERVAL_SECONDS, get_db, utc_now
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy import select
@@ -42,7 +42,7 @@ async def get_current_session(credentials: HTTPAuthorizationCredentials | None =
     if user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="用户不存在或已停用。")
 
-    now = naive_utc_now()
+    now = utc_now()
     if login_record.last_seen_at is None or (now - login_record.last_seen_at).total_seconds() > LOGIN_HEARTBEAT_INTERVAL_SECONDS:
         login_record.last_seen_at = now
         db.add(login_record)

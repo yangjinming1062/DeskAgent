@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 
-from components import SESSION_LOCAL, get_logger, naive_utc_now
+from components import SESSION_LOCAL, get_logger, utc_now
 from modules.memory import Memory
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -29,7 +29,7 @@ _counters: dict[int, _DailyCounters] = {}
 
 
 def _today_key() -> str:
-    return naive_utc_now().strftime("%Y-%m-%d")
+    return utc_now().strftime("%Y-%m-%d")
 
 
 def _get_or_seed(user_id: int) -> _DailyCounters:

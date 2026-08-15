@@ -113,7 +113,7 @@ class AvatarAsset(ModelBase):
     seed_back_url: Mapped[str] = mapped_column(String(2048), default="", server_default=text("''"))
     seed: Mapped[int | None] = mapped_column(Integer, nullable=True)
     active: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("FALSE"), index=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     user: Mapped["User"] = relationship(back_populates="avatar_assets")
 

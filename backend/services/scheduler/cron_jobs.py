@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any
 
-from components import get_logger, naive_utc_now, session_scope
+from components import get_logger, session_scope, utc_now
 from croniter import croniter
 from modules.scheduler import CronJob
 from sqlalchemy import func, select
@@ -15,15 +15,15 @@ MAX_ACTIVE_CRON_JOBS = 10
 
 def _compute_next_run_at(schedule: str, base: datetime) -> datetime | None:
     try:
-        next_dt = croniter(schedule, base).get_next(datetime)
+        # croniter preserves the base's tzinfo — aware in, aware out.
+        return croniter(schedule, base).get_next(datetime)
     except Exception as exc:
         logger.error("Invalid cron expression", extra={"schedule": schedule, "error": str(exc)})
         return None
-    return next_dt.replace(tzinfo=None)
 
 
 def _refresh_schedule(job: CronJob) -> None:
-    next_run = _compute_next_run_at(job.schedule, naive_utc_now())
+    next_run = _compute_next_run_at(job.schedule, utc_now())
     if next_run is None:
         job.is_paused = True
         job.next_run_at = None

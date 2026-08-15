@@ -3,7 +3,7 @@ import contextlib
 from datetime import timedelta
 
 import asyncpg
-from components import BackgroundTask, begin_local_scope, get_logger, naive_utc_now, safe_json_loads, session_scope
+from components import BackgroundTask, begin_local_scope, get_logger, safe_json_loads, session_scope, utc_now
 from fastapi import WebSocket
 from modules.ws import WSEvent
 from sqlalchemy import delete, select
@@ -135,7 +135,7 @@ async def _process_events(wakeup: asyncio.Event):
 
         # GC stale rows past the delivery window first.
         async with session_scope() as db:
-            cutoff = naive_utc_now() - timedelta(seconds=WS_EVENT_MAX_AGE_SECONDS)
+            cutoff = utc_now() - timedelta(seconds=WS_EVENT_MAX_AGE_SECONDS)
             stale_result = await db.execute(delete(WSEvent).where(WSEvent.created_at < cutoff))
             if stale_result.rowcount:
                 logger.info("WS event GC reaped", extra={"reaped": stale_result.rowcount})

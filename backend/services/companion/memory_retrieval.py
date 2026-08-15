@@ -1,8 +1,9 @@
 import math
 import re
+from datetime import UTC
 from typing import Any
 
-from components import get_logger, naive_utc_now
+from components import get_logger, utc_now
 from modules.memory import Memory
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -34,6 +35,10 @@ def cosine_similarity(vec_a: list[float] | None, vec_b: list[float] | None) -> f
 def _compute_time_decay(updated_at: Any, now: Any) -> float:
     if not updated_at or not now:
         return 1.0
+    # SQLite reads back tz-aware columns without tzinfo (PG does); both
+    # sides are UTC by convention, so re-attach before subtracting.
+    if updated_at.tzinfo is None:
+        updated_at = updated_at.replace(tzinfo=UTC)
     delta_days = max(0.0, (now - updated_at).total_seconds() / 86400.0)
     return TIME_DECAY_FLOOR + (1.0 - TIME_DECAY_FLOOR) * math.exp(-TIME_DECAY_LAMBDA * delta_days)
 
@@ -134,7 +139,7 @@ async def retrieve_hybrid_memories(
     dense_ranks = {r.id: rank + 1 for rank, r in enumerate(dense_candidates)}
     sparse_ranks = {r.id: rank + 1 for rank, r in enumerate(sparse_candidates)}
 
-    now = naive_utc_now()
+    now = utc_now()
     results = []
 
     for mem_id, mem in all_memories.items():

@@ -21,5 +21,5 @@ class UpdateVersion(ModelBase):
     runner_size: Mapped[int | None] = mapped_column(Integer, nullable=True)
     runner_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default=text("TRUE"), index=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     created_by: Mapped[str | None] = mapped_column(String(128), nullable=True)

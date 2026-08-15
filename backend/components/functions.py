@@ -61,9 +61,9 @@ def tool_error(msg: str) -> str:
     return json.dumps({"success": False, "error": msg}, ensure_ascii=False)
 
 
-def naive_utc_now() -> datetime:
-    """Naive UTC ``datetime`` — matches the DB convention (no tzinfo in columns)."""
-    return datetime.now(UTC).replace(tzinfo=None)
+def utc_now() -> datetime:
+    """Timezone-aware UTC ``datetime`` — matches the DB convention (timestamptz columns)."""
+    return datetime.now(UTC)
 
 
 def as_bool(value: Any, default: bool) -> bool:

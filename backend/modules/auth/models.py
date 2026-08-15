@@ -21,7 +21,7 @@ class User(ModelBase, TimestampMixin):
     activation_token_hash: Mapped[str | None] = mapped_column(String(128), unique=True, index=True, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default=text("TRUE"))
     can_use: Mapped[bool] = mapped_column(Boolean, default=True, server_default=text("TRUE"))
-    expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     login_records: Mapped[list["LoginRecord"]] = relationship(back_populates="user", passive_deletes=True)
     model_config: Mapped["UserModelConfig | None"] = relationship(back_populates="user", uselist=False, passive_deletes=True)
@@ -43,9 +43,9 @@ class LoginRecord(ModelBase):
     ip_address: Mapped[str] = mapped_column(String(64), default="")
     user_agent: Mapped[str] = mapped_column(Text, default="")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default=text("TRUE"), index=True)
-    login_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
-    logout_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    login_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+    logout_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     user: Mapped[User] = relationship(back_populates="login_records")
 
@@ -62,8 +62,8 @@ class AdminSession(ModelBase):
     ip_address: Mapped[str] = mapped_column(String(64), default="")
     user_agent: Mapped[str] = mapped_column(Text, default="")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default=text("TRUE"), index=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
-    revoked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class UserModelConfig(ModelBase, TimestampMixin):

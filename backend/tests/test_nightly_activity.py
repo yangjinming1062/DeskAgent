@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 import json
 
 import pytest
@@ -640,7 +640,7 @@ async def test_eligibility_and_tick_trigger(seeded, monkeypatch):
     SessionLocal = seeded
     # User 1001 is in Asia/Shanghai (UTC+8).
     # If UTC now is 2026-08-12 18:00:00, Beijing local time is 2026-08-13 02:00:00 (in [0, 5) window).
-    simulated_now_utc = datetime(2026, 8, 12, 18, 0, 0)
+    simulated_now_utc = datetime(2026, 8, 12, 18, 0, 0, tzinfo=UTC)
 
     # Clean cron scan/run throttle
     cron._LAST_NIGHTLY_SCAN = 0.0
@@ -659,7 +659,7 @@ async def test_eligibility_and_tick_trigger(seeded, monkeypatch):
                     conversation_id=conv.id,
                     role="user",
                     content=f"Message {i}",
-                    created_at=datetime(2026, 8, 11, 17, 30, 0),
+                    created_at=datetime(2026, 8, 11, 17, 30, 0, tzinfo=UTC),
                 )
             )
         await db.commit()
@@ -703,7 +703,7 @@ async def test_eligibility_and_tick_trigger(seeded, monkeypatch):
                     conversation_id=conv.id,
                     role="user",
                     content=f"Few msg {i}",
-                    created_at=datetime(2026, 8, 11, 17, 30, 0),
+                    created_at=datetime(2026, 8, 11, 17, 30, 0, tzinfo=UTC),
                 )
             )
         await db.commit()
@@ -732,7 +732,7 @@ async def test_eligibility_gate_and_pipeline_read_the_same_day(seeded, monkeypat
         await db.refresh(conv)
         for i in range(NIGHTLY_MIN_MESSAGES_TODAY):
             # 2026-08-12 01:30 UTC == 09:30 Beijing on 2026-08-12.
-            db.add(Message(conversation_id=conv.id, role="user", content=f"Message {i}", created_at=datetime(2026, 8, 12, 1, 30, 0)))
+            db.add(Message(conversation_id=conv.id, role="user", content=f"Message {i}", created_at=datetime(2026, 8, 12, 1, 30, 0, tzinfo=UTC)))
         await db.commit()
 
     seen_windows: list[tuple] = []
@@ -754,7 +754,7 @@ async def test_eligibility_gate_and_pipeline_read_the_same_day(seeded, monkeypat
 
     # 2026-08-12 18:00 UTC == 2026-08-13 02:00 Beijing (inside the 0–5 window),
     # so the day that just ended is 2026-08-12.
-    await cron._maybe_run_autonomous_activity(datetime(2026, 8, 12, 18, 0, 0))
+    await cron._maybe_run_autonomous_activity(datetime(2026, 8, 12, 18, 0, 0, tzinfo=UTC))
 
     # The pipeline got far enough to resolve its own window, and it resolved to
     # the same local day the gate counted.
