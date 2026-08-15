@@ -7,7 +7,7 @@
 **职责**：
 - 桌面精灵 3D 实时渲染（Three.js + 透明置顶窗口）+ 陪伴式交互 UI（chat / voice call / onboarding / settings）
 - 登录鉴权与用户凭证加密落盘（safeStorage）
-- 本地 WebSocket 服务端与 Runner 进程生命周期管理
+- 本地 OS IPC 服务端（命名管道 / UDS）与 Runner 进程生命周期管理
 - 双向工具调用路由与反向 RPC 代理中转
 - 统一自更新（Electron 二进制 + Runner wheel，两阶段契约）
 - **disturbance_tier 的唯一权威**：持有用户偏好 + 活动上下文，独立计算 effective 值并单向推 Backend

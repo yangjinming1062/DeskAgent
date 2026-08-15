@@ -9,7 +9,7 @@
 | 链路 | 方向 | 传输 | 鉴权 | 见 |
 |------|------|------|------|----|
 | **Backend ↔ Client** | 双向 | WebSocket 长连接 (`/api/chat/ws?token=<jwt>`) | 用户 JWT（query string） | §1 |
-| **Client ↔ Runner** | 双向 | 本地环回 WebSocket (`ws://127.0.0.1:<port>/rpc`) | 127.0.0.1 限制 + 动态端口 | §2 |
+| **Client ↔ Runner** | 双向 | 本地 OS IPC（Windows 命名管道 / macOS UDS）承载 WebSocket 帧 | 每次启动握手 token（失败 HTTP 401） | §2 |
 | **Runner → Client (反向 RPC)** | Runner → Client → Backend | 嵌套在 §2 上,经 Client 转发到 `/api/llm/completion` | Client JWT | §3 |
 
 **信封格式**:
@@ -189,10 +189,11 @@ WS JSON-RPC 错误使用标准 JSON-RPC 2.0 错误码（`-32700` 到 `-32603`）
 
 ### 2.1 链路特性
 
-- Runner **主动**连 Client 提供的 WS（`ws://127.0.0.1:<port>/rpc`）,启动参数 `--desktop-ws`。
+- Runner **主动**连 Client 提供的 IPC 端点（Windows 命名管道 `\\.\pipe\deskagent-runner-<pid>` / macOS Unix domain socket `$DESKAGENT_HOME/runner-<pid>.sock`,权限 0600）,启动参数 `--desktop-endpoint <path>` 与 `--desktop-auth <token>`。
+- 端点路径与 token 由 Client **单向下发**：经启动参数注入,并写入 `$DESKAGENT_HOME/desktop-endpoint.json`（`{"transport","path","pid","token","timestamp"}`）；Runner 重连间重读该文件,以在 Client 重启后拾取新端点与新 token。
 - 启动后发 `runner_ready` 握手通知,Client 据此在握手阶段决定是否暴露语音通话 / 唤醒词 / 主动陪伴等依赖 OS 能力的功能。
-- 端口是**动态高位端口**,由 Client 主进程分配并注入 Runner 启动参数。
-- 限定 `127.0.0.1`——不接受外部接口连入。
+- 鉴权：WebSocket upgrade 请求须携带 `X-DeskAgent-Auth: <token>` 头；校验失败 Client 直接回 HTTP 401,不完成 WS 握手。Runner 收到 401 后丢弃内存中缓存的端点与 token、改为等待重读 endpoint 文件（携带陈旧 token 重试必然再被拒）。token 为 Client 每次 bridge 启动新生成的 256-bit 随机值,不是 Backend 凭据。
+- 安全模型：Windows 命名管道命名空间对本机进程可枚举、且 libuv 不暴露自定义 DACL 接口——token 是该侧实际闸门；macOS 侧 0600 socket 为主闸门、token 为纵深防御。OS IPC 不经网络栈,无任何端口监听面。
 
 ### 2.2 RPC 方法清单
 
@@ -312,7 +313,7 @@ Client 是配置的唯一拥有者,经此方法把完整配置 dict 推送给 Ru
 ## 3. 反向 RPC 桥接（Runner 借大脑）
 
 **核心约束**:
-- Runner **零凭证运行**,不持有任何 Backend Token;所有出站 LLM 请求必须向上借道 Client。
+- Runner **零凭证运行**,不持有任何 Backend Token;所有出站 LLM 请求必须向上借道 Client。本地 IPC 链路的握手 token 只守 Client↔Runner 之间,不是 Backend 凭据,不参与任何 Backend 请求的鉴权。
 - 速率守卫：Client 转发前统计单会话请求次数与载荷大小（硬上限 200 帧 / 1MB）,防止 Runner 工具逻辑失控刷爆 LLM 额度。
 
 **链路**:

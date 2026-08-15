@@ -24,8 +24,10 @@ import contextlib
 import ctypes
 import json
 import os
+import tempfile
 import time
 import uuid
+from pathlib import Path
 
 import pytest
 import websockets
@@ -105,6 +107,33 @@ if IS_WINDOWS:
 
 def _make_endpoint(path: str, token: str) -> DesktopEndpoint:
     return DesktopEndpoint(transport=EXPECTED_TRANSPORT, path=path, token=token)
+
+
+class SessionWsAdapter:
+    """Websockets-like surface (send + async iteration) over a FakeDesktop session.
+
+    Shared with the protocol/e2e suites so their ``_Peer`` dispatchers can
+    drive either transport unchanged.
+    """
+
+    def __init__(self, session) -> None:
+        self._session = session
+
+    async def send(self, payload) -> None:
+        text = (
+            payload.decode("utf-8", "replace")
+            if isinstance(payload, (bytes, bytearray))
+            else payload
+        )
+        await self._session.send(text)
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self) -> str:
+        # Effectively-unbounded wait: teardown cancels the peer task, which
+        # is how iteration ends in tests.
+        return await self._session.next_message(timeout_s=1e9)
 
 
 if IS_WINDOWS:
@@ -257,6 +286,14 @@ if IS_WINDOWS:
                 except asyncio.CancelledError:
                     pass
 
+        async def abort(self) -> None:
+            """Tear the transport down without the close handshake (peer drop)."""
+            if self._pump is not None:
+                self._pump.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await self._pump
+            await self._stream.close()
+
         async def close(self, code: int = 1000, reason: str = "") -> None:
             if self._protocol.state is State.OPEN:
                 self._protocol.send_close(code, reason)
@@ -269,28 +306,47 @@ if IS_WINDOWS:
             await self._stream.close()
 
     class FakeDesktop:
-        """Named-pipe Desktop double (Windows): ctypes pipe + sans-I/O server."""
+        """Named-pipe Desktop double (Windows): ctypes pipe + sans-I/O server.
 
-        def __init__(self):
-            self.path = "\\\\.\\pipe\\deskagent-test-" + uuid.uuid4().hex[:12]
-            self.token = uuid.uuid4().hex + uuid.uuid4().hex
+        ``path``/``token`` overrides exist for reconnect tests that rebind a
+        fresh server to the pipe the runner already knows about. ``accept``
+        loops instances like Node/libuv does: a rejected handshake or a
+        dropped session leaves a fresh listening instance for the client's
+        next attempt.
+        """
+
+        def __init__(self, *, path: str | None = None, token: str | None = None):
+            self.path = path or ("\\\\.\\pipe\\deskagent-test-" + uuid.uuid4().hex[:12])
+            self.token = token or (uuid.uuid4().hex + uuid.uuid4().hex)
             self._handle = _create_pipe(self.path)
+            self._active_session: _PipeSession | None = None
 
         async def accept(self) -> _PipeSession:
-            if not await asyncio.to_thread(_listen, self._handle):
-                raise OSError("ConnectNamedPipe failed")
-            handle = self._handle
-            # _PipeStream owns the handle from here on; forget our copy so
-            # cleanup never double-closes.
-            self._handle = None
-            stream = _PipeStream(handle)
-            await stream.start()
-            session = _PipeSession(stream, expect_token=self.token)
-            if not await session.handshake():
-                raise ConnectionError("client rejected")
-            return session
+            while True:
+                if self._handle is None:
+                    self._handle = _create_pipe(self.path)
+                if not await asyncio.to_thread(_listen, self._handle):
+                    raise OSError("ConnectNamedPipe failed")
+                handle, self._handle = self._handle, None
+                # _PipeStream owns the handle from here on; our copy is
+                # dropped so cleanup never double-closes.
+                stream = _PipeStream(handle)
+                await stream.start()
+                session = _PipeSession(stream, expect_token=self.token)
+                if await session.handshake():
+                    self._active_session = session
+                    return session
+                # Rejected (HTTP 401): the loop re-creates a listening
+                # instance so the client's retry has somewhere to land.
 
         async def close(self) -> None:
+            session, self._active_session = self._active_session, None
+            if session is not None:
+                # Abort the accepted session's transport — otherwise the
+                # ghost session keeps the pipe open and the client never
+                # sees the drop.
+                with contextlib.suppress(Exception):
+                    await session.abort()
             if self._handle is not None:
                 _k32.CancelIoEx(self._handle, None)
                 _k32.CloseHandle(self._handle)
@@ -332,9 +388,12 @@ else:
     class FakeDesktop:
         """UDS Desktop double (macOS): websockets.serve — independent implementation."""
 
-        def __init__(self, tmp_path):
-            self.path = str(tmp_path / "runner.sock")
-            self.token = uuid.uuid4().hex + uuid.uuid4().hex
+        def __init__(
+            self, tmp_path=None, *, path: str | None = None, token: str | None = None
+        ):
+            base = tmp_path if tmp_path is not None else Path(tempfile.gettempdir())
+            self.path = path or str(base / ("runner-" + uuid.uuid4().hex[:8] + ".sock"))
+            self.token = token or (uuid.uuid4().hex + uuid.uuid4().hex)
             self._sessions: asyncio.Queue[_MacSession] = asyncio.Queue()
             self._server = None
 
@@ -386,6 +445,13 @@ async def desktop(tmp_path):
             await fake.close()
 
 
+def make_peer_endpoint(fake) -> DesktopEndpoint:
+    """DesktopEndpoint for a FakeDesktop, on this platform's transport."""
+    return DesktopEndpoint(
+        transport=EXPECTED_TRANSPORT, path=fake.path, token=fake.token
+    )
+
+
 async def _connect(fake):
     """Connect the production client and complete the server-side handshake."""
     task = asyncio.create_task(fake.accept())
@@ -412,7 +478,9 @@ async def test_auth_rejected_with_http_401(desktop):
     bad = DesktopEndpoint(
         transport=EXPECTED_TRANSPORT, path=desktop.path, token="0" * 128
     )
-    # Windows: consume the server side so the raw 401 actually gets written.
+    # Windows: consume the server side so the raw 401 actually gets written
+    # (FakeDesktop loops a fresh instance after the rejection, so the accept
+    # task never completes on its own — cancel it once the 401 is through).
     # macOS: websockets answers 401 in process_request before any handler
     # runs, so there is nothing to accept.
     accept_task = asyncio.create_task(desktop.accept()) if IS_WINDOWS else None
@@ -420,7 +488,8 @@ async def test_auth_rejected_with_http_401(desktop):
         await connect_desktop(bad)
     assert excinfo.value.response.status_code == 401
     if accept_task is not None:
-        with contextlib.suppress(ConnectionError, OSError):
+        accept_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
             await accept_task
 
 

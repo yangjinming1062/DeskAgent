@@ -71,47 +71,17 @@ if IS_WINDOWS:
     from ctypes import wintypes
 
     _kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-    _kernel32.CreateFileW.argtypes = [
-        ctypes.c_wchar_p,
-        wintypes.DWORD,
-        wintypes.DWORD,
-        ctypes.c_void_p,
-        wintypes.DWORD,
-        wintypes.DWORD,
-        ctypes.c_void_p,
-    ]
+    _kernel32.CreateFileW.argtypes = [ctypes.c_wchar_p, wintypes.DWORD, wintypes.DWORD, ctypes.c_void_p, wintypes.DWORD, wintypes.DWORD, ctypes.c_void_p]
     _kernel32.CreateFileW.restype = ctypes.c_void_p
     _kernel32.WaitNamedPipeW.argtypes = [ctypes.c_wchar_p, wintypes.DWORD]
     _kernel32.WaitNamedPipeW.restype = wintypes.BOOL
-    _kernel32.ReadFile.argtypes = [
-        wintypes.HANDLE,
-        ctypes.c_void_p,
-        wintypes.DWORD,
-        ctypes.POINTER(wintypes.DWORD),
-        ctypes.c_void_p,
-    ]
+    _kernel32.ReadFile.argtypes = [wintypes.HANDLE, ctypes.c_void_p, wintypes.DWORD, ctypes.POINTER(wintypes.DWORD), ctypes.c_void_p]
     _kernel32.ReadFile.restype = wintypes.BOOL
-    _kernel32.WriteFile.argtypes = [
-        wintypes.HANDLE,
-        ctypes.c_void_p,
-        wintypes.DWORD,
-        ctypes.POINTER(wintypes.DWORD),
-        ctypes.c_void_p,
-    ]
+    _kernel32.WriteFile.argtypes = [wintypes.HANDLE, ctypes.c_void_p, wintypes.DWORD, ctypes.POINTER(wintypes.DWORD), ctypes.c_void_p]
     _kernel32.WriteFile.restype = wintypes.BOOL
-    _kernel32.GetOverlappedResult.argtypes = [
-        wintypes.HANDLE,
-        ctypes.c_void_p,
-        ctypes.POINTER(wintypes.DWORD),
-        wintypes.BOOL,
-    ]
+    _kernel32.GetOverlappedResult.argtypes = [wintypes.HANDLE, ctypes.c_void_p, ctypes.POINTER(wintypes.DWORD), wintypes.BOOL]
     _kernel32.GetOverlappedResult.restype = wintypes.BOOL
-    _kernel32.CreateEventW.argtypes = [
-        ctypes.c_void_p,
-        wintypes.BOOL,
-        wintypes.BOOL,
-        ctypes.c_wchar_p,
-    ]
+    _kernel32.CreateEventW.argtypes = [ctypes.c_void_p, wintypes.BOOL, wintypes.BOOL, ctypes.c_wchar_p]
     _kernel32.CreateEventW.restype = ctypes.c_void_p
     _kernel32.CancelIoEx.argtypes = [wintypes.HANDLE, ctypes.c_void_p]
     _kernel32.CancelIoEx.restype = wintypes.BOOL
@@ -121,13 +91,7 @@ if IS_WINDOWS:
     _INVALID_HANDLE = ctypes.c_void_p(-1).value
 
     class _OVERLAPPED(ctypes.Structure):
-        _fields_ = [
-            ("Internal", ctypes.c_void_p),
-            ("InternalHigh", ctypes.c_void_p),
-            ("Offset", wintypes.DWORD),
-            ("OffsetHigh", wintypes.DWORD),
-            ("hEvent", wintypes.HANDLE),
-        ]
+        _fields_ = [("Internal", ctypes.c_void_p), ("InternalHigh", ctypes.c_void_p), ("Offset", wintypes.DWORD), ("OffsetHigh", wintypes.DWORD), ("hEvent", wintypes.HANDLE)]
 
     _GENERIC_READ_WRITE = 0xC0000000
     _OPEN_EXISTING = 3
@@ -174,25 +138,16 @@ def read_endpoint() -> DesktopEndpoint | None:
         # os.kill(pid, 0): latter is unsafe on Windows (bpo-14484).
         if isinstance(pid, int) and pid > 0:
             if not pid_exists(pid):
-                logger.debug(
-                    "Desktop PID %s is gone, ignoring stale endpoint file", pid
-                )
+                logger.debug("Desktop PID %s is gone, ignoring stale endpoint file", pid)
                 return None
-        return DesktopEndpoint(
-            transport=transport,
-            path=path,
-            token=token,
-            pid=pid if isinstance(pid, int) else None,
-        )
+        return DesktopEndpoint(transport=transport, path=path, token=token, pid=pid if isinstance(pid, int) else None)
     except Exception:
         return None
 
 
 if IS_WINDOWS:
 
-    def _connect_pipe_handle(
-        path: str, *, timeout_s: float = _PIPE_CONNECT_TIMEOUT_S
-    ) -> int:
+    def _connect_pipe_handle(path: str, *, timeout_s: float = _PIPE_CONNECT_TIMEOUT_S) -> int:
         """Open an overlapped client handle to the BYTE-mode pipe, tolerating races.
 
         Two Windows-specific races retry until the deadline:
@@ -209,15 +164,7 @@ if IS_WINDOWS:
         deadline = time.monotonic() + timeout_s
         last_error: int | None = None
         while time.monotonic() < deadline:
-            handle = _kernel32.CreateFileW(
-                path,
-                _GENERIC_READ_WRITE,
-                0,
-                None,
-                _OPEN_EXISTING,
-                _FILE_FLAG_OVERLAPPED,
-                None,
-            )
+            handle = _kernel32.CreateFileW(path, _GENERIC_READ_WRITE, 0, None, _OPEN_EXISTING, _FILE_FLAG_OVERLAPPED, None)
             if handle and handle != _INVALID_HANDLE:
                 return handle
             last_error = ctypes.get_last_error()
@@ -228,9 +175,7 @@ if IS_WINDOWS:
             else:
                 raise OSError(last_error, f"CreateFileW({path!r}) failed")
         assert last_error is not None
-        raise TimeoutError(
-            f"named pipe {path!r} not connectable within {timeout_s}s (winerror {last_error})"
-        )
+        raise TimeoutError(f"named pipe {path!r} not connectable within {timeout_s}s (winerror {last_error})")
 
     class _PipeStream:
         """Asyncio duplex stream over an overlapped named-pipe handle.
@@ -254,9 +199,7 @@ if IS_WINDOWS:
             self._thread: threading.Thread | None = None
 
         async def start(self) -> None:
-            self._thread = threading.Thread(
-                target=self._read_pump, name="desktop-pipe-reader", daemon=True
-            )
+            self._thread = threading.Thread(target=self._read_pump, name="desktop-pipe-reader", daemon=True)
             self._thread.start()
 
         def _read_once(self) -> bytes | None:
@@ -268,22 +211,11 @@ if IS_WINDOWS:
             if not overlapped.hEvent:
                 return None
             try:
-                ok = _kernel32.ReadFile(
-                    self._handle,
-                    buf,
-                    _READ_CHUNK,
-                    ctypes.byref(count),
-                    ctypes.byref(overlapped),
-                )
+                ok = _kernel32.ReadFile(self._handle, buf, _READ_CHUNK, ctypes.byref(count), ctypes.byref(overlapped))
                 if not ok:
                     if ctypes.get_last_error() != _WIN_ERROR_IO_PENDING:
                         return None
-                    ok = _kernel32.GetOverlappedResult(
-                        self._handle,
-                        ctypes.byref(overlapped),
-                        ctypes.byref(count),
-                        True,
-                    )
+                    ok = _kernel32.GetOverlappedResult(self._handle, ctypes.byref(overlapped), ctypes.byref(count), True)
                     if not ok:
                         return None
                 return buf.raw[: count.value]
@@ -325,27 +257,13 @@ if IS_WINDOWS:
             if not overlapped.hEvent:
                 raise OSError("CreateEventW failed for pipe write")
             try:
-                ok = _kernel32.WriteFile(
-                    self._handle,
-                    buf,
-                    len(data),
-                    ctypes.byref(count),
-                    ctypes.byref(overlapped),
-                )
+                ok = _kernel32.WriteFile(self._handle, buf, len(data), ctypes.byref(count), ctypes.byref(overlapped))
                 if not ok:
                     error = ctypes.get_last_error()
                     if error != _WIN_ERROR_IO_PENDING:
                         raise OSError(error, "WriteFile to desktop pipe failed")
-                    if not _kernel32.GetOverlappedResult(
-                        self._handle,
-                        ctypes.byref(overlapped),
-                        ctypes.byref(count),
-                        True,
-                    ):
-                        raise OSError(
-                            ctypes.get_last_error(),
-                            "GetOverlappedResult for pipe write failed",
-                        )
+                    if not _kernel32.GetOverlappedResult(self._handle, ctypes.byref(overlapped), ctypes.byref(count), True):
+                        raise OSError(ctypes.get_last_error(), "GetOverlappedResult for pipe write failed")
             finally:
                 _kernel32.CloseHandle(overlapped.hEvent)
 
@@ -362,9 +280,7 @@ if IS_WINDOWS:
                 # Join off-loop so a wedged reader cannot stall teardown; the
                 # daemon flag is the backstop if the join times out.
                 with contextlib.suppress(asyncio.TimeoutError):
-                    await asyncio.wait_for(
-                        self._loop.run_in_executor(None, thread.join, 2.0), 2.5
-                    )
+                    await asyncio.wait_for(self._loop.run_in_executor(None, thread.join, 2.0), 2.5)
             async with self._write_lock:  # wait out any in-flight executor write
                 _kernel32.CloseHandle(self._handle)
 
@@ -373,9 +289,7 @@ else:
     class _UnixStream:
         """Adapter giving macOS UDS streams the same surface as ``_PipeStream``."""
 
-        def __init__(
-            self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter
-        ) -> None:
+        def __init__(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
             self._reader = reader
             self._writer = writer
             self._closed = False
@@ -424,9 +338,7 @@ class DesktopConnection:
 
     def __init__(self, stream, token: str) -> None:
         self._stream = stream
-        self._protocol = ClientProtocol(
-            parse_uri(_DUMMY_URI), max_size=MAX_MESSAGE_BYTES
-        )
+        self._protocol = ClientProtocol(parse_uri(_DUMMY_URI), max_size=MAX_MESSAGE_BYTES)
         self._token = token
         self._messages: asyncio.Queue[str | None] = asyncio.Queue()
         self._recv_task: asyncio.Task[None] | None = None
@@ -453,22 +365,11 @@ class DesktopConnection:
                 # the body-less response — hand EOF to the protocol and
                 # look for the Response event before giving up.
                 self._protocol.receive_eof()
-                response = next(
-                    (
-                        e
-                        for e in self._protocol.events_received()
-                        if isinstance(e, Response)
-                    ),
-                    None,
-                )
+                response = next((e for e in self._protocol.events_received() if isinstance(e, Response)), None)
                 if response is None:
-                    raise ConnectionError(
-                        "Desktop closed the IPC stream during handshake"
-                    )
+                    raise ConnectionError("Desktop closed the IPC stream during handshake")
                 self._process_handshake_response(response)
-                self._recv_task = asyncio.create_task(
-                    self._pump(), name="desktop-ipc-recv"
-                )
+                self._recv_task = asyncio.create_task(self._pump(), name="desktop-ipc-recv")
                 return
             self._protocol.receive_data(chunk)
             await self._drain()
@@ -476,13 +377,9 @@ class DesktopConnection:
                 if not isinstance(event, Response):
                     # Data frames may not legally precede the handshake
                     # response; anything else is a protocol violation.
-                    raise ConnectionError(
-                        f"unexpected event during handshake: {event!r}"
-                    )
+                    raise ConnectionError(f"unexpected event during handshake: {event!r}")
                 self._process_handshake_response(event)
-                self._recv_task = asyncio.create_task(
-                    self._pump(), name="desktop-ipc-recv"
-                )
+                self._recv_task = asyncio.create_task(self._pump(), name="desktop-ipc-recv")
                 return
 
     def _process_handshake_response(self, response: Response) -> None:
@@ -599,9 +496,7 @@ class DesktopConnection:
         await self.close()
 
 
-async def connect_desktop(
-    endpoint: DesktopEndpoint, *, open_timeout_s: float = 8.0
-) -> DesktopConnection:
+async def connect_desktop(endpoint: DesktopEndpoint, *, open_timeout_s: float = 8.0) -> DesktopConnection:
     """Connect to the Desktop over its native IPC endpoint and authenticate.
 
     Raises ``websockets.exceptions.InvalidStatus`` when the upgrade is
@@ -621,12 +516,4 @@ async def connect_desktop(
     return connection
 
 
-__all__ = [
-    "DesktopConnection",
-    "DesktopEndpoint",
-    "HANDSHAKE_AUTH_HEADER",
-    "PIPE_TRANSPORT",
-    "UNIX_TRANSPORT",
-    "connect_desktop",
-    "read_endpoint",
-]
+__all__ = ["DesktopConnection", "DesktopEndpoint", "HANDSHAKE_AUTH_HEADER", "PIPE_TRANSPORT", "UNIX_TRANSPORT", "connect_desktop", "read_endpoint"]

@@ -34,7 +34,7 @@ DeskAgent 是一个**根据用户描述定制的、具有专属形象的陪伴�
 │  • 统一自更新             │
 │  Windows / macOS 原生 │
 └────────────┬─────────────┘
-             │  本地 WebSocket (127.0.0.1:0 动态端口)
+             │  本地 OS IPC (命名管道/UDS) 承载 WebSocket 帧
              │  JSON-RPC 2.0 + 反向 RPC (request_llm)
              ▼
 ┌──────────────────────────┐

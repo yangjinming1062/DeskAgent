@@ -1,6 +1,6 @@
 # Runner
 
-本地手脚——纯粹的工具执行器，承载伙伴"能帮用户做的事"。以 uv build wheel 形式发布，安装器在 `$DESKAGENT_HOME/runner/.venv` 创建 venv 并安装；Client 直接 spawn venv Python 调用 `server.py`，通过 WebSocket 接收 JSON-RPC 2.0 工具调用指令并在用户机器上执行。
+本地手脚——纯粹的工具执行器，承载伙伴"能帮用户做的事"。以 uv build wheel 形式发布，安装器在 `$DESKAGENT_HOME/runner/.venv` 创建 venv 并安装；Client 直接 spawn venv Python 调用 `server.py`，通过本地 OS IPC（Windows 命名管道 / macOS UDS，承载 WebSocket 帧）接收 JSON-RPC 2.0 工具调用指令并在用户机器上执行。
 
 Runner 不感知"伙伴"语义——终端、文件、浏览器、代码执行等底层能力 100% 保留，伙伴人格完全由 Backend 承载、伙伴形象完全由 Client 渲染。
 
@@ -29,7 +29,7 @@ Runner 不感知"伙伴"语义——终端、文件、浏览器、代码执行�
 
 ```
 runner/
-├── server.py              # 唯一 WebSocket 入口；分发所有 RPC 方法
+├── server.py              # 唯一 IPC 入口；分发所有 RPC 方法
 ├── tools/                 # 工具子包，按 domain 拆分
 │   ├── terminal/          # 终端执行（含 environment/ 子包承载共享态）
 │   ├── files/             # 文件读写 + 跨域写保护
@@ -42,16 +42,16 @@ runner/
 │   ├── system/            # 系统感知（焦点 / 空闲 / 屏幕 / 麦克风）
 │   ├── toolsets/          # 工具集启用/禁用配置
 │   └── security/          # Tirith 扫描 / 路径白名单
-└── utils/                 # 纯 helper 层：路径 / 配置 / 脱敏 / 文件安全 / PID / 反向 RPC / capabilities
+└── utils/                 # 纯 helper 层：路径 / 配置 / 脱敏 / 文件安全 / PID / 反向 RPC / capabilities / Desktop IPC 传输
 ```
 
 依赖方向：`utils/` ← `tools/` ← `server.py`，`utils/` 不反向依赖任何工具；`tools/` 之间跨包直接 import 共享子包（如 `terminal/environment/`）。
 
-**Wheel 产物**：`dist/deskagent-agent-*.whl`。Client spawn `$DESKAGENT_HOME/runner/.venv/{bin/python,Scripts/python.exe} $DESKAGENT_HOME/runner/server.py --desktop-ws <ws-url>`。安装布局详 [installer/README.md §10](../installer/README.md)。
+**Wheel 产物**：`dist/deskagent-agent-*.whl`。Client spawn `$DESKAGENT_HOME/runner/.venv/{bin/python,Scripts/python.exe} $DESKAGENT_HOME/runner/server.py --desktop-endpoint <path> --desktop-auth <token>`。安装布局详 [installer/README.md §10](../installer/README.md)。
 
 ## 4. 关键设计决策
 
-- **WebSocket 而非 stdio 重定向**：（1）避免 C 库底层日志或 Python `print` 污染 stdin/stdout 帧；（2）全双工并发，按 `id` 异步匹配响应，避免进程读写阻塞与全局锁。**为什么不直接 stdin/stdout**：PTY/C 库会与控制台帧冲突；异步 RPC 也会被全局锁退化为串行。
+- **OS IPC + WebSocket 帧而非 stdio 重定向**：Client 监听命名管道（Windows）/ UDS（macOS），Runner 主动连入，链路承载 WebSocket 帧协议。（1）避免 C 库底层日志或 Python `print` 污染 stdin/stdout 帧；（2）全双工并发，按 `id` 异步匹配响应，避免进程读写阻塞与全局锁；（3）零端口暴露——端点路径与每次启动的握手 token 由 Client 单向下发（启动参数 + `desktop-endpoint.json`），Runner 重连间重读文件跟随 Client 重启，401 拒绝即丢弃缓存端点等待新 token。**为什么不直接 stdin/stdout**：PTY/C 库会与控制台帧冲突；异步 RPC 也会被全局锁退化为串行。
 - **`runner_ready` capabilities 字段运行时探测**：`utils.capabilities.snapshot()` 真正枚举设备、调底层 API；不依赖 `import` 是否成功。**为什么不用静态 extra 标记**：依赖可能在 import 时报警但运行时仍可用，反过来亦然；运行时探测才是真值。
 - **环境共享态下沉到 `tools/terminal/environment/` 子包**：`file_tools` / `code_execution_tool` 跨包共享同一批 env 实例，绕开含命令处理 + 安全审批逻辑的 `terminal_tool` 避免循环依赖。`terminal/__init__.py` 用 `__getattr__` 惰性加载 `terminal_tool`，让 `import tools.terminal` 不触发循环环。
 - **reverse RPC 速率守卫**：Client 转发前统计单会话请求次数与载荷大小（硬上限 200 帧 / 1MB），防止 Runner 工具逻辑失控刷爆 LLM 额度。**为什么是 Client 而非 Backend**：Client 是流量入口，能在 IPC 边界做最严格的拒绝。
@@ -82,6 +82,6 @@ runner/
 
 | 限制 | 说明 |
 |------|------|
-| **TTY/stdin 不可用** | 所有 RPC 经 WS；任何 stdin 重定向或直接 console 输入都会与 C 库底层日志污染 WS 帧 |
+| **TTY/stdin 不可用** | 所有 RPC 经本地 IPC 链路；任何 stdin 重定向或直接 console 输入都会与 C 库底层日志污染协议帧 |
 | **单进程架构** | Runner 不支持水平扩展；多用户场景下每个 Client 单独 spawn 独立 Runner 进程 |
 | **`probe_failed` 时 UI 降级需手动** | 部分能力可能仍可用，但 Client UI 收到 `probe_failed=true` 时整体降级；当前没有更细粒度的子能力独立上报 |

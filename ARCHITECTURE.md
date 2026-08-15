@@ -54,8 +54,8 @@ DeskAgent 是一个**根据用户描述定制的、具有专属形象的陪伴�
 │  - 双向工具调用路由及反向 RPC (Reverse RPC) 代理中转          │
 │  - 统一自更新（Electron 二进制 + Runner wheel）               │
 └─────────────────────────┬───────────────────────────────────┘
-                          │ 本地 WebSocket（动态高位端口）
-                          │ ws://127.0.0.1:<port>/rpc
+                          │ 本地 OS IPC（Windows 命名管道 / macOS UDS）
+                          │ WebSocket 帧 + 每次启动握手 token
 ┌─────────────────────────▼───────────────────────────────────┐
 │                        Runner                               │
 │            (本地手脚 / uv build wheel)                       │
@@ -99,9 +99,10 @@ DeskAgent 是一个**根据用户描述定制的、具有专属形象的陪伴�
 
 #### B. Client ↔ Runner
 
-本地环回 WebSocket `ws://127.0.0.1:<port>/rpc`。Client 充当 RPC Server，Runner 启动时作为 Client 主动连入。**选用 WebSocket 而非 stdio 重定向的权衡**：
+本地 OS IPC：Windows 命名管道 `\\.\pipe\deskagent-runner-<pid>` / macOS UDS `$DESKAGENT_HOME/runner-<pid>.sock`（0600），承载 WebSocket 帧协议。Client 充当 RPC Server，Runner 启动时主动连入；upgrade 携带每次启动生成的 `X-DeskAgent-Auth` 握手 token（校验失败回 HTTP 401，握手不完成）。**选用 OS IPC + WebSocket 帧（而非 stdio 重定向）的权衡**：
 1. 避免 C 库底层日志或 Python `print` 污染标准输入输出帧。
 2. 全双工并发，按 `id` 异步匹配响应，避免进程读写阻塞与全局锁。
+3. 零端口监听面：端点路径与 token 由 Client 单向下发（启动参数 + `desktop-endpoint.json`），Runner 重连间重读文件以跟随 Client 重启；Windows 管道侧 token 为实际准入闸门（libuv 无自定义 DACL 接口），macOS 侧 0600 socket 为主闸门。
 
 完整方法清单（`runner_ready` / `get_tools` / `execute_tool` / `deskagent.info` / `mcp.reload` / `request_llm`）与 `capabilities` payload 定义见 [PROTOCOL.md §2](PROTOCOL.md) 与 [runner/README.md](runner/README.md)。
 
@@ -119,11 +120,11 @@ Backend [orchestrator]
     ▼ (WebSocket Push: method="event", type="tool.call")
 Client [runner-bridge]
     │  3. 路由分发，由 IPC Bridge 转换帧
-    ▼ (Local WS: method="execute_tool", params={"name", "args"})
+    ▼ (Local IPC: method="execute_tool", params={"name", "args"})
 Runner [server.py]
     │  4. Tirith / SSRF 扫描与文件写保护校验
     │  5. 本地执行（PTY / Playwright 等），清理控制字符与脱敏
-    ▼ (Local WS Response: result={"stdout", "exit_code"})
+    ▼ (Local IPC Response: result={"stdout", "exit_code"})
 Client [runner-rpc-ws]
     │  6. 捕获连接异常，Runner 离线快速 fail-fast
     ▼ (WebSocket Request: method="tool.result", params={"call_id", "result"})

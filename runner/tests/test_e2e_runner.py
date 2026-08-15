@@ -26,31 +26,29 @@ import asyncio
 import contextlib
 import json
 import os
-import socket
 import time
 from typing import Any
 
 import pytest
 import websockets
+from test_transport import FakeDesktop, SessionWsAdapter, make_peer_endpoint
 
 import server
 from tools import registry
 from tools.skills import skills_sync
 from tools.terminal.environment import factory as env_factory
+from utils.constants import IS_WINDOWS
+from utils.desktop_transport import DesktopEndpoint
+
+EXPECTED_TRANSPORT = "pipe" if IS_WINDOWS else "unix"
 
 # ---------------------------------------------------------------------------
 # Helpers — start a peer, run ``runner_loop`` against it, get a clean teardown
 # ---------------------------------------------------------------------------
 
 
-def _free_port() -> int:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
-
-
 class _Peer:
-    """Multi-connection mock Desktop peer.
+    """Mock Desktop peer on the platform's real IPC transport.
 
     Each test sets a ``on_*`` handler for the JSON-RPC methods the runner
     actually emits (``runner_ready``, ``request_llm``). The peer keeps a
@@ -61,17 +59,19 @@ class _Peer:
     def __init__(self) -> None:
         self.received: list[dict] = []
         self.request_llm_responses: dict[str, dict] = {}  # req_id → response payload
-        self.request_llm_handler = None  # callable(req_id, params) → response dict | None
+        self.request_llm_handler = (
+            None  # callable(req_id, params) → response dict | None
+        )
         self.tools_changed: list[dict] = []
         self.handshakes: list[dict] = []
-        # The peer's server-side ws handle for the runner's connection
+        self.path: str | None = None
+        self.token: str | None = None
+        # The peer's server-side handle for the runner's connection
         # — captured when ``runner_ready`` arrives. Tests use this to
         # inject frames into the runner's reader (server→client).
         self._runner_server_ws: Any = None
-        self._loop: asyncio.AbstractEventLoop | None = None
-        self._accept_task: asyncio.Task | None = None
-        self._server = None
-        self._port: int = 0
+        self._fake: FakeDesktop | None = None
+        self._driver_task: asyncio.Task | None = None
 
     async def _handle(self, ws) -> None:
         try:
@@ -100,12 +100,26 @@ class _Peer:
                     # cancel-drain tests). Only fall back to a canned
                     # response when the handler isn't installed.
                     if response is None and self.request_llm_handler is None:
-                        response = self.request_llm_responses.get(req_id) or {"content": "default response"}
+                        response = self.request_llm_responses.get(req_id) or {
+                            "content": "default response"
+                        }
                     if response is not None:
-                        await ws.send(json.dumps({"jsonrpc": "2.0", "id": req_id, "result": response}))
+                        await ws.send(
+                            json.dumps({
+                                "jsonrpc": "2.0",
+                                "id": req_id,
+                                "result": response,
+                            })
+                        )
                     continue
                 if method == "mcp.reload":
-                    await ws.send(json.dumps({"jsonrpc": "2.0", "id": req_id, "result": {"reloaded": True}}))
+                    await ws.send(
+                        json.dumps({
+                            "jsonrpc": "2.0",
+                            "id": req_id,
+                            "result": {"reloaded": True},
+                        })
+                    )
                     continue
                 if method == "execute_tool":
                     # ``execute_tool`` is a runner-side RPC; in production
@@ -117,41 +131,70 @@ class _Peer:
                     # drive ``process_request`` directly.
                     continue
                 if req_id is not None:
-                    await ws.send(json.dumps({"jsonrpc": "2.0", "id": req_id, "error": {"code": -32601, "message": "peer: unknown method"}}))
+                    await ws.send(
+                        json.dumps({
+                            "jsonrpc": "2.0",
+                            "id": req_id,
+                            "error": {
+                                "code": -32601,
+                                "message": "peer: unknown method",
+                            },
+                        })
+                    )
         except websockets.exceptions.ConnectionClosed:
             return
 
-    async def start(self, port: int, *, reuse_port: bool = False) -> None:
-        # Pre-bind a socket with SO_REUSEADDR so a stopped peer can be
-        # immediately re-bound on the same port — required for the
-        # reconnect test, which drops the runner's connection and
-        # expects the runner to reconnect to the same URL.
-        sock = None
-        if reuse_port:
-            import socket as _socket
+    async def start(
+        self, *, path: str | None = None, token: str | None = None, tmp_path=None
+    ) -> None:
+        """Listen on the platform's native transport.
 
-            sock = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
-            sock.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEADDR, 1)
-            sock.bind(("127.0.0.1", port))
-            sock.listen(128)
-            self._server = await websockets.serve(self._handle, sock=sock)
-        else:
-            self._server = await websockets.serve(self._handle, "127.0.0.1", port)
-        self._port = port
+        ``path``/``token`` pin the endpoint so a fresh peer can rebind
+        exactly where a dropped one was listening (the reconnect test):
+        the runner's cached endpoint carries no file, so it redials the
+        same path and must be accepted by the new listener.
+        """
+        self._fake = (
+            FakeDesktop(path=path, token=token)
+            if IS_WINDOWS
+            else FakeDesktop(tmp_path, path=path, token=token)
+        )
+        if not IS_WINDOWS:
+            await self._fake.start()
+        self.path = self._fake.path
+        self.token = self._fake.token
+
+        async def driver():
+            session = await self._fake.accept()
+            try:
+                await self._handle(SessionWsAdapter(session))
+            except (ConnectionError, OSError):
+                pass
+
+        self._driver_task = asyncio.create_task(driver())
+
+    @property
+    def endpoint(self) -> DesktopEndpoint:
+        return make_peer_endpoint(self._fake)
 
     async def stop(self) -> None:
-        if self._server is not None:
-            self._server.close()
-            await self._server.wait_closed()
+        if self._driver_task is not None:
+            self._driver_task.cancel()
+            with contextlib.suppress(BaseException):
+                await self._driver_task
+            self._driver_task = None
+        if self._fake is not None:
+            await self._fake.close()
+            self._fake = None
 
 
 @contextlib.asynccontextmanager
-async def _running_runner(url: str):
+async def _running_runner(endpoint: DesktopEndpoint = None, *, peer: _Peer = None):
     """Start a peer, run ``runner_loop``, wait for handshake, yield, tear down."""
-    peer = _Peer()
-    port = int(url.rsplit(":", 1)[1].split("/", 1)[0])
-    await peer.start(port)
-    runner_task = asyncio.create_task(server.runner_loop(url))
+    if peer is None:
+        peer = _Peer()
+        await peer.start()
+    runner_task = asyncio.create_task(server.runner_loop(endpoint or peer.endpoint))
     # Wait for the runner to send ``runner_ready``.
     for _ in range(50):
         if peer.handshakes:
@@ -216,22 +259,29 @@ async def test_full_agent_loop_request_llm_dispatches_tool_then_finalizes(tmp_pa
     """
     target = tmp_path / "agent_loop_target.txt"
 
-    port = _free_port()
-    url = f"ws://127.0.0.1:{port}/rpc"
     llm_round = {"count": 0}
 
-    async with _running_runner(url) as peer:
+    async with _running_runner() as peer:
+
         def _llm_handler(req_id, params):
             llm_round["count"] += 1
             if llm_round["count"] == 1:
-                return {"content": f"Please call write_file with path={target} and content=hello-from-agent-loop."}
+                return {
+                    "content": f"Please call write_file with path={target} and content=hello-from-agent-loop."
+                }
             return {"content": "Tool wrote the file successfully. Done."}
 
         peer.request_llm_handler = _llm_handler
 
         # Round 1: runner → request_llm → peer → reply (REAL wire).
-        round1 = await server.request_llm_from_desktop({"messages": [{"role": "user", "content": "write something"}], "task": "agent", "timeout": 5})
-        assert "write_file" in round1, f"LLM round 1 should request write_file, got: {round1}"
+        round1 = await server.request_llm_from_desktop({
+            "messages": [{"role": "user", "content": "write something"}],
+            "task": "agent",
+            "timeout": 5,
+        })
+        assert "write_file" in round1, (
+            f"LLM round 1 should request write_file, got: {round1}"
+        )
 
         # Round 2 (execute_tool): drive ``process_request`` directly with
         # a recording WS. The dispatch still runs through the real
@@ -243,7 +293,17 @@ async def test_full_agent_loop_request_llm_dispatches_tool_then_finalizes(tmp_pa
             async def send(self, payload):
                 sent.append(json.loads(payload))
 
-        await server.process_request(_RecordingWS(), {"id": "x1", "method": "execute_tool", "params": {"name": "write_file", "args": {"path": str(target), "content": "hello-from-agent-loop"}}})
+        await server.process_request(
+            _RecordingWS(),
+            {
+                "id": "x1",
+                "method": "execute_tool",
+                "params": {
+                    "name": "write_file",
+                    "args": {"path": str(target), "content": "hello-from-agent-loop"},
+                },
+            },
+        )
         assert sent[-1]["id"] == "x1"
         assert "result" in sent[-1], f"execute_tool returned error: {sent[-1]}"
 
@@ -252,12 +312,23 @@ async def test_full_agent_loop_request_llm_dispatches_tool_then_finalizes(tmp_pa
         assert target.read_text(encoding="utf-8") == "hello-from-agent-loop"
 
         # Round 3: another request_llm confirms the wire is alive after dispatch.
-        round2 = await server.request_llm_from_desktop({"messages": [{"role": "user", "content": "now read it back"}, {"role": "tool", "content": "wrote ok"}], "task": "agent", "timeout": 5})
-        assert "Done" in round2 or "wrote" in round2.lower(), f"Round 3 reply unexpected: {round2}"
+        round2 = await server.request_llm_from_desktop({
+            "messages": [
+                {"role": "user", "content": "now read it back"},
+                {"role": "tool", "content": "wrote ok"},
+            ],
+            "task": "agent",
+            "timeout": 5,
+        })
+        assert "Done" in round2 or "wrote" in round2.lower(), (
+            f"Round 3 reply unexpected: {round2}"
+        )
 
         # Wire-level: peer observed exactly two request_llm notifications.
         req_llm_frames = [m for m in peer.received if m.get("method") == "request_llm"]
-        assert len(req_llm_frames) == 2, f"expected 2 request_llm notifications, got {len(req_llm_frames)}"
+        assert len(req_llm_frames) == 2, (
+            f"expected 2 request_llm notifications, got {len(req_llm_frames)}"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -267,22 +338,24 @@ async def test_full_agent_loop_request_llm_dispatches_tool_then_finalizes(tmp_pa
 
 @pytest.mark.timeout(20)
 @pytest.mark.asyncio
-async def test_runner_reconnects_after_peer_drop_with_backoff(monkeypatch):
+async def test_runner_reconnects_after_peer_drop_with_backoff(monkeypatch, tmp_path):
     """Drop the peer mid-session and confirm ``runner_loop`` re-attaches.
 
-    Topology: peer binds to a port with ``SO_REUSEADDR`` so the SAME port
-    can be rebound after ``peer.stop()`` (the OS would otherwise hold the
-    port in TIME_WAIT and the rebind would fail). The runner is
-    connected to that URL; the test drops the peer, then re-binds a
-    fresh peer to the SAME port, and the runner MUST reconnect and
-    deliver a second ``runner_ready``.
+    Topology: the runner's cached endpoint names the peer's pipe/socket
+    path, so after the peer is dropped the test rebinds a fresh listener
+    on the SAME path with the SAME token (same "Desktop" from the
+    runner's point of view) and the runner MUST reconnect and deliver a
+    second ``runner_ready``.
+
+    DESKAGENT_HOME is redirected to tmp_path with an endpoint file naming
+    the peer (mirroring production, where the file exists while the
+    Desktop is up): any transient rejection refreshes through the file
+    instead of parking in the wait-for-file branch, and the test is immune
+    to a stale endpoint file on the host running the suite.
 
     No "verify counter only" fallback: the test fails if the second
     peer does not receive the second handshake.
     """
-    port = _free_port()
-    url = f"ws://127.0.0.1:{port}/rpc"
-
     # Shorten the backoff so the test is fast. Patch ``asyncio.sleep``
     # module-level because ``BASE_BACKOFF_S`` is a local in ``runner_loop``.
     real_sleep = asyncio.sleep
@@ -291,13 +364,21 @@ async def test_runner_reconnects_after_peer_drop_with_backoff(monkeypatch):
         await real_sleep(0)
 
     monkeypatch.setattr(asyncio, "sleep", _fast_sleep)
+    monkeypatch.setenv("DESKAGENT_HOME", str(tmp_path))
 
     before = server._RECONNECT_COUNT
 
-    # First peer — binds with SO_REUSEADDR so the port is rebindable later.
     peer = _Peer()
-    await peer.start(port, reuse_port=True)
-    runner_task = asyncio.create_task(server.runner_loop(url))
+    await peer.start()
+    (tmp_path / "desktop-endpoint.json").write_text(
+        json.dumps({
+            "transport": EXPECTED_TRANSPORT,
+            "path": peer.path,
+            "token": peer.token,
+            "pid": os.getpid(),
+        })
+    )
+    runner_task = asyncio.create_task(server.runner_loop(peer.endpoint))
 
     # Wait for the first handshake.
     for _ in range(50):
@@ -306,14 +387,14 @@ async def test_runner_reconnects_after_peer_drop_with_backoff(monkeypatch):
         await asyncio.sleep(0.05)
     assert peer.handshakes, "runner did not handshake initially"
 
-    # Drop the peer — close all in-flight sockets; the runner's
-    # ``async with websockets.connect`` block exits via ConnectionClosed.
+    # Drop the peer — its stream teardown breaks the runner's reader and
+    # the ``async with connect_desktop`` block unwinds.
     await peer.stop()
 
-    # Bind a fresh peer to the SAME port. SO_REUSEADDR allows this even
-    # though the previous socket is still in TIME_WAIT.
+    # Rebind a fresh peer on the SAME path and token: the runner redials
+    # its cached endpoint verbatim.
     peer2 = _Peer()
-    await peer2.start(port, reuse_port=True)
+    await peer2.start(path=peer.path, token=peer.token)
 
     # Wait for the second handshake on the fresh peer.
     deadline = time.monotonic() + 10
@@ -327,45 +408,39 @@ async def test_runner_reconnects_after_peer_drop_with_backoff(monkeypatch):
         await runner_task
     await peer2.stop()
 
-    assert len(peer2.handshakes) > 0, "reconnect did not produce a fresh runner_ready handshake on the second peer"
-    assert rc_at_reconnect > before, f"reconnect counter did not advance (before={before}, after={rc_at_reconnect})"
+    assert len(peer2.handshakes) > 0, (
+        "reconnect did not produce a fresh runner_ready handshake on the second peer"
+    )
+    assert rc_at_reconnect > before, (
+        f"reconnect counter did not advance (before={before}, after={rc_at_reconnect})"
+    )
 
 
 @pytest.mark.timeout(20)
 @pytest.mark.asyncio
 async def test_runner_recovers_from_desktop_restart(monkeypatch, tmp_path):
-    """Simulate the Desktop crashing and restarting on a new port with a
-    new PID — the production recovery path. The runner MUST:
+    """Simulate the Desktop restarting with a fresh token — the production
+    recovery path. The runner MUST:
 
-      1. Notice its initial connection failed (the Desktop is restarting).
-      2. Re-read ``$DESKAGENT_HOME/desktop-endpoint.json`` between
-         attempts (the Desktop wrote a new file pointing at the
-         restarted process on a fresh port).
-      3. Connect to the new URL and complete the ``runner_ready``
+      1. Get its upgrade rejected with HTTP 401 (it still holds the
+         previous session's token against the restarted Desktop).
+      2. Drop the cached endpoint/token, re-read
+         ``$DESKAGENT_HOME/desktop-endpoint.json`` between attempts
+         (the Desktop wrote a new file with the fresh token).
+      3. Connect with the new token and complete the ``runner_ready``
          handshake.
 
-    Critically, the endpoint file points at a *different* PID (the
-    new Desktop process) — so the runner's connection logic can't
-    accidentally short-circuit by trusting a stale PID.
+    The 401 drop is what forces the file refresh instead of hammering
+    the stale token until the attempt budget burns out — pinning the
+    local link's "refresh, don't exit" semantics (the Backend link's
+    1008 hard-exit contract does not apply here).
 
     Uses ``monkeypatch`` only to redirect ``DESKAGENT_HOME`` and
-    shorten ``asyncio.sleep``; ``_read_endpoint_url`` runs through its
+    shorten ``asyncio.sleep``; ``read_endpoint`` runs through its
     real production code path.
     """
     monkeypatch.setenv("DESKAGENT_HOME", str(tmp_path))
-    endpoint = tmp_path / "desktop-endpoint.json"
-
-    # Initial URL points to a port nothing is listening on — the
-    # Desktop process is "down" while we set up the new endpoint.
-    initial_url = f"ws://127.0.0.1:{_free_port()}/rpc"
-
-    new_port = _free_port()
-    # Desktop "restarted": new port, fresh PID. We use this test
-    # process's own PID (still alive — ``_read_endpoint_url`` requires
-    # it) but the *port* is the new one — that's the production-shape
-    # distinction: a crashed Desktop means the OLD port is gone and the
-    # NEW port is what the runner needs to find.
-    endpoint.write_text(json.dumps({"port": new_port, "pid": os.getpid()}))
+    endpoint_file = tmp_path / "desktop-endpoint.json"
 
     # Shorten the reconnect backoff so the test finishes in <1s.
     real_sleep = asyncio.sleep
@@ -376,13 +451,29 @@ async def test_runner_recovers_from_desktop_restart(monkeypatch, tmp_path):
     monkeypatch.setattr(asyncio, "sleep", _fast_sleep)
 
     peer = _Peer()
-    await peer.start(new_port)
+    await peer.start()
 
-    runner_task = asyncio.create_task(server.runner_loop(initial_url))
+    # Desktop "restarted": the file carries the fresh token (and this
+    # test process's live PID — ``read_endpoint`` requires liveness).
+    endpoint_file.write_text(
+        json.dumps({
+            "transport": EXPECTED_TRANSPORT,
+            "path": peer.path,
+            "token": peer.token,
+            "pid": os.getpid(),
+        })
+    )
 
-    # Wait for the runner to find endpoint.json and connect to the new
-    # peer. The runner must produce a real ``runner_ready`` on the
-    # peer — not a synthetic frame from a mock.
+    # The runner starts holding the STALE session's token — the live
+    # peer answers its upgrade with HTTP 401.
+    stale_endpoint = DesktopEndpoint(
+        transport=EXPECTED_TRANSPORT, path=peer.path, token="0" * 128
+    )
+    runner_task = asyncio.create_task(server.runner_loop(stale_endpoint))
+
+    # Wait for the runner to find endpoint.json and connect with the
+    # fresh token. The runner must produce a real ``runner_ready`` on
+    # the peer — not a synthetic frame from a mock.
     deadline = time.monotonic() + 10
     while time.monotonic() < deadline and not peer.handshakes:
         await asyncio.sleep(0.05)
@@ -392,60 +483,122 @@ async def test_runner_recovers_from_desktop_restart(monkeypatch, tmp_path):
         await runner_task
     await peer.stop()
 
-    # The peer received exactly one ``runner_ready`` from the runner —
-    # proving the runner both read the endpoint file AND successfully
-    # completed the post-restart handshake.
-    assert peer.handshakes, "runner did not reconnect to the new endpoint URL after Desktop restart"
+    # The peer received a ``runner_ready`` — proving the runner dropped
+    # the stale token after the 401, read the endpoint file, and completed
+    # the post-restart handshake with the fresh one.
+    assert peer.handshakes, (
+        "runner did not recover with the new token after Desktop restart"
+    )
     handshake = peer.handshakes[0]
-    assert "version" in handshake and "capabilities" in handshake, f"handshake missing required keys: {handshake}"
+    assert "version" in handshake and "capabilities" in handshake, (
+        f"handshake missing required keys: {handshake}"
+    )
 
-    # Reconnect counter must have advanced — the runner tried at least
-    # the initial URL (which failed) before reading endpoint.json.
-    assert server._RECONNECT_COUNT >= 1, "reconnect counter did not advance during Desktop restart recovery"
+    # Reconnect counter must have advanced — the initial attempt was
+    # rejected before the file refresh succeeded.
+    assert server._RECONNECT_COUNT >= 1, (
+        "reconnect counter did not advance during Desktop restart recovery"
+    )
 
 
 @pytest.mark.timeout(10)
-def test_read_endpoint_url_returns_none_for_corrupted_endpoint(monkeypatch, tmp_path):
-    """``_read_endpoint_url`` MUST return ``None`` (not raise, not return
-    a malformed URL) for every kind of corruption the Desktop might
+def test_read_endpoint_returns_none_for_corrupted_endpoint(monkeypatch, tmp_path):
+    """``read_endpoint`` MUST return ``None`` (not raise, not return a
+    malformed endpoint) for every kind of corruption the Desktop might
     leave behind on crash or partial write.
 
     Production risk: a Desktop crash mid-write can leave the file with
     a truncated or non-JSON body, missing keys, or a stale PID. The
     runner's reconnect loop must treat all of these as "no usable
-    endpoint" — otherwise it could try to connect to a bogus URL or
+    endpoint" — otherwise it could try to connect to a bogus path or
     loop forever.
     """
     import server as server_mod
 
     monkeypatch.setenv("DESKAGENT_HOME", str(tmp_path))
-    endpoint = tmp_path / "desktop-endpoint.json"
+    endpoint_file = tmp_path / "desktop-endpoint.json"
+    sample_path = (
+        "\\\\.\\pipe\\deskagent-runner-1234"
+        if IS_WINDOWS
+        else "/tmp/deskagent-runner.sock"
+    )
 
-    cases: list[tuple[str, str, dict | None, str]] = [
-        ("missing file", "", None, "no file → None"),
-        ("empty file", "", None, "empty file → None"),
-        ("malformed JSON", "{not json", None, "malformed JSON → None"),
-        ("missing port", json.dumps({"pid": os.getpid()}), None, "no port key → None"),
-        ("port is string", json.dumps({"port": "abc", "pid": os.getpid()}), None, "non-int port → None"),
-        ("port is 0", json.dumps({"port": 0, "pid": os.getpid()}), None, "port 0 → None"),
-        ("port is negative", json.dumps({"port": -1, "pid": os.getpid()}), None, "negative port → None"),
-        ("dead PID", json.dumps({"port": 8080, "pid": 2**31 - 1}), None, "dead PID → None"),
-        ("dead PID overrides even valid port", json.dumps({"port": 8080, "pid": 2**31 - 1}), None, "dead PID still wins → None"),
+    cases: list[tuple[str, str, str]] = [
+        ("missing file", "", "no file → None"),
+        ("empty file", "", "empty file → None"),
+        ("malformed JSON", "{not json", "malformed JSON → None"),
+        (
+            "missing path",
+            json.dumps({
+                "transport": EXPECTED_TRANSPORT,
+                "token": "a" * 64,
+                "pid": os.getpid(),
+            }),
+            "no path key → None",
+        ),
+        (
+            "path is empty",
+            json.dumps({
+                "transport": EXPECTED_TRANSPORT,
+                "path": "",
+                "token": "a" * 64,
+                "pid": os.getpid(),
+            }),
+            "empty path → None",
+        ),
+        (
+            "missing token",
+            json.dumps({
+                "transport": EXPECTED_TRANSPORT,
+                "path": sample_path,
+                "pid": os.getpid(),
+            }),
+            "no token key → None",
+        ),
+        (
+            "foreign transport",
+            json.dumps({
+                "transport": "tcp",
+                "path": "127.0.0.1:1",
+                "token": "a" * 64,
+                "pid": os.getpid(),
+            }),
+            "transport/host mismatch → None",
+        ),
+        (
+            "dead PID",
+            json.dumps({
+                "transport": EXPECTED_TRANSPORT,
+                "path": sample_path,
+                "token": "a" * 64,
+                "pid": 2**31 - 1,
+            }),
+            "dead PID → None",
+        ),
     ]
-    for name, body, _expected_url, doc in cases:
-        if body == "" and not endpoint.exists():
+    for name, body, doc in cases:
+        if body == "" and not endpoint_file.exists():
             # Missing file case — leave it absent.
             pass
         else:
-            endpoint.write_text(body, encoding="utf-8")
-        result = server_mod._read_endpoint_url()
+            endpoint_file.write_text(body, encoding="utf-8")
+        result = server_mod.read_endpoint()
         assert result is None, f"{name}: expected None ({doc}), got {result!r}"
 
     # The happy path is covered by ``test_runner_recovers_from_desktop_restart``;
     # here we only pin corruption cases.
-    endpoint.write_text(json.dumps({"port": 1234, "pid": os.getpid()}))
-    good = server_mod._read_endpoint_url()
-    assert good == "ws://127.0.0.1:1234/rpc", f"valid endpoint must yield ws URL, got {good!r}"
+    endpoint_file.write_text(
+        json.dumps({
+            "transport": EXPECTED_TRANSPORT,
+            "path": sample_path,
+            "token": "a" * 64,
+            "pid": os.getpid(),
+        })
+    )
+    good = server_mod.read_endpoint()
+    assert good is not None and good.path == sample_path, (
+        f"valid endpoint must resolve, got {good!r}"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -494,6 +647,7 @@ async def test_mcp_reload_rpc_invokes_reload_and_resets_caches(monkeypatch):
     reset_max_read_chars_cache()
     tol._cached_limits = {"max_bytes": 1, "max_lines": 2, "max_line_length": 3}
     import tools.files.file_tools as ft
+
     ft._max_read_chars_cached = 999
 
     sent: list[dict] = []
@@ -502,13 +656,17 @@ async def test_mcp_reload_rpc_invokes_reload_and_resets_caches(monkeypatch):
         async def send(self, payload):
             sent.append(json.loads(payload))
 
-    await server.process_request(_FakeWS(), {"id": "r1", "method": "mcp.reload", "params": {}})
+    await server.process_request(
+        _FakeWS(), {"id": "r1", "method": "mcp.reload", "params": {}}
+    )
 
     assert sent[-1]["id"] == "r1"
     result = sent[-1]["result"]
 
     # Real ``reload_mcp_servers`` returned shape.
-    assert set(result) == {"reloaded", "errors", "servers", "connected"}, f"unexpected reload result keys: {sorted(result)}"
+    assert set(result) == {"reloaded", "errors", "servers", "connected"}, (
+        f"unexpected reload result keys: {sorted(result)}"
+    )
     assert result["reloaded"] == 0
     assert result["servers"] == 0
     assert result["errors"] == 0
@@ -561,8 +719,12 @@ def test_real_reload_mcp_servers_shuts_down_live_servers():
     try:
         reload_result = real_mcp_tool.reload_mcp_servers()
 
-        assert set(reload_result) == {"reloaded", "errors", "servers", "connected"}, f"unexpected reload result keys: {sorted(reload_result)}"
-        assert reload_result["reloaded"] == 2, f"reload should have torn down 2 servers, got {reload_result}"
+        assert set(reload_result) == {"reloaded", "errors", "servers", "connected"}, (
+            f"unexpected reload result keys: {sorted(reload_result)}"
+        )
+        assert reload_result["reloaded"] == 2, (
+            f"reload should have torn down 2 servers, got {reload_result}"
+        )
         assert reload_result["servers"] == 2
         assert reload_result["errors"] == 0
         assert isinstance(reload_result["connected"], int)
@@ -608,6 +770,7 @@ def test_create_environment_routes_singularity(monkeypatch):
     This proves the factory branches by ``env_type`` correctly even when
     singularity isn't installed on the test host.
     """
+
     # Replace the class with a fake so __init__ doesn't try to start an instance.
     class _FakeSingularity:
         def __init__(self, **kwargs):
@@ -633,6 +796,7 @@ def test_create_environment_routes_docker(monkeypatch):
     We stub DockerEnvironment so we don't try to actually launch a container
     in the test env.
     """
+
     class _FakeDocker:
         def __init__(self, **kwargs):
             self.kwargs = kwargs
@@ -645,7 +809,10 @@ def test_create_environment_routes_docker(monkeypatch):
         image="alpine:3",
         cwd="/work",
         timeout=30,
-        container_config={"container_persistent": True, "docker_volumes": ["/host:/container"]},
+        container_config={
+            "container_persistent": True,
+            "docker_volumes": ["/host:/container"],
+        },
     )
     assert isinstance(env, _FakeDocker)
     assert env.kwargs["image"] == "alpine:3"
@@ -664,7 +831,9 @@ def test_create_environment_rejects_ssh_without_host():
 def test_create_environment_rejects_unknown_env_type():
     """An unknown ``env_type`` MUST raise ``ValueError`` — silent fallback would mask config errors."""
     with pytest.raises(ValueError, match="Unknown environment type"):
-        env_factory.create_environment(env_type="quantum", image="", cwd="/tmp", timeout=10)
+        env_factory.create_environment(
+            env_type="quantum", image="", cwd="/tmp", timeout=10
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -811,6 +980,7 @@ def test_sync_skills_survives_unwritable_destination(monkeypatch, tmp_path):
 
     monkeypatch.setenv("DESKAGENT_HOME", str(home))
     import utils.constants as const_mod
+
     monkeypatch.setattr(const_mod, "get_deskagent_home", lambda: home, raising=False)
     monkeypatch.setattr(skills_sync, "get_skills_dir", lambda: protected / "skills")
 
@@ -824,7 +994,9 @@ def test_sync_skills_survives_unwritable_destination(monkeypatch, tmp_path):
         assert isinstance(result, dict)
         assert "copied" in result and "updated" in result and "user_modified" in result
         # No skill landed in the (inaccessible) destination.
-        assert result["copied"] == [], f"sync reported a copy despite PermissionError: {result}"
+        assert result["copied"] == [], (
+            f"sync reported a copy despite PermissionError: {result}"
+        )
     finally:
         _os.chmod(protected, 0o755)
 
@@ -852,13 +1024,16 @@ def test_sync_skills_recovers_from_partial_dest_write(monkeypatch, tmp_path):
     # First sync to register the manifest.
     monkeypatch.setenv("DESKAGENT_HOME", str(home))
     import utils.constants as const_mod
+
     monkeypatch.setattr(const_mod, "get_deskagent_home", lambda: home, raising=False)
     monkeypatch.setattr(skills_sync, "get_skills_dir", lambda: bundled / "skills")
 
     skills_sync.sync_skills(quiet=True)
 
     # Half-write: leave a sentinel file in the dest so its hash differs.
-    (bundled / "skills" / "skill-y" / "EXTRA_FROM_CRASH").write_text("junk left over from a crashed sync")
+    (bundled / "skills" / "skill-y" / "EXTRA_FROM_CRASH").write_text(
+        "junk left over from a crashed sync"
+    )
 
     # Second sync: half-written state must not crash ``copytree``
     # (which refuses non-empty dirs) and must not silently overwrite.
@@ -867,9 +1042,13 @@ def test_sync_skills_recovers_from_partial_dest_write(monkeypatch, tmp_path):
     # The half-written skill is reported as ``user_modified`` — the
     # manifest hash check catches the divergence and the sync leaves
     # the user's partial state alone.
-    assert "skill-y" in result["user_modified"], f"half-written skill not surfaced as user_modified: {result}"
+    assert "skill-y" in result["user_modified"], (
+        f"half-written skill not surfaced as user_modified: {result}"
+    )
     # The crash sentinel survives — sync did NOT clobber it.
-    assert (bundled / "skills" / "skill-y" / "EXTRA_FROM_CRASH").exists(), "sync overwrote a user-modified skill"
+    assert (bundled / "skills" / "skill-y" / "EXTRA_FROM_CRASH").exists(), (
+        "sync overwrote a user-modified skill"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -887,7 +1066,9 @@ def test_vision_tool_visibility_is_locked_to_schema(monkeypatch):
     registry.clear_availability_cache()
     schemas = registry.get_schemas_for_llm(set())
     names = {s["name"] for s in schemas}
-    assert "vision_analyze" in names, f"vision_analyze missing despite no check_fn: {sorted(names)[:5]}"
+    assert "vision_analyze" in names, (
+        f"vision_analyze missing despite no check_fn: {sorted(names)[:5]}"
+    )
 
 
 @pytest.mark.timeout(10)
@@ -905,7 +1086,9 @@ def test_tts_tool_visibility_matches_piper_availability(monkeypatch):
     registry._check_fns["text_to_speech"] = lambda: False
     registry.clear_availability_cache()
     names_hidden = {s["name"] for s in registry.get_schemas_for_llm(set())}
-    assert "text_to_speech" not in names_hidden, f"text_to_speech leaked: {sorted(names_hidden)[:5]}"
+    assert "text_to_speech" not in names_hidden, (
+        f"text_to_speech leaked: {sorted(names_hidden)[:5]}"
+    )
 
     registry._check_fns["text_to_speech"] = lambda: True
     registry.clear_availability_cache()
@@ -930,7 +1113,9 @@ def test_stt_tool_visibility_matches_whisper_availability(monkeypatch):
     registry._check_fns["speech_to_text"] = lambda: False
     registry.clear_availability_cache()
     names_hidden = {s["name"] for s in registry.get_schemas_for_llm(set())}
-    assert "speech_to_text" not in names_hidden, f"speech_to_text leaked: {sorted(names_hidden)[:5]}"
+    assert "speech_to_text" not in names_hidden, (
+        f"speech_to_text leaked: {sorted(names_hidden)[:5]}"
+    )
 
     registry._check_fns["speech_to_text"] = lambda: True
     registry.clear_availability_cache()
@@ -967,10 +1152,7 @@ async def test_runner_loop_survives_partial_and_invalid_json_frames():
     peer when the runner connected), then send a well-formed
     ``deskagent.info`` request and confirm the runner replies.
     """
-    port = _free_port()
-    url = f"ws://127.0.0.1:{port}/rpc"
-
-    async with _running_runner(url) as peer:
+    async with _running_runner() as peer:
         # The runner's outbound ``runner_ready`` carries its server-side
         # ws handle in the ``ws`` parameter of ``_handle`` — capture it
         # by reading the recorded ``runner_ready`` frame's connection.
@@ -984,25 +1166,49 @@ async def test_runner_loop_survives_partial_and_invalid_json_frames():
             await asyncio.sleep(0.02)
         assert runner_server_ws is not None, "peer did not record runner server-side ws"
 
-        for bad in (b'{"jsonrpc": "2.0", "method": "deskagent.info"', b"this is not json {", b"42"):
+        for bad in (
+            b'{"jsonrpc": "2.0", "method": "deskagent.info"',
+            b"this is not json {",
+            b"42",
+        ):
             await runner_server_ws.send(bad)
 
         # Now send a valid ``deskagent.info`` RPC through the same wire
         # path the runner's reader uses (server→client) — prove it's
         # still running and dispatching.
-        await runner_server_ws.send(json.dumps({"jsonrpc": "2.0", "id": "after-bad", "method": "deskagent.info", "params": {}}).encode())
+        await runner_server_ws.send(
+            json.dumps({
+                "jsonrpc": "2.0",
+                "id": "after-bad",
+                "method": "deskagent.info",
+                "params": {},
+            }).encode()
+        )
 
         # Wait for the runner's reply frame on the peer's recorded list.
         deadline = time.monotonic() + 5
         reply = None
         while time.monotonic() < deadline:
-            reply = next((m for m in peer.received if m.get("id") == "after-bad" and "method" not in m), None)
+            reply = next(
+                (
+                    m
+                    for m in peer.received
+                    if m.get("id") == "after-bad" and "method" not in m
+                ),
+                None,
+            )
             if reply is not None:
                 break
             await asyncio.sleep(0.05)
-        assert reply is not None, f"runner did not reply after receiving bad frames; peer.received={peer.received}"
-        assert "result" in reply, f"runner returned error frame after bad frames: {reply}"
-        assert "version" in reply["result"], f"deskagent.info result missing version: {reply}"
+        assert reply is not None, (
+            f"runner did not reply after receiving bad frames; peer.received={peer.received}"
+        )
+        assert "result" in reply, (
+            f"runner returned error frame after bad frames: {reply}"
+        )
+        assert "version" in reply["result"], (
+            f"deskagent.info result missing version: {reply}"
+        )
 
 
 @pytest.mark.timeout(15)
@@ -1026,14 +1232,12 @@ async def test_runner_loop_cancel_drains_pending_rpc_futures():
     ``ConnectionError`` on the pending future; the original
     ``request_llm_from_desktop`` await surfaces the error.
     """
-    port = _free_port()
-    url = f"ws://127.0.0.1:{port}/rpc"
     llm_round = {"count": 0}
 
     # Bring up the peer manually so we own the runner task handle and
     # can cancel it directly.
     peer = _Peer()
-    await peer.start(port)
+    await peer.start()
 
     def _slow_llm(req_id, params):
         # Hold the request open: don't reply. The runner's
@@ -1043,7 +1247,7 @@ async def test_runner_loop_cancel_drains_pending_rpc_futures():
 
     peer.request_llm_handler = _slow_llm
 
-    runner_task = asyncio.create_task(server.runner_loop(url))
+    runner_task = asyncio.create_task(server.runner_loop(peer.endpoint))
     try:
         # Wait for handshake.
         for _ in range(50):
@@ -1055,10 +1259,16 @@ async def test_runner_loop_cancel_drains_pending_rpc_futures():
         # Fire a ``request_llm`` in the background. The peer's handler
         # returns None (no reply) so the future parks — we want the
         # future to be PENDING at the moment we cancel.
-        request_task = asyncio.create_task(asyncio.wait_for(
-            server.request_llm_from_desktop({"messages": [{"role": "user", "content": "will hang"}], "task": "agent", "timeout": 10}),
-            timeout=10,
-        ))
+        request_task = asyncio.create_task(
+            asyncio.wait_for(
+                server.request_llm_from_desktop({
+                    "messages": [{"role": "user", "content": "will hang"}],
+                    "task": "agent",
+                    "timeout": 10,
+                }),
+                timeout=10,
+            )
+        )
 
         # Wait for the runner to actually emit the request_llm frame
         # over the wire — once the frame is on the wire, the future
@@ -1067,7 +1277,9 @@ async def test_runner_loop_cancel_drains_pending_rpc_futures():
         llm_emitted_at = None
         for _ in range(100):
             for m in peer.received:
-                if m.get("method") == "request_llm" and m.get("id", "").startswith("req_llm_"):
+                if m.get("method") == "request_llm" and m.get("id", "").startswith(
+                    "req_llm_"
+                ):
                     llm_emitted_at = time.monotonic()
                     break
             if llm_emitted_at is not None and server._PENDING_RPC:
@@ -1094,18 +1306,24 @@ async def test_runner_loop_cancel_drains_pending_rpc_futures():
         try:
             await asyncio.wait_for(request_task, timeout=5)
         except TimeoutError:
-            raise AssertionError(f"request_llm future not drained on cancel; _PENDING_RPC={server._PENDING_RPC}")
+            raise AssertionError(
+                f"request_llm future not drained on cancel; _PENDING_RPC={server._PENDING_RPC}"
+            )
         except ConnectionError:
             # Expected: the drain set ConnectionError.
             pass
         except Exception as exc:
             # Other exception types are a regression — surface them so
             # the test fails with the actual error.
-            raise AssertionError(f"unexpected exception from cancelled request_llm: {exc!r}")
+            raise AssertionError(
+                f"unexpected exception from cancelled request_llm: {exc!r}"
+            )
 
         # The pending futures MUST be cleared from _PENDING_RPC.
         for fid in pending_ids:
-            assert fid not in server._PENDING_RPC, f"future {fid} leaked in _PENDING_RPC after cancel"
+            assert fid not in server._PENDING_RPC, (
+                f"future {fid} leaked in _PENDING_RPC after cancel"
+            )
     finally:
         if not runner_task.done():
             runner_task.cancel()
@@ -1141,7 +1359,10 @@ async def test_runner_loop_does_not_swallow_unhandled_exceptions_in_dispatch():
         raise RuntimeError("synthetic dispatch failure for robustness test")
 
     real_registry._tools["test_buggy"] = _buggy_handler
-    real_registry._schemas["test_buggy"] = {"name": "test_buggy", "parameters": {"type": "object"}}
+    real_registry._schemas["test_buggy"] = {
+        "name": "test_buggy",
+        "parameters": {"type": "object"},
+    }
     try:
         sent: list[dict] = []
 
@@ -1149,7 +1370,14 @@ async def test_runner_loop_does_not_swallow_unhandled_exceptions_in_dispatch():
             async def send(self, payload):
                 sent.append(json.loads(payload))
 
-        await server.process_request(_RecordingWS(), {"id": "bug1", "method": "execute_tool", "params": {"name": "test_buggy", "args": {}}})
+        await server.process_request(
+            _RecordingWS(),
+            {
+                "id": "bug1",
+                "method": "execute_tool",
+                "params": {"name": "test_buggy", "args": {}},
+            },
+        )
 
         assert sent[-1]["id"] == "bug1"
         # ``ToolError`` → JSON-RPC error frame with code -32000.
@@ -1159,7 +1387,10 @@ async def test_runner_loop_does_not_swallow_unhandled_exceptions_in_dispatch():
 
         # Subsequent frame MUST still be processed.
         sent.clear()
-        await server.process_request(_RecordingWS(), {"id": "after-bug", "method": "deskagent.info", "params": {}})
+        await server.process_request(
+            _RecordingWS(),
+            {"id": "after-bug", "method": "deskagent.info", "params": {}},
+        )
         assert sent[-1]["id"] == "after-bug"
         assert "result" in sent[-1]
     finally:

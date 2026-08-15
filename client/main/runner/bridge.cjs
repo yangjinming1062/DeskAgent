@@ -1,5 +1,7 @@
 const { EventEmitter } = require('node:events')
+const crypto = require('node:crypto')
 const fs = require('node:fs')
+const os = require('node:os')
 const path = require('node:path')
 
 const { atomicWriteFile } = require('../shared/utils.cjs')
@@ -7,6 +9,46 @@ const { atomicWriteFile } = require('../shared/utils.cjs')
 /**
  * Orchestrator tying together Runner process, local WS server, and reverse RPC.
  */
+
+// macOS sun_path is capped at 104 bytes; stay under it with a margin.
+const MAC_SOCK_PATH_BYTE_LIMIT = 100
+
+function computeDesktopEndpoint(deskagentHome) {
+  // The bridge is the single source of truth for the endpoint path (the
+  // runner consumes it from argv / the endpoint file and never re-derives).
+  if (process.platform === 'win32') {
+    return { transport: 'pipe', path: `\\\\.\\pipe\\deskagent-runner-${process.pid}` }
+  }
+  const home = deskagentHome || os.tmpdir()
+  const primary = path.join(home, `runner-${process.pid}.sock`)
+  if (Buffer.byteLength(primary) <= MAC_SOCK_PATH_BYTE_LIMIT) {
+    return { transport: 'unix', path: primary }
+  }
+  // Long $DESKAGENT_HOME (deep home dirs) would overflow sun_path; fall
+  // back to a short, collision-free name under the user's temp dir.
+  const digest = crypto.createHash('sha256').update(`${home}|${process.pid}`).digest('hex').slice(0, 8)
+  const uid = typeof process.getuid === 'function' ? process.getuid() : 0
+  return { transport: 'unix', path: path.join(os.tmpdir(), `deskagent-${uid}-${digest}.sock`) }
+}
+
+function sweepLegacySockets(deskagentHome) {
+  // PID-suffixed socket names make cross-process collisions structurally
+  // impossible, but a crashed Desktop still leaves its file behind. Best
+  // effort: the single-instance lock guarantees no other Desktop owns one.
+  try {
+    for (const name of fs.readdirSync(deskagentHome)) {
+      if (/^runner-\d+\.sock$/.test(name)) {
+        try {
+          fs.unlinkSync(path.join(deskagentHome, name))
+        } catch {
+          /* raced away */
+        }
+      }
+    }
+  } catch {
+    /* deskagentHome missing/unreadable — nothing to sweep */
+  }
+}
 
 function createRunnerBridge(options = {}) {
   const log = typeof options.log === 'function' ? options.log : () => {}
@@ -72,14 +114,23 @@ function createRunnerBridge(options = {}) {
     subUnsubFns = []
   }
 
-  async function writeEndpointFile(port) {
+  async function writeEndpointFile(endpoint) {
     const deskagentHome = options.deskagentHome
     if (!deskagentHome) return
     endpointFilePath = path.join(deskagentHome, 'desktop-endpoint.json')
-    const payload = JSON.stringify({ port, pid: process.pid, timestamp: Date.now() })
+    const payload = JSON.stringify({
+      transport: endpoint.transport,
+      path: endpoint.path,
+      pid: process.pid,
+      token: endpoint.token,
+      timestamp: Date.now()
+    })
     try {
       await atomicWriteFile(endpointFilePath, payload)
-      log(`[runner-bridge] wrote endpoint file: port=${port} pid=${process.pid}`)
+      // Never log the token — the endpoint file and argv are its only carriers.
+      log(
+        `[runner-bridge] wrote endpoint file: transport=${endpoint.transport} path=${endpoint.path} pid=${process.pid}`
+      )
     } catch (error) {
       log(`[runner-bridge] failed to write endpoint file: ${error.message}`)
     }
@@ -143,9 +194,18 @@ function createRunnerBridge(options = {}) {
     })
     if (typeof offProcess === 'function') subUnsubFns.push(offProcess)
 
+    // Fresh 256-bit token per bridge start: a restarted Desktop must
+    // invalidate any token a stale runner process still holds.
+    const authToken = crypto.randomBytes(32).toString('hex')
+    const endpoint = computeDesktopEndpoint(options.deskagentHome)
+    if (process.platform !== 'win32' && options.deskagentHome) {
+      sweepLegacySockets(options.deskagentHome)
+    }
+
     wsServer = wsServerFactory
       ? wsServerFactory({
           onReverseRpc: reverseRpcFactory ? reverseRpcFactory({ backendSession: args.backendSession, log }) : null,
+          authToken,
           log: options.log
         })
       : null
@@ -182,18 +242,18 @@ function createRunnerBridge(options = {}) {
     if (typeof offWs === 'function') subUnsubFns.push(offWs)
 
     try {
-      const { port } = await wsServer.start()
-      log(`[runner-bridge] WS server listening on port ${port}`)
-      await writeEndpointFile(port)
+      const started = await wsServer.start({ path: endpoint.path })
+      log(
+        `[runner-bridge] WS server listening on ${started?.transport || endpoint.transport} ${started?.path || endpoint.path}`
+      )
+      await writeEndpointFile({ ...endpoint, token: authToken })
     } catch (error) {
       await rollback('ws-server-start')
       throw fail('error', error)
     }
 
-    const wsStatus = wsServer.getStatus()
-    const desktopWs = `ws://127.0.0.1:${wsStatus.port}/rpc`
     try {
-      await runnerProcess.start({ desktopWs, executable: args.executable })
+      await runnerProcess.start({ endpointPath: endpoint.path, authToken, executable: args.executable })
     } catch (error) {
       await rollback('process-start')
       throw fail('error', error)

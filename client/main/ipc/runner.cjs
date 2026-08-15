@@ -26,9 +26,10 @@ function ensureRunnerBridge(deps) {
         fileExists: deps.fileExists,
         log: deps.taggedLogger('[runner]')
       }),
-    wsServerFactory: ({ onReverseRpc, log: wsLog }) =>
+    wsServerFactory: ({ onReverseRpc, authToken, log: wsLog }) =>
       deps.createRunnerWsServer({
         onReverseRpc,
+        authToken,
         log: wsLog || deps.taggedLogger('[runner-ws]')
       }),
     reverseRpcFactory: ({ backendSession, log: rpcLog }) =>

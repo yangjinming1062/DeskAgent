@@ -1,15 +1,20 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
 const { EventEmitter } = require('node:events')
+const fs = require('node:fs')
+const os = require('node:os')
+const path = require('node:path')
 const { createRunnerBridge } = require('./bridge.cjs')
 const { sleep } = require('../shared/utils.cjs')
 
 function makeFakeProcess() {
   const emitter = new EventEmitter()
   let started = false
+  const calls = { startArgs: null }
 
   const factory = () => ({
-    start: async () => {
+    start: async args => {
+      calls.startArgs = args
       started = true
       emitter.emit('event', { type: 'start', pid: 9999, command: 'fake', args: [] })
       return { running: true, pid: 9999 }
@@ -31,21 +36,24 @@ function makeFakeProcess() {
     },
     signalReady: () => emitter.emit('event', { type: 'ready' })
   })
-  return { emitter, factory }
+  return { emitter, factory, calls }
 }
 
 function makeFakeWsServer() {
   const emitter = new EventEmitter()
   let connected = false
+  let lastAuthToken = null
 
-  const factory = () => ({
-    start: async () => {
+  const factory = ({ authToken } = {}) => ({
+    start: async ({ path: ipcPath } = {}) => {
       connected = true
+      lastAuthToken = authToken
+      emitter.lastPath = ipcPath
       setTimeout(() => {
         emitter.emit('event', { type: 'connected' })
         emitter.emit('event', { type: 'runner_ready' })
       }, 10)
-      return { port: 12345 }
+      return { transport: process.platform === 'win32' ? 'pipe' : 'unix', path: ipcPath }
     },
     stop: async () => {
       connected = false
@@ -61,9 +69,14 @@ function makeFakeWsServer() {
       emitter.on('event', cb)
       return () => emitter.off('event', cb)
     },
-    getStatus: () => ({ connected, port: connected ? 12345 : 0, pendingCalls: 0 })
+    getStatus: () => ({
+      connected,
+      transport: connected ? 'pipe' : null,
+      path: connected ? emitter.lastPath : null,
+      pendingCalls: 0
+    })
   })
-  return { emitter, factory }
+  return { emitter, factory, getLastAuthToken: () => lastAuthToken }
 }
 
 function makeFakeReverseRpc() {
@@ -125,8 +138,47 @@ test('start() composes process + ws-server and reaches "running" phase', async (
   assert.equal(status.phase, 'running')
   assert.equal(status.wsServer.connected, true)
   assert.equal(status.runner.pid, 9999)
-  assert.equal(status.wsServer.port, 12345)
+  assert.match(
+    status.wsServer.path,
+    process.platform === 'win32' ? /\\\\\.\\pipe\\deskagent-runner-\d+/ : /runner-\d+\.sock$/
+  )
   await bridge.stop()
+})
+
+test('start() spawns the runner with the endpoint argv contract', async () => {
+  const { bridge, process: processMock, wsServer } = makeBridge()
+
+  bridge.start({ readyTimeoutMs: 2_000 })
+  await waitForPhase(bridge, 'running')
+
+  const startArgs = processMock.calls.startArgs
+  assert.ok(startArgs, 'process.start() was never invoked')
+  assert.equal(startArgs.authToken, wsServer.getLastAuthToken(), 'argv token must match the ws server gate')
+  assert.match(
+    startArgs.endpointPath,
+    process.platform === 'win32' ? /\\\\\.\\pipe\\deskagent-runner-\d+/ : /runner-\d+\.sock$/
+  )
+  await bridge.stop()
+})
+
+test('start() writes the endpoint file with the IPC schema when deskagentHome is set', async () => {
+  const deskagentHome = fs.mkdtempSync(path.join(os.tmpdir(), 'deskagent-bridge-test-'))
+  const { bridge, wsServer } = makeBridge({ deskagentHome })
+
+  bridge.start({ readyTimeoutMs: 2_000 })
+  await waitForPhase(bridge, 'running')
+
+  const endpointFile = path.join(deskagentHome, 'desktop-endpoint.json')
+  const payload = JSON.parse(fs.readFileSync(endpointFile, 'utf8'))
+  assert.equal(payload.transport, process.platform === 'win32' ? 'pipe' : 'unix')
+  assert.equal(payload.path, wsServer.emitter.lastPath)
+  assert.equal(payload.pid, process.pid)
+  assert.equal(payload.token, wsServer.getLastAuthToken())
+  assert.equal(typeof payload.timestamp, 'number')
+
+  await bridge.stop()
+  assert.equal(fs.existsSync(endpointFile), false, 'stop() must remove the endpoint file')
+  fs.rmSync(deskagentHome, { recursive: true, force: true })
 })
 
 test('start() fetches tools via get_tools RPC after runner_ready', async () => {

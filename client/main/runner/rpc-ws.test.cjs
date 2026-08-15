@@ -1,18 +1,49 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const net = require('node:net')
+const os = require('node:os')
+const path = require('node:path')
+const { once } = require('node:events')
 const { createRunnerWsServer } = require('./rpc-ws.cjs')
+
+const AUTH_TOKEN = 'a'.repeat(64)
 
 function makeWsServer(overrides = {}) {
   return createRunnerWsServer({
     log: () => {},
+    authToken: AUTH_TOKEN,
     ...overrides
   })
 }
 
-test('start() binds to a port and returns it', async () => {
+function makeIpcPath() {
+  if (process.platform === 'win32') {
+    return `\\\\.\\pipe\\deskagent-test-${process.pid}-${Date.now()}`
+  }
+  return path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'deskagent-ws-test-')), 'runner.sock')
+}
+
+// Production ws client dialing the server over the real pipe/socket —
+// createConnection hands ws a raw net socket for the IPC transport.
+function wsConnect(ipcPath, extraHeaders = {}) {
+  const WebSocket = require('ws')
+  return new WebSocket('ws://deskagent/rpc', {
+    createConnection: () => net.connect(ipcPath),
+    headers: { 'x-deskagent-auth': AUTH_TOKEN, ...extraHeaders }
+  })
+}
+
+test('start() binds to the IPC path and returns transport + path', async () => {
   const server = makeWsServer()
-  const { port } = await server.start()
-  assert.ok(port > 0)
+  const ipcPath = makeIpcPath()
+  const started = await server.start({ path: ipcPath })
+  assert.equal(started.transport, process.platform === 'win32' ? 'pipe' : 'unix')
+  assert.equal(started.path, ipcPath)
+  if (process.platform !== 'win32') {
+    const mode = fs.statSync(ipcPath).mode & 0o777
+    assert.equal(mode, 0o600, `socket mode should be 0600, got ${mode.toString(8)}`)
+  }
   await server.stop()
 })
 
@@ -20,7 +51,8 @@ test('getStatus() reflects initial state', async () => {
   const server = makeWsServer()
   const status = server.getStatus()
   assert.equal(status.connected, false)
-  assert.equal(status.port, 0)
+  assert.equal(status.transport, null)
+  assert.equal(status.path, null)
   assert.equal(status.pendingCalls, 0)
 })
 
@@ -47,8 +79,81 @@ test('onEvent() returns unsubscribe function', async () => {
 
 test('start() can be called twice (idempotent)', async () => {
   const server = makeWsServer()
-  const { port: p1 } = await server.start()
-  const { port: p2 } = await server.start()
-  assert.equal(p1, p2)
+  const ipcPath = makeIpcPath()
+  const first = await server.start({ path: ipcPath })
+  const second = await server.start()
+  assert.equal(second.path, first.path)
+  await server.stop()
+})
+
+test('start() requires an authToken', async () => {
+  const server = createRunnerWsServer({ log: () => {} })
+  await assert.rejects(server.start({ path: makeIpcPath() }), err => /authToken/.test(err.message))
+})
+
+test('authenticated client completes the handshake and delivers notifications', async () => {
+  const server = makeWsServer()
+  const ipcPath = makeIpcPath()
+  await server.start({ path: ipcPath })
+
+  const events = []
+  server.onEvent(ev => events.push(ev))
+  const client = wsConnect(ipcPath)
+  await once(client, 'open')
+  client.send(JSON.stringify({ jsonrpc: '2.0', method: 'runner_ready', params: { version: 'test' } }))
+
+  await new Promise(resolve => {
+    const timer = setInterval(() => {
+      if (events.some(ev => ev.type === 'runner_ready')) {
+        clearInterval(timer)
+        resolve()
+      }
+    }, 20)
+  })
+  assert.equal(server.getStatus().connected, true)
+  client.close()
+  await once(client, 'close')
+  await server.stop()
+})
+
+test('a second authenticated connection replaces the first with code 1000', async () => {
+  const server = makeWsServer()
+  const ipcPath = makeIpcPath()
+  await server.start({ path: ipcPath })
+
+  const first = wsConnect(ipcPath)
+  await once(first, 'open')
+  const second = wsConnect(ipcPath)
+  await once(second, 'open')
+
+  const [closeEvent] = await once(first, 'close')
+  assert.equal(closeEvent, 1000, 'existing connection should be replaced with 1000')
+  second.close()
+  await once(second, 'close')
+  await server.stop()
+})
+
+test('a bad handshake token gets HTTP 401 and never opens; existing connections survive', async () => {
+  const server = makeWsServer()
+  const ipcPath = makeIpcPath()
+  await server.start({ path: ipcPath })
+
+  // A healthy connection first — it must be unaffected by the attacker.
+  const good = wsConnect(ipcPath)
+  await once(good, 'open')
+
+  const bad = wsConnect(ipcPath, { 'x-deskagent-auth': '0'.repeat(64) })
+  const [error] = await once(bad, 'error')
+  assert.match(String(error.message), /401|Unexpected server response/)
+  // ws aborts the failed handshake; 'close' may or may not follow, so
+  // terminate unconditionally and wait bounded.
+  bad.terminate()
+  await Promise.race([once(bad, 'close'), new Promise(resolve => setTimeout(resolve, 500))])
+
+  assert.equal(good.readyState, 1, 'authenticated connection must survive a rejected upgrade')
+  assert.equal(server.getStatus().connected, true)
+
+  good.close()
+  await once(good, 'close')
   await server.stop()
 })

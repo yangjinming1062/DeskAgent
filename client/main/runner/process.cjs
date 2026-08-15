@@ -65,8 +65,8 @@ function createRunnerProcess(options = {}) {
     return { ...state }
   }
 
-  function buildArgs({ desktopWs, extraArgs }) {
-    const args = ['--desktop-ws', desktopWs]
+  function buildArgs({ endpointPath, authToken, extraArgs }) {
+    const args = ['--desktop-endpoint', endpointPath, '--desktop-auth', authToken]
     if (Array.isArray(extraArgs)) args.push(...extraArgs)
     return args
   }
@@ -75,8 +75,11 @@ function createRunnerProcess(options = {}) {
     if (state.running) {
       throw new Error('Runner is already running.')
     }
-    if (!args.desktopWs) {
-      throw new Error('start() requires a desktopWs URL.')
+    if (!args.endpointPath) {
+      throw new Error('start() requires an endpointPath (named pipe or socket path).')
+    }
+    if (!args.authToken) {
+      throw new Error('start() requires an authToken.')
     }
 
     const resolved = resolveRunnerExecutable({
@@ -102,7 +105,11 @@ function createRunnerProcess(options = {}) {
       ...(options.env || {})
     }
 
-    log(`[runner] spawn ${resolved.kind} ${resolved.command} ${argv.join(' ')}`)
+    // The token must not land in logs — argv echo is its leak surface.
+    const displayArgv = argv.map((value, index) =>
+      index > 0 && argv[index - 1] === '--desktop-auth' ? '<redacted>' : value
+    )
+    log(`[runner] spawn ${resolved.kind} ${resolved.command} ${displayArgv.join(' ')}`)
 
     let handle
     try {

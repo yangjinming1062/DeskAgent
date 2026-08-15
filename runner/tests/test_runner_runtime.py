@@ -255,7 +255,7 @@ def test_info_payload_shape():
     even when MCP tools aren't initialized."""
     import importlib
 
-    # Re-import server.py in isolation; it doesn't connect without --desktop-ws.
+    # Re-import server.py in isolation; it doesn't connect without --desktop-endpoint/--desktop-auth.
     server = importlib.import_module("server")
     info = server._build_info()
 

@@ -18,7 +18,18 @@ from tools.interrupt import set_global_interrupt, set_interrupt
 from tools.mcp import discover_mcp_tools, reload_mcp_servers
 from tools.tool_output_limits import reset_cache as reset_output_limits_cache
 from tools.toolsets import get_disabled_toolset_ids
-from utils import disk_free_bytes, get_deskagent_home, init_runner_job_object, network_reachable, pid_exists, set_handler, set_inmemory_config, snapshot
+from utils import (
+    DesktopEndpoint,
+    connect_desktop,
+    disk_free_bytes,
+    get_deskagent_home,
+    init_runner_job_object,
+    network_reachable,
+    read_endpoint,
+    set_handler,
+    set_inmemory_config,
+    snapshot,
+)
 
 logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger("deskagent_runner")
@@ -222,92 +233,108 @@ MAX_BACKOFF_S = 30.0
 _BG_TASKS: set[asyncio.Task] = set()
 
 
-async def runner_loop(ws_url: str) -> None:
-    """Long-running connection loop for Desktop WS.
+async def runner_loop(endpoint: DesktopEndpoint) -> None:
+    """Long-running connection loop for the Desktop IPC link.
 
     Keeps a persistent connection, handles reconnect backoff, dispatches
     RPC calls, and notifies Desktop when ready.
     """
     global _ACTIVE_WS, _RUNNER_LOOP, _RECONNECT_COUNT
 
-    current_url = ws_url
+    current_endpoint = endpoint
     attempt = 0
 
     while True:
-        logger.info(f"Connecting to Desktop WS: {current_url} (attempt {attempt + 1})")
         cancelled = False
-        # Proactively drain any stale
-        # ``_PENDING_RPC`` futures before the new connection opens. The
-        # ``finally`` block on the previous connection does this too,
-        # but only after the websocket context manager fully unwinds —
-        # any future created in the gap would leak an awaited
-        # ``wait_for`` on the caller side. Cheap insurance: set
-        # ConnectionError on every future that's still pending.
-        for _fut in list(_PENDING_RPC.values()):
-            if not _fut.done():
-                _fut.set_exception(ConnectionError("Runner WS reconnecting; abandoning in-flight request"))
-        _PENDING_RPC.clear()
-        try:
-            async with websockets.connect(current_url) as ws:
-                _ACTIVE_WS = ws
-                _RUNNER_LOOP = asyncio.get_running_loop()
-                attempt = 0  # reset on successful connection
-                try:
-                    await _send_notification(ws, "runner_ready", _runner_ready_payload())
-                    _schedule_background_mcp_discovery()
+        if current_endpoint is None:
+            # Pre-try guard (a return-value state, not an exception): the
+            # Desktop-restart window where the endpoint file is missing or
+            # its PID is stale. Wait for the file instead of connecting.
+            logger.info("Desktop endpoint not ready, waiting for endpoint file...")
+        else:
+            logger.info(f"Connecting to Desktop IPC: {current_endpoint.path} (attempt {attempt + 1})")
+            # Proactively drain any stale
+            # ``_PENDING_RPC`` futures before the new connection opens. The
+            # ``finally`` block on the previous connection does this too,
+            # but only after the websocket context manager fully unwinds —
+            # any future created in the gap would leak an awaited
+            # ``wait_for`` on the caller side. Cheap insurance: set
+            # ConnectionError on every future that's still pending.
+            for _fut in list(_PENDING_RPC.values()):
+                if not _fut.done():
+                    _fut.set_exception(ConnectionError("Runner WS reconnecting; abandoning in-flight request"))
+            _PENDING_RPC.clear()
+            try:
+                connection = await connect_desktop(current_endpoint)
+                async with connection as ws:
+                    _ACTIVE_WS = ws
+                    _RUNNER_LOOP = asyncio.get_running_loop()
+                    attempt = 0  # reset on successful connection
+                    try:
+                        await _send_notification(ws, "runner_ready", _runner_ready_payload())
+                        _schedule_background_mcp_discovery()
 
-                    async for message in ws:
-                        try:
-                            data = json.loads(message)
-                        except json.JSONDecodeError:
-                            logger.error("Invalid JSON received")
-                            continue
-                        # JSON-RPC frames must be JSON objects. A frame
-                        # that parses to ``int``/``list``/``None`` is
-                        # a malformed message — log and skip rather
-                        # than letting ``data.get(...)`` raise and
-                        # kill the reader task.
-                        if not isinstance(data, dict):
-                            logger.error("Non-object JSON frame received: %r", type(data).__name__)
-                            continue
+                        async for message in ws:
+                            try:
+                                data = json.loads(message)
+                            except json.JSONDecodeError:
+                                logger.error("Invalid JSON received")
+                                continue
+                            # JSON-RPC frames must be JSON objects. A frame
+                            # that parses to ``int``/``list``/``None`` is
+                            # a malformed message — log and skip rather
+                            # than letting ``data.get(...)`` raise and
+                            # kill the reader task.
+                            if not isinstance(data, dict):
+                                logger.error("Non-object JSON frame received: %r", type(data).__name__)
+                                continue
 
-                        req_id = data.get("id")
-                        if req_id and (fut := _PENDING_RPC.pop(req_id, None)):
-                            if "error" in data:
-                                err = data["error"]
-                                err_msg = err.get("message", str(err)) if isinstance(err, dict) else str(err)
-                                fut.set_exception(Exception(err_msg))
-                            else:
-                                fut.set_result(data.get("result"))
-                            continue
+                            req_id = data.get("id")
+                            if req_id and (fut := _PENDING_RPC.pop(req_id, None)):
+                                if "error" in data:
+                                    err = data["error"]
+                                    err_msg = err.get("message", str(err)) if isinstance(err, dict) else str(err)
+                                    fut.set_exception(Exception(err_msg))
+                                else:
+                                    fut.set_result(data.get("result"))
+                                continue
 
-                        t = asyncio.create_task(process_request(ws, data))
-                        _BG_TASKS.add(t)
-                        t.add_done_callback(_BG_TASKS.discard)
-                finally:
-                    _ACTIVE_WS = None
-                    _RUNNER_LOOP = None
-                    # Drain pending request_llm futures with ConnectionError so
-                    # callers' wait_for returns fast; set_exception (not cancel)
-                    # preserves the "disconnected" reason for the LLM.
-                    for _fut in list(_PENDING_RPC.values()):
-                        # A future may be done (response already popped, or
-                        # wait_for cancelled it) between the values() snapshot
-                        # and the iteration; set_exception on a done future
-                        # raises InvalidStateError and would break the loop.
-                        if not _fut.done():
-                            _fut.set_exception(ConnectionError("Runner WS disconnected before response arrived"))
-                    _PENDING_RPC.clear()
+                            t = asyncio.create_task(process_request(ws, data))
+                            _BG_TASKS.add(t)
+                            t.add_done_callback(_BG_TASKS.discard)
+                    finally:
+                        _ACTIVE_WS = None
+                        _RUNNER_LOOP = None
+                        # Drain pending request_llm futures with ConnectionError so
+                        # callers' wait_for returns fast; set_exception (not cancel)
+                        # preserves the "disconnected" reason for the LLM.
+                        for _fut in list(_PENDING_RPC.values()):
+                            # A future may be done (response already popped, or
+                            # wait_for cancelled it) between the values() snapshot
+                            # and the iteration; set_exception on a done future
+                            # raises InvalidStateError and would break the loop.
+                            if not _fut.done():
+                                _fut.set_exception(ConnectionError("Runner WS disconnected before response arrived"))
+                        _PENDING_RPC.clear()
 
-        except websockets.exceptions.ConnectionClosed:
-            logger.warning("WebSocket connection closed by Desktop.")
-        except asyncio.CancelledError:
-            # Test cleanup / normal shutdown — exit the loop. Don't bump
-            # ``_RECONNECT_COUNT`` because we intentionally tore down, not
-            # dropped mid-session.
-            cancelled = True
-        except Exception as e:
-            logger.error(f"WebSocket error: {e}")
+            except websockets.exceptions.ConnectionClosed:
+                logger.warning("WebSocket connection closed by Desktop.")
+            except websockets.exceptions.InvalidStatus as e:
+                # HTTP 401 from the Desktop's pre-upgrade token check: this
+                # process still holds the previous session's token (the
+                # Desktop restarted). Drop the cached endpoint so the next
+                # attempt re-reads the endpoint file for the fresh path and
+                # token — retrying the stale one would burn the attempt
+                # budget on a guaranteed rejection.
+                logger.warning(f"Desktop rejected handshake ({e.response.status_code}); refreshing endpoint")
+                current_endpoint = None
+            except asyncio.CancelledError:
+                # Test cleanup / normal shutdown — exit the loop. Don't bump
+                # ``_RECONNECT_COUNT`` because we intentionally tore down, not
+                # dropped mid-session.
+                cancelled = True
+            except Exception as e:
+                logger.error(f"WebSocket error: {e}")
 
         if cancelled:
             break
@@ -317,40 +344,15 @@ async def runner_loop(ws_url: str) -> None:
             logger.error(f"Failed to reconnect after {MAX_RECONNECT_ATTEMPTS} attempts. Exiting.")
             sys.exit(1)
 
-        # Try to read a fresh endpoint from the file Desktop writes.
-        new_url = _read_endpoint_url()
-        if new_url:
-            current_url = new_url
+        # Try to read a fresh endpoint (path AND token) from the file the
+        # Desktop writes; a missing/stale file keeps the cached endpoint.
+        new_endpoint = read_endpoint()
+        if new_endpoint:
+            current_endpoint = new_endpoint
 
         backoff = min(BASE_BACKOFF_S * (2 ** min(attempt - 1, 4)), MAX_BACKOFF_S)
         logger.info(f"Reconnecting in {backoff:.1f}s (attempt {attempt}/{MAX_RECONNECT_ATTEMPTS})")
         await asyncio.sleep(backoff)
-
-
-def _read_endpoint_url() -> str | None:
-    """Read ``$DESKAGENT_HOME/desktop-endpoint.json`` and return a WS URL.
-
-    Returns ``None`` if the file is missing, malformed, or the Desktop PID
-    is no longer alive (stale file from a crashed Desktop).
-    """
-    try:
-        endpoint_path = get_deskagent_home() / "desktop-endpoint.json"
-        if not endpoint_path.exists():
-            return None
-        data = json.loads(endpoint_path.read_text(encoding="utf-8"))
-        port = data.get("port")
-        pid = data.get("pid")
-        if not isinstance(port, int) or port <= 0:
-            return None
-        # Skip stale files left by a crashed Desktop. pid_exists() over
-        # os.kill(pid, 0): latter is unsafe on Windows (bpo-14484).
-        if isinstance(pid, int) and pid > 0:
-            if not pid_exists(pid):
-                logger.debug(f"Desktop PID {pid} is gone, ignoring stale endpoint file")
-                return None
-        return f"ws://127.0.0.1:{port}/rpc"
-    except Exception:
-        return None
 
 
 def _runner_ready_payload() -> dict:
@@ -433,14 +435,18 @@ def _active_mcp_server_names() -> list[str]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="DeskAgent Runner Server")
-    parser.add_argument("--desktop-ws", required=True, help="Desktop WebSocket URL (e.g. ws://127.0.0.1:8080/rpc)")
+    parser.add_argument("--desktop-endpoint", required=True, help="Desktop IPC path (Windows named pipe or Unix socket path)")
+    parser.add_argument("--desktop-auth", required=True, help="Desktop handshake token (from --desktop-auth at spawn)")
     args = parser.parse_args()
+
+    transport = "pipe" if sys.platform == "win32" else "unix"
+    endpoint = DesktopEndpoint(transport=transport, path=args.desktop_endpoint, token=args.desktop_auth)
 
     discover_builtin_tools()
     set_handler(request_llm_from_desktop)
 
     try:
-        asyncio.run(runner_loop(args.desktop_ws))
+        asyncio.run(runner_loop(endpoint))
     except KeyboardInterrupt:
         logger.info("Runner stopped.")
 
