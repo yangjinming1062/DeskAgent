@@ -35,6 +35,9 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["debugpy==1.8.20", "pytest==9.0.2", "pytest-asyncio==1.3.0", "pytest-timeout==2.4.0", "ruff==0.15.10"]
 
+[tool.setuptools]
+py-modules = ["runner_version"]
+
 [tool.setuptools.packages.find]
 include = ["tools", "tools.*", "utils", "utils.*"]
 
