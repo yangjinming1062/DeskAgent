@@ -97,23 +97,23 @@ async def speech_to_text(
     """Speech-to-text via the provider chain (MiMo ASR; only MiMo registers STT)."""
     user, _ = auth_data
 
+    # The declared size (client-controlled multipart header) only short-circuits
+    # an obviously oversized upload; the streamed cap below is the real limit —
+    # trusting the header would allow an unbounded read into memory.
     declared_size = _upload_size_or_none(audio_file)
     if declared_size is not None and declared_size > STT_MAX_AUDIO_BYTES:
         raise HTTPException(
             status_code=413, detail={"error": f"Audio file too large (max {STT_MAX_AUDIO_BYTES // (1024 * 1024)} MB)", "reason": "payload_too_large", "status": 413}
         )
 
-    if declared_size is not None:
-        file_bytes = await audio_file.read()
-    else:
-        sink = bytearray()
-        async for chunk in audio_file.stream():
-            sink.extend(chunk)
-            if len(sink) > STT_MAX_AUDIO_BYTES:
-                raise HTTPException(
-                    status_code=413, detail={"error": f"Audio file too large (max {STT_MAX_AUDIO_BYTES // (1024 * 1024)} MB)", "reason": "payload_too_large", "status": 413}
-                )
-        file_bytes = bytes(sink)
+    sink = bytearray()
+    async for chunk in audio_file.stream():
+        sink.extend(chunk)
+        if len(sink) > STT_MAX_AUDIO_BYTES:
+            raise HTTPException(
+                status_code=413, detail={"error": f"Audio file too large (max {STT_MAX_AUDIO_BYTES // (1024 * 1024)} MB)", "reason": "payload_too_large", "status": 413}
+            )
+    file_bytes = bytes(sink)
 
     mime_type = _resolve_mime_type(audio_file.content_type)
 
@@ -210,7 +210,10 @@ async def image_gen(
     # base64 payload — persist locally and serve via our public files route so
     # downstream callers (LLM image_url parts, browser previews) get a stable
     # URL that survives MiniMax CDN eviction.
-    data = base64.b64decode(asset.b64 or "")
+    try:
+        data = base64.b64decode(asset.b64 or "")
+    except ValueError:
+        raise _http_error(502, "image_gen_invalid_payload", "图片生成服务返回了无法解码的数据") from None
     file_id, public_url = save_file(data, session_id="", content_type=asset.mime, ext="jpg")
     return {"success": True, "url": public_url}
 
