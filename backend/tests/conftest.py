@@ -128,6 +128,11 @@ async def _patch_db(monkeypatch, sqlite_engine, tmp_path):
     await connection.close()
 
 
+@pytest.fixture()
+def SessionLocal(_patch_db) -> async_sessionmaker:
+    return _patch_db[1]
+
+
 async def _seed_user(SessionLocal, username="testuser"):
     """Insert a user + active LoginRecord + model config.
 

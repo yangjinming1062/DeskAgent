@@ -56,10 +56,10 @@ _CONSOLIDATE_SCAN_INTERVAL_SECONDS: int = 600
 # Outer throttle on the nightly activity scan.
 _LAST_NIGHTLY_SCAN: float = 0.0
 
-# Hard cap on due jobs processed per tick — bounds event-loop blocking on
-# backlog catch-up after a long pause (e.g. 60 minutes of
-# ``* * * * *`` schedules = 3,600 due jobs on the first tick). Jobs past
-# the cap keep their old ``next_run_at`` and re-fire on the next tick.
+# Hard cap on due jobs processed per tick — bounds the batch CAS statement
+# size and per-tick work on backlog catch-up after a long pause (e.g. 60
+# minutes of ``* * * * *`` schedules = 3,600 due jobs on the first tick).
+# Jobs past the cap keep their old ``next_run_at`` and re-fire on the next tick.
 _MAX_DUE_PER_TICK = 200
 
 
@@ -86,13 +86,16 @@ async def _select_due_jobs() -> list[Row]:
 
 
 async def _bulk_cas_advance(due_jobs: list[Row], now: datetime) -> dict[int, dict[str, Any]]:
-    """Per-row CAS UPDATE advancing ``next_run_at`` for every due job.
+    """Batched CAS advancing ``next_run_at`` for every due job.
 
     The CAS predicate ``(id, next_run_at, schedule)`` guards against a
-    user-driven ``update_job`` advancing ``next_run_at`` mid-tick —
-    breaking the match silently skips the loser.
+    user-driven ``update_job`` advancing ``next_run_at`` mid-tick — rows
+    that break the match silently lose and are skipped. One statement per
+    kind (recurring UPDATE / one-shot DELETE) via row-value ``IN`` —
+    supported by both Postgres and SQLite ≥ 3.15 — instead of ≤200
+    sequential round-trips.
     Returns ``{job_id: {user_id, is_paused, payload}}`` for the jobs that
-    won the CAS. Jobs that lost (0 rows updated) are dropped.
+    won the CAS. Jobs that lost (absent from RETURNING) are dropped.
 
     ``db.commit()`` is explicit because :func:`utils.session_scope`
     only auto-closes — it does not commit. Without the explicit commit,
@@ -118,23 +121,42 @@ async def _bulk_cas_advance(due_jobs: list[Row], now: datetime) -> dict[int, dic
             new_runs[job.id] = next_run
             winners[job.id] = {"user_id": job.user_id, "is_paused": next_run is None, "payload": {"prompt": job.prompt}}
 
+    recurring = [job for job in due_jobs if not job.one_shot]
+    one_shots = [job for job in due_jobs if job.one_shot]
+    won: set[int] = set()
+
     async with session_scope() as db:
-        won_ids: list[int] = []
-        for job in due_jobs:
-            if job.one_shot:
-                # Delete one-shot jobs after firing so they don't accumulate.
-                # The CAS predicate on next_run_at prevents double-fire.
-                result = await db.execute(text("DELETE FROM cron_jobs WHERE id = :id AND next_run_at = :old_run"), {"id": job.id, "old_run": job.next_run_at})
-            else:
-                result = await db.execute(
-                    text("UPDATE cron_jobs SET next_run_at = :new_run, is_paused = :is_paused WHERE id = :id AND next_run_at = :old_run AND schedule = :sched"),
-                    {"id": job.id, "old_run": job.next_run_at, "sched": job.schedule, "new_run": new_runs[job.id], "is_paused": winners[job.id]["is_paused"]},
-                )
-            if result.rowcount:
-                won_ids.append(job.id)
+        if recurring:
+            # PG: CAST gives asyncpg the parameter type in the CASE branch (it
+            # can't infer from the assignment target). SQLite: no cast — its
+            # CAST applies NUMERIC affinity and truncates the ISO string.
+            is_pg = db.bind is not None and db.bind.dialect.name == "postgresql"
+            then = "CAST(:next_{i} AS timestamp)" if is_pg else ":next_{i}"
+            next_case = " ".join(f"WHEN :id_{i} THEN {then.format(i=i)}" for i in range(len(recurring)))
+            match = ", ".join(f"(:id_{i}, :old_{i}, :sched_{i})" for i in range(len(recurring)))
+            params: dict[str, Any] = {}
+            for i, job in enumerate(recurring):
+                params |= {f"id_{i}": job.id, f"next_{i}": new_runs[job.id], f"old_{i}": job.next_run_at, f"sched_{i}": job.schedule}
+            # is_paused derives from the same CASE: croniter exhausted (= None)
+            # is the only state that parks a job.
+            res = await db.execute(
+                text(
+                    f"UPDATE cron_jobs SET next_run_at = CASE id {next_case} END, is_paused = (CASE id {next_case} END) IS NULL "
+                    f"WHERE (id, next_run_at, schedule) IN ({match}) RETURNING id"
+                ),
+                params,
+            )
+            won.update(r[0] for r in res.all())
+        if one_shots:
+            # Delete one-shot jobs after firing so they don't accumulate.
+            # The CAS predicate on next_run_at prevents double-fire.
+            match = ", ".join(f"(:oid_{i}, :oold_{i})" for i in range(len(one_shots)))
+            params = {f"oid_{i}": job.id for i, job in enumerate(one_shots)} | {f"oold_{i}": job.next_run_at for i, job in enumerate(one_shots)}
+            res = await db.execute(text(f"DELETE FROM cron_jobs WHERE (id, next_run_at) IN ({match}) RETURNING id"), params)
+            won.update(r[0] for r in res.all())
         await db.commit()
 
-    return {jid: winners[jid] for jid in won_ids}
+    return {job.id: winners[job.id] for job in due_jobs if job.id in won}
 
 
 async def _advance_due_jobs(due_jobs: list[Row], now: datetime) -> None:
