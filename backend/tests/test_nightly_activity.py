@@ -770,6 +770,10 @@ async def test_eligibility_gate_and_pipeline_read_the_same_day(seeded, monkeypat
 @pytest.mark.asyncio
 async def test_e2e_nightly_full_run(seeded):
     """End-to-end full run against real LLM provider."""
+    import os
+
+    if not os.environ.get("MIMO_API_KEY"):
+        pytest.skip("MIMO_API_KEY not set")
     SessionLocal = seeded
     async with SessionLocal() as db:
         conv = Conversation(user_id=1001)
@@ -903,9 +907,13 @@ async def test_stage_5_creation_pipeline(monkeypatch, _patch_db):
     async def _mock_chain(db, uid, cap):
         return ["provider_a"] if cap == "image_gen" else []
 
+    async def _mock_gen_clips(*a, **kw):
+        return [{"name": "angry_stomp", "duration": 1.0, "tracks": []}]
+
     monkeypatch.setattr(nightly_activity, "preview_wardrobe_texture", _mock_preview)
     monkeypatch.setattr(nightly_activity, "confirm_wardrobe_item", _mock_confirm)
     monkeypatch.setattr(nightly_activity, "resolve_provider_chain", _mock_chain)
+    monkeypatch.setattr(nightly_activity, "generate_animation_clips", _mock_gen_clips)
 
     ok = await _stage_5_creation(
         llm_cfg={"model_name": "test"},

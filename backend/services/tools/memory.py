@@ -278,7 +278,7 @@ class NativeMemory:
         if not query:
             return tool_error("Missing required parameter: query")
         try:
-            from services.companion.memory_retrieval import retrieve_hybrid_memories
+            from services.companion import retrieve_hybrid_memories
 
             async with self._session() as db:
                 results = await retrieve_hybrid_memories(db, self.user_id, query, limit=MEMORY_RECALL_MAX_RESULTS)

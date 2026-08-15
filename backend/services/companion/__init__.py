@@ -36,7 +36,7 @@ from .blender_llm_pipeline import run_blender_llm_pipeline
 from .garment_service import run_garment_pipeline
 from .http_range import serve_ranged_file
 from .interact import InteractResult, interact
-from .interaction_stats import record_interaction
+from .interaction_stats import read_today_summary, record_interaction
 from .memory_admin import delete_memory, list_memories, memory_counts, update_memory, upsert_slotted_memory
 from .memory_bootstrap import build_user_profile_extras, extract_user_profile, read_user_profile, record_user_profile
 from .memory_format import format_auto_inject_block, format_inferred_profile_block, format_memories_block, format_proactive_memory_block
@@ -53,6 +53,7 @@ from .model_service import (
     run_tripo_pipeline,
     signed_model_url,
 )
+from .morph_generator import validate_and_sanitize_expression
 from .outfit_normalizer import normalize_outfit
 from .persona_background import schedule_onboarding_outfit_extraction, schedule_personality_tag_refresh
 from .persona_service import (
@@ -180,6 +181,7 @@ __all__ = [
     "preview_wardrobe_texture",
     "preview_wardrobe_outfit",
     "preview_garment",
+    "read_today_summary",
     "record_interaction",
     "read_user_profile",
     "record_user_profile",
@@ -211,6 +213,7 @@ __all__ = [
     "update_outfit_field",
     "update_persona",
     "upsert_slotted_memory",
+    "validate_and_sanitize_expression",
     "verify_signed_asset_request",
     "verify_signed_avatar_request",
     "voice_catalog",

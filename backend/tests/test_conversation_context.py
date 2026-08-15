@@ -15,7 +15,7 @@ Context window:
 - Excludes messages with tool_calls (multi-step tool-only assistant turns)
 """
 import json
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from sqlalchemy import func, select
@@ -98,7 +98,7 @@ async def _add_msg(SessionLocal, conv_id: int, role: str, content: str = "", *, 
             tool_calls=tool_calls,
             tool_call_id=tool_call_id,
             content_type=content_type or "text",
-            created_at=at or datetime.utcnow(),
+            created_at=at or datetime.now(UTC),
         )
         db.add(m)
         await db.commit()
@@ -215,7 +215,7 @@ async def test_context_window_returns_chronological_recent(seeded):
     """Returns the most recent N messages in chronological order."""
     SessionLocal = seeded
     conv_id = await _make_main_conv(SessionLocal, 3001)
-    base = datetime(2026, 8, 13, 10, 0, 0)
+    base = datetime(2026, 8, 13, 10, 0, 0, tzinfo=UTC)
     # Seed 12 messages; only the last 10 should be returned
     for i in range(12):
         await _add_msg(SessionLocal, conv_id, "user" if i % 2 == 0 else "assistant", f"msg_{i:02d}", at=base + timedelta(minutes=i))
@@ -237,7 +237,7 @@ async def test_context_window_filters_ui_only_subtypes(seeded):
     """status_interaction, status_reaction, hint should be excluded."""
     SessionLocal = seeded
     conv_id = await _make_main_conv(SessionLocal, 3001)
-    base = datetime(2026, 8, 13, 10, 0, 0)
+    base = datetime(2026, 8, 13, 10, 0, 0, tzinfo=UTC)
     # A normal pair
     await _add_msg(SessionLocal, conv_id, "user", "你好", at=base)
     await _add_msg(SessionLocal, conv_id, "assistant", "你好！", at=base + timedelta(minutes=1))
@@ -264,7 +264,7 @@ async def test_context_window_filters_tool_calls_messages(seeded):
     """Assistant messages with tool_calls (intermediate steps) are excluded."""
     SessionLocal = seeded
     conv_id = await _make_main_conv(SessionLocal, 3001)
-    base = datetime(2026, 8, 13, 10, 0, 0)
+    base = datetime(2026, 8, 13, 10, 0, 0, tzinfo=UTC)
     await _add_msg(SessionLocal, conv_id, "user", "查天气", at=base)
     await _add_msg(
         SessionLocal, conv_id, "assistant", "",
@@ -285,7 +285,7 @@ async def test_context_window_filters_tool_calls_messages(seeded):
 async def test_context_window_respects_character_cap(seeded):
     SessionLocal = seeded
     conv_id = await _make_main_conv(SessionLocal, 3001)
-    base = datetime(2026, 8, 13, 10, 0, 0)
+    base = datetime(2026, 8, 13, 10, 0, 0, tzinfo=UTC)
     await _add_msg(SessionLocal, conv_id, "user", "x" * 1000, at=base)
     await _add_msg(SessionLocal, conv_id, "assistant", "y" * 1000, at=base + timedelta(minutes=1))
 
@@ -308,7 +308,7 @@ async def test_context_window_extracts_text_from_multimodal_v1(seeded):
 
     SessionLocal = seeded
     conv_id = await _make_main_conv(SessionLocal, 3001)
-    base = datetime(2026, 8, 13, 10, 0, 0)
+    base = datetime(2026, 8, 13, 10, 0, 0, tzinfo=UTC)
     parts = json.dumps(
         [
             {"type": "text", "text": "看这张图"},

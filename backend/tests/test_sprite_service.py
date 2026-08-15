@@ -1,6 +1,6 @@
 import io
 import json
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
@@ -228,7 +228,7 @@ async def test_prune_album_caps_and_keeps_waiting(db_session, monkeypatch):
     monkeypatch.setattr(sprite_service, "unlink_companion_asset", lambda path: unlinked.append(path))
     monkeypatch.setattr(sprite_service, "_SPRITE_ALBUM_CAP", 3)
     asset = await _avatar(db_session)
-    base = datetime(2026, 8, 14, 12, 0, 0)
+    base = datetime(2026, 8, 14, 12, 0, 0, tzinfo=UTC)
     oldest = await _row(db_session, 1, asset.id, "最旧")
     await db_session.execute(
         update(CompanionSpriteImage).where(CompanionSpriteImage.id == oldest.id).values(created_at=base)

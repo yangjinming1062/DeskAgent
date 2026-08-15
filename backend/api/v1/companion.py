@@ -1,9 +1,10 @@
 import asyncio
 import base64
 import json
+from datetime import timedelta
 
 from common import get_router
-from components import SETTINGS, get_db, get_logger, safe_json_loads
+from components import SESSION_LOCAL, SETTINGS, get_db, get_logger, safe_json_loads, utc_now
 from fastapi import Body, Depends, HTTPException, Request, Response, status
 from modules.auth import LoginRecord, User, get_current_session
 from modules.companion import (
@@ -411,13 +412,18 @@ async def post_wardrobe(
     # render worker (README §1: web never hosts Blender pipelines); this
     # endpoint long-polls the job to keep the synchronous 201 contract.
     job_id = await render_queue.enqueue("garment_preview", user.id, {"description": body.description})
-    while True:
-        job = await db.get(RenderJob, job_id)
+    deadline = utc_now() + timedelta(seconds=SETTINGS.blender_llm_timeout * SETTINGS.blender_llm_max_iterations)
+    job: RenderJob | None = None
+    while utc_now() < deadline:
+        async with SESSION_LOCAL() as poll_db:
+            job = await poll_db.get(RenderJob, job_id)
         if job is None or job.status == "failed":
             raise HTTPException(status_code=502, detail={"error": "换装生成失败，请稍后重试"})
         if job.status == "succeeded":
             break
         await asyncio.sleep(2.0)
+    if job is None or job.status != "succeeded":
+        raise HTTPException(status_code=504, detail={"error": "换装生成超时，请稍后重试"})
     result = job.result or {}
     try:
         item = await confirm_wardrobe_item(

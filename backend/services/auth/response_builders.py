@@ -1,6 +1,6 @@
 from modules.auth import UserModelConfig, UserModelConfigResponse, fingerprint_api_key, public_provider_slots
 
-from services.auth.capabilities import CAPABILITIES
+from .capabilities import CAPABILITIES
 
 
 def build_config_response(cfg: UserModelConfig | None) -> UserModelConfigResponse:

@@ -1,8 +1,9 @@
 from components import safe_json_loads
 from modules.companion import AvatarAsset, AvatarAssetResponse, CompanionModel, CompanionModelResponse, WardrobeItem, WardrobeItemResponse
 
-from services.companion.model_service import signed_model_url
-from services.companion.wardrobe_service import slot_of
+from .asset_store import get_companion_model_sha256
+from .model_service import signed_model_url
+from .wardrobe_service import slot_of
 
 
 def avatar_response(asset: AvatarAsset) -> AvatarAssetResponse:
@@ -24,8 +25,6 @@ def model_response(model: CompanionModel) -> CompanionModelResponse:
         parts = model.asset_url.split("/", 2)
         if len(parts) == 3:
             try:
-                from services.companion.asset_store import get_companion_model_sha256
-
                 content_hash = get_companion_model_sha256(int(parts[1]), parts[2])
             except Exception:
                 pass

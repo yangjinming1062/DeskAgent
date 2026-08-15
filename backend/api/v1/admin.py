@@ -71,7 +71,7 @@ async def update_user(user_id: int, payload: UserUpdate, _admin: str = Depends(g
 
 @router.delete("/users/{user_id}", response_model=MessageResponse)
 async def delete_user(user_id: int, _admin: str = Depends(get_current_admin_token), db: AsyncSession = Depends(get_db)) -> MessageResponse:
-    db.delete(await get_or_404(db, User, id=user_id, detail="用户不存在。"))
+    await db.delete(await get_or_404(db, User, id=user_id, detail="用户不存在。"))
     await db.commit()
     return {"message": "用户已删除。"}
 
@@ -140,6 +140,6 @@ async def upsert_model_config(user_id: int, payload: UserModelConfigRequest, _ad
 
 @router.delete("/{user_id}/model-config")
 async def delete_model_config(user_id: int, _admin: str = Depends(get_current_admin_token), db: AsyncSession = Depends(get_db)) -> MessageResponse:
-    db.delete(await get_or_404(db, UserModelConfig, user_id=user_id, detail="模型配置不存在。"))
+    await db.delete(await get_or_404(db, UserModelConfig, user_id=user_id, detail="模型配置不存在。"))
     await db.commit()
     return {"message": "模型配置已删除。"}

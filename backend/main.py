@@ -20,6 +20,7 @@ from services.media import resume_pending_video_jobs
 from services.rate_limit import limiter, rate_limit_exception_handler, stash_user_id_middleware
 from services.scheduler import start_scheduler, stop_scheduler
 from services.tools import aclose
+from services.worker import queue as render_queue
 from slowapi.errors import RateLimitExceeded
 from sqlalchemy import create_engine, inspect
 from sqlalchemy.engine import make_url
@@ -89,8 +90,6 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     # Age-threshold recovery for render jobs whose worker died mid-claim.
     # Young claims stay untouched: a mere web restart must not requeue jobs a
     # still-running worker is executing (duplicate pipeline runs).
-    from services.worker import queue as render_queue
-
     await render_queue.requeue_stale(SETTINGS.worker_stale_reclaim_seconds)
 
     async def _cleanup_loop():

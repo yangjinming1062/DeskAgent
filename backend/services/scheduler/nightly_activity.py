@@ -33,13 +33,18 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from services.companion import memory_admin
-from services.companion.animation_generator import generate_animation_clips, get_rig_bones
-from services.companion.interaction_stats import read_today_summary
-from services.companion.memory_admin import upsert_slotted_memory
-from services.companion.model_service import emit_wardrobe_gift, get_active_model
-from services.companion.morph_generator import validate_and_sanitize_expression
-from services.companion.wardrobe_service import confirm_wardrobe_item, preview_wardrobe_texture
+from services.companion import (
+    confirm_wardrobe_item,
+    emit_wardrobe_gift,
+    generate_animation_clips,
+    get_active_model,
+    get_rig_bones,
+    list_memories,
+    preview_wardrobe_texture,
+    read_today_summary,
+    upsert_slotted_memory,
+    validate_and_sanitize_expression,
+)
 from services.conversation import CRON_KIND, MAIN_KIND, UI_ONLY_SUBTYPES
 from services.llm import call_llm_once, chat, resolve_provider_chain, resolve_user_llm_config
 from services.tools import AUTO_INJECT_SLOTS, INFERRED_PROFILE_SLOTS, KIND_TO_PREFIX, RECALL_TAGS
@@ -681,7 +686,7 @@ async def run_nightly_pipeline(user_id: int, reference_utc: datetime | None = No
             elif r.context.startswith(KIND_TO_PREFIX["user_profile"]):
                 user_profile[r.context] = r.content
 
-        recall_rows = await memory_admin.list_memories(db, user_id, kind="recall", limit=NIGHTLY_CONSOLIDATE_MAX_RECALL_ROWS)
+        recall_rows = await list_memories(db, user_id, kind="recall", limit=NIGHTLY_CONSOLIDATE_MAX_RECALL_ROWS)
 
         # Baseline 7-day activity stats (main conversation, real turns only —
         # poke/drag status rows are role="user" and would read as engagement).

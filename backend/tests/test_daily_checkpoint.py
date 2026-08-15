@@ -11,7 +11,7 @@ Coverage:
 - compress_summary rows are not folded into the summarisable input
 - tool_summary rows are not folded into the summarisable input
 """
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from sqlalchemy import select
@@ -105,8 +105,8 @@ async def test_daily_checkpoint_no_main_conversation(seeded, monkeypatch):
         await run_daily_checkpoint(
             llm_cfg={"model_name": "m"},
             user_id=2001,
-            utc_start=datetime(2026, 8, 13, 0, 0, 0),
-            utc_end=datetime(2026, 8, 14, 0, 0, 0),
+            utc_start=datetime(2026, 8, 13, 0, 0, 0, tzinfo=UTC),
+            utc_end=datetime(2026, 8, 14, 0, 0, 0, tzinfo=UTC),
             local_date_str="2026-08-13",
         )
     assert called is False
@@ -117,7 +117,7 @@ async def test_daily_checkpoint_empty_day_skip(seeded, monkeypatch):
     """No messages today → no LLM call, no summary."""
     SessionLocal = seeded
     conv_id = await _make_main_conv(SessionLocal, 2001)
-    base = datetime(2026, 8, 13, 10, 0, 0)
+    base = datetime(2026, 8, 13, 10, 0, 0, tzinfo=UTC)
     for i in range(5):
         await _add_message(SessionLocal, conv_id, "user", f"old {i}", base - timedelta(days=1) + timedelta(minutes=i))
 
@@ -130,8 +130,8 @@ async def test_daily_checkpoint_empty_day_skip(seeded, monkeypatch):
         await run_daily_checkpoint(
             llm_cfg={"model_name": "m"},
             user_id=2001,
-            utc_start=datetime(2026, 8, 13, 0, 0, 0),
-            utc_end=datetime(2026, 8, 14, 0, 0, 0),
+            utc_start=datetime(2026, 8, 13, 0, 0, 0, tzinfo=UTC),
+            utc_end=datetime(2026, 8, 14, 0, 0, 0, tzinfo=UTC),
             local_date_str="2026-08-13",
         )
 
@@ -141,7 +141,7 @@ async def test_daily_checkpoint_skip_when_only_status_rows_today(seeded, monkeyp
     """Poke/drag traces are not interaction worth summarizing, even with history."""
     SessionLocal = seeded
     conv_id = await _make_main_conv(SessionLocal, 2001)
-    base = datetime(2026, 8, 13, 10, 0, 0)
+    base = datetime(2026, 8, 13, 10, 0, 0, tzinfo=UTC)
     for i in range(100):
         await _add_message(SessionLocal, conv_id, "user", f"old {i}", base - timedelta(days=2) + timedelta(minutes=i))
     await _add_message(SessionLocal, conv_id, "user", "（戳了戳精灵）", base, subtype="status_interaction")
@@ -155,8 +155,8 @@ async def test_daily_checkpoint_skip_when_only_status_rows_today(seeded, monkeyp
         await run_daily_checkpoint(
             llm_cfg={"model_name": "m"},
             user_id=2001,
-            utc_start=datetime(2026, 8, 13, 0, 0, 0),
-            utc_end=datetime(2026, 8, 14, 0, 0, 0),
+            utc_start=datetime(2026, 8, 13, 0, 0, 0, tzinfo=UTC),
+            utc_end=datetime(2026, 8, 14, 0, 0, 0, tzinfo=UTC),
             local_date_str="2026-08-13",
         )
 
@@ -166,7 +166,7 @@ async def test_daily_checkpoint_summary_inserted_with_summary_date(seeded, monke
     """Enough today → creates a daily_summary message with summary_date set."""
     SessionLocal = seeded
     conv_id = await _make_main_conv(SessionLocal, 2001)
-    base = datetime(2026, 8, 13, 10, 0, 0)
+    base = datetime(2026, 8, 13, 10, 0, 0, tzinfo=UTC)
     for i in range(5):
         await _add_message(SessionLocal, conv_id, "user", f"u{i}", base + timedelta(minutes=i))
         await _add_message(SessionLocal, conv_id, "assistant", f"a{i}", base + timedelta(minutes=i, seconds=30))
@@ -183,8 +183,8 @@ async def test_daily_checkpoint_summary_inserted_with_summary_date(seeded, monke
         await run_daily_checkpoint(
             llm_cfg={"model_name": "m"},
             user_id=2001,
-            utc_start=datetime(2026, 8, 13, 0, 0, 0),
-            utc_end=datetime(2026, 8, 14, 0, 0, 0),
+            utc_start=datetime(2026, 8, 13, 0, 0, 0, tzinfo=UTC),
+            utc_end=datetime(2026, 8, 14, 0, 0, 0, tzinfo=UTC),
             local_date_str="2026-08-13",
         )
 
@@ -215,7 +215,7 @@ async def test_daily_checkpoint_includes_compress_summary_content(seeded, monkey
     messages into one unified summary."""
     SessionLocal = seeded
     conv_id = await _make_main_conv(SessionLocal, 2001)
-    base = datetime(2026, 8, 13, 10, 0, 0)
+    base = datetime(2026, 8, 13, 10, 0, 0, tzinfo=UTC)
 
     # Old messages before any checkpoint
     for i in range(10):
@@ -248,8 +248,8 @@ async def test_daily_checkpoint_includes_compress_summary_content(seeded, monkey
         await run_daily_checkpoint(
             llm_cfg={"model_name": "m"},
             user_id=2001,
-            utc_start=datetime(2026, 8, 13, 0, 0, 0),
-            utc_end=datetime(2026, 8, 14, 0, 0, 0),
+            utc_start=datetime(2026, 8, 13, 0, 0, 0, tzinfo=UTC),
+            utc_end=datetime(2026, 8, 14, 0, 0, 0, tzinfo=UTC),
             local_date_str="2026-08-13",
         )
 
@@ -270,7 +270,7 @@ async def test_daily_checkpoint_skips_when_last_message_is_checkpoint(seeded, mo
     no real turn follows it, skip — there's nothing new to summarise."""
     SessionLocal = seeded
     conv_id = await _make_main_conv(SessionLocal, 2001)
-    base = datetime(2026, 8, 13, 10, 0, 0)
+    base = datetime(2026, 8, 13, 10, 0, 0, tzinfo=UTC)
 
     await _add_message(SessionLocal, conv_id, "user", "hello", base)
     # A compress_summary is the last row — no user interaction after it
@@ -292,8 +292,8 @@ async def test_daily_checkpoint_skips_when_last_message_is_checkpoint(seeded, mo
         await run_daily_checkpoint(
             llm_cfg={"model_name": "m"},
             user_id=2001,
-            utc_start=datetime(2026, 8, 13, 0, 0, 0),
-            utc_end=datetime(2026, 8, 14, 0, 0, 0),
+            utc_start=datetime(2026, 8, 13, 0, 0, 0, tzinfo=UTC),
+            utc_end=datetime(2026, 8, 14, 0, 0, 0, tzinfo=UTC),
             local_date_str="2026-08-13",
         )
 
@@ -305,7 +305,7 @@ async def test_daily_checkpoint_single_message_still_summarises(seeded, monkeypa
     compression."""
     SessionLocal = seeded
     conv_id = await _make_main_conv(SessionLocal, 2001)
-    base = datetime(2026, 8, 13, 10, 0, 0)
+    base = datetime(2026, 8, 13, 10, 0, 0, tzinfo=UTC)
     # Yesterday's checkpoint
     async with SessionLocal() as db:
         db.add(Message(
@@ -332,8 +332,8 @@ async def test_daily_checkpoint_single_message_still_summarises(seeded, monkeypa
         await run_daily_checkpoint(
             llm_cfg={"model_name": "m"},
             user_id=2001,
-            utc_start=datetime(2026, 8, 13, 0, 0, 0),
-            utc_end=datetime(2026, 8, 14, 0, 0, 0),
+            utc_start=datetime(2026, 8, 13, 0, 0, 0, tzinfo=UTC),
+            utc_end=datetime(2026, 8, 14, 0, 0, 0, tzinfo=UTC),
             local_date_str="2026-08-13",
         )
     assert called is True
@@ -344,7 +344,7 @@ async def test_daily_checkpoint_gap_days_in_prompt(seeded, monkeypatch):
     """When the previous summary is from 3+ days ago, the prompt mentions the gap."""
     SessionLocal = seeded
     conv_id = await _make_main_conv(SessionLocal, 2001)
-    base = datetime(2026, 8, 13, 10, 0, 0)
+    base = datetime(2026, 8, 13, 10, 0, 0, tzinfo=UTC)
     async with SessionLocal() as db:
         prev = Message(
             conversation_id=conv_id,
@@ -371,8 +371,8 @@ async def test_daily_checkpoint_gap_days_in_prompt(seeded, monkeypatch):
         await run_daily_checkpoint(
             llm_cfg={"model_name": "m"},
             user_id=2001,
-            utc_start=datetime(2026, 8, 13, 0, 0, 0),
-            utc_end=datetime(2026, 8, 14, 0, 0, 0),
+            utc_start=datetime(2026, 8, 13, 0, 0, 0, tzinfo=UTC),
+            utc_end=datetime(2026, 8, 14, 0, 0, 0, tzinfo=UTC),
             local_date_str="2026-08-13",
         )
 
@@ -384,7 +384,7 @@ async def test_daily_checkpoint_gap_days_in_prompt(seeded, monkeypatch):
 async def test_daily_checkpoint_no_gap_when_consecutive(seeded, monkeypatch):
     SessionLocal = seeded
     conv_id = await _make_main_conv(SessionLocal, 2001)
-    base = datetime(2026, 8, 13, 10, 0, 0)
+    base = datetime(2026, 8, 13, 10, 0, 0, tzinfo=UTC)
     async with SessionLocal() as db:
         prev = Message(
             conversation_id=conv_id,
@@ -411,8 +411,8 @@ async def test_daily_checkpoint_no_gap_when_consecutive(seeded, monkeypatch):
         await run_daily_checkpoint(
             llm_cfg={"model_name": "m"},
             user_id=2001,
-            utc_start=datetime(2026, 8, 13, 0, 0, 0),
-            utc_end=datetime(2026, 8, 14, 0, 0, 0),
+            utc_start=datetime(2026, 8, 13, 0, 0, 0, tzinfo=UTC),
+            utc_end=datetime(2026, 8, 14, 0, 0, 0, tzinfo=UTC),
             local_date_str="2026-08-13",
         )
 
@@ -432,7 +432,7 @@ async def test_daily_checkpoint_does_not_re_summarise_prior_summary(seeded, monk
     """A prior daily_summary row must not be folded into the new chat_content."""
     SessionLocal = seeded
     conv_id = await _make_main_conv(SessionLocal, 2001)
-    base = datetime(2026, 8, 13, 10, 0, 0)
+    base = datetime(2026, 8, 13, 10, 0, 0, tzinfo=UTC)
     async with SessionLocal() as db:
         prev = Message(
             conversation_id=conv_id,
@@ -460,8 +460,8 @@ async def test_daily_checkpoint_does_not_re_summarise_prior_summary(seeded, monk
         await run_daily_checkpoint(
             llm_cfg={"model_name": "m"},
             user_id=2001,
-            utc_start=datetime(2026, 8, 13, 0, 0, 0),
-            utc_end=datetime(2026, 8, 14, 0, 0, 0),
+            utc_start=datetime(2026, 8, 13, 0, 0, 0, tzinfo=UTC),
+            utc_end=datetime(2026, 8, 14, 0, 0, 0, tzinfo=UTC),
             local_date_str="2026-08-13",
         )
 
@@ -477,7 +477,7 @@ async def test_daily_checkpoint_does_not_fold_tool_summary_rows(seeded, monkeypa
     """In-turn tool_summary rows are not summarisable."""
     SessionLocal = seeded
     conv_id = await _make_main_conv(SessionLocal, 2001)
-    base = datetime(2026, 8, 13, 10, 0, 0)
+    base = datetime(2026, 8, 13, 10, 0, 0, tzinfo=UTC)
     await _add_message(SessionLocal, conv_id, "user", "查天气", base)
     await _add_message(SessionLocal, conv_id, "system", "[执行了工具调用：search_web]", base + timedelta(seconds=1), subtype="tool_summary")
     await _add_message(SessionLocal, conv_id, "assistant", "今天晴", base + timedelta(seconds=2))
@@ -494,8 +494,8 @@ async def test_daily_checkpoint_does_not_fold_tool_summary_rows(seeded, monkeypa
         await run_daily_checkpoint(
             llm_cfg={"model_name": "m"},
             user_id=2001,
-            utc_start=datetime(2026, 8, 13, 0, 0, 0),
-            utc_end=datetime(2026, 8, 14, 0, 0, 0),
+            utc_start=datetime(2026, 8, 13, 0, 0, 0, tzinfo=UTC),
+            utc_end=datetime(2026, 8, 14, 0, 0, 0, tzinfo=UTC),
             local_date_str="2026-08-13",
         )
 

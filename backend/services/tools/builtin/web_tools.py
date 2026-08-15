@@ -66,8 +66,10 @@ async def web_search_tool(query: str, limit: int = 5, user_settings: dict | None
     return json.dumps(result, ensure_ascii=False)
 
 
-async def web_extract_tool(urls: list[str], llm_config: dict, use_llm_processing: bool = True, user_settings: dict | None = None, **_) -> str:
+async def web_extract_tool(urls: list[str] | str, llm_config: dict, use_llm_processing: bool = True, user_settings: dict | None = None, **_) -> str:
     user_settings = user_settings or {}
+    if isinstance(urls, str):
+        urls = [urls]
     provider = resolve_extract_provider(user_settings)
     if not provider.is_available():
         msg = provider.missing_credential_message() or (f"{provider.display_name} is not configured or unavailable.")

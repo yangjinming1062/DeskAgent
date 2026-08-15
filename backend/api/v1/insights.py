@@ -111,7 +111,7 @@ async def _skill_summary(db: AsyncSession, user_id: int, since: datetime) -> dic
             text("SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE created_at >= :since) AS recent FROM memories WHERE user_id = :uid"), {"uid": user_id, "since": since}
         )
     ).one()
-    rows = (await db.execute(select(Memory.tags).where(Memory.user_id == user_id, Memory.tags.isnot(None)))).all()
+    rows = (await db.execute(select(Memory.tags).where(Memory.user_id == user_id, Memory.tags.isnot(None)))).scalars().all()
     tag_counter: Counter[str] = Counter()
     for tags_raw in rows:
         # ``Memory.tags`` is a Text column (JSON-encoded string), not a
