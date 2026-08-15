@@ -1,8 +1,10 @@
 import json
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import ClassVar
 
-from components import MAX_AUTO_INJECT_CONTENT_CHARS, MAX_RECALL_CONTENT_CHARS, MEMORY_RECALL_MAX_RESULTS, get_logger, tool_error
+from components import MAX_AUTO_INJECT_CONTENT_CHARS, MAX_RECALL_CONTENT_CHARS, MEMORY_RECALL_MAX_RESULTS, get_logger, session_scope, tool_error
 from modules.memory import Memory
 from sqlalchemy import ColumnElement, or_, select
 from sqlalchemy.exc import IntegrityError
@@ -190,11 +192,21 @@ FORGET_SCHEMA = {
 
 
 class NativeMemory:
-    """Per-session memory view bound to a single DB session."""
+    """Per-turn memory view. ``db=None`` (chat-turn path) opens a short
+    session per tool call so no pool connection is held across LLM awaits;
+    callers with their own single session pass it and it is reused as-is."""
 
-    def __init__(self, db: AsyncSession, user_id: int) -> None:
+    def __init__(self, db: AsyncSession | None, user_id: int) -> None:
         self.db = db
         self.user_id = user_id
+
+    @asynccontextmanager
+    async def _session(self) -> AsyncIterator[AsyncSession]:
+        if self.db is not None:
+            yield self.db
+        else:
+            async with session_scope() as db:
+                yield db
 
     def format_for_system_prompt(self, target: str = "") -> str | None:
         return (
@@ -229,18 +241,19 @@ class NativeMemory:
             return tool_error(f"auto_inject context must be one of {list(AUTO_INJECT_SLOTS)}, got {context!r}")
         if len(content) > MAX_AUTO_INJECT_CONTENT_CHARS:
             return tool_error(f"auto_inject content exceeds {MAX_AUTO_INJECT_CONTENT_CHARS} chars; trim before writing")
-        existing = (await self.db.execute(select(Memory).where(Memory.user_id == self.user_id, Memory.context == context))).scalar_one_or_none()
-        if existing is not None:
-            existing.content = content
-            existing.tags = json.dumps(["auto_inject"])
-        else:
-            self.db.add(Memory(user_id=self.user_id, content=content, context=context, tags=json.dumps(["auto_inject"])))
-        try:
-            await self.db.commit()
-        except IntegrityError:
-            # Concurrent upsert on the partial unique index.
-            await self.db.rollback()
-            return tool_error("concurrent auto_inject write; retry")
+        async with self._session() as db:
+            existing = (await db.execute(select(Memory).where(Memory.user_id == self.user_id, Memory.context == context))).scalar_one_or_none()
+            if existing is not None:
+                existing.content = content
+                existing.tags = json.dumps(["auto_inject"])
+            else:
+                db.add(Memory(user_id=self.user_id, content=content, context=context, tags=json.dumps(["auto_inject"])))
+            try:
+                await db.commit()
+            except IntegrityError:
+                # Concurrent upsert on the partial unique index.
+                await db.rollback()
+                return tool_error("concurrent auto_inject write; retry")
         return json.dumps({"result": "Auto-inject memory updated.", "context": context})
 
     async def _retain_recall(self, content: str, tags: list, context: str | None, importance: float = 1.0) -> str:
@@ -254,10 +267,11 @@ class NativeMemory:
             return tool_error("recall context cannot use reserved prefixes; those are backend-owned namespaces")
         ctx = normalize_recall_context(ctx_raw)
         imp = max(0.1, min(5.0, float(importance)))
-        mem = Memory(user_id=self.user_id, content=content[:MAX_RECALL_CONTENT_CHARS], context=ctx, tags=json.dumps(tags), importance=imp)
-        self.db.add(mem)
-        await self.db.commit()
-        return json.dumps({"result": "Recall memory stored.", "memory_id": mem.id, "context": ctx})
+        async with self._session() as db:
+            mem = Memory(user_id=self.user_id, content=content[:MAX_RECALL_CONTENT_CHARS], context=ctx, tags=json.dumps(tags), importance=imp)
+            db.add(mem)
+            await db.commit()
+            return json.dumps({"result": "Recall memory stored.", "memory_id": mem.id, "context": ctx})
 
     async def _recall(self, args: dict) -> str:
         query = args.get("query", "")
@@ -266,7 +280,8 @@ class NativeMemory:
         try:
             from services.companion.memory_retrieval import retrieve_hybrid_memories
 
-            results = await retrieve_hybrid_memories(self.db, self.user_id, query, limit=MEMORY_RECALL_MAX_RESULTS)
+            async with self._session() as db:
+                results = await retrieve_hybrid_memories(db, self.user_id, query, limit=MEMORY_RECALL_MAX_RESULTS)
             if not results:
                 return json.dumps({"result": "No relevant memories found."})
             lines = [f"ID: {r['id']}{(' [' + r['context'] + ']') if r.get('context') else ''} - {r['content']}" for r in results]
@@ -280,14 +295,14 @@ class NativeMemory:
         if not memory_id:
             return tool_error("Missing required parameter: memory_id")
         try:
-            mem = (await self.db.execute(select(Memory).where(Memory.id == memory_id, Memory.user_id == self.user_id))).scalar_one_or_none()
-            if not mem:
-                return tool_error(f"Memory with ID {memory_id} not found.")
-            await self.db.delete(mem)
-            await self.db.commit()
+            async with self._session() as db:
+                mem = (await db.execute(select(Memory).where(Memory.id == memory_id, Memory.user_id == self.user_id))).scalar_one_or_none()
+                if not mem:
+                    return tool_error(f"Memory with ID {memory_id} not found.")
+                await db.delete(mem)
+                await db.commit()
             return json.dumps({"result": f"Memory {memory_id} deleted successfully."})
         except Exception as e:
-            await self.db.rollback()
             logger.error("memory_forget failed", extra={"error": str(e)})
             return tool_error(f"Failed to delete memory: {e}")
 

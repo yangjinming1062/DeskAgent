@@ -136,7 +136,7 @@ async def test_persist_tool_summary_skips_non_main(seeded):
     conv_id = await _make_standard_conv(SessionLocal, 3001)
 
     async with SessionLocal() as db:
-        await persist_tool_summary(db, _Conv(conv_id, "standard"), {"search_web"})
+        await persist_tool_summary(_Conv(conv_id, "standard"), {"search_web"})
 
     assert await _summaries(SessionLocal, conv_id) == []
 
@@ -146,7 +146,7 @@ async def test_persist_tool_summary_skips_when_no_tools_invoked(seeded):
     conv_id = await _make_main_conv(SessionLocal, 3001)
 
     async with SessionLocal() as db:
-        await persist_tool_summary(db, _Conv(conv_id, "main"), set())
+        await persist_tool_summary(_Conv(conv_id, "main"), set())
 
     assert await _summaries(SessionLocal, conv_id) == []
 
@@ -156,7 +156,7 @@ async def test_persist_tool_summary_lists_invoked_tool_names(seeded):
     conv_id = await _make_main_conv(SessionLocal, 3001)
 
     async with SessionLocal() as db:
-        await persist_tool_summary(db, _Conv(conv_id, "main"), {"search_web", "browser_navigate"})
+        await persist_tool_summary(_Conv(conv_id, "main"), {"search_web", "browser_navigate"})
 
     summary = (await _summaries(SessionLocal, conv_id))[0]
     assert summary.role == "system"

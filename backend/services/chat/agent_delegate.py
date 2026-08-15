@@ -1,7 +1,7 @@
 import json
 from typing import Any
 
-from components import SESSION_LOCAL, get_logger, session_scope, tool_error
+from components import get_logger, session_scope, tool_error
 from modules.conversation import Conversation
 from modules.system import ChatMessageRequest, ChatRequest
 
@@ -34,19 +34,18 @@ async def agent_delegate_tool(
         # forwarding was removed — the companion never consumed the frames.
         headless = HeadlessEmitter()
 
-        async with SESSION_LOCAL() as db:
-            req = ChatRequest(
-                session_id=sid,
-                message=ChatMessageRequest(
-                    role="user",
-                    content=(
-                        f"You are a subagent delegated with the following task:\n\n"
-                        f"{task_description}\n\nWork autonomously to complete it, "
-                        "and your final response will be sent back to the parent agent."
-                    ),
+        req = ChatRequest(
+            session_id=sid,
+            message=ChatMessageRequest(
+                role="user",
+                content=(
+                    f"You are a subagent delegated with the following task:\n\n"
+                    f"{task_description}\n\nWork autonomously to complete it, "
+                    "and your final response will be sent back to the parent agent."
                 ),
-            )
-            await run_chat_turn(db, req, llm_config, user_settings, user_id, headless, session_client_context=None, track_task=None)
+            ),
+        )
+        await run_chat_turn(req, llm_config, user_settings, user_id, headless, session_client_context=None, track_task=None)
 
         chunks: list[str] = []
         last_affect: dict | None = None

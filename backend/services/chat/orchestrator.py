@@ -1,8 +1,7 @@
-from components import AGENT_MAX_LOOP_TURNS, DEFAULT_LANGUAGE, SETTINGS, get_logger, safe_json_loads
+from components import AGENT_MAX_LOOP_TURNS, DEFAULT_LANGUAGE, SETTINGS, get_logger, safe_json_loads, session_scope
 from modules.auth import ChatRequestClientContext
 from modules.conversation import Conversation, Message
 from modules.system import ChatRequest
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..gateway import RuntimeSession
 from ..llm import LLMRuntimeError, MissingLlmConfigError, ServiceType, compress_history_if_needed, execute_with_fallback, resolve_context_tokens
@@ -19,7 +18,6 @@ logger = get_logger(__name__)
 
 
 async def run_chat_turn(
-    db: AsyncSession,
     req: ChatRequest,
     llm_config: dict,
     user_settings: dict,
@@ -30,19 +28,24 @@ async def run_chat_turn(
     *,
     runtime: RuntimeSession | None = None,
 ) -> None:
-    conv = await Conversation.by_session_id(db, req.session_id, user_id=user_id)
-    if not conv:
-        await emitter.send_json({"type": "error", "message": "Conversation not found"})
-        return
-    sid = str(conv.id)
+    # Turn start is the only multi-read phase; it runs in one short session.
+    # Every later DB touchpoint opens its own, so no pool connection is held
+    # across the (multi-second) LLM awaits below. ``conv`` stays usable
+    # detached — persistence reads only loaded columns (id/kind/title).
+    async with session_scope() as db:
+        conv = await Conversation.by_session_id(db, req.session_id, user_id=user_id)
+        if not conv:
+            await emitter.send_json({"type": "error", "message": "Conversation not found"})
+            return
+        sid = str(conv.id)
 
-    await _persist_user_message(db, conv, req)
+        await _persist_user_message(db, conv, req)
 
-    # Per-session overrides merge over global UserSettings for this turn.
-    # Built once and shared by both the registry gate and tool dispatch
-    # so schema visibility matches runtime behavior.
-    effective_settings = _merge_session_settings(user_settings, runtime)
-    inputs = await _build_turn_inputs(db, conv, user_id, req, session_client_context, effective_settings)
+        # Per-session overrides merge over global UserSettings for this turn.
+        # Built once and shared by both the registry gate and tool dispatch
+        # so schema visibility matches runtime behavior.
+        effective_settings = _merge_session_settings(user_settings, runtime)
+        inputs = await _build_turn_inputs(db, conv, user_id, req, session_client_context, effective_settings)
 
     compression_enabled = safe_json_loads(effective_settings.get("chat.enable_context_compression", ""), default=SETTINGS.enable_context_compression)
     compression_threshold = safe_json_loads(effective_settings.get("chat.context_compression_threshold", ""), default=SETTINGS.context_compression_threshold)
@@ -63,15 +66,16 @@ async def run_chat_turn(
     # a standard work conversation that crosses the token threshold needs the
     # same read-start anchor.
     if compress_info is not None:
-        db.add(
-            Message(
-                conversation_id=conv.id,
-                role="system",
-                content=f"[🗜️ 对话压缩 — {compress_info['replaced_count']} 条早期消息已压缩]\n{compress_info['summary']}",
-                subtype="compress_summary",
+        async with session_scope() as db:
+            db.add(
+                Message(
+                    conversation_id=conv.id,
+                    role="system",
+                    content=f"[🗜️ 对话压缩 — {compress_info['replaced_count']} 条早期消息已压缩]\n{compress_info['summary']}",
+                    subtype="compress_summary",
+                )
             )
-        )
-        await db.commit()
+            await db.commit()
     current_messages = truncate_chat_history(compressed_messages)
 
     guardrails = ToolCallGuardrailController()
@@ -130,7 +134,9 @@ async def run_chat_turn(
             stream_emitted = True
 
         try:
-            llm_result = await execute_with_fallback(db, user_id, "llm", call_fn=_call, stream_started=lambda: stream_emitted, _chain=inputs.llm_chain)
+            # db=None: the chain is pre-resolved above, so no session is held
+            # across the streaming LLM call or its provider fallbacks.
+            llm_result = await execute_with_fallback(None, user_id, "llm", call_fn=_call, stream_started=lambda: stream_emitted, _chain=inputs.llm_chain)
         except LLMRuntimeError as exc:
             # Chain exhausted (or non-fallback error / mid-stream after
             # chunks already shipped). Emit the closing error frame so
@@ -147,7 +153,6 @@ async def run_chat_turn(
 
         if not llm_result.tool_calls_list:
             await _persist_assistant_no_tool_turn(
-                db,
                 conv,
                 user_id,
                 effective_settings,
@@ -177,7 +182,6 @@ async def run_chat_turn(
         _ensure_tool_call_ids(llm_result.tool_calls_list)
 
         await _persist_assistant_with_tool_calls_and_results(
-            db,
             conv,
             llm_result.tool_calls_list,
             llm_result.turn_content,
@@ -194,4 +198,4 @@ async def run_chat_turn(
             await emitter.send_json({"type": "error", "message": f"Tool execution loop halted by guardrails: {guardrails.halt_decision.message}"})
             break
 
-    await persist_tool_summary(db, conv, invoked_tool_names)
+    await persist_tool_summary(conv, invoked_tool_names)

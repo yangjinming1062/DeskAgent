@@ -2,7 +2,7 @@ import asyncio
 import json
 from typing import Any
 
-from components import BACKGROUND_REVIEW_DEFAULT, DEFAULT_LANGUAGE, get_logger, safe_json_loads
+from components import BACKGROUND_REVIEW_DEFAULT, DEFAULT_LANGUAGE, get_logger, safe_json_loads, session_scope
 from modules.conversation import Conversation, Message
 from modules.system import ChatRequest
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,14 +17,15 @@ from .types import TrackTask
 logger = get_logger(__name__)
 
 
-async def persist_tool_summary(db: AsyncSession, conv: Conversation, tool_names: set[str]) -> None:
+async def persist_tool_summary(conv: Conversation, tool_names: set[str]) -> None:
     """Main-conversation turns drop their raw tool frames from the LLM context
     (``_history_to_messages``); this row is what stands in for them, so it must
     be written whichever way the turn ended."""
     if conv.kind != MAIN_KIND or not tool_names:
         return
-    db.add(Message(conversation_id=conv.id, role="system", content=f"[执行了工具调用：{', '.join(sorted(tool_names))}]", subtype="tool_summary"))
-    await db.commit()
+    async with session_scope() as db:
+        db.add(Message(conversation_id=conv.id, role="system", content=f"[执行了工具调用：{', '.join(sorted(tool_names))}]", subtype="tool_summary"))
+        await db.commit()
 
 
 def _coerce_tool_result_content(content: Any) -> str:
@@ -74,7 +75,6 @@ async def _persist_user_message(db: AsyncSession, conv: Conversation, req: ChatR
 
 
 async def _persist_assistant_no_tool_turn(
-    db: AsyncSession,
     conv: Conversation,
     user_id: int,
     effective_settings: dict,
@@ -112,17 +112,18 @@ async def _persist_assistant_no_tool_turn(
     sessions that predate the namespaced key.
     """
     if turn_content:
-        db.add(
-            Message(
-                conversation_id=conv.id,
-                role="assistant",
-                content=turn_content,
-                prompt_tokens=final_prompt_tokens,
-                completion_tokens=final_completion_tokens,
-                turn_duration_ms=turn_duration_ms,
+        async with session_scope() as db:
+            db.add(
+                Message(
+                    conversation_id=conv.id,
+                    role="assistant",
+                    content=turn_content,
+                    prompt_tokens=final_prompt_tokens,
+                    completion_tokens=final_completion_tokens,
+                    turn_duration_ms=turn_duration_ms,
+                )
             )
-        )
-        await db.commit()
+            await db.commit()
 
     if conv.title == "New Conversation" and first_user_msg_content and turn_content:
         title_task = asyncio.create_task(
@@ -149,7 +150,6 @@ async def _persist_assistant_no_tool_turn(
 
 
 async def _persist_assistant_with_tool_calls_and_results(
-    db: AsyncSession,
     conv: Conversation,
     tool_calls_list: list[dict],
     turn_content: str,
@@ -165,6 +165,9 @@ async def _persist_assistant_with_tool_calls_and_results(
     tool result Messages, return the tool result messages for the next LLM
     iteration.
 
+    The tool batch (runner IPC / LLM calls) runs BETWEEN two short
+    sessions — no pool connection is held across it.
+
     ``active_tool_names`` and ``schemas_by_name`` are mutated in place when
     ``search_tools`` unlocks new tool names so the next iteration's
     ``active_schemas`` includes them. Names returned here already passed
@@ -179,18 +182,19 @@ async def _persist_assistant_with_tool_calls_and_results(
             "completion_tokens": final_completion_tokens,
         }
     )
-    db.add(
-        Message(
-            conversation_id=conv.id,
-            role="assistant",
-            content=turn_content if turn_content else None,
-            tool_calls=json.dumps(tool_calls_list),
-            prompt_tokens=final_prompt_tokens,
-            completion_tokens=final_completion_tokens,
-            turn_duration_ms=turn_duration_ms,
+    async with session_scope() as db:
+        db.add(
+            Message(
+                conversation_id=conv.id,
+                role="assistant",
+                content=turn_content if turn_content else None,
+                tool_calls=json.dumps(tool_calls_list),
+                prompt_tokens=final_prompt_tokens,
+                completion_tokens=final_completion_tokens,
+                turn_duration_ms=turn_duration_ms,
+            )
         )
-    )
-    await db.commit()
+        await db.commit()
 
     tool_results = await _run_tool_batch(tool_calls_list, dispatch_ctx)
 
@@ -208,7 +212,9 @@ async def _persist_assistant_with_tool_calls_and_results(
                         schema = REGISTRY.get_schema(dispatch_ctx.user_id, name)
                         if schema is not None:
                             schemas_by_name[name] = schema
-        db.add(Message(conversation_id=conv.id, role="tool", tool_call_id=res["tool_call_id"], content=_coerce_tool_result_content(res.get("content", ""))))
-    await db.commit()
+    async with session_scope() as db:
+        for res in tool_results:
+            db.add(Message(conversation_id=conv.id, role="tool", tool_call_id=res["tool_call_id"], content=_coerce_tool_result_content(res.get("content", ""))))
+        await db.commit()
 
     return tool_results

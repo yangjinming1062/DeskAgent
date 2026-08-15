@@ -94,7 +94,14 @@ class ChatFn(Protocol):
 
 
 async def analyze_personality_tags(
-    chat: ChatFn, definition_json: str, user_id: int | None = None, *, species: str | None = None, rig_type: str | None = None, db: AsyncSession | None = None
+    chat: ChatFn,
+    definition_json: str,
+    user_id: int | None = None,
+    *,
+    species: str | None = None,
+    rig_type: str | None = None,
+    db: AsyncSession | None = None,
+    provider_config: ProviderConfig | None = None,
 ) -> list[str]:
     """LLM 分析 persona 设定并提取性格标签列表。
 
@@ -125,7 +132,7 @@ async def analyze_personality_tags(
             f"请输出 3-10 个标签 JSON 数组："
         )
 
-        raw = await chat(db, user_id, _SYSTEM_PROMPT, user_payload)
+        raw = await chat(db, user_id, _SYSTEM_PROMPT, user_payload, provider_config=provider_config)
         cleaned_raw = raw.strip()
         if cleaned_raw.startswith("```"):
             cleaned_raw = cleaned_raw.split("\n", 1)[-1].rsplit("```", 1)[0].strip()

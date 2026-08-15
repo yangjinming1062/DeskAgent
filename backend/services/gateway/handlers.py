@@ -232,15 +232,14 @@ async def handle_chat_websocket(websocket: WebSocket, token: str):
             _inflight_prompt.add(user_id)
 
             try:
-                async with SESSION_LOCAL() as db:
-                    try:
-                        await run_chat_turn(db, req, llm_config, user_settings, user_id, emitter, session_client_context=session_client_context, track_task=_track, runtime=runtime)
-                    except (WebSocketDisconnect, asyncio.CancelledError):
-                        raise
-                    except Exception as e:
-                        logger.exception("prompt.submit chat_turn failed")
-                        with contextlib.suppress(Exception):
-                            await dispatcher.push_event("error", {"message": str(e)}, session_id=runtime.session_id)
+                try:
+                    await run_chat_turn(req, llm_config, user_settings, user_id, emitter, session_client_context=session_client_context, track_task=_track, runtime=runtime)
+                except (WebSocketDisconnect, asyncio.CancelledError):
+                    raise
+                except Exception as e:
+                    logger.exception("prompt.submit chat_turn failed")
+                    with contextlib.suppress(Exception):
+                        await dispatcher.push_event("error", {"message": str(e)}, session_id=runtime.session_id)
             finally:
                 _inflight_prompt.discard(user_id)
 

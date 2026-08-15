@@ -1,4 +1,4 @@
-from components import get_logger, safe_json_loads, session_scope
+from components import get_logger, safe_json_loads
 
 from services.llm import ServiceType, call_with_retry, client_for_config, resolve_context_tokens
 from services.tools import RETAIN_SCHEMA, NativeMemory
@@ -63,26 +63,27 @@ async def run_background_memory_review(user_id: int, llm_config: dict, messages_
     client = client_for_config(llm_config)
 
     try:
-        async with session_scope() as db:
-            native_memory = NativeMemory(db, user_id)
-            schemas = [RETAIN_SCHEMA]
+        # No bound session: the review LLM call below runs connection-free;
+        # each memory_retain opens its own short session.
+        native_memory = NativeMemory(None, user_id)
+        schemas = [RETAIN_SCHEMA]
 
-            provider_name = llm_config.get("provider_name", "")
-            if not provider_name:
-                # Resolver will fall through to the global default; warn so a
-                # misconfigured chain doesn't silently use a 1M budget.
-                logger.warning("background_review: empty provider_name", extra={"user_id": user_id})
-            context_length = resolve_context_tokens(provider_name, ServiceType.llm)
-            response = await call_with_retry(client, context_length=context_length, model=model_name, messages=messages, tools=schemas, stream=False, max_tokens=500)
-            if response.choices and response.choices[0].message.tool_calls:
-                for tc in response.choices[0].message.tool_calls:
-                    fn = tc.function
-                    if not (fn and fn.name == "memory_retain"):
-                        continue
-                    args = safe_json_loads(fn.arguments or "{}")
-                    if args and isinstance(args, dict):
-                        logger.info("Background review extracting memory", extra={"func_args": args})
-                        await native_memory.execute_tool(fn.name, args)
-            # If no tool calls, review simply found nothing to remember.
+        provider_name = llm_config.get("provider_name", "")
+        if not provider_name:
+            # Resolver will fall through to the global default; warn so a
+            # misconfigured chain doesn't silently use a 1M budget.
+            logger.warning("background_review: empty provider_name", extra={"user_id": user_id})
+        context_length = resolve_context_tokens(provider_name, ServiceType.llm)
+        response = await call_with_retry(client, context_length=context_length, model=model_name, messages=messages, tools=schemas, stream=False, max_tokens=500)
+        if response.choices and response.choices[0].message.tool_calls:
+            for tc in response.choices[0].message.tool_calls:
+                fn = tc.function
+                if not (fn and fn.name == "memory_retain"):
+                    continue
+                args = safe_json_loads(fn.arguments or "{}")
+                if args and isinstance(args, dict):
+                    logger.info("Background review extracting memory", extra={"func_args": args})
+                    await native_memory.execute_tool(fn.name, args)
+        # If no tool calls, review simply found nothing to remember.
     except Exception as exc:
         logger.warning("Background memory review failed", extra={"error": str(exc)})

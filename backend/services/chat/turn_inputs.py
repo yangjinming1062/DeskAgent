@@ -193,7 +193,9 @@ async def _build_turn_inputs(
     )
     messages = _history_to_messages(history, build_system_prompt(agent_config), drop_tool_intermediates=conv.kind == MAIN_KIND)
 
-    native_memory = NativeMemory(db, user_id)
+    # No bound session: each memory tool call opens its own, so the turn's
+    # connection isn't pinned across the LLM loop.
+    native_memory = NativeMemory(None, user_id)
     if addition := native_memory.format_for_system_prompt():
         messages[0]["content"] += "\n\n" + addition
 

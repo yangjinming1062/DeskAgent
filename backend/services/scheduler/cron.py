@@ -226,8 +226,7 @@ async def _kick_autonomous_turn(job_id: int, meta: dict[str, Any]) -> None:
 
     emitter = JsonRpcEmitter(raw=None, dispatcher=dispatcher, session_id=session_id)
     try:
-        async with session_scope() as db:
-            await run_chat_turn(db, req, llm_config, user_settings, user_id, emitter)
+        await run_chat_turn(req, llm_config, user_settings, user_id, emitter)
     except Exception as e:
         logger.exception("cron: autonomous turn failed", extra={"user_id": user_id, "job_id": job_id})
         with contextlib.suppress(Exception):

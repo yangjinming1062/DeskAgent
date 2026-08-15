@@ -87,9 +87,9 @@ from services.companion import (
     verify_signed_avatar_request,
     wardrobe_response,
 )
-from services.llm import MissingLlmConfigError, chat
+from services.llm import MissingLlmConfigError, chat, resolve_provider_chain, resolve_vision_chain
 from services.rate_limit import limiter
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 router = get_router()
@@ -160,6 +160,8 @@ def _schedule_personality_tag_refresh(persona_id: int, user_id: int) -> None:
 async def _refresh_personality_tags(persona_id: int, user_id: int) -> None:
     # Re-queries the Persona row at the start of every attempt so a concurrent
     # PUT wins the last-write-wins race with the freshest definition_json.
+    # Read → LLM → write phases each hold their own short session; the LLM
+    # call runs with a pre-resolved provider and no connection pinned.
     last_exc: BaseException | None = None
     for attempt in range(1, _BG_TASK_MAX_ATTEMPTS + 1):
         try:
@@ -171,12 +173,18 @@ async def _refresh_personality_tags(persona_id: int, user_id: int) -> None:
                     return  # row vanished (user deleted?) — nothing to do
                 definition = safe_json_loads(persona.definition_json, default={})
                 species = definition.get("biological_type") if isinstance(definition, dict) else None
-                t_llm_start = time.monotonic()
-                tags = await asyncio.wait_for(
-                    analyze_personality_tags(chat, persona.definition_json, user_id=user_id, species=species, db=db), timeout=_BG_TASK_PER_ATTEMPT_TIMEOUT
-                )
-                t_llm_end = time.monotonic()
-                persona.personality_tags_json = json.dumps(tags, ensure_ascii=False)
+                chain = await resolve_provider_chain(db, user_id, "llm")
+                definition_json = persona.definition_json
+            tag_provider = chain[0] if chain else None
+            t_llm_start = time.monotonic()
+            tags = await asyncio.wait_for(
+                analyze_personality_tags(chat, definition_json, user_id=user_id, species=species, db=None, provider_config=tag_provider), timeout=_BG_TASK_PER_ATTEMPT_TIMEOUT
+            )
+            t_llm_end = time.monotonic()
+            async with SESSION_LOCAL() as db:
+                # Single-column update: a concurrent definition PUT during the
+                # LLM call still wins last-write-wins on every other column.
+                await db.execute(update(Persona).where(Persona.id == persona_id).values(personality_tags_json=json.dumps(tags, ensure_ascii=False)))
                 await db.commit()
                 t_commit = time.monotonic()
             logger.info(
@@ -216,6 +224,8 @@ async def _refresh_outfit_onboarding(persona_id: int, user_id: int) -> None:
     last_exc: BaseException | None = None
     for attempt in range(1, _BG_TASK_MAX_ATTEMPTS + 1):
         try:
+            # Read → LLM → write with a session per phase; the generation
+            # call runs on pre-resolved chains with no connection pinned.
             async with SESSION_LOCAL() as db:
                 persona = (await db.execute(select(Persona).where(Persona.id == persona_id))).scalar_one_or_none()
                 if persona is None:
@@ -228,16 +238,27 @@ async def _refresh_outfit_onboarding(persona_id: int, user_id: int) -> None:
                 if avatar:
                     prompt_payload = safe_json_loads(avatar.prompt_json or "{}", default={})
                     avatar_prompt = prompt_payload.get("avatar_prompt", "") if isinstance(prompt_payload, dict) else ""
+                seed_front_url = avatar.seed_front_url if avatar else None
                 if not avatar_prompt and not appearance_core:
                     return
-                raw_input = f"头像生成提示词：{avatar_prompt}\n形象核心描述：{appearance_core}"
-                image_data_uri = None
-                if avatar and avatar.seed_front_url:
-                    image_data_uri = await asyncio.to_thread(load_avatar_bytes_as_data_uri, avatar.seed_front_url)
-                outfit = await asyncio.wait_for(
-                    normalize_outfit(chat, raw_input=raw_input, persona_definition=persona_def, image_data_uri=image_data_uri, user_id=user_id, db=db),
-                    timeout=_BG_TASK_PER_ATTEMPT_TIMEOUT,
-                )
+                chain = await resolve_provider_chain(db, user_id, "llm")
+                vision_chain = await resolve_vision_chain(db, user_id) if seed_front_url else []
+            raw_input = f"头像生成提示词：{avatar_prompt}\n形象核心描述：{appearance_core}"
+            image_data_uri = await asyncio.to_thread(load_avatar_bytes_as_data_uri, seed_front_url) if seed_front_url else None
+            outfit = await asyncio.wait_for(
+                normalize_outfit(
+                    chat,
+                    raw_input=raw_input,
+                    persona_definition=persona_def,
+                    image_data_uri=image_data_uri,
+                    user_id=user_id,
+                    db=None,
+                    provider_config=chain[0] if chain else None,
+                    vision_chain=vision_chain,
+                ),
+                timeout=_BG_TASK_PER_ATTEMPT_TIMEOUT,
+            )
+            async with SESSION_LOCAL() as db:
                 await update_outfit_field(db, user_id, outfit)
             logger.info("outfit-onboarding persona_id=%s attempt=%d", persona_id, attempt)
             return

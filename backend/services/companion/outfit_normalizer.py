@@ -45,15 +45,29 @@ def _clean(raw: str) -> str:
 
 
 async def normalize_outfit(
-    chat: ChatFn, *, raw_input: str, persona_definition: dict[str, str] | None = None, image_data_uri: str | None = None, user_id: int | None = None, db: AsyncSession | None = None
+    chat: ChatFn,
+    *,
+    raw_input: str,
+    persona_definition: dict[str, str] | None = None,
+    image_data_uri: str | None = None,
+    user_id: int | None = None,
+    db: AsyncSession | None = None,
+    provider_config: ProviderConfig | None = None,
+    vision_chain: list[ProviderConfig] | None = None,
 ) -> str:
     """Vision-first (if *image_data_uri* given) text-fallback outfit normalization.
-    Always returns a non-empty string — falls back to truncated raw_input on error."""
+    Always returns a non-empty string — falls back to truncated raw_input on error.
+
+    ``provider_config`` / ``vision_chain`` let the background onboarding task
+    pre-resolve chains under its own short session and call the LLM with
+    ``db=None`` (no connection held across the generation call)."""
     user_payload = _build_user_payload(raw_input, persona_definition)
 
-    if image_data_uri and db is not None and user_id is not None:
+    if image_data_uri:
         try:
-            chain = await resolve_vision_chain(db, user_id)
+            if vision_chain is None:
+                vision_chain = await resolve_vision_chain(db, user_id) if db is not None and user_id is not None else []
+            chain = vision_chain
             if chain:
                 provider = provider_from_config(chain[0])
                 client = provider.raw_client()
@@ -70,7 +84,7 @@ async def normalize_outfit(
             logger.warning("Vision outfit normalization failed, falling back to text", exc_info=True)
 
     try:
-        raw = await chat(db, user_id, _OUTFIT_NORMALIZER_SYSTEM_PROMPT, user_payload)
+        raw = await chat(db, user_id, _OUTFIT_NORMALIZER_SYSTEM_PROMPT, user_payload, provider_config=provider_config)
         if cleaned := _clean(raw):
             return cleaned[:_MAX_OUTFIT_LEN]
     except Exception:
