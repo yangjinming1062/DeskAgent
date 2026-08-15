@@ -17,7 +17,7 @@ _sudo_password_cache_lock = threading.Lock()
 _callback_tls = threading.local()
 
 
-def _get_sudo_password_callback() -> Callable[[], str | None] | None:
+def get_sudo_password_callback() -> Callable[[], str | None] | None:
     return getattr(_callback_tls, "sudo_password", None)
 
 
@@ -26,7 +26,7 @@ def set_sudo_password_callback(cb: Callable[[], str | None] | None) -> None:
 
 
 def _get_sudo_password_cache_scope() -> str:
-    callback = _get_sudo_password_callback()
+    callback = get_sudo_password_callback()
     if callback is not None:
         owner = getattr(callback, "__self__", None)
         func = getattr(callback, "__func__", None)
@@ -58,7 +58,7 @@ def _prompt_for_sudo_password() -> str:
     cached = _get_cached_sudo_password()
     if cached:
         return cached
-    if (_sudo_cb := _get_sudo_password_callback()) is not None:
+    if (_sudo_cb := get_sudo_password_callback()) is not None:
         try:
             return _sudo_cb() or ""
         except Exception:

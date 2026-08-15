@@ -6,9 +6,13 @@ import threading
 import uuid
 from pathlib import Path
 
-from utils import cfg_get, get_credential_file_mounts, get_deskagent_home, get_skills_directory_mount, load_config
+from utils import CREATE_NO_WINDOW, IS_WINDOWS, cfg_get, get_credential_file_mounts, get_deskagent_home, get_skills_directory_mount, load_config
 
 from ._env_base import BaseEnvironment, _load_json_store, _popen_bash, _save_json_store, get_sandbox_dir
+
+# Windows: suppress the console window the runner would otherwise
+# flash for every docker/ssh/singularity child it spawns.
+_NO_WINDOW = {"creationflags": CREATE_NO_WINDOW} if IS_WINDOWS else {}
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +30,7 @@ def _find_singularity_executable() -> str:
 def _ensure_singularity_available() -> str:
     exe = _find_singularity_executable()
     try:
-        if (res := subprocess.run([exe, "version"], capture_output=True, text=True, timeout=10, stdin=subprocess.DEVNULL)).returncode != 0:
+        if (res := subprocess.run([exe, "version"], capture_output=True, text=True, timeout=10, stdin=subprocess.DEVNULL, **_NO_WINDOW)).returncode != 0:
             raise RuntimeError(f"'{exe} version' failed: {res.stderr.strip()[:200]}")
         return exe
     except Exception as e:
@@ -78,7 +82,10 @@ def _get_or_build_sif(image: str, executable: str = "apptainer") -> str:
         (tmp_dir := cache_dir / "tmp").mkdir(parents=True, exist_ok=True)
         env = os.environ | {"APPTAINER_TMPDIR": str(tmp_dir), "APPTAINER_CACHEDIR": str(cache_dir)}
         try:
-            if subprocess.run([executable, "build", str(sif_path), image], capture_output=True, text=True, timeout=600, env=env, stdin=subprocess.DEVNULL).returncode != 0:
+            if (
+                subprocess.run([executable, "build", str(sif_path), image], capture_output=True, text=True, timeout=600, env=env, stdin=subprocess.DEVNULL, **_NO_WINDOW).returncode
+                != 0
+            ):
                 logger.warning("SIF build failed, falling back to docker:// URL")
                 return image
             return str(sif_path)
@@ -129,7 +136,7 @@ class SingularityEnvironment(BaseEnvironment):
             cmd.extend(["--cpus", str(self._cpu)])
         cmd.extend([str(self.image), self.instance_id])
         try:
-            if (res := subprocess.run(cmd, capture_output=True, text=True, timeout=120, stdin=subprocess.DEVNULL)).returncode != 0:
+            if (res := subprocess.run(cmd, capture_output=True, text=True, timeout=120, stdin=subprocess.DEVNULL, **_NO_WINDOW)).returncode != 0:
                 raise RuntimeError(f"Failed to start instance: {res.stderr}")
             self._instance_started = True
             logger.info("Singularity instance %s started (persistent=%s)", self.instance_id, self._persistent)
@@ -146,7 +153,7 @@ class SingularityEnvironment(BaseEnvironment):
     def cleanup(self) -> None:
         if self._instance_started:
             try:
-                subprocess.run([self.executable, "instance", "stop", self.instance_id], capture_output=True, text=True, timeout=30, stdin=subprocess.DEVNULL)
+                subprocess.run([self.executable, "instance", "stop", self.instance_id], capture_output=True, text=True, timeout=30, stdin=subprocess.DEVNULL, **_NO_WINDOW)
                 logger.info("Singularity instance %s stopped", self.instance_id)
             except Exception as e:
                 logger.warning("Failed to stop Singularity instance %s: %s", self.instance_id, e)

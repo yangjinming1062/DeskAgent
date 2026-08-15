@@ -14,10 +14,12 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import IO, Protocol
 
-from utils import cfg_get, get_deskagent_home, load_config
+from utils import CREATE_NO_WINDOW, cfg_get, get_deskagent_home, load_config
 
 from ..interrupt import is_interrupted
 from ._cmd_rewrite import _rewrite_compound_background, _transform_sudo_command
+
+logger = logging.getLogger(__name__)
 
 if os.name == "nt":
     import ctypes
@@ -58,9 +60,6 @@ def _file_mtime_key(host_path: str) -> tuple[float, int] | None:
         return None
 
 
-logger = logging.getLogger(__name__)
-
-
 def get_sandbox_dir() -> Path:
     override = cfg_get(load_config(), "terminal", "sandbox_dir")
     base = Path(str(override)) if override else (get_deskagent_home() / "sandboxes")
@@ -80,6 +79,9 @@ def _pipe_stdin(proc: subprocess.Popen, data: str) -> None:
 
 
 def _popen_bash(cmd: list[str], stdin_data: str | None = None, **kwargs) -> subprocess.Popen:
+    # Windows: suppress the console window flashed for every bash child.
+    if os.name == "nt":
+        kwargs.setdefault("creationflags", CREATE_NO_WINDOW)
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, stdin=subprocess.PIPE if stdin_data is not None else subprocess.DEVNULL, text=True, **kwargs)
     if stdin_data is not None:
         _pipe_stdin(proc, stdin_data)

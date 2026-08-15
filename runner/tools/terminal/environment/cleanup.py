@@ -60,9 +60,11 @@ def _cleanup_inactive_envs(lifetime_seconds: int = 300) -> None:
                 last_activity.pop(task_id, None)
                 if env is not None:
                     envs_to_stop.append((task_id, env))
-        with creation_locks_lock:
-            for task_id, _ in envs_to_stop:
-                creation_locks.pop(task_id, None)
+        # creation_locks entries are intentionally NOT popped here: removing
+        # a lock object another thread currently holds (mid env creation)
+        # lets a third thread create a fresh lock and enter the same critical
+        # section — two envs for one task. Entries live for the process
+        # lifetime, bounded by the task-id space.
     for task_id, env in envs_to_stop:
         clear_file_ops_cache(task_id)
         try:

@@ -8,8 +8,14 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+from utils import CREATE_NO_WINDOW, IS_WINDOWS
+
 from ._env_base import BaseEnvironment, _popen_bash
 from ._env_file_sync import FileSyncManager, iter_sync_files, quoted_mkdir_command, quoted_rm_command, unique_parent_dirs
+
+# Windows: suppress the console window the runner would otherwise
+# flash for every docker/ssh/singularity child it spawns.
+_NO_WINDOW = {"creationflags": CREATE_NO_WINDOW} if IS_WINDOWS else {}
 
 logger = logging.getLogger(__name__)
 
@@ -73,7 +79,7 @@ class SSHEnvironment(BaseEnvironment):
         cmd = self._build_ssh_command()
         cmd.append("echo 'SSH connection established'")
         try:
-            res = subprocess.run(cmd, capture_output=True, text=True, timeout=15, stdin=subprocess.DEVNULL)
+            res = subprocess.run(cmd, capture_output=True, text=True, timeout=15, stdin=subprocess.DEVNULL, **_NO_WINDOW)
             if res.returncode != 0:
                 raise RuntimeError(res.stderr.strip() or res.stdout.strip())
         except subprocess.TimeoutExpired:
@@ -83,7 +89,7 @@ class SSHEnvironment(BaseEnvironment):
         try:
             cmd = self._build_ssh_command()
             cmd.append("echo $HOME")
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=10, stdin=subprocess.DEVNULL)
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=10, stdin=subprocess.DEVNULL, **_NO_WINDOW)
             if (home := result.stdout.strip()) and result.returncode == 0:
                 return home
         except Exception:
@@ -94,19 +100,19 @@ class SSHEnvironment(BaseEnvironment):
         base = f"{self._remote_home}/.deskagent"
         cmd = self._build_ssh_command()
         cmd.append(quoted_mkdir_command([base, f"{base}/skills", f"{base}/credentials", f"{base}/cache"]))
-        subprocess.run(cmd, capture_output=True, text=True, timeout=10, stdin=subprocess.DEVNULL)
+        subprocess.run(cmd, capture_output=True, text=True, timeout=10, stdin=subprocess.DEVNULL, **_NO_WINDOW)
 
     def _scp_upload(self, host_path: str, remote_path: str) -> None:
         mkdir_cmd = self._build_ssh_command()
         mkdir_cmd.append(f"mkdir -p {shlex.quote(str(Path(remote_path).parent))}")
-        subprocess.run(mkdir_cmd, capture_output=True, text=True, timeout=10, stdin=subprocess.DEVNULL)
+        subprocess.run(mkdir_cmd, capture_output=True, text=True, timeout=10, stdin=subprocess.DEVNULL, **_NO_WINDOW)
         scp_cmd = ["scp", "-o", f"ControlPath={self.control_socket}"]
         if self.port != 22:
             scp_cmd.extend(["-P", str(self.port)])
         if self.key_path:
             scp_cmd.extend(["-i", self.key_path])
         scp_cmd.extend([host_path, f"{self.user}@{self.host}:{remote_path}"])
-        if subprocess.run(scp_cmd, capture_output=True, text=True, timeout=30, stdin=subprocess.DEVNULL).returncode != 0:
+        if subprocess.run(scp_cmd, capture_output=True, text=True, timeout=30, stdin=subprocess.DEVNULL, **_NO_WINDOW).returncode != 0:
             raise RuntimeError(f"scp failed for {remote_path}")
 
     def _ssh_bulk_upload(self, files: list[tuple[str, str]]) -> None:
@@ -116,7 +122,7 @@ class SSHEnvironment(BaseEnvironment):
         if parents := unique_parent_dirs(files):
             cmd = self._build_ssh_command()
             cmd.append(quoted_mkdir_command(parents))
-            if subprocess.run(cmd, capture_output=True, text=True, timeout=30, stdin=subprocess.DEVNULL).returncode != 0:
+            if subprocess.run(cmd, capture_output=True, text=True, timeout=30, stdin=subprocess.DEVNULL, **_NO_WINDOW).returncode != 0:
                 raise RuntimeError("remote mkdir failed")
         with tempfile.TemporaryDirectory(prefix="deskagent-ssh-bulk-") as staging:
             for host_path, remote_path in files:
@@ -138,9 +144,9 @@ class SSHEnvironment(BaseEnvironment):
             tar_cmd = ["tar", "-chf", "-", "-C", staging, "."]
             ssh_cmd = self._build_ssh_command()
             ssh_cmd.append(f"tar xf - --no-overwrite-dir -C {shlex.quote(base)}")
-            tar_proc = subprocess.Popen(tar_cmd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            tar_proc = subprocess.Popen(tar_cmd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, **_NO_WINDOW)
             try:
-                ssh_proc = subprocess.Popen(ssh_cmd, stdin=tar_proc.stdout, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                ssh_proc = subprocess.Popen(ssh_cmd, stdin=tar_proc.stdout, stdout=subprocess.PIPE, stderr=subprocess.PIPE, **_NO_WINDOW)
             except Exception:
                 tar_proc.kill()
                 tar_proc.wait()
@@ -163,13 +169,13 @@ class SSHEnvironment(BaseEnvironment):
         ssh_cmd = self._build_ssh_command()
         ssh_cmd.append(f"tar cf - -C / {shlex.quote(f'{self._remote_home}/.deskagent'.lstrip('/'))}")
         with open(dest, "wb") as f:
-            if subprocess.run(ssh_cmd, stdin=subprocess.DEVNULL, stdout=f, stderr=subprocess.PIPE, timeout=120).returncode != 0:
+            if subprocess.run(ssh_cmd, stdin=subprocess.DEVNULL, stdout=f, stderr=subprocess.PIPE, timeout=120, **_NO_WINDOW).returncode != 0:
                 raise RuntimeError("SSH bulk download failed")
 
     def _ssh_delete(self, remote_paths: list[str]) -> None:
         cmd = self._build_ssh_command()
         cmd.append(quoted_rm_command(remote_paths))
-        if subprocess.run(cmd, capture_output=True, text=True, timeout=10, stdin=subprocess.DEVNULL).returncode != 0:
+        if subprocess.run(cmd, capture_output=True, text=True, timeout=10, stdin=subprocess.DEVNULL, **_NO_WINDOW).returncode != 0:
             raise RuntimeError("remote rm failed")
 
     def _before_execute(self) -> None:
@@ -190,7 +196,11 @@ class SSHEnvironment(BaseEnvironment):
         if self.control_socket.exists():
             with contextlib.suppress(Exception):
                 subprocess.run(
-                    ["ssh", "-o", f"ControlPath={self.control_socket}", "-O", "exit", f"{self.user}@{self.host}"], capture_output=True, timeout=5, stdin=subprocess.DEVNULL
+                    ["ssh", "-o", f"ControlPath={self.control_socket}", "-O", "exit", f"{self.user}@{self.host}"],
+                    capture_output=True,
+                    timeout=5,
+                    stdin=subprocess.DEVNULL,
+                    **_NO_WINDOW,
                 )
             with contextlib.suppress(OSError):
                 self.control_socket.unlink()

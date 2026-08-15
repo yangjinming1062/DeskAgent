@@ -2,20 +2,12 @@ import glob
 import json
 import logging
 import os
-import platform
 import re
 import threading
 import time
 import traceback
 from pathlib import Path
 from typing import Any
-
-if platform.system() != "Windows":
-    import termios
-
-    msvcrt = None
-else:
-    termios = None  # type: ignore[assignment]
 
 from utils import cfg_get, clean_output, load_config
 
@@ -213,7 +205,7 @@ def _foreground_background_guidance(command: str) -> str | None:
     return None
 
 
-def _resolve_notification_flag_conflict(*, notify_on_complete: bool, watch_patterns, background: bool) -> tuple:
+def _resolve_notification_flag_conflict(*, notify_on_complete: bool, watch_patterns: list[str] | None, background: bool) -> tuple[list[str] | None, str]:
     if background and notify_on_complete and watch_patterns:
         note = "watch_patterns ignored because notify_on_complete=True; these two flags produce duplicate notifications when combined"
         return None, note

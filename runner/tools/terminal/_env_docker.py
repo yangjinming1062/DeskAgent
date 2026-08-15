@@ -11,7 +11,17 @@ import threading
 import uuid
 from pathlib import Path
 
-from utils import cfg_get, get_all_passthrough, get_cache_directory_mounts, get_credential_file_mounts, get_deskagent_home, get_skills_directory_mount, load_config
+from utils import (
+    CREATE_NO_WINDOW,
+    IS_WINDOWS,
+    cfg_get,
+    get_all_passthrough,
+    get_cache_directory_mounts,
+    get_credential_file_mounts,
+    get_deskagent_home,
+    get_skills_directory_mount,
+    load_config,
+)
 
 from ._env_base import BaseEnvironment, _popen_bash, get_sandbox_dir
 
@@ -22,6 +32,11 @@ _DOCKER_SEARCH_PATHS = ["/usr/local/bin/docker", "/opt/homebrew/bin/docker", "/A
 _docker_executable: str | None = None
 _ENV_VAR_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _LABEL_VALUE_OK_RE = re.compile(r"[^A-Za-z0-9_.-]")
+
+
+# Windows: suppress the console window the runner would otherwise
+# flash for every docker/ssh/singularity child it spawns.
+_NO_WINDOW = {"creationflags": CREATE_NO_WINDOW} if IS_WINDOWS else {}
 
 
 def _normalize_forward_env_names(forward_env: list[str] | None) -> list[str]:
@@ -63,7 +78,7 @@ def reap_orphan_containers(*, max_age_seconds: int = 600, profile_filter: str | 
     if profile_filter:
         filters.extend(["--filter", f"label=deskagent-profile={_sanitize_label_value(profile_filter)}"])
     try:
-        res = subprocess.run([docker, "ps", "-a", *filters, "--format", "{{.ID}}"], capture_output=True, text=True, timeout=15, stdin=subprocess.DEVNULL)
+        res = subprocess.run([docker, "ps", "-a", *filters, "--format", "{{.ID}}"], capture_output=True, text=True, timeout=15, stdin=subprocess.DEVNULL, **_NO_WINDOW)
         if res.returncode != 0:
             return 0
         ids = [ln.strip() for ln in res.stdout.splitlines() if ln.strip()]
@@ -74,7 +89,7 @@ def reap_orphan_containers(*, max_age_seconds: int = 600, profile_filter: str | 
     for cid in ids:
         if (fin := _container_finished_at(docker, cid)) and (now - fin).total_seconds() >= max_age_seconds:
             try:
-                if subprocess.run([docker, "rm", "-f", cid], capture_output=True, timeout=30, stdin=subprocess.DEVNULL).returncode == 0:
+                if subprocess.run([docker, "rm", "-f", cid], capture_output=True, timeout=30, stdin=subprocess.DEVNULL, **_NO_WINDOW).returncode == 0:
                     removed += 1
                     logger.info("Reaped orphan container %s", cid[:12])
             except Exception:
@@ -111,9 +126,11 @@ def maybe_reap_docker_orphans(container_config: dict, lifetime_seconds: int | No
         logger.debug("Docker orphan reaper raised: %s", e)
 
 
-def _container_finished_at(docker_exe: str, container_id: str):
+def _container_finished_at(docker_exe: str, container_id: str) -> bool:
     try:
-        res = subprocess.run([docker_exe, "inspect", "--format", "{{.State.FinishedAt}}", container_id], capture_output=True, text=True, timeout=10, stdin=subprocess.DEVNULL)
+        res = subprocess.run(
+            [docker_exe, "inspect", "--format", "{{.State.FinishedAt}}", container_id], capture_output=True, text=True, timeout=10, stdin=subprocess.DEVNULL, **_NO_WINDOW
+        )
         if res.returncode == 0 and (raw := res.stdout.strip()) and not raw.startswith("0001-01-01"):
             return datetime.datetime.fromisoformat(re.sub(r"(\.\d{6})\d+", r"\1", raw).replace("Z", "+00:00"))
     except Exception:
@@ -168,7 +185,7 @@ def _build_security_args(run_as_host_user: bool, run_exec: bool = False) -> list
 def _image_uses_init_entrypoint(docker_exe: str, image: str) -> bool:
     try:
         res = subprocess.run(
-            [docker_exe, "image", "inspect", image, "--format", "{{json .Config.Entrypoint}}"], capture_output=True, text=True, timeout=15, stdin=subprocess.DEVNULL
+            [docker_exe, "image", "inspect", image, "--format", "{{json .Config.Entrypoint}}"], capture_output=True, text=True, timeout=15, stdin=subprocess.DEVNULL, **_NO_WINDOW
         )
         if res.returncode == 0 and (raw := (res.stdout or "").strip()) and raw != "null":
             ep = json.loads(raw)
@@ -192,7 +209,7 @@ def _ensure_docker_available() -> None:
     if not (docker_exe := find_docker()):
         raise RuntimeError("Docker executable not found.")
     try:
-        if subprocess.run([docker_exe, "version"], capture_output=True, timeout=5, stdin=subprocess.DEVNULL).returncode != 0:
+        if subprocess.run([docker_exe, "version"], capture_output=True, timeout=5, stdin=subprocess.DEVNULL, **_NO_WINDOW).returncode != 0:
             raise RuntimeError("docker version failed.")
     except Exception as e:
         raise RuntimeError(f"Docker check failed: {e}")
@@ -299,7 +316,7 @@ class DockerEnvironment(BaseEnvironment):
             self._container_id = cid
             if state != "running":
                 try:
-                    subprocess.run([self._docker_exe, "start", cid], capture_output=True, timeout=30, check=True, stdin=subprocess.DEVNULL)
+                    subprocess.run([self._docker_exe, "start", cid], capture_output=True, timeout=30, check=True, stdin=subprocess.DEVNULL, **_NO_WINDOW)
                 except Exception as e:
                     logger.warning("Failed to start existing container %s: %s", cid[:12], e)
                     self._container_id = None
@@ -309,10 +326,10 @@ class DockerEnvironment(BaseEnvironment):
             init_args = [] if self._image_uses_s6_init else ["--init"]
             run_cmd = [self._docker_exe, "run", "-d", *init_args, "--name", container_name, *label_args, "-w", cwd, *self._all_run_args, image, "sleep", "infinity"]
             try:
-                self._container_id = subprocess.run(run_cmd, capture_output=True, text=True, timeout=120, check=True, stdin=subprocess.DEVNULL).stdout.strip()
+                self._container_id = subprocess.run(run_cmd, capture_output=True, text=True, timeout=120, check=True, stdin=subprocess.DEVNULL, **_NO_WINDOW).stdout.strip()
             except Exception as e:
                 logger.warning("docker run failed for %s, cleaning up: %s", container_name, e)
-                subprocess.run([self._docker_exe, "rm", "-f", container_name], capture_output=True, timeout=10, stdin=subprocess.DEVNULL)
+                subprocess.run([self._docker_exe, "rm", "-f", container_name], capture_output=True, timeout=10, stdin=subprocess.DEVNULL, **_NO_WINDOW)
                 raise
         self._init_env_args = self._build_init_env_args()
         self.init_session()
@@ -352,7 +369,7 @@ class DockerEnvironment(BaseEnvironment):
                 self._container_id = cid
             else:
                 try:
-                    subprocess.run([self._docker_exe, "start", cid], capture_output=True, timeout=30, check=True, stdin=subprocess.DEVNULL)
+                    subprocess.run([self._docker_exe, "start", cid], capture_output=True, timeout=30, check=True, stdin=subprocess.DEVNULL, **_NO_WINDOW)
                     self._container_id = cid
                 except Exception as e:
                     logger.warning("Recovery: failed to start container %s: %s", cid[:12], e)
@@ -364,7 +381,7 @@ class DockerEnvironment(BaseEnvironment):
                 init_args = [] if self._image_uses_s6_init else ["--init"]
                 label_args = [arg for k, v in self._labels.items() for arg in ("--label", f"{k}={v}")]
                 run_cmd = [self._docker_exe, "run", "-d", *init_args, "--name", new_name, *label_args, "-w", self.cwd, *self._all_run_args, self._image, "sleep", "infinity"]
-                self._container_id = subprocess.run(run_cmd, capture_output=True, text=True, timeout=120, check=True, stdin=subprocess.DEVNULL).stdout.strip()
+                self._container_id = subprocess.run(run_cmd, capture_output=True, text=True, timeout=120, check=True, stdin=subprocess.DEVNULL, **_NO_WINDOW).stdout.strip()
                 self._container_name = new_name
             except Exception as e:
                 logger.error("Recovery: failed to create new container: %s", e)
@@ -392,13 +409,17 @@ class DockerEnvironment(BaseEnvironment):
         try:
             docker = find_docker() or "docker"
             if (
-                subprocess.run([docker, "info", "--format", "{{.Driver}}"], capture_output=True, text=True, timeout=10, stdin=subprocess.DEVNULL).stdout.strip().lower()
+                subprocess.run([docker, "info", "--format", "{{.Driver}}"], capture_output=True, text=True, timeout=10, stdin=subprocess.DEVNULL, **_NO_WINDOW)
+                .stdout.strip()
+                .lower()
                 == "overlay2"
             ):
-                probe = subprocess.run([docker, "create", "--storage-opt", "size=1m", "hello-world"], capture_output=True, text=True, timeout=15, stdin=subprocess.DEVNULL)
+                probe = subprocess.run(
+                    [docker, "create", "--storage-opt", "size=1m", "hello-world"], capture_output=True, text=True, timeout=15, stdin=subprocess.DEVNULL, **_NO_WINDOW
+                )
                 if probe.returncode == 0:
                     if cid := probe.stdout.strip():
-                        subprocess.run([docker, "rm", cid], capture_output=True, timeout=5, stdin=subprocess.DEVNULL)
+                        subprocess.run([docker, "rm", cid], capture_output=True, timeout=5, stdin=subprocess.DEVNULL, **_NO_WINDOW)
                     _storage_opt_ok = True
                     return True
         except Exception:
@@ -426,6 +447,7 @@ class DockerEnvironment(BaseEnvironment):
                 text=True,
                 timeout=10,
                 stdin=subprocess.DEVNULL,
+                **_NO_WINDOW,
             )
             if res.returncode == 0 and (lines := [ln.strip() for ln in res.stdout.splitlines() if ln.strip()]):
                 running, first = None, None
@@ -457,11 +479,11 @@ class DockerEnvironment(BaseEnvironment):
 
         def _do_cleanup() -> None:
             try:
-                subprocess.run([docker_exe, "stop", "-t", "10", container_id], capture_output=True, timeout=30, stdin=subprocess.DEVNULL)
+                subprocess.run([docker_exe, "stop", "-t", "10", container_id], capture_output=True, timeout=30, stdin=subprocess.DEVNULL, **_NO_WINDOW)
             except Exception as e:
                 logger.warning("docker stop %s timed out / failed: %s", log_id, e)
             try:
-                subprocess.run([docker_exe, "rm", "-f", container_id], capture_output=True, timeout=30, stdin=subprocess.DEVNULL)
+                subprocess.run([docker_exe, "rm", "-f", container_id], capture_output=True, timeout=30, stdin=subprocess.DEVNULL, **_NO_WINDOW)
             except Exception as e:
                 logger.warning("docker rm -f %s failed: %s", log_id, e)
 
