@@ -21,6 +21,7 @@ services:
     build:
       context: ..
       dockerfile: backend/Dockerfile
+      target: backend
     container_name: deskagent-backend
     restart: unless-stopped
     depends_on:
@@ -37,6 +38,50 @@ services:
       - ./config.toml:/app/config.toml:ro
       - ./updates:/app/updates
       - ./data:/app/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:10620/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # Render worker: same image as backend + docker-cli. Owns the Blender/LLM
+  # pipelines so the web process stays responsive. docker.sock is required
+  # for sandboxed bpy execution — that mount is effectively host root, keep
+  # it out of anything multi-tenant (ARCHITECTURE.md §10).
+  worker:
+    build:
+      context: ..
+      dockerfile: backend/Dockerfile
+      target: worker
+    container_name: deskagent-worker
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres:5432/deskagent
+      BLENDER_SANDBOX_ENABLED: "true"
+    volumes:
+      - ./config.toml:/app/config.toml:ro
+      - ./data:/app/data
+      - /var/run/docker.sock:/var/run/docker.sock
+
+  # Build-only Blender sandbox image (--profile build); the worker references
+  # it by name via [blender_sandbox] image.
+  blender-sandbox:
+    build:
+      context: ..
+      dockerfile: backend/Dockerfile
+      target: sandbox
+    image: deskagent-blender-sandbox:latest
+    profiles:
+      - build
+    command: ["true"]
 
 volumes:
   postgres_data:

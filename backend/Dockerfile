@@ -1,9 +1,10 @@
-FROM python:3.13-slim
+# ── Stage: blender runtime — shared by backend/worker and the sandbox image ──
+# apt deps + pinned official Blender tarball live here so the sandbox target
+# and the app targets can never drift apart on Blender version.
+FROM python:3.13-slim AS blender
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
-
-WORKDIR /app
 
 # APT: replace Debian sources with Tsinghua mirror
 RUN sed -i 's|deb.debian.org|mirrors.tuna.tsinghua.edu.cn|g; \
@@ -29,8 +30,7 @@ RUN sed -i 's|deb.debian.org|mirrors.tuna.tsinghua.edu.cn|g; \
     libsm6 \
     libice6 \
     libgomp1 \
-    && rm -rf /var/lib/apt/lists/* \
-    && pip install uv
+    && rm -rf /var/lib/apt/lists/*
 
 # Install Blender 5.2.0 LTS from the official tarball. apt ships Blender 4.x,
 # but the garment/body bpy pipelines must match the locally-used 5.2 to avoid
@@ -43,6 +43,13 @@ RUN curl -fsSL -o /tmp/blender.tar.xz \
     ln -sf "/opt/blender-${BLENDER_VERSION}-linux-x64/blender" /usr/local/bin/blender && \
     rm /tmp/blender.tar.xz
 
+# ── backend / worker app image ──
+FROM blender AS backend
+
+WORKDIR /app
+
+RUN pip install uv
+
 COPY backend/pyproject.toml backend/uv.lock ./
 
 RUN uv sync --frozen
@@ -53,3 +60,21 @@ COPY runner/tools/ /runner/tools/
 EXPOSE 10620
 
 CMD ["uv", "run", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "10620"]
+
+# ── render worker: backend + docker CLI (talks to the host daemon over the
+#    mounted docker.sock to spawn sandbox containers) ──
+FROM backend AS worker
+
+RUN sed -i 's|deb.debian.org|mirrors.tuna.tsinghua.edu.cn|g; \
+            s|security.debian.org/debian-security|mirrors.tuna.tsinghua.edu.cn/debian-security|g' \
+        /etc/apt/sources.list.d/debian.sources && \
+    apt-get update && apt-get install -y --no-install-recommends docker-cli && \
+    rm -rf /var/lib/apt/lists/*
+
+CMD ["uv", "run", "python", "-m", "services.worker"]
+
+# ── sandbox image: Blender only, no app code. Never runs a server; built so
+#    the worker can `docker run` it with hard resource caps. ──
+FROM blender AS sandbox
+
+CMD ["blender", "--version"]

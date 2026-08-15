@@ -17,10 +17,7 @@ def _docker_cmd(container: str, io_dir: Path, script_name: str, args: Sequence[s
     workspace; anything outside io_dir stays verbatim (and will fail loudly
     inside the container)."""
     io_root = io_dir.resolve()
-    mapped = [
-        "/io/" + Path(arg).relative_to(io_root).as_posix() if Path(arg).is_absolute() and Path(arg).is_relative_to(io_root) else arg
-        for arg in args
-    ]
+    mapped = ["/io/" + Path(arg).relative_to(io_root).as_posix() if Path(arg).is_absolute() and Path(arg).is_relative_to(io_root) else arg for arg in args]
     return [
         SETTINGS.blender_sandbox_docker_binary,
         "run",
@@ -58,9 +55,7 @@ async def _kill_container(container: str) -> None:
     # Killing the docker CLI client leaves the container running — the daemon
     # must be told explicitly, else a timed-out Blender keeps burning CPU.
     try:
-        await asyncio.create_subprocess_exec(
-            SETTINGS.blender_sandbox_docker_binary, "kill", container, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL
-        )
+        await asyncio.create_subprocess_exec(SETTINGS.blender_sandbox_docker_binary, "kill", container, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)
     except FileNotFoundError:
         pass
 
