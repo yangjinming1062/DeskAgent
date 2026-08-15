@@ -109,6 +109,7 @@ async def _patch_db(monkeypatch, sqlite_engine, tmp_path):
         "services.companion.interaction_stats",
         "services.companion.memory_admin",
         "services.companion.model_service",
+        "services.companion.persona_background",
         "services.companion.prompt_runtime",
         "services.worker.queue",
         "services.companion.should_act",

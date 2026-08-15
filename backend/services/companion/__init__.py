@@ -54,6 +54,7 @@ from .model_service import (
     signed_model_url,
 )
 from .outfit_normalizer import normalize_outfit
+from .persona_background import schedule_onboarding_outfit_extraction, schedule_personality_tag_refresh
 from .persona_service import (
     ONBOARDING_FIELDS,
     PersonaValidationError,
@@ -185,6 +186,8 @@ __all__ = [
     "record_user_profile",
     "run_prompt_json",
     "run_tripo_pipeline",
+    "schedule_onboarding_outfit_extraction",
+    "schedule_personality_tag_refresh",
     "regenerate_avatar",
     "regenerate_avatar_from_image",
     "recover_stuck_model_generations",

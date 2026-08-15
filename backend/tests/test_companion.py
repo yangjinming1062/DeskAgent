@@ -2138,7 +2138,7 @@ def test_companion_rest_contract(_patch_db, monkeypatch):
     # ``test_persona_tag_refresh_retries_transient_failures`` tests
     # cover the background behaviour on their own.
     monkeypatch.setattr(
-        companion_api, "_schedule_personality_tag_refresh", lambda *a, **kw: None
+        companion_api, "schedule_personality_tag_refresh", lambda *a, **kw: None
     )
 
     resp = client.get("/api/companion/persona")
@@ -2209,7 +2209,7 @@ async def test_persona_put_schedules_background_tag_refresh(_patch_db, monkeypat
         scheduled.append((persona_id, user_id))
 
     monkeypatch.setattr(
-        companion_api, "_schedule_personality_tag_refresh", _record_schedule
+        companion_api, "schedule_personality_tag_refresh", _record_schedule
     )
 
     # Tripwire: if the handler ever awaits the LLM inline, the explode
@@ -2218,7 +2218,7 @@ async def test_persona_put_schedules_background_tag_refresh(_patch_db, monkeypat
         raise AssertionError("analyze_personality_tags should NOT be awaited inline")
 
     monkeypatch.setattr(companion_svc, "analyze_personality_tags", _explode_if_called)
-    monkeypatch.setattr(companion_api, "analyze_personality_tags", _explode_if_called)
+    monkeypatch.setattr(companion_svc.persona_background, "analyze_personality_tags", _explode_if_called)
 
     fake_user_id = 4242
 
@@ -2270,16 +2270,16 @@ async def test_persona_tag_refresh_retries_transient_failures(_patch_db, monkeyp
         return ["retry", "ok"]
 
     monkeypatch.setattr(companion_svc, "analyze_personality_tags", _flaky_tag_extract)
-    monkeypatch.setattr(companion_api, "analyze_personality_tags", _flaky_tag_extract)
+    monkeypatch.setattr(companion_svc.persona_background, "analyze_personality_tags", _flaky_tag_extract)
 
     async def _noop_chat(*_a, **_kw):
         return ""
 
-    monkeypatch.setattr(companion_api, "chat", _noop_chat)
+    monkeypatch.setattr(companion_svc.persona_background, "chat", _noop_chat)
     # Shrink the backoff so the test runs in well under a second total.
-    monkeypatch.setattr(companion_api, "_BG_TASK_BASE_DELAY", 0.01)
-    monkeypatch.setattr(companion_api, "_BG_TASK_MAX_DELAY", 0.05)
-    monkeypatch.setattr(companion_api, "_BG_TASK_PER_ATTEMPT_TIMEOUT", 5.0)
+    monkeypatch.setattr(companion_svc.persona_background, "_BG_TASK_BASE_DELAY", 0.01)
+    monkeypatch.setattr(companion_svc.persona_background, "_BG_TASK_MAX_DELAY", 0.05)
+    monkeypatch.setattr(companion_svc.persona_background, "_BG_TASK_PER_ATTEMPT_TIMEOUT", 5.0)
 
     async with SessionLocal() as db:
         persona = Persona(
@@ -2294,8 +2294,8 @@ async def test_persona_tag_refresh_retries_transient_failures(_patch_db, monkeyp
         await db.refresh(persona)
         persona_id = persona.id
 
-    companion_api._schedule_personality_tag_refresh(persona_id, 31337)
-    await asyncio.gather(*companion_api._PERSONA_TAGS_TASKS, return_exceptions=True)
+    companion_api.schedule_personality_tag_refresh(persona_id, 31337)
+    await asyncio.gather(*companion_svc.persona_background._TASKS, return_exceptions=True)
 
     assert attempts["n"] == 3, f"expected 3 attempts, got {attempts['n']}"
     async with SessionLocal() as db:
@@ -2318,14 +2318,14 @@ async def test_persona_tag_refresh_gives_up_after_max_attempts(_patch_db, monkey
         raise RuntimeError("simulated permanent LLM error")
 
     monkeypatch.setattr(companion_svc, "analyze_personality_tags", _always_fail)
-    monkeypatch.setattr(companion_api, "analyze_personality_tags", _always_fail)
+    monkeypatch.setattr(companion_svc.persona_background, "analyze_personality_tags", _always_fail)
 
     async def _noop_chat(*_a, **_kw):
         return ""
 
-    monkeypatch.setattr(companion_api, "chat", _noop_chat)
-    monkeypatch.setattr(companion_api, "_BG_TASK_BASE_DELAY", 0.01)
-    monkeypatch.setattr(companion_api, "_BG_TASK_MAX_DELAY", 0.05)
+    monkeypatch.setattr(companion_svc.persona_background, "chat", _noop_chat)
+    monkeypatch.setattr(companion_svc.persona_background, "_BG_TASK_BASE_DELAY", 0.01)
+    monkeypatch.setattr(companion_svc.persona_background, "_BG_TASK_MAX_DELAY", 0.05)
 
     async with SessionLocal() as db:
         persona = Persona(
@@ -2341,8 +2341,8 @@ async def test_persona_tag_refresh_gives_up_after_max_attempts(_patch_db, monkey
         await db.refresh(persona)
         persona_id = persona.id
 
-    companion_api._schedule_personality_tag_refresh(persona_id, 31338)
-    await asyncio.gather(*companion_api._PERSONA_TAGS_TASKS, return_exceptions=True)
+    companion_api.schedule_personality_tag_refresh(persona_id, 31338)
+    await asyncio.gather(*companion_svc.persona_background._TASKS, return_exceptions=True)
 
     async with SessionLocal() as db:
         persona = (
