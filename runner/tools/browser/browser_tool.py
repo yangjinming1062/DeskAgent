@@ -27,8 +27,8 @@ from urllib.parse import unquote, urlparse
 import requests
 
 from utils import (
-    _PREFIX_RE,
     CREATE_NO_WINDOW,
+    SECRET_PREFIX_RE,
     call_llm,
     cfg_get,
     check_redirect_url_safety,
@@ -48,8 +48,7 @@ from utils import (
 )
 
 from ..interrupt import is_interrupted
-from ..multimodal import _RESIZE_TARGET_BYTES, _is_image_size_error, _resize_image_for_vision
-from ..multimodal.helpers import _resolve_vision_params
+from ..multimodal import RESIZE_TARGET_BYTES, is_image_size_error, resize_image_for_vision, resolve_vision_params
 from ..process import ProcessRegistry
 from ..registry import registry, tool_error
 from .browser_camofox import (
@@ -1741,11 +1740,11 @@ def browser_navigate(url: str, task_id: str | None = None) -> str:
     # Also check URL-decoded form to catch %2D encoding tricks (e.g. sk%2Dant%2D...).
 
     url_decoded = unquote(url)
-    if _PREFIX_RE.search(url) or _PREFIX_RE.search(url_decoded):
+    if SECRET_PREFIX_RE.search(url) or SECRET_PREFIX_RE.search(url_decoded):
         return json.dumps({"success": False, "error": "Blocked: URL contains what appears to be an API key or token. Secrets must not be sent in URLs."})
     url = normalize_url_for_request(url)
     normalized_decoded = unquote(url)
-    if _PREFIX_RE.search(url) or _PREFIX_RE.search(normalized_decoded):
+    if SECRET_PREFIX_RE.search(url) or SECRET_PREFIX_RE.search(normalized_decoded):
         return json.dumps({"success": False, "error": "Blocked: URL contains what appears to be an API key or token. Secrets must not be sent in URLs."})
 
     # SSRF protection — block private/internal addresses before navigating.
@@ -3442,7 +3441,7 @@ def browser_vision(question: str, annotate: bool = False, task_id: str | None = 
 
         # Local vision models (llama.cpp, ollama) can take well over 30s for
         # screenshot analysis, so the default timeout must be generous.
-        vision_timeout, vision_temperature = _resolve_vision_params()
+        vision_timeout, vision_temperature = resolve_vision_params()
 
         call_kwargs = {
             "task": "vision",
@@ -3457,11 +3456,11 @@ def browser_vision(question: str, annotate: bool = False, task_id: str | None = 
                 return {"success": False, "error": "browser_vision requires no running event loop"}
             response = asyncio.run(call_llm(**call_kwargs))
         except Exception as _api_err:
-            if _is_image_size_error(_api_err) and len(data_url) > _RESIZE_TARGET_BYTES:
+            if is_image_size_error(_api_err) and len(data_url) > RESIZE_TARGET_BYTES:
                 logger.info(
-                    "Vision API rejected screenshot (%.1f MB); auto-resizing to ~%.0f MB and retrying...", len(data_url) / (1024 * 1024), _RESIZE_TARGET_BYTES / (1024 * 1024)
+                    "Vision API rejected screenshot (%.1f MB); auto-resizing to ~%.0f MB and retrying...", len(data_url) / (1024 * 1024), RESIZE_TARGET_BYTES / (1024 * 1024)
                 )
-                data_url = _resize_image_for_vision(screenshot_path, mime_type="image/png")
+                data_url = resize_image_for_vision(screenshot_path, mime_type="image/png")
                 call_kwargs["messages"][0]["content"][1]["image_url"]["url"] = data_url
                 try:
                     response = asyncio.run(call_llm(**call_kwargs))

@@ -12,7 +12,7 @@ import requests
 
 from utils import call_llm, cfg_get, get_deskagent_home, load_config, redact_sensitive_text
 
-from ..multimodal.helpers import _resolve_vision_params
+from ..multimodal import resolve_vision_params
 from ..registry import tool_error
 from .browser_camofox_state import get_camofox_identity
 from .helpers import SNAPSHOT_SUMMARIZE_THRESHOLD, _extract_relevant_content, _truncate_snapshot
@@ -380,7 +380,7 @@ def camofox_vision(question: str, annotate: bool = False, task_id: str | None = 
         vision_prompt = f"Analyze this browser screenshot and answer: {question}{annotation_context}"
 
         try:
-            _vision_timeout, _vision_temperature = _resolve_vision_params()
+            _vision_timeout, _vision_temperature = resolve_vision_params()
         except Exception:
             _vision_timeout, _vision_temperature = 120.0, 0.1
 

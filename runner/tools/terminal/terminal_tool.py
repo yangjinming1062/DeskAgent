@@ -24,16 +24,16 @@ from ..registry import registry
 from ..security import check_command_security
 from ._env_singularity import _get_scratch_dir
 from .environment import (
-    _active_environments,
-    _creation_locks,
-    _creation_locks_lock,
-    _env_lock,
-    _last_activity,
-    _task_env_overrides,
+    active_environments,
     create_environment,
+    creation_locks,
+    creation_locks_lock,
+    env_lock,
     get_env_config,
+    last_activity,
     resolve_container_task_id,
     start_cleanup_thread,
+    task_env_overrides,
 )
 
 logger = logging.getLogger(__name__)
@@ -247,7 +247,7 @@ def terminal_tool(
         config = get_env_config()
         env_type = config["env_type"]
         effective_task_id = resolve_container_task_id(task_id)
-        overrides = (_task_env_overrides.get(task_id) if task_id else None) or _task_env_overrides.get(effective_task_id, {})
+        overrides = (task_env_overrides.get(task_id) if task_id else None) or task_env_overrides.get(effective_task_id, {})
         if env_type == "docker":
             image = overrides.get("docker_image") or config["docker_image"]
         elif env_type == "singularity":
@@ -273,25 +273,25 @@ def terminal_tool(
             if guidance:
                 return json.dumps({"output": "", "exit_code": -1, "error": guidance, "status": "error"}, ensure_ascii=False)
         start_cleanup_thread()
-        with _env_lock:
-            _existing_key = effective_task_id if effective_task_id in _active_environments else (task_id if task_id and task_id in _active_environments else None)
+        with env_lock:
+            _existing_key = effective_task_id if effective_task_id in active_environments else (task_id if task_id and task_id in active_environments else None)
             if _existing_key is not None:
-                _last_activity[_existing_key] = time.time()
-                env = _active_environments[_existing_key]
+                last_activity[_existing_key] = time.time()
+                env = active_environments[_existing_key]
                 needs_creation = False
             else:
                 needs_creation = True
         if needs_creation:
-            with _creation_locks_lock:
-                if effective_task_id not in _creation_locks:
-                    _creation_locks[effective_task_id] = threading.Lock()
-                task_lock = _creation_locks[effective_task_id]
+            with creation_locks_lock:
+                if effective_task_id not in creation_locks:
+                    creation_locks[effective_task_id] = threading.Lock()
+                task_lock = creation_locks[effective_task_id]
             with task_lock:
-                with _env_lock:
-                    _existing_key = effective_task_id if effective_task_id in _active_environments else (task_id if task_id and task_id in _active_environments else None)
+                with env_lock:
+                    _existing_key = effective_task_id if effective_task_id in active_environments else (task_id if task_id and task_id in active_environments else None)
                     if _existing_key is not None:
-                        _last_activity[_existing_key] = time.time()
-                        env = _active_environments[_existing_key]
+                        last_activity[_existing_key] = time.time()
+                        env = active_environments[_existing_key]
                         needs_creation = False
                 if needs_creation:
                     if env_type == "singularity":
@@ -341,9 +341,9 @@ def terminal_tool(
                         return json.dumps(
                             {"output": "", "exit_code": -1, "error": f"Terminal tool disabled: environment creation failed ({e})", "status": "disabled"}, ensure_ascii=False
                         )
-                    with _env_lock:
-                        _active_environments[effective_task_id] = new_env
-                        _last_activity[effective_task_id] = time.time()
+                    with env_lock:
+                        active_environments[effective_task_id] = new_env
+                        last_activity[effective_task_id] = time.time()
                         env = new_env
                     logger.info("%s environment ready for task %s", env_type, effective_task_id[:8])
         if not force:

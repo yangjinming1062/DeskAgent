@@ -23,16 +23,16 @@ from utils import CREATE_NO_WINDOW, IS_WINDOWS, cfg_get, clean_output, find_pyth
 from ..interrupt import is_interrupted
 from ..registry import registry, tool_error
 from ..terminal.environment import (
-    _active_environments,
-    _creation_locks,
-    _creation_locks_lock,
-    _env_lock,
-    _last_activity,
-    _task_env_overrides,
+    active_environments,
     create_environment,
+    creation_locks,
+    creation_locks_lock,
+    env_lock,
     get_env_config,
+    last_activity,
     resolve_container_task_id,
     start_cleanup_thread,
+    task_env_overrides,
 )
 from ..thread_context import propagate_context_to_thread
 
@@ -389,22 +389,22 @@ def _rpc_server_loop(server_sock: socket.socket, task_id: str, tool_call_log: li
 
 def _get_or_create_env(task_id: str):
     effective_task_id = resolve_container_task_id(task_id)
-    with _env_lock:
-        if effective_task_id in _active_environments:
-            _last_activity[effective_task_id] = time.time()
-            return _active_environments[effective_task_id], get_env_config()["env_type"]
-    with _creation_locks_lock:
-        if effective_task_id not in _creation_locks:
-            _creation_locks[effective_task_id] = threading.Lock()
-        task_lock = _creation_locks[effective_task_id]
+    with env_lock:
+        if effective_task_id in active_environments:
+            last_activity[effective_task_id] = time.time()
+            return active_environments[effective_task_id], get_env_config()["env_type"]
+    with creation_locks_lock:
+        if effective_task_id not in creation_locks:
+            creation_locks[effective_task_id] = threading.Lock()
+        task_lock = creation_locks[effective_task_id]
     with task_lock:
-        with _env_lock:
-            if effective_task_id in _active_environments:
-                _last_activity[effective_task_id] = time.time()
-                return _active_environments[effective_task_id], get_env_config()["env_type"]
+        with env_lock:
+            if effective_task_id in active_environments:
+                last_activity[effective_task_id] = time.time()
+                return active_environments[effective_task_id], get_env_config()["env_type"]
         config = get_env_config()
         env_type = config["env_type"]
-        overrides = _task_env_overrides.get(effective_task_id, {})
+        overrides = task_env_overrides.get(effective_task_id, {})
         if env_type == "docker":
             image = overrides.get("docker_image") or config["docker_image"]
         elif env_type == "singularity":
@@ -450,9 +450,9 @@ def _get_or_create_env(task_id: str):
             task_id=effective_task_id,
             host_cwd=config.get("host_cwd"),
         )
-        with _env_lock:
-            _active_environments[effective_task_id] = env
-            _last_activity[effective_task_id] = time.time()
+        with env_lock:
+            active_environments[effective_task_id] = env
+            last_activity[effective_task_id] = time.time()
         start_cleanup_thread()
         logger.info("%s environment ready for execute_code task %s", env_type, effective_task_id[:8])
         return env, env_type

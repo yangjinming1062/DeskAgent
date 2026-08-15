@@ -17,15 +17,15 @@ DOCKER_ORPHAN_LIFETIME_SECONDS = max(60, int(_terminal_config_value("lifetime_se
 
 # ── Shared state ──────────────────────────────────────────────────────
 
-_active_environments: dict[str, Any] = {}
-_last_activity: dict[str, float] = {}
-_env_lock = threading.Lock()
+active_environments: dict[str, Any] = {}
+last_activity: dict[str, float] = {}
+env_lock = threading.Lock()
 
-_creation_locks: dict[str, threading.Lock] = {}
-_creation_locks_lock = threading.Lock()
+creation_locks: dict[str, threading.Lock] = {}
+creation_locks_lock = threading.Lock()
 
-_task_env_overrides: dict[str, dict[str, Any]] = {}
-_task_env_overrides_lock = threading.Lock()
+task_env_overrides: dict[str, dict[str, Any]] = {}
+task_env_overrides_lock = threading.Lock()
 
 # ── Helpers ───────────────────────────────────────────────────────────
 
@@ -109,8 +109,8 @@ def get_env_config() -> dict[str, Any]:
 
 def get_active_env(task_id: str):
     lookup = resolve_container_task_id(task_id)
-    with _env_lock:
-        return _active_environments.get(lookup) or _active_environments.get(task_id)
+    with env_lock:
+        return active_environments.get(lookup) or active_environments.get(task_id)
 
 
 def is_persistent_env(task_id: str) -> bool:
@@ -122,6 +122,6 @@ def is_persistent_env(task_id: str) -> bool:
 
 def register_environment(task_id: str, env: Any) -> None:
     """Register an environment instance and update last activity timestamp."""
-    with _env_lock:
-        _active_environments[task_id] = env
-        _last_activity[task_id] = time.time()
+    with env_lock:
+        active_environments[task_id] = env
+        last_activity[task_id] = time.time()

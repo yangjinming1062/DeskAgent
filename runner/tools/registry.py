@@ -16,11 +16,9 @@ from .toolsets import excluded_tool_names
 
 logger = logging.getLogger(__name__)
 
-# Single source of truth for tool result size. ``budget_config.py`` mirrors
-# this as ``DEFAULT_RESULT_SIZE_CHARS`` and threads it through every tool
-# that has an explicit cap; the value here exists as a final ceiling when a
-# tool forgets to set its own. ``get_max_result_size`` is the only public
-# read path.
+# Single source of truth for tool result size; ``budget_config.py`` threads
+# it through every tool that has an explicit cap. ``get_max_result_size`` is
+# the only public read path.
 DEFAULT_MAX_RESULT_SIZE_CHARS: int = 100_000
 
 

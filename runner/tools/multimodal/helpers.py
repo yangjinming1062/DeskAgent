@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 _VISION_MAX_DOWNLOAD_BYTES = 50 * 1024 * 1024
 _MAX_BASE64_BYTES = 20 * 1024 * 1024
-_RESIZE_TARGET_BYTES = 5 * 1024 * 1024
+RESIZE_TARGET_BYTES = 5 * 1024 * 1024
 
 
 def _resolve_download_timeout() -> float:
@@ -26,7 +26,7 @@ def _resolve_download_timeout() -> float:
     return 30.0
 
 
-def _resolve_vision_params(default_timeout: float = 120.0, default_temperature: float = 0.1) -> tuple[float, float]:
+def resolve_vision_params(default_timeout: float = 120.0, default_temperature: float = 0.1) -> tuple[float, float]:
     """Read ``auxiliary.vision.timeout`` and ``auxiliary.vision.temperature``.
 
     Falls back to ``(default_timeout, default_temperature)`` on any error or
@@ -154,12 +154,12 @@ def _image_to_base64_data_url(image_path: Path, mime_type: str | None = None) ->
     return _file_to_base64_data_url(image_path, mime_type=mime_type or _guess_mime_from_extension(image_path))
 
 
-def _is_image_size_error(error: Exception) -> bool:
+def is_image_size_error(error: Exception) -> bool:
     err_str = str(error).lower()
     return any(h in err_str for h in _SIZE_HINTS) or "image_url" in err_str or "invalid_request" in err_str
 
 
-def _resize_image_for_vision(image_path: Path, mime_type: str | None = None, max_base64_bytes: int = _RESIZE_TARGET_BYTES, max_dimension: int | None = None) -> str:
+def resize_image_for_vision(image_path: Path, mime_type: str | None = None, max_base64_bytes: int = RESIZE_TARGET_BYTES, max_dimension: int | None = None) -> str:
     file_size = image_path.stat().st_size
     estimated_b64 = (file_size * 4) // 3 + 100
     needs_resize = estimated_b64 > max_base64_bytes

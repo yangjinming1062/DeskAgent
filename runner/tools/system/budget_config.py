@@ -1,16 +1,15 @@
 from dataclasses import dataclass, field
 
-from ..registry import registry
+from ..registry import DEFAULT_MAX_RESULT_SIZE_CHARS, registry
 
 PINNED_THRESHOLDS: dict[str, float] = {"read_file": float("inf")}
-DEFAULT_RESULT_SIZE_CHARS = 100_000
 DEFAULT_TURN_BUDGET_CHARS = 200_000
 DEFAULT_PREVIEW_SIZE_CHARS = 1_500
 
 
 @dataclass(frozen=True)
 class BudgetConfig:
-    default_result_size: int = DEFAULT_RESULT_SIZE_CHARS
+    default_result_size: int = DEFAULT_MAX_RESULT_SIZE_CHARS
     turn_budget: int = DEFAULT_TURN_BUDGET_CHARS
     preview_size: int = DEFAULT_PREVIEW_SIZE_CHARS
     tool_overrides: dict[str, int] = field(default_factory=dict)

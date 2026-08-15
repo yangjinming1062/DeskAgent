@@ -8,7 +8,7 @@ import threading
 import time
 
 from .._env_singularity import _get_scratch_dir
-from .state import _active_environments, _creation_locks, _creation_locks_lock, _env_lock, _last_activity, get_env_config
+from .state import active_environments, creation_locks, creation_locks_lock, env_lock, get_env_config, last_activity
 
 logger = logging.getLogger(__name__)
 
@@ -48,20 +48,20 @@ def _cleanup_inactive_envs(lifetime_seconds: int = 300) -> None:
     from ...process import process_registry
 
     current_time = time.time()
-    for task_id in list(_last_activity.keys()):
+    for task_id in list(last_activity.keys()):
         if process_registry.has_active_processes(task_id):
-            _last_activity[task_id] = current_time
+            last_activity[task_id] = current_time
     envs_to_stop = []
-    with _env_lock:
-        for task_id, last_time in list(_last_activity.items()):
+    with env_lock:
+        for task_id, last_time in list(last_activity.items()):
             if current_time - last_time > lifetime_seconds:
-                env = _active_environments.pop(task_id, None)
-                _last_activity.pop(task_id, None)
+                env = active_environments.pop(task_id, None)
+                last_activity.pop(task_id, None)
                 if env is not None:
                     envs_to_stop.append((task_id, env))
-        with _creation_locks_lock:
+        with creation_locks_lock:
             for task_id, _ in envs_to_stop:
-                _creation_locks.pop(task_id, None)
+                creation_locks.pop(task_id, None)
     for task_id, env in envs_to_stop:
         clear_file_ops_cache(task_id)
         try:
@@ -84,7 +84,7 @@ def _cleanup_thread_worker() -> None:
 
 def start_cleanup_thread() -> None:
     global _cleanup_thread, _cleanup_running
-    with _env_lock:
+    with env_lock:
         if _cleanup_thread is None or not _cleanup_thread.is_alive():
             _cleanup_running = True
             _cleanup_thread = threading.Thread(target=_cleanup_thread_worker, daemon=True)
@@ -101,7 +101,7 @@ def stop_cleanup_thread() -> None:
 
 
 def cleanup_all_environments():
-    task_ids = list(_active_environments.keys())
+    task_ids = list(active_environments.keys())
     cleaned = 0
     for task_id in task_ids:
         try:
@@ -130,11 +130,11 @@ def cleanup_vm(task_id: str, *, force_remove: bool = False) -> None:
     from ...files import clear_file_ops_cache
 
     env = None
-    with _env_lock:
-        env = _active_environments.pop(task_id, None)
-        _last_activity.pop(task_id, None)
-    with _creation_locks_lock:
-        _creation_locks.pop(task_id, None)
+    with env_lock:
+        env = active_environments.pop(task_id, None)
+        last_activity.pop(task_id, None)
+    with creation_locks_lock:
+        creation_locks.pop(task_id, None)
     clear_file_ops_cache(task_id)
     if env is None:
         return
@@ -154,10 +154,10 @@ def cleanup_vm(task_id: str, *, force_remove: bool = False) -> None:
 
 def _atexit_cleanup() -> None:
     stop_cleanup_thread()
-    if _active_environments:
-        count = len(_active_environments)
+    if active_environments:
+        count = len(active_environments)
         logger.info("Shutting down %d remaining sandbox(es)...", count)
-        envs_to_wait = list(_active_environments.values())
+        envs_to_wait = list(active_environments.values())
         cleanup_all_environments()
         for env in envs_to_wait:
             wait_fn = getattr(env, "wait_for_cleanup", None)

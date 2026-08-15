@@ -52,7 +52,7 @@ from .file_safety import (
 from .job_object import get_runner_job_handle, init_runner_job_object, is_job_object_active
 from .path_helpers import append_sane_path_entries, find_bash, find_python, msys_to_windows_path, resolve_safe_cwd
 from .pid import kill_tree, pid_exists
-from .redact import _PREFIX_RE, redact_sensitive_text
+from .redact import SECRET_PREFIX_RE, redact_sensitive_text
 from .reverse_rpc import call_llm, set_handler
 from .url_safety import (
     WebsitePolicyError,
@@ -74,7 +74,7 @@ __all__ = [
     "IS_WINDOWS",
     "PIPE_TRANSPORT",
     "UNIX_TRANSPORT",
-    "_PREFIX_RE",
+    "SECRET_PREFIX_RE",
     "WebsitePolicyError",
     "append_sane_path_entries",
     "async_is_safe_url",

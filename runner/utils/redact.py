@@ -41,7 +41,7 @@ _PREFIX_PATTERNS: tuple[str, ...] = (
 # \b anchors both token ends so a secret at string start/end or right after
 # `=` / `"` / space still matches (lookbehind/lookahead can't anchor at a
 # string boundary). Trade-off: a token preceded by `_` is skipped.
-_PREFIX_RE = re.compile(r"\b(" + "|".join(_PREFIX_PATTERNS) + r")\b")
+SECRET_PREFIX_RE = re.compile(r"\b(" + "|".join(_PREFIX_PATTERNS) + r")\b")
 
 _SECRET_ENV_NAMES = r"(?:API_?KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|AUTH|BEARER)"
 _ENV_ASSIGN_RE = re.compile(rf"([A-Za-z_][A-Za-z0-9_]{{0,50}}{_SECRET_ENV_NAMES}[A-Za-z0-9_]{{0,50}})\s*=\s*(['\"]?)(\S+)\2")
@@ -92,4 +92,4 @@ def _redact(text: str) -> str:
     out = _AUTH_HEADER_RE.sub(r"\1***", out)
     out = _BEARER_RE.sub(lambda m: f"{m.group(1)}***", out)
     out = _JWT_RE.sub("***", out)
-    return _PREFIX_RE.sub(lambda m: _mask_token(m.group(0)), out)
+    return SECRET_PREFIX_RE.sub(lambda m: _mask_token(m.group(0)), out)

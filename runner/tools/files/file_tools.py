@@ -25,16 +25,16 @@ from utils import (
 
 from ..registry import registry, tool_error
 from ..terminal.environment import (
-    _active_environments,
-    _creation_locks,
-    _creation_locks_lock,
-    _env_lock,
-    _last_activity,
-    _task_env_overrides,
+    active_environments,
     create_environment,
+    creation_locks,
+    creation_locks_lock,
+    env_lock,
     get_env_config,
+    last_activity,
     resolve_container_task_id,
     start_cleanup_thread,
+    task_env_overrides,
 )
 from .binary_extensions import has_binary_extension
 from .helpers import DEFAULT_READ_LIMIT, MAX_LINES, ShellFileOperations, check_stale, lock_path, normalize_read_pagination, normalize_search_pagination, note_write, record_read
@@ -159,8 +159,8 @@ def _get_live_tracking_cwd(task_id: str = "default") -> str | None:
             return live_cwd
 
     try:
-        with _env_lock:
-            env = _active_environments.get(container_key) or _active_environments.get(task_id)
+        with env_lock:
+            env = active_environments.get(container_key) or active_environments.get(task_id)
             live_cwd = getattr(env, "cwd", None) if env is not None else None
         if live_cwd:
             return live_cwd
@@ -445,8 +445,8 @@ def _get_container_mirror_prefix_for_task(task_id: str = "default") -> str | Non
         return None
 
     try:
-        with _env_lock:
-            env = _active_environments.get(container_key) or _active_environments.get(task_id)
+        with env_lock:
+            env = active_environments.get(container_key) or active_environments.get(task_id)
 
         if env is not None:
             if env.__class__.__name__ == "DockerEnvironment" and bool(getattr(env, "_persistent", False)):
@@ -700,9 +700,9 @@ def _get_file_ops(task_id: str = "default") -> ShellFileOperations:
     with _file_ops_lock:
         cached = _file_ops_cache.get(task_id)
     if cached is not None:
-        with _env_lock:
-            if task_id in _active_environments:
-                _last_activity[task_id] = time.time()
+        with env_lock:
+            if task_id in active_environments:
+                last_activity[task_id] = time.time()
                 return cached
             else:
                 # Environment was cleaned up -- invalidate stale cache entry
@@ -711,24 +711,24 @@ def _get_file_ops(task_id: str = "default") -> ShellFileOperations:
 
     # Need to ensure the environment exists before building file_ops.
 
-    with _creation_locks_lock:
-        if task_id not in _creation_locks:
-            _creation_locks[task_id] = threading.Lock()
-        task_lock = _creation_locks[task_id]
+    with creation_locks_lock:
+        if task_id not in creation_locks:
+            creation_locks[task_id] = threading.Lock()
+        task_lock = creation_locks[task_id]
 
     with task_lock:
         # Double-check: another thread may have created it while we waited
-        with _env_lock:
-            if task_id in _active_environments:
-                _last_activity[task_id] = time.time()
-                terminal_env = _active_environments[task_id]
+        with env_lock:
+            if task_id in active_environments:
+                last_activity[task_id] = time.time()
+                terminal_env = active_environments[task_id]
             else:
                 terminal_env = None
 
         if terminal_env is None:
             config = get_env_config()
             env_type = config["env_type"]
-            overrides = _task_env_overrides.get(task_id, {})
+            overrides = task_env_overrides.get(task_id, {})
 
             if env_type == "docker":
                 image = overrides.get("docker_image") or config["docker_image"]
@@ -779,9 +779,9 @@ def _get_file_ops(task_id: str = "default") -> ShellFileOperations:
                 host_cwd=config.get("host_cwd"),
             )
 
-            with _env_lock:
-                _active_environments[task_id] = terminal_env
-                _last_activity[task_id] = time.time()
+            with env_lock:
+                active_environments[task_id] = terminal_env
+                last_activity[task_id] = time.time()
 
             start_cleanup_thread()
             logger.info("%s environment ready for task %s", env_type, task_id[:8])

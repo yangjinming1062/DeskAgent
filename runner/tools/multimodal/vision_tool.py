@@ -18,10 +18,10 @@ from .helpers import (
     _detect_image_mime_type,
     _download_image,
     _image_to_base64_data_url,
-    _is_image_size_error,
-    _resize_image_for_vision,
-    _resolve_vision_params,
     _validate_image_url_async,
+    is_image_size_error,
+    resize_image_for_vision,
+    resolve_vision_params,
 )
 
 logger = logging.getLogger(__name__)
@@ -70,29 +70,29 @@ async def vision_analyze_tool(image_url: str, user_prompt: str) -> str:
 
         # Quick size check before reading the entire file into memory.
         if temp_path.stat().st_size > _MAX_BASE64_BYTES * 3 // 4:
-            img_url = _resize_image_for_vision(temp_path, mime_type=mime)
+            img_url = resize_image_for_vision(temp_path, mime_type=mime)
         else:
             img_url = _image_to_base64_data_url(temp_path, mime_type=mime)
         if len(img_url) > _MAX_BASE64_BYTES:
-            img_url = _resize_image_for_vision(temp_path, mime_type=mime)
+            img_url = resize_image_for_vision(temp_path, mime_type=mime)
             if len(img_url) > _MAX_BASE64_BYTES:
                 raise ValueError("Image too large for vision API even after resizing.")
 
         messages = [{"role": "user", "content": [{"type": "text", "text": user_prompt}, {"type": "image_url", "image_url": {"url": img_url}}]}]
-        timeout, temp = _resolve_vision_params()
+        timeout, temp = resolve_vision_params()
 
         call_kwargs = {"task": "vision", "messages": messages, "temperature": temp, "max_tokens": 2000, "timeout": timeout}
 
         try:
             res = await call_llm(**call_kwargs)
         except Exception as api_err:
-            if not _is_image_size_error(api_err):
+            if not is_image_size_error(api_err):
                 raise
             # Provider rejected the image as too large. Resize and retry
-            # exactly once. The retry uses _RESIZE_TARGET_BYTES (5 MB) as
+            # exactly once. The retry uses RESIZE_TARGET_BYTES (5 MB) as
             # the ceiling, which is well below _MAX_BASE64_BYTES (20 MB),
             # so a second resize-on-error is unnecessary.
-            img_url = _resize_image_for_vision(temp_path, mime_type=mime)
+            img_url = resize_image_for_vision(temp_path, mime_type=mime)
             messages[0]["content"][1]["image_url"]["url"] = img_url
             res = await call_llm(**call_kwargs)
 
