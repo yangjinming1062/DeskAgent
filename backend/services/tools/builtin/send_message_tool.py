@@ -56,19 +56,16 @@ async def send_message_tool(message: str, target_webhook: str | None = None, aff
     # doesn't burn LLM quota on suppressed messages.
     if not target_webhook:
         user_id = kwargs.get("user_id")
+        quiet = False
         if isinstance(user_id, int):
             # Quiet tier: the spoken/written message is gated, but the
             # LLM-reasoned affect still flows so the companion's emotion is
             # visible (ARCHITECTURE.md §6: 断消息不断 affect). This is not a
             # Desktop rule-engine fallback — the emotion is produced by the
             # persona-+memory-driven LLM that called this tool (§7.6).
-            quiet = await is_quiet(user_id) if isinstance(user_id, int) else False
+            quiet = await is_quiet(user_id)
             if quiet:
-                if affect:
-                    await _emit_companion_affect(user_id, affect)
-                # Quiet + no affect: emit neutral so the sprite returns to idle.
-                else:
-                    await _emit_companion_affect(user_id, "neutral")
+                await _emit_companion_affect(user_id, affect or "neutral")
             else:
                 await _emit_companion_message(user_id, message, affect=affect)
         return json.dumps({"success": True, "channel": "companion", "quiet_suppressed": quiet}, ensure_ascii=False)
