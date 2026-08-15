@@ -13,7 +13,7 @@ except (ImportError, OSError):
     WhisperModel = None  # type: ignore[assignment,misc]
 
 from ...registry import registry, tool_error, tool_result
-from .audio_io import DEFAULT_MAX_INPUT_BYTES, wav_to_wav_pcm16
+from .audio_io import DEFAULT_MAX_INPUT_BYTES, cleanup_audio_cache_dir, wav_to_wav_pcm16
 from .whisper_runtime import get_whisper
 
 logger = logging.getLogger(__name__)
@@ -149,11 +149,13 @@ async def speech_to_text_tool(args: dict[str, Any], **kw: Any) -> str:
         suffix = _suffix_for_mime(mime)
         cache = get_deskagent_home() / "cache" / "audio" / "inbound"
         cache.mkdir(parents=True, exist_ok=True)
+        cleanup_audio_cache_dir(cache)
         raw_src = cache / f"inbound_{uuid.uuid4().hex[:12]}{suffix}"
         raw_src.write_bytes(blob)
 
     workdir = get_deskagent_home() / "cache" / "audio" / "transcode"
     workdir.mkdir(parents=True, exist_ok=True)
+    cleanup_audio_cache_dir(workdir)
     pcm_path = workdir / f"{raw_src.stem}.pcm16.wav"
     try:
         wav_to_wav_pcm16(raw_src, pcm_path, max_bytes=DEFAULT_MAX_INPUT_BYTES)

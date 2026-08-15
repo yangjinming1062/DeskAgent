@@ -1,4 +1,5 @@
 import logging
+import os
 import re
 import threading
 import urllib.error
@@ -59,7 +60,9 @@ def text_language(text: str) -> str:
 class PiperRuntime:
     def __init__(self) -> None:
         self._voices: OrderedDict[str, Any] = OrderedDict()
-        self._lock = threading.Lock()
+        # RLock: synthesize() holds it across get_voice() (re-entrant) so a
+        # PiperVoice object is never driven by two threads at once.
+        self._lock = threading.RLock()
 
     def get_voice(self, voice_id: str = _DEFAULT_VOICE) -> Any:
         if PiperVoice is None:
@@ -86,6 +89,10 @@ class PiperRuntime:
     def synthesize(self, text: str, *, voice_id: str = _DEFAULT_VOICE, output_wav: Path | str, speed: float = 1.0) -> Path:
         # Caller passes any path under ``$DESKAGENT_HOME/cache/audio/tts/`` —
         # outside the cache we'd be writing to an attacker-influenced location.
+        with self._lock:
+            return self._synthesize_locked(text, voice_id=voice_id, output_wav=output_wav, speed=speed)
+
+    def _synthesize_locked(self, text: str, *, voice_id: str, output_wav: Path | str, speed: float) -> Path:
         voice = self.get_voice(voice_id=voice_id)
         output_wav = Path(output_wav)
         output_wav.parent.mkdir(parents=True, exist_ok=True)
@@ -190,7 +197,11 @@ def download_voice(voice_id: str, *, voice_dir: Path | None = None, timeout: flo
             raise RuntimeError(f"failed to download {url}: {exc}") from exc
         if not data:
             raise RuntimeError(f"empty response while downloading {url}")
-        dst.write_bytes(data)
+        # Atomic swap: a partial .onnx left by an interrupted download would
+        # be treated as installed and fail every subsequent load.
+        tmp = dst.with_suffix(dst.suffix + ".part")
+        tmp.write_bytes(data)
+        os.replace(tmp, dst)
     return base / f"{voice_id}.onnx"
 
 

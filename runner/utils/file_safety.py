@@ -309,10 +309,6 @@ def canonicalize_path(path: str) -> str:
     return os.path.realpath(norm) + stream_suffix
 
 
-def _resolve_long_path(path: str) -> str:
-    return canonicalize_path(path)
-
-
 def is_write_denied(path: str) -> bool:
     try:
         home = canonicalize_path("~")

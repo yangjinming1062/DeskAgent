@@ -214,14 +214,14 @@ class TestIsWriteDenied:
         assert is_write_denied(str(escaped)) is True
 
     def test_device_prefix_stripping(self):
-        from utils.file_safety import _resolve_long_path
+        from utils.file_safety import canonicalize_path
 
         assert (
-            _resolve_long_path(r"\\?\C:\Windows\System32").replace("/", "\\").lower()
+            canonicalize_path(r"\\?\C:\Windows\System32").replace("/", "\\").lower()
             == r"c:\windows\system32"
         )
         assert (
-            _resolve_long_path(r"\\.\C:\Windows\System32").replace("/", "\\").lower()
+            canonicalize_path(r"\\.\C:\Windows\System32").replace("/", "\\").lower()
             == r"c:\windows\system32"
         )
 
@@ -235,7 +235,7 @@ class TestIsWriteDenied:
         not IS_WINDOWS, reason="Windows 8.3 short names are Windows-only"
     )
     def test_windows_8_3_short_name_resolves_to_long_form(self):
-        """_resolve_long_path must expand 8.3 short names (PROGRA~1 → Program Files)."""
+        """canonicalize_path must expand 8.3 short names (PROGRA~1 → Program Files)."""
         import ctypes
         from ctypes import wintypes
 
@@ -252,9 +252,9 @@ class TestIsWriteDenied:
             pytest.skip("Cannot get short path name for Windows directory")
         short_path = buf.value
         # The short path should be resolved back to the long form.
-        from utils.file_safety import _resolve_long_path
+        from utils.file_safety import canonicalize_path
 
-        resolved = _resolve_long_path(short_path)
+        resolved = canonicalize_path(short_path)
         assert resolved.lower() == windows_dir.lower()
 
     @pytest.mark.skipif(

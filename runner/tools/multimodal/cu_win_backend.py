@@ -1,42 +1,49 @@
 import base64
 import contextlib
 import ctypes.wintypes
+import functools
 import io
 import logging
 import re
 import sys
+import threading
 from typing import Any
 
 try:
     import mss
 except ImportError:
     mss = None  # type: ignore[assignment]
-try:
-    import psutil
-except ImportError:
-    psutil = None  # type: ignore[assignment]
+import psutil
+
 try:
     import pyautogui
 except ImportError:
     pyautogui = None  # type: ignore[assignment]
-try:
-    import pyperclip
-except ImportError:
-    pyperclip = None  # type: ignore[assignment]
+import pyperclip
+
 try:
     import pywinauto
 except ImportError:
     pywinauto = None  # type: ignore[assignment]
-try:
-    from PIL import Image, ImageDraw, ImageFont
-except ImportError:
-    Image = None  # type: ignore[assignment]
-    ImageDraw = None  # type: ignore[assignment]
-    ImageFont = None  # type: ignore[assignment]
+from PIL import Image, ImageDraw, ImageFont
 
 from .cu_backend import DESKTOP_SENTINELS, ActionResult, CaptureResult, ComputerUseBackend, UIElement
 
 logger = logging.getLogger(__name__)
+
+# COM/UIA interface pointers are apartment-affine and pyautogui drives one
+# physical mouse/keyboard — desktop automation must not run concurrently.
+_serial_lock = threading.RLock()
+
+
+def _serialized(fn):
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        with _serial_lock:
+            return fn(*args, **kwargs)
+
+    return wrapper
+
 
 _WINDOWS_KEY_MAP = {
     "cmd": "win",
@@ -139,53 +146,55 @@ def _capture_window_printwindow(hwnd: int) -> bytes | None:
         hdc_window = ctypes.windll.user32.GetDC(hwnd)
         hdc_mem = ctypes.windll.gdi32.CreateCompatibleDC(hdc_window)
         hbitmap = ctypes.windll.gdi32.CreateCompatibleBitmap(hdc_window, width, height)
-        ctypes.windll.gdi32.SelectObject(hdc_mem, hbitmap)
-
-        result = ctypes.windll.user32.PrintWindow(hwnd, hdc_mem, PW_RENDERFULLCONTENT)
-
-        if result:
-
-            class BITMAPINFOHEADER(ctypes.Structure):
-                _fields_ = [
-                    ("biSize", ctypes.wintypes.DWORD),
-                    ("biWidth", ctypes.wintypes.LONG),
-                    ("biHeight", ctypes.wintypes.LONG),
-                    ("biPlanes", ctypes.wintypes.WORD),
-                    ("biBitCount", ctypes.wintypes.WORD),
-                    ("biCompression", ctypes.wintypes.DWORD),
-                    ("biSizeImage", ctypes.wintypes.DWORD),
-                    ("biXPelsPerMeter", ctypes.wintypes.LONG),
-                    ("biYPelsPerMeter", ctypes.wintypes.LONG),
-                    ("biClrUsed", ctypes.wintypes.DWORD),
-                    ("biClrImportant", ctypes.wintypes.DWORD),
-                ]
-
-            bmi = BITMAPINFOHEADER()
-            bmi.biSize = ctypes.sizeof(BITMAPINFOHEADER)
-            bmi.biWidth = width
-            bmi.biHeight = -height
-            bmi.biPlanes = 1
-            bmi.biBitCount = 32
-            bmi.biCompression = 0
-
-            buf_size = width * height * 4
-            buf = ctypes.create_string_buffer(buf_size)
-            ctypes.windll.gdi32.GetDIBits(hdc_mem, hbitmap, 0, height, buf, ctypes.byref(bmi), 0)
-
-            img = Image.frombuffer("RGBA", (width, height), buf, "raw", "BGRA", 0, 1)
-            png_io = io.BytesIO()
-            img.save(png_io, format="PNG")
-            png_bytes = png_io.getvalue()
-        else:
+        try:
+            ctypes.windll.gdi32.SelectObject(hdc_mem, hbitmap)
             png_bytes = None
-
-        ctypes.windll.gdi32.DeleteObject(hbitmap)
-        ctypes.windll.gdi32.DeleteDC(hdc_mem)
-        ctypes.windll.user32.ReleaseDC(hwnd, hdc_window)
+            if ctypes.windll.user32.PrintWindow(hwnd, hdc_mem, PW_RENDERFULLCONTENT):
+                png_bytes = _bitmap_to_png(hdc_mem, hbitmap, width, height)
+        finally:
+            # Every GDI handle acquired above must be released even when the
+            # pixel copy raises midway — leaks accumulate per capture call.
+            ctypes.windll.gdi32.DeleteObject(hbitmap)
+            ctypes.windll.gdi32.DeleteDC(hdc_mem)
+            ctypes.windll.user32.ReleaseDC(hwnd, hdc_window)
         return png_bytes
     except Exception as e:
         logger.debug("PrintWindow capture failed: %s", e)
         return None
+
+
+def _bitmap_to_png(hdc_mem: int, hbitmap: int, width: int, height: int) -> bytes:
+    class BITMAPINFOHEADER(ctypes.Structure):
+        _fields_ = [
+            ("biSize", ctypes.wintypes.DWORD),
+            ("biWidth", ctypes.wintypes.LONG),
+            ("biHeight", ctypes.wintypes.LONG),
+            ("biPlanes", ctypes.wintypes.WORD),
+            ("biBitCount", ctypes.wintypes.WORD),
+            ("biCompression", ctypes.wintypes.DWORD),
+            ("biSizeImage", ctypes.wintypes.DWORD),
+            ("biXPelsPerMeter", ctypes.wintypes.LONG),
+            ("biYPelsPerMeter", ctypes.wintypes.LONG),
+            ("biClrUsed", ctypes.wintypes.DWORD),
+            ("biClrImportant", ctypes.wintypes.DWORD),
+        ]
+
+    bmi = BITMAPINFOHEADER()
+    bmi.biSize = ctypes.sizeof(BITMAPINFOHEADER)
+    bmi.biWidth = width
+    bmi.biHeight = -height
+    bmi.biPlanes = 1
+    bmi.biBitCount = 32
+    bmi.biCompression = 0
+
+    buf_size = width * height * 4
+    buf = ctypes.create_string_buffer(buf_size)
+    ctypes.windll.gdi32.GetDIBits(hdc_mem, hbitmap, 0, height, buf, ctypes.byref(bmi), 0)
+
+    img = Image.frombuffer("RGBA", (width, height), buf, "raw", "BGRA", 0, 1)
+    png_io = io.BytesIO()
+    img.save(png_io, format="PNG")
+    return png_io.getvalue()
 
 
 def _draw_som_overlay(png_bytes: bytes, elements: list[UIElement]) -> tuple[str, int, int]:
@@ -214,16 +223,6 @@ def _draw_som_overlay(png_bytes: bytes, elements: list[UIElement]) -> tuple[str,
     return base64.b64encode(out.getvalue()).decode(), width, height
 
 
-def _get_windows_for_pid(pid: int) -> list[dict[str, Any]]:
-    try:
-        proc = psutil.Process(pid)
-        name = proc.name()
-    except (psutil.NoSuchProcess, psutil.AccessDenied):
-        name = ""
-    hwnds = _enum_windows_for_pid(pid)
-    return [{"pid": pid, "name": name, "hwnd": hwnd} for hwnd in hwnds]
-
-
 class WinBackend(ComputerUseBackend):
     def __init__(self) -> None:
         self._active_hwnd: int | None = None
@@ -246,6 +245,7 @@ class WinBackend(ComputerUseBackend):
             return False
         return pywinauto is not None and mss is not None and pyautogui is not None
 
+    @_serialized
     def capture(self, mode: str = "som", app: str | None = None) -> CaptureResult:
         if app and app.lower() in DESKTOP_SENTINELS:
             hwnd, app_name = self._find_shell_window()
@@ -294,6 +294,7 @@ class WinBackend(ComputerUseBackend):
             mode=mode, width=width, height=height, png_b64=png_b64, elements=elements, app=self._active_app, window_title=window_title, png_bytes_len=png_bytes_len
         )
 
+    @_serialized
     def click(
         self, *, element: int | None = None, x: int | None = None, y: int | None = None, button: str = "left", click_count: int = 1, modifiers: list[str] | None = None
     ) -> ActionResult:
@@ -317,6 +318,7 @@ class WinBackend(ComputerUseBackend):
         except Exception as e:
             return ActionResult(ok=False, action="click", message=str(e))
 
+    @_serialized
     def drag(
         self,
         *,
@@ -346,6 +348,7 @@ class WinBackend(ComputerUseBackend):
         except Exception as e:
             return ActionResult(ok=False, action="drag", message=str(e))
 
+    @_serialized
     def scroll(
         self, *, direction: str, amount: int = 3, element: int | None = None, x: int | None = None, y: int | None = None, modifiers: list[str] | None = None
     ) -> ActionResult:
@@ -372,6 +375,7 @@ class WinBackend(ComputerUseBackend):
         except Exception as e:
             return ActionResult(ok=False, action="scroll", message=str(e))
 
+    @_serialized
     def type_text(self, text: str) -> ActionResult:
         try:
             if all(ord(c) < 128 for c in text):
@@ -383,6 +387,7 @@ class WinBackend(ComputerUseBackend):
         except Exception as e:
             return ActionResult(ok=False, action="type_text", message=str(e))
 
+    @_serialized
     def key(self, keys: str) -> ActionResult:
         parts = [p.strip().lower() for p in re.split(r"[+\-]", keys) if p.strip()]
         if not parts:
@@ -398,6 +403,7 @@ class WinBackend(ComputerUseBackend):
         except Exception as e:
             return ActionResult(ok=False, action="key", message=str(e))
 
+    @_serialized
     def list_apps(self) -> list[dict[str, Any]]:
         seen = set()
         apps = []
@@ -414,6 +420,7 @@ class WinBackend(ComputerUseBackend):
                 pass
         return apps
 
+    @_serialized
     def focus_app(self, app: str, raise_window: bool = False) -> ActionResult:
         hwnd, app_name = self._find_window_by_app(app)
         if hwnd is None:
@@ -433,6 +440,7 @@ class WinBackend(ComputerUseBackend):
 
         return ActionResult(ok=True, action="focus_app", message=f"Targeted {app_name} (hwnd={hwnd}) without raising")
 
+    @_serialized
     def set_value(self, value: str, element: int | None = None) -> ActionResult:
         if element is None:
             return ActionResult(ok=False, action="set_value", message="set_value requires element=")

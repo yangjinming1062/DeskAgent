@@ -36,8 +36,7 @@ _MACOS_SHELL_APP_NAMES = frozenset({"finder", "dock"})
 # ciphertext out of the cua-driver process tree.
 #
 # Split into exact-match (single env-var names) and prefix-match (env-var
-# families) — the original combined list conflated the two shapes, hiding
-# which entries are names vs. namespaces.
+# families) so each entry declares whether it is a name or a namespace.
 _CUA_DRIVER_SAFE_ENV_EXACT = frozenset({
     # Path / identity / locale / shell
     "PATH",
@@ -125,7 +124,7 @@ def cua_driver_binary_available() -> bool:
     mismatch early.
 
     Result is cached for the process lifetime (cu-driver installation
-    status is static at runtime). Was previously called on every
+    status is static at runtime).
     ``handle_computer_use`` invocation; memoization cuts up to 3 process
     spawns per tool call to 0.
     """

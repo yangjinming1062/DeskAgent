@@ -1,8 +1,10 @@
+import contextlib
 import logging
 import os
 import shutil
 import struct
 import subprocess
+import time
 import uuid
 from pathlib import Path
 
@@ -132,7 +134,9 @@ def wav_to_wav_pcm16(src_path: str | Path, dst_path: str | Path, max_bytes: int 
     dst.parent.mkdir(parents=True, exist_ok=True)
 
     # Fast-path: if source is already a standard WAV container, decode/resample natively via Python + numpy
-    if sniff_container(src.read_bytes()[:16]) == "wav":
+    with open(src, "rb") as probe:
+        head = probe.read(16)
+    if sniff_container(head) == "wav":
         if _native_wav_to_pcm16(src, dst):
             return dst
 
@@ -194,9 +198,33 @@ def write_wav_pcm16(path: str | Path, samples: bytes, sample_rate: int = _TARGET
     return path
 
 
+_LAST_AUDIO_CLEANUP: dict[str, float] = {}
+_AUDIO_CLEANUP_INTERVAL_S = 3600.0
+
+
+def cleanup_audio_cache_dir(cache_dir: Path, max_age_hours: float = 72.0) -> None:
+    """Best-effort GC for audio cache dirs; throttled to one scan per hour per dir.
+
+    Downloads/screenshots/recordings all have GC — without this the four
+    audio cache dirs (inbound/transcode/tts/audio_cache) grow unbounded.
+    """
+    now = time.monotonic()
+    key = str(cache_dir)
+    if now - _LAST_AUDIO_CLEANUP.get(key, 0.0) < _AUDIO_CLEANUP_INTERVAL_S:
+        return
+    _LAST_AUDIO_CLEANUP[key] = now
+    cutoff = time.time() - max_age_hours * 3600
+    with contextlib.suppress(OSError):
+        for f in cache_dir.iterdir():
+            with contextlib.suppress(OSError):
+                if f.is_file() and f.stat().st_mtime < cutoff:
+                    f.unlink()
+
+
 def cache_audio_bytes(raw: bytes, suffix: str = ".wav") -> str:
     cache_dir = get_deskagent_dir("cache/audio", "audio_cache")
     cache_dir.mkdir(parents=True, exist_ok=True)
+    cleanup_audio_cache_dir(cache_dir)
     path = cache_dir / f"inbound_{uuid.uuid4().hex[:12]}{suffix}"
     with open(path, "wb") as f:
         f.write(raw)

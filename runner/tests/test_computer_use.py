@@ -195,7 +195,7 @@ class TestCaptureResponse:
         resp = _capture_response(big)
         # Oversize PNG is dropped; response falls back to text-only shape
         assert not (isinstance(resp, dict) and resp.get("_multimodal"))
-        text = json.dumps(resp) if isinstance(resp, str) else json.dumps(resp)
+        text = resp if isinstance(resp, str) else json.dumps(resp)
         assert "PNG dropped" in text
 
     def test_truncated_elements_surface_in_text(self):

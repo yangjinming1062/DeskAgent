@@ -23,10 +23,11 @@ else:
     pythoncom = None  # type: ignore[assignment]
 
 from ...registry import registry, tool_error, tool_result
+from .audio_io import cleanup_audio_cache_dir
 from .piper_runtime import (
     PIPER_VOICE_RE,
-    PiperRuntime,
     _is_voice_installed,
+    _runtime,
     bundled_voices,
     default_voice_id,
     ensure_voice_installed,
@@ -103,11 +104,14 @@ def _normalize_text(text: str) -> str:
 def _output_path(name_hint: str = "tts") -> Path:
     base = get_deskagent_dir("cache/audio/tts", "audio_cache")
     base.mkdir(parents=True, exist_ok=True)
+    cleanup_audio_cache_dir(base)
     return base / f"{name_hint}_{uuid.uuid4().hex[:10]}.wav"
 
 
 def _synth_piper(text: str, voice: str, speed: float, dst: Path) -> dict[str, Any]:
-    return {"engine": "piper", "voice": voice, "path": str(PiperRuntime().synthesize(text, voice_id=voice, output_wav=dst, speed=speed))}
+    # Module singleton so the voice LRU actually persists across calls — a
+    # fresh PiperRuntime per call reloaded the ONNX model every time.
+    return {"engine": "piper", "voice": voice, "path": str(_runtime.synthesize(text, voice_id=voice, output_wav=dst, speed=speed))}
 
 
 def _enumerate_pyttsx3_voices(engine: Any) -> list[dict[str, str]]:
