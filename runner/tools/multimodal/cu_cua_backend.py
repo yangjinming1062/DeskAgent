@@ -513,11 +513,11 @@ class CuaDriverBackend(ComputerUseBackend):
                 )
 
         target = next((w for w in windows if not w.get("off_screen", False)), windows[0])
-        self._active_pid, self._active_window_id, app_name = target["pid"], target["window_id"], target["app_name"]
+        self._active_pid, self._active_window_id, app_name = (target["pid"], target["window_id"], target["app_name"])
         if app or not self._last_app:
             self._last_app = app_name
 
-        png_b64, elements, width, height, window_title, image_mime_type = None, [], 0, 0, "", None
+        png_b64, elements, width, height, window_title, image_mime_type = (None, [], 0, 0, "", None)
         if mode == "vision":
             sc_out = self._session.call_tool("screenshot", {"window_id": self._active_window_id, "format": "jpeg", "quality": 85})
             png_b64, image_mime_type = _extract_first_image(sc_out)
@@ -669,7 +669,7 @@ class CuaDriverBackend(ComputerUseBackend):
         app_lower = app.lower()
         if matched := [w for w in windows if app_lower in w["app_name"].lower()]:
             target = matched[0]
-            self._active_pid, self._active_window_id, self._last_app = target["pid"], target["window_id"], target["app_name"]
+            self._active_pid, self._active_window_id, self._last_app = (target["pid"], target["window_id"], target["app_name"])
             return ActionResult(
                 ok=True, action="focus_app", message=f"Targeted {target['app_name']} (pid {self._active_pid}, window {self._active_window_id}) without raising window."
             )

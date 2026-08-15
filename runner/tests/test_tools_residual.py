@@ -187,7 +187,9 @@ class TestToolOutputLimits:
         import tools.tool_output_limits as tol
 
         real = tol.load_config
-        monkeypatch.setattr(tol, "load_config", lambda: {"tool_output": {"max_bytes": 99_999}})
+        monkeypatch.setattr(
+            tol, "load_config", lambda: {"tool_output": {"max_bytes": 99_999}}
+        )
         try:
             reset_cache()
             assert get_max_bytes() == 99_999
@@ -265,7 +267,9 @@ class TestMaybePersistToolResult:
 
         env = _FakeEnv()
         s = "x" * (DEFAULT_BUDGET.default_result_size + 10_000)
-        out = maybe_persist_tool_result(s, tool_name="some_big_tool", tool_use_id="t3", env=env)
+        out = maybe_persist_tool_result(
+            s, tool_name="some_big_tool", tool_use_id="t3", env=env
+        )
         # Persisted marker MUST be present.
         assert PERSISTED_OUTPUT_TAG in out
         assert "Persisted" in out or "saved" in out.lower()
@@ -283,14 +287,18 @@ class TestMaybePersistToolResult:
                 return "/sandbox/tmp"
 
         s = "x" * (DEFAULT_BUDGET.default_result_size + 10_000)
-        out = maybe_persist_tool_result(s, tool_name="some_big_tool", tool_use_id="t4", env=_FakeEnv())
+        out = maybe_persist_tool_result(
+            s, tool_name="some_big_tool", tool_use_id="t4", env=_FakeEnv()
+        )
         assert "Truncated" in out
 
     def test_threshold_override_respected(self):
         """``threshold=...`` MUST override the per-tool default."""
         s = "hello world " * 100  # 1200 chars
         # Even though s is long, threshold=10000 means we don't persist.
-        out = maybe_persist_tool_result(s, tool_name="x", tool_use_id="t5", threshold=10_000)
+        out = maybe_persist_tool_result(
+            s, tool_name="x", tool_use_id="t5", threshold=10_000
+        )
         assert out == s
 
 
@@ -359,7 +367,9 @@ class TestExecuteCodeHelpers:
     def test_generated_module_contains_helper_definitions(self):
         out = ec.generate_deskagent_tools_module(["read_file"], transport="uds")
         for helper in ("json_parse", "shell_quote", "retry"):
-            assert f"def {helper}" in out, f"{helper} helper missing from generated sandbox module"
+            assert f"def {helper}" in out, (
+                f"{helper} helper missing from generated sandbox module"
+            )
 
     def test_generated_module_uses_strict_false_json(self):
         """The sandbox-side ``json_parse`` MUST use ``strict=False`` so terminal output
@@ -374,7 +384,9 @@ class TestExecuteCodeHelpers:
 
     def test_scrub_child_env_keeps_passthrough(self):
         env = {"OPENAI_API_KEY": "secret", "PATH": "/usr/bin"}
-        out = ec._scrub_child_env(env, is_passthrough=lambda k: k == "OPENAI_API_KEY", is_windows=False)
+        out = ec._scrub_child_env(
+            env, is_passthrough=lambda k: k == "OPENAI_API_KEY", is_windows=False
+        )
         assert out["OPENAI_API_KEY"] == "secret"
         assert out["PATH"] == "/usr/bin"
 
@@ -420,7 +432,10 @@ class TestUrlSafety:
     def test_blocks_metadata_google_internal(self):
         from utils import is_always_blocked_url
 
-        assert is_always_blocked_url("http://metadata.google.internal/computeMetadata/v1/") is True
+        assert (
+            is_always_blocked_url("http://metadata.google.internal/computeMetadata/v1/")
+            is True
+        )
 
     def test_allows_normal_https(self):
         from utils import is_always_blocked_url
@@ -465,7 +480,11 @@ class TestWebsitePolicy:
         from utils.config import set_inmemory_config
 
         url_safety._cached_policy = None
-        set_inmemory_config({"security": {"website_blocklist": {"enabled": True, "domains": ["example.com"]}}})
+        set_inmemory_config({
+            "security": {
+                "website_blocklist": {"enabled": True, "domains": ["example.com"]}
+            }
+        })
         try:
             out = check_website_access("https://WWW.Example.COM/path")
             if out is not None:
@@ -495,7 +514,14 @@ class TestWebsitePolicy:
         from utils.config import set_inmemory_config
 
         url_safety._cached_policy = None
-        set_inmemory_config({"security": {"website_blocklist": {"enabled": True, "domains": ["foo.com", "bar.com"]}}})
+        set_inmemory_config({
+            "security": {
+                "website_blocklist": {
+                    "enabled": True,
+                    "domains": ["foo.com", "bar.com"],
+                }
+            }
+        })
         try:
             out = load_website_blocklist()
             rules = out.get("rules", [])
@@ -516,7 +542,9 @@ class TestToolsets:
         """``excluded_tool_names`` unconditionally excludes MCP tools — they're toggled via the MCP settings page, not this one."""
         from tools.toolsets.catalog import excluded_tool_names
 
-        out = excluded_tool_names(set(), {"mcp__github__create_issue", "read_file", "terminal"})
+        out = excluded_tool_names(
+            set(), {"mcp__github__create_issue", "read_file", "terminal"}
+        )
         # MCP tools are always excluded even when no toolset is disabled.
         assert "mcp__github__create_issue" in out
         # Non-MCP tools stay visible when no toolset is disabled.
@@ -531,8 +559,12 @@ class TestToolsets:
 
         # Find a toolset with at least one prefix that matches a known
         # registered tool name; ``browser_*`` is a stable prefix.
-        browser_toolset = next(d for d in TOOLSET_CATALOG if any(p == "browser_" for p in d.prefixes))
-        out = excluded_tool_names({browser_toolset.id}, {"browser_navigate", "terminal"})
+        browser_toolset = next(
+            d for d in TOOLSET_CATALOG if any(p == "browser_" for p in d.prefixes)
+        )
+        out = excluded_tool_names(
+            {browser_toolset.id}, {"browser_navigate", "terminal"}
+        )
         assert "browser_navigate" in out
         assert "terminal" not in out
 
@@ -550,7 +582,9 @@ class TestToolsets:
         monkeypatch.setattr(
             toolsets_helpers,
             "get_disabled_config_names",
-            lambda section="skills": {"skill_lab", "mcp_staging"} if section == "toolsets" else set(),
+            lambda section="skills": (
+                {"skill_lab", "mcp_staging"} if section == "toolsets" else set()
+            ),
         )
         try:
             ids = toolsets_helpers.get_disabled_toolset_ids()

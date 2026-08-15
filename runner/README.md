@@ -67,7 +67,7 @@ runner/
 |------|------|---------|
 | `runner_ready` payload（含 version + capabilities） | 对 Client | [PROTOCOL.md §2.3](../PROTOCOL.md) |
 | `deskagent.info` 完整运行快照 | 对 Client | [PROTOCOL.md §2.2](../PROTOCOL.md) |
-| RPC 方法清单（`runner_ready` / `get_tools` / `execute_tool` / `deskagent.info` / `mcp.reload` / `request_llm`） | 对 Client | [PROTOCOL.md §2.2](../PROTOCOL.md) |
+| RPC 方法清单（`runner_ready` / `get_tools` / `execute_tool` / `deskagent.cancel` / `deskagent.config.update` / `deskagent.info` / `mcp.reload` / `request_llm` / `tools_changed`） | 对 Client | [PROTOCOL.md §2.2](../PROTOCOL.md) |
 | 反向 RPC 桥接（`request_llm` → Client → `/api/llm/completion`） | 对 Client | [PROTOCOL.md §3](../PROTOCOL.md) |
 | 反向 RPC 速率守卫（200 帧；文本 1MB / 视觉 10MB 上限） | 对 Client（Client 转发前限流） | [PROTOCOL.md §3](../PROTOCOL.md) |
 | Reserved Keys 不适用 | — | Reserved Key 是 LLM 工具入参约束，不在 Runner 层 |

@@ -67,7 +67,7 @@ def _write_manifest(entries: dict[str, str]) -> None:
 
 def _read_skill_name(skill_md: Path, fallback: str) -> str:
     try:
-        content, in_frontmatter = skill_md.read_text(encoding="utf-8", errors="replace")[:4000], False
+        content, in_frontmatter = (skill_md.read_text(encoding="utf-8", errors="replace")[:4000], False)
         for line in content.splitlines():
             if (stripped := line.strip()) == "---":
                 if in_frontmatter:

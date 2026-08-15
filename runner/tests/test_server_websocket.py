@@ -632,7 +632,14 @@ async def test_process_request_survives_failing_error_reply():
             raise ConnectionError("desktop gone")
 
     task = asyncio.create_task(
-        server.process_request(_BrokenWS(), {"id": "c5", "method": "deskagent.config.update", "params": {"config": "not-a-dict"}})
+        server.process_request(
+            _BrokenWS(),
+            {
+                "id": "c5",
+                "method": "deskagent.config.update",
+                "params": {"config": "not-a-dict"},
+            },
+        )
     )
     await asyncio.wait_for(task, 5)
     assert task.exception() is None

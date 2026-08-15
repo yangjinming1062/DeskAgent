@@ -1,4 +1,3 @@
-
 import pytest
 
 from tools.files.native_ops import NativeFileOperations
@@ -209,7 +208,9 @@ def test_exec_timeout_returns_partial_stdout(tmp_cwd, monkeypatch):
     import subprocess
 
     def fake_run(cmd, **kwargs):
-        raise subprocess.TimeoutExpired(cmd=cmd, timeout=kwargs.get("timeout"), output="partial output")
+        raise subprocess.TimeoutExpired(
+            cmd=cmd, timeout=kwargs.get("timeout"), output="partial output"
+        )
 
     monkeypatch.setattr("tools.files.native_ops.subprocess.run", fake_run)
     ops, _ = tmp_cwd

@@ -520,8 +520,6 @@ def terminal_tool(
             if len(output) > max_output_chars:
                 head_chars = int(max_output_chars * 0.4)
                 tail_chars = max_output_chars - head_chars
-                head_chars = int(MAX_OUTPUT_CHARS * 0.4)
-                tail_chars = MAX_OUTPUT_CHARS - head_chars
                 omitted = len(output) - head_chars - tail_chars
                 truncated_notice = f"\n\n... [OUTPUT TRUNCATED - {omitted} chars omitted out of {len(output)} total] ...\n\n"
                 output = output[:head_chars] + truncated_notice + output[-tail_chars:]

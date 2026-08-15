@@ -5,6 +5,7 @@ import os
 import re
 import threading
 import time
+import tomllib
 from abc import ABC, abstractmethod
 from collections.abc import Iterable
 from contextlib import contextmanager, suppress
@@ -301,7 +302,7 @@ def _lint_yaml_inproc(content: str) -> tuple[bool, str]:
 def _lint_toml_inproc(content: str) -> tuple[bool, str]:
     """In-process TOML syntax check."""
     try:
-        toml.loads(content)
+        tomllib.loads(content)
         return True, ""
     except Exception as e:
         return False, f"{type(e).__name__}: {e}"

@@ -49,7 +49,9 @@ def test_skill_matches_platform_handles_string_value(fake_platform) -> None:
     assert skill_matches_platform({"platforms": "linux"})
 
 
-def test_skill_matches_platform_unknown_string_falls_back_to_literal(fake_platform) -> None:
+def test_skill_matches_platform_unknown_string_falls_back_to_literal(
+    fake_platform,
+) -> None:
     # Unknown platforms fail closed — better to skip a skill than to run it
     # on a host we don't recognize.
     fake_platform("darwin")

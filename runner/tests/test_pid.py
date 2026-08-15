@@ -9,6 +9,7 @@ callers — that contract is itself load-bearing because callers fall back
 to ``psutil``-based tree-kill on POSIX and don't want a silent no-op
 implementation to mask bugs.
 """
+
 import sys
 
 import psutil

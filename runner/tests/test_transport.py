@@ -697,7 +697,7 @@ class _MemStream:
 
     def __init__(self) -> None:
         self._inbox: asyncio.Queue[bytes | None] = asyncio.Queue()
-        self.peer: "_MemStream | None" = None
+        self.peer: _MemStream | None = None
 
     @classmethod
     def pair(cls) -> tuple["_MemStream", "_MemStream"]:

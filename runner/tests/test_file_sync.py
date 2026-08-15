@@ -76,7 +76,9 @@ def test_sync_back_keeps_unchanged_file(tmp_path):
     assert host_file.read_bytes() == b"same content"
 
 
-def test_sync_back_once_deferred_sigint_raises_keyboard_interrupt(tmp_path, monkeypatch):
+def test_sync_back_once_deferred_sigint_raises_keyboard_interrupt(
+    tmp_path, monkeypatch
+):
     """A Ctrl+C deferred during sync must surface as KeyboardInterrupt, not
     terminate the process (Windows os.kill(SIGINT) is TerminateProcess)."""
     manager = _make_manager([], lambda path: None)
@@ -100,13 +102,22 @@ def test_wait_for_process_survives_orphaned_descendant(tmp_path):
 
     env = LocalEnvironment(cwd=str(tmp_path), timeout=30)
     inner = "import subprocess,sys;subprocess.Popen([sys.executable,'-c','import time;time.sleep(3)']);print('marker',flush=True)"
-    proc = subprocess.Popen([sys.executable, "-c", inner], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL)
+    proc = subprocess.Popen(
+        [sys.executable, "-c", inner],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        stdin=subprocess.DEVNULL,
+    )
 
     result = env._wait_for_process(proc, timeout=15)
 
     assert result["returncode"] == 0
     assert "marker" in result["output"]
     deadline = time.monotonic() + 3
-    while time.monotonic() < deadline and any(t.name == "proc-output-drain" and t.is_alive() for t in threading.enumerate()):
+    while time.monotonic() < deadline and any(
+        t.name == "proc-output-drain" and t.is_alive() for t in threading.enumerate()
+    ):
         time.sleep(0.05)
-    assert not any(t.name == "proc-output-drain" and t.is_alive() for t in threading.enumerate())
+    assert not any(
+        t.name == "proc-output-drain" and t.is_alive() for t in threading.enumerate()
+    )

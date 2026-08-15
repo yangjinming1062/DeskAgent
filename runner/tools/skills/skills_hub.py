@@ -186,7 +186,7 @@ class GitHubAuth:
             self._cached_token, self._cached_method = token, "gh-cli"
             return token
         if token := self._try_github_app():
-            self._cached_token, self._cached_method, self._app_token_expiry = token, "github-app", time.time() + 3500
+            self._cached_token, self._cached_method, self._app_token_expiry = (token, "github-app", time.time() + 3500)
             return token
         self._cached_method = "anonymous"
         return None
@@ -1130,7 +1130,11 @@ class SkillsShSource(SkillSource):
     _SITEMAP_LOC_RE = re.compile(r"<loc>([^<]+)</loc>", re.IGNORECASE)
     _SITEMAP_SKILL_RE = re.compile(r"^https?://(?:www\.)?skills\.sh/(?P<owner>[^/]+)/(?P<repo>[^/]+)/(?P<skill>[^/]+)/?$", re.IGNORECASE)
     _SKILL_LINK_RE = re.compile(r'href=["\']/(?P<id>(?!agents/|_next/|api/)[^"\'/]+/[^"\'/]+/[^"\'/]+)["\']')
-    _INSTALL_CMD_RE = re.compile(r"npx\s+skills\s+add\s+(?P<repo>https?://github\.com/[^\s<]+|[^\s<]+)" r"(?:\s+--skill\s+(?P<skill>[^\s<]+))?", re.IGNORECASE)
+    _INSTALL_CMD_RE = re.compile(
+        r"npx\s+skills\s+add\s+(?P<repo>https?://github\.com/[^\s<]+|[^\s<]+)"
+        r"(?:\s+--skill\s+(?P<skill>[^\s<]+))?",
+        re.IGNORECASE,
+    )
     _PAGE_H1_RE = re.compile(r"<h1[^>]*>(?P<title>.*?)</h1>", re.IGNORECASE | re.DOTALL)
     _PROSE_H1_RE = re.compile(r'<div[^>]*class=["\'][^"\']*prose[^"\']*["\'][^>]*>.*?<h1[^>]*>(?P<title>.*?)</h1>', re.IGNORECASE | re.DOTALL)
     _PROSE_P_RE = re.compile(r'<div[^>]*class=["\'][^"\']*prose[^"\']*["\'][^>]*>.*?<p[^>]*>(?P<body>.*?)</p>', re.IGNORECASE | re.DOTALL)

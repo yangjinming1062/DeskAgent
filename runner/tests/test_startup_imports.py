@@ -3,22 +3,42 @@ import pytest
 STARTUP_IMPORTS = [
     ("websockets", "import websockets"),
     ("runner_version", "from runner_version import __version__"),
-    ("tools (top-level facade)", "from tools import discover_builtin_tools, registry, ToolError"),
+    (
+        "tools (top-level facade)",
+        "from tools import discover_builtin_tools, registry, ToolError",
+    ),
     ("tools.audio (audio tools + STT/TTS)", "from tools.multimodal import audio"),
-    ("tools.files.file_tools", "from tools.files.file_tools import reset_max_read_chars_cache"),
-    ("tools.interrupt", "from tools.interrupt import set_global_interrupt, set_interrupt"),
-    ("tools.mcp.discover_mcp_tools (load-bearing)", "from tools.mcp import discover_mcp_tools"),
-    ("tools.mcp.mcp_tool.reload_mcp_servers (load-bearing)", "from tools.mcp.mcp_tool import reload_mcp_servers"),
+    (
+        "tools.files.file_tools",
+        "from tools.files.file_tools import reset_max_read_chars_cache",
+    ),
+    (
+        "tools.interrupt",
+        "from tools.interrupt import set_global_interrupt, set_interrupt",
+    ),
+    (
+        "tools.mcp.discover_mcp_tools (load-bearing)",
+        "from tools.mcp import discover_mcp_tools",
+    ),
+    (
+        "tools.mcp.mcp_tool.reload_mcp_servers (load-bearing)",
+        "from tools.mcp.mcp_tool import reload_mcp_servers",
+    ),
     ("tools.tool_output_limits", "from tools.tool_output_limits import reset_cache"),
     ("tools.toolsets", "from tools.toolsets import get_disabled_toolset_ids"),
-    ("tools.system.activity + activity_tools", "from tools.system import activity, activity_tools"),
+    (
+        "tools.system.activity + activity_tools",
+        "from tools.system import activity, activity_tools",
+    ),
     ("utils.core", "from utils import pid_exists, set_handler"),
     ("utils.capabilities", "from utils.capabilities import snapshot"),
     ("utils.constants", "from utils.constants import get_deskagent_home"),
 ]
 
 
-@pytest.mark.parametrize("desc,stmt", STARTUP_IMPORTS, ids=[desc for desc, _ in STARTUP_IMPORTS])
+@pytest.mark.parametrize(
+    "desc,stmt", STARTUP_IMPORTS, ids=[desc for desc, _ in STARTUP_IMPORTS]
+)
 def test_server_startup_import(desc: str, stmt: str) -> None:
     """Each row is consolidated from a contiguous block of
     ``server.py`` (the import lines collapse to discrete rows when

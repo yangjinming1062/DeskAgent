@@ -59,7 +59,7 @@ def fuzzy_find_and_replace(content: str, old_string: str, new_string: str, repla
 
         if matches:
             if len(matches) > 1 and not replace_all:
-                return content, 0, None, (f"Found {len(matches)} matches for old_string. Provide more context to make it unique, or use replace_all=True.")
+                return (content, 0, None, (f"Found {len(matches)} matches for old_string. Provide more context to make it unique, or use replace_all=True."))
 
             # Escape-drift guard: when the matched strategy is NOT `exact`,
             # we matched via some form of normalization. If new_string

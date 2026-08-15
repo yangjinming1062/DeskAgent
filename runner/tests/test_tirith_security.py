@@ -168,7 +168,9 @@ def test_extract_tirith_binary_exe(tmp_path):
     tar_bytes = io.BytesIO()
     with tarfile.open(fileobj=tar_bytes, mode="w:gz") as tar:
         data = b"dummy tirith binary content"
-        info = tarfile.TarInfo(name="tirith.exe" if sys.platform == "win32" else "tirith")
+        info = tarfile.TarInfo(
+            name="tirith.exe" if sys.platform == "win32" else "tirith"
+        )
         info.size = len(data)
         tar.addfile(info, io.BytesIO(data))
 

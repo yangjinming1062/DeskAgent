@@ -3059,7 +3059,7 @@ def _kill_orphaned_mcp_children(include_active: bool = False) -> None:
     time.sleep(2)
 
     # Phase 3: SIGKILL any survivors
-    _sigkill = getattr(_signal, "SIGKILL", signal.SIGTERM)
+    _sigkill = getattr(signal, "SIGKILL", signal.SIGTERM)
     # ``os.kill(pid, 0)`` is NOT a no-op on Windows. Use the cross-platform
     # existence check before escalating to SIGKILL.
 

@@ -34,7 +34,9 @@ class TestRegistry:
 
 class TestTerminal:
     def test_echo(self):
-        r = json.loads(registry.dispatch("terminal", {"command": "echo hello", "force": True}))
+        r = json.loads(
+            registry.dispatch("terminal", {"command": "echo hello", "force": True})
+        )
         assert "hello" in str(r)
 
 
@@ -50,7 +52,9 @@ class TestFileTools:
                 os.unlink(tmp)
 
     def test_search(self):
-        r = json.loads(registry.dispatch("search_files", {"pattern": "*.py", "target": "files"}))
+        r = json.loads(
+            registry.dispatch("search_files", {"pattern": "*.py", "target": "files"})
+        )
         assert isinstance(r, dict)
 
 

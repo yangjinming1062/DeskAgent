@@ -188,7 +188,7 @@ def list_agent_created_skill_names() -> list[str]:
     base = get_skills_dir()
     if not base.exists():
         return []
-    hub, bundled, prune_builtins, usage = _read_hub_installed_names(), _read_bundled_manifest_names(), _prune_builtins_enabled(), load_usage()
+    hub, bundled, prune_builtins, usage = (_read_hub_installed_names(), _read_bundled_manifest_names(), _prune_builtins_enabled(), load_usage())
     names = []
     for skill_md in base.rglob("SKILL.md"):
         if not is_excluded_skill_path(skill_md):
@@ -210,7 +210,7 @@ def list_archived_skill_names() -> list[str]:
 
 def _read_skill_name(skill_md: Path, fallback: str) -> str:
     try:
-        text, in_front = skill_md.read_text(encoding="utf-8", errors="replace")[:4000], False
+        text, in_front = (skill_md.read_text(encoding="utf-8", errors="replace")[:4000], False)
         for line in text.splitlines():
             if line.strip() == "---":
                 if in_front:
@@ -349,10 +349,10 @@ def forget(skill_name: str) -> None:
 def archive_skill(skill_name: str) -> tuple[bool, str]:
     if not is_curation_eligible(skill_name):
         if is_protected_builtin(skill_name):
-            return False, f"skill '{skill_name}' is a protected built-in; it backs load-bearing UX and is never archived or consolidated"
+            return (False, f"skill '{skill_name}' is a protected built-in; it backs load-bearing UX and is never archived or consolidated")
         if is_hub_installed(skill_name):
             return False, f"skill '{skill_name}' is hub-installed; never archive"
-        return False, f"skill '{skill_name}' is a bundled built-in; enable curator.prune_builtins to allow pruning it"
+        return (False, f"skill '{skill_name}' is a bundled built-in; enable curator.prune_builtins to allow pruning it")
 
     if (skill_dir := _find_skill_dir(skill_name)) is None:
         return False, f"skill '{skill_name}' not found"
@@ -377,7 +377,7 @@ def archive_skill(skill_name: str) -> tuple[bool, str]:
 
 def restore_skill(skill_name: str) -> tuple[bool, str]:
     if is_hub_installed(skill_name) or (is_bundled(skill_name) and not _prune_builtins_enabled()):
-        return False, f"skill '{skill_name}' is now {'hub-installed' if is_hub_installed(skill_name) else 'bundled'}; restore would shadow the upstream version"
+        return (False, f"skill '{skill_name}' is now {'hub-installed' if is_hub_installed(skill_name) else 'bundled'}; restore would shadow the upstream version")
     archive_root = _archive_dir()
     if not archive_root.exists():
         return False, "no archive directory"
