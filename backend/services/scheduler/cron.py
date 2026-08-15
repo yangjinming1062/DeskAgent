@@ -1,5 +1,5 @@
 import asyncio
-import contextlib
+import json
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -20,14 +20,12 @@ from components import (
 from modules.conversation import Conversation, Message
 from modules.memory import Memory
 from modules.scheduler import CronJob
-from modules.system import ChatMessageRequest, ChatRequest
+from modules.ws import WSEvent
 from sqlalchemy import func, select, text
 from sqlalchemy.engine import Row
 
-from services.conversation import CRON_KIND, UI_ONLY_SUBTYPES, get_or_create_cron_conversation
+from services.conversation import CRON_KIND, UI_ONLY_SUBTYPES
 from services.disturbance import is_quiet
-from services.gateway import MANAGER, JsonRpcEmitter
-from services.llm import resolve_user_llm_config
 
 from .cron_jobs import _compute_next_run_at
 from .memory_consolidator import maybe_consolidate_one_user
@@ -185,9 +183,14 @@ async def _advance_due_jobs(due_jobs: list[Row], now: datetime) -> None:
 
 
 async def _kick_autonomous_turn(job_id: int, meta: dict[str, Any]) -> None:
-    """Run an autonomous chat turn on behalf of the user when a cron fires.
+    """Request an autonomous chat turn for the replica holding the user's WS.
 
-    Skipped silently when the user is offline (no dispatcher registered).
+    The turn must execute on the connection's process — streaming deltas,
+    tool futures and the runtime session are process-local — so the tick
+    replica only writes a ws_events row (``cron.turn.request``). The outbox
+    claim loop (connection._process_events, filtered by ``local_user_ids()``)
+    picks it up; a user offline on every replica gets the row reaped by the
+    tightened GC instead of executing anywhere.
     """
     user_id = meta["user_id"]
     prompt = (meta["payload"].get("prompt") or "").strip()
@@ -195,52 +198,23 @@ async def _kick_autonomous_turn(job_id: int, meta: dict[str, Any]) -> None:
         return
 
     if await is_quiet(user_id):
-        # Quiet suppresses autonomous outreach; gate before DB/turn.
+        # Quiet suppresses autonomous outreach; gate before writing the row.
         logger.debug("cron: user is quiet, skipping autonomous turn", extra={"user_id": user_id, "job_id": job_id})
         return
 
-    dispatcher = MANAGER._dispatchers.get(user_id)
-    if dispatcher is None:
-        # User offline — no dispatcher to emit through. The job's
-        # next_run_at was already CAS-advanced, so the next scheduled
-        # interval will re-fire when the user reconnects.
-        logger.debug("cron: user offline, skipping autonomous turn", extra={"user_id": user_id, "job_id": job_id})
-        return
-
-    # Function-local to avoid a circular import: services.chat.__init__ loads
-    # modules that pull in services.scheduler, so importing services.chat
-    # symbols at module scope would deadlock the package init.
-    from services.chat import load_user_settings, run_chat_turn
-
     async with session_scope() as db:
-        # Run on a dedicated cron conversation, NOT the user's main one — see
-        # the comment on CRON_KIND. Keeping the conversations separate stops
-        # ``session.get_main`` (called on every WS reconnect) from cancelling
-        # an in-flight cron's chat_task via _mount_runtime, and stops cron's
-        # user-role rows from interleaving with the renderer's prompt.submit
-        # writes on the same conversation.
-        conv = await get_or_create_cron_conversation(db, user_id)
-        session_id = str(conv.id)
-        llm_config = await resolve_user_llm_config(db, user_id)
-        user_settings = await load_user_settings(db, user_id)
-        req = ChatRequest(session_id=session_id, message=ChatMessageRequest(role="user", content=prompt))
-
-    emitter = JsonRpcEmitter(raw=None, dispatcher=dispatcher, session_id=session_id)
-    try:
-        await run_chat_turn(req, llm_config, user_settings, user_id, emitter)
-    except Exception as e:
-        logger.exception("cron: autonomous turn failed", extra={"user_id": user_id, "job_id": job_id})
-        with contextlib.suppress(Exception):
-            await dispatcher.push_event("error", {"message": str(e)}, session_id=session_id)
+        db.add(WSEvent(user_id=user_id, event_type="cron.turn.request", payload=json.dumps({"job_id": job_id, "prompt": prompt}, ensure_ascii=False)))
+        await db.commit()
+    logger.info("cron: autonomous turn requested", extra={"user_id": user_id, "job_id": job_id})
 
 
 async def _tick() -> None:
-    """CAS-advance ``next_run_at`` for due jobs and kick autonomous turns.
+    """CAS-advance ``next_run_at`` for due jobs and request autonomous turns.
 
-    Each due job runs ``_kick_autonomous_turn`` directly (no WSEvent outbox):
-    the job runs an in-process chat turn whose emitter talks to the user's
-    open WS dispatcher. Crons stay independent of WS round-trip latency and
-    there is no double-fire hazard because the CAS UPDATE serialises winners.
+    Each due job writes a ``cron.turn.request`` ws_events row; whichever
+    replica holds the user's WS connection claims it via the outbox loop and
+    runs the turn there. No double-fire hazard: the CAS UPDATE serialises
+    winners, and the outbox DELETE..RETURNING claim is single-consumer.
     """
     now = utc_now()
     # Memory consolidator runs independently of cron-job dispatch — it must

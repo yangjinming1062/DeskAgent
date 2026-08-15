@@ -9,6 +9,7 @@ from modules.ws import WSEvent
 from sqlalchemy import delete, select
 from sqlalchemy.exc import OperationalError
 
+from .emitter import JsonRpcEmitter
 from .jsonrpc import JsonRpcDispatcher
 
 # GC window for stale outbox events — at-most-once after this many seconds
@@ -18,6 +19,16 @@ from .jsonrpc import JsonRpcDispatcher
 # and dropping the morning greeting after one minute violates that.
 # Cost is a few thousand ws_events rows swept on the next startup.
 WS_EVENT_MAX_AGE_SECONDS = 24 * 60 * 60
+
+# Internal outbox event: scheduler.cron asks the connection-holding replica
+# to run an autonomous chat turn (process-local streaming/tool futures make
+# any other host impossible). Unlike client-bound events the row is
+# worthless minutes later, so the GC window is tight.
+CRON_TURN_EVENT = "cron.turn.request"
+CRON_TURN_MAX_AGE_SECONDS = 10 * 60
+
+# Strong refs so spawned cron turns aren't GC'd mid-run (CPython bpo-46662).
+_cron_turn_tasks: set[asyncio.Task] = set()
 
 logger = get_logger(__name__)
 
@@ -133,10 +144,13 @@ async def _process_events(wakeup: asyncio.Event):
         except TimeoutError:
             pass
 
-        # GC stale rows past the delivery window first.
+        # GC stale rows past the delivery window first. cron.turn.request rows
+        # are only actionable while the connection they target is live, so
+        # they get a much tighter window than client-bound events.
         async with session_scope() as db:
             cutoff = utc_now() - timedelta(seconds=WS_EVENT_MAX_AGE_SECONDS)
-            stale_result = await db.execute(delete(WSEvent).where(WSEvent.created_at < cutoff))
+            cron_cutoff = utc_now() - timedelta(seconds=CRON_TURN_MAX_AGE_SECONDS)
+            stale_result = await db.execute(delete(WSEvent).where((WSEvent.created_at < cutoff) | ((WSEvent.event_type == CRON_TURN_EVENT) & (WSEvent.created_at < cron_cutoff))))
             if stale_result.rowcount:
                 logger.info("WS event GC reaped", extra={"reaped": stale_result.rowcount})
 
@@ -173,12 +187,63 @@ async def _process_events(wakeup: asyncio.Event):
             await db.commit()
 
         for event_id, event_type, payload, user_id in claimed:
+            if event_type == CRON_TURN_EVENT:
+                # Spawned, not awaited: a full chat turn runs minutes and must
+                # not block the dispatch sweep for other users' events.
+                task = asyncio.create_task(_execute_cron_turn(user_id, payload))
+                _cron_turn_tasks.add(task)
+                task.add_done_callback(_cron_turn_tasks.discard)
+                continue
             try:
                 await MANAGER.send_personal_event(event_type, payload, user_id)
             except Exception as e:
                 logger.error("Failed to dispatch event to user", extra={"event_id": event_id, "event_type": event_type, "user_id": user_id, "error": str(e)})
     except Exception as e:
         logger.error("Error processing events", extra={"error": str(e)})
+
+
+async def _execute_cron_turn(user_id: int, payload: dict) -> None:
+    """Run the autonomous chat turn requested by scheduler.cron. Executed
+    only by the replica whose outbox claim won — the turn's emitter, tool
+    futures and runtime session are process-local by design."""
+    dispatcher = MANAGER._dispatchers.get(user_id)
+    if dispatcher is None:
+        # Connection dropped between claim and dispatch; the GC window
+        # already consumed the row, nothing to re-route.
+        logger.debug("cron turn claimed but user disconnected", extra={"user_id": user_id})
+        return
+    prompt = (payload.get("prompt") or "").strip()
+    if not prompt:
+        return
+
+    # Function-local to avoid a circular import: services.chat.__init__ loads
+    # modules that pull services.gateway, so importing services.chat symbols
+    # at module scope would deadlock the package init.
+    from modules.system import ChatMessageRequest, ChatRequest
+
+    from services.chat import load_user_settings, run_chat_turn
+    from services.conversation import get_or_create_cron_conversation
+    from services.llm import resolve_user_llm_config
+
+    async with session_scope() as db:
+        # Dedicated cron conversation, NOT the user's main one — see CRON_KIND
+        # in services.conversation. Keeping them separate stops WS-reconnect
+        # ``session.get_main`` from cancelling an in-flight cron turn and
+        # stops cron's user-role rows from interleaving with the renderer's
+        # prompt.submit writes.
+        conv = await get_or_create_cron_conversation(db, user_id)
+        session_id = str(conv.id)
+        llm_config = await resolve_user_llm_config(db, user_id)
+        user_settings = await load_user_settings(db, user_id)
+        req = ChatRequest(session_id=session_id, message=ChatMessageRequest(role="user", content=prompt))
+
+    emitter = JsonRpcEmitter(raw=None, dispatcher=dispatcher, session_id=session_id)
+    try:
+        await run_chat_turn(req, llm_config, user_settings, user_id, emitter)
+    except Exception as e:
+        logger.exception("cron: autonomous turn failed", extra={"user_id": user_id, "job_id": payload.get("job_id")})
+        with contextlib.suppress(Exception):
+            await dispatcher.push_event("error", {"message": str(e)}, session_id=session_id)
 
 
 _WS_EVENT_LOOP = BackgroundTask("gateway.ws_event_loop")
