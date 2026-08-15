@@ -1,9 +1,12 @@
 import { EventEmitter } from 'node:events'
 import fs from 'node:fs'
 import http from 'node:http'
+import type { Socket } from 'node:net'
 
 import type WebSocket from 'ws'
 import { WebSocketServer } from 'ws'
+
+import type { RunnerCapabilities } from '../shared/ipc-contracts'
 
 export const DEFAULT_TIMEOUT_MS = 120_000
 export const JSON_RPC_VERSION = '2.0'
@@ -13,7 +16,7 @@ export const HEARTBEAT_DEADLINE_MS = 120_000
 export interface CreateRunnerWsServerOptions {
   authToken?: string
   log?: (chunk: string) => void
-  onReverseRpc?: null | ((method: string, params: any) => Promise<any>)
+  onReverseRpc?: null | ((method: string, params?: unknown) => Promise<unknown>)
 }
 
 export interface RunnerWsStatus {
@@ -23,6 +26,19 @@ export interface RunnerWsStatus {
   transport: null | string
 }
 
+export type RunnerWsEvent =
+  | {
+      capabilities: null | RunnerCapabilities
+      probe_failed: boolean | null
+      type: 'runner_ready'
+      version: null | string
+    }
+  | { code?: number; type: 'disconnected' }
+  | { error: unknown; type: 'error' }
+  | { method: string; params: unknown; type: 'notification' }
+  | { type: 'connected' }
+  | { type: 'tools_changed' }
+
 export interface RunnerWsServer {
   call: <T = unknown>(
     method: string,
@@ -30,9 +46,30 @@ export interface RunnerWsServer {
     options?: { id?: number | string; timeoutMs?: number }
   ) => Promise<T>
   getStatus: () => RunnerWsStatus
-  onEvent: (callback: (event: any) => void) => () => void
+  onEvent: (callback: (event: RunnerWsEvent) => void) => () => void
   start: (options?: { path?: string }) => Promise<{ path: null | string; transport: null | string }>
   stop: () => Promise<{ ok: boolean }>
+}
+
+interface PendingCall {
+  method: string
+  reject: (err: Error) => void
+  resolve: (val: unknown) => void
+  timer: NodeJS.Timeout
+}
+
+interface JsonRpcMessage {
+  error?: { code?: number; message?: string }
+  id?: number | string
+  jsonrpc?: string
+  method?: string
+  params?: {
+    capabilities?: RunnerCapabilities
+    probe_failed?: boolean
+    version?: string
+    [key: string]: unknown
+  }
+  result?: unknown
 }
 
 export function createRunnerWsServer(options: CreateRunnerWsServerOptions = {}): RunnerWsServer {
@@ -41,10 +78,7 @@ export function createRunnerWsServer(options: CreateRunnerWsServerOptions = {}):
   const authToken = typeof options.authToken === 'string' ? options.authToken : ''
   const emitter = new EventEmitter()
 
-  const pending = new Map<
-    string,
-    { method: string; reject: (err: Error) => void; resolve: (val: any) => void; timer: NodeJS.Timeout }
-  >()
+  const pending = new Map<string, PendingCall>()
 
   const httpServer = http.createServer()
   let wss: null | WebSocketServer = null
@@ -52,10 +86,10 @@ export function createRunnerWsServer(options: CreateRunnerWsServerOptions = {}):
   let nextId = 1
   let transport: null | string = null
   let ipcPath: null | string = null
-  let upgradeHandler: null | ((req: http.IncomingMessage, socket: any, head: Buffer) => void) = null
+  let upgradeHandler: null | ((req: http.IncomingMessage, socket: Socket, head: Buffer) => void) = null
   let closed = false
 
-  function emit(event: any): void {
+  function emit(event: RunnerWsEvent): void {
     emitter.emit('event', event)
   }
 
@@ -67,7 +101,7 @@ export function createRunnerWsServer(options: CreateRunnerWsServerOptions = {}):
     }
   }
 
-  function sendToRunner(payload: any): boolean {
+  function sendToRunner(payload: unknown): boolean {
     if (!activeWs || activeWs.readyState !== 1) {
       return false
     }
@@ -76,20 +110,23 @@ export function createRunnerWsServer(options: CreateRunnerWsServerOptions = {}):
       activeWs.send(JSON.stringify(payload))
 
       return true
-    } catch (error: any) {
-      log(`[runner-ws] send failed: ${error.message}`)
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error)
+      log(`[runner-ws] send failed: ${msg}`)
 
       return false
     }
   }
 
-  function handleRunnerMessage(raw: any): void {
-    let message: any
+  function handleRunnerMessage(raw: unknown): void {
+    let message: JsonRpcMessage | null = null
 
     try {
-      message = JSON.parse(typeof raw === 'string' ? raw : raw.toString())
-    } catch (error: any) {
-      log(`[runner-ws] parse error: ${error.message}`)
+      const text = typeof raw === 'string' ? raw : (raw as Buffer).toString()
+      message = JSON.parse(text) as JsonRpcMessage
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error)
+      log(`[runner-ws] parse error: ${msg}`)
 
       return
     }
@@ -149,7 +186,7 @@ export function createRunnerWsServer(options: CreateRunnerWsServerOptions = {}):
     }
   }
 
-  async function handleReverseRpc(id: any, method: string, params: any): Promise<void> {
+  async function handleReverseRpc(id: number | string, method: string, params: unknown): Promise<void> {
     if (!onReverseRpc) {
       sendToRunner({
         error: { code: -32601, message: `No handler for reverse RPC: ${method}` },
@@ -163,9 +200,10 @@ export function createRunnerWsServer(options: CreateRunnerWsServerOptions = {}):
     try {
       const result = await onReverseRpc(method, params)
       sendToRunner({ id, jsonrpc: JSON_RPC_VERSION, result })
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const err = error as { code?: number; message?: string } | undefined
       sendToRunner({
-        error: { code: -32000, message: error?.message || String(error) },
+        error: { code: err?.code ?? -32000, message: err?.message || String(error) },
         id,
         jsonrpc: JSON_RPC_VERSION
       })
@@ -196,7 +234,7 @@ export function createRunnerWsServer(options: CreateRunnerWsServerOptions = {}):
         reject(new Error(`Runner call '${method}' (id=${id}) timed out after ${effectiveTimeoutMs}ms.`))
       }, effectiveTimeoutMs)
 
-      pending.set(id, { method, reject, resolve, timer })
+      pending.set(id, { method, reject, resolve: resolve as (val: unknown) => void, timer })
 
       const sent = sendToRunner({
         id,
@@ -218,8 +256,10 @@ export function createRunnerWsServer(options: CreateRunnerWsServerOptions = {}):
       if (process.platform !== 'win32') {
         try {
           fs.unlinkSync(targetPath)
-        } catch (error: any) {
-          if (error?.code !== 'ENOENT') {
+        } catch (error: unknown) {
+          const err = error as { code?: string }
+
+          if (err?.code !== 'ENOENT') {
             reject(error)
 
             return
@@ -269,8 +309,10 @@ export function createRunnerWsServer(options: CreateRunnerWsServerOptions = {}):
 
     try {
       await listenOnce(ipcPath)
-    } catch (error: any) {
-      if (error?.code !== 'EADDRINUSE') {
+    } catch (error: unknown) {
+      const err = error as { code?: string }
+
+      if (err?.code !== 'EADDRINUSE') {
         throw error
       }
 
@@ -338,8 +380,9 @@ export function createRunnerWsServer(options: CreateRunnerWsServerOptions = {}):
 
           try {
             ws.send(JSON.stringify({ jsonrpc: JSON_RPC_VERSION, method: 'runner.ping' }))
-          } catch (err: any) {
-            log(`[runner-ws] heartbeat send failed: ${err.message}`)
+          } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : String(err)
+            log(`[runner-ws] heartbeat send failed: ${msg}`)
           }
         }, HEARTBEAT_INTERVAL_MS)
 
@@ -361,18 +404,20 @@ export function createRunnerWsServer(options: CreateRunnerWsServerOptions = {}):
           emit({ code, type: 'disconnected' })
         })
 
-        ws.on('error', (error: any) => {
-          log(`[runner-ws] runner error: ${error?.message || error}`)
+        ws.on('error', (error: unknown) => {
+          const err = error as { message?: string }
+          log(`[runner-ws] runner error: ${err?.message || String(error)}`)
           emit({ error, type: 'error' })
         })
       })
 
-      wss.on('error', (error: any) => {
-        log(`[runner-ws] server error: ${error?.message || error}`)
+      wss.on('error', (error: unknown) => {
+        const err = error as { message?: string }
+        log(`[runner-ws] server error: ${err?.message || String(error)}`)
       })
 
       return { path: ipcPath, transport }
-    } catch (error: any) {
+    } catch (error: unknown) {
       await new Promise<void>(resolve => httpServer.close(() => resolve()))
       throw error
     }
@@ -388,8 +433,10 @@ export function createRunnerWsServer(options: CreateRunnerWsServerOptions = {}):
       upgradeHandler = null
     }
 
-    if (typeof (httpServer as any).closeAllConnections === 'function') {
-      ;(httpServer as any).closeAllConnections()
+    const serverAny = httpServer as unknown as { closeAllConnections?: () => void }
+
+    if (typeof serverAny.closeAllConnections === 'function') {
+      serverAny.closeAllConnections()
     }
 
     return new Promise(resolve => {
@@ -418,7 +465,7 @@ export function createRunnerWsServer(options: CreateRunnerWsServerOptions = {}):
     })
   }
 
-  function onEvent(callback: (event: any) => void): () => void {
+  function onEvent(callback: (event: RunnerWsEvent) => void): () => void {
     emitter.on('event', callback)
 
     return () => emitter.off('event', callback)

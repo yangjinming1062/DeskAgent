@@ -12,10 +12,10 @@ export function readRestPosition(userDataDir?: string): null | { x: number; y: n
 
   try {
     const raw = fs.readFileSync(path.join(userDataDir, POSITION_FILE), 'utf8')
-    const parsed = JSON.parse(raw)
+    const parsed = JSON.parse(raw) as { x?: unknown; y?: unknown }
 
     if (parsed && typeof parsed.x === 'number' && typeof parsed.y === 'number') {
-      return parsed
+      return { x: parsed.x, y: parsed.y }
     }
   } catch {
     // No saved position yet
@@ -40,12 +40,15 @@ export function registerSpriteIpc({ deps, ipcMain }: { deps: SpriteIpcDeps; ipcM
     }
   }
 
-  ipcMain.handle('deskagent:sprite:set-ignore-mouse-events', async (_event, payload) => {
-    const ignore = Boolean(payload?.ignore)
-    withWindow(win => win.setIgnoreMouseEvents(ignore, { forward: ignore && payload?.forward !== false }))
-  })
+  ipcMain.handle(
+    'deskagent:sprite:set-ignore-mouse-events',
+    async (_event, payload?: { forward?: boolean; ignore: boolean }) => {
+      const ignore = Boolean(payload?.ignore)
+      withWindow(win => win.setIgnoreMouseEvents(ignore, { forward: ignore && payload?.forward !== false }))
+    }
+  )
 
-  ipcMain.handle('deskagent:sprite:set-always-on-top', async (_event, payload) => {
+  ipcMain.handle('deskagent:sprite:set-always-on-top', async (_event, payload?: { on: boolean }) => {
     const on = Boolean(payload?.on)
     withWindow(win => win.setAlwaysOnTop(on, on ? 'floating' : undefined))
   })
@@ -60,7 +63,7 @@ export function registerSpriteIpc({ deps, ipcMain }: { deps: SpriteIpcDeps; ipcM
     return readRestPosition(dir)
   })
 
-  ipcMain.handle('deskagent:sprite:set-position', async (_event, payload) => {
+  ipcMain.handle('deskagent:sprite:set-position', async (_event, payload?: { x: number; y: number }) => {
     if (!payload || typeof payload.x !== 'number' || typeof payload.y !== 'number') {
       return
     }

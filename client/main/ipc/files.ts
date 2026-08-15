@@ -3,7 +3,7 @@ import path from 'node:path'
 
 import type { BrowserWindow, Dialog, IpcMain } from 'electron'
 
-import type { DeskAgentSelectPathsOptions } from '../../renderer/shared/types/global'
+import type { DeskAgentSelectPathsOptions } from '../shared/ipc-contracts'
 import { dataUrlFromBuffer } from '../shared/mime'
 
 export interface FilesIpcDeps {
@@ -13,7 +13,10 @@ export interface FilesIpcDeps {
   }
   hardening: {
     DATA_URL_READ_MAX_BYTES: number
-    resolveReadableFileForIpc: (filePath: string, options: any) => Promise<{ resolvedPath: string; stat: any }>
+    resolveReadableFileForIpc: (
+      filePath: string,
+      options?: { maxBytes?: number; purpose?: string }
+    ) => Promise<{ resolvedPath: string; stat: fs.Stats }>
   }
   ipcMain: IpcMain
   mimeTypeForPath: (filePath: string) => string
@@ -22,7 +25,7 @@ export interface FilesIpcDeps {
 export function registerFilesIpc({ electron, hardening, ipcMain, mimeTypeForPath }: FilesIpcDeps): void {
   const { dialog, getMainWindow } = electron
 
-  ipcMain.handle('deskagent:readFileDataUrl', async (_event, filePath) => {
+  ipcMain.handle('deskagent:readFileDataUrl', async (_event, filePath: string) => {
     const { resolvedPath } = await hardening.resolveReadableFileForIpc(filePath, {
       maxBytes: hardening.DATA_URL_READ_MAX_BYTES,
       purpose: 'File preview'
@@ -54,12 +57,16 @@ export function registerFilesIpc({ electron, hardening, ipcMain, mimeTypeForPath
 
     const mainWin = getMainWindow()
 
-    const result = await dialog.showOpenDialog((mainWin as any) ?? null, {
+    const openOptions = {
       defaultPath: resolvedDefaultPath,
       filters: Array.isArray(options?.filters) ? options.filters : undefined,
       properties,
       title: options?.title || 'Add context'
-    })
+    }
+
+    const result = mainWin
+      ? await dialog.showOpenDialog(mainWin, openOptions)
+      : await dialog.showOpenDialog(openOptions)
 
     if (result.canceled) {
       return []

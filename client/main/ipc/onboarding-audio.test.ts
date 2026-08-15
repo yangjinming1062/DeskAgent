@@ -30,7 +30,12 @@ function makeFakeIpc() {
 test('onboardingAudio:read resolves audio file from deskagentHome or dev fallback', async () => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'deskagent-audio-test-'))
   const ipcMain = makeFakeIpc()
-  const resolveReadableFileForIpc = async (filePath: string) => ({ resolvedPath: path.resolve(filePath), stat: {} })
+
+  const resolveReadableFileForIpc = async (filePath: string) => ({
+    resolvedPath: path.resolve(filePath),
+    stat: {} as fs.Stats
+  })
+
   const mimeTypeForPath = () => 'audio/mpeg'
   const devAudioRoot = path.resolve(__dirname, '../../../installer/payload/onboarding-audio/zh')
 

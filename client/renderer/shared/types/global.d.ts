@@ -218,7 +218,7 @@ export interface DeskAgentConnection {
   mode?: 'local' | 'remote'
   nativeOverlayWidth: number
   source?: 'env' | 'local' | 'settings'
-  token: string
+  token: null | string
   wsUrl: string
   logs: string[]
   windowButtonPosition: { x: number; y: number } | null

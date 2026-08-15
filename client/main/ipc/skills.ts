@@ -8,11 +8,11 @@ import { buildToolsetRoster } from '../shared/lib/toolset-index'
 
 export interface SkillsIpcDeps {
   deskagentHome?: null | string
+  getRunnerBridge?: () => { getTools?: () => Record<string, unknown>[] } | null | undefined
   ipcMain: IpcMain
-  runnerBridge?: any
 }
 
-export function registerSkillsIpc({ deskagentHome, ipcMain, runnerBridge }: SkillsIpcDeps): void {
+export function registerSkillsIpc({ deskagentHome, getRunnerBridge, ipcMain }: SkillsIpcDeps): void {
   const skillsRoot = path.join(deskagentHome || '', 'skills')
 
   ipcMain.handle('deskagent:skills:list', () => ({
@@ -73,10 +73,10 @@ export function registerSkillsIpc({ deskagentHome, ipcMain, runnerBridge }: Skil
   })
 
   ipcMain.handle('deskagent:toolsets:list', () => {
-    let schemas: any[] = []
+    let schemas: Record<string, unknown>[] = []
 
     try {
-      schemas = runnerBridge?.getTools?.() ?? []
+      schemas = (getRunnerBridge?.()?.getTools?.() as Record<string, unknown>[]) ?? []
     } catch {
       schemas = []
     }
@@ -97,10 +97,10 @@ export function registerSkillsIpc({ deskagentHome, ipcMain, runnerBridge }: Skil
       return { error: 'invalid enabled', ok: false }
     }
 
-    let preWriteSchemas: any[] = []
+    let preWriteSchemas: Record<string, unknown>[] = []
 
     try {
-      preWriteSchemas = runnerBridge?.getTools?.() ?? []
+      preWriteSchemas = (getRunnerBridge?.()?.getTools?.() as Record<string, unknown>[]) ?? []
     } catch {
       preWriteSchemas = []
     }

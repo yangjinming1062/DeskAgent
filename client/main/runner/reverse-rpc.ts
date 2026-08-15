@@ -1,14 +1,43 @@
+import type { BackendClient } from '../backend/client'
+
 export const DEFAULT_TIMEOUT_MS = 120_000
 
 // JSON-RPC 2.0 §5.1 — "Method not found".
 export const METHOD_NOT_FOUND_CODE = -32601
 
+export interface BackendSessionLike {
+  client?: () => BackendClient
+  clientInstance?: BackendClient
+  getSession: () => null | { hasToken: boolean; token?: null | string }
+  getToken?: () => null | string
+}
+
 export interface ReverseRpcOptions {
-  backendSession?: any
+  backendSession?: BackendSessionLike | null
   log?: (chunk: string) => void
 }
 
-export function createReverseRpc(options: ReverseRpcOptions = {}): (method: string, params: any) => Promise<any> {
+export interface LlmMessageContentPart {
+  image?: unknown
+  image_url?: unknown
+  type?: string
+}
+
+export interface LlmMessage {
+  content?: string | LlmMessageContentPart[]
+  role?: string
+}
+
+export interface LlmCompletionParams {
+  max_tokens?: number
+  messages?: LlmMessage[]
+  model?: string
+  temperature?: number
+}
+
+export function createReverseRpc(
+  options: ReverseRpcOptions = {}
+): (method: string, params?: unknown) => Promise<unknown> {
   const log = typeof options.log === 'function' ? options.log : () => {}
   const backendSession = options.backendSession
 
@@ -23,7 +52,7 @@ export function createReverseRpc(options: ReverseRpcOptions = {}): (method: stri
   let sessionMessagesSent = 0
   let sessionBytesSent = 0
 
-  function _isVisionRequest(messages: any[]): boolean {
+  function isVisionRequest(messages: LlmMessage[]): boolean {
     if (!Array.isArray(messages)) {
       return false
     }
@@ -41,14 +70,15 @@ export function createReverseRpc(options: ReverseRpcOptions = {}): (method: stri
     return false
   }
 
-  async function handleRequestLlm(params: any): Promise<any> {
-    const session = backendSession.getSession()
+  async function handleRequestLlm(params: unknown): Promise<unknown> {
+    const session = backendSession!.getSession()
 
     if (!session?.hasToken) {
       throw new Error('No active session — cannot proxy LLM request.')
     }
 
-    const messages = params.messages || []
+    const payloadObj = (params as LlmCompletionParams) || {}
+    const messages = payloadObj.messages || []
     const messageCount = messages.length
 
     if (messageCount > MAX_MESSAGES_PER_SESSION) {
@@ -58,7 +88,7 @@ export function createReverseRpc(options: ReverseRpcOptions = {}): (method: stri
     }
 
     const payloadBytes = Buffer.byteLength(JSON.stringify(messages), 'utf8')
-    const isVision = _isVisionRequest(messages)
+    const isVision = isVisionRequest(messages)
     const maxRequestBytes = isVision ? MAX_VISION_BYTES_PER_SESSION : MAX_TEXT_BYTES_PER_SESSION
     const maxSessionBytes = isVision ? MAX_VISION_BYTES_PER_SESSION : MAX_TEXT_BYTES_PER_SESSION
 
@@ -84,34 +114,35 @@ export function createReverseRpc(options: ReverseRpcOptions = {}): (method: stri
       `[reverse-rpc] request_llm (${messageCount} messages, ${payloadBytes} bytes, session ${sessionMessagesSent}/${sessionBytesSent})`
     )
 
-    const token = typeof backendSession.getToken === 'function' ? backendSession.getToken() : session.token
+    const token =
+      typeof backendSession!.getToken === 'function' ? backendSession!.getToken() : (session.token ?? undefined)
 
     const client =
-      typeof backendSession.client === 'function'
-        ? backendSession.client()
-        : backendSession.clientInstance || backendSession
+      typeof backendSession!.client === 'function'
+        ? backendSession!.client()
+        : (backendSession!.clientInstance as BackendClient)
 
     return client.post('/api/llm/completion', {
       body: {
-        max_tokens: params.max_tokens || undefined,
+        max_tokens: payloadObj.max_tokens || undefined,
         messages,
-        model: params.model || undefined,
-        temperature: params.temperature || undefined
+        model: payloadObj.model || undefined,
+        temperature: payloadObj.temperature || undefined
       },
       timeoutMs: DEFAULT_TIMEOUT_MS,
-      token
+      token: token || undefined
     })
   }
 
-  const handlers: Record<string, (params: any) => Promise<any>> = {
+  const handlers: Record<string, (params: unknown) => Promise<unknown>> = {
     request_llm: handleRequestLlm
   }
 
-  async function handleRequest(method: string, params: any): Promise<any> {
+  async function handleRequest(method: string, params?: unknown): Promise<unknown> {
     const handler = handlers[method]
 
     if (!handler) {
-      const error: any = new Error(`Unknown reverse RPC method: ${method}`)
+      const error = new Error(`Unknown reverse RPC method: ${method}`) as Error & { code?: number }
       error.code = METHOD_NOT_FOUND_CODE
       throw error
     }

@@ -3,7 +3,7 @@ import path from 'node:path'
 
 import type { SafeStorageApi } from '../security/hardening'
 
-import { type BackendClient, BackendRequestError, createBackendClient } from './client'
+import { type BackendClient, BackendRequestError, createBackendClient, type FetchFunction } from './client'
 
 export const SESSION_FILENAME = 'agent-session.json'
 export const SESSION_SCHEMA_VERSION = 2
@@ -36,6 +36,30 @@ export class SessionError extends Error {
   }
 }
 
+export interface SessionUser {
+  id: null | number
+  username: null | string
+}
+
+export interface EncryptedToken {
+  encoding: 'safeStorage'
+  value: string
+}
+
+export interface StoredSessionPayload {
+  activationCode: EncryptedToken | null
+  baseUrl: null | string
+  savedAt: number
+  schemaVersion: number
+  user: null | SessionUser
+}
+
+export interface TokenAuthResponse {
+  access_token?: string
+  expires_in?: number
+  user?: unknown
+}
+
 function atomicWriteJson(targetPath: string, payload: unknown): void {
   const tmp = `${targetPath}.${process.pid}.${Date.now()}.tmp`
   fs.mkdirSync(path.dirname(targetPath), { recursive: true })
@@ -54,7 +78,7 @@ function atomicWriteJson(targetPath: string, payload: unknown): void {
   }
 }
 
-function readJsonSafe(filePath: string): any {
+function readJsonSafe(filePath: string): unknown {
   try {
     return JSON.parse(fs.readFileSync(filePath, 'utf8'))
   } catch {
@@ -65,7 +89,7 @@ function readJsonSafe(filePath: string): any {
 export function encryptToken(
   raw: null | string | undefined,
   safeStorage?: null | SafeStorageApi
-): null | { encoding: 'safeStorage'; value: string } {
+): EncryptedToken | null {
   const value = String(raw || '')
 
   if (!value) {
@@ -87,12 +111,14 @@ export function encryptToken(
   }
 }
 
-export function decryptToken(blob: any, safeStorage?: null | SafeStorageApi): null | string {
+export function decryptToken(blob: unknown, safeStorage?: null | SafeStorageApi): null | string {
   if (!blob || typeof blob !== 'object') {
     return null
   }
 
-  if (blob.encoding !== 'safeStorage') {
+  const blobRecord = blob as { encoding?: string; value?: unknown }
+
+  if (blobRecord.encoding !== 'safeStorage') {
     return null
   }
 
@@ -101,7 +127,7 @@ export function decryptToken(blob: any, safeStorage?: null | SafeStorageApi): nu
   }
 
   try {
-    const buf = Buffer.from(String(blob.value || ''), 'base64')
+    const buf = Buffer.from(String(blobRecord.value || ''), 'base64')
 
     return safeStorage.decryptString ? safeStorage.decryptString(buf) : null
   } catch {
@@ -109,13 +135,14 @@ export function decryptToken(blob: any, safeStorage?: null | SafeStorageApi): nu
   }
 }
 
-function normalizeUser(raw: any): null | { id: null | number; username: null | string } {
+function normalizeUser(raw: unknown): null | SessionUser {
   if (!raw || typeof raw !== 'object') {
     return null
   }
 
-  const id = raw.id ?? raw.user_id ?? null
-  const username = raw.username ?? null
+  const record = raw as Record<string, unknown>
+  const id = record.id ?? record.user_id ?? null
+  const username = record.username ?? null
 
   if (id === null && username === null) {
     return null
@@ -130,7 +157,7 @@ function normalizeUser(raw: any): null | { id: null | number; username: null | s
 export function decodeActivationCode(code: string): { baseUrl: string; token: string } {
   const padding = '='.repeat((4 - (code.length % 4)) % 4)
   const raw = Buffer.from(code + padding, 'base64url').toString('utf8')
-  const data = JSON.parse(raw)
+  const data = JSON.parse(raw) as { b?: string; t?: string }
   const baseUrl = data.b
   const token = data.t
 
@@ -144,7 +171,7 @@ export function decodeActivationCode(code: string): { baseUrl: string; token: st
 export interface BackendSessionOptions {
   appVersion?: string
   defaultBaseUrl?: null | string
-  fetchImpl: (url: string, init?: any) => Promise<any>
+  fetchImpl: FetchFunction
   log?: (chunk: string) => void
   now?: () => number
   safeStorage?: null | SafeStorageApi
@@ -155,18 +182,18 @@ export interface SessionSnapshot {
   baseUrl: null | string
   hasToken: boolean
   tokenExpiresAt: null | number
-  user: null | { id: null | number; username: null | string }
+  user: null | SessionUser
 }
 
 export interface BackendSession {
   _sessionPath: string
-  activate: (payload?: { clientContext?: any; code?: string }) => Promise<null | SessionSnapshot>
+  activate: (payload?: { clientContext?: unknown; code?: string }) => Promise<null | SessionSnapshot>
   authHeaders: () => Record<string, string>
   clearSession: () => void
   getSession: () => null | SessionSnapshot
   getToken: () => null | string
   logout: () => Promise<{ backendUnreachable?: boolean; error?: string; ok: boolean }>
-  refresh: (payload?: { clientContext?: any }) => Promise<null | SessionSnapshot>
+  refresh: (payload?: { clientContext?: unknown }) => Promise<null | SessionSnapshot>
   restoreSession: () => Promise<null | SessionSnapshot>
 }
 
@@ -197,7 +224,7 @@ export function createBackendSession(options: BackendSessionOptions): BackendSes
     baseUrl: null | string
     token: null | string
     tokenExpiresAt: null | number
-    user: null | { id: null | number; username: null | string }
+    user: null | SessionUser
   } = null
 
   let backendClient: null | BackendClient = null
@@ -247,8 +274,9 @@ export function createBackendSession(options: BackendSessionOptions): BackendSes
       }
 
       log('[session] proactive token refresh triggered')
-      refresh().catch(err => {
-        log(`[session] proactive refresh failed: ${err?.message || err}`)
+      refresh().catch((err: unknown) => {
+        const msg = err instanceof Error ? err.message : String(err)
+        log(`[session] proactive refresh failed: ${msg}`)
       })
     }, delay)
 
@@ -261,7 +289,7 @@ export function createBackendSession(options: BackendSessionOptions): BackendSes
     activationCode: string
     baseUrl: null | string
     savedAt: null | number
-    user: null | { id: null | number; username: null | string }
+    user: null | SessionUser
   } {
     const raw = readJsonSafe(sessionPath)
 
@@ -269,11 +297,13 @@ export function createBackendSession(options: BackendSessionOptions): BackendSes
       return null
     }
 
-    if (raw.schemaVersion !== SESSION_SCHEMA_VERSION) {
+    const record = raw as Partial<StoredSessionPayload>
+
+    if (record.schemaVersion !== SESSION_SCHEMA_VERSION) {
       return null
     }
 
-    const activationCode = decryptToken(raw.activationCode, safeStorage)
+    const activationCode = decryptToken(record.activationCode, safeStorage)
 
     if (!activationCode) {
       return null
@@ -281,9 +311,9 @@ export function createBackendSession(options: BackendSessionOptions): BackendSes
 
     return {
       activationCode,
-      baseUrl: typeof raw.baseUrl === 'string' ? raw.baseUrl : null,
-      savedAt: Number.isFinite(raw.savedAt) ? raw.savedAt : null,
-      user: normalizeUser(raw.user)
+      baseUrl: typeof record.baseUrl === 'string' ? record.baseUrl : null,
+      savedAt: typeof record.savedAt === 'number' && Number.isFinite(record.savedAt) ? record.savedAt : null,
+      user: normalizeUser(record.user)
     }
   }
 
@@ -329,9 +359,13 @@ export function createBackendSession(options: BackendSessionOptions): BackendSes
     return backendClient
   }
 
-  function translateBackendError(error: any): never {
+  function translateBackendError(error: unknown): never {
     if (!(error instanceof BackendRequestError)) {
-      throw error
+      if (error instanceof Error) {
+        throw error
+      }
+
+      throw new SessionError({ code: 'unknown-error', message: String(error) })
     }
 
     if (error.status === 401) {
@@ -364,7 +398,7 @@ export function createBackendSession(options: BackendSessionOptions): BackendSes
     source: string
     token: string
     tokenExpiresAt: null | number
-    user?: any
+    user?: unknown
   }): null | SessionSnapshot {
     if (!token) {
       throw new SessionError({
@@ -403,7 +437,7 @@ export function createBackendSession(options: BackendSessionOptions): BackendSes
     return snapshot()
   }
 
-  function activate(payload: { clientContext?: any; code?: string } = {}): Promise<null | SessionSnapshot> {
+  async function activate(payload: { clientContext?: unknown; code?: string } = {}): Promise<null | SessionSnapshot> {
     const { clientContext, code } = payload
 
     if (!code) {
@@ -438,7 +472,7 @@ export function createBackendSession(options: BackendSessionOptions): BackendSes
 
     const backend = createBackendClient({ baseUrl, fetch: fetchImpl })
     activatePromise = backend
-      .post<any>('/api/user/activate', {
+      .post<TokenAuthResponse>('/api/user/activate', {
         body: {
           client_context: clientContext || undefined,
           client_version: appVersion,
@@ -454,7 +488,7 @@ export function createBackendSession(options: BackendSessionOptions): BackendSes
         }
 
         const expiresIn =
-          Number.isFinite(response.expires_in) && response.expires_in > 0
+          typeof response.expires_in === 'number' && Number.isFinite(response.expires_in) && response.expires_in > 0
             ? response.expires_in * 1000
             : KNOWN_TOKEN_TTL_MS
 
@@ -475,7 +509,7 @@ export function createBackendSession(options: BackendSessionOptions): BackendSes
     return activatePromise
   }
 
-  function refresh(payload: { clientContext?: any } = {}): Promise<null | SessionSnapshot> {
+  async function refresh(payload: { clientContext?: unknown } = {}): Promise<null | SessionSnapshot> {
     if (!cached || !cached.token) {
       return Promise.reject(
         new SessionError({
@@ -489,7 +523,7 @@ export function createBackendSession(options: BackendSessionOptions): BackendSes
     const backend = client()
 
     return backend
-      .post<any>('/api/user/refresh', {
+      .post<TokenAuthResponse>('/api/user/refresh', {
         body: {
           client_context: clientContext || undefined,
           client_version: appVersion
@@ -505,7 +539,7 @@ export function createBackendSession(options: BackendSessionOptions): BackendSes
         }
 
         const expiresIn =
-          Number.isFinite(response.expires_in) && response.expires_in > 0
+          typeof response.expires_in === 'number' && Number.isFinite(response.expires_in) && response.expires_in > 0
             ? response.expires_in * 1000
             : KNOWN_TOKEN_TTL_MS
 
@@ -537,10 +571,11 @@ export function createBackendSession(options: BackendSessionOptions): BackendSes
         return { ok: true }
       })
       .catch(error => {
-        log(`[session] logout backend call failed: ${error?.message || error}`)
+        const msg = error instanceof Error ? error.message : String(error)
+        log(`[session] logout backend call failed: ${msg}`)
         clearSession()
 
-        return { backendUnreachable: true, error: error?.message || String(error), ok: true }
+        return { backendUnreachable: true, error: msg, ok: true }
       })
   }
 
@@ -552,9 +587,11 @@ export function createBackendSession(options: BackendSessionOptions): BackendSes
 
     try {
       fs.unlinkSync(sessionPath)
-    } catch (error: any) {
-      if (error?.code !== 'ENOENT') {
-        log(`[session] clearSession unlink failed: ${error.message}`)
+    } catch (error: unknown) {
+      const err = error as { code?: string; message?: string }
+
+      if (err?.code !== 'ENOENT') {
+        log(`[session] clearSession unlink failed: ${err.message || String(error)}`)
       }
     }
   }
@@ -576,12 +613,13 @@ export function createBackendSession(options: BackendSessionOptions): BackendSes
 
     try {
       return await activate({ code: loaded.activationCode })
-    } catch (err: any) {
+    } catch (err: unknown) {
       if (err instanceof SessionError && err.code === 'bad-credentials') {
         clearSession()
       }
 
-      log(`[session] restore activation failed: ${err?.message || err}`)
+      const msg = err instanceof Error ? err.message : String(err)
+      log(`[session] restore activation failed: ${msg}`)
 
       return null
     }

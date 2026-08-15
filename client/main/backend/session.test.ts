@@ -12,8 +12,8 @@ function tmpUserData(tag: string): string {
 
 function identitySafeStorage() {
   return {
-    decryptString: (buf: any) => buf.toString('utf8'),
-    encryptString: (value: any) => Buffer.from(String(value), 'utf8'),
+    decryptString: (buf: Buffer) => buf.toString('utf8'),
+    encryptString: (value: string) => Buffer.from(String(value), 'utf8'),
     isEncryptionAvailable: () => true
   }
 }
@@ -24,7 +24,7 @@ function encodeActivationCode(baseUrl: string, token: string): string {
   return Buffer.from(payload, 'utf8').toString('base64url')
 }
 
-function fakeActivateFetch(response: any) {
+function fakeActivateFetch(response: unknown) {
   const body = JSON.stringify(response)
 
   return async (url: string) => {
@@ -94,35 +94,45 @@ test('activate persists the activation code so restoreSession can re-activate', 
   assert.equal(snapshot.user?.username, 'carol')
 })
 
-test('activate rejects missing code', () => {
+test('activate rejects missing code', async () => {
   const userDataDir = tmpUserData('bad-code')
 
   const session = createBackendSession({
     appVersion: 'test',
-    fetchImpl: async () => ({}),
+    fetchImpl: async () => ({
+      headers: { get: () => 'application/json' },
+      ok: true,
+      status: 200,
+      text: async () => '{}'
+    }),
     safeStorage: identitySafeStorage(),
     userDataDir
   })
 
-  assert.throws(
+  await assert.rejects(
     () => session.activate({}),
-    (err: any) => err instanceof SessionError && err.code === 'missing-code'
+    (err: unknown) => err instanceof SessionError && err.code === 'missing-code'
   )
 })
 
-test('activate rejects malformed code', () => {
+test('activate rejects malformed code', async () => {
   const userDataDir = tmpUserData('malformed')
 
   const session = createBackendSession({
     appVersion: 'test',
-    fetchImpl: async () => ({}),
+    fetchImpl: async () => ({
+      headers: { get: () => 'application/json' },
+      ok: true,
+      status: 200,
+      text: async () => '{}'
+    }),
     safeStorage: identitySafeStorage(),
     userDataDir
   })
 
-  assert.throws(
+  await assert.rejects(
     () => session.activate({ code: '!!!not-valid-base64!!!' }),
-    (err: any) => err instanceof SessionError && err.code === 'invalid-code'
+    (err: unknown) => err instanceof SessionError && err.code === 'invalid-code'
   )
 })
 

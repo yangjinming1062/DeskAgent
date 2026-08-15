@@ -165,10 +165,10 @@ test('start() composes process + ws-server and reaches "running" phase', async (
 
   const status = bridge.getStatus()
   assert.equal(status.phase, 'running')
-  assert.equal(status.wsServer.connected, true)
-  assert.equal(status.runner.pid, 9999)
+  assert.equal(status.wsServer?.connected, true)
+  assert.equal(status.runner?.pid, 9999)
   assert.match(
-    status.wsServer.path,
+    status.wsServer?.path || '',
     process.platform === 'win32' ? /\\\\\.\\pipe\\deskagent-runner-\d+/ : /runner-\d+\.sock$/
   )
   await bridge.stop()

@@ -4,11 +4,12 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 
-import type { RunnerCapabilities } from '../../renderer/shared/types/global'
+import type { RunnerCapabilities } from '../shared/ipc-contracts'
 import { atomicWriteFile } from '../shared/utils'
 
-import type { RunnerProcess } from './process'
-import type { RunnerWsServer } from './rpc-ws'
+import type { RunnerProcess, RunnerProcessStartArgs, RunnerProcessState } from './process'
+import type { ReverseRpcOptions } from './reverse-rpc'
+import type { CreateRunnerWsServerOptions, RunnerWsEvent, RunnerWsServer, RunnerWsStatus } from './rpc-ws'
 
 // macOS sun_path is capped at 104 bytes; stay under it with a margin.
 export const MAC_SOCK_PATH_BYTE_LIMIT = 100
@@ -47,13 +48,18 @@ export function sweepLegacySockets(deskagentHome: string): void {
   }
 }
 
+export interface RunnerBridgeStartOptions extends RunnerProcessStartArgs {
+  backendSession?: unknown
+  readyTimeoutMs?: number
+}
+
 export interface RunnerBridgeOptions {
   deskagentHome?: null | string
   log?: (chunk: string) => void
-  processFactory?: null | ((args?: any) => RunnerProcess)
-  pushConfig?: null | ((config?: Record<string, any>) => Promise<any> | void)
-  reverseRpcFactory?: null | ((options: { backendSession: any; log: any }) => any)
-  wsServerFactory?: null | ((options: { authToken: string; log: any; onReverseRpc: any }) => RunnerWsServer)
+  processFactory?: null | ((args?: RunnerBridgeStartOptions) => RunnerProcess)
+  pushConfig?: null | (() => Promise<unknown> | void)
+  reverseRpcFactory?: null | ((options: ReverseRpcOptions) => (method: string, params?: unknown) => Promise<unknown>)
+  wsServerFactory?: null | ((options: CreateRunnerWsServerOptions) => RunnerWsServer)
 }
 
 export interface RunnerBridgeState {
@@ -67,17 +73,37 @@ export interface RunnerBridgeState {
 }
 
 export interface RunnerBridgeStatus extends RunnerBridgeState {
-  runner: any
-  wsServer: any
+  runner: null | RunnerProcessState
+  wsServer: null | RunnerWsStatus
 }
 
+export type RunnerBridgeEvent =
+  | {
+      capabilities: null | RunnerCapabilities
+      probeFailed: boolean | null
+      runnerVersion: null | string
+      tools: Record<string, unknown>[] | null
+      type: 'runner_ready' | 'running'
+    }
+  | { error: Error; phase: string; type: 'error' }
+  | { errors?: string[]; reason?: string; type: 'stopped' }
+  | { tools: Record<string, unknown>[] | null; type: 'tools_changed' }
+
 export interface RunnerBridge {
-  dispatch: <T = unknown>(method: string, params?: Record<string, unknown>, opts?: any) => Promise<T>
+  dispatch: <T = unknown>(
+    method: string,
+    params?: Record<string, unknown>,
+    opts?: { id?: number | string; timeoutMs?: number }
+  ) => Promise<T>
   getStatus: () => RunnerBridgeStatus
-  getTools: () => any[]
-  invoke: <T = unknown>(name: string, args?: Record<string, unknown>, opts?: any) => Promise<T>
-  onEvent: (callback: (event: any) => void) => () => void
-  start: (args?: any) => Promise<RunnerBridgeStatus>
+  getTools: () => Record<string, unknown>[]
+  invoke: <T = unknown>(
+    name: string,
+    args?: Record<string, unknown>,
+    opts?: { id?: number | string; timeoutMs?: number }
+  ) => Promise<T>
+  onEvent: (callback: (event: RunnerBridgeEvent) => void) => () => void
+  start: (args?: RunnerBridgeStartOptions) => Promise<RunnerBridgeStatus>
   stop: (options?: { reason?: string }) => Promise<{ errors?: string[]; noop?: boolean; ok: boolean }>
 }
 
@@ -85,7 +111,7 @@ export function createRunnerBridge(options: RunnerBridgeOptions = {}): RunnerBri
   const log = typeof options.log === 'function' ? options.log : () => {}
   const emit = new EventEmitter()
 
-  const onEvent = (callback: (event: any) => void) => {
+  const onEvent = (callback: (event: RunnerBridgeEvent) => void) => {
     emit.on('event', callback)
 
     return () => emit.off('event', callback)
@@ -98,7 +124,7 @@ export function createRunnerBridge(options: RunnerBridgeOptions = {}): RunnerBri
 
   let runnerProcess: null | RunnerProcess = null
   let wsServer: null | RunnerWsServer = null
-  let cachedTools: any[] | null = null
+  let cachedTools: Record<string, unknown>[] | null = null
   let subUnsubFns: Array<() => void> = []
   let endpointFilePath: null | string = null
 
@@ -170,8 +196,9 @@ export function createRunnerBridge(options: RunnerBridgeOptions = {}): RunnerBri
       log(
         `[runner-bridge] wrote endpoint file: transport=${endpoint.transport} path=${endpoint.path} pid=${process.pid}`
       )
-    } catch (error: any) {
-      log(`[runner-bridge] failed to write endpoint file: ${error.message}`)
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error)
+      log(`[runner-bridge] failed to write endpoint file: ${msg}`)
     }
   }
 
@@ -183,9 +210,11 @@ export function createRunnerBridge(options: RunnerBridgeOptions = {}): RunnerBri
     try {
       fs.unlinkSync(endpointFilePath)
       log('[runner-bridge] cleaned up endpoint file')
-    } catch (error: any) {
-      if (error?.code !== 'ENOENT') {
-        log(`[runner-bridge] failed to cleanup endpoint file: ${error.message}`)
+    } catch (error: unknown) {
+      const err = error as { code?: string; message?: string }
+
+      if (err?.code !== 'ENOENT') {
+        log(`[runner-bridge] failed to cleanup endpoint file: ${err.message || String(error)}`)
       }
     }
 
@@ -193,7 +222,7 @@ export function createRunnerBridge(options: RunnerBridgeOptions = {}): RunnerBri
   }
 
   async function rollback(reason: string): Promise<void> {
-    const tasks: Promise<any>[] = []
+    const tasks: Promise<unknown>[] = []
 
     if (wsServer) {
       tasks.push(wsServer.stop().catch(e => e))
@@ -210,7 +239,7 @@ export function createRunnerBridge(options: RunnerBridgeOptions = {}): RunnerBri
     cachedTools = null
   }
 
-  async function start(args: any = {}): Promise<RunnerBridgeStatus> {
+  async function start(args: RunnerBridgeStartOptions = {}): Promise<RunnerBridgeStatus> {
     detachSubs()
 
     if (state.phase === 'starting' || state.phase === 'running' || state.phase === 'stopping') {
@@ -257,7 +286,9 @@ export function createRunnerBridge(options: RunnerBridgeOptions = {}): RunnerBri
       ? wsServerFactory({
           authToken,
           log: options.log,
-          onReverseRpc: reverseRpcFactory ? reverseRpcFactory({ backendSession: args.backendSession, log }) : null
+          onReverseRpc: reverseRpcFactory
+            ? reverseRpcFactory({ backendSession: args.backendSession as ReverseRpcOptions['backendSession'], log })
+            : null
         })
       : null
 
@@ -266,21 +297,26 @@ export function createRunnerBridge(options: RunnerBridgeOptions = {}): RunnerBri
       throw fail('error', new Error('No WS server factory wired.'))
     }
 
-    const offWs = wsServer.onEvent?.(ev => {
+    const offWs = wsServer.onEvent?.((ev: RunnerWsEvent) => {
       if (ev.type === 'runner_ready') {
-        handleRunnerReady(ev)
+        void handleRunnerReady(ev)
       } else if (ev.type === 'tools_changed') {
-        handleToolsChanged()
+        void handleToolsChanged()
       } else if (ev.type === 'disconnected') {
         if (state.phase === 'running') {
           fail('stopped', new Error('Runner disconnected from WS server.'))
         }
       } else if (ev.type === 'error') {
-        log(`[runner-bridge] ws server error: ${ev.error?.message || ev.error}`)
+        const errObj = ev.error as { message?: string }
+        log(`[runner-bridge] ws server error: ${errObj?.message || String(ev.error)}`)
       } else if (ev.type === 'connected') {
         // Connected event
       } else {
-        const detail = ev.type === 'notification' ? `notification ${ev.method}` : ev.type
+        const detail =
+          (ev as { type: string; method?: string }).type === 'notification'
+            ? `notification ${(ev as { method: string }).method}`
+            : 'unknown'
+
         log(`[runner-bridge] unhandled ws server event: ${detail}`)
       }
     })
@@ -317,7 +353,11 @@ export function createRunnerBridge(options: RunnerBridgeOptions = {}): RunnerBri
     return getStatus()
   }
 
-  async function handleRunnerReady(payload: any): Promise<void> {
+  async function handleRunnerReady(payload: {
+    capabilities?: null | RunnerCapabilities
+    probe_failed?: boolean | null
+    version?: null | string
+  }): Promise<void> {
     log('[runner-bridge] runner_ready received')
 
     if (runnerProcess?.signalReady) {
@@ -334,9 +374,10 @@ export function createRunnerBridge(options: RunnerBridgeOptions = {}): RunnerBri
 
     if (state.phase !== 'starting') {
       if (pushConfig) {
-        Promise.resolve(pushConfig()).catch(err =>
-          log(`[runner-bridge] config push on reconnect failed: ${err.message}`)
-        )
+        Promise.resolve(pushConfig()).catch(err => {
+          const msg = err instanceof Error ? err.message : String(err)
+          log(`[runner-bridge] config push on reconnect failed: ${msg}`)
+        })
       }
 
       emit.emit('event', {
@@ -353,8 +394,9 @@ export function createRunnerBridge(options: RunnerBridgeOptions = {}): RunnerBri
     if (pushConfig) {
       try {
         await pushConfig()
-      } catch (err: any) {
-        log(`[runner-bridge] initial config push failed: ${err.message}`)
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err)
+        log(`[runner-bridge] initial config push failed: ${msg}`)
       }
     }
 
@@ -392,16 +434,24 @@ export function createRunnerBridge(options: RunnerBridgeOptions = {}): RunnerBri
 
   async function _fetchAndCacheTools(): Promise<void> {
     try {
-      const result = await wsServer!.call<{ tools?: any[] }>('get_tools', {}, { timeoutMs: 10_000 })
-      cachedTools = result?.tools || []
+      const result = await wsServer!.call<{ tools?: Record<string, unknown>[] }>('get_tools', {}, { timeoutMs: 10_000 })
+      cachedTools = (result?.tools as Record<string, unknown>[]) || []
       log(`[runner-bridge] got ${cachedTools.length} tools from runner`)
 
       if (cachedTools.length > 0) {
-        const names = cachedTools.map(t => t?.function?.name || t?.name).filter(Boolean)
+        const names = cachedTools
+          .map(t => {
+            const func = t?.function as { name?: string } | undefined
+
+            return func?.name || (t?.name as string | undefined)
+          })
+          .filter(Boolean)
+
         log(`[runner-bridge] tool names: ${names.join(', ') || '(unparseable schemas)'}`)
       }
-    } catch (error: any) {
-      log(`[runner-bridge] get_tools failed: ${error.message}`)
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error)
+      log(`[runner-bridge] get_tools failed: ${msg}`)
       cachedTools = []
     }
   }
@@ -418,8 +468,8 @@ export function createRunnerBridge(options: RunnerBridgeOptions = {}): RunnerBri
     setState({ phase: 'stopping' })
     log(`[runner-bridge] stop reason=${reason || 'unspecified'}`)
 
-    const errors: any[] = []
-    const tasks: Promise<any>[] = []
+    const errors: unknown[] = []
+    const tasks: Promise<unknown>[] = []
 
     if (wsServer) {
       tasks.push(
@@ -445,12 +495,17 @@ export function createRunnerBridge(options: RunnerBridgeOptions = {}): RunnerBri
     runnerProcess = null
     cachedTools = null
     setState({ phase: 'stopped', stoppedAt: Date.now() })
-    emit.emit('event', { errors: errors.map(e => e?.message || String(e)), reason, type: 'stopped' })
+    const errorStrings = errors.map(e => (e instanceof Error ? e.message : String(e)))
+    emit.emit('event', { errors: errorStrings, reason, type: 'stopped' })
 
-    return { errors: errors.map(e => e?.message || String(e)), ok: errors.length === 0 }
+    return { errors: errorStrings, ok: errors.length === 0 }
   }
 
-  async function _rpc<T = unknown>(method: string, params: Record<string, unknown>, opts: any = {}): Promise<T> {
+  async function _rpc<T = unknown>(
+    method: string,
+    params: Record<string, unknown>,
+    opts: { id?: number | string; timeoutMs?: number } = {}
+  ): Promise<T> {
     if (!wsServer || !wsServer.getStatus()?.connected) {
       throw new Error('Runner is not connected.')
     }
@@ -458,13 +513,19 @@ export function createRunnerBridge(options: RunnerBridgeOptions = {}): RunnerBri
     return wsServer.call<T>(method, params || {}, opts)
   }
 
-  const invoke = <T = unknown>(name: string, args?: Record<string, unknown>, opts?: any): Promise<T> =>
-    _rpc<T>('execute_tool', { args: args || {}, name }, opts)
+  const invoke = <T = unknown>(
+    name: string,
+    args?: Record<string, unknown>,
+    opts?: { id?: number | string; timeoutMs?: number }
+  ): Promise<T> => _rpc<T>('execute_tool', { args: args || {}, name }, opts)
 
-  const dispatch = <T = unknown>(method: string, params?: Record<string, unknown>, opts?: any): Promise<T> =>
-    _rpc<T>(method, params || {}, opts)
+  const dispatch = <T = unknown>(
+    method: string,
+    params?: Record<string, unknown>,
+    opts?: { id?: number | string; timeoutMs?: number }
+  ): Promise<T> => _rpc<T>(method, params || {}, opts)
 
-  function getTools(): any[] {
+  function getTools(): Record<string, unknown>[] {
     return cachedTools || []
   }
 

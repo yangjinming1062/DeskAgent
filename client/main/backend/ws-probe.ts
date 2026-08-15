@@ -1,8 +1,16 @@
 export const DEFAULT_CONNECT_TIMEOUT_MS = 10_000
 export const DEFAULT_READY_GRACE_MS = 750
 
+export interface WebSocketLike {
+  addEventListener?: (type: string, listener: (...args: unknown[]) => void) => void
+  close?: () => void
+  on?: (type: string, listener: (...args: unknown[]) => void) => void
+}
+
+export type WebSocketConstructor = new (url: string) => WebSocketLike
+
 export interface ProbeOptions {
-  WebSocketImpl?: any
+  WebSocketImpl?: WebSocketConstructor
   connectTimeoutMs?: number
   readyGraceMs?: number
 }
@@ -30,7 +38,7 @@ export function probeGatewayWebSocket(
     let opened = false
     let connectTimer: NodeJS.Timeout | null = null
     let graceTimer: NodeJS.Timeout | null = null
-    let socket: any
+    let socket: null | WebSocketLike = null
 
     const clearTimers = () => {
       if (connectTimer !== null) {
@@ -63,7 +71,7 @@ export function probeGatewayWebSocket(
 
     try {
       socket = new WebSocketImpl(wsUrl)
-    } catch (error: any) {
+    } catch (error: unknown) {
       finish({
         ok: false,
         reason: error instanceof Error ? error.message : String(error)
@@ -78,34 +86,30 @@ export function probeGatewayWebSocket(
       }
 
       opened = true
-      // Upgrade accepted. Give the server a brief window to reject the
-      // credential post-handshake (early close) before declaring success.
       graceTimer = setTimeout(() => {
         finish({ ok: true })
       }, readyGraceMs)
     }
 
     const onMessage = () => {
-      // Any frame means the gateway accepted us and is talking — unambiguous
-      // success, no need to wait out the grace window.
       finish({ ok: true })
     }
 
-    const onError = (event: any) => {
+    const onError = (...args: unknown[]) => {
       finish({
         ok: false,
-        reason: extractErrorReason(event) || 'WebSocket connection failed.'
+        reason: extractErrorReason(args[0]) || 'WebSocket connection failed.'
       })
     }
 
-    const onClose = (event: any) => {
+    const onClose = (...args: unknown[]) => {
       if (settled) {
         return
       }
 
+      const event = args[0]
+
       if (opened) {
-        // Opened, then closed inside the grace window: the upgrade was accepted
-        // but the session was refused.
         finish({
           ok: false,
           reason: closeReason(event, 'The gateway accepted the connection then closed it (credential rejected?).')
@@ -136,7 +140,7 @@ export function probeGatewayWebSocket(
   })
 }
 
-function addListener(socket: any, type: string, handler: (...args: any[]) => void): void {
+function addListener(socket: WebSocketLike, type: string, handler: (...args: unknown[]) => void): void {
   if (typeof socket.addEventListener === 'function') {
     socket.addEventListener(type, handler)
 
@@ -148,7 +152,7 @@ function addListener(socket: any, type: string, handler: (...args: any[]) => voi
   }
 }
 
-function extractErrorReason(event: any): string {
+function extractErrorReason(event: unknown): string {
   if (!event) {
     return ''
   }
@@ -157,7 +161,8 @@ function extractErrorReason(event: any): string {
     return event.message
   }
 
-  const err = event.error || event.message
+  const record = event as { error?: unknown; message?: unknown }
+  const err = record.error || record.message
 
   if (err instanceof Error) {
     return err.message
@@ -170,9 +175,10 @@ function extractErrorReason(event: any): string {
   return ''
 }
 
-function closeReason(event: any, fallback: string): string {
-  const code = event && typeof event.code === 'number' ? event.code : null
-  const reason = event && typeof event.reason === 'string' ? event.reason.trim() : ''
+function closeReason(event: unknown, fallback: string): string {
+  const record = event as { code?: unknown; reason?: unknown } | null | undefined
+  const code = record && typeof record.code === 'number' ? record.code : null
+  const reason = record && typeof record.reason === 'string' ? record.reason.trim() : ''
 
   if (code && reason) {
     return `${fallback} (code ${code}: ${reason})`

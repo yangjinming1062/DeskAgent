@@ -1,14 +1,14 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { probeGatewayWebSocket } from './ws-probe'
+import { probeGatewayWebSocket, type WebSocketConstructor, type WebSocketLike } from './ws-probe'
 
 function makeFakeWs() {
-  const instances: any[] = []
+  const instances: FakeWs[] = []
 
-  class FakeWs {
+  class FakeWs implements WebSocketLike {
     closed: boolean
-    listeners: Record<string, any[]>
+    listeners: Record<string, ((...args: unknown[]) => void)[]>
     url: string
 
     constructor(url: string) {
@@ -17,13 +17,13 @@ function makeFakeWs() {
       this.closed = false
       instances.push(this)
     }
-    addEventListener(type: string, fn: any) {
+    addEventListener(type: string, fn: (...args: unknown[]) => void) {
       ;(this.listeners[type] ||= []).push(fn)
     }
     close() {
       this.closed = true
     }
-    emit(type: string, event?: any) {
+    emit(type: string, event?: unknown) {
       for (const fn of this.listeners[type] || []) {
         fn(event)
       }
@@ -100,22 +100,31 @@ test('probe times out when the socket never opens', async () => {
   })
 
   assert.equal(result.ok, false)
-  assert.match(result.reason!, /Timed out/)
+  assert.match(result.reason!, /Timed out after 20ms/)
 })
 
 test('probe fails gracefully when the constructor throws', async () => {
-  class ThrowingWs {
+  class ExplodingWs {
     constructor() {
-      throw new Error('bad url')
+      throw new Error('boom')
     }
   }
-  const result = await probeGatewayWebSocket('ws://host/api/ws', { WebSocketImpl: ThrowingWs, ...FAST })
+
+  const result = await probeGatewayWebSocket('ws://host/api/ws?token=t', {
+    WebSocketImpl: ExplodingWs as unknown as WebSocketConstructor,
+    ...FAST
+  })
+
   assert.equal(result.ok, false)
-  assert.match(result.reason!, /bad url/)
+  assert.match(result.reason!, /boom/)
 })
 
 test('probe reports unavailable when no WebSocket implementation is provided', async () => {
-  const result = await probeGatewayWebSocket('ws://host/api/ws', { WebSocketImpl: undefined })
+  const result = await probeGatewayWebSocket('ws://host/api/ws?token=t', {
+    WebSocketImpl: undefined,
+    ...FAST
+  })
+
   assert.equal(result.ok, false)
   assert.match(result.reason!, /not available/)
 })

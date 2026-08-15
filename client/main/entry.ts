@@ -29,7 +29,6 @@ import { createBackendSession } from './backend/session'
 import { registerAuthIpc } from './ipc/auth'
 import { registerClipboardIpc } from './ipc/clipboard'
 import { registerConnectionIpc } from './ipc/connection'
-import { registerExternalIpc } from './ipc/external'
 import { registerFilesIpc } from './ipc/files'
 import { registerLogIpc } from './ipc/log'
 import { createEnginePrefsCache, registerMediaIpc } from './ipc/media'
@@ -37,12 +36,12 @@ import { createModelDiskCache } from './ipc/model-disk-cache'
 import { registerOnboardingAudioIpc } from './ipc/onboarding-audio'
 import { autoStartBridge, autoStopBridge, registerRunnerIpc } from './ipc/runner'
 import { registerRunnerConfigIpc } from './ipc/runner-config'
-import { registerSettingsIpc } from './ipc/settings'
 import { registerSkillsIpc } from './ipc/skills'
 import { registerSpriteIpc } from './ipc/sprite'
 import { registerSystemIpc } from './ipc/system'
 import { registerTitlebarIpc } from './ipc/titlebar'
 import { registerUpdateIpc } from './ipc/update'
+import { createDesktopLogger } from './lifecycle/desktop-log'
 import { detectRemoteDisplay } from './lifecycle/platform'
 import {
   destroyTray,
@@ -67,6 +66,7 @@ import {
 import { deskagentHome } from './security/paths'
 import { buildClientContext } from './shared/client-context'
 import { resolveBackendUrl, resolveNormalizedBackendUrl } from './shared/config'
+import type { DeskAgentConnection, DesktopBootProgress } from './shared/ipc-contracts'
 import * as runnerConfigStore from './shared/lib/runner-config-store'
 import { extensionForMimeType, mimeTypeForPath, STREAMABLE_MEDIA_EXTS } from './shared/mime'
 import { atomicWriteFile, directoryExists, fileExists, sendToMain, sleep } from './shared/utils'
@@ -112,13 +112,6 @@ app.setPath('userData', DESKAGENT_HOME)
 
 runnerConfigStore.init({ deskagentHome: DESKAGENT_HOME })
 
-const DESKTOP_LOG_PATH = path.join(DESKAGENT_HOME, 'logs', 'desktop.log')
-const DESKTOP_LOG_FLUSH_MS = 120
-const DESKTOP_LOG_BUFFER_MAX_CHARS = 64 * 1024
-const DESKTOP_LOG_MAX_BYTES = 10 * 1024 * 1024
-const DESKTOP_LOG_BACKUP_COUNT = 3
-const DESKTOP_LOG_DISCARD_BYTES = DESKTOP_LOG_MAX_BYTES * 4
-const desktopLogBackupPath = (n: number) => `${DESKTOP_LOG_PATH}.${n}`
 const APP_NAME = 'DeskAgent'
 const TITLEBAR_HEIGHT = 34
 const MACOS_TRAFFIC_LIGHTS_HEIGHT = 14
@@ -217,175 +210,24 @@ let spriteBoundsListenerInstalled = false
 const RENDERER_RELOAD_WINDOW_MS = 60_000
 const RENDERER_RELOAD_MAX = 3
 let rendererReloadTimes: number[] = []
-const deskagentLog: string[] = []
+
+const desktopLogger = createDesktopLogger({
+  deskagentHome: DESKAGENT_HOME,
+  isPackaged: IS_PACKAGED
+})
+
+const rememberLog = (chunk: unknown): void => desktopLogger.rememberLog(chunk)
 let previewShortcutActive = false
-let desktopLogBuffer = ''
-let desktopLogFlushTimer: NodeJS.Timeout | null = null
-let desktopLogFlushPromise = Promise.resolve()
 let nativeThemeListenerInstalled = false
 
-let bootProgressState = {
+let bootProgressState: DesktopBootProgress = {
   error: null,
+  fakeMode: false,
   message: 'Waiting to start DeskAgent backend',
   phase: 'idle',
   progress: 0,
   running: false,
   timestamp: Date.now()
-}
-
-function planDesktopLogRotation(size: number): Array<[string, string, string?]> {
-  if (size < DESKTOP_LOG_MAX_BYTES) {
-    return []
-  }
-
-  const backups = (n: number) => Array.from({ length: n }, (_, i) => desktopLogBackupPath(i + 1))
-
-  if (size > DESKTOP_LOG_DISCARD_BYTES) {
-    return [DESKTOP_LOG_PATH, ...backups(DESKTOP_LOG_BACKUP_COUNT)].map(p => ['rm', p])
-  }
-
-  const ops: Array<[string, string, string?]> = [['rm', desktopLogBackupPath(DESKTOP_LOG_BACKUP_COUNT)]]
-
-  for (let i = DESKTOP_LOG_BACKUP_COUNT - 1; i >= 1; i--) {
-    ops.push(['mv', desktopLogBackupPath(i), desktopLogBackupPath(i + 1)])
-  }
-
-  ops.push(['mv', DESKTOP_LOG_PATH, desktopLogBackupPath(1)])
-
-  return ops
-}
-
-function rotateDesktopLogIfNeededSync(): void {
-  let size: number
-
-  try {
-    size = fs.statSync(DESKTOP_LOG_PATH).size
-  } catch {
-    return
-  }
-
-  for (const [op, src, dst] of planDesktopLogRotation(size)) {
-    try {
-      if (op === 'rm') {
-        fs.rmSync(src, { force: true })
-      } else {
-        fs.renameSync(src, dst!)
-      }
-    } catch {
-      // Best effort
-    }
-  }
-}
-
-async function rotateDesktopLogIfNeededAsync(): Promise<void> {
-  let size: number
-
-  try {
-    size = (await fs.promises.stat(DESKTOP_LOG_PATH)).size
-  } catch {
-    return
-  }
-
-  for (const [op, src, dst] of planDesktopLogRotation(size)) {
-    try {
-      if (op === 'rm') {
-        await fs.promises.rm(src, { force: true })
-      } else {
-        await fs.promises.rename(src, dst!)
-      }
-    } catch {
-      // Best effort
-    }
-  }
-}
-
-function flushDesktopLogBufferSync(): void {
-  if (!desktopLogBuffer) {
-    return
-  }
-
-  const chunk = desktopLogBuffer
-  desktopLogBuffer = ''
-
-  try {
-    fs.mkdirSync(path.dirname(DESKTOP_LOG_PATH), { recursive: true })
-    rotateDesktopLogIfNeededSync()
-    fs.appendFileSync(DESKTOP_LOG_PATH, chunk)
-  } catch {
-    // Best effort
-  }
-}
-
-function flushDesktopLogBufferAsync(): Promise<void> {
-  if (!desktopLogBuffer) {
-    return desktopLogFlushPromise
-  }
-
-  const chunk = desktopLogBuffer
-  desktopLogBuffer = ''
-
-  desktopLogFlushPromise = desktopLogFlushPromise
-    .then(async () => {
-      await fs.promises.mkdir(path.dirname(DESKTOP_LOG_PATH), { recursive: true })
-      await rotateDesktopLogIfNeededAsync()
-      await fs.promises.appendFile(DESKTOP_LOG_PATH, chunk)
-    })
-    .catch(() => {
-      // Best effort
-    })
-
-  return desktopLogFlushPromise
-}
-
-function scheduleDesktopLogFlush(): void {
-  if (desktopLogFlushTimer) {
-    return
-  }
-
-  desktopLogFlushTimer = setTimeout(() => {
-    desktopLogFlushTimer = null
-    void flushDesktopLogBufferAsync()
-  }, DESKTOP_LOG_FLUSH_MS)
-}
-
-function rememberLog(chunk: any): void {
-  const text = String(chunk || '').trim()
-
-  if (!text) {
-    return
-  }
-
-  if (!IS_PACKAGED) {
-    const colored = process.stdout.isTTY
-
-    if (colored) {
-      process.stdout.write(`\x1b[2m[deskagent]\x1b[0m ${text}\n`)
-    } else {
-      process.stdout.write(`[deskagent] ${text}\n`)
-    }
-  }
-
-  const lines = text.split(/\r?\n/).map(line => `[deskagent] ${line}`)
-  deskagentLog.push(...lines)
-
-  if (deskagentLog.length > 300) {
-    deskagentLog.splice(0, deskagentLog.length - 300)
-  }
-
-  desktopLogBuffer += `${lines.join('\n')}\n`
-
-  if (desktopLogBuffer.length >= DESKTOP_LOG_BUFFER_MAX_CHARS) {
-    if (desktopLogFlushTimer) {
-      clearTimeout(desktopLogFlushTimer)
-      desktopLogFlushTimer = null
-    }
-
-    void flushDesktopLogBufferAsync()
-
-    return
-  }
-
-  scheduleDesktopLogFlush()
 }
 
 function openExternalUrl(rawUrl: string): boolean {
@@ -1262,7 +1104,7 @@ async function resolveRemoteBackend(): Promise<null | { baseUrl: string }> {
 }
 
 let getAuthToken = (): string | null => null
-let cachedBackend: any = null
+let cachedBackend: DeskAgentConnection | null = null
 
 function resetBackendCache(): void {
   cachedBackend = null
@@ -1274,17 +1116,20 @@ async function mintWsTicket(baseUrl: string, token: string | null): Promise<stri
   }
 
   try {
-    const res = await fetchJson(`${baseUrl}/api/user/ws-ticket`, token, { method: 'POST', timeoutMs: 5000 })
+    const res = (await fetchJson(`${baseUrl}/api/user/ws-ticket`, token, { method: 'POST', timeoutMs: 5000 })) as {
+      access_token?: string
+    }
 
     return res?.access_token || null
-  } catch (error: any) {
-    rememberLog(`[ws-ticket] mint failed: ${error?.message || error}`)
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : String(error)
+    rememberLog(`[ws-ticket] mint failed: ${msg}`)
 
     return null
   }
 }
 
-async function ensureBackend(): Promise<any> {
+async function ensureBackend(): Promise<DeskAgentConnection> {
   if (cachedBackend) {
     const token = getAuthToken()
     const tokenChanged = token !== cachedBackend.token
@@ -1330,7 +1175,7 @@ async function ensureBackend(): Promise<any> {
     cachedBackend = {
       authMode: 'token',
       baseUrl: remote.baseUrl,
-      logs: deskagentLog.slice(-80),
+      logs: desktopLogger.getLogs().slice(-80),
       mode: 'remote',
       source: 'env',
       token,
@@ -1582,8 +1427,6 @@ registerClipboardIpc({
   writeComposerImage
 })
 registerLogIpc({ ipcMain, log: chunk => rememberLog(chunk) })
-registerExternalIpc()
-registerSettingsIpc()
 registerFilesIpc({
   electron: { dialog, getMainWindow: () => mainWindow },
   hardening: { DATA_URL_READ_MAX_BYTES, resolveReadableFileForIpc },
@@ -1692,7 +1535,7 @@ const bridgeDeps: any = {
 registerAuthIpc({ deps: bridgeDeps, ipcMain })
 registerRunnerIpc({ deps: bridgeDeps, ipcMain })
 registerRunnerConfigIpc({ ipcMain })
-registerSkillsIpc({ deskagentHome: DESKAGENT_HOME, ipcMain, runnerBridge: bridgeDeps.runnerBridge })
+registerSkillsIpc({ deskagentHome: DESKAGENT_HOME, getRunnerBridge: () => bridgeDeps.runnerBridge, ipcMain })
 registerUpdateIpc({
   electron: { app },
   getMainWindow: () => mainWindow,
@@ -1826,12 +1669,7 @@ app.on('before-quit', () => {
     }
   }
 
-  if (desktopLogFlushTimer) {
-    clearTimeout(desktopLogFlushTimer)
-    desktopLogFlushTimer = null
-  }
-
-  flushDesktopLogBufferSync()
+  desktopLogger.flushSync()
 })
 
 app.on('window-all-closed', () => {

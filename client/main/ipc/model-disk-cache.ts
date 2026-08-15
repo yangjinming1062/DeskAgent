@@ -4,6 +4,7 @@ import fsp from 'node:fs/promises'
 import path from 'node:path'
 import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
+import type { ReadableStream as NodeReadableStream } from 'node:stream/web'
 
 export const MAX_CACHE_FILES = 20
 export const MAX_CACHE_BYTES = 1024 * 1024 * 1024 // 1 GB
@@ -65,7 +66,7 @@ export function createModelDiskCache({
     return path.join(cacheDir, `${hash}.partial`)
   }
 
-  async function has(hash?: string | null): Promise<boolean> {
+  async function has(hash?: null | string): Promise<boolean> {
     if (!hash || typeof hash !== 'string') {
       return false
     }
@@ -79,7 +80,7 @@ export function createModelDiskCache({
     }
   }
 
-  async function getPath(hash?: string | null): Promise<null | string> {
+  async function getPath(hash?: null | string): Promise<null | string> {
     if (await has(hash)) {
       return getGlbPath(hash!)
     }
@@ -87,7 +88,7 @@ export function createModelDiskCache({
     return null
   }
 
-  async function readBuffer(hash?: string | null): Promise<Buffer | null> {
+  async function readBuffer(hash?: null | string): Promise<Buffer | null> {
     const glbPath = await getPath(hash)
 
     if (!glbPath) {
@@ -211,8 +212,7 @@ export function createModelDiskCache({
 
         if (res.status === 416) {
           await fsp.unlink(partialPath).catch(() => {})
-          const error: any = new Error('416 Range Not Satisfiable')
-          error.status = 416
+          const error = Object.assign(new Error('416 Range Not Satisfiable'), { status: 416 })
           throw error
         }
 
@@ -226,12 +226,12 @@ export function createModelDiskCache({
         flags: isPartial && resumeFromBytes > 0 ? 'a' : 'w'
       })
 
-      const bodyStream = res.body as any
+      const bodyStream = res.body
       let readableNodeStream: Readable
 
-      if (bodyStream && typeof bodyStream.getReader === 'function') {
-        readableNodeStream = Readable.fromWeb(bodyStream)
-      } else if (bodyStream && typeof bodyStream[Symbol.asyncIterator] === 'function') {
+      if (bodyStream && typeof (bodyStream as { getReader?: unknown }).getReader === 'function') {
+        readableNodeStream = Readable.fromWeb(bodyStream as unknown as NodeReadableStream)
+      } else if (bodyStream && Symbol.asyncIterator in bodyStream) {
         readableNodeStream = Readable.from(bodyStream)
       } else {
         const arrayBuf = await res.arrayBuffer()
@@ -250,13 +250,8 @@ export function createModelDiskCache({
         }
       }
 
-      const rawEtag = typeof res.headers?.get === 'function' ? res.headers.get('etag') : (res.headers as any)?.['etag']
-
-      const rawSha =
-        typeof res.headers?.get === 'function'
-          ? res.headers.get('x-content-sha256')
-          : (res.headers as any)?.['x-content-sha256']
-
+      const rawEtag = res.headers.get('etag')
+      const rawSha = res.headers.get('x-content-sha256')
       const headerSha = rawSha || rawEtag?.replace(/"/g, '')
 
       return headerSha || null
@@ -269,8 +264,10 @@ export function createModelDiskCache({
 
     try {
       headerSha = await attemptDownload(resumeBytes)
-    } catch (err: any) {
-      if (err?.status === 416) {
+    } catch (err: unknown) {
+      const errObj = err as { status?: number }
+
+      if (errObj?.status === 416) {
         headerSha = await attemptDownload(0)
       } else {
         throw err

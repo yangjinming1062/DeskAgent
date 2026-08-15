@@ -2,18 +2,25 @@ import fsp from 'node:fs/promises'
 
 import type { IpcMain } from 'electron'
 
+import type { DeskAgentApiRequest, DeskAgentConnection, DesktopBootProgress } from '../shared/ipc-contracts'
 import { dataUrlFromBuffer } from '../shared/mime'
+
+import type { ModelDiskCache } from './model-disk-cache'
 
 export interface ConnectionIpcDeps {
   defaultFetchTimeoutMs?: number
-  ensureBackend: () => Promise<{ baseUrl: string; token?: string; wsUrl: string }>
-  fetchJson: (url: string, token?: string, options?: any) => Promise<any>
-  getBootProgressState: () => any
+  ensureBackend: () => Promise<DeskAgentConnection>
+  fetchJson: (
+    url: string,
+    token?: string,
+    options?: { body?: unknown; method?: string; timeoutMs?: number }
+  ) => Promise<unknown>
+  getBootProgressState: () => DesktopBootProgress
   ipcMain: IpcMain
-  modelDiskCache?: any
+  modelDiskCache?: null | ModelDiskCache
   resetBackendCache?: () => void
   resolvePathTimeoutMs: (path?: string, method?: string, fallbackMs?: number) => number
-  resolveTimeoutMs: (timeoutMs?: any, fallbackMs?: number) => number
+  resolveTimeoutMs: (timeoutMs?: number | string | null, fallbackMs?: number) => number
 }
 
 export function registerConnectionIpc({
@@ -35,20 +42,22 @@ export function registerConnectionIpc({
   })
   ipcMain.handle('deskagent:boot-progress:get', async () => getBootProgressState())
 
-  ipcMain.handle('deskagent:api', async (_event, request) => {
+  ipcMain.handle('deskagent:api', async (_event, request: DeskAgentApiRequest) => {
     const connection = await ensureBackend()
     const fallback = resolvePathTimeoutMs(request?.path, request?.method, defaultFetchTimeoutMs)
     const timeoutMs = resolveTimeoutMs(request?.timeoutMs, fallback)
     const url = `${connection.baseUrl}${request.path}`
 
     try {
-      return await fetchJson(url, connection.token, {
+      return await fetchJson(url, connection.token || undefined, {
         body: request?.body,
         method: request?.method,
         timeoutMs
       })
-    } catch (error: any) {
-      if (error?.message?.startsWith('401 ') && connection.token) {
+    } catch (error: unknown) {
+      const err = error as { message?: string }
+
+      if (err?.message?.startsWith('401 ') && connection.token) {
         try {
           _event.sender.send('deskagent:auth:session-expired')
         } catch {
@@ -60,7 +69,7 @@ export function registerConnectionIpc({
     }
   })
 
-  ipcMain.handle('deskagent:api:asset', async (_event, request) => {
+  ipcMain.handle('deskagent:api:asset', async (_event, request?: { url?: string }) => {
     const connection = await ensureBackend()
     const raw = String(request?.url || '')
 
@@ -96,27 +105,30 @@ export function registerConnectionIpc({
     return dataUrlFromBuffer(Buffer.from(await res.arrayBuffer()), mime)
   })
 
-  ipcMain.handle('deskagent:api:asset-cached-path', async (_event, request) => {
-    const connection = await ensureBackend()
-    const raw = String(request?.url || '')
+  ipcMain.handle(
+    'deskagent:api:asset-cached-path',
+    async (_event, request?: { contentHash?: string; url?: string }) => {
+      const connection = await ensureBackend()
+      const raw = String(request?.url || '')
 
-    if (!raw) {
-      throw new Error('asset url is required')
+      if (!raw) {
+        throw new Error('asset url is required')
+      }
+
+      if (!modelDiskCache) {
+        throw new Error('model disk cache is unavailable')
+      }
+
+      return await modelDiskCache.ensureCached({
+        baseUrl: connection.baseUrl,
+        contentHash: request?.contentHash,
+        token: connection.token || undefined,
+        url: raw
+      })
     }
+  )
 
-    if (!modelDiskCache) {
-      throw new Error('model disk cache is unavailable')
-    }
-
-    return await modelDiskCache.ensureCached({
-      baseUrl: connection.baseUrl,
-      contentHash: request?.contentHash,
-      token: connection.token,
-      url: raw
-    })
-  })
-
-  ipcMain.handle('deskagent:api:asset-buffer', async (_event, request) => {
+  ipcMain.handle('deskagent:api:asset-buffer', async (_event, request?: { contentHash?: string; url?: string }) => {
     const connection = await ensureBackend()
     const raw = String(request?.url || '')
 
@@ -133,7 +145,7 @@ export function registerConnectionIpc({
       const cached = await modelDiskCache.ensureCached({
         baseUrl: connection.baseUrl,
         contentHash: request?.contentHash,
-        token: connection.token,
+        token: connection.token || undefined,
         url: raw
       })
 

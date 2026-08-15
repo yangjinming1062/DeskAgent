@@ -56,10 +56,11 @@ export function normalizeBaseUrl(raw?: null | string): string {
 
   try {
     parsed = new URL(value)
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : String(error)
     throw new BackendRequestError({
       code: 'invalid-base-url',
-      message: `Backend base URL is not valid: ${error.message}`
+      message: `Backend base URL is not valid: ${msg}`
     })
   }
 
@@ -88,7 +89,7 @@ export function resolveTimeoutMs(timeoutMs?: null | number | string): number {
 }
 
 // JSON → JSON-stringified, string → as is, Buffer/Uint8Array → bytes.
-function encodeBody(body: unknown): { body: any; contentType: null | string } {
+function encodeBody(body: unknown): { body: string | Buffer | Uint8Array | undefined; contentType: null | string } {
   if (body === undefined || body === null) {
     return { body: undefined, contentType: null }
   }
@@ -108,7 +109,15 @@ function encodeBody(body: unknown): { body: any; contentType: null | string } {
   return { body: JSON.stringify(body), contentType: 'application/json' }
 }
 
-async function decodeResponseBody(res: any): Promise<unknown> {
+export interface MinimalFetchResponse {
+  headers: { get: (name: string) => null | string }
+  ok: boolean
+  status: number
+  statusText?: string
+  text: () => Promise<string>
+}
+
+async function decodeResponseBody(res: MinimalFetchResponse): Promise<unknown> {
   const contentType = res.headers.get('content-type') || ''
   const isJson = contentType.includes('application/json')
   const text = await res.text()
@@ -128,9 +137,11 @@ async function decodeResponseBody(res: any): Promise<unknown> {
   return text
 }
 
+export type FetchFunction = (url: string, init?: RequestInit) => Promise<MinimalFetchResponse | Response>
+
 export interface BackendClientOptions {
   baseUrl?: string
-  fetch?: (url: string, init?: any) => Promise<any>
+  fetch?: FetchFunction
   timeoutMs?: number
   userAgent?: string
 }
@@ -138,7 +149,7 @@ export interface BackendClientOptions {
 export interface BackendRequestOptions {
   body?: unknown
   headers?: Record<string, string>
-  query?: Record<string, any>
+  query?: Record<string, unknown>
   signal?: AbortSignal
   timeoutMs?: number
   token?: string
@@ -173,10 +184,11 @@ export function createBackendClient(options: BackendClientOptions = {}): Backend
 
     try {
       url = new URL(pathStr, baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`)
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error)
       throw new BackendRequestError({
         code: 'invalid-path',
-        message: `Backend request path is not valid: ${error.message}`
+        message: `Backend request path is not valid: ${msg}`
       })
     }
 
@@ -212,7 +224,7 @@ export function createBackendClient(options: BackendClientOptions = {}): Backend
       }
     }
 
-    let res: any
+    let res: MinimalFetchResponse
 
     try {
       res = await fetchImpl(url.toString(), {
@@ -221,26 +233,30 @@ export function createBackendClient(options: BackendClientOptions = {}): Backend
         method,
         signal: controller.signal
       })
-    } catch (error: any) {
+    } catch (error: unknown) {
       clearTimeout(timeoutHandle)
-      const isAbort = error?.name === 'AbortError'
+      const errObj = error as { message?: string; name?: string } | undefined
+      const isAbort = errObj?.name === 'AbortError'
+      const errMessage = errObj?.message || String(error)
       throw new BackendRequestError({
         cause: error,
         code: isAbort ? 'timeout' : 'network-error',
         message: isAbort
           ? `Backend request timed out after ${effectiveTimeoutMs}ms: ${method} ${url.pathname}`
-          : `Backend request failed: ${method} ${url.pathname} (${error.message || error})`
+          : `Backend request failed: ${method} ${url.pathname} (${errMessage})`
       })
     }
 
     clearTimeout(timeoutHandle)
 
-    const payload = (await decodeResponseBody(res)) as any
+    const payload = await decodeResponseBody(res)
 
     if (!res.ok) {
+      const payloadObj = payload as { detail?: string } | null | undefined
+
       const detail =
-        payload && typeof payload === 'object' && typeof payload.detail === 'string'
-          ? payload.detail
+        payloadObj && typeof payloadObj === 'object' && typeof payloadObj.detail === 'string'
+          ? payloadObj.detail
           : typeof payload === 'string' && payload
             ? payload
             : `${res.status} ${res.statusText || ''}`.trim()

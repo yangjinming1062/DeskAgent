@@ -4,7 +4,7 @@ import os from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
 
-import { registerMediaIpc, ttsAudioCache } from './media'
+import { type EngineMode, registerMediaIpc, ttsAudioCache } from './media'
 import { cacheKey } from './tts-disk-cache'
 
 const ORIG_FETCH = global.fetch
@@ -55,15 +55,15 @@ function toolSchema(name: string) {
 function setup({
   bridge = null,
   deskagentHome = null,
-  stt = 'auto',
+  stt = 'auto' as EngineMode,
   sttSilentFallback = true,
-  tts = 'auto'
+  tts = 'auto' as EngineMode
 }: {
   bridge?: any
   deskagentHome?: null | string
-  stt?: string
+  stt?: EngineMode
   sttSilentFallback?: boolean
-  tts?: string
+  tts?: EngineMode
 } = {}) {
   const ipc = makeFakeIpc()
   registerMediaIpc({

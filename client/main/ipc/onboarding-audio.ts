@@ -14,7 +14,10 @@ export interface OnboardingAudioIpcDeps {
   deskagentHome?: null | string
   devAudioRoot?: string
   hardening: {
-    resolveReadableFileForIpc: (filePath: string, options: any) => Promise<{ resolvedPath: string; stat: any }>
+    resolveReadableFileForIpc: (
+      filePath: string,
+      options?: { maxBytes?: number; purpose?: string }
+    ) => Promise<{ resolvedPath: string; stat: fs.Stats }>
   }
   ipcMain: IpcMain
   mimeTypeForPath: (filePath: string) => string
@@ -61,7 +64,7 @@ export function registerOnboardingAudioIpc({
     devAudioRoot = path.resolve(repoRoot, 'installer/payload/onboarding-audio/zh')
   }
 
-  ipcMain.handle('deskagent:onboardingAudio:read', async (_event, tag) => {
+  ipcMain.handle('deskagent:onboardingAudio:read', async (_event, tag: string) => {
     if (typeof tag !== 'string' || !TAG_RE.test(tag)) {
       throw new Error(`invalid onboarding audio tag: ${tag}`)
     }

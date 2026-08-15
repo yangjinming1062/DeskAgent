@@ -1,23 +1,27 @@
 import type { IpcMain } from 'electron'
 
+import type { FetchFunction } from '../backend/client'
+import type { BackendSession, BackendSessionOptions, SessionSnapshot } from '../backend/session'
+import type { SafeStorageApi } from '../security/hardening'
 import { resolveBackendUrl, writeStoredBackendUrl } from '../shared/config'
+import type { DesktopActivatePayload } from '../shared/ipc-contracts'
 
 export interface AuthIpcDeps {
   app: { getPath: (name: string) => string }
-  backendSession?: any
-  broadcastAuthChanged?: (session: any) => void
-  buildClientContext?: () => any
-  createBackendSession: (options: any) => any
+  backendSession?: null | BackendSession
+  broadcastAuthChanged?: (session: null | SessionSnapshot) => void
+  buildClientContext?: () => { client_context?: unknown }
+  createBackendSession: (options: BackendSessionOptions) => BackendSession
   deskagentHome?: null | string
-  electronNet: { fetch: (url: string, init?: any) => Promise<any> }
+  electronNet: { fetch: FetchFunction }
   rebuildTrayMenu?: () => void
   rememberLog: (chunk: string) => void
   resetBackendCache?: () => void
   resolveDeskAgentVersion: () => string
-  safeStorage?: any
+  safeStorage?: null | SafeStorageApi
 }
 
-export function ensureBackendSession(deps: AuthIpcDeps): any {
+export function ensureBackendSession(deps: AuthIpcDeps): BackendSession {
   if (deps.backendSession) {
     return deps.backendSession
   }
@@ -25,7 +29,7 @@ export function ensureBackendSession(deps: AuthIpcDeps): any {
   deps.backendSession = deps.createBackendSession({
     appVersion: deps.resolveDeskAgentVersion(),
     defaultBaseUrl: resolveBackendUrl(deps.deskagentHome),
-    fetchImpl: (url: string, options: any) => deps.electronNet.fetch(url, options),
+    fetchImpl: (url: string, options?: RequestInit) => deps.electronNet.fetch(url, options),
     log: (chunk: string) => deps.rememberLog(chunk),
     safeStorage: deps.safeStorage,
     userDataDir: deps.app.getPath('userData')
@@ -33,7 +37,7 @@ export function ensureBackendSession(deps: AuthIpcDeps): any {
 
   deps.backendSession
     .restoreSession()
-    .then((snapshot: any) => {
+    .then((snapshot: null | SessionSnapshot) => {
       if (snapshot) {
         deps.rebuildTrayMenu?.()
         deps.broadcastAuthChanged?.(snapshot)
@@ -47,7 +51,7 @@ export function ensureBackendSession(deps: AuthIpcDeps): any {
 }
 
 export function registerAuthIpc({ deps, ipcMain }: { deps: AuthIpcDeps; ipcMain: IpcMain }): void {
-  ipcMain.handle('deskagent:auth:activate', async (_event, payload) => {
+  ipcMain.handle('deskagent:auth:activate', async (_event, payload: DesktopActivatePayload) => {
     const session = ensureBackendSession(deps)
     const built = deps.buildClientContext?.() ?? {}
 
@@ -68,7 +72,7 @@ export function registerAuthIpc({ deps, ipcMain }: { deps: AuthIpcDeps; ipcMain:
     return result
   })
 
-  ipcMain.handle('deskagent:auth:refresh', async (_event, payload) => {
+  ipcMain.handle('deskagent:auth:refresh', async (_event, payload?: { clientContext?: unknown }) => {
     const session = ensureBackendSession(deps)
     const built = deps.buildClientContext?.() ?? {}
 

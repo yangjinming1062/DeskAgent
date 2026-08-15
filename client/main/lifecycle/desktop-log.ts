@@ -1,0 +1,197 @@
+import fs from 'node:fs'
+import path from 'node:path'
+
+export const DESKTOP_LOG_FLUSH_MS = 120
+export const DESKTOP_LOG_BUFFER_MAX_CHARS = 64 * 1024
+export const DESKTOP_LOG_MAX_BYTES = 10 * 1024 * 1024
+export const DESKTOP_LOG_BACKUP_COUNT = 3
+export const DESKTOP_LOG_DISCARD_BYTES = DESKTOP_LOG_MAX_BYTES * 4
+export const MAX_IN_MEMORY_LOGS = 300
+
+export interface DesktopLoggerOptions {
+  deskagentHome: string
+  isPackaged?: boolean
+}
+
+export interface DesktopLogger {
+  flushAsync: () => Promise<void>
+  flushSync: () => void
+  getLogs: () => string[]
+  logPath: string
+  planRotation: (size: number) => Array<[string, string, string?]>
+  rememberLog: (chunk: unknown) => void
+}
+
+export function createDesktopLogger({ deskagentHome, isPackaged = true }: DesktopLoggerOptions): DesktopLogger {
+  const logPath = path.join(deskagentHome, 'logs', 'desktop.log')
+  const logBackupPath = (n: number) => `${logPath}.${n}`
+
+  const inMemoryLogs: string[] = []
+  let buffer = ''
+  let flushTimer: NodeJS.Timeout | null = null
+  let flushPromise = Promise.resolve()
+
+  function planRotation(size: number): Array<[string, string, string?]> {
+    if (size < DESKTOP_LOG_MAX_BYTES) {
+      return []
+    }
+
+    const backups = (n: number) => Array.from({ length: n }, (_, i) => logBackupPath(i + 1))
+
+    if (size > DESKTOP_LOG_DISCARD_BYTES) {
+      return [logPath, ...backups(DESKTOP_LOG_BACKUP_COUNT)].map(p => ['rm', p])
+    }
+
+    const ops: Array<[string, string, string?]> = [['rm', logBackupPath(DESKTOP_LOG_BACKUP_COUNT)]]
+
+    for (let i = DESKTOP_LOG_BACKUP_COUNT - 1; i >= 1; i--) {
+      ops.push(['mv', logBackupPath(i), logBackupPath(i + 1)])
+    }
+
+    ops.push(['mv', logPath, logBackupPath(1)])
+
+    return ops
+  }
+
+  function rotateSync(): void {
+    let size: number
+
+    try {
+      size = fs.statSync(logPath).size
+    } catch {
+      return
+    }
+
+    for (const [op, src, dst] of planRotation(size)) {
+      try {
+        if (op === 'rm') {
+          fs.rmSync(src, { force: true })
+        } else {
+          fs.renameSync(src, dst!)
+        }
+      } catch {
+        // Best effort
+      }
+    }
+  }
+
+  async function rotateAsync(): Promise<void> {
+    let size: number
+
+    try {
+      size = (await fs.promises.stat(logPath)).size
+    } catch {
+      return
+    }
+
+    for (const [op, src, dst] of planRotation(size)) {
+      try {
+        if (op === 'rm') {
+          await fs.promises.rm(src, { force: true })
+        } else {
+          await fs.promises.rename(src, dst!)
+        }
+      } catch {
+        // Best effort
+      }
+    }
+  }
+
+  function flushSync(): void {
+    if (!buffer) {
+      return
+    }
+
+    const chunk = buffer
+    buffer = ''
+
+    try {
+      fs.mkdirSync(path.dirname(logPath), { recursive: true })
+      rotateSync()
+      fs.appendFileSync(logPath, chunk)
+    } catch {
+      // Best effort
+    }
+  }
+
+  function flushAsync(): Promise<void> {
+    if (!buffer) {
+      return flushPromise
+    }
+
+    const chunk = buffer
+    buffer = ''
+
+    flushPromise = flushPromise
+      .then(async () => {
+        await fs.promises.mkdir(path.dirname(logPath), { recursive: true })
+        await rotateAsync()
+        await fs.promises.appendFile(logPath, chunk)
+      })
+      .catch(() => {
+        // Best effort
+      })
+
+    return flushPromise
+  }
+
+  function scheduleFlush(): void {
+    if (flushTimer) {
+      return
+    }
+
+    flushTimer = setTimeout(() => {
+      flushTimer = null
+      void flushAsync()
+    }, DESKTOP_LOG_FLUSH_MS)
+  }
+
+  function rememberLog(chunk: unknown): void {
+    const text = String(chunk || '').trim()
+
+    if (!text) {
+      return
+    }
+
+    if (!isPackaged) {
+      const colored = process.stdout.isTTY
+
+      if (colored) {
+        process.stdout.write(`\x1b[2m[deskagent]\x1b[0m ${text}\n`)
+      } else {
+        process.stdout.write(`[deskagent] ${text}\n`)
+      }
+    }
+
+    const lines = text.split(/\r?\n/).map(line => `[deskagent] ${line}`)
+    inMemoryLogs.push(...lines)
+
+    if (inMemoryLogs.length > MAX_IN_MEMORY_LOGS) {
+      inMemoryLogs.splice(0, inMemoryLogs.length - MAX_IN_MEMORY_LOGS)
+    }
+
+    buffer += `${lines.join('\n')}\n`
+
+    if (buffer.length >= DESKTOP_LOG_BUFFER_MAX_CHARS) {
+      if (flushTimer) {
+        clearTimeout(flushTimer)
+        flushTimer = null
+      }
+
+      void flushAsync()
+
+      return
+    }
+
+    scheduleFlush()
+  }
+
+  return {
+    flushAsync,
+    flushSync,
+    getLogs: () => [...inMemoryLogs],
+    logPath,
+    planRotation,
+    rememberLog
+  }
+}

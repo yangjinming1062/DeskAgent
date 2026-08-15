@@ -1,1 +1,0 @@
-export function registerSettingsIpc(): void {}

@@ -1,35 +1,49 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
+import type { BackendClient, BackendRequestOptions } from '../backend/client'
+
 import { createReverseRpc } from './reverse-rpc'
 
 function makeFakeSession({ baseUrl = 'https://api.test.com', hasToken = true, token = 'test-token' } = {}) {
-  const session = hasToken ? { baseUrl, hasToken: true, token } : { hasToken: false }
+  const session = hasToken ? { baseUrl, hasToken: true, token } : { hasToken: false, token: null }
 
   return {
     client: () => fakeClient,
-    getSession: () => session
+    getSession: () => session,
+    getToken: () => session.token
   }
 }
 
-function makeFakeClient(overrides: any = {}) {
+interface FakeClientData {
+  lastPost: { options?: BackendRequestOptions; path: string } | null
+  post: (path: string, options?: BackendRequestOptions) => Promise<unknown>
+}
+
+function makeFakeClient(overrides: { result?: unknown; throw?: Error } = {}): FakeClientData & BackendClient {
   const fake = {
-    lastPost: null as any,
-    async post(path: string, options: any) {
+    baseUrl: 'https://api.test.com',
+    delete: async <T = unknown>() => ({}) as T,
+    get: async <T = unknown>() => ({}) as T,
+    lastPost: null as { options?: BackendRequestOptions; path: string } | null,
+    patch: async <T = unknown>() => ({}) as T,
+    async post<T = unknown>(path: string, options?: BackendRequestOptions): Promise<T> {
       fake.lastPost = { options, path }
 
       if (overrides.throw) {
         throw overrides.throw
       }
 
-      return overrides.result ?? { content: 'response', usage: null }
-    }
+      return (overrides.result ?? { content: 'response', usage: null }) as T
+    },
+    put: async <T = unknown>() => ({}) as T,
+    request: async <T = unknown>() => ({}) as T
   }
 
   return fake
 }
 
-let fakeClient: any
+let fakeClient: FakeClientData & BackendClient
 
 test('throws when backendSession is missing', () => {
   assert.throws(() => createReverseRpc({}), /backendSession/)
@@ -41,7 +55,10 @@ test('handleRequest() throws for unknown method', async () => {
     log: () => {}
   })
 
-  await assert.rejects(handler('unknown_method', {}), (err: any) => /Unknown reverse RPC/.test(err.message))
+  await assert.rejects(
+    handler('unknown_method', {}),
+    (err: unknown) => err instanceof Error && /Unknown reverse RPC/.test(err.message)
+  )
 })
 
 test('handleRequest() attaches -32601 code for unknown method', async () => {
@@ -50,7 +67,7 @@ test('handleRequest() attaches -32601 code for unknown method', async () => {
     log: () => {}
   })
 
-  await assert.rejects(handler('unknown_method', {}), (err: any) => err.code === -32601)
+  await assert.rejects(handler('unknown_method', {}), (err: unknown) => (err as { code?: number })?.code === -32601)
 })
 
 test('handleRequest() throws when no session', async () => {
@@ -59,7 +76,10 @@ test('handleRequest() throws when no session', async () => {
     log: () => {}
   })
 
-  await assert.rejects(handler('request_llm', { messages: [] }), (err: any) => /No active session/.test(err.message))
+  await assert.rejects(
+    handler('request_llm', { messages: [] }),
+    (err: unknown) => err instanceof Error && /No active session/.test(err.message)
+  )
 })
 
 test('handleRequest() calls client().post() with correct params', async () => {
@@ -70,20 +90,21 @@ test('handleRequest() calls client().post() with correct params', async () => {
     log: () => {}
   })
 
-  const result = await handler('request_llm', {
+  const result = (await handler('request_llm', {
     max_tokens: 256,
     messages: [{ content: 'hello', role: 'user' }],
     model: 'gpt-x',
     temperature: 0.7
-  })
+  })) as { content?: string }
 
-  assert.equal(fakeClient.lastPost.path, '/api/llm/completion')
-  assert.equal(fakeClient.lastPost.options.token, 'my-token')
-  assert.deepEqual(fakeClient.lastPost.options.body.messages, [{ content: 'hello', role: 'user' }])
-  assert.equal(fakeClient.lastPost.options.body.model, 'gpt-x')
-  assert.equal(fakeClient.lastPost.options.body.temperature, 0.7)
-  assert.equal(fakeClient.lastPost.options.body.max_tokens, 256)
-  assert.ok(Number.isFinite(fakeClient.lastPost.options.timeoutMs))
+  assert.equal(fakeClient.lastPost?.path, '/api/llm/completion')
+  assert.equal(fakeClient.lastPost?.options?.token, 'my-token')
+  const body = fakeClient.lastPost?.options?.body as Record<string, unknown>
+  assert.deepEqual(body?.messages, [{ content: 'hello', role: 'user' }])
+  assert.equal(body?.model, 'gpt-x')
+  assert.equal(body?.temperature, 0.7)
+  assert.equal(body?.max_tokens, 256)
+  assert.ok(Number.isFinite(fakeClient.lastPost?.options?.timeoutMs))
   assert.equal(result.content, 'response')
 })
 
@@ -96,5 +117,5 @@ test('handleRequest() propagates client errors', async () => {
     log: () => {}
   })
 
-  await assert.rejects(handler('request_llm', { messages: [] }), (err: any) => err === networkError)
+  await assert.rejects(handler('request_llm', { messages: [] }), (err: unknown) => err === networkError)
 })

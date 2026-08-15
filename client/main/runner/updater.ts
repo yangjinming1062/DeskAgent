@@ -5,6 +5,8 @@ import fsp from 'node:fs/promises'
 import path from 'node:path'
 import { promisify } from 'node:util'
 
+import YAML from 'yaml'
+
 import { sleep } from '../shared/utils'
 
 import { venvPythonFor } from './venv'
@@ -61,7 +63,7 @@ export class RunnerUpdater {
     for (let attempt = 1; attempt <= MANIFEST_FETCH_ATTEMPTS; attempt++) {
       try {
         const text = await this._fetchText(`${updateBaseUrl}/api/update/latest-runner.yml`)
-        manifest = JSON.parse(text)
+        manifest = YAML.parse(text)
         primaryErr = null
 
         break

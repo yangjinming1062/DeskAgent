@@ -1,28 +1,39 @@
 import type { BrowserWindow, IpcMain } from 'electron'
 
-import type { DesktopRunnerState } from '../../renderer/shared/types/global'
+import type { BackendSession } from '../backend/session'
+import type {
+  RunnerBridge,
+  RunnerBridgeEvent,
+  RunnerBridgeOptions,
+  RunnerBridgeStartOptions,
+  RunnerBridgeStatus
+} from '../runner/bridge'
+import type { CreateRunnerProcessOptions, RunnerProcess } from '../runner/process'
+import type { ReverseRpcOptions } from '../runner/reverse-rpc'
+import type { CreateRunnerWsServerOptions, RunnerWsServer } from '../runner/rpc-ws'
+import type { DesktopRunnerState } from '../shared/ipc-contracts'
 import * as store from '../shared/lib/runner-config-store'
 
 export interface RunnerIpcDeps {
-  createReverseRpc: (options: any) => any
-  createRunnerBridge: (options: any) => any
-  createRunnerProcess: (options: any) => any
-  createRunnerWsServer: (options: any) => any
+  createReverseRpc: (options: ReverseRpcOptions) => (method: string, params?: unknown) => Promise<unknown>
+  createRunnerBridge: (options: RunnerBridgeOptions) => RunnerBridge
+  createRunnerProcess: (options: CreateRunnerProcessOptions) => RunnerProcess
+  createRunnerWsServer: (options: CreateRunnerWsServerOptions) => RunnerWsServer
   deskagentHome?: null | string
-  ensureBackendSession: () => any
+  ensureBackendSession: () => BackendSession
   fileExists?: (p: string) => boolean
   getMainWindow?: () => BrowserWindow | null | undefined
   rememberLog: (chunk: string) => void
-  runnerBridge?: any
+  runnerBridge?: null | RunnerBridge
   taggedLogger: (tag: string) => (msg: string) => void
 }
 
-export function ensureRunnerBridge(deps: RunnerIpcDeps): any {
+export function ensureRunnerBridge(deps: RunnerIpcDeps): RunnerBridge {
   if (deps.runnerBridge) {
     return deps.runnerBridge
   }
 
-  const pushConfig = (config: any = store.read()) => {
+  const pushConfig = (config: Record<string, unknown> = store.read()) => {
     const bridge = deps.runnerBridge
 
     if (!bridge) {
@@ -35,22 +46,22 @@ export function ensureRunnerBridge(deps: RunnerIpcDeps): any {
   deps.runnerBridge = deps.createRunnerBridge({
     deskagentHome: deps.deskagentHome,
     log: deps.taggedLogger('[runner-bridge]'),
-    processFactory: () =>
+    processFactory: (args?: RunnerBridgeStartOptions) =>
       deps.createRunnerProcess({
         deskagentHome: deps.deskagentHome,
         devPython: process.env.DESKAGENT_DESKTOP_PYTHON || null,
-        executable: process.env.DESKAGENT_DESKTOP_RUNNER_EXECUTABLE || null,
+        executable: args?.executable || process.env.DESKAGENT_DESKTOP_RUNNER_EXECUTABLE || null,
         fileExists: deps.fileExists,
         log: deps.taggedLogger('[runner]'),
         repoRoot: process.env.DESKAGENT_DESKTOP_RUNNER_REPO_ROOT || null
       }),
     pushConfig,
-    reverseRpcFactory: ({ backendSession, log: rpcLog }: any) =>
+    reverseRpcFactory: ({ backendSession, log: rpcLog }: ReverseRpcOptions) =>
       deps.createReverseRpc({
         backendSession,
         log: rpcLog || deps.taggedLogger('[runner-reverse]')
       }),
-    wsServerFactory: ({ authToken, log: wsLog, onReverseRpc }: any) =>
+    wsServerFactory: ({ authToken, log: wsLog, onReverseRpc }: CreateRunnerWsServerOptions) =>
       deps.createRunnerWsServer({
         authToken,
         log: wsLog || deps.taggedLogger('[runner-ws]'),
@@ -60,7 +71,7 @@ export function ensureRunnerBridge(deps: RunnerIpcDeps): any {
 
   store.setPushTarget(pushConfig)
 
-  deps.runnerBridge.onEvent?.((ev: any) => {
+  deps.runnerBridge.onEvent?.((ev: RunnerBridgeEvent) => {
     const win = deps.getMainWindow?.()
 
     if (win && !win.isDestroyed()) {
@@ -73,7 +84,7 @@ export function ensureRunnerBridge(deps: RunnerIpcDeps): any {
 
 export async function startRunnerBridgeForCurrentSession(
   deps: RunnerIpcDeps
-): Promise<{ error?: string; noop?: boolean; ok: boolean; reason?: string; status?: any }> {
+): Promise<{ error?: string; noop?: boolean; ok: boolean; reason?: string; status?: RunnerBridgeStatus }> {
   const session = deps.ensureBackendSession().getSession()
 
   if (!session?.hasToken) {
@@ -94,8 +105,10 @@ export async function startRunnerBridgeForCurrentSession(
     })
 
     return { ok: true, status: next }
-  } catch (error: any) {
-    return { error: error?.message || String(error), ok: false }
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : String(error)
+
+    return { error: msg, ok: false }
   }
 }
 
@@ -117,14 +130,16 @@ export function autoStartBridge(deps: RunnerIpcDeps): void {
         deps.rememberLog(`[runner-bridge] auto-start failed: ${result.error || 'unknown'}`)
       }
     })
-    .catch(error => {
-      deps.rememberLog(`[runner-bridge] auto-start error: ${error?.message || error}`)
+    .catch((error: unknown) => {
+      const msg = error instanceof Error ? error.message : String(error)
+      deps.rememberLog(`[runner-bridge] auto-start error: ${msg}`)
     })
 }
 
 export function autoStopBridge(deps: RunnerIpcDeps): void {
-  stopRunnerBridgeForCurrentSession(deps, { reason: 'session-cleared' }).catch(error => {
-    deps.rememberLog(`[runner-bridge] auto-stop failed: ${error?.message || error}`)
+  stopRunnerBridgeForCurrentSession(deps, { reason: 'session-cleared' }).catch((error: unknown) => {
+    const msg = error instanceof Error ? error.message : String(error)
+    deps.rememberLog(`[runner-bridge] auto-stop failed: ${msg}`)
   })
 }
 
@@ -156,7 +171,7 @@ export function registerRunnerIpc({ deps, ipcMain }: { deps: RunnerIpcDeps; ipcM
     return
   }
 
-  ipcMain.handle('deskagent:runner:invoke', async (_event, name, args) => {
+  ipcMain.handle('deskagent:runner:invoke', async (_event, name: string, args?: Record<string, unknown>) => {
     if (typeof name !== 'string' || !name) {
       throw new Error('runner:invoke requires a non-empty tool name')
     }
