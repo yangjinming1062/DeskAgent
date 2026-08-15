@@ -317,13 +317,13 @@ async def test_info_payload_shape():
     assert isinstance(info["mcp_servers"], list)
 
 
-def test_runner_ready_payload_shape():
+async def test_runner_ready_payload_shape():
     """The handshake payload must carry version + capabilities (matches
     desktop/main/runner/bridge.cjs's handleRunnerReady trigger logic)."""
     import importlib
 
     server = importlib.import_module("server")
-    payload = server._runner_ready_payload()
+    payload = await server._runner_ready_payload()
     assert "version" in payload
     assert "capabilities" in payload
     assert "probe_failed" in payload
@@ -331,7 +331,7 @@ def test_runner_ready_payload_shape():
     assert payload["probe_failed"] is False
 
 
-def test_runner_ready_payload_probe_failed_flag(monkeypatch):
+async def test_runner_ready_payload_probe_failed_flag(monkeypatch):
     """When the probe raises, the payload must carry ``probe_failed=True``
     so the Desktop can tell apart 'all-features-disabled' from 'probe
     crashed' — silencing voice-call UI in both cases without surfacing
@@ -344,7 +344,7 @@ def test_runner_ready_payload_probe_failed_flag(monkeypatch):
     monkeypatch.setattr(
         server, "snapshot", lambda: (_ for _ in ()).throw(RuntimeError("boom"))
     )
-    payload = server._runner_ready_payload()
+    payload = await server._runner_ready_payload()
     assert payload["probe_failed"] is True
     assert payload["capabilities"] == {}
 
@@ -430,3 +430,27 @@ async def test_discover_timeout_shuts_down_spawned_task(monkeypatch):
     finally:
         mcp_tool._connecting.pop("victim", None)
     assert shutdown_calls == ["victim"]
+
+
+def test_capabilities_snapshot_ttl_cache():
+    """snapshot() caches for the TTL window so repeated handshakes / info
+    polls don't re-import heavy STT/TTS binaries or re-enumerate devices."""
+    import utils.capabilities as caps
+
+    caps.reset_snapshot_cache()
+    probes = {"n": 0}
+    real_probe = caps.microphone_available
+
+    def counting_probe() -> bool:
+        probes["n"] += 1
+        return real_probe()
+
+    caps.microphone_available = counting_probe
+    try:
+        first = caps.snapshot()
+        second = caps.snapshot()
+        assert first is second  # cache hit, no re-probe
+        assert probes["n"] == 1
+    finally:
+        caps.microphone_available = real_probe
+        caps.reset_snapshot_cache()

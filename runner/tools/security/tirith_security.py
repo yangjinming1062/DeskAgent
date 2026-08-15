@@ -39,6 +39,11 @@ def _load_security_config() -> dict:
 
 _resolved_path: str | None | bool = None
 _INSTALL_FAILED = False
+# Transient install failures worth a bounded in-process retry (network /
+# extraction); cosign and configuration failures stay permanent.
+_INSTALL_RETRYABLE = {"download_failed", "binary_extract_failed", "cross_device_copy_failed"}
+_install_retries = 0
+_install_retry_deadline = 0.0
 _install_failure_reason: str = ""
 
 _install_lock = threading.Lock()
@@ -98,6 +103,8 @@ def _mark_install_failed(reason: str = "") -> None:
 
 
 def _clear_install_failed() -> None:
+    global _install_retries
+    _install_retries = 0
     _reset_spawn_warning_state()
     with contextlib.suppress(OSError):
         os.unlink(_failure_marker_path())
@@ -304,6 +311,12 @@ def _resolve_tirith_path(configured_path: str) -> str:
         if _install_failure_reason == "cosign_missing" and shutil.which("cosign"):
             _resolved_path, _install_failure_reason = None, ""
             _clear_install_failed()
+        elif _install_failure_reason in _INSTALL_RETRYABLE and _install_retries < 3 and time.monotonic() >= _install_retry_deadline:
+            # One transient failure (e.g. a network blip at startup) must not
+            # degrade a multi-day runner to builtin rules for its whole life.
+            _install_retries += 1
+            _install_retry_deadline = time.monotonic() + 300
+            _resolved_path, _install_failure_reason = None, ""
         else:
             return expanded
     if _install_thread is not None and _install_thread.is_alive():
@@ -311,9 +324,9 @@ def _resolve_tirith_path(configured_path: str) -> str:
     if (disk_reason := _read_failure_reason()) is not None and _is_install_failed_on_disk():
         _resolved_path, _install_failure_reason = _INSTALL_FAILED, disk_reason
         return expanded
-    # Install in the background: the synchronous download used to block the
-    # first shell command for the whole install duration. Until it lands,
-    # callers degrade to allow-with-warning via the missing-binary path.
+    # Install in the background so the first shell command never blocks on
+    # the download; until it lands, callers degrade to allow-with-warning
+    # via the missing-binary path.
     _install_thread = threading.Thread(target=_background_install, kwargs={"log_failures": True}, daemon=True)
     _install_thread.start()
     return expanded
@@ -335,45 +348,6 @@ def _background_install(*, log_failures: bool = True) -> None:
         else:
             _resolved_path, _install_failure_reason = _INSTALL_FAILED, reason
             _mark_install_failed(reason)
-
-
-def ensure_installed(*, log_failures: bool = True) -> str | None:
-    global _resolved_path, _install_thread, _install_failure_reason
-    cfg = _load_security_config()
-    if not cfg["tirith_enabled"]:
-        return None
-    if _resolved_path is not None and _resolved_path is not _INSTALL_FAILED:
-        return _resolved_path if (os.path.isfile(_resolved_path) and os.access(_resolved_path, os.X_OK)) else None
-    if not is_platform_supported():
-        _resolved_path, _install_failure_reason = (_INSTALL_FAILED, "unsupported_platform")
-        return None
-    configured_path = cfg["tirith_path"]
-    explicit = _is_explicit_path(configured_path)
-    expanded = os.path.expanduser(configured_path)
-    if explicit:
-        if (os.path.isfile(expanded) and os.access(expanded, os.X_OK)) or (expanded := shutil.which(expanded)):
-            _resolved_path = expanded
-            return expanded
-        _resolved_path, _install_failure_reason = (_INSTALL_FAILED, "explicit_path_missing")
-        return None
-    for p in _tirith_search_paths():
-        if (os.path.isfile(p) and os.access(p, os.X_OK)) or (found := shutil.which(p)):
-            _resolved_path, _install_failure_reason = found if found else p, ""
-            _clear_install_failed()
-            return found if found else p
-    if _resolved_path is _INSTALL_FAILED:
-        if _install_failure_reason == "cosign_missing" and shutil.which("cosign"):
-            _resolved_path, _install_failure_reason = None, ""
-            _clear_install_failed()
-        else:
-            return None
-    if (disk_reason := _read_failure_reason()) is not None and _is_install_failed_on_disk():
-        _resolved_path, _install_failure_reason = _INSTALL_FAILED, disk_reason
-        return None
-    if _install_thread is None or not _install_thread.is_alive():
-        _install_thread = threading.Thread(target=_background_install, kwargs={"log_failures": log_failures}, daemon=True)
-        _install_thread.start()
-    return None
 
 
 def check_command_security(command: str) -> dict:

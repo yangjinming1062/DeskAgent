@@ -560,24 +560,24 @@ def test_read_endpoint_schema_variants(tmp_path, monkeypatch):
 
 
 @pytest.mark.timeout(15)
-def test_runner_ready_payload_probe_failed_flag(monkeypatch):
+async def test_runner_ready_payload_probe_failed_flag(monkeypatch):
     def _boom():
         raise RuntimeError("simulated probe crash")
 
     monkeypatch.setattr(server, "snapshot", _boom)
-    payload = server._runner_ready_payload()
+    payload = await server._runner_ready_payload()
     assert payload["probe_failed"] is True
     assert payload["capabilities"] == {}
     assert "version" in payload
 
 
 @pytest.mark.timeout(15)
-def test_runner_ready_payload_snapshot_returns_non_dict(monkeypatch):
+async def test_runner_ready_payload_snapshot_returns_non_dict(monkeypatch):
     def _bad():
         return "not-a-dict"
 
     monkeypatch.setattr(server, "snapshot", _bad)
-    payload = server._runner_ready_payload()
+    payload = await server._runner_ready_payload()
     assert payload["probe_failed"] is True
     assert payload["capabilities"] == {}
 

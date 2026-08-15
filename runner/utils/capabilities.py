@@ -2,6 +2,7 @@ import logging
 import shutil
 import socket
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -105,8 +106,7 @@ def local_tts_available() -> bool:
 def system_activity_available() -> bool:
     """True iff idle / lock / focus probes can answer on this build.
 
-    Unlike the old "does ``ctypes.wintypes`` import" check, this probe
-    exercises a representative call for each platform and reports
+    This probe exercises a representative call per platform and reports
     ``True`` only when the call answers. If ``GetLastInputInfo`` /
     ``CGSessionCopyCurrentDictionary`` would raise in a realistic call,
     we report ``False`` so the Desktop doesn't keep polling a probe
@@ -161,9 +161,28 @@ def disk_free_bytes(path: str | Path = ".") -> int | None:
         return None
 
 
+_SNAPSHOT_TTL_S = 30.0
+_snapshot_cache: tuple[float, dict[str, Any]] | None = None
+
+
+def reset_snapshot_cache() -> None:
+    """Drop the TTL cache (tests)."""
+    global _snapshot_cache
+    _snapshot_cache = None
+
+
 def snapshot() -> dict[str, Any]:
-    """Return the full capabilities map advertised on handshake / info RPC."""
-    return {
+    """Return the full capabilities map advertised on handshake / info RPC.
+
+    Cached for ``_SNAPSHOT_TTL_S``: the probes import heavy binaries
+    (faster-whisper / piper) and enumerate devices — running them on the WS
+    event loop for every handshake / deskagent.info stalls heartbeats.
+    """
+    global _snapshot_cache
+    now = time.monotonic()
+    if _snapshot_cache is not None and now - _snapshot_cache[0] < _SNAPSHOT_TTL_S:
+        return _snapshot_cache[1]
+    result = {
         "microphone": microphone_available(),
         "screen_capture": screen_capture_available(),
         "local_stt": local_stt_available(),
@@ -172,3 +191,5 @@ def snapshot() -> dict[str, Any]:
         "platform": sys.platform,
         "python": sys.version.split()[0],
     }
+    _snapshot_cache = (now, result)
+    return result

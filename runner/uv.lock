@@ -536,7 +536,7 @@ requires-dist = [
     { name = "faster-whisper", specifier = ">=1.0.3" },
     { name = "httpx", extras = ["socks"], specifier = "==0.28.1" },
     { name = "mcp", specifier = "==1.27.0" },
-    { name = "mss", marker = "sys_platform == 'win32'", specifier = ">=9.0.0" },
+    { name = "mss", marker = "sys_platform == 'win32'", specifier = ">=10.2.0" },
     { name = "numpy", specifier = ">=1.26.0" },
     { name = "pillow", specifier = "==12.2.0" },
     { name = "piper-tts", marker = "python_full_version >= '3.10'", specifier = ">=1.2.0" },

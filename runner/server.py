@@ -283,7 +283,7 @@ async def runner_loop(endpoint: DesktopEndpoint) -> None:
                     set_main_loop(_RUNNER_LOOP)
                     attempt = 0  # reset on successful connection
                     try:
-                        await _send_notification(ws, "runner_ready", _runner_ready_payload())
+                        await _send_notification(ws, "runner_ready", await _runner_ready_payload())
                         _schedule_background_mcp_discovery()
 
                         async for message in ws:
@@ -364,12 +364,12 @@ async def runner_loop(endpoint: DesktopEndpoint) -> None:
         await asyncio.sleep(backoff)
 
 
-def _runner_ready_payload() -> dict[str, Any]:
+async def _runner_ready_payload() -> dict[str, Any]:
     """Compact handshake payload sent right after WS connect.
 
     Mirrors ``deskagent.info`` minus fields that depend on runtime stats
-    (uptime, reconnect count) — capabilities are computed once at handshake
-    time and cached. Desktop uses this to decide whether to expose features
+    (uptime, reconnect count) — capabilities come from the TTL-cached
+    snapshot probe. Desktop uses this to decide whether to expose features
     that depend on optional OS subsystems (microphone, screen capture,
     system activity signals, local STT/TTS).
 
@@ -381,7 +381,7 @@ def _runner_ready_payload() -> dict[str, Any]:
     """
     payload: dict[str, Any] = {"version": __version__, "capabilities": {}, "probe_failed": False}
     try:
-        caps = snapshot()
+        caps = await asyncio.to_thread(snapshot)
         if isinstance(caps, dict):
             payload["capabilities"] = caps
         else:
@@ -401,7 +401,7 @@ async def _build_info() -> dict[str, Any]:
     disk is tight).
     """
     try:
-        caps = snapshot()
+        caps = await asyncio.to_thread(snapshot)
     except Exception:
         caps = {}
     mcp_servers = get_active_mcp_servers()
