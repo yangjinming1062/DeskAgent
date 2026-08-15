@@ -152,13 +152,17 @@ def truncate_chat_history(messages: list[dict], max_recent_messages: int = 40, n
 
     if keep_start > 0:
         # Always preserve an anchor message so the model has a continuous
-        # history: a user message when one is the first non-sys turn, or the
-        # earliest user message we can find (handles sub-agent contexts where
-        # the head is an assistant turn), or a generic placeholder if no user
-        # message exists at all.
-        anchor = next((m for m in non_sys if m.get("role") == "user"), None)
+        # history: the earliest dropped user message (sub-agent contexts can
+        # have an assistant turn at the head), or a generic placeholder if no
+        # user message exists at all. Searching only the dropped prefix keeps
+        # an in-window user message from being injected twice.
+        anchor = next((m for m in non_sys[:keep_start] if m.get("role") == "user"), None)
+        removed = keep_start - (1 if anchor is not None else 0)
+        marker = {"role": "user", "content": f"[... {removed} early conversation turns removed for context window management ...]"}
         if anchor is not None:
             out.insert(0, _trajectory_normalize_msg(anchor))
-        out.insert(1, {"role": "user", "content": f"[... {keep_start - 1} early conversation turns removed for context window management ...]"})
+            out.insert(1, marker)
+        else:
+            out.insert(0, marker)
 
     return sys_msgs + out

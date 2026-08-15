@@ -420,3 +420,47 @@ def test_truncate_keeps_tool_summary_in_chronological_position():
     out = truncate_chat_history(messages)
 
     assert [m["content"] for m in out] == [m["content"] for m in messages]
+
+
+def _long_history(first_user_in_window: bool) -> list[dict]:
+    messages = [{"role": "system", "content": "SYS"}]
+    if not first_user_in_window:
+        messages.append({"role": "user", "content": "旧的第一条用户消息"})
+    messages.extend({"role": "assistant", "content": f"turn {i}"} for i in range(45))
+    messages.append({"role": "user", "content": "最新一条用户消息"})
+    return messages
+
+
+def test_truncate_anchor_searches_only_dropped_prefix():
+    """The first user message inside the kept window must not be re-injected
+    as an anchor — it is already present, and duplicating it double-counts."""
+    from services.chat.message_sanitization import truncate_chat_history
+
+    out = truncate_chat_history(_long_history(first_user_in_window=True), max_recent_messages=40)
+
+    user_contents = [m["content"] for m in out if m["role"] == "user"]
+    assert user_contents.count("最新一条用户消息") == 1
+    assert "旧的第一条用户消息" not in user_contents
+
+
+def test_truncate_anchor_from_dropped_prefix_leads_window():
+    from services.chat.message_sanitization import truncate_chat_history
+
+    out = truncate_chat_history(_long_history(first_user_in_window=False), max_recent_messages=40)
+
+    non_sys = out[1:]
+    assert non_sys[0]["content"] == "旧的第一条用户消息"
+    assert non_sys[1]["role"] == "user" and "removed for context window management" in non_sys[1]["content"]
+
+
+def test_truncate_marker_leads_when_no_user_in_prefix():
+    """With no user message to anchor on, the marker must still sit at the
+    head — inserting it after the first kept message would scramble roles."""
+    from services.chat.message_sanitization import truncate_chat_history
+
+    messages = [{"role": "system", "content": "SYS"}]
+    messages.extend({"role": "assistant", "content": f"turn {i}"} for i in range(45))
+
+    out = truncate_chat_history(messages, max_recent_messages=40)
+
+    assert out[1]["role"] == "user" and "removed for context window management" in out[1]["content"]
