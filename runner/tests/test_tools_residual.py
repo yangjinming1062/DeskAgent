@@ -357,30 +357,122 @@ class TestStripFence:
 
 
 class TestExecuteCodeHelpers:
-    """The ``json_parse`` / ``shell_quote`` / ``retry`` helpers live in
-    ``_COMMON_HELPERS`` as a code TEMPLATE injected into the child sandbox
-    Python — they're not importable from this module. We verify they exist
-    in the generated module text (which is what ships to the sandbox) and
-    that ``_scrub_child_env`` filters secrets correctly.
+    """The generated sandbox module is a code TEMPLATE — these tests ``exec``
+    it for real (against a local listener / request files) so a missing
+    preamble or broken transport fails here instead of only in the sandbox.
     """
 
-    def test_generated_module_contains_helper_definitions(self):
-        out = ec.generate_deskagent_tools_module(["read_file"], transport="uds")
-        for helper in ("json_parse", "shell_quote", "retry"):
-            assert f"def {helper}" in out, (
-                f"{helper} helper missing from generated sandbox module"
-            )
+    @staticmethod
+    def _exec_module(enabled: list[str], transport: str, monkeypatch) -> dict:
+        monkeypatch.setenv("DESKAGENT_RPC_TOKEN", "test-token")
+        src = ec.generate_deskagent_tools_module(enabled, transport=transport)
+        ns: dict = {}
+        exec(compile(src, "deskagent_tools.py", "exec"), ns)
+        return ns
 
-    def test_generated_module_uses_strict_false_json(self):
-        """The sandbox-side ``json_parse`` MUST use ``strict=False`` so terminal output
-        with raw tabs in strings doesn't crash the agent's extraction step."""
-        out = ec.generate_deskagent_tools_module(["read_file"], transport="uds")
-        assert "strict=False" in out
+    def test_generated_module_uds_round_trip(self, monkeypatch):
+        """UDS/TCP transport: auth line first, then the request; response parsed."""
+        import json
+        import socket
+        import threading
 
-    def test_generated_module_uses_shlex_quote(self):
-        """``shell_quote`` MUST delegate to ``shlex.quote`` — the only safe quoting lib."""
-        out = ec.generate_deskagent_tools_module(["read_file"], transport="uds")
-        assert "shlex.quote" in out
+        srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        srv.bind(("127.0.0.1", 0))
+        srv.listen(1)
+        seen: dict = {}
+
+        def serve() -> None:
+            conn, _ = srv.accept()
+            buf = b""
+            while buf.count(b"\n") < 2:
+                buf += conn.recv(65536)
+            auth_line, req_line, _ = buf.split(b"\n", 2)
+            seen["auth"] = json.loads(auth_line).get("auth")
+            seen["request"] = json.loads(req_line)
+            conn.sendall((json.dumps({"ok": True}) + "\n").encode())
+            conn.close()
+
+        threading.Thread(target=serve, daemon=True).start()
+        monkeypatch.setenv("DESKAGENT_RPC_SOCKET", f"tcp://127.0.0.1:{srv.getsockname()[1]}")
+        ns = self._exec_module(["read_file"], "uds", monkeypatch)
+        result = ns["read_file"]("/some/file")
+        srv.close()
+        assert result == {"ok": True}
+        assert seen["auth"] == "test-token"
+        assert seen["request"]["tool"] == "read_file"
+        assert seen["request"]["args"]["path"] == "/some/file"
+
+    def test_generated_module_file_round_trip_carries_token(self, tmp_path, monkeypatch):
+        import json
+        import os
+        import threading
+        import time
+
+        monkeypatch.setenv("DESKAGENT_RPC_DIR", str(tmp_path))
+        ns = self._exec_module(["read_file"], "file", monkeypatch)
+        seen: dict = {}
+
+        def respond() -> None:
+            for _ in range(500):
+                reqs = [f for f in os.listdir(tmp_path) if f.startswith("req_")]
+                if reqs:
+                    seen["request"] = json.loads((tmp_path / reqs[0]).read_text(encoding="utf-8"))
+                    (tmp_path / f"res_{reqs[0][4:]}").write_text(json.dumps({"ok": True}), encoding="utf-8")
+                    return
+                time.sleep(0.01)
+
+        threading.Thread(target=respond, daemon=True).start()
+        assert ns["read_file"]("/x") == {"ok": True}
+        assert seen["request"]["token"] == "test-token"
+        assert seen["request"]["tool"] == "read_file"
+
+    def test_rpc_server_loop_rejects_bad_token_then_accepts_good(self):
+        """A connection with the wrong token is dropped and the listener keeps
+        accepting — one unauthenticated local process must not hijack the slot."""
+        import json
+        import socket
+        import threading
+
+        srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        srv.bind(("127.0.0.1", 0))
+        srv.listen(1)
+        thread = threading.Thread(
+            target=ec._rpc_server_loop,
+            args=(srv, "task", [], [0], 99, frozenset(), "good-token"),
+            daemon=True,
+        )
+        thread.start()
+        try:
+            bad = socket.create_connection(("127.0.0.1", srv.getsockname()[1]), timeout=5)
+            bad.sendall((json.dumps({"auth": "wrong"}) + "\n").encode())
+            assert bad.recv(65536) == b"", "bad-token connection must be closed"
+            bad.close()
+
+            good = socket.create_connection(("127.0.0.1", srv.getsockname()[1]), timeout=5)
+            good.sendall((json.dumps({"auth": "good-token"}) + "\n" + json.dumps({"tool": "read_file", "args": {}}) + "\n").encode())
+            resp = json.loads(good.recv(65536).decode())
+            assert "error" in resp, "allowed_tools=frozenset() must yield the not-available error"
+            good.close()
+        finally:
+            srv.close()
+            thread.join(timeout=5)
+
+    def test_helpers_work_in_executed_module(self, monkeypatch):
+        """json_parse tolerates control chars; shell_quote delegates to shlex."""
+        import shlex
+
+        ns = self._exec_module([], "uds", monkeypatch)
+        assert ns["json_parse"]('{"a": "x\ty"}') == {"a": "x\ty"}
+        assert ns["shell_quote"]("a b") == shlex.quote("a b")
+        attempts = []
+
+        def flaky() -> None:
+            attempts.append(1)
+            if len(attempts) < 2:
+                raise RuntimeError("transient")
+
+        ns["retry"](flaky, max_attempts=3, delay=0)
+        assert len(attempts) == 2
 
     def test_scrub_child_env_keeps_passthrough(self):
         env = {"OPENAI_API_KEY": "secret", "PATH": "/usr/bin"}
@@ -414,13 +506,11 @@ class TestExecuteCodeHelpers:
 
     def test_generate_deskagent_tools_module_contains_enabled_tool(self):
         out = ec.generate_deskagent_tools_module(["read_file"], transport="uds")
-        assert "read_file" in out
-        # The generated module MUST dispatch the tool via ``_call``.
-        assert "_call" in out
+        assert "def read_file(" in out
 
     def test_generate_deskagent_tools_module_handles_empty_list(self):
         out = ec.generate_deskagent_tools_module([], transport="file")
-        assert "def" in out  # common helpers still present
+        assert "def json_parse" in out  # common helpers still present
 
 
 # ---------------------------------------------------------------------------

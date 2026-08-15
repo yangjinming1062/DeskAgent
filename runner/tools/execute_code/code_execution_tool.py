@@ -4,6 +4,7 @@ import functools
 import json
 import logging
 import os
+import secrets
 import shlex
 import shutil
 import socket
@@ -41,8 +42,6 @@ logger = logging.getLogger(__name__)
 
 EXECUTION_MODES = ("project", "strict")
 DEFAULT_EXECUTION_MODE = "project"
-
-SANDBOX_AVAILABLE = True
 
 SANDBOX_ALLOWED_TOOLS = frozenset(["web_search", "web_extract", "read_file", "write_file", "search_files", "patch", "terminal"])
 
@@ -178,6 +177,14 @@ def generate_deskagent_tools_module(enabled_tools: list[str], transport: str = "
 
 
 _COMMON_HELPERS = '''\
+import json
+import os
+import shlex
+import threading
+import time
+
+# Auth token for the parent's RPC endpoint, injected via the sandbox env.
+_RPC_TOKEN = os.environ.get("DESKAGENT_RPC_TOKEN", "")
 
 # Convenience helpers (avoid common scripting pitfalls)
 
@@ -215,6 +222,11 @@ _UDS_TRANSPORT_HEADER = (
     _COMMON_HELPERS
     + '''\
 
+import socket
+
+_sock = None
+_call_lock = threading.Lock()
+
 def _connect():
     """Connect to the parent's RPC server via the transport it picked.
 
@@ -238,6 +250,9 @@ def _connect():
             _sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
             _sock.connect(endpoint)
         _sock.settimeout(300)
+    # First line on the wire authenticates this sandbox to the parent's RPC
+    # listener; unauthenticated local connections are dropped server-side.
+    _sock.sendall((json.dumps({"auth": _RPC_TOKEN}) + "\\n").encode())
     return _sock
 
 def _call(tool_name, args):
@@ -270,6 +285,10 @@ _FILE_TRANSPORT_HEADER = (
     _COMMON_HELPERS
     + '''\
 
+_seq = 0
+_seq_lock = threading.Lock()
+_RPC_DIR = os.environ["DESKAGENT_RPC_DIR"]
+
 def _call(tool_name, args):
     """Send a tool call request via file-based RPC and wait for response."""
     global _seq
@@ -285,7 +304,7 @@ def _call(tool_name, args):
     # non-ASCII chars in tool args when encoding them as JSON.
     tmp = req_file + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
-        json.dump({"tool": tool_name, "args": args, "seq": seq}, f)
+        json.dump({"tool": tool_name, "args": args, "seq": seq, "token": _RPC_TOKEN}, f)
     os.rename(tmp, req_file)
 
     deadline = time.monotonic() + 300  # 5-minute timeout per tool call
@@ -318,21 +337,50 @@ def _call(tool_name, args):
 _TERMINAL_BLOCKED_PARAMS = {"background", "pty", "notify_on_complete", "watch_patterns"}
 
 
-def _rpc_server_loop(server_sock: socket.socket, task_id: str, tool_call_log: list[Any], tool_call_counter: list[int], max_tool_calls: int, allowed_tools: frozenset[str]) -> None:
+def _read_conn_line(conn: socket.socket, buf: bytes) -> tuple[bytes | None, bytes]:
+    """Read one newline-terminated line; returns (None, buf) on timeout/EOF."""
+    while b"\n" not in buf:
+        try:
+            chunk = conn.recv(65536)
+        except TimeoutError:
+            return None, buf
+        if not chunk:
+            return None, buf
+        buf += chunk
+    line, rest = buf.split(b"\n", 1)
+    return line, rest
+
+
+def _rpc_server_loop(
+    server_sock: socket.socket, task_id: str, tool_call_log: list[Any], tool_call_counter: list[int], max_tool_calls: int, allowed_tools: frozenset[str], expected_token: str
+) -> None:
     conn = None
     try:
         server_sock.settimeout(5)
-        conn, _ = server_sock.accept()
-        conn.settimeout(300)
-        buf = b""
+        # On Windows the endpoint is loopback TCP with no filesystem
+        # permissions, so the first line must authenticate the sandbox; a
+        # rejected connection is dropped and the listener keeps accepting —
+        # otherwise any local process could hijack the single RPC slot.
         while True:
             try:
-                chunk = conn.recv(65536)
+                conn, _ = server_sock.accept()
             except TimeoutError:
+                return
+            conn.settimeout(5)
+            line, buf = _read_conn_line(conn, b"")
+            try:
+                authed = line is not None and json.loads(line.decode()).get("auth") == expected_token
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                authed = False
+            if authed:
                 break
-            if not chunk:
-                break
-            buf += chunk
+            logger.debug("execute_code RPC: rejected unauthenticated connection")
+            conn.close()
+            conn = None
+        conn.settimeout(300)
+        # Drain buffered lines (the request may have arrived pipelined with
+        # the auth line) before waiting for more wire data.
+        while True:
             while b"\n" in buf:
                 line, buf = buf.split(b"\n", 1)
                 line = line.strip()
@@ -376,6 +424,13 @@ def _rpc_server_loop(server_sock: socket.socket, task_id: str, tool_call_log: li
                 args_preview = str(tool_args)[:80]
                 tool_call_log.append({"tool": tool_name, "args_preview": args_preview, "duration": round(call_duration, 2)})
                 conn.sendall((result + "\n").encode())
+            try:
+                chunk = conn.recv(65536)
+            except TimeoutError:
+                break
+            if not chunk:
+                break
+            buf += chunk
     except TimeoutError:
         logger.debug("RPC listener socket timeout")
     except OSError as e:
@@ -477,7 +532,15 @@ def _env_temp_dir(env: Any) -> str:
 
 
 def _rpc_poll_loop(
-    env: Any, rpc_dir: str, task_id: str, tool_call_log: list[Any], tool_call_counter: list[int], max_tool_calls: int, allowed_tools: frozenset[str], stop_event: threading.Event
+    env: Any,
+    rpc_dir: str,
+    task_id: str,
+    tool_call_log: list[Any],
+    tool_call_counter: list[int],
+    max_tool_calls: int,
+    allowed_tools: frozenset[str],
+    stop_event: threading.Event,
+    expected_token: str,
 ) -> None:
     poll_interval = 0.1
     quoted_rpc_dir = shlex.quote(rpc_dir)
@@ -507,6 +570,10 @@ def _rpc_poll_loop(
                 seq_str = f"{seq:06d}"
                 res_file = f"{rpc_dir}/res_{seq_str}"
                 quoted_res_file = shlex.quote(res_file)
+                if request.get("token") != expected_token:
+                    logger.debug("execute_code RPC: dropped unauthenticated request %s", req_file)
+                    env.execute(f"rm -f {quoted_req_file}", cwd="/", timeout=5)
+                    continue
                 if tool_name not in allowed_tools:
                     available = ", ".join(sorted(allowed_tools))
                     tool_result = json.dumps({"error": (f"Tool '{tool_name}' is not available in execute_code. Available: {available}")})
@@ -551,6 +618,7 @@ def _execute_remote(code: str, task_id: str | None, enabled_tools: list[str] | N
         sandbox_tools = SANDBOX_ALLOWED_TOOLS
     effective_task_id = task_id or "default"
     env, env_type = _get_or_create_env(effective_task_id)
+    rpc_token = secrets.token_hex(16)
     sandbox_id = uuid.uuid4().hex[:12]
     temp_dir = _env_temp_dir(env)
     sandbox_dir = f"{temp_dir}/deskagent_exec_{sandbox_id}"
@@ -576,11 +644,11 @@ def _execute_remote(code: str, task_id: str | None, enabled_tools: list[str] | N
         _ship_file_to_remote(env, f"{sandbox_dir}/script.py", code)
         rpc_thread = threading.Thread(
             target=propagate_context_to_thread(_rpc_poll_loop),
-            args=(env, f"{sandbox_dir}/rpc", effective_task_id, tool_call_log, tool_call_counter, max_tool_calls, sandbox_tools, stop_event),
+            args=(env, f"{sandbox_dir}/rpc", effective_task_id, tool_call_log, tool_call_counter, max_tool_calls, sandbox_tools, stop_event, rpc_token),
             daemon=True,
         )
         rpc_thread.start()
-        env_prefix = f"DESKAGENT_RPC_DIR={shlex.quote(f'{sandbox_dir}/rpc')} PYTHONDONTWRITEBYTECODE=1"
+        env_prefix = f"DESKAGENT_RPC_DIR={shlex.quote(f'{sandbox_dir}/rpc')} DESKAGENT_RPC_TOKEN={rpc_token} PYTHONDONTWRITEBYTECODE=1"
         tz = str(cfg_get(load_config(), "terminal", "timezone", default="")).strip()
         if tz:
             env_prefix += f" TZ={tz}"
@@ -632,8 +700,6 @@ def _execute_remote(code: str, task_id: str | None, enabled_tools: list[str] | N
 
 
 def execute_code(code: str, task_id: str | None = None, enabled_tools: list[str] | None = None) -> str:
-    if not SANDBOX_AVAILABLE:
-        return json.dumps({"error": "execute_code sandbox is unavailable in this environment. Use normal tool calls (terminal, read_file, write_file, ...) instead."})
     if not code or not code.strip():
         return tool_error("No code provided.")
     env_type = get_env_config()["env_type"]
@@ -659,6 +725,7 @@ def execute_code(code: str, task_id: str | None = None, enabled_tools: list[str]
     tool_call_counter = [0]
     exec_start = time.monotonic()
     server_sock = None
+    rpc_token = secrets.token_hex(16)
     try:
         tools_src = generate_deskagent_tools_module(list(sandbox_tools))
         with open(os.path.join(tmpdir, "deskagent_tools.py"), "w", encoding="utf-8") as f:
@@ -676,11 +743,14 @@ def execute_code(code: str, task_id: str | None = None, enabled_tools: list[str]
             os.chmod(sock_path, 0o600)
         server_sock.listen(1)
         rpc_thread = threading.Thread(
-            target=propagate_context_to_thread(_rpc_server_loop), args=(server_sock, task_id, tool_call_log, tool_call_counter, max_tool_calls, sandbox_tools), daemon=True
+            target=propagate_context_to_thread(_rpc_server_loop),
+            args=(server_sock, task_id, tool_call_log, tool_call_counter, max_tool_calls, sandbox_tools, rpc_token),
+            daemon=True,
         )
         rpc_thread.start()
         child_env = _scrub_child_env(os.environ)
         child_env["DESKAGENT_RPC_SOCKET"] = rpc_endpoint
+        child_env["DESKAGENT_RPC_TOKEN"] = rpc_token
         child_env["PYTHONDONTWRITEBYTECODE"] = "1"
         child_env["PYTHONIOENCODING"] = "utf-8"
         child_env["PYTHONUTF8"] = "1"
@@ -1002,8 +1072,6 @@ EXECUTE_CODE_SCHEMA = {
         "required": ["code"],
     },
 }
-
-# Lazy import — resolved at first use to avoid circular dependency with terminal_tool.
 
 
 registry.register_tool("execute_code", schema=EXECUTE_CODE_SCHEMA)(

@@ -87,3 +87,4 @@ runner/
 | **单进程架构** | Runner 不支持水平扩展；多用户场景下每个 Client 单独 spawn 独立 Runner 进程 |
 | **`probe_failed` 时 UI 降级需手动** | 部分能力可能仍可用，但 Client UI 收到 `probe_failed=true` 时整体降级；当前没有更细粒度的子能力独立上报 |
 | **Job Object 随 import 生效** | Windows 上导入 `utils.job_object` 即把导入进程绑进 KILL_ON_JOB_CLOSE Job（含 pytest 等测试进程）；解绑只能靠进程退出 |
+| **execute_code 沙箱 RPC 需令牌** | 每次执行生成一次性 token（env `DESKAGENT_RPC_TOKEN`），子进程首帧/请求文件校验；Windows loopback TCP 端点因此不暴露给未持令牌的本地进程 |
