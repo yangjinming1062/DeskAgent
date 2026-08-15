@@ -708,10 +708,10 @@ def _register_session_handlers(dispatcher: JsonRpcDispatcher, runtime_sessions: 
                             regen_busy = False
                         if regen_busy:
                             payload = {"job_id": job_id, "error": "伙伴正在生成形象，请稍候"}
-                            return
-                        persona = await get_or_create_persona(db, user_id)
-                        asset = await regenerate_avatar(db, user_id, persona, feedback=feedback)
-                        payload = {"job_id": job_id, "asset_url": asset.asset_url, "seed_front_url": None, "seed_right_url": None, "seed_back_url": None, "id": asset.id}
+                        else:
+                            persona = await get_or_create_persona(db, user_id)
+                            asset = await regenerate_avatar(db, user_id, persona, feedback=feedback)
+                            payload = {"job_id": job_id, "asset_url": asset.asset_url, "seed_front_url": None, "seed_right_url": None, "seed_back_url": None, "id": asset.id}
                 except AvatarGenerationError as exc:
                     logger.warning("avatar regenerate failed", extra={"user_id": user_id, "error": str(exc)})
                     payload = {"job_id": job_id, "error": f"伙伴形象生成失败：{exc}"}
