@@ -247,8 +247,7 @@ async def video_gen(
         raise HTTPException(status_code=400, detail={"error": "duration must be between 4 and 15 seconds", "reason": "invalid_params", "status": 400})
     if resolution not in ("512P", "768P", "1080P", "2K"):
         raise HTTPException(status_code=400, detail={"error": "resolution must be 512P/768P/1080P/2K", "reason": "invalid_params", "status": 400})
-    if wait_seconds < 0 or wait_seconds > 60:
-        wait_seconds = min(max(wait_seconds, 0), 60)
+    wait_seconds = min(max(wait_seconds, 0), 60)
 
     try:
         async with SESSION_LOCAL() as db:

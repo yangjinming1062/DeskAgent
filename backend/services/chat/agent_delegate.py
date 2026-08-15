@@ -6,15 +6,13 @@ from modules.conversation import Conversation
 from modules.system import ChatMessageRequest, ChatRequest
 
 from ..tools import REGISTRY
-from .chat_emitter import Emitter, HeadlessEmitter
+from .chat_emitter import HeadlessEmitter
 from .orchestrator import run_chat_turn
 
 logger = get_logger(__name__)
 
 
-async def agent_delegate_tool(
-    task_description: str, user_id: int, llm_config: dict, user_settings: dict, parent_session_id: str | None = None, emitter: Emitter | None = None, **_
-) -> str:
+async def agent_delegate_tool(task_description: str, user_id: int, llm_config: dict, user_settings: dict, parent_session_id: str | None = None, **_) -> str:
     sid: str | None = None
 
     try:

@@ -758,8 +758,7 @@ async def run_nightly_pipeline(user_id: int, reference_utc: datetime | None = No
     # separate LLM calls, no shared state) — run them concurrently to save a wall-
     # clock LLM roundtrip per user per night.
     async def _checkpoint() -> None:
-        async with session_scope() as db:
-            await run_daily_checkpoint(llm_cfg, user_id, db, utc_start, utc_end, local_today_str)
+        await run_daily_checkpoint(llm_cfg, user_id, utc_start, utc_end, local_today_str)
 
     results = await asyncio.gather(
         _checkpoint(), _stage_5_creation(llm_cfg, user_id, clean_messages, updated_inferred, updated_auto_inject, local_today_str, tz_str=tz_str), return_exceptions=True

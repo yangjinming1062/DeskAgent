@@ -11,8 +11,8 @@ class MiMoImageGenProvider(ImageGenProvider):
     that exposes ``client.images.generate()`` — DALL·E, legacy MiMo image, etc.).
 
     The OpenAI SDK handles the wire shape; provider_name "mimo" is the legacy
-    default. ``MiniMaxImageGenProvider`` (added in commit 2) overrides this for
-    deployments that route image_gen through MiniMax.
+    default. ``MiniMaxImageGenProvider`` overrides this for deployments that
+    route image_gen through MiniMax's native endpoint.
     """
 
     provider_name = "mimo"
@@ -24,9 +24,7 @@ class MiMoImageGenProvider(ImageGenProvider):
         self._client: AsyncOpenAI = get_async_client(config.api_key, config.base_url)
 
     def raw_client(self) -> AsyncOpenAI | None:
-        """Back-compat shim: image_gen REST handlers still call
-        ``client.images.generate()`` directly. Once commit 3 routes them
-        through ``provider.generate()``, this method can be removed."""
+        # The image_gen REST handler drives ``client.images.generate()`` directly.
         return self._client
 
     async def generate(self, req: ImageGenRequest) -> ImageGenResult:

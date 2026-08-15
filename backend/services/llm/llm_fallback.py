@@ -98,4 +98,6 @@ async def execute_with_fallback(
             # instead of being masked by an unrelated cascading failure.
             raise content_policy_error or last_error
 
-    raise ((content_policy_error or last_error) if last_error is not None else MissingLlmConfigError(f"provider chain empty for {service_type!r}"))
+    # Unreachable with an empty last_error: the chain is non-empty (checked
+    # above) and every iteration either returns or records last_error.
+    raise content_policy_error or last_error  # type: ignore[misc]

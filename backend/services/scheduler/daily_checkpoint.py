@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any
 
-from components import get_logger
+from components import get_logger, session_scope
 from modules.conversation import Message
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -55,7 +55,7 @@ def _gap_days(prev_date_str: str | None, today_str: str) -> int | None:
         return None
 
 
-async def run_daily_checkpoint(llm_cfg: UserLlmConfig | dict[str, Any], user_id: int, db: AsyncSession, utc_start: datetime, utc_end: datetime, local_date_str: str) -> None:
+async def run_daily_checkpoint(llm_cfg: UserLlmConfig | dict[str, Any], user_id: int, utc_start: datetime, utc_end: datetime, local_date_str: str) -> None:
     """生成每日上下文检查点：从最近的压缩节点（``daily_summary`` 或 ``compress_summary``）
     到现在的全部内容，调一次 LLM 压成一条新的 ``daily_summary``。
 
@@ -69,6 +69,37 @@ async def run_daily_checkpoint(llm_cfg: UserLlmConfig | dict[str, Any], user_id:
 
     只追加，不删除任何已有消息。
     """
+    # Read and write phases hold their own short sessions — the LLM call in
+    # between must not pin a pool connection (README §4 short-transaction rule).
+    async with session_scope() as db:
+        inputs = await _collect_inputs(db, user_id, utc_start, utc_end, local_date_str)
+    if inputs is None:
+        return
+    conv_id, chat_content, prev_summary_text, gap_instruction = inputs
+
+    parsed, _ = await run_prompt_json(
+        user_id,
+        llm_cfg,
+        _SUMMARY_PROMPT_TEMPLATE,
+        {"prev_summary_block": f"已有历史摘要：\n{prev_summary_text}" if prev_summary_text else "暂无之前摘要。", "chat_content": chat_content, "gap_instruction": gap_instruction},
+        max_tokens=_SUMMARY_MAX_TOKENS,
+        log_prefix="daily_checkpoint",
+    )
+    if not parsed:
+        return
+    summary_text = str(parsed.get("summary") or "").strip()
+    if not summary_text:
+        return
+
+    async with session_scope() as wdb:
+        wdb.add(
+            Message(conversation_id=conv_id, role="system", content=f"[📝 截至 {local_date_str} 的对话摘要]\n{summary_text}", subtype="daily_summary", summary_date=local_date_str)
+        )
+        await wdb.commit()
+    logger.info("daily_checkpoint: created summary", extra={"user_id": user_id, "date": local_date_str})
+
+
+async def _collect_inputs(db: AsyncSession, user_id: int, utc_start: datetime, utc_end: datetime, local_date_str: str) -> tuple[int, str, str, str] | None:
     main_conv = await get_main_conversation(db, user_id)
     if main_conv is None:
         return
@@ -129,27 +160,4 @@ async def run_daily_checkpoint(llm_cfg: UserLlmConfig | dict[str, Any], user_id:
     prev_date = prev_daily.summary_date if prev_daily else None
     gap = _gap_days(prev_date, local_date_str)
     gap_instruction = f"- 注明「从 {prev_date} 到 {local_date_str} 之间有 {gap} 天没有互动」\n" if gap and gap > 1 else ""
-
-    parsed, _ = await run_prompt_json(
-        user_id,
-        llm_cfg,
-        _SUMMARY_PROMPT_TEMPLATE,
-        {
-            "prev_summary_block": f"已有历史摘要：\n{prev_summary_text}" if prev_summary_text else "暂无之前摘要。",
-            "chat_content": format_messages_compact(rows),
-            "gap_instruction": gap_instruction,
-        },
-        max_tokens=_SUMMARY_MAX_TOKENS,
-        log_prefix="daily_checkpoint",
-    )
-    if not parsed:
-        return
-    summary_text = str(parsed.get("summary") or "").strip()
-    if not summary_text:
-        return
-
-    db.add(
-        Message(conversation_id=main_conv.id, role="system", content=f"[📝 截至 {local_date_str} 的对话摘要]\n{summary_text}", subtype="daily_summary", summary_date=local_date_str)
-    )
-    await db.commit()
-    logger.info("daily_checkpoint: created summary", extra={"user_id": user_id, "date": local_date_str, "rows": len(rows)})
+    return main_conv.id, format_messages_compact(rows), prev_summary_text, gap_instruction

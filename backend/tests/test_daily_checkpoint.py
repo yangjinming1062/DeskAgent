@@ -105,7 +105,6 @@ async def test_daily_checkpoint_no_main_conversation(seeded, monkeypatch):
         await run_daily_checkpoint(
             llm_cfg={"model_name": "m"},
             user_id=2001,
-            db=db,
             utc_start=datetime(2026, 8, 13, 0, 0, 0),
             utc_end=datetime(2026, 8, 14, 0, 0, 0),
             local_date_str="2026-08-13",
@@ -131,7 +130,6 @@ async def test_daily_checkpoint_empty_day_skip(seeded, monkeypatch):
         await run_daily_checkpoint(
             llm_cfg={"model_name": "m"},
             user_id=2001,
-            db=db,
             utc_start=datetime(2026, 8, 13, 0, 0, 0),
             utc_end=datetime(2026, 8, 14, 0, 0, 0),
             local_date_str="2026-08-13",
@@ -157,7 +155,6 @@ async def test_daily_checkpoint_skip_when_only_status_rows_today(seeded, monkeyp
         await run_daily_checkpoint(
             llm_cfg={"model_name": "m"},
             user_id=2001,
-            db=db,
             utc_start=datetime(2026, 8, 13, 0, 0, 0),
             utc_end=datetime(2026, 8, 14, 0, 0, 0),
             local_date_str="2026-08-13",
@@ -186,7 +183,6 @@ async def test_daily_checkpoint_summary_inserted_with_summary_date(seeded, monke
         await run_daily_checkpoint(
             llm_cfg={"model_name": "m"},
             user_id=2001,
-            db=db,
             utc_start=datetime(2026, 8, 13, 0, 0, 0),
             utc_end=datetime(2026, 8, 14, 0, 0, 0),
             local_date_str="2026-08-13",
@@ -252,7 +248,6 @@ async def test_daily_checkpoint_includes_compress_summary_content(seeded, monkey
         await run_daily_checkpoint(
             llm_cfg={"model_name": "m"},
             user_id=2001,
-            db=db,
             utc_start=datetime(2026, 8, 13, 0, 0, 0),
             utc_end=datetime(2026, 8, 14, 0, 0, 0),
             local_date_str="2026-08-13",
@@ -297,7 +292,6 @@ async def test_daily_checkpoint_skips_when_last_message_is_checkpoint(seeded, mo
         await run_daily_checkpoint(
             llm_cfg={"model_name": "m"},
             user_id=2001,
-            db=db,
             utc_start=datetime(2026, 8, 13, 0, 0, 0),
             utc_end=datetime(2026, 8, 14, 0, 0, 0),
             local_date_str="2026-08-13",
@@ -338,7 +332,6 @@ async def test_daily_checkpoint_single_message_still_summarises(seeded, monkeypa
         await run_daily_checkpoint(
             llm_cfg={"model_name": "m"},
             user_id=2001,
-            db=db,
             utc_start=datetime(2026, 8, 13, 0, 0, 0),
             utc_end=datetime(2026, 8, 14, 0, 0, 0),
             local_date_str="2026-08-13",
@@ -378,7 +371,6 @@ async def test_daily_checkpoint_gap_days_in_prompt(seeded, monkeypatch):
         await run_daily_checkpoint(
             llm_cfg={"model_name": "m"},
             user_id=2001,
-            db=db,
             utc_start=datetime(2026, 8, 13, 0, 0, 0),
             utc_end=datetime(2026, 8, 14, 0, 0, 0),
             local_date_str="2026-08-13",
@@ -419,7 +411,6 @@ async def test_daily_checkpoint_no_gap_when_consecutive(seeded, monkeypatch):
         await run_daily_checkpoint(
             llm_cfg={"model_name": "m"},
             user_id=2001,
-            db=db,
             utc_start=datetime(2026, 8, 13, 0, 0, 0),
             utc_end=datetime(2026, 8, 14, 0, 0, 0),
             local_date_str="2026-08-13",
@@ -469,7 +460,6 @@ async def test_daily_checkpoint_does_not_re_summarise_prior_summary(seeded, monk
         await run_daily_checkpoint(
             llm_cfg={"model_name": "m"},
             user_id=2001,
-            db=db,
             utc_start=datetime(2026, 8, 13, 0, 0, 0),
             utc_end=datetime(2026, 8, 14, 0, 0, 0),
             local_date_str="2026-08-13",
@@ -504,7 +494,6 @@ async def test_daily_checkpoint_does_not_fold_tool_summary_rows(seeded, monkeypa
         await run_daily_checkpoint(
             llm_cfg={"model_name": "m"},
             user_id=2001,
-            db=db,
             utc_start=datetime(2026, 8, 13, 0, 0, 0),
             utc_end=datetime(2026, 8, 14, 0, 0, 0),
             local_date_str="2026-08-13",

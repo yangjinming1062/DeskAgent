@@ -250,18 +250,6 @@ def validate_and_sanitize_clip(clip_data: dict[str, Any], allowed_bones: set[str
     return {"name": name, "duration": round(duration, 3), "loop": loop, "category": category, "tags": tags, "tracks": sanitized_tracks}
 
 
-async def find_unmatched_tags(tags: list[str], rig_type: str, existing_clips: list[dict] | None = None) -> list[str]:
-    if not tags:
-        return []
-
-    covered_tags: set[str] = set()
-    if existing_clips:
-        for clip in existing_clips:
-            covered_tags.update(clip.get("tags", []))
-
-    return [t for t in tags if t not in covered_tags]
-
-
 async def generate_animation_clips(
     chat: ChatFn,
     rig_type: str,

@@ -12,8 +12,7 @@ from typing import Any
 from components import SESSION_LOCAL, SETTINGS, get_logger, parse_llm_json
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..llm import chat, provider_from_config, resolve_vision_chain
-from ..llm.llm_client import MissingLlmConfigError
+from ..llm import MissingLlmConfigError, chat, provider_from_config, resolve_vision_chain
 from ..worker import run_blender
 from .asset_store import build_data_uri, save_companion_model
 from .avatar_service import resolve_uploaded_avatar_path

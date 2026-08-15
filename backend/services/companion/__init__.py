@@ -1,6 +1,6 @@
 from . import asset_store, memory_admin, voice_catalog
 from .affect_check import AffectCheckResult, check_affect
-from .animation_generator import RIG_DEFAULT_BONES, find_unmatched_tags, generate_animation_clips, get_rig_bones
+from .animation_generator import RIG_DEFAULT_BONES, generate_animation_clips, get_rig_bones
 from .asset_store import (
     build_data_uri,
     build_signed_asset_url,
@@ -144,7 +144,6 @@ __all__ = [
     "equip_wardrobe_item",
     "extract_user_profile",
     "finalize_avatar",
-    "find_unmatched_tags",
     "format_auto_inject_block",
     "format_inferred_profile_block",
     "format_memories_block",

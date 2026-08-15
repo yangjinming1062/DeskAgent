@@ -18,6 +18,7 @@ from modules.auth import (
     hash_activation_token,
     public_provider_slots,
 )
+from modules.system import MessageResponse
 from services.llm import merge_provider_json
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -68,8 +69,8 @@ async def update_user(user_id: int, payload: UserUpdate, _admin: str = Depends(g
     return resp
 
 
-@router.delete("/users/{user_id}", response_model=dict)
-async def delete_user(user_id: int, _admin: str = Depends(get_current_admin_token), db: AsyncSession = Depends(get_db)) -> dict:
+@router.delete("/users/{user_id}", response_model=MessageResponse)
+async def delete_user(user_id: int, _admin: str = Depends(get_current_admin_token), db: AsyncSession = Depends(get_db)) -> MessageResponse:
     db.delete(await get_or_404(db, User, id=user_id, detail="用户不存在。"))
     await db.commit()
     return {"message": "用户已删除。"}
@@ -117,7 +118,12 @@ async def list_model_configs(_admin: str = Depends(get_current_admin_token), db:
 
 
 @router.put("/{user_id}/model-config")
-async def upsert_model_config(user_id: int, payload: UserModelConfigRequest, _admin: str = Depends(get_current_admin_token), db: AsyncSession = Depends(get_db)) -> dict:
+async def upsert_model_config(user_id: int, payload: UserModelConfigRequest, _admin: str = Depends(get_current_admin_token), db: AsyncSession = Depends(get_db)) -> MessageResponse:
+    # Unlike the self-service endpoint (empty = keep/clear), an admin write
+    # must be complete — a partially-filled row would silently break the
+    # user's chat chain (PROTOCOL §5.4).
+    if not (payload.llm_base_url and payload.llm_api_key and payload.llm_model_name):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="base_url、api_key、model_name 三字段必填。")
     await get_or_404(db, User, id=user_id, detail="用户不存在。")
     config = (await db.execute(select(UserModelConfig).where(UserModelConfig.user_id == user_id))).scalar_one_or_none()
     provider_json = merge_provider_json(payload.provider_config, config)
@@ -133,7 +139,7 @@ async def upsert_model_config(user_id: int, payload: UserModelConfigRequest, _ad
 
 
 @router.delete("/{user_id}/model-config")
-async def delete_model_config(user_id: int, _admin: str = Depends(get_current_admin_token), db: AsyncSession = Depends(get_db)) -> dict:
+async def delete_model_config(user_id: int, _admin: str = Depends(get_current_admin_token), db: AsyncSession = Depends(get_db)) -> MessageResponse:
     db.delete(await get_or_404(db, UserModelConfig, user_id=user_id, detail="模型配置不存在。"))
     await db.commit()
     return {"message": "模型配置已删除。"}

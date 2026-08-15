@@ -24,10 +24,12 @@ from slowapi.util import get_remote_address
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+WS_TICKET_TTL_SECONDS = 60
+
+
 router = get_router()
 
 # Short-lived ticket TTL: wide enough to open the WS, narrow enough to expire before replay.
-WS_TICKET_TTL_SECONDS = 60
 
 
 @router.post("/activate", response_model=TokenResponse)

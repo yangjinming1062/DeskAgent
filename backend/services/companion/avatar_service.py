@@ -33,6 +33,8 @@ _EXT_TO_MIME: dict[str, str] = {ext: mime for mime, ext in _UPLOAD_EXTS.items()}
 
 _SEED_ATTRS: dict[str, str] = {"front": "seed_front_url", "right": "seed_right_url", "back": "seed_back_url"}
 
+_FULLBODY_PROVIDER_PRIORITY = ["grok", "gemini", "minimax"]
+
 # Per-user lock shared between the REST fullbody route and the WS RPC handlers
 # so a concurrent regen + fullbody for the same user can't race on the row.
 _avatar_job_locks: dict[int, asyncio.Lock] = {}
@@ -465,7 +467,6 @@ async def generate_fullbody(
     # threshold is more permissive for the same structural prompt. Integration
     # testing: Grok and Gemini produce comparable pose compliance (7-8/10),
     # both above MiniMax (5/10); face identity is 7/10 across all three.
-    _FULLBODY_PROVIDER_PRIORITY = ["grok", "gemini", "minimax"]
     results = await asyncio.gather(
         *[
             _generate_one_portrait_with_moderation_retry(

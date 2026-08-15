@@ -7,7 +7,7 @@ from modules.memory import Memory
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from services.tools.memory import RESERVED_FROM_RECALL, context_not_in
+from services.tools import RESERVED_FROM_RECALL, context_not_in
 
 logger = get_logger(__name__)
 

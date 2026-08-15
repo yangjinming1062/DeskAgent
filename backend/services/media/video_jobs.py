@@ -14,6 +14,8 @@ from services.llm import MissingLlmConfigError, ServiceType, VideoGenProvider, V
 
 logger = get_logger(__name__)
 
+_INFLIGHT: set[int] = set()
+
 _BG_TASKS: set[asyncio.Task] = set()
 
 
@@ -132,7 +134,6 @@ async def enqueue_video_job(
 # attempts exit early so we don't double-download or push duplicate
 # WSEvents. The set lives in process memory (lost on restart, which is
 # fine — restart invokes resume_pending_video_jobs which walks the DB).
-_INFLIGHT: set[int] = set()
 
 
 async def _poll_and_finalize(job_id: int) -> None:

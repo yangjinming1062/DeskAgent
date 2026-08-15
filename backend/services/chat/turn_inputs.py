@@ -28,6 +28,12 @@ from .system_prompt import build_system_prompt
 logger = get_logger(__name__)
 
 
+# OpenAI reasoning_effort accepts this exact set; older models ignore it.
+ALLOWED_REASONING_EFFORTS = frozenset({"minimal", "low", "medium", "high", "max"})
+# OpenAI service_tier accepts this exact set; older models ignore it.
+ALLOWED_SERVICE_TIERS = frozenset({"auto", "default", "flex"})
+
+
 @dataclass(frozen=True)
 class _TurnInputs:
     """Outputs of :func:`_build_turn_inputs` — fields the orchestrator and
@@ -213,12 +219,6 @@ async def _build_turn_inputs(
         llm_chain=llm_chain,
         allowed_emotions=allowed_emotions,
     )
-
-
-# OpenAI reasoning_effort accepts this exact set; older models ignore it.
-ALLOWED_REASONING_EFFORTS = frozenset({"minimal", "low", "medium", "high", "max"})
-# OpenAI service_tier accepts this exact set; older models ignore it.
-ALLOWED_SERVICE_TIERS = frozenset({"auto", "default", "flex"})
 
 
 def _parse_reasoning_effort(raw: str | None) -> str | None:

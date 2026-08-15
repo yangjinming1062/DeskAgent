@@ -98,11 +98,6 @@ SHOULD_ACT_ANTIDUP_SECONDS = 2.0
 _last_should_act_ts: dict[int, float] = {}
 
 
-def _user_throttled(state: dict[int, float], user_id: int, min_interval: float, now: float) -> bool:
-    """If the user is still inside the window, return True without recording a new timestamp."""
-    return now - state.get(user_id, 0.0) < min_interval
-
-
 # Tasks created by avatar.* RPCs so we can drain them on shutdown.
 _avatar_regen_tasks: set[asyncio.Task] = set()
 
@@ -111,6 +106,11 @@ _avatar_regen_tasks: set[asyncio.Task] = set()
 # rollback, so no explicit unlock is needed. Combined with ``user_id``
 # to give one slot per user.
 _AVATAR_REGEN_ADVISORY_NAMESPACE = 0x4156_4156
+
+
+def _user_throttled(state: dict[int, float], user_id: int, min_interval: float, now: float) -> bool:
+    """If the user is still inside the window, return True without recording a new timestamp."""
+    return now - state.get(user_id, 0.0) < min_interval
 
 
 class WSEmitter:

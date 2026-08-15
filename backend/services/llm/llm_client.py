@@ -30,9 +30,8 @@ logger = get_logger(__name__)
 def client_for_config(llm_config: dict) -> AsyncOpenAI:
     """Build an ``AsyncOpenAI`` from an already-resolved ``llm_config`` dict.
 
-    Happy path: 7 of 9 callers pre-validate. Raises ``KeyError`` on a missing
-    key — callers that may receive incomplete dicts (e.g. background queue)
-    should pre-validate or use :func:`client_for_user` instead.
+    Raises ``KeyError`` on a missing key — callers that may receive incomplete
+    dicts (e.g. background queue) should pre-validate first.
     """
     return get_async_client(llm_config["api_key"], llm_config["base_url"])
 
@@ -247,27 +246,30 @@ async def provider_for_service(db: AsyncSession | None, user_id: int | None, ser
     return provider_from_config(await resolve_provider_config(db, user_id, service_type))
 
 
+async def _resolve_embedding_provider(db: AsyncSession | None, user_id: int | None) -> EmbeddingProvider | None:
+    try:
+        chain = await resolve_provider_chain(db, user_id, "embedding")
+        if not chain:
+            # Fall back to the chat provider with the OpenAI-compatible default embedding model.
+            llm_cfg = await resolve_provider_config(db, user_id, "llm")
+            chain = [
+                ProviderConfig(
+                    base_url=llm_cfg.base_url, api_key=llm_cfg.api_key, model="text-embedding-3-small", service_type=ServiceType.embedding, provider_name=llm_cfg.provider_name
+                )
+            ]
+        provider = provider_from_config(chain[0])
+        return provider if isinstance(provider, EmbeddingProvider) else None
+    except Exception:
+        return None
+
+
 async def generate_embedding(text: str, user_id: int | None = None, db: AsyncSession | None = None, timeout_seconds: float = 2.0) -> list[float] | None:
     """Generate embedding vector for a single text. Returns None if unconfigured or failed."""
     if not text or not text.strip():
         return None
     try:
-        try:
-            chain = await resolve_provider_chain(db, user_id, "embedding")
-        except Exception:
-            chain = []
-        if not chain:
-            try:
-                llm_cfg = await resolve_provider_config(db, user_id, "llm")
-                chain = [
-                    ProviderConfig(
-                        base_url=llm_cfg.base_url, api_key=llm_cfg.api_key, model="text-embedding-3-small", service_type=ServiceType.embedding, provider_name=llm_cfg.provider_name
-                    )
-                ]
-            except Exception:
-                return None
-        provider = provider_from_config(chain[0])
-        if not isinstance(provider, EmbeddingProvider):
+        provider = await _resolve_embedding_provider(db, user_id)
+        if provider is None:
             return None
         return await asyncio.wait_for(provider.embed_one(text), timeout=timeout_seconds)
     except Exception as exc:
@@ -280,22 +282,8 @@ async def generate_embeddings(texts: list[str], user_id: int | None = None, db: 
     if not texts:
         return []
     try:
-        try:
-            chain = await resolve_provider_chain(db, user_id, "embedding")
-        except Exception:
-            chain = []
-        if not chain:
-            try:
-                llm_cfg = await resolve_provider_config(db, user_id, "llm")
-                chain = [
-                    ProviderConfig(
-                        base_url=llm_cfg.base_url, api_key=llm_cfg.api_key, model="text-embedding-3-small", service_type=ServiceType.embedding, provider_name=llm_cfg.provider_name
-                    )
-                ]
-            except Exception:
-                return None
-        provider = provider_from_config(chain[0])
-        if not isinstance(provider, EmbeddingProvider):
+        provider = await _resolve_embedding_provider(db, user_id)
+        if provider is None:
             return None
         return await asyncio.wait_for(provider.embed(texts), timeout=timeout_seconds)
     except Exception as exc:

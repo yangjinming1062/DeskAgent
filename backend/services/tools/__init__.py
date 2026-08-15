@@ -9,6 +9,7 @@ from .memory import (
     NAMESPACE_SPECS,
     RECALL_SCHEMA,
     RECALL_TAGS,
+    RESERVED_FROM_RECALL,
     RETAIN_SCHEMA,
     STATIC_BLOCK_EXCLUDED,
     NamespaceSpec,
@@ -60,6 +61,7 @@ __all__ = [
     "RECALL_TAGS",
     "RETAIN_SCHEMA",
     "context_not_in",
+    "RESERVED_FROM_RECALL",
     "normalize_recall_context",
     "normalize_recall_tags",
     # search_tools_tool

@@ -10,6 +10,9 @@ from components import SETTINGS, get_logger
 
 logger = get_logger(__name__)
 
+# 5 min — desktop re-fetches frequently anyway
+_ASSET_URL_TTL_SECONDS = 300
+
 
 def build_data_uri(data: bytes, content_type: str | None = None) -> str:
     """Encode image bytes as a ``data:<mime>;base64,...`` reference URI.
@@ -22,10 +25,6 @@ def build_data_uri(data: bytes, content_type: str | None = None) -> str:
     """
     mime = (content_type or "image/png").split(";")[0].strip().lower() or "image/png"
     return f"data:{mime};base64,{base64.b64encode(data).decode('ascii')}"
-
-
-# 5 min — desktop re-fetches frequently anyway
-_ASSET_URL_TTL_SECONDS = 300
 
 
 def _assets_root() -> Path:

@@ -1,13 +1,13 @@
 import os
 
-import components.database as _db_mod
-import modules.media.models  # noqa: F401 — register models on ModelBase.metadata
 import pytest
-import sqlalchemy
-from common import ModelBase
 from sqlalchemy import event, text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
+
+import components.database as _db_mod
+import modules.media.models  # noqa: F401 — register models on ModelBase.metadata
+from common import ModelBase
 
 # All async tests and fixtures share one session-scoped event loop: the
 # session-scoped sqlite_engine (StaticPool = one aiosqlite connection) cannot
@@ -143,15 +143,7 @@ async def _seed_user(SessionLocal, username="testuser"):
       - ``activation_code``: base64url code for tests that exercise
         ``POST /api/user/activate`` directly.
     """
-    from modules.auth import (
-        LoginRecord,
-        User,
-        UserModelConfig,
-        create_access_token,
-        encode_activation_code,
-        generate_activation_token,
-        hash_activation_token
-    )
+    from modules.auth import LoginRecord, User, UserModelConfig, create_access_token, encode_activation_code, generate_activation_token, hash_activation_token
 
     # Retrieve real credentials from the environment for unmocked testing
     mimo_key = os.getenv("MIMO_API_KEY", "sk-fake-for-unit-tests")
@@ -194,6 +186,7 @@ async def _seed_user(SessionLocal, username="testuser"):
 @pytest.fixture()
 async def test_app(_patch_db):
     from fastapi import FastAPI
+
     from components import get_db
 
     app = FastAPI(title="deskagent-test")
@@ -254,8 +247,9 @@ async def ws_ticket(_patch_db):
     and pass ``?ticket=...`` rather than minting a bearer and passing
     ``?token=...``.
     """
-    from modules.auth import User, create_access_token
     from sqlalchemy import select
+
+    from modules.auth import User, create_access_token
 
     _, SessionLocal = _patch_db
     async with SessionLocal() as db:
@@ -268,16 +262,11 @@ async def ws_ticket(_patch_db):
 
 @pytest.fixture(autouse=True)
 def _clear_client_cache():
-    from services.llm import get_async_client
     from services.llm.providers import http as http_pool
 
-    get_async_client.cache_clear()
-    http_pool._clients.clear()
-    http_pool._clients_openai.clear()
+    http_pool.cache_clear()
     yield
-    get_async_client.cache_clear()
-    http_pool._clients.clear()
-    http_pool._clients_openai.clear()
+    http_pool.cache_clear()
 
 
 @pytest.fixture

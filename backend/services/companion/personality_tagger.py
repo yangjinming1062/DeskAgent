@@ -76,9 +76,6 @@ _TAG_SEEDS_BY_RIG: dict[str, list[str]] = {
     "octopod": ["多智", "伪装", "莫测", "怪诞", "克苏鲁", "多面", "诡异", "探知", "喷墨", "触手灵动", "不可名状", "洞察", "狡诈多端", "深海潜行", "柔韧变幻"],
 }
 
-# 扁平合并的所有种子标签
-_TAG_SEED: list[str] = list(dict.fromkeys(tag for tags in _TAG_SEEDS_BY_RIG.values() for tag in tags))
-
 _SYSTEM_PROMPT = (
     "你是一个角色性格与行为标签分析专家。根据用户给出的伙伴设定（名称、性格描述、生物物种、身份背景等），"
     "提炼并输出 3 到 10 个最能概括其性格特征、处事态度或生物形态行为的简短中文标签（每个标签 2-4 字）。\n"

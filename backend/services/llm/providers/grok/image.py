@@ -1,12 +1,11 @@
 import asyncio
-import base64
 from typing import ClassVar
 
 import httpx
 
 from .._provider_errors import raise_for_provider_response
 from ..base import ImageAsset, ImageGenProvider, ImageGenRequest, ImageGenResult, ProviderConfig
-from ..http import get_http
+from ..http import download_as_b64, get_http
 
 
 class GrokImageGenProvider(ImageGenProvider):
@@ -68,7 +67,7 @@ class GrokImageGenProvider(ImageGenProvider):
         # Download images in parallel — one anonymous client, no Bearer header
         # leaking to the CDN (mirrors zhipu/image.py).
         async with httpx.AsyncClient(timeout=httpx.Timeout(60.0, connect=10.0)) as cdn:
-            b64s = await asyncio.gather(*(_download_as_b64(cdn, u) for u in urls))
+            b64s = await asyncio.gather(*(download_as_b64(cdn, u) for u in urls))
         assets = [ImageAsset(b64=b, mime="image/png") for b in b64s]
 
         return ImageGenResult(images=assets, model=self.config.model, raw=body)
@@ -88,13 +87,7 @@ class GrokImageGenProvider(ImageGenProvider):
             raise RuntimeError(f"grok image_edit returned no images: {body}")
 
         async with httpx.AsyncClient(timeout=httpx.Timeout(60.0, connect=10.0)) as cdn:
-            b64s = await asyncio.gather(*(_download_as_b64(cdn, u) for u in urls))
+            b64s = await asyncio.gather(*(download_as_b64(cdn, u) for u in urls))
         assets = [ImageAsset(b64=b, mime="image/png") for b in b64s]
 
         return ImageGenResult(images=assets, model=self.config.model, raw=body)
-
-
-async def _download_as_b64(client: httpx.AsyncClient, url: str) -> str:
-    resp = await client.get(url)
-    resp.raise_for_status()
-    return base64.b64encode(resp.content).decode("utf-8")

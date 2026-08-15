@@ -1,3 +1,4 @@
+import base64
 import contextlib
 
 import httpx
@@ -5,6 +6,14 @@ from components import SETTINGS
 from openai import AsyncOpenAI
 
 _clients: dict[tuple[str, str], httpx.AsyncClient] = {}
+_clients_openai: dict[tuple[str, str], AsyncOpenAI] = {}
+
+
+async def download_as_b64(client: httpx.AsyncClient, url: str) -> str:
+    """Fetch a provider-hosted image URL and return it base64-encoded."""
+    resp = await client.get(url)
+    resp.raise_for_status()
+    return base64.b64encode(resp.content).decode("utf-8")
 
 
 def get_http(base_url: str, api_key: str, *, auth_header: dict[str, str] | None = None) -> httpx.AsyncClient:
@@ -48,9 +57,6 @@ def cache_clear() -> None:
     _clients_openai.clear()
 
 
-_clients_openai: dict[tuple[str, str], AsyncOpenAI] = {}
-
-
 def get_async_client(api_key: str, base_url: str) -> AsyncOpenAI:
     """Cached ``AsyncOpenAI`` keyed on (api_key, base_url).
 
@@ -65,9 +71,3 @@ def get_async_client(api_key: str, base_url: str) -> AsyncOpenAI:
     client = AsyncOpenAI(api_key=api_key, base_url=key[1])
     _clients_openai[key] = client
     return client
-
-
-# ``cache_clear`` is attached so the existing test fixture
-# (tests/conftest.py::_clear_client_cache) can drop both pools in one call
-# without learning about the new locations.
-get_async_client.cache_clear = cache_clear  # type: ignore[attr-defined]

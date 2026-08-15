@@ -302,14 +302,14 @@ _PROVIDER_POLICY_BLOCKED_PATTERNS = [
 # Patterns are intentionally narrow — each phrase is a verbatim string from
 # a specific provider's safety pipeline, not a generic word like "policy" or
 # "violation" that could collide with billing/auth/format errors:
-#   • OpenAI Codex cybersecurity refusal (gpt-5.5, the case from #18028)
+#   • OpenAI Codex cybersecurity refusal (gpt-5.5)
 #   • OpenAI moderation refusal ("violates our usage policies", with
 #     "usage policies" disambiguating from billing's "exceeded ... policy")
 #   • Anthropic safety refusal ("prompt was flagged by ... safety system")
 #   • OpenAI Responses content filter
 #   • MiniMax safety refusal ("violated safety policy" — base_resp 1027)
 _CONTENT_POLICY_BLOCKED_PATTERNS = [
-    # OpenAI Codex (#18028) — message may arrive without an HTTP status
+    # OpenAI Codex — message may arrive without an HTTP status
     "flagged for possible cybersecurity risk",
     "trusted access for cyber",
     # OpenAI moderation — chat completions / responses
@@ -594,7 +594,7 @@ def _classify_provider_specific(error_msg: str, status_code: int | None, result_
     # before status-based classification so a 400 safety block isn't
     # downgraded to a generic ``format_error`` and a status-less block
     # (OpenAI Codex SDK can raise without one) isn't left in the retryable
-    # ``unknown`` bucket. See issue #18028.
+    # ``unknown`` bucket.
     if any(p in error_msg for p in _CONTENT_POLICY_BLOCKED_PATTERNS):
         return result_fn(FailoverReason.content_policy_blocked, retryable=False, should_fallback=True)
 

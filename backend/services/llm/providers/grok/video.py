@@ -17,9 +17,8 @@ _STATUS_MAP = {"queued": "queued", "processing": "processing", "pending": "proce
 _MAX_PROMPT_CHARS = 7000
 
 # xAI docs (Imagine Overview + grok-imagine-video-1.5 model page) say the
-# duration range is 1–15s. Accept the whole range rather than the narrower
-# 5/10/15 set we used to publish — the earlier enum caused callers using
-# VideoGenRequest's default of duration=6 to be rejected client-side.
+# duration range is 1–15s. Accept the whole range rather than a narrow enum —
+# VideoGenRequest's default of duration=6 must not be rejected client-side.
 _SUPPORTED_DURATIONS = tuple(range(1, 16))  # 1..15 inclusive
 # Resolutions are lowercase per the docs (e.g. "720p", "1080p"); accept both
 # cases so callers don't have to know xAI's casing convention.

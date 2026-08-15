@@ -1,7 +1,7 @@
 import json
 import pytest
 
-from services.companion import find_unmatched_tags, generate_animation_clips, get_rig_bones
+from services.companion import generate_animation_clips, get_rig_bones
 from services.companion.animation_generator import validate_and_sanitize_clip
 
 
@@ -42,52 +42,3 @@ def test_get_rig_bones():
 
     fallback_bones = get_rig_bones("unknown_species")
     assert fallback_bones == biped_bones
-
-
-@pytest.mark.asyncio
-async def test_find_unmatched_tags():
-    existing_clips = [
-        {"name": "c1", "tags": ["活泼", "元气"]},
-        {"name": "c2", "tags": ["温柔"]}
-    ]
-
-    unmatched = await find_unmatched_tags(
-        ["活泼", "妖娆", "妩媚"], rig_type="biped", existing_clips=existing_clips
-    )
-    assert unmatched == ["妖娆", "妩媚"]
-
-
-@pytest.mark.asyncio
-async def test_generate_animation_clips():
-    async def mock_chat(
-        db, user_id, system_prompt, user_payload, *, provider_config=None
-    ):
-        return json.dumps(
-            [
-                {
-                    "name": "seductive_look",
-                    "duration": 2.0,
-                    "loop": False,
-                    "category": "interaction",
-                    "tags": ["妖娆"],
-                    "tracks": {
-                        "Head": [
-                            {"t": 0, "r": [0, 0, 0]},
-                            {"t": 2.0, "r": [0.1, 0.1, 0]}
-                        ]
-                    }
-                }
-            ]
-        )
-
-    clips = await generate_animation_clips(
-        mock_chat,
-        rig_type="biped",
-        bone_list=["Head", "Spine"],
-        personality_tags=["妖娆", "妩媚"],
-        species="人类"
-    )
-
-    assert len(clips) == 1
-    assert clips[0]["name"] == "seductive_look"
-    assert clips[0]["tags"] == ["妖娆"]

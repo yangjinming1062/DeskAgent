@@ -8,8 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from .llm_client import MissingLlmConfigError, client_for_config, provider_for_service, provider_from_config
 from .llm_retry import call_with_retry
-from .providers import ServiceType, resolve_context_tokens
-from .providers.base import ProviderConfig
+from .providers import ProviderConfig, ServiceType, resolve_context_tokens
 
 # Chinese-first (persona is Chinese, minimax handles it natively); the
 # 纯白平面背景 clause is a hard contract with the desktop chroma-key renderer.

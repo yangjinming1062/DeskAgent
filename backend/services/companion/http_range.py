@@ -1,4 +1,3 @@
-import hashlib
 import re
 from collections.abc import AsyncIterator
 from pathlib import Path
@@ -6,22 +5,10 @@ from pathlib import Path
 from fastapi import HTTPException, Request, Response
 from starlette.responses import StreamingResponse
 
+from .asset_store import compute_file_sha256
+
 _RANGE_PATTERN = re.compile(r"^bytes=(\d*)-(\d*)$")
 _CHUNK_SIZE = 256 * 1024  # 256 KB
-
-
-def compute_file_sha256(path: Path | str) -> str:
-    """Compute SHA-256 hash of a file on disk in streaming chunks."""
-    h = hashlib.sha256()
-    with open(path, "rb") as f:
-        while chunk := f.read(_CHUNK_SIZE):
-            h.update(chunk)
-    return h.hexdigest()
-
-
-def compute_bytes_sha256(data: bytes) -> str:
-    """Compute SHA-256 hash of raw bytes."""
-    return hashlib.sha256(data).hexdigest()
 
 
 def _parse_range_header(range_header: str, file_size: int) -> tuple[int, int] | None:

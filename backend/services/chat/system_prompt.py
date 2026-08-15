@@ -541,12 +541,7 @@ def _format_volatile_header(config: AgentPromptConfig) -> str:
     labels = _VOLATILE_LABELS.get(lang, _VOLATILE_LABELS[DEFAULT_LANGUAGE])
     if lang == "zh":
         date_str = f"{now.year}年{now.month}月{now.day}日"
-    elif lang in _VOLATILE_LABELS:
-        date_str = now.strftime("%A, %B %d, %Y")
     else:
-        # Mirror the label language on the date format too: an English date
-        # inside a non-English (non-zh) header is the same family of leak
-        # the localised labels were meant to prevent.
         date_str = now.strftime("%A, %B %d, %Y")
     line = f"{labels['started']}{date_str}"
     if config.pass_session_id and config.session_id:

@@ -358,8 +358,8 @@ async def test_safe_outbound_client_request_hook_blocks_unsafe_host(monkeypatch)
     was silently ignored by httpx and never executed)."""
     import httpx
 
+    import components.network as net
     from components import safe_outbound_async_client
-    from components import network as net
 
     def _fake(host: str):
         return (False, "test block") if host == "rebind.test" else (True, "")
