@@ -17,6 +17,8 @@ from .schemas import (
     WardrobeEquipRequest,
     WardrobeGenerateRequest,
     WardrobeItemResponse,
+    WardrobePreviewAcceptedResponse,
+    WardrobePreviewJobResponse,
     WardrobePreviewRequest,
     WardrobePreviewResponse,
 )
@@ -45,6 +47,8 @@ __all__ = [
     "WardrobeGenerateRequest",
     "WardrobeItem",
     "WardrobeItemResponse",
+    "WardrobePreviewAcceptedResponse",
+    "WardrobePreviewJobResponse",
     "WardrobePreviewRequest",
     "WardrobePreviewResponse",
 ]

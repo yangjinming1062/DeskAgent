@@ -29,9 +29,11 @@ from modules.companion import (
     WardrobeEquipRequest,
     WardrobeGenerateRequest,
     WardrobeItemResponse,
+    WardrobePreviewAcceptedResponse,
+    WardrobePreviewJobResponse,
     WardrobePreviewRequest,
-    WardrobePreviewResponse,
 )
+from modules.jobs import RenderJob
 from services.companion import (
     ALLOWED_AVATAR_UPLOAD_MIME_TYPES,
     AvatarGenerationError,
@@ -73,7 +75,6 @@ from services.companion import (
     model_response,
     normalize_outfit,
     normalize_voice_language,
-    preview_wardrobe_outfit,
     regenerate_avatar_from_image,
     resolve_companion_asset_path,
     resolve_companion_model_path,
@@ -89,6 +90,7 @@ from services.companion import (
 )
 from services.llm import MissingLlmConfigError, chat, resolve_provider_chain, resolve_vision_chain
 from services.rate_limit import limiter
+from services.worker import queue as render_queue
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -590,21 +592,39 @@ async def delete_wardrobe(item_id: int, auth: tuple[User, LoginRecord] = Depends
     return {"ok": True}
 
 
-@router.post("/wardrobe/preview", response_model=WardrobePreviewResponse)
+@router.post("/wardrobe/preview", response_model=WardrobePreviewAcceptedResponse, status_code=status.HTTP_202_ACCEPTED)
 @limiter.limit(f"{SETTINGS.companion_wardrobe_generate_rate_limit_per_minute}/minute")
 async def post_wardrobe_preview(
     request: Request,  # required by @limiter.limit
     body: WardrobePreviewRequest,
     auth: tuple[User, LoginRecord] = Depends(get_current_session),
     db: AsyncSession = Depends(get_db),
-) -> WardrobePreviewResponse:
+) -> WardrobePreviewAcceptedResponse:
+    """Enqueue the preview (texture seconds, geometric garment minutes) and
+    return immediately; poll the GET or listen for wardrobe.preview.* events."""
     user, _ = auth
     raw_bytes, content_type = _decode_upload_image(body.image, body.content_type)
-    try:
-        preview = await preview_wardrobe_outfit(db, user_id=user.id, description=body.description, image_bytes=raw_bytes, content_type=content_type, feedback=body.feedback)
-    except (RuntimeError, MissingLlmConfigError) as exc:
-        raise HTTPException(status_code=502, detail={"error": str(exc)})
-    return preview
+    payload = {
+        "description": body.description,
+        "feedback": body.feedback,
+        "content_type": content_type,
+        "image_b64": base64.b64encode(raw_bytes).decode("ascii") if raw_bytes else None,
+    }
+    job_id = await render_queue.enqueue("garment_preview", user.id, payload)
+    return WardrobePreviewAcceptedResponse(job_id=job_id, status="queued")
+
+
+@router.get("/wardrobe/preview/{job_id}", response_model=WardrobePreviewJobResponse)
+async def get_wardrobe_preview(job_id: int, auth: tuple[User, LoginRecord] = Depends(get_current_session), db: AsyncSession = Depends(get_db)) -> WardrobePreviewJobResponse:
+    user, _ = auth
+    job = await db.get(RenderJob, job_id)
+    if job is None or job.user_id != user.id or job.kind != "garment_preview":
+        raise HTTPException(status_code=404, detail="Preview job not found")
+    resp = WardrobePreviewJobResponse(job_id=job.id, status=job.status, error=job.error)
+    if job.status == "succeeded" and job.result:
+        for key, value in job.result.items():
+            setattr(resp, key, value)
+    return resp
 
 
 @router.post("/wardrobe/confirm", response_model=WardrobeItemResponse, status_code=status.HTTP_201_CREATED)

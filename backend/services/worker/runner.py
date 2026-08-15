@@ -20,7 +20,8 @@ logger = get_logger(__name__)
 WORKER_ID = f"{socket.gethostname()}-{os.getpid()}-{uuid.uuid4().hex[:8]}"
 
 # kind → handler(job, io_dir); populated by services.worker.handlers at import.
-Handler = Callable[[RenderJob, Path], Awaitable[None]]
+# A dict return value is persisted on the job row for callers that poll.
+Handler = Callable[[RenderJob, Path], Awaitable[dict | None]]
 HANDLERS: dict[str, Handler] = {}
 
 
@@ -42,8 +43,8 @@ async def drain_once() -> int:
             handler = HANDLERS.get(job.kind)
             if handler is None:
                 raise RuntimeError(f"no handler registered for render job kind {job.kind!r}")
-            await handler(job, io_dir)
-            await queue.finish(job.id)
+            result = await handler(job, io_dir)
+            await queue.finish(job.id, result=result)
         except Exception as e:
             logger.exception("render job failed", extra={"job_id": job.id, "kind": job.kind, "user_id": job.user_id})
             await queue.fail(job.id, f"{type(e).__name__}: {e}")

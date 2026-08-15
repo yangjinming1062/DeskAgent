@@ -36,6 +36,39 @@ interface WardrobePreviewResponse {
   assembly_json?: string
 }
 
+interface WardrobePreviewJobStatus extends Partial<WardrobePreviewResponse> {
+  job_id: number
+  status: string
+  error?: string
+}
+
+const PREVIEW_POLL_INTERVAL_MS = 2500
+const PREVIEW_POLL_TIMEOUT_MS = 10 * 60 * 1000
+
+async function pollPreviewJob(jobId: number): Promise<WardrobePreviewResponse> {
+  const deadline = Date.now() + PREVIEW_POLL_TIMEOUT_MS
+
+  for (;;) {
+    const job = await window.deskagent.api<WardrobePreviewJobStatus>({
+      path: `/api/companion/wardrobe/preview/${jobId}`
+    })
+
+    if (job.status === 'succeeded' && job.url && job.file_id) {
+      return job as WardrobePreviewResponse
+    }
+
+    if (job.status === 'failed') {
+      throw new Error(job.error || '生成失败，请稍后重试')
+    }
+
+    if (Date.now() > deadline) {
+      throw new Error('生成超时，请稍后重试')
+    }
+
+    await new Promise(resolve => setTimeout(resolve, PREVIEW_POLL_INTERVAL_MS))
+  }
+}
+
 interface WardrobeDesignPanelProps {
   onClose: () => void
 }
@@ -141,7 +174,7 @@ export function WardrobeDesignPanel({ onClose }: WardrobeDesignPanelProps): Reac
     setStatusMessage(null)
 
     try {
-      const res = await window.deskagent.api<WardrobePreviewResponse>({
+      const accepted = await window.deskagent.api<{ job_id: number; status: string }>({
         path: '/api/companion/wardrobe/preview',
         method: 'POST',
         body: {
@@ -151,6 +184,14 @@ export function WardrobeDesignPanel({ onClose }: WardrobeDesignPanelProps): Reac
           feedback: feedback.trim() || undefined
         }
       })
+
+      if (!accepted?.job_id) {
+        throw new Error('生成任务创建失败')
+      }
+
+      setStatusMessage({ type: 'info', text: '装扮生成中（贴图数秒，几何服装数分钟）…' })
+
+      const res = await pollPreviewJob(accepted.job_id)
 
       if (res?.url && res.file_id) {
         pushWardrobeCandidate({

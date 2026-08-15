@@ -53,9 +53,9 @@ async def claim_batch(worker_id: str, limit: int = 1) -> list[RenderJob]:
         return jobs
 
 
-async def finish(job_id: int) -> None:
+async def finish(job_id: int, result: dict | None = None) -> None:
     async with session_scope() as db:
-        await db.execute(update(RenderJob).where(RenderJob.id == job_id).values(status="succeeded", finished_at=utc_now()))
+        await db.execute(update(RenderJob).where(RenderJob.id == job_id).values(status="succeeded", finished_at=utc_now(), result=result))
         await db.commit()
 
 

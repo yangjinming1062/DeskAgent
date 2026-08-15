@@ -179,6 +179,26 @@ class WardrobePreviewResponse(BaseModel):
     assembly_json: str = "{}"
 
 
+class WardrobePreviewAcceptedResponse(BaseModel):
+    job_id: int
+    status: str
+
+
+class WardrobePreviewJobResponse(WardrobePreviewResponse):
+    """Polled job status; the preview fields only carry values once
+    ``status == "succeeded``" (hence every inherited field re-declared
+    optional)."""
+
+    job_id: int
+    status: str
+    error: str | None = None
+    url: str | None = None
+    prompt: str | None = None
+    file_id: str | None = None
+    kind: str | None = None
+    assembly_json: str | None = None
+
+
 class WardrobeConfirmRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

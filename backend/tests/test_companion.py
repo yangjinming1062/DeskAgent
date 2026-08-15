@@ -2886,12 +2886,23 @@ async def test_wardrobe_preview_and_confirm_lifecycle(_patch_db, monkeypatch):
         "services.companion.wardrobe_service.normalize_outfit", _fake_normalize_outfit
     )
 
-    # 2. Preview without image
+    # 2. Preview without image: POST enqueues (202), the worker host runs it
+    #    (drained here against the same mocks), result comes back via the
+    #    job-status GET.
+    from services.worker import handlers, runner
+
+    handlers.register()
+
     resp = client.post(
         "/api/companion/wardrobe/preview", json={"description": "未来感机能夹克"}
     )
-    assert resp.status_code == 200
-    preview_data = resp.json()
+    assert resp.status_code == 202
+    job_id = resp.json()["job_id"]
+    assert await runner.drain_once() == 1
+    status_resp = client.get(f"/api/companion/wardrobe/preview/{job_id}")
+    assert status_resp.status_code == 200
+    preview_data = status_resp.json()
+    assert preview_data["status"] == "succeeded"
     assert (
         preview_data["url"].startswith("http")
         or "/api/media/files/" in preview_data["url"]
@@ -2927,7 +2938,8 @@ async def test_wardrobe_preview_and_confirm_lifecycle(_patch_db, monkeypatch):
             "feedback": "添加霓虹蓝色线条",
         },
     )
-    assert resp_with_img.status_code == 200
+    assert resp_with_img.status_code == 202
+    assert await runner.drain_once() == 1
     assert captured_tool_args["reference_image"] == f"data:image/png;base64,{img_b64}"
     assert "用户反馈：添加霓虹蓝色线条" in captured_tool_args["prompt"]
 

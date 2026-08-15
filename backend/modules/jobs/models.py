@@ -31,3 +31,6 @@ class RenderJob(ModelBase, TimestampMixin):
     claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Handler return value for kinds whose caller polls (garment_preview:
+    # the full WardrobePreviewResponse fields).
+    result: Mapped[dict | None] = mapped_column(JSON, nullable=True)
