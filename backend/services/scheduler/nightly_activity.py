@@ -19,6 +19,7 @@ from components import (
     NIGHTLY_MESSAGE_TRUNCATE_CHARS,
     NIGHTLY_PLANNING_MAX_TOKENS,
     NIGHTLY_REFLECTION_MAX_TOKENS,
+    ensure_utc,
     get_logger,
     parse_llm_json,
     safe_json_loads,
@@ -446,7 +447,7 @@ async def _stage_5_creation(
         img_chain = await resolve_provider_chain(db, user_id, "image_gen")
         image_gen_available = bool(img_chain)
 
-        days_since_last_gift = (utc_now() - last_companion_gift_created_at).days if last_companion_gift_created_at else 999
+        days_since_last_gift = (utc_now() - ensure_utc(last_companion_gift_created_at)).days if last_companion_gift_created_at else 999
         allow_wardrobe = image_gen_available and (pending_wardrobe_count == 0) and (days_since_last_gift >= NIGHTLY_CREATION_WARDROBE_MIN_INTERVAL_DAYS)
 
     # Build creation prompt

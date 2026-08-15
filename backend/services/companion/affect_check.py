@@ -61,7 +61,7 @@ async def check_affect(user_id: int, idle_seconds: float, local_hour: int, llm_c
             "memories_block": ctx.memories_block,
             "recent_context": recent_context,
             "idle_minutes": round(coerce_non_negative_float(idle_seconds) / 60, 2),
-            "local_hour": coerce_hour_0_23(local_hour) if local_hour >= 0 else "未知",
+            "local_hour": h if (h := coerce_hour_0_23(local_hour)) >= 0 else "未知",
             "allowed_emotions": ", ".join(sorted(ctx.allowed_emotions)),
         },
         max_tokens=_MAX_RESPONSE_TOKENS,

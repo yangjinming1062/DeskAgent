@@ -1,7 +1,7 @@
 import logging
 from typing import ClassVar
 
-from ..base import ProviderConfig, TTSProvider, TTSResult, VoiceDesignResult
+from ..base import ProviderConfig, TTSProvider, TTSResult, VoiceDesignResult, pick_catalog_voice
 from ..http import get_http
 from ._errors import extract_minimax_audio, raise_for_minimax_response
 
@@ -42,7 +42,7 @@ preview_text 为试听文本——设计完成后会用它合成一段示例音�
         self._client = get_http(config.base_url, config.api_key)
 
     async def synthesize(self, text: str, *, voice: str = "", fmt: str = "mp3", speed: float | None = None) -> TTSResult:
-        chosen_voice = voice or self.VOICE_CATALOG[0]["id"]
+        chosen_voice = pick_catalog_voice(voice, self.VOICE_CATALOG)
         if voice != chosen_voice:
             logger.info("minimax tts: substituted voice", extra={"requested": voice, "used": chosen_voice})
         payload: dict = {

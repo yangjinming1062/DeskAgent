@@ -2,7 +2,7 @@ import logging
 from typing import ClassVar
 
 from .._provider_errors import raise_for_provider_response
-from ..base import ProviderConfig, TTSProvider, TTSResult
+from ..base import ProviderConfig, TTSProvider, TTSResult, pick_catalog_voice
 from ..http import get_http
 
 logger = logging.getLogger(__name__)
@@ -52,7 +52,7 @@ class GrokTTSProvider(TTSProvider):
         self._client = get_http(config.base_url, config.api_key)
 
     async def synthesize(self, text: str, *, voice: str = "", fmt: str = "mp3", speed: float | None = None) -> TTSResult:
-        chosen_voice = voice or self.VOICE_CATALOG[0]["id"]
+        chosen_voice = pick_catalog_voice(voice, self.VOICE_CATALOG)
         if voice != chosen_voice:
             logger.info("grok tts: substituted voice", extra={"requested": voice, "used": chosen_voice})
 

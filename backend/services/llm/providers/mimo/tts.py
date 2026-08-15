@@ -5,7 +5,7 @@ from typing import ClassVar
 from components import MAX_VOICE_DESIGN_PROMPT_CHARS
 from openai import AsyncOpenAI
 
-from ..base import ProviderConfig, TTSProvider, TTSResult, VoiceDesignResult
+from ..base import ProviderConfig, TTSProvider, TTSResult, VoiceDesignResult, pick_catalog_voice
 from ..http import get_async_client
 
 logger = logging.getLogger(__name__)
@@ -81,7 +81,7 @@ class MiMoTTSProvider(TTSProvider):
             model = _VOICEDESIGN_MODEL
             chosen_voice = ""
         else:
-            chosen_voice = voice or self.VOICE_CATALOG[0]["id"]
+            chosen_voice = pick_catalog_voice(voice, self.VOICE_CATALOG)
             if voice != chosen_voice:
                 logger.info("mimo tts: substituted voice", extra={"requested": voice, "used": chosen_voice})
             audio_kwargs = {"format": fmt, "voice": chosen_voice}

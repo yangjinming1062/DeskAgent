@@ -108,19 +108,26 @@ async def update_persona(db: AsyncSession, user_id: int, definition: dict[str, A
     user_profile = extract_user_profile(definition)
     persona_def = {k: v for k, v in definition.items() if not k.startswith("user_")}
     cleaned = _validate_definition(persona_def)
-    await record_user_profile(db, user_id, user_profile)
-    persona = await get_or_create_persona(db, user_id)
-    persona.definition_json = json.dumps(cleaned, ensure_ascii=False)
-    persona.system_prompt_extras = render_extras(cleaned)
-    persona.is_complete = True
-    persona.is_portrait_confirmed = False
-    persona.portrait_confirmed_at = None
-    # Retry on the partial-unique race; record_user_profile is idempotent.
+
+    async def _dual_write() -> Persona:
+        await record_user_profile(db, user_id, user_profile)
+        persona = await get_or_create_persona(db, user_id)
+        persona.definition_json = json.dumps(cleaned, ensure_ascii=False)
+        persona.system_prompt_extras = render_extras(cleaned)
+        persona.is_complete = True
+        persona.is_portrait_confirmed = False
+        persona.portrait_confirmed_at = None
+        return persona
+
+    persona = await _dual_write()
+    # Retry on the partial-unique race — rollback discards the pending persona
+    # assignments too, so the whole dual write replays (record_user_profile is
+    # idempotent).
     try:
         await db.commit()
     except IntegrityError:
         await db.rollback()
-        await record_user_profile(db, user_id, user_profile)
+        persona = await _dual_write()
         await db.commit()
     await db.refresh(persona)
     return persona

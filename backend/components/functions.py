@@ -66,6 +66,11 @@ def utc_now() -> datetime:
     return datetime.now(UTC)
 
 
+def ensure_utc(dt: datetime) -> datetime:
+    """Re-attach UTC to naive datetimes read back from SQLite (PG keeps tzinfo)."""
+    return dt.replace(tzinfo=UTC) if dt.tzinfo is None else dt
+
+
 def as_bool(value: Any, default: bool) -> bool:
     if value is None:
         return default

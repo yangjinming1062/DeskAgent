@@ -244,3 +244,10 @@ class EmbeddingProvider(BaseProvider):
     async def embed_one(self, text: str) -> list[float] | None:
         results = await self.embed([text])
         return results[0] if results else None
+
+
+def pick_catalog_voice(voice: str, catalog: list[dict]) -> str:
+    """Catalog-membership guard for provider ``synthesize`` paths that bypass
+    ``pick_voice_id`` — a foreign id falls back to the catalog default instead
+    of passing through and 400ing at the provider."""
+    return voice if voice and any(v.get("id") == voice for v in catalog) else catalog[0]["id"]
