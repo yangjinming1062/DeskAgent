@@ -52,7 +52,7 @@ class ToolRegistry:
         self._toolset_aliases: dict[str, str] = {}
         self._schemas: dict[str, dict] = {}
         self._check_fns: dict[str, Callable[[], bool]] = {}
-        self._check_fn_cache: dict[str, tuple[bool, float]] = {}
+        self._check_fn_cache: dict[str, tuple[bool, float, float]] = {}
         self._check_fn_ttl_seconds: float = 30.0
         self._check_fn_suppression_seconds: float = 60.0
         self._lock = threading.RLock()
@@ -100,21 +100,15 @@ class ToolRegistry:
         """Lazy capability check, TTL-cached with transient-failure suppression.
 
         Tools without a registered ``check_fn`` are always considered
-        available. Tools with a ``check_fn`` are probed on first call and
-        cached for ``_check_fn_ttl_seconds`` (30s). If a probe fails
-        shortly after a success, the cached "ok" is held for a
-        ``_check_fn_suppression_seconds`` grace window (60s) before
-        flipping — this matches the hermes-agent pattern, preventing a
-        single transient probe failure from silently stripping a tool
-        mid-session.
-
-        The suppression path always refreshes ``_check_fn_cache`` with
-        the *fresh* timestamp — without that write, every subsequent
-        failure within the suppression window reuses the stale success
-        tuple, hiding an ongoing outage. The cache row carries
-        ``(was_suppressed_ok, last_at)`` semantics: ``was_suppressed_ok``
-        stays ``True`` for the suppression window so the LLM sees the
-        tool, and the timestamp bumps so the 30 s TTL still expires.
+        available. Tools with one are probed on first call and cached for
+        ``_check_fn_ttl_seconds`` (30s). A failure landing within
+        ``_check_fn_suppression_seconds`` (60s) of the last *successful*
+        probe keeps advertising the tool, so one transient blip cannot
+        silently strip a tool mid-session. The suppression deadline is
+        anchored only to successes: a persistently failing probe flips
+        the verdict to unavailable once that window lapses — failures
+        never extend it. Cache rows are ``(last_ok, probed_at,
+        suppress_until)``.
         """
         with self._lock:
             check = self._check_fns.get(name)
@@ -122,26 +116,24 @@ class ToolRegistry:
                 return name in self._tools
             cached = self._check_fn_cache.get(name)
 
+        now = time.monotonic()
         if cached is not None:
-            last_ok, last_at = cached
-            if (time.monotonic() - last_at) < self._check_fn_ttl_seconds:
+            last_ok, probed_at, suppress_until = cached
+            if now - probed_at < self._check_fn_ttl_seconds:
                 return last_ok
+            if last_ok and now < suppress_until:
+                return True
 
         try:
             ok = bool(check())
         except Exception:
             ok = False
-        now = time.monotonic()
 
+        now = time.monotonic()
         with self._lock:
-            in_suppression = cached is not None and cached[0] and not ok and (now - cached[1]) < self._check_fn_suppression_seconds
-            if in_suppression:
-                # Bump the timestamp without flipping the verdict — so
-                # the suppression window expires on schedule and the
-                # 30 s TTL will fire a real re-probe after it does.
-                self._check_fn_cache[name] = (cached[0], now)
-                return True
-            self._check_fn_cache[name] = (ok, now)
+            prior = self._check_fn_cache.get(name)
+            suppress_until = now + self._check_fn_suppression_seconds if ok else (prior[2] if prior else now)
+            self._check_fn_cache[name] = (ok, now, suppress_until)
         return ok
 
     def clear_availability_cache(self) -> None:

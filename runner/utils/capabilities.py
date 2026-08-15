@@ -51,11 +51,16 @@ def microphone_available() -> bool:
 def screen_capture_available() -> bool:
     """True iff the host platform has a usable screenshot path on this build."""
     if IS_WINDOWS:
-        # pywinauto + mss are bundled only on Windows in pyproject.toml;
-        # the absence of ``mss`` would have broken `computer_use` already.
-        import importlib.util
+        # Enumerate real monitors via mss — an import-existence check would
+        # advertise capture on a headless session that cannot take one.
+        try:
+            import mss
 
-        return importlib.util.find_spec("mss") is not None
+            with mss.mss() as sct:
+                return len(sct.monitors) > 1
+        except Exception as e:
+            logger.debug("screen capture probe failed: %s", e)
+            return False
     if IS_MACOS:
         # screencapture binary is always present.
         return _binary_exists("screencapture")

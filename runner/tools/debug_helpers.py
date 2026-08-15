@@ -12,10 +12,7 @@ logger = logging.getLogger(__name__)
 class DebugSession:
     def __init__(self, tool_name: str, *, env_var: str) -> None:
         self.tool_name = tool_name
-        # ``env_var`` is the historical parameter name; the value now lives
-        # in ``config["debug"][env_var.lower()]`` so the runner can be
-        # configured without env-var injection.
-        self.enabled = bool(cfg_get(load_config(), "debug", env_var.lower(), default=False))
+        self._debug_key = env_var.lower()
         self.session_id = str(uuid.uuid4()) if self.enabled else ""
         self.log_dir = get_deskagent_home() / "logs"
         self._calls: list[dict[str, Any]] = []
@@ -23,6 +20,11 @@ class DebugSession:
         if self.enabled:
             self.log_dir.mkdir(parents=True, exist_ok=True)
             logger.debug("%s debug mode enabled - Session ID: %s", tool_name, self.session_id)
+
+    @property
+    def enabled(self) -> bool:
+        # Read per call: the Desktop's config push arrives long after import.
+        return bool(cfg_get(load_config(), "debug", self._debug_key, default=False))
 
     @property
     def active(self) -> bool:

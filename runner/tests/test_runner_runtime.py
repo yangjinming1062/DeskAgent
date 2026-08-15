@@ -104,42 +104,59 @@ def test_registry_check_fn_persists_failure_after_window():
     assert reg.is_tool_available("fake_always_false") is False
 
 
-def test_registry_check_fn_suppression_refreshes_timestamp(monkeypatch):
-    """Review finding: the suppression path used to leave the cache row
-    untouched, so every subsequent failure within the suppression window
-    re-checked ``cached[0] is True`` from a stale timestamp — hiding an
-    ongoing outage. The fix bumps the timestamp in suppression so the
-    30 s TTL eventually re-probes; here we time-travel past the
-    suppression window and assert the cache has flipped to False.
-    """
+def test_registry_check_fn_suppression_window_anchored_to_success():
+    """The suppression window is anchored to the last *success* only — a
+    failing probe must never push the deadline forward, or a permanently
+    broken tool would stay advertised to the LLM forever."""
+    import time
+
     from tools.registry import ToolRegistry
 
     reg = ToolRegistry()
-    # First call returns success, then consistent failures.
-    states = iter([True, False, False, False])
-    captured: list[float] = []
+    reg._check_fn_ttl_seconds = 0.0
+    reg._check_fn_suppression_seconds = 0.05
+    probes = {"n": 0}
+
+    def flapping() -> bool:
+        probes["n"] += 1
+        return probes["n"] == 1  # one success, then permanent failure
 
     @reg.register_tool(
-        "fake_recovering_then_broken",
-        schema={"name": "fake_recovering_then_broken", "parameters": {"type": "object"}},
-        check_fn=lambda: next(states),
+        "fake_permabroken",
+        schema={"name": "fake_permabroken", "parameters": {"type": "object"}},
+        check_fn=flapping,
     )
     def _h():  # pragma: no cover
         return "{}"
 
-    assert reg.is_tool_available("fake_recovering_then_broken") is True
-    # The cached row's timestamp must have advanced past the suppression
-    # window so the 30 s TTL can fire. We can't test real wall-clock here
-    # directly, but we *can* assert: after a recent failure, the cache
-    # row's timestamp is strictly greater than the original.
-    with reg._lock:
-        _, last_at = reg._check_fn_cache["fake_recovering_then_broken"]
-        captured.append(last_at)
-    # Pretend the suppression window has elapsed by setting the TTL
-    # window to zero; the next call MUST run the probe again.
-    monkeypatch.setattr(reg, "_check_fn_ttl_seconds", 0.0)
-    monkeypatch.setattr(reg, "_check_fn_suppression_seconds", 0.0)
-    assert reg.is_tool_available("fake_recovering_then_broken") is False
+    assert reg.is_tool_available("fake_permabroken") is True
+    assert reg.is_tool_available("fake_permabroken") is True  # suppressed, no probe
+    assert probes["n"] == 1
+
+    time.sleep(0.06)  # suppression window lapses
+    for _ in range(3):  # repeated failing probes keep the verdict flipped
+        assert reg.is_tool_available("fake_permabroken") is False
+        time.sleep(0.02)
+
+
+def test_debug_switches_read_config_at_call_time():
+    """debug.interrupt / debug.<tool> switches are read per call — the
+    Desktop pushes the config long after module import, so import-time
+    reads made them permanently unreachable."""
+    from tools.debug_helpers import DebugSession
+    from tools.interrupt import _debug_interrupt_enabled
+    from utils import set_inmemory_config
+
+    try:
+        assert _debug_interrupt_enabled() is False
+        session = DebugSession("vision_analyze_tool", env_var="vision_tools")
+        assert session.enabled is False
+
+        set_inmemory_config({"debug": {"interrupt": True, "vision_tools": True}})
+        assert _debug_interrupt_enabled() is True
+        assert session.enabled is True
+    finally:
+        set_inmemory_config({})
 
 
 def test_activity_probes_safe_defaults(monkeypatch):

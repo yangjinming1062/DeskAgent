@@ -178,3 +178,50 @@ def test_extract_tirith_binary_exe(tmp_path):
         if extracted is not None:
             assert "tirith" in extracted
             assert err == ""
+
+
+def test_check_command_security_delegates_install_to_background(monkeypatch):
+    """First-call install must not block the shell command — it is delegated
+    to the background-install path and the check degrades to
+    allow-with-warning until the binary lands."""
+    import time
+
+    import tools.security.tirith_security as ts
+
+    monkeypatch.setattr(
+        "tools.security.tirith_security._load_security_config",
+        lambda: {
+            "tirith_enabled": True,
+            "tirith_path": "tirith",
+            "tirith_timeout": 5,
+            "tirith_fail_open": False,
+        },
+    )
+    monkeypatch.setattr(ts, "_read_failure_reason", lambda: None)
+    monkeypatch.setattr(ts, "_tirith_search_paths", lambda: [])
+    monkeypatch.setattr(ts.shutil, "which", lambda p: None)
+    monkeypatch.setattr(ts, "_resolved_path", None)
+    monkeypatch.setattr(ts, "_install_thread", None)
+
+    started = []
+
+    def _fake_background(**kwargs):
+        started.append(kwargs)
+
+    class _FakeThread:
+        def __init__(self, target=None, kwargs=None, daemon=None):
+            target(**(kwargs or {}))
+
+        def start(self):
+            pass
+
+    monkeypatch.setattr(ts, "_background_install", _fake_background)
+    monkeypatch.setattr(ts.threading, "Thread", _FakeThread)
+
+    t0 = time.monotonic()
+    result = ts.check_command_security("echo test")
+    elapsed = time.monotonic() - t0
+
+    assert result["action"] == "allow"
+    assert started == [{"log_failures": True}]
+    assert elapsed < 2

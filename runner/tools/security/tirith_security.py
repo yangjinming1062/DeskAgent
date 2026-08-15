@@ -277,7 +277,7 @@ def _is_explicit_path(configured_path: str) -> bool:
 
 
 def _resolve_tirith_path(configured_path: str) -> str:
-    global _resolved_path, _install_failure_reason
+    global _resolved_path, _install_failure_reason, _install_thread
     if _resolved_path is not None and _resolved_path is not _INSTALL_FAILED:
         return _resolved_path
     expanded = os.path.expanduser(configured_path)
@@ -309,13 +309,11 @@ def _resolve_tirith_path(configured_path: str) -> str:
     if (disk_reason := _read_failure_reason()) is not None and _is_install_failed_on_disk():
         _resolved_path, _install_failure_reason = _INSTALL_FAILED, disk_reason
         return expanded
-    installed, reason = _install_tirith()
-    if installed:
-        _resolved_path, _install_failure_reason = installed, ""
-        _clear_install_failed()
-        return installed
-    _resolved_path, _install_failure_reason = _INSTALL_FAILED, reason
-    _mark_install_failed(reason)
+    # Install in the background: the synchronous download used to block the
+    # first shell command for the whole install duration. Until it lands,
+    # callers degrade to allow-with-warning via the missing-binary path.
+    _install_thread = threading.Thread(target=_background_install, kwargs={"log_failures": True}, daemon=True)
+    _install_thread.start()
     return expanded
 
 
