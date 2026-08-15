@@ -61,7 +61,6 @@ from services.companion import (
     generate_avatar,
     generate_companion_model,
     generate_fullbody,
-    generate_wardrobe_item,
     get_active_avatar,
     get_active_model,
     get_avatar_job_lock,
@@ -554,8 +553,34 @@ async def post_wardrobe(
     db: AsyncSession = Depends(get_db),
 ) -> WardrobeItemResponse:
     user, _ = auth
+    # Generate-then-confirm in one call. The generation itself runs on the
+    # render worker (README §1: web never hosts Blender pipelines); this
+    # endpoint long-polls the job to keep the synchronous 201 contract.
+    job_id = await render_queue.enqueue("garment_preview", user.id, {"description": body.description})
+    while True:
+        job = await db.get(RenderJob, job_id)
+        if job is None or job.status == "failed":
+            raise HTTPException(status_code=502, detail={"error": "换装生成失败，请稍后重试"})
+        if job.status == "succeeded":
+            break
+        await asyncio.sleep(2.0)
+    result = job.result or {}
     try:
-        item = await generate_wardrobe_item(db, user_id=user.id, name=body.name, description=body.description)
+        item = await confirm_wardrobe_item(
+            db,
+            user_id=user.id,
+            file_id=result.get("file_id", ""),
+            name=body.name,
+            prompt=body.description,
+            normal_file_id=result.get("normal_file_id"),
+            roughness_file_id=result.get("roughness_file_id"),
+            metalness_file_id=result.get("metalness_file_id"),
+            displacement_file_id=result.get("displacement_file_id"),
+            mesh_file_id=result.get("mesh_file_id"),
+            assembly_json=result.get("assembly_json"),
+        )
+    except WardrobeSourceExpiredError as exc:
+        raise HTTPException(status_code=409, detail={"error": "换装草稿已过期，请重新生成", "reason": str(exc)})
     except (RuntimeError, MissingLlmConfigError) as exc:
         raise HTTPException(status_code=502, detail={"error": str(exc)})
     return wardrobe_response(item)

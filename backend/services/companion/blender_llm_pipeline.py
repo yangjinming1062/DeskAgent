@@ -440,7 +440,7 @@ async def run_blender_llm_pipeline(user_id: int, view_filenames: dict[str, str],
 
         await _emit_progress(user_id, "injecting_morphs", 85, provider="blender_llm")
         rig_original_url = save_companion_model(best_glb, user_id=user_id)
-        final_glb = await _inject_morph_targets(best_glb)
+        final_glb = await _inject_morph_targets(best_glb, io_dir=io_dir)
 
         await _emit_progress(user_id, "finalizing", 95, provider="blender_llm")
         asset_url = save_companion_model(final_glb, user_id=user_id)

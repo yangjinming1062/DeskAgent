@@ -2,6 +2,7 @@ import asyncio
 import json
 import shutil
 import tempfile
+from contextlib import nullcontext
 from pathlib import Path
 
 from components import SESSION_LOCAL, SETTINGS, get_logger, safe_json_loads
@@ -96,12 +97,6 @@ def signed_model_url(model: CompanionModel | None) -> str | None:
     return build_signed_model_url(int(parts[1]), parts[2])
 
 
-# Strong references for fire-and-forget background tasks — prevents the
-# event-loop GC from discarding an in-flight ``asyncio.Task`` before it
-# completes (CPython bpo-46662).  Mirrors the ``_PERSONA_TAGS_TASKS``
-# pattern used elsewhere in the codebase.
-_running_model_tasks: set[asyncio.Task] = set()
-
 _CREDITS_ERROR_PATTERNS: tuple[str, ...] = ("credit", "quota", "insufficient", "balance", "exhausted", "limit reached", "billing")
 
 
@@ -176,7 +171,7 @@ async def generate_companion_model(
     db: AsyncSession, *, user_id: int, species_override: str | None = None, provider_override: str | None = None, force: bool = False
 ) -> CompanionModel:
     """Creates a ``status="generating"`` row immediately and returns it;
-    the actual pipeline runs in a background task and emits progress events."""
+    the pipeline runs on the render worker and emits progress events."""
     persona = await get_or_create_persona(db, user_id)
     definition = safe_json_loads(persona.definition_json or "{}", default={})
     species = species_override or (definition.get("biological_type", "人类") if isinstance(definition, dict) else "人类")
@@ -227,22 +222,17 @@ async def generate_companion_model(
         await db.refresh(model)
 
     # Blender+LLM consumes front/right/back seeds, so single-view mode always
-    # takes the Tripo branch (which works with a single front seed).
+    # takes the Tripo branch (which works with a single front seed). Both
+    # pipelines run in the render worker — web never hosts bpy iterations or
+    # the long Tripo poll (ARCHITECTURE.md §10, README §1).
     use_blender = _should_use_blender_fallback(provider_override) and fullbody_mode != "single"
-    if use_blender:
-        # The Blender+LLM loop runs in the render worker, not this process —
-        # web must never host minutes-long bpy iterations (ARCHITECTURE.md §10).
-        await render_queue.enqueue("model_generate", user_id, {"view_filenames": view_filenames, "species": species, "model_id": model.id})
-        logger.info("Blender+LLM generation enqueued (fallback)", extra={"user_id": user_id, "species": species})
-    else:
-        task = asyncio.create_task(_run_tripo_pipeline(user_id, view_filenames, species, model.id, fullbody_mode))
-        logger.info("Tripo3D generation started", extra={"user_id": user_id, "species": species})
-        _running_model_tasks.add(task)
-        task.add_done_callback(_running_model_tasks.discard)
+    kind = "model_generate" if use_blender else "tripo_generate"
+    await render_queue.enqueue(kind, user_id, {"view_filenames": view_filenames, "species": species, "model_id": model.id, "fullbody_mode": fullbody_mode})
+    logger.info("model generation enqueued", extra={"user_id": user_id, "species": species, "kind": kind})
     return model
 
 
-async def _run_tripo_pipeline(user_id: int, view_filenames: dict[str, str], species: str, model_id: int, fullbody_mode: str) -> None:
+async def run_tripo_pipeline(user_id: int, view_filenames: dict[str, str], species: str, model_id: int, fullbody_mode: str, *, io_dir: Path | None = None) -> None:
     is_single = fullbody_mode == "single"
     try:
         # Single-mode has no multi-view fallback path: blender_llm_pipeline
@@ -307,7 +297,7 @@ async def _run_tripo_pipeline(user_id: int, view_filenames: dict[str, str], spec
         rig_original_url = save_companion_model(glb_bytes, user_id=user_id)
 
         await _emit_progress(user_id, "injecting_morphs", 90, provider="tripo")
-        final_glb = await _inject_morph_targets(glb_bytes)
+        final_glb = await _inject_morph_targets(glb_bytes, io_dir=io_dir)
 
         await _emit_progress(user_id, "finalizing", 95, provider="tripo")
         asset_url = save_companion_model(final_glb, user_id=user_id)
@@ -359,18 +349,20 @@ async def _poll_with_progress(user_id: int, task_id: str, stage: str, start_pct:
             await asyncio.gather(*emit_tasks)
 
 
-async def _inject_morph_targets(glb_bytes: bytes) -> bytes:
+async def _inject_morph_targets(glb_bytes: bytes, *, io_dir: Path | None = None) -> bytes:
     """Best-effort Blender headless morph target injection.
 
     Returns the original GLB if Blender is unavailable or the script fails —
-    the model still works, just without facial expressions.
+    the model still works, just without facial expressions. ``io_dir`` keeps
+    the workspace host-visible for the sandboxed docker mount.
     """
     script_path = Path(__file__).parent.parent.parent / "assets" / "animations" / "inject_morph_targets.py"
     if not script_path.exists():
         logger.info("Morph injection script not found, skipping")
         return glb_bytes
 
-    with tempfile.TemporaryDirectory() as tmp:
+    io_ctx = nullcontext(str(io_dir)) if io_dir is not None else tempfile.TemporaryDirectory()
+    with io_ctx as tmp:
         tmp_dir = Path(tmp)
         inp = tmp_dir / "input.glb"
         out = tmp_dir / "output.glb"

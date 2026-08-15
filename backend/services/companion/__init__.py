@@ -50,6 +50,7 @@ from .model_service import (
     get_active_model,
     parse_glb_json,
     recover_stuck_model_generations,
+    run_tripo_pipeline,
     signed_model_url,
 )
 from .outfit_normalizer import normalize_outfit
@@ -89,7 +90,6 @@ from .wardrobe_service import (
     delete_wardrobe_item,
     discard_wardrobe_preview,
     equip_wardrobe_item,
-    generate_wardrobe_item,
     get_equipped_item,
     get_equipped_items,
     list_wardrobe,
@@ -152,7 +152,6 @@ __all__ = [
     "generate_avatar",
     "generate_companion_model",
     "generate_fullbody",
-    "generate_wardrobe_item",
     "get_active_avatar",
     "get_active_model",
     "get_avatar_job_lock",
@@ -185,6 +184,7 @@ __all__ = [
     "read_user_profile",
     "record_user_profile",
     "run_prompt_json",
+    "run_tripo_pipeline",
     "regenerate_avatar",
     "regenerate_avatar_from_image",
     "recover_stuck_model_generations",
