@@ -1751,7 +1751,7 @@ def browser_navigate(url: str, task_id: str | None = None) -> str:
     # Website policy check — block before navigating
     blocked = check_website_access(url)
     if blocked:
-        return json.dumps({"success": False, "error": blocked["message"], "blocked_by_policy": {"host": blocked["host"], "rule": blocked["rule"], "source": blocked["source"]}})
+        return json.dumps({"success": False, "error": blocked.message, "blocked_by_policy": {"host": blocked.host, "rule": blocked.rule, "source": blocked.source}})
 
     # Camofox backend — delegate after safety checks pass
     if is_camofox_mode():

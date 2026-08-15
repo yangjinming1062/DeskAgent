@@ -371,8 +371,8 @@ class TestClassifyCrossProfileTarget:
         # is a cross-profile write.
         info = classify_cross_profile_target(str(target))
         assert info is not None
-        assert info["target_profile"] == "work"
-        assert info["active_profile"] == "default"
+        assert info.target_profile == "work"
+        assert info.active_profile == "default"
 
 
 class TestGetCrossProfileWarning:
@@ -414,9 +414,9 @@ class TestSandboxMirror:
         info = classify_sandbox_mirror_target(str(target))
         assert info is not None
         # The inner_path is everything after ``.deskagent``.
-        assert "skills" in info["inner_path"]
-        assert "x" in info["inner_path"]
-        assert "SKILL.md" in info["inner_path"]
+        assert "skills" in info.inner_path
+        assert "x" in info.inner_path
+        assert "SKILL.md" in info.inner_path
 
 
 class TestContainerMirror:

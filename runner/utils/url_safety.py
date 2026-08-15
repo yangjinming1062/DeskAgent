@@ -5,6 +5,7 @@ import logging
 import socket
 import threading
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote, urlparse, urlsplit, urlunsplit
@@ -13,6 +14,35 @@ from .config import is_truthy_value, load_config
 from .constants import get_deskagent_home
 
 logger = logging.getLogger(__name__)
+
+_BLOCKED_HOSTNAMES = frozenset({"metadata.google.internal", "metadata.goog"})
+
+_ALWAYS_BLOCKED_IPS = frozenset(
+    ipaddress.ip_address(ip)
+    for ip in (
+        "169.254.169.254",
+        "169.254.170.2",
+        "169.254.169.253",
+        "fd00:ec2::254",
+        "100.100.100.200",
+        "::ffff:169.254.169.254",
+        "::ffff:169.254.170.2",
+        "::ffff:169.254.169.253",
+        "::ffff:100.100.100.200",
+    )
+)
+
+_ALWAYS_BLOCKED_NETWORKS = (ipaddress.ip_network("169.254.0.0/16"), ipaddress.ip_network("::ffff:169.254.0.0/112"))
+
+_TRUSTED_PRIVATE_IP_HOSTS = frozenset({"multimedia.nt.qq.com.cn"})
+_CGNAT_NETWORK = ipaddress.ip_network("100.64.0.0/10")
+
+_DEFAULT_WEBSITE_BLOCKLIST = {"enabled": False, "domains": [], "shared_files": []}
+
+_CACHE_TTL_SECONDS = 30.0
+_cache_lock = threading.Lock()
+_cached_policy: dict[str, Any] | None = None
+_cached_policy_time: float = 0.0
 
 
 def normalize_url_for_request(url: str) -> str:
@@ -39,29 +69,6 @@ def normalize_url_for_request(url: str) -> str:
         quote(parsed.query, safe="/%:@!$&'()*+,;=?"),
         quote(parsed.fragment, safe="/%:@!$&'()*+,;=?"),
     ))
-
-
-_BLOCKED_HOSTNAMES = frozenset({"metadata.google.internal", "metadata.goog"})
-
-_ALWAYS_BLOCKED_IPS = frozenset(
-    ipaddress.ip_address(ip)
-    for ip in (
-        "169.254.169.254",
-        "169.254.170.2",
-        "169.254.169.253",
-        "fd00:ec2::254",
-        "100.100.100.200",
-        "::ffff:169.254.169.254",
-        "::ffff:169.254.170.2",
-        "::ffff:169.254.169.253",
-        "::ffff:100.100.100.200",
-    )
-)
-
-_ALWAYS_BLOCKED_NETWORKS = (ipaddress.ip_network("169.254.0.0/16"), ipaddress.ip_network("::ffff:169.254.0.0/112"))
-
-_TRUSTED_PRIVATE_IP_HOSTS = frozenset({"multimedia.nt.qq.com.cn"})
-_CGNAT_NETWORK = ipaddress.ip_network("100.64.0.0/10")
 
 
 def _global_allow_private_urls() -> bool:
@@ -182,14 +189,6 @@ def check_redirect_url_safety(original_url: str, redirect_url: str) -> bool:
     return True
 
 
-_DEFAULT_WEBSITE_BLOCKLIST = {"enabled": False, "domains": [], "shared_files": []}
-
-_CACHE_TTL_SECONDS = 30.0
-_cache_lock = threading.Lock()
-_cached_policy: dict[str, Any] | None = None
-_cached_policy_time: float = 0.0
-
-
 class WebsitePolicyError(Exception):
     pass
 
@@ -288,7 +287,16 @@ def _extract_host_from_urlish(url: str) -> str:
     return _normalize_host(s.hostname or s.netloc) if "://" not in url and (s := urlparse(f"//{url}")) else ""
 
 
-def check_website_access(url: str) -> dict[str, str] | None:
+@dataclass
+class WebsiteBlockMatch:
+    url: str
+    host: str
+    rule: str
+    source: str
+    message: str
+
+
+def check_website_access(url: str) -> WebsiteBlockMatch | None:
     with _cache_lock:
         if _cached_policy is not None and not _cached_policy.get("enabled"):
             return None
@@ -310,5 +318,5 @@ def check_website_access(url: str) -> dict[str, str] | None:
             if _match_host_against_rule(host, pattern := rule.get("pattern", "")):
                 source = rule.get("source", "config")
                 logger.info("Blocked URL %s — matched rule '%s' from %s", url, pattern, source)
-                return {"url": url, "host": host, "rule": pattern, "source": source, "message": f"Blocked by website policy: '{host}' matched rule '{pattern}' from {source}"}
+                return WebsiteBlockMatch(url=url, host=host, rule=pattern, source=source, message=f"Blocked by website policy: '{host}' matched rule '{pattern}' from {source}")
     return None

@@ -2,6 +2,7 @@ import contextlib
 import ctypes
 import os
 from ctypes import wintypes
+from dataclasses import dataclass
 from pathlib import Path
 
 from .config import cfg_get, load_config
@@ -459,7 +460,22 @@ def _resolve_active_profile_name() -> str:
     return "default"
 
 
-def classify_cross_profile_target(path: str) -> dict | None:
+@dataclass
+class CrossProfileTarget:
+    active_profile: str
+    target_profile: str
+    area: str
+    target_path: str
+
+
+@dataclass
+class MirrorTarget:
+    target_path: str
+    mirror_root: str
+    inner_path: str
+
+
+def classify_cross_profile_target(path: str) -> CrossProfileTarget | None:
     try:
         target = Path(os.path.expanduser(str(path))).resolve()
         root_real = _deskagent_home_path().resolve()
@@ -475,14 +491,14 @@ def classify_cross_profile_target(path: str) -> dict | None:
             return None
         if target_profile == (active := _resolve_active_profile_name()):
             return None
-        return {"active_profile": active, "target_profile": target_profile, "area": area, "target_path": str(target)}
+        return CrossProfileTarget(active_profile=active, target_profile=target_profile, area=area, target_path=str(target))
     except (OSError, RuntimeError, ValueError):
         return None
 
 
 def get_cross_profile_warning(path: str) -> str | None:
     if info := classify_cross_profile_target(path):
-        return f"Cross-profile write blocked: {info['target_path']} belongs to profile {info['target_profile']!r} (active: {info['active_profile']!r}). Confirm with user, and retry with cross_profile=True."
+        return f"Cross-profile write blocked: {info.target_path} belongs to profile {info.target_profile!r} (active: {info.active_profile!r}). Confirm with user, and retry with cross_profile=True."
     return None
 
 
@@ -493,15 +509,13 @@ def _find_sandbox_mirror_segments(parts: tuple) -> int | None:
     return None
 
 
-def classify_sandbox_mirror_target(path: str) -> dict | None:
+def classify_sandbox_mirror_target(path: str) -> MirrorTarget | None:
     try:
         target = Path(os.path.expanduser(str(path))).resolve()
         if (idx := _find_sandbox_mirror_segments(target.parts)) is not None:
-            return {
-                "target_path": str(target),
-                "mirror_root": str(Path(*target.parts[: idx + 1])),
-                "inner_path": str(Path(*target.parts[idx + 1 :])) if idx + 1 < len(target.parts) else "",
-            }
+            return MirrorTarget(
+                target_path=str(target), mirror_root=str(Path(*target.parts[: idx + 1])), inner_path=str(Path(*target.parts[idx + 1 :])) if idx + 1 < len(target.parts) else ""
+            )
     except (OSError, RuntimeError):
         pass
     return None
@@ -509,22 +523,22 @@ def classify_sandbox_mirror_target(path: str) -> dict | None:
 
 def get_sandbox_mirror_warning(path: str) -> str | None:
     if info := classify_sandbox_mirror_target(path):
-        return f"Sandbox-mirror write blocked: {info['target_path']} sits under {info['mirror_root']!r}. Authoritative file is likely {info['inner_path']!r}. Confirm with user, and retry with cross_profile=True."
+        return f"Sandbox-mirror write blocked: {info.target_path} sits under {info.mirror_root!r}. Authoritative file is likely {info.inner_path!r}. Confirm with user, and retry with cross_profile=True."
     return None
 
 
-def classify_container_mirror_target(path: str, mirror_prefix: str | None = None) -> dict | None:
+def classify_container_mirror_target(path: str, mirror_prefix: str | None = None) -> MirrorTarget | None:
     if not mirror_prefix:
         return None
     try:
         target, prefix_real = (Path(os.path.expanduser(str(path))).resolve(), Path(os.path.expanduser(mirror_prefix)).resolve())
         rel = target.relative_to(prefix_real)
-        return {"target_path": str(target), "mirror_root": str(prefix_real), "inner_path": str(Path(*rel.parts)) if rel.parts else ""}
+        return MirrorTarget(target_path=str(target), mirror_root=str(prefix_real), inner_path=str(Path(*rel.parts)) if rel.parts else "")
     except (OSError, RuntimeError, ValueError):
         return None
 
 
 def get_container_mirror_warning(path: str, mirror_prefix: str | None = None) -> str | None:
     if info := classify_container_mirror_target(path, mirror_prefix):
-        return f"Container-mirror write blocked: {info['target_path']} sits under {info['mirror_root']!r}. Authoritative file is likely {info['inner_path']!r}. Confirm with user, and retry with cross_profile=True."
+        return f"Container-mirror write blocked: {info.target_path} sits under {info.mirror_root!r}. Authoritative file is likely {info.inner_path!r}. Confirm with user, and retry with cross_profile=True."
     return None

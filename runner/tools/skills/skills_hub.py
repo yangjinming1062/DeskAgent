@@ -133,7 +133,7 @@ def _guarded_http_get(url: str, *, timeout: int = 20) -> httpx.Response | None:
 
         blocked = check_website_access(current_url)
         if blocked:
-            logger.info("Blocked Skills Hub fetch for %s by rule %s", blocked["host"], blocked["rule"])
+            logger.info("Blocked Skills Hub fetch for %s by rule %s", blocked.host, blocked.rule)
             return None
 
         try:

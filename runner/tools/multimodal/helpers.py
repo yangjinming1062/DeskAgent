@@ -110,7 +110,7 @@ async def _download_media(url: str, destination: Path, *, accept: str, max_bytes
     for attempt in range(max_retries):
         try:
             if blocked := check_website_access(url):
-                raise PermissionError(blocked["message"])
+                raise PermissionError(blocked.message)
             async with httpx.AsyncClient(timeout=timeout, follow_redirects=True, event_hooks={"response": [_guard]}) as client:
                 res = await client.get(
                     url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36", "Accept": accept}
@@ -119,7 +119,7 @@ async def _download_media(url: str, destination: Path, *, accept: str, max_bytes
                 if ((cl := res.headers.get("content-length")) and int(cl) > max_bytes) or len(body := res.content) > max_bytes:
                     raise ValueError(f"{media_label.capitalize()} too large")
                 if blocked := check_website_access(str(res.url)):
-                    raise PermissionError(blocked["message"])
+                    raise PermissionError(blocked.message)
                 destination.write_bytes(body)
             return destination
         except Exception as e:

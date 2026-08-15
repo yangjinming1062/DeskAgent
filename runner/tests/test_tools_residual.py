@@ -538,15 +538,12 @@ class TestUrlSafety:
         assert ":8443" in out
 
     def test_is_safe_url_blocks_localhost(self):
-        """127.0.0.1 is a SSRF risk — MUST be blocked by the private-IP gate."""
+        """127.0.0.1 is a SSRF risk — MUST be blocked regardless of config."""
         from utils import is_safe_url
 
-        # The private-IP gate is opt-in via config; without it the
-        # gate is permissive. We don't pin the global state here —
-        # we just assert that ``is_safe_url`` returns a bool and
-        # does NOT crash on loopback.
-        out = is_safe_url("http://127.0.0.1:8000")
-        assert isinstance(out, bool)
+        assert is_safe_url("http://127.0.0.1:8000") is False
+        assert is_safe_url("http://localhost:8000") is False
+        assert is_safe_url("ftp://example.com") is False  # scheme gate
 
 
 class TestWebsitePolicy:
@@ -564,8 +561,10 @@ class TestWebsitePolicy:
         })
         try:
             out = check_website_access("https://WWW.Example.COM/path")
-            if out is not None:
-                assert out.get("host") == "example.com" or "example.com" in str(out)
+            assert out is not None, "blocklist rule must match after host normalization"
+            assert "example.com" in out.host  # www/case-insensitive rule match
+            assert out.rule  # matched some rule from the blocklist
+            assert check_website_access("https://unrelated.org/x") is None
         finally:
             set_inmemory_config({})
             url_safety._cached_policy = None
