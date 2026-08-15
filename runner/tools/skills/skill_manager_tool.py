@@ -457,9 +457,9 @@ SKILL_MANAGE_SCHEMA = {
 
 # --- Registry ---
 def _skill_manage_handler(args: dict[str, Any], **kw: Any) -> str:
-    # Cheap interrupt early-return: skill_manage writes to disk and may
-    # trigger a skills_sync round-trip on a "create" action. Without this
-    # guard a stale call could overwrite a freshly-edited file.
+    # Cheap interrupt early-return: skill_manage writes to disk on "create"
+    # actions. Without this guard a stale call could overwrite a
+    # freshly-edited file.
     if is_interrupted():
         return json.dumps({"error": "Interrupted", "interrupted": True})
     return skill_manage(

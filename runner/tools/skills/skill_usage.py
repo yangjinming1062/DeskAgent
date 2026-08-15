@@ -9,7 +9,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from utils import atomic_replace, get_skills_dir, load_config
+from utils import atomic_replace, get_skills_dir
 
 from .helpers import get_deskagent_metadata, iter_skill_index_files, parse_frontmatter
 
@@ -112,14 +112,6 @@ def activity_count(record: dict[str, Any]) -> int:
     return sum(int(record.get(k) or 0) for k in ("use_count", "view_count", "patch_count"))
 
 
-def _read_bundled_manifest_names() -> set[str]:
-    manifest = get_skills_dir() / ".bundled_manifest"
-    try:
-        return {line.split(":", 1)[0].strip() for line in manifest.read_text(encoding="utf-8").splitlines() if line.strip()} if manifest.exists() else set()
-    except OSError:
-        return set()
-
-
 def _read_hub_installed_names() -> set[str]:
     lock = get_skills_dir() / ".hub" / "lock.json"
     if not lock.exists():
@@ -143,62 +135,19 @@ def _read_hub_installed_names() -> set[str]:
         return set()
 
 
-def _prune_builtins_enabled() -> bool:
-    try:
-        return bool(load_config().get("curator", {}).get("prune_builtins", True))
-    except Exception:
-        return True
-
-
-def _suppressed_file() -> Path:
-    return get_skills_dir() / ".curator_suppressed"
-
-
-def read_suppressed_names() -> set[str]:
-    path = _suppressed_file()
-    try:
-        return {line.strip() for line in path.read_text(encoding="utf-8").splitlines() if line.strip() and not line.strip().startswith("#")} if path.exists() else set()
-    except OSError:
-        return set()
-
-
-def _write_suppressed_names(names: set[str]) -> None:
-    try:
-        atomic_replace(str(_suppressed_file()), "\n".join(sorted(names)) + ("\n" if names else ""))
-    except Exception as e:
-        logger.debug("Failed to write curator suppression list: %s", e, exc_info=True)
-
-
-def add_suppressed_name(skill_name: str) -> None:
-    if skill_name:
-        names = read_suppressed_names()
-        if skill_name not in names:
-            names.add(skill_name)
-            _write_suppressed_names(names)
-
-
-def remove_suppressed_name(skill_name: str) -> None:
-    if skill_name:
-        names = read_suppressed_names()
-        if skill_name in names:
-            names.discard(skill_name)
-            _write_suppressed_names(names)
-
-
 def list_agent_created_skill_names() -> list[str]:
     base = get_skills_dir()
     if not base.exists():
         return []
-    hub, bundled, prune_builtins, usage = (_read_hub_installed_names(), _read_bundled_manifest_names(), _prune_builtins_enabled(), load_usage())
+    hub, usage = _read_hub_installed_names(), load_usage()
     names = []
     for skill_md in base.rglob("SKILL.md"):
         if not is_excluded_skill_path(skill_md):
             try:
                 skill_md.relative_to(base)
                 name = _read_skill_name(skill_md, fallback=skill_md.parent.name)
-                if name not in hub and not is_protected_builtin(name):
-                    if (name in bundled and prune_builtins) or (name not in bundled and _is_curator_managed_record(usage.get(name))):
-                        names.append(name)
+                if name not in hub and not is_protected_builtin(name) and _is_curator_managed_record(usage.get(name)):
+                    names.append(name)
             except ValueError:
                 pass
     return sorted(set(names))
@@ -226,21 +175,15 @@ def _read_skill_name(skill_md: Path, fallback: str) -> str:
 
 
 def is_agent_created(skill_name: str) -> bool:
-    return skill_name not in (_read_bundled_manifest_names() | _read_hub_installed_names())
+    return not is_hub_installed(skill_name)
 
 
 def is_hub_installed(skill_name: str) -> bool:
     return skill_name in _read_hub_installed_names()
 
 
-def is_bundled(skill_name: str) -> bool:
-    return skill_name in _read_bundled_manifest_names()
-
-
 def is_curation_eligible(skill_name: str) -> bool:
-    if is_protected_builtin(skill_name) or is_hub_installed(skill_name):
-        return False
-    return _prune_builtins_enabled() if is_bundled(skill_name) else True
+    return not is_protected_builtin(skill_name) and not is_hub_installed(skill_name)
 
 
 def _is_curator_managed_record(record: Any) -> bool:
@@ -351,9 +294,7 @@ def archive_skill(skill_name: str) -> tuple[bool, str]:
     if not is_curation_eligible(skill_name):
         if is_protected_builtin(skill_name):
             return (False, f"skill '{skill_name}' is a protected built-in; it backs load-bearing UX and is never archived or consolidated")
-        if is_hub_installed(skill_name):
-            return False, f"skill '{skill_name}' is hub-installed; never archive"
-        return (False, f"skill '{skill_name}' is a bundled built-in; enable curator.prune_builtins to allow pruning it")
+        return False, f"skill '{skill_name}' is hub-installed; never archive"
 
     if (skill_dir := _find_skill_dir(skill_name)) is None:
         return False, f"skill '{skill_name}' not found"
@@ -368,8 +309,6 @@ def archive_skill(skill_name: str) -> tuple[bool, str]:
             skill_dir.rename(dest)
         except OSError:
             shutil.move(str(skill_dir), str(dest))
-        if is_bundled(skill_name):
-            add_suppressed_name(skill_name)
         set_state(skill_name, STATE_ARCHIVED)
         return True, f"archived to {dest}"
     except Exception as e:
@@ -377,8 +316,8 @@ def archive_skill(skill_name: str) -> tuple[bool, str]:
 
 
 def restore_skill(skill_name: str) -> tuple[bool, str]:
-    if is_hub_installed(skill_name) or (is_bundled(skill_name) and not _prune_builtins_enabled()):
-        return (False, f"skill '{skill_name}' is now {'hub-installed' if is_hub_installed(skill_name) else 'bundled'}; restore would shadow the upstream version")
+    if is_hub_installed(skill_name):
+        return False, f"skill '{skill_name}' is hub-installed; restore would shadow the upstream version"
     archive_root = _archive_dir()
     if not archive_root.exists():
         return False, "no archive directory"
@@ -398,7 +337,6 @@ def restore_skill(skill_name: str) -> tuple[bool, str]:
             src.rename(dest)
         except OSError:
             shutil.move(str(src), str(dest))
-        remove_suppressed_name(skill_name)
         set_state(skill_name, STATE_ACTIVE)
         return True, f"restored to {dest}"
     except Exception as e:
@@ -418,7 +356,7 @@ def _find_skill_dir(skill_name: str) -> Path | None:
 
 
 def provenance(skill_name: str) -> str:
-    return "hub" if is_hub_installed(skill_name) else ("bundled" if is_bundled(skill_name) else "agent")
+    return "hub" if is_hub_installed(skill_name) else "agent"
 
 
 def usage_report() -> list[dict[str, Any]]:
