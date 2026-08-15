@@ -58,13 +58,15 @@ def get_permission_status() -> dict[str, Any]:
 
 
 def _probe_macos_permission(osascript: str) -> tuple[str, str | None]:
-    """Run a tiny AppleScript and return one of ``"ok" / "denied" / "pending"``.
+    """Run a tiny AppleScript and return one of ``"ok" / "denied" / "pending" / "unknown"``.
 
     - ``"ok"`` — exit 0, permission granted
     - ``"denied"`` — explicit TCC rejection (matched error strings)
     - ``"pending"`` — probe timed out, very likely because a TCC dialog is
       open and the user is mid-grant; we deliberately don't downgrade to
       ``"denied"`` because the dialog being open is itself progress.
+    - ``"unknown"`` — failed without matching a TCC rejection signature;
+      callers bucket it with ``pending`` rather than claiming denial.
 
     ``osascript`` ships with every macOS install — no extra dependency. The
     TCC framework returns specific error strings we pattern-match against
@@ -89,4 +91,4 @@ def _probe_macos_permission(osascript: str) -> tuple[str, str | None]:
     err_lower = err.lower()
     if "not authorized" in err_lower or "not permitted" in err_lower or "(-1743)" in err_lower or "(-25211)" in err_lower:
         return "denied", err
-    return "denied", err
+    return "unknown", err

@@ -85,3 +85,4 @@ runner/
 | **TTY/stdin 不可用** | 所有 RPC 经本地 IPC 链路；任何 stdin 重定向或直接 console 输入都会与 C 库底层日志污染协议帧 |
 | **单进程架构** | Runner 不支持水平扩展；多用户场景下每个 Client 单独 spawn 独立 Runner 进程 |
 | **`probe_failed` 时 UI 降级需手动** | 部分能力可能仍可用，但 Client UI 收到 `probe_failed=true` 时整体降级；当前没有更细粒度的子能力独立上报 |
+| **Job Object 随 import 生效** | Windows 上导入 `utils.job_object` 即把导入进程绑进 KILL_ON_JOB_CLOSE Job（含 pytest 等测试进程）；解绑只能靠进程退出 |

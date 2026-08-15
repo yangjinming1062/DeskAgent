@@ -22,7 +22,6 @@ from utils import cfg_get, clean_output, load_config
 from ..process import process_registry
 from ..registry import registry
 from ..security import check_command_security
-from ..tool_output_limits import get_max_bytes
 from ._env_singularity import _get_scratch_dir
 from .environment import (
     _active_environments,
@@ -257,7 +256,7 @@ def terminal_tool(
             image = ""
         cwd = overrides.get("cwd") or config["cwd"]
         default_timeout = config["timeout"]
-        effective_timeout = timeout or default_timeout
+        effective_timeout = timeout if timeout is not None else default_timeout
         if not background and timeout and timeout > FOREGROUND_MAX_TIMEOUT:
             return json.dumps(
                 {
@@ -515,8 +514,12 @@ def terminal_tool(
                 break
             output = result.get("output", "")
             returncode = result.get("returncode", 0)
-            MAX_OUTPUT_CHARS = get_max_bytes()
-            if len(output) > MAX_OUTPUT_CHARS:
+            # Character budget (the registry's result-size cap): mixing in the
+            # byte cap would let CJK output blow past the LLM payload limit.
+            max_output_chars = registry.get_max_result_size()
+            if len(output) > max_output_chars:
+                head_chars = int(max_output_chars * 0.4)
+                tail_chars = max_output_chars - head_chars
                 head_chars = int(MAX_OUTPUT_CHARS * 0.4)
                 tail_chars = MAX_OUTPUT_CHARS - head_chars
                 omitted = len(output) - head_chars - tail_chars

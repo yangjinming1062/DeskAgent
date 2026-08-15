@@ -928,9 +928,12 @@ class ProcessRegistry:
                 self._terminate_host_pid(session.pid)
             else:
                 return {"status": "error", "error": ("Recovered process cannot be killed after restart because its original runtime handle is no longer available")}
+            # Only report an exit code we actually observed: taskkill /F and
+            # sandbox kills do not map to SIGTERM's -15.
+            proc = getattr(session, "process", None)
             with session._lock:
                 session.exited = True
-                session.exit_code = -15  # SIGTERM
+                session.exit_code = proc.returncode if proc is not None and proc.poll() is not None else None
             self._move_to_finished(session)
             self._write_checkpoint()
             return {"status": "killed", "session_id": session.id}

@@ -39,11 +39,30 @@ def test_job_object_noop_on_posix():
 def test_job_object_child_auto_inheritance():
     """Child processes spawned by runner must belong to the Job Object.
 
-    When runner process or Job Object is configured, child processes
-    inherit the job object automatically at creation.
+    Verified via IsProcessInJob on the child handle — a bare returncode
+    check cannot tell inheritance from nothing.
     """
+    import ctypes
+    from ctypes import wintypes
+
+    k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    k32.IsProcessInJob.argtypes = [wintypes.HANDLE, wintypes.HANDLE, ctypes.POINTER(wintypes.BOOL)]
+    k32.IsProcessInJob.restype = wintypes.BOOL
+    k32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    k32.OpenProcess.restype = wintypes.HANDLE
+    k32.CloseHandle.argtypes = [wintypes.HANDLE]
+
     init_runner_job_object()
-    # Spawn a brief subprocess and ensure it executes normally
     proc = subprocess.Popen([sys.executable, "-c", "import sys; sys.exit(0)"])
-    proc.wait(timeout=5)
+
+    _PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+    child = k32.OpenProcess(_PROCESS_QUERY_LIMITED_INFORMATION, False, proc.pid)
+    assert child, "OpenProcess on the child failed"
+    try:
+        in_job = wintypes.BOOL(False)
+        assert k32.IsProcessInJob(child, None, ctypes.byref(in_job))
+        assert in_job.value, "child process is not a member of the runner's Job Object"
+    finally:
+        k32.CloseHandle(child)
+        proc.wait(timeout=5)
     assert proc.returncode == 0

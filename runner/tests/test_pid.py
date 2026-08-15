@@ -14,6 +14,7 @@ import sys
 import psutil
 import pytest
 
+from utils.constants import CREATE_NO_WINDOW
 from utils.pid import kill_tree, pid_exists
 
 
@@ -195,5 +196,6 @@ def test_kill_tree_passes_creationflags(monkeypatch):
     monkeypatch.setattr("subprocess.run", _fake_run)
     kill_tree(12345)
     assert "creationflags" in captured_kwargs
-    # 0 on POSIX, CREATE_NO_WINDOW on Windows. Either way, not omitted.
-    assert captured_kwargs["creationflags"] >= 0
+    # Exactly CREATE_NO_WINDOW on Windows (0 on POSIX) — any int passing
+    # `>= 0` proved nothing.
+    assert captured_kwargs["creationflags"] == CREATE_NO_WINDOW

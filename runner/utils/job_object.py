@@ -14,7 +14,10 @@ _job_lock = threading.Lock()
 if IS_WINDOWS:
     from ctypes import wintypes
 
-    kernel32 = ctypes.windll.kernel32
+    # use_last_error=True + ctypes.get_last_error() is the reliable error
+    # channel; a plain windll + GetLastError() FFI call can observe a value
+    # reset by intermediate ctypes machinery.
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
 
     # Configure 64-bit safe argtypes and restypes for kernel32 APIs
     kernel32.CreateJobObjectW.restype = wintypes.HANDLE
@@ -93,21 +96,21 @@ def init_runner_job_object() -> bool:
         try:
             h_job = kernel32.CreateJobObjectW(None, None)
             if not h_job or h_job == wintypes.HANDLE(-1).value or h_job == -1:
-                logger.warning("CreateJobObjectW failed with error code %d", kernel32.GetLastError())
+                logger.warning("CreateJobObjectW failed with error code %d", ctypes.get_last_error())
                 return False
 
             info = _JOBOBJECT_EXTENDED_LIMIT_INFORMATION()
             info.BasicLimitInformation.LimitFlags = _JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
             set_res = kernel32.SetInformationJobObject(h_job, _JobObjectExtendedLimitInformation, ctypes.byref(info), ctypes.sizeof(info))
             if not set_res:
-                logger.warning("SetInformationJobObject failed with error code %d", kernel32.GetLastError())
+                logger.warning("SetInformationJobObject failed with error code %d", ctypes.get_last_error())
                 kernel32.CloseHandle(h_job)
                 return False
 
             cur_proc = kernel32.GetCurrentProcess()
             assign_res = kernel32.AssignProcessToJobObject(h_job, cur_proc)
             if not assign_res:
-                logger.warning("AssignProcessToJobObject(GetCurrentProcess()) failed with error code %d", kernel32.GetLastError())
+                logger.warning("AssignProcessToJobObject(GetCurrentProcess()) failed with error code %d", ctypes.get_last_error())
                 kernel32.CloseHandle(h_job)
                 return False
 
@@ -128,7 +131,8 @@ def is_job_object_active() -> bool:
     """True if the Windows Job Object is active for the current Runner process."""
     if not IS_WINDOWS:
         return False
-    return _runner_job_handle is not None and _runner_job_handle != 0
+    with _job_lock:
+        return _runner_job_handle is not None and _runner_job_handle != 0
 
 
 # Auto-initialize when module is loaded on Windows
