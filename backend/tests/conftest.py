@@ -110,6 +110,7 @@ async def _patch_db(monkeypatch, sqlite_engine, tmp_path):
         "services.companion.memory_admin",
         "services.companion.model_service",
         "services.companion.prompt_runtime",
+        "services.worker.queue",
         "services.companion.should_act",
         "api.v1.chat",
         "api.v1.companion",
