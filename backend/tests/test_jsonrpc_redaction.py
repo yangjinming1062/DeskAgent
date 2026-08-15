@@ -1,9 +1,9 @@
 import pytest
 
-from services.gateway import JsonRpcDispatcher, _redact_message
+from services.gateway import JsonRpcDispatcher, redact_message
 
 
-def test_redact_message_strips_paths_and_credentials():
+def testredact_message_strips_paths_and_credentials():
     """P1-9: -32603 messages must never leak server-side internals — DB
     DSNs, absolute paths, traceback frames, known API-key prefixes, or
     Python exception class names from third-party libs."""
@@ -12,7 +12,7 @@ def test_redact_message_strips_paths_and_credentials():
         "10.0.0.5 (10.0.0.5), port 5432 failed: FATAL: password authentication "
         'failed for user "postgres" /home/agent/DeskAgent/backend/services/chat/x.py:42'
     )
-    redacted = _redact_message(leak)
+    redacted = redact_message(leak)
     assert "OperationalError" not in redacted or "[redacted]" in redacted
     assert "/home/agent/" not in redacted
     assert "10.0.0.5" not in redacted
@@ -20,42 +20,42 @@ def test_redact_message_strips_paths_and_credentials():
     assert "psycopg2" not in redacted or "[redacted]" in redacted
 
 
-def test_redact_message_strips_traceback():
+def testredact_message_strips_traceback():
     msg = (
         "Something: Traceback (most recent call last):\n"
         '  File "/srv/app/backend/x.py", line 99, in foo\n'
         "    raise RuntimeError('boom')"
     )
-    redacted = _redact_message(msg)
+    redacted = redact_message(msg)
     assert "Traceback" not in redacted
     assert "/srv/app/" not in redacted
     assert "raise RuntimeError" not in redacted
 
 
-def test_redact_message_strips_api_keys():
+def testredact_message_strips_api_keys():
     msg = "openai call failed: sk-proj-abc123def456ghi789jkl012mno345pqr"
-    redacted = _redact_message(msg)
+    redacted = redact_message(msg)
     assert "sk-proj-abc" not in redacted
     assert "[redacted]" in redacted
 
 
-def test_redact_message_strips_dsn():
+def testredact_message_strips_dsn():
     msg = "OperationalError: postgresql://app:s3cret@db.internal:5432/prod"
-    redacted = _redact_message(msg)
+    redacted = redact_message(msg)
     assert "s3cret" not in redacted
     assert "db.internal" not in redacted or "[redacted]" in redacted
 
 
-def test_redact_message_caps_length():
+def testredact_message_caps_length():
     """Backstop: a runaway exception message can't blow up the WS frame."""
     msg = "x" * 5000
-    redacted = _redact_message(msg)
+    redacted = redact_message(msg)
     assert len(redacted) <= 512
 
 
-def test_redact_message_keeps_clean_messages_intact():
+def testredact_message_keeps_clean_messages_intact():
     msg = "Method not found: foo.bar"
-    assert _redact_message(msg) == msg
+    assert redact_message(msg) == msg
 
 
 @pytest.mark.asyncio
@@ -93,3 +93,35 @@ async def test_jsonrpc_internal_error_redacts_handler_exception():
     assert "s3cret" not in err["message"]
     assert "postgresql://" not in err["message"]
     assert "/srv/app/" not in err["message"]
+
+
+@pytest.mark.asyncio
+async def test_push_error_event_redacts_raw_exception():
+    """push_event bypasses _reply_error — the error-event channel must run the
+    same redact pipeline or raw DSN/traceback text reaches the renderer."""
+    captured_frames: list[dict] = []
+
+    async def _send(frame: dict) -> None:
+        captured_frames.append(frame)
+
+    dispatcher = JsonRpcDispatcher(_send)
+    await dispatcher.push_error_event(
+        "OperationalError: postgresql://app:s3cret@db:5432/x failed at /srv/app/main.py:10",
+        session_id="42",
+    )
+
+    params = captured_frames[0]["params"]
+    assert params["type"] == "error"
+    assert "s3cret" not in params["payload"]["message"]
+    assert "postgresql://" not in params["payload"]["message"]
+
+
+def test_avatar_generation_error_str_is_curated():
+    """str(exc) crosses into 502 `reason` fields and WS payloads — the raw
+    provider error must ride in `.internal` only."""
+    from services.companion import AvatarGenerationError
+
+    exc = AvatarGenerationError("image-gen provider failed", internal="httpx.ConnectError: https://provider.internal/v1 timeout")
+    assert str(exc) == "image-gen provider failed"
+    assert "provider.internal" in exc.internal
+    assert "provider.internal" not in str(AvatarGenerationError("safe"))

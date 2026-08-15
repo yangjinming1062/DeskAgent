@@ -2507,7 +2507,7 @@ async def test_model_generation_failure_keeps_previous_model_active(
             .scalars()
             .one()
         )
-        assert failed.error == "tripo down"
+        assert failed.error == "3D 模型生成失败，请稍后重试"
         assert failed.active is False
         prev = (
             (
@@ -2810,7 +2810,7 @@ async def test_run_tripo_pipeline_single_mode_skips_blender_fallback(
         )
         assert row.status == "failed"
         assert row.active is False
-        assert "credit" in row.error.lower()
+        assert row.error == "3D 模型生成失败，请稍后重试"
 
 
 @pytest.mark.asyncio

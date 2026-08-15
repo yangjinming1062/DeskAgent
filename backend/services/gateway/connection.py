@@ -243,7 +243,7 @@ async def _execute_cron_turn(user_id: int, payload: dict) -> None:
     except Exception as e:
         logger.exception("cron: autonomous turn failed", extra={"user_id": user_id, "job_id": payload.get("job_id")})
         with contextlib.suppress(Exception):
-            await dispatcher.push_event("error", {"message": str(e)}, session_id=session_id)
+            await dispatcher.push_error_event(str(e), session_id=session_id)
 
 
 _WS_EVENT_LOOP = BackgroundTask("gateway.ws_event_loop")

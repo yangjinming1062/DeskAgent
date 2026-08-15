@@ -458,8 +458,8 @@ async def run_blender_llm_pipeline(user_id: int, view_filenames: dict[str, str],
         await _emit_progress(user_id, "done", 100, provider="blender_llm")
         logger.info("Blender+LLM generation succeeded", extra={"user_id": user_id, "species": species, "rig_type": rig_type, "morph_count": len(morph_names)})
 
-    except Exception as exc:
+    except Exception:
         logger.warning("Blender+LLM generation failed", extra={"user_id": user_id}, exc_info=True)
-        reason = str(exc) if isinstance(exc, ModelGenerationError) else f"Blender+LLM 管线错误: {exc}"
-        await _emit_model_failed(user_id, reason)
-        await _mark_generation_failed(model_id, reason)
+        # model.failed reaches the client — fixed copy only (PROTOCOL §1.2).
+        await _emit_model_failed(user_id, "3D 模型生成失败，请稍后重试")
+        await _mark_generation_failed(model_id, "3D 模型生成失败，请稍后重试")

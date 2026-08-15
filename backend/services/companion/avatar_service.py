@@ -92,7 +92,7 @@ async def _generate_one_portrait_with_moderation_retry(
             prompt, user_id, reference_image=reference_image, secondary_reference_image=secondary_reference_image, size=size, persist=persist, preferred_provider=preferred_provider
         )
     except AvatarGenerationError as first_exc:
-        if not is_content_policy_error_message(str(first_exc)):
+        if not is_content_policy_error_message(first_exc.internal):
             raise
         logger.info("avatar gen blocked by moderation, sanitizing prompt", extra={"user_id": user_id})
         sanitized = await _sanitize_prompt_for_moderation(user_id, prompt)
@@ -109,13 +109,20 @@ async def _generate_one_portrait_with_moderation_retry(
                 preferred_provider=preferred_provider,
             )
         except AvatarGenerationError as second_exc:
-            raise AvatarGenerationError(f"sanitized retry failed after moderation block (original: {first_exc})") from second_exc
+            raise AvatarGenerationError("sanitized retry failed after moderation block", internal=f"original: {first_exc.internal}; retry: {second_exc.internal}") from second_exc
 
 
 class AvatarGenerationError(RuntimeError):
     """Raised when avatar generation cannot complete. Distinct from a
     provider rate-limit retry so callers can render a user-friendly
-    "伙伴形象生成失败，请稍后重试" UI without leaking the upstream error."""
+    "伙伴形象生成失败，请稍后重试" UI without leaking the upstream error.
+
+    ``str(exc)`` is always the curated public message; the raw provider /
+    transport error rides in ``internal`` for logs and control flow only."""
+
+    def __init__(self, public: str, internal: str = "") -> None:
+        super().__init__(public)
+        self.internal = internal or public
 
 
 class AvatarNotFoundError(AvatarGenerationError):
@@ -263,10 +270,11 @@ async def _generate_one_portrait(
 
     source_url = first_image_url(result_json)
     if source_url is None:
-        # Preserve the real provider error so _generate_one_portrait_with_moderation_retry can detect content-policy blocks.
+        # The raw provider error must stay reachable for the moderation-retry
+        # sniff, but never crosses into str(exc) (user-visible surface).
         parsed = safe_json_loads(result_json, default=None)
         tool_err = parsed.get("error") if isinstance(parsed, dict) else None
-        raise AvatarGenerationError(tool_err or "image-gen provider returned no URL")
+        raise AvatarGenerationError("image-gen provider failed", internal=str(tool_err or "image-gen provider returned no URL"))
 
     if not persist:
         temp_file_id = _extract_temp_file_id(source_url)
@@ -576,7 +584,7 @@ async def generate_avatar(db: AsyncSession, user_id: int, persona: Persona) -> A
     try:
         avatar_prompt = await enhance_avatar_prompt(db, user_id, persona)
     except (ValidationError, RuntimeError) as exc:
-        raise AvatarGenerationError(f"prompt enhancement failed: {exc}") from exc
+        raise AvatarGenerationError("prompt enhancement failed", internal=str(exc)) from exc
     asset = await _generate_avatar_step(db, user_id, avatar_prompt=avatar_prompt, style=_DEFAULT_STYLE, persona=persona, persist=persona.is_portrait_confirmed)
     return asset
 
@@ -653,7 +661,7 @@ async def regenerate_avatar(db: AsyncSession, user_id: int, persona: Persona, fe
     try:
         avatar_prompt = await enhance_avatar_prompt(db, user_id, persona, feedback=feedback)
     except (ValidationError, RuntimeError) as exc:
-        raise AvatarGenerationError(f"prompt enhancement failed: {exc}") from exc
+        raise AvatarGenerationError("prompt enhancement failed", internal=str(exc)) from exc
     asset = await _generate_avatar_step(db, user_id, avatar_prompt=avatar_prompt, style=style, persona=persona, feedback=feedback, persist=persona.is_portrait_confirmed)
     return asset
 
@@ -724,7 +732,7 @@ async def regenerate_avatar_from_image(
     try:
         avatar_prompt = await enhance_avatar_prompt(db, user_id, persona, feedback=description)
     except (ValidationError, RuntimeError) as exc:
-        raise AvatarGenerationError(f"prompt enhancement failed: {exc}") from exc
+        raise AvatarGenerationError("prompt enhancement failed", internal=str(exc)) from exc
     secondary_uri = build_data_uri(presentation_data, presentation_content_type or "image/png") if presentation_data is not None else None
     asset = await _generate_avatar_step(
         db,

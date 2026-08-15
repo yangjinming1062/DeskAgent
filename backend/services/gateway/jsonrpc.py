@@ -27,7 +27,7 @@ Handler = Callable[[dict], Awaitable[Any]]
 _REDACT_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"\s*Traceback \(most recent call last\):.*", re.DOTALL),
     re.compile(r"(/[A-Za-z0-9_.+-]+){2,}/[A-Za-z0-9_.-]+\.py:\d+"),
-    re.compile(r"[A-Za-z]:\\\\[A-Za-z0-9_.\\\\ -]+\.py:\d+"),
+    re.compile(r"[A-Za-z]:\\[A-Za-z0-9_.\\ -]+\.py:\d+"),
     # Generic filesystem paths (any /var/lib / /tmp / /etc) — the
     # `.py` patterns above don't catch directories or non-Python files.
     re.compile(r"/(?:var|tmp|etc|home|root|opt|srv|mnt)/[A-Za-z0-9_./-]+"),
@@ -59,7 +59,7 @@ _REDACT_PATTERNS: tuple[re.Pattern[str], ...] = (
 )
 
 
-def _redact_message(message: str) -> str:
+def redact_message(message: str) -> str:
     """Strip server-side internals out of a -32603 message before it leaves
     the gateway. The original (with all debug context) is preserved in
     server-side logs via ``logger.exception``; only the curated label
@@ -73,7 +73,7 @@ def _redact_message(message: str) -> str:
 def _redact_data(data: Any) -> Any:
     """Recursively scrub string leaves in structured error data through the redact pipeline."""
     if isinstance(data, str):
-        return _redact_message(data)
+        return redact_message(data)
     if isinstance(data, dict):
         return {k: _redact_data(v) for k, v in data.items()}
     if isinstance(data, (list, tuple)):
@@ -132,7 +132,7 @@ class JsonRpcDispatcher:
             # ship a curated, redacted label to the renderer. ARCH §11#2.
             logger.exception("jsonrpc method failed", extra={"method": method})
             label = f"{type(e).__name__}: {e}"
-            await self._reply_error(msg_id, JSONRPC_INTERNAL_ERROR, _redact_message(label))
+            await self._reply_error(msg_id, JSONRPC_INTERNAL_ERROR, redact_message(label))
             return
 
         if msg_id is None:
@@ -148,6 +148,11 @@ class JsonRpcDispatcher:
             params["payload"] = payload
         await self._send({"jsonrpc": JSON_RPC_VERSION, "method": "event", "params": params})
 
+    async def push_error_event(self, message: str, session_id: str | None = None) -> None:
+        # push_event bypasses _reply_error, so raw exception text must be
+        # redacted here explicitly (ARCH §11#2).
+        await self.push_event("error", {"message": redact_message(message)}, session_id=session_id)
+
     async def _reply_result(self, msg_id: Any, result: Any) -> None:
         await self._send({"jsonrpc": JSON_RPC_VERSION, "id": msg_id, "result": result})
 
@@ -157,5 +162,5 @@ class JsonRpcDispatcher:
         # raise sites that synthesize messages (handler except branches,
         # session.resume "not found", etc.) are responsible for keeping
         # them user-friendly; we still run the redact pass as a backstop.
-        error = {"code": code, "message": _redact_message(message), **({"data": _redact_data(data)} if data is not None else {})}
+        error = {"code": code, "message": redact_message(message), **({"data": _redact_data(data)} if data is not None else {})}
         await self._send({"jsonrpc": JSON_RPC_VERSION, "id": msg_id, "error": error})

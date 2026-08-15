@@ -39,8 +39,8 @@ async def _garment_preview(job: RenderJob, io_dir: Path) -> dict:
             preview = await preview_wardrobe_outfit(
                 db, user_id=job.user_id, description=payload["description"], image_bytes=image_bytes, content_type=payload.get("content_type"), feedback=payload.get("feedback")
             )
-    except Exception as e:
-        await _emit(job.user_id, "wardrobe.preview.failed", {"job_id": job.id, "reason": str(e)})
+    except Exception:
+        await _emit(job.user_id, "wardrobe.preview.failed", {"job_id": job.id, "reason": "生成失败，请稍后重试"})
         raise
     result = preview.model_dump()
     await _emit(job.user_id, "wardrobe.preview.ready", {"job_id": job.id, **result})

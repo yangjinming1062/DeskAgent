@@ -12,7 +12,7 @@ async def test_drain_once_fails_unknown_kind_and_cleans_io(SessionLocal):
     async with SessionLocal() as db:
         row = await db.get(RenderJob, job_id)
         assert row.status == "failed"
-        assert "no handler" in row.error
+        assert row.error == "生成失败，请稍后重试"
         assert row.claimed_by == runner.WORKER_ID
     assert not (Path(SETTINGS.data_dir) / "job-io" / str(job_id)).exists()
 
@@ -46,7 +46,9 @@ async def test_drain_once_handler_failure_marks_failed(SessionLocal, monkeypatch
     async with SessionLocal() as db:
         row = await db.get(RenderJob, job_id)
         assert row.status == "failed"
-        assert "ValueError" in row.error
+        # job.error is served verbatim by the poll endpoint — fixed copy,
+        # never the raw exception text.
+        assert row.error == "生成失败，请稍后重试"
 
 
 async def test_model_generate_handler_end_to_end(SessionLocal, monkeypatch):

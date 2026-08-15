@@ -20,7 +20,6 @@ from .persona_service import get_or_create_persona
 from .rig_type_selector import select_rig_type
 from .tripo_client import (
     TripoApiError,
-    TripoTaskFailed,
     account_balance,
     create_image_to_model,
     create_multiview_to_model,
@@ -334,13 +333,10 @@ async def _run_tripo_pipeline(user_id: int, view_filenames: dict[str, str], spec
             return
 
         logger.warning("Tripo3D generation failed", extra={"user_id": user_id}, exc_info=True)
-        reason = str(exc)
-        if isinstance(exc, TripoApiError):
-            reason = f"Tripo3D API 错误: {exc}"
-        elif isinstance(exc, TripoTaskFailed):
-            reason = f"Tripo3D 任务失败: {exc}"
-        await _emit_model_failed(user_id, reason)
-        await _mark_generation_failed(model_id, reason)
+        # model.failed reaches the client — fixed copy only, the raw provider
+        # error lives in the log line above (PROTOCOL §1.2 / README §4).
+        await _emit_model_failed(user_id, "3D 模型生成失败，请稍后重试")
+        await _mark_generation_failed(model_id, "3D 模型生成失败，请稍后重试")
 
 
 async def _poll_with_progress(user_id: int, task_id: str, stage: str, start_pct: int, end_pct: int) -> dict:

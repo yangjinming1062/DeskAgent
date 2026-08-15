@@ -45,9 +45,11 @@ async def drain_once() -> int:
                 raise RuntimeError(f"no handler registered for render job kind {job.kind!r}")
             result = await handler(job, io_dir)
             await queue.finish(job.id, result=result)
-        except Exception as e:
+        except Exception:
             logger.exception("render job failed", extra={"job_id": job.id, "kind": job.kind, "user_id": job.user_id})
-            await queue.fail(job.id, f"{type(e).__name__}: {e}")
+            # job.error is served verbatim by the poll endpoint — fixed copy
+            # only; the traceback lives in the log line above.
+            await queue.fail(job.id, "生成失败，请稍后重试")
         finally:
             shutil.rmtree(io_dir, ignore_errors=True)
     return len(jobs)
