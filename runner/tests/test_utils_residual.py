@@ -42,6 +42,8 @@ from utils.constants import (
 )
 from utils.env_helpers import inject_context_deskagent_home, sanitize_subprocess_env
 from utils.file_safety import (
+    _strip_device_prefix,
+    canonicalize_path,
     classify_container_mirror_target,
     classify_cross_profile_target,
     classify_sandbox_mirror_target,
@@ -49,6 +51,7 @@ from utils.file_safety import (
     get_cross_profile_warning,
     get_read_block_error,
     get_sandbox_mirror_warning,
+    get_windows_sensitive_prefixes,
     is_write_denied,
 )
 from utils.redact import redact_sensitive_text
@@ -778,3 +781,39 @@ class TestCheckRedirectUrlSafety:
             )
             is True
         )
+
+
+# ---------------------------------------------------------------------------
+# file_safety — NT prefix normalization / drive enumeration
+# ---------------------------------------------------------------------------
+
+
+class TestStripDevicePrefix:
+    def test_device_namespace_paths_pass_through(self):
+        assert _strip_device_prefix(r"\\.\pipe\deskagent") == r"\\.\pipe\deskagent"
+        assert _strip_device_prefix(r"\\.\PhysicalDrive0") == r"\\.\PhysicalDrive0"
+
+    def test_nt_prefixes_stripped_from_normalized_form(self):
+        assert _strip_device_prefix(r"\\?\C:\x") == r"C:\x"
+        assert _strip_device_prefix("//?/C:/x") == r"C:\x"
+        assert _strip_device_prefix(r"\\?\UNC\server\share") == r"\\server\share"
+
+    def test_plain_paths_untouched(self):
+        assert _strip_device_prefix(r"C:\Users\a") == r"C:\Users\a"
+
+
+@pytest.mark.skipif(not IS_WINDOWS, reason="Windows canonicalization path")
+class TestCanonicalizeDevicePath:
+    def test_device_path_stays_absolute(self):
+        # Stripping the \\.\ prefix used to forge a relative "pipe\..." path
+        # that every downstream denylist comparison would miss.
+        assert os.path.isabs(canonicalize_path(r"\\.\pipe\deskagent"))
+
+
+@pytest.mark.skipif(not IS_WINDOWS, reason="Windows drive enumeration")
+class TestWindowsSensitivePrefixes:
+    def test_prefixes_are_drive_anchored_strings(self):
+        prefixes = get_windows_sensitive_prefixes()
+        assert prefixes
+        assert all(isinstance(p, str) and p[1] == ":" for p in prefixes)
+        assert any(p.startswith("c:/") for p in prefixes)

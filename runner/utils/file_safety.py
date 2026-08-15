@@ -139,20 +139,20 @@ def get_windows_sensitive_prefixes() -> tuple[str, ...]:
     performs.
     """
     rel_entries = ("windows/system32/", "windows/syswow64/", "windows/winsxs/", "windows/boot/", "windows/recovery/", "programdata/", "program files/", "program files (x86)/")
-    drives = _enumerate_windows_drives() or ("c")
+    drives = _enumerate_windows_drives() or ("c",)
     return tuple(f"{drv}:/{rel}" for drv in drives for rel in rel_entries)
 
 
 def _enumerate_windows_drives() -> tuple[str, ...]:
-    """Return mounted Windows drive letters (a-z) lowercase, no colon; re-enumerated each call so hot-plugged drives stay in sync with the denylist."""
+    """Return mounted Windows drive letters (a-z) lowercase, no colon."""
     if not IS_WINDOWS:
         return ()
     try:
         bitmask = ctypes.windll.kernel32.GetLogicalDrives()
         drives = tuple(chr(ord("a") + i) for i in range(26) if bitmask & (1 << i))
-        return drives or ("c")
+        return drives or ("c",)
     except Exception:
-        return "c"
+        return ("c",)
 
 
 def _get_safe_write_root() -> str | None:
@@ -186,15 +186,21 @@ if IS_WINDOWS:
 
 
 def _strip_device_prefix(path_str: str) -> str:
-    """Normalize Windows device/NT prefixes (\\\\?\\UNC\\, \\\\?\\, \\\\.\\)."""
+    """Normalize Windows NT path prefixes (``\\\\?\\``, ``\\\\?\\UNC\\``).
+
+    Slicing is done on the separator-normalized form so forward-slash input
+    is handled consistently. ``\\\\.\\`` device paths have no DOS equivalent
+    and pass through untouched — stripping that prefix would forge a bogus
+    relative path out of e.g. ``\\\\.\\pipe\\x``.
+    """
     if not path_str:
         return path_str
     norm = path_str.replace("/", "\\")
     norm_upper = norm.upper()
     if norm_upper.startswith("\\\\?\\UNC\\"):
-        return "\\\\" + path_str[8:]
-    elif norm_upper.startswith("\\\\?\\") or norm_upper.startswith("\\\\.\\"):
-        return path_str[4:]
+        return "\\\\" + norm[8:]
+    if norm_upper.startswith("\\\\?\\"):
+        return norm[4:]
     return path_str
 
 

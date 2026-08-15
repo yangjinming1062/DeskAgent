@@ -14,7 +14,7 @@ from utils import (
     get_skills_dir,
     has_traversal_component,
     load_config,
-    register_credential_files,
+    register_credential_file,
     register_env_passthrough,
     validate_within_dir,
 )
@@ -515,7 +515,12 @@ def skill_view(name: str, file_path: str | None = None, task_id: str | None = No
         missing_cred_files = []
         if isinstance(req_cred_files, list) and req_cred_files:
             try:
-                if missing_cred_files := register_credential_files(req_cred_files):
+                if missing_cred_files := [
+                    rel_path
+                    for entry in req_cred_files
+                    if (rel_path := (entry.strip() if isinstance(entry, str) else (entry.get("path") or entry.get("name") or "").strip() if isinstance(entry, dict) else ""))
+                    if not register_credential_file(rel_path)
+                ]:
                     setup_needed = True
             except Exception:
                 logger.debug("Could not register credential files for skill %s", skill_name, exc_info=True)

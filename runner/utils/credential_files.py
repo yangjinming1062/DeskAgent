@@ -48,15 +48,6 @@ def register_credential_file(relative_path: str, container_base: str = "/root/.d
     return True
 
 
-def register_credential_files(entries: list, container_base: str = "/root/.deskagent") -> list[str]:
-    return [
-        rel_path
-        for entry in entries
-        if (rel_path := (entry.strip() if isinstance(entry, str) else (entry.get("path") or entry.get("name") or "").strip() if isinstance(entry, dict) else ""))
-        if not register_credential_file(rel_path, container_base)
-    ]
-
-
 def _load_config_files() -> list[dict[str, str]]:
     global _config_files
     if _config_files is not None:

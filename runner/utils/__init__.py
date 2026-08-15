@@ -31,7 +31,6 @@ from .credential_files import (
     iter_cache_files,
     iter_skills_files,
     register_credential_file,
-    register_credential_files,
 )
 from .desktop_transport import HANDSHAKE_AUTH_HEADER, PIPE_TRANSPORT, UNIX_TRANSPORT, DesktopConnection, DesktopEndpoint, connect_desktop, read_endpoint
 from .env_helpers import inject_context_deskagent_home, sanitize_subprocess_env
@@ -141,7 +140,6 @@ __all__ = [
     "read_endpoint",
     "redact_sensitive_text",
     "register_credential_file",
-    "register_credential_files",
     "register_env_passthrough",
     "resolve_safe_cwd",
     "safe_schedule_threadsafe",
