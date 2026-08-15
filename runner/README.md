@@ -21,8 +21,8 @@ Runner 不感知"伙伴"语义——终端、文件、浏览器、代码执行�
 - **剥离大脑逻辑**：系统提示词、provider 适配、对话记忆全部由 Backend 承载。Runner 是单纯的"接 JSON-RPC 工具调用 → 执行 → 返回结果"的执行器。
 - **零凭证 / 无网络出站**：Runner 不保存任何用户 Token 或云端地址，无法直接访问 Backend。所有需 LLM 的工具走 `request_llm` 反向 RPC 经 Client 代为调用（[PROTOCOL.md §3](../PROTOCOL.md)）。**这是不可破坏的不变量**——即便 prompt 注入攻陷 Runner 工具逻辑，最坏情况也只是借 Client 调用受限用户账户下的 LLM，不会泄露 Backend 凭证。
 - **Provider 范围**：产品 LLM 交互只面向 OpenAI-compatible providers，不接 Anthropic。nullable union 原样传递，由目标 provider 决定能否接受。
-- **环境状态与工具解耦**：环境共享态（活跃实例表、工厂、cleanup 线程）下沉到 `tools/terminal/environment/` 子包，`file_tools` / `code_execution_tool` 跨包直接导入该子包、共享同一批 env 实例，绕开仍含命令处理 + 安全审批逻辑的 `terminal_tool` 避免循环依赖。`terminal/__init__.py` 对 `terminal_tool` 的重导出用 `__getattr__` 惰性加载。
-- **Capabilities 由运行时探测而非 import 检查**：`utils.capabilities.snapshot()` 真正枚举设备、调底层 Win32 / Quartz / loginctl，没东西可答时才报 `False`。**不**退化为"import 是否存在"——那是欺骗 UI 让用户点不能用按钮。
+- **环境状态与工具解耦**：环境共享态（活跃实例表、工厂、cleanup 线程）下沉到 `tools/terminal/environment/` 子包，`file_tools` / `code_execution_tool` 跨包直接导入该子包、共享同一批 env 实例，绕开仍含命令处理 + 安全审批逻辑的 `terminal_tool` 避免循环依赖。
+- **Capabilities 尽量运行时探测**：`utils.capabilities.snapshot()` 中 microphone（枚举 WASAPI/AVFoundation 设备）、screen_capture（mss 枚举监视器 / screencapture 存在性）、system_activity（真实调 `GetLastInputInfo` / `CGSessionCopyCurrentDictionary`）是运行时探测；local_stt / local_tts 是**执行原生加载器的 import 探测**（faster-whisper / piper 的 import 会加载 CTranslate2 / onnxruntime 二进制，失败即不可用）。不用 `find_spec` 存在性检查——那是欺骗 UI 让用户点不能用按钮。
 - **音频引擎默认在基础 wheel 内**：`faster-whisper` / `piper-tts` / `sounddevice` / `numpy` 是伴侣语音栈的核心依赖（[DESIGN §7](../DESIGN.md)），从基础 wheel 直接可用。`pyttsx3` 用平台 marker 限制（macOS / Windows 上有 SAPI5 / NSSpeechSynthesizer 兜底）。运行时仍要求系统 PATH 有 `ffmpeg`（`audio_io.wav_to_wav_pcm16` 用）。
 
 ## 3. 架构地图
@@ -53,7 +53,7 @@ runner/
 
 - **OS IPC + WebSocket 帧而非 stdio 重定向**：Client 监听命名管道（Windows）/ UDS（macOS），Runner 主动连入，链路承载 WebSocket 帧协议。（1）避免 C 库底层日志或 Python `print` 污染 stdin/stdout 帧；（2）全双工并发，按 `id` 异步匹配响应，避免进程读写阻塞与全局锁；（3）零端口暴露——端点路径与每次启动的握手 token 由 Client 单向下发（启动参数 + `desktop-endpoint.json`），Runner 重连间重读文件跟随 Client 重启，401 拒绝即丢弃缓存端点等待新 token。**为什么不直接 stdin/stdout**：PTY/C 库会与控制台帧冲突；异步 RPC 也会被全局锁退化为串行。
 - **`runner_ready` capabilities 字段运行时探测**：`utils.capabilities.snapshot()` 真正枚举设备、调底层 API；不依赖 `import` 是否成功。**为什么不用静态 extra 标记**：依赖可能在 import 时报警但运行时仍可用，反过来亦然；运行时探测才是真值。
-- **环境共享态下沉到 `tools/terminal/environment/` 子包**：`file_tools` / `code_execution_tool` 跨包共享同一批 env 实例，绕开含命令处理 + 安全审批逻辑的 `terminal_tool` 避免循环依赖。`terminal/__init__.py` 用 `__getattr__` 惰性加载 `terminal_tool`，让 `import tools.terminal` 不触发循环环。
+- **环境共享态下沉到 `tools/terminal/environment/` 子包**：`file_tools` / `code_execution_tool` 跨包共享同一批 env 实例，绕开含命令处理 + 安全审批逻辑的 `terminal_tool` 避免循环依赖。
 - **reverse RPC 速率守卫**：Client 转发前统计单会话请求次数与载荷大小（硬上限 200 帧 / 1MB），防止 Runner 工具逻辑失控刷爆 LLM 额度。**为什么是 Client 而非 Backend**：Client 是流量入口，能在 IPC 边界做最严格的拒绝。
 - **Windows Job Object 内核级进程树生命周期绑定**：在 Windows 上启动时将 Runner 进程加入 `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` Job Object，派生的所有子进程/孙进程/PTY 终端自动原子级继承该 Job；Runner 异常崩溃或被杀时由 Windows 内核原子强杀全进程树，杜绝孤儿进程悬挂。
 - **Win32 `GetFinalPathNameByHandleW` 原生路径规范化**：针对 Windows 8.3 短文件名（`PROGRA~1`）、符号链接、目录联接点（Junction）及深层未创建子路径回溯解析真实路径；统一大小写不敏感比对、剥离 NT/UNC 设备前缀并拦截 NTFS 备用数据流（ADS）。

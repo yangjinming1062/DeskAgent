@@ -52,12 +52,9 @@ def is_termux() -> bool:
 
 
 def secure_parent_dir(path: str | Path) -> None:
-    """Ensure ``path``'s parent exists with ``0700`` permissions (POSIX).
-
-    On Windows, NTFS ignores POSIX mode bits — the chmod is a silent no-op,
-    documented in ``runner/README.md`` under platform support. Use NTFS ACLs
-    if real protection is needed for Windows credential storage.
-    """
+    """Ensure ``path``'s parent exists with ``0700`` permissions (POSIX only —
+    NTFS ignores POSIX mode bits, so the chmod is a Windows no-op; real
+    protection there needs NTFS ACLs)."""
     parent = Path(path).parent
     if not parent.exists():
         parent.mkdir(parents=True, exist_ok=True)

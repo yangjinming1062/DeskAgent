@@ -245,7 +245,7 @@ Blender 系生成分两段：web 进程入队（同步、毫秒级），Render W
 ```
 
 **契约**:
-- `capabilities.local_stt` / `local_tts` 等由运行时探测（实际枚举设备、调用底层 API）,**不**退化为 `import` 是否存在——后者欺骗 UI 让用户点不能用按钮。
+- `capabilities.microphone` / `screen_capture` / `system_activity` 由运行时探测（实际枚举设备、调用底层 API）;`local_stt` / `local_tts` 为执行原生加载器的 import 探测。**不**用 `find_spec` 存在性检查——那会欺骗 UI 让用户点不能用按钮。
 - `probe_failed == true` 表示 capability 探测整体抛异常,Client 应把这条 handshake 视为"功能状态不可信"。
 - 语音通话 / 唤醒词在 capability 为 `false` 时被 Client **静默隐藏**,伙伴不强提示。
 
