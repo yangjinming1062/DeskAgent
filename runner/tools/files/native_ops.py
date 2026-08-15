@@ -8,7 +8,7 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-from utils import strip_ansi
+from utils import is_write_denied, strip_ansi
 
 from .fuzzy_match import format_no_match_hint, fuzzy_find_and_replace
 from .helpers import (
@@ -27,7 +27,6 @@ from .helpers import (
     WriteResult,
     _detect_line_ending,
     _has_bom,
-    _is_write_denied,
     _looks_like_linter_unusable,
     _normalize_line_endings,
     _strip_bom,
@@ -143,7 +142,7 @@ class NativeFileOperations(FileOperations):
 
     def write_file(self, path: str, content: str) -> WriteResult:
         p = self._expand_path(path)
-        if _is_write_denied(str(p)):
+        if is_write_denied(str(p)):
             return WriteResult(error=f"Write denied: '{path}' is a protected system/credential file.")
 
         pre_content = None
@@ -175,7 +174,7 @@ class NativeFileOperations(FileOperations):
 
     def patch_replace(self, path: str, old_string: str, new_string: str, replace_all: bool = False) -> PatchResult:
         p = self._expand_path(path)
-        if _is_write_denied(str(p)):
+        if is_write_denied(str(p)):
             return PatchResult(success=False, error=f"Write denied: '{path}' is a protected system/credential file.")
 
         if not p.exists():
@@ -232,7 +231,7 @@ class NativeFileOperations(FileOperations):
 
     def delete_file(self, path: str) -> WriteResult:
         p = self._expand_path(path)
-        if _is_write_denied(str(p)):
+        if is_write_denied(str(p)):
             return WriteResult(error=f"Delete denied: {path} is a protected path")
         if not p.exists():
             return WriteResult(error=f"File not found: {path}")
@@ -246,7 +245,7 @@ class NativeFileOperations(FileOperations):
 
     def delete_path(self, path: str, recursive: bool = False) -> WriteResult:
         p = self._expand_path(path)
-        if _is_write_denied(str(p)):
+        if is_write_denied(str(p)):
             return WriteResult(error=f"Delete denied: {path} is a protected path")
         if not p.exists():
             return WriteResult(error=f"Path not found: {path}")
@@ -266,7 +265,7 @@ class NativeFileOperations(FileOperations):
         p_src = self._expand_path(src)
         p_dst = self._expand_path(dst)
         for p in (p_src, p_dst):
-            if _is_write_denied(str(p)):
+            if is_write_denied(str(p)):
                 return WriteResult(error=f"Move denied: {p} is a protected path")
         if not p_src.exists():
             return WriteResult(error=f"Source not found: {src}")

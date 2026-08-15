@@ -1,11 +1,10 @@
-import ast as _ast
+import ast
 import difflib
-import json as _json
+import json
 import os
 import re
 import threading
 import time
-import tomllib as _toml
 from abc import ABC, abstractmethod
 from collections.abc import Iterable
 from contextlib import contextmanager, suppress
@@ -14,10 +13,9 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, TypeAlias
 
-import yaml as _yaml
+import yaml
 
-from utils import build_write_denied_paths, build_write_denied_prefixes, cfg_get, load_config, strip_ansi
-from utils import is_write_denied as _shared_is_write_denied
+from utils import build_write_denied_paths, build_write_denied_prefixes, cfg_get, is_write_denied, load_config, strip_ansi
 
 from ..tool_output_limits import get_max_line_length, get_max_lines
 from .binary_extensions import BINARY_EXTENSIONS
@@ -89,11 +87,6 @@ def _strip_bom(text: str) -> tuple[str, bool]:
 def _has_bom(text: str | None) -> bool:
     """True if ``text`` begins with a UTF-8 BOM."""
     return bool(text) and text.startswith(_UTF8_BOM)
-
-
-def _is_write_denied(path: str) -> bool:
-    """Return True if path is on the write deny list."""
-    return _shared_is_write_denied(path)
 
 
 @dataclass
@@ -286,9 +279,9 @@ def _looks_like_linter_unusable(base_cmd: str, output: str) -> bool:
 def _lint_json_inproc(content: str) -> tuple[bool, str]:
     """In-process JSON syntax check."""
     try:
-        _json.loads(content)
+        json.loads(content)
         return True, ""
-    except _json.JSONDecodeError as e:
+    except json.JSONDecodeError as e:
         return False, f"JSONDecodeError: {e.msg} (line {e.lineno}, column {e.colno})"
     except Exception as e:
         return False, f"{type(e).__name__}: {e}"
@@ -297,9 +290,9 @@ def _lint_json_inproc(content: str) -> tuple[bool, str]:
 def _lint_yaml_inproc(content: str) -> tuple[bool, str]:
     """In-process YAML syntax check."""
     try:
-        _yaml.safe_load(content)
+        yaml.safe_load(content)
         return True, ""
-    except _yaml.YAMLError as e:
+    except yaml.YAMLError as e:
         return False, f"YAMLError: {e}"
     except Exception as e:
         return False, f"{type(e).__name__}: {e}"
@@ -308,7 +301,7 @@ def _lint_yaml_inproc(content: str) -> tuple[bool, str]:
 def _lint_toml_inproc(content: str) -> tuple[bool, str]:
     """In-process TOML syntax check."""
     try:
-        _toml.loads(content)
+        toml.loads(content)
         return True, ""
     except Exception as e:
         return False, f"{type(e).__name__}: {e}"
@@ -317,7 +310,7 @@ def _lint_toml_inproc(content: str) -> tuple[bool, str]:
 def _lint_python_inproc(content: str) -> tuple[bool, str]:
     """In-process Python syntax check via ast.parse."""
     try:
-        _ast.parse(content)
+        ast.parse(content)
         return True, ""
     except SyntaxError as e:
         loc = f" (line {e.lineno}, column {e.offset})" if e.lineno else ""
@@ -616,7 +609,7 @@ class ShellFileOperations(FileOperations):
 
     def _python_delete(self, path: str, recursive: bool) -> WriteResult:
         path = self._expand_path(path)
-        if _is_write_denied(path):
+        if is_write_denied(path):
             return WriteResult(error=f"Delete denied: {path} is a protected path")
         snippet = (
             "import shutil, pathlib, sys\n"
@@ -647,7 +640,7 @@ class ShellFileOperations(FileOperations):
         src = self._expand_path(src)
         dst = self._expand_path(dst)
         for p in (src, dst):
-            if _is_write_denied(p):
+            if is_write_denied(p):
                 return WriteResult(error=f"Move denied: {p} is a protected path")
         result = self._exec(f"mv {self._escape_shell_arg(src)} {self._escape_shell_arg(dst)}")
         if result.exit_code != 0:
@@ -657,7 +650,7 @@ class ShellFileOperations(FileOperations):
     def write_file(self, path: str, content: str) -> WriteResult:
         """Write content to a file, creating parent directories as needed."""
         path = self._expand_path(path)
-        if _is_write_denied(path):
+        if is_write_denied(path):
             return WriteResult(error=f"Write denied: '{path}' is a protected system/credential file.")
         ext = os.path.splitext(path)[1].lower()
         pre_content: str | None = None
@@ -694,7 +687,7 @@ class ShellFileOperations(FileOperations):
     def patch_replace(self, path: str, old_string: str, new_string: str, replace_all: bool = False) -> PatchResult:
         """Replace text in a file using fuzzy matching."""
         path = self._expand_path(path)
-        if _is_write_denied(path):
+        if is_write_denied(path):
             return PatchResult(error=f"Write denied: '{path}' is a protected system/credential file.")
         read_cmd = f"cat {self._escape_shell_arg(path)} 2>/dev/null"
         read_result = self._exec(read_cmd)

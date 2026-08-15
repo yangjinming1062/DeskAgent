@@ -13,7 +13,7 @@ import os
 import re
 import secrets
 import shutil
-import signal as _signal
+import signal
 import sys
 import tempfile
 import threading
@@ -3052,14 +3052,14 @@ def _kill_orphaned_mcp_children(include_active: bool = False) -> None:
 
     # Phase 1: SIGTERM (graceful)
     for pid, server_name in pids.items():
-        _send_signal(pid, _signal.SIGTERM, server_name)
+        _send_signal(pid, signal.SIGTERM, server_name)
         logger.debug("Sent SIGTERM to orphaned MCP process %d (%s)", pid, server_name)
 
     # Phase 2: Wait for graceful exit
     time.sleep(2)
 
     # Phase 3: SIGKILL any survivors
-    _sigkill = getattr(_signal, "SIGKILL", _signal.SIGTERM)
+    _sigkill = getattr(_signal, "SIGKILL", signal.SIGTERM)
     # ``os.kill(pid, 0)`` is NOT a no-op on Windows. Use the cross-platform
     # existence check before escalating to SIGKILL.
 

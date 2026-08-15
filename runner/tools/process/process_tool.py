@@ -2,7 +2,7 @@ import contextlib
 import json
 import logging
 import os
-import queue as _queue_mod
+import queue
 import shlex
 import signal
 import subprocess
@@ -20,6 +20,7 @@ from utils import (
     atomic_replace,
     cfg_get,
     clean_output,
+    find_bash,
     get_deskagent_home,
     kill_tree,
     load_config,
@@ -27,7 +28,6 @@ from utils import (
     resolve_safe_cwd,
     sanitize_subprocess_env,
 )
-from utils import find_bash as _find_shell
 
 from ..interrupt import is_interrupted
 from ..registry import registry, tool_error
@@ -150,7 +150,7 @@ class ProcessRegistry:
         # Completion notifications (notify_on_complete) and watch pattern matches
         # both land here, distinguished by "type" field.  CLI process_loop and
         # gateway drain this after each agent turn to auto-trigger new turns.
-        self.completion_queue: _queue_mod.Queue = _queue_mod.Queue()
+        self.completion_queue: queue.Queue = queue.Queue()
         # via wait/poll/log.  Drain loops skip notifications for these.
         self._completion_consumed: set = set()
         # Global watch-match circuit breaker — across all sessions.
@@ -434,7 +434,7 @@ class ProcessRegistry:
         if use_pty:
             # Try PTY mode for interactive CLI tools
             try:
-                user_shell = _find_shell()
+                user_shell = find_bash()
                 pty_env = sanitize_subprocess_env(os.environ, env_vars)
                 pty_env["PYTHONUNBUFFERED"] = "1"
                 pty_proc = _PtyProcessCls.spawn([user_shell, "-lic", f"set +m; {command}"], cwd=session.cwd, env=pty_env, dimensions=(30, 120))
@@ -457,7 +457,7 @@ class ProcessRegistry:
         # Standard Popen path (non-PTY or PTY fallback)
         # Use the user's login shell for consistency with LocalEnvironment --
         # ensures rc files are sourced and user tools are available.
-        user_shell = _find_shell()
+        user_shell = find_bash()
         # during background execution (libraries like tqdm/datasets buffer when
         # stdout is a pipe, hiding output from process(action="poll")).
         bg_env = sanitize_subprocess_env(os.environ, env_vars)

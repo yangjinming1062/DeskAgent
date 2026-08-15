@@ -18,8 +18,7 @@ from typing import Any
 
 import psutil
 
-from utils import CREATE_NO_WINDOW, IS_WINDOWS, cfg_get, clean_output, find_python, get_subprocess_home, kill_tree, load_config
-from utils import is_env_passthrough as _ep
+from utils import CREATE_NO_WINDOW, IS_WINDOWS, cfg_get, clean_output, find_python, get_subprocess_home, is_env_passthrough, kill_tree, load_config
 
 from ..interrupt import is_interrupted
 from ..registry import registry, tool_error
@@ -88,7 +87,7 @@ _WINDOWS_ESSENTIAL_ENV_VARS = frozenset({
 
 def _scrub_child_env(source_env, is_passthrough=None, is_windows=None):
     if is_passthrough is None:
-        is_passthrough = _ep
+        is_passthrough = is_env_passthrough
     if is_windows is None:
         is_windows = IS_WINDOWS
     scrubbed = {}

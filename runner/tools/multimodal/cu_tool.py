@@ -11,7 +11,6 @@ from utils import cfg_get, clean_output, load_config
 from ..interrupt import is_interrupted
 from .cu_backend import ActionResult, CaptureResult, ComputerUseBackend, UIElement
 from .cu_cua_backend import CuaDriverBackend, cua_driver_binary_available
-from .cu_permissions import get_permission_status
 from .cu_win_backend import WinBackend
 from .helpers import _MAX_BASE64_BYTES
 
@@ -424,9 +423,3 @@ def _format_elements(elements: list[UIElement], max_lines: int = 40) -> list[str
 
 def _element_to_dict(e: UIElement) -> dict[str, Any]:
     return {"index": e.index, "role": e.role, "label": clean_output(e.label), "bounds": list(e.bounds), "app": e.app}
-
-
-def check_computer_use_requirements() -> bool:
-    """Boolean wrapper over ``get_permission_status()`` for back-compat with
-    any caller that was written before the dict-returning helper landed."""
-    return get_permission_status()["ok"]

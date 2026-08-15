@@ -3,7 +3,7 @@ import functools
 import json
 import logging
 import os
-import re as _re
+import re
 import threading
 import time
 from contextlib import ExitStack
@@ -1218,7 +1218,7 @@ def patch_tool(
     if path:
         _paths_to_check.append(path)
     if mode == "patch" and patch:
-        for _m in _re.finditer(r"^\*\*\*\s+(?:Update|Add|Delete)\s+File:\s*(.+)$", patch, _re.MULTILINE):
+        for _m in re.finditer(r"^\*\*\*\s+(?:Update|Add|Delete)\s+File:\s*(.+)$", patch, _re.MULTILINE):
             v4a_path = _m.group(1).strip()
             # V4A path headers come from patch CONTENT, not the explicit
             # ``path=`` arg — so they're more attacker-influenceable (skill

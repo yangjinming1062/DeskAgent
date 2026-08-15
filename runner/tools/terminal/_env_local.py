@@ -10,6 +10,7 @@ from pathlib import Path
 from utils import (
     CREATE_NO_WINDOW,
     IS_WINDOWS,
+    append_sane_path_entries,
     find_bash,
     get_deskagent_home,
     get_subprocess_home,
@@ -19,7 +20,6 @@ from utils import (
     msys_to_windows_path,
     resolve_safe_cwd,
 )
-from utils import append_sane_path_entries as _append_missing_sane_path_entries
 
 from ._env_base import BaseEnvironment, _pipe_stdin
 
@@ -35,7 +35,7 @@ def _make_run_env(env: dict) -> dict:
     environment (caller-controlled) and overlays ``env``."""
     run_env = {k: str(v) if v is not None else "" for k, v in (os.environ | env).items()}
     if path_key := _path_env_key(run_env):
-        run_env[path_key] = _append_missing_sane_path_entries(run_env.get(path_key, ""))
+        run_env[path_key] = append_sane_path_entries(run_env.get(path_key, ""))
     inject_context_deskagent_home(run_env)
     if ph := get_subprocess_home():
         run_env["HOME"] = ph

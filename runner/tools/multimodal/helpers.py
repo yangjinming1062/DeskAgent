@@ -1,6 +1,6 @@
 import asyncio
 import base64
-import io as _io
+import io
 import logging
 from pathlib import Path
 from urllib.parse import urlparse
@@ -222,7 +222,7 @@ def _resize_image_for_vision(image_path: Path, mime_type: str | None = None, max
             prev_dims = (new_w, new_h)
 
         for q in quality_steps:
-            buf = _io.BytesIO()
+            buf = io.BytesIO()
             img.save(buf, format=pil_format, **({"quality": q} if q is not None else {}))
             candidate = f"data:{out_mime};base64,{base64.b64encode(buf.getvalue()).decode('ascii')}"
             if best_candidate is None or len(candidate) < len(best_candidate):
