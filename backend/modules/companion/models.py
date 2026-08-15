@@ -132,7 +132,7 @@ class CompanionSpriteImage(ModelBase, TimestampMixin):
 
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     avatar_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    role: Mapped[str | None] = mapped_column(String(32), nullable=True, default=None, server_default=text("NULL"))
+    role: Mapped[str | None] = mapped_column(String(32), nullable=True)
     tag: Mapped[str] = mapped_column(Text, default="", server_default=text("''"))
     prompt: Mapped[str] = mapped_column(Text, default="", server_default=text("''"))
     request_text: Mapped[str] = mapped_column(Text, default="", server_default=text("''"))
