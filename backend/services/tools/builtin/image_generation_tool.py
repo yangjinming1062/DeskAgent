@@ -23,9 +23,9 @@ async def _image_gen_chain(
     to single-ref capable providers (the secondary image is silently dropped).
 
     ``preferred_provider`` reorders the chain: accepts a single provider name
-    or a priority list (e.g. ``["gemini", "grok", "minimax"]``). Providers in
+    or a priority list (e.g. ``["grok", "gemini", "minimax"]``). Providers in
     the list come first in the given order; unlisted providers follow in their
-    original chain order. Used by full-body generation to prefer Gemini → Grok
+    original chain order. Used by full-body generation to prefer Grok → Gemini
     → MiniMax while other image-gen calls use the normal provider chain.
     """
     full = await resolve_provider_chain(db, user_id, "image_gen")

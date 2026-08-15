@@ -13,7 +13,7 @@
 - **不做 LLM provider 特定的 schema 适配**——nullable union 原样传给 OpenAI-compatible provider，由 provider 决定是否接受。
 - **web 进程不执行 Blender 子进程**——3D 模型生成（含 Tripo 主路的长轮询与 morph 注入）与换装几何管线全部经 render_jobs 转交 worker；web 内只保留 avatar 2D 与 video 生成的既有 job 模式。
 
-架构层定位见 [ARCHITECTURE.md §1 / §2](../ARCHITECTURE.md)；跨模块契约见 [PROTOCOL.md](../PROTOCOL.md)；错误分层见 [ARCHITECTURE.md §8](../ARCHITECTURE.md)。
+架构层定位见 [ARCHITECTURE.md §1 / §2](../ARCHITECTURE.md)；跨模块契约见 [PROTOCOL.md](../PROTOCOL.md)；错误分层见 [PROTOCOL.md §1.6](../PROTOCOL.md)。
 
 ## 2. 设计意图
 
@@ -22,7 +22,7 @@
 - **数据库 schema 由 Alembic 版本化迁移管理**：lifespan 启动时自动 `upgrade head`（决策细节见 §4）；schema 演进可审查、可回滚，消除 create_all + 手写幂等 DDL 时代"只能加列、不可收紧不可回滚"的盲区。
 - **Provider 自注册 + 三层入口**：每个 provider 模块在 module bottom 调 `REGISTRY.register`，`main.py` 显式 import 触发；chain resolver 不从 `base_url` host 反推（避免脆弱推断）。三层入口（`provider_for_service` / `client_for_service` / `execute_with_fallback`）按场景路由。
 - **Outbox + LISTEN/NOTIFY 取代轮询**：伙伴主动消息、Cron 任务、形象/角色变更通知全经 PostgreSQL 触发器 + `ws_events` 表，毫秒级、可水平扩展。
-- **重生成任务与 web 进程隔离（PG 队列，零 Redis）**：Blender 系分钟级生成入队 `render_jobs`（INSERT 触发 NOTIFY 唤醒 worker 的 LISTEN 专线；认领 = `FOR UPDATE SKIP LOCKED` + CAS UPDATE），web 请求路径毫秒级返回；attempts 封顶 + stale 回收 + 启动清扫覆盖崩溃恢复，语义按 VideoGenJob 先例自管。跨模块拓扑与安全边界见 [ARCHITECTURE.md §2 云端渲染拓扑](../ARCHITECTURE.md) 与 §10 不变量 11。
+- **重生成任务与 web 进程隔离（PG 队列，零 Redis）**：Blender 系分钟级生成入队 `render_jobs`（INSERT 触发 NOTIFY 唤醒 worker 的 LISTEN 专线；认领 = `FOR UPDATE SKIP LOCKED` + CAS UPDATE），web 请求路径毫秒级返回；attempts 封顶 + stale 回收 + 启动清扫覆盖崩溃恢复，语义按 VideoGenJob 先例自管。跨模块拓扑与安全边界见 [ARCHITECTURE.md §2 云端渲染拓扑](../ARCHITECTURE.md) 与 §8 不变量 11。
 - **形象资产生成受 rate-limit + per-user 锁守护**：生成是同步、阻塞 UI 的高成本路径，不并发、不公开 provider 原始错误。
 
 ## 3. 架构地图
@@ -67,8 +67,10 @@ backend/
 - **形象生成失败对用户返回 502 + 固定文案**：作为陪伴场景的关键路径，需向用户返回可理解的友好提示并支持重试，不暴露生图服务原始错误。**为什么不透传 provider 错误**：provider 错误体常含 URL / 部分 auth header，且用户对生图服务错误无处理能力。
 - **API Key 永不离开后端（fingerprinting）**：`GET /api/user/model-config` 只返回 `sk-…XX` 形式的指纹 + `_set` 布尔。**为什么不分两条**：用户自助配置时不需要原始 key 重新输入；admin 端点单独走 `PUT /api/admin/{user_id}/model-config` 强制三字段非空。
 - **错误分类管道收敛为 21 种 `FailoverReason`**：8 步优先级过滤决定恢复策略（退避重试 / 凭证轮换 / 压缩上下文 / 不重试）。**为什么不暴露原始异常**：provider 错误常含 URL / 部分 auth header / 私有 SDK 调用栈，必须脱敏。
-- **3D 模型生成管线双轨制（Tripo3D 主路 + Blender+LLM 回退）**：默认 Tripo3D 高保真度生成；当 `tripo_api_key` 缺失 / 余额为 0 / Tripo API 返回 credits 耗尽错误模式时自动回退到 Blender+LLM 管线，或由 `ModelGenerateRequest.provider` 显式锁向。**为什么不只用一条**：Tripo 商业 API 有成本与可用性限制（积分、断供、地区封锁）；自由形式 LLM 写 bpy 代码是 last-resort 兜底，质量显著低（无 PBR 纹理）但成本仅为 LLM tokens + 本地 CPU Blender render。Blender 子进程与 Backend 同用户运行——LLM 写代码本身就把 LLM 当作可执行代码生成器，威胁向量与现有 LLM 调用同等级，详见 [ARCHITECTURE.md §10](../ARCHITECTURE.md) 安全层不变量。
+- **3D 模型生成管线双轨制（Tripo3D 主路 + Blender+LLM 回退）**：默认 Tripo3D 高保真度生成；当 `tripo_api_key` 缺失 / 余额为 0 / Tripo API 返回 credits 耗尽错误模式时自动回退到 Blender+LLM 管线，或由 `ModelGenerateRequest.provider` 显式锁向。**为什么不只用一条**：Tripo 商业 API 有成本与可用性限制（积分、断供、地区封锁）；自由形式 LLM 写 bpy 代码是 last-resort 兜底，质量显著低（无 PBR 纹理）但成本仅为 LLM tokens + 本地 CPU Blender render。Blender 子进程与 Backend 同用户运行——LLM 写代码本身就把 LLM 当作可执行代码生成器，威胁向量与现有 LLM 调用同等级，详见 [ARCHITECTURE.md §8](../ARCHITECTURE.md) 安全层不变量。
 - **全身图 prompt 强制最小覆盖基础内衣（仅 biped）**：`_BIPED_A_POSE` 要求种子图穿运动内衣+运动短裤、显式禁掉长袖/连体紧身衣/长裤/长裙/长袍/外套/靴袜。**为什么**：Tripo image-to-3D 只重建实际可见的皮肤——覆盖款（哪怕紧身款）会让 PBR 换装后暴露色差/反光异常/细节缺失，长裙款直接几何穿模。**替代方案被否定的理由**：(a) 切 parametric body（SMPL 类）丢写实人物外观；(b) Tripo 不支持 body/clothing layer 分离，切到 Blender 管线与上条双轨制主路冲突。
+- **全身种子图专用 provider 优先级（grok → gemini → minimax）**：`generate_fullbody` 用 `_FULLBODY_PROVIDER_PRIORITY = ["grok", "gemini", "minimax"]` 强制排序，与通用 image-gen 链分离。**为什么 Grok 优先**：A-pose 最小覆盖内衣的全身提示词会高频触发 Gemini 的 IMAGE_SAFETY 审核拦截，Grok 对同一结构性提示词的安全阈值更宽松；集成测试里 Grok 与 Gemini 姿态合规度相当（7-8/10），都高于 MiniMax（5/10），三者人脸一致性均为 7/10。**为什么不直接跟随通用 `image_gen_provider`（默认 MiniMax）**：MiniMax 对含角色文字描述的全身请求会退化为半身像、且姿态合规度最低。
+- **双参考图能力仅 Gemini 支持（Grok / MiniMax 单参考）**：第二张参考图（身份锚点之外的风格/体态参考）只有 Gemini 消费——其 i2i 原生支持双参考融合（`supports_multiple_reference_images=True`）；Grok 与 MiniMax 都是单参考（MiniMax 的 subject_reference 只接受单条），收到第二张参考图时**静默忽略**。provider 链在双参考请求下把 Gemini 排在单参考供应商之前、单参考作为兜底。全身图 `reference_source="reference_image"` 路径据此把用户原图作主参考、头像作 secondary 交给 Gemini 融合美化（对应 [DESIGN.md §5.4](../DESIGN.md) 的"两类参考图并存"）。
 - **静态精灵相册按需懒生成（[sprite_service.py](services/companion/sprite_service.py)）**：`POST /api/companion/sprite` 是无 3D 模型期的降级渲染源——LLM 按自由语义在相册 tag 中匹配（命中零生成成本），未命中才由 LLM 撰写 prompt 经常规 image-gen 链生成（`role="waiting"` 等待图每用户唯一且命中即返、不查 LLM）。**为什么不预生成全集**：语义空间开放（状态×情绪×反应），预生成既浪费也永远不齐；懒生成让每张图都被真实需求验证。相册按 `avatar_id` 失效、上限 300 张；频控 `companion_sprite_generate_rate_limit_per_minute` 防 LLM 循环刷请求。
 - **长期记忆混合检索与前置主动召回（[memory_retrieval.py](services/companion/memory_retrieval.py)）**：针对传统 SQL 子串匹配的语义鸿沟与纯被动调用的健忘问题，构建多维检索管线：
   - **Dense + Sparse 混合检索与 RRF 融合**：Dense 向量语义检索（pgvector 余弦距离，SQLite/测试环境内存回退）+ Sparse 关键词/CJK N-gram 检索，经 RRF（Reciprocal Rank Fusion，$k=60$）合并打分。
@@ -81,27 +83,27 @@ backend/
 
 | 契约 | 方向 | 在哪定义 |
 |------|------|---------|
-| 伙伴层 JSON-RPC 方法（onboarding / avatar / companion / model / tts） | 对 Client | [PROTOCOL.md §1.1](../PROTOCOL.md) |
-| 事件类型（`companion.affect` / `model.ready` / `wardrobe.updated` 等） | 对 Client | [PROTOCOL.md §1.2](../PROTOCOL.md) |
-| Affect emotion / locale 枚举 | 对 LLM 提示词 → Client 渲染 | [PROTOCOL.md §1.3](../PROTOCOL.md) |
-| 资产 URL 5 分钟 HMAC 签名 | 对 Client | [PROTOCOL.md §1.4](../PROTOCOL.md) |
-| 错误信封 `{error, reason, status}` + JSON-RPC 错误码脱敏 | 对 Client | [PROTOCOL.md §1.5](../PROTOCOL.md) |
+| 伙伴层 JSON-RPC 方法（onboarding / avatar / companion / model / tts） | 对 Client | [PROTOCOL.md §1.2](../PROTOCOL.md) |
+| 事件类型（`companion.affect` / `model.ready` / `wardrobe.updated` 等） | 对 Client | [PROTOCOL.md §1.3](../PROTOCOL.md) |
+| Affect emotion / locale 枚举 | 对 LLM 提示词 → Client 渲染 | [PROTOCOL.md §1.4](../PROTOCOL.md) |
+| 资产 URL 5 分钟 HMAC 签名 | 对 Client | [PROTOCOL.md §1.5](../PROTOCOL.md) |
+| 错误信封 `{error, reason, status}` + JSON-RPC 错误码脱敏 | 对 Client | [PROTOCOL.md §1.6](../PROTOCOL.md) |
 | Reserved Keys 防注入（`user_id` / `llm_config` / `user_settings`） | 对 LLM 工具入参 | [PROTOCOL.md §5.1](../PROTOCOL.md) |
 | Outbox `ws_events` LISTEN/NOTIFY 调度 | 内部（业务 / Cron → Client） | [ARCHITECTURE.md §5](../ARCHITECTURE.md) |
 | IPC future `(user_id, call_id)` 键语义 + 超时 + JWT 过期兜底 | 内部（Backend ↔ Client IPC） | [PROTOCOL.md §4](../PROTOCOL.md) |
-| disturbance_tier 持久化（`companion_preferences` 表，重启不丢） | 接 Client 推送 [PROTOCOL.md §1.1](../PROTOCOL.md) 的 `companion.set_disturbance_tier` | [ARCHITECTURE.md §5](../ARCHITECTURE.md) |
+| disturbance_tier 持久化（`companion_preferences` 表，重启不丢） | 接 Client 推送 [PROTOCOL.md §1.2](../PROTOCOL.md) 的 `companion.set_disturbance_tier` | [ARCHITECTURE.md §5](../ARCHITECTURE.md) |
 | LLM provider chain resolver 三层入口（`provider_for_service` / `client_for_service` / `execute_with_fallback`） | 本模块独有 | 本 README §3 |
 | PROVIDER-first 配置 + Tier 1–4 回落链 | 本模块独有（Provider 自注册产物） | 本 README §2 |
 | 工具三层分类（backend / memory / runner） | 本模块独有 | 本 README §2 + backend 代码 |
-| `ModelGenerateRequest.provider` 取值与触发条件 | 对 Client | [PROTOCOL.md §1.1](../PROTOCOL.md) |
-| `model.ready` / `model.gen.progress` payload `provider` 字段 | 对 Client | [PROTOCOL.md §1.2](../PROTOCOL.md) |
-| `model.ready` `provider` 来源标识（`tripo_image_to_3d` / `tripo_multiview_to_3d` / `blender_llm`） | 对 Client | [PROTOCOL.md §1.2](../PROTOCOL.md) |
-| `onboarding.get_state` payload `fullbody_mode` 与 `default_fullbody_reference_source` | 对 Client | [PROTOCOL.md §1.1](../PROTOCOL.md) |
-| `[companion] fullbody_mode` 配置与单/多视图流水线 | 本模块独有 | 本 README §2 + [PROTOCOL.md §1.1](../PROTOCOL.md) |
-| `WardrobeItem` 换装装配契约（`kind` / `slot` / `assembly_json` / `mesh_url`） | 对 Client | [PROTOCOL.md §1.6](../PROTOCOL.md) |
-| `POST /api/companion/wardrobe/preview`（202 入队）/ `GET .../preview/{job_id}`（轮询）/ `confirm` | 对 Client | [PROTOCOL.md §1.1](../PROTOCOL.md) |
-| `wardrobe.preview.progress/.ready/.failed` 事件 | 对 Client | [PROTOCOL.md §1.2](../PROTOCOL.md) |
-| render job 状态机（queued/processing/succeeded/failed + 崩溃回收） | 对 Client + 内部 | [PROTOCOL.md §1.7](../PROTOCOL.md) |
+| `ModelGenerateRequest.provider` 取值与触发条件 | 对 Client | [PROTOCOL.md §1.2](../PROTOCOL.md) |
+| `model.ready` / `model.gen.progress` payload `provider` 字段 | 对 Client | [PROTOCOL.md §1.3](../PROTOCOL.md) |
+| `model.ready` `provider` 来源标识（`tripo_image_to_3d` / `tripo_multiview_to_3d` / `blender_llm`） | 对 Client | [PROTOCOL.md §1.3](../PROTOCOL.md) |
+| `onboarding.get_state` payload `fullbody_mode` 与 `default_fullbody_reference_source` | 对 Client | [PROTOCOL.md §1.2](../PROTOCOL.md) |
+| `[companion] fullbody_mode` 配置与单/多视图流水线 | 本模块独有 | 本 README §2 + [PROTOCOL.md §1.2](../PROTOCOL.md) |
+| `WardrobeItem` 换装装配契约（`kind` / `slot` / `assembly_json` / `mesh_url`） | 对 Client | [PROTOCOL.md §1.7](../PROTOCOL.md) |
+| `POST /api/companion/wardrobe/preview`（202 入队）/ `GET .../preview/{job_id}`（轮询）/ `confirm` | 对 Client | [PROTOCOL.md §1.2](../PROTOCOL.md) |
+| `wardrobe.preview.progress/.ready/.failed` 事件 | 对 Client | [PROTOCOL.md §1.3](../PROTOCOL.md) |
+| render job 状态机（queued/processing/succeeded/failed + 崩溃回收） | 对 Client + 内部 | [PROTOCOL.md §1.8](../PROTOCOL.md) |
 | cron 自主回合内部事件 `cron.turn.request`（outbox 路由到持连副本） | 内部 | [ARCHITECTURE.md §5](../ARCHITECTURE.md) |
 
 ## 6. 已知限制
@@ -122,7 +124,7 @@ backend/
 | **Blender+LLM 回退管线最坏时长** | 默认 10 轮迭代 × 单次 600s Blender timeout = ~100 分钟一次生成；全程在 worker 沙箱内执行，不占 web 进程。`worker_stale_reclaim_seconds` 必须大于该最坏值，否则在跑任务会被误回收重排队。`blender_llm_max_iterations` / `blender_llm_timeout` 可调 |
 | **Blender+LLM 模型质量** | 无 PBR 纹理（仅纯色 Principled BSDF 材质）、几何为 LLM 自由形式生成——视觉保真度显著低于 Tripo3D。LLM 在迭代内可比 preview vs 种子图 → 持续精修 |
 | **贴图换装受种子图皮肤可见度约束** | `kind=texture` 的 PBR 贴图换装受限于 Tripo 重建的皮肤区域——紧身覆盖款换到露出款会有色差/反光异常。`kind=garment` 的几何换装不受此约束（服装是独立 mesh，不走身体纹理迁移）。 |
-| **几何服装管线需 Blender + 较长生成时间** | `kind=garment` / `accessory` 经 LLM→Blender→evaluate 迭代生成几何，单次预览耗时数分钟（受 `blender_llm_max_iterations` × `blender_llm_timeout` 支配）；预览已异步化（202 + 轮询/事件，见 [PROTOCOL.md §1.7](../PROTOCOL.md)），HTTP 不再阻塞。garment GLB 导出复用身体 armature 保证关节一致，客户端零映射 rebind。 |
+| **几何服装管线需 Blender + 较长生成时间** | `kind=garment` / `accessory` 经 LLM→Blender→evaluate 迭代生成几何，单次预览耗时数分钟（受 `blender_llm_max_iterations` × `blender_llm_timeout` 支配）；预览已异步化（202 + 轮询/事件，见 [PROTOCOL.md §1.8](../PROTOCOL.md)），HTTP 不再阻塞。garment GLB 导出复用身体 armature 保证关节一致，客户端零映射 rebind。 |
 | **换装路由由 LLM 决策而非用户选择** | `POST /api/companion/wardrobe/preview` 接收的描述由一次 LLM 调用分类为 `texture` / `garment` / `accessory` 并同时产出装配元数据（slot / socket / physics），分类失败默认走 `garment`（能力最全的路径）。客户端不暴露 `kind` 字段——用户只输入描述，由后端决定走哪条流水线。路由系统提示词与示例见 [wardrobe_service.py](services/companion/wardrobe_service.py)`_WARDROBE_KIND_CLASSIFIER_SYSTEM`。 |
 | **worker 挂 docker.sock = 宿主 root 面** | 沙箱执行器经 docker.sock 派生容器，持有该 socket 等效宿主 root；仅 compose `worker` 服务挂载、镜像内只装 docker-cli，多租户部署不得开启沙箱（`blender_sandbox_enabled=false` 时退回 worker 容器内裸 blender 子进程）。 |
 | **几何生成"LLM 毛坯 + 确定性后处理"分工** | LLM 只写毛坯几何 + `VG_ANCHOR` 锚点标注（轮廓/风格/锚点位置需要语义理解），贴合/加厚/蒙皮/防穿模全部由确定性 bpy 代码接管（数值几何问题必须可复现可校验）——两者边界 = `_build_garment` 函数。参数表见 [MODEL_SPEC.md §4.2](../docs/MODEL_SPEC.md)。 |

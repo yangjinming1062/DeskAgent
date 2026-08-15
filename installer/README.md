@@ -13,7 +13,7 @@ DeskAgent 安装器产品。本目录容纳 **Tauri 2 桌面程序**（`src/` + 
 **不**做：
 - **不下载 install 脚本**——脚本由 Tauri `bundle.resources` 嵌入，版本 = installer build 版本
 - **不下载 payload**——payload 都在 `bundle.resources` 里
-- **不查更新**——更新流走 Backend `updates/` HTTP endpoint（[PROTOCOL.md §5.6](../PROTOCOL.md)）
+- **不查更新**——更新流走 Backend `updates/` HTTP endpoint（[PROTOCOL.md §5.5](../PROTOCOL.md)）
 - **不依赖 `client/`、`backend/`、`runner/` 的资源**——任何"借用"对方样式 / 组件 / 构建产物的做法都会让 Stage 2.x 的边界退化；`src/styles.css` 的设计 token、`src/components/button.tsx` 的 button variants 等**均为本地副本**
 - **不分发蛋形象资产**——蛋形象由 Client 内置默认渲染，安装期由 `progress.tsx` 矢量蛋组件 (`<Egg>`) + 6 段同心光环 (`<Halo>`) 提供破壳进度叙事，形象资产完全由 Backend 生成并下发（[ARCHITECTURE.md §6](../ARCHITECTURE.md)）
 

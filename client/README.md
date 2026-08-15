@@ -85,11 +85,11 @@ ESLint `no-restricted-imports` 在 `renderer/companion/**` 与 `renderer/hub/**`
 
 | 契约 | 方向 | 在哪定义 |
 |------|------|---------|
-| 伙伴层 JSON-RPC 方法（onboarding / avatar / companion / model / tts） | 对 Backend | [PROTOCOL.md §1.1](../PROTOCOL.md) |
-| 事件类型（`companion.affect` / `model.ready` / `wardrobe.updated` 等） | 接 Backend 推送 | [PROTOCOL.md §1.2](../PROTOCOL.md) |
-| Affect emotion / locale 枚举消费 | 接 Backend | [PROTOCOL.md §1.3](../PROTOCOL.md) |
-| 资产 URL 5 分钟 HMAC 签名消费 + 本地缓存 | 接 Backend | [PROTOCOL.md §1.4](../PROTOCOL.md) |
-| 错误信封 `{error, reason, status}` + JSON-RPC 错误码脱敏消费 | 接 Backend | [PROTOCOL.md §1.5](../PROTOCOL.md) |
+| 伙伴层 JSON-RPC 方法（onboarding / avatar / companion / model / tts） | 对 Backend | [PROTOCOL.md §1.2](../PROTOCOL.md) |
+| 事件类型（`companion.affect` / `model.ready` / `wardrobe.updated` 等） | 接 Backend 推送 | [PROTOCOL.md §1.3](../PROTOCOL.md) |
+| Affect emotion / locale 枚举消费 | 接 Backend | [PROTOCOL.md §1.4](../PROTOCOL.md) |
+| 资产 URL 5 分钟 HMAC 签名消费 + 本地缓存 | 接 Backend | [PROTOCOL.md §1.5](../PROTOCOL.md) |
+| 错误信封 `{error, reason, status}` + JSON-RPC 错误码脱敏消费 | 接 Backend | [PROTOCOL.md §1.6](../PROTOCOL.md) |
 | Runner `runner_ready` payload + capabilities 消费 | 对 Runner | [PROTOCOL.md §2.3](../PROTOCOL.md) |
 | 反向 RPC `request_llm` 代理 | 对 Runner + Backend | [PROTOCOL.md §3](../PROTOCOL.md) |
 | 反向 RPC 速率守卫（200 帧；文本 1MB / 多模态视觉 10MB 上限） | 对 Runner（Client 转发前限流） | [PROTOCOL.md §3](../PROTOCOL.md) |
@@ -97,11 +97,11 @@ ESLint `no-restricted-imports` 在 `renderer/companion/**` 与 `renderer/hub/**`
 | disturbance_tier 双层模型（`$userPreferredTier` + `$effectiveTierOverride` + `$effectiveTier`） | 本模块独有（持久层 + 活动感知器） | 本 README §2 + DESIGN §6.2 |
 | LLM 反应与自主开关 (`llmReactions` / `llmAffect` / `llmAutonomy`) | 本模块独有（`localStorage` 持久化，不上报后端） | [DESIGN.md §6.3](../DESIGN.md) |
 | safeStorage 跨平台一致（DPAPI/Keychain/libsecret） | 平台 | [PROTOCOL.md §5.3](../PROTOCOL.md) |
-| Electron 二进制自更新（`electron-updater` RSA + Runner wheel RSA + SHA-512） | 对 Backend | [PROTOCOL.md §5.6](../PROTOCOL.md) |
-| 自更新两阶段契约（Stage 1 prefetch / Stage 2 install + Sentinel + 降级） | 对 Backend | [PROTOCOL.md §5.6](../PROTOCOL.md) + [ARCHITECTURE.md §9](../ARCHITECTURE.md) |
+| Electron 二进制自更新（`electron-updater` RSA + Runner wheel RSA + SHA-512） | 对 Backend | [PROTOCOL.md §5.5](../PROTOCOL.md) |
+| 自更新两阶段契约（Stage 1 prefetch / Stage 2 install + Sentinel + 降级） | 对 Backend | [PROTOCOL.md §5.5](../PROTOCOL.md) |
 | IPC 命名空间 `deskagent:*` 前缀（`deskagent:sprite:*` / `deskagent:auth:changed` 等） | 本模块独有 | 本 README §3 |
 | 动画状态机（`IDLE` / `LISTENING` / `THINKING` / `SPEAKING` / `WORKING` / `EMOTIONAL` / `SLEEPING` / `INTERACTING` / `DISCONNECTED`） | 本模块独有（消费 Backend `affect` + 用户操作） | 本 README §2 + DESIGN §2 |
-| 空间行为 locales（`home` / `chat` / `perch` / `target` / `roam` / `sleep`）+ 缩放范围 0.5×–2× | 本模块独有（消费 Backend `affect.locale/target`） | 本 README §2 + DESIGN §3 + PROTOCOL §1.3 |
+| 空间行为场所：协议 5 项（`home` / `chat` / `perch` / `roam` / `sleep`）+ 客户端内部 `target`（仪式行走专用，工具调用触发、非协议枚举）+ 缩放范围 0.5×–2× | 本模块独有（消费 Backend `affect.locale`；`target` 仅本模块内部触发） | 本 README §2 + DESIGN §3 + PROTOCOL §1.3 |
 | Companion personality tag 驱动的动画调度（`selectClipByTags`） | 本模块独有 | 本 README §2 + [docs/MODEL_SPEC.md §2](../docs/MODEL_SPEC.md) |
 | 激活码格式（base64 编码 `{b, t}` JSON） | 对 Backend | [PROTOCOL.md §5.3](../PROTOCOL.md) |
 | Skills frontmatter 平台过滤（仅 `macos` / `windows`，历史 `linux` 值兼容翻译表） | 本模块独有 | 本 README §3 + [installer/README.md §2](../installer/README.md) |

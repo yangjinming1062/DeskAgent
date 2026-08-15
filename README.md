@@ -1,56 +1,20 @@
 # DeskAgent
 
-> 定制化陪伴型桌面伙伴 —— **Backend** 云端承载人格与形象，**Client** 本地渲染伙伴并中转，**Runner** 隔离执行本机操作。
+> 可定制的陪伴型桌面伙伴——你描述想要的伙伴，它生成专属形象，常驻你的桌面主动陪伴、记住你、并帮你做事。
 
-DeskAgent 是一个**根据用户描述定制的、具有专属形象的陪伴型桌面伙伴**。用户首次安装时以一颗"蛋"的形态见到它，通过 onboarding 描述自己想要的伙伴（名字、性格、说话风格、外貌偏好），系统据此即时生成专属桌面形象；此后伙伴常驻桌面、能主动陪伴、也能调用本机能力帮用户做事。
+DeskAgent 是一个**根据用户描述定制的、具有专属形象的陪伴型桌面伙伴**。首次安装时你以一颗"蛋"的形态见到它，通过一段对话式 onboarding 描述你想要的伙伴（名字、物种、性格、说话风格、外貌偏好），系统据此即时生成专属桌面形象；此后伙伴常驻桌面、能主动陪伴、也能调用本机能力帮你做事。
 
-三个关键词：**定制**（形象与人格由用户定义并生成）、**陪伴**（主动、持续、有记忆）、**伙伴**（交互对象是"他/她/它"，工具能力只是伙伴"会做的事"，不是产品的主角）。
+三个关键词决定一切产品与技术取舍：**定制**（形象与人格由你定义并生成）、**陪伴**（主动、持续、有记忆的关系，而非一次性问答）、**伙伴**（交互对象是"他/她/它"，工具能力只是伙伴"会做的事"，不是产品的主角）。
 
-完整设计意图、伙伴生命周期、通信协议不变量见 [ARCHITECTURE.md](ARCHITECTURE.md) + [PROTOCOL.md](PROTOCOL.md)。
+## 核心功能
 
-## 模块架构
-
-```
-┌──────────────────────────┐
-│  Backend (云端大脑)        │
-│FastAPI + PostgreSQL + JWT│
-│  • 伙伴人格(角色定义+记忆) │
-│  • 专属形象资产生成（portrait + 3D 模型 + 纹理 + 换装）  │
-│  • LLM 流式编排 + 提示词   │
-│  • 云端工具(搜索/TTS/生图/视频) │
-│  • Cron 主动陪伴调度       │
-│  Docker 容器（Linux 基础镜像）      │
-└────────────┬─────────────┘
-             │  REST + WebSocket (JSON-RPC 2.0)
-             │  唯一通道: WS /api/chat/ws?token=<jwt>
-             ▼
-┌──────────────────────────┐
-│  Client (伙伴载体+枢纽)  │
-│  Electron 42 + React 19  │
-│  • 桌面精灵 3D 实时渲染（Three.js + WebGL） │
-│  • 陪伴交互 + onboarding  │
-│  • JWT 加密落盘           │
-│  • Runner 编排 + WS 中转  │
-│  • 统一自更新             │
-│  Windows / macOS 原生 │
-└────────────┬─────────────┘
-             │  本地 OS IPC (命名管道/UDS) 承载 WebSocket 帧
-             │  JSON-RPC 2.0 + 反向 RPC (request_llm)
-             ▼
-┌──────────────────────────┐
-│  Runner (本地手脚)        │
-│  Python 3.13 (uv wheel)  │
-│  • 终端 / 文件 / 浏览器   │
-│  • 代码执行沙箱           │
-│  • MCP 动态工具 + Skills  │
-│  Windows / macOS 原生 │
-└──────────────────────────┘
-```
-
-**职责一句话**：
-- **Backend = 大脑**：持久化伙伴角色定义与形象资产、编排对话、装配提示词、调度云端工具与 Cron 主动陪伴
-- **Client = 伙伴载体 + 枢纽**：渲染桌面精灵形象、承载陪伴交互；持有用户凭证、中转工具调用、管理 Runner 生命周期与自更新
-- **Runner = 手脚**：零凭证执行本地工具，需要 LLM 时借 Desktop 代为调用
+- **定制专属形象**：对话式 onboarding 描述你想要的伙伴，系统即时生成专属形象——从半身头像、全身立绘到 3D 模型与换装，所见即"你的伙伴"。
+- **常驻桌面陪伴**：伙伴以透明置顶窗口常驻桌面，3D 实时渲染、时刻"活着"（呼吸、微动作、情绪表情）；可缩放、可拖拽、可扒在屏幕边缘或窗口旁。
+- **主动陪伴与长期记忆**：伙伴不被动等你说——它会主动问候、定时提醒、情境化闲聊；随互动累积对你的了解，越处越懂你。
+- **语音交互**：文字对话与语音通话双模式，云端/本地语音合成与转写，可选专属音色。
+- **替你操作本机**：伙伴能调用终端、文件、浏览器等本机能力帮你做事，叙事上始终是"伙伴在帮忙"，原始技术过程不对你暴露。
+- **换装与外观定制**：换装零模型重生——改色、材质、图案秒级热替，几何服装/挂件分钟级装配；模型只在你主动要求时重生。
+- **隐私与安全**：云端只管人格与形象资产，不碰你的本机；本机操作由零凭证的本地执行器隔离执行，你的凭证加密落盘。
 
 ## 快速开始
 
@@ -82,6 +46,7 @@ bash scripts/build_client.sh
 ```
 
 产物：
+
 - `release/DeskAgent-Setup-{ver}.{exe|dmg}` —— 首次安装 / 卸载 / repair
 - `release/DeskAgent-{ver}-update.zip` —— 运行期自更新 payload（走 `electron-updater` 通道）
 
@@ -89,11 +54,9 @@ bash scripts/build_client.sh
 
 ## 文档导航
 
-根 README 只列"是什么 / 怎么跑 / 看哪里"；架构设计、模块行为契约、跨切面安全/错误契约参阅：
-
 | 想了解什么 | 看哪里 |
 |-----------|--------|
-| 项目总览 / 架构机制 / 通信链路与不变量 | [ARCHITECTURE.md](ARCHITECTURE.md) |
+| 项目架构 / 模块边界 / 跨模块不变量 | [ARCHITECTURE.md](ARCHITECTURE.md) |
 | 伙伴层产品设计（形象、动画、生命周期、onboarding、陪伴范式） | [DESIGN.md](DESIGN.md) |
 | 跨模块协议契约（JSON-RPC 方法 / 枚举 / 事件 / 安全 / 凭据） | [PROTOCOL.md](PROTOCOL.md) |
 | Backend 模块结构与实现 | [backend/README.md](backend/README.md) |
@@ -101,31 +64,8 @@ bash scripts/build_client.sh
 | Client 模块结构与实现 | [client/README.md](client/README.md) |
 | Installer 模块结构与协议 | [installer/README.md](installer/README.md) |
 | 3D 模型与动画规格（骨骼 / clip / morph） | [docs/MODEL_SPEC.md](docs/MODEL_SPEC.md) |
-| Tripo3D 骨骼命名权威参考（`spec=tripo` / `spec=mixamo`） | [docs/tripo-spec.md](docs/tripo-spec.md) + [docs/mixamo-spec.md](docs/mixamo-spec.md) |
+| Tripo3D 骨骼命名权威参考 | [docs/tripo-spec.md](docs/tripo-spec.md) + [docs/mixamo-spec.md](docs/mixamo-spec.md) |
 | 构建 / 测试 / 发布脚本 | [scripts/README.md](scripts/README.md) |
-| 仓库级 AI 协作规范 | [CLAUDE.md](CLAUDE.md) |
+| 仓库级协作 / 文档 / Commit 规范 | [RULES.md](RULES.md) |
 
-## 平台支持
-
-| 模块 | 部署目标 | 兼容性要求 |
-|------|---------|-----------|
-| Backend | Linux (Docker 容器) | 仅 Linux，无 Windows 兼容要求 |
-| Runner | Windows / macOS 原生 | Windows 是已知风险面（见 [runner/README.md §已知限制](runner/README.md)） |
-| Client | Windows / macOS 原生 | Windows 兼容性是已知风险面（见 [client/README.md §已知限制](client/README.md)） |
-| Installer | Windows / macOS 原生 | Tauri 2；install 协议 v2（含 install-python stage） |
-
-## 信任与安全
-
-跨模块安全契约详见 [ARCHITECTURE.md §7](ARCHITECTURE.md)；核心要点：
-
-- **Runner 零凭证**：不持有 Backend token；需借 LLM 时通过反向 RPC 经 Client 代调 `POST /api/llm/completion`
-- **JWT 加密落盘**：Electron `safeStorage` 跨平台统一（DPAPI / Keychain / libsecret）
-- **自更新签名**：Electron 二进制走 `electron-updater` RSA；Python runner wheel 走 `scripts/secrets/update.pub` RSA + SHA-512 双重校验
-- **API key fingerprinting**：`GET /api/user/model-config` 只返回 `sk-…XX` 形式的 fingerprint，原始 key 永不离开 Backend
-- **Skills 走单独通道**：由 installer 在首装 seed，client 自更新不下载
-
-## 开发约定
-
-- 改实现方案 / 架构 / 导出 → **同提交**同步该模块及所有受影响 `README.md`（完整规范见 [CLAUDE.md](CLAUDE.md)）
-- 文档用中文，描述当前状态；不写"X 不再 Y / 现在改为 Z"等变化叙事——git log / blame 负责历史
-- 提交前：`pwsh scripts/build_client.ps1` 全链路
+> 架构机制、安全契约、自更新与平台已知限制的权威定义见 [ARCHITECTURE.md](ARCHITECTURE.md) 与 [PROTOCOL.md](PROTOCOL.md)，根 README 不重复。

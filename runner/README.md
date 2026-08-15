@@ -47,7 +47,7 @@ runner/
 
 依赖方向：`utils/` ← `tools/` ← `server.py`，`utils/` 不反向依赖任何工具；`tools/` 之间跨包直接 import 共享子包（如 `terminal/environment/`）。
 
-**Wheel 产物**：`dist/deskagent-agent-*.whl`。Client spawn `$DESKAGENT_HOME/runner/.venv/{bin/python,Scripts/python.exe} $DESKAGENT_HOME/runner/server.py --desktop-endpoint <path> --desktop-auth <token>`。安装布局详 [installer/README.md §10](../installer/README.md)。
+**Wheel 产物**：`dist/deskagent-agent-*.whl`。Client spawn `$DESKAGENT_HOME/runner/.venv/{bin/python,Scripts/python.exe} $DESKAGENT_HOME/runner/server.py --desktop-endpoint <path> --desktop-auth <token>`。安装布局详 [installer/README.md](../installer/README.md)。
 
 ## 4. 关键设计决策
 
@@ -60,6 +60,7 @@ runner/
 - **Tirith 扫描作为 shell 命令前置过滤器**：所有 shell 命令执行前拉起本地 `tirith` 模块对参数签名与静态审查，默认实行 Fail-Secure（`tirith_fail_open=False`），二进制未安装时友好降级并告警。**为什么不在 LLM 层做**：LLM 层做参数校验是治标；Tirith 在执行边界做拦截更彻底。
 - **SSRF 在建连前 `getaddrinfo` + 建连时 httpx `event_hooks.connect` 双重校验**：仅 `getaddrinfo` 会被预检-建连之间的 DNS 重绑定绕过；httpx 的 connect 事件钩子捕获实际目标 IP 二次过滤。**为什么不只信任 URL 形式**：URL 形式不可信，`getaddrinfo` 后 host 可被重新解析。
 - **`probe_failed` 独立于 capabilities 字段**：当 capabilities 探测整体抛异常时返回 `true`，Client 应当把这条 handshake 视为"功能状态不可信"，结合 `deskagent.info` 进一步诊断。**为什么不一起返回在 capabilities**：部分能力可能仍可用，整体失败应让 UI 降级而非禁用。
+- **依赖显式声明而非 try-except import**：Runner 以 uv wheel 分发、装到用户机器后依赖集即冻结、无法中途增补——所有 pip 依赖一律显式声明在 `pyproject.toml`（含平台 marker，如 `pywinpty; win32` / `ptyprocess; !=win32`），一个依赖"有就是有、没有就是没有"，不需要在导入时再判断。`try/except ImportError` 只允许两类合法场景：① 运行时能力探测（`capabilities.py` 故意执行原生加载器的 import 验证二进制真能加载，而非 `find_spec` 存在性检查）；② OS 框架/平台导入（`ctypes` / `Quartz` / `AppKit` / `pythoncom` 等非 pip 依赖）。对已声明依赖（`psutil` / `piper` / `faster-whisper` / `pyttsx3` / `mcp`）残留的 try-except 属历史遗留（ruff `F823` 的 "legacy try-imports" 佐证），方向是移除。
 
 ## 5. 与外部的契约
 
@@ -76,7 +77,7 @@ runner/
 | **本地安全防线**：Hardline 危险命令阻断 + Windows 路径不敏感写限制 + SSRF + Tirith 扫描 | 对本地工具执行 | [ARCHITECTURE.md §7](../ARCHITECTURE.md) |
 | 工具三层分类中的 runner tools（需 IPC 下发） | — | 由 Backend 决策，Runner 只接收 `execute_tool` |
 | MCP 动态加载 + Skills frontmatter 平台过滤 | 本模块独有 | 本 README §2 |
-| 音频引擎内置于基础 wheel | 本模块独有（[installer/README.md §11](../installer/README.md) 携带 Piper voices） | 本 README §2 |
+| 音频引擎内置于基础 wheel | 本模块独有（[installer/README.md §2](../installer/README.md) 携带 Piper voices） | 本 README §2 |
 
 ## 6. 已知限制
 

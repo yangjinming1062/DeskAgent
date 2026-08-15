@@ -11,7 +11,7 @@ chat/
 ├── orchestrator.py          # run_chat_turn：单回合主循环（压缩、budget、guardrail、affect 透传）
 ├── turn_inputs.py           # 组装 system prompt（persona + user_profile + memory）+ schemas + LLM client
 ├── streaming.py             # 单次 LLM call 全流程：chunk → 影响 scrubber + think scrubber + usage → message.* 帧
-├── affect.py                # ALLOWED_EMOTIONS + AffectScrubber（流式剥离 `[affect:…]` tag）
+├── affect.py                # BUILTIN_EMOTIONS + AffectScrubber（流式剥离 `[affect:…]` tag）
 ├── think_scrubber.py        # StreamingThinkScrubber：流式过滤 `<think>` 标签
 ├── persistence.py           # Message 行落库；触发 title 生成 / background review；emit message.complete
 ├── tool_dispatch.py         # 并行 dispatch + return_exceptions 容错；并行白名单见 services/tools/tool_dispatch_helpers
