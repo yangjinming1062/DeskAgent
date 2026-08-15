@@ -17,8 +17,6 @@ fragmented-message reassembly, write serialization, and prompt teardown of
 the blocking reader thread (``CancelIoEx`` on overlapped I/O).
 """
 
-from __future__ import annotations
-
 import asyncio
 import contextlib
 import ctypes
@@ -28,6 +26,7 @@ import tempfile
 import time
 import uuid
 from pathlib import Path
+from typing import Any
 
 import pytest
 import websockets
@@ -37,16 +36,15 @@ from websockets.http11 import Response
 from websockets.protocol import State
 from websockets.server import ServerProtocol
 
-from utils.constants import IS_WINDOWS
-from utils.desktop_transport import (
+from utils import (
+    IS_WINDOWS,
     PIPE_TRANSPORT,
     UNIX_TRANSPORT,
     DesktopEndpoint,
-    _connect_pipe_handle,
-    _PipeStream,
     connect_desktop,
     read_endpoint,
 )
+from utils.desktop_transport import _connect_pipe_handle, _PipeStream
 
 EXPECTED_TRANSPORT = PIPE_TRANSPORT if IS_WINDOWS else UNIX_TRANSPORT
 
@@ -116,7 +114,7 @@ class SessionWsAdapter:
     drive either transport unchanged.
     """
 
-    def __init__(self, session) -> None:
+    def __init__(self, session: Any) -> None:
         self._session = session
 
     async def send(self, payload) -> None:
@@ -138,7 +136,7 @@ class SessionWsAdapter:
 
 if IS_WINDOWS:
 
-    def _create_pipe(path: str):
+    def _create_pipe(path: str) -> int:
         handle = _k32.CreateNamedPipeW(
             path,
             _PIPE_ACCESS_DUPLEX_OVERLAPPED,
@@ -153,7 +151,7 @@ if IS_WINDOWS:
             raise OSError(ctypes.get_last_error(), "CreateNamedPipeW failed")
         return handle
 
-    def _listen(pipe_handle) -> bool:
+    def _listen(pipe_handle: int) -> bool:
         """Put a pipe instance into listening state (overlapped ConnectNamedPipe)."""
         overlapped = _OVERLAPPED()
         overlapped.hEvent = _k32.CreateEventW(None, True, False, None)
@@ -357,7 +355,7 @@ else:
     class _MacSession:
         """websockets ServerConnection wrapped in the session surface."""
 
-        def __init__(self, connection):
+        def __init__(self, connection: Any):
             self._connection = connection
             self.messages: asyncio.Queue[str] = asyncio.Queue()
             self.pong_count = 0
@@ -445,7 +443,7 @@ async def desktop(tmp_path):
             await fake.close()
 
 
-def make_peer_endpoint(fake) -> DesktopEndpoint:
+def make_peer_endpoint(fake: FakeDesktop) -> DesktopEndpoint:
     """DesktopEndpoint for a FakeDesktop, on this platform's transport."""
     return DesktopEndpoint(
         transport=EXPECTED_TRANSPORT, path=fake.path, token=fake.token

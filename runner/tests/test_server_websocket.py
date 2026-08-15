@@ -30,7 +30,7 @@ import websockets
 from test_transport import FakeDesktop, SessionWsAdapter, make_peer_endpoint
 
 import server
-from utils.constants import IS_WINDOWS
+from utils import IS_WINDOWS
 
 
 class _Peer:

@@ -173,11 +173,8 @@ function createRunnerWsServer(options = {}) {
     })
   }
 
-  // bind(2) happens synchronously inside server.listen(); the umask must be
-  // restored in a synchronous try/finally. Restoring in the async listen
-  // callback would keep the process-wide 0o077 mask during every event-loop
-  // turn in between (affecting unrelated file creation) — and leak forever
-  // if listen() throws before the callback could ever fire.
+  // bind(2) runs synchronously inside listen(), so the umask must be restored
+  // synchronously too — an async restore would leak 0o077 process-wide.
   function listenOnce(ipcPath) {
     return new Promise((resolve, reject) => {
       if (process.platform !== 'win32') {
@@ -236,10 +233,9 @@ function createRunnerWsServer(options = {}) {
       const WebSocket = require('ws')
       wss = new WebSocket.Server({ noServer: true })
 
-      // Reject unauthorized upgrades BEFORE completing the WebSocket
-      // handshake: the peer gets a plain HTTP 401 and its socket destroyed.
-      // ws cannot reject pre-upgrade in server mode (handleProtocols just
-      // completes the handshake), which is why the routing is manual here.
+      // Manual routing because ws cannot reject pre-upgrade in server mode
+      // (handleProtocols merely completes the handshake): reject with plain
+      // HTTP 401 so an unauthorized peer never opens a WebSocket.
       upgradeHandler = (req, socket, head) => {
         if (req.headers['x-deskagent-auth'] !== authToken) {
           log('[runner-ws] rejected upgrade: bad handshake token')

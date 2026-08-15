@@ -1,29 +1,14 @@
 """OS-native IPC transport for the Runner -> Desktop link.
 
-The Desktop listens on a Windows named pipe
-(``\\\\.\\pipe\\deskagent-runner-<pid>``) or a macOS Unix domain socket
-(``$DESKAGENT_HOME/runner-<pid>.sock``, mode 0600); the Runner dials in as
-the client. Above the byte stream the existing WebSocket wire protocol is
-preserved: the sans-I/O ``websockets.client.ClientProtocol`` owns the
-handshake, masking, control frames, and close semantics, while this module
-owns only the stream plumbing and the driving pump.
+The Desktop listens on a Windows named pipe or a 0600 Unix domain socket
+(macOS) and the Runner dials in as the client; the WebSocket wire protocol
+is preserved on top of the byte stream, driven by the sans-I/O
+``websockets.client.ClientProtocol`` (the library owns handshake, masking,
+control frames, and close semantics; this module owns the plumbing).
 
-Handshake authentication: the Desktop generates a 256-bit token per bridge
-start and delivers it via argv and ``desktop-endpoint.json``; the client
-sends it in the ``X-DeskAgent-Auth`` header of the HTTP upgrade request.
-Windows named pipes are enumerable machine-wide and Node/libuv exposes no
-API for restrictive pipe DACLs, so the token is the actual gate there; on
-macOS the 0600 socket is the gate and the token is defense in depth.
-
-Windows I/O strategy: the CRT (``os.read``/``os.write``) is unusable here —
-its per-fd lock is held across a blocking read, so any concurrent write on
-the same fd waits forever. The pipe is therefore opened as a raw
-``FILE_FLAG_OVERLAPPED`` handle and driven with overlapped
-``ReadFile``/``WriteFile`` + ``GetOverlappedResult``, which also makes
-``CancelIoEx`` the correct (and working) cancellation primitive.
+Endpoint/auth contract and the security model live in PROTOCOL.md §2.1;
+the transport design rationale in runner/README.md §4.
 """
-
-from __future__ import annotations
 
 import asyncio
 import contextlib
@@ -33,6 +18,7 @@ import logging
 import threading
 import time
 from dataclasses import dataclass
+from typing import Protocol
 
 from websockets.client import ClientProtocol
 from websockets.frames import OP_BINARY, OP_CONT, OP_TEXT, Frame
@@ -145,21 +131,25 @@ def read_endpoint() -> DesktopEndpoint | None:
         return None
 
 
+class _Stream(Protocol):
+    """Duplex byte-stream surface both platform transports implement."""
+
+    async def read(self, n: int = _READ_CHUNK) -> bytes: ...
+
+    async def write(self, data: bytes) -> None: ...
+
+    async def close(self) -> None: ...
+
+
 if IS_WINDOWS:
 
     def _connect_pipe_handle(path: str, *, timeout_s: float = _PIPE_CONNECT_TIMEOUT_S) -> int:
-        """Open an overlapped client handle to the BYTE-mode pipe, tolerating races.
+        """Open an overlapped client handle, retrying connect races.
 
-        Two Windows-specific races retry until the deadline:
-
-        - ``ERROR_PIPE_BUSY`` (231): every pipe instance is in use mid-handoff;
-          ``WaitNamedPipeW`` sleeps until an instance frees up instead of
-          busy-polling ``CreateFileW``.
-        - ``ERROR_FILE_NOT_FOUND`` (2): Desktop-restart window — the new pipe
-          is not listening yet.
-
-        Anything else (``ACCESS_DENIED``, bad path shape, ...) propagates
-        immediately; the runner's reconnect backoff is the right retry point.
+        ``ERROR_PIPE_BUSY`` (all instances mid-handoff) sleeps in
+        ``WaitNamedPipeW`` and ``ERROR_FILE_NOT_FOUND`` (Desktop-restart
+        window) polls, both until the deadline; anything else propagates —
+        the runner's reconnect backoff is the right retry point there.
         """
         deadline = time.monotonic() + timeout_s
         last_error: int | None = None
@@ -178,16 +168,12 @@ if IS_WINDOWS:
         raise TimeoutError(f"named pipe {path!r} not connectable within {timeout_s}s (winerror {last_error})")
 
     class _PipeStream:
-        """Asyncio duplex stream over an overlapped named-pipe handle.
+        """Duplex stream over an overlapped named-pipe handle.
 
-        A daemon reader thread issues overlapped ``ReadFile`` and blocks in
-        ``GetOverlappedResult``; completed chunks feed an
-        ``asyncio.StreamReader`` via ``call_soon_threadsafe``. Writes are
-        serialized under an asyncio lock and run overlapped in the default
-        executor. ``CancelIoEx(handle, None)`` aborts every pending
-        overlapped operation on the handle, which is what makes teardown
-        prompt; the raw-handle route also sidesteps the CRT fd lock that a
-        blocking ``os.read`` would hold against ``os.write`` forever.
+        Raw handles instead of CRT fds: the CRT holds its per-fd lock across
+        a blocking ``os.read``, so a concurrent ``os.write`` on the same fd
+        would wait forever. ``CancelIoEx(handle, None)`` aborts all pending
+        overlapped operations, which is what keeps teardown prompt.
         """
 
         def __init__(self, handle: int) -> None:
@@ -313,7 +299,7 @@ else:
                 await writer.wait_closed()
 
 
-async def _open_stream(path: str):
+async def _open_stream(path: str) -> _Stream:
     if IS_WINDOWS:
         # The connect loop can sleep up to its deadline (BUSY / restart
         # window); keep it off the loop.
@@ -336,7 +322,7 @@ class DesktopConnection:
     - ``receive_eof()`` must be called when the stream hits EOF.
     """
 
-    def __init__(self, stream, token: str) -> None:
+    def __init__(self, stream: _Stream, token: str) -> None:
         self._stream = stream
         self._protocol = ClientProtocol(parse_uri(_DUMMY_URI), max_size=MAX_MESSAGE_BYTES)
         self._token = token
@@ -429,7 +415,7 @@ class DesktopConnection:
         finally:
             self._messages.put_nowait(None)
 
-    def _emit(self, opcode, data: bytes) -> None:
+    def _emit(self, opcode: int, data: bytes) -> None:
         if opcode is OP_TEXT:
             self._messages.put_nowait(data.decode("utf-8"))
         else:
@@ -489,7 +475,7 @@ class DesktopConnection:
             raise StopAsyncIteration
         return item
 
-    async def __aenter__(self) -> DesktopConnection:
+    async def __aenter__(self) -> "DesktopConnection":
         return self
 
     async def __aexit__(self, *exc_info) -> None:
@@ -514,6 +500,3 @@ async def connect_desktop(endpoint: DesktopEndpoint, *, open_timeout_s: float = 
             await stream.close()
         raise
     return connection
-
-
-__all__ = ["DesktopConnection", "DesktopEndpoint", "HANDSHAKE_AUTH_HEADER", "PIPE_TRANSPORT", "UNIX_TRANSPORT", "connect_desktop", "read_endpoint"]

@@ -21,12 +21,7 @@ if IS_WINDOWS:
     kernel32.CreateJobObjectW.argtypes = [wintypes.LPVOID, wintypes.LPCWSTR]
 
     kernel32.SetInformationJobObject.restype = wintypes.BOOL
-    kernel32.SetInformationJobObject.argtypes = [
-        wintypes.HANDLE,
-        wintypes.DWORD,
-        wintypes.LPVOID,
-        wintypes.DWORD,
-    ]
+    kernel32.SetInformationJobObject.argtypes = [wintypes.HANDLE, wintypes.DWORD, wintypes.LPVOID, wintypes.DWORD]
 
     kernel32.AssignProcessToJobObject.restype = wintypes.BOOL
     kernel32.AssignProcessToJobObject.argtypes = [wintypes.HANDLE, wintypes.HANDLE]
@@ -98,42 +93,26 @@ def init_runner_job_object() -> bool:
         try:
             h_job = kernel32.CreateJobObjectW(None, None)
             if not h_job or h_job == wintypes.HANDLE(-1).value or h_job == -1:
-                logger.warning(
-                    "CreateJobObjectW failed with error code %d",
-                    kernel32.GetLastError(),
-                )
+                logger.warning("CreateJobObjectW failed with error code %d", kernel32.GetLastError())
                 return False
 
             info = _JOBOBJECT_EXTENDED_LIMIT_INFORMATION()
             info.BasicLimitInformation.LimitFlags = _JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
-            set_res = kernel32.SetInformationJobObject(
-                h_job,
-                _JobObjectExtendedLimitInformation,
-                ctypes.byref(info),
-                ctypes.sizeof(info),
-            )
+            set_res = kernel32.SetInformationJobObject(h_job, _JobObjectExtendedLimitInformation, ctypes.byref(info), ctypes.sizeof(info))
             if not set_res:
-                logger.warning(
-                    "SetInformationJobObject failed with error code %d",
-                    kernel32.GetLastError(),
-                )
+                logger.warning("SetInformationJobObject failed with error code %d", kernel32.GetLastError())
                 kernel32.CloseHandle(h_job)
                 return False
 
             cur_proc = kernel32.GetCurrentProcess()
             assign_res = kernel32.AssignProcessToJobObject(h_job, cur_proc)
             if not assign_res:
-                logger.warning(
-                    "AssignProcessToJobObject(GetCurrentProcess()) failed with error code %d",
-                    kernel32.GetLastError(),
-                )
+                logger.warning("AssignProcessToJobObject(GetCurrentProcess()) failed with error code %d", kernel32.GetLastError())
                 kernel32.CloseHandle(h_job)
                 return False
 
             _runner_job_handle = h_job
-            logger.info(
-                "Windows Job Object initialized with JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE (process tree bound to Runner)"
-            )
+            logger.info("Windows Job Object initialized with JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE (process tree bound to Runner)")
             return True
         except Exception as exc:
             logger.warning("Failed to initialize Windows Job Object: %s", exc)

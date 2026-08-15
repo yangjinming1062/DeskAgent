@@ -27,20 +27,23 @@ import contextlib
 import json
 import os
 import time
+from pathlib import Path
 from typing import Any
 
 import pytest
 import websockets
-from test_transport import FakeDesktop, SessionWsAdapter, make_peer_endpoint
+from test_transport import (
+    EXPECTED_TRANSPORT,
+    FakeDesktop,
+    SessionWsAdapter,
+    make_peer_endpoint,
+)
 
 import server
 from tools import registry
 from tools.skills import skills_sync
 from tools.terminal.environment import factory as env_factory
-from utils.constants import IS_WINDOWS
-from utils.desktop_transport import DesktopEndpoint
-
-EXPECTED_TRANSPORT = "pipe" if IS_WINDOWS else "unix"
+from utils import IS_WINDOWS, DesktopEndpoint
 
 # ---------------------------------------------------------------------------
 # Helpers — start a peer, run ``runner_loop`` against it, get a clean teardown
@@ -145,7 +148,11 @@ class _Peer:
             return
 
     async def start(
-        self, *, path: str | None = None, token: str | None = None, tmp_path=None
+        self,
+        *,
+        path: str | None = None,
+        token: str | None = None,
+        tmp_path: Path | None = None,
     ) -> None:
         """Listen on the platform's native transport.
 
@@ -189,7 +196,9 @@ class _Peer:
 
 
 @contextlib.asynccontextmanager
-async def _running_runner(endpoint: DesktopEndpoint = None, *, peer: _Peer = None):
+async def _running_runner(
+    endpoint: DesktopEndpoint | None = None, *, peer: _Peer | None = None
+):
     """Start a peer, run ``runner_loop``, wait for handshake, yield, tear down."""
     if peer is None:
         peer = _Peer()
@@ -380,11 +389,13 @@ async def test_runner_reconnects_after_peer_drop_with_backoff(monkeypatch, tmp_p
     )
     runner_task = asyncio.create_task(server.runner_loop(peer.endpoint))
 
-    # Wait for the first handshake.
+    # Wait for the first handshake — with real sleeps: the patch above is
+    # for the runner's backoff, and a patched sleep(0) here would exhaust
+    # the 50 iterations in milliseconds before the connect completes.
     for _ in range(50):
         if peer.handshakes:
             break
-        await asyncio.sleep(0.05)
+        await real_sleep(0.05)
     assert peer.handshakes, "runner did not handshake initially"
 
     # Drop the peer — its stream teardown breaks the runner's reader and
@@ -399,7 +410,7 @@ async def test_runner_reconnects_after_peer_drop_with_backoff(monkeypatch, tmp_p
     # Wait for the second handshake on the fresh peer.
     deadline = time.monotonic() + 10
     while time.monotonic() < deadline and len(peer2.handshakes) == 0:
-        await asyncio.sleep(0.05)
+        await real_sleep(0.05)
 
     rc_at_reconnect = server._RECONNECT_COUNT
 
@@ -476,7 +487,7 @@ async def test_runner_recovers_from_desktop_restart(monkeypatch, tmp_path):
     # the peer — not a synthetic frame from a mock.
     deadline = time.monotonic() + 10
     while time.monotonic() < deadline and not peer.handshakes:
-        await asyncio.sleep(0.05)
+        await real_sleep(0.05)
 
     runner_task.cancel()
     with contextlib.suppress(BaseException):
