@@ -1,4 +1,5 @@
 import subprocess
+import sys
 
 from tools.security.tirith_security import check_command_security
 
@@ -167,17 +168,16 @@ def test_extract_tirith_binary_exe(tmp_path):
     tar_bytes = io.BytesIO()
     with tarfile.open(fileobj=tar_bytes, mode="w:gz") as tar:
         data = b"dummy tirith binary content"
-        info = tarfile.TarInfo(name="tirith.exe")
+        info = tarfile.TarInfo(name="tirith.exe" if sys.platform == "win32" else "tirith")
         info.size = len(data)
         tar.addfile(info, io.BytesIO(data))
 
     tar_bytes.seek(0)
     with tarfile.open(fileobj=tar_bytes, mode="r:gz") as tar:
         extracted, err = _extract_tirith_binary(tar, str(tmp_path), lambda *a: None)
-        # On Windows it extracts tirith.exe, on POSIX tirith
-        if extracted is not None:
-            assert "tirith" in extracted
-            assert err == ""
+        assert extracted is not None, f"extraction failed: {err}"
+        assert "tirith" in extracted
+        assert err == ""
 
 
 def test_check_command_security_delegates_install_to_background(monkeypatch):

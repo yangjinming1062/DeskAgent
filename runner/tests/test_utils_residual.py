@@ -183,15 +183,16 @@ class TestPlatformFlags:
 
 
 class TestIsWriteDenied:
-    def test_denies_dotenv_in_home(self, tmp_path, monkeypatch):
-        # ``is_write_denied`` resolves the user's $HOME via ``os.path.expanduser``.
-        # We can't easily override expanduser, but the home-relative
-        # denied list includes ``.env`` which is conventionally present.
-        dotenv = Path.home() / ".env"
-        if dotenv.exists():
-            # Only assert if it actually exists on the host — otherwise
-            # the path-resolution probe can't see the resolved form.
-            assert is_write_denied(str(dotenv)) is True
+    def test_denies_shell_rc_in_home(self, tmp_path, monkeypatch):
+        # ``is_write_denied`` resolves the user's $HOME via ``os.path.expanduser``;
+        # point it at a tmp home with a real .bashrc so the home-relative
+        # denial is observable (note: home ``.env`` is intentionally not in
+        # the write-deny list — only $DESKAGENT_HOME/.env is).
+        monkeypatch.setenv("USERPROFILE", str(tmp_path))
+        monkeypatch.setenv("HOME", str(tmp_path))
+        bashrc = tmp_path / ".bashrc"
+        bashrc.write_text("# x")
+        assert is_write_denied(str(bashrc)) is True
 
     def test_denies_path_inside_deskagent_home(self, monkeypatch, tmp_path):
         monkeypatch.setenv("DESKAGENT_HOME", str(tmp_path))

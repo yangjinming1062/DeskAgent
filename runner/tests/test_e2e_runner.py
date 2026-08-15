@@ -534,8 +534,10 @@ def test_read_endpoint_returns_none_for_corrupted_endpoint(monkeypatch, tmp_path
         else "/tmp/deskagent-runner.sock"
     )
 
-    cases: list[tuple[str, str, str]] = [
-        ("missing file", "", "no file → None"),
+    # None body = keep the file absent (the "missing file" case); "" writes a
+    # genuinely empty file so that case is exercised for real.
+    cases: list[tuple[str, str | None, str]] = [
+        ("missing file", None, "no file → None"),
         ("empty file", "", "empty file → None"),
         ("malformed JSON", "{not json", "malformed JSON → None"),
         (
@@ -588,9 +590,9 @@ def test_read_endpoint_returns_none_for_corrupted_endpoint(monkeypatch, tmp_path
         ),
     ]
     for name, body, doc in cases:
-        if body == "" and not endpoint_file.exists():
-            # Missing file case — leave it absent.
-            pass
+        if body is None:
+            with contextlib.suppress(FileNotFoundError):
+                endpoint_file.unlink()
         else:
             endpoint_file.write_text(body, encoding="utf-8")
         result = server_mod.read_endpoint()
