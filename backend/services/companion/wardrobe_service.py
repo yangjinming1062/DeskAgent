@@ -5,8 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlparse
 
-import httpx
-from components import get_file_path, get_logger, is_safe_outbound, parse_llm_json, safe_json_loads, save_file, temp_file_delete
+from components import get_file_path, get_logger, is_safe_outbound, parse_llm_json, safe_json_loads, safe_outbound_async_client, save_file, temp_file_delete
 from modules.companion import Persona, WardrobeItem, WardrobePreviewResponse
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -77,13 +76,7 @@ async def fetch_texture_bytes(url: str) -> bytes | None:
     if not safe:
         return None
     try:
-
-        def _verify_connect_ip(request: httpx.Request) -> None:
-            verify, _ = is_safe_outbound(request.url.host or "")
-            if not verify:
-                raise httpx.ConnectError(f"refusing to connect to {request.url.host} (TOCTOU: DNS rebinding)")
-
-        async with httpx.AsyncClient(timeout=120.0, follow_redirects=False, event_hooks={"connect": [_verify_connect_ip]}) as client:
+        async with safe_outbound_async_client(timeout=120.0) as client:
             resp = await client.get(url)
             resp.raise_for_status()
             return resp.content
@@ -354,13 +347,7 @@ async def _download_texture_with_mime(url: str) -> tuple[bytes, str, str] | None
     if not safe:
         return None
     try:
-
-        def _verify_connect_ip(request: httpx.Request) -> None:
-            verify, _ = is_safe_outbound(request.url.host or "")
-            if not verify:
-                raise httpx.ConnectError(f"refusing to connect to {request.url.host} (TOCTOU: DNS rebinding)")
-
-        async with httpx.AsyncClient(timeout=120.0, follow_redirects=False, event_hooks={"connect": [_verify_connect_ip]}) as client:
+        async with safe_outbound_async_client(timeout=120.0) as client:
             resp = await client.get(url)
             resp.raise_for_status()
             raw_ct = (resp.headers.get("content-type") or "image/png").split(";")[0].strip().lower() or "image/png"

@@ -350,3 +350,21 @@ class TestReferenceImageChain:
         payload = json.loads(result)
         assert payload["success"] is False
         assert "以图生图" in payload["error"]
+
+
+@pytest.mark.asyncio
+async def test_safe_outbound_client_request_hook_blocks_unsafe_host(monkeypatch):
+    """The request-hook guard must actually fire (the old "connect" hook key
+    was silently ignored by httpx and never executed)."""
+    import httpx
+
+    from components import safe_outbound_async_client
+    from components import network as net
+
+    def _fake(host: str):
+        return (False, "test block") if host == "rebind.test" else (True, "")
+
+    monkeypatch.setattr(net, "is_safe_outbound", _fake)
+    async with safe_outbound_async_client() as client:
+        with pytest.raises(httpx.ConnectError):
+            await client.get("http://rebind.test/x")

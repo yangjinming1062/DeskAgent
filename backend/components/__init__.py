@@ -82,7 +82,7 @@ from .functions import (
 )
 from .hashing import normalize_sha512, sha256_hex, sha512_b64
 from .logger import get_logger, set_request_user_id, setup_logging
-from .network import is_safe_outbound
+from .network import is_safe_outbound, safe_outbound_async_client
 from .redact import redact_sensitive_text
 from .temp_files import cleanup_expired, get_file_path, save_file
 from .temp_files import delete_file as temp_file_delete
@@ -90,6 +90,7 @@ from .temp_files import gc_session as temp_files_gc_session
 
 __all__ = [
     "is_safe_outbound",
+    "safe_outbound_async_client",
     "BackgroundTask",
     "fetch_public_ip",
     "SETTINGS",

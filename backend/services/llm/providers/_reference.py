@@ -2,7 +2,7 @@ import base64
 from urllib.parse import urlparse
 
 import httpx
-from components import is_safe_outbound
+from components import is_safe_outbound, safe_outbound_async_client
 
 
 def _parse_data_uri(reference: str) -> tuple[bytes, str] | None:
@@ -40,14 +40,7 @@ async def resolve_reference_bytes(reference_image: str) -> tuple[bytes, str]:
     if not safe:
         raise RuntimeError(f"refusing to fetch unsafe reference host: {hostname} ({reason})")
 
-    # TOCTOU: re-verify the connect-time destination so a DNS rebinding
-    # between the pre-check and the TCP connect can't land on a private host.
-    def _verify_connect_ip(request: httpx.Request) -> None:
-        verify, _ = is_safe_outbound(request.url.host or "")
-        if not verify:
-            raise httpx.ConnectError(f"refusing to connect to {request.url.host} (TOCTOU: DNS rebinding)")
-
-    async with httpx.AsyncClient(timeout=httpx.Timeout(120.0, connect=10.0), follow_redirects=False, event_hooks={"connect": [_verify_connect_ip]}) as client:
+    async with safe_outbound_async_client(timeout=httpx.Timeout(120.0, connect=10.0)) as client:
         resp = await client.get(reference_image)
         resp.raise_for_status()
         content_type = (resp.headers.get("content-type") or "image/jpeg").split(";")[0].strip().lower()

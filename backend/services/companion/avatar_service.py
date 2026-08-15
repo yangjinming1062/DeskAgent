@@ -6,8 +6,7 @@ import secrets
 from pathlib import Path
 from urllib.parse import urlparse
 
-import httpx
-from components import SESSION_LOCAL, SETTINGS, get_file_path, get_logger, is_safe_outbound, safe_json_loads
+from components import SESSION_LOCAL, SETTINGS, get_file_path, get_logger, is_safe_outbound, safe_json_loads, safe_outbound_async_client
 from modules.companion import AvatarAsset, Persona
 from pydantic import ValidationError
 from sqlalchemy import select, update
@@ -220,15 +219,8 @@ async def _download_to_bytes(url: str) -> tuple[bytes, str] | None:
     if not safe:
         raise RuntimeError(f"refusing to fetch unsafe outbound host: {hostname} ({reason})")
 
-    # TOCTOU: re-verify the connect-time destination so a DNS rebinding
-    # between the pre-check and the TCP connect can't land on a private host.
-    def _verify_connect_ip(request: httpx.Request) -> None:
-        verify, _ = is_safe_outbound(request.url.host or "")
-        if not verify:
-            raise httpx.ConnectError(f"refusing to connect to {request.url.host} (TOCTOU: DNS rebinding)")
-
     try:
-        async with httpx.AsyncClient(timeout=120.0, follow_redirects=False, event_hooks={"connect": [_verify_connect_ip]}) as client:
+        async with safe_outbound_async_client(timeout=120.0) as client:
             resp = await client.get(url)
             resp.raise_for_status()
             return resp.content, (resp.headers.get("content-type") or "image/jpeg").split(";")[0].strip().lower()

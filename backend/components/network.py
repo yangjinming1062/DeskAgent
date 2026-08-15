@@ -1,5 +1,8 @@
 import ipaddress
 import socket
+from typing import Any
+
+import httpx
 
 BLOCKED_HOSTNAMES = frozenset({"metadata.google.internal", "metadata.goog", "metadata", "instance-data.ec2.internal", "instance-data", "kubernetes.default.svc"})
 _BLOCKED_CGNAT = ipaddress.ip_network("100.64.0.0/10")
@@ -33,3 +36,17 @@ def is_safe_outbound(host: str) -> tuple[bool, str]:
             return False, f"refusing to connect to {ip_str} (cloud-metadata / CGNAT)"
 
     return True, ""
+
+
+def safe_outbound_async_client(**kwargs: Any) -> httpx.AsyncClient:
+    """SSRF-guarded AsyncClient factory. httpx has no connect-time hook — the
+    request hook is the last point before the TCP connect where the resolved
+    target can be re-verified, closing the pre-check-to-connect DNS-rebind
+    window to the same level as a pre-check alone (never wider)."""
+
+    async def _verify(request: httpx.Request) -> None:
+        safe, reason = is_safe_outbound(request.url.host or "")
+        if not safe:
+            raise httpx.ConnectError(f"refusing to connect to {request.url.host} ({reason})")
+
+    return httpx.AsyncClient(follow_redirects=False, event_hooks={"request": [_verify]}, **kwargs)

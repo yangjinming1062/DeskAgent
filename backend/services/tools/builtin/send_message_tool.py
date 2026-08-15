@@ -1,8 +1,7 @@
 import json
 from urllib.parse import urlparse
 
-import httpx
-from components import SESSION_LOCAL, get_logger, is_safe_outbound, tool_error
+from components import SESSION_LOCAL, get_logger, is_safe_outbound, safe_outbound_async_client, tool_error
 from modules.conversation import Message
 from modules.ws import WSEvent
 
@@ -78,19 +77,8 @@ async def send_message_tool(message: str, target_webhook: str | None = None, aff
     if not safe:
         return tool_error(f"Refusing to POST to {parsed.hostname}: {reason}")
 
-    # TOCTOU defense: the pre-check above resolves the hostname NOW,
-    # but between then and the actual TCP connect an attacker could
-    # rebind DNS to a private IP. ``httpx``'s connect-time hook runs
-    # once the kernel has chosen the destination; we re-verify that
-    # destination is still safelisted.
-    # Re-resolve the hostname at connect time to mitigate DNS rebinding between the pre-check and the TCP connect.
-    def _verify_connect_ip(request: httpx.Request) -> None:
-        verify, _ = is_safe_outbound(request.url.host or "")
-        if not verify:
-            raise httpx.ConnectError(f"refusing to connect to {request.url.host} (TOCTOU: DNS rebinding)")
-
     try:
-        async with httpx.AsyncClient(follow_redirects=False, event_hooks={"connect": [_verify_connect_ip]}) as client:
+        async with safe_outbound_async_client() as client:
             # Webhooks vary on payload shape; send both common keys.
             response = await client.post(target_webhook, json={"text": message, "content": message}, timeout=WEBHOOK_TIMEOUT)
             response.raise_for_status()
