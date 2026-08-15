@@ -47,10 +47,6 @@ def get_skills_dir() -> Path:
     return get_deskagent_home() / "skills"
 
 
-def is_termux() -> bool:
-    return bool(os.environ.get("TERMUX_VERSION"))
-
-
 def secure_parent_dir(path: str | Path) -> None:
     """Ensure ``path``'s parent exists with ``0700`` permissions (POSIX only —
     NTFS ignores POSIX mode bits, so the chmod is a Windows no-op; real

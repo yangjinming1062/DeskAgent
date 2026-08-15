@@ -20,7 +20,6 @@ from .constants import (
     get_deskagent_home_override,
     get_skills_dir,
     get_subprocess_home,
-    is_termux,
     secure_parent_dir,
 )
 from .credential_files import (
@@ -122,7 +121,6 @@ __all__ = [
     "is_env_passthrough",
     "is_job_object_active",
     "is_safe_url",
-    "is_termux",
     "is_truthy_value",
     "is_write_denied",
     "iter_cache_files",

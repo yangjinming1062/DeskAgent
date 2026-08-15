@@ -38,7 +38,6 @@ from utils import (
     in_async_loop,
     is_always_blocked_url,
     is_safe_url,
-    is_termux,
     is_truthy_value,
     kill_tree,
     load_config,
@@ -75,20 +74,8 @@ from .profile_manager import DEFAULT_RETENTION_HOURS, cleanup_old_profiles, is_p
 logger = logging.getLogger(__name__)
 
 # Standard PATH entries for environments with minimal PATH (e.g. systemd services).
-# Includes Android/Termux and macOS Homebrew locations needed for agent-browser,
-# npx, node, and Android's glibc runner (grun).
-_SANE_PATH_DIRS = (
-    "/data/data/com.termux/files/usr/bin",
-    "/data/data/com.termux/files/usr/sbin",
-    "/opt/homebrew/bin",
-    "/opt/homebrew/sbin",
-    "/usr/local/sbin",
-    "/usr/local/bin",
-    "/usr/sbin",
-    "/usr/bin",
-    "/sbin",
-    "/bin",
-)
+# Includes macOS Homebrew locations needed for agent-browser and npx/node.
+_SANE_PATH_DIRS = ("/opt/homebrew/bin", "/opt/homebrew/sbin", "/usr/local/sbin", "/usr/local/bin", "/usr/sbin", "/usr/bin", "/sbin", "/bin")
 _SANE_PATH = os.pathsep.join(_SANE_PATH_DIRS)
 
 _INACTIVITY_RAW = cfg_get(load_config(), "browser", "inactivity_timeout_seconds", default=300)
@@ -320,17 +307,7 @@ _VALID_BROWSER_ENGINES = ("auto", "lightpanda", "chrome")
 
 
 def _browser_install_hint() -> str:
-    if is_termux():
-        return "npm install -g agent-browser && agent-browser install"
     return "npm install -g agent-browser && agent-browser install --with-deps"
-
-
-def _requires_real_termux_browser_install(browser_cmd: str) -> bool:
-    return is_termux() and not _get_cdp_override() and browser_cmd.strip() == "npx agent-browser"
-
-
-def _termux_browser_install_error() -> str:
-    return f"Local browser automation on Termux cannot rely on the bare npx fallback. Install agent-browser explicitly first: {_browser_install_hint()}"
 
 
 def _get_browser_engine() -> str:
@@ -475,16 +452,13 @@ def _run_chrome_fallback_command(task_id: str, command: str, args: list[str], ti
         return {"success": False, "error": str(e)}
 
     if not _chromium_installed():
-        if _running_in_docker():
-            hint = "Chrome fallback requires Chromium, but it is missing. You're running in Docker — pull the latest image: docker pull ghcr.io/nousresearch/deskagent-agent:latest"
-        else:
-            hint = "Chrome fallback requires Chromium, but it is missing. Install it with: npx agent-browser install --with-deps (or: npx playwright install --with-deps chromium)"
+        hint = "Chrome fallback requires Chromium, but it is missing. Install it with: npx agent-browser install --with-deps (or: npx playwright install --with-deps chromium)"
         return {"success": False, "error": hint}
 
     # On Windows npx is npx.cmd — use shutil.which so CreateProcessW can
     # execute the batch shim.  shutil.which honours PATHEXT on Windows and
-    # returns the plain executable on POSIX.  If npx isn't on PATH (Termux,
-    # bare container), fall back to the bare name and let Popen raise with
+    # returns the plain executable on POSIX.  If npx isn't on PATH (bare
+    # container), fall back to the bare name and let Popen raise with
     # a readable "FileNotFoundError: 'npx'" rather than WinError 193.
     if browser_cmd == "npx agent-browser":
         _npx_bin = shutil.which("npx") or "npx"
@@ -1402,7 +1376,7 @@ def _find_agent_browser() -> str:
         return which_result
 
     # Build an extended search PATH including DeskAgent-managed Node, macOS
-    # versioned Homebrew installs, and fallback system dirs like Termux.
+    # versioned Homebrew installs, and fallback system dirs.
     extended_path = _merge_browser_path("")
     if extended_path:
         which_result = shutil.which("agent-browser", path=extended_path)
@@ -1488,21 +1462,11 @@ def _run_browser_command(task_id: str, command: str, args: list[str] | None = No
         logger.warning("agent-browser CLI not found: %s", e)
         return {"success": False, "error": str(e)}
 
-    if _requires_real_termux_browser_install(browser_cmd):
-        error = _termux_browser_install_error()
-        logger.warning("browser command blocked on Termux: %s", error)
-        return {"success": False, "error": error}
-
     # Local mode with no Chromium on disk: fail fast with an actionable
     # message instead of hanging for _command_timeout seconds per call.
     # Skip when engine=lightpanda — LP doesn't need Chromium for navigation.
     if not _chromium_installed() and _get_browser_engine() != "lightpanda":
-        if _running_in_docker():
-            hint = (
-                "Chromium browser is missing. You're running in Docker — pull the latest image to get the bundled Chromium: docker pull ghcr.io/nousresearch/deskagent-agent:latest"
-            )
-        else:
-            hint = "Chromium browser is missing. Install it with: npx agent-browser install --with-deps (or: npx playwright install --with-deps chromium)"
+        hint = "Chromium browser is missing. Install it with: npx agent-browser install --with-deps (or: npx playwright install --with-deps chromium)"
         logger.warning("browser command blocked: %s", hint)
         return {"success": False, "error": hint}
 
@@ -3740,17 +3704,6 @@ def _chromium_installed() -> bool:
     return False
 
 
-def _running_in_docker() -> bool:
-    """Best-effort detection of whether we're inside a Docker container."""
-    if os.path.exists("/.dockerenv"):
-        return True
-    try:
-        with open("/proc/1/cgroup", encoding="utf-8") as fp:
-            return "docker" in fp.read()
-    except OSError:
-        return False
-
-
 def check_browser_requirements() -> bool:
     """
     Check if browser tool requirements are met.
@@ -3778,15 +3731,8 @@ def check_browser_requirements() -> bool:
 
     # The agent-browser CLI is required for local launches.
     try:
-        browser_cmd = _find_agent_browser()
+        _find_agent_browser()
     except FileNotFoundError:
-        return False
-
-    # On Termux, the bare npx fallback is too fragile to treat as a satisfied
-    # local browser dependency. Require a real install (global or local) so the
-    # browser tool is not advertised as available when it will likely fail on
-    # first use.
-    if _requires_real_termux_browser_install(browser_cmd):
         return False
 
     # Local mode with Lightpanda can provide text/navigation tools without a
@@ -3802,47 +3748,6 @@ def check_browser_requirements() -> bool:
 
     return True
 
-
-if __name__ == "__main__":
-    """
-    Simple test/demo when run directly
-    """
-    print("🌐 Browser Tool Module")
-    print("=" * 40)
-    print("   Mode: local")
-
-    if check_browser_requirements():
-        print("✅ All requirements met")
-    else:
-        print("❌ Missing requirements:")
-        try:
-            browser_cmd = _find_agent_browser()
-            if _requires_real_termux_browser_install(browser_cmd):
-                print("   - bare npx fallback found (insufficient on Termux local mode)")
-                print(f"     Install: {_browser_install_hint()}")
-            elif not _chromium_installed():
-                print("   - Chromium browser binary not found")
-                searched = ", ".join(_chromium_search_roots()) or "(no candidate paths)"
-                print(f"     Searched: {searched}")
-                if _running_in_docker():
-                    print("     Docker: pull the latest image — the current one predates the bundled Chromium install")
-                    print("       docker pull ghcr.io/nousresearch/deskagent-agent:latest")
-                else:
-                    print("     Install it with:")
-                    print("       npx agent-browser install --with-deps")
-                    print("     Or:  npx playwright install --with-deps chromium")
-        except FileNotFoundError:
-            print("   - agent-browser CLI not found")
-            print(f"     Install: {_browser_install_hint()}")
-
-    print("\n📋 Available Browser Tools:")
-    for schema in BROWSER_TOOL_SCHEMAS:
-        print(f"  🔹 {schema['name']}: {schema['description'][:60]}...")
-
-    print("\n💡 Usage:")
-    print("  from .browser_tool import browser_navigate, browser_snapshot")
-    print("  result = browser_navigate('https://example.com', task_id='my_task')")
-    print("  snapshot = browser_snapshot(task_id='my_task')")
 
 _BROWSER_SCHEMA_MAP = {s["name"]: s for s in BROWSER_TOOL_SCHEMAS}
 

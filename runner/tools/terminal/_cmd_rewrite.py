@@ -1,22 +1,9 @@
 import logging
-import os
-import platform
 import re
 import subprocess
-import sys
 import threading
-import time
 
-from utils import IS_WINDOWS, cfg_get, get_env_type, is_truthy_value, load_config
-
-if platform.system() != "Windows":
-    import termios
-
-    msvcrt = None
-else:
-    import msvcrt  # type: ignore[import-not-found]
-
-    termios = None  # type: ignore[assignment]
+from utils import cfg_get, get_env_type, is_truthy_value, load_config
 
 logger = logging.getLogger(__name__)
 
@@ -63,108 +50,19 @@ def _set_cached_sudo_password(password: str) -> None:
             _sudo_password_cache.pop(scope, None)
 
 
-def _prompt_for_sudo_password(timeout_seconds: int = 45) -> str:
+def _prompt_for_sudo_password() -> str:
+    """Sudo password source: the callback the Desktop installs (thread_context
+    propagates it), else the per-scope cache. The runner has no interactive
+    console — a TTY prompt here would be unreachable dead weight (README §6)."""
     cached = _get_cached_sudo_password()
     if cached:
         return cached
-    _sudo_cb = _get_sudo_password_callback()
-    if _sudo_cb is not None:
+    if (_sudo_cb := _get_sudo_password_callback()) is not None:
         try:
             return _sudo_cb() or ""
         except Exception:
-            return ""
-    result = {"password": None, "done": False}
-
-    def read_password_thread() -> None:
-        tty_fd = None
-        old_attrs = None
-        try:
-            if IS_WINDOWS:
-                msvcrt_mod = msvcrt
-                chars = []
-                while True:
-                    c = msvcrt_mod.getwch()
-                    if c in {"\r", "\n"}:
-                        break
-                    if c == "\x03":
-                        raise KeyboardInterrupt
-                    chars.append(c)
-                result["password"] = "".join(chars)
-            else:
-                tty_fd = os.open("/dev/tty", os.O_RDONLY)
-                old_attrs = termios.tcgetattr(tty_fd)
-                new_attrs = termios.tcgetattr(tty_fd)
-                new_attrs[3] = new_attrs[3] & ~termios.ECHO
-                termios.tcsetattr(tty_fd, termios.TCSAFLUSH, new_attrs)
-                chars = []
-                while True:
-                    b = os.read(tty_fd, 1)
-                    if not b or b in {b"\n", b"\r"}:
-                        break
-                    chars.append(b)
-                result["password"] = b"".join(chars).decode("utf-8", errors="replace")
-        except (EOFError, KeyboardInterrupt, OSError):
-            result["password"] = ""
-        except Exception:
-            result["password"] = ""
-        finally:
-            if tty_fd is not None and old_attrs is not None:
-                try:
-                    termios.tcsetattr(tty_fd, termios.TCSAFLUSH, old_attrs)
-                except Exception as e:
-                    logger.debug("Failed to restore terminal attributes: %s", e)
-            if tty_fd is not None:
-                try:
-                    os.close(tty_fd)
-                except Exception as e:
-                    logger.debug("Failed to close tty fd: %s", e)
-            result["done"] = True
-
-    try:
-        os.environ["DESKAGENT_SPINNER_PAUSE"] = "1"
-        time.sleep(0.2)
-        print()
-        print("┌" + "─" * 58 + "┐")
-        print("│  🔐 SUDO PASSWORD REQUIRED" + " " * 30 + "│")
-        print("├" + "─" * 58 + "┤")
-        print("│  Enter password below (input is hidden), or:            │")
-        print("│    • Press Enter to skip (command fails gracefully)     │")
-        print(f"│    • Wait {timeout_seconds}s to auto-skip" + " " * 27 + "│")
-        print("└" + "─" * 58 + "┘")
-        print()
-        print("  Password (hidden): ", end="", flush=True)
-        password_thread = threading.Thread(target=read_password_thread, daemon=True)
-        password_thread.start()
-        password_thread.join(timeout=timeout_seconds)
-        if result["done"]:
-            password = result["password"] or ""
-            print()
-            if password:
-                print("  ✓ Password received (cached for this session)")
-            else:
-                print("  ⏭ Skipped - continuing without sudo")
-            print()
-            sys.stdout.flush()
-            return password
-        else:
-            print("\n  ⏱ Timeout - continuing without sudo")
-            print("    (Press Enter to dismiss)")
-            print()
-            sys.stdout.flush()
-            return ""
-    except (EOFError, KeyboardInterrupt):
-        print()
-        print("  ⏭ Cancelled - continuing without sudo")
-        print()
-        sys.stdout.flush()
-        return ""
-    except Exception as e:
-        print(f"\n  [sudo prompt error: {e}] - continuing without sudo\n")
-        sys.stdout.flush()
-        return ""
-    finally:
-        if "DESKAGENT_SPINNER_PAUSE" in os.environ:
-            del os.environ["DESKAGENT_SPINNER_PAUSE"]
+            logger.debug("sudo password callback failed", exc_info=True)
+    return ""
 
 
 def _looks_like_env_assignment(token: str) -> bool:
@@ -372,7 +270,7 @@ def _transform_sudo_command(command: str | None) -> tuple[str | None, str | None
     if not has_configured_password and not sudo_password and _sudo_nopasswd_works():
         return command, None
     if not has_configured_password and not sudo_password and is_truthy_value(cfg_get(load_config(), "terminal", "interactive_sudo_prompt", default=False)):
-        sudo_password = _prompt_for_sudo_password(timeout_seconds=45)
+        sudo_password = _prompt_for_sudo_password()
         if sudo_password:
             _set_cached_sudo_password(sudo_password)
     if has_configured_password or sudo_password:

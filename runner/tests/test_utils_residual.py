@@ -36,7 +36,6 @@ from utils.constants import (
     get_deskagent_home,
     get_skills_dir,
     get_subprocess_home,
-    is_termux,
     secure_parent_dir,
 )
 from utils.env_helpers import inject_context_deskagent_home, sanitize_subprocess_env
@@ -138,16 +137,6 @@ class TestGetDeskagentDir:
         # Neither exists; ``get_deskagent_dir`` returns the new path
         # anyway so the caller can create it.
         assert get_deskagent_dir(new_subpath="new", old_name="old") == tmp_path / "new"
-
-
-class TestIsTermux:
-    def test_false_when_unset(self, monkeypatch):
-        monkeypatch.delenv("TERMUX_VERSION", raising=False)
-        assert is_termux() is False
-
-    def test_true_when_set(self, monkeypatch):
-        monkeypatch.setenv("TERMUX_VERSION", "0.118")
-        assert is_termux() is True
 
 
 class TestSecureParentDir:

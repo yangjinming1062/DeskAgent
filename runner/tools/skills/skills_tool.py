@@ -31,9 +31,9 @@ SKILLS_DIR = get_skills_dir()
 MAX_NAME_LENGTH = 64
 MAX_DESCRIPTION_LENGTH = 1024
 
-_PLATFORM_MAP = {"macos": "darwin", "linux": "linux", "windows": "win32"}
+_PLATFORM_MAP = {"macos": "darwin", "windows": "win32"}
 _ENV_VAR_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
-_REMOTE_ENV_BACKENDS = frozenset({"docker", "singularity", "modal", "ssh", "daytona"})
+_REMOTE_ENV_BACKENDS = frozenset({"docker", "singularity", "ssh"})
 
 
 def _skill_lookup_path_error(name: str) -> str | None:

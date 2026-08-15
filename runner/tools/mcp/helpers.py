@@ -232,10 +232,6 @@ async def _wait_for_callback() -> tuple[str, str | None]:
 
     threading.Thread(target=server.handle_request, daemon=True).start()
 
-    if _is_interactive():
-        print("\n  Or paste the redirect URL here (or ?code=...&state=...) and press Enter. Type `skip` + Enter to continue without this server:", file=sys.stderr, flush=True)
-        threading.Thread(target=_paste_callback_reader, args=(result,), daemon=True).start()
-
     timeout, poll = 300.0, 0.5
     for _ in range(int(timeout / poll)):
         if result["auth_code"] is not None or result["error"] is not None:
@@ -250,52 +246,6 @@ async def _wait_for_callback() -> tuple[str, str | None]:
     if result["auth_code"] is None:
         raise OAuthNonInteractiveError("OAuth callback timed out.")
     return result["auth_code"], result["state"]
-
-
-def _paste_callback_reader(result: dict) -> None:
-    try:
-        if not (line := sys.stdin.readline().strip()):
-            return
-    except (KeyboardInterrupt, OSError, ValueError):
-        return
-
-    if result.get("auth_code") is not None or result.get("error") is not None:
-        return
-
-    if line.lower() in _SKIP_TOKENS:
-        result["error"] = _USER_SKIPPED_SENTINEL
-        print("  OAuth skipped.", file=sys.stderr)
-        return
-
-    query = line.split("?", 1)[1] if "?" in line else line
-    if query.startswith("?"):
-        query = query[1:]
-
-    try:
-        params = parse_qs(query)
-    except Exception:
-        print("  Could not parse pasted input — ignoring.", file=sys.stderr)
-        return
-
-    code = params.get("code", [None])[0]
-    state = params.get("state", [None])[0]
-    error = params.get("error", [None])[0]
-
-    if not code and not error:
-        print("  Pasted input did not contain code or error — ignoring.", file=sys.stderr)
-        return
-
-    if result.get("auth_code") is not None or result.get("error") is not None:
-        return
-
-    result.update({"auth_code": code, "state": state, "error": error})
-    if code:
-        print("  Got authorization code from paste — completing flow.", file=sys.stderr)
-
-
-def remove_oauth_tokens(server_name: str) -> None:
-    DeskAgentTokenStorage(server_name).remove()
-    logger.info("OAuth tokens removed for '%s'", server_name)
 
 
 def _configure_callback_port(cfg: dict) -> int:
