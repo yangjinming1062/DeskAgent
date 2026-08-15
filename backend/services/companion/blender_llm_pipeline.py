@@ -1,5 +1,6 @@
 import asyncio
 import re
+import shutil
 import tempfile
 import textwrap
 from contextlib import nullcontext
@@ -196,9 +197,11 @@ _EVAL_SYSTEM_PROMPT = """\
 """
 
 
-def _resolve_seeds(view_filenames: dict[str, str]) -> tuple[dict[str, str], dict[str, str]]:
+def _resolve_seeds(view_filenames: dict[str, str], io_dir: Path | None = None) -> tuple[dict[str, str], dict[str, str]]:
     """Resolve the three seed images once. Single pass halves disk lookups vs
-    resolving data-URIs and file-paths independently."""
+    resolving data-URIs and file-paths independently. With ``io_dir`` (worker
+    host), seeds are copied into the per-job workspace so the sandbox
+    container only ever sees the mounted io dir, never the data_dir layout."""
     uris: dict[str, str] = {}
     paths: dict[str, str] = {}
     for view_key in ("front", "right", "back"):
@@ -208,7 +211,12 @@ def _resolve_seeds(view_filenames: dict[str, str]) -> tuple[dict[str, str], dict
             raise ModelGenerationError(f"{view_key} 视角种子图文件不可读: {filename}")
         path, content_type = resolved
         uris[view_key] = build_data_uri(path.read_bytes(), content_type)
-        paths[view_key] = str(path)
+        if io_dir is not None:
+            dest = io_dir / f"seed_{view_key}{path.suffix}"
+            shutil.copyfile(path, dest)
+            paths[view_key] = str(dest)
+        else:
+            paths[view_key] = str(path)
     return uris, paths
 
 
@@ -334,9 +342,9 @@ async def run_blender_scaffold(
         return BlenderResult(success=True, glb_bytes=glb_bytes, preview_png=preview_bytes)
 
 
-async def _execute_blender_script(llm_code: str, seed_paths: dict[str, str], *, render_preview: bool = True) -> BlenderResult:
+async def _execute_blender_script(llm_code: str, seed_paths: dict[str, str], *, render_preview: bool = True, io_dir: Path | None = None) -> BlenderResult:
     payload = ["--seed-front", seed_paths.get("front", ""), "--seed-right", seed_paths.get("right", ""), "--seed-back", seed_paths.get("back", "")]
-    return await run_blender_scaffold(_SCAFFOLD_PATH, llm_code, _BUILD_MARKER, payload, render_preview=render_preview, script_name="build_character.py")
+    return await run_blender_scaffold(_SCAFFOLD_PATH, llm_code, _BUILD_MARKER, payload, render_preview=render_preview, script_name="build_character.py", io_dir=io_dir)
 
 
 def _validate_glb(glb_bytes: bytes, required_bones: set[str]) -> list[str]:
@@ -360,7 +368,7 @@ def _validate_glb(glb_bytes: bytes, required_bones: set[str]) -> list[str]:
     return missing
 
 
-async def run_blender_llm_pipeline(user_id: int, view_filenames: dict[str, str], species: str, model_id: int) -> None:
+async def run_blender_llm_pipeline(user_id: int, view_filenames: dict[str, str], species: str, model_id: int, *, io_dir: Path | None = None) -> None:
     try:
         await _emit_progress(user_id, "analyzing", 5, provider="blender_llm")
         rig_type = await select_rig_type(chat, species, user_id=user_id)
@@ -368,7 +376,7 @@ async def run_blender_llm_pipeline(user_id: int, view_filenames: dict[str, str],
         bone_tree = format_bone_tree(rig_type)
         required_bones = bone_names(rig_type)
 
-        seed_uris, seed_paths = await asyncio.to_thread(_resolve_seeds, view_filenames)
+        seed_uris, seed_paths = await asyncio.to_thread(_resolve_seeds, view_filenames, io_dir)
 
         best_glb: bytes | None = None
         prev_script: str | None = None
@@ -389,7 +397,7 @@ async def run_blender_llm_pipeline(user_id: int, view_filenames: dict[str, str],
                 else:
                     script = await _llm_refine_script(prev_script, last_preview_uri or "", last_critique, seed_uris, user_id, db)
 
-            result = await _execute_blender_script(script, seed_paths, render_preview=True)
+            result = await _execute_blender_script(script, seed_paths, render_preview=True, io_dir=io_dir)
 
             if not result.success:
                 logger.warning("Blender execution failed (iter %d): %s", i + 1, result.stderr[:200], extra={"user_id": user_id})

@@ -11,6 +11,7 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from services.llm import chat
+from services.worker import queue as render_queue
 from services.worker import run_blender
 
 from .asset_store import build_signed_model_url, save_companion_model
@@ -230,20 +231,15 @@ async def generate_companion_model(
     # takes the Tripo branch (which works with a single front seed).
     use_blender = _should_use_blender_fallback(provider_override) and fullbody_mode != "single"
     if use_blender:
-        # Lazy import: blender_llm_pipeline imports model_service helpers, so an
-        # eager top-level import here would form a cycle (model_service →
-        # blender_llm_pipeline → model_service) before either module finishes
-        # initialising.  The call site is reached only after both modules are
-        # fully loaded by the request handler.
-        from .blender_llm_pipeline import run_blender_llm_pipeline
-
-        task = asyncio.create_task(run_blender_llm_pipeline(user_id, view_filenames, species, model.id))
-        logger.info("Blender+LLM generation started (fallback)", extra={"user_id": user_id, "species": species})
+        # The Blender+LLM loop runs in the render worker, not this process —
+        # web must never host minutes-long bpy iterations (ARCHITECTURE.md §10).
+        await render_queue.enqueue("model_generate", user_id, {"view_filenames": view_filenames, "species": species, "model_id": model.id})
+        logger.info("Blender+LLM generation enqueued (fallback)", extra={"user_id": user_id, "species": species})
     else:
         task = asyncio.create_task(_run_tripo_pipeline(user_id, view_filenames, species, model.id, fullbody_mode))
         logger.info("Tripo3D generation started", extra={"user_id": user_id, "species": species})
-    _running_model_tasks.add(task)
-    task.add_done_callback(_running_model_tasks.discard)
+        _running_model_tasks.add(task)
+        task.add_done_callback(_running_model_tasks.discard)
     return model
 
 
@@ -259,9 +255,7 @@ async def _run_tripo_pipeline(user_id: int, view_filenames: dict[str, str], spec
                 balance_info = await account_balance()
                 if float(balance_info.get("balance", 1)) <= 0:
                     logger.info("Tripo balance is 0, falling back to Blender+LLM", extra={"user_id": user_id})
-                    from .blender_llm_pipeline import run_blender_llm_pipeline
-
-                    await run_blender_llm_pipeline(user_id, view_filenames, species, model_id)
+                    await render_queue.enqueue("model_generate", user_id, {"view_filenames": view_filenames, "species": species, "model_id": model_id})
                     return
             except Exception:
                 pass  # Best-effort: key might be invalid, network down, etc. — let the pipeline try normally.
@@ -336,9 +330,7 @@ async def _run_tripo_pipeline(user_id: int, view_filenames: dict[str, str], spec
     except Exception as exc:
         if SETTINGS.blender_llm_enabled and isinstance(exc, TripoApiError) and _is_credits_exhausted_error(exc) and not is_single:
             logger.info("Tripo credits exhausted, falling back to Blender+LLM", extra={"user_id": user_id})
-            from .blender_llm_pipeline import run_blender_llm_pipeline
-
-            await run_blender_llm_pipeline(user_id, view_filenames, species, model_id)
+            await render_queue.enqueue("model_generate", user_id, {"view_filenames": view_filenames, "species": species, "model_id": model_id})
             return
 
         logger.warning("Tripo3D generation failed", extra={"user_id": user_id}, exc_info=True)
