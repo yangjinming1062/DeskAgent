@@ -5,9 +5,8 @@ import struct
 import subprocess
 import uuid
 from pathlib import Path
-from typing import Any
 
-from utils import CREATE_NO_WINDOW, get_deskagent_dir
+from utils import get_deskagent_dir, get_deskagent_home
 
 try:
     import sounddevice  # type: ignore[import-not-found]
@@ -57,7 +56,6 @@ def _resolve_ffmpeg_bin(preferred: str = "ffmpeg") -> str:
     env_path = os.environ.get("DESKAGENT_FFMPEG_PATH")
     if env_path and Path(env_path).is_file():
         return env_path
-    from utils import get_deskagent_home
 
     home_bin = Path(get_deskagent_home()) / "bin" / ("ffmpeg.exe" if os.name == "nt" else "ffmpeg")
     if home_bin.is_file():
@@ -214,10 +212,3 @@ def is_pa_loaded() -> bool:
     """False when PortAudio shared library is unavailable — Desktop should
     fall back to its Electron-side mic capture rather than stall the user."""
     return sounddevice is not None
-
-
-def suppress_windows_console_window(cmd: list[str], **kwargs: Any) -> subprocess.CompletedProcess:
-    kwargs.setdefault("creationflags", 0)
-    if os.name == "nt":
-        kwargs["creationflags"] |= CREATE_NO_WINDOW
-    return subprocess.run(cmd, **kwargs)

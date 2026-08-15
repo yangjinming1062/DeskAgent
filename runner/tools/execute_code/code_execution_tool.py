@@ -14,6 +14,7 @@ import threading
 import time
 import uuid
 from collections import deque
+from collections.abc import Callable
 from typing import Any
 
 import psutil
@@ -85,12 +86,12 @@ _WINDOWS_ESSENTIAL_ENV_VARS = frozenset({
 })
 
 
-def _scrub_child_env(source_env, is_passthrough=None, is_windows=None):
+def _scrub_child_env(source_env: dict[str, str], is_passthrough: Callable[[str], bool] | None = None, is_windows: bool | None = None) -> dict[str, str]:
     if is_passthrough is None:
         is_passthrough = is_env_passthrough
     if is_windows is None:
         is_windows = IS_WINDOWS
-    scrubbed = {}
+    scrubbed: dict[str, str] = {}
     _dropped_deskagent = []
     for k, v in source_env.items():
         if is_passthrough(k):
@@ -317,7 +318,7 @@ def _call(tool_name, args):
 _TERMINAL_BLOCKED_PARAMS = {"background", "pty", "notify_on_complete", "watch_patterns"}
 
 
-def _rpc_server_loop(server_sock: socket.socket, task_id: str, tool_call_log: list, tool_call_counter: list, max_tool_calls: int, allowed_tools: frozenset):
+def _rpc_server_loop(server_sock: socket.socket, task_id: str, tool_call_log: list[Any], tool_call_counter: list[int], max_tool_calls: int, allowed_tools: frozenset[str]) -> None:
     conn = None
     try:
         server_sock.settimeout(5)
@@ -387,7 +388,7 @@ def _rpc_server_loop(server_sock: socket.socket, task_id: str, tool_call_log: li
                 logger.debug("RPC conn close error: %s", e)
 
 
-def _get_or_create_env(task_id: str):
+def _get_or_create_env(task_id: str) -> tuple[Any, str]:
     effective_task_id = resolve_container_task_id(task_id)
     with env_lock:
         if effective_task_id in active_environments:
@@ -454,7 +455,7 @@ def _get_or_create_env(task_id: str):
         return env, env_type
 
 
-def _ship_file_to_remote(env, remote_path: str, content: str) -> None:
+def _ship_file_to_remote(env: Any, remote_path: str, content: str) -> None:
     encoded = base64.b64encode(content.encode("utf-8")).decode("ascii")
     quoted_remote_path = shlex.quote(remote_path)
     env.execute(f"echo '{encoded}' | base64 -d > {quoted_remote_path}", cwd="/", timeout=30)
@@ -475,7 +476,9 @@ def _env_temp_dir(env: Any) -> str:
     return "/tmp"
 
 
-def _rpc_poll_loop(env, rpc_dir: str, task_id: str, tool_call_log: list, tool_call_counter: list, max_tool_calls: int, allowed_tools: frozenset, stop_event: threading.Event):
+def _rpc_poll_loop(
+    env: Any, rpc_dir: str, task_id: str, tool_call_log: list[Any], tool_call_counter: list[int], max_tool_calls: int, allowed_tools: frozenset[str], stop_event: threading.Event
+) -> None:
     poll_interval = 0.1
     quoted_rpc_dir = shlex.quote(rpc_dir)
     while not stop_event.is_set():
@@ -828,7 +831,7 @@ def execute_code(code: str, task_id: str | None = None, enabled_tools: list[str]
             pass
 
 
-def _kill_process_group(proc, escalate: bool = False) -> None:
+def _kill_process_group(proc: subprocess.Popen, escalate: bool = False) -> None:
     if IS_WINDOWS:
         if not kill_tree(proc.pid, force=True):
             try:

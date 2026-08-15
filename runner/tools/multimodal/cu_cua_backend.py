@@ -296,7 +296,7 @@ class _AsyncBridge:
         if not self._ready.wait(timeout=5.0):
             raise RuntimeError("cua-driver asyncio bridge failed to start")
 
-    def run(self, coro, timeout: float | None = 30.0) -> Any:
+    def run(self, coro: Any, timeout: float | None = 30.0) -> Any:
         if not self._loop or not self._thread or not self._thread.is_alive():
             if asyncio.iscoroutine(coro):
                 coro.close()

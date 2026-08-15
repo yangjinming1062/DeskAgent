@@ -54,7 +54,7 @@ class WhisperRuntime:
 _runtime = WhisperRuntime()
 
 
-def get_whisper(size: str = _DEFAULT_SIZE, compute_type: str = _DEFAULT_COMPUTE_TYPE, device: str = "cpu"):
+def get_whisper(size: str = _DEFAULT_SIZE, compute_type: str = _DEFAULT_COMPUTE_TYPE, device: str = "cpu") -> Any:
     return _runtime.get_model(size=size, compute_type=compute_type, device=device)
 
 

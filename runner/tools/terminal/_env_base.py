@@ -18,6 +18,7 @@ from typing import IO, Protocol
 from utils import cfg_get, get_deskagent_home, load_config
 
 from ..interrupt import is_interrupted
+from ._cmd_rewrite import _rewrite_compound_background, _transform_sudo_command
 
 if os.name == "nt":
     import ctypes
@@ -123,7 +124,7 @@ class _ThreadedProcessHandle:
         threading.Thread(target=_worker, daemon=True).start()
 
     @property
-    def stdout(self):
+    def stdout(self) -> IO[bytes] | None:
         return self._stdout
 
     @property
@@ -140,7 +141,7 @@ class _ThreadedProcessHandle:
 
     def wait(self, timeout: float | None = None) -> int:
         self._done.wait(timeout=timeout)
-        return self._returncode
+        return self._returncode or 0
 
 
 def _cwd_marker(session_id: str) -> str:
@@ -169,7 +170,7 @@ class BaseEnvironment(ABC):
         raise NotImplementedError(f"{type(self).__name__} must implement _run_bash()")
 
     @abstractmethod
-    def cleanup(self): ...
+    def cleanup(self) -> None: ...
     def init_session(self) -> None:
         bootstrap = (
             f"export -p > {shlex.quote(self._snapshot_path)}\n"
@@ -338,8 +339,6 @@ class BaseEnvironment(ABC):
         self._before_execute()
         exec_command, sudo_stdin = self._prepare_command(command)
         if rewrite_compound_background:
-            from ._cmd_rewrite import _rewrite_compound_background
-
             exec_command = _rewrite_compound_background(exec_command)
         effective_stdin = sudo_stdin + stdin_data if sudo_stdin is not None and stdin_data is not None else (sudo_stdin or stdin_data)
         if effective_stdin and self._stdin_mode == "heredoc":
@@ -360,6 +359,4 @@ class BaseEnvironment(ABC):
             self.cleanup()
 
     def _prepare_command(self, command: str) -> tuple[str, str | None]:
-        from ._cmd_rewrite import _transform_sudo_command
-
         return _transform_sudo_command(command)

@@ -463,7 +463,7 @@ class WinBackend(ComputerUseBackend):
         except Exception as e:
             return ActionResult(ok=False, action="set_value", message=str(e))
 
-    def _get_desktop(self):
+    def _get_desktop(self) -> Any:
         if self._desktop is None:
             self._desktop = pywinauto.Desktop(backend="uia")
         return self._desktop

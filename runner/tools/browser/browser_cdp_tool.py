@@ -65,7 +65,7 @@ BROWSER_CDP_SCHEMA: dict[str, Any] = {
 }
 
 
-def _run_async(coro):
+def _run_async(coro: Any) -> Any:
     try:
         if asyncio.get_running_loop().is_running():
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:

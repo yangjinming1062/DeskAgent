@@ -1,13 +1,14 @@
 import contextvars
 import logging
 from collections.abc import Callable
+from typing import Any
 
-from .terminal._cmd_rewrite import _get_sudo_password_callback, set_sudo_password_callback
+from .terminal import _get_sudo_password_callback, set_sudo_password_callback
 
 logger = logging.getLogger(__name__)
 
 
-def propagate_context_to_thread(target: Callable) -> Callable:
+def propagate_context_to_thread(target: Callable[..., Any]) -> Callable[..., Any]:
     ctx = contextvars.copy_context()
     parent_sudo_cb = None
     try:
@@ -15,8 +16,8 @@ def propagate_context_to_thread(target: Callable) -> Callable:
     except Exception:
         logger.debug("Could not capture parent approval/sudo callbacks", exc_info=True)
 
-    def _runner(*args, **kwargs):
-        def _inner():
+    def _runner(*args: Any, **kwargs: Any) -> Any:
+        def _inner() -> Any:
             if parent_sudo_cb is not None:
                 try:
                     set_sudo_password_callback(parent_sudo_cb)

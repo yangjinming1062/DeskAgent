@@ -18,7 +18,7 @@ import logging
 import threading
 import time
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Any, Protocol
 
 from websockets.client import ClientProtocol
 from websockets.frames import OP_BINARY, OP_CONT, OP_TEXT, Frame
@@ -363,7 +363,7 @@ class DesktopConnection:
             if self._recv_task is not None:
                 return
 
-    def _consume_handshake_events(self, events) -> None:
+    def _consume_handshake_events(self, events: list[Any] | tuple[Any, ...]) -> None:
         """Process one events batch: the Response first, then any frames the
         peer pipelined behind it. The sans-I/O parser keeps parsing after the
         101 in the same batch, and ``events_received()`` drains the queue —
@@ -477,7 +477,7 @@ class DesktopConnection:
     def close_reason(self) -> str | None:
         return self._protocol.close_reason
 
-    def __aiter__(self):
+    def __aiter__(self) -> "DesktopConnection":
         return self
 
     async def __anext__(self) -> str:

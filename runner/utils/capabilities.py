@@ -56,7 +56,7 @@ def screen_capture_available() -> bool:
         try:
             import mss
 
-            with mss.mss() as sct:
+            with mss.MSS() as sct:
                 return len(sct.monitors) > 1
         except Exception as e:
             logger.debug("screen capture probe failed: %s", e)

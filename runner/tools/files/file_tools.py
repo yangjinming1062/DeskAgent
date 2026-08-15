@@ -8,6 +8,7 @@ import threading
 import time
 from contextlib import ExitStack
 from pathlib import Path
+from typing import Any
 
 from utils import (
     IS_WINDOWS,
@@ -1547,15 +1548,15 @@ SEARCH_FILES_SCHEMA = {
 }
 
 
-def _handle_list_directory(args, **kw):
+def _handle_list_directory(args: dict[str, Any], **kw: Any) -> str:
     return list_directory_tool(args.get("path", ""), kw.get("task_id", "default"))
 
 
-def _handle_read_file(args, **kw):
+def _handle_read_file(args: dict[str, Any], **kw: Any) -> str:
     return read_file_tool(args.get("path", ""), args.get("offset", 1), args.get("limit", 500), kw.get("task_id", "default"))
 
 
-def _handle_write_file(args, **kw):
+def _handle_write_file(args: dict[str, Any], **kw: Any) -> str:
     if not isinstance(path := args.get("path"), str) or not path:
         return tool_error("write_file: missing 'path'.")
     if "content" not in args:
@@ -1565,7 +1566,7 @@ def _handle_write_file(args, **kw):
     return write_file_tool(path, content, kw.get("task_id", "default"), bool(args.get("cross_profile")))
 
 
-def _handle_patch(args, **kw):
+def _handle_patch(args: dict[str, Any], **kw: Any) -> str:
     return patch_tool(
         args.get("mode", "replace"),
         args.get("path"),
@@ -1578,7 +1579,7 @@ def _handle_patch(args, **kw):
     )
 
 
-def _handle_search_files(args, **kw):
+def _handle_search_files(args: dict[str, Any], **kw: Any) -> str:
     target = {"grep": "content", "find": "files"}.get(args.get("target", "content"), args.get("target", "content"))
     return search_tool(
         args.get("pattern", ""),

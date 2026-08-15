@@ -354,12 +354,12 @@ class NativeFileOperations(FileOperations):
 
         return SearchResult(matches=matches, files=list(files), counts=counts, total_count=total_count, truncated=truncated)
 
-    def _exec(self, command: str, cwd: str | None = None, timeout: int | None = None, stdin_data: str | None = None) -> Any:
+    def _exec(self, command: str, cwd: str | None = None, timeout: int | None = 60, stdin_data: str | None = None) -> Any:
         kwargs = {"shell": True, "text": True, "capture_output": True}
         if stdin_data is not None:
             kwargs["input"] = stdin_data
-        if timeout is not None:
-            kwargs["timeout"] = timeout
+        effective_timeout = 60 if timeout is None else timeout
+        kwargs["timeout"] = effective_timeout
         try:
             result = subprocess.run(command, cwd=cwd or self.cwd, **kwargs)
             return ExecuteResult(stdout=result.stdout, exit_code=result.returncode)

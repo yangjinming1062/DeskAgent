@@ -1,6 +1,7 @@
 import fnmatch
 import hashlib
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -528,7 +529,7 @@ def content_hash(skill_path: Path) -> str:
     return f"sha256:{h.hexdigest()[:16]}"
 
 
-def _check_structure(skill_dir: Path, ignore=None) -> list[Finding]:
+def _check_structure(skill_dir: Path, ignore: Callable[[str], bool] | None = None) -> list[Finding]:
     ignore = ignore or (lambda _rel: False)
     findings, file_count, total_size = [], 0, 0
     for f in skill_dir.rglob("*"):
@@ -596,7 +597,7 @@ _ALWAYS_IGNORED_NAMES = set(_SKILL_IGNORE_FILENAMES)
 _NEVER_IGNORABLE = {"SKILL.md"}
 
 
-def _load_skill_ignore(skill_dir: Path):
+def _load_skill_ignore(skill_dir: Path) -> Callable[[str], bool]:
     patterns: list[str] = []
     for name in _SKILL_IGNORE_FILENAMES:
         ig = skill_dir / name

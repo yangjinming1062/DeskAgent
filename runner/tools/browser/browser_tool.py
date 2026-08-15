@@ -20,6 +20,7 @@ import tempfile
 import threading
 import time
 import uuid
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 from urllib.parse import unquote, urlparse
@@ -2570,7 +2571,7 @@ def browser_select(ref: str, value: str | None = None, label: str | None = None,
 _LAST_DOWNLOAD_CLEANUP: float = 0.0
 
 
-def _unlink_files_older_than(paths, cutoff_s: float) -> None:
+def _unlink_files_older_than(paths: Iterable[Path] | Any, cutoff_s: float) -> None:
     """Unlink each path whose mtime predates ``cutoff_s``. Errors are logged, not raised."""
     for p in paths:
         try:

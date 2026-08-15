@@ -1,3 +1,5 @@
+from typing import Any
+
 from .._env_docker import DockerEnvironment, maybe_reap_docker_orphans
 from .._env_local import LocalEnvironment
 from .._env_singularity import SingularityEnvironment
@@ -15,7 +17,7 @@ def create_environment(
     local_config: dict | None = None,
     task_id: str = "default",
     host_cwd: str | None = None,
-):
+) -> Any:
     cc = container_config or {}
     lc = local_config or {}
     cpu = cc.get("container_cpu", 1)

@@ -9,7 +9,7 @@ from utils import cfg_bool, cfg_float, cfg_get, cfg_int, cfg_json, cfg_str, load
 # ── Config-driven constants ───────────────────────────────────────────
 
 
-def _terminal_config_value(key: str, default):
+def _terminal_config_value(key: str, default: Any) -> Any:
     return cfg_get(load_config(), "terminal", key, default=default)
 
 
@@ -107,7 +107,7 @@ def get_env_config() -> dict[str, Any]:
     }
 
 
-def get_active_env(task_id: str):
+def get_active_env(task_id: str) -> Any | None:
     lookup = resolve_container_task_id(task_id)
     with env_lock:
         return active_environments.get(lookup) or active_environments.get(task_id)

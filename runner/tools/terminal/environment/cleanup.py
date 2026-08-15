@@ -6,6 +6,7 @@ import logging
 import shutil
 import threading
 import time
+from typing import Any
 
 from .._env_singularity import _get_scratch_dir
 from .state import active_environments, creation_locks, creation_locks_lock, env_lock, get_env_config, last_activity
@@ -31,7 +32,7 @@ def _log_cleanup_error(task_id: str, exc: BaseException) -> None:
         logger.warning("Error cleaning up environment for task %s: %s", task_id, exc)
 
 
-def _stop_env(env) -> None:
+def _stop_env(env: Any) -> None:
     if hasattr(env, "cleanup"):
         env.cleanup()
     elif hasattr(env, "stop"):
@@ -100,7 +101,7 @@ def stop_cleanup_thread() -> None:
             _cleanup_thread.join(timeout=5)
 
 
-def cleanup_all_environments():
+def cleanup_all_environments() -> int:
     task_ids = list(active_environments.keys())
     cleaned = 0
     for task_id in task_ids:

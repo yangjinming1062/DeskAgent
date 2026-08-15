@@ -3,6 +3,7 @@ import json
 import logging
 import shutil
 import sys
+from collections.abc import Callable
 from contextlib import contextmanager, suppress
 from datetime import UTC, datetime
 from pathlib import Path
@@ -296,7 +297,7 @@ def seed_record_if_missing(skill_name: str) -> None:
             pass
 
 
-def _mutate(skill_name: str, mutator, *, require_curation_eligible: bool = False) -> None:
+def _mutate(skill_name: str, mutator: Callable[[dict[str, Any]], Any], *, require_curation_eligible: bool = False) -> None:
     if skill_name and not (require_curation_eligible and not is_curation_eligible(skill_name)):
         try:
             with _usage_file_lock():

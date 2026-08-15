@@ -12,6 +12,8 @@ import tempfile
 import threading
 import time
 import urllib.request
+from collections.abc import Callable
+from typing import Any
 
 from utils import IS_WINDOWS, cfg_get, get_deskagent_home, load_config
 
@@ -194,7 +196,7 @@ def _tirith_search_paths() -> list[str]:
     return paths
 
 
-def _extract_tirith_binary(tar: tarfile.TarFile, dest_dir: str, log) -> tuple[str | None, str]:
+def _extract_tirith_binary(tar: tarfile.TarFile, dest_dir: str, log: Callable[..., Any]) -> tuple[str | None, str]:
     bin_names = _tirith_bin_names()
     for m in tar.getmembers():
         base_name = os.path.basename(m.name)

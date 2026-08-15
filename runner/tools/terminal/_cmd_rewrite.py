@@ -2,6 +2,7 @@ import logging
 import re
 import subprocess
 import threading
+from collections.abc import Callable
 
 from utils import cfg_get, get_env_type, is_truthy_value, load_config
 
@@ -16,11 +17,11 @@ _sudo_password_cache_lock = threading.Lock()
 _callback_tls = threading.local()
 
 
-def _get_sudo_password_callback():
+def _get_sudo_password_callback() -> Callable[[], str | None] | None:
     return getattr(_callback_tls, "sudo_password", None)
 
 
-def set_sudo_password_callback(cb) -> None:
+def set_sudo_password_callback(cb: Callable[[], str | None] | None) -> None:
     _callback_tls.sudo_password = cb
 
 

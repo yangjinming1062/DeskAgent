@@ -2,8 +2,9 @@ import logging
 import os
 import shlex
 import tempfile
+from typing import Any
 
-from .system.budget_config import DEFAULT_BUDGET, DEFAULT_PREVIEW_SIZE_CHARS, BudgetConfig
+from .system import DEFAULT_BUDGET, DEFAULT_PREVIEW_SIZE_CHARS, BudgetConfig
 
 logger = logging.getLogger(__name__)
 PERSISTED_OUTPUT_TAG = "<persisted-output>"
@@ -11,7 +12,7 @@ PERSISTED_OUTPUT_CLOSING_TAG = "</persisted-output>"
 STORAGE_DIR = os.path.join(tempfile.gettempdir(), "deskagent-results")
 
 
-def _resolve_storage_dir(env) -> str:
+def _resolve_storage_dir(env: Any) -> str:
     if env is not None and (get_temp_dir := getattr(env, "get_temp_dir", None)) and callable(get_temp_dir):
         try:
             if temp_dir := get_temp_dir():
@@ -30,7 +31,7 @@ def generate_preview(content: str, max_chars: int = DEFAULT_PREVIEW_SIZE_CHARS) 
     return truncated, True
 
 
-def _write_to_sandbox(content: str, remote_path: str, env) -> bool:
+def _write_to_sandbox(content: str, remote_path: str, env: Any) -> bool:
     cmd = f"mkdir -p {shlex.quote(os.path.dirname(remote_path))} && cat > {shlex.quote(remote_path)}"
     return env.execute(cmd, timeout=30, stdin_data=content).get("returncode", 1) == 0
 
@@ -50,7 +51,7 @@ def _build_persisted_message(preview: str, has_more: bool, original_size: int, f
     )
 
 
-def maybe_persist_tool_result(content: str, tool_name: str, tool_use_id: str, env=None, config: BudgetConfig = DEFAULT_BUDGET, threshold: int | float | None = None) -> str:
+def maybe_persist_tool_result(content: str, tool_name: str, tool_use_id: str, env: Any = None, config: BudgetConfig = DEFAULT_BUDGET, threshold: int | float | None = None) -> str:
     effective_threshold = threshold if threshold is not None else config.resolve_threshold(tool_name)
     if effective_threshold == float("inf") or len(content) <= effective_threshold:
         return content

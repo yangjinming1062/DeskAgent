@@ -1234,7 +1234,7 @@ PROCESS_SCHEMA = {
 }
 
 
-def _handle_process(args, **kw):
+def _handle_process(args: dict[str, Any], **kw: Any) -> str:
     task_id = kw.get("task_id")
     action = args.get("action", "")
     # Coerce to string — some models send session_id as an integer

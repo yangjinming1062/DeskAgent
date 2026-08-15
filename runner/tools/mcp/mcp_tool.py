@@ -18,6 +18,7 @@ import sys
 import tempfile
 import threading
 import time
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 from typing import Any, ClassVar
@@ -323,7 +324,7 @@ def _mcp_image_extension_for_mime_type(mime_type: str) -> str:
     return ".jpg" if normalized in {"image/jpeg", "image/jpg"} else mimetypes.guess_extension(normalized) or ".png"
 
 
-def _cache_mcp_image_block(block) -> str:
+def _cache_mcp_image_block(block: Any) -> str:
     data = getattr(block, "data", None)
     mime_type = getattr(block, "mimeType", None)
     normalized_mime = str(mime_type or "").split(";", 1)[0].strip().lower()
@@ -389,7 +390,7 @@ def _validate_remote_mcp_url(server_name: str, url: Any) -> str:
     return stripped
 
 
-def _resolve_client_cert(server_name: str, config: dict):
+def _resolve_client_cert(server_name: str, config: dict) -> str | tuple[str, str] | tuple[str, str, str] | None:
     """Resolve the ``client_cert`` / ``client_key`` config for mTLS.
 
     Returns whatever ``httpx``'s ``cert=`` parameter accepts, or ``None`` when
@@ -475,7 +476,7 @@ def _format_connect_error(exc: BaseException) -> str:
     return _sanitize_error("; ".join(deduped[:3]))
 
 
-def _safe_numeric(value, default, coerce=int, minimum=1):
+def _safe_numeric(value: Any, default: Any, coerce: Callable = int, minimum: int | float = 1) -> Any:
     try:
         val = coerce(value)
         return default if isinstance(val, float) and not math.isfinite(val) else max(val, minimum)
@@ -529,7 +530,7 @@ class SamplingHandler:
 
     # -- Model resolution ----------------------------------------------------
 
-    def _resolve_model(self, preferences) -> str | None:
+    def _resolve_model(self, preferences: Any) -> str | None:
         """Config override > server hint > None (use default)."""
         if self.model_override:
             return self.model_override
@@ -542,15 +543,15 @@ class SamplingHandler:
     # -- Message conversion --------------------------------------------------
 
     @staticmethod
-    def _extract_tool_result_text(block) -> str:
+    def _extract_tool_result_text(block: Any) -> str:
         """Extract text from a ToolResultContent block."""
         if not hasattr(block, "content") or block.content is None:
             return ""
         items = block.content if isinstance(block.content, list) else [block.content]
         return "\n".join(item.text for item in items if hasattr(item, "text"))
 
-    def _convert_messages(self, params) -> list[dict]:
-        messages: list[dict] = []
+    def _convert_messages(self, params: Any) -> list[dict[str, Any]]:
+        messages: list[dict[str, Any]] = []
         for msg in params.messages:
             blocks = msg.content_as_list if hasattr(msg, "content_as_list") else (msg.content if isinstance(msg.content, list) else [msg.content])
             tool_results = [b for b in blocks if hasattr(b, "toolUseId")]
@@ -592,7 +593,7 @@ class SamplingHandler:
     # -- Error helper --------------------------------------------------------
 
     @staticmethod
-    def _error(message: str, code: int = -1):
+    def _error(message: str, code: int = -1) -> Any:
         """Return ErrorData (MCP spec) or raise as fallback."""
         if _MCP_SAMPLING_TYPES:
             return ErrorData(code=code, message=message)
@@ -600,7 +601,7 @@ class SamplingHandler:
 
     # -- Response building ---------------------------------------------------
 
-    def _build_tool_use_result(self, choice, response):
+    def _build_tool_use_result(self, choice: Any, response: Any) -> Any:
         """Build a CreateMessageResultWithTools from an LLM tool_calls response."""
         self.metrics["tool_use_count"] += 1
 
@@ -638,7 +639,7 @@ class SamplingHandler:
 
         return CreateMessageResultWithTools(role="assistant", content=content_blocks, model=response.model, stopReason="toolUse")
 
-    def _build_text_result(self, choice, response):
+    def _build_text_result(self, choice: Any, response: Any) -> Any:
         """Build a CreateMessageResult from a normal text response."""
         self._tool_loop_count = 0  # reset on text response
         response_text = choice.message.content or ""
@@ -660,13 +661,13 @@ class SamplingHandler:
 
     # -- Session kwargs helper -----------------------------------------------
 
-    def session_kwargs(self) -> dict:
+    def session_kwargs(self) -> dict[str, Any]:
         """Return kwargs to pass to ClientSession for sampling support."""
         return {"sampling_callback": self, "sampling_capabilities": SamplingCapability(tools=SamplingToolsCapability())}
 
     # -- Main callback -------------------------------------------------------
 
-    async def __call__(self, context, params):
+    async def __call__(self, context: Any, params: Any) -> Any:
         """Sampling callback invoked by the MCP SDK.
 
         Conforms to ``SamplingFnT`` protocol.  Returns
@@ -1834,7 +1835,7 @@ def _ensure_mcp_loop() -> None:
         _mcp_thread.start()
 
 
-def _run_on_mcp_loop(coro_or_factory, timeout: float = 30):
+def _run_on_mcp_loop(coro_or_factory: Any, timeout: float = 30) -> Any:
     """Schedule a coroutine on the MCP event loop and block until done.
 
     Accepts either a coroutine object or a zero-arg callable that returns one.
@@ -2374,7 +2375,7 @@ def sanitize_mcp_name_component(value: str) -> str:
     return _NAME_COMPONENT_RE.sub("_", str(value or ""))
 
 
-def _convert_mcp_schema(server_name: str, mcp_tool) -> dict:
+def _convert_mcp_schema(server_name: str, mcp_tool: Any) -> dict[str, Any]:
     """Convert an MCP tool listing to the DeskAgent registry schema format.
 
     Args:
@@ -2935,6 +2936,12 @@ def shutdown_mcp_servers() -> None:
                 logger.warning("Error during MCP shutdown: %s", exc)
 
     _stop_mcp_loop()
+
+
+def get_active_mcp_servers() -> list[str]:
+    """Return a sorted list of names for all active MCP servers."""
+    with _lock:
+        return sorted(_servers.keys())
 
 
 def reload_mcp_servers() -> dict:

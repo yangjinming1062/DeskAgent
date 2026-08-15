@@ -6,8 +6,6 @@ from typing import Any
 from utils import IS_MACOS, IS_WINDOWS
 
 logger = logging.getLogger(__name__)
-
-# Platform-conditional optional imports at module top per CLAUDE.md.
 try:
     import psutil  # type: ignore[import-not-found]
 except ImportError:

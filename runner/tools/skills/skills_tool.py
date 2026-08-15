@@ -194,7 +194,7 @@ def _get_category_from_path(skill_path: Path) -> str | None:
     return None
 
 
-def _parse_tags(tags_value) -> list[str]:
+def _parse_tags(tags_value: Any) -> list[str]:
     if not tags_value:
         return []
     if isinstance(tags_value, list):
@@ -596,7 +596,7 @@ SKILL_VIEW_SCHEMA = {
 registry.register_tool("skills_list", schema=SKILLS_LIST_SCHEMA)(lambda args, **kw: skills_list(category=args.get("category"), task_id=kw.get("task_id")))
 
 
-def _skill_view_with_bump(args, **kw):
+def _skill_view_with_bump(args: dict[str, Any], **kw: Any) -> str:
     # Cheap interrupt early-return: skill_view reads from disk + the hub
     # index-cache. Without this guard, a stale "please list skills" call
     # keeps running after the user has moved on.

@@ -358,7 +358,7 @@ def normalize_search_pagination(offset: Any = DEFAULT_SEARCH_OFFSET, limit: Any 
 class ShellFileOperations(FileOperations):
     """File operations implemented via shell commands."""
 
-    def __init__(self, terminal_env, cwd: str | None = None) -> None:
+    def __init__(self, terminal_env: Any, cwd: str | None = None) -> None:
         self.env = terminal_env
         self.cwd = cwd or getattr(terminal_env, "cwd", None) or getattr(getattr(terminal_env, "config", None), "cwd", None) or "/"
         self._command_cache: dict[str, bool] = {}
@@ -1162,7 +1162,7 @@ def check_stale(task_id: str, resolved_or_path: str | Path) -> str | None:
     return _REGISTRY.check_stale(task_id, resolved_or_path)
 
 
-def lock_path(resolved_or_path: str | Path):
+def lock_path(resolved_or_path: str | Path) -> Any:
     return _REGISTRY.lock_path(resolved_or_path)
 
 

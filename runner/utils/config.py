@@ -1,12 +1,13 @@
 import json
+from typing import Any
 
 _TRUTHY_STRINGS = frozenset({"1", "true", "yes", "on"})
 
 # ``None`` until the Desktop pushes via deskagent.config.update; consumers fall back to cfg_get(default=...).
-_INMEMORY_CONFIG: dict | None = None
+_INMEMORY_CONFIG: dict[str, Any] | None = None
 
 
-def is_truthy_value(value, default: bool = False) -> bool:
+def is_truthy_value(value: Any, default: bool = False) -> bool:
     """Interpret a config value as a bool.
 
     Used to coerce ``cfg["foo"]`` (which can be a bool, a str, a number,
@@ -22,12 +23,12 @@ def is_truthy_value(value, default: bool = False) -> bool:
     return bool(value)
 
 
-def load_config() -> dict:
+def load_config() -> dict[str, Any]:
     """Return the in-memory config dict (``{}`` before the Desktop's first push)."""
     return _INMEMORY_CONFIG if _INMEMORY_CONFIG is not None else {}
 
 
-def set_inmemory_config(config: dict) -> None:
+def set_inmemory_config(config: dict[str, Any]) -> None:
     """Replace the in-memory config; called by the ``deskagent.config.update`` RPC handler."""
     global _INMEMORY_CONFIG
     if not isinstance(config, dict):
@@ -35,7 +36,7 @@ def set_inmemory_config(config: dict) -> None:
     _INMEMORY_CONFIG = config
 
 
-def cfg_get(d: dict, *keys, default=None):
+def cfg_get(d: dict[str, Any] | Any, *keys: str, default: Any = None) -> Any:
     """Walk nested ``d.get(k)`` chain; return ``default`` on any miss."""
     for k in keys:
         if not isinstance(d, dict):
@@ -54,18 +55,18 @@ def get_env_type(default: str = "local") -> str:
     return str(val).strip().lower() or default
 
 
-def cfg_str(section: dict, key: str, default: str = "") -> str:
+def cfg_str(section: dict[str, Any], key: str, default: str = "") -> str:
     """Coerce a config value to str, stripping whitespace."""
     v = section.get(key, default)
     return str(v).strip() if v is not None else default
 
 
-def cfg_bool(section: dict, key: str, default: bool = False) -> bool:
+def cfg_bool(section: dict[str, Any], key: str, default: bool = False) -> bool:
     """Coerce a config value to bool via ``is_truthy_value``."""
     return is_truthy_value(section.get(key), default=default)
 
 
-def cfg_int(section: dict, key: str, default: int = 0) -> int:
+def cfg_int(section: dict[str, Any], key: str, default: int = 0) -> int:
     """Coerce a config value to int, returning *default* on failure."""
     try:
         return int(section.get(key, default))
@@ -73,7 +74,7 @@ def cfg_int(section: dict, key: str, default: int = 0) -> int:
         return default
 
 
-def cfg_float(section: dict, key: str, default: float = 0.0) -> float:
+def cfg_float(section: dict[str, Any], key: str, default: float = 0.0) -> float:
     """Coerce a config value to float, returning *default* on failure."""
     try:
         return float(section.get(key, default))
@@ -81,7 +82,7 @@ def cfg_float(section: dict, key: str, default: float = 0.0) -> float:
         return default
 
 
-def cfg_json(section: dict, key: str, default=None):
+def cfg_json(section: dict[str, Any], key: str, default: Any = None) -> Any:
     """Coerce a config value to a JSON-decoded list/dict, or *default*."""
     v = section.get(key)
     if v is None:

@@ -8,15 +8,15 @@ import sys
 import threading
 import time
 import uuid
+from typing import Any
 
 import websockets
 
-import tools.mcp.mcp_tool as mcp_tool
 from runner_version import __version__
 from tools import ToolError, discover_builtin_tools, registry
 from tools.files import reset_max_read_chars_cache
 from tools.interrupt import set_global_interrupt, set_interrupt
-from tools.mcp import discover_mcp_tools, reload_mcp_servers
+from tools.mcp import discover_mcp_tools, get_active_mcp_servers, reload_mcp_servers
 from tools.tool_output_limits import reset_cache as reset_output_limits_cache
 from tools.toolsets import get_disabled_toolset_ids
 from utils import DesktopEndpoint, connect_desktop, disk_free_bytes, get_deskagent_home, network_reachable, read_endpoint, set_handler, set_inmemory_config, snapshot
@@ -42,7 +42,7 @@ _require_supported_host()
 # utils imports trigger the Windows Job Object auto-init (import-time side
 # effect, see job_object.py); nothing else needed here.
 
-_ACTIVE_WS = None
+_ACTIVE_WS: Any | None = None
 _RUNNER_LOOP: asyncio.AbstractEventLoop | None = None
 _PENDING_RPC: dict[str, asyncio.Future] = {}
 # Process-scoped: MCP tool cache lives for the runner's lifetime, so a single
@@ -52,18 +52,18 @@ _STARTED_AT = time.time()
 _RECONNECT_COUNT = 0
 
 
-async def _send(ws, req_id, **fields) -> None:
+async def _send(ws: Any, req_id: Any, **fields: Any) -> None:
     await ws.send(json.dumps({"jsonrpc": "2.0", "id": req_id, **fields}))
 
 
-async def _send_notification(ws, method, params, id=None) -> None:
-    body = {"jsonrpc": "2.0", "method": method, "params": params}
+async def _send_notification(ws: Any, method: str, params: dict[str, Any], id: Any = None) -> None:
+    body: dict[str, Any] = {"jsonrpc": "2.0", "method": method, "params": params}
     if id is not None:
         body["id"] = id
     await ws.send(json.dumps(body))
 
 
-async def request_llm_from_desktop(kwargs: dict) -> str:
+async def request_llm_from_desktop(kwargs: dict[str, Any]) -> str:
     """Send a ``request_llm`` to Desktop and return the raw LLM response text.
 
     Used by tools that need a one-off LLM completion (vision, web
@@ -79,7 +79,7 @@ async def request_llm_from_desktop(kwargs: dict) -> str:
         raise RuntimeError("No active WebSocket connection")
 
     req_id = f"req_llm_{uuid.uuid4().hex[:8]}"
-    fut = asyncio.Future()
+    fut: asyncio.Future = asyncio.Future()
     _PENDING_RPC[req_id] = fut
 
     await _send_notification(ws, "request_llm", kwargs, id=req_id)
@@ -108,7 +108,7 @@ async def request_llm_from_desktop(kwargs: dict) -> str:
     raise RuntimeError(f"request_llm: backend returned {type(result).__name__}, expected str or dict with content")
 
 
-def _extract_llm_content(result: dict) -> str:
+def _extract_llm_content(result: dict[str, Any]) -> str:
     """Pull text out of a Backend completion response.
 
     The Backend ``/api/llm/completion`` proxy returns either
@@ -140,7 +140,7 @@ def _extract_llm_content(result: dict) -> str:
     return ""
 
 
-async def process_request(ws, req) -> None:
+async def process_request(ws: Any, req: dict[str, Any]) -> None:
     req_id = req.get("id")
     method = req.get("method")
     params = req.get("params", {})
@@ -151,14 +151,10 @@ async def process_request(ws, req) -> None:
 
     # A new request just arrived. Clear any stale per-thread interrupt
     # left over from a previous request so the current request's tools
-    # don't immediately bail.  For cancel requests we also set the
+    # don't immediately bail. For cancel requests we set the
     # cross-thread ``_global_interrupt`` so in-flight tool handlers
-    # from *other* requests see the flag on their next ``is_interrupted()``
-    # check.  Non-cancel requests clear the global flag left over from
-    # a *prior* cancel — the flag persists across requests so in-flight
-    # workers spawned before the cancel can still observe it; it is
-    # cleared here on the *next* request rather than in the cancel's
-    # own finally-block, which runs before those workers poll.
+    # from other requests see the flag on their next ``is_interrupted()``
+    # check. A new execute_tool invocation clears any prior cancel flag.
     if method == "deskagent.cancel":
         set_global_interrupt(True)
     else:
@@ -359,7 +355,7 @@ async def runner_loop(endpoint: DesktopEndpoint) -> None:
         await asyncio.sleep(backoff)
 
 
-def _runner_ready_payload() -> dict:
+def _runner_ready_payload() -> dict[str, Any]:
     """Compact handshake payload sent right after WS connect.
 
     Mirrors ``deskagent.info`` minus fields that depend on runtime stats
@@ -374,7 +370,7 @@ def _runner_ready_payload() -> dict:
     feature whose value is missing from the dict as "do not enable"
     regardless of the failure flag.
     """
-    payload: dict[str, object] = {"version": __version__, "capabilities": {}, "probe_failed": False}
+    payload: dict[str, Any] = {"version": __version__, "capabilities": {}, "probe_failed": False}
     try:
         caps = snapshot()
         if isinstance(caps, dict):
@@ -387,7 +383,7 @@ def _runner_ready_payload() -> dict:
     return payload
 
 
-async def _build_info() -> dict:
+async def _build_info() -> dict[str, Any]:
     """Full snapshot returned by the ``deskagent.info`` RPC.
 
     Captures process / OS state in addition to capabilities so the
@@ -425,17 +421,13 @@ async def _build_info() -> dict:
 
 
 def _active_mcp_server_names() -> list[str]:
-    """Names of MCP servers with at least one live task in ``mcp_tool._servers``.
+    """Names of MCP servers with at least one live task.
 
-    Resolved via the same MCP module loader the rest of the runner uses,
-    but never raises — a stale registry state during shutdown must not
-    break ``deskagent.info``.
+    Resolved via the tools.mcp facade, but never raises — a stale registry state
+    during shutdown must not break ``deskagent.info``.
     """
     try:
-        servers = getattr(mcp_tool, "_servers", None)
-        if not servers:
-            return []
-        return sorted(servers.keys())
+        return get_active_mcp_servers()
     except Exception:
         return []
 

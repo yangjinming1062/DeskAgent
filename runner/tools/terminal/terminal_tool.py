@@ -51,7 +51,7 @@ FOREGROUND_MAX_TIMEOUT = cfg_get(_cfg, "terminal", "max_foreground_timeout", def
 DISK_USAGE_WARNING_THRESHOLD_GB = float(cfg_get(_cfg, "terminal", "disk_warning_gb", default=DEFAULT_DISK_USAGE_WARNING_GB))
 
 
-def _check_disk_usage_warning():
+def _check_disk_usage_warning() -> None:
     try:
         scratch_dir = _get_scratch_dir()
         total_bytes = 0
@@ -582,7 +582,7 @@ TERMINAL_SCHEMA = {
 }
 
 
-def _handle_terminal(args, **kw):
+def _handle_terminal(args: dict[str, Any], **kw: Any) -> str:
     return terminal_tool(
         command=args.get("command"),
         background=args.get("background", False),

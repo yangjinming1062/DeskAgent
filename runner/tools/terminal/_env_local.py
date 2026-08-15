@@ -119,7 +119,7 @@ class LocalEnvironment(BaseEnvironment):
             _pipe_stdin(proc, stdin_data)
         return proc
 
-    def _kill_process(self, proc):
+    def _kill_process(self, proc: subprocess.Popen) -> None:
         def _group_alive(pgid: int) -> bool:
             try:
                 os.killpg(pgid, 0)
