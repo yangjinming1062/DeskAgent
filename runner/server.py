@@ -1,5 +1,6 @@
 import argparse
 import asyncio
+import contextlib
 import json
 import logging
 import platform
@@ -84,14 +85,14 @@ async def request_llm_from_desktop(kwargs: dict) -> str:
     A non-dict response, or a dict that does not carry a ``content`` key,
     is rejected as a protocol error — callers depend on the ``str`` contract.
     """
-    if not _ACTIVE_WS:
+    if (ws := _ACTIVE_WS) is None:
         raise RuntimeError("No active WebSocket connection")
 
     req_id = f"req_llm_{uuid.uuid4().hex[:8]}"
     fut = asyncio.Future()
     _PENDING_RPC[req_id] = fut
 
-    await _send_notification(_ACTIVE_WS, "request_llm", kwargs, id=req_id)
+    await _send_notification(ws, "request_llm", kwargs, id=req_id)
 
     # Honor the caller's per-call timeout when one is supplied. Floor at
     # 1.0s to avoid pathological zero-second waits; no upper bound, since
@@ -183,7 +184,7 @@ async def process_request(ws, req) -> None:
             return
 
         if method == "deskagent.info":
-            await _send(ws, req_id, result=_build_info())
+            await _send(ws, req_id, result=await _build_info())
             return
 
         if method == "deskagent.config.update":
@@ -223,14 +224,32 @@ async def process_request(ws, req) -> None:
 
         await _send(ws, req_id, error={"code": -32601, "message": "Method not found"})
     except Exception as e:
-        await _send(ws, req_id, error={"code": -32000, "message": str(e)})
+        # The reply itself must not raise: a connection torn down mid-handler
+        # would leave the background task dying with an unretrieved exception.
+        with contextlib.suppress(Exception):
+            await _send(ws, req_id, error={"code": -32000, "message": str(e)})
 
 
 MAX_RECONNECT_ATTEMPTS = 15
 BASE_BACKOFF_S = 2.0
 MAX_BACKOFF_S = 30.0
+_ENDPOINT_POLL_S = 1.0
 
 _BG_TASKS: set[asyncio.Task] = set()
+
+
+def _fail_pending_rpcs(reason: str) -> None:
+    """Fail every in-flight request_llm future so callers' wait_for returns fast.
+
+    set_exception (not cancel) preserves the disconnect reason for the LLM.
+    A future may already be done (response popped, or wait_for cancelled it)
+    between the values() snapshot and the iteration; set_exception on a done
+    future raises InvalidStateError and would break the loop.
+    """
+    for fut in list(_PENDING_RPC.values()):
+        if not fut.done():
+            fut.set_exception(ConnectionError(reason))
+    _PENDING_RPC.clear()
 
 
 async def runner_loop(endpoint: DesktopEndpoint) -> None:
@@ -246,10 +265,11 @@ async def runner_loop(endpoint: DesktopEndpoint) -> None:
 
     while True:
         cancelled = False
+        # Waiting for the Desktop to publish an endpoint (restart window,
+        # missing/stale file) is a normal steady state, not a failed connect —
+        # it must not consume the reconnect-attempt budget below.
+        tried_connect = current_endpoint is not None
         if current_endpoint is None:
-            # Pre-try guard (a return-value state, not an exception): the
-            # Desktop-restart window where the endpoint file is missing or
-            # its PID is stale. Wait for the file instead of connecting.
             logger.info("Desktop endpoint not ready, waiting for endpoint file...")
         else:
             logger.info(f"Connecting to Desktop IPC: {current_endpoint.path} (attempt {attempt + 1})")
@@ -260,10 +280,7 @@ async def runner_loop(endpoint: DesktopEndpoint) -> None:
             # any future created in the gap would leak an awaited
             # ``wait_for`` on the caller side. Cheap insurance: set
             # ConnectionError on every future that's still pending.
-            for _fut in list(_PENDING_RPC.values()):
-                if not _fut.done():
-                    _fut.set_exception(ConnectionError("Runner WS reconnecting; abandoning in-flight request"))
-            _PENDING_RPC.clear()
+            _fail_pending_rpcs("Runner WS reconnecting; abandoning in-flight request")
             try:
                 connection = await connect_desktop(current_endpoint)
                 async with connection as ws:
@@ -290,7 +307,7 @@ async def runner_loop(endpoint: DesktopEndpoint) -> None:
                                 continue
 
                             req_id = data.get("id")
-                            if req_id and (fut := _PENDING_RPC.pop(req_id, None)):
+                            if req_id is not None and (fut := _PENDING_RPC.pop(req_id, None)):
                                 if "error" in data:
                                     err = data["error"]
                                     err_msg = err.get("message", str(err)) if isinstance(err, dict) else str(err)
@@ -305,17 +322,9 @@ async def runner_loop(endpoint: DesktopEndpoint) -> None:
                     finally:
                         _ACTIVE_WS = None
                         _RUNNER_LOOP = None
-                        # Drain pending request_llm futures with ConnectionError so
-                        # callers' wait_for returns fast; set_exception (not cancel)
-                        # preserves the "disconnected" reason for the LLM.
-                        for _fut in list(_PENDING_RPC.values()):
-                            # A future may be done (response already popped, or
-                            # wait_for cancelled it) between the values() snapshot
-                            # and the iteration; set_exception on a done future
-                            # raises InvalidStateError and would break the loop.
-                            if not _fut.done():
-                                _fut.set_exception(ConnectionError("Runner WS disconnected before response arrived"))
-                        _PENDING_RPC.clear()
+                        # Drain pending request_llm futures so callers'
+                        # wait_for returns fast with the disconnect reason.
+                        _fail_pending_rpcs("Runner WS disconnected before response arrived")
 
             except websockets.exceptions.ConnectionClosed:
                 logger.warning("WebSocket connection closed by Desktop.")
@@ -338,17 +347,22 @@ async def runner_loop(endpoint: DesktopEndpoint) -> None:
 
         if cancelled:
             break
-        _RECONNECT_COUNT += 1
-        attempt += 1
-        if attempt >= MAX_RECONNECT_ATTEMPTS:
-            logger.error(f"Failed to reconnect after {MAX_RECONNECT_ATTEMPTS} attempts. Exiting.")
-            sys.exit(1)
 
         # Try to read a fresh endpoint (path AND token) from the file the
         # Desktop writes; a missing/stale file keeps the cached endpoint.
         new_endpoint = read_endpoint()
         if new_endpoint:
             current_endpoint = new_endpoint
+
+        if not tried_connect:
+            await asyncio.sleep(_ENDPOINT_POLL_S)
+            continue
+
+        _RECONNECT_COUNT += 1
+        attempt += 1
+        if attempt >= MAX_RECONNECT_ATTEMPTS:
+            logger.error(f"Failed to reconnect after {MAX_RECONNECT_ATTEMPTS} attempts. Exiting.")
+            sys.exit(1)
 
         backoff = min(BASE_BACKOFF_S * (2 ** min(attempt - 1, 4)), MAX_BACKOFF_S)
         logger.info(f"Reconnecting in {backoff:.1f}s (attempt {attempt}/{MAX_RECONNECT_ATTEMPTS})")
@@ -383,7 +397,7 @@ def _runner_ready_payload() -> dict:
     return payload
 
 
-def _build_info() -> dict:
+async def _build_info() -> dict:
     """Full snapshot returned by the ``deskagent.info`` RPC.
 
     Captures process / OS state in addition to capabilities so the
@@ -403,6 +417,9 @@ def _build_info() -> dict:
         tool_names = registry.get_all_tool_names()
     except Exception:
         tool_names = []
+    # network_reachable can block up to ~1.5s; keep it off the loop so
+    # heartbeats and deskagent.cancel stay responsive during the probe.
+    reachable = await asyncio.to_thread(network_reachable)
     return {
         "version": __version__,
         "started_at": _STARTED_AT,
@@ -412,7 +429,7 @@ def _build_info() -> dict:
         "system": {"platform": sys.platform, "python": sys.version.split()[0], "release": platform.release(), "machine": platform.machine()},
         "tool_count": len(tool_names),
         "mcp_servers": mcp_servers,
-        "network_reachable": network_reachable(),
+        "network_reachable": reachable,
         "disk_free_bytes": disk_free_bytes(get_deskagent_home()),
     }
 

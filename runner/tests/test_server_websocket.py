@@ -423,22 +423,16 @@ server._global_interrupt_after_marker = _global_interrupt_after_marker
 async def test_pending_request_llm_future_drains_on_disconnect():
     """When the WS drops mid-``request_llm``, the pending future MUST fail with ConnectionError.
 
-    Mirrors the drain in ``runner_loop``'s ``finally`` block — that code
-    is the safety net for callers whose desktop has gone away mid-call.
+    Exercises the production drain helper ``runner_loop``'s ``finally``
+    block calls — that code is the safety net for callers whose desktop
+    has gone away mid-call.
     """
-    # Manually wire ``_ACTIVE_WS`` + a future, then verify the drain shape.
     fut: asyncio.Future = asyncio.get_event_loop().create_future()
     server._PENDING_RPC["req_x"] = fut
-    server._ACTIVE_WS = object()  # placeholder; the drain only touches _PENDING_RPC
 
-    # Simulate the runner_loop finally block:
-    for f in list(server._PENDING_RPC.values()):
-        if not f.done():
-            f.set_exception(
-                ConnectionError("Runner WS disconnected before response arrived")
-            )
-    server._PENDING_RPC.clear()
+    server._fail_pending_rpcs("Runner WS disconnected before response arrived")
 
+    assert server._PENDING_RPC == {}
     with pytest.raises(ConnectionError, match="disconnected"):
         await fut
 
@@ -577,12 +571,13 @@ def test_runner_ready_payload_snapshot_returns_non_dict(monkeypatch):
 
 
 @pytest.mark.timeout(15)
-def test_build_info_handles_individual_subfailures(monkeypatch):
+@pytest.mark.asyncio
+async def test_build_info_handles_individual_subfailures(monkeypatch):
     def _failing_snapshot():
         raise RuntimeError("probe crashed")
 
     monkeypatch.setattr(server, "snapshot", _failing_snapshot)
-    info = server._build_info()
+    info = await server._build_info()
     assert info["capabilities"] == {}
     assert isinstance(info["tool_count"], int)
     assert isinstance(info["mcp_servers"], list)
@@ -599,3 +594,45 @@ def test_active_mcp_server_names_survives_missing_mcp_state(monkeypatch):
         mcp_tool, "_servers", {"alpha": object(), "beta": object()}, raising=False
     )
     assert server._active_mcp_server_names() == ["alpha", "beta"]
+
+
+@pytest.mark.timeout(15)
+@pytest.mark.asyncio
+async def test_runner_loop_waits_for_endpoint_without_burning_budget(monkeypatch):
+    """Waiting for the endpoint file is a normal Desktop-restart state and must
+    not consume the reconnect-attempt budget (it used to sys.exit(1) after
+    ~15 poll rounds even though nothing had failed)."""
+    reads = {"n": 0}
+
+    def fake_read_endpoint():
+        reads["n"] += 1
+        return None
+
+    monkeypatch.setattr(server, "read_endpoint", fake_read_endpoint)
+    monkeypatch.setattr(server, "_ENDPOINT_POLL_S", 0.01)
+
+    task = asyncio.create_task(server.runner_loop(None))
+    for _ in range(200):  # far beyond MAX_RECONNECT_ATTEMPTS poll rounds
+        await asyncio.sleep(0.01)
+    assert not task.done()
+    assert reads["n"] > server.MAX_RECONNECT_ATTEMPTS
+    task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await task
+
+
+@pytest.mark.timeout(15)
+@pytest.mark.asyncio
+async def test_process_request_survives_failing_error_reply():
+    """A connection torn down mid-handler must not kill the background task
+    with an unretrieved exception from the error-reply send."""
+
+    class _BrokenWS:
+        async def send(self, payload):
+            raise ConnectionError("desktop gone")
+
+    task = asyncio.create_task(
+        server.process_request(_BrokenWS(), {"id": "c5", "method": "deskagent.config.update", "params": {"config": "not-a-dict"}})
+    )
+    await asyncio.wait_for(task, 5)
+    assert task.exception() is None

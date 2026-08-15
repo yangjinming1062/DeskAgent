@@ -250,14 +250,15 @@ def test_action_result_carries_verdict_fields():
     assert res.code == 0
 
 
-def test_info_payload_shape():
+async def test_info_payload_shape():
     """_build_info() in server.py returns the documented shape, no exceptions
     even when MCP tools aren't initialized."""
+    import asyncio
     import importlib
 
     # Re-import server.py in isolation; it doesn't connect without --desktop-endpoint/--desktop-auth.
     server = importlib.import_module("server")
-    info = server._build_info()
+    info = await asyncio.wait_for(server._build_info(), 10)
 
     assert info["version"]
     for k in (
