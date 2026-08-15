@@ -48,6 +48,37 @@ else:
 # is itself POSIX-only, so Windows never reaches it.)
 if not IS_WINDOWS:
     import fcntl
+else:
+    import ctypes
+    import msvcrt
+    from ctypes import wintypes
+
+    _kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    _kernel32.PeekNamedPipe.argtypes = [wintypes.HANDLE, wintypes.LPVOID, wintypes.DWORD, wintypes.LPVOID, wintypes.LPVOID, wintypes.LPVOID]
+    _kernel32.PeekNamedPipe.restype = wintypes.BOOL
+
+
+def _drain_pipe_peek_windows(stdout) -> str:
+    """One-shot drain of whatever is currently buffered in the pipe.
+
+    PeekNamedPipe reports how many bytes are readable so os.read never
+    blocks on a pipe a live descendant is still holding open.
+    """
+    chunks: list[str] = []
+    try:
+        fd = stdout.fileno()
+        handle = msvcrt.get_osfhandle(fd)
+        avail = wintypes.DWORD(0)
+        while _kernel32.PeekNamedPipe(handle, None, 0, None, ctypes.byref(avail), None) and avail.value > 0:
+            chunk = os.read(fd, min(65536, avail.value))
+            if not chunk:
+                break
+            chunks.append(chunk.decode("utf-8", errors="replace"))
+            avail = wintypes.DWORD(0)
+    except (OSError, ValueError) as e:
+        logger.debug("PeekNamedPipe drain failed: %s", e)
+    return "".join(chunks)
+
 
 logger = logging.getLogger(__name__)
 
@@ -472,7 +503,7 @@ class ProcessRegistry:
             errors="replace",
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
-            stdin=subprocess.DEVNULL,
+            stdin=subprocess.PIPE,
             preexec_fn=None if IS_WINDOWS else os.setsid,
             **_popen_kwargs,
         )
@@ -510,7 +541,7 @@ class ProcessRegistry:
     def spawn_via_env(self, env: Any, command: str, cwd: str | None = None, task_id: str = "", session_key: str = "", timeout: int = 10) -> ProcessSession:
         """
         Spawn a background process through a non-local environment backend.
-        For Docker/Singularity/Modal/Daytona/SSH: runs the command inside the sandbox
+        For Docker/Singularity/SSH: runs the command inside the sandbox
         using the environment's execute() interface. We wrap the command to
         capture the in-sandbox PID and redirect output to a log file inside
         the sandbox, then poll the log via subsequent execute() calls.
@@ -752,7 +783,9 @@ class ProcessRegistry:
         # available and we stop.
         drained = ""
         stdout = getattr(proc, "stdout", None)
-        if stdout is not None and not IS_WINDOWS:
+        if stdout is not None and IS_WINDOWS:
+            drained = _drain_pipe_peek_windows(stdout)
+        elif stdout is not None:
             try:
                 fd = stdout.fileno()
                 flags = fcntl.fcntl(fd, fcntl.F_GETFL)
@@ -916,8 +949,15 @@ class ProcessRegistry:
                 except (ProcessLookupError, PermissionError):
                     session.process.kill()
             elif session.env_ref and session.pid:
-                # Non-local -- kill inside sandbox
-                session.env_ref.execute(f"kill {session.pid} 2>/dev/null", timeout=5)
+                # Non-local — kill inside the sandbox. The recorded pid is the
+                # wrapper subshell ($!); the real command is its child, so
+                # signal the sibling set (pkill -P) too, then escalate if any
+                # part of the tree survives.
+                qpid = shlex.quote(str(session.pid))
+                session.env_ref.execute(f"pkill -TERM -P {qpid} 2>/dev/null; kill {qpid} 2>/dev/null", timeout=5)
+                alive = session.env_ref.execute(f"kill -0 {qpid} 2>/dev/null || pgrep -P {qpid} >/dev/null 2>&1", timeout=5)
+                if alive.get("returncode", 1) == 0:
+                    session.env_ref.execute(f"pkill -KILL -P {qpid} 2>/dev/null; kill -9 {qpid} 2>/dev/null", timeout=5)
             elif session.detached and session.pid_scope == "host" and session.pid:
                 if not self._is_host_pid_alive(session.pid):
                     with session._lock:

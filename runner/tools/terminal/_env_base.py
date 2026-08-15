@@ -11,7 +11,6 @@ import threading
 import time
 import uuid
 from abc import ABC, abstractmethod
-from collections.abc import Callable
 from pathlib import Path
 from typing import IO, Protocol
 
@@ -95,53 +94,6 @@ class ProcessHandle(Protocol):
     def stdout(self) -> IO[str] | None: ...
     @property
     def returncode(self) -> int | None: ...
-
-
-class _ThreadedProcessHandle:
-    def __init__(self, exec_fn: Callable[[], tuple[str, int]], cancel_fn: Callable[[], None] | None = None) -> None:
-        self._cancel_fn = cancel_fn
-        self._done = threading.Event()
-        self._returncode: int | None = None
-        self._error: Exception | None = None
-        read_fd, write_fd = os.pipe()
-        self._stdout = os.fdopen(read_fd, "r", encoding="utf-8", errors="replace")
-        self._write_fd = write_fd
-
-        def _worker() -> None:
-            try:
-                output, exit_code = exec_fn()
-                self._returncode = exit_code
-                with contextlib.suppress(OSError):
-                    os.write(self._write_fd, output.encode("utf-8", errors="replace"))
-            except Exception as exc:
-                self._error = exc
-                self._returncode = 1
-            finally:
-                with contextlib.suppress(OSError):
-                    os.close(self._write_fd)
-                self._done.set()
-
-        threading.Thread(target=_worker, daemon=True).start()
-
-    @property
-    def stdout(self) -> IO[bytes] | None:
-        return self._stdout
-
-    @property
-    def returncode(self) -> int | None:
-        return self._returncode
-
-    def poll(self) -> int | None:
-        return self._returncode if self._done.is_set() else None
-
-    def kill(self) -> None:
-        if self._cancel_fn:
-            with contextlib.suppress(Exception):
-                self._cancel_fn()
-
-    def wait(self, timeout: float | None = None) -> int:
-        self._done.wait(timeout=timeout)
-        return self._returncode or 0
 
 
 def _cwd_marker(session_id: str) -> str:

@@ -204,16 +204,14 @@ class TestHandleProcessDispatch:
         result = json.loads(
             _handle_process({"action": "poll", "session_id": "proc_nope"})
         )
-        # ``poll`` returns a dict; ``_handle_process`` JSON-encodes it.
-        # ``session_id`` doesn't exist → result has error or empty fields.
-        assert isinstance(result, dict)
+        assert result["status"] == "not_found"
+        assert "proc_nope" in result["error"]
 
     def test_session_id_accepts_integer_and_coerces_to_string(
         self, fresh_registry, monkeypatch
     ):
         """Some models send session_id as an integer — must NOT crash the dispatch."""
         monkeypatch.setattr(process_tool, "process_registry", fresh_registry)
-        result = _handle_process({"action": "poll", "session_id": 12345})
-        # Coerces to "12345" internally; ``poll`` returns error dict for missing.
-        parsed = json.loads(result)
-        assert isinstance(parsed, dict)
+        result = json.loads(_handle_process({"action": "poll", "session_id": 12345}))
+        assert result["status"] == "not_found"
+        assert "12345" in result["error"]
