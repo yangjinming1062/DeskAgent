@@ -7,7 +7,6 @@ import threading
 import time
 import tomllib
 from abc import ABC, abstractmethod
-from collections.abc import Iterable
 from contextlib import contextmanager, suppress
 from dataclasses import dataclass, field
 from enum import Enum
@@ -749,8 +748,6 @@ class ShellFileOperations(FileOperations):
                     return LintResult(skipped=True, message=f"Failed to read {path} for lint")
                 content = read_result.stdout
             ok, err = inproc(content)
-            if err == "__SKIP__":
-                return LintResult(skipped=True, message=f"No linter available for {ext} (missing dependency)")
             return LintResult(success=ok, output="" if ok else err)
         if ext not in LINTERS:
             return LintResult(skipped=True, message=f"No linter for {ext} files")
@@ -867,7 +864,9 @@ class ShellFileOperations(FileOperations):
             glob_pattern = f"*{pattern}"
         else:
             glob_pattern = pattern
-        fetch_limit = limit + offset
+        # Fetch one row past the page so "exactly limit results" is not
+        # misreported as truncated (a >= limit check cannot tell).
+        fetch_limit = limit + offset + 1
         cmd_sorted = f"rg --files --sortr=modified -g {self._escape_shell_arg(glob_pattern)} {self._escape_shell_arg(path)} 2>/dev/null | head -n {fetch_limit}"
         result = self._exec(cmd_sorted, timeout=60)
         all_files = [f for f in result.stdout.strip().split("\n") if f]
@@ -875,8 +874,10 @@ class ShellFileOperations(FileOperations):
             cmd_plain = f"rg --files -g {self._escape_shell_arg(glob_pattern)} {self._escape_shell_arg(path)} 2>/dev/null | head -n {fetch_limit}"
             result = self._exec(cmd_plain, timeout=60)
             all_files = [f for f in result.stdout.strip().split("\n") if f]
+        truncated = len(all_files) > limit + offset
+        total = min(len(all_files), limit + offset) if truncated else len(all_files)
         page = all_files[offset : offset + limit]
-        return SearchResult(files=page, total_count=len(all_files), truncated=len(all_files) >= fetch_limit)
+        return SearchResult(files=page, total_count=total, truncated=truncated)
 
     def _search_content(self, pattern: str, path: str, file_glob: str | None, limit: int, offset: int, output_mode: str, context: int) -> SearchResult:
         """Search for content inside files (grep-like)."""
@@ -1116,24 +1117,6 @@ class FileStateRegistry:
             return f"{resolved_s} was not read by this agent. Read the file first so you can write an informed edit."
         return None
 
-    def writes_since(self, exclude_task_id: str, since_ts: float, paths: Iterable[str | Path]) -> dict[str, list[str]]:
-        """Return ``{writer_task_id: [paths]}`` for writes by other agents."""
-        if _disabled():
-            return {}
-        paths_set = {str(p) for p in paths}
-        out: dict[str, list[str]] = {}
-        with self._state_lock:
-            for p, (writer_tid, ts) in self._last_writer.items():
-                if writer_tid != exclude_task_id and ts >= since_ts and p in paths_set:
-                    out.setdefault(writer_tid, []).append(p)
-        return out
-
-    def known_reads(self, task_id: str) -> list[str]:
-        if _disabled():
-            return []
-        with self._state_lock:
-            return list(self._reads.get(task_id, {}).keys())
-
     def clear(self) -> None:
         """Reset all state."""
         with self._state_lock:
@@ -1144,10 +1127,6 @@ class FileStateRegistry:
 
 
 _REGISTRY = FileStateRegistry()
-
-
-def get_registry() -> FileStateRegistry:
-    return _REGISTRY
 
 
 def record_read(task_id: str, resolved_or_path: str | Path, *, partial: bool = False) -> None:
@@ -1164,14 +1143,6 @@ def check_stale(task_id: str, resolved_or_path: str | Path) -> str | None:
 
 def lock_path(resolved_or_path: str | Path) -> Any:
     return _REGISTRY.lock_path(resolved_or_path)
-
-
-def writes_since(exclude_task_id: str, since_ts: float, paths: Iterable[str | Path]) -> dict[str, list[str]]:
-    return _REGISTRY.writes_since(exclude_task_id, since_ts, paths)
-
-
-def known_reads(task_id: str) -> list[str]:
-    return _REGISTRY.known_reads(task_id)
 
 
 # ── Patch Parser ───────────────────────────────────────────────────────────

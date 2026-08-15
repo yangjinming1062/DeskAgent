@@ -6,6 +6,7 @@ import re
 import shlex
 import shutil
 import subprocess
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -298,7 +299,7 @@ class NativeFileOperations(FileOperations):
         total_count = 0
         truncated = False
 
-        def get_files() -> None:
+        def get_files() -> "Iterator[Path]":
             if not search_root.is_dir():
                 yield search_root
                 return
@@ -354,12 +355,10 @@ class NativeFileOperations(FileOperations):
 
         return SearchResult(matches=matches, files=list(files), counts=counts, total_count=total_count, truncated=truncated)
 
-    def _exec(self, command: str, cwd: str | None = None, timeout: int | None = 60, stdin_data: str | None = None) -> Any:
-        kwargs = {"shell": True, "text": True, "capture_output": True}
+    def _exec(self, command: str, cwd: str | None = None, timeout: int = 60, stdin_data: str | None = None) -> Any:
+        kwargs = {"shell": True, "text": True, "capture_output": True, "timeout": timeout}
         if stdin_data is not None:
             kwargs["input"] = stdin_data
-        effective_timeout = 60 if timeout is None else timeout
-        kwargs["timeout"] = effective_timeout
         try:
             result = subprocess.run(command, cwd=cwd or self.cwd, **kwargs)
             return ExecuteResult(stdout=result.stdout, exit_code=result.returncode)
@@ -385,8 +384,6 @@ class NativeFileOperations(FileOperations):
                 except Exception as e:
                     return LintResult(skipped=True, message=f"Failed to read {path} for lint: {e}")
             ok, err = inproc(content)
-            if err == "__SKIP__":
-                return LintResult(skipped=True, message=f"No linter available for {ext} (missing dependency)")
             return LintResult(success=ok, output="" if ok else err)
         if ext not in LINTERS:
             return LintResult(skipped=True, message=f"No linter for {ext} files")

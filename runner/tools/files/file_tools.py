@@ -344,7 +344,7 @@ _SENSITIVE_PATH_PREFIXES = ("/etc/", "/boot/", "/usr/lib/systemd/", "/private/et
 _SENSITIVE_USER_PREFIXES: tuple[str, ...] = ()
 _SENSITIVE_USER_EXACTS: tuple[str, ...] = ()
 if IS_WINDOWS:
-    import os as _os
+    import os
 
     def _get_user_home_prefixes() -> tuple[str, ...]:
         homes: set[str] = set()
@@ -352,7 +352,7 @@ if IS_WINDOWS:
         # HOMEPATH is relative (\Users\alice, no drive letter) and can
         # never match a resolved absolute path, so skip it.
         for var in ("USERPROFILE", "HOME"):
-            val = _os.environ.get(var)
+            val = os.environ.get(var)
             if val:
                 norm = val.replace("\\", "/").rstrip("/").lower() + "/"
                 homes.add(norm)

@@ -34,7 +34,8 @@ def _read_wheel_version() -> str:
     with _LOCK:
         if _CACHED_VERSION is not None:
             return _CACHED_VERSION
-        _CACHED_VERSION = _read_source_tree_version() or _safe_metadata_version() or "0.0.0+unknown"
+        resolved = _read_source_tree_version() or _safe_metadata_version()
+        _CACHED_VERSION = resolved or "0.0.0+unknown"
     return _CACHED_VERSION
 
 

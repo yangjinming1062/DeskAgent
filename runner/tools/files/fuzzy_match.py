@@ -294,15 +294,12 @@ def _apply_replacements(content: str, matches: list[tuple[int, int]], new_string
 
 
 def _strategy_exact(content: str, pattern: str) -> list[tuple[int, int]]:
-    """Strategy 1: Exact string match."""
+    """Strategy 1: Exact string match (non-overlapping, like str.replace)."""
     matches = []
     start = 0
-    while True:
-        pos = content.find(pattern, start)
-        if pos == -1:
-            break
+    while (pos := content.find(pattern, start)) != -1:
         matches.append((pos, pos + len(pattern)))
-        start = pos + 1
+        start = pos + len(pattern)
     return matches
 
 
@@ -519,9 +516,9 @@ def _strategy_block_anchor(content: str, pattern: str) -> list[tuple[int, int]]:
     matches = []
     candidate_count = len(potential_matches)
 
-    # Thresholding logic: 0.50 for unique matches, 0.70 for multiple candidates.
-    # Previous values (0.10 / 0.30) were dangerously loose — a 10% middle-section
-    # similarity could match completely unrelated blocks.
+    # Thresholding logic: 0.50 for unique matches, 0.70 for multiple
+    # candidates — a loose middle-section similarity must not match
+    # unrelated blocks.
     threshold = 0.50 if candidate_count == 1 else 0.70
 
     for i in potential_matches:

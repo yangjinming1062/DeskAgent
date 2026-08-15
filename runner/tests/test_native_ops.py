@@ -217,3 +217,22 @@ def test_exec_timeout_returns_partial_stdout(tmp_cwd, monkeypatch):
     result = ops._exec("whatever", timeout=1)
     assert result.exit_code == 124
     assert "partial output" in result.stdout
+
+
+class TestFuzzyNonOverlappingExact:
+    """Regression: _strategy_exact used to produce overlapping matches
+    (start = pos + 1), double-replacing replace_all ranges and double-
+    counting single occurrences."""
+
+    def test_overlapping_pattern_counts_once(self):
+        from tools.files.fuzzy_match import _strategy_exact
+
+        assert _strategy_exact("aaa", "aa") == [(0, 2)]
+
+    def test_replace_all_overlap_replaces_once(self):
+        from tools.files.fuzzy_match import fuzzy_find_and_replace
+
+        content, count, strategy, error = fuzzy_find_and_replace("aaa", "aa", "b", True)
+        assert error is None
+        assert count == 1
+        assert content == "ba"

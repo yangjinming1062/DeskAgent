@@ -408,12 +408,8 @@ class DockerEnvironment(BaseEnvironment):
             return _storage_opt_ok
         try:
             docker = find_docker() or "docker"
-            if (
-                subprocess.run([docker, "info", "--format", "{{.Driver}}"], capture_output=True, text=True, timeout=10, stdin=subprocess.DEVNULL, **_NO_WINDOW)
-                .stdout.strip()
-                .lower()
-                == "overlay2"
-            ):
+            info = subprocess.run([docker, "info", "--format", "{{.Driver}}"], capture_output=True, text=True, timeout=10, stdin=subprocess.DEVNULL, **_NO_WINDOW)
+            if info.stdout.strip().lower() == "overlay2":
                 probe = subprocess.run(
                     [docker, "create", "--storage-opt", "size=1m", "hello-world"], capture_output=True, text=True, timeout=15, stdin=subprocess.DEVNULL, **_NO_WINDOW
                 )
