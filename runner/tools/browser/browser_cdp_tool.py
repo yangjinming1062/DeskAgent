@@ -122,18 +122,10 @@ def _browser_cdp_via_supervisor(task_id: str, frame_id: str, method: str, params
     if (supervisor := SUPERVISOR_REGISTRY.get(task_id)) is None:
         return tool_error(f"No CDP supervisor attached for task={task_id!r}.")
 
-    snap = supervisor.snapshot()
-    top = snap.frame_tree.get("top")
-    frame_info = top if top and top.get("frame_id") == frame_id else next((c for c in (snap.frame_tree.get("children") or []) if c.get("frame_id") == frame_id), None)
-
-    if frame_info is None:
-        with supervisor._state_lock:
-            if raw := supervisor._frames.get(frame_id):
-                frame_info = raw.to_dict()
-
-    if frame_info is None:
+    frame, child_sid = supervisor.get_frame_session(frame_id)
+    if frame is None:
         return tool_error(f"frame_id {frame_id!r} not found. Call browser_snapshot to refresh.")
-    if not (child_sid := frame_info.get("session_id")):
+    if not child_sid:
         return tool_error(f"frame_id {frame_id!r} is not an out-of-process iframe (no session).")
     if not (loop := supervisor._loop) or not loop.is_running():
         return tool_error("Supervisor loop is not running.")

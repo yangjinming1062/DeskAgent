@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-import asyncio
 import atexit
 import base64
 import contextlib
@@ -30,13 +29,12 @@ import requests
 from utils import (
     CREATE_NO_WINDOW,
     SECRET_PREFIX_RE,
-    call_llm,
+    call_llm_sync,
     cfg_get,
     check_redirect_url_safety,
     check_website_access,
     get_deskagent_dir,
     get_deskagent_home,
-    in_async_loop,
     is_always_blocked_url,
     is_safe_url,
     is_truthy_value,
@@ -3417,9 +3415,7 @@ def browser_vision(question: str, annotate: bool = False, task_id: str | None = 
         }
         # Try full-size screenshot; on size-related rejection, downscale and retry.
         try:
-            if in_async_loop():
-                return {"success": False, "error": "browser_vision requires no running event loop"}
-            response = asyncio.run(call_llm(**call_kwargs))
+            response = call_llm_sync(**call_kwargs)
         except Exception as _api_err:
             if is_image_size_error(_api_err) and len(data_url) > RESIZE_TARGET_BYTES:
                 logger.info(
@@ -3428,7 +3424,7 @@ def browser_vision(question: str, annotate: bool = False, task_id: str | None = 
                 data_url = resize_image_for_vision(screenshot_path, mime_type="image/png")
                 call_kwargs["messages"][0]["content"][1]["image_url"]["url"] = data_url
                 try:
-                    response = asyncio.run(call_llm(**call_kwargs))
+                    response = call_llm_sync(**call_kwargs)
                 except Exception:
                     return {"success": False, "error": "vision API failed on retry"}
             else:

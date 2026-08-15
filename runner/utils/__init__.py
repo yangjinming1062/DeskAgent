@@ -52,7 +52,7 @@ from .job_object import get_runner_job_handle, init_runner_job_object, is_job_ob
 from .path_helpers import append_sane_path_entries, find_bash, find_python, msys_to_windows_path, resolve_safe_cwd
 from .pid import kill_tree, pid_exists
 from .redact import SECRET_PREFIX_RE, redact_sensitive_text
-from .reverse_rpc import call_llm, set_handler
+from .reverse_rpc import call_llm, call_llm_sync, set_handler, set_main_loop
 from .url_safety import (
     WebsitePolicyError,
     async_is_safe_url,
@@ -81,6 +81,7 @@ __all__ = [
     "build_write_denied_paths",
     "build_write_denied_prefixes",
     "call_llm",
+    "call_llm_sync",
     "canonicalize_path",
     "cfg_bool",
     "cfg_float",
@@ -146,6 +147,7 @@ __all__ = [
     "secure_parent_dir",
     "set_handler",
     "set_inmemory_config",
+    "set_main_loop",
     "snapshot",
     "strip_ansi",
     "strip_fence",

@@ -10,7 +10,7 @@ from urllib.parse import SplitResult, urlparse, urlsplit, urlunsplit
 
 import requests
 
-from utils import call_llm, cfg_get, get_deskagent_home, load_config, redact_sensitive_text
+from utils import call_llm_sync, cfg_get, get_deskagent_home, load_config, redact_sensitive_text
 
 from ..multimodal import resolve_vision_params
 from ..registry import tool_error
@@ -168,7 +168,10 @@ def _get_session(task_id: str | None) -> dict[str, Any]:
                     "managed": False,
                     "adopt_existing_tab": False,
                 }
-        return _adopt_existing_tab(_sessions[task_id])
+        session = _sessions[task_id]
+    # Adoption hits the camofox HTTP API — keep it outside the sessions lock
+    # so a slow /tabs call can't stall every other session lookup.
+    return _adopt_existing_tab(session)
 
 
 def _ensure_tab(task_id: str | None, url: str = "about:blank") -> dict[str, Any]:
@@ -384,7 +387,7 @@ def camofox_vision(question: str, annotate: bool = False, task_id: str | None = 
         except Exception:
             _vision_timeout, _vision_temperature = 120.0, 0.1
 
-        response = call_llm(
+        response = call_llm_sync(
             messages=[
                 {
                     "role": "user",
@@ -398,7 +401,7 @@ def camofox_vision(question: str, annotate: bool = False, task_id: str | None = 
             temperature=_vision_temperature,
             timeout=_vision_timeout,
         )
-        analysis = redact_sensitive_text((response.choices[0].message.content or "").strip() if response.choices else "")
+        analysis = redact_sensitive_text((response or "").strip())
         return json.dumps({"success": True, "analysis": analysis, "screenshot_path": screenshot_path})
     except Exception as e:
         return tool_error(str(e), success=False)

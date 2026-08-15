@@ -40,9 +40,9 @@ CONSOLE_HISTORY_MAX = 50
 # if they couldn't respond to it in time.
 RECENT_DIALOGS_MAX = 20
 
-# Magic host the injected dialog bridge XHRs to.  Intercepted via the CDP
-
-# has to exist.  Keep this ASCII + URL-safe; we also gate Fetch patterns on it.
+# Magic host the injected dialog bridge XHRs to. Intercepted via the CDP
+# Fetch domain; the host never has to resolve. Keep this ASCII + URL-safe;
+# we also gate Fetch patterns on it.
 DIALOG_BRIDGE_HOST = "deskagent-dialog-bridge.invalid"
 DIALOG_BRIDGE_URL_PATTERN = f"http://{DIALOG_BRIDGE_HOST}/*"
 
@@ -319,8 +319,9 @@ class CDPSupervisor:
         self._stop_requested = True
         loop = self._loop
         if loop is not None and loop.is_running():
-            # raw in self._ws`` return cleanly, ``_run`` hits its ``finally``,
-            # pending tasks get cancelled in order, THEN the thread exits.
+            # Closing the WS makes the pending ``recv()`` in ``_run`` return
+            # cleanly, ``_run`` hits its ``finally``, pending tasks get
+            # cancelled in order, THEN the thread exits.
             async def _close_ws() -> None:
                 ws = self._ws
                 self._ws = None
@@ -351,6 +352,17 @@ class CDPSupervisor:
         return SupervisorSnapshot(
             pending_dialogs=dialogs, recent_dialogs=recent, frame_tree=frames_tree, console_errors=console, active=active, cdp_url=self.cdp_url, task_id=self.task_id
         )
+
+    def get_frame_session(self, frame_id: str) -> tuple[FrameInfo | None, str | None]:
+        """Internal routing lookup: the FrameInfo plus its CDP session id.
+
+        ``to_dict()`` deliberately omits ``cdp_session_id`` so session ids
+        never reach the LLM through snapshots; this is the only sanctioned
+        way for in-package callers to resolve one.
+        """
+        with self._state_lock:
+            frame = self._frames.get(frame_id)
+            return (frame, frame.cdp_session_id) if frame else (None, None)
 
     def respond_to_dialog(self, action: str, *, prompt_text: str | None = None, dialog_id: str | None = None, timeout: float = 10.0) -> dict[str, Any]:
         """Accept/dismiss a pending dialog. Sync bridge onto the supervisor loop.
@@ -1404,9 +1416,13 @@ class _SupervisorRegistry:
         supervisor = CDPSupervisor(task_id=task_id, cdp_url=cdp_url, dialog_policy=dialog_policy, dialog_timeout_s=dialog_timeout_s)
         supervisor.start(timeout=start_timeout)
         with self._lock:
-            if (already := self._by_task.get(task_id)) is not None and already.cdp_url == cdp_url:
-                supervisor.stop()
-                return already
+            if (already := self._by_task.get(task_id)) is not None:
+                if already.cdp_url == cdp_url:
+                    supervisor.stop()
+                    return already
+                # Raced a different-URL start for the same task — the loser
+                # keeps the slot; stop the stale one so its thread/WS die.
+                already.stop()
             self._by_task[task_id] = supervisor
         return supervisor
 
