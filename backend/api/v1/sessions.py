@@ -15,7 +15,7 @@ from modules.conversation import (
 )
 from services.chat import build_session_messages
 from services.conversation import CRON_KIND, MAIN_KIND
-from sqlalchemy import asc, desc, func, or_, select
+from sqlalchemy import String, asc, cast, desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -78,6 +78,27 @@ async def list_sessions(
     # Exclude internal cron scratchpad conversations from user-facing lists.
     q = select(Conversation).options(selectinload(Conversation.messages)).where(Conversation.user_id == user.id, Conversation.kind != CRON_KIND)
 
+    # Subquery for message counts
+    msg_stats = (
+        select(
+            Message.conversation_id,
+            func.count(Message.id).label("msg_count"),
+            func.coalesce(func.sum(Message.prompt_tokens), 0).label("input_tok"),
+            func.coalesce(func.sum(Message.completion_tokens), 0).label("output_tok"),
+        )
+        .group_by(Message.conversation_id)
+        .subquery()
+    )
+
+    tool_stats = select(Message.conversation_id, func.count(Message.id).label("tool_count")).where(Message.tool_calls.isnot(None)).group_by(Message.conversation_id).subquery()
+
+    q = q.outerjoin(msg_stats, Conversation.id == msg_stats.c.conversation_id)
+    q = q.outerjoin(tool_stats, Conversation.id == tool_stats.c.conversation_id)
+
+    # The aggregate columns must ride along in the SELECT — ``.scalars()``
+    # would otherwise drop them and every count would read back as 0.
+    q = q.add_columns(msg_stats.c.msg_count, msg_stats.c.input_tok, msg_stats.c.output_tok, tool_stats.c.tool_count)
+
     if archived == "only":
         # Self-referencing parent_id marks archived; real lineage (parent_id
         # pointing at a different conversation) is a subagent and stays visible.
@@ -103,23 +124,6 @@ async def list_sessions(
     # navigation lives on the search endpoint and direct URL, not in the
     # ``archived`` toggle UI.
 
-    # Subquery for message counts
-    msg_stats = (
-        select(
-            Message.conversation_id,
-            func.count(Message.id).label("msg_count"),
-            func.coalesce(func.sum(Message.prompt_tokens), 0).label("input_tok"),
-            func.coalesce(func.sum(Message.completion_tokens), 0).label("output_tok"),
-        )
-        .group_by(Message.conversation_id)
-        .subquery()
-    )
-
-    tool_stats = select(Message.conversation_id, func.count(Message.id).label("tool_count")).where(Message.tool_calls.isnot(None)).group_by(Message.conversation_id).subquery()
-
-    q = q.outerjoin(msg_stats, Conversation.id == msg_stats.c.conversation_id)
-    q = q.outerjoin(tool_stats, Conversation.id == tool_stats.c.conversation_id)
-
     if min_messages > 0:
         q = q.where(func.coalesce(msg_stats.c.msg_count, 0) >= min_messages)
 
@@ -130,15 +134,11 @@ async def list_sessions(
     else:
         q = q.order_by(asc(Conversation.created_at))
 
-    convs = (await db.execute(q.offset(offset).limit(limit))).scalars().all()
+    rows = (await db.execute(q.offset(offset).limit(limit))).all()
 
     sessions = []
-    for conv in convs:
-        mc = getattr(conv, "msg_count", None)
-        it = getattr(conv, "input_tok", None)
-        ot = getattr(conv, "output_tok", None)
-        tc = getattr(conv, "tool_count", None)
-        sessions.append(_conversation_to_session_info(conv, int(mc) if mc else 0, int(it) if it else 0, int(ot) if ot else 0, int(tc) if tc else 0))
+    for conv, mc, it, ot, tc in rows:
+        sessions.append(_conversation_to_session_info(conv, int(mc or 0), int(it or 0), int(ot or 0), int(tc or 0)))
 
     return DesktopSessionListResponse(limit=limit, offset=offset, total=total_q, sessions=sessions)
 
@@ -175,7 +175,7 @@ async def search_sessions(
                 select(Conversation.id).where(
                     Conversation.user_id == user.id,
                     Conversation.kind != CRON_KIND,
-                    or_(Conversation.title.ilike(pattern, escape=SQL_LIKE_ESCAPE_CHAR), Conversation.id.like(pattern, escape=SQL_LIKE_ESCAPE_CHAR)),
+                    or_(Conversation.title.ilike(pattern, escape=SQL_LIKE_ESCAPE_CHAR), cast(Conversation.id, String).like(pattern, escape=SQL_LIKE_ESCAPE_CHAR)),
                 )
             )
         ).all()
