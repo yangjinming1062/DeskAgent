@@ -8,6 +8,24 @@ def test_runner_version_resolves():
     parts = __version__.split(".")
     assert len(parts) >= 2
     assert all(p.isdigit() for p in parts[:2])
+    assert __version__ != "0.0.0+unknown"
+
+
+def test_kill_orphaned_mcp_children_survives_dead_pid():
+    """The orphan-reap path must not raise on any platform — a tracked-but-dead
+    stdio pid is its normal input (regression: ``_sigkill`` used-before-bound
+    made every Windows ``mcp.reload`` with live servers fatal)."""
+    import subprocess
+
+    from tools.mcp import mcp_tool
+
+    proc = subprocess.Popen([sys.executable, "-c", "pass"])
+    proc.wait()
+    mcp_tool._stdio_pids[proc.pid] = "test-orphan"
+    try:
+        mcp_tool._kill_orphaned_mcp_children(include_active=True)
+    finally:
+        mcp_tool._stdio_pids.pop(proc.pid, None)
 
 
 def test_capabilities_snapshot_returns_safe_dict():

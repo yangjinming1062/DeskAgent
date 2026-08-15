@@ -122,37 +122,8 @@ def _write_stderr_log_header(server_name: str) -> None:
         pass
 
 
-# Graceful import -- MCP SDK is an optional dependency
-
-_MCP_AVAILABLE = False
-_MCP_HTTP_AVAILABLE = False
-_MCP_SAMPLING_TYPES = False
-_MCP_NOTIFICATION_TYPES = False
-_MCP_MESSAGE_HANDLER_SUPPORTED = False
-try:
-    _MCP_AVAILABLE = True
-    try:
-        _MCP_HTTP_AVAILABLE = True
-    except ImportError:
-        _MCP_HTTP_AVAILABLE = False
-    # Prefer the non-deprecated API (mcp >= 1.24.0); fall back to the
-    # deprecated wrapper for older SDK versions.
-    try:
-        _MCP_NEW_HTTP = True
-    except ImportError:
-        _MCP_NEW_HTTP = False
-except ImportError:
-    logger.debug("mcp package not installed -- MCP tool support disabled")
-
-
 def _check_message_handler_support() -> bool:
-    """Check if ClientSession accepts ``message_handler`` kwarg.
-
-    Inspects the constructor signature for backward compatibility with older
-    MCP SDK versions that don't support notification handlers.
-    """
-    if not _MCP_AVAILABLE:
-        return False
+    """ClientSession accepts ``message_handler`` only on newer MCP SDKs."""
     try:
         return "message_handler" in inspect.signature(ClientSession).parameters
     except (TypeError, ValueError):
@@ -160,7 +131,7 @@ def _check_message_handler_support() -> bool:
 
 
 _MCP_MESSAGE_HANDLER_SUPPORTED = _check_message_handler_support()
-if _MCP_AVAILABLE and not _MCP_MESSAGE_HANDLER_SUPPORTED:
+if not _MCP_MESSAGE_HANDLER_SUPPORTED:
     logger.debug("MCP SDK does not support message_handler -- dynamic tool discovery disabled")
 
 _DEFAULT_TOOL_TIMEOUT = 120  # seconds for tool calls
@@ -593,11 +564,8 @@ class SamplingHandler:
     # -- Error helper --------------------------------------------------------
 
     @staticmethod
-    def _error(message: str, code: int = -1) -> Any:
-        """Return ErrorData (MCP spec) or raise as fallback."""
-        if _MCP_SAMPLING_TYPES:
-            return ErrorData(code=code, message=message)
-        raise Exception(message)
+    def _error(message: str, code: int = -1) -> ErrorData:
+        return ErrorData(code=code, message=message)
 
     # -- Response building ---------------------------------------------------
 
@@ -849,7 +817,7 @@ class MCPServerTask:
                 if isinstance(message, Exception):
                     logger.debug("MCP message handler (%s): exception: %s", self.name, message)
                     return
-                if _MCP_NOTIFICATION_TYPES and isinstance(message, ServerNotification):
+                if isinstance(message, ServerNotification):
                     match message.root:
                         case ToolListChangedNotification():
                             logger.info("MCP server '%s': received tools/list_changed notification", self.name)
@@ -969,14 +937,6 @@ class MCPServerTask:
 
     async def _run_stdio(self, config: dict) -> None:
         """Run the server using stdio transport."""
-        if not _MCP_AVAILABLE:
-            raise ImportError(
-                f"MCP server '{self.name}' requires the 'mcp' Python SDK, but "
-                "it is not installed. Install with:\n"
-                "  pip install 'deskagent-agent[mcp]'\n"
-                "or (full install):\n"
-                "  pip install 'deskagent-agent[all]'"
-            )
 
         command = config.get("command")
         args = config.get("args", [])
@@ -995,7 +955,7 @@ class MCPServerTask:
         server_params = StdioServerParameters(command=command, args=args, env=safe_env if safe_env else None)
 
         sampling_kwargs = self._sampling.session_kwargs() if self._sampling else {}
-        if _MCP_NOTIFICATION_TYPES and _MCP_MESSAGE_HANDLER_SUPPORTED:
+        if _MCP_MESSAGE_HANDLER_SUPPORTED:
             sampling_kwargs["message_handler"] = self._make_message_handler()
 
         pids_before = _snapshot_child_pids()
@@ -1130,9 +1090,6 @@ class MCPServerTask:
 
     async def _run_http(self, config: dict):
         """Run the server using HTTP/StreamableHTTP transport."""
-        if not _MCP_HTTP_AVAILABLE:
-            raise ImportError(f"MCP server '{self.name}' requires HTTP transport but mcp.client.streamable_http is not available. Upgrade the mcp package to get HTTP support.")
-
         url = config["url"]
         headers = dict(config.get("headers") or {})
         # Some MCP servers require MCP-Protocol-Version on the initial
@@ -1160,16 +1117,13 @@ class MCPServerTask:
                 raise
 
         sampling_kwargs = self._sampling.session_kwargs() if self._sampling else {}
-        if _MCP_NOTIFICATION_TYPES and _MCP_MESSAGE_HANDLER_SUPPORTED:
+        if _MCP_MESSAGE_HANDLER_SUPPORTED:
             sampling_kwargs["message_handler"] = self._make_message_handler()
 
         # SSE transport (for MCP servers that implement the SSE transport protocol
         # rather than Streamable HTTP). Configure with ``transport: sse`` in the
         # mcp_servers entry in desktop-settings.json.
         if config.get("transport") == "sse":
-            if sse_client is None:
-                raise ImportError(f"MCP server '{self.name}' requires SSE transport but mcp.client.sse.sse_client is not available. Upgrade the mcp package to get SSE support.")
-
             # 300s (not tool_timeout): SSE servers idle for minutes between
             # events, so a short read timeout drops the connection. Matches the
             # Streamable HTTP path's httpx read timeout below.
@@ -1213,63 +1167,46 @@ class MCPServerTask:
                     logger.info("MCP server '%s': reconnect requested — tearing down SSE session", self.name)
             return
 
-        if _MCP_NEW_HTTP:
-            # New API (mcp >= 1.24.0): build an explicit httpx.AsyncClient
-            # matching the SDK's own create_mcp_http_client defaults.
+        # Build an explicit httpx.AsyncClient matching the SDK's own
+        # create_mcp_http_client defaults.
 
-            _original_url = httpx.URL(url)
+        _original_url = httpx.URL(url)
 
-            async def _strip_auth_on_cross_origin_redirect(response) -> None:
-                """Strip Authorization headers when redirected to a different origin."""
-                if response.is_redirect and response.next_request:
-                    target = response.next_request.url
-                    if (target.scheme, target.host, target.port) != (_original_url.scheme, _original_url.host, _original_url.port):
-                        response.next_request.headers.pop("authorization", None)
-                        response.next_request.headers.pop("Authorization", None)
+        async def _strip_auth_on_cross_origin_redirect(response) -> None:
+            """Strip Authorization headers when redirected to a different origin."""
+            if response.is_redirect and response.next_request:
+                target = response.next_request.url
+                if (target.scheme, target.host, target.port) != (_original_url.scheme, _original_url.host, _original_url.port):
+                    response.next_request.headers.pop("authorization", None)
+                    response.next_request.headers.pop("Authorization", None)
 
-            client_kwargs: dict = {
-                "follow_redirects": True,
-                "timeout": httpx.Timeout(float(connect_timeout), read=300.0),
-                "verify": ssl_verify,
-                "event_hooks": {"response": [_strip_auth_on_cross_origin_redirect]},
-            }
-            if headers:
-                client_kwargs["headers"] = headers
-            if _oauth_auth is not None:
-                client_kwargs["auth"] = _oauth_auth
-            if client_cert is not None:
-                client_kwargs["cert"] = client_cert
+        client_kwargs: dict = {
+            "follow_redirects": True,
+            "timeout": httpx.Timeout(float(connect_timeout), read=300.0),
+            "verify": ssl_verify,
+            "event_hooks": {"response": [_strip_auth_on_cross_origin_redirect]},
+        }
+        if headers:
+            client_kwargs["headers"] = headers
+        if _oauth_auth is not None:
+            client_kwargs["auth"] = _oauth_auth
+        if client_cert is not None:
+            client_kwargs["cert"] = client_cert
 
-            # Caller owns the client lifecycle — the SDK skips cleanup when
-            # http_client is provided, so we wrap in async-with.
-            async with (
-                httpx.AsyncClient(**client_kwargs) as http_client,
-                streamable_http_client(url, http_client=http_client) as (read_stream, write_stream, _get_session_id),
-                ClientSession(read_stream, write_stream, **sampling_kwargs) as session,
-            ):
-                self.initialize_result = await session.initialize()
-                self.session = session
-                await self._discover_tools()
-                self._ready.set()
-                reason = await self._wait_for_lifecycle_event()
-                if reason == "reconnect":
-                    logger.info("MCP server '%s': reconnect requested — tearing down HTTP session", self.name)
-        else:
-            # Deprecated API (mcp < 1.24.0): manages httpx client internally.
-            _http_kwargs: dict = {"headers": headers, "timeout": float(connect_timeout), "verify": ssl_verify}
-            if _oauth_auth is not None:
-                _http_kwargs["auth"] = _oauth_auth
-            async with (
-                streamable_http_client(url, **_http_kwargs) as (read_stream, write_stream, _get_session_id),
-                ClientSession(read_stream, write_stream, **sampling_kwargs) as session,
-            ):
-                self.initialize_result = await session.initialize()
-                self.session = session
-                await self._discover_tools()
-                self._ready.set()
-                reason = await self._wait_for_lifecycle_event()
-                if reason == "reconnect":
-                    logger.info("MCP server '%s': reconnect requested — tearing down legacy HTTP session", self.name)
+        # Caller owns the client lifecycle — the SDK skips cleanup when
+        # http_client is provided, so we wrap in async-with.
+        async with (
+            httpx.AsyncClient(**client_kwargs) as http_client,
+            streamable_http_client(url, http_client=http_client) as (read_stream, write_stream, _get_session_id),
+            ClientSession(read_stream, write_stream, **sampling_kwargs) as session,
+        ):
+            self.initialize_result = await session.initialize()
+            self.session = session
+            await self._discover_tools()
+            self._ready.set()
+            reason = await self._wait_for_lifecycle_event()
+            if reason == "reconnect":
+                logger.info("MCP server '%s': reconnect requested — tearing down HTTP session", self.name)
 
     async def _discover_tools(self) -> None:
         """Discover tools from the connected session."""
@@ -1290,7 +1227,7 @@ class MCPServerTask:
         self._auth_type = (config.get("auth") or "").lower().strip()
 
         sampling_config = config.get("sampling", {})
-        if sampling_config.get("enabled", True) and _MCP_SAMPLING_TYPES:
+        if sampling_config.get("enabled", True):
             self._sampling = SamplingHandler(self.name, sampling_config)
         else:
             self._sampling = None
@@ -2678,10 +2615,6 @@ def register_mcp_servers(servers: dict[str, dict]) -> list[str]:
     Returns:
         List of all currently registered MCP tool names.
     """
-    if not _MCP_AVAILABLE:
-        logger.debug("MCP SDK not available -- skipping explicit MCP registration")
-        return []
-
     if not servers:
         logger.debug("No explicit MCP servers provided")
         return []
@@ -2756,10 +2689,6 @@ def discover_mcp_tools() -> list[str]:
     Returns:
         List of all registered MCP tool names.
     """
-    if not _MCP_AVAILABLE:
-        logger.debug("MCP SDK not available -- skipping MCP tool discovery")
-        return []
-
     servers = _load_mcp_config()
     if not servers:
         logger.debug("No MCP servers configured")
@@ -2854,9 +2783,6 @@ def probe_mcp_server_tools() -> dict[str, list[tuple]]:
         Dict mapping server name to list of (tool_name, description) tuples.
         Servers that fail to connect are omitted from the result.
     """
-    if not _MCP_AVAILABLE:
-        return {}
-
     servers_config = _load_mcp_config()
     if not servers_config:
         return {}
@@ -3033,6 +2959,8 @@ def _kill_orphaned_mcp_children(include_active: bool = False) -> None:
     if not pids:
         return
 
+    _sigkill = getattr(signal, "SIGKILL", signal.SIGTERM)
+
     def _send_signal(pid: int, sig: int, server_name: str) -> None:
         """SIGTERM/SIGKILL via pgroup on POSIX, fall back to pid signal.
         On Windows use ``kill_tree`` so descendants (common when stdio MCP
@@ -3066,7 +2994,6 @@ def _kill_orphaned_mcp_children(include_active: bool = False) -> None:
     time.sleep(2)
 
     # Phase 3: SIGKILL any survivors
-    _sigkill = getattr(signal, "SIGKILL", signal.SIGTERM)
     # ``os.kill(pid, 0)`` is NOT a no-op on Windows. Use the cross-platform
     # existence check before escalating to SIGKILL.
 
