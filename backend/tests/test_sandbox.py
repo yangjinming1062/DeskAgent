@@ -2,12 +2,23 @@ import asyncio
 import sys
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
 from components import SETTINGS
 from services.worker import sandbox
 
 
 def _flag(cmd: list[str], flag: str) -> str:
     return cmd[cmd.index(flag) + 1]
+
+
+def test_docker_cmd_rejects_io_outside_data_dir(tmp_path, monkeypatch):
+    """docker -v sources resolve on the host daemon; only data_dir is a host
+    bind mount, so anything else would silently mount as an empty directory."""
+    monkeypatch.setattr(SETTINGS, "data_dir", str(tmp_path / "data"))
+    outside = tmp_path / "elsewhere"
+    outside.mkdir()
+    with pytest.raises(RuntimeError):
+        sandbox._docker_cmd("deskagent-job-x", outside, "s.py", [])
 
 
 def test_docker_command_flags_and_io_mapping(tmp_path, monkeypatch):

@@ -1,6 +1,6 @@
 import asyncio
 import tempfile
-from contextlib import AsyncExitStack
+from contextlib import nullcontext
 from pathlib import Path
 from typing import Any
 
@@ -327,9 +327,14 @@ async def run_garment_pipeline(
     assembly_json: str,
     body_joint_names: list[str] | None = None,
     user_id: int,
-    db: AsyncSession | None = None,
+    io_dir: Path | None = None,
 ) -> bytes:
-    """Iterate LLM-Blender-evaluation loop until convergence; returns best garment GLB bytes."""
+    """Iterate LLM-Blender-evaluation loop until convergence; returns best garment GLB bytes.
+
+    ``io_dir`` hosts the body GLB + per-iteration scripts in the worker's
+    per-job directory (host-visible for the sandbox mount). Each LLM call
+    opens its own short session — the loop spans minutes and must not pin a
+    caller's session across Blender runs."""
     reference_uris = reference_uris or []
     body_joint_names = _extract_joint_names(body_glb_bytes) if body_joint_names is None else body_joint_names
     ctx_bones_info = _build_ctx_bones_info(body_joint_names)
@@ -342,15 +347,15 @@ async def run_garment_pipeline(
     last_critique = ""
     last_preview_uri: str | None = None
 
-    with tempfile.TemporaryDirectory() as tmp:
+    io_ctx = nullcontext(str(io_dir)) if io_dir is not None else tempfile.TemporaryDirectory()
+    with io_ctx as tmp:
         body_glb_path = Path(tmp) / "body.glb"
         await asyncio.to_thread(body_glb_path.write_bytes, body_glb_bytes)
 
         for i in range(max_iters):
             logger.info("Geometric pipeline iteration %d/%d (%s)", i + 1, max_iters, kind, extra={"user_id": user_id})
 
-            async with AsyncExitStack() as stack:
-                iter_db = db if db is not None else await stack.enter_async_context(session_scope())
+            async with session_scope() as iter_db:
                 if i == 0:
                     script = await _llm_generate_garment_script(body_preview_uri, reference_uris, rig_type, ctx_bones_info, description, user_id, iter_db, kind=kind, socket=socket)
                 elif last_error:
@@ -366,6 +371,7 @@ async def run_garment_pipeline(
                 _GARMENT_BUILD_MARKER,
                 ["--body-glb", str(body_glb_path), "--assembly", assembly_json, "--kind", kind, "--socket", socket or ""],
                 script_name="build_garment.py",
+                io_dir=Path(tmp),
             )
 
             if not result.success:
@@ -390,8 +396,7 @@ async def run_garment_pipeline(
 
             last_preview_uri = build_data_uri(result.preview_png, "image/png")
 
-            async with AsyncExitStack() as stack:
-                iter_db = db if db is not None else await stack.enter_async_context(session_scope())
+            async with session_scope() as iter_db:
                 evaluation = await _llm_evaluate_garment(last_preview_uri, body_preview_uri, reference_uris, description, user_id, iter_db)
 
             logger.info("Garment evaluation (iter %d): score=%d converged=%s", i + 1, evaluation.score, evaluation.converged, extra={"user_id": user_id})

@@ -4,14 +4,14 @@
 
 ## 1. 职责与边界
 
-**职责**：伙伴角色定义与形象资产生成与下发、LLM 流式对话编排、系统提示词装配、云端工具执行、Cron 调度、跨模块事件下发（WS outbox）、REST + WebSocket 端点暴露。分钟级 Blender 系生成（3D 建模回退 / garment 换装 / morph 注入）入队 `render_jobs`，由**同镜像的 Render Worker 副本**（compose `worker` 服务）认领执行，每轮 Blender 跑在一次性沙箱容器里。
+**职责**：伙伴角色定义与形象资产生成与下发、LLM 流式对话编排、系统提示词装配、云端工具执行、Cron 调度、跨模块事件下发（WS outbox）、REST + WebSocket 端点暴露。3D 模型生成（Tripo3D 主路 + Blender+LLM 回退）与分钟级 Blender 系生成（garment 换装 / morph 注入）全部入队 `render_jobs`，由**同镜像的 Render Worker 副本**（compose `worker` 服务）认领执行，每轮 Blender 跑在一次性沙箱容器里。
 
 **不**做：
 - **不接触用户本机操作系统**——所有本机操作经 IPC 委托给 Runner；图像/视频/语音等资产仅在云端生成、Client 拉取后渲染。
 - **不持有终端 / 浏览器会话**——这些都在 Runner 进程内。
 - **不渲染桌面伙伴**——形象与动画完全是 Client 责任（[DESIGN.md §1](../DESIGN.md)）。
 - **不做 LLM provider 特定的 schema 适配**——nullable union 原样传给 OpenAI-compatible provider，由 provider 决定是否接受。
-- **web 进程不执行 Blender 子进程**——重管线全部经 render_jobs 转交 worker；web 内只保留 avatar 2D 与 video 生成的既有 job 模式。
+- **web 进程不执行 Blender 子进程**——3D 模型生成（含 Tripo 主路的长轮询与 morph 注入）与换装几何管线全部经 render_jobs 转交 worker；web 内只保留 avatar 2D 与 video 生成的既有 job 模式。
 
 架构层定位见 [ARCHITECTURE.md §1 / §2](../ARCHITECTURE.md)；跨模块契约见 [PROTOCOL.md](../PROTOCOL.md)；错误分层见 [ARCHITECTURE.md §8](../ARCHITECTURE.md)。
 
@@ -61,7 +61,7 @@ backend/
 - **TOML 模版与 Git 隔离配置管理**：Git 统一托管默认配置模版 `config.toml.example`，`components/config.py` 中不保留重复默认值与冗余注释。开发者本地配置写在 `config.toml`（已被 `.gitignore` 忽略）。系统按 `OS Env > .env > config.toml > config.toml.example` 优先级加载。
 - **provider 自注册而非手动 `main.py` 引入**：`services/llm/providers/<name>/__init__.py` import 时注册到 `_REGISTRY`；新增 provider 子包即可扩展能力，无须修改 `main.py`。**代价**：注册顺序敏感——`main.py` 显式 import 触发；遗漏某 provider 则该能力静默缺失（fail-open）。
 - **IPC future 按 `(user_id, call_id)` 二元键寻址**：并发用户不共享 future；`discard_user` 在 WS 断开时取消该用户所有未决 future。**为什么不只 `call_id`**：跨用户 key 复用会泄露上下文。
-- **LLM bpy 代码经沙箱容器执行（worker 派生）**：worker 把种子图/body-GLB 拷进每 job 私有的 `job-io` 目录后 `docker run --rm`（`--network none` + CPU/内存限额 + 只读根 + tmpfs + 仅挂该目录），超时/取消走 `docker kill`（杀 docker CLI 不杀容器）。容器名前缀 `deskagent-job-`、label `deskagent-worker=1`，worker 启动按 label 清扫孤儿。**为什么不用宿主子进程直跑**：LLM 生成的代码零消毒，直跑即 RCE 面（原不变量 11 记录的问题）。**代价**：worker 需挂 docker.sock（等效宿主 root），仅授予 worker 服务、镜像内只装 docker-cli；`[blender_sandbox] enabled=false`（默认）退回裸子进程路径，保测试与裸机开发。compose 部署形态：`backend` + `worker`（docker.sock / data / config.toml ro）+ `blender-sandbox`（`--profile build` 构建镜像，worker 按镜像名引用）三服务。
+- **LLM bpy 代码经沙箱容器执行（worker 派生）**：worker 把种子图/body-GLB 拷进每 job 私有的 `job-io` 目录后 `docker run --rm`（`--network none` + CPU/内存限额 + 只读根 + tmpfs + 仅挂该目录），超时/取消走 `docker kill`（杀 docker CLI 不杀容器）。容器名前缀 `deskagent-job-`、label `deskagent-worker=1`，worker 启动按 label 清扫孤儿。**挂载约束**：`docker -v` 源路径由宿主 daemon 解析，只有 `data_dir` 是宿主 bind mount——沙箱执行器强制 io_dir 必须位于 data_dir 之下（越界即 fail-loud），一切 Blender 工作区（脚本/种子/body-GLB/输出）都必须落在 job-io。**为什么不用宿主子进程直跑**：LLM 生成的代码零消毒，直跑即 RCE 面（原不变量 11 记录的问题）。**代价**：worker 需挂 docker.sock（等效宿主 root），仅授予 worker 服务、镜像内只装 docker-cli；`[blender_sandbox] enabled=false`（默认）退回裸子进程路径，保测试与裸机开发。compose 部署形态：`backend` + `worker`（docker.sock / data / config.toml ro）+ `blender-sandbox`（`--profile build` 构建镜像，worker 按镜像名引用）三服务。
 - **Outbox + LISTEN/NOTIFY 而非直推 WS**：调度器 tick 只写入事件不 await WS 发射，慢客户端不拖垮事务；副本原子认领保证单发。**为什么不直接推 WS**：WS 不可水平扩展，且无法处理后端 OOM/重启时的未发事件。
 - **WS 关闭码 1008（鉴权失效）立即退出重连流程**：避免在 token 失效状态下重试 N 次把请求堆到过期账号上。**为什么不让 retry**：用户凭据问题靠重试无法恢复。
 - **形象生成失败对用户返回 502 + 固定文案**：作为陪伴场景的关键路径，需向用户返回可理解的友好提示并支持重试，不暴露生图服务原始错误。**为什么不透传 provider 错误**：provider 错误体常含 URL / 部分 auth header，且用户对生图服务错误无处理能力。

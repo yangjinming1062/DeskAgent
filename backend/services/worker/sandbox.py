@@ -17,6 +17,10 @@ def _docker_cmd(container: str, io_dir: Path, script_name: str, args: Sequence[s
     workspace; anything outside io_dir stays verbatim (and will fail loudly
     inside the container)."""
     io_root = io_dir.resolve()
+    # docker -v source paths resolve on the HOST daemon — only data_dir is a
+    # host bind mount, so anything else would silently mount as an empty dir.
+    if not io_root.is_relative_to(Path(SETTINGS.data_dir).resolve()):
+        raise RuntimeError(f"sandbox io_dir must live under data_dir, got {io_root}")
     mapped = ["/io/" + Path(arg).relative_to(io_root).as_posix() if Path(arg).is_absolute() and Path(arg).is_relative_to(io_root) else arg for arg in args]
     return [
         SETTINGS.blender_sandbox_docker_binary,

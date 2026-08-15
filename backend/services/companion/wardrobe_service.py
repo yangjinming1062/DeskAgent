@@ -162,25 +162,6 @@ async def _resolve_rig_type(db: AsyncSession, user_id: int) -> str:
     return await select_rig_type(chat, species or "人类", db=db, user_id=user_id)
 
 
-async def generate_wardrobe_item(db: AsyncSession, *, user_id: int, name: str, description: str) -> WardrobeItem:
-    """Generate a new wardrobe item end-to-end. Routes between geometry and texture
-    pipelines via LLM classifier — see DESIGN.md §1.3."""
-    preview = await preview_wardrobe_outfit(db, user_id=user_id, description=description)
-    return await confirm_wardrobe_item(
-        db,
-        user_id=user_id,
-        file_id=preview.file_id,
-        name=name,
-        prompt=description,
-        normal_file_id=preview.normal_file_id,
-        roughness_file_id=preview.roughness_file_id,
-        metalness_file_id=preview.metalness_file_id,
-        displacement_file_id=preview.displacement_file_id,
-        mesh_file_id=preview.mesh_file_id,
-        assembly_json=preview.assembly_json,
-    )
-
-
 @dataclass
 class WardrobeRouting:
     kind: str  # texture | garment | accessory
@@ -248,9 +229,12 @@ async def _classify_wardrobe_kind(description: str, user_id: int, db: AsyncSessi
 
 
 async def preview_wardrobe_outfit(
-    db: AsyncSession, *, user_id: int, description: str, image_bytes: bytes | None = None, content_type: str | None = None, feedback: str | None = None
+    db: AsyncSession, *, user_id: int, description: str, image_bytes: bytes | None = None, content_type: str | None = None, feedback: str | None = None, io_dir: Path | None = None
 ) -> WardrobePreviewResponse:
-    """Route description and generate a wardrobe preview (texture or geometric)."""
+    """Route description and generate a wardrobe preview (texture or geometric).
+
+    ``io_dir`` (render worker) hosts the geometric pipeline's Blender
+    workspace under the host-visible per-job directory."""
     joints = await _body_joint_names(db, user_id)
     routing = await _classify_wardrobe_kind(description, user_id, db, joints)
     logger.info("wardrobe pipeline routed", extra={"user_id": user_id, "kind": routing.kind, "slot": routing.slot})
@@ -259,7 +243,7 @@ async def preview_wardrobe_outfit(
         return await preview_wardrobe_texture(db, user_id=user_id, description=description, image_bytes=image_bytes, content_type=content_type, feedback=feedback)
 
     return await preview_garment(
-        db, user_id=user_id, description=description, image_bytes=image_bytes, content_type=content_type, feedback=feedback, routing=routing, body_joint_names=joints
+        db, user_id=user_id, description=description, image_bytes=image_bytes, content_type=content_type, feedback=feedback, routing=routing, body_joint_names=joints, io_dir=io_dir
     )
 
 
@@ -407,6 +391,7 @@ async def preview_garment(
     feedback: str | None = None,
     routing: WardrobeRouting,
     body_joint_names: list[str] | None = None,
+    io_dir: Path | None = None,
 ) -> WardrobePreviewResponse:
     """Generate geometric unit (garment or accessory) via LLM-Blender pipeline."""
     model = await get_active_model(db, user_id)
@@ -435,7 +420,7 @@ async def preview_garment(
             assembly_json=assembly,
             body_joint_names=body_joint_names,
             user_id=user_id,
-            db=db,
+            io_dir=io_dir,
         ),
         _generate_pbr_channels(description=description, feedback=feedback, rig_type=rig_type, reference_data_uri=reference_data_uri, user_id=user_id),
     )

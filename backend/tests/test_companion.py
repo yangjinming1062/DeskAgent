@@ -2365,13 +2365,6 @@ async def test_model_generation_rejects_concurrent_run(_patch_db, monkeypatch):
 
     _, SessionLocal = _patch_db
 
-    async def _noop_pipeline(*_a, **_kw):
-        return None
-
-    monkeypatch.setattr(
-        "services.companion.model_service._run_tripo_pipeline", _noop_pipeline
-    )
-
     async with SessionLocal() as db:
         user = User(username="mgen", password_hash=None, is_active=True, can_use=True)
         db.add(user)
@@ -2480,20 +2473,18 @@ async def test_model_generation_failure_keeps_previous_model_active(
         uid = user.id
         previous_id = previous.id
 
-    # The pipeline runs in a fire-and-forget task; let it complete. The task
-    # starts on the first await inside generate_companion_model, so keep this
-    # session (and its SAVEPOINT) open until the task finishes — the shared
-    # single-connection test harness cannot tolerate this session rolling
-    # back around the task's own nested savepoint.
-    import asyncio
-    from services.companion.model_service import _running_model_tasks
+    # The pipeline runs on the render worker; drain the enqueued job inline.
+    from services.worker import handlers as worker_handlers
+    from services.worker import runner
+
+    worker_handlers.register()
 
     async with SessionLocal() as db:
         # force=True: an active succeeded model exists, so this is an explicit
         # regeneration rather than the idempotent first-time path.
         await generate_companion_model(db, user_id=uid, force=True)
 
-        await asyncio.gather(*list(_running_model_tasks), return_exceptions=True)
+        await runner.drain_once()
 
         failed = (
             (
@@ -2694,7 +2685,7 @@ async def test_run_tripo_pipeline_single_mode_uses_image_to_model(
     (asset_dir / "front.png").write_bytes(b"\x89PNG\r\n\x1a\n")
 
     try:
-        await model_service._run_tripo_pipeline(
+        await model_service.run_tripo_pipeline(
             uid, {"front": "front.png"}, "人类", model_id, "single"
         )
     finally:
@@ -2794,7 +2785,7 @@ async def test_run_tripo_pipeline_single_mode_skips_blender_fallback(
     (asset_dir / "front.png").write_bytes(b"\x89PNG\r\n\x1a\n")
 
     try:
-        await model_service._run_tripo_pipeline(
+        await model_service.run_tripo_pipeline(
             uid, {"front": "front.png"}, "人类", model_id, "single"
         )
     finally:
@@ -3693,3 +3684,49 @@ async def test_confirm_wardrobe_with_displacement_channel(monkeypatch, _patch_db
         assert "wardrobe_roughness.png" in item.roughness_url
         assert "wardrobe_metalness.png" in item.metalness_url
         assert "wardrobe_displacement.png" in item.displacement_url
+
+
+@pytest.mark.asyncio
+async def test_garment_pipeline_threads_io_dir(_patch_db, monkeypatch):
+    """The worker's per-job io_dir must reach the Blender scaffold — the
+    sandbox can only mount paths under the host-visible data_dir."""
+    from pathlib import Path as _Path
+
+    from components import SETTINGS as _SETTINGS
+
+    from services.companion import garment_service
+    from services.companion.blender_llm_pipeline import BlenderResult
+
+    io_dir = _Path(_SETTINGS.data_dir) / "job-io" / "77"
+    io_dir.mkdir(parents=True)
+
+    captured: dict = {}
+
+    async def _fake_scaffold(_scaffold, _code, _marker, args, *, io_dir=None, **_kw):
+        captured["io_dir"] = io_dir
+        captured["args"] = args
+        return BlenderResult(success=True, glb_bytes=b"glb", preview_png=None)
+
+    async def _fake_gen(*_a, **_kw):
+        return "pass"
+
+    monkeypatch.setattr(garment_service, "run_blender_scaffold", _fake_scaffold)
+    monkeypatch.setattr(garment_service, "_llm_generate_garment_script", _fake_gen)
+    monkeypatch.setattr(garment_service, "_validate_garment_glb", lambda *_a, **_kw: [])
+
+    out = await garment_service.run_garment_pipeline(
+        description="红裙子",
+        body_glb_bytes=b"body",
+        body_preview_uri="data:image/png;base64,x",
+        assembly_json="{}",
+        kind="garment",
+        socket=None,
+        body_joint_names=["Hips"],
+        user_id=1,
+        io_dir=io_dir,
+    )
+
+    assert out == b"glb"
+    assert captured["io_dir"] == io_dir
+    assert (io_dir / "body.glb").exists()
+    assert "--body-glb" in captured["args"]
