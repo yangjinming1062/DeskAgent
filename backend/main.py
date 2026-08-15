@@ -86,6 +86,12 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     start_ws_event_loop(_raw_pg_dsn() if is_pg else None)
     await resume_pending_video_jobs()
     await recover_stuck_model_generations()
+    # Age-threshold recovery for render jobs whose worker died mid-claim.
+    # Young claims stay untouched: a mere web restart must not requeue jobs a
+    # still-running worker is executing (duplicate pipeline runs).
+    from services.worker import queue as render_queue
+
+    await render_queue.requeue_stale(SETTINGS.worker_stale_reclaim_seconds)
 
     async def _cleanup_loop():
         while True:

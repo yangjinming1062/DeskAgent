@@ -53,7 +53,7 @@ class _FakeSession:
         return False
 
 
-def _fake_resolve_seeds(_filenames: dict[str, str]) -> tuple[dict[str, str], dict[str, str]]:
+def _fake_resolve_seeds(_filenames: dict[str, str], _io_dir=None) -> tuple[dict[str, str], dict[str, str]]:
     return (
         {"front": "data:image/jpeg;base64,AAA", "right": "data:image/jpeg;base64,BBB", "back": "data:image/jpeg;base64,CCC"},
         {"front": "/tmp/f.jpg", "right": "/tmp/r.jpg", "back": "/tmp/b.jpg"},
