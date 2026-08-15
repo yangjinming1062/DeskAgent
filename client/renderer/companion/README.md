@@ -128,6 +128,7 @@ GLB 加载成功后骨骼动画覆盖全部状态；GLB 不可用（生成中/�
   - `STT` 数据 > 25 MiB → runner 端拒绝（`audio_io.DEFAULT_MAX_INPUT_BYTES`）
   - `TTS` 文本 > 4000 字符 → 拒绝
   - `runner:invoke` 60 次/秒 token bucket
+- **Stop 按钮双通道**：`session.interrupt`（停 LLM 流）+ `runnerCancel`（置 Runner 全局中断标记，让在跑的本地工具尽早退出）；两者均为 best-effort，本地 finalize 兜底 UX
 - **持久化键**：
   - `da.companion.voiceId` / `da.companion.responseMode` / `da.companion.disturbanceTier` / `da.companion.chatDockOffset` / `da.companion.defaultScale`
   - 仅 `disturbanceTier` + `chatDockOffset` + `defaultScale` 跨重启保留；`voiceId` 在 onMount 由 `voice-validity.ts` 校验 provider 目录变化。

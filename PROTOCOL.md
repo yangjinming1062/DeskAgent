@@ -222,6 +222,7 @@ Blender 系生成分两段：web 进程入队（同步、毫秒级），Render W
 | `deskagent.info` | Client → Runner | 完整运行快照（version / uptime / capabilities / system / tool_count / mcp_servers / network_reachable / disk_free_bytes） | — |
 | `execute_tool` | Client → Runner | 执行工具调用,返回 `{ok, result|None, error?}` | — |
 | `mcp.reload` | Client → Runner | 重新加载 MCP server 配置 | — |
+| `deskagent.cancel` | Client → Runner | 置 Runner 全局中断标记;in-flight 工具 handler 在下次 `is_interrupted()` 轮询时退出;立即应答 `{ok: true}`(异步生效,不等工具退出) | — |
 | `deskagent.config.update` | Client → Runner | 推送完整配置 dict;Runner 持有在内存,下次 `load_config()` 即生效,无需重启 | §2.4 |
 | `request_llm` | Runner → Client | 反向 RPC——借大脑（见 §3） | §3 |
 

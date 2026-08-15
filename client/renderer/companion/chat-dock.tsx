@@ -217,6 +217,10 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
       }
     }
 
+    // session.interrupt stops the LLM stream, not a command the runner is
+    // already executing; the cancel RPC flags those handlers to bail early.
+    void window.deskagent?.runnerCancel?.().catch(() => {})
+
     // Backend cancellation aborts run_chat_turn mid-stream — no message.complete
     // arrives, so we must finalize the streaming bubble locally to avoid a
     // stuck "…" indicator. If the user clicked Stop during the pre-response

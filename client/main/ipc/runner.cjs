@@ -169,6 +169,15 @@ function registerRunnerIpc({ ipcMain, deps }) {
     const bridge = ensureRunnerBridge(deps)
     return bridge.dispatch('mcp.reload', {})
   })
+
+  // Sets the runner's global interrupt flag; in-flight tool handlers observe
+  // it on their next is_interrupted() poll and bail out early. Used by the
+  // chat Stop button alongside session.interrupt (which stops the LLM stream
+  // but not an already-running local command).
+  ipcMain.handle('deskagent:runner:cancel', async () => {
+    const bridge = ensureRunnerBridge(deps)
+    return bridge.dispatch('deskagent.cancel', {})
+  })
 }
 
 module.exports = {
