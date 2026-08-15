@@ -53,15 +53,26 @@ async def claim_batch(worker_id: str, limit: int = 1) -> list[RenderJob]:
         return jobs
 
 
-async def finish(job_id: int, result: dict | None = None) -> None:
+async def finish(job_id: int, worker_id: str, result: dict | None = None) -> None:
+    # The claim predicate mirrors claim_batch's CAS: a job reclaimed after a
+    # stale timeout now belongs to another worker — a late finish here must
+    # not clobber the replacement's processing row.
     async with session_scope() as db:
-        await db.execute(update(RenderJob).where(RenderJob.id == job_id).values(status="succeeded", finished_at=utc_now(), result=result))
+        await db.execute(
+            update(RenderJob)
+            .where(RenderJob.id == job_id, RenderJob.claimed_by == worker_id, RenderJob.status == "processing")
+            .values(status="succeeded", finished_at=utc_now(), result=result)
+        )
         await db.commit()
 
 
-async def fail(job_id: int, error: str) -> None:
+async def fail(job_id: int, worker_id: str, error: str) -> None:
     async with session_scope() as db:
-        await db.execute(update(RenderJob).where(RenderJob.id == job_id).values(status="failed", finished_at=utc_now(), error=error))
+        await db.execute(
+            update(RenderJob)
+            .where(RenderJob.id == job_id, RenderJob.claimed_by == worker_id, RenderJob.status == "processing")
+            .values(status="failed", finished_at=utc_now(), error=error)
+        )
         await db.commit()
 
 

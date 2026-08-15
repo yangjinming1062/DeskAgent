@@ -29,11 +29,11 @@ async def test_claim_batch_is_exclusive_and_fifo(SessionLocal):
 async def test_finish_and_fail_are_terminal(SessionLocal):
     ok_id = await queue.enqueue("model_generate", 1, {})
     (job,) = await queue.claim_batch("w", 1)
-    await queue.finish(ok_id)
+    await queue.finish(ok_id, "w")
 
     bad_id = await queue.enqueue("model_generate", 1, {})
     await queue.claim_batch("w", 1)
-    await queue.fail(bad_id, "pipeline exhausted")
+    await queue.fail(bad_id, "w", "pipeline exhausted")
 
     async with SessionLocal() as db:
         ok = await db.get(RenderJob, ok_id)
@@ -43,6 +43,25 @@ async def test_finish_and_fail_are_terminal(SessionLocal):
         assert bad.status == "failed"
         assert bad.error == "pipeline exhausted"
     assert job.status == "processing"
+
+
+async def test_finish_by_stale_claimant_does_not_clobber(SessionLocal):
+    """After a stale timeout requeues and another worker re-claims the job, a
+    late finish from the original worker must be a no-op."""
+    job_id = await queue.enqueue("model_generate", 1, {})
+    await queue.claim_batch("slow-worker", 1)
+    await _backdate_claim(SessionLocal, job_id, hours=3)
+    assert await queue.requeue_stale(7200) == 1
+    await queue.claim_batch("fast-worker", 1)
+
+    await queue.finish(job_id, "slow-worker", result={"stale": True})
+    await queue.fail(job_id, "slow-worker", "late failure")
+
+    async with SessionLocal() as db:
+        job = await db.get(RenderJob, job_id)
+        assert job.status == "processing"
+        assert job.claimed_by == "fast-worker"
+        assert job.result is None and job.error is None
 
 
 async def test_requeue_stale_recovers_once_then_caps(SessionLocal):
