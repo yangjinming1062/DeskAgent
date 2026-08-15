@@ -24,6 +24,7 @@ Runner 不感知"伙伴"语义——终端、文件、浏览器、代码执行�
 - **环境状态与工具解耦**：环境共享态（活跃实例表、工厂、cleanup 线程）下沉到 `tools/terminal/environment/` 子包，`file_tools` / `code_execution_tool` 跨包直接导入该子包、共享同一批 env 实例，绕开仍含命令处理 + 安全审批逻辑的 `terminal_tool` 避免循环依赖。
 - **Capabilities 尽量运行时探测**：`utils.capabilities.snapshot()` 中 microphone（枚举 WASAPI/AVFoundation 设备）、screen_capture（mss 枚举监视器 / screencapture 存在性）、system_activity（真实调 `GetLastInputInfo` / `CGSessionCopyCurrentDictionary`）是运行时探测；local_stt / local_tts 是**执行原生加载器的 import 探测**（faster-whisper / piper 的 import 会加载 CTranslate2 / onnxruntime 二进制，失败即不可用）。不用 `find_spec` 存在性检查——那是欺骗 UI 让用户点不能用按钮。
 - **音频引擎默认在基础 wheel 内**：`faster-whisper` / `piper-tts` / `sounddevice` / `numpy` 是伴侣语音栈的核心依赖（[DESIGN §7](../DESIGN.md)），从基础 wheel 直接可用。`pyttsx3` 用平台 marker 限制（macOS / Windows 上有 SAPI5 / NSSpeechSynthesizer 兜底）。运行时仍要求系统 PATH 有 `ffmpeg`（`audio_io.wav_to_wav_pcm16` 用）。
+- **Skills 安全扫描的信任边界**：THREAT 扫描与结构检查对 community 来源强制执行；skill 自带的 `.skillignore` 只对 builtin/trusted 来源生效——不可信 skill 不能用自己的 ignore 文件关闭对自己的安全门禁。
 
 ## 3. 架构地图
 

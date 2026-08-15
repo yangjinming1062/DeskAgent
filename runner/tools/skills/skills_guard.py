@@ -386,7 +386,6 @@ def scan_skill(skill_path: Path, source: str = "community") -> ScanResult:
     Scan all files in a skill directory for security threats.
 
     Performs:
-        pass
     1. Structural checks (file count, total size, binary files, symlinks)
     2. Regex pattern matching on all text files
     3. Invisible unicode character detection
@@ -412,7 +411,10 @@ def scan_skill(skill_path: Path, source: str = "community") -> ScanResult:
     all_findings: list[Finding] = []
 
     if skill_path.is_dir():
-        ignore = _load_skill_ignore(skill_path)
+        # .skillignore only applies to sources we already trust — an
+        # untrusted skill shipping its own `*` ignore file must not be able
+        # to switch off its own THREAT scan and structure checks.
+        ignore = _load_skill_ignore(skill_path) if trust_level in ("builtin", "trusted") else _ignore_nothing
 
         # Structural checks first (honoring the ignore list)
         all_findings.extend(_check_structure(skill_path, ignore=ignore))
@@ -595,6 +597,11 @@ def _unicode_char_name(char: str) -> str:
 _SKILL_IGNORE_FILENAMES = (".skillignore", ".clawhubignore")
 _ALWAYS_IGNORED_NAMES = set(_SKILL_IGNORE_FILENAMES)
 _NEVER_IGNORABLE = {"SKILL.md"}
+
+
+def _ignore_nothing(_rel: str) -> bool:
+    """Ignore-list for untrusted sources: never excludes a file."""
+    return False
 
 
 def _load_skill_ignore(skill_dir: Path) -> Callable[[str], bool]:

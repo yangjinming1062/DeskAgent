@@ -1,4 +1,5 @@
 import re
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -27,7 +28,7 @@ def parse_frontmatter(content: str) -> tuple[dict[str, Any], str]:
     return data if isinstance(data, dict) else {}, content[match.end() :]
 
 
-def iter_skill_index_files(directory: Path | str, name: str = "SKILL.md") -> None:
+def iter_skill_index_files(directory: Path | str, name: str = "SKILL.md") -> Iterator[Path]:
     """Yield every ``name`` file under ``directory`` (recursive)."""
     root = Path(directory)
     if not root.is_dir():

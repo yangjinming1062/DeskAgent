@@ -253,7 +253,14 @@ def _find_all_skills(*, skip_disabled: bool = False) -> list[dict[str, Any]]:
                 frontmatter, body = parse_frontmatter(skill_md.read_text(encoding="utf-8")[:4000])
                 if not skill_matches_platform(frontmatter):
                     continue
-                name = frontmatter.get("name", skill_md.parent.name)[:MAX_NAME_LENGTH]
+                raw_name = frontmatter.get("name", skill_md.parent.name)
+                if not isinstance(raw_name, str) or not raw_name.strip():
+                    # YAML `name: 123` (or a list) used to raise here and the
+                    # skill silently vanished from listings with only a debug
+                    # log — surface it instead.
+                    logger.warning("skills_list: skill at %s has a non-string name (%r); skipping", skill_md.parent, raw_name)
+                    continue
+                name = raw_name[:MAX_NAME_LENGTH]
                 category = _get_category_from_path(skill_md)
                 if name in seen_names or _is_disabled(name, category, disabled):
                     continue
