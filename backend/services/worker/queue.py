@@ -35,13 +35,17 @@ async def claim_batch(worker_id: str, limit: int = 1) -> list[RenderJob]:
             .with_for_update(skip_locked=True)
         )
         claimed = (
-            await db.execute(
-                update(RenderJob)
-                .where(RenderJob.id.in_(candidates), RenderJob.status == "queued")
-                .values(status="processing", claimed_by=worker_id, claimed_at=utc_now(), attempts=RenderJob.attempts + 1)
-                .returning(RenderJob.id)
+            (
+                await db.execute(
+                    update(RenderJob)
+                    .where(RenderJob.id.in_(candidates), RenderJob.status == "queued")
+                    .values(status="processing", claimed_by=worker_id, claimed_at=utc_now(), attempts=RenderJob.attempts + 1)
+                    .returning(RenderJob.id)
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         jobs = []
         if claimed:
             jobs = list((await db.execute(select(RenderJob).where(RenderJob.id.in_(claimed)))).scalars().all())

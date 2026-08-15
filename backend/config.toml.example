@@ -56,6 +56,26 @@ blender_llm_max_iterations = 10
 # Per Blender invocation timeout in seconds (mesh build + optional render).
 blender_llm_timeout = 1800
 
+[worker]
+# Render-job worker process (docker-compose `worker` service).
+worker_concurrency = 1
+# A processing render_job whose claimant went silent this long is requeued
+# (or failed at the attempts cap). Must exceed the worst-case job duration.
+worker_stale_reclaim_seconds = 7200
+# Fallback poll when PG LISTEN/NOTIFY is unavailable.
+worker_poll_interval_seconds = 5.0
+
+[blender_sandbox]
+# Run LLM-generated bpy code in throwaway Docker containers (network none,
+# cpu/memory caps, read-only root, only the per-job io dir mounted).
+# false = bare `blender` subprocess in the backend/worker container.
+blender_sandbox_enabled = false
+blender_sandbox_image = "deskagent-blender-sandbox:latest"
+blender_sandbox_docker_binary = "docker"
+blender_sandbox_cpus = 2.0
+blender_sandbox_memory = "4g"
+blender_sandbox_tmpfs_size = "1g"
+
 [providers]
 # Priority order chain (first wins). Supported: mimo, minimax, gemini, grok, zhipu
 providers = ["mimo", "minimax", "gemini", "grok", "zhipu"]

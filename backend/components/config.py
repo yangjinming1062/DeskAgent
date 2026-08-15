@@ -94,6 +94,19 @@ class Settings(BaseSettings):
     blender_llm_max_iterations: int = Field(default=10, validation_alias="BLENDER_LLM_MAX_ITERATIONS")
     blender_llm_timeout: int = Field(default=600, validation_alias="BLENDER_LLM_TIMEOUT")
 
+    # Worker process (services.worker) + Blender sandbox executor. Sandbox off
+    # keeps the bare in-process `blender` subprocess path.
+    worker_concurrency: int = Field(default=1, validation_alias="WORKER_CONCURRENCY")
+    worker_stale_reclaim_seconds: int = Field(default=7200, validation_alias="WORKER_STALE_RECLAIM_SECONDS")
+    worker_poll_interval_seconds: float = Field(default=5.0, validation_alias="WORKER_POLL_INTERVAL_SECONDS")
+
+    blender_sandbox_enabled: bool = Field(default=False, validation_alias="BLENDER_SANDBOX_ENABLED")
+    blender_sandbox_image: str = Field(default="deskagent-blender-sandbox:latest", validation_alias="BLENDER_SANDBOX_IMAGE")
+    blender_sandbox_docker_binary: str = Field(default="docker", validation_alias="BLENDER_SANDBOX_DOCKER_BINARY")
+    blender_sandbox_cpus: float = Field(default=2.0, validation_alias="BLENDER_SANDBOX_CPUS")
+    blender_sandbox_memory: str = Field(default="4g", validation_alias="BLENDER_SANDBOX_MEMORY")
+    blender_sandbox_tmpfs_size: str = Field(default="1g", validation_alias="BLENDER_SANDBOX_TMPFS_SIZE")
+
     companion_asset_signing_key: str
 
     providers: Annotated[list[str], NoDecode] = Field(validation_alias="PROVIDERS")

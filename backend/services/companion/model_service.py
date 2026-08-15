@@ -1,5 +1,6 @@
 import asyncio
 import json
+import shutil
 import tempfile
 from pathlib import Path
 
@@ -10,6 +11,7 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from services.llm import chat
+from services.worker import run_blender
 
 from .asset_store import build_signed_model_url, save_companion_model
 from .avatar_service import resolve_uploaded_avatar_path
@@ -381,36 +383,19 @@ async def _inject_morph_targets(glb_bytes: bytes) -> bytes:
         return glb_bytes
 
     with tempfile.TemporaryDirectory() as tmp:
-        inp = Path(tmp) / "input.glb"
-        out = Path(tmp) / "output.glb"
+        tmp_dir = Path(tmp)
+        inp = tmp_dir / "input.glb"
+        out = tmp_dir / "output.glb"
         await asyncio.to_thread(inp.write_bytes, glb_bytes)
+        await asyncio.to_thread(shutil.copyfile, script_path, tmp_dir / "inject_morph_targets.py")
 
         try:
-            proc = await asyncio.create_subprocess_exec(
-                "blender",
-                "--background",
-                "--python",
-                str(script_path),
-                "--",
-                "--input",
-                str(inp),
-                "--output",
-                str(out),
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
+            returncode, stderr = await run_blender(tmp_dir, "inject_morph_targets.py", ["--input", str(inp), "--output", str(out)], timeout=120)
         except FileNotFoundError:
             logger.warning("Blender binary not found on PATH, skipping morph injection")
             return glb_bytes
-        try:
-            await asyncio.wait_for(proc.wait(), timeout=120)
-        except TimeoutError:
-            proc.kill()
-            logger.warning("Blender morph injection timed out")
-            return glb_bytes
-        if proc.returncode != 0 or not out.exists():
-            stderr = await proc.stderr.read() if proc.stderr else b""
-            logger.warning("Blender morph injection failed", extra={"stderr": stderr.decode(errors="ignore")[:500]})
+        if returncode != 0 or not out.exists():
+            logger.warning("Blender morph injection failed", extra={"stderr": stderr[:500]})
             return glb_bytes
         return await asyncio.to_thread(out.read_bytes)
 

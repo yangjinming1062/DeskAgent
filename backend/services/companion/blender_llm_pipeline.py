@@ -2,6 +2,7 @@ import asyncio
 import re
 import tempfile
 import textwrap
+from contextlib import nullcontext
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -12,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..llm import chat, provider_from_config, resolve_vision_chain
 from ..llm.llm_client import MissingLlmConfigError
+from ..worker import run_blender
 from .asset_store import build_data_uri, save_companion_model
 from .avatar_service import resolve_uploaded_avatar_path
 from .model_service import (
@@ -290,15 +292,19 @@ def _merge_scaffold(llm_code: str, scaffold_path: Path | None = None, build_mark
 
 
 async def run_blender_scaffold(
-    scaffold_path: Path, llm_code: str, build_marker: str, payload_args: list[str], *, render_preview: bool = True, script_name: str = "build_script.py"
+    scaffold_path: Path, llm_code: str, build_marker: str, payload_args: list[str], *, render_preview: bool = True, script_name: str = "build_script.py", io_dir: Path | None = None
 ) -> BlenderResult:
-    """Merge LLM code into scaffold and execute headless Blender."""
+    """Merge LLM code into scaffold and execute headless Blender. ``io_dir``
+    lets the worker host everything (script, seeds, outputs) in the per-job
+    directory it mounts into the sandbox container; the default private
+    tempdir is cleaned up here instead."""
     if not scaffold_path.exists():
         return BlenderResult(success=False, stderr=f"scaffold not found: {scaffold_path}")
 
     merged_script = _merge_scaffold(llm_code, scaffold_path, build_marker)
 
-    with tempfile.TemporaryDirectory() as tmp:
+    io_ctx = nullcontext(str(io_dir)) if io_dir is not None else tempfile.TemporaryDirectory()
+    with io_ctx as tmp:
         tmp_dir = Path(tmp)
         script_path = tmp_dir / script_name
         glb_path = tmp_dir / "output.glb"
@@ -306,27 +312,16 @@ async def run_blender_scaffold(
 
         script_path.write_text(merged_script, encoding="utf-8")
 
-        cmd: list[str] = ["blender", "--background", "--python", str(script_path), "--", "--output", str(glb_path), *payload_args]
+        payload: list[str] = ["--output", str(glb_path), *payload_args]
         if render_preview:
-            cmd.extend(["--render-output", str(render_path)])
+            payload.extend(["--render-output", str(render_path)])
 
         try:
-            proc = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+            returncode, combined_stderr = await run_blender(tmp_dir, script_name, payload, timeout=SETTINGS.blender_llm_timeout)
         except FileNotFoundError:
-            return BlenderResult(success=False, stderr="blender binary not found on PATH")
+            return BlenderResult(success=False, stderr="blender binary (or docker sandbox) not found on PATH")
 
-        try:
-            await asyncio.wait_for(proc.wait(), timeout=SETTINGS.blender_llm_timeout)
-        except TimeoutError:
-            proc.kill()
-            await proc.wait()
-            return BlenderResult(success=False, stderr=f"Blender timed out after {SETTINGS.blender_llm_timeout}s")
-
-        stdout_bytes = await proc.stdout.read() if proc.stdout else b""
-        stderr_bytes = await proc.stderr.read() if proc.stderr else b""
-        combined_stderr = (stdout_bytes + stderr_bytes).decode(errors="replace")
-
-        if proc.returncode != 0:
+        if returncode != 0:
             return BlenderResult(success=False, stderr=combined_stderr[-3000:])
 
         if not glb_path.exists() or glb_path.stat().st_size < 64:
