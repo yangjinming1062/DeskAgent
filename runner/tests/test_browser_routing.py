@@ -10,6 +10,7 @@
 
 import asyncio
 import threading
+import time
 
 import pytest
 
@@ -67,3 +68,52 @@ def test_call_llm_sync_bridges_worker_thread_to_main_loop():
 async def test_call_llm_sync_rejects_running_on_loop():
     with pytest.raises(RuntimeError, match="await call_llm"):
         reverse_rpc.call_llm_sync(task="vision")
+
+
+# ── browser_tool: save_as sanitization + screenshot path recovery ──
+
+def test_safe_save_name_strips_escape_attempts():
+    from tools.browser.browser_tool import _safe_save_name
+
+    assert _safe_save_name("C:/evil/x.png", "default.png") == "x.png"
+    assert _safe_save_name(r"\server\share\x.png", "default.png") == "x.png"
+    assert _safe_save_name("../../etc/passwd", "default.png") == "passwd"
+    assert _safe_save_name("", "default.png") == "default.png"
+    assert _safe_save_name(None, "default.png") == "default.png"
+    assert _safe_save_name("plain.pdf", "default.pdf") == "plain.pdf"
+
+
+def test_extract_screenshot_path_recovers_windows_drive_paths():
+    from tools.browser.browser_tool import _extract_screenshot_path_from_text
+
+    assert _extract_screenshot_path_from_text(r"Screenshot saved to 'C:\Users\a\AppData\Local\Temp\x.png'") == r"C:\Users\a\AppData\Local\Temp\x.png"
+    assert _extract_screenshot_path_from_text("Screenshot saved to /tmp/shot.png") == "/tmp/shot.png"
+    assert _extract_screenshot_path_from_text("no path here") is None
+
+
+def test_wait_for_download_waits_for_late_begin_event():
+    import time as _time
+
+    sup = _make_supervisor()
+
+    def _late_register():
+        _time.sleep(0.3)
+        with sup._state_lock:
+            guid = "g-late"
+            sup._pending_downloads[guid] = {"state": "in_progress", "filename": "f.bin", "event": threading.Event()}
+            _time.sleep(0.1)
+            sup._pending_downloads[guid]["state"] = "completed"
+            sup._pending_downloads[guid]["event"].set()
+
+    threading.Thread(target=_late_register, daemon=True).start()
+    result = sup.wait_for_download(timeout=5.0)
+    assert result == {"ok": True, "filename": "f.bin", "guid": "g-late"}
+
+
+def test_wait_for_download_errors_after_grace_window():
+    sup = _make_supervisor()
+    start = time.monotonic()
+    result = sup.wait_for_download(timeout=5.0)
+    assert result["ok"] is False
+    assert "no pending download" in result["error"]
+    assert time.monotonic() - start >= 1.5  # waited the ~2s grace window

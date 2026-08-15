@@ -77,8 +77,13 @@ logger = logging.getLogger(__name__)
 _SANE_PATH_DIRS = ("/opt/homebrew/bin", "/opt/homebrew/sbin", "/usr/local/sbin", "/usr/local/bin", "/usr/sbin", "/usr/bin", "/sbin", "/bin")
 _SANE_PATH = os.pathsep.join(_SANE_PATH_DIRS)
 
-_INACTIVITY_RAW = cfg_get(load_config(), "browser", "inactivity_timeout_seconds", default=300)
-BROWSER_SESSION_INACTIVITY_TIMEOUT = int(_INACTIVITY_RAW) if isinstance(_INACTIVITY_RAW, (int, float, str)) else 300
+# Import-time config parse must not kill the whole browser toolset
+# (discover_builtin_tools swallows the exception and every browser.* tool
+# silently vanishes) — non-numeric values fall back to the default.
+try:
+    BROWSER_SESSION_INACTIVITY_TIMEOUT = max(int(cfg_get(load_config(), "browser", "inactivity_timeout_seconds", default=300)), 1)
+except (TypeError, ValueError):
+    BROWSER_SESSION_INACTIVITY_TIMEOUT = 300
 
 
 @functools.lru_cache(maxsize=1)
@@ -120,6 +125,12 @@ def _merge_browser_path(existing_path: str = "") -> str:
 
 # Throttle screenshot cleanup to avoid repeated full directory scans.
 _LAST_SCREENSHOT_CLEANUP_BY_DIR: dict[str, float] = {}
+
+# Throttle download-dir cleanup (see _cleanup_old_downloads).
+_LAST_DOWNLOAD_CLEANUP: float = 0.0
+
+# Cache for Chromium discovery. Invalidated by _reset_browser_caches.
+_cached_chromium_installed: bool | None = None
 
 # Max matches returned by ``browser_find`` — the DOM walk is bounded so a
 # single snapshot doesn't drown the LLM context.
@@ -1422,7 +1433,14 @@ def _extract_screenshot_path_from_text(text: str) -> str | None:
     if not text:
         return None
 
-    patterns = [r"Screenshot saved to ['\"](?P<path>/[^'\"]+?\.png)['\"]", r"Screenshot saved to (?P<path>/\S+?\.png)(?:\s|$)", r"(?P<path>/\S+?\.png)(?:\s|$)"]
+    # ``(?:/|[A-Za-z]:[\\\\/])`` accepts POSIX roots and Windows drive
+    # letters — a ``/``-only prefix never matched ``C:\...\Temp\...``.
+    prefix = r"(?:/|[A-Za-z]:[\\\\/])"
+    patterns = [
+        rf"Screenshot saved to ['\"](?P<path>{prefix}[^'\"]+?\.png)['\"]",
+        rf"Screenshot saved to (?P<path>{prefix}\S+?\.png)(?:\s|$)",
+        rf"(?P<path>{prefix}\S+?\.png)(?:\s|$)",
+    ]
 
     for pattern in patterns:
         match = re.search(pattern, text)
@@ -1581,10 +1599,10 @@ def _run_browser_command(task_id: str, command: str, args: list[str] | None = No
         try:
             # See matching comment at the other Popen site above — on
             # Windows we put agent-browser in its own process group, force
-
-            # three explicit handles (no leaked parent-console handles to
-            # confuse the Rust binary's daemon-spawn), and close_fds=True to
-            # block inheritance of everything else.
+            # stdin/stdout/stderr to three explicit handles (no leaked
+            # parent-console handles to confuse the Rust binary's
+            # daemon-spawn), and close_fds=True to block inheritance of
+            # everything else.
             _popen_extra: dict = {}
             if os.name == "nt":
                 # See matching block at the other Popen site — CREATE_NO_WINDOW
@@ -2566,7 +2584,14 @@ def browser_select(ref: str, value: str | None = None, label: str | None = None,
 # ── Download / export tools ─────────────────────────────────────────────────
 
 
-_LAST_DOWNLOAD_CLEANUP: float = 0.0
+def _safe_save_name(save_as: str | None, default: str) -> str:
+    """Keep only the basename of an LLM-supplied save_as.
+
+    Absolute paths replace the target dir entirely on Windows and ``..``
+    climbs out of it — both let a tool call write outside the cache dir.
+    """
+    name = Path(save_as or "").name
+    return name or default
 
 
 def _unlink_files_older_than(paths: Iterable[Path] | Any, cutoff_s: float) -> None:
@@ -2665,7 +2690,7 @@ def browser_download(ref_or_url: str, save_as: str | None = None, timeout_s: flo
     if supervisor is not None:
         dl_result = supervisor.wait_for_download(timeout=timeout_s)
         if dl_result.get("ok"):
-            filename = save_as or dl_result.get("filename", "download")
+            filename = _safe_save_name(save_as, dl_result.get("filename", "download"))
             file_path = downloads_dir / filename
             if file_path.exists():
                 return _download_ok(file_path, filename)
@@ -2733,15 +2758,13 @@ def browser_pdf(
         return json.dumps({"success": False, "error": "browser_pdf: CDP returned empty PDF data"}, ensure_ascii=False)
 
     pdf_bytes = base64.b64decode(pdf_b64)
-    filename = save_as or f"page_{uuid.uuid4().hex[:8]}.pdf"
+    filename = _safe_save_name(save_as, f"page_{uuid.uuid4().hex[:8]}.pdf")
     file_path = downloads_dir / filename
     file_path.write_bytes(pdf_bytes)
-    # Count PDF pages via the ``/Type /Page`` marker. ``Page.printToPDF``
-    # returns ``{data: ..., stream: ...}`` with no page count field, so
-    # the previous code always reported ``pages: 0`` (a lie). One regex
-    # pass over the binary covers both ``/Type /Page`` and ``/Type/Page``
-    # spellings; the negative lookahead avoids matching ``/Type /Pages``
-    # (the catalog marker).
+    # Count PDF pages via the ``/Type /Page`` marker — Page.printToPDF
+    # returns no page count field. One regex pass covers both ``/Type
+    # /Page`` and ``/Type/Page`` spellings; the negative lookahead avoids
+    # matching ``/Type /Pages`` (the catalog marker).
     pages = len(re.findall(rb"/Type\s*/Page(?!s)", pdf_bytes))
 
     return json.dumps(
@@ -2822,7 +2845,7 @@ def browser_screenshot_element(ref: str, save_as: str | None = None, task_id: st
     img_bytes = base64.b64decode(img_b64)
     screenshots_dir = get_deskagent_dir("cache/screenshots", "browser_screenshots")
     screenshots_dir.mkdir(parents=True, exist_ok=True)
-    filename = save_as or f"element_{uuid.uuid4().hex[:8]}.png"
+    filename = _safe_save_name(save_as, f"element_{uuid.uuid4().hex[:8]}.png")
     file_path = screenshots_dir / filename
     file_path.write_bytes(img_bytes)
 
@@ -3067,9 +3090,9 @@ def _browser_eval(expression: str, task_id: str | None = None) -> str:
     # --- Fast path: route through the supervisor's persistent CDP WS ---------
     # When a CDPSupervisor is alive for this task_id, ``Runtime.evaluate`` runs
     # on the already-connected WebSocket — zero subprocess startup cost vs
-    # spawning an ``agent-browser eval`` CLI process.  Falls through to the
-
-    # supervisor is running (e.g. plain agent-browser without a CDP backend).
+    # spawning an ``agent-browser eval`` CLI process. Falls through to the CLI
+    # path when no supervisor is running (e.g. plain agent-browser without a
+    # CDP backend).
     try:
         supervisor = SUPERVISOR_REGISTRY.get(effective_task_id)
         if supervisor is not None:
@@ -3614,15 +3637,10 @@ def cleanup_all_browsers() -> None:
     _browser_engine_resolved = False
 
 
-# Cache for Chromium discovery. Invalidated by _reset_browser_caches.
-_cached_chromium_installed: bool | None = None
-
-
 def _chromium_search_roots() -> list[str]:
     """Directories to scan for a Chromium / headless-shell build.
 
     Order mirrors what agent-browser and Playwright actually probe:
-        pass
 
     1. ``PLAYWRIGHT_BROWSERS_PATH`` when set (Docker image sets this to
        ``/opt/deskagent/.playwright``).
@@ -3649,7 +3667,6 @@ def _chromium_installed() -> bool:
     """Return True when a usable Chromium (or headless-shell) build is on disk.
 
     Checks, in order:
-        pass
 
     1. ``AGENT_BROWSER_EXECUTABLE_PATH`` env var — the official way to point
        agent-browser at a pre-installed Chrome/Chromium.

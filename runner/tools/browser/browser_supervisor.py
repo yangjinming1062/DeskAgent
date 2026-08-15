@@ -548,6 +548,10 @@ class CDPSupervisor:
         if not guid:
             return
         with self._state_lock:
+            # Drop finished entries nobody waited for (page-initiated
+            # downloads) so the map doesn't grow without bound.
+            for stale in [g for g, e in self._pending_downloads.items() if e["event"].is_set()]:
+                self._pending_downloads.pop(stale, None)
             self._pending_downloads[guid] = {"state": "in_progress", "filename": params.get("suggestedFilename", ""), "url": params.get("url", ""), "event": threading.Event()}
 
     def _on_download_progress(self, params: dict[str, Any]) -> None:
@@ -571,6 +575,13 @@ class CDPSupervisor:
         Returns ``{"ok": True, "filename": ..., "state": "completed"}`` on
         success, or ``{"ok": False, "error": ...}`` on timeout / cancellation.
         """
+        # downloadWillBegin arrives asynchronously after the triggering click
+        # returns — wait briefly for the entry instead of failing outright.
+        grace_deadline = time.monotonic() + 2.0
+        while not self._pending_downloads:
+            if time.monotonic() >= grace_deadline:
+                return {"ok": False, "error": "no pending download found"}
+            time.sleep(0.05)
         with self._state_lock:
             if not self._pending_downloads:
                 return {"ok": False, "error": "no pending download found"}
