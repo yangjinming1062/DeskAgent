@@ -1,5 +1,6 @@
 import contextlib
 import difflib
+import logging
 import os
 import re
 import shlex
@@ -33,6 +34,8 @@ from .helpers import (
     get_max_line_length,
     normalize_read_pagination,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class NativeFileOperations(FileOperations):

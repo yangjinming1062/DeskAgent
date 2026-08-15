@@ -176,6 +176,11 @@ class DeskAgentTokenStorage:
         return self._tokens_path().exists()
 
 
+def remove_oauth_tokens(server_name: str) -> None:
+    DeskAgentTokenStorage(server_name).remove()
+    logger.info("OAuth tokens removed for '%s'", server_name)
+
+
 def _make_callback_handler() -> tuple[type, dict]:
     result = {"auth_code": None, "state": None, "error": None}
 
