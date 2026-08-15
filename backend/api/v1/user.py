@@ -50,7 +50,7 @@ async def activate(payload: ActivateRequest, request: Request, db: AsyncSession 
     user = (await db.execute(select(User).where(User.activation_token_hash == token_hash, User.is_active.is_(True)))).scalar_one_or_none()
     if user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="激活码无效。")
-    if not user.can_use or (user.expires_at and user.expires_at.date() < utc_now().date()):
+    if user.entitlement_expired:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="该用户已超过有效使用期限，需要续费后才能继续使用。")
 
     now = utc_now()

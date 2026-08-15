@@ -2,6 +2,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 from common import ModelBase, TimestampMixin
+from components import utc_now
 from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text, UniqueConstraint, func, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -22,6 +23,12 @@ class User(ModelBase, TimestampMixin):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default=text("TRUE"))
     can_use: Mapped[bool] = mapped_column(Boolean, default=True, server_default=text("TRUE"))
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    @property
+    def entitlement_expired(self) -> bool:
+        # Checked on every authenticated request, not just at activate —
+        # otherwise a disabled/expired user keeps refreshing tokens forever.
+        return not self.can_use or (self.expires_at is not None and self.expires_at.date() < utc_now().date())
 
     login_records: Mapped[list["LoginRecord"]] = relationship(back_populates="user", passive_deletes=True)
     model_config: Mapped["UserModelConfig | None"] = relationship(back_populates="user", uselist=False, passive_deletes=True)

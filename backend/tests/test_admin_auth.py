@@ -96,3 +96,43 @@ async def test_search_sessions_by_numeric_id_substring(test_client, test_token, 
     resp = await test_client.get("/api/sessions/search", params={"q": conv_id}, headers={"Authorization": f"Bearer {test_token}"})
     assert resp.status_code == 200
     assert any(s["id"] == conv_id for s in resp.json()["sessions"])
+
+
+async def _expire_seeded_user(SessionLocal, **updates):
+    from sqlalchemy import update
+
+    from modules.auth import User
+
+    async with SessionLocal() as db:
+        await db.execute(update(User).where(User.username == "testuser").values(**updates))
+        await db.commit()
+
+
+async def test_disabled_user_rejected_by_session_guard(test_client, test_token, _patch_db):
+    """can_use=False must block every authenticated request, not just the
+    next activate — the old check let a disabled user refresh forever."""
+    _, SessionLocal = _patch_db
+    await _expire_seeded_user(SessionLocal, can_use=False)
+
+    resp = await test_client.get("/api/sessions", headers={"Authorization": f"Bearer {test_token}"})
+    assert resp.status_code == 403
+
+
+async def test_expired_user_rejected_by_session_guard(test_client, test_token, _patch_db):
+    _, SessionLocal = _patch_db
+    from datetime import UTC, datetime, timedelta
+
+    await _expire_seeded_user(SessionLocal, expires_at=datetime.now(UTC) - timedelta(days=1))
+
+    resp = await test_client.get("/api/sessions", headers={"Authorization": f"Bearer {test_token}"})
+    assert resp.status_code == 403
+
+
+async def test_expired_user_rejected_on_ws_handshake(_patch_db, test_user_credentials, ws_ticket):
+    from services.gateway.auth import authenticate_ws_token
+
+    _, SessionLocal = _patch_db
+    await _expire_seeded_user(SessionLocal, can_use=False)
+
+    user, payload = await authenticate_ws_token(ws_ticket)
+    assert user is None and payload is None
