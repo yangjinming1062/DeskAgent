@@ -12,6 +12,7 @@ from .runner import HANDLERS
 async def _emit(user_id: int, event_type: str, payload: dict) -> None:
     async with session_scope() as db:
         db.add(WSEvent(user_id=user_id, event_type=event_type, payload=json.dumps(payload, ensure_ascii=False)))
+        await db.commit()
 
 
 async def _model_generate(job: RenderJob, io_dir: Path) -> None:
