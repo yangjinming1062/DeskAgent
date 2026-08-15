@@ -19,6 +19,15 @@ from utils import cfg_get, get_deskagent_home, load_config
 
 from ..interrupt import is_interrupted
 
+if os.name == "nt":
+    import ctypes
+    import msvcrt
+    from ctypes import wintypes
+
+    _kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    _kernel32.PeekNamedPipe.argtypes = [ctypes.c_void_p, ctypes.c_void_p, wintypes.DWORD, ctypes.c_void_p, ctypes.POINTER(wintypes.DWORD), ctypes.c_void_p]
+    _kernel32.PeekNamedPipe.restype = wintypes.BOOL
+
 
 def _load_json_store(path: Path) -> dict:
     try:
@@ -230,8 +239,31 @@ class BaseEnvironment(ABC):
                 if not isinstance(fd, int) or fd < 0:
                     _drain_iterable(stream)
                 elif os.name == "nt":
-                    while chunk := os.read(fd, 4096):
-                        output_chunks.append(decoder.decode(chunk))
+                    # A bare blocking os.read never returns while an orphaned
+                    # descendant still holds the pipe's write end; poll with
+                    # PeekNamedPipe and stop once the direct child is gone and
+                    # the pipe stays empty (mirrors the POSIX select branch).
+                    handle = msvcrt.get_osfhandle(fd)
+                    avail = wintypes.DWORD(0)
+                    idle_after_exit = 0
+                    while True:
+                        peeked = _kernel32.PeekNamedPipe(handle, None, 0, None, ctypes.byref(avail), None)
+                        if peeked and avail.value > 0:
+                            if not (chunk := os.read(fd, min(4096, avail.value))):
+                                break
+                            output_chunks.append(decoder.decode(chunk))
+                            idle_after_exit = 0
+                        elif not peeked:
+                            # Write end closed (broken pipe): drain what is still
+                            # buffered, then the read returns b"" and we stop.
+                            if not (chunk := os.read(fd, 4096)):
+                                break
+                            output_chunks.append(decoder.decode(chunk))
+                        elif proc.poll() is not None:
+                            if (idle_after_exit := idle_after_exit + 1) >= 3:
+                                break
+                        else:
+                            time.sleep(0.05)
                 else:
                     idle_after_exit = 0
                     while True:
@@ -253,7 +285,7 @@ class BaseEnvironment(ABC):
                 except Exception:
                     pass
 
-        drain_thread = threading.Thread(target=_drain, daemon=True)
+        drain_thread = threading.Thread(target=_drain, daemon=True, name="proc-output-drain")
         drain_thread.start()
         deadline = time.monotonic() + timeout
         try:

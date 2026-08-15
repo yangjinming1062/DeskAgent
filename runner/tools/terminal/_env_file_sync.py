@@ -1,3 +1,4 @@
+import contextlib
 import hashlib
 import logging
 import os
@@ -154,7 +155,12 @@ class FileSyncManager:
             if on_main and original is not None:
                 signal.signal(signal.SIGINT, original)
                 if deferred:
-                    os.kill(os.getpid(), signal.SIGINT)
+                    if os.name == "posix":
+                        os.kill(os.getpid(), signal.SIGINT)
+                    else:
+                        # Windows os.kill with SIGINT is TerminateProcess, not
+                        # KeyboardInterrupt — deliver the deferred interrupt directly.
+                        raise KeyboardInterrupt
 
     def _sync_back_locked(self, lock_path: Path) -> None:
         with open(lock_path, "w", encoding="utf-8") as f:
@@ -177,19 +183,27 @@ class FileSyncManager:
         if not self._bulk_download_fn:
             raise RuntimeError("Missing bulk_download_fn")
         mapping = list(self._get_files_fn())
-        with tempfile.NamedTemporaryFile(suffix=".tar") as tf:
-            self._bulk_download_fn(Path(tf.name))
-            if (tar_size := os.path.getsize(tf.name)) > _SYNC_BACK_MAX_BYTES:
+        # mkstemp + explicit close: the download subprocess must be able to
+        # open the path for writing, which Windows denies while our own fd
+        # holds the file open (NamedTemporaryFile's open handle).
+        fd, tar_name = tempfile.mkstemp(suffix=".tar")
+        os.close(fd)
+        try:
+            self._bulk_download_fn(Path(tar_name))
+            if (tar_size := os.path.getsize(tar_name)) > _SYNC_BACK_MAX_BYTES:
                 logger.warning("sync_back: remote tar %d bytes exceeds cap", tar_size)
                 return
             with tempfile.TemporaryDirectory(prefix="deskagent-sync-back-") as staging:
-                with tarfile.open(tf.name) as tar:
+                with tarfile.open(tar_name) as tar:
                     tar.extractall(staging, filter="data")
                 applied = 0
                 for dp, _, fnames in os.walk(staging):
                     for fn in fnames:
                         staged = os.path.join(dp, fn)
-                        remote = "/" + os.path.relpath(staged, staging)
+                        # Remote/container paths are POSIX-style; on Windows
+                        # os.path.relpath emits backslashes that never match
+                        # the mapping.
+                        remote = "/" + os.path.relpath(staged, staging).replace(os.sep, "/")
                         if (pushed := self._pushed_hashes.get(remote)) is not None and _sha256_file(staged) == pushed:
                             continue
                         if not (host := self._resolve_host_path(remote, mapping) or self._infer_host_path(remote, mapping)):
@@ -202,9 +216,14 @@ class FileSyncManager:
                         applied += 1
                 if applied:
                     logger.info("sync_back: applied %d changed file(s)", applied)
+        finally:
+            with contextlib.suppress(OSError):
+                os.unlink(tar_name)
 
     def _resolve_host_path(self, remote_path: str, mapping: list[tuple[str, str]]) -> str | None:
         return next((h for h, r in mapping if r == remote_path), None)
 
     def _infer_host_path(self, remote_path: str, mapping: list[tuple[str, str]]) -> str | None:
-        return next((str(Path(host).parent) + remote_path[len(r_dir) :] for host, remote in mapping if remote_path.startswith((r_dir := str(Path(remote).parent)) + "/")), None)
+        # posixpath.dirname keeps the prefix POSIX-style on every host;
+        # str(Path(...)) on Windows would emit drive-less backslash paths.
+        return next((str(Path(host).parent) + remote_path[len(r_dir) :] for host, remote in mapping if remote_path.startswith((r_dir := posixpath.dirname(remote)) + "/")), None)
