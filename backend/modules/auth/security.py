@@ -6,13 +6,11 @@ from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import jwt
-from components import SESSION_LOCAL, SETTINGS, get_logger
+from components import SESSION_LOCAL, SETTINGS
 from fastapi import HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from .models import AdminSession
-
-logger = get_logger(__name__)
 
 # Activation token parameters — opaque random tokens (not user-chosen
 # passwords), so SHA-256 is sufficient (no PBKDF2 slow-hash needed).
@@ -88,16 +86,15 @@ async def create_admin_token(client_version: str = "", ip_address: str = "", use
     expires_at = datetime.now(UTC) + expires_delta
     payload = {"sub": "admin", "username": SETTINGS.admin_username, "is_admin": True, "jti": jti, "exp": expires_at}
     token = jwt.encode(payload, SETTINGS.jwt_secret_key, algorithm=SETTINGS.jwt_algorithm)
-    try:
-        async with SESSION_LOCAL() as db:
-            db.add(
-                AdminSession(
-                    token_jti=jti, username=SETTINGS.admin_username, client_version=client_version[:64], ip_address=ip_address[:64], user_agent=user_agent[:1024], is_active=True
-                )
+    # deps.get_current_admin_token requires the jti row to exist, so a failed
+    # insert must surface instead of minting a token that 401s on first use.
+    async with SESSION_LOCAL() as db:
+        db.add(
+            AdminSession(
+                token_jti=jti, username=SETTINGS.admin_username, client_version=client_version[:64], ip_address=ip_address[:64], user_agent=user_agent[:1024], is_active=True
             )
-            await db.commit()
-    except Exception as exc:
-        logger.warning("admin session record failed (token still valid): %s", exc)
+        )
+        await db.commit()
     return token, int(expires_delta.total_seconds())
 
 
