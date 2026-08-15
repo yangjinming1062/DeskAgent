@@ -70,6 +70,12 @@ def _load_config_files() -> list[dict[str, str]]:
     return _config_files
 
 
+def reset_cache() -> None:
+    """Drop the config-derived mounts list (deskagent.config.update)."""
+    global _config_files
+    _config_files = None
+
+
 def get_credential_file_mounts() -> list[dict[str, str]]:
     mounts = {cp: hp for cp, hp in _get_registered().items() if Path(hp).is_file()}
     cfg_mounts = {entry["container_path"]: entry["host_path"] for entry in _load_config_files() if Path(entry["host_path"]).is_file()}

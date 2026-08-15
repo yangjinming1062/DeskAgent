@@ -52,6 +52,7 @@ from utils.file_safety import (
     get_windows_sensitive_prefixes,
     is_write_denied,
 )
+from utils.clean import clean_output
 from utils.redact import redact_sensitive_text
 from utils.reverse_rpc import call_llm, set_handler
 
@@ -527,19 +528,28 @@ class TestRedactSensitiveText:
     def test_empty_input(self):
         assert redact_sensitive_text("") == ""
 
-    def test_redact_failure_returns_original(self, monkeypatch):
-        """If the redactor itself raises, MUST return the original text (defensive)."""
+    def test_redact_failure_propagates_to_fail_closed_boundary(self, monkeypatch):
+        """If the redactor raises, the exception must propagate — clean_output
+        is the security boundary that masks the whole output when it fires."""
+        import pytest
+
         import utils.redact as redact_mod
 
-        real = redact_mod._redact
         monkeypatch.setattr(
             redact_mod, "_redact", lambda s: (_ for _ in ()).throw(RuntimeError("boom"))
         )
-        try:
-            out = redact_sensitive_text("sk_abcdefghijklmnop")
-            assert out == "sk_abcdefghijklmnop"
-        finally:
-            monkeypatch.setattr(redact_mod, "_redact", real)
+        with pytest.raises(RuntimeError, match="boom"):
+            redact_sensitive_text("sk_abcdefghijklmnop")
+
+    def test_clean_output_fail_closed_when_redactor_raises(self, monkeypatch):
+        """clean_output masks the ENTIRE output when redaction blows up — raw
+        secrets must never reach the LLM because the regex engine choked."""
+        import utils.redact as redact_mod
+
+        monkeypatch.setattr(
+            redact_mod, "_redact", lambda s: (_ for _ in ()).throw(RuntimeError("boom"))
+        )
+        assert clean_output("sk_abcdefghijklmnop") == "***REDACTED (error)***"
 
 
 # ---------------------------------------------------------------------------

@@ -71,16 +71,13 @@ def _is_redact_enabled() -> bool:
 def redact_sensitive_text(text: str) -> str:
     """Redact likely secrets in *text*. Disabled when ``security.redact_secrets`` is falsy in config.
 
-    Resolves the config flag on each call so editors can flip it via ``mcp.reload``
-    without a runner restart; ``load_config`` is mtime-cached so the per-call cost is a stat.
+    Reads the in-memory config on each call, so a ``deskagent.config.update``
+    push takes effect immediately. Regex failures propagate — ``clean_output``
+    is the security boundary that fails closed on them.
     """
     if not text or not _is_redact_enabled():
         return text
-    try:
-        return _redact(text)
-    except Exception:
-        logger.debug("redact_sensitive_text failed on %d chars", len(text), exc_info=True)
-        return text
+    return _redact(text)
 
 
 def _redact(text: str) -> str:

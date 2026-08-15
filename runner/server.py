@@ -12,12 +12,14 @@ from typing import Any
 
 import websockets
 
+import utils.credential_files
+import utils.env_passthrough
 from runner_version import __version__
 from tools import ToolError, discover_builtin_tools, registry
 from tools.files import reset_max_read_chars_cache
 from tools.interrupt import set_global_interrupt, set_interrupt
 from tools.mcp import discover_mcp_tools, get_active_mcp_servers, reload_mcp_servers
-from tools.tool_output_limits import reset_cache as reset_output_limits_cache
+from tools.tool_output_limits import reset_cache
 from tools.toolsets import get_disabled_toolset_ids
 from utils import DesktopEndpoint, connect_desktop, disk_free_bytes, get_deskagent_home, network_reachable, read_endpoint, set_handler, set_inmemory_config, set_main_loop, snapshot
 
@@ -51,6 +53,14 @@ _discovery_started = False
 _STARTED_AT = time.time()
 _RECONNECT_COUNT = 0
 
+# Reconnect backoff and the endpoint-file poll interval.
+MAX_RECONNECT_ATTEMPTS = 15
+BASE_BACKOFF_S = 2.0
+MAX_BACKOFF_S = 30.0
+_ENDPOINT_POLL_S = 1.0
+
+_BG_TASKS: set[asyncio.Task] = set()
+
 
 async def _send(ws: Any, req_id: Any, **fields: Any) -> None:
     await ws.send(json.dumps({"jsonrpc": "2.0", "id": req_id, **fields}))
@@ -70,10 +80,11 @@ async def request_llm_from_desktop(kwargs: dict[str, Any]) -> str:
     extraction). All network auth lives in Desktop; the runner has no
     provider credentials.
 
-    The Backend returns ``{ "content": str, "usage": dict|null }``; we
-    extract and return only the content string so callers get plain text.
-    A non-dict response, or a dict that does not carry a ``content`` key,
-    is rejected as a protocol error — callers depend on the ``str`` contract.
+    The Backend returns ``{ "content": str, "usage": dict|null }`` or a raw
+    OpenAI-compatible body; the content text is extracted so callers get
+    plain ``str``. A dict with no text-bearing key degrades to ``""`` (see
+    ``_extract_llm_content``); a non-str/non-dict payload is rejected as a
+    protocol error.
     """
     if (ws := _ACTIVE_WS) is None:
         raise RuntimeError("No active WebSocket connection")
@@ -154,10 +165,11 @@ async def process_request(ws: Any, req: dict[str, Any]) -> None:
     # don't immediately bail. For cancel requests we set the
     # cross-thread ``_global_interrupt`` so in-flight tool handlers
     # from other requests see the flag on their next ``is_interrupted()``
-    # check. A new execute_tool invocation clears any prior cancel flag.
+    # check. Only a subsequent execute_tool clears it — diagnostic polls
+    # (deskagent.info / get_tools) must not swallow a pending cancel.
     if method == "deskagent.cancel":
         set_global_interrupt(True)
-    else:
+    elif method == "execute_tool":
         set_global_interrupt(False)
     set_interrupt(False, thread_id=None)
     try:
@@ -179,16 +191,20 @@ async def process_request(ws: Any, req: dict[str, Any]) -> None:
             if not isinstance(config, dict):
                 raise ValueError("deskagent.config.update requires a 'config' object")
             set_inmemory_config(config)
-            reset_output_limits_cache()
+            reset_cache()
             reset_max_read_chars_cache()
+            utils.env_passthrough.reset_cache()
+            utils.credential_files.reset_cache()
             await _send(ws, req_id, result={"ok": True})
             return
 
         if method == "mcp.reload":
             # Clear config caches so tool_output_limits and file_read_max_chars
             # pick up any config changes without requiring a runner restart.
-            reset_output_limits_cache()
+            reset_cache()
             reset_max_read_chars_cache()
+            utils.env_passthrough.reset_cache()
+            utils.credential_files.reset_cache()
             # Off-load: reload_mcp_servers joins the MCP loop thread and waits
             # up to 15s on shutdown — running it inline would block the
             # Runner's WS event loop and starve deskagent.cancel / heartbeats.
@@ -214,14 +230,6 @@ async def process_request(ws: Any, req: dict[str, Any]) -> None:
         # would leave the background task dying with an unretrieved exception.
         with contextlib.suppress(Exception):
             await _send(ws, req_id, error={"code": -32000, "message": str(e)})
-
-
-MAX_RECONNECT_ATTEMPTS = 15
-BASE_BACKOFF_S = 2.0
-MAX_BACKOFF_S = 30.0
-_ENDPOINT_POLL_S = 1.0
-
-_BG_TASKS: set[asyncio.Task] = set()
 
 
 def _fail_pending_rpcs(reason: str) -> None:
@@ -396,10 +404,7 @@ async def _build_info() -> dict[str, Any]:
         caps = snapshot()
     except Exception:
         caps = {}
-    try:
-        mcp_servers = sorted(_active_mcp_server_names())
-    except Exception:
-        mcp_servers = []
+    mcp_servers = get_active_mcp_servers()
     try:
         tool_names = registry.get_all_tool_names()
     except Exception:
@@ -419,18 +424,6 @@ async def _build_info() -> dict[str, Any]:
         "network_reachable": reachable,
         "disk_free_bytes": disk_free_bytes(get_deskagent_home()),
     }
-
-
-def _active_mcp_server_names() -> list[str]:
-    """Names of MCP servers with at least one live task.
-
-    Resolved via the tools.mcp facade, but never raises — a stale registry state
-    during shutdown must not break ``deskagent.info``.
-    """
-    try:
-        return get_active_mcp_servers()
-    except Exception:
-        return []
 
 
 def main() -> None:

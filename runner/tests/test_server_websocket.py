@@ -30,7 +30,9 @@ import websockets
 from test_transport import FakeDesktop, SessionWsAdapter, make_peer_endpoint
 
 import server
-from utils import IS_WINDOWS
+import utils.credential_files
+import utils.env_passthrough
+from utils import IS_WINDOWS, set_inmemory_config
 
 
 class _Peer:
@@ -387,8 +389,10 @@ async def test_deskagent_cancel_returns_ok_and_sets_global_flag():
 
 @pytest.mark.timeout(15)
 @pytest.mark.asyncio
-async def test_non_cancel_request_clears_stale_interrupt():
-    from tools.interrupt import set_global_interrupt
+async def test_non_execute_tool_request_keeps_stale_interrupt():
+    """Diagnostic polls (deskagent.info / get_tools) must NOT clear a pending
+    cancel — only a subsequent execute_tool does."""
+    from tools.interrupt import is_interrupted, set_global_interrupt
 
     set_global_interrupt(True)  # simulate leftover from prior cancel
     sent: list[dict[str, Any]] = []
@@ -401,21 +405,29 @@ async def test_non_cancel_request_clears_stale_interrupt():
         _FakeWS(), {"id": "g3", "method": "get_tools", "params": {}}
     )
     assert sent[0]["id"] == "g3"
-    # After a non-cancel request, the global flag should be cleared.
-    assert server._global_interrupt_after_marker() is False  # see marker below
+    # The diagnostic poll must leave the cancel flag in place.
+    assert is_interrupted() is True
     set_global_interrupt(False)
 
 
-# Helper exposing the post-clear flag for the test above without exporting
-# internals into the production API. ``process_request`` does NOT actually
-# read back the flag, so we patch in a tiny indirect check.
-def _global_interrupt_after_marker():
-    from tools.interrupt import is_interrupted
+async def test_execute_tool_clears_stale_interrupt():
+    from tools.interrupt import is_interrupted, set_global_interrupt
 
-    return is_interrupted()
+    set_global_interrupt(True)  # simulate leftover from prior cancel
+    sent: list[dict[str, Any]] = []
 
+    class _FakeWS:
+        async def send(self, payload):
+            sent.append(json.loads(payload))
 
-server._global_interrupt_after_marker = _global_interrupt_after_marker
+    await server.process_request(
+        _FakeWS(), {"id": "e1", "method": "execute_tool", "params": {"name": "nonexistent_tool", "arguments": {}}}
+    )
+    # execute_tool (even one that errors on an unknown tool) clears the flag
+    # before dispatch, and responds with a JSON-RPC error frame.
+    assert is_interrupted() is False
+    assert "error" in sent[0]
+    set_global_interrupt(False)
 
 
 @pytest.mark.timeout(15)
@@ -584,17 +596,6 @@ async def test_build_info_handles_individual_subfailures(monkeypatch):
 
 
 @pytest.mark.timeout(15)
-def test_active_mcp_server_names_survives_missing_mcp_state(monkeypatch):
-    from tools.mcp import mcp_tool
-
-    monkeypatch.setattr(mcp_tool, "_servers", None, raising=False)
-    assert server._active_mcp_server_names() == []
-
-    monkeypatch.setattr(
-        mcp_tool, "_servers", {"alpha": object(), "beta": object()}, raising=False
-    )
-    assert server._active_mcp_server_names() == ["alpha", "beta"]
-
 
 @pytest.mark.timeout(15)
 @pytest.mark.asyncio
@@ -643,3 +644,33 @@ async def test_process_request_survives_failing_error_reply():
     )
     await asyncio.wait_for(task, 5)
     assert task.exception() is None
+
+
+@pytest.mark.timeout(15)
+@pytest.mark.asyncio
+async def test_config_update_resets_derived_caches():
+    """deskagent.config.update must invalidate the env_passthrough and
+    credential_files config caches — otherwise a push never takes effect
+    and a cache populated before the first push stays empty forever."""
+    try:
+        set_inmemory_config({"terminal": {"env_passthrough": ["MY_LEAK"]}})
+        utils.env_passthrough.reset_cache()
+        utils.credential_files.reset_cache()
+        assert utils.env_passthrough.is_env_passthrough("MY_LEAK") is True
+        assert utils.env_passthrough.is_env_passthrough("OTHER") is False
+
+        sent: list[dict[str, Any]] = []
+
+        class _FakeWS:
+            async def send(self, payload):
+                sent.append(json.loads(payload))
+
+        set_inmemory_config({"terminal": {"env_passthrough": ["CHANGED_VAR"]}})
+        await server.process_request(_FakeWS(), {"id": "c1", "method": "deskagent.config.update", "params": {"config": {"terminal": {"env_passthrough": ["CHANGED_VAR"]}}}})
+        assert sent[0]["result"] == {"ok": True}
+        assert utils.env_passthrough.is_env_passthrough("CHANGED_VAR") is True
+        assert utils.env_passthrough.is_env_passthrough("MY_LEAK") is False
+    finally:
+        set_inmemory_config({})
+        utils.env_passthrough.reset_cache()
+        utils.credential_files.reset_cache()

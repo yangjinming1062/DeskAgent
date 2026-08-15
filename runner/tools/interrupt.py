@@ -39,8 +39,8 @@ def set_global_interrupt(active: bool) -> None:
 
     The WS message loop sets ``True`` for ``deskagent.cancel`` requests so
     in-flight tool handlers from other requests see the flag on their
-    next ``is_interrupted()`` check.  ``False`` is set at the start of
-    every non-cancel request to clear a stale flag from a prior cancel.
+    next ``is_interrupted()`` check. ``False`` is set at the start of the
+    next execute_tool to clear a stale flag from a prior cancel.
     """
     global _global_interrupt
     with _LOCK:
@@ -52,20 +52,3 @@ def set_global_interrupt(active: bool) -> None:
 def is_interrupted() -> bool:
     with _LOCK:
         return _global_interrupt or threading.current_thread().ident in _interrupted_threads
-
-
-class _ThreadAwareEventProxy:
-    def is_set(self) -> bool:
-        return is_interrupted()
-
-    def set(self) -> None:
-        set_interrupt(True)
-
-    def clear(self) -> None:
-        set_interrupt(False)
-
-    def wait(self, timeout: float | None = None) -> bool:
-        return is_interrupted()
-
-
-INTERRUPT_EVENT = _ThreadAwareEventProxy()

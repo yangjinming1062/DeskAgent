@@ -36,7 +36,7 @@ def set_inmemory_config(config: dict[str, Any]) -> None:
     _INMEMORY_CONFIG = config
 
 
-def cfg_get(d: dict[str, Any] | Any, *keys: str, default: Any = None) -> Any:
+def cfg_get(d: Any, *keys: str, default: Any = None) -> Any:
     """Walk nested ``d.get(k)`` chain; return ``default`` on any miss."""
     for k in keys:
         if not isinstance(d, dict):

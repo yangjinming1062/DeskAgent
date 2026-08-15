@@ -41,6 +41,12 @@ def _load_config_passthrough() -> frozenset[str]:
     return _config_passthrough
 
 
+def reset_cache() -> None:
+    """Drop the config-derived passthrough set (deskagent.config.update)."""
+    global _config_passthrough
+    _config_passthrough = None
+
+
 def is_env_passthrough(var_name: str) -> bool:
     return var_name in _get_allowed() or var_name in _load_config_passthrough()
 

@@ -2,7 +2,7 @@
 surfaces that aren't tested elsewhere.
 
 Targets:
-- ``tools.interrupt`` — per-thread + global flag semantics, ``INTERRUPT_EVENT`` proxy
+- ``tools.interrupt`` — per-thread + global flag semantics
 - ``tools.thread_context`` — contextvar propagation semantics
 - ``tools.tool_output_limits`` — config coercion + cache invalidation
 - ``tools.tool_result_storage`` — preview generation + persisted-message shape
@@ -18,7 +18,7 @@ default suite, not the build-gate slow path.
 """
 
 from tools.execute_code import code_execution_tool as ec
-from tools.interrupt import INTERRUPT_EVENT, is_interrupted, set_global_interrupt
+from tools.interrupt import is_interrupted, set_global_interrupt
 from tools.thread_context import propagate_context_to_thread
 from tools.tool_output_limits import (
     _coerce_positive_int,
@@ -75,19 +75,6 @@ class TestInterruptFlags:
         t.start()
         t.join()
         assert observed == [True]
-
-    def test_event_proxy_set_clears_is_interrupted(self):
-        INTERRUPT_EVENT.set()
-        assert is_interrupted() is True
-        INTERRUPT_EVENT.clear()
-        assert is_interrupted() is False
-
-    def test_event_proxy_wait_returns_current_state(self):
-        """``INTERRUPT_EVENT.wait`` is a no-op predicate (not a real Event) — returns the current state."""
-        set_global_interrupt(False)
-        assert INTERRUPT_EVENT.wait(timeout=0.05) is False
-        set_global_interrupt(True)
-        assert INTERRUPT_EVENT.wait(timeout=0.05) is True
 
     def test_set_interrupt_targets_specific_thread(self):
         """Per-thread set only marks that one thread as interrupted."""
