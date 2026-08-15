@@ -63,6 +63,7 @@ test-results/
 # ---------------------------------------------------------------------------
 build/
 dist/
+dist-electron/
 release/
 updates/
 

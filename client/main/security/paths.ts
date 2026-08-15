@@ -1,0 +1,16 @@
+import os from 'node:os'
+import path from 'node:path'
+
+export function deskagentHome(): string {
+  if (process.platform === 'win32') {
+    const local = process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local')
+
+    return path.join(local, 'DeskAgent')
+  }
+
+  if (process.platform === 'darwin') {
+    return path.join(os.homedir(), 'Library', 'Application Support', 'DeskAgent')
+  }
+
+  return path.join(os.homedir(), '.deskagent')
+}

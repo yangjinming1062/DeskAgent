@@ -1,0 +1,168 @@
+import fsp from 'node:fs/promises'
+
+import type { IpcMain } from 'electron'
+
+import { dataUrlFromBuffer } from '../shared/mime'
+
+export interface ConnectionIpcDeps {
+  defaultFetchTimeoutMs?: number
+  ensureBackend: () => Promise<{ baseUrl: string; token?: string; wsUrl: string }>
+  fetchJson: (url: string, token?: string, options?: any) => Promise<any>
+  getBootProgressState: () => any
+  ipcMain: IpcMain
+  modelDiskCache?: any
+  resetBackendCache?: () => void
+  resolvePathTimeoutMs: (path?: string, method?: string, fallbackMs?: number) => number
+  resolveTimeoutMs: (timeoutMs?: any, fallbackMs?: number) => number
+}
+
+export function registerConnectionIpc({
+  defaultFetchTimeoutMs = 15_000,
+  ensureBackend,
+  fetchJson,
+  getBootProgressState,
+  ipcMain,
+  modelDiskCache,
+  resetBackendCache,
+  resolvePathTimeoutMs,
+  resolveTimeoutMs
+}: ConnectionIpcDeps): { resetBackendCache: () => void } {
+  ipcMain.handle('deskagent:connection', async () => ensureBackend())
+  ipcMain.handle('deskagent:gateway:ws-url', async () => {
+    const connection = await ensureBackend()
+
+    return connection.wsUrl
+  })
+  ipcMain.handle('deskagent:boot-progress:get', async () => getBootProgressState())
+
+  ipcMain.handle('deskagent:api', async (_event, request) => {
+    const connection = await ensureBackend()
+    const fallback = resolvePathTimeoutMs(request?.path, request?.method, defaultFetchTimeoutMs)
+    const timeoutMs = resolveTimeoutMs(request?.timeoutMs, fallback)
+    const url = `${connection.baseUrl}${request.path}`
+
+    try {
+      return await fetchJson(url, connection.token, {
+        body: request?.body,
+        method: request?.method,
+        timeoutMs
+      })
+    } catch (error: any) {
+      if (error?.message?.startsWith('401 ') && connection.token) {
+        try {
+          _event.sender.send('deskagent:auth:session-expired')
+        } catch {
+          /* window may have been destroyed */
+        }
+      }
+
+      throw error
+    }
+  })
+
+  ipcMain.handle('deskagent:api:asset', async (_event, request) => {
+    const connection = await ensureBackend()
+    const raw = String(request?.url || '')
+
+    if (!raw) {
+      throw new Error('asset url is required')
+    }
+
+    const { pathname, search } = new URL(raw, connection.baseUrl)
+    const pathAndQuery = `${pathname}${search}`
+
+    const timeoutMs = defaultFetchTimeoutMs
+
+    const res = await fetch(`${connection.baseUrl}${pathAndQuery}`, {
+      headers: { ...(connection.token ? { Authorization: `Bearer ${connection.token}` } : {}) },
+      signal: AbortSignal.timeout(timeoutMs)
+    })
+
+    if (!res.ok) {
+      if (res.status === 401 && connection.token) {
+        try {
+          _event.sender.send('deskagent:auth:session-expired')
+        } catch {
+          /* window may have been destroyed */
+        }
+      }
+
+      const text = await res.text().catch(() => '')
+      throw new Error(`${res.status} ${pathname}: ${text || res.statusText}`)
+    }
+
+    const mime = res.headers.get('content-type') || 'application/octet-stream'
+
+    return dataUrlFromBuffer(Buffer.from(await res.arrayBuffer()), mime)
+  })
+
+  ipcMain.handle('deskagent:api:asset-cached-path', async (_event, request) => {
+    const connection = await ensureBackend()
+    const raw = String(request?.url || '')
+
+    if (!raw) {
+      throw new Error('asset url is required')
+    }
+
+    if (!modelDiskCache) {
+      throw new Error('model disk cache is unavailable')
+    }
+
+    return await modelDiskCache.ensureCached({
+      baseUrl: connection.baseUrl,
+      contentHash: request?.contentHash,
+      token: connection.token,
+      url: raw
+    })
+  })
+
+  ipcMain.handle('deskagent:api:asset-buffer', async (_event, request) => {
+    const connection = await ensureBackend()
+    const raw = String(request?.url || '')
+
+    if (!raw) {
+      throw new Error('asset url is required')
+    }
+
+    const { pathname, search } = new URL(raw, connection.baseUrl)
+
+    const isModel =
+      pathname.includes('/model/file/') || pathname.includes('/companion-models/') || Boolean(request?.contentHash)
+
+    if (modelDiskCache && isModel) {
+      const cached = await modelDiskCache.ensureCached({
+        baseUrl: connection.baseUrl,
+        contentHash: request?.contentHash,
+        token: connection.token,
+        url: raw
+      })
+
+      return await fsp.readFile(cached.filePath)
+    }
+
+    const pathAndQuery = `${pathname}${search}`
+    const timeoutMs = defaultFetchTimeoutMs
+
+    const res = await fetch(`${connection.baseUrl}${pathAndQuery}`, {
+      headers: { ...(connection.token ? { Authorization: `Bearer ${connection.token}` } : {}) },
+      signal: AbortSignal.timeout(timeoutMs)
+    })
+
+    if (!res.ok) {
+      if (res.status === 401 && connection.token) {
+        try {
+          _event.sender.send('deskagent:auth:session-expired')
+        } catch {
+          /* window may have been destroyed */
+        }
+      }
+
+      const text = await res.text().catch(() => '')
+      throw new Error(`${res.status} ${pathname}: ${text || res.statusText}`)
+    }
+
+    return Buffer.from(await res.arrayBuffer())
+  })
+
+  return { resetBackendCache: resetBackendCache || (() => {}) }
+}

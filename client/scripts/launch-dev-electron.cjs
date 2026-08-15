@@ -8,14 +8,7 @@ const electronPath = require('electron')
 delete process.env.ELECTRON_RUN_AS_NODE
 
 // Auto-wire the local Runner so dev mode gets local STT/TTS/tools without
-// manually setting DESKAGENT_DESKTOP_PYTHON every session. Detects a runner
-// venv in the source tree (../runner/.venv relative to this script's package
-// root) and points the Desktop at it + the repo root for runner/server.py.
-// The venv must have the audio stack installed (faster_whisper / piper /
-// pyttsx3) — checked via their package marker files instead of spawning the
-// interpreter, since importing faster_whisper alone takes seconds and would
-// block every dev launch.
-// Explicit env vars always win.
+// manually setting DESKAGENT_DESKTOP_PYTHON every session.
 const repoRoot = path.resolve(__dirname, '..', '..')
 const venvRoot = path.join(repoRoot, 'runner', '.venv')
 const venvPython =
@@ -54,16 +47,58 @@ if (!process.env.DESKAGENT_DESKTOP_RUNNER_REPO_ROOT && fs.existsSync(path.join(r
   process.env.DESKAGENT_DESKTOP_RUNNER_REPO_ROOT = repoRoot
 }
 
-const child = spawn(electronPath, ['.'], {
-  stdio: 'inherit',
-  env: process.env,
-  shell: true
-})
+let child = null
+let isRestarting = false
+let debounceTimer = null
 
-child.on('error', err => {
-  console.error('[launch-dev-electron] failed to spawn electron:', err)
-  process.exit(1)
-})
-child.on('exit', (code, signal) => {
-  process.exit(code ?? (signal ? 128 : 0))
-})
+function spawnElectron() {
+  child = spawn(electronPath, ['.'], {
+    stdio: 'inherit',
+    env: process.env,
+    shell: true
+  })
+
+  child.on('error', err => {
+    console.error('[launch-dev-electron] failed to spawn electron:', err)
+    process.exit(1)
+  })
+
+  child.on('exit', (code, signal) => {
+    if (isRestarting) {
+      isRestarting = false
+      console.log('[launch-dev-electron] restarting electron...')
+      spawnElectron()
+    } else {
+      process.exit(code ?? (signal ? 128 : 0))
+    }
+  })
+}
+
+// Watch dist-electron/ for rebuilds by tsup --watch
+const distElectronDir = path.join(__dirname, '..', 'dist-electron')
+if (!fs.existsSync(distElectronDir)) {
+  fs.mkdirSync(distElectronDir, { recursive: true })
+}
+
+try {
+  fs.watch(distElectronDir, (_eventType, filename) => {
+    if (filename && filename.includes('entry.cjs')) {
+      if (debounceTimer) clearTimeout(debounceTimer)
+      debounceTimer = setTimeout(() => {
+        if (child && !isRestarting) {
+          isRestarting = true
+          console.log('[launch-dev-electron] main process changed, restarting...')
+          if (process.platform === 'win32') {
+            spawn('taskkill', ['/pid', child.pid.toString(), '/f', '/t'], { shell: true })
+          } else {
+            child.kill('SIGTERM')
+          }
+        }
+      }, 300)
+    }
+  })
+} catch (err) {
+  console.warn('[launch-dev-electron] watcher init error:', err.message)
+}
+
+spawnElectron()

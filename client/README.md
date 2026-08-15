@@ -34,12 +34,15 @@
 
 ```
 client/
-├── main/                  # CommonJS *.cjs — Electron 主进程
-│   ├── entry.cjs          # 启动入口 + 自更新挂载
-│   ├── ipc/               # IPC handler 命名空间（auth / media / connection / runner）
+├── main/                  # TypeScript *.ts — Electron 主进程（经 tsup 编译打包至 dist-electron/）
+│   ├── entry.ts           # 启动入口 + 自更新挂载
+│   ├── preload.ts         # Preload 桥接脚本
+│   ├── ipc/               # IPC handler 命名空间（auth / media / connection / runner 等）
 │   ├── runner/            # Runner 进程编排（bridge + reverse-rpc + updater）
-│   ├── security/          # 路径白名单 + 凭证保护
-│   └── lifecycle/         # tray + 单实例锁 + 关闭拦截
+│   ├── security/          # 路径白名单 + 凭证保护 + hardening
+│   ├── lifecycle/         # tray + 单实例锁 + 关闭拦截
+│   ├── backend/           # REST 客户端 + session 会话管理 + ws 探测
+│   └── shared/            # 强类型 IPC 契约定义与通用工具库
 ├── renderer/              # ESM *.{ts,tsx} — Vite 编译
 │   ├── shared/            # 跨窗口共享层
 │   ├── companion/         # 伙伴层（精灵窗口 + 3D + onboarding + chat UI）
@@ -47,11 +50,11 @@ client/
 │   ├── hub/               # 枢纽层（托盘唤起的工具窗口）
 │   ├── app.tsx            # 角色分发点
 │   └── main.tsx
-├── scripts/               # 构建/测试钩子（不进 package.json#scripts）
+├── scripts/               # 构建/测试钩子
 └── assets/                # icon
 ```
 
-**双 runtime 不可混用**：`main/*.cjs`（CommonJS，不经 vite/tsc）+ `renderer/**/*.{ts,tsx}`（ESM, Vite 编译）。绝不能交叉用 `.cjs` 写 renderer 或 `.ts` 写 main。
+**TypeScript 全栈类型安全**：主进程采用 `main/*.ts`（经 `tsup` 统一编译输出 CJS 产物至 `dist-electron/`），渲染进程采用 `renderer/**/*.{ts,tsx}`（Vite 编译）。通过 `main/shared/ipc-contracts.ts` 与 `renderer/shared/types/global.d.ts` 共享严格的 IPC Channel 与 Payload 契约。
 
 **renderer 内部跨模块边界**：`companion` ↔ `hub` 是**两个窗口**而非一个工程的两个层——它们的代码历史上不该相互依赖：
 
@@ -114,6 +117,6 @@ ESLint `no-restricted-imports` 在 `renderer/companion/**` 与 `renderer/hub/**`
 | **几何服装与布料碰撞精度** | 服装与身体的碰撞由 CPU 代理网格（`BodyCollider`，~4096 顶点）结合骨骼球计算，在极端曲率处存在数毫米内的近似误差；换装 PBR 支持 5 通道（含 displacement 视差置换）。 |
 | **`voice-call-dock.tsx` useEffect 依赖故意省略 `[gatewayState]`** | 麦克风挂载/take-down 由 `[requestGateway]` 触发；reconnect 重入若再加 `gatewayState` 会再次重新挂麦克风导致当前通话被打断 |
 | **Electron 42 + pnpm 11 需 hoisted** | 失去 phantom-deps 防护；等 Electron ESM 主进程支持 |
-| **`.cjs` + `.ts` 双 runtime** | 新增 main 模块用 `.cjs`，renderer 用 `.ts/.tsx`；等 Electron ESM 主进程支持 |
+| **主进程 TypeScript 构建** | 主进程源码使用 TypeScript (`main/*.ts`)，由 `tsup` 统一编译打包为 CJS 输出至 `dist-electron/`，与渲染进程共享严谨的静态类型校验 |
 | **Windows 单实例锁 dev opt-out** | `DESKAGENT_DESKTOP_DISABLE_SINGLE_INSTANCE_LOCK=1` 强制多实例运行，便于并行调试窗口 |
 | **STT/TTS 引擎选择不在 Desktop 设置面板暴露** | 三档（`auto` / `local` / `cloud`）+ `stt.silent_fallback` 走 Backend 配置（`stt.engine` / `tts.engine`），不在 sprite UI 暴露 |

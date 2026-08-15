@@ -42,7 +42,21 @@ const APP = (() => {
 })()
 
 const _require = createRequire(import.meta.url)
-const { deskagentHome } = _require('../main/security/paths.cjs')
+let deskagentHome
+try {
+  deskagentHome = _require('../dist-electron/security/paths.cjs').deskagentHome
+} catch {
+  deskagentHome = () => {
+    if (process.platform === 'win32') {
+      const local = process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local')
+      return path.join(local, 'DeskAgent')
+    }
+    if (process.platform === 'darwin') {
+      return path.join(os.homedir(), 'Library', 'Application Support', 'DeskAgent')
+    }
+    return path.join(os.homedir(), '.deskagent')
+  }
+}
 
 const DEFAULT_DESKAGENT_HOME = deskagentHome()
 const VENV_ROOT = path.join(DEFAULT_DESKAGENT_HOME, 'runner', '.venv')

@@ -1,0 +1,386 @@
+import type { ChildProcess } from 'node:child_process'
+import childProcess from 'node:child_process'
+import { EventEmitter } from 'node:events'
+import path from 'node:path'
+
+import { resolveVenvPython } from './venv'
+
+export const DEFAULT_GRACE_MS = 4_000
+export const DEFAULT_STOP_TIMEOUT_MS = 8_000
+export const DEFAULT_HEALTH_TIMEOUT_MS = 8_000
+
+export interface RunnerProcessState {
+  args: null | string[]
+  command: null | string
+  exitCode: null | number
+  exitSignal: NodeJS.Signals | null | string
+  kind: null | string
+  lastError: null | string
+  pid: null | number
+  running: boolean
+  startedAt: null | number
+}
+
+export interface CreateRunnerProcessOptions {
+  deskagentHome?: null | string
+  devPython?: null | string
+  env?: Record<string, string | undefined>
+  executable?: null | string
+  fileExists?: (p: string) => boolean
+  log?: (chunk: string) => void
+  repoRoot?: null | string
+  spawn?: typeof childProcess.spawn
+  stopGraceMs?: number
+  stopTimeoutMs?: number
+}
+
+export interface RunnerProcessStartArgs {
+  authToken?: string
+  endpointPath?: string
+  executable?: string
+  extraArgs?: string[]
+}
+
+export interface RunnerProcess {
+  getStatus: () => RunnerProcessState
+  onEvent: (callback: (event: any) => void) => () => void
+  restart: (args: RunnerProcessStartArgs) => Promise<RunnerProcessState>
+  signalReady: () => void
+  start: (args: RunnerProcessStartArgs) => Promise<RunnerProcessState>
+  stop: (options?: {
+    reason?: string
+  }) => Promise<{ code?: null | number; noop?: boolean; ok: boolean; signal?: null | string }>
+  waitForReady: (options?: { timeoutMs?: number }) => Promise<RunnerProcessState>
+}
+
+function resolveRunnerExecutable(options: {
+  deskagentHome?: null | string
+  devPython?: null | string
+  executable?: null | string
+  fileExists: (p: string) => boolean
+  repoRoot?: null | string
+}): null | { args: string[]; command: string; kind: string } {
+  if (options.executable) {
+    return { args: [], command: options.executable, kind: 'binary' }
+  }
+
+  const venvResult = resolveVenvPython({
+    deskagentHome: options.deskagentHome,
+    fileExists: options.fileExists,
+    platform: process.platform
+  })
+
+  if (venvResult) {
+    return venvResult
+  }
+
+  if (options.devPython && options.repoRoot && options.fileExists(options.devPython)) {
+    return {
+      args: [path.join(options.repoRoot, 'runner', 'server.py')],
+      command: options.devPython,
+      kind: 'dev-python'
+    }
+  }
+
+  return null
+}
+
+export function createRunnerProcess(options: CreateRunnerProcessOptions = {}): RunnerProcess {
+  const emitter = new EventEmitter()
+  const log = options.log || (() => {})
+  const spawnFn = options.spawn || childProcess.spawn
+  const fileExists = options.fileExists || (() => false)
+
+  const stopGraceMs =
+    typeof options.stopGraceMs === 'number' && Number.isFinite(options.stopGraceMs)
+      ? options.stopGraceMs
+      : DEFAULT_GRACE_MS
+
+  const stopTimeoutMs =
+    typeof options.stopTimeoutMs === 'number' && Number.isFinite(options.stopTimeoutMs)
+      ? options.stopTimeoutMs
+      : DEFAULT_STOP_TIMEOUT_MS
+
+  let state: RunnerProcessState = {
+    args: null,
+    command: null,
+    exitCode: null,
+    exitSignal: null,
+    kind: null,
+    lastError: null,
+    pid: null,
+    running: false,
+    startedAt: null
+  }
+
+  let child: ChildProcess | null = null
+
+  function emit(event: any): void {
+    emitter.emit('event', event)
+  }
+
+  function setState(patch: Partial<RunnerProcessState>): void {
+    state = { ...state, ...patch }
+  }
+
+  function getStatus(): RunnerProcessState {
+    return { ...state }
+  }
+
+  function buildArgs({ authToken, endpointPath, extraArgs }: RunnerProcessStartArgs): string[] {
+    const args = ['--desktop-endpoint', endpointPath || '', '--desktop-auth', authToken || '']
+
+    if (Array.isArray(extraArgs)) {
+      args.push(...extraArgs)
+    }
+
+    return args
+  }
+
+  async function start(args: RunnerProcessStartArgs = {}): Promise<RunnerProcessState> {
+    if (state.running) {
+      throw new Error('Runner is already running.')
+    }
+
+    if (!args.endpointPath) {
+      throw new Error('start() requires an endpointPath (named pipe or socket path).')
+    }
+
+    if (!args.authToken) {
+      throw new Error('start() requires an authToken.')
+    }
+
+    const resolved = resolveRunnerExecutable({
+      deskagentHome: options.deskagentHome,
+      devPython: options.devPython,
+      executable: args.executable,
+      fileExists,
+      repoRoot: options.repoRoot
+    })
+
+    if (!resolved) {
+      const err = new Error(
+        'Could not resolve a Runner executable. Pass options.executable, install the Runner venv under $DESKAGENT_HOME, or set DESKAGENT_DESKTOP_PYTHON for dev mode.'
+      )
+
+      setState({ lastError: err.message })
+      throw err
+    }
+
+    const argv = [...resolved.args, ...buildArgs(args)]
+
+    const env: NodeJS.ProcessEnv = {
+      ...process.env,
+      ...(options.deskagentHome ? { DESKAGENT_HOME: options.deskagentHome } : {}),
+      ...(options.env || {})
+    }
+
+    const displayArgv = argv.map((value, index) =>
+      index > 0 && argv[index - 1] === '--desktop-auth' ? '<redacted>' : value
+    )
+
+    log(`[runner] spawn ${resolved.kind} ${resolved.command} ${displayArgv.join(' ')}`)
+
+    let handle: ChildProcess
+
+    try {
+      handle = spawnFn(resolved.command, argv, {
+        env,
+        stdio: ['pipe', 'pipe', 'pipe'],
+        windowsHide: true
+      })
+    } catch (error: any) {
+      const err = error instanceof Error ? error : new Error(String(error))
+      setState({ lastError: err.message })
+      log(`[runner] spawn failed: ${err.message}`)
+      throw err
+    }
+
+    child = handle
+    setState({
+      args: argv,
+      command: resolved.command,
+      exitCode: null,
+      exitSignal: null,
+      kind: resolved.kind,
+      lastError: null,
+      pid: handle.pid ?? null,
+      running: true,
+      startedAt: Date.now()
+    })
+
+    handle.stdout?.on('data', chunk => emit({ data: chunk.toString(), type: 'stdout' }))
+    handle.stderr?.on('data', chunk => {
+      const text = chunk.toString()
+      log(`[runner] stderr: ${text.trim()}`)
+      emit({ data: text, type: 'stderr' })
+    })
+    handle.on('error', (error: Error) => {
+      log(`[runner] error event: ${error.message}`)
+      setState({ lastError: error.message })
+      emit({ error, type: 'error' })
+    })
+    handle.on('exit', (code, signal) => {
+      log(`[runner] exit code=${code} signal=${signal}`)
+      setState({ exitCode: code, exitSignal: signal, running: false })
+      child = null
+      emit({ code, signal, type: 'exit' })
+    })
+
+    emit({ args: argv, command: resolved.command, pid: handle.pid, type: 'start' })
+
+    return getStatus()
+  }
+
+  function stop({ reason }: { reason?: string } = {}): Promise<{
+    code?: null | number
+    noop?: boolean
+    ok: boolean
+    signal?: null | string
+  }> {
+    if (!state.running || !child) {
+      return Promise.resolve({ noop: true, ok: true })
+    }
+
+    log(`[runner] stop reason=${reason || 'unspecified'}`)
+
+    return new Promise(resolve => {
+      const target = child!
+      let settled = false
+
+      const finalize = (code: null | number, signal: null | string, fromExit: boolean) => {
+        if (settled) {
+          return
+        }
+
+        settled = true
+        clearTimeout(forceKillTimer)
+        target.removeListener('exit', onExit)
+        const ok = fromExit ? code === 0 || signal !== null : false
+        resolve({ code, ok, signal })
+      }
+
+      const onExit = (code: null | number, signal: null | string) => finalize(code, signal, true)
+
+      target.once('exit', onExit)
+
+      const settleIfExited = (fallbackSignal: null | string) => {
+        if (target.exitCode != null || target.signalCode != null) {
+          finalize(target.exitCode, target.signalCode, true)
+        } else {
+          finalize(null, fallbackSignal, false)
+        }
+      }
+
+      if (process.platform === 'win32') {
+        childProcess.execFile(
+          'taskkill',
+          ['/PID', String(target.pid), '/T', '/F'],
+          { timeout: Math.max(100, stopGraceMs - 100), windowsHide: true },
+          err => {
+            if (err) {
+              log(`[runner] taskkill failed for pid=${target.pid}: ${err.message}; falling back to SIGTERM`)
+
+              try {
+                target.kill('SIGTERM')
+              } catch (error: any) {
+                log(`[runner] SIGTERM fallback failed: ${error.message}`)
+              }
+            }
+          }
+        )
+      } else {
+        try {
+          target.kill('SIGTERM')
+        } catch (error: any) {
+          log(`[runner] SIGTERM failed: ${error.message}`)
+        }
+      }
+
+      const forceKillTimer = setTimeout(() => {
+        if (settled) {
+          return
+        }
+
+        log(`[runner] grace expired; force-killing pid=${target.pid}`)
+
+        try {
+          target.kill('SIGKILL')
+        } catch (error: any) {
+          log(`[runner] SIGKILL failed: ${error.message}`)
+        }
+
+        setTimeout(() => {
+          if (target.exitCode == null && target.signalCode == null) {
+            log(`[runner] pid=${target.pid} still alive after SIGKILL; reporting failure`)
+          }
+
+          settleIfExited('SIGKILL')
+        }, 500).unref()
+      }, stopGraceMs)
+
+      setTimeout(() => settleIfExited(null), stopTimeoutMs).unref()
+    })
+  }
+
+  async function restart(args: RunnerProcessStartArgs): Promise<RunnerProcessState> {
+    await stop({ reason: 'restart' })
+
+    return start(args)
+  }
+
+  function onEvent(callback: (event: any) => void): () => void {
+    emitter.on('event', callback)
+
+    return () => emitter.off('event', callback)
+  }
+
+  function waitForReady({
+    timeoutMs = DEFAULT_HEALTH_TIMEOUT_MS
+  }: { timeoutMs?: number } = {}): Promise<RunnerProcessState> {
+    return new Promise((resolve, reject) => {
+      if (!state.running) {
+        reject(new Error('Runner is not running.'))
+
+        return
+      }
+
+      const timer = setTimeout(() => {
+        detach()
+        reject(new Error(`Runner failed to become ready within ${timeoutMs}ms`))
+      }, timeoutMs)
+
+      const onEventHandler = (ev: any) => {
+        if (ev.type === 'ready') {
+          detach()
+          clearTimeout(timer)
+          resolve(getStatus())
+        } else if (ev.type === 'exit') {
+          detach()
+          clearTimeout(timer)
+          reject(new Error(`Runner exited before becoming ready (code=${ev.code}, signal=${ev.signal})`))
+        }
+      }
+
+      function detach() {
+        emitter.off('event', onEventHandler)
+      }
+
+      emitter.on('event', onEventHandler)
+    })
+  }
+
+  function signalReady(): void {
+    emit({ type: 'ready' })
+  }
+
+  return {
+    getStatus,
+    onEvent,
+    restart,
+    signalReady,
+    start,
+    stop,
+    waitForReady
+  }
+}

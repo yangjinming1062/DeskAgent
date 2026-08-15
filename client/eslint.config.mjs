@@ -25,16 +25,12 @@ const customRules = {
 
 export default [
   {
-    ignores: ['**/node_modules/**', '**/dist/**', 'src/**/*.js']
+    ignores: ['**/node_modules/**', '**/dist/**', '**/dist-electron/**', 'src/**/*.js']
   },
   js.configs.recommended,
   {
     files: ['**/*.{ts,tsx}'],
     languageOptions: {
-      globals: {
-        ...globals.browser,
-        ...globals.node
-      },
       parser: typescriptParser,
       parserOptions: {
         ecmaFeatures: { jsx: true },
@@ -46,9 +42,6 @@ export default [
       '@typescript-eslint': typescriptEslint,
       'custom-rules': customRules,
       perfectionist,
-      react: reactPlugin,
-      'react-compiler': reactCompiler,
-      'react-hooks': hooksPlugin,
       'unused-imports': unusedImports
     },
     rules: {
@@ -98,20 +91,40 @@ export default [
       'perfectionist/sort-jsx-props': ['error', { order: 'asc', type: 'natural' }],
       'perfectionist/sort-named-exports': ['error', { order: 'asc', type: 'natural' }],
       'perfectionist/sort-named-imports': ['error', { order: 'asc', type: 'natural' }],
+      'unused-imports/no-unused-imports': 'error'
+    }
+  },
+  {
+    files: ['renderer/**/*.{ts,tsx}'],
+    languageOptions: {
+      globals: {
+        ...globals.browser,
+        ...globals.node
+      }
+    },
+    plugins: {
+      react: reactPlugin,
+      'react-compiler': reactCompiler,
+      'react-hooks': hooksPlugin
+    },
+    rules: {
       'react-compiler/react-compiler': 'warn',
       'react-hooks/exhaustive-deps': 'warn',
-      'react-hooks/rules-of-hooks': 'error',
-      'unused-imports/no-unused-imports': 'error'
+      'react-hooks/rules-of-hooks': 'error'
     },
     settings: {
       react: { version: 'detect' }
     }
   },
   {
-    // Renderer-internal module boundary — companion ↔ hub. Both may reach
-    // into @/shared/*; neither may reach into the other. Implemented with
-    // ESLint core's no-restricted-imports (path-glob style) so we don't
-    // add eslint-plugin-import for one rule.
+    files: ['main/**/*.{ts,tsx}', 'scripts/**/*.{ts,tsx,mts}'],
+    languageOptions: {
+      globals: {
+        ...globals.node
+      }
+    }
+  },
+  {
     files: ['renderer/companion/**/*.{ts,tsx}'],
     ignores: ['**/node_modules/**'],
     rules: {
@@ -147,7 +160,7 @@ export default [
   },
   {
     files: ['**/*.js', '**/*.cjs', '**/*.mjs'],
-    ignores: ['**/node_modules/**', '**/dist/**'],
+    ignores: ['**/node_modules/**', '**/dist/**', '**/dist-electron/**'],
     languageOptions: {
       ecmaVersion: 'latest',
       globals: { ...globals.node },
