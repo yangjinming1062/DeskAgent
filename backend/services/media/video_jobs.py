@@ -111,7 +111,7 @@ async def enqueue_video_job(
     except Exception as e:
         logger.exception("video submit failed", extra={"job_id": job.id})
         try:
-            await _update_job(job.id, status="failed", error_reason="submit_failed", error_message=str(e))
+            await _record_failure(job.id, reason="submit_failed", exc=e)
         except Exception as update_err:
             logger.exception("failed to mark job as failed", extra={"job_id": job.id, "error": str(update_err)})
         raise
@@ -126,6 +126,55 @@ async def enqueue_video_job(
     _BG_TASKS.add(t)
     t.add_done_callback(_BG_TASKS.discard)
     return job
+
+
+_FAILURE_COPY: dict[str, str] = {
+    "submit_failed": "视频提交失败，请稍后重试",
+    "missing_task_id": "视频服务暂不可用，请稍后重试",
+    "provider_unavailable": "视频 provider 配置变更，请稍后重试",
+    "provider_failed": "视频生成失败，请稍后重试",
+    "download_failed": "视频下载失败，请稍后重试",
+    "download_interrupted": "视频下载中断，请重新生成",
+    "timeout": "视频生成超时，请稍后重试",
+    "poll_failed": "视频生成失败，请稍后重试",
+    "worker_failed": "视频生成服务异常，请稍后重试",
+}
+
+_POLICY_KEYWORDS = ("policy", "unsafe", "content_filter", "敏感", "违规", "moderation")
+
+
+def _failure_user_message(reason: str, exc: BaseException | None) -> str:
+    """Pick a curated copy string by failure reason. Policy-suggestive exception
+    text is detected by keyword sniff only — the raw exception text never
+    reaches the renderer (ARCH §11#2)."""
+    msg = _FAILURE_COPY.get(reason, "视频生成失败，请稍后重试")
+    if exc is not None:
+        text = str(exc).lower()
+        if any(k in text for k in _POLICY_KEYWORDS):
+            return "内容审核未通过，请调整提示词后重试"
+    return msg
+
+
+async def _record_failure(job_id: int, *, reason: str, exc: BaseException | None = None, user_id: int | None = None, exc_text: str | None = None) -> None:
+    """Write a redacted failure row + matching WSEvent. ``exc`` is logged
+    server-side; only curated copy lands in ``error_message`` and the WS
+    event payload — raw provider text and internal strings never reach
+    the client."""
+    if exc is not None:
+        logger.exception("video job failure", extra={"job_id": job_id, "reason": reason})
+    elif exc_text is not None:
+        logger.warning("video job failure", extra={"job_id": job_id, "reason": reason, "raw": exc_text[:200]})
+    else:
+        logger.warning("video job failure", extra={"job_id": job_id, "reason": reason})
+    sniff_exc: BaseException | None = exc if exc is not None else (RuntimeError(exc_text) if exc_text else None)
+    user_msg = _failure_user_message(reason, sniff_exc)
+    await _update_job(job_id, status="failed", error_reason=reason, error_message=user_msg)
+    if user_id is None:
+        async with SESSION_LOCAL() as db:
+            row = await db.get(VideoGenJob, job_id)
+            user_id = row.user_id if row else 0
+    if user_id:
+        await _emit_ws_event(user_id, "video_gen.failed", {"task_id": str(job_id), "error": user_msg})
 
 
 # In-flight set: when a process restarts mid-poll, multiple coroutines can
@@ -175,8 +224,7 @@ async def _poll_and_finalize_locked(job_id: int) -> None:
             # The submit ran but no task_id was persisted (extremely unlikely,
             # but stay defensive) — fail fast with a clear reason so the row
             # doesn't sit in limbo forever.
-            await _update_job(job_id, status="failed", error_reason="missing_task_id", error_message="provider.submit returned no task_id")
-            await _evt("video_gen.failed", {"task_id": str(job_id), "error": "missing task id"})
+            await _record_failure(job_id, reason="missing_task_id", user_id=user_id)
             return
 
         async with SESSION_LOCAL() as db:
@@ -196,10 +244,7 @@ async def _poll_and_finalize_locked(job_id: int) -> None:
         if provider_cfg is not None and job_model and job_model != provider_cfg.model:
             provider_cfg = replace(provider_cfg, model=job_model)
         if provider_cfg is None:
-            await _update_job(
-                job_id, status="failed", error_reason="provider_unavailable", error_message=f"video provider {provider_name!r} no longer in the chain; cannot poll task_id"
-            )
-            await _evt("video_gen.failed", {"task_id": str(job_id), "error": "provider unavailable"})
+            await _record_failure(job_id, reason="provider_unavailable", user_id=user_id)
             return
         provider = resolve(ServiceType.video_gen, provider_cfg.provider_name)(provider_cfg)
 
@@ -219,8 +264,7 @@ async def _poll_and_finalize_locked(job_id: int) -> None:
                 status = await provider.poll(current_task_id)
             except Exception:
                 logger.exception("video poll failed", extra={"job_id": job_id})
-                await _update_job(job_id, status="failed", error_reason="poll_failed", error_message="视频生成失败，请稍后重试")
-                await _evt("video_gen.failed", {"task_id": str(job_id), "error": "视频生成失败，请稍后重试"})
+                await _record_failure(job_id, reason="poll_failed", user_id=user_id)
                 return
 
             if status.status == "succeeded":
@@ -242,29 +286,24 @@ async def _poll_and_finalize_locked(job_id: int) -> None:
                     file_id, public_url = await _download_and_store(provider, status.file_id, download_url=status.download_url)
                 except Exception:
                     logger.exception("video download failed", extra={"job_id": job_id})
-                    await _update_job(job_id, status="failed", error_reason="download_failed", error_message="视频下载失败，请稍后重试")
-                    await _evt("video_gen.failed", {"task_id": str(job_id), "error": "视频下载失败，请稍后重试"})
+                    await _record_failure(job_id, reason="download_failed", user_id=user_id)
                     return
                 await _update_job(job_id, status="succeeded", file_id=file_id, video_url=public_url)
                 await _evt("video_gen.completed", {"task_id": str(job_id), "url": public_url})
                 logger.info("video job succeeded", extra={"job_id": job_id, "file_id": file_id})
                 return
             if status.status == "failed":
-                err_msg = status.error or "视频生成失败，请稍后重试"
-                await _update_job(job_id, status="failed", error_reason="provider_failed", error_message=err_msg)
-                await _evt("video_gen.failed", {"task_id": str(job_id), "error": err_msg})
+                await _record_failure(job_id, reason="provider_failed", user_id=user_id, exc_text=status.error)
                 return
 
             await _update_job(job_id, status="processing")
             if utc_now() >= deadline:
-                await _update_job(job_id, status="failed", error_reason="timeout", error_message="视频生成超时，请稍后重试")
-                await _evt("video_gen.failed", {"task_id": str(job_id), "error": "视频生成超时，请稍后重试"})
+                await _record_failure(job_id, reason="timeout", user_id=user_id)
                 return
             await asyncio.sleep(interval)
     except Exception:
         logger.exception("unhandled exception in video poll worker", extra={"job_id": job_id})
-        await _update_job(job_id, status="failed", error_reason="worker_failed", error_message="视频生成服务异常，请稍后重试")
-        await _evt("video_gen.failed", {"task_id": str(job_id), "error": "视频生成服务异常，请稍后重试"})
+        await _record_failure(job_id, reason="worker_failed", user_id=user_id)
 
 
 async def _download_and_store(provider, file_id: str | None, *, download_url: str | None = None) -> tuple[str, str]:
@@ -311,7 +350,7 @@ async def resume_pending_video_jobs() -> None:
         stuck = await db.execute(
             VideoGenJob.__table__.update()
             .where(VideoGenJob.status == "downloading")
-            .values(status="failed", error_reason="download_interrupted", error_message="restarted during download; provider URL window expired")
+            .values(status="failed", error_reason="download_interrupted", error_message=_FAILURE_COPY["download_interrupted"])
         )
         rows = (await db.execute(select(VideoGenJob).where(VideoGenJob.status.in_(("queued", "processing"))))).scalars().all()
         job_ids = [r.id for r in rows]
