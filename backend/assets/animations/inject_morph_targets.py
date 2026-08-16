@@ -1,9 +1,10 @@
 import argparse
+import math
 import os
 import sys
 
 import bpy
-from mathutils import Vector
+from mathutils import Matrix, Vector
 
 ARKIT_BLENDSHAPES: tuple[str, ...] = (
     "eyeBlinkLeft",
@@ -68,7 +69,7 @@ def _reset_scene() -> None:
         bpy.data.objects.remove(obj, do_unlink=True)
 
 
-def _import_glb(path: str) -> bpy.types.Object:
+def _import_glb(path: str) -> tuple[bpy.types.Object, bpy.types.Object | None]:
     ext = os.path.splitext(path)[1].lower()
     if ext == ".glb":
         bpy.ops.import_scene.gltf(filepath=path)
@@ -76,37 +77,86 @@ def _import_glb(path: str) -> bpy.types.Object:
         bpy.ops.import_scene.fbx(filepath=path)
     else:
         raise ValueError(f"unsupported input extension: {ext}")
+
     armatures = [o for o in bpy.context.scene.objects if o.type == "ARMATURE"]
-    meshes = [o for o in bpy.context.scene.objects if o.type == "MESH"]
-    if not meshes:
+    armature = armatures[0] if armatures else None
+
+    # Pick the character mesh (attached to armature or possessing materials)
+    character_mesh = None
+    for o in bpy.context.scene.objects:
+        if o.type == "MESH" and o.name != "Icosphere":
+            if o.parent == armature or any(m.type == "ARMATURE" for m in o.modifiers) or (o.data.materials and len(o.data.materials) > 0):
+                character_mesh = o
+                break
+    if not character_mesh:
+        character_mesh = next((o for o in bpy.context.scene.objects if o.type == "MESH"), None)
+
+    if not character_mesh:
         raise RuntimeError(f"no mesh in {path}")
-    return meshes[0], armatures[0] if armatures else None
+
+    # Remove orphan / helper objects (like Icosphere)
+    for o in list(bpy.context.scene.objects):
+        if o.type == "MESH" and o != character_mesh:
+            bpy.data.objects.remove(o, do_unlink=True)
+
+    # Orientation check: if arms are spread along Y instead of X (Tripo model modeled sideways), rotate -90 deg around Z
+    if armature:
+        left_hand = next((b for b in armature.data.bones if "lefthand" in b.name.lower() or "left_hand" in b.name.lower()), None)
+        if left_hand and abs(left_hand.head_local.y) > abs(left_hand.head_local.x):
+            rot_mat = Matrix.Rotation(math.radians(-90.0), 4, "Z")
+            armature.matrix_world = rot_mat @ armature.matrix_world
+            bpy.context.view_layer.objects.active = armature
+            bpy.ops.object.transform_apply(location=False, rotation=True, scale=False)
+
+    # Standardize bone and vertex group names (strip mixamorig: prefix per Mixamo spec)
+    if armature:
+        for b in armature.data.bones:
+            orig = b.name
+            if orig.startswith("mixamorig:"):
+                b.name = orig[len("mixamorig:") :]
+            elif orig.startswith("mixamorig_"):
+                b.name = orig[len("mixamorig_") :]
+
+    if character_mesh:
+        for vg in character_mesh.vertex_groups:
+            orig = vg.name
+            if orig.startswith("mixamorig:"):
+                vg.name = orig[len("mixamorig:") :]
+            elif orig.startswith("mixamorig_"):
+                vg.name = orig[len("mixamorig_") :]
+
+    return character_mesh, armature
 
 
-def _body_region(mesh: bpy.types.Object, bone_name: str = "Head") -> dict[str, Vector]:
+def _body_region(mesh: bpy.types.Object, armature: bpy.types.Object | None = None) -> dict[str, Vector]:
     """Returns bounding-box centroids per ARKit region, anchored on the Head bone."""
     head_bone = None
-    if mesh.parent and mesh.parent.type == "ARMATURE":
-        head_bone = mesh.parent.data.bones.get(bone_name)
-    fallback = Vector((0.0, 1.6, 0.15)) if not head_bone else head_bone.head_local
+    if armature and armature.data.bones:
+        for b in armature.data.bones:
+            if b.name.lower() in ("head", "mixamorig:head") or b.name.endswith(":Head") or b.name.endswith("_Head"):
+                head_bone = b
+                break
+
+    fallback = Vector((0.0, 0.0, 0.8)) if not head_bone else head_bone.head_local
     bounds = [Vector(c) for c in mesh.bound_box]
     cx = sum(b.x for b in bounds) / 8.0
     cy = sum(b.y for b in bounds) / 8.0
     cz = sum(b.z for b in bounds) / 8.0
-    head_y = fallback.y + 0.05
+
+    hx, hy, hz = fallback.x, fallback.y, fallback.z
     return {
-        "left_eye": Vector((fallback.x - 0.035, head_y, fallback.z + 0.04)),
-        "right_eye": Vector((fallback.x + 0.035, head_y, fallback.z + 0.04)),
-        "brow_left": Vector((fallback.x - 0.04, head_y + 0.04, fallback.z + 0.06)),
-        "brow_right": Vector((fallback.x + 0.04, head_y + 0.04, fallback.z + 0.06)),
-        "jaw": Vector((fallback.x, head_y - 0.09, fallback.z + 0.045)),
-        "mouth_left": Vector((fallback.x - 0.025, head_y - 0.075, fallback.z + 0.05)),
-        "mouth_right": Vector((fallback.x + 0.025, head_y - 0.075, fallback.z + 0.05)),
-        "cheek_left": Vector((fallback.x - 0.055, head_y - 0.02, fallback.z + 0.035)),
-        "cheek_right": Vector((fallback.x + 0.055, head_y - 0.02, fallback.z + 0.035)),
-        "nose": Vector((fallback.x, head_y - 0.02, fallback.z + 0.07)),
-        "forehead": Vector((fallback.x, head_y + 0.07, fallback.z + 0.05)),
-        "body_center": Vector((cx, cy * 0.5, cz)),
+        "left_eye": Vector((hx + 0.03, hy - 0.04, hz + 0.02)),
+        "right_eye": Vector((hx - 0.03, hy - 0.04, hz + 0.02)),
+        "brow_left": Vector((hx + 0.035, hy - 0.045, hz + 0.045)),
+        "brow_right": Vector((hx - 0.035, hy - 0.045, hz + 0.045)),
+        "jaw": Vector((hx, hy - 0.03, hz - 0.07)),
+        "mouth_left": Vector((hx + 0.02, hy - 0.04, hz - 0.045)),
+        "mouth_right": Vector((hx - 0.02, hy - 0.04, hz - 0.045)),
+        "cheek_left": Vector((hx + 0.045, hy - 0.03, hz - 0.02)),
+        "cheek_right": Vector((hx - 0.045, hy - 0.03, hz - 0.02)),
+        "nose": Vector((hx, hy - 0.055, hz)),
+        "forehead": Vector((hx, hy - 0.04, hz + 0.07)),
+        "body_center": Vector((cx, cy, cz)),
     }
 
 
@@ -130,66 +180,72 @@ def _displace_vertices(coords, region: Vector, direction: Vector, radius: float,
 
 
 _DISPLACEMENTS: dict[str, callable] = {
-    "eyeBlinkLeft": lambda d, r: _displace_vertices(d, r["left_eye"], Vector((0, -1, 0)), 0.04, 0.025),
-    "eyeBlinkRight": lambda d, r: _displace_vertices(d, r["right_eye"], Vector((0, -1, 0)), 0.04, 0.025),
-    "eyeWideLeft": lambda d, r: _displace_vertices(d, r["left_eye"], Vector((0, 1, 0)), 0.04, 0.015),
-    "eyeWideRight": lambda d, r: _displace_vertices(d, r["right_eye"], Vector((0, 1, 0)), 0.04, 0.015),
-    "eyeSquintLeft": lambda d, r: _displace_vertices(d, r["left_eye"], Vector((0, -1, 0)), 0.04, 0.01),
-    "eyeSquintRight": lambda d, r: _displace_vertices(d, r["right_eye"], Vector((0, -1, 0)), 0.04, 0.01),
-    "eyesLookDown": lambda d, r: (_displace_vertices(d, r["left_eye"], Vector((0, -1, 0)), 0.05, 0.005), _displace_vertices(d, r["right_eye"], Vector((0, -1, 0)), 0.05, 0.005)),
-    "browInnerUp": lambda d, r: _displace_vertices(d, r["brow_left"], Vector((0, 0, 0.5)), 0.06, 0.015),
-    "browInnerDown": lambda d, r: _displace_vertices(d, r["brow_left"], Vector((0, -1, 0)), 0.06, 0.01),
-    "jawOpen": lambda d, r: _displace_vertices(d, r["jaw"], Vector((0, -1, 0)), 0.05, 0.03),
+    "eyeBlinkLeft": lambda d, r: _displace_vertices(d, r["left_eye"], Vector((0, 0, -1)), 0.03, 0.015),
+    "eyeBlinkRight": lambda d, r: _displace_vertices(d, r["right_eye"], Vector((0, 0, -1)), 0.03, 0.015),
+    "eyeWideLeft": lambda d, r: _displace_vertices(d, r["left_eye"], Vector((0, 0, 1)), 0.03, 0.01),
+    "eyeWideRight": lambda d, r: _displace_vertices(d, r["right_eye"], Vector((0, 0, 1)), 0.03, 0.01),
+    "eyeSquintLeft": lambda d, r: _displace_vertices(d, r["left_eye"], Vector((0, 0, -0.5)), 0.03, 0.008),
+    "eyeSquintRight": lambda d, r: _displace_vertices(d, r["right_eye"], Vector((0, 0, -0.5)), 0.03, 0.008),
+    "eyesLookDown": lambda d, r: (_displace_vertices(d, r["left_eye"], Vector((0, 0, -1)), 0.03, 0.008), _displace_vertices(d, r["right_eye"], Vector((0, 0, -1)), 0.03, 0.008)),
+    "browInnerUp": lambda d, r: _displace_vertices(d, r["brow_left"], Vector((0, 0, 1)), 0.04, 0.012),
+    "browInnerDown": lambda d, r: _displace_vertices(d, r["brow_left"], Vector((0, 0, -1)), 0.04, 0.01),
+    "jawOpen": lambda d, r: _displace_vertices(d, r["jaw"], Vector((0, 0, -1)), 0.05, 0.025),
     "mouthSmile": lambda d, r: (
-        _displace_vertices(d, r["mouth_left"], Vector((0, 1, 0.3)), 0.05, 0.012),
-        _displace_vertices(d, r["mouth_right"], Vector((0, 1, 0.3)), 0.05, 0.012),
+        _displace_vertices(d, r["mouth_left"], Vector((0.5, 0, 0.5)), 0.035, 0.01),
+        _displace_vertices(d, r["mouth_right"], Vector((-0.5, 0, 0.5)), 0.035, 0.01),
     ),
-    "mouthSmileRight": lambda d, r: _displace_vertices(d, r["mouth_right"], Vector((0, 1, 0.3)), 0.05, 0.015),
-    "mouthFrown": lambda d, r: (_displace_vertices(d, r["mouth_left"], Vector((0, -1, 0)), 0.05, 0.01), _displace_vertices(d, r["mouth_right"], Vector((0, -1, 0)), 0.05, 0.01)),
-    "cheekSquintLeft": lambda d, r: _displace_vertices(d, r["cheek_left"], Vector((1, 1, 0)), 0.05, 0.008),
-    "noseSneerLeft": lambda d, r: _displace_vertices(d, r["nose"], Vector((0, 1, 0)), 0.04, 0.012),
-    "tongueOut": lambda d, r: _displace_vertices(d, r["jaw"], Vector((0, 0, 1)), 0.03, 0.025),
-    "eyeCloseTight": lambda d, r: (_displace_vertices(d, r["left_eye"], Vector((0, -1, 0)), 0.05, 0.03), _displace_vertices(d, r["right_eye"], Vector((0, -1, 0)), 0.05, 0.03)),
-    "eyeDroopLeft": lambda d, r: _displace_vertices(d, r["left_eye"], Vector((0, -1, 0.3)), 0.05, 0.008),
-    "eyeDroopRight": lambda d, r: _displace_vertices(d, r["right_eye"], Vector((0, -1, 0.3)), 0.05, 0.008),
-    "eyeWidenFear": lambda d, r: (_displace_vertices(d, r["left_eye"], Vector((0, 1, 0)), 0.05, 0.02), _displace_vertices(d, r["right_eye"], Vector((0, 1, 0)), 0.05, 0.02)),
-    "eyeNarrow": lambda d, r: (_displace_vertices(d, r["left_eye"], Vector((0, -1, 0)), 0.05, 0.012), _displace_vertices(d, r["right_eye"], Vector((0, -1, 0)), 0.05, 0.012)),
-    "browFurrow": lambda d, r: _displace_vertices(d, r["brow_left"], Vector((-1, 1, 0)), 0.06, 0.012),
-    "browOuterUp": lambda d, r: _displace_vertices(d, r["brow_right"], Vector((1, 1, 0)), 0.06, 0.015),
-    "nostrilFlare": lambda d, r: _displace_vertices(d, r["nose"], Vector((0, 0, 1)), 0.025, 0.01),
-    "mouthTremble": lambda d, r: _displace_vertices(d, r["mouth_left"], Vector((0, -0.5, 0)), 0.03, 0.005),
+    "mouthSmileRight": lambda d, r: _displace_vertices(d, r["mouth_right"], Vector((-0.5, 0, 0.5)), 0.035, 0.01),
+    "mouthFrown": lambda d, r: (
+        _displace_vertices(d, r["mouth_left"], Vector((0, 0, -1)), 0.035, 0.008),
+        _displace_vertices(d, r["mouth_right"], Vector((0, 0, -1)), 0.035, 0.008),
+    ),
+    "cheekSquintLeft": lambda d, r: _displace_vertices(d, r["cheek_left"], Vector((0.5, 0, 0.5)), 0.04, 0.008),
+    "noseSneerLeft": lambda d, r: _displace_vertices(d, r["nose"], Vector((0, 0, 1)), 0.03, 0.008),
+    "tongueOut": lambda d, r: _displace_vertices(d, r["jaw"], Vector((0, -1, 0)), 0.03, 0.015),
+    "eyeCloseTight": lambda d, r: (_displace_vertices(d, r["left_eye"], Vector((0, 0, -1)), 0.04, 0.02), _displace_vertices(d, r["right_eye"], Vector((0, 0, -1)), 0.04, 0.02)),
+    "eyeDroopLeft": lambda d, r: _displace_vertices(d, r["left_eye"], Vector((0, 0, -0.5)), 0.03, 0.006),
+    "eyeDroopRight": lambda d, r: _displace_vertices(d, r["right_eye"], Vector((0, 0, -0.5)), 0.03, 0.006),
+    "eyeWidenFear": lambda d, r: (_displace_vertices(d, r["left_eye"], Vector((0, 0, 1)), 0.04, 0.015), _displace_vertices(d, r["right_eye"], Vector((0, 0, 1)), 0.04, 0.015)),
+    "eyeNarrow": lambda d, r: (_displace_vertices(d, r["left_eye"], Vector((0, 0, -0.8)), 0.03, 0.01), _displace_vertices(d, r["right_eye"], Vector((0, 0, -0.8)), 0.03, 0.01)),
+    "browFurrow": lambda d, r: _displace_vertices(d, r["brow_left"], Vector((-0.5, 0, -0.5)), 0.04, 0.01),
+    "browOuterUp": lambda d, r: _displace_vertices(d, r["brow_right"], Vector((-0.5, 0, 0.5)), 0.04, 0.012),
+    "nostrilFlare": lambda d, r: _displace_vertices(d, r["nose"], Vector((0, -1, 0)), 0.025, 0.008),
+    "mouthTremble": lambda d, r: _displace_vertices(d, r["mouth_left"], Vector((0, 0, -0.3)), 0.025, 0.004),
     "mouthCornerDown": lambda d, r: (
-        _displace_vertices(d, r["mouth_left"], Vector((0, -1, 0)), 0.03, 0.012),
-        _displace_vertices(d, r["mouth_right"], Vector((0, -1, 0)), 0.03, 0.012),
+        _displace_vertices(d, r["mouth_left"], Vector((0, 0, -1)), 0.025, 0.01),
+        _displace_vertices(d, r["mouth_right"], Vector((0, 0, -1)), 0.025, 0.01),
     ),
-    "jawClench": lambda d, r: _displace_vertices(d, r["jaw"], Vector((0, 1, 0)), 0.05, 0.008),
-    "lipPress": lambda d, r: (_displace_vertices(d, r["mouth_left"], Vector((0, 0, -1)), 0.03, 0.008), _displace_vertices(d, r["mouth_right"], Vector((0, 0, -1)), 0.03, 0.008)),
-    "faceWince": lambda d, r: _displace_vertices(d, r["nose"], Vector((0, -1, 0)), 0.06, 0.01),
-    "cheekPuff": lambda d, r: (_displace_vertices(d, r["cheek_left"], Vector((1, 0, 0)), 0.04, 0.015), _displace_vertices(d, r["cheek_right"], Vector((-1, 0, 0)), 0.04, 0.015)),
-    "eyeCloseLeft": lambda d, r: _displace_vertices(d, r["left_eye"], Vector((0, -1, 0)), 0.04, 0.02),
-    "eyeCloseRight": lambda d, r: _displace_vertices(d, r["right_eye"], Vector((0, -1, 0)), 0.04, 0.02),
-    "browRaiseLeft": lambda d, r: _displace_vertices(d, r["brow_left"], Vector((0, 1, 0)), 0.06, 0.015),
-    "browRaiseRight": lambda d, r: _displace_vertices(d, r["brow_right"], Vector((0, 1, 0)), 0.06, 0.015),
-    "mouthPucker": lambda d, r: (_displace_vertices(d, r["mouth_left"], Vector((1, 0, 1)), 0.03, 0.01), _displace_vertices(d, r["mouth_right"], Vector((-1, 0, 1)), 0.03, 0.01)),
-    "lipBiteLower": lambda d, r: _displace_vertices(d, r["mouth_left"], Vector((0, -1, 0.5)), 0.03, 0.008),
-    "noseWrinkle": lambda d, r: _displace_vertices(d, r["nose"], Vector((0, 1, 0)), 0.04, 0.008),
+    "jawClench": lambda d, r: _displace_vertices(d, r["jaw"], Vector((0, 1, 0)), 0.04, 0.006),
+    "lipPress": lambda d, r: (_displace_vertices(d, r["mouth_left"], Vector((0, 1, 0)), 0.025, 0.006), _displace_vertices(d, r["mouth_right"], Vector((0, 1, 0)), 0.025, 0.006)),
+    "faceWince": lambda d, r: _displace_vertices(d, r["nose"], Vector((0, 0, -1)), 0.05, 0.008),
+    "cheekPuff": lambda d, r: (_displace_vertices(d, r["cheek_left"], Vector((1, 0, 0)), 0.04, 0.012), _displace_vertices(d, r["cheek_right"], Vector((-1, 0, 0)), 0.04, 0.012)),
+    "eyeCloseLeft": lambda d, r: _displace_vertices(d, r["left_eye"], Vector((0, 0, -1)), 0.035, 0.015),
+    "eyeCloseRight": lambda d, r: _displace_vertices(d, r["right_eye"], Vector((0, 0, -1)), 0.035, 0.015),
+    "browRaiseLeft": lambda d, r: _displace_vertices(d, r["brow_left"], Vector((0, 0, 1)), 0.04, 0.012),
+    "browRaiseRight": lambda d, r: _displace_vertices(d, r["brow_right"], Vector((0, 0, 1)), 0.04, 0.012),
+    "mouthPucker": lambda d, r: (
+        _displace_vertices(d, r["mouth_left"], Vector((-0.5, -1, 0)), 0.03, 0.008),
+        _displace_vertices(d, r["mouth_right"], Vector((0.5, -1, 0)), 0.03, 0.008),
+    ),
+    "lipBiteLower": lambda d, r: _displace_vertices(d, r["mouth_left"], Vector((0, 1, 0.5)), 0.025, 0.006),
+    "noseWrinkle": lambda d, r: _displace_vertices(d, r["nose"], Vector((0, 0, 1)), 0.03, 0.006),
     "cheekBlush": lambda d, r: (
-        _displace_vertices(d, r["cheek_left"], Vector((1, 0, 0.5)), 0.04, 0.003),
-        _displace_vertices(d, r["cheek_right"], Vector((-1, 0, 0.5)), 0.04, 0.003),
+        _displace_vertices(d, r["cheek_left"], Vector((0, -0.5, 0.5)), 0.03, 0.002),
+        _displace_vertices(d, r["cheek_right"], Vector((0, -0.5, 0.5)), 0.03, 0.002),
     ),
-    "Body_Height": lambda d, r: _displace_vertices(d, r["body_center"], Vector((0, 1, 0)), 1.0, 0.1),
-    "Body_Weight": lambda d, r: _displace_vertices(d, r["body_center"], Vector((0.7, 0, 0.7)), 1.0, 0.04),
-    "Body_Muscle": lambda d, r: _displace_vertices(d, r["body_center"], Vector((1, 0, 1)), 1.0, 0.02),
-    "Body_Shoulders": lambda d, r: _displace_vertices(d, r["body_center"], Vector((1, 0, 0)), 1.0, 0.03),
-    "Face_Width": lambda d, r: _displace_vertices(d, r["cheek_left"], Vector((-1, 0, 0)), 0.08, 0.012),
-    "Face_Jaw": lambda d, r: _displace_vertices(d, r["jaw"], Vector((0, -1, 0)), 0.06, 0.008),
+    "Body_Height": lambda d, r: _displace_vertices(d, r["body_center"], Vector((0, 0, 1)), 1.0, 0.08),
+    "Body_Weight": lambda d, r: _displace_vertices(d, r["body_center"], Vector((1, 1, 0)), 1.0, 0.03),
+    "Body_Muscle": lambda d, r: _displace_vertices(d, r["body_center"], Vector((1, 1, 0)), 1.0, 0.015),
+    "Body_Shoulders": lambda d, r: _displace_vertices(d, r["body_center"], Vector((1, 0, 0)), 1.0, 0.025),
+    "Face_Width": lambda d, r: _displace_vertices(d, r["cheek_left"], Vector((1, 0, 0)), 0.06, 0.01),
+    "Face_Jaw": lambda d, r: _displace_vertices(d, r["jaw"], Vector((0, 0, -1)), 0.05, 0.006),
 }
 
 
 def inject(input_glb: str, output_glb: str) -> list[str]:
     _reset_scene()
-    mesh, _arm = _import_glb(input_glb)
-    regions = _body_region(mesh)
+    mesh, armature = _import_glb(input_glb)
+    regions = _body_region(mesh, armature)
     _add_shape_keys(mesh)
     added: list[str] = []
     for name in ARKIT_BLENDSHAPES:
@@ -198,6 +254,7 @@ def inject(input_glb: str, output_glb: str) -> list[str]:
             continue
         _add_shape(mesh, name, regions, deformer)
         added.append(name)
+
     bpy.ops.export_scene.gltf(
         filepath=output_glb,
         export_format="GLB",
@@ -210,13 +267,7 @@ def inject(input_glb: str, output_glb: str) -> list[str]:
         export_animations=True,
         export_animation_mode="ACTIONS",
         export_morph_animation=False,
-        export_draco_mesh_compression_enable=True,
-        export_draco_mesh_compression_level=6,
-        export_draco_position_quantization=14,
-        export_draco_normal_quantization=10,
-        export_draco_texcoord_quantization=12,
-        export_draco_color_quantization=10,
-        export_draco_generic_quantization=12,
+        export_draco_mesh_compression_enable=False,
     )
     return added
 
