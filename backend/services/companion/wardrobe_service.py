@@ -392,14 +392,22 @@ async def preview_garment(
         )
     )
     pbr_task = asyncio.create_task(_generate_pbr_channels(description=description, feedback=feedback, rig_type=rig_type, reference_data_uri=reference_data_uri, user_id=user_id))
-    try:
-        glb_bytes, (res_dict, prompts) = await asyncio.gather(garment_task, pbr_task)
-    except Exception:
-        if not garment_task.done():
-            garment_task.cancel()
+    # gather returns exceptions so the minute-long garment pipeline is not
+    # cancelled on a seconds-scale PBR failure; the runner's ``finally: rmtree(io_dir)``
+    # is responsible for its own tempdir cleanup regardless of which side raises.
+    garment_result, pbr_result = await asyncio.gather(garment_task, pbr_task, return_exceptions=True)
+    if isinstance(garment_result, BaseException):
+        # Cancel PBR if still running so we don't leak its task; raise the garment
+        # exception first since the minute-long pipeline is what the user is waiting on.
         if not pbr_task.done():
             pbr_task.cancel()
-        raise
+        raise garment_result
+    if isinstance(pbr_result, BaseException):
+        # PBR raised but garment succeeded — surface the PBR error (texture channels are
+        # required for the preview to be usable).
+        raise pbr_result
+    glb_bytes = garment_result
+    res_dict, prompts = pbr_result
 
     mesh_fid, mesh_url = save_file(glb_bytes, session_id="", content_type="model/gltf-binary", ext="glb")
     return _preview_response(res_dict, prompts, mesh_url=mesh_url, mesh_file_id=mesh_fid, kind=routing.kind, assembly_json=assembly)
