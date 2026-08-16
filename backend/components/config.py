@@ -226,5 +226,13 @@ class Settings(BaseSettings):
         coerced = coerce_int(v, None)
         return None if coerced is None or coerced <= 0 else coerced
 
+    @field_validator("data_dir", mode="after")
+    @classmethod
+    def _resolve_data_dir(cls, v: str) -> str:
+        p = Path(v)
+        if not p.is_absolute():
+            return str((BACKEND_DIR / p).resolve())
+        return str(p.resolve())
+
 
 SETTINGS = Settings()

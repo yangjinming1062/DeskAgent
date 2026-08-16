@@ -6,7 +6,7 @@ from urllib.parse import quote
 
 from common import get_router
 from components import SESSION_LOCAL, SETTINGS, STT_MAX_AUDIO_BYTES, TTS_MAX_TEXT_CHARS, get_file_path, get_logger, save_file, utc_now
-from fastapi import Depends, File, Form, HTTPException, Request, UploadFile
+from fastapi import Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 from modules.auth import LoginRecord, User, get_current_session
 from services.llm import ImageGenRequest, MissingLlmConfigError, classify_api_error, execute_with_fallback, pick_voice_id, resolve_provider_chain
@@ -130,16 +130,32 @@ async def speech_to_text(request: Request, audio_file: UploadFile = File(...), a
         raise _llm_http_error(e, "stt") from e
 
 
+async def _extract_request_data(request: Request) -> dict[str, Any]:
+    content_type = request.headers.get("content-type", "")
+    if "application/json" in content_type:
+        try:
+            body = await request.json()
+            return body if isinstance(body, dict) else {}
+        except Exception:
+            return {}
+    try:
+        form = await request.form()
+        return dict(form)
+    except Exception:
+        return {}
+
+
 # ── TTS (语音合成) ─────────────────────────────────────────────────────
 
 
 @router.post("/tts")
 @limiter.limit(f"{SETTINGS.media_tts_rate_limit_per_minute}/minute")
-async def text_to_speech(
-    request: Request, text: str = Form(...), voice: str = Form(default=""), auth_data: tuple[User, LoginRecord] = Depends(get_current_session)
-) -> StreamingResponse:
-    """Text-to-speech via the provider chain (MiMo TTS or MiniMax TTS)."""
+async def text_to_speech(request: Request, auth_data: tuple[User, LoginRecord] = Depends(get_current_session)) -> StreamingResponse:
+    """Text-to-speech via the provider chain (MiMo TTS or MiniMax TTS). Accepts JSON or Form body."""
     user, _ = auth_data
+    data = await _extract_request_data(request)
+    text = str(data.get("text") or "").strip()
+    voice = str(data.get("voice") or "").strip()
     if not text:
         raise HTTPException(status_code=400, detail={"error": "text is required", "reason": "missing_params", "status": 400})
     if len(text) > TTS_MAX_TEXT_CHARS:
@@ -169,9 +185,11 @@ async def text_to_speech(
 
 @router.post("/image_gen")
 @limiter.limit(f"{SETTINGS.media_image_gen_rate_limit_per_minute}/minute")
-async def image_gen(request: Request, prompt: str = Form(...), auth_data: tuple[User, LoginRecord] = Depends(get_current_session)) -> dict[str, Any]:
-    """Image generation via the provider chain. Returns 501 when no image-gen provider is configured."""
+async def image_gen(request: Request, auth_data: tuple[User, LoginRecord] = Depends(get_current_session)) -> dict[str, Any]:
+    """Image generation via the provider chain. Accepts JSON or Form body."""
     user, _ = auth_data
+    data = await _extract_request_data(request)
+    prompt = str(data.get("prompt") or "").strip()
     if not prompt:
         raise HTTPException(status_code=400, detail={"error": "prompt is required", "reason": "missing_params", "status": 400})
 
@@ -200,10 +218,10 @@ async def image_gen(request: Request, prompt: str = Form(...), auth_data: tuple[
     # downstream callers (LLM image_url parts, browser previews) get a stable
     # URL that survives MiniMax CDN eviction.
     try:
-        data = base64.b64decode(asset.b64 or "")
+        data_bytes = base64.b64decode(asset.b64 or "")
     except ValueError:
         raise _http_error(502, "image_gen_invalid_payload", "图片生成服务返回了无法解码的数据") from None
-    file_id, public_url = save_file(data, session_id="", content_type=asset.mime, ext="jpg")
+    file_id, public_url = save_file(data_bytes, session_id="", content_type=asset.mime, ext="jpg")
     return {"success": True, "url": public_url}
 
 
@@ -212,21 +230,19 @@ async def image_gen(request: Request, prompt: str = Form(...), auth_data: tuple[
 
 @router.post("/video_gen")
 @limiter.limit(f"{SETTINGS.media_video_gen_rate_limit_per_minute}/minute")
-async def video_gen(
-    request: Request,
-    prompt: str = Form(...),
-    duration: int = Form(default=6),
-    resolution: str = Form(default="768P"),
-    first_frame_image: str | None = Form(default=None),
-    aspect_ratio: str | None = Form(default=None),
-    model: str | None = Form(default=None),
-    wait_seconds: int = Form(default=0),
-    auth_data: tuple[User, LoginRecord] = Depends(get_current_session),
-) -> dict[str, Any]:
+async def video_gen(request: Request, auth_data: tuple[User, LoginRecord] = Depends(get_current_session)) -> dict[str, Any]:
     """Submit a video generation job. Default response is 202 + task_id; if
     ``wait_seconds`` > 0, the handler polls for up to that many seconds and
     returns the resulting URL directly when the job finishes."""
     user, _ = auth_data
+    data = await _extract_request_data(request)
+    prompt = str(data.get("prompt") or "").strip()
+    duration = int(data.get("duration") or 6)
+    resolution = str(data.get("resolution") or "768P")
+    first_frame_image = data.get("first_frame_image") or None
+    aspect_ratio = data.get("aspect_ratio") or None
+    model = data.get("model") or None
+    wait_seconds = int(data.get("wait_seconds") or 0)
     if not prompt:
         raise HTTPException(status_code=400, detail={"error": "prompt is required", "reason": "missing_params", "status": 400})
     # Permissive union of the v1 (Hailuo: 6/10s, 512P/768P/1080P) and v2

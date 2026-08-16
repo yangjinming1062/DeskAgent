@@ -177,3 +177,86 @@ async def test_asset_dual_path_auth_serves_authenticated_user_without_valid_sig(
         qs = avatar_url.split("?", 1)[1]
         resp = await client.get(f"/api/companion/avatar/file/dual_auth_avatar.png?{qs}")
         assert resp.status_code == 200
+
+
+def test_load_avatar_bytes_as_data_uri_path_variations(tmp_path, monkeypatch):
+    from pathlib import Path
+    from components import SETTINGS
+    from services.companion.avatar_service import load_avatar_bytes_as_data_uri
+
+    monkeypatch.setattr(SETTINGS, "data_dir", str(tmp_path))
+    avatar_dir = tmp_path / "companion-avatars"
+    avatar_dir.mkdir(parents=True, exist_ok=True)
+    img_file = avatar_dir / "test_avatar_123.jpg"
+    img_file.write_bytes(b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00fakejpg")
+
+    # 1. Standard bare path with slash
+    res1 = load_avatar_bytes_as_data_uri("companion-avatars/test_avatar_123.jpg")
+    assert res1 is not None and res1.startswith("data:image/jpeg;base64,")
+
+    # 2. Windows backslash path
+    res2 = load_avatar_bytes_as_data_uri("companion-avatars\\test_avatar_123.jpg")
+    assert res2 is not None and res2.startswith("data:image/jpeg;base64,")
+
+    # 3. Bare filename without prefix
+    res3 = load_avatar_bytes_as_data_uri("test_avatar_123.jpg")
+    assert res3 is not None and res3.startswith("data:image/jpeg;base64,")
+
+    # 4. Bare filename without extension
+    res4 = load_avatar_bytes_as_data_uri("test_avatar_123")
+    assert res4 is not None and res4.startswith("data:image/jpeg;base64,")
+
+    # 5. Full URL path with query params
+    res5 = load_avatar_bytes_as_data_uri("/api/companion/avatar/file/test_avatar_123.jpg?expires=123456&sig=abcdef")
+    assert res5 is not None and res5.startswith("data:image/jpeg;base64,")
+
+
+@pytest.mark.asyncio
+async def test_media_tts_supports_json_and_form_body(_patch_db, monkeypatch):
+    from httpx import ASGITransport, AsyncClient
+    from main import app
+    from modules.auth import LoginRecord, User, create_access_token
+    from services.llm import TTSResult
+
+    _, SessionLocal = _patch_db
+
+    async with SessionLocal() as db:
+        user1 = User(id=101, username="tts_user", is_active=True, can_use=True)
+        db.add(user1)
+        await db.commit()
+
+    token_user1, _, token_jti = create_access_token(user_id=101, username="tts_user")
+    async with SessionLocal() as db:
+        db.add(LoginRecord(user_id=101, token_jti=token_jti, is_active=True))
+        await db.commit()
+
+    # Mock TTS synthesis in execute_with_fallback
+    async def fake_execute(*args, **kwargs):
+        return TTSResult(audio=b"fake-mp3-audio-bytes", mime="audio/mpeg", voice="mimo_voice")
+
+    async def fake_chain(*a, **k):
+        return ["mimo"]
+
+    monkeypatch.setattr("api.v1.media.execute_with_fallback", fake_execute)
+    monkeypatch.setattr("api.v1.media.resolve_provider_chain", fake_chain)
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        # 1. JSON body request (Client fetch)
+        resp = await client.post(
+            "/api/media/tts",
+            json={"text": "你好，这是测试语音", "voice": "custom_voice"},
+            headers={"Authorization": f"Bearer {token_user1}"},
+        )
+        assert resp.status_code == 200
+        assert resp.content == b"fake-mp3-audio-bytes"
+        assert resp.headers["content-type"] == "audio/mpeg"
+
+        # 2. Form body request
+        resp_form = await client.post(
+            "/api/media/tts",
+            data={"text": "你好，这是测试语音表单", "voice": "custom_voice"},
+            headers={"Authorization": f"Bearer {token_user1}"},
+        )
+        assert resp_form.status_code == 200
+        assert resp_form.content == b"fake-mp3-audio-bytes"

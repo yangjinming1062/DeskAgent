@@ -716,46 +716,77 @@ def load_avatar_bytes_as_data_uri(asset_url_or_path: str | None) -> str | None:
     if not asset_url_or_path:
         return None
 
-    # Onboarding draft: temp-media/{file_id} — resolve via temp_files sidecar.
+    clean_path = asset_url_or_path.replace("\\", "/")
+
+    # 1. Onboarding draft: temp-media/{file_id} — resolve via temp_files sidecar.
     temp_marker = "temp-media/"
-    temp_idx = asset_url_or_path.find(temp_marker)
+    temp_idx = clean_path.find(temp_marker)
     if temp_idx >= 0:
-        temp_file_id = asset_url_or_path[temp_idx + len(temp_marker) :].split("?")[0]
-        res = get_file_path(temp_file_id)
-        if res is None:
-            return None
-        path, mime = res
-        try:
-            data = path.read_bytes()
-        except OSError:
-            return None
-        return build_data_uri(data, mime)
+        temp_file_id = clean_path[temp_idx + len(temp_marker) :].split("?")[0]
+        raw_id = temp_file_id.rsplit(".", 1)[0] if "." in temp_file_id else temp_file_id
+        res = get_file_path(raw_id) or get_file_path(temp_file_id)
+        if res is not None:
+            path, mime = res
+            try:
+                data = path.read_bytes()
+                return build_data_uri(data, mime)
+            except OSError:
+                pass
 
+    # 2. Extract potential filename from path or signed URL
     filename: str | None = None
-
-    # Bare path form: ``companion-avatars/<file_id>.<ext>``.
     bare_marker = "companion-avatars/"
-    bare_idx = asset_url_or_path.find(bare_marker)
+    bare_idx = clean_path.find(bare_marker)
     if bare_idx >= 0:
-        filename = asset_url_or_path[bare_idx + len(bare_marker) :].split("?")[0]
-    elif "/api/companion/avatar/file/" in asset_url_or_path:
-        # Signed URL form: extract the <file_id>.<ext> path component.
-        idx = asset_url_or_path.find("/api/companion/avatar/file/")
-        path_only = asset_url_or_path[idx + len("/api/companion/avatar/file/") :].split("?")[0]
+        filename = clean_path[bare_idx + len(bare_marker) :].split("?")[0]
+    elif "/api/companion/avatar/file/" in clean_path:
+        idx = clean_path.find("/api/companion/avatar/file/")
+        path_only = clean_path[idx + len("/api/companion/avatar/file/") :].split("?")[0]
         filename = path_only.rsplit("/", 1)[-1]
+    else:
+        filename = Path(clean_path.split("?")[0]).name
 
-    if not filename:
-        return None
+    if filename:
+        resolved = resolve_uploaded_avatar_path(filename)
+        if resolved is not None:
+            path, mime = resolved
+            try:
+                data = path.read_bytes()
+                return f"data:{mime};base64,{base64.b64encode(data).decode('ascii')}"
+            except OSError:
+                pass
+        if "." not in filename:
+            for ext in ("jpg", "png", "jpeg", "webp"):
+                resolved = resolve_uploaded_avatar_path(f"{filename}.{ext}")
+                if resolved is not None:
+                    path, mime = resolved
+                    try:
+                        data = path.read_bytes()
+                        return f"data:{mime};base64,{base64.b64encode(data).decode('ascii')}"
+                    except OSError:
+                        pass
 
-    resolved = resolve_uploaded_avatar_path(filename)
-    if resolved is None:
-        return None
-    path, mime = resolved
-    try:
-        data = path.read_bytes()
-    except OSError:
-        return None
-    return f"data:{mime};base64,{base64.b64encode(data).decode('ascii')}"
+    # 3. Companion asset fallback (companion-assets/{user_id}/{filename})
+    if "companion-assets/" in clean_path or "/api/companion/asset/" in clean_path:
+        parts = clean_path.split("?")[0].split("/")
+        if len(parts) >= 2:
+            try:
+                uid = int(parts[-2])
+                asset_filename = parts[-1]
+                from .asset_store import resolve_companion_asset_path
+
+                resolved = resolve_companion_asset_path(uid, asset_filename)
+                if resolved is not None:
+                    path, mime = resolved
+                    try:
+                        data = path.read_bytes()
+                        return f"data:{mime};base64,{base64.b64encode(data).decode('ascii')}"
+                    except OSError:
+                        pass
+            except Exception:
+                pass
+
+    return None
 
 
 async def regenerate_avatar_from_image(
