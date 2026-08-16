@@ -12,7 +12,7 @@ api_prefix = "/api"
 
 [database]
 # SQLAlchemy URL. In Docker the service hostname is `postgres` (port 5432).
-database_url = "postgresql+psycopg://postgres:postgres@localhost:5432/spiritagent"
+database_url = "postgresql+psycopg://postgres:postgres@postgres:5432/spiritagent"
 
 [auth]
 # CHANGE THIS in production! Must be ≥ 16 chars; used to sign JWTs.
