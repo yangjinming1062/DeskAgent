@@ -188,6 +188,12 @@ export class Engine {
       }
     })
 
+    const headBone = bones.find(b => {
+      const name = b.name.toLowerCase()
+
+      return b.name === 'Head' || b.name === 'mixamorigHead' || name.endsWith('head')
+    })
+
     let minY = Infinity
     let maxY = -Infinity
     let minX = Infinity
@@ -238,8 +244,21 @@ export class Engine {
     const centerY = (minY + maxY) / 2
     const centerX = (minX + maxX) / 2
 
-    // Straight-on face-to-face framing:
-    // The camera is placed horizontally level with the character's vertical center.
+    // Straight-on eye-level (平视) framing:
+    // Determine eye-level optical axis height (~72% of character height, or Head bone level for bipeds).
+    // Placing the camera at eye level with 0° pitch guarantees a true straight-on perspective without chin-up distortion.
+    let targetY = centerY
+
+    if (this.character.isBipedRig || bones.length >= 3) {
+      if (headBone) {
+        const headPos = new THREE.Vector3()
+        headBone.getWorldPosition(headPos)
+        targetY = THREE.MathUtils.clamp(headPos.y - 0.05, centerY, maxY - 0.1)
+      } else {
+        targetY = minY + height * 0.72
+      }
+    }
+
     // Height fill ratio ~87% ensures ~6.5% breathing room above hair and below feet,
     // completely eliminating top-of-head cropping while filling the 1/3 screen window.
     const aspect = this.camera.aspect || getBaseSpriteWidth() / getBaseSpriteHeight()
@@ -251,11 +270,29 @@ export class Engine {
     const dist = Math.max(distH, distW, 0.5)
 
     // Level straight-on camera (pitch = 0°, eye-level horizontal line of sight)
-    this.camera.position.set(centerX, centerY, dist)
-    this.camera.lookAt(centerX, centerY, 0)
+    this.camera.position.set(centerX, targetY, dist)
+    this.camera.lookAt(centerX, targetY, 0)
+
+    // Shift projection window vertically via setViewOffset so the full body remains centered
+    // from head to toe within the canvas window without tilting the camera optical axis.
+    const canvasWidth = this.canvas.clientWidth || getBaseSpriteWidth()
+    const canvasHeight = this.canvas.clientHeight || getBaseSpriteHeight()
+    const visibleWorldHeight = ((height * 0.5) / 0.87) * 2
+    const deltaY = targetY - centerY
+    const yOffset = (deltaY / visibleWorldHeight) * canvasHeight
+
+    if (Math.abs(yOffset) > 0.5) {
+      this.camera.setViewOffset(canvasWidth, canvasHeight, 0, yOffset, canvasWidth, canvasHeight)
+    } else {
+      this.camera.clearViewOffset()
+    }
   }
 
-  async loadCharacter(bytes: ArrayBuffer | null, rigType: string = 'biped', contentHash?: string): Promise<LoadedModelInfo> {
+  async loadCharacter(
+    bytes: ArrayBuffer | null,
+    rigType: string = 'biped',
+    contentHash?: string
+  ): Promise<LoadedModelInfo> {
     const info = await this.character.load(bytes, this.scene, rigType, contentHash)
     this.frameCharacter()
 

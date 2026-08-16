@@ -6,7 +6,7 @@ export const DEFAULT_FETCH_TIMEOUT_MS = 15_000
 export const DATA_URL_READ_MAX_BYTES = 16 * 1024 * 1024
 export const TEXT_PREVIEW_SOURCE_MAX_BYTES = 64 * 1024 * 1024
 
-// Avatar generation: provider call + Pillow re-encode + clip seeding routinely
+// Avatar / Sprite / Wardrobe generation: provider call + Pillow re-encode + clip seeding routinely
 // run 15–25s, so the 15s default fires before the backend returns 201.
 export const AVATAR_FETCH_TIMEOUT_MS = 120_000
 
@@ -27,7 +27,8 @@ export function resolveTimeoutMs(timeoutMs?: null | number | string, fallbackMs 
   return Number.isFinite(fallbackNum) && fallbackNum > 0 ? Math.round(fallbackNum) : DEFAULT_FETCH_TIMEOUT_MS
 }
 
-export const AVATAR_SLOW_PATH_PATTERN = /^\/api\/companion\/avatar(?:\/from-image|\/\d+\/fullbody)?$/i
+export const AVATAR_SLOW_PATH_PATTERN =
+  /^\/api\/(?:companion\/(?:avatar(?:\/from-image|\/\d+\/fullbody)?|sprite|wardrobe|animations\/generate)|media\/(?:image_gen|video_gen))$/i
 
 // POST only — reads are DB lookups with no provider call.
 export function resolvePathTimeoutMs(
@@ -35,12 +36,12 @@ export function resolvePathTimeoutMs(
   method?: null | string,
   fallbackMs = DEFAULT_FETCH_TIMEOUT_MS
 ): number {
-  const isAvatarPost =
+  const isSlowPost =
     String(method || 'GET').toUpperCase() === 'POST' &&
     typeof pathStr === 'string' &&
     AVATAR_SLOW_PATH_PATTERN.test(pathStr)
 
-  return isAvatarPost ? AVATAR_FETCH_TIMEOUT_MS : resolveTimeoutMs(undefined, fallbackMs)
+  return isSlowPost ? AVATAR_FETCH_TIMEOUT_MS : resolveTimeoutMs(undefined, fallbackMs)
 }
 
 export interface SafeStorageApi {

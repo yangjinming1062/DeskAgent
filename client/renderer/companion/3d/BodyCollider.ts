@@ -304,7 +304,8 @@ function sortByCentroidInPlace(
   const ca = centroid[a * 3 + axis]
   const cb = centroid[b * 3 + axis]
   const cc = centroid[c * 3 + axis]
-  const pivotTri = (ca <= cb && cb <= cc) || (cc <= cb && cb <= ca) ? b : (ca <= cc && cc <= cb) || (cb <= cc && cc <= ca) ? c : a
+  const pivotTri =
+    (ca <= cb && cb <= cc) || (cc <= cb && cb <= ca) ? b : (ca <= cc && cc <= cb) || (cb <= cc && cc <= ca) ? c : a
   const pivotVal = centroid[pivotTri * 3 + axis]
 
   // 3-way Dutch Flag partition: [start, lt) < pivot, [lt, gt) = pivot, [gt, end) > pivot — reduces recursion depth on duplicate centroids.

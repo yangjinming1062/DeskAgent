@@ -268,7 +268,11 @@ export function Companion3D(): React.JSX.Element {
       }
 
       try {
-        const info = await engine.loadCharacter(bytes, modelInfo.rig_type || 'biped', modelInfo.content_hash || undefined)
+        const info = await engine.loadCharacter(
+          bytes,
+          modelInfo.rig_type || 'biped',
+          modelInfo.content_hash || undefined
+        )
 
         if (cancelled) {
           return

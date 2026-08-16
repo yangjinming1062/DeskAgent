@@ -22,11 +22,15 @@ test('resolveTimeoutMs falls back to defaults and accepts overrides', () => {
   assert.equal(resolveTimeoutMs('2750'), 2750)
 })
 
-test('resolvePathTimeoutMs routes avatar POSTs to the slow bucket', () => {
+test('resolvePathTimeoutMs routes avatar and generative AI POSTs to the slow bucket', () => {
   assert.equal(resolvePathTimeoutMs('/api/companion/avatar', 'POST'), AVATAR_FETCH_TIMEOUT_MS)
   assert.equal(resolvePathTimeoutMs('/api/companion/avatar/from-image', 'POST'), AVATAR_FETCH_TIMEOUT_MS)
   assert.equal(resolvePathTimeoutMs('/api/companion/avatar/42/fullbody', 'POST'), AVATAR_FETCH_TIMEOUT_MS)
   assert.equal(resolvePathTimeoutMs('/API/COMPANION/AVATAR', 'post'), AVATAR_FETCH_TIMEOUT_MS)
+  assert.equal(resolvePathTimeoutMs('/api/companion/sprite', 'POST'), AVATAR_FETCH_TIMEOUT_MS)
+  assert.equal(resolvePathTimeoutMs('/api/companion/wardrobe', 'POST'), AVATAR_FETCH_TIMEOUT_MS)
+  assert.equal(resolvePathTimeoutMs('/api/companion/animations/generate', 'POST'), AVATAR_FETCH_TIMEOUT_MS)
+  assert.equal(resolvePathTimeoutMs('/api/media/image_gen', 'POST'), AVATAR_FETCH_TIMEOUT_MS)
 })
 
 test('resolvePathTimeoutMs keeps reads and PUTs on the fast default', () => {

@@ -203,6 +203,9 @@ async function decompressGlbIfNeeded(buffer: ArrayBuffer): Promise<ArrayBuffer> 
   return buffer
 }
 
+const _QUAT = new THREE.Quaternion()
+const _EULER = new THREE.Euler()
+
 export class CharacterController {
   private readonly morph = new MorphController()
   private readonly physics: PhysicsBackend
@@ -216,6 +219,12 @@ export class CharacterController {
   private isProcedural = false
   private proc: ProcParts | null = null
   private rigType: string = 'biped'
+  private headBone: THREE.Bone | null = null
+  private neckBone: THREE.Bone | null = null
+
+  get isBipedRig(): boolean {
+    return this.rigType === 'biped'
+  }
 
   private currentState: SpriteStateName = 'idle'
   private breathPhase = 0
@@ -317,10 +326,19 @@ export class CharacterController {
           this.actions.set(clip.name, this.mixer.clipAction(clip))
         }
 
+        this.headBone = null
+        this.neckBone = null
         this.boneRestQuats.clear()
         this.root.traverse(child => {
           if (child instanceof THREE.Bone) {
             this.boneRestQuats.set(child.name, child.quaternion.clone())
+            const name = child.name.toLowerCase()
+
+            if (child.name === 'Head' || child.name === 'mixamorigHead' || name.endsWith('head')) {
+              this.headBone = child
+            } else if (child.name === 'Neck' || child.name === 'mixamorigNeck' || name.endsWith('neck')) {
+              this.neckBone = child
+            }
           }
         })
 
@@ -362,6 +380,9 @@ export class CharacterController {
   private disposeRoot(scene: THREE.Scene | null): void {
     // Bump epoch first so in-flight textureLoader callbacks dispose their freshly-decoded texture and bail.
     this.textureEpoch++
+
+    this.headBone = null
+    this.neckBone = null
 
     if (this.root.parent) {
       scene?.remove(this.root)
@@ -1167,6 +1188,25 @@ export class CharacterController {
     const roll = this.dragTilt.z * 0.4
     this.root.rotation.x = THREE.MathUtils.lerp(this.root.rotation.x, pitch, 0.1)
     this.root.rotation.z = THREE.MathUtils.lerp(this.root.rotation.z, roll, 0.1)
+
+    // Subtle chin-tuck posture + cursor gaze tracking for natural, engaged eye-level contact
+    // In human portraiture, a slight chin-tuck (~3°) flatters the jawline, engages direct eye contact,
+    // and eliminates the detached "looking up at the ceiling" appearance from raw AI rigs.
+    if (this.headBone && this.isBipedRig) {
+      const chinTuckPitch = 0.05
+      const lookPitch = -this.lookY * 0.06
+      const lookYaw = this.lookX * 0.1
+
+      _EULER.set(chinTuckPitch + lookPitch, lookYaw, 0, 'YXZ')
+      _QUAT.setFromEuler(_EULER)
+      this.headBone.quaternion.multiply(_QUAT)
+
+      if (this.neckBone) {
+        _EULER.set((chinTuckPitch + lookPitch) * 0.25, lookYaw * 0.25, 0, 'YXZ')
+        _QUAT.setFromEuler(_EULER)
+        this.neckBone.quaternion.multiply(_QUAT)
+      }
+    }
   }
 
   // ── Procedural fallback character ───────────────────────────

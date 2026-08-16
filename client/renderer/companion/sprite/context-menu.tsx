@@ -22,29 +22,25 @@ export function SpriteContextMenu({
   const visible = pos !== null
   const menuRef = useRef<HTMLDivElement>(null)
   // Hidden state returns null so isPointInteractive skips the menu — avoids the (0,0) false hit that display:none would introduce (BCR returns 0×0).
-  useInteractiveRegion(
-    'sprite-context-menu',
-    menuRef,
-    () => {
-      if (!visible || !pos) {
-        return null
-      }
-
-      const el = menuRef.current
-
-      if (!el) {
-        return null
-      }
-
-      const rect = el.getBoundingClientRect()
-
-      if (rect.width === 0 || rect.height === 0) {
-        return null
-      }
-
-      return new DOMRect(rect.left, rect.top, rect.width, rect.height)
+  useInteractiveRegion('sprite-context-menu', menuRef, () => {
+    if (!visible || !pos) {
+      return null
     }
-  )
+
+    const el = menuRef.current
+
+    if (!el) {
+      return null
+    }
+
+    const rect = el.getBoundingClientRect()
+
+    if (rect.width === 0 || rect.height === 0) {
+      return null
+    }
+
+    return new DOMRect(rect.left, rect.top, rect.width, rect.height)
+  })
 
   useEffect(() => {
     if (!visible) {

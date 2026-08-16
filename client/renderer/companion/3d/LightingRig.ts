@@ -69,10 +69,12 @@ export class LightingRig {
     this.fill.position.set(-1.6, 1.4, 2.6)
     scene.add(this.fill)
 
-    // Eye catchlight / face soft light — straight-on front for lively eyes
-    this.eyeLight = new THREE.DirectionalLight(0xffffff, 0.4)
-    this.eyeLight.position.set(0, 1.2, 2.8)
+    // Eye catchlight / face soft light — straight-on front at eye level for lively catchlights & soft facial fill.
+    this.eyeLight = new THREE.DirectionalLight(0xffffff, 0.8)
+    this.eyeLight.position.set(0, 1.45, 2.5)
+    this.eyeLight.target.position.set(0, 1.45, 0)
     scene.add(this.eyeLight)
+    scene.add(this.eyeLight.target)
 
     // Rim — behind/above, creates edge separation from background.
     this.rim = new THREE.DirectionalLight(0xede6ff, 1.1)
@@ -83,6 +85,6 @@ export class LightingRig {
   dispose(scene: THREE.Scene): void {
     scene.environment = null
     this.disposeEnvTarget()
-    scene.remove(this.ambient, this.key, this.fill, this.eyeLight, this.rim)
+    scene.remove(this.ambient, this.key, this.fill, this.eyeLight, this.eyeLight.target, this.rim)
   }
 }
