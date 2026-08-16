@@ -80,7 +80,7 @@ async def activate(payload: ActivateRequest, request: Request, db: AsyncSession 
 
 
 @router.post("/ws-ticket", response_model=TokenResponse)
-def mint_ws_ticket(current: tuple[User, LoginRecord] = Depends(get_current_session)) -> TokenResponse:
+async def mint_ws_ticket(current: tuple[User, LoginRecord] = Depends(get_current_session)) -> TokenResponse:
     """Mint a short-lived WS-only JWT so the renderer never holds the long-lived bearer."""
     user, _session = current
     token, expires_in, _ = create_access_token(user_id=user.id, username=user.username, expires_in_seconds=WS_TICKET_TTL_SECONDS, purpose="ws")

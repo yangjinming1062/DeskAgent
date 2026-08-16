@@ -148,10 +148,14 @@ export function CompanionRoot(): React.JSX.Element {
 
     let cancelled = false
     setCompanionLifecycle('unauthed')
-    Promise.all([
-      window.spiritagent.api<{ is_complete?: boolean }>({ path: '/api/companion/persona' }),
-      requestGateway<{ complete?: boolean }>('onboarding.get_state', {})
-    ])
+
+    const personaPromise = window.spiritagent
+      .api<{ is_complete?: boolean }>({ path: '/api/companion/persona' })
+      .catch(() => null)
+
+    const statePromise = requestGateway<{ complete?: boolean }>('onboarding.get_state', {}).catch(() => null)
+
+    Promise.all([personaPromise, statePromise])
       .then(([persona, state]) => {
         if (cancelled) {
           return

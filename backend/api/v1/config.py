@@ -37,5 +37,5 @@ async def put_config(body: DesktopConfigPutRequest, current: tuple[User, object]
 
 
 @router.get("/defaults", response_model=DesktopConfigResponse, dependencies=[Depends(get_current_session)])
-def get_config_defaults() -> DesktopConfigResponse:
+async def get_config_defaults() -> DesktopConfigResponse:
     return DesktopConfigResponse(config=DEFAULT_CONFIG)

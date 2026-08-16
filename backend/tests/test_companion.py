@@ -1552,6 +1552,19 @@ async def test_ws_ticket_mints_short_lived_jwt():
     assert user is None and payload is None  # missing purpose gate kicks in
 
 
+async def test_ws_ticket_endpoint_success(test_client, test_token):
+    """Verify POST /api/user/ws-ticket responds 200 with access_token and user info."""
+    resp = await test_client.post(
+        "/api/user/ws-ticket", headers={"Authorization": f"Bearer {test_token}"}
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "access_token" in data
+    assert data["expires_in"] == 60
+    assert data["user"]["username"] == "testuser"
+
+
+
 def test_voice_catalog_cjk_score_prefers_specific_match():
     """P2-11: CJK preference scoring prefers the most specific match.
     A '少女' preference should score higher than a generic '女' on
