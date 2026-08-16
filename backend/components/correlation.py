@@ -6,7 +6,7 @@ from typing import Any
 from fastapi import Request, Response
 from fastapi.responses import JSONResponse
 
-from .logger import current_request_id, set_request_id
+from .logger import current_request_id, get_logger, set_request_id
 
 REQUEST_ID_HEADER = "X-Request-ID"
 _MAX_INBOUND_ID_LEN = 64
@@ -14,6 +14,8 @@ _MAX_INBOUND_ID_LEN = 64
 # Charset 选 [A-Za-z0-9._-]+ 因为它同时覆盖 ULID (26) / W3C trace-id
 # (32 hex with dashes) / uuid hex (32) / dotted form, 客户这些都合法.
 _VALID_INBOUND_CHARS = re.compile(r"^[A-Za-z0-9._-]+$")
+
+logger = get_logger(__name__)
 
 
 def normalize_inbound(value: str | None) -> str | None:
@@ -61,7 +63,7 @@ def begin_local_scope() -> str:
     return rid
 
 
-async def correlated_exception_response(_request: Request, exc: Exception) -> JSONResponse:
+async def correlated_exception_response(request: Request, exc: Exception) -> JSONResponse:
     """Fallback handler: 把 ContextVar 里的 request_id 写进 500 response header.
 
     必需因为 ServerErrorMiddleware 在最外层 — BaseHTTPMiddleware 抛 raise 时
@@ -69,6 +71,14 @@ async def correlated_exception_response(_request: Request, exc: Exception) -> JS
     ExceptionMiddleware (在 user middleware 之内) 兜底, header 透传.
     """
     rid = current_request_id()
+    logger.exception(
+        "Unhandled server exception on %s %s: %s",
+        request.method,
+        request.url.path,
+        exc,
+        exc_info=exc,
+        extra={"request_id": rid},
+    )
     headers = {"X-Request-ID": rid} if rid else {}
     return JSONResponse(status_code=500, content={"error": "Internal Server Error", "reason": "internal_error", "status": 500}, headers=headers)
 
