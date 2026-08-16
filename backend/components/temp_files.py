@@ -65,17 +65,27 @@ def _build_public_url(file_id: str) -> str:
 def get_file_path(file_id: str) -> tuple[Path, str] | None:
     """Get file path and content_type by ID. Returns None if not found/expired."""
     mp = _meta_path(file_id)
-    if not mp.exists():
-        return None
-    try:
-        meta = json.loads(mp.read_text())
-    except (json.JSONDecodeError, OSError):
-        return None
-    path = Path(meta["path"])
-    if not path.exists():
-        _safe_unlink(mp)
-        return None
-    return path, meta["content_type"]
+    if mp.exists():
+        try:
+            meta = json.loads(mp.read_text())
+            path = Path(meta.get("path", ""))
+            if not path.is_absolute():
+                path = (Path(SETTINGS.data_dir) / path).resolve()
+            if not path.exists():
+                path = _storage_dir() / Path(meta.get("path", "")).name
+            if path.exists():
+                return path, meta.get("content_type", "image/png")
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    # Direct fallback: check _storage_dir for any matching extension
+    for ext in ("jpg", "png", "jpeg", "webp", "glb", "wav", "mp3"):
+        candidate = _storage_dir() / f"{file_id}.{ext}"
+        if candidate.exists():
+            content_type = "image/jpeg" if ext in ("jpg", "jpeg") else ("image/png" if ext == "png" else "application/octet-stream")
+            return candidate, content_type
+
+    return None
 
 
 def _iter_meta_files() -> Iterator[tuple[Path, dict]]:
