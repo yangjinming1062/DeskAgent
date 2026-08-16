@@ -301,6 +301,11 @@ def _require_str(params: dict[str, Any], key: str) -> str:
     return v
 
 
+def _is_nonneg_int(v: Any) -> bool:
+    """``type(v) is int`` rejects bool (Python treats bool as int subclass)."""
+    return type(v) is int and v >= 0
+
+
 def _validate_attachments(params: dict[str, Any]) -> list[dict[str, Any]] | None:
     """Validate + normalize the ``attachments`` payload. Returns the cleaned
     list (every item reshaped to ``{type, file_url}``) or ``None`` when the
@@ -364,7 +369,7 @@ def _register_session_handlers(
 ) -> None:
     effective_buffer = replay_buffer or (user_session.replay_buffer if user_session else ReplayBuffer())
 
-    def _mount_runtime(conv: Conversation, cwd: str | None, *, cancel_existing: bool = True) -> RuntimeSession:
+    def _mount_runtime(conv: Conversation, cwd: str | None, *, cancel_existing: bool = False) -> RuntimeSession:
         """Cancel any in-memory runtime for the same conversation, then mount a fresh one."""
         for existing in list(runtime_sessions.values()):
             if existing.conversation_id == conv.id:
@@ -379,7 +384,7 @@ def _register_session_handlers(
 
     async def session_ack(params: dict) -> dict:
         seq = params.get("seq")
-        if not isinstance(seq, int) or seq < 0:
+        if not _is_nonneg_int(seq):
             raise JsonRpcError(JSONRPC_INVALID_PARAMS, "seq must be a non-negative int")
         pruned = effective_buffer.ack(seq)
         return {"acked": seq, "pruned": pruned}
@@ -479,8 +484,8 @@ def _register_session_handlers(
             raise JsonRpcError(JSONRPC_INVALID_PARAMS, "companion reaction in-flight; please retry after it lands")
 
         truncate_ordinal = params.get("truncate_before_user_ordinal")
-        if truncate_ordinal is not None and not isinstance(truncate_ordinal, int):
-            raise JsonRpcError(JSONRPC_INVALID_PARAMS, "truncate_before_user_ordinal must be an int")
+        if truncate_ordinal is not None and not _is_nonneg_int(truncate_ordinal):
+            raise JsonRpcError(JSONRPC_INVALID_PARAMS, "truncate_before_user_ordinal must be a non-negative int")
         if truncate_ordinal is not None:
             async with SESSION_LOCAL() as db:
                 user_rows = (
