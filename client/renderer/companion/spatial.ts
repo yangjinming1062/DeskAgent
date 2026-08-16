@@ -2,7 +2,13 @@ import { atom } from 'nanostores'
 
 import { $focusContext } from '@/companion/activity'
 import { $chatOpen } from '@/companion/chat-store'
-import { $clipOverride, $effectiveTier, $spriteEmotion, $spriteState } from '@/companion/companion-store'
+import {
+  $clipOverride,
+  $effectiveTier,
+  $spriteEmotion,
+  $spriteState,
+  setSpriteState
+} from '@/companion/companion-store'
 import { $llmAutonomy } from '@/companion/prefs'
 import { persistString, storedString } from '@/shared/lib/storage'
 
@@ -630,6 +636,7 @@ export function endDragAt(pos: { x: number; y: number }): void {
   $spatialLocale.set('home')
   $dragVelocity.set({ vx: 0, vy: 0 })
   $clipOverride.set('drag_end')
+  setSpriteState('interacting', { durationMs: 500 })
   void window.spiritagent.sprite.setPosition(pos)
 }
 

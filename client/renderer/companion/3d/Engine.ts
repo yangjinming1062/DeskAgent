@@ -156,8 +156,37 @@ export class Engine {
     reportBackend(backendKind)
   }
 
+  frameCharacter(): void {
+    if (!this.character.root) {
+      return
+    }
+
+    const box = new THREE.Box3().setFromObject(this.character.root)
+
+    if (box.isEmpty()) {
+      return
+    }
+
+    const size = box.getSize(new THREE.Vector3())
+    const center = box.getCenter(new THREE.Vector3())
+
+    // Frame character so it fills ~88% of the viewport height nicely
+    const aspect = this.camera.aspect || 1
+    const halfFovRad = THREE.MathUtils.degToRad(this.camera.fov / 2)
+
+    const distH = (size.y * 0.5) / Math.tan(halfFovRad)
+    const distW = (size.x * 0.5) / (Math.tan(halfFovRad) * aspect)
+    const dist = Math.max(distH, distW) * 1.15
+
+    this.camera.position.set(0, center.y, Math.max(0.5, dist))
+    this.camera.lookAt(0, center.y, 0)
+  }
+
   async loadCharacter(bytes: ArrayBuffer | null, rigType: string = 'biped'): Promise<LoadedModelInfo> {
-    return this.character.load(bytes, this.scene, rigType)
+    const info = await this.character.load(bytes, this.scene, rigType)
+    this.frameCharacter()
+
+    return info
   }
 
   start(): void {
@@ -284,6 +313,7 @@ export class Engine {
     this.camera.aspect = width / height
     this.camera.updateProjectionMatrix()
     this.renderer.setSize(width, height)
+    this.frameCharacter()
   }
 
   dispose(): void {

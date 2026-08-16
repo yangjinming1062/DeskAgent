@@ -157,13 +157,6 @@ export function handleHoverInteraction(): void {
 
 export function handleDragEndInteraction(): void {
   const tags = $personalityTags.get()
-  const library = getClipDefs($modelInfo.get().rig_type)
-  const available = $availableClipNames.get()
-
-  const clip = resolveInteractionClip('drag', tags, library, available)
-  $clipOverride.set(clip)
-  setSpriteState('interacting', { durationMs: 2000 })
-
   void triggerReaction('drag', 'drag', tags)
   reportInteractionStat('drag')
 }

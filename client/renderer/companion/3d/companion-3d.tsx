@@ -15,7 +15,7 @@ import { $personalityTags } from '@/companion/persona-store'
 import { $activeSprite, $glbLoadFailed, $staticMode } from '@/companion/static-sprite/sprite-store'
 import { log } from '@/shared/lib/log'
 
-import { $dragVelocity } from '../spatial'
+import { $dragVelocity, $spatialLocomotion } from '../spatial'
 
 import { Engine } from './Engine'
 import {
@@ -147,9 +147,9 @@ export function Companion3D(): React.JSX.Element {
       ro.observe(eng.canvas)
       window.addEventListener('resize', onResize)
 
-      // Look-at — only when chat is closed (avoid head twitching while typing).
+      // Look-at — only when chat is closed AND not dragging (avoid head twitching while dragging/typing).
       const onPointerMove = (e: PointerEvent) => {
-        if ($chatOpen.get()) {
+        if ($chatOpen.get() || $spatialLocomotion.get() === 'drag') {
           return
         }
 

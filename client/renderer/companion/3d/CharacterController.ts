@@ -275,6 +275,15 @@ export class CharacterController {
         })
         scene.add(this.root)
         this.mixer = new THREE.AnimationMixer(this.root)
+        this.mixer.addEventListener('finished', () => {
+          if (this.mixer && !this.isProcedural) {
+            const baseClip = resolveClip(this.currentState, this.actionNames)
+
+            if (baseClip && this.actionNames.has(baseClip)) {
+              this.playClip(baseClip, 0.3)
+            }
+          }
+        })
 
         for (const clip of gltf.animations) {
           this.actions.set(clip.name, this.mixer.clipAction(clip))
@@ -1058,8 +1067,8 @@ export class CharacterController {
 
   setDragVelocity(vx: number, vy: number): void {
     // vx, vy normalised in px/ms
-    this.dragTilt.z = THREE.MathUtils.clamp(-vx * 0.28, -0.45, 0.45)
-    this.dragTilt.x = THREE.MathUtils.clamp(vy * 0.18, -0.35, 0.35)
+    this.dragTilt.z = THREE.MathUtils.clamp(-vx * 0.12, -0.25, 0.25)
+    this.dragTilt.x = THREE.MathUtils.clamp(vy * 0.08, -0.2, 0.2)
   }
 
   update(delta: number): void {
@@ -1068,8 +1077,8 @@ export class CharacterController {
     this.morph.update(delta)
 
     // Smoothly decay drag tilt
-    this.dragTilt.x = THREE.MathUtils.lerp(this.dragTilt.x, 0, 0.08)
-    this.dragTilt.z = THREE.MathUtils.lerp(this.dragTilt.z, 0, 0.08)
+    this.dragTilt.x = THREE.MathUtils.lerp(this.dragTilt.x, 0, 0.1)
+    this.dragTilt.z = THREE.MathUtils.lerp(this.dragTilt.z, 0, 0.1)
 
     if (this.isProcedural) {
       this.updateProcedural(delta)
@@ -1098,7 +1107,11 @@ export class CharacterController {
   private playClip(name: string, fade: number): void {
     const next = this.actions.get(name)
 
-    if (!next || next === this.currentAction) {
+    if (!next) {
+      return
+    }
+
+    if (next === this.currentAction && next.isRunning()) {
       return
     }
 
