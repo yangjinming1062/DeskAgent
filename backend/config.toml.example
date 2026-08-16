@@ -170,6 +170,12 @@ companion_avatar_upload_rate_limit_per_minute = 5
 companion_model_generate_rate_limit_per_minute = 1
 companion_sprite_generate_rate_limit_per_minute = 10
 companion_wardrobe_generate_rate_limit_per_minute = 5
+rate_limit_storage_url = ""
+
+[observability]
+metrics_enabled = true
+metrics_path = "/metrics"
+metrics_auth_token = ""
 
 [logging]
 log_level = "INFO"

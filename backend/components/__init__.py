@@ -84,6 +84,18 @@ from .functions import (
 from .hashing import normalize_sha512, sha256_hex, sha512_b64
 from .logger import get_logger, set_request_user_id, setup_logging
 from .network import download_capped, is_safe_outbound, safe_outbound_async_client
+from .observability import (
+    HTTP_REQUEST_DURATION_SECONDS,
+    HTTP_REQUESTS_TOTAL,
+    RPC_REQUEST_DURATION_SECONDS,
+    RPC_REQUESTS_TOTAL,
+    WS_CONNECTIONS_ACTIVE,
+    async_trace_span,
+    get_current_span_id,
+    get_current_trace_id,
+    render_metrics_response,
+    sync_trace_span,
+)
 from .redact import redact_sensitive_text
 from .temp_files import cleanup_expired, get_file_path, save_file
 from .temp_files import delete_file as temp_file_delete
@@ -100,6 +112,8 @@ __all__ = [
     "DEFAULT_LANGUAGE",
     "DEFAULT_SESSION_TITLE",
     "ENGINE",
+    "HTTP_REQUESTS_TOTAL",
+    "HTTP_REQUEST_DURATION_SECONDS",
     "JSONRPC_INTERNAL_ERROR",
     "JSONRPC_INVALID_PARAMS",
     "JSONRPC_INVALID_REQUEST",
@@ -138,6 +152,8 @@ __all__ = [
     "NIGHTLY_WINDOW_END_HOUR",
     "NIGHTLY_WINDOW_START_HOUR",
     "REQUEST_ID_HEADER",
+    "RPC_REQUESTS_TOTAL",
+    "RPC_REQUEST_DURATION_SECONDS",
     "SEARCH_INPUT_MAX_LEN",
     "SESSION_LOCAL",
     "SESSION_PREVIEW_MAX_CHARS",
@@ -153,11 +169,13 @@ __all__ = [
     "TOOL_CALL_ID_HEX_PREFIX_LEN",
     "TOOL_ENFORCE_OFF_VALUES",
     "TTS_MAX_TEXT_CHARS",
+    "WS_CONNECTIONS_ACTIVE",
     "BackgroundTask",
     "adopt_inbound",
     "apply_partial",
     "approx_message_tokens",
     "as_bool",
+    "async_trace_span",
     "attachment_root",
     "attachments_gc_session",
     "begin_local_scope",
@@ -171,6 +189,8 @@ __all__ = [
     "download_capped",
     "ensure_utc",
     "fetch_public_ip",
+    "get_current_span_id",
+    "get_current_trace_id",
     "get_db",
     "get_file_path",
     "get_logger",
@@ -181,6 +201,7 @@ __all__ = [
     "path_attach_ref",
     "positive_int",
     "redact_sensitive_text",
+    "render_metrics_response",
     "safe_json_loads",
     "safe_outbound_async_client",
     "save_file",
@@ -189,6 +210,7 @@ __all__ = [
     "setup_logging",
     "sha256_hex",
     "sha512_b64",
+    "sync_trace_span",
     "temp_file_delete",
     "temp_files_gc_session",
     "tool_error",

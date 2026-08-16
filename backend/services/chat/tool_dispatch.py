@@ -1,7 +1,7 @@
 import asyncio
 from dataclasses import dataclass
 
-from components import get_logger, redact_sensitive_text, safe_json_loads, tool_error
+from components import async_trace_span, get_logger, redact_sensitive_text, safe_json_loads, tool_error
 from fastapi import WebSocketDisconnect
 
 from services.gateway import MANAGER, await_future
@@ -106,17 +106,18 @@ async def _execute_single_tool(tc: dict, ctx: _ToolDispatchContext) -> dict:
             return make_tool_result_message(name, result_str, tc["id"])
 
         tool_location = REGISTRY.get_location(ctx.user_id, name)
-        match tool_location:
-            case "backend":
-                result_str = await REGISTRY.execute_backend_tool(
-                    name, args, user_id=ctx.user_id, llm_config=ctx.llm_config, user_settings=ctx.user_settings, parent_session_id=ctx.session_id, emitter=ctx.emitter
-                )
-            case "memory":
-                result_str = await ctx.native_memory.execute_tool(name, args)
-            case "runner":
-                result_str = await _dispatch_runner_tool(ctx.user_id, name, args, tc["id"], ctx.emitter)
-            case _:
-                result_str = tool_error(f"Unknown tool location for {name}")
+        async with async_trace_span(f"tool.{name}", attributes={"tool.location": tool_location, "tool.call_id": tc["id"]}):
+            match tool_location:
+                case "backend":
+                    result_str = await REGISTRY.execute_backend_tool(
+                        name, args, user_id=ctx.user_id, llm_config=ctx.llm_config, user_settings=ctx.user_settings, parent_session_id=ctx.session_id, emitter=ctx.emitter
+                    )
+                case "memory":
+                    result_str = await ctx.native_memory.execute_tool(name, args)
+                case "runner":
+                    result_str = await _dispatch_runner_tool(ctx.user_id, name, args, tc["id"], ctx.emitter)
+                case _:
+                    result_str = tool_error(f"Unknown tool location for {name}")
 
         post_decision = ctx.guardrails.after_call(name, args, result_str)
         result_str = append_toolguard_guidance(result_str, post_decision)

@@ -4,7 +4,7 @@ import re
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-from components import JSON_RPC_VERSION, JSONRPC_INTERNAL_ERROR, JSONRPC_INVALID_REQUEST, JSONRPC_METHOD_NOT_FOUND, JSONRPC_PARSE_ERROR, get_logger
+from components import JSON_RPC_VERSION, JSONRPC_INTERNAL_ERROR, JSONRPC_INVALID_REQUEST, JSONRPC_METHOD_NOT_FOUND, JSONRPC_PARSE_ERROR, async_trace_span, get_logger
 
 from .buffer import ReplayBuffer
 
@@ -153,7 +153,8 @@ class JsonRpcDispatcher:
             return
 
         try:
-            result = await handler(params)
+            async with async_trace_span(f"rpc.{method}", attributes={"rpc.id": msg_id}):
+                result = await handler(params)
         except JsonRpcError as e:
             await self._reply_error(msg_id, e.code, e.message, e.data)
             return

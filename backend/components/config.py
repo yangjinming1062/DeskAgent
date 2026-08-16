@@ -184,6 +184,12 @@ class Settings(BaseSettings):
     companion_model_generate_rate_limit_per_minute: int
     companion_sprite_generate_rate_limit_per_minute: int
     companion_wardrobe_generate_rate_limit_per_minute: int
+    rate_limit_storage_url: str = ""
+
+    metrics_enabled: bool = True
+    metrics_path: str = "/metrics"
+    metrics_auth_token: str = ""
+
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
     log_format: Literal["json", "text"]
 

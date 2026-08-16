@@ -10,8 +10,19 @@ import services.tools.builtin  # noqa: F401
 from alembic import command
 from alembic.config import Config
 from api import ROUTERS
-from components import ENGINE, SETTINGS, attachment_root, cleanup_expired, correlated_exception_response, correlation_id_middleware, fetch_public_ip, get_logger, setup_logging
-from fastapi import FastAPI
+from components import (
+    ENGINE,
+    SETTINGS,
+    attachment_root,
+    cleanup_expired,
+    correlated_exception_response,
+    correlation_id_middleware,
+    fetch_public_ip,
+    get_logger,
+    render_metrics_response,
+    setup_logging,
+)
+from fastapi import FastAPI, Header, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from services.companion import recover_stuck_model_generations
@@ -148,6 +159,15 @@ app.mount("/updates", StaticFiles(directory=str(updates_dir)), name="updates")
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+if SETTINGS.metrics_enabled:
+
+    @app.get(SETTINGS.metrics_path)
+    def metrics_endpoint(
+        authorization: str | None = Header(default=None, alias="Authorization"), x_metrics_token: str | None = Header(default=None, alias="X-Metrics-Token")
+    ) -> Response:
+        return render_metrics_response(auth_header=authorization, token_header=x_metrics_token)
 
 
 for _router in ROUTERS:
