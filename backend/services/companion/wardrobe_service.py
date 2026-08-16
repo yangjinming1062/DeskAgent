@@ -3,9 +3,8 @@ import json
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
-from urllib.parse import urlparse
 
-from components import get_file_path, get_logger, is_safe_outbound, parse_llm_json, safe_json_loads, safe_outbound_async_client, save_file, temp_file_delete
+from components import download_capped, get_file_path, get_logger, parse_llm_json, safe_json_loads, save_file, temp_file_delete
 from modules.companion import Persona, WardrobeItem, WardrobePreviewResponse
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -69,17 +68,8 @@ async def fetch_texture_bytes(url: str) -> bytes | None:
             return None
         return await asyncio.to_thread(Path(res[0]).read_bytes)
 
-    parsed = urlparse(url)
-    if parsed.scheme not in ("http", "https"):
-        return None
-    safe, _ = is_safe_outbound(parsed.hostname or "")
-    if not safe:
-        return None
     try:
-        async with safe_outbound_async_client(timeout=120.0) as client:
-            resp = await client.get(url)
-            resp.raise_for_status()
-            return resp.content
+        return await download_capped(url, max_bytes=50 * 1024 * 1024, timeout=120.0)
     except Exception:
         return None
 
@@ -213,7 +203,7 @@ async def _classify_wardrobe_kind(description: str, user_id: int, db: AsyncSessi
         socket = _resolve_socket(parsed.get("socket"), slot, body_joint_names) if kind == "accessory" else None
         if kind == "accessory" and socket is None:
             # No resolvable socket → degrade to a garment in the nearest slot.
-            kind, slot, physics = "garment", slot if slot != "outfit" else "torso", "skin"
+            kind, slot, physics = ("garment", slot if slot != "outfit" else "torso", "skin")
         return WardrobeRouting(kind=kind, slot=slot, socket=socket, physics=physics)
     except Exception as exc:
         logger.info("wardrobe kind classifier failed, defaulting to garment", extra={"error": str(exc)})
@@ -340,19 +330,17 @@ async def _download_texture_with_mime(url: str) -> tuple[bytes, str, str] | None
     if "/api/media/files/" in url:
         # Already-resolved temp-media URLs don't go through here — handled above.
         return None
-    parsed = urlparse(url)
-    if parsed.scheme not in ("http", "https"):
-        return None
-    safe, _ = is_safe_outbound(parsed.hostname or "")
-    if not safe:
-        return None
     try:
-        async with safe_outbound_async_client(timeout=120.0) as client:
-            resp = await client.get(url)
-            resp.raise_for_status()
-            raw_ct = (resp.headers.get("content-type") or "image/png").split(";")[0].strip().lower() or "image/png"
-            ext = {"image/jpeg": "jpg", "image/webp": "webp", "image/gif": "gif"}.get(raw_ct, "png")
-            return resp.content, raw_ct, ext
+        content = await download_capped(url, max_bytes=50 * 1024 * 1024, timeout=120.0)
+        ext = "png"
+        raw_ct = "image/png"
+        if content.startswith(b"\xff\xd8\xff"):
+            raw_ct, ext = "image/jpeg", "jpg"
+        elif content.startswith(b"RIFF") and b"WEBP" in content[:12]:
+            raw_ct, ext = "image/webp", "webp"
+        elif content.startswith(b"GIF8"):
+            raw_ct, ext = "image/gif", "gif"
+        return content, raw_ct, ext
     except Exception:
         return None
 
@@ -395,7 +383,7 @@ async def preview_garment(
     rig_type = model.rig_type or "biped"
     assembly = routing.assembly_json()
     # The geometry pipeline (minutes) and PBR fan-out (seconds) are independent.
-    glb_bytes, (res_dict, prompts) = await asyncio.gather(
+    garment_task = asyncio.create_task(
         run_garment_pipeline(
             description=description,
             body_glb_bytes=body_glb_bytes,
@@ -408,9 +396,17 @@ async def preview_garment(
             body_joint_names=body_joint_names,
             user_id=user_id,
             io_dir=io_dir,
-        ),
-        _generate_pbr_channels(description=description, feedback=feedback, rig_type=rig_type, reference_data_uri=reference_data_uri, user_id=user_id),
+        )
     )
+    pbr_task = asyncio.create_task(_generate_pbr_channels(description=description, feedback=feedback, rig_type=rig_type, reference_data_uri=reference_data_uri, user_id=user_id))
+    try:
+        glb_bytes, (res_dict, prompts) = await asyncio.gather(garment_task, pbr_task)
+    except Exception:
+        if not garment_task.done():
+            garment_task.cancel()
+        if not pbr_task.done():
+            pbr_task.cancel()
+        raise
 
     mesh_fid, mesh_url = save_file(glb_bytes, session_id="", content_type="model/gltf-binary", ext="glb")
     return _preview_response(res_dict, prompts, mesh_url=mesh_url, mesh_file_id=mesh_fid, kind=routing.kind, assembly_json=assembly)
@@ -458,7 +454,7 @@ async def confirm_wardrobe_item(
         except OSError:
             return None
 
-    normal_url, roughness_url, metalness_url, displacement_url, mesh_url = await asyncio.gather(
+    (normal_url, roughness_url, metalness_url, displacement_url, mesh_url) = await asyncio.gather(
         _resolve_channel(normal_file_id, "wardrobe_normal"),
         _resolve_channel(roughness_file_id, "wardrobe_roughness"),
         _resolve_channel(metalness_file_id, "wardrobe_metalness"),
@@ -502,11 +498,12 @@ async def confirm_wardrobe_item(
     if equip:
         await _equip(db, item)
     db.add(item)
-    await db.commit()
-    await db.refresh(item)
-    _re_sign_texture(item)
+    await db.flush()
     if equip:
         await _sync_persona_outfit(db, user_id)
+    else:
+        await db.commit()
+    _re_sign_texture(item)
     return item
 
 
@@ -564,10 +561,8 @@ async def equip_wardrobe_item(db: AsyncSession, user_id: int, item_id: int) -> W
     if item is None:
         raise ValueError("Wardrobe item not found")
     await _equip(db, item)
-    await db.commit()
-    await db.refresh(item)
-    _re_sign_texture(item)
     await _sync_persona_outfit(db, user_id)
+    _re_sign_texture(item)
     return item
 
 
@@ -582,7 +577,6 @@ async def decline_wardrobe_item(db: AsyncSession, user_id: int, item_id: int) ->
         raise ValueError("Wardrobe item is not a pending gift")
     item.gift_state = "declined"
     await db.commit()
-    await db.refresh(item)
     _re_sign_texture(item)
     return item
 
@@ -595,10 +589,11 @@ async def delete_wardrobe_item(db: AsyncSession, user_id: int, item_id: int) -> 
     paths = list(_iter_companion_asset_paths(item))
     was_equipped = item.equipped
     await db.delete(item)
-    await db.commit()
     # Refresh the persona outfit field from the surviving equipped set.
     if was_equipped:
         await _sync_persona_outfit(db, user_id)
+    else:
+        await db.commit()
     for _attr, uid, filename in paths:
         if unlink_companion_asset(f"companion-assets/{uid}/{filename}") is None:
             logger.warning("Failed to unlink wardrobe asset", extra={"user_id": user_id, "path": f"companion-assets/{uid}/{filename}"})

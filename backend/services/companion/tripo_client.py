@@ -4,7 +4,7 @@ from collections.abc import Callable
 from typing import Any
 
 import httpx
-from components import SETTINGS, get_logger
+from components import SETTINGS, download_capped, get_logger
 
 logger = get_logger(__name__)
 
@@ -230,10 +230,7 @@ async def poll_task(
 
 async def download_model(model_url: str) -> bytes:
     """Tripo model URLs are short-lived; download immediately after the rig task succeeds."""
-    async with httpx.AsyncClient(timeout=_DOWNLOAD_TIMEOUT_SECONDS, follow_redirects=True) as client:
-        resp = await client.get(model_url)
-        resp.raise_for_status()
-        return resp.content
+    return await download_capped(model_url, max_bytes=100 * 1024 * 1024, timeout=_DOWNLOAD_TIMEOUT_SECONDS)
 
 
 async def account_balance() -> dict[str, float]:

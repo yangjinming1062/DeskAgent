@@ -4,9 +4,8 @@ import contextlib
 import json
 import secrets
 from pathlib import Path
-from urllib.parse import urlparse
 
-from components import SESSION_LOCAL, SETTINGS, get_file_path, get_logger, is_safe_outbound, safe_json_loads, safe_outbound_async_client
+from components import SESSION_LOCAL, SETTINGS, download_capped, get_file_path, get_logger, safe_json_loads
 from modules.companion import AvatarAsset, Persona
 from pydantic import ValidationError
 from sqlalchemy import select, update
@@ -211,21 +210,14 @@ async def _download_to_bytes(url: str) -> tuple[bytes, str] | None:
         if res:
             path, content_type = res
             return Path(path).read_bytes(), content_type
-    # Out-of-scope provider URL: same SSRF guard as send_message_tool.
-    parsed = urlparse(url)
-    if parsed.scheme not in ("http", "https"):
-        raise RuntimeError(f"refusing to fetch non-http asset url: {url}")
-    hostname = parsed.hostname or ""
-
-    safe, reason = is_safe_outbound(hostname)
-    if not safe:
-        raise RuntimeError(f"refusing to fetch unsafe outbound host: {hostname} ({reason})")
-
     try:
-        async with safe_outbound_async_client(timeout=120.0) as client:
-            resp = await client.get(url)
-            resp.raise_for_status()
-            return resp.content, (resp.headers.get("content-type") or "image/jpeg").split(";")[0].strip().lower()
+        content = await download_capped(url, max_bytes=50 * 1024 * 1024, timeout=120.0)
+        ct = "image/jpeg"
+        if content.startswith(b"\x89PNG"):
+            ct = "image/png"
+        elif content.startswith(b"RIFF") and b"WEBP" in content[:12]:
+            ct = "image/webp"
+        return content, ct
     except Exception:
         return None
 

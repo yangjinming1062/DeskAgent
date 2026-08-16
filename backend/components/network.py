@@ -1,6 +1,7 @@
 import ipaddress
 import socket
 from typing import Any
+from urllib.parse import urljoin, urlparse
 
 import httpx
 
@@ -50,3 +51,59 @@ def safe_outbound_async_client(**kwargs: Any) -> httpx.AsyncClient:
             raise httpx.ConnectError(f"refusing to connect to {request.url.host} ({reason})")
 
     return httpx.AsyncClient(follow_redirects=False, event_hooks={"request": [_verify]}, **kwargs)
+
+
+async def download_capped(url: str, *, max_bytes: int, timeout: float = 60.0, max_redirects: int = 5) -> bytes:
+    """Download a remote URL safely with size-capping, hop-by-hop SSRF validation,
+    protocol whitelist ({http, https}), and HTTPS->HTTP downgrade protection.
+    """
+    current_url = url
+    redirect_count = 0
+
+    client_timeout = httpx.Timeout(timeout, connect=10.0, read=timeout, write=timeout)
+
+    while True:
+        parsed = urlparse(current_url)
+        if parsed.scheme not in ("http", "https"):
+            raise ValueError(f"unsupported URL scheme: {parsed.scheme!r}")
+
+        safe, reason = is_safe_outbound(parsed.hostname or "")
+        if not safe:
+            raise httpx.ConnectError(f"SSRF check failed for {parsed.hostname}: {reason}")
+
+        async with safe_outbound_async_client(timeout=client_timeout) as client:
+            async with client.stream("GET", current_url) as resp:
+                if resp.is_redirect or resp.status_code in (301, 302, 303, 307, 308):
+                    redirect_count += 1
+                    if redirect_count > max_redirects:
+                        raise RuntimeError(f"too many redirects ({redirect_count} > {max_redirects})")
+
+                    location = resp.headers.get("location")
+                    if not location:
+                        raise RuntimeError("redirect response missing location header")
+
+                    target_url = urljoin(current_url, location)
+                    target_parsed = urlparse(target_url)
+
+                    # Protocol whitelist
+                    if target_parsed.scheme not in ("http", "https"):
+                        raise ValueError(f"redirect to unsupported scheme: {target_parsed.scheme!r}")
+
+                    # Disallow HTTPS -> HTTP downgrade
+                    if parsed.scheme == "https" and target_parsed.scheme == "http":
+                        raise ValueError("refusing redirect downgrade from HTTPS to HTTP")
+
+                    current_url = target_url
+                    continue
+
+                resp.raise_for_status()
+
+                sink = bytearray()
+                total = 0
+                async for chunk in resp.aiter_bytes():
+                    total += len(chunk)
+                    if total > max_bytes:
+                        raise ValueError(f"download exceeded size limit of {max_bytes} bytes")
+                    sink.extend(chunk)
+
+                return bytes(sink)

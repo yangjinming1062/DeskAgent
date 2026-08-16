@@ -3,8 +3,7 @@ import json
 from dataclasses import replace
 from datetime import timedelta
 
-import httpx
-from components import SESSION_LOCAL, SETTINGS, get_logger, save_file, utc_now
+from components import SESSION_LOCAL, SETTINGS, download_capped, get_logger, save_file, utc_now
 from modules.media import VideoGenJob
 from modules.ws import WSEvent
 from sqlalchemy import select, update
@@ -218,10 +217,10 @@ async def _poll_and_finalize_locked(job_id: int) -> None:
 
             try:
                 status = await provider.poll(current_task_id)
-            except Exception as e:
+            except Exception:
                 logger.exception("video poll failed", extra={"job_id": job_id})
-                await _update_job(job_id, status="failed", error_reason="poll_failed", error_message=str(e))
-                await _evt("video_gen.failed", {"task_id": str(job_id), "error": str(e)})
+                await _update_job(job_id, status="failed", error_reason="poll_failed", error_message="视频生成失败，请稍后重试")
+                await _evt("video_gen.failed", {"task_id": str(job_id), "error": "视频生成失败，请稍后重试"})
                 return
 
             if status.status == "succeeded":
@@ -241,30 +240,31 @@ async def _poll_and_finalize_locked(job_id: int) -> None:
                         return
                 try:
                     file_id, public_url = await _download_and_store(provider, status.file_id, download_url=status.download_url)
-                except Exception as e:
+                except Exception:
                     logger.exception("video download failed", extra={"job_id": job_id})
-                    await _update_job(job_id, status="failed", error_reason="download_failed", error_message=str(e))
-                    await _evt("video_gen.failed", {"task_id": str(job_id), "error": str(e)})
+                    await _update_job(job_id, status="failed", error_reason="download_failed", error_message="视频下载失败，请稍后重试")
+                    await _evt("video_gen.failed", {"task_id": str(job_id), "error": "视频下载失败，请稍后重试"})
                     return
                 await _update_job(job_id, status="succeeded", file_id=file_id, video_url=public_url)
                 await _evt("video_gen.completed", {"task_id": str(job_id), "url": public_url})
                 logger.info("video job succeeded", extra={"job_id": job_id, "file_id": file_id})
                 return
             if status.status == "failed":
-                await _update_job(job_id, status="failed", error_reason="provider_failed", error_message=status.error)
-                await _evt("video_gen.failed", {"task_id": str(job_id), "error": status.error})
+                err_msg = status.error or "视频生成失败，请稍后重试"
+                await _update_job(job_id, status="failed", error_reason="provider_failed", error_message=err_msg)
+                await _evt("video_gen.failed", {"task_id": str(job_id), "error": err_msg})
                 return
 
             await _update_job(job_id, status="processing")
             if utc_now() >= deadline:
-                await _update_job(job_id, status="failed", error_reason="timeout", error_message="polling deadline reached")
-                await _evt("video_gen.failed", {"task_id": str(job_id), "error": "timeout"})
+                await _update_job(job_id, status="failed", error_reason="timeout", error_message="视频生成超时，请稍后重试")
+                await _evt("video_gen.failed", {"task_id": str(job_id), "error": "视频生成超时，请稍后重试"})
                 return
             await asyncio.sleep(interval)
-    except Exception as exc:
+    except Exception:
         logger.exception("unhandled exception in video poll worker", extra={"job_id": job_id})
-        await _update_job(job_id, status="failed", error_reason="worker_failed", error_message=str(exc))
-        await _evt("video_gen.failed", {"task_id": str(job_id), "error": str(exc)})
+        await _update_job(job_id, status="failed", error_reason="worker_failed", error_message="视频生成服务异常，请稍后重试")
+        await _evt("video_gen.failed", {"task_id": str(job_id), "error": "视频生成服务异常，请稍后重试"})
 
 
 async def _download_and_store(provider, file_id: str | None, *, download_url: str | None = None) -> tuple[str, str]:
@@ -292,21 +292,9 @@ async def _stream_download(url: str) -> bytes:
     """Bounded download — caps at ``video_gen_download_max_bytes`` so a
     runaway provider doesn't fill the disk. Uses a long ``read`` timeout
     (10 min) since the LLM default (30–60s) is way too short for a 200MB
-    video on a slow link, and a single ``bytearray`` to keep peak memory
-    at ~1× the video size."""
+    video on a slow link."""
     cap = SETTINGS.video_gen_download_max_bytes
-    total = 0
-    sink = bytearray()
-    timeout = httpx.Timeout(600.0, connect=10.0, read=600.0, write=600.0)
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        async with client.stream("GET", url) as resp:
-            resp.raise_for_status()
-            async for chunk in resp.aiter_bytes():
-                total += len(chunk)
-                if total > cap:
-                    raise RuntimeError(f"video download exceeded {cap} bytes")
-                sink.extend(chunk)
-    return bytes(sink)
+    return await download_capped(url, max_bytes=cap, timeout=600.0)
 
 
 async def resume_pending_video_jobs() -> None:

@@ -1,8 +1,7 @@
 import base64
 from urllib.parse import urlparse
 
-import httpx
-from components import is_safe_outbound, safe_outbound_async_client
+from components import download_capped, is_safe_outbound
 
 
 def _parse_data_uri(reference: str) -> tuple[bytes, str] | None:
@@ -20,12 +19,6 @@ def _parse_data_uri(reference: str) -> tuple[bytes, str] | None:
 async def resolve_reference_bytes(reference_image: str) -> tuple[bytes, str]:
     """Return ``(bytes, content_type)`` for a reference image given as a
     ``data:`` URI or an http(s) URL.
-
-    URLs are fetched with ``follow_redirects=False`` and the connect-time
-    destination re-verified against ``is_safe_outbound`` (loopback, link-local,
-    private, multicast, and reserved IPs are blocked at the DNS-resolution
-    layer) so a poisoned reference URL can't redirect into cloud metadata or
-    other internal hosts.
     """
     from_uri = _parse_data_uri(reference_image)
     if from_uri is not None:
@@ -35,13 +28,14 @@ async def resolve_reference_bytes(reference_image: str) -> tuple[bytes, str]:
     if parsed.scheme not in ("http", "https"):
         raise ValueError(f"reference_image must be a data URI or http(s) URL: {reference_image[:64]!r}")
     hostname = parsed.hostname or ""
-
     safe, reason = is_safe_outbound(hostname)
     if not safe:
         raise RuntimeError(f"refusing to fetch unsafe reference host: {hostname} ({reason})")
 
-    async with safe_outbound_async_client(timeout=httpx.Timeout(120.0, connect=10.0)) as client:
-        resp = await client.get(reference_image)
-        resp.raise_for_status()
-        content_type = (resp.headers.get("content-type") or "image/jpeg").split(";")[0].strip().lower()
-        return resp.content, content_type
+    data = await download_capped(reference_image, max_bytes=50 * 1024 * 1024, timeout=120.0)
+    ct = "image/jpeg"
+    if data.startswith(b"\x89PNG"):
+        ct = "image/png"
+    elif data.startswith(b"RIFF") and b"WEBP" in data[:12]:
+        ct = "image/webp"
+    return data, ct

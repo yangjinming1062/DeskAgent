@@ -7,7 +7,7 @@ from services.companion import (
     build_signed_asset_url,
     build_signed_avatar_url,
     verify_signed_asset_request,
-    verify_signed_avatar_request
+    verify_signed_avatar_request,
 )
 
 
@@ -24,10 +24,7 @@ def test_signed_asset_url_round_trip():
     parsed = urlparse(url)
     qs = parse_qs(parsed.query)
     assert verify_signed_asset_request(
-        42,
-        "idle_video_abc.mp4",
-        int(qs["expires"][0]),
-        qs["sig"][0]
+        42, "idle_video_abc.mp4", int(qs["expires"][0]), qs["sig"][0]
     )
 
 
@@ -41,7 +38,7 @@ def test_signed_asset_url_rejects_wrong_user():
         99,  # different user — must not be valid for the same URL
         "idle_video_abc.mp4",
         int(qs["expires"][0]),
-        qs["sig"][0]
+        qs["sig"][0],
     )
 
 
@@ -55,7 +52,7 @@ def test_signed_asset_url_rejects_wrong_filename():
         42,
         "idle_video_xxx.mp4",  # different filename
         int(qs["expires"][0]),
-        qs["sig"][0]
+        qs["sig"][0],
     )
 
 
@@ -66,10 +63,7 @@ def test_signed_asset_url_rejects_tampered_sig():
     parsed = urlparse(url)
     qs = parse_qs(parsed.query)
     assert not verify_signed_asset_request(
-        42,
-        "idle_video_abc.mp4",
-        int(qs["expires"][0]),
-        "deadbeef" + qs["sig"][0][8:]
+        42, "idle_video_abc.mp4", int(qs["expires"][0]), "deadbeef" + qs["sig"][0][8:]
     )
 
 
@@ -92,9 +86,7 @@ def test_signed_avatar_url_round_trip():
     parsed = urlparse(url)
     qs = parse_qs(parsed.query)
     assert verify_signed_avatar_request(
-        "fileid123.png",
-        int(qs["expires"][0]),
-        qs["sig"][0]
+        "fileid123.png", int(qs["expires"][0]), qs["sig"][0]
     )
 
 
@@ -107,7 +99,7 @@ def test_signed_avatar_url_rejects_wrong_filename():
     assert not verify_signed_avatar_request(
         "other.png",  # wrong filename
         int(qs["expires"][0]),
-        qs["sig"][0]
+        qs["sig"][0],
     )
 
 

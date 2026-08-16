@@ -1,6 +1,6 @@
 import json
+from collections.abc import Callable
 from typing import Any
-from typing import Callable
 
 import httpx
 import pytest
@@ -171,7 +171,9 @@ async def test_create_image_to_model_clamps_face_limit_for_p_series(mock_http):
     mock_http.responder = lambda _r: httpx.Response(
         200, json=_ok({"task_id": "task_p"})
     )
-    await tripo_client.create_image_to_model("file_x", model_version="P1-20260311", face_limit=500_000)
+    await tripo_client.create_image_to_model(
+        "file_x", model_version="P1-20260311", face_limit=500_000
+    )
     body = mock_http.calls[0][2]
     assert body["face_limit"] == 20_000
 
@@ -181,11 +183,7 @@ async def test_create_multiview_to_model_formats_inputs_correctly(mock_http):
     mock_http.responder = lambda _r: httpx.Response(
         200, json=_ok({"task_id": "task_multi"})
     )
-    views = {
-        "front": "token_f",
-        "right": "token_r",
-        "back": "token_b"
-    }
+    views = {"front": "token_f", "right": "token_r", "back": "token_b"}
     tid = await tripo_client.create_multiview_to_model(views)
     assert tid == "task_multi"
     assert mock_http.calls[0][0] == "POST"
@@ -194,7 +192,7 @@ async def test_create_multiview_to_model_formats_inputs_correctly(mock_http):
     assert body["inputs"] == [
         {"front": "token_f"},
         {"right": "token_r"},
-        {"back": "token_b"}
+        {"back": "token_b"},
     ]
 
 
@@ -268,8 +266,8 @@ async def test_poll_task_returns_on_success(mock_http):
         lambda _r: httpx.Response(200, json=_ok({"status": "running"})),
         lambda _r: httpx.Response(
             200,
-            json=_ok({"status": "success", "output": {"model_url": "https://x/y.glb"}})
-        )
+            json=_ok({"status": "success", "output": {"model_url": "https://x/y.glb"}}),
+        ),
     ]
     seq = iter(queue)
 
@@ -297,7 +295,7 @@ async def test_poll_task_invokes_on_progress_with_each_response(mock_http):
         lambda _r: httpx.Response(200, json=_ok({"status": "running", "progress": 30})),
         lambda _r: httpx.Response(
             200, json=_ok({"status": "success", "progress": 100})
-        )
+        ),
     ]
     seq = iter(queue)
 
