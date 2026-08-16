@@ -24,12 +24,16 @@ class ReplayBuffer:
     Maintains a monotonically increasing sequence ID for frames sent to the client.
     Enables seamless session resume across short-term disconnects (< 30s) by replaying
     un-acknowledged frames that occurred during the disconnection gap.
-    """
+
+    Frames are stored in a ``dict[int, BufferedFrame]`` keyed by seq; Python 3.7+
+    dicts guarantee insertion order, so iteration order matches send order without
+    needing a separate ``_seq_order`` list (which would create sync hazards on
+    prune / clear)."""
 
     def __init__(self, capacity: int = DEFAULT_REPLAY_BUFFER_CAPACITY, ttl_seconds: float = DEFAULT_REPLAY_BUFFER_TTL_SECONDS) -> None:
         self.capacity = capacity
         self.ttl_seconds = ttl_seconds
-        self._buffer: list[BufferedFrame] = []
+        self._buffer: dict[int, BufferedFrame] = {}
         self._current_seq: int = 0
 
     @property
@@ -38,7 +42,7 @@ class ReplayBuffer:
 
     @property
     def min_seq(self) -> int:
-        return self._buffer[0].seq if self._buffer else (self._current_seq + 1)
+        return next(iter(self._buffer.values())).seq if self._buffer else self._current_seq
 
     @property
     def max_seq(self) -> int:
@@ -49,11 +53,15 @@ class ReplayBuffer:
 
     def get_unsent(self) -> list[BufferedFrame]:
         """Return all frames in the buffer that have not yet been sent over the wire."""
-        return [f for f in self._buffer if not f.sent]
+        return [f for f in self._buffer.values() if not f.sent]
 
     def mark_sent_through(self, max_seq: int) -> None:
-        """Mark all buffered frames with seq <= max_seq as sent."""
-        for f in self._buffer:
+        """Mark all buffered frames with seq <= max_seq as sent.
+
+        Frames are NOT removed here — ``ack`` is the only deletion path so the
+        30s replay window keeps un-acknowledged frames available for catch-up
+        on reconnect. O(n) over the dict; n is bounded by capacity (500)."""
+        for f in self._buffer.values():
             if f.seq <= max_seq:
                 f.sent = True
 
@@ -72,19 +80,21 @@ class ReplayBuffer:
             stamped_frame["seq"] = seq
 
         now = time.monotonic()
-        self._buffer.append(BufferedFrame(seq=seq, timestamp=now, frame=stamped_frame, sent=False))
+        self._buffer[seq] = BufferedFrame(seq=seq, timestamp=now, frame=stamped_frame, sent=False)
         self._prune(now)
         return seq, stamped_frame
 
     def ack(self, ack_seq: int) -> int:
         """Prune all frames with seq <= ack_seq. Returns the number of pruned frames."""
-        if not self._buffer or ack_seq < self._buffer[0].seq:
+        if not self._buffer:
             return 0
-
-        original_len = len(self._buffer)
-        self._buffer = [f for f in self._buffer if f.seq > ack_seq]
-        pruned_count = original_len - len(self._buffer)
-        return pruned_count
+        oldest_seq = next(iter(self._buffer.values())).seq
+        if ack_seq < oldest_seq:
+            return 0
+        pruned_keys = [k for k in self._buffer if k <= ack_seq]
+        for k in pruned_keys:
+            del self._buffer[k]
+        return len(pruned_keys)
 
     def can_replay(self, last_seq: int) -> bool:
         """Check whether all frames since `last_seq` are still present in the buffer."""
@@ -104,7 +114,7 @@ class ReplayBuffer:
             return False
 
         # The oldest available frame in buffer
-        oldest_seq = self._buffer[0].seq
+        oldest_seq = next(iter(self._buffer.values())).seq
         # We can replay if last_seq is immediately before or within our buffer range
         return (last_seq + 1) >= oldest_seq
 
@@ -120,19 +130,24 @@ class ReplayBuffer:
         if not self.can_replay(last_seq):
             return None
 
-        return [f.frame for f in self._buffer if f.seq > last_seq]
+        return [f.frame for f in self._buffer.values() if f.seq > last_seq]
 
     def _prune(self, now: float) -> None:
         """Prune frames older than ttl_seconds or exceeding max capacity."""
         cutoff = now - self.ttl_seconds
-        # Filter by TTL
-        if self._buffer and self._buffer[0].timestamp < cutoff:
-            self._buffer = [f for f in self._buffer if f.timestamp >= cutoff]
+        # TTL: drop the head of the dict while it's stale
+        while self._buffer:
+            oldest_key = next(iter(self._buffer))
+            if self._buffer[oldest_key].timestamp < cutoff:
+                del self._buffer[oldest_key]
+            else:
+                break
 
-        # Filter by capacity (keep the newest capacity items)
+        # Capacity: keep the newest ``capacity`` items (insertion-ordered)
         if len(self._buffer) > self.capacity:
             excess = len(self._buffer) - self.capacity
-            self._buffer = self._buffer[excess:]
+            for k in list(self._buffer)[:excess]:
+                del self._buffer[k]
 
     def clear(self) -> None:
         """Reset the buffer and sequence counter."""
