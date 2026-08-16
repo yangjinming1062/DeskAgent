@@ -4,7 +4,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 
-import type { RunnerCapabilities } from '../shared/ipc-contracts'
+import type { RunnerCapabilities, RunnerCapabilitiesHealth } from '../shared/ipc-contracts'
 import { atomicWriteFile } from '../shared/utils'
 
 import type { RunnerProcess, RunnerProcessStartArgs, RunnerProcessState } from './process'
@@ -64,6 +64,7 @@ export interface RunnerBridgeOptions {
 
 export interface RunnerBridgeState {
   capabilities: null | RunnerCapabilities
+  capabilitiesHealth: null | RunnerCapabilitiesHealth
   lastError: null | string
   phase: 'error' | 'idle' | 'running' | 'starting' | 'stopped' | 'stopping'
   probeFailed: boolean | null
@@ -80,6 +81,7 @@ export interface RunnerBridgeStatus extends RunnerBridgeState {
 export type RunnerBridgeEvent =
   | {
       capabilities: null | RunnerCapabilities
+      capabilitiesHealth?: null | RunnerCapabilitiesHealth
       probeFailed: boolean | null
       runnerVersion: null | string
       tools: Record<string, unknown>[] | null
@@ -130,6 +132,7 @@ export function createRunnerBridge(options: RunnerBridgeOptions = {}): RunnerBri
 
   let state: RunnerBridgeState = {
     capabilities: null,
+    capabilitiesHealth: null,
     lastError: null,
     phase: 'idle',
     probeFailed: null,
@@ -355,6 +358,7 @@ export function createRunnerBridge(options: RunnerBridgeOptions = {}): RunnerBri
 
   async function handleRunnerReady(payload: {
     capabilities?: null | RunnerCapabilities
+    capabilities_health?: null | RunnerCapabilitiesHealth
     probe_failed?: boolean | null
     version?: null | string
   }): Promise<void> {
@@ -367,6 +371,7 @@ export function createRunnerBridge(options: RunnerBridgeOptions = {}): RunnerBri
     if (payload && typeof payload === 'object') {
       setState({
         capabilities: payload.capabilities ?? null,
+        capabilitiesHealth: payload.capabilities_health ?? null,
         probeFailed: payload.probe_failed ?? null,
         runnerVersion: payload.version ?? null
       })
@@ -382,6 +387,7 @@ export function createRunnerBridge(options: RunnerBridgeOptions = {}): RunnerBri
 
       emit.emit('event', {
         capabilities: state.capabilities,
+        capabilitiesHealth: state.capabilitiesHealth,
         probeFailed: state.probeFailed,
         runnerVersion: state.runnerVersion,
         tools: cachedTools,
@@ -409,6 +415,7 @@ export function createRunnerBridge(options: RunnerBridgeOptions = {}): RunnerBri
     setState({ phase: 'running' })
     emit.emit('event', {
       capabilities: state.capabilities,
+      capabilitiesHealth: state.capabilitiesHealth,
       probeFailed: state.probeFailed,
       runnerVersion: state.runnerVersion,
       tools: cachedTools,

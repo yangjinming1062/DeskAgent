@@ -34,6 +34,13 @@ export type DesktopRunnerUpdateEvent =
   | { kind: 'runner-prefetching'; percent?: number; phase: 'manifest' | 'server' | 'wheel'; version: string }
   | { kind: 'runner-ready'; version: string }
 
+export interface CapabilityHealthItem {
+  available: boolean
+  reason?: string | null
+}
+
+export type RunnerCapabilitiesHealth = Record<string, CapabilityHealthItem>
+
 export interface RunnerCapabilities {
   local_stt?: boolean
   local_tts?: boolean
@@ -48,12 +55,14 @@ export type DesktopRunnerStatusEvent =
   | { error: Error; phase: string; type: 'error' }
   | {
       capabilities?: null | RunnerCapabilities
+      capabilitiesHealth?: null | RunnerCapabilitiesHealth
       probeFailed?: boolean | null
       runnerVersion?: null | string
       type: 'runner_ready'
     }
   | {
       capabilities?: null | RunnerCapabilities
+      capabilitiesHealth?: null | RunnerCapabilitiesHealth
       probeFailed?: boolean | null
       runnerVersion?: null | string
       tools: unknown[]
@@ -61,6 +70,7 @@ export type DesktopRunnerStatusEvent =
     }
   | {
       capabilities?: null | RunnerCapabilities
+      capabilitiesHealth?: null | RunnerCapabilitiesHealth
       tools: unknown[]
       type: 'tools_changed'
     }
@@ -70,6 +80,7 @@ export type DesktopRunnerPhase = 'error' | 'idle' | 'running' | 'starting' | 'st
 
 export interface DesktopRunnerState {
   capabilities?: null | RunnerCapabilities
+  capabilitiesHealth?: null | RunnerCapabilitiesHealth
   lastError?: null | string
   phase: DesktopRunnerPhase
   probeFailed?: boolean | null

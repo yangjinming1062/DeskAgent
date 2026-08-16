@@ -7,6 +7,8 @@ from .capabilities import (
     network_reachable,
     screen_capture_available,
     snapshot,
+    snapshot_health,
+    snapshot_with_health,
     system_activity_available,
 )
 from .clean import clean_output, strip_ansi, strip_fence
@@ -149,6 +151,8 @@ __all__ = [
     "set_inmemory_config",
     "set_main_loop",
     "snapshot",
+    "snapshot_health",
+    "snapshot_with_health",
     "strip_ansi",
     "strip_fence",
     "system_activity_available",

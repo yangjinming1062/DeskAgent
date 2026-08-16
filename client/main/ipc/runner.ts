@@ -196,6 +196,7 @@ export function registerRunnerIpc({ deps, ipcMain }: { deps: RunnerIpcDeps; ipcM
 
     return {
       capabilities: status.capabilities ?? null,
+      capabilitiesHealth: status.capabilitiesHealth ?? null,
       lastError: status.lastError ?? null,
       phase: status.phase,
       probeFailed: status.probeFailed ?? null,

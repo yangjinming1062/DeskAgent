@@ -33,6 +33,7 @@ from utils import (
     set_inmemory_config,
     set_main_loop,
     snapshot,
+    snapshot_health,
 )
 
 logging.basicConfig(level=logging.WARNING)
@@ -373,10 +374,7 @@ async def runner_loop(endpoint: DesktopEndpoint) -> None:
 
 
 async def _runner_ready_payload() -> dict[str, Any]:
-    """Compact handshake payload sent right after WS connect.
-
-    Mirrors ``deskagent.info`` minus fields that depend on runtime stats
-    (uptime, reconnect count) — capabilities come from the TTL-cached
+    """Compile the ``runner_ready`` notification payload from a fresh / cached
     snapshot probe. Desktop uses this to decide whether to expose features
     that depend on optional OS subsystems (microphone, screen capture,
     system activity signals, local STT/TTS).
@@ -387,11 +385,15 @@ async def _runner_ready_payload() -> dict[str, Any]:
     feature whose value is missing from the dict as "do not enable"
     regardless of the failure flag.
     """
-    payload: dict[str, Any] = {"version": __version__, "capabilities": {}, "probe_failed": False}
+    payload: dict[str, Any] = {"version": __version__, "capabilities": {}, "capabilities_health": {}, "probe_failed": False}
     try:
         caps = await asyncio.to_thread(snapshot)
         if isinstance(caps, dict):
             payload["capabilities"] = caps
+            try:
+                payload["capabilities_health"] = await asyncio.to_thread(snapshot_health)
+            except Exception:
+                payload["capabilities_health"] = {}
         else:
             payload["probe_failed"] = True
     except Exception as e:
@@ -410,8 +412,16 @@ async def _build_info() -> dict[str, Any]:
     """
     try:
         caps = await asyncio.to_thread(snapshot)
+        if not isinstance(caps, dict):
+            caps = {}
     except Exception:
         caps = {}
+    try:
+        health = await asyncio.to_thread(snapshot_health)
+        if not isinstance(health, dict):
+            health = {}
+    except Exception:
+        health = {}
     mcp_servers = get_active_mcp_servers()
     try:
         tool_names = registry.get_all_tool_names()
@@ -426,6 +436,7 @@ async def _build_info() -> dict[str, Any]:
         "uptime_seconds": round(time.time() - _STARTED_AT, 2),
         "reconnect_count": _RECONNECT_COUNT,
         "capabilities": caps,
+        "capabilities_health": health,
         "system": {"platform": sys.platform, "python": sys.version.split()[0], "release": platform.release(), "machine": platform.machine()},
         "tool_count": len(tool_names),
         "mcp_servers": mcp_servers,

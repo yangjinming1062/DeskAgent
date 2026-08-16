@@ -60,7 +60,8 @@ runner/
 - **Win32 `GetFinalPathNameByHandleW` 原生路径规范化**：针对 Windows 8.3 短文件名（`PROGRA~1`）、符号链接、目录联接点（Junction）及深层未创建子路径回溯解析真实路径；统一大小写不敏感比对、剥离 NT/UNC 设备前缀并拦截 NTFS 备用数据流（ADS）。
 - **Tirith 扫描作为 shell 命令前置过滤器**：所有 shell 命令执行前拉起本地 `tirith` 模块对参数签名与静态审查，默认实行 Fail-Secure（`tirith_fail_open=False`），二进制未安装时友好降级并告警。**为什么不在 LLM 层做**：LLM 层做参数校验是治标；Tirith 在执行边界做拦截更彻底。
 - **SSRF 在建连前 `getaddrinfo` + 建连时 httpx `event_hooks.connect` 双重校验**：仅 `getaddrinfo` 会被预检-建连之间的 DNS 重绑定绕过；httpx 的 connect 事件钩子捕获实际目标 IP 二次过滤。**为什么不只信任 URL 形式**：URL 形式不可信，`getaddrinfo` 后 host 可被重新解析。
-- **`probe_failed` 独立于 capabilities 字段**：当 capabilities 探测整体抛异常时返回 `true`，Client 应当把这条 handshake 视为"功能状态不可信"，结合 `deskagent.info` 进一步诊断。**为什么不一起返回在 capabilities**：部分能力可能仍可用，整体失败应让 UI 降级而非禁用。
+- **`capabilities_health` 细粒度健康诊断与向后兼容**：`snapshot_with_health()` 同时产出平铺布尔字典与结构化 health 字典，记录各子能力（麦克风、屏幕截屏、本地 STT/TTS、系统活跃度）的探测可用性及具体失败原因（如设备缺失、依赖缺失），支持 Client 端按子功能精准优雅降级而非一刀切禁用。
+- **`probe_failed` 独立于 capabilities 字段**：当 capabilities 探测整体抛致命异常时返回 `true`，Client 应当把这条 handshake 视为"功能状态不可信"，结合 `deskagent.info` 进一步诊断。
 - **依赖显式声明而非 try-except import**：Runner 以 uv wheel 分发、装到用户机器后依赖集即冻结、无法中途增补——所有 pip 依赖一律显式声明在 `pyproject.toml`（含平台 marker，如 `pywinpty; win32` / `ptyprocess; !=win32`），一个依赖"有就是有、没有就是没有"，不需要在导入时再判断。`try/except ImportError` 只允许两类合法场景：① 运行时能力探测（`capabilities.py` 故意执行原生加载器的 import 验证二进制真能加载，而非 `find_spec` 存在性检查）；② OS 框架/平台导入（`ctypes` / `Quartz` / `AppKit` / `pythoncom` 等非 pip 依赖）。对已声明依赖（`psutil` / `piper` / `faster-whisper` / `pyttsx3` / `mcp`）残留的 try-except 属历史遗留（ruff `F823` 的 "legacy try-imports" 佐证），方向是移除。
 - **`execute_code` 沙箱 RPC 令牌鉴权**：每次代码执行生成一次性 Capability Token（env `DESKAGENT_RPC_TOKEN`），子进程首帧/请求文件校验；Windows loopback TCP 端点防范本地未授权进程访问。
 - **单进程 1:1 架构模型**：多用户或多实例场景下每个 Client 单独 spawn 专属 Runner 进程，天然隔离各用户的本地权限、环境变量与进程上下文。
@@ -69,7 +70,7 @@ runner/
 
 | 契约 | 方向 | 在哪定义 |
 |------|------|---------|
-| `runner_ready` payload（含 version + capabilities） | 对 Client | [PROTOCOL.md §2.3](../PROTOCOL.md) |
+| `runner_ready` payload（含 version + capabilities + capabilities_health） | 对 Client | [PROTOCOL.md §2.3](../PROTOCOL.md) |
 | `deskagent.info` 完整运行快照 | 对 Client | [PROTOCOL.md §2.2](../PROTOCOL.md) |
 | RPC 方法清单（`runner_ready` / `get_tools` / `execute_tool` / `deskagent.cancel` / `deskagent.config.update` / `deskagent.info` / `mcp.reload` / `request_llm` / `tools_changed`） | 对 Client | [PROTOCOL.md §2.2](../PROTOCOL.md) |
 | 反向 RPC 桥接（`request_llm` → Client → `/api/llm/completion`） | 对 Client | [PROTOCOL.md §3](../PROTOCOL.md) |
@@ -87,4 +88,3 @@ runner/
 | 限制 | 说明 |
 |------|------|
 | **TTY/stdin 不可用** | 所有 RPC 经本地 IPC 链路；任何 stdin 重定向或直接 console 输入都会与 C 库底层日志污染协议帧 |
-| **`probe_failed` 时 UI 降级需手动** | 部分能力可能仍可用，但 Client UI 收到 `probe_failed=true` 时整体降级；当前没有更细粒度的子能力独立上报 |

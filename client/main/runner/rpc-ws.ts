@@ -6,7 +6,7 @@ import type { Socket } from 'node:net'
 import type WebSocket from 'ws'
 import { WebSocketServer } from 'ws'
 
-import type { RunnerCapabilities } from '../shared/ipc-contracts'
+import type { RunnerCapabilities, RunnerCapabilitiesHealth } from '../shared/ipc-contracts'
 
 export const DEFAULT_TIMEOUT_MS = 120_000
 export const JSON_RPC_VERSION = '2.0'
@@ -29,6 +29,7 @@ export interface RunnerWsStatus {
 export type RunnerWsEvent =
   | {
       capabilities: null | RunnerCapabilities
+      capabilities_health?: null | RunnerCapabilitiesHealth
       probe_failed: boolean | null
       type: 'runner_ready'
       version: null | string
@@ -172,6 +173,7 @@ export function createRunnerWsServer(options: CreateRunnerWsServerOptions = {}):
         log('[runner-ws] runner_ready received')
         emit({
           capabilities: message.params?.capabilities ?? null,
+          capabilities_health: (message.params?.capabilities_health as RunnerCapabilitiesHealth | undefined) ?? null,
           probe_failed: message.params?.probe_failed ?? null,
           type: 'runner_ready',
           version: message.params?.version ?? null

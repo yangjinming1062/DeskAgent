@@ -157,6 +157,13 @@ export type DesktopRunnerUpdateEvent =
   | { kind: 'runner-failed'; error: string; recoverable: boolean; version?: string }
 
 // Runner capabilities probe result. Reflected from `runner_ready` events in
+export interface CapabilityHealthItem {
+  available: boolean
+  reason?: string | null
+}
+
+export type RunnerCapabilitiesHealth = Record<string, CapabilityHealthItem>
+
 // runner-bridge.cjs and the `running` / `tools_changed` lifecycle variants —
 // each capability maps to a real per-platform subsystem probe
 // (sounddevice, Win32 GetLastInputInfo, Quartz, loginctl, …).
@@ -180,12 +187,14 @@ export type DesktopRunnerStatusEvent =
       type: 'running'
       tools: unknown[]
       capabilities?: RunnerCapabilities | null
+      capabilitiesHealth?: RunnerCapabilitiesHealth | null
       runnerVersion?: string | null
       probeFailed?: boolean | null
     }
   | {
       type: 'runner_ready'
       capabilities?: RunnerCapabilities | null
+      capabilitiesHealth?: RunnerCapabilitiesHealth | null
       runnerVersion?: string | null
       probeFailed?: boolean | null
     }
@@ -193,6 +202,7 @@ export type DesktopRunnerStatusEvent =
       type: 'tools_changed'
       tools: unknown[]
       capabilities?: RunnerCapabilities | null
+      capabilitiesHealth?: RunnerCapabilitiesHealth | null
     }
   | { type: 'stopped'; reason?: string; errors: string[] }
   | { type: 'error'; phase: string; error: Error }
@@ -208,6 +218,7 @@ export interface DesktopRunnerState {
   stoppedAt?: number | null
   lastError?: string | null
   capabilities?: RunnerCapabilities | null
+  capabilitiesHealth?: RunnerCapabilitiesHealth | null
   runnerVersion?: string | null
   probeFailed?: boolean | null
 }

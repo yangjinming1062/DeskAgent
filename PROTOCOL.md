@@ -147,9 +147,9 @@ Blender 系生成分两段：web 进程入队（同步、毫秒级），Render W
 | deskagent.config.update | Client → Runner | 推送完整配置（Client 是唯一拥有者） | Client 设置 + Runner 内存配置 |
 | request_llm | Runner → Client | 反向 RPC 借大脑 | §3 |
 
-### 2.3 runner_ready capabilities
+### 2.3 runner_ready capabilities 与 health 状态
 
-capabilities 字段由**运行时探测**：microphone / screen_capture / system_activity 真实枚举设备、调用底层 API；local_stt / local_tts 执行原生加载器的 import 探测。**不用存在性检查**——那会欺骗 UI 让用户点不能用按钮。probe_failed=true 表示探测整体抛异常，Client 应把这条 handshake 视为"功能状态不可信"。语音通话 / 唤醒词在 capability 为 false 时被 Client **静默隐藏**。
+capabilities 字段由**运行时探测**：microphone / screen_capture / system_activity 真实枚举设备、调用底层 API；local_stt / local_tts 执行原生加载器的 import 探测。**不用存在性检查**——那会欺骗 UI 让用户点不能用按钮。`runner_ready` 与 `deskagent.info` 同时返回平铺的 `capabilities`（布尔映射向后兼容）与结构化的 `capabilities_health`（`{ [capability_name]: { available: boolean, reason?: string } }`），供客户端对各子能力展示精细化诊断与局部优雅降级。`probe_failed=true` 仅在探测流程发生致命未捕获异常时置位。语音通话 / 唤醒词在对应 capability 为 false 时由 Client 优雅降级或提供具体故障原因 Tooltip 引导。
 
 ### 2.4 配置推送所有权
 
