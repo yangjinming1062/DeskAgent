@@ -54,12 +54,7 @@ def raise_for_minimax_response(resp, *, provider: str, model: str) -> dict:
             try:
                 inner_int = int(raw_inner_code)
             except (TypeError, ValueError):
-                raise ProviderError(
-                    f"minimax {provider} non-numeric status_code: {raw_inner_code!r}",
-                    status_code=502,
-                    provider=provider,
-                    model=model,
-                ) from None
+                raise ProviderError(f"minimax {provider} non-numeric status_code: {raw_inner_code!r}", status_code=502, provider=provider, model=model) from None
             if inner_int in (1013, 2013) and any(s in inner_msg.lower() for s in _ENTITLEMENT_SIGNALS):
                 http = 402
             elif inner_int in _BASE_RESP_TO_HTTP:

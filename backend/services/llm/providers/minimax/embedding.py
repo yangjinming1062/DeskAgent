@@ -2,6 +2,7 @@ from typing import ClassVar
 
 from ..base import EmbeddingProvider, ProviderConfig, ProviderError, ServiceType
 from ..http import get_http
+from ._errors import raise_for_minimax_response
 
 
 class MiniMaxEmbeddingProvider(EmbeddingProvider):

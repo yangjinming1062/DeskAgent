@@ -209,12 +209,7 @@ async def _persist_assistant_with_tool_calls_and_results(
         # row above is never orphaned (a row with tool_calls but no matching
         # tool-result rows makes the next LLM turn's context malformed).
         tool_results = [
-            {
-                "role": "tool",
-                "name": tc.get("function", {}).get("name", ""),
-                "tool_call_id": tc.get("id", ""),
-                "content": json.dumps({"error": "cancelled"}, ensure_ascii=False),
-            }
+            {"role": "tool", "name": tc.get("function", {}).get("name", ""), "tool_call_id": tc.get("id", ""), "content": json.dumps({"error": "cancelled"}, ensure_ascii=False)}
             for tc in tool_calls_list
         ]
 

@@ -1,6 +1,10 @@
 import re
 from typing import Any
 
+from components import get_logger
+from modules.companion import CompanionExpression
+from sqlalchemy import select
+
 # Built-in 17 baseline emotions (ARCHITECTURE §7.5). Unknown LLM tokens fall
 # back to ``neutral`` so a malformed emit doesn't poison renderer state.
 BUILTIN_EMOTIONS: frozenset[str] = frozenset(
@@ -57,20 +61,20 @@ _PARTIAL_SPATIAL_RE = re.compile(r"^\s*\[spatial:([a-z_]+)?(?:,target:([^\]\n]*)
 # the scrubber drains so downstream code surfaces it as text.
 _MAX_TAG_LEN: int = 256
 
+logger = get_logger(__name__)
+
 
 async def resolve_allowed_emotions(db: Any, user_id: int | None = None) -> frozenset[str]:
     """Return BUILTIN_EMOTIONS merged with user's custom CompanionExpression names."""
     if user_id is None or db is None:
         return BUILTIN_EMOTIONS
     try:
-        from modules.companion import CompanionExpression
-        from sqlalchemy import select
-
         rows = (await db.execute(select(CompanionExpression.name).where(CompanionExpression.user_id == user_id))).all()
         if not rows:
             return BUILTIN_EMOTIONS
         return BUILTIN_EMOTIONS | frozenset(r[0] for r in rows if r[0])
     except Exception:
+        logger.warning("resolve_allowed_emotions failed; falling back to builtins", exc_info=True)
         return BUILTIN_EMOTIONS
 
 
@@ -79,11 +83,9 @@ async def resolve_custom_expressions(db: Any, user_id: int | None = None) -> lis
     if user_id is None or db is None:
         return []
     try:
-        from modules.companion import CompanionExpression
-        from sqlalchemy import select
-
         return (await db.execute(select(CompanionExpression).where(CompanionExpression.user_id == user_id))).scalars().all()
     except Exception:
+        logger.warning("resolve_custom_expressions failed; returning empty list", exc_info=True)
         return []
 
 

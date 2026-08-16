@@ -1,3 +1,7 @@
+import contextlib
+import shutil
+from pathlib import Path
+
 from common import get_or_404, get_router, list_response
 from components import SETTINGS, apply_partial, get_db
 from fastapi import Depends, HTTPException, status
@@ -18,9 +22,14 @@ from modules.auth import (
     hash_activation_token,
     public_provider_slots,
 )
+from modules.companion import AvatarAsset, CompanionModel, WardrobeItem
 from modules.system import MessageResponse
+from services.gateway.connection import cancel_user_cron_turns
+from services.gateway.handlers import _USER_SESSIONS, REGISTRY, discard_user
+from services.gateway.handlers import MANAGER as _MANAGER
 from services.llm import merge_provider_json
-from sqlalchemy import delete as sa_delete, select
+from sqlalchemy import delete as sa_delete
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 router = get_router()
@@ -73,16 +82,6 @@ async def update_user(user_id: int, payload: UserUpdate, _admin: str = Depends(g
 async def delete_user(user_id: int, _admin: str = Depends(get_current_admin_token), db: AsyncSession = Depends(get_db)) -> MessageResponse:
     await get_or_404(db, User, id=user_id, detail="用户不存在。")
     # Kick active WS so a deleted user's renderer gets disconnected cleanly.
-    from services.gateway.connection import cancel_user_cron_turns
-    from services.gateway.handlers import (
-        REGISTRY,
-        MANAGER as _MANAGER,
-        _USER_SESSIONS,
-        discard_user,
-    )
-    import contextlib
-    from services.companion.asset_store import unlink_companion_asset
-
     ws = _MANAGER.active_connections.get(user_id)
     if ws is not None:
         with contextlib.suppress(Exception):
@@ -102,17 +101,11 @@ async def delete_user(user_id: int, _admin: str = Depends(get_current_admin_toke
     discard_user(user_id)
 
     # Wipe user-scoped DB rows + on-disk assets (right-to-be-forgotten).
-    from sqlalchemy import delete as sa_delete
-
-    from modules.companion import AvatarAsset, CompanionModel, WardrobeItem
-
     await db.execute(sa_delete(AvatarAsset).where(AvatarAsset.user_id == user_id))
     await db.execute(sa_delete(CompanionModel).where(CompanionModel.user_id == user_id))
     await db.execute(sa_delete(WardrobeItem).where(WardrobeItem.user_id == user_id))
     await db.delete(await db.get(User, user_id))
     await db.commit()
-
-    import shutil
 
     for sub in ("companion-assets", "companion-avatars", "companion-models"):
         d = Path(SETTINGS.data_dir) / sub / str(user_id)

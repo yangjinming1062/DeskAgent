@@ -4,7 +4,7 @@ import json
 from datetime import timedelta
 
 from common import get_router
-from components import SESSION_LOCAL, SETTINGS, get_db, get_logger, safe_json_loads, utc_now
+from components import SESSION_LOCAL, SETTINGS, TempFileMarkerMismatch, get_db, get_logger, safe_json_loads, utc_now
 from fastapi import Body, Depends, HTTPException, Request, Response, status
 from modules.auth import LoginRecord, User, get_current_session
 from modules.companion import (
@@ -529,9 +529,7 @@ async def get_wardrobe_preview(job_id: int, auth: tuple[User, LoginRecord] = Dep
 
 
 @router.post("/wardrobe/confirm", response_model=WardrobeItemResponse, status_code=status.HTTP_201_CREATED)
-async def post_wardrobe_confirm(
-    body: WardrobeConfirmRequest, auth: tuple[User, LoginRecord] = Depends(get_current_session)
-) -> WardrobeItemResponse:
+async def post_wardrobe_confirm(body: WardrobeConfirmRequest, auth: tuple[User, LoginRecord] = Depends(get_current_session)) -> WardrobeItemResponse:
     user, _ = auth
     # Pre-resolve persona + vision chain in a short session so the LLM call
     # inside confirm_wardrobe_item does not hold a pool connection.
@@ -567,8 +565,6 @@ async def delete_wardrobe_preview(file_id: str, auth: tuple[User, LoginRecord] =
     """Best-effort delete of an unconfirmed wardrobe preview. Called when the
     Wardrobe Studio discards or closes so the temp-media file isn't held
     until ``cleanup_expired`` sweeps it. Cross-user deletes are refused."""
-    from components import TempFileMarkerMismatch
-
     user, _ = auth
     try:
         deleted = discard_wardrobe_preview(file_id, user_id=user.id)

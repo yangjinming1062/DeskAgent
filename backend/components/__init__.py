@@ -97,7 +97,7 @@ from .observability import (
     sync_trace_span,
 )
 from .redact import redact_sensitive_text
-from .temp_files import cleanup_expired, get_file_path, save_file
+from .temp_files import TempFileMarkerMismatch, cleanup_expired, get_file_path, save_file
 from .temp_files import delete_file as temp_file_delete
 from .temp_files import gc_session as temp_files_gc_session
 
@@ -211,6 +211,7 @@ __all__ = [
     "sha256_hex",
     "sha512_b64",
     "sync_trace_span",
+    "TempFileMarkerMismatch",
     "temp_file_delete",
     "temp_files_gc_session",
     "tool_error",

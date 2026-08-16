@@ -483,14 +483,7 @@ async def confirm_wardrobe_item(
 
     # LLM call uses db=None + caller-pre-resolved persona/vision_chain so the
     # multi-second generation does not hold a pool connection.
-    outfit_desc = await normalize_outfit(
-        chat,
-        raw_input=prompt or name,
-        persona_definition=persona_definition,
-        user_id=user_id,
-        db=None,
-        vision_chain=vision_chain,
-    )
+    outfit_desc = await normalize_outfit(chat, raw_input=prompt or name, persona_definition=persona_definition, user_id=user_id, db=None, vision_chain=vision_chain)
 
     item = WardrobeItem(
         user_id=user_id,

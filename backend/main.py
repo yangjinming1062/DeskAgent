@@ -26,11 +26,16 @@ from fastapi import FastAPI, Header, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from services.companion import recover_stuck_model_generations
+from services.companion.persona_background import drain as _persona_drain
 from services.gateway import start_ws_event_loop, stop_ws_event_loop
+from services.gateway.connection import drain as _conn_drain
+from services.gateway.handlers import drain as _handlers_drain
 from services.llm import aclose_all
 from services.media import resume_pending_video_jobs
+from services.media.video_jobs import drain as _video_drain
 from services.rate_limit import limiter, rate_limit_exception_handler, stash_user_id_middleware
 from services.scheduler import start_scheduler, stop_scheduler
+from services.scheduler.cron import drain as _cron_drain
 from services.tools import aclose
 from services.worker import queue as render_queue
 from slowapi.errors import RateLimitExceeded
@@ -123,20 +128,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
 
         # Drain in-flight module-level task sets before disposing the engine
         # so SIGTERM doesn't leave coroutines holding pool connections mid-commit.
-        from services.scheduler.cron import drain as _cron_drain
-        from services.companion.persona_background import drain as _persona_drain
-        from services.media.video_jobs import drain as _video_drain
-        from services.gateway.connection import drain as _conn_drain
-        from services.gateway.handlers import drain as _handlers_drain
-
-        await asyncio.gather(
-            _cron_drain(),
-            _persona_drain(),
-            _video_drain(),
-            _conn_drain(),
-            _handlers_drain(),
-            return_exceptions=True,
-        )
+        await asyncio.gather(_cron_drain(), _persona_drain(), _video_drain(), _conn_drain(), _handlers_drain(), return_exceptions=True)
 
         await stop_scheduler()
         await stop_ws_event_loop()

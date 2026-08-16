@@ -103,8 +103,6 @@ async def drain() -> None:
 
     The module-level ``_avatar_regen_tasks`` is not drained here — by Commit 9
     those tasks live only on the per-user ``background_tasks`` set."""
-    import itertools
-
     pending: list[asyncio.Task] = []
     for sess in _USER_SESSIONS.values():
         pending.extend(sess.background_tasks)
@@ -289,9 +287,10 @@ async def handle_chat_websocket(websocket: WebSocket, token: str):
                                     if not t.done():
                                         t.cancel()
                                 target_sess.runtime_sessions.clear()
-                            from .connection import cancel_user_cron_turns
                             from services.companion.avatar_service import _avatar_job_locks
                             from services.companion.model_service import _model_job_locks
+
+                            from .connection import cancel_user_cron_turns
 
                             cancel_user_cron_turns(uid)
                             MANAGER.unregister_dispatcher(uid)

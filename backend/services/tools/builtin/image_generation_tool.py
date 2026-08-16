@@ -92,12 +92,7 @@ async def image_generation_tool(
         return tool_error("图片生成服务返回空结果")
 
     urls: list[str] = []
-    ext_by_mime = {
-        "image/png": "png",
-        "image/jpeg": "jpg",
-        "image/webp": "webp",
-        "image/gif": "gif",
-    }
+    ext_by_mime = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp", "image/gif": "gif"}
     for asset in result.images:
         if asset.url:
             urls.append(asset.url)

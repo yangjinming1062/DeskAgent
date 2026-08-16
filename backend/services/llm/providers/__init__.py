@@ -32,6 +32,7 @@ from .http import aclose_all
 from .mimo import MiMoChatProvider, MiMoImageGenProvider, MiMoSTTProvider, MiMoTTSProvider
 from .registry import (
     KNOWN_PROVIDERS,
+    OPENAI_COMPATIBLE_PROVIDERS,
     PROVIDER_DEFAULT_URLS,
     SERVICE_DEFAULT_PROVIDER,
     default_base_url,
@@ -71,6 +72,7 @@ def resolve_context_tokens(provider: str, service_type: str) -> int:
 
 __all__ = [
     "KNOWN_PROVIDERS",
+    "OPENAI_COMPATIBLE_PROVIDERS",
     "PROVIDER_DEFAULT_URLS",
     "SERVICE_DEFAULT_PROVIDER",
     "BaseProvider",

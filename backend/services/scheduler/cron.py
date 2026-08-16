@@ -50,6 +50,7 @@ async def drain() -> None:
             t.cancel()
     await asyncio.gather(*pending, return_exceptions=True)
 
+
 SCHEDULER_INTERVAL_SECONDS = 60
 
 # Per-user timestamp of last consolidator run. Process-local — matches the

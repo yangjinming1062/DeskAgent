@@ -32,6 +32,7 @@ async def drain() -> None:
             t.cancel()
     await asyncio.gather(*pending, return_exceptions=True)
 
+
 # Per-attempt timeout deliberately much shorter than ``call_with_retry``'s
 # 300s default — these tasks run in the background and a hung call must not
 # pin a worker indefinitely.
