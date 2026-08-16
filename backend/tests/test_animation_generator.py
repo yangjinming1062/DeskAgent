@@ -1,7 +1,4 @@
-import json
-import pytest
-
-from services.companion import generate_animation_clips, get_rig_bones
+from services.companion import get_rig_bones
 from services.companion.animation_generator import validate_and_sanitize_clip
 
 
@@ -18,10 +15,10 @@ def test_validate_and_sanitize_clip():
                 {"t": 1.0, "r": [0.2, -0.1, 0.05]},
                 {
                     "t": 1.5,
-                    "r": [0.5, 0.5, 0.5]
-                }  # loop will fix final keyframe to t=2.0 and r=[0, 0, 0]
+                    "r": [0.5, 0.5, 0.5],
+                },  # loop will fix final keyframe to t=2.0 and r=[0, 0, 0]
             ]
-        }
+        },
     }
 
     sanitized = validate_and_sanitize_clip(raw_clip, allowed_bones={"Head", "Spine"})

@@ -1,3 +1,4 @@
+import asyncio
 import re
 from collections.abc import AsyncIterator
 from pathlib import Path
@@ -9,6 +10,23 @@ from .asset_store import compute_file_sha256
 
 _RANGE_PATTERN = re.compile(r"^bytes=(\d*)-(\d*)$")
 _CHUNK_SIZE = 256 * 1024  # 256 KB
+_SHA256_CACHE: dict[tuple[str, float, int], str] = {}
+_MAX_SHA_CACHE = 1000
+
+
+def _get_file_sha256(file_path: Path) -> str:
+    try:
+        st = file_path.stat()
+        key = (str(file_path.resolve()), st.st_mtime, st.st_size)
+        if key in _SHA256_CACHE:
+            return _SHA256_CACHE[key]
+        sha = compute_file_sha256(file_path)
+        if len(_SHA256_CACHE) >= _MAX_SHA_CACHE:
+            _SHA256_CACHE.pop(next(iter(_SHA256_CACHE)))
+        _SHA256_CACHE[key] = sha
+        return sha
+    except Exception:
+        return compute_file_sha256(file_path)
 
 
 def _parse_range_header(range_header: str, file_size: int) -> tuple[int, int] | None:
@@ -55,7 +73,7 @@ async def serve_ranged_file(request: Request, file_path: Path, media_type: str, 
         raise HTTPException(status_code=404, detail="File not found")
 
     file_size = file_path.stat().st_size
-    sha256 = content_sha256 or compute_file_sha256(file_path)
+    sha256 = content_sha256 or _get_file_sha256(file_path)
     etag = f'"{sha256}"'
 
     base_headers = {"Accept-Ranges": "bytes", "ETag": etag, "Cache-Control": "public, max-age=31536000, immutable", "X-Content-Sha256": sha256}
@@ -71,9 +89,15 @@ async def serve_ranged_file(request: Request, file_path: Path, media_type: str, 
     if not range_header:
 
         async def full_file_iterator() -> AsyncIterator[bytes]:
-            with open(file_path, "rb") as f:
-                while chunk := f.read(_CHUNK_SIZE):
+            f = await asyncio.to_thread(open, file_path, "rb")
+            try:
+                while True:
+                    chunk = await asyncio.to_thread(f.read, _CHUNK_SIZE)
+                    if not chunk:
+                        break
                     yield chunk
+            finally:
+                await asyncio.to_thread(f.close)
 
         headers = {**base_headers, "Content-Length": str(file_size)}
         return StreamingResponse(full_file_iterator(), status_code=200, media_type=media_type, headers=headers)
@@ -88,16 +112,23 @@ async def serve_ranged_file(request: Request, file_path: Path, media_type: str, 
     chunk_length = end - start + 1
 
     async def ranged_iterator() -> AsyncIterator[bytes]:
-        with open(file_path, "rb") as f:
-            f.seek(start)
+        def _open_and_seek():
+            fh = open(file_path, "rb")
+            fh.seek(start)
+            return fh
+
+        f = await asyncio.to_thread(_open_and_seek)
+        try:
             remaining = chunk_length
             while remaining > 0:
                 to_read = min(_CHUNK_SIZE, remaining)
-                chunk = f.read(to_read)
+                chunk = await asyncio.to_thread(f.read, to_read)
                 if not chunk:
                     break
                 remaining -= len(chunk)
                 yield chunk
+        finally:
+            await asyncio.to_thread(f.close)
 
     ranged_headers = {**base_headers, "Content-Range": f"bytes {start}-{end}/{file_size}", "Content-Length": str(chunk_length)}
 

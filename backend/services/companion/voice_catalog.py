@@ -64,10 +64,7 @@ def _score(preference: str, voice: VoiceEntry) -> int:
         t = tag.lower()
         if t in p:
             score += 2
-        elif any(tok and tok in t for tok in p_tokens):
-            score += 1
-        # CJK preference blob won't token-split; substring-match both directions.
-        elif any(tok and (tok in t or t in p) for tok in p_tokens if any("一" <= c <= "鿿" for c in tok)):
+        elif any(tok and tok in t for tok in p_tokens) or any(tok and (tok in t or t in p) for tok in p_tokens if any("一" <= c <= "鿿" for c in tok)):
             score += 1
     if voice.label.lower() in p:
         score += 2

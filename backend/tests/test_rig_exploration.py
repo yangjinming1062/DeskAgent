@@ -1,8 +1,7 @@
 import httpx
 import pytest
 
-from services.companion import rig_exploration
-from services.companion import tripo_client
+from services.companion import rig_exploration, tripo_client
 
 
 @pytest.fixture
@@ -21,6 +20,11 @@ def transport(monkeypatch, fake_key):
         return original(transport=t, base_url=tripo_client.BASE_URL)
 
     monkeypatch.setattr(tripo_client.httpx, "AsyncClient", _factory)
+    monkeypatch.setattr(
+        "components.network.safe_outbound_async_client",
+        lambda **kw: original(transport=t, **kw),
+    )
+    monkeypatch.setattr("components.network.is_safe_outbound", lambda host: (True, ""))
     return t
 
 
@@ -28,7 +32,7 @@ def transport(monkeypatch, fake_key):
 async def test_run_aborts_with_exit_code_2_when_balance_is_zero(transport, capsys):
     transport.responder = lambda _r: httpx.Response(
         200,
-        json={"code": 0, "status": "success", "data": {"balance": 0.0, "frozen": 0.0}}
+        json={"code": 0, "status": "success", "data": {"balance": 0.0, "frozen": 0.0}},
     )
     rc = await rig_exploration.run()
     assert rc == 2
@@ -58,7 +62,7 @@ async def test_run_completes_full_flow(transport, monkeypatch, tmp_path):
             200,
             json=_ok(
                 {"status": "success", "output": {"riggable": True, "rig_type": "biped"}}
-            )
+            ),
         ),
         lambda _r: httpx.Response(200, json=_ok({"task_id": "rig_1"})),
         lambda _r: httpx.Response(
@@ -66,11 +70,11 @@ async def test_run_completes_full_flow(transport, monkeypatch, tmp_path):
             json=_ok(
                 {
                     "status": "success",
-                    "output": {"model_url": "https://cdn.example/rig.glb"}
+                    "output": {"model_url": "https://cdn.example/rig.glb"},
                 }
-            )
+            ),
         ),
-        lambda _r: httpx.Response(200, content=b"GLB")
+        lambda _r: httpx.Response(200, content=b"GLB"),
     ]
     seq = iter(responses)
     transport.responder = lambda _r: next(seq)(_r)

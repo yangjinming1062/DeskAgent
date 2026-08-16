@@ -16,7 +16,7 @@ class _FakeChat:
                 "db": db,
                 "user_id": user_id,
                 "system": system_prompt,
-                "user": user_payload
+                "user": user_payload,
             }
         )
         if isinstance(self.content, Exception):

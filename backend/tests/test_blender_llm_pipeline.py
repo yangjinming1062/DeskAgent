@@ -17,7 +17,12 @@ from services.companion.model_service import (
     _should_use_blender_fallback,
     parse_glb_json,
 )
-from services.companion.rig_bone_specs import RIG_BONE_HIERARCHIES, bone_names, format_bone_tree, get_bone_hierarchy
+from services.companion.rig_bone_specs import (
+    RIG_BONE_HIERARCHIES,
+    bone_names,
+    format_bone_tree,
+    get_bone_hierarchy,
+)
 
 
 def _make_glb(gltf_dict: dict) -> bytes:
@@ -53,16 +58,30 @@ class _FakeSession:
         return False
 
 
-def _fake_resolve_seeds(_filenames: dict[str, str], _io_dir=None) -> tuple[dict[str, str], dict[str, str]]:
+def _fake_resolve_seeds(
+    _filenames: dict[str, str], _io_dir=None
+) -> tuple[dict[str, str], dict[str, str]]:
     return (
-        {"front": "data:image/jpeg;base64,AAA", "right": "data:image/jpeg;base64,BBB", "back": "data:image/jpeg;base64,CCC"},
+        {
+            "front": "data:image/jpeg;base64,AAA",
+            "right": "data:image/jpeg;base64,BBB",
+            "back": "data:image/jpeg;base64,CCC",
+        },
         {"front": "/tmp/f.jpg", "right": "/tmp/r.jpg", "back": "/tmp/b.jpg"},
     )
 
 
 class TestRigBoneSpecs:
     def test_all_seven_rig_types_present(self):
-        assert set(RIG_BONE_HIERARCHIES.keys()) == {"biped", "quadruped", "avian", "serpentine", "aquatic", "hexapod", "octopod"}
+        assert set(RIG_BONE_HIERARCHIES.keys()) == {
+            "biped",
+            "quadruped",
+            "avian",
+            "serpentine",
+            "aquatic",
+            "hexapod",
+            "octopod",
+        }
 
     def test_biped_has_25_bones(self):
         bones = get_bone_hierarchy("biped")
@@ -190,7 +209,9 @@ class TestGlbValidation:
 
     def test_validate_glb_missing_bones(self):
         # Only 3 bones — most are missing.
-        glb = _make_glb({"nodes": [{"name": "Hips"}, {"name": "Head"}, {"name": "Spine"}]})
+        glb = _make_glb(
+            {"nodes": [{"name": "Hips"}, {"name": "Head"}, {"name": "Spine"}]}
+        )
         missing = _validate_glb(glb, bone_names("biped"))
         assert "LeftArm" in missing
         assert "RightFoot" in missing
@@ -220,7 +241,7 @@ class TestScaffoldMerge:
         llm_code = "if True:\n    pass"
         merged = blender_llm_pipeline._merge_scaffold(llm_code)
         # The code should be indented inside _build_body.  The scaffold keeps a
-        # trailing "# noqa: F821 -- placeholder marker" comment on the pass
+        # trailing "
         # line — match by prefix, not equality.
         lines = merged.split("\n")
         body_lines = [l for l in lines if l.lstrip().startswith("pass")]
@@ -235,8 +256,12 @@ class TestExecuteBlenderScript:
         async def _raise(*a, **kw):
             raise FileNotFoundError
 
-        monkeypatch.setattr(blender_llm_pipeline.asyncio, "create_subprocess_exec", _raise)
-        result = await blender_llm_pipeline._execute_blender_script("pass", {"front": "", "right": "", "back": ""})
+        monkeypatch.setattr(
+            blender_llm_pipeline.asyncio, "create_subprocess_exec", _raise
+        )
+        result = await blender_llm_pipeline._execute_blender_script(
+            "pass", {"front": "", "right": "", "back": ""}
+        )
         assert result.success is False
         assert "not found" in result.stderr
 
@@ -254,7 +279,9 @@ class TestExecuteBlenderScript:
             def __exit__(self, *a):
                 pass
 
-        monkeypatch.setattr(blender_llm_pipeline.tempfile, "TemporaryDirectory", _FakeTempDir)
+        monkeypatch.setattr(
+            blender_llm_pipeline.tempfile, "TemporaryDirectory", _FakeTempDir
+        )
 
         (tmp_path / "output.glb").write_bytes(valid_glb)
         (tmp_path / "preview.png").write_bytes(b"\x89PNG fake")
@@ -266,11 +293,17 @@ class TestExecuteBlenderScript:
         async def _fake_wait_for(coro, timeout=None):
             return await coro
 
-        monkeypatch.setattr(blender_llm_pipeline.asyncio, "create_subprocess_exec", AsyncMock(return_value=fake_proc))
+        monkeypatch.setattr(
+            blender_llm_pipeline.asyncio,
+            "create_subprocess_exec",
+            AsyncMock(return_value=fake_proc),
+        )
         monkeypatch.setattr(blender_llm_pipeline.asyncio, "wait_for", _fake_wait_for)
         monkeypatch.setattr(SETTINGS, "blender_llm_timeout", 60)
 
-        result = await blender_llm_pipeline._execute_blender_script("pass", {"front": "", "right": "", "back": ""})
+        result = await blender_llm_pipeline._execute_blender_script(
+            "pass", {"front": "", "right": "", "back": ""}
+        )
         assert result.success is True
         assert result.glb_bytes == valid_glb
         assert result.preview_png is not None
@@ -293,22 +326,34 @@ class TestPipelineIntegration:
             emit_calls.append(("ready", "", ""))
 
         monkeypatch.setattr(blender_llm_pipeline, "_emit_progress", _fake_emit_progress)
-        monkeypatch.setattr(blender_llm_pipeline, "_emit_model_failed", _fake_emit_model_failed)
-        monkeypatch.setattr(blender_llm_pipeline, "_emit_model_ready", _fake_emit_model_ready)
+        monkeypatch.setattr(
+            blender_llm_pipeline, "_emit_model_failed", _fake_emit_model_failed
+        )
+        monkeypatch.setattr(
+            blender_llm_pipeline, "_emit_model_ready", _fake_emit_model_ready
+        )
 
         # Mock select_rig_type to avoid LLM calls.
-        monkeypatch.setattr(blender_llm_pipeline, "select_rig_type", AsyncMock(return_value="biped"))
+        monkeypatch.setattr(
+            blender_llm_pipeline, "select_rig_type", AsyncMock(return_value="biped")
+        )
 
         # Mock seed loading to avoid file I/O.
         monkeypatch.setattr(blender_llm_pipeline, "_resolve_seeds", _fake_resolve_seeds)
 
-        monkeypatch.setattr(blender_llm_pipeline, "_llm_generate_script", AsyncMock(return_value="pass"))
-        monkeypatch.setattr(blender_llm_pipeline, "_vision_llm_call", AsyncMock(return_value="pass"))
+        monkeypatch.setattr(
+            blender_llm_pipeline, "_llm_generate_script", AsyncMock(return_value="pass")
+        )
+        monkeypatch.setattr(
+            blender_llm_pipeline, "_vision_llm_call", AsyncMock(return_value="pass")
+        )
 
         monkeypatch.setattr(
             blender_llm_pipeline,
             "_execute_blender_script",
-            AsyncMock(return_value=BlenderResult(success=False, stderr="blender error")),
+            AsyncMock(
+                return_value=BlenderResult(success=False, stderr="blender error")
+            ),
         )
 
         monkeypatch.setattr(SETTINGS, "blender_llm_max_iterations", 2)
@@ -319,11 +364,17 @@ class TestPipelineIntegration:
         async def _fake_mark_generation_failed(mid, reason):
             fail_calls.append((mid, reason))
 
-        monkeypatch.setattr(blender_llm_pipeline, "_mark_generation_failed", _fake_mark_generation_failed)
+        monkeypatch.setattr(
+            blender_llm_pipeline,
+            "_mark_generation_failed",
+            _fake_mark_generation_failed,
+        )
 
         monkeypatch.setattr(blender_llm_pipeline, "SESSION_LOCAL", _FakeSession)
 
-        await blender_llm_pipeline.run_blender_llm_pipeline(1, {"front": "f.jpg", "right": "r.jpg", "back": "b.jpg"}, "人类", 1)
+        await blender_llm_pipeline.run_blender_llm_pipeline(
+            1, {"front": "f.jpg", "right": "r.jpg", "back": "b.jpg"}, "人类", 1
+        )
 
         # Verify model was marked failed.
         assert len(fail_calls) == 1
@@ -345,31 +396,59 @@ class TestPipelineIntegration:
             emit_calls.append(("failed", reason, ""))
 
         monkeypatch.setattr(blender_llm_pipeline, "_emit_progress", _fake_emit_progress)
-        monkeypatch.setattr(blender_llm_pipeline, "_emit_model_ready", _fake_emit_model_ready)
-        monkeypatch.setattr(blender_llm_pipeline, "_emit_model_failed", _fake_emit_model_failed)
+        monkeypatch.setattr(
+            blender_llm_pipeline, "_emit_model_ready", _fake_emit_model_ready
+        )
+        monkeypatch.setattr(
+            blender_llm_pipeline, "_emit_model_failed", _fake_emit_model_failed
+        )
 
-        monkeypatch.setattr(blender_llm_pipeline, "select_rig_type", AsyncMock(return_value="biped"))
+        monkeypatch.setattr(
+            blender_llm_pipeline, "select_rig_type", AsyncMock(return_value="biped")
+        )
         monkeypatch.setattr(blender_llm_pipeline, "_resolve_seeds", _fake_resolve_seeds)
 
-        monkeypatch.setattr(blender_llm_pipeline, "_llm_generate_script", AsyncMock(return_value="bpy.ops.mesh.primitive_cube_add()"))
+        monkeypatch.setattr(
+            blender_llm_pipeline,
+            "_llm_generate_script",
+            AsyncMock(return_value="bpy.ops.mesh.primitive_cube_add()"),
+        )
 
         valid_glb = _make_valid_biped_glb()
         monkeypatch.setattr(
             blender_llm_pipeline,
             "_execute_blender_script",
-            AsyncMock(return_value=BlenderResult(success=True, glb_bytes=valid_glb, preview_png=b"\x89PNG fake")),
+            AsyncMock(
+                return_value=BlenderResult(
+                    success=True, glb_bytes=valid_glb, preview_png=b"\x89PNG fake"
+                )
+            ),
         )
 
-        monkeypatch.setattr(blender_llm_pipeline, "_inject_morph_targets", AsyncMock(return_value=valid_glb))
-        monkeypatch.setattr(blender_llm_pipeline, "_extract_morph_names_from_glb", lambda data: ["eyeBlinkLeft"])
+        monkeypatch.setattr(
+            blender_llm_pipeline,
+            "_inject_morph_targets",
+            AsyncMock(return_value=valid_glb),
+        )
+        monkeypatch.setattr(
+            blender_llm_pipeline,
+            "_extract_morph_names_from_glb",
+            lambda data: ["eyeBlinkLeft"],
+        )
 
         monkeypatch.setattr(
             blender_llm_pipeline,
             "_llm_evaluate",
-            AsyncMock(return_value=EvaluationResult(score=9, converged=True, critique="good")),
+            AsyncMock(
+                return_value=EvaluationResult(score=9, converged=True, critique="good")
+            ),
         )
 
-        monkeypatch.setattr(blender_llm_pipeline, "save_companion_model", lambda data, user_id: f"companion-models/{user_id}/model_test.glb")
+        monkeypatch.setattr(
+            blender_llm_pipeline,
+            "save_companion_model",
+            lambda data, user_id: f"companion-models/{user_id}/model_test.glb",
+        )
 
         # Mock the shared finalize helper — returns True (activated, not superseded).
         finalize_calls: list[dict] = []
@@ -378,13 +457,21 @@ class TestPipelineIntegration:
             finalize_calls.append(kw)
             return True
 
-        monkeypatch.setattr(blender_llm_pipeline, "_finalize_generation", _fake_finalize_generation)
-        monkeypatch.setattr(blender_llm_pipeline, "_mark_generation_failed", AsyncMock(return_value=None))
+        monkeypatch.setattr(
+            blender_llm_pipeline, "_finalize_generation", _fake_finalize_generation
+        )
+        monkeypatch.setattr(
+            blender_llm_pipeline,
+            "_mark_generation_failed",
+            AsyncMock(return_value=None),
+        )
 
         monkeypatch.setattr(blender_llm_pipeline, "SESSION_LOCAL", _FakeSession)
         monkeypatch.setattr(SETTINGS, "blender_llm_max_iterations", 5)
 
-        await blender_llm_pipeline.run_blender_llm_pipeline(1, {"front": "f.jpg", "right": "r.jpg", "back": "b.jpg"}, "人类", 42)
+        await blender_llm_pipeline.run_blender_llm_pipeline(
+            1, {"front": "f.jpg", "right": "r.jpg", "back": "b.jpg"}, "人类", 42
+        )
 
         # Verify finalize was called with the right provider.
         assert len(finalize_calls) == 1

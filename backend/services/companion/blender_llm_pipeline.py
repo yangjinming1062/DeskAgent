@@ -337,7 +337,7 @@ async def run_blender_scaffold(
         if render_preview and render_path.exists():
             glb_bytes, preview_bytes = await asyncio.gather(asyncio.to_thread(glb_path.read_bytes), asyncio.to_thread(render_path.read_bytes))
         else:
-            glb_bytes, preview_bytes = await asyncio.to_thread(glb_path.read_bytes), None
+            glb_bytes, preview_bytes = (await asyncio.to_thread(glb_path.read_bytes), None)
         return BlenderResult(success=True, glb_bytes=glb_bytes, preview_png=preview_bytes)
 
 

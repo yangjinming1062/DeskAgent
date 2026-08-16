@@ -165,15 +165,14 @@ def render_extras(definition: dict[str, str]) -> str:
 async def update_outfit_field(db: AsyncSession, user_id: int, outfit: str) -> None:
     """Swap ``appearance_outfit`` + re-render ``system_prompt_extras`` without full re-validation. Empty string clears the field."""
     persona = (await db.execute(select(Persona).where(Persona.user_id == user_id))).scalar_one_or_none()
-    if persona is None:
-        return
-    definition = _load_draft(persona)
-    if outfit:
-        definition["appearance_outfit"] = outfit[:_MAX_FIELD_LEN]
-    else:
-        definition.pop("appearance_outfit", None)
-    persona.definition_json = json.dumps(definition, ensure_ascii=False)
-    persona.system_prompt_extras = render_extras(definition)
+    if persona is not None:
+        definition = _load_draft(persona)
+        if outfit:
+            definition["appearance_outfit"] = outfit[:_MAX_FIELD_LEN]
+        else:
+            definition.pop("appearance_outfit", None)
+        persona.definition_json = json.dumps(definition, ensure_ascii=False)
+        persona.system_prompt_extras = render_extras(definition)
     await db.commit()
 
 

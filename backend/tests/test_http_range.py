@@ -1,9 +1,9 @@
 import hashlib
 from pathlib import Path
 
-import pytest
 from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
+
 from services.companion.asset_store import compute_bytes_sha256
 from services.companion.http_range import compute_file_sha256, serve_ranged_file
 
@@ -116,3 +116,33 @@ def test_serve_missing_file_404(tmp_path: Path):
     client = TestClient(app)
     resp = client.get(f"/test-file?path={tmp_path / 'nonexistent.glb'}")
     assert resp.status_code == 404
+
+
+def test_serve_sha256_cache(tmp_path: Path, monkeypatch):
+    from services.companion import http_range
+
+    content = b"cacheable binary content"
+    f = tmp_path / "cache_test.glb"
+    f.write_bytes(content)
+
+    call_count = 0
+    orig_compute = http_range.compute_file_sha256
+
+    def _counted_compute(p):
+        nonlocal call_count
+        call_count += 1
+        return orig_compute(p)
+
+    monkeypatch.setattr(http_range, "compute_file_sha256", _counted_compute)
+    http_range._SHA256_CACHE.clear()
+
+    client = TestClient(app)
+    # First call: computes sha
+    resp1 = client.get(f"/test-file?path={f}")
+    assert resp1.status_code == 200
+    assert call_count == 1
+
+    # Second call: hits cache
+    resp2 = client.get(f"/test-file?path={f}")
+    assert resp2.status_code == 200
+    assert call_count == 1

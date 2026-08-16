@@ -405,7 +405,6 @@ async def post_wardrobe(
     request: Request,  # required by @limiter.limit
     body: WardrobeGenerateRequest,
     auth: tuple[User, LoginRecord] = Depends(get_current_session),
-    db: AsyncSession = Depends(get_db),
 ) -> WardrobeItemResponse:
     user, _ = auth
     # Generate-then-confirm in one call. The generation itself runs on the
@@ -426,23 +425,25 @@ async def post_wardrobe(
         raise HTTPException(status_code=504, detail={"error": "换装生成超时，请稍后重试"})
     result = job.result or {}
     try:
-        item = await confirm_wardrobe_item(
-            db,
-            user_id=user.id,
-            file_id=result.get("file_id", ""),
-            name=body.name,
-            prompt=body.description,
-            normal_file_id=result.get("normal_file_id"),
-            roughness_file_id=result.get("roughness_file_id"),
-            metalness_file_id=result.get("metalness_file_id"),
-            displacement_file_id=result.get("displacement_file_id"),
-            mesh_file_id=result.get("mesh_file_id"),
-            assembly_json=result.get("assembly_json"),
-        )
+        async with SESSION_LOCAL() as confirm_db:
+            item = await confirm_wardrobe_item(
+                confirm_db,
+                user_id=user.id,
+                file_id=result.get("file_id", ""),
+                name=body.name,
+                prompt=body.description,
+                normal_file_id=result.get("normal_file_id"),
+                roughness_file_id=result.get("roughness_file_id"),
+                metalness_file_id=result.get("metalness_file_id"),
+                displacement_file_id=result.get("displacement_file_id"),
+                mesh_file_id=result.get("mesh_file_id"),
+                assembly_json=result.get("assembly_json"),
+            )
     except WardrobeSourceExpiredError as exc:
         raise HTTPException(status_code=409, detail={"error": "换装草稿已过期，请重新生成", "reason": str(exc)})
-    except (RuntimeError, MissingLlmConfigError) as exc:
-        raise HTTPException(status_code=502, detail={"error": str(exc)})
+    except (RuntimeError, MissingLlmConfigError):
+        logger.exception("wardrobe post confirmation failed", extra={"user_id": user.id})
+        raise HTTPException(status_code=502, detail={"error": "换装确认失败，请稍后重试"})
     return wardrobe_response(item)
 
 
@@ -533,8 +534,9 @@ async def post_wardrobe_confirm(
         )
     except WardrobeSourceExpiredError as exc:
         raise HTTPException(status_code=409, detail={"error": "换装草稿已过期，请重新生成", "reason": str(exc)})
-    except (RuntimeError, MissingLlmConfigError) as exc:
-        raise HTTPException(status_code=502, detail={"error": str(exc)})
+    except (RuntimeError, MissingLlmConfigError):
+        logger.exception("wardrobe confirm failed", extra={"user_id": user.id})
+        raise HTTPException(status_code=502, detail={"error": "换装确认失败，请稍后重试"})
     await emit_wardrobe_updated(user.id)
     return wardrobe_response(item)
 

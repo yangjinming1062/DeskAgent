@@ -1,4 +1,3 @@
-import pytest
 from services.companion.morph_generator import validate_and_sanitize_expression
 
 
@@ -44,4 +43,9 @@ def test_validate_and_sanitize_expression_invalid_inputs():
     assert validate_and_sanitize_expression(None) is None
     assert validate_and_sanitize_expression("not a dict") is None
     assert validate_and_sanitize_expression({"name": ""}) is None
-    assert validate_and_sanitize_expression({"name": "test", "label": "test", "weights": {}}) is None
+    assert (
+        validate_and_sanitize_expression(
+            {"name": "test", "label": "test", "weights": {}}
+        )
+        is None
+    )

@@ -1,12 +1,12 @@
 import asyncio
 import importlib
 import json
+from unittest.mock import AsyncMock
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy import func, select
-from unittest.mock import AsyncMock
 
 from api.v1 import companion as companion_api
 from components import get_db
@@ -43,6 +43,7 @@ async def test_send_message_companion_path_emits_ws_event(monkeypatch):
         captured.append((uid, text, affect))
 
     monkeypatch.setattr(smt, "_emit_companion_message", _emit)
+
     async def _is_quiet(_uid):
         return False
 
@@ -68,6 +69,7 @@ async def test_send_message_companion_path_emits_with_affect(monkeypatch):
         captured.append((uid, text, affect))
 
     monkeypatch.setattr(smt, "_emit_companion_message", _emit)
+
     async def _is_quiet(_uid):
         return False
 
@@ -98,6 +100,7 @@ async def test_send_message_quiet_tier_diverts_affect_only(monkeypatch):
 
     monkeypatch.setattr(smt, "_emit_companion_message", _emit_msg)
     monkeypatch.setattr(smt, "_emit_companion_affect", _emit_affect)
+
     async def _is_quiet(_uid):
         return True
 
@@ -132,6 +135,7 @@ async def test_send_message_quiet_tier_no_affect_emits_neutral(monkeypatch):
 
     monkeypatch.setattr(smt, "_emit_companion_message", _emit_msg)
     monkeypatch.setattr(smt, "_emit_companion_affect", _emit_affect)
+
     async def _is_quiet(_uid):
         return True
 
@@ -157,6 +161,7 @@ async def test_send_message_normal_tier_emits(monkeypatch):
         captured.append((uid, text, affect))
 
     monkeypatch.setattr(smt, "_emit_companion_message", _emit)
+
     async def _is_quiet(_uid):
         return False
 
@@ -184,7 +189,13 @@ async def test_onboarding_incremental_persistence_and_recovery(_patch_db):
     async with SessionLocal() as db:
         # Fresh user: no answers, next field is the first question.
         state = await get_onboarding_state(db, 100)
-        assert state == {"answers": {}, "next_field": "name", "complete": False, "fullbody_mode": "single", "default_fullbody_reference_source": "reference_image"}
+        assert state == {
+            "answers": {},
+            "next_field": "name",
+            "complete": False,
+            "fullbody_mode": "single",
+            "default_fullbody_reference_source": "reference_image",
+        }
 
         # Submit one field — it persists immediately.
         state = await submit_onboarding_field(db, 100, "name", "小光")
@@ -235,10 +246,10 @@ async def test_post_character_onboarding_accepts_user_and_voice(_patch_db):
         PersonaValidationError,
         confirm_portrait,
         get_onboarding_state,
+        read_user_profile,
         submit_onboarding_field,
         update_persona,
     )
-    from services.companion import read_user_profile
 
     async with SessionLocal() as db:
         await update_persona(
@@ -669,8 +680,7 @@ async def test_affect_check_llm_failure_is_silent(monkeypatch, _patch_db):
     ac = importlib.import_module("services.companion.affect_check")
     await _seed_persona(SessionLocal, 444)
 
-    from services.llm import LLMRuntimeError
-    from services.llm import ClassifiedError, FailoverReason
+    from services.llm import ClassifiedError, FailoverReason, LLMRuntimeError
 
     monkeypatch.setattr(
         "services.companion.prompt_runtime.client_for_config", lambda cfg: None
@@ -807,7 +817,9 @@ def test_voice_catalog_language_field():
 
 async def test_voice_catalog_zh_first_in_list_voices(monkeypatch):
     """Onboarding voice picker is what users see on first launch — zh-first matches "default Chinese"."""
-    monkeypatch.setattr(voice_catalog, "active_tts_provider", AsyncMock(return_value="mimo"))
+    monkeypatch.setattr(
+        voice_catalog, "active_tts_provider", AsyncMock(return_value="mimo")
+    )
     result = await voice_catalog.list_tts_voices(db=None, user_id=999)
     langs = [v["language"] for v in result["voices"]]
     # All zh must come before any en (multi sits between them).
@@ -844,7 +856,9 @@ def test_voice_catalog_minimax_all_zh_stays_unchanged():
 
 async def test_voice_catalog_language_filter_zh(monkeypatch):
     """list_voices(language='zh') returns only Chinese voices."""
-    monkeypatch.setattr(voice_catalog, "active_tts_provider", AsyncMock(return_value="mimo"))
+    monkeypatch.setattr(
+        voice_catalog, "active_tts_provider", AsyncMock(return_value="mimo")
+    )
     result = await voice_catalog.list_tts_voices(db=None, user_id=999, language="zh")
     assert all(v["language"] == "zh" for v in result["voices"])
     assert len(result["voices"]) == 4  # 冰糖 / 茉莉 / 苏打 / 白桦
@@ -853,7 +867,9 @@ async def test_voice_catalog_language_filter_zh(monkeypatch):
 
 async def test_voice_catalog_language_filter_en(monkeypatch):
     """list_voices(language='en') returns only English voices."""
-    monkeypatch.setattr(voice_catalog, "active_tts_provider", AsyncMock(return_value="mimo"))
+    monkeypatch.setattr(
+        voice_catalog, "active_tts_provider", AsyncMock(return_value="mimo")
+    )
     result = await voice_catalog.list_tts_voices(db=None, user_id=999, language="en")
     assert all(v["language"] == "en" for v in result["voices"])
     assert len(result["voices"]) == 4  # Mia / Chloe / Milo / Dean
@@ -861,7 +877,9 @@ async def test_voice_catalog_language_filter_en(monkeypatch):
 
 async def test_voice_catalog_language_filter_multi(monkeypatch):
     """list_voices(language='multi') returns only multilingual voices."""
-    monkeypatch.setattr(voice_catalog, "active_tts_provider", AsyncMock(return_value="mimo"))
+    monkeypatch.setattr(
+        voice_catalog, "active_tts_provider", AsyncMock(return_value="mimo")
+    )
     result = await voice_catalog.list_tts_voices(db=None, user_id=999, language="multi")
     assert all(v["language"] == "multi" for v in result["voices"])
     assert result["default_voice"]["id"] == "mimo_default"
@@ -869,7 +887,9 @@ async def test_voice_catalog_language_filter_multi(monkeypatch):
 
 async def test_voice_catalog_language_filter_none_returns_full(monkeypatch):
     """list_voices(language=None) returns the full sorted catalog."""
-    monkeypatch.setattr(voice_catalog, "active_tts_provider", AsyncMock(return_value="mimo"))
+    monkeypatch.setattr(
+        voice_catalog, "active_tts_provider", AsyncMock(return_value="mimo")
+    )
     result = await voice_catalog.list_tts_voices(db=None, user_id=999, language=None)
     # Same as the default call — all 9 voices.
     assert len(result["voices"]) == 9
@@ -877,7 +897,9 @@ async def test_voice_catalog_language_filter_none_returns_full(monkeypatch):
 
 async def test_voice_catalog_language_filter_empty_zh_subset_keeps_default(monkeypatch):
     """Provider that registers no TTS catalog → empty voices + DEFAULT_VOICE stub."""
-    monkeypatch.setattr(voice_catalog, "active_tts_provider", AsyncMock(return_value="gemini"))
+    monkeypatch.setattr(
+        voice_catalog, "active_tts_provider", AsyncMock(return_value="gemini")
+    )
     result = await voice_catalog.list_tts_voices(db=None, user_id=999, language="zh")
     assert result["voices"] == []
     assert result["default_voice"]["id"] == ""
@@ -891,12 +913,16 @@ def test_voice_catalog_language_scoring():
 
 
 async def test_voice_catalog_supports_voice_design(monkeypatch):
-    monkeypatch.setattr(voice_catalog, "active_tts_provider", AsyncMock(return_value="minimax"))
+    monkeypatch.setattr(
+        voice_catalog, "active_tts_provider", AsyncMock(return_value="minimax")
+    )
     result = await voice_catalog.list_tts_voices(db=None, user_id=999)
     assert result["supports_voice_design"] is True
     assert result["voice_design_guide"]
 
-    monkeypatch.setattr(voice_catalog, "active_tts_provider", AsyncMock(return_value="zhipu"))
+    monkeypatch.setattr(
+        voice_catalog, "active_tts_provider", AsyncMock(return_value="zhipu")
+    )
     result = await voice_catalog.list_tts_voices(db=None, user_id=999)
     assert result["supports_voice_design"] is False
 
@@ -973,13 +999,17 @@ def test_pick_voice_id_unknown_falls_back_to_default():
 
 
 async def test_list_voices_empty_when_no_provider(monkeypatch):
-    monkeypatch.setattr(voice_catalog, "active_tts_provider", AsyncMock(return_value=""))
+    monkeypatch.setattr(
+        voice_catalog, "active_tts_provider", AsyncMock(return_value="")
+    )
     result = await voice_catalog.list_tts_voices(db=None, user_id=999)
     assert result["provider"] == ""
     assert result["voices"] == []
     assert result["supports_voice_design"] is False
 
-    monkeypatch.setattr(voice_catalog, "active_tts_provider", AsyncMock(return_value="minimax"))
+    monkeypatch.setattr(
+        voice_catalog, "active_tts_provider", AsyncMock(return_value="minimax")
+    )
     result = await voice_catalog.list_tts_voices(db=None, user_id=999)
     assert result["provider"] == "minimax"
     # catalog[0] is the default for users who never picked a voice.
@@ -1320,8 +1350,10 @@ def test_onboarding_field_partitions_split_at_voice():
     """character + voice + post-character must reconstruct ONBOARDING_FIELDS —
     catches a mis-insertion that would put a field on the wrong side of voice."""
     from services.companion import ONBOARDING_FIELDS
-    from services.companion.persona_service import _CHARACTER_ONBOARDING_FIELDS
-    from services.companion.persona_service import _POST_CHARACTER_FIELDS
+    from services.companion.persona_service import (
+        _CHARACTER_ONBOARDING_FIELDS,
+        _POST_CHARACTER_FIELDS,
+    )
 
     assert (
         _CHARACTER_ONBOARDING_FIELDS + ("voice",) + _POST_CHARACTER_FIELDS
@@ -1472,7 +1504,11 @@ async def test_disturbance_tier_persists_across_reload(SessionLocal):
     # expiring all cached instances before re-reading.
     async with SessionLocal() as db:
         db.expire_all()
-        row = (await db.execute(select(CompanionPreference).where(CompanionPreference.user_id == 7))).scalar_one()
+        row = (
+            await db.execute(
+                select(CompanionPreference).where(CompanionPreference.user_id == 7)
+            )
+        ).scalar_one()
         assert row.disturbance_tier == "quiet"
     assert await disturbance.get_disturbance_tier(7) == "quiet"
     assert await disturbance.is_quiet(7) is True
@@ -1719,7 +1755,9 @@ async def test_regenerate_avatar_from_image_refuses_when_persona_incomplete(_pat
 
 
 @pytest.mark.asyncio
-async def test_generate_fullbody_stage_front_and_aux_chained(monkeypatch, _patch_db, set_fullbody_mode):
+async def test_generate_fullbody_stage_front_and_aux_chained(
+    monkeypatch, _patch_db, set_fullbody_mode
+):
     """Stage 'front' generates only the front seed using avatar as reference and caches front_prompt.
     Stage 'aux' generates right and back seeds using front seed as reference and caches multiview_prompts.
     """
@@ -1817,7 +1855,9 @@ async def test_generate_fullbody_stage_front_and_aux_chained(monkeypatch, _patch
 
 
 @pytest.mark.asyncio
-async def test_generate_fullbody_preconditions(monkeypatch, _patch_db, set_fullbody_mode):
+async def test_generate_fullbody_preconditions(
+    monkeypatch, _patch_db, set_fullbody_mode
+):
     """Step-2 raises typed errors for missing row, missing stage/view, unreadable source, and missing front seed for aux."""
     set_fullbody_mode("multi")
 
@@ -1905,7 +1945,9 @@ async def test_generate_fullbody_preconditions(monkeypatch, _patch_db, set_fullb
 
 
 @pytest.mark.asyncio
-async def test_generate_fullbody_single_mode_rejects_aux(monkeypatch, _patch_db, set_fullbody_mode):
+async def test_generate_fullbody_single_mode_rejects_aux(
+    monkeypatch, _patch_db, set_fullbody_mode
+):
     """In single-view mode, stage='aux' and view='right'/'back' are rejected."""
     set_fullbody_mode("single")
 
@@ -1970,7 +2012,9 @@ def test_fullbody_generate_request_accepts_feedback():
     text here and the backend injects it into the image prompt."""
     from modules.companion.schemas import FullbodyGenerateRequest
 
-    parsed = FullbodyGenerateRequest.model_validate({"view": "front", "feedback": "头发再短一点"})
+    parsed = FullbodyGenerateRequest.model_validate(
+        {"view": "front", "feedback": "头发再短一点"}
+    )
     assert parsed.feedback == "头发再短一点"
 
     empty = FullbodyGenerateRequest.model_validate({"view": "front"})
@@ -1994,16 +2038,16 @@ async def test_generate_fullbody_uses_call_time_feedback(monkeypatch, _patch_db)
     _, SessionLocal = _patch_db
     captured: dict[str, str] = {}
 
-    async def fake_gen(**_kwargs):  # noqa: ARG001
+    async def fake_gen(**_kwargs):
         return _json.dumps({"success": True, "urls": ["http://provider/fullbody.png"]})
 
-    async def fake_download(_url):  # noqa: ARG001
+    async def fake_download(_url):
         return b"\x89PNG\r\n\x1a\n", "image/png"
 
-    async def fake_select_rig(_chat, _species, db=None, user_id=None):  # noqa: ARG001
+    async def fake_select_rig(_chat, _species, db=None, user_id=None):
         return "biped"
 
-    def fake_build(view, *, template, feedback=None, avatar_prompt=""):  # noqa: ARG001
+    def fake_build(view, *, template, feedback=None, avatar_prompt=""):
         captured["feedback"] = feedback or ""
         return f"prompt-{view}"
 
@@ -2218,7 +2262,9 @@ async def test_persona_put_schedules_background_tag_refresh(_patch_db, monkeypat
         raise AssertionError("analyze_personality_tags should NOT be awaited inline")
 
     monkeypatch.setattr(companion_svc, "analyze_personality_tags", _explode_if_called)
-    monkeypatch.setattr(companion_svc.persona_background, "analyze_personality_tags", _explode_if_called)
+    monkeypatch.setattr(
+        companion_svc.persona_background, "analyze_personality_tags", _explode_if_called
+    )
 
     fake_user_id = 4242
 
@@ -2270,7 +2316,9 @@ async def test_persona_tag_refresh_retries_transient_failures(_patch_db, monkeyp
         return ["retry", "ok"]
 
     monkeypatch.setattr(companion_svc, "analyze_personality_tags", _flaky_tag_extract)
-    monkeypatch.setattr(companion_svc.persona_background, "analyze_personality_tags", _flaky_tag_extract)
+    monkeypatch.setattr(
+        companion_svc.persona_background, "analyze_personality_tags", _flaky_tag_extract
+    )
 
     async def _noop_chat(*_a, **_kw):
         return ""
@@ -2279,7 +2327,9 @@ async def test_persona_tag_refresh_retries_transient_failures(_patch_db, monkeyp
     # Shrink the backoff so the test runs in well under a second total.
     monkeypatch.setattr(companion_svc.persona_background, "_BG_TASK_BASE_DELAY", 0.01)
     monkeypatch.setattr(companion_svc.persona_background, "_BG_TASK_MAX_DELAY", 0.05)
-    monkeypatch.setattr(companion_svc.persona_background, "_BG_TASK_PER_ATTEMPT_TIMEOUT", 5.0)
+    monkeypatch.setattr(
+        companion_svc.persona_background, "_BG_TASK_PER_ATTEMPT_TIMEOUT", 5.0
+    )
 
     async with SessionLocal() as db:
         persona = Persona(
@@ -2295,13 +2345,15 @@ async def test_persona_tag_refresh_retries_transient_failures(_patch_db, monkeyp
         persona_id = persona.id
 
     companion_api.schedule_personality_tag_refresh(persona_id, 31337)
-    await asyncio.gather(*companion_svc.persona_background._TASKS, return_exceptions=True)
+    await asyncio.gather(
+        *companion_svc.persona_background._TASKS, return_exceptions=True
+    )
 
     assert attempts["n"] == 3, f"expected 3 attempts, got {attempts['n']}"
     async with SessionLocal() as db:
         persona = (
-            (await db.execute(select(Persona).where(Persona.id == persona_id))).scalar_one()
-        )
+            await db.execute(select(Persona).where(Persona.id == persona_id))
+        ).scalar_one()
         tags = json.loads(persona.personality_tags_json or "[]")
     assert tags == ["retry", "ok"]
 
@@ -2318,7 +2370,9 @@ async def test_persona_tag_refresh_gives_up_after_max_attempts(_patch_db, monkey
         raise RuntimeError("simulated permanent LLM error")
 
     monkeypatch.setattr(companion_svc, "analyze_personality_tags", _always_fail)
-    monkeypatch.setattr(companion_svc.persona_background, "analyze_personality_tags", _always_fail)
+    monkeypatch.setattr(
+        companion_svc.persona_background, "analyze_personality_tags", _always_fail
+    )
 
     async def _noop_chat(*_a, **_kw):
         return ""
@@ -2342,12 +2396,14 @@ async def test_persona_tag_refresh_gives_up_after_max_attempts(_patch_db, monkey
         persona_id = persona.id
 
     companion_api.schedule_personality_tag_refresh(persona_id, 31338)
-    await asyncio.gather(*companion_svc.persona_background._TASKS, return_exceptions=True)
+    await asyncio.gather(
+        *companion_svc.persona_background._TASKS, return_exceptions=True
+    )
 
     async with SessionLocal() as db:
         persona = (
-            (await db.execute(select(Persona).where(Persona.id == persona_id))).scalar_one()
-        )
+            await db.execute(select(Persona).where(Persona.id == persona_id))
+        ).scalar_one()
         tags = json.loads(persona.personality_tags_json or "[]")
     assert tags == ["pre-existing"]
 
@@ -2358,10 +2414,11 @@ async def test_model_generation_rejects_concurrent_run(_patch_db, monkeypatch):
     spawning overlapping pipelines that race over the active row."""
 
     from modules.auth import User
-    from modules.companion import AvatarAsset
-    from modules.companion import CompanionModel
-    from services.companion import generate_companion_model
-    from services.companion import ModelGenerationInProgressError
+    from modules.companion import AvatarAsset, CompanionModel
+    from services.companion import (
+        ModelGenerationInProgressError,
+        generate_companion_model,
+    )
 
     _, SessionLocal = _patch_db
 
@@ -2396,16 +2453,15 @@ async def test_model_generation_rejects_concurrent_run(_patch_db, monkeypatch):
     # no-op pipeline "finishes", a fresh call still sees the in-flight row.
     async with SessionLocal() as db:
         assert (
-            (
-                await db.execute(
-                    select(func.count()).select_from(CompanionModel).where(
-                        CompanionModel.user_id == uid,
-                        CompanionModel.status == "generating",
-                    )
+            await db.execute(
+                select(func.count())
+                .select_from(CompanionModel)
+                .where(
+                    CompanionModel.user_id == uid,
+                    CompanionModel.status == "generating",
                 )
-            ).scalar_one()
-            == 1
-        )
+            )
+        ).scalar_one() == 1
 
 
 @pytest.mark.asyncio
@@ -2417,11 +2473,8 @@ async def test_model_generation_failure_keeps_previous_model_active(
     import json as _json
 
     from modules.auth import User
-    from modules.companion import AvatarAsset
-    from modules.companion import CompanionModel
-    from modules.companion import Persona
-    from services.companion import generate_companion_model
-    from services.companion import ModelGenerationError
+    from modules.companion import AvatarAsset, CompanionModel, Persona
+    from services.companion import ModelGenerationError, generate_companion_model
 
     _, SessionLocal = _patch_db
 
@@ -2523,9 +2576,7 @@ async def test_generate_companion_model_is_idempotent_when_model_exists(
     import json as _json
 
     from modules.auth import User
-    from modules.companion import AvatarAsset
-    from modules.companion import CompanionModel
-    from modules.companion import Persona
+    from modules.companion import AvatarAsset, CompanionModel, Persona
     from services.companion import generate_companion_model
 
     _, SessionLocal = _patch_db
@@ -2583,7 +2634,11 @@ async def test_generate_companion_model_is_idempotent_when_model_exists(
 
     async with SessionLocal() as db:
         rows = (
-            (await db.execute(select(CompanionModel).where(CompanionModel.user_id == uid)))
+            (
+                await db.execute(
+                    select(CompanionModel).where(CompanionModel.user_id == uid)
+                )
+            )
             .scalars()
             .all()
         )
@@ -2615,7 +2670,9 @@ async def test_run_tripo_pipeline_single_mode_uses_image_to_model(
         return "task_img"
 
     async def fake_create_multi(views, **_kwargs):
-        captured["create_multi_called"] = True  # sentinel: single-mode should never reach here
+        captured["create_multi_called"] = (
+            True  # sentinel: single-mode should never reach here
+        )
         return "task_multi"
 
     async def fake_rig_check(_task_id):
@@ -2656,7 +2713,9 @@ async def test_run_tripo_pipeline_single_mode_uses_image_to_model(
         db.add(
             Persona(
                 user_id=user.id,
-                definition_json=_json.dumps({"name": "x", "personality": "p", "speaking_style": "s"}),
+                definition_json=_json.dumps(
+                    {"name": "x", "personality": "p", "speaking_style": "s"}
+                ),
                 is_complete=True,
             )
         )
@@ -2680,6 +2739,7 @@ async def test_run_tripo_pipeline_single_mode_uses_image_to_model(
     from pathlib import Path
 
     from components import SETTINGS
+
     asset_dir = Path(SETTINGS.data_dir) / "companion-avatars"
     asset_dir.mkdir(parents=True, exist_ok=True)
     (asset_dir / "front.png").write_bytes(b"\x89PNG\r\n\x1a\n")
@@ -2697,7 +2757,11 @@ async def test_run_tripo_pipeline_single_mode_uses_image_to_model(
 
     async with SessionLocal() as db:
         row = (
-            (await db.execute(select(CompanionModel).where(CompanionModel.id == model_id)))
+            (
+                await db.execute(
+                    select(CompanionModel).where(CompanionModel.id == model_id)
+                )
+            )
             .scalars()
             .one()
         )
@@ -2757,7 +2821,9 @@ async def test_run_tripo_pipeline_single_mode_skips_blender_fallback(
         db.add(
             Persona(
                 user_id=user.id,
-                definition_json=_json.dumps({"name": "x", "personality": "p", "speaking_style": "s"}),
+                definition_json=_json.dumps(
+                    {"name": "x", "personality": "p", "speaking_style": "s"}
+                ),
                 is_complete=True,
             )
         )
@@ -2780,6 +2846,7 @@ async def test_run_tripo_pipeline_single_mode_skips_blender_fallback(
     from pathlib import Path
 
     from components import SETTINGS
+
     asset_dir = Path(SETTINGS.data_dir) / "companion-avatars"
     asset_dir.mkdir(parents=True, exist_ok=True)
     (asset_dir / "front.png").write_bytes(b"\x89PNG\r\n\x1a\n")
@@ -2795,7 +2862,11 @@ async def test_run_tripo_pipeline_single_mode_skips_blender_fallback(
 
     async with SessionLocal() as db:
         row = (
-            (await db.execute(select(CompanionModel).where(CompanionModel.id == model_id)))
+            (
+                await db.execute(
+                    select(CompanionModel).where(CompanionModel.id == model_id)
+                )
+            )
             .scalars()
             .one()
         )
@@ -2808,11 +2879,13 @@ async def test_run_tripo_pipeline_single_mode_skips_blender_fallback(
 async def test_wardrobe_preview_and_confirm_lifecycle(_patch_db, monkeypatch):
     """End-to-end test for wardrobe preview (temp-media) and confirm (persist + equip)."""
     import base64
+
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
+
     from api.v1 import companion as companion_api
     from components import get_db
-    from modules.auth import get_current_session, User
+    from modules.auth import User, get_current_session
     from modules.companion import WardrobeItem
     from services.rate_limit import limiter
 
@@ -2853,13 +2926,16 @@ async def test_wardrobe_preview_and_confirm_lifecycle(_patch_db, monkeypatch):
     async def _fake_classify_kind(description, user_id, db, body_joint_names=None):
         from services.companion.wardrobe_service import WardrobeRouting
 
-        return WardrobeRouting(kind="texture", slot="outfit", socket=None, physics="skin")
+        return WardrobeRouting(
+            kind="texture", slot="outfit", socket=None, physics="skin"
+        )
 
     monkeypatch.setattr(
         "services.companion.wardrobe_service._resolve_rig_type", _fake_resolve_rig_type
     )
     monkeypatch.setattr(
-        "services.companion.wardrobe_service._classify_wardrobe_kind", _fake_classify_kind
+        "services.companion.wardrobe_service._classify_wardrobe_kind",
+        _fake_classify_kind,
     )
 
     async def _fake_img_tool(prompt, reference_image=None, **kwargs):
@@ -2871,8 +2947,8 @@ async def test_wardrobe_preview_and_confirm_lifecycle(_patch_db, monkeypatch):
         return b"preview_texture_png_bytes"
 
     def _fake_get_file_path(fid):
-        from pathlib import Path
         import tempfile
+        from pathlib import Path
 
         if fid == "non_existent_expired_id":
             return None
@@ -3024,6 +3100,44 @@ async def test_wardrobe_preview_and_confirm_lifecycle(_patch_db, monkeypatch):
     assert expired_resp.status_code == 409
 
 
+@pytest.mark.asyncio
+async def test_wardrobe_confirm_502_redacted_error(_patch_db, monkeypatch):
+    from api.v1 import companion as companion_api
+    from components import get_db
+    from modules.auth import User, get_current_session
+
+    _, SessionLocal = _patch_db
+
+    async with SessionLocal() as db:
+        user = User(username="w-user-redact", is_active=True, can_use=True)
+        db.add(user)
+        await db.commit()
+        await db.refresh(user)
+
+    app = FastAPI()
+
+    async def _test_get_db():
+        async with SessionLocal() as db:
+            yield db
+
+    app.dependency_overrides[get_db] = _test_get_db
+    app.dependency_overrides[get_current_session] = lambda: (user, None)
+    app.include_router(companion_api.router)
+
+    async def _failing_confirm(*args, **kwargs):
+        raise RuntimeError("Internal unredacted DB exception sk-secret-token")
+
+    monkeypatch.setattr(companion_api, "confirm_wardrobe_item", _failing_confirm)
+
+    client = TestClient(app)
+    resp = client.post(
+        "/api/companion/wardrobe/confirm",
+        json={"file_id": "test_file_id", "name": "新裙子"},
+    )
+    assert resp.status_code == 502
+    assert resp.json() == {"detail": {"error": "换装确认失败，请稍后重试"}}
+
+
 # ---------------------------------------------------------------------------
 # Outfit normalization
 # ---------------------------------------------------------------------------
@@ -3103,8 +3217,8 @@ async def test_update_outfit_field_surgical(_patch_db):
         from modules.companion import Persona
 
         persona = (
-            (await db.execute(select(Persona).where(Persona.user_id == 9900))).scalar_one()
-        )
+            await db.execute(select(Persona).where(Persona.user_id == 9900))
+        ).scalar_one()
         definition = json.loads(persona.definition_json)
         assert definition["appearance_outfit"] == "粉色碎花洋裙"
         # Other fields untouched
@@ -3138,8 +3252,8 @@ def test_render_extras_outfit_label():
 
 def test_outfit_guidance_injected_only_when_outfit_present():
     """system_prompt.py conditionally appends COMPANION_OUTFIT_GUIDANCE."""
-    from services.chat.system_prompt import build_system_prompt
     from modules.system import AgentPromptConfig
+    from services.chat.system_prompt import build_system_prompt
 
     base_config = AgentPromptConfig(
         valid_tool_names=[],
@@ -3183,18 +3297,14 @@ def test_outfit_guidance_injected_only_when_outfit_present():
 async def _make_authenticated_client(_patch_db, uid: int = 3001):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
-    from components import get_db
-    from modules.auth import get_current_session
+
     from api.v1 import companion as companion_api
-    from modules.auth import User, UserModelConfig
+    from components import get_db
+    from modules.auth import User, UserModelConfig, get_current_session
 
     _, SessionLocal = _patch_db
     async with SessionLocal() as db:
-        if (
-            not (
-                await db.execute(select(User).where(User.id == uid))
-            ).scalars().first()
-        ):
+        if not (await db.execute(select(User).where(User.id == uid))).scalars().first():
             user = User(
                 id=uid,
                 username=f"u_{uid}",
@@ -3257,9 +3367,10 @@ async def test_get_expressions_endpoint(_patch_db):
 @pytest.mark.asyncio
 async def test_companion_gift_creation_and_decline_flow(monkeypatch, _patch_db):
     client, SessionLocal, uid = await _make_authenticated_client(_patch_db, uid=3002)
-    from services.companion import confirm_wardrobe_item
-    from pathlib import Path
     import tempfile
+    from pathlib import Path
+
+    from services.companion import confirm_wardrobe_item
 
     td = tempfile.mkdtemp()
     dummy_file = Path(td) / "dummy.png"
@@ -3316,19 +3427,34 @@ async def test_slot_based_multi_equip(_patch_db):
 
     _, SessionLocal = _patch_db
     async with SessionLocal() as db:
-        user = User(username="slot_equip_user", password_hash=None, is_active=True, can_use=True)
+        user = User(
+            username="slot_equip_user", password_hash=None, is_active=True, can_use=True
+        )
         db.add(user)
         await db.commit()
         await db.refresh(user)
         uid = user.id
 
     def _asm(slot, kind="garment", socket=None, physics="skin"):
-        return json.dumps({"kind": kind, "slot": slot, "layer": 1, "socket": socket, "physics": physics})
+        return json.dumps(
+            {
+                "kind": kind,
+                "slot": slot,
+                "layer": 1,
+                "socket": socket,
+                "physics": physics,
+            }
+        )
 
     async with SessionLocal() as db:
+
         async def _mk(name, kind, assembly):
             item = WardrobeItem(
-                user_id=uid, name=name, category="generated", equipped=False, kind=kind,
+                user_id=uid,
+                name=name,
+                category="generated",
+                equipped=False,
+                kind=kind,
                 mesh_url="companion-assets/1/m.glb" if kind != "texture" else None,
                 texture_url="companion-assets/1/t.png" if kind == "texture" else None,
                 assembly_json=assembly,
@@ -3340,7 +3466,9 @@ async def test_slot_based_multi_equip(_patch_db):
 
         torso_a = await _mk("夹克", "garment", _asm("torso"))
         legs = await _mk("长裤", "garment", _asm("legs"))
-        hat = await _mk("帽子", "accessory", _asm("head", kind="accessory", socket="mixamorig:Head"))
+        hat = await _mk(
+            "帽子", "accessory", _asm("head", kind="accessory", socket="mixamorig:Head")
+        )
         texture = await _mk("红裙配色", "texture", "{}")
 
         # Equip legs + hat + torso_a: all different slots → all stay equipped.
@@ -3364,7 +3492,12 @@ async def test_slot_based_multi_equip(_patch_db):
 def test_resolve_socket_exact_suffix_fallback():
     from services.companion.wardrobe_service import _resolve_socket
 
-    joints = ["mixamorig:Hips", "mixamorig:Spine", "mixamorig:Head", "mixamorig:RightHand"]
+    joints = [
+        "mixamorig:Hips",
+        "mixamorig:Spine",
+        "mixamorig:Head",
+        "mixamorig:RightHand",
+    ]
     # Exact match
     assert _resolve_socket("mixamorig:Head", "head", joints) == "mixamorig:Head"
     # Suffix match (LLM spec name -> mixamorig bone)
@@ -3384,7 +3517,9 @@ def test_resolve_socket_exact_suffix_fallback():
 
 
 @pytest.mark.asyncio
-async def test_generate_fullbody_reference_image_source(monkeypatch, _patch_db, set_fullbody_mode):
+async def test_generate_fullbody_reference_image_source(
+    monkeypatch, _patch_db, set_fullbody_mode
+):
     """reference_source='reference_image' uses the uploaded image as primary
     and the bust avatar as secondary (for Gemini dual-ref beautification)."""
     set_fullbody_mode("multi")
@@ -3455,7 +3590,9 @@ async def test_generate_fullbody_reference_image_source(monkeypatch, _patch_db, 
 
 
 @pytest.mark.asyncio
-async def test_generate_fullbody_avatar_source_no_secondary(monkeypatch, _patch_db, set_fullbody_mode):
+async def test_generate_fullbody_avatar_source_no_secondary(
+    monkeypatch, _patch_db, set_fullbody_mode
+):
     """reference_source='avatar' (default) uses the bust avatar as primary
     and does NOT set a secondary reference."""
     set_fullbody_mode("multi")
@@ -3484,7 +3621,9 @@ async def test_generate_fullbody_avatar_source_no_secondary(monkeypatch, _patch_
     monkeypatch.setattr(avatar_service, "select_rig_type", fake_select_rig)
 
     async with SessionLocal() as db:
-        user = User(username="avatarref", password_hash=None, is_active=True, can_use=True)
+        user = User(
+            username="avatarref", password_hash=None, is_active=True, can_use=True
+        )
         db.add(user)
         await db.commit()
         await db.refresh(user)
@@ -3518,7 +3657,9 @@ async def test_generate_fullbody_avatar_source_no_secondary(monkeypatch, _patch_
 
 
 @pytest.mark.asyncio
-async def test_generate_fullbody_reference_image_ignored_for_aux(monkeypatch, _patch_db, set_fullbody_mode):
+async def test_generate_fullbody_reference_image_ignored_for_aux(
+    monkeypatch, _patch_db, set_fullbody_mode
+):
     """reference_source='reference_image' has no effect on right/back views —
     they always use the front seed as reference, with no secondary."""
     set_fullbody_mode("multi")
@@ -3570,7 +3711,10 @@ async def test_generate_fullbody_reference_image_ignored_for_aux(monkeypatch, _p
 
         # First generate front (so aux has a seed to reference)
         await avatar_service.generate_fullbody(
-            db, user_id=user.id, avatar_id=asset.id, stage="front",
+            db,
+            user_id=user.id,
+            avatar_id=asset.id,
+            stage="front",
             reference_source="reference_image",
             reference_image="iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB",
             reference_content_type="image/png",
@@ -3579,7 +3723,10 @@ async def test_generate_fullbody_reference_image_ignored_for_aux(monkeypatch, _p
 
         # Aux views — reference_source should be ignored
         await avatar_service.generate_fullbody(
-            db, user_id=user.id, avatar_id=asset.id, stage="aux",
+            db,
+            user_id=user.id,
+            avatar_id=asset.id,
+            stage="aux",
             reference_source="reference_image",
             reference_image="iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB",
             reference_content_type="image/png",
@@ -3589,7 +3736,10 @@ async def test_generate_fullbody_reference_image_ignored_for_aux(monkeypatch, _p
         for call in all_calls:
             # Right/back use the front seed, not the uploaded image
             assert call["reference_image"].startswith("data:image/png;base64,")
-            assert call["reference_image"] != "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB"
+            assert (
+                call["reference_image"]
+                != "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB"
+            )
             # No secondary for aux views
             assert call["secondary_reference_image"] is None
 
@@ -3606,8 +3756,10 @@ def test_fullbody_request_schema_reference_source_validation():
 
     # reference_source='reference_image' with image — OK
     req = FullbodyGenerateRequest(
-        stage="front", reference_source="reference_image",
-        reference_image="iVBORw0KGgo=", reference_content_type="image/png",
+        stage="front",
+        reference_source="reference_image",
+        reference_image="iVBORw0KGgo=",
+        reference_content_type="image/png",
     )
     assert req.reference_source == "reference_image"
 
@@ -3623,26 +3775,44 @@ async def test_onboarding_state_default_fullbody_reference_source(_patch_db):
 
     async with SessionLocal() as db:
         # Preset species (人类) → 'avatar'
-        await update_persona(db, 201, {
-            "name": "光", "personality": "温柔", "speaking_style": "轻柔",
-            "biological_type": "人类",
-        })
+        await update_persona(
+            db,
+            201,
+            {
+                "name": "光",
+                "personality": "温柔",
+                "speaking_style": "轻柔",
+                "biological_type": "人类",
+            },
+        )
         state = await get_onboarding_state(db, 201)
         assert state["default_fullbody_reference_source"] == "avatar"
 
         # Non-preset species (猫) → 'reference_image'
-        await update_persona(db, 202, {
-            "name": "喵", "personality": "活泼", "speaking_style": "俏皮",
-            "biological_type": "猫",
-        })
+        await update_persona(
+            db,
+            202,
+            {
+                "name": "喵",
+                "personality": "活泼",
+                "speaking_style": "俏皮",
+                "biological_type": "猫",
+            },
+        )
         state = await get_onboarding_state(db, 202)
         assert state["default_fullbody_reference_source"] == "reference_image"
 
         # Preset species (精灵) → 'avatar'
-        await update_persona(db, 203, {
-            "name": "艾尔", "personality": "优雅", "speaking_style": "沉稳",
-            "biological_type": "精灵",
-        })
+        await update_persona(
+            db,
+            203,
+            {
+                "name": "艾尔",
+                "personality": "优雅",
+                "speaking_style": "沉稳",
+                "biological_type": "精灵",
+            },
+        )
         state = await get_onboarding_state(db, 203)
         assert state["default_fullbody_reference_source"] == "avatar"
 
@@ -3650,9 +3820,10 @@ async def test_onboarding_state_default_fullbody_reference_source(_patch_db):
 @pytest.mark.asyncio
 async def test_confirm_wardrobe_with_displacement_channel(monkeypatch, _patch_db):
     client, SessionLocal, uid = await _make_authenticated_client(_patch_db, uid=3003)
-    from services.companion import confirm_wardrobe_item
-    from pathlib import Path
     import tempfile
+    from pathlib import Path
+
+    from services.companion import confirm_wardrobe_item
 
     td = tempfile.mkdtemp()
     dummy_file = Path(td) / "dummy.png"
@@ -3664,7 +3835,9 @@ async def test_confirm_wardrobe_with_displacement_channel(monkeypatch, _patch_db
     )
     monkeypatch.setattr(
         "services.companion.wardrobe_service.save_companion_asset",
-        lambda data, user_id, label, ext="png": f"companion-assets/{user_id}/{label}.{ext}",
+        lambda data, user_id, label, ext="png": (
+            f"companion-assets/{user_id}/{label}.{ext}"
+        ),
     )
 
     async with SessionLocal() as db:
@@ -3693,7 +3866,6 @@ async def test_garment_pipeline_threads_io_dir(_patch_db, monkeypatch):
     from pathlib import Path as _Path
 
     from components import SETTINGS as _SETTINGS
-
     from services.companion import garment_service
     from services.companion.blender_llm_pipeline import BlenderResult
 

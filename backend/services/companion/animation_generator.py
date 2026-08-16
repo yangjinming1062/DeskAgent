@@ -226,7 +226,7 @@ def validate_and_sanitize_clip(clip_data: dict[str, Any], allowed_bones: set[str
                 t = float(item.get("t", 0))
                 r = item.get("r")
                 if isinstance(r, (list, tuple)) and len(r) == 3:
-                    rx, ry, rz = clamp_value(r[0], -math.pi, math.pi), clamp_value(r[1], -math.pi, math.pi), clamp_value(r[2], -math.pi, math.pi)
+                    rx, ry, rz = (clamp_value(r[0], -math.pi, math.pi), clamp_value(r[1], -math.pi, math.pi), clamp_value(r[2], -math.pi, math.pi))
                     clean_kfs.append({"t": round(t, 3), "r": [rx, ry, rz]})
             except (TypeError, ValueError):
                 continue
