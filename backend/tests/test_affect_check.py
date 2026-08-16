@@ -27,7 +27,7 @@ async def _seed_persona(SessionLocal, user_id: int, *, complete: bool = True):
                 system_prompt_extras="你是小光，一个温柔的桌面伙伴。"
                 if complete
                 else "",
-                is_complete=complete
+                is_complete=complete,
             )
         )
         await db.commit()
@@ -61,7 +61,9 @@ async def test_check_affect_should_express_true_emits(monkeypatch, _patch_db):
     aff = importlib.import_module("services.companion.affect_check")
     await _seed_persona(SessionLocal, 2001)
 
-    monkeypatch.setattr("services.companion.prompt_runtime.client_for_config", lambda cfg: None)
+    monkeypatch.setattr(
+        "services.companion.prompt_runtime.client_for_config", lambda cfg: None
+    )
 
     async def _ok(*a, **kw):
         return _MockResponse(
@@ -81,7 +83,7 @@ async def test_check_affect_should_express_true_emits(monkeypatch, _patch_db):
         user_id=2001,
         idle_seconds=45 * 60,
         local_hour=23,
-        llm_config={"model_name": "test"}
+        llm_config={"model_name": "test"},
     )
 
     assert result.expressed is True
@@ -103,7 +105,9 @@ async def test_check_affect_should_express_false_returns_no_emit(
         )
 
     monkeypatch.setattr("services.companion.prompt_runtime.call_with_retry", _ok)
-    monkeypatch.setattr("services.companion.prompt_runtime.client_for_config", lambda cfg: None)
+    monkeypatch.setattr(
+        "services.companion.prompt_runtime.client_for_config", lambda cfg: None
+    )
 
     emitted: list[tuple[int, str]] = []
 
@@ -136,7 +140,9 @@ async def test_check_affect_unknown_emotion_skips_emit(monkeypatch, _patch_db):
         )
 
     monkeypatch.setattr("services.companion.prompt_runtime.call_with_retry", _ok)
-    monkeypatch.setattr("services.companion.prompt_runtime.client_for_config", lambda cfg: None)
+    monkeypatch.setattr(
+        "services.companion.prompt_runtime.client_for_config", lambda cfg: None
+    )
 
     emitted: list = []
 
@@ -149,7 +155,7 @@ async def test_check_affect_unknown_emotion_skips_emit(monkeypatch, _patch_db):
         user_id=2003,
         idle_seconds=1800,
         local_hour=14,
-        llm_config={"model_name": "test"}
+        llm_config={"model_name": "test"},
     )
 
     assert result.expressed is False
@@ -166,7 +172,9 @@ async def test_check_affect_unparseable_response(monkeypatch, _patch_db):
         return _MockResponse("not json at all, just prose")
 
     monkeypatch.setattr("services.companion.prompt_runtime.call_with_retry", _ok)
-    monkeypatch.setattr("services.companion.prompt_runtime.client_for_config", lambda cfg: None)
+    monkeypatch.setattr(
+        "services.companion.prompt_runtime.client_for_config", lambda cfg: None
+    )
 
     async def _no_emit(*a):
         return None
@@ -200,7 +208,9 @@ async def test_check_affect_llm_error_returns_no_throw(monkeypatch, _patch_db):
         return None
 
     monkeypatch.setattr("services.companion.prompt_runtime.call_with_retry", _fail)
-    monkeypatch.setattr("services.companion.prompt_runtime.client_for_config", lambda cfg: None)
+    monkeypatch.setattr(
+        "services.companion.prompt_runtime.client_for_config", lambda cfg: None
+    )
     monkeypatch.setattr(aff, "emit_companion_affect", _no_emit)
 
     result = await aff.check_affect(
@@ -242,16 +252,19 @@ async def test_check_affect_custom_expression_accepted(monkeypatch, _patch_db):
 
     async with SessionLocal() as db:
         from modules.companion import CompanionExpression
-        db.add(CompanionExpression(
-            user_id=2007,
-            name="tender_worry",
-            label="心疼",
-            valence="negative",
-            description="Used when companion feels concerned for the user",
-            weights_json='{"frown": 0.5}',
-            tags_json='["心疼"]',
-            scale_boost=1.1,
-        ))
+
+        db.add(
+            CompanionExpression(
+                user_id=2007,
+                name="tender_worry",
+                label="心疼",
+                valence="negative",
+                description="Used when companion feels concerned for the user",
+                weights_json='{"frown": 0.5}',
+                tags_json='["心疼"]',
+                scale_boost=1.1,
+            )
+        )
         await db.commit()
 
     async def _ok(*a, **kw):
@@ -260,7 +273,9 @@ async def test_check_affect_custom_expression_accepted(monkeypatch, _patch_db):
         )
 
     monkeypatch.setattr("services.companion.prompt_runtime.call_with_retry", _ok)
-    monkeypatch.setattr("services.companion.prompt_runtime.client_for_config", lambda cfg: None)
+    monkeypatch.setattr(
+        "services.companion.prompt_runtime.client_for_config", lambda cfg: None
+    )
 
     emitted: list = []
 
@@ -273,7 +288,7 @@ async def test_check_affect_custom_expression_accepted(monkeypatch, _patch_db):
         user_id=2007,
         idle_seconds=1800,
         local_hour=14,
-        llm_config={"model_name": "test"}
+        llm_config={"model_name": "test"},
     )
 
     assert result.expressed is True

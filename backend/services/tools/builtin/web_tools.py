@@ -61,7 +61,7 @@ async def web_search_tool(query: str, limit: int = 5, user_settings: dict | None
     try:
         result = await provider.search(query, safe_limit)
     except Exception as e:
-        return tool_error(f"Search error: {str(e)}")
+        return tool_error(f"Search error: {e!s}")
 
     return json.dumps(result, ensure_ascii=False)
 
@@ -81,7 +81,7 @@ async def web_extract_tool(urls: list[str] | str, llm_config: dict, use_llm_proc
     try:
         documents = await provider.extract(urls)
     except Exception as e:
-        return tool_error(f"Extraction error: {str(e)}")
+        return tool_error(f"Extraction error: {e!s}")
 
     # Some providers return the legacy envelope {success, data: ...} — unwrap.
     if isinstance(documents, dict) and "data" in documents:

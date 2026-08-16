@@ -15,12 +15,12 @@ from .runtime import RuntimeSession, SessionCreateResult, SessionResumeResult, S
 _HANDLER_NAMES = frozenset({"handle_chat_websocket"})
 
 __all__ = [
+    "MANAGER",
     "ConnectionManager",
     "Handler",
     "JsonRpcDispatcher",
     "JsonRpcEmitter",
     "JsonRpcError",
-    "MANAGER",
     "ReplayBuffer",
     "RuntimeSession",
     "SessionCreateResult",

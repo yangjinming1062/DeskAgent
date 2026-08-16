@@ -16,10 +16,7 @@ async def _seed_user(SessionLocal):
 
     async with SessionLocal() as db:
         user = User(
-            username="statsuser",
-            password_hash=None,
-            is_active=True,
-            can_use=True
+            username="statsuser", password_hash=None, is_active=True, can_use=True
         )
         db.add(user)
         await db.commit()
@@ -81,7 +78,9 @@ async def test_single_kind_at_threshold_writes_summary(_patch_db):
         assert "peak=10-11h" in row.content
         assert "hour_counts=" in row.content
 
-    summary = await interaction_stats.read_today_summary(user_id, interaction_stats._today_key())
+    summary = await interaction_stats.read_today_summary(
+        user_id, interaction_stats._today_key()
+    )
     assert summary is not None
     assert summary["date"] == interaction_stats._today_key()
 

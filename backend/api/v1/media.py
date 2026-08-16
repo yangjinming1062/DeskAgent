@@ -89,11 +89,7 @@ async def serve_file(file_id: str) -> FileResponse:
 
 @router.post("/stt")
 @limiter.limit(f"{SETTINGS.media_stt_rate_limit_per_minute}/minute")
-async def speech_to_text(
-    request: Request,  # noqa: ARG001 — required by @limiter.limit
-    audio_file: UploadFile = File(...),
-    auth_data: tuple[User, LoginRecord] = Depends(get_current_session),
-) -> dict[str, Any]:
+async def speech_to_text(request: Request, audio_file: UploadFile = File(...), auth_data: tuple[User, LoginRecord] = Depends(get_current_session)) -> dict[str, Any]:
     """Speech-to-text via the provider chain (MiMo ASR; only MiMo registers STT)."""
     user, _ = auth_data
 
@@ -140,10 +136,7 @@ async def speech_to_text(
 @router.post("/tts")
 @limiter.limit(f"{SETTINGS.media_tts_rate_limit_per_minute}/minute")
 async def text_to_speech(
-    request: Request,  # noqa: ARG001 — required by @limiter.limit
-    text: str = Form(...),
-    voice: str = Form(default=""),
-    auth_data: tuple[User, LoginRecord] = Depends(get_current_session),
+    request: Request, text: str = Form(...), voice: str = Form(default=""), auth_data: tuple[User, LoginRecord] = Depends(get_current_session)
 ) -> StreamingResponse:
     """Text-to-speech via the provider chain (MiMo TTS or MiniMax TTS)."""
     user, _ = auth_data
@@ -176,11 +169,7 @@ async def text_to_speech(
 
 @router.post("/image_gen")
 @limiter.limit(f"{SETTINGS.media_image_gen_rate_limit_per_minute}/minute")
-async def image_gen(
-    request: Request,  # noqa: ARG001 — required by @limiter.limit
-    prompt: str = Form(...),
-    auth_data: tuple[User, LoginRecord] = Depends(get_current_session),
-) -> dict[str, Any]:
+async def image_gen(request: Request, prompt: str = Form(...), auth_data: tuple[User, LoginRecord] = Depends(get_current_session)) -> dict[str, Any]:
     """Image generation via the provider chain. Returns 501 when no image-gen provider is configured."""
     user, _ = auth_data
     if not prompt:
@@ -224,7 +213,7 @@ async def image_gen(
 @router.post("/video_gen")
 @limiter.limit(f"{SETTINGS.media_video_gen_rate_limit_per_minute}/minute")
 async def video_gen(
-    request: Request,  # noqa: ARG001 — required by @limiter.limit
+    request: Request,
     prompt: str = Form(...),
     duration: int = Form(default=6),
     resolution: str = Form(default="768P"),
@@ -281,7 +270,7 @@ async def video_gen(
                 if row.status == "succeeded":
                     return {"success": True, "task_id": str(job.id), "status": "succeeded", "url": row.video_url}
                 if row.status == "failed":
-                    return {"success": False, "task_id": str(job.id), "status": "failed", "error": row.error_message}
+                    return {"success": False, "task_id": str(job.id), "status": "failed", "error": row.error_message or "视频生成失败，请稍后重试", "reason": row.error_reason}
 
     return {"success": True, "task_id": str(job.id), "status": job.status, "poll_url": f"/api/media/video_gen/{job.id}"}
 
@@ -298,6 +287,7 @@ async def video_gen_status(task_id: int, auth_data: tuple[User, LoginRecord] = D
         "status": row.status,
         "url": row.video_url,
         "error": row.error_message,
+        "reason": row.error_reason,
         "created_at": row.created_at.isoformat() if row.created_at else None,
         "updated_at": row.updated_at.isoformat() if row.updated_at else None,
     }

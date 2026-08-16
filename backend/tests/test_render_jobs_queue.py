@@ -1,14 +1,19 @@
 from datetime import timedelta
 
+from sqlalchemy import update
+
 from components import utc_now
 from modules.jobs import RenderJob
 from services.worker import queue
-from sqlalchemy import update
 
 
 async def _backdate_claim(SessionLocal, job_id: int, hours: int) -> None:
     async with SessionLocal() as db:
-        await db.execute(update(RenderJob).where(RenderJob.id == job_id).values(claimed_at=utc_now() - timedelta(hours=hours)))
+        await db.execute(
+            update(RenderJob)
+            .where(RenderJob.id == job_id)
+            .values(claimed_at=utc_now() - timedelta(hours=hours))
+        )
         await db.commit()
 
 
@@ -90,6 +95,10 @@ async def test_requeue_stale_recovers_once_then_caps(SessionLocal):
 async def test_claim_skips_rows_at_attempt_cap(SessionLocal):
     job_id = await queue.enqueue("model_generate", 1, {})
     async with SessionLocal() as db:
-        await db.execute(update(RenderJob).where(RenderJob.id == job_id).values(attempts=queue.MAX_ATTEMPTS))
+        await db.execute(
+            update(RenderJob)
+            .where(RenderJob.id == job_id)
+            .values(attempts=queue.MAX_ATTEMPTS)
+        )
         await db.commit()
     assert await queue.claim_batch("w", 1) == []

@@ -3,8 +3,8 @@ from types import SimpleNamespace
 
 import httpx
 import pytest
-from services.llm import MissingLlmConfigError
-from services.llm import ProviderError
+
+from services.llm import MissingLlmConfigError, ProviderError
 
 
 def _async_handler(responses):
@@ -49,7 +49,7 @@ class TestVideoGenJobModel:
             "error_message",
             "created_at",
             "updated_at",
-            "expires_at"
+            "expires_at",
         ):
             assert col in names, f"missing column {col}"
 
@@ -84,11 +84,13 @@ class TestVideoGenJobRoundtrip:
     ):
         """Seed the user config, install the mock transport, enqueue a job and
         wait for it to reach a terminal state. Returns the final job row."""
+        import asyncio
+
+        from sqlalchemy import select
+
         from components import SESSION_LOCAL
         from modules.auth import User, UserModelConfig
         from services.media import enqueue_video_job, get_job
-        from sqlalchemy import select
-        import asyncio
 
         async with SESSION_LOCAL() as db:
             user = (
@@ -121,25 +123,25 @@ class TestVideoGenJobRoundtrip:
         # intercepted (the CDN URL points to ``example.com``, which would
         # otherwise hit the open internet).
         import services.llm.providers.http as http_mod
-        import services.media.video_jobs as video_jobs_mod
 
         def _mock_async_client(timeout=None, **kwargs):
             return httpx.AsyncClient(
                 transport=httpx.MockTransport(handler),
                 headers=kwargs.get("headers"),
-                timeout=timeout
+                timeout=timeout,
             )
 
-        fake_httpx = SimpleNamespace(
-            Timeout=httpx.Timeout,
-            AsyncClient=_mock_async_client
+        monkeypatch.setattr(
+            "components.network.safe_outbound_async_client", _mock_async_client
         )
-        monkeypatch.setattr(video_jobs_mod, "httpx", fake_httpx)
+        monkeypatch.setattr(
+            "components.network.is_safe_outbound", lambda host: (True, "")
+        )
 
         mock_client = httpx.AsyncClient(
             transport=httpx.MockTransport(handler),
             base_url="https://api.minimaxi.com",
-            headers={"Authorization": "Bearer sk-test"}
+            headers={"Authorization": "Bearer sk-test"},
         )
         http_mod._clients[("https://api.minimaxi.com", "sk-test")] = mock_client
 
@@ -153,7 +155,7 @@ class TestVideoGenJobRoundtrip:
                 resolution=resolution,
                 first_frame_image=None,
                 model=None,
-                aspect_ratio=aspect_ratio
+                aspect_ratio=aspect_ratio,
             )
             job_id = job.id
             assert job.status == "queued"
@@ -183,7 +185,7 @@ class TestVideoGenJobRoundtrip:
                 return httpx.Response(
                     200,
                     content=b"\x00\x00\x00\x18ftypmoov",
-                    headers={"content-type": "video/mp4"}
+                    headers={"content-type": "video/mp4"},
                 )
             if path == "/v1/video_generation":
                 calls.append("submit")
@@ -192,7 +194,7 @@ class TestVideoGenJobRoundtrip:
                 assert "content" not in body
                 return httpx.Response(
                     200,
-                    json={"base_resp": {"status_code": 0}, "task_id": "task-test-1"}
+                    json={"base_resp": {"status_code": 0}, "task_id": "task-test-1"},
                 )
             if path == "/v1/query/video_generation":
                 calls.append("poll")
@@ -201,8 +203,8 @@ class TestVideoGenJobRoundtrip:
                     json={
                         "base_resp": {"status_code": 0},
                         "status": "Success",
-                        "file_id": "file-1"
-                    }
+                        "file_id": "file-1",
+                    },
                 )
             if path == "/v1/files/retrieve":
                 calls.append("retrieve")
@@ -213,9 +215,9 @@ class TestVideoGenJobRoundtrip:
                         "base_resp": {"status_code": 0},
                         "file": {
                             "download_url": "https://example.com/video.mp4",
-                            "content_type": "video/mp4"
-                        }
-                    }
+                            "content_type": "video/mp4",
+                        },
+                    },
                 )
             return httpx.Response(404, json={"error": "not found", "path": path})
 
@@ -225,7 +227,7 @@ class TestVideoGenJobRoundtrip:
             handler=handler,
             duration=6,
             resolution="768P",
-            aspect_ratio=None
+            aspect_ratio=None,
         )
         assert row.status == "succeeded", (
             f"job ended in {row.status}: {row.error_message}"
@@ -249,7 +251,7 @@ class TestVideoGenJobRoundtrip:
                 return httpx.Response(
                     200,
                     content=b"\x00\x00\x00\x18ftypmoov",
-                    headers={"content-type": "video/mp4"}
+                    headers={"content-type": "video/mp4"},
                 )
             if path == "/v2/video_generation":
                 calls.append("submit")
@@ -257,7 +259,7 @@ class TestVideoGenJobRoundtrip:
                 assert body["content"][0]["text"] == "a cat playing piano"
                 return httpx.Response(
                     200,
-                    json={"base_resp": {"status_code": 0}, "task_id": "task-test-1"}
+                    json={"base_resp": {"status_code": 0}, "task_id": "task-test-1"},
                 )
             if path.startswith("/v2/query/video_generation/"):
                 calls.append("poll")
@@ -267,9 +269,9 @@ class TestVideoGenJobRoundtrip:
                         "base_resp": {"status_code": 0},
                         "task": {
                             "status": "succeeded",
-                            "content": {"url": "https://example.com/video.mp4"}
-                        }
-                    }
+                            "content": {"url": "https://example.com/video.mp4"},
+                        },
+                    },
                 )
             return httpx.Response(404, json={"error": "not found", "path": path})
 
@@ -279,7 +281,7 @@ class TestVideoGenJobRoundtrip:
             handler=handler,
             duration=6,
             resolution="768P",
-            aspect_ratio="16:9"
+            aspect_ratio="16:9",
         )
         assert row.status == "succeeded", (
             f"job ended in {row.status}: {row.error_message}"
@@ -294,11 +296,12 @@ class TestVideoGenJobRoundtrip:
         # Bypass the multi-session visibility question: drive everything
         # through the same SESSION_LOCAL session so the commit happens in
         # the same transaction the test reads.
+        from sqlalchemy import select
+
+        import services.llm.providers.http as http_mod
         from components import SESSION_LOCAL
         from modules.auth import User, UserModelConfig
         from services.media import enqueue_video_job
-        from sqlalchemy import select
-        import services.llm.providers.http as http_mod
 
         async def handler(request: httpx.Request) -> httpx.Response:
             if request.url.path == "/v1/video_generation":
@@ -306,14 +309,14 @@ class TestVideoGenJobRoundtrip:
                     200,
                     json={
                         "base_resp": {"status_code": 1004, "status_msg": "auth fail"}
-                    }
+                    },
                 )
             return httpx.Response(404)
 
         mock_client = httpx.AsyncClient(
             transport=httpx.MockTransport(handler),
             base_url="https://api.minimaxi.com",
-            headers={"Authorization": "Bearer sk-test"}
+            headers={"Authorization": "Bearer sk-test"},
         )
         http_mod._clients.clear()
         http_mod._clients[("https://api.minimaxi.com", "sk-test")] = mock_client
@@ -351,23 +354,62 @@ class TestVideoGenJobRoundtrip:
                     resolution="768P",
                     first_frame_image=None,
                     model=None,
-                    aspect_ratio=None
+                    aspect_ratio=None,
                 )
 
             # Read via the SAME session the test session — _update_job
             # opens its own session which on SQLite under SAVEPOINT may
             # have visibility issues, so trust the test session.
-            from modules.media import VideoGenJob
             from sqlalchemy import select
+
+            from modules.media import VideoGenJob
 
             db.expire_all()
             rows = (
-                (await db.execute(
-                    select(VideoGenJob).where(VideoGenJob.user_id == user_id)
-                ))
+                (
+                    await db.execute(
+                        select(VideoGenJob).where(VideoGenJob.user_id == user_id)
+                    )
+                )
                 .scalars()
                 .all()
             )
             assert rows, "expected a failed job row"
             assert rows[0].status == "failed", f"row status: {rows[0].status}"
             assert rows[0].error_reason == "submit_failed"
+
+
+@pytest.mark.asyncio
+async def test_video_gen_status_endpoint_returns_reason(
+    test_client, test_app, SessionLocal
+):
+    from modules.auth import User, get_current_session
+    from modules.media import VideoGenJob
+
+    async with SessionLocal() as db:
+        user = User(username="vg-user", is_active=True, can_use=True)
+        db.add(user)
+        await db.flush()
+        job = VideoGenJob(
+            user_id=user.id,
+            prompt="test",
+            provider="minimax",
+            model="video-01",
+            status="failed",
+            error_reason="poll_failed",
+            error_message="视频生成失败，请稍后重试",
+        )
+        db.add(job)
+        await db.commit()
+        job_id = job.id
+
+    test_app.dependency_overrides[get_current_session] = lambda: (user, None)
+    try:
+        res = await test_client.get(f"/api/media/video_gen/{job_id}")
+        assert res.status_code == 200
+        data = res.json()
+        assert data["status"] == "failed"
+        assert data["reason"] == "poll_failed"
+        assert data["error"] == "视频生成失败，请稍后重试"
+    finally:
+        test_app.dependency_overrides.pop(get_current_session, None)

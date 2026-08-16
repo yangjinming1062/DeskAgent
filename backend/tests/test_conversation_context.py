@@ -14,6 +14,7 @@ Context window:
 - Returns empty string when no main conversation exists
 - Excludes messages with tool_calls (multi-step tool-only assistant turns)
 """
+
 import json
 from datetime import UTC, datetime, timedelta
 
@@ -33,7 +34,7 @@ async def _seed_user(SessionLocal, user_id: int = 3001):
         UserModelConfig,
         create_access_token,
         generate_activation_token,
-        hash_activation_token
+        hash_activation_token,
     )
 
     async with SessionLocal() as db:
@@ -44,9 +45,11 @@ async def _seed_user(SessionLocal, user_id: int = 3001):
                 id=user_id,
                 username=f"u{user_id}",
                 password_hash=None,
-                activation_token_hash=hash_activation_token(generate_activation_token()),
+                activation_token_hash=hash_activation_token(
+                    generate_activation_token()
+                ),
                 is_active=True,
-                can_use=True
+                can_use=True,
             )
             db.add(user)
             await db.commit()
@@ -55,7 +58,7 @@ async def _seed_user(SessionLocal, user_id: int = 3001):
                     user_id=user_id,
                     llm_base_url="https://fake.example.com",
                     llm_api_key="sk-fake",
-                    llm_model_name="mimo-v2.5-pro"
+                    llm_model_name="mimo-v2.5-pro",
                 )
             )
             token, _, jti = create_access_token(user_id=user_id, username=user.username)
@@ -88,7 +91,18 @@ async def _make_standard_conv(SessionLocal, user_id: int) -> int:
         return conv.id
 
 
-async def _add_msg(SessionLocal, conv_id: int, role: str, content: str = "", *, subtype: str | None = None, tool_calls: str | None = None, tool_call_id: str | None = None, content_type: str | None = None, at: datetime | None = None):
+async def _add_msg(
+    SessionLocal,
+    conv_id: int,
+    role: str,
+    content: str = "",
+    *,
+    subtype: str | None = None,
+    tool_calls: str | None = None,
+    tool_call_id: str | None = None,
+    content_type: str | None = None,
+    at: datetime | None = None,
+):
     async with SessionLocal() as db:
         m = Message(
             conversation_id=conv_id,
@@ -156,7 +170,9 @@ async def test_persist_tool_summary_lists_invoked_tool_names(seeded):
     conv_id = await _make_main_conv(SessionLocal, 3001)
 
     async with SessionLocal() as db:
-        await persist_tool_summary(_Conv(conv_id, "main"), {"search_web", "browser_navigate"})
+        await persist_tool_summary(
+            _Conv(conv_id, "main"), {"search_web", "browser_navigate"}
+        )
 
     summary = (await _summaries(SessionLocal, conv_id))[0]
     assert summary.role == "system"
@@ -170,16 +186,26 @@ async def test_persist_tool_summary_lists_invoked_tool_names(seeded):
 def _tool_turn_history() -> list[Message]:
     return [
         Message(role="user", content="帮我查天气"),
-        Message(role="assistant", content=None, tool_calls=json.dumps([{"id": "c1", "function": {"name": "search_web"}}])),
+        Message(
+            role="assistant",
+            content=None,
+            tool_calls=json.dumps([{"id": "c1", "function": {"name": "search_web"}}]),
+        ),
         Message(role="tool", content="results", tool_call_id="c1"),
         Message(role="assistant", content="北京 22 度"),
-        Message(role="system", content="[执行了工具调用：search_web]", subtype="tool_summary"),
+        Message(
+            role="system",
+            content="[执行了工具调用：search_web]",
+            subtype="tool_summary",
+        ),
         Message(role="user", content="(poked)", subtype="status_interaction"),
     ]
 
 
 def test_history_drops_tool_intermediates_for_main():
-    out = _history_to_messages(_tool_turn_history(), "SYS", drop_tool_intermediates=True)
+    out = _history_to_messages(
+        _tool_turn_history(), "SYS", drop_tool_intermediates=True
+    )
     roles = [m["role"] for m in out]
     assert roles == ["system", "user", "assistant", "system"]
     assert not any("tool_calls" in m for m in out)
@@ -187,14 +213,25 @@ def test_history_drops_tool_intermediates_for_main():
 
 
 def test_history_keeps_tool_intermediates_for_standard():
-    out = _history_to_messages(_tool_turn_history(), "SYS", drop_tool_intermediates=False)
-    assert [m["role"] for m in out] == ["system", "user", "assistant", "tool", "assistant", "system"]
+    out = _history_to_messages(
+        _tool_turn_history(), "SYS", drop_tool_intermediates=False
+    )
+    assert [m["role"] for m in out] == [
+        "system",
+        "user",
+        "assistant",
+        "tool",
+        "assistant",
+        "system",
+    ]
     assert out[2]["tool_calls"][0]["function"]["name"] == "search_web"
 
 
 def test_history_always_drops_ui_only_subtypes():
     for drop in (True, False):
-        out = _history_to_messages(_tool_turn_history(), "SYS", drop_tool_intermediates=drop)
+        out = _history_to_messages(
+            _tool_turn_history(), "SYS", drop_tool_intermediates=drop
+        )
         assert all(m["content"] != "(poked)" for m in out)
 
 
@@ -207,7 +244,9 @@ def test_history_always_drops_ui_only_subtypes():
 async def test_context_window_returns_empty_for_no_main(seeded):
     SessionLocal = seeded
     async with SessionLocal() as db:
-        result = await context_window.load_recent_context_window(db, 3001, max_messages=10)
+        result = await context_window.load_recent_context_window(
+            db, 3001, max_messages=10
+        )
     assert result == ""
 
 
@@ -218,10 +257,18 @@ async def test_context_window_returns_chronological_recent(seeded):
     base = datetime(2026, 8, 13, 10, 0, 0, tzinfo=UTC)
     # Seed 12 messages; only the last 10 should be returned
     for i in range(12):
-        await _add_msg(SessionLocal, conv_id, "user" if i % 2 == 0 else "assistant", f"msg_{i:02d}", at=base + timedelta(minutes=i))
+        await _add_msg(
+            SessionLocal,
+            conv_id,
+            "user" if i % 2 == 0 else "assistant",
+            f"msg_{i:02d}",
+            at=base + timedelta(minutes=i),
+        )
 
     async with SessionLocal() as db:
-        result = await context_window.load_recent_context_window(db, 3001, max_messages=10)
+        result = await context_window.load_recent_context_window(
+            db, 3001, max_messages=10
+        )
 
     # Chronological order (msg_02 first, msg_11 last)
     lines = result.split("\n")
@@ -240,16 +287,48 @@ async def test_context_window_filters_ui_only_subtypes(seeded):
     base = datetime(2026, 8, 13, 10, 0, 0, tzinfo=UTC)
     # A normal pair
     await _add_msg(SessionLocal, conv_id, "user", "你好", at=base)
-    await _add_msg(SessionLocal, conv_id, "assistant", "你好！", at=base + timedelta(minutes=1))
+    await _add_msg(
+        SessionLocal, conv_id, "assistant", "你好！", at=base + timedelta(minutes=1)
+    )
     # UI-only subtypes
-    await _add_msg(SessionLocal, conv_id, "user", "（戳了戳精灵）", subtype="status_interaction", at=base + timedelta(minutes=2))
-    await _add_msg(SessionLocal, conv_id, "assistant", "反应", subtype="status_reaction", at=base + timedelta(minutes=3))
-    await _add_msg(SessionLocal, conv_id, "system", "提示", subtype="hint", at=base + timedelta(minutes=4))
+    await _add_msg(
+        SessionLocal,
+        conv_id,
+        "user",
+        "（戳了戳精灵）",
+        subtype="status_interaction",
+        at=base + timedelta(minutes=2),
+    )
+    await _add_msg(
+        SessionLocal,
+        conv_id,
+        "assistant",
+        "反应",
+        subtype="status_reaction",
+        at=base + timedelta(minutes=3),
+    )
+    await _add_msg(
+        SessionLocal,
+        conv_id,
+        "system",
+        "提示",
+        subtype="hint",
+        at=base + timedelta(minutes=4),
+    )
     # proactive assistant — should NOT be filtered (it's a real turn)
-    await _add_msg(SessionLocal, conv_id, "assistant", "早晚问候", subtype="status_proactive", at=base + timedelta(minutes=5))
+    await _add_msg(
+        SessionLocal,
+        conv_id,
+        "assistant",
+        "早晚问候",
+        subtype="status_proactive",
+        at=base + timedelta(minutes=5),
+    )
 
     async with SessionLocal() as db:
-        result = await context_window.load_recent_context_window(db, 3001, max_messages=10)
+        result = await context_window.load_recent_context_window(
+            db, 3001, max_messages=10
+        )
 
     assert "你好" in result
     assert "你好！" in result
@@ -267,14 +346,21 @@ async def test_context_window_filters_tool_calls_messages(seeded):
     base = datetime(2026, 8, 13, 10, 0, 0, tzinfo=UTC)
     await _add_msg(SessionLocal, conv_id, "user", "查天气", at=base)
     await _add_msg(
-        SessionLocal, conv_id, "assistant", "",
+        SessionLocal,
+        conv_id,
+        "assistant",
+        "",
         tool_calls=json.dumps([{"id": "c1", "function": {"name": "search_web"}}]),
         at=base + timedelta(minutes=1),
     )
-    await _add_msg(SessionLocal, conv_id, "assistant", "北京 22 度", at=base + timedelta(minutes=2))
+    await _add_msg(
+        SessionLocal, conv_id, "assistant", "北京 22 度", at=base + timedelta(minutes=2)
+    )
 
     async with SessionLocal() as db:
-        result = await context_window.load_recent_context_window(db, 3001, max_messages=10)
+        result = await context_window.load_recent_context_window(
+            db, 3001, max_messages=10
+        )
 
     assert "查天气" in result
     assert "北京 22 度" in result
@@ -287,10 +373,14 @@ async def test_context_window_respects_character_cap(seeded):
     conv_id = await _make_main_conv(SessionLocal, 3001)
     base = datetime(2026, 8, 13, 10, 0, 0, tzinfo=UTC)
     await _add_msg(SessionLocal, conv_id, "user", "x" * 1000, at=base)
-    await _add_msg(SessionLocal, conv_id, "assistant", "y" * 1000, at=base + timedelta(minutes=1))
+    await _add_msg(
+        SessionLocal, conv_id, "assistant", "y" * 1000, at=base + timedelta(minutes=1)
+    )
 
     async with SessionLocal() as db:
-        result = await context_window.load_recent_context_window(db, 3001, max_messages=10)
+        result = await context_window.load_recent_context_window(
+            db, 3001, max_messages=10
+        )
 
     # Each line is capped at 200 chars (format_messages_compact default)
     for line in result.split("\n"):
@@ -315,11 +405,17 @@ async def test_context_window_extracts_text_from_multimodal_v1(seeded):
             {"type": "image_url", "image_url": {"url": "https://example.com/x.png"}},
         ]
     )
-    await _add_msg(SessionLocal, conv_id, "user", parts, at=base, content_type="multimodal_v1")
-    await _add_msg(SessionLocal, conv_id, "assistant", "好的看到了", at=base + timedelta(minutes=1))
+    await _add_msg(
+        SessionLocal, conv_id, "user", parts, at=base, content_type="multimodal_v1"
+    )
+    await _add_msg(
+        SessionLocal, conv_id, "assistant", "好的看到了", at=base + timedelta(minutes=1)
+    )
 
     async with SessionLocal() as db:
-        result = await context_window.load_recent_context_window(db, 3001, max_messages=10)
+        result = await context_window.load_recent_context_window(
+            db, 3001, max_messages=10
+        )
 
     assert "看这张图" in result
     assert "image_url" not in result
@@ -379,12 +475,18 @@ async def test_get_or_create_main_conversation_is_idempotent(seeded):
     assert hint_count == 1
 
 
-async def test_get_or_create_cron_conversation_is_idempotent_and_distinct_from_main(seeded):
+async def test_get_or_create_cron_conversation_is_idempotent_and_distinct_from_main(
+    seeded,
+):
     """The cron conversation must be a singleton per user and must not collide
     with the main one — autonomous cron turns need their own scratchpad so a
     renderer's ``session.get_main`` cannot cancel an in-flight cron via
     ``_mount_runtime`` (different conversation_id → no match)."""
-    from services.conversation import CRON_KIND, get_or_create_cron_conversation, get_or_create_main_conversation
+    from services.conversation import (
+        CRON_KIND,
+        get_or_create_cron_conversation,
+        get_or_create_main_conversation,
+    )
 
     SessionLocal = seeded
     async with SessionLocal() as db:
@@ -410,7 +512,11 @@ def test_truncate_keeps_tool_summary_in_chronological_position():
 
     messages = [
         {"role": "system", "content": "SYS"},
-        {"role": "system", "content": "[截至 2026-08-12 的对话摘要]", "subtype": "daily_summary"},
+        {
+            "role": "system",
+            "content": "[截至 2026-08-12 的对话摘要]",
+            "subtype": "daily_summary",
+        },
         {"role": "user", "content": "帮我查天气"},
         {"role": "assistant", "content": "北京 22 度"},
         {"role": "system", "content": "[执行了工具调用：search_web]"},
@@ -436,7 +542,9 @@ def test_truncate_anchor_searches_only_dropped_prefix():
     as an anchor — it is already present, and duplicating it double-counts."""
     from services.chat.message_sanitization import truncate_chat_history
 
-    out = truncate_chat_history(_long_history(first_user_in_window=True), max_recent_messages=40)
+    out = truncate_chat_history(
+        _long_history(first_user_in_window=True), max_recent_messages=40
+    )
 
     user_contents = [m["content"] for m in out if m["role"] == "user"]
     assert user_contents.count("最新一条用户消息") == 1
@@ -446,11 +554,16 @@ def test_truncate_anchor_searches_only_dropped_prefix():
 def test_truncate_anchor_from_dropped_prefix_leads_window():
     from services.chat.message_sanitization import truncate_chat_history
 
-    out = truncate_chat_history(_long_history(first_user_in_window=False), max_recent_messages=40)
+    out = truncate_chat_history(
+        _long_history(first_user_in_window=False), max_recent_messages=40
+    )
 
     non_sys = out[1:]
     assert non_sys[0]["content"] == "旧的第一条用户消息"
-    assert non_sys[1]["role"] == "user" and "removed for context window management" in non_sys[1]["content"]
+    assert (
+        non_sys[1]["role"] == "user"
+        and "removed for context window management" in non_sys[1]["content"]
+    )
 
 
 def test_truncate_marker_leads_when_no_user_in_prefix():
@@ -463,4 +576,7 @@ def test_truncate_marker_leads_when_no_user_in_prefix():
 
     out = truncate_chat_history(messages, max_recent_messages=40)
 
-    assert out[1]["role"] == "user" and "removed for context window management" in out[1]["content"]
+    assert (
+        out[1]["role"] == "user"
+        and "removed for context window management" in out[1]["content"]
+    )

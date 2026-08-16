@@ -82,7 +82,7 @@ async def stash_user_id_middleware(request: Request, call_next: Callable[[Reques
     return await call_next(request)
 
 
-async def rate_limit_exception_handler(request: Request, exc: RateLimitExceeded) -> JSONResponse:  # noqa: ARG001 — request required by exception-handler signature
+async def rate_limit_exception_handler(request: Request, exc: RateLimitExceeded) -> JSONResponse:
     """429 envelope in ``{error, reason, status}`` shape with ``Retry-After``.
 
     Mirrors ``ARCHITECTURE.md §5.3`` and the upstream 429 path: server log

@@ -1,4 +1,5 @@
 import json
+
 import pytest
 
 from services.companion import analyze_personality_tags

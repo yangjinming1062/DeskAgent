@@ -3,10 +3,10 @@ from .schemas import DesktopSessionInfo, DesktopSessionListResponse, DesktopSess
 
 __all__ = [
     "Conversation",
-    "Message",
     "DesktopSessionInfo",
     "DesktopSessionListResponse",
     "DesktopSessionMessagesResponse",
     "DesktopSessionPatchRequest",
     "DesktopSessionSearchResponse",
+    "Message",
 ]

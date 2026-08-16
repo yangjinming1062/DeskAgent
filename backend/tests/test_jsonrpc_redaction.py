@@ -121,7 +121,10 @@ def test_avatar_generation_error_str_is_curated():
     provider error must ride in `.internal` only."""
     from services.companion import AvatarGenerationError
 
-    exc = AvatarGenerationError("image-gen provider failed", internal="httpx.ConnectError: https://provider.internal/v1 timeout")
+    exc = AvatarGenerationError(
+        "image-gen provider failed",
+        internal="httpx.ConnectError: https://provider.internal/v1 timeout",
+    )
     assert str(exc) == "image-gen provider failed"
     assert "provider.internal" in exc.internal
     assert "provider.internal" not in str(AvatarGenerationError("safe"))

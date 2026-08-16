@@ -59,14 +59,36 @@ async def test_model_generate_handler_end_to_end(SessionLocal, monkeypatch):
 
     calls: list[dict] = []
 
-    async def _fake_pipeline(user_id, view_filenames, species, model_id, *, io_dir=None):
+    async def _fake_pipeline(
+        user_id, view_filenames, species, model_id, *, io_dir=None
+    ):
         assert io_dir is not None and io_dir.is_dir()
-        calls.append({"user_id": user_id, "views": view_filenames, "species": species, "model_id": model_id})
+        calls.append(
+            {
+                "user_id": user_id,
+                "views": view_filenames,
+                "species": species,
+                "model_id": model_id,
+            }
+        )
 
-    monkeypatch.setattr(blender_llm_pipeline, "run_blender_llm_pipeline", _fake_pipeline)
-    payload = {"view_filenames": {"front": "f.png", "right": "r.png", "back": "b.png"}, "species": "人类", "model_id": 9}
+    monkeypatch.setattr(
+        blender_llm_pipeline, "run_blender_llm_pipeline", _fake_pipeline
+    )
+    payload = {
+        "view_filenames": {"front": "f.png", "right": "r.png", "back": "b.png"},
+        "species": "人类",
+        "model_id": 9,
+    }
     job_id = await queue.enqueue("model_generate", 1, payload)
     assert await runner.drain_once() == 1
-    assert calls == [{"user_id": 1, "views": payload["view_filenames"], "species": "人类", "model_id": 9}]
+    assert calls == [
+        {
+            "user_id": 1,
+            "views": payload["view_filenames"],
+            "species": "人类",
+            "model_id": 9,
+        }
+    ]
     async with SessionLocal() as db:
         assert (await db.get(RenderJob, job_id)).status == "succeeded"

@@ -2,7 +2,7 @@ from typing import ClassVar
 
 from openai import AsyncOpenAI
 
-from .base import ChatProvider, EmbeddingProvider, ProviderConfig
+from .base import ChatProvider, EmbeddingProvider, ProviderConfig, ProviderError
 from .http import get_async_client
 
 
@@ -34,5 +34,8 @@ class OpenAIEmbeddingProvider(EmbeddingProvider):
         if not texts:
             return []
         model = self.config.model or "text-embedding-3-small"
-        res = await self._client.embeddings.create(input=texts, model=model)
-        return [item.embedding for item in sorted(res.data, key=lambda x: x.index)]
+        try:
+            res = await self._client.embeddings.create(input=texts, model=model)
+            return [item.embedding for item in sorted(res.data, key=lambda x: x.index)]
+        except Exception as exc:
+            raise ProviderError(f"{self.provider_name} embedding error: {exc}", provider=self.provider_name, model=model) from exc

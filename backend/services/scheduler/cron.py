@@ -185,12 +185,11 @@ async def _advance_due_jobs(due_jobs: list[Row], now: datetime) -> None:
 async def _kick_autonomous_turn(job_id: int, meta: dict[str, Any]) -> None:
     """Request an autonomous chat turn for the replica holding the user's WS.
 
-    The turn must execute on the connection's process — streaming deltas,
+    The turn executes on the connection's process — streaming deltas,
     tool futures and the runtime session are process-local — so the tick
     replica only writes a ws_events row (``cron.turn.request``). The outbox
     claim loop (connection._process_events, filtered by ``local_user_ids()``)
-    picks it up; a user offline on every replica gets the row reaped by the
-    tightened GC instead of executing anywhere.
+    picks it up; a user offline on every replica gets the row reaped by GC.
     """
     user_id = meta["user_id"]
     prompt = (meta["payload"].get("prompt") or "").strip()

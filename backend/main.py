@@ -1,10 +1,11 @@
 import asyncio
+import contextlib
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-import services.chat.agent_delegate  # noqa: F401 — module side-effect: triggers agent_delegate_tool self-registration into services.tools.REGISTRY
-import services.scheduler.cronjob_tool  # noqa: F401 — cronjob tool owned by scheduler, not tools.builtin
+import services.chat.agent_delegate
+import services.scheduler.cronjob_tool
 import services.tools.builtin  # noqa: F401
 from alembic import command
 from alembic.config import Config
@@ -106,6 +107,8 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
         yield
     finally:
         cleanup_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await cleanup_task
 
         await stop_scheduler()
         await stop_ws_event_loop()
@@ -135,7 +138,9 @@ app.middleware("http")(correlation_id_middleware)
 # 写 header, 让 500 路径也带 X-Request-ID (404 找不到路由时同理).
 app.add_exception_handler(Exception, correlated_exception_response)
 app.add_exception_handler(RateLimitExceeded, rate_limit_exception_handler)
-app.mount("/updates", StaticFiles(directory=str(Path("updates").absolute())), name="updates")
+updates_dir = Path("updates").absolute()
+updates_dir.mkdir(parents=True, exist_ok=True)
+app.mount("/updates", StaticFiles(directory=str(updates_dir)), name="updates")
 
 
 # Root-mounted so external Docker HEALTHCHECK / k8s livenessProbe /

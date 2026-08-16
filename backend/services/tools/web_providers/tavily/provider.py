@@ -122,7 +122,7 @@ class TavilyWebSearchProvider(WebSearchProvider):
             logger.warning("Tavily search error", extra={"error": str(exc)})
             return {"success": False, "error": f"Tavily search failed: {exc}"}
 
-    async def extract(self, urls: list[str], **kwargs: Any) -> list[dict[str, Any]]:  # noqa: ARG002 — provider-interface shape
+    async def extract(self, urls: list[str], **kwargs: Any) -> list[dict[str, Any]]:
         try:
             logger.info("Tavily extract", extra={"url_count": len(urls)})
             raw = await _tavily_request("extract", {"urls": urls, "include_images": False}, api_key=self._api_key, base_url=self._base_url)

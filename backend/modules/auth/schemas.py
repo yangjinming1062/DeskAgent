@@ -116,8 +116,6 @@ class _UserModelConfigBase(BaseModel):
 class UserModelConfigRequest(_UserModelConfigBase):
     """Admin model config."""
 
-    pass
-
 
 class UserModelConfigSelfRequest(_UserModelConfigBase):
     """User self-service model config — all fields optional.

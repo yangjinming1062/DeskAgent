@@ -8,8 +8,52 @@ from fastapi import Depends
 from modules.auth import LoginRecord, User, UserModelConfig, get_current_session
 from modules.conversation import Conversation, Message
 from modules.memory import Memory
+from pydantic import BaseModel
 from sqlalchemy import Select, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
+
+
+class InsightsOverviewSummary(BaseModel):
+    total_sessions: int
+    total_messages: int
+    total_tool_calls: int
+    total_input_tokens: int
+    total_output_tokens: int
+    total_tokens: int
+    total_hours: float
+    avg_session_duration: float
+
+
+class InsightsToolCount(BaseModel):
+    tool: str
+    count: int
+
+
+class InsightsTagCount(BaseModel):
+    tag: str
+    count: int
+
+
+class InsightsSkillSummary(BaseModel):
+    total_memories: int
+    new_in_window: int
+    top_tags: list[InsightsTagCount]
+
+
+class InsightsDailyActivity(BaseModel):
+    date: str
+    messages: int
+
+
+class InsightsOverviewResponse(BaseModel):
+    days: int
+    overview: InsightsOverviewSummary
+    top_tools: list[InsightsToolCount]
+    models: dict[str, Any]
+    platforms: dict[str, int]
+    skills: InsightsSkillSummary
+    activity: list[InsightsDailyActivity]
+
 
 router = get_router(dependencies=[Depends(get_current_session)])
 
@@ -127,7 +171,7 @@ async def _skill_summary(db: AsyncSession, user_id: int, since: datetime) -> dic
     return {"total_memories": int(counts.total), "new_in_window": int(counts.recent), "top_tags": [{"tag": t, "count": c} for t, c in tag_counter.most_common(10)]}
 
 
-@router.get("/overview")
+@router.get("/overview", response_model=InsightsOverviewResponse)
 async def get_insights_overview(
     days: int = DEFAULT_INSIGHTS_DAYS, session_data: tuple[User, LoginRecord] = Depends(get_current_session), db: AsyncSession = Depends(get_db)
 ) -> dict[str, Any]:

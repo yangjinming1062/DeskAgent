@@ -1,4 +1,5 @@
 import pytest
+
 from services.companion.should_act import ALLOWED_ACTIONS, ShouldActResult, should_act
 
 

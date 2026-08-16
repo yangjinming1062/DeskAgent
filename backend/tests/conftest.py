@@ -6,7 +6,8 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
 import components.database as _db_mod
-import modules.media.models  # noqa: F401 — register models on ModelBase.metadata
+import modules  # noqa: F401 — registers all ORM models on ModelBase.metadata
+import modules.media.models  # noqa: F401
 from common import ModelBase
 
 # All async tests and fixtures share one session-scoped event loop: the
@@ -80,7 +81,10 @@ async def _patch_db(monkeypatch, sqlite_engine, tmp_path):
     transaction = await connection.begin()
 
     SessionLocal = async_sessionmaker(
-        bind=connection, autoflush=False, expire_on_commit=False, join_transaction_mode="create_savepoint"
+        bind=connection,
+        autoflush=False,
+        expire_on_commit=False,
+        join_transaction_mode="create_savepoint",
     )
 
     monkeypatch.setattr(_db_mod, "ENGINE", sqlite_engine)
@@ -116,7 +120,7 @@ async def _patch_db(monkeypatch, sqlite_engine, tmp_path):
         "api.v1.chat",
         "api.v1.companion",
         "api.v1.llm",
-        "api.v1.media"
+        "api.v1.media",
     ):
         mod = __import__(mod_name, fromlist=["SESSION_LOCAL"])
         if hasattr(mod, "SESSION_LOCAL"):
@@ -143,7 +147,15 @@ async def _seed_user(SessionLocal, username="testuser"):
       - ``activation_code``: base64url code for tests that exercise
         ``POST /api/user/activate`` directly.
     """
-    from modules.auth import LoginRecord, User, UserModelConfig, create_access_token, encode_activation_code, generate_activation_token, hash_activation_token
+    from modules.auth import (
+        LoginRecord,
+        User,
+        UserModelConfig,
+        create_access_token,
+        encode_activation_code,
+        generate_activation_token,
+        hash_activation_token,
+    )
 
     # Retrieve real credentials from the environment for unmocked testing
     mimo_key = os.getenv("MIMO_API_KEY", "sk-fake-for-unit-tests")
@@ -156,7 +168,7 @@ async def _seed_user(SessionLocal, username="testuser"):
             password_hash=None,
             activation_token_hash=hash_activation_token(raw_token),
             is_active=True,
-            can_use=True
+            can_use=True,
         )
         db.add(user)
         await db.commit()
@@ -167,7 +179,7 @@ async def _seed_user(SessionLocal, username="testuser"):
                 user_id=user.id,
                 llm_base_url=mimo_url,
                 llm_api_key=mimo_key,
-                llm_model_name="mimo-v2.5-pro"
+                llm_model_name="mimo-v2.5-pro",
             )
         )
         await db.commit()
@@ -179,7 +191,7 @@ async def _seed_user(SessionLocal, username="testuser"):
         await db.commit()
     return {
         "token": token,
-        "activation_code": encode_activation_code("http://localhost:10620", raw_token)
+        "activation_code": encode_activation_code("http://localhost:10620", raw_token),
     }
 
 
@@ -253,7 +265,9 @@ async def ws_ticket(_patch_db):
 
     _, SessionLocal = _patch_db
     async with SessionLocal() as db:
-        user = (await db.execute(select(User).where(User.is_active.is_(True)))).scalar_one()
+        user = (
+            await db.execute(select(User).where(User.is_active.is_(True)))
+        ).scalar_one()
         token, _, _ = create_access_token(
             user_id=user.id, username=user.username, expires_in_seconds=60, purpose="ws"
         )

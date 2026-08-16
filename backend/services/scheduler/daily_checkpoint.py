@@ -160,4 +160,4 @@ async def _collect_inputs(db: AsyncSession, user_id: int, utc_start: datetime, u
     prev_date = prev_daily.summary_date if prev_daily else None
     gap = _gap_days(prev_date, local_date_str)
     gap_instruction = f"- 注明「从 {prev_date} 到 {local_date_str} 之间有 {gap} 天没有互动」\n" if gap and gap > 1 else ""
-    return main_conv.id, format_messages_compact(rows), prev_summary_text, gap_instruction
+    return (main_conv.id, format_messages_compact(rows), prev_summary_text, gap_instruction)

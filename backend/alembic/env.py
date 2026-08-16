@@ -8,10 +8,10 @@ from sqlalchemy import engine_from_config, make_url, pool
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-import modules  # noqa: E402,F401 — import side effect: registers all models on ModelBase
-import modules.media.models  # noqa: E402,F401 — video_gen_jobs is intentionally not imported by modules/__init__
-from common.model import ModelBase  # noqa: E402
-from components.config import SETTINGS  # noqa: E402
+import modules
+import modules.media.models  # noqa: F401 — video_gen_jobs is intentionally not imported by modules/__init__
+from common.model import ModelBase
+from components.config import SETTINGS
 
 config = context.config
 if config.config_file_name:

@@ -9,15 +9,19 @@ import pytest
 async def test_admin_login_awaits_token_creation(monkeypatch):
     """create_admin_token is async — forgetting the await made the endpoint
     unpack a coroutine and 500 on every admin login."""
-    import api.v1.page as page
+    from api.v1 import page
     from components import SETTINGS
     from modules.auth import AdminLoginRequest
 
     monkeypatch.setattr(SETTINGS, "admin_username", "admin")
     monkeypatch.setattr(SETTINGS, "admin_password", "secret")
-    monkeypatch.setattr(page, "create_admin_token", AsyncMock(return_value=("tok", 3600)))
+    monkeypatch.setattr(
+        page, "create_admin_token", AsyncMock(return_value=("tok", 3600))
+    )
 
-    resp = await page.admin_login(AdminLoginRequest(username="admin", password="secret"))
+    resp = await page.admin_login(
+        AdminLoginRequest(username="admin", password="secret")
+    )
 
     assert resp.access_token == "tok"
     assert resp.expires_in == 3600
@@ -28,11 +32,11 @@ async def test_admin_login_awaits_token_creation(monkeypatch):
 async def test_consolidator_scan_unpacks_single_column_rows(_patch_db, monkeypatch):
     """`int(Row)` raised TypeError and killed the whole scheduler_loop once a
     user's recall pool crossed the trigger threshold."""
+
     from components import utc_now
     from modules.auth import User
     from modules.memory import Memory
     from services.scheduler import cron
-    from sqlalchemy import select
 
     _, SessionLocal = _patch_db
     async with SessionLocal() as db:
@@ -40,7 +44,9 @@ async def test_consolidator_scan_unpacks_single_column_rows(_patch_db, monkeypat
         db.add(user)
         await db.flush()
         for i in range(3):
-            db.add(Memory(user_id=user.id, context=f"recall:r{i}", content=f"memory {i}"))
+            db.add(
+                Memory(user_id=user.id, context=f"recall:r{i}", content=f"memory {i}")
+            )
         await db.commit()
         uid = user.id
 
@@ -68,12 +74,25 @@ async def test_list_sessions_reports_message_counts(test_client, test_token, _pa
         conv = Conversation(user_id=1, kind="standard", title="stats")
         db.add(conv)
         await db.flush()
-        db.add(Message(conversation_id=conv.id, role="user", content="hello", prompt_tokens=11))
-        db.add(Message(conversation_id=conv.id, role="assistant", content="hi", completion_tokens=7))
+        db.add(
+            Message(
+                conversation_id=conv.id, role="user", content="hello", prompt_tokens=11
+            )
+        )
+        db.add(
+            Message(
+                conversation_id=conv.id,
+                role="assistant",
+                content="hi",
+                completion_tokens=7,
+            )
+        )
         await db.commit()
         conv_id = conv.id
 
-    resp = await test_client.get("/api/sessions", headers={"Authorization": f"Bearer {test_token}"})
+    resp = await test_client.get(
+        "/api/sessions", headers={"Authorization": f"Bearer {test_token}"}
+    )
     assert resp.status_code == 200
     entry = next(s for s in resp.json()["sessions"] if s["id"] == str(conv_id))
     assert entry["message_count"] == 2
@@ -81,7 +100,9 @@ async def test_list_sessions_reports_message_counts(test_client, test_token, _pa
     assert entry["output_tokens"] == 7
 
 
-async def test_search_sessions_by_numeric_id_substring(test_client, test_token, _patch_db):
+async def test_search_sessions_by_numeric_id_substring(
+    test_client, test_token, _patch_db
+):
     """Conversation.id is an Integer column; the search predicate must cast it
     (Postgres has no integer ~~ unknown operator)."""
     _, SessionLocal = _patch_db
@@ -93,7 +114,11 @@ async def test_search_sessions_by_numeric_id_substring(test_client, test_token, 
         await db.commit()
         conv_id = str(conv.id)
 
-    resp = await test_client.get("/api/sessions/search", params={"q": conv_id}, headers={"Authorization": f"Bearer {test_token}"})
+    resp = await test_client.get(
+        "/api/sessions/search",
+        params={"q": conv_id},
+        headers={"Authorization": f"Bearer {test_token}"},
+    )
     assert resp.status_code == 200
     assert any(s["id"] == conv_id for s in resp.json()["sessions"])
 
@@ -104,31 +129,45 @@ async def _expire_seeded_user(SessionLocal, **updates):
     from modules.auth import User
 
     async with SessionLocal() as db:
-        await db.execute(update(User).where(User.username == "testuser").values(**updates))
+        await db.execute(
+            update(User).where(User.username == "testuser").values(**updates)
+        )
         await db.commit()
 
 
-async def test_disabled_user_rejected_by_session_guard(test_client, test_token, _patch_db):
+async def test_disabled_user_rejected_by_session_guard(
+    test_client, test_token, _patch_db
+):
     """can_use=False must block every authenticated request, not just the
     next activate — the old check let a disabled user refresh forever."""
     _, SessionLocal = _patch_db
     await _expire_seeded_user(SessionLocal, can_use=False)
 
-    resp = await test_client.get("/api/sessions", headers={"Authorization": f"Bearer {test_token}"})
+    resp = await test_client.get(
+        "/api/sessions", headers={"Authorization": f"Bearer {test_token}"}
+    )
     assert resp.status_code == 403
 
 
-async def test_expired_user_rejected_by_session_guard(test_client, test_token, _patch_db):
+async def test_expired_user_rejected_by_session_guard(
+    test_client, test_token, _patch_db
+):
     _, SessionLocal = _patch_db
     from datetime import UTC, datetime, timedelta
 
-    await _expire_seeded_user(SessionLocal, expires_at=datetime.now(UTC) - timedelta(days=1))
+    await _expire_seeded_user(
+        SessionLocal, expires_at=datetime.now(UTC) - timedelta(days=1)
+    )
 
-    resp = await test_client.get("/api/sessions", headers={"Authorization": f"Bearer {test_token}"})
+    resp = await test_client.get(
+        "/api/sessions", headers={"Authorization": f"Bearer {test_token}"}
+    )
     assert resp.status_code == 403
 
 
-async def test_expired_user_rejected_on_ws_handshake(_patch_db, test_user_credentials, ws_ticket):
+async def test_expired_user_rejected_on_ws_handshake(
+    _patch_db, test_user_credentials, ws_ticket
+):
     from services.gateway.auth import authenticate_ws_token
 
     _, SessionLocal = _patch_db

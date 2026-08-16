@@ -135,7 +135,13 @@ async def _stream_llm_response(
     final_prompt_tokens = final_completion_tokens = 0
     final_usage_payload: dict | None = None
 
-    await emitter.send_json({"type": "message.start"})
+    message_start_sent = False
+
+    async def _ensure_message_start() -> None:
+        nonlocal message_start_sent
+        if not message_start_sent:
+            message_start_sent = True
+            await emitter.send_json({"type": "message.start"})
 
     scrubber = StreamingThinkScrubber()
     affect = AffectScrubber(allowed_emotions)
@@ -151,6 +157,7 @@ async def _stream_llm_response(
                 if on_first_chunk is not None:
                     on_first_chunk()
                     on_first_chunk = None  # fire once
+                await _ensure_message_start()
                 # Some providers emit a final chunk with choices == []
                 # carrying only usage info — skip rather than crash on
                 # chunk.choices[0].

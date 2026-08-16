@@ -32,7 +32,7 @@ async def _make_user(SessionLocal, user_id: int = 1001):
                         generate_activation_token()
                     ),
                     is_active=True,
-                    can_use=True
+                    can_use=True,
                 )
             )
             await db.commit()
@@ -60,9 +60,7 @@ async def test_retain_recall_requires_closed_tag(seeded):
         )
         assert "error" in json.loads(out)
         rows = (
-            await db.execute(
-                text("SELECT count(*) FROM memories WHERE user_id = 1001")
-            )
+            await db.execute(text("SELECT count(*) FROM memories WHERE user_id = 1001"))
         ).scalar()
         assert rows == 0
 
@@ -100,8 +98,8 @@ async def test_retain_auto_inject_upserts(seeded):
             _json_args(
                 kind="auto_inject",
                 content="old style",
-                context="auto_inject:communication_style"
-            )
+                context="auto_inject:communication_style",
+            ),
         )
         assert json.loads(out1)
         # Second call with the same slot updates in place.
@@ -110,8 +108,8 @@ async def test_retain_auto_inject_upserts(seeded):
             _json_args(
                 kind="auto_inject",
                 content="new style",
-                context="auto_inject:communication_style"
-            )
+                context="auto_inject:communication_style",
+            ),
         )
         assert json.loads(out2)
         # memory_id is the row id from the first retain; the second should
@@ -121,7 +119,7 @@ async def test_retain_auto_inject_upserts(seeded):
                 text(
                     "SELECT id, content FROM memories WHERE user_id = 1001 AND context = :c"
                 ),
-                {"c": "auto_inject:communication_style"}
+                {"c": "auto_inject:communication_style"},
             )
         ).all()
         assert len(rows) == 1
@@ -136,7 +134,7 @@ async def test_retain_auto_inject_rejects_unknown_slot(seeded):
         mem = NativeMemory(db, 1001)
         out = await mem.execute_tool(
             "memory_retain",
-            _json_args(kind="auto_inject", content="x", context="auto_inject:bogus")
+            _json_args(kind="auto_inject", content="x", context="auto_inject:bogus"),
         )
         assert "error" in json.loads(out)
 
@@ -156,8 +154,8 @@ async def test_retain_auto_inject_caps_content_length(seeded):
             _json_args(
                 kind="auto_inject",
                 content=too_long,
-                context="auto_inject:communication_style"
-            )
+                context="auto_inject:communication_style",
+            ),
         )
         assert "error" in json.loads(out_long)
         out_ok = await mem.execute_tool(
@@ -165,8 +163,8 @@ async def test_retain_auto_inject_caps_content_length(seeded):
             _json_args(
                 kind="auto_inject",
                 content=just_right,
-                context="auto_inject:communication_style"
-            )
+                context="auto_inject:communication_style",
+            ),
         )
         assert "error" not in json.loads(out_ok)
 
@@ -184,13 +182,11 @@ async def test_retain_rejects_forged_user_profile_context(seeded):
             "memory_retain",
             _json_args(
                 kind="recall", content="malicious", context="user_profile:gender"
-            )
+            ),
         )
         assert "error" in json.loads(out)
         rows = (
-            await db.execute(
-                text("SELECT count(*) FROM memories WHERE user_id = 1001")
-            )
+            await db.execute(text("SELECT count(*) FROM memories WHERE user_id = 1001"))
         ).scalar()
         assert rows == 0
 
@@ -205,7 +201,7 @@ async def test_retain_rejects_forged_interaction_stats_context(seeded):
             "memory_retain",
             _json_args(
                 kind="recall", content="x", context="interaction_stats:2026-08-05"
-            )
+            ),
         )
         assert "error" in json.loads(out)
 
@@ -222,15 +218,15 @@ async def test_recall_excludes_other_kinds(seeded):
         # Seed one row in each namespace.
         await mem.execute_tool(
             "memory_retain",
-            _json_args(kind="recall", content="likes python", tags=["likes"])
+            _json_args(kind="recall", content="likes python", tags=["likes"]),
         )
         await mem.execute_tool(
             "memory_retain",
             _json_args(
                 kind="auto_inject",
                 content="terse",
-                context="auto_inject:communication_style"
-            )
+                context="auto_inject:communication_style",
+            ),
         )
         out = await mem.execute_tool("memory_recall", _json_args(query="python"))
         parsed = json.loads(out)
@@ -255,7 +251,7 @@ async def test_format_memories_block_includes_null_context(seeded):
                 user_id=1001,
                 content="orphaned but real",
                 context=None,
-                tags='["likes"]'
+                tags='["likes"]',
             )
         )
         await db.commit()
@@ -280,16 +276,16 @@ async def test_format_auto_inject_block_renders_full_content(seeded):
             _json_args(
                 kind="auto_inject",
                 content=payload,
-                context="auto_inject:communication_style"
-            )
+                context="auto_inject:communication_style",
+            ),
         )
         await mem.execute_tool(
             "memory_retain",
             _json_args(
                 kind="auto_inject",
                 content="rapport note",
-                context="auto_inject:rapport_state"
-            )
+                context="auto_inject:rapport_state",
+            ),
         )
         block = await format_auto_inject_block(db, 1001)
         # Full content renders — no render-time truncate.
@@ -312,7 +308,9 @@ async def test_memory_admin_update_requires_ownership(seeded):
         await db.commit()
         await db.refresh(row)
         # user 1002 cannot edit user 1001's row.
-        assert await memory_admin.update_memory(db, 1002, row.id, content="evil") is None
+        assert (
+            await memory_admin.update_memory(db, 1002, row.id, content="evil") is None
+        )
         # user 1001 can.
         updated = await memory_admin.update_memory(db, 1001, row.id, content="ok")
         assert updated is not None
@@ -333,7 +331,7 @@ async def test_memory_admin_list_filters_by_kind(seeded):
             "memory_retain",
             _json_args(
                 kind="auto_inject", content="b", context="auto_inject:rapport_state"
-            )
+            ),
         )
         recall_rows = await memory_admin.list_memories(db, 1001, kind="recall")
         auto_rows = await memory_admin.list_memories(db, 1001, kind="auto_inject")
@@ -355,14 +353,14 @@ async def test_memory_admin_counts_breakdown(seeded):
                     user_id=1001,
                     content="a1",
                     context="auto_inject:rapport_state",
-                    tags='["auto_inject"]'
+                    tags='["auto_inject"]',
                 ),
                 Memory(
                     user_id=1001,
                     content="p1",
                     context="user_profile:gender",
-                    tags='["onboarding"]'
-                )
+                    tags='["onboarding"]',
+                ),
             ]
         )
         await db.commit()
@@ -381,13 +379,12 @@ async def test_consolidator_replaces_old_rows(seeded, monkeypatch):
     replaced by the LLM's summaries.
     """
     SessionLocal = seeded
-    from modules.memory import Memory
-    from services.scheduler import memory_consolidator
-    from services.tools import RECALL_TAGS
-
     # Insert exactly MEMORY_CONSOLIDATE_TRIGGER_ROWS so the read window
     # consumes all of them; consolidator deletes the window and writes summaries.
     from components import MEMORY_CONSOLIDATE_TRIGGER_ROWS
+    from modules.memory import Memory
+    from services.scheduler import memory_consolidator
+    from services.tools import RECALL_TAGS
 
     async with SessionLocal() as db:
         for i in range(MEMORY_CONSOLIDATE_TRIGGER_ROWS):
@@ -396,7 +393,7 @@ async def test_consolidator_replaces_old_rows(seeded, monkeypatch):
                     user_id=1001,
                     content=f"fact {i}",
                     context=f"recall:topic_{i}",
-                    tags=json.dumps([next(iter(RECALL_TAGS))])
+                    tags=json.dumps([next(iter(RECALL_TAGS))]),
                 )
             )
         await db.commit()
@@ -406,7 +403,7 @@ async def test_consolidator_replaces_old_rows(seeded, monkeypatch):
             {
                 "summaries": [
                     {"content": "merged a", "tags": ["likes"], "context": "merged_a"},
-                    {"content": "merged b", "tags": ["likes"], "context": "merged_b"}
+                    {"content": "merged b", "tags": ["likes"], "context": "merged_b"},
                 ]
             }
         )
@@ -416,7 +413,7 @@ async def test_consolidator_replaces_old_rows(seeded, monkeypatch):
             "api_key": "x",
             "base_url": "y",
             "model_name": "z",
-            "provider_name": "mimo"
+            "provider_name": "mimo",
         }
 
     monkeypatch.setattr(memory_consolidator, "call_llm_once", fake_call_llm_once)
@@ -453,10 +450,10 @@ async def test_consolidator_keeps_source_rows_when_all_summaries_empty(
     consolidator MUST roll back instead of deleting the user's pool.
     """
     SessionLocal = seeded
+    from components import MEMORY_CONSOLIDATE_TRIGGER_ROWS
     from modules.memory import Memory
     from services.scheduler import memory_consolidator
     from services.tools import RECALL_TAGS
-    from components import MEMORY_CONSOLIDATE_TRIGGER_ROWS
 
     async with SessionLocal() as db:
         for i in range(MEMORY_CONSOLIDATE_TRIGGER_ROWS):
@@ -465,7 +462,7 @@ async def test_consolidator_keeps_source_rows_when_all_summaries_empty(
                     user_id=1001,
                     content=f"fact {i}",
                     context=f"recall:topic_{i}",
-                    tags=json.dumps([next(iter(RECALL_TAGS))])
+                    tags=json.dumps([next(iter(RECALL_TAGS))]),
                 )
             )
         await db.commit()
@@ -480,7 +477,7 @@ async def test_consolidator_keeps_source_rows_when_all_summaries_empty(
             "api_key": "x",
             "base_url": "y",
             "model_name": "z",
-            "provider_name": "mimo"
+            "provider_name": "mimo",
         }
 
     monkeypatch.setattr(memory_consolidator, "call_llm_once", fake_call)
@@ -519,7 +516,7 @@ async def test_update_memory_enforces_auto_inject_cap(seeded):
             user_id=1001,
             content="x",
             context="auto_inject:communication_style",
-            tags='["auto_inject"]'
+            tags='["auto_inject"]',
         )
         db.add(row)
         await db.commit()

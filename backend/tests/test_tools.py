@@ -254,8 +254,7 @@ class TestReferenceImageChain:
     async def test_tool_passes_reference_to_native_provider(self, monkeypatch):
         import importlib
 
-        from services.llm import ImageAsset
-        from services.llm import ImageGenResult
+        from services.llm import ImageAsset, ImageGenResult
 
         tool_mod = importlib.import_module(
             "services.tools.builtin.image_generation_tool"
@@ -295,8 +294,7 @@ class TestReferenceImageChain:
         """No reference_image → chain is unfiltered, any image provider works."""
         import importlib
 
-        from services.llm import ImageAsset
-        from services.llm import ImageGenResult
+        from services.llm import ImageAsset, ImageGenResult
 
         tool_mod = importlib.import_module(
             "services.tools.builtin.image_generation_tool"
@@ -336,6 +334,7 @@ class TestReferenceImageChain:
         tool_mod = importlib.import_module(
             "services.tools.builtin.image_generation_tool"
         )
+
         async def _fake_chain(*a, **kw):
             return ([], "当前图片生成供应商均不支持以图生图")
 

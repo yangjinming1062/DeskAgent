@@ -1,10 +1,10 @@
 from datetime import timedelta
 
+from sqlalchemy import select
+
 from components import utc_now
 from modules.auth import User
 from modules.scheduler import CronJob
-from sqlalchemy import select
-
 from services.scheduler.cron import _bulk_cas_advance, _compute_next_run_at
 
 _DUE_COLS = ("id", "user_id", "name", "schedule", "next_run_at", "prompt", "one_shot")
@@ -21,7 +21,15 @@ async def _seed(SessionLocal, jobs: list[dict]) -> list:
         await db.commit()
         rows = (
             await db.execute(
-                select(CronJob.id, CronJob.user_id, CronJob.name, CronJob.schedule, CronJob.next_run_at, CronJob.prompt, CronJob.one_shot).order_by(CronJob.id)
+                select(
+                    CronJob.id,
+                    CronJob.user_id,
+                    CronJob.name,
+                    CronJob.schedule,
+                    CronJob.next_run_at,
+                    CronJob.prompt,
+                    CronJob.one_shot,
+                ).order_by(CronJob.id)
             )
         ).all()
     return rows
@@ -35,7 +43,16 @@ async def _rows(SessionLocal) -> dict[int, CronJob | None]:
 
 async def test_recurring_winner_advances(SessionLocal):
     now = utc_now()
-    rows = await _seed(SessionLocal, [{"name": "r1", "schedule": "* * * * *", "next_run_at": now - timedelta(minutes=5)}])
+    rows = await _seed(
+        SessionLocal,
+        [
+            {
+                "name": "r1",
+                "schedule": "* * * * *",
+                "next_run_at": now - timedelta(minutes=5),
+            }
+        ],
+    )
 
     winners = await _bulk_cas_advance(rows, now)
 
@@ -49,7 +66,16 @@ async def test_recurring_winner_advances(SessionLocal):
 
 async def test_cas_loser_is_skipped(SessionLocal):
     now = utc_now()
-    rows = await _seed(SessionLocal, [{"name": "r1", "schedule": "* * * * *", "next_run_at": now - timedelta(minutes=5)}])
+    rows = await _seed(
+        SessionLocal,
+        [
+            {
+                "name": "r1",
+                "schedule": "* * * * *",
+                "next_run_at": now - timedelta(minutes=5),
+            }
+        ],
+    )
 
     # Simulate update_job advancing next_run_at mid-tick: the stale Row no
     # longer matches, so the batch CAS must silently skip the loser.
@@ -64,15 +90,29 @@ async def test_cas_loser_is_skipped(SessionLocal):
 
     assert winners == {}
     # SQLite reads timestamptz back without tzinfo; PG preserves it.
-    assert jobs[rows[0].id].next_run_at.replace(tzinfo=None) == moved.replace(tzinfo=None)
+    assert jobs[rows[0].id].next_run_at.replace(tzinfo=None) == moved.replace(
+        tzinfo=None
+    )
 
 
 async def test_one_shot_winner_is_deleted(SessionLocal):
     now = utc_now()
-    rows = await _seed(SessionLocal, [
-        {"name": "one", "schedule": "* * * * *", "next_run_at": now - timedelta(minutes=5), "one_shot": True},
-        {"name": "rec", "schedule": "* * * * *", "next_run_at": now - timedelta(minutes=5)},
-    ])
+    rows = await _seed(
+        SessionLocal,
+        [
+            {
+                "name": "one",
+                "schedule": "* * * * *",
+                "next_run_at": now - timedelta(minutes=5),
+                "one_shot": True,
+            },
+            {
+                "name": "rec",
+                "schedule": "* * * * *",
+                "next_run_at": now - timedelta(minutes=5),
+            },
+        ],
+    )
 
     winners = await _bulk_cas_advance(rows, now)
 
@@ -84,7 +124,16 @@ async def test_one_shot_winner_is_deleted(SessionLocal):
 
 async def test_exhausted_schedule_pauses(SessionLocal, monkeypatch):
     now = utc_now()
-    rows = await _seed(SessionLocal, [{"name": "dead", "schedule": "* * * * *", "next_run_at": now - timedelta(minutes=5)}])
+    rows = await _seed(
+        SessionLocal,
+        [
+            {
+                "name": "dead",
+                "schedule": "* * * * *",
+                "next_run_at": now - timedelta(minutes=5),
+            }
+        ],
+    )
 
     import services.scheduler.cron as cron_mod
 
@@ -115,7 +164,11 @@ async def test_kick_autonomous_turn_routes_via_outbox(SessionLocal, monkeypatch)
     await cron_mod._kick_autonomous_turn(5, meta)
 
     async with SessionLocal() as db:
-        rows = (await db.execute(select(WSEvent).where(WSEvent.user_id == 9))).scalars().all()
+        rows = (
+            (await db.execute(select(WSEvent).where(WSEvent.user_id == 9)))
+            .scalars()
+            .all()
+        )
         assert len(rows) == 1
         assert rows[0].event_type == "cron.turn.request"
         assert _json.loads(rows[0].payload) == {"job_id": 5, "prompt": "想你了"}
@@ -128,5 +181,39 @@ async def test_kick_autonomous_turn_routes_via_outbox(SessionLocal, monkeypatch)
     await cron_mod._kick_autonomous_turn(7, {"user_id": 9, "payload": {"prompt": "  "}})
 
     async with SessionLocal() as db:
-        remaining = (await db.execute(select(WSEvent).where(WSEvent.user_id == 9))).scalars().all()
+        remaining = (
+            (await db.execute(select(WSEvent).where(WSEvent.user_id == 9)))
+            .scalars()
+            .all()
+        )
         assert [r.id for r in remaining] == [rows[0].id]
+
+
+async def test_cancel_user_cron_turns():
+    import asyncio
+
+    from services.gateway.connection import (
+        _cron_turn_tasks,
+        _discard_cron_task,
+        cancel_user_cron_turns,
+    )
+
+    async def _dummy_coro():
+        try:
+            await asyncio.sleep(10)
+        except asyncio.CancelledError:
+            pass
+
+    task1 = asyncio.create_task(_dummy_coro())
+    task2 = asyncio.create_task(_dummy_coro())
+    _cron_turn_tasks.setdefault(101, set()).add(task1)
+    _cron_turn_tasks.setdefault(101, set()).add(task2)
+    task1.add_done_callback(lambda t: _discard_cron_task(101, t))
+    task2.add_done_callback(lambda t: _discard_cron_task(101, t))
+
+    cancelled = cancel_user_cron_turns(101)
+    assert cancelled == 2
+    assert 101 not in _cron_turn_tasks
+    await asyncio.sleep(0.01)
+    assert task1.cancelled()
+    assert task2.cancelled()

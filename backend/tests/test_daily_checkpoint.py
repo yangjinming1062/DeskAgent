@@ -11,6 +11,7 @@ Coverage:
 - compress_summary rows are not folded into the summarisable input
 - tool_summary rows are not folded into the summarisable input
 """
+
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -28,7 +29,7 @@ async def _seed_user(SessionLocal, user_id: int = 2001):
         UserModelConfig,
         create_access_token,
         generate_activation_token,
-        hash_activation_token
+        hash_activation_token,
     )
 
     async with SessionLocal() as db:
@@ -39,9 +40,11 @@ async def _seed_user(SessionLocal, user_id: int = 2001):
                 id=user_id,
                 username=f"u{user_id}",
                 password_hash=None,
-                activation_token_hash=hash_activation_token(generate_activation_token()),
+                activation_token_hash=hash_activation_token(
+                    generate_activation_token()
+                ),
                 is_active=True,
-                can_use=True
+                can_use=True,
             )
             db.add(user)
             await db.commit()
@@ -50,7 +53,7 @@ async def _seed_user(SessionLocal, user_id: int = 2001):
                     user_id=user_id,
                     llm_base_url="https://fake.example.com",
                     llm_api_key="sk-fake",
-                    llm_model_name="mimo-v2.5-pro"
+                    llm_model_name="mimo-v2.5-pro",
                 )
             )
             token, _, jti = create_access_token(user_id=user_id, username=user.username)
@@ -74,14 +77,22 @@ async def _make_main_conv(SessionLocal, user_id: int) -> int:
         return conv.id
 
 
-async def _add_message(SessionLocal, conv_id: int, role: str, content: str, at: datetime, *, subtype: str | None = None):
+async def _add_message(
+    SessionLocal,
+    conv_id: int,
+    role: str,
+    content: str,
+    at: datetime,
+    *,
+    subtype: str | None = None,
+):
     async with SessionLocal() as db:
         msg = Message(
             conversation_id=conv_id,
             role=role,
             content=content,
             subtype=subtype,
-            created_at=at
+            created_at=at,
         )
         db.add(msg)
         await db.commit()
@@ -119,7 +130,13 @@ async def test_daily_checkpoint_empty_day_skip(seeded, monkeypatch):
     conv_id = await _make_main_conv(SessionLocal, 2001)
     base = datetime(2026, 8, 13, 10, 0, 0, tzinfo=UTC)
     for i in range(5):
-        await _add_message(SessionLocal, conv_id, "user", f"old {i}", base - timedelta(days=1) + timedelta(minutes=i))
+        await _add_message(
+            SessionLocal,
+            conv_id,
+            "user",
+            f"old {i}",
+            base - timedelta(days=1) + timedelta(minutes=i),
+        )
 
     async def _fail(*args, **kwargs):
         raise AssertionError("LLM should not be called on empty days")
@@ -143,8 +160,21 @@ async def test_daily_checkpoint_skip_when_only_status_rows_today(seeded, monkeyp
     conv_id = await _make_main_conv(SessionLocal, 2001)
     base = datetime(2026, 8, 13, 10, 0, 0, tzinfo=UTC)
     for i in range(100):
-        await _add_message(SessionLocal, conv_id, "user", f"old {i}", base - timedelta(days=2) + timedelta(minutes=i))
-    await _add_message(SessionLocal, conv_id, "user", "（戳了戳精灵）", base, subtype="status_interaction")
+        await _add_message(
+            SessionLocal,
+            conv_id,
+            "user",
+            f"old {i}",
+            base - timedelta(days=2) + timedelta(minutes=i),
+        )
+    await _add_message(
+        SessionLocal,
+        conv_id,
+        "user",
+        "（戳了戳精灵）",
+        base,
+        subtype="status_interaction",
+    )
 
     async def _fail(*args, **kwargs):
         raise AssertionError("should not call LLM when the day had no real turns")
@@ -168,8 +198,16 @@ async def test_daily_checkpoint_summary_inserted_with_summary_date(seeded, monke
     conv_id = await _make_main_conv(SessionLocal, 2001)
     base = datetime(2026, 8, 13, 10, 0, 0, tzinfo=UTC)
     for i in range(5):
-        await _add_message(SessionLocal, conv_id, "user", f"u{i}", base + timedelta(minutes=i))
-        await _add_message(SessionLocal, conv_id, "assistant", f"a{i}", base + timedelta(minutes=i, seconds=30))
+        await _add_message(
+            SessionLocal, conv_id, "user", f"u{i}", base + timedelta(minutes=i)
+        )
+        await _add_message(
+            SessionLocal,
+            conv_id,
+            "assistant",
+            f"a{i}",
+            base + timedelta(minutes=i, seconds=30),
+        )
 
     captured_args: dict = {}
 
@@ -219,21 +257,32 @@ async def test_daily_checkpoint_includes_compress_summary_content(seeded, monkey
 
     # Old messages before any checkpoint
     for i in range(10):
-        await _add_message(SessionLocal, conv_id, "user", f"old_{i}", base - timedelta(hours=2) + timedelta(minutes=i))
+        await _add_message(
+            SessionLocal,
+            conv_id,
+            "user",
+            f"old_{i}",
+            base - timedelta(hours=2) + timedelta(minutes=i),
+        )
 
     # A compress_summary checkpoint landed mid-day
     async with SessionLocal() as db:
-        db.add(Message(
-            conversation_id=conv_id, role="system",
-            content="[🗜️ 对话压缩 — 10 条早期消息已压缩]\n旧压缩摘要",
-            subtype="compress_summary",
-            created_at=base - timedelta(hours=1),
-        ))
+        db.add(
+            Message(
+                conversation_id=conv_id,
+                role="system",
+                content="[🗜️ 对话压缩 — 10 条早期消息已压缩]\n旧压缩摘要",
+                subtype="compress_summary",
+                created_at=base - timedelta(hours=1),
+            )
+        )
         await db.commit()
 
     # New messages after the compress
     for i in range(3):
-        await _add_message(SessionLocal, conv_id, "user", f"new_{i}", base + timedelta(minutes=i))
+        await _add_message(
+            SessionLocal, conv_id, "user", f"new_{i}", base + timedelta(minutes=i)
+        )
 
     captured: dict = {}
 
@@ -265,7 +314,9 @@ async def test_daily_checkpoint_includes_compress_summary_content(seeded, monkey
 
 
 @pytest.mark.asyncio
-async def test_daily_checkpoint_skips_when_last_message_is_checkpoint(seeded, monkeypatch):
+async def test_daily_checkpoint_skips_when_last_message_is_checkpoint(
+    seeded, monkeypatch
+):
     """If the most recent row is already a daily_summary or compress_summary and
     no real turn follows it, skip — there's nothing new to summarise."""
     SessionLocal = seeded
@@ -275,16 +326,21 @@ async def test_daily_checkpoint_skips_when_last_message_is_checkpoint(seeded, mo
     await _add_message(SessionLocal, conv_id, "user", "hello", base)
     # A compress_summary is the last row — no user interaction after it
     async with SessionLocal() as db:
-        db.add(Message(
-            conversation_id=conv_id, role="system",
-            content="[🗜️ 对话压缩 — 1 条早期消息已压缩]\n摘要",
-            subtype="compress_summary",
-            created_at=base + timedelta(seconds=1),
-        ))
+        db.add(
+            Message(
+                conversation_id=conv_id,
+                role="system",
+                content="[🗜️ 对话压缩 — 1 条早期消息已压缩]\n摘要",
+                subtype="compress_summary",
+                created_at=base + timedelta(seconds=1),
+            )
+        )
         await db.commit()
 
     async def _fail(*args, **kwargs):
-        raise AssertionError("should not call LLM when no new messages after checkpoint")
+        raise AssertionError(
+            "should not call LLM when no new messages after checkpoint"
+        )
 
     monkeypatch.setattr(daily_checkpoint, "run_prompt_json", _fail)
 
@@ -308,12 +364,16 @@ async def test_daily_checkpoint_single_message_still_summarises(seeded, monkeypa
     base = datetime(2026, 8, 13, 10, 0, 0, tzinfo=UTC)
     # Yesterday's checkpoint
     async with SessionLocal() as db:
-        db.add(Message(
-            conversation_id=conv_id, role="system",
-            content="[📝 截至 2026-08-12 的对话摘要]\n昨日摘要",
-            subtype="daily_summary", summary_date="2026-08-12",
-            created_at=base - timedelta(days=1),
-        ))
+        db.add(
+            Message(
+                conversation_id=conv_id,
+                role="system",
+                content="[📝 截至 2026-08-12 的对话摘要]\n昨日摘要",
+                subtype="daily_summary",
+                summary_date="2026-08-12",
+                created_at=base - timedelta(days=1),
+            )
+        )
         await db.commit()
     # Today: exactly one real turn
     await _add_message(SessionLocal, conv_id, "user", "就一句话", base)
@@ -357,7 +417,9 @@ async def test_daily_checkpoint_gap_days_in_prompt(seeded, monkeypatch):
         db.add(prev)
         await db.commit()
     for i in range(5):
-        await _add_message(SessionLocal, conv_id, "user", f"u{i}", base + timedelta(minutes=i))
+        await _add_message(
+            SessionLocal, conv_id, "user", f"u{i}", base + timedelta(minutes=i)
+        )
 
     captured_args: dict = {}
 
@@ -397,7 +459,9 @@ async def test_daily_checkpoint_no_gap_when_consecutive(seeded, monkeypatch):
         db.add(prev)
         await db.commit()
     for i in range(5):
-        await _add_message(SessionLocal, conv_id, "user", f"u{i}", base + timedelta(minutes=i))
+        await _add_message(
+            SessionLocal, conv_id, "user", f"u{i}", base + timedelta(minutes=i)
+        )
 
     captured_args: dict = {}
 
@@ -428,7 +492,9 @@ def test_gap_days():
 
 
 @pytest.mark.asyncio
-async def test_daily_checkpoint_does_not_re_summarise_prior_summary(seeded, monkeypatch):
+async def test_daily_checkpoint_does_not_re_summarise_prior_summary(
+    seeded, monkeypatch
+):
     """A prior daily_summary row must not be folded into the new chat_content."""
     SessionLocal = seeded
     conv_id = await _make_main_conv(SessionLocal, 2001)
@@ -445,7 +511,9 @@ async def test_daily_checkpoint_does_not_re_summarise_prior_summary(seeded, monk
         db.add(prev)
         await db.commit()
     for i in range(3):
-        await _add_message(SessionLocal, conv_id, "user", f"今天-u{i}", base + timedelta(minutes=i))
+        await _add_message(
+            SessionLocal, conv_id, "user", f"今天-u{i}", base + timedelta(minutes=i)
+        )
 
     captured: dict = {}
 
@@ -479,8 +547,17 @@ async def test_daily_checkpoint_does_not_fold_tool_summary_rows(seeded, monkeypa
     conv_id = await _make_main_conv(SessionLocal, 2001)
     base = datetime(2026, 8, 13, 10, 0, 0, tzinfo=UTC)
     await _add_message(SessionLocal, conv_id, "user", "查天气", base)
-    await _add_message(SessionLocal, conv_id, "system", "[执行了工具调用：search_web]", base + timedelta(seconds=1), subtype="tool_summary")
-    await _add_message(SessionLocal, conv_id, "assistant", "今天晴", base + timedelta(seconds=2))
+    await _add_message(
+        SessionLocal,
+        conv_id,
+        "system",
+        "[执行了工具调用：search_web]",
+        base + timedelta(seconds=1),
+        subtype="tool_summary",
+    )
+    await _add_message(
+        SessionLocal, conv_id, "assistant", "今天晴", base + timedelta(seconds=2)
+    )
 
     captured: dict = {}
 

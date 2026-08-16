@@ -6,7 +6,6 @@ from types import SimpleNamespace
 
 import pytest
 
-
 # ── TestLLMClient (pure business logic, no mock) ────────────────────
 
 
@@ -112,8 +111,10 @@ class TestResolveContextTokens:
 
     def test_openai_family_injects_openai_guidance(self):
         from modules.system import AgentPromptConfig
-        from services.chat.system_prompt import OPENAI_MODEL_EXECUTION_GUIDANCE
-        from services.chat.system_prompt import build_system_prompt_parts
+        from services.chat.system_prompt import (
+            OPENAI_MODEL_EXECUTION_GUIDANCE,
+            build_system_prompt_parts,
+        )
 
         parts = build_system_prompt_parts(
             AgentPromptConfig(prompt_family="openai", valid_tool_names=["terminal"])
@@ -122,8 +123,10 @@ class TestResolveContextTokens:
 
     def test_google_family_injects_google_guidance(self):
         from modules.system import AgentPromptConfig
-        from services.chat.system_prompt import GOOGLE_MODEL_OPERATIONAL_GUIDANCE
-        from services.chat.system_prompt import build_system_prompt_parts
+        from services.chat.system_prompt import (
+            GOOGLE_MODEL_OPERATIONAL_GUIDANCE,
+            build_system_prompt_parts,
+        )
 
         parts = build_system_prompt_parts(
             AgentPromptConfig(prompt_family="google", valid_tool_names=["terminal"])
@@ -132,8 +135,10 @@ class TestResolveContextTokens:
 
     def test_zh_language_directive_injected_by_default(self):
         from modules.system import AgentPromptConfig
-        from services.chat.system_prompt import LANGUAGE_DIRECTIVES
-        from services.chat.system_prompt import build_system_prompt_parts
+        from services.chat.system_prompt import (
+            LANGUAGE_DIRECTIVES,
+            build_system_prompt_parts,
+        )
 
         parts = build_system_prompt_parts(
             AgentPromptConfig(valid_tool_names=["terminal"])
@@ -142,8 +147,10 @@ class TestResolveContextTokens:
 
     def test_en_language_directive_injected_when_en(self):
         from modules.system import AgentPromptConfig
-        from services.chat.system_prompt import LANGUAGE_DIRECTIVES
-        from services.chat.system_prompt import build_system_prompt_parts
+        from services.chat.system_prompt import (
+            LANGUAGE_DIRECTIVES,
+            build_system_prompt_parts,
+        )
 
         parts = build_system_prompt_parts(
             AgentPromptConfig(valid_tool_names=["terminal"], language="en")
@@ -165,7 +172,7 @@ class TestResolveContextTokens:
             session_id="1",
             message=ChatMessageRequest(role="user", content="hi"),
             model="custom-32k",
-            context_tokens=32_000
+            context_tokens=32_000,
         )
         assert req.context_tokens == 32_000
         assert req.model == "custom-32k"
@@ -205,8 +212,8 @@ class TestResolveContextTokens:
         assert "Model" in hdr
 
     def test_image_attachment_uses_image_url_part(self):
-        from services.chat.persistence import _build_persisted_content
         from modules.system import ChatMessageRequest
+        from services.chat.persistence import _build_persisted_content
 
         req = SimpleNamespace(
             message=ChatMessageRequest(
@@ -214,7 +221,7 @@ class TestResolveContextTokens:
                 content="Describe this image",
                 attachments=[
                     {"type": "image", "file_url": "http://example.com/image.png"}
-                ]
+                ],
             )
         )
         content, content_type = _build_persisted_content(req)
@@ -226,8 +233,8 @@ class TestResolveContextTokens:
         assert image_part["image_url"]["url"] == "http://example.com/image.png"
 
     def test_no_attachments_returns_text(self):
-        from services.chat.persistence import _build_persisted_content
         from modules.system import ChatMessageRequest
+        from services.chat.persistence import _build_persisted_content
 
         req = SimpleNamespace(
             message=ChatMessageRequest(role="user", content="Just text")
@@ -297,19 +304,24 @@ class TestChatE2E:
             "messages": [{"role": "user", "content": "Say 'hello' in one word."}],
             "model": "mimo-v2.5-pro",
             "temperature": 0.5,
-            "max_tokens": 50
+            "max_tokens": 50,
         }
-        resp = await test_client.post("/api/llm/completion", headers=headers, json=payload)
+        resp = await test_client.post(
+            "/api/llm/completion", headers=headers, json=payload
+        )
         assert resp.status_code == 200
         body = resp.json()
         assert body["content"] is not None
         assert len(body["content"]) > 0
 
-    async def test_websocket_chat_flow(self, test_app, test_token, ws_ticket, monkeypatch, _patch_db):
+    async def test_websocket_chat_flow(
+        self, test_app, test_token, ws_ticket, monkeypatch, _patch_db
+    ):
         """Test the actual WebSocket chat flow from session creation to prompt completion without mocks."""
         # httpx has no websocket support — the sync TestClient drives the
         # async app on its portal loop (fine with the shared aiosqlite conn).
         from fastapi.testclient import TestClient
+
         from services.gateway import handlers
 
         # ``services.gateway.handlers`` is not in conftest's SESSION_LOCAL
@@ -334,8 +346,8 @@ class TestChatE2E:
                     "method": "prompt.submit",
                     "params": {
                         "session_id": session_id,
-                        "text": "Say 'ok' in one word."
-                    }
+                        "text": "Say 'ok' in one word.",
+                    },
                 }
             )
             resp = ws.receive_json()
@@ -375,9 +387,12 @@ class TestChatE2E:
             ):
                 pass
 
-    async def test_websocket_session_lifecycle(self, test_app, test_token, ws_ticket, monkeypatch, _patch_db):
+    async def test_websocket_session_lifecycle(
+        self, test_app, test_token, ws_ticket, monkeypatch, _patch_db
+    ):
         """Test creating a session and verifying prompt submission after interrupt."""
         from fastapi.testclient import TestClient
+
         from services.gateway import handlers
 
         # Same conftest patch-list gap as the chat-flow test above.
@@ -399,7 +414,7 @@ class TestChatE2E:
                     "jsonrpc": "2.0",
                     "id": 2,
                     "method": "session.interrupt",
-                    "params": {"session_id": session_id}
+                    "params": {"session_id": session_id},
                 }
             )
             resp = ws.receive_json()

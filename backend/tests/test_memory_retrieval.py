@@ -1,5 +1,5 @@
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from sqlalchemy import select
@@ -32,7 +32,9 @@ async def _make_user(SessionLocal, user_id: int = 1001):
                     id=user_id,
                     username=f"u{user_id}",
                     password_hash=None,
-                    activation_token_hash=hash_activation_token(generate_activation_token()),
+                    activation_token_hash=hash_activation_token(
+                        generate_activation_token()
+                    ),
                     is_active=True,
                     can_use=True,
                 )
@@ -65,7 +67,7 @@ def test_cosine_similarity():
 
 
 def test_time_decay_ebbinghaus():
-    now = datetime(2026, 8, 14, 12, 0, 0, tzinfo=timezone.utc)
+    now = datetime(2026, 8, 14, 12, 0, 0, tzinfo=UTC)
 
     # 0 days elapsed -> decay ~ 1.0
     decay_0 = _compute_time_decay(now, now)
@@ -110,7 +112,9 @@ async def test_hybrid_search_sparse_and_dense(seeded):
         await db.commit()
 
         # Query with tech vector
-        results = await retrieve_hybrid_memories(db, 1001, "Python", query_embedding=vec_tech, limit=5)
+        results = await retrieve_hybrid_memories(
+            db, 1001, "Python", query_embedding=vec_tech, limit=5
+        )
         assert len(results) >= 1
         assert results[0]["id"] == m1.id
         assert "Python" in results[0]["content"]
@@ -191,7 +195,9 @@ async def test_proactive_memory_retrieval_and_formatting(seeded):
         db.add(m)
         await db.commit()
 
-        proactive = await retrieve_proactive_memories(db, 1001, "我明天要参加大模型架构师面试", limit=3)
+        proactive = await retrieve_proactive_memories(
+            db, 1001, "我明天要参加大模型架构师面试", limit=3
+        )
         assert len(proactive) == 1
         assert proactive[0]["id"] == m.id
 
@@ -219,7 +225,9 @@ async def test_native_memory_retain_and_recall_with_importance(seeded):
 
         # Verify importance is persisted
         row = (
-            await db.execute(select(Memory).where(Memory.id == parsed_retain["memory_id"]))
+            await db.execute(
+                select(Memory).where(Memory.id == parsed_retain["memory_id"])
+            )
         ).scalar_one_or_none()
         assert row is not None
         assert row.importance == 2.0
@@ -295,7 +303,9 @@ async def test_turn_inputs_proactive_injection(seeded):
 
         req = ChatRequest(
             session_id=str(conv.id),
-            message=ChatMessageRequest(role="user", content="请帮我写一个排序算法，注意回答要精炼"),
+            message=ChatMessageRequest(
+                role="user", content="请帮我写一个排序算法，注意回答要精炼"
+            ),
         )
         turn = await _build_turn_inputs(
             db=db,

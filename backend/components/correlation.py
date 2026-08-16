@@ -61,7 +61,7 @@ def begin_local_scope() -> str:
     return rid
 
 
-async def correlated_exception_response(_request: Request, exc: Exception) -> JSONResponse:  # noqa: ARG001 — exc required by FastAPI exception-handler signature
+async def correlated_exception_response(_request: Request, exc: Exception) -> JSONResponse:
     """Fallback handler: 把 ContextVar 里的 request_id 写进 500 response header.
 
     必需因为 ServerErrorMiddleware 在最外层 — BaseHTTPMiddleware 抛 raise 时

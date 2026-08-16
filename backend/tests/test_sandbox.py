@@ -1,8 +1,8 @@
-import asyncio
 import sys
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+
 from components import SETTINGS
 from services.worker import sandbox
 
@@ -34,7 +34,14 @@ def test_docker_command_flags_and_io_mapping(tmp_path, monkeypatch):
         "deskagent-job-7-1",
         io,
         "build_character.py",
-        ["--output", str(io / "output.glb"), "--seed-front", str(io / "front.jpg"), "--species", "人类"],
+        [
+            "--output",
+            str(io / "output.glb"),
+            "--seed-front",
+            str(io / "front.jpg"),
+            "--species",
+            "人类",
+        ],
     )
 
     assert cmd[:3] == ["docker", "run", "--rm"]
@@ -49,21 +56,52 @@ def test_docker_command_flags_and_io_mapping(tmp_path, monkeypatch):
     assert _flag(cmd, "-v").rsplit(":", 1)[1] == "/io"
     # container argv: image → blender → script under /io
     image_idx = cmd.index("blender-sbx:9.9")
-    assert cmd[image_idx + 1 : image_idx + 6] == ["blender", "--background", "--python", "/io/build_character.py", "--"]
+    assert cmd[image_idx + 1 : image_idx + 6] == [
+        "blender",
+        "--background",
+        "--python",
+        "/io/build_character.py",
+        "--",
+    ]
     tail = cmd[image_idx + 6 :]
-    assert tail == ["--output", "/io/output.glb", "--seed-front", "/io/front.jpg", "--species", "人类"]
+    assert tail == [
+        "--output",
+        "/io/output.glb",
+        "--seed-front",
+        "/io/front.jpg",
+        "--species",
+        "人类",
+    ]
 
 
 def test_bare_command_shape(tmp_path):
     io = tmp_path / "io"
     cmd = sandbox._bare_cmd(io, "s.py", ["--output", str(io / "o.glb")])
-    assert cmd == ["blender", "--background", "--python", str(io / "s.py"), "--", "--output", str(io / "o.glb")]
+    assert cmd == [
+        "blender",
+        "--background",
+        "--python",
+        str(io / "s.py"),
+        "--",
+        "--output",
+        str(io / "o.glb"),
+    ]
 
 
 async def test_disabled_mode_runs_bare_and_captures_output(tmp_path, monkeypatch):
     monkeypatch.setattr(SETTINGS, "blender_sandbox_enabled", False)
-    monkeypatch.setattr(sandbox, "_bare_cmd", lambda io_dir, script_name, args: [sys.executable, "-c", "import sys; print('bare-ok', file=sys.stderr)"])
-    returncode, combined = await sandbox.run_blender(tmp_path, "s.py", ["--x"], timeout=15)
+    monkeypatch.setattr(
+        sandbox,
+        "_bare_cmd",
+        lambda io_dir, script_name, args: [
+            sys.executable,
+            "-c",
+            "import sys; print('bare-ok', file=sys.stderr)",
+        ],
+    )
+    returncode, combined = await sandbox.run_blender(
+        tmp_path, "s.py", ["--x"], timeout=15
+    )
     assert returncode == 0
     assert "bare-ok" in combined
 
@@ -76,9 +114,19 @@ async def test_timeout_kills_container_and_returns_124(tmp_path, monkeypatch):
         killed.append(container)
 
     monkeypatch.setattr(sandbox, "_kill_container", _record_kill)
-    monkeypatch.setattr(sandbox, "_docker_cmd", lambda container, io_dir, script_name, args: [sys.executable, "-c", "import time; time.sleep(30)"])
+    monkeypatch.setattr(
+        sandbox,
+        "_docker_cmd",
+        lambda container, io_dir, script_name, args: [
+            sys.executable,
+            "-c",
+            "import time; time.sleep(30)",
+        ],
+    )
 
-    returncode, stderr = await sandbox.run_blender(tmp_path, "s.py", [], timeout=0.2, name_hint="42-1")
+    returncode, stderr = await sandbox.run_blender(
+        tmp_path, "s.py", [], timeout=0.2, name_hint="42-1"
+    )
     assert returncode == 124
     assert "timed out" in stderr
     assert killed[0].startswith("deskagent-job-42-1-")
@@ -105,4 +153,7 @@ async def test_sweep_removes_labeled_containers(monkeypatch):
     assert await sandbox.sweep_orphan_containers() == 2
     assert calls[0][1:4] == ["ps", "-aq", "--filter"]
     assert calls[0][4] == "label=deskagent-worker=1"
-    assert [c[1:4] for c in calls[1:]] == [["rm", "-f", "abc123def456"], ["rm", "-f", "def789abc012"]]
+    assert [c[1:4] for c in calls[1:]] == [
+        ["rm", "-f", "abc123def456"],
+        ["rm", "-f", "def789abc012"],
+    ]

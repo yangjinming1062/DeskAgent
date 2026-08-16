@@ -52,14 +52,14 @@ async def _image_gen_chain(
 
 async def image_generation_tool(
     prompt: str,
-    llm_config: dict,  # noqa: ARG001 — shared tool signature; dispatch passes it
+    llm_config: dict,
     size: str = "1024x1024",
     n: int = 1,
     user_id: int | None = None,
     reference_image: str | None = None,
     secondary_reference_image: str | None = None,
     preferred_provider: str | list[str] | None = None,
-    **kwargs,  # noqa: ARG001 — absorbs dispatcher extras
+    **kwargs,
 ) -> str:
     """Image generation via the per-service provider chain. base64 payloads
     are saved locally and returned as our own /api/media/files/<id> URLs so
