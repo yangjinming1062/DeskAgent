@@ -28,6 +28,12 @@ _PROVIDER_VISION_MODELS: dict[str, str] = {}
 # the dicts below.
 KNOWN_PROVIDERS: frozenset[str] = frozenset({"mimo", "minimax", "gemini", "grok", "zhipu"})
 
+# Providers that expose an OpenAI-shaped ``/v1/embeddings`` endpoint. Native
+# providers (e.g. minimax's ``/v1/embeddings`` uses ``texts`` not ``input``) are
+# excluded — the embedding fallback in ``llm_client._resolve_embedding_provider``
+# only constructs an OpenAI-compatible fallback for this set.
+OPENAI_COMPATIBLE_PROVIDERS: frozenset[str] = frozenset({"openai", "mimo"})
+
 # Default provider when ``SETTINGS.<svc>_provider`` is empty. Chat/STT/TTS
 # default to MiMo (OpenAI-compatible); image/video gen default to MiniMax.
 SERVICE_DEFAULT_PROVIDER: dict[str, str] = {"llm": "mimo", "stt": "mimo", "tts": "mimo", "image_gen": "minimax", "video_gen": "minimax", "embedding": "minimax"}

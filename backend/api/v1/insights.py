@@ -4,7 +4,7 @@ from typing import Any
 
 from common import get_router
 from components import ACTIVITY_DAY_BUCKETS, DEFAULT_INSIGHTS_DAYS, MS_PER_HOUR, SETTINGS, get_db, safe_json_loads, utc_now
-from fastapi import Depends
+from fastapi import Depends, Query
 from modules.auth import LoginRecord, User, UserModelConfig, get_current_session
 from modules.conversation import Conversation, Message
 from modules.memory import Memory
@@ -45,12 +45,24 @@ class InsightsDailyActivity(BaseModel):
     messages: int
 
 
+class InsightsModelItem(BaseModel):
+    model: str
+    base_url: str = ""
+    is_active: bool = True
+
+
+class InsightsPlatformItem(BaseModel):
+    platform: str
+    count: int
+    pct: float
+
+
 class InsightsOverviewResponse(BaseModel):
     days: int
     overview: InsightsOverviewSummary
     top_tools: list[InsightsToolCount]
-    models: dict[str, Any]
-    platforms: dict[str, int]
+    models: list[InsightsModelItem]
+    platforms: list[InsightsPlatformItem]
     skills: InsightsSkillSummary
     activity: list[InsightsDailyActivity]
 
@@ -173,7 +185,7 @@ async def _skill_summary(db: AsyncSession, user_id: int, since: datetime) -> dic
 
 @router.get("/overview", response_model=InsightsOverviewResponse)
 async def get_insights_overview(
-    days: int = DEFAULT_INSIGHTS_DAYS, session_data: tuple[User, LoginRecord] = Depends(get_current_session), db: AsyncSession = Depends(get_db)
+    days: int = Query(DEFAULT_INSIGHTS_DAYS, ge=1, le=90), session_data: tuple[User, LoginRecord] = Depends(get_current_session), db: AsyncSession = Depends(get_db)
 ) -> dict[str, Any]:
     current_user, _ = session_data
     since = utc_now() - timedelta(days=days)

@@ -250,8 +250,16 @@ async def _resolve_embedding_provider(db: AsyncSession | None, user_id: int | No
     try:
         chain = await resolve_provider_chain(db, user_id, "embedding")
         if not chain:
-            # Fall back to the chat provider with the OpenAI-compatible default embedding model.
+            # Fall back to the chat provider with the OpenAI-compatible default embedding
+            # model, but only for providers that actually expose an OpenAI-shaped
+            # ``/v1/embeddings`` endpoint. Native providers (minimax uses ``texts`` not
+            # ``input``) would 404 / return malformed bodies — silently degrading
+            # semantic memory without surfacing the misconfiguration.
+            from .providers import OPENAI_COMPATIBLE_PROVIDERS
+
             llm_cfg = await resolve_provider_config(db, user_id, "llm")
+            if llm_cfg.provider_name not in OPENAI_COMPATIBLE_PROVIDERS:
+                return None
             chain = [
                 ProviderConfig(
                     base_url=llm_cfg.base_url, api_key=llm_cfg.api_key, model="text-embedding-3-small", service_type=ServiceType.embedding, provider_name=llm_cfg.provider_name

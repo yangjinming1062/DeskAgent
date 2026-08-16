@@ -25,13 +25,8 @@ class MiniMaxEmbeddingProvider(EmbeddingProvider):
         model = self.config.model or "embo-01"
         payload = {"model": model, "texts": texts, "type": "db"}
         resp = await self._http.post("/v1/embeddings", json=payload)
-        if resp.status_code != 200:
-            raise ProviderError(f"MiniMax embedding HTTP {resp.status_code}: {resp.text[:200]}", provider=self.provider_name, model=model, status_code=resp.status_code)
-        data = resp.json()
-        base_resp = data.get("base_resp") or {}
-        if base_resp.get("status_code", 0) != 0:
-            raise ProviderError(f"MiniMax embedding error: {base_resp.get('status_msg')}", provider=self.provider_name, model=model, status_code=resp.status_code)
-        vectors = data.get("vectors")
+        body = raise_for_minimax_response(resp, provider=self.provider_name, model=model)
+        vectors = body.get("vectors") if isinstance(body, dict) else None
         if not vectors or not isinstance(vectors, list):
-            raise ProviderError("MiniMax embedding returned empty or invalid vectors", provider=self.provider_name, model=model)
+            raise ProviderError("MiniMax embedding returned empty or invalid vectors", provider=self.provider_name, model=model, status_code=502)
         return vectors

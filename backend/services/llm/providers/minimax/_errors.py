@@ -1,4 +1,5 @@
 import base64
+import json
 
 from ..base import ProviderError
 
@@ -35,21 +36,30 @@ def raise_for_minimax_response(resp, *, provider: str, model: str) -> dict:
     map to 502 (provider upstream failure) instead of falling back to
     ``resp.status_code`` — the latter is often 200, which would tell
     error_classifier the call succeeded.
-    """
+
+    A non-numeric non-zero ``base_resp.status_code`` (e.g. a gateway
+    returning ``"SYSTEM_ERROR"``) raises ``ProviderError(502)`` instead
+    of silently treating the call as successful (which would happen if
+    we coerced ``inner_int = 0``)."""
     try:
         body = resp.json()
-    except Exception:
+    except (json.JSONDecodeError, ValueError):
         body = {}
 
     if isinstance(body, dict) and "base_resp" in body:
         base = body.get("base_resp") or {}
-        inner_code = base.get("status_code", 0)
+        raw_inner_code = base.get("status_code", 0)
         inner_msg = base.get("status_msg", "") or ""
-        if inner_code and inner_code != 0:
+        if raw_inner_code and raw_inner_code != 0:
             try:
-                inner_int = int(inner_code)
+                inner_int = int(raw_inner_code)
             except (TypeError, ValueError):
-                inner_int = 0
+                raise ProviderError(
+                    f"minimax {provider} non-numeric status_code: {raw_inner_code!r}",
+                    status_code=502,
+                    provider=provider,
+                    model=model,
+                ) from None
             if inner_int in (1013, 2013) and any(s in inner_msg.lower() for s in _ENTITLEMENT_SIGNALS):
                 http = 402
             elif inner_int in _BASE_RESP_TO_HTTP:
@@ -58,12 +68,8 @@ def raise_for_minimax_response(resp, *, provider: str, model: str) -> dict:
                 # Don't fall back to resp.status_code (likely 200); surface
                 # as a generic 502 so error_classifier marks it retryable.
                 http = 502
-            extra_body = {"error": {"code": str(inner_code), "message": inner_msg}, "base_resp": base}
-            # Don't pollute the message with internal marker words — the
-            # classifier uses the message TEXT to detect content-filter;
-            # using ``content_filter`` as a sentinel here makes sense only
-            # when the upstream actually mentioned it.
-            raise ProviderError(f"minimax {provider} error {inner_code}: {inner_msg}", status_code=http, body=extra_body, provider=provider, model=model)
+            extra_body = {"error": {"code": str(raw_inner_code), "message": inner_msg}, "base_resp": base}
+            raise ProviderError(f"minimax {provider} error {raw_inner_code}: {inner_msg}", status_code=http, body=extra_body, provider=provider, model=model)
         return body
 
     if resp.status_code >= 400:

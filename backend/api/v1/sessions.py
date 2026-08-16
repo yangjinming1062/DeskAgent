@@ -3,7 +3,7 @@ from typing import Literal
 from common import get_router
 from components import SEARCH_INPUT_MAX_LEN, SESSION_PREVIEW_MAX_CHARS, SETTINGS, SQL_LIKE_ESCAPE_CHAR, attachments_gc_session, get_db, get_logger, temp_files_gc_session
 from fastapi import Depends, HTTPException, Query
-from modules.auth import User, get_current_session
+from modules.auth import LoginRecord, User, get_current_session
 from modules.conversation import (
     Conversation,
     DesktopSessionInfo,
@@ -66,10 +66,10 @@ async def list_sessions(
     limit: int = 40,
     offset: int = 0,
     min_messages: int = 0,
-    archived: str = "exclude",
+    archived: Literal["only", "exclude", "include"] = "exclude",
     order: Literal["recent", "oldest"] = "recent",
     include_subagents: bool = False,
-    current: tuple[User, object] = Depends(get_current_session),
+    current: tuple[User, LoginRecord] = Depends(get_current_session),
     db: AsyncSession = Depends(get_db),
 ) -> DesktopSessionListResponse:
     user, _ = current

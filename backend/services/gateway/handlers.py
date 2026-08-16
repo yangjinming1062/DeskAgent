@@ -557,11 +557,15 @@ def _register_session_handlers(
         # MCP server configs live in $DESKAGENT_HOME/config.yaml on the runner's
         # host. The runner reloads lazily on the next mcp_* tool call, so we
         # only need to forward the reload signal — no server list to ship.
+        from .jsonrpc import redact_message
+
         try:
             return await dispatch_user_event(user_id, "mcp.reload", {}, dispatcher=dispatcher, timeout=60.0)
+        except asyncio.CancelledError:
+            return {"status": "cancelled"}
         except Exception as e:
             logger.warning("reload.mcp dispatch failed", extra={"error": str(e)})
-            return {"status": "runner_offline", "error": str(e)}
+            return {"status": "runner_offline", "error": redact_message(str(e))}
 
     dispatcher.register("session.create", session_create)
     dispatcher.register("session.resume", session_resume)
