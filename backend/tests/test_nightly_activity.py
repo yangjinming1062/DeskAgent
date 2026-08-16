@@ -902,7 +902,7 @@ async def test_stage_5_creation_pipeline(monkeypatch, _patch_db):
     async def _mock_preview(*a, **kw):
         return _MockPreview()
 
-    async def _mock_confirm(db, user_id, file_id, name, prompt, **kwargs):
+    async def _mock_confirm(*, user_id, file_id, name, prompt, db=None, **kwargs):
         item = WardrobeItem(
             user_id=user_id,
             name=name,
@@ -914,8 +914,9 @@ async def test_stage_5_creation_pipeline(monkeypatch, _patch_db):
             gift_reason=kwargs.get("gift_reason"),
             gift_message=kwargs.get("gift_message"),
         )
-        db.add(item)
-        await db.commit()
+        async with SessionLocal() as write_db:
+            write_db.add(item)
+            await write_db.commit()
         return item
 
     async def _mock_chain(db, uid, cap):

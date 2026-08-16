@@ -18,6 +18,7 @@ from modules.companion import (
     CompanionModelResponse,
     FullbodyGenerateRequest,
     ModelGenerateRequest,
+    Persona,
     PersonaResponse,
     PersonaUpdate,
     SpriteImageResponse,
@@ -82,7 +83,7 @@ from services.companion import (
     verify_signed_avatar_request,
     wardrobe_response,
 )
-from services.llm import MissingLlmConfigError, chat
+from services.llm import MissingLlmConfigError, chat, resolve_vision_chain
 from services.rate_limit import limiter
 from services.worker import queue as render_queue
 from sqlalchemy import select
@@ -91,6 +92,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 router = get_router()
 
 logger = get_logger(__name__)
+
+
+async def _resolve_persona_definition(db: AsyncSession, user_id: int) -> dict[str, str]:
+    """Read the persona's definition draft (short read; called inside a short session)."""
+    persona = (await db.execute(select(Persona).where(Persona.user_id == user_id))).scalar_one_or_none()
+    if persona is None:
+        return {}
+    draft = safe_json_loads(persona.definition_json or "{}", default={})
+    return draft if isinstance(draft, dict) else {}
 
 
 @router.get("/persona", response_model=PersonaResponse)
@@ -424,21 +434,26 @@ async def post_wardrobe(
     if job is None or job.status != "succeeded":
         raise HTTPException(status_code=504, detail={"error": "换装生成超时，请稍后重试"})
     result = job.result or {}
+    # Pre-resolve persona + vision chain in a short session so the LLM
+    # call inside confirm_wardrobe_item does not hold a pool connection.
+    async with SESSION_LOCAL() as pre_db:
+        persona_definition = await _resolve_persona_definition(pre_db, user.id)
+        vision_chain = await resolve_vision_chain(pre_db, user.id)
     try:
-        async with SESSION_LOCAL() as confirm_db:
-            item = await confirm_wardrobe_item(
-                confirm_db,
-                user_id=user.id,
-                file_id=result.get("file_id", ""),
-                name=body.name,
-                prompt=body.description,
-                normal_file_id=result.get("normal_file_id"),
-                roughness_file_id=result.get("roughness_file_id"),
-                metalness_file_id=result.get("metalness_file_id"),
-                displacement_file_id=result.get("displacement_file_id"),
-                mesh_file_id=result.get("mesh_file_id"),
-                assembly_json=result.get("assembly_json"),
-            )
+        item = await confirm_wardrobe_item(
+            user_id=user.id,
+            file_id=result.get("file_id", ""),
+            name=body.name,
+            prompt=body.description,
+            normal_file_id=result.get("normal_file_id"),
+            roughness_file_id=result.get("roughness_file_id"),
+            metalness_file_id=result.get("metalness_file_id"),
+            displacement_file_id=result.get("displacement_file_id"),
+            mesh_file_id=result.get("mesh_file_id"),
+            assembly_json=result.get("assembly_json"),
+            persona_definition=persona_definition,
+            vision_chain=vision_chain,
+        )
     except WardrobeSourceExpiredError as exc:
         raise HTTPException(status_code=409, detail={"error": "换装草稿已过期，请重新生成", "reason": str(exc)})
     except (RuntimeError, MissingLlmConfigError):
@@ -515,12 +530,16 @@ async def get_wardrobe_preview(job_id: int, auth: tuple[User, LoginRecord] = Dep
 
 @router.post("/wardrobe/confirm", response_model=WardrobeItemResponse, status_code=status.HTTP_201_CREATED)
 async def post_wardrobe_confirm(
-    body: WardrobeConfirmRequest, auth: tuple[User, LoginRecord] = Depends(get_current_session), db: AsyncSession = Depends(get_db)
+    body: WardrobeConfirmRequest, auth: tuple[User, LoginRecord] = Depends(get_current_session)
 ) -> WardrobeItemResponse:
     user, _ = auth
+    # Pre-resolve persona + vision chain in a short session so the LLM call
+    # inside confirm_wardrobe_item does not hold a pool connection.
+    async with SESSION_LOCAL() as pre_db:
+        persona_definition = await _resolve_persona_definition(pre_db, user.id)
+        vision_chain = await resolve_vision_chain(pre_db, user.id)
     try:
         item = await confirm_wardrobe_item(
-            db,
             user_id=user.id,
             file_id=body.file_id,
             name=body.name,
@@ -531,6 +550,8 @@ async def post_wardrobe_confirm(
             displacement_file_id=body.displacement_file_id,
             mesh_file_id=body.mesh_file_id,
             assembly_json=body.assembly_json,
+            persona_definition=persona_definition,
+            vision_chain=vision_chain,
         )
     except WardrobeSourceExpiredError as exc:
         raise HTTPException(status_code=409, detail={"error": "换装草稿已过期，请重新生成", "reason": str(exc)})

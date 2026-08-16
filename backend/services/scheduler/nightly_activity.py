@@ -46,7 +46,7 @@ from services.companion import (
     validate_and_sanitize_expression,
 )
 from services.conversation import CRON_KIND, MAIN_KIND, UI_ONLY_SUBTYPES
-from services.llm import call_llm_once, chat, resolve_provider_chain, resolve_user_llm_config
+from services.llm import call_llm_once, chat, resolve_provider_chain, resolve_user_llm_config, resolve_vision_chain
 from services.tools import AUTO_INJECT_SLOTS, INFERRED_PROFILE_SLOTS, KIND_TO_PREFIX, RECALL_TAGS
 
 from .cron_jobs import create_job
@@ -254,6 +254,16 @@ def _local_9am_cron(tz_str: str | None) -> str:
 
 
 # ── Pipeline Stages ───────────────────────────────────────────────────
+
+
+async def _nightly_resolve_persona_definition(db: AsyncSession, user_id: int) -> dict[str, str]:
+    """Read persona definition draft (short read; called inside a short session)."""
+    persona = (await db.execute(select(Persona).where(Persona.user_id == user_id))).scalar_one_or_none()
+    if persona is None:
+        return {}
+    from services.companion.persona_service import _load_draft  # late import to avoid cycles
+
+    return _load_draft(persona)
 
 
 async def _stage_1_daily_reflection(
@@ -560,28 +570,35 @@ async def _stage_5_creation(
         w_msg = str(wardrobe_spec.get("message") or "").strip()
         if w_name and w_desc:
             try:
-                async with session_scope() as db:
-                    preview = await preview_wardrobe_texture(db, user_id=user_id, description=w_desc)
-                    created_wardrobe_item = await confirm_wardrobe_item(
-                        db,
-                        user_id=user_id,
-                        file_id=preview.file_id,
-                        name=w_name,
-                        prompt=w_desc,
-                        normal_file_id=getattr(preview, "normal_file_id", None),
-                        roughness_file_id=getattr(preview, "roughness_file_id", None),
-                        metalness_file_id=getattr(preview, "metalness_file_id", None),
-                        displacement_file_id=getattr(preview, "displacement_file_id", None),
-                        equip=False,
-                        origin="companion",
-                        gift_state="pending",
-                        gift_reason=w_reason,
-                        gift_message=w_msg,
-                    )
-                    # Emit a wardrobe.gift event so an online client hydrates and
-                    # announces proactively. Offline clients pick it up on reconnect
-                    # via the WSEvent backlog, and the morning cron is the fallback.
-                    await emit_wardrobe_gift(user_id, name=w_name, message=w_msg or None, reason=w_reason or None)
+                # Preview (short session, read+image-gen LLM); then pre-resolve
+                # persona + vision chain (short read); then call confirm with
+                # db=None so its LLM call doesn't hold a pool connection across
+                # the multi-second await.
+                async with session_scope() as preview_db:
+                    preview = await preview_wardrobe_texture(preview_db, user_id=user_id, description=w_desc)
+                    persona_definition = await _nightly_resolve_persona_definition(preview_db, user_id)
+                    vision_chain = await resolve_vision_chain(preview_db, user_id)
+                created_wardrobe_item = await confirm_wardrobe_item(
+                    user_id=user_id,
+                    file_id=preview.file_id,
+                    name=w_name,
+                    prompt=w_desc,
+                    normal_file_id=getattr(preview, "normal_file_id", None),
+                    roughness_file_id=getattr(preview, "roughness_file_id", None),
+                    metalness_file_id=getattr(preview, "metalness_file_id", None),
+                    displacement_file_id=getattr(preview, "displacement_file_id", None),
+                    equip=False,
+                    origin="companion",
+                    gift_state="pending",
+                    gift_reason=w_reason,
+                    gift_message=w_msg,
+                    persona_definition=persona_definition,
+                    vision_chain=vision_chain,
+                )
+                # Emit a wardrobe.gift event so an online client hydrates and
+                # announces proactively. Offline clients pick it up on reconnect
+                # via the WSEvent backlog, and the morning cron is the fallback.
+                await emit_wardrobe_gift(user_id, name=w_name, message=w_msg or None, reason=w_reason or None)
             except Exception as exc:
                 logger.warning("nightly_activity: stage 5 wardrobe gift generation failed", extra={"user_id": user_id, "error": str(exc)})
 

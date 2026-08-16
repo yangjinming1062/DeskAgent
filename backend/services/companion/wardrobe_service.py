@@ -4,8 +4,8 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
-from components import download_capped, get_file_path, get_logger, parse_llm_json, safe_json_loads, save_file, temp_file_delete
-from modules.companion import Persona, WardrobeItem, WardrobePreviewResponse
+from components import SESSION_LOCAL, download_capped, get_file_path, get_logger, parse_llm_json, safe_json_loads, save_file, temp_file_delete
+from modules.companion import WardrobeItem, WardrobePreviewResponse
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -17,7 +17,7 @@ from .blender_llm_pipeline import _vision_llm_call
 from .garment_service import joint_names_from_gltf, run_garment_pipeline
 from .model_service import get_active_model
 from .outfit_normalizer import normalize_outfit
-from .persona_service import _load_draft, get_or_create_persona, update_outfit_field
+from .persona_service import get_or_create_persona, update_outfit_field
 from .rig_type_selector import select_rig_type
 
 logger = get_logger(__name__)
@@ -96,13 +96,6 @@ def _re_sign_texture(item: WardrobeItem) -> None:
     """Re-sign all companion-assets URLs on the item (5-min TTL)."""
     for attr, uid, filename in _iter_companion_asset_paths(item):
         setattr(item, attr, build_signed_asset_url(int(uid), filename))
-
-
-async def _persona_definition(db: AsyncSession, user_id: int) -> dict[str, str]:
-    persona = (await db.execute(select(Persona).where(Persona.user_id == user_id))).scalar_one_or_none()
-    if persona is None:
-        return {}
-    return _load_draft(persona)
 
 
 async def list_wardrobe(db: AsyncSession, user_id: int) -> list[WardrobeItem]:
@@ -413,7 +406,6 @@ async def preview_garment(
 
 
 async def confirm_wardrobe_item(
-    db: AsyncSession,
     *,
     user_id: int,
     file_id: str,
@@ -430,7 +422,16 @@ async def confirm_wardrobe_item(
     gift_state: str | None = None,
     gift_reason: str | None = None,
     gift_message: str | None = None,
+    persona_definition: dict[str, str] | None = None,
+    vision_chain: list | None = None,
+    db: AsyncSession | None = None,
 ) -> WardrobeItem:
+    """Write a wardrobe item. Caller pre-resolves ``persona_definition`` and
+    ``vision_chain`` in a short session so the LLM normalisation call does not
+    hold a DB connection across its multi-second await. ``db`` is opened
+    here only for the short write path (add/flush/commit/equip/sync) and
+    must be closed by the caller (or pass ``None`` to let this function
+    manage its own short session)."""
     res = get_file_path(file_id)
     if res is None:
         raise WardrobeSourceExpiredError(f"temp-media file expired for file_id {file_id}")
@@ -472,7 +473,16 @@ async def confirm_wardrobe_item(
     kind = asm_kind if mesh_url and asm_kind in ("garment", "accessory") else ("garment" if mesh_url else "texture")
     final_assembly = assembly_json or "{}"
 
-    outfit_desc = await normalize_outfit(chat, raw_input=prompt or name, persona_definition=await _persona_definition(db, user_id), user_id=user_id, db=db)
+    # LLM call uses db=None + caller-pre-resolved persona/vision_chain so the
+    # multi-second generation does not hold a pool connection.
+    outfit_desc = await normalize_outfit(
+        chat,
+        raw_input=prompt or name,
+        persona_definition=persona_definition,
+        user_id=user_id,
+        db=None,
+        vision_chain=vision_chain,
+    )
 
     item = WardrobeItem(
         user_id=user_id,
@@ -495,6 +505,23 @@ async def confirm_wardrobe_item(
         gift_reason=gift_reason,
         gift_message=gift_message,
     )
+    if db is None:
+        async with SESSION_LOCAL() as write_db:
+            return await _confirm_write(write_db, item, equip=equip, user_id=user_id)
+    if equip:
+        await _equip(db, item)
+    db.add(item)
+    await db.flush()
+    if equip:
+        await _sync_persona_outfit(db, user_id)
+    else:
+        await db.commit()
+    _re_sign_texture(item)
+    return item
+
+
+async def _confirm_write(db: AsyncSession, item: WardrobeItem, *, equip: bool, user_id: int) -> WardrobeItem:
+    """Short write path used when caller did not pass an open session."""
     if equip:
         await _equip(db, item)
     db.add(item)

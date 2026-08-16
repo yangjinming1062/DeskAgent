@@ -3388,7 +3388,6 @@ async def test_companion_gift_creation_and_decline_flow(monkeypatch, _patch_db):
     # Create gift costume item with equip=False, origin='companion', gift_state='pending'
     async with SessionLocal() as db:
         gift_item = await confirm_wardrobe_item(
-            db,
             user_id=uid,
             file_id="dummy_file_id",
             name="温暖羊毛衫",
@@ -3398,6 +3397,7 @@ async def test_companion_gift_creation_and_decline_flow(monkeypatch, _patch_db):
             gift_state="pending",
             gift_reason="昨晚你熬夜，想让你感觉温暖",
             gift_message="为您准备了一份特别的小礼物！",
+            db=db,
         )
         gift_id = gift_item.id
         assert gift_item.equipped is False
@@ -3842,7 +3842,6 @@ async def test_confirm_wardrobe_with_displacement_channel(monkeypatch, _patch_db
 
     async with SessionLocal() as db:
         item = await confirm_wardrobe_item(
-            db,
             user_id=uid,
             file_id="dummy_albedo",
             normal_file_id="dummy_normal",
@@ -3851,6 +3850,7 @@ async def test_confirm_wardrobe_with_displacement_channel(monkeypatch, _patch_db
             displacement_file_id="dummy_displacement",
             name="刺绣长袍",
             prompt="Embroidered robe",
+            db=db,
         )
         assert "wardrobe_texture.png" in item.texture_url
         assert "wardrobe_normal.png" in item.normal_url
