@@ -566,8 +566,15 @@ async def post_wardrobe_confirm(
 async def delete_wardrobe_preview(file_id: str, auth: tuple[User, LoginRecord] = Depends(get_current_session)) -> dict[str, bool]:
     """Best-effort delete of an unconfirmed wardrobe preview. Called when the
     Wardrobe Studio discards or closes so the temp-media file isn't held
-    until ``cleanup_expired`` sweeps it."""
-    return {"deleted": discard_wardrobe_preview(file_id)}
+    until ``cleanup_expired`` sweeps it. Cross-user deletes are refused."""
+    from components import TempFileMarkerMismatch
+
+    user, _ = auth
+    try:
+        deleted = discard_wardrobe_preview(file_id, user_id=user.id)
+    except TempFileMarkerMismatch:
+        raise HTTPException(status_code=403, detail="preview does not belong to current user")
+    return {"deleted": deleted}
 
 
 public_router = get_router()

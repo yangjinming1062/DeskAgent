@@ -25,8 +25,14 @@ def _media_path(file_id: str, ext: str) -> Path:
     return _storage_dir() / f"{file_id}.{ext}"
 
 
-def save_file(data: bytes, session_id: str, content_type: str, ext: str) -> tuple[str, str]:
-    """Save bytes to temp storage, return (file_id, public_url)."""
+def save_file(data: bytes, session_id: str, content_type: str, ext: str, *, meta_marker: str | None = None) -> tuple[str, str]:
+    """Save bytes to temp storage, return (file_id, public_url).
+
+    ``meta_marker`` is an opaque ownership/identity tag (e.g.
+    ``"wardrobe_preview:{user_id}"``); it lands in meta and is checked by
+    ``temp_file_delete`` so that DELETE /temp/{file_id} endpoints can refuse
+    cross-owner deletes. A failed meta write unlinks the data file to avoid
+    orphans without TTL tracking."""
     file_id = secrets.token_urlsafe(16)
     filepath = _media_path(file_id, ext)
 
@@ -34,11 +40,18 @@ def save_file(data: bytes, session_id: str, content_type: str, ext: str) -> tupl
         f.write(data)
 
     meta = {"path": str(filepath), "session_id": session_id, "created_at": time.time(), "content_type": content_type, "size": len(data)}
-    with open(_meta_path(file_id), "w") as f:
-        json.dump(meta, f)
+    if meta_marker is not None:
+        meta["marker"] = meta_marker
+    try:
+        with open(_meta_path(file_id), "w") as f:
+            json.dump(meta, f)
+    except OSError as exc:
+        _safe_unlink(filepath)
+        logger.warning("temp meta write failed; orphan removed", extra={"file_id": file_id, "error": str(exc)})
+        raise
 
     public_url = _build_public_url(file_id)
-    logger.info("Temp file saved", extra={"file_id": file_id, "size": len(data), "session_id": session_id})
+    logger.info("Temp file saved", extra={"file_id": file_id, "size": len(data), "session_id": session_id, "marker": meta_marker})
     return file_id, public_url
 
 
@@ -97,12 +110,21 @@ def gc_session(session_id: str) -> None:
         logger.info("Cleaned up session temp files", extra={"session_id": session_id, "count": count})
 
 
-def delete_file(file_id: str) -> bool:
+class TempFileMarkerMismatch(PermissionError):
+    """Caller-supplied ``required_marker`` does not match the file's recorded marker.
+
+    Raised by ``delete_file`` / ``temp_file_delete`` so the route layer can
+    translate to 403 / 404 without leaking existence to other users."""
+
+
+def delete_file(file_id: str, *, required_marker: str | None = None) -> bool:
     """Best-effort delete of a single temp-media file by id. Returns True when something was removed.
 
-    Caller is responsible for any authorisation checks; the helper is a thin
-    file-level unlink guarded against path traversal.
-    """
+    ``required_marker``: when set, the file's ``marker`` meta field must
+    equal this string (substring-equality on the prefix portion is allowed
+    so the route can pass ``"wardrobe_preview:"`` and the file may carry
+    ``"wardrobe_preview:{user_id}"``). Mismatch raises ``TempFileMarkerMismatch``
+    so the caller can distinguish cross-owner attempts from missing files."""
     if not file_id or "/" in file_id or "\\" in file_id or ".." in file_id:
         return False
     mp = _meta_path(file_id)
@@ -113,6 +135,12 @@ def delete_file(file_id: str) -> bool:
     except (json.JSONDecodeError, OSError):
         _safe_unlink(mp)
         return False
+    if required_marker is not None:
+        marker = meta.get("marker", "")
+        # Accept exact match or a known-prefix match so the caller may pass
+        # a category prefix like "wardrobe_preview:".
+        if not (marker == required_marker or marker.startswith(required_marker + ":") or marker.startswith(required_marker)):
+            raise TempFileMarkerMismatch(f"file_id {file_id!r} marker {marker!r} does not match required {required_marker!r}")
     _safe_unlink(Path(meta.get("path", "")))
     _safe_unlink(mp)
     return True

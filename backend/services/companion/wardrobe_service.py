@@ -274,7 +274,7 @@ async def _generate_pbr_channels(
             if fetched is None:
                 return None
             data, ct, ext = fetched
-            fid, pub_url = save_file(data, session_id="", content_type=ct, ext=ext)
+            fid, pub_url = save_file(data, session_id="", content_type=ct, ext=ext, meta_marker=f"wardrobe_preview:{user_id}")
             return pub_url, fid
         except Exception as exc:
             logger.warning("PBR texture channel generation failed", extra={"channel": ch, "error": str(exc)})
@@ -409,7 +409,7 @@ async def preview_garment(
     glb_bytes = garment_result
     res_dict, prompts = pbr_result
 
-    mesh_fid, mesh_url = save_file(glb_bytes, session_id="", content_type="model/gltf-binary", ext="glb")
+    mesh_fid, mesh_url = save_file(glb_bytes, session_id="", content_type="model/gltf-binary", ext="glb", meta_marker=f"wardrobe_preview:{user_id}")
     return _preview_response(res_dict, prompts, mesh_url=mesh_url, mesh_file_id=mesh_fid, kind=routing.kind, assembly_json=assembly)
 
 
@@ -580,14 +580,13 @@ async def _sync_persona_outfit(db: AsyncSession, user_id: int) -> None:
     await update_outfit_field(db, user_id, desc)
 
 
-def discard_wardrobe_preview(file_id: str) -> bool:
+def discard_wardrobe_preview(file_id: str, *, user_id: int) -> bool:
     """Best-effort delete of an unconfirmed wardrobe preview from temp-media.
 
-    Called by the Wardrobe Studio when the user discards or closes without
-    confirming; the file would otherwise linger until ``cleanup_expired``
-    sweeps it on the next TTL pass.
-    """
-    return temp_file_delete(file_id)
+    The marker written by ``save_file(meta_marker=f"wardrobe_preview:{user_id}")``
+    must match the caller's user_id — a cross-user DELETE on another user's
+    preview is rejected with ``TempFileMarkerMismatch``."""
+    return temp_file_delete(file_id, required_marker=f"wardrobe_preview:{user_id}")
 
 
 async def equip_wardrobe_item(db: AsyncSession, user_id: int, item_id: int) -> WardrobeItem:
