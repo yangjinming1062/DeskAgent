@@ -144,7 +144,7 @@ export class Engine {
     this.scene = new THREE.Scene()
 
     // Bust/half-body framing for a desktop companion.
-    this.camera = new THREE.PerspectiveCamera(35, size.width / size.height, 0.1, 50)
+    this.camera = new THREE.PerspectiveCamera(30, size.width / size.height, 0.1, 50)
     this.camera.position.set(0, 1.35, 2.8)
     this.camera.lookAt(0, 1.15, 0)
 
@@ -161,6 +161,7 @@ export class Engine {
       return
     }
 
+    this.character.root.updateMatrixWorld(true)
     const box = new THREE.Box3().setFromObject(this.character.root)
 
     if (box.isEmpty()) {
@@ -170,13 +171,13 @@ export class Engine {
     const size = box.getSize(new THREE.Vector3())
     const center = box.getCenter(new THREE.Vector3())
 
-    // Frame character so it fills ~88% of the viewport height nicely
+    // Frame character so it fills ~95% of the viewport height nicely
     const aspect = this.camera.aspect || 1
     const halfFovRad = THREE.MathUtils.degToRad(this.camera.fov / 2)
 
-    const distH = (size.y * 0.5) / Math.tan(halfFovRad)
-    const distW = (size.x * 0.5) / (Math.tan(halfFovRad) * aspect)
-    const dist = Math.max(distH, distW) * 1.15
+    const distH = ((size.y * 0.5) / Math.tan(halfFovRad)) * 1.04
+    const distW = ((size.x * 0.5) / (Math.tan(halfFovRad) * aspect)) * 1.04
+    const dist = Math.max(distH, distW)
 
     this.camera.position.set(0, center.y, Math.max(0.5, dist))
     this.camera.lookAt(0, center.y, 0)

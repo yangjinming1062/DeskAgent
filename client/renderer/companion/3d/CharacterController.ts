@@ -237,6 +237,7 @@ export class CharacterController {
   // root instead and keep no entry here.
   private units: AssembledUnit[] = []
   private bodyCollider: BodyCollider | null = null
+  private boneRestQuats = new Map<string, THREE.Quaternion>()
 
   constructor(physics: PhysicsBackend) {
     this.physics = physics
@@ -289,12 +290,19 @@ export class CharacterController {
           this.actions.set(clip.name, this.mixer.clipAction(clip))
         }
 
-        for (const clip of buildClipsForRig(rigType)) {
+        this.boneRestQuats.clear()
+        this.root.traverse(child => {
+          if (child instanceof THREE.Bone) {
+            this.boneRestQuats.set(child.name, child.quaternion.clone())
+          }
+        })
+
+        for (const clip of buildClipsForRig(rigType, this.boneRestQuats)) {
           this.actions.set(clip.name, this.mixer.clipAction(clip))
         }
 
         for (const def of this.injectedClipDefs) {
-          const clip = buildClip(def)
+          const clip = buildClip(def, this.boneRestQuats)
           this.actions.set(clip.name, this.mixer.clipAction(clip))
         }
 
@@ -359,6 +367,7 @@ export class CharacterController {
 
     this.units = []
     this.bodyCollider = null
+    this.boneRestQuats.clear()
     disposeObjectTree(this.root)
     this.root = new THREE.Group()
   }
@@ -370,7 +379,7 @@ export class CharacterController {
       this.injectedClipDefs.push(def)
 
       if (this.mixer) {
-        const clip = buildClip(def)
+        const clip = buildClip(def, this.boneRestQuats)
         this.actions.set(clip.name, this.mixer.clipAction(clip))
         this.actionNames.add(clip.name)
       }

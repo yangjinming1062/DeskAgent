@@ -147,19 +147,33 @@ export function Companion3D(): React.JSX.Element {
       ro.observe(eng.canvas)
       window.addEventListener('resize', onResize)
 
-      // Look-at — only when chat is closed AND not dragging (avoid head twitching while dragging/typing).
+      // Look-at — only when chat is closed AND hovering over the companion (avoids permanent tilt when mouse is elsewhere).
       const onPointerMove = (e: PointerEvent) => {
         if ($chatOpen.get() || $spatialLocomotion.get() === 'drag') {
+          eng.character.setLookTarget(0, 0)
+
           return
         }
 
         const rect = eng.canvas.getBoundingClientRect()
-        const nx = ((e.clientX - rect.left) / rect.width) * 2 - 1
-        const ny = ((e.clientY - rect.top) / rect.height) * 2 - 1
-        eng.character.setLookTarget(nx, ny)
+        const insideX = e.clientX >= rect.left && e.clientX <= rect.right
+        const insideY = e.clientY >= rect.top && e.clientY <= rect.bottom
+
+        if (insideX && insideY) {
+          const nx = ((e.clientX - rect.left) / rect.width) * 2 - 1
+          const ny = ((e.clientY - rect.top) / rect.height) * 2 - 1
+          eng.character.setLookTarget(nx, ny)
+        } else {
+          eng.character.setLookTarget(0, 0)
+        }
+      }
+
+      const onPointerLeave = () => {
+        eng.character.setLookTarget(0, 0)
       }
 
       eng.canvas.addEventListener('pointermove', onPointerMove)
+      eng.canvas.addEventListener('pointerleave', onPointerLeave)
 
       // Render-power tiers — resolves once immediately (boot locks to active
       // until the first model settles), then on every signal change.
@@ -183,6 +197,7 @@ export function Companion3D(): React.JSX.Element {
         window.removeEventListener('resize', onResize)
         ro.disconnect()
         eng.canvas.removeEventListener('pointermove', onPointerMove)
+        eng.canvas.removeEventListener('pointerleave', onPointerLeave)
       }
 
       return created

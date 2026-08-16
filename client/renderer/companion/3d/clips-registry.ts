@@ -52,10 +52,13 @@ export function getClipNames(rigType: RigType | string | null | undefined): read
   return Object.keys(getClipDefs(rigType))
 }
 
-export function buildClipsForRig(rigType: RigType | string | null | undefined): THREE.AnimationClip[] {
+export function buildClipsForRig(
+  rigType: RigType | string | null | undefined,
+  restQuats?: ReadonlyMap<string, THREE.Quaternion>
+): THREE.AnimationClip[] {
   const defs = getClipDefs(rigType)
 
-  return Object.values(defs).map(buildClip)
+  return Object.values(defs).map(def => buildClip(def, restQuats))
 }
 
 export interface RigClipSummary {

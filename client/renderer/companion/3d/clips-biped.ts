@@ -42,7 +42,7 @@ function _q(x: number, y: number, z: number): readonly [number, number, number, 
   return [_QUAT.x, _QUAT.y, _QUAT.z, _QUAT.w] as const
 }
 
-export function buildClip(def: ClipDef): THREE.AnimationClip {
+export function buildClip(def: ClipDef, restQuats?: ReadonlyMap<string, THREE.Quaternion>): THREE.AnimationClip {
   const tracks: THREE.QuaternionKeyframeTrack[] = []
 
   for (const [bone, kfs] of Object.entries(def.tracks)) {
@@ -52,11 +52,27 @@ export function buildClip(def: ClipDef): THREE.AnimationClip {
 
     const times: number[] = []
     const values: number[] = []
+    const restQ = restQuats?.get(bone)
 
     for (const kf of kfs) {
       times.push(kf.t)
-      const q = _q(...kf.r)
-      values.push(q[0], q[1], q[2], q[3])
+      _EULER.set(kf.r[0], kf.r[1], kf.r[2], 'XYZ')
+      _QUAT.setFromEuler(_EULER)
+
+      let qx = _QUAT.x
+      let qy = _QUAT.y
+      let qz = _QUAT.z
+      let qw = _QUAT.w
+
+      if (restQ) {
+        const finalQ = restQ.clone().multiply(_QUAT)
+        qx = finalQ.x
+        qy = finalQ.y
+        qz = finalQ.z
+        qw = finalQ.w
+      }
+
+      values.push(qx, qy, qz, qw)
     }
 
     tracks.push(new THREE.QuaternionKeyframeTrack(`${bone}.quaternion`, times, values))
@@ -154,21 +170,19 @@ export const BIPED_CLIPS: Readonly<Record<string, ClipDef>> = {
     loop: true,
     category: 'state',
     tracks: {
-      [_SPINE]: [kf(0, 0, 0, 0), kf(2, 0.04, 0, 0), kf(4, 0, 0, 0)],
+      [_SPINE]: [kf(0, 0, 0, 0), kf(2, 0.02, 0, 0), kf(4, 0, 0, 0)],
       [_SPINE1]: [
-        kf(0, 0, 0, 0.02),
-        kf(1, 0.02, 0.02, 0.03),
+        kf(0, 0, 0, 0.01),
+        kf(1, 0.01, 0.01, 0.02),
         kf(2, 0, 0, 0.01),
-        kf(3, -0.02, -0.02, -0.01),
-        kf(4, 0, 0, 0.02)
+        kf(3, -0.01, -0.01, 0),
+        kf(4, 0, 0, 0.01)
       ],
-      [_HEAD]: [kf(0, 0, 0.04, 0), kf(2, 0.05, -0.04, 0), kf(4, 0, 0.04, 0)],
-      [_LEFT_ARM]: [kf(0, 0.05, 0.05, 1.22), kf(2, 0.08, 0.03, 1.26), kf(4, 0.05, 0.05, 1.22)],
-      [_LEFT_FORE]: [kf(0, 0.15, 0, 0.1), kf(2, 0.22, 0, 0.12), kf(4, 0.15, 0, 0.1)],
-      [_RIGHT_ARM]: [kf(0, 0.05, -0.05, -1.22), kf(2, 0.08, -0.03, -1.26), kf(4, 0.05, -0.05, -1.22)],
-      [_RIGHT_FORE]: [kf(0, 0.15, 0, -0.1), kf(2, 0.22, 0, -0.12), kf(4, 0.15, 0, -0.1)],
-      [_LEFT_UP]: [kf(0, 0, 0, -0.03), kf(2, 0.02, 0, -0.02), kf(4, 0, 0, -0.03)],
-      [_RIGHT_UP]: [kf(0, 0, 0, 0.03), kf(2, -0.02, 0, 0.02), kf(4, 0, 0, 0.03)]
+      [_HEAD]: [kf(0, 0, 0.02, 0), kf(2, 0.03, -0.02, 0), kf(4, 0, 0.02, 0)],
+      [_LEFT_ARM]: [kf(0, 0.02, 0.02, 0.65), kf(2, 0.04, 0.01, 0.68), kf(4, 0.02, 0.02, 0.65)],
+      [_LEFT_FORE]: [kf(0, 0.1, 0, 0.05), kf(2, 0.14, 0, 0.06), kf(4, 0.1, 0, 0.05)],
+      [_RIGHT_ARM]: [kf(0, 0.02, -0.02, -0.65), kf(2, 0.04, -0.01, -0.68), kf(4, 0.02, -0.02, -0.65)],
+      [_RIGHT_FORE]: [kf(0, 0.1, 0, -0.05), kf(2, 0.14, 0, -0.06), kf(4, 0.1, 0, -0.05)]
     }
   },
   listening: {
@@ -177,13 +191,13 @@ export const BIPED_CLIPS: Readonly<Record<string, ClipDef>> = {
     loop: true,
     category: 'state',
     tracks: {
-      [_HEAD]: [kf(0, 0.08, 0.12, 0), kf(1.75, 0.06, 0.15, 0), kf(3.5, 0.08, 0.12, 0)],
-      [_SPINE]: [kf(0, -0.04, 0, 0), kf(1.75, -0.03, 0, 0), kf(3.5, -0.04, 0, 0)],
-      [_NECK]: [kf(0, -0.05, 0, 0), kf(1.75, -0.03, 0, 0), kf(3.5, -0.05, 0, 0)],
-      [_LEFT_ARM]: [kf(0, 0.06, 0.06, 1.2), kf(1.75, 0.08, 0.08, 1.22), kf(3.5, 0.06, 0.06, 1.2)],
-      [_LEFT_FORE]: [kf(0, 0.18, 0, 0.12), kf(1.75, 0.22, 0, 0.14), kf(3.5, 0.18, 0, 0.12)],
-      [_RIGHT_ARM]: [kf(0, 0.06, -0.06, -1.2), kf(1.75, 0.08, -0.08, -1.22), kf(3.5, 0.06, -0.06, -1.2)],
-      [_RIGHT_FORE]: [kf(0, 0.18, 0, -0.12), kf(1.75, 0.22, 0, -0.14), kf(3.5, 0.18, 0, -0.12)]
+      [_HEAD]: [kf(0, 0.04, 0.08, 0), kf(1.75, 0.03, 0.1, 0), kf(3.5, 0.04, 0.08, 0)],
+      [_SPINE]: [kf(0, -0.02, 0, 0), kf(1.75, -0.01, 0, 0), kf(3.5, -0.02, 0, 0)],
+      [_NECK]: [kf(0, -0.03, 0, 0), kf(1.75, -0.02, 0, 0), kf(3.5, -0.03, 0, 0)],
+      [_LEFT_ARM]: [kf(0, 0.03, 0.03, 0.65), kf(1.75, 0.05, 0.05, 0.68), kf(3.5, 0.03, 0.03, 0.65)],
+      [_LEFT_FORE]: [kf(0, 0.12, 0, 0.06), kf(1.75, 0.15, 0, 0.08), kf(3.5, 0.12, 0, 0.06)],
+      [_RIGHT_ARM]: [kf(0, 0.03, -0.03, -0.65), kf(1.75, 0.05, -0.05, -0.68), kf(3.5, 0.03, -0.03, -0.65)],
+      [_RIGHT_FORE]: [kf(0, 0.12, 0, -0.06), kf(1.75, 0.15, 0, -0.08), kf(3.5, 0.12, 0, -0.06)]
     }
   },
   thinking: {
