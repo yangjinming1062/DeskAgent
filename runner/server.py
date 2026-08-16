@@ -21,7 +21,19 @@ from tools.interrupt import set_global_interrupt, set_interrupt
 from tools.mcp import discover_mcp_tools, get_active_mcp_servers, reload_mcp_servers
 from tools.tool_output_limits import reset_cache
 from tools.toolsets import get_disabled_toolset_ids
-from utils import DesktopEndpoint, connect_desktop, disk_free_bytes, get_deskagent_home, network_reachable, read_endpoint, set_handler, set_inmemory_config, set_main_loop, snapshot
+from utils import (
+    DesktopEndpoint,
+    connect_desktop,
+    disk_free_bytes,
+    get_deskagent_home,
+    init_runner_job_object,
+    network_reachable,
+    read_endpoint,
+    set_handler,
+    set_inmemory_config,
+    set_main_loop,
+    snapshot,
+)
 
 logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger("deskagent_runner")
@@ -39,10 +51,6 @@ def _require_supported_host() -> None:
     if sys.platform not in {"win32", "darwin"}:
         raise SystemExit(f"DeskAgent Runner does not support the {sys.platform!r} host. Supported hosts are Windows and macOS only.")
 
-
-_require_supported_host()
-# utils imports trigger the Windows Job Object auto-init (import-time side
-# effect, see job_object.py); nothing else needed here.
 
 _ACTIVE_WS: Any | None = None
 _RUNNER_LOOP: asyncio.AbstractEventLoop | None = None
@@ -427,6 +435,8 @@ async def _build_info() -> dict[str, Any]:
 
 
 def main() -> None:
+    _require_supported_host()
+    init_runner_job_object()
     parser = argparse.ArgumentParser(description="DeskAgent Runner Server")
     parser.add_argument("--desktop-endpoint", required=True, help="Desktop IPC path (Windows named pipe or Unix socket path)")
     parser.add_argument("--desktop-auth", required=True, help="Desktop handshake token (from --desktop-auth at spawn)")

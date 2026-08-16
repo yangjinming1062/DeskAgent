@@ -56,7 +56,7 @@ runner/
 - **`runner_ready` capabilities 字段运行时探测**：`utils.capabilities.snapshot()` 真正枚举设备、调底层 API；不依赖 `import` 是否成功。**为什么不用静态 extra 标记**：依赖可能在 import 时报警但运行时仍可用，反过来亦然；运行时探测才是真值。
 - **环境共享态下沉到 `tools/terminal/environment/` 子包**：`file_tools` / `code_execution_tool` 跨包共享同一批 env 实例，绕开含命令处理 + 安全审批逻辑的 `terminal_tool` 避免循环依赖。
 - **reverse RPC 速率守卫**：Client 转发前统计单会话请求次数与载荷大小（硬上限 200 帧 / 1MB），防止 Runner 工具逻辑失控刷爆 LLM 额度。**为什么是 Client 而非 Backend**：Client 是流量入口，能在 IPC 边界做最严格的拒绝。
-- **Windows Job Object 内核级进程树生命周期绑定**：在 Windows 上启动时将 Runner 进程加入 `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` Job Object，派生的所有子进程/孙进程/PTY 终端自动原子级继承该 Job；Runner 异常崩溃或被杀时由 Windows 内核原子强杀全进程树，杜绝孤儿进程悬挂。
+- **Windows Job Object 内核级进程树生命周期绑定**：在 Windows 上 Runner 服务启动阶段（`server.py` 入口）显式将自身进程加入 `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` Job Object，派生的所有子进程/孙进程/PTY 终端自动原子级继承该 Job；模块导入无隐式副作用，Runner 异常崩溃或被杀时由 Windows 内核原子强杀全进程树，杜绝孤儿进程悬挂。
 - **Win32 `GetFinalPathNameByHandleW` 原生路径规范化**：针对 Windows 8.3 短文件名（`PROGRA~1`）、符号链接、目录联接点（Junction）及深层未创建子路径回溯解析真实路径；统一大小写不敏感比对、剥离 NT/UNC 设备前缀并拦截 NTFS 备用数据流（ADS）。
 - **Tirith 扫描作为 shell 命令前置过滤器**：所有 shell 命令执行前拉起本地 `tirith` 模块对参数签名与静态审查，默认实行 Fail-Secure（`tirith_fail_open=False`），二进制未安装时友好降级并告警。**为什么不在 LLM 层做**：LLM 层做参数校验是治标；Tirith 在执行边界做拦截更彻底。
 - **SSRF 在建连前 `getaddrinfo` + 建连时 httpx `event_hooks.connect` 双重校验**：仅 `getaddrinfo` 会被预检-建连之间的 DNS 重绑定绕过；httpx 的 connect 事件钩子捕获实际目标 IP 二次过滤。**为什么不只信任 URL 形式**：URL 形式不可信，`getaddrinfo` 后 host 可被重新解析。
@@ -88,4 +88,3 @@ runner/
 |------|------|
 | **TTY/stdin 不可用** | 所有 RPC 经本地 IPC 链路；任何 stdin 重定向或直接 console 输入都会与 C 库底层日志污染协议帧 |
 | **`probe_failed` 时 UI 降级需手动** | 部分能力可能仍可用，但 Client UI 收到 `probe_failed=true` 时整体降级；当前没有更细粒度的子能力独立上报 |
-| **Job Object 随 import 生效** | Windows 上导入 `utils.job_object` 即把导入进程绑进 KILL_ON_JOB_CLOSE Job（含 pytest 等测试进程）；解绑只能靠进程退出 |

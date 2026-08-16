@@ -1,4 +1,3 @@
-import contextlib
 import ctypes
 import logging
 import threading
@@ -133,9 +132,3 @@ def is_job_object_active() -> bool:
         return False
     with _job_lock:
         return _runner_job_handle is not None and _runner_job_handle != 0
-
-
-# Auto-initialize when module is loaded on Windows
-if IS_WINDOWS:
-    with contextlib.suppress(Exception):
-        init_runner_job_object()
