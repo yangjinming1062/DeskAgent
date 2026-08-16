@@ -81,6 +81,9 @@ ESLint `no-restricted-imports` 在 `renderer/companion/**` 与 `renderer/hub/**`
 - **STT 默认本地优先 / TTS 默认云端优先**（见 [DESIGN.md §7](../DESIGN.md)）：本地零成本，云端音色音质优；Engine 路由由 `main/ipc/media.cjs` 在 IPC 边界读 short-TTL 缓存决策（`auto` / `local` / `cloud` 三档），不暴露在 Desktop 设置面板——运维/部署侧决策。
 - **`voice id` 不跨引擎**：云端 voice id（provider 目录中的 id）与本地 voice id（Piper `en_US-amy-medium` 格式）属于不同命名空间；`media.cjs` 路由到本地时不传 caller 的 voice。用户在伙伴设置中选的音色仅在云端路径生效。
 - **3D 渲染栈 `WebGPURenderer` + 四层回退**：`Engine.create()` 异步工厂按 WebGPU 后端 → three 内置 WebGL2 后端（同一 API 面/场景图，零代码）→ 经典 `WebGLRenderer` → `EngineInitError`（static-sprite 层兜底，永不空白）逐级降级。经典回退必须换新 canvas——曾成功获取过 webgpu 上下文的 canvas 再也要不到 webgl2 上下文，所以 canvas 由 Engine 自建自管（React 只渲染容器），companion-3d 的 load/outfit effects 一律 await 引擎就绪 Promise 而非早退，避免首模型在异步 boot 窗口被静默丢弃。PMREMGenerator 按渲染器类型分支——经典版深度依赖 WebGLRenderer internals，传入 WebGPURenderer 构造期即抛。**为什么不停留在 WebGLRenderer**：混合显卡笔记本上 `powerPreference:'high-performance'` 会强制唤醒独显（桌宠场景远低于 dGPU 门槛），且 TSL compute 需要节点材质系统才能把布料物理搬进 GPU。
+- **3D 模型传输与本地缓存优化**：身体与服装 GLB 均采用 Draco 压缩（体积降低 5–10×），渲染端通过 `createGLTFLoader()`（集成 `DRACOLoader`，解码器由 Vite `assets/draco/` 本地托管）流式解压渲染；主进程按 `content_hash` 在 `$DESKAGENT_HOME/cache/models/` 磁盘缓存，支持 HTTP Range 断点续传与 LRU 淘汰。
+- **主进程 TypeScript 构建**：主进程源码使用 TypeScript (`main/*.ts`)，由 `tsup` 统一编译打包为 CJS 输出至 `dist-electron/`，与渲染进程共享严谨的静态类型校验。
+- **Windows 单实例锁 dev opt-out**：`DESKAGENT_DESKTOP_DISABLE_SINGLE_INSTANCE_LOCK=1` 强制多实例运行，便于并行调试窗口。
 
 ## 5. 与外部的契约
 
@@ -114,10 +117,5 @@ ESLint `no-restricted-imports` 在 `renderer/companion/**` 与 `renderer/hub/**`
 | **透明窗口平台差异** | 远程显示（X11/VNC/RDP）无法合成透明层，精灵窗口降级为非透明（`SPRITE_TRANSPARENT`）；macOS / Windows 本地会话支持良好 |
 | **WebGPURenderer 内部 rAF 不可停** | three 的 WebGPURenderer 在 `init()` 即启动内部 rAF 且无公开 stop；休眠档省掉的是 render 与 JS 更新，不是全部唤醒（µs 级空转，接受） |
 | **WebGPU 透明合成依赖 premultiplied** | `alpha:true` 时 three 自动以 `alphaMode:'premultiplied'` 配置 canvas；透明精灵窗下若出现黑晕/黑底即走回退链（决策写 dev log） |
-| **3D 模型传输与缓存机制** | 身体与服装 GLB 均采用 Draco 压缩（体积降低 5–10×），渲染端通过 `createGLTFLoader()`（集成 `DRACOLoader`，解码器由 Vite `assets/draco/` 本地托管）流式解压渲染；主进程按 `content_hash` 在 `$DESKAGENT_HOME/cache/models/` 磁盘缓存，支持 HTTP Range 断点续传与 LRU 淘汰 |
 | **几何服装与布料碰撞精度** | 服装与身体的碰撞由 CPU 代理网格（`BodyCollider`，~4096 顶点）结合骨骼球计算，在极端曲率处存在数毫米内的近似误差；换装 PBR 支持 5 通道（含 displacement 视差置换）。 |
-| **`voice-call-dock.tsx` useEffect 依赖故意省略 `[gatewayState]`** | 麦克风挂载/take-down 由 `[requestGateway]` 触发；reconnect 重入若再加 `gatewayState` 会再次重新挂麦克风导致当前通话被打断 |
 | **Electron 42 + pnpm 11 需 hoisted** | 失去 phantom-deps 防护；等 Electron ESM 主进程支持 |
-| **主进程 TypeScript 构建** | 主进程源码使用 TypeScript (`main/*.ts`)，由 `tsup` 统一编译打包为 CJS 输出至 `dist-electron/`，与渲染进程共享严谨的静态类型校验 |
-| **Windows 单实例锁 dev opt-out** | `DESKAGENT_DESKTOP_DISABLE_SINGLE_INSTANCE_LOCK=1` 强制多实例运行，便于并行调试窗口 |
-| **STT/TTS 引擎选择不在 Desktop 设置面板暴露** | 三档（`auto` / `local` / `cloud`）+ `stt.silent_fallback` 走 Backend 配置（`stt.engine` / `tts.engine`），不在 sprite UI 暴露 |

@@ -64,6 +64,8 @@ installer/
 - **`--reinstall` / `--repair` 跳过 fast path**：显式覆盖 fast path 进入完整 UI，让用户能修复已损坏的 install。**为什么不复用 fast path**：fast path 的本意是"已 install 一切正常，无需打扰用户"。
 - **Piper voice `content-based copy`**：只有当目标目录同时缺 `<id>.onnx` 和 `<id>.onnx.json` 时才拷贝，避免每次启动 install 都重写大文件。**为什么不每次都覆盖**：60MB × 3 个 voice × 每次 reinstall 都是几百 MB IO；content-based copy 让 reinstall 几乎零 IO。
 - **`DeskAgent-Setup --uninstall` 而非 Client 触发 uninstall**：所有平台变更职责集中在 Installer；Client 启动时只连云端 Backend，不调 `install.ps1` / `DeskAgent-Setup --uninstall`。**为什么不让 Client 自卸载**：卸载是 OS 级变更（移除 `$DESKAGENT_HOME` / `/Applications/DeskAgent.app` / 注册表 / 计划任务），Client 无足够权限（macOS 需要 sudo）。
+- **ZIP 格式解压路径自适应回退**：`DESKAGENT_INSTALLER_FORMAT=zip` 解压到 `$DESKAGENT_HOME` 时 desktop 不在 canonical 路径；`resolve_deskagent_desktop_exe` 额外回退 `$DESKAGENT_HOME/apps/DeskAgent/DeskAgent.exe`。
+- **`install.cmd` 开发期辅助脚本**：Windows cmd.exe 仅供本地开发调试兜底，生产环境 `bundle.resources` 不嵌入。
 
 ## 5. 与外部的契约
 
@@ -87,9 +89,5 @@ installer/
 
 | 限制 | 说明 |
 |------|------|
-| **蛋形象不随 installer 分发** | 角色定义完成前的"蛋"占位形象由 Client 内置默认渲染（`BrandMark` 组件），不经 installer seed payload；避免 payload 与形象资产版本耦合 |
-| **`install.cmd` 仅 dev 路径** | Windows cmd.exe 不可用时兜底；`bundle.resources` 不嵌入，仅 dev fallback |
 | **macOS fast path 不会自我检测损坏** | 三条件全满足时跳过 UI；用户需手动 `--repair` 走完整 reinstall |
 | **uv pip install 失败回退到阿里云镜像** | 网络隔离的企业用户需设 `DESKAGENT_PYPI_INDEX_URL` / `PIP_INDEX_URL` |
-| **ZIP 安装格式 desktop 路径回退** | `DESKAGENT_INSTALLER_FORMAT=zip` 解压到 `$DESKAGENT_HOME` 时 desktop 不在 canonical 路径；`resolve_deskagent_desktop_exe` 额外回退 `$DESKAGENT_HOME/apps/DeskAgent/DeskAgent.exe` |
-| **Self-contained install 脚本不下载更新** | DeskAgent-Setup 二进制**不**下载 install 脚本（项目不放在 GitHub，无可下载源）；脚本版本 = installer build 版本 |

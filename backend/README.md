@@ -78,6 +78,14 @@ backend/
   - **前置主动召回注入**：在主对话 turn 开始前自动根据当前输入匹配 Top-3 高相关 recall 记忆注入 System Prompt，免去 LLM 轮轮主动调用 `memory_recall` 的认知开销。
 - **Alembic 版本化迁移 + 启动自动 upgrade**：schema 由 `alembic/versions/` 版本化；lifespan 内 `asyncio.to_thread(_run_migrations)` 自动 `upgrade head`，无独立部署步骤。**为什么启动时跑**：单实例部署且无 CI/CD，应用启动是最不易漏的迁移时机。**存量库零接触**：检测到业务表但无 `alembic_version` 时先 stamp 到 baseline（0001）再 upgrade——规范化迁移（0002）全部幂等，对已匹配的库是 no-op。**autogenerate 两个坑**：(a) `modules.media.models`（video_gen_jobs）不被 `modules/__init__` 导入，`alembic/env.py` 的显式 import 勿删；(b) partial unique / hnsw / gin trgm 索引只存在于迁移文件（声明进模型会让 SQLite `create_all` 丢失 `WHERE` 语义变成全量唯一索引），env.py 的 `include_object` 因此跳过"仅存在于数据库"的索引——代价是从模型删除 Index 时 autogenerate 不会生成对应 `drop_index`，需手写。**严格比对**：`compare_type` + `compare_server_default` 全开，`alembic check` 必须零差异；`ModelBase.metadata` 带 naming convention（与 PG 默认约束名逐一致，新约束自动获得确定性名字，改约束名须走迁移）。
 - **全异步数据访问层（SQLAlchemy 2.0 async + asyncpg 单一连接池）**：所有 session 经 `components/database.py` 的 `create_async_engine`（asyncpg 驱动，20+10 连接）与 `AsyncSession`；路由、WS handler、调度协程内的 DB 读写不再阻塞事件循环。**为什么单池**：此前同步 psycopg 池与 asyncpg LISTEN 池并存（峰值 40 连接且职责重叠），合并后 30+1。**LISTEN 专线**：`ws_event_loop` 持一条进程生命周期专用的 asyncpg 直连（LISTEN 独占连接，连接池语义无用），断线 5s 自动重连，非 PG 后端传 None 走 60s 轮询回退。**AsyncSession 纪律**：关系属性访问必须显式 `selectinload`/`joinedload`（懒加载在 async 下直接抛 `MissingGreenlet`）；`db.add` 是同步方法不可 await（`db.delete`/`commit`/`refresh` 等为 async）。**timestamptz 纪律**：全库 DateTime 列均为 `timezone=True`，`utc_now()` 返回 aware UTC；asyncpg 对 timestamptz 参数强制 aware（naive 混入在绑定期即报错）；SQLite 读回丢失 tzinfo，跨方言的 datetime 算术需容错（见 `_compute_time_decay`）；存量 naive 值由 0004 迁移以 `AT TIME ZONE 'UTC'` 定锚，无时区漂移。**短事务纪律（session 不跨 LLM await）**：`run_chat_turn` 不接收 session——turn 起点（加载对话 + 写用户消息 + 装配输入）一个短 session，其后每个持久化点、工具批处理前后、压缩检查点各自开短 session；`NativeMemory(db=None)` 时每次记忆工具调用自开短 session；后台任务（persona 标签刷新 / 换装 onboarding / 后台记忆复习）按"读→LLM→写"三段各持短 session，LLM 调用经预解析的 provider chain（`_chain`/`provider_config`/`vision_chain` 旁路）以 `db=None` 执行。
+- **换装管线自然语言路由与分类机制**：`POST /api/companion/wardrobe/preview` 接收的描述由 LLM 语义分类为 `texture` / `garment` / `accessory` 并产出装配元数据（slot / socket / physics），分类失败默认走 `garment`（能力最全路径）。客户端不暴露 `kind` 字段——用户只输入自然语言描述，由后端自适应决定走哪条流水线。
+- **几何换装"LLM 毛坯 + 确定性后处理"分工**：LLM 负责毛坯几何生成与 `VG_ANCHOR` 锚点标注（语义理解优势），贴合/加厚/蒙皮/防穿模由确定性 bpy 算法接管（边界为 `_build_garment` 函数，保证数值几何可复现可校验）。参数表见 [MODEL_SPEC.md §4.2](../docs/MODEL_SPEC.md)。
+- **挂件（Accessory）硬质绑定管线**：accessory 作为硬质附件直接挂接 socket 骨骼，无需贴合、加厚与变形蒙皮——scaffold `--kind accessory` 分支直接导出并校验 GLB 可解析。
+- **骨骼 Socket 自动模糊匹配与去前缀**：针对 mixamo 导出的 `mixamorig:` 前缀差异，`_resolve_socket` 执行精确与去前缀两级匹配；匹配失败按槽位回退默认挂点（Head/RightHand/Spine2），再失败降级为 garment。
+- **装备槽位互斥与 Outfit 状态拼接**：`equip` 仅顶替同 `assembly_json.slot` 的已装备部件；persona outfit 字段镜像全部已装备部件描述的文本拼接。texture 恒占 `outfit` 槽。
+- **流式 Chat 一致性与错误隔离**：流式 chat 一旦首 chunk 已发不再 fallback，避免同一回合混合两个模型的输出造成上下文截断；失败统一 raise。LLM 下载临时媒体失败拦截原始 SDK 报错，返回标准短消息，避免误导性触发 LLM 回退。
+- **交互频控与汇总门限**：`companion.interact` 设 5 分钟封顶作为主动反应成本控制闸门，不影响自主行为与统计；`interaction_stats` 采用 OR 门限（poke/drag/chat_turn 达到 10 即写汇总），序列化 `hour_counts` 供夜间反思。
+- **MiniMax 内容风控快速失败**：`base_resp.status_code=1027` 映射到 `content_policy_blocked` 且 `retryable=False`，避免无意义重试白烧配额。
 
 ## 5. 与外部的契约
 
@@ -113,22 +121,11 @@ backend/
 | **web 单副本语义（chat 亲和）** | 运行时 chat 会话（流式 / `chat_task`）与 IPC future 在 process-local 内存，多 web 副本需粘性 WS 且不解决迁移互斥（lifespan 自动迁移无并发锁）；in-memory rate limit（slowapi）。`disturbance_tier` 与 cron 回合派发已跨副本安全。Render Worker 无进程内用户状态，可加副本 |
 | **AsyncSession 关系懒加载不可用** | 关系属性在查询后访问必须显式 `selectinload`/`joinedload` 预加载，否则运行时抛 `MissingGreenlet`；新增跨表访问时需同步补加载选项。 |
 | **MiniMax 视频 URL 短时效** | video_gen v2（H3）`poll` 直接返回 `download_url`，v1（Hailuo）还有 `files/retrieve` 第二跳；两者 URL 都是短时效的，必须**立即下载落 `data_dir/temp-media`**，不能直接返给前端 |
-| **MiniMax 内容风控 1027 不重试** | `base_resp.status_code=1027` 映射到 `content_policy_blocked` 且 `retryable=False`，避免重试三次白烧配额 |
-| **流式 chat 一旦首 chunk 已发不再 fallback** | 用户已看到部分输出，切换 provider 会造成 transcript 截断；失败统一 raise，由 HTTP envelope 走 `{error, reason, status}` |
 | **Cron kick 守卫** | 写行前的 `is_quiet` 守卫（tier 落库）；`cron.turn.request` 行只被持有该用户 WS 的副本认领执行，全副本离线时 10min GC 兜底清行——该次触发丢弃（`next_run_at` 已 CAS 前移，等下次调度） |
-| **附件 fetch 失败独立报错** | LLM 下载临时媒体失败（链接过期、网络隔离）拦截 Proxy 端原始 SDK 报错，返回 provider-agnostic 短消息，避免误导性触发 LLM 回退 |
-| **WS 鉴权失效（1008）立即退出重连** | 不在过期 token 状态下重试；用户重新激活后才恢复 |
 | **Obs 缺口** | 无 `/metrics` 端点、无 OpenTelemetry 集成；日志 stdout only，dev text / prod json |
-| **`companion.interact` 5 分钟封顶** | 5 分钟封顶是用户主动触发（poke/drag）反应的成本控制闸门，不作用于 `companion.should_act` 自主行为，也不压制 `companion.record_interaction_stats` 统计上报 |
-| **`interaction_stats` 汇总写门限** | `record_interaction` 用 OR 门限（poke/drag/chat_turn 任一 kind 达到 10 即写汇总），并在 content 序列化 `hour_counts` 供夜间 LLM 反射 |
 | **Blender+LLM 回退管线最坏时长** | 默认 10 轮迭代 × 单次 600s Blender timeout = ~100 分钟一次生成；全程在 worker 沙箱内执行，不占 web 进程。`worker_stale_reclaim_seconds` 必须大于该最坏值，否则在跑任务会被误回收重排队。`blender_llm_max_iterations` / `blender_llm_timeout` 可调 |
 | **Blender+LLM 模型质量** | 无 PBR 纹理（仅纯色 Principled BSDF 材质）、几何为 LLM 自由形式生成——视觉保真度显著低于 Tripo3D。LLM 在迭代内可比 preview vs 种子图 → 持续精修 |
 | **贴图换装受种子图皮肤可见度约束** | `kind=texture` 的 PBR 贴图换装受限于 Tripo 重建的皮肤区域——紧身覆盖款换到露出款会有色差/反光异常。`kind=garment` 的几何换装不受此约束（服装是独立 mesh，不走身体纹理迁移）。 |
 | **几何服装管线需 Blender + 较长生成时间** | `kind=garment` / `accessory` 经 LLM→Blender→evaluate 迭代生成几何，单次预览耗时数分钟（受 `blender_llm_max_iterations` × `blender_llm_timeout` 支配）；预览已异步化（202 + 轮询/事件，见 [PROTOCOL.md §1.8](../PROTOCOL.md)），HTTP 不再阻塞。garment GLB 导出复用身体 armature 保证关节一致，客户端零映射 rebind。 |
-| **换装路由由 LLM 决策而非用户选择** | `POST /api/companion/wardrobe/preview` 接收的描述由一次 LLM 调用分类为 `texture` / `garment` / `accessory` 并同时产出装配元数据（slot / socket / physics），分类失败默认走 `garment`（能力最全的路径）。客户端不暴露 `kind` 字段——用户只输入描述，由后端决定走哪条流水线。路由系统提示词与示例见 [wardrobe_service.py](services/companion/wardrobe_service.py)`_WARDROBE_KIND_CLASSIFIER_SYSTEM`。 |
 | **worker 挂 docker.sock = 宿主 root 面** | 沙箱执行器经 docker.sock 派生容器，持有该 socket 等效宿主 root；仅 compose `worker` 服务挂载、镜像内只装 docker-cli，多租户部署不得开启沙箱（`blender_sandbox_enabled=false` 时退回 worker 容器内裸 blender 子进程）。 |
-| **几何生成"LLM 毛坯 + 确定性后处理"分工** | LLM 只写毛坯几何 + `VG_ANCHOR` 锚点标注（轮廓/风格/锚点位置需要语义理解），贴合/加厚/蒙皮/防穿模全部由确定性 bpy 代码接管（数值几何问题必须可复现可校验）——两者边界 = `_build_garment` 函数。参数表见 [MODEL_SPEC.md §4.2](../docs/MODEL_SPEC.md)。 |
-| **挂件生成跳过后处理四阶段** | accessory 是硬质附件挂到 socket 骨骼，无需贴合/蒙皮/防穿模——scaffold `--kind accessory` 分支直接导出（并在导出前移除导入的身体对象），生成管线只校验 GLB 可解析。 |
-| **socket 从身体 GLB 实际关节名解析** | LLM 看到的骨骼名与 mixamo 导出的 `mixamorig:` 前缀可能不一致——`_resolve_socket` 做精确→去前缀两级匹配，失败按槽位回退默认挂点（Head/RightHand/Spine2），再失败降级为 garment。 |
-| **同槽互斥、异槽并存的多装备** | `equip` 只顶掉同 `assembly_json.slot` 的已装备件；persona outfit 字段镜像全部已装备件描述的拼接（不是单行）。texture 行恒占 `outfit` 槽。 |
 | **几何拟真度天花板** | 几何是程序化/LLM 生成，偏"干净"，达不到扫描级写实；通过生成期 Blender 布料重力悬垂烘焙（20 帧静态形变固化）、5 通道 PBR 贴图（含 displacement 微表面深度）与客户端 BodyCollider 表面防穿模推移提升拟真度。扫描级写实属于商业高成本管线边界，非工程缺陷。 |

@@ -7,7 +7,7 @@
 1. **阅读文档优先**：优先阅读[ARCHITECTURE.md](ARCHITECTURE.md)和[DESIGN.md](DESIGN.md)了解项目思路，处理具体模块前**先读**该模块 `README.md`。
 2. **同步更新文档**：修改源码/结构/导出/架构后，**同一提交**里同步该模块及所有受影响的 `README.md`。
 
-## 全局已知限制与平台支持策略
+## 平台支持策略与环境边界
 
 - **Backend**：通过 Docker 部署，仅在 Docker (Linux 基础镜像) 内运行，**无需维护 Windows / macOS 兼容性**。
 - **Runner / Desktop / Installer**：仅在 **Windows** 与 **macOS** 上原生运行（**不支持 Linux**）。由于依赖了如 pty、原生 subprocess 等与系统紧密相关的操作，需重点关注 Windows 的兼容性。Windows 兼容性缓解措施记录在各自模块的 `README.md` 与 `runner/README.md` 中。

@@ -62,6 +62,8 @@ runner/
 - **SSRF 在建连前 `getaddrinfo` + 建连时 httpx `event_hooks.connect` 双重校验**：仅 `getaddrinfo` 会被预检-建连之间的 DNS 重绑定绕过；httpx 的 connect 事件钩子捕获实际目标 IP 二次过滤。**为什么不只信任 URL 形式**：URL 形式不可信，`getaddrinfo` 后 host 可被重新解析。
 - **`probe_failed` 独立于 capabilities 字段**：当 capabilities 探测整体抛异常时返回 `true`，Client 应当把这条 handshake 视为"功能状态不可信"，结合 `deskagent.info` 进一步诊断。**为什么不一起返回在 capabilities**：部分能力可能仍可用，整体失败应让 UI 降级而非禁用。
 - **依赖显式声明而非 try-except import**：Runner 以 uv wheel 分发、装到用户机器后依赖集即冻结、无法中途增补——所有 pip 依赖一律显式声明在 `pyproject.toml`（含平台 marker，如 `pywinpty; win32` / `ptyprocess; !=win32`），一个依赖"有就是有、没有就是没有"，不需要在导入时再判断。`try/except ImportError` 只允许两类合法场景：① 运行时能力探测（`capabilities.py` 故意执行原生加载器的 import 验证二进制真能加载，而非 `find_spec` 存在性检查）；② OS 框架/平台导入（`ctypes` / `Quartz` / `AppKit` / `pythoncom` 等非 pip 依赖）。对已声明依赖（`psutil` / `piper` / `faster-whisper` / `pyttsx3` / `mcp`）残留的 try-except 属历史遗留（ruff `F823` 的 "legacy try-imports" 佐证），方向是移除。
+- **`execute_code` 沙箱 RPC 令牌鉴权**：每次代码执行生成一次性 Capability Token（env `DESKAGENT_RPC_TOKEN`），子进程首帧/请求文件校验；Windows loopback TCP 端点防范本地未授权进程访问。
+- **单进程 1:1 架构模型**：多用户或多实例场景下每个 Client 单独 spawn 专属 Runner 进程，天然隔离各用户的本地权限、环境变量与进程上下文。
 
 ## 5. 与外部的契约
 
@@ -85,7 +87,5 @@ runner/
 | 限制 | 说明 |
 |------|------|
 | **TTY/stdin 不可用** | 所有 RPC 经本地 IPC 链路；任何 stdin 重定向或直接 console 输入都会与 C 库底层日志污染协议帧 |
-| **单进程架构** | Runner 不支持水平扩展；多用户场景下每个 Client 单独 spawn 独立 Runner 进程 |
 | **`probe_failed` 时 UI 降级需手动** | 部分能力可能仍可用，但 Client UI 收到 `probe_failed=true` 时整体降级；当前没有更细粒度的子能力独立上报 |
 | **Job Object 随 import 生效** | Windows 上导入 `utils.job_object` 即把导入进程绑进 KILL_ON_JOB_CLOSE Job（含 pytest 等测试进程）；解绑只能靠进程退出 |
-| **execute_code 沙箱 RPC 需令牌** | 每次执行生成一次性 token（env `DESKAGENT_RPC_TOKEN`），子进程首帧/请求文件校验；Windows loopback TCP 端点因此不暴露给未持令牌的本地进程 |
