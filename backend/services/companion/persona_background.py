@@ -21,6 +21,17 @@ logger = get_logger(__name__)
 # drains can introspect the in-flight work.
 _TASKS: set[asyncio.Task] = set()
 
+
+async def drain() -> None:
+    """Cancel + await every background task; tolerates CancelledError."""
+    if not _TASKS:
+        return
+    pending = list(_TASKS)
+    for t in pending:
+        if not t.done():
+            t.cancel()
+    await asyncio.gather(*pending, return_exceptions=True)
+
 # Per-attempt timeout deliberately much shorter than ``call_with_retry``'s
 # 300s default — these tasks run in the background and a hung call must not
 # pin a worker indefinitely.

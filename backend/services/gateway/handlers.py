@@ -98,6 +98,24 @@ class UserGatewaySession:
 _USER_SESSIONS: dict[int, UserGatewaySession] = {}
 
 
+async def drain() -> None:
+    """Cancel every per-user background task held in ``UserGatewaySession``.
+
+    The module-level ``_avatar_regen_tasks`` is not drained here — by Commit 9
+    those tasks live only on the per-user ``background_tasks`` set."""
+    import itertools
+
+    pending: list[asyncio.Task] = []
+    for sess in _USER_SESSIONS.values():
+        pending.extend(sess.background_tasks)
+    if not pending:
+        return
+    for t in pending:
+        if not t.done():
+            t.cancel()
+    await asyncio.gather(*pending, return_exceptions=True)
+
+
 async def _noop_send(data: dict[str, Any]) -> None:
     pass
 

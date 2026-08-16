@@ -121,6 +121,23 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
         with contextlib.suppress(asyncio.CancelledError):
             await cleanup_task
 
+        # Drain in-flight module-level task sets before disposing the engine
+        # so SIGTERM doesn't leave coroutines holding pool connections mid-commit.
+        from services.scheduler.cron import drain as _cron_drain
+        from services.companion.persona_background import drain as _persona_drain
+        from services.media.video_jobs import drain as _video_drain
+        from services.gateway.connection import drain as _conn_drain
+        from services.gateway.handlers import drain as _handlers_drain
+
+        await asyncio.gather(
+            _cron_drain(),
+            _persona_drain(),
+            _video_drain(),
+            _conn_drain(),
+            _handlers_drain(),
+            return_exceptions=True,
+        )
+
         await stop_scheduler()
         await stop_ws_event_loop()
 

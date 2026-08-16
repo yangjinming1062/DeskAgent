@@ -52,6 +52,19 @@ def cancel_user_cron_turns(user_id: int) -> int:
     return cancelled
 
 
+async def drain() -> None:
+    """Flatten the per-user ``_cron_turn_tasks`` dict → cancel + await every task."""
+    pending: list[asyncio.Task] = []
+    for user_tasks in list(_cron_turn_tasks.values()):
+        pending.extend(user_tasks)
+    if not pending:
+        return
+    for t in pending:
+        if not t.done():
+            t.cancel()
+    await asyncio.gather(*pending, return_exceptions=True)
+
+
 logger = get_logger(__name__)
 
 

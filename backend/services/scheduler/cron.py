@@ -35,6 +35,21 @@ logger = get_logger(__name__)
 
 _BG_TASKS: set[asyncio.Task] = set()
 
+
+async def drain() -> None:
+    """Cancel + await every background task; tolerates CancelledError.
+
+    Called by ``main.py`` lifespan on shutdown so SIGTERM doesn't leave a
+    video poll / memory consolidator mid-``db.commit()`` when the engine
+    gets disposed."""
+    if not _BG_TASKS:
+        return
+    pending = list(_BG_TASKS)
+    for t in pending:
+        if not t.done():
+            t.cancel()
+    await asyncio.gather(*pending, return_exceptions=True)
+
 SCHEDULER_INTERVAL_SECONDS = 60
 
 # Per-user timestamp of last consolidator run. Process-local — matches the

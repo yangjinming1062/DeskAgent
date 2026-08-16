@@ -18,6 +18,17 @@ _INFLIGHT: set[int] = set()
 _BG_TASKS: set[asyncio.Task] = set()
 
 
+async def drain() -> None:
+    """Cancel + await every background video job task; tolerates CancelledError."""
+    if not _BG_TASKS:
+        return
+    pending = list(_BG_TASKS)
+    for t in pending:
+        if not t.done():
+            t.cancel()
+    await asyncio.gather(*pending, return_exceptions=True)
+
+
 async def _update_job(job_id: int, **fields) -> None:
     """Update a job row using a fresh short-lived session.
 
