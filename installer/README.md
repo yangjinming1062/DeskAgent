@@ -60,8 +60,7 @@ installer/
 - **uv-managed venv 而非 system Python**：通过 `uv` 安装 Python 到 uv 托管位置，venv 创建在 `$DESKAGENT_HOME/runner/.venv`。**为什么不依赖 system Python**：macOS 自带 Python 3（不会破坏）、Windows 默认无 Python、Linux 发行版差异大；依赖系统 Python 会让 install 兼容性变成无尽测试矩阵。**为什么不直接用 conda/venv**：uv 单一二进制 + 跨平台 + 5× 速度 + 内置 Python 安装，是当前最佳选择。
 - **install 协议 6 stage 拆分**：`welcome` → `install-python` → `unpack-runner` → `unpack-desktop` → `install-skills` → `finalize`。`finalize` 写 `.deskagent-bootstrap-complete` marker（runner 配置由 Client 经 WS 协议推送，不再经文件）。**为什么不一次性 `pip install` + `cp`**：分阶段让 Tauri 可以单独 retry / 单独回滚单 stage；崩溃可以从断点恢复；进度条粒度更细。
 - **uv pip install 失败后自动用镜像重试**：`DESKAGENT_PYPI_INDEX_URL` / `PIP_INDEX_URL` 环境变量优先，缺省阿里云镜像 `https://mirrors.aliyun.com/pypi/simple/`。**为什么不内置 pip mirror 配置**：用户自托管 / 企业代理场景下可能需要私有 index；env var 优先 + 兜底镜像覆盖大多数情况。
-- **macOS fast path**（前述）：让 `/Applications/DeskAgent.app` 兼任"首次启动走安装、之后是 launcher"——减少启动时的 UI 闪烁、避免每次启动都进入安装器界面。**代价**：fast path 跳过任何"组件已损坏需要 repair"的检测；用户需手动 `--repair`。
-- **`--reinstall` / `--repair` 跳过 fast path**：显式覆盖 fast path 进入完整 UI，让用户能修复已损坏的 install。**为什么不复用 fast path**：fast path 的本意是"已 install 一切正常，无需打扰用户"。
+- **macOS fast path 完整性自检与自愈**：让 `/Applications/DeskAgent.app` 兼任"首次启动走安装、之后是 launcher"——减少启动时的 UI 闪烁。`deskagent_is_installed()` 内部通过 `runner_venv_is_healthy()` 深度校验核心依赖（执行 Python 导入 `Sentinel`, `BaseMetadata`, `BaseModel`），若检测到 venv 损坏或关键组件丢失则自动回退到常规安装/修复流程；用户亦可显式传入 `--reinstall` / `--repair` 强制进入完整安装界面。
 - **Piper voice `content-based copy`**：只有当目标目录同时缺 `<id>.onnx` 和 `<id>.onnx.json` 时才拷贝，避免每次启动 install 都重写大文件。**为什么不每次都覆盖**：60MB × 3 个 voice × 每次 reinstall 都是几百 MB IO；content-based copy 让 reinstall 几乎零 IO。
 - **`DeskAgent-Setup --uninstall` 而非 Client 触发 uninstall**：所有平台变更职责集中在 Installer；Client 启动时只连云端 Backend，不调 `install.ps1` / `DeskAgent-Setup --uninstall`。**为什么不让 Client 自卸载**：卸载是 OS 级变更（移除 `$DESKAGENT_HOME` / `/Applications/DeskAgent.app` / 注册表 / 计划任务），Client 无足够权限（macOS 需要 sudo）。
 - **ZIP 格式解压路径自适应回退**：`DESKAGENT_INSTALLER_FORMAT=zip` 解压到 `$DESKAGENT_HOME` 时 desktop 不在 canonical 路径；`resolve_deskagent_desktop_exe` 额外回退 `$DESKAGENT_HOME/apps/DeskAgent/DeskAgent.exe`。
@@ -89,5 +88,4 @@ installer/
 
 | 限制 | 说明 |
 |------|------|
-| **macOS fast path 不会自我检测损坏** | 三条件全满足时跳过 UI；用户需手动 `--repair` 走完整 reinstall |
 | **uv pip install 失败回退到阿里云镜像** | 网络隔离的企业用户需设 `DESKAGENT_PYPI_INDEX_URL` / `PIP_INDEX_URL` |
