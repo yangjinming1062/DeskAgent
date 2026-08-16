@@ -290,12 +290,26 @@ async def handle_chat_websocket(websocket: WebSocket, token: str):
                                         t.cancel()
                                 target_sess.runtime_sessions.clear()
                             from .connection import cancel_user_cron_turns
+                            from services.companion.avatar_service import _avatar_job_locks
+                            from services.companion.model_service import _model_job_locks
 
                             cancel_user_cron_turns(uid)
                             MANAGER.unregister_dispatcher(uid)
                             _HANDSHAKE_LOCKS.pop(uid, None)
                             discard_user(uid)
                             REGISTRY.clear_runner_tools(uid)
+                            # Per-user process-local state — drop on full cleanup so
+                            # long-lived deployments don't monotonically grow these
+                            # dicts and so a stale ``_inflight_prompt`` doesn't lock
+                            # out the user's next prompt.submit with "user_busy".
+                            _inflight_prompt.discard(uid)
+                            _inflight_interact -= {(u, k) for u, k in _inflight_interact if u == uid}
+                            _last_interact_ts.pop(uid, None)
+                            _last_llm_respond_ts.pop(uid, None)
+                            _last_check_affect_ts.pop(uid, None)
+                            _last_should_act_ts.pop(uid, None)
+                            _avatar_job_locks.pop(uid, None)
+                            _model_job_locks.pop(uid, None)
                     except asyncio.CancelledError:
                         pass
 
@@ -876,11 +890,15 @@ def _register_session_handlers(
                 logger.debug("avatar.regenerated event push failed", extra={"user_id": user_id}, exc_info=True)
 
         task = asyncio.create_task(_run())
-        _avatar_regen_tasks.add(task)
-        task.add_done_callback(_avatar_regen_tasks.discard)
         if user_session is not None:
             user_session.background_tasks.add(task)
             task.add_done_callback(user_session.background_tasks.discard)
+        else:
+            # Belt-and-braces: when no per-user session exists yet, fall back
+            # to the module-level set so the task still has a strong reference
+            # until completion.
+            _avatar_regen_tasks.add(task)
+            task.add_done_callback(_avatar_regen_tasks.discard)
         return {"queued": True, "job_id": job_id}
 
     dispatcher.register("avatar.regenerate", avatar_regenerate)
