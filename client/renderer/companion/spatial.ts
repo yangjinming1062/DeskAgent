@@ -14,19 +14,19 @@ import { persistString, storedString } from '@/shared/lib/storage'
 
 export function getBaseSpriteHeight(): number {
   if (typeof window === 'undefined') {
-    return 270
+    return 360
   }
 
-  // Default height is 1/4 of display screen height, clamped within [200, 720]
-  return Math.round(Math.max(200, Math.min(window.innerHeight * 0.25, 720)))
+  // Default height is 1/3 of display screen height, clamped within [260, 960]
+  return Math.round(Math.max(260, Math.min(window.innerHeight / 3, 960)))
 }
 
 export function getBaseSpriteWidth(): number {
   return Math.round(getBaseSpriteHeight() * 0.85)
 }
 
-export const SPRITE_W = typeof window !== 'undefined' ? getBaseSpriteWidth() : 230
-export const SPRITE_H = typeof window !== 'undefined' ? getBaseSpriteHeight() : 270
+export const SPRITE_W = typeof window !== 'undefined' ? getBaseSpriteWidth() : 306
+export const SPRITE_H = typeof window !== 'undefined' ? getBaseSpriteHeight() : 360
 const REST_MARGIN = 24
 
 const WALK_SPEED = 80

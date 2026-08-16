@@ -13,6 +13,8 @@ export class LightingRig {
   private readonly fill: THREE.DirectionalLight
   private readonly rim: THREE.DirectionalLight
 
+  private readonly eyeLight: THREE.DirectionalLight
+
   // The env texture is the only part that survives construction; the classic
   // PMREMGenerator is bound to WebGLRenderer internals and the webgpu one to
   // the WebGPU backend, so the target handle differs per renderer kind.
@@ -38,12 +40,12 @@ export class LightingRig {
 
     scene.environment = this.envTexture
 
-    this.ambient = new THREE.AmbientLight(0xffffff, 0.15)
+    this.ambient = new THREE.AmbientLight(0xffffff, 0.3)
     scene.add(this.ambient)
 
     // Key — warm, front-left, casts the primary shadow.
-    this.key = new THREE.DirectionalLight(0xfff2e6, 2.0)
-    this.key.position.set(1.8, 2.5, 3.0)
+    this.key = new THREE.DirectionalLight(0xfff6ee, 2.2)
+    this.key.position.set(1.4, 2.2, 3.2)
     this.key.castShadow = true
     this.key.shadow.mapSize.set(2048, 2048)
     this.key.shadow.camera.near = 0.5
@@ -57,19 +59,24 @@ export class LightingRig {
     scene.add(this.key)
 
     // Fill — cool, front-right, softer; lifts shadow detail.
-    this.fill = new THREE.DirectionalLight(0xc4d8ff, 0.6)
-    this.fill.position.set(-2.0, 1.2, 2.5)
+    this.fill = new THREE.DirectionalLight(0xdbe8ff, 0.85)
+    this.fill.position.set(-1.6, 1.4, 2.6)
     scene.add(this.fill)
 
+    // Eye catchlight / face soft light — straight-on front for lively eyes
+    this.eyeLight = new THREE.DirectionalLight(0xffffff, 0.4)
+    this.eyeLight.position.set(0, 1.2, 2.8)
+    scene.add(this.eyeLight)
+
     // Rim — behind/above, creates edge separation from background.
-    this.rim = new THREE.DirectionalLight(0xe8d8ff, 0.9)
-    this.rim.position.set(0.5, 3.0, -3.5)
+    this.rim = new THREE.DirectionalLight(0xede6ff, 1.1)
+    this.rim.position.set(0.4, 2.6, -3.0)
     scene.add(this.rim)
   }
 
   dispose(scene: THREE.Scene): void {
     scene.environment = null
     this.disposeEnvTarget()
-    scene.remove(this.ambient, this.key, this.fill, this.rim)
+    scene.remove(this.ambient, this.key, this.fill, this.eyeLight, this.rim)
   }
 }

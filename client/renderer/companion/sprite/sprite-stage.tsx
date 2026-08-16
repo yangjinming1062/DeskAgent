@@ -53,6 +53,10 @@ export function SpriteStage({ children, onTap, onDoubleTap, onContextMenu }: Spr
 
   const pendingToggleRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  const pendingPosRef = useRef<{ x: number; y: number } | null>(null)
+  const pendingVelRef = useRef<{ vx: number; vy: number } | null>(null)
+  const dragRafRef = useRef<number | null>(null)
+
   const toggle = useCallback((enable: boolean) => {
     if (pendingToggleRef.current) {
       clearTimeout(pendingToggleRef.current)
@@ -102,9 +106,14 @@ export function SpriteStage({ children, onTap, onDoubleTap, onContextMenu }: Spr
     const onMove = (e: MouseEvent) => {
       lastPointRef.current = { x: e.clientX, y: e.clientY }
 
+      // Skip probing during active drag to avoid layout thrashing
+      if (dragRef.current) {
+        return
+      }
+
       if (isPointInteractive(e.clientX, e.clientY)) {
         capture()
-      } else if (!dragRef.current) {
+      } else {
         release()
       }
     }
@@ -112,7 +121,7 @@ export function SpriteStage({ children, onTap, onDoubleTap, onContextMenu }: Spr
     const probe = () => {
       const p = lastPointRef.current
 
-      if (p && isPointInteractive(p.x, p.y)) {
+      if (p && !dragRef.current && isPointInteractive(p.x, p.y)) {
         capture()
       }
     }
@@ -124,6 +133,11 @@ export function SpriteStage({ children, onTap, onDoubleTap, onContextMenu }: Spr
       window.removeEventListener('mousemove', onMove)
       setCaptureProbe(null)
       release()
+
+      if (dragRafRef.current !== null) {
+        cancelAnimationFrame(dragRafRef.current)
+        dragRafRef.current = null
+      }
     }
   }, [capture, release])
 
@@ -180,7 +194,19 @@ export function SpriteStage({ children, onTap, onDoubleTap, onContextMenu }: Spr
 
       const nextX = Math.round(d.originX + dx)
       const nextY = Math.round(d.originY + dy)
-      updateDragPosition({ x: nextX, y: nextY }, { vx, vy })
+
+      pendingPosRef.current = { x: nextX, y: nextY }
+      pendingVelRef.current = { vx, vy }
+
+      if (dragRafRef.current === null) {
+        dragRafRef.current = requestAnimationFrame(() => {
+          dragRafRef.current = null
+
+          if (pendingPosRef.current) {
+            updateDragPosition(pendingPosRef.current, pendingVelRef.current ?? undefined)
+          }
+        })
+      }
     }
   }
 
@@ -188,6 +214,17 @@ export function SpriteStage({ children, onTap, onDoubleTap, onContextMenu }: Spr
     ;(e.currentTarget as Element).releasePointerCapture?.(e.pointerId)
     const drag = dragRef.current
     dragRef.current = null
+
+    if (dragRafRef.current !== null) {
+      cancelAnimationFrame(dragRafRef.current)
+      dragRafRef.current = null
+    }
+
+    if (pendingPosRef.current) {
+      updateDragPosition(pendingPosRef.current, pendingVelRef.current ?? undefined)
+      pendingPosRef.current = null
+      pendingVelRef.current = null
+    }
 
     if (drag?.moved) {
       endDragAt($spatialPos.get())
@@ -224,13 +261,15 @@ export function SpriteStage({ children, onTap, onDoubleTap, onContextMenu }: Spr
         onPointerUp={onPointerUp}
         ref={mountRef}
         style={{
-          left: pos.x,
-          top: pos.y,
+          left: 0,
+          top: 0,
           width: `${spriteW}px`,
           height: `${spriteH}px`,
           pointerEvents: 'auto',
           touchAction: 'none',
-          transform: `scale(${scale})`
+          transform: `translate3d(${pos.x}px, ${pos.y}px, 0px) scale(${scale})`,
+          transformOrigin: 'top left',
+          willChange: 'transform'
         }}
       >
         {children}

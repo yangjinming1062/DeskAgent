@@ -5,21 +5,54 @@ import type { SpriteEmotion } from '@/companion/companion-store'
 /** Canonical semantic name → possible morph target names across model formats
  * (ARKit blendshapes, VRM expressions, Daz morphs, custom). The first alias
  * that exists in the loaded model's dictionary wins. */
-const ALIASES: Record<string, string[]> = {
-  blinkL: ['blink', 'eyeBlinkLeft', 'Blink_Left', 'blink_l', 'eye_blink_left'],
-  blinkR: ['blink', 'eyeBlinkRight', 'Blink_Right', 'blink_r', 'eye_blink_right'],
-  blink: ['blink', 'eyeBlink', 'eyesClosed', 'Blink', 'eye_blink'],
-  smile: ['mouthSmile', 'mouthSmileLeft', 'mouthSmile', 'Smile', 'smile', 'mouth_smile_left', 'happy'],
-  smileR: ['mouthSmileRight', 'Smile_R', 'mouth_smile_right', 'happy'],
-  frown: ['mouthFrown', 'mouthFrownLeft', 'Frown', 'frown', 'sad', 'mouth_frown_left'],
-  jawOpen: ['jawOpen', 'mouthOpen', 'Open', 'aa', 'mouth_open'],
-  browUp: ['browInnerUp', 'browUp', 'BrowRaise', 'brow_up'],
-  browDown: ['browInnerDown', 'browDown', 'BrowLower', 'brow_down'],
-  eyeWide: ['eyeWideLeft', 'eyeWide', 'EyeWide', 'eye_wide'],
-  eyeSquint: ['eyeSquintLeft', 'eyeSquint', 'Squint', 'eye_squint'],
-  cheekRaise: ['cheekSquintLeft', 'cheekRaise', 'CheekRaise', 'cheek_raise'],
-  eyelidDroop: ['eyesLookDown', 'eyelidDroop', 'eyeSquint', 'squint'],
-  tongueOut: ['tongueOut', 'TongueOut', 'tongue_out']
+const ALIASES: Record<string, string[][]> = {
+  blinkL: [['eyeBlinkLeft', 'Blink_Left', 'blink_l', 'eye_blink_left']],
+  blinkR: [['eyeBlinkRight', 'Blink_Right', 'blink_r', 'eye_blink_right']],
+  blink: [
+    ['blink', 'eyeBlink', 'eyesClosed', 'Blink', 'eye_blink'],
+    ['eyeBlinkLeft', 'Blink_Left', 'blink_l', 'eye_blink_left'],
+    ['eyeBlinkRight', 'Blink_Right', 'blink_r', 'eye_blink_right']
+  ],
+  smileL: [['mouthSmileLeft', 'Smile_L', 'mouth_smile_left']],
+  smileR: [['mouthSmileRight', 'Smile_R', 'mouth_smile_right']],
+  smile: [
+    ['mouthSmile', 'Smile', 'smile', 'happy'],
+    ['mouthSmileLeft', 'Smile_L', 'mouth_smile_left'],
+    ['mouthSmileRight', 'Smile_R', 'mouth_smile_right']
+  ],
+  frown: [
+    ['mouthFrown', 'Frown', 'frown', 'sad'],
+    ['mouthFrownLeft', 'Frown_L', 'mouth_frown_left'],
+    ['mouthFrownRight', 'Frown_R', 'mouth_frown_right']
+  ],
+  jawOpen: [['jawOpen', 'mouthOpen', 'Open', 'aa', 'mouth_open']],
+  browUp: [
+    ['browInnerUp', 'browUp', 'BrowRaise', 'brow_up'],
+    ['browOuterUpLeft', 'brow_outer_up_left'],
+    ['browOuterUpRight', 'brow_outer_up_right']
+  ],
+  browDown: [
+    ['browDown', 'BrowLower', 'brow_down'],
+    ['browDownLeft', 'browInnerDown', 'brow_down_left'],
+    ['browDownRight', 'brow_down_right']
+  ],
+  eyeWide: [
+    ['eyeWide', 'EyeWide', 'eye_wide'],
+    ['eyeWideLeft', 'eye_wide_left'],
+    ['eyeWideRight', 'eye_wide_right']
+  ],
+  eyeSquint: [
+    ['eyeSquint', 'Squint', 'eye_squint'],
+    ['eyeSquintLeft', 'eye_squint_left'],
+    ['eyeSquintRight', 'eye_squint_right']
+  ],
+  cheekRaise: [
+    ['cheekRaise', 'CheekRaise', 'cheek_raise'],
+    ['cheekSquintLeft', 'cheek_squint_left'],
+    ['cheekSquintRight', 'cheek_squint_right']
+  ],
+  eyelidDroop: [['eyesLookDown', 'eyelidDroop', 'eyeSquint', 'squint']],
+  tongueOut: [['tongueOut', 'TongueOut', 'tongue_out']]
 }
 
 /** Emotion → weighted semantic morph influences. Missing morphs are
@@ -90,17 +123,36 @@ export class MorphController {
       return
     }
 
-    for (const [semantic, aliases] of Object.entries(ALIASES)) {
+    for (const [semantic, aliasGroups] of Object.entries(ALIASES)) {
       const hits: [number, number][] = []
 
       for (let mi = 0; mi < this.meshes.length; mi++) {
         const dict = this.meshes[mi].morphTargetDictionary!
 
-        for (const alias of aliases) {
-          if (alias in dict) {
-            hits.push([mi, dict[alias]])
+        let unifiedMatched = false
 
-            break
+        if (aliasGroups.length > 1) {
+          for (const alias of aliasGroups[0]) {
+            if (alias in dict) {
+              hits.push([mi, dict[alias]])
+              unifiedMatched = true
+
+              break
+            }
+          }
+        }
+
+        if (!unifiedMatched) {
+          const startIdx = aliasGroups.length > 1 ? 1 : 0
+
+          for (let gi = startIdx; gi < aliasGroups.length; gi++) {
+            for (const alias of aliasGroups[gi]) {
+              if (alias in dict) {
+                hits.push([mi, dict[alias]])
+
+                break
+              }
+            }
           }
         }
       }

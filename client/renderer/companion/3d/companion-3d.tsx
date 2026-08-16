@@ -15,7 +15,7 @@ import { $personalityTags } from '@/companion/persona-store'
 import { $activeSprite, $glbLoadFailed, $staticMode } from '@/companion/static-sprite/sprite-store'
 import { log } from '@/shared/lib/log'
 
-import { $dragVelocity, $spatialLocomotion } from '../spatial'
+import { $dragVelocity, $spatialLocomotion, getBaseSpriteHeight, getBaseSpriteWidth } from '../spatial'
 
 import { Engine } from './Engine'
 import {
@@ -138,16 +138,23 @@ export function Companion3D(): React.JSX.Element {
       const detachLipSync = registerAmplitudeSink(amp => eng.character.setLipSyncAmplitude(amp))
 
       const onResize = () => {
-        const w = eng.canvas.clientWidth || window.innerWidth
-        const h = eng.canvas.clientHeight || window.innerHeight
+        const container = containerRef.current
+        const w = container?.clientWidth || eng.canvas.clientWidth || getBaseSpriteWidth()
+        const h = container?.clientHeight || eng.canvas.clientHeight || getBaseSpriteHeight()
         eng.resize(w, h)
       }
 
       const ro = new ResizeObserver(onResize)
-      ro.observe(eng.canvas)
+
+      if (containerRef.current) {
+        ro.observe(containerRef.current)
+      } else {
+        ro.observe(eng.canvas)
+      }
+
       window.addEventListener('resize', onResize)
 
-      // Look-at — only when chat is closed AND hovering over the companion (avoids permanent tilt when mouse is elsewhere).
+      // Look-at — smoothly track cursor when hovering over the companion without triggering DOM reflows
       const onPointerMove = (e: PointerEvent) => {
         if ($chatOpen.get() || $spatialLocomotion.get() === 'drag') {
           eng.character.setLookTarget(0, 0)
@@ -155,17 +162,11 @@ export function Companion3D(): React.JSX.Element {
           return
         }
 
-        const rect = eng.canvas.getBoundingClientRect()
-        const insideX = e.clientX >= rect.left && e.clientX <= rect.right
-        const insideY = e.clientY >= rect.top && e.clientY <= rect.bottom
-
-        if (insideX && insideY) {
-          const nx = ((e.clientX - rect.left) / rect.width) * 2 - 1
-          const ny = ((e.clientY - rect.top) / rect.height) * 2 - 1
-          eng.character.setLookTarget(nx, ny)
-        } else {
-          eng.character.setLookTarget(0, 0)
-        }
+        const cw = eng.canvas.clientWidth || getBaseSpriteWidth()
+        const ch = eng.canvas.clientHeight || getBaseSpriteHeight()
+        const nx = (e.offsetX / cw) * 2 - 1
+        const ny = (e.offsetY / ch) * 2 - 1
+        eng.character.setLookTarget(nx, ny)
       }
 
       const onPointerLeave = () => {

@@ -1131,11 +1131,14 @@ export class CharacterController {
   }
 
   private applyLookAt(): void {
-    const yaw = this.lookX * 0.15
-    const pitch = -this.lookY * 0.08 + this.dragTilt.x
-    const roll = this.dragTilt.z
+    // Subtle body yaw towards cursor
+    const yaw = this.lookX * 0.12
     this.root.rotation.y = THREE.MathUtils.lerp(this.root.rotation.y, yaw, 0.08)
-    this.root.rotation.x = THREE.MathUtils.lerp(this.root.rotation.x, pitch, 0.08)
+
+    // Drag physics inertia only during active drag (smoothly decays to 0 at rest)
+    const pitch = this.dragTilt.x * 0.4
+    const roll = this.dragTilt.z * 0.4
+    this.root.rotation.x = THREE.MathUtils.lerp(this.root.rotation.x, pitch, 0.1)
     this.root.rotation.z = THREE.MathUtils.lerp(this.root.rotation.z, roll, 0.1)
   }
 

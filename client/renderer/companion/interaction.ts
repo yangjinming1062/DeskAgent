@@ -145,14 +145,7 @@ export function handlePokeInteraction(): void {
 }
 
 export function handleHoverInteraction(): void {
-  if (hoverThrottleTimer) {
-    return
-  }
-
-  setSpriteState('interacting', { durationMs: 1500 })
-  hoverThrottleTimer = setTimeout(() => {
-    hoverThrottleTimer = null
-  }, 10000)
+  // Smooth hover: cursor tracking is handled directly by Look-At without interrupting clips
 }
 
 export function handleDragEndInteraction(): void {

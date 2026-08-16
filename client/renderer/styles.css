@@ -1178,6 +1178,12 @@ body:has(.recording-toolbar-root) {
     floor before the first sprite resolves (DESIGN.md §1.2). Breathing matches
     the procedural egg's 3.4s cadence family so the degraded mode still reads
     as alive. */
+.companion-3d-canvas {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+}
+
 .companion-3d-wrapper[data-static-covered='true'] .companion-3d-canvas {
   visibility: hidden;
 }

@@ -65,7 +65,7 @@ export function buildClip(def: ClipDef, restQuats?: ReadonlyMap<string, THREE.Qu
       let qw = _QUAT.w
 
       if (restQ) {
-        const finalQ = restQ.clone().multiply(_QUAT)
+        const finalQ = _QUAT.clone().multiply(restQ)
         qx = finalQ.x
         qy = finalQ.y
         qz = finalQ.z
@@ -170,19 +170,13 @@ export const BIPED_CLIPS: Readonly<Record<string, ClipDef>> = {
     loop: true,
     category: 'state',
     tracks: {
-      [_SPINE]: [kf(0, 0, 0, 0), kf(2, 0.02, 0, 0), kf(4, 0, 0, 0)],
-      [_SPINE1]: [
-        kf(0, 0, 0, 0.01),
-        kf(1, 0.01, 0.01, 0.02),
-        kf(2, 0, 0, 0.01),
-        kf(3, -0.01, -0.01, 0),
-        kf(4, 0, 0, 0.01)
-      ],
-      [_HEAD]: [kf(0, 0, 0.02, 0), kf(2, 0.03, -0.02, 0), kf(4, 0, 0.02, 0)],
-      [_LEFT_ARM]: [kf(0, 0.02, 0.02, 0.65), kf(2, 0.04, 0.01, 0.68), kf(4, 0.02, 0.02, 0.65)],
-      [_LEFT_FORE]: [kf(0, 0.1, 0, 0.05), kf(2, 0.14, 0, 0.06), kf(4, 0.1, 0, 0.05)],
-      [_RIGHT_ARM]: [kf(0, 0.02, -0.02, -0.65), kf(2, 0.04, -0.01, -0.68), kf(4, 0.02, -0.02, -0.65)],
-      [_RIGHT_FORE]: [kf(0, 0.1, 0, -0.05), kf(2, 0.14, 0, -0.06), kf(4, 0.1, 0, -0.05)]
+      [_SPINE]: [kf(0, 0, 0, 0), kf(2, 0.015, 0, 0), kf(4, 0, 0, 0)],
+      [_SPINE1]: [kf(0, 0, 0, 0), kf(2, 0.015, 0, 0), kf(4, 0, 0, 0)],
+      [_HEAD]: [kf(0, -0.02, 0, 0), kf(2, -0.01, 0, 0), kf(4, -0.02, 0, 0)],
+      [_LEFT_ARM]: [kf(0, 0.02, 0, 0.62), kf(2, 0.03, 0, 0.65), kf(4, 0.02, 0, 0.62)],
+      [_LEFT_FORE]: [kf(0, 0.08, 0, 0.02), kf(2, 0.1, 0, 0.03), kf(4, 0.08, 0, 0.02)],
+      [_RIGHT_ARM]: [kf(0, 0.02, 0, -0.62), kf(2, 0.03, 0, -0.65), kf(4, 0.02, 0, -0.62)],
+      [_RIGHT_FORE]: [kf(0, 0.08, 0, -0.02), kf(2, 0.1, 0, -0.03), kf(4, 0.08, 0, -0.02)]
     }
   },
   listening: {
@@ -296,10 +290,10 @@ export const BIPED_CLIPS: Readonly<Record<string, ClipDef>> = {
     loop: false,
     category: 'state',
     tracks: {
-      [_SPINE]: [kf(0, 0, 0, 0), kf(0.15, -0.06, 0, 0), kf(0.6, 0, 0, 0), kf(1.5, 0, 0, 0)],
-      [_HEAD]: [kf(0, 0, 0, 0), kf(0.3, 0.12, 0.25, 0), kf(1.5, 0, 0, 0)],
-      [_LEFT_ARM]: [kf(0, 0.05, 0.05, 1.22), kf(0.3, -0.1, 0.1, 1.0), kf(1.5, 0.05, 0.05, 1.22)],
-      [_RIGHT_ARM]: [kf(0, 0.05, -0.05, -1.22), kf(0.3, -0.1, -0.1, -1.0), kf(1.5, 0.05, -0.05, -1.22)]
+      [_SPINE]: [kf(0, 0, 0, 0), kf(0.3, 0.02, 0, 0), kf(1.5, 0, 0, 0)],
+      [_HEAD]: [kf(0, 0, 0, 0), kf(0.3, 0.04, 0, 0), kf(1.5, 0, 0, 0)],
+      [_LEFT_ARM]: [kf(0, 0.02, 0, 0.62), kf(0.3, 0.06, 0, 0.7), kf(1.5, 0.02, 0, 0.62)],
+      [_RIGHT_ARM]: [kf(0, 0.02, 0, -0.62), kf(0.3, 0.06, 0, -0.7), kf(1.5, 0.02, 0, -0.62)]
     }
   },
   emotional_idle: {

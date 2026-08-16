@@ -3,6 +3,8 @@ import { WebGPURenderer } from 'three/webgpu'
 
 import { log } from '@/shared/lib/log'
 
+import { getBaseSpriteHeight, getBaseSpriteWidth } from '../spatial'
+
 import { CharacterController } from './CharacterController'
 import { reportBackend, reportFrameStats } from './engine-diagnostics'
 import { LightingRig } from './LightingRig'
@@ -32,15 +34,21 @@ const MAX_FRAME_DELTA = 0.05
 function makeCanvas(container: HTMLElement): HTMLCanvasElement {
   const canvas = document.createElement('canvas')
   canvas.className = 'companion-3d-canvas'
+  canvas.style.width = '100%'
+  canvas.style.height = '100%'
+  canvas.style.display = 'block'
   container.appendChild(canvas)
 
   return canvas
 }
 
-// Same sizing handshake as a React-rendered canvas: read the layout box the
-// unstyled 300x150 default canvas occupies inside the shrink-wrapping stage.
+// Read the layout box the canvas occupies inside the companion container.
 function readCanvasSize(canvas: HTMLCanvasElement): { width: number; height: number } {
-  return { width: canvas.clientWidth || 320, height: canvas.clientHeight || 320 }
+  const parent = canvas.parentElement
+  const width = parent?.clientWidth || canvas.clientWidth || getBaseSpriteWidth()
+  const height = parent?.clientHeight || canvas.clientHeight || getBaseSpriteHeight()
+
+  return { width, height }
 }
 
 export class Engine {
@@ -133,7 +141,7 @@ export class Engine {
     this.canvas = canvas
 
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
-    this.renderer.setSize(size.width, size.height)
+    this.renderer.setSize(size.width, size.height, false)
     this.renderer.setClearColor(0x000000, 0)
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping
     this.renderer.toneMappingExposure = 1.0
@@ -143,10 +151,10 @@ export class Engine {
 
     this.scene = new THREE.Scene()
 
-    // Bust/half-body framing for a desktop companion.
-    this.camera = new THREE.PerspectiveCamera(30, size.width / size.height, 0.1, 50)
-    this.camera.position.set(0, 1.35, 2.8)
-    this.camera.lookAt(0, 1.15, 0)
+    // Straight-on (face-to-face) telephoto portrait camera setup — 14° FOV provides true orthographic-like parallel perspective, eliminating chin/feet keystoning
+    this.camera = new THREE.PerspectiveCamera(14, size.width / size.height, 0.1, 50)
+    this.camera.position.set(0, 0.9, 6.0)
+    this.camera.lookAt(0, 0.9, 0)
 
     this.lighting = new LightingRig(this.scene, this.renderer)
 
@@ -162,25 +170,80 @@ export class Engine {
     }
 
     this.character.root.updateMatrixWorld(true)
-    const box = new THREE.Box3().setFromObject(this.character.root)
 
-    if (box.isEmpty()) {
-      return
+    // Check if we have skeleton bones to calculate real posed/skinned world positions
+    const bones: THREE.Bone[] = []
+    this.character.root.traverse(child => {
+      if (child instanceof THREE.Bone) {
+        bones.push(child)
+      }
+    })
+
+    let minY = Infinity
+    let maxY = -Infinity
+    let minX = Infinity
+    let maxX = -Infinity
+
+    if (bones.length >= 3) {
+      const v = new THREE.Vector3()
+
+      for (const bone of bones) {
+        bone.getWorldPosition(v)
+
+        if (v.y < minY) {
+          minY = v.y
+        }
+
+        if (v.y > maxY) {
+          maxY = v.y
+        }
+
+        if (v.x < minX) {
+          minX = v.x
+        }
+
+        if (v.x > maxX) {
+          maxX = v.x
+        }
+      }
+
+      // Add generous head top clearance (~26cm above Head bone for skull, hair buns, and volume)
+      // and foot sole clearance (~6cm below Foot/Toe bone for shoes and ground plane)
+      maxY += 0.26
+      minY -= 0.06
+    } else {
+      // Fallback: Box3 from meshes
+      const box = new THREE.Box3().setFromObject(this.character.root)
+
+      if (box.isEmpty()) {
+        return
+      }
+
+      minY = box.min.y
+      maxY = box.max.y
+      minX = box.min.x
+      maxX = box.max.x
     }
 
-    const size = box.getSize(new THREE.Vector3())
-    const center = box.getCenter(new THREE.Vector3())
+    const height = Math.max(0.1, maxY - minY)
+    const centerY = (minY + maxY) / 2
+    const centerX = (minX + maxX) / 2
 
-    // Frame character so it fills ~95% of the viewport height nicely
-    const aspect = this.camera.aspect || 1
+    // Straight-on face-to-face framing:
+    // The camera is placed horizontally level with the character's vertical center.
+    // Height fill ratio ~87% ensures ~6.5% breathing room above hair and below feet,
+    // completely eliminating top-of-head cropping while filling the 1/3 screen window.
+    const aspect = this.camera.aspect || getBaseSpriteWidth() / getBaseSpriteHeight()
     const halfFovRad = THREE.MathUtils.degToRad(this.camera.fov / 2)
 
-    const distH = ((size.y * 0.5) / Math.tan(halfFovRad)) * 1.04
-    const distW = ((size.x * 0.5) / (Math.tan(halfFovRad) * aspect)) * 1.04
-    const dist = Math.max(distH, distW)
+    const distH = (height * 0.5) / (Math.tan(halfFovRad) * 0.87)
+    const widthSpan = Math.max(Math.min(maxX - minX, height * 0.65), height * 0.42)
+    const distW = (widthSpan * 0.5) / (Math.tan(halfFovRad) * aspect * 0.85)
+    const dist = Math.max(distH, distW, 0.5)
 
-    this.camera.position.set(0, center.y, Math.max(0.5, dist))
-    this.camera.lookAt(0, center.y, 0)
+    // Level straight-on camera (pitch = 0°, eye-level horizontal line of sight)
+    this.camera.position.set(centerX, centerY, dist)
+    this.camera.lookAt(centerX, centerY, 0)
   }
 
   async loadCharacter(bytes: ArrayBuffer | null, rigType: string = 'biped'): Promise<LoadedModelInfo> {
@@ -313,7 +376,7 @@ export class Engine {
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
     this.camera.aspect = width / height
     this.camera.updateProjectionMatrix()
-    this.renderer.setSize(width, height)
+    this.renderer.setSize(width, height, false)
     this.frameCharacter()
   }
 
