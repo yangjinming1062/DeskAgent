@@ -55,13 +55,7 @@ def _export_glb(output_path: str) -> None:
         export_skins=True,
         export_morph=False,
         export_animations=False,
-        export_draco_mesh_compression_enable=True,
-        export_draco_mesh_compression_level=6,
-        export_draco_position_quantization=14,
-        export_draco_normal_quantization=10,
-        export_draco_texcoord_quantization=12,
-        export_draco_color_quantization=10,
-        export_draco_generic_quantization=12,
+        export_draco_mesh_compression_enable=False,
     )
 
 

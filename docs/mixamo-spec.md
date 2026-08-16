@@ -51,7 +51,22 @@ Hips
 
 ---
 
-## 4. API 调用参数
+## 4. 管线清洗与规范化契约
+
+Tripo3D 在 `spec=mixamo` 模式下生成的原始 GLB/FBX 通常具备以下特征：
+- 骨骼命名自带 `mixamorig:` 前缀（例如 `mixamorig:Hips`、`mixamorig:Spine`）；
+- 原始坐标系可能为侧向建模（双臂沿 Y 轴展开，正面朝向 -X）；
+- 场景中可能附带未绑定的辅助几何体（如 `Icosphere`）。
+
+**后端形变注入管线（`inject_morph_targets.py`）的规范化职责**：
+1. **网格提取与清理**：精准筛选挂载在骨架上的蒙皮材质网格，剥离 `Icosphere` 等辅助体；
+2. **坐标系前向对齐**：自动检测手臂展开方向，对侧向模型旋转对齐至前向标准坐标系（双臂沿 X 轴对称展开，正面朝向镜头）；
+3. **命名清洗**：自动去除所有骨骼及对应蒙皮顶点组（Vertex Groups）的 `mixamorig:` 前缀，输出符合本规范的纯净 Mixamo 骨骼树；
+4. **ARKit 形变注入**：基于 Head 骨骼局部坐标精确定位五官与面部区域，注入 44 组 ARKit Blendshapes。
+
+---
+
+## 5. API 调用参数
 
 Tripo3D `POST /v3/animations/rig`：
 
@@ -68,9 +83,10 @@ Tripo3D `POST /v3/animations/rig`：
 
 ---
 
-## 5. 参考实现
+## 6. 参考实现
 
 - 骨骼路由：`backend/services/companion/tripo_client.py`（`_RIG_SPECS`、
   `_RIG_MODEL_VERSIONS`、`rig_spec()`、`rig_model_version()`）
+- 形变与规范化管线：`backend/assets/animations/inject_morph_targets.py`
 - biped clip 库：`client/renderer/companion/3d/clips-biped.ts`（动画库中所有
   `bone` 常量）
