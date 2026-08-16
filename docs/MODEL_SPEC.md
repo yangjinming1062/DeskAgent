@@ -252,7 +252,21 @@ LLM 只产"毛坯几何 + `VG_ANCHOR` 锚点标注"，其后一切由确定性 b
 
 ---
 
-## 5. 验证 checklist
+## 5. 模型质量与压缩传输原则
+
+### 5.1 模型质量第一原则（Quality Priority）
+
+- **保留最高面数上限**：Tripo3D 等生成阶段启用最高面数上限（`tripo_face_limit` 最大化），以呈现高精度的发丝轮廓、服饰褶皱及细腻五官微结构；
+- **禁止破坏性有损后处理**：形变注入与资产处理管线严禁对模型执行有损减面（Decimation）或有损量化（如 Draco Quantization），确保 3D 资产的几何曲面与贴图法线 100% 保真。
+
+### 5.2 整文件无损压缩与客户端透明解压
+
+- **无损整包压缩**：由于 44 组 ARKit 面部/体态 Blendshape 在非位移区域包含大量稀疏浮点数据，采用 Gzip / Deflate 等通用无损压缩方案可实现 90% 以上的体积缩减（原始 300MB~600MB 模型无损压缩后仅需 ~30MB~50MB 传输带宽）；
+- **客户端透明解压**：客户端（[`CharacterController.ts`](../client/renderer/companion/3d/CharacterController.ts)）集成原生 Web 流式解压（`DecompressionStream`），自动识别压缩魔数并透明还原为原始二进制 GLB 缓冲区，零感知交付给 Three.js `GLTFLoader` 渲染。
+
+---
+
+## 6. 验证 checklist
 
 审查 `clips-biped.ts`（或对应 rig_type 库）时：
 

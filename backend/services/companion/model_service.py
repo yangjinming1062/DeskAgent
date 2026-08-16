@@ -15,7 +15,7 @@ from services.llm import chat
 from services.worker import queue as render_queue
 from services.worker import run_blender
 
-from .asset_store import build_signed_model_url, save_companion_model
+from .asset_store import build_signed_model_url, decompress_glb_if_needed, save_companion_model
 from .avatar_service import resolve_uploaded_avatar_path
 from .persona_service import get_or_create_persona
 from .rig_type_selector import select_rig_type
@@ -382,6 +382,7 @@ async def _inject_morph_targets(glb_bytes: bytes, *, io_dir: Path | None = None)
 
 def parse_glb_json(glb_data: bytes) -> dict | None:
     """Returns ``None`` on any malformed input (length, magic, chunk header)."""
+    glb_data = decompress_glb_if_needed(glb_data)
     if len(glb_data) < 20:
         return None
     if int.from_bytes(glb_data[0:4], "little") != 0x46546C67:  # 'glTF'

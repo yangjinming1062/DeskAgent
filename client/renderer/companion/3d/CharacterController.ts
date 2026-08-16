@@ -164,6 +164,44 @@ const disposeObjectTree = (root: THREE.Object3D): void => {
   })
 }
 
+/**
+ * Transparently decompresses Gzip / Deflate compressed GLB buffers.
+ * Preserves 100% full mesh resolution and fidelity while drastically reducing transport size.
+ */
+async function decompressGlbIfNeeded(buffer: ArrayBuffer): Promise<ArrayBuffer> {
+  const bytes = new Uint8Array(buffer)
+
+  // Gzip magic bytes (0x1f, 0x8b)
+  if (bytes.length >= 2 && bytes[0] === 0x1f && bytes[1] === 0x8b) {
+    if (typeof DecompressionStream !== 'undefined') {
+      try {
+        const ds = new DecompressionStream('gzip')
+        const decompressed = await new Response(new Response(bytes).body?.pipeThrough(ds)).arrayBuffer()
+
+        return decompressed
+      } catch (err) {
+        log.warn('CharacterController', 'Failed to decompress gzip glb buffer:', err)
+      }
+    }
+  }
+
+  // Deflate / zlib magic bytes (0x78 0x9c / 0x78 0x01 / 0x78 0xda)
+  if (bytes.length >= 2 && bytes[0] === 0x78 && (bytes[1] === 0x9c || bytes[1] === 0x01 || bytes[1] === 0xda)) {
+    if (typeof DecompressionStream !== 'undefined') {
+      try {
+        const ds = new DecompressionStream('deflate')
+        const decompressed = await new Response(new Response(bytes).body?.pipeThrough(ds)).arrayBuffer()
+
+        return decompressed
+      } catch (err) {
+        log.warn('CharacterController', 'Failed to decompress deflate glb buffer:', err)
+      }
+    }
+  }
+
+  return buffer
+}
+
 export class CharacterController {
   private readonly morph = new MorphController()
   private readonly physics: PhysicsBackend
@@ -214,8 +252,9 @@ export class CharacterController {
     if (bytes) {
       try {
         this.disposeRoot(scene)
+        const decompressedBytes = await decompressGlbIfNeeded(bytes)
         const loader = createGLTFLoader()
-        const gltf = await loader.parseAsync(bytes, '')
+        const gltf = await loader.parseAsync(decompressedBytes, '')
         this.root = gltf.scene
         this.root.traverse(child => {
           if (child instanceof THREE.Mesh) {

@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..llm import build_texture_prompt, chat, is_preset_species
 from ..tools.builtin import first_image_url, image_generation_tool
-from .asset_store import build_data_uri, build_signed_asset_url, resolve_companion_model_path, save_companion_asset, unlink_companion_asset
+from .asset_store import build_data_uri, build_signed_asset_url, decompress_glb_if_needed, resolve_companion_model_path, save_companion_asset, unlink_companion_asset
 from .avatar_service import get_active_avatar, load_avatar_bytes_as_data_uri
 from .blender_llm_pipeline import _vision_llm_call
 from .garment_service import joint_names_from_gltf, run_garment_pipeline
@@ -358,7 +358,7 @@ def _read_model_bytes(asset_url: str) -> bytes:
     resolved = resolve_companion_model_path(int(parts[1]), parts[2])
     if resolved is None:
         raise RuntimeError(f"body model file not found: {asset_url}")
-    return resolved[0].read_bytes()
+    return decompress_glb_if_needed(resolved[0].read_bytes())
 
 
 async def preview_garment(
