@@ -317,6 +317,7 @@ export function Companion3D(): React.JSX.Element {
     <div
       className="companion-3d-wrapper"
       data-static-covered={staticMode && activeSprite ? 'true' : undefined}
+      ref={containerRef}
       style={{ position: 'relative', width: '100%', height: '100%' }}
     >
       {genState === 'generating' && (
