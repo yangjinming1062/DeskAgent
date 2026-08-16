@@ -37,6 +37,7 @@ import { speakProactive } from './proactive/proactive'
 import { ProactiveBubble } from './proactive/proactive-bubble'
 import { CompanionSettings } from './settings-overlay'
 import { SpriteContextMenu } from './sprite/context-menu'
+import { $contextMenuPos } from './sprite/context-menu-store'
 import { SpriteStage } from './sprite/sprite-stage'
 import { StaticSprite } from './static-sprite/StaticSprite'
 import { VoiceCallDock } from './voice-call-dock'
@@ -69,7 +70,6 @@ export function CompanionRoot(): React.JSX.Element {
   }, [voiceCallOpen])
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [memoryOpen, setMemoryOpen] = useState(false)
-  const [contextMenuPos, setContextMenuPos] = useState<{ x: number; y: number } | null>(null)
   const { requestGateway } = useGatewayRequest()
   const validityCheckedRef = useRef(false)
   // Marks a sprite click that triggered the login flow — distinguishes a fresh
@@ -302,7 +302,7 @@ export function CompanionRoot(): React.JSX.Element {
       <SpriteStage
         onContextMenu={e => {
           if (showReady) {
-            setContextMenuPos({ x: e.clientX, y: e.clientY })
+            $contextMenuPos.set({ x: e.clientX, y: e.clientY })
           }
         }}
         onDoubleTap={onDoubleTap}
@@ -315,9 +315,8 @@ export function CompanionRoot(): React.JSX.Element {
           </>
         )}
       </SpriteStage>
-      {showReady && contextMenuPos && (
+      {showReady && (
         <SpriteContextMenu
-          onClose={() => setContextMenuPos(null)}
           onOpenMemory={() => {
             setChatOpen(false)
             setVoiceCallOpen(false)
@@ -332,8 +331,6 @@ export function CompanionRoot(): React.JSX.Element {
             setChatOpen(false)
             setVoiceCallOpen(true)
           }}
-          x={contextMenuPos.x}
-          y={contextMenuPos.y}
         />
       )}
       {showReady && chatOpen && (

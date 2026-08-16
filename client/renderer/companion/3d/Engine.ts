@@ -6,7 +6,7 @@ import { log } from '@/shared/lib/log'
 import { getBaseSpriteHeight, getBaseSpriteWidth } from '../spatial'
 
 import { CharacterController } from './CharacterController'
-import { reportBackend, reportFrameStats } from './engine-diagnostics'
+import { reportBackend, reportEngineError, reportFrameStats } from './engine-diagnostics'
 import { LightingRig } from './LightingRig'
 import { CpuBackend } from './physics/CpuBackend'
 import { type PhysicsBackend, pickBackendFor } from './physics/PhysicsBackend'
@@ -30,6 +30,11 @@ const HIDDEN_IDLE_MS = 37
 // verlet solver a multi-second delta (ClothSolver clamps its own, the mixer
 // does not).
 const MAX_FRAME_DELTA = 0.05
+
+// DPR cap. 1.5 is enough for a 300×360 desktop-pet window — going higher
+// (e.g. 2.0) doubles the shader work without any visible quality gain at
+// the sprite's native display size. iGPU + alpha:true is fillrate-bound.
+const MAX_DPR = 1.5
 
 function makeCanvas(container: HTMLElement): HTMLCanvasElement {
   const canvas = document.createElement('canvas')
@@ -81,6 +86,7 @@ export class Engine {
   // one. Anything beyond that propagates to the caller (static-sprite mode
   // is the never-blank floor).
   static async create(opts: EngineOptions): Promise<Engine> {
+    const useShadows = opts.useShadows ?? false
     const canvas = makeCanvas(opts.container)
     const size = readCanvasSize(canvas)
 
@@ -88,7 +94,8 @@ export class Engine {
       const gpu = new WebGPURenderer({
         canvas,
         alpha: true,
-        antialias: true,
+        // MSAA off: per-frame resolve is a meaningful chunk of GPU time at this size; PBR + tonemap already hide jagged silhouettes. WebGPU renderer does not expose `premultipliedAlpha` (the WebGL2 fallback does).
+        antialias: false,
         powerPreference: 'low-power'
       })
 
@@ -98,7 +105,7 @@ export class Engine {
 
       log.info('engine', `3D renderer backend: ${kind}`)
 
-      return new Engine(gpu, kind, canvas, size)
+      return new Engine(gpu, kind, canvas, size, useShadows)
     } catch (err) {
       log.warn('engine', 'WebGPURenderer init failed, falling back to classic WebGLRenderer:', err)
       canvas.remove()
@@ -111,14 +118,14 @@ export class Engine {
       const classic = new THREE.WebGLRenderer({
         canvas: fallbackCanvas,
         alpha: true,
-        antialias: true,
-        // 'default' keeps hybrid-GPU laptops on the integrated GPU — the
-        // companion scene is far below dGPU territory and forcing it wakes a
-        // 20W+ chip for a desk pet.
+        // MSAA off (same reasoning as WebGPU branch); premultipliedAlpha off skips the multiply during the resolve.
+        antialias: false,
+        premultipliedAlpha: false,
+        // 'default' keeps hybrid-GPU laptops on the integrated GPU — the companion scene is far below dGPU territory and forcing it wakes a 20W+ chip for a desk pet.
         powerPreference: 'default'
       })
 
-      return new Engine(classic, 'classic-webgl', fallbackCanvas, fallbackSize)
+      return new Engine(classic, 'classic-webgl', fallbackCanvas, fallbackSize, useShadows)
     } catch (err) {
       // No GPU context at all — release the orphan canvas before propagating
       // (static-sprite mode is the never-blank floor).
@@ -134,20 +141,22 @@ export class Engine {
     size: {
       width: number
       height: number
-    }
+    },
+    useShadows: boolean
   ) {
     this.renderer = renderer
     this.backendKind = backendKind
     this.canvas = canvas
 
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, MAX_DPR))
     this.renderer.setSize(size.width, size.height, false)
     this.renderer.setClearColor(0x000000, 0)
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping
     this.renderer.toneMappingExposure = 1.0
     this.renderer.outputColorSpace = THREE.SRGBColorSpace
-    this.renderer.shadowMap.enabled = true
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap
+    this.renderer.shadowMap.enabled = useShadows
+    // 1024² PCF (no Soft) when shadows are on — half the bandwidth of the old 2048² PCFSoft default.
+    this.renderer.shadowMap.type = useShadows ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap
 
     this.scene = new THREE.Scene()
 
@@ -156,7 +165,7 @@ export class Engine {
     this.camera.position.set(0, 0.9, 6.0)
     this.camera.lookAt(0, 0.9, 0)
 
-    this.lighting = new LightingRig(this.scene, this.renderer)
+    this.lighting = new LightingRig(this.scene, this.renderer, useShadows)
 
     this.physics = pickBackendFor(backendKind) === 'tsl' ? new TslComputeBackend() : new CpuBackend()
     this.character = new CharacterController(this.physics)
@@ -246,8 +255,8 @@ export class Engine {
     this.camera.lookAt(centerX, centerY, 0)
   }
 
-  async loadCharacter(bytes: ArrayBuffer | null, rigType: string = 'biped'): Promise<LoadedModelInfo> {
-    const info = await this.character.load(bytes, this.scene, rigType)
+  async loadCharacter(bytes: ArrayBuffer | null, rigType: string = 'biped', contentHash?: string): Promise<LoadedModelInfo> {
+    const info = await this.character.load(bytes, this.scene, rigType, contentHash)
     this.frameCharacter()
 
     return info
@@ -337,6 +346,14 @@ export class Engine {
           reportFrameStats(this.profile, this.stats.fps)
         }
       }
+    } catch (err) {
+      // Render guard — stop the ticker on first error so the next frame doesn't repeat the same throw; surface via $engineError for the dev overlay.
+      this.running = false
+      const message = err instanceof Error ? err.message : String(err)
+      reportEngineError(message)
+      log.error('engine', 'ticker stopped after error:', err)
+
+      return
     } finally {
       this.isTicking = false
     }
@@ -373,7 +390,7 @@ export class Engine {
   resize(width: number, height: number): void {
     // Re-pick pixel ratio: window.devicePixelRatio changes when the window
     // is dragged across monitors with different DPI.
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, MAX_DPR))
     this.camera.aspect = width / height
     this.camera.updateProjectionMatrix()
     this.renderer.setSize(width, height, false)

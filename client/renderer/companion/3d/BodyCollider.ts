@@ -247,13 +247,8 @@ export class BodyCollider {
       const extent = [mx[0] - mn[0], mx[1] - mn[1], mx[2] - mn[2]]
       const axis = extent[0] >= extent[1] && extent[0] >= extent[2] ? 0 : extent[1] >= extent[2] ? 1 : 2
 
-      const slice = Array.from(order.subarray(start, end)).sort(
-        (a, b) => centroid[a * 3 + axis] - centroid[b * 3 + axis]
-      )
-
-      for (let i = 0; i < slice.length; i++) {
-        order[start + i] = slice[i]
-      }
+      // In-place typed-array quicksort — replaces the old `Array.from(...).sort(...)` which allocated ~50K elements per frame on a 4K-triangle proxy.
+      sortByCentroidInPlace(order, start, end, centroid, axis)
 
       const mid = (start + end) >> 1
       this.bvhLeft[node] = build(start, mid)
@@ -265,6 +260,79 @@ export class BodyCollider {
 
     this.bvhRoot = build(0, triCount)
   }
+}
+
+/** In-place quicksort with median-of-three pivot + 3-way Dutch Flag partition over a typed-array `[start, end)` slice. */
+const INSERTION_SORT_THRESHOLD = 16
+
+function sortByCentroidInPlace(
+  order: Uint32Array,
+  start: number,
+  end: number,
+  centroid: Float32Array,
+  axis: number
+): void {
+  const length = end - start
+
+  if (length <= 1) {
+    return
+  }
+
+  // Insertion sort for small slices — lower constant factor than quicksort and no recursion overhead.
+  if (length <= INSERTION_SORT_THRESHOLD) {
+    for (let i = start + 1; i < end; i++) {
+      const key = order[i]
+      const keyVal = centroid[key * 3 + axis]
+      let j = i - 1
+
+      while (j >= start && centroid[order[j] * 3 + axis] > keyVal) {
+        order[j + 1] = order[j]
+        j--
+      }
+
+      order[j + 1] = key
+    }
+
+    return
+  }
+
+  // Median-of-three pivot: pick the median of `start`, `mid`, `end-1`.
+  const mid = start + (length >> 1)
+  const a = order[start]
+  const b = order[mid]
+  const c = order[end - 1]
+  const ca = centroid[a * 3 + axis]
+  const cb = centroid[b * 3 + axis]
+  const cc = centroid[c * 3 + axis]
+  const pivotTri = (ca <= cb && cb <= cc) || (cc <= cb && cb <= ca) ? b : (ca <= cc && cc <= cb) || (cb <= cc && cc <= ca) ? c : a
+  const pivotVal = centroid[pivotTri * 3 + axis]
+
+  // 3-way Dutch Flag partition: [start, lt) < pivot, [lt, gt) = pivot, [gt, end) > pivot — reduces recursion depth on duplicate centroids.
+  let lt = start
+  let i = start
+  let gt = end
+
+  while (i < gt) {
+    const v = centroid[order[i] * 3 + axis]
+
+    if (v < pivotVal) {
+      const tmp = order[lt]
+      order[lt] = order[i]
+      order[i] = tmp
+      lt++
+      i++
+    } else if (v > pivotVal) {
+      gt--
+      const tmp = order[i]
+      order[i] = order[gt]
+      order[gt] = tmp
+    } else {
+      i++
+    }
+  }
+
+  sortByCentroidInPlace(order, start, lt, centroid, axis)
+  sortByCentroidInPlace(order, gt, end, centroid, axis)
 }
 
 /** Squared distance from point to node AABB (for BVH pruning). */

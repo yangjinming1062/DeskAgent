@@ -21,7 +21,7 @@ export class LightingRig {
   private readonly envTexture: THREE.Texture
   private readonly disposeEnvTarget: () => void
 
-  constructor(scene: THREE.Scene, renderer: RendererHost) {
+  constructor(scene: THREE.Scene, renderer: RendererHost, enableShadows: boolean) {
     // PMREM environment gives PBR materials realistic ambient reflections
     // without needing an HDRI file.
     if (renderer instanceof WebGPURenderer) {
@@ -43,19 +43,25 @@ export class LightingRig {
     this.ambient = new THREE.AmbientLight(0xffffff, 0.3)
     scene.add(this.ambient)
 
-    // Key — warm, front-left, casts the primary shadow.
+    // Key — warm, front-left. Default off for a 300×360 desktop-pet window (shadow map was the single biggest GPU cost); when on, 1024² PCF radius 1.
     this.key = new THREE.DirectionalLight(0xfff6ee, 2.2)
     this.key.position.set(1.4, 2.2, 3.2)
-    this.key.castShadow = true
-    this.key.shadow.mapSize.set(2048, 2048)
-    this.key.shadow.camera.near = 0.5
-    this.key.shadow.camera.far = 12
-    this.key.shadow.camera.left = -2.5
-    this.key.shadow.camera.right = 2.5
-    this.key.shadow.camera.top = 2.5
-    this.key.shadow.camera.bottom = -1.5
-    this.key.shadow.bias = -0.0005
-    this.key.shadow.radius = 4
+
+    if (enableShadows) {
+      this.key.castShadow = true
+      this.key.shadow.mapSize.set(1024, 1024)
+      this.key.shadow.camera.near = 0.5
+      this.key.shadow.camera.far = 12
+      this.key.shadow.camera.left = -2.5
+      this.key.shadow.camera.right = 2.5
+      this.key.shadow.camera.top = 2.5
+      this.key.shadow.camera.bottom = -1.5
+      this.key.shadow.bias = -0.0005
+      this.key.shadow.radius = 1
+    } else {
+      this.key.castShadow = false
+    }
+
     scene.add(this.key)
 
     // Fill — cool, front-right, softer; lifts shadow detail.

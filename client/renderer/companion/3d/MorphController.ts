@@ -94,6 +94,8 @@ export class MorphController {
   private blinkPhase: 'idle' | 'closing' | 'opening' = 'idle'
   private blinkElapsed = 0
   private lipSyncAmplitude = 0
+  // Smoothed jaw-open override — asymmetric attack/release kills the mouth "pop" on audio start and the abrupt close on audio end (airi pattern).
+  private currentJawValue = 0
 
   setCustomExpressions(exprs: readonly { name: string; weights: Record<string, number> }[]): void {
     this.customPresets = {}
@@ -225,18 +227,31 @@ export class MorphController {
     }
 
     this.updateBlink(delta)
+    this.updateLipSync(delta)
+  }
 
-    if (this.lipSyncAmplitude > 0.01) {
-      const jawHits = this.resolved['jawOpen']
+  /**
+   * Asymmetric smoothing on the audio-driven jaw override — fast attack, slow release (airi pattern).
+   * The override is `max`'d with the emotion-morphed jaw so audio can drive the mouth open but cannot undercut an emotion preset.
+   */
+  private updateLipSync(delta: number): void {
+    const target = this.lipSyncAmplitude * 0.6
 
-      if (jawHits) {
-        for (const [mi, ti] of jawHits) {
-          const infls = this.meshes[mi].morphTargetInfluences!
+    // Fast attack on rising target (mouth opens quickly), slow release on falling target (mouth closes gently). The clamp keeps the lerp factor frame-rate-correct at very large `delta` (e.g. after a tab pause): without it, the lerp would overshoot `target` and oscillate.
+    const speed = target > this.currentJawValue ? 50 : 8
+    this.currentJawValue = THREE.MathUtils.lerp(this.currentJawValue, target, Math.min(1, speed * delta))
 
-          if (infls[ti] !== undefined) {
-            infls[ti] = Math.max(infls[ti], this.lipSyncAmplitude * 0.6)
-          }
-        }
+    const jawHits = this.resolved['jawOpen']
+
+    if (!jawHits) {
+      return
+    }
+
+    for (const [mi, ti] of jawHits) {
+      const infls = this.meshes[mi].morphTargetInfluences!
+
+      if (infls[ti] !== undefined) {
+        infls[ti] = Math.max(infls[ti], this.currentJawValue)
       }
     }
   }

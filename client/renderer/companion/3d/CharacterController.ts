@@ -11,6 +11,7 @@ import { BodyCollider } from './BodyCollider'
 import { resolveEmotionClip, resolveInteractionClip } from './clip-dispatch'
 import { buildClip, type ClipDef } from './clips-biped'
 import { buildClipsForRig, getClipDefs } from './clips-registry'
+import { hasGltf, stashGltf, takeGltfClone } from './gltf-instance-cache'
 import { createGLTFLoader } from './gltf-loader-factory'
 import { $availableClipNames, type CompanionExpression } from './model-store'
 import { MorphController } from './MorphController'
@@ -243,20 +244,46 @@ export class CharacterController {
     this.physics = physics
   }
 
-  /** GLB: parse pre-fetched bytes + animations; falls back to procedural on error.
-   * Bytes arrive from the renderer's `apiAssetBuffer` IPC (host-stripped + re-based
-   * onto the local backend by main), so no CORS preflight against the signed
-   * URL's host. See connection.cjs::spiritagent:api:asset-buffer. */
-  async load(bytes: ArrayBuffer | null, scene: THREE.Scene, rigType: string = 'biped'): Promise<LoadedModelInfo> {
+  /** Parse pre-fetched GLB bytes + animations; falls back to procedural on error. Bytes arrive from the renderer's `apiAssetBuffer` IPC (host-stripped + re-based by main, no CORS preflight). When `contentHash` is provided and `gltf-instance-cache` already has a parsed template, the load pulls a deep clone instead of re-parsing. */
+  async load(
+    bytes: ArrayBuffer | null,
+    scene: THREE.Scene,
+    rigType: string = 'biped',
+    contentHash?: string
+  ): Promise<LoadedModelInfo> {
     this.rigType = rigType
 
-    if (bytes) {
+    if (bytes || (contentHash && hasGltf(contentHash))) {
       try {
         this.disposeRoot(scene)
-        const decompressedBytes = await decompressGlbIfNeeded(bytes)
-        const loader = createGLTFLoader()
-        const gltf = await loader.parseAsync(decompressedBytes, '')
-        this.root = gltf.scene
+
+        let rootScene: THREE.Group
+        let gltfAnimations: THREE.AnimationClip[]
+
+        // Detached cache: deep clone is dramatically cheaper than re-parsing GLB.
+        if (contentHash && hasGltf(contentHash)) {
+          const cached = takeGltfClone(contentHash)!
+
+          rootScene = cached.scene
+          gltfAnimations = cached.animations
+        } else {
+          if (!bytes) {
+            throw new Error('no bytes and no cache hit')
+          }
+
+          const decompressedBytes = await decompressGlbIfNeeded(bytes)
+          const loader = createGLTFLoader()
+          const gltf = await loader.parseAsync(decompressedBytes, '')
+          rootScene = gltf.scene
+          gltfAnimations = gltf.animations
+
+          // Template stays owned by the cache; subsequent takes return deep clones.
+          if (contentHash) {
+            stashGltf(contentHash, gltf.scene, gltf.animations, bytes.byteLength)
+          }
+        }
+
+        this.root = rootScene
         this.root.traverse(child => {
           if (child instanceof THREE.Mesh) {
             child.castShadow = true
@@ -286,7 +313,7 @@ export class CharacterController {
           }
         })
 
-        for (const clip of gltf.animations) {
+        for (const clip of gltfAnimations) {
           this.actions.set(clip.name, this.mixer.clipAction(clip))
         }
 

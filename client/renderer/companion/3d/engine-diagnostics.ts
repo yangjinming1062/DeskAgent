@@ -14,6 +14,9 @@ export const $rendererBackend = atom<EngineBackendKind | null>(null)
 export const $powerProfile = atom<PowerProfile>('active')
 export const $engineFps = atom(0)
 
+// Render guard — surfaces unrecoverable engine errors so the ticker can stop instead of looping into per-frame throws.
+export const $engineError = atom<{ message: string; at: number } | null>(null)
+
 let lastLoggedProfile: PowerProfile | null = null
 
 export function reportBackend(kind: EngineBackendKind): void {
@@ -28,4 +31,13 @@ export function reportFrameStats(profile: PowerProfile, fps: number): void {
     lastLoggedProfile = profile
     log.info('engine', `power profile -> ${profile} (observed ${fps.toFixed(0)} fps)`)
   }
+}
+
+export function reportEngineError(message: string): void {
+  $engineError.set({ message, at: Date.now() })
+  log.error('engine', `engine error: ${message}`)
+}
+
+export function clearEngineError(): void {
+  $engineError.set(null)
 }

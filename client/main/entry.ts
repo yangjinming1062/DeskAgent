@@ -1332,6 +1332,8 @@ function createSpriteWindow(): void {
     resizable: false,
     show: false,
     skipTaskbar: true,
+    // `type: 'panel'` is macOS-only (Cocoa NSPanel); setting it on Win/Linux logs a deprecation warning.
+    type: IS_MAC ? 'panel' : undefined,
     transparent: SPRITE_TRANSPARENT,
     webPreferences: {
       backgroundThrottling: false,
@@ -1346,7 +1348,13 @@ function createSpriteWindow(): void {
 
   applySpriteBounds()
   mainWindow.setIgnoreMouseEvents(true, { forward: SPRITE_TRANSPARENT })
-  mainWindow.setAlwaysOnTop(true, 'floating')
+
+  // macOS gets the 'screen-saver' z-band (sits above the floating window level and beats games using exclusive fullscreen); Win/Linux fall back to 'floating'. Windows exclusive fullscreen bypasses DWM entirely — companion cannot overlay those; documented limitation.
+  if (IS_MAC) {
+    mainWindow.setAlwaysOnTop(true, 'screen-saver', 1)
+  } else {
+    mainWindow.setAlwaysOnTop(true, 'floating')
+  }
 
   if (IS_MAC && icon) {
     app.dock?.setIcon(icon)

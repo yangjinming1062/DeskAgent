@@ -16,8 +16,10 @@ import { $activeSprite, $glbLoadFailed, $staticMode } from '@/companion/static-s
 import { log } from '@/shared/lib/log'
 
 import { $dragVelocity, $spatialLocomotion, getBaseSpriteHeight, getBaseSpriteWidth } from '../spatial'
+import { $contextMenuOpen } from '../sprite/context-menu-store'
 
 import { Engine } from './Engine'
+import { fetchGlbWithCache } from './glb-opfs-cache'
 import {
   $expressions,
   $generatedClips,
@@ -156,7 +158,7 @@ export function Companion3D(): React.JSX.Element {
 
       // Look-at — smoothly track cursor when hovering over the companion without triggering DOM reflows
       const onPointerMove = (e: PointerEvent) => {
-        if ($chatOpen.get() || $spatialLocomotion.get() === 'drag') {
+        if ($chatOpen.get() || $spatialLocomotion.get() === 'drag' || $contextMenuOpen.get()) {
           eng.character.setLookTarget(0, 0)
 
           return
@@ -247,16 +249,15 @@ export function Companion3D(): React.JSX.Element {
 
       if (url) {
         try {
-          const u8 = await window.spiritagent.apiAssetBuffer({
-            url,
-            contentHash: modelInfo.content_hash || undefined
-          })
+          // OPFS-cached first; falls back to the main-process IPC and
+          // populates the cache on success. The first load still costs the
+          // IPC round-trip; subsequent loads with the same contentHash are
+          // instant.
+          bytes = await fetchGlbWithCache(url, modelInfo.content_hash || undefined)
 
           if (cancelled) {
             return
           }
-
-          bytes = u8.slice().buffer
         } catch (err) {
           if (cancelled) {
             return
@@ -267,7 +268,7 @@ export function Companion3D(): React.JSX.Element {
       }
 
       try {
-        const info = await engine.loadCharacter(bytes, modelInfo.rig_type || 'biped')
+        const info = await engine.loadCharacter(bytes, modelInfo.rig_type || 'biped', modelInfo.content_hash || undefined)
 
         if (cancelled) {
           return

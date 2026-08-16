@@ -82,6 +82,8 @@ GLB 加载成功后骨骼动画覆盖全部状态；GLB 不可用（生成中/�
 
 两条防坑约束：**Ready 保护**——首个模型 `loadCharacter` 落定（`$modelLoadSettled`）前强制 active，避免孵化动画被误降频拉长；**隐藏窗口降级**——Chromium 对 hidden 窗口硬停 rAF（禁节流开关管不到合成层），active/idle 档在 `document.hidden` 时改由 16/37ms timer 驱动，`visibilitychange` 恢复 rAF。dormant 恒为 250ms timer（进程级禁 timer 节流，锁屏下稳定）；档位回升时 Engine 层把 delta 钳制到 50ms，防 mixer/布料在长暂停后跳变。
 
+**性能取舍**（与上述 3D 渲染叠加生效）：阴影默认关闭（300×360 精灵窗的 PBR 环境光足以体现深度，2048² PCFSoft 阴影是单项最大 GPU 成本），开启时强制 1024² PCF；MSAA 关闭、贴图预乘 alpha 关闭、DPR 封顶 1.5——小透明窗口的不必要 GUI 成本剔除。GLB 解析模板走 [gltf-instance-cache.ts](3d/gltf-instance-cache.ts)：按 `contentHash` 缓存解析后的 scene + animations，切换模型时深克隆避免重新解析；模板的 materials/textures 被多个克隆共享（read-only，PBR 热替走 `loadPbrChannel` 另克隆 slot）。OPFS 字节缓存（[glb-opfs-cache.ts](3d/glb-opfs-cache.ts)）以 `contentHash` 为键（同源私有文件系统，而不是 `caches.open` 的 HTTP 缓存），第二次加载走 0 ms 落盘读。BodyCollider BVH 划分改 typed-array in-place quicksort（原 `Array.from(...).sort(...)` 每帧 ~50K 分配，4K 三角形下完全压垮 GC）。Renderer 错误隔离（`$engineError`）：Engine tick 抛错时停止 ticker 并上报，避免"每帧抛+日志洪水"循环。这些都是默认关闭或收紧后的基线，需要在 Settings 重新打开的功能必须经过实测。
+
 ## 5. 屏锁与端忙
 
 - `companion/activity.ts` 每 30s 调 `system.is_screen_locked`（`runnerInvoke`）。结果写入 `$screenLocked` atom。
@@ -107,7 +109,7 @@ GLB 加载成功后骨骼动画覆盖全部状态；GLB 不可用（生成中/�
 
 - **戳 / 拖**（`onTap` / `onDragEnd`）：[interaction.ts](interaction.ts) 从 `client/renderer/companion/reactions/manifest.json` 的 52 条文案里按 (bucket, tone) 随机抽一条（[reactions/reaction-audio.ts](reactions/reaction-audio.ts)），交给 `speakScripted`（[tts.ts](tts.ts)）→ `spiritagent:media:tts { persist: true }`。合成结果按 `sha1(音色 + 台词)` 内容寻址缓存在 `$SPIRITAGENT_HOME/audio/tts-cache/<lang>/`：首次播放合成一次并落盘，之后都是本地读盘，同一组 (音色, 台词) 一辈子只花一次云端额度。换音色或改台词会让缓存键变化从而自然失效，没有需要维护的失效逻辑；只有云端结果落盘，Piper 兜底产物不写，否则它会冒充用户选定的云端音色。音色试听句走同一条路径。
 - **悬停**：10s 节流，`interacting` 1.5s（不放音）。
-- **右键**：托盘菜单入口（声音切换、伙伴设置、登出）。
+- **右键**：托盘菜单入口（声音切换、伙伴设置、登出）。精灵窗口内右键开自定义 in-sprite 菜单（[sprite/context-menu.tsx](sprite/context-menu.tsx)）——始终挂载、通过 `visibility: hidden` 切换，避免 mount/unmount DOM 与重新注册 `interactive-region`/`mousedown` listener；状态走 `$contextMenuPos` 原子（[sprite/context-menu-store.ts](sprite/context-menu-store.ts)），菜单自身订阅，宿主 `CompanionRoot` 不参与。点击外部通过 `mousedown` listener 关闭，仅在菜单可见时注册，避免隐藏态干扰 hover 命中。
 
 **每日互动统计**：poke / drag / chat_turn 三类事件经 `companion.record_interaction_stats`（无 LLM）上报，Backend 按 UTC 自然日聚合 + OR 门限（任一类 ≥ 10）upsert `Memory(context="interaction_stats:<date>")`（含 hour_counts 快照），喂给后续 LLM "用户当日活跃度 + 高峰时段" 信号。
 

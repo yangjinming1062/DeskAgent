@@ -1,5 +1,7 @@
 export interface EngineOptions {
   container: HTMLElement
+  /** Whether the renderer should enable shadow mapping. Default `false` — for a 300×360 desktop-pet window PBR environment lighting alone conveys depth, and a 2048² PCFSoft shadow map is the single biggest GPU cost in the pipeline. When enabled, capped at 1024² PCF. */
+  useShadows?: boolean
 }
 
 export type EngineBackendKind = 'webgpu' | 'webgl2' | 'classic-webgl'

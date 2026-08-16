@@ -57,19 +57,25 @@ export function SpriteStage({ children, onTap, onDoubleTap, onContextMenu }: Spr
   const pendingVelRef = useRef<{ vx: number; vy: number } | null>(null)
   const dragRafRef = useRef<number | null>(null)
 
-  const toggle = useCallback((enable: boolean) => {
+  // 0-delay unignore on capture: setIgnoreMouseEvents(true, { forward: true }) does NOT forward mousedown/contextmenu to the renderer, so the window must be ungnored BEFORE the click arrives — mousemove is the only signal that reaches us.
+  const captureImmediate = useCallback(() => {
+    if (pendingToggleRef.current) {
+      clearTimeout(pendingToggleRef.current)
+      pendingToggleRef.current = null
+    }
+
+    void window.spiritagent.sprite.setIgnoreMouseEvents({ ignore: false })
+  }, [])
+
+  // 50 ms debounce on release: prevents boundary jitter from repeatedly flipping the window between interactive and click-through.
+  const releaseDebounced = useCallback(() => {
     if (pendingToggleRef.current) {
       clearTimeout(pendingToggleRef.current)
     }
 
     pendingToggleRef.current = setTimeout(() => {
       pendingToggleRef.current = null
-
-      if (enable) {
-        void window.spiritagent.sprite.setIgnoreMouseEvents({ ignore: false })
-      } else {
-        void window.spiritagent.sprite.setIgnoreMouseEvents({ ignore: true, forward: true })
-      }
+      void window.spiritagent.sprite.setIgnoreMouseEvents({ ignore: true, forward: true })
     }, 50)
   }, [])
 
@@ -80,8 +86,8 @@ export function SpriteStage({ children, onTap, onDoubleTap, onContextMenu }: Spr
 
     capturedRef.current = true
     handleHoverInteraction()
-    toggle(true)
-  }, [toggle])
+    captureImmediate()
+  }, [captureImmediate])
 
   const release = useCallback(() => {
     if (!capturedRef.current) {
@@ -89,8 +95,8 @@ export function SpriteStage({ children, onTap, onDoubleTap, onContextMenu }: Spr
     }
 
     capturedRef.current = false
-    toggle(false)
-  }, [toggle])
+    releaseDebounced()
+  }, [releaseDebounced])
 
   useInteractiveRegion(SPRITE_REGION_ID, mountRef, el => {
     const rect = el.getBoundingClientRect()
@@ -103,19 +109,32 @@ export function SpriteStage({ children, onTap, onDoubleTap, onContextMenu }: Spr
   })
 
   useEffect(() => {
-    const onMove = (e: MouseEvent) => {
-      lastPointRef.current = { x: e.clientX, y: e.clientY }
+    // Coalesce mousemove to a single rAF tick — getBoundingClientRect() per region is layout-forcing, and 60+ Hz raw mousemove burns the frame budget on the resulting style-recalc.
+    let moveRafId: number | null = null
 
-      // Skip probing during active drag to avoid layout thrashing
-      if (dragRef.current) {
+    const flushMove = () => {
+      moveRafId = null
+      const p = lastPointRef.current
+
+      if (!p || dragRef.current) {
         return
       }
 
-      if (isPointInteractive(e.clientX, e.clientY)) {
+      if (isPointInteractive(p.x, p.y)) {
         capture()
       } else {
         release()
       }
+    }
+
+    const onMove = (e: MouseEvent) => {
+      lastPointRef.current = { x: e.clientX, y: e.clientY }
+
+      if (moveRafId !== null) {
+        return
+      }
+
+      moveRafId = requestAnimationFrame(flushMove)
     }
 
     const probe = () => {
@@ -133,6 +152,11 @@ export function SpriteStage({ children, onTap, onDoubleTap, onContextMenu }: Spr
       window.removeEventListener('mousemove', onMove)
       setCaptureProbe(null)
       release()
+
+      if (moveRafId !== null) {
+        cancelAnimationFrame(moveRafId)
+        moveRafId = null
+      }
 
       if (dragRafRef.current !== null) {
         cancelAnimationFrame(dragRafRef.current)
